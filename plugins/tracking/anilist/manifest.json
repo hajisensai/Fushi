@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "kind": "tracking",
+  "id": "moe.fushi.tracking.anilist",
+  "name": "AniList",
+  "version": "0.1.4",
+  "api": 1,
+  "entry": "main.js",
+  "description": "Keeps your AniList anime, manga and light novel list in step with Fushi.",
+  "capabilities": ["login", "account", "trackingEntry", "trackingSubject", "trackingSearch", "trackingLookup"],
+  "permissions": ["network", "credentials"],
+  "network": { "domains": ["graphql.anilist.co", "anilist.co"], "methods": ["POST"] },
+  "tracking": {
+    "siteId": "anilist",
+    "siteHost": "anilist.co",
+    "kinds": ["anime", "manga", "novel"],
+    "defaultKinds": ["anime"],
+    "modes": ["episode", "chapter", "volume"],
+    "requestsPerMinute": 30,
+    "subjectUrl": {
+      "anime": "https://anilist.co/anime/{id}",
+      "manga": "https://anilist.co/manga/{id}",
+      "novel": "https://anilist.co/manga/{id}"
+    }
+  }
+}

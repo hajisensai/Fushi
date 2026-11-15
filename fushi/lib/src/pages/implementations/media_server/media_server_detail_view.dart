@@ -12,7 +12,7 @@ import 'package:fushi/src/media/detail/media_detail_kit.dart';
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
 import 'package:fushi/src/media/video/media_server/media_server_library.dart';
 import 'package:fushi/src/media/video/video_watched_marks.dart';
-import 'package:fushi/src/models/app_model.dart' show appProvider;
+import 'package:fushi/src/models/app_model.dart' show AppModel, appProvider;
 import 'package:fushi/src/sync/remote_library_cache.dart'
     show remoteLibraryCacheProvider;
 import 'package:fushi/src/sync/remote_video_client.dart'
@@ -546,8 +546,10 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
       context,
       listen: false,
     );
+    final AppModel app = container.read(appProvider);
     final WatchedMarkResult result = await setVideosWatched(
-      db: container.read(appProvider).database,
+      db: app.database,
+      tracking: app.libraryFinishTracking,
       watched: watched,
       localUids: <String>[
         for (final MediaServerItem e in targets)

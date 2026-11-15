@@ -311,6 +311,26 @@ Color fushiHeroBlockColor(ColorScheme scheme) => Color.alphaBlend(
   scheme.surfaceContainerLow,
 );
 
+/// A small state mark for a Continue entry (media tracking: sent / not linked /
+/// last send failed). The cover row draws it as a round badge on the cover's
+/// top end corner; the main card shows [label] as one more meta line. It is
+/// information only: taps go to the card underneath.
+class FushiContinueMark {
+  const FushiContinueMark({
+    required this.icon,
+    required this.label,
+    this.problem = false,
+  });
+
+  final IconData icon;
+
+  /// Full sentence for the meta line and the screen reader.
+  final String label;
+
+  /// true = needs the user (error colours); false = quiet confirmation.
+  final bool problem;
+}
+
 /// 「继续」区里的一个条目（主卡与旁边封面行共用一份数据）。
 ///
 /// 主卡长什么样只看封面方向（[still]）：横图（视频剧照）走剧照叠层皮——
@@ -342,7 +362,11 @@ class FushiContinueEntry {
     this.colorSource,
     this.badge,
     this.semanticLabel,
+    this.mark,
   });
+
+  /// State mark on the cover (cover row); null = none.
+  final FushiContinueMark? mark;
 
   /// 取色卡（[FushiContinueCardRow]）标题下的状态角标（游戏的游玩状态）；
   /// null = 不画。
@@ -446,6 +470,7 @@ class FushiContinueEntry {
           colorSource: colorSource,
           badge: badge,
           semanticLabel: semanticLabel,
+          mark: mark,
         );
 }
 
@@ -1047,7 +1072,11 @@ class FushiContinueSideTile extends StatelessWidget {
           container: true,
           button: true,
           excludeSemantics: true,
-          label: subtitle == null ? entry.title : '${entry.title} · $subtitle',
+          label: <String>[
+            entry.title,
+            if (subtitle != null) subtitle,
+            if (entry.mark case final FushiContinueMark mark) mark.label,
+          ].join(' · '),
           onTap: entry.onOpen,
           onLongPress: entry.onLongPress,
           child: SizedBox(
@@ -1056,7 +1085,23 @@ class FushiContinueSideTile extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                SizedBox(width: width, height: coverHeight, child: cover),
+                SizedBox(
+                  width: width,
+                  height: coverHeight,
+                  child: entry.mark == null
+                      ? cover
+                      : Stack(
+                          fit: StackFit.expand,
+                          children: <Widget>[
+                            cover,
+                            PositionedDirectional(
+                              top: 6,
+                              end: 6,
+                              child: _ContinueMarkBadge(mark: entry.mark!),
+                            ),
+                          ],
+                        ),
+                ),
                 // 文字块也是点按面（封面那张卡只盖封面）。右键走绑定表
                 // （ContextMenuTrigger），不硬绑次按钮。
                 ContextMenuTrigger(
@@ -1086,6 +1131,41 @@ class FushiContinueSideTile extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+/// The round state badge on a cover-row cover ([FushiContinueMark]). Ignores
+/// pointers so the cover card under it keeps its tap, long press and hover.
+class _ContinueMarkBadge extends StatelessWidget {
+  const _ContinueMarkBadge({required this.mark});
+
+  final FushiContinueMark mark;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final bool eink = isEinkTheme(context);
+    final Color fill = eink
+        ? cs.surface
+        : (mark.problem ? cs.errorContainer : cs.secondaryContainer);
+    final Color ink = eink
+        ? cs.onSurface
+        : (mark.problem ? cs.onErrorContainer : cs.onSecondaryContainer);
+    return IgnorePointer(
+      child: DecoratedBox(
+        key: const ValueKey<String>('fushi-continue-mark'),
+        decoration: ShapeDecoration(
+          color: fill,
+          shape: CircleBorder(
+            side: eink ? BorderSide(color: cs.onSurface) : BorderSide.none,
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(4),
+          child: FushiIcon(mark.icon, size: 14, color: ink),
+        ),
+      ),
     );
   }
 }

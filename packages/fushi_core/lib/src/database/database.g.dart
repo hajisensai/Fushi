@@ -24681,6 +24681,54 @@ class $MediaTrackingMappingsTable extends MediaTrackingMappings
     type: DriftSqlType.int,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _linkSourceMeta = const VerificationMeta(
+    'linkSource',
+  );
+  @override
+  late final GeneratedColumn<String> linkSource = GeneratedColumn<String>(
+    'link_source',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _confidenceMeta = const VerificationMeta(
+    'confidence',
+  );
+  @override
+  late final GeneratedColumn<double> confidence = GeneratedColumn<double>(
+    'confidence',
+    aliasedName,
+    true,
+    type: DriftSqlType.double,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _sentProgressMeta = const VerificationMeta(
+    'sentProgress',
+  );
+  @override
+  late final GeneratedColumn<int> sentProgress = GeneratedColumn<int>(
+    'sent_progress',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _sentCompletedMeta = const VerificationMeta(
+    'sentCompleted',
+  );
+  @override
+  late final GeneratedColumn<bool> sentCompleted = GeneratedColumn<bool>(
+    'sent_completed',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("sent_completed" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -24695,6 +24743,10 @@ class $MediaTrackingMappingsTable extends MediaTrackingMappings
     progressOffset,
     createdAt,
     updatedAt,
+    linkSource,
+    confidence,
+    sentProgress,
+    sentCompleted,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -24804,6 +24856,36 @@ class $MediaTrackingMappingsTable extends MediaTrackingMappings
     } else if (isInserting) {
       context.missing(_updatedAtMeta);
     }
+    if (data.containsKey('link_source')) {
+      context.handle(
+        _linkSourceMeta,
+        linkSource.isAcceptableOrUnknown(data['link_source']!, _linkSourceMeta),
+      );
+    }
+    if (data.containsKey('confidence')) {
+      context.handle(
+        _confidenceMeta,
+        confidence.isAcceptableOrUnknown(data['confidence']!, _confidenceMeta),
+      );
+    }
+    if (data.containsKey('sent_progress')) {
+      context.handle(
+        _sentProgressMeta,
+        sentProgress.isAcceptableOrUnknown(
+          data['sent_progress']!,
+          _sentProgressMeta,
+        ),
+      );
+    }
+    if (data.containsKey('sent_completed')) {
+      context.handle(
+        _sentCompletedMeta,
+        sentCompleted.isAcceptableOrUnknown(
+          data['sent_completed']!,
+          _sentCompletedMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -24868,6 +24950,22 @@ class $MediaTrackingMappingsTable extends MediaTrackingMappings
         DriftSqlType.int,
         data['${effectivePrefix}updated_at'],
       )!,
+      linkSource: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}link_source'],
+      ),
+      confidence: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}confidence'],
+      ),
+      sentProgress: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}sent_progress'],
+      ),
+      sentCompleted: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}sent_completed'],
+      )!,
     );
   }
 
@@ -24894,6 +24992,29 @@ class MediaTrackingMappingRow extends DataClass
   final int progressOffset;
   final int createdAt;
   final int updatedAt;
+
+  /// v145: how the link was made: `manual` (picked by the user), `id` (from
+  /// an id another source gave, e.g. MAL or MangaBaka → AniList), `auto` (title
+  /// match ≥ 0.90), `suggestion` (a title match the user approved). Null for
+  /// links made before v145.
+  final String? linkSource;
+
+  /// v145: title match score (0..1) for `auto` / `suggestion` links.
+  final double? confidence;
+
+  /// v152: what a send of this link last succeeded with, in the site's units
+  /// (after [progressOffset]): the highest progress, or for a `status` link
+  /// the last status. The catch-up compares local progress with it (and with
+  /// a queued row) instead of a time watermark, so progress that arrives late
+  /// with an old timestamp is still sent once. Null = nothing sent yet (a new
+  /// or changed link). -1 = a link made before v152, nothing recorded: the
+  /// first catch-up takes the current progress as sent when the old
+  /// watermark had covered it, and queues it otherwise.
+  final int? sentProgress;
+
+  /// v152: a send of this link succeeded with `completed` (see
+  /// [sentProgress]).
+  final bool sentCompleted;
   const MediaTrackingMappingRow({
     required this.id,
     required this.provider,
@@ -24907,6 +25028,10 @@ class MediaTrackingMappingRow extends DataClass
     required this.progressOffset,
     required this.createdAt,
     required this.updatedAt,
+    this.linkSource,
+    this.confidence,
+    this.sentProgress,
+    required this.sentCompleted,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -24923,6 +25048,16 @@ class MediaTrackingMappingRow extends DataClass
     map['progress_offset'] = Variable<int>(progressOffset);
     map['created_at'] = Variable<int>(createdAt);
     map['updated_at'] = Variable<int>(updatedAt);
+    if (!nullToAbsent || linkSource != null) {
+      map['link_source'] = Variable<String>(linkSource);
+    }
+    if (!nullToAbsent || confidence != null) {
+      map['confidence'] = Variable<double>(confidence);
+    }
+    if (!nullToAbsent || sentProgress != null) {
+      map['sent_progress'] = Variable<int>(sentProgress);
+    }
+    map['sent_completed'] = Variable<bool>(sentCompleted);
     return map;
   }
 
@@ -24940,6 +25075,16 @@ class MediaTrackingMappingRow extends DataClass
       progressOffset: Value(progressOffset),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
+      linkSource: linkSource == null && nullToAbsent
+          ? const Value.absent()
+          : Value(linkSource),
+      confidence: confidence == null && nullToAbsent
+          ? const Value.absent()
+          : Value(confidence),
+      sentProgress: sentProgress == null && nullToAbsent
+          ? const Value.absent()
+          : Value(sentProgress),
+      sentCompleted: Value(sentCompleted),
     );
   }
 
@@ -24961,6 +25106,10 @@ class MediaTrackingMappingRow extends DataClass
       progressOffset: serializer.fromJson<int>(json['progressOffset']),
       createdAt: serializer.fromJson<int>(json['createdAt']),
       updatedAt: serializer.fromJson<int>(json['updatedAt']),
+      linkSource: serializer.fromJson<String?>(json['linkSource']),
+      confidence: serializer.fromJson<double?>(json['confidence']),
+      sentProgress: serializer.fromJson<int?>(json['sentProgress']),
+      sentCompleted: serializer.fromJson<bool>(json['sentCompleted']),
     );
   }
   @override
@@ -24979,6 +25128,10 @@ class MediaTrackingMappingRow extends DataClass
       'progressOffset': serializer.toJson<int>(progressOffset),
       'createdAt': serializer.toJson<int>(createdAt),
       'updatedAt': serializer.toJson<int>(updatedAt),
+      'linkSource': serializer.toJson<String?>(linkSource),
+      'confidence': serializer.toJson<double?>(confidence),
+      'sentProgress': serializer.toJson<int?>(sentProgress),
+      'sentCompleted': serializer.toJson<bool>(sentCompleted),
     };
   }
 
@@ -24995,6 +25148,10 @@ class MediaTrackingMappingRow extends DataClass
     int? progressOffset,
     int? createdAt,
     int? updatedAt,
+    Value<String?> linkSource = const Value.absent(),
+    Value<double?> confidence = const Value.absent(),
+    Value<int?> sentProgress = const Value.absent(),
+    bool? sentCompleted,
   }) => MediaTrackingMappingRow(
     id: id ?? this.id,
     provider: provider ?? this.provider,
@@ -25008,6 +25165,10 @@ class MediaTrackingMappingRow extends DataClass
     progressOffset: progressOffset ?? this.progressOffset,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
+    linkSource: linkSource.present ? linkSource.value : this.linkSource,
+    confidence: confidence.present ? confidence.value : this.confidence,
+    sentProgress: sentProgress.present ? sentProgress.value : this.sentProgress,
+    sentCompleted: sentCompleted ?? this.sentCompleted,
   );
   MediaTrackingMappingRow copyWithCompanion(
     MediaTrackingMappingsCompanion data,
@@ -25033,6 +25194,18 @@ class MediaTrackingMappingRow extends DataClass
           : this.progressOffset,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      linkSource: data.linkSource.present
+          ? data.linkSource.value
+          : this.linkSource,
+      confidence: data.confidence.present
+          ? data.confidence.value
+          : this.confidence,
+      sentProgress: data.sentProgress.present
+          ? data.sentProgress.value
+          : this.sentProgress,
+      sentCompleted: data.sentCompleted.present
+          ? data.sentCompleted.value
+          : this.sentCompleted,
     );
   }
 
@@ -25050,7 +25223,11 @@ class MediaTrackingMappingRow extends DataClass
           ..write('progressMode: $progressMode, ')
           ..write('progressOffset: $progressOffset, ')
           ..write('createdAt: $createdAt, ')
-          ..write('updatedAt: $updatedAt')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('linkSource: $linkSource, ')
+          ..write('confidence: $confidence, ')
+          ..write('sentProgress: $sentProgress, ')
+          ..write('sentCompleted: $sentCompleted')
           ..write(')'))
         .toString();
   }
@@ -25069,6 +25246,10 @@ class MediaTrackingMappingRow extends DataClass
     progressOffset,
     createdAt,
     updatedAt,
+    linkSource,
+    confidence,
+    sentProgress,
+    sentCompleted,
   );
   @override
   bool operator ==(Object other) =>
@@ -25085,7 +25266,11 @@ class MediaTrackingMappingRow extends DataClass
           other.progressMode == this.progressMode &&
           other.progressOffset == this.progressOffset &&
           other.createdAt == this.createdAt &&
-          other.updatedAt == this.updatedAt);
+          other.updatedAt == this.updatedAt &&
+          other.linkSource == this.linkSource &&
+          other.confidence == this.confidence &&
+          other.sentProgress == this.sentProgress &&
+          other.sentCompleted == this.sentCompleted);
 }
 
 class MediaTrackingMappingsCompanion
@@ -25102,6 +25287,10 @@ class MediaTrackingMappingsCompanion
   final Value<int> progressOffset;
   final Value<int> createdAt;
   final Value<int> updatedAt;
+  final Value<String?> linkSource;
+  final Value<double?> confidence;
+  final Value<int?> sentProgress;
+  final Value<bool> sentCompleted;
   const MediaTrackingMappingsCompanion({
     this.id = const Value.absent(),
     this.provider = const Value.absent(),
@@ -25115,6 +25304,10 @@ class MediaTrackingMappingsCompanion
     this.progressOffset = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
+    this.linkSource = const Value.absent(),
+    this.confidence = const Value.absent(),
+    this.sentProgress = const Value.absent(),
+    this.sentCompleted = const Value.absent(),
   });
   MediaTrackingMappingsCompanion.insert({
     this.id = const Value.absent(),
@@ -25129,6 +25322,10 @@ class MediaTrackingMappingsCompanion
     this.progressOffset = const Value.absent(),
     required int createdAt,
     required int updatedAt,
+    this.linkSource = const Value.absent(),
+    this.confidence = const Value.absent(),
+    this.sentProgress = const Value.absent(),
+    this.sentCompleted = const Value.absent(),
   }) : mediaType = Value(mediaType),
        mediaKey = Value(mediaKey),
        mediaTitle = Value(mediaTitle),
@@ -25151,6 +25348,10 @@ class MediaTrackingMappingsCompanion
     Expression<int>? progressOffset,
     Expression<int>? createdAt,
     Expression<int>? updatedAt,
+    Expression<String>? linkSource,
+    Expression<double>? confidence,
+    Expression<int>? sentProgress,
+    Expression<bool>? sentCompleted,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -25165,6 +25366,10 @@ class MediaTrackingMappingsCompanion
       if (progressOffset != null) 'progress_offset': progressOffset,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
+      if (linkSource != null) 'link_source': linkSource,
+      if (confidence != null) 'confidence': confidence,
+      if (sentProgress != null) 'sent_progress': sentProgress,
+      if (sentCompleted != null) 'sent_completed': sentCompleted,
     });
   }
 
@@ -25181,6 +25386,10 @@ class MediaTrackingMappingsCompanion
     Value<int>? progressOffset,
     Value<int>? createdAt,
     Value<int>? updatedAt,
+    Value<String?>? linkSource,
+    Value<double?>? confidence,
+    Value<int?>? sentProgress,
+    Value<bool>? sentCompleted,
   }) {
     return MediaTrackingMappingsCompanion(
       id: id ?? this.id,
@@ -25195,6 +25404,10 @@ class MediaTrackingMappingsCompanion
       progressOffset: progressOffset ?? this.progressOffset,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      linkSource: linkSource ?? this.linkSource,
+      confidence: confidence ?? this.confidence,
+      sentProgress: sentProgress ?? this.sentProgress,
+      sentCompleted: sentCompleted ?? this.sentCompleted,
     );
   }
 
@@ -25237,6 +25450,18 @@ class MediaTrackingMappingsCompanion
     if (updatedAt.present) {
       map['updated_at'] = Variable<int>(updatedAt.value);
     }
+    if (linkSource.present) {
+      map['link_source'] = Variable<String>(linkSource.value);
+    }
+    if (confidence.present) {
+      map['confidence'] = Variable<double>(confidence.value);
+    }
+    if (sentProgress.present) {
+      map['sent_progress'] = Variable<int>(sentProgress.value);
+    }
+    if (sentCompleted.present) {
+      map['sent_completed'] = Variable<bool>(sentCompleted.value);
+    }
     return map;
   }
 
@@ -25254,7 +25479,11 @@ class MediaTrackingMappingsCompanion
           ..write('progressMode: $progressMode, ')
           ..write('progressOffset: $progressOffset, ')
           ..write('createdAt: $createdAt, ')
-          ..write('updatedAt: $updatedAt')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('linkSource: $linkSource, ')
+          ..write('confidence: $confidence, ')
+          ..write('sentProgress: $sentProgress, ')
+          ..write('sentCompleted: $sentCompleted')
           ..write(')'))
         .toString();
   }
@@ -25770,6 +25999,2438 @@ class MediaTrackingOutboxCompanion
           ..write('nextAttemptAt: $nextAttemptAt, ')
           ..write('lastError: $lastError, ')
           ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $MediaTrackingSuggestionsTable extends MediaTrackingSuggestions
+    with TableInfo<$MediaTrackingSuggestionsTable, MediaTrackingSuggestionRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $MediaTrackingSuggestionsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+    'id',
+    aliasedName,
+    false,
+    hasAutoIncrement: true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'PRIMARY KEY AUTOINCREMENT',
+    ),
+  );
+  static const VerificationMeta _providerMeta = const VerificationMeta(
+    'provider',
+  );
+  @override
+  late final GeneratedColumn<String> provider = GeneratedColumn<String>(
+    'provider',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _mediaTypeMeta = const VerificationMeta(
+    'mediaType',
+  );
+  @override
+  late final GeneratedColumn<String> mediaType = GeneratedColumn<String>(
+    'media_type',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _mediaKeyMeta = const VerificationMeta(
+    'mediaKey',
+  );
+  @override
+  late final GeneratedColumn<String> mediaKey = GeneratedColumn<String>(
+    'media_key',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _subjectIdMeta = const VerificationMeta(
+    'subjectId',
+  );
+  @override
+  late final GeneratedColumn<int> subjectId = GeneratedColumn<int>(
+    'subject_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _subjectNameMeta = const VerificationMeta(
+    'subjectName',
+  );
+  @override
+  late final GeneratedColumn<String> subjectName = GeneratedColumn<String>(
+    'subject_name',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _subjectKindMeta = const VerificationMeta(
+    'subjectKind',
+  );
+  @override
+  late final GeneratedColumn<String> subjectKind = GeneratedColumn<String>(
+    'subject_kind',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _scoreMeta = const VerificationMeta('score');
+  @override
+  late final GeneratedColumn<double> score = GeneratedColumn<double>(
+    'score',
+    aliasedName,
+    false,
+    type: DriftSqlType.double,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _detailsJsonMeta = const VerificationMeta(
+    'detailsJson',
+  );
+  @override
+  late final GeneratedColumn<String> detailsJson = GeneratedColumn<String>(
+    'details_json',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('{}'),
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<int> createdAt = GeneratedColumn<int>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _dismissedAtMeta = const VerificationMeta(
+    'dismissedAt',
+  );
+  @override
+  late final GeneratedColumn<int> dismissedAt = GeneratedColumn<int>(
+    'dismissed_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    provider,
+    mediaType,
+    mediaKey,
+    subjectId,
+    subjectName,
+    subjectKind,
+    score,
+    detailsJson,
+    createdAt,
+    dismissedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'media_tracking_suggestions';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<MediaTrackingSuggestionRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('provider')) {
+      context.handle(
+        _providerMeta,
+        provider.isAcceptableOrUnknown(data['provider']!, _providerMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_providerMeta);
+    }
+    if (data.containsKey('media_type')) {
+      context.handle(
+        _mediaTypeMeta,
+        mediaType.isAcceptableOrUnknown(data['media_type']!, _mediaTypeMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_mediaTypeMeta);
+    }
+    if (data.containsKey('media_key')) {
+      context.handle(
+        _mediaKeyMeta,
+        mediaKey.isAcceptableOrUnknown(data['media_key']!, _mediaKeyMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_mediaKeyMeta);
+    }
+    if (data.containsKey('subject_id')) {
+      context.handle(
+        _subjectIdMeta,
+        subjectId.isAcceptableOrUnknown(data['subject_id']!, _subjectIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_subjectIdMeta);
+    }
+    if (data.containsKey('subject_name')) {
+      context.handle(
+        _subjectNameMeta,
+        subjectName.isAcceptableOrUnknown(
+          data['subject_name']!,
+          _subjectNameMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_subjectNameMeta);
+    }
+    if (data.containsKey('subject_kind')) {
+      context.handle(
+        _subjectKindMeta,
+        subjectKind.isAcceptableOrUnknown(
+          data['subject_kind']!,
+          _subjectKindMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_subjectKindMeta);
+    }
+    if (data.containsKey('score')) {
+      context.handle(
+        _scoreMeta,
+        score.isAcceptableOrUnknown(data['score']!, _scoreMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_scoreMeta);
+    }
+    if (data.containsKey('details_json')) {
+      context.handle(
+        _detailsJsonMeta,
+        detailsJson.isAcceptableOrUnknown(
+          data['details_json']!,
+          _detailsJsonMeta,
+        ),
+      );
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    if (data.containsKey('dismissed_at')) {
+      context.handle(
+        _dismissedAtMeta,
+        dismissedAt.isAcceptableOrUnknown(
+          data['dismissed_at']!,
+          _dismissedAtMeta,
+        ),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  List<Set<GeneratedColumn>> get uniqueKeys => [
+    {provider, mediaType, mediaKey, subjectId},
+  ];
+  @override
+  MediaTrackingSuggestionRow map(
+    Map<String, dynamic> data, {
+    String? tablePrefix,
+  }) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return MediaTrackingSuggestionRow(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}id'],
+      )!,
+      provider: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}provider'],
+      )!,
+      mediaType: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}media_type'],
+      )!,
+      mediaKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}media_key'],
+      )!,
+      subjectId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}subject_id'],
+      )!,
+      subjectName: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}subject_name'],
+      )!,
+      subjectKind: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}subject_kind'],
+      )!,
+      score: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}score'],
+      )!,
+      detailsJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}details_json'],
+      )!,
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}created_at'],
+      )!,
+      dismissedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}dismissed_at'],
+      ),
+    );
+  }
+
+  @override
+  $MediaTrackingSuggestionsTable createAlias(String alias) {
+    return $MediaTrackingSuggestionsTable(attachedDatabase, alias);
+  }
+}
+
+class MediaTrackingSuggestionRow extends DataClass
+    implements Insertable<MediaTrackingSuggestionRow> {
+  final int id;
+  final String provider;
+  final String mediaType;
+  final String mediaKey;
+  final int subjectId;
+  final String subjectName;
+
+  /// `TrackingKind.value` of the remote subject (novel / manga).
+  final String subjectKind;
+  final double score;
+
+  /// Provider facts for the review UI (titles, authors, totals, cover). JSON.
+  final String detailsJson;
+  final int createdAt;
+  final int? dismissedAt;
+  const MediaTrackingSuggestionRow({
+    required this.id,
+    required this.provider,
+    required this.mediaType,
+    required this.mediaKey,
+    required this.subjectId,
+    required this.subjectName,
+    required this.subjectKind,
+    required this.score,
+    required this.detailsJson,
+    required this.createdAt,
+    this.dismissedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['provider'] = Variable<String>(provider);
+    map['media_type'] = Variable<String>(mediaType);
+    map['media_key'] = Variable<String>(mediaKey);
+    map['subject_id'] = Variable<int>(subjectId);
+    map['subject_name'] = Variable<String>(subjectName);
+    map['subject_kind'] = Variable<String>(subjectKind);
+    map['score'] = Variable<double>(score);
+    map['details_json'] = Variable<String>(detailsJson);
+    map['created_at'] = Variable<int>(createdAt);
+    if (!nullToAbsent || dismissedAt != null) {
+      map['dismissed_at'] = Variable<int>(dismissedAt);
+    }
+    return map;
+  }
+
+  MediaTrackingSuggestionsCompanion toCompanion(bool nullToAbsent) {
+    return MediaTrackingSuggestionsCompanion(
+      id: Value(id),
+      provider: Value(provider),
+      mediaType: Value(mediaType),
+      mediaKey: Value(mediaKey),
+      subjectId: Value(subjectId),
+      subjectName: Value(subjectName),
+      subjectKind: Value(subjectKind),
+      score: Value(score),
+      detailsJson: Value(detailsJson),
+      createdAt: Value(createdAt),
+      dismissedAt: dismissedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(dismissedAt),
+    );
+  }
+
+  factory MediaTrackingSuggestionRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return MediaTrackingSuggestionRow(
+      id: serializer.fromJson<int>(json['id']),
+      provider: serializer.fromJson<String>(json['provider']),
+      mediaType: serializer.fromJson<String>(json['mediaType']),
+      mediaKey: serializer.fromJson<String>(json['mediaKey']),
+      subjectId: serializer.fromJson<int>(json['subjectId']),
+      subjectName: serializer.fromJson<String>(json['subjectName']),
+      subjectKind: serializer.fromJson<String>(json['subjectKind']),
+      score: serializer.fromJson<double>(json['score']),
+      detailsJson: serializer.fromJson<String>(json['detailsJson']),
+      createdAt: serializer.fromJson<int>(json['createdAt']),
+      dismissedAt: serializer.fromJson<int?>(json['dismissedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'provider': serializer.toJson<String>(provider),
+      'mediaType': serializer.toJson<String>(mediaType),
+      'mediaKey': serializer.toJson<String>(mediaKey),
+      'subjectId': serializer.toJson<int>(subjectId),
+      'subjectName': serializer.toJson<String>(subjectName),
+      'subjectKind': serializer.toJson<String>(subjectKind),
+      'score': serializer.toJson<double>(score),
+      'detailsJson': serializer.toJson<String>(detailsJson),
+      'createdAt': serializer.toJson<int>(createdAt),
+      'dismissedAt': serializer.toJson<int?>(dismissedAt),
+    };
+  }
+
+  MediaTrackingSuggestionRow copyWith({
+    int? id,
+    String? provider,
+    String? mediaType,
+    String? mediaKey,
+    int? subjectId,
+    String? subjectName,
+    String? subjectKind,
+    double? score,
+    String? detailsJson,
+    int? createdAt,
+    Value<int?> dismissedAt = const Value.absent(),
+  }) => MediaTrackingSuggestionRow(
+    id: id ?? this.id,
+    provider: provider ?? this.provider,
+    mediaType: mediaType ?? this.mediaType,
+    mediaKey: mediaKey ?? this.mediaKey,
+    subjectId: subjectId ?? this.subjectId,
+    subjectName: subjectName ?? this.subjectName,
+    subjectKind: subjectKind ?? this.subjectKind,
+    score: score ?? this.score,
+    detailsJson: detailsJson ?? this.detailsJson,
+    createdAt: createdAt ?? this.createdAt,
+    dismissedAt: dismissedAt.present ? dismissedAt.value : this.dismissedAt,
+  );
+  MediaTrackingSuggestionRow copyWithCompanion(
+    MediaTrackingSuggestionsCompanion data,
+  ) {
+    return MediaTrackingSuggestionRow(
+      id: data.id.present ? data.id.value : this.id,
+      provider: data.provider.present ? data.provider.value : this.provider,
+      mediaType: data.mediaType.present ? data.mediaType.value : this.mediaType,
+      mediaKey: data.mediaKey.present ? data.mediaKey.value : this.mediaKey,
+      subjectId: data.subjectId.present ? data.subjectId.value : this.subjectId,
+      subjectName: data.subjectName.present
+          ? data.subjectName.value
+          : this.subjectName,
+      subjectKind: data.subjectKind.present
+          ? data.subjectKind.value
+          : this.subjectKind,
+      score: data.score.present ? data.score.value : this.score,
+      detailsJson: data.detailsJson.present
+          ? data.detailsJson.value
+          : this.detailsJson,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      dismissedAt: data.dismissedAt.present
+          ? data.dismissedAt.value
+          : this.dismissedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MediaTrackingSuggestionRow(')
+          ..write('id: $id, ')
+          ..write('provider: $provider, ')
+          ..write('mediaType: $mediaType, ')
+          ..write('mediaKey: $mediaKey, ')
+          ..write('subjectId: $subjectId, ')
+          ..write('subjectName: $subjectName, ')
+          ..write('subjectKind: $subjectKind, ')
+          ..write('score: $score, ')
+          ..write('detailsJson: $detailsJson, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('dismissedAt: $dismissedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    provider,
+    mediaType,
+    mediaKey,
+    subjectId,
+    subjectName,
+    subjectKind,
+    score,
+    detailsJson,
+    createdAt,
+    dismissedAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MediaTrackingSuggestionRow &&
+          other.id == this.id &&
+          other.provider == this.provider &&
+          other.mediaType == this.mediaType &&
+          other.mediaKey == this.mediaKey &&
+          other.subjectId == this.subjectId &&
+          other.subjectName == this.subjectName &&
+          other.subjectKind == this.subjectKind &&
+          other.score == this.score &&
+          other.detailsJson == this.detailsJson &&
+          other.createdAt == this.createdAt &&
+          other.dismissedAt == this.dismissedAt);
+}
+
+class MediaTrackingSuggestionsCompanion
+    extends UpdateCompanion<MediaTrackingSuggestionRow> {
+  final Value<int> id;
+  final Value<String> provider;
+  final Value<String> mediaType;
+  final Value<String> mediaKey;
+  final Value<int> subjectId;
+  final Value<String> subjectName;
+  final Value<String> subjectKind;
+  final Value<double> score;
+  final Value<String> detailsJson;
+  final Value<int> createdAt;
+  final Value<int?> dismissedAt;
+  const MediaTrackingSuggestionsCompanion({
+    this.id = const Value.absent(),
+    this.provider = const Value.absent(),
+    this.mediaType = const Value.absent(),
+    this.mediaKey = const Value.absent(),
+    this.subjectId = const Value.absent(),
+    this.subjectName = const Value.absent(),
+    this.subjectKind = const Value.absent(),
+    this.score = const Value.absent(),
+    this.detailsJson = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.dismissedAt = const Value.absent(),
+  });
+  MediaTrackingSuggestionsCompanion.insert({
+    this.id = const Value.absent(),
+    required String provider,
+    required String mediaType,
+    required String mediaKey,
+    required int subjectId,
+    required String subjectName,
+    required String subjectKind,
+    required double score,
+    this.detailsJson = const Value.absent(),
+    required int createdAt,
+    this.dismissedAt = const Value.absent(),
+  }) : provider = Value(provider),
+       mediaType = Value(mediaType),
+       mediaKey = Value(mediaKey),
+       subjectId = Value(subjectId),
+       subjectName = Value(subjectName),
+       subjectKind = Value(subjectKind),
+       score = Value(score),
+       createdAt = Value(createdAt);
+  static Insertable<MediaTrackingSuggestionRow> custom({
+    Expression<int>? id,
+    Expression<String>? provider,
+    Expression<String>? mediaType,
+    Expression<String>? mediaKey,
+    Expression<int>? subjectId,
+    Expression<String>? subjectName,
+    Expression<String>? subjectKind,
+    Expression<double>? score,
+    Expression<String>? detailsJson,
+    Expression<int>? createdAt,
+    Expression<int>? dismissedAt,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (provider != null) 'provider': provider,
+      if (mediaType != null) 'media_type': mediaType,
+      if (mediaKey != null) 'media_key': mediaKey,
+      if (subjectId != null) 'subject_id': subjectId,
+      if (subjectName != null) 'subject_name': subjectName,
+      if (subjectKind != null) 'subject_kind': subjectKind,
+      if (score != null) 'score': score,
+      if (detailsJson != null) 'details_json': detailsJson,
+      if (createdAt != null) 'created_at': createdAt,
+      if (dismissedAt != null) 'dismissed_at': dismissedAt,
+    });
+  }
+
+  MediaTrackingSuggestionsCompanion copyWith({
+    Value<int>? id,
+    Value<String>? provider,
+    Value<String>? mediaType,
+    Value<String>? mediaKey,
+    Value<int>? subjectId,
+    Value<String>? subjectName,
+    Value<String>? subjectKind,
+    Value<double>? score,
+    Value<String>? detailsJson,
+    Value<int>? createdAt,
+    Value<int?>? dismissedAt,
+  }) {
+    return MediaTrackingSuggestionsCompanion(
+      id: id ?? this.id,
+      provider: provider ?? this.provider,
+      mediaType: mediaType ?? this.mediaType,
+      mediaKey: mediaKey ?? this.mediaKey,
+      subjectId: subjectId ?? this.subjectId,
+      subjectName: subjectName ?? this.subjectName,
+      subjectKind: subjectKind ?? this.subjectKind,
+      score: score ?? this.score,
+      detailsJson: detailsJson ?? this.detailsJson,
+      createdAt: createdAt ?? this.createdAt,
+      dismissedAt: dismissedAt ?? this.dismissedAt,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (provider.present) {
+      map['provider'] = Variable<String>(provider.value);
+    }
+    if (mediaType.present) {
+      map['media_type'] = Variable<String>(mediaType.value);
+    }
+    if (mediaKey.present) {
+      map['media_key'] = Variable<String>(mediaKey.value);
+    }
+    if (subjectId.present) {
+      map['subject_id'] = Variable<int>(subjectId.value);
+    }
+    if (subjectName.present) {
+      map['subject_name'] = Variable<String>(subjectName.value);
+    }
+    if (subjectKind.present) {
+      map['subject_kind'] = Variable<String>(subjectKind.value);
+    }
+    if (score.present) {
+      map['score'] = Variable<double>(score.value);
+    }
+    if (detailsJson.present) {
+      map['details_json'] = Variable<String>(detailsJson.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<int>(createdAt.value);
+    }
+    if (dismissedAt.present) {
+      map['dismissed_at'] = Variable<int>(dismissedAt.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MediaTrackingSuggestionsCompanion(')
+          ..write('id: $id, ')
+          ..write('provider: $provider, ')
+          ..write('mediaType: $mediaType, ')
+          ..write('mediaKey: $mediaKey, ')
+          ..write('subjectId: $subjectId, ')
+          ..write('subjectName: $subjectName, ')
+          ..write('subjectKind: $subjectKind, ')
+          ..write('score: $score, ')
+          ..write('detailsJson: $detailsJson, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('dismissedAt: $dismissedAt')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $MediaTrackingIgnoredTable extends MediaTrackingIgnored
+    with TableInfo<$MediaTrackingIgnoredTable, MediaTrackingIgnoredRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $MediaTrackingIgnoredTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+    'id',
+    aliasedName,
+    false,
+    hasAutoIncrement: true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'PRIMARY KEY AUTOINCREMENT',
+    ),
+  );
+  static const VerificationMeta _mediaTypeMeta = const VerificationMeta(
+    'mediaType',
+  );
+  @override
+  late final GeneratedColumn<String> mediaType = GeneratedColumn<String>(
+    'media_type',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _mediaKeyMeta = const VerificationMeta(
+    'mediaKey',
+  );
+  @override
+  late final GeneratedColumn<String> mediaKey = GeneratedColumn<String>(
+    'media_key',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _mediaTitleMeta = const VerificationMeta(
+    'mediaTitle',
+  );
+  @override
+  late final GeneratedColumn<String> mediaTitle = GeneratedColumn<String>(
+    'media_title',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
+  static const VerificationMeta _kindMeta = const VerificationMeta('kind');
+  @override
+  late final GeneratedColumn<String> kind = GeneratedColumn<String>(
+    'kind',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<int> createdAt = GeneratedColumn<int>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    mediaType,
+    mediaKey,
+    mediaTitle,
+    kind,
+    createdAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'media_tracking_ignored';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<MediaTrackingIgnoredRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('media_type')) {
+      context.handle(
+        _mediaTypeMeta,
+        mediaType.isAcceptableOrUnknown(data['media_type']!, _mediaTypeMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_mediaTypeMeta);
+    }
+    if (data.containsKey('media_key')) {
+      context.handle(
+        _mediaKeyMeta,
+        mediaKey.isAcceptableOrUnknown(data['media_key']!, _mediaKeyMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_mediaKeyMeta);
+    }
+    if (data.containsKey('media_title')) {
+      context.handle(
+        _mediaTitleMeta,
+        mediaTitle.isAcceptableOrUnknown(data['media_title']!, _mediaTitleMeta),
+      );
+    }
+    if (data.containsKey('kind')) {
+      context.handle(
+        _kindMeta,
+        kind.isAcceptableOrUnknown(data['kind']!, _kindMeta),
+      );
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  List<Set<GeneratedColumn>> get uniqueKeys => [
+    {mediaType, mediaKey},
+  ];
+  @override
+  MediaTrackingIgnoredRow map(
+    Map<String, dynamic> data, {
+    String? tablePrefix,
+  }) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return MediaTrackingIgnoredRow(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}id'],
+      )!,
+      mediaType: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}media_type'],
+      )!,
+      mediaKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}media_key'],
+      )!,
+      mediaTitle: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}media_title'],
+      )!,
+      kind: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}kind'],
+      ),
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}created_at'],
+      )!,
+    );
+  }
+
+  @override
+  $MediaTrackingIgnoredTable createAlias(String alias) {
+    return $MediaTrackingIgnoredTable(attachedDatabase, alias);
+  }
+}
+
+class MediaTrackingIgnoredRow extends DataClass
+    implements Insertable<MediaTrackingIgnoredRow> {
+  final int id;
+  final String mediaType;
+  final String mediaKey;
+
+  /// The local title when it was ignored (the "Ignored" view shows it).
+  final String mediaTitle;
+
+  /// `TrackingKind.value`, when known.
+  final String? kind;
+  final int createdAt;
+  const MediaTrackingIgnoredRow({
+    required this.id,
+    required this.mediaType,
+    required this.mediaKey,
+    required this.mediaTitle,
+    this.kind,
+    required this.createdAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['media_type'] = Variable<String>(mediaType);
+    map['media_key'] = Variable<String>(mediaKey);
+    map['media_title'] = Variable<String>(mediaTitle);
+    if (!nullToAbsent || kind != null) {
+      map['kind'] = Variable<String>(kind);
+    }
+    map['created_at'] = Variable<int>(createdAt);
+    return map;
+  }
+
+  MediaTrackingIgnoredCompanion toCompanion(bool nullToAbsent) {
+    return MediaTrackingIgnoredCompanion(
+      id: Value(id),
+      mediaType: Value(mediaType),
+      mediaKey: Value(mediaKey),
+      mediaTitle: Value(mediaTitle),
+      kind: kind == null && nullToAbsent ? const Value.absent() : Value(kind),
+      createdAt: Value(createdAt),
+    );
+  }
+
+  factory MediaTrackingIgnoredRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return MediaTrackingIgnoredRow(
+      id: serializer.fromJson<int>(json['id']),
+      mediaType: serializer.fromJson<String>(json['mediaType']),
+      mediaKey: serializer.fromJson<String>(json['mediaKey']),
+      mediaTitle: serializer.fromJson<String>(json['mediaTitle']),
+      kind: serializer.fromJson<String?>(json['kind']),
+      createdAt: serializer.fromJson<int>(json['createdAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'mediaType': serializer.toJson<String>(mediaType),
+      'mediaKey': serializer.toJson<String>(mediaKey),
+      'mediaTitle': serializer.toJson<String>(mediaTitle),
+      'kind': serializer.toJson<String?>(kind),
+      'createdAt': serializer.toJson<int>(createdAt),
+    };
+  }
+
+  MediaTrackingIgnoredRow copyWith({
+    int? id,
+    String? mediaType,
+    String? mediaKey,
+    String? mediaTitle,
+    Value<String?> kind = const Value.absent(),
+    int? createdAt,
+  }) => MediaTrackingIgnoredRow(
+    id: id ?? this.id,
+    mediaType: mediaType ?? this.mediaType,
+    mediaKey: mediaKey ?? this.mediaKey,
+    mediaTitle: mediaTitle ?? this.mediaTitle,
+    kind: kind.present ? kind.value : this.kind,
+    createdAt: createdAt ?? this.createdAt,
+  );
+  MediaTrackingIgnoredRow copyWithCompanion(
+    MediaTrackingIgnoredCompanion data,
+  ) {
+    return MediaTrackingIgnoredRow(
+      id: data.id.present ? data.id.value : this.id,
+      mediaType: data.mediaType.present ? data.mediaType.value : this.mediaType,
+      mediaKey: data.mediaKey.present ? data.mediaKey.value : this.mediaKey,
+      mediaTitle: data.mediaTitle.present
+          ? data.mediaTitle.value
+          : this.mediaTitle,
+      kind: data.kind.present ? data.kind.value : this.kind,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MediaTrackingIgnoredRow(')
+          ..write('id: $id, ')
+          ..write('mediaType: $mediaType, ')
+          ..write('mediaKey: $mediaKey, ')
+          ..write('mediaTitle: $mediaTitle, ')
+          ..write('kind: $kind, ')
+          ..write('createdAt: $createdAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(id, mediaType, mediaKey, mediaTitle, kind, createdAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MediaTrackingIgnoredRow &&
+          other.id == this.id &&
+          other.mediaType == this.mediaType &&
+          other.mediaKey == this.mediaKey &&
+          other.mediaTitle == this.mediaTitle &&
+          other.kind == this.kind &&
+          other.createdAt == this.createdAt);
+}
+
+class MediaTrackingIgnoredCompanion
+    extends UpdateCompanion<MediaTrackingIgnoredRow> {
+  final Value<int> id;
+  final Value<String> mediaType;
+  final Value<String> mediaKey;
+  final Value<String> mediaTitle;
+  final Value<String?> kind;
+  final Value<int> createdAt;
+  const MediaTrackingIgnoredCompanion({
+    this.id = const Value.absent(),
+    this.mediaType = const Value.absent(),
+    this.mediaKey = const Value.absent(),
+    this.mediaTitle = const Value.absent(),
+    this.kind = const Value.absent(),
+    this.createdAt = const Value.absent(),
+  });
+  MediaTrackingIgnoredCompanion.insert({
+    this.id = const Value.absent(),
+    required String mediaType,
+    required String mediaKey,
+    this.mediaTitle = const Value.absent(),
+    this.kind = const Value.absent(),
+    required int createdAt,
+  }) : mediaType = Value(mediaType),
+       mediaKey = Value(mediaKey),
+       createdAt = Value(createdAt);
+  static Insertable<MediaTrackingIgnoredRow> custom({
+    Expression<int>? id,
+    Expression<String>? mediaType,
+    Expression<String>? mediaKey,
+    Expression<String>? mediaTitle,
+    Expression<String>? kind,
+    Expression<int>? createdAt,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (mediaType != null) 'media_type': mediaType,
+      if (mediaKey != null) 'media_key': mediaKey,
+      if (mediaTitle != null) 'media_title': mediaTitle,
+      if (kind != null) 'kind': kind,
+      if (createdAt != null) 'created_at': createdAt,
+    });
+  }
+
+  MediaTrackingIgnoredCompanion copyWith({
+    Value<int>? id,
+    Value<String>? mediaType,
+    Value<String>? mediaKey,
+    Value<String>? mediaTitle,
+    Value<String?>? kind,
+    Value<int>? createdAt,
+  }) {
+    return MediaTrackingIgnoredCompanion(
+      id: id ?? this.id,
+      mediaType: mediaType ?? this.mediaType,
+      mediaKey: mediaKey ?? this.mediaKey,
+      mediaTitle: mediaTitle ?? this.mediaTitle,
+      kind: kind ?? this.kind,
+      createdAt: createdAt ?? this.createdAt,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (mediaType.present) {
+      map['media_type'] = Variable<String>(mediaType.value);
+    }
+    if (mediaKey.present) {
+      map['media_key'] = Variable<String>(mediaKey.value);
+    }
+    if (mediaTitle.present) {
+      map['media_title'] = Variable<String>(mediaTitle.value);
+    }
+    if (kind.present) {
+      map['kind'] = Variable<String>(kind.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<int>(createdAt.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MediaTrackingIgnoredCompanion(')
+          ..write('id: $id, ')
+          ..write('mediaType: $mediaType, ')
+          ..write('mediaKey: $mediaKey, ')
+          ..write('mediaTitle: $mediaTitle, ')
+          ..write('kind: $kind, ')
+          ..write('createdAt: $createdAt')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $MediaTrackingActivityTable extends MediaTrackingActivity
+    with TableInfo<$MediaTrackingActivityTable, MediaTrackingActivityRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $MediaTrackingActivityTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+    'id',
+    aliasedName,
+    false,
+    hasAutoIncrement: true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'PRIMARY KEY AUTOINCREMENT',
+    ),
+  );
+  static const VerificationMeta _providerMeta = const VerificationMeta(
+    'provider',
+  );
+  @override
+  late final GeneratedColumn<String> provider = GeneratedColumn<String>(
+    'provider',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _mediaTypeMeta = const VerificationMeta(
+    'mediaType',
+  );
+  @override
+  late final GeneratedColumn<String> mediaType = GeneratedColumn<String>(
+    'media_type',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _mediaKeyMeta = const VerificationMeta(
+    'mediaKey',
+  );
+  @override
+  late final GeneratedColumn<String> mediaKey = GeneratedColumn<String>(
+    'media_key',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _mediaTitleMeta = const VerificationMeta(
+    'mediaTitle',
+  );
+  @override
+  late final GeneratedColumn<String> mediaTitle = GeneratedColumn<String>(
+    'media_title',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _kindMeta = const VerificationMeta('kind');
+  @override
+  late final GeneratedColumn<String> kind = GeneratedColumn<String>(
+    'kind',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _progressModeMeta = const VerificationMeta(
+    'progressMode',
+  );
+  @override
+  late final GeneratedColumn<String> progressMode = GeneratedColumn<String>(
+    'progress_mode',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _progressMeta = const VerificationMeta(
+    'progress',
+  );
+  @override
+  late final GeneratedColumn<int> progress = GeneratedColumn<int>(
+    'progress',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _completedMeta = const VerificationMeta(
+    'completed',
+  );
+  @override
+  late final GeneratedColumn<bool> completed = GeneratedColumn<bool>(
+    'completed',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("completed" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _okMeta = const VerificationMeta('ok');
+  @override
+  late final GeneratedColumn<bool> ok = GeneratedColumn<bool>(
+    'ok',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("ok" IN (0, 1))',
+    ),
+  );
+  static const VerificationMeta _errorMeta = const VerificationMeta('error');
+  @override
+  late final GeneratedColumn<String> error = GeneratedColumn<String>(
+    'error',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<int> createdAt = GeneratedColumn<int>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    provider,
+    mediaType,
+    mediaKey,
+    mediaTitle,
+    kind,
+    progressMode,
+    progress,
+    completed,
+    ok,
+    error,
+    createdAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'media_tracking_activity';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<MediaTrackingActivityRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('provider')) {
+      context.handle(
+        _providerMeta,
+        provider.isAcceptableOrUnknown(data['provider']!, _providerMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_providerMeta);
+    }
+    if (data.containsKey('media_type')) {
+      context.handle(
+        _mediaTypeMeta,
+        mediaType.isAcceptableOrUnknown(data['media_type']!, _mediaTypeMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_mediaTypeMeta);
+    }
+    if (data.containsKey('media_key')) {
+      context.handle(
+        _mediaKeyMeta,
+        mediaKey.isAcceptableOrUnknown(data['media_key']!, _mediaKeyMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_mediaKeyMeta);
+    }
+    if (data.containsKey('media_title')) {
+      context.handle(
+        _mediaTitleMeta,
+        mediaTitle.isAcceptableOrUnknown(data['media_title']!, _mediaTitleMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_mediaTitleMeta);
+    }
+    if (data.containsKey('kind')) {
+      context.handle(
+        _kindMeta,
+        kind.isAcceptableOrUnknown(data['kind']!, _kindMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_kindMeta);
+    }
+    if (data.containsKey('progress_mode')) {
+      context.handle(
+        _progressModeMeta,
+        progressMode.isAcceptableOrUnknown(
+          data['progress_mode']!,
+          _progressModeMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_progressModeMeta);
+    }
+    if (data.containsKey('progress')) {
+      context.handle(
+        _progressMeta,
+        progress.isAcceptableOrUnknown(data['progress']!, _progressMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_progressMeta);
+    }
+    if (data.containsKey('completed')) {
+      context.handle(
+        _completedMeta,
+        completed.isAcceptableOrUnknown(data['completed']!, _completedMeta),
+      );
+    }
+    if (data.containsKey('ok')) {
+      context.handle(_okMeta, ok.isAcceptableOrUnknown(data['ok']!, _okMeta));
+    } else if (isInserting) {
+      context.missing(_okMeta);
+    }
+    if (data.containsKey('error')) {
+      context.handle(
+        _errorMeta,
+        error.isAcceptableOrUnknown(data['error']!, _errorMeta),
+      );
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  MediaTrackingActivityRow map(
+    Map<String, dynamic> data, {
+    String? tablePrefix,
+  }) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return MediaTrackingActivityRow(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}id'],
+      )!,
+      provider: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}provider'],
+      )!,
+      mediaType: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}media_type'],
+      )!,
+      mediaKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}media_key'],
+      )!,
+      mediaTitle: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}media_title'],
+      )!,
+      kind: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}kind'],
+      )!,
+      progressMode: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}progress_mode'],
+      )!,
+      progress: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}progress'],
+      )!,
+      completed: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}completed'],
+      )!,
+      ok: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}ok'],
+      )!,
+      error: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}error'],
+      ),
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}created_at'],
+      )!,
+    );
+  }
+
+  @override
+  $MediaTrackingActivityTable createAlias(String alias) {
+    return $MediaTrackingActivityTable(attachedDatabase, alias);
+  }
+}
+
+class MediaTrackingActivityRow extends DataClass
+    implements Insertable<MediaTrackingActivityRow> {
+  final int id;
+  final String provider;
+  final String mediaType;
+  final String mediaKey;
+  final String mediaTitle;
+
+  /// `TrackingKind.value` of the link.
+  final String kind;
+
+  /// `TrackingProgressMode.value` of the link (`status` = a game status).
+  final String progressMode;
+
+  /// The remote progress (or status code) that was sent.
+  final int progress;
+  final bool completed;
+  final bool ok;
+
+  /// The error text when [ok] is false.
+  final String? error;
+  final int createdAt;
+  const MediaTrackingActivityRow({
+    required this.id,
+    required this.provider,
+    required this.mediaType,
+    required this.mediaKey,
+    required this.mediaTitle,
+    required this.kind,
+    required this.progressMode,
+    required this.progress,
+    required this.completed,
+    required this.ok,
+    this.error,
+    required this.createdAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['provider'] = Variable<String>(provider);
+    map['media_type'] = Variable<String>(mediaType);
+    map['media_key'] = Variable<String>(mediaKey);
+    map['media_title'] = Variable<String>(mediaTitle);
+    map['kind'] = Variable<String>(kind);
+    map['progress_mode'] = Variable<String>(progressMode);
+    map['progress'] = Variable<int>(progress);
+    map['completed'] = Variable<bool>(completed);
+    map['ok'] = Variable<bool>(ok);
+    if (!nullToAbsent || error != null) {
+      map['error'] = Variable<String>(error);
+    }
+    map['created_at'] = Variable<int>(createdAt);
+    return map;
+  }
+
+  MediaTrackingActivityCompanion toCompanion(bool nullToAbsent) {
+    return MediaTrackingActivityCompanion(
+      id: Value(id),
+      provider: Value(provider),
+      mediaType: Value(mediaType),
+      mediaKey: Value(mediaKey),
+      mediaTitle: Value(mediaTitle),
+      kind: Value(kind),
+      progressMode: Value(progressMode),
+      progress: Value(progress),
+      completed: Value(completed),
+      ok: Value(ok),
+      error: error == null && nullToAbsent
+          ? const Value.absent()
+          : Value(error),
+      createdAt: Value(createdAt),
+    );
+  }
+
+  factory MediaTrackingActivityRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return MediaTrackingActivityRow(
+      id: serializer.fromJson<int>(json['id']),
+      provider: serializer.fromJson<String>(json['provider']),
+      mediaType: serializer.fromJson<String>(json['mediaType']),
+      mediaKey: serializer.fromJson<String>(json['mediaKey']),
+      mediaTitle: serializer.fromJson<String>(json['mediaTitle']),
+      kind: serializer.fromJson<String>(json['kind']),
+      progressMode: serializer.fromJson<String>(json['progressMode']),
+      progress: serializer.fromJson<int>(json['progress']),
+      completed: serializer.fromJson<bool>(json['completed']),
+      ok: serializer.fromJson<bool>(json['ok']),
+      error: serializer.fromJson<String?>(json['error']),
+      createdAt: serializer.fromJson<int>(json['createdAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'provider': serializer.toJson<String>(provider),
+      'mediaType': serializer.toJson<String>(mediaType),
+      'mediaKey': serializer.toJson<String>(mediaKey),
+      'mediaTitle': serializer.toJson<String>(mediaTitle),
+      'kind': serializer.toJson<String>(kind),
+      'progressMode': serializer.toJson<String>(progressMode),
+      'progress': serializer.toJson<int>(progress),
+      'completed': serializer.toJson<bool>(completed),
+      'ok': serializer.toJson<bool>(ok),
+      'error': serializer.toJson<String?>(error),
+      'createdAt': serializer.toJson<int>(createdAt),
+    };
+  }
+
+  MediaTrackingActivityRow copyWith({
+    int? id,
+    String? provider,
+    String? mediaType,
+    String? mediaKey,
+    String? mediaTitle,
+    String? kind,
+    String? progressMode,
+    int? progress,
+    bool? completed,
+    bool? ok,
+    Value<String?> error = const Value.absent(),
+    int? createdAt,
+  }) => MediaTrackingActivityRow(
+    id: id ?? this.id,
+    provider: provider ?? this.provider,
+    mediaType: mediaType ?? this.mediaType,
+    mediaKey: mediaKey ?? this.mediaKey,
+    mediaTitle: mediaTitle ?? this.mediaTitle,
+    kind: kind ?? this.kind,
+    progressMode: progressMode ?? this.progressMode,
+    progress: progress ?? this.progress,
+    completed: completed ?? this.completed,
+    ok: ok ?? this.ok,
+    error: error.present ? error.value : this.error,
+    createdAt: createdAt ?? this.createdAt,
+  );
+  MediaTrackingActivityRow copyWithCompanion(
+    MediaTrackingActivityCompanion data,
+  ) {
+    return MediaTrackingActivityRow(
+      id: data.id.present ? data.id.value : this.id,
+      provider: data.provider.present ? data.provider.value : this.provider,
+      mediaType: data.mediaType.present ? data.mediaType.value : this.mediaType,
+      mediaKey: data.mediaKey.present ? data.mediaKey.value : this.mediaKey,
+      mediaTitle: data.mediaTitle.present
+          ? data.mediaTitle.value
+          : this.mediaTitle,
+      kind: data.kind.present ? data.kind.value : this.kind,
+      progressMode: data.progressMode.present
+          ? data.progressMode.value
+          : this.progressMode,
+      progress: data.progress.present ? data.progress.value : this.progress,
+      completed: data.completed.present ? data.completed.value : this.completed,
+      ok: data.ok.present ? data.ok.value : this.ok,
+      error: data.error.present ? data.error.value : this.error,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MediaTrackingActivityRow(')
+          ..write('id: $id, ')
+          ..write('provider: $provider, ')
+          ..write('mediaType: $mediaType, ')
+          ..write('mediaKey: $mediaKey, ')
+          ..write('mediaTitle: $mediaTitle, ')
+          ..write('kind: $kind, ')
+          ..write('progressMode: $progressMode, ')
+          ..write('progress: $progress, ')
+          ..write('completed: $completed, ')
+          ..write('ok: $ok, ')
+          ..write('error: $error, ')
+          ..write('createdAt: $createdAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    provider,
+    mediaType,
+    mediaKey,
+    mediaTitle,
+    kind,
+    progressMode,
+    progress,
+    completed,
+    ok,
+    error,
+    createdAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MediaTrackingActivityRow &&
+          other.id == this.id &&
+          other.provider == this.provider &&
+          other.mediaType == this.mediaType &&
+          other.mediaKey == this.mediaKey &&
+          other.mediaTitle == this.mediaTitle &&
+          other.kind == this.kind &&
+          other.progressMode == this.progressMode &&
+          other.progress == this.progress &&
+          other.completed == this.completed &&
+          other.ok == this.ok &&
+          other.error == this.error &&
+          other.createdAt == this.createdAt);
+}
+
+class MediaTrackingActivityCompanion
+    extends UpdateCompanion<MediaTrackingActivityRow> {
+  final Value<int> id;
+  final Value<String> provider;
+  final Value<String> mediaType;
+  final Value<String> mediaKey;
+  final Value<String> mediaTitle;
+  final Value<String> kind;
+  final Value<String> progressMode;
+  final Value<int> progress;
+  final Value<bool> completed;
+  final Value<bool> ok;
+  final Value<String?> error;
+  final Value<int> createdAt;
+  const MediaTrackingActivityCompanion({
+    this.id = const Value.absent(),
+    this.provider = const Value.absent(),
+    this.mediaType = const Value.absent(),
+    this.mediaKey = const Value.absent(),
+    this.mediaTitle = const Value.absent(),
+    this.kind = const Value.absent(),
+    this.progressMode = const Value.absent(),
+    this.progress = const Value.absent(),
+    this.completed = const Value.absent(),
+    this.ok = const Value.absent(),
+    this.error = const Value.absent(),
+    this.createdAt = const Value.absent(),
+  });
+  MediaTrackingActivityCompanion.insert({
+    this.id = const Value.absent(),
+    required String provider,
+    required String mediaType,
+    required String mediaKey,
+    required String mediaTitle,
+    required String kind,
+    required String progressMode,
+    required int progress,
+    this.completed = const Value.absent(),
+    required bool ok,
+    this.error = const Value.absent(),
+    required int createdAt,
+  }) : provider = Value(provider),
+       mediaType = Value(mediaType),
+       mediaKey = Value(mediaKey),
+       mediaTitle = Value(mediaTitle),
+       kind = Value(kind),
+       progressMode = Value(progressMode),
+       progress = Value(progress),
+       ok = Value(ok),
+       createdAt = Value(createdAt);
+  static Insertable<MediaTrackingActivityRow> custom({
+    Expression<int>? id,
+    Expression<String>? provider,
+    Expression<String>? mediaType,
+    Expression<String>? mediaKey,
+    Expression<String>? mediaTitle,
+    Expression<String>? kind,
+    Expression<String>? progressMode,
+    Expression<int>? progress,
+    Expression<bool>? completed,
+    Expression<bool>? ok,
+    Expression<String>? error,
+    Expression<int>? createdAt,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (provider != null) 'provider': provider,
+      if (mediaType != null) 'media_type': mediaType,
+      if (mediaKey != null) 'media_key': mediaKey,
+      if (mediaTitle != null) 'media_title': mediaTitle,
+      if (kind != null) 'kind': kind,
+      if (progressMode != null) 'progress_mode': progressMode,
+      if (progress != null) 'progress': progress,
+      if (completed != null) 'completed': completed,
+      if (ok != null) 'ok': ok,
+      if (error != null) 'error': error,
+      if (createdAt != null) 'created_at': createdAt,
+    });
+  }
+
+  MediaTrackingActivityCompanion copyWith({
+    Value<int>? id,
+    Value<String>? provider,
+    Value<String>? mediaType,
+    Value<String>? mediaKey,
+    Value<String>? mediaTitle,
+    Value<String>? kind,
+    Value<String>? progressMode,
+    Value<int>? progress,
+    Value<bool>? completed,
+    Value<bool>? ok,
+    Value<String?>? error,
+    Value<int>? createdAt,
+  }) {
+    return MediaTrackingActivityCompanion(
+      id: id ?? this.id,
+      provider: provider ?? this.provider,
+      mediaType: mediaType ?? this.mediaType,
+      mediaKey: mediaKey ?? this.mediaKey,
+      mediaTitle: mediaTitle ?? this.mediaTitle,
+      kind: kind ?? this.kind,
+      progressMode: progressMode ?? this.progressMode,
+      progress: progress ?? this.progress,
+      completed: completed ?? this.completed,
+      ok: ok ?? this.ok,
+      error: error ?? this.error,
+      createdAt: createdAt ?? this.createdAt,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (provider.present) {
+      map['provider'] = Variable<String>(provider.value);
+    }
+    if (mediaType.present) {
+      map['media_type'] = Variable<String>(mediaType.value);
+    }
+    if (mediaKey.present) {
+      map['media_key'] = Variable<String>(mediaKey.value);
+    }
+    if (mediaTitle.present) {
+      map['media_title'] = Variable<String>(mediaTitle.value);
+    }
+    if (kind.present) {
+      map['kind'] = Variable<String>(kind.value);
+    }
+    if (progressMode.present) {
+      map['progress_mode'] = Variable<String>(progressMode.value);
+    }
+    if (progress.present) {
+      map['progress'] = Variable<int>(progress.value);
+    }
+    if (completed.present) {
+      map['completed'] = Variable<bool>(completed.value);
+    }
+    if (ok.present) {
+      map['ok'] = Variable<bool>(ok.value);
+    }
+    if (error.present) {
+      map['error'] = Variable<String>(error.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<int>(createdAt.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MediaTrackingActivityCompanion(')
+          ..write('id: $id, ')
+          ..write('provider: $provider, ')
+          ..write('mediaType: $mediaType, ')
+          ..write('mediaKey: $mediaKey, ')
+          ..write('mediaTitle: $mediaTitle, ')
+          ..write('kind: $kind, ')
+          ..write('progressMode: $progressMode, ')
+          ..write('progress: $progress, ')
+          ..write('completed: $completed, ')
+          ..write('ok: $ok, ')
+          ..write('error: $error, ')
+          ..write('createdAt: $createdAt')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $MediaTrackingRemoteEpisodesTable extends MediaTrackingRemoteEpisodes
+    with
+        TableInfo<
+          $MediaTrackingRemoteEpisodesTable,
+          MediaTrackingRemoteEpisodeRow
+        > {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $MediaTrackingRemoteEpisodesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+    'id',
+    aliasedName,
+    false,
+    hasAutoIncrement: true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'PRIMARY KEY AUTOINCREMENT',
+    ),
+  );
+  static const VerificationMeta _mediaKeyMeta = const VerificationMeta(
+    'mediaKey',
+  );
+  @override
+  late final GeneratedColumn<String> mediaKey = GeneratedColumn<String>(
+    'media_key',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways('UNIQUE'),
+  );
+  static const VerificationMeta _groupKeyMeta = const VerificationMeta(
+    'groupKey',
+  );
+  @override
+  late final GeneratedColumn<String> groupKey = GeneratedColumn<String>(
+    'group_key',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _seriesTitleMeta = const VerificationMeta(
+    'seriesTitle',
+  );
+  @override
+  late final GeneratedColumn<String> seriesTitle = GeneratedColumn<String>(
+    'series_title',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
+  static const VerificationMeta _titleMeta = const VerificationMeta('title');
+  @override
+  late final GeneratedColumn<String> title = GeneratedColumn<String>(
+    'title',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _seasonNumberMeta = const VerificationMeta(
+    'seasonNumber',
+  );
+  @override
+  late final GeneratedColumn<int> seasonNumber = GeneratedColumn<int>(
+    'season_number',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _episodeNumberMeta = const VerificationMeta(
+    'episodeNumber',
+  );
+  @override
+  late final GeneratedColumn<int> episodeNumber = GeneratedColumn<int>(
+    'episode_number',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _isMovieMeta = const VerificationMeta(
+    'isMovie',
+  );
+  @override
+  late final GeneratedColumn<bool> isMovie = GeneratedColumn<bool>(
+    'is_movie',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_movie" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _serverNameMeta = const VerificationMeta(
+    'serverName',
+  );
+  @override
+  late final GeneratedColumn<String> serverName = GeneratedColumn<String>(
+    'server_name',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
+  static const VerificationMeta _watchedAtMeta = const VerificationMeta(
+    'watchedAt',
+  );
+  @override
+  late final GeneratedColumn<int> watchedAt = GeneratedColumn<int>(
+    'watched_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    mediaKey,
+    groupKey,
+    seriesTitle,
+    title,
+    seasonNumber,
+    episodeNumber,
+    isMovie,
+    serverName,
+    watchedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'media_tracking_remote_episodes';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<MediaTrackingRemoteEpisodeRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('media_key')) {
+      context.handle(
+        _mediaKeyMeta,
+        mediaKey.isAcceptableOrUnknown(data['media_key']!, _mediaKeyMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_mediaKeyMeta);
+    }
+    if (data.containsKey('group_key')) {
+      context.handle(
+        _groupKeyMeta,
+        groupKey.isAcceptableOrUnknown(data['group_key']!, _groupKeyMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_groupKeyMeta);
+    }
+    if (data.containsKey('series_title')) {
+      context.handle(
+        _seriesTitleMeta,
+        seriesTitle.isAcceptableOrUnknown(
+          data['series_title']!,
+          _seriesTitleMeta,
+        ),
+      );
+    }
+    if (data.containsKey('title')) {
+      context.handle(
+        _titleMeta,
+        title.isAcceptableOrUnknown(data['title']!, _titleMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_titleMeta);
+    }
+    if (data.containsKey('season_number')) {
+      context.handle(
+        _seasonNumberMeta,
+        seasonNumber.isAcceptableOrUnknown(
+          data['season_number']!,
+          _seasonNumberMeta,
+        ),
+      );
+    }
+    if (data.containsKey('episode_number')) {
+      context.handle(
+        _episodeNumberMeta,
+        episodeNumber.isAcceptableOrUnknown(
+          data['episode_number']!,
+          _episodeNumberMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_episodeNumberMeta);
+    }
+    if (data.containsKey('is_movie')) {
+      context.handle(
+        _isMovieMeta,
+        isMovie.isAcceptableOrUnknown(data['is_movie']!, _isMovieMeta),
+      );
+    }
+    if (data.containsKey('server_name')) {
+      context.handle(
+        _serverNameMeta,
+        serverName.isAcceptableOrUnknown(data['server_name']!, _serverNameMeta),
+      );
+    }
+    if (data.containsKey('watched_at')) {
+      context.handle(
+        _watchedAtMeta,
+        watchedAt.isAcceptableOrUnknown(data['watched_at']!, _watchedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_watchedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  MediaTrackingRemoteEpisodeRow map(
+    Map<String, dynamic> data, {
+    String? tablePrefix,
+  }) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return MediaTrackingRemoteEpisodeRow(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}id'],
+      )!,
+      mediaKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}media_key'],
+      )!,
+      groupKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}group_key'],
+      )!,
+      seriesTitle: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}series_title'],
+      )!,
+      title: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}title'],
+      )!,
+      seasonNumber: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}season_number'],
+      ),
+      episodeNumber: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}episode_number'],
+      )!,
+      isMovie: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_movie'],
+      )!,
+      serverName: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}server_name'],
+      )!,
+      watchedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}watched_at'],
+      )!,
+    );
+  }
+
+  @override
+  $MediaTrackingRemoteEpisodesTable createAlias(String alias) {
+    return $MediaTrackingRemoteEpisodesTable(attachedDatabase, alias);
+  }
+}
+
+class MediaTrackingRemoteEpisodeRow extends DataClass
+    implements Insertable<MediaTrackingRemoteEpisodeRow> {
+  final int id;
+
+  /// `RemoteAnimeEpisode.mediaKey` (server + user + item).
+  final String mediaKey;
+
+  /// One link covers the group: server + series + season for episodes
+  /// (`remote_series` links), the item's own key for a movie.
+  final String groupKey;
+  final String seriesTitle;
+
+  /// The episode as the server names it, e.g. "Frieren S1E3".
+  final String title;
+  final int? seasonNumber;
+  final int episodeNumber;
+  final bool isMovie;
+  final String serverName;
+  final int watchedAt;
+  const MediaTrackingRemoteEpisodeRow({
+    required this.id,
+    required this.mediaKey,
+    required this.groupKey,
+    required this.seriesTitle,
+    required this.title,
+    this.seasonNumber,
+    required this.episodeNumber,
+    required this.isMovie,
+    required this.serverName,
+    required this.watchedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['media_key'] = Variable<String>(mediaKey);
+    map['group_key'] = Variable<String>(groupKey);
+    map['series_title'] = Variable<String>(seriesTitle);
+    map['title'] = Variable<String>(title);
+    if (!nullToAbsent || seasonNumber != null) {
+      map['season_number'] = Variable<int>(seasonNumber);
+    }
+    map['episode_number'] = Variable<int>(episodeNumber);
+    map['is_movie'] = Variable<bool>(isMovie);
+    map['server_name'] = Variable<String>(serverName);
+    map['watched_at'] = Variable<int>(watchedAt);
+    return map;
+  }
+
+  MediaTrackingRemoteEpisodesCompanion toCompanion(bool nullToAbsent) {
+    return MediaTrackingRemoteEpisodesCompanion(
+      id: Value(id),
+      mediaKey: Value(mediaKey),
+      groupKey: Value(groupKey),
+      seriesTitle: Value(seriesTitle),
+      title: Value(title),
+      seasonNumber: seasonNumber == null && nullToAbsent
+          ? const Value.absent()
+          : Value(seasonNumber),
+      episodeNumber: Value(episodeNumber),
+      isMovie: Value(isMovie),
+      serverName: Value(serverName),
+      watchedAt: Value(watchedAt),
+    );
+  }
+
+  factory MediaTrackingRemoteEpisodeRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return MediaTrackingRemoteEpisodeRow(
+      id: serializer.fromJson<int>(json['id']),
+      mediaKey: serializer.fromJson<String>(json['mediaKey']),
+      groupKey: serializer.fromJson<String>(json['groupKey']),
+      seriesTitle: serializer.fromJson<String>(json['seriesTitle']),
+      title: serializer.fromJson<String>(json['title']),
+      seasonNumber: serializer.fromJson<int?>(json['seasonNumber']),
+      episodeNumber: serializer.fromJson<int>(json['episodeNumber']),
+      isMovie: serializer.fromJson<bool>(json['isMovie']),
+      serverName: serializer.fromJson<String>(json['serverName']),
+      watchedAt: serializer.fromJson<int>(json['watchedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'mediaKey': serializer.toJson<String>(mediaKey),
+      'groupKey': serializer.toJson<String>(groupKey),
+      'seriesTitle': serializer.toJson<String>(seriesTitle),
+      'title': serializer.toJson<String>(title),
+      'seasonNumber': serializer.toJson<int?>(seasonNumber),
+      'episodeNumber': serializer.toJson<int>(episodeNumber),
+      'isMovie': serializer.toJson<bool>(isMovie),
+      'serverName': serializer.toJson<String>(serverName),
+      'watchedAt': serializer.toJson<int>(watchedAt),
+    };
+  }
+
+  MediaTrackingRemoteEpisodeRow copyWith({
+    int? id,
+    String? mediaKey,
+    String? groupKey,
+    String? seriesTitle,
+    String? title,
+    Value<int?> seasonNumber = const Value.absent(),
+    int? episodeNumber,
+    bool? isMovie,
+    String? serverName,
+    int? watchedAt,
+  }) => MediaTrackingRemoteEpisodeRow(
+    id: id ?? this.id,
+    mediaKey: mediaKey ?? this.mediaKey,
+    groupKey: groupKey ?? this.groupKey,
+    seriesTitle: seriesTitle ?? this.seriesTitle,
+    title: title ?? this.title,
+    seasonNumber: seasonNumber.present ? seasonNumber.value : this.seasonNumber,
+    episodeNumber: episodeNumber ?? this.episodeNumber,
+    isMovie: isMovie ?? this.isMovie,
+    serverName: serverName ?? this.serverName,
+    watchedAt: watchedAt ?? this.watchedAt,
+  );
+  MediaTrackingRemoteEpisodeRow copyWithCompanion(
+    MediaTrackingRemoteEpisodesCompanion data,
+  ) {
+    return MediaTrackingRemoteEpisodeRow(
+      id: data.id.present ? data.id.value : this.id,
+      mediaKey: data.mediaKey.present ? data.mediaKey.value : this.mediaKey,
+      groupKey: data.groupKey.present ? data.groupKey.value : this.groupKey,
+      seriesTitle: data.seriesTitle.present
+          ? data.seriesTitle.value
+          : this.seriesTitle,
+      title: data.title.present ? data.title.value : this.title,
+      seasonNumber: data.seasonNumber.present
+          ? data.seasonNumber.value
+          : this.seasonNumber,
+      episodeNumber: data.episodeNumber.present
+          ? data.episodeNumber.value
+          : this.episodeNumber,
+      isMovie: data.isMovie.present ? data.isMovie.value : this.isMovie,
+      serverName: data.serverName.present
+          ? data.serverName.value
+          : this.serverName,
+      watchedAt: data.watchedAt.present ? data.watchedAt.value : this.watchedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MediaTrackingRemoteEpisodeRow(')
+          ..write('id: $id, ')
+          ..write('mediaKey: $mediaKey, ')
+          ..write('groupKey: $groupKey, ')
+          ..write('seriesTitle: $seriesTitle, ')
+          ..write('title: $title, ')
+          ..write('seasonNumber: $seasonNumber, ')
+          ..write('episodeNumber: $episodeNumber, ')
+          ..write('isMovie: $isMovie, ')
+          ..write('serverName: $serverName, ')
+          ..write('watchedAt: $watchedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    mediaKey,
+    groupKey,
+    seriesTitle,
+    title,
+    seasonNumber,
+    episodeNumber,
+    isMovie,
+    serverName,
+    watchedAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MediaTrackingRemoteEpisodeRow &&
+          other.id == this.id &&
+          other.mediaKey == this.mediaKey &&
+          other.groupKey == this.groupKey &&
+          other.seriesTitle == this.seriesTitle &&
+          other.title == this.title &&
+          other.seasonNumber == this.seasonNumber &&
+          other.episodeNumber == this.episodeNumber &&
+          other.isMovie == this.isMovie &&
+          other.serverName == this.serverName &&
+          other.watchedAt == this.watchedAt);
+}
+
+class MediaTrackingRemoteEpisodesCompanion
+    extends UpdateCompanion<MediaTrackingRemoteEpisodeRow> {
+  final Value<int> id;
+  final Value<String> mediaKey;
+  final Value<String> groupKey;
+  final Value<String> seriesTitle;
+  final Value<String> title;
+  final Value<int?> seasonNumber;
+  final Value<int> episodeNumber;
+  final Value<bool> isMovie;
+  final Value<String> serverName;
+  final Value<int> watchedAt;
+  const MediaTrackingRemoteEpisodesCompanion({
+    this.id = const Value.absent(),
+    this.mediaKey = const Value.absent(),
+    this.groupKey = const Value.absent(),
+    this.seriesTitle = const Value.absent(),
+    this.title = const Value.absent(),
+    this.seasonNumber = const Value.absent(),
+    this.episodeNumber = const Value.absent(),
+    this.isMovie = const Value.absent(),
+    this.serverName = const Value.absent(),
+    this.watchedAt = const Value.absent(),
+  });
+  MediaTrackingRemoteEpisodesCompanion.insert({
+    this.id = const Value.absent(),
+    required String mediaKey,
+    required String groupKey,
+    this.seriesTitle = const Value.absent(),
+    required String title,
+    this.seasonNumber = const Value.absent(),
+    required int episodeNumber,
+    this.isMovie = const Value.absent(),
+    this.serverName = const Value.absent(),
+    required int watchedAt,
+  }) : mediaKey = Value(mediaKey),
+       groupKey = Value(groupKey),
+       title = Value(title),
+       episodeNumber = Value(episodeNumber),
+       watchedAt = Value(watchedAt);
+  static Insertable<MediaTrackingRemoteEpisodeRow> custom({
+    Expression<int>? id,
+    Expression<String>? mediaKey,
+    Expression<String>? groupKey,
+    Expression<String>? seriesTitle,
+    Expression<String>? title,
+    Expression<int>? seasonNumber,
+    Expression<int>? episodeNumber,
+    Expression<bool>? isMovie,
+    Expression<String>? serverName,
+    Expression<int>? watchedAt,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (mediaKey != null) 'media_key': mediaKey,
+      if (groupKey != null) 'group_key': groupKey,
+      if (seriesTitle != null) 'series_title': seriesTitle,
+      if (title != null) 'title': title,
+      if (seasonNumber != null) 'season_number': seasonNumber,
+      if (episodeNumber != null) 'episode_number': episodeNumber,
+      if (isMovie != null) 'is_movie': isMovie,
+      if (serverName != null) 'server_name': serverName,
+      if (watchedAt != null) 'watched_at': watchedAt,
+    });
+  }
+
+  MediaTrackingRemoteEpisodesCompanion copyWith({
+    Value<int>? id,
+    Value<String>? mediaKey,
+    Value<String>? groupKey,
+    Value<String>? seriesTitle,
+    Value<String>? title,
+    Value<int?>? seasonNumber,
+    Value<int>? episodeNumber,
+    Value<bool>? isMovie,
+    Value<String>? serverName,
+    Value<int>? watchedAt,
+  }) {
+    return MediaTrackingRemoteEpisodesCompanion(
+      id: id ?? this.id,
+      mediaKey: mediaKey ?? this.mediaKey,
+      groupKey: groupKey ?? this.groupKey,
+      seriesTitle: seriesTitle ?? this.seriesTitle,
+      title: title ?? this.title,
+      seasonNumber: seasonNumber ?? this.seasonNumber,
+      episodeNumber: episodeNumber ?? this.episodeNumber,
+      isMovie: isMovie ?? this.isMovie,
+      serverName: serverName ?? this.serverName,
+      watchedAt: watchedAt ?? this.watchedAt,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (mediaKey.present) {
+      map['media_key'] = Variable<String>(mediaKey.value);
+    }
+    if (groupKey.present) {
+      map['group_key'] = Variable<String>(groupKey.value);
+    }
+    if (seriesTitle.present) {
+      map['series_title'] = Variable<String>(seriesTitle.value);
+    }
+    if (title.present) {
+      map['title'] = Variable<String>(title.value);
+    }
+    if (seasonNumber.present) {
+      map['season_number'] = Variable<int>(seasonNumber.value);
+    }
+    if (episodeNumber.present) {
+      map['episode_number'] = Variable<int>(episodeNumber.value);
+    }
+    if (isMovie.present) {
+      map['is_movie'] = Variable<bool>(isMovie.value);
+    }
+    if (serverName.present) {
+      map['server_name'] = Variable<String>(serverName.value);
+    }
+    if (watchedAt.present) {
+      map['watched_at'] = Variable<int>(watchedAt.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MediaTrackingRemoteEpisodesCompanion(')
+          ..write('id: $id, ')
+          ..write('mediaKey: $mediaKey, ')
+          ..write('groupKey: $groupKey, ')
+          ..write('seriesTitle: $seriesTitle, ')
+          ..write('title: $title, ')
+          ..write('seasonNumber: $seasonNumber, ')
+          ..write('episodeNumber: $episodeNumber, ')
+          ..write('isMovie: $isMovie, ')
+          ..write('serverName: $serverName, ')
+          ..write('watchedAt: $watchedAt')
           ..write(')'))
         .toString();
   }
@@ -77936,6 +80597,14 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
       $MediaTrackingMappingsTable(this);
   late final $MediaTrackingOutboxTable mediaTrackingOutbox =
       $MediaTrackingOutboxTable(this);
+  late final $MediaTrackingSuggestionsTable mediaTrackingSuggestions =
+      $MediaTrackingSuggestionsTable(this);
+  late final $MediaTrackingIgnoredTable mediaTrackingIgnored =
+      $MediaTrackingIgnoredTable(this);
+  late final $MediaTrackingActivityTable mediaTrackingActivity =
+      $MediaTrackingActivityTable(this);
+  late final $MediaTrackingRemoteEpisodesTable mediaTrackingRemoteEpisodes =
+      $MediaTrackingRemoteEpisodesTable(this);
   late final $GalgamesTable galgames = $GalgamesTable(this);
   late final $GalgameSourcesTable galgameSources = $GalgameSourcesTable(this);
   late final $GalgameSessionsTable galgameSessions = $GalgameSessionsTable(
@@ -78132,6 +80801,10 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
     collectionScrapeMeta,
     mediaTrackingMappings,
     mediaTrackingOutbox,
+    mediaTrackingSuggestions,
+    mediaTrackingIgnored,
+    mediaTrackingActivity,
+    mediaTrackingRemoteEpisodes,
     galgames,
     galgameSources,
     galgameSessions,
@@ -95423,6 +98096,10 @@ typedef $$MediaTrackingMappingsTableCreateCompanionBuilder =
       Value<int> progressOffset,
       required int createdAt,
       required int updatedAt,
+      Value<String?> linkSource,
+      Value<double?> confidence,
+      Value<int?> sentProgress,
+      Value<bool> sentCompleted,
     });
 typedef $$MediaTrackingMappingsTableUpdateCompanionBuilder =
     MediaTrackingMappingsCompanion Function({
@@ -95438,6 +98115,10 @@ typedef $$MediaTrackingMappingsTableUpdateCompanionBuilder =
       Value<int> progressOffset,
       Value<int> createdAt,
       Value<int> updatedAt,
+      Value<String?> linkSource,
+      Value<double?> confidence,
+      Value<int?> sentProgress,
+      Value<bool> sentCompleted,
     });
 
 final class $$MediaTrackingMappingsTableReferences
@@ -95548,6 +98229,26 @@ class $$MediaTrackingMappingsTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<String> get linkSource => $composableBuilder(
+    column: $table.linkSource,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get confidence => $composableBuilder(
+    column: $table.confidence,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get sentProgress => $composableBuilder(
+    column: $table.sentProgress,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get sentCompleted => $composableBuilder(
+    column: $table.sentCompleted,
+    builder: (column) => ColumnFilters(column),
+  );
+
   Expression<bool> mediaTrackingOutboxRefs(
     Expression<bool> Function($$MediaTrackingOutboxTableFilterComposer f) f,
   ) {
@@ -95642,6 +98343,26 @@ class $$MediaTrackingMappingsTableOrderingComposer
     column: $table.updatedAt,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get linkSource => $composableBuilder(
+    column: $table.linkSource,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get confidence => $composableBuilder(
+    column: $table.confidence,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get sentProgress => $composableBuilder(
+    column: $table.sentProgress,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get sentCompleted => $composableBuilder(
+    column: $table.sentCompleted,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$MediaTrackingMappingsTableAnnotationComposer
@@ -95696,6 +98417,26 @@ class $$MediaTrackingMappingsTableAnnotationComposer
 
   GeneratedColumn<int> get updatedAt =>
       $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumn<String> get linkSource => $composableBuilder(
+    column: $table.linkSource,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<double> get confidence => $composableBuilder(
+    column: $table.confidence,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get sentProgress => $composableBuilder(
+    column: $table.sentProgress,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<bool> get sentCompleted => $composableBuilder(
+    column: $table.sentCompleted,
+    builder: (column) => column,
+  );
 
   Expression<T> mediaTrackingOutboxRefs<T extends Object>(
     Expression<T> Function($$MediaTrackingOutboxTableAnnotationComposer a) f,
@@ -95775,6 +98516,10 @@ class $$MediaTrackingMappingsTableTableManager
                 Value<int> progressOffset = const Value.absent(),
                 Value<int> createdAt = const Value.absent(),
                 Value<int> updatedAt = const Value.absent(),
+                Value<String?> linkSource = const Value.absent(),
+                Value<double?> confidence = const Value.absent(),
+                Value<int?> sentProgress = const Value.absent(),
+                Value<bool> sentCompleted = const Value.absent(),
               }) => MediaTrackingMappingsCompanion(
                 id: id,
                 provider: provider,
@@ -95788,6 +98533,10 @@ class $$MediaTrackingMappingsTableTableManager
                 progressOffset: progressOffset,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
+                linkSource: linkSource,
+                confidence: confidence,
+                sentProgress: sentProgress,
+                sentCompleted: sentCompleted,
               ),
           createCompanionCallback:
               ({
@@ -95803,6 +98552,10 @@ class $$MediaTrackingMappingsTableTableManager
                 Value<int> progressOffset = const Value.absent(),
                 required int createdAt,
                 required int updatedAt,
+                Value<String?> linkSource = const Value.absent(),
+                Value<double?> confidence = const Value.absent(),
+                Value<int?> sentProgress = const Value.absent(),
+                Value<bool> sentCompleted = const Value.absent(),
               }) => MediaTrackingMappingsCompanion.insert(
                 id: id,
                 provider: provider,
@@ -95816,6 +98569,10 @@ class $$MediaTrackingMappingsTableTableManager
                 progressOffset: progressOffset,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
+                linkSource: linkSource,
+                confidence: confidence,
+                sentProgress: sentProgress,
+                sentCompleted: sentCompleted,
               ),
           withReferenceMapper: (p0) => p0
               .map(
@@ -96270,6 +99027,1238 @@ typedef $$MediaTrackingOutboxTableProcessedTableManager =
       (MediaTrackingOutboxRow, $$MediaTrackingOutboxTableReferences),
       MediaTrackingOutboxRow,
       PrefetchHooks Function({bool mappingId})
+    >;
+typedef $$MediaTrackingSuggestionsTableCreateCompanionBuilder =
+    MediaTrackingSuggestionsCompanion Function({
+      Value<int> id,
+      required String provider,
+      required String mediaType,
+      required String mediaKey,
+      required int subjectId,
+      required String subjectName,
+      required String subjectKind,
+      required double score,
+      Value<String> detailsJson,
+      required int createdAt,
+      Value<int?> dismissedAt,
+    });
+typedef $$MediaTrackingSuggestionsTableUpdateCompanionBuilder =
+    MediaTrackingSuggestionsCompanion Function({
+      Value<int> id,
+      Value<String> provider,
+      Value<String> mediaType,
+      Value<String> mediaKey,
+      Value<int> subjectId,
+      Value<String> subjectName,
+      Value<String> subjectKind,
+      Value<double> score,
+      Value<String> detailsJson,
+      Value<int> createdAt,
+      Value<int?> dismissedAt,
+    });
+
+class $$MediaTrackingSuggestionsTableFilterComposer
+    extends Composer<_$FushiDatabase, $MediaTrackingSuggestionsTable> {
+  $$MediaTrackingSuggestionsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get provider => $composableBuilder(
+    column: $table.provider,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get mediaType => $composableBuilder(
+    column: $table.mediaType,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get mediaKey => $composableBuilder(
+    column: $table.mediaKey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get subjectId => $composableBuilder(
+    column: $table.subjectId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get subjectName => $composableBuilder(
+    column: $table.subjectName,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get subjectKind => $composableBuilder(
+    column: $table.subjectKind,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get score => $composableBuilder(
+    column: $table.score,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get detailsJson => $composableBuilder(
+    column: $table.detailsJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get dismissedAt => $composableBuilder(
+    column: $table.dismissedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$MediaTrackingSuggestionsTableOrderingComposer
+    extends Composer<_$FushiDatabase, $MediaTrackingSuggestionsTable> {
+  $$MediaTrackingSuggestionsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get provider => $composableBuilder(
+    column: $table.provider,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get mediaType => $composableBuilder(
+    column: $table.mediaType,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get mediaKey => $composableBuilder(
+    column: $table.mediaKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get subjectId => $composableBuilder(
+    column: $table.subjectId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get subjectName => $composableBuilder(
+    column: $table.subjectName,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get subjectKind => $composableBuilder(
+    column: $table.subjectKind,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get score => $composableBuilder(
+    column: $table.score,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get detailsJson => $composableBuilder(
+    column: $table.detailsJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get dismissedAt => $composableBuilder(
+    column: $table.dismissedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$MediaTrackingSuggestionsTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $MediaTrackingSuggestionsTable> {
+  $$MediaTrackingSuggestionsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get provider =>
+      $composableBuilder(column: $table.provider, builder: (column) => column);
+
+  GeneratedColumn<String> get mediaType =>
+      $composableBuilder(column: $table.mediaType, builder: (column) => column);
+
+  GeneratedColumn<String> get mediaKey =>
+      $composableBuilder(column: $table.mediaKey, builder: (column) => column);
+
+  GeneratedColumn<int> get subjectId =>
+      $composableBuilder(column: $table.subjectId, builder: (column) => column);
+
+  GeneratedColumn<String> get subjectName => $composableBuilder(
+    column: $table.subjectName,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get subjectKind => $composableBuilder(
+    column: $table.subjectKind,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<double> get score =>
+      $composableBuilder(column: $table.score, builder: (column) => column);
+
+  GeneratedColumn<String> get detailsJson => $composableBuilder(
+    column: $table.detailsJson,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<int> get dismissedAt => $composableBuilder(
+    column: $table.dismissedAt,
+    builder: (column) => column,
+  );
+}
+
+class $$MediaTrackingSuggestionsTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $MediaTrackingSuggestionsTable,
+          MediaTrackingSuggestionRow,
+          $$MediaTrackingSuggestionsTableFilterComposer,
+          $$MediaTrackingSuggestionsTableOrderingComposer,
+          $$MediaTrackingSuggestionsTableAnnotationComposer,
+          $$MediaTrackingSuggestionsTableCreateCompanionBuilder,
+          $$MediaTrackingSuggestionsTableUpdateCompanionBuilder,
+          (
+            MediaTrackingSuggestionRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $MediaTrackingSuggestionsTable,
+              MediaTrackingSuggestionRow
+            >,
+          ),
+          MediaTrackingSuggestionRow,
+          PrefetchHooks Function()
+        > {
+  $$MediaTrackingSuggestionsTableTableManager(
+    _$FushiDatabase db,
+    $MediaTrackingSuggestionsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$MediaTrackingSuggestionsTableFilterComposer(
+                $db: db,
+                $table: table,
+              ),
+          createOrderingComposer: () =>
+              $$MediaTrackingSuggestionsTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$MediaTrackingSuggestionsTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<String> provider = const Value.absent(),
+                Value<String> mediaType = const Value.absent(),
+                Value<String> mediaKey = const Value.absent(),
+                Value<int> subjectId = const Value.absent(),
+                Value<String> subjectName = const Value.absent(),
+                Value<String> subjectKind = const Value.absent(),
+                Value<double> score = const Value.absent(),
+                Value<String> detailsJson = const Value.absent(),
+                Value<int> createdAt = const Value.absent(),
+                Value<int?> dismissedAt = const Value.absent(),
+              }) => MediaTrackingSuggestionsCompanion(
+                id: id,
+                provider: provider,
+                mediaType: mediaType,
+                mediaKey: mediaKey,
+                subjectId: subjectId,
+                subjectName: subjectName,
+                subjectKind: subjectKind,
+                score: score,
+                detailsJson: detailsJson,
+                createdAt: createdAt,
+                dismissedAt: dismissedAt,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                required String provider,
+                required String mediaType,
+                required String mediaKey,
+                required int subjectId,
+                required String subjectName,
+                required String subjectKind,
+                required double score,
+                Value<String> detailsJson = const Value.absent(),
+                required int createdAt,
+                Value<int?> dismissedAt = const Value.absent(),
+              }) => MediaTrackingSuggestionsCompanion.insert(
+                id: id,
+                provider: provider,
+                mediaType: mediaType,
+                mediaKey: mediaKey,
+                subjectId: subjectId,
+                subjectName: subjectName,
+                subjectKind: subjectKind,
+                score: score,
+                detailsJson: detailsJson,
+                createdAt: createdAt,
+                dismissedAt: dismissedAt,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$MediaTrackingSuggestionsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $MediaTrackingSuggestionsTable,
+      MediaTrackingSuggestionRow,
+      $$MediaTrackingSuggestionsTableFilterComposer,
+      $$MediaTrackingSuggestionsTableOrderingComposer,
+      $$MediaTrackingSuggestionsTableAnnotationComposer,
+      $$MediaTrackingSuggestionsTableCreateCompanionBuilder,
+      $$MediaTrackingSuggestionsTableUpdateCompanionBuilder,
+      (
+        MediaTrackingSuggestionRow,
+        BaseReferences<
+          _$FushiDatabase,
+          $MediaTrackingSuggestionsTable,
+          MediaTrackingSuggestionRow
+        >,
+      ),
+      MediaTrackingSuggestionRow,
+      PrefetchHooks Function()
+    >;
+typedef $$MediaTrackingIgnoredTableCreateCompanionBuilder =
+    MediaTrackingIgnoredCompanion Function({
+      Value<int> id,
+      required String mediaType,
+      required String mediaKey,
+      Value<String> mediaTitle,
+      Value<String?> kind,
+      required int createdAt,
+    });
+typedef $$MediaTrackingIgnoredTableUpdateCompanionBuilder =
+    MediaTrackingIgnoredCompanion Function({
+      Value<int> id,
+      Value<String> mediaType,
+      Value<String> mediaKey,
+      Value<String> mediaTitle,
+      Value<String?> kind,
+      Value<int> createdAt,
+    });
+
+class $$MediaTrackingIgnoredTableFilterComposer
+    extends Composer<_$FushiDatabase, $MediaTrackingIgnoredTable> {
+  $$MediaTrackingIgnoredTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get mediaType => $composableBuilder(
+    column: $table.mediaType,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get mediaKey => $composableBuilder(
+    column: $table.mediaKey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get mediaTitle => $composableBuilder(
+    column: $table.mediaTitle,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get kind => $composableBuilder(
+    column: $table.kind,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$MediaTrackingIgnoredTableOrderingComposer
+    extends Composer<_$FushiDatabase, $MediaTrackingIgnoredTable> {
+  $$MediaTrackingIgnoredTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get mediaType => $composableBuilder(
+    column: $table.mediaType,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get mediaKey => $composableBuilder(
+    column: $table.mediaKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get mediaTitle => $composableBuilder(
+    column: $table.mediaTitle,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get kind => $composableBuilder(
+    column: $table.kind,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$MediaTrackingIgnoredTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $MediaTrackingIgnoredTable> {
+  $$MediaTrackingIgnoredTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get mediaType =>
+      $composableBuilder(column: $table.mediaType, builder: (column) => column);
+
+  GeneratedColumn<String> get mediaKey =>
+      $composableBuilder(column: $table.mediaKey, builder: (column) => column);
+
+  GeneratedColumn<String> get mediaTitle => $composableBuilder(
+    column: $table.mediaTitle,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get kind =>
+      $composableBuilder(column: $table.kind, builder: (column) => column);
+
+  GeneratedColumn<int> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+}
+
+class $$MediaTrackingIgnoredTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $MediaTrackingIgnoredTable,
+          MediaTrackingIgnoredRow,
+          $$MediaTrackingIgnoredTableFilterComposer,
+          $$MediaTrackingIgnoredTableOrderingComposer,
+          $$MediaTrackingIgnoredTableAnnotationComposer,
+          $$MediaTrackingIgnoredTableCreateCompanionBuilder,
+          $$MediaTrackingIgnoredTableUpdateCompanionBuilder,
+          (
+            MediaTrackingIgnoredRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $MediaTrackingIgnoredTable,
+              MediaTrackingIgnoredRow
+            >,
+          ),
+          MediaTrackingIgnoredRow,
+          PrefetchHooks Function()
+        > {
+  $$MediaTrackingIgnoredTableTableManager(
+    _$FushiDatabase db,
+    $MediaTrackingIgnoredTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$MediaTrackingIgnoredTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$MediaTrackingIgnoredTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$MediaTrackingIgnoredTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<String> mediaType = const Value.absent(),
+                Value<String> mediaKey = const Value.absent(),
+                Value<String> mediaTitle = const Value.absent(),
+                Value<String?> kind = const Value.absent(),
+                Value<int> createdAt = const Value.absent(),
+              }) => MediaTrackingIgnoredCompanion(
+                id: id,
+                mediaType: mediaType,
+                mediaKey: mediaKey,
+                mediaTitle: mediaTitle,
+                kind: kind,
+                createdAt: createdAt,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                required String mediaType,
+                required String mediaKey,
+                Value<String> mediaTitle = const Value.absent(),
+                Value<String?> kind = const Value.absent(),
+                required int createdAt,
+              }) => MediaTrackingIgnoredCompanion.insert(
+                id: id,
+                mediaType: mediaType,
+                mediaKey: mediaKey,
+                mediaTitle: mediaTitle,
+                kind: kind,
+                createdAt: createdAt,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$MediaTrackingIgnoredTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $MediaTrackingIgnoredTable,
+      MediaTrackingIgnoredRow,
+      $$MediaTrackingIgnoredTableFilterComposer,
+      $$MediaTrackingIgnoredTableOrderingComposer,
+      $$MediaTrackingIgnoredTableAnnotationComposer,
+      $$MediaTrackingIgnoredTableCreateCompanionBuilder,
+      $$MediaTrackingIgnoredTableUpdateCompanionBuilder,
+      (
+        MediaTrackingIgnoredRow,
+        BaseReferences<
+          _$FushiDatabase,
+          $MediaTrackingIgnoredTable,
+          MediaTrackingIgnoredRow
+        >,
+      ),
+      MediaTrackingIgnoredRow,
+      PrefetchHooks Function()
+    >;
+typedef $$MediaTrackingActivityTableCreateCompanionBuilder =
+    MediaTrackingActivityCompanion Function({
+      Value<int> id,
+      required String provider,
+      required String mediaType,
+      required String mediaKey,
+      required String mediaTitle,
+      required String kind,
+      required String progressMode,
+      required int progress,
+      Value<bool> completed,
+      required bool ok,
+      Value<String?> error,
+      required int createdAt,
+    });
+typedef $$MediaTrackingActivityTableUpdateCompanionBuilder =
+    MediaTrackingActivityCompanion Function({
+      Value<int> id,
+      Value<String> provider,
+      Value<String> mediaType,
+      Value<String> mediaKey,
+      Value<String> mediaTitle,
+      Value<String> kind,
+      Value<String> progressMode,
+      Value<int> progress,
+      Value<bool> completed,
+      Value<bool> ok,
+      Value<String?> error,
+      Value<int> createdAt,
+    });
+
+class $$MediaTrackingActivityTableFilterComposer
+    extends Composer<_$FushiDatabase, $MediaTrackingActivityTable> {
+  $$MediaTrackingActivityTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get provider => $composableBuilder(
+    column: $table.provider,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get mediaType => $composableBuilder(
+    column: $table.mediaType,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get mediaKey => $composableBuilder(
+    column: $table.mediaKey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get mediaTitle => $composableBuilder(
+    column: $table.mediaTitle,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get kind => $composableBuilder(
+    column: $table.kind,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get progressMode => $composableBuilder(
+    column: $table.progressMode,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get progress => $composableBuilder(
+    column: $table.progress,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get completed => $composableBuilder(
+    column: $table.completed,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get ok => $composableBuilder(
+    column: $table.ok,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get error => $composableBuilder(
+    column: $table.error,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$MediaTrackingActivityTableOrderingComposer
+    extends Composer<_$FushiDatabase, $MediaTrackingActivityTable> {
+  $$MediaTrackingActivityTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get provider => $composableBuilder(
+    column: $table.provider,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get mediaType => $composableBuilder(
+    column: $table.mediaType,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get mediaKey => $composableBuilder(
+    column: $table.mediaKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get mediaTitle => $composableBuilder(
+    column: $table.mediaTitle,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get kind => $composableBuilder(
+    column: $table.kind,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get progressMode => $composableBuilder(
+    column: $table.progressMode,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get progress => $composableBuilder(
+    column: $table.progress,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get completed => $composableBuilder(
+    column: $table.completed,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get ok => $composableBuilder(
+    column: $table.ok,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get error => $composableBuilder(
+    column: $table.error,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$MediaTrackingActivityTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $MediaTrackingActivityTable> {
+  $$MediaTrackingActivityTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get provider =>
+      $composableBuilder(column: $table.provider, builder: (column) => column);
+
+  GeneratedColumn<String> get mediaType =>
+      $composableBuilder(column: $table.mediaType, builder: (column) => column);
+
+  GeneratedColumn<String> get mediaKey =>
+      $composableBuilder(column: $table.mediaKey, builder: (column) => column);
+
+  GeneratedColumn<String> get mediaTitle => $composableBuilder(
+    column: $table.mediaTitle,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get kind =>
+      $composableBuilder(column: $table.kind, builder: (column) => column);
+
+  GeneratedColumn<String> get progressMode => $composableBuilder(
+    column: $table.progressMode,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get progress =>
+      $composableBuilder(column: $table.progress, builder: (column) => column);
+
+  GeneratedColumn<bool> get completed =>
+      $composableBuilder(column: $table.completed, builder: (column) => column);
+
+  GeneratedColumn<bool> get ok =>
+      $composableBuilder(column: $table.ok, builder: (column) => column);
+
+  GeneratedColumn<String> get error =>
+      $composableBuilder(column: $table.error, builder: (column) => column);
+
+  GeneratedColumn<int> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+}
+
+class $$MediaTrackingActivityTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $MediaTrackingActivityTable,
+          MediaTrackingActivityRow,
+          $$MediaTrackingActivityTableFilterComposer,
+          $$MediaTrackingActivityTableOrderingComposer,
+          $$MediaTrackingActivityTableAnnotationComposer,
+          $$MediaTrackingActivityTableCreateCompanionBuilder,
+          $$MediaTrackingActivityTableUpdateCompanionBuilder,
+          (
+            MediaTrackingActivityRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $MediaTrackingActivityTable,
+              MediaTrackingActivityRow
+            >,
+          ),
+          MediaTrackingActivityRow,
+          PrefetchHooks Function()
+        > {
+  $$MediaTrackingActivityTableTableManager(
+    _$FushiDatabase db,
+    $MediaTrackingActivityTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$MediaTrackingActivityTableFilterComposer(
+                $db: db,
+                $table: table,
+              ),
+          createOrderingComposer: () =>
+              $$MediaTrackingActivityTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$MediaTrackingActivityTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<String> provider = const Value.absent(),
+                Value<String> mediaType = const Value.absent(),
+                Value<String> mediaKey = const Value.absent(),
+                Value<String> mediaTitle = const Value.absent(),
+                Value<String> kind = const Value.absent(),
+                Value<String> progressMode = const Value.absent(),
+                Value<int> progress = const Value.absent(),
+                Value<bool> completed = const Value.absent(),
+                Value<bool> ok = const Value.absent(),
+                Value<String?> error = const Value.absent(),
+                Value<int> createdAt = const Value.absent(),
+              }) => MediaTrackingActivityCompanion(
+                id: id,
+                provider: provider,
+                mediaType: mediaType,
+                mediaKey: mediaKey,
+                mediaTitle: mediaTitle,
+                kind: kind,
+                progressMode: progressMode,
+                progress: progress,
+                completed: completed,
+                ok: ok,
+                error: error,
+                createdAt: createdAt,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                required String provider,
+                required String mediaType,
+                required String mediaKey,
+                required String mediaTitle,
+                required String kind,
+                required String progressMode,
+                required int progress,
+                Value<bool> completed = const Value.absent(),
+                required bool ok,
+                Value<String?> error = const Value.absent(),
+                required int createdAt,
+              }) => MediaTrackingActivityCompanion.insert(
+                id: id,
+                provider: provider,
+                mediaType: mediaType,
+                mediaKey: mediaKey,
+                mediaTitle: mediaTitle,
+                kind: kind,
+                progressMode: progressMode,
+                progress: progress,
+                completed: completed,
+                ok: ok,
+                error: error,
+                createdAt: createdAt,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$MediaTrackingActivityTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $MediaTrackingActivityTable,
+      MediaTrackingActivityRow,
+      $$MediaTrackingActivityTableFilterComposer,
+      $$MediaTrackingActivityTableOrderingComposer,
+      $$MediaTrackingActivityTableAnnotationComposer,
+      $$MediaTrackingActivityTableCreateCompanionBuilder,
+      $$MediaTrackingActivityTableUpdateCompanionBuilder,
+      (
+        MediaTrackingActivityRow,
+        BaseReferences<
+          _$FushiDatabase,
+          $MediaTrackingActivityTable,
+          MediaTrackingActivityRow
+        >,
+      ),
+      MediaTrackingActivityRow,
+      PrefetchHooks Function()
+    >;
+typedef $$MediaTrackingRemoteEpisodesTableCreateCompanionBuilder =
+    MediaTrackingRemoteEpisodesCompanion Function({
+      Value<int> id,
+      required String mediaKey,
+      required String groupKey,
+      Value<String> seriesTitle,
+      required String title,
+      Value<int?> seasonNumber,
+      required int episodeNumber,
+      Value<bool> isMovie,
+      Value<String> serverName,
+      required int watchedAt,
+    });
+typedef $$MediaTrackingRemoteEpisodesTableUpdateCompanionBuilder =
+    MediaTrackingRemoteEpisodesCompanion Function({
+      Value<int> id,
+      Value<String> mediaKey,
+      Value<String> groupKey,
+      Value<String> seriesTitle,
+      Value<String> title,
+      Value<int?> seasonNumber,
+      Value<int> episodeNumber,
+      Value<bool> isMovie,
+      Value<String> serverName,
+      Value<int> watchedAt,
+    });
+
+class $$MediaTrackingRemoteEpisodesTableFilterComposer
+    extends Composer<_$FushiDatabase, $MediaTrackingRemoteEpisodesTable> {
+  $$MediaTrackingRemoteEpisodesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get mediaKey => $composableBuilder(
+    column: $table.mediaKey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get groupKey => $composableBuilder(
+    column: $table.groupKey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get seriesTitle => $composableBuilder(
+    column: $table.seriesTitle,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get title => $composableBuilder(
+    column: $table.title,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get seasonNumber => $composableBuilder(
+    column: $table.seasonNumber,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get episodeNumber => $composableBuilder(
+    column: $table.episodeNumber,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get isMovie => $composableBuilder(
+    column: $table.isMovie,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get serverName => $composableBuilder(
+    column: $table.serverName,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get watchedAt => $composableBuilder(
+    column: $table.watchedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$MediaTrackingRemoteEpisodesTableOrderingComposer
+    extends Composer<_$FushiDatabase, $MediaTrackingRemoteEpisodesTable> {
+  $$MediaTrackingRemoteEpisodesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get mediaKey => $composableBuilder(
+    column: $table.mediaKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get groupKey => $composableBuilder(
+    column: $table.groupKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get seriesTitle => $composableBuilder(
+    column: $table.seriesTitle,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get title => $composableBuilder(
+    column: $table.title,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get seasonNumber => $composableBuilder(
+    column: $table.seasonNumber,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get episodeNumber => $composableBuilder(
+    column: $table.episodeNumber,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get isMovie => $composableBuilder(
+    column: $table.isMovie,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get serverName => $composableBuilder(
+    column: $table.serverName,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get watchedAt => $composableBuilder(
+    column: $table.watchedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$MediaTrackingRemoteEpisodesTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $MediaTrackingRemoteEpisodesTable> {
+  $$MediaTrackingRemoteEpisodesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get mediaKey =>
+      $composableBuilder(column: $table.mediaKey, builder: (column) => column);
+
+  GeneratedColumn<String> get groupKey =>
+      $composableBuilder(column: $table.groupKey, builder: (column) => column);
+
+  GeneratedColumn<String> get seriesTitle => $composableBuilder(
+    column: $table.seriesTitle,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get title =>
+      $composableBuilder(column: $table.title, builder: (column) => column);
+
+  GeneratedColumn<int> get seasonNumber => $composableBuilder(
+    column: $table.seasonNumber,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get episodeNumber => $composableBuilder(
+    column: $table.episodeNumber,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<bool> get isMovie =>
+      $composableBuilder(column: $table.isMovie, builder: (column) => column);
+
+  GeneratedColumn<String> get serverName => $composableBuilder(
+    column: $table.serverName,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get watchedAt =>
+      $composableBuilder(column: $table.watchedAt, builder: (column) => column);
+}
+
+class $$MediaTrackingRemoteEpisodesTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $MediaTrackingRemoteEpisodesTable,
+          MediaTrackingRemoteEpisodeRow,
+          $$MediaTrackingRemoteEpisodesTableFilterComposer,
+          $$MediaTrackingRemoteEpisodesTableOrderingComposer,
+          $$MediaTrackingRemoteEpisodesTableAnnotationComposer,
+          $$MediaTrackingRemoteEpisodesTableCreateCompanionBuilder,
+          $$MediaTrackingRemoteEpisodesTableUpdateCompanionBuilder,
+          (
+            MediaTrackingRemoteEpisodeRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $MediaTrackingRemoteEpisodesTable,
+              MediaTrackingRemoteEpisodeRow
+            >,
+          ),
+          MediaTrackingRemoteEpisodeRow,
+          PrefetchHooks Function()
+        > {
+  $$MediaTrackingRemoteEpisodesTableTableManager(
+    _$FushiDatabase db,
+    $MediaTrackingRemoteEpisodesTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$MediaTrackingRemoteEpisodesTableFilterComposer(
+                $db: db,
+                $table: table,
+              ),
+          createOrderingComposer: () =>
+              $$MediaTrackingRemoteEpisodesTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$MediaTrackingRemoteEpisodesTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<String> mediaKey = const Value.absent(),
+                Value<String> groupKey = const Value.absent(),
+                Value<String> seriesTitle = const Value.absent(),
+                Value<String> title = const Value.absent(),
+                Value<int?> seasonNumber = const Value.absent(),
+                Value<int> episodeNumber = const Value.absent(),
+                Value<bool> isMovie = const Value.absent(),
+                Value<String> serverName = const Value.absent(),
+                Value<int> watchedAt = const Value.absent(),
+              }) => MediaTrackingRemoteEpisodesCompanion(
+                id: id,
+                mediaKey: mediaKey,
+                groupKey: groupKey,
+                seriesTitle: seriesTitle,
+                title: title,
+                seasonNumber: seasonNumber,
+                episodeNumber: episodeNumber,
+                isMovie: isMovie,
+                serverName: serverName,
+                watchedAt: watchedAt,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                required String mediaKey,
+                required String groupKey,
+                Value<String> seriesTitle = const Value.absent(),
+                required String title,
+                Value<int?> seasonNumber = const Value.absent(),
+                required int episodeNumber,
+                Value<bool> isMovie = const Value.absent(),
+                Value<String> serverName = const Value.absent(),
+                required int watchedAt,
+              }) => MediaTrackingRemoteEpisodesCompanion.insert(
+                id: id,
+                mediaKey: mediaKey,
+                groupKey: groupKey,
+                seriesTitle: seriesTitle,
+                title: title,
+                seasonNumber: seasonNumber,
+                episodeNumber: episodeNumber,
+                isMovie: isMovie,
+                serverName: serverName,
+                watchedAt: watchedAt,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$MediaTrackingRemoteEpisodesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $MediaTrackingRemoteEpisodesTable,
+      MediaTrackingRemoteEpisodeRow,
+      $$MediaTrackingRemoteEpisodesTableFilterComposer,
+      $$MediaTrackingRemoteEpisodesTableOrderingComposer,
+      $$MediaTrackingRemoteEpisodesTableAnnotationComposer,
+      $$MediaTrackingRemoteEpisodesTableCreateCompanionBuilder,
+      $$MediaTrackingRemoteEpisodesTableUpdateCompanionBuilder,
+      (
+        MediaTrackingRemoteEpisodeRow,
+        BaseReferences<
+          _$FushiDatabase,
+          $MediaTrackingRemoteEpisodesTable,
+          MediaTrackingRemoteEpisodeRow
+        >,
+      ),
+      MediaTrackingRemoteEpisodeRow,
+      PrefetchHooks Function()
     >;
 typedef $$GalgamesTableCreateCompanionBuilder =
     GalgamesCompanion Function({
@@ -130438,6 +134427,21 @@ class $FushiDatabaseManager {
       $$MediaTrackingMappingsTableTableManager(_db, _db.mediaTrackingMappings);
   $$MediaTrackingOutboxTableTableManager get mediaTrackingOutbox =>
       $$MediaTrackingOutboxTableTableManager(_db, _db.mediaTrackingOutbox);
+  $$MediaTrackingSuggestionsTableTableManager get mediaTrackingSuggestions =>
+      $$MediaTrackingSuggestionsTableTableManager(
+        _db,
+        _db.mediaTrackingSuggestions,
+      );
+  $$MediaTrackingIgnoredTableTableManager get mediaTrackingIgnored =>
+      $$MediaTrackingIgnoredTableTableManager(_db, _db.mediaTrackingIgnored);
+  $$MediaTrackingActivityTableTableManager get mediaTrackingActivity =>
+      $$MediaTrackingActivityTableTableManager(_db, _db.mediaTrackingActivity);
+  $$MediaTrackingRemoteEpisodesTableTableManager
+  get mediaTrackingRemoteEpisodes =>
+      $$MediaTrackingRemoteEpisodesTableTableManager(
+        _db,
+        _db.mediaTrackingRemoteEpisodes,
+      );
   $$GalgamesTableTableManager get galgames =>
       $$GalgamesTableTableManager(_db, _db.galgames);
   $$GalgameSourcesTableTableManager get galgameSources =>
