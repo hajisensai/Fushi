@@ -40,8 +40,11 @@ fn meta(c: &Connection, key: &str) -> Result<Option<String>, String> {
 /// schema。只改 `srs_meta` 这三行，别的页不动。
 ///
 /// 要求：库是这一版协议 3 的（`schema` = [SCHEMA_VERSION]），连接不在事务里。已经封存过、`sealed_into` 相同 = 什么也
-/// 不写（提交点之后中断、下次启动重做时幂等：`gen4::files::open_gen4` 的 Primary 打开发现 `srs4.db` 在、`srs.db`
-/// 还是协议 3 的就重做）；封存进了别的文件、或 schema 是别的值都报错、不改。
+/// 不写（提交点之后中断、下次启动重做时幂等：`gen4::files::open_gen4` 的 Primary 打开发现 `srs4.db` 记着的迁移来源
+/// 就是这份还没封存的 `srs.db` 就重做）；封存进了别的文件、或 schema 是别的值都报错、不改。
+///
+/// 这里不核对「[into] 是不是从这份库迁移来的」：那是调用方的事（[legacy_identity] 与新代库里的迁移来源标记对上
+/// 才能调）。
 ///
 /// 封存这一笔**返回前已经落盘**：提交时临时把连接切到 `synchronous = FULL`（WAL 下 = 提交时 fsync WAL），返回前
 /// 改回原值。协议 3 内核的连接平时是 `NORMAL`，WAL + NORMAL 的提交不 fsync，断电可能丢掉最后几笔——改名
@@ -96,6 +99,33 @@ fn seal_in_tx(conn: &Connection, into: &str) -> Result<(), String> {
             "cannot seal a library at schema {other:?} (this build seals {SCHEMA_VERSION})"
         ))),
     }
+}
+
+/// 一份协议 3 库的身份：`sync2_self` 里各 profile 的设备 ID（建库后各自随机生成的 UUIDv7），小写十六进制、排序后
+/// 用逗号连起来。只读，不写这份库。没有 `sync2_self` 表、或一行也没有（没启用过协议 3 的库，`gen4::legacy` 的
+/// `preflight` 也不让它迁移）= `None`：这样的库没有可以拿来核对的身份。
+///
+/// 用途：迁移把它记进新代库的 `srs_meta`（`gen4::files::MIGRATED_FROM_KEY`），随改名一起提交；之后补做封存时拿
+/// 旁边那份 `srs.db` 的身份去对，对不上就不是迁移来源，不封。
+pub fn legacy_identity(conn: &Connection) -> Result<Option<String>, String> {
+    let has_self: bool = conn
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = 'sync2_self')",
+            [],
+            |r| r.get(0),
+        )
+        .map_err(e)?;
+    if !has_self {
+        return Ok(None);
+    }
+    let devices: Vec<String> = conn
+        .prepare("SELECT lower(hex(device)) FROM sync2_self ORDER BY device")
+        .map_err(e)?
+        .query_map([], |r| r.get(0))
+        .map_err(e)?
+        .collect::<Result<_, _>>()
+        .map_err(e)?;
+    Ok((!devices.is_empty()).then(|| devices.join(",")))
 }
 
 pub(crate) fn with_suffix(path: &Path, suffix: &str) -> PathBuf {
@@ -335,6 +365,38 @@ mod tests {
         c.execute_batch("PRAGMA synchronous = OFF;").unwrap();
         assert!(seal_legacy(&c, "other.db").is_err());
         assert_eq!(sync(&c), 0);
+    }
+
+    /// 身份 = 各 profile 的设备 ID：没启用过协议 3 的库没有身份；两份各自建的库身份不同；读它不改库。
+    #[test]
+    fn the_identity_is_the_device_ids_and_absent_without_protocol_3() {
+        const P: &str = crate::store::sync2::tests::P;
+        let dir = tempdir::new("seal-identity");
+        let path = legacy_db(&dir.0);
+        let ro =
+            |p: &Path| Connection::open_with_flags(p, OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+        assert_eq!(legacy_identity(&ro(&path)), Ok(None));
+        assert_eq!(
+            legacy_identity(&Connection::open_in_memory().unwrap()),
+            Ok(None)
+        );
+        let core = SrsCore::open(&path).unwrap();
+        let device = core.sync2_identity(P, 1).unwrap()["device"]
+            .as_str()
+            .unwrap()
+            .replace('-', "");
+        drop(core);
+        drain_wal(&path).unwrap();
+        let before = fs::read(&path).unwrap();
+        assert_eq!(legacy_identity(&ro(&path)), Ok(Some(device.clone())));
+        assert_eq!(fs::read(&path).unwrap(), before);
+        let other = tempdir::new("seal-identity-other");
+        let other_path = other.0.join("srs.db");
+        let core = SrsCore::open(&other_path).unwrap();
+        core.sync2_identity(P, 1).unwrap();
+        drop(core);
+        let theirs = legacy_identity(&ro(&other_path)).unwrap().unwrap();
+        assert_ne!(theirs, device);
     }
 
     #[test]

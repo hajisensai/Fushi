@@ -5,8 +5,11 @@
 //!
 //! - [LEGACY_FILE] `srs.db`：协议 3 的库。迁移提交后原位封存（`store::schema::seal_legacy`），保留副本到期后换成墓碑库。
 //! - [GEN4_TEMP] `srs4.db-migrating`：迁移中的新代库。提交点 = 改名成 [GEN4_FILE]。
-//! - [GEN4_FILE] `srs4.db`：新代库。它在 = 迁移已经提交（全新安装也一样：库在 [GEN4_CREATING] 建好、落盘之后才改名
-//!   到位，所以这个名字上永远不会出现建到一半的库）。
+//! - [GEN4_FILE] `srs4.db`：新代库。它在 = 库是完整的（迁移已经提交；全新安装也一样：库在 [GEN4_CREATING] 建好、
+//!   落盘之后才改名到位，所以这个名字上永远不会出现建到一半的库）。**它在不等于「旁边的 `srs.db` 已经迁进来了」**：
+//!   迁移来的新代库在 `srs_meta` 里带 [MIGRATED_FROM_KEY]（迁移来源那份协议 3 库的身份，`store::seal::legacy_identity`；
+//!   设计 §6.1 第 7 步的「已核对」标记），在临时文件里写好、随改名一起提交（[record_migrated_from]）；全新安装建的
+//!   没有这一行。
 //! - [GEN4_CREATING] `srs4.db-creating`：全新安装时在锁里建空库用的临时名。只有拿着锁的进程碰它；崩溃留下的直接
 //!   删掉重建（它不是迁移，没有要接着做的东西）。
 //! - [GEN_LOCK_FILE] `srs.gen.lock`：换代锁（[GenLock]）。迁移全程持有；锁文件本身只建不删（删了别的进程可能锁在
@@ -18,9 +21,15 @@
 //!   [OpenError::NotMigrated]（迁移由调用方另跑，G7-2），换代锁被别人拿着 = [OpenError::Migrating]，两样都没有（全新
 //!   安装）就在锁里建一个空的新代库。
 //!
-//!   有新代库、换代锁没人拿、而 `srs.db` 还是协议 3 的库（没封存）：迁移提交之后、封存落盘之前断过电或崩过。打开前
-//!   在锁里补做封存（`store::schema::seal_legacy`，幂等），不然旧版本会把它当正常库打开写入，那些写入永远进不了
-//!   新代。锁被别人拿着时不补：正在迁移的那个进程自己会封。
+//!   有新代库、换代锁没人拿、而 `srs.db` 还是协议 3 的库（没封存），看新代库记的迁移来源：
+//!
+//!   - 来源就是这份 `srs.db`（身份相同）：迁移提交之后、封存落盘之前断过电或崩过。在锁里补做封存
+//!     （`store::schema::seal_legacy`，幂等），不然旧版本会把它当正常库打开写入，那些写入永远进不了新代。
+//!   - 没有来源（全新安装建的新代库）或来源是另一份库：这份 `srs.db` 没迁移过（协议 3 的版本在同一个目录里跑过、
+//!     备份还原放回来的……）。**不封、不改它**，报 [OpenError::LegacyNotMigrated]——封了等于把没进新代的数据标成
+//!     「已迁入」，两个版本都读不到。并入还是提示由调用方定（G7-2）。
+//!
+//!   锁被别人拿着时不看：正在迁移的那个进程自己会封。
 //! - **Secondary**（查词弹窗等辅助进程，只读）：不建库、不迁移、不建表；没有新代库就按锁的状态报
 //!   [OpenError::Migrating] / [OpenError::NotMigrated]。打开的连接 `query_only`，写不进去。
 
@@ -42,6 +51,9 @@ pub const GEN_LOCK_FILE: &str = "srs.gen.lock";
 pub const GEN4_CREATING: &str = "srs4.db-creating";
 /// 协议 3 的库文件名（冻结）。
 pub const LEGACY_FILE: &str = "srs.db";
+/// 新代库 `srs_meta` 里的迁移来源标记：值 = 迁移来源那份协议 3 库的身份（`store::seal::legacy_identity`）。只有
+/// 迁移提交出来的新代库有；全新安装建的没有。
+pub const MIGRATED_FROM_KEY: &str = "migrated_from";
 
 /// 换代锁：`srs.gen.lock` 上的跨进程独占文件锁（`File::try_lock`：Unix 上是 `flock`，Windows 上是 `LockFileEx`）。
 /// 句柄在就持有，drop 即释放；进程死掉时由操作系统释放。同一进程里另开一个句柄也拿不到。
@@ -78,13 +90,16 @@ pub enum OpenMode {
     Secondary,
 }
 
-/// 打不开新代库的原因。前两种是代际状态（C 入口将来映射成 `STORE_NOT_MIGRATED` / `STORE_MIGRATING`），其余是错误。
+/// 打不开新代库的原因。前三种是代际状态（C 入口将来映射成返回码，前两种是 `STORE_NOT_MIGRATED` /
+/// `STORE_MIGRATING`），其余是错误。
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum OpenError {
     /// 还没有新代库（有旧库要迁移，或辅助进程比主进程先到）。
     NotMigrated,
     /// 另一个进程正拿着换代锁（迁移进行中）。
     Migrating,
+    /// 新代库在，旁边还有一份没封存、也不是它迁移来源的协议 3 库（文件头「打开模式」）。那份库原样没动。
+    LegacyNotMigrated,
     /// 别的错误（不是新代库、比本版本新、IO……）。
     Failed(String),
 }
@@ -94,6 +109,9 @@ impl std::fmt::Display for OpenError {
         match self {
             OpenError::NotMigrated => f.write_str("gen4 store: not migrated yet"),
             OpenError::Migrating => f.write_str("gen4 store: migration in progress"),
+            OpenError::LegacyNotMigrated => f.write_str(
+                "gen4 store: an unmigrated protocol 3 library sits next to the generation 4 library",
+            ),
             OpenError::Failed(e) => f.write_str(e),
         }
     }
@@ -111,11 +129,12 @@ pub fn open_gen4(dir: &Path, mode: OpenMode) -> Result<Connection, OpenError> {
     if path.exists() {
         return match mode {
             OpenMode::Primary => {
+                let conn = schema::open(&path)?;
                 if let Some(lock) = GenLock::try_acquire(dir)? {
-                    finish_seal(dir)?;
+                    finish_seal(dir, &conn)?;
                     drop(lock);
                 }
-                Ok(schema::open(&path)?)
+                Ok(conn)
             }
             OpenMode::Secondary => Ok(open_secondary(&path)?),
         };
@@ -166,39 +185,76 @@ fn create_fresh(dir: &Path) -> Result<(), String> {
     r
 }
 
-/// 新代库已经在：`srs.db` 若还是协议 3 的库就补做封存（文件头「打开模式」）。已封存 / 墓碑 / 别的版本的协议 3
-/// 库都不动。读不了它（被别的进程写锁住、不是 SQLite 文件……）报错：不能在旧版本还可能写它的状态下照常打开。
-fn finish_seal(dir: &Path) -> Result<(), String> {
-    let legacy = dir.join(LEGACY_FILE);
-    if !legacy.exists() {
-        return Ok(());
-    }
-    let fail = |e: String| format!("gen4 store: retained {}: {e}", legacy.display());
-    let conn = Connection::open_with_flags(
-        &legacy,
-        OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+/// 把迁移来源记进新代库：[new] = 迁移中的新代库（[GEN4_TEMP]，改名之前），[legacy] = 迁移来源那份协议 3 库的
+/// 连接（只读它）。来源没有身份（没启用过协议 3）报错——那样的库 `gen4::legacy` 的 `preflight` 本来也不让迁移。
+pub fn record_migrated_from(new: &Connection, legacy: &Connection) -> Result<(), String> {
+    let source = seal::legacy_identity(legacy)?.ok_or_else(|| {
+        "gen4 store: the protocol 3 library has no identity to record as the migration source"
+            .to_owned()
+    })?;
+    new.execute(
+        "INSERT INTO srs_meta (key, value) VALUES (?1, ?2) \
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        [MIGRATED_FROM_KEY, source.as_str()],
     )
-    .map_err(|e| fail(e.to_string()))?;
-    let has_meta: bool = conn
-        .query_row(
-            "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = 'srs_meta')",
-            [],
-            |r| r.get(0),
-        )
-        .map_err(|e| fail(e.to_string()))?;
+    .map_err(schema::sql)?;
+    Ok(())
+}
+
+/// [conn] 是不是一份没封存的、这一版的协议 3 库（`srs_meta.schema` = 协议 3 的当前号）。已封存 / 墓碑 / 别的版本
+/// 的协议 3 库 / 不是协议 3 的库都不是。
+fn is_unsealed_legacy(conn: &Connection) -> rusqlite::Result<bool> {
+    let has_meta: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = 'srs_meta')",
+        [],
+        |r| r.get(0),
+    )?;
     if !has_meta {
-        return Ok(());
+        return Ok(false);
     }
     let current: Option<String> = conn
         .query_row("SELECT value FROM srs_meta WHERE key = 'schema'", [], |r| {
             r.get(0)
         })
-        .optional()
-        .map_err(|e| fail(e.to_string()))?;
-    if current.as_deref() == Some(crate::store::schema::SCHEMA_VERSION.to_string().as_str()) {
-        crate::store::schema::seal_legacy(&conn, GEN4_FILE).map_err(fail)?;
+        .optional()?;
+    Ok(current.as_deref() == Some(crate::store::schema::SCHEMA_VERSION.to_string().as_str()))
+}
+
+/// 新代库 [new] 已经在：`srs.db` 若是没封存的协议 3 库，按 [new] 记的迁移来源处理（文件头「打开模式」）——来源就是
+/// 它 = 补做封存；不是 = [OpenError::LegacyNotMigrated]，不动它。已封存 / 墓碑 / 别的版本的协议 3 库都不动。
+/// 判断阶段只读打开 `srs.db`，确定要封了才以读写方式打开。读不了它（被别的进程写锁住、不是 SQLite 文件……）报错：
+/// 不能在旧版本还可能写它的状态下照常打开。
+fn finish_seal(dir: &Path, new: &Connection) -> Result<(), OpenError> {
+    let legacy = dir.join(LEGACY_FILE);
+    if !legacy.exists() {
+        return Ok(());
     }
-    conn.close().map_err(|(_, e)| fail(e.to_string()))
+    let fail =
+        |e: String| OpenError::Failed(format!("gen4 store: retained {}: {e}", legacy.display()));
+    let open = |flags: OpenFlags| {
+        Connection::open_with_flags(&legacy, flags | OpenFlags::SQLITE_OPEN_NO_MUTEX)
+            .map_err(|e| fail(e.to_string()))
+    };
+    let ro = open(OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    if !is_unsealed_legacy(&ro).map_err(|e| fail(e.to_string()))? {
+        return Ok(());
+    }
+    let source: Option<String> = new
+        .query_row(
+            "SELECT value FROM srs_meta WHERE key = ?1",
+            [MIGRATED_FROM_KEY],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(schema::sql)?;
+    let identity = seal::legacy_identity(&ro).map_err(fail)?;
+    if source.is_none() || source != identity {
+        return Err(OpenError::LegacyNotMigrated);
+    }
+    ro.close().map_err(|(_, e)| fail(e.to_string()))?;
+    let rw = open(OpenFlags::SQLITE_OPEN_READ_WRITE)?;
+    crate::store::schema::seal_legacy(&rw, GEN4_FILE).map_err(fail)?;
+    rw.close().map_err(|(_, e)| fail(e.to_string()))
 }
 
 fn open_secondary(path: &Path) -> Result<Connection, String> {
@@ -434,13 +490,112 @@ mod tests {
             .unwrap()
     }
 
-    /// 迁移提交了、封存那一笔没落盘（`srs4.db` 在、`srs.db` 还是协议 3 的）：Primary 打开时在锁里补封；锁被别人拿着
-    /// （迁移进程还在提交点与封存之间）时不补；Secondary 从不写它。
+    const P: &str = crate::store::sync2::tests::P;
+
+    /// 一份启用了协议 3（有身份）的 `srs.db`，内核已经关掉。
+    fn legacy_with_identity(dir: &Path) {
+        let core = crate::store::SrsCore::open(&dir.join(LEGACY_FILE)).unwrap();
+        core.sync2_identity(P, 1).unwrap();
+    }
+
+    /// 迁移的提交点：在 [GEN4_TEMP] 建好新代库、记下来源 [source_dir] 里那份 `srs.db`，关掉后改名成 [GEN4_FILE]。
+    /// 不封存旧库（= 提交之后、封存落盘之前中断的状态）。
+    fn commit_migration(dir: &Path, source_dir: &Path) {
+        let tmp = dir.join(GEN4_TEMP);
+        let conn = schema::open(&tmp).unwrap();
+        let source = Connection::open_with_flags(
+            source_dir.join(LEGACY_FILE),
+            OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )
+        .unwrap();
+        record_migrated_from(&conn, &source).unwrap();
+        drop(source);
+        conn.close().unwrap();
+        assert!(!seal::with_suffix(&tmp, "-wal").exists());
+        std::fs::rename(&tmp, dir.join(GEN4_FILE)).unwrap();
+    }
+
+    /// 全新安装建的新代库（没有迁移来源）旁边后来出现一份协议 3 的 `srs.db`（协议 3 的版本在同一个目录里跑过）：
+    /// Primary 不封它、报「旁边有没迁移的协议 3 库」，`srs.db` 逐字节不变、协议 3 的内核照常能开。有没有身份都一样。
+    #[test]
+    fn a_fresh_install_never_seals_a_protocol_3_library_that_shows_up_later() {
+        let dir = tempdir::new("open-unmigrated");
+        let legacy = dir.0.join(LEGACY_FILE);
+        let v3 = crate::store::schema::SCHEMA_VERSION.to_string();
+        drop(open_gen4(&dir.0, OpenMode::Primary).unwrap());
+        drop(crate::store::SrsCore::open(&legacy).unwrap());
+        for with_identity in [false, true] {
+            if with_identity {
+                legacy_with_identity(&dir.0);
+            }
+            let before = std::fs::read(&legacy).unwrap();
+            assert_eq!(
+                open_gen4(&dir.0, OpenMode::Primary).unwrap_err(),
+                OpenError::LegacyNotMigrated,
+                "identity: {with_identity}"
+            );
+            assert_eq!(std::fs::read(&legacy).unwrap(), before);
+            assert_eq!(legacy_schema(&dir.0), v3);
+            // 只读的辅助进程照常；锁在别人手里（那个进程自己负责）时 Primary 不判断。
+            drop(open_gen4(&dir.0, OpenMode::Secondary).unwrap());
+            let lock = GenLock::try_acquire(&dir.0).unwrap().unwrap();
+            drop(open_gen4(&dir.0, OpenMode::Primary).unwrap());
+            drop(lock);
+            assert_eq!(legacy_schema(&dir.0), v3);
+            drop(crate::store::SrsCore::open(&legacy).unwrap());
+        }
+        // 没有来源标记的新代库没被写上标记。
+        let n: i64 = open_gen4(&dir.0, OpenMode::Secondary)
+            .unwrap()
+            .query_row(
+                "SELECT COUNT(*) FROM srs_meta WHERE key = ?1",
+                [MIGRATED_FROM_KEY],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(n, 0);
+    }
+
+    /// 新代库是从**另一份**协议 3 库迁移来的（来源标记与旁边这份 `srs.db` 的身份对不上）：不封、报同一个状态、
+    /// `srs.db` 逐字节不变。
+    #[test]
+    fn a_library_migrated_from_elsewhere_does_not_seal_the_one_next_to_it() {
+        let dir = tempdir::new("open-foreign");
+        let elsewhere = tempdir::new("open-foreign-source");
+        legacy_with_identity(&elsewhere.0);
+        commit_migration(&dir.0, &elsewhere.0);
+        legacy_with_identity(&dir.0);
+        let legacy = dir.0.join(LEGACY_FILE);
+        let before = std::fs::read(&legacy).unwrap();
+        assert_eq!(
+            open_gen4(&dir.0, OpenMode::Primary).unwrap_err(),
+            OpenError::LegacyNotMigrated
+        );
+        assert_eq!(std::fs::read(&legacy).unwrap(), before);
+        assert_eq!(
+            legacy_schema(&dir.0),
+            crate::store::schema::SCHEMA_VERSION.to_string()
+        );
+    }
+
+    /// 来源没有身份的库记不了来源（也迁移不了）。
+    #[test]
+    fn a_source_without_an_identity_cannot_be_recorded() {
+        let dir = tempdir::new("open-no-identity");
+        drop(crate::store::SrsCore::open(&dir.0.join(LEGACY_FILE)).unwrap());
+        let source = Connection::open(dir.0.join(LEGACY_FILE)).unwrap();
+        let conn = schema::open_in_memory().unwrap();
+        let e = record_migrated_from(&conn, &source).unwrap_err();
+        assert!(e.contains("no identity"), "{e}");
+    }
+
+    /// 迁移提交了、封存那一笔没落盘（`srs4.db` 在、记的来源就是旁边这份还没封存的 `srs.db`）：Primary 打开时在锁里
+    /// 补封；锁被别人拿着（迁移进程还在提交点与封存之间）时不补；Secondary 从不写它。
     #[test]
     fn primary_finishes_a_lost_seal_before_opening() {
         let dir = tempdir::new("open-reseal");
-        drop(open_gen4(&dir.0, OpenMode::Primary).unwrap());
-        drop(crate::store::SrsCore::open(&dir.0.join(LEGACY_FILE)).unwrap());
+        legacy_with_identity(&dir.0);
+        commit_migration(&dir.0, &dir.0);
         let v3 = crate::store::schema::SCHEMA_VERSION.to_string();
         assert_eq!(legacy_schema(&dir.0), v3);
         drop(open_gen4(&dir.0, OpenMode::Secondary).unwrap());
@@ -454,6 +609,15 @@ mod tests {
             legacy_schema(&dir.0),
             crate::store::schema::SEALED_SCHEMA.to_string()
         );
+        let sealed_into: String = Connection::open(dir.0.join(LEGACY_FILE))
+            .unwrap()
+            .query_row(
+                "SELECT value FROM srs_meta WHERE key = 'sealed_into'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(sealed_into, GEN4_FILE);
         let err = crate::store::SrsCore::open(&dir.0.join(LEGACY_FILE))
             .err()
             .expect("protocol 3 must refuse");
