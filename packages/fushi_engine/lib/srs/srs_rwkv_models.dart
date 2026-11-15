@@ -167,7 +167,43 @@ class SrsRwkvModels {
   /// 按 [SrsRwkvModelFile.urls] 的顺序下载（每个来源内的断点续传 / 代理 / 重连见 [ModelFileDownloader]），
   /// 每个来源下完都校验字节数 + SHA-256，不符或下载失败就删掉残留、换下一个来源。已就绪时立即结束。
   /// 全部来源失败抛 [SrsRwkvModelException]，信息里逐个写明哪个来源、为什么失败。
-  Stream<ModelDownloadEvent> download() async* {
+  ///
+  /// 取消（订阅 `cancel()`）是硬停：先停掉在途的连接，之后不再碰任何文件（不读权重、不写校验标记、不删残留），
+  /// `cancel()` 返回的 future 等下载真的停下才完成——宿主关闭时 await 它，之后删目录也不会有收尾撞上来。
+  /// 取消后才冒出来的文件错误（例如收尾那一刻目录被删）交给 `cancel()` 的 future，不落到 zone。
+  Stream<ModelDownloadEvent> download() {
+    final _DownloadCancel cancel = _DownloadCancel();
+    late final StreamController<ModelDownloadEvent> out;
+    Future<void>? body;
+    out = StreamController<ModelDownloadEvent>(
+      onListen: () {
+        body = _download(out.add, cancel).then<void>(
+          (_) {
+            if (!cancel.requested) out.close();
+          },
+          onError: (Object error, StackTrace stack) {
+            // 只有 cancel() 的调用方还在等：交给它的 future。
+            if (cancel.requested) Error.throwWithStackTrace(error, stack);
+            out
+              ..addError(error, stack)
+              ..close();
+          },
+        );
+      },
+      onPause: () => cancel.inner?.pause(),
+      onResume: () => cancel.inner?.resume(),
+      onCancel: () async {
+        await cancel.stop();
+        await body;
+      },
+    );
+    return out.stream;
+  }
+
+  Future<void> _download(
+    void Function(ModelDownloadEvent event) emit,
+    _DownloadCancel cancel,
+  ) async {
     if (isReady) return;
     dir.createSync(recursive: true);
     final SrsRwkvModelFile file = model;
@@ -175,28 +211,51 @@ class SrsRwkvModels {
     final File part = File('${weights.path}.part');
     final List<String> failures = <String>[];
     for (final String url in file.urls) {
+      if (cancel.requested) return;
       // 每个来源从头下：上一个来源的残留可能就是它失败的原因（内容不符）。
       for (final File f in <File>[weights, part]) {
         if (f.existsSync()) f.deleteSync();
       }
+      final Completer<void> done = Completer<void>();
+      cancel.done = done;
+      cancel.inner =
+          ModelFileDownloader(
+                // 连接由这里建、取消时由这里强关（见 [_DownloadCancel.stop]）。
+                createClient: () =>
+                    cancel.client = (_createClient ?? _client)(),
+                urlCandidates: (DownloadableModelFile _) => <String>[url],
+              )
+              .downloadAll(
+                files: <DownloadableModelFile>[file],
+                targetDir: dir,
+                isReady: (File f) =>
+                    f.existsSync() && f.lengthSync() == file.expectedBytes,
+              )
+              .listen(
+                emit,
+                onError: (Object error, StackTrace stack) {
+                  if (!done.isCompleted) done.completeError(error, stack);
+                },
+                onDone: () {
+                  if (!done.isCompleted) done.complete();
+                },
+                cancelOnError: true,
+              );
       try {
-        await for (final ModelDownloadEvent event
-            in ModelFileDownloader(
-              createClient: _createClient,
-              urlCandidates: (DownloadableModelFile _) => <String>[url],
-            ).downloadAll(
-              files: <DownloadableModelFile>[file],
-              targetDir: dir,
-              isReady: (File f) =>
-                  f.existsSync() && f.lengthSync() == file.expectedBytes,
-            )) {
-          yield event;
-        }
+        await done.future;
       } on Object catch (error) {
+        if (cancel.requested) return;
         failures.add('$url: $error');
         continue;
+      } finally {
+        cancel
+          ..inner = null
+          ..done = null
+          ..client = null;
       }
+      if (cancel.requested) return;
       final List<int> bytes = await weights.readAsBytes();
+      if (cancel.requested) return;
       final String actual = sha256.convert(bytes).toString();
       if (bytes.length == file.expectedBytes && actual == file.sha256) {
         await _marker(weights).writeAsString(file.sha256, flush: true);
@@ -207,6 +266,7 @@ class SrsRwkvModels {
         '(want ${file.expectedBytes} bytes, ${file.sha256})',
       );
     }
+    if (cancel.requested) return;
     for (final File f in <File>[weights, part]) {
       if (f.existsSync()) f.deleteSync();
     }
@@ -223,5 +283,43 @@ class SrsRwkvModels {
         if (await f.exists()) await f.delete();
       }
     }
+  }
+}
+
+/// [ModelFileDownloader] 不注入客户端时用的那一个（同它的缺省：统一代理装配 + 20 s 连接超时）。
+HttpClient _client() =>
+    createAsrHttpClient()..connectionTimeout = const Duration(seconds: 20);
+
+/// [SrsRwkvModels.download] 一次下载的取消状态：取消标志、在途的来源订阅与它的完成信号。
+class _DownloadCancel {
+  bool requested = false;
+  StreamSubscription<ModelDownloadEvent>? inner;
+  Completer<void>? done;
+
+  /// 在途来源用的 HTTP 客户端（[ModelFileDownloader] 每次下载建一个）。
+  HttpClient? client;
+
+  /// 取消：停掉在途的来源，再叫醒等它的循环（被取消的订阅不会再发 done），循环看到 [requested] 就退出。
+  ///
+  /// 先强关连接：[ModelFileDownloader] 是 async* 生成器，等下一块数据时（可长达它的卡死超时 30 s）对取消没有
+  /// 反应，只有连接断了它才走到收尾。它收尾时报出的「连接断了 / 客户端已关」（[HttpException] /
+  /// [SocketException] / `Client is closed` 的 [StateError]）正是这次强关的结果、也是取消要的结局，只认这三种；
+  /// 没强关过连接、或冒出别的错，照常抛给 `cancel()` 的调用方。
+  Future<void> stop() async {
+    requested = true;
+    final HttpClient? closing = client;
+    closing?.close(force: true);
+    try {
+      await inner?.cancel();
+    } on Object catch (error) {
+      final bool causedByClose =
+          closing != null &&
+          (error is HttpException ||
+              error is SocketException ||
+              error is StateError);
+      if (!causedByClose) rethrow;
+    }
+    final Completer<void>? waiting = done;
+    if (waiting != null && !waiting.isCompleted) waiting.complete();
   }
 }
