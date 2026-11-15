@@ -1,12 +1,44 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-15T04:56:41Z",
+ "generatedAt": "2026-11-15T05:36:55Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "cf4e333758b390430661e386ee4054b284c6b755",
-  "seq": 27315
+  "sha": "4cd7c991f8e558e8b4004510e722a38374f3a2de",
+  "seq": 27324
  },
  "builds": [
+  {
+   "seq": 27285,
+   "version": "3.3.0",
+   "sha": "27b0ddf6d4983fced0c7dd32bafc58e4f4c2c6b9",
+   "unknown": false,
+   "publishedAt": "2026-11-15T05:36:42Z",
+   "testflight": false,
+   "baseSeq": 27276,
+   "prs": [
+    3435,
+    3433
+   ],
+   "direct": [],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "ok"
+    },
+    "windows": {
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43672887240"
+    },
+    "macos": {
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43672887240"
+    },
+    "ios": {
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43672887240"
+    }
+   }
+  },
   {
    "seq": 27276,
    "version": "3.3.0",
@@ -148,7 +180,7 @@
    "unknown": false,
    "publishedAt": "2026-11-15T00:48:48Z",
    "testflight": false,
-   "baseSeq": 27021,
+   "baseSeq": 26884,
    "prs": [
     3343,
     3402,
@@ -164,37 +196,7 @@
     3334,
     3415,
     3412,
-    3332
-   ],
-   "direct": [],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "ok"
-    },
-    "windows": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43649783969"
-    },
-    "macos": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43649783969"
-    },
-    "ios": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43649783969"
-    }
-   }
-  },
-  {
-   "seq": 27021,
-   "version": "3.3.0",
-   "sha": "e2066cb5e14b68e8602cb1036c4dc89a6cbe0aa1",
-   "unknown": false,
-   "publishedAt": "2026-11-14T23:04:48Z",
-   "testflight": false,
-   "baseSeq": 26884,
-   "prs": [
+    3332,
     3299,
     3284,
     3418,
@@ -213,51 +215,51 @@
      "state": "ok"
     },
     "windows": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43646046566"
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43649783969"
     },
     "macos": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43646046566"
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43649783969"
     },
     "ios": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43646046566"
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43649783969"
     }
    }
   }
  ],
  "pending": {
-  "headSha": "cf4e333758b390430661e386ee4054b284c6b755",
-  "headSeq": 27315,
+  "headSha": "4cd7c991f8e558e8b4004510e722a38374f3a2de",
+  "headSeq": 27324,
   "prs": [
+   3437,
+   3436,
    3441,
    3391,
    3431,
    3439,
    3432,
-   3438,
-   3435,
-   3433
+   3438
   ],
   "direct": [],
   "truncated": false,
   "platforms": {
    "android": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43678680105"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43680582806"
    },
    "windows": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43678858721"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43680582784"
    },
    "macos": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43678858721"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43680582784"
    },
    "ios": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43678858721"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43680582784"
    }
   }
  },
@@ -605,6 +607,26 @@
    "additions": 1208,
    "deletions": 0,
    "labels": []
+  },
+  "3436": {
+   "number": 3436,
+   "title": "fix(srs): 浏览页按键处理不再抢走持焦控件的 Enter（BUG-4628）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-15T04:56:53Z",
+   "additions": 163,
+   "deletions": 10,
+   "labels": []
+  },
+  "3437": {
+   "number": 3437,
+   "title": "feat(ocr): upgrade the manga CTC recogniser to Kellenok v0.3 / 漫画 CTC 识别器升级到 Kellenok v0.3",
+   "author": "samutw",
+   "mergedAt": "2026-11-15T05:19:27Z",
+   "additions": 804,
+   "deletions": 110,
+   "labels": [
+    "merge-approved"
+   ]
   },
   "3438": {
    "number": 3438,
