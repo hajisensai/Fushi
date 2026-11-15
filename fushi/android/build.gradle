@@ -60,15 +60,20 @@ subprojects {
         if (proj.plugins.hasPlugin('com.android.library') || proj.plugins.hasPlugin('com.android.application')) {
             def android = proj.extensions.findByName('android')
             if (android != null) {
-                // Force compileSdk for all subprojects so Material You attrs (lStar etc.) resolve
-                // App uses 36; plugins stay at 34 to avoid null-safety breakage.
+                // Raise compileSdk to at least 34 for all subprojects so Material You attrs
+                // (lStar etc.) resolve. Plugins that already declare a higher compileSdk keep
+                // it: AGP 9 runs checkReleaseAarMetadata on every library module, and e.g.
+                // mobile_scanner (flutter.compileSdkVersion) depends on androidx.camera 1.6,
+                // whose AAR metadata requires compiling against 36 -- forcing it down to 34
+                // fails the release build. Older plugins are not raised past 34 (higher
+                // platform stubs break their nullability). App uses 36.
                 // Exception: bonsoir_android references API-36 symbols
                 // (NsdServiceInfo.hostname / hostAddresses) behind runtime SDK guards, so it must be
                 // compiled against 36 or it fails with "Unresolved reference 'hostname'".
                 if (proj.plugins.hasPlugin('com.android.application') ||
                         proj.name == 'bonsoir_android') {
                     android.compileSdk = 36
-                } else {
+                } else if ((android.compileSdk ?: 0) < 34) {
                     android.compileSdk = 34
                 }
 
