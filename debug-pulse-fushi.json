@@ -1,12 +1,45 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-15T00:49:00Z",
+ "generatedAt": "2026-11-15T01:19:22Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "e5e1f73a42dc3dfde2bc96c1f10775e8b8ecabd6",
   "seq": 27255
  },
  "builds": [
+  {
+   "seq": 27210,
+   "version": "3.3.0",
+   "sha": "262391b32640eec669f74723163cad3b11b7b39d",
+   "unknown": false,
+   "publishedAt": "2026-11-15T01:19:12Z",
+   "testflight": false,
+   "baseSeq": 27107,
+   "prs": [
+    3318,
+    3321,
+    3365,
+    3357,
+    3368
+   ],
+   "direct": [],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43654446387"
+    },
+    "windows": {
+     "state": "ok"
+    },
+    "macos": {
+     "state": "ok"
+    },
+    "ios": {
+     "state": "ok"
+    }
+   }
+  },
   {
    "seq": 27107,
    "version": "3.3.0",
@@ -96,12 +129,10 @@
    "unknown": false,
    "publishedAt": "2026-11-14T22:13:29Z",
    "testflight": true,
-   "baseSeq": 26871,
+   "baseSeq": 26879,
    "prs": [
     3413,
-    3411,
-    3317,
-    3406
+    3411
    ],
    "direct": [
     {
@@ -124,41 +155,6 @@
      "state": "ok"
     }
    }
-  },
-  {
-   "seq": 26871,
-   "version": "3.3.0",
-   "sha": "0ec4f96a5ac63a48b6b0f0b948af8d53be36584e",
-   "unknown": false,
-   "publishedAt": "2026-11-14T20:22:49Z",
-   "testflight": true,
-   "baseSeq": 26834,
-   "prs": [
-    3409,
-    3403,
-    3404,
-    3398,
-    3333,
-    3355,
-    3369,
-    3408
-   ],
-   "direct": [],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "none"
-    },
-    "windows": {
-     "state": "ok"
-    },
-    "macos": {
-     "state": "ok"
-    },
-    "ios": {
-     "state": "ok"
-    }
-   }
   }
  ],
  "pending": {
@@ -169,12 +165,7 @@
    3424,
    3427,
    3381,
-   3277,
-   3318,
-   3321,
-   3365,
-   3357,
-   3368
+   3277
   ],
   "direct": [],
   "truncated": false,
@@ -234,15 +225,6 @@
    "deletions": 22,
    "labels": []
   },
-  "3317": {
-   "number": 3317,
-   "title": "fix(shelf): group volumes imported while the shelf is open (BUG-4388)",
-   "author": "samutw",
-   "mergedAt": "2026-11-14T20:04:23Z",
-   "additions": 193,
-   "deletions": 1,
-   "labels": []
-  },
   "3318": {
    "number": 3318,
    "title": "fix(sync): 互联 live 进度的写入契约、基线按远端分槽、三方判定统一（BUG-4429..4436）",
@@ -270,15 +252,6 @@
    "deletions": 1,
    "labels": []
   },
-  "3333": {
-   "number": 3333,
-   "title": "feat(floating-ball): 吉祥物呼吸光晕（默认关）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-14T18:06:43Z",
-   "additions": 460,
-   "deletions": 20,
-   "labels": []
-  },
   "3334": {
    "number": 3334,
    "title": "feat(galhook/entisgls): EntisGLS 消息文本道 adapter（implemented_unverified，仅文本）",
@@ -295,15 +268,6 @@
    "mergedAt": "2026-11-14T22:45:50Z",
    "additions": 2889,
    "deletions": 77,
-   "labels": []
-  },
-  "3355": {
-   "number": 3355,
-   "title": "feat(music): 在线插件曲目下载成本地曲目（含歌词 sidecar）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-14T18:06:38Z",
-   "additions": 1828,
-   "deletions": 17,
    "labels": []
   },
   "3357": {
@@ -333,15 +297,6 @@
    "deletions": 27,
    "labels": []
   },
-  "3369": {
-   "number": 3369,
-   "title": "字幕 AI 校对真正用上参考：视频画面（默认开）+ 播放器里选的参考字幕",
-   "author": "W1ght",
-   "mergedAt": "2026-11-14T18:06:33Z",
-   "additions": 3157,
-   "deletions": 161,
-   "labels": []
-  },
   "3381": {
    "number": 3381,
    "title": "复习库按实体 ID 的读写核对 profile 归属（BUG-4388）",
@@ -350,17 +305,6 @@
    "additions": 1890,
    "deletions": 102,
    "labels": []
-  },
-  "3398": {
-   "number": 3398,
-   "title": "fix(popup): mine/audio shortcuts follow the focused entry; + shows the mine shortcut (BUG-4479)",
-   "author": "samutw",
-   "mergedAt": "2026-11-14T18:08:12Z",
-   "additions": 604,
-   "deletions": 20,
-   "labels": [
-    "merge-approved"
-   ]
   },
   "3402": {
    "number": 3402,
@@ -372,55 +316,6 @@
    "labels": [
     "merge-approved"
    ]
-  },
-  "3403": {
-   "number": 3403,
-   "title": "fix(manga): 修复 OCR 断词、撇号与词组查词",
-   "author": "zitons",
-   "mergedAt": "2026-11-14T18:13:41Z",
-   "additions": 1529,
-   "deletions": 237,
-   "labels": [
-    "merge-approved"
-   ]
-  },
-  "3404": {
-   "number": 3404,
-   "title": "fix(onnx): read the GPU memory budget from the CUDA device's adapter",
-   "author": "samutw",
-   "mergedAt": "2026-11-14T18:11:29Z",
-   "additions": 287,
-   "deletions": 36,
-   "labels": [
-    "merge-approved"
-   ]
-  },
-  "3406": {
-   "number": 3406,
-   "title": "ci(windows): appSmoke 失败时重放 cmake --install，印出被吞掉的 CMake 报错",
-   "author": "W1ght",
-   "mergedAt": "2026-11-14T18:35:22Z",
-   "additions": 10,
-   "deletions": 0,
-   "labels": []
-  },
-  "3408": {
-   "number": 3408,
-   "title": "fix(feedback-cli): list 默认不再截断条数",
-   "author": "W1ght",
-   "mergedAt": "2026-11-14T18:06:29Z",
-   "additions": 14,
-   "deletions": 2,
-   "labels": []
-  },
-  "3409": {
-   "number": 3409,
-   "title": "fix(windows): galgame helper 解包改用 ZipFile，修所有 PR 的 windows appSmoke 红",
-   "author": "W1ght",
-   "mergedAt": "2026-11-14T18:34:58Z",
-   "additions": 11,
-   "deletions": 3,
-   "labels": []
   },
   "3410": {
    "number": 3410,
