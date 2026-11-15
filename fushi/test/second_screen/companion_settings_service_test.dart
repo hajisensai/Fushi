@@ -260,7 +260,7 @@ void main() {
       );
       expect(
         of(const CompanionContext(CompanionContextKind.audiobook)),
-        SettingsDestinationId.reading,
+        SettingsDestinationId.listening,
       );
       expect(
         of(const CompanionContext(CompanionContextKind.manga)),
@@ -390,10 +390,12 @@ void main() {
           <String>['reading', 'video'],
         );
 
+        // The audiobook view: its own group. This schema has no listening
+        // category, so the rows show under reading.
         f.top = const CompanionContext(CompanionContextKind.audiobook);
-        expect(_keys(f.service.overview().context!.rows), <String>[
-          'listening.speed',
-        ]);
+        final CompanionSettingsPage audiobook = f.service.overview().context!;
+        expect(audiobook.category!.id, 'reading');
+        expect(_keys(audiobook.rows), <String>['listening.speed']);
 
         // Not a reader: the category's first page.
         f.top = const CompanionContext(

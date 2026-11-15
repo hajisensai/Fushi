@@ -95,6 +95,8 @@ void main() {
         'services.resources',
         'services.metadata',
         'services.media',
+        // 弹幕服务器与媒体服务器账号不是一类东西，单独成区；只有一个入口行，常显。
+        'services.danmaku',
       ]);
       expect(
         services.sections.map((SettingsSection s) => s.presentation),
@@ -102,6 +104,7 @@ void main() {
           SettingsSectionPresentation.expanded,
           SettingsSectionPresentation.collapsed,
           SettingsSectionPresentation.collapsed,
+          SettingsSectionPresentation.alwaysExpanded,
           SettingsSectionPresentation.alwaysExpanded,
         ],
       );

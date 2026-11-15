@@ -41,13 +41,21 @@ void main() {
     List<String> idsOf(SettingsSection s) =>
         s.items.map((SettingsItem i) => i.id).toList();
 
-    test('regroups into five intent-based sections', () {
+    test('regroups into six intent-based sections', () {
       // 互联（client 配置 / LAN 发现 / host 模式）已拆到独立的
       // buildInterconnectDestination（见下方 group），「数据存储位置」已挪到
       // 「存储」大类展示（buildDataStorageLocationSection，见下方 group），
-      // 同步分类剩：method / what / when / assets / backup（C1：开关、时机、
-      // 动作各自成节，不再混排）。
-      expect(dest.sections, hasLength(5));
+      // 同步分类剩：method / what / remote entries / when / assets / backup
+      // （C1：开关、时机、动作各自成节，不再混排；远端占位卡是显示偏好、不是
+      // 「同步什么」，单独成节）。
+      expect(dest.sections.map((SettingsSection s) => s.id), <String>[
+        'sync.method.section',
+        'sync.content.section',
+        'sync.section.remote_entries',
+        'sync.when.section',
+        'sync.assets.section',
+        'sync.backup.section',
+      ]);
       expect(
         dest.sections
             .expand((SettingsSection s) => s.items)
@@ -116,49 +124,55 @@ void main() {
       );
     });
 
-    test('what / when / assets / backup groups remain global', () {
-      // C1：§2 只放六个同形态开关；§3 是时机（自动 + 手动）；§4 是显式动作行。
-      expect(idsOf(dest.sections[1]), <String>[
-        'sync.statistics',
-        // 设备级「同步浏览历史」（默认关，3fdceb86fa / PR #2500）：云备份与互联
-        // 共用、不设 visible 门控，所以同样是全局项，紧跟统计开关。
-        'sync.web_history',
-        // 「同步设置」（反馈 AWp-0BtDDv，默认关）：可移植偏好设置跨设备 LWW，
-        // 云与互联共用、不设 visible 门控。
-        'sync.settings',
-        'sync.content',
-        'sync.manga_content',
-        'sync.audiobook_files',
-        'sync.video_files',
-        // 多端库联合视图（spec §2.1）：「显示远端条目」占位卡混排开关（纯显示偏好）。
-        'sync.show_remote_entries',
-        // 「仅从本机移除」的远端书找回列表（反馈 nvlhtczbro）。
-        'sync.hidden_remote_books',
-      ]);
-      expect(idsOf(dest.sections[2]), <String>[
-        'sync.auto_sync',
-        'sync.server_mode_note',
-        'sync.sync_now',
-        'sync.compare',
-      ]);
-      expect(idsOf(dest.sections[3]), <String>[
-        // 升级前开着那两个自动同步开关的存量库才占位的一次性告知（确认后消失）。
-        'sync.asset_legacy_notice',
-        // 词典与本地音频源数据库不是开关，而是一类一行的显式动作，方向在行尾菜单选。
-        'sync.dictionary_transfer',
-        'sync.local_audio_transfer',
-        // 字体文件 + 字体配置的显式传输（同步备份带字体，2026-10-09）。
-        'sync.fonts_transfer',
-      ]);
-      expect(idsOf(dest.sections[4]), <String>[
-        'sync.backup_export',
-        'sync.backup_import',
-        // 合并导入时是否带可移植设置（反馈 AWp-0BtDDv，默认关），紧跟导入动作行。
-        'sync.backup_merge_settings',
-        // 第三方阅读器（Hoshi Reader）书库备份导入：五端都有。
-        'sync.hoshi_import',
-      ]);
-    });
+    test(
+      'what / remote entries / when / assets / backup groups remain global',
+      () {
+        // C1：§2 只放同形态的「同步什么」开关；§3 是远端占位卡的显示偏好；§4 是
+        // 时机（自动 + 手动）；§5 是显式动作行。
+        expect(idsOf(dest.sections[1]), <String>[
+          'sync.statistics',
+          // 「同步设置」（反馈 AWp-0BtDDv，默认关）：可移植偏好设置跨设备 LWW，
+          // 云与互联共用、不设 visible 门控。
+          'sync.settings',
+          // 设备级「同步浏览历史」（默认关，3fdceb86fa / PR #2500）：云备份与互联
+          // 共用、不设 visible 门控，所以同样是全局项。
+          'sync.web_history',
+          'sync.content',
+          'sync.manga_content',
+          'sync.video_files',
+          'sync.audiobook_files',
+        ]);
+        expect(idsOf(dest.sections[2]), <String>[
+          // 多端库联合视图（spec §2.1）：「显示远端条目」占位卡混排开关（纯显示偏好）。
+          'sync.show_remote_entries',
+          // 「仅从本机移除」的远端书找回列表（反馈 nvlhtczbro）。
+          'sync.hidden_remote_books',
+        ]);
+        expect(idsOf(dest.sections[3]), <String>[
+          'sync.auto_sync',
+          'sync.server_mode_note',
+          'sync.sync_now',
+          'sync.compare',
+        ]);
+        expect(idsOf(dest.sections[4]), <String>[
+          // 升级前开着那两个自动同步开关的存量库才占位的一次性告知（确认后消失）。
+          'sync.asset_legacy_notice',
+          // 词典与本地音频源数据库不是开关，而是一类一行的显式动作，方向在行尾菜单选。
+          'sync.dictionary_transfer',
+          'sync.local_audio_transfer',
+          // 字体文件 + 字体配置的显式传输（同步备份带字体，2026-10-09）。
+          'sync.fonts_transfer',
+        ]);
+        expect(idsOf(dest.sections[5]), <String>[
+          'sync.backup_export',
+          'sync.backup_import',
+          // 合并导入时是否带可移植设置（反馈 AWp-0BtDDv，默认关），紧跟导入动作行。
+          'sync.backup_merge_settings',
+          // 第三方阅读器（Hoshi Reader）书库备份导入：五端都有。
+          'sync.hoshi_import',
+        ]);
+      },
+    );
 
     test(
       'auto-sync and upload switches are gated; content-scope switches are not',
@@ -266,7 +280,7 @@ void main() {
       // A pure Fushi host has no outbound sync, so "sync now" / "compare" must
       // be hidden in server mode and an explanatory note shown instead — every
       // one of the three carries a visibility predicate (none is unconditional).
-      final SettingsSection actions = dest.sections[2];
+      final SettingsSection actions = dest.sections[3];
       SettingsItem byId(String id) =>
           actions.items.firstWhere((SettingsItem i) => i.id == id);
       expect(
@@ -300,8 +314,10 @@ void main() {
       final int compareAt = src.indexOf("id: 'sync.compare'");
       expect(noteAt, greaterThanOrEqualTo(0));
       for (final int at in <int>[noteAt, nowAt, compareAt]) {
+        // 截到下一项的 id 为止：只看本项自己的定义，不受文案 key 长短影响。
+        final int next = src.indexOf("id: '", at + 1);
         expect(
-          src.substring(at, at + 200),
+          src.substring(at, next),
           contains('_cloudOutboundUnavailable'),
           reason: 'manual-sync gate must use cloud-outbound availability',
         );
@@ -336,7 +352,7 @@ void main() {
     test('server-mode / interconnect notes are first-class status rows', () {
       // C1：两条指路/状态行走框架的 SettingsStatusItem，不再各自手拼
       // AdaptiveSettingsRow（那是 C0 消掉的特殊情况）。
-      final SettingsItem note = dest.sections[2].items.firstWhere(
+      final SettingsItem note = dest.sections[3].items.firstWhere(
         (SettingsItem i) => i.id == 'sync.server_mode_note',
       );
       expect(note, isA<SettingsStatusItem>());
@@ -449,10 +465,18 @@ void main() {
 
     test('is its own top-level destination (not inside syncBackup)', () {
       expect(dest.id, SettingsDestinationId.interconnect);
-      // 启用开关 + 连接设备 + 上传到互联对端（BUG-988）+ 与已配对设备共享（统计/
-      // 收藏夹，双向、默认开）+ 交给已配对设备（制卡/备份后端）+ 本机服务器 +
-      // 互联相关配置镜像（远端词典/音频来源/远端占位卡）。
-      expect(dest.sections, hasLength(7));
+      // 启用开关 + 设备（配对 / 主机服务两个子页入口）+ 互联功能（下载任务 / 串流）
+      // + 与已配对设备共享（统计 / 收藏夹，双向、默认开）+ 上传到互联对端
+      // （BUG-988）+ 远端内容指路 + 使用主机的能力（备份后端 / 服务配置等）。
+      expect(dest.sections.map((SettingsSection s) => s.id), <String>[
+        'interconnect.enabled.section',
+        'interconnect.client.section',
+        'interconnect.section.features',
+        'interconnect.share.section',
+        'interconnect.upload.section',
+        'interconnect.related.section',
+        'interconnect.delegate.section',
+      ]);
     });
 
     test(
@@ -490,26 +514,13 @@ void main() {
           reason: 'the note must say the other device pairs with that server',
         );
         // C2：对端列表 + LAN 发现（整页最高的两个 widget）挪进子页「配对与设备」，
-        // 主页只留一行带已配对数摘要的入口；其后是「加入游戏串流」入口
-        // （PR #1611）——每个平台都能当接收端，所以该行不带平台门控。
-        // _sZllpFQWm：两者之间是「互联下载」任务页入口——iOS 没有浏览模块，
-        // 互联下载又不是商店受限能力，这一行同样不带任何门控。
+        // host 模式开关与「已配对设备可以…」授权挪进子页「主机服务」；主页「设备」
+        // 区只留两行带实时摘要的入口。
         expect(idsOf(dest.sections[1]), <String>[
           'interconnect.devices',
-          'interconnect.download_tasks',
-          'interconnect.game_stream',
+          'interconnect.host',
         ]);
         expect(dest.sections[1].visible, isNotNull);
-        expect(
-          dest.sections[1].items[1].visible,
-          isNull,
-          reason: '互联下载不是商店受限能力，入口不该按平台藏起来',
-        );
-        expect(
-          dest.sections[1].items[2].visible,
-          isNull,
-          reason: '串流接收端覆盖全部平台，入口不该再按平台藏起来',
-        );
         final SettingsNavigationItem devices =
             dest.sections[1].items.first as SettingsNavigationItem;
         expect(devices.child, isNotNull, reason: '入口必须是子 schema 页');
@@ -522,22 +533,25 @@ void main() {
           ),
           <String>['sync.fushi_server_config', 'sync.lan_devices'],
         );
-        // BUG-988：互联专属上传分项开关，与云备份/连接开关解耦，默认全关；仅互联启用时
-        // 可见（host 无 outbound 时进一步隐藏）。
-        // BUG-2494：一行互联通道专属的词典显式传输动作（上传 / 下载）。
-        // BUG-2762：它是本区唯一的词典行——旧的「上传词典」自动同步开关曾与它
-        // 并排成两个「词典」，已删除。
+        // 「互联功能」是用互联能做的事而不是连接配置：「互联下载」任务页入口
+        // （_sZllpFQWm：iOS 没有浏览模块，互联下载又不是商店受限能力）与「加入
+        // 游戏串流」（PR #1611，每个平台都能当接收端），两行都不带平台门控。
         expect(idsOf(dest.sections[2]), <String>[
-          'interconnect.upload_content',
-          'interconnect.upload_manga_content',
-          'interconnect.dictionary_transfer',
-          'interconnect.local_audio_transfer',
-          'interconnect.fonts_transfer',
-          'interconnect.upload_audiobook_files',
-          'interconnect.upload_video_files',
+          'interconnect.download_tasks',
+          'interconnect.game_stream',
         ]);
         expect(dest.sections[2].visible, isNotNull);
-        // 与已配对设备共享：统计 / 收藏夹。刻意独立成区而不并进上面的上传区——那一区
+        expect(
+          dest.sections[2].items[0].visible,
+          isNull,
+          reason: '互联下载不是商店受限能力，入口不该按平台藏起来',
+        );
+        expect(
+          dest.sections[2].items[1].visible,
+          isNull,
+          reason: '串流接收端覆盖全部平台，入口不该再按平台藏起来',
+        );
+        // 与已配对设备共享：统计 / 收藏夹。刻意独立成区而不并进下面的上传区——那一区
         // 是纯 OUTBOUND 的重内容、脚注承诺「默认全部关闭」，这两项双向且默认开启。
         // 反馈 5nWEirdCs2（方案 A）：两项只在「一轮同步」里合并——互联通道自己的
         // 自动同步开关（默认开）与它们同区，「双向合并、默认开启」才成立。它是真开关，
@@ -567,12 +581,26 @@ void main() {
           isNotNull,
           reason: '双向 + 默认开启这件事必须在 UI 上说清楚',
         );
-        // 交给已配对设备：制卡到已配对设备（原在「制卡」分类）+ 用互联做备份后端
-        // + 从 host 同步外部服务配置（BUG-1693 的 apikey 同步开关）+ 配置文件
-        // （Profile）双向搬运的两个一次性动作。制卡开关下面是它的「保存到」（§4.8，开关开着才显示）。
+        // BUG-988：互联专属上传分项开关，与云备份/连接开关解耦，默认全关；仅互联启用时
+        // 可见（host 无 outbound 时进一步隐藏）。四个上传开关在前，其后是三行显式
+        // 传输动作。
+        // BUG-2494：一行互联通道专属的词典显式传输动作（上传 / 下载）。
+        // BUG-2762：它是本区唯一的词典行——旧的「上传词典」自动同步开关曾与它
+        // 并排成两个「词典」，已删除。
         expect(idsOf(dest.sections[4]), <String>[
-          'interconnect.mine_to_server',
-          'interconnect.mine_to_server_target',
+          'interconnect.upload_content',
+          'interconnect.upload_manga_content',
+          'interconnect.upload_audiobook_files',
+          'interconnect.upload_video_files',
+          'interconnect.dictionary_transfer',
+          'interconnect.local_audio_transfer',
+          'interconnect.fonts_transfer',
+        ]);
+        expect(dest.sections[4].visible, isNotNull);
+        // 使用主机的能力：用互联做备份后端 + 从 host 同步外部服务配置（BUG-1693 的
+        // apikey 同步开关）+ 配置文件（Profile）双向搬运的两个一次性动作。「制卡到
+        // 已配对设备」是制卡的去向，住在制卡分类（见下方 mine-to-server 测试）。
+        expect(idsOf(dest.sections[6]), <String>[
           'interconnect.backup_backend',
           'interconnect.service_config_sync',
           // 跟随已配对设备自动登录 Fushi 账户（client 侧开关，默认开）。
@@ -582,29 +610,36 @@ void main() {
           // 主机版本 / 更新主机（反馈 Pp8XPyve0N）：也是「交给已配对设备」的一次性动作。
           'interconnect.host_update',
         ]);
-        expect(dest.sections[4].visible, isNotNull);
-        // 本机作为服务器：host 模式开关 + host 侧「允许对端读写本机配置」许可——C2
-        // 整块挪进子页「主机服务」，主页只留一行带运行状态（端口）摘要的入口。
-        expect(idsOf(dest.sections[5]), <String>['interconnect.host']);
-        expect(dest.sections[5].visible, isNotNull);
-        final SettingsNavigationItem host =
-            dest.sections[5].items.single as SettingsNavigationItem;
+        expect(dest.sections[6].visible, isNotNull);
+        // 本机作为服务器：host 模式开关 + 「已配对设备可以…」授权——C2 整块住在子页
+        // 「主机服务」，主页只留一行带运行状态（端口）摘要的入口。
+        final SettingsNavigationItem host = dest.sections[1].items
+            .whereType<SettingsNavigationItem>()
+            .singleWhere((SettingsItem i) => i.id == 'interconnect.host');
         expect(host.child, isNotNull, reason: '入口必须是子 schema 页');
         expect(host.subtitleBuilder, isNotNull, reason: '入口行带运行状态摘要');
         final SettingsDestination hostPage = host.child!();
         expect(hostPage.id, dest.id, reason: '子页共用父分类 id');
+        expect(hostPage.sections.map((SettingsSection s) => s.id), <String>[
+          'interconnect.server_mode.section',
+          'interconnect.section.host_permissions',
+        ]);
         expect(
           hostPage.sections.expand(
             (SettingsSection s) => s.items.map((SettingsItem i) => i.id),
           ),
           <String>[
             'sync.server_mode',
-            // 弱网转码开关（host 按对端选的画质档切段转 HLS）也住在主机服务子页：
-            // 它是「本机作为服务器」的能力开关，不是对端侧偏好。
+            // 所有「允许已配对设备…」的授权集中在这一区，不再散在各功能页。
+            // 弱网转码开关（host 按对端选的画质档切段转 HLS）：它是「本机作为服务器」
+            // 的能力开关，不是对端侧偏好。
             'interconnect.transcode_host',
             // 允许已配对设备使用本机 AI（「互联主机」AI 提供商，反馈 M8KvhMTHVS）：
             // 花的是本机的 AI 额度，同样是主机主人的能力开关。
             'interconnect.ai_relay_host',
+            // 允许已配对设备使用本机的 AI 助手（改本机库与设置）：定义来自
+            // buildAiAgentForPeersItem，授权归口在这里。
+            'ai.agent_for_peers',
             // 允许已配对设备远程启动本机游戏（PR #1616）：会在主机上拉起进程，
             // 必须是主机主人的显式意愿，所以同样是主机服务子页的能力开关。
             'interconnect.game_stream_remote_launch',
@@ -649,20 +684,43 @@ void main() {
       );
     });
 
-    test('delegate section lives with interconnect, not in card creation', () {
-      // 用户诉求：「制卡到已配对设备要放到 hibiki 互联里面」。开关的前置条件（配对）、
-      // 目标设备、失效条件全由互联决定，故唯一归宿是互联分类——「制卡」分类里不得再有
-      // 第二份，否则互联关掉时那份就是纯死开关。
-      final List<String> allIds = dest.sections
+    test('mine-to-server lives exactly once, in card creation', () {
+      // 「制卡到已配对设备」是卡片的去向，归制卡分类「卡片去向」分区
+      // （card_creation.section.destination，经 buildMineToServerItems）。同一开关
+      // 只能有一份：互联页再挂一份会搜出双份、改一处另一处不动；制卡分类内也不得
+      // 再有 Anki 分组里的镜像行。前置条件（配对）由开关自身的 visible 门控表达，
+      // 互联关掉时它随之隐藏，不会成为死开关。
+      final List<String> interconnectIds = dest.sections
           .expand((SettingsSection s) => s.items)
           .map((SettingsItem i) => i.id)
           .toList();
-      expect(allIds, contains('interconnect.mine_to_server'));
-      final List<String> cardIds = buildCardCreationDestination().sections
+      expect(interconnectIds, isNot(contains('interconnect.mine_to_server')));
+      expect(
+        interconnectIds,
+        isNot(contains('interconnect.mine_to_server_target')),
+      );
+      final SettingsDestination card = buildCardCreationDestination();
+      final SettingsSection destination = card.sections.singleWhere(
+        (SettingsSection s) => s.id == 'card_creation.section.destination',
+      );
+      expect(idsOf(destination), <String>[
+        'interconnect.mine_to_server',
+        'interconnect.mine_to_server_target',
+      ]);
+      final List<String> cardIds = card.sections
           .expand((SettingsSection s) => s.items)
           .map((SettingsItem i) => i.id)
           .toList();
-      expect(cardIds, isNot(contains('interconnect.mine_to_server')));
+      expect(
+        cardIds.where((String id) => id == 'interconnect.mine_to_server'),
+        hasLength(1),
+      );
+      expect(
+        destination.items[0].visible,
+        isNotNull,
+        reason: '没有可用的已配对设备时开关必须藏起来，否则是纯死开关',
+      );
+      expect(destination.items[1].visible, isNotNull, reason: '「保存到」只在开关开着时显示');
     });
 
     test(
@@ -671,12 +729,12 @@ void main() {
         // 远端词典查询/管理音频来源/远端占位卡在查词、同步分类各有其位。此前在互联
         // 分类镜像三行同一 builder；用户拍板（2026-09-06）改成一行指路——不再重复
         // 渲染开关，点进去落到查词分类并定位远端查词那一行。仅互联启用时可见。
-        expect(idsOf(dest.sections[6]), <String>[
+        expect(idsOf(dest.sections[5]), <String>[
           'interconnect.related_settings',
         ]);
-        expect(dest.sections[6].visible, isNotNull);
+        expect(dest.sections[5].visible, isNotNull);
         final SettingsNavigationItem related =
-            dest.sections[6].items.single as SettingsNavigationItem;
+            dest.sections[5].items.single as SettingsNavigationItem;
         expect(related.onTap, isNotNull, reason: '指路行必须能点进查词分类');
         // 三个被指的行仍各在其位（查词两行 / 同步一行），没有随镜像一起消失。
         final List<String> lookupIds = buildLookupDestination().sections
@@ -695,8 +753,17 @@ void main() {
       },
     );
 
-    test('host-server group keeps its explanatory footer', () {
-      expect(dest.sections[5].footer, isNotNull);
+    test('host-server entry and permissions keep their explanations', () {
+      // 主机服务入口行说清子页里有什么；授权区脚注说清「所有授权都在这一处」。
+      final SettingsNavigationItem host = dest.sections
+          .expand((SettingsSection s) => s.items)
+          .whereType<SettingsNavigationItem>()
+          .singleWhere((SettingsItem i) => i.id == 'interconnect.host');
+      expect(host.subtitle, isNotNull);
+      final SettingsSection permissions = host.child!().sections.singleWhere(
+        (SettingsSection s) => s.id == 'interconnect.section.host_permissions',
+      );
+      expect(permissions.footer, isNotNull);
     });
 
     test('upload section carries an explicit dictionary transfer row scoped to '
