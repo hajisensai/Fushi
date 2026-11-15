@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "version": "3.3.0-debug.27107",
-  "tag": "v3.3.0-debug.27107+8cf583e",
+  "version": "3.3.0-debug.27210",
+  "tag": "v3.3.0-debug.27210+262391b",
   "channel": "debug",
   "prerelease": true,
-  "releaseSequence": 27107,
-  "notes": "Automated release-signed debug-channel build from develop @ 8cf583e. Push releases are always prerelease and never Latest.",
+  "releaseSequence": 27210,
+  "notes": "Automated desktop debug-channel build from develop @ 262391b. Push releases are always prerelease and never Latest.",
   "assets": [
     {
       "name": "fushi-3.3.0-debug.27021-ios.ipa",
@@ -35,15 +35,6 @@
       "sha256": "96a742a07d8fea189ec7f202b4e0e4b30512967a8ebaea4011916a83282effd6"
     },
     {
-      "name": "fushi-3.3.0-debug.27021-windows-setup.exe",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.3.0-debug.27021-windows-setup.exe",
-      "releaseSequence": 27021,
-      "tag": "v3.3.0-debug.27021+e2066cb",
-      "version": "3.3.0-debug.27021",
-      "size": 297956272,
-      "sha256": "1ba42b96ef8ed1ff5696b6cea124ecca3cce4f9f47aaef69805b24b1a2f1a5e6"
-    },
-    {
       "name": "fushi-3.3.0-debug.27107-8cf583e-debug.apk",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.3.0-debug.27107-8cf583e-debug.apk",
       "releaseSequence": 27107,
@@ -51,6 +42,15 @@
       "version": "3.3.0-debug.27107",
       "size": 273835292,
       "sha256": "b480b23deb5e23285d288c25bc3517f02349afa2f65ae31ca5d5ccabb17451b2"
+    },
+    {
+      "name": "fushi-3.3.0-debug.27210-windows-setup.exe",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.3.0-debug.27210-windows-setup.exe",
+      "releaseSequence": 27210,
+      "tag": "v3.3.0-debug.27210+262391b",
+      "version": "3.3.0-debug.27210",
+      "size": 298004552,
+      "sha256": "66f5229643d718f7ba26c38089e8cdb5b43f00048174ad2aa61b2d304825d743"
     }
   ]
 }
