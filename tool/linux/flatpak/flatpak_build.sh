@@ -58,10 +58,28 @@ ensure_flathub() {
   flatpak remote-add --user --if-not-exists flathub "$FLATHUB"
 }
 
+# BUG-4659: flatpak-builder hardlinks between --state-dir and the build dir and
+# refuses to start when the state dir and the parent of the build dir
+# (--force-clean "$WORK/build") are on different filesystems ("The state dir
+# (...) is not on the same filesystem as the target dir (...)"). In the
+# container /tmp is the overlay root while STATE_DIR lives on a bind mount /
+# volume, so the work dir is created next to STATE_DIR, never with a bare
+# `mktemp -d`. Removed on exit.
+WORK=""
+cleanup_workdir() {
+  if [[ -n "$WORK" ]]; then rm -rf "$WORK"; fi
+}
+trap cleanup_workdir EXIT
+make_workdir() {
+  mkdir -p "$STATE_DIR"
+  WORK="$(mktemp -d -p "$(dirname "$STATE_DIR")" flatpak-work.XXXXXX)"
+}
+
 cmd_baseapp() {
   local out="$1" key work
   key="$(baseapp_key)"
-  work="$(mktemp -d)"
+  make_workdir
+  work="$WORK"
   mkdir -p "$out"
   ensure_flathub
   cp -a "$HERE/baseapp/." "$work/"
@@ -79,7 +97,8 @@ cmd_app() {
   [[ -f "$tarball" ]] || die "no bundle tarball at $tarball"
   flatpak info --user "$BASE_ID//$BASE_BRANCH" >/dev/null 2>&1 \
     || die "$BASE_ID//$BASE_BRANCH is not installed (--user); install its .flatpak first"
-  work="$(mktemp -d)"
+  make_workdir
+  work="$WORK"
   mkdir -p "$out"
   ensure_flathub
   cp "$HERE/app.fushi.reader.yml" "$HERE/app.fushi.reader.desktop" \
