@@ -289,19 +289,14 @@ MangaFolderPlan planMangaFolders({
     // 目录的子树里没有任何单文件卷（`系列/ch01/*.jpg` + `系列/extra.cbz`），那批图
     // 就是真正的页，这个候选仍成卷——否则一个散装章节目录会因为隔壁多了一个包而
     // 被整卷静默丢掉。
-    final List<String> candidateImageDirs = <String>[
-      for (final String dir in imageDirs)
-        if (ctx.equals(dir, candidate) || ctx.isWithin(candidate, dir)) dir,
-    ];
-    final bool claimedByCarrier =
-        candidateImageDirs.isNotEmpty &&
-        candidateImageDirs.every(
-          (String imageDir) => carrierPaths.any((String carrierPath) {
-            final String carrierDir = ctx.dirname(ctx.normalize(carrierPath));
-            return ctx.equals(carrierDir, imageDir) ||
-                ctx.isWithin(imageDir, carrierDir);
-          }),
-        );
+    final bool claimedByCarrier = mangaImageDirsClaimedByCarriers(
+      imageDirs: <String>[
+        for (final String dir in imageDirs)
+          if (ctx.equals(dir, candidate) || ctx.isWithin(candidate, dir)) dir,
+      ],
+      carrierPaths: carrierPaths,
+      context: ctx,
+    );
     if (!claimedByCarrier) imageFolders.add(candidate);
   }
   return MangaFolderPlan(
@@ -314,6 +309,38 @@ MangaFolderPlan planMangaFolders({
         if (seriesOf[folder] != null) folder: seriesOf[folder]!,
     },
   );
+}
+
+/// 一个候选卷里的页图是不是全都只是**单文件卷的附属图**（封面 / 目录图），因而不该
+/// 再单独成一卷：[imageDirs] 是这个候选里每一个含页图的目录，[carrierPaths] 是同一棵
+/// 树里的单文件卷（压缩包 / 纯图 EPUB / PDF）。**每一个**页图目录自己（或其子树）都
+/// 躺着单文件卷时为 true；[imageDirs] 为空时为 false（没有页图可让位）。
+///
+/// 这是「散图让位给单文件卷」的唯一判据：来源库扫描（[planMangaFolders]）与漫画导入框
+/// 的目录载体判定（app 侧 `mangaDirectoryHasPageImages`）都问它。此前导入框自己按
+/// 「有页图就是页图目录」判，`卷01.epub` + `卷02.epub` + `cover.jpg` 的文件夹在「导入
+/// 文件夹」里逐卷导入，在导入框里却被当成一卷只有封面的页图目录（iycDWb7ys6）。
+bool mangaImageDirsClaimedByCarriers({
+  required Iterable<String> imageDirs,
+  required Iterable<String> carrierPaths,
+  p.Context? context,
+}) {
+  final p.Context ctx = context ?? p.context;
+  final List<String> carrierDirs = <String>[
+    for (final String carrierPath in carrierPaths)
+      ctx.dirname(ctx.normalize(carrierPath)),
+  ];
+  bool any = false;
+  for (final String imageDir in imageDirs) {
+    any = true;
+    final String dir = ctx.normalize(imageDir);
+    final bool claimed = carrierDirs.any(
+      (String carrierDir) =>
+          ctx.equals(carrierDir, dir) || ctx.isWithin(dir, carrierDir),
+    );
+    if (!claimed) return false;
+  }
+  return any;
 }
 
 /// 系列目录下探判据（规则见库文档「系列目录下探一层」）：[seriesDir] 下含页图的

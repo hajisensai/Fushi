@@ -487,6 +487,7 @@ class _Importer {
     await _stopIfAsked();
     await _prefetchMedia();
     await _importNotes();
+    if (options.withScheduling) await _importDeletedCardRevlogs();
     if (!options.withScheduling) {
       report.reviewLogsSkipped =
           col.db.select('SELECT count(*) AS n FROM revlog').first['n'] as int;
@@ -1343,6 +1344,15 @@ class _Importer {
     // 音频两项随参数继承（只写在 own 牌组上）；与缺省值相同时不写，不产生多余记录。
     if (!p.autoplay) v[SrsFieldKeys.deckAutoplay] = false;
     if (!p.replayQuestion) v[SrsFieldKeys.deckReplayQuestion] = false;
+    // 出卡顺序（srs_apkg_common.dart 的映射）同样随参数继承；映射后与缺省相同、或 Fushi 没有的顺序都不写。
+    final SrsNewCardMix? mix = srsNewCardMixOfAnki(p.newMix);
+    if (mix != null && mix != SrsNewCardMix.afterReviews) {
+      v[SrsFieldKeys.deckNewMix] = mix.wire;
+    }
+    final SrsReviewCardOrder? order = srsReviewCardOrderOfAnki(p.reviewOrder);
+    if (order != null && order != SrsReviewCardOrder.retrievability) {
+      v[SrsFieldKeys.deckReviewOrder] = order.wire;
+    }
     if (p.desiredRetention > 0 && p.desiredRetention < 1) {
       v[SrsFieldKeys.deckRetention] = p.desiredRetention;
     }
@@ -1431,7 +1441,8 @@ class _Importer {
       'SELECT nid, id, did, odid, ord, mod, type, queue, due, odue, ivl, '
       'factor, reps, lapses, data FROM cards ORDER BY nid, ord, id',
     );
-    // 不导排程时用不到 revlog（[_importCardSchedule] 只在带排程时走）。
+    // 不导排程时用不到 revlog（[_importCardSchedule] 只在带排程时走）。JOIN cards 只收还有卡的 revlog；卡已删除的
+    // 由 [_importDeletedCardRevlogs] 另走（BUG-4657）。
     final PreparedStatement? revlogs = options.withScheduling
         ? col.db.prepare(
             'SELECT c.nid AS nid, c.ord AS ord, r.cid AS cid, r.id AS id, '
@@ -1477,7 +1488,8 @@ class _Importer {
         }
         if (logCur != null) {
           for (final _SrcCard c in of) {
-            // 同序归并：先跳过排在这张卡之前的（属于被跳过的孤儿卡），再收这张卡的。
+            // 同序归并：先跳过排在这张卡之前的（属于被跳过的孤儿卡；没有笔记的卡的 revlog 由
+            // [_importDeletedCardRevlogs] 另走），再收这张卡的。
             for (Row? r = logCur.row; r != null; r = logCur.row) {
               if (!_logBefore(r, nid, c.ord, c.id)) break;
               logCur.next();
@@ -1497,6 +1509,157 @@ class _Importer {
       notes.close();
       cards.close();
       revlogs?.close();
+    }
+  }
+
+  /// 来源包里卡已删除、revlog 还在的复习（BUG-4657）：cards 表里已没有这张卡（或卡所属的笔记已不在），上面的三路
+  /// 归并按卡收 revlog，这些行一条不收。所有者定案：保留，只进统计与日历的历史，不参与排期。
+  ///
+  /// 承载：日志挂在 [SrsIds.deletedAnkiCard] 派生的卡 ID 上。这个 ID 不由任何笔记 × 模板派生，永远没有卡片缓存行：
+  /// 缓存刷新只更新已有缓存行的卡（caches.rs `flush_cards`），复习队列 / 浏览 / 卡片历史都从卡片缓存出发，碰不到它；
+  /// 有效复习投影（`refresh_stats`）对没有缓存行的卡也照常投影（归属自己），统计页与日历读的就是这张投影表。所以
+  /// 不需要新表、新列或改内核。
+  ///
+  /// 同一来源卡的 revlog 按 id 升序走 [_revlogLog]（与活卡同一套 reps / lapses 推算，投影里的分类与成熟变化才对）；
+  /// 不写导入锚点（没有卡可锚）。本 profile 里已经有同一次复习的不写，两种来路：
+  /// - Anki 导入那份（之前导入时卡还在、或重复导入同一个包）：按 revlog id 查本机 Anki 日志，评分 / 复习类型 / 用时
+  ///   都相同即是——没有笔记可比，判据同 [_importCardSchedule] 里认不出笔记的旧卡；
+  /// - 原生那份（在 Fushi 复习 → 导出 apkg → Anki 删卡 → 不带 fushi-ext 导回来）：导出时 revlog id 取原生日志的发生
+  ///   时刻，与原生日志之间没有血统链接，投影去重也只认 Anki 导入日志。按卡片历史内核的等价判据
+  ///   （[srsImportEquivalentAny]：评分类、评分相同、时刻差 ≤ 1 秒）对本 profile 里时刻相近的原生日志判；没有卡可比，
+  ///   另加用时相同（导出写的是 `min(用时, 60000)`），不把别的卡同一秒同评分的复习误判成它。
+  /// fushi-ext 里记着的 revlog 本来就是 Fushi 导出的日志，同样不写。
+  Future<void> _importDeletedCardRevlogs() async {
+    final PreparedStatement q = col.db.prepare(
+      'SELECT r.cid AS cid, r.id AS id, r.ease AS ease, r.ivl AS ivl, '
+      'r.factor AS factor, r.time AS time, r.type AS type FROM revlog r '
+      'WHERE NOT EXISTS (SELECT 1 FROM cards c JOIN notes n ON n.id = c.nid '
+      'WHERE c.id = r.cid) ORDER BY r.cid, r.id',
+    );
+    final Set<int> extRevlogs = _extRevlogIds.values.toSet();
+    final List<(int, List<_SrcRevlog>)> chunk = <(int, List<_SrcRevlog>)>[];
+    int chunkLogs = 0;
+    Future<void> drain() async {
+      if (chunk.isEmpty) return;
+      await _importDeletedCardChunk(chunk, extRevlogs);
+      chunk.clear();
+      chunkLogs = 0;
+      await _flush();
+      await _stopIfAsked();
+    }
+
+    try {
+      final IteratingCursor cur = q.selectCursor();
+      while (cur.moveNext()) {
+        final Row r = cur.current;
+        final int cid = r['cid'] as int;
+        if (chunk.isEmpty || chunk.last.$1 != cid) {
+          if (chunkLogs >= _batchEvents) await drain();
+          chunk.add((cid, <_SrcRevlog>[]));
+        }
+        chunk.last.$2.add(_SrcRevlog(r));
+        chunkLogs++;
+      }
+      await drain();
+    } finally {
+      q.close();
+    }
+  }
+
+  /// [_importDeletedCardRevlogs] 的一块：每项 (来源卡 id, 它的 revlog 按 id 升序)。本机已有的同一次复习按块一次查。
+  Future<void> _importDeletedCardChunk(
+    List<(int, List<_SrcRevlog>)> chunk,
+    Set<int> extRevlogs,
+  ) async {
+    final Map<int, List<SrsAnkiLogAt>> present = <int, List<SrsAnkiLogAt>>{};
+    for (final SrsAnkiLogAt l in await store.ankiImportedLogsAt(<int>[
+      for (final (int _, List<_SrcRevlog> logs) in chunk)
+        for (final _SrcRevlog r in logs) r.id,
+    ])) {
+      (present[l.revlogId] ??= <SrsAnkiLogAt>[]).add(l);
+    }
+    final List<SrsReviewLog> natives = await store.nativeRatingLogsNear(<int>[
+      for (final (int _, List<_SrcRevlog> logs) in chunk)
+        for (final _SrcRevlog r in logs) r.id,
+    ]);
+    bool alreadyPresent(_SrcRevlog r) {
+      final int? rating = r.ease >= 1 && r.ease <= 4 ? r.ease : null;
+      final String rtype = SrsReviewType.fromAnki(r.type);
+      return (present[r.id] ?? const <SrsAnkiLogAt>[]).any(
+        (SrsAnkiLogAt h) =>
+            h.rating == rating &&
+            h.reviewType == rtype &&
+            h.durationMs == r.time,
+      );
+    }
+
+    final (int nowMs, _) = store.now();
+    // 过了 fushi-ext 与 Anki 那份判重的候选；与原生日志的等价整块一次 FFI 判。
+    final List<SrsReviewLog> candidates = <SrsReviewLog>[];
+    final List<List<SrsReviewLog>> nearby = <List<SrsReviewLog>>[];
+    for (final (int cid, List<_SrcRevlog> revlogs) in chunk) {
+      if (revlogs.last.id > nowMs + srsClockToleranceMs) {
+        report.futureCards.add(cid);
+        continue;
+      }
+      final String cardId = SrsIds.deletedAnkiCard(store.defaultDeckId, cid);
+      final List<String> ids = SrsIds.importedRevlogs(cardId, <int>[
+        for (final _SrcRevlog r in revlogs) r.id,
+      ]);
+      int reps = 0;
+      int lapses = 0;
+      int? lastRated;
+      for (int i = 0; i < revlogs.length; i++) {
+        final _SrcRevlog r = revlogs[i];
+        if (r.isRating) {
+          reps++;
+          if (r.type == 1 && r.ease == 1) lapses++;
+          lastRated = r.id;
+        } else if (!r.isFiltered && r.row.isReset) {
+          reps = 0;
+          lapses = 0;
+        }
+        if (extRevlogs.contains(r.id)) {
+          report.revlogsVerifiedByExt++;
+          continue;
+        }
+        if (alreadyPresent(r)) {
+          report.revlogsAlreadyPresent++;
+          continue;
+        }
+        candidates.add(
+          _revlogLog(
+            cardId,
+            r,
+            id: ids[i],
+            reps: reps,
+            lapses: lapses,
+            lastRated: lastRated,
+          ),
+        );
+        nearby.add(<SrsReviewLog>[
+          for (final SrsReviewLog n in natives)
+            if ((n.occurredAt - r.id).abs() <= srsImportEquivalenceWindowMs &&
+                min(n.durationMs, 60000) == r.time)
+              n,
+        ]);
+      }
+    }
+    final List<bool> equivalent =
+        srsImportEquivalentAny(<(SrsReviewLog, List<SrsReviewLog>)>[
+          for (int i = 0; i < candidates.length; i++)
+            if (nearby[i].isNotEmpty) (candidates[i], nearby[i]),
+        ]);
+    int k = 0;
+    for (int i = 0; i < candidates.length; i++) {
+      if (nearby[i].isNotEmpty && equivalent[k++]) {
+        report.revlogsAlreadyPresent++;
+        continue;
+      }
+      if (pkg.fushiExt != null) report.revlogsNotInExt++;
+      _pending.add(SrsReadyDraft(SrsLogEvent(candidates[i])));
+      report.reviewLogsImported++;
+      report.deletedCardRevlogsImported++;
     }
   }
 

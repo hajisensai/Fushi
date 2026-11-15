@@ -173,18 +173,36 @@ impl Model {
         reviews: &[(u32, f32)],
         starting: Option<Memory>,
     ) -> Result<Memory, String> {
-        let (mut state, start) = match starting {
-            Some(s) => (s, 0),
-            None if reviews.is_empty() => (Memory::ZERO, 0),
-            None => (self.init_from_first(reviews[0].0), 1),
+        self.validate(self.forward(reviews, starting, None))
+    }
+
+    /// [Model::memory_state] 的逐次评审，不校验结果。[resume] = (已经算过 [reviews] 的前几次, 那之后的状态)：从那里
+    /// 接着算，与从头算逐位相同——状态只按顺序经 [Model::step] 递推，第 i 次只看前一个状态、这一次的评分与间隔、
+    /// 以及 i 本身。没有起点时第 0 次不走 [Model::step]（`init_from_first`），所以那种情况下接着算至少要已经算过
+    /// 1 次（调用方保证）。
+    pub fn forward(
+        &self,
+        reviews: &[(u32, f32)],
+        starting: Option<Memory>,
+        resume: Option<(usize, Memory)>,
+    ) -> Memory {
+        let (mut state, start) = match (resume, starting) {
+            (Some((done, state)), _) => {
+                debug_assert!(done <= reviews.len() && (done > 0 || starting.is_some()));
+                (state, done)
+            }
+            (None, Some(s)) => (s, 0),
+            (None, None) if reviews.is_empty() => (Memory::ZERO, 0),
+            (None, None) => (self.init_from_first(reviews[0].0), 1),
         };
         for (i, &(rating, dt)) in reviews.iter().enumerate().skip(start) {
             state = self.step(dt, rating, state, i);
         }
-        self.validate(state)
+        state
     }
 
-    fn validate(&self, m: Memory) -> Result<Memory, String> {
+    /// [Model::memory_state] 的校验：状态有限。
+    pub fn validate(&self, m: Memory) -> Result<Memory, String> {
         if m.s.is_finite()
             && m.d.is_finite()
             && (self.version == Version::Fsrs6 || m.sf.is_finite())

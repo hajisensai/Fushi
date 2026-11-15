@@ -555,4 +555,118 @@ void main() {
       },
     );
   });
+
+  // BUG-4243 遗留 + 反馈 s2fdTTmLyh：旧端上传的聚合里带 Latin-1 乱码书名行。
+  // 解码时剥层并按 MAX 折叠撞键行——否则本机「检查数据库」修好的统计会在下一轮
+  // 同步时被 peer 的乱码行原样灌回来。
+  group('Latin-1 mojibake on ingest', () {
+    String garble(String s) => latin1.decode(utf8.encode(s));
+
+    test(
+      'reading stats: garbled titles unwrap and MAX-fold into the real bucket',
+      () {
+        const String title = '葬送のフリーレン';
+        final AggregateSnapshot snap = AggregateSnapshot.fromJson(
+          <String, Object?>{
+            'version': AggregateSnapshot.currentVersion,
+            'readingStats': <Object?>[
+              <String, Object?>{
+                'title': title,
+                'dateKey': '2026-11-01',
+                'charactersRead': 100,
+                'readingTimeMs': 50000,
+                'lastStatisticModified': 5,
+              },
+              <String, Object?>{
+                'title': garble(garble(title)),
+                'dateKey': '2026-11-01',
+                'charactersRead': 90,
+                'readingTimeMs': 57000,
+                'lastStatisticModified': 9,
+              },
+              <String, Object?>{
+                'title': 'Café',
+                'dateKey': '2026-11-01',
+                'charactersRead': 1,
+                'readingTimeMs': 1,
+                'lastStatisticModified': 1,
+              },
+            ],
+          },
+        );
+        expect(snap.readingStats, hasLength(2));
+        final ReadingStatRecord real = snap.readingStats.singleWhere(
+          (ReadingStatRecord r) => r.title == title,
+        );
+        expect(real.charactersRead, 100);
+        expect(real.readingTimeMs, 57000);
+        expect(real.lastStatisticModified, 9);
+        expect(
+          snap.readingStats.map((ReadingStatRecord r) => r.title),
+          contains('Café'),
+        );
+      },
+    );
+
+    test(
+      'lookup counters: title and bookKey unwrap; conflicting bookKey folds to null',
+      () {
+        const String title = '本好きの下剋上';
+        final AggregateSnapshot snap = AggregateSnapshot.fromJson(
+          <String, Object?>{
+            'version': AggregateSnapshot.currentVersion,
+            'lookupMiningCounters': <Object?>[
+              <String, Object?>{
+                'bookKey': 'epub:a',
+                'title': title,
+                'sourceType': 'book',
+                'dateKey': '2026-11-01',
+                'lookupCount': 10,
+                'mineCount': 3,
+              },
+              <String, Object?>{
+                'bookKey': garble('epub:a'),
+                'title': garble(title),
+                'sourceType': 'book',
+                'dateKey': '2026-11-01',
+                'lookupCount': 12,
+                'mineCount': 1,
+              },
+              <String, Object?>{
+                'bookKey': garble('epub:本'),
+                'title': garble(title),
+                'sourceType': 'book',
+                'dateKey': '2026-11-02',
+                'lookupCount': 4,
+                'mineCount': 0,
+              },
+              <String, Object?>{
+                'bookKey': 'epub:other',
+                'title': title,
+                'sourceType': 'book',
+                'dateKey': '2026-11-02',
+                'lookupCount': 2,
+                'mineCount': 5,
+              },
+            ],
+          },
+        );
+        expect(snap.lookupMiningCounters, hasLength(2));
+        final LookupMiningRecord day1 = snap.lookupMiningCounters.singleWhere(
+          (LookupMiningRecord r) => r.dateKey == '2026-11-01',
+        );
+        expect(day1.title, title);
+        expect(day1.bookKey, 'epub:a');
+        expect(day1.lookupCount, 12);
+        expect(day1.mineCount, 3);
+        final LookupMiningRecord day2 = snap.lookupMiningCounters.singleWhere(
+          (LookupMiningRecord r) => r.dateKey == '2026-11-02',
+        );
+        expect(day2.title, title);
+        expect(day2.bookKey, isNull, reason: '两行身份矛盾 → 无法唯一归因');
+        expect(day2.lookupCount, 4);
+        expect(day2.mineCount, 5);
+      },
+    );
+  });
 }

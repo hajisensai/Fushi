@@ -8,7 +8,8 @@ import 'package:fushi_engine/media/audiobook/audiobook_alignment_service.dart'
     show
         AudiobookAlignmentMessages,
         AudiobookAlignmentResult,
-        alignAndPersistAudiobook;
+        alignAndPersistAudiobook,
+        replaceAudiobookAudio;
 import 'package:fushi_engine/media/audiobook/audiobook_subtitle_formats.dart';
 import 'package:fushi_engine/media/audiobook/audiobook_transcribe_import_queue.dart';
 import 'package:fushi_engine/media/discovery/import/discovery_engine_importers.dart'
@@ -17,7 +18,7 @@ import 'package:fushi_engine/media/audiobook/subtitle_rematch_policy.dart';
 
 import 'package:fushi/src/asr_host/asr_host.dart' show isAsrSupported;
 import 'package:fushi/src/media/audiobook/subtitle_rematch.dart';
-import 'package:fushi/src/media/import/srt_book_reimport.dart';
+import 'package:fushi_engine/media/audiobook/srt_book_reimport.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/ops/ctl_library_entries.dart';
@@ -30,8 +31,8 @@ import 'package:fushi/src/ops/op_context.dart';
 /// - 字幕书（无 `audiobooks` 行）换音频 / 字幕：[reimportSrtBook]（字幕书「重新导入」
 ///   对话框同一函数，换字幕时连带重建由 cue 生成的正文）；
 /// - EPUB 书挂有声书 / 换字幕：[alignAndPersistAudiobook]（导入书 + 字幕 + 音频时的
-///   对齐落库同一函数）；只换音频：[AudiobookStorage.syncAudioFiles] +
-///   [AudiobookRepository.replaceAudio]（有声书导入对话框「只换音频」同一组原语）；
+///   对齐落库同一函数）；只换音频：[replaceAudiobookAudio]（`syncAudioFiles` +
+///   [AudiobookRepository.replaceAudio] + 配对 SrtBook 音频，服务端库根重扫同一入口）；
 ///   判据与书架 `_openSrtBookReimport` 一致——看该 bookKey 有没有 `audiobooks` 行；
 /// - 重新匹配：[rematchStoredAudiobookCues]（Sasayaki 重匹配本体）；
 /// - 挂载 / 替换 / 重新匹配都是短时后台任务（[LibraryCtlTaskRegistry]）：立即返回
@@ -271,8 +272,8 @@ class _AudiobookHandlers {
 
     final EpubBookRow? row = await _db.getEpubBook(bookKey);
     if (row == null) throw CtlFailure.notFound('书架里没有 book:$bookKey');
-    if (BookFormat.parseOrEpub(row.format) != BookFormat.epub) {
-      throw const CtlFailure.rejected('有声书只支持 EPUB 书（PDF / 漫画不能挂音频）');
+    if (!BookFormat.parseOrEpub(row.format).supportsAudiobook) {
+      throw const CtlFailure.rejected('有声书只支持 EPUB / PDF 书（漫画不能挂音频）');
     }
 
     if (subtitle == null) {
@@ -293,18 +294,13 @@ class _AudiobookHandlers {
             ..markCommitting()
             ..report(phase: 'copying');
           await stopPlayback();
-          final Directory persistDir = await AudiobookStorage.ensurePersistDir(
-            bookKey,
-          );
-          final List<String> persisted = await AudiobookStorage.syncAudioFiles(
-            persistDir,
-            audio,
+          // 与服务端有声书库根重扫补音频同一个引擎入口：连配对 SrtBook 的音频一起换。
+          final List<String> persisted = await replaceAudiobookAudio(
+            db: _db,
+            bookKey: bookKey,
+            audioPaths: audio,
             onProgress: (int copied, int total) =>
                 task.report(progress: total > 0 ? copied / total : null),
-          );
-          await audiobookRepo.replaceAudio(
-            bookKey: bookKey,
-            audioPaths: persisted,
           );
           _refreshShelf();
           return <String, Object?>{
@@ -389,7 +385,7 @@ class _AudiobookHandlers {
         ? null
         : await repo.findByBookKey(bookKey);
     if (ab == null) {
-      throw const CtlFailure.rejected('只有挂在 EPUB 正文上的有声书才能重新匹配');
+      throw const CtlFailure.rejected('只有挂在书正文（EPUB / PDF）上的有声书才能重新匹配');
     }
     if (!SubtitleRematchPolicy.isEligible(ab)) {
       throw const CtlFailure.rejected('SMIL / JSON 对齐自带时间锚点，不需要重新匹配');
@@ -412,7 +408,6 @@ class _AudiobookHandlers {
     if (threshold <= 0 || threshold > 1) {
       throw const CtlFailure.badRequest('threshold 必须在 (0, 1] 之间');
     }
-    final String extractDir = row.extractDir;
     return _startTask(
       call,
       kind: 'rematch',
@@ -421,7 +416,6 @@ class _AudiobookHandlers {
         final SubtitleRematchOutcome outcome = await rematchStoredAudiobookCues(
           repo: repo,
           bookKey: bookKey,
-          extractDir: extractDir,
           searchWindow: window,
           similarityThreshold: threshold,
           isCancelled: () => task.cancelRequested,
@@ -573,8 +567,8 @@ class _AudiobookHandlers {
     }
     final EpubBookRow? row = await _db.getEpubBook(bookKey);
     if (row == null) throw CtlFailure.notFound('书架里没有 book:$bookKey');
-    if (BookFormat.parseOrEpub(row.format) != BookFormat.epub) {
-      throw const CtlFailure.rejected('有声书只支持 EPUB 书（PDF / 漫画不能挂音频）');
+    if (!BookFormat.parseOrEpub(row.format).supportsAudiobook) {
+      throw const CtlFailure.rejected('有声书只支持 EPUB / PDF 书（漫画不能挂音频）');
     }
     return (bookKey, row.title);
   }

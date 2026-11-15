@@ -1324,7 +1324,20 @@ class _BookImportDialogState extends State<BookImportDialog>
 
     reportProgress(0.05, t.import_step_reading);
     final String bookKey;
-    if (TextToEpub.isSupported(_epubPath!)) {
+    // PDF + 字幕 + 音频：PDF 走自己的导入器（落库 format='pdf'），对齐时引擎按
+    // format 取 PDF 文本层逐页全文（`loadBookTextSections`），PDF 阅读器播放 + 高亮。
+    // 以前这里只认 EPUB / 文本，PDF 被塞进 EpubImporter 当 zip 解包直接失败。
+    final bool isPdf = _classifyCarrier(_epubPath!) == ImportCarrier.pdf;
+    if (isPdf) {
+      reportProgress(0.2, t.import_step_importing_book);
+      bookKey = await PdfImporter.importFromPath(
+        db: widget.db,
+        filePath: _epubPath!,
+        fileName: _epubName ?? p.basename(_epubPath!),
+        title: title,
+        policy: DuplicatePolicy.ask(_askOnDuplicate),
+      );
+    } else if (TextToEpub.isSupported(_epubPath!)) {
       reportProgress(0.1, t.import_step_converting_epub);
       final Uint8List importBytes = await TextToEpub.convert(
         file: epubFile,
@@ -1349,7 +1362,8 @@ class _BookImportDialogState extends State<BookImportDialog>
       );
     }
 
-    await _applyBestCoverToEpub(bookKey);
+    // PDF 封面由 PdfImporter 栅格化首页得到，不走 EPUB 的封面择优。
+    if (!isPdf) await _applyBestCoverToEpub(bookKey);
 
     // EPUB 导入之后的对齐落库下沉到非 UI 的 alignAndPersistAudiobook：解析章节、
     // 解析 cue、跑 matcher、持久字幕/音频、写 Audiobooks + 配对 SrtBook + cue +

@@ -15,7 +15,8 @@ import 'dart:convert' show jsonDecode, jsonEncode;
 import 'dart:io' show Directory;
 import 'dart:math' as math;
 
-import 'package:flutter/foundation.dart' show ValueListenable;
+import 'package:flutter/foundation.dart'
+    show ValueListenable, visibleForTesting;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
@@ -23,6 +24,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart' show DateFormat;
 import 'package:fushi_engine/srs/apkg/srs_import_report.dart';
 import 'package:fushi_engine/srs/srs_browse.dart' show srsDeckQuery;
+import 'package:fushi_engine/srs/srs_collection_binding.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_legacy_lapis_migration.dart';
 import 'package:fushi_engine/srs/srs_remote_store.dart'
@@ -63,6 +65,7 @@ import 'package:fushi/src/srs/srs_remote_store_client.dart'
     show
         SrsRemoteBadResponse,
         SrsRemoteDeckSnapshot,
+        SrsRemoteHostCompat,
         SrsRemoteProfileChoiceCancelled;
 import 'package:fushi/src/sync/interconnect_host_client.dart'
     show InterconnectHostError;
@@ -148,6 +151,11 @@ Set<String> srsDeckSubtreeIds(List<SrsDeckSummary> decks, String rootId) {
   return out;
 }
 
+/// 测试用：「本次启动已问过首次同步」复位（静态标记跨用例共享）。
+@visibleForTesting
+void debugResetSrsFirstSyncAsked() =>
+    _SrsDeckListPageState._askedFirstSync = false;
+
 class SrsDeckListPage extends ConsumerStatefulWidget {
   const SrsDeckListPage({super.key});
 
@@ -205,15 +213,27 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
   }
 
   /// 问一次首次同步；刚确认就顺手跑一轮。
+  ///
+  /// 确认之后的那一轮同步归 app 级的 [SrsAppRuntime]，不归这个页面：运行时在第一个 await 之前、页面还挂着时
+  /// 就解析好。确认框挂在根导航上，用户点「开始」时首页这一页可能已经卸载（切了 tab / 换了页），以前在 await
+  /// 之后才 `ref.read`，页面已卸载就抛「No ProviderScope」，用户刚确认的首次同步不跑（反馈 nxR7tmcOjw）。
+  /// 页面卸载得比确认框弹出还早（框根本没弹）时撤回「本次启动已问过」，下次进复习页再问。
   Future<bool> _confirmFirstSync({required bool sync}) async {
     final AppModel app = ref.read(appProvider);
     if (app.srsSync2MergeConfirmed) return true;
+    final SrsAppRuntime? runtime = sync
+        ? ref.read(srsAppRuntimeProvider)
+        : null;
     final SrsDbStore? store = await readSrsStore(ref);
-    if (!mounted) return false;
+    if (!mounted) {
+      if (sync) _askedFirstSync = false;
+      return false;
+    }
     final bool ok = await ensureSrsFirstSyncConfirmed(context, app, store);
-    if (ok && sync) {
-      final SrsAppRuntime? runtime = ref.read(srsAppRuntimeProvider);
+    if (ok) {
       if (runtime != null) await runtime.syncNow();
+    } else if (sync && !app.srsSync2MergeConfirmed && !context.mounted) {
+      _askedFirstSync = false;
     }
     return ok;
   }
@@ -870,6 +890,9 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
         data: list,
         showImportTasks: ref.read(srsImportControllerProvider).tasks.isNotEmpty,
         lapisPending: ref.watch(srsLegacyLapisPendingProvider).valueOrNull ?? 0,
+        joinProvisional:
+            ref.watch(srsCollectionBindingProvider).valueOrNull?.state ==
+            SrsCollectionBindingState.provisional,
         onMigrateLapis: () => srsRunLogged(
           'SrsDeckList.lapisMigration',
           () => openSrsLegacyLapisMigrationPage(context),

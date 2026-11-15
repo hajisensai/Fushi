@@ -65,15 +65,20 @@ class SrsRemoteHostConnector {
     return configuredInterconnectHostTargets(repo);
   }
 
-  /// [candidates] 里声明了远程复习能力的主机（走网络探 `/api/capabilities`，没应答的不列）。
-  Future<List<InterconnectHostTarget>> supporting(
+  /// 探一台主机远程复习的代（默认走网络探 `/api/capabilities`，[probeSrsRemoteGeneration]）。测试替身换掉它，
+  /// 「代 → 能不能接上 → 留哪些」的映射仍走真实的 [probeSrsRemoteHosts]。
+  SrsRemoteGenerationProbe get generationProbe => probeSrsRemoteGeneration;
+
+  /// [candidates] 里声明了远程复习能力的主机（走网络探 `/api/capabilities`）：hostId → 能不能接上
+  /// （[probeSrsRemoteHosts]）。没应答、没有远程复习的不在结果里；代对不上的在，界面标明该升级哪边。
+  Future<Map<String, SrsRemoteHostCompat>> probeHosts(
     List<InterconnectHostTarget> candidates,
   ) async {
     final SyncRepository? repo = repository;
     if (repo == null || candidates.isEmpty) {
-      return const <InterconnectHostTarget>[];
+      return const <String, SrsRemoteHostCompat>{};
     }
-    return filterSrsRemoteStoreTargets(repo, candidates);
+    return probeSrsRemoteHosts(repo, candidates, probe: generationProbe);
   }
 
   /// 复习首页「已配对设备」的落盘缓存（[kSrsHomePairedCachePrefKey]）；库还没开时 null（之后再读）。
@@ -174,7 +179,8 @@ final Provider<SrsRemoteHostConnector> srsRemoteHostConnectorProvider =
 /// Riverpod 的子作用域只替换被覆盖的 provider：读了 `srsStoreProvider` 的派生 provider 若不在这里重建，
 /// 读到的仍是根容器（本机）的库，所以凡是可达页面用到的派生 provider 都在这里一并覆盖：
 /// - 媒体库与音频出口（卡面 / 原生 Fushi 卡片 / `[sound:]` 播放都经它们读媒体）；
-/// - RWKV 服务与 app 运行时置空：RWKV 与参数优化在主机上跑，本机的那份不碰主机的库；
+/// - RWKV 服务与 app 运行时置空：RWKV 与参数优化在主机上跑，本机的那份不碰主机的库；「等 RWKV」的状态换成
+///   主机的（进度 / 错误 / 就绪后重排 / 重试都经主机）；
 /// - 修订号是作用域自己的：远程写入只叫醒作用域里的页面，不触发本机复习库的互联推送。
 class SrsRemoteCollectionScope extends StatelessWidget {
   const SrsRemoteCollectionScope({
@@ -195,9 +201,14 @@ class SrsRemoteCollectionScope extends StatelessWidget {
       srsMediaStoreProvider.overrideWith((Ref ref) => media),
       srsCardAudioOutputProvider.overrideWith(srsDefaultCardAudioOutput),
       srsRwkvServiceProvider.overrideWith((Ref ref) => null),
+      srsRwkvStatusProvider.overrideWith((Ref ref) => store.hostRwkv),
       srsAppRuntimeProvider.overrideWith((Ref ref) => null),
       srsRevisionProvider.overrideWith((Ref ref) => 0),
       srsLocalWriteProvider.overrideWith((Ref ref) => 0),
+      // 「正在复习」的计数也是作用域自己的：本机 runtime 只按本机的复习页批量推送、给参数优化让路。
+      srsActiveReviewSessionsProvider.overrideWith(
+        (Ref ref) => ValueNotifier<int>(0),
+      ),
     ],
     child: child,
   );

@@ -32,7 +32,7 @@ const int kAudioEnergyWindowMs = 100;
 /// 字幕对轴**波形可视化**的分析窗口（毫秒）。比自动对轴的采样窗口（100ms = 10 帧/秒，
 /// 够互相关求整体平移，但画成波形只有 10 根柱/秒、粗得看不出句子）细 5 倍：20ms = 50
 /// 帧/秒，让波形密度接近成熟工具（Audacity / Aegisub），语音节奏与句间静音清晰可辨。
-/// 仅用于波形显示探测（`_loadSubtitleWaveformEnvelope`），不改自动对轴的采样率。
+/// 仅用于波形显示探测（`_loadSubtitleWaveformSegment`），不改自动对轴的采样率。
 const int kSubtitleWaveformWindowMs = 20;
 
 /// 自动对轴探测的默认时间上界（毫秒）：只抽视频前 20 分钟的音频能量。求一个**全局
@@ -40,6 +40,10 @@ const int kSubtitleWaveformWindowMs = 20;
 /// （astats 读穿整条音轨），前 N 分钟即可定位偏移。截断同时作用于 ffmpeg `-t`（少抽
 /// 音频）与字幕 cue 栅格化上界（[buildCueActivityEnvelope] 的 durationMs），两侧栅格都
 /// 从 t=0 同 binMs 起、截到同一上界，相位一致不偏。0 或负值表示不截断（抽整轨）。
+///
+/// **只管自动对轴**：人工查看的波形对轴视图时间窗是片长全程，包络按段懒抽
+/// （`subtitle_waveform_segments.dart`，反馈 EUvw-RjUE4：历史上视图沿用本上界，24 分钟
+/// 的一集 20:00 之后无波形、拖不过去）。
 const int kSubtitleAutoAlignProbeLimitMs = 20 * 60 * 1000;
 
 /// 流音源（媒体服务器 / 在线源，没有本地文件）的波形 / 自动对轴探测上界（毫秒）：3 分钟。
@@ -50,8 +54,9 @@ const int kSubtitleAutoAlignProbeLimitMs = 20 * 60 * 1000;
 /// 互相关置信度不足会走既有的低置信降级、不乱平移。
 const int kStreamSubtitleAlignProbeLimitMs = 3 * 60 * 1000;
 
-/// **纯函数**：按音源种类给出探测时间上界。页面的抽音、`-t` 截断、cue 栅格化上界、
-/// 波形时间窗必须同取这一个值，否则两侧栅格长度不一致、波形窗口与实际音频错位。
+/// **纯函数**：按音源种类给出**自动对轴**的探测时间上界。自动对轴的抽音、`-t` 截断与
+/// cue 栅格化上界必须同取这一个值，否则两侧栅格长度不一致、互相关错位。人工波形视图
+/// 不用它（时间窗 = 片长，按段抽，段内相位约束见 `subtitle_waveform_segments.dart`）。
 int subtitleAlignProbeLimitMs({required bool fromStream}) => fromStream
     ? kStreamSubtitleAlignProbeLimitMs
     : kSubtitleAutoAlignProbeLimitMs;
@@ -81,6 +86,10 @@ const int _kEnvelopeOutputFrameSeconds = 6;
 ///   （BUG-345 同范式）拦截：[audioStreamIndex] >= [audioStreamCount] 时不加 `-map` 回退默认
 ///   轨——外挂音轨场景 mpv 轨序号未必 = ffmpeg `0:a:N`，越界会让 ffmpeg `Stream map matches
 ///   no streams` 硬失败→空包络→上层 noData 安全降级（不误移），故宁可回退默认轨。
+/// - `-ss <startSeconds>`（可选，输入选项）：从 [startMs] 起抽（波形视图分段懒抽，见
+///   `subtitle_waveform_segments.dart`）。置于 `-i` 之前 = 输入端 seek，ffmpeg 转码时
+///   精确 seek（`-accurate_seek` 默认开）、丢掉起点前解出的样本，逐帧窗口从 [startMs]
+///   起算；与 `-t` 同为输入选项时 `-t` 量的是从 seek 点起的时长。<=0 不加。
 /// - `-t <limitSeconds>`（可选）：只抽前 [limitSeconds] 秒音频（大文件性能截断，与字幕
 ///   cue 栅格化上界同步，见 [kSubtitleAutoAlignProbeLimitMs]）。**必须是输入选项**（置于
 ///   `-i` **之前**）：作输出选项时它只在输出端按帧截断，而末尾的大帧
@@ -111,6 +120,7 @@ List<String> buildFfmpegPcmEnvelopeArgs({
   int? audioStreamIndex,
   int? audioStreamCount,
   int? limitSeconds,
+  int startMs = 0,
   String? metadataFilePath,
 }) {
   final int win = windowMs <= 0 ? kAudioEnergyWindowMs : windowMs;
@@ -123,6 +133,10 @@ List<String> buildFfmpegPcmEnvelopeArgs({
     audioStreamCount: audioStreamCount,
   );
   final List<String> args = <String>['-hide_banner', '-nostats'];
+  // 分段起点：输入端精确 seek（与制卡裁剪同一写法，秒、三位小数）。
+  if (startMs > 0) {
+    args.addAll(<String>['-ss', (startMs / 1000).toStringAsFixed(3)]);
+  }
   // 性能截断：只读前 limitSeconds 秒。必须是输入选项（-i 之前），作输出选项会被末尾
   // 大帧 asetnsamples 拖过上界、包络比时间窗长，见上方文档。
   if (limitSeconds != null && limitSeconds > 0) {
@@ -238,6 +252,9 @@ Duration audioEnergyProbeTimeoutForBytes(int sizeBytes) {
 
 /// 抽取 [videoPath] 的逐帧音频 RMS 能量包络（经 [FfmpegBackend]）。
 ///
+/// [startMs] > 0 时从该时刻起抽（输入端 `-ss`），[limitMs] 量的是从 [startMs] 起的时长
+/// ——波形视图按段懒抽就是 `startMs = 段起点, limitMs = 段长`。
+///
 /// 超时复用 [subtitleExtractTimeoutForBytes]（按容器字节数放大，BUG-104 同范式）。
 /// 逐帧行经 `ametadata` 的 `file=` 写进 [Directory.systemTemp] 下的临时文件（五端都可写：
 /// 桌面是系统临时目录，Android / iOS 是 app 缓存目录），读完即删；文件没有逐帧行时回退
@@ -249,6 +266,7 @@ Future<List<double>> extractAudioEnergyEnvelope({
   int? audioStreamIndex,
   int? audioStreamCount,
   int? limitMs = kSubtitleAutoAlignProbeLimitMs,
+  int startMs = 0,
 }) async {
   // 没有本机媒体字节的路径（网络流 / `.strm` / DVD title）不碰文件系统，与
   // video_member_file.dart 的 hasLocalMediaFile 同一判据；其余一次 async stat 拿
@@ -280,6 +298,7 @@ Future<List<double>> extractAudioEnergyEnvelope({
         audioStreamIndex: audioStreamIndex,
         audioStreamCount: audioStreamCount,
         limitSeconds: limitSeconds,
+        startMs: startMs,
         metadataFilePath: metadataFile.path,
       ),
       timeout,
@@ -291,9 +310,11 @@ Future<List<double>> extractAudioEnergyEnvelope({
       );
       return const <double>[];
     }
-    List<double> envelope = metadataFile.existsSync()
+    // 异步读回逐帧文件：不在 UI isolate 上同步阻塞磁盘 IO（解析在 Rust，一段 2 分钟
+    // 约 6000 行，亚毫秒级）。
+    List<double> envelope = await metadataFile.exists()
         ? parseAudioRmsEnvelopeFromFfmpegLogBytes(
-            metadataFile.readAsBytesSync(),
+            await metadataFile.readAsBytes(),
           )
         : const <double>[];
     if (envelope.isEmpty) {

@@ -1,18 +1,15 @@
 /// 漫画朗读的「一页读什么、按什么顺序读」：纯函数，不碰播放器 / WebView。
 ///
-/// 一句 = overlay 的一个句子分组（[mangaBlockSentenceGroups]，跨块的一句只读一次，
-/// 组号原样用于高亮）。组间先后取组内**正文块**在 [computeReadingOrder] 里的最小
-/// 名次；注音（振假名）块既不进朗读文本，也不参与排序——它们很小，会被聚进面板，
-/// 干扰面板聚类。
+/// 一句 = overlay 的一个句子分组，跨块的一句只读一次，组号原样用于高亮。句子与
+/// 先后顺序取 [mangaPageSentencesInReadingOrder]（与「复制本页文本」同一份排序；
+/// 注音块不进朗读文本、不参与排序）。
 library;
 
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
-import 'package:fushi_engine/ocr/ocr_types.dart';
-import 'package:fushi_engine/ocr/reading_order.dart';
 import 'package:fushi_engine/tts/tts_pronunciation.dart';
 import 'package:fushi_engine/tts/tts_text_split.dart';
 
-import 'package:fushi/src/media/manga/manga_overlay_html.dart';
+import 'package:fushi/src/media/manga/reader/manga_page_sentences.dart';
 
 /// 一页里要读的一句。
 class MangaReadAloudUtterance {
@@ -51,43 +48,15 @@ List<MangaReadAloudUtterance> planMangaPageReadAloud(
   required List<TtsPronunciationRule> pronunciation,
   required int maxInputLength,
 }) {
-  final List<MangaBlockSentence> groups = mangaBlockSentenceGroups(page);
-  if (groups.isEmpty) return const <MangaReadAloudUtterance>[];
-
-  // 只拿正文块排序。
-  final List<int> bodyBlocks = <int>[
-    for (int i = 0; i < groups.length; i++)
-      if (!groups[i].ruby) i,
-  ];
-  final List<OcrRect> rects = <OcrRect>[
-    for (final int i in bodyBlocks) _ocrRect(page.blocks[i].rectangle),
-  ];
-  final List<int> order = computeReadingOrder(rects, rightToLeft: rightToLeft);
-  final Map<int, int> rankOfBlock = <int, int>{
-    for (int rank = 0; rank < order.length; rank++)
-      bodyBlocks[order[rank]]: rank,
-  };
-
-  // 组 → 组内正文块的最小名次 + 整句文本。
-  final Map<int, int> groupRank = <int, int>{};
-  final Map<int, String> groupText = <int, String>{};
-  for (int i = 0; i < groups.length; i++) {
-    final int? rank = rankOfBlock[i];
-    if (rank == null) continue;
-    final int group = groups[i].group;
-    groupText[group] = groups[i].sentence;
-    final int? best = groupRank[group];
-    if (best == null || rank < best) groupRank[group] = rank;
-  }
-  final List<int> orderedGroups = groupRank.keys.toList()
-    ..sort((int a, int b) {
-      final int byRank = groupRank[a]!.compareTo(groupRank[b]!);
-      return byRank != 0 ? byRank : a.compareTo(b);
-    });
+  final List<MangaPageSentence> sentences = mangaPageSentencesInReadingOrder(
+    page,
+    rightToLeft: rightToLeft,
+  );
 
   final List<MangaReadAloudUtterance> out = <MangaReadAloudUtterance>[];
-  for (final int group in orderedGroups) {
-    final String text = groupText[group]!.trim();
+  for (final MangaPageSentence sentence in sentences) {
+    final int group = sentence.group;
+    final String text = sentence.sentence.trim();
     if (!_speakable.hasMatch(text)) continue;
     final List<String> chunks = splitTtsTextForInputLimit(
       applyTtsPronunciation(text, pronunciation),
@@ -105,6 +74,3 @@ List<MangaReadAloudUtterance> planMangaPageReadAloud(
   }
   return out;
 }
-
-OcrRect _ocrRect(MokuroRect r) =>
-    OcrRect(left: r.left, top: r.top, right: r.right, bottom: r.bottom);

@@ -305,6 +305,36 @@ void main() {
       ], reason: '书架远端列表按 hasContent 过滤，「继续」不过滤会产生点了就消失的死路卡');
     });
 
+    test('反馈 Jq1_ujHa4t: host 在读的 PDF（hasPdfContent）进「继续」', () {
+      final List<RemoteContinueCandidate> out = remoteContinueCandidates(
+        localBookKeys: const <String>{},
+        localVideoUids: const <String>{},
+        remoteBooks: <RemoteBookInfo>[
+          const RemoteBookInfo(
+            title: 'pdf-in-progress',
+            hasContent: false,
+            hasPdfContent: true,
+            format: 'pdf',
+            bookKey: 'pdf-in-progress',
+            progressPercent: 42,
+            progressUpdatedAtMs: 5,
+          ),
+          const RemoteBookInfo(
+            title: 'pdf-file-missing',
+            hasContent: false,
+            format: 'pdf',
+            bookKey: 'pdf-file-missing',
+            progressPercent: 30,
+            progressUpdatedAtMs: 4,
+          ),
+        ],
+        remoteVideos: const <RemoteVideoInfo>[],
+      );
+      expect(out.map((RemoteContinueCandidate c) => c.id), <String>[
+        'pdf-in-progress',
+      ], reason: 'PDF 原件可下载 → 书架有它的占位卡，「继续」同判据；原件缺失的仍不出卡');
+    });
+
     test('remoteContinueCandidates：候选携带 MediaKind，SRT 书不被抹成 epub', () {
       final List<RemoteContinueCandidate> out = remoteContinueCandidates(
         localBookKeys: const <String>{},

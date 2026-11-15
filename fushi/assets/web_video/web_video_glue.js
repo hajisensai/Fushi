@@ -460,12 +460,13 @@
 
   // seek 完成回执 → Dart（[WebVideoPlatformPlayer] 据此结束「跳转在途」）。Netflix 由 netflix-bridge
   // 轮询播放器时间收敛后回（超时回 ok:false）；其它站点由 <video> 的 seeked 事件回。id 原样回显。
-  function postSeekDone(ok, err, id) {
-    post({ type: 'seekDone', ok: !!ok, err: String(err || ''), id: id == null ? null : Number(id) });
+  // diag = netflix-bridge 的页面侧诊断快照（BUG-4186，Dart 限流写日志）；<video> 直改的站点没有。
+  function postSeekDone(ok, err, id, diag) {
+    post({ type: 'seekDone', ok: !!ok, err: String(err || ''), id: id == null ? null : Number(id), diag: String(diag || '') });
   }
   window.addEventListener('message', function (e) {
     if (e.source !== window || !e.data || e.data.__fushiNf !== 'seekDone') return;
-    postSeekDone(e.data.ok, e.data.err, e.data.id);
+    postSeekDone(e.data.ok, e.data.err, e.data.id, e.data.diag);
   });
 
   // document-start 时 <head> / <html> 可能都还没有：等根元素出现再挂（一次性观察）。

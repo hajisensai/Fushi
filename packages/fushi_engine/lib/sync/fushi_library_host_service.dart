@@ -67,6 +67,17 @@ const String kSubtitleSuffixHeader = 'X-Fushi-Subtitle-Suffix';
 /// `PUT /api/library/videos/<id>/subtitle` 带 `1` = 设为这一集的默认字幕（BUG-2728）。
 const String kSubtitleDefaultHeader = 'X-Fushi-Subtitle-Default';
 
+/// `GET /api/library/videos/<id>/subtitle?sidecar=<文件名>`：按文件名下载这一集的
+/// 某一条外挂字幕（[RemoteVideoSidecarSubtitle.fileName]，反馈 -CaVsioFhG）。host 只
+/// 在它自己枚举出的 sidecar 里按 basename **精确**匹配，绝不把参数拼成路径。老 host
+/// 不认这个参数、会回默认字幕——所以 client 只对 `/streamurl` 下发了
+/// `sidecarSubtitles` 的 host 发它。
+const String kVideoSidecarSubtitleQueryParam = 'sidecar';
+
+/// `/api/host/info` 的能力位：host 会在 `/streamurl` 列出这一集的全部外挂字幕、
+/// 并接受 [kVideoSidecarSubtitleQueryParam]（[VideoSidecarSubtitleListHost]）。
+const String kVideoSidecarSubtitlesCapability = 'videoSidecarSubtitles';
+
 // ── 改名前的旧 header 名（Hibiki → Fushi，2026-10）─────────────────────────────
 //
 // 互联两端可能跑不同版本：改名前的 client / host 只认 `X-Hibiki-*`。旧名照样**发**
@@ -192,6 +203,7 @@ class RemoteAudiobookInfo {
     this.delayUpdatedAtMs = 0,
     this.importedAt,
     this.hasAudio,
+    this.contentRevision,
   });
 
   final String bookKey;
@@ -228,6 +240,13 @@ class RemoteAudiobookInfo {
   /// null = 旧 host 不下发此字段，**未知**（消费方必须按旧行为放行，不能当 false）。
   final bool? hasAudio;
 
+  /// host 上这本有声书的**内容版本**（`audiobookContentState`）：音频或字幕一换就变，
+  /// 断点 / 调轴 / 标题变了不变。不透明字符串，只比相等。
+  ///
+  /// client 在下载时记下它，之后清单里的值不同 = host 上内容换过，提示可以重新下载。
+  /// null = 旧 host 不下发（未知，消费方不得据此提示更新）。
+  final String? contentRevision;
+
   /// 传输/URL 身份键：srt-backed=bookKey；纯 SRT（bookKey 空）=uid。
   String get identity => bookKey.isNotEmpty ? bookKey : (uid ?? '');
 
@@ -244,6 +263,7 @@ class RemoteAudiobookInfo {
     if (delayUpdatedAtMs > 0) 'delayUpdatedAtMs': delayUpdatedAtMs,
     if (importedAt != null) 'importedAt': importedAt,
     if (hasAudio != null) 'hasAudio': hasAudio,
+    if (contentRevision != null) 'contentRevision': contentRevision,
   };
 
   static RemoteAudiobookInfo fromJson(Map<String, Object?> json) =>
@@ -261,6 +281,11 @@ class RemoteAudiobookInfo {
         importedAt: (json['importedAt'] as num?)?.toInt(),
         // 缺键 / 非 bool → null（未知），**不是** false：旧 host 的清单一律放行。
         hasAudio: json['hasAudio'] is bool ? json['hasAudio']! as bool : null,
+        contentRevision:
+            (json['contentRevision'] is String &&
+                (json['contentRevision']! as String).isNotEmpty)
+            ? json['contentRevision']! as String
+            : null,
       );
 }
 
@@ -289,6 +314,15 @@ abstract interface class AudiobookSubtitleHost {
   Future<File> exportAudiobookSubtitles(String identity);
 }
 
+/// host 端「有声书内容版本」的**可选**能力（与 [AudiobookDelayHost] 同范式，不并进
+/// 主接口）。包端点拿它给导出缓存定版本：缓存的包只在版本相同时命中，内容换过的书
+/// 下一次普通下载就重新打包。host 不实现 → 缓存只按 TTL 换代（旧行为）。
+abstract interface class AudiobookContentRevisionHost {
+  /// 身份键为 [identity] 的有声书此刻的内容版本（与清单的
+  /// [RemoteAudiobookInfo.contentRevision] 同值）；查无此书返回 null。
+  Future<String?> audiobookContentRevision(String identity);
+}
+
 /// host 端「client 导入的字幕设为该视频默认字幕」的**可选**能力（远端视频导入 /
 /// 重定时字幕自动上传）。与 [AudiobookDelayHost] 同范式：不并进主接口，免得十余个
 /// 测试 fake 全量补桩；server 用 `is` 探测，实现了才在 `/api/capabilities` 声明
@@ -309,6 +343,27 @@ abstract interface class VideoSubtitleDefaultHost {
     File subtitleFile, {
     required String id,
     required String format,
+  });
+}
+
+/// host 端「列出某一集**全部**外挂字幕」的**可选**能力（反馈 -CaVsioFhG；与
+/// [VideoSubtitleDefaultHost] 同范式，不扩大主接口）。
+///
+/// 此前协议只有单值 `subtitleFileName` / `subtitleUrl`：host 在视频旁放了日 / 中 /
+/// 英多条字幕，client 只看得到 [FushiLibraryHostService.resolveVideoSubtitle] 挑中的
+/// 那一条。实现了本接口的 host 在 `/streamurl` 额外下发 `sidecarSubtitles`，并接受
+/// `GET .../subtitle?sidecar=<文件名>` 按名下载其中任意一条。不实现 → 不下发列表、
+/// `?sidecar=` 落 404，client 退回只有默认那条的旧行为。
+abstract interface class VideoSidecarSubtitleListHost {
+  /// 视频 [id] 第 [episodeIndex] 集**同目录**的全部 sidecar 字幕文件（判据同
+  /// `listSidecarSubtitles`：`<视频 stem>[.lang].srt|ass|ssa|vtt`），只含真实存在的
+  /// 普通文件，按文件名排序。未知视频 / 网络流 / 目录读不了时返回空表。
+  ///
+  /// 不必包含 host 用户另行选定、住在别处的默认字幕——服务端会把
+  /// [FushiLibraryHostService.resolveVideoSubtitle] 的结果并进列表并标默认。
+  Future<List<File>> listVideoSidecarSubtitles(
+    String id, {
+    int episodeIndex = 0,
   });
 }
 
@@ -665,6 +720,7 @@ class RemoteBookInfo {
     this.format = 'epub',
     this.hasMangaContent = false,
     this.hasMangaChapters = false,
+    this.hasPdfContent = false,
     this.mangaReadingMode,
     this.mangaReaderOverrides = const <String, Object?>{},
     this.mangaReaderOverrideUpdatedAt = 0,
@@ -690,6 +746,18 @@ class RemoteBookInfo {
   /// 识就当 false（行为与从前一致），新 client 据此把它当多章在线作品加进本机书架，
   /// 章节表走 `/api/library/manga/<bookKey>/manifest` 的 `chapters`。
   final bool hasMangaChapters;
+
+  /// PDF 原件可下载（format=='pdf' 且 host 书目录里的 PDF 文件在盘上，判据
+  /// `hasExportablePdfContent`，见 pdf_sync_package.dart；反馈 Jq1_ujHa4t）。与 [hasContent] **分键**的理由同
+  /// [hasMangaContent]：旧 client 只认 hasContent、会拿 EpubImporter 吃下载到的
+  /// 字节，所以 PDF 对它保持 false（看不到即不出错）；新 client 据此在书架渲染远端
+  /// 占位卡，走同一 books 端点下载 PDF 原件、按内容嗅探交 PDF 导入器落库。
+  /// additive 键 `hasPdfContent`：旧 host 不发 → false（行为与从前一致）。
+  final bool hasPdfContent;
+
+  /// 书架（非漫画架）上能以占位卡出现并下载落地的书：EPUB 内容树或 PDF 原件。
+  /// 书架远端列表、首页「继续」、同步对比弹窗共用这一条判据（一处漏判 = 死路卡）。
+  bool get hasBookShelfContent => hasContent || hasPdfContent;
 
   /// host 端该漫画的按本阅读模式（`EpubBooks.mangaReadingMode`；null = 跟随自动
   /// 判定）。additive；下载落地时作为初始值带过来（无持续 LWW——列无时间戳，
@@ -815,6 +883,7 @@ class RemoteBookInfo {
     if (format != 'epub') 'format': format,
     if (hasMangaContent) 'hasMangaContent': true,
     if (hasMangaChapters) 'hasMangaChapters': true,
+    if (hasPdfContent) 'hasPdfContent': true,
     if (_isNonEmpty(mangaReadingMode)) 'mangaReadingMode': mangaReadingMode,
     if (mangaReaderOverrides.isNotEmpty || mangaReaderOverrideDeleted)
       'mangaReaderOverrides': mangaReaderOverrides,
@@ -843,6 +912,7 @@ class RemoteBookInfo {
     String? format,
     bool? hasMangaContent,
     bool? hasMangaChapters,
+    bool? hasPdfContent,
     String? mangaReadingMode,
     Map<String, Object?>? mangaReaderOverrides,
     int? mangaReaderOverrideUpdatedAt,
@@ -869,6 +939,7 @@ class RemoteBookInfo {
     format: format ?? this.format,
     hasMangaContent: hasMangaContent ?? this.hasMangaContent,
     hasMangaChapters: hasMangaChapters ?? this.hasMangaChapters,
+    hasPdfContent: hasPdfContent ?? this.hasPdfContent,
     mangaReadingMode: mangaReadingMode ?? this.mangaReadingMode,
     mangaReaderOverrides: mangaReaderOverrides ?? this.mangaReaderOverrides,
     mangaReaderOverrideUpdatedAt:
@@ -914,6 +985,7 @@ class RemoteBookInfo {
       format: _jsonString(json['format']) ?? 'epub',
       hasMangaContent: json['hasMangaContent'] == true,
       hasMangaChapters: json['hasMangaChapters'] == true,
+      hasPdfContent: json['hasPdfContent'] == true,
       mangaReadingMode: _jsonString(json['mangaReadingMode']),
       mangaReaderOverrides: _jsonObjectMap(json['mangaReaderOverrides']),
       mangaReaderOverrideUpdatedAt: _jsonNonNegativeInt(
@@ -2091,6 +2163,333 @@ int capFutureSyncStamp(int atMs, {required int nowMs}) {
 int trustedStoredSyncStamp(int storedAtMs, {required int nowMs}) =>
     storedAtMs > nowMs + kSyncFutureStampToleranceMs ? 0 : storedAtMs;
 
+/// 书进度的「可信戳」视图：只把 [RemoteBookProgress.updatedAtMs] 换成
+/// [trustedStoredSyncStamp]（超限毒戳按 0），其余字段原样。戳本来可信时原样返回
+/// 同一个对象。比较前用它，书籍通道才与视频 / 有声书同样能自愈毒戳（BUG-3367 的
+/// 书籍版）。纯函数。
+RemoteBookProgress withTrustedStoredStamp(
+  RemoteBookProgress p, {
+  required int nowMs,
+}) {
+  final int trusted = trustedStoredSyncStamp(p.updatedAtMs, nowMs: nowMs);
+  if (trusted == p.updatedAtMs) return p;
+  return RemoteBookProgress(
+    sectionIndex: p.sectionIndex,
+    normCharOffset: p.normCharOffset,
+    charOffset: p.charOffset,
+    updatedAtMs: trusted,
+  );
+}
+
+/// 书进度的上报戳截到 `nowMs + kSyncFutureStampToleranceMs`（[capFutureSyncStamp]），
+/// 其余字段原样；未超限时原样返回同一个对象。纯函数。
+RemoteBookProgress withCappedStamp(RemoteBookProgress p, {required int nowMs}) {
+  final int capped = capFutureSyncStamp(p.updatedAtMs, nowMs: nowMs);
+  if (capped == p.updatedAtMs) return p;
+  return RemoteBookProgress(
+    sectionIndex: p.sectionIndex,
+    normCharOffset: p.normCharOffset,
+    charOffset: p.charOffset,
+    updatedAtMs: capped,
+  );
+}
+
+/// 互联 live 写入（书进度 / 视频位置 / 有声书位置 `PUT`）的结果（BUG-4431）。
+/// wire 值即枚举名。
+enum LiveWriteResult {
+  /// host 已按上报值落库。
+  applied,
+
+  /// 上报值与 host 已存值相同，没有可写的（host 值即为两端一致的值）。
+  unchanged,
+
+  /// 无前置条件的旧口径 LWW 下，上报值被 host 已存的较新值胜过，未写。
+  stale,
+
+  /// host 没有该条目（书 / 有声书不在库），未写。
+  missing,
+
+  /// 上报带的前置条件与 host 此刻的值不符（判定后对端又改过），未写；端点回 409。
+  preconditionFailed,
+}
+
+/// 新 host 在 live 位置端点（三个位置 `GET` / `PUT` 与批量书进度 `GET`）的响应上
+/// 宣告新写入契约的头（BUG-4431）。值恒为 `1`；旧 host 不发此头，client 据此走兼容层。
+const String kLiveWriteHeader = 'X-Fushi-Live-Write';
+
+/// 视频 / 有声书位置 `PUT` 请求体里的可选前置条件键：host 当前位置必须是其中之一。
+const String kLiveExpectedPositionsKey = 'expectedPositionsMs';
+
+/// 书进度 `PUT` 请求体里的可选前置条件键：`[{sectionIndex, normCharOffset}, ...]`。
+const String kLiveExpectedBookProgressKey = 'expected';
+
+LiveWriteResult? _liveWriteResultOf(Object? raw) {
+  if (raw is! String) return null;
+  for (final LiveWriteResult r in LiveWriteResult.values) {
+    if (r.name == raw) return r;
+  }
+  return null;
+}
+
+/// 视频 / 有声书位置 live 写入的回执：结果 + host 写后的当前值（BUG-4431）。
+class LivePositionWriteOutcome {
+  const LivePositionWriteOutcome({
+    required this.result,
+    required this.positionMs,
+    required this.updatedAtMs,
+  });
+
+  final LiveWriteResult result;
+  final int positionMs;
+  final int updatedAtMs;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'result': result.name,
+    'positionMs': positionMs,
+    'positionUpdatedAtMs': updatedAtMs,
+  };
+
+  /// 解析失败（非 Map、缺字段、`result` 未知）返回 null，不抛；调用方按「未确认」处理。
+  static LivePositionWriteOutcome? tryParse(Object? json) {
+    if (json is! Map) return null;
+    final LiveWriteResult? result = _liveWriteResultOf(json['result']);
+    final Object? pos = json['positionMs'];
+    final Object? at = json['positionUpdatedAtMs'];
+    if (result == null || pos is! num || at is! num) return null;
+    return LivePositionWriteOutcome(
+      result: result,
+      positionMs: pos.toInt(),
+      updatedAtMs: at.toInt(),
+    );
+  }
+}
+
+/// 书进度 live 写入的回执：结果 + host 写后的当前进度（BUG-4431）。
+class LiveBookProgressWriteOutcome {
+  const LiveBookProgressWriteOutcome({
+    required this.result,
+    required this.current,
+  });
+
+  final LiveWriteResult result;
+  final RemoteBookProgress current;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'result': result.name,
+    'progress': current.toJson(),
+  };
+
+  /// 解析失败（非 Map、缺 `progress`、`result` 未知）返回 null，不抛。
+  static LiveBookProgressWriteOutcome? tryParse(Object? json) {
+    if (json is! Map) return null;
+    final LiveWriteResult? result = _liveWriteResultOf(json['result']);
+    final Object? progress = json['progress'];
+    if (result == null || progress is! Map) return null;
+    return LiveBookProgressWriteOutcome(
+      result: result,
+      current: RemoteBookProgress.fromJson(progress.cast<String, Object?>()),
+    );
+  }
+}
+
+/// 可选 host 能力：带结果回执与前置条件的 live 写入（BUG-4431）。与
+/// [MangaLibraryHost] 同范式，server 用 `is` 协商；没实现的 host 端点照旧回 200 空体、
+/// 不发 [kLiveWriteHeader]。
+abstract interface class LivePositionWriteHost {
+  /// [expectedPositionsMs] 非 null 时是前置条件：host 当前位置不在其中 →
+  /// [LiveWriteResult.preconditionFailed]，不写。判定口径见 [resolveLivePositionWrite]。
+  Future<LivePositionWriteOutcome> putVideoPositionChecked(
+    String id,
+    int positionMs,
+    int updatedAtMs, {
+    int episodeIndex = 0,
+    List<int>? expectedPositionsMs,
+  });
+
+  /// 有声书版；host 无该有声书 → [LiveWriteResult.missing]。
+  Future<LivePositionWriteOutcome> putAudiobookPositionChecked(
+    String identity,
+    int positionMs,
+    int updatedAtMs, {
+    List<int>? expectedPositionsMs,
+  });
+
+  /// 书进度版；host 无该书 → [LiveWriteResult.missing]。判定口径见
+  /// [resolveLiveBookProgressWrite]。
+  Future<LiveBookProgressWriteOutcome> putBookProgressChecked(
+    String bookKey,
+    RemoteBookProgress progress, {
+    List<BookProgressBaseline>? expected,
+  });
+}
+
+/// 解析位置 `PUT` 请求体的 [kLiveExpectedPositionsKey]：缺省 / null → null（不设
+/// 前置条件）；不是全为整数的数组 → 抛 [FormatException]（端点回 400）。
+List<int>? parseLiveExpectedPositionsMs(Object? raw) {
+  if (raw == null) return null;
+  if (raw is! List) {
+    throw const FormatException('expectedPositionsMs must be an int array');
+  }
+  return <int>[
+    for (final Object? e in raw)
+      if (e is int)
+        e
+      else
+        throw const FormatException('expectedPositionsMs must be an int array'),
+  ];
+}
+
+/// 解析书进度 `PUT` 请求体的 [kLiveExpectedBookProgressKey]：缺省 / null → null；
+/// 元素不是带整数 `sectionIndex` 与 `normCharOffset` 的对象 → 抛 [FormatException]。
+List<BookProgressBaseline>? parseLiveExpectedBookProgress(Object? raw) {
+  if (raw == null) return null;
+  const FormatException bad = FormatException(
+    'expected must be an array of {sectionIndex, normCharOffset}',
+  );
+  if (raw is! List) throw bad;
+  return <BookProgressBaseline>[
+    for (final Object? e in raw)
+      if (e is Map && e['sectionIndex'] is int && e['normCharOffset'] is int)
+        BookProgressBaseline(
+          sectionIndex: e['sectionIndex'] as int,
+          normCharOffset: e['normCharOffset'] as int,
+        )
+      else
+        throw bad,
+  ];
+}
+
+/// host 位置写入（视频 / 有声书 `PUT`）的唯一判定口径（BUG-4431）。纯函数。
+///
+/// - 上报位置 clamp 0，上报戳截到 `now + 余量`；已存超限毒戳按 0 比较。
+/// - [expectedPositionsMs] 非 null（新 client 带前置条件）：host 当前位置不在其中 →
+///   [LiveWriteResult.preconditionFailed]；命中时**不按戳拒收**（写入方已核对过 host
+///   此刻的值，时钟偏慢的设备也不该被拒），落库戳取 `max(上报戳, 已存可信戳 + 1)`，
+///   保证 host 戳单调前进；同位置且已存戳可信、上报戳不新 → [LiveWriteResult.unchanged]。
+///   已存毒戳一定被改写成可信戳。
+/// - null（旧 client）：沿用 [resolvePositionLww]；胜者是 host 已存值时按上报位置是否
+///   相同回 [LiveWriteResult.unchanged] / [LiveWriteResult.stale]，否则
+///   [LiveWriteResult.applied]。
+///
+/// 返回的 `next` 是 host 写后应处的值（未写时即 [current]）。
+({LiveWriteResult result, ({int positionMs, int updatedAtMs}) next})
+resolveLivePositionWrite({
+  required ({int positionMs, int updatedAtMs}) current,
+  required int positionMs,
+  required int updatedAtMs,
+  required List<int>? expectedPositionsMs,
+  required int nowMs,
+}) {
+  final int inPos = positionMs < 0 ? 0 : positionMs;
+  final int inTs = capFutureSyncStamp(updatedAtMs, nowMs: nowMs);
+  final int curTs = trustedStoredSyncStamp(current.updatedAtMs, nowMs: nowMs);
+  final bool stampTrusted = curTs == current.updatedAtMs;
+  if (expectedPositionsMs != null) {
+    if (!expectedPositionsMs.contains(current.positionMs)) {
+      return (result: LiveWriteResult.preconditionFailed, next: current);
+    }
+    if (inPos == current.positionMs &&
+        stampTrusted &&
+        inTs <= current.updatedAtMs) {
+      return (result: LiveWriteResult.unchanged, next: current);
+    }
+    return (
+      result: LiveWriteResult.applied,
+      next: (
+        positionMs: inPos,
+        updatedAtMs: capFutureSyncStamp(
+          inTs > curTs ? inTs : curTs + 1,
+          nowMs: nowMs,
+        ),
+      ),
+    );
+  }
+  final ({int positionMs, int updatedAtMs}) winner = resolvePositionLww(
+    localPositionMs: current.positionMs,
+    localUpdatedAtMs: curTs,
+    remotePositionMs: inPos,
+    remoteUpdatedAtMs: inTs,
+  );
+  if (winner.positionMs == current.positionMs && winner.updatedAtMs == curTs) {
+    return (
+      result: inPos == current.positionMs
+          ? LiveWriteResult.unchanged
+          : LiveWriteResult.stale,
+      next: current,
+    );
+  }
+  return (result: LiveWriteResult.applied, next: winner);
+}
+
+/// host 书进度写入（`PUT /api/library/books/<bookKey>/progress`）的唯一判定口径
+/// （BUG-4431）。纯函数；书不在库的 [LiveWriteResult.missing] 由调用方判。
+///
+/// 与 [resolveLivePositionWrite] 同构：前置条件用 [BookProgressBaseline.matches]；
+/// 命中时 [LiveWriteResult.unchanged] 要求 section / normCharOffset / **charOffset**
+/// 三者都相同且已存戳可信、上报戳不新——同位置只差 charOffset 时照样写，host 才拿得到
+/// 精确锚点。无前置条件时沿用 [resolveBookProgressSync]（可信戳视图 vs 截戳上报）。
+({LiveWriteResult result, RemoteBookProgress next})
+resolveLiveBookProgressWrite({
+  required RemoteBookProgress current,
+  required RemoteBookProgress incoming,
+  required List<BookProgressBaseline>? expected,
+  required int nowMs,
+}) {
+  final RemoteBookProgress inP = RemoteBookProgress(
+    sectionIndex: incoming.sectionIndex < 0 ? 0 : incoming.sectionIndex,
+    normCharOffset: incoming.normCharOffset < 0 ? 0 : incoming.normCharOffset,
+    charOffset: incoming.charOffset,
+    updatedAtMs: capFutureSyncStamp(incoming.updatedAtMs, nowMs: nowMs),
+  );
+  final int curTs = trustedStoredSyncStamp(current.updatedAtMs, nowMs: nowMs);
+  final bool stampTrusted = curTs == current.updatedAtMs;
+  if (expected != null) {
+    if (!expected.any((BookProgressBaseline b) => b.matches(current))) {
+      return (result: LiveWriteResult.preconditionFailed, next: current);
+    }
+    if (sameBookPosition(inP, current) &&
+        inP.charOffset == current.charOffset &&
+        stampTrusted &&
+        inP.updatedAtMs <= current.updatedAtMs) {
+      return (result: LiveWriteResult.unchanged, next: current);
+    }
+    return (
+      result: LiveWriteResult.applied,
+      next: RemoteBookProgress(
+        sectionIndex: inP.sectionIndex,
+        normCharOffset: inP.normCharOffset,
+        charOffset: inP.charOffset,
+        updatedAtMs: capFutureSyncStamp(
+          inP.updatedAtMs > curTs ? inP.updatedAtMs : curTs + 1,
+          nowMs: nowMs,
+        ),
+      ),
+    );
+  }
+  final RemoteBookProgress trustedCurrent = withTrustedStoredStamp(
+    current,
+    nowMs: nowMs,
+  );
+  final RemoteBookProgress winner = resolveBookProgressSync(
+    local: trustedCurrent,
+    remote: inP,
+  );
+  // 胜者是 host 已存那份（可信戳视图）就不写：不能把毒戳视图的 0 戳写回库。胜者是
+  // 上报那份时仍与**原始** current 逐字段比较（含原始戳）。
+  if (identical(winner, trustedCurrent) ||
+      (sameBookPosition(winner, current) &&
+          winner.charOffset == current.charOffset &&
+          winner.updatedAtMs == current.updatedAtMs)) {
+    return (
+      result: sameBookPosition(inP, current)
+          ? LiveWriteResult.unchanged
+          : LiveWriteResult.stale,
+      next: current,
+    );
+  }
+  return (result: LiveWriteResult.applied, next: winner);
+}
+
 /// 互联播放位置（视频 / 有声书）的三方判定（BUG-3367）。纯函数。
 ///
 /// 与书籍进度 [resolveBookProgressThreeWay]（BUG-2506）同口径，只是位置是单维
@@ -2099,10 +2498,11 @@ int trustedStoredSyncStamp(int storedAtMs, {required int nowMs}) =>
 /// 是**位置基线**（上次两端达成一致的位置，`sync_baselines` 一行），不看时间戳：
 /// - 一端「无记录」（updatedAtMs<=0，含没带时间戳的旧数据）→ 另一端直接胜出；
 /// - 两端位置相同 → [BookProgressSyncAction.synced]（调用方只对齐时间戳）；
-/// - 没有基线且两端位置不同 → 退回旧口径 LWW（较新时间戳胜，平局取较远位置）一次，
-///   胜出端落地时调用方顺带记下基线，此后才走三方判定。升级前从没记过基线，若这里
-///   直接判冲突，升级后首轮会把每条「只有一端动过」的条目全弹出来；
-
+/// - 没有基线且两端位置不同 → [BookProgressSyncAction.conflict] 交用户（BUG-4435，
+///   与书籍同口径）。不比较两台设备各自的墙钟：时钟偏快的一端会静默盖掉另一端的
+///   真实进度。升级首轮不会因此批量弹冲突——存量基线由按 host 分槽的领养
+///   （`ensureBaselinesAdopted`，BUG-4434）搬到新作用域；只有从未记过基线的条目
+///   （多 host、从备份恢复的新设备、新配对的 host）首次两端不等时问一次；
 /// - 有基线：只一端偏离 → 那端胜；两端都偏离 → [BookProgressSyncAction.conflict]，
 ///   谁都不覆盖。
 ///
@@ -2128,17 +2528,7 @@ BookProgressSyncAction resolvePlaybackPositionThreeWay({
   if (local.positionMs == remote.positionMs) {
     return BookProgressSyncAction.synced;
   }
-  if (basePositionMs == null) {
-    if (local.updatedAtMs > remote.updatedAtMs) {
-      return BookProgressSyncAction.pushLocal;
-    }
-    if (remote.updatedAtMs > local.updatedAtMs) {
-      return BookProgressSyncAction.applyRemote;
-    }
-    return local.positionMs > remote.positionMs
-        ? BookProgressSyncAction.pushLocal
-        : BookProgressSyncAction.applyRemote;
-  }
+  if (basePositionMs == null) return BookProgressSyncAction.conflict;
   final bool localMoved = local.positionMs != basePositionMs;
   final bool remoteMoved = remote.positionMs != basePositionMs;
   if (localMoved && remoteMoved) return BookProgressSyncAction.conflict;
@@ -2209,6 +2599,7 @@ class RemoteVideoEmbeddedSubtitleTrack {
     this.fileName,
     this.containerTrackOrdinal,
     this.isExternalFile = false,
+    this.isDefault = false,
   });
 
   /// 服务端定位该轨用的流号：Fushi host 是 ffmpeg `-map 0:s:N` 的字幕相对序号，
@@ -2234,6 +2625,11 @@ class RemoteVideoEmbeddedSubtitleTrack {
   /// 按 [streamIndex] 去选只会选中另一条不相干的内嵌轨。
   final bool isExternalFile;
 
+  /// 服务端把这条轨标成**默认**（Jellyfin / Emby `MediaStreams[].IsDefault`，即容器
+  /// disposition default 或服务器上设的默认）。起播时 app 的字幕语言偏好没命中任何轨
+  /// 才按它自动挂（反馈 wCQIR4Pvz9，见 `pickRemoteStartupSubtitleTrack`）。
+  final bool isDefault;
+
   Map<String, Object?> toJson() => <String, Object?>{
     'streamIndex': streamIndex,
     'codec': codec,
@@ -2245,6 +2641,7 @@ class RemoteVideoEmbeddedSubtitleTrack {
     if (containerTrackOrdinal != null)
       'containerTrackOrdinal': containerTrackOrdinal,
     if (isExternalFile) 'isExternalFile': true,
+    if (isDefault) 'isDefault': true,
   };
 
   RemoteVideoEmbeddedSubtitleTrack copyWith({String? url, String? fileName}) =>
@@ -2258,6 +2655,7 @@ class RemoteVideoEmbeddedSubtitleTrack {
         fileName: fileName ?? this.fileName,
         containerTrackOrdinal: containerTrackOrdinal,
         isExternalFile: isExternalFile,
+        isDefault: isDefault,
       );
 
   static RemoteVideoEmbeddedSubtitleTrack fromJson(Map<String, Object?> json) =>
@@ -2271,8 +2669,75 @@ class RemoteVideoEmbeddedSubtitleTrack {
         fileName: _jsonString(json['fileName']),
         containerTrackOrdinal: _jsonInt(json['containerTrackOrdinal']),
         isExternalFile: json['isExternalFile'] == true,
+        isDefault: json['isDefault'] == true,
       );
 }
+
+/// host 上某一集的一条**外挂字幕文件**（`/streamurl` 的 `sidecarSubtitles[]`，
+/// 反馈 -CaVsioFhG）。
+///
+/// [fileName] 只是 basename（目录结构留在 host），同时是下载选择子：client 用
+/// `GET .../subtitle?sidecar=<fileName>` 取这一条（[kVideoSidecarSubtitleQueryParam]）。
+/// [format] 是小写扩展名（`srt` / `ass` / `ssa` / `vtt`），决定解析器。
+/// [language] 是文件名里视频 stem 与扩展名之间的标记（`ep01.ja.srt` → `ja`），没有
+/// 标记时为 null。[isDefault] = 这一条就是旧单值字段 `subtitleFileName` /
+/// `subtitleUrl` 指的那条（host 的默认字幕）。[url] 与 [RemoteVideoStreamUrls.subtitleUrl]
+/// 同口径：只说明 host 怎么定位它，client 实际按自己的 api base 拼请求。
+class RemoteVideoSidecarSubtitle {
+  const RemoteVideoSidecarSubtitle({
+    required this.fileName,
+    required this.format,
+    this.language,
+    this.sizeBytes,
+    this.isDefault = false,
+    this.url,
+  });
+
+  final String fileName;
+  final String format;
+  final String? language;
+  final int? sizeBytes;
+  final bool isDefault;
+  final String? url;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'fileName': fileName,
+    'format': format,
+    if (_isNonEmpty(language)) 'language': language,
+    if (sizeBytes != null) 'sizeBytes': sizeBytes,
+    if (isDefault) 'isDefault': true,
+    if (_isNonEmpty(url)) 'url': url,
+  };
+
+  /// 坏条目（没有文件名 / 文件名带路径分隔符 / 格式缺失）返回 null，调用方丢弃。
+  static RemoteVideoSidecarSubtitle? fromJson(Object? value) {
+    if (value is! Map) return null;
+    final String fileName = value['fileName']?.toString().trim() ?? '';
+    if (fileName.isEmpty || fileName.contains('/') || fileName.contains(r'\')) {
+      return null;
+    }
+    final String format = (value['format']?.toString() ?? '')
+        .trim()
+        .toLowerCase();
+    if (format.isEmpty) return null;
+    return RemoteVideoSidecarSubtitle(
+      fileName: fileName,
+      format: format,
+      language: _jsonString(value['language']),
+      sizeBytes: _jsonInt(value['sizeBytes']),
+      isDefault: value['isDefault'] == true,
+      url: _jsonString(value['url']),
+    );
+  }
+}
+
+/// 解析 `sidecarSubtitles` 数组（缺失 / 非数组 → 空表，坏条目丢弃）。
+List<RemoteVideoSidecarSubtitle> _jsonSidecarSubtitles(Object? value) =>
+    <RemoteVideoSidecarSubtitle>[
+      if (value case final List<Object?> items)
+        for (final Object? item in items)
+          ?RemoteVideoSidecarSubtitle.fromJson(item),
+    ];
 
 /// 远端播放列表中的一集（TODO-885）。
 ///
@@ -2495,6 +2960,48 @@ class RemoteVideoInfo {
 
   bool get hasDisplayCover =>
       hasCover || _isNonEmpty(coverUrl) || _isNonEmpty(coverPath);
+
+  /// 只换断点（[positionMs] / [positionUpdatedAtMs]）的副本，其余字段原样。
+  ///
+  /// 客户端展示远端条目时把清单快照里的 host 断点与本机库断点取较新者
+  /// （BUG-4303，见 app 侧 `withLocalRemoteVideoPositions`）用。
+  RemoteVideoInfo withPosition({
+    required int positionMs,
+    required int positionUpdatedAtMs,
+  }) => RemoteVideoInfo(
+    id: id,
+    title: title,
+    sizeBytes: sizeBytes,
+    hasSubtitle: hasSubtitle,
+    subtitleFileName: subtitleFileName,
+    embeddedSubtitleTracks: embeddedSubtitleTracks,
+    durationMs: durationMs,
+    hasCover: hasCover,
+    coverUrl: coverUrl,
+    coverPath: coverPath,
+    seriesCoverUrl: seriesCoverUrl,
+    positionMs: positionMs,
+    positionUpdatedAtMs: positionUpdatedAtMs,
+    delayMs: delayMs,
+    delayUpdatedAtMs: delayUpdatedAtMs,
+    audioTrackId: audioTrackId,
+    audioTrackUpdatedAtMs: audioTrackUpdatedAtMs,
+    secondarySubtitleSource: secondarySubtitleSource,
+    secondarySubtitleUpdatedAtMs: secondarySubtitleUpdatedAtMs,
+    secondaryDelayMs: secondaryDelayMs,
+    secondaryDelayUpdatedAtMs: secondaryDelayUpdatedAtMs,
+    completedAt: completedAt,
+    completedMarkedAtMs: completedMarkedAtMs,
+    episodes: episodes,
+    currentEpisode: currentEpisode,
+    tags: tags,
+    tagsAddedAt: tagsAddedAt,
+    tagTombstones: tagTombstones,
+    collection: collection,
+    importedAt: importedAt,
+    fileName: fileName,
+    peerPlayable: peerPlayable,
+  );
 
   Map<String, Object?> toJson() => <String, Object?>{
     'id': id,
@@ -2758,6 +3265,7 @@ class RemoteVideoStreamUrls {
     this.miningVideoUrl,
     this.miningVideoHasAudio = false,
     this.embeddedSubtitleTracks = const <RemoteVideoEmbeddedSubtitleTrack>[],
+    this.sidecarSubtitles = const <RemoteVideoSidecarSubtitle>[],
     this.streamIsOriginalContainer = true,
     this.sourceRequiresDolbyVisionReshape = false,
     this.discTitle,
@@ -2802,6 +3310,12 @@ class RemoteVideoStreamUrls {
   final bool miningVideoHasAudio;
   final List<RemoteVideoEmbeddedSubtitleTrack> embeddedSubtitleTracks;
 
+  /// 这一集 host 上的**全部**外挂字幕文件（反馈 -CaVsioFhG），默认那条
+  /// （[subtitleFileName]）标 [RemoteVideoSidecarSubtitle.isDefault]。只有实现了
+  /// [VideoSidecarSubtitleListHost] 的互联 host 会发；老 host / 其它来源恒空，client
+  /// 退回只用 [subtitleUrl] / [subtitleFileName] 这一条的旧行为。
+  final List<RemoteVideoSidecarSubtitle> sidecarSubtitles;
+
   static RemoteVideoStreamUrls fromJson(Map<String, Object?> json) {
     final String streamUrl = json['url']?.toString() ?? '';
     final String? subtitleUrl = json['subtitleUrl']?.toString();
@@ -2828,6 +3342,7 @@ class RemoteVideoStreamUrls {
       miningVideoUrl: miningVideoUrl,
       miningVideoHasAudio: miningVideoHasAudio,
       embeddedSubtitleTracks: embeddedSubtitleTracks,
+      sidecarSubtitles: _jsonSidecarSubtitles(json['sidecarSubtitles']),
       streamIsOriginalContainer: streamIsOriginalContainer,
       discTitle: BlurayRemoteTitle.fromJson(json['discTitle']),
     );
@@ -3200,6 +3715,18 @@ abstract interface class TagSyncHost {
 
   /// 把 client 上报的标签清单按 LWW 并入 host DB，返回并入后的 host 清单。
   Future<TagManifest> mergeTagManifest(TagManifest incoming);
+}
+
+/// host 端「能否收下对端推来的 PDF 书」的**可选**能力（反馈 Jq1_ujHa4t）。
+///
+/// 与 [TagSyncHost] 同范式（server 用 `is` 探测、不扩大主接口），但多一层运行时
+/// 判断：同一个 `LocalLibraryHostService` 在 app 里接了 PDF 导入器（pdfrx 量页数 /
+/// 渲染封面），在无头服务端则没有——能力位 `liveLibrary.pdfBooks` 取
+/// [acceptsPdfBooks]。client 只在它为 true 时才推 PDF，否则 PDF 留在本机，不往收不
+/// 下的 host 白传一遍再收 500。
+abstract interface class PdfBookImportHost {
+  /// 这台 host 能否把推来的 PDF 原件导入书库。
+  bool get acceptsPdfBooks;
 }
 
 /// host 端「作品图谱清单」的**可选**能力（互联作品图谱同步，`media_link_sync.dart`）。

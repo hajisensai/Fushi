@@ -985,6 +985,21 @@ PR4：复习页
 - 【修8】新卡出卡顺序是确定性的（A-5）：按 (笔记 createdAt, cardId) 升序，多台设备看到同一顺序。
   导入笔记的 createdAt 取来源笔记 id（Anki 笔记 id 就是创建毫秒时刻），同样只由来源决定。
   到期复习的顺序沿用「可提取度从低到高」（见「第一期补充」）。
+- 出卡顺序设置（反馈 fUcwKOAw0X，2026-11-07）：牌组寄存器加两个键，与 `newOrder` 一样随参数继承取所点牌组的
+  own 祖先（Rust 视图短键 `ro` / `mx`；规则只在 native/fushi_fsrs store/study.rs，Dart 只读写值）：
+  · `reviewOrder`（复习顺序）：`retrievability`（缺省 / 不认识的值：此刻 R 升序，同 R 按 id）、`dueDate`
+    （到期日）、`difficulty`（难度从高到低，无难度最后）、`intervalAscending`（间隔从短到长）、`random`。R 以外
+    都是一天内不变的静态键，同键按当天哈希 h(卡, 今天)（FNV-1a + splitmix64）断平再按 id；常驻会话按需懒建
+    有序索引、随增量重读维护。own 祖先按 RWKV 排程时整棵子树固定按 R（寄存器照存）；FSRS 根下混着 RWKV 子牌组时
+    两路各取队首再比此刻 R。
+  · `newMix`（新卡与复习）：`afterReviews`（缺省：复习之后）、`beforeReviews`（新卡先出，上限用完再出复习）、
+    `mixed`（按今天总量 Bresenham 式均匀穿插：nd / rd = 子树今天已学新卡 / 已复习卡，nr / rr = 根上剩余；
+    N = nd + nr、L = N + rd + rr、i = nd + rd，(i+1)·N ≥ (nd+1)·L 时出新卡）。到期学习卡永远最先、20 分钟内
+    到期的学习卡最后兜底；选中的一类没卡时退到另一类。
+  · 预取的「再下一张」把「下一张」那一类虚拟扣掉一张（根上剩余数与穿插进度都扣）；各层上限没有虚拟扣减。
+  · 自定义学习不受这两项影响。Anki 预设映射：`newMix` after↔1 / mixed↔0 / before↔2；`reviewOrder` 导出
+    R→7、dueDate→0、difficulty→5（开 FSRS 时 Anki 的 EASE_ASCENDING = 难度从高到低）、intervalAscending→3、
+    random→8，导入 0/1/2→dueDate、3、5、8 对应，其余不写（落缺省）。
 - 【修8】冲突提示（铁律 H）：卡片的笔记有待裁决字段时，复习页顶栏显示一个标记，点开进编辑页选择；不打断复习。
 - 【修8】出处（B-1）：卡片有出处时，提供「回到原文」（复用 collections_page.dart 的跳回逻辑）；
   视频 / 有声书出处可播放原声片段。

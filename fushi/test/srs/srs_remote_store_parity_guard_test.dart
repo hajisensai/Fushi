@@ -49,8 +49,10 @@ const List<String> _reachable = <String>[
   'lib/src/pages/implementations/srs/srs_ui.dart',
   'lib/src/srs/srs_custom_study_flow.dart',
   'lib/src/srs/srs_change_note_type.dart',
+  'lib/src/srs/srs_review_freshness.dart',
   '$_engine/srs_browse.dart',
   '$_engine/srs_browse_ops.dart',
+  '$_engine/srs_note_batch_edit.dart',
 ];
 
 String _read(String path) => File(path).readAsStringSync();

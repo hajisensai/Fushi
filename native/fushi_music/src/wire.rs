@@ -22,6 +22,9 @@
 //!   kind 2 error     := str path | str message
 //!   kind 3 cover     := str path | bytes image  （远程曲目的内嵌封面，排在该文件的曲目
 //!                       记录之前；本地曲目之后按路径现读，不走这里）
+//!   kind 4 playlist  := str path | i64 fileMtimeMs | opt_str name | u32 entryCount
+//!                       | str entry*entryCount  （本地扫描遇到的 `.m3u` / `.m3u8`，条目已解析
+//!                       成绝对路径，见 [crate::playlist]）
 //! str     := u32 byteLen | utf8 bytes
 //! opt_str := u32 byteLen（0xFFFFFFFF = null）| utf8 bytes
 //! opt_i64 := u8 present | i64（present = 0 时仍写 8 字节 0，定长便于读）
@@ -35,12 +38,13 @@
 use std::collections::HashMap;
 
 /// 批次格式版本；改字段必须同时升它与 [crate::ABI_VERSION]。
-pub const BATCH_FORMAT_VERSION: u32 = 2;
+pub const BATCH_FORMAT_VERSION: u32 = 3;
 
 pub const KIND_TRACK: u8 = 0;
 pub const KIND_UNCHANGED: u8 = 1;
 pub const KIND_ERROR: u8 = 2;
 pub const KIND_COVER: u8 = 3;
+pub const KIND_PLAYLIST: u8 = 4;
 
 /// 一首曲目（普通文件或 CUE 虚拟曲目）的扫描结果。
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -105,6 +109,12 @@ pub enum Record {
     Cover {
         path: String,
         data: Vec<u8>,
+    },
+    /// 本地扫描遇到的播放列表文件（[crate::playlist]）。
+    Playlist {
+        path: String,
+        mtime_ms: i64,
+        playlist: crate::playlist::ParsedPlaylist,
     },
 }
 
@@ -189,6 +199,16 @@ pub fn encode_batch(records: &[Record], done: bool) -> Vec<u8> {
                 w.u8(KIND_COVER);
                 w.str(path);
                 w.bytes(data);
+            }
+            Record::Playlist {
+                path,
+                mtime_ms,
+                playlist,
+            } => {
+                w.u8(KIND_PLAYLIST);
+                w.str(path);
+                w.i64(*mtime_ms);
+                crate::playlist::write_parsed(&mut w, playlist);
             }
         }
     }
@@ -349,6 +369,11 @@ pub fn decode_batch(bytes: &[u8]) -> Option<(bool, Vec<Record>)> {
             KIND_COVER => out.push(Record::Cover {
                 path: r.str()?,
                 data: r.bytes()?,
+            }),
+            KIND_PLAYLIST => out.push(Record::Playlist {
+                path: r.str()?,
+                mtime_ms: r.i64()?,
+                playlist: crate::playlist::read_parsed(&mut r)?,
             }),
             _ => return None,
         }

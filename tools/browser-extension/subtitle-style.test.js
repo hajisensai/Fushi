@@ -56,7 +56,7 @@ test('toCssVars：默认设置全 null；改过的项给出变量；底板颜色
   assert.deepEqual(Object.keys(def).sort(), [
     '--fushi-sub-align', '--fushi-sub-bg', '--fushi-sub-color', '--fushi-sub-family', '--fushi-sub-line-height',
     '--fushi-sub-padding', '--fushi-sub-radius', '--fushi-sub-scale', '--fushi-sub-shadow', '--fushi-sub-spacing',
-    '--fushi-sub-weight',
+    '--fushi-sub-stroke', '--fushi-sub-weight',
   ]);
   const v = S.toCssVars({
     fontFamily: 'serif', fontScale: 150, fontWeight: 400, letterSpacing: 10, lineHeight: 200, textAlign: 'left',
@@ -668,4 +668,37 @@ test('底板宽 / 高落到覆盖层：按视频盒折 px 写 style.width / minH
   w.storage.remove('subtitleStyle');
   assert.strictEqual(el.style.width, '', '删键回默认：宽清空、随内容');
   assert.strictEqual(el.style.minHeight, '');
+});
+
+test('描边（反馈 0wkJImhZUp，同步 app 字幕描边自定义）：默认不描边；粗细 0.5 步长夹进 [0,8]；粗细×2 + 颜色（缺省纯黑）；覆盖层与预览都把描边画在填充之下', () => {
+  const S = loadStyle();
+  assert.strictEqual(S.DEFAULTS.outlineWidth, 0);
+  assert.strictEqual(S.DEFAULTS.outlineColor, '');
+  assert.strictEqual(S.DEFAULT_OUTLINE_COLOR, '#000000');
+  assert.strictEqual(S.toCssVars(null)['--fushi-sub-stroke'], null, '默认不写变量（老用户零变化）');
+  assert.strictEqual(S.normalize({ outlineWidth: 2.3 }).outlineWidth, 2.5);
+  assert.strictEqual(S.normalize({ outlineWidth: '1.2' }).outlineWidth, 1);
+  assert.strictEqual(S.normalize({ outlineWidth: 99 }).outlineWidth, 8);
+  assert.strictEqual(S.normalize({ outlineWidth: -1 }).outlineWidth, 0);
+  assert.strictEqual(S.normalize({ outlineWidth: 'x' }).outlineWidth, 0);
+  assert.strictEqual(S.normalize({ outlineColor: 'F00' }).outlineColor, '#ff0000');
+  assert.strictEqual(S.normalize({ outlineColor: 'red' }).outlineColor, '');
+  // 可见宽 = 用户粗细：居中描边被字身盖住一半，所以 stroke 宽 ×2（app subtitleOutlineStrokeWidth 同一换算）。
+  assert.strictEqual(S.toCssVars({ outlineWidth: 2 })['--fushi-sub-stroke'], '4px #000000');
+  assert.strictEqual(S.toCssVars({ outlineWidth: 1.5, outlineColor: '#123456' })['--fushi-sub-stroke'], '3px #123456');
+  assert.strictEqual(S.isDefault({ outlineColor: '#123456' }), false);
+  for (const [file, re] of [
+    [path.join(__dirname, 'scripts', 'content-css-overlay.css'), /#fushi-subtitle-overlay \{([\s\S]*?)\n\}/],
+    [path.join(__dirname, 'options.css'), /\.subtitle-preview-cue \{([\s\S]*?)\n\}/],
+  ]) {
+    const block = re.exec(fs.readFileSync(file, 'utf8'))[1];
+    assert.match(block, /-webkit-text-stroke: var\(--fushi-sub-stroke\);/, file);
+    assert.match(block, /paint-order: stroke fill;/, file);
+    assert.match(block, /--fushi-sub-stroke: 0 transparent;/, file);
+  }
+  // 设置页：粗细滑杆刻度 = app（0..8、步长 0.5），颜色带「默认」复位钮。
+  const html = fs.readFileSync(path.join(__dirname, 'options.html'), 'utf8');
+  assert.match(html, /id="subtitleStyleOutlineWidth" type="range" min="0" max="8" step="0.5"/);
+  assert.match(html, /id="subtitleStyleOutlineColor" type="color"/);
+  assert.match(html, /id="subtitleStyleOutlineColorReset"[^>]*data-i18n="opt_subtitleStyle_default_color"/);
 });

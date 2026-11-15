@@ -15,6 +15,8 @@ import androidx.annotation.NonNull;
 import androidx.annotation.RequiresApi;
 
 import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -35,7 +37,8 @@ import io.flutter.plugin.common.MethodChannel;
  * <p>原生崩溃、被系统按内存杀、裸 Java 线程未捕获异常都绕过 Dart 的错误钩子，错误日志里
  * 只剩一次冷启动。系统其实记着：API 30+ 的 {@link ActivityManager#getHistoricalProcessExitReasons}
  * 给出 reason / description / importance / pss / rss / 时间，native crash（tombstone）与 ANR
- * 还能取 trace。启动时 Dart 调一次 {@code consumeExitReports}，只取上次汇报之后的新记录
+ * 还能取 trace。Java 层崩溃（{@code REASON_CRASH}）系统不给 trace，由 {@link JavaCrashCapture}
+ * 的链式未捕获异常处理器在崩溃时落盘，这里按 pid + 时间窗并进对应记录的 trace，交出后删除。启动时 Dart 调一次 {@code consumeExitReports}，只取上次汇报之后的新记录
  * （时间戳游标存 SharedPreferences），trace 只回传有限长度的摘要，不传完整 tombstone。
  *
  * <p>另外进程级登记 {@link ComponentCallbacks2#onTrimMemory}，把最近几次级别和时间记进
@@ -168,9 +171,16 @@ public final class ProcessExitChannel {
                 System.currentTimeMillis() - lookbackMs);
         long newest = prefs.getLong(KEY_LAST_EXIT_TS, 0L);
         final int myPid = Process.myPid();
+        final File[] javaCrashFiles = JavaCrashCapture.crashDir(context).listFiles();
+        final List<File> consumedJavaCrashes = new ArrayList<>();
         // 系统按时间倒序给出（最新在前）。
         for (ApplicationExitInfo info : infos) {
             newest = Math.max(newest, info.getTimestamp());
+            // 先于游标过滤匹配：已汇报过 / 超出上限的那条 CRASH 的落盘记录也算消费掉，不留在目录里。
+            final File javaCrash = info.getReason() == ApplicationExitInfo.REASON_CRASH
+                    ? JavaCrashRecord.findMatch(javaCrashFiles, info.getPid(), info.getTimestamp())
+                    : null;
+            if (javaCrash != null) consumedJavaCrashes.add(javaCrash);
             if (info.getTimestamp() <= cursor || info.getPid() == myPid) continue;
             if (reasons.size() >= MAX_REASONS) continue;
             final Map<String, Object> r = new HashMap<>();
@@ -187,10 +197,16 @@ public final class ProcessExitChannel {
             if (reason == ApplicationExitInfo.REASON_CRASH_NATIVE
                     || reason == ApplicationExitInfo.REASON_ANR) {
                 r.put("trace", readTraceSummary(info, reason == ApplicationExitInfo.REASON_ANR));
+            } else if (javaCrash != null) {
+                r.put("trace", readJavaCrashSummary(javaCrash));
             }
             reasons.add(r);
         }
         prefs.edit().putLong(KEY_LAST_EXIT_TS, newest).apply();
+        for (File f : consumedJavaCrashes) {
+            //noinspection ResultOfMethodCallIgnored
+            f.delete();
+        }
         return reasons;
     }
 
@@ -227,6 +243,22 @@ public final class ProcessExitChannel {
                     ? from.substring(0, TRACE_SUMMARY_CHARS) : from;
         } catch (IOException | RuntimeException e) {
             return "trace unavailable: " + e;
+        }
+    }
+
+    /** 读 {@link JavaCrashCapture} 落盘的 Java 崩溃记录，按 trace 摘要上限压缩。 */
+    private static String readJavaCrashSummary(File file) {
+        try (InputStream in = new FileInputStream(file)) {
+            final ByteArrayOutputStream buf = new ByteArrayOutputStream();
+            final byte[] chunk = new byte[8192];
+            int n;
+            while (buf.size() < JavaCrashRecord.MAX_FILE_BYTES && (n = in.read(chunk)) > 0) {
+                buf.write(chunk, 0, Math.min(n, JavaCrashRecord.MAX_FILE_BYTES - buf.size()));
+            }
+            return JavaCrashRecord.summarize(
+                    new String(buf.toByteArray(), StandardCharsets.UTF_8), TRACE_SUMMARY_CHARS);
+        } catch (IOException | RuntimeException e) {
+            return "java crash record unavailable: " + e;
         }
     }
 

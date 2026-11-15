@@ -43,6 +43,19 @@ Future<VideoMineCommitSummary?> showVideoMineQueueDialog({
   );
 }
 
+/// 一批写入结束后的汇总提示：张数，加上写入的卡带回的提示（如「保存到」被主机退回默认，
+/// BUG-4287）——批量写入没有逐张的结果提示，汇总这一条不带它，用户就永远不知道落点变了。
+String videoMineCommitMessage(VideoMineCommitSummary summary) => <String>[
+  t.video_mine_queue_committed(ok: summary.succeeded, failed: summary.failed),
+  ?summary.notice,
+].join('\n');
+
+/// 汇总提示的级别：有失败或带回提示都是 warning（关掉「制卡成功提示」也照样要让用户看到）。
+ToastSeverity videoMineCommitSeverity(VideoMineCommitSummary summary) =>
+    summary.failed == 0 && summary.notice == null
+    ? ToastSeverity.success
+    : ToastSeverity.warning;
+
 /// 离开播放页之后，在后台把 [bookUid] 的待制卡写进 Anki：先等 [inFlight]（还在准备
 /// 媒体的暂存任务）收尾，再 [VideoMineQueue.commitAll]。
 ///
@@ -68,13 +81,8 @@ void commitStagedVideoMinesAfterExit({
         repo: repo,
       );
       FushiToast.show(
-        msg: t.video_mine_queue_committed(
-          ok: summary.succeeded,
-          failed: summary.failed,
-        ),
-        severity: summary.failed == 0
-            ? ToastSeverity.success
-            : ToastSeverity.warning,
+        msg: videoMineCommitMessage(summary),
+        severity: videoMineCommitSeverity(summary),
       );
     } catch (error, stack) {
       try {
@@ -110,6 +118,10 @@ class _VideoMineQueueDialogState extends State<VideoMineQueueDialog> {
   List<WebMineQueueRow> _rows = const <WebMineQueueRow>[];
   bool _loading = true;
   ({int done, int total})? _progress;
+
+  /// 有失败、弹窗留着时，上一轮写入带回的提示（[VideoMineCommitSummary.notice]）显示在列表上方；
+  /// 全部成功时汇总交回调用方报，这里不留。
+  String? _notice;
 
   @override
   void initState() {
@@ -147,7 +159,10 @@ class _VideoMineQueueDialogState extends State<VideoMineQueueDialog> {
       if (mounted) setState(() => _progress = (done: done, total: total));
     });
     if (!mounted) return;
-    setState(() => _progress = null);
+    setState(() {
+      _progress = null;
+      _notice = summary.notice ?? _notice;
+    });
     if (summary.failed == 0) {
       Navigator.of(context).pop(summary);
       return;
@@ -183,6 +198,10 @@ class _VideoMineQueueDialogState extends State<VideoMineQueueDialog> {
                         total: progress.total,
                       ),
                     ),
+                    const SizedBox(height: 8),
+                  ],
+                  if (_notice case final String notice) ...<Widget>[
+                    Text(notice, style: TextStyle(color: cs.tertiary)),
                     const SizedBox(height: 8),
                   ],
                   if (_rows.isEmpty)

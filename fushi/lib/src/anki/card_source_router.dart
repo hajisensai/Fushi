@@ -204,6 +204,7 @@ Future<void> _openCardSource({
       ? RemoteMiningAnkiRepository(
           local: configured,
           client: app.createRemoteMiningClient(),
+          targetResetNotice: () => t.anki_mine_to_server_target_reset,
         )
       : configured;
   final SourceReviewSession session = SourceReviewSession(

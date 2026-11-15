@@ -9,7 +9,8 @@
 //
 // 附件没传上去（网络中断等）时字节落盘到 FeedbackPendingStore，详情页可「重试上传」；
 // 服务端 24 小时内允许补传空闲槽位（与 PR #2090 的待传重试是同一机制）。视频（槽位 v0，
-// ≤ 50 MB）先在本机转码成 720p / 1080p H.264（feedback_video.dart），从待传区的文件流式上传。
+// ≤ 100 MB）默认原件上传，超限 / 格式不收或用户选了 720p / 1080p 档时在本机转码成 H.264
+// （feedback_video.dart），从待传区的文件流式上传。
 //
 // 「我的反馈」= 本机回执 ∪ 账户列表：已登录排行榜账户时另拉 GET /v1/feedback/mine
 // （别的设备带账户提交的也在里面），按 id 去重、本机回执优先；账户列表里的条目没有 ticket
@@ -125,15 +126,15 @@ class FeedbackRetryResult {
   final int dropped;
 }
 
-/// 一次视频准备的选项：压缩档位、取消、选 1080p 却退回 720p 时的通知。
+/// 一次视频准备的选项：档位（默认原件）、取消、选 1080p 却退回 720p 时的通知。
 class FeedbackVideoPrepareOptions {
   const FeedbackVideoPrepareOptions({
-    this.quality = FeedbackVideoQuality.p720,
+    this.mode = FeedbackVideoMode.original,
     this.cancel,
     this.onDowngraded,
   });
 
-  final FeedbackVideoQuality quality;
+  final FeedbackVideoMode mode;
 
   /// 完成即中止压缩（强杀 ffmpeg、删半成品），准备函数抛 [FeedbackVideoCancelledException]。
   final Future<void>? cancel;
@@ -159,7 +160,7 @@ Future<PreparedFeedbackVideo> _defaultPrepareVideo(
   source,
   workDir: workDir,
   onProgress: onProgress,
-  quality: options.quality,
+  mode: options.mode,
   cancel: options.cancel,
   onDowngraded: options.onDowngraded,
 );
@@ -316,17 +317,7 @@ class FeedbackService extends ChangeNotifier {
     } on Object catch (e, st) {
       ErrorLogService.instance.log('feedback.pending_scan', e, st);
     }
-    final String? key = _client().identity?.accountId;
-    if (key != null) {
-      try {
-        _accountKey = key;
-        _accountTickets = _withoutLocal(
-          await FeedbackTicketStore.account(await _supportRoot(), key).read(),
-        );
-      } on Object catch (e, st) {
-        ErrorLogService.instance.log('feedback.account_cache_read', e, st);
-      }
-    }
+    await _switchAccount(_client().identity?.accountId);
     _loaded = true;
     notifyListeners();
   }
@@ -363,7 +354,7 @@ class FeedbackService extends ChangeNotifier {
   /// 拉全部记录的最新进度（每批 ≤ 50）。查不到的条目标 missing（保留，由用户删）。
   /// 网络错误原样抛给调用方（反馈中心显示「刷新失败」）。
   ///
-  /// 换账户 / 退出登录后旧账户的列表在联网之前就丢掉（[_dropStaleAccountTickets]）：
+  /// 换账户 / 退出登录后旧账户的列表在联网之前就丢掉（[_switchAccount]）：
   /// 它只取决于本机身份，不该等批量查进度成功——断网时那一步就抛了，旧账户的工单标题
   /// 会一直挂在列表里。
   ///
@@ -373,7 +364,7 @@ class FeedbackService extends ChangeNotifier {
   /// 结果在调用方读 [tickets] 时还没落下。
   Future<void> refresh() async {
     await load();
-    _dropStaleAccountTickets(_client().identity?.accountId);
+    await _switchAccount(_client().identity?.accountId);
     final Future<void>? running = _refreshInFlight;
     if (running != null) return running;
     // _fetchProgress 是 async：同步调用不会立刻跑完，whenComplete 一定晚于下面的赋值。
@@ -417,11 +408,32 @@ class FeedbackService extends ChangeNotifier {
     await _refreshAccount();
   }
 
-  /// 账户列表只属于 [_accountKey]：当前身份 [key] 不是它（换账户 / 退出登录）就整份丢掉。
-  void _dropStaleAccountTickets(String? key) {
+  /// 账户列表只属于 [_accountKey]：当前身份 [key] 不是它（换账户 / 退出登录 / 账户
+  /// 文件比本服务晚读出来）就换成 [key] 那一份——旧账户的列表整份丢掉，新账户的从
+  /// 它自己的落盘缓存恢复（连同各条的已读时刻 `seenAt`）。
+  ///
+  /// BUG-4502：冷启动时排行榜账户文件与本服务并行加载，[_load] 读身份那一刻常常还是
+  /// null；此前这里只会把列表清空，随后 [_refreshAccount] 用 seenAt=0 的新条目重建
+  /// 并覆盖缓存，读过的回复每次重启都回到「新回复」。身份何时可用都不该决定已读状态。
+  Future<void> _switchAccount(String? key) async {
     if (key == _accountKey) return;
     _accountKey = key;
     _accountTickets = <FeedbackTicket>[];
+    notifyListeners();
+    if (key == null) return;
+    final List<FeedbackTicket> cached;
+    try {
+      cached = await FeedbackTicketStore.account(
+        await _supportRoot(),
+        key,
+      ).read();
+    } on Object catch (e, st) {
+      ErrorLogService.instance.log('feedback.account_cache_read', e, st);
+      return;
+    }
+    // 读缓存期间又换了账户 / 已被刷新填好：以那边为准。
+    if (_accountKey != key || _accountTickets.isNotEmpty) return;
+    _accountTickets = _withoutLocal(cached);
     notifyListeners();
   }
 
@@ -434,7 +446,7 @@ class FeedbackService extends ChangeNotifier {
     final LeaderboardClient client = _client();
     final String? key = client.identity?.accountId;
     // 批量查进度的那段时间里也可能换了账户：这里再核对一次。
-    _dropStaleAccountTickets(key);
+    await _switchAccount(key);
     if (key == null) return;
     final List<FeedbackSummary> items = <FeedbackSummary>[];
     String? cursor;

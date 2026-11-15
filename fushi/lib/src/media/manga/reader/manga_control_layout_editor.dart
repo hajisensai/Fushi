@@ -660,6 +660,7 @@ class _MangaToolbarPreview extends StatelessWidget {
                   ),
                 ],
                 title: t.manga_reader_control_zone_top,
+                titleBacking: true,
                 actions: <List<FushiToolbarItem>>[_items(MangaControlSlot.top)],
                 overflow: _items(MangaControlSlot.overflow),
                 adaptiveOverflow: false,

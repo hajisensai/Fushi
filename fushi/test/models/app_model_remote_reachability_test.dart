@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/dictionary_repository.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
@@ -14,12 +15,23 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 import '../helpers/test_platform_services.dart';
 
-/// BUG-4275：查词与服务器词典目录服务共用一份可达性。
+/// BUG-4692：查词与服务器词典目录服务共用一份可达性。
 ///
 /// 走真实的 `AppModel.searchDictionary` 与真实的目录服务：服务器是回环地址上的假
 /// host，「掉线」时收到请求就直接掐断连接（客户端拿不到任何 HTTP 响应 = 传输层失败）。
 /// 本机结果经查词结果缓存命中。
 void main() {
+  // V-B4：带 hostId 的明文地址拿凭据前要当场 ping 核对；这里的对端是 MockClient / 本机
+  // 假服务，把身份核对视为通过（选路本身由 interconnect_peer_addresses 的测试覆盖）。
+  setUp(() {
+    resetInterconnectRaceCache();
+    debugInterconnectAddressProbeOverride =
+        (FushiClientUrl candidate, String? hostId) async => true;
+  });
+  tearDown(() {
+    debugInterconnectAddressProbeOverride = null;
+    resetInterconnectRaceCache();
+  });
   late FushiDatabase db;
   late HttpServer host;
   late AppModel app;

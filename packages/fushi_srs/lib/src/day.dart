@@ -7,7 +7,7 @@ library;
 
 const int _dayMs = 24 * 60 * 60 * 1000;
 
-/// 「今天」的计算口径：profile 的 UTC 偏移与翻日时刻。
+/// 「今天」的计算口径：UTC 偏移（本机）与翻日时刻（profile 同步值或宿主回落值）。
 class SrsDayContext {
   const SrsDayContext({required this.utcOffsetMin, required this.rolloverHour})
     : assert(rolloverHour >= 0 && rolloverHour <= 23);
@@ -28,7 +28,7 @@ class SrsDayContext {
   int dayStartMs(int dayIndex) =>
       dayIndex * _dayMs + rolloverHour * 3600000 - utcOffsetMin * 60000;
 
-  /// 本机当前偏移（profile 没设时区时用）。
+  /// 本机当前偏移（「今天」的时区恒取它，不随 profile 同步）。
   static int localOffsetMin([DateTime? at]) =>
       (at ?? DateTime.now()).timeZoneOffset.inMinutes;
 }

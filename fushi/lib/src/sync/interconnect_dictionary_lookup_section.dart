@@ -86,7 +86,7 @@ String remoteDictionaryServersSummary(List<FushiClientUrl> urls) {
 
 /// 「已添加的设备」一行的地址注记：这台 host 在列表里有多条地址时，标出本行是第几条、
 /// 走什么网络、是否由 host 公布自动学到——同一设备名的几行才认得出是同一台机器的
-/// 不同路径，而不是重复配对（BUG-4274）。只有一条地址 → null（不加行）。
+/// 不同路径，而不是重复配对（BUG-4691）。只有一条地址 → null（不加行）。
 String? interconnectPeerAddressNote(
   List<FushiClientUrl> urls,
   FushiClientUrl peer,

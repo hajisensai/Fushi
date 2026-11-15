@@ -124,6 +124,8 @@ MusicServerTrack? parseJellyfinMusicTrack(Map<String, Object?> j) {
     bitDepth: _int(audio?['BitDepth']),
     channels: _int(audio?['Channels']),
     sizeBytes: _int(source?['Size']),
+    playlistEntryId: _str(j['PlaylistItemId']),
+    path: _str(j['Path']) ?? _str(source?['Path']),
     coverRef: _hasPrimary(j)
         ? id
         : (_str(j['AlbumPrimaryImageTag']) != null ? albumId : null),
@@ -165,6 +167,9 @@ MusicServerPlaylist? parseJellyfinMusicPlaylist(Map<String, Object?> j) {
     trackCount: _int(j['ChildCount']) ?? _int(j['SongCount']),
     durationMs: jellyfinTicksToMs(j['RunTimeTicks']),
     coverRef: _hasPrimary(j) ? id : null,
+    // 只有明确报了 `CanDelete: false`（别人的歌单）才不让改；兼容层不报这个字段时按可改
+    // 处理，真没权限由服务器拒绝、页面提示。
+    editable: j['CanDelete'] != false,
   );
 }
 

@@ -5,19 +5,45 @@ import 'package:drift/native.dart';
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/sync/fushi_remote_lookup_client.dart';
+import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/src/sync/remote_dictionary_reachability.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
-/// BUG-4275：查词路径与目录服务共用一份词典服务器可达性。这里验追踪器本身
+/// BUG-4692：查词路径与目录服务共用一份词典服务器可达性。这里验追踪器本身
 /// （跳过判据、后台再探测节奏、立即探测、revision 只在状态变化时 bump）与查词客户端
 /// 的挂钩（含弹窗进程用的后台探测 [FushiRemoteLookupClient.probeDictionaryHost]）。
+/// 结局只经互联传输层的全局上报点进追踪器（追踪器构造时订阅），客户端不另传回调。
 /// 目录服务回前台 / 配对列表变化调 [RemoteDictionaryReachability.probeUnreachableNow]
 /// 的真实路径见 `remote_dictionary_catalog_service_test.dart`。
 void main() {
   group('RemoteDictionaryReachability', () {
+    test('只听互联全局上报点：词典查词地址记账，关了查词的地址不记，dispose 后退订', () {
+      final RemoteDictionaryReachability r = RemoteDictionaryReachability();
+      const FushiClientUrl lookup = FushiClientUrl(
+        url: 'http://a:8765',
+        hostId: 'host-a',
+      );
+      const FushiClientUrl noLookup = FushiClientUrl(
+        url: 'http://b:8765',
+        hostId: 'host-b',
+        lookupEnabled: false,
+      );
+      reportInterconnectCandidateUnreachable(lookup);
+      reportInterconnectCandidateUnreachable(noLookup);
+      expect(r.isUnreachable('host-a'), isTrue);
+      expect(r.hosts.containsKey('host-b'), isFalse);
+      reportInterconnectCandidateReached(lookup);
+      expect(r.hosts['host-a']!.reachable, isTrue);
+
+      r.dispose();
+      reportInterconnectCandidateUnreachable(lookup);
+      expect(r.hosts['host-a']!.reachable, isTrue, reason: '退订后不再记账');
+      resetInterconnectRaceCache();
+    });
+
     test('没挂探测函数：判死后只在再探测间隔内跳过，过了间隔放行一次查词', () {
       DateTime now = DateTime.fromMillisecondsSinceEpoch(1000000);
       final RemoteDictionaryReachability r = RemoteDictionaryReachability(
@@ -140,6 +166,10 @@ void main() {
     late SyncRepository repo;
 
     setUp(() async {
+      // V-B4：明文地址拿凭据前要当场 ping 核对 hostId；对端是 MockClient，核对视为通过。
+      resetInterconnectRaceCache();
+      debugInterconnectAddressProbeOverride =
+          (FushiClientUrl candidate, String? hostId) async => true;
       db = FushiDatabase.forTesting(
         DatabaseConnection(NativeDatabase.memory()),
       );
@@ -150,11 +180,16 @@ void main() {
       ]);
       await repo.setFushiClientToken('tok');
     });
-    tearDown(() => db.close());
+    tearDown(() async {
+      debugInterconnectAddressProbeOverride = null;
+      resetInterconnectRaceCache();
+      await db.close();
+    });
 
     test('按 host 报传输层结局；判死的 host 不再发请求', () async {
       final List<String> requested = <String>[];
       final RemoteDictionaryReachability reach = RemoteDictionaryReachability();
+      addTearDown(reach.dispose);
       final FushiRemoteLookupClient client = FushiRemoteLookupClient(
         repo: repo,
         httpClient: MockClient((http.Request request) async {
@@ -168,7 +203,6 @@ void main() {
           );
         }),
         skipDictionaryHost: reach.shouldSkip,
-        onDictionaryHostOutcomes: reach.record,
       );
 
       expect(
@@ -218,7 +252,6 @@ void main() {
             );
           }),
           skipDictionaryHost: reach.shouldSkip,
-          onDictionaryHostOutcomes: reach.record,
         );
         reach.probe = client.probeDictionaryHost;
 
@@ -264,6 +297,7 @@ void main() {
       int requests = 0;
       final RemoteDictionaryReachability reach = RemoteDictionaryReachability()
         ..record(<String, bool>{'host-down': false, 'host-up': false});
+      addTearDown(reach.dispose);
       final FushiRemoteLookupClient client = FushiRemoteLookupClient(
         repo: repo,
         httpClient: MockClient((http.Request request) async {
@@ -271,7 +305,6 @@ void main() {
           return http.Response('{}', 200);
         }),
         skipDictionaryHost: reach.shouldSkip,
-        onDictionaryHostOutcomes: reach.record,
       );
       expect(
         await client.searchDictionary(
@@ -286,6 +319,7 @@ void main() {
 
     test('首次发现全部不可达仍抛 RemoteLookupUnreachableError，并记下两台都判死', () async {
       final RemoteDictionaryReachability reach = RemoteDictionaryReachability();
+      addTearDown(reach.dispose);
       final FushiRemoteLookupClient client = FushiRemoteLookupClient(
         repo: repo,
         httpClient: MockClient(
@@ -293,7 +327,6 @@ void main() {
               throw http.ClientException('refused', request.url),
         ),
         skipDictionaryHost: reach.shouldSkip,
-        onDictionaryHostOutcomes: reach.record,
       );
       await expectLater(
         client.searchDictionary(term: '猫', wildcards: false, maximumTerms: 10),

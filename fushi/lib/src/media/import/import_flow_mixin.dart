@@ -1,10 +1,22 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi_engine/epub/epub_parser.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
+
+/// 导入失败 toast 的文案。已知的「用户能自己处理」的失败给可操作的本地化提示
+/// （EPUB zip 容器损坏 / 下载不完整 → 请重新下载），其余保持
+/// `t.srt_import_error: $e` 原样带出唯一的可诊断原因。原始异常始终照常落
+/// [ErrorLogService]，这里只决定给用户看什么。
+String importFailureMessage(Object error) {
+  if (error is EpubArchiveCorruptException) {
+    return t.book_import_epub_corrupt;
+  }
+  return '${t.srt_import_error}: $error';
+}
 
 /// 导入对话框共享的「导入流程」mixin：逐步进度基础设施 + [runImport] 执行模板。
 ///
@@ -49,7 +61,7 @@ mixin ImportFlowMixin<T extends StatefulWidget> on State<T> {
   ///    [action] 自己做**（各对话框 pop 语义不同：book 回 bool、video 回 bookUid）；
   /// 3. 失败被捕获（绝不逃逸 zone）：[ErrorLogService] 以 [logTag] 为源落日志 +
   ///    `debugPrint`（[debugMessage] 可定制，默认 `'$logTag failed: $e'`）+ toast
-  ///    `t.srt_import_error: $e`（LENGTH_LONG——错误文案带着唯一的可诊断原因，
+  ///    [importFailureMessage]（LENGTH_LONG——错误文案带着唯一的可诊断原因，
   ///    SHORT 的 2s 读不完）——**不 pop**，对话框留在原地供用户改参重试；
   /// 4. finally `setState(() => importing = false)` 复位（mounted 门控）。
   ///
@@ -75,7 +87,7 @@ mixin ImportFlowMixin<T extends StatefulWidget> on State<T> {
         );
         if (mounted) {
           FushiToast.show(
-            msg: '${t.srt_import_error}: $e',
+            msg: importFailureMessage(e),
             severity: ToastSeverity.error,
             // 失败 toast 必须走 LONG：这条文案带着**唯一**的可诊断原因（哪一页缺、
             // 搜过哪些目录）。默认 SHORT 在桌面只有 2000ms（含两端 200ms 淡入淡出，
@@ -117,10 +129,14 @@ mixin ImportFlowMixin<T extends StatefulWidget> on State<T> {
   ///
   /// [enabled] 为 false 时按钮同样禁用（对话框还有别的异步步骤在跑，如正在取文件，
   /// 这时开始导入会读到半途被改写的输入）。
+  ///
+  /// [label] 覆盖空闲态文案（默认 [t.dialog_import]）：导入后立即打开的流程
+  /// （如粘贴文本阅读）用「阅读」更贴切；进行中文案不变。
   Widget buildImportAction(
     BuildContext context, {
     required VoidCallback onImport,
     bool enabled = true,
+    String? label,
   }) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return adaptiveDialogAction(
@@ -144,7 +160,7 @@ mixin ImportFlowMixin<T extends StatefulWidget> on State<T> {
                 Text(t.dialog_importing),
               ],
             )
-          : Text(t.dialog_import),
+          : Text(label ?? t.dialog_import),
     );
   }
 

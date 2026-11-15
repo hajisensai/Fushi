@@ -570,7 +570,7 @@ class FushiFocusController extends ChangeNotifier {
       _repairDeferredWhileBackgrounded = true;
       return;
     }
-    // 先让框架把已排队的焦点请求落地，再判断主焦点（BUG-4273）。
+    // 先让框架把已排队的焦点请求落地，再判断主焦点（BUG-4690）。
     //
     // 框架的焦点变更（含 autofocus）不是即时生效的：`requestFocus` /
     // `FocusScopeNode.autofocus` 只记账，由 [FocusManager] 排的微任务统一应用；
@@ -669,7 +669,7 @@ class FushiFocusController extends ChangeNotifier {
       _repairScheduled = false;
       // 不在帧后回调里同步修复：同一帧后续的帧后回调可能还要排焦点请求
       // （EditableText 的 autofocus 就在这里排队）。挪到微任务里，等本帧所有
-      // 帧后回调跑完，[ensureFocus] 开头再把挂起请求一并应用后才判断（BUG-4273）。
+      // 帧后回调跑完，[ensureFocus] 开头再把挂起请求一并应用后才判断（BUG-4690）。
       scheduleRepairBeforeNextFrame();
     });
   }

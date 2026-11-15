@@ -7,17 +7,19 @@
 /// 此前只在备份恢复里做了，同步路径上没有。
 ///
 /// 本文件补上同步路径的关联：
-/// - 每个写入者在自己的目录里放一份 [kSrsProfileInfoName]（profile 名 + 有没有用户笔记），
+/// - 每个写入者在自己的目录里放一份 [kSrsProfileInfoName]（profile 名 + 有没有用户数据），
 ///   别的设备据此认出「同一个 profile」；
 /// - [srsDecideProfileLink] 是纯函数：给定本机 profile 与目录里已有的 profile，决定保持 / 自动采用
-///   对方 uid / 交给用户选。自动采用只在答案唯一时发生：本机 profile **没有用户笔记**（只有内置行，
+///   对方 uid / 交给用户选。自动采用只在答案唯一时发生：本机 profile **没有用户数据**（只有内置行，
 ///   内置行 ID 由 uid 派生、换 uid 后随新 uid 重新生成），且目录里恰好一个有数据的同一 profile；
 /// - 答案不唯一时**不静默保持**（以前那样做，三台设备各自随机生成 uid、都叫「Default」时，新设备永远按
 ///   自己的空 profile 同步，复习数据从不互通、也没有任何提示）：目录里有多个有数据的候选，或本机与对方都有
 ///   用户笔记，交给用户选采用哪一个（[SrsProfileLinkChoose]）。本机有笔记时选定后并入所选 profile（见
 ///   srs_profile_merge.dart），不丢任何一边的数据；
 /// - 没有用户笔记的 profile 不算候选：它所在的设备会来采用有数据的一方；
-/// - 双方都没有用户笔记时按 uid 字典序只让一边采用，不会两边互相采用来回翻。
+/// - 双方都没有用户笔记时按 uid 字典序只让一边采用，不会两边互相采用来回翻；
+/// - 已经选定要并入别的 uid、只是并入暂缓着的写入者（说明文件里的 `mergingInto`，BUG-4296）不再算它旧 profile 的
+///   成员：它按旧 uid 照常同步只是为了把缺的日志收进来，别的设备不能再把这个旧 profile 当成候选并进去。
 ///
 /// 只读写 [SyncAssetStore]，与后端无关（互联 / 云盘同一份格式）。
 library;
@@ -28,7 +30,10 @@ import 'dart:io';
 import 'package:drift/drift.dart' show QueryRow, Variable;
 import 'package:fushi_core/fushi_core.dart' show FushiDatabase;
 import 'package:fushi_engine/srs/srs_backup_merge.dart' show srsAdoptProfileUid;
+import 'package:fushi_engine/srs/srs_collection_binding.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_profile_data.dart'
+    show SrsMetaSet, srsEditMetaSet;
 import 'package:fushi_engine/srs/srs_profile_merge.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_store.dart'
     show kSrsSync2Folder, kSrsSync2Namespace, kSrsSync2V1Folder;
@@ -36,13 +41,15 @@ import 'package:fushi_engine/sync/sync_asset_store.dart';
 
 /// srs.db `srs_meta`：本设备改用别的 uid 之前用过的同步 v2 设备身份（JSON 数组）。换 uid 后本机在新集合里是新的
 /// v2 设备，旧集合的本机身份行也随并入删掉了——不记下来就认不出同步目录里那个旧 uid 目录是自己留下的孤儿。
-/// 只存本机 srs.db（不进偏好表，不随偏好同步到别的设备）。
+/// 只存本机 srs.db（不进偏好表，不随偏好同步到别的设备）。读写都经内核的 `meta_set_edit`（[srsEditMetaSet]，
+/// [SrsMetaSet.retiredDevices]）。
 const String kSrsRetiredV2DevicesKey = 'srs_retired_v2_devices';
 
 /// srs.db `srs_meta`：本设备**改用别的 uid** 时离开的旧 profile uid（JSON 数组）。孤儿目录清理只认这里记着的 uid：
 /// 只有换 uid（采用 / 并入）才保证旧 uid 的数据已经搬到了新 uid 下。「只有本设备写过、本机又没有这个 uid 的
 /// profile」本身不是证据——删 profile（srs_profile_cleanup.dart 明确约定远端已同步的集合不动、只删本机）、恢复
-/// 旧备份之后都是这个样子，那时同步目录里的那份可能是唯一的副本。
+/// 旧备份之后都是这个样子，那时同步目录里的那份可能是唯一的副本。读写都经内核的 `meta_set_edit`
+/// （[SrsMetaSet.retiredUids]）。
 const String kSrsRetiredProfileUidsKey = 'srs_retired_profile_uids';
 
 /// 写入者目录里的 profile 说明文件。同步引擎只认 `batch-*` / `snapshot-*` / `cursor` / `probe`，
@@ -59,6 +66,7 @@ class SrsRemoteProfile {
     this.updatedAt,
     this.devices = const <String>[],
     this.noteCount,
+    this.mergingInto = const <String, String>{},
   });
 
   /// 显示名：说明文件里报的第一个名字，没有时用 uid。
@@ -83,6 +91,15 @@ class SrsRemoteProfile {
 
   /// 各写入者报的用户笔记数里最大的那个（同一 profile 各设备看到的是同一份笔记，取最新最全的一份）；没人报时为 null。
   final int? noteCount;
+
+  /// 写入者 → 它已经选定要并入的 uid（说明文件的 `mergingInto`，[srsPublishProfileInfo]）：那台设备的用户已经决定离开
+  /// 这个 profile，只是并入暂缓（[SrsDeferredProfileMerge]）期间还按这个 uid 同步。[srsDecideProfileLink] 不把这些
+  /// 写入者算作这个 profile 的成员（BUG-4296）。旧版本不写这个键：空，按以前那样算。
+  final Map<String, String> mergingInto;
+
+  /// 不在离开中的写入者（[writers] 去掉 [mergingInto] 里的）。
+  Iterable<String> get stayingWriters =>
+      writers.where((String w) => !mergingInto.containsKey(w));
 }
 
 /// 关联决定。
@@ -123,6 +140,11 @@ String srsV2WriterName(String device) => 'v2:$device';
 
 /// 决定本机 profile 与同步目录的关联（纯函数，规则见库注释）。
 ///
+/// - [localHasNotes]：本机 profile 有没有用户数据（[SrsDbStore.hasUserData]：笔记、自建牌组、改过的预设…，不只是
+///   笔记；参数名沿用旧名）。为假时可能判成采用，采用会删掉本机旧 uid 的全部行。
+/// - [settled]：本机 profile 已经在**别的**同步位置上定下了集合（[SrsCollectionBinding.settledElsewhere]）。为真时
+///   不再返回 [SrsProfileLinkAdopt]：唯一的有数据候选也交给用户选（[SrsProfileLinkChoose]），候选全空时保持——一台设备的
+///   几个位置各自判出不同答案时不来回改 uid。
 /// - [localProfileCount]：本机 profile 总数。目录里的 profile 都没有说明文件（旧版本写的）、
 ///   名字对不上时，只有「两边都只有一个 profile」才把唯一那个当成同一个。
 SrsProfileLinkDecision srsDecideProfileLink({
@@ -133,10 +155,16 @@ SrsProfileLinkDecision srsDecideProfileLink({
   required int localProfileCount,
   required List<SrsRemoteProfile> remote,
   String? v2Device,
+  bool settled = false,
 }) {
   bool own(String w) =>
       srsWriterOfDevice(w, deviceId) ||
       (v2Device != null && w == srsV2WriterName(v2Device));
+  // 别的设备里只算留在这个 profile 的：已经选定并入别处、并入暂缓着的写入者（[SrsRemoteProfile.mergingInto]）不算
+  // ——否则对方采用了本机的 profile 之后、并入做完之前，本机还会被问要不要并进对方已经放弃的那个 profile，选了两边
+  // 就分叉（BUG-4296）。
+  bool otherMember(SrsRemoteProfile r) =>
+      r.stayingWriters.any((String w) => !own(w));
   SrsRemoteProfile? mine;
   final List<SrsRemoteProfile> others = <SrsRemoteProfile>[];
   for (final SrsRemoteProfile r in remote) {
@@ -147,13 +175,13 @@ SrsProfileLinkDecision srsDecideProfileLink({
     }
   }
   // 本机 uid 的目录里已有别的设备：已经关联上了（别人采用了我们的 uid），改 uid 会把它们甩下。
-  if (mine != null && mine.writers.any((String w) => !own(w))) {
+  if (mine != null && otherMember(mine)) {
     return const SrsProfileLinkKeep(linked: true);
   }
   // 只看「不全是本设备写的」profile：本设备旧化身留下的目录不算别人的数据。
   final List<SrsRemoteProfile> foreign = <SrsRemoteProfile>[
     for (final SrsRemoteProfile r in others)
-      if (r.writers.any((String w) => !own(w))) r,
+      if (otherMember(r)) r,
   ];
   if (foreign.isEmpty) return const SrsProfileLinkKeep();
   final List<SrsRemoteProfile> byName = <SrsRemoteProfile>[
@@ -180,7 +208,7 @@ SrsProfileLinkDecision srsDecideProfileLink({
   if (withData.isEmpty) {
     // 候选全是只有内置行的空 profile：本机有笔记就等它们来采用本机；本机也没有，就全体收敛到 uid 最小的那个
     // （只让较大的一边采用，不会互相采用来回翻）。
-    if (localHasNotes) return const SrsProfileLinkKeep();
+    if (localHasNotes || settled) return const SrsProfileLinkKeep();
     final String smallest = pool
         .map((SrsRemoteProfile r) => r.uid)
         .reduce((String a, String b) => a.compareTo(b) <= 0 ? a : b);
@@ -189,7 +217,7 @@ SrsProfileLinkDecision srsDecideProfileLink({
         : const SrsProfileLinkKeep();
   }
   // 本机是空的、有数据的候选恰好一个：答案唯一，直接采用。
-  if (!localHasNotes && withData.length == 1) {
+  if (!localHasNotes && !settled && withData.length == 1) {
     return SrsProfileLinkAdopt(withData.single.uid);
   }
   return SrsProfileLinkChoose(withData);
@@ -210,7 +238,8 @@ Future<List<SrsRemoteProfile>> srsListRemoteProfiles(
     int? updatedAt;
     final List<String> devices = <String>[];
     int? noteCount;
-    Future<void> readInfo(String folder) async {
+    final Map<String, String> mergingInto = <String, String>{};
+    Future<void> readInfo(String writer, String folder) async {
       final (Map<String, Object?>?, int?) read = await _readInfo(
         store,
         folder,
@@ -232,6 +261,10 @@ Future<List<SrsRemoteProfile>> srsListRemoteProfiles(
       if (count is int && (noteCount == null || count > noteCount!)) {
         noteCount = count;
       }
+      final Object? into = info['mergingInto'];
+      if (into is String && into.isNotEmpty && into != p.name) {
+        mergingInto[writer] = into;
+      }
     }
 
     for (final AssetEntry w in await store.listChildren(p.id)) {
@@ -245,13 +278,13 @@ Future<List<SrsRemoteProfile>> srsListRemoteProfiles(
             if (!dev.isFolder) continue;
             final String name = srsV2WriterName(dev.name);
             if (!writers.contains(name)) writers.add(name);
-            await readInfo(dev.id);
+            await readInfo(name, dev.id);
           }
         }
         continue;
       }
       writers.add(w.name);
-      await readInfo(w.id);
+      await readInfo(w.name, w.id);
     }
     out.add(
       SrsRemoteProfile(
@@ -262,6 +295,7 @@ Future<List<SrsRemoteProfile>> srsListRemoteProfiles(
         updatedAt: updatedAt,
         devices: devices,
         noteCount: noteCount,
+        mergingInto: mergingInto,
       ),
     );
   }
@@ -301,6 +335,9 @@ Future<(Map<String, Object?>?, int?)> _readInfo(
 }
 
 /// 在本机的同步 v2 设备目录（`fushi-srs/<uid>/v3/devices/<设备>/`）里写（覆盖）profile 说明文件。
+///
+/// [mergingInto]：本设备已经选定把这个 profile 并入哪个 uid、并入还没做完（srs.db 里的并入标记还在，
+/// [srsPendingProfileMerges]）。别的设备据此不再把这个 profile 当成候选（[SrsRemoteProfile.mergingInto]）。
 Future<void> srsPublishProfileInfo(
   SyncAssetStore store, {
   required String profileUid,
@@ -309,6 +346,7 @@ Future<void> srsPublishProfileInfo(
   required bool hasNotes,
   String? device,
   int? noteCount,
+  String? mergingInto,
   Directory? tempDir,
 }) async {
   final String ns = await store.ensureNamespace(kSrsSync2Namespace);
@@ -325,13 +363,15 @@ Future<void> srsPublishProfileInfo(
   try {
     final File f = File('${dir.path}${Platform.pathSeparator}info');
     await f.writeAsString(
-      // `device` / `notes`（反馈 dOv8AdJ6yV）是附加键：旧读者只认 name / hasNotes，忽略它们。
+      // `device` / `notes`（反馈 dOv8AdJ6yV）、`mergingInto`（BUG-4296）是附加键：旧读者只认 name / hasNotes，
+      // 忽略它们（不认识 `mergingInto` 的旧版本照旧把这个 profile 当候选，与以前一样）。
       jsonEncode(<String, Object?>{
         'v': 1,
         'name': name,
         'hasNotes': hasNotes,
         'device': ?device,
         'notes': ?noteCount,
+        'mergingInto': ?mergingInto,
       }),
       flush: true,
     );
@@ -415,7 +455,7 @@ class SrsProfileLinkOutcome {
   /// 非 null = 没法自动关联，要用户在这些候选里选（[SrsProfileLinkChoose]）。
   final List<SrsRemoteProfile>? choose;
 
-  /// 判定时本机 profile 有没有用户笔记（有 = 选定后要并入，而不是直接改用）。
+  /// 判定时本机 profile 有没有用户数据（[SrsDbStore.hasUserData]，不只是笔记；有 = 选定后要并入，而不是直接改用）。
   final bool localHasNotes;
 
   /// 判定时本机 profile 的用户笔记数（只在 [choose] 非 null 时数，给用户对比本机与候选）。
@@ -476,7 +516,15 @@ final class SrsProfileAdoptDeferred extends SrsProfileAdoptResult {
 /// 同步前的 profile 关联与同步后的说明文件发布（铁律 E，见文件头）。
 abstract interface class SrsProfileLinker {
   /// 跑引擎之前：决定本机 profile 是否改用目录里已有的 uid（必要时采用并重开 store）。
-  Future<SrsProfileLinkOutcome> link(SyncAssetStore backend, SrsDbStore store);
+  ///
+  /// [directoryKey]：[backend] 的位置身份。关联上（目录里已有别的设备在本机 uid 下，或刚采用了对方的 uid）时把绑定
+  /// 状态定为 `settled`、记下这个位置（[SrsCollectionBinding]）；已经在别的位置定下时不再自动采用。null = 调用方不知道
+  /// 位置：不记绑定，已定下的绑定按「别处」算。
+  Future<SrsProfileLinkOutcome> link(
+    SyncAssetStore backend,
+    SrsDbStore store, {
+    String? directoryKey,
+  });
 
   /// 用户在 [SrsProfileLinkChoose] 的候选里选了 [uid]：本机 profile 改用它（本机有用户笔记时并入），返回按新身份
   /// 重开的 store。本设备在旧 uid 下的同步目录由之后的 [link] 清掉。
@@ -486,10 +534,13 @@ abstract interface class SrsProfileLinker {
   ///
   /// 并入暂缓（undo 撤销的日志还没同步到，[SrsProfileMergeDeferred]）不是失败：返回 [SrsProfileAdoptDeferred]
   /// （store 不变、并入标记已写，之后的 [link] 续做）；其它失败照常抛。
+  ///
+  /// [directoryKey]：候选所在位置的身份；改用成功后按它把绑定状态定为 `settled`（null = 不记）。
   Future<SrsProfileAdoptResult> adopt(
     SrsDbStore store,
     String uid, {
     SyncAssetStore? within,
+    String? directoryKey,
   });
 
   /// [store] 所属的当前 profile 正在暂缓的并入：并入标记还在、且本进程里最近一次跑它的结果是暂缓；否则 null。
@@ -625,29 +676,105 @@ class SrsDbProfileLinker implements SrsProfileLinker {
     return row.read<int>('c');
   }
 
+  /// 在位置 [directoryKey] 上关联上了：[store] 的绑定状态定为 `settled`（只进不退，已定下的不改）。
+  Future<void> _settle(SrsDbStore store, String? directoryKey) async {
+    if (directoryKey == null) return;
+    await store.setCollectionBinding(
+      SrsCollectionBindingState.settled,
+      via: directoryKey,
+    );
+  }
+
   @override
   Future<SrsProfileLinkOutcome> link(
     SyncAssetStore backend,
-    SrsDbStore store,
-  ) async {
+    SrsDbStore store, {
+    String? directoryKey,
+  }) async {
     // 上次并入做到一半进程就退出了（标记还在 srs.db）：先用同样的参数做完，再按新身份判定。
     final SrsDbStore? resumed = await _resumePendingMerges(store, backend);
-    if (resumed != null) return SrsProfileLinkOutcome(resumed, linked: true);
+    if (resumed != null) {
+      // 并入刚做完：本设备离开的旧 uid 目录这一轮就清掉。这一轮按「已关联」交回，调度器之后不再跑 [link]，不在这里清
+      // 就要等下次启动——期间别的设备一直看得到那个旧 profile（BUG-4296）。清不掉不影响这一轮，下次 [link] 再清。
+      try {
+        await _removeRetiredFolders(
+          backend,
+          resumed,
+          await srsListRemoteProfiles(backend),
+        );
+      } catch (e, stack) {
+        onError?.call('SrsProfileLinker.cleanup', e, stack);
+      }
+      await _settle(resumed, directoryKey);
+      return SrsProfileLinkOutcome(resumed, linked: true);
+    }
     // 当前 profile 的并入暂缓中：用户（或之前的自动判定）已经选定了要并入的 uid，不再重新判定、不再弹冲突让用户
     // 另选；按旧 uid 照常同步（把缺的日志送进来）。不算已关联（linked: false），调度器每一轮都重跑 [link] 续做并入。
     if (await deferredMerge(store) != null) return SrsProfileLinkOutcome(store);
     final List<SrsRemoteProfile> remote = await srsListRemoteProfiles(backend);
+    await _removeRetiredFolders(backend, store, remote);
+    // 「本机有数据」看的是全部用户数据（[SrsDbStore.hasUserData]），不只是笔记：判成采用就会经 [_switchUid]
+    // 删掉本机旧 uid 的全部行，只建了牌组 / 改了预设、还没有笔记的 profile 以前会被当成空的删掉。
+    final bool localHasNotes = await store.hasUserData();
+    final SrsCollectionBinding? binding = await store.collectionBinding();
+    final SrsProfileLinkDecision decision = srsDecideProfileLink(
+      localUid: store.profileUid,
+      localName: await _nameOf(store.profileUid),
+      deviceId: store.deviceId,
+      localHasNotes: localHasNotes,
+      localProfileCount: await _profileCount(),
+      remote: remote,
+      v2Device: store.sync2Device,
+      settled: binding?.settledElsewhere(directoryKey) ?? false,
+    );
+    switch (decision) {
+      case SrsProfileLinkKeep(:final bool linked):
+        if (linked) await _settle(store, directoryKey);
+        return SrsProfileLinkOutcome(store, linked: linked);
+      case SrsProfileLinkChoose(:final List<SrsRemoteProfile> candidates):
+        return SrsProfileLinkOutcome(
+          store,
+          choose: candidates,
+          localHasNotes: localHasNotes,
+          localNoteCount: await store.userNoteCount(),
+        );
+      case SrsProfileLinkAdopt(:final String uid):
+        // 那个 uid 已是本机另一个 profile（profiles.uid 唯一）：用户切过去就能同步，不动。
+        if (await _uidTakenLocally(uid)) return SrsProfileLinkOutcome(store);
+        final SrsDbStore adopted = await _switchUid(store, uid, merge: false);
+        try {
+          await srsRemoveOwnProfileFolder(
+            backend,
+            profileUid: store.profileUid,
+            deviceId: store.deviceId,
+            v2Device: store.sync2Device,
+          );
+        } catch (e, stack) {
+          // 孤儿目录只有本设备的内置行批次，删不掉不影响同步。
+          onError?.call('SrsProfileLinker.cleanup', e, stack);
+        }
+        await _settle(adopted, directoryKey);
+        return SrsProfileLinkOutcome(adopted, linked: true);
+    }
+  }
+
+  /// 删掉 [remote] 里本设备的孤儿目录（删掉的同时从 [remote] 里去掉）。规则见下面的注释。
+  Future<void> _removeRetiredFolders(
+    SyncAssetStore backend,
+    SrsDbStore store,
+    List<SrsRemoteProfile> remote,
+  ) async {
     // 本设备的孤儿目录：本设备**换 uid 时离开的**旧 uid（[kSrsRetiredProfileUidsKey]，例如用户在冲突弹窗里选了
     // 别的 profile），且只有本设备写过、本机也没有 profile 再用它。本机判定本来就不把它算作别人的数据，但别的设备会
     // 一直把它当成又一个有数据的候选，所以清掉。没记在退役名单里的一律不碰：删掉的 profile、恢复旧备份前的 uid
     // 同样「只有本设备写过、本机没有」，它们在同步目录里的那份可能是唯一的副本。
-    final Set<String> retired = await _readMetaSet(
-      store,
-      kSrsRetiredV2DevicesKey,
+    final Set<String> retired = await srsEditMetaSet(
+      store.core,
+      SrsMetaSet.retiredDevices,
     );
-    final Set<String> retiredUids = await _readMetaSet(
-      store,
-      kSrsRetiredProfileUidsKey,
+    final Set<String> retiredUids = await srsEditMetaSet(
+      store.core,
+      SrsMetaSet.retiredUids,
     );
     for (final SrsRemoteProfile r in <SrsRemoteProfile>[...remote]) {
       if (r.uid == store.profileUid || r.writers.isEmpty) continue;
@@ -679,43 +806,6 @@ class SrsDbProfileLinker implements SrsProfileLinker {
         onError?.call('SrsProfileLinker.cleanup', e, stack);
       }
     }
-    final bool localHasNotes = await store.hasUserNotes();
-    final SrsProfileLinkDecision decision = srsDecideProfileLink(
-      localUid: store.profileUid,
-      localName: await _nameOf(store.profileUid),
-      deviceId: store.deviceId,
-      localHasNotes: localHasNotes,
-      localProfileCount: await _profileCount(),
-      remote: remote,
-      v2Device: store.sync2Device,
-    );
-    switch (decision) {
-      case SrsProfileLinkKeep(:final bool linked):
-        return SrsProfileLinkOutcome(store, linked: linked);
-      case SrsProfileLinkChoose(:final List<SrsRemoteProfile> candidates):
-        return SrsProfileLinkOutcome(
-          store,
-          choose: candidates,
-          localHasNotes: localHasNotes,
-          localNoteCount: await store.userNoteCount(),
-        );
-      case SrsProfileLinkAdopt(:final String uid):
-        // 那个 uid 已是本机另一个 profile（profiles.uid 唯一）：用户切过去就能同步，不动。
-        if (await _uidTakenLocally(uid)) return SrsProfileLinkOutcome(store);
-        final SrsDbStore adopted = await _switchUid(store, uid, merge: false);
-        try {
-          await srsRemoveOwnProfileFolder(
-            backend,
-            profileUid: store.profileUid,
-            deviceId: store.deviceId,
-            v2Device: store.sync2Device,
-          );
-        } catch (e, stack) {
-          // 孤儿目录只有本设备的内置行批次，删不掉不影响同步。
-          onError?.call('SrsProfileLinker.cleanup', e, stack);
-        }
-        return SrsProfileLinkOutcome(adopted, linked: true);
-    }
   }
 
   @override
@@ -723,6 +813,7 @@ class SrsDbProfileLinker implements SrsProfileLinker {
     SrsDbStore store,
     String uid, {
     SyncAssetStore? within,
+    String? directoryKey,
   }) async {
     if (uid == store.profileUid) return SrsProfileAdopted(store);
     if (await _uidTakenLocally(uid)) {
@@ -730,14 +821,14 @@ class SrsDbProfileLinker implements SrsProfileLinker {
     }
     final int profileId = await activeProfileId();
     try {
-      return SrsProfileAdopted(
-        await _switchUid(
-          store,
-          uid,
-          merge: await store.hasUserNotes(),
-          within: within,
-        ),
+      final SrsDbStore adopted = await _switchUid(
+        store,
+        uid,
+        merge: await store.hasUserData(),
+        within: within,
       );
+      await _settle(adopted, directoryKey);
+      return SrsProfileAdopted(adopted);
     } on SrsProfileMergeDeferred catch (e, stack) {
       // 暂缓在第一次落库之前抛（[SrsProfileMergeDeferred]）：主库还指向旧 uid、并入标记已写（[srsMergeProfileUid]
       // 一开头），之后的 [link] 经 [_resumePendingMerges] 重跑。主库已经改了 uid 就不是这种干净的暂缓，按失败抛。
@@ -749,54 +840,12 @@ class SrsDbProfileLinker implements SrsProfileLinker {
     }
   }
 
-  /// srs.db `srs_meta` 里 [key] 存的字符串集合（JSON 数组；没有 / 坏了为空）。
-  Future<Set<String>> _readMetaSet(SrsDbStore store, String key) async {
-    final QueryRow? row = await store.db
-        .customSelect(
-          'SELECT value FROM srs_meta WHERE key = ?',
-          variables: <Variable<Object>>[Variable<String>(key)],
-        )
-        .getSingleOrNull();
-    final String? raw = row?.read<String>('value');
-    if (raw == null) return <String>{};
-    try {
-      final Object? j = jsonDecode(raw);
-      return j is List ? <String>{for (final Object? x in j) '$x'} : <String>{};
-    } on FormatException {
-      return <String>{};
-    }
-  }
-
-  /// 往 srs.db `srs_meta` 的字符串集合 [key] 里加 [value]（已有就不写）。
-  Future<void> _addToMetaSet(SrsDbStore store, String key, String value) async {
-    final Set<String> values = await _readMetaSet(store, key);
-    if (!values.add(value)) return;
-    await store.db.customStatement(
-      'INSERT OR REPLACE INTO srs_meta (key, value) VALUES (?, ?)',
-      <Object>[key, jsonEncode(values.toList())],
-    );
-  }
-
-  /// 从 srs.db `srs_meta` 的字符串集合 [key] 里去掉 [value]。
-  Future<void> _removeFromMetaSet(
-    SrsDbStore store,
-    String key,
-    String value,
-  ) async {
-    final Set<String> values = await _readMetaSet(store, key);
-    if (!values.remove(value)) return;
-    await store.db.customStatement(
-      'INSERT OR REPLACE INTO srs_meta (key, value) VALUES (?, ?)',
-      <Object>[key, jsonEncode(values.toList())],
-    );
-  }
-
   /// 换 uid 之前记下本机在旧集合里的 v2 设备身份（[kSrsRetiredV2DevicesKey]）：并入会删掉旧 uid 的本机身份行，
   /// 之后（含中断后续做的并入）就再也查不到了。只凭它不会删任何目录，见 [kSrsRetiredProfileUidsKey]。
   Future<void> _retireV2Device(SrsDbStore store) async {
     final String? device = store.sync2Device;
     if (device != null) {
-      await _addToMetaSet(store, kSrsRetiredV2DevicesKey, device);
+      await srsEditMetaSet(store.core, SrsMetaSet.retiredDevices, add: device);
     }
   }
 
@@ -853,7 +902,7 @@ class SrsDbProfileLinker implements SrsProfileLinker {
         continue;
       }
       _deferred.remove(_mergeKey(m.profileId, m.oldUid, m.newUid));
-      await _addToMetaSet(store, kSrsRetiredProfileUidsKey, m.oldUid);
+      await srsEditMetaSet(store.core, SrsMetaSet.retiredUids, add: m.oldUid);
       resumed = true;
     }
     // 并入在改完主库 uid 之后才失败（第二遍并入 / 核对），而手里的 store 还是旧 uid 的：按 profiles 表的新 uid 重开，
@@ -893,36 +942,66 @@ class SrsDbProfileLinker implements SrsProfileLinker {
         pullTarget: _pullTarget(within),
       );
     } else {
-      await srsAdoptProfileUid(
-        db,
-        store.db,
-        profileId: profileId,
-        oldUid: oldUid,
-        newUid: uid,
-      );
+      // 删旧 uid 在它自己那份副本的最后一段独占区里跑、之后副本作废（[SrsDbStore.retire]）：副本已经读完现值、
+      // 正等着发命令的写入（制卡、作答）先写完再删；排在后面的、以后再来的一律明确失败，不会把行写回一个已删的
+      // uid（内核写本机状态行时没有行就新建，一条漏进来的写入会让退役的 uid 重新长出数据与纪元）。
+      try {
+        await store.retire(
+          () => srsAdoptProfileUid(
+            db,
+            store.core,
+            profileId: profileId,
+            oldUid: oldUid,
+            newUid: uid,
+          ),
+          reason: 'profile $oldUid adopted the uid $uid',
+        );
+      } catch (_) {
+        // 没采用成（主库的 uid 没改；旧 uid 的行可能已删，只有内置行 / 本机状态，重开时重建）：副本已作废，按原
+        // uid 重开一份。
+        await reopenStore();
+        rethrow;
+      }
     }
     // 主库已经改用 [uid]：旧 uid 的数据已在新 uid 下（并入）或本来只有内置行（采用），它在同步目录里的本设备
     // 目录可以由之后的 [link] 清掉。
-    await _addToMetaSet(store, kSrsRetiredProfileUidsKey, oldUid);
+    await srsEditMetaSet(store.core, SrsMetaSet.retiredUids, add: oldUid);
+    SrsDbStore? adopted;
     try {
       final SrsDbStore? reopened = await reopenStore();
       if (reopened == null || reopened.profileUid != uid) {
         throw StateError('store did not reopen under the adopted profile');
       }
+      adopted = reopened;
       // 新写入者化身：本设备可能早年在这个 profile 下写过（重装等），不沿用旧 writerId。
       await reopened.afterRestore(freshIncarnation: true);
       return reopened;
     } catch (_) {
       if (!merge) {
-        // 采用要么整体成功、要么回到原样（旧 uid 下只有内置行 / 本机状态，重开时重建）。
-        await srsAdoptProfileUid(
+        // 采用要么整体成功、要么回到原样（旧 uid 下只有内置行 / 本机状态，重开时重建）。[uid] 的新副本开出来了
+        // 就在它的最后一段独占区里删、随后作废它（同上，不与它自己的写入交错）；没开出来就没有副本会写 [uid]，
+        // 直接删。
+        Future<void> revert() => srsAdoptProfileUid(
           db,
-          store.db,
+          store.core,
           profileId: profileId,
           oldUid: uid,
           newUid: oldUid,
         );
-        await _removeFromMetaSet(store, kSrsRetiredProfileUidsKey, oldUid);
+        final SrsDbStore? live = adopted;
+        if (live != null && live.isUsable) {
+          await live.retire(
+            revert,
+            reason: 'adopting the uid $uid was rolled back',
+          );
+        } else {
+          await revert();
+        }
+        await srsEditMetaSet(
+          store.core,
+          SrsMetaSet.retiredUids,
+          remove: oldUid,
+        );
         await reopenStore();
       }
       rethrow;
@@ -939,14 +1018,21 @@ class SrsDbProfileLinker implements SrsProfileLinker {
     final String? device = store.sync2Device;
     if (device == null) return;
     final int noteCount = await store.userNoteCount();
-    final bool hasNotes = noteCount > 0;
+    // 说明文件的 `hasNotes` 报的是「有没有用户数据」（[SrsDbStore.hasUserData]）：只建了牌组 / 改了预设的设备也要
+    // 被别的设备当成有数据的候选，否则对方（空的）按「双方都空、收敛到最小 uid」判，这边又因为有数据不采用，两边
+    // 就各自保持、悄悄分叉。键名沿用旧名（旧版本读到 true 同样当作有数据）。
+    final bool hasNotes = noteCount > 0 || await store.hasUserData();
     // 设备人读名（昵称或型号，devices.rs）：别的设备遇到 profile 冲突时靠它认出这份数据是哪台设备的。
     final Object? label = (await store.sync2DeviceInfo())['name'];
     final String? deviceLabel = label is String && label.isNotEmpty
         ? label
         : null;
+    // 并入暂缓着（或做到一半）：用户已经选定离开这个 uid，告诉别的设备别再把它当候选（BUG-4296）。并入标记是 srs.db
+    // 里的持久状态，进程重启、离线多久都还在；并入做完标记删掉、本设备换到新 uid，旧 uid 下的目录随后由 [link] 清掉。
+    final String? mergingInto = await _mergingInto(store);
     final String sig =
-        '${store.profileUid}|$device|$name|$noteCount|${deviceLabel ?? ''}';
+        '${store.profileUid}|$device|$name|$noteCount|$hasNotes|'
+        '${deviceLabel ?? ''}|${mergingInto ?? ''}';
     if (_published[directoryKey] == sig) return;
     await srsPublishProfileInfo(
       backend,
@@ -956,7 +1042,21 @@ class SrsDbProfileLinker implements SrsProfileLinker {
       hasNotes: hasNotes,
       device: deviceLabel,
       noteCount: noteCount,
+      mergingInto: mergingInto,
     );
     _published[directoryKey] = sig;
+  }
+
+  /// [store] 所属的当前 profile 有没做完的并入、且它还在旧 uid 上（[srsPendingProfileMerges]）：要并入的 uid；否则 null。
+  Future<String?> _mergingInto(SrsDbStore store) async {
+    final int profileId = await activeProfileId();
+    for (final SrsPendingProfileMerge m in await srsPendingProfileMerges(
+      store.db,
+    )) {
+      if (m.profileId == profileId && m.oldUid == store.profileUid) {
+        return m.newUid;
+      }
+    }
+    return null;
   }
 }

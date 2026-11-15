@@ -79,12 +79,20 @@ void main() {
         expect(b, a, reason: zh);
         expect(en.trim(), isNotEmpty, reason: zh);
       });
-      // 唯一允许的中文：语言下拉里「界面语言」的中文提示（给读不懂英文的人找回中文）。
+      // 允许的中文 / 日文只有：语言下拉里「界面语言」的中文提示（给读不懂英文的人找回中文），
+      // 以及词典页里作日语查词示例的「食べた」（试查 placeholder 与去屈折说明）。
       final List<String> withCjk = kWebUiEnglish.entries
           .where((MapEntry<String, String> e) => _cjk.hasMatch(e.value))
           .map((MapEntry<String, String> e) => e.key)
           .toList();
-      expect(withCjk, <String>['界面语言（Language）']);
+      expect(
+        withCjk,
+        unorderedEquals(<String>[
+          '界面语言（Language）',
+          '食べた',
+          '已配对设备查词时只把要查的文字发过来，去屈折（「食べた」→「食べる」）在本机用本机的变形表做，所以变形表装在服务端即可，各设备无需自带。',
+        ]),
+      );
     });
 
     test('脚本里的中文全包在 T() 里（注释与语言名除外）', () {

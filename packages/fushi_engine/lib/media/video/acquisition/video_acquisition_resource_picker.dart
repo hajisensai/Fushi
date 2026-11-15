@@ -379,7 +379,7 @@ int? estimatedBytesPerEpisode(VideoResourceVersionGroup group) {
   int count = 0;
   for (final VideoResourceCandidate member in group.members) {
     final int size = member.sizeBytes ?? 0;
-    if (size <= 0 || isLikelyBatchVideoRelease(member.title)) continue;
+    if (size <= 0 || group.isSeasonPack(member)) continue;
     total += size;
     count++;
   }
@@ -394,7 +394,7 @@ int? estimatedBytesPerEpisode(VideoResourceVersionGroup group) {
 /// - 订阅 → 代表条 + [StrictVideoSubscriptionFilter] + `startAfterEpisode = episodes.min`；
 /// - 下载 tv：`Single(n)` → `pickResourceVersionCandidate(group, episode: n)`；
 ///   `Range` → 组内集号落在范围内的成员（同集取代表序最优），缺的集进 `missingEpisodes`；
-///   `All` → 有 `isLikelyBatchVideoRelease` 成员（只会在整包卡里）则只取做种最多
+///   `All` → 有有据整包成员（`group.isSeasonPack`）（只会在整包卡里）则只取做种最多
 ///   的合集（`usesBatch`），否则所有能解析出集号的成员（同集去重）；结果为空 → null。
 VideoAcquisitionResourcePlan? planResourceFromGroup(
   VideoResourceVersionGroup group, {
@@ -429,7 +429,7 @@ VideoAcquisitionResourcePlan? planResourceFromGroup(
 ///
 /// 电影身份并不保证资源是电影：发现页可能把集数未知的 TV 动画合并到一条电影
 /// 身份下，资源搜索于是拿回整季合集包或逐集发布。
-/// * 代表条是合集包（`isLikelyBatchVideoRelease`）→ 照旧整包下，但如实标
+/// * 代表条是合集包（`group.isSeasonPack`：标题或文件列表证成）→ 照旧整包下，但如实标
 ///   `usesBatch`，摘要说「合集」而不是「一部电影」；落地时整理器按文件名集号
 ///   改判剧集（`looksLikeEpisodicPack`）。
 /// * 代表条本身是某一集、组里还有别的集号 → 这是一张逐集发布的剧集卡，拿一集
@@ -439,7 +439,7 @@ VideoAcquisitionResourcePlan? _planMovieDownload(
   VideoResourceVersionGroup group,
 ) {
   final VideoResourceCandidate representative = group.representative;
-  if (isLikelyBatchVideoRelease(representative.title)) {
+  if (group.isSeasonPack(representative)) {
     return VideoAcquisitionResourcePlan(
       group: group,
       picks: <VideoResourceCandidate>[representative],
@@ -493,12 +493,14 @@ VideoAcquisitionResourcePlan? _planEpisodesDownload(
       );
     case VideoAcquisitionAllEpisodes():
       // 发布形态是分组键的一维（BUG-4246）：逐集卡里没有整包，整包卡里没有单集，
-      // 不会再拿 A 作品的整包去配 B 作品的逐集。整包卡里只认**写明是合集**的那几条
-      // （关键词 / 区间 / 只写季号的 `S01` 季包，BUG-4267）：没有集号的单条（`Show Special`、没写 batch 的 BD 包）
-      // 分不清是全集还是一集特典，当「全集」下错了比给不出计划更糟。
+      // 不会再拿 A 作品的整包去配 B 作品的逐集。整包卡里只认**有据的**整包：标题
+      // 写明是合集（关键词 / 区间 / 只写季号的 `S01` 季包，BUG-4267），或种子文件
+      // 列表证成多集合集（没写 batch 的 BD 包）。只有「没有集号」这一个特征的单条
+      // （`Show Special`、没取到文件列表的 BD 包）分不清是全集还是一集特典，当
+      // 「全集」下错了比给不出计划更糟。
       final List<VideoResourceCandidate> batches = <VideoResourceCandidate>[
         for (final VideoResourceCandidate member in group.members)
-          if (isLikelyBatchVideoRelease(member.title)) member,
+          if (group.isSeasonPack(member)) member,
       ];
       if (batches.isNotEmpty) {
         batches.sort(_byRepresentativeOrder);

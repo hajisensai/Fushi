@@ -53,8 +53,20 @@ const sliceEnd = source.indexOf(sliceEndMarker, sliceStart);
 assert.ok(sliceEnd > sliceStart, 'missing handler slice end marker');
 const rawSlice = source.substring(sliceStart, sliceEnd);
 
-function makeHarness(continuousMode) {
+// [opts] (GitHub #3088 tap-lookup toggle cases; omitted = the original paged
+// harness, byte-for-byte the same fakes):
+//   vnMode / vnClickAdvance -- VN view mode with "tap blank to advance";
+//   highlightOnTap          -- the tap-gate mirror's `lookup` half;
+//   glyphHit                -- the finger lands INSIDE a real glyph box (caret
+//                              range with text + a char rect covering the
+//                              point), so `_fushiVnTapIsBlank` says "text";
+//   selection               -- install a `window.fushiSelection` stub that
+//                              records JS-side direct selectText calls.
+function makeHarness(continuousMode, opts) {
+  opts = opts || {};
   const handlers = {};
+  const vnBlankTaps = [];
+  const selects = [];
   // Each onSwipe is recorded as `<direction>@<dispatch event type>` so the test
   // can prove WHICH path fired it. In paged mode the finger lands on body text,
   // so the fixed reader emits the swipe from touchend -> _gestureEnd (recorded
@@ -97,9 +109,14 @@ function makeHarness(continuousMode) {
   // caret the helper would return null, `!null` = true, and the 890378f19
   // regression would wrongly drive the pointer machine yet still emit a swipe
   // from pointerup, masking the bug (the original false-green).
-  const bodyTextRange = {
-    startContainer: { nodeType: 3 /* Node.TEXT_NODE */ },
-  };
+  const bodyTextRange = opts.glyphHit
+    ? {
+      startContainer: { nodeType: 3 /* Node.TEXT_NODE */, textContent: 'あいうえお' },
+      startOffset: 0,
+    }
+    : {
+      startContainer: { nodeType: 3 /* Node.TEXT_NODE */ },
+    };
 
   const documentObj = {
     documentElement: { classList: documentElementClassList },
@@ -114,10 +131,25 @@ function makeHarness(continuousMode) {
     // undefined so the helper takes this branch) returning that text range.
     caretRangeFromPoint() { return bodyTextRange; },
   };
+  if (opts.glyphHit) {
+    // One char rect covering the whole viewport: any tap lands inside a glyph.
+    documentObj.createRange = function () {
+      return {
+        setStart() {},
+        setEnd() {},
+        collapse() {},
+        getClientRects() { return [{ left: 0, right: 10000, top: 0, bottom: 10000 }]; },
+      };
+    };
+  }
 
   const windowObj = {
-    fushiReader: { isVertical() { return false; } },
-    fushiSelection: null,
+    fushiReader: opts.vnMode
+      ? { isVertical() { return false; }, paginate() {} }
+      : { isVertical() { return false; } },
+    fushiSelection: opts.selection
+      ? { selectText(x, y) { selects.push([x, y]); return true; } }
+      : null,
     getSelection() { return { isCollapsed: true, removeAllRanges() {} }; },
     getComputedStyle() { return body; },
     scrollBy() {},
@@ -127,6 +159,7 @@ function makeHarness(continuousMode) {
         // can assert touchend (fix) vs pointerup (regression) as the source.
         if (name === 'onSwipe') { swipes.push(a1 + '@' + (currentDispatch || 'unknown')); }
         if (name === 'onTap') { taps.push(a1); }
+        if (name === 'onVnBlankTap') { vnBlankTaps.push(currentDispatch); }
       },
     },
   };
@@ -151,8 +184,8 @@ function makeHarness(continuousMode) {
     continuousMode: !!continuousMode,
     // TODO-909: VN flags default false here (this harness exercises the paged
     // path); keeps the slice self-contained when VN tap-advance was added.
-    vnMode: false,
-    vnClickAdvance: false,
+    vnMode: !!opts.vnMode,
+    vnClickAdvance: !!opts.vnClickAdvance,
     hoverAutoLookup: false,
     swipeDistThreshold: SWIPE_DIST,
     swipeFastDistThreshold: SWIPE_FAST_DIST,
@@ -162,7 +195,7 @@ function makeHarness(continuousMode) {
     debugLogging: false,
     // BUG-712 (1): the tap-gate mirror governs tap-to-lookup, orthogonal to the
     // paged swipe assertion, so neutral values are fine.
-    highlightOnTap: true,
+    highlightOnTap: opts.highlightOnTap === undefined ? true : !!opts.highlightOnTap,
     showChrome: true,
   };
   const prepared = '(function(C){\n'
@@ -184,7 +217,7 @@ function makeHarness(continuousMode) {
 
   function advance(ms) { clockMs += ms; }
 
-  return { dispatch, swipes, taps, advance };
+  return { dispatch, swipes, taps, advance, vnBlankTaps, selects };
 }
 
 function pointerEvt(type, x, y, button, buttons) {
@@ -403,6 +436,61 @@ assert.ok(
     'a touch path that crossed pan slop must never become lookup just because '
       + 'touchend returned near its origin; got ' + JSON.stringify(h.taps),
   );
+})();
+
+// GitHub #3088 (feedback 6UvuZxRQkW): "Look up words on tap" switched OFF must
+// make a tap on body text behave exactly like a tap on blank space -- the JS
+// must neither select the word itself nor keep VN "tap to advance" limited to
+// blank spots. (Dart's onTap then routes the tap into the blank-tap handler.)
+
+// Lookup ON (control): paged, finger on a glyph, selection ready -> JS selects
+// the word directly (BUG-712 fast path), no onTap round-trip.
+(function () {
+  const h = makeHarness(false, { glyphHit: true, selection: true, highlightOnTap: true });
+  h.dispatch('touchstart', touchEvt(200, 300));
+  h.advance(120);
+  h.dispatch('touchend', touchEvt(201, 300));
+  assert.deepStrictEqual(h.selects, [[201, 300]], 'lookup on: tap on text selects the word');
+  assert.deepStrictEqual(h.taps, [], 'lookup on: the JS fast path owns the tap');
+})();
+
+// Lookup OFF: same tap -> no JS selection; the tap goes to Dart's onTap (which
+// treats it as a blank tap: tap zones / floating chrome reveal).
+(function () {
+  const h = makeHarness(false, { glyphHit: true, selection: true, highlightOnTap: false });
+  h.dispatch('touchstart', touchEvt(200, 300));
+  h.advance(120);
+  h.dispatch('touchend', touchEvt(201, 300));
+  assert.deepStrictEqual(h.selects, [], 'lookup off: a tap on text must never select/look up');
+  assert.deepStrictEqual(h.taps, [201], 'lookup off: the tap is handed to Dart onTap');
+  assert.deepStrictEqual(h.swipes, [], 'a tap never page-turns via onSwipe');
+})();
+
+// VN + tap-to-advance, lookup ON (control): a tap on a glyph is a lookup, not
+// an advance.
+(function () {
+  const h = makeHarness(false, {
+    vnMode: true, vnClickAdvance: true, glyphHit: true, selection: true, highlightOnTap: true,
+  });
+  h.dispatch('touchstart', touchEvt(200, 300));
+  h.advance(120);
+  h.dispatch('touchend', touchEvt(201, 300));
+  assert.deepStrictEqual(h.vnBlankTaps, [], 'lookup on: text tap in VN is not an advance');
+  assert.deepStrictEqual(h.selects, [[201, 300]], 'lookup on: text tap in VN looks up');
+})();
+
+// VN + tap-to-advance, lookup OFF: the same tap on a glyph advances like a
+// blank tap (onVnBlankTap), and never looks up.
+(function () {
+  const h = makeHarness(false, {
+    vnMode: true, vnClickAdvance: true, glyphHit: true, selection: true, highlightOnTap: false,
+  });
+  h.dispatch('touchstart', touchEvt(200, 300));
+  h.advance(120);
+  h.dispatch('touchend', touchEvt(201, 300));
+  assert.deepStrictEqual(h.vnBlankTaps, ['touchend'], 'lookup off: text tap in VN advances');
+  assert.deepStrictEqual(h.selects, [], 'lookup off: text tap in VN never looks up');
+  assert.deepStrictEqual(h.taps, [], 'lookup off: VN advance owns the tap (no onTap)');
 })();
 
 console.log('reader_paged_touch_swipe_behavior_test.js: all assertions passed');

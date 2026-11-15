@@ -35,6 +35,14 @@ const Duration kMusicResumeWriteStep = Duration(seconds: 5);
 /// 断点写入节流：没在播（暂停 / 播完 / 暂停时拖动）时，位置变了这么多就写。
 const Duration kMusicResumeIdleWriteStep = Duration(seconds: 1);
 
+/// 系统媒体卡片（通知栏 / 锁屏 / SMTC）进度条用的时长，与应用内进度条同一个口径：
+/// 普通曲目 = [MusicPlayItem.playbackDuration]；试听片段不拿整首的元数据时长画
+/// 0:30 / 4:00，用引擎拿到的媒体实际长度（[engineDuration]，报出前为 null，反馈 okvRZINcQU）。
+Duration? musicMediaSessionDuration(
+  MusicPlayItem item,
+  Duration? engineDuration,
+) => item.isPreview ? engineDuration : item.playbackDuration;
+
 /// 播放失败的提示文字。
 String musicPlaybackFailureText(MusicBackendFailed failure) =>
     switch (failure.reason) {
@@ -552,27 +560,21 @@ class MusicSession extends ChangeNotifier {
       return;
     }
     final String? cover = item.coverPath;
+    // 基础信息与当前歌词行一次组成最终卡片：本方法挂在每个进度 tick 上，分两次推
+    // （先无歌词卡、再有歌词卡）会让两张卡交替、去重失效，每 tick 真推两次
+    // setMediaItem（BUG-4507）。
     handler.setMediaItemInfo(
       title: item.title,
       artist: item.artist,
-      duration: item.durationMs == null
-          ? null
-          : Duration(milliseconds: item.durationMs!),
+      duration: musicMediaSessionDuration(item, engine.duration),
       // 服务器曲库的封面是 http(s) 地址（audio_service 自己下载），本地封面是文件。
       artUri: cover == null
           ? null
           : (cover.startsWith('http://') || cover.startsWith('https://'))
           ? Uri.parse(cover)
           : (File(cover).existsSync() ? Uri.file(cover) : null),
+      subtitle: mediaSessionLyricLine?.call(),
     );
-    final String? line = mediaSessionLyricLine?.call();
-    if (line != null) {
-      handler.updateNotificationSubtitle(
-        title: item.title,
-        subtitle: line,
-        fallbackArtist: item.artist,
-      );
-    }
     handler.updatePlaybackState(
       playing: engine.isPlaying,
       position: engine.position,

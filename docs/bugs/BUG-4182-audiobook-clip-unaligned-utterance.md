@@ -13,13 +13,13 @@
   - `transcript.srt`（设备端 ASR 产物）对应 cue 4149 `おてつだいしましょうか？` 03:37:24.544–27.856：ASR **漏听了「いーらーん」**，但段时间戳盖住了它；
     匹配器只认听到的字，把正文「いーらーん」并进了下一条 ASR cue（4150 `引っぺがして部屋に戻る。`，其音频里没有这句）。
   - 结果：导出 #3293 时音频里有两句、卡片只有第一句；而点 #3294 播放时高亮着「いーらーん」却听不到它。导出代码按 cue 数据做的是对的。
-- **[ ] ① 未修复** — 修复层在对齐，不在导出：
-  - ASR 漏字本身属上游 `hajisensai/fushi-subtitles`（asr-assembly.md：ASR 算法一律去上游改）。
-  - 本仓可落地的一层是 `packages/fushi_audio/lib/src/matching/cue_sentence_resegmenter.dart` 的合缝 `_closeGaps`：它已有「前一条末 token 后有长段没出字 → 缝归前一条」的证据判据（`_fallbackCut` / `_unheardTailMs`），
-    但只在缝内第一个切点**认领不下**时才查；第一个切点认领得起时直接按句界切，不看 token 证据。不过本例**用不上**这条：本书目录里没有 `transcript.tokens.jsonl`（token sidecar），
-    `attachAsrCueTokenTiming` 挂不上，重切器整段不参与（`_eligible` 要求 token 时间）。
-- **[ ] ② 未加自动化测试** — 根因层未定前不写。
-- **备注**：证据缺口（定修复层所需）：
-  1. 本书当时对齐有没有 token sidecar（目录里现在只有 `transcript.srt` 与 `安達としまむら3.srt`；库里 cue 起止与现存 `transcript.srt` 差 40–150 ms，说明落库时用的不是这份原样时间，可能是带 token 的旧一次转录）；
-  2. 是匹配器哪一步把 #3294 的起点向前扩到 `ns=8571`（native `ffc_text_cue_match` 的 Dice 滑窗 / `cueTailOverlap` 回退，还是 `AnchorGapFiller` 回填）——需在本机拿这本 EPUB + `transcript.srt` 重跑一遍 `EpubSrtMatcher` 并打印该段 `CueMatch`。
-  拿到这两条再决定修在匹配器（漏听台词归时长富余的一侧）还是上游 ASR（不漏听 / 按 VAD 切段）。导出侧无需改动。
+- **[x] ① 已修复** — `a2a797e45b`（修在本仓匹配器的合缝，不在导出、不在上游 ASR）。
+  - 补证据（2026-11-10）：token sidecar 在转录任务目录 `support/asr_jobs/c69e62d5…/transcript.tokens.jsonl`（行数 = cue 数 8008，`attachAsrCueTokenTiming` 挂得上，重切器参与了；书目录里那份 `transcript.srt` 只是拷贝）。
+    用该书 EPUB + 这份 `transcript.srt` / sidecar 重跑 `EpubSrtMatcher`（window=200, threshold=0.6）→ `AnchorGapFiller` → `CueSentenceResegmenter`，输出与库里 #3293/#3294 逐字一致：
+    - native 第一遍：cue 4148 `おてつだいしましょうか？` → `ns=8561 ne=8571`，cue 4149 `引っぺがして部屋に戻る。` → `ns=8576 ne=8587`；**匹配器没把「いーらーん」给任何一侧**，留成缝 `[8571,8576)`，回填也没动；
+    - 合缝 `_closeGaps`：缝内第一个切点就是缝起点 8571（`？」「` 句界），后一条 1.6 s 认领 16 字不超读速上限 → 直接按它切，整段推给后一条 → `ns=8571`。没看 token 证据：前一条末 token 在 1394 ms、cue 到 3312 ms 才收声（1.9 s 没出字），后一条首 token 偏移 0。
+  - 归属：ASR 漏听（raw 段 `13044058–13048026` 只解出 11 个 token，末 token 13045938）确属上游，但上游漏字是常态、本仓匹配器的职责就是用时间证据把漏听正文归给正在发声的 cue——这次错在本仓 `packages/fushi_audio/lib/src/matching/cue_sentence_resegmenter.dart` 合缝（`_closeGaps` 无中间 cue 分支，修前 :277 `fits(first) ? first : _fallbackCut(...)`）：时长证据只在第一个切点认领不下时才看。
+  - 修复（`cue_sentence_resegmenter.dart:276-300`）：前一条「没出字的发声时长」比后一条开头多出 `forwardPauseMs` 以上（`_unheardSide`，与 `_fallbackCut` / 片归属同一判据）时，把第一个切点之后**到最后一个整句 / 整段引号边界**（`_lastUtteranceBoundary` + `_SectionGaps.endsUtteranceAt`：句末标点或引号开 / 合 / 换对）的正文归前一条，认领不下仍走原路径。只按整句挪：没出字时长也可能是末字拖长音（「んー……ま、いっか」实测「ま」念在两条之间），句中逗号后的下一句开头半截不拆过去。
+  - 整书对拍（修前 / 修后同一输入，8008 cue → 6372 cue）：只变 3 处，`ffmpeg silencedetect` 逐处核过都是漏听的台词确实在前一条的发声区间里：#3293「いーらーん」、「…ないや｜じゃあ」（前一条尾 11849.80–11850.74 s 有一段发声）、「あはははははっははー｜えぇぇ」（笑声全在前两条里，后一条「え」只有 0.5 s）。160 个合成用例 × 2 档 `cue_resegmenter_golden` 夹具逐位不变。
+- **[x] ② 已加自动化测试** — `cba5310fa1`：`packages/fushi_audio/test/matching/cue_sentence_resegmenter_test.dart` 组「合缝：漏听的整句台词按没出字时长归前一条（BUG-4182）」——本书真实 token 时间的最小复现（两句正文、ASR 只给一句 token、时间覆盖两句 → 两条 cue，`いーらーん` 在前一条，换正文后 `「お手伝いしましょうか？」「いーらーん」` / `引っ剝がして部屋に戻る。`），外加拖长音反例（「んー……ま、いっか」缝尾半句不拆过去）。测试未在本分支运行，统一在合并后验证。
+- **备注**：导出侧（`clipExportGlobalRange` / `_buildAudiobookClipPlan`）无缺陷、未改。已落库的书要重新对齐（重新「使用字幕」/ 重匹配）才会换上新切分。

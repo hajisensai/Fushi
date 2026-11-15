@@ -87,8 +87,46 @@ void main() {
     expect(handler, contains('fushiLiftHaptic(context);'));
     expect(
       handler,
-      contains('await showImageActionsSheet(context, file: file);'),
+      matches(
+        RegExp(r'await showImageActionsSheet\(\s*context,\s*file: file,'),
+      ),
     );
+  });
+
+  test('OCR 文本复制（反馈 hjUlprxxKI）：长按面板与右键菜单都按落点给复制项', () {
+    final String source = read(
+      'lib/src/media/manga/reader/manga_fushi_page.dart',
+    );
+    final String longPress = slice(
+      source,
+      'Future<void> _onMangaPageLongPress(String payloadJson)',
+      '_MangaOcrCopyTexts _ocrCopyTextsAt(',
+    );
+    expect(longPress, contains('_ocrCopyTextsAt(decoded)'));
+    expect(longPress, contains('ImageSheetExtraAction('));
+    expect(longPress, contains('t.manga_ocr_copy_text'));
+    expect(longPress, contains('t.manga_ocr_copy_page_text'));
+
+    final String resolver = slice(
+      source,
+      '_MangaOcrCopyTexts _ocrCopyTextsAt(',
+      'Future<void> _runCurrentMangaPageImageAction(',
+    );
+    // 文本真值在 Dart 侧按页 OCR 块算，与查词 / 朗读同一次分组，不读 DOM 文字。
+    expect(resolver, contains('mangaSentenceGroupCopyText(image,'));
+    expect(resolver, contains('mangaPageCopyText(image,'));
+    expect(resolver, contains('Clipboard.setData(ClipboardData(text: text))'));
+
+    final String menu = slice(
+      source,
+      'Future<void> _showReaderContextMenu(String payloadJson)',
+      'Widget build(BuildContext context)',
+    );
+    expect(menu, contains('_ocrCopyTextsAt(decoded)'));
+    expect(menu, contains('value: _MangaContextAction.copyText'));
+    expect(menu, contains('value: _MangaContextAction.copyPageText'));
+    expect(menu, contains('case _MangaContextAction.copyText:'));
+    expect(menu, contains('case _MangaContextAction.copyPageText:'));
   });
 
   test('「保存目录」设置不再出现在漫画阅读设置里', () {

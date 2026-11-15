@@ -5,6 +5,7 @@ import 'dart:ui' show Rect, Size;
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart';
 import 'package:fushi/src/media/range_playback.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.dart';
+import 'package:fushi/src/mining/advanced_mining/advanced_mining_layout.dart';
 import 'package:fushi_anki/fushi_anki_core.dart';
 import 'package:fushi_engine/mining/immersion_mining_request.dart'
     show VideoMiningImageMode;
@@ -87,6 +88,11 @@ class FakeAdvancedMiningHost {
   /// 卡片字段分区每次「记住显示哪些字段」的入参。
   final List<Set<String>> setVisibleFieldsCalls = <Set<String>>[];
   int closedCalls = 0;
+
+  // ── 布局（反馈 aZ99bm9R6K）──
+  /// 宿主记住的布局；null = 从没改过（对话框用默认布局）。
+  AdvancedMiningLayout? layout;
+  final List<AdvancedMiningLayout> setLayoutCalls = <AdvancedMiningLayout>[];
 
   // ── 视频 ──
   final List<int> frameRequests = <int>[];
@@ -324,6 +330,11 @@ class FakeAdvancedMiningHost {
     deck: deck,
     fields: fields,
     wordAudio: wordAudio,
+    layout: layout,
+    setLayout: (AdvancedMiningLayout next) async {
+      setLayoutCalls.add(next);
+      layout = next;
+    },
     sections: AdvancedMiningSections(
       sentence: sentence,
       audio: audio,

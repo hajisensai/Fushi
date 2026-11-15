@@ -1020,7 +1020,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (dirty) renderPaletteGrid();
 });
 
-// ── 字幕外观（subtitle-style.js：字体 / 大小 / 字重 / 间距 / 行高 / 对齐 / 颜色 / 描边 / 底板）──
+// ── 字幕外观（subtitle-style.js：字体 / 大小 / 字重 / 间距 / 行高 / 对齐 / 颜色 / 阴影 / 描边 / 底板）──
 // 设置整体存 chrome.storage.local.subtitleStyle；控件 id → 字段名。预览与视频上的覆盖层走同一份
 // toCssVars（预览节点的默认值在 options.css 里与 content-css-overlay.css 同一组 --fushi-sub-*）。
 const SUB = self.fushiSubtitleStyle || null;
@@ -1033,6 +1033,8 @@ const subtitleStyleFields = Object.freeze({
   subtitleStyleTextAlign: { field: 'textAlign', kind: 'select' },
   subtitleStyleTextColor: { field: 'textColor', kind: 'color' },
   subtitleStyleShadow: { field: 'shadow', kind: 'select' },
+  subtitleStyleOutlineWidth: { field: 'outlineWidth', kind: 'range' },
+  subtitleStyleOutlineColor: { field: 'outlineColor', kind: 'color' },
   subtitleStyleBackgroundColor: { field: 'backgroundColor', kind: 'color' },
   subtitleStyleBackgroundOpacity: { field: 'backgroundOpacity', kind: 'range' },
   subtitleStyleBorderRadius: { field: 'borderRadius', kind: 'range' },
@@ -1045,6 +1047,8 @@ const subtitleStyleFields = Object.freeze({
 const subtitleColorDefaults = SUB ? {
   subtitleStyleTextColor: SUB.DEFAULT_TEXT_COLOR,
   subtitleStyleBackgroundColor: SUB.DEFAULT_BACKGROUND_COLOR,
+  // 描边色的「默认」不是主题色而是纯黑（app 同值），按钮文案因此是「默认」而非「跟随主题」。
+  subtitleStyleOutlineColor: SUB.DEFAULT_OUTLINE_COLOR,
 } : {};
 let subtitleStyleCurrent = SUB ? SUB.normalize(null) : null;
 

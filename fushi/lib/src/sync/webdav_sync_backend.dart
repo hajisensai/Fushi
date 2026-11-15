@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
+import 'package:fushi/src/sync/sync_asset_range_reader.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_backend_file_trio_mixin.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -19,7 +20,8 @@ class WebDavSyncBackend extends SyncBackend
         SyncFolderCache,
         SyncBackendFileTrioMixin,
         SyncAssetStoreDefaults,
-        WebDavPathBackendMixin {
+        WebDavPathBackendMixin
+    implements SyncAssetRangeReader {
   WebDavSyncBackend._();
   static final WebDavSyncBackend instance = WebDavSyncBackend._();
 
@@ -274,6 +276,7 @@ class WebDavSyncBackend extends SyncBackend
             name: _stripTrailingSlash(e.displayName),
             isFolder: e.isCollection,
             revision: e.isCollection ? null : e.etag,
+            sizeBytes: e.contentLength,
             modifiedAt: e.modifiedAt,
           ),
         )
@@ -300,6 +303,24 @@ class WebDavSyncBackend extends SyncBackend
     // WebDavOps.deleteFile 已把 404/已删除当作成功（幂等）；其它错误（网络/权限/
     // 协议）必须自然抛出，否则 UI 会把真实失败误报为「已删除」。
     await _ops!.deleteFile(id);
+  }
+
+  // ── SyncAssetRangeReader ─────────────────────────────────────────
+
+  /// `GET` + `Range` 读资产区间（云端旧名漫画包判型、云盘视频流播）。凭据只在
+  /// [WebDavOps] 的请求头里，不随区间流交出去。服务器不支持 `Range` 时抛
+  /// [SyncAssetRangeUnsupported]，不退化成整包下载（见 [WebDavOps.openRange]）。
+  @override
+  Future<SyncAssetRange> openAssetRange(
+    String assetId, {
+    required int start,
+    int? end,
+  }) {
+    final WebDavOps? ops = _ops;
+    if (ops == null) {
+      throw SyncAuthError('WebDAV credentials not configured');
+    }
+    return ops.openRange(assetId, start: start, end: end);
   }
 
   static String _stripTrailingSlash(String value) =>

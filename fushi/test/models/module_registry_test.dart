@@ -288,8 +288,15 @@ void main() {
       const ModuleVisibility none = ModuleVisibility(<ModuleId>{});
       // 每一条都是一个具体的产品决定，不是「还没写」：
       // appearance/system/storage/profiles 是设备级；reading 是 books 与 manga
-      // 共用（漫画库页内嵌的就是它）；lookup 是「关页面入口但留查词能力」的例外。
+      // 共用（漫画库页内嵌的就是它）；lookup 是「关页面入口但留查词能力」的例外；
+      // general / navigation 收着语言、快捷键与功能模块开关本身（模块关光后要靠它
+      // 再打开）；webBrowser 是 app 内浏览器，视频站点入口也会打开它；models 是
+      // 本机 OCR / ASR / TTS 模型这类设备级资源。
       for (final SettingsDestinationId id in <SettingsDestinationId>[
+        SettingsDestinationId.general,
+        SettingsDestinationId.navigation,
+        SettingsDestinationId.webBrowser,
+        SettingsDestinationId.models,
         SettingsDestinationId.appearance,
         SettingsDestinationId.profiles,
         SettingsDestinationId.reading,
@@ -324,14 +331,41 @@ void main() {
 
     test('成对分类挂同一个模块（关一半比不关更糟）', () {
       expect(
-        moduleOfSettingsDestination(SettingsDestinationId.mediaTracking),
-        moduleOfSettingsDestination(SettingsDestinationId.services),
-        reason: '媒体追踪靠在线服务的凭据跑，分成两个开关只会让用户关了一半',
-      );
-      expect(
         moduleOfSettingsDestination(SettingsDestinationId.interconnect),
         moduleOfSettingsDestination(SettingsDestinationId.syncBackup),
         reason: '互联是从同步备份拆出去的分类，共享同一套后端',
+      );
+    });
+
+    test('Media tracking is its own module: the settings category follows '
+        'it, not Services', () {
+      expect(
+        moduleOfSettingsDestination(SettingsDestinationId.mediaTracking),
+        ModuleId.tracking,
+      );
+      expect(ModuleId.tracking.defaultEnabled, isFalse);
+      expect(homeTabOfModule(ModuleId.tracking), isNull);
+      final ModuleVisibility noTracking = ModuleVisibility(
+        ModuleId.values.toSet()..remove(ModuleId.tracking),
+      );
+      expect(isMediaTrackingEnabled(noTracking), isFalse);
+      expect(
+        isSettingsDestinationVisible(
+          SettingsDestinationId.mediaTracking,
+          noTracking,
+        ),
+        isFalse,
+      );
+      final ModuleVisibility noServices = ModuleVisibility(
+        ModuleId.values.toSet()..remove(ModuleId.services),
+      );
+      expect(isMediaTrackingEnabled(noServices), isTrue);
+      expect(
+        isSettingsDestinationVisible(
+          SettingsDestinationId.mediaTracking,
+          noServices,
+        ),
+        isTrue,
       );
     });
 
@@ -358,6 +392,31 @@ void main() {
       expect(isAiModuleEnabled(noServices), isTrue);
       expect(
         isSettingsDestinationVisible(SettingsDestinationId.ai, noServices),
+        isTrue,
+      );
+    });
+
+    test('听书是独立分类，跟听书模块开关走', () {
+      expect(
+        moduleOfSettingsDestination(SettingsDestinationId.listening),
+        ModuleId.listening,
+      );
+      final ModuleVisibility noListening = ModuleVisibility(
+        ModuleId.values.toSet()..remove(ModuleId.listening),
+      );
+      expect(
+        isSettingsDestinationVisible(
+          SettingsDestinationId.listening,
+          noListening,
+        ),
+        isFalse,
+      );
+      // 阅读分类不再内嵌听书分区，关听书不该连坐阅读。
+      expect(
+        isSettingsDestinationVisible(
+          SettingsDestinationId.reading,
+          noListening,
+        ),
         isTrue,
       );
     });

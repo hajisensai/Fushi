@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/utils/misc/flatpak_updater.dart';
 import 'package:fushi/src/utils/misc/platform_updater.dart';
 
 List<Map<String, dynamic>> _assets(List<String> names) => names
@@ -223,11 +224,15 @@ void main() {
       expect(platformSupportsInAppInstall(), u.supportsInAppInstall);
     });
 
-    test('in-app install capability is android, windows or macos', () {
-      // 195fbd320 起 macOS 也支持应用内自更新（MacUpdater）；iOS/Linux 仍只
-      // 检查版本后跳转发布页。
+    test('in-app install capability is android, windows, macos or a '
+        'release-branch flatpak', () {
+      // 195fbd320 起 macOS 也支持应用内自更新（MacUpdater）；Linux 只在发布通道的
+      // Flatpak 里经 portal 自更新（FlatpakUpdater），iOS 仍只检查版本后跳转发布页。
       final bool expected =
-          Platform.isAndroid || Platform.isWindows || Platform.isMacOS;
+          Platform.isAndroid ||
+          Platform.isWindows ||
+          Platform.isMacOS ||
+          (Platform.isLinux && FlatpakInstallation.current()?.channel != null);
       expect(platformSupportsInAppInstall(), expected);
     });
   });

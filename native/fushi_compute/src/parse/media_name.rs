@@ -142,12 +142,19 @@ fn patterns() -> &'static Patterns {
         )),
         tokenize: JsRegex::cs(r"[ _.+&,]+"),
         whitespace: JsRegex::cs(r"\s+"),
+        // 集号收 1–4 位（H0K31TjWub / BUG：`S01E0005` 这种补零到 4 位的长篇命名，
+        // 与 cn_episode / dash_episode 同口径）。`S` 前缀 + 两侧分隔已把它与年份、
+        // 分辨率区分开，不需要按数值特判。
         season_episode: JsRegex::cs(
-            r"(?:^|[\s._-])[Ss](\d{1,2})\s*[Ee][Pp]?\.?(\d{1,3})(?:[vV]\d{1,2})?(?=$|[\s._-])",
+            r"(?:^|[\s._-])[Ss](\d{1,2})\s*[Ee][Pp]?\.?(\d{1,4})(?:[vV]\d{1,2})?(?=$|[\s._-])",
         ),
         cn_episode: JsRegex::cs(r"第\s*(\d{1,4})\s*[话話集回巻]"),
         cn_episode_suffix: JsRegex::cs(r"(?:^|[\s._-])(\d{1,4})\s*[话話集](?=$|[\s._-])"),
-        ep_token: JsRegex::ci(r"(?:^|[\s._-])(?:EP[\s._-]?|E\.?)(\d{1,3})(?=$|[\s._-])"),
+        // 同上放宽到 4 位：`E` / `EP` 前缀 + 前后分隔约束下，`E0012` / `EP1000`
+        // 只能是集号；`1080p` 这类后面紧跟字母的 token 仍被前瞻挡掉。
+        ep_token: JsRegex::ci(r"(?:^|[\s._-])(?:EP[\s._-]?|E\.?)(\d{1,4})(?=$|[\s._-])"),
+        // 刻意仍是 1–3 位：`#` 后没有尾部分隔约束，放宽到 4 位会把 `#1080p` 这类
+        // 画质 / 编号标签整段读成集号 1080；`#` 编号的番剧实际不会到 4 位。
         hash_episode: JsRegex::cs(r"#\s*(\d{1,3})"),
         dash_episode: JsRegex::ci(
             r"\s[-‐–—]\s*(\d{1,4})(?:[vV]\d{1,2})?(?:\s*(?:END|Fin|完))?(?=\s|$)",
@@ -1188,6 +1195,38 @@ mod tests {
             assert_eq!(s(&r.title), title, "title of {input}");
             assert_eq!((r.season, r.episode), (season, episode), "{input}");
         }
+    }
+
+    /// H0K31TjWub：4 位补零集号（`S01E0005`）必须认出集号，否则整名当标题、
+    /// 每集各成一个系列。
+    #[test]
+    fn four_digit_episode_numbers() {
+        let cases: [(&str, &str, Option<i64>, Option<i64>); 5] = [
+            ("Show.S01E0005.mkv", "Show", Some(1), Some(5)),
+            ("Show S01E0123 1080p WEB-DL.mkv", "Show", Some(1), Some(123)),
+            ("One Piece S1E1000.mkv", "One Piece", Some(1), Some(1000)),
+            ("Show E0012.mkv", "Show", None, Some(12)),
+            ("Show.EP1000.mkv", "Show", None, Some(1000)),
+        ];
+        for (input, title, season, episode) in cases {
+            let r = parse_name(&w(input), &env());
+            assert_eq!(s(&r.title), title, "title of {input}");
+            assert_eq!((r.season, r.episode), (season, episode), "{input}");
+        }
+        // 年份与 4 位集号并存：年份仍归年份，集号不被年份顶掉。
+        let r = parse_name(&w("Show.2024.S01E0005.1080p.WEB-DL.mkv"), &env());
+        assert_eq!(s(&r.title), "Show");
+        assert_eq!(
+            (r.season, r.episode, r.year),
+            (Some(1), Some(5), Some(2024))
+        );
+        // 反例：5 位数不是集号，也不得被截成前 4 位。
+        let r = parse_name(&w("Show.S01E12345.mkv"), &env());
+        assert_ne!(r.episode, Some(1234), "5-digit run must not be truncated");
+        assert_ne!(r.episode, Some(12345), "5-digit run is not an episode");
+        // 反例：`E` 后紧跟字母的画质 token 不是集号。
+        let r = parse_name(&w("Show E1080p.mkv"), &env());
+        assert_ne!(r.episode, Some(1080));
     }
 
     #[test]

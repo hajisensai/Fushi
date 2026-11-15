@@ -1,4 +1,5 @@
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
+import 'package:fushi/src/sync/position_converter.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// 页式书（漫画 / PDF）在同步链路里的位置口径。
@@ -14,10 +15,22 @@ import 'package:fushi_core/fushi_core.dart';
 bool isPagedSyncBook(EpubBookRow book) =>
     BookFormat.parseOrEpub(book.format).isPagedImageBook;
 
+/// 同步链路按书取的章节字符表（EPUB 位置 ↔ ッツ `exploredCharCount` 换算用）。
+///
+/// 页式书（漫画 / PDF）一律返回空表、**不解析** `chaptersJson`：本地漫画 / PDF 存的
+/// 是 `'[]'`，而在线（扩展源）漫画存的是**章节清单**（`OnlineMangaChapter.toJson`，
+/// 只有 key / name 等，没有 `characters`）。按字符表解析后者会在
+/// `m['characters'] as int` 上抛 TypeError，整本同步恒失败（BUG-4337）。页式书的位置
+/// 换算本就只走页码（见本文件其余函数），用不到字符表。
+List<ChapterCharInfo> syncChapterCharTable(EpubBookRow book) =>
+    isPagedSyncBook(book)
+    ? const <ChapterCharInfo>[]
+    : parseChaptersJson(book.chaptersJson);
+
 /// 本地页式书的总页数（`chapterCount`）。
 ///
 /// 在线漫画返回 null：它的 `chapterCount` 写的是**章数**、`sectionIndex` 是**章内**
-/// 页码，两者量纲不同（同 `ReaderFushiSource._onlineMangaProgress` 的说明），
+/// 页码，两者量纲不同（书架进度因此按章算，见 `onlineMangaShelfProgress`），
 /// 只能显示页码、折算不出全书分数。
 int? pagedSyncPageCount(EpubBookRow book) {
   if (!isPagedSyncBook(book)) return null;

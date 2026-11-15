@@ -184,8 +184,11 @@ class _FakeAppModel extends AppModel {
 
   @override
   Future<void> setDictionaryHidden(Dictionary dictionary, bool hidden) async {
-    store.firstWhere((Dictionary d) => d.name == dictionary.name)
-      .hiddenLanguages = hidden ? <String>['ja'] : <String>[];
+    store
+        .firstWhere((Dictionary d) => d.name == dictionary.name)
+        .hiddenLanguages = hidden
+        ? <String>['ja']
+        : <String>[];
     dictionary.hiddenLanguages = hidden ? <String>['ja'] : <String>[];
   }
 
@@ -612,7 +615,9 @@ void main() {
     await _pressEnter(tester);
     expect(model.catalogHiddenWrites, <(String, bool)>[('JMdict', true)]);
     expect(
-      model.remote.firstWhere((RemoteDictionary r) => r.name == 'JMdict').hidden,
+      model.remote
+          .firstWhere((RemoteDictionary r) => r.name == 'JMdict')
+          .hidden,
       isTrue,
     );
     await _focusInside(tester, toggle);
@@ -622,7 +627,9 @@ void main() {
       ('JMdict', false),
     ]);
     expect(
-      model.remote.firstWhere((RemoteDictionary r) => r.name == 'JMdict').hidden,
+      model.remote
+          .firstWhere((RemoteDictionary r) => r.name == 'JMdict')
+          .hidden,
       isFalse,
     );
     expect(tester.takeException(), isNull);

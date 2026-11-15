@@ -20,7 +20,17 @@ import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/mining/galgame_line_voice_window.dart';
 import 'package:fushi/src/mining/galgame_play_tracker.dart';
 import 'package:fushi/src/mining/galgame_repository.dart';
+import 'package:fushi/src/mining/gal_hook_tick_clock.dart';
+import 'package:fushi/src/mining/gal_mining_settings.dart';
 import 'package:fushi/src/mining/knife_text_websocket.dart';
+import 'package:fushi/src/mining/gal_voice_resource_name.dart';
+import 'package:fushi/src/mining/tyrano_dom/tyrano_dom_attach_probe.dart';
+import 'package:fushi/src/mining/tyrano_dom/tyrano_dom_feed.dart';
+import 'package:fushi/src/mining/tyrano_dom/tyrano_dom_frame.dart';
+import 'package:fushi/src/mining/tyrano_dom/tyrano_dom_game_detect.dart';
+import 'package:fushi/src/mining/tyrano_dom/tyrano_dom_launch.dart';
+import 'package:fushi/src/mining/tyrano_dom/tyrano_dom_session.dart';
+import 'package:fushi/src/mining/tyrano_dom/tyrano_dom_voice.dart';
 import 'package:fushi/src/mining/serial_job_queue.dart';
 import 'package:fushi/src/mining/galgame_system_ui_filter.dart';
 import 'package:fushi/src/mining/galgame_text_process.dart';
@@ -180,6 +190,7 @@ class GalCaptureMemory {
     this.textThreadTypicalLength,
     this.audioFallbackPolicy = GalAudioFallbackPolicy.full,
     this.textProcess = kGalDefaultTextProcessPipeline,
+    this.engineExactDeclined = false,
   });
 
   factory GalCaptureMemory.fromJson(Map<Object?, Object?> json) {
@@ -201,6 +212,7 @@ class GalCaptureMemory {
       textProcess: json['textProcess'] is List
           ? GalTextProcessPipeline.fromJson(json['textProcess'])
           : kGalDefaultTextProcessPipeline,
+      engineExactDeclined: json['engineExactDeclined'] == true,
     );
   }
 
@@ -231,12 +243,22 @@ class GalCaptureMemory {
   /// 禁用一次 = 下次启动又被默认管线顶回来」。
   final GalTextProcessPipeline textProcess;
 
+  /// 用户在**引擎精确线程已登记**的会话里亲手选了别的线程（或清空选择）。
+  ///
+  /// 引擎精确线程（[isEngineExactTextThread]）默认压过记忆里的 Luna 线程：记忆多半
+  /// 是在这条精确线程出现之前手挑的（真机 Role player とろろ姉妹：旧会话记下的
+  /// KiriKiriZX 线程把后来才有的 ENGINE:KIRIKIRI 整页线程挡在自动选择之外）。但用户
+  /// 在两者并存时明确选了别的，就是在否决它——这一位把那次否决记下来，之后的会话
+  /// 不再自动换掉用户的选择。用户再选回引擎精确线程时清零。
+  final bool engineExactDeclined;
+
   bool get isEmpty =>
       excludedTrackFingerprints.isEmpty &&
       voiceTrackFingerprint == null &&
       textThreadFingerprint == null &&
       audioFallbackPolicy == GalAudioFallbackPolicy.full &&
-      textProcess == kGalDefaultTextProcessPipeline;
+      textProcess == kGalDefaultTextProcessPipeline &&
+      !engineExactDeclined;
 
   GalCaptureMemory copyWith({
     List<String>? excludedTrackFingerprints,
@@ -245,6 +267,7 @@ class GalCaptureMemory {
     int? textThreadTypicalLength,
     GalAudioFallbackPolicy? audioFallbackPolicy,
     GalTextProcessPipeline? textProcess,
+    bool? engineExactDeclined,
     bool clearVoiceTrack = false,
     bool clearTextThread = false,
   }) => GalCaptureMemory(
@@ -261,6 +284,7 @@ class GalCaptureMemory {
         : textThreadTypicalLength ?? this.textThreadTypicalLength,
     audioFallbackPolicy: audioFallbackPolicy ?? this.audioFallbackPolicy,
     textProcess: textProcess ?? this.textProcess,
+    engineExactDeclined: engineExactDeclined ?? this.engineExactDeclined,
   );
 
   Map<String, Object?> toJson() => <String, Object?>{
@@ -273,6 +297,7 @@ class GalCaptureMemory {
       'audioFallback': audioFallbackPolicy.storageKey,
     if (textProcess != kGalDefaultTextProcessPipeline)
       'textProcess': textProcess.toJson(),
+    if (engineExactDeclined) 'engineExactDeclined': true,
   };
 }
 
@@ -737,6 +762,34 @@ typedef GalExe32BitProbe = Future<bool?> Function(String path);
 /// exe 路径本来就能从 PID 拿到（`QueryFullProcessImageNameW`），补上这条查询即可
 /// 让两条路径共用同一套判据，而不是各自猜。
 typedef GalTargetImagePathProbe = String? Function(int pid);
+
+/// 为一次 launch 规划 TyranoScript DOM 源的调试端口与追加参数（非 Tyrano 游戏返回 null）。
+typedef GalTyranoDomLaunchPlanner =
+    Future<TyranoDomLaunchPlan?> Function(
+      String exePath, {
+      required List<String> userArgs,
+    });
+
+/// 连接游戏页面的 DOM 数据源（等页面目标出现，最长 [timeout]）。
+typedef GalTyranoDomConnector =
+    Future<TyranoDomFrameSource> Function({
+      required int port,
+      required Duration timeout,
+    });
+
+/// 取一条 DOM 语音事件对应的游戏原件（解析位置 + 读 asar 成员 / 文件 + 校验签名）。
+typedef GalTyranoDomVoiceFetcher =
+    Future<({TyranoDomVoiceBytes? voice, TyranoDomVoiceSkip? skip})> Function(
+      TyranoDomVoiceEvent event,
+    );
+
+/// 从已运行进程的命令行读 `--remote-debugging-port`；读不到返回 null。
+typedef GalRemoteDebuggingPortProbe = int? Function(int pid);
+
+/// TyranoScript DOM 源产出的 texthooker 行的 `sourceLabel`（来源仍是
+/// [TexthookerLineSource.engineHook]：它就是游戏引擎自己的正文，需要与引擎行同样的
+/// 折叠 / 统计 / 制卡待遇）。
+const String kTyranoDomLineSourceLabel = 'tyrano_dom';
 typedef GalWindowListLoader = Future<List<ExternalWindowInfo>> Function();
 
 /// 解析注入器可执行路径。**异步**：注入前要先把 hook 运行时暂存出安装目录
@@ -819,7 +872,31 @@ class GalHookSessionController extends ChangeNotifier {
     GalgameProcessProbe? gameProcessProbe,
     Duration gameExitPollInterval = const Duration(seconds: 1),
     int gameExitConfirmSamples = 3,
+    // TyranoScript（Electron / NW.js）DOM 数据源。测试注入 fake，避免碰文件系统 / CDP。
+    GalTyranoDomLaunchPlanner? tyranoDomLaunchPlanner,
+    GalTyranoDomConnector? tyranoDomConnector,
+    GalTyranoDomVoiceFetcher? tyranoDomVoiceFetcher,
+    GalRemoteDebuggingPortProbe? remoteDebuggingPortProbe,
+    bool Function(String exePath)? isTyranoGame,
+    // DOM 行时间戳的时钟：必须与 native 文本 / 语音资源事件同一时基（GetTickCount64）。
+    int Function()? tickNow,
+    Duration tyranoDomConnectTimeout = const Duration(seconds: 60),
+    Duration tyranoDomReconnectTimeout = const Duration(seconds: 10),
+    Duration tyranoDomReconnectDelay = const Duration(seconds: 2),
+    int tyranoDomMaxReconnects = 3,
   }) : _textService = textService ?? TexthookerService.instance,
+       _tyranoDomLaunchPlanner =
+           tyranoDomLaunchPlanner ?? _defaultTyranoDomLaunchPlanner,
+       _tyranoDomConnector = tyranoDomConnector ?? _defaultTyranoDomConnector,
+       _tyranoDomVoiceFetcher = tyranoDomVoiceFetcher,
+       _remoteDebuggingPortProbe =
+           remoteDebuggingPortProbe ?? readRemoteDebuggingPortForPid,
+       _isTyranoGame = isTyranoGame ?? isTyranoElectronGameDirectory,
+       _tickNow = tickNow ?? galHookTickNowMs,
+       _tyranoDomConnectTimeout = tyranoDomConnectTimeout,
+       _tyranoDomReconnectTimeout = tyranoDomReconnectTimeout,
+       _tyranoDomReconnectDelay = tyranoDomReconnectDelay,
+       _tyranoDomMaxReconnects = tyranoDomMaxReconnects,
        _gameProcessProbeOverride = gameProcessProbe,
        _gameExitPollInterval = gameExitPollInterval,
        _gameExitConfirmSamples = gameExitConfirmSamples,
@@ -887,7 +964,45 @@ class GalHookSessionController extends ChangeNotifier {
   static const int _eventLimit = 400;
 
   final TexthookerService _textService;
+  final GalTyranoDomLaunchPlanner _tyranoDomLaunchPlanner;
+  final GalTyranoDomConnector _tyranoDomConnector;
+  final GalTyranoDomVoiceFetcher? _tyranoDomVoiceFetcher;
+  final TyranoDomVoiceReader _tyranoDomVoiceReader = TyranoDomVoiceReader();
+  final GalRemoteDebuggingPortProbe _remoteDebuggingPortProbe;
+  final bool Function(String exePath) _isTyranoGame;
+  final int Function() _tickNow;
+  final Duration _tyranoDomConnectTimeout;
+  final Duration _tyranoDomReconnectTimeout;
+  final Duration _tyranoDomReconnectDelay;
+  final int _tyranoDomMaxReconnects;
   final GalEngineSourceFactory _engineSourceFactory;
+
+  // -- TyranoScript DOM 源（生命周期挂在会话上：_stopSourcesInternal / dispose 收）--
+  /// 每次停源 +1；连接 / 重连 / 结束回调凭它判断自己是否已作废。
+  int _tyranoDomGeneration = 0;
+  TyranoDomFrameSource? _tyranoDomSource;
+  TyranoDomFeed? _tyranoDomFeed;
+  StreamSubscription<TyranoDomFrame>? _tyranoDomFrameSubscription;
+  Timer? _tyranoDomReconnectTimer;
+
+  /// 本次连接是否已经产出过一句正文（仲裁「DOM 源在线」的判据，见 [tyranoDomTextOnline]）。
+  bool _tyranoDomDeliveredLine = false;
+  int _tyranoDomLastLineGeneration = -1;
+  String _tyranoDomPreviousFrameText = '';
+  int? _tyranoDomLineStartTick;
+
+  // DOM 语音：按脚本句序号归属（见 [_onTyranoDomVoice]）。
+  StreamSubscription<TyranoDomVoiceEvent>? _tyranoDomVoiceSubscription;
+  String _tyranoDomVoiceDocument = '';
+  final SplayTreeMap<int, _TyranoDomVoiceGroup> _tyranoDomVoiceGroups =
+      SplayTreeMap<int, _TyranoDomVoiceGroup>();
+  int _tyranoDomLastVoiceGroupId = 0;
+
+  /// 语音归属由 DOM 语音事件决定的行（页面声明了语音缓冲区时入库的 DOM 行）。制卡取音
+  /// 对它们只认已绑定的资源，不按时间戳去 native dump 里补猜（见 [_appendTyranoDomLine]）。
+  final LinkedHashSet<String> _tyranoDomVoiceOwnedLines =
+      LinkedHashSet<String>();
+  Future<void> _tyranoDomVoiceQueue = Future<void>.value();
   final GalLoopbackSourceFactory _loopbackSourceFactory;
   final GalTargetWow64Probe _targetWow64Probe;
   final GalTargetImagePathProbe _targetImagePathProbe;
@@ -1156,6 +1271,14 @@ class GalHookSessionController extends ChangeNotifier {
   /// 文本线程记忆已在本会话应用过（或用户已手动选过线程）——两者都终止自动恢复。
   bool _textThreadMemoryApplied = false;
 
+  /// 用户本会话亲手选过线程（工作台下拉 / 设置对话框 / ctl，`remember: true`）。
+  /// 之后任何自动选择——记忆恢复与引擎精确线程接管——都不再碰选择。
+  bool _textThreadUserSelected = false;
+
+  /// 一次自动选择（记忆恢复或引擎精确接管）正在等 native 确认。两条自动路径共用：
+  /// 恢复的 select 还没回来时引擎接管又发一次，晚回来的那次会把选择改回去。
+  bool _textThreadAutoSelectInFlight = false;
+
   /// 记忆恢复文本线程所需的最小行数：native 线程 id 混了 processId，跨会话不稳定，
   /// 同一 hook 往往有多条并行线程共用同一指纹，只能靠「真的在出台词」来消歧。
   /// 门限设 3 行而不是 1 行，避免开局个别 UI 线程抢先蹦一行就把选择钉死。
@@ -1165,9 +1288,9 @@ class GalHookSessionController extends ChangeNotifier {
 
   /// 行 id → 产出它**当前文本**的那份管线输入原文（见 [selectedLineProcessInput]）。
   final Map<String, String> _lineProcessInputCache = <String, String>{};
-  final Map<String, ({int timestampMs, int textEventId, bool eventOwnedOnly})>
+  final Map<String, ({int timestampMs, int? textEventId, bool eventOwnedOnly})>
   _pendingResourceMatches =
-      <String, ({int timestampMs, int textEventId, bool eventOwnedOnly})>{};
+      <String, ({int timestampMs, int? textEventId, bool eventOwnedOnly})>{};
 
   /// 被折叠吞掉的行 id → 合并结果 id。
   ///
@@ -1449,6 +1572,632 @@ class GalHookSessionController extends ChangeNotifier {
     );
   }
 
+  // ── TyranoScript（Electron / NW.js）DOM 数据源 ──────────────────────────────
+  //
+  // 生命周期：launch 时追加调试端口、游戏跑起来后连接；attach 时只复用游戏命令行里已有的
+  // 端口。连接挂在会话上——停源 / 换游戏 / 游戏退出（stopCapture）/ dispose 都经
+  // [_stopTyranoDom] 关闭；对端断开记事件，游戏进程仍在时最多重连
+  // [_tyranoDomMaxReconnects] 次（间隔 [_tyranoDomReconnectDelay]，每次等页面
+  // [_tyranoDomReconnectTimeout]），用尽或游戏已不在就停，不无限重连。
+
+  /// 当前已连上的 DOM 源（查词几何的实测排版路线消费）；未连接为 null。
+  TyranoDomFeed? get tyranoDomFeed => _tyranoDomFeed;
+
+  /// 正文来源仲裁：DOM 源已连上，**且**本次连接已经产出过一句完成的正文。
+  ///
+  /// 为真时 LunaHook 引擎文本道的行不再作为正文进 texthooker（线程目录照常观测）。
+  /// 只连上还不够：观察脚本找不到消息层（非标准 Tyrano 页面）时 DOM 一句也给不出，
+  /// 这时把引擎文本也掐掉就成了「什么都没有」。代价是连上后的第一句可能两路各进一份。
+  bool get tyranoDomTextOnline =>
+      _tyranoDomFeed != null && _tyranoDomDeliveredLine;
+
+  /// 本会话的正文是否要靠用户选定一条 LunaHook 文本线程才能进工作台。
+  ///
+  /// 只有引擎文本道才需要选线程；TyranoScript DOM 源在线（[tyranoDomTextOnline]）时
+  /// 正文与语音都由 DOM 源按句给出、根本不读引擎文本道，此时再报「等待选择台词线程」
+  /// 就与屏幕上正在流入的台词和音频自相矛盾（真机：yurialice 工作台满屏 tyrano_dom
+  /// 行，状态卡却停在「等待选择台词线程」）。
+  bool get requiresTextThreadSelection =>
+      hasEngineSource && !tyranoDomTextOnline;
+
+  static Future<TyranoDomLaunchPlan?> _defaultTyranoDomLaunchPlanner(
+    String exePath, {
+    required List<String> userArgs,
+  }) => planTyranoDomLaunch(exePath, userArgs: userArgs);
+
+  static Future<TyranoDomFrameSource> _defaultTyranoDomConnector({
+    required int port,
+    required Duration timeout,
+  }) => TyranoDomSession.connect(port: port, timeout: timeout);
+
+  Future<TyranoDomLaunchPlan?> _planTyranoDomLaunch(
+    String executablePath,
+    List<String> launchArguments,
+  ) async {
+    try {
+      return await _tyranoDomLaunchPlanner(
+        executablePath,
+        userArgs: launchArguments,
+      );
+    } on Object catch (error) {
+      // 判定读的是游戏目录 / asar 头：读不了就当不是 Tyrano，照常启动。
+      _record(
+        GalHookEventSeverity.warning,
+        'launch',
+        'tyrano_dom.plan_failed',
+        'Could not inspect the game directory for a TyranoScript build',
+        details: <String, Object?>{'error': '$error'},
+      );
+      return null;
+    }
+  }
+
+  /// attach：只复用游戏命令行里已有的调试端口；没有就不启用 DOM 源并记一条诊断，
+  /// 不替用户重启游戏。
+  void _startTyranoDomForAttach(
+    int generation, {
+    required String? executablePath,
+    required int pid,
+  }) {
+    if (executablePath == null || executablePath.isEmpty || pid <= 0) return;
+    bool isTyrano;
+    try {
+      isTyrano = _isTyranoGame(executablePath);
+    } on Object {
+      isTyrano = false;
+    }
+    if (!isTyrano) return;
+    final int? port = _remoteDebuggingPortProbe(pid);
+    if (port == null) {
+      _record(
+        GalHookEventSeverity.warning,
+        'text',
+        'tyrano_dom.attach_no_debug_port',
+        'This TyranoScript game was started without a remote debugging port; '
+            'launch it from Fushi to read dialogue and in-game lookup '
+            'geometry from the page',
+        details: <String, Object?>{'pid': pid},
+      );
+      return;
+    }
+    _startTyranoDom(generation, port: port, pid: pid);
+  }
+
+  void _startTyranoDom(int generation, {required int port, int? pid}) {
+    if (generation != _operationGeneration) return;
+    final int domGeneration = _tyranoDomGeneration;
+    _record(
+      GalHookEventSeverity.info,
+      'text',
+      'tyrano_dom.connecting',
+      'Connecting to the TyranoScript page over the remote debugging port',
+      details: <String, Object?>{'port': port, 'pid': ?pid},
+    );
+    unawaited(
+      _connectTyranoDom(
+        generation,
+        domGeneration,
+        port: port,
+        pid: pid,
+        attempt: 0,
+      ),
+    );
+  }
+
+  bool _tyranoDomCurrent(int generation, int domGeneration) =>
+      generation == _operationGeneration &&
+      domGeneration == _tyranoDomGeneration;
+
+  Future<void> _connectTyranoDom(
+    int generation,
+    int domGeneration, {
+    required int port,
+    required int? pid,
+    required int attempt,
+  }) async {
+    final TyranoDomFrameSource source;
+    try {
+      source = await _tyranoDomConnector(
+        port: port,
+        timeout: attempt == 0
+            ? _tyranoDomConnectTimeout
+            : _tyranoDomReconnectTimeout,
+      );
+    } on Object catch (error) {
+      if (!_tyranoDomCurrent(generation, domGeneration)) return;
+      _record(
+        GalHookEventSeverity.warning,
+        'text',
+        'tyrano_dom.connect_failed',
+        'Could not connect to the TyranoScript page; DOM dialogue and in-game '
+            'lookup geometry are unavailable',
+        details: <String, Object?>{
+          'port': port,
+          'attempt': attempt,
+          'error': '$error',
+        },
+      );
+      // 首连已经等满了整段超时（页面始终没出现）：不再重试。重连失败才继续计数。
+      if (attempt > 0) {
+        _scheduleTyranoDomReconnect(
+          generation,
+          domGeneration,
+          port: port,
+          pid: pid,
+          failedAttempts: attempt,
+        );
+      }
+      return;
+    }
+    if (!_tyranoDomCurrent(generation, domGeneration)) {
+      await source.close();
+      return;
+    }
+    final TyranoDomFeed feed = TyranoDomFeed(
+      port: port,
+      gamePid: pid ?? _state.gamePid,
+    );
+    _tyranoDomSource = source;
+    _tyranoDomFeed = feed;
+    _tyranoDomDeliveredLine = false;
+    _tyranoDomLastLineGeneration = -1;
+    _tyranoDomPreviousFrameText = '';
+    _tyranoDomLineStartTick = null;
+    _tyranoDomFrameSubscription = source.frames.listen(
+      (TyranoDomFrame frame) => _onTyranoDomFrame(feed, frame),
+    );
+    _tyranoDomVoiceSubscription = source.voices.listen(
+      (TyranoDomVoiceEvent voice) => _onTyranoDomVoice(feed, voice),
+    );
+    _record(
+      GalHookEventSeverity.success,
+      'text',
+      'tyrano_dom.connected',
+      'Connected to the TyranoScript page; dialogue and lookup geometry now '
+          'come from the page',
+      details: <String, Object?>{'port': port, 'attempt': attempt},
+    );
+    unawaited(
+      source.done.then(
+        (TyranoDomEndReason reason) => _onTyranoDomEnded(
+          generation,
+          domGeneration,
+          feed,
+          reason,
+          port: port,
+          pid: pid,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _onTyranoDomEnded(
+    int generation,
+    int domGeneration,
+    TyranoDomFeed feed,
+    TyranoDomEndReason reason, {
+    required int port,
+    required int? pid,
+  }) async {
+    // 停源路径自己收（feed 已被换掉）；这里只处理对端断开。
+    if (!identical(_tyranoDomFeed, feed)) return;
+    await _releaseTyranoDomConnection(notify: true);
+    _record(
+      GalHookEventSeverity.warning,
+      'text',
+      'tyrano_dom.disconnected',
+      'The TyranoScript page connection ended; in-game lookup geometry was '
+          'withdrawn',
+      details: <String, Object?>{'port': port, 'reason': reason.name},
+    );
+    if (!_tyranoDomCurrent(generation, domGeneration)) return;
+    _scheduleTyranoDomReconnect(
+      generation,
+      domGeneration,
+      port: port,
+      pid: pid,
+      failedAttempts: 0,
+    );
+  }
+
+  void _scheduleTyranoDomReconnect(
+    int generation,
+    int domGeneration, {
+    required int port,
+    required int? pid,
+    required int failedAttempts,
+  }) {
+    final int next = failedAttempts + 1;
+    if (next > _tyranoDomMaxReconnects) {
+      _record(
+        GalHookEventSeverity.warning,
+        'text',
+        'tyrano_dom.reconnect_gave_up',
+        'Gave up reconnecting to the TyranoScript page',
+        details: <String, Object?>{'port': port, 'attempts': failedAttempts},
+      );
+      return;
+    }
+    // 游戏进程已经不在 = 正常退出，不重连（会话本身由退出监视收）。
+    final int? gamePid = pid ?? _state.gamePid;
+    if (gamePid == null || _targetImagePathProbe(gamePid) == null) {
+      _record(
+        GalHookEventSeverity.info,
+        'text',
+        'tyrano_dom.game_gone',
+        'The TyranoScript game is no longer running; not reconnecting',
+        details: <String, Object?>{'port': port, 'pid': ?gamePid},
+      );
+      return;
+    }
+    _tyranoDomReconnectTimer?.cancel();
+    _tyranoDomReconnectTimer = Timer(_tyranoDomReconnectDelay, () {
+      _tyranoDomReconnectTimer = null;
+      if (!_tyranoDomCurrent(generation, domGeneration)) return;
+      _record(
+        GalHookEventSeverity.info,
+        'text',
+        'tyrano_dom.reconnecting',
+        'Reconnecting to the TyranoScript page',
+        details: <String, Object?>{'port': port, 'attempt': next},
+      );
+      unawaited(
+        _connectTyranoDom(
+          generation,
+          domGeneration,
+          port: port,
+          pid: pid,
+          attempt: next,
+        ),
+      );
+    });
+  }
+
+  /// 停源：作废所有在途连接 / 重连，关闭当前连接。
+  Future<void> _stopTyranoDom({bool notify = true}) async {
+    _tyranoDomGeneration++;
+    _tyranoDomReconnectTimer?.cancel();
+    _tyranoDomReconnectTimer = null;
+    await _releaseTyranoDomConnection(notify: notify);
+  }
+
+  Future<void> _releaseTyranoDomConnection({required bool notify}) async {
+    final TyranoDomFrameSource? source = _tyranoDomSource;
+    final TyranoDomFeed? feed = _tyranoDomFeed;
+    final Future<void>? cancelled = _tyranoDomFrameSubscription?.cancel();
+    _tyranoDomFrameSubscription = null;
+    final Future<void>? voicesCancelled = _tyranoDomVoiceSubscription?.cancel();
+    _tyranoDomVoiceSubscription = null;
+    _tyranoDomVoiceGroups.clear();
+    _tyranoDomVoiceDocument = '';
+    _tyranoDomSource = null;
+    _tyranoDomFeed = null;
+    _tyranoDomDeliveredLine = false;
+    _tyranoDomLastLineGeneration = -1;
+    _tyranoDomPreviousFrameText = '';
+    _tyranoDomLineStartTick = null;
+    // 先把 feed 换成 null 再通知：central sync 看到「没有 feed」就把查词几何整面撤掉
+    // （attached 控制器也会在 feed 结束时自行 attachedDetach）。
+    if (notify && feed != null) notifyListeners();
+    if (cancelled != null) await cancelled;
+    if (voicesCancelled != null) await voicesCancelled;
+    if (feed != null) await feed.close();
+    if (source != null) await source.close();
+  }
+
+  void _onTyranoDomFrame(TyranoDomFeed feed, TyranoDomFrame frame) {
+    if (!identical(feed, _tyranoDomFeed)) return;
+    // 句子开始的时刻 = 正文换成「不是上一帧的延续」的那一帧。语音在句子开始时播放，
+    // 而 complete 帧要等逐字显示结束（可能晚几秒），所以配对用开始时刻而不是完成时刻。
+    if (frame.text != _tyranoDomPreviousFrameText) {
+      final bool continuation =
+          _tyranoDomPreviousFrameText.isNotEmpty &&
+          frame.text.startsWith(_tyranoDomPreviousFrameText);
+      if (!continuation || _tyranoDomLineStartTick == null) {
+        _tyranoDomLineStartTick = _tickNow();
+      }
+      _tyranoDomPreviousFrameText = frame.text;
+    }
+    if (frame.complete &&
+        frame.generation != _tyranoDomLastLineGeneration &&
+        frame.text.trim().isNotEmpty) {
+      _tyranoDomLastLineGeneration = frame.generation;
+      _appendTyranoDomLine(
+        frame.text,
+        tick: _tyranoDomLineStartTick ?? 0,
+        frame: frame,
+      );
+    }
+    // 几何在 texthooker 行之后发：attached 控制器拿到的帧与刚入库的行是同一句。
+    feed.add(frame);
+  }
+
+  void _appendTyranoDomLine(
+    String text, {
+    required int tick,
+    required TyranoDomFrame frame,
+  }) {
+    if (isGalgameSystemUiLine(text)) return;
+    final EngineHookGalAudioSource? engine = _engineSource;
+    // 仲裁：页面用 [voconfig] 声明了语音缓冲区时，这句有没有语音、是哪条，由 DOM 语音
+    // 事件（引擎在语音缓冲区上播放的原件，按句序号归属）权威给出，DOM 行**只接受 DOM
+    // 语音**，不再按时间戳去 native dump 里猜 —— 否则 native asar 截获（判据是
+    // `data/sound/v_` 文件名猜测）的同一份语音会被时间邻近配到相邻句上，或与 DOM 语音
+    // 重复配对。没声明语音缓冲区的游戏没有 DOM 语音事件，保持原有按时间戳配对。
+    final _TyranoDomVoiceGroup? voiceGroup = frame.voiceDeclared
+        ? _tyranoDomVoiceGroupFor(frame.documentId, frame.lineSeq)
+        : null;
+    final bool resourceReady =
+        voiceGroup == null &&
+        engine != null &&
+        engine.rawVoiceReady &&
+        tick > 0;
+    final TexthookerLineAudioStatus initialStatus;
+    if (voiceGroup != null) {
+      initialStatus =
+          voiceGroup.resourceIds.isNotEmpty || voiceGroup.inFlight > 0
+          ? TexthookerLineAudioStatus.pending
+          : TexthookerLineAudioStatus.unavailable;
+    } else {
+      initialStatus = resourceReady
+          ? TexthookerLineAudioStatus.pending
+          : TexthookerLineAudioStatus.unavailable;
+    }
+    final TexthookerLineEntry? entry = _textService.appendLine(
+      text,
+      source: TexthookerLineSource.engineHook,
+      sourceLabel: kTyranoDomLineSourceLabel,
+      // DOM 行没有 native 文本事件 seq；时间戳是 GetTickCount64，与语音资源事件同一时基。
+      hookTimestampMs: tick > 0 ? tick : null,
+      audioStatus: initialStatus,
+    );
+    if (entry == null) return;
+    final bool firstDomLine = !_tyranoDomDeliveredLine;
+    _tyranoDomDeliveredLine = true;
+    // 第一句 DOM 正文翻转了 [requiresTextThreadSelection]：工作台的「等待选择台词线程」
+    // 由会话通知驱动，必须在这里通知一次，不能等别的事件顺带刷新。
+    if (firstDomLine) notifyListeners();
+    _redirectFoldedLines(_textService.lastFoldedLineIds, entry.id);
+    _pendingResourceMatches.remove(entry.id);
+    _recordEngineDelta(
+      _textService.lastAppendedDelta,
+      entry: entry,
+      atMs: tick,
+    );
+    if (tick > 0) {
+      _lineTimestampCache[entry.id] = tick;
+      _trimCache(_lineTimestampCache);
+    }
+    if (voiceGroup != null) {
+      voiceGroup.lineId = entry.id;
+      _tyranoDomVoiceOwnedLines.add(entry.id);
+      while (_tyranoDomVoiceOwnedLines.length > 2048) {
+        _tyranoDomVoiceOwnedLines.remove(_tyranoDomVoiceOwnedLines.first);
+      }
+      if (voiceGroup.resourceIds.isNotEmpty) {
+        _applyTyranoDomVoice(voiceGroup);
+      } else if (voiceGroup.inFlight == 0 && voiceGroup.events > 0) {
+        // 引擎说这句有语音，但原件一条都取不到（远程 / base64 / 签名不符…）：明确降级。
+        _scheduleLoopbackFreeze(entry);
+      }
+      // 没有语音事件 = 引擎没在语音缓冲区上播放任何东西：这句无语音，保持 unavailable，
+      // 不借时间邻近的 native 资源，也不录 Loopback（录到的只会是 BGM / 环境音）。
+    } else if (resourceReady) {
+      // 只按时间戳配对（没有 native 事件 id 可认领 event-owned 资源）。
+      final String? resourceId = engine.findPairedVoiceResourceId(tick);
+      if (resourceId != null) {
+        _textService.updateLineAudio(
+          entry.id,
+          status: TexthookerLineAudioStatus.matched,
+          backend: 'game_resource',
+          resourceId: resourceId,
+        );
+      } else {
+        _pendingResourceMatches[entry.id] = (
+          timestampMs: tick,
+          textEventId: null,
+          eventOwnedOnly: false,
+        );
+        _trimCache(_pendingResourceMatches);
+        _textService.updateLineAudio(
+          entry.id,
+          status: TexthookerLineAudioStatus.pending,
+          clearResourceId: true,
+        );
+      }
+    } else {
+      // 没有引擎资源通道时与外部行同一条降级（策略守卫在函数内部）。
+      _scheduleLoopbackFreeze(entry);
+    }
+    if (_recapturingLineId != null) unawaited(finishLineRecapture());
+    _setState(
+      _state.copyWith(
+        phase: _state.phase == GalHookSessionPhase.waitingSignals
+            ? GalHookSessionPhase.running
+            : _state.phase,
+        textSignalReceived: true,
+      ),
+    );
+  }
+
+  // ── DOM 语音：按句序号把引擎原件绑到 DOM 行 ─────────────────────────────────
+  //
+  // 观察脚本在 `master_tag.playbgm.start`（target="se" 且 buf ∈ stat.map_vo.vobuf）上
+  // 推语音事件，带脚本句序号 `ln`；帧带同一计数。Dart 以 (文档 id, ln) 为一句建一个
+  // 组：语音先到（[vostart] 自动语音在正文出现前播放）就先把原件取出落盘、等行入库时
+  // 绑定；行先到就记下行 id、等原件落盘后绑定。同一句的多条语音（多人同时配音）落进同
+  // 一组，文件名带同一个 `fushi_domvoice<组 id>` 标记：主语音（组内第一条）作为行的
+  // resourceId，制卡时 [EngineHookGalAudioSource.grabPairedVoiceBytes] 按组标记把其余
+  // 作为伴音一起取（BUG-1605 约定）。组 id 取 GetTickCount64 且严格递增，跨会话不会撞号。
+  // 原件按事件顺序串行取（[_tyranoDomVoiceQueue]），主语音因此恒为最先播放的那条。
+
+  _TyranoDomVoiceGroup _tyranoDomVoiceGroupFor(String documentId, int lineSeq) {
+    if (documentId != _tyranoDomVoiceDocument) {
+      // 页面重载 / 观察脚本重注入：句序号重新从 0 数，旧组作废。
+      _tyranoDomVoiceDocument = documentId;
+      _tyranoDomVoiceGroups.clear();
+    }
+    final _TyranoDomVoiceGroup? existing = _tyranoDomVoiceGroups[lineSeq];
+    if (existing != null) return existing;
+    final int now = _tickNow();
+    _tyranoDomLastVoiceGroupId = now > _tyranoDomLastVoiceGroupId
+        ? now
+        : _tyranoDomLastVoiceGroupId + 1;
+    final _TyranoDomVoiceGroup group = _TyranoDomVoiceGroup(
+      _tyranoDomLastVoiceGroupId,
+    );
+    _tyranoDomVoiceGroups[lineSeq] = group;
+    while (_tyranoDomVoiceGroups.length > _kTyranoDomVoiceGroupLimit) {
+      _tyranoDomVoiceGroups.remove(_tyranoDomVoiceGroups.firstKey());
+    }
+    return group;
+  }
+
+  static const int _kTyranoDomVoiceGroupLimit = 64;
+
+  void _onTyranoDomVoice(TyranoDomFeed feed, TyranoDomVoiceEvent voice) {
+    if (!identical(feed, _tyranoDomFeed)) return;
+    final _TyranoDomVoiceGroup group = _tyranoDomVoiceGroupFor(
+      voice.documentId,
+      voice.lineSeq,
+    );
+    // 同一句里同一个原件播两次（重播 / 回退重放）仍是同一条语音。
+    if (!group.storages.add(voice.storagePath)) return;
+    group.events++;
+    group.inFlight++;
+    final int tick = _tickNow();
+    final String? lineId = group.lineId;
+    if (lineId != null && group.resourceIds.isEmpty) {
+      // 行已入库（语音晚于正文）：先标成等待，原件落盘后绑定。
+      _textService.updateLineAudio(
+        lineId,
+        status: TexthookerLineAudioStatus.pending,
+        clearResourceId: true,
+      );
+    }
+    _tyranoDomVoiceQueue = _tyranoDomVoiceQueue.then(
+      (void _) => _materializeTyranoDomVoice(feed, group, voice, tick),
+    );
+  }
+
+  Future<({TyranoDomVoiceBytes? voice, TyranoDomVoiceSkip? skip})>
+  _fetchTyranoDomVoice(TyranoDomVoiceEvent voice) async {
+    final GalTyranoDomVoiceFetcher? injected = _tyranoDomVoiceFetcher;
+    if (injected != null) return injected(voice);
+    final ({TyranoDomVoiceLocation? location, TyranoDomVoiceSkip? skip})
+    resolved = resolveTyranoDomVoiceLocation(
+      pageUrl: voice.pageUrl,
+      storagePath: voice.storagePath,
+      base64: voice.base64,
+    );
+    final TyranoDomVoiceLocation? location = resolved.location;
+    if (location == null) return (voice: null, skip: resolved.skip);
+    return _tyranoDomVoiceReader.read(location);
+  }
+
+  Future<void> _materializeTyranoDomVoice(
+    TyranoDomFeed feed,
+    _TyranoDomVoiceGroup group,
+    TyranoDomVoiceEvent voice,
+    int tick,
+  ) async {
+    String? resourceId;
+    String? failure;
+    String? member;
+    try {
+      final ({TyranoDomVoiceBytes? voice, TyranoDomVoiceSkip? skip}) fetched =
+          await _fetchTyranoDomVoice(voice);
+      final TyranoDomVoiceBytes? bytes = fetched.voice;
+      if (bytes == null) {
+        failure = fetched.skip?.name ?? 'unreadable';
+      } else {
+        member = bytes.asarMember;
+        final EngineHookGalAudioSource? engine = _engineSource;
+        if (engine == null) {
+          // 语音 dump 目录与制卡取音都挂在引擎源上；没有它就没有地方落原件。
+          failure = 'no_voice_store';
+        } else {
+          resourceId = await engine.storeDomVoiceResource(
+            fileName: galDomVoiceResourceName(
+              tick: tick > 0 ? tick : group.id,
+              group: group.id,
+              basename: tyranoVoiceDumpBasename(
+                bytes.sourcePath,
+                bytes.container,
+              ),
+            ),
+            bytes: bytes.bytes,
+          );
+          if (resourceId == null) failure = 'store_failed';
+        }
+      }
+    } on Object catch (error) {
+      failure = 'error: $error';
+    }
+    group.inFlight--;
+    if (!identical(feed, _tyranoDomFeed)) return;
+    if (resourceId != null) {
+      group.resourceIds.add(resourceId);
+      _record(
+        GalHookEventSeverity.info,
+        'audio',
+        'tyrano_dom.voice_stored',
+        'Stored the original voice resource the TyranoScript engine played '
+            'on a declared voice buffer',
+        details: <String, Object?>{
+          'resourceId': resourceId,
+          'buffer': voice.buffer,
+          'lineSeq': voice.lineSeq,
+          if (member != null) 'asarMember': member,
+        },
+      );
+    } else {
+      group.failed++;
+      _record(
+        GalHookEventSeverity.warning,
+        'audio',
+        'tyrano_dom.voice_unpaired',
+        'A TyranoScript voice could not be read from the game files; the line '
+            'is not paired with it',
+        details: <String, Object?>{
+          'reason': failure,
+          'buffer': voice.buffer,
+          'lineSeq': voice.lineSeq,
+        },
+      );
+    }
+    _applyTyranoDomVoice(group);
+  }
+
+  /// 把组里的原件绑到组的行上；组里一条都取不到且已无在途时按降级处理。
+  void _applyTyranoDomVoice(_TyranoDomVoiceGroup group) {
+    final String? lineId = group.lineId;
+    if (lineId == null) return;
+    final TexthookerLineEntry? entry = _textService.entryById(lineId);
+    if (entry == null) return;
+    if (group.resourceIds.isNotEmpty) {
+      if (entry.audioResourceId == group.resourceIds.first &&
+          entry.audioStatus == TexthookerLineAudioStatus.matched) {
+        return;
+      }
+      _textService.updateLineAudio(
+        lineId,
+        status: TexthookerLineAudioStatus.matched,
+        backend: 'game_resource',
+        resourceId: group.resourceIds.first,
+      );
+      return;
+    }
+    if (group.inFlight == 0 && group.events > 0) {
+      _textService.updateLineAudio(
+        lineId,
+        status: TexthookerLineAudioStatus.unavailable,
+        clearResourceId: true,
+      );
+      _scheduleLoopbackFreeze(entry);
+    }
+  }
+
   /// 经用户确认后把 knife 台词服务开关写进 knife.ini（重启游戏后生效）。
   /// 返回 false = 当前会话没有待开启的 knife，或写入失败。
   bool enableKnifeTextServiceInIni() {
@@ -1600,6 +2349,11 @@ class GalHookSessionController extends ChangeNotifier {
     if (generation != _operationGeneration) return;
     _beginGameSession(identity, attachedExecutable: identity.executablePath);
     _noteKnifeTextServiceForAttach(identity.executablePath);
+    _startTyranoDomForAttach(
+      generation,
+      executablePath: identity.executablePath,
+      pid: window.pid,
+    );
     // 计时与 hook 彻底解耦：附着时游戏**已经在跑**，注入成功与否、走哪条降级，都不
     // 改变「用户此刻正在玩」这个事实。所以计时起点就在这里，不挂在任何一条成功分支上。
     _startPlayTracker(
@@ -1814,6 +2568,13 @@ class GalHookSessionController extends ChangeNotifier {
       );
     }
     final bool lunaPcHooks = shouldUseLunaPcHooksForExecutable(executablePath);
+    // TyranoScript（Electron / NW.js）：本次启动带上 Chrome 远程调试端口，台词与逐字几何
+    // 改从游戏页面 DOM 取。与 knife 同一纪律：只加给这一次启动、不改用户保存的参数；
+    // 转区回退递归 launchGame 时传的仍是用户原参数，重新规划，不会叠两份。
+    final TyranoDomLaunchPlan? tyranoDomPlan = await _planTyranoDomLaunch(
+      executablePath,
+      launchArguments,
+    );
     // knife 的台词服务默认关闭：没开就在本次启动参数里打开（只加给这一次启动，不改
     // 用户保存的参数；转区回退递归 launchGame 时仍传用户原参数，不会叠两份）。
     final List<String> gameArguments = <String>[
@@ -1826,6 +2587,7 @@ class GalHookSessionController extends ChangeNotifier {
         '--text-websocket',
         '127.0.0.1:${await pickFreeLoopbackPort()}',
       ],
+      ...?tyranoDomPlan?.extraArgs,
     ];
     if (generation != _operationGeneration) {
       return const GalHookLaunchResult.failed(
@@ -1843,7 +2605,10 @@ class GalHookSessionController extends ChangeNotifier {
         'arch': is32Bit == true ? 'x86' : 'x64',
         'lunaPcHooks': lunaPcHooks,
         'gameArgCount': launchArguments.length,
-        'knifeTextServiceAuto': gameArguments.length != launchArguments.length,
+        'knifeTextServiceAuto':
+            gameArguments.length - (tyranoDomPlan?.extraArgs.length ?? 0) !=
+            launchArguments.length,
+        if (tyranoDomPlan != null) 'tyranoDomPort': tyranoDomPlan.port,
         'hasWorkdir': workdir.isNotEmpty,
       },
     );
@@ -2014,7 +2779,15 @@ class GalHookSessionController extends ChangeNotifier {
           generation: generation,
           pid: runningPid,
           identity: identity,
+          launchedByFushi: true,
         );
+        if (tyranoDomPlan != null) {
+          _startTyranoDom(
+            generation,
+            port: tyranoDomPlan.port,
+            pid: runningPid,
+          );
+        }
         return const GalHookLaunchResult.launched();
       }
       _fail(
@@ -2119,7 +2892,11 @@ class GalHookSessionController extends ChangeNotifier {
       generation: generation,
       pid: gamePid,
       identity: identity,
+      launchedByFushi: true,
     );
+    if (tyranoDomPlan != null) {
+      _startTyranoDom(generation, port: tyranoDomPlan.port, pid: gamePid);
+    }
     return const GalHookLaunchResult.launched();
   }
 
@@ -2137,10 +2914,16 @@ class GalHookSessionController extends ChangeNotifier {
   /// 不受 `canTrackPlaytime` 限制：库外附着的游戏同样要在退出时结束会话。
   /// 会话被换代（stop、重启、attach、接手）即自停；源停止时（[_stopSourcesInternal]）
   /// 一并取消。
+  ///
+  /// [launchedByFushi]：[pid] 是注入器 `LAUNCH pid=` 回报的、Fushi 自己拉起的进程，
+  /// 它存在过是事实（见 [GalGameExitWatch] 的 `existenceConfirmed`）——转手即退的同目录
+  /// 启动器 stub 在第一次采样前就死了，也必须能交接给它拉起的本体。附着路径不传：那里
+  /// 的 PID 可能属于判活恒失败的受保护进程。
   void _startGameExitWatch({
     required int generation,
     required int? pid,
     required GalHookSessionIdentity identity,
+    bool launchedByFushi = false,
   }) {
     _gameExitTimer?.cancel();
     _gameExitTimer = null;
@@ -2154,6 +2937,7 @@ class GalHookSessionController extends ChangeNotifier {
         probe: probe,
       ),
       confirmSamples: _gameExitConfirmSamples,
+      existenceConfirmed: launchedByFushi,
     );
     // PID 未知又没有游戏目录可认领：没有任何判据，不起空转的定时器。
     if (watch.pid <= 0 && watch.group.gameDirectory == null) return;
@@ -2269,9 +3053,23 @@ class GalHookSessionController extends ChangeNotifier {
     _gameExitedCount.value++;
   }
 
+  /// 测试套件级默认：构造时没注入 `gameProcessProbe` 的控制器用它代替真实 Windows probe。
+  ///
+  /// `test/flutter_test_config.dart` 把它钉成「没有 probe」——与 Linux CI 上
+  /// `Platform.isWindows == false` 的行为一致。否则 Windows 开发机上每个只造了假引擎
+  /// （假 PID）的用例都会去读**真实进程表**：假 PID 在真机上不存在（或碰巧属于别的
+  /// 进程），launch 路径又把注入器回报的 PID 视为确实存在过（`existenceConfirmed`），
+  /// 跑得久一点的用例就会被判「游戏已退出」而中途停会话。要测退出监视的用例显式注入
+  /// probe，优先于这里。生产代码从不设置它。
+  @visibleForTesting
+  static GalgameProcessProbe? Function()? debugDefaultGameProcessProbe;
+
   GalgameProcessProbe? _resolveGameProcessProbe() {
     final GalgameProcessProbe? injected = _gameProcessProbeOverride;
     if (injected != null) return injected;
+    final GalgameProcessProbe? Function()? debugDefault =
+        debugDefaultGameProcessProbe;
+    if (debugDefault != null) return debugDefault();
     if (!_isWindows || !Platform.isWindows) return null;
     try {
       return _sharedProcessProbe ??= GalgameWindowsProcessProbe();
@@ -3026,6 +3824,8 @@ class GalHookSessionController extends ChangeNotifier {
         appended.contains(line.seq) ||
         line.text.trim().isEmpty ||
         isGalgameSystemUiLine(line.text) ||
+        // 与 poll 路径同一仲裁：DOM 源在线时引擎文本道不再回捞成正文。
+        tyranoDomTextOnline ||
         !_acceptsLineFromSelectedThread(line)) {
       return false;
     }
@@ -3149,6 +3949,7 @@ class GalHookSessionController extends ChangeNotifier {
       if (remember) {
         // 用户已亲自表态：本会话不再自动恢复，并把这次选择记成新的真值。
         _textThreadMemoryApplied = true;
+        _textThreadUserSelected = true;
         TexthookerTextThread? chosen;
         for (final TexthookerTextThread thread in textThreads) {
           if (thread.key == _selectedTextThreadKey) {
@@ -3561,16 +4362,17 @@ class GalHookSessionController extends ChangeNotifier {
   /// （ctx 未透出），靠「谁真的在出台词」消歧。选中后本会话不再自动改，避免
   /// 行数此消彼长导致选择反复跳动。
   void _maybeRestoreTextThread() {
+    if (_textThreadUserSelected || _textThreadAutoSelectInFlight) return;
+    // 引擎精确线程先于记忆：它一旦真出过行，就接管「没有用户本会话亲选」的任何选择
+    // ——包括记忆恢复出来的 Luna 线程（见 [GalCaptureMemory.engineExactDeclined]）。
+    if (_maybeAutoSelectEngineExactThread()) return;
     if (_textThreadMemoryApplied || _selectedTextThreadKey != null) return;
     // 记忆未接入 / 本局拿不到游戏 key / 记忆里没有线程指纹，三种情况都落到
     // 引擎精确线程的自动选择；只有真有记忆时才按指纹恢复（用户显式选择优先）。
     final String? wanted = _ensureCaptureMemoryLoaded()
         ? _captureMemory.textThreadFingerprint
         : null;
-    if (wanted == null) {
-      _maybeAutoSelectEngineExactThread();
-      return;
-    }
+    if (wanted == null) return;
     // BUG-2706：必须是**本会话**的线程目录（全量目录里还留着上一次启动的死线程）。
     final TexthookerTextThread? best = pickRememberedTextThread(
       textThreads,
@@ -3580,10 +4382,12 @@ class GalHookSessionController extends ChangeNotifier {
     );
     if (best == null) return;
     _textThreadMemoryApplied = true;
+    _textThreadAutoSelectInFlight = true;
     unawaited(
       selectTextThread(best.nativeThreadId, threadKey: best.key).then((
         bool selected,
       ) {
+        _textThreadAutoSelectInFlight = false;
         if (!selected) return;
         _record(
           GalHookEventSeverity.info,
@@ -3592,6 +4396,9 @@ class GalHookSessionController extends ChangeNotifier {
           'Restored the text thread remembered for this game',
           details: <String, Object?>{'threadKey': best.key},
         );
+        // 恢复在飞期间引擎精确线程可能已出满行数，而那一轮的判定被在飞标记挡掉了；
+        // 选择落定后按当前目录重评一次（引擎线程已选中时立即返回，不会往复）。
+        _maybeRestoreTextThread();
       }),
     );
   }
@@ -3606,7 +4413,18 @@ class GalHookSessionController extends ChangeNotifier {
   /// 在十几条 MultiByteToWideChar 噪声线程里手挑它，只是把确定的事推给人。
   /// 判据与记忆恢复同款：必须真出过 [_textThreadRestoreMinLines] 行，避免只登记
   /// 未出行的线程被选中后一行不来。选中后本会话不再自动改。
-  void _maybeAutoSelectEngineExactThread() {
+  ///
+  /// 接管对象：没有选择，或选择来自自动路径（记忆恢复）且不是引擎精确线程。用户本会话
+  /// 亲选过（[_textThreadUserSelected]）或记忆里记着用户否决过
+  /// （[GalCaptureMemory.engineExactDeclined]）时不接管。
+  ///
+  /// 返回 true = 引擎精确线程已是当前选择或刚发起选择，调用方不再做记忆恢复。
+  bool _maybeAutoSelectEngineExactThread() {
+    final TexthookerTextThread? current = selectedTextThread;
+    if (current != null && isEngineExactTextThread(current)) return true;
+    if (_ensureCaptureMemoryLoaded() && _captureMemory.engineExactDeclined) {
+      return false;
+    }
     TexthookerTextThread? best;
     for (final TexthookerTextThread thread in textThreads) {
       if (!isEngineExactTextThread(thread)) continue;
@@ -3617,38 +4435,65 @@ class GalHookSessionController extends ChangeNotifier {
         best = thread;
       }
     }
-    if (best == null) return;
+    if (best == null) return false;
+    final TexthookerTextThread chosen = best;
+    final String? replaced = current?.key ?? _selectedTextThreadKey;
     _textThreadMemoryApplied = true;
+    _textThreadAutoSelectInFlight = true;
     unawaited(
-      selectTextThread(best.nativeThreadId, threadKey: best.key).then((
+      selectTextThread(chosen.nativeThreadId, threadKey: chosen.key).then((
         bool selected,
       ) {
+        _textThreadAutoSelectInFlight = false;
         if (!selected) return;
         _record(
           GalHookEventSeverity.info,
           'text',
           'text.thread_engine_exact_selected',
           'Selected the engine exact text thread automatically',
-          details: <String, Object?>{'threadKey': best!.key},
+          details: <String, Object?>{
+            'threadKey': chosen.key,
+            if (replaced != null) 'replacedThreadKey': replaced,
+          },
         );
       }),
     );
+    return true;
   }
 
   /// 用户显式选定/取消文本线程后同步持久化（null = 未选择，清掉记忆）。
   void _persistTextThread(TexthookerTextThread? thread) {
     if (!_ensureCaptureMemoryLoaded()) return;
+    // 引擎精确线程已登记时选了别的（或清空）= 否决它；选回它 = 撤销否决。
+    final bool engineExactPresent = textThreads.any(
+      (TexthookerTextThread t) =>
+          isEngineExactTextThread(t) &&
+          t.nativeThreadId != null &&
+          t.nativeThreadId != 0,
+    );
+    final bool declined =
+        engineExactPresent &&
+        (thread == null || !isEngineExactTextThread(thread));
     final String? fingerprint = thread == null
         ? null
         : textThreadFingerprint(thread);
     if (fingerprint == null) {
-      if (_captureMemory.textThreadFingerprint == null) return;
-      _saveCaptureMemory(_captureMemory.copyWith(clearTextThread: true));
+      if (_captureMemory.textThreadFingerprint == null &&
+          _captureMemory.engineExactDeclined == declined) {
+        return;
+      }
+      _saveCaptureMemory(
+        _captureMemory.copyWith(
+          clearTextThread: true,
+          engineExactDeclined: declined,
+        ),
+      );
       return;
     }
     final int? typicalLength = textThreadTypicalLength(thread!);
     if (_captureMemory.textThreadFingerprint == fingerprint &&
-        _captureMemory.textThreadTypicalLength == typicalLength) {
+        _captureMemory.textThreadTypicalLength == typicalLength &&
+        _captureMemory.engineExactDeclined == declined) {
       return;
     }
     _saveCaptureMemory(
@@ -3659,6 +4504,7 @@ class GalHookSessionController extends ChangeNotifier {
         textThreadTypicalLength: typicalLength,
         audioFallbackPolicy: _captureMemory.audioFallbackPolicy,
         textProcess: _captureMemory.textProcess,
+        engineExactDeclined: declined,
       ),
     );
   }
@@ -3732,6 +4578,8 @@ class GalHookSessionController extends ChangeNotifier {
   void _resetCaptureMemorySession() {
     _trackMemoryApplied = false;
     _textThreadMemoryApplied = false;
+    _textThreadUserSelected = false;
+    _textThreadAutoSelectInFlight = false;
     _captureMemoryLoaded = false;
     _captureMemoryGameKey = null;
     _captureMemory = const GalCaptureMemory();
@@ -3751,6 +4599,7 @@ class GalHookSessionController extends ChangeNotifier {
   Future<Uint8List?> captureAudioForOccurrence({
     required GalIngameMiningBinding occurrence,
     required String outputExtension,
+    GalMiningAudioLimit limit = GalMiningAudioLimit.unlimited,
   }) async {
     bool current() =>
         occurrence.resolve(
@@ -3776,6 +4625,7 @@ class GalHookSessionController extends ChangeNotifier {
         lineId: original.id,
         sentence: row!.text,
         outputExtension: outputExtension,
+        limit: limit,
       );
       if (!current()) return null;
       if (_textService.entryById(original.id)?.sourceSequence == seq) {
@@ -3816,10 +4666,14 @@ class GalHookSessionController extends ChangeNotifier {
     return null;
   }
 
+  /// [limit] 是本次制卡生效的句子音频长度策略（全局 + 本游戏覆盖，反馈
+  /// II3jOBIhT5）：只裁截取出来的 PCM，资源原件与用户裁决不受影响，见
+  /// [GalMiningAudioMode]。不带音频（off）由协调器在调用前短路，不会走到这里。
   Future<Uint8List?> captureAudioBytes({
     required String lineId,
     required String sentence,
     required String outputExtension,
+    GalMiningAudioLimit limit = GalMiningAudioLimit.unlimited,
   }) async {
     final TexthookerLineEntry? entry = _textService.entryById(lineId);
     if (entry == null ||
@@ -3839,6 +4693,7 @@ class GalHookSessionController extends ChangeNotifier {
         lineId: lineId,
         sentence: sentence,
         outputExtension: outputExtension,
+        limit: limit,
       ),
       buildFailure: (Object error, StackTrace stack) => null,
       onError: (Object error, StackTrace stack) => _record(
@@ -3923,6 +4778,7 @@ class GalHookSessionController extends ChangeNotifier {
     required String lineId,
     required String sentence,
     required String outputExtension,
+    required GalMiningAudioLimit limit,
   }) async {
     final GalAudioSource? source = _audioSource;
     final EngineHookGalAudioSource? engine = _engineSource;
@@ -3947,6 +4803,21 @@ class GalHookSessionController extends ChangeNotifier {
             ? 'manual_track_override'
             : 'manual_recapture',
       );
+    }
+    // TyranoScript DOM 语音仲裁已经定论「这句没有语音」（声明了语音缓冲区、这句一条
+    // 语音事件都没有、也没有在取的原件）：入库时就把它标成 unavailable、不借时间邻近的
+    // native 资源、不录 Loopback（见 [_onTyranoDomFrame]）。制卡取音必须服从同一结论：
+    // 以前这里照样空等资源等待窗（默认 1.2s）再走 PCM / Loopback 兜底链，而制卡动图
+    // 的采样又要等本句音频有结论才收口——用户看到的就是浮窗「制卡」按钮一直转。
+    if (_tyranoDomLineHasNoVoice(lineId)) {
+      _record(
+        GalHookEventSeverity.info,
+        'match',
+        'audio.dom_no_voice',
+        'TyranoScript DOM voice arbitration reports no voice for this line',
+        details: <String, Object?>{'lineId': lineId},
+      );
+      return null;
     }
     final int timestamp = _lineTimestampCache[lineId] ?? 0;
     if (engine != null && _isWindows) {
@@ -4074,14 +4945,33 @@ class GalHookSessionController extends ChangeNotifier {
       _markLineAudioMissing(lineId, reason);
       return null;
     }
+    // 长度策略只裁这里——自动截取的 PCM。上面的用户裁决分支与资源原件分支不经过它。
+    // 缓存里留的仍是完整切片：工作台试听 / 换策略再制卡都要拿到原始捕获。
+    final GalAudioSlice limited = applyGalMiningAudioLimit(slice, limit);
+    if (!identical(limited, slice)) {
+      _record(
+        GalHookEventSeverity.info,
+        'encode',
+        'audio.mining_length_limited',
+        'Captured slice length adjusted by the mining audio length setting',
+        details: <String, Object?>{
+          'lineId': lineId,
+          'mode': limit.mode.wireName,
+          'limitMs': limit.limitMs,
+          'capturedMs': (slice.pcm.length * 1000) ~/ slice.format.byteRate,
+        },
+      );
+    }
     return _encodeLineSlice(
       lineId: lineId,
-      slice: slice,
+      slice: limited,
       backend: identical(source, engine) ? 'engine_pcm' : 'system_loopback',
       outputExtension: outputExtension,
       fallbackReason: timestamp > 0
           ? 'paired_voice_not_found'
           : 'no_engine_timestamp',
+      // 用户定了时长（最长 / 固定），这段长度就是他要的，不再按「单句超长」亮黄。
+      lengthChosenByUser: limit.limitMs != null,
     );
   }
 
@@ -4112,12 +5002,15 @@ class GalHookSessionController extends ChangeNotifier {
     required String backend,
     required String outputExtension,
     required String? fallbackReason,
+    bool lengthChosenByUser = false,
   }) async {
     final int durationMs = (slice.pcm.length * 1000) ~/ slice.format.byteRate;
-    final String? effectiveReason = sliceFallbackReasonFor(
-      durationMs: durationMs,
-      fallbackReason: fallbackReason,
-    );
+    final String? effectiveReason = lengthChosenByUser
+        ? fallbackReason
+        : sliceFallbackReasonFor(
+            durationMs: durationMs,
+            fallbackReason: fallbackReason,
+          );
     if (effectiveReason != fallbackReason) {
       _record(
         GalHookEventSeverity.warning,
@@ -4163,6 +5056,20 @@ class GalHookSessionController extends ChangeNotifier {
     }
   }
 
+  /// [lineId] 是 DOM 语音仲裁管辖的行，且它的语音组已经定论无语音：一条语音事件
+  /// 都没收到、没有在取的原件、也没有已落盘的资源。语音组已被淘汰 / 文档已重载
+  /// （找不到组）时不下结论，返回 false，交给原有等待与兜底链。
+  bool _tyranoDomLineHasNoVoice(String lineId) {
+    if (!_tyranoDomVoiceOwnedLines.contains(lineId)) return false;
+    for (final _TyranoDomVoiceGroup group in _tyranoDomVoiceGroups.values) {
+      if (group.lineId != lineId) continue;
+      return group.events == 0 &&
+          group.inFlight == 0 &&
+          group.resourceIds.isEmpty;
+    }
+    return false;
+  }
+
   /// 资源 hook 已就绪时，资源文件仍可能比文本环晚几十到几百毫秒落盘。制卡不能在第一次
   /// 未命中后立刻录 Loopback；先给资源一个短暂、有上限的等待窗口，超时后才走既有降级链。
   Future<Uint8List?> _waitForPairedResourceAudio(
@@ -4179,19 +5086,23 @@ class GalHookSessionController extends ChangeNotifier {
           _textService.entryById(lineId)?.eventOwnedVoice == true ||
           _pendingResourceMatches[lineId]?.eventOwnedOnly == true;
       String? resourceId = _resourceIdForLine(lineId);
+      // DOM 语音仲裁：这句的语音由引擎语音缓冲区事件决定，只认已绑定的 DOM 资源。
+      final bool domOwned = _tyranoDomVoiceOwnedLines.contains(lineId);
       // BUG-955：mine 阶段解析具体某行，绝不走「最新语音」兜底——历史行时间戳被淘汰后 timestamp=0，
       // 借最新语音会把当前语音错配给旧台词。晚附着 live 行的资源已在捕获期固化到 _resourceIdForLine，
       // 这里只按精确 resourceId / 正时间戳窗口取，取不到就交给下游 PCM/loopback 或明确 missing。
-      resourceId ??= eventOnly
-          ? engine.findEventOwnedVoiceResourceId(
-              timestamp,
-              textEventId: _lineTextEventIdCache[lineId] ?? 0,
-            )
-          : engine.findPairedVoiceResourceId(
-              timestamp,
-              textEventId: _lineTextEventIdCache[lineId],
-              allowLatestSessionFallback: false,
-            );
+      if (!domOwned) {
+        resourceId ??= eventOnly
+            ? engine.findEventOwnedVoiceResourceId(
+                timestamp,
+                textEventId: _lineTextEventIdCache[lineId] ?? 0,
+              )
+            : engine.findPairedVoiceResourceId(
+                timestamp,
+                textEventId: _lineTextEventIdCache[lineId],
+                allowLatestSessionFallback: false,
+              );
+      }
       if (resourceId != null && _resourceIdForLine(lineId) == null) {
         _textService.updateLineAudio(
           lineId,
@@ -4200,7 +5111,7 @@ class GalHookSessionController extends ChangeNotifier {
           resourceId: resourceId,
         );
       }
-      final Uint8List? bytes = eventOnly && resourceId == null
+      final Uint8List? bytes = (eventOnly || domOwned) && resourceId == null
           ? null
           : await engine.grabPairedVoiceBytes(
               timestamp,
@@ -4210,7 +5121,8 @@ class GalHookSessionController extends ChangeNotifier {
               allowLatestSessionFallback: false,
             );
       if (bytes != null && bytes.isNotEmpty) return bytes;
-      if (!engine.rawVoiceReady ||
+      // DOM 行的原件可能还在取（语音事件已到、asar 读写未完）：与 native 资源同一个等待窗。
+      if ((!engine.rawVoiceReady && !domOwned) ||
           waitUs <= 0 ||
           elapsed.elapsedMicroseconds >= waitUs) {
         return null;
@@ -4443,6 +5355,7 @@ class GalHookSessionController extends ChangeNotifier {
   /// [gameExitedCount] 通知器（BUG-4002 移植时补）。
   @override
   void dispose() {
+    unawaited(_stopTyranoDom(notify: false));
     _gameExitTimer?.cancel();
     _gameExitTimer = null;
     _gameExitedCount.dispose();
@@ -5498,6 +6411,8 @@ class GalHookSessionController extends ChangeNotifier {
   }
 
   Future<void> _stopSourcesInternal() async {
+    // DOM 源跟会话走：停源 / 换游戏 / 游戏退出（stopCapture）都在这里收。
+    await _stopTyranoDom();
     // 补录窗口挂在会话音源上，会话停就必须先收束（丢弃取音）：否则临时 loopback
     // 源泄漏，超时回调还会往已结束的会话行里写状态。
     await finishLineRecapture(discard: true);
@@ -5682,6 +6597,7 @@ class GalHookSessionController extends ChangeNotifier {
               text: line.text,
               hookCode: line.hookCode.isEmpty ? null : line.hookCode,
               hookCodeLaneUnique: line.hookCodeIsLaneUnique,
+              dialogueSurface: line.isDialogueSurface,
               nativeThreadId: line.threadId == 0 ? null : line.threadId,
               notify: false,
             );
@@ -5707,6 +6623,7 @@ class GalHookSessionController extends ChangeNotifier {
               label: threadLabel,
               hookCode: line.hookCode.isEmpty ? null : line.hookCode,
               hookCodeLaneUnique: line.hookCodeIsLaneUnique,
+              dialogueSurface: line.isDialogueSurface,
               nativeThreadId: line.threadId,
             );
           }
@@ -5717,6 +6634,14 @@ class GalHookSessionController extends ChangeNotifier {
         // 会被 injector 的 hook 赢家选择放行——在喂进文本服务/查词面板前用实证启发式剔除。
         // 推进 cursor 消费掉该 seq，但不置 receivedTextLine（菜单文字不算收到台词信号）。
         if (isGalgameSystemUiLine(line.text)) {
+          cursor = line.seq;
+          continue;
+        }
+        // 正文来源仲裁：TyranoScript DOM 源在线（见 [tyranoDomTextOnline]）时，正文只认
+        // DOM 行。Electron 里 LunaHook 抓到的是 V8 / Chromium 内部字符串，与 DOM 正文同
+        // 一句会进两份，且夹着脚本 / UI 噪声；DOM 行还带着查词几何依赖的逐字下标。线程
+        // 目录观测（上面）照旧，cursor 照常推进；语音资源事件不经这里，配对不受影响。
+        if (tyranoDomTextOnline) {
           cursor = line.seq;
           continue;
         }
@@ -6477,7 +7402,7 @@ class GalHookSessionController extends ChangeNotifier {
     final List<String> matched = <String>[];
     for (final MapEntry<
           String,
-          ({int timestampMs, int textEventId, bool eventOwnedOnly})
+          ({int timestampMs, int? textEventId, bool eventOwnedOnly})
         >
         pending
         in _pendingResourceMatches.entries) {
@@ -6493,10 +7418,12 @@ class GalHookSessionController extends ChangeNotifier {
         matched.add(pending.key); // 用户已裁决：撤出待匹配集合，不再自动改写。
         continue;
       }
-      final String? resourceId = pending.value.eventOwnedOnly
+      final int? pendingEventId = pending.value.textEventId;
+      final String? resourceId =
+          pending.value.eventOwnedOnly && pendingEventId != null
           ? engine.findEventOwnedVoiceResourceId(
               pending.value.timestampMs,
-              textEventId: pending.value.textEventId,
+              textEventId: pendingEventId,
             )
           : engine.findPairedVoiceResourceId(
               pending.value.timestampMs,
@@ -7173,4 +8100,30 @@ class _LoopbackFreeze {
     timer.cancel();
     if (!done.isCompleted) done.complete();
   }
+}
+
+/// TyranoScript DOM 的一句（脚本句序号）上的语音组。
+class _TyranoDomVoiceGroup {
+  _TyranoDomVoiceGroup(this.id);
+
+  /// 组 id（写进文件名的 `fushi_domvoice<id>` 标记）。
+  final int id;
+
+  /// 已收到的语音存储路径（去重）。
+  final Set<String> storages = <String>{};
+
+  /// 已落盘的资源 ID，按播放顺序；首个是主语音。
+  final List<String> resourceIds = <String>[];
+
+  /// 收到的语音事件数。
+  int events = 0;
+
+  /// 还在取 / 写的原件数。
+  int inFlight = 0;
+
+  /// 取不到的原件数。
+  int failed = 0;
+
+  /// 这一句入库后的 texthooker 行 id（续行折叠后指向最新一行）。
+  String? lineId;
 }

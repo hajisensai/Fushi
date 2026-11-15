@@ -11,7 +11,9 @@ import 'package:fushi/src/models/game_stream_button_profile.dart';
 import 'package:fushi/src/models/game_stream_lookup_layout.dart';
 import 'package:fushi/src/pages/implementations/game_stream_line_font_fit.dart';
 import 'package:fushi/src/pages/implementations/game_stream_settings_sheet.dart';
-import 'package:fushi/src/platform/game_stream_companion_display_channel.dart';
+import 'package:fushi/src/second_screen/game_stream_panel_host.dart';
+import 'package:fushi/src/second_screen/input/controller_lookup_mode.dart';
+import 'package:fushi/src/shortcuts/key_event_device_type.dart';
 import 'package:fushi/src/sync/game_stream_client.dart';
 import 'package:fushi/src/sync/game_stream_virtual_button.dart';
 import 'package:fushi/src/sync/game_stream_companion_bridge.dart';
@@ -147,8 +149,9 @@ class GameStreamPage extends StatefulWidget {
     this.companionDisplay,
     this.secondScreen = GameStreamSecondScreen.auto,
     this.onSecondScreenChanged,
+    ControllerLookupMode? controllerLookupMode,
     super.key,
-  });
+  }) : _controllerLookupMode = controllerLookupMode;
 
   final String sessionId;
   final String clientId;
@@ -181,7 +184,14 @@ class GameStreamPage extends StatefulWidget {
 
   /// The second display, where the lookup panel goes while one is connected
   /// (null where the platform has none). The caller owns and disposes it.
-  final GameStreamCompanionDisplay? companionDisplay;
+  final GameStreamPanelHost? companionDisplay;
+
+  final ControllerLookupMode? _controllerLookupMode;
+
+  /// Controller lookup mode / R1 panel drive the stream claims the raw
+  /// controller from (the shared instance unless a test injects one).
+  ControllerLookupMode get controllerLookupMode =>
+      _controllerLookupMode ?? ControllerLookupMode.instance;
 
   /// Whether to use a second display (persisted by the caller).
   final GameStreamSecondScreen secondScreen;
@@ -325,6 +335,13 @@ class _GameStreamPageState extends State<GameStreamPage>
   GameStreamTouchMode _touchMode = GameStreamTouchMode.direct;
   Offset _trackpadCursor = const Offset(.5, .5);
   late GameStreamVideoSettings _settings = widget.settings;
+
+  /// The receiver-only "Stream volume" boost is offered (slider shown, gain
+  /// applied) only on a device with a usable second display: the host's
+  /// display list is not empty, i.e. the same signal as
+  /// `SecondScreenHost.available` (the native capability check); followed
+  /// live.
+  final ValueNotifier<bool> _volumeBoostAvailable = ValueNotifier<bool>(false);
   late GameStreamLookupLayout _lookupLayout = widget.lookupLayout;
   late GameStreamLookupLayout _committedLookupLayout = widget.lookupLayout;
 
@@ -358,6 +375,11 @@ class _GameStreamPageState extends State<GameStreamPage>
     widget.receiver?.addListener(_onReceiverChanged);
     widget.receiver?.renderer.addListener(_schedulePointerGeometryCheck);
     widget.inputComposer.addListener(_onReceiverChanged);
+    // Every controller button goes to the remote game: the companion's
+    // lookup mode (hold L1) and R1 panel drive must not take one, also when
+    // this stream leaves the second screen to the companion.
+    widget.controllerLookupMode.claimRawInput(this);
+    _syncVolumeBoost();
     unawaited(_startCompanion());
   }
 
@@ -389,6 +411,7 @@ class _GameStreamPageState extends State<GameStreamPage>
       );
       widget.receiver?.addListener(_onReceiverChanged);
       widget.receiver?.renderer.addListener(_schedulePointerGeometryCheck);
+      _syncVolumeBoost();
     }
   }
 
@@ -402,6 +425,8 @@ class _GameStreamPageState extends State<GameStreamPage>
     widget.receiver?.renderer.removeListener(_schedulePointerGeometryCheck);
     widget.inputComposer.removeListener(_onReceiverChanged);
     _stopCompanion();
+    _volumeBoostAvailable.dispose();
+    widget.controllerLookupMode.releaseRawInput(this);
     _statsTimer?.cancel();
     _videoFocus.dispose();
     _keyboardFocus.dispose();
@@ -412,9 +437,10 @@ class _GameStreamPageState extends State<GameStreamPage>
   // ---- Second display -----------------------------------------------------
 
   Future<void> _startCompanion() async {
-    final GameStreamCompanionDisplay? display = widget.companionDisplay;
+    final GameStreamPanelHost? display = widget.companionDisplay;
     if (display == null) return;
     display.displays.addListener(_placeCompanion);
+    display.displays.addListener(_syncVolumeBoost);
     display.attached.addListener(_onCompanionAttached);
     display.resets.addListener(_onCompanionReset);
     _companionMessages = display.messages.listen(_onCompanionMessage);
@@ -431,13 +457,15 @@ class _GameStreamPageState extends State<GameStreamPage>
     }
     if (!mounted) return;
     _companionStarted = true;
+    _syncVolumeBoost();
     _placeCompanion();
   }
 
   void _stopCompanion() {
-    final GameStreamCompanionDisplay? display = widget.companionDisplay;
+    final GameStreamPanelHost? display = widget.companionDisplay;
     if (display == null) return;
     display.displays.removeListener(_placeCompanion);
+    display.displays.removeListener(_syncVolumeBoost);
     display.attached.removeListener(_onCompanionAttached);
     display.resets.removeListener(_onCompanionReset);
     unawaited(_companionMessages?.cancel());
@@ -445,13 +473,22 @@ class _GameStreamPageState extends State<GameStreamPage>
     _companionDisplayId = null;
   }
 
+  /// Re-evaluates whether this device offers the stream volume boost (a
+  /// display appeared / went away) and hands the result to the receiver, which
+  /// falls back to unity gain when it is false.
+  void _syncVolumeBoost() {
+    final bool available =
+        widget.companionDisplay?.displays.value.isNotEmpty ?? false;
+    _volumeBoostAvailable.value = available;
+    widget.receiver?.setVolumeBoostAllowed(available);
+  }
+
   /// Puts the panel on the first second display when the setting allows it,
   /// or takes it down when it does not (or the display went away).
   void _placeCompanion() {
-    final GameStreamCompanionDisplay? display = widget.companionDisplay;
+    final GameStreamPanelHost? display = widget.companionDisplay;
     if (display == null || !_companionStarted || !mounted) return;
-    final List<GameStreamCompanionDisplayInfo> displays =
-        display.displays.value;
+    final List<SecondScreenDisplayInfo> displays = display.displays.value;
     final int? target =
         _secondScreen == GameStreamSecondScreen.auto && displays.isNotEmpty
         ? displays.first.id
@@ -563,7 +600,7 @@ class _GameStreamPageState extends State<GameStreamPage>
   /// Sends the panel whatever changed since the last push: the light state
   /// on any change, the result only when it (or its styles) changed.
   void _syncCompanion() {
-    final GameStreamCompanionDisplay? display = widget.companionDisplay;
+    final GameStreamPanelHost? display = widget.companionDisplay;
     if (display == null || !_companionActive || !mounted) return;
     final GameStreamCompanionState state = _companionState();
     if (state != _sentCompanionState) {
@@ -639,7 +676,7 @@ class _GameStreamPageState extends State<GameStreamPage>
   }
 
   Future<void> _answerCompanion(GameStreamCompanionRequest request) async {
-    final GameStreamCompanionDisplay? display = widget.companionDisplay;
+    final GameStreamPanelHost? display = widget.companionDisplay;
     if (display == null) return;
     final GameStreamLookupController? controller = _lookupController;
     final DictionaryPopupResourceSource? resources = controller?.popupResources;
@@ -1471,7 +1508,7 @@ class _GameStreamPageState extends State<GameStreamPage>
     // up here, and the game gets no arrows in this mode anyway.
     final GameStreamPhysicalButton? physical =
         GameStreamPhysicalButton.gameButtonFor(event.logicalKey) ??
-        (lookupMode || _isControllerSource(event.deviceType)
+        (lookupMode || _isControllerSource(keyEventDeviceType(event))
             ? GameStreamPhysicalButton.dpadFor(event.logicalKey)
             : null);
     if (physical != null) {
@@ -1683,7 +1720,7 @@ class _GameStreamPageState extends State<GameStreamPage>
           }
         : null;
     if (companionCommand != null) {
-      final GameStreamCompanionDisplay? display = widget.companionDisplay;
+      final GameStreamPanelHost? display = widget.companionDisplay;
       if (display != null) {
         await _runCompanionCall(
           'command',
@@ -1808,15 +1845,20 @@ class _GameStreamPageState extends State<GameStreamPage>
   Future<void> _openSettings() async {
     setState(() => _lookupSuspended = true);
     try {
+      _syncVolumeBoost();
       final GameStreamVideoSettings? next = await showGameStreamSettingsSheet(
         context,
         initial: _settings,
+        volumeAvailable: _volumeBoostAvailable,
       );
       if (next == null || !mounted) return;
+      final GameStreamVideoSettings previous = _settings;
       setState(() => _settings = next);
       widget.onSettingsChanged?.call(next);
-      if (!_supports(GameStreamFeature.videoSettings)) {
-        widget.receiver?.setAudioEnabled(next.audio);
+      // Mute / volume only change local playback: no join for the host.
+      if (!_supports(GameStreamFeature.videoSettings) ||
+          next.sameHostParameters(previous)) {
+        widget.receiver?.applyLocalSettings(next);
         return;
       }
       final GameStreamVideoSettings? applied = await widget.receiver
@@ -1827,6 +1869,15 @@ class _GameStreamPageState extends State<GameStreamPage>
       if (applied.maxHeight < next.maxHeight || applied.maxFps < next.maxFps) {
         ScaffoldMessenger.maybeOf(context)?.showSnackBar(
           FushiSnackBar(content: Text(t.game_stream_settings_capped)),
+        );
+      }
+      // The host keeps streaming when it cannot silence its speakers; say so
+      // instead of leaving the switch claiming it worked.
+      if (next.muteHost && !applied.muteHost) {
+        setState(() => _settings = _settings.copyWith(muteHost: false));
+        widget.onSettingsChanged?.call(_settings);
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+          FushiSnackBar(content: Text(t.game_stream_settings_mute_host_failed)),
         );
       }
     } catch (error) {

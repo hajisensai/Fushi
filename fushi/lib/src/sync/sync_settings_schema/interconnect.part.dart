@@ -423,7 +423,26 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
   }
 
   /// 地址行副标题：连通性测试结果；`p2p://` 地址另挂隧道路径（直连 / 中继）。
-  Widget? _urlRowSubtitle(ThemeData theme, String url, bool? ok) {
+  /// [address] 非 null 时（标题已是设备名）把 URL 放在副标题首行，同一台 host 的
+  /// 多条地址靠它区分；[note] 是同 host 多地址的位置注记（BUG-4691），排在地址下面。
+  Widget? _urlRowSubtitle(
+    ThemeData theme,
+    String url,
+    bool? ok, {
+    String? address,
+    String? note,
+  }) {
+    final Widget? addressLine = address == null
+        ? null
+        : Text(
+            address,
+            key: ValueKey<String>('interconnect-peer-url-$url'),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          );
     // M3E tonal 状态色块：成功 tertiary（Apple 落系统绿淡染）、失败 error。
     final Widget? reach = ok == null
         ? null
@@ -448,11 +467,26 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
             ),
           );
     final bool p2p = parseInterconnectP2pUrl(url) != null;
-    if (!p2p && why == null) return reach;
+    final Widget? noteLine = note == null
+        ? null
+        : Text(
+            note,
+            key: ValueKey<String>('interconnect-peer-address-note-$url'),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          );
+    if (!p2p && why == null && addressLine == null && noteLine == null) {
+      return reach;
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
+        ?addressLine,
+        ?noteLine,
         ?reach,
         ?why,
         if (p2p) InterconnectP2pPathBadge(url: url),
@@ -692,6 +726,11 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
 
   Future<void> _toggleUrl(int index) async {
     final String url = _urls[index].url;
+    // 启停一翻，上一轮测试结果就不再代表当前状态，清掉等下次测试。
+    setState(() {
+      _reachable.remove(url);
+      _failureReason.remove(url);
+    });
     await _mutateUrls(
       (List<FushiClientUrl> current) => <FushiClientUrl>[
         for (final FushiClientUrl u in current)
@@ -712,7 +751,8 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
     final String url = _urls[index].url;
     final String? hostId = _urls[index].hostId;
     final String dictionaryHostId = remoteDictionaryHostIdOf(_urls[index]);
-    final String hostName = (_urls[index].deviceName?.trim().isNotEmpty ?? false)
+    final String hostName =
+        (_urls[index].deviceName?.trim().isNotEmpty ?? false)
         ? _urls[index].deviceName!.trim()
         : url;
     final int removed =
@@ -771,9 +811,17 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
       if (mounted) _showSnackBar(context, t.sync_connection_failed);
       return;
     }
+    // 只测启用的行：停用的行不参与任何真实同步 / 请求，测它亮 ✓ 只会误导。
+    final List<FushiClientUrl> targets = interconnectUrlsToTest(_urls);
+    if (targets.isEmpty) {
+      if (mounted) {
+        _showSnackBar(context, t.interconnect_peer_test_none_enabled);
+      }
+      return;
+    }
     final String globalToken = _tokenController.text.trim();
     setState(() => _isTesting = true);
-    for (final FushiClientUrl u in _urls) {
+    for (final FushiClientUrl u in targets) {
       // BUG-1693：凭据逐地址取（行上 per-peer token 优先、回落全局键），与全部
       // 真实同步消费点的 BUG-1550 规则一致。旧实现拿全局键测每一台：配对第二台
       // 后全局键被覆写，第一台恒被误报失败；全局键为空时更是整体早退，哪怕各
@@ -863,7 +911,12 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
               spacing: fushiGroupedListGap(context),
               itemBuilder: (BuildContext context, int index) {
                 final FushiClientUrl u = _urls[index];
-                final bool? ok = _reachable[u.url];
+                // 停用的行不显示上一轮测试结果：它不参与任何真实请求，留着 ✓
+                // 会让人以为它在用（测试本身也只测启用行，见 _testAll）。
+                final bool? ok = u.enabled ? _reachable[u.url] : null;
+                // 标题优先显示对端设备名（同 host 的备用地址借组内的名字），URL
+                // 退到副标题；没有名字的老条目 / 手输地址照旧以 URL 为标题。
+                final String? peerName = interconnectPeerRowName(_urls, u);
                 // 53NT7G_tSO：窄屏（手机竖屏 ~360dp）上一排五个控件把标题挤到 0 宽，
                 // 地址整行看不见、认不出是哪台。放不下时把次要动作挪到地址下方一行，
                 // 只有开关留在行尾；宽屏照旧平铺在行尾。
@@ -917,56 +970,16 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
                       builder: (BuildContext context, BoxConstraints box) {
                         final bool compact =
                             box.maxWidth < _kInterconnectPeerRowWideMinWidth;
-                        final Widget? reachStatus = _urlRowSubtitle(
+                        // BUG-4691：列表逐地址成行（排序 = 选路优先级，开关 / 测试 /
+                        // 重新配对都按地址），同一台 host 的几条地址标题是同一个设备
+                        // 名；注记标出第几条、什么网络、是否自动学到，免得看成重复配对。
+                        final Widget? status = _urlRowSubtitle(
                           theme,
                           u.url,
                           ok,
+                          address: peerName == null ? null : u.url,
+                          note: interconnectPeerAddressNote(_urls, u),
                         );
-                        // 已知设备名时标题是设备名、地址退到副标题首行（认设备先认名字）。
-                        final ({String title, String? url}) labels =
-                            interconnectPeerRowLabels(u);
-                        final String? urlLine = labels.url;
-                        // BUG-4274：列表逐地址成行（排序 = 选路优先级，开关 / 测试 /
-                        // 重新配对都按地址），同一台 host 的几条地址标题是同一个设备
-                        // 名；注记标出第几条、什么网络、是否自动学到，免得看成重复配对。
-                        final String? addressNote = interconnectPeerAddressNote(
-                          _urls,
-                          u,
-                        );
-                        final TextStyle? detailStyle = theme.textTheme.bodySmall
-                            ?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
-                            );
-                        final Widget? status =
-                            urlLine != null || addressNote != null
-                            ? Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisSize: MainAxisSize.min,
-                                children: <Widget>[
-                                  if (urlLine != null)
-                                    Text(
-                                      urlLine,
-                                      key: ValueKey<String>(
-                                        'interconnect-peer-url-${u.url}',
-                                      ),
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: detailStyle,
-                                    ),
-                                  if (addressNote != null)
-                                    Text(
-                                      addressNote,
-                                      key: ValueKey<String>(
-                                        'interconnect-peer-address-note-${u.url}',
-                                      ),
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: detailStyle,
-                                    ),
-                                  ?reachStatus,
-                                ],
-                              )
-                            : reachStatus;
                         return FushiListItem(
                           padding: const EdgeInsets.symmetric(horizontal: 12),
                           leading: FushiListLeadingIcon(
@@ -981,7 +994,7 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
                           // 在窄屏上只显示得到 `http…`，等于认不出是哪台设备。放宽两行。
                           titleMaxLines: 2,
                           title: Text(
-                            labels.title,
+                            peerName ?? u.url,
                             key: ValueKey<String>(
                               'interconnect-peer-title-${u.url}',
                             ),
@@ -1204,6 +1217,14 @@ mixin _PairingV2FlowMixin<T extends StatefulWidget> on State<T> {
     // 一个冒充已知 host 的对端已经拿到了我的设备标识。铉扎的意义就是「握手前先判」。
     if (!await _ensurePinnedFingerprintTrusted(baseUrl, fingerprint)) return;
 
+    // 地址归属闸：这条 URL 已归另一台已配对 host 时先问用户是否作为新设备配对，
+    // 取消就中止（同样在握手之前，不把本机标识送给对端）。
+    final _AddressOwnerDecision? owner = await _ensureAddressOwnerConfirmed(
+      baseUrl,
+      hostId,
+    );
+    if (!mounted || owner == null) return;
+
     // 第一重确认：核对要连接的设备身份（展示名 + 证书指纹）。
     final bool confirmed = await _confirmPairIdentity(
       deviceName: deviceName,
@@ -1243,6 +1264,8 @@ mixin _PairingV2FlowMixin<T extends StatefulWidget> on State<T> {
             token,
             fingerprint,
             hostId: hostId,
+            owner: owner,
+            deviceName: deviceName,
           );
         case FushiPairV2Failure(:final String reason):
           // 'cancelled' = 用户在 PIN 输入框点了取消，静默收场不弹提示。
@@ -1266,6 +1289,45 @@ mixin _PairingV2FlowMixin<T extends StatefulWidget> on State<T> {
   /// - 存过但不等 → **当场中止**，并给用户一个显式的「清除已存指纹重新信任」出口：
   ///   host 真的重装 / 重置了证书时，没这个入口那条地址就永远修不好（只能删了重加）；
   ///   同意后只清指纹、**不**惄悉新指纹，下一步仍走完整双确认（展示新指纹供核对）。
+  /// 地址归属闸（配对前）：[baseUrl] 那一行已归另一台 host（签发方 [hostId] 为空
+  /// 或不同）时弹「作为新设备配对」确认框。返回 null = 用户取消，中止配对（不提示）；
+  /// 否则 [_AddressOwnerDecision.reassign] 表示写 token 时是否改归属。
+  Future<_AddressOwnerDecision?> _ensureAddressOwnerConfirmed(
+    String baseUrl,
+    String? hostId,
+  ) async {
+    final List<FushiClientUrl> rows = await _pairRepo.getFushiClientUrls();
+    final FushiClientUrl? owner = interconnectAddressOwnerConflict(
+      rows,
+      baseUrl,
+      incomingHostId: hostId,
+    );
+    if (owner == null) return const _AddressOwnerDecision.keep();
+    if (!mounted) return null;
+    final bool ok = await confirmInterconnectAddressReassign(
+      context,
+      address: baseUrl,
+      ownerLabel: interconnectAddressOwnerLabel(rows, owner),
+    );
+    if (!ok) return null;
+    return _AddressOwnerDecision.reassignFrom(owner.hostId!);
+  }
+
+  /// 归属改动落库后修正指向这条地址的「下载执行设备」偏好。
+  Future<void> _reconcileAfterAddressReassign(
+    String baseUrl,
+    _AddressOwnerDecision owner,
+  ) async {
+    final String? previous = owner.previousHostId;
+    if (previous == null) return;
+    await reconcileDownloadExecutionHostAfterReassign(
+      _pairSettingsContext.appModel.prefsRepo,
+      await _pairRepo.getFushiClientUrls(),
+      url: baseUrl,
+      previousHostId: previous,
+    );
+  }
+
   Future<bool> _ensurePinnedFingerprintTrusted(
     String baseUrl,
     String? fingerprint,
@@ -1373,28 +1435,42 @@ mixin _PairingV2FlowMixin<T extends StatefulWidget> on State<T> {
   /// 配对成功收尾：经 TOFU 记录器把 url+指纹+展示名写进候选列表（指纹变更会抛
   /// [FushiFingerprintMismatchException] → 告警，绝不覆盖），落 token，bump
   /// clientConfigRevision（client-config widget 监听后自动重载，单一真相源）。
+  ///
+  /// [deviceName] 是配对前 `/api/ping` 回报的 host 展示名（BUG-4322：以前这里写死 null，
+  /// 手动地址配对的 host 只剩 URL）。
   Future<String> _onPairSuccess(
     String baseUrl,
     String token,
     String? fingerprint, {
     String? hostId,
+    _AddressOwnerDecision owner = const _AddressOwnerDecision.keep(),
+    String? deviceName,
   }) async {
-    try {
-      await _pairRepo.addFushiClientUrl(
-        baseUrl,
-        fingerprint: fingerprint,
-        deviceName: null,
-      );
-    } on FushiFingerprintMismatchException catch (e, stack) {
-      ErrorLogService.instance.log('PairV2.fingerprintChanged', e, stack);
-      return t.sync_pair_fingerprint_changed;
-    }
+    // 与扫码 / 深链配对同一份落库（[recordInterconnectPairing]）：
     // BUG-1550：per-peer token 落在**这条地址**上（同时写全局键作老配置回落）。
     // 只写全局键会让「配对第二台对端」把第一台的凭据覆盖掉，而第一台地址仍排在
     // 候选前列且可达 → 拿着别人的 token 撞 401 → 整个互联瘫痪。
     // 53NT7G_tSO：重新配对会作废本机在这台 host 上的旧 token，新 token 要落到这台
     // host 的全部地址（内网 / 外网 / IPv6 …），否则其余地址一律 401。
-    await _pairRepo.setFushiClientTokenForUrl(baseUrl, token, hostId: hostId);
+    try {
+      await recordInterconnectPairing(
+        _pairRepo,
+        baseUrl: baseUrl,
+        token: token,
+        fingerprint: fingerprint,
+        deviceName: deviceName,
+        hostId: hostId,
+        reassignOwner: owner.reassign,
+      );
+    } on FushiFingerprintMismatchException catch (e, stack) {
+      ErrorLogService.instance.log('PairV2.fingerprintChanged', e, stack);
+      return t.sync_pair_fingerprint_changed;
+    } on InterconnectAddressOwnerConflict catch (e, stack) {
+      // 只会在确认框与写入之间这条地址被并发改归了别的 host 时出现。
+      ErrorLogService.instance.log('PairV2.addressOwnerConflict', e, stack);
+      return t.sync_pair_address_owner_conflict;
+    }
+    await _reconcileAfterAddressReassign(baseUrl, owner);
     // 配对成功立即学一次 host 的地址集（IPv6 / 组网 / 公网 / P2P）：出了这个
     // 局域网也连得回来。失败只留痕，不影响配对结果。
     for (final FushiClientUrl u in await _pairRepo.getFushiClientUrls()) {
@@ -2184,6 +2260,7 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget>
         device,
         repo,
         state,
+        hostId: probe?.ping.hostId,
       );
     } finally {
       if (mounted) setState(() => _pairingUrl = null);
@@ -2199,13 +2276,21 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget>
     String baseUrl,
     FushiDevice device,
     SyncRepository repo,
-    _SyncSettingsState state,
-  ) async {
+    _SyncSettingsState state, {
+    String? hostId,
+  }) async {
     // Always record the address (deduped) so the user keeps the URL even if
     // the host declines and they fall back to pasting the token.
     await repo.addFushiClientUrl(baseUrl);
     // A client connection now exists → lock this device out of server mode.
     state.setHasClientConnection(true);
+    // 地址归属闸：v1 签发方报不出（或报了不同的）hostId，证明不了自己是这条地址
+    // 原来那台 host——已归组的地址必须用户确认才改归属，否则 token 会写进旧组。
+    final _AddressOwnerDecision? owner = await _ensureAddressOwnerConfirmed(
+      baseUrl,
+      hostId,
+    );
+    if (!mounted || owner == null) return;
 
     String message;
     try {
@@ -2227,7 +2312,13 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget>
             : null;
         if (token != null && token.isNotEmpty) {
           // BUG-1550：v1 老路径同样把凭据落在这条地址上（理由见 _onPairSuccess）。
-          await repo.setFushiClientTokenForUrl(baseUrl, token);
+          await repo.setFushiClientTokenForUrl(
+            baseUrl,
+            token,
+            hostId: hostId,
+            reassignOwner: owner.reassign,
+          );
+          await _reconcileAfterAddressReassign(baseUrl, owner);
           // BUG-1693：与 v2 路径一致——拿到 token（配对成功）才落「互联已启用」。
           await state.setInterconnectEnabled(true);
           message = t.sync_pair_success;
@@ -2239,6 +2330,9 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget>
       } else {
         message = t.sync_pair_failed;
       }
+    } on InterconnectAddressOwnerConflict catch (e, stack) {
+      ErrorLogService.instance.log('LanDiscovery.pair:$baseUrl', e, stack);
+      message = t.sync_pair_address_owner_conflict;
     } catch (e, stack) {
       // Pairing probe failed (no server/timeout/declined). Keep the URL; record
       // why instead of swallowing.
@@ -2630,6 +2724,16 @@ class _InterconnectBackupBackendWidgetState
 
 // ── 配对弹窗（手动 IP / LAN 发现 / 扫码 / 深链共用）────────────────────
 
+/// 地址归属闸的结论：[reassign] = 写 token 时让这一行脱离 [previousHostId] 的组。
+final class _AddressOwnerDecision {
+  const _AddressOwnerDecision.keep() : reassign = false, previousHostId = null;
+  const _AddressOwnerDecision.reassignFrom(String this.previousHostId)
+    : reassign = true;
+
+  final bool reassign;
+  final String? previousHostId;
+}
+
 /// BUG-1553：把 client 的机器可读 reason 翻成人话。此前只认三个 reason，
 /// 限速 / TLS 指纹不符 / 超时统统落进 default 的「配对失败」——用户被 host 锁了
 /// 15 分钟却看不出来，只会一遍遍重试；证书不符这种安全事件也说成一样的话。
@@ -2656,6 +2760,8 @@ String interconnectPairFailureMessage(String reason) {
       return t.sync_pair_link_unreachable;
     case 'fingerprint_changed':
       return t.sync_pair_fingerprint_changed;
+    case 'address_owner_conflict':
+      return t.sync_pair_address_owner_conflict;
     default:
       return t.sync_pair_failed;
   }

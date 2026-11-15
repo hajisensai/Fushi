@@ -298,14 +298,17 @@ void main() {
       );
     });
 
-    test('FushiLookupRequest.hiddenKanjiDictionaries 默认空，与 hiddenDictionaries 分开', () {
-      const FushiLookupRequest request = FushiLookupRequest(
-        text: '日',
-        maxResults: 8,
-        hiddenDictionaries: <String>{'Mixed'},
-      );
-      expect(request.hiddenKanjiDictionaries, isEmpty);
-    });
+    test(
+      'FushiLookupRequest.hiddenKanjiDictionaries 默认空，与 hiddenDictionaries 分开',
+      () {
+        const FushiLookupRequest request = FushiLookupRequest(
+          text: '日',
+          maxResults: 8,
+          hiddenDictionaries: <String>{'Mixed'},
+        );
+        expect(request.hiddenKanjiDictionaries, isEmpty);
+      },
+    );
   });
 
   group('excludedDictionariesCacheSuffix', () {

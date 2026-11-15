@@ -490,9 +490,7 @@ class MusicCrossfadeBackend implements MusicOutputBackend {
           ? null
           : musicCrossfadeTiming(
               from: from,
-              to: plan.next.durationMs == null
-                  ? null
-                  : Duration(milliseconds: plan.next.durationMs!),
+              to: plan.next.playbackDuration,
               crossfade: _settings.crossfade,
               speed: _speed,
             );

@@ -5,7 +5,7 @@
 # all call this through `.github/actions/native-store-names`, so a name can never be
 # computed two ways (guard: fushi/test/build/native_store_names_single_source_guard_test.dart).
 #
-#   names.sh <windows|macos|ios|linux>
+#   names.sh <windows|macos|ios|linux|android|flatpak>
 #
 # Prints `key=value` lines and appends them to $GITHUB_OUTPUT when that is set, so a
 # local dry run is just `bash .github/actions/native-store-names/names.sh linux`.
@@ -26,7 +26,7 @@
 # A build starts reading another directory => add it to the path lists below.
 set -euo pipefail
 
-platform="${1:?usage: names.sh <windows|macos|ios|linux|android>}"
+platform="${1:?usage: names.sh <windows|macos|ios|linux|android|flatpak>}"
 
 # fushi_p2p Rust toolchain. Every `Set up Rust (fushi_p2p...)` step takes
 # `toolchain: ${{ steps.native_store.outputs.p2p_rust }}`, so bumping it here both
@@ -130,6 +130,14 @@ case "$platform" in
       "anki_sync_debug=linux-x64-fushi-anki-sync-debug-v1-$image_os-$image-$(tree_hash "$toolchain_env" "${ANKI_SYNC[@]}")"
     )
     ;;
+  flatpak)
+    # Flatpak BaseApp (WebKit, mpv, ...; release-desktop.yml flatpak-baseapp job). It is
+    # built inside the tool/linux/flatpak/Dockerfile container from Flathub's GNOME SDK,
+    # so the runner image is not an input; the container image and the manifest are.
+    names+=(
+      "baseapp=flatpak-x86_64-fushi-baseapp-v1-$(tree_hash "" tool/linux/flatpak/baseapp tool/linux/flatpak/Dockerfile)"
+    )
+    ;;
   android)
     # release.yml's Android build job (the only producer and consumer). The NDK and
     # the runner's vcpkg checkout are build inputs the tree hash cannot see.
@@ -143,7 +151,7 @@ case "$platform" in
     )
     ;;
   *)
-    echo "::error title=native-store-names::unknown platform '$platform' (windows|macos|ios|linux|android)" >&2
+    echo "::error title=native-store-names::unknown platform '$platform' (windows|macos|ios|linux|android|flatpak)" >&2
     exit 2
     ;;
 esac

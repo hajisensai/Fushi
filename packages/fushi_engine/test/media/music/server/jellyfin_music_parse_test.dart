@@ -114,7 +114,24 @@ void main() {
     expect(p.durationMs, 600000);
     expect(p.coverRef, 'p1');
     expect(p.curator, isNull);
-    expect(p.editable, isFalse);
+    // 不报 CanDelete 按可改；只有明确 `CanDelete: false`（别人的歌单）才只读。
+    expect(p.editable, isTrue);
+    expect(
+      parseJellyfinMusicPlaylist(<String, Object?>{
+        'Id': 'p2',
+        'Name': 'Theirs',
+        'CanDelete': false,
+      })!.editable,
+      isFalse,
+    );
+    expect(
+      parseJellyfinMusicPlaylist(<String, Object?>{
+        'Id': 'p3',
+        'Name': 'Mine',
+        'CanDelete': true,
+      })!.editable,
+      isTrue,
+    );
     expect(
       parseJellyfinMusicPlaylist(<String, Object?>{
         'Id': 'v',

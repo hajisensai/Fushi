@@ -904,6 +904,37 @@ void main() {
       );
     });
 
+    test('桌面 OCR 字格可拖选文本，且文本拖动不会翻页', () {
+      final String doc = mangaWindowDocument(
+        <MokuroImage>[_pageWithTwoBlocks()],
+        <String>['p.jpg'],
+        mode: MangaReadingMode.spread,
+        spreadDirection: 'rtl',
+        inlineSelectionJs: ReaderSelectionScripts.source(),
+        enableMouseTextSelection: true,
+      );
+
+      expect(
+        doc.contains('.ocr-char{-webkit-user-select:text;user-select:text;}'),
+        isTrue,
+        reason: 'desktop OCR text must opt back into native selection',
+      );
+      expect(
+        doc.contains("window.matchMedia('(any-pointer:fine)').matches"),
+        isTrue,
+      );
+      expect(
+        doc.contains("e.target.closest('.ocr-char')"),
+        isTrue,
+        reason: 'selection starts only when the mouse is on OCR text',
+      );
+      expect(
+        doc.contains('if (textDrag) {'),
+        isTrue,
+        reason: 'mouse text drags must not turn the page',
+      );
+    });
+
     test('webtoon → 竖向堆叠（column）', () {
       final MokuroImage page = _pageWithTwoBlocks();
       final String doc = mangaWindowDocument(

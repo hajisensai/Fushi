@@ -1,4 +1,4 @@
-# Flutter 3.47.6 Windows 引擎补丁：合成器内 HDR 输出
+# Flutter 3.47.6 Windows 引擎补丁：合成器内 HDR 输出、无障碍树加固
 
 让 HDR 视频画在 Flutter **自己的**交换链里（R16G16B16A16_FLOAT + scRGB），
 不再需要把 libmpv 的 gpu-next 画进主窗后面的独立宿主窗（该宿主窗已于 2026-10-18 删除）。只改 Windows 嵌入层
@@ -88,6 +88,126 @@ legacy `D3D11_RESOURCE_MISC_SHARED` 资源只靠 OS 隐式串行化，生产端�
   mutex；原版引擎没有这个导出，插件留在 legacy 共享纹理，「补丁引擎与原版引擎都能跑同一份 app」不变。
 - 代价：每个新视频帧在 Flutter 设备上多一次整帧 GPU 拷贝。
 
+### `engine-a11y-tree-hardening.patch`（flutter 仓库根目录，与前四份互不重叠，按序叠在其后；BUG-4380）
+
+Windows 无障碍树加固（Windows 嵌入层与 `shell/platform/common` 的无障碍桥，Dart 侧不变）。原版
+`AccessibilityBridge::CommitUpdates` 把框架的增量语义更新原样交给 `ui::AXTree::Unserialize`；
+AXTree 拒收时**已经改完一部分树**，bridge 只打日志就 return，节点委托映射与树从此脱节，外部 UIA
+客户端（输入法、划词、讲述人）一查询就在 `flutter_windows.dll` 里解引用空委托 / 已释放节点，或在
+下一次重挂时 `CreateRemoveReparentedNodesUpdate` 的 `child_ids.erase(end())` 越界写坏堆（BUG-2337 /
+BUG-2345 / BUG-3796 / BUG-4073 / BUG-4333 都是这一个失步模型）。补丁：
+
+- bridge 保留框架下发过的每个节点的最新数据（`semantics_nodes_`，flags 按值存，不再指向已释放的
+  embedder 缓冲区）和自定义动作（`custom_actions_`）。每次提交先合并 pending，再从根推出目标树
+  （`PlanTree`：子节点必须有数据、每个节点只挂一个父节点且本帧重发的父节点优先、先父后子），与当前
+  AXTree 比对生成两步更新（`ApplyTreePlan`）。框架违约的帧（列出没下发的子节点、孤儿节点、换父节点
+  不重发、同一子节点两个父节点）不再交给 AXTree 拒收；缺的部分在数据到达后自动挂上。保留数据的上限是
+  框架 id 空间（id 在 2^16-1 回绕）。
+- AXTree 仍拒收时整树重建（`RebuildTree`）：先清事件、销毁全部委托（平台节点 `Destroy`，客户端拿到
+  「元素不可用」），再用同一 tree id 新建 AXTree 从目标树重建；重建也失败就留空树。树与委托映射
+  始终一致，绝不半应用。
+- `OnNodeReparented` 重建委托（AXTree 在同一份更新里销毁并重建同 id 节点时只发这个回调）；
+  删掉 release 下无效的 `assert` 与 `CreateRemoveReparentedNodesUpdate`。
+- 委托：`ChildAtIndex` 越界返回 `nullptr`，`HitTestSync` 跳过拿不到委托的子节点。
+- 引擎单测加在 `accessibility_bridge_unittests.cc`（未纳入本仓 CI，编引擎时跑
+  `ninja -C out\host_debug flutter/shell/platform/common:common_cpp_unittests` 一类目标）。
+
+上游没有对应修复（截至 2026-11-10，`main` 上 `accessibility_bridge.cc` 仍是拒收即 return）。
+**删除条件**：上游 bridge 改成拒收后能自愈、且不再依赖 release 下无效的 `assert` 时删掉，或回移上游实现。
+
+### `engine-program-binary-cache.patch`（flutter 仓库根目录，叠在前五份之上）
+
+着色器程序磁盘缓存。冷启动时 `FlutterWindowsEngine::Run → … → PlatformView::NotifyCreated` 在主线程上
+干等 raster 线程建 `impeller::ContentContext`，后者逐条 `PipelineLibraryGLES::CreatePipeline →
+glLinkProgram`，ANGLE 在后台线程 `ProgramD3D::GetPixelExecutableTask → d3dcompiler_47` 把每条管线编成
+DXBC——每次启动全量重编，Release 实测主线程阻塞约 1 秒（580→1587 ms）。ANGLE 自带的程序缓存只在内存里，
+应用不给 `EGL_ANDROID_blob_cache` 回调就不落盘。补丁：
+
+- `egl::ProgramBinaryCache`（新文件 `egl/program_binary_cache.{h,cc}` + 单测）：blob cache 的磁盘后端。
+  一键一文件（`<目录>\<命名空间>\<SHA-1 十六进制>.bin`），文件头带 magic / 格式号 / 键长 / 值长 /
+  FNV-1a 校验和、正文带完整键；读出时逐项核对，短文件、校验不符、键不符一律当未命中并入队删除。
+  `Get` 同步读（它替代的就是同线程上的一次编译），ANGLE 先问大小再要字节，第一次读出的值暂存一次，
+  不读两遍。`Put` 只把值拷进队列；后台线程（`THREAD_MODE_BACKGROUND_BEGIN`，CPU 与 I/O 都降优先级）
+  负责写（临时文件 + `MoveFileExW` 原子替换，不 `FlushFileBuffers`——断电撕裂的文件过不了校验和）、
+  命中后刷新 mtime、删坏文件、总量封顶（32 MB，按 mtime 淘汰最久未用；单条 >4 MB 不存；排队未写
+  >16 MB 丢弃）。建不出目录、`ERROR_DISK_FULL` / `ERROR_ACCESS_DENIED` 等就整场停写，只退回照常编译。
+- 命名空间（子目录名）= FNV-1a(格式号 + `GetFlutterEngineVersion()` + 本 `flutter_windows.dll` 文件的
+  大小与修改时间)：换引擎版本、换补丁、重编 DLL 都换新目录，旧目录在后台删掉（只删 16 位小写十六进制
+  名的目录，不碰别的东西）。
+- `egl::Manager`：`eglInitialize` 之后、建上下文之前，若 runner 配了目录且 display 声明
+  `EGL_ANDROID_blob_cache`，调 `eglSetBlobCacheFuncsANDROID`。display 被所有 manager 共用、最后一个才
+  `eglTerminate`（ANGLE terminate 时清掉回调），所以装没装按 display 生命周期记。
+- 新导出 `FlutterDesktopSetProgramBinaryCacheDirectory(const wchar_t*)`：进程级，必须在建第一个引擎
+  之前调。runner 用 `GetProcAddress` 解析，原版引擎没有它就照常每次编译。
+
+缓存 key 与失效（ANGLE `84027ac` 源码）：
+
+- key 是 `MemoryProgramCache::ComputeHash`（`src/libANGLE/MemoryProgramCache.cpp:69-113`）：各 shader 的
+  `writeShaderKey`（源码 + 编译选项）、`ANGLE_PROGRAM_VERSION`、`GetANGLESHVersion()`、上下文 ES 版本、
+  **`GL_RENDERER` 字符串**、attrib / uniform / 输出位置绑定、TF varyings。D3D11 下 `GL_RENDERER` =
+  `ANGLE (<厂商>, <适配器描述> (<DeviceId>) Direct3D11 vs_5_0 ps_5_0, D3D11-<驱动版本>)`
+  （`src/libANGLE/Context.cpp:3490-3520`、`renderer/d3d/d3d11/Renderer11.cpp:2340-2356`、`:4533-4540`，
+  非 WebGL 上下文带完整驱动版本），所以**换显卡、换驱动都换 key**。
+- 载入时再查一遍：`Program::deserialize`（`src/libANGLE/Program.cpp:2260-2300`）核对程序版本、
+  64 位、SH 版本、renderer 字符串、ES 版本；`ProgramExecutableD3D::load`
+  （`renderer/d3d/ProgramExecutableD3D.cpp:491-520`）核对 `DeviceIdentifier`（VendorId / DeviceId /
+  SubSysId / Revision / FeatureLevel，`Renderer11.cpp:2358-2370`）与编译优化级别。任一不符 →
+  `CacheGetResult::Rejected` → 重新从源码链接（`Program.cpp:996-1001`），并经 `Put` 覆盖旧文件。
+- 值是 gzip（`angletypes.cpp:1063-1125` 的 `CompressBlob` / `DecompressBlob`），解压失败同样当未命中
+  （`MemoryProgramCache.cpp:137-143`）。
+- ANGLE 自己的 key **不**覆盖：ANGLE 翻译器 / D3D 后端改了 HLSL 生成但没动 `ANGLE_PROGRAM_VERSION`
+  （那个哈希只跟序列化相关文件走）。这一块由上面的命名空间兜住：换任何一份 DLL 都换目录。
+- 命中路径对 Impeller 成立：`PipelineLibraryGLES` 的 `LinkProgram`（`impeller/renderer/backend/gles/
+  pipeline_library_gles.cc:77-175`）是普通的 `glCompileShader` ×2 + `glBindAttribLocation` +
+  `glLinkProgram`，不设 `GL_PROGRAM_BINARY_RETRIEVABLE_HINT`、不是 separable，正好走
+  `Program::link` 里的缓存查找（`Program.cpp:961-1001`）与 `cacheProgramBinaryIfNotAlready`
+  （`:2380-2410`）。ANGLE 调回调时持着自己的 blob cache 锁（`BlobCache.cpp:55-72`、`:85-126`）。
+- 只缓存链好的程序，不改任何着色器、管线状态或渲染目标格式：渲染结果与不缓存完全一样；HDR
+  （`engine-impeller-hdr.patch`）的半浮点目标不进 key、也不触发重新编译（见上文该节）。
+
+目录由 runner 决定（`fushi/windows/runner/main.cpp` `ResolveProgramBinaryCacheDirectory`）：
+`FUSHI_TEST_ROOT` → `<测试根>\cache\shader-programs`；否则 exe 旁可写 → `<exe>.ShaderCache`；
+否则 `%LOCALAPPDATA%\Fushi\ShaderCache\<exe 路径哈希>`。永远不在生产数据根 `%APPDATA%\Fushi\Fushi` 下。
+诊断：`FUSHI_PROGRAM_CACHE_LOG=<文件>` 时后台线程每次排空队列追加一行命中 / 未命中 / 坏文件 / 写入 /
+丢弃 / 淘汰计数。引擎单测 `egl/program_binary_cache_unittests.cc`（目标
+`flutter/shell/platform/windows:flutter_windows_unittests`，未纳入本仓 CI）。
+
+实测（2026-11-12，本机 Release、离屏 `FUSHI_TEST_HIDDEN`、隔离测试根，同一 exe + app.so 只换
+`flutter_windows.dll`，进程创建 → Dart `main()`，6 轮）：原版 1458–1501 ms（中位 1464）；补丁首次
+（删缓存）1478–1577 ms（中位 1488，75 条程序全部 miss → 后台写入 75 条，共 460 KB）；补丁第二次起
+526–550 ms（中位 534，75/75 命中、0 写入）。
+
+**删除条件**：上游 Windows 嵌入层自己接上 `EGL_ANDROID_blob_cache`（或 Impeller GLES 自带程序二进制
+缓存）时删掉。
+
+### `engine-resize-before-first-frame.patch`（flutter 仓库根目录，叠在前六份之上）
+
+首帧前改窗口尺寸不再阻塞平台线程。原版 `FlutterWindowsView::OnWindowSizeChanged`
+（`shell/platform/windows/flutter_windows_view.cc:209` 起）在 surface 有效且尺寸会变时置
+`kResizeStarted`、发 metrics，然后 `PollOnce` 循环等 raster 线程把状态推到 `kDone`，最多等
+`kWindowResizeTimeout{100}`（`:30`）。`kDone` 只由 `OnFramePresented`（`:748`）在
+`OnFrameGenerated` / `OnEmptyFrameGenerated` 按目标尺寸重建 surface（`kFrameGenerated`）之后置上。
+框架还没出过帧时（Fushi 冷启动 `binding.deferFirstFrame()` 压着首帧，`main.dart` 还在
+`DesktopWindowPlacement.applyInitialPlacement()` 里），没有任何帧会来，平台线程每次都干等满
+100 ms：`window_manager` 的 `setBounds` 是同步 `SetWindowPos`（WM_SIZE 在调用内送达 → 这一等就压在
+`await setBounds` 上）；`maximize` 是 `PostMessage(WM_SYSCOMMAND, SC_MAXIMIZE)`，`await` 本身不等，
+但它的 WM_SIZE 稍后在平台线程上再等一次 100 ms，期间平台消息全部停摆。
+
+补丁：`FlutterWindowsView` 加 `has_presented_frame_`（`resize_mutex_` 保护），`OnFramePresented`
+一进锁就置真。`OnWindowSizeChanged` 在同一把锁里置 `kResizeStarted` + 目标尺寸时顺带读它；从未呈现过
+帧就发完 metrics 直接返回 `false`（返回值无人消费，`flutter_window.cc` `OnResize` 忽略它），不进
+等待循环。resize 保持挂起，与原版「超时之后」完全同一条路径：之后第一帧若是目标尺寸，raster 线程在
+`OnFrameGenerated` 里先 `ResizeRenderSurface` 再呈现；别的尺寸的帧被拒（`:187`），不会画在旧尺寸
+surface 上。呈现过任意一帧之后行为与原版逐字相同。
+
+引擎单测（`flutter_windows_view_unittests.cc`）：新增 `WindowResizeBeforeFirstFrameDoesNotBlock`
+（两次首帧前改尺寸各 <50 ms 返回、旧尺寸帧被拒、首帧按新尺寸重建 surface 并完成 resize）与
+`WindowResizeAfterFirstFrameStillBlocks`（呈现过一帧后照旧等满 100 ms）；原有
+`WindowResizeTests` / `TestEmptyFrameResizes` / `WindowResizeRace` 测的是同步路径，开头补一次
+`OnFramePresented()` 让它们仍走同步。
+
+**删除条件**：上游让首帧前的 resize 不再同步等待（或整个 resize 同步改成不阻塞平台线程）时删掉。
+
 ### `angle-scrgb-swapchain.patch`（ANGLE 仓库根目录 `git apply`）
 
 ANGLE 的 D3D11 后端原本**从不设置交换链色彩空间**，也不声明
@@ -105,12 +225,15 @@ sRGB 合成，>1.0 全被钳掉（实测：backing store 里 2.57，桌面上 1.
 `<工作目录>\depot_tools`）：
 
 ```powershell
-tool/flutter_engine/build_patched_engine.ps1 -Root D:\fe -PatchVersion hdr-output-3   # 自动取 fushi/.fvmrc 的 Flutter 版本
+tool/flutter_engine/build_patched_engine.ps1 -Root D:\fe -PatchVersion hdr-output-4   # 自动取 fushi/.fvmrc 的 Flutter 版本
 # 只重编 / 只打包：-Steps build,stage,pack -Modes release
 # 本机 VS 缺 ATL 时：-AtlDir '<另一套 VS>\VC\Tools\MSVC\<ver>\atlmfc'
+# 机器忙时限并发：-Jobs 8（每个 clang-cl 最多吃约 1 GB）
+# SDK 没装「Debugging Tools for Windows」（gn 报 dbghelp.dll not found）：-WindowsSdkDir <镜像目录>，
+#   目录里用 junction 指回真 SDK 的各子目录，再放一份 Debuggers\x64\dbghelp.dll（只被拷进 out 目录，不进产物）
 ```
 
-步骤：sync（clone `.fvmrc` 版本 + `gclient sync`；已有源码树就 fetch 新 tag 切过去再增量 sync）→ patch（四份引擎补丁 + ANGLE 一份，干净树上按序打）→
+步骤：sync（clone `.fvmrc` 版本 + `gclient sync`；已有源码树就 fetch 新 tag 切过去再增量 sync）→ patch（七份引擎补丁 + ANGLE 一份，干净树上按序打）→
 build（`gn --runtime-mode <mode>` + `ninja flutter_windows`，与官方产物同配置）→
 stage（按 `windows-x64{,-profile,-release}` 布局 + `engine-overlay.json`）→
 pack（连同 pdb 打 zip——`flutter build windows` 要求缓存里有 `flutter_windows.dll.pdb`，
@@ -124,13 +247,16 @@ pack（连同 pdb 打 zip——`flutter build windows` 要求缓存里有 `flutt
 
 ## 当前产物
 
-`artifacts.json` → release `flutter-engine-3.47.6-hdr-output-3`（prerelease、非 Latest；
-2026-11-05 编，含 `engine-hdr-output` + `engine-underlay-composition` + `engine-impeller-hdr` +
-`engine-d3d-keyed-mutex` 四份引擎补丁与 ANGLE 补丁；三种模式 + 匹配的 pdb——`flutter build windows`
+`artifacts.json` → release `flutter-engine-3.47.6-hdr-output-4`（prerelease、非 Latest；
+2026-11-12 编，含上面全部七份引擎补丁与 ANGLE 补丁；三种模式 + 匹配的 pdb——`flutter build windows`
 缺 pdb 会在 assemble 失败；tag 不以数字 / `v`+数字开头，app 更新检查与发布 workflow 都不会把它当
-app 版本）。重编后换一个新的 `patchVersion` 发新 release，再改本目录的 `artifacts.json`，旧 release
-留着给旧提交复现用（`hdr-output-2` 是前三份补丁、无 keyed mutex；`hdr-output-1` 只有 Skia 路径的
-HDR、不含 underlay；3.44.0 时代的是 `flutter-engine-3.44.0-hdr-output-2`）。
+app 版本）。相对 `hdr-output-3` 新带上 `engine-a11y-tree-hardening`（2026-11-10 加入）、
+`engine-program-binary-cache`、`engine-resize-before-first-frame`（2026-11-12 加入）三份。
+
+改补丁后重编要换一个新的 `patchVersion` 发新 release，再改本目录的 `artifacts.json`；在那之前出的包
+仍是旧引擎。旧 release 留着给旧提交复现用（`hdr-output-3` 是前四份补丁；`hdr-output-2` 是前三份、
+无 keyed mutex；`hdr-output-1` 只有 Skia 路径的 HDR、不含 underlay；3.44.0 时代的是
+`flutter-engine-3.44.0-hdr-output-2`）。
 
 注意：在**已经打过补丁**的源码树上重跑 `patch` 步骤会失败——`Invoke-Patch` 用「能否反向应用」判断
 已打过，但前几份补丁的改动被后几份覆盖后不能单独反向应用。增量重编时只打新补丁

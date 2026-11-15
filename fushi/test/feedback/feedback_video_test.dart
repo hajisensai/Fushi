@@ -1,5 +1,6 @@
 // 反馈视频的本机准备（feedback_video.dart）：魔数嗅探与服务端同口径、码率按时长装进
-// 50 MB、转码参数（720p / libx264 / aac / faststart）、转码不可用时原样上传但仍受上限约束。
+// 100 MB、转码参数（720p / libx264 / aac / faststart）、转码不可用时原样上传但仍受上限约束；
+// 默认原件档：≤ 100 MB 且格式合规原样上传不起 ffmpeg，超限 / 格式不收才自动压缩（1080p 起退 720p）。
 
 import 'dart:async';
 import 'dart:io';
@@ -109,7 +110,7 @@ void main() {
     expect(sniffFeedbackVideoType(const <int>[]), isNull);
   });
 
-  test('码率：短视频封顶 2 Mbps；长视频压低到装进 50 MB；装不下返回 null', () {
+  test('码率：短视频封顶 2 Mbps；长视频压低到装进 100 MB；装不下返回 null', () {
     expect(feedbackVideoBitrateKbps(null), kFeedbackVideoMaxKbps);
     expect(feedbackVideoBitrateKbps(60 * 1000), kFeedbackVideoMaxKbps);
     final int tenMin = feedbackVideoBitrateKbps(10 * 60 * 1000)!;
@@ -158,6 +159,7 @@ void main() {
         durationLine: 'Duration: 00:00:10.00',
         transcode: () => 3000,
       ),
+      mode: FeedbackVideoMode.p720,
     );
     expect(v.transcoded, isTrue);
     expect(v.contentType, 'video/mp4');
@@ -172,6 +174,7 @@ void main() {
       src,
       workDir: work,
       backend: _FakeFfmpeg(throws: true),
+      mode: FeedbackVideoMode.p720,
     );
     expect(v.transcoded, isFalse);
     expect(v.contentType, 'video/webm');
@@ -180,7 +183,7 @@ void main() {
     expect(src.existsSync(), isTrue);
   });
 
-  test('转码失败且原件超 50 MB：报太大，不偷偷截断', () async {
+  test('转码失败且原件超 100 MB：报太大，不偷偷截断', () async {
     final File src = source(_mp4Head, length: FeedbackLimits.videoMaxBytes + 1);
     await expectLater(
       prepareFeedbackVideo(
@@ -228,6 +231,7 @@ void main() {
         durationLine: 'Duration: 01:00:00.00',
         transcode: () => 1000,
       ),
+      mode: FeedbackVideoMode.p720,
     );
     expect(v.transcoded, isFalse);
     expect(v.bytes, 6000);
@@ -288,6 +292,7 @@ void main() {
       source(_movHead, length: 8000),
       workDir: work,
       backend: ffmpeg,
+      mode: FeedbackVideoMode.p720,
     );
     final List<String> args = ffmpeg.calls.firstWhere(
       (List<String> a) => a.contains('-c:v'),
@@ -318,9 +323,9 @@ void main() {
       (mid.kbps + kFeedbackVideoAudioKbps) * 1000 / 8 * 120,
       lessThanOrEqualTo(FeedbackLimits.videoMaxBytes),
     );
-    // 5 分钟：1080p 码率不够，退回 720p。
+    // 7 分钟：1080p 码率不够（100 MB 下 1080p 约撑到 6 分钟），退回 720p。
     final ({FeedbackVideoQuality quality, int kbps}) long =
-        planFeedbackVideoTranscode(300 * 1000, FeedbackVideoQuality.p1080)!;
+        planFeedbackVideoTranscode(420 * 1000, FeedbackVideoQuality.p1080)!;
     expect(long.quality, FeedbackVideoQuality.p720);
     // 一小时：哪一档都装不下。
     expect(
@@ -336,7 +341,7 @@ void main() {
 
   test('选 1080p 但视频太长：按 720p 转并通知调用方', () async {
     final _FakeFfmpeg ffmpeg = _FakeFfmpeg(
-      durationLine: 'Duration: 00:05:00.00',
+      durationLine: 'Duration: 00:07:00.00',
       transcode: () => 3000,
     );
     int downgraded = 0;
@@ -344,7 +349,7 @@ void main() {
       source(_movHead, length: 8000),
       workDir: work,
       backend: ffmpeg,
-      quality: FeedbackVideoQuality.p1080,
+      mode: FeedbackVideoMode.p1080,
       onDowngraded: () => downgraded++,
     );
     expect(downgraded, 1);
@@ -366,7 +371,7 @@ void main() {
       source(_movHead, length: FeedbackLimits.videoMaxBytes + 10),
       workDir: work,
       backend: ffmpeg,
-      quality: FeedbackVideoQuality.p1080,
+      mode: FeedbackVideoMode.p1080,
       onDowngraded: () => downgraded++,
     );
     expect(downgraded, 1);
@@ -391,6 +396,7 @@ void main() {
       backend: ffmpeg,
       onProgress: progress.add,
       cancel: cancel.future,
+      mode: FeedbackVideoMode.p720,
     );
     await ffmpeg.started.future;
     expect(progress, isNotEmpty);
@@ -398,5 +404,157 @@ void main() {
     await expectLater(job, throwsA(isA<FeedbackVideoCancelledException>()));
     expect(ffmpeg.killed, isTrue);
     expect(work.listSync(), isEmpty);
+  });
+
+  test('上限 100 MB（1e8 字节）：与服务端 FEEDBACK_LIMITS.videoMaxBytes 同值', () {
+    expect(FeedbackLimits.videoMaxBytes, 100 * 1000 * 1000);
+  });
+
+  test('原件档判定：格式合规且 0 < 大小 ≤ 100 MB 才原样上传；超限 / 格式不收 / 压缩档都转码', () {
+    const int max = FeedbackLimits.videoMaxBytes;
+    expect(FeedbackVideoMode.values.first, FeedbackVideoMode.original);
+    expect(
+      feedbackVideoUploadsOriginal(
+        FeedbackVideoMode.original,
+        sourceType: 'video/mp4',
+        sourceBytes: max,
+      ),
+      isTrue,
+    );
+    expect(
+      feedbackVideoUploadsOriginal(
+        FeedbackVideoMode.original,
+        sourceType: 'video/mp4',
+        sourceBytes: max + 1,
+      ),
+      isFalse,
+    );
+    expect(
+      feedbackVideoUploadsOriginal(
+        FeedbackVideoMode.original,
+        sourceType: null,
+        sourceBytes: 4096,
+      ),
+      isFalse,
+    );
+    expect(
+      feedbackVideoUploadsOriginal(
+        FeedbackVideoMode.original,
+        sourceType: 'video/webm',
+        sourceBytes: 0,
+      ),
+      isFalse,
+    );
+    for (final FeedbackVideoMode m in <FeedbackVideoMode>[
+      FeedbackVideoMode.p1080,
+      FeedbackVideoMode.p720,
+    ]) {
+      expect(
+        feedbackVideoUploadsOriginal(
+          m,
+          sourceType: 'video/mp4',
+          sourceBytes: 4096,
+        ),
+        isFalse,
+      );
+    }
+    // 原件档要压时从 1080p 起。
+    expect(FeedbackVideoMode.original.compressFrom, FeedbackVideoQuality.p1080);
+  });
+
+  test('默认原件档：不超限的 mov 原样上传，不起 ffmpeg', () async {
+    final _FakeFfmpeg ffmpeg = _FakeFfmpeg(
+      durationLine: 'Duration: 00:00:10.00',
+      transcode: () => 3000,
+    );
+    // 恰好 100 MB 的边界由上面的纯函数测；这里用小文件免得测试真拷 100 MB。
+    final File src = source(_movHead, length: 8000);
+    final PreparedFeedbackVideo v = await prepareFeedbackVideo(
+      src,
+      workDir: work,
+      backend: ffmpeg,
+    );
+    expect(v.transcoded, isFalse);
+    expect(v.quality, isNull);
+    expect(v.contentType, 'video/quicktime');
+    expect(v.bytes, 8000);
+    expect(p.extension(v.file.path), '.mov');
+    expect(p.isWithin(work.path, v.file.path), isTrue);
+    expect(ffmpeg.calls, isEmpty);
+    expect(src.existsSync(), isTrue);
+  });
+
+  test('默认原件档：超过 100 MB 自动压缩，从 1080p 起，不算降档', () async {
+    final _FakeFfmpeg ffmpeg = _FakeFfmpeg(
+      durationLine: 'Duration: 00:01:00.00',
+      transcode: () => 3000,
+    );
+    int downgraded = 0;
+    final PreparedFeedbackVideo v = await prepareFeedbackVideo(
+      source(_mp4Head, length: FeedbackLimits.videoMaxBytes + 1),
+      workDir: work,
+      backend: ffmpeg,
+      onDowngraded: () => downgraded++,
+    );
+    expect(v.transcoded, isTrue);
+    expect(v.quality, FeedbackVideoQuality.p1080);
+    expect(v.bytes, 3000);
+    expect(downgraded, 0);
+    final List<List<String>> encodes = ffmpeg.calls
+        .where((List<String> a) => a.contains('-c:v'))
+        .toList();
+    expect(encodes, hasLength(1));
+    expect(encodes.single[encodes.single.indexOf('-vf') + 1], contains('1080'));
+  });
+
+  test('默认原件档：超限且较长（7 分钟）时自动压成 720p，同样不算降档', () async {
+    final _FakeFfmpeg ffmpeg = _FakeFfmpeg(
+      durationLine: 'Duration: 00:07:00.00',
+      transcode: () => 3000,
+    );
+    int downgraded = 0;
+    final PreparedFeedbackVideo v = await prepareFeedbackVideo(
+      source(_mp4Head, length: FeedbackLimits.videoMaxBytes + 1),
+      workDir: work,
+      backend: ffmpeg,
+      onDowngraded: () => downgraded++,
+    );
+    expect(v.transcoded, isTrue);
+    expect(v.quality, FeedbackVideoQuality.p720);
+    expect(downgraded, 0);
+  });
+
+  test('默认原件档：1080p 转完仍超上限，改转 720p 再来一次', () async {
+    int round = 0;
+    final _FakeFfmpeg ffmpeg = _FakeFfmpeg(
+      durationLine: 'Duration: 00:01:00.00',
+      transcode: () => ++round == 1 ? FeedbackLimits.videoMaxBytes + 1 : 3000,
+    );
+    final PreparedFeedbackVideo v = await prepareFeedbackVideo(
+      source(_mp4Head, length: FeedbackLimits.videoMaxBytes + 10),
+      workDir: work,
+      backend: ffmpeg,
+    );
+    expect(v.quality, FeedbackVideoQuality.p720);
+    expect(v.bytes, 3000);
+    expect(
+      ffmpeg.calls.where((List<String> a) => a.contains('-c:v')),
+      hasLength(2),
+    );
+  });
+
+  test('默认原件档：格式不收（≤ 100 MB）也自动转成 mp4', () async {
+    final _FakeFfmpeg ffmpeg = _FakeFfmpeg(
+      durationLine: 'Duration: 00:00:10.00',
+      transcode: () => 3000,
+    );
+    final PreparedFeedbackVideo v = await prepareFeedbackVideo(
+      source(<int>[0x00, 0x01, 0x02, 0x03], length: 8000),
+      workDir: work,
+      backend: ffmpeg,
+    );
+    expect(v.transcoded, isTrue);
+    expect(v.contentType, 'video/mp4');
+    expect(v.quality, FeedbackVideoQuality.p1080);
   });
 }

@@ -1,8 +1,12 @@
+import 'dart:io' show Directory;
+
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:test/test.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/video_folder_group_coordinator.dart';
+import 'package:fushi_engine/media/video/video_path_migration.dart';
+import 'package:path/path.dart' as p;
 import 'package:fushi/src/media/video/video_folder_collection_policy.dart';
 import 'package:fushi_engine/media/video/video_filename_parser.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart';
@@ -783,5 +787,159 @@ void main() {
     expect(summary.createdVideoUids, <String>['movie']);
     expect(summary.createdCollectionIds, isEmpty);
     expect(await db.getAllMediaCollections(), isEmpty);
+  });
+
+  group('BUG-4362 按文件夹改按作品后系列页散成每集（反馈 YUH015QaF2）', () {
+    Future<Map<String, int>> folded() async => applyVideoFolderCollectionPolicy(
+      primary: await db.getPrimaryCollectionIdByEntry(),
+      collections: await db.getAllMediaCollections(),
+      items: await db.getAllCollectionItems(),
+      books: await db.allVideoBooks(),
+      sources: await db.getMediaSourcesByKind('video'),
+    );
+
+    // 常见发布命名：中文剧名 + SxxEyy + 画质标签，整季放在剧名目录里。
+    const List<String> episodes = <String>[
+      '/tv/白莲花度假村/白莲花度假村.S01E01.2021.1080p.WEB-DL.mkv',
+      '/tv/白莲花度假村/白莲花度假村.S01E02.2021.1080p.WEB-DL.mkv',
+      '/tv/白莲花度假村/白莲花度假村.S01E03.2021.1080p.WEB-DL.mkv',
+      '/tv/白莲花度假村/白莲花度假村.S01E04.2021.1080p.WEB-DL.mkv',
+      '/tv/白莲花度假村/白莲花度假村.S01E05.2021.1080p.WEB-DL.mkv',
+      '/tv/白莲花度假村/白莲花度假村.S01E06.2021.1080p.WEB-DL.mkv',
+    ];
+
+    test('复现命名按文件名解析为同一部作品', () {
+      final List<VideoGroup> groups = groupVideosIntoPlaylists(episodes);
+      expect(groups, hasLength(1));
+      expect(groups.single.series, '白莲花度假村');
+      expect(groups.single.episodes, hasLength(episodes.length));
+    });
+
+    test('只改模式不归组：每集一张散卡、每集一部刮削作品；按作品重扫后折回一部', () async {
+      final int sourceId = await db.insertMediaSource(
+        MediaSourcesCompanion.insert(
+          label: 'TV',
+          mediaKind: 'video',
+          rootPath: '/tv',
+          createdAt: 1000,
+          videoGroupingMode: const Value('folder'),
+        ),
+      );
+      for (int i = 0; i < episodes.length; i++) {
+        await addVideo(uid: 'wl-$i', path: episodes[i], sourceId: sourceId);
+      }
+      await coordinator.groupPaths(
+        videoPaths: episodes,
+        sourceId: sourceId,
+        groupingMode: 'folder',
+        sourceRoot: '/tv',
+      );
+      final Map<String, int> folderFold = await folded();
+      final Set<int> folderIds = <int>{
+        for (int i = 0; i < episodes.length; i++) folderFold['video|wl-$i']!,
+      };
+      expect(folderIds, hasLength(1), reason: '文件夹模式：整部剧折成一张目录合集卡');
+
+      // 来源设置里只把模式改成「按作品」（修复前保存设置只做这一步）。
+      await (db.update(
+        db.mediaSources,
+      )..where((tbl) => tbl.id.equals(sourceId))).write(
+        const MediaSourcesCompanion(videoGroupingMode: Value('series')),
+      );
+      final Map<String, int> scattered = await folded();
+      expect(
+        <String>[
+          for (int i = 0; i < episodes.length; i++)
+            if (scattered.containsKey('video|wl-$i')) 'wl-$i',
+        ],
+        isEmpty,
+        reason: '按作品模式不再折进目录合集；没跟着归组时每集都是散卡——这就是反馈的现象',
+      );
+      expect(
+        await VideoSourceWorkPlanner(
+          db,
+        ).plan((await db.getMediaSourceById(sourceId))!),
+        hasLength(episodes.length),
+        reason: '没跟着归组时刮削把每一集当一部作品去识别',
+      );
+
+      // 修复：模式变了立即走按作品的扫描归组（来源页 applyVideoGroupingMode → 重扫）。
+      final VideoFolderGroupSummary regrouped = await coordinator.groupPaths(
+        videoPaths: episodes,
+        sourceId: sourceId,
+        groupingMode: 'series',
+        sourceRoot: '/tv',
+      );
+      expect(regrouped.createdCollectionIds, hasLength(1));
+      final int playlistId = regrouped.createdCollectionIds.single;
+      expect(
+        (await db.getMediaCollectionById(playlistId))!.collectionType,
+        'playlist',
+      );
+      final Map<String, int> seriesFold = await folded();
+      for (int i = 0; i < episodes.length; i++) {
+        expect(seriesFold['video|wl-$i'], playlistId);
+      }
+      final List<VideoSourceScrapeWork> works = await VideoSourceWorkPlanner(
+        db,
+      ).plan((await db.getMediaSourceById(sourceId))!);
+      expect(works, hasLength(1), reason: '整部剧作为一部作品刮削');
+      expect(works.single.members, hasLength(episodes.length));
+      expect(works.single.collection?.id, playlistId);
+    });
+
+    test('「整理文件名」改名后重扫，成员仍在原作品合集、不新建合集', () async {
+      final String root = p.join(Directory.systemTemp.path, 'bug4323_tv');
+      final int sourceId = await addSource(root);
+      final List<String> oldPaths = <String>[
+        for (int i = 1; i <= 3; i++)
+          p.join(root, '白莲花度假村', '白莲花度假村.S01E0$i.1080p.mkv'),
+      ];
+      for (int i = 0; i < oldPaths.length; i++) {
+        await addVideo(uid: 'wl-$i', path: oldPaths[i], sourceId: sourceId);
+      }
+      final VideoFolderGroupSummary first = await coordinator.groupPaths(
+        videoPaths: oldPaths,
+        sourceId: sourceId,
+        sourceRoot: root,
+      );
+      final int playlistId = first.createdCollectionIds.single;
+
+      // 整理文件名：`标题 (年份)/Season 01/标题 (年份) - S01E0N.ext`，库内路径一处迁移。
+      await repository.applyMediaFileMoves(
+        moved: MovedMediaFiles(<String, String>{
+          for (int i = 0; i < oldPaths.length; i++)
+            oldPaths[i]: p.join(
+              root,
+              '白莲花度假村 (2021)',
+              'Season 01',
+              '白莲花度假村 (2021) - S01E0${i + 1}.mkv',
+            ),
+        }),
+      );
+      final List<String> newPaths = <String>[
+        for (final VideoBookRow row in await repository.listAll())
+          row.videoPath,
+      ];
+      expect(newPaths, everyElement(contains('Season 01')));
+
+      final VideoFolderGroupSummary rescan = await coordinator.groupPaths(
+        videoPaths: newPaths,
+        sourceId: sourceId,
+        sourceRoot: root,
+      );
+      expect(rescan.createdCollectionIds, isEmpty, reason: '改名不得另起一个合集');
+      expect(await db.getAllMediaCollections(), hasLength(1));
+      expect(
+        (await db.getCollectionItems(
+          playlistId,
+        )).map((MediaCollectionItemRow item) => item.entryKey).toSet(),
+        <String>{'wl-0', 'wl-1', 'wl-2'},
+      );
+      final Map<String, int> fold = await folded();
+      for (int i = 0; i < oldPaths.length; i++) {
+        expect(fold['video|wl-$i'], playlistId);
+      }
+    });
   });
 }

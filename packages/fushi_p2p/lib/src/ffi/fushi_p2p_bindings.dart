@@ -39,11 +39,14 @@ typedef _StatusC =
       ffi.Pointer<Fp2pEndpoint>,
       ffi.Pointer<ffi.Char>,
     );
+typedef _NetworkChangeC =
+    ffi.Pointer<ffi.Char> Function(ffi.Pointer<Fp2pEndpoint>);
 typedef _CloseC = ffi.Void Function(ffi.Pointer<Fp2pEndpoint>);
 typedef _CloseDart = void Function(ffi.Pointer<Fp2pEndpoint>);
 
 /// `fp2p_*` 符号表。构造时就把全部符号解析完：缺符号 = 库不对，立刻抛
-/// [ArgumentError]，由 [FushiP2p.load] 转成「不可用」。
+/// [ArgumentError]，由 [FushiP2p.load] 转成「不可用」。可选符号（后加的、旧原生库
+/// 没有也不影响其余能力的）用 `providesSymbol` 查，缺了是 null。
 class FushiP2pBindings {
   FushiP2pBindings(ffi.DynamicLibrary lib)
     : fp2p_version = lib.lookupFunction<_VersionC, _VersionC>('fp2p_version'),
@@ -75,6 +78,11 @@ class FushiP2pBindings {
         'fp2p_conn_status',
       ),
       fp2p_host_peer = lib.lookupFunction<_PortC, _PortDart>('fp2p_host_peer'),
+      fp2p_network_change = lib.providesSymbol('fp2p_network_change')
+          ? lib.lookupFunction<_NetworkChangeC, _NetworkChangeC>(
+              'fp2p_network_change',
+            )
+          : null,
       fp2p_endpoint_close = lib.lookupFunction<_CloseC, _CloseDart>(
         'fp2p_endpoint_close',
       );
@@ -129,6 +137,11 @@ class FushiP2pBindings {
   /// 主机侧：本地源端口 → 隧道对端 {"nodeId":hex|null}。
   final ffi.Pointer<ffi.Char> Function(ffi.Pointer<Fp2pEndpoint>, int)
   fp2p_host_peer;
+
+  /// OS 报告网络变化，让 iroh 重新探测路径（异步执行、立即返回）。可选：旧原生库
+  /// 没有这个符号时为 null，只是收不到网络变化通知。
+  final ffi.Pointer<ffi.Char> Function(ffi.Pointer<Fp2pEndpoint>)?
+  fp2p_network_change;
 
   /// 关闭并释放句柄。
   final void Function(ffi.Pointer<Fp2pEndpoint>) fp2p_endpoint_close;

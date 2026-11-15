@@ -175,8 +175,18 @@ void MediaKitVideoPlugin::HandleMethodCall(
     auto handle =
         std::get<std::string>(arguments[flutter::EncodableValue("handle")]);
     auto handle_value = static_cast<int64_t>(std::stoll(handle.c_str()));
-    video_output_manager_->Dispose(handle_value);
-    result->Success(flutter::EncodableValue(std::monostate{}));
+    // FUSHI FORK (BUG-4339): reply only once the |VideoOutput| (and with it
+    // libmpv's render context) is gone. |Player.dispose| awaits this reply
+    // before it schedules |mpv_terminate_destroy|; replying up front left the
+    // order to a 5 s timer, and libmpv aborts the process when the core is
+    // destroyed while a render context is still alive.
+    std::shared_ptr<flutter::MethodResult<flutter::EncodableValue>>
+        shared_result(std::move(result));
+    video_output_manager_->Dispose(handle_value, [this, shared_result]() {
+      RunOnMainThread([shared_result]() {
+        shared_result->Success(flutter::EncodableValue(std::monostate{}));
+      });
+    });
   } else if (method_call.method_name().compare("VideoOutputManager.SetSize") ==
              0) {
     auto arguments = std::get<flutter::EncodableMap>(*method_call.arguments());

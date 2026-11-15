@@ -26,6 +26,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/anki/card_source_origin.dart'
     show cardSourceLinkOfFields;
 import 'package:fushi/src/anki/card_source_router.dart' show openCardSource;
+import 'package:fushi/src/focus/focus_activation.dart';
 import 'package:fushi/src/focus/page_focus_ownership.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_browse_card_tile.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_browse_preview.dart';
@@ -36,6 +37,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_field_editors.dart';
 import 'package:fushi/src/srs/srs_fushi_card_fields.dart' show srsPlainText;
 import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi/src/srs/srs_sound_tag.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -47,6 +49,7 @@ import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_loading_view.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_load_error.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
@@ -111,8 +114,6 @@ String? srsBrowseSentenceAudioFieldId(SrsNoteTypeView type) {
   return null;
 }
 
-final RegExp _sound = RegExp(r'\[sound:([^\]]+)\]');
-
 /// 检查器。
 class SrsBrowseInspector extends ConsumerStatefulWidget {
   const SrsBrowseInspector({
@@ -158,6 +159,9 @@ class _SrsBrowseInspectorState extends ConsumerState<SrsBrowseInspector> {
   SrsCardDetail? _detail;
   int _seq = 0;
 
+  /// 读这张卡失败（复习库打开失败原样抛出、或读的途中出错）：编辑 / 历史页签显示错误态 + 重试，不停在转圈。
+  Object? _loadError;
+
   @override
   void initState() {
     super.initState();
@@ -175,11 +179,45 @@ class _SrsBrowseInspectorState extends ConsumerState<SrsBrowseInspector> {
 
   Future<void> _load() async {
     final int seq = ++_seq;
-    final SrsDbStore? store = await readSrsStore(ref);
-    if (store == null) return;
-    final SrsCardDetail? detail = await store.cardDetail(widget.row.cardId);
+    final SrsCardDetail? detail;
+    try {
+      final SrsDbStore? store = await readSrsStore(ref);
+      if (store == null) return;
+      detail = await store.cardDetail(widget.row.cardId);
+    } catch (e, stack) {
+      ErrorLogService.instance.log('SrsBrowseInspector.load', e, stack);
+      if (mounted && seq == _seq) {
+        setState(() {
+          _loadError = e;
+          // 换了行：上一张卡的内容不能留在这一行的页签里，改显示错误态（同一张卡重读失败则照旧显示）。
+          if (_detail?.card.id != widget.row.cardId) _detail = null;
+        });
+      }
+      return;
+    }
     if (!mounted || seq != _seq) return;
-    setState(() => _detail = detail);
+    setState(() {
+      _detail = detail;
+      _loadError = null;
+    });
+  }
+
+  void _retryLoad() {
+    retrySrsStoreOpen(ref);
+    setState(() => _loadError = null);
+    unawaited(_load());
+  }
+
+  /// 编辑 / 历史页签在还没读到这张卡时的占位：读失败给错误态，否则转圈。
+  Widget _pending() {
+    final Object? error = _loadError;
+    return error == null
+        ? const FushiLoadingView()
+        : SrsLoadErrorView(
+            error: error,
+            retryKey: const ValueKey<String>('srs-browse-inspector-load-retry'),
+            onRetry: _retryLoad,
+          );
   }
 
   CardSourceLink? get _link {
@@ -199,7 +237,7 @@ class _SrsBrowseInspectorState extends ConsumerState<SrsBrowseInspector> {
       ),
       SrsBrowseInspectorTab.edit =>
         detail == null
-            ? const FushiLoadingView()
+            ? _pending()
             : _EditTab(
                 key: ValueKey<String>(
                   'srs-browse-inspector-edit-${detail.note.id}',
@@ -211,7 +249,7 @@ class _SrsBrowseInspectorState extends ConsumerState<SrsBrowseInspector> {
               ),
       SrsBrowseInspectorTab.history =>
         detail == null
-            ? const FushiLoadingView()
+            ? _pending()
             : _HistoryTab(
                 key: ValueKey<String>(
                   'srs-browse-inspector-history-${detail.card.id}',
@@ -348,7 +386,9 @@ class _PreviewTab extends ConsumerWidget {
         if (plain.isNotEmpty) sentence = plain;
       }
       final String? aid = srsBrowseSentenceAudioFieldId(d.noteType);
-      if (aid != null) clip = _sound.firstMatch(d.note.field(aid))?.group(1);
+      if (aid != null) {
+        clip = srsSoundTagPattern.firstMatch(d.note.field(aid))?.group(1);
+      }
     }
     final String term = inspector.row.sortText;
     final ColorScheme scheme = Theme.of(context).colorScheme;
@@ -497,19 +537,31 @@ class _EditTabState extends State<_EditTab> {
   @override
   void didUpdateWidget(_EditTab old) {
     super.didUpdateWidget(old);
+    // 只在库里读回了新数据时对账，且只认库这一侧真的变了的格子（反馈 a0lR-BHuJU）。
+    //
+    // 以前每次父级重建都拿 `widget.detail` 和「最近一次落库的值」比：停笔 800 ms 自动保存一开始就把
+    // [_saved] 改成新值，而检查器在新数据读回之前会先带着旧的 detail 重建一次（写入后浏览页 revision +1、
+    // setState），旧值 ≠ 新的 [_saved] 被当成「别处改了」，[SrsFieldModel.reset] 把字段换回旧值、编辑器按
+    // generation 整块重建——输入框失焦、光标丢失、刚打的字被换掉，等读回新值又换一次。
+    // 现在：detail 没换（同一份数据的重建）就什么都不做；换了也只看库里这一格相对上一份 detail 变没变，
+    // 变成的正是自己刚存进去的值（自己保存的回声）不算外部修改。
+    if (identical(old.detail, widget.detail)) return;
     // 同一条笔记被别处写了（批量操作 / 撤销）：没在改的字段换成新值。
     for (final SrsFieldDef f in widget.detail.noteType.fields) {
       final String v = widget.detail.note.field(f.id);
+      if (v == old.detail.note.field(f.id) || v == _saved[f.id]) continue;
       final SrsFieldModel? m = _models[f.id];
       if (m == null || _pending.containsKey(f.id)) continue;
-      if (v != _saved[f.id] && m.value == _saved[f.id]) {
+      if (m.value == _saved[f.id]) {
         _saved[f.id] = v;
         m.reset(v);
       }
     }
-    // 标签同理：外部改了、这边没有未保存的改动时换成新值。
+    // 标签同理：库里的标签变了、不是自己刚存的、这边也没有未保存的改动时换成新值。
     final List<String> tags = _normalTags(widget.detail.note.tags);
-    if (!_sameTags(tags, _savedTags) && !_tagsDirty) {
+    if (!_sameTags(tags, _normalTags(old.detail.note.tags)) &&
+        !_sameTags(tags, _savedTags) &&
+        !_tagsDirty) {
       _savedTags = tags;
       _tags.text = tags.join(' ');
     }
@@ -749,6 +801,9 @@ class _HistoryTab extends ConsumerStatefulWidget {
 class _HistoryTabState extends ConsumerState<_HistoryTab> {
   _HistoryData? _data;
 
+  /// 读复习历史失败：页签显示错误态 + 重试（不是空白曲线 + 未处理异常）。
+  Object? _loadError;
+
   @override
   void initState() {
     super.initState();
@@ -762,6 +817,21 @@ class _HistoryTabState extends ConsumerState<_HistoryTab> {
   }
 
   Future<void> _load() async {
+    try {
+      await _read();
+    } catch (e, stack) {
+      ErrorLogService.instance.log('SrsBrowseInspector.history', e, stack);
+      if (mounted) setState(() => _loadError = e);
+    }
+  }
+
+  void _retryLoad() {
+    retrySrsStoreOpen(ref);
+    setState(() => _loadError = null);
+    unawaited(_load());
+  }
+
+  Future<void> _read() async {
     final SrsDbStore? store = await readSrsStore(ref);
     if (store == null) return;
     final SrsCardHistory history = await store.history(widget.detail.card.id);
@@ -791,8 +861,9 @@ class _HistoryTabState extends ConsumerState<_HistoryTab> {
             futureDays: math.max(7, interval * 1.5),
           );
     if (!mounted) return;
-    setState(
-      () => _data = _HistoryData(
+    setState(() {
+      _loadError = null;
+      _data = _HistoryData(
         logs: <SrsReviewLog>[
           for (final SrsReviewLog l in logs.reversed)
             if (l.kind == SrsLogKind.review) l,
@@ -800,12 +871,20 @@ class _HistoryTabState extends ConsumerState<_HistoryTab> {
         curve: curve,
         target: config.desiredRetention,
         nowMs: nowMs,
-      ),
-    );
+      );
+    });
   }
 
   @override
   Widget build(BuildContext context) {
+    final Object? loadError = _loadError;
+    if (loadError != null) {
+      return SrsLoadErrorView(
+        error: loadError,
+        retryKey: const ValueKey<String>('srs-browse-history-load-retry'),
+        onRetry: _retryLoad,
+      );
+    }
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final SrsBrowseRow row = widget.row;
     final _HistoryData? data = _data;
@@ -1158,6 +1237,10 @@ class _SrsBrowseDetailPageState extends ConsumerState<SrsBrowseDetailPage> {
     final KeyEventResult? lookup = _lookupCtl.guardKey(event);
     if (lookup != null) return lookup;
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    // 焦点在页签 / 上一张下一张这类可激活子控件上：确认键归它，不当「翻面」吞掉。
+    if (focusedDescendantClaimsActivation(node, event.logicalKey)) {
+      return KeyEventResult.ignored;
+    }
     if (FocusManager.instance.primaryFocus?.context
             ?.findAncestorStateOfType<EditableTextState>() !=
         null) {

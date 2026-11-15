@@ -40,6 +40,8 @@ import 'package:flutter/rendering.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_expressive_progress.dart'
+    show FushiExpressiveLoadingIndicator;
 import 'package:fushi/src/utils/components/fushi_fill_slot.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_player.dart'
     show fushiPlayButtonBorder, fushiPlayButtonRotation;
@@ -99,6 +101,7 @@ class FushiToolbarItem {
     this.tooltip,
     this.onLongPress,
     this.emphasized = false,
+    this.busy = false,
   });
 
   final IconData icon;
@@ -120,6 +123,10 @@ class FushiToolbarItem {
   /// 强调态：不是「选中」，只给图标按钮垫一层 secondaryContainer 底，让临时出现的
   /// 动作（跳转记录的返回 / 前进）和常驻按钮区分开。语义上不报 selected。
   final bool emphasized;
+
+  /// 进行中：纯图标按钮的图标位换成 Expressive 加载指示（形变多边形转圈），
+  /// 按钮照常可点（漫画阅读器「整卷识别」进行中再点 = 取消）。
+  final bool busy;
 }
 
 /// 悬浮工具栏配色。null 字段回落到主题：MD3 standard = surfaceContainer /
@@ -455,16 +462,25 @@ class FushiToolbarButton extends StatelessWidget {
       // UIBarButtonItemGroup），选中只把字形染成强调色，不再叠一枚选中圆钮
       // （玻璃套玻璃）；字号随 bar button（桌面 18 / 移动 20）。
       final bool apple = isGlassDesign(context);
+      final double glyph = apple
+          ? (fushiAppleCompact(context) ? 18 : 20)
+          : iconSize;
       // 有长按 / 右键时提示、长按、语义一律交给 [FushiToolbarLongPressTarget]
       // （与桌面经典顶栏同一份手势装配），按钮本身不带 tooltip / 长按。
       final Widget bare = custom != null
           ? KeyedSubtree(key: item.key, child: custom(context, item, fg))
           : FushiIconButtonControl(
               key: item.key,
-              icon: FushiIcon(item.icon, color: fg),
-              iconSize: apple
-                  ? (fushiAppleCompact(context) ? 18 : 20)
-                  : iconSize,
+              icon: item.busy
+                  ? SizedBox.square(
+                      dimension: glyph,
+                      child: FushiExpressiveLoadingIndicator(
+                        size: glyph,
+                        color: fg,
+                      ),
+                    )
+                  : FushiIcon(item.icon, color: fg),
+              iconSize: glyph,
               tooltip: longPress == null ? tooltip : null,
               isSelected: apple ? null : item.selected,
               style: (item.selected || item.emphasized) && !apple
@@ -678,6 +694,18 @@ extension on FushiToolbarButton {
   }
 }
 
+/// 「更多」溢出菜单按钮（⋯）的默认键。
+const ValueKey<String> kFushiToolbarOverflowKey = ValueKey<String>(
+  'fushi_floating_toolbar_overflow',
+);
+
+/// 溢出菜单项的键：项本身带 `ValueKey<String>('x')` 时为 `x_menu_item`（焦点驱动
+/// 的集成测试按它找项），否则 null。
+Key? fushiToolbarMenuItemKey(Key? itemKey) => switch (itemKey) {
+  final ValueKey<String> k => ValueKey<String>('${k.value}_menu_item'),
+  _ => null,
+};
+
 /// 「更多」溢出菜单按钮（⋯）。[items] 为空时不画。
 class FushiToolbarOverflowButton extends StatelessWidget {
   const FushiToolbarOverflowButton({
@@ -685,17 +713,21 @@ class FushiToolbarOverflowButton extends StatelessWidget {
     required this.items,
     required this.foreground,
     this.axis = Axis.horizontal,
+    this.buttonKey = kFushiToolbarOverflowKey,
   });
 
   final List<FushiToolbarItem> items;
   final Color foreground;
   final Axis axis;
 
+  /// ⋯ 按钮本身的键（宿主页面的测试 / 集成测试按它定位）。
+  final Key buttonKey;
+
   @override
   Widget build(BuildContext context) {
     if (items.isEmpty) return const SizedBox.shrink();
     return FushiPopupMenuButton<FushiToolbarItem>(
-      key: const ValueKey<String>('fushi_floating_toolbar_overflow'),
+      key: buttonKey,
       tooltip: MaterialLocalizations.of(context).moreButtonTooltip,
       icon: FushiIcon(
         axis == Axis.horizontal ? FushiIcons.moreHoriz : FushiIcons.more,
@@ -708,9 +740,7 @@ class FushiToolbarOverflowButton extends StatelessWidget {
       itemBuilder: (BuildContext context) => <PopupMenuEntry<FushiToolbarItem>>[
         for (final FushiToolbarItem item in items)
           PopupMenuItem<FushiToolbarItem>(
-            key: item.key == null
-                ? null
-                : ValueKey<String>('fushi_toolbar_overflow_${item.key}'),
+            key: fushiToolbarMenuItemKey(item.key),
             value: item,
             enabled: item.onPressed != null,
             child: Row(
@@ -751,7 +781,11 @@ class FushiFloatingToolbar extends StatelessWidget {
     this.compact = false,
     this.excludeFocus = false,
     this.inlineLabel,
+    this.overflowKey = kFushiToolbarOverflowKey,
   });
+
+  /// 「⋯」按钮的键（见 [FushiToolbarOverflowButton.buttonKey]）。
+  final Key overflowKey;
 
   final List<List<FushiToolbarItem>> groups;
   final List<FushiToolbarItem> overflow;
@@ -851,6 +885,7 @@ class FushiFloatingToolbar extends StatelessWidget {
           items: overflow,
           foreground: palette.foreground,
           axis: axis,
+          buttonKey: overflowKey,
         ),
       );
     }
@@ -948,6 +983,7 @@ class FushiFloatingToolbar extends StatelessWidget {
         items: overflow,
         foreground: palette.foreground,
         axis: axis,
+        buttonKey: overflowKey,
       );
       if (capsules.isEmpty) {
         capsules.add(<Widget>[more]);
@@ -1062,6 +1098,10 @@ class FushiFloatingTopBar extends StatefulWidget {
     this.adaptiveOverflow = true,
     this.titleFirst = false,
     this.bare = false,
+    this.titleTrailing,
+    this.pinnedActions = const <FushiToolbarItem>[],
+    this.titleBacking = false,
+    this.overflowKey = kFushiToolbarOverflowKey,
   });
 
   final List<FushiToolbarItem> leading;
@@ -1110,6 +1150,24 @@ class FushiFloatingTopBar extends StatefulWidget {
   /// 沉浸页上用（音乐歌词页：右上动作与左上返回同样裸露，用户 2026-10-29）。
   /// 自适应收纳照旧。
   final bool bare;
+
+  /// 标题胶囊里排在标题文字后的状态件（漫画阅读器的分镜状态胶囊 / debug 命中
+  /// 信息）。带它时测宽按保底宽预留（宽度未知）。
+  final Widget? titleTrailing;
+
+  /// 恒平铺、不收进「⋯」的动作，自成一组排在 [actions] 之前（漫画阅读器的跳转
+  /// 记录返回 / 前进：所有者 2026-11-02「窄屏也放得下、不收起」）。宽度不够时
+  /// 先让标题胶囊收窄、普通动作收进「⋯」。
+  final List<FushiToolbarItem> pinnedActions;
+
+  /// 标题是否垫底：阅读器的顶栏浮在任意正文 / 页图上，标题不垫底会压在内容上
+  /// 看不清（反馈 -JpWlEuH5N）。Material 的标题本来就是胶囊；这里只影响 Apple
+  /// ——内联标题装进与返回键 / 动作组同一种实色悬浮胶囊。普通页面（标题下是
+  /// 页面底色）保持 iOS 26 的无底内联标题。
+  final bool titleBacking;
+
+  /// 「⋯」按钮的键（见 [FushiToolbarOverflowButton.buttonKey]）。
+  final Key overflowKey;
 
   @override
   State<FushiFloatingTopBar> createState() => _FushiFloatingTopBarState();
@@ -1556,8 +1614,12 @@ class _FushiFloatingTopBarState extends State<FushiFloatingTopBar> {
   final FushiTopBarOverflowFit _fit = FushiTopBarOverflowFit();
 
   /// 按可用宽度定平铺颗数（带展开回差）。
+  ///
+  /// [groups] = [FushiFloatingTopBar.pinnedActions]（非空时自成第一组）+
+  /// [FushiFloatingTopBar.actions]；结果至少是恒平铺的那几颗。
   int _visibleFor(
-    double maxWidth, {
+    double maxWidth,
+    List<List<FushiToolbarItem>> groups, {
     required bool hasTitle,
     required int leadingCount,
     ({double title, double subtitle})? titleWidths,
@@ -1565,13 +1627,13 @@ class _FushiFloatingTopBarState extends State<FushiFloatingTopBar> {
   }) {
     if (!widget.adaptiveOverflow) {
       int total = 0;
-      for (final List<FushiToolbarItem> g in actions) {
+      for (final List<FushiToolbarItem> g in groups) {
         total += g.length;
       }
       return total;
     }
-    return _fit.visibleFor(
-      groups: actions,
+    final int fit = _fit.visibleFor(
+      groups: groups,
       overflow: overflow,
       budget: _actionsBudget(
         maxWidth,
@@ -1582,6 +1644,7 @@ class _FushiFloatingTopBarState extends State<FushiFloatingTopBar> {
       pinnedMenu: menuPinned || widget.menu.isNotEmpty,
       slotWidth: fushiTopBarActionSlotWidth(context),
     );
+    return math.max(fit, widget.pinnedActions.length);
   }
 
   /// 动作组的宽度预算：两条测宽路径（带字排法 / 自适应溢出）共用。
@@ -1616,13 +1679,15 @@ class _FushiFloatingTopBarState extends State<FushiFloatingTopBar> {
     String t,
     String s,
   ) {
-    if (widget.titleLeading != null) return null;
+    if (widget.titleLeading != null || widget.titleTrailing != null) {
+      return null;
+    }
     final bool apple = isGlassDesign(context);
     if (apple && !widget.titleFirst) return null;
     final TextTheme text = Theme.of(context).textTheme;
     final TextScaler scaler = MediaQuery.textScalerOf(context);
     final double padding = apple
-        ? _kAppleTitleHorizontalPadding
+        ? _appleTitlePadding
         : _kMaterialTitleHorizontalPadding;
     // 文字宽取整 + 两侧内边距 + 2 的取整余量。
     double measure(String value, TextStyle? style) {
@@ -1650,18 +1715,24 @@ class _FushiFloatingTopBarState extends State<FushiFloatingTopBar> {
   /// Apple 的标题：iOS 26 / macOS 26 导航栏的内联标题不装进玻璃——玻璃只给
   /// 栏上的控件。纯文字（移动 17 semibold / 桌面 15 semibold，label 色；
   /// 副标题 secondaryLabel），可点时按下变淡，没有水波纹。
+  ///
+  /// [FushiFloatingTopBar.titleBacking]（阅读器）时整块装进与返回键 / 动作组同
+  /// 一种实色悬浮胶囊（[FushiFloatingPill]），文字两侧留 Material 标题同款内边距。
   Widget _appleTitle(
     BuildContext context,
     String t,
     String s,
     Widget? titleLeading,
+    Color pillColor,
   ) {
     final FushiAppleColors apple = appleColorsOf(context);
+    final Widget? trailing = widget.titleTrailing;
     final Widget content = ConstrainedBox(
       constraints: BoxConstraints(minHeight: fushiAppleFloatingExtent(context)),
       child: Padding(
-        padding: const EdgeInsetsDirectional.symmetric(
-          horizontal: _kAppleTitleHorizontalPadding,
+        padding: EdgeInsetsDirectional.only(
+          start: _appleTitlePadding,
+          end: trailing == null ? _appleTitlePadding : 8,
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -1704,6 +1775,10 @@ class _FushiFloatingTopBarState extends State<FushiFloatingTopBar> {
                 ],
               ),
             ),
+            if (trailing != null) ...<Widget>[
+              const SizedBox(width: 8),
+              Flexible(child: trailing),
+            ],
           ],
         ),
       ),
@@ -1713,17 +1788,32 @@ class _FushiFloatingTopBarState extends State<FushiFloatingTopBar> {
       excludeFromSemantics: true,
       child: content,
     );
-    return KeyedSubtree(
+    final Widget tappable = onTitleTap == null
+        ? body
+        : FushiPlainButton(
+            onPressed: onTitleTap,
+            borderRadius: kFushiAppleInlineTitleRadius,
+            child: body,
+          );
+    if (!widget.titleBacking) {
+      return KeyedSubtree(
+        key: const ValueKey<String>('fushi_floating_top_bar_title'),
+        child: tappable,
+      );
+    }
+    return FushiFloatingPill(
       key: const ValueKey<String>('fushi_floating_top_bar_title'),
-      child: onTitleTap == null
-          ? body
-          : FushiPlainButton(
-              onPressed: onTitleTap,
-              borderRadius: kFushiAppleInlineTitleRadius,
-              child: body,
-            ),
+      color: pillColor,
+      padding: EdgeInsets.zero,
+      child: tappable,
     );
   }
+
+  /// Apple 标题文字两侧的内边距：垫底胶囊里与 Material 标题胶囊同宽，内联
+  /// （无底）时贴近导航栏标题的 4。build 与测宽共用。
+  double get _appleTitlePadding => widget.titleBacking
+      ? _kMaterialTitleHorizontalPadding
+      : _kAppleTitleHorizontalPadding;
 
   @override
   Widget build(BuildContext context) =>
@@ -1738,21 +1828,27 @@ class _FushiFloatingTopBarState extends State<FushiFloatingTopBar> {
     })
     palette = fushiFloatingToolbarPalette(context, colors: colors);
     final ThemeData theme = Theme.of(context);
+    final List<List<FushiToolbarItem>> groups = <List<FushiToolbarItem>>[
+      if (widget.pinnedActions.isNotEmpty) widget.pinnedActions,
+      ...actions,
+    ];
     final bool hasActions =
-        actions.any((List<FushiToolbarItem> g) => g.isNotEmpty) ||
+        groups.any((List<FushiToolbarItem> g) => g.isNotEmpty) ||
         overflow.isNotEmpty ||
         widget.menu.isNotEmpty;
     final String t = title.trim();
     final String s = subtitle.trim();
     final Widget? titleLeading = widget.titleLeading;
+    final Widget? titleTrailing = widget.titleTrailing;
     final bool apple = isGlassDesign(context);
     final double leadingExtent = apple
         ? fushiAppleFloatingExtent(context)
         : kFushiFloatingToolbarCompactExtent;
-    final Widget? titlePill = t.isEmpty && s.isEmpty && titleLeading == null
+    final Widget? titlePill =
+        t.isEmpty && s.isEmpty && titleLeading == null && titleTrailing == null
         ? null
         : apple
-        ? _appleTitle(context, t, s, titleLeading)
+        ? _appleTitle(context, t, s, titleLeading, palette.container)
         : FushiFloatingPill(
             key: const ValueKey<String>('fushi_floating_top_bar_title'),
             color: palette.container,
@@ -1771,7 +1867,9 @@ class _FushiFloatingTopBarState extends State<FushiFloatingTopBar> {
                       start: titleLeading == null
                           ? _kMaterialTitleHorizontalPadding
                           : 6,
-                      end: _kMaterialTitleHorizontalPadding,
+                      end: titleTrailing == null
+                          ? _kMaterialTitleHorizontalPadding
+                          : 8,
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
@@ -1818,6 +1916,10 @@ class _FushiFloatingTopBarState extends State<FushiFloatingTopBar> {
                             ],
                           ),
                         ),
+                        if (titleTrailing != null) ...<Widget>[
+                          const SizedBox(width: 8),
+                          Flexible(child: titleTrailing),
+                        ],
                       ],
                     ),
                   ),
@@ -1852,15 +1954,19 @@ class _FushiFloatingTopBarState extends State<FushiFloatingTopBar> {
         })
         split = labeled != null
             ? (
-                groups: <List<FushiToolbarItem>>[labeled.shown],
+                groups: <List<FushiToolbarItem>>[
+                  if (widget.pinnedActions.isNotEmpty) widget.pinnedActions,
+                  labeled.shown,
+                ],
                 overflow: labeled.hidden,
               )
             : widget.adaptiveOverflow
             ? fushiTopBarSplitActions(
-                actions,
+                groups,
                 overflow,
                 _visibleFor(
                   constraints.maxWidth,
+                  groups,
                   hasTitle: titlePill != null,
                   leadingCount: leadingShown,
                   // 收起的前置钮在「⋯」里：⋯ 恒占一格。
@@ -1870,7 +1976,7 @@ class _FushiFloatingTopBarState extends State<FushiFloatingTopBar> {
                       : _titleWidths(context, t, s),
                 ),
               )
-            : (groups: actions, overflow: overflow);
+            : (groups: groups, overflow: overflow);
         final Widget? toolbar = hasActions || foldedLeading.isNotEmpty
             // 不做尺寸动画（HBK034）：AnimatedSize 收缩时会保留旧宽度一帧，窗口
             // 骤缩时右侧溢出。按目标宽度立即布局，防抖靠展开回差。
@@ -1883,6 +1989,7 @@ class _FushiFloatingTopBarState extends State<FushiFloatingTopBar> {
                 ],
                 colors: colors,
                 compact: true,
+                overflowKey: widget.overflowKey,
                 inlineLabel: labeled == null
                     ? null
                     : (FushiToolbarItem item) => labeled.labeled.contains(item),

@@ -26,6 +26,7 @@ import 'package:fushi/src/media/music/music_session.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/audio_controller.dart';
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
+import 'package:fushi/src/pages/implementations/music/music_preview_badge.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/pages/implementations/music/music_audio_effects_page.dart';
@@ -193,11 +194,18 @@ class _BarTitle extends StatelessWidget {
     mainAxisSize: MainAxisSize.min,
     crossAxisAlignment: CrossAxisAlignment.start,
     children: <Widget>[
-      Text(
-        item.title,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: context.fushiType.titleSmallEmphasized,
+      Row(
+        children: <Widget>[
+          Flexible(
+            child: Text(
+              item.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: context.fushiType.titleSmallEmphasized,
+            ),
+          ),
+          MusicPreviewBadgeSwitcher(visible: item.isPreview),
+        ],
       ),
       Text(
         <String?>[item.artist, item.album]

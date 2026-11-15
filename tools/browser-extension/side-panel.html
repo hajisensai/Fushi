@@ -41,7 +41,15 @@
       <button type="button" data-offset="100">+0.1</button>
       <button type="button" data-offset="500">+0.5</button>
       <button id="offset-reset" type="button" title="重置时轴偏移" data-i18n-title="sp_offset_reset_title" data-i18n-aria-label="sp_offset_reset_title"><span class="msr-slot" data-fushi-icon="restart_alt" data-fushi-icon-size="20"></span></button>
+      <button id="align-auto" type="button" title="自动对轴" data-i18n-title="align_auto_label" data-i18n-aria-label="align_auto_label"><span class="msr-slot" data-fushi-icon="auto_awesome" data-fushi-icon-size="20"></span></button>
+      <button id="align-wave" type="button" aria-pressed="false" aria-controls="align-pane" title="波形对轴" data-i18n-title="align_wave_label" data-i18n-aria-label="align_wave_label"><span class="msr-slot" data-fushi-icon="graphic_eq" data-fushi-icon-size="20"></span></button>
     </div>
+    <section id="align-pane" class="align-pane" aria-label="波形对轴" data-i18n-aria-label="align_wave_label" hidden>
+      <canvas id="align-canvas" class="align-canvas" tabindex="0" role="slider" aria-valuemin="-3600" aria-valuemax="3600" aria-valuenow="0"
+              aria-label="拖动字幕条对齐波形" data-i18n-aria-label="align_wave_aria"></canvas>
+      <p id="align-status" class="align-status" aria-live="polite"></p>
+      <p class="align-hint" data-i18n="align_wave_hint">把下方字幕条拖到波形里对应的说话处；方向键每次 0.1 秒。</p>
+    </section>
   </header>
   <main id="list" class="subtitle-list" aria-live="polite">
     <div class="empty" data-i18n="sp_list_loading">正在读取字幕…</div>

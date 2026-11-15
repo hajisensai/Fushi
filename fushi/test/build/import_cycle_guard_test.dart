@@ -32,9 +32,43 @@ import 'package:test/test.dart';
 /// 里 develop 把整条浏览器扩展 sync API 经图形字幕 OCR 接进环的那条边已拆掉
 /// （值类型挪到 `graphic_subtitle_ocr_types.dart`），没靠上限放过。
 ///
+/// 2026-11-10 develop 实测涨到 714（几个 PR 单独都 ≤713，合在一起超了）。根子是
+/// AI 助手（`ai_agent_controller` / `ai_agent_assistant_host` / `ai_mcp_ui`）直接
+/// import `ops/op_routes.dart`：路由表依赖全部 `ctl_<域>_routes.dart`，后者又读
+/// AppModel，整个操作目录（约 78 个文件，含 20 多个 `ctl_settings_body_*`）都被拖进
+/// 大环。改成 app 根组件经 `registerAppOpContext(buildInProcessInvoker:)` 注入组装
+/// 函数、AI 助手只依赖 `app_op_context.dart` 的窄接口后，最大环降到 636，上限随之下调。
+///
+/// 2026-11-11 批量合并后实测 643。拆掉两条底层边：曲目入库层
+/// （`music_remote_tracks`，AppModel 建音乐会话就 import）为一个纯函数
+/// `musicServerPlayItem` 反向 import 读 AppModel 的 `music_servers`（挪到
+/// `music_server_play_item.dart`），把音乐会话 / 历史 / 曲库数据四个文件拖进了环；
+/// 有声书版本记录为取对端身份 import `hidden_remote_books`（它要连云盘远端书客户端，
+/// 挪到 `remote_book_source_host.dart`）。剩下 +2 是音乐页簇新增的两个 UI 文件
+/// （`music_playlist_actions` / `music_playlist_track_column`，本就读 AppModel、
+/// 与其它音乐页互相 import），与 2026-11-05 那 4 个 UI 文件同理，上限按实测调到 638。
+///
+/// 同日再合 develop（343 个提交）后实测 643，新进环的 5 个文件都没有把底层接上 UI：
+/// 4 个本就读 AppModel 的 UI 页 / 流程（`gal_line_tts_voice_overrides_page`、
+/// `audiobook_subtitle_export_flow`、`manga_ocr_manager_page`、设置页动作
+/// `database_check_action`），与上面同理；`sync/synced_book_import` 只 import
+/// `pdf_importer`，它进环是因为 `pdf_importer → media_cover_service` 早已在环里
+/// （`media_cover_service` 直接 import `app_model` 与 UI 的 `video_import_dialog`）。
+/// 上限按实测调到 643；拆 `media_cover_service` 对 AppModel / 导入对话框的依赖是下一步。
+///
+/// 2026-11-15 合入设置重整（#3277）新增两个一级分类的 schema 文件（`settings_schema_general` /
+/// `settings_schema_navigation`）。设置 schema 整族本就在环里（`settings_schema.dart`
+/// 注册它们，它们读 AppModel），新分类没有别的落脚处，上限随之 +2 到 645——
+/// 新增的是本就读 AppModel 的 UI 文件，没有把任何底层模块接进环。
+///
+/// 同日合入服务端词典（#3147）新增 `sync/dictionary_transfer_service`（词典管理页按 host
+/// 推送 / 下载单本词典）：它的唯一同步入口 `runHostDictionaryTransfer` 在 `sync_auto_trigger`
+/// 里（与其它同步路径共用忙闸 / 在飞登记），而 `sync_auto_trigger` 本就在环里，AppModel 又持有
+/// 这个服务，于是 +1 到 646。新进环的是新文件本身，没有把任何既有底层模块接进环。
+///
 /// 红了：新加的 import 把底层模块接到了 UI / AppModel 上。把用到的东西挪到
 /// 更底层的文件，或改用参数 / 回调注入，不要调大上限、不要把文件从目录里豁免。
-const int kMaxCycleFiles = 713;
+const int kMaxCycleFiles = 646;
 
 const String kAppModel = 'lib/src/models/app_model.dart';
 

@@ -704,6 +704,55 @@ void main() {
       expect(inner.mined, 0);
     });
 
+    test('覆写只改勾选的字段（反馈 nWWjBp3Clo）：按这条笔记自己的笔记类型取选择，其余字段原样', () async {
+      final int handle = await mine('雪', 'ゆき');
+      final SrsNoteView before = await noteOf('雪', 'ゆき');
+      final String? typeName = await repo.overwriteNoteTypeName(handle);
+      expect(typeName, isNotNull);
+      inner.settings = inner.settings.withOverwriteFields(typeName!, <String>[
+        'Sentence',
+      ]);
+      final MineOutcome out = await repo.updateMinedNote(
+        noteId: handle,
+        rawPayloadJson: jsonEncode(<String, Object?>{
+          'expression': '雪',
+          'reading': 'ゆき',
+          'glossary': '<ol><li>snowfall</li></ol>',
+          'glossaryFirst': '<ol><li>snowfall</li></ol>',
+          'audio': '',
+        }),
+        context: const AnkiMiningContext(sentence: '雪が積もる。'),
+      );
+      expect(out.result, MineResult.success);
+      final SrsNoteView after = (await store.note(before.id))!;
+      expect(after.field(fid('Sentence')), contains('積もる'));
+      expect(
+        after.field(fid('Glossary')),
+        before.field(fid('Glossary')),
+        reason: '没勾的字段不点名，保留原值',
+      );
+      expect(after.tags, containsAll(before.tags));
+      expect(inner.ankiCalls, 0);
+    });
+
+    test('覆写只改勾选的字段：勾的字段这次全空 → 拒绝，笔记不动', () async {
+      final int handle = await mine('雪', 'ゆき');
+      final SrsNoteView before = await noteOf('雪', 'ゆき');
+      final String typeName = (await repo.overwriteNoteTypeName(handle))!;
+      inner.settings = inner.settings.withOverwriteFields(typeName, <String>[
+        'Sentence',
+      ]);
+      final MineOutcome out = await repo.updateMinedNote(
+        noteId: handle,
+        rawPayloadJson: _payload('雪', 'ゆき'),
+        context: const AnkiMiningContext(sentence: ''),
+      );
+      expect(out.result, MineResult.error);
+      expect(out.errorCode, AnkiErrorCode.overwriteFieldsEmpty);
+      final SrsNoteView after = (await store.note(before.id))!;
+      expect(after.field(fid('Sentence')), before.field(fid('Sentence')));
+    });
+
     test('覆写：原笔记已删 → 明确失败', () async {
       final int handle = await mine('雪', 'ゆき');
       await store.deleteNote((await noteOf('雪', 'ゆき')).id);

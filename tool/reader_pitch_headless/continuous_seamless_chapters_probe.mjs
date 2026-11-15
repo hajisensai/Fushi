@@ -9,13 +9,14 @@
 //
 //   flutter test test/reader/reader_headless_shell_dump_test.dart --no-pub   # 写引擎到 systemTemp
 //   node tool/reader_pitch_headless/continuous_seamless_chapters_probe.mjs
-// 退出码 0 = 横排 / 竖排 + 开关关闭三组断言全部成立。
+// 退出码 0 = 横排 / 竖排、真触摸、慢拖跨章只换一章（BUG-4363）、短邻章边界认领、开关关闭各组断言全部成立。
+// 验证未落盘的改动时可用 FUSHI_ENGINE_JS=<引擎产物路径> 覆盖默认的 systemTemp 产物。
 import fs from 'node:fs'; import path from 'node:path'; import os from 'node:os'; import puppeteer from 'puppeteer-core';
 
 const CHROME = process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe';
 const W = 420, H = 760;
 const TOP = 40, BOTTOM = 30;
-const ENGINE = fs.readFileSync(path.join(os.tmpdir(), 'fushi_full_engine_continuous.js'), 'utf8');
+const ENGINE = fs.readFileSync(process.env.FUSHI_ENGINE_JS || path.join(os.tmpdir(), 'fushi_full_engine_continuous.js'), 'utf8');
 
 const CHAPTERS = [
   { path: '/epub/OEBPS/Text/ch0.xhtml', paras: 30 },
@@ -43,8 +44,8 @@ body::after { content: '' !important; display: block !important; block-size: ${v
 img.block-img { max-inline-size: 100%; display: block; }`;
 }
 
-function chapterHtml(i, vertical) {
-  const c = CHAPTERS[i];
+function chapterHtml(i, vertical, parasOverride) {
+  const c = parasOverride && parasOverride[i] !== undefined ? { ...CHAPTERS[i], paras: parasOverride[i] } : CHAPTERS[i];
   const paras = Array.from({ length: c.paras }, (_, k) =>
     `<p>【第${i}章-${k}段】吾輩は猫である。名前はまだ無い。どこで生れたかとんと見当がつかぬ。</p>`).join('\n');
   const css = i === 2 ? '../Styles/style.css' : '../Styles/style.css';
@@ -61,13 +62,13 @@ ${paras}
 </body></html>`;
 }
 
-function config(vertical, seamless) {
+function config(vertical, seamless, pinMid = false) {
   return {
     navigationGeneration: 1, continuousMode: true, vnMode: false, vnClickAdvance: false,
     scanNonJapaneseText: false, hoverAutoLookup: false, hoverKey: 'shiftKey', hostHoverLookup: false,
     highlightOnTap: false, showChrome: false, debugLogging: false,
     swipeDistThreshold: 24, swipeFastDistThreshold: 12, swipeFastVelocity: 300, wheelGestureQuietMs: 300,
-    continuousTurnPullPx: 20, continuousTurnPinMidGesture: false,
+    continuousTurnPullPx: 20, continuousTurnPinMidGesture: pinMid,
     pageTurnAnimation: 'none', pageTurnDurationMs: 0, pageTurnFollowDrag: false,
     furiganaMode: 'off', caretColor: '#f00', caretInsetTop: TOP, caretInsetBottom: BOTTOM,
     initialProgress: 0, initialCharOffset: -1, initialCharOffsetEnd: -1, initialFragment: null,
@@ -89,18 +90,25 @@ function check(label, ok, detail) {
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-async function open(browser, vertical, seamless) {
+async function open(browser, vertical, seamless, opts = {}) {
+  const { paras = null, delays = {}, pinMid = false } = opts;
+  const fetched = {};
   const page = await browser.newPage();
   await page.emulate({
     viewport: { width: W, height: H, isMobile: true, hasTouch: true, deviceScaleFactor: 1 },
     userAgent: 'Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140 Mobile Safari/537.36',
   });
   await page.setRequestInterception(true);
-  page.on('request', (q) => {
+  page.on('request', async (q) => {
     const u = new URL(q.url());
     if (u.host !== 'fushi.local') return q.continue();
     const idx = CHAPTERS.findIndex((c) => c.path === u.pathname);
-    if (idx >= 0) return q.respond({ status: 200, contentType: 'text/html', body: chapterHtml(idx, vertical) });
+    if (idx >= 0) {
+      fetched[idx] = (fetched[idx] || 0) + 1;
+      // 邻章挂载晚到：只延迟该章第一次被拉取（模块挂载那次；首章文档本身不受影响）。
+      if (delays[idx] && fetched[idx] === 1) await sleep(delays[idx]);
+      return q.respond({ status: 200, contentType: 'text/html', body: chapterHtml(idx, vertical, paras) });
+    }
     if (u.pathname === '/epub/OEBPS/Styles/style.css') return q.respond({ status: 200, contentType: 'text/css', body: EPUB_CSS });
     if (u.pathname === '/epub/OEBPS/Images/pic.svg') return q.respond({ status: 200, contentType: 'image/svg+xml', body: PIC });
     return q.respond({ status: 404, body: '' });
@@ -117,7 +125,7 @@ async function open(browser, vertical, seamless) {
     };
   });
   await page.goto(url(1), { waitUntil: 'load', timeout: 8000 });
-  const boot = `window.__fushiReaderConfig = ${JSON.stringify(config(vertical, seamless))};window.__fushiEngine.install(window.__fushiReaderConfig);`;
+  const boot = `window.__fushiReaderConfig = ${JSON.stringify(config(vertical, seamless, pinMid))};window.__fushiEngine.install(window.__fushiReaderConfig);`;
   await page.evaluate(ENGINE + '\n' + boot);
   await sleep(900);
   return page;
@@ -379,6 +387,76 @@ async function runTouch(browser) {
   await page.close();
 }
 
+// 反馈 R7k887yaJI 重开：「章节交界处长按慢拖，飞到下下章」。停在章末（文档尽头 = 活动章末，
+// 下一章还在挂载）时按住慢慢上推：挂载中途落地，视口越过章界被晋升（换章一次）；松手时触摸
+// 边界控制器按手势起点的 pin 判「拉过边界」，旧实现再回传 onBoundarySwipe，Dart 从已经换过的
+// 章号再跨一章。修复后无缝模式是文档内换章的唯一所有者：一次慢拖只换一章、不回传边界换章。
+async function slowDrag(page, fromY, toY, stepPx = 4, stepMs = 30) {
+  const cdp = await page.createCDPSession();
+  let y = fromY;
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 210, y }] });
+  while (y > toY) {
+    y -= stepPx;
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: 210, y }] });
+    await sleep(stepMs);
+  }
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await sleep(800);
+}
+const turnEvents = (page) => page.evaluate(() => ({
+  active: window.__fushiSeamless.activeChapter,
+  seamless: window.__events.filter((e) => e[0] === 'onSeamlessChapterActivated').map((e) => e.slice(1)),
+  boundary: window.__events.filter((e) => e[0] === 'onBoundarySwipe').map((e) => e.slice(1)),
+}));
+
+async function runSlowDragLateMount(browser, pinMid) {
+  const tag = `[slow-drag late mount ${pinMid ? 'low' : 'standard'}]`;
+  const page = await open(browser, false, true, { delays: { 2: 900 }, pinMid });
+  const pre = await page.evaluate(() => {
+    window.scrollTo(0, 1e7);
+    return { mounted: window.__fushiSeamless.mountedChapters(), atDocEnd: window.fushiReader.isAtEnd() };
+  });
+  check(`${tag} gesture starts pinned at the document end with chapter 2 still mounting`,
+    pre.atDocEnd && pre.mounted.indexOf(2) < 0, pre);
+  await slowDrag(page, 700, 100);
+  const s = await turnEvents(page);
+  check(`${tag} one slow drag across the boundary turns exactly one chapter`,
+    s.active === 2 && s.seamless.length === 1 && s.seamless[0][0] === 2 && s.boundary.length === 0, s);
+  await page.close();
+}
+
+// 文档尽头还挂着一个短到视口中心越不过迟滞带的邻章（标题页）：边界拉动由无缝模块晋升它，
+// 不回传 onBoundarySwipe 让 Dart 整章重载。
+async function runShortNeighborBoundaryPull(browser) {
+  const tag = '[short neighbor boundary pull]';
+  const page = await open(browser, false, true, { paras: { 2: 0 } });
+  const pre = await page.evaluate(() => {
+    window.scrollTo(0, 1e7);
+    return { mounted: window.__fushiSeamless.mountedChapters(), atDocEnd: window.fushiReader.isAtEnd(), active: window.__fushiSeamless.activeChapter };
+  });
+  check(`${tag} short chapter 2 mounted at the document end, chapter 1 still active`,
+    pre.mounted.indexOf(2) >= 0 && pre.active === 1, pre);
+  await slowDrag(page, 600, 520);
+  const s = await turnEvents(page);
+  check(`${tag} boundary pull promotes chapter 2 in-document (no Dart reload)`,
+    s.active === 2 && s.seamless.length === 1 && s.boundary.length === 0, s);
+  // 按键翻页同理：滚不动时由模块认领，paginate 不回 limit。
+  await page.evaluate(() => window.__fushiSeamless.ack(1, 5));
+  await sleep(900);
+  const keyed = await page.evaluate(() => {
+    window.scrollTo(0, 1e7);
+    const mounted = window.__fushiSeamless.mountedChapters();
+    const out = [];
+    for (let i = 0; i < 3; i++) out.push(window.fushiReader.paginate('forward'));
+    return { mounted, out, active: window.__fushiSeamless.activeChapter };
+  });
+  check(`${tag} paginate at the document end is claimed while a neighbor is mounted`,
+    keyed.mounted.indexOf(3) >= 0 && keyed.out[0] === 'scrolled' && keyed.active === 3, keyed);
+  const after = await turnEvents(page);
+  check(`${tag} key paging never fell back to a Dart boundary turn`, after.boundary.length === 0, after);
+  await page.close();
+}
+
 async function runOff(browser) {
   const page = await open(browser, false, false);
   await sleep(500);
@@ -401,6 +479,9 @@ try {
   await runSeamless(browser, false);
   await runSeamless(browser, true);
   await runTouch(browser);
+  await runSlowDragLateMount(browser, false);
+  await runSlowDragLateMount(browser, true);
+  await runShortNeighborBoundaryPull(browser);
   await runOff(browser);
 } finally {
   await browser.close();

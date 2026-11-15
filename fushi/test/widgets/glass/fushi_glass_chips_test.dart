@@ -147,7 +147,9 @@ void main() {
       expect(
         find.descendant(
           of: find.byKey(const ValueKey<String>('avatar')),
-          matching: find.byKey(const ValueKey<String>('fushi-chip-leading-check')),
+          matching: find.byKey(
+            const ValueKey<String>('fushi-chip-leading-check'),
+          ),
         ),
         findsOneWidget,
       );
@@ -188,7 +190,10 @@ void main() {
       await tester.sendKeyEvent(LogicalKeyboardKey.enter);
       await tester.pump(const Duration(milliseconds: 300));
       expect(selected, isTrue);
-      expect(tester.widget<ChoiceChip>(find.byType(ChoiceChip)).selected, isTrue);
+      expect(
+        tester.widget<ChoiceChip>(find.byType(ChoiceChip)).selected,
+        isTrue,
+      );
       expect(
         tester.widget<ChoiceChip>(find.byType(ChoiceChip)).showCheckmark,
         isTrue,

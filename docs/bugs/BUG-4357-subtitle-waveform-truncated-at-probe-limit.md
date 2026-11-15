@@ -1,0 +1,10 @@
+## BUG-4357 · 波形对轴视图被自动对轴的 20 分钟探测上界截断，24 分钟的一集 20:00 之后无波形、拖不过去
+- **报告**：2026-11-09（开发者自提，应用内反馈 EUvw-RjUE4，Windows 视频：「波形对轴显示不全，后面拉不过去了」，截图停在约 20:17）
+- **真实性**：✅ 真 bug。人工查看的波形视图沿用了自动对轴互相关的性能截断：
+  - `fushi/lib/src/media/video/audio_energy_probe.dart:43,51,55-57`：`kSubtitleAutoAlignProbeLimitMs`（本地 20 分钟）/ `kStreamSubtitleAlignProbeLimitMs`（流 3 分钟）/ `subtitleAlignProbeLimitMs()` 是自动对轴的探测上界，注释还要求「波形时间窗必须同取这一个值」；
+  - `fushi/lib/src/media/video/subtitle_waveform_align_panel.dart:159-165`：`_windowEndMs = min(片长, probeLimitMs)`，`:921` `naturalWidth = windowEndMs * pxPerMs` —— 时间轴本身只有 20 分钟宽；
+  - `fushi/lib/src/pages/implementations/video_fushi/subtitle.part.dart:4324`：波形包络 `limitMs: _subtitleAlignProbeLimitMs`，只抽前 20 分钟；`:4360-4364` 键盘直达（Shift+A）路径同一算式。
+  24 分钟的一集因此 20:00 之后既无波形、也滚不过去。
+- **[x] ① 已修复** — 把「自动对轴互相关的探测上界」和「人工波形视图的时间窗」拆开：视图时间窗 = 片长全程（`subtitleWaveformWindowEndMs`）；包络按 2 分钟一段懒抽（新 `subtitle_waveform_segments.dart`：`SubtitleWaveformSegments` 串行调度、视口驱动 `ensureRange`、移出视口的排队请求撤销、已抽段缓存），本地 / 互联整集音源用输入端 `-ss`/`-t` 分段抽（`buildFfmpegPcmEnvelopeArgs` 新增 `startMs`），流音源只在滚到时拉该段；段长是 20ms 帧与 100ms bin 的整数倍，拼接按段保持相位；抽取中的段盖骨架闪光 + 「正在加载波形」（`FushiSkeletonShimmer` + `AnimatedSwitcher` 淡出）；页面级 `WaveformEnvelopeCache` 改为按「音源 + 段」缓存；部分段已抽时按已抽比例换算归一化分位，避免削顶 / 增益跳变。自动对轴仍用原上界不变。提交见分支 `claude/subtitle-waveform-full-duration`（db6ebb6333 / 40442e10e0 / b5f8f2ed7f 及其后的收尾提交）。
+- **[x] ② 已加自动化测试** — `fushi/test/media/video/subtitle_waveform_segments_test.dart`（段边界、相位一致拼接、帧数对齐、归一化分位换算、串行调度与撤销、空段不自动重试）；`fushi/test/media/video/subtitle_waveform_align_panel_test.dart`（`EUvw-RjUE4` 组：painter `windowEndMs` = 24 分钟片长、点开只抽播放头所在段、滚到片尾才抽末段且显示加载态；`waveformViewportRangeMs` 纯函数）；`fushi/test/media/video/subtitle_auto_align_test.dart`（`-ss` 为输入选项）；`fushi/test/media/video/waveform_envelope_cache_test.dart`（按段缓存）；源码守卫 `fushi/test/pages/video_disc_menu_and_stream_align_wiring_guard_test.dart`（波形抽取 / 键盘直达 / 面板不再引用探测上界）。
+- **备注**：测试未在本分支运行（本批次统一在合并后于 develop 尖端验证）。未做设备 / 真实长片复测（24 分钟本地集与媒体服务器流各需滚到片尾确认波形与 cue 对齐）。

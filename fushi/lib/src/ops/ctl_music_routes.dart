@@ -470,6 +470,8 @@ List<CtlRoute> buildMusicCtlRoutesFor({
       // 曲库页「添加文件夹」同一函数（登记后立即扫描）。
       final AddLocalFolderResult result = await addLocalFolderAsSource(
         db: db,
+        // 音乐来源不扫书，没有有声书要转录。
+        transcribeAudiobook: null,
         mediaKind: SourceLibraryKind.music.dbValue,
         path: path,
       );
@@ -522,7 +524,10 @@ List<CtlRoute> buildMusicCtlRoutesFor({
         throw CtlFailure.notFound('没有 id=$only 的音乐扫描根');
       }
       // 曲库页「重新扫描」：逐个音乐来源扫（扫描器自己吞异常并写回 lastScanError）。
-      final SourceLibraryScanner scanner = SourceLibraryScanner(db);
+      final SourceLibraryScanner scanner = SourceLibraryScanner(
+        db,
+        transcribeAudiobook: null,
+      );
       final List<Map<String, Object?>> results = <Map<String, Object?>>[];
       for (final MediaSourceRow row in targets) {
         final SourceScanSummary summary = await scanner.scan(row);

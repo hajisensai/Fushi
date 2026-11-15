@@ -296,13 +296,15 @@ void main() {
           'videoMiningAnimatedFormat',
           'appModel',
         ),
+        // gal 入口读的是「全局 + 本游戏覆盖」解析后的设置（反馈 3dRZdakRdJ）：
+        // owner 是解析结果局部变量，其来源由下面的 gal 解析守卫锁住。
         'lib/src/pages/implementations/texthooker_page.dart': (
-          'galMiningAnimatedFormat',
-          'mixinAppModel',
+          'animatedFormat',
+          'mining',
         ),
         'lib/src/lookup/gal_hook_text_overlay_controller.dart': (
-          'galMiningAnimatedFormat',
-          'model',
+          'animatedFormat',
+          'mining',
         ),
       };
       entries.forEach((String path, (String, String) wiring) {
@@ -344,12 +346,12 @@ void main() {
           'appModel',
         ),
         'lib/src/pages/implementations/texthooker_page.dart': (
-          'galMiningStillFormat',
-          'mixinAppModel',
+          'stillFormat',
+          'mining',
         ),
         'lib/src/lookup/gal_hook_text_overlay_controller.dart': (
-          'galMiningStillFormat',
-          'model',
+          'stillFormat',
+          'mining',
         ),
       };
       entries.forEach((String path, (String, String) wiring) {
@@ -374,6 +376,50 @@ void main() {
               '实际是 ${actual.isEmpty ? "（一个都没传）" : actual.toSet()}；'
               '漏传时形参默认 jpg，用户选的 PNG 静默失效',
         );
+      });
+    });
+
+    // gal 制卡入口的设置来源（反馈 3dRZdakRdJ / II3jOBIhT5）：上面两条守卫对 gal 入口
+    // 断言的是 `mining.<轴>`，这里锁住 `mining` 本身必须来自「全局 + 当前游戏覆盖」的
+    // 唯一解析入口，且句子音频长度策略同样透传——任一入口退回读全局偏好，「本游戏
+    // 设置」就会在那个入口静默失效。
+    test('每个 gal 制卡入口都从 galMiningSettingsForGame 取设置并透传音频长度策略', () {
+      const Map<String, String> entries = <String, String>{
+        'lib/src/pages/implementations/texthooker_page.dart': 'mixinAppModel',
+        'lib/src/lookup/gal_hook_text_overlay_controller.dart': 'model',
+        'lib/src/ops/ctl_game_routes.dart': 'model',
+      };
+      entries.forEach((String path, String owner) {
+        final String src = File(path).readAsStringSync();
+        expect(
+          RegExp(
+            'final GalMiningSettings mining = '
+            '${RegExp.escape(owner)}\\.galMiningSettingsForGame\\(',
+          ).hasMatch(src),
+          isTrue,
+          reason: '$path 必须经 $owner.galMiningSettingsForGame 解析本游戏设置',
+        );
+        expect(
+          RegExp(r'\baudioLimit:\s*mining\.audioLimit\b').hasMatch(src),
+          isTrue,
+          reason: '$path 漏传 audioLimit：形参默认不裁，用户的长度设置静默失效',
+        );
+        for (final String axis in <String>[
+          'imageMode',
+          'animatedFormat',
+          'stillFormat',
+          'clipFormat',
+        ]) {
+          final Iterable<String> actual = RegExp(
+            '\\b$axis:\\s*([\\w.]+)',
+          ).allMatches(src).map((RegExpMatch m) => m.group(1)!);
+          expect(
+            actual.isNotEmpty &&
+                actual.every((String v) => v == 'mining.$axis'),
+            isTrue,
+            reason: '$path 的 `$axis:` 必须是 mining.$axis，实际 ${actual.toSet()}',
+          );
+        }
       });
     });
 

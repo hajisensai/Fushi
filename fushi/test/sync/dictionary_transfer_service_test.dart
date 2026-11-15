@@ -9,6 +9,7 @@ import 'dart:io';
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/src/sync/dictionary_transfer_service.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/sync_orchestrator.dart';
@@ -128,6 +129,17 @@ Future<HttpServer> _startPackage404Proxy(String upstream) async {
 }
 
 void main() {
+  // V-B4：带 hostId 的明文地址拿凭据前要当场 ping 核对；这里的对端是 MockClient / 本机
+  // 假服务，把身份核对视为通过（选路本身由 interconnect_peer_addresses 的测试覆盖）。
+  setUp(() {
+    resetInterconnectRaceCache();
+    debugInterconnectAddressProbeOverride =
+        (FushiClientUrl candidate, String? hostId) async => true;
+  });
+  tearDown(() {
+    debugInterconnectAddressProbeOverride = null;
+    resetInterconnectRaceCache();
+  });
   late Directory work;
   late _Host hostA;
   late _Host hostB;

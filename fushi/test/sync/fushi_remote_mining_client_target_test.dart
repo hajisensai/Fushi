@@ -5,6 +5,7 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/sync/fushi_remote_mining_client.dart';
 import 'package:fushi/src/sync/mine_to_server_target_picker.dart';
+import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/sync/forwarded_mine_payload.dart';
@@ -25,6 +26,17 @@ const ForwardedMinePayload _payload = ForwardedMinePayload(
 );
 
 void main() {
+  // V-B4：明文地址拿凭据前要当场 ping 核对 hostId；这些用例的对端是 MockClient，
+  // 把身份核对视为通过。
+  setUp(() {
+    resetInterconnectRaceCache();
+    debugInterconnectAddressProbeOverride =
+        (FushiClientUrl candidate, String? hostId) async => true;
+  });
+  tearDown(() {
+    debugInterconnectAddressProbeOverride = null;
+    resetInterconnectRaceCache();
+  });
   late FushiDatabase db;
   late List<http.Request> sent;
 
@@ -177,6 +189,27 @@ void main() {
       options.length,
       reason: '选项值互不相同',
     );
+  });
+
+  test('the review default deck is listed once when the host reports it '
+      '(BUG-4288)', () {
+    final List<MineToServerTargetOption> options = mineToServerTargetOptions(
+      <String, dynamic>{
+        'review': <Object?>[
+          <String, Object?>{
+            'profile': kUid,
+            'name': 'Japanese',
+            'decks': <Object?>['Default', 'Mining'],
+            'defaultDeck': 'Default',
+          },
+        ],
+      },
+    );
+    expect(options.map((MineToServerTargetOption o) => o.target), <Object?>[
+      null,
+      const RemoteMiningTarget(kind: 'review', profile: kUid),
+      const RemoteMiningTarget(kind: 'review', profile: kUid, deck: 'Mining'),
+    ]);
   });
 
   test('主机不支持挑落点（404）→ null', () async {

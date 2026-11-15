@@ -12,7 +12,7 @@ import 'package:fushi/src/media/detail/media_detail_kit.dart';
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
 import 'package:fushi/src/media/video/media_server/media_server_library.dart';
 import 'package:fushi/src/media/video/video_watched_marks.dart';
-import 'package:fushi/src/models/app_model.dart' show appProvider;
+import 'package:fushi/src/models/app_model.dart' show AppModel, appProvider;
 import 'package:fushi/src/sync/remote_library_cache.dart'
     show remoteLibraryCacheProvider;
 import 'package:fushi/src/sync/remote_video_client.dart'
@@ -546,8 +546,10 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
       context,
       listen: false,
     );
+    final AppModel app = container.read(appProvider);
     final WatchedMarkResult result = await setVideosWatched(
-      db: container.read(appProvider).database,
+      db: app.database,
+      tracking: app.libraryFinishTracking,
       watched: watched,
       localUids: <String>[
         for (final MediaServerItem e in targets)
@@ -1015,7 +1017,6 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
                   (BuildContext context, int index) => _buildEpisodeCard(
                     context,
                     _episodes[index],
-                    index,
                     isContinue: index == continueIndex,
                   ),
                 ),
@@ -1040,8 +1041,7 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
   /// 放在最外层。
   Widget _buildEpisodeCard(
     BuildContext context,
-    MediaServerItem episode,
-    int index, {
+    MediaServerItem episode, {
     required bool isContinue,
   }) {
     final String duration = formatMediaServerDuration(episode.durationMs);
@@ -1072,7 +1072,8 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
                       : MediaServerImageKind.primary,
                 ),
               ),
-              number: '${episode.episodeNumber ?? index + 1}',
+              // 缺集号就不画集号：列表位置不是集号（VF5D4O_Tyx）。
+              number: episode.episodeNumber?.toString(),
               title: episode.name,
               summary: episode.overview,
               meta: <String>[

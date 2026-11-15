@@ -1,9 +1,9 @@
-/// admin API 的词典导入（`POST /api/admin/dictionaries/import`）：WebUI「词典」页上传
-/// 一个词典包，在运行中的 serve 里导入并立即进引擎（不用重启）。
+/// admin API 的词典导入（`PUT /api/admin/dictionaries`，见 admin_dictionaries.dart）：
+/// WebUI「词典」页上传一个词典包，在运行中的 serve 里导入并立即进引擎（不用重启）。
 ///
-/// 协议：请求体是文件原始字节（`Content-Type: application/octet-stream`，不分块），
-/// 文件名放在 `?filename=<名字>`（或 `X-Filename` 头，URL 编码）。文件名只用来认格式
-/// （扩展名）与交给原生导入器（MDX / DSL 按扩展名分派），不进任何库目录。
+/// 协议：请求体是文件原始字节（不分块）。文件名可选，放在 `?filename=<名字>`（或
+/// `X-Filename` 头，URL 编码），只用来认格式（扩展名）与交给原生导入器（MDX / DSL 按
+/// 扩展名分派），不进任何库目录。不带文件名 = Yomitan zip（#3102 起的原始契约）。
 ///
 /// 两种包，按内容判（扩展名只做初筛）：
 /// - **app 导出的 `.fushidict`**：zip 根目录 `manifest.json` 的 `kind` 是 `dictionary`。
@@ -11,10 +11,11 @@
 ///   释放映射、收尾重载引擎）。
 /// - **原始词典包**：Yomitan zip（根目录 `index.json`）、含 `.mdx` / `.ifo` 的 zip、
 ///   裸 `.mdx` / `.dsl`。走 `dict add` 同一个 [importDictionaryArchive]（记 index.json
-///   来源元数据），在库互斥锁里跑、传 `reloadEngine`，导入完引擎即看到。
+///   来源元数据），装进库那一步走调用方给的 `installGuard`（库锁 + 释放映射 + 重载引擎）。
 ///
-/// 字节先落 `<data_dir>/tmp/` 下的暂存目录（与资源目录同盘），按上传配额边收边判
-/// （[UploadStore.receiveToFile]）；导入成功才计入配额账本。暂存目录在所有出口都删。
+/// 字节先落 `<data_dir>/tmp/` 下的暂存目录（与资源目录同盘）。给了 [UploadStore] 时按
+/// 上传配额边收边判（[UploadStore.receiveToFile]），导入成功才计入配额账本。暂存目录在
+/// 所有出口都删。
 library;
 
 import 'dart:convert';
@@ -22,7 +23,7 @@ import 'dart:io';
 
 import 'package:archive/archive_io.dart';
 import 'package:fushi_core/fushi_core.dart';
-import 'package:fushi_dictionary/fushi_dictionary_core.dart';
+import 'package:fushi_engine/utils/misc/safe_file_name.dart';
 import 'package:fushi_server/src/admin/admin_context.dart';
 import 'package:fushi_server/src/admin/upload_store.dart';
 import 'package:fushi_server/src/commands/dict_commands.dart';
@@ -56,12 +57,20 @@ enum _DictPackageKind { fushidict, archive }
 class AdminDictionaryImport {
   AdminDictionaryImport({
     required this.ctx,
-    required this.uploads,
+    required DictInstallGuard installGuard,
+    this.uploads,
     DictArchiveImporter? importer,
-  }) : _importer = importer;
+  }) : _installGuard = installGuard,
+       _importer = importer;
 
   final AdminContext ctx;
-  final UploadStore uploads;
+
+  /// 上传配额账本；null = 不计配额（只有单测这样构造）。
+  final UploadStore? uploads;
+
+  /// 装进库那一步的包装（库锁 + 释放引擎映射 + 收尾重载引擎），由
+  /// [AdminDictionaries] 给，与其它词典改动同一把锁。
+  final DictInstallGuard _installGuard;
 
   /// 原始词典包的原生导入器；null = 真原生库（`FushiDicts.importDictionary`）。测试注入。
   final DictArchiveImporter? _importer;
@@ -82,13 +91,16 @@ class AdminDictionaryImport {
     final Directory staging = await ctx.paths.temp.createTemp('dict_upload_');
     try {
       File staged = File(p.join(staging.path, fileName));
-      final int bytes = await uploads.receiveToFile(
-        target: staged,
-        body: request.read(),
-        declaredLength: request.contentLength ?? 0,
-      );
+      final UploadStore? quota = uploads;
+      final int bytes = quota != null
+          ? await quota.receiveToFile(
+              target: staged,
+              body: request.read(),
+              declaredLength: request.contentLength ?? 0,
+            )
+          : await _receive(staged, request.read());
       if (bytes == 0) {
-        throw UploadRejected(400, tr('上传的文件是空的', 'the uploaded file is empty'));
+        throw UploadRejected(400, tr('上传的文件是空的', 'empty upload'));
       }
       final ({_DictPackageKind kind, String? name}) detected = _detect(
         staged,
@@ -111,7 +123,7 @@ class AdminDictionaryImport {
           }
           outcome = await _importArchive(staged);
       }
-      await uploads.recordUsage(bytes);
+      await quota?.recordUsage(bytes);
       ctx.log.info(
         'dictionary import: "${outcome.name}" (${outcome.format}, '
         '${outcome.replaced ? 'replaced' : 'new'})',
@@ -122,8 +134,25 @@ class AdminDictionaryImport {
     }
   }
 
+  /// 不计配额地把正文落到 [target]，返回字节数。
+  static Future<int> _receive(File target, Stream<List<int>> body) async {
+    await target.parent.create(recursive: true);
+    final IOSink sink = target.openWrite();
+    int written = 0;
+    try {
+      await for (final List<int> chunk in body) {
+        sink.add(chunk);
+        written += chunk.length;
+      }
+    } finally {
+      await sink.close();
+    }
+    return written;
+  }
+
   /// `?filename=` 优先，其次 `X-Filename` 头（URL 编码）。只取最后一段，替换掉
-  /// Windows 文件名里不合法的字符；空名 400。
+  /// Windows 文件名里不合法的字符。都没给 = `upload.zip`（#3102 的原始契约：正文是
+  /// Yomitan zip）；给了却清洗成空名 400。
   static String _fileNameOf(shelf.Request request) {
     String raw = request.url.queryParameters['filename'] ?? '';
     if (raw.isEmpty) {
@@ -134,9 +163,10 @@ class AdminDictionaryImport {
         raw = header;
       }
     }
+    if (raw.isEmpty) return 'upload.zip';
     final String base = p.posix
         .basename(raw.replaceAll('\\', '/'))
-        .replaceAll(RegExp(r'[<>:"|?*\x00-\x1f]'), '_')
+        .replaceAll(windowsUnsafeFileNameChars, '_')
         .trim();
     if (base.isEmpty || base == '.' || base == '..') {
       throw UploadRejected(
@@ -174,7 +204,9 @@ class AdminDictionaryImport {
     String ext,
   ) {
     if (!_isZip(file)) {
-      if (ext == '.mdx' || ext == '.dsl') {
+      // 裸 MDX / DSL；`.zip` 却不是 zip 时也交给原生导入器，由它报 422（与 #3102 的
+      // 原始契约一致：认不出的包是「导入失败」，不是「请求不对」）。
+      if (ext != '.fushidict') {
         return (kind: _DictPackageKind.archive, name: null);
       }
       throw UploadRejected(
@@ -289,7 +321,7 @@ class AdminDictionaryImport {
     String name,
   ) async {
     final bool replaced = await _row(name) != null;
-    await ctx.host.buildLibraryService().importDictionary(package);
+    await ctx.host.libraryService.importDictionary(package);
     final DictionaryMetaRow? row = await _row(name);
     if (row == null) {
       throw StateError('dictionary "$name" missing after import');
@@ -305,28 +337,22 @@ class AdminDictionaryImport {
     );
   }
 
-  /// 原始词典包：`dict add` 同一个导入函数，在库锁里跑、导入完重载引擎。
+  /// 原始词典包：`dict add` 同一个导入函数，装进库那一步走 [_installGuard]。
   Future<AdminDictionaryImportOutcome> _importArchive(File archive) async {
     _ensureImporterAvailable();
-    DictImportOutcome? result;
+    final DictImportOutcome r;
     try {
-      await ctx.host.runLibraryExclusive(() async {
-        result = await importDictionaryArchive(
-          db: ctx.db,
-          resourceRoot: ctx.paths.dictionaryResources,
-          archive: archive,
-          importer: _importer,
-          stagingParent: ctx.paths.temp,
-          reloadEngine: () async => ctx.host.dictionaries?.refresh(),
-        );
-      });
-    } on DictImportException catch (e) {
-      throw UploadRejected(
-        422,
-        tr('导入失败：${e.message}', 'import failed: ${e.message}'),
+      r = await importDictionaryArchive(
+        db: ctx.db,
+        resourceRoot: ctx.paths.dictionaryResources,
+        archive: archive,
+        importer: _importer,
+        stagingParent: ctx.paths.temp,
+        installGuard: _installGuard,
       );
+    } on DictImportException catch (e) {
+      throw UploadRejected(422, e.message);
     }
-    final DictImportOutcome r = result!;
     return (
       name: r.name,
       format: 'archive',
@@ -338,32 +364,16 @@ class AdminDictionaryImport {
     );
   }
 
-  /// 原生导入器就是词典引擎的原生库：引擎没起来就别收（503 带原因）。host 还没 start
-  /// （只有测试会这样）时按 `dict add` 的办法现探一次。
+  /// 原生导入器就是词典引擎的原生库：引擎没加载时导入必然失败，先说清原因（409），
+  /// 免得交给导入器才报一句「找不到符号」。`.fushidict` 不经原生导入器，不受此限。
   void _ensureImporterAvailable() {
     if (_importer != null) return;
-    final ServerDictionaryHost? host = ctx.host.dictionaries;
-    if (host != null) {
-      if (host.available) return;
-      throw UploadRejected(
-        503,
-        host.unavailableReason ??
-            tr('词典引擎没有运行', 'the dictionary engine is not running'),
-      );
-    }
-    final String? lib = resolveFushiDictsLibraryPath();
-    FushiDicts.nativeLibraryPath = lib;
-    try {
-      FushiDicts.probeDictContent(ctx.paths.dictionaryResources.path);
-    } catch (e) {
-      throw UploadRejected(
-        503,
-        tr(
-          '词典引擎原生库不可用（${lib ?? 'libfushidicts_ffi 裸名'}）：$e',
-          'the dictionary engine native library is unavailable '
-              '(${lib ?? 'bare libfushidicts_ffi name'}): $e',
-        ),
-      );
-    }
+    final ServerDictionaryHost? engine = ctx.host.dictionaries;
+    if (engine?.available ?? false) return;
+    throw UploadRejected(
+      409,
+      'dictionary engine unavailable: '
+      '${engine?.unavailableReason ?? 'the interconnect host is not running'}',
+    );
   }
 }

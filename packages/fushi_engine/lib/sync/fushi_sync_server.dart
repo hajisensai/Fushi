@@ -26,6 +26,8 @@ import 'package:fushi_engine/media/video/video_subtitle_source.dart'
         listEmbeddedSubtitleTracks,
         subtitleExtensionForCodec,
         subtitleFormatForCodec;
+import 'package:fushi_engine/media/video/video_sidecar.dart'
+    show isSidecarSubtitleSuffix, sidecarSubtitleLanguageTag;
 import 'package:fushi_engine/sync/aggregate_snapshot.dart';
 import 'package:fushi_engine/sync/collection_manifest.dart';
 import 'package:fushi_engine/sync/repr_digest.dart';
@@ -38,6 +40,8 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart'
 import 'package:fushi_engine/media/video/metadata/video_metadata_wire.dart';
 import 'package:fushi_engine/sync/video_metadata_manifest.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
+import 'package:fushi_engine/sync/pdf_sync_package.dart'
+    show kLiveLibraryPdfBooksCapability;
 import 'package:fushi_engine/media/video/dandanplay_file_key.dart'
     show DandanplayFileKey;
 import 'package:fushi_engine/sync/graphic_subtitle_track_export.dart';
@@ -96,17 +100,26 @@ part 'fushi_sync_server/host_update.part.dart';
 
 /// Embedded WebDAV-style server used for device-to-device LAN sync.
 ///
-/// SECURITY (HBK-AUDIT-011): transport is plain HTTP and auth is HTTP Basic,
-/// so the bearer token travels in reversible base64 over the wire. This is
-/// acceptable only on a trusted LAN, and is gated behind [_allowLan] — when
-/// false (the default) the server binds to loopback only and is never exposed
-/// to the network. Enabling LAN sync therefore requires an explicit opt-in.
+/// SECURITY（现状，H11 订正）：
+/// - 传输：装配方传入 `securityContext` 时走 TLS（host 自签证书），配对成功响应回传
+///   证书 SHA-256 指纹供 client 钉扎（扫码 / 链接配对的指纹走带外通道）。未开 TLS 时是明文
+///   HTTP + Basic，token 以可逆 base64 过线。全网卡（局域网）监听时 TLS 双栈
+///   （`v6Only:false`），明文只听 IPv4（NAT 之后），不在全局 IPv6 上暴露。
+/// - 监听范围：由 [FushiListenScope] 决定（默认只听回环；局域网要显式打开；无头端
+///   `bind` 写具体地址时只听该地址），见 [FushiSyncServer.start]。
+/// - 凭据：已配对设备各持一枚可单独吊销的 per-peer token；没有稳定 deviceId 的配对
+///   （v1、不带 `clientDeviceId` 的 v2）拿 [kFushiLegacyPeerIdPrefix] 前缀的 legacy
+///   token，同样可单独吊销，但只过普通鉴权、不过敏感服务门；共享 host token 只为
+///   升级前已配对的老设备保留兼容。视频流 / 原盘 / 查词音频等派生凭据记签发凭据，
+///   签发凭据被吊销即连带作废。
+/// - 免 Basic 的路由只有 auth.part 里的「规范化路径 + 方法」单表 `_kPublicRoutes`，
+///   每条 handler 自带门（token / 配对窗口）。
+/// - 配对请求来源（局域网 / P2P / 公网含反代）由 pairing.part 的 `_RequestOrigin`
+///   一处分类：带转发头的请求不算局域网；PIN 失败按来源类别计预算。
+/// - 请求体一律有界读取，超限回 413。
 ///
-/// The proper hardening (TLS with a token-pinned self-signed certificate, or
-/// an HMAC challenge-response so the raw token is never transmitted) is a
-/// coordinated server+client+discovery protocol change that must be designed
-/// and verified on real devices; it is intentionally NOT bolted on here. Until
-/// then, treat LAN sync as unencrypted and only use it on a network you trust.
+/// SECURITY 历史（HBK-AUDIT-011）：本类最初是纯明文 HTTP + Basic，只靠「默认只听
+/// 回环、局域网显式开启」限制暴露面；上面的 TLS / 指纹钉扎即是当时列出的加固方向。
 
 /// 请求上下文里标记信任区的键：P2P 隧道监听口进来的请求为 `'p2p'`。
 const String kFushiRequestZone = 'fushi.zone';
@@ -118,6 +131,11 @@ const String kFushiP2pRemoteAddress = 'P2P tunnel';
 /// [FushiSyncServer.p2pPeerResolver] 查得到时存在）。
 const String kFushiP2pPeer = 'fushi.p2p.peer';
 
+/// 没有稳定 deviceId 的配对（v1 `/api/pair`、不带 `clientDeviceId` 的 v2 confirm）
+/// 落库时 peerId 的前缀。这类 token 能单独吊销，但权限与共享 token 相同：只过普通
+/// 鉴权，不过只认已配对设备 token 的敏感服务门（BUG-4393）。
+const String kFushiLegacyPeerIdPrefix = 'legacy-';
+
 /// A pairing attempt from a peer that POSTed /api/pair. Carries what the host
 /// UI needs to identify the requester in its confirmation prompt.
 class FushiPairRequest {
@@ -128,7 +146,24 @@ class FushiPairRequest {
     this.pinRequired = false,
     this.clientDeviceId,
     this.ownerDeviceGrant,
+    this.sessionId,
+    this.pin,
+    this.sourceKey,
   });
+
+  /// BUG：v2 配对会话 id（与 [FushiSyncServer.onPairSessionResolved] 的参数同值），
+  /// 宿主据此只收起**本会话**的常驻 PIN 弹窗 / pending 条目。旧 /api/pair（v1）为 null。
+  final String? sessionId;
+
+  /// 本会话的屏显 PIN：只在 v2 创建阶段的 pinRequired 非票据会话上非 null。PIN 跟着
+  /// 会话走、只在进程内传递，绝不进任何响应——宿主按会话持有它，不放进共享单槽。
+  final String? pin;
+
+  /// 来源标识（IP，IPv6 按 /64；隧道按 NodeId；不认自报 deviceId），宿主判「同源重试
+  /// 取代旧审批框」用。只在能区分真实来源时非 null：经本机反代 / 穿透进来的回环对端
+  /// （未经可信代理解析）、查不到 NodeId 的隧道对端都给 null（它们背后的所有
+  /// 人共用一个键，按它判同源会让陌生人顶掉别人的常驻 PIN 框）。null = 宿主按不同源处理。
+  final String? sourceKey;
 
   /// Self-reported name from the client (may be null/empty if not sent).
   final String? deviceName;
@@ -220,6 +255,11 @@ bool isAddressInUseError(SocketException e) {
       message.contains('shared flag to bind');
 }
 
+/// 互联 host 唯一的请求路径形态：已 URL 解码、带前导 `/`。路由分发与鉴权中间件的
+/// 豁免判定都只用它，两边不会对同一个请求看出两条不同的路径（`%2F` 等编码）。
+String canonicalRequestPath(shelf.Request r) =>
+    Uri.decodeFull('/${r.url.path}');
+
 /// TODO-1215: dictionary media endpoint accepts these query token param
 /// names (aligned with yomitan-api server). A browser <img> GET carries no
 /// Authorization header, so it authenticates via ?token= instead.
@@ -245,6 +285,68 @@ bool _constantTimeEquals(Uint8List a, Uint8List b) {
     result |= (i < a.length ? a[i] : 0) ^ (i < b.length ? b[i] : 0);
   }
   return result == 0;
+}
+
+/// host 当前有效凭据的一次性快照。所有鉴权与派生凭据校验都从同一份快照读；
+/// 配对 / 吊销经 [FushiSyncServer.invalidatePeerTokenCache] 推进代际后整体作废。
+class _CredentialSnapshot {
+  _CredentialSnapshot({
+    required String sharedToken,
+    required Set<String> peerTokens,
+    required Set<String> legacyPeerTokens,
+  }) : peerTokens = Set<String>.unmodifiable(peerTokens),
+       legacyPeerTokens = Set<String>.unmodifiable(legacyPeerTokens),
+       fingerprints = Set<String>.unmodifiable(<String>{
+         _credentialFingerprint(sharedToken),
+         for (final String t in peerTokens) _credentialFingerprint(t),
+         for (final String t in legacyPeerTokens) _credentialFingerprint(t),
+       }),
+       dictionaryMediaKeys = List<Uint8List>.unmodifiable(<Uint8List>[
+         for (final String t in <String>{
+           sharedToken,
+           ...peerTokens,
+           ...legacyPeerTokens,
+         })
+           Uint8List.fromList(utf8.encode(dictionaryMediaKeyFor(t))),
+       ]);
+
+  /// 带稳定 deviceId 配上的设备 token：过 `_validateAuth` 也过 `_validatePeerAuth`。
+  final Set<String> peerTokens;
+
+  /// `legacy-` 行的 token（[kFushiLegacyPeerIdPrefix]）：只过 `_validateAuth`。
+  /// 只有 [FushiSyncServer.pairedPeerCredentialsProvider] 能区分出来。
+  final Set<String> legacyPeerTokens;
+
+  /// sha256hex(utf8(token))：共享 + peer + legacy。供派生凭据记签发者用。
+  final Set<String> fingerprints;
+
+  /// 词典媒体作用域 key（[dictionaryMediaKeyFor]，utf8 字节）：共享 + peer + legacy
+  /// 各一份。`/api/media/dictionary` 的 query 凭据以 `fmk1.` 开头时逐个常量时间比对。
+  final List<Uint8List> dictionaryMediaKeys;
+}
+
+String _credentialFingerprint(String token) =>
+    sha256.convert(utf8.encode(token)).toString();
+
+/// 词典媒体作用域 key 的方案名：`/api/extension/status` 以 `dictionaryMediaKey` 字段
+/// 公布，扩展见到它才改发 [dictionaryMediaKeyFor] 派生的 key（BUG-4394）。
+const String kDictionaryMediaKeyScheme = 'fmk1';
+
+const String _kDictionaryMediaKeyLabel = 'fushi-dictionary-media-v1';
+
+/// 由 [credential]（共享 token / 已配对设备 token）派生的词典媒体作用域 key：
+/// `'fmk1.' + base64url(无填充)(HMAC-SHA256(key: utf8(credential), msg: utf8('fushi-dictionary-media-v1')))`。
+///
+/// 只换得到 `GET|HEAD /api/media/dictionary` 的 query 免 Basic 入口；签发凭据被吊销后，
+/// 它不在当前凭据快照里，key 随之失效。扩展端同一定义在
+/// `tools/browser-extension/dict-media-key.js`，两边逐字节一致。
+String dictionaryMediaKeyFor(String credential) {
+  final Digest mac = Hmac(
+    sha256,
+    utf8.encode(credential),
+  ).convert(utf8.encode(_kDictionaryMediaKeyLabel));
+  return '$kDictionaryMediaKeyScheme.'
+      '${base64Url.encode(mac.bytes).replaceAll('=', '')}';
 }
 
 /// 把 [file] 的字节流式交给响应体，流结束（传完 / 对端断开取消订阅）后删它所在的
@@ -328,12 +430,90 @@ Future<File?> _coverFile(String? path) async {
 /// 本文件既有调用方。
 String _guessContentType(String filePath) => mimeTypeForFilePath(filePath);
 
+/// 互联 host 的 TCP 监听范围。引擎此前只收一个 `allowLan` 布尔，无头端把 `bind`
+/// 压成「是不是 127.0.0.1」，写了具体地址 / `::1` 的配置实际全网卡监听；现在边界
+/// 处直接传类型化的范围，「是否只听本机」也只从这里判一次。
+sealed class FushiListenScope {
+  const FushiListenScope();
+
+  /// 只听 127.0.0.1（`allowLan: false`）。
+  const factory FushiListenScope.loopbackV4() = FushiListenLoopbackV4;
+
+  /// `allowLan: true`：明文只听 anyIPv4；TLS 双栈 anyIPv6（`v6Only:false`），
+  /// 绑不上回落 anyIPv4。
+  const factory FushiListenScope.lan() = FushiListenLan;
+
+  /// 精确绑定这一个地址（明文与 TLS 相同）；地址不在本机网卡上时启动失败，
+  /// 不回落全网卡。
+  const factory FushiListenScope.exact(InternetAddress address) =
+      FushiListenExact;
+
+  /// 只在本机回环上可达（不枚举网卡地址、不开 P2P 隧道）。
+  bool get isLoopbackOnly;
+}
+
+/// 见 [FushiListenScope.loopbackV4]。
+final class FushiListenLoopbackV4 extends FushiListenScope {
+  const FushiListenLoopbackV4();
+
+  @override
+  bool get isLoopbackOnly => true;
+}
+
+/// 见 [FushiListenScope.lan]。
+final class FushiListenLan extends FushiListenScope {
+  const FushiListenLan();
+
+  @override
+  bool get isLoopbackOnly => false;
+}
+
+/// 见 [FushiListenScope.exact]。
+final class FushiListenExact extends FushiListenScope {
+  const FushiListenExact(this.address);
+
+  final InternetAddress address;
+
+  @override
+  bool get isLoopbackOnly => address.isLoopback;
+
+  /// [other] 是不是同一个地址（按类型 + 原始字节比，不依赖具体实现类的 `==`）。
+  bool matches(InternetAddress other) =>
+      other.type == address.type &&
+      _sameBytes(other.rawAddress, address.rawAddress);
+
+  static bool _sameBytes(List<int> a, List<int> b) {
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+}
+
+/// 只保留 [address] 这一条地址的网卡视图（精确监听时公布的地址集）。
+final class _ListenAddressNic implements NetworkInterface {
+  _ListenAddressNic(this._nic, this.addresses);
+
+  final NetworkInterface _nic;
+
+  @override
+  final List<InterfaceAddress> addresses;
+
+  @override
+  String get name => _nic.name;
+
+  @override
+  int get index => _nic.index;
+}
+
 class FushiSyncServer {
   FushiSyncServer({
     required String syncDataDir,
     required int port,
     required String token,
     bool allowLan = false,
+    FushiListenScope? listenScope,
     FushiRemoteLookupService? remoteLookupService,
     FushiRemoteMiningService? miningService,
     FushiRemoteHistoryService? historyService,
@@ -355,11 +535,16 @@ class FushiSyncServer {
     FushiRemoteGameStreamService? gameStreamService,
     VideoRemoteService? videoRemoteService,
     @visibleForTesting BlurayClipRelayPool? blurayClipRelays,
-  }) : syncDataDir = p.join(syncDataDir, 'sync-data'),
+  }) : assert(listenScope == null || !allowLan, 'listenScope 与 allowLan 只给一个'),
+       syncDataDir = p.join(syncDataDir, 'sync-data'),
        _blurayClipRelays = blurayClipRelays ?? BlurayClipRelayPool(),
        _requestedPort = port,
        _token = token,
-       _allowLan = allowLan,
+       _listenScope =
+           listenScope ??
+           (allowLan
+               ? const FushiListenScope.lan()
+               : const FushiListenScope.loopbackV4()),
        _securityContext = securityContext,
        _hostFingerprint = hostFingerprint,
        _deviceName = deviceName,
@@ -383,7 +568,7 @@ class FushiSyncServer {
   final String syncDataDir;
   final int _requestedPort;
   final String _token;
-  final bool _allowLan;
+  final FushiListenScope _listenScope;
 
   /// 非 null 时 server 起 HTTPS（shelf 透传给 HttpServer.bindSecure）；null 时
   /// 走明文 HTTP 老路径，行为零变化（TLS 默认关，Never break userspace）。
@@ -454,6 +639,9 @@ class FushiSyncServer {
     audioTokens: _audioTokens,
     lookup: _remoteLookupService,
     mining: _miningService,
+    // BUG-4393：音频 id 记签发凭据，取字节时对照当前快照（吊销即连带作废）。
+    issuerOf: _requestCredentialFingerprint,
+    issuerValid: _issuerStillValid,
   );
 
   final Map<String, _VideoStreamToken> _videoStreamTokens =
@@ -480,13 +668,39 @@ class FushiSyncServer {
   final Map<String, FushiPairSession> _pairSessions =
       <String, FushiPairSession>{};
 
-  /// TODO-961 M3：PIN 爆破限速器。按来源（client 自报 deviceId，回退来源 IP）聚合
-  /// PIN 校验失败；同一来源在滑动窗口内累计到阈值即锁定退避一段时间，期间 confirm
+  /// TODO-961 M3：PIN 爆破限速器。按来源（IP，IPv6 按 /64；隧道按 NodeId。不认自报
+  /// deviceId，BUG-4391）聚合 PIN 校验失败；同一来源在滑动窗口内累计到阈值即锁定退避一段时间，期间 confirm
   /// 直接被拒（不再触碰 PIN 比对）。粒度选「来源」而非「会话」的理由见
   /// [FushiPinRateLimiter] 文档：[FushiPairSession.consumed] 已让单会话只能撞一次，
   /// 真正的爆破面是不断开新会话逐个撞——只有按来源聚合才挡得住。纯内存态，随
   /// [_prunePairSessions] 一并 prune 防泄漏；server 重启即清空。
   final FushiPinRateLimiter _pinRateLimiter = FushiPinRateLimiter();
+
+  /// BUG-4391：按来源类别的 PIN 失败总预算。换来源（IPv6 前缀、多台机器）绕得过
+  /// [_pinRateLimiter]，绕不过这里；分类别是为了公网被刷锁时局域网 / 隧道照常配对。
+  final Map<FushiPairOriginClass, FushiPinFailureBudget> _pinBudgets =
+      <FushiPairOriginClass, FushiPinFailureBudget>{
+        for (final FushiPairOriginClass c in FushiPairOriginClass.values)
+          c: FushiPinFailureBudget(),
+      };
+
+  /// 当前因 PIN 失败过多而锁定的来源类别及各自的解锁时刻（BUG-4391）；只含锁定中的。
+  Map<FushiPairOriginClass, DateTime> get pairingLockouts {
+    final DateTime now = _now();
+    return <FushiPairOriginClass, DateTime>{
+      for (final MapEntry<FushiPairOriginClass, FushiPinFailureBudget> e
+          in _pinBudgets.entries)
+        if (e.value.isLockedOut(now)) e.key: e.value.lockedUntil!,
+    };
+  }
+
+  /// 管理员解除配对锁定（BUG-4391）：清掉全部类别预算与按来源的限速记录。
+  void resetPairingLockout() {
+    for (final FushiPinFailureBudget b in _pinBudgets.values) {
+      b.reset();
+    }
+    _pinRateLimiter.reset();
+  }
 
   HttpServer? _server;
 
@@ -499,20 +713,40 @@ class FushiSyncServer {
 
   /// TODO-961 M1: host 生成 6 位 PIN 并喂给审批弹窗显示的供给器。pair/v2 创建会话时
   /// 调用一次拿到本会话 PIN（同一 PIN 显示给用户、又用于 confirm 时重算比对）。
-  /// null（无 UI 接线）时 server 自行用 [FushiPairingProtocol.generatePin] 兜底，
-  /// 但因 PIN 不显示给任何人，pinRequired=true 的会话将无法被 confirm（安全侧默认拒）。
+  /// null（无 UI 接线）时 server 自行用 [FushiPairingProtocol.generatePin] 兜底。
+  ///
+  /// 只在 pinRequired 的非票据会话上、来源锁定检查之后调用；返回值写进会话并经
+  /// [FushiPairRequest.pin] 交给 [onPairRequest]。它只是**供给器**：宿主不得借它
+  /// 存「当前 PIN」之类的共享状态——并发会话会互相覆盖（BUG：PIN 单槽被他人顶掉）。
   String Function(FushiPairSession session)? onPairPinGenerated;
 
   /// TODO-961 M1: host 偏好「LAN 自动发现也要 PIN」的供给器（默认 false=自家免）。
   /// 注入而非直读 DB，保持 server 对存储层无依赖、可单测。
   Future<bool> Function()? lanRequiresPinProvider;
 
+  /// BUG-4390：回环 TCP 对端（127/8、::1）是否算局域网来源。app 保持 true（同机
+  /// 多实例 / 本机联调）；无头端设 false——经回环进来的几乎都是本机反代 / 穿透
+  /// （frp TCP 模式不加转发头），把它当 LAN 会让公网请求免 PIN。
+  bool loopbackPeerIsLan = true;
+
+  /// BUG-4391：pinRequired 会话的 [onPairRequest] 批准是不是人点的。app 是（弹审批框），
+  /// 无头端不是（自动放行、PIN 本身就是人因）。人工批准过的会话不会被会话上限淘汰——
+  /// 攻击者没法不经主人点头就占住它们；自动批准的会话则谁都能刷出来，必须可淘汰。
+  bool pinApprovalIsManual = true;
+
+  /// BUG-4390：可信反代地址（IP / CIDR）供给器，每请求现读；null = 没有。TCP 对端
+  /// 命中时才读转发头里的真实来源，**只**用于限速键与展示 IP，不让任何请求变回局域网
+  /// （带转发头的请求恒按公网）。条目非法时按空集处理——校验在配置加载处做。
+  List<String> Function()? trustedProxiesProvider;
+
   /// TODO-1330 / BUG：pinRequired 会话的 client 提交了 confirm（PIN 已被对方读到并
   /// 用于算 proof）时回调一次，让 host UI 关掉那个「一直显示 PIN、等对方输入」的审批
   /// 弹窗。修的是「host 点允许即关窗抹掉 PIN → client 还没输就看不到 PIN」的时序死锁：
   /// host 点允许后弹窗改为常驻显示 PIN，直到本回调（或用户手动关 / TTL 超时）才收起。
   /// 免 PIN 会话不涉及（本就没有常驻 PIN 弹窗），故仅 pinRequired 分支触发。
-  void Function()? onPairSessionResolved;
+  /// 参数是被解决的会话 id（= [FushiPairRequest.sessionId]）：宿主只收起该会话的
+  /// 弹窗 / pending 条目，别的会话的 confirm / 过期不得收起它。
+  void Function(String sessionId)? onPairSessionResolved;
 
   /// TODO-961 M1b: confirm 成功后把新派发的 per-peer 凭据交给 host 落库（写
   /// `fushi_paired_peers` 表）。注入而非直连 DB，保持 server 存储层无依赖、可单测。
@@ -537,10 +771,20 @@ class FushiSyncServer {
   /// host 自己的复习数据刚发布到本机同步目录（app 侧在本机目录一轮上传了段之后调）。
   void notifySrsChanged() => srsChanges.bump();
 
+  /// host 自己此刻是否已加入复习同步 v2（[kSrsSyncStatusPath]，BUG-4320），每个请求现读。app 装配为「首次 v2 同步已
+  /// 确认」；null（无头服务端 / 旧调用方 / 单测：没有首次确认这一步）→ 端点 404，客户端按「不报告」处理。
+  bool Function()? srsSync2Joined;
+
   /// TODO-961 M1b: 供给当前全部未吊销的 per-peer token（auth 校验入站请求时，除共享
   /// [_token] 外接受任一 peer token）。注入而非直连 DB。首次 auth 时惰性加载并缓存；
   /// [invalidatePeerTokenCache] 在配对/吊销后清缓存促其下次重载。null 时只认共享 token。
   Future<Set<String>> Function()? pairedPeerTokensProvider;
+
+  /// BUG-4393：供给全部未吊销的已配对设备凭据（peerId → token）。优先于
+  /// [pairedPeerTokensProvider]：peerId 以 [kFushiLegacyPeerIdPrefix] 开头的 token
+  /// 只过普通鉴权（与共享 token 同权），其余还过只认已配对设备的敏感服务门。
+  /// 缓存 / 失效语义同 [pairedPeerTokensProvider]。
+  Future<Map<String, String>> Function()? pairedPeerCredentialsProvider;
 
   /// 「跟随已配对设备自动登录 Fushi 账户」的 host 能力（app 装配，见
   /// `interconnect_leaderboard_link.dart`）。null（旧调用方 / 无头服务端 / 单测）→
@@ -576,9 +820,11 @@ class FushiSyncServer {
       aiRelaySettings != null && readInterconnectAiRelayEnabled(_prefs);
 
   /// 本 host 的稳定设备 id（与 LAN 广播 TXT `id=` 同值）。非 null 时
-  /// `/api/capabilities` 公布 `hostId` + `addresses`，client 据此把同一台 host 的
-  /// 多条地址归为一组、自动学习新地址（docs/specs/2026-09-28-interconnect-remote-reach.md
-  /// §1）。null（老调用方 / 单测）→ 不公布，client 行为同升级前。
+  /// `/api/ping`（无鉴权）回传 `hostId` 供 client 选路时核对身份；地址集走需鉴权的
+  /// `/api/host/addresses`（`{hostId, addresses}`），不进 capabilities。client 据此把
+  /// 同一台 host 的多条地址归为一组、自动学习新地址
+  /// （docs/specs/2026-09-28-interconnect-remote-reach.md §1）。null（老调用方 /
+  /// 单测）→ 不回传、`/api/host/addresses` 404，client 行为同升级前。
   String? hostId;
 
   /// 「立即给这个视频补字幕」（`POST /api/library/videos/<id>/subtitle/backfill`）。
@@ -603,10 +849,10 @@ class FushiSyncServer {
     now: _now,
   );
 
-  /// 用户在 host 上填的公网 / 反代 / DDNS 地址（每次 capabilities 实时读）。
+  /// 用户在 host 上填的公网 / 反代 / DDNS 地址（每次 `/api/host/addresses` 实时读）。
   Future<List<String>> Function()? publicUrlsProvider;
 
-  /// 网卡之外的附加地址（P2P 节点等），每次 capabilities 实时读。
+  /// 网卡之外的附加地址（P2P 节点等），每次 `/api/host/addresses` 实时读。
   List<InterconnectHostAddress> Function()? extraAddressesProvider;
 
   /// 测试缝：替换网卡枚举。
@@ -651,10 +897,12 @@ class FushiSyncServer {
     );
   }
 
-  /// 本 host 当前可公布的地址集。只在 LAN 开放时有意义——仅本机监听时公布网卡
-  /// 地址等于告诉 client 一堆连不上的地址。
+  /// 本 host 当前可公布的地址集。仅本机监听时不枚举网卡——公布网卡地址等于告诉
+  /// client 一堆连不上的地址；但 `publicUrls`（本机反代 / 穿透的对外地址）与
+  /// `extra`（P2P）不经网卡监听口，照样可达，照常公布（BUG-4391：VPS 上
+  /// `bind: 127.0.0.1` + 反代的无头端签发的配对链接否则一个地址都没有）。
   Future<List<InterconnectHostAddress>> _hostAddresses() async {
-    if (!_allowLan || _server == null) return const <InterconnectHostAddress>[];
+    if (_server == null) return const <InterconnectHostAddress>[];
     return listInterconnectHostAddresses(
       port: port,
       tls: _securityContext != null,
@@ -663,19 +911,52 @@ class FushiSyncServer {
               Future<List<String>>.value(const <String>[])),
       extra:
           extraAddressesProvider?.call() ?? const <InterconnectHostAddress>[],
-      interfaceLister: interfaceLister,
+      interfaceLister: listensBeyondLoopback
+          ? _listenedInterfaces
+          : () async => const <NetworkInterface>[],
     );
   }
 
-  /// [pairedPeerTokensProvider] 结果的缓存（避免每个请求打一次 DB）。null=未加载。
-  /// 配对新增 / 吊销后经 [invalidatePeerTokenCache] 置 null，下次 auth 重新拉取。
-  Set<String>? _cachedPeerTokens;
+  /// 网卡地址里真正有监听口的那些：精确监听时只剩那一条地址，其余照常。
+  Future<List<NetworkInterface>> _listenedInterfaces() async {
+    final List<NetworkInterface> nics =
+        await (interfaceLister ??
+            () => NetworkInterface.list(includeLinkLocal: false))();
+    final FushiListenScope scope = _listenScope;
+    if (scope is! FushiListenExact) return nics;
+    return <NetworkInterface>[
+      for (final NetworkInterface nic in nics)
+        if (nic.addresses.any(scope.matches))
+          _ListenAddressNic(nic, <InterfaceAddress>[
+            for (final InterfaceAddress a in nic.addresses)
+              if (scope.matches(a)) a,
+          ]),
+    ];
+  }
+
+  /// [pairedPeerTokensProvider] 结果的快照缓存（避免每个请求打一次 DB）。null=未加载。
+  /// 配对新增 / 吊销后经 [invalidatePeerTokenCache] 置 null 并推进
+  /// [_credentialGeneration]，下次 auth 重新拉取。
+  _CredentialSnapshot? _credentials;
+
+  /// 凭据代际：每次 invalidate 加一。在飞加载完成时若代际已变，说明结果读于
+  /// 吊销之前，丢弃不写回缓存。
+  int _credentialGeneration = 0;
+
+  /// 单飞加载槽：并发请求共用同一次 provider 调用；失败与过期都不留在槽里。
+  Future<_CredentialSnapshot>? _credentialsLoading;
 
   bool get isRunning => _server != null;
 
   /// 是否以 HTTPS 对外服务（P2P 地址据此带 `?tls=1`）。
   bool get usesTls => _securityContext != null;
   int get port => _server?.port ?? _requestedPort;
+
+  /// 实际监听的地址（未运行时 null）。启动日志打这个，而不是配置值。
+  InternetAddress? get boundAddress => _server?.address;
+
+  /// 监听口是否在本机回环之外可达（据此公布网卡地址、决定能否开 P2P 隧道）。
+  bool get listensBeyondLoopback => !_listenScope.isLoopbackOnly;
 
   static String generateToken() {
     final random = Random.secure();
@@ -711,6 +992,7 @@ class FushiSyncServer {
 
   shelf.Handler _buildHandler() => const shelf.Pipeline()
       .addMiddleware(_gzipTextMiddleware())
+      .addMiddleware(bodyLimitMiddleware())
       .addMiddleware(_authMiddleware())
       .addHandler(_handleRequest);
 
@@ -805,7 +1087,7 @@ class FushiSyncServer {
     await server?.close(force: true);
   }
 
-  /// 仅本机 → loopback v4。允许 LAN → IPv6 双栈（`::`、`v6Only:false`，同一个端口
+  /// 仅本机 → loopback v4。精确地址 → 只绑该地址。允许 LAN → IPv6 双栈（`::`、`v6Only:false`，同一个端口
   /// 同时收 v4 与 v6）：国内家宽普遍没有公网 v4 却有公网 v6，只监听 v4 等于把这
   /// 条最便宜的直连路堵死。v4 对端在双栈 socket 上报成 `::ffff:a.b.c.d`，由
   /// [FushiPairingProtocol.unmapIPv4MappedAddress] 还原。
@@ -814,13 +1096,25 @@ class FushiSyncServer {
   /// 边界，回落只监听 v4——行为与升级前一致。端口被占不在此回落：它在 v4 上同样会
   /// 撞，交给调用方报 [SyncServerPortInUseException]。
   Future<HttpServer> _bindListener(shelf.Handler handler) async {
-    if (!_allowLan) {
-      return shelf_io.serve(
-        handler,
-        InternetAddress.loopbackIPv4,
-        _requestedPort,
-        securityContext: _securityContext,
-      );
+    final FushiListenScope scope = _listenScope;
+    switch (scope) {
+      case FushiListenLoopbackV4():
+        return shelf_io.serve(
+          handler,
+          InternetAddress.loopbackIPv4,
+          _requestedPort,
+          securityContext: _securityContext,
+        );
+      case FushiListenExact(:final InternetAddress address):
+        // 精确监听：绑不上（地址不在本机 / 端口被占）照常抛，不回落全网卡。
+        return shelf_io.serve(
+          handler,
+          address,
+          _requestedPort,
+          securityContext: _securityContext,
+        );
+      case FushiListenLan():
+        break;
     }
     // 明文 host 维持升级前的只监听 v4（在 NAT 之后）：双栈会让它在全局 IPv6 上
     // 直接对公网可达，token 与数据明文跑在公网上，用户却没有任何开关。开了 TLS
@@ -911,12 +1205,14 @@ class FushiSyncServer {
   /// 使下一次 [_validateAuth] 从 [pairedPeerTokensProvider] 重新拉取最新集合。
   /// controller 在 upsert / revoke 后调它，保证吊销即时生效、新 token 立即受理。
   void invalidatePeerTokenCache() {
-    _cachedPeerTokens = null;
+    _credentialGeneration++;
+    _credentials = null;
+    _credentialsLoading = null;
   }
 
   Future<shelf.Response> _handleRequest(shelf.Request request) async {
     final method = request.method.toUpperCase();
-    final reqPath = Uri.decodeFull('/${request.url.path}');
+    final String reqPath = canonicalRequestPath(request);
     if (reqPath == '/api/pair') {
       return _handlePair(request);
     }
@@ -983,6 +1279,8 @@ class FushiSyncServer {
         'app': 'fushi',
         'ready': true,
         'port': port,
+        // BUG-4394：能力位——扩展见到它才把词典图片 URL 的 token 换成派生 key。
+        'dictionaryMediaKey': kDictionaryMediaKeyScheme,
       });
     }
     if (reqPath == '/api/ping') {
@@ -990,12 +1288,26 @@ class FushiSyncServer {
       return _handlePing();
     }
     // 复习同步快速通道（设计 §6.3）：令牌变了立刻回，没变挂到下一次写入或超时。鉴权走上方 middleware。
+    // `own`：这段推进全是提问的这台设备自己写 head 引起的（BUG-4382，见 [SrsChangePoll.ownOnly]）。
     if (reqPath == '/api/srs/changes') {
       if (method != 'GET') return shelf.Response(405);
-      final int token = await srsChanges.waitAfter(
+      final SrsChangePoll poll = await srsChanges.poll(
         int.tryParse(request.url.queryParameters['after'] ?? ''),
+        reader: _pairedIdentity(request.headers['authorization']),
       );
-      return jsonResponse(<String, dynamic>{'token': token});
+      return jsonResponse(<String, dynamic>{
+        'token': poll.token,
+        'own': poll.ownOnly,
+      });
+    }
+    // 复习同步 v2 的参与状态（BUG-4320）：客户端一轮跑完问 host 自己加入了没有。鉴权走上方 middleware。
+    if (reqPath == kSrsSyncStatusPath) {
+      if (method != 'GET') return shelf.Response(405);
+      final bool Function()? joined = srsSync2Joined;
+      if (joined == null) {
+        return shelf.Response.notFound('SRS sync status not reported');
+      }
+      return jsonResponse(<String, dynamic>{'joined': joined()});
     }
     // 远程复习库：已配对设备不下载卡组，直接在本机的复习库上复习。鉴权走上方 middleware。
     if (reqPath.startsWith(kSrsRemoteStorePathPrefix)) {
@@ -1142,7 +1454,13 @@ class FushiSyncServer {
       if (_libraryService is! VideoDiscShareHost) {
         return shelf.Response.notFound('Disc share off');
       }
-      return handleDiscShareRequest(_discShares, request, method, reqPath);
+      return handleDiscShareRequest(
+        _discShares,
+        request,
+        method,
+        reqPath,
+        issuerValid: _issuerStillValid,
+      );
     }
     if (reqPath == '/api/library/aggregate') {
       return _handleLibraryAggregate(request, method, reqPath);
@@ -1177,8 +1495,9 @@ class FushiSyncServer {
     // 大小写折叠——同一本书在 Windows host 落成小写、在 Linux/Android host 保留原
     // 大小写，跨平台同步身份就此错位。故真实文件操作绝不能用 canonicalize 的结果。
     final fsPath = p.normalize(p.join(syncDataDir, reqPath.substring(1)));
-    // 路径穿越围栏：canonicalize 的大小写折叠/符号链接解析只用于"是否逃出根目录"
-    // 的判定，不参与真实读写，故对身份大小写无影响。
+    // 路径穿越围栏：p.canonicalize 只做词法规整与大小写折叠，**不解析符号链接**；
+    // 它只用于"是否逃出根目录"的判定，不参与真实读写，故对身份大小写无影响。同步根
+    // 里的符号链接只能由 host 本机用户创建（WebDAV 没有创建链接的方法），故不在此防。
     final canonicalFsPath = p.canonicalize(fsPath);
     final canonicalRoot = p.canonicalize(syncDataDir);
     if (canonicalFsPath != canonicalRoot &&
@@ -1222,8 +1541,18 @@ class FushiSyncServer {
     }
   }
 
+  /// 已配对设备的身份（它的专属口令，BUG-4382 长轮询分辨「是不是自己写的」）：没带鉴权、或用的是共享口令（多台设备
+  /// 共用，分不出是谁）时为 null。只在内存里比对，不落盘、不进日志。
+  String? _pairedIdentity(String? authHeader) {
+    if (authHeader == null) return null;
+    final String? password = _basicPassword(authHeader);
+    return password == null || password.isEmpty || password == _token
+        ? null
+        : password;
+  }
+
   /// 写成功（2xx）才回调 [onClientWrite]；回调异常不影响响应。[published] = 这次写带来了新内容（PUT）：
-  /// 只有它推进复习同步的长轮询令牌。删旧 head（客户端每发一个新 head 就清两代前的）没有任何新数据，
+  /// 只有它推进复习同步的长轮询令牌。删旧 head（客户端每发一个新 head 就按内核给的清单清掉更早的）没有任何新数据，
   /// 以前也推进令牌，等于每轮多唤醒一次全部设备。
   shelf.Response _reportClientWrite(
     String reqPath,
@@ -1238,7 +1567,7 @@ class FushiSyncServer {
         // 写，head 落地才说明这一轮的段齐了，只在这时唤醒长轮询。
         reqPath.contains('/fushi-srs/') &&
         p.posix.basename(reqPath).startsWith('head-')) {
-      srsChanges.bump();
+      srsChanges.bump(writer: _pairedIdentity(authHeader));
     }
     final void Function(String relativePath)? cb = onClientWrite;
     if (cb != null && response.statusCode >= 200 && response.statusCode < 300) {
@@ -1582,6 +1911,14 @@ Future<String> videoFileEtag(File file) async {
 ///
 /// 每份导出同时算一次整包 SHA-256（[reprDigestFor]，后台 isolate 跑，不占 host
 /// 所在 isolate），随响应发 `Repr-Digest`，供 client 续传拼完后做整体校验。
+///
+/// **内容版本**（[obtain] 的 `version`）：调用方能说出「这一项此刻的内容版本」时
+/// （有声书：`audiobookContentState` 的 revision），缓存只在版本相同时命中——host
+/// 上换过音频 / 字幕的书，下一次普通下载就重新打包，不必等 TTL 闲置换代，也不靠
+/// 每条写入路径记得通知缓存。换代时正在发送的旧包不受影响：它的响应体早已打开那份
+/// 文件，照常发完（旧文件删不掉的留给 [dispose]）；它之后的续传请求带的是旧 ETag，
+/// 撞上新包的 ETag 不匹配，`If-Range` 规则让它收到 200 全量新包、从 0 重下
+/// （[serveFileWithRange]）——干净地失败重来，绝不把两代字节拼在一起。
 class ExportPackageCache {
   ExportPackageCache({this.ttl = const Duration(minutes: 15)});
 
@@ -1592,6 +1929,16 @@ class ExportPackageCache {
 
   /// key → 最后一次使用（命中 / 生产 / 流式发送）时刻；滑动 TTL 的依据。
   final Map<String, DateTime> _lastUsed = <String, DateTime>{};
+
+  /// key → 当前缓存那份是按哪个内容版本导出的（[obtain] 的 `version`；没给版本的
+  /// 项不在表里）。
+  final Map<String, String> _versions = <String, String>{};
+
+  /// key → 当前 [_latest] 那份出自第几次开始的导出（[_produce] 的启动序号）。
+  /// 按版本去重后同一 key 可能有两次导出并行（内容刚换过）：后开始的那次代表更新的
+  /// 内容，先开始、后打完的旧导出不得把它顶掉。
+  final Map<String, int> _installedStart = <String, int>{};
+  int _startSeq = 0;
 
   /// 缓存文件路径 → `Repr-Digest` 头值（`sha-256=:<base64>:`）。
   final Map<String, String> _reprDigests = <String, String>{};
@@ -1614,14 +1961,18 @@ class ExportPackageCache {
   /// 取 (kind,id) 的缓存导出文件；TTL 内直接命中，否则经 [export] 重新打包。
   /// [export] 返回的临时文件（连同其父临时目录）所有权移交本缓存。
   ///
+  /// [version]（可选）：这一项此刻的内容版本。给了就只在缓存那份是同一版本导出的
+  /// 时候命中，版本不同当 miss 重新打包（见类注释「内容版本」）；不给 = 只按 TTL。
+  ///
   /// 命中判据走 async stat（包下载端点在 host 所在 isolate 上跑，同步 stat 会和别的
   /// 请求抢 isolate，BUG-3756）。await 之后再读 [_inFlight] / [_latest]：两段之间别的
   /// 请求可能已换代，命中判据只认 await 后仍是「当前代」的那份。
   Future<File> obtain(
     String kind,
     String id,
-    Future<File> Function() export,
-  ) async {
+    Future<File> Function() export, {
+    String? version,
+  }) async {
     final String key = '$kind|$id';
     final File? hit = _latest[key];
     if (hit != null) {
@@ -1631,7 +1982,8 @@ class ExportPackageCache {
         if (identical(_latest[key], hit) &&
             stat.type == FileSystemEntityType.file &&
             lastUsed != null &&
-            DateTime.now().difference(lastUsed) < ttl) {
+            DateTime.now().difference(lastUsed) < ttl &&
+            (version == null || _versions[key] == version)) {
           _lastUsed[key] = DateTime.now();
           return hit;
         }
@@ -1639,18 +1991,24 @@ class ExportPackageCache {
         // stat 失败：当 miss 处理，走重导出。
       }
     }
+    // 在跑的导出按「key + 版本」去重：内容刚换过时，新版本的请求不能搭上旧版本
+    // 那次还没打完的导出。
+    final String flightKey = version == null ? key : '$key#$version';
     // 注意回调必须用块体：`=> _inFlight.remove(key)` 会把被移除的 Future（即本
     // whenComplete 链自身）作为回调返回值交还 whenComplete，而 whenComplete 对
     // 返回的 Future 会等其完成——自己等自己，永久死锁。
-    return _inFlight[key] ??= _produce(key, export).whenComplete(() {
-      _inFlight.remove(key);
-    });
+    return _inFlight[flightKey] ??= _produce(key, export, version).whenComplete(
+      () {
+        _inFlight.remove(flightKey);
+      },
+    );
   }
 
   /// 让 (kind,id) 的缓存导出作废，下一次 [obtain] 必定重新打包。旧文件 best-effort
   /// 删除（Windows 上被正在流式的请求占用则删不掉，留给 [dispose]）。
   Future<void> invalidate(String kind, String id) async {
     _lastUsed.remove('$kind|$id');
+    _versions.remove('$kind|$id');
     final File? old = _latest.remove('$kind|$id');
     if (old == null) return;
     _reprDigests.remove(old.path);
@@ -1680,7 +2038,12 @@ class ExportPackageCache {
     return '"pkg-$seq-${stat.size}-${stat.modified.millisecondsSinceEpoch}"';
   }
 
-  Future<File> _produce(String key, Future<File> Function() export) async {
+  Future<File> _produce(
+    String key,
+    Future<File> Function() export,
+    String? version,
+  ) async {
+    final int start = ++_startSeq;
     final File exported = await export();
     // 保留原始文件名（扩展名决定 Content-Type，如 .epub → application/epub+zip），
     // 前缀序号防同名不同 key 撞车。
@@ -1706,9 +2069,20 @@ class ExportPackageCache {
       // 只损失整体校验（client 退回长度校验），不影响下载本身。
       engineLog.log('ExportPackageCache.reprDigest', e, stack);
     }
+    // 比这次晚开始的导出已经装进缓存：那份是更新的内容（版本换过之后才开始的），
+    // 这份更旧。不能把它顶回 [_latest]——那会让缓存退回旧版本，还会删掉新那份，而
+    // 新那份的请求方可能还没打开它（拿到 File 与开流之间还有 await）。这份照常交给
+    // 本次请求方发完；文件留在缓存目录，[dispose] 整目录回收。
+    if ((_installedStart[key] ?? 0) > start) return target;
+    _installedStart[key] = start;
     final File? old = _latest[key];
     _latest[key] = target;
     _lastUsed[key] = DateTime.now();
+    if (version == null) {
+      _versions.remove(key);
+    } else {
+      _versions[key] = version;
+    }
     if (old != null) {
       _reprDigests.remove(old.path);
       try {
@@ -1725,6 +2099,8 @@ class ExportPackageCache {
     _latest.clear();
     _inFlight.clear();
     _lastUsed.clear();
+    _versions.clear();
+    _installedStart.clear();
     _reprDigests.clear();
     final Directory? root = _root;
     _root = null;
@@ -1762,15 +2138,26 @@ class _DavEntry {
 class _VideoStreamToken {
   const _VideoStreamToken({
     required this.videoId,
+    required this.issuer,
     required this.createdAt,
     this.episodeIndex = 0,
     this.transcodeProfile,
     this.transcodeAudioStreamIndex,
     this.transcodeDurationMs,
+    this.ticket,
   });
+
+  /// 随哪张流票一起释放（BUG-4461）。null = 这张 token 本身就是流票（`/streamurl`
+  /// 回给 client 的 `ticket` 即它的值）；光盘制卡 token 填主 token 的值，client 释放
+  /// 播放票时一并作废。
+  final String? ticket;
 
   /// 绑定的视频 id（即 VideoBooks.bookUid，可含 `/`）。
   final String videoId;
+
+  /// 签发请求所用凭据的指纹（`_credentialFingerprint`）。每次取流都对照当前凭据
+  /// 快照，签发凭据被吊销即作废（BUG-4393）。
+  final String issuer;
   final DateTime createdAt;
 
   /// 远端播放列表集下标（TODO-885）；单视频 / 当前集恒 0。

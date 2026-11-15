@@ -11,6 +11,7 @@ import 'package:fushi/src/anki/anki_deck_reposition_runner.dart';
 import 'package:fushi/src/anki/delegating_anki_repository.dart';
 import 'package:fushi/src/anki/auto_reposition_anki_repository.dart';
 import 'package:fushi/src/anki/anki_media_dedup_runner.dart';
+import 'package:fushi/src/anki/mined_expression_cache.dart';
 import 'package:fushi/src/anki/lapis_template_service.dart';
 import 'package:fushi/src/anki/anki_video_template_service.dart';
 import 'package:fushi/src/anki/pending_mining/pending_mine_store.dart';
@@ -752,9 +753,14 @@ final ankiRepositoryProvider = Provider<BaseAnkiRepository>((ref) {
     appProvider.select((AppModel m) => m.mineToServerEnabled),
   );
   if (!mineToServer) {
+    // 反馈 JAEwvc6Lmr：离线已制卡缓存包在本机后端最里层——待发队列补发、自动重排
+    // 都经过它，补发进 Anki 的卡同样落进缓存；Anki 连不上时查词照样画 ✓。
+    final BaseAnkiRepository cached = MinedExpressionCacheAnkiRepository(
+      inner: local,
+    );
     return _withSrsMining(
       ref,
-      _withPendingQueue(ref, _withAutoReposition(ref, local)),
+      _withPendingQueue(ref, _withAutoReposition(ref, cached)),
       followWorkSession: true,
       background: true,
     );
@@ -762,10 +768,10 @@ final ankiRepositoryProvider = Provider<BaseAnkiRepository>((ref) {
   final AppModel appModel = ref.read(appProvider);
   final RemoteMiningAnkiRepository remote = RemoteMiningAnkiRepository(
     local: local,
-    client: appModel.createRemoteMiningClient(
-      onTargetUnavailable: (_) =>
-          FushiToast.show(msg: t.anki_mine_to_server_target_reset),
-    ),
+    // 「保存到」被主机退回默认时的提示跟着制卡结果走（RemoteMiningAnkiRepository 填
+    // MineOutcome.notice）：单独弹一条会被紧随其后的结果提示顶掉（BUG-4287）。
+    client: appModel.createRemoteMiningClient(),
+    targetResetNotice: () => t.anki_mine_to_server_target_reset,
     // BUG-1185：主机拒绝互联 token 时查重根本没跑成。bool 契约表达不了「不知道」，
     // 所以在这里把它变成用户可见的失败提示，而不是让用户收到一个静默的「不重复」。
     onAuthRejected: (String message) =>

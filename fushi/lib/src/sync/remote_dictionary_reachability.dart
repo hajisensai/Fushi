@@ -1,11 +1,17 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:fushi/src/sync/interconnect_peer_addresses.dart'
+    show
+        addInterconnectReachabilityObserver,
+        removeInterconnectReachabilityObserver,
+        reportInterconnectCandidateReached,
+        reportInterconnectCandidateUnreachable;
 import 'package:fushi/src/sync/sync_repository.dart'
     show FushiClientUrl, remoteDictionaryHostIdOf;
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
-/// 词典服务器被判不可达后的**再探测间隔**（BUG-1302 的失败冷却窗，BUG-4275 起改作
+/// 词典服务器被判不可达后的**再探测间隔**（BUG-1302 的失败冷却窗，BUG-4692 起改作
 /// 后台再探测的节奏）。
 ///
 /// 与音频源的 `kRemoteAudioFailureCooldown`（45s，`word_audio_resolver.dart`）同量级：
@@ -42,33 +48,18 @@ class RemoteDictionaryHostReachability {
   bool get reachable => failingSince == null && lastOkAt != null;
 }
 
-/// 一次互联请求里各候选地址的传输层结局，按 host 归并：任一地址拿到响应 = 可达；
-/// 试过的地址全部失败 = 不可达；没轮到的 host（前面已有候选给出结果）不出现。
-class RemoteHostOutcomes {
-  final Map<String, bool> _reachableByHost = <String, bool>{};
-
-  /// 交给 `InterconnectPostTransport` 的 `onCandidateOutcome`。
-  void add(FushiClientUrl candidate, bool responded) {
-    final String hostId = remoteDictionaryHostIdOf(candidate);
-    _reachableByHost[hostId] = (_reachableByHost[hostId] ?? false) || responded;
-  }
-
-  bool get isEmpty => _reachableByHost.isEmpty;
-
-  Map<String, bool> get reachableByHost =>
-      Map<String, bool>.unmodifiable(_reachableByHost);
-}
-
 /// 后台再探测一台 host：做一次轻量互联往返，结局经 [RemoteDictionaryReachability.record]
 /// 记回来（探测函数自己负责记，追踪器只管什么时候探）。
 typedef RemoteDictionaryHostProbe = Future<void> Function(String hostId);
 
-/// 词典服务器可达性的**唯一真相源**（BUG-4275）。
+/// 词典服务器可达性的**唯一真相源**（BUG-4692）。
 ///
 /// 以前查词路径（`AppModel` 的失败冷却）与目录服务（来源卡片的在线 / 连不上）各记各的：
 /// 目录服务早就判了 host 掉线，查词仍要自己再付一遍「3s × 地址数」；目录刷新成功、
-/// 卡片已显示在线，查词还要等满自己的 45s 冷却。现在两边都把每次往返的结局写进同
-/// 一个实例，也都只读它：
+/// 卡片已显示在线，查词还要等满自己的 45s 冷却。现在结局只有一个来源：互联传输层的
+/// 全局上报点 [reportInterconnectCandidateReached] / [reportInterconnectCandidateUnreachable]
+/// （与选路缓存同一份），本追踪器构造时订阅它、只记承担词典查词的地址
+/// （[FushiClientUrl.isDictionaryLookupCandidate]），两边也都只读它：
 /// * 查词：被判不可达的 host 直接跳过（[shouldSkip]），全部查词 host 都不可达时连远端
 ///   请求都不发，本机结果不等远端；
 /// * 任何一次成功往返（目录刷新、查词、后台探测）立刻把 host 标回可达；
@@ -84,7 +75,16 @@ class RemoteDictionaryReachability {
     DateTime Function() now = DateTime.now,
     Duration reprobeInterval = kRemoteDictionaryFailureCooldown,
   }) : _now = now,
-       _reprobeInterval = reprobeInterval;
+       _reprobeInterval = reprobeInterval {
+    addInterconnectReachabilityObserver(_onInterconnectReport);
+  }
+
+  /// 互联传输层上报的一次候选结局：只记承担词典查词的地址。同一请求里先失败的地址、
+  /// 后成功的同 host 地址按到达顺序记，终态与「任一地址拿到响应 = 可达」一致。
+  void _onInterconnectReport(FushiClientUrl candidate, bool reached) {
+    if (!candidate.isDictionaryLookupCandidate) return;
+    note(remoteDictionaryHostIdOf(candidate), reachable: reached);
+  }
 
   final DateTime Function() _now;
   final Duration _reprobeInterval;
@@ -128,7 +128,7 @@ class RemoteDictionaryReachability {
     return any;
   }
 
-  /// 记下一次请求的按 host 结局（[RemoteHostOutcomes.reachableByHost]）。
+  /// 记下按 host 的结局（host → 是否拿到了响应）。
   ///
   /// [revision] 只在某台 host 的可见状态变了时 +1（新出现、可达 ↔ 不可达）：每次查词
   /// 都会记一次，状态没变还 bump 的话词典管理页每查一次词就重建一遍来源卡片。
@@ -210,8 +210,12 @@ class RemoteDictionaryReachability {
     revision.value++;
   }
 
-  /// 停掉全部后台探测（App 退出）。状态保留，之后查词按「没挂探测函数」的口径。
-  void dispose() => probe = null;
+  /// 停掉全部后台探测并退订互联上报（App 退出）。状态保留，之后查词按「没挂探测
+  /// 函数」的口径。
+  void dispose() {
+    probe = null;
+    removeInterconnectReachabilityObserver(_onInterconnectReport);
+  }
 
   void _scheduleReprobe(String hostId) {
     if (_probe == null) return;

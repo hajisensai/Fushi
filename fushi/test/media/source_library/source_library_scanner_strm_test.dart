@@ -102,6 +102,7 @@ void main() {
 
     final SourceScanSummary summary = await SourceLibraryScanner(
       db,
+      transcribeAudiobook: null,
     ).scan(await _videoSource(db, tmp.path));
     expect(summary.succeeded, isTrue, reason: summary.error ?? '');
 

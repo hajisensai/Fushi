@@ -1,4 +1,5 @@
 import 'package:fushi_core/fushi_core.dart' show BookFormat, EpubBookRow;
+import 'package:fushi_engine/sync/pdf_sync_package.dart' show pdfBookFilePath;
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/utils/misc/reveal_in_file_manager.dart';
@@ -23,7 +24,9 @@ String bookMainFilePath(EpubBookRow row) {
   final BookFormat format = BookFormat.parseOrEpub(row.format);
   return switch (format) {
     BookFormat.epub => row.extractDir,
-    BookFormat.pdf || BookFormat.manga => p.join(row.extractDir, row.epubPath),
+    // PDF 与互联 PDF 通道（导出 / 推送）共用引擎侧同一口径。
+    BookFormat.pdf => pdfBookFilePath(row),
+    BookFormat.manga => p.join(row.extractDir, row.epubPath),
   };
 }
 

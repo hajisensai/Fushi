@@ -252,6 +252,9 @@ Type: files; Name: "{app}\data_root.bootstrap"
 ; 应用内更新提权安装时 Inno 日志写在安装目录（BUG-3567，见 platform_updater.dart
 ; windowsElevatedInstallerLogPath；前缀与 kWindowsElevatedInstallLogPrefix 一致）。
 Type: files; Name: "{app}\fushi-update-install-*.log"
+; 着色器程序磁盘缓存（runner main.cpp ResolveProgramBinaryCacheDirectory，安装目录
+; 可写时放在 exe 旁）。纯缓存，删了下次启动重编一次即可。
+Type: filesandordirs; Name: "{app}\fushi.exe.ShaderCache"
 
 [Run]
 Filename: "{app}\fushi.exe"; Description: "{cm:LaunchProgram,Fushi}"; Flags: nowait postinstall; Check: ShouldLaunchAppAfterInstall

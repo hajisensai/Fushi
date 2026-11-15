@@ -335,6 +335,22 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
     '查询结果快照 JSON（词条文本），无路径。',
   ),
 
+  // ── media_tracking_mappings / media_tracking_suggestions（媒体追踪）────
+  PathRebaseColumn(
+    'MediaTrackingMappings',
+    'linkSource',
+    PathRebaseKind.notAPath,
+    'v145 关联来源标记 manual / id / auto / suggestion（TrackingLinkSource），'
+        '不是来源路径。',
+  ),
+  PathRebaseColumn(
+    'MediaTrackingSuggestions',
+    'detailsJson',
+    PathRebaseKind.notAPath,
+    '远端条目事实 JSON（titles / authors / totalChapters / finalVolume / '
+        'finished，见 toDetailsJson），无路径。',
+  ),
+
   // ── epub_books ────────────────────────────────────────────────────
   PathRebaseColumn(
     'EpubBooks',
@@ -1341,6 +1357,13 @@ final List<PathRebasePref> kPathRebasePrefs = <PathRebasePref>[
     PathRebaseKind.externalUserPath,
     PathValueShape.none,
     '用户本机 mpv 着色器目录，外部路径，不随数据根走。',
+  ),
+  PathRebasePref(
+    'video_subtitle_series_dirs',
+    PathRebaseKind.externalUserPath,
+    PathValueShape.none,
+    '0PZAhFd1RO：按系列记住的字幕文件夹（`{系列键: {dir, template?}}`），dir 是用户'
+        '自己放整季字幕的外部目录，不在 Fushi 数据根下，跟着数据根改写只会把它改坏。',
   ),
   PathRebasePref(
     'audiobook_material_dirs',

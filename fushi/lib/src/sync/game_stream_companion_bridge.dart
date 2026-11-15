@@ -5,6 +5,10 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:fushi/src/models/game_stream_button_profile.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_resource_source.dart';
+import 'package:fushi/src/second_screen/second_screen_pipe.dart';
+
+export 'package:fushi/src/second_screen/second_screen_pipe.dart'
+    show SecondScreenPipe, kSecondScreenInlineMessageUnits;
 
 /// Messages between the stream page (main engine, the single source of truth)
 /// and the companion panel on a second display (its own engine, render only).
@@ -515,7 +519,7 @@ enum GameStreamCompanionMineOutcome {
 }
 
 /// Media reply value: `{bytes, contentType}`, or null when missing. Size is
-/// the pipe's business ([GameStreamCompanionPipe] hands a big reply over as
+/// the pipe's business ([SecondScreenPipe] hands a big reply over as
 /// a file).
 Object? encodeGameStreamCompanionMedia(DictionaryPopupMedia? media) =>
     media == null
@@ -538,102 +542,15 @@ DictionaryPopupMedia? decodeGameStreamCompanionMedia(Object? value) {
 }
 
 // ---------------------------------------------------------------------------
-// The pipe: what actually crosses the process boundary
+// The pipe: [SecondScreenPipe] (shared with the companion)
 // ---------------------------------------------------------------------------
 
-/// Longest message (UTF-16 code units) handed to the relay as is.
-///
-/// Android relays each message as a `Bundle` string in one oneway Binder
-/// transaction. `Bundle.putString` writes UTF-16 (two bytes a unit), and
-/// oneway transactions share an async buffer of about half the 1 MB Binder
-/// buffer with everything else in flight. 64K units (128 KB on the wire)
-/// keeps a burst of messages well inside it; anything longer (a big result
-/// with its dictionary CSS, a large media reply) goes through a file.
-const int kGameStreamCompanionInlineMessageUnits = 64 * 1024;
-
-/// A relayed message that stands for the file after the prefix. Messages
-/// themselves are JSON objects, so they never start with it.
-const String _spilledPrefix = '@file:';
-
-/// Where both ends of the pipe spill big messages: the app's temporary
-/// directory, which both processes share. The stream page's side deletes it
-/// when the session ends ([GameStreamCompanionPipe.clearSpills]), so a
-/// message nobody read (a panel that closed first) does not stay behind.
-Directory gameStreamCompanionSpillRoot() => Directory(
-  '${Directory.systemTemp.path}${Platform.pathSeparator}game_stream_companion',
-);
-
-/// One end of the pipe between the stream page and the companion panel.
-///
-/// [send] delivers a message or throws: the relay reports whether it took
-/// the message (`post` returns true), and a message too big for one Binder
-/// transaction is written to a file under [spillDirectory] first. [receive]
-/// turns what arrives back into the message, in arrival order.
-class GameStreamCompanionPipe {
-  GameStreamCompanionPipe({
-    required Future<bool?> Function(String raw) post,
-    required this.spillDirectory,
-    this.inlineLimit = kGameStreamCompanionInlineMessageUnits,
-  }) : _post = post;
-
-  final Future<bool?> Function(String raw) _post;
-  final Directory spillDirectory;
-  final int inlineLimit;
-  int _spillCount = 0;
-  Future<void> _inbound = Future<void>.value();
-
-  Future<void> send(String message) async {
-    File? spilled;
-    String raw = message;
-    if (message.length > inlineLimit) {
-      await spillDirectory.create(recursive: true);
-      spilled = File(
-        '${spillDirectory.path}${Platform.pathSeparator}'
-        '${DateTime.now().microsecondsSinceEpoch}-${_spillCount++}.json',
-      );
-      await spilled.writeAsString(message, flush: true);
-      raw = '$_spilledPrefix${spilled.path}';
-    }
-    final bool? delivered = await _post(raw);
-    if (delivered == true) return;
-    if (spilled != null && spilled.existsSync()) await spilled.delete();
-    throw StateError(
-      'game stream companion: the relay did not take the message',
-    );
-  }
-
-  /// Hands each received [raw] to [onMessage] as the message it stands for,
-  /// strictly in arrival order (a spilled one is read back and its file
-  /// deleted). A message that cannot be read goes to [onError].
-  void receive(
-    String raw,
-    void Function(String message) onMessage,
-    void Function(Object error, StackTrace stack) onError,
-  ) {
-    _inbound = _inbound.then((_) async {
-      try {
-        onMessage(await _open(raw));
-      } catch (error, stack) {
-        onError(error, stack);
-      }
-    });
-  }
-
-  static Future<String> _open(String raw) async {
-    if (!raw.startsWith(_spilledPrefix)) return raw;
-    final File file = File(raw.substring(_spilledPrefix.length));
-    try {
-      return await file.readAsString();
-    } finally {
-      if (file.existsSync()) await file.delete();
-    }
-  }
-
-  /// Deletes [root] and every spilled message in it.
-  static Future<void> clearSpills(Directory root) async {
-    if (root.existsSync()) await root.delete(recursive: true);
-  }
-}
+/// Where both ends of the game stream pipe spill big messages. The stream
+/// page's side deletes it when the session ends
+/// ([SecondScreenPipe.clearSpills]), so a message nobody read (a panel that
+/// closed first) does not stay behind.
+Directory gameStreamCompanionSpillRoot() =>
+    secondScreenSpillRoot('game_stream_companion');
 
 // ---------------------------------------------------------------------------
 // Companion side: request bookkeeping and the relayed popup resources

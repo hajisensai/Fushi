@@ -5,7 +5,7 @@
 //! [TABLES] 的列序逐行原样写入，所以列序也是契约的一部分。
 
 /// 本库自己的版本号（`srs_meta.schema`）。迁移阶梯见 [migrate]。
-pub const SCHEMA_VERSION: i64 = 28;
+pub const SCHEMA_VERSION: i64 = 29;
 
 /// 前身链接的部分索引条件；与 `kSrsHistoryFromCondition`（database_srs.part.dart）逐字一致，
 /// 查询里的 WHERE 必须写成同一个表达式才用得上这个索引。
@@ -743,6 +743,12 @@ pub fn migrate(conn: &mut rusqlite::Connection) -> Result<(), String> {
         // [super::sync2::replay_anki_copies]），与收段新建的库、与对端逐位相同（摘要前缀换成 `5:`）。只改投影行，
         // 操作日志不动；新建的库没有日志，不跑。可重放。
         super::sync2::replay_anki_copies(&tx)?;
+    }
+    if current < 29 {
+        // V29：设备信任（store/sync2/trust.rs）。只建两张表；没有行 = 可信，升级那一刻已经认识的设备全部可信，存量的删除
+        // 不追溯扣住。新建的库同样建表。可重放。
+        tx.execute_batch(super::sync2::schema::V29_TRUST)
+            .map_err(|e| e.to_string())?;
     }
     tx.execute(
         "INSERT INTO srs_meta (key, value) VALUES ('schema', ?1) \

@@ -43,6 +43,13 @@ import FlutterMacOS
 /// - 更早的系统只有老请求，照旧整页识别、忽略 `tiles`：切片对它几乎没有收益
 ///   （7.4% → 8.1%）却要多花三倍时间。Dart 侧的合并对没带 `tile` 的行是恒等的。
 ///
+/// - **截屏识字**（Dart 下发 `purpose: "screen"`，桌面应用外冻结层，反馈 Eemf0HOZhj /
+///   BUG-4069）一律走老的 `VNRecognizeTextRequest`，并带逐字框（`words`）。屏幕是界面
+///   文字（横排、密、几百行），`RecognizeDocumentsRequest` 对一整块 4K 屏做的是文档
+///   版面分析（段落 / 表格 / 列表），用户实测一分钟以上才出行框；老请求只做行识别，
+///   而且能按字问框（`boundingBox(for:)`），点字不用整行等分。代价是不读竖排——
+///   要读竖排游戏文字在截屏识字的引擎设置里选本机模型。
+///
 /// 编译期用 `#if compiler(>=6.2)` 挡住新符号（它们只在 Xcode 26 的 SDK 里），
 /// 运行期用 `#available` 分流——与 `FushiSpeechTranscriber.swift` 同一个套路。
 enum FushiSystemOcr {
@@ -95,6 +102,8 @@ enum FushiSystemOcr {
     }
     let data = typed.data
     let language = (args["language"] as? String) ?? ""
+    // 截屏识字（桌面冻结层）：见类文档「两条识别路径」后的「截屏识字」一条。
+    let screenText = (args["purpose"] as? String) == "screen"
 
     let supported = supportedLanguages()
     let languages = visionLanguages(for: language, supported: supported)
@@ -136,7 +145,7 @@ enum FushiSystemOcr {
       }
 
       #if compiler(>=6.2)
-        if #available(iOS 26.0, macOS 26.0, *) {
+        if !screenText, #available(iOS 26.0, macOS 26.0, *) {
           let crops = tileCrops(args["tiles"], width: width, height: height)
           Task {
             do {
@@ -188,7 +197,8 @@ enum FushiSystemOcr {
         payload(
           observations: request.results ?? [],
           width: width,
-          height: height))
+          height: height,
+          withGlyphs: screenText))
     }
   }
 
@@ -196,17 +206,21 @@ enum FushiSystemOcr {
   ///
   /// 一个 observation 一行，不做任何分组——气泡合并在 Dart / JS 那边，Android 侧
   /// 同样如此，两边都拼一套只会拼出两种结果。
+  ///
+  /// [withGlyphs]（截屏识字）时每行再带 `words`：逐字框（与 Windows OCR 的词框同一个
+  /// 通道字段，Dart `SystemOcrTextLine.segments`），点字按字框定位而不是整行等分。
   static func payload(
     observations: [VNRecognizedTextObservation],
     width: Int,
-    height: Int
+    height: Int,
+    withGlyphs: Bool = false
   ) -> [String: Any] {
     let w = CGFloat(width)
     let h = CGFloat(height)
     var lines: [[String: Any]] = []
     for observation in observations {
       guard let candidate = observation.topCandidates(1).first else { continue }
-      if let entry = lineEntry(
+      if var entry = lineEntry(
         text: candidate.string,
         box: observation.boundingBox,
         w: w,
@@ -214,6 +228,10 @@ enum FushiSystemOcr {
         origin: .zero,
         tile: nil)
       {
+        if withGlyphs {
+          let words = glyphSegments(candidate, w: w, h: h)
+          if !words.isEmpty { entry["words"] = words }
+        }
         lines.append(entry)
       }
     }
@@ -222,6 +240,56 @@ enum FushiSystemOcr {
       "height": height,
       "lines": lines,
     ]
+  }
+
+  /// 一行里每个字的框（送检图像素、左上原点），`start` / `length` 是该字在行文本里的
+  /// UTF-16 区间（与 Dart String 下标同口径）。
+  ///
+  /// Vision 对某些文字只给整词框（同一个词里每个字问出来都是同一个框）：相同的框并成
+  /// 一段（Dart 在段内按字等分）。框不按阅读顺序（左→右）排、或问不出框时整行不发
+  /// `words`——发一份乱序的词框会让点字稳定落到错字上，不如退回整行等分。
+  static func glyphSegments(
+    _ candidate: VNRecognizedText,
+    w: CGFloat,
+    h: CGFloat
+  ) -> [[String: Any]] {
+    let text = candidate.string
+    var segments: [[String: Any]] = []
+    var last: CGRect?
+    for index in text.indices {
+      if text[index].isWhitespace { continue }
+      let range = index..<text.index(after: index)
+      guard let observed = try? candidate.boundingBox(for: range) else { return [] }
+      let box = observed.boundingBox
+      let rect = CGRect(
+        x: box.minX * w,
+        y: (1 - box.maxY) * h,
+        width: box.width * w,
+        height: box.height * h)
+      if rect.width <= 0 || rect.height <= 0 { return [] }
+      let utf16 = NSRange(range, in: text)
+      if let previous = last,
+        abs(previous.minX - rect.minX) < 0.5,
+        abs(previous.maxX - rect.maxX) < 0.5,
+        var merged = segments.last,
+        let start = merged["start"] as? Int
+      {
+        merged["length"] = utf16.location + utf16.length - start
+        segments[segments.count - 1] = merged
+        continue
+      }
+      if let previous = last, rect.midX < previous.midX { return [] }
+      last = rect
+      segments.append([
+        "start": utf16.location,
+        "length": utf16.length,
+        "left": Double(rect.minX),
+        "top": Double(rect.minY),
+        "right": Double(rect.maxX),
+        "bottom": Double(rect.maxY),
+      ])
+    }
+    return segments
   }
 
   /// 一条行的载荷。[box] 是相对送检图（整页或某一片）归一化、原点左下的框，

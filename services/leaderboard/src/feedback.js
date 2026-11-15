@@ -11,7 +11,7 @@
 //                                             重试复用同一个。同一个 key 再来一次 → 原样回同一张回执（同 id、同 ticket），
 //                                             不新建反馈、不再计限流 / 预算（见 createFeedback 幂等说明）
 //   PUT  /v1/feedback/:id/attachments/:slot   [X-Fushi-Ticket] 原始字节；slot = log（gzip）/ s0..s2（截图）
-//                                             / v0（视频 mp4 / mov / webm ≤ 50 MB，流式写 R2，见 putVideoAttachment）
+//                                             / v0（视频 mp4 / mov / webm ≤ 100 MB，流式写 R2，见 putVideoAttachment）
 //   POST /v1/feedback/status                  {items:[{id, ticket}] ≤ 50} → 各条进度摘要（凭据不对的条目不返回）
 //   GET  /v1/feedback/mine?cursor&limit       [签名] 本账户提交过的反馈（跨设备看自己的工单），摘要 + 游标分页
 //   GET  /v1/feedback/:id                     [凭据] 详情 + 时间线
@@ -118,11 +118,18 @@ export const FEEDBACK_LIMITS = {
   duplicateWindowMs: HOUR,
   /** 跨来源同内容打 duplicate 标记的回看窗口。 */
   duplicateLookbackMs: 24 * HOUR,
-  /** 视频附件（槽位 v0）单个上限。 */
-  videoMaxBytes: 50 * 1024 * 1024,
   /**
-   * 每个上传 IP 每天（UTC 日窗口）视频总字节上限（按声明长度计，传失败不退）：4 段满额视频。
-   * 匿名每 IP 每小时能提 10 条反馈、每条一个 50 MB 视频，没有这一道时一个 IP 一小时就能占掉 500 MB。
+   * 视频附件（槽位 v0）单个上限：100 MB（十进制 1e8 字节）。客户端常量 FeedbackLimits.videoMaxBytes
+   * （packages/fushi_engine/lib/feedback/feedback_models.dart）必须同值。取十进制而不是 100 MiB：
+   * 请求体在进 Worker 之前先过 Cloudflare 边缘的请求体上限（Free / Pro 套餐 100 MB，文档没写是
+   * 1e8 还是 2^20 进制），1e8 在两种口径下都过得去；Business（200 MB）以上套餐同样不受影响。
+   * 视频是流式写 R2（见 putVideoAttachment），不进 Worker 内存，所以 Worker 128 MB 内存上限不相干。
+   */
+  videoMaxBytes: 100 * 1000 * 1000,
+  /**
+   * 每个上传 IP 每天（UTC 日窗口）视频总字节上限（按声明长度计，传失败不退）：2 段满额（100 MB）视频。
+   * 匿名每 IP 每小时能提 10 条反馈、每条一个 100 MB 视频，没有这一道时一个 IP 一小时就能占掉 1 GB
+   * （视频池默认就是 1 GiB，见 budget.js）。
    */
   videoBytesPerIpDay: 200 * 1024 * 1024,
   /** 视频在结案后保留多久（与创建后保留期取先到者）。 */
@@ -696,8 +703,8 @@ function rejoin(head, reader) {
 }
 
 /**
- * PUT /v1/feedback/:id/attachments/v0：视频直接把请求体流式写进 R2，不整读进内存（50 MB 进 Worker
- * 内存就是 128 MB 上限的一大半）。所有能在读体之前判的都先判（窗口 / 槽位 / 长度 / 类型），超限的
+ * PUT /v1/feedback/:id/attachments/v0：视频直接把请求体流式写进 R2，不整读进内存（100 MB 进 Worker
+ * 内存就逼近 128 MB 上限）。所有能在读体之前判的都先判（窗口 / 槽位 / 长度 / 类型），超限的
  * 请求不扣预算也不占配额；魔数只读开头一块。R2 put 要求流长度已知，经 FixedLengthStream（Workers
  * 运行时全局）按声明长度封口：实际字节多了少了流都会出错，归还配额、删掉半截对象，400 bad_length。
  * 魔数通过后才计费：先记上传 IP 当天的视频字节（超了 429 rate_limited），再扣 media 预算 1 次，最后在
@@ -1075,7 +1082,7 @@ export function parseRange(header, size) {
 
 /**
  * 开发者取附件。日志可带 ?view=text 在服务端解压成纯文本（流式，不占内存）。视频支持单段 Range
- * （`<video>` 拖进度条只取需要的那段，不必整段 50 MB 下发），download = true 时作为附件下载。
+ * （`<video>` 拖进度条只取需要的那段，不必整段 100 MB 下发），download = true 时作为附件下载。
  */
 export async function attachmentResponse(env, row, slot, asText, { range = null, download = false } = {}) {
   const a = parseAttachments(row).find((x) => x.slot === slot);
@@ -1450,7 +1457,7 @@ export async function routeFeedback(request, env, url, now, io) {
   if (method === 'PUT' && (m = RE.attach.exec(path))) {
     // 补传只认 ticket：签名要覆盖整个请求体，视频没法边收边验。
     const row = await feedbackForTicket(env, m[1], ticket);
-    // 视频不走 readBody：50 MB 不整读进内存，直接流式写 R2。
+    // 视频不走 readBody：100 MB 不整读进内存，直接流式写 R2。
     if (m[2] === VIDEO_SLOT) return json(await putVideoAttachment(env, row, request, now, io.ip), 201, noStore);
     const bytes = await io.readBody(ATTACHMENT_MAX_BYTES);
     return json(await putAttachment(env, row, m[2], bytes, now), 201, noStore);

@@ -1927,39 +1927,27 @@ class _EmptyCollection extends StatelessWidget {
 }
 
 /// 成员卡的指针悬停反馈壳：卡片本体仍被 [IgnorePointer] 屏蔽（长按拖拽手势竞技场
-/// 决策不变），悬停高亮由本壳的 [MouseRegion]（默认 opaque，自身参与命中测试）
-/// 提供——桌面指针划过成员卡有可交互反馈，触摸/手柄路径零变化。
-class _HoverableMemberCard extends StatefulWidget {
+/// 决策不变），悬停与指针位置由 [FushiHoverLiftRelay] 的 [MouseRegion]（默认
+/// opaque，自身参与命中测试）代收再往下传——卡片照常走库页同一套抬升 / 扫光 /
+/// 接触阴影 / 3D 倾斜视差（反馈 bsbJ4OVa8o：此前只代收悬停位，倾斜层拿不到指针
+/// 位置，合集里的书卡永远是平的）。触摸/手柄路径零变化。
+class _HoverableMemberCard extends StatelessWidget {
   const _HoverableMemberCard({required this.child});
 
   final Widget child;
 
   @override
-  State<_HoverableMemberCard> createState() => _HoverableMemberCardState();
-}
-
-class _HoverableMemberCardState extends State<_HoverableMemberCard> {
-  bool _hovering = false;
-
-  @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final bool eink = isEinkTheme(context);
-    final bool material = _hasCoverMaterial(context, widget.child);
-    return MouseRegion(
+    final bool material = _hasCoverMaterial(context, child);
+    return FushiHoverLiftRelay(
       cursor: SystemMouseCursors.click,
-      onEnter: (_) => setState(() => _hovering = true),
-      onExit: (_) => setState(() => _hovering = false),
-      child: Stack(
+      builder: (BuildContext context, bool hovering) => Stack(
         fit: StackFit.expand,
         children: <Widget>[
-          // 卡片被 IgnorePointer 挡掉了命中测试，自己的悬停收不到；由这里代收
-          // 再往下传，卡片照常走库页同一套抬升 / 扫光 / 接触阴影。
-          FushiHoverLiftHost(
-            hovering: _hovering,
-            child: IgnorePointer(child: widget.child),
-          ),
-          if (_hovering && !material)
+          IgnorePointer(child: child),
+          if (hovering && !material)
             Positioned.fill(
               child: IgnorePointer(
                 child: DecoratedBox(

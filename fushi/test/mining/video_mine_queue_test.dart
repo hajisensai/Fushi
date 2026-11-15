@@ -4,7 +4,10 @@ import 'dart:io';
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/video/video_mine_queue_dialog.dart';
 import 'package:fushi/src/mining/video_mine_queue.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -94,6 +97,7 @@ void main() {
       meta: const VideoMineStagedMeta(
         documentTitle: '作品 - 第1話',
         bookTitleTag: '第1話',
+        seriesTitle: '作品',
         statBookKey: 'remote/emby/1',
         statTitle: '第1話',
         historyDateKey: '2026-09-26',
@@ -142,6 +146,8 @@ void main() {
     expect(first.sentence, '走るの文。');
     expect(first.documentTitle, '作品 - 第1話');
     expect(first.bookTitleTag, '第1話');
+    // 出处「系列 → 集」（反馈 MCJLSBR5Wg）：暂存的系列名随卡落地（meta.json 往返）。
+    expect(first.seriesTitle, '作品');
     expect(first.source, AnkiMiningSource.video);
     expect(first.clipStartMs, 1000);
     expect(first.clipEndMs, 2500);
@@ -238,6 +244,38 @@ void main() {
     await queue.discard(a);
     expect(await queue.pending('remote/emby/1'), isEmpty);
     expect(queue.bundleDir(a).existsSync(), isFalse);
+  });
+
+  test('BUG-4287：写入的卡带回的提示（「保存到」被退回主机默认）进汇总与汇总提示', () async {
+    await stageOne('走る');
+    await stageOne('泳ぐ');
+    final VideoMineCommitSummary summary = await queue.commitAll(
+      bookUid: 'remote/emby/1',
+      repo: _Repo(<MineOutcome>[
+        const MineOutcome.success(notice: 'Save to was reset.'),
+        const MineOutcome.success(),
+      ]),
+    );
+    expect(summary.succeeded, 2);
+    expect(summary.notice, 'Save to was reset.');
+    expect(
+      videoMineCommitMessage(summary),
+      '${t.video_mine_queue_committed(ok: 2, failed: 0)}\nSave to was reset.',
+    );
+    // 关掉「制卡成功提示」也要让用户知道落点变了。
+    expect(videoMineCommitSeverity(summary), ToastSeverity.warning);
+
+    await stageOne('飛ぶ');
+    final VideoMineCommitSummary plain = await queue.commitAll(
+      bookUid: 'remote/emby/1',
+      repo: _Repo(<MineOutcome>[const MineOutcome.success()]),
+    );
+    expect(plain.notice, isNull);
+    expect(
+      videoMineCommitMessage(plain),
+      t.video_mine_queue_committed(ok: 1, failed: 0),
+    );
+    expect(videoMineCommitSeverity(plain), ToastSeverity.success);
   });
 
   test('交给仓库后进了待发制卡队列（queued）：算交接完成，出本暂存队列，不当失败', () async {

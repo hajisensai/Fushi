@@ -44,6 +44,7 @@ import 'package:fushi_engine/media/video/download/video_download_path_mapping.da
 import 'package:fushi_engine/media/video/download/video_download_subtitle_language.dart';
 import 'package:fushi_engine/media/video/download/video_resource_registry.dart';
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
+import 'package:fushi_engine/media/video/download/video_subtitle_registry_source.dart';
 import 'package:fushi_engine/media/video/external_video.dart'
     show normalizeVideoPath;
 import 'package:fushi_engine/media/video/m3u8_playlist.dart';
@@ -1029,14 +1030,16 @@ class VideoDownloadPipelineService {
     required this.backendResolver,
     required this.scrapeCoordinator,
     this.onBackendTaskAdded,
-    this.subtitleRegistry,
+    VideoSubtitleRegistry? subtitleRegistry,
+    VideoSubtitleRegistrySource? subtitleRegistrySource,
     this.subtitleAligner,
-    this.defaultContentLanguage,
+    String? defaultContentLanguage,
+    VideoDownloadSubtitleLanguagesReader? subtitleLanguages,
     this.subtitleLanguageResolver,
     this.discoveryImporter,
     this.onDownloadOnlyCompleted,
     this.manualTorrentDirectory,
-    Iterable<String> preferredSubtitleLanguages = const <String>[],
+    Iterable<String>? preferredSubtitleLanguages,
     String? workerId,
     this.pollInterval = const Duration(seconds: 5),
     this.leaseDuration = const Duration(minutes: 2),
@@ -1047,9 +1050,29 @@ class VideoDownloadPipelineService {
     this.defaultTargetSourceId,
     this.onDiscCollectionImported,
     DateTime Function()? now,
-  }) : preferredSubtitleLanguages = List<String>.unmodifiable(
-         preferredSubtitleLanguages,
+  }) : assert(
+         subtitleRegistry == null || subtitleRegistrySource == null,
+         'pass either subtitleRegistry or subtitleRegistrySource, not both',
        ),
+       subtitleRegistrySource =
+           subtitleRegistrySource ??
+           (subtitleRegistry == null
+               ? null
+               : FixedVideoSubtitleRegistrySource(subtitleRegistry)),
+       assert(
+         subtitleLanguages == null ||
+             (preferredSubtitleLanguages == null &&
+                 defaultContentLanguage == null),
+         'pass either fixed subtitle languages or a subtitleLanguages reader',
+       ),
+       _subtitleLanguages =
+           subtitleLanguages ??
+           _fixedSubtitleLanguages(
+             VideoDownloadSubtitleLanguages(
+               preferred: preferredSubtitleLanguages ?? const <String>[],
+               defaultContentLanguage: defaultContentLanguage,
+             ),
+           ),
        workerId = workerId ?? 'video-${generateVideoDownloadInstallationId()}',
        _coverExtractor = coverExtractor ?? extractVideoCover,
        _videoRepository = VideoBookRepository(database),
@@ -1057,23 +1080,30 @@ class VideoDownloadPipelineService {
 
   final FushiDatabase database;
   final VideoResourceRegistry resourceRegistry;
-  final VideoSubtitleRegistry? subtitleRegistry;
+
+  /// 字幕阶段的来源入口：每进一次字幕阶段借一份、阶段结束归还（见
+  /// video_subtitle_registry_source.dart）。构造时传 `subtitleRegistry` 等于固定一份
+  /// （[FixedVideoSubtitleRegistrySource]）；null = 本机没配字幕。
+  final VideoSubtitleRegistrySource? subtitleRegistrySource;
 
   /// 装 sidecar 前按视频内嵌字幕轨对时间轴（见 embedded_reference_subtitle_sync.dart）；
   /// null = 不对齐。算法是确定性的，所以续跑时按内容认领已落盘文件照样成立。
   final AutomaticSubtitleAligner? subtitleAligner;
 
-  /// 用户在设置里**显式**选的字幕语言（`jimakuDefaultLanguage`）。非空即硬过滤
-  /// （进 `VideoSubtitleSearchRequest.languages`）——他自己说的。
-  final List<String> preferredSubtitleLanguages;
+  /// 全局字幕语言设置（显式字幕语言 `jimakuDefaultLanguage` + 默认内容语言），每轮
+  /// 字幕阶段开头读一次、整轮共用：构造时传固定值（app：设置改了整套重建管线），
+  /// 或传 `subtitleLanguages` 读取器（服务端：WebUI 改了下一轮即生效，在飞的那一轮
+  /// 不受影响）。见 [VideoDownloadSubtitleLanguages]。
+  final VideoDownloadSubtitleLanguagesReader _subtitleLanguages;
 
-  /// 设置·外观·排版里的默认内容语言。没有显式字幕语言、视频也没有可读语言时的
-  /// 最后一档；空/null = 不表态（**不猜**，见 subtitle_language_preference.dart）。
-  final String? defaultContentLanguage;
+  static VideoDownloadSubtitleLanguagesReader _fixedSubtitleLanguages(
+    VideoDownloadSubtitleLanguages value,
+  ) =>
+      () => value;
 
   /// 按作品的字幕语言（见 video_download_subtitle_language.dart）。字幕阶段先问它：
   /// 拿到语言码就当作用户对**这部作品**的显式选择（硬过滤 + 排序首选），压过
-  /// [preferredSubtitleLanguages]；null = 不表态，走原来的全局链。解析器抛异常
+  /// 全局的显式字幕语言；null = 不表态，走原来的全局链。解析器抛异常
   /// 与本阶段其它异常同等处理（任务按可重试 / needsAttention 落库），**不吞**：
   /// 它读的是本进程内的偏好，抛了就是偏好层坏了，不能伪装成「没记过语言」。
   final VideoDownloadSubtitleLanguageResolver? subtitleLanguageResolver;
@@ -3679,7 +3709,10 @@ class VideoDownloadPipelineService {
       await _advance(job, VideoDownloadJobStage.import);
       return;
     }
-    if (subtitleRegistry == null) {
+    // 来源集合按「这一轮」借：宿主运行期间改了 key / 开关，下一轮字幕阶段就用新的；
+    // 这一轮借到的用到本阶段结束，期间配置再变也不会被拔掉。
+    final VideoSubtitleRegistryLease? lease = subtitleRegistrySource?.acquire();
+    if (lease == null) {
       if (policy == VideoDownloadSubtitlePolicy.required) {
         throw const VideoDownloadPipelineActionRequired(
           'Required subtitles are not configured on this device',
@@ -3688,6 +3721,30 @@ class VideoDownloadPipelineService {
       await _advance(job, VideoDownloadJobStage.import);
       return;
     }
+    engineLog.logDiagnostic(
+      'VideoDownloadPipeline',
+      'subtitle stage ${job.jobId}: sources '
+          '${lease.registry.providers.map((VideoSubtitleProvider p) => p.id).join('+')}',
+    );
+    try {
+      await _installSubtitlesWith(
+        job,
+        policy,
+        lease.registry,
+        _subtitleLanguages(),
+      );
+    } finally {
+      lease.release();
+    }
+  }
+
+  Future<void> _installSubtitlesWith(
+    VideoDownloadJobRow job,
+    VideoDownloadSubtitlePolicy policy,
+    VideoSubtitleRegistry subtitleRegistry,
+    VideoDownloadSubtitleLanguages languages,
+  ) async {
+    final List<String> preferredSubtitleLanguages = languages.preferred;
     // 只有原盘、没有散装视频（BUG-4245）：外挂字幕没有挂靠对象——盘的字幕是盘上
     // 自带的 PGS 轨，库里的成员是 `.mpls` / DVD title。不搜、不按 required 判失败。
     // 判据是显式的「有原盘且没有 video 行」：没有原盘、video 行又恰好没落盘路径
@@ -3786,7 +3843,7 @@ class VideoDownloadPipelineService {
       try {
         final File video = File(file.finalAbsolutePath!);
         final ProviderBatchResult<VideoSubtitleCandidate> result =
-            await subtitleRegistry!.search(
+            await subtitleRegistry.search(
               VideoSubtitleSearchRequest(
                 media: _mediaReference(
                   job,
@@ -3805,7 +3862,7 @@ class VideoDownloadPipelineService {
             );
         _ensureLeaseHeld();
         if (result.items.isEmpty) {
-          final String message = subtitleRegistry!.describeEmptySearch(result);
+          final String message = subtitleRegistry.describeEmptySearch(result);
           await _recordUnavailableSubtitle(job, file, subtitleId, message);
           if (policy == VideoDownloadSubtitlePolicy.required) {
             throw VideoDownloadPipelineActionRequired(message);
@@ -3844,6 +3901,8 @@ class VideoDownloadPipelineService {
         if (candidate == null) {
           final ({_VerifiedSubtitleBytes? picked, String? reason}) selection =
               await _selectVerifiedSubtitle(
+                subtitleRegistry: subtitleRegistry,
+                languages: languages,
                 candidates: result.items,
                 videoPath: video.path,
                 explicitLanguage: perWorkLanguage,
@@ -3898,7 +3957,7 @@ class VideoDownloadPipelineService {
         // 自动路径已经在校验时下过一次字节，直接复用——校验不该让每条字幕多下
         // 一遍。手动/续跑路径没验过，这里才真去下。
         final VideoSubtitleDownload download =
-            verified?.download ?? await subtitleRegistry!.download(candidate);
+            verified?.download ?? await subtitleRegistry.download(candidate);
         _ensureLeaseHeld();
         // 打包源（SubDL 的 zip）的候选名只是下载前的猜测 `<release>.srt`，真实扩展名
         // 要解包后才知道：sidecar 扩展名以 `download.fileName` 为准（空才回退候选名），
@@ -4014,6 +4073,8 @@ class VideoDownloadPipelineService {
   /// 探测失败就拒收**。
   Future<({_VerifiedSubtitleBytes? picked, String? reason})>
   _selectVerifiedSubtitle({
+    required VideoSubtitleRegistry subtitleRegistry,
+    required VideoDownloadSubtitleLanguages languages,
     required List<VideoSubtitleCandidate> candidates,
     required String videoPath,
     String? explicitLanguage,
@@ -4032,9 +4093,9 @@ class VideoDownloadPipelineService {
     // 只是排在后面。
     final String? preferredLanguage = resolveSubtitleDownloadLanguage(
       explicitSubtitlePreference:
-          explicitLanguage ?? preferredSubtitleLanguages.firstOrNull,
+          explicitLanguage ?? languages.preferred.firstOrNull,
       contentMetadataLanguage: facts.primaryAudioLanguage,
-      globalDefaultContentLanguage: defaultContentLanguage,
+      globalDefaultContentLanguage: languages.defaultContentLanguage,
     );
     final List<VideoSubtitleCandidate> ordered = rankByPreferredLanguage(
       candidates,
@@ -4050,7 +4111,7 @@ class VideoDownloadPipelineService {
       final VideoSubtitleCandidate candidate = ordered[i];
       final VideoSubtitleDownload download;
       try {
-        download = await subtitleRegistry!.download(candidate);
+        download = await subtitleRegistry.download(candidate);
       } on Object catch (error) {
         // 单条下载失败不该中断整轮筛选——下一条可能好好的。
         lastDownloadError = _safeError(error.toString());

@@ -217,7 +217,10 @@ void main() {
     final int start = src.indexOf('Future<bool> _selectSubtitleSource(');
     expect(start, greaterThan(-1));
     final int graphicAt = src.indexOf('if (source.isGraphicEmbedded)', start);
-    final int showAt = src.indexOf('_showSubtitleLoadingOverlay();', start);
+    final int showAt = src.indexOf(
+      '_showSubtitleLoadingOverlay(origin: origin);',
+      start,
+    );
     expect(graphicAt, greaterThan(start));
     expect(
       showAt,

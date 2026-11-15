@@ -58,18 +58,33 @@ inline bool NeedsSpaceBetween(const std::wstring& previous,
   return IsAsciiUnit(tail) || IsAsciiUnit(head);
 }
 
-inline std::wstring JoinOcrWords(const std::vector<std::wstring>& words) {
+// 同时记下每个词在拼好的行文本里的起点（UTF-16 码元下标，与 Dart String 下标同口径）；
+// 空词记 -1。点字查词按词框定位被点的字（BUG-4367）：没有这张表就只能按字数等分
+// 行框，日英混排 / 行内有空隙时点哪个字查的都是别的字。
+inline std::wstring JoinOcrWordsWithOffsets(
+    const std::vector<std::wstring>& words, std::vector<int>* offsets) {
   std::wstring joined;
-  for (const std::wstring& word : words) {
+  if (offsets != nullptr) {
+    offsets->assign(words.size(), -1);
+  }
+  for (size_t i = 0; i < words.size(); ++i) {
+    const std::wstring& word = words[i];
     if (word.empty()) {
       continue;
     }
     if (NeedsSpaceBetween(joined, word)) {
       joined.push_back(L' ');
     }
+    if (offsets != nullptr) {
+      (*offsets)[i] = static_cast<int>(joined.size());
+    }
     joined += word;
   }
   return joined;
+}
+
+inline std::wstring JoinOcrWords(const std::vector<std::wstring>& words) {
+  return JoinOcrWordsWithOffsets(words, nullptr);
 }
 
 // 行框 = 该行所有（有面积的）词框的并集；一个有效词框都没有时返回 nullopt。

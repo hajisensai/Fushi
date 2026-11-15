@@ -9,7 +9,9 @@
 /// - 按**文件**去重成「集」：CUE 整轨多曲共用一个音频文件，只转写一次，登记时再按曲目
 ///   区间切（[MusicAsrTrackSlot]）；
 /// - 插件 / 服务器 / Apple Music 等不是本机文件的曲目 → 不可处理（remote）；文件不在 →
-///   missingFile；
+///   missingFile。例外是歌词页对**正在播放的在线音源插件曲目**的单曲入口
+///   （[MusicSubtitleTargets.forPluginTrack]）：调用方先把音频取到本机
+///   （`MusicPluginAsrAudioStager`），这里按那份副本建目标、登记到插件曲目的 uid；
 /// - 批量（专辑 / 来源）时已有生成字幕（`asr` 行）的曲目跳过，整个文件的曲目都有了就不
 ///   排这个文件；文件已转写导出过、只是还有曲目没登记的，管线跳过转写、由落点直接用已有
 ///   导出补登（[AppSubtitleOutputSink.registersSkippedExisting]）；单曲入口总是重新生成
@@ -29,6 +31,8 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/music/asr/music_asr_subtitle_sink.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_service.dart';
+import 'package:fushi/src/media/music/music_output_backend.dart'
+    show MusicPlayItem;
 import 'package:fushi/src/media/music/plugin/music_plugins.dart'
     show parseMusicPluginTrackPath;
 import 'package:fushi/src/media/video/subtitle/app_video_subtitle_types.dart';
@@ -75,6 +79,46 @@ class MusicSubtitleTargets {
       key: 'music:track:$trackUid',
       batch: false,
       work: _work(album, fallbackTitle: row.title, fallbackKey: trackUid),
+    );
+  }
+
+  /// 在线音源插件曲目（歌词页对当前曲目）：插件曲目不进曲库表，身份与元数据取自播放项；
+  /// [audio] 是已取到本机的音频副本（`MusicPluginAsrAudioStager.stage`），转写它、产物
+  /// 登记成 [item] 的 `asr` 歌词行，登记完删掉副本。总是重新生成（与 [forTrack] 同）。
+  Future<AppVideoSubtitleTarget> forPluginTrack(
+    MusicPlayItem item,
+    File audio,
+  ) async {
+    final String? albumUid = item.albumUid;
+    final String title = item.title;
+    return AppVideoSubtitleTarget(
+      title: title,
+      work: albumUid == null
+          ? SubtitleWorkContext(
+              workKey: 'music-track:${item.trackUid}',
+              title: title,
+            )
+          : SubtitleWorkContext(
+              workKey: 'album:$albumUid',
+              title: item.album ?? title,
+            ),
+      episodes: <AppVideoSubtitleEpisode>[
+        AppVideoSubtitleEpisode(videoPath: audio.path, title: title),
+      ],
+      unavailable: const <AppVideoSubtitleUnavailable>[],
+      trackCounts: (pending: 1, skipped: 0),
+      sink: MusicAsrSubtitleSink(
+        outRoot: await _outRoot(),
+        lyrics: lyrics,
+        slotsByPath: <String, List<MusicAsrTrackSlot>>{
+          audio.path: <MusicAsrTrackSlot>[
+            MusicAsrTrackSlot(trackUid: item.trackUid),
+          ],
+        },
+        stagedAudio: <String>{audio.path},
+      ),
+      wholeSeason: false,
+      key: 'music:track:${item.trackUid}',
     );
   }
 

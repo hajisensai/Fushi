@@ -150,6 +150,7 @@ void main() {
 
       final SourceScanSummary summary = await SourceLibraryScanner(
         db,
+        transcribeAudiobook: null,
       ).scan(await _videoSource(db, tmp.path));
 
       expect(summary.succeeded, isTrue, reason: summary.error ?? '');
@@ -181,7 +182,10 @@ void main() {
       File(p.join(tmp.path, 'broken.mkv')).writeAsStringSync('v');
       final String phantomSub = p.join(tmp.path, 'broken.srt'); // 不创建
 
-      final SourceLibraryScanner scanner = SourceLibraryScanner(db);
+      final SourceLibraryScanner scanner = SourceLibraryScanner(
+        db,
+        transcribeAudiobook: null,
+      );
       final SourceScanSummary summary = await scanner.scan(
         await _videoSource(db, tmp.path),
         fs: _FakeLocalFs(<String>[
@@ -222,6 +226,7 @@ void main() {
 
       final SourceScanSummary summary = await SourceLibraryScanner(
         db,
+        transcribeAudiobook: null,
       ).scan(await _videoSource(db, tmp.path));
 
       expect(summary.error, isNull);

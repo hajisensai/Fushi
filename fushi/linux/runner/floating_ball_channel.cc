@@ -11,7 +11,9 @@
 #include <string>
 #include <vector>
 
+#include "deck_buttons.h"
 #include "floating_ball_window.h"
+#include "gamescope_overlay.h"
 #include "screen_capture.h"
 #include "screen_ocr_overlay.h"
 
@@ -24,6 +26,8 @@ struct _FushiFloatingBall {
   // checks that this object still lives and that it is still the latest one.
   std::shared_ptr<bool> alive = std::make_shared<bool>(true);
   uint64_t capture_generation = 0;
+  // Steam Deck Game Mode only: the back button that toggles screen OCR.
+  std::unique_ptr<fushi::deck_buttons::Watcher> deck_button;
 };
 
 namespace {
@@ -500,6 +504,27 @@ FushiFloatingBall* fushi_floating_ball_new(FlBinaryMessenger* messenger,
     self->window->RestoreAfterCapture();
     Invoke(self, "screenOcrDismissed", nullptr);
   });
+  // Steam Deck Game Mode: Fushi's windows get no input until they take Steam's
+  // overlay slot (gamescope_overlay.h), so the ball cannot be tapped over the
+  // game. R4 does what the ball's screen OCR button does (the same route as the
+  // global hotkey: no anchor, Dart captures the screen); pressed again it
+  // closes the layer. L4 is left to the Fushi Lens Decky plugin's default.
+  if (fushi::gamescope::InGameMode()) {
+    self->deck_button = std::make_unique<fushi::deck_buttons::Watcher>();
+    std::weak_ptr<bool> alive = self->alive;
+    self->deck_button->Start(fushi::deck_buttons::BackButton::kR4,
+                             [self, alive]() {
+                               if (alive.expired()) return;
+                               if (self->screen_ocr->IsShowing()) {
+                                 self->screen_ocr->DismissByUser();
+                                 return;
+                               }
+                               g_autoptr(FlValue) map = fl_value_new_map();
+                               fl_value_set_string_take(
+                                   map, "id", fl_value_new_string("screen_ocr"));
+                               Invoke(self, "systemBallAction", map);
+                             });
+  }
   return self;
 }
 
@@ -510,6 +535,8 @@ void fushi_floating_ball_free(FushiFloatingBall* self) {
                                               nullptr);
     g_clear_object(&self->channel);
   }
+  // Joins the reader thread; presses already queued see |alive| expired.
+  self->deck_button.reset();
   self->alive.reset();
   self->screen_ocr.reset();
   self->window.reset();

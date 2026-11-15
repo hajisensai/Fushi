@@ -24,6 +24,10 @@ import 'package:fushi_engine/models/local_audio_source_pref.dart'
     show LocalAudioSourcePref;
 import 'package:fushi_engine/sync/local_library_host_service.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
+import 'package:fushi/src/sync/remote_audiobook_revision.dart';
+import 'package:fushi/src/sync/remote_audiobook_revision_store.dart';
+import 'package:fushi_engine/sync/fushi_library_host_service.dart'
+    show RemoteAudiobookInfo;
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
@@ -736,6 +740,18 @@ void main() {
         isTrue,
         reason: '拉回来的必须是一本能播的书，不是一本只有字幕的壳',
       );
+      // sweep 自动补拉与书架手动下载经同一个记录入口：记下这份包是 host 哪一版，
+      // 之后 host 换了音频 / 字幕，书架才会提示「对端有更新」。
+      final String? hostRevision = (await backend.listRemoteAudiobooks())
+          .singleWhere((RemoteAudiobookInfo a) => a.bookKey == 'HostAudioBook')
+          .contentRevision;
+      expect(hostRevision, isNotNull);
+      final RemoteAudiobookRevisionRecord? record =
+          (await RemoteAudiobookRevisionStore(
+            localDb,
+          ).load())[remoteAudiobookRevisionKeyForBook('HostAudioBook')];
+      expect(record?.revision, hostRevision);
+      expect(record?.sourceId, startsWith('interconnect|'));
     });
 
     test('push：本地有 LocalAudioBook 有声书，host 无 → 推送到 host', () async {
@@ -786,6 +802,17 @@ void main() {
         ),
       );
 
+      // 这台设备以前从 host 下载过这本（记过 host 当时的内容版本），之后 host 那份
+      // 没了、本机把自己的推回去：推完 host 的版本就是本机这份，旧记录必须作废，
+      // 否则书架会把本机自己的推送报成「对端有更新」。
+      await RemoteAudiobookRevisionStore(localDb).put(
+        remoteAudiobookRevisionKeyForBook('LocalAudioBook'),
+        const RemoteAudiobookRevisionRecord(
+          sourceId: 'interconnect|stale-host',
+          revision: 'r1-stale',
+        ),
+      );
+
       final Directory tmp = Directory(p.join(work.path, 'tmp_ab_push'))
         ..createSync();
       final InterconnectSyncBackend backend = await _buildClientBackend(
@@ -811,6 +838,13 @@ void main() {
         report.audiobooksExported,
         1,
         reason: 'LocalAudioBook 有声书应被推送到 host',
+      );
+      expect(
+        (await RemoteAudiobookRevisionStore(
+          localDb,
+        ).load())[remoteAudiobookRevisionKeyForBook('LocalAudioBook')],
+        isNull,
+        reason: '推送后 host 就是本机这份，下载时记的旧内容版本必须作废',
       );
     });
 

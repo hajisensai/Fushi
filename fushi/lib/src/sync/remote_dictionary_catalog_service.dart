@@ -62,7 +62,7 @@ class RemoteDictionaryCatalogDiff {
 /// 跨实例写入（同步编排）也走这一条，不靠每个写入点记得通知。
 ///
 /// 每次拉清单的按 host 传输层结局写进共享的 [RemoteDictionaryReachability]
-/// （BUG-4275：查词路径读的是同一份），并挂上它的后台探测（[probeHost]）：host 判死
+/// （BUG-4692：查词路径读的是同一份），并挂上它的后台探测（[probeHost]）：host 判死
 /// 之后按再探测间隔轻量拉一次清单，拉通了查词立刻恢复。
 class RemoteDictionaryCatalogService {
   RemoteDictionaryCatalogService({
@@ -80,10 +80,14 @@ class RemoteDictionaryCatalogService {
        _transport = transport,
        _dictionaries = dictionaries,
        _reachability = reachability ?? RemoteDictionaryReachability(now: now),
+       _ownsReachability = reachability == null,
        _now = now,
        _timeout = timeout,
        _probeTimeout = probeTimeout,
        _resumeRefreshInterval = resumeRefreshInterval;
+
+  /// 没注入追踪器时自建的那份由本服务退订（它订阅着互联全局上报点）。
+  final bool _ownsReachability;
 
   final FushiDatabase _db;
   final SyncRepository _syncRepository;
@@ -97,7 +101,7 @@ class RemoteDictionaryCatalogService {
   final Duration _probeTimeout;
   final Duration _resumeRefreshInterval;
 
-  /// 词典服务器可达性的唯一真相源（与查词路径共用，BUG-4275）。
+  /// 词典服务器可达性的唯一真相源（与查词路径共用，BUG-4692）。
   final RemoteDictionaryReachability _reachability;
 
   /// 目录表的进程内「已变更」广播（[reconcileHost] 每次真正改了行就 +1）。
@@ -137,6 +141,7 @@ class RemoteDictionaryCatalogService {
   }
 
   void dispose() {
+    if (_ownsReachability) _reachability.dispose();
     if (!_started) return;
     _started = false;
     SyncRepository.fushiClientUrlsRevision.removeListener(_onClientUrlsChanged);
@@ -186,7 +191,7 @@ class RemoteDictionaryCatalogService {
       _serial(() => _refreshAll(force: true));
 
   /// App 回到前台：刷新距上次成功拉取超过节流间隔的 host；判死的 host 不受节流，
-  /// 回前台立刻再探（BUG-4275，[RemoteDictionaryReachability.probeUnreachableNow]，
+  /// 回前台立刻再探（BUG-4692，[RemoteDictionaryReachability.probeUnreachableNow]，
   /// 与定时再探共用同一次探测）。返回的差异不含经探测拉到的 host。
   Future<Map<String, RemoteDictionaryCatalogDiff>> refreshOnResume() async {
     // 先发起探测（排在串行链上），再排节流刷新：等到刷新跑完时探测也已跑完。
@@ -253,7 +258,8 @@ class RemoteDictionaryCatalogService {
     String hostId, {
     required Duration timeout,
   }) async {
-    final RemoteHostOutcomes outcomes = RemoteHostOutcomes();
+    // 可达性不在这里记：传输层把每个候选的结局报给全局上报点，[_reachability]
+    // 订阅的就是那一份。
     final InterconnectGetOutcome outcome;
     try {
       outcome = await _transport.getJson(
@@ -263,13 +269,10 @@ class RemoteDictionaryCatalogService {
         candidateFilter: (FushiClientUrl candidate) =>
             candidate.isDictionaryLookupCandidate &&
             remoteDictionaryHostIdOf(candidate) == hostId,
-        onCandidateOutcome: outcomes.add,
       );
     } on SyncAuthError catch (e, stack) {
       ErrorLogService.instance.log('remoteDictionaryCatalog.auth', e, stack);
       return null;
-    } finally {
-      _reachability.record(outcomes.reachableByHost);
     }
     return remoteDictionaryInfosFromJson(outcome.json);
   }
@@ -307,7 +310,7 @@ class RemoteDictionaryCatalogService {
   /// 不用再持有服务实例。真正改了行就 bump [catalogRevision]。
   ///
   /// 新行的顺序 / 开关按优先级取：
-  /// 1. 激活配置快照里的 `<hostId>/<真名>`（BUG-4276）——配置从服务器拉下来 / 恢复 /
+  /// 1. 激活配置快照里的 `<hostId>/<真名>`（BUG-4693）——配置从服务器拉下来 / 恢复 /
   ///    导入后先应用、目录后到，或配对时配置早已激活，应用那一刻还没有这一行可写；
   ///    这里补上，配置的选择不必等到下一次切换才生效；
   /// 2. 本机同名词典（刚推送上去的那本，落在本机行的位置、沿用本机开关）；

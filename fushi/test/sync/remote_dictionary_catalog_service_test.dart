@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/src/sync/interconnect_post_transport.dart';
 import 'package:fushi/src/sync/remote_dictionary_catalog_service.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -17,6 +18,17 @@ import 'package:http/testing.dart';
 /// 服务器托管词典目录的对账状态机（新增 / 消失 / 回来 / 目录列更新 / 不可达不动），
 /// 以及刷新只问开着「用它查词典」的那台 host。
 void main() {
+  // V-B4：带 hostId 的明文地址拿凭据前要当场 ping 核对；这里的对端是 MockClient / 本机
+  // 假服务，把身份核对视为通过（选路本身由 interconnect_peer_addresses 的测试覆盖）。
+  setUp(() {
+    resetInterconnectRaceCache();
+    debugInterconnectAddressProbeOverride =
+        (FushiClientUrl candidate, String? hostId) async => true;
+  });
+  tearDown(() {
+    debugInterconnectAddressProbeOverride = null;
+    resetInterconnectRaceCache();
+  });
   late FushiDatabase db;
 
   setUp(() async {
@@ -121,7 +133,7 @@ void main() {
       return profileId;
     }
 
-    test('BUG-4276：激活配置快照有这本 ⇒ 新行取快照的顺序与开关（压过本机同名与 host 默认）', () async {
+    test('BUG-4693：激活配置快照有这本 ⇒ 新行取快照的顺序与开关（压过本机同名与 host 默认）', () async {
       await db.upsertDictionaryMeta(
         const DictionaryMetadataCompanion(
           name: Value<String>('L'),
@@ -176,7 +188,7 @@ void main() {
       expect(live['h1/Bad']!.hidden, isTrue);
     });
 
-    test('BUG-4276：快照只播种新行，已有行的配置列不被它改', () async {
+    test('BUG-4693：快照只播种新行，已有行的配置列不被它改', () async {
       await RemoteDictionaryCatalogService.reconcileHost(
         db,
         hostId: 'h1',
@@ -451,7 +463,7 @@ void main() {
       expect((await rows()).keys, <String>['host-3/Meikyo']);
     });
 
-    // ── BUG-4275：目录服务与查词共用一份可达性 ─────────────────────────────
+    // ── BUG-4692：目录服务与查词共用一份可达性 ─────────────────────────────
     const List<FushiClientUrl> oneHost = <FushiClientUrl>[
       FushiClientUrl(url: 'http://h1:8765', hostId: 'host-1'),
     ];

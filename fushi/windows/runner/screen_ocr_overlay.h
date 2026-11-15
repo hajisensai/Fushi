@@ -48,6 +48,8 @@ class ScreenOcrOverlay {
     // 取帧路径的诊断（HDR 显示器走了哪条路、为什么回落），空 = 普通 SDR BitBlt。
     // 经通道回给 Dart 记进诊断日志。
     std::string diagnostic;
+    // 这帧是 DXGI scRGB 取帧（HDR + Windows 10）还是 GDI BitBlt：随取证一起回给 Dart。
+    bool via_dxgi = false;
   };
 
   using TapCallback = std::function<void(int x, int y)>;

@@ -15,6 +15,8 @@ import 'package:fushi/src/media/video/browser_video_study_bridge.dart'
     show BrowserVideoSample;
 import 'package:fushi/src/media/video/graphic_subtitle_ocr_types.dart'
     show GraphicSubtitleOcrFrame, GraphicSubtitleOcrUnavailable;
+import 'package:fushi/src/media/video/subtitle_capture_align.dart'
+    show buildCaptureAlignResponse;
 import 'package:fushi/src/sync/extension_font_api.dart';
 import 'package:fushi/src/sync/extension_image_ocr.dart';
 import 'package:fushi/src/sync/remote_subtitle_search_handlers.dart';
@@ -75,6 +77,10 @@ class FushiExtensionApiCore {
 
   static const String youtubeCaptionsPath = '/api/youtube/captions';
   static const String subtitleParsePath = '/api/subtitle/parse';
+
+  /// 反馈 0wkJImhZUp：网页视频自动对轴。扩展边播边听攒下的音频能量包络 + 当前轨 cue →
+  /// app 的自动对轴算法（[buildCaptureAlignResponse]）算整体平移。
+  static const String subtitleAlignPath = '/api/subtitle/align';
   static const String subtitleSearchPath = '/api/subtitle/search';
   static const String subtitleFetchPath = '/api/subtitle/fetch';
   static const String jimakuSearchPath = '/api/subtitle/jimaku/search';
@@ -93,6 +99,7 @@ class FushiExtensionApiCore {
   static const Set<String> paths = <String>{
     youtubeCaptionsPath,
     subtitleParsePath,
+    subtitleAlignPath,
     subtitleSearchPath,
     subtitleFetchPath,
     jimakuSearchPath,
@@ -184,6 +191,8 @@ class FushiExtensionApiCore {
         return _youtubeCaptions(body);
       case subtitleParsePath:
         return _subtitleParse(body);
+      case subtitleAlignPath:
+        return _subtitleAlign(body);
       case subtitleSearchPath:
         return _subtitleSearch(body);
       case subtitleFetchPath:
@@ -248,6 +257,18 @@ class FushiExtensionApiCore {
     return FushiExtensionApiResponse.json(
       buildParsedSubtitleResponse(filename: filename, content: content),
     );
+  }
+
+  /// 反馈 0wkJImhZUp：网页视频自动对轴。body 见 [buildCaptureAlignResponse]；体不合契约 400。
+  FushiExtensionApiResponse _subtitleAlign(Map<String, dynamic> body) {
+    final Map<String, dynamic>? out = buildCaptureAlignResponse(body);
+    if (out == null) {
+      return const FushiExtensionApiResponse.error(
+        400,
+        'Bad binMs/startMs/rmsDb/cues',
+      );
+    }
+    return FushiExtensionApiResponse.json(out);
   }
 
   /// 「查字幕」①搜索：逻辑在 [buildRemoteSubtitleSearchResponse]；候选按 handle 暂存供 fetch。

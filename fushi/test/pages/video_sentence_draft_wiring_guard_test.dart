@@ -111,7 +111,7 @@ void main() {
 
     test('mining clears the draft only on success', () {
       final String mine = region(
-        'Future<MinePopupResult> _onMineEntryImpl(Map<String, String> fields) async {',
+        'Future<MinePopupResult> _onMineEntryImpl(',
         'Future<MinePopupResult> _onUpdateEntryImpl(',
       );
       // 成功 → 清草稿（与 popup.js 同事件归零）。

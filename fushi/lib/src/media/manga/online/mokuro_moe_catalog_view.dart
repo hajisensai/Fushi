@@ -322,13 +322,16 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
     });
   }
 
-  /// 一卷的入库身份 key（与导入侧 [MokuroMoeVolumeDownloader.volumeTitle] 同源）。
-  String _volumeKey(String volume) => sanitizeTtuFilename(
-    MokuroMoeVolumeDownloader.volumeTitle(_series?.name ?? '', volume),
-  );
+  /// 一卷可能的入库身份 key（与导入侧 [MokuroMoeVolumeDownloader.volumeTitle]
+  /// 同源；旧口径起名、已在库的卷也认，见 [MokuroMoeVolumeDownloader.volumeTitleCandidates]）。
+  Iterable<String> _volumeKeys(String volume) =>
+      MokuroMoeVolumeDownloader.volumeTitleCandidates(
+        _series?.name ?? '',
+        volume,
+      ).map(sanitizeTtuFilename);
 
   bool _isImported(String volume) =>
-      _existingBookKeys.contains(_volumeKey(volume));
+      _volumeKeys(volume).any(_existingBookKeys.contains);
 
   List<MokuroMoeSeries> get _filteredSeries {
     final List<MokuroMoeSeries> all = _library ?? const <MokuroMoeSeries>[];
@@ -366,7 +369,7 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
       if (!mounted || token != _seriesToken) return;
       setState(() {
         // 详情响应不保证回带 name/path/cover；缺了就用列表条目的值兜底，否则
-        // _volumeKey（入库身份）与封面 URL 会拿到空串。
+        // _volumeKeys（入库身份）与封面 URL 会拿到空串。
         _series = MokuroMoeSeries(
           name: detail.name.isNotEmpty ? detail.name : series.name,
           path: detail.path.isNotEmpty ? detail.path : series.path,

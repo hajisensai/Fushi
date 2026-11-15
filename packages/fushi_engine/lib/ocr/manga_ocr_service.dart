@@ -163,10 +163,16 @@ class MangaOcrModelStatus {
     required this.diskBytes,
     required this.totalBytes,
     this.obtainedBytes = 0,
+    this.supersededReady = false,
   });
 
+  /// 当前一代模型的检测 / 识别文件是否齐全（决定设置页还要不要下载）。
   final bool detectorReady;
   final bool recognizerReady;
+
+  /// 当前一代没下齐，但磁盘上有齐全的上一代模型：识别照常能跑（见 [canRun]），
+  /// 设置页仍按「未下齐」给出下载入口。
+  final bool supersededReady;
 
   /// 模型目录的**真实递归占用**字节数。
   ///
@@ -190,7 +196,11 @@ class MangaOcrModelStatus {
   /// Range 续传，再点就是接着下。能力早就在，缺的只是把它说出来。
   final int obtainedBytes;
 
+  /// 当前一代是否下齐。「还要不要下载」看它；「能不能识别」看 [canRun]。
   bool get allReady => detectorReady && recognizerReady;
+
+  /// 本地 OCR 现在能不能跑：当前一代齐全，或上一代齐全（替它读）。
+  bool get canRun => allReady || supersededReady;
 
   /// 是否存在可续传的半成品（决定按钮显示「下载」还是「继续下载」）。
   bool get hasResumableDownload => !allReady && obtainedBytes > 0;

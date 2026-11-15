@@ -23,6 +23,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
@@ -1059,7 +1060,7 @@ class DictionaryManagerRow {
     return '$kDictionaryManagerServerKeyPrefix${remote!.key}';
   }
 
-  /// 用户可见的名字：本机走 effectiveDisplayName；服务器行是本机起的名（v150）>
+  /// 用户可见的名字：本机走 effectiveDisplayName；服务器行是本机起的名（v154）>
   /// host 报的展示名 > 真名（[RemoteDictionary.effectiveDisplayName]）。
   String get displayName {
     final Dictionary? l = local;
@@ -1392,30 +1393,32 @@ class DictionarySourceFilterBar extends StatelessWidget {
       child: Row(
         children: <Widget>[
           Expanded(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: <Widget>[
-                  for (final (DictionarySourceFilter filter, String label)
-                      in options)
-                    Padding(
-                      padding: EdgeInsetsDirectional.only(
-                        end: tokens.spacing.gap / 2,
-                      ),
-                      child: FushiPressScale(
-                        child: FushiChoiceChip(
-                          key: ValueKey<String>(
-                            'dict-source-filter-${filter.id}',
+            child: HorizontalDragScrollable(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: <Widget>[
+                    for (final (DictionarySourceFilter filter, String label)
+                        in options)
+                      Padding(
+                        padding: EdgeInsetsDirectional.only(
+                          end: tokens.spacing.gap / 2,
+                        ),
+                        child: FushiPressScale(
+                          child: FushiChoiceChip(
+                            key: ValueKey<String>(
+                              'dict-source-filter-${filter.id}',
+                            ),
+                            label: Text(label),
+                            selected: filter == selected,
+                            onSelected: (bool _) {
+                              if (filter != selected) onSelected(filter);
+                            },
                           ),
-                          label: Text(label),
-                          selected: filter == selected,
-                          onSelected: (bool _) {
-                            if (filter != selected) onSelected(filter);
-                          },
                         ),
                       ),
-                    ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),

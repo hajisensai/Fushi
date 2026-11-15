@@ -8,6 +8,7 @@ export 'src/audio_fingerprint.dart';
 export 'src/fushi_music_library.dart';
 export 'src/lyric_timeline.dart';
 export 'src/lyrics_ffi.dart';
+export 'src/music_playlist_file.dart';
 export 'src/music_scanner.dart';
 export 'src/music_tag_fields.dart';
 export 'src/plugin/plugin_ffi.dart';

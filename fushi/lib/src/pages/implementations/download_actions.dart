@@ -95,6 +95,7 @@ Future<GenericPushOutcome> pushGenericMagnet({
   required String magnet,
   required String contentKind,
   DiscoveryMediaKind? discoveryKind,
+  void Function(DownloadExecutionUnreachable unreachable)? onRemoteUnreachable,
 }) async {
   // 「下载执行设备」指到互联 host 时整条磁链交给它，本机不碰下载后端。
   // [discoveryKind] 是远端按域入库用的内容域（null = 视频）；本机路径仍按
@@ -104,27 +105,34 @@ Future<GenericPushOutcome> pushGenericMagnet({
   );
   switch (execution) {
     case DownloadExecutionRemote(target: final target, client: final client):
-      final String? kindName = discoveryKind?.name;
-      if (!target.supportsKind(kindName)) {
-        return GenericPushOutcome.remoteKindUnsupported;
-      }
-      final String trimmed = magnet.trim();
-      if (parseMagnetInfoHash(trimmed) == null) {
-        return GenericPushOutcome.invalidMagnet;
-      }
       try {
-        await client.addMagnet(
-          target,
-          magnetUri: trimmed,
-          title: parseMagnetDisplayName(trimmed) ?? trimmed,
-          discoveryKind: kindName,
-        );
-        return GenericPushOutcome.remoteQueued;
-      } on Object catch (error, stack) {
-        ErrorLogService.instance.log('GenericMagnet.remote', error, stack);
-        return GenericPushOutcome.pushFailed;
+        final String? kindName = discoveryKind?.name;
+        if (!target.supportsKind(kindName)) {
+          return GenericPushOutcome.remoteKindUnsupported;
+        }
+        final String trimmed = magnet.trim();
+        if (parseMagnetInfoHash(trimmed) == null) {
+          return GenericPushOutcome.invalidMagnet;
+        }
+        try {
+          await client.addMagnet(
+            target,
+            magnetUri: trimmed,
+            title: parseMagnetDisplayName(trimmed) ?? trimmed,
+            discoveryKind: kindName,
+          );
+          return GenericPushOutcome.remoteQueued;
+        } on Object catch (error, stack) {
+          ErrorLogService.instance.log('GenericMagnet.remote', error, stack);
+          return GenericPushOutcome.pushFailed;
+        }
+      } finally {
+        execution.release();
       }
-    case DownloadExecutionUnreachable():
+    case final DownloadExecutionUnreachable unreachable:
+      // 结果枚举带不了原因：经回调交给调用方，提示时说出具体原因（凭据 / 证书 /
+      // 版本），见 [genericPushMessage]。
+      onRemoteUnreachable?.call(unreachable);
       return GenericPushOutcome.remoteUnreachable;
     case DownloadExecutionLocal():
       break;
@@ -229,8 +237,12 @@ Future<GenericPushOutcome> enqueueSelectedDiscoveryTorrent({
   }
 }
 
-/// 把 [GenericPushOutcome] 映射成用户可读提示文案（i18n）。
-String genericPushMessage(GenericPushOutcome outcome) {
+/// 把 [GenericPushOutcome] 映射成用户可读提示文案（i18n）。[unreachable] 是
+/// [pushGenericMagnet] 经 `onRemoteUnreachable` 交回的解析结果，带失败原因。
+String genericPushMessage(
+  GenericPushOutcome outcome, {
+  DownloadExecutionUnreachable? unreachable,
+}) {
   switch (outcome) {
     case GenericPushOutcome.ok:
       return t.discovery_download_queued;
@@ -245,7 +257,9 @@ String genericPushMessage(GenericPushOutcome outcome) {
     case GenericPushOutcome.remoteQueued:
       return t.download_execution_remote_queued;
     case GenericPushOutcome.remoteUnreachable:
-      return t.download_execution_host_unreachable;
+      return unreachable == null
+          ? t.download_execution_host_unreachable
+          : downloadExecutionUnreachableMessage(unreachable);
     case GenericPushOutcome.remoteKindUnsupported:
       return t.download_execution_remote_kind_unsupported;
     case GenericPushOutcome.remoteMagnetOnly:
@@ -316,12 +330,15 @@ Future<DownloadStartResult> startDiscoveryItemDownload({
           return const DownloadStartResult.declined('页面已关闭');
         }
         final GenericPushOutcome outcome;
+        DownloadExecutionUnreachable? unreachable;
         if (payload is DiscoveryTorrentPayload) {
           outcome = await pushGenericMagnet(
             context: context,
             appModel: appModel,
             magnet: payload.magnetUri,
             discoveryKind: item.kind,
+            onRemoteUnreachable: (DownloadExecutionUnreachable u) =>
+                unreachable = u,
             contentKind: switch (item.kind) {
               DiscoveryMediaKind.novel => AnimeDownloadPlan.kindBook,
               DiscoveryMediaKind.audiobook => AnimeDownloadPlan.kindAudiobook,
@@ -352,7 +369,7 @@ Future<DownloadStartResult> startDiscoveryItemDownload({
           started: outcome.isSuccess,
           notices: <DownloadStartNotice>[
             DownloadStartNotice(
-              genericPushMessage(outcome),
+              genericPushMessage(outcome, unreachable: unreachable),
               outcome.isSuccess
                   ? ToastSeverity.success
                   : outcome == GenericPushOutcome.alreadyQueued

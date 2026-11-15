@@ -159,7 +159,8 @@ fushi_fsrs 合成一个归档，同理。
 | macOS | `build_macos_dylib.sh`（只出 arm64） | `prebuilt/macos/libfushi_web_core.dylib` | Runner 构建阶段「Bundle fushi_web_core dylib」拷进 `Contents/Frameworks`；Release/Profile 缺库失败 |
 | iOS | **并入伞形库** `native/fushi_ios_umbrella/build_ios_staticlib.sh` | `libfushi_ios_umbrella.a` | Runner `-force_load`，Dart 侧 `DynamicLibrary.process()`；出包后核对 `fwc_*` 符号 |
 
-- 测试：`cargo test --release`（含回归向量）；Dart 包 `packages/fushi_web_core` 与 `fushi/` 的单测经
+- 测试：`cargo test --release`（含回归向量；开发循环用 `cargo test --profile quick --lib <过滤>`，见
+  docs/agent/build.md「Rust 本地开发循环」）；Dart 包 `packages/fushi_web_core` 与 `fushi/` 的单测经
   `package:fushi_web_core/testing.dart` 找本目录 `target/release/` 或 `prebuilt/<平台>/` 的库（或
   `FUSHI_WEB_CORE_LIB`），找不到就失败。CI 的单测 job 先编 Linux `.so`。
 - `verify_abi.sh <二进制> [nm]`：按 Dart 绑定里 lookup 的 `fwc_*` 名逐个核对导出表（ELF / Mach-O）。

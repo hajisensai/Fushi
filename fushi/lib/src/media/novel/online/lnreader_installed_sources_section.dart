@@ -306,34 +306,28 @@ class _LnReaderInstalledSourcesSectionState
             )
           else ...<Widget>[
             if (pinned.isNotEmpty)
-              SliverToBoxAdapter(
-                child: InstalledSourcesGroup<LnReaderInstalledPlugin>(
-                  key: const ValueKey<String>('novel_sources_pinned_group'),
-                  header: t.online_sources_pinned_header,
-                  items: pinned,
-                  keyOf: (LnReaderInstalledPlugin plugin) => plugin.id,
-                  reorderable: reorderable,
-                  onReorder: (List<LnReaderInstalledPlugin> reordered) =>
-                      unawaited(_reorderGroup(reordered, pinned: true)),
-                  rowBuilder: _rowBuilder(pinned, reorderable: reorderable),
-                ),
+              InstalledSourcesGroup<LnReaderInstalledPlugin>(
+                key: const ValueKey<String>('novel_sources_pinned_group'),
+                header: t.online_sources_pinned_header,
+                items: pinned,
+                keyOf: (LnReaderInstalledPlugin plugin) => plugin.id,
+                reorderable: reorderable,
+                onReorder: (List<LnReaderInstalledPlugin> reordered) =>
+                    unawaited(_reorderGroup(reordered, pinned: true)),
+                rowBuilder: _rowBuilder(pinned, reorderable: reorderable),
               ),
             if (rest.isNotEmpty)
-              SliverToBoxAdapter(
-                child: InstalledSourcesGroup<LnReaderInstalledPlugin>(
-                  key: const ValueKey<String>('novel_sources_all_group'),
-                  // 无置顶时整段只有一组，不必再挂小标题。
-                  header: pinned.isNotEmpty
-                      ? t.online_sources_all_header
-                      : null,
-                  items: rest,
-                  keyOf: (LnReaderInstalledPlugin plugin) => plugin.id,
-                  reorderable: reorderable,
-                  entranceOffset: pinned.length,
-                  onReorder: (List<LnReaderInstalledPlugin> reordered) =>
-                      unawaited(_reorderGroup(reordered, pinned: false)),
-                  rowBuilder: _rowBuilder(rest, reorderable: reorderable),
-                ),
+              InstalledSourcesGroup<LnReaderInstalledPlugin>(
+                key: const ValueKey<String>('novel_sources_all_group'),
+                // 无置顶时整段只有一组，不必再挂小标题。
+                header: pinned.isNotEmpty ? t.online_sources_all_header : null,
+                items: rest,
+                keyOf: (LnReaderInstalledPlugin plugin) => plugin.id,
+                reorderable: reorderable,
+                entranceOffset: pinned.length,
+                onReorder: (List<LnReaderInstalledPlugin> reordered) =>
+                    unawaited(_reorderGroup(reordered, pinned: false)),
+                rowBuilder: _rowBuilder(rest, reorderable: reorderable),
               ),
           ],
         ],

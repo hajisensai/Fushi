@@ -18,6 +18,8 @@ import 'package:fushi/src/media/video/subtitle/video_subtitle_generate_sheet.dar
     show
         VideoSubtitleGeneratePrefs,
         VideoSubtitleInAppTranscribe,
+        confirmVideoSubtitleAiFrames,
+        resolveVideoSubtitleAiFrames,
         videoSubtitleEpisodeStatusLabel,
         videoSubtitleStageLabel;
 import 'package:fushi/src/sync/interconnect_job_client.dart' show HostJobTarget;
@@ -122,6 +124,7 @@ class RemoteVideoSubtitleSheet extends StatefulWidget {
 
 class _RemoteVideoSubtitleSheetState extends State<RemoteVideoSubtitleSheet> {
   late bool _proofread = widget.prefs.proofread;
+  late bool _frames = widget.prefs.frames;
   late VideoSubtitleSegmenterMode _segmenter = widget.prefs.segmenter;
 
   /// 在 host 上跑管线、字幕写在 host 的视频旁；false = 本机转录。没有
@@ -178,6 +181,15 @@ class _RemoteVideoSubtitleSheetState extends State<RemoteVideoSubtitleSheet> {
   }
 
   bool get _supported => _host?.supports(kVideoSubtitleJobKind) ?? false;
+
+  /// host 的校对提供商能不能收图（capability 的 `framesAvailable`）；null = 老 host
+  /// 不认画面参考，面板不显示这个开关、也不带参数。
+  bool? get _hostFramesAvailable {
+    final Object? entry = _host?.capability[kVideoSubtitleJobKind];
+    final Object? value = entry is Map ? entry['framesAvailable'] : null;
+    return value is bool ? value : null;
+  }
+
   bool get _running => _job?.isRunning ?? false;
 
   Future<void> _setProofread(bool on) async {
@@ -192,9 +204,21 @@ class _RemoteVideoSubtitleSheetState extends State<RemoteVideoSubtitleSheet> {
       );
       if (!ok || !mounted) return;
       await widget.prefs.setConsented(true);
+      // 说明里写明了画面：画面的知情一并记下。
+      await widget.prefs.setFramesConsented(true);
     }
     setState(() => _proofread = on);
     await widget.prefs.setProofread(on);
+  }
+
+  /// 「参考画面」开关（与本机面板共用同一偏好与知情）。
+  Future<void> _setFrames(bool on) async {
+    if (on && !await confirmVideoSubtitleAiFrames(context, widget.prefs)) {
+      return;
+    }
+    if (!mounted) return;
+    setState(() => _frames = on);
+    await widget.prefs.setFrames(on);
   }
 
   Future<void> _setSaveBeside(bool on) async {
@@ -219,8 +243,16 @@ class _RemoteVideoSubtitleSheetState extends State<RemoteVideoSubtitleSheet> {
     await widget.prefs.setSegmenter(mode);
   }
 
-  void _start() {
+  Future<void> _start() async {
     setState(() => _startError = null);
+    // host 能收图才谈得上带画面；用户点了「不发画面」时开关跟着关掉。
+    final bool frames = await resolveVideoSubtitleAiFrames(
+      context,
+      widget.prefs,
+      wanted: _proofread && _frames && (_hostFramesAvailable ?? false),
+    );
+    if (!mounted) return;
+    if (_frames && !widget.prefs.frames) setState(() => _frames = false);
     try {
       final RemoteVideoSubtitleJob job = widget.service.start(
         widget.target,
@@ -228,6 +260,7 @@ class _RemoteVideoSubtitleSheetState extends State<RemoteVideoSubtitleSheet> {
           proofread: _proofread,
           segmenter: _segmenter,
           mossBackend: widget.prefs.mossBackend,
+          frames: frames,
         ),
       );
       setState(() => _attach(job));
@@ -378,6 +411,40 @@ class _RemoteVideoSubtitleSheetState extends State<RemoteVideoSubtitleSheet> {
           ],
         ),
       ),
+      // 画面参考：host 上的管线取它自己那份视频的画面。老 host 不认，不显示。
+      if (_proofread && _saveBeside && _hostFramesAvailable != null)
+        (
+          t.video_subtitle_ai_frames_label,
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            spacing: 4,
+            children: <Widget>[
+              Row(
+                children: <Widget>[
+                  Expanded(child: _hint(t.video_subtitle_ai_frames_hint)),
+                  SizedBox(width: tokens.spacing.gap),
+                  KeyedSubtree(
+                    key: const ValueKey<String>('remote-subtitle-frames'),
+                    child: adaptiveSwitch(
+                      context: context,
+                      value: _frames,
+                      onChanged: _running
+                          ? null
+                          : (bool v) => unawaited(_setFrames(v)),
+                    ),
+                  ),
+                ],
+              ),
+              if (_frames && _hostFramesAvailable == false)
+                _hint(
+                  t.video_subtitle_ai_frames_unsupported,
+                  key: const ValueKey<String>(
+                    'remote-subtitle-frames-unsupported',
+                  ),
+                ),
+            ],
+          ),
+        ),
     ];
     final List<Widget> sections = <Widget>[
       for (int i = 0; i < parts.length; i++)

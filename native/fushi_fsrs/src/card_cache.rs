@@ -949,6 +949,29 @@ fn media_refs_in(html: &str, out: &mut Vec<String>) {
     }
 }
 
+/// `srsMediaRefsIn(html, includeStatic: true)`（模板 / CSS 用）：[media_refs_in] 的全部，再加引号 / 左括号后面下划线
+/// 开头的静态文件名——Dart `_staticRef` = `["'(]\s*(_[^"')\s]+)`（url("_x.woff")、src="_x.js" 等）。不去重。
+pub(crate) fn media_refs_with_static(text: &str, out: &mut Vec<String>) {
+    media_refs_in(text, out);
+    let stop = |c: char| matches!(c, '"' | '\'' | ')') || is_js_space(c);
+    let mut rest = text;
+    // 逐个找开头的引号 / 左括号；匹配上的名字不含这三种字符，所以从名字之后接着找与正则的不重叠匹配相同。
+    while let Some(open) = rest.find(['"', '\'', '(']) {
+        let after = &rest[open + 1..];
+        let name = after.trim_start_matches(is_js_space);
+        let len = match name.strip_prefix('_') {
+            Some(tail) => tail.find(stop).unwrap_or(tail.len()),
+            None => 0,
+        };
+        if len == 0 {
+            rest = after;
+            continue;
+        }
+        out.push(unescape(&name[..1 + len]));
+        rest = &name[1 + len..];
+    }
+}
+
 fn style_link_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| {

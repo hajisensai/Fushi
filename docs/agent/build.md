@@ -30,11 +30,13 @@ bundle 布局：`build/linux/x64/<mode>/bundle/{fushi, lib/, data/, mihon_bridge
 
 **单实例**：runner 以 `G_APPLICATION_HANDLES_COMMAND_LINE` 注册到会话 D-Bus（id `app.fushi.reader`），第二次启动（文件关联 / `fushi://` 深链 / 终端 `fushi <路径>`）把第一条非 flag 参数经 `app.fushi/external_video` 交给已开着的实例并前置窗口（`linux/runner/my_application.cc` + `external_open_handoff.cc`）；Dart 处理器注册前到达的参数在 runner 排队，Dart 发 `externalOpenReady` 后冲出，首帧前不前置窗口（BUG-3089）；首实例退出链开始时 Dart 发 `appExiting`，此后它对二次启动回退出码 75、不接管，二次启动方等名字让出后自己按首实例启动（BUG-3087，对应 Windows「窗口不可见 ⇔ 正在退出」）；`--fushi-restarted` 先等旧实例让出名字；设了 `FUSHI_TEST_HIDDEN` / `FUSHI_TEST_ROOT` 的测试实例不参与单实例；没有会话总线时 GLib 自动退化成多实例。系统关联本身靠打包时装的 `.desktop`（`Exec=fushi %u` + `MimeType=x-scheme-handler/fushi;…`），本仓不随带。
 
-构建依赖（Debian trixie 一条龙）：`clang cmake ninja-build make pkg-config g++`（≥ 14，fushidicts 要 `std::expected`）、`libgtk-3-dev liblzma-dev libmpv-dev libsecret-1-dev libkeybinder-3.0-dev`，要 WebView 再加 `libwpewebkit-2.0-dev libwpebackend-fdo-1.0-dev libwpe-1.0-dev libepoxy-dev libwayland-dev`；要 app 外全局查词卡（`fushi_lookup_card`，独立进程，见 [Linux 全局查词卡](../specs/2026-11-05-linux-global-lookup-card.md)）再加 `libwebkit2gtk-4.1-dev libjson-glib-dev libx11-dev libxi-dev`，缺了只是不编这个 helper；`wayland-protocols`（≥ 1.39）让 runner 能读 Wayland 应用里选中的字，缺了只读 X11 PRIMARY。Flutter（3.47.6）用 `CC=clang` 调 CMake，而 Debian 的 clang 配 libstdc++ 时 `std::expected` 不一定可用：在 PATH 前面放两个垫片脚本把 `clang` / `clang++` 指到 `gcc` / `g++`（≥ 14）再 `flutter build linux`。Mihon 运行时：`tool/mihon/build_desktop_runtime.sh bundle/mihon_bridge` 在 Linux 上出宿主架构的 `runtime/` + JAR。
+构建依赖（Debian trixie 一条龙）：`clang cmake ninja-build make pkg-config g++`（≥ 14，fushidicts 要 `std::expected`）、`libgtk-3-dev liblzma-dev libmpv-dev libsecret-1-dev libkeybinder-3.0-dev`，要 WebView 再加 `libwpewebkit-2.0-dev libwpebackend-fdo-1.0-dev libwpe-1.0-dev libepoxy-dev libwayland-dev`；要 app 外全局查词卡（`fushi_lookup_card`，独立进程，见 [Linux 全局查词卡](../specs/2026-11-05-linux-global-lookup-card.md)）再加 `libwebkit2gtk-4.1-dev libjson-glib-dev libx11-dev libxi-dev`，缺了只是不编这个 helper；`wayland-protocols`（≥ 1.39）让 runner 能读 Wayland 应用里选中的字，缺了只读 X11 PRIMARY；`libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev` 让 Steam Deck 游戏模式的截屏识字能读 Gamescope 的 PipeWire 画面，缺了游戏模式截屏直接报 `capture_failed`。Flutter（3.47.6）用 `CC=clang` 调 CMake，而 Debian 的 clang 配 libstdc++ 时 `std::expected` 不一定可用：在 PATH 前面放两个垫片脚本把 `clang` / `clang++` 指到 `gcc` / `g++`（≥ 14）再 `flutter build linux`。Mihon 运行时：`tool/mihon/build_desktop_runtime.sh bundle/mihon_bridge` 在 Linux 上出宿主架构的 `runtime/` + JAR。
 
 本机没有 Linux：用 Docker Desktop（`debian:trixie` + 拷进 `/opt/flutter` 的 3.47.6 SDK）构建；源码以 `git ls-files -co --exclude-standard` 打包进 docker 卷再编，别直接 bind mount 工作区（`.dart_tool/package_config.json` 会被写成 Linux 路径）。跑 app / 集成测试用 `Xvfb :99` + `dbus-run-session`；容器里没有 user namespace，WebView 相关测试要设 `WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1`（**只限容器测试**）。
 
 **一条命令出包（2026-11-03）**：`bash tool/linux/build_in_docker.sh [--skip-native] [--clean]`（Git Bash / Linux / macOS 宿主均可）按上面的做法在 `tool/linux/Dockerfile`（trixie + Flutter 3.47.6 + Rust 1.95.0 / 1.97.1 + protoc 31.1 + vcpkg）里跑 `tool/linux/build_bundle.sh`，产出 `build/linux-dist/fushi-<版本>-linux-x64.tar.gz`。与 app CMake 的 copy-if-present 不同，**出包时 p2p / fsrs / torrent 一律必需**，并补上 CMake 不管的 `fushi-anki-sync`、`mihon_bridge/`、`fushi_cli`；缺任何一件即失败。缓存放在 `fushi-linux-*` 命名卷里，`--skip-native` 跳过 p2p / torrent 与 bootstrap 的 Rust 重编；容器默认只用一半核心与 12 GB。产物要求 glibc ≥ 2.38（实测）。无头冒烟：`bash tool/linux/smoke_in_docker.sh [秒]` → `build/linux-dist/smoke/{run.log,screen.png}`。目标机运行库（Ubuntu 26.04 / WSL 实测缺的）：`libsecret-1-0 libsoup-3.0-0 libpulse0 libwayland-server0 libkeybinder-3.0-0 libmpv2 libgles2 libegl1 libgl1-mesa-dri`，外加 PATH 上的 `ffmpeg ffprobe parecord`（`pulseaudio-utils`）；可选 WPE：Debian 13 `libwpewebkit-2.0-1 libwpebackend-fdo-1.0-1 libwpe-1.0-1`、Fedora / Arch `wpewebkit`；查词卡 helper 要 `libwebkit2gtk-4.1-0 libjson-glib-1.0-0 libxi6`（GNOME 49 Flatpak 运行时自带）。**Ubuntu 26.04 的官方源没有 WPE WebKit**（实测 `apt-cache search wpe` 为空），Ubuntu 上阅读器 / 弹窗只显示安装提示——要覆盖 Ubuntu 只能随包 / Flatpak 带 WPE 或改用 WebKitGTK。
+
+**Flatpak（官方 Linux 分发，2026-11-07）**：两层。`tool/linux/flatpak/baseapp/`（`app.fushi.reader.BaseApp`：WPE WebKit、mpv 等 GNOME 49 运行时缺的库，`-g0` 不带调试信息）只在它或 `tool/linux/flatpak/Dockerfile` 变了时重编（数小时）；`app.fushi.reader.yml` 以 `base:` 叠上 Linux bundle（几分钟）。构建脚本只有一份 `tool/linux/flatpak/flatpak_build.sh`（`baseapp` / `app` / `publish`），本机经 `build_flatpak.sh` 在特权 Docker 容器里跑，CI 直接调它。CI：`release-desktop.yml` 的 `flatpak-baseapp` job 经原生产物持久库（名字由 `native-store-names` 的 `flatpak` 平台算）取或编 BaseApp，`linux` job 编 bundle（`FUSHI_BUILD_NAME` / `FUSHI_BUILD_NUMBER` = 通道版本）并按通道提交到 Flatpak branch（debug / beta / stable），`publish` 先把签名的 OSTree 仓库部署到 GitHub Pages（`https://<owner>.github.io/<repo>/repo/`，可用变量 `FLATPAK_REPO_URL` 覆盖），再传 `fushi-<v>-linux-x86_64.flatpak` 资产与清单。应用内自更新（`fushi/lib/src/utils/misc/flatpak_updater.dart`）：版本检查照旧读 GitHub release，安装经 `org.freedesktop.portal.Flatpak` 的 `UpdateMonitor.Update`，重启用 `Spawn` + `LATEST_VERSION`；通道由已装 branch 决定。**一次性设置（仓库管理员）**：secret `FLATPAK_GPG_PRIVATE_KEY`（ASCII armored，无口令）；Settings → Pages → Source 选 GitHub Actions，并让 `github-pages` 环境允许 `develop` 与 `main` 部署。没有 key 时只出未签名 bundle、不发仓库也不传资产。**改 `finish-args` = 已装用户要手动更新一次**：portal 拒绝需要新权限的更新（应用内提示用 `flatpak update app.fushi.reader`）。portal 的真实错误名（`portal/flatpak-portal.c`）：新权限 = `org.freedesktop.DBus.Error.NotSupported` 且带 `n_ops`，用户在「更新 Fushi？」对话框点了拒绝 = `AccessDenied`（portal 会记住，之后每次都拒，应用内提示去系统隐私设置放开）。`publish` 镜像线上仓库时用同一把公钥校验每个提交的签名，**换 key 要先清空 Pages 上的旧仓库**，否则镜像校验失败、发布中止。
 
 ## Melos
 
@@ -108,6 +110,66 @@ Android / Windows / macOS / iOS debug/beta workflow 必须使用跨 workflow 统
 - 缺库 = 构建失败：Windows / Linux CMake `FATAL_ERROR`（`FUSHI_RWKV_DLL` / `FUSHI_RWKV_SO`）、macOS `fushi/macos/bundle_fushi_rwkv.sh` `exit 1`、iOS 编译前 `fushi/ios/check_fushi_rwkv.sh`（伞形库不导出 `frwkv_abi_version` 即失败）、Android `checkFushiRwkvNative`（挂 `preBuild`）。本地 `tool/bootstrap.ps1` / `bootstrap.sh` 紧接 fushi_compute 编它，`-SkipNativeCompute` 两个一起跳过。守卫 `fushi/test/build/fushi_rwkv_hard_dependency_guard_test.dart`。
 - **CI**：凡用 `setup-fushi-compute` 的 job 紧跟着用 `.github/actions/setup-fushi-rwkv`（同样的 `android-abis`，导出 `FUSHI_RWKV_LIB`）；出包 job 与 fushi_compute 同处各带 rust-cache 构建并出包后核对（APK 每个 ABI、Windows bundle、macOS Frameworks、iOS Runner 导出 `frwkv_*`、服务端 Linux / Windows bundle），dlopen 冒烟比对的 ABI 版本从 `src/lib.rs` 的 `ABI_VERSION` 读、不写死。PR 上 `native-rwkv-gate.yml` 跑三种 CPU 内核的 `cargo test --release`（权重与小模型包按 `fetch_model.sh` 钉的两个 SHA-256 缓存）+ Android 三 ABI 真编与符号核对。
 - **许可**：fushi_rwkv 是 AGPL-3.0-or-later（推理核心搬自 kuma3-anki-core，所有者 2026-10-19 拍板接受，见 `native/fushi_rwkv/UPSTREAM.md`）。动态加载它的四端 app 与静态链它的 iOS 伞形库 / Runner 都随之受 AGPL 约束（GPL-3.0 第 13 条允许与 AGPL-3.0 合并分发）。
+
+## Rust 本地开发循环（quick profile）
+
+- **改 Rust 时的「编译—测试」循环一律用 `quick` profile，不用 `--release`**：在 `native/<crate>/` 下
+  `cargo test --profile quick --lib <过滤>`。带 feature 的照加（fushi_fsrs 的 `--features id_audit`）；有 `tests/*.rs`
+  集成测试的 crate（fushi_music / fushi_rwkv / fushi_corpus）按需去掉 `--lib` 或写 `--test <名>`。profile 定义在仓库根
+  `.cargo/config.toml`（cargo 从工作目录逐级向上找，所以在仓库任意子目录、或从根目录带 `--manifest-path` 都生效）。
+- **为什么**：各 crate 的 `[profile.release]` 是出包配置（`lto = true` + `codegen-units = 1`）——改一行就把整个 crate 连同全部
+  依赖重新做一遍 fat LTO，而且基本单线程；`cargo test --release` 还要把库本体（cdylib + staticlib）和测试可执行文件各做一遍。
+  `quick` 继承 release（优化级别、各包 `opt-level` 覆盖、`panic`、不开 `debug-assertions` / `overflow-checks` 都不变，测试的
+  运行语义与 CI 的 `cargo test --release` 相同），只改编译方式：不做 LTO、256 个 codegen unit、增量编译、不 strip（panic 回溯
+  带函数名）。
+- **实测**（2026-11-11，i5-12600KF，fushi_fsrs 6.8 万行，机器同时有其他会话在编）：
+
+  | | `--release` | `--profile quick --lib` |
+  |---|---|---|
+  | 改一行后重编到可跑测试 | 7～15 分钟 | **8～9 秒** |
+  | 全新 target 冷编（含依赖） | 约 15 分钟 | 2.5～5.5 分钟（看机器负载） |
+  | 一轮「test + `id_audit` test + build」 | 约 40 分钟 | —— |
+  | 全量 384 个测试（同负载背靠背） | `cargo test` 16 线程 263～301 秒 | `tool/rust_test.sh` 12 进程 **133 秒** |
+
+- **`--lib`**：不带它，`cargo test` 会把库本体与测试可执行文件各编一遍；测试都写在 crate 内（`#[cfg(test)]`）的 crate
+  （fushi_fsrs / fushi_compute / fushi_web_core）加 `--lib` 只编测试那一份，doctest 也跳过。
+- **`--release` 只在三种时候用**：① 出产物（`build_*` 脚本、`tool/native_libs.ps1`，给 app 与 `flutter test` 用的库必须是
+  release）；② 量性能（基准、README 里的耗时——`quick` 没有跨 crate 内联，**不要在 `quick` 下量性能**）；③ 复核只在 LTO /
+  单 codegen unit 下才出现的问题。全量 `cargo test --release --locked` 由 PR CI 的 `native-*-gate.yml` 跑，本地不拿它当循环，
+  一个分支至多 push 前跑一次。
+- **一个 worktree 一个 target 目录（默认的 `native/<crate>/target/` 就是），不必另设 `CARGO_TARGET_DIR`**。跨 worktree
+  共用一个目录曾经会静默拿错产物：cargo 给工作区内 crate 算单元哈希用的是相对工作区的路径，不同 worktree 的 `fushi_fsrs`
+  是**同一个哈希**，新鲜度只比源文件 mtime——实测 B 侧加了一个必挂的测试，`cargo test` 0.3 秒报 6 passed、exit 0，用的是
+  A 侧的产物。现在有两半接线防它：仓库根 `.cargo/config.toml` 的 `[env]` 把本 worktree 根目录放进 `FUSHI_WORKTREE_ROOT`
+  （`relative = true`），每个 crate 的入口文件 `option_env!` 读它一次，cargo 把值记进新鲜度指纹，换 worktree 就判 dirty 重编
+  本仓 crate（依赖不重编；值不进产物）。新加 crate 必须带上入口文件里那一行，守卫
+  `fushi/test/build/native_crate_worktree_fingerprint_guard_test.dart`。仍然不建议共用：并发构建互相等目录锁，来回切换每次
+  都要重编本仓 crate；**还没合到这份接线的旧分支共用目录照旧会拿错产物**。同一个 worktree 里的多个子代理共用它是对的。
+- **跑一大批测试用 `bash tool/rust_test.sh <crate> [过滤...]`**（`--features <f>`、`--jobs <n>`、`-- <libtest 参数>`）：用
+  `quick` 编一次，再把测试分给多个**进程**跑，退出码 0 = 全部通过且报告的测试数等于选中的数。fushi_fsrs 的测试在同一个进程
+  里多线程跑不快（16 个测试单线程 7 秒，16 线程反而 11～18 秒；分到 8 个进程则 8 倍工作量只多三成时间）。同负载背靠背
+  实测全量 384 个测试：`cargo test` 16 线程 263～301 秒，本脚本 12 进程 133 秒（机器闲时 85 秒）。跑个别测试直接
+  `cargo test --profile quick --lib <过滤>` 即可。
+- **为什么进程内多线程不快**：SQLite 的内存统计（`SQLITE_DEFAULT_MEMSTATUS`，默认开）让进程内每一次 SQLite 分配 / 释放都过
+  同一把全局锁，而测试是多线程同时建库、建表、预编译语句，分配极密。对照实验：用 `-DSQLITE_DEFAULT_MEMSTATUS=0` 重编后
+  同一批 16 个测试 1 / 4 / 16 线程是 7 / 3 / 3 秒，全量 16 线程 149～209 秒（开着是 337 秒，同负载背靠背）。已排除的：
+  SQLite 全局页缓存（`SQLITE_ENABLE_MEMORY_MANAGEMENT`）、Rust 堆分配器。**生产构建没有关它**：`ffsrs_store_diag_counts`
+  靠它报 SQLite 堆用量与高水位（移动端内存耗尽闪退的取证，BUG-4075，`store::ffi::tests::diag_counts_*` 钉着），而只读查询受
+  这把锁的影响不大——K 条只读连接各跑同样多的「取行 + JSON 取值 + 排序 + 分组」查询，吞吐开 / 关分别是 2 条 1.54× / 2.02×、
+  4 条 2.47× / 2.84×、8 条 2.52× / 2.63×。要在生产关掉它，得先给诊断换一个不靠全局统计的读数（例如按连接的
+  `sqlite3_db_status`）。分进程跑时每个进程各有一把锁，所以脚本不改被测对象就拿到了并行。
+- **循环里不跑两遍全量**：fushi_fsrs 的 `--features id_audit` 给 Dart 桥的 query / exec 路径加了 ID 绑定审计
+  （`ids::audit::take`），默认构建没有；CI 两种都跑。本地按改动选一种——动了桥、ID 绑定或经桥执行的 SQL 就带
+  `--features id_audit`，否则跑默认构建——两遍都跑留给 CI。
+- **测试可执行文件的全局分配器只在量内存时记账**（`native/fushi_fsrs/src/store/sync2/mem_bench.rs`）：它原先对每次分配 / 释放
+  都写同一条缓存行上的两个原子量，16 个测试线程互相抢，CPU 时间放大 27 倍（同一批测试单线程 6 秒、16 线程 170 秒）。给测试
+  加全局状态（分配器、计数器、全局锁）前先想清楚它在 16 个线程下的代价。
+- **sccache（可选）**：`tool/native_libs.ps1` 发现装了就自动挂上。实测只对冷编有用且有限：换一个 target 目录后 146 次可缓存编译只命中 26 次
+  （带 build script 的依赖把 `OUT_DIR`——在 target 目录下——编进产物，下游跟着失配），冷编 153 秒 → 92 秒；对「改一行重编」
+  没有帮助（工作区 crate 开了增量，sccache 不缓存增量编译）。缓存目录用 sccache 自己的配置文件指定（Windows 开发机在
+  `D:\dev-cache\sccache`，别落 C 盘）。
+- 旧分支 / 还没合到这份配置的 worktree：本机 `~/.cargo/config.toml` 里放同一段 `[profile.quick]` 即可（Windows 开发机已放）；
+  `[env]` 那一段只能跟仓库走（要按 worktree 解析路径），旧分支没有。
 
 ## 发布通道
 
@@ -252,6 +314,41 @@ Android / Windows / macOS / iOS debug/beta workflow 必须使用跨 workflow 统
   debug push），产物不进 Release 资产 —— 代价是这种 run 下 iOS 构建两次。
 - macOS 走 **Developer ID + 公证**，不进 Mac App Store：`Release.entitlements` 已刻意
   去沙盒以支持应用内自动更新替换 `/Applications/fushi.app`，商店强制沙盒，两者不可兼得。
+
+### iOS 包体积与崩溃符号（2026-11-15）
+
+- **slang 不生成 flat map**（`fushi/slang.yaml` 的 `flat_map: false`，BUG-4640）：17 个
+  `_flatMapFunction` 在 iOS 快照里占 15 MB，还会让 Windows gen_snapshot 爆栈（BUG-1589）。
+  文案只走生成的 getter，`t['key']` 编译不过；守卫 `test/build/slang_flat_map_disabled_guard_test.dart`。
+- **两条 iOS 出包命令都 `--split-debug-info`、不 `--obfuscate`**（BUG-4655）：未签名包拆到
+  `build/ios/dart-symbols-unsigned`，TestFlight 包拆到 `build/ios/dart-symbols-testflight`，各按
+  发布序号上传 artifact `ios-dart-symbols-{unsigned,testflight}-<序号>`（与 `ios-dsyms-*` 同为 90 天）。
+  不混淆是因为仓里有 `runtimeType.toString()` 判断，混淆只多省 0.7 MB。
+  代价：release 包里的 Dart 栈是 DWARF 形式（`*** *** ***` 头 + `#00 abs 0x… virt 0x… _kDartIsolateSnapshotInstructions+0x…`），
+  诊断日志 / 反馈里看不到文件名行号；`ui_activity_probe` 的调用点归因在 iOS release 包上会退化成原始帧。
+  **还原**：按报告里的构建号下载对应 artifact（`gh run download <run-id> -n ios-dart-symbols-unsigned-<序号>`，
+  TestFlight 包换 `testflight`），把栈原文存成文件后
+  `flutter symbolize -i stack.txt -d app.ios-arm64.symbols`。原生帧（`Runner+偏移`）照旧用 `ios-dsyms-*` 的 dSYM。
+- **iOS 包里每个 Mach-O 都 `strip -x`**（`tool/ios_strip_local_symbols.sh`，BUG-4656）：只去本地符号，
+  逐个比对 strip 前后的导出集合与 Runner 的 FFI 前缀计数，变了就让出包失败，之后再跑一遍 7 个
+  `verify_abi.sh`。崩溃符号化靠 dSYM，不受影响。
+  - 未签名 IPA：`flutter build ios` 是 Xcode build 动作（`DEPLOYMENT_POSTPROCESSING=NO`），Runner 的
+    `STRIP_STYLE=non-global` 不执行，嵌入的预编译 framework 也不 strip——在「Prepare unsigned iOS IPA
+    release asset」里 ditto 之后、zip 之前 strip（Mac 实测 −27.4 MB 原始、IPA zip −4.1 MB）。
+  - TestFlight：archive 动作下 Runner 已按 `STRIP_STYLE` 处理（实测再 strip 是空操作），但 CocoaPods
+    嵌的预编译 framework 原样进包（Harfbuzz、PDFium 等，再 strip 还能省 9.8 MB）。`flutter build ipa`
+    之后对归档里的 .app strip，再 `xcodebuild -exportArchive` 用同一份 ExportOptions 重签导出。
+- **已知未修：dev_dependencies 插件的 framework 仍进 Release IPA**（integration_test 82 KB、
+  flutter_native_splash 72 KB）。根因在 Flutter 3.47.6：release 构建只把它们从
+  `GeneratedPluginRegistrant` 里滤掉（`flutter_tools/lib/src/flutter_plugins.dart:1410` 的 `releaseMode`
+  过滤），而 `bin/podhelper.rb` 的 `flutter_install_plugin_pods`（:292）不看
+  `.flutter-plugins-dependencies` 的 `dev_dependency` 标记，照样 `pod` 进所有配置。在 Podfile 里把它们
+  限到 Debug / Profile 试过（Mac 实测 Pods-Runner-frameworks.sh 的 Release 段确实不再嵌入），但注册表只在
+  跑 pub 的 `flutter build` 里按 release 重生成（`runner/flutter_command.dart:1982` 的
+  `regeneratePlatformSpecificToolingIfApplicable`，`--no-pub` 时跳过）：`--no-pub` 的 release 构建或
+  pub get 后直接用 Xcode archive，注册表仍 `@import flutter_native_splash`，编译直接
+  `Module 'flutter_native_splash' not found`。为 150 KB 引入这个坑不划算，等 Flutter 的 podhelper
+  自己按 `dev_dependency` 过滤。
 
 ## 版本号与 build number
 
@@ -449,7 +546,7 @@ Flutter 3.47.6 下部分上游依赖未适配，两种补法并存（对个别�
 - **pub-cache 补丁**：`ci/apply-patches.sh` 把 `ci/patches/{hosted,git}/<包-版本>/` 覆盖到 pub cache，按精确版本号命名；版本漂移就跳过并警告（HBK-AUDIT-005）。每次清 cache 或 `pub get` 后要重跑（bootstrap 已含）。
 - **Flutter SDK 框架补丁**：同一脚本还把 `ci/patches/flutter-sdk/<frameworkVersion>/*.patch`（`-p1` unified diff）打进当前 SDK（`FLUTTER_ROOT` 或 PATH 上的 flutter）。框架 Dart 会编进 app 快照，不用重编引擎。与 pub-cache 补丁不同，**版本不符直接失败**：升 Flutter 时必须回移或删除这些补丁，否则它修的崩溃会悄悄回来。补丁是幂等的（已打过就跳过），而且改的是本机全局 SDK。来历和删除条件见 `ci/patches/flutter-sdk/README.md`（当前一条：BUG-2839 语义孤儿节点）。
 
-- **Flutter 引擎补丁（仅 Windows）**：`ci/patches/flutter-engine/<版本>/` 是 `flutter_windows.dll` 的源码补丁（flutter 仓库四份按序叠加：`engine-hdr-output` → `engine-underlay-composition` → `engine-impeller-hdr` → `engine-d3d-keyed-mutex`（BUG-3888：外部视频纹理按 keyed mutex 同步，插件见 `FlutterDesktopGpuSurfaceSupportsKeyedMutex` 导出才启用），外加 ANGLE 一份），让 HDR 视频画在 Flutter 自己的 FP16 scRGB 交换链里（合成器内 HDR，Windows 唯一的 HDR 路径；原版引擎下只能 SDR）。app 全线 Impeller（runner 钉 `ImpellerSwitch::Enabled`），HDR 走的是 Impeller 路径，所以补丁产物必须包含 `engine-impeller-hdr.patch`，否则 HDR 静默退回 SDR。它**不能**像框架补丁那样打进本机 SDK——要重编引擎：`tool/flutter_engine/build_patched_engine.ps1 -Root <工作目录> -PatchVersion <名>`（sync → patch → build → stage → pack；gclient 同步几十 GB、三种模式各编一遍）。产物用 `tool/engine_overlay.ps1 -ArtifactDir <目录>`（或 `-Manifest <artifacts.json>` 下载并校验 SHA-256）装进 SDK 缓存，`-Restore` 还原原版。CI 的 Windows app 构建经 `.github/actions/flutter-engine-overlay` 安装；`artifacts.json` 不存在时用原版引擎构建并打 warning——app 照常跑，runner 运行期报告「合成器 HDR 不可用」、HDR 视频只能 SDR 输出（mpv 色调映射；宿主窗已于 2026-10-18 删除）。**本机日常开发不装也行**，同理回退。升级 Flutter 时补丁要重新对齐基线（守卫 `fushi/test/build/compositor_hdr_engine_guard_test.dart` 要求补丁目录与 `.fvmrc` 同版本），细节见该目录 `README.md`。
+- **Flutter 引擎补丁（仅 Windows）**：`ci/patches/flutter-engine/<版本>/` 是 `flutter_windows.dll` 的源码补丁（flutter 仓库七份按序叠加：`engine-hdr-output` → `engine-underlay-composition` → `engine-impeller-hdr` → `engine-d3d-keyed-mutex`（BUG-3888：外部视频纹理按 keyed mutex 同步，插件见 `FlutterDesktopGpuSurfaceSupportsKeyedMutex` 导出才启用）→ `engine-a11y-tree-hardening`（BUG-4380：无障碍桥从保留的语义数据推出 AXTree、拒收即整树重建，修 Windows UIA 失步崩溃）→ `engine-program-binary-cache`（ANGLE 链好的着色器程序经 `EGL_ANDROID_blob_cache` 落盘，冷启动不再每次把 Impeller 全部管线重编一遍；目录由 runner 经 `FlutterDesktopSetProgramBinaryCacheDirectory` 导出给，`FUSHI_TEST_ROOT` 下落进测试根、否则 `<exe>.ShaderCache` / `%LOCALAPPDATA%\Fushi\ShaderCache\<exe 哈希>`，原版引擎没有该导出就照常编译；守卫 `fushi/test/build/program_binary_cache_engine_guard_test.dart`）→ `engine-resize-before-first-frame`（还没呈现过任何一帧时改窗口尺寸不再在平台线程上干等 100 ms 的 resize 同步超时，冷启动恢复窗口几何 / 最大化就是这条路径；尺寸仍由随后第一帧在 raster 线程落到 surface 上；守卫 `fushi/test/build/resize_before_first_frame_engine_guard_test.dart`），外加 ANGLE 一份），让 HDR 视频画在 Flutter 自己的 FP16 scRGB 交换链里（合成器内 HDR，Windows 唯一的 HDR 路径；原版引擎下只能 SDR）。app 全线 Impeller（runner 钉 `ImpellerSwitch::Enabled`），HDR 走的是 Impeller 路径，所以补丁产物必须包含 `engine-impeller-hdr.patch`，否则 HDR 静默退回 SDR。它**不能**像框架补丁那样打进本机 SDK——要重编引擎：`tool/flutter_engine/build_patched_engine.ps1 -Root <工作目录> -PatchVersion <名>`（sync → patch → build → stage → pack；gclient 同步几十 GB、三种模式各编一遍）。产物用 `tool/engine_overlay.ps1 -ArtifactDir <目录>`（或 `-Manifest <artifacts.json>` 下载并校验 SHA-256）装进 SDK 缓存，`-Restore` 还原原版。CI 的 Windows app 构建经 `.github/actions/flutter-engine-overlay` 安装；`artifacts.json` 不存在时用原版引擎构建并打 warning——app 照常跑，runner 运行期报告「合成器 HDR 不可用」、HDR 视频只能 SDR 输出（mpv 色调映射；宿主窗已于 2026-10-18 删除）。**本机日常开发不装也行**，同理回退。升级 Flutter 时补丁要重新对齐基线（守卫 `fushi/test/build/compositor_hdr_engine_guard_test.dart` 要求补丁目录与 `.fvmrc` 同版本），细节见该目录 `README.md`。
 
 > `carousel_slider` / `fading_edge_scrollview` / `network_to_file_image` 两边都有：`dependency_overrides` 生效，pub-cache 同名补丁因版本对不上被自动跳过，以 vendored 为准。
 

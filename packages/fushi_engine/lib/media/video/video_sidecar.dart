@@ -88,6 +88,23 @@ bool isSidecarSubtitleSuffix(String suffix) => RegExp(
   caseSensitive: false,
 ).hasMatch(suffix);
 
+/// 纯函数：sidecar 字幕文件名 [fileName] 里的语言标记（`<stem>.<tag>.<ext>` 的
+/// `<tag>`，原样大小写）。不是 [videoBaseNameNoExt] 的 sidecar、或没有标记
+/// （`<stem>.srt`）时返回 null。互联 host 列全部外挂字幕时给每条报语言（反馈
+/// -CaVsioFhG）。
+String? sidecarSubtitleLanguageTag(String videoBaseNameNoExt, String fileName) {
+  final int stemLength = videoBaseNameNoExt.length;
+  if (fileName.length <= stemLength ||
+      !fileName.toLowerCase().startsWith(videoBaseNameNoExt.toLowerCase())) {
+    return null;
+  }
+  final String suffix = fileName.substring(stemLength);
+  if (!isSidecarSubtitleSuffix(suffix)) return null;
+  final List<String> parts = suffix.split('.');
+  // `.ja.srt` → ['', 'ja', 'srt']；`.srt` → ['', 'srt']。
+  return parts.length == 3 ? parts[1] : null;
+}
+
 /// 纯函数：「设为该视频默认字幕」时落盘用的 sidecar 后缀——学习语言标记版
 /// `.<langCode>.<ext>`（[pickSidecar] 优先级最高的那一组），[langCode] 为空时退回
 /// 无标记 `.<ext>`。[format] 取 `srt` / `.ass` 等（大小写、前导点皆可）；不是字幕

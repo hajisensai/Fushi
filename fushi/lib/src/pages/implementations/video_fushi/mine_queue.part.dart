@@ -45,8 +45,9 @@ extension _VideoMineQueuePart on _VideoFushiPageState {
   }
 
   /// 登记一个后台制卡任务：在途计数 +1，结束 -1；异常报 OSD 并记日志（不能静默——
-  /// 弹窗早就显示「已加入」了，失败只剩这里能告诉用户）。
-  void _trackBackgroundMine(Future<void> job) {
+  /// 弹窗早就关了，失败只剩这里能告诉用户）。[retry] 非空时结果卡带「重试」
+  /// （反馈 OeS0m8tLHc）。
+  void _trackBackgroundMine(Future<void> job, {VoidCallback? retry}) {
     _minesInFlight.value++;
     late final Future<void> tracked;
     tracked = job
@@ -58,10 +59,12 @@ extension _VideoMineQueuePart on _VideoFushiPageState {
               stack,
             );
           } catch (_) {}
-          _showOsd(
-            t.card_export_failed_detail(reason: '$error'),
-            severity: ToastSeverity.error,
-          );
+          final String message = t.card_export_failed_detail(reason: '$error');
+          if (retry != null) {
+            _showMineOsd(message, MineToastStatus.failed, null, retry);
+          } else {
+            _showOsd(message, severity: ToastSeverity.error);
+          }
         })
         .whenComplete(() {
           _backgroundMineJobs.remove(tracked);
@@ -109,14 +112,9 @@ extension _VideoMineQueuePart on _VideoFushiPageState {
 
   void _showCommitSummary(VideoMineCommitSummary summary) {
     _showOsd(
-      t.video_mine_queue_committed(
-        ok: summary.succeeded,
-        failed: summary.failed,
-      ),
+      videoMineCommitMessage(summary),
       prominent: true,
-      severity: summary.failed == 0
-          ? ToastSeverity.success
-          : ToastSeverity.warning,
+      severity: videoMineCommitSeverity(summary),
     );
   }
 

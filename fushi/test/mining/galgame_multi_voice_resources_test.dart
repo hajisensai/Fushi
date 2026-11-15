@@ -140,6 +140,165 @@ void main() {
     }
   }, skip: !Platform.isWindows);
 
+  test('Tyrano DOM 语音：落盘后不进 native 配对，伴音只认同组，m4a 可取，prune 照常清', () async {
+    final Directory root = await Directory.systemTemp.createTemp(
+      'gal_dom_voice_',
+    );
+    final GalVoiceDumpIndex index = GalVoiceDumpIndex(directory: root);
+    final _RecordingFfmpegBackend backend = _RecordingFfmpegBackend();
+    // 同一毫秒还有一条 native 未标记资源与另一组的 DOM 语音：都不是伴音。
+    const String nativeSameTick = '50000_voice_native.ogg';
+    try {
+      await File(
+        '${root.path}/$nativeSameTick',
+      ).writeAsBytes(<int>[0x4f, 0x67, 0x67, 0x53]);
+      await index.startSession();
+      setFfmpegBackendForTesting(backend);
+      final EngineHookGalAudioSource source = EngineHookGalAudioSource(
+        injectorPath: '',
+        voiceDumpIndex: index,
+      );
+      final String? primary = await source.storeDomVoiceResource(
+        fileName: galDomVoiceResourceName(
+          tick: 50000,
+          group: 900,
+          basename: 'vo-a-1.ogg',
+        ),
+        bytes: Uint8List.fromList(<int>[0x4f, 0x67, 0x67, 0x53, 1]),
+      );
+      final String? partner = await source.storeDomVoiceResource(
+        fileName: galDomVoiceResourceName(
+          tick: 50040,
+          group: 900,
+          basename: 'vo-b-1.m4a',
+        ),
+        bytes: Uint8List.fromList(<int>[0, 0, 0, 8, 0x66, 0x74, 0x79, 0x70]),
+      );
+      final String? otherGroup = await source.storeDomVoiceResource(
+        fileName: galDomVoiceResourceName(
+          tick: 50000,
+          group: 901,
+          basename: 'vo-a-2.ogg',
+        ),
+        bytes: Uint8List.fromList(<int>[0x4f, 0x67, 0x67, 0x53, 2]),
+      );
+      expect(primary, '50000_fushi_domvoice900_vo-a-1.ogg');
+      expect(partner, isNotNull);
+      expect(otherGroup, isNotNull);
+      // 不带 DOM 标记的名字不许借这个入口写进 dump 目录。
+      expect(
+        await source.storeDomVoiceResource(
+          fileName: '50000_plain.ogg',
+          bytes: Uint8List(4),
+        ),
+        isNull,
+      );
+      await index.synchronize();
+      expect(index.snapshot.byName.keys, contains(partner));
+      // native 时间配对只看得到 native 资源。
+      expect(index.findPairedResourceNames(textTsMs: 50000), <String>[
+        nativeSameTick,
+      ]);
+      expect(source.findPairedVoiceResourceId(50000), nativeSameTick);
+      expect(
+        source.pairedVoiceFilePathForResourceId(partner!),
+        '${root.path}${Platform.pathSeparator}$partner',
+      );
+      final Uint8List? bytes = await source.grabPairedVoiceBytes(
+        50000,
+        outputExtension: 'aac',
+        resourceId: primary,
+        allowLatestSessionFallback: false,
+      );
+      expect(bytes, isNotNull);
+      expect(backend.calls, hasLength(2), reason: '主语音 + 同组 m4a，别的都不算');
+      expect(
+        backend.calls[0],
+        contains('${root.path}${Platform.pathSeparator}$primary'),
+      );
+      expect(
+        backend.calls[1],
+        contains('${root.path}${Platform.pathSeparator}$partner'),
+      );
+      // pruneVoiceDump 对 DOM 语音同样按年龄清理。
+      await File(
+        '${root.path}/$otherGroup',
+      ).setLastModified(DateTime.now().subtract(const Duration(days: 2)));
+      index.invalidate();
+      await source.pruneVoiceDump();
+      expect(File('${root.path}/$otherGroup').existsSync(), isFalse);
+      expect(File('${root.path}/$primary').existsSync(), isTrue);
+    } finally {
+      setFfmpegBackendForTesting(null);
+      await index.stopSession();
+      await root.delete(recursive: true);
+    }
+  }, skip: !Platform.isWindows);
+
+  group('Tyrano DOM 语音文件名', () {
+    test('解析 fushi_domvoice 组标记；畸形标记不降级成时间候选', () {
+      final GalVoiceResourceName parsed = parseGalVoiceResourceName(
+        '123_fushi_domvoice77_vo-a-1.ogg',
+      )!;
+      expect(parsed.tick, 123);
+      expect(parsed.domVoiceGroup, 77);
+      expect(parsed.textEventId, isNull);
+      expect(parsed.basename, 'vo-a-1.ogg');
+      expect(parseGalVoiceResourceName('123_fushi_domvoiceX_a.ogg'), isNull);
+      expect(parseGalVoiceResourceName('123_fushi_domvoice0_a.ogg'), isNull);
+    });
+
+    test('pickPairedVoiceOggs / pickPairedUnityVoiceWavs 不把 DOM 语音当候选', () {
+      expect(
+        pickPairedVoiceOggs(
+          oggFileNames: const <String>['1000_fushi_domvoice5_a.ogg'],
+          textTsMs: 1000,
+        ),
+        isEmpty,
+      );
+      expect(
+        pickPairedVoiceOggs(
+          oggFileNames: const <String>['780_fushi_domvoice5_a.ogg'],
+          textTsMs: 1000,
+        ),
+        isEmpty,
+      );
+      expect(
+        pickPairedUnityVoiceWavs(
+          wavFileNames: const <String>['1000_fushi_domvoice5_a.wav'],
+          textTsMs: 1000,
+        ),
+        isEmpty,
+      );
+    });
+
+    test('伴音：DOM 主资源只收同组；native 主资源不收 DOM 语音', () {
+      const List<String> candidates = <String>[
+        '100_fushi_domvoice5_b.ogg',
+        '100_fushi_domvoice6_c.ogg',
+        '100_voice_native.ogg',
+        '90_fushi_domvoice5_se_like_name.ogg',
+      ];
+      expect(
+        companionVoiceResourceNames(
+          primaryName: '100_fushi_domvoice5_a.ogg',
+          candidateNames: candidates,
+        ),
+        <String>[
+          '100_fushi_domvoice5_b.ogg',
+          '90_fushi_domvoice5_se_like_name.ogg',
+        ],
+      );
+      expect(
+        companionVoiceResourceNames(
+          primaryName: '100_voice_native2.ogg',
+          candidateNames: candidates,
+        ),
+        <String>['100_voice_native.ogg'],
+      );
+    });
+  });
+
   group('pickPairedVoiceOggs（事件 ID 层全取）', () {
     test('同一事件 ID 的多个资源全部返回，按与文本时间戳的距离排序', () {
       final List<String> picked = pickPairedVoiceOggs(

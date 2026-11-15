@@ -120,6 +120,10 @@ void main() {
       // 路径（正斜杠、相对本测试的扫描根）→ 允许出现的**次数**。数量也钉住：同一文件
       // 里多冒出一处同样要表态，这正是「漏改一个」的形状。
       const Map<String, int> allowed = <String, int>{
+        // 截屏识字诊断日志：每个识别框的字素数（`…/12c`），是排障摘要不是学习计数。
+        'lib/src/floating_ball/app_floating_ball_host.dart': 1,
+        // 发现页搜索相关度：查询词按码点数加权算命中覆盖率，是排序判据不是学习计数。
+        'lib/src/media/discovery/discovery_search_relevance.dart': 1,
         // BUG-2767 切片 OCR 合并：重叠区重复行去重时按文本码点长度排序（长行先
         // 占位、短行若被包含就丢），比较器两侧各一处，是排序键不是学习计数。
         'packages/fushi_engine/lib/ocr/ocr_page_tiling.dart': 2,
@@ -132,6 +136,9 @@ void main() {
         // 作品图谱 L5 人物同名建议：归一化后的名字短于 2 个码点不出建议键（单字名
         // 撞名太多），是匹配判据不是学习计数。
         'packages/fushi_engine/lib/media/people/person_identity.dart': 1,
+        // 媒体追踪书目关联：书名方括号里的人名长度上限（≤24 码点才当作者名），
+        // 与繁简折叠时「折叠结果恰好是单个码点」的判断，是匹配判据不是学习计数。
+        'packages/fushi_engine/lib/media/tracking/book_tracking_link.dart': 2,
         // 视频字幕 AI 校对（spec 2026-10-19）：S4 片假名名字编辑距离 1 的长度比较
         // （与基准 consistency.py 的 len() 同口径），是匹配判据不是学习计数。
         'packages/fushi_engine/lib/media/video/subtitle/asr_proofread/subtitle_consistency_pass.dart':

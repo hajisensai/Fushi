@@ -7,7 +7,7 @@
 ///
 /// 正在跑的 `serve` 不会自动看到离线改动：导入 / 删除后重启 serve 才进引擎
 /// （经互联推送、或在 WebUI「词典」页导入的词典则即时生效——后者在 serve 进程内跑
-/// 同一个 [importDictionaryArchive]，带上 `reloadEngine`，见 admin_api.dart）。
+/// 同一个 [importDictionaryArchive]，带上 `installGuard`，见 admin/admin_dictionaries.dart）。
 library;
 
 import 'dart:convert';
@@ -18,7 +18,6 @@ import 'package:args/args.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary_core.dart';
-import 'package:fushi_engine/dictionary/dictionary_engine_hooks.dart';
 import 'package:fushi_engine/models/dictionary_directory.dart';
 import 'package:fushi_server/src/commands/cli_module.dart';
 import 'package:fushi_server/src/dictionary_host.dart';
@@ -50,17 +49,20 @@ class DictImportException implements Exception {
 typedef DictArchiveImporter =
     Future<FushiImportResult> Function(String archivePath, String outputDir);
 
+/// 包住「装进库」那一步（换资源目录 + 写元数据）的钩子。运行中的 serve 用它拿库互斥锁、
+/// 释放引擎映射并在收尾重载引擎（WebUI 导入）；离线命令不传，直接执行。
+typedef DictInstallGuard =
+    Future<void> Function(Future<void> Function() install);
+
 /// 把 [archive]（Yomitan zip 等原生导入器认的格式）导入服务端词典库。
 ///
 /// 同名词典视为更新：替换资源目录，保留原有的排序与用户设置（隐藏 / 折叠 / 语言覆盖 /
 /// 显示名），与 app 重导同名词典的继承口径一致；新词典排在最后。
 ///
-/// 两种调用方：
-/// - 离线 CLI（`dict add`）：没有引擎在跑，[reloadEngine] 留空。
-/// - serve 进程内（WebUI 导入）：调用方在库互斥锁里调用，并传 [reloadEngine]（按 DB
-///   重载引擎）。原生导入写的是暂存目录，不碰引擎；「删旧目录 → 搬入 → 写 DB」整段
-///   在 [withDictionaryMappingsReleased] 作用域里（同名覆盖时旧目录正被引擎映射，
-///   BUG-1756），收尾无论成败都 [reloadEngine]，引擎不会停在释放后的空状态。
+/// 原生导入（慢，后台 isolate）先在暂存目录里做完，只有装进库的那一小步（删旧目录 →
+/// 搬入 → 写 DB）走 [installGuard]：大词典导入期间引擎照常查词，库锁也不被长时间占着。
+/// 运行中的 serve 用它拿库互斥锁、释放引擎映射并在收尾重载引擎（同名覆盖时旧目录正被
+/// 引擎映射，BUG-1756）；离线 CLI（`dict add`）不传，直接执行。
 ///
 /// [stagingParent]：原生导入的输出暂存目录建在哪（默认系统临时目录）。serve 传数据目录
 /// 的 `tmp/`，与资源目录同盘，搬入是一次改名而不是逐文件复制。
@@ -70,7 +72,7 @@ Future<DictImportOutcome> importDictionaryArchive({
   required File archive,
   DictArchiveImporter? importer,
   Directory? stagingParent,
-  Future<void> Function()? reloadEngine,
+  DictInstallGuard? installGuard,
 }) async {
   final Directory staging;
   if (stagingParent != null) {
@@ -91,25 +93,26 @@ Future<DictImportOutcome> importDictionaryArchive({
       );
     }
     final String name = sanitizeDictionaryTitle(result.title);
-    final List<DictionaryMetaRow> rows = await db.getAllDictionaryMetadata();
-    DictionaryMetaRow? previous;
-    for (final DictionaryMetaRow r in rows) {
-      if (r.name == name) previous = r;
-    }
-    final Directory inner = Directory(p.join(staging.path, name));
-    final Directory source = inner.existsSync() ? inner : staging;
-    final Directory target = Directory(p.join(resourceRoot.path, name));
-    await resourceRoot.create(recursive: true);
     final String type = switch (result.detectedType) {
       'frequency' || 'pitch' || 'kanji' => result.detectedType,
       _ => 'term',
     };
-    Future<String?> publish() async {
-      // 引擎在作用域结束后由调用方的 reloadEngine 统一装回（作用域内不装，免得把
-      // 正要覆盖的目录又映射上）。
+    bool replaced = false;
+    String? language;
+    Future<void> install() async {
+      final List<DictionaryMetaRow> rows = await db.getAllDictionaryMetadata();
+      DictionaryMetaRow? previous;
+      for (final DictionaryMetaRow r in rows) {
+        if (r.name == name) previous = r;
+      }
+      replaced = previous != null;
+      final Directory inner = Directory(p.join(staging.path, name));
+      final Directory source = inner.existsSync() ? inner : staging;
+      final Directory target = Directory(p.join(resourceRoot.path, name));
+      await resourceRoot.create(recursive: true);
       await deleteDictionaryDirectory(target, reloadEngine: () {});
       await _moveDirectory(source, target);
-      return _writeImportedMetadata(
+      language = await _writeImportedMetadata(
         db: db,
         rows: rows,
         previous: previous,
@@ -121,22 +124,17 @@ Future<DictImportOutcome> importDictionaryArchive({
       );
     }
 
-    final String? language;
-    if (reloadEngine == null) {
-      language = await publish();
+    if (installGuard == null) {
+      await install();
     } else {
-      try {
-        language = await withDictionaryMappingsReleased(publish);
-      } finally {
-        await reloadEngine();
-      }
+      await installGuard(install);
     }
     return (
       name: name,
       type: type,
       termCount: result.termCount,
       kanjiCount: result.kanjiCount,
-      replaced: previous != null,
+      replaced: replaced,
       language: language,
     );
   } finally {

@@ -351,6 +351,10 @@ bool isContinuousLyricsPlayback({
 ///   是 `0..reached`——还没听到的插图不给看（不剧透，与阅读器「未读到的插图
 ///   打码」同一取向）。
 /// * [shown]：插图位（横屏左栏 / 竖屏小方块）当前显示的插图；null = 显示封面。
+/// * 已看过（[isSeen] / [shownUnseen]）：打开过大图（[markSeen]）或插图卡完整
+///   展示过（弹卡后自动收起 / 停留结束 [closeCard]）的插图。缩略图的「新插图」
+///   提示点只在插图位换上**没看过**的插图时出现。按插图 [LyricsIllustration.key]
+///   记，生命周期跟控制器走（一次歌词模式会话，不持久化）。
 ///
 /// 播放顺着走过一张插图的位置时自动换上它并停住；用户 [dismiss] 才回封面。
 class LyricsIllustrationController extends ChangeNotifier {
@@ -360,6 +364,10 @@ class LyricsIllustrationController extends ChangeNotifier {
   int? _lastAudioMs;
   bool _cardOpen = false;
   bool _rightToLeft = false;
+
+  /// 已看过的插图（[LyricsIllustration.key]）。只增不减，[load] 也不清：同一
+  /// 会话里重新装入同一批插图时，看过的仍算看过。
+  final Set<String> _seen = <String>{};
 
   /// 卡片自动收起计时（[observe] 弹卡时起；停留接管 / 用户接手 / 收起时作废）。
   Timer? _cardAutoCloseTimer;
@@ -403,6 +411,22 @@ class LyricsIllustrationController extends ChangeNotifier {
   LyricsIllustration? get shownIllustration {
     final int? index = _shown;
     return index == null ? null : _items[index];
+  }
+
+  /// 第 [index] 张插图是否已看过（打开过大图或插图卡完整展示过）。
+  bool isSeen(int index) =>
+      index >= 0 && index < _items.length && _seen.contains(_items[index].key);
+
+  /// 插图位上是一张还没看过的插图：缩略图据此画「新插图」提示点。
+  bool get shownUnseen {
+    final int? index = _shown;
+    return index != null && !isSeen(index);
+  }
+
+  /// 把第 [index] 张记为已看过（大图浏览打开 / 翻到这一页时调用）。
+  void markSeen(int index) {
+    if (index < 0 || index >= _items.length) return;
+    if (_seen.add(_items[index].key)) notifyListeners();
   }
 
   /// 是否有可浏览的插图（至少听到了一张）。
@@ -492,12 +516,15 @@ class LyricsIllustrationController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 只收起插图卡，插图位仍是这张插图的缩略图（带提示点，点它还能看大图）。
-  /// 「弹出停留」到点自动收起走这里。
+  /// 只收起插图卡，插图位仍是这张插图的缩略图（点它还能看大图）。「弹出停留」
+  /// 到点 / 展示时长到点自动收起走这里：卡已完整展示过，这张记为已看过，缩略图
+  /// 不再带「新插图」提示点。
   void closeCard() {
     _cancelCardAutoClose();
     if (!_cardOpen) return;
     _cardOpen = false;
+    final int? shown = _shown;
+    if (shown != null) _seen.add(_items[shown].key);
     notifyListeners();
   }
 

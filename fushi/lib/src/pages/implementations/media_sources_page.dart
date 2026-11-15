@@ -14,6 +14,9 @@ import 'package:fushi/src/media/drag_drop/drop_classification.dart'
         kDragBookExtensions,
         kDragPlaylistExtensions,
         kDragSubtitleExtensions;
+import 'package:fushi/src/media/import/pasted_text_book_dialog.dart';
+import 'package:fushi/src/media/media_item.dart';
+import 'package:fushi/src/media/media_source.dart' show MediaItemAppLookup;
 import 'package:fushi/src/media/import/quick_import_section.dart';
 import 'package:fushi_engine/media/media_extensions.dart' show kVideoExtensions;
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
@@ -266,6 +269,12 @@ class _MediaSourcesPageState extends ConsumerState<MediaSourcesPage> {
           label: t.media_import_folder,
           onTap: _importFolder,
         ),
+        // 反馈 f2k9m1oU0j：粘贴剪贴板文本直接阅读（落成一本书后打开阅读器查词）。
+        QuickImportAction(
+          icon: FushiIcons.paste,
+          label: t.book_paste_text_action,
+          onTap: _readPastedText,
+        ),
       ],
       'video' => <QuickImportAction>[
         QuickImportAction(
@@ -300,6 +309,27 @@ class _MediaSourcesPageState extends ConsumerState<MediaSourcesPage> {
       ),
     );
     if (imported == true) _invalidateBookProviders();
+  }
+
+  /// 「粘贴文本阅读」：对话框把文本落成书库里的一本书（[importPastedTextBook]），
+  /// 返回 bookKey 后刷新书架并直接打开阅读器——「粘贴 → 读 → 点词查词」一步到位，
+  /// 不必先回书架找这本书。
+  Future<void> _readPastedText() async {
+    final String? bookKey = await showAppDialog<String>(
+      context: context,
+      builder: (_) => PastedTextBookDialog(db: _appModel.database),
+    );
+    if (bookKey == null || !mounted) return;
+    _invalidateBookProviders();
+    final MediaItem? item = await ReaderFushiSource.instance
+        .mediaItemForBookKey(bookKey);
+    if (item == null || !mounted) return;
+    await _appModel.openMedia(
+      ref: ref,
+      mediaSource: item.getMediaSource(appModel: _appModel),
+      item: item,
+      waitUntilClosed: false,
+    );
   }
 
   /// 「导入文件夹」：二选一——设为常驻来源（Komga 式，长期自动扫描）或

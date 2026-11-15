@@ -561,6 +561,23 @@ Future<List<Map<String, dynamic>>> fetchAllGitHubReleases({
   }
 }
 
+/// 拉调试版流水线数据（[kDebugPulseUrl]）的原始响应体。复用检查更新的私有 HTTP
+/// 管线：直连 + 镜像并发竞速、系统 / 自定义代理、每候选超时。全失败返回 null（调用方
+/// 显示「拉取失败」），异常收敛为 null 并记日志。
+Future<String?> fetchDebugPulseBody({String customProxy = ''}) async {
+  final HttpClient client = HttpClient()
+    ..connectionTimeout = const Duration(seconds: 10);
+  try {
+    await applyAppProxy(client, userProxy: customProxy);
+    return await UpdateChecker._httpGetString(client, kDebugPulseUrl);
+  } catch (e, stack) {
+    ErrorLogService.instance.log('fetchDebugPulseBody', e, stack);
+    return null;
+  } finally {
+    client.close();
+  }
+}
+
 /// 解析 GitHub `releases` 列表 API 响应体（[fetchAllGitHubReleases] 的纯解析核心，
 /// 抽出便于单测）：期望顶层是 release 对象数组，逐元素保留 `Map`，只留
 /// [isAppVersionRelease]（与检查更新同一判据：tag 是版本号、非草稿）——同仓库里只挂资产的

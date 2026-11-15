@@ -1019,6 +1019,7 @@ class ImmersionMiningEngine {
       source: req.source,
       bookTitleTag: req.bookTitleTag,
       collectionTag: req.collectionTag,
+      seriesTitle: req.seriesTitle,
       // 片段时间窗（渲染 `{clip-timestamp}`）：原样透传，有效性不在这里判——
       // 唯一判据在 [AnkiHandlebarRenderer.formatClipTimestamp]（`end > start`，
       // 与 [ImmersionMiningRequest.hasClipWindow] 同语义——**不是** [hasRange]：后者还

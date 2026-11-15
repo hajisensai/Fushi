@@ -4202,6 +4202,13 @@ $kSentenceAudioRubyGapJs
     if (total <= 0) return 0;
     return this._charsBeforeEdge(this.isVertical()) / total;
   },
+  // 文档内换章计数与边界换章的认领（反馈 R7k887yaJI 重开：慢拖跨一章落到下下章）。
+  // 连续 shell 自己从不在文档内换章，所以默认计数恒 0、从不认领——换章一律交 Dart 整章
+  // 重载。章节无缝衔接模块（reader_seamless_chapters_script.dart）装饰这两个方法，成为
+  // 文档内换章的唯一所有者。三条「滚到尽头就换章」的通道（触摸边界拉动、滚轮试滚、
+  // 按键 paginate 的 limit）发起换章前都先问 claimBoundaryTurn。
+  chapterTurnEpoch: function() { return 0; },
+  claimBoundaryTurn: function(direction) { return false; },
   // BUG-1241：连续模式同样以视口首字符算 progress，物理滚到底时分数仍可能小于 1。
   // 横排读 scrollTop；竖排 WebView 在 vertical-rl 下 scrollX 为负，因此用绝对位移
   // 与物理最大滚动量比较。
@@ -4315,7 +4322,10 @@ $kSentenceAudioRubyGapJs
     this.__selectionViewportScroll = after;
     var moved = Math.abs(after - before) > 1;
     if (moved) this._clearSelectionOnViewportChange(true);
-    return moved ? "scrolled" : "limit";
+    if (moved) return "scrolled";
+    // 滚到文档尽头：文档内换章的所有者（无缝衔接）认领了就由它换章，不再回 limit 让
+    // Dart 从（可能已经换过的）章号再跨一章。认领后视口已对齐到新章，按「滚动了」回报。
+    return this.claimBoundaryTurn(direction) ? "scrolled" : "limit";
   },
   getFirstVisibleCharOffset: function() {
     var vertical = this.isVertical();
@@ -4762,6 +4772,7 @@ window.fushiReader.updatePageSize = function(cssWidth, cssHeight) {
   var FLING_MIN_VELOCITY = $continuousPanAssistFlingMinVelocity;
   var FLING_MAX_VELOCITY = $continuousPanAssistFlingMaxVelocity;
   var downX = 0, downY = 0, downSPos = 0, downSMax = 1, hasDown = false;
+  var downEpoch = 0;
   var pinFwdAt = null, pinBackAt = null;
   var slopAt = 0, nativeMovedSinceDown = false;
   var assist = false, assistDecided = false, assistLastPos = 0, assistLastMain = 0;
@@ -4804,6 +4815,8 @@ window.fushiReader.updatePageSize = function(cssWidth, cssHeight) {
     var ax = _axis(vertical);
     downSPos = ax.pos;
     downSMax = ax.max;
+    var r0 = _reader();
+    downEpoch = r0 ? r0.chapterTurnEpoch() : 0;
     pinFwdAt = null; pinBackAt = null;
     _notePin(_fingerMain(x, y, vertical), ax);
     slopAt = 0; nativeMovedSinceDown = false;
@@ -4909,7 +4922,14 @@ window.fushiReader.updatePageSize = function(cssWidth, cssHeight) {
       + ' downAtStart=' + (downAtStart ? 1 : 0) + ' downAtEnd=' + (downAtEnd ? 1 : 0)
       + ' pull=' + pullPx + ' mid=' + (C.continuousTurnPinMidGesture === true ? 1 : 0)
       + ' dir=' + dir);
-    if (dir && window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
+    if (!dir) return;
+    // 反馈 R7k887yaJI 重开：起点贴边的 pin 记在手势开始那一章的文档几何上。这次手势里
+    // 文档内已经换过章（无缝晋升），pin 与距离都不再描述「当前章的边界」，换章已经发生，
+    // 这次手势到此为止；否则松手再跨一章就落到下下章。
+    var r = _reader();
+    if (r.chapterTurnEpoch() !== downEpoch) return;
+    if (r.claimBoundaryTurn(dir)) return;
+    if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
       window.flutter_inappwebview.callHandler('onBoundarySwipe', dir);
     }
   }

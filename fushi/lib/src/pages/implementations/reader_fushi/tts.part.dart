@@ -314,7 +314,7 @@ extension _ReaderTtsExtension on _ReaderFushiPageState {
       _audiobookController = controller;
       _syncChromePlaybackListener();
     });
-    _reapplyLyricsFollowOverride();
+    _reapplyLyricsReaderDetached();
     await _primeAudioCuesForCurrentBook();
     // 朗读是在章节已经加载之后开始的：本章的句子区间要现在交给 WebView，
     // 否则要等下一次章节加载才有高亮。

@@ -2,6 +2,7 @@ import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi_engine/media/torrent/nyaa_client.dart';
 import 'package:fushi_engine/media/torrent/search_query_script.dart';
 import 'package:fushi_engine/media/torrent/torrent_backend.dart';
+import 'package:fushi_engine/media/torrent/torrent_metainfo.dart';
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 
@@ -11,7 +12,8 @@ import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart
 const String kNyaaResourceProviderId = 'nyaa';
 
 /// 一个用户 Nyaa 式 BT 站的资源 provider。
-class NyaaVideoResourceProvider implements LabeledVideoResourceProvider {
+class NyaaVideoResourceProvider
+    implements LabeledVideoResourceProvider, VideoReleaseFileListingProvider {
   NyaaVideoResourceProvider({
     required NyaaClient client,
     required this.siteId,
@@ -130,6 +132,23 @@ class NyaaVideoResourceProvider implements LabeledVideoResourceProvider {
         ),
       ],
     );
+  }
+
+  /// 下 `.torrent` 读文件清单（info hash 必须与搜索结果一致）。
+  @override
+  Future<List<String>?> listReleaseFiles(
+    VideoResourceCandidate candidate,
+  ) async {
+    if (candidate is! _NyaaResourceCandidate) return null;
+    final String torrentUrl = candidate.torrent.torrentUrl.trim();
+    if (torrentUrl.isEmpty) return null;
+    final InspectedTorrentMetainfo inspected = inspectTorrentMetainfo(
+      await _client.fetchTorrentFile(torrentUrl),
+      expectedInfoHash: candidate.torrent.infoHash,
+    );
+    return <String>[
+      for (final InspectedTorrentFile file in inspected.files) file.path,
+    ];
   }
 
   @override

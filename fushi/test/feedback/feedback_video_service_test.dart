@@ -179,7 +179,7 @@ void main() {
       if (r.url.path == '/v1/feedback') return receipt(r);
       return _json(<String, dynamic>{'slot': 'x'}, 201);
     };
-    final List<FeedbackVideoQuality> qualities = <FeedbackVideoQuality>[];
+    final List<FeedbackVideoMode> modes = <FeedbackVideoMode>[];
     final FeedbackService s = service(
       prepare:
           (
@@ -188,7 +188,7 @@ void main() {
             void Function(double) onProgress,
             FeedbackVideoPrepareOptions options,
           ) async {
-            qualities.add(options.quality);
+            modes.add(options.mode);
             final File out = await src.copy(p.join(work.path, 'out.mp4'));
             return PreparedFeedbackVideo(
               file: out,
@@ -200,9 +200,7 @@ void main() {
     );
     final FeedbackStagedVideo staged = await s.stageVideo(
       source,
-      options: const FeedbackVideoPrepareOptions(
-        quality: FeedbackVideoQuality.p1080,
-      ),
+      options: const FeedbackVideoPrepareOptions(mode: FeedbackVideoMode.p1080),
     );
     final List<FeedbackSubmitStage> stages = <FeedbackSubmitStage>[];
     final FeedbackSubmitResult result = await s.submit(
@@ -217,7 +215,7 @@ void main() {
       onStage: stages.add,
     );
     expect(result.failedAttachments, 0);
-    expect(qualities, <FeedbackVideoQuality>[FeedbackVideoQuality.p1080]);
+    expect(modes, <FeedbackVideoMode>[FeedbackVideoMode.p1080]);
     expect(stages, <FeedbackSubmitStage>[
       FeedbackSubmitStage.sending,
       FeedbackSubmitStage.video,
@@ -506,6 +504,55 @@ void main() {
         again.tickets.map((FeedbackTicket t) => t.id),
         containsAll(<String>['otherdev01', 'otherdev02']),
       );
+    });
+
+    // BUG-4502：冷启动时排行榜账户文件比反馈服务晚读出来（load 时身份还是 null）。
+    // 此前随后的刷新把账户列表清空、用 seenAt=0 的条目重建并覆盖缓存，读过的回复
+    // 每次重启都回到「新回复」。
+    test('load 时身份未就绪：刷新后已读状态仍从账户缓存恢复，不再回到新回复', () async {
+      final Map<String, dynamic> replied = <String, dynamic>{
+        ..._summary('otherdev01'),
+        'devReplyAt': 1500,
+        'updatedAt': 1500,
+      };
+      handler = (http.Request r) async {
+        if (r.url.path == '/v1/feedback/mine') {
+          return _json(<String, dynamic>{
+            'items': <Object>[replied],
+            'next': null,
+          });
+        }
+        if (r.url.path == '/v1/feedback/otherdev01') {
+          return _json(<String, dynamic>{
+            ...replied,
+            'body': 'body-otherdev01',
+            'attachments': <Object>[],
+            'messages': <Object>[],
+          });
+        }
+        return _json(<String, dynamic>{}, 404);
+      };
+      final FeedbackService first = service();
+      await first.refresh();
+      expect(first.byId('otherdev01')!.hasUnseenReply, isTrue);
+      await first.detail('otherdev01');
+      expect(first.byId('otherdev01')!.hasUnseenReply, isFalse);
+      expect(first.unseenCount, 0);
+
+      // 「重启」：新服务 load 那一刻账户还没读出来。
+      final LeaderboardIdentity account = identity!;
+      identity = null;
+      final FeedbackService relaunched = service();
+      await relaunched.load();
+      identity = account;
+      await relaunched.refresh();
+      expect(relaunched.byId('otherdev01')!.hasUnseenReply, isFalse);
+      expect(relaunched.unseenCount, 0);
+
+      // 覆盖写回的缓存也保住了已读时刻：再「重启」一次照样是已读。
+      final FeedbackService third = service();
+      await third.load();
+      expect(third.byId('otherdev01')!.hasUnseenReply, isFalse);
     });
 
     test('退出登录 / 换账户：丢掉旧账户的列表，未登录不请求 mine', () async {

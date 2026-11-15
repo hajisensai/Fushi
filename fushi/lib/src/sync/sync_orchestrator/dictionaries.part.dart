@@ -13,7 +13,7 @@ extension _SyncOrchestratorDictionaries on SyncOrchestrator {
         .getAllDictionaryMetadata();
     final List<RemoteDictionaryInfo> remoteDicts = await backend
         .listRemoteDictionaries();
-    // 服务器托管词典目录（v149）：连接中这台 host 的清单已经拿在手上，顺手对账进
+    // 服务器托管词典目录（v153）：连接中这台 host 的清单已经拿在手上，顺手对账进
     // `remote_dictionary_metadata`，不另发请求。对账失败只记进报告，不影响词典同步。
     try {
       await RemoteDictionaryCatalogService.reconcileHost(
@@ -41,6 +41,8 @@ extension _SyncOrchestratorDictionaries on SyncOrchestrator {
     int index = 0;
 
     for (final String name in pulls) {
+      // 安全检查点：上一项已完整落地，这一项还没开始。
+      _checkpoint();
       try {
         await _pullLiveDictionary(
           backend,
@@ -56,6 +58,8 @@ extension _SyncOrchestratorDictionaries on SyncOrchestrator {
     }
 
     for (final String name in pushes) {
+      // 安全检查点：上一项已完整落地，这一项还没开始。
+      _checkpoint();
       try {
         await _pushLiveDictionary(
           backend,
@@ -199,6 +203,8 @@ extension _SyncOrchestratorDictionaries on SyncOrchestrator {
 
     // Push local-only dictionaries.
     for (final DictionaryMetaRow d in toPush) {
+      // 安全检查点：上一项已完整落地，这一项还没开始。
+      _checkpoint();
       _emit(
         SyncPhase.dictionaries,
         itemIndex: index,
@@ -242,6 +248,8 @@ extension _SyncOrchestratorDictionaries on SyncOrchestrator {
       // `.fushidict`）suffix, which otherwise surfaces as a "weird" entry in
       // the progress list.
       final String displayName = _stripDictionaryAssetSuffix(e.name);
+      // 安全检查点：上一项已完整落地，这一项还没开始。
+      _checkpoint();
       _emit(
         SyncPhase.dictionaries,
         itemIndex: index,

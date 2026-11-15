@@ -55,10 +55,12 @@ const src = fs.readFileSync(process.argv[2], 'utf8');
 
 function makeEnv({ innerWidth, clientWidth, zoom, withObserver }) {
   const observers = [];
+  const frames = [];
   const container = { style: {} };
   const rootStyle = { zoom: zoom || '', setProperty() {} };
   const documentElement = { style: rootStyle, clientWidth };
   const window = { innerWidth, relayouts: 0 };
+  window.requestAnimationFrame = (cb) => { frames.push(cb); return frames.length; };
   window.__fushiRelayoutPopupColumns = () => { window.relayouts++; };
   if (withObserver) {
     window.ResizeObserver = function (cb) {
@@ -76,8 +78,9 @@ function makeEnv({ innerWidth, clientWidth, zoom, withObserver }) {
   const getComputedStyle = () => ({ paddingLeft: '10px', paddingRight: '10px' });
   const run = new Function('window', 'document', 'getComputedStyle', src);
   return {
-    window, document, container, observers,
+    window, document, container, observers, frames,
     inject: () => run(window, document, getComputedStyle),
+    flushFrames: () => { frames.splice(0).forEach((cb) => cb()); },
   };
 }
 
@@ -108,6 +111,8 @@ function makeEnv({ innerWidth, clientWidth, zoom, withObserver }) {
 }
 // 5. 滚动条在内容变长后才出现：ResizeObserver 回调里 gutter 变了才重算；
 //    重复注入不叠加观察者。
+//    重算挪到下一帧：回调投递期间不写布局（写会改被观察的 documentElement 自身尺寸，
+//    浏览器抛「ResizeObserver loop completed with undelivered notifications」）。
 {
   const e = makeEnv({ innerWidth: 400, clientWidth: 400, withObserver: true });
   e.inject();
@@ -117,11 +122,24 @@ function makeEnv({ innerWidth, clientWidth, zoom, withObserver }) {
   assert.strictEqual(e.container.style.width, '380px');
   const before = e.window.relayouts;
   e.observers[0].cb();
+  assert.strictEqual(e.frames.length, 0, 'no gutter change -> no frame queued');
   assert.strictEqual(e.window.relayouts, before, 'no gutter change -> no relayout');
   e.document.documentElement.clientWidth = 385;
   e.observers[0].cb();
+  e.observers[0].cb();
+  assert.strictEqual(e.container.style.width, '380px',
+    'callback must not write layout during ResizeObserver delivery');
+  assert.strictEqual(e.window.relayouts, before, 'relayout waits for the next frame');
+  assert.strictEqual(e.frames.length, 1, 'repeated callbacks queue a single frame');
+  e.flushFrames();
   assert.strictEqual(e.container.style.width, '365px');
   assert.strictEqual(e.window.relayouts, before + 1);
+  // 那一帧之前 gutter 又回到已应用的值（别的重算追平）：不重复铺。
+  e.document.documentElement.clientWidth = 400;
+  e.observers[0].cb();
+  e.document.documentElement.clientWidth = 385;
+  e.flushFrames();
+  assert.strictEqual(e.window.relayouts, before + 1, 'gutter already applied -> skip');
 }
 console.log('all assertions passed');
 ''';

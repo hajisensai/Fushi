@@ -79,6 +79,9 @@ class MangaChapterList extends StatelessWidget {
     this.ocrRunningChapterKey,
     this.ocrProgress,
     this.ocrQueuedChapterKeys = const <String>{},
+    this.ocrCompletedChapterKeys = const <String>{},
+    this.selectedChapterKeys,
+    this.onChapterSelectGesture,
     this.languageScope,
     this.onSiblingSourceTap,
     this.sliver = false,
@@ -146,6 +149,16 @@ class MangaChapterList extends StatelessWidget {
   /// [uploading] = 远程引擎还在上传页图（计数是已上传页数，BUG-3605）。
   final ({int done, int total, bool uploading})? ocrProgress;
   final Set<String> ocrQueuedChapterKeys;
+
+  /// 已有识别结果的章（反馈 wCgL364tgM：逐章显示是否已 OCR）。宿主从磁盘上章
+  /// `manga.json` 的真实内容推导（`ocrCompletedChapterKeys`），不另存状态。
+  final Set<String> ocrCompletedChapterKeys;
+
+  /// 非 null = 多选态：行首换成勾选标记，行尾菜单收起，点行由宿主切换选择。
+  final Set<String>? selectedChapterKeys;
+
+  /// 长按 / 右键一行（进入多选或在多选态里切换该章）；null = 不支持多选。
+  final void Function(OnlineMangaChapter chapter)? onChapterSelectGesture;
 
   /// 空章节列表的解释（BUG-2510）：该源只取哪种语言的章 + 同扩展其它语言的源。
   /// null = 不知道 / 不适用，空态沿用「还没有章节」。作品页只在「刷新已结束、
@@ -383,6 +396,12 @@ class MangaChapterList extends StatelessWidget {
     // 相邻章节常有相同下载状态，列表身份必须取章节 key；状态探针放在每章内部，
     // 避免重复 sibling key，且排序 / 下载状态变化时保留该章的进场状态。
     final GlobalKey? anchor = current ? currentChapterAnchorKey : null;
+    final Set<String>? selection = selectedChapterKeys;
+    final bool ocrBusy =
+        chapter.key == ocrRunningChapterKey ||
+        ocrQueuedChapterKeys.contains(chapter.key);
+    final void Function(OnlineMangaChapter chapter)? selectGesture =
+        onChapterSelectGesture;
     return FushiStaggeredEntrance(
       key: ValueKey<String>('manga_chapter_${chapter.key}'),
       index: index,
@@ -416,8 +435,25 @@ class MangaChapterList extends StatelessWidget {
                 download == _ChapterDownloadState.downloading && pagesTotal > 0
                 ? ((job?.pagesDone ?? 0) / pagesTotal).clamp(0.0, 1.0)
                 : null,
-            trailing: _buildMenu(chapter, download),
+            completedLabel: t.manga_chapter_status_read,
+            statusIcons: <MediaDetailStatusIcon>[
+              // 正在识别 / 排队的章由副标题报进度，不同时挂「已识别」。
+              if (!ocrBusy && ocrCompletedChapterKeys.contains(chapter.key))
+                MediaDetailStatusIcon(
+                  key: const ValueKey<String>('manga_chapter_ocr_done'),
+                  icon: FushiIcons.ocr,
+                  label: t.manga_chapter_status_ocr_done,
+                ),
+            ],
+            selected: selection?.contains(chapter.key),
+            trailing: selection == null ? _buildMenu(chapter, download) : null,
             onTap: () => onChapterTap(chapter),
+            onLongPress: selectGesture == null
+                ? null
+                : () => selectGesture(chapter),
+            onSecondaryTap: selectGesture == null
+                ? null
+                : () => selectGesture(chapter),
           ),
         ),
       ),
