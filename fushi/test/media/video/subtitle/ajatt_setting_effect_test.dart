@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:drift/native.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/media/video/subtitle/ajatt_subtitle_provider.dart';
@@ -105,7 +106,7 @@ void main() {
   ) async {
     await pumpContext(tester);
     final SettingsSwitchItem row = ajattRow();
-    expect(row.title, 'AJATT');
+    expect(row.title, t.settings_services_ajatt_title);
 
     // 默认开：零配置来源，开箱即用。
     expect(row.value(settingsContext), isTrue);

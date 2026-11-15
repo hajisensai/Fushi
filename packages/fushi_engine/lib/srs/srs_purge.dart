@@ -12,23 +12,24 @@
 ///
 /// ## 媒体回收与并发写入的契约
 ///
-/// 「扫存活引用 → 删文件」若不在一个独占区里，中间插进来的编辑 / 恢复 / 撤销会重新引用某个刚判为
-/// 无引用的文件，清理照旧按过期的结论删掉它，且无从找回（HBK-AUDIT-014）。所以：
-/// - 扫描、删文件、移出待回收集合在**同一个** `runExclusive` 里做；库里每一种引入引用的写入都走这把锁。
+/// 「扫存活引用 → 删文件」必须对写入原子：中间插进来的编辑 / 恢复 / 撤销 / 对端事件会重新引用某个刚判为无引用的
+/// 文件，清理照旧按过期的结论删掉它，且无从找回（HBK-AUDIT-014）。所以：
+/// - 核对存活引用、删文件、移出待回收集合是内核的**一条命令**（`media_gc_collect`，
+///   native/fushi_fsrs/src/store/media_gc.rs；[SrsDbStore.collectPendingMedia]）：在内核的写锁里、一笔里做，
+///   库里每一种引入引用的写入都要这把锁。存活引用的口径也只在内核一处。
 /// - 媒体文件本身先于引用落盘（`SrsMediaStore.store` 写文件 / 复用同内容文件 → 之后才提交引用它的
 ///   笔记），这一步在锁外。为此 `store` 复用已有文件时也刷新修改时间，回收只删修改时间早于
 ///   [kSrsMediaGcGrace] 的文件：刚写 / 刚复用、引用可能还没提交的文件留到下一轮。
-/// - 候选落进本机状态（`SrsDbStore.pendingMediaGc`）：被跳过、被叫停或中途崩溃的下次维护接着处理。
+/// - 候选落进本机状态行（内核持有的 `mediaGc`，[SrsDbStore.pendingMediaGc]）：被跳过、被叫停或中途崩溃的下次
+///   维护接着处理。
 library;
 
 import 'dart:io';
+import 'dart:math';
 
-import 'package:fushi_engine/srs/apkg/srs_apkg_common.dart' show srsMediaRefsIn;
 import 'package:fushi_engine/srs/srs_db_store.dart';
-import 'package:fushi_engine/srs/srs_media_sync.dart'
-    show kSrsMediaRetention, srsLiveMediaReferences;
+import 'package:fushi_engine/srs/srs_media_sync.dart' show kSrsMediaRetention;
 import 'package:fushi_srs/fushi_srs.dart';
-import 'package:path/path.dart' as p;
 
 /// 媒体回收宽限期：修改时间在这之内的文件不删（见库注释「媒体回收与并发写入的契约」）。
 const Duration kSrsMediaGcGrace = Duration(hours: 24);
@@ -59,21 +60,27 @@ Future<SrsPurgeReport> srsPurgeExpiredTombstones(
   bool stopped() => shouldStop?.call() ?? false;
   if (stopped()) return report;
   final int cutoff = store.now().$1 - after.inMilliseconds;
-  await store.queueMediaGc(await store.expiredNoteMediaRefs(cutoff));
-  if (stopped()) return report;
-  if (store.pendingMediaGc.isNotEmpty) {
-    report.mediaFiles = await _collectPendingMedia(
-      store,
-      mediaRoot,
-      grace: mediaGrace,
-      retention: after,
-    );
-  }
+  final Set<String> pending = await store.queueMediaGcOf(
+    expiredBeforeMs: cutoff,
+  );
+  if (stopped() || pending.isEmpty) return report;
+  report.mediaFiles = await _collectPendingMedia(
+    store,
+    mediaRoot,
+    grace: mediaGrace,
+    retention: after,
+    shouldStop: shouldStop,
+  );
   return report;
 }
 
+/// 一条 `purge` 命令清除的笔记数上限（[srsPurgeNotesNow] 的分块）：一条命令一笔事务，连同缓存重放与 WAL 都随
+/// 条数增长；逐条发（以前）则每条笔记各付一次事务、缓存刷新与本机状态行。
+const int kSrsPurgeChunk = 200;
+
 /// 用户确认后彻底清除 [noteIds]（例如删牌组时选了「永久删除」）：每条一个 v2 `Purge`（先删除、再清除内容，
-/// 全网一致）；它们引用过的、此刻没有存活引用的媒体随后回收。
+/// 全网一致），每 [kSrsPurgeChunk] 条一条内核命令、一笔（中途出错：已经做完的块留着，这一块整块不落）；它们
+/// 引用过的、此刻没有存活引用的媒体随后回收。
 Future<SrsPurgeReport> srsPurgeNotesNow(
   SrsDbStore store,
   List<String> noteIds, {
@@ -81,21 +88,19 @@ Future<SrsPurgeReport> srsPurgeNotesNow(
   Duration mediaGrace = kSrsMediaGcGrace,
 }) async {
   final SrsPurgeReport report = SrsPurgeReport();
-  final Set<String> media = <String>{};
-  for (final SrsNoteView? n in (await store.notes(noteIds)).values) {
-    if (n == null) continue;
-    for (final String v in n.fields.values) {
-      media
-        ..addAll(srsMediaRefsIn(v))
-        ..addAll(srsStyleRefsIn(v));
-    }
+  // 清除会抹掉字段：先把它们此刻引用的媒体记进待回收集合（没有媒体目录的副本从不回收，不记）。
+  final bool queued =
+      mediaRoot != null &&
+      (await store.queueMediaGcOf(notes: noteIds)).isNotEmpty;
+  for (int i = 0; i < noteIds.length; i += kSrsPurgeChunk) {
+    final List<String> chunk = noteIds.sublist(
+      i,
+      min(i + kSrsPurgeChunk, noteIds.length),
+    );
+    await store.sync2PurgeMany(SrsEntityKind.note, chunk);
+    report.notes += chunk.length;
   }
-  for (final String id in noteIds) {
-    await store.sync2Purge(SrsEntityKind.note, id);
-    report.notes++;
-  }
-  if (mediaRoot != null && media.isNotEmpty) {
-    await store.queueMediaGc(media);
+  if (queued) {
     report.mediaFiles = await _collectPendingMedia(
       store,
       mediaRoot,
@@ -108,56 +113,17 @@ Future<SrsPurgeReport> srsPurgeNotesNow(
   return report;
 }
 
-/// 回收待回收集合里此刻没有任何存活引用、且过了宽限期的文件（只删 [mediaRoot] 下的裸文件名）。
-///
-/// 扫描、删除、移出集合全程在一个独占区里（见库注释）。比较不区分大小写：Windows / macOS 默认卷上
-/// 大小写不同的两个名字是同一个文件。
+/// 回收待回收集合里此刻没有任何存活引用、且过了宽限期的文件（只删 [mediaRoot] 下的裸文件名）：策略（保留期、
+/// 宽限期）在这里，「核对存活引用 → 删文件 → 移出集合」在内核（见库注释）。
 Future<int> _collectPendingMedia(
   SrsDbStore store,
   Directory mediaRoot, {
   required Duration grace,
   required Duration retention,
-}) => store.runExclusive(() async {
-  final Set<String> alive = <String>{
-    for (final String n in await srsLiveMediaReferences(
-      store,
-      retention: retention,
-    ))
-      n.toLowerCase(),
-  };
-  final DateTime freshAfter = DateTime.now().subtract(grace);
-  final List<String> settled = <String>[];
-  int deleted = 0;
-  for (final String name in store.pendingMediaGc) {
-    // 又被引用了：不是垃圾。以后引用它的笔记删除满保留期时会重新成为候选。
-    if (!_isBareName(name) || alive.contains(name.toLowerCase())) {
-      settled.add(name);
-      continue;
-    }
-    final File f = File(p.join(mediaRoot.path, name));
-    final FileStat st = await f.stat();
-    if (st.type == FileSystemEntityType.notFound) {
-      settled.add(name);
-      continue;
-    }
-    // 刚写 / 刚复用：引用它的笔记可能还没提交，留到下一轮。
-    if (st.modified.isAfter(freshAfter)) continue;
-    try {
-      await f.delete();
-      deleted++;
-      settled.add(name);
-    } on FileSystemException {
-      // 被占用（Windows 上正在播放 / 预览）：留在集合里，下一轮再试。
-    }
-  }
-  await store.settlePendingMediaGc(settled);
-  return deleted;
-});
-
-bool _isBareName(String n) =>
-    n.isNotEmpty &&
-    !n.contains('/') &&
-    !n.contains(r'\') &&
-    !n.contains(':') &&
-    n != '.' &&
-    n != '..';
+  bool Function()? shouldStop,
+}) => store.collectPendingMedia(
+  mediaRoot.path,
+  aliveAfterMs: store.now().$1 - retention.inMilliseconds,
+  freshAfterMs: DateTime.now().subtract(grace).millisecondsSinceEpoch,
+  shouldStop: shouldStop,
+);

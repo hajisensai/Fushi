@@ -65,4 +65,25 @@ function run(pending, scroller, isFinal) {
   assert.strictEqual(sandbox.window.__fushiPendingScrollTop, 0);
 }
 
+// 6. 新查词会话的归零 `__fushiResetPopupScroll`（popup.js 唯一实现，in-app 热槽与 app 外
+//    根 iframe 共用）：文档滚动面、body 归零，残留的待恢复位一并清掉。in-app 全量推送随后
+//    再写本页的 pending（历史页恢复），所以清 pending 不影响后退 / 前进。
+{
+  const sandbox = loadPopup();
+  const scroller = makeScroller(2000, 400);
+  scroller.scrollTop = 900;
+  sandbox.document.scrollingElement = scroller;
+  if (!sandbox.document.body) sandbox.document.body = {};
+  sandbox.document.body.scrollTop = 900;
+  const scrolledTo = [];
+  sandbox.window.scrollTo = (x, y) => scrolledTo.push([x, y]);
+  sandbox.window.__fushiPendingScrollTop = 300;
+  assert.strictEqual(typeof sandbox.window.__fushiResetPopupScroll, 'function');
+  vm.runInContext('window.__fushiResetPopupScroll()', sandbox);
+  assert.strictEqual(scroller.scrollTop, 0);
+  assert.strictEqual(sandbox.document.body.scrollTop, 0);
+  assert.deepStrictEqual(scrolledTo, [[0, 0]]);
+  assert.strictEqual(sandbox.window.__fushiPendingScrollTop, 0);
+}
+
 console.log('popup_pending_scroll_restore: all assertions passed');

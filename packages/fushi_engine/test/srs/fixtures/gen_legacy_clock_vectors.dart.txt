@@ -1,0 +1,146 @@
+// 旧版 HLC 时钟（Dart `HlcClock`，packages/fushi_srs/lib/src/hlc.dart）的对拍向量生成器。
+//
+// SRS 收掉 Dart 写路径第 6 步把这只时钟搬进内核（native/fushi_fsrs/src/store/legacy_clock.rs）并删掉 Dart 版。搬之前
+// 在 4cadefd4f（第 5 步头）上用 Dart 实现跑出这份向量、冻结入库（native/fushi_fsrs/tests/fixtures/
+// legacy_clock_vectors.json），内核单测逐步对拍。`HlcClock` 删掉后这个文件不再能编译，改名 .dart.txt 留作出处。
+//
+// 跑法（packages/fushi_srs 下）：dart run tool/gen_legacy_clock_vectors.dart <输出 json>
+import 'dart:convert';
+import 'dart:io';
+import 'dart:math';
+
+import 'package:fushi_srs/fushi_srs.dart';
+
+const int _tol = srsClockToleranceMs;
+
+Map<String, Object?> _tick(HlcClock c, int now) {
+  c.tick(now);
+  return <String, Object?>{'op': 'tick', 'now': now, 'out': c.last.encode()};
+}
+
+Map<String, Object?> _recv(HlcClock c, Hlc remote, int? server, int now) {
+  c.receive(remote, serverTimeMs: server, trustedNowMs: now);
+  return <String, Object?>{
+    'op': 'recv',
+    'remote': remote.encode(),
+    'server': server,
+    'now': now,
+    'out': c.last.encode(),
+  };
+}
+
+Map<String, Object?> _case(
+  String writer,
+  Hlc? start,
+  List<Map<String, Object?>> Function(HlcClock c) run,
+) {
+  final HlcClock c = HlcClock(writer, last: start);
+  return <String, Object?>{
+    'writer': writer,
+    'start': c.last.encode(),
+    'steps': run(c),
+  };
+}
+
+List<Map<String, Object?>> _edges(HlcClock c) {
+  const int t = 1700000000000;
+  return <Map<String, Object?>>[
+    // tick：大于 / 等于 / 小于已见过的物理时间。
+    _tick(c, t),
+    _tick(c, t),
+    _tick(c, t - 1),
+    _tick(c, t + 1),
+    _tick(c, 0),
+    _tick(c, -5),
+    // receive 不带服务器时间：钳到 now + 容差。边界 -1 / 0 / +1。
+    _recv(c, Hlc(t + 5, 7, 'peer#1'), null, t),
+    _recv(c, Hlc(t + 5, 3, 'peer#1'), null, t),
+    _recv(c, Hlc(t + 5, 9, 'peer#1'), null, t),
+    _recv(c, Hlc(t + _tol + 10 - 1, 4, 'a:b:c'), null, t + 10),
+    _recv(c, Hlc(t + _tol + 10, 4, 'a:b:c'), null, t + 10),
+    _recv(c, Hlc(t + _tol + 10 + 1, 4, 'a:b:c'), null, t + 10),
+    // 被钳过的远端与本机同一物理时间：计数器不采用（remote.physical != effective）。
+    _recv(c, Hlc(t + _tol + 999, 50, 'far'), null, t + 10),
+    // 带服务器时间：钳到 S + 容差，与 now 无关。
+    _recv(c, Hlc(t + 3 * _tol, 2, 'far'), t + 2 * _tol, t),
+    _recv(c, Hlc(t + 5 * _tol, 2, 'far'), t + 2 * _tol, t + 9 * _tol),
+    _recv(c, Hlc(t + 3 * _tol, 8, 'far'), t + 2 * _tol, t),
+    _recv(c, Hlc(t + 3 * _tol, 1, 'far'), t + 2 * _tol, t),
+    // 远端更旧：不动。
+    _recv(c, Hlc(t, 99, 'old'), null, t),
+    _recv(c, Hlc(0, 0, ''), null, t),
+    _recv(c, Hlc(-7, 3, 'neg'), -1000000, t),
+    // 接着 tick：落在被推高的物理时间之后 / 之前。
+    _tick(c, t + 2),
+    _tick(c, t + 4 * _tol),
+    _tick(c, t + 4 * _tol),
+    _recv(c, Hlc(t + 4 * _tol, 0, 'eq'), null, t + 4 * _tol),
+    _recv(c, Hlc(t + 4 * _tol, 1, 'eq'), null, t + 4 * _tol),
+    _recv(c, Hlc(t + 4 * _tol, 2, 'eq'), null, t + 4 * _tol),
+  ];
+}
+
+List<Map<String, Object?>> _random(HlcClock c, Random r, int steps) {
+  int now = 1730000000000 + r.nextInt(1000000);
+  final List<Map<String, Object?>> out = <Map<String, Object?>>[];
+  for (int i = 0; i < steps; i++) {
+    // 可信时间大多往前走，偶尔原地 / 倒退（换了校时来源）。
+    final int d = r.nextInt(10);
+    if (d < 6) {
+      now += r.nextInt(5000);
+    } else if (d < 8) {
+      now -= r.nextInt(3000);
+    }
+    if (r.nextInt(3) == 0) {
+      out.add(_tick(c, now));
+      continue;
+    }
+    final int? server = r.nextBool()
+        ? now + r.nextInt(4 * _tol) - 2 * _tol
+        : null;
+    final int bound = (server ?? now) + _tol;
+    final int physical = switch (r.nextInt(8)) {
+      0 => bound,
+      1 => bound - 1,
+      2 => bound + 1,
+      3 => c.last.physical,
+      4 => c.last.physical + 1,
+      5 => c.last.physical - 1,
+      6 => bound + r.nextInt(100000000),
+      _ => now + r.nextInt(2 * _tol) - _tol,
+    };
+    final int counter = switch (r.nextInt(4)) {
+      0 => c.last.counter,
+      1 => c.last.counter + 1,
+      2 => max(0, c.last.counter - 1),
+      _ => r.nextInt(6),
+    };
+    out.add(_recv(c, Hlc(physical, counter, 'p${r.nextInt(4)}#1'), server, now));
+  }
+  return out;
+}
+
+void main(List<String> args) {
+  final Random r = Random(20261111);
+  final Map<String, Object?> doc = <String, Object?>{
+    'source':
+        'Dart HlcClock at 4cadefd4f (packages/fushi_srs/lib/src/hlc.dart); '
+        'generator packages/fushi_engine/test/srs/fixtures/'
+        'gen_legacy_clock_vectors.dart.txt',
+    'toleranceMs': _tol,
+    'cases': <Map<String, Object?>>[
+      _case('dev#1', null, _edges),
+      _case('a:b#2', const Hlc(1700000000500, 3, 'a:b#2'), _edges),
+      _case('dev#1', null, (HlcClock c) => _random(c, r, 400)),
+      _case(
+        '01928c3e-0000-7000-8000-00000000c0de#3',
+        const Hlc(1730000500000, 12, '01928c3e-0000-7000-8000-00000000c0de#3'),
+        (HlcClock c) => _random(c, r, 400),
+      ),
+      _case('w', const Hlc(9000000000000, 0, 'w'), (HlcClock c) {
+        return _random(c, r, 200);
+      }),
+    ],
+  };
+  File(args.single).writeAsStringSync('${jsonEncode(doc)}\n');
+}

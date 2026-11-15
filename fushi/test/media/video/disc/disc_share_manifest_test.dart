@@ -334,10 +334,10 @@ void main() {
       );
       expect(body['baseUrl'], 'https://[::1]:8765/api/library/disc/tok/');
       expect(
-        isDiscShareSessionPath('api/library/disc/tok/manifest.json'),
+        isDiscShareSessionPath('/api/library/disc/tok/manifest.json'),
         isTrue,
       );
-      expect(isDiscShareSessionPath('api/library/videos/x/disc'), isFalse);
+      expect(isDiscShareSessionPath('/api/library/videos/x/disc'), isFalse);
     });
   });
 }

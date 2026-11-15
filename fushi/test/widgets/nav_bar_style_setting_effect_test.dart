@@ -11,7 +11,7 @@ import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
-import 'package:fushi/src/settings/settings_schema_appearance.dart';
+import 'package:fushi/src/settings/settings_schema_navigation.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart';
 import 'package:fushi/src/utils/adaptive/nav_bar_style.dart';
 import 'package:fushi/src/utils/adaptive/nav_overflow/nav_mode_strip_bar.dart';
@@ -54,7 +54,7 @@ void main() {
   });
 
   SettingsSegmentedItem<AdaptiveNavBarStyle> styleRow() =>
-      buildAppearanceDestination().sections
+      buildNavigationDestination().sections
           .expand((SettingsSection s) => s.items)
           .whereType<SettingsSegmentedItem<AdaptiveNavBarStyle>>()
           .singleWhere(

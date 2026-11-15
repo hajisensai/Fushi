@@ -20,53 +20,6 @@ class _FakeEngine implements FsrsEngine {
       List<double>.filled(a.paramCount, 1);
   @override
   String? validateParams(SrsAlgorithm a, List<double> p) => null;
-  SrsMemory _step(SrsMemory? m, int r) => SrsMemory(
-    stability: switch (r) {
-      1 => 0.3,
-      2 => 1.5 + (m?.stability ?? 0),
-      3 => 3 + (m?.stability ?? 0) * 2,
-      _ => 6 + (m?.stability ?? 0) * 3,
-    },
-    difficulty: 5,
-  );
-  @override
-  SrsNextStates nextStates({
-    required SrsAlgorithm algorithm,
-    required List<double> params,
-    required double desiredRetention,
-    required SrsMemory? memory,
-    required double elapsedDays,
-  }) {
-    SrsItemState st(int r) {
-      final SrsMemory m = _step(memory, r);
-      return SrsItemState(memory: m, interval: m.stability);
-    }
-
-    return SrsNextStates(again: st(1), hard: st(2), good: st(3), easy: st(4));
-  }
-
-  @override
-  SrsMemory? memoryState({
-    required SrsAlgorithm algorithm,
-    required List<double> params,
-    required List<SrsFsrsReview> reviews,
-    SrsMemory? starting,
-  }) {
-    SrsMemory? m = starting;
-    for (final SrsFsrsReview r in reviews) {
-      m = _step(m, r.rating);
-    }
-    return m;
-  }
-
-  @override
-  SrsMemory memoryStateFromSm2({
-    required SrsAlgorithm algorithm,
-    required List<double> params,
-    required double easeFactor,
-    required double intervalDays,
-    required double sm2Retention,
-  }) => SrsMemory(stability: intervalDays, difficulty: 5);
   @override
   double retrievability({
     required SrsAlgorithm algorithm,
@@ -528,11 +481,11 @@ void main() {
     );
     final String? oldDevice = a.sync2Device;
     // 恢复备份：本机状态、缓存表与同步 v2 的本机身份被清空（备份快照剥掉设备本地表，见 SrsCore.snapshotInto）。
-    await srsStorage.db.delete(srsStorage.db.srsLocalState).go();
-    await srsStorage.db.delete(srsStorage.db.srsEventLocal).go();
-    await srsStorage.db.delete(srsStorage.db.srsCardsCache).go();
-    await srsStorage.db.delete(srsStorage.db.srsNotesCache).go();
-    await srsStorage.db.customStatement('DELETE FROM sync2_self');
+    srsStorage.core.debugExecRaw('DELETE FROM srs_local_state');
+    srsStorage.core.debugExecRaw('DELETE FROM srs_event_local');
+    srsStorage.core.debugExecRaw('DELETE FROM srs_cards_cache');
+    srsStorage.core.debugExecRaw('DELETE FROM srs_notes_cache');
+    srsStorage.core.debugExecRaw('DELETE FROM sync2_self');
     final SrsDbStore restored = await SrsDbStore.open(
       db: srsStorage.db,
       core: srsStorage.core,
