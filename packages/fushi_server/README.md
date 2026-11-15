@@ -167,6 +167,9 @@ docker compose logs fushi-server # 首次启动打印 admin_token；配对时 PI
 - **配对**：容器不做局域网 mDNS 广播（镜像里没有 avahi，默认 bridge 网络也传不出组播），Fushi 的
   局域网列表里看不到它：在 Fushi 里手动输入 `<宿主机地址>:38765`。`network_mode: host`（仅 Linux 宿主）
   省掉端口映射，但同样不广播。
+- **配对链接 / 二维码**：bridge 网络里服务端只知道容器地址（`172.x.x.x`），手机连不上。先在 WebUI
+  「设置」→「远程访问」→ 公网地址里填手机能连的地址（如 `https://192.168.1.20:38765`，宿主机地址 +
+  `FUSHI_SYNC_PORT`），保存即生效，再到「配对」页生成链接。
 - **密钥**：`FUSHI_*` 环境变量（OpenSubtitles / SubDL / Jimaku / AniDB / Bangumi / Plex 等）写进 `.env`
   （已 git-ignore），优先于服务端里存的值；不要写进镜像或 Dockerfile。
 - **更新**：`git pull` 后 `docker compose up -d --build`（或拉新的预构建镜像）。容器里的应用内远程更新被拒，

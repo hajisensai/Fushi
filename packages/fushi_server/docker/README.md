@@ -55,6 +55,12 @@ downloads, WebUI) in a container. Commands below run from this directory
    Pairing page and in the log; type it into the app. The container does not
    show up in the app's LAN list (no mDNS from Docker), so always enter the address.
 
+   **Pair links / QR codes:** WebUI → Pairing → "Create pairing link" skips the PIN.
+   In bridge mode the server only sees its container address (`172.x.x.x`), which
+   phones cannot reach. First add the address phones use under WebUI → Settings →
+   Remote access → Public addresses, e.g. `https://192.168.1.20:38765` (your host and
+   `FUSHI_SYNC_PORT`). It takes effect on save, and paired devices learn it too.
+
 6. **Add a library.** WebUI → Libraries → add a path under `/media`, e.g.
    `/media/anime` with type `video`, then Status → Scan.
 
