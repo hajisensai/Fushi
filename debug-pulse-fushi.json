@@ -1,12 +1,44 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-15T05:48:09Z",
+ "generatedAt": "2026-11-15T05:52:33Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "4cd7c991f8e558e8b4004510e722a38374f3a2de",
   "seq": 27324
  },
  "builds": [
+  {
+   "seq": 27301,
+   "version": "3.3.0",
+   "sha": "b81d46ca32857dce9083ea9e4f65d125d28981df",
+   "unknown": false,
+   "publishedAt": "2026-11-15T05:52:19Z",
+   "testflight": true,
+   "baseSeq": 27285,
+   "prs": [
+    3431,
+    3439,
+    3432,
+    3438
+   ],
+   "direct": [],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43677182685"
+    },
+    "windows": {
+     "state": "ok"
+    },
+    "macos": {
+     "state": "ok"
+    },
+    "ios": {
+     "state": "ok"
+    }
+   }
+  },
   {
    "seq": 27285,
    "version": "3.3.0",
@@ -113,42 +145,12 @@
    "unknown": false,
    "publishedAt": "2026-11-15T03:33:29Z",
    "testflight": false,
-   "baseSeq": 27210,
+   "baseSeq": 27107,
    "prs": [
     3424,
     3427,
     3381,
-    3277
-   ],
-   "direct": [],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "ok"
-    },
-    "windows": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43658688931"
-    },
-    "macos": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43658688931"
-    },
-    "ios": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43658688931"
-    }
-   }
-  },
-  {
-   "seq": 27210,
-   "version": "3.3.0",
-   "sha": "262391b32640eec669f74723163cad3b11b7b39d",
-   "unknown": false,
-   "publishedAt": "2026-11-15T01:19:12Z",
-   "testflight": true,
-   "baseSeq": 27107,
-   "prs": [
+    3277,
     3318,
     3321,
     3365,
@@ -159,17 +161,19 @@
    "truncated": false,
    "platforms": {
     "android": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43654446387"
+     "state": "ok"
     },
     "windows": {
-     "state": "ok"
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43658688931"
     },
     "macos": {
-     "state": "ok"
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43658688931"
     },
     "ios": {
-     "state": "ok"
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43658688931"
     }
    }
   },
@@ -236,11 +240,7 @@
    3437,
    3436,
    3441,
-   3391,
-   3431,
-   3439,
-   3432,
-   3438
+   3391
   ],
   "direct": [],
   "truncated": false,
