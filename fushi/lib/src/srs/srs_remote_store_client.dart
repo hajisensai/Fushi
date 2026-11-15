@@ -17,6 +17,7 @@ import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_edit_history.dart';
 import 'package:fushi_engine/srs/srs_note_type_store.dart';
+import 'package:fushi_engine/srs/srs_remote_generation.dart';
 import 'package:fushi_engine/srs/srs_remote_store.dart';
 import 'package:fushi_engine/srs/srs_rwkv_scheduling.dart';
 import 'package:fushi_srs/fushi_srs.dart';
@@ -31,6 +32,8 @@ import 'package:fushi/src/sync/video_remote_targets.dart';
 
 export 'package:fushi_engine/srs/srs_remote_store.dart'
     show SrsRemoteStoreError, SrsRemoteWireError;
+export 'package:fushi_engine/srs/srs_remote_generation.dart'
+    show SrsRemoteHostCompat, SrsRemoteHostGeneration;
 
 /// 一台互联主机的远程复习库端点。失败抛 [InterconnectHostError]，`message` 是主机的机读码
 /// （[SrsRemoteStoreError] 的常量）或连接层的码（[InterconnectHostError.unreachableCode] 等）。
@@ -69,9 +72,15 @@ class SrsRemoteHostClient extends InterconnectHostClient {
     authErrorMessage: 'SRS remote store authentication rejected',
   );
 
-  /// 主机是否声明了远程复习库。null = 没有应答。
+  /// 主机是否声明了远程复习库（V1 能力位）。null = 没有应答。
   Future<bool?> supportsRemoteStore() =>
       declaresCapability(kSrsRemoteStoreCapability);
+
+  /// 主机远程复习的代（按 `/api/capabilities` 的能力位，[srsRemoteHostGenerationOf]）。null = 没有应答。
+  Future<SrsRemoteHostGeneration?> remoteGeneration() async {
+    final Map<Object?, Object?>? declared = await capabilities();
+    return declared == null ? null : srsRemoteHostGenerationOf(declared);
+  }
 
   /// 一个媒体文件的字节；主机没有时 null。
   Future<Uint8List?> media(String name) async {
@@ -83,8 +92,15 @@ class SrsRemoteHostClient extends InterconnectHostClient {
   }
 }
 
-/// 远程复习库的能力探测（一次性 client，探完关掉它的连接）。
-Future<bool?> _probeSrsRemoteStore(
+/// 探一台对端远程复习的代。null = 没有应答。
+typedef SrsRemoteGenerationProbe =
+    Future<SrsRemoteHostGeneration?> Function(
+      SyncRepository repository,
+      FushiClientUrl peer,
+    );
+
+/// 远程复习的代际探测（一次性 client，探完关掉它的连接）。[probeSrsRemoteHosts] 的默认探测。
+Future<SrsRemoteHostGeneration?> probeSrsRemoteGeneration(
   SyncRepository repository,
   FushiClientUrl peer,
 ) async {
@@ -93,21 +109,65 @@ Future<bool?> _probeSrsRemoteStore(
     peer: peer,
   );
   try {
-    return await client.supportsRemoteStore();
+    return await client.remoteGeneration();
   } finally {
     client.cancelPending();
   }
 }
 
-/// [candidates]（[configuredInterconnectHostTargets] 列出的）里此刻提供远程复习库的那些。
+/// [candidates]（[configuredInterconnectHostTargets] 列出的）逐台探远程复习的代，按本机能说的线格式配对
+/// （[srsRemoteHostCompat]）：hostId → 能不能接上。没应答、超过 [timeout]、探测抛错、没有远程复习
+/// （[SrsRemoteHostCompat.unavailable]）的主机不在结果里；代对不上的主机在结果里，界面列出来并标明该升级哪边，
+/// 不再悄悄滤掉。各 host 并发探测。
+Future<Map<String, SrsRemoteHostCompat>> probeSrsRemoteHosts(
+  SyncRepository repository,
+  List<InterconnectHostTarget> candidates, {
+  SrsRemoteGenerationProbe probe = probeSrsRemoteGeneration,
+  Duration timeout = const Duration(seconds: 6),
+}) async {
+  Future<SrsRemoteHostCompat> compatOf(InterconnectHostTarget target) async {
+    try {
+      final SrsRemoteHostGeneration? generation = await probe(
+        repository,
+        target.peer,
+      ).timeout(timeout);
+      return generation == null
+          ? SrsRemoteHostCompat.unavailable
+          : srsRemoteHostCompat(generation);
+    } catch (_) {
+      return SrsRemoteHostCompat.unavailable;
+    }
+  }
+
+  final List<SrsRemoteHostCompat> results = await Future.wait(
+    candidates.map(compatOf),
+  );
+  return <String, SrsRemoteHostCompat>{
+    for (int i = 0; i < candidates.length; i++)
+      if (results[i] != SrsRemoteHostCompat.unavailable)
+        candidates[i].hostId: results[i],
+  };
+}
+
+/// [candidates] 里此刻能直接连上远程复习库的那些（[probeSrsRemoteHosts] 判为 [SrsRemoteHostCompat.ready]，
+/// 顺序不变）。代对不上的（[SrsRemoteHostCompat.hostNeedsUpgrade] / [SrsRemoteHostCompat.clientNeedsUpgrade]）不在内。
 Future<List<InterconnectHostTarget>> filterSrsRemoteStoreTargets(
   SyncRepository repository,
-  List<InterconnectHostTarget> candidates,
-) => filterInterconnectHostTargets(
-  repository: repository,
-  candidates: candidates,
-  probe: _probeSrsRemoteStore,
-);
+  List<InterconnectHostTarget> candidates, {
+  SrsRemoteGenerationProbe probe = probeSrsRemoteGeneration,
+  Duration timeout = const Duration(seconds: 6),
+}) async {
+  final Map<String, SrsRemoteHostCompat> compat = await probeSrsRemoteHosts(
+    repository,
+    candidates,
+    probe: probe,
+    timeout: timeout,
+  );
+  return <InterconnectHostTarget>[
+    for (final InterconnectHostTarget c in candidates)
+      if (compat[c.hostId] == SrsRemoteHostCompat.ready) c,
+  ];
+}
 
 /// 主机的回包不合契约（[SrsRemoteWireError]）：按 [InterconnectHostError] 的形状抛，机读码是
 /// [SrsRemoteStoreError.badResponse]，页面与别的远程失败走同一套文案和重试。[op] 是哪一次调用，
@@ -799,6 +859,8 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
     int durationMs = 0,
     String? studyDeckId,
     SrsCustomStudy? custom,
+    // 主机一侧的前置条件（路由按请求里的基准传给主机的库）；这一侧的基准是 [_bases]，不看这个参数。
+    ({String? lastLogId})? expectBase,
   }) async {
     final bool known = _bases.containsKey(cardId);
     final String? base = _bases.remove(cardId);
@@ -970,6 +1032,67 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
     }, (Object? json) => json == null ? null : SrsRemoteWire.editsFrom(json));
   }
 
+  /// 条件写笔记字段（批量改字段的落计划与撤销）。主机没有「比对 + 写」一条路由：读一遍主机上的现值、在这一侧
+  /// 比对、再用 [editFieldsBatch] 写——比对与写入之间主机上别的写入插得进来（远程副本上一直如此；本机库上这是内核的
+  /// 一条命令）。规则与 [SrsDbStore.editNoteFieldsIf] 相同。
+  @override
+  Future<Set<String>> editNoteFieldsIf(
+    List<SrsNoteFieldWrite> writes, {
+    required bool wholeNote,
+  }) async {
+    final (Set<String> rejected, List<SrsFieldChange> changes) =
+        await _noteFieldsIfChanges(writes, wholeNote: wholeNote);
+    if (changes.isNotEmpty) await editFieldsBatch(changes);
+    return rejected;
+  }
+
+  /// 同 [editNoteFieldsIf] 的落计划模式，写入走 [editFieldsUndoable]（主机在它自己的写锁里记撤销凭据）。
+  @override
+  Future<(Set<String>, SrsEditUndo)> editNoteFieldsIfUndoable(
+    List<SrsNoteFieldWrite> writes,
+  ) async {
+    final (Set<String> rejected, List<SrsFieldChange> changes) =
+        await _noteFieldsIfChanges(writes, wholeNote: true);
+    return (
+      rejected,
+      changes.isEmpty ? SrsEditUndo.empty : await editFieldsUndoable(changes),
+    );
+  }
+
+  /// [editNoteFieldsIf] 的比对：读一遍主机上的现值，交回被拒的笔记与通过的写入。
+  Future<(Set<String>, List<SrsFieldChange>)> _noteFieldsIfChanges(
+    List<SrsNoteFieldWrite> writes, {
+    required bool wholeNote,
+  }) async {
+    if (writes.isEmpty) {
+      return (const <String>{}, const <SrsFieldChange>[]);
+    }
+    final Map<String, SrsNoteView?> views = await notes(<String>{
+      for (final SrsNoteFieldWrite w in writes) w.noteId,
+    });
+    final Set<String> rejected = <String>{};
+    final List<SrsNoteFieldWrite> passed = <SrsNoteFieldWrite>[];
+    for (final SrsNoteFieldWrite w in writes) {
+      final SrsNoteView? n = views[w.noteId];
+      if (n == null || n.deletedAt != null || n.field(w.fieldId) != w.expect) {
+        rejected.add(w.noteId);
+      } else {
+        passed.add(w);
+      }
+    }
+    final List<SrsFieldChange> changes = <SrsFieldChange>[
+      for (final SrsNoteFieldWrite w in passed)
+        if (!wholeNote || !rejected.contains(w.noteId))
+          SrsFieldChange(
+            SrsEntityKind.note,
+            w.noteId,
+            SrsFieldKeys.noteField(w.fieldId),
+            w.value,
+          ),
+    ];
+    return (rejected, changes);
+  }
+
   @override
   Future<List<SrsFieldEdit>> editFieldsBatch(List<SrsFieldChange> changes) {
     for (final SrsFieldChange c in changes) {
@@ -981,6 +1104,30 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
           SrsEditSpec(c.kind, c.entityId, c.key, c.value),
       ]),
     }, SrsRemoteWire.editsFrom);
+  }
+
+  @override
+  Future<SrsEditUndo> editFieldsUndoable(List<SrsFieldChange> changes) {
+    for (final SrsFieldChange c in changes) {
+      if (c.kind == SrsEntityKind.card) _bases.remove(c.entityId);
+    }
+    return _write('editFieldsUndoable', <String, Object?>{
+      'changes': SrsRemoteWire.editSpecs(<SrsEditSpec>[
+        for (final SrsFieldChange c in changes)
+          SrsEditSpec(c.kind, c.entityId, c.key, c.value),
+      ]),
+    }, SrsEditUndo.fromJson);
+  }
+
+  /// 撤销在主机的写锁里按主机库的修改记录裁决（撤销凭据里的 dot 是主机内核分配的）。
+  @override
+  Future<SrsEditUndoResult> revertEdits(SrsEditUndo undo) {
+    for (final SrsEditUndoItem i in undo.items) {
+      if (i.kind == SrsEntityKind.card) _bases.remove(i.entityId);
+    }
+    return _write('revertEdits', <String, Object?>{
+      'undo': undo.toJson(),
+    }, SrsEditUndoResult.fromJson);
   }
 
   @override

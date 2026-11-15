@@ -478,6 +478,12 @@ abstract final class FushiMotion {
   /// 环境动效：背景大形状自转一圈的时长。
   static const Duration ambientSpin = Duration(seconds: 120);
 
+  /// 环境动效（吉祥物光晕）：空闲时一呼一吸的单程时长，接近静息呼吸的节奏。
+  static const Duration ambientBreath = Duration(milliseconds: 2800);
+
+  /// 环境动效（吉祥物光晕）：有后台任务在跑时的单程时长，比 [ambientBreath] 快一倍。
+  static const Duration ambientBreathBusy = Duration(milliseconds: 1400);
+
   /// 环境动效（[ambientDrift] 往返）的曲线：两端速度为零，掉头处无顿挫。
   static const Curve ambient = _AmbientSine();
 

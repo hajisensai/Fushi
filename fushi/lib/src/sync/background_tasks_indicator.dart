@@ -26,6 +26,9 @@ import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 
+export 'package:fushi/src/sync/sync_background_activity.dart'
+    show hasActiveSyncTasks, syncBackgroundTasksListenable;
+
 /// 首页外壳的「后台任务」入口（2026-11-03 顶栏让位）：常规同步、复习同步 / 旧文件
 /// 迁移、视频源补刮共用右下（MD3 手机叠在悬浮底栏 FAB 上方、Apple 进大标题行）的
 /// 一颗按钮，按钮外圈是 [FushiSegmentedProgressRing]——一项任务一段弧，看一眼
@@ -104,20 +107,6 @@ class BackgroundTask {
     finished,
   );
 }
-
-/// 同步类任务的全部数据源；入口与明细都听它。
-final Listenable syncBackgroundTasksListenable = Listenable.merge(<Listenable>[
-  syncTasks,
-  srsSyncProgress,
-  srsMigrationProgress,
-]);
-
-/// 有没有同步类任务在跑（外壳只在这一位翻转时重建）。已结束、只因有失败而留在
-/// 明细里的那几轮不算。
-bool hasActiveSyncTasks() =>
-    syncTasks.value.any((SyncTask task) => task.isActive) ||
-    srsSyncProgress.value != null ||
-    srsMigrationProgress.value != null;
 
 /// 条目种类的图标（书 / 视频 / 有声书 / 词典 / 本地音频 / 字体）；不知道是哪种时用
 /// 同步图标。

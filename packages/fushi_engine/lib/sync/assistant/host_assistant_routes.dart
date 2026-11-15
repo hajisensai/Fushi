@@ -23,6 +23,8 @@ library;
 import 'dart:convert';
 
 import 'package:fushi_engine/sync/assistant/host_assistant.dart';
+import 'package:fushi_engine/sync/remote_lookup_routes.dart'
+    show readBoundedBodyString;
 import 'package:shelf/shelf.dart' as shelf;
 
 shelf.Response _json(Object body, {int status = 200}) => shelf.Response(
@@ -32,7 +34,7 @@ shelf.Response _json(Object body, {int status = 200}) => shelf.Response(
 );
 
 Future<Map<String, Object?>?> _readObject(shelf.Request request) async {
-  final String text = await request.readAsString();
+  final String text = await readBoundedBodyString(request);
   if (text.trim().isEmpty) return <String, Object?>{};
   final Object? decoded = jsonDecode(text);
   if (decoded is! Map) return null;

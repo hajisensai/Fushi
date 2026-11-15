@@ -250,6 +250,11 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   @protected
   ShortcutScope? get dictionaryPopupInputScope => null;
 
+  /// 本页面在弹窗可见时真正派发「点＋制卡」的键盘动作，只用于给「＋」写快捷键提示。
+  /// null = 本页没有键盘制卡派发 → 不提示（绝不提示一个按了没反应的键）。
+  @protected
+  ShortcutAction? get dictionaryPopupMineShortcutAction => null;
+
   /// 弹窗可见时仍要生效的动作。token 表由注册表**当前**绑定实时导出，故用户改键
   /// 立即对弹窗持焦的路径生效（旧桥把键名硬编码在 JS 里，改键后不跟随）。
   @protected
@@ -1234,6 +1239,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         // 已制卡动作 / 打开卡片）弹窗停靠屏外但仍挂载，它的 DOM 还可能拿着系统键盘
         // 焦点，一个被绑的键就能把对话框背后的整条浮层栈关掉。与 `visible:` 的
         // `_popupHidingDialogDepth == 0` 共用判据。
+        mineShortcutAction: dictionaryPopupMineShortcutAction,
         onHostInputToken: dictionaryPopupInputScope == null
             ? null
             : (String token) {

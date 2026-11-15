@@ -135,7 +135,14 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
 
   /// 还没拆成积木的草稿（打字实时筛）。
   final TextEditingController _draft = TextEditingController();
+
+  /// 草稿的提交值：输入法组字（[TextEditingValue.composing]）结束后的文本。查询、补全、粘贴拆积木都只认它，
+  /// 组字中的中间态（拼音、候选未选定的假名）不算（反馈 D2hILRLlPT：Windows 中文输入法组字中的「ni hao」
+  /// 被当成粘贴拆成积木、清空草稿，组字被打断）。
   String _lastDraft = '';
+
+  /// 上一次提交值之后经历过组字：组字确认进来的一段字不是「粘贴」，不拆积木。
+  bool _composedSinceCommit = false;
   final FocusNode _queryFocus = FocusNode(debugLabel: 'srs-browse-search');
   final FocusNode _focusNode = FocusNode(debugLabel: 'srs-browse');
 
@@ -212,6 +219,9 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
     _columns = decodeSrsBrowseColumns(
       ref.read(appProvider).srsBrowseTableColumns,
     );
+    // 组字结束时常常只有 composing 区间变、文本不变（日文输入法回车确认），TextField 的 onChanged 不报；
+    // 草稿的提交值只能跟着控制器的整份 value 走。
+    _draft.addListener(_onDraftValue);
     unawaited(_refresh());
   }
 
@@ -250,8 +260,8 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
   String get _draftQuery {
     final String? field = _searchField;
     return field == null
-        ? _draft.text
-        : srsFieldContainsQuery(field, _draft.text);
+        ? _lastDraft
+        : srsFieldContainsQuery(field, _lastDraft);
   }
 
   String get _effectiveQuery => <String>[
@@ -571,11 +581,25 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
     _requery();
   }
 
-  void _onDraftChanged(String text) {
+  /// 草稿控制器变了：组字还没结束就不动（中间态不是提交值）；组字结束或直接打字时按提交值处理。
+  void _onDraftValue() {
+    final TextEditingValue value = _draft.value;
+    if (value.composing.isValid && !value.composing.isCollapsed) {
+      _composedSinceCommit = true;
+      return;
+    }
+    final bool composed = _composedSinceCommit;
+    _composedSinceCommit = false;
+    if (value.text == _lastDraft) return;
+    _onDraftChanged(value.text, composed: composed);
+  }
+
+  void _onDraftChanged(String text, {required bool composed}) {
     final String before = _lastDraft;
     _lastDraft = text;
-    // 粘贴整段（一次进来多个字、含空白、能拆出两块以上）：直接拆成积木。打字只改草稿。
-    if (_searchField == null &&
+    // 粘贴整段（一次进来多个字、含空白、能拆出两块以上）：直接拆成积木。打字、输入法确认的一段字只改草稿。
+    if (!composed &&
+        _searchField == null &&
         text.length - before.length > 1 &&
         text.contains(RegExp(r'\s'))) {
       final List<SrsBrowseChip> parsed = srsParseBrowseChips(text);
@@ -583,8 +607,8 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
           parsed.every(
             (SrsBrowseChip c) => c.kind != SrsBrowseChipKind.syntax,
           )) {
-        _draft.clear();
         _lastDraft = '';
+        _draft.clear();
         _setChips(<SrsBrowseChip>[..._chips, ...parsed]);
         return;
       }
@@ -606,8 +630,8 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
     final List<SrsBrowseChip> next = _searchField == null
         ? srsBrowseCommitDraft(_chips, text)
         : <SrsBrowseChip>[..._chips, SrsBrowseChip.syntax(_draftQuery)];
-    _draft.clear();
     _lastDraft = '';
+    _draft.clear();
     setState(() => _searchField = null);
     _setChips(next);
   }
@@ -616,7 +640,7 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
       _searchField != null || !_queryFocus.hasFocus
       ? const <SrsBrowseSuggestion>[]
       : srsBrowseSuggestions(
-          _draft.text,
+          _lastDraft,
           decks: _deckNames,
           tags: _tags,
           noteTypes: <String>[
@@ -773,8 +797,8 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
   /// 套用一条视图条件（快捷视图 / 保存的视图 / 健康条 / 「只看这一作」）：留下牌组积木，其余换成它；
   /// 已经套着时再点 = 撤掉。
   void _applyView(String query) {
-    _draft.clear();
     _lastDraft = '';
+    _draft.clear();
     _setChips(srsBrowseToggleQuickView(_chips, srsParseBrowseChips(query)));
   }
 
@@ -1619,12 +1643,15 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
       final _UndoEntry entry = _undo.removeLast();
       setState(() => _busy = true);
       try {
-        final int blocked = await entry.revert(store);
+        final SrsBatchRevertResult r = await entry.revert(store);
         FushiToast.show(
-          msg: blocked > 0
-              ? t.srs_browse_undo_partial(n: blocked)
+          msg: r.blockedLogs > 0
+              ? t.srs_browse_undo_partial(n: r.blockedLogs)
+              // 之后被别人（同步拉进来的别的设备 / AI / 别处）改过的字段保留了现值。
+              : !r.edits.complete
+              ? t.srs_undo_kept_changed(n: r.edits.kept.length)
               : t.srs_browse_undone,
-          severity: blocked > 0 ? ToastSeverity.warning : ToastSeverity.neutral,
+          severity: r.complete ? ToastSeverity.neutral : ToastSeverity.warning,
         );
         if (!mounted) return;
         await _afterWrite();
@@ -1939,7 +1966,8 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
           fieldScope: _searchField,
           suggestions: _suggestions,
           error: _searchError,
-          onDraftChanged: _onDraftChanged,
+          // 控制器监听（[_onDraftValue]）已处理；这里只是同一入口，提交值没变时是空操作。
+          onDraftChanged: (String _) => _onDraftValue(),
           onDraftSubmitted: _onDraftSubmitted,
           onChipTap: (int i) =>
               srsRunLogged('SrsBrowse.chip', () => _editChip(i)),
@@ -1948,6 +1976,7 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
           onRemoveLast: () =>
               _setChips(srsBrowseReplaceChip(_chips, _chips.length - 1, null)),
           onSuggestion: (SrsBrowseSuggestion s) {
+            _lastDraft = '';
             _draft.clear();
             _setChips(<SrsBrowseChip>[..._chips, s.chip]);
           },

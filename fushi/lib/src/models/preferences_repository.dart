@@ -10,6 +10,8 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/mining/gal_mining_settings.dart';
 import 'package:fushi/src/profile/work_profile_scope.dart';
 import 'package:fushi_engine/ai/ai_settings.dart';
+import 'package:fushi_engine/media/tracking/media_tracking_service.dart'
+    show kBangumiAccessTokenPref;
 import 'package:fushi_engine/srs/sync2/srs_folder_location.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_crypto.dart';
 import 'package:fushi_engine/sync/remote_mining_target.dart'
@@ -485,6 +487,18 @@ class PreferencesRepository extends ChangeNotifier
     // that same-process bump — change detection is cross-process and goes
     // through [readPrefsVersionFromDb] / a full [loadFromDb] reload.
     await _db.setPref(key, strVal);
+  }
+
+  /// Deletes the row of [key] (cache and database), so it reads as never set.
+  /// Unlike writing an empty value, a missing row is not exported by the
+  /// interconnect service config snapshot (it means "never configured here").
+  Future<void> removePref(String key) async {
+    _ensureWritable('removePref');
+    if (_workScoped(key)) {
+      throw ArgumentError.value(key, 'key', 'work-scoped keys are not removed');
+    }
+    _prefCache.remove(key);
+    await _db.deletePref(key);
   }
 
   /// 一个**逻辑设置**由多个 key 承载时（三态投影成两个 bool 键、值 + 判别键……）的写入
@@ -3536,6 +3550,30 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// AI 校对时是否附上视频画面（画面参考，spec
+  /// `2026-11-11-video-subtitle-ai-reference`）。**默认开**（所有者 2026-11-11 拍板）；
+  /// 设备本地：开着就是「把视频画面发给所选提供商」，这种选择只对点它的那台设备成立。
+  /// 真的发图还要两个条件：指派的提供商开了图片输入，且用户看过写明「会发画面」的
+  /// 说明（[videoSubtitleAiFramesConsented]）。
+  bool get videoSubtitleAiFrames =>
+      getPref('video_subtitle_ai_frames', defaultValue: true) as bool;
+
+  Future<void> setVideoSubtitleAiFrames(bool enabled) async {
+    await setPref('video_subtitle_ai_frames', enabled);
+    notifyListeners();
+  }
+
+  /// 用户是否已看过写明「会发画面」的说明：首次开 AI 校对的说明里就有（同意即记下）；
+  /// 在旧版说明（写着「不发送画面」）下同意过的用户，第一次真要发画面前补看一次。
+  bool get videoSubtitleAiFramesConsented =>
+      getPref('video_subtitle_ai_frames_consented', defaultValue: false)
+          as bool;
+
+  Future<void> setVideoSubtitleAiFramesConsented(bool consented) async {
+    await setPref('video_subtitle_ai_frames_consented', consented);
+    notifyListeners();
+  }
+
   /// 生成日语字幕的分段方式（`VideoSubtitleSegmenterMode.name`：auto / moss /
   /// window）；不认识的值按 auto。设备本地：能不能跑 MOSS 取决于这台机器的显卡。
   VideoSubtitleSegmenterMode get videoSubtitleSegmenter {
@@ -4243,6 +4281,28 @@ class PreferencesRepository extends ChangeNotifier
       else if (moduleUnset && existingUser)
         ..._moduleEntry(ModuleId.srs, false),
     });
+  }
+
+  /// First run with the Media tracking module ([ModuleId.tracking], off by
+  /// default): an install that already signed in to a tracking site keeps
+  /// tracking, so nobody loses a working setup silently.
+  ///
+  /// Signed in = a stored Bangumi token or [hasPluginSignIn] (a tracking
+  /// plugin with a stored sign-in, read by the caller from the plugin
+  /// folder). The decision is written as the module switch itself, once: a
+  /// switch already stored (decided before, or set by the user) is never
+  /// touched, so a later sign-out does not flip it.
+  Future<void> settleTrackingModuleInstallDefault({
+    required bool hasPluginSignIn,
+  }) async {
+    if (_moduleStored(ModuleId.tracking)) return;
+    bool hasText(String key) {
+      final Object? value = getPref(key, defaultValue: null);
+      return value is String && value.trim().isNotEmpty;
+    }
+
+    final bool signedIn = hasPluginSignIn || hasText(kBangumiAccessTokenPref);
+    await setPrefs(_moduleEntry(ModuleId.tracking, signedIn));
   }
 
   /// 模块开关是否显式落过盘（没落过 = 读出厂默认 / 判定规则）。

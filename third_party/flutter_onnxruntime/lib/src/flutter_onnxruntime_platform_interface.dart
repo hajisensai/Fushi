@@ -44,9 +44,11 @@ abstract class FlutterOnnxruntimePlatform extends PlatformInterface {
     throw UnimplementedError('getAvailableProviders() has not been implemented.');
   }
 
-  /// Fushi fork: DXGI video-memory budget of adapter [deviceId] (Windows only).
-  /// Returns null where the platform has no such query.
-  Future<Map<String, dynamic>?> getDeviceMemoryInfo({int deviceId = 0}) async => null;
+  /// Fushi fork: DXGI video-memory budget (Windows only). With [deviceId] it
+  /// answers for that DXGI adapter; without it, for the adapter GPU sessions run
+  /// on (the CUDA device's adapter once the CUDA plugin EP is registered, DXGI
+  /// adapter 0 otherwise). Returns null where the platform has no such query.
+  Future<Map<String, dynamic>?> getDeviceMemoryInfo({int? deviceId}) async => null;
 
   /// Fushi fork: ask the NVIDIA driver (nvcuda.dll) for its CUDA version and
   /// devices, without needing the CUDA runtime libraries (Windows only).

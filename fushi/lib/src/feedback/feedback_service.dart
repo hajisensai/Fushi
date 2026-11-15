@@ -317,17 +317,7 @@ class FeedbackService extends ChangeNotifier {
     } on Object catch (e, st) {
       ErrorLogService.instance.log('feedback.pending_scan', e, st);
     }
-    final String? key = _client().identity?.accountId;
-    if (key != null) {
-      try {
-        _accountKey = key;
-        _accountTickets = _withoutLocal(
-          await FeedbackTicketStore.account(await _supportRoot(), key).read(),
-        );
-      } on Object catch (e, st) {
-        ErrorLogService.instance.log('feedback.account_cache_read', e, st);
-      }
-    }
+    await _switchAccount(_client().identity?.accountId);
     _loaded = true;
     notifyListeners();
   }
@@ -364,7 +354,7 @@ class FeedbackService extends ChangeNotifier {
   /// 拉全部记录的最新进度（每批 ≤ 50）。查不到的条目标 missing（保留，由用户删）。
   /// 网络错误原样抛给调用方（反馈中心显示「刷新失败」）。
   ///
-  /// 换账户 / 退出登录后旧账户的列表在联网之前就丢掉（[_dropStaleAccountTickets]）：
+  /// 换账户 / 退出登录后旧账户的列表在联网之前就丢掉（[_switchAccount]）：
   /// 它只取决于本机身份，不该等批量查进度成功——断网时那一步就抛了，旧账户的工单标题
   /// 会一直挂在列表里。
   ///
@@ -374,7 +364,7 @@ class FeedbackService extends ChangeNotifier {
   /// 结果在调用方读 [tickets] 时还没落下。
   Future<void> refresh() async {
     await load();
-    _dropStaleAccountTickets(_client().identity?.accountId);
+    await _switchAccount(_client().identity?.accountId);
     final Future<void>? running = _refreshInFlight;
     if (running != null) return running;
     // _fetchProgress 是 async：同步调用不会立刻跑完，whenComplete 一定晚于下面的赋值。
@@ -418,11 +408,32 @@ class FeedbackService extends ChangeNotifier {
     await _refreshAccount();
   }
 
-  /// 账户列表只属于 [_accountKey]：当前身份 [key] 不是它（换账户 / 退出登录）就整份丢掉。
-  void _dropStaleAccountTickets(String? key) {
+  /// 账户列表只属于 [_accountKey]：当前身份 [key] 不是它（换账户 / 退出登录 / 账户
+  /// 文件比本服务晚读出来）就换成 [key] 那一份——旧账户的列表整份丢掉，新账户的从
+  /// 它自己的落盘缓存恢复（连同各条的已读时刻 `seenAt`）。
+  ///
+  /// BUG-4502：冷启动时排行榜账户文件与本服务并行加载，[_load] 读身份那一刻常常还是
+  /// null；此前这里只会把列表清空，随后 [_refreshAccount] 用 seenAt=0 的新条目重建
+  /// 并覆盖缓存，读过的回复每次重启都回到「新回复」。身份何时可用都不该决定已读状态。
+  Future<void> _switchAccount(String? key) async {
     if (key == _accountKey) return;
     _accountKey = key;
     _accountTickets = <FeedbackTicket>[];
+    notifyListeners();
+    if (key == null) return;
+    final List<FeedbackTicket> cached;
+    try {
+      cached = await FeedbackTicketStore.account(
+        await _supportRoot(),
+        key,
+      ).read();
+    } on Object catch (e, st) {
+      ErrorLogService.instance.log('feedback.account_cache_read', e, st);
+      return;
+    }
+    // 读缓存期间又换了账户 / 已被刷新填好：以那边为准。
+    if (_accountKey != key || _accountTickets.isNotEmpty) return;
+    _accountTickets = _withoutLocal(cached);
     notifyListeners();
   }
 
@@ -435,7 +446,7 @@ class FeedbackService extends ChangeNotifier {
     final LeaderboardClient client = _client();
     final String? key = client.identity?.accountId;
     // 批量查进度的那段时间里也可能换了账户：这里再核对一次。
-    _dropStaleAccountTickets(key);
+    await _switchAccount(key);
     if (key == null) return;
     final List<FeedbackSummary> items = <FeedbackSummary>[];
     String? cursor;

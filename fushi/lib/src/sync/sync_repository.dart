@@ -1856,7 +1856,14 @@ class SyncRepository {
     _keyDeletionTombstonesBaselineMs,
     _keyVideoMetadataSyncSinceMs,
     _keyContentSniffCache,
+    // 云后端最近一次取到的账号（BUG-4434）：文件箱进度基线按它挑槽；随备份带到
+    // 登着别的账号的设备，邮箱缺失时会挑错槽，且把账号邮箱带进备份。
+    syncRemoteAccountPrefBase,
   ];
+
+  /// 按通道分槽的「云后端最近一次取到的账号」键基名（BUG-4434）；完整键见
+  /// `syncRemoteAccountPrefKey`（`sync_baseline_scope.dart`）。设备本地。
+  static const String syncRemoteAccountPrefBase = 'sync_remote_account';
 
   static const List<String> _deviceLocalFixedKeys = <String>[
     // 「同步浏览历史」是这台设备的隐私许可：从另一台设备恢复备份不得替这台设备
@@ -2046,6 +2053,9 @@ class SyncRepository {
     // 那台设备成立。分段方式 / MOSS 后端取决于这台机器的显卡，换设备没有意义。
     'video_subtitle_ai_proofread',
     'video_subtitle_ai_consented',
+    // 画面参考（AI 校对时附上视频画面）与它的同意：发图的同意同样只对点它的那台设备成立。
+    'video_subtitle_ai_frames',
+    'video_subtitle_ai_frames_consented',
     // AI 整理库：自动整理开关、开关时刻与「会发送什么」的同意——与上两条同理只对
     // 点它的那台设备成立（只在一台设备上开就够，结果靠合集同步传播）。
     'library_organize_allowed_keys',

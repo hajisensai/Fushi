@@ -29,8 +29,8 @@ SettingsDestination buildMediaTrackingDestination() {
       ),
       SettingsBodySearchEntry(
         id: 'media_tracking.mappings',
-        title: t.media_tracking_mappings,
-        subtitle: t.media_tracking_summary,
+        title: t.media_tracking_page_open_title,
+        subtitle: t.media_tracking_page_open_hint,
       ),
     ],
   );

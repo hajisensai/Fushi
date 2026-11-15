@@ -403,6 +403,7 @@ class _MusicPluginCollectionPageState
               widget.manifest,
               tracks[group.value[j]],
               inPlaylist: c.playlist,
+              inAlbum: c.album,
               onChanged: _reloadTracks,
             ),
             onTap: () => play(start: group.value[j]),
@@ -461,6 +462,7 @@ class _MusicPluginCollectionPageState
         album: album,
         playlist: playlist,
         collected: album?.collected ?? playlist?.collected,
+        tracks: c.tracks,
       ),
     ];
     final String? owner = playlist?.owner;

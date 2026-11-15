@@ -249,19 +249,24 @@ fn synth(c: &SrsCore, cards: usize, target: usize, seed: u64) -> Synth {
             chunk.swap(i, j);
         }
     }
-    c.exec("BEGIN", &[], false).unwrap();
+    // 语句 0 = 原文存 jslim，1 = 按生产写法瘦存，2 = 服务器时刻。整批经原始通道一个 SAVEPOINT 落下。
+    let log_sql = |jslim: &str| {
+        format!(
+            "INSERT INTO srs_review_logs (id, profile_uid, card_id, kind, rating, occurred_at, review_type, origin, duration_ms, jslim) \
+             VALUES (srs_id(?1), srs_id(?2), srs_id(?3), ?4, ?5, ?6, ?7, ?8, ?9, {jslim})"
+        )
+    };
+    let statements = [
+        log_sql("?10"),
+        log_sql("srs_log_pack(?10, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)"),
+        "INSERT INTO srs_event_local (event_id, profile_uid, server_time) VALUES (srs_id(?1), srs_id(?2), ?3)"
+            .to_owned(),
+    ];
+    let mut applications: Vec<(usize, Vec<Value>)> = Vec::with_capacity(pending.len() * 2);
     for (k, p) in pending.iter().enumerate() {
-        let jslim = if k % 10 == 3 {
-            "?10".to_owned()
-        } else {
-            "srs_log_pack(?10, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)".to_owned()
-        };
-        c.exec(
-            &format!(
-                "INSERT INTO srs_review_logs (id, profile_uid, card_id, kind, rating, occurred_at, review_type, origin, duration_ms, jslim) \
-                 VALUES (srs_id(?1), srs_id(?2), srs_id(?3), ?4, ?5, ?6, ?7, ?8, ?9, {jslim})"
-            ),
-            &[
+        applications.push((
+            if k % 10 == 3 { 0 } else { 1 },
+            vec![
                 Value::Text(p.id.clone()),
                 Value::Text("p".into()),
                 Value::Text(p.card.clone()),
@@ -273,19 +278,20 @@ fn synth(c: &SrsCore, cards: usize, target: usize, seed: u64) -> Synth {
                 Value::Integer(p.dur),
                 Value::Text(p.json.clone()),
             ],
-            false,
-        )
-        .unwrap();
+        ));
         if let Some(st) = p.server_time {
-            c.exec(
-                "INSERT INTO srs_event_local (event_id, profile_uid, server_time) VALUES (srs_id(?1), srs_id(?2), ?3)",
-                &[Value::Text(p.id.clone()), Value::Text("p".into()), Value::Integer(st)],
-                false,
-            )
-            .unwrap();
+            applications.push((
+                2,
+                vec![
+                    Value::Text(p.id.clone()),
+                    Value::Text("p".into()),
+                    Value::Integer(st),
+                ],
+            ));
         }
     }
-    c.exec("COMMIT", &[], false).unwrap();
+    let statements: Vec<&str> = statements.iter().map(String::as_str).collect();
+    c.exec_batch_raw(&statements, &applications).unwrap();
     let ids: Vec<i64> = (0..groups.len() * 4).map(|i| 1000 + i as i64).collect();
     Synth {
         groups,
@@ -409,7 +415,7 @@ fn scan_outputs_match_the_vectors_recorded_from_the_json_holding_implementation(
     let s = synth(&c, 600, 9_000, 0x5eed_2026_1103);
     // 九成按生产写法瘦存、一成原文：两条解析路径都走到（页首行是列名）。
     let count = |sql: &str| -> i64 {
-        match &super::rows::decode(&c.exec(sql, &[], true).unwrap())
+        match &super::rows::decode(&c.exec_raw(sql, &[], true).unwrap())
             .unwrap()
             .1[1][0]
         {

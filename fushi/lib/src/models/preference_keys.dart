@@ -52,6 +52,13 @@ const String kSrsDayRolloverPendingPrefKeyPrefix = 'srs_day_rollover_pending::';
 /// 统计日界（`AppModel.adoptSyncedDayRollover`）。设备本地，同上。
 const String kSrsDayRolloverSeenPrefKeyPrefix = 'srs_day_rollover_seen::';
 
+/// 音乐来源上次**全量解析**时 Rust 扫描的解析修订号（int，`musicScanParserRevision`）：后缀 = 来源 id。
+/// 与当前修订号不一致时扫描器不传已知文件清单、整源重新解析，让解析改动（如 BUG-4493 合写署名拆分）
+/// 落到已入库的曲目上，扫完才记下新值。是这台设备曲库（`music_tracks` 等设备本地表）的扫描状态：
+/// 设备本地（`PrefRedactionPolicy.deviceLocalKeyPrefixes`），不进 Profile 快照 / 备份 / 设置同步。
+const String kMusicScanParserRevisionPrefKeyPrefix =
+    'music_scan_parser_revision::';
+
 /// 库页「手动」排序的顺序（排序模式里拖出来的），后缀 = 库（`book` / `manga` /
 /// `video` / `game`），值是换行分隔的单元 tieKey（`encodeShelfManualOrder`）。
 /// 与页签顺序同族：设备本地，不进 Profile 快照（ProfileKeys._excludedPrefPrefixes）。
@@ -1039,6 +1046,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 用户唯一能用的源。
   // bool（默认 false）：用户是否已看过「AI 校对会发送什么」说明；设备本地。
   'video_subtitle_ai_consented',
+  // bool（默认 true）：AI 校对时是否附上视频画面（画面参考）；设备本地（发图选择）。
+  'video_subtitle_ai_frames',
+  // bool（默认 false）：用户是否已看过写明「会发画面」的说明；设备本地。
+  'video_subtitle_ai_frames_consented',
   // bool（默认 false）：生成日语字幕时是否 AI 校对；设备本地（计费同意）。
   'video_subtitle_ai_proofread',
   'video_subtitle_ajatt_enabled',
@@ -1175,7 +1186,12 @@ const List<String> kKnownPreferenceKeyPrefixes = <String>[
   kLibraryManualOrderPrefKeyPrefix,
   kSrsDayRolloverPendingPrefKeyPrefix,
   kSrsDayRolloverSeenPrefKeyPrefix,
+  kMusicScanParserRevisionPrefKeyPrefix,
   'src:',
+  // string：`sync_remote_account__<通道槽位>`——云后端最近一次取到的账号（规整后的
+  // 小写邮箱 / 用户名，BUG-4434），文件箱进度基线按它分槽。设备本地
+  // （SyncRepository.deviceLocalPrefKeys），不进备份 / 设置同步。
+  'sync_remote_account__',
   // int（毫秒，v101）：`updates_last_check_<UpdateFeedKind.dbValue>`——某个域上次
   // 后台检查完成的时刻。到期判据只读它，失败也照记（否则断网时每个 tick 都重试）。
   'updates_last_check_',

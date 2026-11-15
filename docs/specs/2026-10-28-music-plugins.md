@@ -244,6 +244,27 @@ Challenge {
 - 电台播放：`radio` 不走 MusicKit 那种自管队列，队列仍在 Fushi 手里——`media/music/music_queue_feed.dart`
   的 `MusicQueueFeedRunner` 在离队尾不到 2 首时调 `radio next` 并 `MusicPlayerEngine.appendToQueue`
   追加；用户换了别的队列即停。
+- 下载（2026-11-11，`media/music/plugin/music_plugin_download.dart`）：插件曲目可下载成**本地曲目**进曲库，
+  离线可播。入口：曲目「更多」菜单「下载」（`playable` 的曲目才有），专辑 / 歌单详情页头部按钮行「下载全部」
+  （串行，跳过不可播放的）。不需要新能力：只用 `stream`，声明了 `lyrics` 时连歌词一起存。
+  - 传输与任务：与在线视频源剧集下载同一个下载器（`AnimeEpisodeDownloader.download`，直链 Range 续传 +
+    流身份校验、HLS 分片）交给 app 级 `InterconnectDownloadManager`（任务种类 `music`、来源 `musicPlugin`，
+    下载中心标「扩展源 · 外部来源」）：进度、暂停 / 继续、取消（可连文件）、失败重试都在下载中心。流地址
+    每轮现取；音质用「在线插件音质」默认档，没有单独的下载音质。
+  - 试听：取到的流带 `trial` 的曲目**拒绝下载**并提示（与播放 / 转写同一判据
+    `fetchFullMusicPluginStream` → `MusicPluginTrialOnly`）；「下载全部」里的试听曲目跳过，结束后提示跳过了几首。
+  - 落点：`<documents>/music_downloads/<插件 id>/<专辑名> [<专辑键哈希>]/<碟-曲序> <标题> [<曲目哈希>].<扩展名>`
+    （目录登记在 `AppPaths.fushiOwnedDocumentsEntries`，随数据根迁移）。一张专辑一个目录（专辑取曲目的
+    `album.id`，没有时取专辑页的专辑，单曲自成一个目录）；文件名带曲目 id 哈希，同一作品里的同名曲目不撞。
+    扩展名按下完的文件头嗅探，认不出才看 URL 后缀 / `codec`，都认不出任务失败。
+  - 进曲库：封面（曲目 `coverUrl`，没有用专辑的）落成目录封面 `cover.<jpg|png|webp>`；标题 / 艺人 / 专辑 /
+    专辑艺人 / 曲序 / 碟号 / 发行日期写进文件标签（Rust `ffm_tags_write_fields`）；然后按「仅此一次」导入曲库
+    （`importLocalFolderOnceAt`，与音频 CD 抓轨同一条入库路径），曲库照常从标签与目录封面读。
+  - 歌词：`lyrics` 的原文写成同名 sidecar `<主名>.<format>`，译文写成 `<主名>.<language 缺省 zh-Hans>.<format>`，
+    与用户自己放在音频旁的歌词同一条读取规则（`pickLyricSidecars`，档位最高）；罗马音不存。下载后的曲目是
+    本地曲目，播放时不再回插件取词。
+  - 封面 / 歌词取不到不让下载失败（记错误日志）；标签写不进、曲库导入报错时任务失败，重试不重下已落地的音频。
+    再点一次已下完的曲目只重新登记进曲库。
 - 兼容：旧版宿主的清单校验不认识这四个新能力名，会拒装声明了它们的插件包（网易云插件 0.6.0 起需要本版宿主）。
 
 ## 5.1 第三方开发包

@@ -228,6 +228,7 @@ class FushiDatabaseUnrecoverableException implements Exception {
 /// touching anything — so a genuinely missing/corrupt/permission-denied main db
 /// is NOT mistaken for a sidecar problem (it falls through to unrecoverable).
 const int _kSqliteIoErr = 10; // SQLITE_IOERR
+const int _kSqliteCorrupt = 11; // SQLITE_CORRUPT
 const int _kSqliteCantOpen = 14; // SQLITE_CANTOPEN
 const int _kSqliteNotADb = 26; // SQLITE_NOTADB
 
@@ -243,6 +244,18 @@ bool _isSidecarOpenError(Object e) {
       primary == _kSqliteCantOpen ||
       primary == _kSqliteNotADb;
 }
+
+/// BUG-4509：`SQLITE_CORRUPT`(11)——「database disk image is malformed」。它与上面的
+/// 侧车类错误**根本不同**：WAL 帧带校验和（坏帧在回放时被丢弃），`-shm` 的 wal-index
+/// 头带校验和（不一致就从 `-wal` 重建），所以开库阶段报 CORRUPT 意味着主库页（或校验
+/// 通过、内容却坏的 WAL 帧——检查点会把它写进主库）本身坏了。恢复阶梯对它**无事可做**：
+/// Layer 1 的 checkpoint 会把坏帧折进主库、Layer 2 删侧车会丢掉手工恢复要用的最后
+/// 写入。所以它直接成为终态 [FushiDatabaseUnrecoverableException]（kind=corrupt），
+/// 磁盘上什么都不动；此前它原样 rethrow 成裸 [sqlite3.SqliteException]，app 层落进通用
+/// 错误屏，「重试」对着同一个坏文件无限循环。
+bool _isMainDbCorruptError(Object e) =>
+    e is sqlite3.SqliteException &&
+    (e.extendedResultCode & 0xFF) == _kSqliteCorrupt;
 
 /// The 16-byte magic header every SQLite database file starts with
 /// ("SQLite format 3\u0000"). See https://www.sqlite.org/fileformat.html .
@@ -317,6 +330,10 @@ Future<QueryExecutor> _openWithRecovery(
     }
     return NativeDatabase.createInBackground(dbFile, setup: applyPragmas);
   } catch (e, stack) {
+    // 主库自身损坏：终态，不进恢复阶梯、不碰任何文件（见 [_isMainDbCorruptError]）。
+    if (_isMainDbCorruptError(e)) {
+      throw FushiDatabaseUnrecoverableException(dbPath: path, cause: e);
+    }
     // Not a sidecar-class error → nothing recovery can safely do, surface it.
     if (!_isSidecarOpenError(e)) rethrow;
     // The error class is ambiguous (a corrupt MAIN db can also raise
@@ -364,6 +381,9 @@ Future<QueryExecutor> _openWithRecovery(
     );
     return NativeDatabase.createInBackground(dbFile, setup: applyPragmas);
   } catch (e, stack) {
+    if (_isMainDbCorruptError(e)) {
+      throw FushiDatabaseUnrecoverableException(dbPath: path, cause: e);
+    }
     if (!_isSidecarOpenError(e)) rethrow;
     fushiDebugPrint('[fushi-db] Layer 1 still failing on "$path": $e\n$stack');
   }
@@ -661,7 +681,17 @@ Future<void> _rejectPreRenameDatabase(String dbDirectory) async {
 /// 里抛出的异常要经 drift 的请求通道绕一圈回来，到调用方手里已被包成（可能多层）
 /// [DriftRemoteException]——`on FushiDatabaseDowngradeException` 永远接不住，用户
 /// 只看到通用错误屏和一个无效的「重试」。这里在开库这一步把它们原样还原。
+///
+/// BUG-4509：后台 isolate 里 drift 自己开库（`setup` 再跑一遍 PRAGMA）时报的
+/// `SQLITE_CORRUPT` 同样经这条通道回来——Layer 0 的探测连接开过、后台连接才撞上坏页
+/// 时就是这样。它在这里被翻译成与 [_openWithRecovery] 同一个终态类型，app 层只认一种
+/// 「主库坏了」，不会因为错误从哪条路回来而落进通用错误屏的重试循环。
 class _TypedOpenErrorInterceptor extends QueryInterceptor {
+  _TypedOpenErrorInterceptor(this.dbPath);
+
+  /// 被打开的主库路径，翻译成 [FushiDatabaseUnrecoverableException] 时带上。
+  final String dbPath;
+
   @override
   Future<bool> ensureOpen(
     QueryExecutor executor,
@@ -677,8 +707,15 @@ class _TypedOpenErrorInterceptor extends QueryInterceptor {
         cause = cause.remoteCause;
       }
       if (cause is FushiDatabaseDowngradeException ||
-          cause is UnsupportedLegacySchemaException) {
+          cause is UnsupportedLegacySchemaException ||
+          cause is FushiDatabaseUnrecoverableException) {
         Error.throwWithStackTrace(cause, causeStack ?? stack);
+      }
+      if (_isMainDbCorruptError(cause)) {
+        Error.throwWithStackTrace(
+          FushiDatabaseUnrecoverableException(dbPath: dbPath, cause: cause),
+          causeStack ?? stack,
+        );
       }
       rethrow;
     }
@@ -693,7 +730,7 @@ LazyDatabase _openDb(String dbDirectory, {bool isMainProcess = true}) {
       file,
       allowSidecarDelete: isMainProcess,
     );
-    return executor.interceptWith(_TypedOpenErrorInterceptor());
+    return executor.interceptWith(_TypedOpenErrorInterceptor(file.path));
   });
 }
 
@@ -707,7 +744,7 @@ LazyDatabase _openDbFile(String dbFilePath, {bool isMainProcess = true}) {
       file,
       allowSidecarDelete: isMainProcess,
     );
-    return executor.interceptWith(_TypedOpenErrorInterceptor());
+    return executor.interceptWith(_TypedOpenErrorInterceptor(file.path));
   });
 }
 
@@ -829,6 +866,10 @@ void _requireOneVideoMetadataOwner({
     CollectionScrapeMeta,
     MediaTrackingMappings,
     MediaTrackingOutbox,
+    MediaTrackingSuggestions,
+    MediaTrackingIgnored,
+    MediaTrackingActivity,
+    MediaTrackingRemoteEpisodes,
     Galgames,
     GalgameSources,
     GalgameSessions,
@@ -945,7 +986,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 149;
+  int get schemaVersion => 152;
 
   /// v125–v128 四步的产物（全部幂等）：SRS 写路径索引、
   /// `collection_member_tombstones.published_at`、`bookmarks.char_offset` /
@@ -2986,6 +3027,65 @@ class FushiDatabase extends _$FushiDatabase
               await m.addColumn(musicRemoteTracks, c);
             }
           }
+        }
+      }
+      if (from < 150) {
+        // v150：追番/追书的标题匹配（MangaBaka / AniList 漫画与小说）。
+        // media_tracking_mappings 加 link_source（manual / id / auto / suggestion）
+        // 与 confidence（标题匹配分）；存量映射两列皆 NULL = v150 前建立、来源不明。
+        // 新表 media_tracking_suggestions 存待用户确认的候选。幂等：早期步骤按当前
+        // 定义建表时已带这两列 / 这张表，跳过。
+        if (await _tableExists('media_tracking_mappings')) {
+          for (final GeneratedColumn<Object> column
+              in <GeneratedColumn<Object>>[
+                mediaTrackingMappings.linkSource,
+                mediaTrackingMappings.confidence,
+              ]) {
+            if (!await _columnExists('media_tracking_mappings', column.name)) {
+              await m.addColumn(mediaTrackingMappings, column);
+            }
+          }
+        }
+        if (!await _tableExists('media_tracking_suggestions')) {
+          await m.createTable(mediaTrackingSuggestions);
+        }
+      }
+      if (from < 151) {
+        // v151：追番/追书三张新表——不追踪清单 media_tracking_ignored、发送记录
+        // media_tracking_activity（只留最新 500 行）、未能按服务器 id 关联的媒体
+        // 服务器剧集 media_tracking_remote_episodes。纯新增，幂等按表存在性守卫。
+        if (!await _tableExists('media_tracking_ignored')) {
+          await m.createTable(mediaTrackingIgnored);
+        }
+        if (!await _tableExists('media_tracking_activity')) {
+          await m.createTable(mediaTrackingActivity);
+        }
+        if (!await _tableExists('media_tracking_remote_episodes')) {
+          await m.createTable(mediaTrackingRemoteEpisodes);
+        }
+      }
+      if (from < 152) {
+        // v152：media_tracking_mappings 加 sent_progress / sent_completed（该映射
+        // 上次发送成功的进度），补发按「本地进度 vs 已发进度」逐映射判定，不再靠
+        // 全局时间水位（旧时间戳晚到的进度会被永久跳过）。存量映射记 -1 = v152 前
+        // 建立、未记录；首轮补发在旧水位已覆盖时直接采信当前进度，不整库重发。
+        // 幂等：列已存在（早期步骤按当前定义建表）时不动，也不改写已有值。
+        if (await _tableExists('media_tracking_mappings') &&
+            !await _columnExists('media_tracking_mappings', 'sent_progress')) {
+          await m.addColumn(
+            mediaTrackingMappings,
+            mediaTrackingMappings.sentProgress,
+          );
+          await customStatement(
+            'UPDATE media_tracking_mappings SET sent_progress = -1',
+          );
+        }
+        if (await _tableExists('media_tracking_mappings') &&
+            !await _columnExists('media_tracking_mappings', 'sent_completed')) {
+          await m.addColumn(
+            mediaTrackingMappings,
+            mediaTrackingMappings.sentCompleted,
+          );
         }
       }
     },

@@ -29,6 +29,7 @@ import 'package:fushi_asr_core/asr_core.dart'
         serializeAsrCuesToSrt;
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/ai_text_completer.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_frame_reference.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_pipeline_cancel.dart';
 import 'package:path/path.dart' as p;
 
@@ -51,8 +52,17 @@ const String kAsrProofreadContextBeforeHeader =
 const String kAsrProofreadContextAfterHeader =
     'Read-only context after (do not return these ids):';
 
+/// 批正文里画面清单的标题（[AsrTranscriptProofreader.frames] 开着时才有）。
+const String kAsrProofreadFramesHeader =
+    'Attached video frames, in order (time into the recording):';
+
 /// 校对规则（[AiTextCompleter.complete] 的 `stablePrefix`：同一次运行各批逐字相同）。
-String buildAsrProofreadStablePrefix({String? languageTag}) {
+/// [withFrames] = 这次校对带画面参考（转录的是视频）：多一条画面规则；不带时与改版前
+/// 逐字相同。
+String buildAsrProofreadStablePrefix({
+  String? languageTag,
+  bool withFrames = false,
+}) {
   final StringBuffer sb = StringBuffer()
     ..writeln(
       'You are proofreading a speech-recognition (ASR) dictation transcript. '
@@ -81,12 +91,22 @@ String buildAsrProofreadStablePrefix({String? languageTag}) {
     ..writeln(
       '5. Read-only context lines are only for understanding; do not return '
       'them.',
-    )
-    ..write(
-      'Output only a JSON object {"<id>": "<corrected text>", ...} that '
-      'contains exactly every id listed under "$kAsrProofreadTargetHeader" '
-      'and no other id. No explanations, no code fences.',
     );
+  if (withFrames) {
+    sb.writeln(
+      '6. The attached images are frames of the video at the times listed '
+      'under "$kAsrProofreadFramesHeader". Use on-screen text (captions, '
+      'signs, letters, device screens, name tags), the people speaking and '
+      'the scene only as clues for names, terms and homophones. Never add '
+      'on-screen text as spoken lines, and do not write anything you cannot '
+      'hear in the line.',
+    );
+  }
+  sb.write(
+    'Output only a JSON object {"<id>": "<corrected text>", ...} that '
+    'contains exactly every id listed under "$kAsrProofreadTargetHeader" '
+    'and no other id. No explanations, no code fences.',
+  );
   return sb.toString();
 }
 
@@ -97,6 +117,7 @@ String buildAsrProofreadBatchBody({
   required List<int> targets,
   required List<int> contextBefore,
   required List<int> contextAfter,
+  List<int> frameTimesMs = const <int>[],
 }) {
   String section(List<int> ids) =>
       jsonEncode(<String, String>{for (final int i in ids) '$i': cues[i].text});
@@ -114,6 +135,21 @@ String buildAsrProofreadBatchBody({
       ..writeln()
       ..writeln(kAsrProofreadContextAfterHeader)
       ..write(section(contextAfter));
+  }
+  if (frameTimesMs.isNotEmpty) {
+    sb
+      ..writeln()
+      ..write(kAsrProofreadFramesHeader);
+    for (int k = 0; k < frameTimesMs.length; k++) {
+      final int ms = frameTimesMs[k];
+      final String minutes = '${ms ~/ 60000}'.padLeft(2, '0');
+      final String seconds = ((ms % 60000) / 1000)
+          .toStringAsFixed(2)
+          .padLeft(5, '0');
+      sb
+        ..writeln()
+        ..write('image ${k + 1}: $minutes:$seconds');
+    }
   }
   return sb.toString();
 }
@@ -169,6 +205,7 @@ class AsrTranscriptProofreader {
     this.contextLines = 2,
     this.concurrency = 4,
     this.languageTag,
+    this.frames,
     this.log,
   }) : assert(batchSize > 0 && contextLines >= 0 && concurrency > 0);
 
@@ -182,6 +219,11 @@ class AsrTranscriptProofreader {
 
   /// 稿子的语言（BCP 47 等）；非空时写进提示词。
   final String? languageTag;
+
+  /// 画面参考（spec `2026-11-11-video-subtitle-ai-reference`）：非 null = 稿子转录自
+  /// 这个视频、时间轴就是视频时间，每批附上对应时刻的画面。调用方须先确认提供商
+  /// 能收图、用户知情。有声书 / 音乐的稿没有画面，保持 null。
+  final SubtitleProofreadFrames? frames;
   final void Function(String message)? log;
 
   /// 校对 [cues]。回复不合格的批保持原文；请求失败（[SubtitleAiRequestFailure]）
@@ -197,6 +239,7 @@ class AsrTranscriptProofreader {
     ];
     final String prefix = buildAsrProofreadStablePrefix(
       languageTag: languageTag,
+      withFrames: frames != null,
     );
     final List<Map<int, String>?> fixes = List<Map<int, String>?>.filled(
       ranges.length,
@@ -220,6 +263,7 @@ class AsrTranscriptProofreader {
             ranges[index],
             prefix,
             usage,
+            cancel,
           );
           switch (verdict) {
             case _BatchApplied(:final Map<int, String> fix):
@@ -273,6 +317,7 @@ class AsrTranscriptProofreader {
     (int, int) range,
     String prefix,
     SubtitleAiUsageTally usage,
+    SubtitleCancelToken cancel,
   ) async {
     final (int lo, int hi) = range;
     // 空文本行不送校对（也不会被改）；整批都空就不必请求。
@@ -281,6 +326,25 @@ class AsrTranscriptProofreader {
         if (cues[i].text.trim().isNotEmpty) i,
     ];
     if (targets.isEmpty) return const _BatchApplied(<int, String>{});
+    final SubtitleProofreadFrames? frames = this.frames;
+    final List<SubtitleReferenceFrame> shots = frames == null
+        ? const <SubtitleReferenceFrame>[]
+        : await loadSubtitleReferenceFrames(
+            frames,
+            planReferenceFrameTimes(
+              <({int startMs, int endMs, String text})>[
+                for (final int i in targets)
+                  (
+                    startMs: cues[i].startMs,
+                    endMs: cues[i].endMs,
+                    text: cues[i].text,
+                  ),
+              ],
+              maxFrames: frames.maxFramesPerBatch,
+              minGapMs: frames.minGapMs,
+            ),
+            cancel: cancel,
+          );
     final String body = buildAsrProofreadBatchBody(
       cues: cues,
       targets: targets,
@@ -290,10 +354,15 @@ class AsrTranscriptProofreader {
       contextAfter: <int>[
         for (int i = hi; i < math.min(cues.length, hi + contextLines); i++) i,
       ],
+      frameTimesMs: <int>[for (final SubtitleReferenceFrame s in shots) s.atMs],
     );
     final AiChatCompletion reply = await completer.complete(
       body,
       stablePrefix: prefix,
+      images: <AiChatImage>[
+        for (final SubtitleReferenceFrame s in shots)
+          AiChatImage(bytes: s.bytes, mimeType: 'image/jpeg'),
+      ],
     );
     usage.addCall(reply.usage);
     return _validateReply(reply.text, targets);

@@ -291,6 +291,9 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
 
   List<MusicLibraryEntry> get entries => _list;
 
+  /// 本列表里本地曲目的 uid → 音频路径（找专辑内嵌封面所在的那首用），随 [_list] 重算。
+  late Map<String, String> _pathByUid = musicLocalTrackPathsOf(_list);
+
   static List<String> _uids(List<MusicLibraryEntry> entries) => <String>[
     for (final MusicLibraryEntry e in entries) e.trackUid,
   ];
@@ -308,6 +311,7 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
     if (identical(oldWidget._source, widget._source)) return;
     final List<MusicLibraryEntry> previous = _list;
     _list = widget.entries;
+    _pathByUid = musicLocalTrackPathsOf(_list);
     if (!listEquals(_uids(previous), _uids(_list))) _resume.watch(_uids(_list));
   }
 
@@ -575,7 +579,7 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
                       style: c.fushiType.bodySmall,
                     ),
                   )
-                : const FushiListLeadingIcon(FushiIcons.music),
+                : _localCover(track),
             title: Text(
               track.title,
               maxLines: 1,
@@ -603,6 +607,24 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
           ),
         ),
       ),
+    );
+  }
+
+  /// 本地曲目行的封面缩略图（与远程行同尺寸同材质）。
+  Widget _localCover(MusicTrackRow track) {
+    final MusicTrackCoverSource cover = musicLocalTrackCoverOf(
+      track,
+      album: track.albumUid == null ? null : widget.albums[track.albumUid],
+      pathByUid: _pathByUid,
+    );
+    return musicMaterialCover(
+      MusicCover(
+        coverPath: cover.coverPath,
+        embeddedFromPath: cover.embeddedFromPath,
+        size: 40,
+      ),
+      size: 40,
+      compact: true,
     );
   }
 
@@ -815,6 +837,37 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
   /// 行 key：歌单里同一首可以出现两次，歌单页的 key 带上行号免得撞。
   String _rowKey(String prefix, int i, String uid) =>
       widget.playlist == null ? '$prefix-$uid' : '$prefix-$i-$uid';
+}
+
+/// 本地曲目行缩略图的来源（[MusicCover] 的两个参数）。
+typedef MusicTrackCoverSource = ({String? coverPath, String? embeddedFromPath});
+
+/// [entries] 里本地曲目的 uid → 音频路径。
+Map<String, String> musicLocalTrackPathsOf(List<MusicLibraryEntry> entries) =>
+    <String, String>{
+      for (final MusicLibraryEntry e in entries)
+        if (e case MusicLocalEntry(:final MusicTrackRow track))
+          track.trackUid: track.path,
+    };
+
+/// 本地曲目行用哪张封面：与专辑网格 / 「继续收听」同一来源——专辑的目录封面
+/// （[MusicAlbumRow.coverPath]）优先，其次专辑选定的内嵌封面曲目
+/// （[MusicAlbumRow.coverTrackUid]，同一张专辑的各行共用一次读取）；那首不在本列表里
+/// （[pathByUid] 查不到）时退回这首自己的内嵌封面；都没有给占位（两个都为 null）。
+MusicTrackCoverSource musicLocalTrackCoverOf(
+  MusicTrackRow track, {
+  required MusicAlbumRow? album,
+  required Map<String, String> pathByUid,
+}) {
+  final String? albumEmbedded = switch (album?.coverTrackUid) {
+    final String uid => pathByUid[uid],
+    null => null,
+  };
+  return (
+    coverPath: album?.coverPath,
+    embeddedFromPath:
+        albumEmbedded ?? (track.hasEmbeddedCover ? track.path : null),
+  );
 }
 
 /// 当前的断点续播模式（设置 `music_resume_mode`）；设置里切档时调用方跟着重建。

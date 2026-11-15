@@ -14,6 +14,8 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart'
+    show srsNativeLookupHitAt;
 import 'package:fushi/src/pages/implementations/srs/srs_html_card_view.dart';
 import 'package:fushi/src/srs/srs_card_appearance.dart';
 import 'package:fushi/src/srs/srs_html_card.dart';
@@ -362,6 +364,30 @@ void main() {
     await tester.pump(const Duration(milliseconds: 600));
     expect(_hasText('词性：动词'), isTrue);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('BUG-4500：<details> 折叠标题是控件，点它不取词；正文的字照常取词', (
+    WidgetTester tester,
+  ) async {
+    await _pump(tester, source: kaishi.answer, answer: true);
+    final RenderBox face = tester.renderObject<RenderBox>(
+      find.byType(SrsHtmlCardView),
+    );
+    await tester.ensureVisible(find.text('语法详情'));
+    await tester.pump();
+    // 取词区抬起时按这一判据决定发不发查词（SrsNativeLookupRegion._onUp）。
+    expect(
+      srsNativeLookupHitAt(face, tester.getCenter(find.text('语法详情'))),
+      isNull,
+      reason: '点折叠标题只展开 / 收起，不弹查词（反馈 QqGzcpZ_gu）',
+    );
+    await tester.ensureVisible(find.text('違').first);
+    await tester.pump();
+    expect(
+      srsNativeLookupHitAt(face, tester.getCenter(find.text('違').first)),
+      isNotNull,
+      reason: '卡面正文仍可取词',
+    );
   });
 
   testWidgets('深色 + 关掉设计系统覆盖：模板加粗色原样', (WidgetTester tester) async {
