@@ -521,6 +521,108 @@ void main() {
     });
   });
 
+  group('CueSentenceResegmenter 合缝：漏听的整句台词按没出字时长归前一条（BUG-4182）', () {
+    List<EpubSection> book(String text) => <EpubSection>[
+      EpubSection(index: 0, href: 'ch0.xhtml', text: text),
+    ];
+    List<int> range(CueMatch m) => <int>[m.normCharStart, m.normCharEnd];
+
+    test('前一条末 token 后 1.9 s 没出字、后一条首 token 紧贴起点：缝里的台词归前一条', () {
+      // 《安達としまむら 3》实测（反馈 Q8uRYyNSLO）：音频 #3293 段里念了两句，ASR 只吐出
+      // 「おてつだいしましょうか」（末 token 在 1394 ms，cue 到 3312 ms 才收声），
+      // 漏听了「いーらーん」；后一条「引っぺがして…」的音频里没有它。token 时间、
+      // cue 起止原样取自该书 transcript.srt / transcript.tokens.jsonl。
+      // 归一化：お手伝いしましょうか(0-10) いーらーん(10-15) 引っ剝がして部屋に戻る(15-26)。
+      // 缝 [10,15) 的第一个切点 10 就是句界（？」「），旧行为把整段推给后一条。
+      final List<EpubSection> sections = book(
+        '「お手伝いしましょうか？」「いーらーん」引っ剝がして部屋に戻る。',
+      );
+      final CueResegmentResult out = _r.resegment(
+        sections: sections,
+        cues: <AudioCue>[
+          _cue(
+            0,
+            'おてつだいしましょうか？',
+            start: 13044544,
+            end: 13047856,
+            times: <int>[
+              0,
+              0,
+              34,
+              194,
+              354,
+              554,
+              754,
+              834,
+              1154,
+              1234,
+              1394,
+              1394,
+            ],
+          ),
+          _cue(
+            1,
+            '引っぺがして部屋に戻る。',
+            start: 13049760,
+            end: 13051344,
+            times: <int>[
+              0,
+              0,
+              0,
+              140,
+              380,
+              500,
+              900,
+              980,
+              1100,
+              1300,
+              1540,
+              1540,
+            ],
+          ),
+        ],
+        result: _result(<CueMatch>[
+          _hit(0, 0, 10, score: 0.63),
+          _hit(1, 15, 26, score: 0.8),
+        ]),
+      );
+      expect(out.stats.gapsClosed, 1);
+      expect(out.cues, hasLength(2));
+      expect(range(out.result.matches[0]), <int>[0, 15]);
+      expect(range(out.result.matches[1]), <int>[15, 26]);
+      // 时间不动：两句台词都在前一条的发声区间里，后一条仍是它自己那 1.6 s。
+      expect(out.cues[0].startMs, 13044544);
+      expect(out.cues[0].endMs, 13047856);
+      expect(out.cues[1].startMs, 13049760);
+      expect(out.cues[1].endMs, 13051344);
+      replaceMatchedCueTextWithBookText(
+        sections: sections,
+        cues: out.cues,
+        result: out.result,
+      );
+      expect(out.cues[0].text, '「お手伝いしましょうか？」「いーらーん」');
+      expect(out.cues[1].text, '引っ剝がして部屋に戻る。');
+    });
+
+    test('没出字时长只是末字拖长音：缝尾是下一句的开头半截时不拆过去', () {
+      // 「んー……ま、いっか」：ASR 只听到「ん」（拖长音占满 1.3 s）与「いっか」，
+      // 「ま」念在两条之间。前一条没出字时长多，但缝 [1,3) = ーま 里只有「……」是
+      // 整句边界，「ま、｜いっか」是同一句——仍切在第一个切点 2。
+      final CueResegmentResult out = _r.resegment(
+        sections: book('「んー……ま、いっか」'),
+        cues: <AudioCue>[
+          _cue(0, 'ん', start: 0, end: 1300, times: <int>[0]),
+          _cue(1, 'いっか', start: 3200, end: 3800, times: <int>[0, 100, 260]),
+        ],
+        result: _result(<CueMatch>[_hit(0, 0, 1), _hit(1, 3, 6)]),
+      );
+      expect(out.stats.gapsClosed, 2);
+      expect(out.cues, hasLength(2));
+      expect(range(out.result.matches[0]), <int>[0, 2]);
+      expect(range(out.result.matches[1]), <int>[2, 6]);
+    });
+  });
+
   group('CueSentenceResegmenter 无 token 正文片的归属', () {
     List<EpubSection> sec(String text) => <EpubSection>[
       EpubSection(index: 0, href: 'ch0.xhtml', text: text),

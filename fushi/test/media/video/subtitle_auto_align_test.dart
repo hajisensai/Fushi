@@ -269,6 +269,36 @@ void main() {
       );
     });
 
+    // EUvw-RjUE4：波形视图按段抽，段起点走输入端 `-ss`（与 `-t` 同在 -i 之前，`-t` 量从
+    // seek 点起的段长），逐帧窗口从段起点起算。
+    test('startMs adds -ss as an input option before -i', () {
+      final List<String> args = buildFfmpegPcmEnvelopeArgs(
+        inputPath: '/tmp/v.mkv',
+        startMs: 1200000,
+        limitSeconds: 120,
+      );
+      final int ssIdx = args.indexOf('-ss');
+      expect(ssIdx, greaterThanOrEqualTo(0));
+      expect(args[ssIdx + 1], '1200.000');
+      expect(ssIdx, lessThan(args.indexOf('-i')));
+      expect(args[args.indexOf('-t') + 1], '120');
+      expect(args.indexOf('-t'), lessThan(args.indexOf('-i')));
+    });
+
+    test('startMs 0 (default) omits -ss', () {
+      expect(
+        buildFfmpegPcmEnvelopeArgs(inputPath: '/tmp/v.mkv').contains('-ss'),
+        isFalse,
+      );
+      expect(
+        buildFfmpegPcmEnvelopeArgs(
+          inputPath: '/tmp/v.mkv',
+          startMs: 0,
+        ).contains('-ss'),
+        isFalse,
+      );
+    });
+
     // TODO-413 §3：音轨越界（index >= count）时不加 -map（BUG-345 同范式回退默认轨），
     // 避免 ffmpeg `Stream map matches no streams` 硬失败。
     test('out-of-bounds audioStreamIndex drops -map (stream-bound guard)', () {

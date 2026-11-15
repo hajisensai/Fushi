@@ -45,6 +45,8 @@ import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_fushi_card_native_media.dart'
+    show SrsCardNativeFallback;
 import 'package:fushi_engine/srs/srs_rwkv_service.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
@@ -52,6 +54,8 @@ import 'package:fushi/src/anki/card_source_origin.dart'
     show cardSourceKindIcon, cardSourceLinkOfFields;
 import 'package:fushi/src/anki/card_source_router.dart' show openCardSource;
 import 'package:fushi/src/focus/page_focus_ownership.dart';
+import 'package:fushi/src/second_screen/companion/companion_page_link.dart';
+import 'package:fushi/src/second_screen/companion/companion_protocol.dart';
 import 'package:fushi/src/ai/ai_srs_field_assistant.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_registry.dart';
@@ -59,6 +63,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_browse_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_appearance_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_review_companion.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_deck_settings_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_field_ai_sheet.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_fushi_card_view.dart';
@@ -79,8 +84,7 @@ import 'package:fushi/src/srs/srs_card_appearance.dart'
     show SrsCardAppearance, SrsCardColorSource, srsCardColorScheme;
 import 'package:fushi/src/srs/srs_card_autoplay.dart';
 import 'package:fushi/src/srs/srs_fushi_card_media.dart';
-import 'package:fushi/src/srs/srs_fushi_card_items.dart'
-    show srsFushiCardRenderedNative;
+import 'package:fushi/src/srs/srs_card_face_route.dart';
 import 'package:fushi/src/srs/srs_fushi_card_plan.dart' show srsFushiCardPlan;
 import 'package:fushi/src/srs/srs_html_card.dart';
 import 'package:fushi/src/srs/srs_card_media.dart' show srsMediaNameFromUrl;
@@ -115,6 +119,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/srs/srs_navigation.dart';
+import 'package:fushi/src/srs/srs_review_freshness.dart';
 
 /// 评分按钮上的间隔文案：按界面语言给单位（文案照 Anki 答题按钮：英文 m / h / d /
 /// mo / y，中文 分钟 / 小时 / 天 / 个月 / 年），不再让「1m」与「11.1mo」混着读。
@@ -133,6 +138,7 @@ class _PrefetchedCard {
     required this.detail,
     required this.rendered,
     required this.audioOwner,
+    required this.stamp,
   });
 
   final SrsCardDetail detail;
@@ -140,7 +146,20 @@ class _PrefetchedCard {
 
   /// 这张卡的音频设置所在牌组（own 祖先）。
   final SrsDeckView? audioOwner;
+
+  /// 读自库的哪一版（取用前按它判断还新不新鲜，见 `_takePrefetch`）。
+  final SrsShownCardStamp stamp;
+
+  _PrefetchedCard rebased(SrsStoreMark now) => _PrefetchedCard(
+    detail: detail,
+    rendered: rendered,
+    audioOwner: audioOwner,
+    stamp: stamp.rebased(now),
+  );
 }
+
+/// 一张卡在复习页上的牌组上下文：音频设置所在牌组 + 读自库的哪一版。
+typedef _CardContext = ({SrsDeckView? audioOwner, SrsShownCardStamp stamp});
 
 /// 卡片菜单动作。
 enum _CardAction { edit, suspend, bury, flag, move, reset, deleteNote }
@@ -248,10 +267,14 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
   bool _finished = false;
   Object? _error;
 
+  /// 队列空了之后，库在本页之外变了（同步拉入新卡、别处取消暂停 / 改期）又排得出卡：「复习完」页给一个回到复习的
+  /// 入口（[_recheckFinished]），不自动把卡塞到用户眼前。只在 [_finished] 时有意义，出卡 / 再次排空时清掉。
+  bool _moreDue = false;
+
   /// 队列空了是因为 RWKV 还没准备好（[SrsStudyState.rwkvPending]）：RWKV 牌组的复习卡不退回按 FSRS-7 的到期日
   /// 出，这里显示 RWKV 的准备 / 失败状态，就绪后自动重新排队（[_onRwkvStatus]）。
   bool _rwkvPending = false;
-  SrsRwkvService? _rwkv;
+  SrsRwkvStatusSource? _rwkv;
   SrsRwkvStatus? _rwkvStatus;
   StreamSubscription<SrsRwkvStatus>? _rwkvSubscription;
 
@@ -316,6 +339,13 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
   int _ratedSerial = 0;
 
   void _pushUndo(SrsReviewUndoStep step) => _undoStack?.push(step);
+
+  /// 一次可撤销写入压一步（没改动 = 凭据为空，不压）。
+  void _pushEdits(String cardId, SrsEditUndo undo) {
+    if (undo.isNotEmpty) {
+      _pushUndo(SrsReviewUndoStep(cardId: cardId, edits: undo));
+    }
+  }
 
   /// 卡面音频的自动播放 / 重播序列（换卡、翻面、离开本页都会打断）。
   ///
@@ -405,6 +435,16 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
   /// 这一面该自动播、但页面还没上报可见发音：等上报到了再播。
   bool _autoplayPending = false;
 
+  /// 「正在复习」计数（[srsActiveReviewSessionsProvider]：本机是 runtime 监听的那个，远程作用域里是作用域自己的）。
+  late final ValueNotifier<int> _activeSessions;
+
+  /// 正在显示的这张读自库的哪一版（[_syncWithStore] 据此判断库的变化关不关它的事）。
+  SrsShownCardStamp? _stamp;
+
+  /// [_syncWithStore] 的串行化：在跑的那一轮，以及跑的途中又来了请求（跑完再对一轮）。
+  Future<void>? _syncRun;
+  bool _syncRequested = false;
+
   @override
   void initState() {
     super.initState();
@@ -412,14 +452,31 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     WidgetsBinding.instance.addObserver(this);
     _focusNode.addListener(_onPageFocusChanged);
     // 正在复习：自动优化让路（在跑的那一轮立即取消，见 srs_optimization_scheduler.dart）。
-    srsActiveReviewSessions.value++;
+    _activeSessions = ref.read(srsActiveReviewSessionsProvider);
+    _activeSessions.value++;
+    // 库在本页之外变了（同步拉入、操作目录 / AI 写入、压在上面的页面写入）：listen 而不是 watch——修订号
+    // 一跳不重建本页，由 [_syncWithStore] 判断关不关正在显示的卡。
+    ref.listenManual<int>(
+      srsRevisionProvider,
+      (int? previous, int next) =>
+          srsRunLogged('SrsReviewPage.syncWithStore', _syncWithStore),
+    );
+    _companion.startSnapshots(_companionSnapshot);
     unawaited(_start());
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _companionRoute = ModalRoute.of(context);
+    _claimCompanion(force: true);
+  }
+
+  @override
   void dispose() {
+    _companion.dispose();
     unawaited(_rwkvSubscription?.cancel());
-    srsActiveReviewSessions.value--;
+    _activeSessions.value--;
     WidgetsBinding.instance.removeObserver(this);
     _focusNode.removeListener(_onPageFocusChanged);
     _lookup.dispose();
@@ -437,25 +494,47 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
       _loading = true;
       _error = null;
     });
-    unawaited(_store == null ? _start() : _loadNext());
+    if (_store == null) {
+      // 库没打开成：作废缓存着失败的 provider，[_start] 才会真的重开一次。
+      retrySrsStoreOpen(ref);
+      unawaited(_start());
+    } else {
+      unawaited(_loadNext());
+    }
   }
 
   Future<void> _start() async {
-    final SrsDbStore? store = await readSrsStore(ref);
+    final SrsDbStore? store;
+    try {
+      store = await readSrsStore(ref);
+    } catch (e, stack) {
+      // 打开失败：原样交给错误态（[SrsLoadErrorView] 出可读说明 + 重试），不再报成「内核不可用」。
+      ErrorLogService.instance.log('SrsReviewPage.openStore', e, stack);
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _error = e;
+        });
+      }
+      return;
+    }
     if (!mounted) return;
     if (store == null) {
+      // 这里没有复习库（模块关着 / 存储此刻不可用）。排程内核缺失不走这里：库照常打开、只是不能排程
+      // （[SrsDbStore.canSchedule]，见 [_buildBody]）。
       setState(() {
         _loading = false;
-        _error = t.srs_engine_unavailable;
+        _error = t.module_disabled_hint;
       });
       return;
     }
     _store = store;
     // 先把 RWKV 服务装配到 store 上（[SrsDbStore.rwkv]）再排第一次队：没装配的 store 会把 RWKV 牌组当成
     // 「宿主没有 RWKV」按到期日排。
-    SrsRwkvService? rwkv;
+    SrsRwkvStatusSource? rwkv;
     try {
-      rwkv = await ref.read(srsRwkvServiceProvider.future);
+      // 本机复习：就是 RWKV 服务（[srsRwkvServiceProvider]，读它即完成装配）；远程复习：主机状态的影子。
+      rwkv = await ref.read(srsRwkvStatusProvider.future);
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsReviewPage.rwkv', e, stack);
     }
@@ -530,6 +609,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
               );
         SrsReviewPage.debugPhase?.call('prefetch:nextCard');
         if (id == null) return null;
+        final SrsStoreMark mark = SrsStoreMark.of(store);
         final SrsCardDetail? detail = await store.cardDetail(id);
         SrsReviewPage.debugPhase?.call('prefetch:detail');
         if (detail == null) return null;
@@ -548,14 +628,16 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
               ?rendered.fushiCardDefinitions,
             ],
           );
-          // 原生 HTML 卡面的解析与判据（按内容记忆）同样提前算好。
-          _htmlCardOf(rendered, detail);
+          // 卡面路线（原生 HTML / 区块判据，按内容记忆）同样提前算好。
+          _routeOf(rendered, detail);
           SrsReviewPage.debugPhase?.call('prefetch:warm');
         }
+        final _CardContext ctx = await _cardContextOf(store, detail, mark);
         return _PrefetchedCard(
           detail: detail,
           rendered: rendered,
-          audioOwner: await _audioOwnerOf(store, detail),
+          audioOwner: ctx.audioOwner,
+          stamp: ctx.stamp,
         );
       } catch (e, stack) {
         ErrorLogService.instance.log('SrsReviewPage.prefetch', e, stack);
@@ -564,8 +646,9 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     }();
   }
 
-  /// 预取的卡还能不能直接用：必须正是排程选出的 [id]，且卡片行没被改过
-  /// （同步 / 别处写入改了它就按常规路径重取）。
+  /// 预取的卡还能不能直接用：必须正是排程选出的 [id]，且预取之后库里没有关它显示的变化——卡片行、笔记字段、
+  /// 笔记类型（模板 / CSS）、牌组设置（[srsShownCardStale]；以前只比卡片行，同步 / 别处改了笔记或模板照样
+  /// 拿旧内容上屏）。有变化就按常规路径重取。
   Future<_PrefetchedCard?> _takePrefetch(
     Future<_PrefetchedCard?>? pending,
     String id,
@@ -573,8 +656,17 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     if (pending == null) return null;
     final _PrefetchedCard? hit = await pending;
     if (hit == null || hit.detail.card.id != id) return null;
-    final SrsCardCacheRow? row = await _store!.cardRow(id);
-    return row == hit.detail.card ? hit : null;
+    final SrsDbStore store = _store!;
+    // 先记版本再比：比的途中落库的写入留给下一次 [_syncWithStore]。
+    final SrsStoreMark now = SrsStoreMark.of(store);
+    if (await srsShownCardStale(
+      store,
+      hit.stamp,
+      reviewDeckId: widget.deckId,
+    )) {
+      return null;
+    }
+    return hit.rebased(now);
   }
 
   /// 取下一张（或 [cardId] 指定的那张，撤销后回到被撤的卡）并显示问题面。
@@ -616,6 +708,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
         setState(() {
           _loading = false;
           _finished = true;
+          _moreDue = false;
           _rwkvPending = rwkvPending;
           // 状态以服务此刻的为准：等排队结果的途中发来的事件（例如打分失败转「出错」）已被 [_onRwkvStatus]
           // 记下，这里再对一次，免得界面停在排队前的阶段。
@@ -627,7 +720,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
         srsRunLogged('SrsReviewPage.stopAudio', _audio.cancel);
         // 「就绪」可能在这次排队等结果时就已经来过：那时 [_finished] 还是 false，[_onRwkvStatus] 不重排，
         // 之后也不会再有就绪事件——页面会一直停在「等 RWKV」。所以 pending 落定后当场看一次服务：已就绪就
-        // 重排。不会空转：服务就绪时打分失败会转「出错」（`SrsRwkvService` 的 _scoringFailed），store 也不会
+        // 重排。不会空转：服务就绪时打分失败会转「出错」（RWKV 排程内核，native/fushi_rwkv 的 sched），store 也不会
         // 在 RWKV 就绪且打分成功时报 pending，所以「就绪 + pending」只可能是这个竞态。
         if (rwkvPending && (_rwkv?.ready ?? false)) {
           await _loadNext();
@@ -644,6 +737,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
           preview: null,
           day: _day,
           audioOwner: hit.audioOwner,
+          stamp: hit.stamp,
           afterKnown: afterKnown,
           after: plan?.after,
         );
@@ -657,6 +751,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
         await _refreshCounts();
       }
       SrsReviewPage.debugPhase?.call('counts');
+      final SrsStoreMark mark = SrsStoreMark.of(store);
       final SrsCardDetail? detail = await store.cardDetail(id);
       final SrsRenderedCard? rendered = detail == null
           ? null
@@ -667,7 +762,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
         // 加载指示只认 detail == null，静默转圈且「显示答案」永远禁用。
         throw StateError('SrsReviewPage: scheduled card $id has no detail');
       }
-      final SrsDeckView? audioOwner = await _audioOwnerOf(store, detail);
+      final _CardContext ctx = await _cardContextOf(store, detail, mark);
       if (!mounted) return;
       // 问题面只要卡片内容：间隔预览（只在翻面后的评分键上）与日界在卡面上屏后补齐，
       // 与预取命中同一条路径（[_completeShown]），不挡首张卡。
@@ -676,7 +771,8 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
         rendered,
         preview: null,
         day: _day,
-        audioOwner: audioOwner,
+        audioOwner: ctx.audioOwner,
+        stamp: ctx.stamp,
         afterKnown: afterKnown,
         after: plan?.after,
       );
@@ -699,16 +795,19 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     required SrsAnswerPreview? preview,
     required SrsDayContext? day,
     required SrsDeckView? audioOwner,
+    required SrsShownCardStamp? stamp,
     bool afterKnown = false,
     String? after,
   }) {
     _shownGeneration++;
+    _stamp = stamp;
     SrsReviewPage.debugPhase?.call('show');
     // 换卡：上一张卡上查的词弹窗收起。
     _lookup.closeAll();
     setState(() {
       _loading = false;
       _finished = false;
+      _moreDue = false;
       _error = null;
       _detail = detail;
       _rendered = rendered;
@@ -794,17 +893,28 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
 
   // ------------------------------------------------------------------ 卡面音频
 
-  /// 卡的音频设置所在牌组：卡所在牌组的 own 祖先（与算法 / 记忆率同一条继承）。
-  Future<SrsDeckView?> _audioOwnerOf(
+  /// 卡的牌组上下文（同一份牌组树读出）：音频设置所在牌组 = 卡所在牌组的 own 祖先（与算法 / 记忆率同一条
+  /// 继承）；以及这张卡读自库的哪一版（[mark] 是读 [detail] 之前记下的）。
+  Future<_CardContext> _cardContextOf(
     SrsDbStore store,
-    SrsCardDetail? detail,
+    SrsCardDetail detail,
+    SrsStoreMark mark,
   ) async {
-    if (detail == null) return null;
     final SrsDeckTree tree = await store.deckTree();
-    final String deckId = tree[detail.card.deckId] != null
-        ? detail.card.deckId
-        : store.defaultDeckId;
-    return tree[deckId] == null ? null : tree.paramsOwner(deckId);
+    final String deckId = tree.effectiveDeckOf(
+      detail.card.deckId,
+      fallback: store.defaultDeckId,
+    );
+    return (
+      audioOwner: tree[deckId] == null ? null : tree.paramsOwner(deckId),
+      stamp: SrsShownCardStamp.of(
+        mark,
+        detail,
+        tree,
+        reviewDeckId: widget.deckId,
+        defaultDeckId: store.defaultDeckId,
+      ),
+    );
   }
 
   /// 牌组没读到时按缺省（开），与 [SrsDeckView] 的缺省一致。
@@ -831,7 +941,8 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     SrsRenderedCard rendered, {
     bool layout = false,
   }) {
-    if (_fushiNative(rendered)) {
+    final SrsCardFaceRoute? route = _routeOf(rendered);
+    if (route is SrsCardFaceFushiNative) {
       final SrsFushiCardMedia media = srsFushiCardPlan(
         rendered.fields,
         ref.read(srsCardAppearanceProvider),
@@ -840,8 +951,8 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
       ).media;
       return (question: media.front, answer: media.back);
     }
-    final SrsHtmlCard? html = _htmlCardOf(rendered);
-    if (html != null) {
+    if (route is SrsCardFaceHtmlNative) {
+      final SrsHtmlCard html = route.card;
       // 原生 HTML 卡面：盒子树里看得见的发音键（与卡面画出来的同一份，两面都现成）。
       final bool dark = Theme.of(context).brightness == Brightness.dark;
       List<String> sounds(SrsHtmlCardFace f) => srsHtmlVisibleSounds(
@@ -1047,6 +1158,73 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     );
   }
 
+  // ---- 副屏（双屏掌机）伴侣：复习中认领 srs 上下文，发计数 / 阶段 / 评分间隔，收翻面 / 评分 / 撤销 ----
+
+  final CompanionPageLink _companion = CompanionPageLink();
+  Route<Object?>? _companionRoute;
+  String? _companionTitle;
+
+  /// 认领（或更新标题）。标题随牌组改名变，没变就不重复认领。
+  void _claimCompanion({bool force = false}) {
+    final String title = _title;
+    if (!force && title == _companionTitle) return;
+    _companionTitle = title;
+    _companion.claim(
+      CompanionContext(CompanionContextKind.srs, title: title),
+      route: _companionRoute,
+      onCommand: _onCompanionCommand,
+    );
+  }
+
+  /// 复习状态的每次变化（翻面、评分、撤销、计数、加载）都走 setState：在这里顺手
+  /// 把快照推给副屏（未启用副屏时 [CompanionPageLink.publishNow] 只是两次布尔判断）。
+  @override
+  void setState(VoidCallback fn) {
+    super.setState(fn);
+    _claimCompanion();
+    _companion.publishNow();
+  }
+
+  Map<String, Object?> _companionSnapshot() {
+    final bool showIntervals = ref.read(srsReviewShowIntervalsProvider);
+    return buildSrsCompanionSnapshot(
+      deck: _title,
+      phase: srsCompanionPhase(
+        loading: _loading,
+        hasError: _error != null,
+        finished: _finished,
+        rwkvPending: _rwkvPending,
+        canSchedule: _store?.canSchedule ?? true,
+        hasCard: _detail != null,
+        showingAnswer: _showingAnswer,
+      ),
+      newCount: _newCount,
+      learnCount: _learnCount,
+      reviewCount: _reviewCount,
+      // 与评分按钮上显示的同一份间隔文案（关了「显示间隔」就是空串）。
+      intervals: <String>[
+        for (int rating = 1; rating <= 4; rating++)
+          showIntervals ? _ratingInterval(rating) : '',
+      ],
+      canUndo: _canUndo,
+      busy: _busy,
+      twoButtons: ref.read(srsReviewHideHardEasyProvider),
+    );
+  }
+
+  void _onCompanionCommand(String action, Map<String, Object?> args) {
+    if (!mounted) return;
+    handleSrsCompanionCommand(
+      action,
+      args,
+      busy: _busy,
+      showAnswer: _showAnswer,
+      rate: _rate,
+      undo: _undoLast,
+    );
+    _companion.publishNow();
+  }
+
   void _undoLast() {
     final SrsDbStore? store = _store;
     if (store == null || !_canUndo) return;
@@ -1066,7 +1244,14 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
           }
           if (_reviewedThisSession > 0) _reviewedThisSession--;
         } else {
-          await step.revert!(store);
+          final SrsEditUndoResult r = await store.revertEdits(step.edits!);
+          if (!r.complete) {
+            // 之后被别人（同步拉进来的别的设备 / AI / 别处）改过的字段保留了现值。
+            FushiToast.show(
+              msg: t.srs_undo_kept_changed(n: r.kept.length),
+              severity: ToastSeverity.warning,
+            );
+          }
         }
         await _loadNext(cardId: step.cardId);
       }),
@@ -1085,12 +1270,16 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
         await _editNote(detail);
       case _CardAction.suspend:
         await _guarded('suspend', () async {
-          await store.setSuspended(card.id, true);
-          _pushUndo(
-            SrsReviewUndoStep(
-              cardId: card.id,
-              revert: (SrsDbStore s) => s.setSuspended(card.id, false),
-            ),
+          _pushEdits(
+            card.id,
+            await store.editFieldsUndoable(<SrsFieldChange>[
+              SrsFieldChange(
+                SrsEntityKind.card,
+                card.id,
+                SrsFieldKeys.suspended,
+                true,
+              ),
+            ]),
           );
           await _loadNext();
         });
@@ -1098,13 +1287,16 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
         await _guarded('bury', () async {
           final SrsDayContext day = await store.dayContext();
           final int today = day.dayIndexOf(store.now().$1);
-          final int? before = card.buriedUntilDay;
-          await store.buryUntil(card.id, today + 1);
-          _pushUndo(
-            SrsReviewUndoStep(
-              cardId: card.id,
-              revert: (SrsDbStore s) => s.buryUntil(card.id, before),
-            ),
+          _pushEdits(
+            card.id,
+            await store.editFieldsUndoable(<SrsFieldChange>[
+              SrsFieldChange(
+                SrsEntityKind.card,
+                card.id,
+                SrsFieldKeys.buriedUntilDay,
+                today + 1,
+              ),
+            ]),
           );
           await _loadNext();
         });
@@ -1123,13 +1315,16 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
         );
         if (flag == null || flag == card.flag || !mounted) return;
         await _guarded('flag', () async {
-          final int before = card.flag;
-          await store.setFlag(card.id, flag);
-          _pushUndo(
-            SrsReviewUndoStep(
-              cardId: card.id,
-              revert: (SrsDbStore s) => s.setFlag(card.id, before),
-            ),
+          _pushEdits(
+            card.id,
+            await store.editFieldsUndoable(<SrsFieldChange>[
+              SrsFieldChange(
+                SrsEntityKind.card,
+                card.id,
+                SrsFieldKeys.flag,
+                flag,
+              ),
+            ]),
           );
           await _reloadCurrent();
         });
@@ -1146,13 +1341,16 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
         );
         if (target == null || target == card.deckId || !mounted) return;
         await _guarded('move', () async {
-          final String before = card.deckId;
-          await store.moveCard(card.id, target);
-          _pushUndo(
-            SrsReviewUndoStep(
-              cardId: card.id,
-              revert: (SrsDbStore s) => s.moveCard(card.id, before),
-            ),
+          _pushEdits(
+            card.id,
+            await store.editFieldsUndoable(<SrsFieldChange>[
+              SrsFieldChange(
+                SrsEntityKind.card,
+                card.id,
+                SrsFieldKeys.cardDeck,
+                target,
+              ),
+            ]),
           );
           await _loadNext();
         });
@@ -1192,12 +1390,16 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
         );
         if (!ok || !mounted) return;
         await _guarded('deleteNote', () async {
-          await store.deleteNote(detail.note.id);
-          _pushUndo(
-            SrsReviewUndoStep(
-              cardId: card.id,
-              revert: (SrsDbStore s) => s.restoreNote(detail.note.id),
-            ),
+          _pushEdits(
+            card.id,
+            await store.editFieldsUndoable(<SrsFieldChange>[
+              SrsFieldChange(
+                SrsEntityKind.note,
+                detail.note.id,
+                SrsFieldKeys.deleted,
+                store.now().$1,
+              ),
+            ]),
           );
           await _loadNext();
         });
@@ -1283,22 +1485,21 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
   ) async {
     final SrsDbStore? store = _store;
     if (store == null || before == after) return;
-    await store.updateNote(
-      detail.note.id,
-      fieldsById: <String, String>{fieldId: after},
-    );
-    _pushUndo(
-      SrsReviewUndoStep(
-        cardId: detail.card.id,
-        revert: (SrsDbStore s) => s.updateNote(
+    _pushEdits(
+      detail.card.id,
+      await store.editFieldsUndoable(<SrsFieldChange>[
+        SrsFieldChange(
+          SrsEntityKind.note,
           detail.note.id,
-          fieldsById: <String, String>{fieldId: before},
+          SrsFieldKeys.noteField(fieldId),
+          after,
         ),
-      ),
+      ]),
     );
     if (mounted) setState(() => _editSelection = null);
     bumpSrsRevision(ref);
-    await _reloadCurrent();
+    // 与外部写入同一个入口：这一跳的监听与这里的调用并成一轮，只重读一次。
+    await _syncWithStore();
   }
 
   /// 卡面选区 → 对应字段加粗 / 高亮 / 清除格式（srs_review_edit.dart）。
@@ -1407,45 +1608,114 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     );
   }
 
-  /// 编辑笔记；有改动时压一步「改回原值」进撤销栈。
+  /// 编辑笔记；保存了改动时压一步进撤销栈（编辑页交回这次保存的撤销凭据）。
   Future<void> _editNote(SrsCardDetail detail) async {
-    final Map<String, String> before = <String, String>{
-      for (final SrsFieldDef f in detail.noteType.fields)
-        f.id: detail.note.field(f.id),
-    };
-    final List<String> tagsBefore = List<String>.of(detail.note.tags);
-    await _focusOwnership.guardOverlay(
-      () => srsPushPage<void>(
-        context,
-        (_) => SrsNoteEditorPage(noteId: detail.note.id),
+    SrsEditUndo saved = SrsEditUndo.empty;
+    await _pushOver(
+      (_) => SrsNoteEditorPage(
+        noteId: detail.note.id,
+        onSaved: (SrsEditUndo undo) => saved = saved.merge(undo),
       ),
     );
     if (!mounted) return;
-    final SrsDbStore store = _store!;
-    final SrsNoteView? after = await store.note(detail.note.id);
-    if (after == null) return;
-    final bool changed =
-        before.entries.any(
-          (MapEntry<String, String> e) => after.field(e.key) != e.value,
-        ) ||
-        after.tags.join('\u0000') != tagsBefore.join('\u0000');
-    if (changed) {
-      _pushUndo(
-        SrsReviewUndoStep(
-          cardId: detail.card.id,
-          revert: (SrsDbStore s) => s.updateNote(
-            detail.note.id,
-            fieldsById: before,
-            tags: tagsBefore,
-          ),
-        ),
-      );
-    }
+    _pushEdits(detail.card.id, saved);
     bumpSrsRevision(ref);
-    await _reloadCurrent();
   }
 
-  /// 原地刷新当前这张（编辑 / 浏览 / 牌组设置回来后），保持正反面状态。
+  /// 在本页之上压一页（编辑笔记 / 浏览 / 牌组设置 / 模板编辑器），回来后按库对齐当前这张（[_syncWithStore]）。
+  ///
+  /// 压着的页面写库时通常也发 [bumpSrsRevision]，本页那时就已对齐；回来再对一次是兜住没发信号的写入（对齐
+  /// 只在当前这张真有变化时才重读，没变化只是比一下版本）。四个入口共用这一处，不再各自记得重读。
+  Future<void> _pushOver(WidgetBuilder builder) async {
+    await _focusOwnership.guardOverlay(
+      () => srsPushPage<void>(context, builder),
+    );
+    if (mounted) await _syncWithStore();
+  }
+
+  /// 库变了之后让本页与库对齐：同步拉入、操作目录 / AI 写入、压在上面的页面写入，以及本页自己的编辑。
+  ///
+  /// 只在变化关系到正在显示的这张（卡片行、笔记字段、模板 / CSS、牌组设置，[srsShownCardStale]）时走
+  /// [_reloadCurrent]（保持正反面）；与它无关的变化不 setState、不重建本页。预取的下一张变了就重新预取（不上屏）。
+  /// 已到「复习完」时没有当前卡，改为重新看一次还排不排得出卡（[_recheckFinished]）。
+  ///
+  /// 串行：一轮在跑时又来的请求不另起，跑完再对一轮——上一轮的重读已把版本记到它开始读的那一刻，第二轮只会
+  /// 看到那之后落库的写入。
+  Future<void> _syncWithStore() {
+    _syncRequested = true;
+    return _syncRun ??= _drainSync().whenComplete(() => _syncRun = null);
+  }
+
+  Future<void> _drainSync() async {
+    while (_syncRequested && mounted) {
+      _syncRequested = false;
+      await _syncOnce();
+    }
+  }
+
+  Future<void> _syncOnce() async {
+    final SrsDbStore? store = _store;
+    final SrsShownCardStamp? stamp = _stamp;
+    if (store == null) return;
+    // 队列已排空：没有正在显示的卡可对，要对的是「还排不排得出卡」。
+    if (_finished) {
+      await _recheckFinished(store);
+      return;
+    }
+    if (stamp != null && _detail?.card.id == stamp.cardId) {
+      final bool stale = await srsShownCardStale(
+        store,
+        stamp,
+        reviewDeckId: widget.deckId,
+      );
+      // 比的途中已换了卡（评分 / 撤销）：新卡是刚读的，不用再管旧卡。
+      if (!mounted || !identical(stamp, _stamp)) return;
+      if (stale) {
+        await _reloadCurrent();
+        return;
+      }
+    }
+    final Future<_PrefetchedCard?>? pending = _prefetch;
+    if (pending == null) return;
+    final _PrefetchedCard? hit = await pending;
+    if (hit == null || !identical(pending, _prefetch)) return;
+    final bool stale = await srsShownCardStale(
+      store,
+      hit.stamp,
+      reviewDeckId: widget.deckId,
+    );
+    final String? current = _detail?.card.id;
+    if (stale && mounted && identical(pending, _prefetch) && current != null) {
+      _startPrefetch(current);
+    }
+  }
+
+  /// 「复习完」（含等 RWKV）时库变了：按库重排一次队（与出卡同一条 [SrsDbStore.studyState]），排得出卡就亮出
+  /// 回到复习的入口（[_moreDue]），排不出就收起；计数随之更新。只改入口与计数，不出卡——出卡由用户点入口
+  /// （[_resumeMoreDue]）。
+  Future<void> _recheckFinished(SrsDbStore store) async {
+    final SrsStudyState? plan = await store.studyState(
+      widget.deckId,
+      custom: widget.custom,
+    );
+    // 排队途中已离开「复习完」（撤销 / 点了入口 / 重试）：那边已重新排过队。
+    if (!mounted || !_finished) return;
+    setState(() {
+      if (plan != null) {
+        _applyCounts(plan.summary);
+        if (widget.custom != null) _customProgress = plan.custom;
+      }
+      _moreDue = plan?.next != null;
+    });
+  }
+
+  /// 「复习完」页的入口：重新排队出卡（与加载同一条路径 [_loadNext]）。
+  void _resumeMoreDue() {
+    setState(() => _moreDue = false);
+    unawaited(_loadNext());
+  }
+
+  /// 原地刷新当前这张（库里关它的内容变了，经 [_syncWithStore]；或本页的标记等操作之后），保持正反面状态。
   ///
   /// 除了卡面内容与音频设置，间隔预览、顶栏计数与标题也现读（BUG-3547）：它们是本页
   /// 在出题时算好缓存的，牌组设置改了学习步长 / 记忆率 / 最大间隔 / 每日上限 / 名字，
@@ -1457,32 +1727,41 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     // 刷新途中已换了卡（评分 / 撤销）：旧卡的结果不能盖回去。
     final int generation = _shownGeneration;
     final String id = detail.card.id;
+    SrsReviewPage.debugPhase?.call('reloadCurrent');
+    // 先记版本再读：读的途中落库的写入留给下一次 [_syncWithStore]。
+    final SrsStoreMark mark = SrsStoreMark.of(store);
     final SrsCardCacheRow? row = await store.cardRow(id);
     if (!mounted || generation != _shownGeneration) return;
+    final SrsCardDetail? fresh = row == null || row.hidden
+        ? null
+        : await store.cardDetail(id);
+    if (!mounted || generation != _shownGeneration) return;
     // 改完变成空卡 / 被删：直接下一张。
-    if (row == null || row.hidden) {
+    if (fresh == null) {
       await _loadNext();
       return;
     }
-    final SrsCardDetail? fresh = await store.cardDetail(id);
-    final SrsRenderedCard? rendered = fresh == null
-        ? null
-        : await store.renderCard(id, detail: fresh);
-    final SrsDeckView? audioOwner = await _audioOwnerOf(store, fresh);
+    final SrsRenderedCard? rendered = await store.renderCard(id, detail: fresh);
+    final _CardContext ctx = await _cardContextOf(store, fresh, mark);
     final SrsDeckSummary? sum = await _deckSummary();
     final SrsDayContext day = await store.dayContext();
     final SrsAnswerPreview? preview = store.canSchedule
         ? await store.preview(id)
         : null;
     if (!mounted || generation != _shownGeneration) return;
+    final bool wasAutoplay = _autoplayEnabled;
+    _stamp = ctx.stamp;
     setState(() {
       _detail = fresh;
       _rendered = rendered;
-      _audioOwner = audioOwner;
+      _audioOwner = ctx.audioOwner;
       _applyCounts(sum);
       _day = day;
       _preview = preview;
     });
+    // 牌组设置里刚打开自动播放：当前这一面立刻按新设置播；刚关掉：停掉正在自动播的
+    // （卡面页内的片段由卡面闸门随 [SrsCardFace.autoplayMedia] 重放 / 停下）。
+    if (wasAutoplay != _autoplayEnabled) _autoplayAudio();
     unawaited(_probeMedia(generation));
     // 编辑可能改了同一笔记的兄弟卡、设置可能改了下一张的音频设置：预取作废重来。
     _startPrefetch(id);
@@ -1741,19 +2020,17 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
   ];
 
   /// 像 Anki 一样从复习跳到浏览、直接落在正在复习的这张卡上（旁边就是预览与编辑）；
-  /// 回来后按库里最新内容重载这张卡（浏览里可能改了它、挂起了它或删了它）。
+  /// 浏览里改了它、挂起了它或删了它，本页按库对齐（[_pushOver]）。
   Future<void> _openBrowse() async {
     final SrsCardDetail? detail = _detail;
     if (detail == null) return;
-    await srsPushPage<void>(
-      context,
+    await _pushOver(
       (_) => SrsBrowsePage(
         initialCardId: detail.card.id,
         onChangeNoteType: showSrsChangeNoteTypeFlow,
         onMigrateToFushiCard: srsMigrateNotesToFushiCard,
       ),
     );
-    if (mounted) await _reloadCurrent();
   }
 
   /// 卡面样式入口，按当前这张卡的笔记类型分流：Fushi 卡片 → 可视化外观页；其它类型 →
@@ -1779,16 +2056,16 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
       // 模板编辑器（正面 / 背面 / 样式源码）用代码图标，不与卡面外观的调色板混成一样。
       icon: FushiIcons.code,
       label: t.srs_card_edit_template(name: detail.noteType.name),
-      onPressed: () => srsRunLogged('SrsReview.editTemplate', () async {
-        await srsPushPage<void>(
-          context,
+      // 模板 / CSS 改了，当前这张（及预取的下一张）按新模板重画（[_pushOver]）。
+      onPressed: () => srsRunLogged(
+        'SrsReview.editTemplate',
+        () => _pushOver(
           (_) => SrsTemplateEditorPage(
             noteTypeId: detail.noteType.id,
             templateId: tpl.id,
           ),
-        );
-        if (mounted) bumpSrsRevision(ref);
-      }),
+        ),
+      ),
     );
   }
 
@@ -1878,38 +2155,20 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     ];
   }
 
-  Future<void> _openDeckSettings(String deckId) async {
-    await _focusOwnership.guardOverlay(
-      () => srsPushPage<void>(
-        context,
-        (_) => SrsDeckSettingsPage(deckId: deckId),
-      ),
-    );
-    if (!mounted) return;
-    await _applyDeckSettingsChange();
-  }
-
-  /// 牌组设置页回来后，当前会话立即按新设置走（BUG-3547）。
+  /// 牌组设置页回来后，当前会话立即按新设置走（BUG-3547 / BUG-3546）。
   ///
   /// 排程层没有跨调用的配置快照：`SrsDbStore.nextCard` / `answer` / `preview` 每次都现读
   /// 牌组树，所以「下一张选谁」（每日上限、学习卡优先）与「评分后的间隔」（学习步长、
   /// 记忆率、最大间隔）在下一次调用时自然用新值，**没有预排好的队列需要重建**。
-  /// 过期的只有本页自己缓存的东西：
-  /// - 预取的下一张：它连同出发时读到的音频设置一起缓存（[_PrefetchedCard.audioOwner]），
-  ///   在这里**同步**作废——设置页一关就按评分键时不会再拿旧快照显示下一张、按旧开关
-  ///   自动播放；[_reloadCurrent] 随后按新设置重新预取。
-  /// - 当前这张的间隔预览、计数、标题、音频开关：[_reloadCurrent] 现读。
+  /// 过期的只有本页自己缓存的东西，由 [_pushOver] → [_syncWithStore] 按牌组链的签名认出：
+  /// - 当前这张的间隔预览、计数、标题、音频开关：[_reloadCurrent] 现读，自动播放开关变了当场按新设置播 / 停；
+  /// - 预取的下一张：它连同出发时读到的音频设置一起缓存（[_PrefetchedCard.audioOwner]），取用前比版本
+  ///   （[_takePrefetch]），设置页一关就按评分键也不会拿旧快照显示下一张。
   ///
   /// 当前这张卡本身不换：用户正在看它（可能已翻到答案面），与 Anki 一样让它答完；
   /// 调低了每日上限时，答完这张后的选卡按新上限走。
-  Future<void> _applyDeckSettingsChange() async {
-    _prefetch = null;
-    final bool wasAutoplay = _autoplayEnabled;
-    await _reloadCurrent();
-    // 刚打开自动播放：当前这一面立刻按新设置播；刚关掉：停掉正在自动播的
-    // （卡面页内的片段由卡面闸门随 [SrsCardFace.autoplayMedia] 重放 / 停下）。
-    if (mounted && wasAutoplay != _autoplayEnabled) _autoplayAudio();
-  }
+  Future<void> _openDeckSettings(String deckId) =>
+      _pushOver((_) => SrsDeckSettingsPage(deckId: deckId));
 
   /// 悬浮态下没有卡面可点（读失败 / 复习完 / 排程不可用）：顶栏常驻，不然连返回键都
   /// 唤不出来。
@@ -2207,33 +2466,42 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
       _detail != null &&
       _nativeFace(_rendered);
 
-  /// 非 Fushi 卡片两面都能原生画时的解析结果（[srsNativeHtmlCardFor]，按内容记忆）；null =
-  /// 不是这类卡或画不全（整面 WebView）。[detail] 缺省为当前卡（预取时传那张卡的）。
-  SrsHtmlCard? _htmlCardOf(SrsRenderedCard? rendered, [SrsCardDetail? detail]) {
-    if (rendered == null || _fushiNative(rendered)) return null;
-    return srsNativeHtmlCardFor(
-      fushiCard:
-          (detail ?? _detail)?.noteType.builtinKey == kSrsBuiltinFushiCardKey,
-      question: rendered.question,
-      answer: rendered.answer,
-      css: rendered.css,
-      languageCode: ref.read(appProvider).defaultContentLanguage,
-    );
-  }
-
-  /// 内置 Fushi 卡片走原生混合卡面：引擎认得出区块布局、自定义区块（字段 / HTML 区块）原生
-  /// 画得全（[srsFushiCardRenderedNative]，按内容记忆）。否则整面 WebView。
-  bool _fushiNative(SrsRenderedCard? rendered) =>
-      rendered != null &&
-      srsFushiCardRenderedNative(
-        rendered,
-        languageCode: ref.read(appProvider).defaultContentLanguage,
-      );
+  /// 这张卡走哪种卡面（[srsCardFaceRoute]：原生 Fushi 混合卡面 / 原生 HTML 卡面 / 整面 WebView，
+  /// 判据按内容记忆）。[detail] 缺省为当前卡（预取时传那张卡的）。
+  SrsCardFaceRoute? _routeOf(
+    SrsRenderedCard? rendered, [
+    SrsCardDetail? detail,
+  ]) => rendered == null
+      ? null
+      : srsCardFaceRoute(
+          rendered,
+          fushiCard:
+              (detail ?? _detail)?.noteType.builtinKey ==
+              kSrsBuiltinFushiCardKey,
+          languageCode: ref.read(appProvider).defaultContentLanguage,
+        );
 
   /// 卡面由 Flutter 原生画（Fushi 卡片混合渲染或原生 HTML 卡面）。
   bool _nativeFace(SrsRenderedCard? rendered) =>
-      rendered != null &&
-      (_fushiNative(rendered) || _htmlCardOf(rendered) != null);
+      _routeOf(rendered)?.isNative ?? false;
+
+  /// 已记过的整面 WebView 回退（笔记类型 × 模板 × 原因类别），会话内每种只记一次。
+  final Set<String> _loggedWebFallbacks = <String>{};
+
+  /// 卡面走了整面 WebView：把卡在哪一道记进诊断日志（反馈 O5YDP27Xko：以前静默回退，
+  /// 查不出是模板、样式、媒体还是区块的原因）。
+  void _logWebFallback(SrsCardDetail detail, SrsCardNativeFallback fallback) {
+    final String key =
+        '${detail.noteType.id}\u0000${detail.template?.id}\u0000'
+        '${fallback.code.name}';
+    if (!_loggedWebFallbacks.add(key)) return;
+    ErrorLogService.instance.logDiagnostic(
+      'SrsCardFace.webFallback',
+      'noteType=${detail.noteType.name} '
+          'builtin=${detail.noteType.builtinKey ?? '-'} '
+          'tpl=${detail.template?.name ?? '-'} reason=$fallback',
+    );
+  }
 
   Widget _buildBody(BuildContext context) {
     // 首张卡还在读：先把卡面（WebView 外壳）建起来、上面压加载指示。WebView 冷建 +
@@ -2266,7 +2534,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
   /// 队列空了而 RWKV 还没准备好：说清楚在等什么（下载 / 回放 / 失败），失败给「重试」。
   Widget _buildRwkvPending(BuildContext context) {
     final SrsRwkvStatus? status = _rwkvStatus;
-    final SrsRwkvService? service = _rwkv;
+    final SrsRwkvStatusSource? service = _rwkv;
     final bool failed = status?.phase == SrsRwkvPhase.failed;
     final String? detail = switch (status?.phase) {
       SrsRwkvPhase.failed => t.srs_settings_rwkv_failed(
@@ -2295,16 +2563,17 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
                 : FushiPlaceholderTone.neutral,
             message: t.srs_review_rwkv_pending,
             detail: detail,
-            action: failed && service != null
-                ? FushiFilledButton(
-                    key: const ValueKey<String>('srs-review-rwkv-retry'),
-                    onPressed: () => srsRunLogged(
-                      'SrsRwkvService.start',
-                      () => service.start(force: true),
-                    ),
-                    child: Text(t.retry),
-                  )
-                : null,
+            action: _finishedActions(<Widget>[
+              if (failed && service != null)
+                FushiFilledButton(
+                  key: const ValueKey<String>('srs-review-rwkv-retry'),
+                  onPressed: () => srsRunLogged(
+                    'SrsRwkvService.start',
+                    () => service.start(force: true),
+                  ),
+                  child: Text(t.retry),
+                ),
+            ]),
           ),
         ),
       ),
@@ -2322,25 +2591,48 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
             icon: FushiIcons.success,
             message: t.srs_review_done,
             detail: t.srs_review_done_detail(n: _reviewedThisSession),
-            action: Wrap(
-              spacing: FushiDesignTokens.of(context).spacing.gap,
-              children: <Widget>[
-                if (_canUndo)
-                  FushiOutlinedButton.icon(
-                    onPressed: _busy ? null : _undoLast,
-                    icon: const FushiIcon(FushiIcons.undo),
-                    label: Text(t.undo),
-                  ),
-                if (navigator.canPop())
-                  FushiFilledButton.tonalIcon(
-                    onPressed: () => unawaited(navigator.maybePop()),
-                    icon: const FushiIcon(FushiIcons.back),
-                    label: Text(t.srs_review_back_to_decks),
-                  ),
-              ],
-            ),
+            action: _finishedActions(<Widget>[
+              if (_canUndo)
+                FushiOutlinedButton.icon(
+                  onPressed: _busy ? null : _undoLast,
+                  icon: const FushiIcon(FushiIcons.undo),
+                  label: Text(t.undo),
+                ),
+              if (navigator.canPop())
+                FushiFilledButton.tonalIcon(
+                  onPressed: () => unawaited(navigator.maybePop()),
+                  icon: const FushiIcon(FushiIcons.back),
+                  label: Text(t.srs_review_back_to_decks),
+                ),
+            ]),
           ),
         ),
+      ),
+    );
+  }
+
+  /// 「复习完」/「等 RWKV」页的动作行：[_moreDue] 时在最前面加「有新的到期卡」入口。入口随库变化出现 / 收起，
+  /// 整行交叉淡入淡出（不跳）。一个动作都没有时 null。
+  Widget? _finishedActions(List<Widget> actions) {
+    final List<Widget> children = <Widget>[
+      if (_moreDue)
+        FushiFilledButton.icon(
+          key: const ValueKey<String>('srs-review-more-due'),
+          onPressed: _resumeMoreDue,
+          icon: const FushiIcon(FushiIcons.play),
+          label: Text(t.srs_review_more_due_continue),
+        ),
+      ...actions,
+    ];
+    if (children.isEmpty) return null;
+    return AnimatedSwitcher(
+      duration: fushiMotionDuration(context, FushiMotion.medium),
+      switchInCurve: FushiMotion.enter,
+      switchOutCurve: FushiMotion.exit,
+      child: Wrap(
+        key: ValueKey<bool>(_moreDue),
+        spacing: FushiDesignTokens.of(context).spacing.gap,
+        children: children,
       ),
     );
   }
@@ -2413,17 +2705,20 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     );
     // 内置 Fushi 卡片（模板未改或只调了区块布局）走原生 + 释义 WebView 的混合渲染；其余卡片两面都在原生
     // 认得的 HTML / CSS 子集里就整面原生（[srsHtmlCardOf]），否则整面 WebView。
-    final SrsHtmlCard? html = _htmlCardOf(rendered);
-    final Widget built = html != null
+    final SrsCardFaceRoute? route = _routeOf(rendered);
+    if (route is SrsCardFaceWeb && detail != null) {
+      _logWebFallback(detail, route.fallback);
+    }
+    final Widget built = route is SrsCardFaceHtmlNative
         ? SrsHtmlCardView(
             key: const ValueKey<String>('srs-html-card-view'),
             face: face,
-            source: html.face(answerSide: _showingAnswer),
+            source: route.card.face(answerSide: _showingAnswer),
             topInset: media.padding.top,
             bottomInset: _bottomBarInset,
             zoom: zoom,
           )
-        : _fushiNative(rendered)
+        : route is SrsCardFaceFushiNative
         ? MediaQuery(
             // 原生区跟随卡面缩放：在系统字号倍率上再乘缩放倍率。
             data: media.copyWith(

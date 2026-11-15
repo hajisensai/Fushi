@@ -55,8 +55,14 @@ void main() {
     final String src = File(
       'lib/src/pages/implementations/home_dashboard_page.dart',
     ).readAsStringSync();
-    expect(src, contains('final String todayKey = _statWindow.todayKey;'));
-    expect(src, contains('final StatWindow w = _statWindow;'));
+    // 目标卡先把字段窗口取成局部 w，今日键从同一个 w 取（不现算 StatWindow.now）。
+    expect(
+      src,
+      contains(
+        'final StatWindow w = _statWindow;\n'
+        '    final String todayKey = w.todayKey;',
+      ),
+    );
     expect(src, contains('_midnightReload = Timer('));
     expect(
       RegExp(r'StatWindow\(DateTime\.now\(\)\)').allMatches(src).length,

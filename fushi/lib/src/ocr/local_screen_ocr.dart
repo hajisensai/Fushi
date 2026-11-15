@@ -1,9 +1,9 @@
-/// 桌面应用外悬浮球「截屏识字」在 Linux 上的识别器。
+/// 桌面应用外悬浮球「截屏识字」的本机模型识别器：截屏识字引擎解析到本机模型时用它
+/// （`screen_ocr_engine.dart`；Linux 没有系统 OCR，只能用它或 Lens）。
 ///
-/// Linux 没有系统 OCR（macOS Vision / Windows.Media.Ocr / Android ML Kit 那一档），
-/// 所以截屏识字改用 Fushi 自己的本机 OCR 模型（设置里的漫画 OCR 本机模型，离线、
-/// 不上传）。走「整帧当一块文字图」那条现成路径（[MangaOcrTextImageSession]：PP 行
-/// 检测 + 逐行识别，不加载漫画检测器）——图形字幕整轨识别同一个入口；Steam Deck
+/// 用 Fushi 自己的本机 OCR 模型（设置里的 OCR 本机模型，离线、不上传），走「整帧
+/// 当一块文字图」那条现成路径（[MangaOcrTextImageSession]：PP 行检测 + 逐行识别，
+/// 不加载漫画检测器）——图形字幕整轨识别同一个入口；Steam Deck
 /// 实测（2026-11-04，游戏画面 40 帧）中位约 0.5 s。
 ///
 /// 对外仍是 [SystemOcrPlatform]：冻结层、命中测试、查词那一整套不分平台。模型没下
@@ -139,6 +139,10 @@ class LocalScreenOcr implements SystemOcrPlatform {
 
 /// 识别结果 → 冻结层要的行（截图像素坐标）。有行几何时逐行给出；识别器只给了整块
 /// 文字时退成一行、框为整张图（点哪都查这段文字的开头附近，好过什么都点不到）。
+///
+/// 识别器给了逐字命中格（[OcrRecognition.glyphBoxes]，区间按各行无分隔拼接记）时，
+/// 切到各行、换成行内区间作词框（[SystemOcrTextLine.segments]）：点字按字格定位，
+/// 与 Windows OCR 的词框同一条路径（BUG-4367），不再按整行等分估计。
 @visibleForTesting
 SystemOcrPageResult systemOcrPageFromRecognition(
   OcrRecognition result, {
@@ -149,17 +153,31 @@ SystemOcrPageResult systemOcrPageFromRecognition(
   final List<String>? texts = result.lines;
   final List<OcrRect>? boxes = result.lineBoxes;
   if (texts != null && boxes != null) {
+    final List<OcrGlyphBox>? glyphs = result.glyphBoxes;
+    int offset = 0;
     for (int i = 0; i < texts.length && i < boxes.length; i++) {
-      final String text = texts[i].trim();
+      final String raw = texts[i];
+      final int lineStart = offset;
+      offset += raw.length;
+      final String text = raw.trim();
       final OcrRect box = boxes[i];
       if (text.isEmpty || box.right <= box.left || box.bottom <= box.top) {
         continue;
       }
+      // trim 掉的行首空白：字格区间要跟着左移。
+      final int lead = raw.length - raw.trimLeft().length;
       lines.add(
         SystemOcrTextLine(
           text: text,
           rect: Rect.fromLTRB(box.left, box.top, box.right, box.bottom),
           isVertical: result.vertical,
+          segments: glyphs == null
+              ? const <SystemOcrTextSegment>[]
+              : _lineSegments(
+                  glyphs,
+                  from: lineStart + lead,
+                  textLength: text.length,
+                ),
         ),
       );
     }
@@ -177,6 +195,34 @@ SystemOcrPageResult systemOcrPageFromRecognition(
     imageWidth: width,
     imageHeight: height,
   );
+}
+
+/// 落在 `[from, from + textLength)` 里的字格 → 行内区间的词框（按序、互不重叠；
+/// 不满足的整行不带词框，退回按行等分）。
+List<SystemOcrTextSegment> _lineSegments(
+  List<OcrGlyphBox> glyphs, {
+  required int from,
+  required int textLength,
+}) {
+  final List<SystemOcrTextSegment> out = <SystemOcrTextSegment>[];
+  int cursor = 0;
+  for (final OcrGlyphBox glyph in glyphs) {
+    final int start = glyph.start - from;
+    final int end = glyph.end - from;
+    if (start < 0 || end > textLength) continue;
+    final OcrRect r = glyph.rect;
+    if (r.right <= r.left || r.bottom <= r.top) continue;
+    if (start < cursor || end <= start) return const <SystemOcrTextSegment>[];
+    out.add(
+      SystemOcrTextSegment(
+        start: start,
+        length: end - start,
+        rect: Rect.fromLTRB(r.left, r.top, r.right, r.bottom),
+      ),
+    );
+    cursor = end;
+  }
+  return out;
 }
 
 class _Rgba {

@@ -3,7 +3,7 @@
 ///
 /// 与 app `AppModel` 的三条路同一套引擎代码（`backfillLibraryVideoSubtitle` /
 /// `backfillScrapedWorkSubtitles` / `runDownloadSubtitleRetryRound`），差别只在装配：
-/// - 字幕来源每次用时按当前偏好 / 环境现建、用完即关（经互联同步来的 key、WebUI
+/// - 字幕来源每次用时按当前偏好 / 环境现建、用完即关（WebUI / ctl 存的 key、WebUI
 ///   改的字幕语言即时生效），见 [buildServerSubtitleRegistry]；
 /// - AI 重排候选（`aiSubtitleBackfillReorder`）用配置文件 `ai:` 段那一家
 ///   （[ServerAiSettings] 把「视频搜索辅助」指给它）；没有 `ai:` 段 / 没配全时

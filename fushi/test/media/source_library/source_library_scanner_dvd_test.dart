@@ -174,7 +174,10 @@ void main() {
       final String disc = p.join(tmp.path, 'Show Vol.1');
       writeTvDvdFixture(disc);
 
-      final SourceLibraryScanner scanner = SourceLibraryScanner(db);
+      final SourceLibraryScanner scanner = SourceLibraryScanner(
+        db,
+        transcribeAudiobook: null,
+      );
       final SourceScanSummary first = await scanner.scan(
         await _videoSource(db, tmp.path),
       );
@@ -214,6 +217,7 @@ void main() {
       }
       final SourceScanSummary summary = await SourceLibraryScanner(
         db,
+        transcribeAudiobook: null,
       ).scan(await _videoSource(db, tmp.path));
       expect(summary.error, contains('DVD'));
       expect(summary.error, contains('Bad'));
@@ -238,6 +242,7 @@ void main() {
 
       final SourceScanSummary summary = await SourceLibraryScanner(
         db,
+        transcribeAudiobook: null,
       ).scan(await _videoSource(db, tmp.path));
       expect(summary.succeeded, isTrue, reason: summary.error ?? '');
       expect(await membersByCollection(db), <String, List<String>>{
@@ -257,6 +262,7 @@ void main() {
       final SourceLibraryRow source = await _videoSource(db, tmp.path);
       final SourceScanSummary first = await SourceLibraryScanner(
         db,
+        transcribeAudiobook: null,
       ).scan(source);
       expect(first.succeeded, isTrue, reason: first.error ?? '');
 
@@ -273,7 +279,7 @@ void main() {
       expect(await repo.findByVideoPath(dvdTitlePath(disc, 4)), isNull);
 
       // 重扫幂等：不重复建特典行。
-      await SourceLibraryScanner(db).scan(source);
+      await SourceLibraryScanner(db, transcribeAudiobook: null).scan(source);
       expect(await repo.listAll(), hasLength(2));
 
       final VideoLibraryDeleteResult result =
@@ -288,6 +294,7 @@ void main() {
       expect(result.deleted, 1);
       final SourceScanSummary rescan = await SourceLibraryScanner(
         db,
+        transcribeAudiobook: null,
       ).scan(source);
       expect(rescan.succeeded, isTrue, reason: rescan.error ?? '');
       expect(await repo.findByVideoPath(dvdTitlePath(disc, 2)), isNull);

@@ -4,7 +4,11 @@
 ///   提示文案与在线来源共用 [musicAddToPlaylist]；
 /// - 远程曲目（YouTube / 在线插件，判据 `music_remote_tracks.dart`）的「加入音乐库 / 从音乐库
 ///   移除 / 加入本地歌单」：远程曲目行与歌单条目在同一个事务里落库；
-/// - 合规门：远程曲目的这些入口只在 [musicRemoteTracksAvailable] 时出现（iOS 上不存在）。
+/// - 合规门：YouTube / 插件曲目的这些入口只在 [musicRemoteTracksAvailable] 时出现（iOS 上
+///   不存在）；
+/// - 服务器曲目（Jellyfin / Subsonic，v149，反馈 se3Fw8HmOX）：服务器曲目菜单同样有「加入
+///   音乐库 / 加入本地歌单」，落库的只有服务器配置身份 + 条目 id + 元数据
+///   （[musicServerRemoteTrackCompanion]），不受上面的合规门约束。
 library;
 
 import 'dart:async';
@@ -17,7 +21,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_remote_tracks.dart';
-import 'package:fushi/src/media/music/server/music_servers.dart'
+import 'package:fushi/src/media/music/server/music_server_play_item.dart'
     show musicServerPlayItem;
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/music/music_track_actions.dart';
@@ -116,7 +120,15 @@ Future<void> musicAddRemoteItemToLibrary(
   if (r == null || !musicRemoteTracksAvailable) {
     throw StateError('not a remote track: ${item.path}');
   }
-  await db.addMusicRemoteTrackToLibrary(r, at: _now());
+  await musicAddRemoteTrackToLibrary(db, r);
+}
+
+/// 一行远程曲目加入音乐库（已在库只刷新元数据）。调用方负责种类 / 平台判据。
+Future<void> musicAddRemoteTrackToLibrary(
+  FushiDatabase db,
+  MusicRemoteTracksCompanion track,
+) async {
+  await db.addMusicRemoteTrackToLibrary(track, at: _now());
   FushiToast.show(
     msg: t.music_action_added_to_library,
     severity: ToastSeverity.success,
@@ -147,31 +159,52 @@ List<MusicMenuAction> musicRemoteLibraryActions(
   if (!musicRemoteTracksAvailable || !musicItemIsRemoteTrack(item)) {
     return const <MusicMenuAction>[];
   }
-  return <MusicMenuAction>[
-    if (inLibrary)
-      MusicMenuAction(
-        id: 'removeFromLibrary',
-        label: t.music_action_remove_from_library,
-        icon: FushiIcons.close,
-        run: (_) => musicRemoveRemoteTrackFromLibrary(db, item.trackUid),
-      )
-    else
-      MusicMenuAction(
-        id: 'addToLibrary',
-        label: t.music_action_add_to_library,
-        icon: FushiIcons.libraryAdd,
-        run: (_) => musicAddRemoteItemToLibrary(db, item),
-      ),
-    MusicMenuAction(
-      id: 'addToLocalPlaylist',
-      label: playlistLabel ?? t.music_action_add_to_playlist,
-      icon: FushiIcons.playlist,
-      run: (BuildContext c) async {
-        await musicAddItemsToLocalPlaylist(c, db, <MusicPlayItem>[item]);
-      },
-    ),
-  ];
+  return musicRemoteTrackLibraryActions(
+    db,
+    musicRemoteTrackCompanionOf(item)!,
+    inLibrary: inLibrary,
+    playlistLabel: playlistLabel,
+  );
 }
+
+/// 一行远程曲目（YouTube / 插件 / 服务器曲目）的「加入 / 移出音乐库」「加入本地歌单」。
+/// 不做种类 / 平台判据：调用方只在这一种在本平台可用时调用（[musicRemoteKindAvailable]）。
+List<MusicMenuAction> musicRemoteTrackLibraryActions(
+  FushiDatabase db,
+  MusicRemoteTracksCompanion track, {
+  required bool inLibrary,
+  String? playlistLabel,
+}) => <MusicMenuAction>[
+  if (inLibrary)
+    MusicMenuAction(
+      id: 'removeFromLibrary',
+      label: t.music_action_remove_from_library,
+      icon: FushiIcons.close,
+      run: (_) => musicRemoveRemoteTrackFromLibrary(db, track.trackUid.value),
+    )
+  else
+    MusicMenuAction(
+      id: 'addToLibrary',
+      label: t.music_action_add_to_library,
+      icon: FushiIcons.libraryAdd,
+      run: (_) => musicAddRemoteTrackToLibrary(db, track),
+    ),
+  MusicMenuAction(
+    id: 'addToLocalPlaylist',
+    label: playlistLabel ?? t.music_action_add_to_playlist,
+    icon: FushiIcons.playlist,
+    run: (BuildContext c) async {
+      await musicAddToPlaylist(
+        c,
+        MusicLocalPlaylistEditor(
+          db,
+          remote: <MusicRemoteTracksCompanion>[track],
+        ),
+        <String>[track.trackUid.value],
+      );
+    },
+  ),
+];
 
 /// 搜索结果里一首远程曲目（YouTube 内置音源）的菜单：加入 / 移出音乐库、加入歌单。
 /// 不是远程曲目或门没过回 null（行尾不留空位）。
@@ -209,23 +242,74 @@ Future<void> _showRemoteSearchMenu(
   );
 }
 
-/// 服务器来源曲目行（统一搜索 / 来源搜索页）的远程曲目菜单：只有 YouTube 内置音源的曲目是
-/// 只能串流的远程曲目（Jellyfin / Subsonic 的播放地址带账号凭据、整库可混排，不进远程曲目表；
-/// Apple Music 有自己的菜单）。其它来源回 null。
+/// 服务器来源曲目行（服务器页 / 统一搜索 / 来源搜索页）的「加入音乐库 / 本地歌单」菜单：
+/// YouTube 内置音源走占位路径的远程曲目；Jellyfin / Subsonic 走服务器曲目
+/// （[musicServerTrackLibraryActions]）。Apple Music 有自己的菜单；能改歌单的服务器
+/// （Jellyfin）的曲目菜单由 `musicServerTrackMenu` 出、把这几项并进去。其它来源回 null。
 MusicItemMenu? musicServerTrackLibraryMenu(
   BuildContext context,
   MusicServerBrowser browser,
-  MusicServerTrack track,
-) {
-  if (browser.kind != MusicServerKind.youtube) return null;
+  MusicServerTrack track, {
+  String? albumTitle,
+}) {
   final AppModel app = ProviderScope.containerOf(
     context,
     listen: false,
   ).read(appProvider);
   if (!app.isDatabaseReady) return null;
-  return musicRemoteSearchTrackMenu(
-    context,
-    app.database,
-    musicServerPlayItem(browser, track),
+  if (browser.kind == MusicServerKind.youtube) {
+    return musicRemoteSearchTrackMenu(
+      context,
+      app.database,
+      musicServerPlayItem(browser, track),
+    );
+  }
+  if (musicServerRemoteTrackCompanion(browser, track) == null) return null;
+  return MusicItemMenu(
+    buttonKey: ValueKey<String>('music-server-library-menu-${track.id}'),
+    open: (MusicMenuAnchor? anchor) => unawaited(() async {
+      // 右键坐标只在同步派发期间可读：第一个 await 之前取好。
+      final MusicMenuAnchor? at = anchor ?? musicContextMenuAnchor();
+      final List<MusicMenuAction> actions =
+          await musicServerTrackLibraryActions(
+            app.database,
+            browser,
+            track,
+            albumTitle: albumTitle,
+          );
+      if (!context.mounted) return;
+      await showMusicActionMenu(
+        context,
+        anchor: at,
+        errorText: (Object e) => t.music_action_failed(error: '$e'),
+        actions: actions,
+      );
+    }()),
+  );
+}
+
+/// Jellyfin / Subsonic 曲目的「加入 / 移出音乐库」「加入本地歌单」（读一次入库状态）；
+/// 不能入库的来源回空。[playlistLabel] 与服务器账号歌单并列时传「加入本地歌单」。
+Future<List<MusicMenuAction>> musicServerTrackLibraryActions(
+  FushiDatabase db,
+  MusicServerBrowser browser,
+  MusicServerTrack track, {
+  String? albumTitle,
+  String? playlistLabel,
+}) async {
+  final MusicRemoteTracksCompanion? row = musicServerRemoteTrackCompanion(
+    browser,
+    track,
+    albumTitle: albumTitle,
+  );
+  if (row == null) return const <MusicMenuAction>[];
+  final bool inLibrary =
+      (await db.getMusicRemoteTrack(row.trackUid.value))?.libraryAddedAt !=
+      null;
+  return musicRemoteTrackLibraryActions(
+    db,
+    row,
+    inLibrary: inLibrary,
+    playlistLabel: playlistLabel,
   );
 }

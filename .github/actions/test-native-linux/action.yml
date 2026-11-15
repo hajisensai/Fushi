@@ -21,8 +21,14 @@ runs:
       with:
         workspaces: native/fushi_fsrs -> target
         key: fushi-fsrs-linux-x64
-    - name: Build fushi_fsrs (linux-x64 .so)
+    # 测试库带 ID 审计（native/fushi_fsrs/src/store/ids.rs `audit`，与 main.yml 包测试那份同一 feature）：ID 列存
+    # 16 字节 BLOB，SQL 里绑 ID 漏写 srs_id(?) 在发布构建里是静默查不到行，审计构建里那条语句直接报错，主应用单测
+    # （fushi/test，经 Drift → ffsrs_store_exec 进内核的语句）因此会红。消费方 job 设 FUSHI_FSRS_ID_AUDIT=1，金丝雀
+    # fushi/test/srs/srs_id_audit_gate_test.dart 据此断言审计真的开着。这个 .so 只给测试用，不进任何发布产物。
+    - name: Build fushi_fsrs (linux-x64 .so, id_audit)
       shell: bash
+      env:
+        FUSHI_FSRS_FEATURES: id_audit
       run: bash native/fushi_fsrs/build_linux_so.sh
     - name: Build fushi_compute (linux-x64 .so)
       uses: ./.github/actions/setup-fushi-compute

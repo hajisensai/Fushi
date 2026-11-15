@@ -16,7 +16,7 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart'
 
 import '../helpers/fake_anki_repository.dart';
 
-/// v149：服务器托管词典的顺序 / 开关属于配置（`remote_dictionary_meta` 类别）。
+/// v153：服务器托管词典的顺序 / 开关属于配置（`remote_dictionary_meta` 类别）。
 ///
 /// 与 `dictionary_meta` 同一次快照、同一个应用事务；应用只改已有目录行、从不插行
 /// （目录只由刷新建立）；只读配置视图把快照里的列合成进词典过滤与缓存指纹；分享

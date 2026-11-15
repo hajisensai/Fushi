@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:material_ui/material_ui.dart';
@@ -21,12 +23,24 @@ import '../helpers/glass_unwrap.dart';
 /// 断言的是真实渲染：段的先后用两个标签的实际横坐标比，不是「字符串存在」——
 /// 把两段调换回去，本文件必须红。
 class _TestAppModel extends AppModel {
-  _TestAppModel({required QbConnectionConfig config, this.embeddedReady = true})
-    : _config = config,
-      super(testPlatformServices());
+  _TestAppModel({
+    required QbConnectionConfig config,
+    this.embeddedReady = true,
+    this.embeddedRuntime = true,
+  }) : _config = config,
+       super(testPlatformServices());
 
   QbConnectionConfig _config;
-  final bool embeddedReady;
+
+  /// 下载服务已备好内置引擎路径（= 可接任务）。
+  bool embeddedReady;
+
+  /// 本次安装的 DLL 能加载（与服务起没起无关）。
+  final bool embeddedRuntime;
+
+  /// 引导补起下载服务的次数；[serviceStart] 非 null 时启动挂在它上面。
+  int serviceStartRequests = 0;
+  Completer<void>? serviceStart;
   final String saveRoot = r'D:\downloads';
 
   /// 引导点「完成」时写进来的配置（断言真的落到了 AppModel）。
@@ -61,6 +75,16 @@ class _TestAppModel extends AppModel {
 
   @override
   bool get isEmbeddedTorrentReady => embeddedReady;
+
+  @override
+  bool get isEmbeddedTorrentRuntimeAvailable => embeddedRuntime;
+
+  @override
+  Future<void> ensureAnimeDownloadServiceRunning() async {
+    serviceStartRequests++;
+    final Completer<void>? pending = serviceStart;
+    if (pending != null) await pending.future;
+  }
 
   @override
   String get downloadSaveRoot => saveRoot;
@@ -197,6 +221,7 @@ void main() {
     final _TestAppModel appModel = _TestAppModel(
       config: const QbConnectionConfig(),
       embeddedReady: false,
+      embeddedRuntime: false,
     );
     await tester.pumpWidget(
       _harness(
@@ -217,6 +242,92 @@ void main() {
       ),
     );
     expect(done.onPressed, isNull, reason: '缺 DLL 的包配了也下不了，不能让用户以为配好了');
+  });
+
+  testWidgets('引导：运行库在而下载服务没起时不报缺运行库，补起服务后可完成', (WidgetTester tester) async {
+    // 反馈 cliIUL82nf：服务没起曾被误报成「本次安装缺少内置引擎运行库」。
+    final _TestAppModel appModel = _TestAppModel(
+      config: const QbConnectionConfig(),
+      embeddedReady: false,
+    )..serviceStart = Completer<void>();
+    await tester.pumpWidget(
+      _harness(
+        appModel,
+        DownloadBackendSetupDialog(
+          appModel: appModel,
+          embeddedSupportedOverride: true,
+        ),
+        scrollable: false,
+      ),
+    );
+    await tester.pump();
+
+    expect(appModel.serviceStartRequests, 1, reason: '运行库在就该当场补起下载服务');
+    expect(find.text(t.download_backend_embedded_unavailable), findsNothing);
+    expect(
+      find.text(t.download_backend_embedded_service_starting),
+      findsOneWidget,
+    );
+    FilledButton done() => tester.widget<FilledButton>(
+      glassUnwrap<FilledButton>(
+        find.widgetWithText(FilledButton, t.dialog_done),
+      ),
+    );
+    expect(done().onPressed, isNull, reason: '服务没备好时推不了任务，不能先让用户「完成」');
+
+    appModel.embeddedReady = true;
+    appModel.serviceStart!.complete();
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(t.download_backend_embedded_service_starting),
+      findsNothing,
+    );
+    expect(find.text(appModel.saveRoot), findsOneWidget);
+    expect(done().onPressed, isNotNull);
+  });
+
+  testWidgets('引导：服务补起失败时说「下载服务没有运行」，不说缺运行库', (WidgetTester tester) async {
+    final _TestAppModel appModel = _TestAppModel(
+      config: const QbConnectionConfig(),
+      embeddedReady: false,
+    );
+    await tester.pumpWidget(
+      _harness(
+        appModel,
+        DownloadBackendSetupDialog(
+          appModel: appModel,
+          embeddedSupportedOverride: true,
+        ),
+        scrollable: false,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(t.download_backend_embedded_service_unavailable),
+      findsOneWidget,
+    );
+    expect(find.text(t.download_backend_embedded_unavailable), findsNothing);
+  });
+
+  testWidgets('引导：内置引擎已就绪时不再去起服务', (WidgetTester tester) async {
+    final _TestAppModel appModel = _TestAppModel(
+      config: const QbConnectionConfig(),
+    );
+    await tester.pumpWidget(
+      _harness(
+        appModel,
+        DownloadBackendSetupDialog(
+          appModel: appModel,
+          embeddedSupportedOverride: true,
+        ),
+        scrollable: false,
+      ),
+    );
+    await tester.pump();
+
+    expect(appModel.serviceStartRequests, 0);
   });
 
   testWidgets('引导：切到外接 qb 后地址是必填项', (WidgetTester tester) async {

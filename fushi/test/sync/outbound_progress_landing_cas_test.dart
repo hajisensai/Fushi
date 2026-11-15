@@ -16,6 +16,7 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/local_library_host_service.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'package:fushi_engine/sync/ttu_models.dart';
+import '../helpers/interconnect_legacy_host_scope.dart';
 
 /// BUG-3537：本机落 `reader_positions` / 播放断点的出站写口（云导入、互联 client
 /// 落地）在「读本地 → 等网络 → 写本地」之间不持任何与 host PUT 共享的锁，且是
@@ -180,7 +181,8 @@ Future<SyncBookResult> _cloudSync(
 );
 
 /// 互联 host 的进度存储（client 侧视角的远端）。[onPut] 在 PUT 提交前执行。
-class _HostBackend extends InterconnectSyncBackend {
+class _HostBackend extends InterconnectSyncBackend
+    with LegacyInterconnectHostScope {
   _HostBackend() : super.withProbe((String url, String token) async => true);
 
   final Map<String, RemoteBookProgress> books = <String, RemoteBookProgress>{};

@@ -9,9 +9,10 @@ void main() {
     expect(SourceLibraryKind.video.dbValue, 'video');
     expect(SourceLibraryKind.manga.dbValue, 'manga');
     expect(SourceLibraryKind.music.dbValue, 'music');
+    expect(SourceLibraryKind.game.dbValue, 'game');
     expect(
       SourceLibraryKind.values,
-      hasLength(4),
+      hasLength(5),
       reason: '新增来源库种类必须同步扫描/统计/对话框的穷尽 switch 与本守卫',
     );
   });
@@ -21,12 +22,17 @@ void main() {
     expect(SourceLibraryKind.tryParse('video'), SourceLibraryKind.video);
     expect(SourceLibraryKind.tryParse('manga'), SourceLibraryKind.manga);
     expect(SourceLibraryKind.tryParse('music'), SourceLibraryKind.music);
+    expect(SourceLibraryKind.tryParse('game'), SourceLibraryKind.game);
     expect(
       SourceLibraryKind.tryParse('epub'),
       isNull,
       reason: 'MediaKind 的值域串不属于来源库值域(book≠epub 是真实语义差)',
     );
-    expect(SourceLibraryKind.tryParse('game'), isNull);
+    expect(
+      SourceLibraryKind.tryParse('galgame'),
+      isNull,
+      reason: '落库串是 game，不是表名 galgames 的单数',
+    );
     expect(SourceLibraryKind.tryParse(''), isNull);
     expect(SourceLibraryKind.tryParse(null), isNull);
   });

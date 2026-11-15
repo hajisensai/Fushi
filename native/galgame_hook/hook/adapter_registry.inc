@@ -148,10 +148,39 @@ class UnityIl2CppAdapter final : public fushi_voice_hook::EngineAdapter {
   bool install() override {
     ready_ = TryHookUnityIl2CppAudio();
     installed_ = installed_ || ready_;
+    // After a shutdown the sampling detour is still chained; resume it.
+    if (probe()) ReinstallUnityMonoLookup(kUmRuntimeIl2Cpp);
     return ready_;
   }
   bool ready() const { return ready_; }
-  void ProcessPendingEvents() { ProcessPendingUnityAudioEvents(); }
+  // registry Poll (HookWorker): audio events, the one-time canvas lookup
+  // resolution (unity_il2cpp_lookup.inc), then the shared lookup tick.
+  void ProcessPendingEvents() {
+    ProcessPendingUnityAudioEvents();
+    if (probe()) TryInstallUnityIl2CppLookup();
+    ProcessUnityMonoLookupTick(kUmRuntimeIl2Cpp);
+  }
+  fushi_voice_hook::LookupAdmissionReport lookupAdmission() const override {
+    fushi_voice_hook::LookupAdmissionReport report;
+    if (UnityIl2CppLookupSensorInstalled()) {
+      report.state = fushi_voice_hook::kLookupAdmissionSensorInstalled;
+      return report;
+    }
+    // Runtime shape or sites refused: this exe's terminal state.
+    if (UnityIl2CppLookupRejected()) {
+      report.state = fushi_voice_hook::kLookupAdmissionIdentityRejected;
+      strncpy_s(report.executable_sha256,
+                fushi_voice_hook::HostExecutableSha256Hex(), _TRUNCATE);
+      return report;
+    }
+    // Resolution ran and no canvas-text lane (TMP pair / UI.Text) exists.
+    if (UnityIl2CppLookupUnsupported()) {
+      report.state = fushi_voice_hook::kLookupAdmissionEngineUnsupported;
+      return report;
+    }
+    report.state = fushi_voice_hook::kLookupAdmissionIdentityAccepted;
+    return report;
+  }
   fushi_voice_hook::AdapterCapability capabilities() const override {
     return fushi_voice_hook::AdapterCapability::kText |
            fushi_voice_hook::AdapterCapability::kResourceAudio |
@@ -165,6 +194,7 @@ class UnityIl2CppAdapter final : public fushi_voice_hook::EngineAdapter {
     }
   }
   void shutdown() override {
+    ShutdownUnityMonoLookup(kUmRuntimeIl2Cpp);
     installed_ = false;
     ready_ = false;
   }
@@ -646,6 +676,9 @@ class AdapterRegistry {
     kogado_hy_.ProcessPendingEvents();
     luca_.ProcessPendingEvents();
     softpal_.ProcessPendingEvents();
+    system4_.ProcessPendingEvents();
+    nitroplus_.ProcessPendingEvents();
+    entisgls_.ProcessPendingEvents();
     // These retry budgets and ordering intentionally match the old HookWorker. onModuleLoaded is
     // the stable seam; P3 can replace this bounded poll with real module events without changing
     // individual adapter contracts.
@@ -827,6 +860,11 @@ class AdapterRegistry {
       return 16;
     }
     if (softpal_.lookup_sensor_available() && g_header != nullptr &&
+        fushi_voice_hook::HasLookupRegion(g_header) &&
+        g_header->lookup_enabled != 0) {
+      return 16;
+    }
+    if (system4_.lookup_sensor_available() && g_header != nullptr &&
         fushi_voice_hook::HasLookupRegion(g_header) &&
         g_header->lookup_enabled != 0) {
       return 16;

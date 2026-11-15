@@ -281,9 +281,10 @@ void main() {
     },
   );
 
-  for (final String stage in <String>['noteType', 'backfill']) {
+  // 内核 `change` 的两段：`apply` = 还原点 + 换类型与补迁的修改记录；`move` = 把笔记连同新卡移到目标牌组。
+  for (final String stage in <String>['apply', 'move']) {
     test(
-      'a failure after the $stage step rolls the whole migration back; retry works',
+      'a failure after the $stage stage rolls the whole migration back; retry works',
       () async {
         final SrsDbStore s = await device();
         final String id = await importedLapis(s, 'Lapis');
@@ -302,11 +303,15 @@ void main() {
           s.migrateLegacyLapis(
             id,
             targetDeckId: fushiDeck,
-            debugOnStage: (String at) async {
-              if (at == stage) throw StateError('injected at $at');
-            },
+            debugFailAfter: stage,
           ),
-          throwsStateError,
+          throwsA(
+            isA<SrsCoreException>().having(
+              (SrsCoreException e) => '$e',
+              'message',
+              contains('injected failure after $stage'),
+            ),
+          ),
         );
         // 什么都没落库：仍是旧 Lapis、仍在原牌组、仍是迁移源。
         expect(await s.changeFingerprint(), fingerprint);

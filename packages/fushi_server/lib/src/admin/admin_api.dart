@@ -5,7 +5,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:drift/drift.dart' show Value;
 import 'package:fushi_asr_core/asr_core.dart' as asr;
 import 'package:fushi_anki/fushi_anki_core.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -22,6 +21,10 @@ import 'package:fushi_engine/media/torrent/torznab_client.dart'
 import 'package:fushi_engine/media/video/download/video_resource_prefs.dart'
     show readTorznabIndexerConfigs;
 import 'package:fushi_engine/media/video/download/video_resource_registry.dart';
+import 'package:fushi_engine/media/video/acquisition/video_acquisition_models.dart'
+    show kVideoAcquisitionSubtitleLanguageCodes;
+import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.dart'
+    show subtitleLanguageNativeName;
 import 'package:fushi_engine/utils/net/app_http.dart'
     show createAppHttpIoClient;
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart'
@@ -32,26 +35,26 @@ import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/video_library_prune.dart';
 import 'package:fushi_engine/sync/downloads/host_download_host.dart';
-import 'package:fushi_engine/sync/fushi_library_host_service.dart'
-    show RemoteDictionaryInfo;
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job.dart';
 import 'package:fushi_engine/sync/interconnect_owner_devices.dart';
+import 'package:fushi_engine/sync/pairing/fushi_pairing_protocol.dart';
 import 'package:fushi_engine/sync/subscriptions/host_subscription_host.dart';
 import 'package:fushi_engine/sync/subscriptions/host_subscription_routes.dart'
     show HostSubscriptionRejected;
 import 'package:fushi_server/src/admin/admin_backups.dart';
-import 'package:fushi_server/src/admin/admin_dictionary_import.dart';
 import 'package:fushi_server/src/admin/admin_srs.dart';
+import 'package:fushi_server/src/admin/admin_srs_ctl.dart';
 import 'package:fushi_server/src/admin/admin_context.dart';
+import 'package:fushi_server/src/admin/admin_dictionaries.dart';
 import 'package:fushi_server/src/admin/resource_indexer_settings.dart';
+import 'package:fushi_server/src/admin/subtitle_provider_settings.dart';
 import 'package:fushi_server/src/anki_landing.dart';
 import 'package:fushi_server/src/admin/upload_store.dart';
 import 'package:fushi_server/src/config/server_ai_config.dart';
 import 'package:fushi_server/src/commands/dict_commands.dart'
     show DictArchiveImporter;
 import 'package:fushi_server/src/config/server_config.dart';
-import 'package:fushi_server/src/dictionary_host.dart';
 import 'package:fushi_server/src/download_host.dart';
 import 'package:fushi_server/src/headless_host.dart';
 import 'package:fushi_server/src/host_bindings.dart';
@@ -105,13 +108,6 @@ class AdminApi {
   /// 词典导入的原生导入器（null = 真原生库）；测试注入假的。
   final DictArchiveImporter? _dictionaryImporter;
 
-  /// 词典导入端点（`POST /api/admin/dictionaries/import`，见 admin_dictionary_import.dart）。
-  late final AdminDictionaryImport dictionaryImport = AdminDictionaryImport(
-    ctx: ctx,
-    uploads: uploads,
-    importer: _dictionaryImporter,
-  );
-
   Future<shelf.Response> handle(shelf.Request request) async {
     final String method = request.method.toUpperCase();
     final String path = '/${request.url.path}';
@@ -143,6 +139,17 @@ class AdminApi {
   /// 复习（SRS）端点（`/api/admin/srs*`，见 admin_srs.dart）。
   late final AdminSrs srs = AdminSrs(ctx);
 
+  /// 复习库内容端点（`/api/admin/srs/{decks,notes,stats,conflicts,duplicates}*`，见
+  /// admin_srs_ctl.dart）：与 app 同一份 engine 路由，按 `profile` 点名哪一份库。
+  late final AdminSrsCtl srsCtl = AdminSrsCtl(() => ctx.host.srs);
+
+  /// 词典端点（`/api/admin/dictionaries*`，见 admin_dictionaries.dart）。
+  late final AdminDictionaries dictionaries = AdminDictionaries(
+    ctx,
+    importer: _dictionaryImporter,
+    uploads: uploads,
+  );
+
   Future<shelf.Response> _route(
     String method,
     String path,
@@ -154,6 +161,15 @@ class AdminApi {
     }
     if (path == kAdminSrsPath || path.startsWith('$kAdminSrsPath/')) {
       final shelf.Response? r = await srs.route(method, path, request);
+      if (r != null) return r;
+    }
+    if (path.startsWith('$kAdminSrsPath/')) {
+      final shelf.Response? r = await srsCtl.route(method, path, request);
+      if (r != null) return r;
+    }
+    if (path == kAdminDictionariesPath ||
+        path.startsWith('$kAdminDictionariesPath/')) {
+      final shelf.Response? r = await dictionaries.route(method, path, request);
       if (r != null) return r;
     }
     switch ((method, path)) {
@@ -169,6 +185,12 @@ class AdminApi {
         );
       case ('GET', '/api/admin/pairing'):
         return _pairing();
+      case ('POST', '/api/admin/pairing/unlock'):
+        // BUG-4391：解除因 PIN 失败过多的配对暂停（全部来源类别）。
+        ctx.host.resetPairingLockout();
+        return shelf.Response(204);
+      case ('POST', '/api/admin/pairing/link'):
+        return _createPairLink();
       case ('PUT', _)
           when path.startsWith('/api/admin/pairing/peers/') &&
               path.endsWith('/owner'):
@@ -343,6 +365,10 @@ class AdminApi {
         );
       case ('GET', '/api/admin/p2p'):
         return _json(ctx.host.p2pStatus());
+      case ('GET', '/api/admin/upload/folders'):
+        return _json(<String, Object?>{
+          'folders': await UploadStore.subfolders(_libraryFor(request)),
+        });
       case ('GET', '/api/admin/upload'):
         return _uploadStatus(request);
       case ('PUT', '/api/admin/upload'):
@@ -389,21 +415,6 @@ class AdminApi {
               ),
         );
         return _json(<String, Object?>{'started': true, 'id': id});
-      case ('GET', '/api/admin/dictionaries'):
-        return _dictionaries();
-      case ('POST', '/api/admin/dictionaries/reload'):
-        return _reloadDictionaries();
-      case ('POST', '/api/admin/dictionaries/import'):
-        return _importDictionary(request);
-      case ('PUT', _) when path.startsWith(_dictionariesPrefix):
-        return _updateDictionary(
-          Uri.decodeComponent(path.substring(_dictionariesPrefix.length)),
-          await _body(request),
-        );
-      case ('DELETE', _) when path.startsWith(_dictionariesPrefix):
-        return _deleteDictionary(
-          Uri.decodeComponent(path.substring(_dictionariesPrefix.length)),
-        );
       case (_, _) when path.startsWith(_hostProxyPrefix):
         return _hostProxy(request, path.substring(_hostProxyPrefix.length));
     }
@@ -411,7 +422,6 @@ class AdminApi {
   }
 
   static const String _hostProxyPrefix = '/api/admin/host/';
-  static const String _dictionariesPrefix = '/api/admin/dictionaries/';
   static const String _btSitesPrefix = '/api/admin/resource-indexers/bt-sites/';
 
   /// `/api/admin/host/<rest>` → 互联的 `/api/<rest>`，以 host 身份进程内调用。
@@ -583,8 +593,32 @@ class AdminApi {
   InterconnectOwnerDeviceStore get _ownerDevices =>
       InterconnectOwnerDeviceStore(ctx.db);
 
+  /// BUG-4391：签发一次性配对链接（票据配对不走 PIN 预算）。签不出时 409 + reason。
+  Future<shelf.Response> _createPairLink() async {
+    final PairLinkOutcome outcome = await ctx.host.createPairLink();
+    return switch (outcome) {
+      PairLinkIssued(:final String uri, :final DateTime expiresAt) =>
+        _json(<String, Object?>{
+          'uri': uri,
+          'expiresInSeconds': expiresAt
+              .difference(DateTime.now())
+              .inSeconds
+              .clamp(0, 1 << 31),
+        }),
+      PairLinkUnavailable(:final String reason) => _json(<String, Object?>{
+        'reason': reason,
+      }, status: 409),
+    };
+  }
+
   Future<shelf.Response> _pairing() async {
-    final PendingPairing? pending = ctx.host.pendingPairing;
+    // 待输入 PIN 按会话各一条（并发配对互不覆盖）；`pending` 保留最新一条兼容旧前端。
+    final List<PendingPairing> pendingList = ctx.host.pendingPairings;
+    final PendingPairing? pending = pendingList.isEmpty
+        ? null
+        : pendingList.last;
+    final Map<FushiPairOriginClass, DateTime> lockouts =
+        ctx.host.pairingLockouts;
     final List<FushiPairedPeerRow> peers = await ctx.db.getPairedPeers();
     final Set<String> owners = await _ownerDevices.ownerDevicePeerIds();
     final Map<String, String> deviceKeys = await _ownerDevices
@@ -597,6 +631,11 @@ class AdminApi {
         'tls': ctx.config.tls,
         'reachable': ctx.config.leaderboardLink && ctx.config.tls,
       },
+      // BUG-4391：各来源类别因 PIN 失败过多暂停配对到何时；null = 没暂停。
+      'lockout': <String, Object?>{
+        for (final FushiPairOriginClass c in FushiPairOriginClass.values)
+          c.name: lockouts[c]?.toUtc().toIso8601String(),
+      },
       'pending': pending == null
           ? null
           : <String, Object?>{
@@ -605,6 +644,16 @@ class AdminApi {
               'remoteAddress': pending.remoteAddress,
               'createdAt': pending.createdAt.toIso8601String(),
             },
+      // 不下发 sessionId：WebUI 只需显示，会话 id 留在进程内。
+      'pendingList': <Object?>[
+        for (final PendingPairing p in pendingList)
+          <String, Object?>{
+            'pin': p.pin,
+            'deviceName': p.deviceName,
+            'remoteAddress': p.remoteAddress,
+            'createdAt': p.createdAt.toIso8601String(),
+          },
+      ],
       'peers': <Object?>[
         for (final FushiPairedPeerRow peer in peers)
           <String, Object?>{
@@ -652,242 +701,6 @@ class AdminApi {
     await _ownerDevices.forgetPeer(peerId);
     ctx.host.invalidatePeerTokens();
     return _json(<String, Object?>{'ok': n > 0});
-  }
-
-  // ── 词典 ───────────────────────────────────────────────────────────
-  //
-  // 服务端托管的词典（经互联推送或 `dict import` 落 DB + 资源目录）。引擎装全部词典，
-  // 每个已配对设备按自己的配置（Profile）在请求里带词典选择；这里的 `defaultEnabled`
-  // 只是**没带选择**的请求（浏览器扩展 / 旧客户端）的默认开关，落在服务端行的
-  // `hiddenLanguagesJson`（与 app 推送写入的口径一致：含 `ja` = 默认关）。
-
-  /// 词典清单：目录字段（含默认开关 `defaultEnabled`）与互联
-  /// `/api/library/dictionaries` 同源（[RemoteDictionaryInfo.fromMetadataRow]），外加
-  /// 占用、资源目录在不在、服务端排序位。
-  Future<shelf.Response> _dictionaries() async {
-    final List<DictionaryMetaRow> rows = await ctx.db.getAllDictionaryMetadata()
-      ..sort(
-        (DictionaryMetaRow a, DictionaryMetaRow b) =>
-            a.order.compareTo(b.order),
-      );
-    final ServerDictionaryHost? host = ctx.host.dictionaries;
-    final List<Map<String, Object?>> out = <Map<String, Object?>>[];
-    for (final DictionaryMetaRow row in rows) {
-      out.add(await _dictionaryEntry(row));
-    }
-    return _json(<String, Object?>{
-      'engineAvailable': host?.available ?? false,
-      'engineUnavailableReason': host?.unavailableReason,
-      'loadedCount': host?.loadedCount ?? 0,
-      'dictionaries': out,
-    });
-  }
-
-  /// 清单里的一条：互联目录字段（`sourceLanguage` 是生效值，手动指定优先）外加管理页
-  /// 要分辨「自动 / 手动」的原始列——`languageOverride`（没指定为 null）、
-  /// `packageLanguage`（包内 index.json 声明的词头语言，没声明为 null）；`displayName`
-  /// 本来就是原始列。再加排序位、占用、资源目录在不在。
-  Future<Map<String, Object?>> _dictionaryEntry(DictionaryMetaRow row) async {
-    final Directory dir = _dictionaryDirectory(row.name);
-    final bool present = await dir.exists();
-    return <String, Object?>{
-      ...RemoteDictionaryInfo.fromMetadataRow(row).toJson(),
-      'languageOverride': _blankToNull(row.languageOverride),
-      'packageLanguage': _packageLanguageOf(row.metadataJson),
-      'order': row.order,
-      'sizeBytes': present ? await _directorySize(dir) : 0,
-      'present': present,
-    };
-  }
-
-  static String? _blankToNull(String? raw) {
-    final String trimmed = raw?.trim() ?? '';
-    return trimmed.isEmpty ? null : trimmed;
-  }
-
-  static String? _packageLanguageOf(String metadataJson) {
-    try {
-      final Object? decoded = jsonDecode(metadataJson);
-      if (decoded is Map) {
-        final Object? lang = decoded['sourceLanguage'];
-        if (lang is String) return _blankToNull(lang);
-      }
-    } on FormatException {
-      // 畸形 metadataJson：当包内没声明。
-    }
-    return null;
-  }
-
-  /// 词头语言手动指定的宽松校验：BCP-47 形状（字母 / 数字 / 连字符，2–35 字符）。
-  static final RegExp _languageTagPattern = RegExp(r'^[A-Za-z0-9-]{2,35}$');
-
-  /// 显示名上限（字符）：只是给人看的覆盖名，防误粘一大段。
-  static const int _maxDisplayNameLength = 200;
-
-  /// 可清空的字符串字段：缺键 = 不改（返回 `null`）；`null` / 空串 / 纯空白 = 清掉
-  /// （`Value(null)`）；否则 trim 后写入。非字符串 400。
-  static Value<String?>? _clearableString(
-    Map<String, dynamic> body,
-    String key,
-  ) {
-    if (!body.containsKey(key)) return null;
-    final Object? raw = body[key];
-    if (raw != null && raw is! String) {
-      throw FormatException(
-        tr('$key 必须是字符串或 null', '$key must be a string or null'),
-      );
-    }
-    return Value<String?>(_blankToNull(raw as String?));
-  }
-
-  /// `PUT /api/admin/dictionaries/<name>`，请求体可带下面任意几项（至少一项）：
-  ///
-  /// - `defaultEnabled: bool`：服务端默认开关（`hiddenLanguagesJson` 里只增删 `ja`，
-  ///   其余语言保留，[RemoteDictionaryInfo.withHiddenByDefault]）；只管没带配置词典
-  ///   选择的请求。
-  /// - `languageOverride: string|null`：词头语言手动指定（同 app 的每词典语言设置，
-  ///   列 `languageOverride`）；trim 后空串 / null = 清掉、回到包内声明。
-  /// - `displayName: string|null`：显示名覆盖（列 `displayName`，真名不动），语义同上。
-  ///
-  /// 读-改-写与引擎重载都在库互斥锁里（与互联推送 / 删除词典同一把），不与它们交错。
-  /// 返回更新后的清单条目（同 `GET` 的一条）。客户端下次刷新目录就看到新值：互联
-  /// 词典目录读的是同一行。
-  Future<shelf.Response> _updateDictionary(
-    String name,
-    Map<String, dynamic> body,
-  ) async {
-    bool? enabled;
-    if (body.containsKey('defaultEnabled')) {
-      final Object? raw = body['defaultEnabled'];
-      if (raw is! bool) {
-        throw const FormatException('defaultEnabled must be a boolean');
-      }
-      enabled = raw;
-    }
-    final Value<String?>? language = _clearableString(body, 'languageOverride');
-    final String? tag = language?.value;
-    if (tag != null && !_languageTagPattern.hasMatch(tag)) {
-      throw FormatException(
-        tr(
-          '语言标签无效：「$tag」（应为 BCP-47 标签，如 ja、zh-Hant）',
-          'invalid language tag "$tag" (expected a BCP-47 tag such as ja or zh-Hant)',
-        ),
-      );
-    }
-    final Value<String?>? displayName = _clearableString(body, 'displayName');
-    final String? shown = displayName?.value;
-    if (shown != null && shown.length > _maxDisplayNameLength) {
-      throw FormatException(
-        tr(
-          '显示名太长（最多 $_maxDisplayNameLength 个字符）',
-          'display name is too long (at most $_maxDisplayNameLength characters)',
-        ),
-      );
-    }
-    if (enabled == null && language == null && displayName == null) {
-      throw FormatException(
-        tr(
-          '请求体要带 defaultEnabled、languageOverride 或 displayName',
-          'body must contain defaultEnabled, languageOverride or displayName',
-        ),
-      );
-    }
-    DictionaryMetaRow? updated;
-    await ctx.host.runLibraryExclusive(() async {
-      final DictionaryMetaRow? row = await _dictionaryRow(name);
-      if (row == null) return;
-      await ctx.db.upsertDictionaryMeta(
-        row
-            .toCompanion(true)
-            .copyWith(
-              hiddenLanguagesJson: enabled == null
-                  ? const Value<String>.absent()
-                  : Value<String>(
-                      RemoteDictionaryInfo.withHiddenByDefault(
-                        row.hiddenLanguagesJson,
-                        !enabled,
-                      ),
-                    ),
-              languageOverride: language ?? const Value<String?>.absent(),
-              displayName: displayName ?? const Value<String?>.absent(),
-            ),
-      );
-      await ctx.host.dictionaries?.refresh();
-      updated = await _dictionaryRow(name);
-    });
-    final DictionaryMetaRow? row = updated;
-    if (row == null) return _err(404, 'dictionary "$name" not found');
-    return _json(await _dictionaryEntry(row));
-  }
-
-  /// `DELETE /api/admin/dictionaries/<name>`：与互联删除同一条路径（DB 元数据 + 引擎
-  /// 重载 + 资源目录，串行于库互斥锁）。名字含路径穿越字符时 400。
-  Future<shelf.Response> _deleteDictionary(String name) async {
-    if (await _dictionaryRow(name) == null) {
-      return _err(404, 'dictionary "$name" not found');
-    }
-    await ctx.host.buildLibraryService().deleteDictionary(name);
-    return _json(const <String, Object?>{'ok': true});
-  }
-
-  /// `POST /api/admin/dictionaries/import?filename=<文件名>`，请求体 = 文件原始字节：
-  /// 导入一个词典包（app 导出的 `.fushidict` 或 Yomitan / MDX / DSL 原始包），导入完
-  /// 引擎即看到。返回 `{name, format, type, termCount, kanjiCount, replaced, language,
-  /// dictionary}`（`format` 是 `fushidict` / `archive`；`.fushidict` 不带词条数，两个
-  /// count 为 null；`dictionary` 是同 `GET` 的清单条目）。拒收走 [UploadRejected]：
-  /// 400 文件名缺失 / 空文件 / 认不出的包，413 超上传配额，415 扩展名不收，422 原生
-  /// 导入器报错，503 词典引擎不可用。协议细节见 [AdminDictionaryImport]。
-  Future<shelf.Response> _importDictionary(shelf.Request request) async {
-    final AdminDictionaryImportOutcome r = await dictionaryImport.run(request);
-    final DictionaryMetaRow? row = await _dictionaryRow(r.name);
-    return _json(<String, Object?>{
-      'name': r.name,
-      'format': r.format,
-      'type': r.type,
-      'termCount': r.termCount,
-      'kanjiCount': r.kanjiCount,
-      'replaced': r.replaced,
-      'language': r.language,
-      'dictionary': row == null ? null : await _dictionaryEntry(row),
-    });
-  }
-
-  /// `POST /api/admin/dictionaries/reload`：按 DB 重载引擎（手工改过资源目录后用）。
-  Future<shelf.Response> _reloadDictionaries() async {
-    final ServerDictionaryHost? host = ctx.host.dictionaries;
-    if (host == null || !host.available) {
-      return _err(
-        503,
-        host?.unavailableReason ?? 'the dictionary engine is not running',
-      );
-    }
-    await host.refresh();
-    return _json(<String, Object?>{
-      'ok': true,
-      'loadedCount': host.loadedCount,
-    });
-  }
-
-  Future<DictionaryMetaRow?> _dictionaryRow(String name) async {
-    for (final DictionaryMetaRow row
-        in await ctx.db.getAllDictionaryMetadata()) {
-      if (row.name == name) return row;
-    }
-    return null;
-  }
-
-  Directory _dictionaryDirectory(String name) =>
-      Directory(p.join(ctx.paths.dictionaryResources.path, name));
-
-  static Future<int> _directorySize(Directory dir) async {
-    int total = 0;
-    await for (final FileSystemEntity e in dir.list(
-      recursive: true,
-      followLinks: false,
-    )) {
-      if (e is File) total += await e.length();
-    }
-    return total;
   }
 
   // ── 库 ─────────────────────────────────────────────────────────────
@@ -1033,6 +846,7 @@ class AdminApi {
           force: true,
         );
       case SourceLibraryKind.music:
+      case SourceLibraryKind.game:
       case null:
         throw FormatException(
           'library "${library.id}": ${unsupportedLibraryKindMessage(library.kind)}',
@@ -1656,6 +1470,12 @@ class AdminApi {
     'lookupChineseScriptVariants': ctx.config.lookupChineseScriptVariants,
     // 与 qBittorrent 密码同样只报「设过没有」，不回显明文。
     'tmdbApiKeySet': (ctx.config.tmdbApiKey ?? '').isNotEmpty,
+    // 在线字幕来源（偏好表，与 app 同键）：key / 密码只报「设过没有」；保存即生效
+    // （下载管线每轮字幕阶段、补字幕每次请求现读）。
+    kSubtitleProvidersSettingsKey: subtitleProviderSettingsToJson(
+      ctx.host.prefs,
+      ctx.environment,
+    ),
     'ffmpeg': ctx.config.ffmpegPath,
     'ffprobe': ctx.config.ffprobePath,
     'onnxruntimeLibrary': ctx.config.ortLibraryPath,
@@ -1683,6 +1503,31 @@ class AdminApi {
     'aiPresets': <String>[
       for (final AiProviderPreset preset in kAiProviderPresets) preset.id,
       kAiCustomPresetId,
+    ],
+    // WebUI 下拉用：预设显示名 + 起点模型（模型框的建议值）。
+    'aiPresetOptions': <Map<String, String>>[
+      for (final AiProviderPreset preset in kAiProviderPresets)
+        <String, String>{
+          'id': preset.id,
+          'name': preset.displayName,
+          'model': preset.suggestedModel,
+        },
+    ],
+    // 字幕语言下拉：与「AI 下视频」同一份可选码，显示名用母语写法。
+    'subtitleLanguageOptions': <Map<String, String>>[
+      for (final String code in kVideoAcquisitionSubtitleLanguageCodes)
+        <String, String>{
+          'code': code,
+          'name': subtitleLanguageNativeName(code),
+        },
+    ],
+    'metadataLocaleOptions': <Map<String, String>>[
+      // 地区由 code 本身体现（zh-CN / zh-TW），名字只取主语种，免得显示成「中文 (CN) (zh-CN)」。
+      for (final String code in ServerConfig.metadataLocaleSuggestions)
+        <String, String>{
+          'code': code,
+          'name': subtitleLanguageNativeName(code.split('-').first),
+        },
     ],
     // 刮削协调器按启动时的配置快照构造（下载管线持有它），资料语言与 TMDB key 同重启生效。
     'restartRequiredKeys': const <String>[
@@ -1749,6 +1594,14 @@ class AdminApi {
       body['ai'],
       ctx.config.ai,
     );
+    // 字幕来源先整体校验（非法 → 400，什么都不写），配置文件落盘之后再写偏好。
+    final SubtitleProviderSettingsUpdate? subtitleProviders =
+        body[kSubtitleProvidersSettingsKey] == null
+        ? null
+        : parseSubtitleProviderSettings(
+            body[kSubtitleProvidersSettingsKey],
+            ctx.host.prefs,
+          );
     final ServerConfig next = ctx.config.copyWith(
       deviceName: body['deviceName']?.toString(),
       port: body['port'] is num ? (body['port'] as num).toInt() : null,
@@ -1796,6 +1649,7 @@ class AdminApi {
       clearAi: ai?.clear ?? false,
     );
     await ctx.updateConfig(next);
+    await subtitleProviders?.apply(ctx.host.prefs);
     return _settings();
   }
 
@@ -1870,6 +1724,7 @@ class AdminApi {
           ? null
           : AiReasoningEffort.fromStorageKey(effort),
       allowInsecureHttp: flag('allowInsecureHttp'),
+      images: flag('images'),
       webKnowledge: flag('webKnowledge'),
       libraryOrganize: flag('libraryOrganize'),
       agentForPeers: flag('agentForPeers'),

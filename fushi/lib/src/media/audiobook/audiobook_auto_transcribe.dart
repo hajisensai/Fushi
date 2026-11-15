@@ -19,11 +19,15 @@ import 'package:fushi_asr_core/asr_core.dart';
 import 'package:fushi_engine/epub/epub_parser.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/media/audiobook/audiobook_transcribe_import_queue.dart';
+import 'package:fushi_engine/media/audiobook/book_audiobook_pairing.dart'
+    show BookAudiobookTranscribeResult;
 import 'package:fushi_engine/media/discovery/discovery_download_queue.dart'
     show DiscoveryImportOutcome;
 import 'package:fushi_engine/media/discovery/import/discovery_engine_importers.dart'
     show audiobookTitleForAudioPaths, discoveryImportFileName;
 import 'package:fushi_engine/media/discovery/import/discovery_import_plan.dart';
+import 'package:fushi/src/asr_host/asr_memory_gate.dart'
+    show MemoryGatedAsrTranscriptionService;
 import 'package:fushi/src/asr_host/shared_model_downloads.dart'
     show asrDownloadKeyFor, sharedModelDownloads;
 import 'package:fushi/src/media/audiobook/audiobook_material_library.dart';
@@ -87,6 +91,11 @@ class AppAudiobookTranscriber implements AudiobookTranscriber {
       preference: _preference,
     );
     if (!plan.modelReady) {
+      // 内存门槛先于下载判（BUG-4372）：这台机器跑不动这个模型时，自动转录
+      // 不该先白下几百 MB 再在 start 被拦——直接以同一句说明失败。
+      if (service is MemoryGatedAsrTranscriptionService) {
+        service.ensureMemoryFor(language, plan.variant);
+      }
       await _downloadModel(service, plan, onProgress, cancel);
       plan = await service.plan(language: language, preference: _preference);
       if (!plan.modelReady) {
@@ -303,4 +312,27 @@ Future<AudiobookMaterialMatch> matchAudiobookMaterialsForAudio(
     if (key != null) break;
   }
   return matchAudiobookMaterial(scan.index, key: key, title: title);
+}
+
+/// 书架文件夹导入的转录端口实现：把 [audioPaths] 排进转录队列，转完挂到已导入的
+/// [bookKey] 上（`targetBookKey`，对齐书的正文）。
+///
+/// 这组音频已有任务（含已结束的失败 / 取消任务）时不再排：重扫不该把用户取消掉的
+/// 几小时转录又排回去，失败的由用户在下载中心重试。
+Future<BookAudiobookTranscribeResult> enqueueFolderImportTranscription({
+  required AudiobookTranscribeImportQueue queue,
+  required String bookKey,
+  required List<String> audioPaths,
+  required String title,
+}) async {
+  await queue.load();
+  if (queue.findJobForAudio(audioPaths) != null) {
+    return BookAudiobookTranscribeResult.alreadyTracked;
+  }
+  await queue.enqueue(
+    audioPaths: audioPaths,
+    targetBookKey: bookKey,
+    title: title,
+  );
+  return BookAudiobookTranscribeResult.queued;
 }

@@ -27,6 +27,7 @@ import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/download/video_library_presence.dart';
+import 'package:fushi_engine/media/video/download/video_release_scope_evidence.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_ai_identity.dart';
 
@@ -46,9 +47,14 @@ class VideoAcquisitionPorts {
     required this.submitSubscription,
     required this.loadFranchise,
     this.resolveAlias = _noAlias,
+    this.inspectRelease = _noManifest,
   });
 
   static Future<List<String>> _noAlias(String query) async => const <String>[];
+
+  static Future<VideoReleaseManifest?> _noManifest(
+    VideoResourceCandidate candidate,
+  ) async => null;
 
   /// 发现聚合搜索（`VideoDiscoveryController.load`）。
   final Future<ProviderBatchResult<VideoDiscoveryPage>> Function(
@@ -111,6 +117,11 @@ class VideoAcquisitionPorts {
   /// 「整套下载」：锚点作品所在系列的剧集与剧场版；null = 没有可用的系列来源。
   final Future<VideoFranchise?> Function(VideoFranchiseQuery query)
   loadFranchise;
+
+  /// 取一条发布的种子文件列表（整包证据）；null = 这家给不出（只有磁链的索引器）。
+  /// 默认恒 null（测试与未接线的宿主不联网）。组合根接 `VideoResourceRegistry.inspectRelease`。
+  final Future<VideoReleaseManifest?> Function(VideoResourceCandidate candidate)
+  inspectRelease;
 }
 
 /// 本机会话：页面经 [VideoAcquisitionSession] 消费它，互联 host 也用它代办。
@@ -269,6 +280,8 @@ class VideoAcquisitionService implements VideoAcquisitionSession {
         await _loadDetails(effect.item);
       case VideoAcquisitionSearchResourcesEffect():
         await _searchResources(effect);
+      case VideoAcquisitionInspectReleasesEffect():
+        await _inspectReleases(effect);
       case VideoAcquisitionPersistPreferenceEffect():
         return _guard(
           effect,
@@ -714,6 +727,33 @@ class VideoAcquisitionService implements VideoAcquisitionSession {
       lastError = error;
       _queue.add(VideoAcquisitionFailedEvent(_describe(error)));
     }
+  }
+
+  /// 逐条串行取（同站点请求本就要排队节流）；单条失败只记日志、记成「拿不到
+  /// 列表」——它只是少一份证据，规划照旧按标题判（不当整包），不让整个流程失败。
+  Future<void> _inspectReleases(
+    VideoAcquisitionInspectReleasesEffect effect,
+  ) async {
+    final Map<String, VideoReleaseManifest?> manifests =
+        <String, VideoReleaseManifest?>{};
+    for (final VideoResourceCandidate target in effect.targets) {
+      VideoReleaseManifest? manifest;
+      try {
+        manifest = await _ports.inspectRelease(target);
+      } catch (error, stack) {
+        engineLog.logDiagnostic(
+          'VideoAcquisition.inspectRelease',
+          '${target.providerId}:${target.remoteId}: $error\n$stack',
+        );
+      }
+      manifests[target.identityKey] = manifest;
+    }
+    _queue.add(
+      VideoAcquisitionReleasesInspectedEvent(
+        manifests: manifests,
+        franchiseIndex: effect.franchiseIndex,
+      ),
+    );
   }
 
   static String _describe(Object error) {

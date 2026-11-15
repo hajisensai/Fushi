@@ -190,6 +190,7 @@ class SettingsSchemaItem extends StatefulWidget
       SettingsSliderItem slider => <Object?>[
         slider.value(ctx),
         slider.label?.call(slider.value(ctx)),
+        slider.resolveBounds(ctx),
       ],
       SettingsStepperItem stepper => <Object?>[stepper.value(ctx)],
       SettingsTextItem text => <Object?>[
@@ -637,8 +638,11 @@ class _CommitOnReleaseSliderState extends State<_CommitOnReleaseSlider> {
   @override
   Widget build(BuildContext context) {
     final SettingsSliderItem item = widget.item;
+    final SettingsSliderBounds bounds = item.resolveBounds(
+      widget.settingsContext,
+    );
     final double value = (_dragValue ?? item.value(widget.settingsContext))
-        .clamp(item.min, item.max)
+        .clamp(bounds.min, bounds.max)
         .toDouble();
     return AdaptiveSettingsSliderRow(
       title: item.title,
@@ -646,9 +650,9 @@ class _CommitOnReleaseSliderState extends State<_CommitOnReleaseSlider> {
       icon: item.icon,
       showIcon: widget.showIcons,
       value: value,
-      min: item.min,
-      max: item.max,
-      divisions: item.divisions,
+      min: bounds.min,
+      max: bounds.max,
+      divisions: bounds.divisions,
       label: item.label?.call(value),
       step: item.step,
       readout: item.titleReadout ? item.label?.call(value) : null,

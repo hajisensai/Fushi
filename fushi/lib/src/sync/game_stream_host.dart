@@ -502,6 +502,9 @@ class FushiGameStreamHost extends ChangeNotifier {
   Future<void> _inputs = Future<void>.value();
   GameStreamVideoSettings _settings = const GameStreamVideoSettings();
   int _captureHeight = 1080;
+
+  /// Whether the runner currently ducks the bound game on the host speakers.
+  bool _hostMuted = false;
   String? _error;
 
   /// Parameters in effect for the current session.
@@ -590,6 +593,13 @@ class FushiGameStreamHost extends ChangeNotifier {
         throw StateError('Capture cancelled');
       }
       _boundHwnd = hwnd;
+      // Before capture starts, so the speakers are already silent when the
+      // stream begins. Always sent: turning it off also restores a duck left
+      // by a run that was killed mid-stream. [_settings] rather than
+      // [settings]: a join may already have changed it while binding.
+      final bool muted = await _applyHostMute(_settings.muteHost);
+      _requireGeneration(generation);
+      _settings = _settings.copyWith(muteHost: muted);
       // Window-only streaming: WGC captures an occluded window and input is
       // posted to this HWND, so the game may stay behind other windows. Only
       // the foreground input mode brings it forward, and a refused activation
@@ -817,6 +827,23 @@ class FushiGameStreamHost extends ChangeNotifier {
     }
   }
 
+  /// Asks the runner to (un)mute the bound game on the host speakers and
+  /// returns whether it is muted now. A refusal keeps the stream running with
+  /// the host audible — the returned value tells the receiver, which reports
+  /// it — rather than failing the session over a convenience.
+  Future<bool> _applyHostMute(bool muted) async {
+    try {
+      await GameStreamInputChannel.setHostMuted(muted);
+      _hostMuted = muted;
+    } on PlatformException catch (error, stack) {
+      engineLog.log('GameStream.hostMute', error, stack);
+      // A failed unmute leaves nothing ducked by us: the runner stops its
+      // ducker before anything that can fail.
+      _hostMuted = false;
+    }
+    return _hostMuted;
+  }
+
   void _requireGeneration(int generation) {
     if (_disposed || generation != _generation) {
       throw StateError('Capture cancelled');
@@ -919,10 +946,16 @@ class FushiGameStreamHost extends ChangeNotifier {
   ) async {
     final GameStreamVideoSettings ceiling =
         service.session?.settings ?? _settings;
-    final GameStreamVideoSettings effective = requested.copyWith(
+    GameStreamVideoSettings effective = requested.copyWith(
       maxHeight: math.min(requested.maxHeight, _captureHeight),
       maxFps: math.min(requested.maxFps, ceiling.maxFps),
     );
+    // Before binding, start() applies whatever [_settings] holds by then.
+    if (_boundHwnd != null && requested.muteHost != _hostMuted) {
+      effective = effective.copyWith(
+        muteHost: await _applyHostMute(requested.muteHost),
+      );
+    }
     _settings = effective;
     _ladder.reset(effective.maxHeight);
     if (_started) await _setVideoParameters();
@@ -1167,6 +1200,8 @@ class FushiGameStreamHost extends ChangeNotifier {
     _control = null;
     _pendingTexts.clear();
     _lastClientId = null;
+    // The runner's unbind also restores the host speakers.
+    _hostMuted = false;
     final List<Future<void> Function()> cleanup = <Future<void> Function()>[
       if (_boundHwnd != null) GameStreamInputChannel.unbind,
       for (final MediaStreamTrack track

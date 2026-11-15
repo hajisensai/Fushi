@@ -3,7 +3,7 @@
 - **真实性**：✅ 真 bug（两处）：① `fushi/assets/popup/popup.js:5629`（修前）`setMineState` 直接写 `mineButton.title`，走 WebView2 原生提示；② `fushi/lib/src/pages/implementations/dictionary_popup_webview.dart:4148`（修前）Windows 宿主右键让位清单只有 `'.audio-button, .fushi-audio-menu'`，漏了已制卡 ✓
 - **[x] ① 已修复** — popup.js 改走 `setInlineButtonTip(mineButton, …)`（三镜像同步）；宿主让位清单抽成 `kPopupOwnedContextMenuSelector`，加入 `.mine-button[data-mined="1"]:not([data-mining="1"])`
 - **[x] ② 已加自动化测试** — `fushi/test/utils/misc/popup_asset_behavior_test.js`（已制卡 / 已入队两条断言改为 `dataset.fushiTip` 且无 `title`）、`fushi/test/dictionary/popup_native_title_tooltip_guard_test.dart`、`fushi/test/pages/popup_owned_context_menu_selector_test.dart`
-- **备注**：鼠标长按（`bindMinedCardManageTriggers` 只认 touch / pen）是否支持、或桌面提示文案只写「右键」，属产品决策，未改。
+- **备注**：鼠标长按（`bindMinedCardManageTriggers` 只认 touch / pen）用户 2026-11-10 拍板「桌面端支持鼠标长按，类似的都支持」→ 已做：popup.js 新增共享的 `bindPopupSecondaryActionTriggers`（触屏 / 触控笔 / 鼠标主键长按 + 右键 + 菜单键），✓ 管理与 ♪ 选源菜单都委托它，提示「右键或长按」与行为一致；测试 `popup_asset_behavior_test.js` 的 `testMouseLongPress*` 与 `fushi/test/pages/popup_secondary_action_triggers_guard_test.dart`。
 
 ### 根因
 

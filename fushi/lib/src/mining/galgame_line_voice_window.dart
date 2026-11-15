@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:fushi/src/mining/galgame_audio_encode.dart' show PcmFormat;
 import 'package:fushi/src/mining/galgame_audio_source.dart' show GalAudioSlice;
+import 'package:fushi/src/mining/gal_mining_settings.dart';
 
 /// 一句台词语音的最长时长（毫秒）：逐行语音窗口在「没有下一句」时的上限。
 ///
@@ -114,4 +115,36 @@ GalAudioSlice trimLoopbackTrailingFloor(GalAudioSlice slice) {
       (lastActive + 1) * kGalVoiceTailFrameMs + kGalVoiceTailPadMs;
   final int totalMs = slice.pcm.length * 1000 ~/ slice.format.byteRate;
   return dropPcmTailMs(slice, totalMs - keepMs);
+}
+
+/// 把 [limit] 应用到一段截取的 PCM 上（纯函数，帧对齐）。
+///
+/// - maxLength：超过 N 秒的截到前 N 秒（前面是这句的开头——窗口从台词到达开始）。
+/// - fixedLength：同上截断；不足 N 秒的在尾部补零（PCM 零值即静音，int16 / float32
+///   都成立），让每张卡的音频时长一致。
+/// - auto / off：原样返回（off 由调用方在取音之前就短路，不会走到这里）。
+GalAudioSlice applyGalMiningAudioLimit(
+  GalAudioSlice slice,
+  GalMiningAudioLimit limit,
+) {
+  final int? limitMs = limit.limitMs;
+  if (limitMs == null || slice.isEmpty) return slice;
+  final PcmFormat format = slice.format;
+  final int block = format.blockAlign;
+  if (block <= 0 || format.byteRate <= 0) return slice;
+  final int targetBytes = (limitMs * format.byteRate ~/ 1000) ~/ block * block;
+  if (targetBytes <= 0) return slice;
+  final int length = slice.pcm.length ~/ block * block;
+  if (length > targetBytes) {
+    return GalAudioSlice(
+      pcm: Uint8List.sublistView(slice.pcm, 0, targetBytes),
+      format: format,
+    );
+  }
+  if (limit.mode == GalMiningAudioMode.fixedLength && length < targetBytes) {
+    final Uint8List padded = Uint8List(targetBytes)
+      ..setRange(0, length, slice.pcm);
+    return GalAudioSlice(pcm: padded, format: format);
+  }
+  return slice;
 }

@@ -9,6 +9,7 @@ import 'package:fushi/src/mining/galgame_play_tracker.dart';
 import 'package:fushi/src/mining/window_capture_channel.dart';
 import 'package:fushi/src/pages/implementations/game_shared.dart';
 import 'package:fushi/src/pages/implementations/home_game_page.dart';
+import 'package:fushi/src/pages/implementations/media_sources_view.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
 import 'package:fushi/src/sync/texthooker_ws_client.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -32,6 +33,10 @@ Widget _stubDashboard(BuildContext _, VoidCallback __) => const SizedBox();
 
 Widget _stubDiscover(BuildContext _, Widget navigation) =>
     Column(children: <Widget>[navigation, const Text('game-discover')]);
+
+/// 「导入」子区常驻来源列表的桩：绕开真 [MediaSourcesView] 对 appProvider 的依赖。
+Widget _stubSources(BuildContext _, GlobalKey<MediaSourcesViewState> __) =>
+    const Text('game-sources');
 
 int _streamBuilds = 0;
 
@@ -70,6 +75,53 @@ void main() {
     gameSectionNotifier.value = GameSection.dashboard;
   });
 
+  testWidgets('反馈 9Rm_8JEkGM：导入页有「添加来源」入口与常驻来源列表，访问过才构建', (
+    WidgetTester tester,
+  ) async {
+    int sourceBuilds = 0;
+    GlobalKey<MediaSourcesViewState>? viewKey;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: HomeGamePage(
+          monitorBuilder: (_, __) => const SizedBox(),
+          libraryBuilder: _testLibrary,
+          dashboardBuilder: _stubDashboard,
+          discoverBuilder: _stubDiscover,
+          streamBuilder: _stubStream,
+          sourcesBuilder:
+              (BuildContext _, GlobalKey<MediaSourcesViewState> key) {
+                sourceBuilds++;
+                viewKey = key;
+                return const Text('game-sources');
+              },
+        ),
+      ),
+    );
+    await _settleOnLibrary(tester);
+    expect(
+      sourceBuilds,
+      0,
+      reason: 'IndexedStack 急切构建全部子区；来源列表一挂载就查库，没进过导入页不建',
+    );
+
+    gameSectionNotifier.value = GameSection.importGames;
+    await tester.pump();
+
+    expect(find.byKey(HomeGamePage.addSourceKey), findsOneWidget);
+    final FushiIconButton add = tester.widget<FushiIconButton>(
+      find.byKey(HomeGamePage.addSourceKey),
+    );
+    expect(add.label, t.media_source_add);
+    expect(add.onTap, isNotNull);
+    expect(find.text(t.media_source_section_title), findsWidgets);
+    expect(find.text(t.game_source_scan_hint), findsOneWidget);
+    expect(find.text('game-sources'), findsOneWidget);
+    expect(sourceBuilds, greaterThan(0));
+    expect(viewKey, isNotNull, reason: '区头按钮经这把 key 调 addSource');
+    // 快速导入区（添加游戏 / 拖 exe）仍在，来源区是追加的，不替换它。
+    expect(find.text(t.game_add), findsOneWidget);
+  });
+
   testWidgets('library shows real capture count and true empty state', (
     WidgetTester tester,
   ) async {
@@ -82,6 +134,7 @@ void main() {
           dashboardBuilder: _stubDashboard,
           discoverBuilder: _stubDiscover,
           streamBuilder: _stubStream,
+          sourcesBuilder: _stubSources,
         ),
       ),
     );
@@ -124,6 +177,7 @@ void main() {
           dashboardBuilder: _stubDashboard,
           discoverBuilder: _stubDiscover,
           streamBuilder: _stubStream,
+          sourcesBuilder: _stubSources,
         ),
       ),
     );
@@ -180,6 +234,7 @@ void main() {
           dashboardBuilder: _stubDashboard,
           discoverBuilder: _stubDiscover,
           streamBuilder: _stubStream,
+          sourcesBuilder: _stubSources,
           monitorBuilder: (_, VoidCallback onShowLibrary) => _TestMonitor(
             onShowLibrary: onShowLibrary,
             onInit: () => initCount++,
@@ -221,6 +276,7 @@ void main() {
             dashboardBuilder: _stubDashboard,
             discoverBuilder: _stubDiscover,
             streamBuilder: _stubStream,
+            sourcesBuilder: _stubSources,
           ),
         ),
       ),
@@ -350,6 +406,7 @@ void main() {
             dashboardBuilder: _stubDashboard,
             discoverBuilder: _stubDiscover,
             streamBuilder: _stubStream,
+            sourcesBuilder: _stubSources,
             monitorBuilder: (_, __) => const Text('focused-monitor'),
           ),
         ),
@@ -389,6 +446,7 @@ void main() {
             dashboardBuilder: _stubDashboard,
             discoverBuilder: _stubDiscover,
             streamBuilder: _stubStream,
+            sourcesBuilder: _stubSources,
           ),
         ),
       );
@@ -411,6 +469,7 @@ void main() {
             dashboardBuilder: _stubDashboard,
             discoverBuilder: _stubDiscover,
             streamBuilder: _stubStream,
+            sourcesBuilder: _stubSources,
           ),
         ),
       ),

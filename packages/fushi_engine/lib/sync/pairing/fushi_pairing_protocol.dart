@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io' show InternetAddress, InternetAddressType;
 import 'dart:math';
 import 'dart:typed_data';
 
@@ -35,6 +36,10 @@ class FushiPairSession {
     this.tunnelPeer,
     this.devicePubkey,
     this.ownerDeviceGrant,
+    this.sourceKey,
+    this.sourceKeyTrusted = false,
+    this.originClass = FushiPairOriginClass.public,
+    this.protectedFromEviction = false,
   });
 
   /// 不透明会话 id（client 在 confirm 时回传以定位本会话）。
@@ -85,6 +90,27 @@ class FushiPairSession {
   /// 本会话审批时 host 主人对「这是我的设备」的选择（**绑定本次会话**，不按 deviceId
   /// 全局记账）。null = 本会话不提供该选项（没上报设备钥匙 / 扫码票据配对）。
   final FushiPairOwnerDeviceGrant? ownerDeviceGrant;
+
+  /// 本会话在 PIN 限速与会话分桶里的来源键（BUG-4391）：IP（IPv6 按 /64）、可信代理
+  /// 解析出的转发来源，或隧道 NodeId。**不**取 client 自报的 deviceId——那个谁都能冒报。
+  /// null = 无法识别来源，只受类别预算约束。
+  final String? sourceKey;
+
+  /// [sourceKey] 能否区分不同的真实来源（回环对端、`p2p:?` 为 false）；为 false 时不做
+  /// 「每来源会话数」限额——否则所有经本机反代进来的人共用一个名额。
+  final bool sourceKeyTrusted;
+
+  /// 能区分真实来源时的 [sourceKey]，否则 null（BUG-4391 评审 correctness-1）。按来源的
+  /// PIN 限速 / 锁定与宿主「同源取代审批框」只认它：不可信键（经本机反代 / 穿透进来的
+  /// 共用 `ip:127.0.0.1`、`p2p:?`）背后是所有人，按它锁会让一个攻击者把全体（含票据
+  /// 配对）一起锁住，只计入来源类别预算。
+  String? get trustedSourceKey => sourceKeyTrusted ? sourceKey : null;
+
+  /// 来源类别：决定 PIN 失败计入哪一份总预算、会话占哪一个分区（BUG-4391）。
+  final FushiPairOriginClass originClass;
+
+  /// 会话上限淘汰时跳过本会话：票据会话、由人工批准过的 PIN 会话（BUG-4391）。
+  final bool protectedFromEviction;
 
   /// 单次消费标志：一旦 confirm（无论成功/失败）即置位，第二次 confirm 直接拒，
   /// 防 nonce 重放。
@@ -248,9 +274,10 @@ class FushiPairingProtocol {
 /// 撞不同 PIN。故计数粒度必须落在**来源**（client），而非会话——否则每次开新会话就
 /// 把失败计数重置为零，限速形同虚设。
 ///
-/// 来源标识（[sourceKey]）由调用方给出：优先 client 自报的稳定 `clientDeviceId`，
-/// 回退请求来源 IP（`remoteAddress`）。二者都缺时调用方应退化为不限速的单会话路径
-/// （无稳定身份可锁，见 [FushiSyncServer]）。
+/// 来源标识（[sourceKey]）由调用方给出：请求来源 IP（IPv6 按 /64，见
+/// [fushiRateKeyForAddress]）或隧道 NodeId，**不**用 client 自报的 deviceId（可冒报，
+/// BUG-4391）。拿不到来源时调用方不按来源限速，只受 [FushiPinFailureBudget] 约束。
+/// 本类只挡单一来源；海量来源轮流猜由按来源类别的 [FushiPinFailureBudget] 兜住。
 ///
 /// 语义：同一来源在滑动窗口 [failureWindow] 内累计 [maxFailures] 次 PIN 校验失败即
 /// 进入锁定，锁定持续 [lockoutDuration]（退避有界、可恢复）。锁定窗口内该来源的
@@ -324,6 +351,11 @@ class FushiPinRateLimiter {
     _records.remove(sourceKey);
   }
 
+  /// 管理员解除锁定（BUG-4391）：清掉全部来源记录。
+  void reset() {
+    _records.clear();
+  }
+
   /// 清掉既非锁定中、失败又已冷却（超 [failureWindow]）的陈旧记录，并在超过
   /// [maxTrackedSources] 时淘汰最旧活动来源。与会话 prune 同步调用防内存泄漏。
   void prune(DateTime now) {
@@ -378,4 +410,197 @@ class _PinFailureRecord {
 
   /// 锁定退避到期时刻；null 表示尚未触发锁定。
   final DateTime? lockedUntil;
+}
+
+/// 按来源类别的 PIN 失败总预算（BUG-4391）。[FushiPinRateLimiter] 只按来源分桶，
+/// 攻击者换来源（IPv6 一个 /64 外还有海量前缀、僵尸网络）即可绕过；无头端又没有人工
+/// 审批环节，「开会话 → 猜一次」可以无限循环。本类把同一类别的所有失败合在一起计：
+/// 失败间隔都不超过 [window] 的连续 [maxFailures] 次失败即锁定整个类别
+/// `baseLockout * 2^level`（封顶 [maxLockout]），之后 level 加一、计数清零。距上次
+/// 失败超过 [levelDecay] 时 level 归零。纯内存态、注入时钟，可单测。
+class FushiPinFailureBudget {
+  FushiPinFailureBudget({
+    this.maxFailures = 10,
+    this.window = const Duration(minutes: 15),
+    this.baseLockout = const Duration(minutes: 15),
+    this.maxLockout = const Duration(hours: 24),
+    this.levelDecay = const Duration(hours: 24),
+  }) : assert(maxFailures > 0);
+
+  final int maxFailures;
+  final Duration window;
+  final Duration baseLockout;
+  final Duration maxLockout;
+  final Duration levelDecay;
+
+  int _count = 0;
+  int _level = 0;
+  DateTime? _lastFailureAt;
+  DateTime? _lockedUntil;
+
+  /// 当前锁定到期时刻；未锁定（含已到期）为 null。
+  DateTime? get lockedUntil => _lockedUntil;
+
+  /// 已触发过的锁定级数（下一次锁定时长 = baseLockout * 2^level）。
+  int get level => _level;
+
+  /// [now] 时本类别是否处于锁定中；到期即解除。
+  bool isLockedOut(DateTime now) {
+    final DateTime? until = _lockedUntil;
+    if (until == null) return false;
+    if (now.isBefore(until)) return true;
+    _lockedUntil = null;
+    return false;
+  }
+
+  /// 记一次失败；返回记后是否处于锁定。锁定中再记不累计、不延长（调用方本应在锁定时
+  /// 直接拒，不会走到这里）。
+  bool recordFailure(DateTime now) {
+    if (isLockedOut(now)) return true;
+    final DateTime? last = _lastFailureAt;
+    if (last != null && now.difference(last) > levelDecay) _level = 0;
+    if (last == null || now.difference(last) > window) _count = 0;
+    _lastFailureAt = now;
+    _count++;
+    if (_count < maxFailures) return false;
+    _lockedUntil = now.add(_lockoutFor(_level));
+    _level++;
+    _count = 0;
+    return true;
+  }
+
+  /// 本类别有 PIN 会话配对成功：级数与计数清零（锁定中不会有成功，不涉及锁定）。
+  void recordSuccess() {
+    _count = 0;
+    _level = 0;
+  }
+
+  /// 管理员解除：清锁定、级数与计数。
+  void reset() {
+    _count = 0;
+    _level = 0;
+    _lastFailureAt = null;
+    _lockedUntil = null;
+  }
+
+  Duration _lockoutFor(int level) {
+    Duration d = baseLockout;
+    for (int i = 0; i < level; i++) {
+      d *= 2;
+      if (d >= maxLockout) return maxLockout;
+    }
+    return d > maxLockout ? maxLockout : d;
+  }
+}
+
+/// 配对请求的来源类别（BUG-4390）。决定是否免 PIN（只有 [lan] 可能免）。
+///
+/// - [lan]：TCP 对端是私网地址、请求不带任何转发头（无头端另要求对端不是回环）。
+/// - [p2p]：经 P2P 隧道监听口进来（`fushi.zone = p2p`），恒按公网要 PIN / 票据。
+/// - [public]：其余一切——公网对端、带转发头（经反代 / 穿透）、无头端的回环对端、
+///   拿不到对端地址。
+enum FushiPairOriginClass { lan, p2p, public }
+
+/// 一组 IP / CIDR（`a.b.c.d`、`a.b.c.d/n`、IPv6 及 `/n`）。用于无头端
+/// `trusted_proxies`：对端命中时才读转发头里的真实来源（只影响限速键与展示，
+/// **不**影响 LAN 判定）。IPv4 映射的 IPv6 地址（`::ffff:a.b.c.d`）两侧都先还原成 v4。
+class FushiAddressRangeSet {
+  const FushiAddressRangeSet._(this._ranges);
+
+  /// 空集合：什么都不包含。
+  static const FushiAddressRangeSet empty = FushiAddressRangeSet._(
+    <_AddressRange>[],
+  );
+
+  final List<_AddressRange> _ranges;
+
+  bool get isEmpty => _ranges.isEmpty;
+
+  /// 解析一组条目；任一条非法即抛 [FormatException]，消息里带出那一项原文。
+  static FushiAddressRangeSet parse(List<String> cidrsOrIps) {
+    final List<_AddressRange> ranges = <_AddressRange>[];
+    for (final String raw in cidrsOrIps) {
+      ranges.add(_AddressRange.parse(raw));
+    }
+    return FushiAddressRangeSet._(List<_AddressRange>.unmodifiable(ranges));
+  }
+
+  bool contains(InternetAddress address) {
+    final List<int> bytes = fushiUnmapIPv4MappedRaw(address.rawAddress);
+    for (final _AddressRange r in _ranges) {
+      if (r.matches(bytes)) return true;
+    }
+    return false;
+  }
+}
+
+class _AddressRange {
+  const _AddressRange(this.bytes, this.prefixBits);
+
+  final List<int> bytes;
+  final int prefixBits;
+
+  static _AddressRange parse(String raw) {
+    final String entry = raw.trim();
+    FormatException bad() =>
+        FormatException('Invalid IP address or CIDR: "$raw"', raw);
+    if (entry.isEmpty) throw bad();
+    final int slash = entry.indexOf('/');
+    final String addrText = slash < 0 ? entry : entry.substring(0, slash);
+    final InternetAddress? addr = InternetAddress.tryParse(addrText);
+    if (addr == null) throw bad();
+    final List<int> rawBytes = addr.rawAddress;
+    final List<int> bytes = fushiUnmapIPv4MappedRaw(rawBytes);
+    final int fullBits = rawBytes.length * 8;
+    int prefix = fullBits;
+    if (slash >= 0) {
+      final int? n = int.tryParse(entry.substring(slash + 1));
+      if (n == null || n < 0 || n > fullBits) throw bad();
+      prefix = n;
+    }
+    // 写成 v4 映射形式的条目还原成 v4：前缀也要扣掉 96 位映射头。
+    if (bytes.length != rawBytes.length) {
+      if (prefix < 96) throw bad();
+      prefix -= 96;
+    }
+    return _AddressRange(bytes, prefix);
+  }
+
+  bool matches(List<int> other) {
+    if (other.length != bytes.length) return false;
+    int remaining = prefixBits;
+    for (int i = 0; i < bytes.length && remaining > 0; i++) {
+      final int bits = remaining >= 8 ? 8 : remaining;
+      final int mask = (0xff << (8 - bits)) & 0xff;
+      if ((bytes[i] & mask) != (other[i] & mask)) return false;
+      remaining -= bits;
+    }
+    return true;
+  }
+}
+
+/// IPv4 映射的 IPv6 原始地址（16 字节，`::ffff:a.b.c.d`）还原成 4 字节 v4；
+/// 其余原样返回。
+List<int> fushiUnmapIPv4MappedRaw(List<int> raw) {
+  if (raw.length != 16) return raw;
+  for (int i = 0; i < 10; i++) {
+    if (raw[i] != 0) return raw;
+  }
+  if (raw[10] != 0xff || raw[11] != 0xff) return raw;
+  return raw.sublist(12);
+}
+
+/// 限速 / 会话分桶用的来源键（步骤 5 消费）：v4（含 v4 映射还原后）→
+/// `ip:<点分地址>`；v6 → `ip6:<前 64 位规范化>/64`（同一 /64 内换地址仍是同一来源）。
+String fushiRateKeyForAddress(InternetAddress address) {
+  final List<int> raw = fushiUnmapIPv4MappedRaw(address.rawAddress);
+  if (raw.length == 4) {
+    return 'ip:${InternetAddress.fromRawAddress(Uint8List.fromList(raw), type: InternetAddressType.IPv4).address}';
+  }
+  final Uint8List prefix = Uint8List(16)..setRange(0, 8, raw);
+  final String net = InternetAddress.fromRawAddress(
+    prefix,
+    type: InternetAddressType.IPv6,
+  ).address;
+  return 'ip6:$net/64';
 }

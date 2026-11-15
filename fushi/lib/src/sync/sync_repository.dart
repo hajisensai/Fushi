@@ -26,9 +26,11 @@ import 'package:fushi/src/media/video/media_server/media_server_config.dart';
 import 'package:fushi/src/media/video/media_server/media_server_registry.dart';
 import 'package:fushi/src/sync/jellyfin_video_client.dart'
     show JellyfinServerConfig, JellyfinVideoClient;
+import 'package:fushi/src/sync/remote_audiobook_revision.dart'
+    show kInterconnectAudiobookRevisionsPrefKey;
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/interconnect_peer_addresses.dart'
-    show applyIssuedInterconnectToken;
+    show applyIssuedInterconnectToken, InterconnectAddressOwnerConflict;
 import 'package:fushi_engine/sync/tls/fushi_pinning_http.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/sync/interconnect_host_addresses.dart'
@@ -93,8 +95,8 @@ class FushiClientUrl {
   /// 携带出设备（与全局 token 键同待遇）。
   final String? token;
 
-  /// 这条地址属于哪台 host（host 的稳定设备 id，来自 `/api/capabilities` 的
-  /// `hostId`）。同 hostId 的多条地址是**同一台机器**的不同路径（LAN / IPv6 /
+  /// 这条地址属于哪台 host（host 的稳定设备 id，来自 `/api/ping` 与
+  /// `/api/host/addresses` 回报的 `hostId`）。同 hostId 的多条地址是**同一台机器**的不同路径（LAN / IPv6 /
   /// 组网 / 公网 / P2P），选路时组内并发、列设备时合并为一台。null = 老条目或
   /// 老 host，单独成组，行为与升级前逐字一致
   /// （docs/specs/2026-09-28-interconnect-remote-reach.md §1）。
@@ -1796,10 +1798,15 @@ class SyncRepository {
   /// 53NT7G_tSO：host 按设备只认一份 token（重新配对即作废旧的），所以新 token 同时
   /// 写到**同一台 host 的全部地址**；[hostId]（配对时 ping 回报的身份）让还没归组的
   /// 新地址先按指纹判据归组，见 [applyIssuedInterconnectToken]。
+  ///
+  /// 地址归属闸：[url] 已归另一台 host 而 [reassignOwner] 为 false 时，变换里抛
+  /// [InterconnectAddressOwnerConflict]（与 [addFushiClientUrl] 抛
+  /// [FushiFingerprintMismatchException] 同一模式），列表与全局 token 键都不写。
   Future<void> setFushiClientTokenForUrl(
     String url,
     String token, {
     String? hostId,
+    bool reassignOwner = false,
   }) async {
     await updateFushiClientUrls(
       (List<FushiClientUrl> urls) => applyIssuedInterconnectToken(
@@ -1807,6 +1814,7 @@ class SyncRepository {
         url: url,
         token: token,
         hostId: hostId,
+        reassignOwner: reassignOwner,
       ),
     );
     await setFushiClientToken(token);
@@ -1931,7 +1939,14 @@ class SyncRepository {
     _keyDeletionTombstonesBaselineMs,
     _keyVideoMetadataSyncSinceMs,
     _keyContentSniffCache,
+    // 云后端最近一次取到的账号（BUG-4434）：文件箱进度基线按它挑槽；随备份带到
+    // 登着别的账号的设备，邮箱缺失时会挑错槽，且把账号邮箱带进备份。
+    syncRemoteAccountPrefBase,
   ];
+
+  /// 按通道分槽的「云后端最近一次取到的账号」键基名（BUG-4434）；完整键见
+  /// `syncRemoteAccountPrefKey`（`sync_baseline_scope.dart`）。设备本地。
+  static const String syncRemoteAccountPrefBase = 'sync_remote_account';
 
   static const List<String> _deviceLocalFixedKeys = <String>[
     // 「同步浏览历史」是这台设备的隐私许可：从另一台设备恢复备份不得替这台设备
@@ -1944,6 +1959,13 @@ class SyncRepository {
     ...kWebBrowserDeviceLocalPrefKeys,
     // 页面背景的自定义图片文件路径与取色缓存：文件只在这台设备的数据目录里。
     ...kPageBackdropDeviceLocalPrefKeys,
+    // 第二块屏启动策略、已同意的副屏与查词显示屏（SecondScreenController 的键）：
+    // 描述的是本机硬件，不跟去别的设备。
+    'second_screen_mode',
+    'second_screen_approved_displays',
+    'second_screen_lookup_screen',
+    // 手柄查词模式的开启方式（ControllerLookupStyle）：跟这台设备的手柄走。
+    'controller_lookup_style',
     // v105 统计按 Profile 隔离：legacy 统计归属 Profile 的值是本库自增 id，
     // 换一台设备就指向别的 Profile，绝不随备份 / Profile 分享出境。
     kStatLegacyProfileIdPrefKey,
@@ -1951,6 +1973,10 @@ class SyncRepository {
     kWorkProfileSessionPrefKey,
     // 库页「每行数量」：合适的列数取决于这台设备的屏幕（BUG-4219）。
     kLibraryGridColumnsPrefKey,
+    // 书架文件夹导入「缺字幕就转录」：几个小时的设备端推理，跑不跑得动是这台设备
+    // 的事（手机上开着、恢复到没有 ASR 算力的机器上不该跟着开）。同组的总开关
+    // `audiobook_auto_transcribe` 是同步的，这一个有意设成设备本地。
+    PreferencesRepository.audiobookFolderImportTranscribeKey,
     // Android 桌面小组件的默认隐私：描述这台设备的桌面。
     PreferencesRepository.widgetPrivacyHideTitlesKey,
     PreferencesRepository.widgetPrivacyHideDefinitionsKey,
@@ -2110,6 +2136,9 @@ class SyncRepository {
     // 那台设备成立。分段方式 / MOSS 后端取决于这台机器的显卡，换设备没有意义。
     'video_subtitle_ai_proofread',
     'video_subtitle_ai_consented',
+    // 画面参考（AI 校对时附上视频画面）与它的同意：发图的同意同样只对点它的那台设备成立。
+    'video_subtitle_ai_frames',
+    'video_subtitle_ai_frames_consented',
     // AI 整理库：自动整理开关、开关时刻与「会发送什么」的同意——与上两条同理只对
     // 点它的那台设备成立（只在一台设备上开就够，结果靠合集同步传播）。
     'library_organize_allowed_keys',
@@ -2118,6 +2147,9 @@ class SyncRepository {
     'library_organize_consented',
     'video_subtitle_segmenter',
     'video_subtitle_moss_backend',
+    // 按系列记住的字幕文件夹（0PZAhFd1RO）：值是这台机器上的外部绝对路径，系列键里
+    // 是本库自增的合集 id——换台设备路径不存在、id 指向别的合集。
+    'video_subtitle_series_dirs',
     // 已删除的「查词自动按句意挑词条」开关（2026-10-09 移除）：存量值仍是
     // 设备本地的计费同意，留在清单里免得旧备份把它漂到别的设备。
     'lookup_ai_context_auto',
@@ -2167,6 +2199,9 @@ class SyncRepository {
     // 「制卡到已配对设备」每台主机的「保存到」：按 hostId 记、指向这台设备配对过的主机，
     // 带到另一台设备上没有意义。
     PreferencesRepository.mineToServerTargetsKey,
+    // 从互联对端下载的有声书当时的内容版本：记的是「这台设备手上是哪一份」，带到别的
+    // 设备上会让它误报 / 漏报「对端有更新」。
+    kInterconnectAudiobookRevisionsPrefKey,
   ];
 
   // ── Helpers ───────────────────────────────────────────────────────

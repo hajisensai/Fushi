@@ -41,12 +41,14 @@ class MusicPluginInstance {
     required MusicPluginLogSink log,
     required String vaultRoot,
     MusicPluginVaultKeyProvider? vaultKey,
+    String? vaultDomain,
     MusicPluginHttpPerformer? httpPerformer,
     MusicPluginResolver? resolver,
     MusicPluginAddressBlocker? addressBlocker,
     MusicPluginMediaProbe? mediaProbe,
   }) : _handle = handle,
        _vaultKey = vaultKey,
+       _vaultDomain = vaultDomain,
        _worker = worker,
        _resolver = resolver,
        _addressBlocker = addressBlocker,
@@ -58,6 +60,10 @@ class MusicPluginInstance {
        _log = log;
 
   /// 打开已安装目录 [dir]（重新哈希校验 + 建 JS 实例）。失败抛 [MusicPluginException]。
+  ///
+  /// [vaultDomain]：凭据保险库的插件体系，随每次保险库操作作为 `domain` 传给原生库。null =
+  /// 音乐插件（不带 `domain`，与旧格式相同）；追踪插件宿主传 `'tracking'`，同一插件 id / 键名
+  /// 的凭据与音乐体系互不可解（`native/fushi_music/src/plugin/vault.rs`）。
   static Future<MusicPluginInstance> open({
     required String dir,
     required File storageFile,
@@ -65,6 +71,7 @@ class MusicPluginInstance {
     required MusicPluginLogSink log,
     required String vaultRoot,
     MusicPluginVaultKeyProvider? vaultKey,
+    String? vaultDomain,
     int budgetMs = 2000,
     MusicPluginHttpPerformer? httpPerformer,
     MusicPluginResolver? resolver,
@@ -93,6 +100,7 @@ class MusicPluginInstance {
       log: log,
       vaultRoot: vaultRoot,
       vaultKey: vaultKey,
+      vaultDomain: vaultDomain,
       httpPerformer: httpPerformer,
       resolver: resolver,
       addressBlocker: addressBlocker,
@@ -120,6 +128,9 @@ class MusicPluginInstance {
 
   /// 保险库数据密钥来源（null = 原生库自管，只有 Windows）。
   final MusicPluginVaultKeyProvider? _vaultKey;
+
+  /// 保险库插件体系（null = 音乐，见 [open]）。
+  final String? _vaultDomain;
 
   int _nextInv = 0;
   final Map<int, Completer<Object?>> _invocations = <int, Completer<Object?>>{};
@@ -425,6 +436,7 @@ class MusicPluginInstance {
         'key': args['key'],
         if (op == 'set') 'value': args['value'],
         if (dataKey != null) 'dataKey': base64.encode(dataKey),
+        if (_vaultDomain != null) 'domain': _vaultDomain,
       },
     );
     if (r['error'] case final String e) throw StateError(e);

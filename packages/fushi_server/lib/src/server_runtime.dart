@@ -14,6 +14,9 @@ import 'package:fushi_engine/utils/net/app_proxy.dart';
 import 'package:fushi_server/src/commands/command_io.dart' show kExitConflict;
 import 'package:fushi_server/src/config/server_config.dart';
 import 'package:fushi_server/src/host_bindings.dart';
+import 'package:fushi_server/src/self_update/server_self_updater.dart'
+    show kExitSelfUpdated;
+import 'package:fushi_server/src/self_update/server_update_recovery.dart';
 import 'package:fushi_server/src/server_data_lock.dart';
 import 'package:fushi_server/src/server_identity.dart';
 import 'package:fushi_server/src/server_log.dart';
@@ -63,12 +66,18 @@ class ServerRuntime {
 ///
 /// [serve] 标明调用方是 `serve`（锁文件里记成 serve，被拒的离线命令据此提示改用
 /// `ctl`）；[command] 是写进锁文件的命令摘要。
+///
+/// 拿到锁后、碰数据库之前先做远程更新的启动收尾（[recoverSelfUpdate]，见
+/// `server_update_recovery.dart`）：换包中断、正在跑的是没换完的新版时以
+/// [kExitSelfUpdated] 退出，不让它把库迁移到旧版打不开的 schema。
 Future<int> withServerRuntime(
   File configFile,
   bool verbose,
   Future<int> Function(ServerRuntime rt) body, {
   bool serve = false,
   String? command,
+  Future<ServerUpdateRecovery> Function(EngineLogSink log) recoverSelfUpdate =
+      _recoverRunningBundle,
 }) async {
   if (!await configFile.exists()) {
     stderr.writeln(
@@ -111,40 +120,66 @@ Future<int> withServerRuntime(
     );
     return kExitConflict;
   }
+  ServerLog? log;
   try {
+    // 日志先于启动收尾打开：收尾的留痕（还原了中断的换包、旧文件没删掉）要进
+    // 日志文件与 WebUI 日志页（ServerLog.recent），不能只落 stderr。建目录 / 开
+    // 日志文件不碰数据库。
+    final ServerPaths paths = ServerPaths(config.dataDir);
+    await paths.ensureLayout();
+    final ServerLog opened = log = ServerLog(
+      file: File(p.join(paths.logs.path, 'fushi_server.log')),
+      verbose: verbose,
+    );
+    await opened.open();
+    if (await recoverSelfUpdate(opened) ==
+        ServerUpdateRecovery.restartRequired) {
+      opened.info(
+        tr(
+          '上次远程更新换包中断，已还原旧版文件；以退出码 $kExitSelfUpdated 退出，'
+              '由服务管理器拉起旧版（数据库未改动）',
+          'The previous remote update was interrupted mid-swap and the old '
+              'files were restored; exiting with code $kExitSelfUpdated so the '
+              'service manager starts the old build (database untouched)',
+        ),
+      );
+      await opened.close();
+      await dataLock.release();
+      return kExitSelfUpdated;
+    }
     return await _withLockedRuntime(
       configFile,
       config,
-      verbose,
       dataLock,
+      paths,
+      opened,
       body,
     );
   } catch (_) {
-    // 运行时还没建起来（dispose 管不到锁）时出错：这里放锁；建起来之后 dispose 放，
-    // release 幂等。
+    // 运行时还没建起来（dispose 管不到锁与日志）时出错：这里放；建起来之后
+    // dispose 放，release / close 都幂等。
+    await log?.close();
     await dataLock.release();
     rethrow;
   }
 }
 
+/// [withServerRuntime] 的缺省启动收尾：正在运行的发布包。
+Future<ServerUpdateRecovery> _recoverRunningBundle(EngineLogSink log) =>
+    recoverServerSelfUpdate(log: log);
+
 Future<int> _withLockedRuntime(
   File configFile,
   ServerConfig config,
-  bool verbose,
   ServerDataLock dataLock,
+  ServerPaths paths,
+  ServerLog log,
   Future<int> Function(ServerRuntime rt) body,
 ) async {
   if (config.adminToken == null) {
     config = config.copyWith(adminToken: FushiSyncServer.generateToken());
     await config.save(configFile);
   }
-  final ServerPaths paths = ServerPaths(config.dataDir);
-  await paths.ensureLayout();
-  final ServerLog log = ServerLog(
-    file: File(p.join(paths.logs.path, 'fushi_server.log')),
-    verbose: verbose,
-  );
-  await log.open();
   installServerHostBindings(config: config, paths: paths, log: log);
   // 与 app 侧 `AppModel.initialise()` 对偶：`createAppHttpClient()` 的 auto 模式
   // 要读这份缓存，不 prime 的话服务端只认 HTTP(S)_PROXY 环境变量，系统代理设置

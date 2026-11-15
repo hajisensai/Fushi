@@ -231,6 +231,36 @@ Color fushiOpaquePageColor(BuildContext context) {
   return scaffold.a > 0 ? scaffold : theme.colorScheme.surface;
 }
 
+/// 去掉 [theme] 页面转场里垫的 [FushiPageBackdrop]：每个平台的
+/// [FushiBackdropPageTransitionsBuilder] 还原成它包着的内层 builder，转场动效 / 返回
+/// 手势不变，只是路由不再垫页面底色和角落形状。
+///
+/// 给盖在别的 app 上的透明浮窗用（app 外查词 `popup_main`、悬浮词典
+/// `floating_dict_main`）：这类窗口没有「页」，卡片以外必须透出背后的 app。
+/// 用户主题的转场里带着背景层，`home` 路由一经它就把整窗铺成页面底色 + 形状
+/// （反馈 jDuyvS-Hly「app 外查词底下有多余的背景」）。主题本身（配色 / 组件 /
+/// 墨水屏）照旧跟用户设置走。没垫背景层的主题原样返回。
+ThemeData withoutFushiPageBackdrop(ThemeData theme) {
+  final Map<TargetPlatform, PageTransitionsBuilder> builders =
+      theme.pageTransitionsTheme.builders;
+  if (!builders.values.any(
+    (PageTransitionsBuilder b) => b is FushiBackdropPageTransitionsBuilder,
+  )) {
+    return theme;
+  }
+  return theme.copyWith(
+    pageTransitionsTheme: PageTransitionsTheme(
+      builders: <TargetPlatform, PageTransitionsBuilder>{
+        for (final MapEntry<TargetPlatform, PageTransitionsBuilder> e
+            in builders.entries)
+          e.key: e.value is FushiBackdropPageTransitionsBuilder
+              ? (e.value as FushiBackdropPageTransitionsBuilder).inner
+              : e.value,
+      },
+    ),
+  );
+}
+
 /// 给任意转场 builder 垫上 [FushiPageBackdrop]：转场作用在「底 + 页面」整体上。
 class FushiBackdropPageTransitionsBuilder extends PageTransitionsBuilder {
   const FushiBackdropPageTransitionsBuilder(this.inner);

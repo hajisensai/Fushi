@@ -11,12 +11,17 @@
 ///
 /// 送进 TTS 的文本：拆出人名后只读台词本体（[GalLineTtsSettings.stripSpeaker]），
 /// 再依次过 [GalLineTtsTextFix]（正则替换，如去掉「」）。浮窗显示的文本不受影响。
+///
+/// 默认声音分层（[GalLineTtsSettings.voiceFor]）：规则指定的声音 > 按游戏 >
+/// 按语言 > 全局默认 > 跟随「朗读声音」。同时玩日语和中文游戏时按语言 / 按游戏
+/// 自动换声音，不用来回手动切。
 library;
 
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 
+import 'package:fushi/src/profile/language_binding.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
 import 'package:fushi/src/utils/misc/playback_speed.dart';
 
@@ -406,6 +411,8 @@ class GalLineTtsSettings {
     this.textFixes = const <GalLineTtsTextFix>[],
     this.volume = 1.0,
     this.speed = 1.0,
+    this.languageVoices = const <String, String>{},
+    this.gameVoices = const <String, String>{},
   });
 
   /// 自动朗读总开关（浮窗工具条上的「自动朗读」键就是它）。默认关：TTS 要先配声音。
@@ -431,6 +438,29 @@ class GalLineTtsSettings {
   /// TTS 播放倍速（变速不变调，[kGalLineTtsSpeedMin]..[kGalLineTtsSpeedMax]）。
   final double speed;
 
+  /// 按游戏内容语言指定的默认声音：语言绑定键（[normalizeLanguageBinding]，如
+  /// `ja` / `zh-Hans`）→ TTS 声音预设 id。
+  final Map<String, String> languageVoices;
+
+  /// 按游戏指定的默认声音：`galgames.id` → TTS 声音预设 id，压过 [languageVoices]。
+  /// 键用库条目 id 而不是 exe 路径：路径会随搬盘重定位，id 不变。
+  final Map<String, String> gameVoices;
+
+  /// 这一局实际用的默认声音（规则没指定声音时用它）。顺序：按游戏 > 按语言 >
+  /// [presetId]（null = 跟随「朗读声音」当前声音）。
+  String? voiceFor(GalLineTtsVoiceContext context) {
+    final String? gameId = context.gameId;
+    if (gameId != null && gameId.isNotEmpty) {
+      final String? byGame = gameVoices[gameId];
+      if (byGame != null) return byGame;
+    }
+    final String? byLanguage = galLineTtsLanguageVoiceFor(
+      languageVoices,
+      context.language,
+    );
+    return byLanguage ?? presetId;
+  }
+
   /// 实际生效的档位（总开关关 = off）。
   GalLineTtsAutoPlay get effectiveAutoPlay =>
       autoPlayEnabled ? autoPlay : GalLineTtsAutoPlay.off;
@@ -446,6 +476,8 @@ class GalLineTtsSettings {
     List<GalLineTtsTextFix>? textFixes,
     double? volume,
     double? speed,
+    Map<String, String>? languageVoices,
+    Map<String, String>? gameVoices,
   }) => GalLineTtsSettings(
     autoPlayEnabled: autoPlayEnabled ?? this.autoPlayEnabled,
     autoPlay: autoPlay ?? this.autoPlay,
@@ -456,7 +488,35 @@ class GalLineTtsSettings {
     textFixes: textFixes ?? this.textFixes,
     volume: volume ?? this.volume,
     speed: speed ?? this.speed,
+    languageVoices: languageVoices ?? this.languageVoices,
+    gameVoices: gameVoices ?? this.gameVoices,
   );
+
+  /// 设 / 清（[presetId] 为 null）某语言的声音。[language] 先归一成绑定键，归一后
+  /// 为空（不认识的标签）不写。
+  GalLineTtsSettings withLanguageVoice(String language, String? presetId) {
+    final String key = normalizeLanguageBinding(language);
+    if (key.isEmpty) return this;
+    final Map<String, String> next = Map<String, String>.of(languageVoices);
+    if (presetId == null || presetId.isEmpty) {
+      next.remove(key);
+    } else {
+      next[key] = presetId;
+    }
+    return copyWith(languageVoices: next);
+  }
+
+  /// 设 / 清（[presetId] 为 null）某游戏（`galgames.id`）的声音。
+  GalLineTtsSettings withGameVoice(String gameId, String? presetId) {
+    if (gameId.isEmpty) return this;
+    final Map<String, String> next = Map<String, String>.of(gameVoices);
+    if (presetId == null || presetId.isEmpty) {
+      next.remove(gameId);
+    } else {
+      next[gameId] = presetId;
+    }
+    return copyWith(gameVoices: next);
+  }
 
   Map<String, Object?> toJson() => <String, Object?>{
     'autoPlayEnabled': autoPlayEnabled,
@@ -470,6 +530,8 @@ class GalLineTtsSettings {
     ],
     'volume': volume,
     'speed': speed,
+    'languageVoices': languageVoices,
+    'gameVoices': gameVoices,
   };
 
   String encode() => jsonEncode(toJson());
@@ -493,6 +555,13 @@ class GalLineTtsSettings {
     final Object? volume = json['volume'];
     final Object? speed = json['speed'];
     final Object? enabled = json['autoPlayEnabled'];
+    final Map<String, String> languageVoices = <String, String>{};
+    for (final MapEntry<String, String> e in _decodeVoiceMap(
+      json['languageVoices'],
+    ).entries) {
+      final String key = normalizeLanguageBinding(e.key);
+      if (key.isNotEmpty) languageVoices[key] = e.value;
+    }
     return GalLineTtsSettings(
       autoPlayEnabled: enabled is bool && enabled,
       autoPlay: GalLineTtsAutoPlay.fromWire(json['autoPlay']),
@@ -519,8 +588,18 @@ class GalLineTtsSettings {
       speed: speed is num && speed.isFinite
           ? speed.toDouble().clamp(kGalLineTtsSpeedMin, kGalLineTtsSpeedMax)
           : 1.0,
+      languageVoices: languageVoices,
+      gameVoices: _decodeVoiceMap(json['gameVoices']),
     );
   }
+
+  /// `{键: 预设 id}`；非字符串 / 空串的条目丢弃（不让一条坏条目拖垮整份设置）。
+  static Map<String, String> _decodeVoiceMap(Object? raw) => <String, String>{
+    if (raw is Map)
+      for (final MapEntry<Object?, Object?> e in raw.entries)
+        if (e.key case final String key when key.isNotEmpty)
+          if (e.value case final String value when value.isNotEmpty) key: value,
+  };
 
   @override
   bool operator ==(Object other) =>
@@ -533,7 +612,9 @@ class GalLineTtsSettings {
       listEquals(other.rules, rules) &&
       listEquals(other.textFixes, textFixes) &&
       other.volume == volume &&
-      other.speed == speed;
+      other.speed == speed &&
+      mapEquals(other.languageVoices, languageVoices) &&
+      mapEquals(other.gameVoices, gameVoices);
 
   @override
   int get hashCode => Object.hash(
@@ -546,7 +627,63 @@ class GalLineTtsSettings {
     Object.hashAll(textFixes),
     volume,
     speed,
+    Object.hashAllUnordered(
+      languageVoices.entries.map(
+        (MapEntry<String, String> e) => Object.hash(e.key, e.value),
+      ),
+    ),
+    Object.hashAllUnordered(
+      gameVoices.entries.map(
+        (MapEntry<String, String> e) => Object.hash(e.key, e.value),
+      ),
+    ),
   );
+}
+
+/// 这一局的声音上下文：当前游戏在库里的 id 与它的内容语言。两者都可能未知
+/// （不在库里的游戏 / 没有游戏身份），未知就跳过对应那一层。
+@immutable
+class GalLineTtsVoiceContext {
+  const GalLineTtsVoiceContext({this.gameId, this.language});
+
+  /// `galgames.id`；null = 不在库里 / 没有游戏身份。
+  final String? gameId;
+
+  /// 游戏内容语言（BCP-47 原串，游戏声明的或全局默认）；null = 未知。
+  final String? language;
+
+  @override
+  bool operator ==(Object other) =>
+      other is GalLineTtsVoiceContext &&
+      other.gameId == gameId &&
+      other.language == language;
+
+  @override
+  int get hashCode => Object.hash(gameId, language);
+}
+
+/// 按语言找声音。[language] 归一成绑定键后依次试：
+///  1. 同键（`zh-Hans` → `zh-Hans`）；
+///  2. 只有主语言的条目（`zh-Hans` / `zh-CN` → `zh`）；
+///  3. 同主语言的条目恰好只有一个时用它（游戏标 `zh`、只配了 `zh-Hans`）。
+/// 同主语言有多个条目且前两步都没命中时不猜，返回 null。
+String? galLineTtsLanguageVoiceFor(
+  Map<String, String> languageVoices,
+  String? language,
+) {
+  if (languageVoices.isEmpty) return null;
+  final String key = normalizeLanguageBinding(language);
+  if (key.isEmpty) return null;
+  final String? exact = languageVoices[key];
+  if (exact != null) return exact;
+  final String primary = key.split('-').first;
+  final String? bare = languageVoices[primary];
+  if (bare != null) return bare;
+  final List<String> sameLanguage = <String>[
+    for (final MapEntry<String, String> e in languageVoices.entries)
+      if (e.key.split('-').first == primary) e.value,
+  ];
+  return sameLanguage.length == 1 ? sameLanguage.single : null;
 }
 
 /// 这一行的游戏原声配对证据。
@@ -612,12 +749,14 @@ String galLineTtsText(GalLineTtsSettings settings, String rawText) {
 }
 
 /// 裁决一行读不读。[manual] = 用户点了浮窗「朗读」键：规则里的 skip 与配对证据都
-/// 不拦（用户就是想听这句），只保留声音选择。
+/// 不拦（用户就是想听这句），只保留声音选择。[voiceContext] 决定这一局的默认声音
+/// （按游戏 / 按语言，见 [GalLineTtsSettings.voiceFor]）。
 GalLineTtsDecision decideGalLineTts({
   required GalLineTtsSettings settings,
   required String rawText,
   required GalLineVoiceEvidence evidence,
   required bool manual,
+  GalLineTtsVoiceContext voiceContext = const GalLineTtsVoiceContext(),
 }) {
   final GalLineTtsAutoPlay mode = settings.effectiveAutoPlay;
   if (!manual && mode == GalLineTtsAutoPlay.off) {
@@ -632,20 +771,21 @@ GalLineTtsDecision decideGalLineTts({
     customPattern: settings.speakerPattern,
   );
   final String raw = rawText.trim();
+  final String? defaultVoice = settings.voiceFor(voiceContext);
   for (final GalLineTtsRule rule in settings.rules) {
     if (!rule.matches(rawText: raw, speaker: split.speaker)) continue;
     switch (rule.action) {
       case GalLineTtsRuleAction.skip:
         if (manual) {
-          return GalLineTtsSpeak(text: text, presetId: settings.presetId);
+          return GalLineTtsSpeak(text: text, presetId: defaultVoice);
         }
         return const GalLineTtsSkip('rule_skip');
       case GalLineTtsRuleAction.read:
-        return GalLineTtsSpeak(text: text, presetId: settings.presetId);
+        return GalLineTtsSpeak(text: text, presetId: defaultVoice);
       case GalLineTtsRuleAction.voice:
         return GalLineTtsSpeak(
           text: text,
-          presetId: rule.presetId ?? settings.presetId,
+          presetId: rule.presetId ?? defaultVoice,
         );
     }
   }
@@ -659,5 +799,5 @@ GalLineTtsDecision decideGalLineTts({
         break;
     }
   }
-  return GalLineTtsSpeak(text: text, presetId: settings.presetId);
+  return GalLineTtsSpeak(text: text, presetId: defaultVoice);
 }

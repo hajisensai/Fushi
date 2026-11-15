@@ -402,6 +402,8 @@ extension _SyncOrchestratorVideos on SyncOrchestrator {
     bool subtitleEndpointMissing = false;
     for (final ({VideoBookRow row, File file, bool pushVideo}) item in toPush) {
       final VideoBookRow v = item.row;
+      // 安全检查点：上一项已完整落地，这一项还没开始。
+      _checkpoint();
       _emit(
         SyncPhase.videos,
         itemIndex: index,

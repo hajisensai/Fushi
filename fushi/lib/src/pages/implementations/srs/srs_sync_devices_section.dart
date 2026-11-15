@@ -1,6 +1,6 @@
 /// 同步页的「设备」列表：每台设备的名称（「<名称>（Fushi X.Y）」）、平台图标、最后在线、状态（正常 / 落后 / 缺段 /
 /// 需要升级 / 已停用）。点本机改昵称（只替换名称部分）；点别的设备「这台设备不用了」（停用，确认框说明后果，可在这里
-/// 恢复），已停用的点了恢复。数据来自内核 `sync2_status`（native/fushi_fsrs/src/store/sync2/devices.rs）。
+/// 恢复），已停用的点了恢复；还没信任的设备（删除扣着，store/sync2/trust.rs）标「待确认 / 已拒绝」，点了去冲突中心确认。数据来自内核 `sync2_status`（native/fushi_fsrs/src/store/sync2/devices.rs）。
 library;
 
 import 'package:material_ui/material_ui.dart';
@@ -73,7 +73,14 @@ List<String> srsDeviceRowDetails(
               : t.srs_timeline_behind(n: d.behind),
         SrsDeviceState.ok => null,
       },
+    if (!d.self && d.trust != SrsDeviceTrust.trusted)
+      t.srs_device_trust_held_detail(n: d.heldDeletes + d.heldPurges),
     if (d.digestMismatch) t.srs_timeline_digest_mismatch,
+    if (!d.self && d.rulesTheirs != null && d.rulesMine != null)
+      t.srs_device_rules_differ(
+        theirs: d.rulesTheirs.toString(),
+        mine: d.rulesMine.toString(),
+      ),
     if (d.warning != null) t.srs_timeline_device_warning,
   ].nonNulls.toList();
 }
@@ -87,6 +94,7 @@ class SrsSyncDevicesSection extends StatelessWidget {
     required this.onRename,
     required this.onRetire,
     required this.onUnretire,
+    required this.onReviewTrust,
   });
 
   final List<SrsDeviceView> devices;
@@ -99,6 +107,9 @@ class SrsSyncDevicesSection extends StatelessWidget {
   final ValueChanged<SrsDeviceView> onRename;
   final ValueChanged<SrsDeviceView> onRetire;
   final ValueChanged<SrsDeviceView> onUnretire;
+
+  /// 点一台还没信任的设备：去冲突中心「待确认的设备」确认 / 拒绝（它的删除在本机扣着）。
+  final ValueChanged<SrsDeviceView> onReviewTrust;
 
   @override
   Widget build(BuildContext context) {
@@ -117,6 +128,8 @@ class SrsSyncDevicesSection extends StatelessWidget {
         ? null
         : d.self
         ? () => onRename(d)
+        : d.trust != SrsDeviceTrust.trusted
+        ? () => onReviewTrust(d)
         : d.state == SrsDeviceState.retired
         ? () => onUnretire(d)
         : () => onRetire(d);
@@ -144,6 +157,17 @@ class SrsSyncDevicesSection extends StatelessWidget {
                 key: ValueKey<String>('srs_device_rename_${d.id}'),
                 message: t.srs_device_rename_tooltip,
                 child: const FushiIcon(FushiIcons.rename),
+              )
+            : d.trust != SrsDeviceTrust.trusted
+            ? FushiTag(
+                key: ValueKey<String>('srs_device_trust_${d.id}'),
+                text: d.needsTrust
+                    ? t.srs_device_trust_pending
+                    : t.srs_device_trust_rejected,
+                tone: d.needsTrust
+                    ? FushiTagTone.warning
+                    : FushiTagTone.neutral,
+                dense: true,
               )
             : FushiTag(
                 key: ValueKey<String>('srs_device_state_${d.id}'),

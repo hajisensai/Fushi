@@ -19,8 +19,8 @@ class StatWindow {
 
   StatWindow._(DateTime now, String today)
     : todayKey = today,
-      weekFromKey = _mondayOf(today),
-      prevWeekFromKey = FushiDatabase.statDateKeyPlusDays(_mondayOf(today), -7),
+      weekFromKey = mondayOf(today),
+      prevWeekFromKey = FushiDatabase.statDateKeyPlusDays(mondayOf(today), -7),
       prevWeekToKey = FushiDatabase.statDateKeyPlusDays(today, -7),
       monthFromKey = _keyDaysAgo(now, 29),
       _now = now;
@@ -76,7 +76,9 @@ class StatWindow {
   static Duration untilNextStatDayBoundary(DateTime now) =>
       FushiDatabase.untilNextStatDayBoundary(now);
 
-  static String _mondayOf(String dateKey) => FushiDatabase.statDateKeyPlusDays(
+  /// [dateKey] 所在自然周的周一（dateKey 口径）。[weekFromKey] 与桌面小组件的
+  /// 周目标分子（`widget_snapshot.dart`）都从这一处取，「本周」只有一个定义。
+  static String mondayOf(String dateKey) => FushiDatabase.statDateKeyPlusDays(
     dateKey,
     -(FushiDatabase.statDateKeyToDay(dateKey).weekday - DateTime.monday),
   );

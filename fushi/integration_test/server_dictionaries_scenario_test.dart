@@ -1632,7 +1632,7 @@ void main() {
             final _Http a = await _awaitPumping(
               tester,
               _admin(
-                'PUT',
+                'PATCH',
                 _dictPath(_kGames),
                 json: <String, Object?>{'defaultEnabled': false},
               ),
@@ -1640,7 +1640,7 @@ void main() {
             final _Http b = await _awaitPumping(
               tester,
               _admin(
-                'PUT',
+                'PATCH',
                 _dictPath(_kKo),
                 json: <String, Object?>{'languageOverride': 'ko-KR'},
               ),
@@ -1650,7 +1650,7 @@ void main() {
               _admin('DELETE', _dictPath(_kPush)),
             );
             _log(
-              '4 admin PUT games=${a.status} PUT ko=${b.status} DELETE push=${c.status}',
+              '4 admin PATCH games=${a.status} PATCH ko=${b.status} DELETE push=${c.status}',
             );
             final Object? diffs = await _awaitPumping(
               tester,
@@ -1780,15 +1780,15 @@ void main() {
             await _shot(tester, '17-after-local-delete');
             await _closeManager(tester);
 
-            // 经 WebUI 导入端点重新放回服务器。
+            // 经 WebUI 导入端点（PUT /api/admin/dictionaries）重新放回服务器。
             final List<int> bytes = File(
               p.join(_kScratch, 'dicts', 'TestPushJA.zip'),
             ).readAsBytesSync();
             final _Http imp = await _awaitPumping(
               tester,
               _admin(
-                'POST',
-                '/api/admin/dictionaries/import?filename=TestPushJA.zip',
+                'PUT',
+                '/api/admin/dictionaries?filename=TestPushJA.zip',
                 bytes: bytes,
               ),
             );
@@ -2245,19 +2245,19 @@ void main() {
 
           await safe('admin Games defaultEnabled=true', () async {
             final _Http r = await _admin(
-              'PUT',
+              'PATCH',
               _dictPath(_kGames),
               json: <String, Object?>{'defaultEnabled': true},
             );
-            _log('restore: PUT games ${r.status}');
+            _log('restore: PATCH games ${r.status}');
           });
           await safe('admin KO languageOverride=null (original)', () async {
             final _Http r = await _admin(
-              'PUT',
+              'PATCH',
               _dictPath(_kKo),
               json: <String, Object?>{'languageOverride': null},
             );
-            _log('restore: PUT ko ${r.status}');
+            _log('restore: PATCH ko ${r.status}');
           });
           await safe('admin delete Test Push JA', () async {
             final _Http r = await _admin('DELETE', _dictPath(_kPush));

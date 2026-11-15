@@ -31,6 +31,7 @@ import 'package:fushi_engine/foundation/engine_paths.dart';
 import 'package:fushi_engine/dictionary/dictionary_engine_hooks.dart';
 import 'package:fushi_engine/foundation/engine_platform_hooks.dart';
 import 'package:fushi_engine/media/audio/flac_encoder.dart';
+import 'package:fushi_engine/media/audiobook/book_text_sections.dart';
 import 'package:fushi_engine/media/video/bluray/aacs_media_session.dart'
     show aacsDecryptionAvailable;
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
@@ -41,6 +42,7 @@ import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart'
 import 'package:fushi/src/utils/net/ffmpeg_relay_route.dart';
 import 'package:fushi_engine/ocr/ocr_host_bindings.dart';
 import 'package:fushi/src/media/manga/manga_panel_model_service.dart';
+import 'package:fushi/src/pdf/pdf_text_sections.dart';
 
 /// `AppPaths` 静态便捷层 → 引擎 [EnginePaths]。三个根逐一委派，子目录派生规则
 /// 在引擎基类里与 `AppPaths.documentsSubdirectory` 同构。
@@ -117,6 +119,8 @@ void installEngineHostBindings() {
   installAudiobookStoragePlatform();
   // AIFF 有声书落盘转 FLAC（Android 的 ExoPlayer 不认 AIFF）。
   installAudiobookFlacTranscoder();
+  // PDF 有声书对齐的正文 = PDFium 文本层逐页全文（引擎不依赖 pdfrx 插件）。
+  pdfTextSectionsLoader = loadPdfTextSections;
   // 漫画 OCR 整卷任务的后台 isolate：插件后端会话工厂 + MethodChannel 引导。
   ocrSessionFactoryBuilder = buildOrtOcrFactory;
   ocrIsolateBootstrap = fushiOcrIsolateBootstrap;

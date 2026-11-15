@@ -165,6 +165,65 @@ void main() {
     expect(opened, <int>[0, 1], reason: '回封面后从最近听到的那张看起');
   });
 
+  // 反馈 VaaRL9s3Tg：小封面打开大图（不回封面的入口）看过后，缩略图仍留着插图，
+  // 但「新插图」提示点必须消失；换上新插图时再出现。
+  testWidgets('竖屏：打开大图看过后提示点消失，换上新插图再出现', (WidgetTester tester) async {
+    final LyricsIllustrationController c = _controller()
+      // 「红点」提示方式：不弹卡（不起自动收起计时），只换缩略图 + 提示点。
+      ..autoOpenCard = false;
+    late BuildContext hostContext;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (BuildContext context) {
+              hostContext = context;
+              return Center(
+                child: LyricsIllustrationCompactArtwork(
+                  controller: c,
+                  onOpen: (int index) => showLyricsIllustrationViewer(
+                    hostContext,
+                    controller: c,
+                    index: index,
+                  ),
+                  builder: (BuildContext context, ImageProvider? _) =>
+                      const SizedBox.square(dimension: 44),
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+    const Key dot = ValueKey<String>('lyrics_compact_artwork_dot');
+
+    _playPastTwo(c);
+    await tester.pumpAndSettle();
+    expect(c.shown, 0);
+    expect(find.byKey(dot), findsOneWidget, reason: '换上了没看过的插图');
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('lyrics_compact_artwork')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('1 / 2'), findsOneWidget);
+    await tester.tap(
+      find.byKey(const ValueKey<String>('lyrics_illustration_viewer_close')),
+    );
+    await tester.pumpAndSettle();
+    expect(c.shown, 0, reason: '不回封面的入口：插图位仍是这张插图');
+    expect(find.byKey(dot), findsNothing, reason: '看过大图：提示点消失');
+
+    // 顺着播走过第三张：换上新插图，提示点重新出现。
+    c.observe(
+      const LyricsBookPosition(3, 10),
+      audioPosition: const Duration(seconds: 10),
+    );
+    await tester.pumpAndSettle();
+    expect(c.shown, 2);
+    expect(find.byKey(dot), findsOneWidget, reason: '换上新插图：提示点再出现');
+  });
+
   testWidgets('大图浏览：只翻已听到的插图，翻页同步封面位，关掉回封面', (WidgetTester tester) async {
     final LyricsIllustrationController c = _controller();
     _playPastTwo(c);

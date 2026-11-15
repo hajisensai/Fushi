@@ -395,6 +395,71 @@ void main() {
     ]);
   });
 
+  // 反馈 80S7Esbdec：shinnku 后端是字符级模糊匹配，搜「ユリアリス」会把
+  // 零散命中 リ / ア / ス 的条目原样透传。聚合层统一按相关度重排（不删条目，
+  // 折叠交给 UI），所有消费方（发现页 / AI 下载 / ctl）同一口径。
+  test('搜索结果在每个分片内按相关度稳定重排，不删条目、不跨源混排', () async {
+    final _FakeSource shinnku = _FakeSource(
+      id: 'shinnku',
+      priority: 1,
+      capabilities: novelSearch,
+      onSearch: (DiscoveryRequest _) async => _pageOf('shinnku', <String>[
+        '天文時計のアリア',
+        'ユニオリズム',
+        'ユリアリス.7z',
+        'デリシャスらんちぱっく',
+      ]),
+    );
+    final _FakeSource alist = _FakeSource(
+      id: 'alist',
+      priority: 2,
+      capabilities: novelSearch,
+      onSearch: (DiscoveryRequest _) async =>
+          _pageOf('alist', <String>['ユリアリス']),
+    );
+    final MediaDiscoveryService service = MediaDiscoveryService(
+      sources: <MediaDiscoverySource>[shinnku, alist],
+    );
+
+    final DiscoveryAggregateResult result = await service.load(
+      const DiscoveryRequest(kind: DiscoveryMediaKind.novel, query: 'ユリアリス'),
+    );
+
+    expect(result.entries.map((DiscoveryEntry e) => e.title), <String>[
+      'ユリアリス.7z',
+      '天文時計のアリア',
+      'ユニオリズム',
+      'デリシャスらんちぱっく',
+      'ユリアリス',
+    ]);
+  });
+
+  test('浏览请求不按相关度重排', () async {
+    final _FakeSource site = _FakeSource(
+      id: 'site',
+      priority: 1,
+      capabilities: DiscoveryCapabilities(
+        kinds: <DiscoveryMediaKind>{DiscoveryMediaKind.novel},
+        supportsBrowse: true,
+      ),
+      onBrowse: (DiscoveryRequest _) async =>
+          _pageOf('site', <String>['b', 'a']),
+    );
+    final MediaDiscoveryService service = MediaDiscoveryService(
+      sources: <MediaDiscoverySource>[site],
+    );
+
+    final DiscoveryAggregateResult result = await service.load(
+      const DiscoveryRequest(kind: DiscoveryMediaKind.novel),
+      sourceId: 'site',
+    );
+
+    expect(result.entries.map((DiscoveryEntry e) => e.title), <String>[
+      'b',
+      'a',
+    ]);
+  });
+
   test('close 逐源下发', () {
     final _FakeSource a = _FakeSource(
       id: 'a',

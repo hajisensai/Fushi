@@ -80,10 +80,14 @@ class RemoteDictionaryCatalogService {
        _transport = transport,
        _dictionaries = dictionaries,
        _reachability = reachability ?? RemoteDictionaryReachability(now: now),
+       _ownsReachability = reachability == null,
        _now = now,
        _timeout = timeout,
        _probeTimeout = probeTimeout,
        _resumeRefreshInterval = resumeRefreshInterval;
+
+  /// 没注入追踪器时自建的那份由本服务退订（它订阅着互联全局上报点）。
+  final bool _ownsReachability;
 
   final FushiDatabase _db;
   final SyncRepository _syncRepository;
@@ -137,6 +141,7 @@ class RemoteDictionaryCatalogService {
   }
 
   void dispose() {
+    if (_ownsReachability) _reachability.dispose();
     if (!_started) return;
     _started = false;
     SyncRepository.fushiClientUrlsRevision.removeListener(_onClientUrlsChanged);
@@ -253,7 +258,8 @@ class RemoteDictionaryCatalogService {
     String hostId, {
     required Duration timeout,
   }) async {
-    final RemoteHostOutcomes outcomes = RemoteHostOutcomes();
+    // 可达性不在这里记：传输层把每个候选的结局报给全局上报点，[_reachability]
+    // 订阅的就是那一份。
     final InterconnectGetOutcome outcome;
     try {
       outcome = await _transport.getJson(
@@ -263,13 +269,10 @@ class RemoteDictionaryCatalogService {
         candidateFilter: (FushiClientUrl candidate) =>
             candidate.isDictionaryLookupCandidate &&
             remoteDictionaryHostIdOf(candidate) == hostId,
-        onCandidateOutcome: outcomes.add,
       );
     } on SyncAuthError catch (e, stack) {
       ErrorLogService.instance.log('remoteDictionaryCatalog.auth', e, stack);
       return null;
-    } finally {
-      _reachability.record(outcomes.reachableByHost);
     }
     return remoteDictionaryInfosFromJson(outcome.json);
   }

@@ -439,6 +439,15 @@ dependencies {
     // typed calls (a by-name reflective call does not survive R8). The plugin only has this as
     // `implementation`, so declare it here at the plugin's version (audio_service 0.18.18).
     implementation 'androidx.media:media:1.7.0'
+    // 反馈回复后台检查的纯原生 Worker（app.fushi.reader.feedback.FeedbackReplyWorker，反馈
+    // yjn-3h8B-7）。版本对齐 workmanager_android 0.10.9 android/build.gradle 的 work_version；
+    // 该插件只以 implementation 带它，app 模块编译期看不到。CoroutineWorker 继承的
+    // ListenableWorker.startWork() 返回 guava 的 ListenableFuture：运行时类路径上已有
+    // exoplayer 带进来的完整 guava 31.0.1-android，但 AGP 把编译期的 listenablefuture:1.0 对齐成
+    // 9999.0-empty-to-avoid-conflict-with-guava 空包（实测编译报 Unresolved reference），所以编译期
+    // 直接依赖同版本 guava——不给 APK 增加新代码。
+    implementation "androidx.work:work-runtime:2.11.2"
+    implementation "com.google.guava:guava:31.0.1-android"
 }
 
 // 计算内核 fushi_compute 是硬依赖：本次构建要出的每个 ABI 都必须已有

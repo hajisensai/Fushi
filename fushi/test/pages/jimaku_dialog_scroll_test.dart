@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi/src/pages/implementations/jimaku_subtitle_dialog.dart';
@@ -225,8 +226,10 @@ void main() {
   });
 
   // TODO-673：番名都一样、只有集数（第01話/E01...）不同的真实场景下，结果项文件名
-  // 若单行 ellipsis 截断就把区分集数的部分吃掉，用户分不清是第几集。修后文件名标题
-  // 允许换行（maxLines>1 + softWrap），完整文件名（含集数）可渲染、可见。
+  // 若单行 ellipsis 截断就把区分集数的部分吃掉，用户分不清是第几集。
+  // BUG-4348：上一版放宽到 3 行仍会在窄屏切掉末尾，改为完整换行、不限行
+  // （SubtitleFileNameText，与版本视图同一组件）。断言落在实际排版的
+  // RenderParagraph 上：不限行、没有任何一行被截掉。
   List<JimakuCandidate> makeSameSeriesEpisodes() {
     const String longSeries = 'デッドデッドデーモンズデデデデデストラクション';
     return <JimakuCandidate>[
@@ -242,7 +245,7 @@ void main() {
   }
 
   testWidgets(
-    'TODO-673: result title wraps (maxLines>1 + softWrap), episode visible',
+    'TODO-673/BUG-4348: result title wraps fully (no line cap), episode visible',
     (WidgetTester tester) async {
       tester.view.physicalSize = const Size(360, 800);
       tester.view.devicePixelRatio = 1.0;
@@ -265,24 +268,31 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // 标题 Text（文件名）必须换行：maxLines>1 且 softWrap，且不再用 ellipsis 截断
-      // （否则集数被吃掉）。
-      final Iterable<Text> titles = tester.widgetList<Text>(
-        find.textContaining('第01話'),
+      // 标题（文件名）必须完整换行：实际排版不限行、没有被截断（否则末尾的
+      // 集数 / 版本差异被吃掉）。
+      final Finder titleParagraph = find.byWidgetPredicate(
+        (Widget w) => w is RichText && w.text.toPlainText().contains('第01話'),
       );
-      expect(titles, isNotEmpty, reason: '含集数(第01話)的完整文件名应作为标题被渲染');
-      final Text title = titles.first;
-      expect(title.maxLines, isNotNull, reason: '标题应设置 maxLines（多行而非默认单行截断）');
+      expect(titleParagraph, findsOneWidget, reason: '含集数(第01話)的完整文件名应作为标题被渲染');
+      final RenderParagraph paragraph = tester.renderObject<RenderParagraph>(
+        titleParagraph,
+      );
+      expect(paragraph.maxLines, isNull, reason: '文件名标题不应设行数上限');
+      expect(paragraph.softWrap, isTrue, reason: '标题应 softWrap 才能换行');
+      expect(paragraph.didExceedMaxLines, isFalse, reason: '文件名不应有任何一行被截掉');
       expect(
-        title.maxLines!,
+        paragraph
+            .getBoxesForSelection(
+              TextSelection(
+                baseOffset: 0,
+                extentOffset: paragraph.text.toPlainText().length,
+              ),
+            )
+            .map((TextBox box) => box.top)
+            .toSet()
+            .length,
         greaterThan(1),
-        reason: '标题 maxLines 应 >1 才能换行显示完整文件名',
-      );
-      expect(title.softWrap, isTrue, reason: '标题应 softWrap 才能换行');
-      expect(
-        title.overflow,
-        isNot(TextOverflow.ellipsis),
-        reason: '标题不应再用 ellipsis 截断（会吃掉区分集数的部分）',
+        reason: '360 宽下长文件名应换成多行而不是单行截断',
       );
 
       // 第二集的集数同样可见——两集番名相同，唯一区分点（第02話）必须渲染出来。

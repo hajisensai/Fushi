@@ -257,9 +257,13 @@ class SrtBookRepository {
   /// [pickedPaths] 为空时直接返回（无副作用），调用方负责空选过滤/提示。
   /// [onProgress] 透传给 `persistFileWithProgress`，可用于进度 UI。
   /// 返回复制后落库的音频路径列表（顺序与 [pickedPaths] 一致）。
+  ///
+  /// [copy] 为 false 时是引用导入（`syncAudioFiles` 的 `copy: false`）：音频留在原处、
+  /// 库里记原始绝对路径——服务端有声书库根重扫补音频用它。
   Future<List<String>> replaceAudio({
     required String uid,
     required List<String> pickedPaths,
+    bool copy = true,
     void Function(int copied, int total)? onProgress,
   }) async {
     if (pickedPaths.isEmpty) return const <String>[];
@@ -278,6 +282,7 @@ class SrtBookRepository {
     final List<String> persisted = await AudiobookStorage.syncAudioFiles(
       persistDir,
       pickedPaths,
+      copy: copy,
       onProgress: onProgress,
     );
 
@@ -288,11 +293,19 @@ class SrtBookRepository {
     // BUG-1679：换了音频就作废与旧时间轴绑定的播放进度。SRT 书的进度 pref key 是
     // `audiobook_pos_<uid>`（与 AudiobookSessionLauncher._readPrefs 的 SRT 分支
     // 同源）。不归零则恢复 seek 落在新音频的随机处甚至 EOF——「音频不响」/
-    // 「乱跳页」。音频集合没变（重复导入同一组）时不动进度。
+    // 「乱跳页」。音频集合没变（重复导入同一组）时不动进度；变了但断点所在文件及其
+    // 之前的文件都没变（追加章节等）也不动（[audiobookPositionSurvivesAudioChange]，
+    // 编码时长与控制器 / [saveCues] 同一条 [audiobookPositionDurationsMs]）。
     final bool audioChanged =
         previousRoot != null ||
         !AudiobookStorage.sameAudioPathList(previousAudio, persisted);
-    if (audioChanged) {
+    if (audioChanged &&
+        (previousRoot != null ||
+            !await _positionSurvivesAudioChange(
+              uid: uid,
+              oldPaths: previousAudio,
+              newPaths: persisted,
+            ))) {
       await AudiobookRepository(
         _db,
       ).updatePositionMs(bookKey: uid, positionMs: 0);
@@ -307,6 +320,29 @@ class SrtBookRepository {
     await _healDirtyAudiobookRow(book);
 
     return persisted;
+  }
+
+  Future<bool> _positionSurvivesAudioChange({
+    required String uid,
+    required List<String> oldPaths,
+    required List<String> newPaths,
+  }) async {
+    final RemoteAudioBinding? binding = await RemoteAudioBindingRepository(
+      _db,
+    ).get(uid);
+    return audiobookPositionSurvivesAudioChange(
+      globalMs: await AudiobookRepository(_db).readPositionMs(uid),
+      durationsMs: audiobookPositionDurationsMs(
+        await cuesFor(uid),
+        remoteTrackDurationsMs: <int>[
+          for (final RemoteAudioTrack t
+              in binding?.tracks ?? const <RemoteAudioTrack>[])
+            t.durationMs,
+        ],
+      ),
+      oldPaths: oldPaths,
+      newPaths: newPaths,
+    );
   }
 
   /// TODO-1032 PR2：删除「旧版书架 audioOnly 导入误落的 Audiobook 脏行」，使读取端

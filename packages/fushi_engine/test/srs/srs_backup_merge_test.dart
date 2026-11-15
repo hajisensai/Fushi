@@ -342,7 +342,7 @@ void main() {
 
     await srsAdoptProfileUid(
       local,
-      localSrs.db,
+      localSrs.core,
       profileId: localId,
       oldUid: oldUid,
       newUid: 'new-uid',

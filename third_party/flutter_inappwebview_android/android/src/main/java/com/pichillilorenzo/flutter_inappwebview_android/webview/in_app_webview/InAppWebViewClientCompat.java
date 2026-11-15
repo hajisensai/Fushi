@@ -28,6 +28,7 @@ import androidx.webkit.WebResourceRequestCompat;
 import androidx.webkit.WebViewClientCompat;
 import androidx.webkit.WebViewFeature;
 
+import com.pichillilorenzo.flutter_inappwebview_android.BackgroundCookieFlusher;
 import com.pichillilorenzo.flutter_inappwebview_android.Util;
 import com.pichillilorenzo.flutter_inappwebview_android.credential_database.CredentialDatabase;
 import com.pichillilorenzo.flutter_inappwebview_android.in_app_browser.InAppBrowserDelegate;
@@ -242,8 +243,11 @@ public class InAppWebViewClientCompat extends WebViewClientCompat {
     // Fushi patch: no cookie flush here. CookieManager.flush() blocks the UI
     // thread until Chromium's cookie-store IO thread finishes the write, which
     // took >5-10 s under memory / IO pressure and caused input-dispatch ANRs on
-    // every page load. Chromium persists cookies on its own; explicit cookie
-    // writes (MyCookieManager.setCookie / delete*) still flush. See PATCHES.md.
+    // every page load. Only mark the store dirty; BackgroundCookieFlusher
+    // flushes once on a background thread when the app UI is hidden. Explicit
+    // cookie writes (MyCookieManager.setCookie / delete*) still flush. See
+    // PATCHES.md.
+    BackgroundCookieFlusher.markDirty();
 
     String js = JavaScriptBridgeJS.PLATFORM_READY_JS_SOURCE;
 

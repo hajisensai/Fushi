@@ -622,6 +622,13 @@ pub(crate) fn purge_op(
         return Ok(());
     }
     let skel = op.purge();
+    if own == Some(&id.device) {
+        super::min_reader::raise(
+            conn,
+            profile,
+            crate::sync2::min_reader::min_reader_of(&skel),
+        )?;
+    }
     conn.prepare_cached(
         "UPDATE sync2_ops SET payload = ?4, purged = 1, sc = NULL, sc_at = NULL, pz = 0 WHERE profile_uid = srs_id(?1) AND device = ?2 AND seq = ?3",
     )

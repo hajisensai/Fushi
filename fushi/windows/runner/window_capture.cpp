@@ -633,13 +633,99 @@ bool VerifyPrintWindowTarget(HWND hwnd) {
   return true;
 }
 
-PrintWindowWorkerStatus ValidatePrintWindowPixels(uint8_t* bytes,
-                                                  size_t buffer_size,
-                                                  UINT width, UINT height) {
+// Client size in the target window's *own* DPI coordinate space.
+//
+// The capture path measures the client in physical pixels (this process is
+// per-monitor-v2 aware). A DPI-unaware window on a scaled monitor is
+// bitmap-stretched by DWM: its redirection surface, and therefore what
+// PrintWindow paints, is at the logical size the window itself sees, e.g.
+// a physical 2238x1230 client at 300% renders 746x410 pixels. Reading
+// GetClientRect under the target's awareness context gives exactly that size;
+// for a per-monitor-aware target it equals the physical client.
+bool ReadNativeClientSize(HWND hwnd, UINT* width, UINT* height,
+                          int* awareness) {
+  if (hwnd == nullptr || width == nullptr || height == nullptr ||
+      awareness == nullptr) {
+    return false;
+  }
+  *width = 0;
+  *height = 0;
+  *awareness = -1;
+  const DPI_AWARENESS_CONTEXT context = GetWindowDpiAwarenessContext(hwnd);
+  if (context == nullptr) {
+    return false;
+  }
+  *awareness =
+      static_cast<int>(GetAwarenessFromDpiAwarenessContext(context));
+  const DPI_AWARENESS_CONTEXT previous = SetThreadDpiAwarenessContext(context);
+  if (previous == nullptr) {
+    return false;
+  }
+  RECT client{};
+  const BOOL read = GetClientRect(hwnd, &client);
+  SetThreadDpiAwarenessContext(previous);
+  if (!read || client.right <= client.left || client.bottom <= client.top) {
+    return false;
+  }
+  *width = static_cast<UINT>(client.right - client.left);
+  *height = static_cast<UINT>(client.bottom - client.top);
+  return true;
+}
+
+// Which part of the physical-size DIB PrintWindow actually painted. The DIB
+// is pre-filled with a position-dependent sentinel, so "painted" is observed,
+// not inferred from DPI arithmetic.
+struct PrintWindowPaintedRegion {
+  // Accepted image size inside the DIB (top-left anchored). Equals the DIB
+  // size for a full paint, the native client size for a DPI-virtualized
+  // paint, and zero when the paint is rejected.
+  UINT width = 0;
+  UINT height = 0;
+  // Bounding box of every painted pixel, for diagnostics only.
+  UINT painted_left = 0;
+  UINT painted_top = 0;
+  UINT painted_right = 0;
+  UINT painted_bottom = 0;
+};
+
+// [width]x[height] is the physical client DIB; [native_width]x[native_height]
+// is ReadNativeClientSize(). Exactly two layouts are complete frames:
+//   1. every DIB pixel painted (PrintWindow rendered at physical size);
+//   2. the native client is strictly smaller, every pixel inside the top-left
+//      native rectangle is painted and every pixel outside it is untouched
+//      (PrintWindow rendered the bitmap-stretched window at its own size).
+// Any other mix of painted / untouched pixels stays kPartialPixels.
+PrintWindowWorkerStatus ValidatePrintWindowPixels(
+    uint8_t* bytes, size_t buffer_size, UINT width, UINT height,
+    UINT native_width, UINT native_height, PrintWindowPaintedRegion* region) {
+  PrintWindowPaintedRegion observed;
+  observed.painted_left = width;
+  observed.painted_top = height;
+  if (region != nullptr) {
+    *region = PrintWindowPaintedRegion{};
+  }
+  const size_t pixel_count = static_cast<size_t>(width) * height;
+  if (bytes == nullptr || width == 0 || height == 0 ||
+      buffer_size != pixel_count * 4u) {
+    return PrintWindowWorkerStatus::kHelperProtocolFailed;
+  }
+  const bool native_smaller =
+      native_width > 0 && native_height > 0 && native_width <= width &&
+      native_height <= height &&
+      (native_width < width || native_height < height);
   size_t untouched_pixels = 0;
+  size_t untouched_inside_native = 0;
+  size_t painted_outside_native = 0;
   bool has_non_black_rgb = false;
   bool has_nonzero_alpha = false;
+  bool native_has_non_black_rgb = false;
+  bool native_has_nonzero_alpha = false;
   for (size_t i = 0; i < buffer_size; i += 4) {
+    const size_t pixel = i / 4u;
+    const UINT x = static_cast<UINT>(pixel % width);
+    const UINT y = static_cast<UINT>(pixel / width);
+    const bool inside_native =
+        native_smaller && x < native_width && y < native_height;
     const bool unchanged =
         bytes[i] == static_cast<uint8_t>(0xA5u ^ (i & 0x3Fu)) &&
         bytes[i + 1] == static_cast<uint8_t>(0xA5u ^ ((i + 1) & 0x3Fu)) &&
@@ -647,32 +733,134 @@ PrintWindowWorkerStatus ValidatePrintWindowPixels(uint8_t* bytes,
         bytes[i + 3] == static_cast<uint8_t>(0xA5u ^ ((i + 3) & 0x3Fu));
     if (unchanged) {
       ++untouched_pixels;
+      if (inside_native) {
+        ++untouched_inside_native;
+      }
+    } else {
+      observed.painted_left = (std::min)(observed.painted_left, x);
+      observed.painted_top = (std::min)(observed.painted_top, y);
+      observed.painted_right = (std::max)(observed.painted_right, x + 1);
+      observed.painted_bottom = (std::max)(observed.painted_bottom, y + 1);
+      if (native_smaller && !inside_native) {
+        ++painted_outside_native;
+      }
     }
-    if (bytes[i] != 0 || bytes[i + 1] != 0 || bytes[i + 2] != 0) {
-      has_non_black_rgb = true;
-    }
-    if (bytes[i + 3] != 0) {
-      has_nonzero_alpha = true;
+    const bool non_black = bytes[i] != 0 || bytes[i + 1] != 0 || bytes[i + 2] != 0;
+    const bool nonzero_alpha = bytes[i + 3] != 0;
+    has_non_black_rgb = has_non_black_rgb || non_black;
+    has_nonzero_alpha = has_nonzero_alpha || nonzero_alpha;
+    if (inside_native) {
+      native_has_non_black_rgb = native_has_non_black_rgb || non_black;
+      native_has_nonzero_alpha = native_has_nonzero_alpha || nonzero_alpha;
     }
     // A 32bpp BI_RGB DIB does not promise meaningful alpha. A captured game
     // client is opaque, so normalize it before handing pixels to WIC.
     bytes[i + 3] = 0xFF;
   }
-  const size_t pixel_count = static_cast<size_t>(width) * height;
   if (untouched_pixels == pixel_count) {
+    observed.painted_left = 0;
+    observed.painted_top = 0;
+    if (region != nullptr) {
+      *region = observed;
+    }
     return PrintWindowWorkerStatus::kNoPixels;
   }
-  if (untouched_pixels != 0) {
+  bool image_non_black = false;
+  bool image_nonzero_alpha = false;
+  if (untouched_pixels == 0) {
+    observed.width = width;
+    observed.height = height;
+    image_non_black = has_non_black_rgb;
+    image_nonzero_alpha = has_nonzero_alpha;
+  } else if (native_smaller && untouched_inside_native == 0 &&
+             painted_outside_native == 0) {
+    observed.width = native_width;
+    observed.height = native_height;
+    image_non_black = native_has_non_black_rgb;
+    image_nonzero_alpha = native_has_nonzero_alpha;
+  } else {
+    if (region != nullptr) {
+      *region = observed;
+    }
     return PrintWindowWorkerStatus::kPartialPixels;
   }
-  if (!has_non_black_rgb) {
+  if (region != nullptr) {
+    *region = observed;
+  }
+  if (!image_non_black) {
     // A BI_RGB DIB may leave alpha at zero even after a visible WM_PRINT.
     // Treat an all-black RGB frame as unusable; distinguish an explicitly
     // zero-alpha black frame from a non-transparent black frame in logs.
-    return has_nonzero_alpha ? PrintWindowWorkerStatus::kBlackPixels
-                             : PrintWindowWorkerStatus::kTransparentPixels;
+    return image_nonzero_alpha ? PrintWindowWorkerStatus::kBlackPixels
+                               : PrintWindowWorkerStatus::kTransparentPixels;
   }
   return PrintWindowWorkerStatus::kComplete;
+}
+
+// Stretch the top-left [source_width]x[source_height] block of a BGRA buffer
+// (row stride [source_stride]) to [target_width]x[target_height], the same
+// physical client size WGC would have delivered for this window. Returns an
+// empty vector on any WIC failure. The calling thread must have COM.
+std::vector<uint8_t> ScaleBgraRegion(const uint8_t* pixels, UINT source_width,
+                                     UINT source_height, UINT source_stride,
+                                     UINT target_width, UINT target_height) {
+  std::vector<uint8_t> scaled;
+  if (pixels == nullptr || source_width == 0 || source_height == 0 ||
+      target_width == 0 || target_height == 0 ||
+      source_stride < source_width * 4u ||
+      !CaptureSizeWithinBudget(target_width, target_height)) {
+    return scaled;
+  }
+  ComPtr<IWICImagingFactory> factory;
+  if (FAILED(CoCreateInstance(CLSID_WICImagingFactory, nullptr,
+                              CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory)))) {
+    return scaled;
+  }
+  ComPtr<IWICBitmap> source;
+  // The caller's buffer holds at least [source_height] full strides (the
+  // native block is the top-left corner of the physical DIB).
+  const UINT source_bytes = source_stride * source_height;
+  if (FAILED(factory->CreateBitmapFromMemory(
+          source_width, source_height, GUID_WICPixelFormat32bppBGRA,
+          source_stride, source_bytes, const_cast<BYTE*>(pixels), &source))) {
+    return scaled;
+  }
+  ComPtr<IWICBitmapScaler> scaler;
+  if (FAILED(factory->CreateBitmapScaler(&scaler)) ||
+      FAILED(scaler->Initialize(source.Get(), target_width, target_height,
+                                WICBitmapInterpolationModeHighQualityCubic))) {
+    return scaled;
+  }
+  const UINT target_stride = target_width * 4u;
+  scaled.resize(static_cast<size_t>(target_stride) * target_height);
+  if (FAILED(scaler->CopyPixels(nullptr, target_stride,
+                                static_cast<UINT>(scaled.size()),
+                                scaled.data()))) {
+    scaled.clear();
+  }
+  return scaled;
+}
+
+std::string DescribePrintWindowGeometry(UINT width, UINT height,
+                                        UINT native_width, UINT native_height,
+                                        int awareness,
+                                        const PrintWindowPaintedRegion* region) {
+  char buffer[256];
+  if (region != nullptr && region->painted_right > region->painted_left &&
+      region->painted_bottom > region->painted_top) {
+    _snprintf_s(buffer, sizeof(buffer), _TRUNCATE,
+                " (physical_client=%ux%u native_client=%ux%u "
+                "dpi_awareness=%d painted=[%u,%u,%u,%u])",
+                width, height, native_width, native_height, awareness,
+                region->painted_left, region->painted_top,
+                region->painted_right, region->painted_bottom);
+  } else {
+    _snprintf_s(buffer, sizeof(buffer), _TRUNCATE,
+                " (physical_client=%ux%u native_client=%ux%u "
+                "dpi_awareness=%d painted=none)",
+                width, height, native_width, native_height, awareness);
+  }
+  return buffer;
 }
 
 bool ParsePointerArgument(const wchar_t* value, ULONG_PTR* parsed) {
@@ -892,6 +1080,15 @@ bool TryCapturePrintWindow(HWND hwnd, WindowCaptureResult* out) {
 
   const UINT width = static_cast<UINT>(initial_client.client_width_px);
   const UINT height = static_cast<UINT>(initial_client.client_height_px);
+  UINT native_width = 0;
+  UINT native_height = 0;
+  int native_awareness = -1;
+  if (!ReadNativeClientSize(hwnd, &native_width, &native_height,
+                            &native_awareness)) {
+    AppendDiagnostic(out, "PrintWindow rejected: native client size unavailable",
+                     S_OK);
+    return false;
+  }
   const UINT stride = width * 4u;
   const size_t buffer_size = static_cast<size_t>(stride) * height;
   const size_t mapping_size = sizeof(PrintWindowHelperSharedState) + buffer_size;
@@ -1118,43 +1315,78 @@ bool TryCapturePrintWindow(HWND hwnd, WindowCaptureResult* out) {
 
   uint8_t* bytes = reinterpret_cast<uint8_t*>(state) +
                    sizeof(PrintWindowHelperSharedState);
-  const PrintWindowWorkerStatus pixel_status =
-      ValidatePrintWindowPixels(bytes, buffer_size, width, height);
+  PrintWindowPaintedRegion painted;
+  const PrintWindowWorkerStatus pixel_status = ValidatePrintWindowPixels(
+      bytes, buffer_size, width, height, native_width, native_height,
+      &painted);
+  const std::string geometry = DescribePrintWindowGeometry(
+      width, height, native_width, native_height, native_awareness, &painted);
   if (pixel_status != PrintWindowWorkerStatus::kComplete) {
+    const char* note = nullptr;
+    HRESULT note_hr = S_OK;
     switch (pixel_status) {
       case PrintWindowWorkerStatus::kNoPixels:
-        AppendDiagnostic(out, "PrintWindow produced no pixels", S_OK);
+        note = "PrintWindow produced no pixels";
         break;
       case PrintWindowWorkerStatus::kPartialPixels:
-        AppendDiagnostic(out, "PrintWindow produced partial client pixels", S_OK);
+        note = "PrintWindow produced partial client pixels";
         break;
       case PrintWindowWorkerStatus::kBlackPixels:
-        AppendDiagnostic(out, "PrintWindow produced a black client frame", S_OK);
+        note = "PrintWindow produced a black client frame";
         break;
       case PrintWindowWorkerStatus::kTransparentPixels:
-        AppendDiagnostic(out, "PrintWindow produced a transparent client frame",
-                         S_OK);
+        note = "PrintWindow produced a transparent client frame";
         break;
       default:
-        AppendDiagnostic(out, "PrintWindow helper returned invalid pixels",
-                         E_UNEXPECTED);
+        note = "PrintWindow helper returned invalid pixels";
+        note_hr = E_UNEXPECTED;
         break;
     }
+    AppendDiagnostic(out, (std::string(note) + geometry).c_str(), note_hr);
     return false;
   }
 
   WindowCaptureMetadata observed_client;
+  UINT final_native_width = 0;
+  UINT final_native_height = 0;
+  int final_native_awareness = -1;
   if (!ReadCaptureClient(hwnd, &observed_client) ||
       !SameCaptureClient(initial_client, observed_client) ||
-      !SameCaptureClient(initial_client, state->final_client)) {
+      !SameCaptureClient(initial_client, state->final_client) ||
+      !ReadNativeClientSize(hwnd, &final_native_width, &final_native_height,
+                            &final_native_awareness) ||
+      final_native_width != native_width ||
+      final_native_height != native_height ||
+      final_native_awareness != native_awareness) {
     AppendDiagnostic(out,
                      "PrintWindow rejected: client identity changed during capture",
                      S_OK);
     return false;
   }
+  // A DPI-virtualized paint covers only the window's own (logical) client.
+  // Stretch it to the physical client, which is what DWM shows on screen and
+  // what WGC delivers for the same window, so image == client stays true for
+  // every consumer of the metadata.
+  const bool virtualized_paint =
+      painted.width != width || painted.height != height;
+  std::vector<uint8_t> scaled;
+  if (virtualized_paint) {
+    scaled = ScaleBgraRegion(bytes, painted.width, painted.height, stride,
+                             width, height);
+    if (scaled.empty()) {
+      AppendDiagnostic(
+          out,
+          (std::string("PrintWindow DPI-virtualized client scaling failed") +
+           geometry)
+              .c_str(),
+          S_OK);
+      return false;
+    }
+  }
   std::string encode_error;
-  std::vector<uint8_t> png =
-      EncodeBgraToPng(bytes, width, height, stride, &encode_error);
+  std::vector<uint8_t> png = EncodeBgraToPng(
+      virtualized_paint ? scaled.data() : bytes, width, height, stride,
+      &encode_error);
   if (png.empty()) {
     AppendDiagnostic(out, "PrintWindow PNG encoding failed", S_OK);
     return false;
@@ -1172,9 +1404,16 @@ bool TryCapturePrintWindow(HWND hwnd, WindowCaptureResult* out) {
   replacement.metadata = observed_client;
   replacement.capture_reason = "printwindow_complete";
   replacement.ok = true;
-  AppendDiagnostic(&replacement,
-                   "PrintWindow fallback captured the target client area",
-                   S_OK);
+  AppendDiagnostic(
+      &replacement,
+      (std::string(virtualized_paint
+                       ? "PrintWindow fallback captured the DPI-virtualized "
+                         "client at its native size and scaled it to the "
+                         "physical client"
+                       : "PrintWindow fallback captured the target client area") +
+       geometry)
+          .c_str(),
+      S_OK);
   *out = std::move(replacement);
   return true;
 }

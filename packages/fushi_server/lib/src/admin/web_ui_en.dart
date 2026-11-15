@@ -108,6 +108,25 @@ const Map<String, String> kWebUiEnglish = <String, String>{
   '{0} ({1}) 请求配对，请在该设备输入：':
       '{0} ({1}) wants to pair. Enter this on that device:',
   '未知设备': 'Unknown device',
+  '局域网': 'LAN',
+  '公网或反向代理': 'internet or reverse proxy',
+  '来自{0}的配对因多次 PIN 错误暂停至 {1}':
+      'Pairing from {0} is paused until {1} after repeated wrong PINs',
+  '解除': 'Unlock',
+  '已解除': 'Unlocked',
+  '配对链接': 'Pairing link',
+  '一次性链接自带票据，配对不用 PIN；来自公网的 PIN 配对被暂停时也能用。':
+      'A single-use link carries its own ticket, so pairing needs no PIN. It works even while PIN pairing from the internet is paused.',
+  '生成配对链接': 'Create pairing link',
+  '复制': 'Copy',
+  '{0} 分钟内有效，只能用一次。在 Fushi 的互联设置里点「粘贴配对链接」使用。':
+      'Valid for {0} minutes, single use. In the interconnect settings of Fushi, tap "Paste pairing link".',
+  '浏览器不让复制，请手动选中':
+      'The browser blocked copying; select the link and copy it manually',
+  '已复制': 'Copied',
+  '互联服务没在运行': 'The interconnect service is not running',
+  '没有能放进链接的地址：配对链接只收 HTTPS 地址或 P2P 隧道。请开启 TLS、在「设置 › 远程访问」填写 HTTPS 公网地址，或开启 P2P 隧道':
+      'No address can go into the link: pairing links only carry HTTPS addresses or a P2P tunnel. Turn on TLS, add an HTTPS public address under Settings › Remote access, or turn on the P2P tunnel',
   '已配对设备': 'Paired devices',
   '我的设备': 'My device',
   '标为我的设备': 'Mark as my device',
@@ -244,8 +263,22 @@ const Map<String, String> kWebUiEnglish = <String, String>{
   '地址（https://…/api；带 ?apikey= 会自动拆进 key 栏）':
       'Address (https://…/api; a ?apikey= part moves into the key field)',
   '优先级（小的先搜）': 'Priority (lower is searched first)',
-  '分类（逗号分隔，可空）': 'Categories (comma-separated, optional)',
+  '分类（不选 = 全部）': 'Categories (none selected = all)',
+  '其他分类 ID（逗号分隔，可空）': 'Other category IDs (comma-separated, optional)',
   '清除已存的 key': 'Clear the stored key',
+  // ── 在线字幕来源 ──
+  '在线字幕来源': 'Online subtitle sources',
+  '代下载配字幕与补字幕用。与 app 同一份设置；key 不回显，留空不改。设了 FUSHI_* 环境变量时，环境变量里的 key 优先。':
+      'Used to fetch subtitles for downloads and subtitle backfill. Same settings as the app; keys are never shown, leave empty to keep. When a FUSHI_* environment variable is set, its key takes priority.',
+  '保存即生效：下一个下载任务的字幕阶段就用新设置。':
+      "Applies on save: the next download task's subtitle stage uses the new settings.",
+  'OpenSubtitles（不填 key 时用 app 内置 key）':
+      "OpenSubtitles (uses the app's built-in key when empty)",
+  '未生效': 'Inactive',
+  '（环境变量里的 key 优先于这里存的）':
+      "(the environment variable's key takes priority over the one stored here)",
+  '用户名（可选）': 'Username (optional)',
+  '清除已存的密码': 'Clear the stored password',
   '还没有 Torznab indexer。': 'No Torznab indexers yet.',
   '第 {0} 个 indexer 的优先级必须是整数':
       'The priority of indexer {0} must be a whole number',
@@ -343,6 +376,22 @@ const Map<String, String> kWebUiEnglish = <String, String>{
   '{0} 条笔记': '{0} notes',
   '同步目录里还没有任何配置文件：先让一台设备经互联同步一次复习数据。':
       'The sync folder has no profiles yet: sync review data from a device over interconnect once first.',
+  '待确认的设备': 'Devices waiting for confirmation',
+  '本机开始提供某份配置文件之后才第一次同步过来的设备，它的普通修改照常生效，删除与彻底清除先扣在本机，确认是你自己的设备后再生效。拒绝 = 继续扣着，之后仍可改为信任。':
+      'A device that first syncs after this server started serving a profile has its ordinary changes applied as usual, but its deletes and purges are held here until you confirm it is your own device. Reject = keep holding them; you can still trust it later.',
+  '{0}（Fushi {1}）': '{0} (Fushi {1})',
+  '未命名设备': 'Unnamed device',
+  '扣着 {0} 条删除、{1} 条彻底清除': 'Holding {0} deletes, {1} purges',
+  '首次出现 {0}': 'First seen {0}',
+  '待确认': 'Waiting',
+  '已拒绝': 'Rejected',
+  '信任': 'Trust',
+  '拒绝': 'Reject',
+  '没有待确认的设备': 'No devices waiting for confirmation',
+  '信任「{0}」？它扣着的 {1} 条删除与彻底清除会立即生效。':
+      'Trust "{0}"? Its {1} held deletes and purges take effect immediately.',
+  '已信任': 'Trusted',
+  '已拒绝，删除继续扣着': 'Rejected; its deletes stay held',
   '已开始提供': 'Now serving',
   '已停止提供': 'Stopped serving',
   '已设为默认': 'Set as default',
@@ -350,9 +399,9 @@ const Map<String, String> kWebUiEnglish = <String, String>{
       'Where cards go when a paired device uses "Save to paired device". A phone can choose otherwise in its own settings; if it has not, cards go to the phone\'s current profile when this server has it, otherwise to the default profile.',
   '落到': 'Save to',
   '自动（没配好 Anki 时进复习）': 'Automatic (Review when Anki is not set up)',
-  '换日时刻（0–23 点）': 'Day starts at (hour, 0–23)',
+  '换日时刻': 'Day starts at',
   '{0} 的制卡牌组（空 = 默认牌组）': 'Deck for {0} (empty = default deck)',
-  '监听地址（127.0.0.1 = 只限本机）': 'Listen address (127.0.0.1 = this machine only)',
+  '监听地址': 'Listen address',
   '共用 key（落到默认配置文件）': 'Shared key (goes to the default profile)',
   '{0} 专用 key': 'Key for {0}',
   '清除共用 key': 'Clear shared key',
@@ -375,8 +424,8 @@ const Map<String, String> kWebUiEnglish = <String, String>{
   '扫描后清理文件已消失的视频条目': 'Remove video items whose files are gone after scans',
   '允许已配对设备推送 / 拉取配置文件（Profile）':
       'Allow paired devices to push / pull settings profiles',
-  '允许已配对设备远程更新本服务端（仅发布包；装完退出码 75，由服务管理器重启）':
-      'Allow paired devices to update this server remotely (release packages only; exits with code 75 for the service manager to restart it)',
+  '允许已配对设备远程更新本服务端（仅发布包；装完退出码 10，由服务管理器重启）':
+      'Allow paired devices to update this server remotely (release packages only; exits with code 10 for the service manager to restart it)',
   '允许「我的设备」跟随本机 Fushi 排行榜账户自动登录':
       'Allow "my devices" to sign in with this server\'s Fushi leaderboard account',
   '中文查词简繁互查（只管不自带开关的浏览器扩展 / 旧客户端；新版 app 用自己的开关）':
@@ -384,7 +433,6 @@ const Map<String, String> kWebUiEnglish = <String, String>{
   'ffmpeg 路径（空=PATH）': 'ffmpeg path (empty = PATH)',
   'ffprobe 路径（空=PATH）': 'ffprobe path (empty = PATH)',
   'onnxruntime 动态库': 'onnxruntime library',
-  '上传配额（字节）': 'Upload quota (bytes)',
   'WebUI 端口': 'WebUI port',
   'torrent 引擎': 'Torrent engine',
   '内置引擎库路径（空=随包/系统）': 'Embedded engine library path (empty = bundled / system)',
@@ -400,6 +448,8 @@ const Map<String, String> kWebUiEnglish = <String, String>{
   'AI 推理档位': 'AI reasoning effort',
   'AI 允许明文 HTTP（本地推理服务）': 'AI: allow plain HTTP (local inference servers)',
   'AI 联网资料（维基辅助识别作品）': 'AI web knowledge (Wikipedia helps identify titles)',
+  'AI 模型能看图（字幕校对会附上视频画面）':
+      'AI model accepts images (subtitle proofreading sends video frames)',
   '扫描入库后自动 AI 整理库（把该在一起的归进合集，按量计费）':
       'Organize the library with AI after scans (groups related items into collections; billed per use)',
 
@@ -435,6 +485,54 @@ const Map<String, String> kWebUiEnglish = <String, String>{
   '本机': 'This server',
   '新对话': 'New chat',
 
+  // ── 词典 ──
+  '词典': 'Dictionaries',
+  '查词引擎': 'Lookup engine',
+  '已配对设备查词时只把要查的文字发过来，去屈折（「食べた」→「食べる」）在本机用本机的变形表做，所以变形表装在服务端即可，各设备无需自带。':
+      'Paired devices send only the text to look up. Deinflection (食べた → 食べる) runs here with this server\'s transform tables, so they only need to be installed on the server, not on each device.',
+  '导入词典': 'Import a dictionary',
+  '导入': 'Import',
+  'Yomitan 格式的 zip（术语 / 频率 / 音调 / 汉字）。同名词典视为更新，保留排序与隐藏设置。导入完立即生效；也可以在 Fushi 的「词典 · 传输」推送过来。':
+      'A Yomitan zip (terms / frequency / pitch / kanji). A dictionary with the same name is treated as an update and keeps its order and hidden setting. Imports take effect immediately; you can also push one from Fushi under "Dictionaries · Transfer".',
+  '顺序决定查词结果里各词典的排列。「隐藏」对应日语查词的隐藏标记（服务端引擎目前只认这一个）：隐藏的词典不装进引擎，查词时不出结果。':
+      'The order decides how dictionaries are ranked in lookup results. "Hide" is the Japanese lookup hidden flag (the only one the server engine reads for now): hidden dictionaries are not loaded into the engine and give no results.',
+  '试查': 'Try a lookup',
+  '食べた': '食べた',
+  '查词': 'Look up',
+  '术语': 'Terms',
+  '频率': 'Frequency',
+  '音调': 'Pitch',
+  '汉字': 'Kanji',
+  '引擎': 'Engine',
+  '已加载': 'Loaded',
+  '不可用': 'Unavailable',
+  '不可用：{0}': 'Unavailable: {0}',
+  '已装载': 'Loaded dictionaries',
+  '{0} 本': '{0}',
+  '变形表（去屈折）': 'Transform tables (deinflection)',
+  '缺失：只能查原形（设 FUSHI_TRANSFORMS_DIR 或随包放 share/fushi/transforms）':
+      'Missing: only dictionary forms can be looked up (set FUSHI_TRANSFORMS_DIR or ship share/fushi/transforms)',
+  '原生库': 'Native library',
+  '默认搜索路径': 'Default search path',
+  '上移': 'Move up',
+  '下移': 'Move down',
+  '文件缺失': 'File missing',
+  '已隐藏': 'Hidden',
+  '取消隐藏': 'Unhide',
+  '隐藏': 'Hide',
+  '还没有词典': 'No dictionaries yet',
+  '删除词典「{0}」？（删除服务端上的词典文件，不影响各设备本地的词典）':
+      'Delete dictionary "{0}"? (Deletes the dictionary files on the server; dictionaries on your devices are not affected)',
+  '网络错误': 'Network error',
+  '先选择一个 zip': 'Choose a zip first',
+  '上传中 {0}%': 'Uploading {0}%',
+  '导入中…（大词典要几分钟）': 'Importing… (large dictionaries take a few minutes)',
+  '已更新「{0}」（{1}，{2} 词条{3}）': 'Updated "{0}" ({1}, {2} entries{3})',
+  '已导入「{0}」（{1}，{2} 词条{3}）': 'Imported "{0}" ({1}, {2} entries{3})',
+  '，{0} 汉字': ', {0} kanji',
+  '导入失败：{0}': 'Import failed: {0}',
+  '按「{0}」查': 'Looked up as "{0}"',
+  '没有结果': 'No results',
   // ── 日志 / 标题栏 ──
   '最近日志': 'Recent logs',
   '自动刷新': 'Auto refresh',
@@ -490,4 +588,11 @@ const Map<String, String> kWebUiEnglish = <String, String>{
   '全部': 'All',
   '仅错误': 'Errors only',
   '没有错误': 'No errors',
+  // ── 下拉选项 ──
+  '其他…': 'Other…',
+  '单位': 'Unit',
+  '所有网络（0.0.0.0）': 'All networks (0.0.0.0)',
+  '仅本机（127.0.0.1）': 'This machine only (127.0.0.1)',
+  '不用 AI': 'No AI',
+  '自定义': 'Custom',
 };

@@ -41,6 +41,8 @@ const List<Object?> _speakers = <Object?>[
       <String, Object?>{'name': 'あまあま', 'id': 0},
       <String, Object?>{'name': 'ハミング', 'id': 3001, 'type': 'humming'},
       <String, Object?>{'name': '歌', 'id': 3002, 'type': 'sing'},
+      <String, Object?>{'name': '教師', 'id': 3003, 'type': 'singing_teacher'},
+      <String, Object?>{'name': 'フレーム', 'id': 3004, 'type': 'frame_decode'},
     ],
   },
   <String, Object?>{
@@ -229,6 +231,24 @@ void main() {
     expect(voices.first.displayName, '四国めたん / ノーマル');
     expect(voices.last.displayName, 'ずんだもん / ノーマル');
     expect(parseVoicevoxSpeakers(<String, Object?>{}), isEmpty);
+  });
+
+  test('parseVoicevoxSpeakers keeps streaming_talk styles (engine 0.26+)', () {
+    // BUG-4503：VOICEVOX 0.26 的 /speakers 把默认角色的风格全报成
+    // `streaming_talk`，只认 `talk` 时整张列表为空。
+    final List<TtsVoice> voices = parseVoicevoxSpeakers(<Object?>[
+      <String, Object?>{
+        'name': 'ずんだもん',
+        'speaker_uuid': '388f246b',
+        'styles': <Object?>[
+          <String, Object?>{'name': 'ノーマル', 'id': 3, 'type': 'streaming_talk'},
+          <String, Object?>{'name': 'あまあま', 'id': 1, 'type': 'talk'},
+          <String, Object?>{'name': '歌', 'id': 3003, 'type': 'sing'},
+        ],
+      },
+    ]);
+    expect(voices.map((TtsVoice v) => v.id), <String>['3', '1']);
+    expect(voices.first.displayName, 'ずんだもん / ノーマル');
   });
 
   test('listVoices GETs /speakers (sub-path endpoint kept)', () async {

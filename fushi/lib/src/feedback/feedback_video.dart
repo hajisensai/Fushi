@@ -1,11 +1,14 @@
-// 反馈视频附件的本机准备：上传前转码成 720p（默认）或 1080p 的 H.264 + AAC mp4。
+// 反馈视频附件的本机准备：默认原件上传（[FeedbackVideoMode.original]），原件超过上限或不是
+// 服务端收的格式时才自动转码成 H.264 + AAC mp4（先 1080p，装不下退 720p）；用户也可以显式选
+// 720p / 1080p 档，那时总是转码。
 //
-// 服务端（services/leaderboard 的 v0 槽位）只收 ≤ 50 MB 的 mp4 / webm / mov，每条反馈一个。
+// 服务端（services/leaderboard 的 v0 槽位）只收 ≤ 100 MB（[FeedbackLimits.videoMaxBytes]，
+// 1e8 字节）的 mp4 / webm / mov，每条反馈一个。
 // 转码走项目现成的 ffmpeg 后端（resolveFfmpegBackend：桌面捆绑的统一 FFmpeg、移动端
 // ffmpeg_kit_next_flutter，两边都是全组件构建，含 libx264 + aac + mp4 muxer）；后端起不来 / 转码失败时**原样上传**，
-// 但原件同样要过格式与 50 MB 上限，过不了就明说「太大 / 不是视频」，不偷偷截断。
+// 但原件同样要过格式与 100 MB 上限，过不了就明说「太大 / 不是视频」，不偷偷截断。
 //
-// 码率按时长自适应：720p 的 2 Mbps 下 50 MB 只装得下约 3 分钟，更长的录屏把视频码率压低到
+// 码率按时长自适应：720p 的 2 Mbps 下 100 MB 只装得下约 6 分钟，更长的录屏把视频码率压低到
 // 刚好装进上限（下限 250 kbps，再低也装不下就报太大），而不是转完才发现超了。1080p 只在
 // 码率还够 1080p 用时才转（见 [FeedbackVideoQuality.p1080]），否则自动退回 720p 并告诉调用方。
 //
@@ -28,13 +31,14 @@ import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi_engine/media/video/ffmpeg_watched_run.dart';
 import 'package:path/path.dart' as p;
 
-/// 压缩目标分辨率（短边）。720p 是默认；1080p 是用户显式选的高清档。
+/// 转码目标档位（短边与码率）。用户在提交页选的是 [FeedbackVideoMode]（含「原件」），
+/// 这里只描述真要转码时转成什么。
 enum FeedbackVideoQuality {
   /// 720p：录屏 / 实拍在 2 Mbps 下文字仍清楚；码率下限 250 kbps（再低装不下就报太大）。
   p720(shortSide: 720, maxKbps: 2000, minKbps: 250, label: '720p'),
 
-  /// 1080p：封顶 4 Mbps（50 MB 约装 1 分半）；码率掉到 2 Mbps（720p 的满码率）以下时
-  /// 1080p 已不比 720p 清楚，此时退回 720p（约 3 分钟以上的视频）。
+  /// 1080p：封顶 4 Mbps（100 MB 约装 3 分钟）；码率掉到 2 Mbps（720p 的满码率）以下时
+  /// 1080p 已不比 720p 清楚，此时退回 720p（约 6 分钟以上的视频）。
   p1080(shortSide: 1080, maxKbps: 4000, minKbps: 2000, label: '1080p');
 
   const FeedbackVideoQuality({
@@ -56,6 +60,44 @@ enum FeedbackVideoQuality {
   /// 界面上显示的名字（「720p」/「1080p」，不翻译）。
   final String label;
 }
+
+/// 用户在提交页选的视频档位。默认 [original]：原件 ≤ [FeedbackLimits.videoMaxBytes] 且是服务端
+/// 收的格式（mp4 / webm / mov）就原样上传、不转码；否则自动按 [compressFrom] 起压（装不下再退
+/// 720p）。[p1080] / [p720] 是用户显式要求压缩的档位，总是转码。
+enum FeedbackVideoMode {
+  /// 原件：不超限、格式合规就原样上传，否则自动压缩（1080p 起，装不下退 720p）。
+  original(compressFrom: FeedbackVideoQuality.p1080, keepsOriginal: true),
+
+  /// 压成 1080p（装不下退 720p，并通知调用方 onDowngraded）。
+  p1080(compressFrom: FeedbackVideoQuality.p1080, keepsOriginal: false),
+
+  /// 压成 720p。
+  p720(compressFrom: FeedbackVideoQuality.p720, keepsOriginal: false);
+
+  const FeedbackVideoMode({
+    required this.compressFrom,
+    required this.keepsOriginal,
+  });
+
+  /// 需要转码时从哪一档起转（[planFeedbackVideoTranscode] 的 requested）。
+  final FeedbackVideoQuality compressFrom;
+
+  /// 原件能直接传（不超限、格式合规）时是否跳过转码。
+  final bool keepsOriginal;
+}
+
+/// 纯函数：这个档位下原件是否直接上传、不转码——[mode] 保留原件、[sourceType] 是服务端收的
+/// 格式（[sniffFeedbackVideoType] 认得）、且 0 < [sourceBytes] ≤ [maxBytes]。
+bool feedbackVideoUploadsOriginal(
+  FeedbackVideoMode mode, {
+  required String? sourceType,
+  required int sourceBytes,
+  int maxBytes = FeedbackLimits.videoMaxBytes,
+}) =>
+    mode.keepsOriginal &&
+    sourceType != null &&
+    sourceBytes > 0 &&
+    sourceBytes <= maxBytes;
 
 /// 目标视频码率上限（kbps）：720p 录屏 / 实拍在这个码率下文字仍清楚。
 const int kFeedbackVideoMaxKbps = 2000;
@@ -310,18 +352,22 @@ class _CancelFlag {
   }
 }
 
-/// 准备上传：先按 [quality] 转码（[onProgress] 回报 0..1，时长未知时不回报），转不了就原样
-/// 用原件（复制进 [workDir]，原件不动）。结果仍超 [FeedbackLimits.videoMaxBytes] 抛
+/// 准备上传。[mode] 是 [FeedbackVideoMode.original]（默认）且原件能直接传
+/// （[feedbackVideoUploadsOriginal]）时不起 ffmpeg，原样复制进 [workDir]；否则按
+/// [FeedbackVideoMode.compressFrom] 转码（[onProgress] 回报 0..1，时长未知时不回报），转不了
+/// 就原样用原件（复制进 [workDir]，原件不动）。结果仍超 [FeedbackLimits.videoMaxBytes] 抛
 /// [FeedbackVideoTooLargeException]；既不是视频、又转不了抛 [FeedbackVideoUnsupportedException]。
+/// 原件档自动压缩的结果 [PreparedFeedbackVideo.transcoded] 为 true，调用方据此告诉用户。
 ///
-/// 选 1080p 而 1080p 装不进上限（太长，或转完仍超）时自动改转 720p，并调 [onDowngraded]。
+/// 选 1080p 而 1080p 装不进上限（太长，或转完仍超）时自动改转 720p，并调 [onDowngraded]
+/// （原件档的自动压缩本来就是「能 1080p 就 1080p」，退 720p 不算降档、不调它）。
 /// [cancel] 完成即中止（强杀 ffmpeg、删掉半成品），抛 [FeedbackVideoCancelledException]。
 Future<PreparedFeedbackVideo> prepareFeedbackVideo(
   File source, {
   required Directory workDir,
   FfmpegBackend? backend,
   void Function(double fraction)? onProgress,
-  FeedbackVideoQuality quality = FeedbackVideoQuality.p720,
+  FeedbackVideoMode mode = FeedbackVideoMode.original,
   void Function()? onDowngraded,
   Future<void>? cancel,
 }) async {
@@ -329,6 +375,14 @@ Future<PreparedFeedbackVideo> prepareFeedbackVideo(
   await workDir.create(recursive: true);
   final String? sourceType = sniffFeedbackVideoType(await _head(source));
   final int sourceBytes = await source.length();
+  flag.check();
+  if (feedbackVideoUploadsOriginal(
+    mode,
+    sourceType: sourceType,
+    sourceBytes: sourceBytes,
+  )) {
+    return _copyOriginal(source, workDir, sourceType!, sourceBytes, flag);
+  }
   final File out = File(p.join(workDir.path, 'feedback-video.mp4'));
   PreparedFeedbackVideo? transcoded;
   // 太长、最低码率也装不下：原件本身若已是 ≤ 上限的视频（低码率长录屏）照样能传。
@@ -339,8 +393,8 @@ Future<PreparedFeedbackVideo> prepareFeedbackVideo(
       out,
       backend ?? resolveFfmpegBackend(),
       onProgress,
-      quality: quality,
-      onDowngraded: onDowngraded,
+      quality: mode.compressFrom,
+      onDowngraded: mode.keepsOriginal ? null : onDowngraded,
       cancel: cancel,
       flag: flag,
     );
@@ -375,6 +429,17 @@ Future<PreparedFeedbackVideo> prepareFeedbackVideo(
     throw tooLong ?? FeedbackVideoTooLargeException(sourceBytes);
   }
   await _deleteIfExists(out);
+  return _copyOriginal(source, workDir, sourceType, sourceBytes, flag);
+}
+
+/// 原样上传：把原件复制进 [workDir]（原件不动），类型按魔数。
+Future<PreparedFeedbackVideo> _copyOriginal(
+  File source,
+  Directory workDir,
+  String sourceType,
+  int sourceBytes,
+  _CancelFlag flag,
+) async {
   final String ext = switch (sourceType) {
     'video/webm' => 'webm',
     'video/quicktime' => 'mov',

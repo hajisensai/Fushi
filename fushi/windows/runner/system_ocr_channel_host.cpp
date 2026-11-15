@@ -35,6 +35,22 @@ flutter::EncodableValue SystemOcrReplyMap(const SystemOcrResult& ocr) {
   flutter::EncodableList lines;
   lines.reserve(ocr.lines.size());
   for (const SystemOcrLine& line : ocr.lines) {
+    flutter::EncodableList words;
+    words.reserve(line.words.size());
+    for (const SystemOcrWord& word : line.words) {
+      words.push_back(flutter::EncodableValue(flutter::EncodableMap{
+          {flutter::EncodableValue("start"),
+           flutter::EncodableValue(static_cast<int32_t>(word.start))},
+          {flutter::EncodableValue("length"),
+           flutter::EncodableValue(static_cast<int32_t>(word.length))},
+          {flutter::EncodableValue("left"), flutter::EncodableValue(word.left)},
+          {flutter::EncodableValue("top"), flutter::EncodableValue(word.top)},
+          {flutter::EncodableValue("right"),
+           flutter::EncodableValue(word.right)},
+          {flutter::EncodableValue("bottom"),
+           flutter::EncodableValue(word.bottom)},
+      }));
+    }
     // 不带 `vertical`：由 Dart 的 inferSystemOcrVertical 按包围盒推断。
     lines.push_back(flutter::EncodableValue(flutter::EncodableMap{
         {flutter::EncodableValue("text"), flutter::EncodableValue(line.text)},
@@ -43,6 +59,8 @@ flutter::EncodableValue SystemOcrReplyMap(const SystemOcrResult& ocr) {
         {flutter::EncodableValue("right"), flutter::EncodableValue(line.right)},
         {flutter::EncodableValue("bottom"),
          flutter::EncodableValue(line.bottom)},
+        {flutter::EncodableValue("words"),
+         flutter::EncodableValue(std::move(words))},
     }));
   }
   return flutter::EncodableValue(flutter::EncodableMap{
@@ -50,6 +68,12 @@ flutter::EncodableValue SystemOcrReplyMap(const SystemOcrResult& ocr) {
        flutter::EncodableValue(static_cast<int32_t>(ocr.width))},
       {flutter::EncodableValue("height"),
        flutter::EncodableValue(static_cast<int32_t>(ocr.height))},
+      {flutter::EncodableValue("recognizedWidth"),
+       flutter::EncodableValue(static_cast<int32_t>(ocr.recognized_width))},
+      {flutter::EncodableValue("recognizedHeight"),
+       flutter::EncodableValue(static_cast<int32_t>(ocr.recognized_height))},
+      {flutter::EncodableValue("maxImageDimension"),
+       flutter::EncodableValue(static_cast<int32_t>(ocr.max_image_dimension))},
       {flutter::EncodableValue("lines"),
        flutter::EncodableValue(std::move(lines))},
   });

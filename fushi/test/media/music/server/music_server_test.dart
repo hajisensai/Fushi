@@ -11,6 +11,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/server/jellyfin_music_client.dart';
+import 'package:fushi/src/media/music/server/music_server_play_item.dart';
 import 'package:fushi/src/media/music/server/music_servers.dart';
 import 'package:fushi/src/media/music/server/youtube_music_gate.dart';
 import 'package:fushi/src/media/music/music_online_sources.dart';
@@ -312,7 +313,8 @@ void main() {
       expect(p1.trackCount, 3);
       expect(p1.durationMs, 540000);
       expect(p1.coverRef, 'p1');
-      expect(p1.editable, isFalse);
+      // 服务器没报 CanDelete（兼容层）时按可改处理，真没权限由服务器拒绝。
+      expect(p1.editable, isTrue);
 
       final MusicServerPage<MusicServerPlaylist> second = await mb
           .listPlaylists(offset: 2, limit: 2);

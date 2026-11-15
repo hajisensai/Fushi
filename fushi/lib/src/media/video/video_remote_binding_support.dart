@@ -1,9 +1,12 @@
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 import 'package:fushi/src/media/audiobook/mining_audio_clip.dart'
     show padSentenceRange;
+import 'package:fushi/src/media/video/video_simultaneous_cues.dart'
+    show groupSimultaneousCues, joinSimultaneousCueText;
 import 'package:fushi/src/media/video/video_subtitle_jump_panel.dart'
     show subtitleTranscriptRowSpans;
 import 'package:fushi/src/sync/video_remote_host.dart';
@@ -62,22 +65,53 @@ class VideoRemoteCueCache {
 }
 
 /// 一条字幕流的遥控行（id = `<track>:<代表行原始下标>`）。
+///
+/// 反馈 rLCxUJ-2i4：ASS 把一句拆成几条同时显示的 Dialogue 时（判据
+/// [groupSimultaneousCues]，与桌面复制 / 制卡同一处），手机列表仍逐行显示，但每行带上
+/// 整句 [VideoRemoteCue.sentence] 与同句共用的 [VideoRemoteCue.sentenceId]（组内最小
+/// 原始下标），手机查词制卡取整句、「上 / 下 N 句」按句数。
 List<VideoRemoteCue> videoRemoteTrackRows(
   List<AudioCue> cues,
   String track,
   int delayMs,
-) => <VideoRemoteCue>[
-  for (final ({int rawIndex, String text, int startMs, int endMs}) row
-      in subtitleTranscriptRowSpans(cues))
-    VideoRemoteCue(
-      id: '$track:${row.rawIndex}',
-      text: row.text,
-      startMs: row.startMs,
-      endMs: row.endMs,
-      delayMs: delayMs,
-      track: track,
-    ),
-];
+) {
+  final Map<AudioCue, int> rawIndexOf = HashMap<AudioCue, int>.identity();
+  for (int i = 0; i < cues.length; i++) {
+    rawIndexOf.putIfAbsent(cues[i], () => i);
+  }
+  final Map<int, ({String sentence, String sentenceId})> sentenceOfRaw =
+      <int, ({String sentence, String sentenceId})>{};
+  for (final List<AudioCue> group in groupSimultaneousCues(cues)) {
+    if (group.length < 2) continue;
+    final List<int> raws = <int>[
+      for (final AudioCue c in group)
+        if (rawIndexOf[c] != null) rawIndexOf[c]!,
+    ];
+    if (raws.isEmpty) continue;
+    final int head = raws.reduce((int a, int b) => a < b ? a : b);
+    final ({String sentence, String sentenceId}) info = (
+      sentence: joinSimultaneousCueText(group),
+      sentenceId: '$track:s$head',
+    );
+    for (final int raw in raws) {
+      sentenceOfRaw[raw] = info;
+    }
+  }
+  return <VideoRemoteCue>[
+    for (final ({int rawIndex, String text, int startMs, int endMs}) row
+        in subtitleTranscriptRowSpans(cues))
+      VideoRemoteCue(
+        id: '$track:${row.rawIndex}',
+        text: row.text,
+        startMs: row.startMs,
+        endMs: row.endMs,
+        delayMs: delayMs,
+        track: track,
+        sentence: sentenceOfRaw[row.rawIndex]?.sentence,
+        sentenceId: sentenceOfRaw[row.rawIndex]?.sentenceId,
+      ),
+  ];
+}
 
 /// 遥控制卡 / 试听的字幕时基区间：`[startMs, endMs]`（[anchor] 所在那条字幕流 [cues]）
 /// 按制卡音频首尾留白加宽。调用方再按 [anchor] 的调轴换到播放器轴（`miningClipTimeMs`）。

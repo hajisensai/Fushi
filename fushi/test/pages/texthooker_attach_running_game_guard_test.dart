@@ -44,7 +44,7 @@ String _methodBody(String src, RegExp signature) {
 }
 
 final RegExp _toolbarSig = RegExp(
-  r'List<Widget> _buildToolbarActions\([\s\S]*?\)\s*\{',
+  r'List<List<_SessionTool>> _buildToolbarActions\([\s\S]*?\)\s*\{',
 );
 final RegExp _attachSig = RegExp(
   r'Future<void> _attachToRunningGame\(\)\s*async\s*\{',

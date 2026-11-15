@@ -7,6 +7,7 @@ import 'package:fushi_engine/epub/epub_series_backfill.dart';
 import 'package:fushi_engine/media/collections/book_series_key.dart';
 import 'package:fushi_engine/media/collections/shelf_sort.dart'
     show naturalCompare;
+import 'package:fushi_engine/sync/override_title_lookup.dart';
 
 /// 在线漫画描述符类型标记（写进 `sourceMetadata`，永不变；同
 /// `leaderboard/local_shelf.dart`）。在线漫画一行就是一整部作品，不按卷归组。
@@ -106,6 +107,22 @@ class BookSeriesGrouper {
         if (id != null && !created.contains(id)) updated.add(id);
       }
     }
+    // 已有的规则合集名里的 slug 也规整（vECncM6f8Y 合入前按旧口径建的合集）；
+    // 名字以库里当前值为准，归组这一轮可能刚改过别的合集。
+    final Set<String> playlistNames = <String>{
+      for (final MediaCollectionRow c
+          in await _database.getAllMediaCollections())
+        if (c.collectionType == 'playlist') c.name,
+    };
+    for (final MediaCollectionRow c in collections) {
+      if (created.contains(c.id)) continue;
+      final List<MediaCollectionItemRow>? members = itemsByCollection[c.id];
+      if (members == null) continue;
+      if (await _healSlugName(c, members, byMember, playlistNames) &&
+          !updated.contains(c.id)) {
+        updated.add(c.id);
+      }
+    }
     final BookSeriesOrder order = BookSeriesOrder._(byMember);
     for (final MediaCollectionRow c in collections) {
       if (created.contains(c.id) || updated.contains(c.id)) continue;
@@ -188,8 +205,14 @@ class BookSeriesGrouper {
   Future<List<_Volume>> _loadVolumes() async {
     final List<_Volume> out = <_Volume>[];
     final Map<String, _Volume> byBookKey = <String, _Volume>{};
+    // 书架卡上显示的是「改名覆盖 ?? 原书名」，归组也按它：用户把
+    // `… Karakai-Jouzu-Takagi-san-02` 改成 `… 2` 就是为了让它归组（vECncM6f8Y），
+    // 以前这里只读 `epub_books.title` 原名，改名对归组毫无作用、重启也不变。
+    final Map<String, OverrideTitleEntry> overrides =
+        await readOverrideTitlesByBookKey(_database);
     for (final EpubBookRow book in await _database.getAllEpubBooks()) {
       if (isOnlineMangaSourceMetadata(book.sourceMetadata)) continue;
+      final String title = overrides[book.bookKey]?.title ?? book.title;
       // 包里声明的系列优先（n4KC1azJvw：每卷副标题不同、书名里没有系列线索的作品
       // 只能靠它），没有声明才按书名启发式。
       final EpubSeries? declared = decodeEpubSeriesMetadata(
@@ -199,12 +222,12 @@ class BookSeriesGrouper {
           ? declaredBookSeriesKey(
               name: declared.name,
               index: declared.index,
-              title: book.title,
+              title: title,
             )
-          : parseBookSeriesKey(book.title);
+          : parseBookSeriesKey(title);
       if (key == null) continue;
       final _Volume v = _Volume(
-        title: book.title,
+        title: title,
         key: key,
         shelf: BookFormat.parseOrEpub(book.format) == BookFormat.manga
             ? 'manga'
@@ -261,12 +284,17 @@ class BookSeriesGrouper {
       seriesItems,
       byMember,
     );
-    final String name = volumes.first.key.seriesTitle;
-    collection ??= playlistByName[name];
+    // 合集名用规整过 slug 的可读系列名；同名 playlist / 删除墓碑新旧两种名字都认
+    // （规整前建的同名合集、用户删过的旧名合集不因改口径而重复 / 复活）。
+    final String rawName = volumes.first.key.seriesTitle;
+    final String name = readableSeriesTitle(rawName);
+    collection ??= playlistByName[name] ?? playlistByName[rawName];
     if (collection == null) {
       if (volumes.length < 2) return null;
-      if (await _database.hasCollectionDeletionTombstone(name, 'playlist')) {
-        return null;
+      for (final String n in <String>{name, rawName}) {
+        if (await _database.hasCollectionDeletionTombstone(n, 'playlist')) {
+          return null;
+        }
       }
       final int id = await _database.createMediaCollection(
         name,
@@ -304,6 +332,47 @@ class BookSeriesGrouper {
       await _sortMembers(collection.id, groupKey);
     }
     return collection.id;
+  }
+
+  /// 规则归组器建的合集名若是带 slug 的系列名（[readableSeriesTitle] 能规整），
+  /// 改成可读名；返回是否改了。
+  ///
+  /// 只动「仍归规则管」（`origin == rule`，用户改过名 / 加减过成员就转成 `user`，
+  /// 永不再动）、名字正是其中 ≥2 卷的系列名（确是本归组器起的名）的 playlist；
+  /// 可读名已被别的 playlist 占用或被用户删过（合集级墓碑）时不改。改名走
+  /// [FushiDatabase.renameMediaCollection]（`userIntent: false`，不把来源转成
+  /// `user`），与手动改名同样维护跨端合集同步墓碑。
+  Future<bool> _healSlugName(
+    MediaCollectionRow collection,
+    List<MediaCollectionItemRow> items,
+    Map<String, _Volume> byMember,
+    Set<String> playlistNames,
+  ) async {
+    if (collection.collectionType != 'playlist' ||
+        CollectionOrigin.parse(collection.origin) != CollectionOrigin.rule) {
+      return false;
+    }
+    final String pretty = readableSeriesTitle(collection.name);
+    if (pretty.isEmpty || pretty == collection.name) return false;
+    final Set<_Volume> named = <_Volume>{
+      for (final MediaCollectionItemRow i in items)
+        if (byMember['${i.mediaType}|${i.entryKey}'] case final _Volume v
+            when v.key.seriesTitle == collection.name)
+          v,
+    };
+    if (named.length < 2 || playlistNames.contains(pretty)) return false;
+    if (await _database.hasCollectionDeletionTombstone(pretty, 'playlist')) {
+      return false;
+    }
+    await _database.renameMediaCollection(
+      collection.id,
+      pretty,
+      userIntent: false,
+    );
+    playlistNames
+      ..remove(collection.name)
+      ..add(pretty);
+    return true;
   }
 
   /// 已有 ≥2 个同系列（同书架）成员的合集，取成员最多者；没有则 null。

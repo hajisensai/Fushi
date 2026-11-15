@@ -51,11 +51,8 @@ extension _VideoSubtitleCaret on _VideoFushiPageState {
       _showOsd(t.no_sentence_selected, severity: ToastSeverity.error);
       return;
     }
-    // 与 _lookupAt 同款暂停语义：仅在播时置位标记，fire-and-forget 暂停。
-    if (controller.isPlaying) {
-      _pausedForLookup = true;
-      unawaited(controller.pause());
-    }
+    // 与 _lookupAt 同一暂停入口：仅在播时置位标记，fire-and-forget 暂停。
+    _pauseForLookup();
     // 迁移追踪的初值来自**进入时的播放态**（见 [SubtitleCaretPauseTracker]）：
     // 本来就暂停时进光标不会调 pause、播放态不翻转、播放器也不再通知，恒 false 的
     // 初值会让「外部恢复播放自动退光标」永久失效。
@@ -91,9 +88,11 @@ extension _VideoSubtitleCaret on _VideoFushiPageState {
       _videoCaret.popupState = null;
       _subtitleCaretEntry = null;
     });
+    // 副屏查词页上的查词还开着：暂停归它（关闭时 [_companionLookupClosed] 恢复）。
     if (resume &&
         _pausedForLookup &&
         !_hasVisiblePopup &&
+        !_companionHook.lookupOpen &&
         _controller != null) {
       _pausedForLookup = false;
       unawaited(_controller!.resumePlayback());

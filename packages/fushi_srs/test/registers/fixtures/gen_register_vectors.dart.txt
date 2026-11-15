@@ -300,7 +300,8 @@ List<String> _keysFor(SrsEntityKind kind) => switch (kind) {
   ],
   SrsEntityKind.profile => <String>[
     SrsFieldKeys.dayRolloverHour,
-    SrsFieldKeys.utcOffsetMin,
+    // 历史字段键（常量已删）：向量里留着它的修改记录，照原键名写。
+    'utcOffsetMin',
   ],
 };
 

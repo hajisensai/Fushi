@@ -400,6 +400,7 @@ class ImmersionMiningRequest {
     required this.source,
     this.bookTitleTag,
     this.collectionTag,
+    this.seriesTitle,
     this.updateNoteId,
     this.sourceLink,
     this.sourceLinkResolver,
@@ -467,6 +468,9 @@ class ImmersionMiningRequest {
   /// 开关，非 null 时经 [BaseAnkiRepository.buildNoteTags] 追加为独立 tag。不属合集/单视频
   /// 无系列名时为 null。透传进 [AnkiMiningContext.collectionTag]。
   final String? collectionTag;
+
+  /// 出处的上一级（系列原名，不清洗、不看标签开关）：透传进 [AnkiMiningContext.seriesTitle]。
+  final String? seriesTitle;
 
   /// 非 null = 覆盖现有卡（走 updateMinedNote，不计统计）。
   final int? updateNoteId;
@@ -636,6 +640,7 @@ class ImmersionMiningRequest {
         source: source,
         bookTitleTag: bookTitleTag,
         collectionTag: collectionTag,
+        seriesTitle: seriesTitle,
         updateNoteId: updateNoteId,
         sourceLink: sourceLink,
         sourceLinkResolver: sourceLinkResolver,
@@ -700,6 +705,7 @@ class ImmersionMiningRequest {
     source: source,
     bookTitleTag: bookTitleTag,
     collectionTag: collectionTag,
+    seriesTitle: seriesTitle,
     updateNoteId: updateNoteId,
     sourceLink: sourceLink,
     sourceLinkResolver: sourceLinkResolver,

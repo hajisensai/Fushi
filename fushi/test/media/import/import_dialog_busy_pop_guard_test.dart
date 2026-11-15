@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/audiobook/srt_book_reimport_dialog.dart';
 import 'package:fushi/src/media/import/import_flow_mixin.dart';
+import 'package:fushi/src/media/import/pasted_text_book_dialog.dart';
 import 'package:fushi/src/media/manga/manga_import_dialog.dart';
 import 'package:fushi/src/media/video/iptv_playlist_import_dialog.dart';
 import 'package:fushi/src/media/video/video_import_dialog.dart';
@@ -28,6 +29,9 @@ void main() {
             VideoImportDialog(repo: VideoBookRepository(db)),
         'iptv': (FushiDatabase db) =>
             IptvPlaylistImportDialog(repo: VideoBookRepository(db)),
+        // 粘贴文本阅读（反馈 f2k9m1oU0j）：剪贴板替身返回 null，不碰系统剪贴板。
+        'pasted-text': (FushiDatabase db) =>
+            PastedTextBookDialog(db: db, readClipboard: () async => null),
         // 字幕书重导：只需一本内存里的书行（standalone，正文由 cue 生成）。
         'srt-reimport': (FushiDatabase db) => SrtBookReimportDialog(
           book: SrtBook()

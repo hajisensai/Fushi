@@ -291,6 +291,17 @@ void main() {
         },
       );
 
+      // 反馈 uOanUXUIDt：漫画卡单独打 `manga`，不再沿用 `book`。
+      test(
+        'manga source -> appends both fushi and manga (AnkiConnect)',
+        () async {
+          expect(
+            await tagsForConnect('', source: AnkiMiningSource.manga),
+            <String>['fushi', 'manga'],
+          );
+        },
+      );
+
       test(
         'null source -> only fushi, no category tag (AnkiConnect)',
         () async {
@@ -334,6 +345,10 @@ void main() {
         expect(await tagsForDroid('', source: AnkiMiningSource.music), <String>[
           'fushi',
           'music',
+        ]);
+        expect(await tagsForDroid('', source: AnkiMiningSource.manga), <String>[
+          'fushi',
+          'manga',
         ]);
         expect(await tagsForDroid('foo', source: null), <String>[
           'foo',

@@ -23,9 +23,9 @@ Cloudflare Worker + D1 + R2。设计与分期见
 | 资源 | 免费额度 | 本服务的保护 |
 |---|---|---|
 | Workers 请求 | 10 万次/天 | 匿名读边缘缓存 60 秒（缓存键只含白名单参数）；`READ_LIMITER` 每 IP 每分钟 120 次；未鉴权写入口先过 `AUTH_LIMITER`（每 IP 每分钟 10 次，IPv6 按 /64）；图片走边缘缓存 |
-| D1 读 | 500 万行/天 | 榜单 / 人气 / 名次读定时快照（每 30 分钟一次，只读周期汇总表的当期段）；读者数、行数、周/月计分、周/月作品读者数全部增量维护；书架 / 作品读者用游标分页（每页只读 limit+1 行）；`test/plans.test.js` 在查询计划上断言每个读接口不全表扫描、不建临时 B 树 |
+| D1 读 | 500 万行/天 | 榜单 / 人气 / 名次读定时快照（每 30 分钟一次，只读周期汇总表的当期段）；读者数、行数、周/月计分、周/月作品读者数全部增量维护；书架 / 作品读者用游标分页（每页只读 limit+1 行）；`test/plans.test.js` 在查询计划上断言每个读接口不全表扫描、不建临时 B 树；处理台安装统计（一次 ≈ 20 条全表聚合、实测约 30 万行）只读快照，定时任务每 6 小时重算一次，手动刷新冷却 15 分钟（2026-11-10 曾因每次打开都现场算而超额） |
 | D1 写 | 10 万行/天 | 增量上报；**全局日预算 `write_rows` 8 万行**（超了 503，次日恢复）；每账户每天 2 万行；安装统计心跳另有日预算 `ping` 4000 个安装（每个约 5 行，同一安装当天第二次心跳只读不写） |
-| R2 存储 | 10 GB | 头像 ≤ 64KB、封面 ≤ 96KB；反馈截图 ≤ 1.5 MiB、日志 ≤ 2 MiB（结案 90 天清）；**反馈视频 ≤ 50MB，结案 7 天 / 创建 30 天（先到者）到期清理**，流式写入不进 Worker 内存；**总配额 8 GiB**（超了 507，按声明长度预占）；删除即归还。总配额分两池：**反馈视频单独 1 GiB**（`media_usage.video_bytes`，满了 507 `video_quota`，只拒视频），头像 / 封面 / 反馈截图与日志用其余 7 GiB（满了 507 `media_quota`），两池互不挤占；**视频每上传 IP 每天 ≤ 200 MB**（按声明长度计，超了 429） |
+| R2 存储 | 10 GB | 头像 ≤ 64KB、封面 ≤ 96KB；反馈截图 ≤ 1.5 MiB、日志 ≤ 2 MiB（结案 90 天清）；**反馈视频 ≤ 100 MB（十进制 1e8 字节，压在 Cloudflare Free / Pro 的 100 MB 请求体上限内），结案 7 天 / 创建 30 天（先到者）到期清理**，流式写入不进 Worker 内存；**总配额 8 GiB**（超了 507，按声明长度预占）；删除即归还。总配额分两池：**反馈视频单独 1 GiB**（`media_usage.video_bytes`，满了 507 `video_quota`，只拒视频），头像 / 封面 / 反馈截图与日志用其余 7 GiB（满了 507 `media_quota`），两池互不挤占；**视频每上传 IP 每天 ≤ 200 MB**（按声明长度计，超了 429） |
 | R2 操作 | A 类 100 万/月、B 类 1000 万/月 | 全局日预算 `media` 3000 次上传；出图先查边缘缓存 |
 | 发信：Brevo SMTP（配了 `SMTP_*` 时）或 Resend | Brevo 300 封/天；Resend 100 封/天、3000 封/月 | 全局日预算 `email` 默认 90 封，`wrangler.toml` 走 Brevo 时设为 280；每 IP 每小时 5 封、每邮箱每小时 3 封 / 每天 10 封 |
 
@@ -85,6 +85,8 @@ dashboard 的 Email Sending 里 Onboard 发件域名），否则用 Resend（`wr
 > `0013_install_verified.sql`（`installs.verified` / `install_days.verified` / `feedback.install_verified`，安装证明）：没迁移就部署时心跳、反馈提交、`/dev/stats` 与反馈详情都会 500——**同样碰了反馈提交，务必先迁移**。只加带默认值的列，旧 Worker 在线时先迁移不受影响。
 > `0017_install_dimensions.sql`（`installs` / `install_days` 各加可空列 `country` / `locale` / `arch` / `os_version` / `source`）：没迁移就部署时心跳与 `/dev/stats` 会 500（反馈提交不受影响）——**先迁移**。纯增量，旧 Worker 在线时先迁移不受影响；迁移前的历史记录这些列为 NULL，统计页显示「未记录 / 未上报」。
 > `0018_project_stats.sql`（新表 `repo_daily` / `site_daily` / `project_meta`，处理台 `/dev/project`）：没迁移就部署时定时任务的最后一步与 `/dev/project` 会 500（其余接口不受影响）——**先迁移**。纯新表。
+> `0020_decisions.sql`（新表 `decisions` / `decision_notes`，处理台 `/dev/decisions`）：没迁移就部署时只有 `/dev/decisions` 与拍板提交会 500（其余接口不受影响）。纯新表。
+> `0021_install_stats_snapshot.sql`（新表 `install_stats_snapshot`，处理台 `/dev/stats` / `/dev/stats.json` / `/dev/project` 改读安装统计快照）：没迁移就部署时这三页与定时任务的快照一步会 500（其余接口不受影响）——**先迁移**。纯新表。
 > `0009_feedback_release.sql`（修复 / 发布追踪列）同理：处理台列表显式选 `fix_*` 列，`/v1/ci/feedback/**` 也读写这些列，没迁移就部署时都会 500（反馈人接口 `SELECT *` 不受影响，`fix` 恒为 null）。
 
 部署后还要知道的：
@@ -161,7 +163,7 @@ Run workflow），push / PR 永远不会部署。维护者不需要在自己机�
 | GET | `/u/:id`、`/w/:id`、`/rank?metric&window` | — | 只读 HTML 落地页（分享链接；匿名渲染、无脚本、边缘缓存） |
 | POST | `/v1/ping` `{installId, version, platform, channel, locale?, arch?, osVersion?, source?}` | 可选安装证明 | 安装统计心跳 → 204。`installId` 小写 UUID v4 形状，`platform` ∈ android / windows / macos / linux（iOS 不发），`channel` ∈ stable / beta / debug；`AUTH_LIMITER` 限流，日预算 `ping`；服务端不存 IP。新客户端的 `installId` 由系统机器标识经 HMAC 派生成 P-256 钥匙、再取公钥指纹（重装不变，原始机器标识不上传），并带 `X-Fushi-Install-Key / -Time / -Sig / -Pow` 安装证明：id == 公钥指纹、签名覆盖方法 + 路径 + 时刻 + 请求体哈希（±5 分钟，签名串防重放）、工作量证明 18 位前导 0，都过了记已验证，带了但不对 401（`install_id_mismatch` / `bad_install_signature` / `stale_install_time` / `install_replayed` / `install_pow_required` / `bad_install_proof`）；不带证明（旧客户端）照收、记未验证。可选维度：`locale` App 界面语言（BCP 47）、`arch` 宿主 CPU 架构、`osVersion` 系统大版本、`source` 安装来源类别，只校验形状不校验取值表（形状不对 400 `bad_locale` / `bad_arch` / `bad_os_version` / `bad_source`）；国家 / 地区取 Cloudflare 的 `request.cf.country`（只存两位码，不存 IP / 城市 / ASN）。开发者处理台 `/dev/stats` 看日活 / 周活 / 月活、分国家日活趋势、留存（次日 / 第 7–13 天 / 第 30–59 天）、版本升级进度，以及平台 / 通道 / 版本 / 国家地区 / 界面语言 / 架构 / 系统版本 / 安装来源分布（只数已验证，未验证另列）。细节见 `src/installs.js` 文件头 |
 | POST | `/v1/feedback` `{category, title, body, contact?, meta?, installId?}` | 可选签名 | 提交反馈 → 201 `{id, ticket}`（`installId` 同心跳，不合法当没带，处理台据此显示该安装的版本轨迹；可带同一套安装证明头，验过标「已验证」，带了但不对 401）（ticket 只返回这一次；带签名 = 关联账户）。每 IP 每小时 10 条，日预算 `feedback`；同来源同内容 1 小时内 409 `duplicate_feedback`；伪装字符剥掉、注入 / 链接 / 跨来源重复只打标记（`flags`，仅开发者可见） |
-| PUT | `/v1/feedback/:id/attachments/:slot` | `X-Fushi-Ticket` | 补传附件：`s0`..`s2` 截图（PNG/JPEG/WebP ≤ 1.5 MiB）、`log`（gzip ≤ 2 MiB）、`v0` 视频（mp4 / mov / webm ≤ 50MB，必须带 `Content-Length`，缺 411、超限 413、类型不对 415 `unsupported_video_type` / `not_a_video`、实际长度不符 400 `bad_length`；流式写 R2）；提交后 24 小时内、每槽一次（重复 409 `slot_taken`）。只认 ticket（签名覆盖不了流式请求体） |
+| PUT | `/v1/feedback/:id/attachments/:slot` | `X-Fushi-Ticket` | 补传附件：`s0`..`s2` 截图（PNG/JPEG/WebP ≤ 1.5 MiB）、`log`（gzip ≤ 2 MiB）、`v0` 视频（mp4 / mov / webm ≤ 100 MB（1e8 字节），必须带 `Content-Length`，缺 411、超限 413、类型不对 415 `unsupported_video_type` / `not_a_video`、实际长度不符 400 `bad_length`；流式写 R2）；提交后 24 小时内、每槽一次（重复 409 `slot_taken`）。只认 ticket（签名覆盖不了流式请求体） |
 | POST | `/v1/feedback/status` `{items:[{id, ticket}] ≤ 50}` | — | 批量查进度（ticket 不对的条目不返回） |
 | GET | `/v1/feedback/mine?cursor&limit` | 签名 | 本账户提交过的反馈（跨设备找回工单）→ `{items, next}`，摘要同 status，按创建时间倒序游标分页（limit 默认 30、上限 50） |
 | GET | `/v1/feedback/:id` | ticket 或同账户签名 | 详情 + 处理时间线 |
@@ -178,7 +180,7 @@ Run workflow），push / PR 永远不会部署。维护者不需要在自己机�
 | POST | `/v1/ci/feedback/fixed` `{sha, ids ≤ 50, scope: app\|none}` | Bearer `FEEDBACK_CI_TOKEN` | CI 标记修复 commit → `{updated, unchanged, missing}`（open / 处理中 → 已解决并记时间线；换了 sha 或 scope 会清空已发布记录，sha 与 scope 都没变的幂等跳过、进 `unchanged`）。没配 secret 时 `/v1/ci/**` 一律 404。手动兜底：`node scripts/feedback.mjs fixed <id> --sha <commit> [--no-app]` |
 | GET | `/v1/ci/feedback/pending?channel&platform` | Bearer | 180 天内、需要新 App、该通道 / 平台还没回填的修复 `{items:[{id, sha}]}`（≤ 500） |
 | POST | `/v1/ci/feedback/released` `{channel, platform, version, ids: [{id, sha}] ≤ 500}` | Bearer | 回填「哪个版本已包含修复」，只记首次 → `{updated}`；行的当前 `fix_sha` 与该条 `sha` 不同（其间被重新标记修复）的静默跳过。只写 `fixed_in`，不刷 `dev_reply_at` / `updated_at`（回填不是开发者回复，不影响红点、「新消息」与处理台排序）。反馈人 / 开发者接口的摘要带 `fix: {sha, scope, at, releases}` |
-| GET/POST | `/dev/**` | 会话 Cookie | 开发者网页处理台（邮箱验证码登录，仅 role = dev；无脚本、POST 验 Origin）：`/dev` 反馈（`/dev/feedback.json?status&cursor&q`、`/dev/f/:id.json` 同数据的 JSON）、`/dev/stats` 安装统计（`/dev/stats.json` 同一份数据的 JSON，供维护者看板 Fushi Pulse 用同一会话取数，没会话回 401 而不是跳登录页）、`/dev/project` 项目数据（GitHub star / fork / 关注 / issue、App Release 各平台下载、官网 fushi.moe 每日页面浏览 / 访客 / 流量 / 国家；定时任务每 3 / 6 小时取一次存成每日快照画趋势，页面可「立即刷新」；细节见 `src/project_stats.js` 文件头） |
+| GET/POST | `/dev/**` | 会话 Cookie | 开发者网页处理台（邮箱验证码登录，仅 role = dev；无脚本、POST 验 Origin）：`/dev` 反馈（`/dev/feedback.json?status&cursor&q`、`/dev/f/:id.json` 同数据的 JSON）、`/dev/stats` 安装统计（读定时快照，每 6 小时重算，页面可「刷新」、冷却 15 分钟；`/dev/stats.json` 同一份数据的 JSON 加 `computedAt`，供维护者看板 Fushi Pulse 用同一会话取数，没会话回 401 而不是跳登录页）、`/dev/project` 项目数据（GitHub star / fork / 关注 / issue、App Release 各平台下载、官网 fushi.moe 每日页面浏览 / 访客 / 流量 / 国家；定时任务每 3 / 6 小时取一次存成每日快照画趋势，页面可「立即刷新」；细节见 `src/project_stats.js` 文件头）、`/dev/decisions` 拍板台（AI 代理经 `node scripts/decisions.mjs` 写入待拍事项，开发者点做 / 不做 / 以后 / 永远不做 / 没看懂 / 你定并留言；`POST /dev/d/:id`；规则见 `docs/agent/decision-board.md`） |
 
 「ticket 或同账户签名」：带了非空 `X-Fushi-Ticket` 就只认 ticket；否则验 `X-Fushi-Account` 签名，反馈须是该账户提交的。
 不存在 / 不是你的 / 匿名提交的 / 什么都没带一律 404（不区分）；匿名提交的反馈只能凭 ticket。

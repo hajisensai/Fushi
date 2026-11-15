@@ -173,7 +173,7 @@ void main() {
     expect(await db.getVideoDownloadJobs(), isEmpty, reason: '被拒的域不能留下任务行');
   });
 
-  test('字幕来源随管线起停：启动装上、重载换新并关旧、停机关闭；一家没配时为空', () async {
+  test('字幕来源不随管线起停：每次用时按当前偏好现建、用完即关；重载索引器不碰它；一家没配时为空', () async {
     final List<_ClosingSubtitleProvider> built = <_ClosingSubtitleProvider>[];
     host = await build(
       <(String, List<int>)>[('Novel/book.txt', 'x'.codeUnits)],
@@ -183,20 +183,21 @@ void main() {
         return VideoSubtitleRegistry(<VideoSubtitleProvider>[provider]);
       },
     );
+    final int afterStart = built.length;
+    expect(
+      built.every((_ClosingSubtitleProvider p) => p.closed),
+      isTrue,
+      reason: '启动日志查过一次来源，查完即关，管线不常驻持有',
+    );
+
     expect(host.subtitleProviderIds, <String>['fake-subs']);
-    expect(built, hasLength(1));
+    expect(built, hasLength(afterStart + 1), reason: '每次查都按当前偏好现建');
+    expect(built.last.closed, isTrue);
 
     await host.reloadResourceIndexers();
-    expect(built, hasLength(2), reason: '重建管线按当前偏好重读字幕来源');
-    final DateTime deadline = DateTime.now().add(const Duration(seconds: 10));
-    while (!built.first.closed && DateTime.now().isBefore(deadline)) {
-      await Future<void>.delayed(const Duration(milliseconds: 20));
-    }
-    expect(built.first.closed, isTrue, reason: '旧管线停下后关旧 registry');
-    expect(built.last.closed, isFalse);
+    expect(built, hasLength(afterStart + 1), reason: '重建管线不再预建字幕来源');
 
     await host.stop();
-    expect(built.last.closed, isTrue);
     host = await build(<(String, List<int>)>[
       ('Novel/book.txt', 'x'.codeUnits),
     ]);

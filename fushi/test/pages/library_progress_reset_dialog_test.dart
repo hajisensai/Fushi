@@ -11,6 +11,7 @@ void main() {
   Future<List<StudyRecordResetScope?>> pumpLauncher(
     WidgetTester tester, {
     bool showRecordOptions = true,
+    bool trackingOn = false,
   }) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(900, 1400);
@@ -28,6 +29,7 @@ void main() {
                   message: t.library_progress_reset_book_message,
                   itemTitle: 'Some Book',
                   showRecordOptions: showRecordOptions,
+                  trackingOn: trackingOn,
                 ),
               ),
               child: const Text('open'),
@@ -81,6 +83,18 @@ void main() {
     await tester.tap(find.text(t.dialog_cancel));
     await tester.pumpAndSettle();
     expect(results, <StudyRecordResetScope?>[null]);
+  });
+
+  testWidgets('T1 F20: with media tracking on, says the sites keep their '
+      'progress; off, says nothing about tracking', (
+    WidgetTester tester,
+  ) async {
+    await pumpLauncher(tester, trackingOn: true);
+    expect(find.text(t.library_progress_reset_tracking_note), findsOneWidget);
+    await tester.tap(find.text(t.dialog_cancel));
+    await tester.pumpAndSettle();
+    await pumpLauncher(tester);
+    expect(find.text(t.library_progress_reset_tracking_note), findsNothing);
   });
 
   testWidgets('showRecordOptions=false → 不摆勾选，恒 keep', (

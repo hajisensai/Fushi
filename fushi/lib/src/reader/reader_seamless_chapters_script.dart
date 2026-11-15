@@ -673,6 +673,30 @@ final String kSeamlessChaptersInstallJs =
     if (prev && c <= mainRange(prev.getBoundingClientRect()).end - HYSTERESIS) return S.promote(prev);
     return false;
   };
+  // 无缝模式下「换章」只有一个所有者：本模块。连续 shell 原有的三条「滚到文档尽头就换章」
+  // 通道（触摸边界拉动 / 滚轮试滚 / 按键 paginate 返回 limit）都按**文档**物理尽头判边界、
+  // 在手势结束时相对 Dart 当下的章号换章；而本模块在同一手势中途就可能已经晋升过邻章
+  // （例：停在章末时下一章还在挂载，手指按住慢慢拉，挂载落地、视口越过章界晋升，松手时
+  // 边界拉动又从新章号再跨一章 = 落到下下章，反馈 R7k887yaJI 重开）。三条通道换章前一律
+  // 经 fushiReader.claimBoundaryTurn 问这里：true = 本模块处置了（邻章已挂 → 晋升并对齐；
+  // 邻章正在挂载 / 模块正在启动 → 这一侧归本模块，挂好后照常滚过去），调用方不得再换章；
+  // false = 这一侧本模块给不了邻章（书首尾、挂载失败、启动失败），退回原来的整章重载。
+  S.claimBoundaryTurn = function(dir) {
+    if (!S.started) return S._starting === true;
+    var side = dir === 'backward' ? -1 : 1;
+    var nb = neighborOf(S.activeChapter, side);
+    if (!nb) return false;
+    var host = hostFor(nb.index);
+    if (!host) return S.pending[nb.index] === true;
+    if (busy()) return true;
+    // 文档尽头还挂着邻章 = 邻章短到视口中心越不过迟滞带（标题页 / 单图章）：边界拉动的
+    // 意思就是「去那一章」，由本模块晋升，落点与整章重载一致（前进到章首、后退到章末）。
+    if (!S.promote(host)) return false;
+    S.noteProgram();
+    if (side > 0) S.alignActiveStart();
+    else S.alignActiveEnd();
+    return true;
+  };
   function scheduleEvaluate() {
     if (S.evalRaf) return;
     S.evalRaf = requestAnimationFrame(function() {
@@ -760,6 +784,17 @@ final String kSeamlessChaptersInstallJs =
       }
       if (last) last.scrollIntoView({block: 'end', inline: 'nearest', behavior: 'instant'});
       else S.alignActiveEnd();
+    };
+  });
+  // 文档内换章计数：触摸边界控制器在手势起点记下、松手时比对，变了就说明这次手势里已经
+  // 晋升过（换章已由本模块完成），这次手势不再触发任何换章。
+  wrap('chapterTurnEpoch', function() {
+    return function() { return S.seq; };
+  });
+  wrap('claimBoundaryTurn', function(orig) {
+    return function(direction) {
+      if (S.claimBoundaryTurn(direction)) return true;
+      return orig.apply(this, arguments);
     };
   });
   wrap('isAtEnd', function(orig) {

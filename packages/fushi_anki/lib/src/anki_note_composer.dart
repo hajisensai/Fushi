@@ -393,6 +393,10 @@ mixin AnkiNoteComposer {
   /// 此前打成 `book` 的旧音乐卡不迁移不重写。
   static const String musicTag = 'music';
 
+  /// 漫画阅读器的分类标签（反馈 uOanUXUIDt 拍板）。仅决定新制卡默认标签，此前打成
+  /// `book` 的旧漫画卡不迁移不重写。
+  static const String mangaTag = 'manga';
+
   /// 把制卡来源类别映射成分类标签；`null`（未指定来源）时返回 `null`（不追加）。
   static String? _categoryTagForSource(AnkiMiningSource? source) {
     switch (source) {
@@ -404,6 +408,8 @@ mixin AnkiNoteComposer {
         return gameTag;
       case AnkiMiningSource.music:
         return musicTag;
+      case AnkiMiningSource.manga:
+        return mangaTag;
       case null:
         return null;
     }
@@ -413,8 +419,8 @@ mixin AnkiNoteComposer {
   /// **追加** [fushiTag] 与 [source] 对应的分类标签后去重（保序）。
   ///
   /// - 追加而非覆盖：用户已配置的 tag 全部保留，只是按开关额外多 `fushi` + 分类标签。
-  /// - 顺序：用户 tag → `fushi` → 分类标签（`book`/`video`/`game`/`music`）。
-  /// - 去重：用户若已手动配置了 `fushi`/`book`/`video`/`game`/`music`，不会出现两个。
+  /// - 顺序：用户 tag → `fushi` → 分类标签（`book`/`video`/`game`/`music`/`manga`）。
+  /// - 去重：用户若已手动配置了 `fushi` 或任一分类标签，不会出现两个。
   /// - [includeHibiki]（TODO-117 开关）为 `false` 时不追加 `fushi`。
   /// - [includeCategory]（TODO-117 开关）为 `false` 时不追加分类标签；为 `true` 但
   ///   [source] 为 `null`（未指定来源，如独立查词/悬浮窗）时本就没有分类标签可加。
@@ -752,11 +758,26 @@ mixin AnkiNoteComposer {
   /// 没有的名字原样保留（服务端按名匹配自会丢弃，与 BUG-1900 同口径）。AnkiDroid
   /// 后端在 native `updateNoteFields` 里按位置做同一件事（`clearUnspecified`），
   /// 那边本来就握着整条 note，不必再经通道回读一次。
+  ///
+  /// 反馈 nWWjBp3Clo：[onlyFields] 非 null 时只覆写用户选中的字段——返回值**只含**
+  /// 选中且属于这张 note 的字段（映射到的写渲染值，没映射到的写空串），其余字段一个
+  /// 都不点名，两后端都按「未给出的字段保留旧值」原样留着。[existingFieldNames] 为空
+  /// （手上没有字段真相）时按 [onlyFields] 原样点名，交由后端按名 / 按位置裁决。
   @protected
   static Map<String, String> fieldsForOverwrite({
     required Iterable<String> existingFieldNames,
     required Map<String, String> rendered,
+    Set<String>? onlyFields,
   }) {
+    if (onlyFields != null) {
+      final List<String> known = existingFieldNames.toList();
+      final Iterable<String> targets = known.isEmpty
+          ? onlyFields
+          : known.where(onlyFields.contains);
+      return <String, String>{
+        for (final String name in targets) name: rendered[name] ?? '',
+      };
+    }
     final Map<String, String> out = <String, String>{...rendered};
     for (final String name in existingFieldNames) {
       out.putIfAbsent(name, () => '');

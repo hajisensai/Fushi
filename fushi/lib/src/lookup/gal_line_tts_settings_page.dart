@@ -60,11 +60,16 @@ String galLineTtsVoiceLabel(TtsServices services, String? presetId) {
   return t.models_tts_fallback_voice_missing;
 }
 
-/// 选声音。返回 `(picked: true, presetId: …)`；取消 / 去了管理页返回 null。
+/// 选声音。返回 `(presetId: …)`；取消 / 去了管理页返回 null。
+///
+/// 第一项（返回 `presetId: null`）默认是「跟随朗读声音」；按游戏 / 按语言的覆盖项
+/// 里它的语义是「删掉这一项、回落到下一层」，由 [nullLabel] / [nullHint] 改文案。
 Future<({String? presetId})?> showGalLineTtsVoicePicker(
   BuildContext context,
   TtsServices services, {
   required String? current,
+  String? nullLabel,
+  String? nullHint,
 }) async {
   await services.seedBuiltinVoiceIfUnset();
   if (!context.mounted) return null;
@@ -76,8 +81,8 @@ Future<({String? presetId})?> showGalLineTtsVoicePicker(
     options: <FushiChoiceOption<String>>[
       FushiChoiceOption<String>(
         value: _kFollowActiveVoice,
-        label: t.gal_line_tts_voice_follow,
-        subtitle: t.gal_line_tts_voice_follow_hint,
+        label: nullLabel ?? t.gal_line_tts_voice_follow,
+        subtitle: nullHint ?? t.gal_line_tts_voice_follow_hint,
         icon: FushiIcons.volumeUp,
       ),
       for (final TtsVoiceSwitchEntry e in ttsVoiceSwitchEntries(

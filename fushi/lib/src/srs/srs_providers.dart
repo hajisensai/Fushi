@@ -24,9 +24,11 @@ import 'package:flutter/foundation.dart'
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:fushi_engine/srs/srs_miner.dart';
+import 'package:fushi_engine/srs/srs_collection_binding.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_legacy_lapis_migration.dart';
 import 'package:fushi_engine/srs/srs_purge.dart';
+import 'package:fushi_engine/srs/srs_rwkv_attach.dart';
 import 'package:fushi_engine/srs/srs_rwkv_models.dart';
 import 'package:fushi_engine/srs/srs_rwkv_service.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
@@ -40,6 +42,7 @@ import 'package:fushi/src/models/preference_keys.dart'
     show kSrsLapisMigrationReminderPrefKey;
 import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/srs/srs_card_appearance.dart';
+import 'package:fushi/src/srs/srs_device_view.dart';
 import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi_engine/srs/srs_mining_target.dart';
 import 'package:fushi/src/srs/srs_profile_stores.dart';
@@ -348,7 +351,7 @@ final FutureProvider<SrsRwkvModels> srsRwkvModelsProvider =
     FutureProvider<SrsRwkvModels>((Ref ref) async {
       final Directory support = await ref.watch(srsSupportRootProvider)();
       return SrsRwkvModels(
-        dir: Directory(p.join(support.path, 'srs_rwkv', 'models')),
+        dir: srsRwkvModelsDir(support),
         createClient: createAppHttpClient,
       );
     });
@@ -364,29 +367,36 @@ final FutureProvider<SrsRwkvService?> srsRwkvServiceProvider =
         srsRwkvModelsProvider.future,
       );
       final Directory support = await ref.watch(srsSupportRootProvider)();
-      final SrsRwkvService service = SrsRwkvService(
-        store: store,
+      // 装配与无头服务端共用一份（srs_rwkv_attach.dart）；这里只注入目录、权重库与日志。
+      final SrsRwkvService service = srsAttachRwkv(
+        store,
+        support: support,
         models: models,
-        snapshotDir: Directory(p.join(support.path, 'srs_rwkv', 'state')),
         log: (String message) => ErrorLogService.instance.log(
           'SrsRwkvService',
           message,
           StackTrace.current,
         ),
       );
-      store.rwkv = service;
       ref.onDispose(() {
         if (identical(store.rwkv, service)) store.rwkv = null;
         unawaited(service.close());
       });
-      final SrsDeckTree tree = await store.deckTree();
-      if (tree.decks.any(
-        (SrsDeckView d) => tree.paramsOwner(d.id).localAlgorithm.usesRwkv,
-      )) {
-        srsRunLogged('SrsRwkvService.start', service.start);
-      }
+      await srsRwkvStartIfUsed(
+        store,
+        service,
+        onError: (Object e, StackTrace stack) =>
+            ErrorLogService.instance.log('SrsRwkvService.start', e, stack),
+      );
       return service;
     });
+
+/// 「等 RWKV」的页面看的状态来源（进度 / 错误 / 就绪事件 / 重试）：本机复习是 [srsRwkvServiceProvider]；远程复习的
+/// 作用域把它换成主机状态的影子（`SrsRemoteStore.hostRwkv`）——RWKV 在主机上跑，本机的服务不碰主机的库。
+final FutureProvider<SrsRwkvStatusSource?> srsRwkvStatusProvider =
+    FutureProvider<SrsRwkvStatusSource?>(
+      (Ref ref) => ref.watch(srsRwkvServiceProvider.future),
+    );
 
 /// SRS 媒体根所在的支持目录（测试覆写成临时目录）。
 final Provider<Future<Directory> Function()> srsSupportRootProvider =
@@ -408,6 +418,12 @@ final FutureProvider<SrsMediaStore?> srsMediaStoreProvider =
 /// 正在显示的复习页数量（复习页 initState +1 / dispose −1）。自动优化据此判断「在复习」，
 /// 进入复习页时取消在跑的优化（见 srs_optimization_scheduler.dart）。
 final ValueNotifier<int> srsActiveReviewSessions = ValueNotifier<int>(0);
+
+/// 复习页登记「正在复习」用的计数：根容器里就是本机 runtime 监听的 [srsActiveReviewSessions]（批量推送、
+/// 自动优化让路，见 srs_app_runtime.dart）。远程复习的作用域（`SrsRemoteCollectionScope`）覆盖成自己的
+/// 计数——在主机的库上复习不该让本机库的推送改成批量、也不该取消本机的参数优化。
+final Provider<ValueNotifier<int>> srsActiveReviewSessionsProvider =
+    Provider<ValueNotifier<int>>((Ref ref) => srsActiveReviewSessions);
 
 /// 本机写操作后的刷新信号（单调递增）。
 final StateProvider<int> srsRevisionProvider = StateProvider<int>(
@@ -672,9 +688,12 @@ srsDeckListProvider = FutureProvider<SrsDeckListData?>((Ref ref) async {
   List<SrsDeckSummary> decks = await load();
   // RWKV 牌组的到期数在等 RWKV（[SrsDeckSummary.rwkvPending]）：RWKV 就绪不是 store 的写入，不推进
   // [srsRevisionProvider]，这里自己等它就绪再重读，列表 / 首页的「准备中」才会换成真实计数。
-  // 只在确有 pending 时取服务：pending 意味着 store 已装配了 RWKV（[srsRwkvServiceProvider] 已建好）。
+  // 只在确有 pending 时取服务：pending 意味着 store 已装配了 RWKV（[srsRwkvServiceProvider] 已建好；远程复习时
+  // 是主机的状态，[srsRwkvStatusProvider]）。
   if (decks.any((SrsDeckSummary d) => d.rwkvPending)) {
-    final SrsRwkvService? rwkv = await ref.read(srsRwkvServiceProvider.future);
+    final SrsRwkvStatusSource? rwkv = await ref.read(
+      srsRwkvStatusProvider.future,
+    );
     if (rwkv != null) {
       final StreamSubscription<SrsRwkvStatus> sub = rwkv.statusChanges
           .where((SrsRwkvStatus s) => s.phase == SrsRwkvPhase.ready)
@@ -751,6 +770,15 @@ Future<int> _srsMemoByContent(
 
 /// 还能迁到 Fushi 卡片的旧 Lapis 笔记 + 可补迁遗漏字段的笔记，合计（牌组列表的迁移提醒）。
 /// 提醒关着时不算（不为看不见的提示扫库）。内容没变时复用上次结果（[_srsMemoByContent]）。
+/// 当前 profile 的集合绑定状态（内核持有，见 srs_collection_binding.dart；这里只是每次修订号变化时现读一次）。
+/// 复习页据此提示「还没加入同步位置上已有的复习数据」（`provisional`）。
+final FutureProvider<SrsCollectionBinding?> srsCollectionBindingProvider =
+    FutureProvider<SrsCollectionBinding?>((Ref ref) async {
+      ref.watch(srsRevisionProvider);
+      final SrsDbStore? store = await ref.watch(srsStoreProvider.future);
+      return store?.collectionBinding();
+    });
+
 final FutureProvider<int> srsLegacyLapisPendingProvider = FutureProvider<int>((
   Ref ref,
 ) async {
@@ -778,18 +806,31 @@ final FutureProvider<int> srsConflictCountProvider = FutureProvider<int>((
   return _srsMemoByContent(_conflictCountMemo, store, () async {
     final int conflicts = (await store.syncConflicts()).length;
     final int held = (await store.sync2Conflicts()).length;
-    return conflicts + held + await store.pendingDecisionCount();
+    // 待确认的设备（删除 / 彻底清除扣着等本机确认，store/sync2/trust.rs）与冲突同级进角标。
+    final int untrusted = srsDeviceViewsOf(
+      await store.sync2Status(),
+    ).where((SrsDeviceView d) => d.needsTrust).length;
+    return conflicts + held + untrusted + await store.pendingDecisionCount();
   });
 });
 
-/// 等 store 就绪（页面动作里用）。模块关着 / 打开失败时返回 null。
-Future<SrsDbStore?> readSrsStore(WidgetRef ref) async {
-  try {
-    return await ref.read(srsStoreProvider.future);
-  } catch (e, stack) {
-    ErrorLogService.instance.log('readSrsStore', e, stack);
-    return null;
+/// 等 store 就绪（页面动作里用）。
+///
+/// null 只表示「这里没有复习库」：模块关着，或存储此刻不可用（非主进程在主进程完成首次搬迁之前，见
+/// [srsStorageProvider]）。**打开失败原样抛出**——以前在这里吞掉记日志、返回 null，复习页于是报「排程内核
+/// 不可用」、操作目录报「复习库还没就绪」，真正的错误（库损坏、升级空间不够……）只在日志里。调用方各自
+/// 把它交给错误态 / 失败结果。
+Future<SrsDbStore?> readSrsStore(WidgetRef ref) =>
+    ref.read(srsStoreProvider.future);
+
+/// 错误态「重试」前调：上次打开失败时 [srsStoreProvider]（及它等的 [srsStorageProvider]）缓存着那个错误，
+/// 不作废的话之后的 [readSrsStore] 只会原样拿回同一个失败。只作废失败了的那一层；已经打开好的库不动
+/// （作废会让全 app 重开一遍库）。
+void retrySrsStoreOpen(WidgetRef ref) {
+  if (ref.exists(srsStorageProvider) && ref.read(srsStorageProvider).hasError) {
+    ref.invalidate(srsStorageProvider);
   }
+  if (ref.read(srsStoreProvider).hasError) ref.invalidate(srsStoreProvider);
 }
 
 /// 把一个 Future 交给后台跑并记录失败（按钮回调里用）。

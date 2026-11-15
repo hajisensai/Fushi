@@ -458,4 +458,84 @@ void main() {
       expect(chooseWebVideoTrackKey(tracks: tracks, videoKey: 'v1'), 'v1|live');
     });
   });
+
+  // BUG-4186：seek 回执带页面诊断；日志判据播放器后端与制卡页共用。
+  group('seekDone 诊断', () {
+    test('parse 带出 diag；旧 glue 没有 diag 时为空；超长截断', () {
+      final WebVideoSeekDone? withDiag =
+          parseWebVideoSeekDonePayload(<String, Object?>{
+            'type': 'seekDone',
+            'ok': false,
+            'err': 'timeout',
+            'id': 3,
+            'diag': 'bridge=ab dup=0 videos=1',
+          });
+      expect(withDiag!.diag, 'bridge=ab dup=0 videos=1');
+      expect(withDiag.id, 3);
+      final WebVideoSeekDone? legacy = parseWebVideoSeekDonePayload(
+        <String, Object?>{'ok': true, 'err': '', 'id': 1},
+      );
+      expect(legacy!.diag, '');
+      final WebVideoSeekDone? long = parseWebVideoSeekDonePayload(
+        <String, Object?>{'ok': true, 'diag': 'x' * 5000},
+      );
+      expect(long!.diag, hasLength(kWebVideoSeekDiagMaxChars));
+    });
+
+    test('superseded 不记；失败每次都记且带诊断', () {
+      final WebVideoSeekDoneLog log = WebVideoSeekDoneLog();
+      expect(
+        log.lineFor(
+          const WebVideoSeekDone(
+            ok: false,
+            err: 'superseded',
+            id: 1,
+            diag: 'd',
+          ),
+        ),
+        isNull,
+      );
+      for (int i = 0; i < 3; i++) {
+        expect(
+          log.lineFor(
+            WebVideoSeekDone(ok: false, err: 'timeout', id: i, diag: 'dup=1'),
+          ),
+          'seek failed (id=$i): timeout | dup=1',
+        );
+      }
+      expect(
+        log.lineFor(const WebVideoSeekDone(ok: false, err: 'timeout', id: 9)),
+        'seek failed (id=9): timeout',
+      );
+    });
+
+    test('成功的诊断限流：首条记，间隔内不记，满间隔再记；没诊断的成功不记', () {
+      DateTime now = DateTime(2026, 11, 10, 12);
+      final WebVideoSeekDoneLog log = WebVideoSeekDoneLog(now: () => now);
+      expect(
+        log.lineFor(const WebVideoSeekDone(ok: true, err: '', id: 1)),
+        isNull,
+      );
+      expect(
+        log.lineFor(
+          const WebVideoSeekDone(ok: true, err: '', id: 2, diag: 'videos=1'),
+        ),
+        'seek ok (id=2) | videos=1',
+      );
+      now = now.add(kWebVideoSeekDiagOkInterval - const Duration(seconds: 1));
+      expect(
+        log.lineFor(
+          const WebVideoSeekDone(ok: true, err: '', id: 3, diag: 'videos=1'),
+        ),
+        isNull,
+      );
+      now = now.add(const Duration(seconds: 1));
+      expect(
+        log.lineFor(
+          const WebVideoSeekDone(ok: true, err: '', id: 4, diag: 'videos=2'),
+        ),
+        'seek ok (id=4) | videos=2',
+      );
+    });
+  });
 }

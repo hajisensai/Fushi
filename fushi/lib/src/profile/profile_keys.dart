@@ -52,7 +52,7 @@ class ProfileKeys {
   /// JSON blob produced by [ProfileRepository]'s dictionary-meta serializer.
   static const String categoryDictionaryMeta = 'dictionary_meta';
 
-  /// v149：服务器托管词典（`remote_dictionary_metadata`）里配置拥有的两列（顺序 /
+  /// v153：服务器托管词典（`remote_dictionary_metadata`）里配置拥有的两列（顺序 /
   /// 开关）的快照，与 [categoryDictionaryMeta] 同一次快照 / 同一个应用事务。一行一本：
   /// key = `<hostId>/<真名>`，value = `{"order", "hidden"}`（格式见
   /// [kProfileSettingCategoryRemoteDictionaryMeta]）。

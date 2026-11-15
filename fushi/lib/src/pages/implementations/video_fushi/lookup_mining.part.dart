@@ -73,27 +73,35 @@ extension _VideoLookupMining on _VideoFushiPageState {
       return _miningDraft.length;
     }
     final List<AudioCue> cues = controller.cueStreamOwning(anchor);
-    final int idx = cues.indexOf(anchor);
+    // 反馈 rLCxUJ-2i4：「句」按同时显示的多行合一切（[groupSimultaneousCues]）——ASS 把
+    // 一句拆成几条起止相同的 Dialogue 时，「上 1 句」不能取到同一句的另一行。
+    final List<List<AudioCue>> sentences = groupSimultaneousCues(cues);
+    final int idx = sentences.indexWhere(
+      (List<AudioCue> group) => group.any((AudioCue c) => identical(c, anchor)),
+    );
     if (idx < 0) {
       _miningDraft.setContext();
       return _miningDraft.length;
     }
-    // 与有声书歌词模式同一个切法（cueContextNeighbors）：一条 cue 就是一句。
-    final ({List<AudioCue> prev, List<AudioCue> next}) around =
-        cueContextNeighbors(
-          cues: cues,
+    // 与有声书歌词模式同一个切法（cueContextNeighbors），只是元素是「一句」而非一条 cue。
+    final ({List<List<AudioCue>> prev, List<List<AudioCue>> next}) around =
+        cueContextNeighbors<List<AudioCue>>(
+          cues: sentences,
           anchorIndex: idx,
           prevCount: prevCount,
           nextCount: nextCount,
         );
-    MiningDraftSentence toEntry(AudioCue cue) =>
-        MiningDraftSentence(sentence: cue.text, audioRange: _cueRange(cue));
+    // 同组 cue 起止相同，取组首的时间窗即整句时间窗。
+    MiningDraftSentence toEntry(List<AudioCue> group) => MiningDraftSentence(
+      sentence: joinSimultaneousCueText(group),
+      audioRange: _cueRange(group.first),
+    );
     _miningDraft.setContext(
       prev: <MiningDraftSentence>[
-        for (final AudioCue cue in around.prev) toEntry(cue),
+        for (final List<AudioCue> group in around.prev) toEntry(group),
       ],
       next: <MiningDraftSentence>[
-        for (final AudioCue cue in around.next) toEntry(cue),
+        for (final List<AudioCue> group in around.next) toEntry(group),
       ],
     );
     return _miningDraft.length;
@@ -284,12 +292,24 @@ extension _VideoLookupMining on _VideoFushiPageState {
           ? (controller.positionMs ?? 0)
           : miningClipTimeMs(mergedRange.startMs, clipDelayMs),
       // 多句时 cueSentence 用合并文本与 sentence 一致；草稿空时退回单 cue 文本作 fallback。
-      cueSentence: _miningDraft.isEmpty ? cue?.text : mergedSentence,
+      // 反馈 rLCxUJ-2i4：单句时也取锚点 cue 所在整句（同时显示的多行合一）。
+      cueSentence: _miningDraft.isEmpty
+          ? (cue == null
+                ? null
+                : simultaneousCueText(controller.cueStreamOwning(cue), cue))
+          : mergedSentence,
       sentence: mergedSentence,
     );
   }
 
-  Future<MinePopupResult> _onMineEntryImpl(Map<String, String> fields) async {
+  /// [awaitLocalLanding]：本地视频要不要等卡落地再回结果。查词弹窗（默认 false）不等——
+  /// 反馈 OeS0m8tLHc，弹窗点「制卡」后立刻关、视频续播，卡在后台落地；手机遥控制卡传
+  /// true，要把真实结果报回手机。网络流照旧按「在线视频制卡」偏好（见
+  /// [resolveVideoMineDispatch]）。
+  Future<MinePopupResult> _onMineEntryImpl(
+    Map<String, String> fields, {
+    bool awaitLocalLanding = false,
+  }) async {
     // 网页档：画面归站点（硬件 DRM 截不到）、没有本地媒体源——只入队，由内置档重放落卡
     // （见 web_source.part.dart）。
     if (_webMode) return _onWebMineEntry(fields);
@@ -341,6 +361,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
       sentence: range.sentence,
       cueSentence: range.cueSentence,
       overrides: overrides,
+      awaitLocalLanding: awaitLocalLanding,
       historySnapshot: recordHistory ? historySnapshot : null,
       // 在线视频后台制卡：卡在弹窗返回之后才落地，历史行跟着落地时再写。
       onBackgroundLanded: (MinePopupResult landed) {
@@ -632,19 +653,22 @@ extension _VideoLookupMining on _VideoFushiPageState {
     Future<void> Function()? writeFieldsMedia,
     Future<Uint8List?>? frozenCurrentFrame,
     bool detachedFromDialog = false,
+    bool awaitLocalLanding = true,
   }) async {
     final VideoPlayerController? controller = _controller;
     if (controller == null || !_discExtractionAllowed(controller)) {
       onFailure?.call('video_extraction_unavailable');
       return const MinePopupResult();
     }
-    // 在线视频：弹窗等不等这张卡（见 [VideoOnlineMiningMode]）。覆盖已有卡片 / 回看会话
-    // 要拿到落卡结果才有意义，恒等待；本地文件本就秒出，恒等待（= 改动前行为）。
-    final VideoOnlineMiningMode onlineMode = resolveVideoOnlineMiningMode(
+    // 调用方等不等这张卡（见 [resolveVideoMineDispatch]）。覆盖已有卡片 / 回看会话要拿到
+    // 落卡结果才有意义，恒等待；查词弹窗的新制卡不等（反馈 OeS0m8tLHc：弹窗立刻关、
+    // 视频续播），本地视频也走后台；网络流再按「在线视频制卡」偏好分后台 / 看完再制。
+    final VideoMineDispatch dispatch = resolveVideoMineDispatch(
       preferred: appModel.videoOnlineMiningMode,
       mediaSource: controller.miningSource,
       overwrite: updateNoteId != null || forceForeground,
       sourceReview: _sourceReviewSession != null,
+      awaitLocalLanding: awaitLocalLanding,
     );
 
     // 入队前立即冻结所有播放器/页面输入。换集会复用或 dispose controller，后续任务绝不能
@@ -792,6 +816,44 @@ extension _VideoLookupMining on _VideoFushiPageState {
                 } catch (_) {}
                 return null;
               });
+    // 反馈 OeS0m8tLHc：不陪等的制卡（后台 / 看完再制）失败时，弹窗早就关了、视频在播，
+    // 结果卡上的「重试」是唯一的重来入口。用这一次冻结的全部输入（字段 / 区间 / 覆盖项 /
+    // 点击当下那一帧）重跑；换集 / 换播放器后区间对不上现在的媒体，不重跑、说一声。
+    // 等待落地的调用方（覆盖 / 回看 / 遥控）自己拿得到失败结果，不挂重试。
+    final VoidCallback? retry =
+        dispatch == VideoMineDispatch.awaitLanding || silent
+        ? null
+        : () {
+            if (!mounted ||
+                !identical(_controller, controller) ||
+                _currentEpisode != episode) {
+              if (mounted) {
+                _showOsd(
+                  t.video_mine_retry_cancelled_episode,
+                  severity: ToastSeverity.warning,
+                );
+              }
+              return;
+            }
+            unawaited(
+              _mineVideoCard(
+                fields: fields,
+                clipStartMs: clipStartMs,
+                clipEndMs: clipEndMs,
+                stillFrameAtMs: stillFrameAtMs,
+                sentence: sentence,
+                cueSentence: cueSentence,
+                overrides: overrides,
+                historySnapshot: historySnapshot,
+                onBackgroundLanded: onBackgroundLanded,
+                onFailure: onFailure,
+                writeFieldsMedia: writeFieldsMedia,
+                frozenCurrentFrame: currentFrameSnapshot,
+                detachedFromDialog: true,
+                awaitLocalLanding: awaitLocalLanding,
+              ),
+            );
+          };
     // 不 await：先把本任务按点击顺序送进共享队列，轮到它时再解析临时目录。否则两个
     // 连续点击可能因 path_provider 返回先后不同而逆序入队。
     final Future<String> tempDir = getTemporaryDirectory().then(
@@ -842,7 +904,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
       required AnkiMiningContext context,
     })?
     stageNote;
-    if (onlineMode == VideoOnlineMiningMode.deferred) {
+    if (dispatch == VideoMineDispatch.deferred) {
       final Future<VideoMineQueue> queueFuture = _videoMineQueue();
       final String queueBookUid = _activeBookUid;
       final String videoKey = '$sourceUid#$sourceEpisode';
@@ -854,6 +916,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
         collectionTag: appModel.autoAddBookNameToTags
             ? BaseAnkiRepository.sanitizeTitleTag(_playlistTitle)
             : null,
+        seriesTitle: _playlistTitle,
         statBookKey: statIdentity.bookKey,
         statTitle: statIdentity.title,
         recordHistory: historySnapshot != null,
@@ -996,6 +1059,9 @@ extension _VideoLookupMining on _VideoFushiPageState {
         // 合集/系列名标签（同上开关）：播放列表下用系列名 _playlistTitle（col.name，已在内存）
         // 作独立 tag，与剧集名并列；单视频/远端无系列名时为 null 不追加。
         collectionTag: collectionTag,
+        // 出处的上一级（反馈 MCJLSBR5Wg）：SRS 出处按「系列 → 集」两级分组。与 collectionTag 同一个来源
+        // （本地播放列表的合集名 / 远端作品名），但不看标签开关、不清洗。单视频为 null，出处只有集这一级。
+        seriesTitle: _playlistTitle,
         updateNoteId: updateNoteId,
         stillFallback: () => currentFrameSnapshot,
         // 高级制卡「不要音频 / 不要图片」（只对这一张卡）：引擎跳过对应抽取，两者都
@@ -1045,6 +1111,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
         onFailure: onFailure,
         undoRepo: repo,
         expression: fields['expression'],
+        retry: retry,
       );
       _reportSentenceAudioFallback(
         reason: audioSourceFallback,
@@ -1055,7 +1122,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
       return landed;
     }
 
-    if (onlineMode == VideoOnlineMiningMode.wait) return land(await job);
+    if (dispatch == VideoMineDispatch.awaitLanding) return land(await job);
     // BUG-3492：后台**写入 Anki** 的这张卡（不是暂存、不是回看改卡）在落地前可以被排队
     // 覆盖。登记在途，落地时（成功或失败）结算排队的覆盖请求。
     final String? overwriteKey =
@@ -1121,6 +1188,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
             }
             onBackgroundLanded?.call(landed);
           }),
+      retry: retry,
     );
     return const MinePopupResult.queued();
   }
@@ -1143,21 +1211,25 @@ extension _VideoLookupMining on _VideoFushiPageState {
     void Function(String code)? onFailure,
     BaseAnkiRepository? undoRepo,
     String? expression,
+    VoidCallback? retry,
   }) {
     // BUG-296 / TODO-390：应带句子音频却抽取失败 → 显式 OSD + 中止，不建无音频卡。
     if (res.aborted) {
       onFailure?.call(res.abortReason ?? 'sentence_audio_export_failed');
       if (mounted && !silent) {
-        _showOsd(
-          t.card_export_failed_detail(
-            reason:
-                res.abortReason ??
-                (audioFailure == null
-                    ? 'sentence audio export failed'
-                    : 'sentence audio export failed: $audioFailure'),
-          ),
-          severity: ToastSeverity.error,
+        final String message = t.card_export_failed_detail(
+          reason:
+              res.abortReason ??
+              (audioFailure == null
+                  ? 'sentence audio export failed'
+                  : 'sentence audio export failed: $audioFailure'),
         );
+        // 不陪等的制卡（[retry] 非空）：弹窗早关了，结果卡带「重试」。
+        if (retry != null) {
+          _showMineOsd(message, MineToastStatus.failed, null, retry);
+        } else {
+          _showOsd(message, severity: ToastSeverity.error);
+        }
       }
       return const MinePopupResult();
     }
@@ -1212,7 +1284,13 @@ extension _VideoLookupMining on _VideoFushiPageState {
     final MinedCardUndo? undo = overwrite || undoRepo == null
         ? null
         : MinedCardUndo.of(undoRepo, outcome, expression: expression);
-    _showMineOsd(described.message, described.status, undo);
+    // 反馈 OeS0m8tLHc：只有真失败才挂「重试」（重复卡片重试也还是重复）。
+    _showMineOsd(
+      described.message,
+      described.status,
+      undo,
+      described.status == MineToastStatus.failed ? retry : null,
+    );
     return result;
   }
 

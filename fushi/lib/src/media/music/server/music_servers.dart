@@ -23,7 +23,8 @@ import 'package:fushi_engine/media/music/youtube/youtube_music_client.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/music/apple_music/apple_music_account.dart';
-import 'package:fushi/src/media/music/music_output_backend.dart';
+import 'package:fushi/src/media/music/music_remote_tracks.dart'
+    show MusicServerBinding;
 import 'package:fushi/src/media/music/server/jellyfin_music_client.dart';
 import 'package:fushi/src/media/music/server/youtube_music_gate.dart';
 import 'package:fushi/src/media/video/media_server/media_server_config.dart';
@@ -77,6 +78,35 @@ Future<List<MusicServerBrowser>> loadMusicServerBrowsers(AppModel app) async {
     }
     if (isYoutubeMusicSourceAvailable && app.prefsRepo.musicYoutubeEnabled) {
       out.add(YoutubeMusicClient(displayName: 'YouTube'));
+    }
+  }
+  return out;
+}
+
+/// 曲库 / 本地歌单里的服务器曲目（v149，反馈 se3Fw8HmOX）起播 / 取封面用的服务器：只有
+/// Jellyfin（媒体服务器配置）与启用着的 Subsonic（自配服务器），按当前配置新建客户端、带上
+/// 设置里的码率上限。只拼地址、不发请求；不碰 Apple Music / YouTube（前者读状态要起网页桥）。
+/// `music_remote_tracks.dart` 的 [MusicServerBinding] 经 `AppModel` 装到
+/// `musicServerBindingLoader`。
+Future<Map<String, MusicServerBinding>> loadMusicServerBindings(
+  AppModel app,
+) async {
+  final int? limit = musicServerBitrateLimit(
+    app.isPreferencesReady ? app.prefsRepo.musicServerMaxBitrate : 0,
+  );
+  final Map<String, MusicServerBinding> out = <String, MusicServerBinding>{};
+  void add(MusicServerBrowser b) =>
+      out[b.serverId] = MusicServerBinding(b, maxBitrateKbps: limit);
+  if (app.isDatabaseReady) {
+    for (final MediaServerConfig c in await SyncRepository(
+      app.database,
+    ).getMediaServers()) {
+      if (c is JellyfinServerConfig) add(JellyfinMusicClient(c));
+    }
+  }
+  if (app.isPreferencesReady) {
+    for (final SubsonicServerConfig c in app.prefsRepo.musicSubsonicServers) {
+      if (c.enabled) add(SubsonicMusicClient(c));
     }
   }
   return out;
@@ -195,39 +225,6 @@ const List<int> kMusicServerBitrateChoices = <int>[320, 192, 128];
 /// 服务器码率上限（设置）→ [MusicServerBrowser.streamFor] 的参数：0 = 原样直出。
 int? musicServerBitrateLimit(int settingKbps) =>
     settingKbps <= 0 ? null : settingKbps;
-
-/// 一首服务器曲目 → 播放项。路径是 HTTP 流地址；源属性取服务器报的（转码时取转码后的：
-/// 信号路径面板据此不把转码流判 bit-perfect）。
-MusicPlayItem musicServerPlayItem(
-  MusicServerBrowser browser,
-  MusicServerTrack track, {
-  int? maxBitrateKbps,
-  String? albumTitle,
-  String? coverPath,
-}) {
-  final MusicServerStream stream = browser.streamFor(
-    track,
-    maxBitrateKbps: maxBitrateKbps,
-  );
-  return MusicPlayItem(
-    trackUid: musicServerTrackUid(browser.serverId, track.id),
-    path: stream.uri.toString(),
-    title: track.title,
-    artist: track.artist,
-    album: albumTitle ?? track.album,
-    albumUid: track.albumId == null
-        ? null
-        : musicServerAlbumUid(browser.serverId, track.albumId!),
-    discNo: track.discNo,
-    trackNo: track.trackNo,
-    durationMs: track.durationMs,
-    coverPath: coverPath ?? browser.coverUri(track.coverRef)?.toString(),
-    codec: stream.transcoded ? stream.codec : (track.codec ?? track.container),
-    sampleRate: stream.transcoded ? null : track.sampleRate,
-    bitDepth: stream.transcoded ? null : track.bitDepth,
-    channels: track.channels,
-  );
-}
 
 /// 混排进曲库的一张服务器专辑（专辑网格里与本地专辑并列）。
 class MusicServerAlbumRef {

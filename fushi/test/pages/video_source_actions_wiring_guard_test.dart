@@ -56,6 +56,20 @@ void main() {
     expect(page, contains('onTap: _clearAllScrapeRecords'));
     expect(settings, contains('showClearAllVideoScrapeRecordsAction'));
     expect(action, contains('VideoScrapeCleanupService('));
+    // Feedback 7NBVwW-6Qc：确认框必须给出「只清记录 / 连同生成文件」两种方式，
+    // 勾选态真正传到清理服务，CLI 也能选。
+    expect(
+      action,
+      contains('checkboxLabel: t.video_source_scrape_clear_all_delete_files'),
+    );
+    expect(
+      action,
+      contains(
+        'videoScrapeCleanupModeFor(deleteGeneratedFiles: confirmed.checked)',
+      ),
+    );
+    expect(action, contains('.clearAll(mode: mode)'));
+    expect(settings, contains("deleteGeneratedFiles: files == 'delete'"));
     expect(action, contains('videoScrapeCleanupRevision.value += 1'));
     expect(
       view,

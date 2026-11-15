@@ -17,6 +17,8 @@ import 'package:path/path.dart' as p;
 import 'package:shelf/shelf.dart' as shelf;
 import 'package:test/test.dart';
 
+import 'support/fake_rwkv.dart';
+
 const String kJa = '01928c3e-0000-7000-8000-00000000a0a0';
 const String kZh = '01928c3e-0000-7000-8000-00000000b0b0';
 
@@ -40,6 +42,8 @@ void main() {
     final ServerPaths paths = ServerPaths(config.dataDir);
     await paths.ensureLayout();
     host = HeadlessHost(
+      // RWKV 权重不联网下载（下载当场失败 = RWKV 没就绪）。
+      srsRwkvHttpClient: noNetworkHttpClient,
       config: config,
       paths: paths,
       db: db,
@@ -149,6 +153,68 @@ void main() {
     expect(host.srs!.storeFor(kZh), isNull);
   });
 
+  test('制卡牌组：miningDecks 整份替换；miningDecksPatch 只改给了的那几份，空串删掉那一项', () async {
+    var (int code, Map<String, dynamic> st) = await call(
+      'PUT',
+      'srs',
+      <String, Object?>{
+        'addProfiles': <String>[kJa, kZh],
+        'miningDecks': <String, String>{kJa: 'JA', kZh: 'ZH'},
+      },
+    );
+    expect(code, 200, reason: '$st');
+
+    (code, st) = await call('PUT', 'srs', <String, Object?>{
+      'miningDecksPatch': <String, String>{kJa: ' JA::New '},
+    });
+    expect(code, 200, reason: '$st');
+    expect((st['config'] as Map)['miningDecks'], <String, String>{
+      kJa: 'JA::New',
+      kZh: 'ZH',
+    });
+
+    (code, st) = await call('PUT', 'srs', <String, Object?>{
+      'miningDecksPatch': <String, String>{kZh: ''},
+    });
+    expect((st['config'] as Map)['miningDecks'], <String, String>{
+      kJa: 'JA::New',
+    });
+    expect(
+      (await ServerConfig.load(configFile)).srs.miningDecks,
+      <String, String>{kJa: 'JA::New'},
+      reason: '写回配置文件',
+    );
+
+    // 两个都给：patch 合到这次的整份上。
+    (code, st) = await call('PUT', 'srs', <String, Object?>{
+      'miningDecks': <String, String>{kZh: 'ZH2'},
+      'miningDecksPatch': <String, String>{kJa: 'JA3'},
+    });
+    expect((st['config'] as Map)['miningDecks'], <String, String>{
+      kZh: 'ZH2',
+      kJa: 'JA3',
+    });
+
+    // 整份替换照旧（WebUI 那条）。
+    (code, st) = await call('PUT', 'srs', <String, Object?>{
+      'miningDecks': <String, String>{kZh: 'Only'},
+    });
+    expect((st['config'] as Map)['miningDecks'], <String, String>{kZh: 'Only'});
+
+    expect(
+      (await call('PUT', 'srs', <String, Object?>{
+        'miningDecksPatch': <String, String>{'not-a-uid': 'X'},
+      })).$1,
+      400,
+    );
+    expect(
+      (await call('PUT', 'srs', <String, Object?>{
+        'miningDecksPatch': <String>['x'],
+      })).$1,
+      400,
+    );
+  });
+
   test('参数不对：400；默认那份不在列表里：400', () async {
     expect(
       (await call('PUT', 'srs', <String, Object?>{
@@ -219,5 +285,14 @@ void main() {
     );
     expect((cleared['ankiConnect'] as Map)['apiKeySet'], isFalse);
     expect(host.config.ankiConnect.profileKeys[kJa], 'ja-key');
+  });
+
+  test('牌组建议：没提供的 profile → 404', () async {
+    final (int status, Map<String, dynamic> body) = await call(
+      'GET',
+      'srs/decks?profile=$kJa',
+    );
+    expect(status, 404);
+    expect(body['error'], 'profile_not_served');
   });
 }

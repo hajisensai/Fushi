@@ -2,23 +2,12 @@
 //   FUSHI_SRS_AUDIT_DB=<srs.db 副本> FUSHI_SRS_AUDIT_SUPPORT=<应用支持目录> \
 //   FUSHI_SRS_AUDIT_PROFILE=<profile uid> [FUSHI_SRS_AUDIT_OUT=<报告文件>] \
 //   flutter test test/srs/srs_real_deck_native_audit_test.dart
-// 逐张卡走复习页同一判据（Fushi 卡片 → srsFushiCardRenderedNative，其余 → srsHtmlCardProbe），
+// 逐张卡走复习页同一判据（srsCardFaceRoute：Fushi 卡片带引擎回退原因，其余 → 原生 HTML 子集原因），
 // 按笔记类型 × 模板统计原生 / 回退、回退原因与渲染异常。只读：库请先复制一份。
 import 'dart:io';
 
 import 'package:drift/drift.dart';
-import 'package:fushi/src/srs/srs_fushi_card_items.dart';
-import 'package:fushi/src/srs/srs_html_card.dart';
-import 'package:fushi_anki/fushi_anki_core.dart'
-    show
-        FushiCardItem,
-        fushiCardBackLayoutOf,
-        fushiCardCssIsDefault,
-        fushiCardFrontLayoutOf,
-        templateIdsToNames;
-import 'package:fushi_engine/srs/srs_fushi_card_native_media.dart'
-    show srsFushiCardMediaIsNative;
-import 'package:fushi_srs/fushi_srs.dart' show SrsFieldDef;
+import 'package:fushi/src/srs/srs_card_face_route.dart';
 import 'package:fushi_core/fushi_core.dart' show srsIdType;
 import 'package:fushi_engine/srs/srs_builtin.dart' show kSrsBuiltinFushiCardKey;
 import 'package:fushi_engine/srs/srs_db_store.dart';
@@ -105,52 +94,14 @@ void main() {
             continue;
           }
           if (r.isEmpty) b.empty++;
-          final bool fushi = d.noteType.builtinKey == kSrsBuiltinFushiCardKey;
-          String? reason;
-          if (fushi) {
-            if (r.fushiCardDefinitions == null) {
-              final Map<String, String> idToName = <String, String>{
-                for (final SrsFieldDef f in d.noteType.fields) f.id: f.name,
-              };
-              final String front = templateIdsToNames(
-                d.template!.front,
-                idToName,
-              );
-              final String back = templateIdsToNames(
-                d.template!.back,
-                idToName,
-              );
-              reason =
-                  'fushi: css=${fushiCardCssIsDefault(d.noteType.css)} '
-                  'front=${fushiCardFrontLayoutOf(front) != null} '
-                  'back=${fushiCardBackLayoutOf(back) != null} '
-                  'media=${srsFushiCardMediaIsNative(r.fields)}';
-            } else if (!srsFushiCardRenderedNative(r, languageCode: 'ja')) {
-              for (final FushiCardItem x in <FushiCardItem>[
-                ...r.fushiCardFront,
-                ...r.fushiCardBack,
-              ]) {
-                final String? html = srsFushiItemHtml(x, r.fields);
-                if (html == null || html.trim().isEmpty) continue;
-                final String? why = srsHtmlFragmentProbe(
-                  html,
-                  languageCode: 'ja',
-                ).reason;
-                if (why != null) {
-                  reason = 'fushi 区块: $why';
-                  break;
-                }
-              }
-              reason ??= 'fushi 区块: ?';
-            }
-          } else {
-            reason = srsHtmlCardProbe(
-              question: r.question,
-              answer: r.answer,
-              css: r.css,
-              languageCode: 'ja',
-            ).reason;
-          }
+          final SrsCardFaceRoute route = srsCardFaceRoute(
+            r,
+            fushiCard: d.noteType.builtinKey == kSrsBuiltinFushiCardKey,
+            languageCode: 'ja',
+          );
+          final String? reason = route is SrsCardFaceWeb
+              ? route.fallback.toString()
+              : null;
           if (reason == null) {
             b.native++;
           } else {

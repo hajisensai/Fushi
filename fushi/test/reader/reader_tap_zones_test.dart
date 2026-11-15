@@ -196,14 +196,24 @@ void main() {
     });
 
     test('onTapEmpty：查词弹窗先关，再按模板翻页，未命中才落到工具栏', () {
-      final String body = slice(
+      final String handler = slice(
         webview,
         "handlerName: 'onTapEmpty',",
         "handlerName: 'onVnBlankTap',",
       );
+      expect(
+        handler,
+        contains('_handleReaderBlankTap(args, sizeIndex: 2);'),
+        reason: 'onTapEmpty 的 args 是 (x, y, 视口宽, 视口高)，尺寸从下标 2 起',
+      );
+      final String body = slice(
+        chrome,
+        'void _handleReaderBlankTap(',
+        'void _handleVnBlankTap()',
+      );
       final int dict = body.indexOf('if (isDictionaryShown) {');
       final int zone = body.indexOf(
-        '_turnPageByTapZone(args, 0, sizeIndex: 2)',
+        '_turnPageByTapZone(args, 0, sizeIndex: sizeIndex)',
       );
       final int chromeBranch = body.indexOf('_handleFloatingChromeReveal()');
       expect(dict, greaterThanOrEqualTo(0));
@@ -211,18 +221,39 @@ void main() {
       expect(chromeBranch, greaterThan(zone), reason: '模板未命中才走工具栏分支');
     });
 
-    test('onTap：只在不查词的两条分支（栏收起 / 点按查词关闭）认领翻页区', () {
+    test('onTap：栏收起时模板先认领两侧，中间唤栏；不查词', () {
       final String body = slice(
         webview,
         "handlerName: 'onTap',",
         '_selectTextAt(x, y);',
       );
+      final int hidden = body.indexOf('if (!shiftKey && !_tapGateChrome) {');
       final int zone = body.indexOf('_turnPageByTapZone(args, 0)');
-      expect(zone, greaterThanOrEqualTo(0));
-      final String guard = body.substring(0, zone);
-      expect(guard, contains('!shiftKey'));
-      expect(guard, contains('!_tapGateChrome'));
-      expect(guard, contains('!ReaderFushiSource.instance.highlightOnTap'));
+      final int toggle = body.indexOf('_toggleChrome();');
+      expect(hidden, greaterThanOrEqualTo(0));
+      expect(zone, greaterThan(hidden));
+      expect(toggle, greaterThan(zone), reason: '模板未命中才唤栏');
+    });
+
+    test('onTap：单击查词关闭时，点正文与点空白同语义（GitHub #3088）', () {
+      final String body = slice(
+        webview,
+        "handlerName: 'onTap',",
+        '_selectTextAt(x, y);',
+      );
+      final int gate = body.indexOf(
+        'if (!shiftKey && !ReaderFushiSource.instance.highlightOnTap) {',
+      );
+      expect(gate, greaterThanOrEqualTo(0));
+      final String branch = body.substring(gate, body.indexOf('return;', gate));
+      expect(
+        branch,
+        contains('_handleReaderBlankTap(args, sizeIndex: 3);'),
+        reason:
+            'onTap 的 args 是 (x, y, shift, 视口宽, 视口高)；关掉单击查词后这一击'
+            '必须走空白单击的全部语义（关弹窗 / 清拖选 / 翻页区域 / 悬浮栏唤出），'
+            '不能只夺回焦点就吞掉',
+      );
     });
 
     test('JS 的 VN「点击空白前进」先于选词脚本：VN 开了点击前进时模板不参与', () {

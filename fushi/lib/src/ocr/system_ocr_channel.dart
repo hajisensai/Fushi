@@ -23,6 +23,29 @@ import 'dart:async';
 
 import 'package:flutter/services.dart';
 
+/// 行里的一段（平台的「词」，Windows OCR 对日文常常逐字）：在 [SystemOcrTextLine.text]
+/// 里的位置（UTF-16 码元）+ 它自己的框（送检图像素）。
+class SystemOcrTextSegment {
+  const SystemOcrTextSegment({
+    required this.start,
+    required this.length,
+    required this.rect,
+  });
+
+  /// 在行文本里的起点（UTF-16 码元下标）。
+  final int start;
+
+  /// 码元数。
+  final int length;
+
+  final Rect rect;
+
+  int get end => start + length;
+
+  @override
+  String toString() => 'SystemOcrTextSegment($start+$length, $rect)';
+}
+
 /// 平台识别出的一条文本行，坐标是**送检图的像素坐标**。
 class SystemOcrTextLine {
   const SystemOcrTextLine({
@@ -30,6 +53,7 @@ class SystemOcrTextLine {
     required this.rect,
     required this.isVertical,
     this.tile,
+    this.segments = const <SystemOcrTextSegment>[],
   });
 
   final String text;
@@ -44,6 +68,11 @@ class SystemOcrTextLine {
   /// 整页识别（没切、或平台忽略了切片请求）时为 null。
   final int? tile;
 
+  /// 平台给的词框（按行内顺序、互不重叠地覆盖 [text] 的一部分）。空 = 平台只给
+  /// 行框（点字时按字数等分行框估计）。Windows OCR 给（BUG-4367）；Apple 截屏识字、
+  /// 本机模型与 Google Lens 的截屏识字给逐字框（BUG-4069）。
+  final List<SystemOcrTextSegment> segments;
+
   @override
   String toString() =>
       'SystemOcrTextLine($text, $rect, vertical: $isVertical, tile: $tile)';
@@ -55,6 +84,9 @@ class SystemOcrPageResult {
     required this.lines,
     required this.imageWidth,
     required this.imageHeight,
+    this.recognizedWidth,
+    this.recognizedHeight,
+    this.maxImageDimension,
   });
 
   final List<SystemOcrTextLine> lines;
@@ -62,6 +94,14 @@ class SystemOcrPageResult {
   /// 送检图尺寸；坐标换算的分母，缺了它没法映射回页图。
   final int imageWidth;
   final int imageHeight;
+
+  /// 实际送进识别器的位图尺寸（Windows：超过 [maxImageDimension] 时被等比缩小）。
+  /// 平台不报时为 null。只用于诊断日志（BUG-4367）。
+  final int? recognizedWidth;
+  final int? recognizedHeight;
+
+  /// 识别器的最大边长（Windows `OcrEngine.MaxImageDimension`）；平台不报时为 null。
+  final int? maxImageDimension;
 
   bool get isEmpty => lines.isEmpty;
 }
@@ -295,10 +335,17 @@ abstract interface class SystemOcrModelSetup {
 
 /// 生产实现：走平台通道。
 class MethodChannelSystemOcr implements SystemOcrPlatform, SystemOcrModelSetup {
-  const MethodChannelSystemOcr({MethodChannel? channel})
-    : _channel = channel ?? kSystemOcrChannel;
+  const MethodChannelSystemOcr({
+    MethodChannel? channel,
+    this.screenText = false,
+  }) : _channel = channel ?? kSystemOcrChannel;
 
   final MethodChannel _channel;
+
+  /// 送检图是一整块屏幕截图（桌面应用外截屏识字）：下发 `purpose: screen`。Apple 据此
+  /// 走行识别 + 逐字框，不对整屏做文档版面分析（反馈 Eemf0HOZhj / BUG-4069，4K 屏一分钟
+  /// 以上才出行框）；其它平台忽略这个字段。
+  final bool screenText;
 
   @override
   Future<bool> isAvailable() async {
@@ -326,6 +373,7 @@ class MethodChannelSystemOcr implements SystemOcrPlatform, SystemOcrModelSetup {
         <String, Object?>{
           'bytes': imageBytes,
           'language': language,
+          if (screenText) 'purpose': kSystemOcrScreenPurpose,
           if (tiles.isNotEmpty)
             'tiles': <List<double>>[
               for (final Rect tile in tiles)
@@ -412,6 +460,9 @@ class MethodChannelSystemOcr implements SystemOcrPlatform, SystemOcrModelSetup {
   }
 }
 
+/// `recognize` 的 `purpose` 取值：送检图是屏幕截图（见 [MethodChannelSystemOcr.screenText]）。
+const String kSystemOcrScreenPurpose = 'screen';
+
 /// 平台通道。原生侧实现同名方法。
 const MethodChannel kSystemOcrChannel = MethodChannel(
   'app.fushi.reader/system_ocr',
@@ -451,6 +502,7 @@ SystemOcrPageResult parseSystemOcrPayload(Map<Object?, Object?> raw) {
               ? vertical
               : inferSystemOcrVertical(rect),
           tile: tile is num ? tile.toInt() : null,
+          segments: _parseSegments(entry['words'], text.length),
         ),
       );
     }
@@ -459,7 +511,46 @@ SystemOcrPageResult parseSystemOcrPayload(Map<Object?, Object?> raw) {
     lines: lines,
     imageWidth: width,
     imageHeight: height,
+    recognizedWidth: _asOptionalPositiveInt(raw['recognizedWidth']),
+    recognizedHeight: _asOptionalPositiveInt(raw['recognizedHeight']),
+    maxImageDimension: _asOptionalPositiveInt(raw['maxImageDimension']),
   );
+}
+
+/// 行的词框（BUG-4367）。越出行文本、没面积、与前一段重叠或倒序的段丢掉——
+/// 剩下的保证按行内顺序、互不重叠，点字定位可以直接按顺序找。
+List<SystemOcrTextSegment> _parseSegments(Object? raw, int textLength) {
+  if (raw is! List || raw.isEmpty) return const <SystemOcrTextSegment>[];
+  final List<SystemOcrTextSegment> out = <SystemOcrTextSegment>[];
+  int cursor = 0;
+  for (final Object? entry in raw) {
+    if (entry is! Map) continue;
+    final Object? start = entry['start'];
+    final Object? length = entry['length'];
+    if (start is! num || length is! num) continue;
+    final int s = start.toInt();
+    final int n = length.toInt();
+    if (s < cursor || n <= 0 || s + n > textLength) continue;
+    final double left = _asDouble(entry['left']);
+    final double top = _asDouble(entry['top']);
+    final double right = _asDouble(entry['right']);
+    final double bottom = _asDouble(entry['bottom']);
+    if (!(right > left) || !(bottom > top)) continue;
+    out.add(
+      SystemOcrTextSegment(
+        start: s,
+        length: n,
+        rect: Rect.fromLTRB(left, top, right, bottom),
+      ),
+    );
+    cursor = s + n;
+  }
+  return out;
+}
+
+int? _asOptionalPositiveInt(Object? value) {
+  final int parsed = _asInt(value);
+  return parsed > 0 ? parsed : null;
 }
 
 /// 平台不表态时按包围盒推断竖排：高远大于宽的行就是竖排。漫画气泡里这条

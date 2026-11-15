@@ -5,38 +5,42 @@
 /// → start → 轮询（间隔递增有上限）→ 取回 manga.json 写到本地
 /// `<所选文件夹>/manga_ocr_out/manga.json`（图片本就在本地，不回传）。
 ///
-/// 传输契约与 [FushiRemoteMiningClient] 同构：候选地址来自
-/// [SyncRepository.getFushiClientUrls]、`Basic base64(hibiki:token)` 鉴权、
-/// https 带指纹走钉扎 client。老 host 的 capabilities 无 `mangaOcr` 字段 →
-/// [probe] 返回 null → UI 隐藏远程选项（版本 skew 零破坏）。
+/// 传输一律走共享 [InterconnectHostChannel]（按 host 选路、per-peer 凭据、钉扎闸、
+/// 整段超时、client 生命周期）：每次 [InterconnectMangaOcrClient.probe] 与每次
+/// [InterconnectMangaOcrClient.run] 各建自己的通道，用完即关，client 本身不持有任何
+/// `http.Client`。老 host 的 capabilities 无 `mangaOcr` 字段 → [probe] 返回 null →
+/// UI 隐藏远程选项（版本 skew 零破坏）。
+///
+/// 一次 [InterconnectMangaOcrClient.run] 与通用任务 client 同一张状态机：提交
+/// （create → 上传 → start）任何失败都清理 host 任务；观测 / 取回中的**传输失败**
+/// （[MangaOcrRemoteException.transport]，即通道报 unreachable 或网关 502/503/504）
+/// 只说明此刻看不到 host，进断连子状态继续观测（[RemoteJobLinkWatch]，容忍窗超了才
+/// 判断连；每次观测都经通道重新选路）；host 判定的失败、协议错、用户取消才 DELETE；
+/// 任务已不在 host（`unknown_job`）不再 DELETE；取回成功后先交付结果再尽力清理。
 library;
 
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart'
     show
         MangaOcrPageFile,
         enumerateMangaPages,
         kMangaOcrOutDirName,
         kMangaOcrOutputFileName;
-import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
+import 'package:fushi/src/sync/interconnect_host_channel.dart';
+import 'package:fushi/src/sync/interconnect_remote_job_poll.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
-import 'package:fushi_engine/sync/tls/fushi_pinning_http.dart';
-import 'package:fushi/src/sync/webdav_ops.dart';
 
-/// 轮询退避：500ms 起步 ×1.5 递增，封顶 5s。纯函数便于单测单调性与上限。
-Duration mangaOcrPollDelay(int attempt) {
-  const int baseMs = 500;
-  const int maxMs = 5000;
-  final num scaled = baseMs * pow(1.5, attempt);
-  return Duration(milliseconds: min(scaled.round(), maxMs));
-}
+/// 轮询退避：与通用远端任务共用 [remoteJobPollDelay]（500ms 起 ×1.5，封顶 5s）。
+Duration mangaOcrPollDelay(int attempt) => remoteJobPollDelay(attempt);
 
 /// host 上一个可点名的 OCR 模型（capabilities `mangaOcr.models` 的一项）。
 class MangaOcrRemoteModel {
@@ -128,9 +132,15 @@ class MangaOcrRemoteTarget {
     this.fingerprintSha256,
     this.deviceName,
     this.model,
+    this.host,
   });
 
+  /// 这台 host 的持久地址（探测得到的 target 是组的锚地址，不是本次的 P2P 转发口）。
   final String baseUrl;
+
+  /// 这台 host 的身份（探测得到的 target 都带）。null 时
+  /// [InterconnectMangaOcrClient.run] 按 [baseUrl] 在配对清单里认回那台 host。
+  final InterconnectHostRef? host;
 
   /// 已按 [model] 换算过的能力（见 [MangaOcrRemoteCapability.forModel]）。
   final MangaOcrRemoteCapability capability;
@@ -150,22 +160,30 @@ class MangaOcrRemoteEvent {
   const MangaOcrRemoteEvent.uploading({required this.done, required this.total})
     : uploading = true,
       finished = false,
+      reconnecting = false,
       mangaJsonPath = null;
 
-  const MangaOcrRemoteEvent.running({required this.done, required this.total})
-    : uploading = false,
-      finished = false,
-      mangaJsonPath = null;
+  const MangaOcrRemoteEvent.running({
+    required this.done,
+    required this.total,
+    this.reconnecting = false,
+  }) : uploading = false,
+       finished = false,
+       mangaJsonPath = null;
 
   const MangaOcrRemoteEvent.finished({required String this.mangaJsonPath})
     : uploading = false,
       finished = true,
+      reconnecting = false,
       done = 0,
       total = 0;
 
   /// true = 上传阶段进度；false = host 侧 OCR 阶段进度。
   final bool uploading;
   final bool finished;
+
+  /// 观测链路暂时断了、正在容忍窗内等 host 回来（进度停在最后看到的值）。
+  final bool reconnecting;
   final int done;
   final int total;
 
@@ -178,12 +196,20 @@ class MangaOcrRemoteEvent {
 /// code 取值：`no_host`（无可用主机）/ `no_pages`（本地目录无页图）/
 /// `models_not_ready`（host 模型未就绪）/ `not_supported`（host 不支持）/
 /// `auth`（token 被拒）/ `remote_failed`（host 侧 OCR 失败）/
-/// `cancelled`（host 侧任务被取消）/ `http`（网络/协议错误）。
+/// `cancelled`（host 侧任务被取消）/ `http`（网络/协议错误）/
+/// `unknown_job`（任务已不在 host）。
 class MangaOcrRemoteException implements Exception {
-  const MangaOcrRemoteException(this.code, [this.detail]);
+  const MangaOcrRemoteException(this.code, [this.detail]) : transport = false;
+
+  /// 传输层失败（超时、断连、网关 502/503/504）：此刻看不到 host，不代表任务失败。
+  const MangaOcrRemoteException.transport(this.code, [this.detail])
+    : transport = true;
 
   final String code;
   final String? detail;
+
+  /// true = 观测失败（传输层），观测 / 取回阶段据此进断连子状态而不是判任务失败。
+  final bool transport;
 
   @override
   String toString() => detail == null || detail!.isEmpty
@@ -215,111 +241,109 @@ abstract class MangaOcrRemoteRunner {
 class InterconnectMangaOcrClient implements MangaOcrRemoteRunner {
   InterconnectMangaOcrClient({
     required SyncRepository repo,
-    http.Client? httpClient,
+    http.Client Function()? plainClientFactory,
     http.Client Function(String expectedFingerprint)? pinnedClientFactory,
     Duration probeTimeout = const Duration(seconds: 4),
     Duration requestTimeout = const Duration(seconds: 30),
     int uploadConcurrency = 2,
     Duration Function(int attempt)? pollDelay,
     String? Function()? preferredModel,
+    Duration linkLossTolerance = kRemoteJobLinkLossTolerance,
+    DateTime Function()? now,
   }) : _repo = repo,
        _preferredModel = preferredModel,
-       _httpClient = httpClient ?? http.Client(),
-       _pinnedClientFactory = pinnedClientFactory ?? _defaultPinnedClient,
+       _plainClientFactory = plainClientFactory,
+       _pinnedClientFactory = pinnedClientFactory,
        _probeTimeout = probeTimeout,
        _requestTimeout = requestTimeout,
        _uploadConcurrency = uploadConcurrency,
-       _pollDelay = pollDelay ?? mangaOcrPollDelay;
+       _pollDelay = pollDelay ?? remoteJobPollDelay,
+       _linkLossTolerance = linkLossTolerance,
+       _now = now ?? DateTime.now;
 
   final SyncRepository _repo;
-  final http.Client _httpClient;
-  final http.Client Function(String expectedFingerprint) _pinnedClientFactory;
+
+  /// 每次 probe / run 调一次，建出的明文 client 归那一次所有、用完即关。null →
+  /// 通道自建（带建连超时）并在关闭时一并关掉。
+  final http.Client Function()? _plainClientFactory;
+
+  /// 透传给通道；建出的钉扎 client 归通道所有。null → 通道默认钉扎 client。
+  final http.Client Function(String expectedFingerprint)? _pinnedClientFactory;
   final Duration _probeTimeout;
   final Duration _requestTimeout;
   final int _uploadConcurrency;
   final Duration Function(int attempt) _pollDelay;
+  final Duration _linkLossTolerance;
+  final DateTime Function() _now;
 
   /// 用户在引擎下拉里点名的服务端模型（null / 空 = 服务端默认）。每次 probe 现读。
   final String? Function()? _preferredModel;
 
-  static http.Client _defaultPinnedClient(String expectedFingerprint) =>
-      createPinnedHttpPackageClient(expectedFingerprint: expectedFingerprint);
-
-  /// BUG-1550：解析 [baseUrl] 这台对端该用哪份凭据——地址行自带的 per-peer token
-  /// 优先，为空回落全局键。列表里找不到该地址（用户中途删了）时只剩全局回落。
-  Future<String?> _tokenForBaseUrl(String baseUrl) async {
-    final String? fallbackToken = await _repo.getFushiClientToken();
-    final List<FushiClientUrl> urls = await _repo.getFushiClientUrls();
-    for (final FushiClientUrl u in urls) {
-      // 走 P2P 时 baseUrl 是本次的本地转发口，换回持久的 p2p:// 再认。
-      if (u.url == interconnectPersistedUrl(baseUrl)) {
-        return interconnectTokenFor(u, fallbackToken);
-      }
-    }
-    return (fallbackToken != null && fallbackToken.isNotEmpty)
-        ? fallbackToken
-        : null;
-  }
+  InterconnectHostChannel _channelFor(
+    InterconnectHostRef host,
+    http.Client? plain,
+  ) => InterconnectHostChannel(
+    repo: _repo,
+    host: host,
+    plainClient: plain,
+    pinnedClientFactory: _pinnedClientFactory,
+  );
 
   @override
   Future<MangaOcrRemoteTarget?> probe() async {
-    final List<FushiClientUrl> candidates = await rankInterconnectCandidates(
-      (await _repo.getFushiClientUrls())
-          .where((FushiClientUrl u) => u.enabled)
-          .toList(growable: false),
-    );
-    final String? fallbackToken = await _repo.getFushiClientToken();
-    if (candidates.isEmpty) return null;
+    final List<FushiClientUrl> rows = await _repo.getFushiClientUrls();
+    final List<InterconnectHostRef> hosts = interconnectPairedHostRefs(rows);
+    if (hosts.isEmpty) return null;
     final String? preferred = _preferredModel?.call();
     final String? preferredModel = preferred == null || preferred.isEmpty
         ? null
         : preferred;
 
-    // 「支持但模型明确未下载」的第一台：所有候选都不可用时才拿它回填，让 UI 有
-    // 具体原因可讲。一台可用的都不能被它挡住，所以只记不返。
-    MangaOcrRemoteTarget? modelsMissingFallback;
-    for (final FushiClientUrl candidate in candidates) {
-      final Uri? uri = _uri(candidate.url, '/api/capabilities');
-      if (uri == null) continue;
-      // BUG-1550：凭据按候选取（地址行自带的 per-peer token 优先，回落全局键）。
-      final String? token = interconnectTokenFor(candidate, fallbackToken);
-      if (token == null) continue;
-      final (http.Client client, bool closeAfter) = _clientFor(
-        candidate.url,
-        fingerprint: candidate.fingerprintSha256,
-      );
-      try {
-        final http.Response response = await client
-            .get(uri, headers: _headers(token))
-            .timeout(_probeTimeout);
-        if (response.statusCode != 200) continue;
-        final dynamic decoded = jsonDecode(utf8.decode(response.bodyBytes));
-        if (decoded is! Map) continue;
-        final MangaOcrRemoteCapability? hostCapability =
-            MangaOcrRemoteCapability.fromCapabilitiesJson(
-              Map<String, dynamic>.from(decoded),
+    final http.Client? plain = _plainClientFactory?.call();
+    final List<InterconnectHostChannel> channels = <InterconnectHostChannel>[];
+    try {
+      // 「支持但模型明确未下载」的第一台：所有 host 都不可用时才拿它回填，让 UI 有
+      // 具体原因可讲。一台可用的都不能被它挡住，所以只记不返。
+      MangaOcrRemoteTarget? modelsMissingFallback;
+      for (final InterconnectHostRef host in hosts) {
+        final InterconnectHostChannel channel = _channelFor(host, plain);
+        channels.add(channel);
+        final InterconnectCapabilityOutcome<MangaOcrRemoteTarget> outcome =
+            await probeInterconnectCapability<MangaOcrRemoteTarget>(
+              channel,
+              label: interconnectHostLabel(rows, host),
+              timeout: _probeTimeout,
+              parse: (Map<String, dynamic> caps, FushiClientUrl via) {
+                final MangaOcrRemoteCapability? hostCapability =
+                    MangaOcrRemoteCapability.fromCapabilitiesJson(caps);
+                // 老 host（无字段）或明确不支持 → 换下一台。
+                if (hostCapability == null || !hostCapability.supported) {
+                  return null;
+                }
+                return MangaOcrRemoteTarget(
+                  baseUrl: host.anchorUrl,
+                  capability: hostCapability.forModel(preferredModel),
+                  fingerprintSha256: via.fingerprintSha256,
+                  deviceName: via.deviceName,
+                  model: hostCapability.models.isEmpty ? null : preferredModel,
+                  host: host,
+                );
+              },
             );
-        // 老 host（无字段）或明确不支持 → 换下一个候选。
-        if (hostCapability == null || !hostCapability.supported) continue;
-        final MangaOcrRemoteCapability capability = hostCapability.forModel(
-          preferredModel,
-        );
-        final MangaOcrRemoteTarget target = MangaOcrRemoteTarget(
-          baseUrl: candidate.url,
-          capability: capability,
-          fingerprintSha256: candidate.fingerprintSha256,
-          deviceName: candidate.deviceName,
-          model: hostCapability.models.isEmpty ? null : preferredModel,
-        );
-        if (capability.usable) return target;
+        if (outcome is! InterconnectCapabilityAvailable<MangaOcrRemoteTarget>) {
+          continue;
+        }
+        final MangaOcrRemoteTarget target = outcome.target;
+        if (target.capability.usable) return target;
         modelsMissingFallback ??= target;
-      } catch (_) {
-        continue;
-      } finally {
-        if (closeAfter) client.close();
       }
+      return modelsMissingFallback;
+    } finally {
+      for (final InterconnectHostChannel channel in channels) {
+        channel.close();
+      }
+      plain?.close();
     }
-    return modelsMissingFallback;
   }
 
   @override
@@ -332,178 +356,261 @@ class InterconnectMangaOcrClient implements MangaOcrRemoteRunner {
         StreamController<MangaOcrRemoteEvent>();
     bool cancelled = false;
     String? jobId;
-    http.Client? client;
-    bool closeAfter = false;
 
-    Future<void> cleanupRemote() async {
+    /// 本次 run 的通道与工厂建出的明文 client：主循环结束且全部清理落地后才关。
+    InterconnectHostChannel? channel;
+    http.Client? plain;
+
+    /// 已发起的全部清理（含 onCancel 触发的）；主循环收尾时等它们落地再关通道。
+    Future<void> cleanupDone = Future<void>.value();
+
+    /// 尽力清理 host 上的任务（幂等：jobId 同步置空，重复调用返回同一批清理）。
+    Future<void> cleanupRemote() {
       final String? id = jobId;
-      if (id == null) return;
+      final InterconnectHostChannel? c = channel;
+      if (id == null || c == null) return cleanupDone;
       jobId = null;
-      // 取消/收尾的 best-effort 清理：独立短命 client（run 的主 client 可能已关）。
-      final (http.Client c, bool close) = _clientFor(
-        target.baseUrl,
-        fingerprint: target.fingerprintSha256,
+      final Future<void> delete = () async {
+        try {
+          await _send(c, 'DELETE', '/api/ocr/job/$id', idempotent: true);
+        } catch (_) {
+          // host 侧 TTL 清理兜底。
+        }
+      }();
+      return cleanupDone = Future.wait(<Future<void>>[
+        cleanupDone,
+        delete,
+      ]).then((_) {});
+    }
+
+    final RemoteJobLinkWatch watch = RemoteJobLinkWatch(
+      tolerance: _linkLossTolerance,
+      now: _now,
+    );
+
+    /// 用户取消后的收尾：create 在途时 [controller.onCancel] 拿不到 jobId，
+    /// 所以每个取消检查点都要自己补一次（[cleanupRemote] 幂等）。
+    Future<bool> stopIfCancelled() async {
+      if (!cancelled) return false;
+      await cleanupRemote();
+      return true;
+    }
+
+    /// 提交阶段：create → 有限并发上传 → start。返回 host 任务 id；用户取消返回 null。
+    Future<String?> submit(
+      InterconnectHostChannel c,
+      List<MangaOcrPageFile> pages,
+    ) async {
+      final Map<String, dynamic> created = _expectJson(
+        await _send(
+          c,
+          'POST',
+          '/api/ocr/job',
+          jsonBody: <String, Object?>{
+            if (volumeTitle != null && volumeTitle.trim().isNotEmpty)
+              'volumeTitle': volumeTitle.trim(),
+            'pageCount': pages.length,
+            if (target.model != null) 'model': target.model,
+          },
+        ),
       );
-      try {
-        final String? token = await _tokenForBaseUrl(target.baseUrl);
-        if (token == null) return;
-        final Uri? uri = _uri(target.baseUrl, '/api/ocr/job/$id');
-        if (uri == null) return;
-        await c.delete(uri, headers: _headers(token)).timeout(_requestTimeout);
-      } catch (_) {
-        // host 侧 TTL 清理兜底。
-      } finally {
-        if (close) c.close();
+      final String id = created['jobId']?.toString() ?? '';
+      if (id.isEmpty) {
+        throw const MangaOcrRemoteException('http', 'missing jobId');
+      }
+      jobId = id;
+      if (await stopIfCancelled()) return null;
+
+      int nextIndex = 0;
+      int uploaded = 0;
+      Future<void> worker() async {
+        while (!cancelled) {
+          final int i = nextIndex;
+          if (i >= pages.length) return;
+          nextIndex += 1;
+          final MangaOcrPageFile page = pages[i];
+          final Uint8List bytes = await page.file.readAsBytes();
+          _expectJson(
+            await _send(
+              c,
+              'PUT',
+              '/api/ocr/job/$id/page/$i',
+              query: <String, String>{'name': page.relativeUrl},
+              bytes: bytes,
+              // 整页字节可重放：写出后断开也可以换同一台 host 的另一条地址重传。
+              idempotent: true,
+            ),
+          );
+          uploaded += 1;
+          if (!controller.isClosed && !cancelled) {
+            controller.add(
+              MangaOcrRemoteEvent.uploading(
+                done: uploaded,
+                total: pages.length,
+              ),
+            );
+          }
+        }
+      }
+
+      await Future.wait(<Future<void>>[
+        for (int w = 0; w < max(1, _uploadConcurrency); w++) worker(),
+      ]);
+      if (await stopIfCancelled()) return null;
+
+      // start（host 模型未就绪等在此转成可读错误码）。
+      _expectJson(await _send(c, 'POST', '/api/ocr/job/$id/start'));
+      if (await stopIfCancelled()) return null;
+      return id;
+    }
+
+    /// 观测 + 取回阶段：轮询到 done 后取回 manga.json 写到本地，返回该文件；
+    /// 用户取消返回 null。任务仍留在 host（[jobId] 不清），由调用方交付后尽力清理。
+    Future<File?> observeAndCollect(
+      InterconnectHostChannel c,
+      String id,
+      int pageCount,
+    ) async {
+      int lastDone = 0;
+      int lastTotal = pageCount;
+      bool announcedReconnect = false;
+
+      /// 一次观测 / 取回交换。传输失败且仍在容忍窗内返回 null（按退避再来），
+      /// 超窗抛断连；其余异常原样抛（由外层清理 + 报错）。
+      Future<T?> exchange<T extends Object>(Future<T> Function() send) async {
+        try {
+          final T value = await send();
+          watch.observed();
+          announcedReconnect = false;
+          return value;
+        } on MangaOcrRemoteException catch (e) {
+          if (!e.transport) rethrow;
+          if (!watch.lost()) {
+            throw MangaOcrRemoteException.transport(
+              'http',
+              t.interconnect_remote_job_disconnected(
+                minutes: '${_linkLossTolerance.inMinutes}',
+              ),
+            );
+          }
+          // 同一断连期只报一次「重连中」。
+          if (!announcedReconnect && !controller.isClosed && !cancelled) {
+            announcedReconnect = true;
+            controller.add(
+              MangaOcrRemoteEvent.running(
+                done: lastDone,
+                total: lastTotal,
+                reconnecting: true,
+              ),
+            );
+          }
+          return null;
+        }
+      }
+
+      bool hostDone = false;
+      int attempt = 0;
+      while (true) {
+        await Future<void>.delayed(_pollDelay(attempt));
+        attempt += 1;
+        if (await stopIfCancelled()) return null;
+        if (!hostDone) {
+          final Map<String, dynamic>? status;
+          try {
+            status = await exchange(
+              () async =>
+                  _expectJson(await _send(c, 'GET', '/api/ocr/job/$id')),
+            );
+          } on MangaOcrRemoteException catch (e) {
+            if (e.code != 'unknown_job') rethrow;
+            // 任务已不在 host（被删 / host 重启后丢了）：没有可清理的，不再 DELETE。
+            jobId = null;
+            rethrow;
+          }
+          if (await stopIfCancelled()) return null;
+          if (status == null) continue;
+          final String state = status['state']?.toString() ?? '';
+          if (state == 'error') {
+            throw MangaOcrRemoteException(
+              'remote_failed',
+              status['error']?.toString(),
+            );
+          }
+          if (state == 'cancelled') {
+            throw const MangaOcrRemoteException('cancelled');
+          }
+          if (state != 'done') {
+            lastDone = (status['pagesDone'] as num?)?.toInt() ?? 0;
+            lastTotal = (status['pagesTotal'] as num?)?.toInt() ?? pageCount;
+            controller.add(
+              MangaOcrRemoteEvent.running(done: lastDone, total: lastTotal),
+            );
+            continue;
+          }
+          hostDone = true;
+        }
+
+        // 取回 manga.json，写到本地 <所选文件夹>/manga_ocr_out/manga.json。
+        final InterconnectChannelResponse? result = await exchange(
+          () => _send(c, 'GET', '/api/ocr/job/$id/result'),
+        );
+        if (await stopIfCancelled()) return null;
+        if (result == null) continue;
+        final String json = utf8.decode(result.bodyBytes);
+        final Directory outDir = Directory(
+          p.join(imageDirPath, kMangaOcrOutDirName),
+        );
+        await outDir.create(recursive: true);
+        final File output = File(p.join(outDir.path, kMangaOcrOutputFileName));
+        await output.writeAsString(json, flush: true);
+        return output;
       }
     }
 
     controller.onListen = () {
       unawaited(() async {
         try {
-          final String? token = await _tokenForBaseUrl(target.baseUrl);
-          if (token == null || token.isEmpty) {
-            throw const MangaOcrRemoteException('no_host');
-          }
+          final InterconnectHostRef? host =
+              target.host ??
+              interconnectHostRefForUrl(
+                await _repo.getFushiClientUrls(),
+                target.baseUrl,
+              );
+          if (host == null) throw const MangaOcrRemoteException('no_host');
           final List<MangaOcrPageFile> pages = enumerateMangaPages(
             Directory(imageDirPath),
           );
           if (pages.isEmpty) {
             throw const MangaOcrRemoteException('no_pages');
           }
-          final (http.Client c, bool close) = _clientFor(
-            target.baseUrl,
-            fingerprint: target.fingerprintSha256,
-          );
-          client = c;
-          closeAfter = close;
+          plain = _plainClientFactory?.call();
+          final InterconnectHostChannel c = channel = _channelFor(host, plain);
 
-          // 1. 创建任务。
-          final Map<String, dynamic> created = _expectJson(
-            await _send(
-              c,
-              token,
-              'POST',
-              target,
-              '/api/ocr/job',
-              jsonBody: <String, Object?>{
-                if (volumeTitle != null && volumeTitle.trim().isNotEmpty)
-                  'volumeTitle': volumeTitle.trim(),
-                'pageCount': pages.length,
-                if (target.model != null) 'model': target.model,
-              },
-            ),
-          );
-          final String id = created['jobId']?.toString() ?? '';
-          if (id.isEmpty) {
-            throw const MangaOcrRemoteException('http', 'missing jobId');
-          }
-          jobId = id;
-          if (cancelled) return;
-
-          // 2. 有限并发逐页上传（进度回调）。
-          int nextIndex = 0;
-          int uploaded = 0;
-          Future<void> worker() async {
-            while (!cancelled) {
-              final int i = nextIndex;
-              if (i >= pages.length) return;
-              nextIndex += 1;
-              final MangaOcrPageFile page = pages[i];
-              final List<int> bytes = await page.file.readAsBytes();
-              _expectJson(
-                await _send(
-                  c,
-                  token,
-                  'PUT',
-                  target,
-                  '/api/ocr/job/$id/page/$i',
-                  query: <String, String>{'name': page.relativeUrl},
-                  bodyBytes: bytes,
-                ),
-              );
-              uploaded += 1;
-              if (!controller.isClosed && !cancelled) {
-                controller.add(
-                  MangaOcrRemoteEvent.uploading(
-                    done: uploaded,
-                    total: pages.length,
-                  ),
-                );
-              }
-            }
-          }
-
-          await Future.wait(<Future<void>>[
-            for (int w = 0; w < max(1, _uploadConcurrency); w++) worker(),
-          ]);
-          if (cancelled) return;
-
-          // 3. start（host 模型未就绪等在此转成可读错误码）。
-          _expectJson(
-            await _send(c, token, 'POST', target, '/api/ocr/job/$id/start'),
-          );
-          if (cancelled) return;
-
-          // 4. 轮询（间隔递增上限）。
-          int attempt = 0;
-          while (true) {
-            await Future<void>.delayed(_pollDelay(attempt));
-            attempt += 1;
-            if (cancelled) return;
-            final Map<String, dynamic> status = _expectJson(
-              await _send(c, token, 'GET', target, '/api/ocr/job/$id'),
-            );
-            if (cancelled) return;
-            final String state = status['state']?.toString() ?? '';
-            if (state == 'done') break;
-            if (state == 'error') {
-              throw MangaOcrRemoteException(
-                'remote_failed',
-                status['error']?.toString(),
-              );
-            }
-            if (state == 'cancelled') {
-              throw const MangaOcrRemoteException('cancelled');
-            }
-            controller.add(
-              MangaOcrRemoteEvent.running(
-                done: (status['pagesDone'] as num?)?.toInt() ?? 0,
-                total: (status['pagesTotal'] as num?)?.toInt() ?? pages.length,
-              ),
-            );
-          }
-
-          // 5. 取回 manga.json，写到本地 <所选文件夹>/manga_ocr_out/manga.json。
-          final http.Response result = await _send(
-            c,
-            token,
-            'GET',
-            target,
-            '/api/ocr/job/$id/result',
-          );
-          final String json = utf8.decode(result.bodyBytes);
-          final Directory outDir = Directory(
-            p.join(imageDirPath, kMangaOcrOutDirName),
-          );
-          await outDir.create(recursive: true);
-          final File output = File(
-            p.join(outDir.path, kMangaOcrOutputFileName),
-          );
-          await output.writeAsString(json, flush: true);
-
-          // 任务已完成：host 侧清掉（幂等；失败靠 TTL 兜底）。
-          await cleanupRemote();
+          final String? id = await submit(c, pages);
+          if (id == null) return;
+          final File? output = await observeAndCollect(c, id, pages.length);
+          if (output == null) return;
           if (!controller.isClosed && !cancelled) {
             controller.add(
               MangaOcrRemoteEvent.finished(mangaJsonPath: output.path),
             );
+            await controller.close();
           }
+          // 结果已交付；host 侧清理是尽力而为（幂等，失败靠 host TTL 兜底）。
+          await cleanupRemote();
         } catch (e, stack) {
+          // 提交阶段任何失败、host 判定的失败、协议错、断连超窗：先报错，再尽力清理
+          // host 任务（任务已不在 host 时 jobId 已清，这里是空操作）。
           if (!controller.isClosed && !cancelled) {
             controller.addError(e, stack);
           }
+          await cleanupRemote();
         } finally {
-          if (closeAfter) client?.close();
+          // 通道归本次 run：等全部清理（含 onCancel 发起的 DELETE）落地后再关，
+          // 不让关通道把在途的清理请求一并掐掉。
+          await cleanupDone;
+          channel?.close();
+          plain?.close();
           if (!controller.isClosed) {
             await controller.close();
           }
@@ -517,119 +624,94 @@ class InterconnectMangaOcrClient implements MangaOcrRemoteRunner {
     return controller.stream;
   }
 
-  // ── HTTP 内部 ─────────────────────────────────────────────────
+  // ── 交换（传输走 [InterconnectHostChannel]） ─────────────────────────
 
-  Map<String, String> _headers(String token) => <String, String>{
-    'Authorization': 'Basic ${base64Encode(utf8.encode('hibiki:$token'))}',
+  /// 通道失败 → 本 client 的错误形状（对外 code 语义不变）。unreachable 是传输
+  /// 失败（观测 / 取回阶段据此进断连子状态）；证书不符、凭据被拒、未配对不是。
+  static MangaOcrRemoteException _channelFailure(
+    InterconnectChannelException e,
+  ) => switch (e.kind) {
+    InterconnectChannelFailure.unreachable => MangaOcrRemoteException.transport(
+      'http',
+      '$e',
+    ),
+    InterconnectChannelFailure.authRejected => const MangaOcrRemoteException(
+      'auth',
+    ),
+    InterconnectChannelFailure.certificateMismatch =>
+      const MangaOcrRemoteException('http', 'certificate mismatch'),
+    InterconnectChannelFailure.notPaired => const MangaOcrRemoteException(
+      'no_host',
+    ),
+    InterconnectChannelFailure.cancelled => const MangaOcrRemoteException(
+      'cancelled',
+    ),
   };
 
-  /// https + 指纹 → 新建钉扎 client（调用方负责 close）；否则复用共享明文 client。
-  (http.Client, bool) _clientFor(String baseUrl, {String? fingerprint}) {
-    final Uri? base = _parse(baseUrl);
-    final bool usePinned =
-        base != null &&
-        base.isScheme('https') &&
-        fingerprint != null &&
-        fingerprint.isNotEmpty;
-    if (usePinned) return (_pinnedClientFactory(fingerprint), true);
-    return (_httpClient, false);
-  }
-
-  Future<http.Response> _send(
-    http.Client client,
-    String token,
+  /// 一次交换；超时覆盖整段（含响应体），由通道保证。[idempotent] 缺省按 method
+  /// （GET 幂等）；create / start 的 POST 非幂等，写出后不换地址重发。
+  Future<InterconnectChannelResponse> _send(
+    InterconnectHostChannel channel,
     String method,
-    MangaOcrRemoteTarget target,
     String path, {
-    Map<String, String>? query,
-    List<int>? bodyBytes,
+    Map<String, String> query = const <String, String>{},
+    Uint8List? bytes,
     Map<String, Object?>? jsonBody,
+    bool? idempotent,
   }) async {
-    final Uri? uri = _uri(target.baseUrl, path, query: query);
-    if (uri == null) {
-      throw const MangaOcrRemoteException('http', 'bad host url');
-    }
-    final http.Request request = http.Request(method, uri);
-    request.headers.addAll(_headers(token));
-    if (jsonBody != null) {
-      request.headers['Content-Type'] = 'application/json';
-      request.body = jsonEncode(jsonBody);
-    } else if (bodyBytes != null) {
-      request.headers['Content-Type'] = 'application/octet-stream';
-      request.bodyBytes = bodyBytes;
-    }
-    final http.Response response;
+    final InterconnectChannelResponse response;
     try {
-      response = await http.Response.fromStream(
-        await client.send(request).timeout(_requestTimeout),
+      response = await channel.send(
+        method,
+        path,
+        query: query,
+        body: jsonBody != null
+            ? InterconnectRequestBody.json(jsonBody)
+            : bytes != null
+            ? InterconnectRequestBody.bytes(bytes)
+            : null,
+        timeout: _requestTimeout,
+        idempotent: idempotent,
       );
-    } on MangaOcrRemoteException {
-      rethrow;
-    } on TimeoutException {
-      throw const MangaOcrRemoteException('http', 'request timed out');
-    } catch (e) {
-      throw MangaOcrRemoteException('http', '$e');
-    }
-    if (response.statusCode == 401) {
-      throw const MangaOcrRemoteException('auth');
+    } on InterconnectChannelException catch (e) {
+      throw _channelFailure(e);
     }
     if (response.statusCode < 200 || response.statusCode >= 300) {
       // host 返回机器可读 {error: <code>}：透传已知 code，其余归 http。
       String code = 'http';
       String? detail = 'HTTP ${response.statusCode}';
-      try {
-        final dynamic decoded = jsonDecode(utf8.decode(response.bodyBytes));
-        if (decoded is Map && decoded['error'] is String) {
-          const Set<String> known = <String>{
-            'models_not_ready',
-            'not_supported',
-            'unknown_job',
-            'no_pages',
-            'bad_state',
-            'not_done',
-            'unknown_model',
-          };
-          final String raw = decoded['error'] as String;
-          if (known.contains(raw)) {
-            code = raw;
-            detail = null;
-          } else {
-            detail = raw;
-          }
+      final Object? error = response.jsonObject?['error'];
+      if (error is String) {
+        const Set<String> known = <String>{
+          'models_not_ready',
+          'not_supported',
+          'unknown_job',
+          'no_pages',
+          'bad_state',
+          'not_done',
+          'unknown_model',
+        };
+        if (known.contains(error)) {
+          code = error;
+          detail = null;
+        } else {
+          detail = error;
         }
-      } catch (_) {
-        // 错误体解析失败就用默认错误码——本 catch 只服务于错误信息提取。
+      }
+      // 网关 / 反代的 502/503/504（非 host 的机器可读码）：此刻到不了 host，按传输失败。
+      // 503 带 `models_not_ready` 等已知码时 code 已换成该码，不算传输失败。
+      if (code == 'http' &&
+          (response.statusCode == 502 ||
+              response.statusCode == 503 ||
+              response.statusCode == 504)) {
+        throw MangaOcrRemoteException.transport(code, detail);
       }
       throw MangaOcrRemoteException(code, detail);
     }
     return response;
   }
 
-  Map<String, dynamic> _expectJson(http.Response response) {
-    try {
-      final dynamic decoded = jsonDecode(utf8.decode(response.bodyBytes));
-      if (decoded is Map<String, dynamic>) return decoded;
-      if (decoded is Map) return Map<String, dynamic>.from(decoded);
-    } catch (_) {
-      // 解析失败统一走下面的 invalid JSON 异常，无需区分原因。
-    }
-    throw const MangaOcrRemoteException('http', 'invalid JSON response');
-  }
-
-  Uri? _parse(String baseUrl) {
-    try {
-      return Uri.parse(WebDavOps.normalizeUrl(baseUrl));
-    } catch (_) {
-      return null;
-    }
-  }
-
-  Uri? _uri(String baseUrl, String path, {Map<String, String>? query}) {
-    final Uri? base = _parse(baseUrl);
-    if (base == null) return null;
-    return base.replace(
-      path: path,
-      queryParameters: query ?? const <String, String>{},
-    );
-  }
+  Map<String, dynamic> _expectJson(InterconnectChannelResponse response) =>
+      response.jsonObject ??
+      (throw const MangaOcrRemoteException('http', 'invalid JSON response'));
 }

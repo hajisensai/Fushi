@@ -9,6 +9,8 @@ import 'package:fushi/src/models/theme_notifier.dart'
     show buildFushiFallbackTheme;
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
+import 'package:fushi/src/utils/adaptive/fushi_page_backdrop.dart'
+    show withoutFushiPageBackdrop;
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
@@ -91,9 +93,17 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
   /// 坐标系）。非空时作为弹窗避让锚（超集，覆盖被查字）；为 null 时回退只避让被查字。
   Rect? _subtitlePhysical;
 
+  /// 弹窗词卡页的 navigator。交给 [FushiToast] 后，弹窗里的提示（制卡结果、「保存到」退回
+  /// 主机默认等）画成应用自己的通知胶囊；此前没有 overlay，退回系统原生 toast，Android 12+
+  /// 把文字 toast 截成两行（BUG-4287）。只给 toast 用，不复用 [AppModel.navigatorKey]——
+  /// 那把挂着主 app 的全局弹窗入口，弹窗进程里不该被它们够到。
+  final GlobalKey<NavigatorState> _toastNavigatorKey =
+      GlobalKey<NavigatorState>();
+
   @override
   void initState() {
     super.initState();
+    FushiToast.navigatorKey = _toastNavigatorKey;
 
     PopupChannel.instance.init(
       onNewProcessText:
@@ -182,7 +192,9 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
       // 是贴顶的 M3E 面板（错误色块图标 + 原因 + 关闭），点外面也能关窗。
       final brightness =
           WidgetsBinding.instance.platformDispatcher.platformBrightness;
-      final ThemeData fallbackTheme = buildFushiFallbackTheme(brightness);
+      final ThemeData fallbackTheme = withoutFushiPageBackdrop(
+        buildFushiFallbackTheme(brightness),
+      );
       return TranslationProvider(
         child: MaterialApp(
           debugShowCheckedModeBanner: false,
@@ -203,7 +215,9 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
     if (!appModel.isInitialised) {
       final brightness =
           WidgetsBinding.instance.platformDispatcher.platformBrightness;
-      final ThemeData fallbackTheme = buildFushiFallbackTheme(brightness);
+      final ThemeData fallbackTheme = withoutFushiPageBackdrop(
+        buildFushiFallbackTheme(brightness),
+      );
       final ColorScheme cs = fallbackTheme.colorScheme;
       return TranslationProvider(
         child: MaterialApp(
@@ -227,12 +241,16 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
 
     return TranslationProvider(
       child: MaterialApp(
+        navigatorKey: _toastNavigatorKey,
         debugShowCheckedModeBanner: false,
         builder: _buildWithSpacing,
-        theme: appModel.overrideDictionaryTheme ?? appModel.theme,
+        // 透明浮窗不垫页面背景层（底色 + 形状），见 [withoutFushiPageBackdrop]。
+        theme: withoutFushiPageBackdrop(
+          appModel.overrideDictionaryTheme ?? appModel.theme,
+        ),
         darkTheme: appModel.overrideDictionaryTheme != null
             ? null
-            : appModel.darkTheme,
+            : withoutFushiPageBackdrop(appModel.darkTheme),
         themeMode: appModel.overrideDictionaryTheme != null
             ? ThemeMode.light
             : appModel.themeMode,

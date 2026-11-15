@@ -11,6 +11,8 @@ import 'package:fushi_server/src/server_srs.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
+import 'support/fake_rwkv.dart';
+
 const String kJa = '01928c3e-0000-7000-8000-00000000a0a0';
 const String kZh = '01928c3e-0000-7000-8000-00000000b0b0';
 
@@ -24,6 +26,8 @@ void main() {
     tmp = await Directory.systemTemp.createTemp('fushi_server_srs_mine_');
     config = const ServerSrsConfig(profiles: <String>[kJa, kZh]);
     srs = ServerSrs(
+      // RWKV 权重不联网下载（下载当场失败 = RWKV 没就绪）。
+      rwkvHttpClient: noNetworkHttpClient,
       support: Directory(p.join(tmp.path, 'support'))..createSync(),
       syncData: Directory(p.join(tmp.path, 'interconnect'))..createSync(),
       deviceId: 'server-device',
@@ -158,7 +162,7 @@ void main() {
   });
 
   test(
-    'mining_decks 按牌组全名生效；手机点名的牌组主机没有 → 落默认牌组并报 targetUnavailable',
+    'mining_decks 按牌组全名生效；手机点名的牌组主机没有 → 整个退回服务端默认并报 targetUnavailable',
     () async {
       final SrsDbStore ja = srs.storeFor(kJa)!;
       await ja.createDeck('Configured');
@@ -175,6 +179,16 @@ void main() {
         'profile': kJa,
         'deck': 'Configured',
       });
+      // BUG-4288：每份 profile 报出不点名时落进的牌组，手机不再把它另列一遍。
+      final List<Object?> review =
+          (await mining.miningTargets())['review']! as List<Object?>;
+      expect((review.first! as Map)['defaultDeck'], 'Configured');
+      expect(
+        (review.last! as Map)['defaultDeck'],
+        (await srs.storeFor(kZh)!.deckTree()).fullName(
+          srs.storeFor(kZh)!.defaultDeckId,
+        ),
+      );
 
       final Map<String, dynamic> gone = await mine(
         '歌う',
@@ -186,6 +200,42 @@ void main() {
       );
       expect(gone['result'], 'success');
       expect(gone['targetUnavailable'], isTrue, reason: '$gone');
+      expect(gone['landed'], <String, Object?>{
+        'kind': 'review',
+        'profile': kJa,
+        'deck': 'Configured',
+      });
+
+      // 点名别的 profile 里一个已删的牌组：不落那份 profile 的默认牌组，整个退回服务端默认（日语、Configured）。
+      final int zhBefore = await notes(kZh);
+      final Map<String, dynamic> goneZh = await mine(
+        '跑',
+        target: <String, Object?>{
+          'kind': 'review',
+          'profile': kZh,
+          'deck': 'Deleted deck',
+        },
+      );
+      expect(goneZh['result'], 'success', reason: '$goneZh');
+      expect(goneZh['targetUnavailable'], isTrue);
+      expect(goneZh['landed'], <String, Object?>{
+        'kind': 'review',
+        'profile': kJa,
+        'deck': 'Configured',
+      });
+      expect(await notes(kZh), zhBefore, reason: '卡不该进点名 profile 的默认牌组');
+      // 查重同一口径：查的是服务端默认（日语）那一份。
+      expect(
+        await duplicate(
+          '跑',
+          target: <String, Object?>{
+            'kind': 'review',
+            'profile': kZh,
+            'deck': 'Deleted deck',
+          },
+        ),
+        isTrue,
+      );
     },
   );
 

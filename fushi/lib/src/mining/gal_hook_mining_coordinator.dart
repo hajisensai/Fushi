@@ -17,6 +17,7 @@ import 'package:fushi_engine/mining/immersion_mining_request.dart';
 import 'package:fushi/src/mining/serial_job_queue.dart';
 import 'package:fushi/src/mining/window_capture_channel.dart';
 import 'package:fushi/src/pages/implementations/dictionary_webview_media.dart';
+import 'package:fushi/src/mining/gal_mining_settings.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
 import 'package:fushi/src/utils/misc/card_screenshot_downsampler.dart';
@@ -37,6 +38,7 @@ typedef GalHookAudioCapture =
       required String lineId,
       required String sentence,
       required String outputExtension,
+      required GalMiningAudioLimit limit,
     });
 
 /// 该台词行到达时刻（hook 侧 tick 毫秒域，与录制帧同一时钟）；无时间戳返回 null。
@@ -312,6 +314,9 @@ class GalHookMiningCoordinator {
     MiningStillFormat stillFormat = MiningStillFormat.jpg,
     // 音画同步片段格式。缺省 mp4 = 旧行为；调用方透传 [AppModel.galMiningClipFormat]。
     MiningClipFormat clipFormat = MiningClipFormat.mp4H264,
+    // 句子音频长度策略（反馈 II3jOBIhT5）。缺省不裁 = 旧行为；调用方透传
+    // [AppModel.galMiningSettingsForCurrentGame] 的 audioLimit（全局 + 本游戏覆盖）。
+    GalMiningAudioLimit audioLimit = GalMiningAudioLimit.unlimited,
     // 仅游戏内嵌 popup 的制卡入口传入。普通 texthooker/浮窗制卡没有画在游戏窗口
     // 里的查词层，不需要也不应触发这条屏障。
     GalHookCaptureLeaseFactory? captureLeaseFactory,
@@ -352,6 +357,7 @@ class GalHookMiningCoordinator {
                   animatedFormat: animatedFormat,
                   stillFormat: stillFormat,
                   clipFormat: clipFormat,
+                  audioLimit: audioLimit,
                   captureLeaseFactory: captureLeaseFactory,
                   providedLineScreenshot: providedLineScreenshot,
                   mosaic: List<MiningMosaicRegion>.unmodifiable(mosaic),
@@ -396,6 +402,7 @@ class GalHookMiningCoordinator {
     required MiningAnimatedFormat animatedFormat,
     required MiningStillFormat stillFormat,
     required MiningClipFormat clipFormat,
+    required GalMiningAudioLimit audioLimit,
     required GalHookLineScreenshot? providedLineScreenshot,
     required GalHookCaptureLeaseFactory? captureLeaseFactory,
     required List<MiningMosaicRegion> mosaic,
@@ -516,17 +523,24 @@ class GalHookMiningCoordinator {
     // 就成了 unhandled async error（Flutter 下直接上报成崩溃）。暂存 + 重抛保持
     // 与串行版逐字一致的抛出语义。
     final String audioExtension = immersionMiningAudioExtension();
+    //
+    // 用户选了「不截取音频」（反馈 II3jOBIhT5）：根本不去取——无配音游戏取到的只会是
+    // BGM。卡照做、不带句子音频，也不算「缺音频」（见收尾的 sentenceAudioMissing）。
     final _SceneAudio audio = _SceneAudio(
-      occurrence != null
+      audioLimit.skipsAudio
+          ? Future<Uint8List?>.value()
+          : occurrence != null
           ? _session.captureAudioForOccurrence(
               occurrence: occurrence,
               outputExtension: audioExtension,
+              limit: audioLimit,
             )
           : _captureAudio(
               lineId: entry.id,
               // sentenceOverride only changes card text, not audio identity.
               sentence: entry.text,
               outputExtension: audioExtension,
+              limit: audioLimit,
             ),
     );
     final Future<Uint8List?> audioFuture = audio.future;
@@ -661,6 +675,7 @@ class GalHookMiningCoordinator {
         cover: cover,
         compression: compression,
         stillFormat: stillFormat,
+        audioLimit: audioLimit,
         repo: repo,
         updateNoteId: updateNoteId,
         addTitleTag: addTitleTag,
@@ -737,7 +752,11 @@ class GalHookMiningCoordinator {
 
     // 视频片段分支已经 await 过同一个 Future；对已完成的 Future 再 await 只是取值。
     final Uint8List? audioBytes = await job.audio.value();
-    final bool sentenceAudioMissing = audioBytes == null || audioBytes.isEmpty;
+    final bool hasSentenceAudio = audioBytes != null && audioBytes.isNotEmpty;
+    // 用户关掉了句子音频：没有音频是选择的结果，不是「缺」——不弹缺音频警告，
+    // 也不按 resourceOnly 拒绝制卡。
+    final bool sentenceAudioMissing =
+        !hasSentenceAudio && !job.audioLimit.skipsAudio;
     // 只有最严格的 resourceOnly 才因为「没抓到音频」拒绝制卡。cleanOnly 的立场是
     // 「这句本来就没配音很正常」——旁白/心理描写句照样成卡，只是不带音频；把它也
     // 拦成制卡失败，等于逼用户在「收一段 BGM」和「这张卡做不了」之间二选一。
@@ -769,9 +788,9 @@ class GalHookMiningCoordinator {
           screenshotBytes: coverBytes,
           coverName: coverName,
           audioBytes: audioBytes,
-          audioName: sentenceAudioMissing
-              ? null
-              : 'galgame_audio.${job.audioExtension}',
+          audioName: hasSentenceAudio
+              ? 'galgame_audio.${job.audioExtension}'
+              : null,
           documentTitle: window.title.isEmpty
               ? 'External window'
               : window.title,
@@ -825,7 +844,7 @@ class GalHookMiningCoordinator {
         staleScene: job.staleScene,
         unmappedTokens: await _unmappedTokens(
           job.repo,
-          hasSentenceAudio: !sentenceAudioMissing,
+          hasSentenceAudio: hasSentenceAudio,
         ),
       );
     } finally {
@@ -1018,6 +1037,7 @@ class _SceneJob {
     required this.cover,
     required this.compression,
     required this.stillFormat,
+    required this.audioLimit,
     required this.repo,
     required this.updateNoteId,
     required this.addTitleTag,
@@ -1035,6 +1055,7 @@ class _SceneJob {
   final _SceneCover cover;
   final MiningMediaCompression compression;
   final MiningStillFormat stillFormat;
+  final GalMiningAudioLimit audioLimit;
   final BaseAnkiRepository repo;
   final int? updateNoteId;
   final bool addTitleTag;

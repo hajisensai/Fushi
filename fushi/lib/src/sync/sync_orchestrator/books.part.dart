@@ -50,10 +50,11 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
       for (final EpubBookRow b in localBooks) sanitizeTtuFilename(b.title),
     };
     final Map<String, bool> remoteKeyHasContent = <String, bool>{
-      // 「远端已有内容」= EPUB 内容树 ∨ 漫画包内容（互联完整支持批次）——否则
-      // host 上已有的漫画会被本端当「远端无」反复推送。
+      // 「远端已有内容」= EPUB 内容树 ∨ 漫画包内容（互联完整支持批次）∨ PDF 原件
+      // （反馈 Jq1_ujHa4t）——否则 host 上已有的漫画 / PDF 会被本端当「远端无」反复推送。
       for (final RemoteBookInfo r in remoteBooks)
-        sanitizeTtuFilename(r.title): r.hasContent || r.hasMangaContent,
+        sanitizeTtuFilename(r.title):
+            r.hasContent || r.hasMangaContent || r.hasPdfContent,
     };
 
     // 按 sanitizeTtuFilename(title) union 计算 diff。
@@ -75,10 +76,15 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
 
     final int total = diff.toPush.length;
     int index = 0;
+    // host 能否收 PDF（`liveLibrary.pdfBooks`）：轮到第一本 PDF 时才问一次，没有
+    // PDF 要推的轮次零额外请求。
+    bool? hostAcceptsPdf;
 
     // ── Push：本端独有 → 重打包并上传 ───────────────────────────────────────
     for (final String key in diff.toPush) {
       final String title = localKeyToTitle[key] ?? key;
+      // 安全检查点：上一项已完整落地，这一项还没开始。
+      _checkpoint();
       _emit(SyncPhase.books, itemIndex: index, itemTotal: total, title: title);
       File? tmp;
       try {
@@ -98,11 +104,23 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
           continue;
         }
         final BookFormat format = BookFormat.parseOrEpub(row.format);
+        // PDF（反馈 Jq1_ujHa4t）：包 = 书目录里的 PDF 原件，直接上传，不重打包。
+        // 只推给显式宣称能收 PDF 的 host——老 host 会把它当 EPUB 导入失败，无头
+        // 服务端没有 PDF 引擎；这两种对端上 PDF 留在本机（能力边界，不是错误）。
+        File? upload;
         if (format == BookFormat.pdf) {
-          // PDF 无互联内容通道（互联全域盘点已记录）。此前无 format 过滤时每本
-          // 漫画/PDF 每轮同步都稳定产出一条 repackage 失败噪音错误——静默跳过。
-          index++;
-          continue;
+          final bool acceptsPdf = hostAcceptsPdf ??= await backend
+              .hostAcceptsPdfBooks();
+          if (!acceptsPdf) {
+            index++;
+            continue;
+          }
+          if (!hasExportablePdfContent(row)) {
+            report.errors.add('live push book "$title": pdf file missing');
+            index++;
+            continue;
+          }
+          upload = File(pdfBookFilePath(row));
         }
         // 在线合集只有元数据占位，没有可上传的漫画页图。
         if (format == BookFormat.manga &&
@@ -115,25 +133,28 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
           index++;
           continue;
         }
-        tmp = _tmpFile('.epub');
-        // 漫画 → 书目录整树 zip（manga.json 标记，host importBook 内容嗅探分流）；
-        // EPUB → 既有 repackage。
-        final bool built = format == BookFormat.manga
-            ? await repackageMangaBook(row.extractDir, tmp.path)
-            : await repackageExtractedEpub(row.extractDir, tmp.path);
-        if (!built) {
-          report.errors.add(
-            'live push book "$title": repackage produced no output',
-          );
-          index++;
-          continue;
+        if (upload == null) {
+          tmp = _tmpFile('.epub');
+          // 漫画 → 书目录整树 zip（manga.json 标记，host importBook 内容嗅探分流）；
+          // EPUB → 既有 repackage。
+          final bool built = format == BookFormat.manga
+              ? await repackageMangaBook(row.extractDir, tmp.path)
+              : await repackageExtractedEpub(row.extractDir, tmp.path);
+          if (!built) {
+            report.errors.add(
+              'live push book "$title": repackage produced no output',
+            );
+            index++;
+            continue;
+          }
+          upload = tmp;
         }
         // 显示名跟着书走，**身份不跟着走**（BUG-1488 定的红线）：端点寻址、
         // host 端 bookKey 派生仍恒用 raw [title]。
         final OverrideTitleEntry? override = overrideTitles[row.bookKey];
         await backend.putRemoteBook(
           title,
-          tmp,
+          upload,
           displayTitle: override?.title,
           displayTitleAt: override?.updatedAt ?? 0,
           presentSinceAt: row.localAddedAt,
@@ -186,6 +207,14 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
     );
     final List<EpubBookRow> localBooks = await _db.getAllEpubBooks();
     if (localBooks.isEmpty) return;
+    // 先绑定这一轮的 host（BUG-4434）：基线读写落这台 host 的作用域，之后的 host
+    // 读写都钉住它，中途换了 host 本阶段就此结束。
+    try {
+      await sync.bind();
+    } catch (e) {
+      report.noteError('live book progress', e);
+      return;
+    }
     // BUG-1569③：退出书的单本同步不再等整轮 sweep 结束，它在互联上只锁那本书。
     // 下面的批量读与本端快照都是「此刻」的，若在本阶段跑到某本书之前它已被单本
     // 同步改过（推了 host、或落了本地、记了新基线），拿这份旧快照去判定就会把 host
@@ -208,54 +237,94 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
       report.noteError('live book progress', e);
       return;
     }
-    for (int i = 0; i < localBooks.length; i++) {
-      final EpubBookRow book = localBooks[i];
-      _emit(
-        SyncPhase.readingData,
-        itemIndex: i,
-        itemTotal: localBooks.length,
-        title: book.title,
-        itemKind: SyncItemKind.book,
-      );
-      final String lockKey = syncBookResource(book.bookKey);
-      try {
-        // 判定 + 落地在这本书的锁里做，与退出书的单本同步互斥（见上）。
-        await syncResourceLocks.withResources(<String>{lockKey}, () async {
-          final bool touched =
-              syncResourceLocks.generationOf(lockKey) !=
-              lockGenerations[book.bookKey];
-          final RemoteBookProgress remote;
-          if (touched) {
-            remote = await sync.remoteProgress(book);
-          } else {
-            final RemoteBookProgressRead read = await remotes[i];
-            final Object? readError = read.error;
-            if (readError != null) {
-              Error.throwWithStackTrace(readError, read.stackTrace!);
-            }
-            remote = read.progress!;
-          }
-          final BookProgressSyncStep step = await sync.syncOne(
-            book,
-            remote: remote,
-            snapshot: touched ? null : snapshot,
-          );
-          if (step.localChanged) report.localBookProgressPulled++;
-          if (step.action == BookProgressSyncAction.conflict) {
-            report.conflicts.add(
-              SyncConflict(
-                assetKey: book.bookKey,
-                dimension: kInterconnectBookProgressDimension,
-                title: book.title,
-                localVersion: step.localUpdatedAtMs,
-                remoteVersion: step.remoteUpdatedAtMs,
-              ),
-            );
-          }
-        });
-      } catch (e) {
-        report.noteError('live book progress "${book.title}"', e);
+    try {
+      for (int i = 0; i < localBooks.length; i++) {
+        // 安全检查点：上一项已完整落地，这一项还没开始。
+        _checkpoint();
+        await _syncOneBookProgressLive(
+          report,
+          sync: sync,
+          book: localBooks[i],
+          index: i,
+          total: localBooks.length,
+          lockGeneration: lockGenerations[localBooks[i].bookKey],
+          listed: remotes[i],
+          snapshot: snapshot,
+        );
       }
+    } on InterconnectHostChangedException catch (e) {
+      // 会话中途换了 host（BUG-4434）：用这台 host 的基线判另一台 host 的值会把它
+      // 当成「对端单边改动」落到本机。本阶段到此为止，报一条，下一轮重新绑定。
+      report.noteError('live progress: host changed mid-round', e);
+    }
+  }
+
+  /// [_syncBookProgressLive] 里的一本书。会话换了 host 时
+  /// [InterconnectHostChangedException] 原样抛出，由阶段统一结束。
+  Future<void> _syncOneBookProgressLive(
+    SyncRunReport report, {
+    required InterconnectBookProgressSync sync,
+    required EpubBookRow book,
+    required int index,
+    required int total,
+    required int? lockGeneration,
+    required Future<RemoteBookProgressRead> listed,
+    required BookProgressSweepSnapshot snapshot,
+  }) async {
+    _emit(
+      SyncPhase.readingData,
+      itemIndex: index,
+      itemTotal: total,
+      title: book.title,
+      itemKind: SyncItemKind.book,
+    );
+    final String lockKey = syncBookResource(book.bookKey);
+    try {
+      // 判定 + 落地在这本书的锁里做，与退出书的单本同步互斥（见上）。
+      await syncResourceLocks.withResources(<String>{lockKey}, () async {
+        final bool touched =
+            syncResourceLocks.generationOf(lockKey) != lockGeneration;
+        final RemoteBookProgress remote;
+        if (touched) {
+          remote = await sync.remoteProgress(book);
+        } else {
+          final RemoteBookProgressRead read = await listed;
+          final Object? readError = read.error;
+          if (readError != null) {
+            Error.throwWithStackTrace(readError, read.stackTrace!);
+          }
+          remote = read.progress!;
+        }
+        final BookProgressSyncStep step = await sync.syncOne(
+          book,
+          remote: remote,
+          snapshot: touched ? null : snapshot,
+        );
+        if (step.localChanged) report.localBookProgressPulled++;
+        // 摘要计数（BUG-4302）只数位置真的挪动了的：落地了 host 的进度 / host 确认
+        // 采纳了本机的进度（BUG-4431）。只对齐时间戳（synced）不算变化。
+        if (step.action == BookProgressSyncAction.applyRemote &&
+            step.localChanged) {
+          report.bookProgressReceived++;
+        } else if (step.pushed) {
+          report.bookProgressSent++;
+        }
+        if (step.action == BookProgressSyncAction.conflict) {
+          report.conflicts.add(
+            SyncConflict(
+              assetKey: book.bookKey,
+              dimension: kInterconnectBookProgressDimension,
+              title: book.title,
+              localVersion: step.localUpdatedAtMs,
+              remoteVersion: step.remoteUpdatedAtMs,
+            ),
+          );
+        }
+      });
+    } on InterconnectHostChangedException {
+      rethrow;
+    } catch (e) {
+      report.noteError('live book progress "${book.title}"', e);
     }
   }
 
@@ -274,6 +343,15 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
   /// 只对 host 也有的键同步（本地独有条目无 host 真相，跳过）；逐条错误以
   /// `[errorLabel] "<key>": <e>` 进 [report.errors] 不中断整体。host 清单的获取
   /// 与两侧空集合的早退仍在各调用方（保持既有网络行为不变）。
+  ///
+  /// 每条「重读本端 → 判定 → 落地」在该条目的位置锁里做（BUG-4432），与播放页实时
+  /// 上报、冲突弹窗互斥。
+  ///
+  /// [readHost]（host 清单）只用来跳过已收敛的条目：清单可能是钉住 host 之前取的、
+  /// 甚至来自另一台 host 的缓存，也可能在取清单之后被实时上报推进过。所以未收敛的
+  /// 条目一律在锁里经 [InterconnectPlaybackPositionSync.remotePosition]（钉住本轮
+  /// 绑定的 host）重读再判定（BUG-4434）；跳过是安全的，判定只用重读的值。会话中途
+  /// 换了 host 时本阶段就此结束、报一条。
   Future<void> _syncPositionsLive(
     SyncRunReport report, {
     required InterconnectPlaybackPositionSync sync,
@@ -284,10 +362,16 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
     required String Function(String key) titleOf,
     required PlaybackPosition Function(String key) localFromSnapshot,
   }) async {
+    try {
+      await sync.bind();
+    } catch (e) {
+      report.noteError(errorLabel, e);
+      return;
+    }
     // 整轮一次读齐基线 / 待确认基线（两条查询）；本端位置由调用方从 sweep 开头的
     // 偏好快照里取（零查询）。两端已收敛的条目在内存里判定后直接跳过，不再逐条
     // 读 3 次、写 2 次；其余条目照旧逐条重读、判定、落地（快照只用来跳过，从不
-    // 用来写）。
+    // 用来写）。基线落本轮绑定的 host 的作用域（BUG-4434）。
     final PlaybackBaselineSnapshot baselines = await sync
         .loadBaselineSnapshot();
     final List<String> keys = <String>[
@@ -298,53 +382,94 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
       PlaybackPositionKind.video => SyncItemKind.video,
       PlaybackPositionKind.audiobook => SyncItemKind.audiobook,
     };
-    for (int i = 0; i < keys.length; i++) {
-      final String key = keys[i];
-      // 任务面板要能说出「在同步哪个视频 / 哪本有声书」（反馈 kM-Gb_Xnu-）。
-      _emit(
-        SyncPhase.readingData,
-        itemIndex: i,
-        itemTotal: keys.length,
-        title: titleOf(key),
-        itemKind: itemKind,
-      );
-      try {
-        final PlaybackPosition host = await readHost(key);
-        if (InterconnectPlaybackPositionSync.isSettled(
-          local: localFromSnapshot(key),
-          remote: host,
-          snapshot: baselines,
-          key: key,
-        )) {
-          continue;
-        }
-        final PlaybackPosition local = await sync.localPosition(key);
-        final BookProgressSyncAction action = await sync.decide(
-          key,
-          local: local,
-          remote: host,
+    try {
+      for (int i = 0; i < keys.length; i++) {
+        // 安全检查点：上一项已完整落地，这一项还没开始。
+        _checkpoint();
+        await _syncOnePositionLive(
+          report,
+          sync: sync,
+          errorLabel: errorLabel,
+          key: keys[i],
+          index: i,
+          total: keys.length,
+          itemKind: itemKind,
+          readHost: readHost,
+          titleOf: titleOf,
+          localFromSnapshot: localFromSnapshot,
+          baselines: baselines,
         );
-        switch (action) {
-          case BookProgressSyncAction.synced:
-            await sync.alignSynced(key, local: local, remote: host);
-          case BookProgressSyncAction.pushLocal:
-            await sync.pushLocal(key, local: local, remote: host);
-          case BookProgressSyncAction.applyRemote:
-            await sync.applyRemote(key, host, local: local);
-          case BookProgressSyncAction.conflict:
-            report.conflicts.add(
-              SyncConflict(
-                assetKey: key,
-                dimension: sync.dimension,
-                title: titleOf(key),
-                localVersion: local.updatedAtMs,
-                remoteVersion: host.updatedAtMs,
-              ),
-            );
-        }
-      } catch (e) {
-        report.noteError('$errorLabel "$key"', e);
       }
+    } on InterconnectHostChangedException catch (e) {
+      report.noteError('live progress: host changed mid-round', e);
+    }
+  }
+
+  /// [_syncPositionsLive] 里的一条。会话换了 host 时
+  /// [InterconnectHostChangedException] 原样抛出，由阶段统一结束。
+  Future<void> _syncOnePositionLive(
+    SyncRunReport report, {
+    required InterconnectPlaybackPositionSync sync,
+    required String errorLabel,
+    required String key,
+    required int index,
+    required int total,
+    required SyncItemKind itemKind,
+    required Future<PlaybackPosition> Function(String key) readHost,
+    required String Function(String key) titleOf,
+    required PlaybackPosition Function(String key) localFromSnapshot,
+    required PlaybackBaselineSnapshot baselines,
+  }) async {
+    // 任务面板要能说出「在同步哪个视频 / 哪本有声书」（反馈 kM-Gb_Xnu-）。
+    _emit(
+      SyncPhase.readingData,
+      itemIndex: index,
+      itemTotal: total,
+      title: titleOf(key),
+      itemKind: itemKind,
+    );
+    try {
+      final PlaybackPosition listed = await readHost(key);
+      if (InterconnectPlaybackPositionSync.isSettled(
+        local: localFromSnapshot(key),
+        remote: listed,
+        snapshot: baselines,
+        key: key,
+      )) {
+        return;
+      }
+      final String lockKey = syncPlaybackPositionResource(sync.kind, key);
+      await syncResourceLocks.withResources(<String>{lockKey}, () async {
+        // 判定与落地与播放页开播共用同一份（BUG-4436）；前置条件 = 本次判定读到
+        // 的 host 位置（BUG-4432）。
+        final PlaybackPositionSyncStep step = await sync.syncOne(
+          key,
+          remote: await sync.remotePosition(key),
+        );
+        // 摘要计数（BUG-4302）：落地了 host 的位置（判定后本端被改写则未落地，
+        // BUG-3537）/ host 确认采纳了本机的位置（BUG-4431）。
+        if (step.action == BookProgressSyncAction.applyRemote &&
+            step.localChanged) {
+          report.notePlaybackPositionMoved(sync.kind, received: true);
+        } else if (step.push == LivePushStatus.confirmed) {
+          report.notePlaybackPositionMoved(sync.kind, received: false);
+        }
+        if (step.action == BookProgressSyncAction.conflict) {
+          report.conflicts.add(
+            SyncConflict(
+              assetKey: key,
+              dimension: sync.dimension,
+              title: titleOf(key),
+              localVersion: step.local.updatedAtMs,
+              remoteVersion: step.remote.updatedAtMs,
+            ),
+          );
+        }
+      });
+    } on InterconnectHostChangedException {
+      rethrow;
+    } catch (e) {
+      report.noteError('$errorLabel "$key"', e);
     }
   }
 }

@@ -150,6 +150,34 @@ class _Track implements MediaStreamTrack {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
+class _AudioTrack implements MediaStreamTrack {
+  _AudioTrack(this.id);
+
+  @override
+  final String id;
+
+  @override
+  bool enabled = true;
+
+  @override
+  String get kind => 'audio';
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _AudioStream implements MediaStream {
+  _AudioStream(this.tracks);
+
+  final List<MediaStreamTrack> tracks;
+
+  @override
+  List<MediaStreamTrack> getAudioTracks() => tracks;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
 GameStreamSignal _hostSignal(int sequence, GameStreamSignalType type) =>
     GameStreamSignal(
       sessionId: 'session',
@@ -179,9 +207,11 @@ void main() {
   late _Peer peer;
   late FushiGameStreamReceiver receiver;
   late List<int> audioPreparedAtRendererInits;
+  late List<(String, double)> volumeCalls;
 
   setUp(() {
     audioPreparedAtRendererInits = <int>[];
+    volumeCalls = <(String, double)>[];
     debugDefaultTargetPlatformOverride = TargetPlatform.android;
     transport = _Transport();
     renderer = _Renderer();
@@ -192,6 +222,8 @@ void main() {
       peerFactory: () async => peer,
       prepareAudio: () async =>
           audioPreparedAtRendererInits.add(renderer.initializeCount),
+      setTrackVolume: (double gain, MediaStreamTrack track) async =>
+          volumeCalls.add((track.id!, gain)),
     );
   });
 
@@ -298,6 +330,153 @@ void main() {
       reason:
           'call options are invalid with playback and would make iOS '
           'reject the category; an absent key would keep the old options',
+    );
+  });
+
+  group('stream volume', () {
+    test('default volume leaves arriving tracks untouched', () async {
+      await receiver.connect(sessionId: 'session', clientId: 'phone');
+      final _AudioTrack track = _AudioTrack('a1');
+      peer.onTrack?.call(
+        RTCTrackEvent(
+          streams: <MediaStream>[
+            _AudioStream(<MediaStreamTrack>[track]),
+          ],
+          track: track,
+        ),
+      );
+      expect(volumeCalls, isEmpty);
+      expect(track.enabled, isTrue);
+    });
+
+    test('a boosted receiver applies the gain on track arrival', () async {
+      receiver.setVolumeBoostAllowed(true);
+      await receiver.connect(
+        sessionId: 'session',
+        clientId: 'phone',
+        settings: const GameStreamVideoSettings(volumePercent: 300),
+      );
+      final _AudioTrack track = _AudioTrack('a1');
+      peer.onTrack?.call(
+        RTCTrackEvent(
+          streams: <MediaStream>[
+            _AudioStream(<MediaStreamTrack>[track]),
+          ],
+          track: track,
+        ),
+      );
+      expect(volumeCalls, <(String, double)>[('a1', 3.0)]);
+      expect(track.enabled, isTrue);
+    });
+
+    test('a volume change applies live without a host join', () async {
+      int joins = 0;
+      transport.handler = (Map<String, dynamic> body) async {
+        if (body.containsKey('settings')) joins++;
+        return const GameStreamPostResult(
+          json: <String, dynamic>{'signals': <Object>[]},
+        );
+      };
+      await receiver.connect(sessionId: 'session', clientId: 'phone');
+      receiver.setVolumeBoostAllowed(true);
+      final _AudioTrack track = _AudioTrack('a1');
+      renderer.stream = _AudioStream(<MediaStreamTrack>[track]);
+      receiver.applyLocalSettings(
+        receiver.settings.copyWith(volumePercent: 200, maxFps: 30),
+      );
+      expect(volumeCalls, <(String, double)>[('a1', 2.0)]);
+      expect(receiver.settings.volumePercent, 200);
+      // Host-side fields are not touched by a local apply.
+      expect(receiver.settings.maxFps, 60);
+      expect(joins, 0);
+      receiver.applyLocalSettings(
+        receiver.settings.copyWith(volumePercent: 100),
+      );
+      expect(volumeCalls.last, ('a1', 1.0));
+    });
+
+    test('mute wins over the boost and unmuting restores the gain', () async {
+      receiver.setVolumeBoostAllowed(true);
+      await receiver.connect(
+        sessionId: 'session',
+        clientId: 'phone',
+        settings: const GameStreamVideoSettings(
+          audio: false,
+          volumePercent: 500,
+        ),
+      );
+      final _AudioTrack track = _AudioTrack('a1');
+      peer.onTrack?.call(
+        RTCTrackEvent(
+          streams: <MediaStream>[
+            _AudioStream(<MediaStreamTrack>[track]),
+          ],
+          track: track,
+        ),
+      );
+      expect(track.enabled, isFalse);
+      expect(volumeCalls, isEmpty);
+      receiver.setAudioEnabled(true);
+      expect(track.enabled, isTrue);
+      expect(volumeCalls, <(String, double)>[('a1', 5.0)]);
+      // Muting again while boosted: silent, no gain call.
+      receiver.setAudioEnabled(false);
+      expect(track.enabled, isFalse);
+      expect(volumeCalls, hasLength(1));
+    });
+
+    test(
+      'without the boost (single screen) a stored 500 % plays at unity',
+      () async {
+        expect(receiver.volumeBoostAllowed, isFalse);
+        await receiver.connect(
+          sessionId: 'session',
+          clientId: 'phone',
+          settings: const GameStreamVideoSettings(volumePercent: 500),
+        );
+        final _AudioTrack track = _AudioTrack('a1');
+        peer.onTrack?.call(
+          RTCTrackEvent(
+            streams: <MediaStream>[
+              _AudioStream(<MediaStreamTrack>[track]),
+            ],
+            track: track,
+          ),
+        );
+        expect(volumeCalls, isEmpty, reason: 'Unity gain needs no call');
+        expect(track.enabled, isTrue);
+        // A live change of the stored value still applies unity only.
+        receiver.applyLocalSettings(
+          receiver.settings.copyWith(volumePercent: 400),
+        );
+        expect(volumeCalls, <(String, double)>[('a1', 1.0)]);
+        expect(receiver.settings.volumePercent, 400);
+      },
+    );
+
+    test(
+      'a second display appearing / going away recomputes the gain',
+      () async {
+        await receiver.connect(
+          sessionId: 'session',
+          clientId: 'phone',
+          settings: const GameStreamVideoSettings(volumePercent: 500),
+        );
+        final _AudioTrack track = _AudioTrack('a1');
+        renderer.stream = _AudioStream(<MediaStreamTrack>[track]);
+        receiver.setVolumeBoostAllowed(true);
+        expect(volumeCalls, <(String, double)>[('a1', 5.0)]);
+        receiver.setVolumeBoostAllowed(true);
+        expect(volumeCalls, hasLength(1), reason: 'No change, no call');
+        receiver.setVolumeBoostAllowed(false);
+        expect(volumeCalls.last, ('a1', 1.0));
+        // Muted: toggling the boost never re-enables or boosts the track.
+        receiver.setAudioEnabled(false);
+        final int calls = volumeCalls.length;
+        receiver.setVolumeBoostAllowed(true);
+        expect(track.enabled, isFalse);
+        expect(volumeCalls, hasLength(calls));
+      },
     );
   });
 

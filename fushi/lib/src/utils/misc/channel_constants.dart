@@ -7,6 +7,12 @@ abstract final class FushiChannels {
   static const String _prefix = 'app.fushi.reader';
 
   static const MethodChannel splash = MethodChannel('$_prefix/splash');
+
+  /// 冷启动原生段计时（进程创建到 Dart `main()` 之前），`get` 取一次。Windows runner
+  /// `startup_trace.cpp`、Android `StartupTrace.java`、iOS `FushiStartupTrace`。
+  static const MethodChannel startupTrace = MethodChannel(
+    '$_prefix/startup_trace',
+  );
   static const MethodChannel anki = MethodChannel('$_prefix/anki');
   static const MethodChannel popup = MethodChannel('$_prefix/popup');
   static const MethodChannel tts = MethodChannel('$_prefix/tts');
@@ -55,6 +61,13 @@ abstract final class FushiChannels {
   /// native side (`widgets/WidgetChannel.kt`). Dart facade
   /// `lib/src/platform/widget_snapshot.dart`.
   static const MethodChannel widgets = MethodChannel('$_prefix/widgets');
+
+  /// 反馈回复后台检查（反馈 yjn-3h8B-7）：主引擎上排 / 撤 Android 纯原生的
+  /// `FeedbackReplyWorker`（`feedback/FeedbackReplyWorkChannel.kt`）。Dart 门面
+  /// `lib/src/feedback/feedback_reply_background.dart`。
+  static const MethodChannel feedbackReplyWork = MethodChannel(
+    '$_prefix/feedback_reply_work',
+  );
   static const MethodChannel clipboardImage = MethodChannel(
     '$_prefix/clipboard_image',
   );
@@ -70,6 +83,13 @@ abstract final class FushiChannels {
   /// `lib/src/diagnostics/previous_exit_log.dart`。
   static const MethodChannel processExit = MethodChannel(
     '$_prefix/process_exit',
+  );
+
+  /// 系统默认网络变了（EventChannel，Android / iOS）：互联 P2P 隧道据此通知 iroh
+  /// 重新探测路径。原生侧 `NetworkChangeChannel.java` / `FushiNetworkChange.swift`，
+  /// Dart 侧 `interconnect_p2p_app.dart`。
+  static const EventChannel networkChange = EventChannel(
+    '$_prefix/network_change',
   );
   static const MethodChannel screenBrightness = MethodChannel(
     '$_prefix/screen_brightness',
@@ -96,10 +116,19 @@ abstract final class FushiChannels {
     '$_prefix/picture_in_picture',
   );
 
-  /// 串流第二块屏（双屏掌机下屏 / 外接显示器）上的查词面板。原生侧
-  /// `GameStreamCompanionDisplay.java`（主进程）与 `GameStreamCompanionActivity.java`
-  /// （面板进程）用同一个名字，Dart 门面 `game_stream_companion_display_channel.dart`。
-  static const MethodChannel gameStreamCompanion = MethodChannel(
-    '$_prefix/game_stream_companion',
+  /// 第二块屏宿主（双屏掌机下屏 / 外接显示器上的面板：副屏伴侣或串流查词面板）。
+  /// 原生侧 `SecondScreenDisplay.java`（主进程）与 `SecondScreenActivity.java`
+  /// （面板进程）用同一个名字；主进程 Dart 门面 `second_screen_host.dart`，
+  /// 面板进程入口 `second_screen_main.dart`。
+  static const MethodChannel secondScreen = MethodChannel(
+    '$_prefix/second_screen',
+  );
+
+  /// Linux GTK runner: raise the main window with a Wayland `xdg_activation_v1`
+  /// token (e.g. the one the GlobalShortcuts portal sends with `Activated`).
+  /// Runner side `linux/runner/my_application.cc`, Dart facade
+  /// `lib/src/platform/desktop/linux_window_activation_channel.dart`.
+  static const MethodChannel windowActivation = MethodChannel(
+    '$_prefix/window_activation',
   );
 }

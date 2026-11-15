@@ -93,7 +93,7 @@ fn world(core: &SrsCore, profile: &str) -> (Vec<Vec<u8>>, Vec<Vec<u8>>, Vec<(Str
         let head = Head {
             gen: 1,
             protocol: segment::PROTOCOL,
-            min_reader: segment::MIN_READER,
+            min_reader: segment::CONTENT_FLOOR,
             collection: local.collection,
             device,
             public: local.key.public(),
@@ -129,7 +129,7 @@ fn fresh_ingest(dir: &Path, profile: &str, heads: &[Vec<u8>], segs: &[Vec<u8>]) 
         cmd(&core, profile, json!({"op": "ingest_begin"}), vec![]);
         let mut batch: Vec<Vec<u8>> = Vec::new();
         let mut size = 0;
-        let mut send = |batch: &mut Vec<Vec<u8>>| {
+        let send = |batch: &mut Vec<Vec<u8>>| {
             cmd(
                 &core,
                 profile,

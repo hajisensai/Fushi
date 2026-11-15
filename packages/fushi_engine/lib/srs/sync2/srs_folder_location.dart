@@ -221,6 +221,8 @@ Future<SrsFolderSyncReport> srsSyncFolderLocation({
     // 加密也在这里把 kdf 写上）。
     final SrsLocationHandshake h = await srsLocationHandshake(
       root,
+      host: store,
+      locationId: location.locationId,
       key: key,
       collection: (await store.sync2Command(<String, Object?>{
         'op': 'identity',

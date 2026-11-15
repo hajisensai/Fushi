@@ -1,6 +1,8 @@
 import 'dart:io' show Platform;
 
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/models/preferences_repository.dart'
+    show PreferencesRepository;
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
@@ -98,15 +100,17 @@ SettingsDestination buildWidgetsDestination() {
             onChanged: (SettingsContext c, int v) =>
                 c.appModel.setMiningGoalDailyCards(v),
           ),
-          // 与统计页 / 首页同一个目标（`readingGoalDailyChars`），这里只是多一个入口。
+          // 与统计页 / 首页同一个目标，这里只是多一个入口：编辑**当前周期**
+          // （日 / 周，反馈 CjIr9RGSCe）生效的那一份（`readingGoalActiveChars`），
+          // 周期本身在首页目标对话框里切。上限取周目标上限，日目标由偏好层再钳。
           _goalItem(
             id: 'widgets.goal_chars',
             title: t.widget_settings_goal_chars,
             unit: t.stat_goal_unit_chars,
-            max: 1000000,
-            value: (SettingsContext c) => c.appModel.readingGoalDailyChars,
+            max: PreferencesRepository.readingGoalWeeklyCharsMax,
+            value: (SettingsContext c) => c.appModel.readingGoalActiveChars,
             onChanged: (SettingsContext c, int v) =>
-                c.appModel.setReadingGoalDailyChars(v),
+                c.appModel.setReadingGoalActiveChars(v),
           ),
         ],
       ),

@@ -16,10 +16,11 @@ Anki 能力——一切经本机 Fushi 桌面 App 内置的 Fushi API 服务器�
 | `dict-frame.html/js` | 扩展 iframe | 带 `<script>` 的 MDX 词条沙箱外层中继：扩展页 CSP `frame-src 'self'` 在请求前拦内层自导航；只认 popup.js 交来的 MessageChannel port，内层消息按白名单（height/error/link/select）重建后转出（见 `docs/specs/2026-10-23-dictionary-script-sandbox.md`「浏览器扩展：两层沙箱 frame」） |
 | `dict-sandbox.html` | sandbox 页 | 沙箱内层（manifest `sandbox.pages`，不透明源、`connect-src 'none'`）：只收外层一次 render，`document.write` 渲染词典脚本文档 |
 | `subtitle-panel.js` | 隔离 | 字幕轨状态控制器 + 视频覆盖层（鼠标经左侧拖柄 / 触屏按住整块挪位，位置按视频分数坐标存 `subtitleOverlayPosition`；右下角把手拖拽改底板大小、双击回随内容；点文字查词、鼠标在文字上拖是原生选区可复制；`subtitleOverlayBackground` 关掉只剩描边字）+ 外挂字幕安装 + 全轨时轴偏移 + 快捷键执行端；不渲染网页列表 |
+| `subtitle-align.js` | 隔离 | 字幕对轴（反馈 0wkJImhZUp）：`<video>.captureStream()` 边播边听，按媒体时间攒 20ms RMS 包络；自动对轴把 100ms 包络 + 当前轨 cue 交 app `/api/subtitle/align`（与 app 视频页同一套互相关）写进 `trackOffsets`；侧边栏波形对轴的数据源（见「字幕对轴」） |
 | `subtitle-mask.js` | 隔离 + options | 字幕遮布：正片上一块盖住烧录硬字幕的矩形（模糊 / 纯色），几何按画面内容区（扣掉 object-fit 黑边）比例存 `subtitleMask`，层级在字幕覆盖层之下、平时不拦指针；编辑模式拖动 / 四角四边缩放；设置页只借纯函数（见「字幕遮布」） |
 | `i18n.js` + `locales/` | 隔离 + 扩展页 + SW | 界面多语言：`locales/en.js` 是源字典（同步装入），其余 16 种 `locales/<tag>.json` 按需 fetch；语言默认跟随 Fushi（见「多语言」） |
 | `theme-palette.js` + `theme.js` + `theme.css` | 隔离 + 扩展页 | 调色板引擎（种子色 → 明暗两套 token、预设、自定义条目）+ 明暗 / 调色板 / 外观风格唯一决议点 + 扩展自有界面的唯一 token 源（颜色 + 风格；见「主题与颜色」） |
-| `subtitle-style.js` | 隔离 + options | 视频上字幕外观设置（字体/大小/字重/间距/行高/对齐/颜色/描边/底板含宽高）→ 覆盖层 `--fushi-sub-*` 变量 + `applyBox` 宽高 + `fitTextInto` 自适应缩放（`--fushi-sub-fit`） |
+| `subtitle-style.js` | 隔离 + options | 视频上字幕外观设置（字体/大小/字重/间距/行高/对齐/颜色/阴影/真描边粗细与颜色/底板含宽高）→ 覆盖层 `--fushi-sub-*` 变量 + `applyBox` 宽高 + `fitTextInto` 自适应缩放（`--fushi-sub-fit`） |
 | `study-tracker.js` | 隔离 | 网页视频沉浸时间：正片 `<video>` 播放时每秒把位置样本经 background 交给 app 记学习统计（见「沉浸时间」） |
 | `side-panel.html/js/css` | 扩展页 | 浏览器原生 Side Panel 字幕列表；侧边栏内取词，默认把词交给宿主页用页面弹窗渲染（见「侧边栏查词跨出面板」），经 tabs 消息读取轨道并执行跳转/制卡/偏移，不把字幕列表注入网页 |
 | `video-shortcuts.js` | 隔离 + options | 视频页快捷键判定（纯函数）+ 绑定；每个动作独立开关、组合键可在设置页改（`videoShortcutKeys`），动作交 subtitle-panel 执行；按秒快退 / 快进（`videoSeekSeconds`，经 `fushiSubtitleSeekBy`）与按住临时倍速（`videoHoldSpeedRate`，松开 / 失焦恢复原速）不需要字幕轨；设置页只借用纯函数做改键录入 |
@@ -98,7 +99,7 @@ app 升级
 全部 `POST http://<host>:<port>/api/...`，`Authorization: Basic base64('fushi:'+token)`。
 查词 `/api/lookup/dictionary` · 单词音频 `/api/lookup/audio` · 制卡 `/api/mine` · 查重
 `/api/duplicate` · 收藏 `/api/extension/favorite` · 状态/心跳 `/api/extension/status` · 弹窗尺寸 `/api/extension/popup-size` ·
-YouTube 整集字幕 `/api/youtube/captions` · 外挂字幕解析 `/api/subtitle/parse` · 配置列表 `/api/extension/profiles`。
+YouTube 整集字幕 `/api/youtube/captions` · 外挂字幕解析 `/api/subtitle/parse` · 自动对轴 `/api/subtitle/align` · 配置列表 `/api/extension/profiles`。
 服务端实现：`fushi/lib/src/sync/fushi_api_server.dart`。
 
 ## 选择 Fushi 配置（反馈 biLEesNqWb）
@@ -189,7 +190,11 @@ CSS/JS 能突破。所以「侧边栏里的查词弹窗被那 ~400px 夹住」�
 - **底色**：`subtitleOverlayBackground`（options「字幕底色」，默认开）关掉 → `data-bare`，CSS 去
   底板/投影只剩描边字，像站点原生字幕那样不挡画面。
 - **外观**（options「字幕外观」）：`subtitleStyle` 一个对象存字体 / 大小（基准字号百分比）/ 字重 /
-  字间距 / 行高 / 对齐 / 文字色 / 描边（none·soft·strong）/ 底板颜色·不透明度·圆角·内边距·宽·高。
+  字间距 / 行高 / 对齐 / 文字色 / 阴影（`shadow`：none·soft·strong）/ 真描边（`outlineWidth` 0–8px 步长 0.5、
+  `outlineColor` 缺省纯黑；反馈 0wkJImhZUp 同步 app 视频字幕的描边自定义，同义同刻度：`-webkit-text-stroke`
+  宽 = 粗细 ×2 + `paint-order: stroke fill`，与 app `subtitleOutlineStrokeWidth` 同一换算，同一数值两边一样粗）/
+  底板颜色·不透明度·圆角·内边距·宽·高。app 内浏览器的设置镜像（`settings_schema_web_browser_extension.dart`）
+  同步这两个字段，缺省 / 上限与本文件逐字比对（`web_browser_settings_page_test.dart`）。
   `subtitle-style.js`（`fushiSubtitleStyle.normalize / toCssVars / applyTo`）把它翻成覆盖层根上的
   `--fushi-sub-*` 变量（默认项 removeProperty 交还 CSS），`content-css-overlay.css` 的
   `#fushi-subtitle-overlay` 每一项外观都读这些变量并带默认值；设置页预览走同一份 `toCssVars`，
@@ -223,6 +228,32 @@ CSS/JS 能突破。所以「侧边栏里的查词弹窗被那 ~400px 夹住」�
   `\uXXXX` 转义。
 
 守卫：`subtitle-overlay-drag.test.js` 后半段、`subtitle-style.test.js`、`utf8-shippable.test.js`。
+
+## 字幕对轴（`subtitle-align.js`，反馈 0wkJImhZUp）
+
+app 视频页的自动对轴 / 波形对轴读的是媒体文件（ffmpeg 抽逐窗 RMS）。网页视频没有可读的文件，能拿到声音的只有
+正在播的 `<video>`：
+
+- **采集**：`video.captureStream()` → `AudioContext` → `ScriptProcessor`（经 0 增益接 destination，不多出第二份
+  声音；captureStream 是旁路，元素照常对用户发声——不用 tabCapture，它会把整页声音改道）。每块按 20ms 切片算 RMS，
+  按**媒体时间**（`currentTime`，倍速按媒体时间折算）落格；暂停 / 拖动中 / 结束的块不收，拖动进度条留下的空洞就是
+  没听过的格。换视频（`fushiVideoKey` 变了）清空包络，迟到的对轴结果丢弃。
+- **自动对轴**：播放器菜单「自动对轴」或侧边栏 ✨ 键。听够 45 秒（`AUTO_MIN_CAPTURED_MS`，≥ 服务端最小样本量
+  20 秒）立刻算，不够先提示「再播 N 秒」、攒够自动算。100ms 栅格 dBFS 包络（null = 没听过）+ 当前轨**已套偏移**
+  的 cue（只带时间）→ background `subtitleAlign` → `POST /api/subtitle/align` → `subtitle_capture_align.dart`：
+  cue 减去窗口起点、空洞两侧都屏蔽，再调 app 的 `normalizeAudioEnergyEnvelope` / `buildCueActivityEnvelope` /
+  `bestOffsetMsByCrossCorrelation`（互相关本体在 Rust），回「再平移多少」；这里加到当前偏移上，写进同一份
+  `trackOffsets`（外挂轨照常持久化）。低置信 / 样本不足不改偏移，如实提示。
+- **波形对轴**：侧边栏偏移行的波形键展开画布：上半是 20ms 一根的音量柱（可见范围内按 dB 归一，下限 -70dB），
+  下半是字幕条（上半同时画淡色投影），播放头居中、播放中按倍速外推。按住拖字幕条 = 改偏移（10ms 取整，松手写
+  绝对值，与手填秒数同一条 `fushiSubtitleSidePanelOffset`）；方向键 ±0.1s（Shift ±0.5s）；滚轮缩放 4–40 秒。
+  侧边栏每 300ms 取一次状态即续 4 秒租约；租约过期且没有待算的自动对轴，页面就停止监听（关掉侧边栏不会一直占着音频图）。
+- **读不到声音时如实说**：没有 captureStream / AudioContext（`unsupported`）、跨源视频（`cross-origin`，浏览器
+  禁止读它的采样）、听了 10 秒全是静音（`silent`，DRM 流常见；听到声音即恢复，不是终态）、自动播放策略挂起
+  （`needs-gesture`，在页面上点一下即恢复）。这些情况只能用偏移按钮手调。
+- 执行端契约 `window.fushiSubtitleAlign.{autoAlign, waveState, stopListening}`；消息
+  `fushiSubtitleAlign{State,Auto,Stop}`（侧边栏 → 顶层 frame）。守卫 `subtitle-align.test.js`、
+  `fushi/test/media/video/subtitle_capture_align_test.dart`（含两边栅格 / 门槛交叉比对）。
 
 ## 字幕遮布（`subtitle-mask.js`）
 
@@ -448,6 +479,7 @@ YouTube 的自动生成（ASR）字幕在 DOM 里是**逐词滚动**渲染的—
 | 隐藏字幕 | 转发 `window.fushiToggleSubtitleHiding()`（状态归 content.js 独占，这里不写盘） |
 | 打开字幕侧边栏 | `fushiSubtitleShortcut('toggle-panel')` |
 | 时轴偏移 −0.1 / ⟲ / ＋0.1 | `fushiSubtitleShortcut('offset-minus'/'offset-reset'/'offset-plus')` |
+| 自动对轴（无 Fushi 轨置灰） | `fushiSubtitleAlign.autoAlign()`（见「字幕对轴」） |
 | 字幕样式 | 子页直改 `subtitleStyle`（大小 / 行高 / 对齐 / 描边 / 文字色 / 底板色 / 底板不透明度），上下限取自 `fushiSubtitleStyle.LIMITS` |
 | 扩展设置 | background 的 `openOptions` 消息 |
 

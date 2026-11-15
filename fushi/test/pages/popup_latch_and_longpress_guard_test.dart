@@ -12,16 +12,18 @@ import 'package:test/test.dart';
 ///    一次瞬时读盘异常（文件锁 / 磁盘抖动）不该把整进程永久降级到不可靠
 ///    的 file:// 路径；成功后 `_inlineCss != null` 已能防重复读盘。
 /// 2. BUG-914：同文件不得再有 `[dict-perf]` 热路径打点探针。
-/// 3. BUG-912 #3：`reader_quick_settings_sheet.dart` 的 `_RepeatIconButton`
-///    长按手势必须挂 `onLongPressCancel`，否则手势被取消（指针滑出 /
-///    识别器被夺走）时 `_timer` 会持续连触直到 dispose。
+/// 3. BUG-912 #3：有声书音画同步步进器的连发键（原 `reader_quick_settings_sheet.dart`
+///    的 `_RepeatIconButton`，2026-11 抽成 `audiobook_av_sync_stepper.dart` 的
+///    `AudiobookRepeatIconButton`，快捷设置与歌词模式同步面板共用）长按手势必须挂
+///    `onLongPressCancel`，否则手势被取消（指针滑出 / 识别器被夺走）时 `_timer`
+///    会持续连触直到 dispose。
 void main() {
   String read(String path) => File(path).readAsStringSync();
 
   const String popupWebviewPath =
       'lib/src/pages/implementations/dictionary_popup_webview.dart';
-  const String quickSettingsPath =
-      'lib/src/media/audiobook/reader_quick_settings_sheet.dart';
+  const String repeatButtonPath =
+      'lib/src/media/audiobook/audiobook_av_sync_stepper.dart';
 
   test('BUG-912 #2：弹窗内联资产不再有进程级永久失败闩', () {
     final String src = read(popupWebviewPath);
@@ -62,19 +64,19 @@ void main() {
     );
   });
 
-  test('BUG-912 #3：_RepeatIconButton 长按手势挂 onLongPressCancel', () {
-    final String src = read(quickSettingsPath);
-    final int classIdx = src.indexOf('class _RepeatIconButtonState');
+  test('BUG-912 #3：AudiobookRepeatIconButton 长按手势挂 onLongPressCancel', () {
+    final String src = read(repeatButtonPath);
+    final int classIdx = src.indexOf('class _AudiobookRepeatIconButtonState');
     expect(
       classIdx,
       greaterThanOrEqualTo(0),
-      reason: '$quickSettingsPath 应存在 _RepeatIconButtonState',
+      reason: '$repeatButtonPath 应存在 _AudiobookRepeatIconButtonState',
     );
     final int buildIdx = src.indexOf('GestureDetector', classIdx);
     expect(
       buildIdx,
       greaterThanOrEqualTo(0),
-      reason: '_RepeatIconButtonState.build 应有 GestureDetector',
+      reason: '_AudiobookRepeatIconButtonState.build 应有 GestureDetector',
     );
     // 截取该 GestureDetector 到其 child 之间的构造参数块。
     final String body = src.substring(
@@ -85,7 +87,7 @@ void main() {
       body.contains('onLongPressCancel'),
       isTrue,
       reason:
-          '_RepeatIconButton 的 GestureDetector 必须挂 onLongPressCancel，'
+          'AudiobookRepeatIconButton 的 GestureDetector 必须挂 onLongPressCancel，'
           '否则手势被取消时 _timer 持续连触（BUG-912 #3）',
     );
   });

@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
+import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -336,6 +337,62 @@ void main() {
         isFalse,
         reason: '开关必须写穿 manga_online_sources.enabled',
       );
+      expect(tester.takeException(), null);
+    });
+
+    testWidgets('鼠标拖拽重排真写穿排序（懒建 sliver 里照样能拖）', (WidgetTester tester) async {
+      await pumpSlivers(tester, <Widget>[
+        MihonInstalledSourcesSection(manager: manager),
+      ]);
+      final Offset alpha = tester.getCenter(find.text('Alpha source'));
+      final Offset beta = tester.getCenter(find.text('Beta source'));
+      final TestGesture gesture = await tester.startGesture(
+        alpha,
+        kind: PointerDeviceKind.mouse,
+      );
+      // 分步越过拖动阈值，再越过 Beta 行的中线。
+      final double distance = beta.dy - alpha.dy + 24;
+      for (int i = 1; i <= 8; i++) {
+        await gesture.moveTo(alpha + Offset(0, distance * i / 8));
+        await tester.pump();
+      }
+      await gesture.up();
+      await tester.pumpAndSettle();
+      final List<MangaOnlineSourceRow> rows = await database
+          .getMangaOnlineSources();
+      expect(
+        rows.map((MangaOnlineSourceRow row) => row.name).toList(),
+        <String>['Beta source', 'Alpha source'],
+      );
+      expect(tester.takeException(), null);
+    });
+
+    testWidgets('上千个已装源只建可见的那些行（#E5IZOyVcbm）', (WidgetTester tester) async {
+      await database.replaceMangaOnlineSources(
+        'org.example.fixture',
+        <MangaOnlineSourcesCompanion>[
+          for (int i = 0; i < 400; i++)
+            MangaOnlineSourcesCompanion.insert(
+              extensionPackage: 'org.example.fixture',
+              sourceId: '$i',
+              name: 'Bulk source $i',
+              language: 'ja',
+              sortOrder: Value<int>(i),
+            ),
+        ],
+      );
+      await manager.reload();
+      await pumpSlivers(tester, <Widget>[
+        MihonInstalledSourcesSection(manager: manager),
+      ]);
+      expect(find.text('Bulk source 0'), findsOneWidget);
+      // skipOffstage: false 连视口外（缓存区）已建的行一起数：非懒建时是 400 行全建。
+      final int built = find
+          .textContaining('Bulk source ', skipOffstage: false)
+          .evaluate()
+          .length;
+      expect(built, lessThan(60), reason: '已装源列表必须懒建，实建 $built 行');
+      expect(find.text('Bulk source 399', skipOffstage: false), findsNothing);
       expect(tester.takeException(), null);
     });
 

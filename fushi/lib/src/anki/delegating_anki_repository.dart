@@ -77,6 +77,10 @@ abstract class DelegatingAnkiRepository extends BaseAnkiRepository {
       inner.noteFields(noteId);
 
   @override
+  Future<String?> overwriteNoteTypeName(int noteId) =>
+      inner.overwriteNoteTypeName(noteId);
+
+  @override
   Future<bool> openNoteInAnki(int noteId) => inner.openNoteInAnki(noteId);
 
   @override
@@ -129,6 +133,16 @@ abstract class DelegatingAnkiRepository extends BaseAnkiRepository {
   @override
   Future<bool> isDuplicate(String expression, String reading) =>
       inner.isDuplicate(expression, reading);
+
+  @override
+  Future<bool?> probeDuplicate(String expression, String reading) =>
+      inner.probeDuplicate(expression, reading);
+
+  @override
+  Future<String?> minedCacheScope() => inner.minedCacheScope();
+
+  @override
+  Future<List<String>?> listMinedFirstFields() => inner.listMinedFirstFields();
 
   /// 不委派的后果不是「少个功能」而是**正确性回归**：装饰器会拿到基类默认 `true`，
   /// 于是开了自动重排的 iOS 用户点 ✓ 时，编排层以为「这个后端能回读 Anki」，把

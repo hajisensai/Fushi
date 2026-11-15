@@ -22,7 +22,6 @@ import 'package:fushi/src/ai/mcp_client/ai_mcp_client_runtime.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/ops/app_op_context.dart';
 import 'package:fushi/src/ops/op_context.dart';
-import 'package:fushi/src/ops/op_routes.dart';
 
 /// 「AI 助手」当前可用的提供商；null = 未指派（不发任何请求，引导去设置）。
 AiProviderConfig? resolveAiAgentProvider(AiSettingsSource settings) => settings
@@ -210,10 +209,28 @@ class AiAgentController extends ChangeNotifier
   bool get awaitingChoice => host.awaitingChoice;
 
   @override
-  void answerConfirm(bool approved) => host.answerConfirm(approved);
+  void answerConfirm(bool approved, {String? entryId}) {
+    if (!_answers(AgentEntryKind.confirm, entryId)) return;
+    host.answerConfirm(approved);
+  }
 
   @override
-  void answerChoice(String? id) => host.answerChoice(id);
+  void answerChoice(String? id, {String? entryId}) {
+    if (!_answers(AgentEntryKind.choice, entryId)) return;
+    host.answerChoice(id);
+  }
+
+  /// [entryId] 为空（不指定卡片）或正是此刻最后一张 [kind] 卡片且仍待答时才作答。
+  bool _answers(AgentEntryKind kind, String? entryId) {
+    if (entryId == null) return true;
+    final List<AgentEntry> all = entries;
+    for (int i = all.length - 1; i >= 0; i--) {
+      final AgentEntry entry = all[i];
+      if (entry.kind != kind) continue;
+      return entry.id == entryId && entry.status == AgentEntryStatus.pending;
+    }
+    return false;
+  }
 
   /// 本机执行。
   @override
@@ -236,7 +253,7 @@ class AiAgentController extends ChangeNotifier
   ValueListenable<int> get sessionsRevision => _sessionsRevision;
 
   AiAgentToolbox get toolbox => _toolbox ??= AiAgentToolbox(
-    invoker: _invoker ??= buildInProcessOpInvoker(
+    invoker: _invoker ??= buildAppInProcessOpInvoker(
       _opContext,
       extra: buildAiAgentInProcessOps(_opContext),
     ),

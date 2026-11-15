@@ -1059,7 +1059,7 @@ class DictionaryManagerRow {
     return '$kDictionaryManagerServerKeyPrefix${remote!.key}';
   }
 
-  /// 用户可见的名字：本机走 effectiveDisplayName；服务器行是本机起的名（v150）>
+  /// 用户可见的名字：本机走 effectiveDisplayName；服务器行是本机起的名（v154）>
   /// host 报的展示名 > 真名（[RemoteDictionary.effectiveDisplayName]）。
   String get displayName {
     final Dictionary? l = local;

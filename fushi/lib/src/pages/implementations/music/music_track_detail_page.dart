@@ -24,6 +24,8 @@ import 'package:fushi/src/media/music/music_session.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/media/music/asr/music_subtitle_target.dart'
     show MusicSubtitleTargets;
+import 'package:fushi/src/pages/implementations/music/music_playlist_actions.dart'
+    show musicAddLocalTracksToPlaylist;
 import 'package:fushi/src/pages/implementations/music/music_subtitle_actions.dart';
 import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart'
     show MusicFloatingBarHost;
@@ -189,7 +191,9 @@ class _MusicTrackDetailPageState extends ConsumerState<MusicTrackDetailPage> {
             ? ToastSeverity.warning
             : ToastSeverity.success,
       );
-      setState(() => _appearances = _loadAppearances());
+      setState(() {
+        _appearances = _loadAppearances();
+      });
     } finally {
       if (mounted) setState(() => _detecting = false);
     }
@@ -324,6 +328,21 @@ class _MusicTrackDetailPageState extends ConsumerState<MusicTrackDetailPage> {
                       child: FushiFilledButton.tonalIcon(
                         size: FushiButtonSize.m,
                         key: const ValueKey<String>(
+                          'music_track_add_to_playlist',
+                        ),
+                        onPressed: () => unawaited(
+                          musicAddLocalTracksToPlaylist(context, <String>[
+                            track.trackUid,
+                          ]),
+                        ),
+                        icon: const FushiIcon(FushiIcons.playlist),
+                        label: Text(t.music_action_add_to_playlist),
+                      ),
+                    ),
+                    FushiPressScale(
+                      child: FushiFilledButton.tonalIcon(
+                        size: FushiButtonSize.m,
+                        key: const ValueKey<String>(
                           'music_track_detect_theme_song',
                         ),
                         onPressed: _detecting
@@ -399,7 +418,9 @@ class _MusicTrackDetailPageState extends ConsumerState<MusicTrackDetailPage> {
         database: _db,
         track: track,
         service: ref.read(appProvider).musicScrape,
-        onChanged: () => setState(() => _versions = _loadVersions()),
+        onChanged: () => setState(() {
+          _versions = _loadVersions();
+        }),
       ),
       FutureBuilder<
         ({MusicScrapeMetaRow? meta, Map<String, MusicTrackRow> local})

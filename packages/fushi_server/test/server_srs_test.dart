@@ -15,11 +15,13 @@ import 'package:fushi_engine/sync/local_directory_asset_store.dart';
 import 'package:fushi_server/src/config/server_srs_config.dart';
 import 'package:fushi_server/src/server_srs.dart';
 import 'package:fushi_core/fushi_core.dart' show SrsNoteCacheRow;
-import 'package:fushi_srs/fushi_srs.dart' show SrsNoteView;
+import 'package:fushi_srs/fushi_srs.dart' show SrsDayContext, SrsNoteView;
 import 'package:path/path.dart' as p;
 import 'package:shelf/shelf.dart' as shelf;
 import 'package:test/test.dart';
 import 'dart:convert';
+
+import 'support/fake_rwkv.dart';
 
 const String kJa = '01928c3e-0000-7000-8000-00000000a0a0';
 const String kZh = '01928c3e-0000-7000-8000-00000000b0b0';
@@ -40,6 +42,8 @@ void main() {
     config = const ServerSrsConfig();
     published = 0;
     srs = ServerSrs(
+      // RWKV 权重不联网下载（下载当场失败 = RWKV 没就绪）。
+      rwkvHttpClient: noNetworkHttpClient,
       support: support,
       syncData: syncData,
       deviceId: 'server-device',
@@ -112,6 +116,8 @@ void main() {
     final Directory bad = Directory(p.join(tmp.path, 'not-a-dir'));
     File(bad.path).writeAsStringSync('this is a file, not a directory');
     final ServerSrs broken = ServerSrs(
+      // RWKV 权重不联网下载（下载当场失败 = RWKV 没就绪）。
+      rwkvHttpClient: noNetworkHttpClient,
       support: bad,
       syncData: syncData,
       deviceId: 'server-device',
@@ -162,6 +168,34 @@ void main() {
     expect(await expressions(ja), <String>['食べる']);
   });
 
+  // BUG-4286：状态里的笔记数是打开时从同步位置读的设备报数，之后服务端加卡 / 设备再同步都不变。
+  test('note count follows the served store after server writes and device '
+      'uploads', () async {
+    final SrsDbStore ja = await phone(kJa, 'phone-ja');
+    await addNote(ja, '食べる');
+    expect((await phoneSync(ja)).error, isNull);
+    config = const ServerSrsConfig(profiles: <String>[kJa]);
+    await srs.start();
+    await srs.syncNow();
+    int notes() => srs.profile(kJa)!.toJson(isDefault: true)['notes']! as int;
+    expect(notes(), 1);
+
+    // 服务端自己写（AnkiConnect / 互联制卡）。
+    await addNote(srs.storeFor(kJa)!, '飲む');
+    await srs.syncNow(kJa);
+    expect(notes(), 2);
+
+    // 设备又加一张同步进来。
+    await addNote(ja, '走る');
+    expect((await phoneSync(ja)).error, isNull);
+    await srs.syncNow(kJa);
+    expect(notes(), 3);
+
+    // 重新套用配置（WebUI 保存）：设备报的旧数不覆盖库里的数。
+    await srs.applyConfig();
+    expect(notes(), 3);
+  });
+
   test('已配对设备写进来的文件只叫醒对应那份 profile', () async {
     final SrsDbStore ja = await phone(kJa, 'phone-ja');
     expect((await phoneSync(ja)).error, isNull);
@@ -176,6 +210,35 @@ void main() {
     srs.onClientWrite('fushi-data/books/whatever.epub');
     expect(await changed.timeout(const Duration(seconds: 20)), kJa);
     expect(await expressions(srs.storeFor(kJa)!), <String>['飲む']);
+  });
+
+  test('远程复习的「今天」按客户端带来的偏移算；不带时按服务端时区', () async {
+    final SrsDbStore ja = await phone(kJa, 'phone-ja');
+    await addNote(ja, '食べる');
+    await phoneSync(ja);
+    config = const ServerSrsConfig(profiles: <String>[kJa]);
+    await srs.start();
+    await srs.syncNow();
+
+    final SrsRemoteStoreService remote = srs.remoteStore!;
+    final int hostOff = SrsDayContext.localOffsetMin();
+    final int off = hostOff == -300 ? 330 : -300;
+    Future<int> offsetOf(Map<String, Object?> body) async =>
+        SrsRemoteWire.dayContextFrom(
+          (await _call(remote, body))['result'],
+        ).utcOffsetMin;
+    expect(
+      await offsetOf(<String, Object?>{
+        'op': 'dayContext',
+        'profile': kJa,
+        kSrsRemoteDeviceOffsetKey: off,
+      }),
+      off,
+    );
+    expect(
+      await offsetOf(<String, Object?>{'op': 'dayContext', 'profile': kJa}),
+      hostOff,
+    );
   });
 
   test('远程复习：握手列出两份，点名中文那份读到中文；去掉那份后回 profile_changed', () async {

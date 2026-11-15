@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:archive/archive.dart';
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/epub/epub_storage.dart';
@@ -318,5 +319,136 @@ void main() {
     expect(part.existsSync(), isTrue, reason: '取消必须保留 .part 供续传');
     expect(File(p.join(stagingDir().path, 'volume.cbz')).existsSync(), isFalse);
     expect((await db.getAllEpubBooks()), isEmpty);
+  });
+
+  // vECncM6f8Y：mokuro.moe 卷名是系列名的 slug + 卷号，旧口径拼成
+  // `Karakai Jouzu no Takagi-san Karakai-Jouzu-Takagi-san-02`。
+  group('volumeTitle', () {
+    const String takagi = 'Karakai Jouzu no Takagi-san';
+
+    test('slug 卷名规整成 `<系列> <卷号>`，旧口径名保留供认旧卷', () {
+      expect(
+        MokuroMoeVolumeDownloader.volumeTitle(
+          takagi,
+          'Karakai-Jouzu-Takagi-san-02',
+        ),
+        'Karakai Jouzu no Takagi-san 02',
+      );
+      expect(
+        MokuroMoeVolumeDownloader.legacyVolumeTitle(
+          takagi,
+          'Karakai-Jouzu-Takagi-san-02',
+        ),
+        'Karakai Jouzu no Takagi-san Karakai-Jouzu-Takagi-san-02',
+      );
+      expect(
+        MokuroMoeVolumeDownloader.volumeTitleCandidates(
+          takagi,
+          'Karakai-Jouzu-Takagi-san-02',
+        ),
+        <String>[
+          'Karakai Jouzu no Takagi-san 02',
+          'Karakai Jouzu no Takagi-san Karakai-Jouzu-Takagi-san-02',
+        ],
+      );
+      expect(
+        MokuroMoeVolumeDownloader.volumeTitle('One Piece', 'one_piece_101'),
+        'One Piece 101',
+      );
+    });
+
+    test('不是系列 slug 的卷名照旧口径，不改既有书的身份', () {
+      // 卷名已含系列名：直接用卷名。
+      expect(
+        MokuroMoeVolumeDownloader.volumeTitle(takagi, '$takagi 02'),
+        '$takagi 02',
+      );
+      // 前缀有系列名里没有的词（章节 / 别的作品）。
+      expect(
+        MokuroMoeVolumeDownloader.volumeTitle(takagi, 'Extra-02'),
+        '$takagi Extra-02',
+      );
+      expect(
+        MokuroMoeVolumeDownloader.volumeTitle(series, volume),
+        'Comic #1 vol1',
+      );
+      // 非拉丁系列名切不出词：照旧拼接。
+      expect(
+        MokuroMoeVolumeDownloader.volumeTitle('志乃と恋', '志乃と恋-02'),
+        '志乃と恋-02',
+      );
+      expect(
+        MokuroMoeVolumeDownloader.volumeTitle('よつばと', '第01巻'),
+        'よつばと 第01巻',
+      );
+      expect(
+        MokuroMoeVolumeDownloader.volumeTitleCandidates(series, volume),
+        <String>['Comic #1 vol1'],
+      );
+    });
+  });
+
+  test('旧口径起名的卷已在库：重下判 skippedExisting，不按新名再建一行', () async {
+    const String s = 'Karakai Jouzu no Takagi-san';
+    const String v = 'Karakai-Jouzu-Takagi-san-02';
+    final String legacy = MokuroMoeVolumeDownloader.legacyVolumeTitle(s, v);
+    await db.insertEpubBook(
+      EpubBooksCompanion.insert(
+        bookKey: sanitizeTtuFilename(legacy),
+        title: legacy,
+        epubPath: '/m/legacy',
+        extractDir: '/m/legacy',
+        chapterCount: 1,
+        chaptersJson: '[]',
+        importedAt: 1,
+        format: const Value<String>('manga'),
+      ),
+    );
+    server.payloads['/mokuro-reader/$s/$v.cbz'] = _buildCbz(
+      v,
+      <String, List<int>>{
+        '001.jpg': <int>[1, 2, 3],
+      },
+    );
+    server.payloads['/mokuro-reader/$s/$v.mokuro'] = utf8.encode(
+      _buildMokuro(v, <String>['001.jpg']),
+    );
+
+    final List<MokuroMoeVolumeDownloadEvent> events = await downloader()
+        .run(db: db, seriesName: s, volumeName: v)
+        .toList();
+
+    expect(events.last.stage, MokuroMoeDownloadStage.done);
+    expect(events.last.skippedExisting, isTrue);
+    expect(events.last.bookKey, isNull);
+    expect(
+      (await db.getAllEpubBooks()).map((EpubBookRow r) => r.title),
+      <String>[legacy],
+    );
+  });
+
+  test('新下的 slug 卷按规整后的名字入库', () async {
+    const String s = 'Karakai Jouzu no Takagi-san';
+    const String v = 'Karakai-Jouzu-Takagi-san-03';
+    server.payloads['/mokuro-reader/$s/$v.cbz'] = _buildCbz(
+      v,
+      <String, List<int>>{
+        '001.jpg': <int>[1, 2, 3],
+      },
+    );
+    server.payloads['/mokuro-reader/$s/$v.mokuro'] = utf8.encode(
+      _buildMokuro(v, <String>['001.jpg']),
+    );
+
+    final List<MokuroMoeVolumeDownloadEvent> events = await downloader()
+        .run(db: db, seriesName: s, volumeName: v)
+        .toList();
+
+    expect(events.last.stage, MokuroMoeDownloadStage.done);
+    expect(events.last.skippedExisting, isFalse);
+    expect(
+      (await db.getEpubBook(events.last.bookKey!))!.title,
+      'Karakai Jouzu no Takagi-san 03',
+    );
   });
 }

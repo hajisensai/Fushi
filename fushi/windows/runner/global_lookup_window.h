@@ -130,8 +130,19 @@ class GlobalLookupWindow {
   // size and makes it visible (arming the click-outside hooks). Called once per
   // lookup after the page has self-measured, so the user never sees the
   // measure->resize jitter. Pass <=0 to keep the current size.
+  //
+  // [layer_origin] 说明调用方把窗口放在了哪：
+  //   * kCursorSingleCard（默认）—— legacy 路径，窗口在光标处、单卡尺寸，host 图层
+  //     必须复位到 (0,0)（BUG-2123）。
+  //   * kCommittedBBox —— 直连游戏内卡（RevealOverProcessClient）：窗口落在**已提交
+  //     几何**的 union bbox 原点、union 尺寸，图层平移正是同一几何的
+  //     commitLayerShift(bbox) 写进去的，绝不能复位（BUG-4355：子卡向上翻出后复位会把
+  //     整叠卡画回 window-local 原点，两张卡下方各露出一截透明区）。
+  enum class RevealLayerOrigin { kCursorSingleCard, kCommittedBBox };
   void Reveal(int width, int height, bool clamp_to_work_area = true,
-              HWND consume_outside_owner = nullptr);
+              HWND consume_outside_owner = nullptr,
+              RevealLayerOrigin layer_origin =
+                  RevealLayerOrigin::kCursorSingleCard);
   // TODO-867 P3c E1 — reveals/resizes to the nested-stack union bounding box.
   // |dx|/|dy| offset the window from the pending cursor anchor (physical px; the
   // host bbox origin × dpr) so a left/up cascade shifts the window while the root

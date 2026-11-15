@@ -1,4 +1,4 @@
-// 服务器托管词典（v149 remote_dictionary_metadata）进入查词过滤：与本机词典按 order
+// 服务器托管词典（v153 remote_dictionary_metadata）进入查词过滤：与本机词典按 order
 // 混排、同名时本机遮住服务器那本、按 host 算出随远端查词请求发出的 `dictionaries` 选择、
 // 管理页一次混排重编号在同一个事务里写两张表。
 

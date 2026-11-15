@@ -9,6 +9,8 @@ import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/sync/manual_sync_ui.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
+import 'package:fushi/src/sync/sync_module_gate.dart'
+    show resetSyncModuleGateForTest;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -17,11 +19,13 @@ import '../helpers/test_platform_services.dart';
 /// 下拉刷新 = 手动同步必须跟随「同步与备份 + 互联」模块门（反馈 SJeJd5EEZO）。
 ///
 /// 此前门只写在书架页，视频 / 词典页下拉直接调 [runManualSyncWithFeedback]：关了同步
-/// 模块，下拉刷新照样跑一轮同步。修复把门收进 [runPullToRefreshSync]，三页只调它。
+/// 模块，下拉刷新照样跑一轮同步。三页改为只调 [runPullToRefreshSync]；门本身后来收进
+/// 同步层（`syncModuleGate`，由 [AppModel.setModuleEnabled] 驱动），悬浮球 / 桌面控制
+/// 通道走同一道门。
 ///
 /// 行为用例用 `syncInProgress = true` 区分「门挡住」与「进了同步外壳」：外壳遇到在飞
 /// 同步返回 busy、且在碰数据库之前就返回，因此不需要完整初始化的 AppModel；门挡住时
-/// 必须返回 notConfigured、根本不进外壳。
+/// 必须返回 moduleDisabled、根本不进同步。
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -43,6 +47,7 @@ void main() {
   });
 
   tearDown(() async {
+    resetSyncModuleGateForTest();
     syncInProgress.value = false;
     await db.close();
     if (storeDir.existsSync()) storeDir.deleteSync(recursive: true);
@@ -74,16 +79,24 @@ void main() {
     return outcome;
   }
 
-  testWidgets('同步模块关掉时下拉不进同步外壳，返回 notConfigured 且不出提示', (
+  testWidgets('同步模块关掉时下拉不进同步，返回 moduleDisabled 且不出提示', (
     WidgetTester tester,
   ) async {
-    await tester.runAsync(() => prefs.setModuleEnabled(ModuleId.sync, false));
+    await tester.runAsync(
+      () => appModel.setModuleEnabled(ModuleId.sync, false),
+    );
     expect(appModel.moduleVisibility.isEnabled(ModuleId.sync), isFalse);
+    expect(syncModuleGate.isOpen, isFalse, reason: '关模块必须同步关上同步层的门');
 
     final ManualSyncOutcome outcome = await pull(tester);
 
-    expect(outcome, ManualSyncOutcome.notConfigured);
+    expect(outcome, ManualSyncOutcome.moduleDisabled);
     expect(find.byType(SnackBar), findsNothing);
+
+    // 重新打开模块：门跟着打开，下拉恢复进同步外壳。
+    await tester.runAsync(() => appModel.setModuleEnabled(ModuleId.sync, true));
+    expect(syncModuleGate.isOpen, isTrue);
+    expect(await pull(tester), ManualSyncOutcome.busy);
   });
 
   testWidgets('同步模块开着时照常进同步外壳（在飞同步 → busy，不出提示）', (WidgetTester tester) async {
@@ -107,7 +120,7 @@ void main() {
       expect(
         directCall.hasMatch(source),
         isFalse,
-        reason: '$path 直调 runManualSyncWithFeedback 会绕过同步模块门',
+        reason: '$path 下拉刷新必须走 runPullToRefreshSync（关掉提示的统一口径）',
       );
       expect(source, contains('runPullToRefreshSync('), reason: path);
     }

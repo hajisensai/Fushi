@@ -1,8 +1,9 @@
 // 提交反馈：分类 / 标题 / 描述 / 联系方式 + 截图（默认带上打开反馈前的画面；可从
 // 相册选、也可直接粘贴剪贴板里的截图——桌面 Ctrl/Cmd+V、描述框长按菜单「粘贴图片」、
 // 显式「粘贴图片」按钮、Android 输入法插入的图片）+
-// 附带日志与设备信息开关 + 已登录排行榜账户时「以 xx 身份提交」+ 可选 1 个视频（上传前
-// 本机转码成 720p（默认）/ 1080p，≤ 50 MB，见 feedback_video.dart；显示压缩 / 上传进度）。
+// 附带日志与设备信息开关 + 已登录排行榜账户时「以 xx 身份提交」+ 可选 1 个视频（≤ 100 MB；
+// 默认原件上传，超限 / 格式不收时自动压缩并告知；也可选 1080p / 720p 档在本机转码，见
+// feedback_video.dart；显示压缩 / 上传进度）。
 // 成功后 `pop(FeedbackSubmitResult)`，失败就地显示原因（不靠 toast，用户要一直看得到）。
 //
 // 视频选完就在后台压缩（用户边写边压），换档位即取消在途压缩按新档位重压；表单在压缩期间
@@ -126,8 +127,8 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
   double? _videoFraction;
   bool _pickingVideo = false;
 
-  /// 压缩档位（默认 720p，只在本页有效，不进草稿）。
-  FeedbackVideoQuality _videoQuality = FeedbackVideoQuality.p720;
+  /// 视频档位（默认原件，只在本页有效，不进草稿）。
+  FeedbackVideoMode _videoMode = FeedbackVideoMode.original;
 
   /// 进行中的压缩的取消开关（× / 换档 / 离开页面时完成它）；没在压缩时为 null。
   Completer<void>? _videoCancel;
@@ -813,7 +814,7 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
       final FeedbackStagedVideo staged = await _service.stageVideo(
         video,
         options: FeedbackVideoPrepareOptions(
-          quality: _videoQuality,
+          mode: _videoMode,
           cancel: cancel.future,
           onDowngraded: () {
             if (current()) setState(() => _videoDowngraded = true);
@@ -944,18 +945,21 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
           )
         : staged != null
         ? Text(
-            t.feedback_compose_video_compressed(
-              size: FushiByteFormat.bytes(staged.video.bytes),
-            ),
+            staged.video.transcoded
+                ? t.feedback_compose_video_compressed(
+                    size: FushiByteFormat.bytes(staged.video.bytes),
+                  )
+                : t.feedback_compose_video_ready_original(
+                    size: FushiByteFormat.bytes(staged.video.bytes),
+                  ),
             key: const ValueKey<String>('feedback-video-ready'),
           )
         : Text(FushiByteFormat.bytes(_videoBytes));
     return <Widget>[
       SizedBox(height: tokens.spacing.card),
       Text(
-        t.feedback_compose_video_hint(
+        t.feedback_compose_video_limit_hint(
           max: FushiByteFormat.bytes(FeedbackLimits.videoMaxBytes),
-          resolution: _videoQuality.label,
         ),
         key: const ValueKey<String>('feedback-video-hint'),
         style: tokens.type.metadata,
@@ -1009,28 +1013,45 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
         SizedBox(height: tokens.spacing.gap),
         Align(
           alignment: Alignment.centerLeft,
-          child: adaptiveSegmentedButton<FeedbackVideoQuality>(
+          child: adaptiveSegmentedButton<FeedbackVideoMode>(
             context: context,
-            segments: <ButtonSegment<FeedbackVideoQuality>>[
-              for (final FeedbackVideoQuality q in FeedbackVideoQuality.values)
-                ButtonSegment<FeedbackVideoQuality>(
-                  value: q,
+            segments: <ButtonSegment<FeedbackVideoMode>>[
+              for (final FeedbackVideoMode m in FeedbackVideoMode.values)
+                ButtonSegment<FeedbackVideoMode>(
+                  value: m,
                   label: Text(
-                    q.label,
-                    key: ValueKey<String>('feedback-video-quality-${q.label}'),
+                    _videoModeLabel(m),
+                    key: ValueKey<String>('feedback-video-quality-${m.name}'),
                   ),
                 ),
             ],
-            selected: <FeedbackVideoQuality>{_videoQuality},
-            onSelectionChanged: (Set<FeedbackVideoQuality> v) {
-              if (v.first == _videoQuality) return;
-              setState(() => _videoQuality = v.first);
+            selected: <FeedbackVideoMode>{_videoMode},
+            onSelectionChanged: (Set<FeedbackVideoMode> v) {
+              if (v.first == _videoMode) return;
+              setState(() => _videoMode = v.first);
               // 换档：取消在途压缩、丢掉旧档位的产物，按新档位重压。
               _startVideoCompression();
             },
           ),
         ),
-        if (_videoQuality == FeedbackVideoQuality.p1080) ...<Widget>[
+        const SizedBox(height: 2),
+        Text(
+          switch (_videoMode) {
+            FeedbackVideoMode.original =>
+              t.feedback_compose_video_original_hint(
+                max: FushiByteFormat.bytes(FeedbackLimits.videoMaxBytes),
+              ),
+            FeedbackVideoMode.p1080 => t.feedback_compose_video_compress_hint(
+              resolution: FeedbackVideoQuality.p1080.label,
+            ),
+            FeedbackVideoMode.p720 => t.feedback_compose_video_compress_hint(
+              resolution: FeedbackVideoQuality.p720.label,
+            ),
+          },
+          key: ValueKey<String>('feedback-video-${_videoMode.name}-hint'),
+          style: tokens.type.metadata,
+        ),
+        if (_videoMode == FeedbackVideoMode.p1080) ...<Widget>[
           const SizedBox(height: 2),
           Text(
             t.feedback_compose_video_1080_hint(
@@ -1051,8 +1072,34 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
           style: tokens.type.metadata,
         ),
       ],
+      // 原件档自动压缩了：告诉用户为什么（原件超限 / 格式不收）和压成了什么。
+      if (video != null &&
+          staged != null &&
+          _videoMode.keepsOriginal &&
+          staged.video.transcoded) ...<Widget>[
+        SizedBox(height: tokens.spacing.gap),
+        Text(
+          _videoBytes > FeedbackLimits.videoMaxBytes
+              ? t.feedback_compose_video_auto_compressed(
+                  max: FushiByteFormat.bytes(FeedbackLimits.videoMaxBytes),
+                  resolution: staged.video.quality?.label ?? '',
+                )
+              : t.feedback_compose_video_auto_converted(
+                  resolution: staged.video.quality?.label ?? '',
+                ),
+          key: const ValueKey<String>('feedback-video-auto-compressed'),
+          style: tokens.type.metadata,
+        ),
+      ],
     ];
   }
+
+  /// 档位按钮的名字：原件翻译，720p / 1080p 不翻译。
+  static String _videoModeLabel(FeedbackVideoMode mode) => switch (mode) {
+    FeedbackVideoMode.original => t.feedback_compose_video_quality_original,
+    FeedbackVideoMode.p1080 => FeedbackVideoQuality.p1080.label,
+    FeedbackVideoMode.p720 => FeedbackVideoQuality.p720.label,
+  };
 
   @override
   Widget build(BuildContext context) {

@@ -113,9 +113,8 @@ class AudiobookSessionLauncher {
     final AudiobookRepository repo = AudiobookRepository(_db);
     final SessionPrefs prefs = await _readPrefs(repo, bookKey);
     final SessionPersistCallbacks persist = _persistFor(repo, bookKey);
-    final (String title, String? author, String? coverPath) = await _bookMeta(
-      bookKey,
-    );
+    final (String title, String? author, String? coverPath, BookFormat format) =
+        await _bookMeta(bookKey);
     // 后台听书无 reader 喂 cue（reader 才调 setChapterCues）；这里一次性把全书 cue
     // 取出随 request 返回，让 session.start 直接灌进控制器，否则 _chapterCues 为空、
     // _updateCurrentCue 提前 return、currentCue 恒 null → 悬浮窗推空串（TODO-354
@@ -136,6 +135,7 @@ class AudiobookSessionLauncher {
         isSrtBookSource: false,
         author: author,
         coverPath: coverPath,
+        format: format,
         // BUG-2558：统计身份 = 调用方传进来的 key，与阅读器 `widget.bookKey` 同源。
         statsMediaKey: bookKey,
       ),
@@ -167,6 +167,11 @@ class AudiobookSessionLauncher {
     final String? overrideTitle = srtBook.bookKey.isNotEmpty
         ? ReaderFushiSource.instance.overrideTitleForBookKey(srtBook.bookKey)
         : ReaderFushiSource.instance.overrideTitleForSrtUid(srtBook.uid);
+    // 配对书的 format（PDF 有声书的后台听书统计按 PDF 记）；standalone 字幕书的正文
+    // 是生成的 EPUB。
+    final EpubBookRow? pairedRow = srtBook.bookKey.isEmpty
+        ? null
+        : await _db.getEpubBook(srtBook.bookKey);
 
     return AudiobookSessionStartRequest(
       info: SessionBookInfo(
@@ -179,6 +184,7 @@ class AudiobookSessionLauncher {
         isSrtBookSource: true,
         author: srtBook.author,
         coverPath: srtBook.coverPath,
+        format: BookFormat.parseOrEpub(pairedRow?.format),
         // BUG-2558：此处 [SessionBookInfo.bookKey] 是 srt_books.uid，不是阅读器用的
         // 身份——统计一律用调用方传进来的 key。
         statsMediaKey: statsMediaKey,
@@ -232,9 +238,11 @@ class AudiobookSessionLauncher {
     );
   }
 
-  Future<(String, String?, String?)> _bookMeta(String bookKey) async {
+  Future<(String, String?, String?, BookFormat)> _bookMeta(
+    String bookKey,
+  ) async {
     final EpubBookRow? row = await _db.getEpubBook(bookKey);
-    if (row == null) return ('Fushi', null, null);
+    if (row == null) return ('Fushi', null, null, BookFormat.epub);
     String? coverPath;
     if (row.coverPath != null && row.coverPath!.isNotEmpty) {
       String coverRel = row.coverPath!;
@@ -243,7 +251,12 @@ class AudiobookSessionLauncher {
       if (File(candidate).existsSync()) coverPath = candidate;
     }
     coverPath ??= _firstExistingCover(row.extractDir);
-    return (row.title, row.author, coverPath);
+    return (
+      row.title,
+      row.author,
+      coverPath,
+      BookFormat.parseOrEpub(row.format),
+    );
   }
 
   String? _firstExistingCover(String extractDir) {

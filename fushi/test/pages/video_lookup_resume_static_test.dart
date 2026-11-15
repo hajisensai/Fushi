@@ -111,6 +111,17 @@ void main() {
         isFalse,
       );
     });
+
+    test('副屏查词页仍开着 → 不恢复（暂停归副屏，关它时再恢复）', () {
+      expect(
+        VideoFushiPage.shouldResumeAfterLookupDismiss(
+          stackEmpty: true,
+          pausedForLookup: true,
+          companionHoldsPause: true,
+        ),
+        isFalse,
+      );
+    });
   });
 
   group('源码接线守卫', () {
@@ -121,11 +132,19 @@ void main() {
     final String page = readVideoFushiSource();
 
     test('_lookupAt 仅在 isPlaying 时暂停并置位 _pausedForLookup', () {
-      final String lookup = _functionSource(
+      final String lookupAt = _functionSource(
         page,
         'Future<void> _lookupAt(',
-        'Future<void> _refreshVideoSentenceFavorite(',
+        'void _pauseForLookup() {',
       );
+      // 浮层与副屏查词页共用唯一暂停入口 `_pauseForLookup`（副屏路由前不暂停：
+      // 副屏注册表接手查词时调同一入口）。
+      final String lookup = _functionSource(
+        page,
+        'void _pauseForLookup() {',
+        'void _companionLookupClosed(',
+      );
+      expect(lookupAt, contains('_pauseForLookup();'));
       // 暂停被 isPlaying 门控（不再无条件 pause）。
       expect(
         lookup.contains('if (controller.isPlaying)'),
@@ -135,8 +154,8 @@ void main() {
       expect(lookup.contains('_pausedForLookup = true'), isTrue);
       // 置位必须在暂停之后、在判空 return 之后（空词不弹浮层 → 不能暂停）。
       expect(
-        lookup.indexOf('if (term.isEmpty) return'),
-        lessThan(lookup.indexOf('controller.isPlaying')),
+        lookupAt.indexOf('if (term.isEmpty) return'),
+        lessThan(lookupAt.indexOf('_pauseForLookup();')),
         reason: '先判空再暂停，避免暂停后无浮层可关导致卡暂停',
       );
       // Perf guard（查词弹窗弹出慢，源自 video_lookup_pause_nonblocking_guard_test.dart）：
@@ -184,6 +203,8 @@ void main() {
       expect(pop.contains('stackEmpty: stackEmpty'), isTrue);
       expect(pop.contains('pausedForLookup: _pausedForLookup'), isTrue);
       // videoEnterCaret（PR#632 C2）：光标仍激活时暂停由光标会话接管，关栈不得续播。
+      // 副屏查词页还开着时暂停归它：关页内浮层不得续播。
+      expect(pop, contains('companionHoldsPause: _companionHook.lookupOpen'));
       expect(
         pop.contains('caretHoldsPause: _videoCaretActive'),
         isTrue,

@@ -108,7 +108,7 @@ void main() {
       ),
     );
     expect(src, contains('showChrome: _tapGateChrome,'));
-    expect(src, contains('if (!_tapGateChrome && !shiftKey) {'));
+    expect(src, contains('if (!shiftKey && !_tapGateChrome) {'));
   });
 
   group('VN 空白点在栏关掉时只推进', () {

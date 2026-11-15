@@ -1,0 +1,24 @@
+## BUG-4294 · 复习页不接收外部变更（同步拉入、操作目录写入、模板编辑器返回），预取命中也认不出笔记 / 模板变化
+- **报告**：2026-11-10（用户：内部审查）
+- **真实性**：✅ 真 bug（沿代码路径核实，widget 测试复现）。打开着的复习页与库不同步：
+  - 页面不订阅任何库变化信号。同步拉入只经 `SrsRevisionOrigin.bumpPulled` 推进 `srsRevisionProvider`，操作目录 / AI 写完调 `bumpSrsRevision`（`fushi/lib/src/ops/ctl_srs_routes.dart:51-57` 的注释写着「写完后让打开着的复习页面重读」），但复习页（`fushi/lib/src/pages/implementations/srs/srs_review_page.dart`）全文没有 `ref.listen`，只 watch 显示类偏好。所以别的设备改了当前卡的笔记、AI 改了字段，正在看的卡面一直是旧的。
+  - 从模板编辑器返回后只调 `bumpSrsRevision`（旧 `srs_review_page.dart:1790`），不重读当前卡；编辑笔记 / 浏览 / 牌组设置三处返回点各自手工调 `_reloadCurrent`，四处各写各的。
+  - 预取命中校验只比卡片缓存行（旧 `srs_review_page.dart:577` 的 `row == hit.detail.card`）。改笔记字段时内核会重写卡片行，但写回的值一样，逐列比较看不出变化；改模板 / CSS 不碰卡片行。两种情况下，评分后都会把旧内容的预取卡显示出来。
+- **[x] ① 已修复** — 修复前先核对了库现有的变更信息，结论是不用新增引擎机制：
+  - 卡片 / 笔记：用缓存行变更日志 `SrsDbStore.cacheChangesSince`。缓存行只经内核投影命令写入；模板、字段这类影响缓存的笔记类型修改，由内核 `Marks.note_types` 扩展到该类型的全部笔记。
+  - 笔记类型 CSS / 名字 / 字段说明、牌组设置：这几类不写缓存行，但会推进 `contentFingerprint`。
+  - 新增 `fushi/lib/src/srs/srs_review_freshness.dart`。读数据前先记版本 `SrsStoreMark`；`SrsShownCardStamp` 记下卡片行、笔记 / 笔记类型 / 牌组链的修改记录签名（`srsEditsSignature`，按每个字段键上未被支配的修改记录 ID 计算）。`srsShownCardStale`（`:153`）判断时先查日志；日志答不了（远程库、日志滚掉）就逐项比对；指纹变了才去比笔记类型和牌组链（`srsDeckChainSignature`，`:70`，不计收起 / 排序这类界面状态）。
+  - 复习页改为 `ref.listenManual(srsRevisionProvider)`（`srs_review_page.dart:444`）。这是 listen 不是 watch，修订号变化不会重建页面。监听交给唯一入口 `_syncWithStore` / `_syncOnce`（`:1538` / `:1550`，串行执行）：只有当前卡变了才走 `_reloadCurrent`（保持正反面不变，牌组自动播放开关变化时当场播放或停止）；预取的下一张变了只重新预取。
+  - 四处返回点统一走 `_pushOver`（`:1524`），由它在返回后调 `_syncWithStore`。原来的 `_applyDeckSettingsChange` 删掉，其中的自动播放逻辑并入 `_reloadCurrent`。
+  - 预取校验 `_takePrefetch`（`:621`）改用同一判据；校验通过后把版本推进到校验开始的时刻。
+  - `SrsRemoteStore` 显式声明没有日志（`cacheChangesSince` 返回 null），以前这里会走到 `noSuchMethod` 抛错。
+- **[x] ② 已加自动化测试** — `fushi/test/srs/srs_review_external_changes_test.dart`，覆盖以下场景：
+  - 同步拉入改了当前卡笔记：原地换新内容，答案面保持，只重读一次。
+  - 改笔记类型 CSS：卡面换新样式。
+  - 牌组改名：标题更新。
+  - 无关笔记变化和本页自己评分：不重读、不重建卡面。
+  - 预取卡在评分前被改了笔记：评分后显示新内容。
+- **备注**：
+  - 只有 widget 测试，没在真 app 里看过（WebView 卡面、真同步拉入路径都没验）。
+  - 复习完（finished）的页面在同步拉入新到期卡后不会自动重新排队，这次不在修复范围内。
+  - 计数只在当前卡相关的变化时随重读一起刷新，与当前卡无关的变化（例如别的设备复习了同牌组的其它卡）不刷新顶栏计数，到下一张卡时自然更新。

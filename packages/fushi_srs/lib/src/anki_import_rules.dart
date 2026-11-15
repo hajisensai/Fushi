@@ -96,6 +96,6 @@ SrsAnchorDecision srsDecideAnchor({
 ///
 /// 第六轮审查「handOff 卡回导」：修订版 8 里，Anki 里复习过 → 锚点把 scheduler 改回 fushi（卡被收回）；
 /// 没复习过 → 不写锚点（卡仍只读）。同一个操作两种结果。改为：导入从不改归属；
-/// 收回只能由显式的「收回到 Fushi」动作（SrsCardOps.reclaim，也是一条 handOff 事件）完成。
+/// 收回只能由显式的「收回到 Fushi」动作（一条 handOff 事件，重放按 Rust `sched::hand_off` 算）完成。
 /// 这样锚点内容仍只由来源决定（铁律 C），不读本机状态。
 const String srsAnchorScheduler = SrsScheduler.fushi;

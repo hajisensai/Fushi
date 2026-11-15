@@ -94,8 +94,8 @@ class CloudRemoteBookClient implements RemoteBookClient {
   /// 测试可置 [Duration.zero] 保持快速。
   final Duration contentProbeRetryBackoff;
 
-  /// [backend] 的明文区间读视图（Google Drive / OneDrive / Dropbox）；null = 只能整包
-  /// 下载（WebDAV / FTP / SFTP），旧名 `.epub` 漫画包不在列举时嗅探。
+  /// [backend] 的明文区间读视图（Google Drive / OneDrive / Dropbox / WebDAV / SFTP）；
+  /// null = 只能整包下载（FTP），旧名 `.epub` 漫画包不在列举时嗅探。
   final SyncAssetRangeReader? _contentRangeReader;
 
   /// 旧名内容资产判型结果的本机缓存；null（没有本机库的只读场景之外不会发生）时不嗅探。

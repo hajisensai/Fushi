@@ -18,6 +18,9 @@ import 'package:fushi/src/pages/implementations/music/music_subtitle_actions.dar
 import 'package:fushi/src/pages/implementations/music/music_unified_search.dart'
     show kMusicSearchDebounce;
 import 'package:fushi/src/models/audio_controller.dart';
+import 'package:fushi/src/second_screen/companion/companion_context.dart';
+import 'package:fushi/src/second_screen/companion/companion_protocol.dart';
+import 'package:fushi/src/second_screen/companion/modules/library_companion_schema.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart'
     show FushiIconButton;
 import 'package:fushi_core/fushi_core.dart';
@@ -558,5 +561,44 @@ void main() {
       ),
       isFalse,
     );
+  });
+
+  testWidgets('companion Main mode: claims the music library and publishes '
+      'the focused album', (WidgetTester tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1400, 900);
+    addTearDown(tester.view.reset);
+    final FushiDatabase db = await _seed();
+    addTearDown(db.close);
+    final AppModel app = AppModel(testPlatformServices())
+      ..wireDatabaseForTesting(db)
+      ..wireMusicPluginManagerForTesting(_noPlugins());
+    await _pump(tester, app, const MusicLibraryPage());
+    expect(companionContexts.current.library, CompanionLibraryKind.music);
+    expect(companionContexts.currentOwner, isNotNull);
+
+    companionContexts.setActive(true);
+    addTearDown(() => companionContexts.setActive(false));
+    await tester.pump();
+    CompanionLibraryMainSnapshot snap = CompanionLibraryMainSnapshot.fromJson(
+      companionContexts.currentSnapshot!,
+    );
+    expect(snap.highlighted, isNull);
+    expect(snap.searchable, isFalse);
+    expect(snap.sorts, isEmpty);
+
+    Focus.of(tester.element(find.text('Night Album'))).requestFocus();
+    await tester.pump();
+    snap = CompanionLibraryMainSnapshot.fromJson(
+      companionContexts.currentSnapshot!,
+    );
+    expect(snap.highlighted?.ref, CompanionLibraryRef.musicAlbum('al'));
+    expect(snap.highlighted?.title, 'Night Album');
+    expect(snap.highlighted?.subtitle, 'Singer');
+    expect(snap.highlighted?.count, 2);
+
+    companionContexts.setActive(false);
+    await tester.pumpWidget(const SizedBox());
+    expect(companionContexts.currentOwner, isNull);
   });
 }

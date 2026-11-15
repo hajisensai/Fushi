@@ -27,7 +27,8 @@ import 'package:fushi/src/utils/misc/error_log_service.dart';
 //    卡；播放走过插图时以 M3E spatial 弹簧（缩放 + 淡入）换成插图卡并停住。插图卡
 //    点左 / 右三分之一 = 上 / 下一张，点中间 = 看大图，右上角 ✕ = 回封面。
 //  * [LyricsIllustrationCompactArtwork]：窄屏控制条里的小封面方块。有新插图时换成
-//    插图缩略图并带一个提示点；点它进插图大图浏览，看完回到封面。
+//    插图缩略图，插图还没看过（没开过大图、卡没完整展示过）时带一个提示点；点它进
+//    插图大图浏览，看完回到封面。
 //  * [LyricsIllustrationPopupCard]：窄屏播放卡标题上方的插图卡。与宽屏封面位同一
 //    套弹出逻辑（播放走过插图时弹出并停住，✕ 收起），只是没有封面可换。
 //  * [showLyricsIllustrationViewer]：插图大图浏览（左右翻页 + 双指 / 滚轮缩放）。
@@ -46,7 +47,10 @@ Future<void> showLyricsIllustrationViewer(
 }) async {
   if (!controller.hasReached) return;
   final int start = index.clamp(0, controller.reached);
-  controller.showAt(start);
+  controller
+    ..showAt(start)
+    // 打开大图即算看过：缩略图的「新插图」提示点随之消失。
+    ..markSeen(start);
   await Navigator.of(context).push(
     illustrationZoomRoute(
       context,
@@ -690,24 +694,50 @@ class LyricsIllustrationCompactArtwork extends StatelessWidget {
                   clipBehavior: Clip.none,
                   children: <Widget>[
                     face,
-                    // 新插图提示点：插图位换上了还没看过的插图。
-                    if (shown != null)
-                      PositionedDirectional(
-                        top: -2,
-                        end: -2,
-                        child: Container(
-                          key: const ValueKey<String>(
-                            'lyrics_compact_artwork_dot',
-                          ),
-                          width: 10,
-                          height: 10,
-                          decoration: BoxDecoration(
-                            color: cs.primary,
-                            shape: BoxShape.circle,
-                            border: Border.all(color: cs.surface, width: 1.5),
-                          ),
+                    // 新插图提示点：插图位换上了还没看过的插图（打开过大图 /
+                    // 插图卡完整展示过即消失，换上新插图时再出现）。
+                    PositionedDirectional(
+                      top: -2,
+                      end: -2,
+                      child: AnimatedSwitcher(
+                        duration: fushiMotionDuration(
+                          context,
+                          FushiMotion.short,
                         ),
+                        switchInCurve: motion.spatialDefault.curve,
+                        switchOutCurve: motion.effectsDefault.curve,
+                        transitionBuilder:
+                            (Widget child, Animation<double> animation) =>
+                                FadeTransition(
+                                  opacity: fushiUnitClamped(animation),
+                                  child: ScaleTransition(
+                                    scale: animation,
+                                    child: child,
+                                  ),
+                                ),
+                        child: c.shownUnseen
+                            ? Container(
+                                key: const ValueKey<String>(
+                                  'lyrics_compact_artwork_dot',
+                                ),
+                                width: 10,
+                                height: 10,
+                                decoration: BoxDecoration(
+                                  color: cs.primary,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: cs.surface,
+                                    width: 1.5,
+                                  ),
+                                ),
+                              )
+                            : const SizedBox.shrink(
+                                key: ValueKey<String>(
+                                  'lyrics_compact_artwork_no_dot',
+                                ),
+                              ),
                       ),
+                    ),
                   ],
                 ),
               ),
@@ -779,7 +809,9 @@ class _LyricsIllustrationViewerState extends State<LyricsIllustrationViewer> {
       _index = index;
       _zoomed = false;
     });
-    widget.controller.showAt(index);
+    widget.controller
+      ..showAt(index)
+      ..markSeen(index);
   }
 
   void _onInteractionEnd(int index) {

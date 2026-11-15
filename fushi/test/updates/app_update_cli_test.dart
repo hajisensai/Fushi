@@ -56,6 +56,38 @@ class _FakeUpdater extends PlatformUpdater {
   }
 }
 
+class _FakeManagedUpdater extends PackageManagedUpdater {
+  final List<String> staged = <String>[];
+  final List<String> restartedInto = <String>[];
+
+  @override
+  bool get supportsUpdateCheck => true;
+
+  @override
+  bool get supportsInAppInstall => true;
+
+  @override
+  Future<UpdateAsset?> selectAsset(
+    List<Map<String, dynamic>> assets, {
+    UpdateChannel channel = UpdateChannel.stable,
+  }) async => null;
+
+  @override
+  Future<void> stage(
+    String version, {
+    required void Function(double progress) onProgress,
+    UpdateDownloadCancellation? cancellation,
+  }) async {
+    onProgress(1);
+    staged.add(version);
+  }
+
+  @override
+  Future<void> restartIntoStagedUpdate(String version) async {
+    restartedInto.add(version);
+  }
+}
+
 const HeadlessUpdateCheck _update = HeadlessUpdateCheck(
   version: '1.1.0',
   asset: UpdateAsset(name: 'fushi-setup.exe', url: 'https://x/setup.exe'),
@@ -82,7 +114,7 @@ void main() {
   });
 
   AppUpdateCliBackend backend({
-    required _FakeUpdater updater,
+    required PlatformUpdater updater,
     HeadlessUpdateCheck? update = _update,
     Future<File> Function(
       UpdateDownloadCancellation cancellation,
@@ -106,7 +138,42 @@ void main() {
           onProgress(1);
           return file;
         },
+    stage:
+        (
+          AppModel _,
+          HeadlessUpdateCheck u,
+          PackageManagedUpdater managed,
+          UpdateDownloadCancellation cancellation,
+          void Function(double) onProgress,
+        ) => managed.stage(
+          u.version,
+          onProgress: onProgress,
+          cancellation: cancellation,
+        ),
   );
+
+  test('download → install on a package-managed platform (Flatpak): the '
+      'package manager deploys, install only restarts into it', () async {
+    final _FakeManagedUpdater updater = _FakeManagedUpdater();
+    debugSetAppUpdateCliBackend(backend(updater: updater));
+    final SettingsCliTask download = startAppUpdateDownloadForCli(
+      app,
+      registry: registry,
+    );
+    await download.whenDone;
+    expect(download.status, SettingsCliTaskStatus.done);
+    expect(download.result!['staged'], isTrue);
+    expect(updater.staged, <String>['1.1.0']);
+    expect(appUpdateDownloadedForCli?.file, isNull);
+
+    final SettingsCliTask install = installAppUpdateForCli(
+      app,
+      registry: registry,
+    );
+    await install.whenDone;
+    expect(install.status, SettingsCliTaskStatus.done);
+    expect(updater.restartedInto, <String>['1.1.0']);
+  });
 
   test('check：已是最新 / 有新版带说明与可安装标记', () async {
     debugSetAppUpdateCliBackend(backend(updater: _FakeUpdater(), update: null));

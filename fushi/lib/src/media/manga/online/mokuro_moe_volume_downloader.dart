@@ -134,13 +134,73 @@ class MokuroMoeVolumeDownloader {
   }
 
   /// 入库标题：`<系列> <卷>`；卷名已含系列名时直接用卷名（照
-  /// [MangaImporter] `_deriveTitle` 的去重口径）。
+  /// [MangaImporter] `_deriveTitle` 的去重口径）；卷名只是系列名的 slug 加卷号
+  /// （`Karakai Jouzu no Takagi-san` / `Karakai-Jouzu-Takagi-san-02`）时规整成
+  /// `<系列> <卷号>`（`Karakai Jouzu no Takagi-san 02`）。
+  ///
+  /// vECncM6f8Y：以前 slug 卷名原样拼在系列名后，书名成了
+  /// `Karakai Jouzu no Takagi-san Karakai-Jouzu-Takagi-san-02`，书架卡与自动合集名
+  /// 都带着一串 slug。标题经 `sanitizeTtuFilename` 就是书的身份 key（冻结），
+  /// 已入库的卷不改名——「是否已在库」由 [volumeTitleCandidates] 新旧两种口径都认。
   static String volumeTitle(String series, String volume) {
+    final String s = series.trim();
+    final String v = volume.trim();
+    if (s.isNotEmpty && !v.contains(s)) {
+      final String? number = _slugVolumeNumber(s, v);
+      if (number != null) return '$s $number';
+    }
+    return legacyVolumeTitle(series, volume);
+  }
+
+  /// vECncM6f8Y 之前的起名口径：`<系列> <卷名>`，卷名已含系列名时直接用卷名。
+  /// 只用于认出按它起名、已在库的旧卷（书 key 冻结不改）。
+  static String legacyVolumeTitle(String series, String volume) {
     final String s = series.trim();
     final String v = volume.trim();
     if (s.isEmpty) return v.isEmpty ? 'manga' : v;
     if (v.isEmpty) return s;
     return v.contains(s) ? v : '$s $v';
+  }
+
+  /// 这一卷可能已经用过的入库标题（新口径在前；两种口径相同时只一个）。
+  static List<String> volumeTitleCandidates(String series, String volume) =>
+      <String>{
+        volumeTitle(series, volume),
+        legacyVolumeTitle(series, volume),
+      }.toList(growable: false);
+
+  /// slug 卷名：拉丁字母结尾的前缀 + `-` / `_` / 空白 + 1–4 位卷号。
+  static final RegExp _slugVolume = RegExp(r'^(.*[A-Za-z])[\s_\-]+(\d{1,4})$');
+
+  /// [volume] 的前缀每个词都出现在系列名 [series] 里（slug 常省掉 `no` 之类的
+  /// 虚词，所以按「子集」而不是「相等」比）时返回卷号原文；否则 null。非拉丁
+  /// 字母的系列名切不出词，一律不规整，走旧口径。
+  static String? _slugVolumeNumber(String series, String volume) {
+    final RegExpMatch? m = _slugVolume.firstMatch(volume);
+    if (m == null) return null;
+    final Set<String> seriesWords = _latinWords(series).toSet();
+    final List<String> slugWords = _latinWords(m.group(1)!);
+    if (slugWords.isEmpty || !slugWords.every(seriesWords.contains)) {
+      return null;
+    }
+    return m.group(2);
+  }
+
+  static List<String> _latinWords(String s) => s
+      .toLowerCase()
+      .split(RegExp(r'[^a-z0-9]+'))
+      .where((String w) => w.isNotEmpty)
+      .toList(growable: false);
+
+  /// 按 [legacyVolumeTitle] 起名的这一卷已在库（且新口径名与它不同）。
+  static Future<bool> _hasLegacyVolume(
+    FushiDatabase db,
+    String seriesName,
+    String volumeName,
+  ) async {
+    final String legacy = legacyVolumeTitle(seriesName, volumeName);
+    if (legacy == volumeTitle(seriesName, volumeName)) return false;
+    return await db.getEpubBook(sanitizeTtuFilename(legacy)) != null;
   }
 
   /// 跑完一卷全流程。事件流以 done 事件正常结束；取消以
@@ -247,23 +307,27 @@ class MokuroMoeVolumeDownloader {
         ),
       );
       String? bookKey;
-      bool skipped = false;
-      try {
-        bookKey = await MangaImporter.importFromMokuroPath(
-          db: db,
-          mokuroPath: placedMokuro.path,
-          title: volumeTitle(seriesName, volumeName),
-          policy: const DuplicatePolicy.skip(),
-          onProgress: (int done, int total) => controller.add(
-            MokuroMoeVolumeDownloadEvent(
-              stage: MokuroMoeDownloadStage.importing,
-              pagesDone: done,
-              pagesTotal: total,
+      // 旧口径起名、已在库的卷（[legacyVolumeTitle]）同样算「已在库」，不按新名
+      // 再导一份重复的。
+      bool skipped = await _hasLegacyVolume(db, seriesName, volumeName);
+      if (!skipped) {
+        try {
+          bookKey = await MangaImporter.importFromMokuroPath(
+            db: db,
+            mokuroPath: placedMokuro.path,
+            title: volumeTitle(seriesName, volumeName),
+            policy: const DuplicatePolicy.skip(),
+            onProgress: (int done, int total) => controller.add(
+              MokuroMoeVolumeDownloadEvent(
+                stage: MokuroMoeDownloadStage.importing,
+                pagesDone: done,
+                pagesTotal: total,
+              ),
             ),
-          ),
-        );
-      } on DuplicateImportCancelledException {
-        skipped = true;
+          );
+        } on DuplicateImportCancelledException {
+          skipped = true;
+        }
       }
 
       controller.add(

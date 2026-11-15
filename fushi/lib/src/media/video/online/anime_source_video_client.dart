@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
+import 'package:fushi_engine/media/torrent/magnet_utils.dart' show isMagnetUri;
 import 'package:fushi_engine/media/video/jimaku_client.dart'
     show detectSubtitleLanguage;
 import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.dart';
@@ -329,6 +330,42 @@ class AnimeSourceVideoClient
     return null;
   }
 
+  /// 默认选流：先在**可串流**的候选里按 [_chooseVideo] 挑，一条都没有才退到全部候选
+  /// （此时挑出来的必是磁链，由 [_rejectTorrent] 转成种子下载入口）。
+  ///
+  /// Torrentio 一类扩展（反馈 xAeextyOV1）给的候选是 `magnet:` 链接——Aniyomi 靠外挂
+  /// TorrServer 把它变成本地 http 流，本宿主没有这一层，磁链交给 libmpv 只会被当成
+  /// 相对文件名打开、45 秒后判超时。同一集同时有直链和磁链时，默认挑直链；用户在
+  /// 线路菜单里明确钉住磁链那条，则照钉的走（[_matchPinned] 在前）。
+  MihonVideo _chooseDefault(List<MihonVideo> candidates) {
+    final List<MihonVideo> streamable = <MihonVideo>[
+      for (final MihonVideo video in candidates)
+        if (!isTorrentAnimeVideo(video)) video,
+    ];
+    return _chooseVideo(streamable.isNotEmpty ? streamable : candidates);
+  }
+
+  /// 选中的是磁链：它不是可串流地址，抛 [AnimeSourceTorrentVideoException] 交给调用方
+  /// 走种子下载管线（播放页给「用种子下载」入口；批量整片下载如实失败），而不是把
+  /// 磁链当 URL 交给播放器 / HTTP 下载器。
+  void _rejectTorrent(MihonVideo chosen, MihonEpisode episode) {
+    if (!isTorrentAnimeVideo(chosen)) return;
+    throw AnimeSourceTorrentVideoException(
+      magnetUri: chosen.resolvedUrl.trim(),
+      title: torrentTaskTitle(anime, episode),
+    );
+  }
+
+  /// 种子任务的默认标题：作品名 + 集名。Torrentio 的磁链 `dn` 就是 infoHash 本身，
+  /// 拿来当标题用户认不出是哪一集。
+  static String torrentTaskTitle(MihonAnime anime, MihonEpisode episode) {
+    final String work = anime.title.trim();
+    final String name = episode.name.trim();
+    if (work.isEmpty) return name;
+    if (name.isEmpty || name == work) return work;
+    return '$work - $name';
+  }
+
   /// 当前集已解析的候选；尚未取流为空。
   List<MihonVideo> get _currentCandidates {
     final String? id = _currentEpisodeId;
@@ -401,9 +438,11 @@ class AnimeSourceVideoClient
       );
     }
     final MihonVideo chosen =
-        _matchPinned(_pinnedVideos[id], candidates) ?? _chooseVideo(candidates);
+        _matchPinned(_pinnedVideos[id], candidates) ??
+        _chooseDefault(candidates);
     _currentVideo = chosen;
     _currentEpisodeId = id;
+    _rejectTorrent(chosen, episode);
     final MihonVideoTrack? subtitle = defaultSubtitleTrack(
       chosen.subtitleTracks,
       _defaultSubtitleLanguage = preferredSubtitleLanguage,
@@ -579,9 +618,11 @@ class AnimeSourceVideoClient
       );
     }
     final MihonVideo chosen =
-        _matchPinned(_pinnedVideos[id], candidates) ?? _chooseVideo(candidates);
+        _matchPinned(_pinnedVideos[id], candidates) ??
+        _chooseDefault(candidates);
     _currentVideo = chosen;
     _currentEpisodeId = id;
+    _rejectTorrent(chosen, episode);
     _defaultSubtitleLanguage = preferredSubtitleLanguage;
     _logIgnoredMpvArgs(chosen);
     final List<RemoteVideoExternalAudioTrack> audio = externalAudioTracksFor(
@@ -661,6 +702,31 @@ class AnimeSourceVideoClient
   void dispose() {
     _httpClient.close();
   }
+}
+
+/// 候选的可播地址是磁力链接（种子），不是可串流的 URL。
+bool isTorrentAnimeVideo(MihonVideo video) => isMagnetUri(video.resolvedUrl);
+
+/// 视频源扩展给这一集的候选是种子（磁力链接）：本宿主不做种子流播，取流 / 整片下载
+/// 都不能拿它当 URL 用。播放页据 [magnetUri] / [title] 打开下载中心的「添加任务」
+/// 预填（种子 / 下载管线），而不是把磁链当本地文件名交给 libmpv（反馈 xAeextyOV1）。
+class AnimeSourceTorrentVideoException implements Exception {
+  const AnimeSourceTorrentVideoException({
+    required this.magnetUri,
+    required this.title,
+  });
+
+  /// 扩展给的原始磁链（Aniyomi 约定可能带 `index=` 文件下标，原样保留）。
+  final String magnetUri;
+
+  /// 下载任务的默认标题（作品名 + 集名）。
+  final String title;
+
+  @override
+  String toString() =>
+      'AnimeSourceTorrentVideoException: the source returned a torrent '
+      '(magnet link) for "$title", which cannot be streamed or downloaded '
+      'over HTTP; add it to the torrent download pipeline instead';
 }
 
 /// 用户钉住的线路：菜单上的标签 + 当时的下标。见 [AnimeSourceVideoClient._matchPinned]。

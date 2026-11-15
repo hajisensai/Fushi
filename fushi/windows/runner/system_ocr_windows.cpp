@@ -361,35 +361,60 @@ void CollectLines(WMO::IOcrResult* ocr, const DecodedImage& image,
     if (FAILED(line->get_Words(words.GetAddressOf())) || !words) continue;
     unsigned int word_count = 0;
     words->get_Size(&word_count);
+    // 文本与框成对取：只有文本没框的词照样拼进行文本，但不进 |words|。
     std::vector<std::wstring> texts;
+    std::vector<std::optional<so::RectD>> word_boxes;
     std::vector<so::RectD> boxes;
     for (unsigned int w = 0; w < word_count; ++w) {
       ComPtr<WMO::IOcrWord> word;
       if (FAILED(words->GetAt(w, word.GetAddressOf())) || !word) continue;
       HSTRING text = nullptr;
+      std::wstring word_text;
       if (SUCCEEDED(word->get_Text(&text))) {
-        texts.push_back(HStringToWide(text));
+        word_text = HStringToWide(text);
         WindowsDeleteString(text);
       }
+      std::optional<so::RectD> box;
       WF::Rect rect = {};
       if (SUCCEEDED(word->get_BoundingRect(&rect))) {
-        boxes.push_back(so::RectD{rect.X * inverse, rect.Y * inverse,
-                                  (rect.X + rect.Width) * inverse,
-                                  (rect.Y + rect.Height) * inverse});
+        box = so::RectD{rect.X * inverse, rect.Y * inverse,
+                        (rect.X + rect.Width) * inverse,
+                        (rect.Y + rect.Height) * inverse};
+        boxes.push_back(*box);
       }
+      texts.push_back(std::move(word_text));
+      word_boxes.push_back(box);
     }
-    const std::wstring joined = so::JoinOcrWords(texts);
+    std::vector<int> offsets;
+    const std::wstring joined = so::JoinOcrWordsWithOffsets(texts, &offsets);
     const std::optional<so::RectD> bounds = so::UnionOfRects(boxes);
     if (joined.empty() || !bounds) continue;
     SystemOcrLine entry;
     entry.text = WideToUtf8(joined.data(), joined.size());
-    entry.left = std::clamp(bounds->left, 0.0, static_cast<double>(image.width));
-    entry.top = std::clamp(bounds->top, 0.0, static_cast<double>(image.height));
-    entry.right =
-        std::clamp(bounds->right, 0.0, static_cast<double>(image.width));
-    entry.bottom =
-        std::clamp(bounds->bottom, 0.0, static_cast<double>(image.height));
+    const double max_x = static_cast<double>(image.width);
+    const double max_y = static_cast<double>(image.height);
+    entry.left = std::clamp(bounds->left, 0.0, max_x);
+    entry.top = std::clamp(bounds->top, 0.0, max_y);
+    entry.right = std::clamp(bounds->right, 0.0, max_x);
+    entry.bottom = std::clamp(bounds->bottom, 0.0, max_y);
     if (entry.right <= entry.left || entry.bottom <= entry.top) continue;
+    for (size_t w = 0; w < texts.size(); ++w) {
+      const std::optional<so::RectD>& box = word_boxes[w];
+      if (offsets[w] < 0 || !box || !std::isfinite(box->left) ||
+          !std::isfinite(box->top) || !std::isfinite(box->right) ||
+          !std::isfinite(box->bottom)) {
+        continue;
+      }
+      SystemOcrWord item;
+      item.start = offsets[w];
+      item.length = static_cast<int>(texts[w].size());
+      item.left = std::clamp(box->left, 0.0, max_x);
+      item.top = std::clamp(box->top, 0.0, max_y);
+      item.right = std::clamp(box->right, 0.0, max_x);
+      item.bottom = std::clamp(box->bottom, 0.0, max_y);
+      if (item.right <= item.left || item.bottom <= item.top) continue;
+      entry.words.push_back(item);
+    }
     out->push_back(std::move(entry));
   }
 }
@@ -444,6 +469,9 @@ SystemOcrResult RecognizeOnInitializedThread(
   SystemOcrResult out;
   out.width = static_cast<int>(image.width);
   out.height = static_cast<int>(image.height);
+  out.recognized_width = static_cast<int>(image.ocr_width);
+  out.recognized_height = static_cast<int>(image.ocr_height);
+  out.max_image_dimension = static_cast<int>(max_dimension);
   CollectLines(ocr.Get(), image, &out.lines);
   return out;
 }

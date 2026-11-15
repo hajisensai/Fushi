@@ -25,6 +25,9 @@ import 'package:fushi/src/pages/implementations/srs/srs_review_page.dart';
 import 'package:fushi/src/srs/srs_card_media.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_remote_store_client.dart';
+import 'package:fushi/src/sync/interconnect_host_client.dart'
+    show InterconnectHostError;
+import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/video_remote_targets.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
@@ -34,8 +37,10 @@ import 'package:fushi_engine/srs/srs_builtin.dart' show srsLapisFieldId;
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_edit_history.dart';
 import 'package:fushi_engine/srs/srs_note_type_store.dart';
+import 'package:fushi_engine/srs/srs_remote_generation.dart';
 import 'package:fushi_engine/srs/srs_remote_store.dart';
 import 'package:fushi_engine/srs/srs_remote_store_routes.dart';
+import 'package:fushi_engine/srs/srs_rwkv_scheduling.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -90,20 +95,38 @@ class _Host {
   final List<String> ops = <String>[];
   final Map<String, Uint8List> media = <String, Uint8List>{};
 
+  /// 收到的 `call` 请求体（原样，未剥字段）。
+  final List<Map<String, Object?>> bodies = <Map<String, Object?>>[];
+
   late final SyncRepository repository = SyncRepository(db);
 
-  SrsRemoteHostClient client() => SrsRemoteHostClient(
+  /// [localOffsetMin]：客户端设备的 UTC 偏移（缺省读系统时区）。[legacyHost]：模拟不认识
+  /// [kSrsRemoteDeviceOffsetKey] 的旧主机——请求体里的那个键不交给路由（旧路由只读已知键）。
+  SrsRemoteHostClient client({
+    int Function()? localOffsetMin,
+    bool legacyHost = false,
+  }) => SrsRemoteHostClient(
     repository: repository,
     peer: _peer,
+    localOffsetMin: localOffsetMin,
     httpClient: MockClient((http.Request r) async {
       final String path = r.url.path;
       if (!path.startsWith(kSrsRemoteStorePathPrefix)) {
         return http.Response('', 404);
       }
       String? op;
+      String? body = r.method == 'GET' ? null : r.body;
       if (r.method == 'POST') {
-        op = (jsonDecode(r.body) as Map)['op'] as String?;
+        final Map<String, Object?> decoded = (jsonDecode(r.body) as Map)
+            .cast<String, Object?>();
+        bodies.add(decoded);
+        op = decoded['op'] as String?;
         ops.add(op!);
+        if (legacyHost) {
+          body = jsonEncode(
+            Map<String, Object?>.of(decoded)..remove(kSrsRemoteDeviceOffsetKey),
+          );
+        }
       } else {
         ops.add(path.substring(kSrsRemoteStorePathPrefix.length));
       }
@@ -116,11 +139,7 @@ class _Host {
       }
       final shelf.Response res = await handleSrsRemoteStoreRequest(
         service,
-        shelf.Request(
-          r.method,
-          Uri.parse('http://host$path'),
-          body: r.method == 'GET' ? null : r.body,
-        ),
+        shelf.Request(r.method, Uri.parse('http://host$path'), body: body),
         r.method,
         path,
       );
@@ -138,8 +157,53 @@ class _Host {
   Future<SrsRemoteStore> remote() => SrsRemoteStore.connect(client());
 }
 
-Future<_Host> _openHost(List<String> expressions) async {
-  final (FushiDatabase db, SrsDbStore store) = await openSrsTestStore();
+/// 主机上的 RWKV 替身：状态由测试拨，记下收到的「开始准备」。
+class _HostRwkv implements SrsRwkvScheduling, SrsRwkvStatusSource {
+  SrsRwkvStatus now = const SrsRwkvStatus(
+    SrsRwkvPhase.preparing,
+    done: 3,
+    total: 10,
+  );
+
+  /// 每次 [start] 的 force。
+  final List<bool> starts = <bool>[];
+
+  @override
+  SrsRwkvStatus get status => now;
+
+  @override
+  Stream<SrsRwkvStatus> get statusChanges =>
+      const Stream<SrsRwkvStatus>.empty();
+
+  @override
+  bool get ready => now.phase == SrsRwkvPhase.ready;
+
+  @override
+  Future<void> start({bool force = false}) async => starts.add(force);
+
+  @override
+  Future<List<double>?> instantRetrievability(
+    List<SrsRwkvCandidate> cards, {
+    required int atMs,
+  }) async => ready ? List<double>.filled(cards.length, 0.1) : null;
+
+  @override
+  Future<List<double>?> currentRetrievability(
+    List<SrsRwkvCandidate> cards, {
+    required int nowMs,
+  }) async => ready ? List<double>.filled(cards.length, 0.1) : null;
+
+  @override
+  Future<void> onAnswered(String cardId, SrsReviewLog log) async {}
+
+  @override
+  Future<void> onCardsPurged(List<String> cardIds) async {}
+}
+
+Future<_Host> _openHost(List<String> expressions, {SrsTestClock? clock}) async {
+  final (FushiDatabase db, SrsDbStore store) = await openSrsTestStore(
+    clock: clock,
+  );
   for (int i = 0; i < expressions.length; i++) {
     await store.createNote(
       noteTypeId: store.lapisNoteTypeId,
@@ -157,8 +221,9 @@ Future<_Host> _openHost(List<String> expressions) async {
   return _Host(db, store);
 }
 
-/// 首页「已配对设备」用的连接器：本机互联配置读 [host] 的库（真实的配置门控与对账），能力探测只认
-/// [hosts] 里有的 hostId（不走网络），连主机走对应 [_Host] 的 MockClient。
+/// 首页「已配对设备」用的连接器：本机互联配置读 [host] 的库（真实的配置门控与对账），代际探测只认
+/// [hosts] 里有的 hostId（不走网络；「代 → 能不能接上 → 留哪些」走真实的 [probeSrsRemoteHosts]），连主机走对应
+/// [_Host] 的 MockClient。
 class _FakeConnector extends SrsRemoteHostConnector {
   _FakeConnector(super.app, this.host, this.dir, {Map<String, _Host>? hosts})
     : hosts = hosts ?? <String, _Host>{'host-1': host};
@@ -188,13 +253,20 @@ class _FakeConnector extends SrsRemoteHostConnector {
   @override
   DateTime now() => clock;
 
+  /// 各主机按能力位判定出的代（没写的是现状：只声明 V1）。
+  final Map<String, SrsRemoteHostGeneration> generations =
+      <String, SrsRemoteHostGeneration>{};
+
+  /// 没配的主机 / [unsupported] 里的不应答（null）；其余按 [generations]，没写的只声明 V1。
   @override
-  Future<List<InterconnectHostTarget>> supporting(
-    List<InterconnectHostTarget> candidates,
-  ) async => <InterconnectHostTarget>[
-    for (final InterconnectHostTarget c in candidates)
-      if (hosts.containsKey(c.hostId) && !unsupported.contains(c.hostId)) c,
-  ];
+  SrsRemoteGenerationProbe get generationProbe =>
+      (SyncRepository _, FushiClientUrl peer) async {
+        final String? id = peer.hostId;
+        if (id == null || !hosts.containsKey(id) || unsupported.contains(id)) {
+          return null;
+        }
+        return generations[id] ?? SrsRemoteHostGeneration.v1Only;
+      };
 
   @override
   Future<SrsRemoteSession> open(
@@ -228,11 +300,11 @@ class _CountingConnector extends _FakeConnector {
   Completer<void>? openGate;
 
   @override
-  Future<List<InterconnectHostTarget>> supporting(
+  Future<Map<String, SrsRemoteHostCompat>> probeHosts(
     List<InterconnectHostTarget> candidates,
   ) {
     probed.addAll(candidates.map((InterconnectHostTarget c) => c.hostId));
-    return super.supporting(candidates);
+    return super.probeHosts(candidates);
   }
 
   @override
@@ -307,6 +379,17 @@ Future<void> _pumpHome(
 }
 
 void main() {
+  // V-B4：明文地址拿凭据前要当场 ping 核对 hostId；这些用例的对端是 MockClient，
+  // 把身份核对视为通过。
+  setUp(() {
+    resetInterconnectRaceCache();
+    debugInterconnectAddressProbeOverride =
+        (FushiClientUrl candidate, String? hostId) async => true;
+  });
+  tearDown(() {
+    debugInterconnectAddressProbeOverride = null;
+    resetInterconnectRaceCache();
+  });
   test('卡面引用的媒体名：[sound:]、src / poster、CSS url，只认裸文件名', () {
     expect(
       srsCardReferencedMedia(
@@ -316,6 +399,28 @@ void main() {
         '<img src="e&amp;f.png">',
       ),
       <String>{'a.mp3', 'b.png', 'c.jpg', 'd.webp', 'e&f.png'},
+    );
+  });
+
+  test('远程复习的换代机读码各有文案，不落成「Remote review failed (<码>)」', () {
+    LocaleSettings.setLocale(AppLocale.en);
+    String textOf(String code) =>
+        srsRemoteReviewErrorText(InterconnectHostError(code, statusCode: 426));
+    expect(
+      textOf(SrsRemoteStoreError.upgradeRequired),
+      t.srs_remote_review_error_upgrade_required,
+    );
+    expect(
+      textOf(SrsRemoteStoreError.migrating),
+      t.srs_remote_review_error_host_migrating,
+    );
+    expect(
+      textOf(SrsRemoteStoreError.migrationFailed),
+      t.srs_remote_review_error_host_migration_failed,
+    );
+    expect(
+      textOf('something_else'),
+      t.srs_remote_review_error_other(code: 'something_else'),
     );
   });
 
@@ -339,6 +444,80 @@ void main() {
       host = await _openHost(<String>['犬', '猫', '鳥']);
     });
     tearDown(() => host.db.close());
+
+    test('主机 RWKV 的准备状态随信封到客户端：进度 / 错误、重试转给主机、就绪由客户端自己发现', () async {
+      final _HostRwkv rwkv = _HostRwkv();
+      host.store.rwkv = rwkv;
+      final SrsRemoteStore remote = await host.remote();
+      final SrsRemoteRwkvStatus shadow = remote.hostRwkv;
+      expect(shadow.ready, isFalse);
+      expect(shadow.status.phase, SrsRwkvPhase.preparing);
+      expect(shadow.status.done, 3);
+      expect(shadow.status.total, 10);
+
+      // 出错：错误文本跟着下一次回包过来；「重试」转给主机（不受失败后的重试间隔限制）。
+      rwkv.now = SrsRwkvStatus(
+        SrsRwkvPhase.failed,
+        error: StateError('weights unreachable'),
+      );
+      await remote.deckSummaries();
+      expect(shadow.status.phase, SrsRwkvPhase.failed);
+      expect('${shadow.status.error}', contains('weights unreachable'));
+      await shadow.start(force: true);
+      expect(rwkv.starts, <bool>[true]);
+      expect(host.ops.last, 'rwkvStart');
+
+      // 主机就绪不是库的写入、不推进修订号：有人在听时客户端自己定时问主机，问到就绪就停。
+      final List<SrsRwkvPhase> events = <SrsRwkvPhase>[];
+      final StreamSubscription<SrsRwkvStatus> sub = shadow.statusChanges.listen(
+        (SrsRwkvStatus s) => events.add(s.phase),
+      );
+      addTearDown(sub.cancel);
+      rwkv.now = const SrsRwkvStatus(SrsRwkvPhase.ready);
+      // 等到客户端自己问到（墙钟定时器 + 一次真实握手，耗时随机器负载）；等不到由下面的断言报红。
+      final Stopwatch waited = Stopwatch()..start();
+      while (events.isEmpty && waited.elapsed < const Duration(seconds: 30)) {
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      }
+      expect(events, <SrsRwkvPhase>[SrsRwkvPhase.ready]);
+      expect(shadow.ready, isTrue);
+      expect(
+        remote.instantActiveFor(await remote.deckTree(), remote.defaultDeckId),
+        isTrue,
+      );
+      final int asked = host.ops.length;
+      await Future<void>.delayed(
+        SrsRemoteRwkvStatus.pollEvery + const Duration(milliseconds: 600),
+      );
+      expect(host.ops.length, asked, reason: '就绪后不再轮询');
+    });
+
+    test('主机没报 RWKV 状态（老主机 / 没有运行时）：只按就绪与否', () async {
+      final SrsRemoteStore remote = await host.remote();
+      expect(remote.hostRwkv.ready, isFalse);
+      expect(remote.hostRwkv.status.phase, SrsRwkvPhase.idle);
+      expect(
+        SrsRemoteWire.envelopeFrom(const <String, Object?>{
+          'rwkv': true,
+        }).rwkvStatus,
+        isNull,
+      );
+      // 更新的主机报了这一版不认识的阶段：当没有。
+      expect(
+        SrsRemoteWire.envelopeFrom(const <String, Object?>{
+          'rk': <String, Object?>{'p': 'migrating', 'd': 1, 't': 2},
+        }).rwkvStatus,
+        isNull,
+      );
+      final SrsRwkvStatus round = SrsRemoteWire.rwkvStatusFrom(
+        SrsRemoteWire.rwkvStatus(
+          const SrsRwkvStatus(SrsRwkvPhase.downloading, done: 5, total: 9),
+        ),
+      )!;
+      expect(round.phase, SrsRwkvPhase.downloading);
+      expect(round.done, 5);
+      expect(round.total, 9);
+    });
 
     test('读到的与主机库相同；笔记类型按标签缓存只搬一次', () async {
       final SrsRemoteStore remote = await host.remote();
@@ -375,6 +554,62 @@ void main() {
         await remote.noteIdsOfType(host.store.lapisNoteTypeId),
         await host.store.noteIdsOfType(host.store.lapisNoteTypeId),
       );
+    });
+
+    test('「今天」的时区取本机：每次调用带本机偏移，主机按它算；本机换时区后重取', () async {
+      final int hostOff = SrsDayContext.localOffsetMin();
+      int off = hostOff == -300 ? 330 : -300;
+      final SrsRemoteStore remote = await SrsRemoteStore.connect(
+        host.client(localOffsetMin: () => off),
+      );
+      final SrsDayContext hostDay = await host.store.dayContext();
+      final SrsDayContext day = await remote.dayContext();
+      expect(day.utcOffsetMin, off);
+      expect(
+        day.rolloverHour,
+        hostDay.rolloverHour,
+        reason: '翻日时刻仍取主机 profile',
+      );
+      expect(host.bodies, isNotEmpty);
+      for (final Map<String, Object?> b in host.bodies) {
+        expect(b[kSrsRemoteDeviceOffsetKey], off);
+      }
+      // 本机这台设备换了时区：缓存的「今天」作废，按新偏移重取。
+      off = 540;
+      expect((await remote.dayContext()).utcOffsetMin, 540);
+      expect(host.bodies.last[kSrsRemoteDeviceOffsetKey], 540);
+      // 主机自己的「今天」不受远程调用影响。
+      expect((await host.store.dayContext()).utcOffsetMin, hostOff);
+    });
+
+    test('新客户端连旧主机：旧主机不认偏移键，按主机时区算，照常复习', () async {
+      final int hostOff = SrsDayContext.localOffsetMin();
+      final int off = hostOff == -300 ? 330 : -300;
+      final SrsRemoteStore remote = await SrsRemoteStore.connect(
+        host.client(localOffsetMin: () => off, legacyHost: true),
+      );
+      expect((await remote.dayContext()).utcOffsetMin, hostOff);
+      expect(
+        host.bodies.first[kSrsRemoteDeviceOffsetKey],
+        off,
+        reason: '客户端照带',
+      );
+      final String deck = host.store.defaultDeckId;
+      final SrsStudyState study = (await remote.studyState(deck))!;
+      expect(study.next, (await host.store.studyState(deck))!.next);
+    });
+
+    test('本机偏移越出现实时区范围：不带偏移，按主机时区算', () async {
+      final SrsRemoteStore remote = await SrsRemoteStore.connect(
+        host.client(localOffsetMin: () => 15 * 60),
+      );
+      expect(
+        (await remote.dayContext()).utcOffsetMin,
+        SrsDayContext.localOffsetMin(),
+      );
+      for (final Map<String, Object?> b in host.bodies) {
+        expect(b.containsKey(kSrsRemoteDeviceOffsetKey), isFalse);
+      }
     });
 
     test('主机回包不合契约：抛机读码 bad_response 的错误（带出错路径），不漏成 TypeError', () async {
@@ -614,6 +849,11 @@ void main() {
       expect(faces, isNotEmpty);
       final String first = faces.last.cardId;
       expect(faces.last.showingAnswer, isFalse);
+      expect(
+        srsActiveReviewSessions.value,
+        0,
+        reason: '在主机的库上复习不推动本机 runtime 的活跃会话计数（批量推送 / 优化让路）',
+      );
 
       await tester.sendKeyEvent(LogicalKeyboardKey.space);
       await settle(tester, rounds: 6);
@@ -1212,6 +1452,121 @@ void main() {
       await tester.pump(const Duration(seconds: 1));
     });
 
+    testWidgets('代对不上的主机不再悄悄滤掉：列出来标明该升级哪边、不握手不发调用；重探后代对上了照常连', (
+      WidgetTester tester,
+    ) async {
+      final (_Host host, SrsDbStore local, _CountingConnector connector) =
+          await openFixture(tester);
+      // 本机这个构建仍说 V1；主机已是新代（声明 V2，V1 只是拒绝桩）→ 本机需要升级。
+      expect(kSrsRemoteClientWire, SrsRemoteWireVersion.v1);
+      connector.generations['host-1'] = SrsRemoteHostGeneration.v2;
+      final ValueNotifier<bool> shown = await pumpReopenableHome(
+        tester,
+        connector,
+        local,
+      );
+      await settle(tester);
+      expect(find.byKey(pairedSection), findsOneWidget, reason: '不再静默过滤');
+      expect(
+        pairedHeaderText(t.srs_remote_review_client_upgrade_required),
+        findsOneWidget,
+      );
+      expect(connector.probes, 1);
+      expect(connector.opens, 0, reason: '代对不上不握手');
+      expect(host.ops, isEmpty, reason: '不向主机发任何调用');
+      expect(
+        find.byKey(const ValueKey<String>('srs-paired-retry-host-1')),
+        findsNothing,
+        reason: '升级提示不是可重试的加载失败',
+      );
+      expect(connector.homeCache, isNot(contains('host-1')), reason: '没有牌组可落盘');
+
+      // 有效期内再进首页：照旧只显示提示，不握手。
+      await reopen(tester, shown);
+      expect(connector.opens, 0);
+      expect(host.ops, isEmpty);
+
+      // 主机侧回到本机能说的代（这里模拟成只声明 V1），探测过期后重探：照常握手、读牌组。
+      connector.generations.remove('host-1');
+      connector.clock = connector.clock.add(kSrsPairedProbeTtl);
+      await reopen(tester, shown);
+      expect(connector.opens, 1);
+      expect(
+        pairedHeaderText(t.srs_remote_review_client_upgrade_required),
+        findsNothing,
+      );
+      expect(pairedHeaderText(t.srs_home_deck_cards(n: 2)), findsOneWidget);
+
+      // 反方向：主机重新判成代对不上时，已有会话与上次的牌组一并作废，只留提示。
+      connector.generations['host-1'] = SrsRemoteHostGeneration.v2;
+      connector.clock = connector.clock.add(kSrsPairedProbeTtl);
+      final int opsBefore = host.ops.length;
+      await reopen(tester, shown);
+      expect(
+        pairedHeaderText(t.srs_remote_review_client_upgrade_required),
+        findsOneWidget,
+      );
+      expect(pairedHeaderText(t.srs_home_deck_cards(n: 2)), findsNothing);
+      expect(host.ops.length, opsBefore, reason: '作废的会话不再发调用');
+      expect(connector.homeCache, isNot(contains('host-1')));
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 1));
+    });
+
+    testWidgets('加载途中主机被判成代对不上：进行中的加载作废，不挂会话、不写牌组、不落成可重试的错误态', (
+      WidgetTester tester,
+    ) async {
+      final (_Host host, SrsDbStore local, _CountingConnector connector) =
+          await openFixture(tester);
+      // 先落成可重试的错误态（会话作废），点重试时握手停在 [openGate] 上：对账一轮之外有一次加载在跑。
+      host.malformedDeckSummaries = true;
+      final ValueNotifier<bool> shown = await pumpReopenableHome(
+        tester,
+        connector,
+        local,
+      );
+      await settle(tester);
+      final Finder retry = find.byKey(
+        const ValueKey<String>('srs-paired-retry-host-1'),
+      );
+      expect(retry, findsOneWidget);
+      host.malformedDeckSummaries = false;
+      connector.openGate = Completer<void>();
+      await tester.tap(retry);
+      await settle(tester, rounds: 4);
+      expect(connector.opens, 2, reason: '重试的握手已发出、停在闸上');
+
+      // 握手途中：主机换成新代，探测过期后再进首页重探 → 判成代对不上。
+      connector.generations['host-1'] = SrsRemoteHostGeneration.v2;
+      connector.clock = connector.clock.add(kSrsPairedProbeTtl);
+      await reopen(tester, shown);
+      expect(
+        pairedHeaderText(t.srs_remote_review_client_upgrade_required),
+        findsOneWidget,
+      );
+
+      // 握手这才完成：结果作废，主机仍只显示升级提示。
+      final int opsBefore = host.ops.length;
+      connector.openGate!.complete();
+      await settle(tester);
+      expect(
+        pairedHeaderText(t.srs_remote_review_client_upgrade_required),
+        findsOneWidget,
+      );
+      expect(pairedHeaderText(t.srs_home_deck_cards(n: 2)), findsNothing);
+      expect(retry, findsNothing, reason: '作废的加载不落成可重试的错误态');
+      expect(
+        host.ops.skip(opsBefore).where((String o) => o != 'hello'),
+        isEmpty,
+        reason: '作废的会话不读牌组',
+      );
+      expect(connector.homeCache, isNot(contains('host-1')), reason: '不落盘');
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 1));
+    });
+
     testWidgets('远程复习页：主机回包不合契约是可重试的错误态，主机恢复后点重试接着复习', (
       WidgetTester tester,
     ) async {
@@ -1281,6 +1636,107 @@ void main() {
       await settle(tester);
       expect(retry, findsNothing);
       expect(faces, isNotEmpty, reason: '主机恢复后重试出卡');
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 1));
+    });
+
+    testWidgets('主机的 RWKV 没就绪：远程复习页显示主机的状态与错误，重试转给主机；主机就绪后自己重排出卡', (
+      WidgetTester tester,
+    ) async {
+      tester.view.physicalSize = const Size(900, 1400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final SrsTestClock clock = SrsTestClock();
+      final _HostRwkv rwkv = _HostRwkv()
+        ..now = SrsRwkvStatus(
+          SrsRwkvPhase.failed,
+          error: StateError('weights unreachable'),
+        );
+      // 主机上只有一张复习卡（两天前毕业），默认牌组按 RWKV 排：主机的 RWKV 没就绪时它不出。
+      final _Host host = (await tester.runAsync(() async {
+        final _Host h = await _openHost(<String>['犬'], clock: clock);
+        final String card = (await h.store.nextCard(h.store.defaultDeckId))!;
+        await h.store.answer(card, 4);
+        clock.advance(const Duration(days: 2));
+        h.store.rwkv = rwkv;
+        return h;
+      }))!;
+      addTearDown(() => tester.runAsync(host.db.close));
+      final Directory dir = Directory.systemTemp.createTempSync('srs_rpk_');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final SrsRemoteHostClient client = host.client();
+      final SrsRemoteMediaStore media = SrsRemoteMediaStore(dir, client);
+      final SrsRemoteStore remote = (await tester.runAsync(
+        () => SrsRemoteStore.connect(client, prefetchMedia: media.prefetch),
+      ))!;
+      final AppModel app = AppModel(testPlatformServices())
+        ..shortcutRegistry.loadDefaults(TargetPlatform.windows);
+      final List<SrsCardFace> faces = <SrsCardFace>[];
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: <Override>[
+            appProvider.overrideWith((Ref ref) => app),
+            srsCardFaceBuilderProvider.overrideWithValue((
+              BuildContext context,
+              SrsCardFace face,
+            ) {
+              // 卡面占位（还没有卡）的 id 是空串：只记真正上屏的卡。
+              if (face.cardId.isNotEmpty) faces.add(face);
+              return SrsPlainCardFace(face: face);
+            }),
+          ],
+          child: TranslationProvider(
+            child: MaterialApp(
+              theme: buildFushiThemeData(
+                scheme: ColorScheme.fromSeed(seedColor: Colors.teal),
+                textTheme: Typography.material2021().black,
+                designSystem: FushiDesignSystem.material,
+                glass: FushiGlassMaterial.off,
+                glassDesign: false,
+              ),
+              builder: (BuildContext context, Widget? child) =>
+                  FushiGlassScope(child: child!),
+              home: SrsRemoteCollectionScope(
+                store: remote,
+                media: media,
+                child: SrsReviewPage(
+                  deckId: remote.defaultDeckId,
+                  deckName: 'Default',
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await settle(tester);
+      final Finder pending = find.byKey(
+        const ValueKey<String>('srs-review-rwkv-pending'),
+      );
+      final Finder retry = find.byKey(
+        const ValueKey<String>('srs-review-rwkv-retry'),
+      );
+      expect(pending, findsOneWidget, reason: '等主机的 RWKV，不按 FSRS-7 的到期日出');
+      expect(faces, isEmpty);
+      expect(find.textContaining('weights unreachable'), findsOneWidget);
+      expect(retry, findsOneWidget, reason: '主机出错时给重试');
+
+      await tester.tap(retry);
+      await settle(tester, rounds: 6);
+      expect(rwkv.starts, <bool>[true], reason: '重试转给主机，不受失败后的重试间隔限制');
+
+      // 主机就绪：没有任何写入推进修订号，客户端靠自己的定时握手发现，复习页随即重排。
+      rwkv.now = const SrsRwkvStatus(SrsRwkvPhase.ready);
+      await tester.pump(SrsRemoteRwkvStatus.pollEvery);
+      // 握手与重排是真异步（主机的库），耗时随机器负载：按轮推进到卡上屏，到不了由下面的断言报红。
+      final Stopwatch waited = Stopwatch()..start();
+      while (faces.isEmpty && waited.elapsed < const Duration(seconds: 30)) {
+        await settle(tester, rounds: 2);
+      }
+      // 卡上屏后「等 RWKV」的占位还要走完切换动效才离开树。
+      await settle(tester);
+      expect(pending, findsNothing);
+      expect(faces, isNotEmpty, reason: '主机就绪后出卡');
 
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump(const Duration(seconds: 1));

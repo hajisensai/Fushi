@@ -22,13 +22,34 @@ final class VideoRemoteCue {
     required this.endMs,
     required this.delayMs,
     required this.track,
+    this.sentence,
+    this.sentenceId,
   });
   final String id;
   final String text;
+
+  /// Host-side only (not on the wire): when this row is one line of a sentence
+  /// that the subtitle splits into several simultaneously shown cues (ASS
+  /// Dialogue lines with identical timing and style), the whole sentence in
+  /// display order; null when the row is a sentence on its own. Copy / mining
+  /// use [mineText] so the card gets the full sentence (feedback rLCxUJ-2i4).
+  final String? sentence;
+
+  /// Host-side only: rows of the same split sentence share this key, so "N
+  /// sentences before / after" counts the sentence once. Null = own sentence.
+  final String? sentenceId;
   final int startMs;
   final int endMs;
   final int delayMs;
   final String track;
+
+  /// The text a card or copy takes for this row: the whole sentence it belongs
+  /// to ([sentence]) or the row itself.
+  String get mineText => sentence ?? text;
+
+  /// The sentence-context unit this row belongs to ([sentenceId] or its own id).
+  String get sentenceKey => sentenceId ?? id;
+
   Map<String, Object?> toJson() => <String, Object?>{
     'id': id,
     'text': text,
@@ -1068,7 +1089,7 @@ final class VideoRemoteHost implements VideoRemoteService {
       return <String, Object?>{
         'contextId': lookup.id,
         'cue': cue.toJson(),
-        'sentence': cue.text,
+        'sentence': cue.mineText,
       };
     }
     if (operation == 'favoriteSet') {
@@ -1289,7 +1310,10 @@ final class VideoRemoteHost implements VideoRemoteService {
         played = false;
     }
     return <String, Object?>{
-      ...buildSentenceContextPreview(draft: draft, current: lookup.cue.text),
+      ...buildSentenceContextPreview(
+        draft: draft,
+        current: lookup.cue.mineText,
+      ),
       if (played != null) 'played': played,
     };
   }
@@ -1297,19 +1321,23 @@ final class VideoRemoteHost implements VideoRemoteService {
   /// The desktop page's "N rows before / after" rule
   /// (`_setSentenceContextToDraft`) over the rows the phone lists: the
   /// anchor's own track in time order, replacing the previous selection.
+  /// Rows of one split sentence ([VideoRemoteCue.sentenceKey]) count once, so
+  /// "1 before" never picks the other line of the anchor's own sentence.
   void _setContext(_RemoteLookup lookup, int prevCount, int nextCount) {
-    final List<VideoRemoteCue> rows = _cues
-        .where((VideoRemoteCue cue) => cue.track == lookup.cue.track)
-        .toList();
+    final Set<String> seen = <String>{};
+    final List<VideoRemoteCue> rows = <VideoRemoteCue>[
+      for (final VideoRemoteCue cue in _cues)
+        if (cue.track == lookup.cue.track && seen.add(cue.sentenceKey)) cue,
+    ];
     final int idx = rows.indexWhere(
-      (VideoRemoteCue cue) => cue.id == lookup.cue.id,
+      (VideoRemoteCue cue) => cue.sentenceKey == lookup.cue.sentenceKey,
     );
     if (idx < 0) {
       lookup.draft.setContext();
       return;
     }
     MiningDraftSentence entry(VideoRemoteCue cue) => MiningDraftSentence(
-      sentence: cue.text,
+      sentence: cue.mineText,
       audioRange: AudioPlaybackRange(
         audioFileIndex: 0,
         startMs: cue.startMs,
@@ -1341,10 +1369,10 @@ final class VideoRemoteHost implements VideoRemoteService {
       ),
     );
     final bool adjusted = !draft.isEmpty || draft.currentSentenceEdit != null;
-    final String merged = draft.composeText(cue.text);
+    final String merged = draft.composeText(cue.mineText);
     return VideoRemoteMineSelection(
-      sentence: adjusted ? merged : cue.text,
-      cueSentence: draft.isEmpty ? cue.text : merged,
+      sentence: adjusted ? merged : cue.mineText,
+      cueSentence: draft.isEmpty ? cue.mineText : merged,
       startMs: range?.startMs ?? cue.startMs,
       endMs: range?.endMs ?? cue.endMs,
       adjusted: adjusted,

@@ -1304,8 +1304,10 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
   Future<bool> playPopupWordAudio(
     String expression,
     String reading,
-    DictionaryPopupWebViewState? popupState,
-  ) async {
+    DictionaryPopupWebViewState? popupState, {
+    // 发音问那台设备要：远端解析 / TTS 兜底由它按自己的口径做，命中原文不上送。
+    String matched = '',
+  }) async {
     final String? ref;
     try {
       ref = await _resources.wordAudioRef(expression, reading);

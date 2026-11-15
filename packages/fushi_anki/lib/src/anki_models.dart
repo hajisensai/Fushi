@@ -74,6 +74,24 @@ AnkiOverwriteScope ankiOverwriteScopeFromName(String? name) {
   }
 }
 
+/// 解析持久化的 [AnkiSettings.overwriteFieldsByNoteType]：缺键 / 形状不对一律视为空表
+/// （= 每种笔记类型都覆写全部字段，旧存档升级后行为不变）；空清单的条目丢弃。
+Map<String, List<String>> overwriteFieldsByNoteTypeFromJson(Object? raw) {
+  if (raw is! Map) return const <String, List<String>>{};
+  final Map<String, List<String>> out = <String, List<String>>{};
+  for (final MapEntry<Object?, Object?> e in raw.entries) {
+    final Object? key = e.key;
+    final Object? value = e.value;
+    if (key is! String || value is! List) continue;
+    final List<String> fields = <String>[
+      for (final Object? f in value)
+        if (f is String && f.isNotEmpty) f,
+    ];
+    if (fields.isNotEmpty) out[key] = fields;
+  }
+  return out;
+}
+
 /// 查重（以及据同一条件反查已存在卡）的**搜索范围**。
 ///
 /// 用户痛点：Anki 的 `deck:X` 搜索包含 X 的子卡组，但**不包含**它的父卡组与兄弟
@@ -218,6 +236,7 @@ class AnkiSettings {
     this.compactGlossaries = false,
     this.embedMedia = true,
     this.overwriteScope = AnkiOverwriteScope.latest,
+    this.overwriteFieldsByNoteType = const <String, List<String>>{},
     this.duplicateScope = AnkiDuplicateScope.deck,
     this.ankiConnectHost = 'localhost',
     this.ankiConnectPort = 8765,
@@ -280,6 +299,9 @@ class AnkiSettings {
     embedMedia: json['embedMedia'] as bool? ?? true,
     overwriteScope: ankiOverwriteScopeFromName(
       json['overwriteScope'] as String?,
+    ),
+    overwriteFieldsByNoteType: overwriteFieldsByNoteTypeFromJson(
+      json['overwriteFieldsByNoteType'],
     ),
     duplicateScope: ankiDuplicateScopeFromName(
       json['duplicateScope'] as String?,
@@ -364,6 +386,45 @@ class AnkiSettings {
 
   /// TODO-614：覆写已制卡片的范围（默认 [AnkiOverwriteScope.latest] = 仅最近一张）。
   final AnkiOverwriteScope overwriteScope;
+
+  /// 反馈 nWWjBp3Clo：覆写已有卡时**只改哪些字段**，按笔记类型名记住。
+  ///
+  /// 笔记类型名 → 要覆写的字段名清单。**没有条目 = 覆写全部字段**（BUG-2606 的整卡
+  /// 替换，旧行为不变）；有条目时只写清单里的字段，其余字段原样保留——预制卡组里的
+  /// 释义、JLPT 标注等不会被清空，Fushi 只补句子 / 图片 / 音频。标签照旧只增不减。
+  ///
+  /// 不进 Profile 快照：键是笔记类型名，切 Profile 换笔记类型时各自的选择互不干扰。
+  /// 读写一律经 [overwriteFieldsFor] / [withOverwriteFields]，不直接拼这张表。
+  final Map<String, List<String>> overwriteFieldsByNoteType;
+
+  /// [noteTypeName] 这种笔记类型覆写时要写的字段；`null` = 全部字段（旧行为）。
+  Set<String>? overwriteFieldsFor(String? noteTypeName) {
+    if (noteTypeName == null) return null;
+    final List<String>? fields = overwriteFieldsByNoteType[noteTypeName];
+    if (fields == null || fields.isEmpty) return null;
+    return fields.toSet();
+  }
+
+  /// 记住 [noteTypeName] 的覆写字段选择。[fields] 为 `null` 或空 = 恢复「全部字段」，
+  /// 直接删掉这个笔记类型的条目（空选择没有「什么都不写」的意义，覆写按钮本身就
+  /// 是「要写」）。
+  AnkiSettings withOverwriteFields(
+    String noteTypeName,
+    Iterable<String>? fields,
+  ) {
+    final Map<String, List<String>> next = <String, List<String>>{
+      ...overwriteFieldsByNoteType,
+    };
+    final List<String> list = fields == null
+        ? const <String>[]
+        : fields.toSet().toList();
+    if (list.isEmpty) {
+      next.remove(noteTypeName);
+    } else {
+      next[noteTypeName] = list;
+    }
+    return copyWith(overwriteFieldsByNoteType: next);
+  }
 
   /// 查重 / 反查已存在卡的搜索范围（默认 [AnkiDuplicateScope.deck] = 旧行为：
   /// 只查当前卡组及其子卡组）。仅 AnkiConnect 生效，见 [AnkiDuplicateScope]。
@@ -566,6 +627,7 @@ class AnkiSettings {
     bool? compactGlossaries,
     bool? embedMedia,
     AnkiOverwriteScope? overwriteScope,
+    Map<String, List<String>>? overwriteFieldsByNoteType,
     AnkiDuplicateScope? duplicateScope,
     String? ankiConnectHost,
     int? ankiConnectPort,
@@ -620,6 +682,8 @@ class AnkiSettings {
     compactGlossaries: compactGlossaries ?? this.compactGlossaries,
     embedMedia: embedMedia ?? this.embedMedia,
     overwriteScope: overwriteScope ?? this.overwriteScope,
+    overwriteFieldsByNoteType:
+        overwriteFieldsByNoteType ?? this.overwriteFieldsByNoteType,
     duplicateScope: duplicateScope ?? this.duplicateScope,
     ankiConnectHost: ankiConnectHost ?? this.ankiConnectHost,
     ankiConnectPort: ankiConnectPort ?? this.ankiConnectPort,
@@ -676,6 +740,7 @@ class AnkiSettings {
     'compactGlossaries': compactGlossaries,
     'embedMedia': embedMedia,
     'overwriteScope': overwriteScope.name,
+    'overwriteFieldsByNoteType': overwriteFieldsByNoteType,
     'duplicateScope': duplicateScope.name,
     'ankiConnectHost': ankiConnectHost,
     'ankiConnectPort': ankiConnectPort,
@@ -949,6 +1014,11 @@ enum AnkiMiningSource {
   /// （写入 Anki 的标签字面量为 `music`）。所有者 2026-10-24 拍板：此前沿用收藏夹
   /// 口径打成 `book`；只决定新卡，旧卡不迁移不重写。
   music,
+
+  /// 漫画阅读器制卡（OCR 气泡查词 / 收藏夹里的漫画句）—— 归「漫画」分类标签
+  /// （写入 Anki 的标签字面量为 `manga`）。反馈 uOanUXUIDt 拍板：此前漫画卡沿用
+  /// 书籍口径打成 `book`；只决定新卡，旧卡不迁移不重写。
+  manga,
 }
 
 class AnkiMiningContext {
@@ -963,6 +1033,7 @@ class AnkiMiningContext {
     this.source,
     this.bookTitleTag,
     this.collectionTag,
+    this.seriesTitle,
     this.charPositionText,
     this.clipStartMs,
     this.clipEndMs,
@@ -1002,6 +1073,11 @@ class AnkiMiningContext {
   /// 二者字面量不同则各成一个 tag（Anki 里可按系列聚合、也可按单集/单本区分）；相同时由
   /// [buildNoteTags] 去重合并。见视频 `lookup_mining` / reader `mining` 注入点。
   final String? collectionTag;
+
+  /// 出处的上一级（系列 / 合集 / 播放列表的**原样名字**，不清洗）：SRS 出处按「系列 → 集」两级分组
+  /// （`SrsSourceRef.seriesTitle`，反馈 MCJLSBR5Wg）。与 [collectionTag] 是同一个来源，但不受「自动添加书名到
+  /// 标签」开关影响、也不做标签清洗——它是出处层级，不是标签。不属任何系列时 null。
+  final String? seriesTitle;
 
   /// 「制卡位置写入 MiscInfo」开关（冻结偏好键 `auto_add_char_position_to_tags`）开启时，
   /// 调用方（小说阅读器）按界面语言格式化好的**制卡位置文本**（如「制卡位置：第 12345 字」）：
@@ -1054,6 +1130,7 @@ class AnkiMiningContext {
     source: source,
     bookTitleTag: bookTitleTag,
     collectionTag: collectionTag,
+    seriesTitle: seriesTitle,
     charPositionText: charPositionText,
     clipStartMs: clipStartMs,
     clipEndMs: clipEndMs,
@@ -1085,6 +1162,7 @@ class AnkiMiningContext {
     source: source,
     bookTitleTag: bookTitleTag,
     collectionTag: collectionTag,
+    seriesTitle: seriesTitle,
     charPositionText: charPositionText,
     clipStartMs: clipStartMs,
     clipEndMs: clipEndMs,
@@ -1951,6 +2029,12 @@ class AnkiErrorCode {
   /// 此前这条失败不带码，toast 里直接是后端的英文原文（用户 2026-10-21 iOS 反馈）。
   static const String allFieldsEmpty = 'ANKI_ALL_FIELDS_EMPTY';
 
+  /// 反馈 nWWjBp3Clo：用户选了「覆写时只改这些字段」，但这次渲染出来这些字段**全是空**
+  /// （或选中的字段一个都不在这张卡的笔记类型里）——写下去只会清空它们，本地拒绝。
+  /// 与具体词条有关（这次没有图 / 没有音频），**不是**字段映射配错，不进
+  /// [isFieldMappingConfigError]。
+  static const String overwriteFieldsEmpty = 'ANKI_OVERWRITE_FIELDS_EMPTY';
+
   /// BUG-2380：「创建并选用 Lapis」建完之后，Lapis 牌组 / 笔记类型仍然不在后端
   /// 回读的清单里 —— 也就是后端把创建**静默吞掉**了（AnkiDroid 的 `addNewDeck`
   /// 失败返回 null 而 native 侧照样 `result.success`，是已知形态）。
@@ -2021,6 +2105,7 @@ class MineOutcome {
     this.noteId,
     this.deckName,
     this.audioWarning,
+    this.notice,
     this.errorDetail,
     this.errorCode,
     this.error,
@@ -2044,18 +2129,27 @@ class MineOutcome {
   /// 成功 toast 的「已添加到『…』」只认它——此前调用点事后用
   /// `loadSettings().selectedDeckName` 猜，旧存档/旧 Profile 快照只有 id 没有
   /// name 时（AnkiConnect 按 id 照样落卡成功）toast 显示空引号。
-  const MineOutcome.success({this.noteId, this.deckName, this.audioWarning})
-    : result = MineResult.success,
-      errorDetail = null,
-      errorCode = null,
-      error = null,
-      stackTrace = null;
+  ///
+  /// [notice]：随成功结果一起告诉用户的另一件事（已本地化的整句），例如「保存到」所选的落点
+  /// 主机已不再提供、卡落进了它的默认（BUG-4287）。它必须跟结果走同一条提示：单独再弹一条
+  /// 会被紧随其后的结果提示顶掉。
+  const MineOutcome.success({
+    this.noteId,
+    this.deckName,
+    this.audioWarning,
+    this.notice,
+  }) : result = MineResult.success,
+       errorDetail = null,
+       errorCode = null,
+       error = null,
+       stackTrace = null;
 
   const MineOutcome.duplicate()
     : result = MineResult.duplicate,
       noteId = null,
       deckName = null,
       audioWarning = null,
+      notice = null,
       errorDetail = null,
       errorCode = null,
       error = null,
@@ -2070,6 +2164,7 @@ class MineOutcome {
     : result = MineResult.queued,
       noteId = null,
       audioWarning = null,
+      notice = null,
       errorDetail = null,
       errorCode = null,
       error = null,
@@ -2080,6 +2175,7 @@ class MineOutcome {
       noteId = null,
       deckName = null,
       audioWarning = null,
+      notice = null,
       errorDetail = null,
       errorCode = null,
       error = null,
@@ -2098,6 +2194,7 @@ class MineOutcome {
        noteId = null,
        deckName = null,
        audioWarning = null,
+       notice = null,
        errorDetail = detail,
        errorCode = errorCode,
        error = error,
@@ -2121,6 +2218,9 @@ class MineOutcome {
   /// 主 app 据它在成功 toast 后追加「音频获取失败」提示。`null` = 音频本就没有或
   /// 下载成功（TODO-779）。
   final String? audioWarning;
+
+  /// 仅成功时可能非空：随结果一起提示的另一件事（见 [MineOutcome.success]）。
+  final String? notice;
 
   /// 仅在 [result] == [MineResult.error] 时非空：简短的人类可读失败原因（回退文案）。
   final String? errorDetail;

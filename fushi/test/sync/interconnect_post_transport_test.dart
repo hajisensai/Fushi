@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:drift/drift.dart' hide isNotNull, isNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/src/sync/interconnect_post_transport.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -287,6 +288,31 @@ void main() {
       ),
     );
     expect(b.allUnreachable, isFalse);
+  });
+
+  test('已配对但只剩换不出转发口的 p2p://（隧道层没装）→ 仍是不可达，不是未配对', () async {
+    // BUG-4278 审查：选路把换不出转发口的 `p2p://` 去掉后候选为空，不能被当成「未配对」
+    // 吞成普通无结果——那样失败冷却与「连不上」提示都失效。
+    setInterconnectP2pResolver(null);
+    resetInterconnectRaceCache();
+    addTearDown(resetInterconnectRaceCache);
+    final FushiDatabase db = _testDb();
+    addTearDown(db.close);
+    final SyncRepository repo = await _repo(
+      db: db,
+      urls: const <FushiClientUrl>[
+        FushiClientUrl(url: 'p2p://node-a', hostId: 'HOST-A'),
+      ],
+    );
+    final InterconnectPostOutcome outcome = await _post(
+      InterconnectPostTransport(
+        repo: repo,
+        httpClient: MockClient((_) async => throw StateError('不该发请求')),
+      ),
+    );
+    expect(outcome.json, isNull);
+    expect(outcome.allUnreachable, isTrue);
+    expect(outcome.mayHaveDelivered, isFalse);
   });
 
   test('https 带指纹的候选强制走钉扎 client，不碰注入的共享 client (TODO-961 gap①)', () async {

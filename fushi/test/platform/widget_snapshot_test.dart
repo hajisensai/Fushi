@@ -93,6 +93,7 @@ void main() {
         'reviews',
         'mined',
         'chars',
+        'chars_weekly',
       ])
         id: 'G:$id',
     },
@@ -632,6 +633,48 @@ void main() {
       expect(t['goal'], 1, reason: 'legacy char goal fraction, clamped');
     });
 
+    test(
+      'weekly char goal (CjIr9RGSCe): numerator = natural week since Monday',
+      () {
+        // today = 2026-10-23（周五）→ 本周一 = 2026-10-19。上周日 10-18 不计入。
+        final Map<String, Object?> s = build(
+          immersion: const WidgetImmersionInput(
+            charsByDay: <String, int>{
+              '2026-10-18': 9000,
+              '2026-10-19': 1000,
+              '2026-10-21': 2000,
+              today: 3000,
+            },
+          ),
+          goals: const WidgetGoalsInput(chars: 12000, charsWeekly: true),
+        );
+        final List<Map<String, Object?>> goals = listOf(s['goals']);
+        expect(goals.single['id'], 'chars');
+        expect(goals.single['label'], 'G:chars_weekly');
+        expect(goals.single['value'], '6000 chars');
+        expect(goals.single['target'], '12000 chars');
+        expect(goals.single['frac'], 0.5);
+        expect(goals.single['done'], false);
+        final Map<String, Object?> t = mapOf(s['today']);
+        expect(t['goal'], 0.5, reason: 'today ring follows the weekly goal');
+        // 「今日字数」本身不受周期影响。
+        expect(t['chars'], '3000 chars');
+      },
+    );
+
+    test('daily char goal keeps the daily label and today numerator', () {
+      final Map<String, Object?> s = build(
+        immersion: const WidgetImmersionInput(
+          charsByDay: <String, int>{'2026-10-19': 1000, today: 3000},
+        ),
+        goals: const WidgetGoalsInput(chars: 6000),
+      );
+      final Map<String, Object?> g = listOf(s['goals']).single;
+      expect(g['label'], 'G:chars');
+      expect(g['value'], '3000 chars');
+      expect(g['frac'], 0.5);
+    });
+
     test('no goals set: empty list', () {
       expect(build(goals: const WidgetGoalsInput())['goals'], isEmpty);
     });
@@ -1075,6 +1118,7 @@ void main() {
         'reviews',
         'mined',
         'chars',
+        'chars_weekly',
       });
     });
 

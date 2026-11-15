@@ -5,6 +5,7 @@ import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/mining/gal_hook_mining_coordinator.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
+import 'package:fushi/src/mining/gal_mining_settings.dart';
 import 'package:fushi/src/mining/window_capture_channel.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
 import 'package:fushi_engine/mining/immersion_mining_request.dart';
@@ -29,6 +30,7 @@ class FushiGameStreamMiningAdapter {
     this.imageMode = VideoMiningImageMode.currentFrame,
     this.animatedFormat = MiningAnimatedFormat.gif,
     this.stillFormat = MiningStillFormat.jpg,
+    GalMiningSettings Function()? miningSettings,
     bool Function()? addTitleTag,
     GalHookLineLookup? lineLookup,
     String? Function()? currentLineId,
@@ -42,6 +44,7 @@ class FushiGameStreamMiningAdapter {
        assert(maxSnapshotBytes > 0),
        _coordinator = coordinator ?? GalHookMiningCoordinator.instance,
        _compression = compression,
+       _miningSettings = miningSettings,
        _addTitleTag = addTitleTag ?? (() => false),
        _lineLookup = lineLookup ?? TexthookerService.instance.entryById,
        _currentLineId = currentLineId ?? _latestLineId,
@@ -58,6 +61,10 @@ class FushiGameStreamMiningAdapter {
   /// 串流卡是替接收端制的，主机装配时给的是遵守本机挖词目标的主机制卡仓库。
   final BaseAnkiRepository Function() repository;
   final MiningMediaCompression Function() _compression;
+
+  /// 每张卡读一次的 gal 制卡设置（全局 + 当前游戏覆盖）。主机装配时注入；
+  /// null（测试替身）= 用构造时给的 [stillFormat]、句子音频不裁。
+  final GalMiningSettings Function()? _miningSettings;
   final bool Function() _addTitleTag;
   final GalHookLineLookup _lineLookup;
   final String? Function() _currentLineId;
@@ -226,6 +233,7 @@ class FushiGameStreamMiningAdapter {
       sentence: line.text,
       fields: fields,
     );
+    final GalMiningSettings? settings = _miningSettings?.call();
     final GalHookMiningResult result = _mineSnapshot != null
         ? await _mineSnapshot(safeRequest, screenshot)
         : await _coordinator.mineLine(
@@ -236,7 +244,8 @@ class FushiGameStreamMiningAdapter {
             repo: repository(),
             addTitleTag: _addTitleTag(),
             imageMode: VideoMiningImageMode.currentFrame,
-            stillFormat: stillFormat,
+            stillFormat: settings?.stillFormat ?? stillFormat,
+            audioLimit: settings?.audioLimit ?? GalMiningAudioLimit.unlimited,
             providedLineScreenshot: screenshot,
           );
     // 失败原文**不出主机**：`GalHookMiningResult.failureReason` 有一条路是

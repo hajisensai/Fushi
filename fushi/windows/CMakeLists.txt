@@ -89,11 +89,14 @@ include(flutter/generated_plugins.cmake)
 # Only Fushi's explicit window-stream constraint selects this adapter.
 target_sources(flutter_webrtc_plugin PRIVATE
   "runner/game_stream_webrtc_capture.cpp"
-  "runner/window_capture.cpp")
+  "runner/window_capture.cpp"
+  # Host mute: the patched application_loopback_capturer.cc reads the game
+  # tree's session volume and undoes the runner's duck (audio_duck_gain.h).
+  "runner/audio_session_ducker.cpp")
 target_include_directories(flutter_webrtc_plugin PRIVATE "runner")
 target_compile_definitions(flutter_webrtc_plugin PRIVATE FUSHI_GAME_STREAM_WGC)
 target_link_libraries(flutter_webrtc_plugin PRIVATE
-  d3d11 dxgi dwmapi windowsapp windowscodecs shlwapi)
+  d3d11 dxgi dwmapi windowsapp windowscodecs shlwapi ole32)
 
 # === fushidicts native dictionary engine ===
 set(FUSHIDICTS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../native/fushidicts")

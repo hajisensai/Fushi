@@ -20,6 +20,8 @@ import 'package:fushi/src/utils/adaptive/fushi_page_transitions.dart';
 import 'package:fushi/src/utils/adaptive/predictive_back_page_transitions.dart';
 import 'package:fushi/src/utils/components/accent_logo_image.dart'
     show appLogoFollowsAccent;
+import 'package:fushi/src/utils/components/mascot_glow.dart'
+    show mascotGlowEnabled;
 import 'package:fushi/src/utils/misc/app_icon_preferences.dart'
     show AppIconSelection, currentAppIconSelection;
 import 'package:fushi/src/utils/misc/channel_constants.dart';
@@ -882,6 +884,7 @@ class ThemeNotifier extends ChangeNotifier {
     'glass_material',
     'pure_black_dark',
     tintAppLogoPrefKey,
+    mascotGlowPrefKey,
     followAppIconPrefKey,
     audioHighlightColorPrefKey,
     customThemesPrefKey,
@@ -938,6 +941,9 @@ class ThemeNotifier extends ChangeNotifier {
   /// 「图标跟随主题色」：内置吉祥物 logo 按当前强调色换色（关 = 始终原图）。
   static const String tintAppLogoPrefKey = 'theme_tint_app_logo';
 
+  /// 「吉祥物光晕」：悬浮球上的吉祥物带一圈呼吸光晕，后台同步时更亮更快（默认关）。
+  static const String mascotGlowPrefKey = 'theme_mascot_glow';
+
   /// 「主题色跟随图标」：用户设置了自定义图标图片时，从图标取种子色当强调色。
   /// 只是**覆盖**生效配色，不改写 `app_theme_key` / 自定义主题，关掉即回到原主题。
   static const String followAppIconPrefKey = 'theme_follow_app_icon';
@@ -961,6 +967,14 @@ class ThemeNotifier extends ChangeNotifier {
   Future<void> setTintAppLogo(bool value) async {
     await _set(tintAppLogoPrefKey, value);
     appLogoFollowsAccent.value = value;
+    notifyListeners();
+  }
+
+  bool get mascotGlow => _get(mascotGlowPrefKey, defaultValue: false) as bool;
+
+  Future<void> setMascotGlow(bool value) async {
+    await _set(mascotGlowPrefKey, value);
+    mascotGlowEnabled.value = value;
     notifyListeners();
   }
 
@@ -994,6 +1008,7 @@ class ThemeNotifier extends ChangeNotifier {
   /// 偏好加载 / 刷新后：发布 logo 换色开关、按需取图标色。
   void _onAppIconPreferencesLoaded() {
     appLogoFollowsAccent.value = tintAppLogo;
+    mascotGlowEnabled.value = mascotGlow;
     if (followAppIconAccent) unawaited(refreshAppIconSeed());
   }
 
@@ -3651,9 +3666,15 @@ ThemeData buildFushiThemeData({
         iconSize: 18,
       ),
     ),
+    // MD3 设计系统的 ElevatedButton 走官方 M3 Expressive 实现（material_ui 1.11：
+    // 尺寸 / 形状变体、按压形变与选中态），与 iconButtonTheme 同口径；Apple 与
+    // 墨水屏保持 M3 原件。M3E 下不写 shape：静止态本就是全圆角，写死
+    // StadiumBorder 会盖掉官方的按压 / 选中形变。其余尺寸、字重沿用 2026-10-04
+    // 的按钮统一口径。
     elevatedButtonTheme: ElevatedButtonThemeData(
+      variant: appleDesign || eink ? null : StyleVariant.material3Expressive,
       style: ElevatedButton.styleFrom(
-        shape: const StadiumBorder(),
+        shape: appleDesign || eink ? const StadiumBorder() : null,
         minimumSize: const Size(64, 40),
         padding: const EdgeInsets.symmetric(horizontal: 20),
         textStyle: tt.labelLarge?.copyWith(

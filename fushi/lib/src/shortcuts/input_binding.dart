@@ -11,6 +11,8 @@ import 'package:flutter/gestures.dart'
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
+import 'package:fushi/src/shortcuts/key_event_device_type.dart';
+
 enum ModifierKey {
   ctrl,
   shift,
@@ -651,7 +653,7 @@ enum GamepadButton {
     final GamepadButton? button = fromLogicalKey(event.logicalKey);
     if (button == null) return null;
     if (!button.isDpad) return button;
-    return isGamepadLikeDevice(event.deviceType) ? button : null;
+    return isGamepadLikeDevice(keyEventDeviceType(event)) ? button : null;
   }
 
   static GamepadButton? fromLabel(String label) {

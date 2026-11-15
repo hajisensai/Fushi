@@ -44,6 +44,7 @@ extension _FushiSyncServerLibrary on FushiSyncServer {
     required Future<void> Function(File tmp) import,
     required Future<void> Function() delete,
     Future<bool> Function()? vetoPush,
+    Future<String?> Function()? contentVersion,
   }) async {
     switch (method) {
       case 'GET':
@@ -56,9 +57,18 @@ extension _FushiSyncServerLibrary on FushiSyncServer {
         if (request.url.queryParameters['fresh'] == '1') {
           await _exportCache.invalidate(cacheKind, id);
         }
+        // [contentVersion]（可选）：这一项此刻的内容版本，缓存只在同版本时命中
+        // （[ExportPackageCache] 类注释「内容版本」）。host 上内容一换，下一次普通
+        // 下载就拿到新包；正在传的旧包照常发完，它的续传因 ETag 不匹配收 200 新包。
         File file;
         try {
-          file = await _exportCache.obtain(cacheKind, id, export);
+          final String? version = await contentVersion?.call();
+          file = await _exportCache.obtain(
+            cacheKind,
+            id,
+            export,
+            version: version,
+          );
         } on StateError {
           return shelf.Response.notFound(notFoundMessage);
         }
@@ -220,9 +230,31 @@ extension _FushiSyncServerLibrary on FushiSyncServer {
       // bookKey 含 CJK：charset 必带（同 _handleLibraryAggregate）。
       headers: <String, String>{
         'Content-Type': 'application/json; charset=utf-8',
+        ..._liveWriteHeaders(svc),
       },
     );
   }
+
+  /// 实现 [LivePositionWriteHost] 的 host 在 live 位置端点响应上加的能力宣告头
+  /// （BUG-4431）；没实现的 host 不加，client 据此走兼容层。
+  Map<String, String> _liveWriteHeaders(Object? svc) =>
+      svc is LivePositionWriteHost
+      ? const <String, String>{kLiveWriteHeader: '1'}
+      : const <String, String>{};
+
+  /// live 写入 `PUT` 的回执响应（BUG-4431）：前置条件不符回 409，其余 200；体是
+  /// 回执 JSON，带 [kLiveWriteHeader]。
+  shelf.Response _liveWriteResponse(
+    LiveWriteResult result,
+    Map<String, Object?> body,
+  ) => shelf.Response(
+    result == LiveWriteResult.preconditionFailed ? 409 : 200,
+    body: jsonEncode(body),
+    headers: const <String, String>{
+      'Content-Type': 'application/json',
+      kLiveWriteHeader: '1',
+    },
+  );
 
   Future<shelf.Response> _handleLibraryBooks(
     shelf.Request request,
@@ -284,21 +316,44 @@ extension _FushiSyncServerLibrary on FushiSyncServer {
           );
           return shelf.Response.ok(
             jsonEncode(progress.toJson()),
-            headers: <String, String>{'Content-Type': 'application/json'},
+            headers: <String, String>{
+              'Content-Type': 'application/json',
+              ..._liveWriteHeaders(svc),
+            },
           );
         case 'PUT':
-          final String body = await request.readAsString();
+          final String body = await readBoundedBodyString(request);
           Map<String, dynamic> json;
           try {
             json = jsonDecode(body) as Map<String, dynamic>;
           } catch (_) {
             return shelf.Response(400, body: 'Invalid JSON');
           }
-          await svc.putBookProgress(
-            progressBookKey,
-            RemoteBookProgress.fromJson(json.cast<String, Object?>()),
+          final RemoteBookProgress incoming = RemoteBookProgress.fromJson(
+            json.cast<String, Object?>(),
           );
-          return shelf.Response(200);
+          // BUG-4431：实现 [LivePositionWriteHost] 的 host 回结果回执、接受可选前置
+          // 条件（不符 → 409 不写）并宣告 [kLiveWriteHeader]；否则照旧 200 空体。
+          final Object liveHost = svc;
+          if (liveHost is! LivePositionWriteHost) {
+            await svc.putBookProgress(progressBookKey, incoming);
+            return shelf.Response(200);
+          }
+          final List<BookProgressBaseline>? expected;
+          try {
+            expected = parseLiveExpectedBookProgress(
+              json[kLiveExpectedBookProgressKey],
+            );
+          } on FormatException catch (e) {
+            return shelf.Response(400, body: e.message);
+          }
+          final LiveBookProgressWriteOutcome outcome = await liveHost
+              .putBookProgressChecked(
+                progressBookKey,
+                incoming,
+                expected: expected,
+              );
+          return _liveWriteResponse(outcome.result, outcome.toJson());
         default:
           return shelf.Response(405);
       }
@@ -613,10 +668,13 @@ extension _FushiSyncServerLibrary on FushiSyncServer {
               'positionMs': p.positionMs,
               'positionUpdatedAtMs': p.updatedAtMs,
             }),
-            headers: <String, String>{'Content-Type': 'application/json'},
+            headers: <String, String>{
+              'Content-Type': 'application/json',
+              ..._liveWriteHeaders(svc),
+            },
           );
         case 'PUT':
-          final String body = await request.readAsString();
+          final String body = await readBoundedBodyString(request);
           Map<String, dynamic> json;
           try {
             json = jsonDecode(body) as Map<String, dynamic>;
@@ -626,8 +684,28 @@ extension _FushiSyncServerLibrary on FushiSyncServer {
           final int posMs = (json['positionMs'] as num?)?.toInt() ?? 0;
           final int updatedAtMs =
               (json['positionUpdatedAtMs'] as num?)?.toInt() ?? 0;
-          await svc.putAudiobookPosition(positionBookKey, posMs, updatedAtMs);
-          return shelf.Response(200);
+          // BUG-4431：回执 + 可选前置条件（见书进度 PUT 同段注释）。
+          final Object liveHost = svc;
+          if (liveHost is! LivePositionWriteHost) {
+            await svc.putAudiobookPosition(positionBookKey, posMs, updatedAtMs);
+            return shelf.Response(200);
+          }
+          final List<int>? expected;
+          try {
+            expected = parseLiveExpectedPositionsMs(
+              json[kLiveExpectedPositionsKey],
+            );
+          } on FormatException catch (e) {
+            return shelf.Response(400, body: e.message);
+          }
+          final LivePositionWriteOutcome outcome = await liveHost
+              .putAudiobookPositionChecked(
+                positionBookKey,
+                posMs,
+                updatedAtMs,
+                expectedPositionsMs: expected,
+              );
+          return _liveWriteResponse(outcome.result, outcome.toJson());
         default:
           return shelf.Response(405);
       }
@@ -667,7 +745,7 @@ extension _FushiSyncServerLibrary on FushiSyncServer {
             'delayUpdatedAtMs': d.updatedAtMs,
           });
         case 'PUT':
-          final String body = await request.readAsString();
+          final String body = await readBoundedBodyString(request);
           Map<String, dynamic> json;
           try {
             json = jsonDecode(body) as Map<String, dynamic>;
@@ -754,6 +832,12 @@ extension _FushiSyncServerLibrary on FushiSyncServer {
       export: () => svc.exportAudiobook(bookKey),
       import: (File tmp) => svc.importAudiobook(tmp, bookKeyOverride: bookKey),
       delete: () => svc.deleteAudiobook(bookKey),
+      // 内容版本与清单的 `contentRevision` 同源：host 上换过音频 / 字幕（库根重扫、
+      // 换字幕、对端推送）后，下一次普通下载就重新打包，不回 TTL 内的旧包。
+      contentVersion: svc is AudiobookContentRevisionHost
+          ? () => (svc as AudiobookContentRevisionHost)
+                .audiobookContentRevision(bookKey)
+          : null,
       // 有声书与 EPUB 共享 bookKey：删书（只立 `book` 墓碑）会连带删掉 host 上的有声书，
       // 推回来的有声书包会在 host 落成一条无书可绑的孤儿。纯字幕书身份是 uid，同一端点。
       vetoPush: () => _peerPushVetoed(

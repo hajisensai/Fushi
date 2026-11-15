@@ -26,6 +26,8 @@ import 'package:fushi/src/media/video/subtitle_pos_mapping.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:fushi/src/media/video/video_subtitle_style.dart';
+import 'package:fushi/src/media/video/video_simultaneous_cues.dart'
+    show subtitleAuthoredVerticalFraction;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/src/lookup/hover_lookup_modifier.dart';
@@ -1093,6 +1095,15 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   final Map<String, List<_GroupSlot>> _groupSlots =
       <String, List<_GroupSlot>>{};
 
+  /// 显式定位 cue（`\pos` / `\move`）的**身份序号**（BUG-4352）：显式定位事件各自成组，
+  /// 分组键要能区分同一位置上的不同事件，且跨帧稳定（[KeyedSubtree] 与 [_groupSlots]
+  /// 的身份）。按 cue 对象身份发号，cue 被回收即随 [Expando] 一起消失。
+  final Expando<int> _explicitCueIds = Expando<int>('explicitCueId');
+  int _nextExplicitCueId = 0;
+
+  int _explicitCueIdOf(AudioCue cue) =>
+      _explicitCueIds[cue] ??= _nextExplicitCueId++;
+
   /// 最近一次 build 的字幕显示区高度（本 widget 的 LayoutBuilder 记录），供
   /// [_styleForGrapheme] 把 ASS 绝对字号 / 阴影深度按 显示区高 / PlayResY 缩放
   /// （TODO-1246）。在 LayoutBuilder builder 里赋值，早于 box 内各字符 Builder 回调
@@ -1745,7 +1756,21 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     final Map<String, List<AudioCue>> byKey = <String, List<AudioCue>>{};
     final List<(String, List<AudioCue>)> order = <(String, List<AudioCue>)>[];
     for (final AudioCue cue in cues) {
-      final String key = _positionKey(cue.markup, isSecondary: isSecondary);
+      final String posKey = _positionKey(cue.markup, isSecondary: isSecondary);
+      // BUG-4352：显式定位（`\pos` / `\move`）事件**各自成组**，同位也不进同一个 Column。
+      // libass 对显式定位事件不做碰撞检测（`detect_collisions = !explicit`）：同一 `\pos`
+      // 上的多条事件按 Layer / 事件序原地叠画。卡拉 OK 特效正是靠这个出效果——整行底字一条、
+      // 逐音节高亮 / 光晕拷贝若干条，全部钉在同一个 `\pos`。旧实现按位置键把它们塞进一个
+      // 竖排堆叠组，结果底字、光晕、单音节「la,」被排成上下好几行（副字幕顶部歌词叠行、
+      // 光晕残影）。分组键追加事件身份，组内恒单 cue，绘制顺序仍由 [sortCueGroupsForPaint]
+      // 按 Layer + 事件序决定。
+      final String key =
+          isExplicitlyPositionedCue(
+            cue.markup,
+            respectAssStyle: widget.respectAssStyle,
+          )
+          ? '$posKey#${_explicitCueIdOf(cue)}'
+          : posKey;
       final List<AudioCue>? existing = byKey[key];
       if (existing != null) {
         existing.add(cue);
@@ -4486,6 +4511,22 @@ Matrix4 assShearMatrix(double fax, double fay) {
   return m;
 }
 
+/// 这条 cue 是否**显式定位**（BUG-4352）：带 `\pos`，或在尊重 ASS 样式时带 `\move`。
+///
+/// 与 libass `explicit` 同义：显式定位事件不参与碰撞避让，同一位置上的多条事件原地叠画，
+/// 不竖排堆叠。overlay 据此让它们各自成组（见 `_groupMainCuesByPosition`）。
+/// 纯字幕模式（[respectAssStyle] 关）不分组，`\move` 也不参与定位，故只认 `\pos`
+/// ——与分组键里 `\move` 的判据同一个开关。
+@visibleForTesting
+bool isExplicitlyPositionedCue(
+  SubtitleMarkup? markup, {
+  required bool respectAssStyle,
+}) {
+  if (markup == null) return false;
+  if (markup.posFraction != null) return true;
+  return respectAssStyle && markup.move != null;
+}
+
 /// 分组绘制 z 序（libass）：ASS `Layer` 升序、同层按事件序（[AudioCue.sentenceIndex]，
 /// 解析器按起始时间稳定排序后的文件序）——Stack 后者盖前者。稳定排序（同键保持输入
 /// 顺序），分组键不变故 element 复用不受影响。纯函数可单测。
@@ -4513,31 +4554,6 @@ List<(String, List<AudioCue>)> sortCueGroupsForPaint(
   return <(String, List<AudioCue>)>[for (final int i in idx) groups[i]];
 }
 
-/// 一条 cue 在**作者排版**里的竖直位置（0=画面顶，1=画面底），供纯字幕模式排行序用
-/// （BUG-3608）。\pos 取 y 分数、\move 取起点 y；无显式位置按 \an 竖直锚点 + MarginV
-/// （有 PlayResY 才折算）近似：底部 `1 - MarginV/PlayResY`、顶部 `MarginV/PlayResY`、中部
-/// 0.5。无 markup（srt/vtt）视作底部（1.0）。
-double _authoredVerticalFraction(SubtitleMarkup? m) {
-  if (m == null) return 1.0;
-  final SubtitlePos? pos = m.posFraction;
-  if (pos != null) return pos.yFraction;
-  final SubtitleMove? move = m.move;
-  if (move != null) return move.y1Fraction;
-  final double? playResY = m.playResY;
-  final double mv = m.cueStyle?.marginV ?? 0;
-  final double mvFraction = (playResY != null && playResY > 0 && mv > 0)
-      ? (mv / playResY).clamp(0.0, 1.0).toDouble()
-      : 0.0;
-  switch (m.anchor?.vertical ?? SubtitleVAlign.bottom) {
-    case SubtitleVAlign.top:
-      return mvFraction;
-    case SubtitleVAlign.middle:
-      return 0.5;
-    case SubtitleVAlign.bottom:
-      return 1.0 - mvFraction;
-  }
-}
-
 /// 纯字幕模式（respectAssStyle 关，BUG-915）把整层 cue 折进**一个**锚定堆叠组、位置
 /// 语义归零后，组内行序按**作者排版的竖直次序**排（BUG-3608）：返回「锚点侧在前」的
 /// 顺序（与 `_syncGroupSlots` 的槽位次序同构）——[anchorBottom] 时最靠下的在前（slot0
@@ -4557,7 +4573,7 @@ List<AudioCue> orderPlainCuesByAuthoredPosition(
 }) {
   if (cues.length < 2) return cues;
   final List<double> ys = <double>[
-    for (final AudioCue c in cues) _authoredVerticalFraction(c.markup),
+    for (final AudioCue c in cues) subtitleAuthoredVerticalFraction(c.markup),
   ];
   final List<int> idx = List<int>.generate(cues.length, (int i) => i)
     ..sort((int a, int b) {

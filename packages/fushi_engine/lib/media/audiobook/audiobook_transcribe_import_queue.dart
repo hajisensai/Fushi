@@ -282,6 +282,18 @@ class AudiobookTranscribeImportQueue extends EngineChangeNotifier {
     _kick();
   }
 
+  /// 这组音频的转录任务（**含已结束的**：done / failed / cancelled），没有返回 null。
+  /// 多个时取最新的。须先 [load]。
+  ///
+  /// 书架文件夹导入用它防止每次重扫都重排：失败 / 取消的任务不自动重排，由用户
+  /// 在下载中心手动重试（[retry]）。
+  AudiobookTranscribeJob? findJobForAudio(List<String> audioPaths) {
+    for (final AudiobookTranscribeJob job in _jobs.reversed) {
+      if (_samePaths(job.audioPaths, audioPaths)) return job;
+    }
+    return null;
+  }
+
   /// 排一个任务。同一组音频已有未结束的任务时直接返回那个，不重复排。
   /// [targetBookKey] 非 null = 转完挂到这本已有的书上（见
   /// [AudiobookTranscribeJob.targetBookKey]），与 [contentPath] 互斥。

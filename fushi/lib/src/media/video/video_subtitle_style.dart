@@ -222,7 +222,7 @@ EdgeInsets videoControlsChromeInsets({
 /// 折算 DPI）。短边 <= 0（未布局）时返回 1.0（不缩放）。
 double subtitleScreenScaleFactor(
   Size screenSize, {
-  double referenceShortestSide = 400.0,
+  double referenceShortestSide = kVideoSubtitleReferenceShortestSide,
   double minFactor = 0.85,
   double maxFactor = 1.6,
 }) {
@@ -230,6 +230,74 @@ double subtitleScreenScaleFactor(
   if (shortest <= 0 || referenceShortestSide <= 0) return 1.0;
   final double raw = shortest / referenceShortestSide;
   return raw.clamp(minFactor, maxFactor).toDouble();
+}
+
+/// [subtitleScreenScaleFactor] 的参考短边（逻辑像素，约一台手机的短边）：在此短边上
+/// 因子 = 1，用户设置的基准字号即所见字号。
+const double kVideoSubtitleReferenceShortestSide = 400;
+
+/// 字幕字号滑条下限（逻辑像素，基准值）。
+const double kVideoSubtitleMinFontSize = 12;
+
+/// 字幕字号**基准**上限的保底值（逻辑像素）：历史上滑条写死的上限，在参考短边
+/// [kVideoSubtitleReferenceShortestSide] 的手机上，它占视口短边 48/400 = 12%。
+/// 任何视口下的基准上限都不低于它，老用户在任何屏幕上原本够得着的值仍够得着。
+const double kVideoSubtitleBaseMaxFontSize = 48;
+
+/// 字幕**实际渲染字号**允许占视口短边的比例上限 = 历史上限在参考手机上的占屏比例。
+///
+/// 反馈 CcT_7VQIQr（高 DPI 屏字幕调到最大仍不够大）根因：滑条上限写死 48，而
+/// [subtitleScreenScaleFactor] 为防撑爆又把因子夹在 1.6——两者相乘，任何屏幕上字幕
+/// 最多 76.8 逻辑像素。手机（短边 400）上这占短边 12%，桌面高 DPI 全屏（短边 1080~
+/// 1440 逻辑像素）上只有 5~7%，「同一比例」在大屏上被两个写死的数截断了。现在上限按
+/// 视口算：实际字号最多到短边的这个比例（与手机上的最大观感一致），滑条基准上限由它
+/// 反推（[videoSubtitleMaxBaseFontSize]）。
+const double kVideoSubtitleMaxScreenFraction =
+    kVideoSubtitleBaseMaxFontSize / kVideoSubtitleReferenceShortestSide;
+
+/// 持久化字号的绝对夹取上限：只防坏数据 / 手写配置，不是可调上限（可调上限随视口，
+/// 见 [videoSubtitleMaxBaseFontSize]）。取得足够大，8K 100% 缩放的短边（4320）在
+/// [kVideoSubtitleMaxScreenFraction] 下推出的基准上限（约 324）也不被截。
+const double kVideoSubtitleMaxStoredFontSize = 400;
+
+/// 视口 [viewport]（逻辑像素，已折算 DPI）下字幕**实际渲染字号**的上限：
+/// `max(历史上限 × 屏幕因子, 短边 × [kVideoSubtitleMaxScreenFraction])`。
+/// 取两者较大，保证基准 ≤ [kVideoSubtitleBaseMaxFontSize] 的用户（全部老用户）渲染结果
+/// 像素级不变；视口未布局（短边 <= 0）时退回历史上限。
+double videoSubtitleMaxEffectiveFontSize(Size viewport) {
+  final double legacy =
+      kVideoSubtitleBaseMaxFontSize * subtitleScreenScaleFactor(viewport);
+  final double shortest = viewport.shortestSide;
+  if (shortest <= 0) return legacy;
+  return math.max(legacy, shortest * kVideoSubtitleMaxScreenFraction);
+}
+
+/// 视口 [viewport] 下字幕字号滑条（基准值）的上限：实际字号上限除以屏幕因子，取整
+/// （滑条按 1 逻辑像素一档），夹在 [[kVideoSubtitleBaseMaxFontSize],
+/// [kVideoSubtitleMaxStoredFontSize]]。例：短边 1080 → 因子 1.6、实际上限 129.6 →
+/// 基准上限 81；手机短边 400 → 48（与历史一致）。
+double videoSubtitleMaxBaseFontSize(Size viewport) {
+  final double base =
+      videoSubtitleMaxEffectiveFontSize(viewport) /
+      subtitleScreenScaleFactor(viewport);
+  // +1e-6 吸收浮点误差：129.6 / 1.6 这类整除结果可能算成 80.999…，直接 floor 会少一档。
+  return (base + 1e-6)
+      .floorToDouble()
+      .clamp(kVideoSubtitleBaseMaxFontSize, kVideoSubtitleMaxStoredFontSize)
+      .toDouble();
+}
+
+/// 字幕实际渲染字号 = 基准 [baseFontSize] × 屏幕因子，再夹到本视口的实际上限
+/// [videoSubtitleMaxEffectiveFontSize]。播放页 overlay 与设置页字幕预览同源调用。
+///
+/// 夹上限的意义：在大窗口里调大的基准（如 81）拿到小窗口 / 手机上播放时，不会按基准
+/// 直接放大到占满画面，而是收在与该视口相称的最大观感；基准 ≤ 48 时本函数恒等于
+/// `base × factor`（历史行为）。
+double videoSubtitleEffectiveFontSize(double baseFontSize, Size viewport) {
+  return math.min(
+    baseFontSize * subtitleScreenScaleFactor(viewport),
+    videoSubtitleMaxEffectiveFontSize(viewport),
+  );
 }
 
 /// 字幕层的**用户垂直锚定**（TODO-2838）：决定该层 padding 基线量的是「离底距离」
@@ -606,7 +674,10 @@ class VideoSubtitleStyle {
       final int? backgroundArgb = colorArgb(d['backgroundColor']);
       final int? outlineArgb = colorArgb(d['outlineColor']);
       return VideoSubtitleStyle(
-        fontSize: num2d(d['fontSize'], defaults.fontSize).clamp(10, 72),
+        fontSize: num2d(
+          d['fontSize'],
+          defaults.fontSize,
+        ).clamp(10, kVideoSubtitleMaxStoredFontSize).toDouble(),
         textColor: argb == null ? null : Color(argb),
         fontWeight: readFontWeight(d['fontWeight']),
         shadowColor: shadowArgb == null ? null : Color(shadowArgb),

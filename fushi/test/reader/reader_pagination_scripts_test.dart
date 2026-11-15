@@ -242,7 +242,14 @@ void main() {
       );
 
       expect(body, contains('window.scrollBy({left: step'));
-      expect(body, contains('return moved ? "scrolled" : "limit";'));
+      expect(body, contains('if (moved) return "scrolled";'));
+      // 反馈 R7k887yaJI 重开：滚不动时先问文档内换章的所有者，认领了就不回 limit。
+      expect(
+        body,
+        contains(
+          'return this.claimBoundaryTurn(direction) ? "scrolled" : "limit";',
+        ),
+      );
     });
 
     test('continuous vertical visible-char sampling uses viewport width', () {

@@ -1,13 +1,13 @@
 import 'dart:math' as math;
 import 'dart:ui' show Rect;
 
-import 'package:characters/characters.dart';
 import 'package:flutter/foundation.dart' show visibleForTesting;
 
 import 'package:fushi/src/media/manga/manga_reading_mode.dart';
 import 'package:fushi/src/media/manga/manga_view_prefs.dart';
 import 'package:fushi/src/media/manga/manga_reader_preferences.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_text_join.dart';
+import 'package:fushi/src/ocr/ocr_text_regions.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 
 /// 把一页所有 mokuro block 渲染成绝对定位的透明 `<p class="ocr-box">` 层。
@@ -56,7 +56,9 @@ String mangaOcrBoxesHtml(MokuroImage page) {
     final bool hasRegions = regions.isNotEmpty;
     final String inner = hasRegions
         ? _mangaCharacterRegionsHtml(block: block, regions: regions)
-        : block.lines.map(_escapeHtml).join('<br>');
+        : mangaBlockTextLayout(block).lines
+              .map((MangaBlockTextLine line) => _escapeHtml(line.text))
+              .join('<br>');
     buffer.write(
       '<p class="ocr-box" '
       'data-ocr-orientation="$orientation" '
@@ -399,219 +401,161 @@ int _compareMangaBlockReadingOrder(MokuroBlock a, MokuroBlock b) {
 bool _mangaEndsSentence(String text) =>
     RegExp(r'[。！？.!?‼⁉][」』）)\]】〉》〕｝}］”’]*$').hasMatch(text);
 
-/// Returns character-level hit regions for every OCR producer.
+/// [mangaBlockTextLayout] 的一行：有效文本（行尾断字连字符已去掉）与它在整串里的起点。
+typedef MangaBlockTextLine = OcrTextLine;
+
+/// 块内文本布局：`text` 是拼好的整串，`lines` 与 `block.lines` 一一对应；
+/// `dehyphenatedBreaks` 是"被断字吃掉连字符"的行界在 `text` 里的偏移（这些行界不能再当
+/// 词间空格补空白节点）。
+typedef MangaBlockTextLayout = ({
+  String text,
+  List<MangaBlockTextLine> lines,
+  Set<int> dehyphenatedBreaks,
+});
+
+/// 块内文本布局：与 [mangaJoinOcrText] 同一拼接规则（行尾断字连字符去掉、拉丁行界补
+/// 词间空格），同时给出每行有效文本与它在整串里的起点。
 ///
-/// Lens already supplies line-derived regions. Local ONNX and legacy mokuro
-/// blocks do not, so they are subdivided here using `lines_coords` when
-/// available and the block rectangle otherwise. This mirrors Niratan's native
-/// reader: hit testing is based on explicit character geometry instead of
-/// asking browser typography to approximate where transparent text landed.
+/// 字格 [MangaOcrTextRegion] 的 utf16 区间必须落在 `text` 上，所以整串与偏移由**同一次**
+/// 拼接产出——分开算会在断字处差一个字符，点「n」会选中隔壁字。
+MangaBlockTextLayout mangaBlockTextLayout(MokuroBlock block) {
+  final StringBuffer buffer = StringBuffer();
+  final List<MangaBlockTextLine> lines = <MangaBlockTextLine>[];
+  final Set<int> dehyphenatedBreaks = <int>{};
+  String previous = '';
+  for (final String raw in block.lines) {
+    if (raw.isEmpty) {
+      lines.add((start: buffer.length, text: raw));
+      continue;
+    }
+    if (mangaOcrIsDehyphenationBreak(previous, raw)) {
+      // `Under-` + `stands` → `Understands`：删掉**上一行**末尾的连字符再拼。
+      // 当前行原样写入——截当前行会把 `stands` 的尾字削掉（少一个 s）。
+      final int removed = previous.length - previous.trimRight().length + 1;
+      final String text = buffer.toString();
+      buffer
+        ..clear()
+        ..write(text.substring(0, text.length - removed));
+      int lastIndex = lines.length - 1;
+      // 空行记录不承载连字符：跳到最近一条非空行（空行不更新 previous，只有它可能带 `-`）。
+      while (lastIndex >= 0 && lines[lastIndex].text.isEmpty) {
+        lastIndex--;
+      }
+      final MangaBlockTextLine previousLine = lines[lastIndex];
+      lines[lastIndex] = (
+        start: previousLine.start,
+        text: previousLine.text.substring(
+          0,
+          previousLine.text.length - removed,
+        ),
+      );
+      // 空行也指向删掉连字符后的行界，避免产生越界或虚假的词界。
+      for (int i = lastIndex + 1; i < lines.length; i++) {
+        lines[i] = (start: buffer.length, text: '');
+      }
+      dehyphenatedBreaks.add(buffer.length);
+    } else if (mangaOcrNeedsWordGap(previous, raw)) {
+      buffer.write(' ');
+    }
+    lines.add((start: buffer.length, text: raw));
+    buffer.write(raw);
+    // 断词判定用**原始**行（带连字符），与 [mangaJoinOcrText] 的 previous 语义一致。
+    previous = raw;
+  }
+  return (
+    text: buffer.toString(),
+    lines: lines,
+    dehyphenatedBreaks: dehyphenatedBreaks,
+  );
+}
+
+/// Returns character-level hit regions for the manga reader's effective text.
 ///
-/// Supplied regions are used only when they match the block text as a whole:
-/// every region lies on grapheme boundaries inside the sentence and every
-/// visible grapheme is covered ([mangaTextRegionsMatchSentence]). Otherwise —
-/// for example a manga.json whose text was rewritten while the regions still
-/// carry the old offsets — the whole block falls back to line geometry.
-/// Dropping the mismatched regions one by one would leave characters with no
-/// hit target (or, when all of them miss, a block that cannot be clicked).
+/// Supplied regions index the raw joined lines. Map their offsets through the
+/// layout's deletions and inserted spaces, retaining their original geometry.
+/// Invalid or incomplete regions fall back to `lines_coords` or the block
+/// rectangle, so every visible character remains hittable.
 List<MangaOcrTextRegion> mangaEffectiveTextRegions(MokuroBlock block) {
   final List<MangaOcrTextRegion>? supplied = block.regions;
+  final MangaBlockTextLayout layout = mangaBlockTextLayout(block);
+  final String original = block.lines.join();
   if (supplied != null &&
       supplied.isNotEmpty &&
-      mangaTextRegionsMatchSentence(supplied, block.lines.join())) {
-    return supplied;
+      mangaTextRegionsMatchSentence(supplied, original)) {
+    if (layout.text == original) return supplied;
+    final List<MangaOcrTextRegion> mapped = _mangaRemapTextRegions(
+      block,
+      layout,
+      supplied,
+    );
+    if (mangaTextRegionsMatchSentence(mapped, layout.text)) return mapped;
   }
-  return _mangaGeometryTextRegions(block);
+  return ocrGeometryTextRegions(block, layout.lines);
 }
 
-/// Whether [regions] can stand for [sentence] character by character.
-///
-/// Each region must be a non-empty UTF-16 range on grapheme boundaries inside
-/// the sentence, and together they must cover every non-whitespace grapheme.
-/// A single miss makes the whole set unusable: the caller then re-derives
-/// regions from line geometry instead of keeping a partial set.
-bool mangaTextRegionsMatchSentence(
-  List<MangaOcrTextRegion> regions,
-  String sentence,
+/// Each retained UTF-16 code unit keeps its printed rectangle. Deleted suffixes
+/// have no destination; inserted spaces have no source rectangle. Deriving the
+/// map from effective lines also handles edits whose length changes cancel out.
+List<MangaOcrTextRegion> _mangaRemapTextRegions(
+  MokuroBlock block,
+  MangaBlockTextLayout layout,
+  List<MangaOcrTextRegion> supplied,
 ) {
-  final Set<int> boundaries = <int>{0};
-  final List<({int start, int end})> visible = <({int start, int end})>[];
-  int offset = 0;
-  for (final String grapheme in sentence.characters) {
-    final int end = offset + grapheme.length;
-    if (grapheme.trim().isNotEmpty) visible.add((start: offset, end: end));
-    boundaries.add(end);
-    offset = end;
+  final List<int?> destinations = <int?>[];
+  for (int i = 0; i < block.lines.length; i++) {
+    final MangaBlockTextLine line = layout.lines[i];
+    for (int j = 0; j < block.lines[i].length; j++) {
+      destinations.add(j < line.text.length ? line.start + j : null);
+    }
   }
-  final List<bool> covered = List<bool>.filled(sentence.length, false);
-  for (final MangaOcrTextRegion region in regions) {
-    final int start = region.utf16Start;
-    final int end = region.utf16End;
-    if (start < 0 || end <= start || end > sentence.length) return false;
-    if (!boundaries.contains(start) || !boundaries.contains(end)) return false;
-    covered.fillRange(start, end, true);
-  }
-  return visible.every((({int start, int end}) g) => covered[g.start]);
-}
-
-/// Character regions derived from `lines_coords` (or the block rectangle).
-List<MangaOcrTextRegion> _mangaGeometryTextRegions(MokuroBlock block) {
-  if (block.lines.isEmpty || block.rectangle.isEmpty) {
-    return const <MangaOcrTextRegion>[];
-  }
-  final List<MokuroOrientedRect> lineRects = _mangaLineRects(block);
   final List<MangaOcrTextRegion> result = <MangaOcrTextRegion>[];
-  int utf16Base = 0;
-  for (int lineIndex = 0; lineIndex < block.lines.length; lineIndex++) {
-    final String line = block.lines[lineIndex];
-    final List<({String text, int start, int end})> characters =
-        <({String text, int start, int end})>[];
-    int offset = utf16Base;
-    for (final String character in line.characters) {
-      final int end = offset + character.length;
-      if (character.trim().isNotEmpty) {
-        characters.add((text: character, start: offset, end: end));
-      }
-      offset = end;
+  for (final MangaOcrTextRegion region in supplied) {
+    int? start;
+    int? end;
+    for (int i = region.utf16Start; i < region.utf16End; i++) {
+      final int? destination = destinations[i];
+      if (destination == null) continue;
+      start ??= destination;
+      end = destination + 1;
     }
-    if (characters.isNotEmpty) {
-      final MokuroOrientedRect line = lineRects[lineIndex];
-      final MokuroRect lineRect = line.unrotated;
-      for (int index = 0; index < characters.length; index++) {
-        // 先在摆正的行里均分字格，再把字格中心转回行的倾角：斜行上的字格
-        // 沿着斜线排，而不是在外接框里横平竖直地铺。
-        final MokuroRect upright = block.isVertical
-            ? MokuroRect.fromLTWH(
-                lineRect.left,
-                lineRect.top + index * lineRect.height / characters.length,
-                lineRect.width,
-                lineRect.height / characters.length,
-              )
-            : MokuroRect.fromLTWH(
-                lineRect.left + index * lineRect.width / characters.length,
-                lineRect.top,
-                lineRect.width / characters.length,
-                lineRect.height,
-              );
-        final MokuroRect characterRect;
-        if (line.rotation == 0) {
-          characterRect = upright;
-        } else {
-          final MokuroPoint center = line.toPage(
-            upright.center.dx - line.center.dx,
-            upright.center.dy - line.center.dy,
-          );
-          characterRect = MokuroRect.fromLTWH(
-            center.dx - upright.width / 2,
-            center.dy - upright.height / 2,
-            upright.width,
-            upright.height,
-          );
-        }
-        result.add(
-          MangaOcrTextRegion(
-            rectangle: characterRect,
-            utf16Start: characters[index].start,
-            utf16End: characters[index].end,
-            rotation: line.rotation,
-          ),
-        );
-      }
-    }
-    utf16Base += line.length;
+    if (start == null || end == null) continue;
+    result.add(
+      MangaOcrTextRegion(
+        rectangle: region.rectangle,
+        utf16Start: start,
+        utf16End: end,
+        rotation: region.rotation,
+      ),
+    );
   }
   return result;
 }
 
-/// 每行的几何：`lines_coords` 齐全时逐行取，四点矩形保留旋转
-/// （[mokuroOrientedRectFromQuad]），其它多边形取外接框；否则按块均分。
-List<MokuroOrientedRect> _mangaLineRects(MokuroBlock block) {
-  final List<List<List<double>>>? coordinates = block.linesCoords;
-  if (coordinates != null && coordinates.length == block.lines.length) {
-    final List<MokuroOrientedRect> parsed = <MokuroOrientedRect>[];
-    for (final List<List<double>> polygon in coordinates) {
-      if (polygon.isEmpty ||
-          polygon.any((List<double> point) => point.length < 2)) {
-        parsed.clear();
-        break;
-      }
-      double left = double.infinity;
-      double top = double.infinity;
-      double right = double.negativeInfinity;
-      double bottom = double.negativeInfinity;
-      for (final List<double> point in polygon) {
-        left = math.min(left, point[0]);
-        top = math.min(top, point[1]);
-        right = math.max(right, point[0]);
-        bottom = math.max(bottom, point[1]);
-      }
-      if (right <= left || bottom <= top) {
-        parsed.clear();
-        break;
-      }
-      final MokuroOrientedRect? oriented = mokuroOrientedRectFromQuad(polygon);
-      parsed.add(
-        oriented != null && oriented.rotation != 0
-            ? oriented
-            : _uprightLine(MokuroRect.fromLTRB(left, top, right, bottom)),
-      );
-    }
-    if (parsed.length == block.lines.length) {
-      return parsed;
-    }
-  }
-
-  final MokuroRect rect = block.rectangle;
-  final int count = block.lines.length;
-  if (block.isVertical) {
-    final double width = rect.width / count;
-    return <MokuroOrientedRect>[
-      for (int index = 0; index < count; index++)
-        _uprightLine(
-          MokuroRect.fromLTWH(
-            rect.right - (index + 1) * width,
-            rect.top,
-            width,
-            rect.height,
-          ),
-        ),
-    ];
-  }
-  final double height = rect.height / count;
-  return <MokuroOrientedRect>[
-    for (int index = 0; index < count; index++)
-      _uprightLine(
-        MokuroRect.fromLTWH(
-          rect.left,
-          rect.top + index * height,
-          rect.width,
-          height,
-        ),
-      ),
-  ];
-}
-
-MokuroOrientedRect _uprightLine(MokuroRect rect) => MokuroOrientedRect(
-  center: rect.center,
-  width: rect.width,
-  height: rect.height,
-);
+/// 验证漫画字框是否完整覆盖指定文本；基础校验不做文本变换。
+bool mangaTextRegionsMatchSentence(
+  List<MangaOcrTextRegion> regions,
+  String sentence,
+) => ocrTextRegionsMatchSentence(regions, sentence);
 
 String _mangaCharacterRegionsHtml({
   required MokuroBlock block,
   required List<MangaOcrTextRegion> regions,
 }) {
-  final String sentence = block.lines.join();
+  final MangaBlockTextLayout layout = mangaBlockTextLayout(block);
+  final String sentence = layout.text;
   final MokuroRect parent = block.rectangle;
   final double parentWidth = parent.width <= 0 ? 1 : parent.width;
   final double parentHeight = parent.height <= 0 ? 1 : parent.height;
   final StringBuffer buffer = StringBuffer();
-  // 各行在 [sentence] 里的分界（UTF-16）：行与行直接拼接，行尾不带空格。
+  // 各行在 [sentence] 里的分界（UTF-16）：拉丁行界已补空格；行尾断字连字符
+  // 已去掉，所以分界取有效行的终点（不是原始行长度）。断词行界不参与"补词间空格"
+  // 判定——`LET-` / `TER` 拼成的是一个词，补空格会把 `LETTER` 拆成 `LET TER`。
   final List<int> lineBreaks = <int>[];
-  int lineEnd = 0;
-  for (int i = 0; i < block.lines.length - 1; i++) {
-    lineEnd += block.lines[i].length;
-    lineBreaks.add(lineEnd);
+  for (int i = 0; i < layout.lines.length - 1; i++) {
+    final MangaBlockTextLine line = layout.lines[i];
+    final int breakAt = line.start + line.text.length;
+    if (layout.dehyphenatedBreaks.contains(breakAt)) continue;
+    lineBreaks.add(breakAt);
   }
   int? previousEnd;
   // [regions] comes from [mangaEffectiveTextRegions]: every range is already
@@ -847,6 +791,7 @@ String mangaWindowDocument(
   String? readingModeLabel,
   // 悬停查词按住的键在 MouseEvent 上的字段名（HoverLookupModifier.jsEventFlag）。
   String hoverKey = 'shiftKey',
+  bool enableMouseTextSelection = false,
   // 折叠屏书本姿态：双页之间留出的铰链缝（逻辑像素，见 fushiHingeGutterPx）。0 = 无缝。
   double spreadGutterPx = 0,
 }) {
@@ -1008,6 +953,11 @@ String mangaWindowDocument(
       ? ''
       : '<style id="manga-anim-css">#manga-root{'
             '${_rootTransitionCss(pageAnimation, pageAnimationSpeed)}}</style>';
+  final String mouseTextSelectionCss = enableMouseTextSelection
+      ? '@media (any-pointer:fine){'
+            '.ocr-char{-webkit-user-select:text;user-select:text;}'
+            '.ocr-char::selection{background:rgba(80,140,220,.55);color:transparent;}}'
+      : '';
 
   // spread 时 strip 包进 overflow:hidden 视口；webtoon 时 root 直接在 body。
   final String content = isWebtoon
@@ -1086,6 +1036,7 @@ String mangaWindowDocument(
       '.ocr-char{position:absolute;display:block;overflow:hidden;'
       'color:transparent;pointer-events:auto;line-height:1;'
       'writing-mode:horizontal-tb;}'
+      '$mouseTextSelectionCss'
       // BUG-2554：被查词高亮。命中层文字本身透明（画的是底下的页图），查词后
       // Dart 经 fushiSelection.highlightSelection 把命中的字符 Range 放进 CSS
       // Highlight `fushi-selection`；没有这条规则浏览器什么都不画，用户看不出
@@ -1103,7 +1054,7 @@ String mangaWindowDocument(
       '<script>$inlineSelectionJs</script>'
       '<script>'
       'window.__mangaDocumentGeneration=$documentGeneration;'
-      '${_mangaGestureJs(isWebtoon: isWebtoon, rtl: rtl, currentSpread: currentSpread, restoreFraction: restoreFraction, zoomPercent: zoomPercent, restZoomPercent: restZoomPercent ?? zoomPercent, zoomMinPercent: zoomMinPercent, zoomMaxPercent: zoomMaxPercent, zoomSensitivity: zoomSensitivity, pageAnimation: pageAnimation, pageAnimationSpeed: pageAnimationSpeed, followDrag: followDrag, tapZonePaging: tapZonePaging, tapZoneLayout: tapZoneLayout, disableZoomOut: disableZoomOut, animateDoubleTap: animateDoubleTap, invertHorizontal: invertHorizontal, invertVertical: invertVertical, invertBoth: invertBoth, doubleTapAnimationMs: doubleTapAnimationMs, splitWidePages: splitWidePages, rotateWidePages: rotateWidePages, autoZoomWidePages: autoZoomWidePages, panWidePages: panWidePages, zoomStartPosition: zoomStartPosition, preferences: preferences, hoverKey: hoverKey, cropBorders: cropBorders, scaleType: scaleType, longStripSidePadding: longStripSidePadding, isVerticalPaged: isVerticalPaged)}'
+      '${_mangaGestureJs(isWebtoon: isWebtoon, rtl: rtl, currentSpread: currentSpread, restoreFraction: restoreFraction, zoomPercent: zoomPercent, restZoomPercent: restZoomPercent ?? zoomPercent, zoomMinPercent: zoomMinPercent, zoomMaxPercent: zoomMaxPercent, zoomSensitivity: zoomSensitivity, pageAnimation: pageAnimation, pageAnimationSpeed: pageAnimationSpeed, followDrag: followDrag, tapZonePaging: tapZonePaging, tapZoneLayout: tapZoneLayout, disableZoomOut: disableZoomOut, animateDoubleTap: animateDoubleTap, invertHorizontal: invertHorizontal, invertVertical: invertVertical, invertBoth: invertBoth, doubleTapAnimationMs: doubleTapAnimationMs, splitWidePages: splitWidePages, rotateWidePages: rotateWidePages, autoZoomWidePages: autoZoomWidePages, panWidePages: panWidePages, zoomStartPosition: zoomStartPosition, preferences: preferences, hoverKey: hoverKey, cropBorders: cropBorders, scaleType: scaleType, longStripSidePadding: longStripSidePadding, isVerticalPaged: isVerticalPaged, enableMouseTextSelection: enableMouseTextSelection)}'
       '</script>'
       '</body></html>';
 }
@@ -1201,6 +1152,7 @@ String _mangaGestureJs({
   MangaScaleType scaleType = MangaScaleType.fitScreen,
   int longStripSidePadding = 0,
   bool isVerticalPaged = false,
+  bool enableMouseTextSelection = false,
 }) {
   // 点击翻页热区表 → JS 字面量 `[l,t,w,h,forward]` 的逗号串（外层中括号在模板里
   // 补）。几何与阅读方向镜像都在 Dart 侧算完（[mangaTapZones] 有单测），注入的脚本
@@ -2193,6 +2145,20 @@ String _mangaGestureJs({
     window.__mangaApplySpeaking(true);
   };
   document.addEventListener('pointermove', function(e){
+    if (mouseOcrSelection && mouseOcrSelection.id === e.pointerId) {
+      var selectDx = e.clientX - mouseOcrSelection.x;
+      var selectDy = e.clientY - mouseOcrSelection.y;
+      if (!mouseOcrSelection.dragging &&
+          selectDx * selectDx + selectDy * selectDy >= 16) {
+        mouseOcrSelection.dragging = true;
+        if (panDrag && panDrag.id === e.pointerId) panDrag = null;
+        has = false;
+        _swipeRelease(false);
+      }
+      // Leave the unprevented mouse gesture to WebKit so it can maintain its
+      // native text range. Touch still follows the existing swipe/pinch path.
+      if (mouseOcrSelection.dragging) return;
+    }
     if (rightDrag) {
       var dx = e.clientX - rightDrag.lastX;
       var dy = e.clientY - rightDrag.lastY;
@@ -2690,9 +2656,13 @@ String _mangaGestureJs({
       orientation: charEl.getAttribute('data-ocr-orientation') || '',
       x: x, y: y, zoom: ZOOM
     };
+    // BUG-4361：「同一个词」按归一后的词首判定（与 fushiSelection.selectText 的去重同一
+    // 判据）。拉丁词首回退会跨字格，点 WELL 的 E 时选区起点是 W 字格——只比被点字格
+    // 本身，悬停在同词别的字母上会重复查词、再点同词也不再是「取消」。
+    var tapStart = selection.selectionStartFor(node, 0);
     if (selection.selection &&
-        selection.selection.startNode === node &&
-        selection.selection.startOffset === 0) {
+        selection.selection.startNode === tapStart.node &&
+        selection.selection.startOffset === tapStart.offset) {
       if (fromHover) return 'same';
       selection.clearSelection();
       return 'same';
@@ -2930,6 +2900,14 @@ String _mangaGestureJs({
   // 单击 / swipe 路径。
   var LONG_PRESS_MS = 500, LONG_PRESS_SLOP = 10;
   var longPress = null, longPressFired = null;
+  // 桌面鼠标在 OCR 字格上左键拖动 = 原生文字选区（enableMouseTextSelection）。
+  // 与上面的长按状态同属本节按下 / 松手 / 取消监听共用的状态机：
+  // 左键落在 .ocr-char 上先记下起点；pointermove 越过 4px 才判成拖选，此后整段
+  // 手势交给 WebView 原生维护选区，松手不走单击 / swipe。没拖动的左键点击照旧是单击，
+  // 触屏的长按 / 滑动 / 捏合不受影响（只认 pointerType === 'mouse'）。
+  var mouseOcrSelectionEnabled = ${enableMouseTextSelection ? 'true' : 'false'} &&
+      !!(window.matchMedia && window.matchMedia('(any-pointer:fine)').matches);
+  var mouseOcrSelection = null;
   function _mangaPageIndexAt(x, y){
     var stack = document.elementsFromPoint ? document.elementsFromPoint(x, y) : [];
     for (var i = 0; i < stack.length; i++) {
@@ -2945,6 +2923,37 @@ String _mangaGestureJs({
   }
   function _cancelLongPress(){
     if (longPress) { clearTimeout(longPress.timer); longPress = null; }
+  }
+  // 复制 OCR 文本（反馈 hjUlprxxKI）：长按 / 右键落点所在 OCR 文本块的句子分组号
+  // （data-manga-sentence-group，与 Dart 侧 mangaBlockSentenceGroups 同一次分组），
+  // 只认属于 [page] 那页的块；没点中文本块返回 null。字格优先走查词同一套命中
+  // （_hitOcrChar，4px 余量），带字格的块整块 pointer-events:none，所以从字格向上
+  // 找所属文本块；无字格的块直接是命中元素。
+  function _ocrSentenceGroupAt(x, y, page){
+    var hits = [];
+    var charEl = typeof _hitOcrChar === 'function' ? _hitOcrChar(x, y) : null;
+    if (charEl) hits.push(charEl);
+    var stack = document.elementsFromPoint ? document.elementsFromPoint(x, y) : [];
+    for (var i = 0; i < stack.length; i++) hits.push(stack[i]);
+    for (var j = 0; j < hits.length; j++) {
+      var box = hits[j].closest ? hits[j].closest('.ocr-box') : null;
+      if (!box) continue;
+      var owner = box.closest ? box.closest('.manga-page') : null;
+      if (!owner || Number(owner.getAttribute('data-page')) !== page) continue;
+      var group = Number(box.getAttribute('data-manga-sentence-group'));
+      if (isFinite(group) && group >= 0) return group;
+    }
+    return null;
+  }
+  // 长按 / 右键上报给 Dart 的落点信息：页号（命中不到页为 null）与文本块分组号
+  // （没点中文本块时不带 group 字段）。
+  function _ocrHitPayload(x, y, page){
+    var payload = {page: page};
+    if (page !== null) {
+      var group = _ocrSentenceGroupAt(x, y, page);
+      if (group !== null) payload.group = group;
+    }
+    return payload;
   }
   function _armLongPress(e){
     _cancelLongPress();
@@ -2974,7 +2983,8 @@ String _mangaGestureJs({
     _cancelPendingEmptyTap();
     dblArmed = false;
     var b = _bridge();
-    if (b) b.callHandler('onMangaPageLongPress', JSON.stringify({page: page}));
+    if (b) b.callHandler('onMangaPageLongPress',
+        JSON.stringify(_ocrHitPayload(lp.x, lp.y, page)));
   }
   // 松手时：本指已触发长按就吞掉这次松手（返回 true）。
   function _consumeLongPressRelease(id){
@@ -2986,6 +2996,13 @@ String _mangaGestureJs({
     return false;
   }
   document.addEventListener('pointerdown', function(e){
+    if (mouseOcrSelectionEnabled && e.pointerType === 'mouse' &&
+        e.button === 0 && e.target && e.target.closest &&
+        e.target.closest('.ocr-char')) {
+      mouseOcrSelection = {id:e.pointerId, x:e.clientX, y:e.clientY, dragging:false};
+    } else if (e.button === 0) {
+      mouseOcrSelection = null;
+    }
     if (e.pointerType === 'touch') {
       // 触点表只靠「松手 / 取消」事件删条目，而这两个事件不保证到得了 document：
       // 手指按在随后被移出 DOM 的节点上（__mangaReplaceOcr 换掉 OCR 层、覆盖翻页
@@ -3058,6 +3075,17 @@ String _mangaGestureJs({
     );
   }, {passive: false});
   document.addEventListener('pointerup', function(e){
+    var textDrag = mouseOcrSelection &&
+        mouseOcrSelection.id === e.pointerId && mouseOcrSelection.dragging;
+    if (mouseOcrSelection && mouseOcrSelection.id === e.pointerId) {
+      mouseOcrSelection = null;
+    }
+    if (textDrag) {
+      if (panDrag && panDrag.id === e.pointerId) panDrag = null;
+      has = false;
+      _swipeRelease(false);
+      return;
+    }
     var drag = (panDrag && panDrag.id === e.pointerId) ? panDrag : null;
     if (drag) panDrag = null;
     if (_consumeLongPressRelease(e.pointerId)) {
@@ -3108,9 +3136,13 @@ String _mangaGestureJs({
       e.preventDefault();
       if (drag && !drag.moved) {
         var b = _bridge();
-        if (b) b.callHandler('onMangaContextMenu', JSON.stringify({
-          x:e.clientX, y:e.clientY
-        }));
+        if (b) {
+          var hit = _ocrHitPayload(e.clientX, e.clientY,
+              _mangaPageIndexAt(e.clientX, e.clientY));
+          hit.x = e.clientX;
+          hit.y = e.clientY;
+          b.callHandler('onMangaContextMenu', JSON.stringify(hit));
+        }
       }
       return;
     }
@@ -3123,6 +3155,9 @@ String _mangaGestureJs({
   // manga_overlay_html_test 的 C1 不变式按该字面量计数，恰好允许一个。
   document.addEventListener('pointercancel', function(e){
     _consumeLongPressRelease(e.pointerId);
+    if (mouseOcrSelection && mouseOcrSelection.id === e.pointerId) {
+      mouseOcrSelection = null;
+    }
     if (panDrag && panDrag.id === e.pointerId) {
       panDrag = null;
       // 系统夺走指针：跟到一半的页面不能挂在半路，回弹到当前跨页。

@@ -113,6 +113,12 @@ const List<String> kStatPages = <String>[
   // 桌面 / 安卓小组件快照（#2819）：今日 / 近 7 / 35 天按 StatWindow 切 loadStatFacts，
   // 与首页「今日」卡同口径；属窗口统计消费方，受 ④ 管辖。
   'lib/src/platform/widget_snapshot_source.dart',
+  // 小组件快照纯函数：周字数目标分子按 StatWindow.mondayOf 取本自然周起点
+  // （反馈 CjIr9RGSCe），不得自算周窗口。
+  'lib/src/platform/widget_snapshot.dart',
+  // 副屏伴侣「今日」摘要：今日阅读 / 观看 / 收听按 StatWindow 切 loadStatFacts，与
+  // 首页「今日」卡同口径。
+  'lib/src/second_screen/companion/companion_main_services.dart',
 ];
 
 void main() {
@@ -284,7 +290,7 @@ void main() {
     expect(containsCodeLine(window, '_keyDaysAgo(now, 29)'), isTrue);
     // 本周 = 自然周（周一起，2026-10-09，与范围条「周」同口径）；上周 = 上周同期
     // （上周一 .. 今日-7），与本周已过天数同长、不重叠。
-    expect(containsCodeLine(window, 'weekFromKey = _mondayOf(today),'), isTrue);
+    expect(containsCodeLine(window, 'weekFromKey = mondayOf(today),'), isTrue);
     expect(
       containsCodeLine(
         window,
@@ -476,6 +482,24 @@ void main() {
       ),
       isTrue,
       reason: '统计页目标分子的实参必须是完整日面 _dailyFacts，与首页同口径',
+    );
+    // 周目标（反馈 CjIr9RGSCe）：按周时分子走 studyGoalCharsForWeek，实参同样钉死
+    // 完整日面——否则「按周」档会悄悄退回单域切片，BUG-1993 换个入口复发。
+    expect(
+      containsCodeLine(
+        read('lib/src/pages/implementations/home_dashboard_page.dart'),
+        'StudyGoalPeriod.weekly => studyGoalCharsForWeek(_dailyRows, w),',
+      ),
+      isTrue,
+      reason: '首页周目标分子的实参必须是完整日面 _dailyRows',
+    );
+    expect(
+      containsCodeLine(
+        read('lib/src/pages/implementations/reading_statistics_page.dart'),
+        '_weekStudyChars = studyGoalCharsForWeek(_dailyFacts, w);',
+      ),
+      isTrue,
+      reason: '统计页周目标分子的实参必须是完整日面 _dailyFacts，与首页同口径',
     );
   });
 
