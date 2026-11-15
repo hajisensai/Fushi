@@ -31,9 +31,9 @@
 //!
 //! 「已清除」的修改记录（`reg_ix.state` = [S_PURGED]）不算证据——按逻辑标记，不看它落没落成空洞，所以同一个操作集合
 //! 加同一个信任状态，别名表逐行相同。信任状态不同的两台设备（一台不执行另一台信任的 Purge）证据不同、别名表可以
-//! 不同（设计 §10 第 18 条；按答法 A：接受，但可检测）：[Index::hollowed] 列出本机有生效清除的、带自然键的那几种
-//! 实体，[Index::key_evidence] 回答「这个实体在本机还剩几条自然键证据」，上层拿一台设备的清单去另一台问就得到会
-//! 分叉的集合。
+//! 不同（设计 §10 第 18 条；按答法 A：接受，但可检测）：[Index::hollowed] 列出本机见过 Purge（生效的、作者没被
+//! 信任的都算）的、带自然键的那几种实体与本机还算数的证据条数，[Index::key_evidence] 回答「这个实体在本机还剩几条
+//! 自然键证据」，上层拿一台设备的清单去另一台问、条数不同的就是会分叉的集合。
 //!
 //! 身份记录不受清除影响（`weigh.rs`），所以笔记的 `guid`、笔记类型的 `ankiNum` 清除后还在；丢的是定义史、
 //! `noteType` 史、牌组的名字与父牌组史（设计 §10 第 19 条：证据变少时规范 ID 退回它自己）。
@@ -74,7 +74,7 @@ use serde_json::{Value, json};
 
 use super::derive::{Index, Ref, Reg, body_of};
 use super::schema::sql;
-use super::weigh::S_PURGED;
+use super::weigh::{S_DISTRUSTED, S_PURGED};
 use crate::gen4::name::write_edit_key;
 use crate::gen4::op::{Body4, Log4};
 use crate::gen4::stamp::{HeritageStamp, StampHlc};
@@ -146,13 +146,19 @@ pub struct LogCopy {
     pub at: i64,
 }
 
-/// 本机有生效清除的、带自然键的实体（[Index::hollowed]）。
+/// 本机见过 Purge 的、带自然键的实体（[Index::hollowed]）。
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Hollow {
     pub kind: EntKind,
     pub entity: Ref,
     /// 生效的 Purge。
     pub purges: Vec<OpId>,
+    /// 作者还没被本机信任、不执行的 Purge。本机不清，但别的设备执行了它、传来的空洞本机照收（设计 §3.2「本机还
+    /// 没有这个槽」），所以本机的证据也可能少了。
+    pub distrusted: Vec<OpId>,
+    /// 本机还算数的自然键证据有几条（= [Index::key_evidence]）。另一台设备对同一个实体答的条数与它不同，两边的
+    /// 别名表就会分叉。
+    pub evidence: u64,
     /// 已清除、还没落成空洞的自然键证据有几条（落成空洞之后就数不出来了：0 不代表它没带过）。
     pub pending: u64,
 }
@@ -1330,46 +1336,62 @@ impl Index<'_, '_> {
         Ok((live, purged))
     }
 
-    /// 本机有生效清除的、带自然键的实体（笔记类型、笔记、牌组）。它们的定义史 / `noteType` 史 / 名字史在本机不算
-    /// 证据了；一台不执行这些清除的设备（没信任清除的作者）证据还在，两边对它们以及由它们派生的 ID 的规范 ID
-    /// 可以不同。上层拿这张清单去另一台设备问 [Index::key_evidence]：答案不是 0 的就是会分叉的。
+    /// 本机见过 Purge 的、带自然键的实体（笔记类型、笔记、牌组），带本机还算数的证据条数。
+    ///
+    /// 两台设备的证据会因为两种原因不同：本机执行了清除（生效的 Purge：定义史 / `noteType` 史 / 名字史不算证据了），
+    /// 或者本机不执行、但收到的是执行了它的设备传来的空洞（作者没被信任的 Purge：收什么留什么，空洞里没有内容）。
+    /// 后一种本机认不出哪个空洞是哪个实体的，所以作者没被信任的 Purge 点名的实体也列上——只列生效的，两台都不信任
+    /// 作者、一台有原文一台只有空洞的设备互相问时清单都是空的，分叉查不出来。
+    ///
+    /// 上层拿这张清单去另一台设备问 [Index::key_evidence]：答的条数与清单里的 [Hollow::evidence] 不同的就是会分叉的。
+    /// 清单是保守的超集（列上了不代表证据真的少了）。
     pub fn hollowed(&self) -> Result<Vec<Hollow>, String> {
-        let rows: Vec<(i64, Ref, i64)> = {
+        let rows: Vec<(i64, Ref, i64, i64)> = {
             let mut stmt = self
                 .t
                 .conn()
                 .prepare_cached(
-                    "SELECT ekind, ent, k FROM purge_ix \
-                     WHERE col = ?1 AND state = 1 AND ekind IN (?2, ?3, ?4) AND typeof(ent) = 'blob' \
-                     ORDER BY ekind, ent, k",
+                    "SELECT ekind, ent, k, state FROM purge_ix \
+                     WHERE col = ?1 AND state IN (1, ?5) AND ekind IN (?2, ?3, ?4) \
+                     AND typeof(ent) = 'blob' ORDER BY ekind, ent, k",
                 )
                 .map_err(sql)?;
             let rows = stmt
-                .query_map(params![self.col, DECK, NOTE_TYPE, NOTE], |r| {
-                    Ok((r.get(0)?, r.get(1)?, r.get(2)?))
-                })
+                .query_map(
+                    params![self.col, DECK, NOTE_TYPE, NOTE, S_DISTRUSTED],
+                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+                )
                 .map_err(sql)?;
             rows.collect::<Result<_, _>>().map_err(sql)?
         };
         let mut out: Vec<Hollow> = Vec::new();
-        for (ekind, ent, k) in rows {
+        for (ekind, ent, k, state) in rows {
             let op = self.t.id_of_key(k)?;
             let kind = ent_kind(ekind)?;
-            match out.last_mut() {
-                Some(h) if h.kind == kind && h.entity == ent => h.purges.push(op),
-                _ => {
-                    let (_, pending) = self.evidence_rows(ekind, &ent)?;
-                    out.push(Hollow {
-                        kind,
-                        entity: ent,
-                        purges: vec![op],
-                        pending,
-                    });
-                }
+            let same = matches!(out.last(), Some(h) if h.kind == kind && h.entity == ent);
+            if !same {
+                let (evidence, pending) = self.evidence_rows(ekind, &ent)?;
+                out.push(Hollow {
+                    kind,
+                    entity: ent,
+                    purges: Vec::new(),
+                    distrusted: Vec::new(),
+                    evidence,
+                    pending,
+                });
+            }
+            let Some(h) = out.last_mut() else {
+                unreachable!("刚放进去");
+            };
+            if state == S_DISTRUSTED {
+                h.distrusted.push(op);
+            } else {
+                h.purges.push(op);
             }
         }
         for h in &mut out {
             h.purges.sort();
+            h.distrusted.sort();
         }
         Ok(out)
     }
@@ -2003,6 +2025,7 @@ pub(crate) mod tests {
                     (EntKind::NoteType, &r(w.nt), 1)
                 );
                 assert_eq!(listed[0].purges.len(), 1);
+                assert_eq!((listed[0].evidence, listed[0].distrusted.len()), (0, 0));
                 let before = dump(t.conn(), col);
                 assert_eq!(ix.execute_purges()?, 1);
                 let after = dump(t.conn(), col);
@@ -2034,13 +2057,91 @@ pub(crate) mod tests {
                 ix.trust_changed();
                 ix.settle()?;
                 assert_eq!(ix.canonical(&r(w.card))?, r(w.c_card));
-                assert_eq!(ix.hollowed()?, []);
+                // 不执行也列上（别的设备执行了它、传来的空洞本机照收），证据条数是本机还算数的。
+                let listed = ix.hollowed()?;
+                assert_eq!(listed.len(), 1);
+                assert_eq!(
+                    (
+                        listed[0].purges.len(),
+                        listed[0].distrusted.len(),
+                        listed[0].evidence,
+                        listed[0].pending
+                    ),
+                    (0, 1, 1, 0)
+                );
                 assert_eq!(ix.key_evidence(EntKind::NoteType, &r(w.nt))?, 1);
                 Ok(())
             })
             .unwrap();
             assert_rebuild_is_identity(t, col);
         });
+    }
+
+    /// 两台都不信任清除作者的设备：一台有原文，一台只收到执行了清除的设备传来的空洞（设计 §3.2「本机还没有这个槽」）。
+    /// 两边证据不同、别名表不同；没有执行清除的设备在场，两边的清单也得各自列出这个实体，互相问就看得出分叉。
+    #[test]
+    fn distrusting_devices_with_and_without_the_original_both_see_the_fork() {
+        let w = world();
+        let purge = Body4::Purge {
+            kind: EntKind::NoteType,
+            entity: key(w.nt),
+        };
+        // (清单, 本机证据条数, 卡的规范 ID)
+        type Side = (Vec<Hollow>, u64, Ref);
+        let run = |void_at: Option<crate::sync2::segment::Chain>| -> Side {
+            with(|t, col| {
+                let mut side: Option<Side> = None;
+                t.tx(|t| {
+                    let mut ix = Index::new(t, col);
+                    for (i, b) in ops_of(&w).iter().enumerate() {
+                        let seq = i as u64 + 1;
+                        match (&void_at, seq) {
+                            // 定义史那一条：只收到了空洞。
+                            (Some(chain), 3) => t.append_native_void(col, &id(0xa1), 1, chain)?,
+                            _ => native(t, &mut ix, col, &op(0xa1, seq, 100 + i as i64, &[], b)),
+                        }
+                    }
+                    native(t, &mut ix, col, &op(0xa2, 1, 9000, &[], &purge));
+                    t.set_trust(col, &id(0xa2), Some(TRUST_PENDING), 1)?;
+                    ix.trust_changed();
+                    ix.settle()?;
+                    side = Some((
+                        ix.hollowed()?,
+                        ix.key_evidence(EntKind::NoteType, &r(w.nt))?,
+                        ix.canonical(&r(w.card))?,
+                    ));
+                    Ok(())
+                })
+                .unwrap();
+                assert_rebuild_is_identity(t, col);
+                side.unwrap()
+            })
+        };
+        let chain3 = with(|t, col| {
+            t.tx(|t| {
+                let mut ix = Index::new(t, col);
+                feed(t, &mut ix, col, 0xa1, &ops_of(&w)[..3]);
+                t.chain_at(col, &id(0xa1), 3)
+            })
+            .unwrap()
+        });
+        let (b_list, b_evidence, b_card) = run(None);
+        let (d_list, d_evidence, d_card) = run(Some(chain3));
+        assert_eq!((b_evidence, d_evidence), (1, 0));
+        assert_eq!(b_card, r(w.c_card));
+        assert_eq!(d_card, r(w.card));
+        for (list, evidence) in [(&b_list, b_evidence), (&d_list, d_evidence)] {
+            assert_eq!(list.len(), 1);
+            assert_eq!(
+                (list[0].kind, &list[0].entity),
+                (EntKind::NoteType, &r(w.nt))
+            );
+            assert_eq!((list[0].purges.len(), list[0].distrusted.len()), (0, 1));
+            assert_eq!(list[0].evidence, evidence);
+        }
+        // 拿任一边的清单去另一边问，条数都不同。
+        assert_ne!(d_list[0].evidence, b_evidence);
+        assert_ne!(b_list[0].evidence, d_evidence);
     }
 
     /// 旧并入改名的写入者：两边有同 seq 的同一条记录才归回去。

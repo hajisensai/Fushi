@@ -381,12 +381,12 @@ void main() {
     expect(_totalMs(await _segments(rig.db), 'web:yt-abc'), 4000);
   });
 
-  test('暂停在场超过学习空闲门：之后不再入账（与阅读面 / app 内视频同一设置）', () async {
+  test('暂停在场超过学习空闲门：只计到门到期，之后不再入账（与阅读面 / app 内视频同一设置）', () async {
     final _Rig rig = _Rig.create(studyIdleTimeout: const Duration(seconds: 10));
     await rig.open(_sample(positionMs: 0));
     rig.play(fromMs: 0, seconds: 2);
-    // 生产里时钟每 60s 结算一窗、窗末空闲则整窗丢弃（所有学习面同一语义）；这里先把
-    // 播放段结算掉（等同那一拍 tick 已落），只验暂停段。
+    // 空闲门按时刻裁剪（BUG-4498，所有学习面同一语义）：阈值内的暂停照计，超出部分
+    // 不计，与 tick 落在哪无关。这里先把播放段结算掉，只验暂停段。
     await rig.trackers.single.clock.flushNow();
     // 暂停 30s，在场、心跳每 5s，但没有任何播放推进喂门。
     for (int i = 0; i < 6; i++) {
@@ -396,8 +396,8 @@ void main() {
     await rig.bridge.stopAll();
     expect(
       _totalMs(await _segments(rig.db), 'web:yt-abc'),
-      2000,
-      reason: '暂停在场 30s 超过 10s 空闲门，这一窗不入账',
+      12000,
+      reason: '暂停在场 30s 超过 10s 空闲门：只计门内 10s，其余 20s 不入账',
     );
   });
 

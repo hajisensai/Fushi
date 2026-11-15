@@ -757,25 +757,51 @@ void FlutterOnnxruntimePlugin::HandleCreateSession(
   }
 }
 
-// Fushi: DXGI budget for adapter `deviceId` (default 0). Errors as
-// UNAVAILABLE so the Dart side can treat "unknown" distinctly from a number.
+// Fushi: DXGI budget. With an explicit `deviceId` it answers for that DXGI
+// adapter. Without one it answers for the adapter GPU sessions run on: the
+// CUDA device's adapter once the CUDA plugin EP is registered (a process runs
+// either CUDA on the bundled core or DirectML on the downloaded one, never
+// both), DXGI adapter 0 otherwise (what DirectML device 0 is). On a
+// hybrid-graphics laptop adapter 0 is usually the integrated GPU, whose
+// "budget" is a slice of system RAM: sizing CUDA batches from it overflows the
+// NVIDIA card (issue #3380 follow-up). Errors as UNAVAILABLE so the Dart side
+// can treat "unknown" distinctly from a number.
 void FlutterOnnxruntimePlugin::HandleGetDeviceMemoryInfo(
     const flutter::MethodCall<flutter::EncodableValue> &method_call,
     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+  bool has_device_id = false;
   int device_id = 0;
   const auto *args = std::get_if<flutter::EncodableMap>(method_call.arguments());
   if (args != nullptr) {
     auto it = args->find(flutter::EncodableValue("deviceId"));
     if (it != args->end() && std::holds_alternative<int32_t>(it->second)) {
       device_id = std::get<int32_t>(it->second);
+      has_device_id = true;
     }
   }
   DeviceMemoryInfo info;
-  if (!QueryDeviceMemoryInfo(device_id, &info)) {
+  // Which rule picked the adapter; reported back for logs and probes.
+  const char *selection = has_device_id ? "explicit" : "default";
+  bool ok = false;
+  // sessionManager_ exists only once ORT is bound; this method must not bind it.
+  if (!has_device_id && impl_->sessionManager_ && impl_->sessionManager_->isCudaRegistered()) {
+    constexpr uint32_t kNvidiaVendorId = 0x10DE;
+    uint8_t luid[8] = {0};
+    if (CudaDeviceLuid(0, luid) && QueryDeviceMemoryInfoByLuid(luid, &info)) {
+      ok = true;
+      selection = "cuda-luid";
+    } else if (QueryDeviceMemoryInfoByVendor(kNvidiaVendorId, &info)) {
+      ok = true;
+      selection = "cuda-vendor";
+    }
+  }
+  if (!ok && !QueryDeviceMemoryInfo(device_id, &info)) {
     FailWith(result, "UNAVAILABLE", "DXGI video memory info unavailable for this adapter");
     return;
   }
   flutter::EncodableMap reply;
+  reply[flutter::EncodableValue("adapterName")] = flutter::EncodableValue(WideToUtf8(info.description));
+  reply[flutter::EncodableValue("selection")] = flutter::EncodableValue(std::string(selection));
   reply[flutter::EncodableValue("dedicatedVideoMemory")] = flutter::EncodableValue(info.dedicated_video_memory);
   reply[flutter::EncodableValue("budget")] = flutter::EncodableValue(info.budget);
   reply[flutter::EncodableValue("currentUsage")] = flutter::EncodableValue(info.current_usage);

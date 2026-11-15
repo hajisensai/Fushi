@@ -8,6 +8,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_schema_listening.dart';
 import 'package:fushi/src/settings/settings_schema_manga.dart';
 import 'package:fushi/src/settings/settings_schema_reading.dart';
 
@@ -32,9 +33,8 @@ void main() {
     });
 
     test('listening：音量键句子导航项带 visible 门控（非总是显示）', () {
-      // 听书 2026-08-24 并入阅读；该项仍是 `listening.*` id，只是归属换成了
-      // 阅读 destination 里的「有声书」分区。
-      final SettingsDestination listening = buildReadingDestination();
+      // 该项住独立的「听书」分类（播放分区）。
+      final SettingsDestination listening = buildListeningDestination();
       expect(
         itemById(listening, 'listening.volume_key_sentence_nav').visible,
         isNotNull,
