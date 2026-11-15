@@ -9,9 +9,11 @@
 //! - [segment]：原生段（魔数 `FSG4`，每设备成链，已清除的区间是空洞）。
 //! - [heritage]：承袭段（魔数 `FSH4`，不成链、上传者签名）与槽（操作 / 原样件 / 副本记录 / 空洞，每个 seq 带原链值指纹）。
 //! - [head]：协议 4 的 head（`seal`、`prev`、派生口径版本；签名覆盖除 `sig` 外的全部键）。
+//! - [export]：`.fushisrs` 第 2 版的内核导出流 `ops.bin`（魔数 `FSRS4EXP`）。
 //!
 //! 与协议 3 互不误读：段魔数不同，head 的必需键不同（[head] 文件头），操作体格式号从 4 起（[op::BODY_FMT]）。
 
+pub mod export;
 pub mod head;
 pub mod heritage;
 pub mod name;
