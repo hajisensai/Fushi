@@ -311,14 +311,14 @@ SettingsDestination buildVideoDestination() {
             id: 'video.picture.open',
             title: t.settings_video_picture_title,
             subtitle: t.settings_video_picture_hint,
-            icon: Icons.tune_outlined,
+            icon: FushiIcons.settings,
             child: buildVideoPictureDestination,
           ),
           SettingsNavigationItem(
             id: 'video.subtitle.open',
             title: t.section_video_subtitles,
             subtitle: t.settings_video_subtitle_hint,
-            icon: Icons.subtitles_outlined,
+            icon: FushiIcons.subtitles,
             child: buildVideoSubtitleDestination,
           ),
         ],
@@ -1533,7 +1533,7 @@ SettingsDestination buildVideoPictureDestination() {
     id: SettingsDestinationId.video,
     title: t.settings_video_picture_title,
     summary: t.settings_video_picture_hint,
-    icon: Icons.tune_outlined,
+    icon: FushiIcons.settings,
     sections: <SettingsSection>[
       // 缩放与比例：画面怎么填进播放区域（缩放模式、窗口比例）与 mpv 几何（比例 /
       // 旋转 / 缩放 / 平移裁切）是同一件事的两层，放在一处调。几何项与首页同源
@@ -2038,7 +2038,7 @@ SettingsDestination buildVideoSubtitleDestination() {
     id: SettingsDestinationId.video,
     title: t.section_video_subtitles,
     summary: t.settings_video_subtitle_hint,
-    icon: Icons.subtitles_outlined,
+    icon: FushiIcons.subtitles,
     sections: <SettingsSection>[
       SettingsSection(
         id: 'video.section.subtitles',
@@ -2863,7 +2863,7 @@ SettingsDestination buildVideoSubtitleDestination() {
             id: 'video.subtitle.backfill_after_scrape',
             title: t.video_setting_subtitle_backfill,
             subtitle: t.video_setting_subtitle_backfill_hint,
-            icon: Icons.subtitles_outlined,
+            icon: FushiIcons.subtitles,
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.videoSubtitleBackfillAfterScrape,
             onChanged: (SettingsContext settingsContext, bool value) async {

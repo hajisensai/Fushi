@@ -139,7 +139,8 @@ Future<List<String>> trackingWorkTitlesFor(
   FushiDatabase database,
   TrackingMediaType type,
   String key,
-) async => (await loadTrackingRowFacts(database)).of(type.value, key).workTitles;
+) async =>
+    (await loadTrackingRowFacts(database)).of(type.value, key).workTitles;
 
 /// Kinds the local item [type] + [key] may be linked as: a PDF book can be a
 /// novel or a manga; anything else has one kind (empty = not a book, the
