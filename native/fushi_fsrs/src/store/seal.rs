@@ -12,7 +12,7 @@
 //! 可以建表的新代库。
 
 use std::fs::{self, OpenOptions};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use rusqlite::{Connection, OpenFlags, OptionalExtension, Transaction, TransactionBehavior};
 
@@ -222,13 +222,67 @@ fn build_tombstone(tmp: &Path) -> Result<(), String> {
         .map_err(|err| e(format!("sync {}: {err}", tmp.display())))
 }
 
-/// 在 [path]（保留副本 `srs.db`）放墓碑库：写临时文件 → 落盘 → 旧库的 WAL 检查点进主文件并截断 → rename 覆盖。
-/// 原路径不存在时直接放墓碑。出错时临时文件删掉、原路径原样不动。
+/// 墓碑能不能盖在 [path] 上：它必须是一份封存过的协议 3 库（`schema` = [SEALED_SCHEMA]），并且要么已经是墓碑
+/// （`tombstone` = 1），要么 `sealed_into` 指向的新代文件就在同一个目录里——数据确实已经在那边。没封存的协议 3 库、
+/// 空库、不是 SQLite 的文件、封存目标不在了的库都拒绝：盖上去就把还没进新代的数据删了。以读写、不创建的方式打开
+/// （WAL 库只读打开会因为没有 `-shm` 失败），只读它。
+fn check_tombstone_target(path: &Path) -> Result<(), String> {
+    let refuse = |why: String| e(format!("refusing to replace {}: {why}", path.display()));
+    let c = Connection::open_with_flags(
+        path,
+        OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .map_err(|err| refuse(err.to_string()))?;
+    let r = (|| {
+        let has_meta: bool = c
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = 'srs_meta')",
+                [],
+                |r| r.get(0),
+            )
+            .map_err(|err| refuse(err.to_string()))?;
+        if !has_meta {
+            return Err(refuse(
+                "not a sealed protocol 3 library (no srs_meta)".to_owned(),
+            ));
+        }
+        let schema = meta(&c, "schema")?;
+        if schema.as_deref() != Some(SEALED_SCHEMA.to_string().as_str()) {
+            return Err(refuse(format!(
+                "not a sealed protocol 3 library (schema {schema:?})"
+            )));
+        }
+        if meta(&c, "tombstone")?.as_deref() == Some("1") {
+            return Ok(());
+        }
+        let into = meta(&c, "sealed_into")?.unwrap_or_default();
+        let mut parts = Path::new(&into).components();
+        let plain = matches!(
+            (parts.next(), parts.next()),
+            (Some(Component::Normal(_)), None)
+        );
+        let dir = path.parent().unwrap_or(Path::new(""));
+        if !plain || !dir.join(&into).is_file() {
+            return Err(refuse(format!(
+                "sealed into {into:?}, which is not a file next to it"
+            )));
+        }
+        Ok(())
+    })();
+    let closed = c.close().map_err(|(_, err)| refuse(err.to_string()));
+    r.and(closed)
+}
+
+/// 在 [path]（保留副本 `srs.db`）放墓碑库：核对覆盖目标（[check_tombstone_target]）→ 写临时文件 → 落盘 → 旧库的
+/// WAL 检查点进主文件并截断 → rename 覆盖。原路径不存在时直接放墓碑。出错时临时文件删掉、原路径原样不动。
 ///
 /// 前提（调用方保证）：持有换代锁（`gen4::files::GenLock`），并且**本机没有任何进程开着旧库**——自己的连接已经
 /// 全部关掉，协议 3 的内核也不在跑。别的连接正在事务里会被查出来报「in use」，但空闲的连接查不出来（见
 /// `drain_wal`）：Unix 上覆盖之后它写的东西会丢。
 pub fn write_tombstone(path: &Path) -> Result<(), String> {
+    if path.exists() {
+        check_tombstone_target(path)?;
+    }
     let tmp = with_suffix(path, TOMBSTONE_TMP_SUFFIX);
     // 上一次中途崩溃留下的临时文件：不完整也没关系，整个重写。
     remove_sqlite_files(&tmp)?;
@@ -348,12 +402,49 @@ mod tests {
         assert_refused_without_change(&path);
     }
 
-    /// 封存时连接临时切到 `synchronous = FULL`（提交即 fsync），不管成败都改回调用方原来的设置。
+    thread_local! {
+        static TRACED: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
+    }
+
+    fn record_sql(sql: &str) {
+        TRACED.with(|t| {
+            t.borrow_mut()
+                .push(sql.trim().trim_end_matches(';').to_owned())
+        });
+    }
+
+    /// 封存时连接临时切到 `synchronous = FULL`（提交即 fsync），封存那一笔在 FULL 下提交；不管成败都改回调用方
+    /// 原来的设置。
     #[test]
     fn sealing_restores_the_callers_sync_setting() {
         let dir = tempdir::new("seal-sync");
         let path = legacy_db(&dir.0);
-        let c = Connection::open(&path).unwrap();
+        let mut c = Connection::open(&path).unwrap();
+        c.execute_batch("PRAGMA synchronous = NORMAL;").unwrap();
+        TRACED.with(|t| t.borrow_mut().clear());
+        c.trace(Some(record_sql));
+        seal_legacy(&c, "srs4.db").unwrap();
+        c.trace(None);
+        let traced = TRACED.with(|t| t.take());
+        let at = |want: &str| {
+            traced
+                .iter()
+                .position(|s| s.eq_ignore_ascii_case(want))
+                .unwrap_or_else(|| panic!("{want} not executed: {traced:?}"))
+        };
+        let full = at("PRAGMA synchronous = FULL");
+        let commit = at("COMMIT");
+        let back = at("PRAGMA synchronous = 1");
+        assert!(full < commit && commit < back, "{traced:?}");
+        assert!(
+            traced[full + 1..commit]
+                .iter()
+                .all(|s| !s.to_ascii_uppercase().starts_with("PRAGMA SYNCHRONOUS"))
+                && traced[full + 1..commit]
+                    .iter()
+                    .any(|s| s.contains("srs_meta")),
+            "{traced:?}"
+        );
         let sync = |c: &Connection| -> i64 {
             c.query_row("PRAGMA synchronous", [], |r| r.get(0)).unwrap()
         };
@@ -365,6 +456,70 @@ mod tests {
         c.execute_batch("PRAGMA synchronous = OFF;").unwrap();
         assert!(seal_legacy(&c, "other.db").is_err());
         assert_eq!(sync(&c), 0);
+    }
+
+    /// 墓碑只盖在封存过、数据确实已经在新代文件里的库上：没封存的 v29 库、空库（零字节 / 有文件头没表）、不是
+    /// SQLite 的文件、封存目标不在同一个目录里的库都拒绝，原文件逐字节不变、临时文件不留。
+    #[test]
+    fn a_tombstone_never_replaces_something_that_is_not_a_finished_retained_copy() {
+        let dir = tempdir::new("tomb-target");
+        let refused = |path: &Path| {
+            let before = fs::read(path).unwrap();
+            let err = write_tombstone(path).unwrap_err();
+            assert!(err.contains("refusing to replace"), "{err}");
+            assert_eq!(fs::read(path).unwrap(), before);
+            assert!(!with_suffix(path, TOMBSTONE_TMP_SUFFIX).exists());
+            assert!(!with_suffix(path, "-wal").exists());
+        };
+        // 没封存的 v29 库。
+        let v29 = legacy_db(&dir.0);
+        refused(&v29);
+        assert!(SrsCore::open(&v29).is_ok());
+        // 零字节；有文件头、一张表也没有。
+        let empty = dir.0.join("empty.db");
+        fs::write(&empty, b"").unwrap();
+        refused(&empty);
+        let no_tables = dir.0.join("no-tables.db");
+        Connection::open(&no_tables)
+            .unwrap()
+            .execute_batch("PRAGMA user_version = 7;")
+            .unwrap();
+        assert!(fs::metadata(&no_tables).unwrap().len() > 0);
+        refused(&no_tables);
+        // 不是 SQLite 的文件。
+        let junk = dir.0.join("junk.db");
+        fs::write(&junk, b"not a database at all. ".repeat(100)).unwrap();
+        refused(&junk);
+        // 封存了，但封存目标不在旁边 / 不是同目录里的文件名。
+        let c = Connection::open(&v29).unwrap();
+        seal_legacy(&c, "srs4.db").unwrap();
+        drop(c);
+        drain_wal(&v29).unwrap();
+        refused(&v29);
+        let elsewhere = tempdir::new("tomb-target-elsewhere");
+        fs::write(elsewhere.0.join("srs4.db"), b"").unwrap();
+        let far = elsewhere.0.join("srs4.db").to_string_lossy().into_owned();
+        Connection::open(&v29)
+            .unwrap()
+            .execute(
+                "UPDATE srs_meta SET value = ?1 WHERE key = 'sealed_into'",
+                [&far],
+            )
+            .unwrap();
+        drain_wal(&v29).unwrap();
+        refused(&v29);
+        // 目标放回同目录：可以盖了。
+        Connection::open(&v29)
+            .unwrap()
+            .execute(
+                "UPDATE srs_meta SET value = 'srs4.db' WHERE key = 'sealed_into'",
+                [],
+            )
+            .unwrap();
+        drain_wal(&v29).unwrap();
+        fs::write(dir.0.join("srs4.db"), b"").unwrap();
+        write_tombstone(&v29).unwrap();
+        assert!(meta_rows(&v29).contains(&("tombstone".to_owned(), "1".to_owned())));
     }
 
     /// 身份 = 各 profile 的设备 ID：没启用过协议 3 的库没有身份；两份各自建的库身份不同；读它不改库。
@@ -426,6 +581,7 @@ mod tests {
     fn a_tombstone_replaces_the_retained_copy_and_is_refused() {
         let dir = tempdir::new("tomb");
         let path = legacy_db(&dir.0);
+        fs::write(dir.0.join("srs4.db"), b"").unwrap();
         let c = Connection::open(&path).unwrap();
         seal_legacy(&c, "srs4.db").unwrap();
         drop(c);
@@ -464,6 +620,7 @@ mod tests {
     fn a_tombstone_over_a_library_in_use_changes_nothing() {
         let dir = tempdir::new("tomb-busy");
         let path = legacy_db(&dir.0);
+        fs::write(dir.0.join("srs4.db"), b"").unwrap();
         let c = Connection::open(&path).unwrap();
         seal_legacy(&c, "srs4.db").unwrap();
         let before_meta = meta_rows(&path);
