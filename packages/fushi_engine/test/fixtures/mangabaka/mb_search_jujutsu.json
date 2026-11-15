@@ -1,0 +1,740 @@
+{
+ "status": 200,
+ "pagination": {
+  "count": 381,
+  "next": "https://api.mangabaka.org/v1/series/search?limit=10&q=%E5%91%AA%E8%A1%93%E5%BB%BB%E6%88%A6&page=2",
+  "previous": null,
+  "page": 1,
+  "limit": 10
+ },
+ "data": [
+  {
+   "id": 410304,
+   "state": "active",
+   "merged_with": null,
+   "canonical_url": "https://mangabaka.org/manga/410304/Jujutsu-Kaisen-Modulo",
+   "title": "Jujutsu Kaisen Modulo",
+   "native_title": "呪術廻戦≡",
+   "romanized_title": "Jujutsu Kaisen Modulo",
+   "secondary_titles": {
+    "unknown": [
+     {
+      "type": "unknown",
+      "title": "Jujutsu Kaisen Modulo",
+      "note": null
+     },
+     {
+      "type": "unknown",
+      "title": "Jujutsu Kaisen Mojuro",
+      "note": null
+     },
+     {
+      "type": "unknown",
+      "title": "Sorcery Fight Modulo",
+      "note": null
+     },
+     {
+      "type": "unknown",
+      "title": "呪術廻戦≡",
+      "note": null
+     }
+    ]
+   },
+   "cover": {
+    "raw": {
+     "url": "https://images.mangabaka.dev/9/8/f/1/4/5/4/0/bf34/4ef9/b830/4a0dddb61047",
+     "size": 737108,
+     "height": 2048,
+     "width": 1304,
+     "format": "jpeg"
+    }
+   },
+   "authors": [
+    "Gege Akutami"
+   ],
+   "artists": [
+    "Yuuji Iwasaki"
+   ],
+   "year": 2025,
+   "status": "completed",
+   "content_rating": "safe",
+   "type": "manga",
+   "original_language": "ja",
+   "final_volume": "3",
+   "titles": [
+    {
+     "language": "ja",
+     "traits": [],
+     "title": "Jujutsu Kaisen ≡",
+     "note": null,
+     "is_primary": false
+    },
+    {
+     "language": "en",
+     "traits": [
+      "official"
+     ],
+     "title": "Jujutsu Kaisen Modulo",
+     "note": null,
+     "is_primary": true
+    },
+    {
+     "language": "en",
+     "traits": [],
+     "title": "Sorcery Fight Modulo",
+     "note": null,
+     "is_primary": false
+    },
+    {
+     "language": "ja",
+     "traits": [
+      "native"
+     ],
+     "title": "呪術廻戦≡",
+     "note": null,
+     "is_primary": true
+    },
+    {
+     "language": "ja",
+     "traits": [
+      "native"
+     ],
+     "title": "呪術廻戦≡〈モジュロ〉",
+     "note": null,
+     "is_primary": false
+    }
+   ]
+  },
+  {
+   "id": 6199,
+   "state": "active",
+   "merged_with": null,
+   "canonical_url": "https://mangabaka.org/manga/6199/Jujutsu-Kaisen",
+   "title": "Jujutsu Kaisen",
+   "native_title": "呪術廻戦",
+   "romanized_title": "JJK",
+   "secondary_titles": {
+    "unknown": [
+     {
+      "type": "unknown",
+      "title": "주술회전",
+      "note": null
+     },
+     {
+      "type": "unknown",
+      "title": "Chú Thuật Hồi Chiến",
+      "note": null
+     },
+     {
+      "type": "unknown",
+      "title": "JJK",
+      "note": null
+     },
+     {
+      "type": "unknown",
+      "title": "Jujutsu Kaisen",
+      "note": null
+     }
+    ]
+   },
+   "cover": {
+    "raw": {
+     "url": "https://images.mangabaka.dev/e/d/f/d/9/7/f/a/3e2f/455b/8a08/d8a39e491844",
+     "size": 506902,
+     "height": 1200,
+     "width": 764,
+     "format": "jpeg"
+    }
+   },
+   "authors": [
+    "Gege Akutami"
+   ],
+   "artists": [
+    "Gege Akutami"
+   ],
+   "year": 2018,
+   "status": "completed",
+   "content_rating": "suggestive",
+   "type": "manga",
+   "original_language": "ja",
+   "final_volume": "30",
+   "titles": [
+    {
+     "language": "en",
+     "traits": [
+      "official"
+     ],
+     "title": "Jujutsu Kaisen",
+     "note": "VIZ Media",
+     "is_primary": true
+    },
+    {
+     "language": "en",
+     "traits": [],
+     "title": "Jujutsu kaisen - Sorcery Fight",
+     "note": null,
+     "is_primary": false
+    },
+    {
+     "language": "en",
+     "traits": [],
+     "title": "Revolving Battles Of Curse Arts",
+     "note": null,
+     "is_primary": false
+    },
+    {
+     "language": "en",
+     "traits": [],
+     "title": "Revolving Battles Of Sorcery",
+     "note": null,
+     "is_primary": false
+    },
+    {
+     "language": "en",
+     "traits": [],
+     "title": "Sorcery Fight",
+     "note": null,
+     "is_primary": false
+    },
+    {
+     "language": "ja",
+     "traits": [
+      "alternative"
+     ],
+     "title": "じゅじゅつかいせん",
+     "note": "Kana title",
+     "is_primary": false
+    },
+    {
+     "language": "ja",
+     "traits": [
+      "native"
+     ],
+     "title": "呪術廻戦",
+     "note": null,
+     "is_primary": true
+    }
+   ]
+  },
+  {
+   "id": 71601,
+   "state": "active",
+   "merged_with": null,
+   "canonical_url": "https://mangabaka.org/other/71601/Arrows",
+   "title": "Jujutsu Kaisen dj - Arrows",
+   "native_title": "呪術廻戦 dj - Arrows",
+   "romanized_title": "Arrows - Jujutsu Kaisen [Doujinshi]",
+   "secondary_titles": {
+    "unknown": [
+     {
+      "type": "unknown",
+      "title": "Jujutsu Kaisen dj - Arrows",
+      "note": null
+     },
+     {
+      "type": "unknown",
+      "title": "呪術廻戦 dj - Arrows",
+      "note": null
+     }
+    ]
+   },
+   "cover": {
+    "raw": {
+     "url": "https://cdn.mangaupdates.com/image/i404222.jpg",
+     "size": 9239,
+     "height": 228,
+     "width": 160,
+     "format": "jpeg"
+    }
+   },
+   "authors": [
+    "Uzura (Mihoshi)"
+   ],
+   "artists": [
+    "Uzura (Mihoshi)"
+   ],
+   "year": 2021,
+   "status": "completed",
+   "content_rating": "safe",
+   "type": "other",
+   "original_language": "ja",
+   "final_volume": "1",
+   "titles": [
+    {
+     "language": "en",
+     "traits": [],
+     "title": "Arrows",
+     "note": null,
+     "is_primary": true
+    },
+    {
+     "language": "ja",
+     "traits": [
+      "native"
+     ],
+     "title": "呪術廻戦",
+     "note": null,
+     "is_primary": true
+    },
+    {
+     "language": "ja",
+     "traits": [],
+     "title": "呪術廻戦 dj - Arrows",
+     "note": null,
+     "is_primary": false
+    }
+   ]
+  },
+  {
+   "id": 103345,
+   "state": "active",
+   "merged_with": null,
+   "canonical_url": "https://mangabaka.org/manga/103345/Jujutsu-Kaisen-Bonus-Manga",
+   "title": "Jujutsu Kaisen: Bonus Manga",
+   "native_title": "呪術廻戦 番外編",
+   "romanized_title": "Jujutsu Kaisen 0.5",
+   "secondary_titles": {
+    "unknown": [
+     {
+      "type": "unknown",
+      "title": "Jujutsu Kaisen Bonus Manga",
+      "note": null
+     },
+     {
+      "type": "unknown",
+      "title": "Jujutsu Kaisen: Bonus Manga",
+      "note": null
+     }
+    ]
+   },
+   "cover": {
+    "raw": {
+     "url": "https://s4.anilist.co/file/anilistcdn/media/manga/cover/large/bx142781-S9MDqdoubJ6X.jpg",
+     "size": 125811,
+     "height": 672,
+     "width": 460,
+     "format": "jpeg"
+    }
+   },
+   "authors": [
+    "Gege Akutami"
+   ],
+   "artists": [
+    "Gege Akutami"
+   ],
+   "year": 2021,
+   "status": "completed",
+   "content_rating": "safe",
+   "type": "manga",
+   "original_language": "ja",
+   "final_volume": null,
+   "titles": [
+    {
+     "language": "en",
+     "traits": [
+      "official"
+     ],
+     "title": "Jujutsu Kaisen: Bonus Manga",
+     "note": null,
+     "is_primary": true
+    },
+    {
+     "language": "ja",
+     "traits": [
+      "native"
+     ],
+     "title": "呪術廻戦 番外編",
+     "note": null,
+     "is_primary": true
+    }
+   ]
+  },
+  {
+   "id": 47720,
+   "state": "active",
+   "merged_with": null,
+   "canonical_url": "https://mangabaka.org/manga/47720/Jujutsu-Kaisen-Official-Fan-Book",
+   "title": "unknown title (please report on Discord)",
+   "native_title": null,
+   "romanized_title": "Jujutsu Kaisen Koushiki Fanbook",
+   "secondary_titles": {},
+   "cover": {
+    "raw": {
+     "url": "https://images.mangabaka.dev/a/1/c/8/1/e/b/a/5768/482b/994a/dbdeb9c998a5",
+     "size": 312314,
+     "height": 1600,
+     "width": 1019,
+     "format": "jpeg"
+    }
+   },
+   "authors": null,
+   "artists": null,
+   "year": null,
+   "status": "completed",
+   "content_rating": "safe",
+   "type": "manga",
+   "original_language": "ja",
+   "final_volume": "1",
+   "titles": [
+    {
+     "language": "en",
+     "traits": [],
+     "title": "Jujutsu Kaisen Official Fan Book",
+     "note": null,
+     "is_primary": true
+    },
+    {
+     "language": "en",
+     "traits": [],
+     "title": "Revolving Battles Of Curse Arts Official Fanbook",
+     "note": null,
+     "is_primary": false
+    },
+    {
+     "language": "ja",
+     "traits": [
+      "native"
+     ],
+     "title": "呪術廻戦 公式ファンブック",
+     "note": null,
+     "is_primary": true
+    }
+   ]
+  },
+  {
+   "id": 84019,
+   "state": "active",
+   "merged_with": null,
+   "canonical_url": "https://mangabaka.org/novel/84019/Jujutsu-Kaisen-Thorny-Road-at-Dawn",
+   "title": "Jujutsu Kaisen: Thorny Road at Dawn",
+   "native_title": "呪術廻戦 夜明けのいばら道",
+   "romanized_title": "Jujutsu Kaisen: Yoake no Ibara Michi",
+   "secondary_titles": {
+    "ko": [
+     {
+      "type": "official",
+      "title": "새벽의 가시밭길"
+     }
+    ]
+   },
+   "cover": {
+    "raw": {
+     "url": "https://images.mangabaka.dev/c/d/f/6/2/8/e/c/2ffc/4189/b626/204267993751",
+     "size": 764185,
+     "height": 2700,
+     "width": 1800,
+     "format": "jpeg"
+    }
+   },
+   "authors": [
+    "Ballad Kitaguni"
+   ],
+   "artists": [
+    "Gege Akutami"
+   ],
+   "year": 2020,
+   "status": "completed",
+   "content_rating": "safe",
+   "type": "novel",
+   "original_language": "ja",
+   "final_volume": "1",
+   "titles": [
+    {
+     "language": "en",
+     "traits": [],
+     "title": "Jujutsu Kaisen: Thorn Road at Dawn",
+     "note": null,
+     "is_primary": false
+    },
+    {
+     "language": "en",
+     "traits": [
+      "official"
+     ],
+     "title": "Jujutsu Kaisen: Thorny Road at Dawn",
+     "note": null,
+     "is_primary": true
+    },
+    {
+     "language": "en",
+     "traits": [],
+     "title": "Jujutsu Kaisen: Thorny Road to Dawn",
+     "note": null,
+     "is_primary": false
+    },
+    {
+     "language": "ja",
+     "traits": [
+      "native"
+     ],
+     "title": "呪術廻戦 夜明けのいばら道",
+     "note": null,
+     "is_primary": true
+    }
+   ]
+  },
+  {
+   "id": 84020,
+   "state": "active",
+   "merged_with": null,
+   "canonical_url": "https://mangabaka.org/novel/84020/Jujutsu-Kaisen-Summer-of-Ashes-Autumn-of-Dust",
+   "title": "Jujutsu Kaisen: Summer of Ashes, Autumn of Dust",
+   "native_title": "呪術廻戦  逝く夏と還る秋",
+   "romanized_title": "Jujutsu Kaisen: Iku Natsu to Kaeru Aki",
+   "secondary_titles": {
+    "ko": [
+     {
+      "type": "official",
+      "title": "떠나가는 여름과 돌아오는 가을"
+     }
+    ]
+   },
+   "cover": {
+    "raw": {
+     "url": "https://images.mangabaka.dev/e/1/e/8/7/c/e/b/0b47/45b5/bbce/ee61918bb457",
+     "size": 881795,
+     "height": 2700,
+     "width": 1800,
+     "format": "jpeg"
+    }
+   },
+   "authors": [
+    "Ballad Kitaguni"
+   ],
+   "artists": [
+    "Gege Akutami"
+   ],
+   "year": 2019,
+   "status": "completed",
+   "content_rating": "safe",
+   "type": "novel",
+   "original_language": "ja",
+   "final_volume": "1",
+   "titles": [
+    {
+     "language": "en",
+     "traits": [],
+     "title": "Jujutsu Kaisen: Departing Summer and Returning Autumn",
+     "note": null,
+     "is_primary": false
+    },
+    {
+     "language": "en",
+     "traits": [],
+     "title": "Jujutsu Kaisen: Soaring Summer and Returning Autumn",
+     "note": null,
+     "is_primary": false
+    },
+    {
+     "language": "en",
+     "traits": [
+      "official"
+     ],
+     "title": "Jujutsu Kaisen: Summer of Ashes, Autumn of Dust",
+     "note": null,
+     "is_primary": true
+    },
+    {
+     "language": "en",
+     "traits": [],
+     "title": "Jujutsu Kaisen: The Passing Summer and The Returning Autumn",
+     "note": null,
+     "is_primary": false
+    },
+    {
+     "language": "ja",
+     "traits": [
+      "native"
+     ],
+     "title": "呪術廻戦　逝く夏と還る秋",
+     "note": null,
+     "is_primary": true
+    }
+   ]
+  },
+  {
+   "id": 134297,
+   "state": "active",
+   "merged_with": null,
+   "canonical_url": "https://mangabaka.org/novel/134297/Gekijouban-Jujutsu-Kaisen-0-Novelize",
+   "title": "Gekijouban Jujutsu Kaisen 0",
+   "native_title": "劇場版 呪術廻戦 0 ノベライズ",
+   "romanized_title": "Gekijouban Jujutsu Kaisen 0",
+   "secondary_titles": {
+    "unknown": [
+     {
+      "type": "unknown",
+      "title": "Gekijouban Jujutsu Kaisen 0",
+      "note": null
+     }
+    ]
+   },
+   "cover": {
+    "raw": {
+     "url": "https://cdn.myanimelist.net/images/manga/3/296751l.jpg",
+     "size": 168162,
+     "height": 600,
+     "width": 381,
+     "format": "jpeg"
+    }
+   },
+   "authors": null,
+   "artists": null,
+   "year": 2021,
+   "status": "completed",
+   "content_rating": "safe",
+   "type": "novel",
+   "original_language": "ja",
+   "final_volume": "1",
+   "titles": [
+    {
+     "language": "ja",
+     "traits": [
+      "native"
+     ],
+     "title": "劇場版 呪術廻戦 0 ノベライズ",
+     "note": null,
+     "is_primary": true
+    }
+   ]
+  },
+  {
+   "id": 30480,
+   "state": "active",
+   "merged_with": null,
+   "canonical_url": "https://mangabaka.org/manga/30480/Jujutsu-Kaisen-0",
+   "title": "Jujutsu Kaisen 0",
+   "native_title": "呪術廻戦 0 東京都立呪術高等専門学校",
+   "romanized_title": "JJK 0",
+   "secondary_titles": {
+    "ko": [
+     {
+      "type": "official",
+      "title": "주술회전0 도쿄 도립 주술 고등전문학교"
+     }
+    ]
+   },
+   "cover": {
+    "raw": {
+     "url": "https://images.mangabaka.dev/3/4/9/2/d/0/c/2/6cd4/45a7/9b41/1981c240bcb9",
+     "size": 893059,
+     "height": 2465,
+     "width": 1561,
+     "format": "jpeg"
+    }
+   },
+   "authors": [
+    "Gege Akutami"
+   ],
+   "artists": [
+    "Gege Akutami"
+   ],
+   "year": 2017,
+   "status": "completed",
+   "content_rating": "safe",
+   "type": "manga",
+   "original_language": "ja",
+   "final_volume": "1",
+   "titles": [
+    {
+     "language": "en",
+     "traits": [
+      "official"
+     ],
+     "title": "Jujutsu Kaisen 0",
+     "note": null,
+     "is_primary": true
+    },
+    {
+     "language": "en",
+     "traits": [],
+     "title": "Jujutsu Kaisen 0: Tokyo Metropolitan Magic Technical School",
+     "note": null,
+     "is_primary": false
+    },
+    {
+     "language": "ja",
+     "traits": [],
+     "title": "Jujutsu Kaisen 0 Tokyo Toritsu Jujutsu Kōtō Senmon Gakkō",
+     "note": null,
+     "is_primary": false
+    },
+    {
+     "language": "en",
+     "traits": [],
+     "title": "Revolving Battles Of Curse Arts 0: Toukyou Metropolitan Curse Arts Technical High School",
+     "note": null,
+     "is_primary": false
+    },
+    {
+     "language": "en",
+     "traits": [],
+     "title": "Revolving Battles Of Sorcery 0: Toukyou Metropolitan Sorcery Technical High School",
+     "note": null,
+     "is_primary": false
+    },
+    {
+     "language": "en",
+     "traits": [],
+     "title": "Tokyo Metropolitan Magic Technical College",
+     "note": null,
+     "is_primary": false
+    },
+    {
+     "language": "en",
+     "traits": [],
+     "title": "Tokyo Metropolitan Magic Technical School",
+     "note": null,
+     "is_primary": false
+    },
+    {
+     "language": "ja",
+     "traits": [
+      "native"
+     ],
+     "title": "呪術廻戦 0 東京都立呪術高等専門学校",
+     "note": null,
+     "is_primary": true
+    }
+   ]
+  },
+  {
+   "id": 602394,
+   "state": "active",
+   "merged_with": null,
+   "canonical_url": "https://mangabaka.org/manga/602394/TV%E3%82%A2%E3%83%8B%E3%83%A1-%E5%91%AA%E8%A1%93%E5%BB%BB%E6%88%A6-%E6%87%90%E7%8E%89-%E7%8E%89%E6%8A%98-%E6%B8%8B%E8%B0%B7%E4%BA%8B%E5%A4%89-%E5%85%AC%E5%BC%8F%E3%82%AC%E3%82%A4%E3%83%89%E3%83%96%E3%83%83%E3%82%AF",
+   "title": "unknown title (please report on Discord)",
+   "native_title": null,
+   "romanized_title": null,
+   "secondary_titles": {},
+   "cover": {
+    "raw": {
+     "url": "https://images.mangabaka.dev/a/9/a/4/0/7/8/7/ed03/4ae2/8b0c/0e89df5c8ad5",
+     "size": 123551,
+     "height": 1200,
+     "width": 835,
+     "format": "jpeg"
+    }
+   },
+   "authors": null,
+   "artists": null,
+   "year": null,
+   "status": "completed",
+   "content_rating": "safe",
+   "type": "manga",
+   "original_language": "ja",
+   "final_volume": "1",
+   "titles": [
+    {
+     "language": "ja",
+     "traits": [
+      "native"
+     ],
+     "title": "TVアニメ『呪術廻戦』懐玉・玉折/渋谷事変 公式ガイドブック",
+     "note": null,
+     "is_primary": true
+    }
+   ]
+  }
+ ]
+}

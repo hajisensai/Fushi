@@ -11,6 +11,11 @@ import 'package:fushi/src/media/metadata/scrape_failure_view.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_press_scale.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:fushi/src/utils/components/fushi_loading_view.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
@@ -23,8 +28,9 @@ import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 /// 书籍 / 漫画 / 有声书「在线匹配封面」弹窗（统一刮削 P1b）。
 ///
-/// 两个源用分段切换（[BookScrapeSource]）：Bangumi 书籍条目（`filter.type=[1]`）与 DLsite
-/// 音声 / 漫画 / 小说作品。默认 Bangumi——DLsite 的搜索含成人向作品，不混进普通书搜索；
+/// 三个源用分段切换（[BookScrapeSource]）：Bangumi 书籍条目（`filter.type=[1]`）、DLsite
+/// 音声 / 漫画 / 小说作品与 MangaBaka 漫画 / 轻小说系列（选中系列后进卷封面网格，预选
+/// 本地卷号 [BookCoverScrapeDialog.volume] 那一卷；结果区底部显示 MangaBaka 署名）。默认 Bangumi——DLsite 的搜索含成人向作品，不混进普通书搜索；
 /// 预填词里认得出 DLsite 编号时默认切到 DLsite 并只填编号（直取）。选中候选后下载其封面
 /// 到临时文件并经 `Navigator.pop(file)` 返回给调用方（候选解析与下载都经
 /// [BookMetadataScrapeFacade]，书架页的写回也经它）（书籍编辑对话框把它当作新的封面
@@ -34,11 +40,12 @@ import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 Future<File?> showBookCoverScrapeDialog({
   required BuildContext context,
   required String initialQuery,
+  num? volume,
 }) {
   return showAppDialog<File>(
     context: context,
     builder: (BuildContext ctx) =>
-        BookCoverScrapeDialog(initialQuery: initialQuery),
+        BookCoverScrapeDialog(initialQuery: initialQuery, volume: volume),
   );
 }
 
@@ -48,9 +55,13 @@ class BookCoverScrapeDialog extends StatefulWidget {
     super.key,
     required this.initialQuery,
     this.scraperOverride,
+    this.volume,
   });
 
   final String initialQuery;
+
+  /// 本地书的卷号（MangaBaka 卷封面网格预选这一卷）；null = 不预选。
+  final num? volume;
 
   /// 测试注入的 scraper（注入时弹窗不负责关闭它）。
   final BookMetadataScraper? scraperOverride;
@@ -86,6 +97,15 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
 
   /// 正在下载封面的候选（在其「使用」按钮上转圈；null = 无进行中）。
   BookScrapeCandidate? _applyingCandidate;
+
+  /// MangaBaka 卷封面网格：选中的系列（null = 在候选列表页）。
+  BookScrapeCandidate? _volumeSeries;
+  List<BookVolumeCover> _volumes = const <BookVolumeCover>[];
+  bool _loadingVolumes = false;
+  Object? _volumeFailure;
+
+  /// 正在下载的那一卷（转圈）。
+  BookVolumeCover? _applyingVolume;
 
   @override
   void initState() {
@@ -150,6 +170,7 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
     if (source == _source) return;
     setState(() {
       _source = source;
+      _volumeSeries = null;
       _results = const <BookScrapeCandidate>[];
       _searched = false;
       _searchFailure = null;
@@ -157,7 +178,61 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
     _search();
   }
 
+  /// MangaBaka 候选「使用」= 进该系列的卷封面网格。
+  Future<void> _openVolumes(BookScrapeCandidate candidate) async {
+    setState(() {
+      _volumeSeries = candidate;
+      _volumes = const <BookVolumeCover>[];
+      _loadingVolumes = true;
+      _volumeFailure = null;
+    });
+    List<BookVolumeCover> volumes = const <BookVolumeCover>[];
+    Object? failure;
+    try {
+      volumes = await _facade.volumeCovers(candidate.subjectId);
+    } catch (e, stack) {
+      ErrorLogService.instance.log('BookCoverScrapeDialog.volumes', e, stack);
+      failure = e;
+    }
+    if (!mounted) return;
+    setState(() {
+      _volumes = volumes;
+      _loadingVolumes = false;
+      _volumeFailure = failure;
+    });
+  }
+
+  Future<void> _useVolume(BookVolumeCover cover) async {
+    if (_applyingVolume != null) return;
+    setState(() => _applyingVolume = cover);
+    File? file;
+    Object? failure;
+    try {
+      file = await _facade.downloadVolumeCover(cover);
+    } catch (e, stack) {
+      ErrorLogService.instance.log('BookCoverScrapeDialog.volume', e, stack);
+      failure = e;
+    }
+    if (!mounted) return;
+    if (file == null) {
+      setState(() => _applyingVolume = null);
+      FushiToast.show(
+        msg: failure == null
+            ? t.book_scrape_failed
+            : '${t.book_scrape_failed}\n${_failureReason(failure)}',
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
+    Navigator.of(context).pop(file);
+  }
+
   Future<void> _use(BookScrapeCandidate candidate) async {
+    if (candidate.source == BookScrapeSource.mangabaka &&
+        _volumeSeries == null) {
+      await _openVolumes(candidate);
+      return;
+    }
     if (_applyingCandidate != null) return;
     setState(() => _applyingCandidate = candidate);
     File? file;
@@ -234,9 +309,22 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
             Flexible(
               child: ConstrainedBox(
                 constraints: const BoxConstraints(minHeight: 120),
-                child: _buildResults(theme, tokens),
+                child: _volumeSeries != null
+                    ? _buildVolumes(theme)
+                    : _buildResults(theme, tokens),
               ),
             ),
+            if (_source == BookScrapeSource.mangabaka)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  t.book_scrape_mangabaka_attribution,
+                  key: const ValueKey<String>(
+                    'book_scrape_mangabaka_attribution',
+                  ),
+                  style: theme.textTheme.bodySmall,
+                ),
+              ),
           ],
         ),
       ),
@@ -246,6 +334,156 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
           child: Text(t.dialog_cancel),
         ),
       ],
+    );
+  }
+
+  /// MangaBaka 卷封面网格：预选本地卷号那一卷（高亮 + 排在最前），另给「使用系列
+  /// 封面」。
+  Widget _buildVolumes(ThemeData theme) {
+    final BookScrapeCandidate series = _volumeSeries!;
+    final Widget header = Row(
+      children: <Widget>[
+        FushiIconButtonControl(
+          tooltip: t.back,
+          icon: const FushiIcon(FushiIcons.back),
+          onPressed: () => setState(() => _volumeSeries = null),
+        ),
+        Expanded(
+          child: Text(
+            '${t.book_scrape_volume_title} · ${series.title}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        FushiTextButton(
+          onPressed: _applyingVolume != null || _applyingCandidate != null
+              ? null
+              : () async {
+                  // 系列主封面走普通下载路径（不进卷网格）。
+                  setState(() => _applyingCandidate = series);
+                  File? file;
+                  Object? failure;
+                  try {
+                    file = await _facade.downloadCover(series);
+                  } catch (e, stack) {
+                    ErrorLogService.instance.log(
+                      'BookCoverScrapeDialog.seriesCover',
+                      e,
+                      stack,
+                    );
+                    failure = e;
+                  }
+                  if (!mounted) return;
+                  if (file == null) {
+                    setState(() => _applyingCandidate = null);
+                    FushiToast.show(
+                      msg: failure == null
+                          ? t.book_scrape_failed
+                          : '${t.book_scrape_failed}\n${_failureReason(failure)}',
+                      severity: ToastSeverity.error,
+                    );
+                    return;
+                  }
+                  Navigator.of(context).pop(file);
+                },
+          child: Text(t.book_scrape_series_cover),
+        ),
+      ],
+    );
+    Widget body;
+    if (_loadingVolumes) {
+      body = const FushiLoadingView();
+    } else if (_volumeFailure != null) {
+      body = ScrapeFailureView(
+        title: t.book_scrape_search_failed,
+        reason: _failureReason(_volumeFailure!),
+        detail: _volumeFailure.toString(),
+      );
+    } else if (_volumes.isEmpty) {
+      body = Center(child: Text(t.book_scrape_volume_empty));
+    } else {
+      final num? wanted = widget.volume;
+      bool isWanted(BookVolumeCover v) =>
+          wanted != null && (v.volume - wanted).abs() < 0.01;
+      final List<BookVolumeCover> ordered = <BookVolumeCover>[
+        ..._volumes.where(isWanted),
+        ..._volumes.where((BookVolumeCover v) => !isWanted(v)),
+      ];
+      body = FushiEntranceScope(
+        child: GridView.builder(
+          gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+            maxCrossAxisExtent: 112,
+            childAspectRatio: 0.62,
+            mainAxisSpacing: 8,
+            crossAxisSpacing: 8,
+          ),
+          itemCount: ordered.length,
+          itemBuilder: fushiStaggeredItemBuilder(
+            (BuildContext context, int index) => _buildVolumeTile(
+              theme,
+              ordered[index],
+              selected: isWanted(ordered[index]),
+            ),
+          ),
+        ),
+      );
+    }
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        header,
+        Flexible(child: body),
+      ],
+    );
+  }
+
+  Widget _buildVolumeTile(
+    ThemeData theme,
+    BookVolumeCover cover, {
+    required bool selected,
+  }) {
+    final ColorScheme scheme = theme.colorScheme;
+    return FushiPressScale(
+      child: InkWell(
+        key: ValueKey<String>('book_scrape_volume_${cover.label}'),
+        borderRadius: FushiBorderRadius.chip,
+        onTap: _applyingVolume != null ? null : () => _useVolume(cover),
+        child: Column(
+          children: <Widget>[
+            Expanded(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  borderRadius: FushiBorderRadius.chip,
+                  border: Border.all(
+                    color: selected ? scheme.primary : Colors.transparent,
+                    width: 3,
+                  ),
+                ),
+                child: ClipRRect(
+                  borderRadius: FushiBorderRadius.chip,
+                  child: identical(_applyingVolume, cover)
+                      ? const Center(
+                          child: FushiCircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Image(
+                          image: AppHttpImage(cover.thumbnailUrl ?? cover.url),
+                          fit: BoxFit.cover,
+                          width: double.infinity,
+                          errorBuilder: (_, __, ___) => const SizedBox.expand(),
+                        ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              t.book_scrape_volume_label(volume: cover.label),
+              style: theme.textTheme.bodySmall,
+              maxLines: 1,
+            ),
+          ],
+        ),
+      ),
     );
   }
 

@@ -405,12 +405,25 @@ abstract class MediaSource {
     required MediaItem item,
     String? fallbackUrl,
     bool noOverride = false,
+    bool noScraped = false,
   }) {
     if (!noOverride) {
       final ImageProvider<Object>? overrideThumbnail =
           getOverrideThumbnailFromMediaItem(appModel: appModel, item: item);
       if (overrideThumbnail != null) {
         return overrideThumbnail;
+      }
+    }
+
+    // 刮削层（书 / 漫画的每卷封面）：在用户 override 之下、内嵌封面之上。
+    // `noOverride` 时仍显示——编辑弹窗的「默认图」就是不算用户覆盖时的样子。
+    if (!noScraped) {
+      final File? scraped = scrapedThumbnailFile(
+        appModel: appModel,
+        item: item,
+      );
+      if (scraped != null) {
+        return resizedFileImage(scraped);
       }
     }
 
@@ -458,6 +471,11 @@ abstract class MediaSource {
       }
     }
 
+    final File? scraped = scrapedThumbnailFile(appModel: appModel, item: item);
+    if (scraped != null) {
+      return scraped.path;
+    }
+
     if (item.imageUrl != null) {
       return item.imageUrl!;
     }
@@ -468,6 +486,14 @@ abstract class MediaSource {
 
     return '';
   }
+
+  /// 刮削层封面（书 / 漫画「已获取的每卷封面」）。默认没有——只有书类源
+  /// （[ReaderMediaSource]）覆写，且只查内存索引、不在 build 里逐块 stat，视频 /
+  /// 音乐 / 在线漫画等其它源不多付一次文件系统调用。
+  File? scrapedThumbnailFile({
+    required AppModel appModel,
+    required MediaItem item,
+  }) => null;
 
   // ── override 身份（BUG-1317）─────────────────────────────────────────
   //
