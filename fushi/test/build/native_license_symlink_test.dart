@@ -106,6 +106,26 @@ void main() {
     expect(resolveNativeLicenseSymlink(loose).path, loose.absolute.path);
   });
 
+  test('最近的 .git 是不跟踪该文件的外层仓库时报错，不退回占位文本', () {
+    // 依赖是没有 .git 的拷贝（vendored / 解压），落在某个外层仓库里。
+    final Directory vendored = Directory('${repo.path}/vendor/dep')
+      ..createSync(recursive: true);
+    final File placeholder = File('${vendored.path}/LICENSE-MIT')
+      ..writeAsStringSync('../LICENSE-MIT');
+    expect(() => resolveNativeLicenseSymlink(placeholder), throwsStateError);
+  });
+
+  test('文件名里的通配字符按字面匹配', () {
+    _addSymlinkEntry(repo, 'percent_encoding/LICENSE-[M]IT', '../LICENSE-MIT');
+    File(
+      '${repo.path}/percent_encoding/LICENSE-MIT-extra',
+    ).writeAsStringSync('');
+    final File resolved = resolveNativeLicenseSymlink(
+      File('${repo.path}/percent_encoding/LICENSE-[M]IT'),
+    );
+    expect(readNativeLicenseText(resolved), _mitText);
+  });
+
   test('目标越出检出根时报错，不退回占位文本', () {
     _addSymlinkEntry(repo, 'percent_encoding/LICENSE-X', '../../outside');
     File('${tmp.path}/outside').writeAsStringSync('outside\n');

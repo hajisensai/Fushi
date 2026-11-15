@@ -559,8 +559,9 @@ Map<String, File> _resolvedEntry(File f) {
 ///
 /// 判据只认 git 索引里的模式 `120000`，不猜文件内容：是符号链接条目时，链接目标取自
 /// git 对象（与检出成真链接还是占位文本无关），相对链接所在目录解析，链式链接逐跳解析。
-/// 不在 git 检出里、或不是符号链接条目的文件原样返回（操作系统层面的真链接读时自然跟随）。
-/// 目标越出检出根或不存在时抛 [StateError]，不静默退回占位文本。
+/// 不在任何 git 检出里、或不是符号链接条目的文件原样返回（操作系统层面的真链接读时自然跟随）。
+/// 最近的 `.git` 不跟踪该文件（外层仓库）、目标越出检出根或不存在时抛 [StateError]，
+/// 不静默退回占位文本。
 File resolveNativeLicenseSymlink(File file) {
   File current = file.absolute;
   for (int hop = 0; hop < 16; hop++) {
@@ -568,6 +569,7 @@ File resolveNativeLicenseSymlink(File file) {
     if (root == null) return current;
     final String rel = _relativePath(root, current);
     final ProcessResult ls = Process.runSync('git', <String>[
+      '--literal-pathspecs',
       'ls-files',
       '-s',
       '--',
@@ -577,8 +579,17 @@ File resolveNativeLicenseSymlink(File file) {
       throw StateError('git ls-files 失败（${root.path}，$rel）：${ls.stderr}');
     }
     final String entry = (ls.stdout as String).trim();
+    if (entry.isEmpty) {
+      // 最近的 `.git` 不跟踪这个文件：它是外层仓库（依赖本身是没有 `.git` 的拷贝 /
+      // 解压目录，或 CARGO_HOME 落在别的仓库里），判不出是不是链接，拒绝静默读原文。
+      throw StateError(
+        '${current.path} 不在最近的 git 检出 ${root.path} 的索引里，'
+        '无法判定是否为符号链接；依赖须是带 .git 的完整检出',
+      );
+    }
     if (!entry.startsWith('120000 ')) return current;
     final ProcessResult blob = Process.runSync('git', <String>[
+      '--literal-pathspecs',
       'cat-file',
       'blob',
       ':$rel',
