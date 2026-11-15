@@ -23,6 +23,7 @@ import 'dart:io';
 
 import 'package:archive/archive_io.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/utils/misc/safe_file_name.dart';
 import 'package:fushi_server/src/admin/admin_context.dart';
 import 'package:fushi_server/src/admin/upload_store.dart';
 import 'package:fushi_server/src/commands/dict_commands.dart';
@@ -165,7 +166,7 @@ class AdminDictionaryImport {
     if (raw.isEmpty) return 'upload.zip';
     final String base = p.posix
         .basename(raw.replaceAll('\\', '/'))
-        .replaceAll(RegExp(r'[<>:"|?*\x00-\x1f]'), '_')
+        .replaceAll(windowsUnsafeFileNameChars, '_')
         .trim();
     if (base.isEmpty || base == '.' || base == '..') {
       throw UploadRejected(

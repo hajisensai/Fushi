@@ -364,12 +364,12 @@ void main() {
 
     int occurrences(String needle) => needle.allMatches(src).length;
 
-    test('五条同步路径都经由 _beginSyncActivity 登记身份', () {
-      // 1 处定义 + 5 处调用（开机自动 sweep / 手动全量 / 合集轻量 / 单本 /
-      // 设置页显式资产上传下载）。
+    test('六条同步路径都经由 _beginSyncActivity 登记身份', () {
+      // 1 处定义 + 6 处调用（开机自动 sweep / 手动全量 / 合集轻量 / 单本 /
+      // 设置页显式资产上传下载 / 词典管理页按 host 推送下载单本词典）。
       expect(
         occurrences('_beginSyncActivity('),
-        6,
+        7,
         reason: '新增同步路径必须一并登记身份，否则进度条又会退回「只有线没有字」',
       );
     });
@@ -377,7 +377,7 @@ void main() {
     test('每条路径都在 finally 里经由 _endSyncActivity 公布结局', () {
       expect(
         occurrences('_endSyncActivity('),
-        6,
+        7,
         reason: '漏掉结局 = 那轮同步静默收尾，用户无从判断到底同没同步',
       );
     });
