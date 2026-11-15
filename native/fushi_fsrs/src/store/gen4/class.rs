@@ -55,6 +55,7 @@ use crate::gen4::stamp::StampHlc;
 use crate::gen4_ids::alias::strict_id;
 use crate::sync2::codec::Reader;
 use crate::sync2::dvv::Dvv;
+use crate::sync2::id::Id;
 use crate::sync2::op::EntKind;
 use crate::sync2::vv::OpId;
 
@@ -81,12 +82,26 @@ pub const JSON_ID_KEYS: [&str; 14] = [
     "freqFieldId",
 ];
 
-/// 按类拼行要的换名（[Index::edit_lines_as]）：写入者表（只放规范名与原名不同的）、这个寄存器的规范实体与规范键。
+/// 按类拼行要的换名（[Index::edit_lines_as]）：写入者表（只放规范名与原名不同的）、这个寄存器的规范实体与规范键，
+/// 以及闭包换名的缓存（[Renamed]，同一次读里各寄存器共用）。
 pub(super) struct Canon<'a> {
     writers: &'a BTreeMap<String, String>,
+    renamed: &'a Renamed,
     pub(super) entity: String,
     pub(super) key: String,
 }
+
+/// 一份闭包是哪一段：整份（`closure_ix` 里那台设备的旧闭包，按 `upto` 记）还是只并到某个 seq 的一部分（[Index] 的
+/// `partial`，按那个 seq 记）。两种的 seq 含义不同，缓存分开记。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) enum Span {
+    Whole,
+    Upto,
+}
+
+/// 闭包过 [Canon::dvv] 换名的结果，按 (设备, [Span], seq) 记；None = 闭包里没有改名的写入者，原样用。只在一次读
+/// 期间有效（读的时候索引不变）。
+pub(super) type Renamed = RefCell<BTreeMap<(Id, Span, u64), Option<Dvv>>>;
 
 impl Canon<'_> {
     /// 规范写入者（表里没有 = 它自己）。
@@ -94,13 +109,36 @@ impl Canon<'_> {
         self.writers.get(w).map_or(w, String::as_str)
     }
 
+    /// 规范写入者 [w] 自己和归到它的全部原名。
+    pub(super) fn names<'w>(&'w self, w: &'w str) -> impl Iterator<Item = &'w str> + 'w {
+        std::iter::once(w).chain(
+            self.writers
+                .iter()
+                .filter(move |(_, c)| c.as_str() == w)
+                .map(|(n, _)| n.as_str()),
+        )
+    }
+
+    /// [d] 里有没有要换名的写入者。
+    fn renames(&self, d: &Dvv) -> bool {
+        d.vv.keys()
+            .chain(d.cloud.keys())
+            .any(|w| self.writers.contains_key(w))
+    }
+
+    /// 闭包 [d]（[at] 是它在缓存里的位置）换成规范写入者之后含不含 dot `(w, q)`，[w] 是规范写入者。与带旧戳写入的
+    /// 上下文用同一个 [Canon::dvv] 换名（设计 §5.3「三处一起换」），换名结果按 [at] 缓存、不重复算。
+    pub(super) fn closure_contains(&self, at: (Id, Span, u64), d: &Dvv, w: &str, q: i64) -> bool {
+        let mut cache = self.renamed.borrow_mut();
+        let r = cache
+            .entry(at)
+            .or_insert_with(|| self.renames(d).then(|| self.dvv(d)));
+        r.as_ref().unwrap_or(d).contains(w, q)
+    }
+
     /// 旧上下文的键换成规范写入者：前缀取大、零散 dot 取并，再按 [Dvv::merge] 的规则收紧。
     pub(super) fn dvv(&self, d: &Dvv) -> Dvv {
-        let renamed_any =
-            d.vv.keys()
-                .chain(d.cloud.keys())
-                .any(|w| self.writers.contains_key(w));
-        if !renamed_any {
+        if !self.renames(d) {
             return d.clone();
         }
         let mut renamed = Dvv::default();
@@ -151,7 +189,19 @@ pub struct ClassWinner {
 }
 
 impl<'t, 'c> Index<'t, 'c> {
-    /// 一个别名类全部寄存器的胜者，按规范键升序（文件头「寄存器」）。[canon] 可以是类里任何一个 ID。
+    /// 按类读的入口先过这一关：别名表还没重算（[Index::aliases_stale]：[Index::hold_aliases] 攒着、或证据变了还没
+    /// [Index::settle]）时报错，不拿旧别名表静默判。
+    fn aliases_settled(&self) -> Result<(), String> {
+        if self.aliases_stale() {
+            return Err(
+                "gen4 index: class read while the alias table is stale (settle first)".to_owned(),
+            );
+        }
+        Ok(())
+    }
+
+    /// 一个别名类全部寄存器的胜者，按规范键升序（文件头「寄存器」）。[canon] 可以是类里任何一个 ID。别名表没重算时
+    /// 报错（[Index::aliases_settled]）。
     pub fn class_winners(
         &mut self,
         kind: EntKind,
@@ -176,6 +226,7 @@ impl<'t, 'c> Index<'t, 'c> {
 
     /// 一个别名类（笔记）现在的标签：类内成员的标签操作并起来重判（文件头「标签」），顺序规则同 [Index::tags_of]。
     pub fn class_tags(&mut self, canon: &Ref) -> Result<Vec<String>, String> {
+        self.aliases_settled()?;
         let members = self.members(canon)?;
         let mut rows = Vec::new();
         for m in &members {
@@ -311,6 +362,7 @@ impl<'t, 'c> Index<'t, 'c> {
         canon: &Ref,
         only: Option<&str>,
     ) -> Result<Vec<ClassWinner>, String> {
+        self.aliases_settled()?;
         let entity = self.canonical(canon)?.text();
         let mut groups: BTreeMap<String, Vec<(i64, i64)>> = BTreeMap::new();
         for m in self.members(canon)? {
@@ -344,11 +396,13 @@ impl<'t, 'c> Index<'t, 'c> {
             }
         }
         let writers = self.writer_aliases()?;
+        let renamed = Renamed::default();
         let mut out = Vec::new();
         for (key, mut rows) in groups {
             rows.sort_unstable();
             let c = Canon {
                 writers: &writers,
+                renamed: &renamed,
                 entity: entity.clone(),
                 key,
             };
@@ -717,8 +771,9 @@ mod tests {
         });
     }
 
-    /// 不带旧戳的原生写入「见没见过」改名写入者的写入：按原名问闭包（闭包存原名）。原生写入依赖的承袭操作带
-    /// `merged-…~w1` 的旧戳，它就见过 (w1, 1)，盖掉它、没有冲突；拿规范名 `w1` 去问会答「没见过」= 误报冲突。
+    /// 不带旧戳的原生写入「见没见过」改名写入者的写入：原生写入依赖的承袭操作带 `merged-…~w1` 的旧戳（闭包里记的
+    /// 是原名），按类拼时 dot 是 (w1, 2)，闭包过同一个换名后也是 w1，见过、盖掉它、没有冲突；拿规范名 `w1` 去问没
+    /// 换名的闭包会答「没见过」= 误报冲突。
     #[test]
     fn a_native_write_sees_a_renamed_writer_by_its_raw_name() {
         with(|t, col| {
@@ -746,6 +801,101 @@ mod tests {
                 assert_eq!(got.len(), 1);
                 assert_eq!(got[0].value, "\"z\"");
                 assert!(!got[0].conflict);
+                Ok(())
+            })
+            .unwrap();
+        });
+    }
+
+    /// 原生写入问闭包与带旧戳写入的上下文用同一个换名（设计 §5.3「三处一起换」）。寄存器里只有一条带旧戳的
+    /// (`[reg_writer]`, 2)；原生写入依赖的另一条承袭记录落在别的键上，它的旧上下文是 {`[ctx_writer]`: 2}。两个名字
+    /// 一个是 `w1`、一个是归回到 `w1` 的 `merged-…~w1`：按类读，原生写入见过那条、盖掉它、没有冲突；按原值读，名字
+    /// 不同 = 没见过 = 冲突。
+    fn native_write_sees_through_the_renamed_closure(renamed_in_register: bool) {
+        with(|t, col| {
+            let merged = merged_w1();
+            let (reg_writer, ctx_writer) = if renamed_in_register {
+                (merged.clone(), "w1".to_owned())
+            } else {
+                ("w1".to_owned(), merged.clone())
+            };
+            t.tx(|t| {
+                let mut ix = Index::new(t, col);
+                renamed_writer_evidence(t, &mut ix, col, &merged);
+                let x = stamped("x", stamp(&reg_writer, 2, r#"{"vv":{}}"#, 100));
+                heritage(t, &mut ix, col, op(0xd1, 1, 1, &[], &x));
+                let ctx = format!(r#"{{"vv":{{"{ctx_writer}":2}}}}"#);
+                let other = Body4::Edit(Edit4 {
+                    key: "other".to_owned(),
+                    value: "\"o\"".to_owned(),
+                    stamp: Some(stamp("v", 1, &ctx, 150)),
+                    ..native_edit()
+                });
+                heritage(t, &mut ix, col, op(0xd3, 1, 2, &[], &other));
+                let z = Body4::Edit(Edit4 {
+                    value: "\"z\"".to_owned(),
+                    ..native_edit()
+                });
+                native(t, &mut ix, col, &op(0xa2, 1, 300, &[(0xd3, 1)], &z));
+                ix.settle()?;
+                assert_eq!(ix.canonical_writer(&merged)?, "w1");
+                let e = native_edit();
+                let raw = ix.register(EntKind::Note, &e.entity, &e.key)?;
+                assert!(raw.iter().any(|(_, s)| *s == R_CONFLICT), "{raw:?}");
+                let got: Vec<ClassWinner> = ix
+                    .class_winners(EntKind::Note, &Ref::of(&e.entity))?
+                    .into_iter()
+                    .filter(|w| w.key == e.key)
+                    .collect();
+                assert_eq!(got.len(), 1);
+                assert_eq!(got[0].value, "\"z\"");
+                assert!(!got[0].conflict, "{got:?}");
+                Ok(())
+            })
+            .unwrap();
+            assert_rebuild_is_identity(t, col);
+        });
+    }
+
+    /// 寄存器里是原名 (w1, 2)，闭包记的是改名后的 merged:2。
+    #[test]
+    fn a_native_write_sees_a_raw_writer_through_a_renamed_closure() {
+        native_write_sees_through_the_renamed_closure(false);
+    }
+
+    /// 寄存器里是改名后的 (merged, 2)，闭包记的是原名 w1:2。
+    #[test]
+    fn a_native_write_sees_a_renamed_writer_through_a_raw_closure() {
+        native_write_sees_through_the_renamed_closure(true);
+    }
+
+    /// 别名表没重算（还没 settle、或 [Index::hold_aliases] 攒着）时按类读报错，不拿旧别名表静默判；重算之后照常。
+    #[test]
+    fn class_reads_refuse_a_stale_alias_table() {
+        with(|t, col| {
+            t.tx(|t| {
+                let mut ix = Index::new(t, col);
+                let e = native_edit();
+                let at = Ref::of(&e.entity);
+                ix.hold_aliases(true);
+                renamed_writer_evidence(t, &mut ix, col, &merged_w1());
+                let refused = |ix: &mut Index<'_, '_>| {
+                    assert!(ix.aliases_stale());
+                    assert!(ix.class_winners(EntKind::Note, &at).is_err());
+                    assert!(ix.class_value(EntKind::Note, &at, "proof").is_err());
+                    assert!(ix.class_tags(&at).is_err());
+                };
+                refused(&mut ix);
+                ix.settle()?;
+                refused(&mut ix);
+                ix.hold_aliases(false);
+                ix.settle()?;
+                assert!(!ix.aliases_stale());
+                assert_eq!(
+                    ix.class_value(EntKind::Note, &at, "proof")?,
+                    Some("\"p\"".to_owned())
+                );
+                assert!(ix.class_tags(&at)?.is_empty());
                 Ok(())
             })
             .unwrap();
@@ -1073,8 +1223,10 @@ mod tests {
                             }
                             rows.sort_unstable();
                             let none = BTreeMap::new();
+                            let fresh = Renamed::default();
                             let plain = Canon {
                                 writers: &none,
+                                renamed: &fresh,
                                 entity: canon.text(),
                                 key: w.key.clone(),
                             };
@@ -1160,6 +1312,7 @@ mod tests {
             // ---- 归回的写入者
             let started = Instant::now();
             let writers = ix.writer_aliases().unwrap();
+            let renamed = Renamed::default();
             let names: BTreeSet<&str> = writers.keys().map(String::as_str).collect();
             let all: Vec<(i64, Ref, Vec<u8>, i64, i64)> = dst
                 .prepare("SELECT ekind, ent, key, k, state FROM reg_ix WHERE col = ?1 ORDER BY ekind, ent, key, k")
@@ -1211,6 +1364,7 @@ mod tests {
                 let key = read_edit_key(&mut Reader::new(&reg.2)).unwrap();
                 let c = Canon {
                     writers: &writers,
+                    renamed: &renamed,
                     entity: reg.1.text(),
                     key: key.clone(),
                 };

@@ -649,21 +649,48 @@ impl<'t, 'c> Index<'t, 'c> {
 
     /// 作者写的时候见过 [full]（每台设备的前缀），算不算见过 dot `(w, q)`：前缀自己含它，或前缀覆盖到的旧闭包含它
     /// （协议 3 `edit_row_with` + `legacy_closure_with`）。
-    fn seen(&mut self, full: &Vv, w: &str, q: i64) -> Result<bool, String> {
+    ///
+    /// [class] = None 按原名问（索引层）。Some = 按别名类问（`class.rs`），[w] 是规范写入者：闭包与部分闭包先过
+    /// 带旧戳写入的上下文用的同一个换名（[super::class::Canon::dvv]，设计 §5.3「三处一起换」）再问规范名；前缀
+    /// 那一问对规范名和归到它的每个原名里是设备 ID 的都问。闭包存的是原名，只按原名查会让「见过 merged:n」与
+    /// 「见过 w1:n」这同一件事在带旧戳与不带旧戳两条路径上得出不同的答案。
+    fn seen(
+        &mut self,
+        full: &Vv,
+        w: &str,
+        q: i64,
+        class: Option<&super::class::Canon>,
+    ) -> Result<bool, String> {
+        use super::class::Span;
         if w.starts_with(SYNTHETIC_PREFIX) {
             return Ok(false);
         }
-        if let Some(id) = Id::parse(w).filter(|id| id.text() == w) {
-            let s = full.get(&id);
-            if s > 0 && q <= s as i64 {
-                return Ok(true);
-            }
+        let in_prefix = |name: &str| -> bool {
+            Id::parse(name)
+                .filter(|id| id.text() == name)
+                .is_some_and(|id| {
+                    let s = full.get(&id);
+                    s > 0 && q <= s as i64
+                })
+        };
+        let prefixed = match class {
+            None => in_prefix(w),
+            Some(c) => c.names(w).any(in_prefix),
+        };
+        if prefixed {
+            return Ok(true);
         }
+        let has = |at: (Id, Span, u64), d: &Dvv| -> bool {
+            match class {
+                None => d.contains(w, q),
+                Some(c) => c.closure_contains(at, d, w, q),
+            }
+        };
         for (d, &s) in &full.0 {
             let whole = match self.closures()?.get(d) {
                 None => continue,
                 Some((upto, ctx)) if s >= *upto => {
-                    if ctx.contains(w, q) {
+                    if has((*d, Span::Whole, *upto), ctx) {
                         return Ok(true);
                     }
                     true
@@ -682,7 +709,7 @@ impl<'t, 'c> Index<'t, 'c> {
                 })?;
                 self.partial.insert((*d, s), acc.finish().1);
             }
-            if self.partial[&(*d, s)].contains(w, q) {
+            if has((*d, Span::Upto, s), &self.partial[&(*d, s)]) {
                 return Ok(true);
             }
         }
@@ -816,7 +843,7 @@ impl<'t, 'c> Index<'t, 'c> {
 
     /// [Index::edit_lines]，[class] = Some 时按别名类拼（`class.rs` 文件头）：dot 的写入者、HLC 的写入者、旧上下文的
     /// 键三处一起换成规范写入者（同一个规范 dot 的并成一次写入），实体、键换成规范形，值里嵌的 ID 归一。
-    /// 不带旧戳的写入「见没见过」仍按原值 dot 问闭包（闭包存的是原名）。
+    /// 不带旧戳的写入「见没见过」按规范 dot 问，闭包过同一个换名（[Index::seen]）。
     pub(super) fn edit_lines_as(
         &mut self,
         ks: &[i64],
@@ -858,26 +885,20 @@ impl<'t, 'c> Index<'t, 'c> {
                 full,
             });
         }
-        // 同一个 dot 的并成一次写入：代表取操作号最小的，server_time 取最小值。按类拼时 dot 用规范写入者，
-        // [raw_dots] 记每个 dot 由哪些原值 dot 并来。
-        let raw_dot = |w: &Write| match &w.ed.stamp {
-            Some(s) => (s.writer.clone(), s.seq),
-            None => (w.id.device.text(), w.id.seq as i64),
-        };
+        // 同一个 dot 的并成一次写入：代表取操作号最小的，server_time 取最小值。按类拼时 dot 用规范写入者。
         let dot = |w: &Write| {
-            let (writer, seq) = raw_dot(w);
+            let (writer, seq) = match &w.ed.stamp {
+                Some(s) => (s.writer.clone(), s.seq),
+                None => (w.id.device.text(), w.id.seq as i64),
+            };
             match class {
                 Some(c) => (c.writer(&writer).to_owned(), seq),
                 None => (writer, seq),
             }
         };
-        let mut raw_dots: BTreeMap<(String, i64), BTreeSet<(String, i64)>> = BTreeMap::new();
         let mut by_dot: BTreeMap<(String, i64), (usize, Option<i64>)> = BTreeMap::new();
         for (i, w) in writes.iter().enumerate() {
             let st = w.ed.stamp.as_ref().and_then(|s| s.server_time);
-            if class.is_some() {
-                raw_dots.entry(dot(w)).or_default().insert(raw_dot(w));
-            }
             by_dot
                 .entry(dot(w))
                 .and_modify(|(rep, min)| {
@@ -914,19 +935,7 @@ impl<'t, 'c> Index<'t, 'c> {
                         if (ow, oq) == (writer, seq) {
                             continue;
                         }
-                        let seen = if class.is_none() {
-                            self.seen(&w.full, ow, *oq)?
-                        } else {
-                            let mut any = false;
-                            for (rw, rq) in raw_dots.get(&(ow.clone(), *oq)).into_iter().flatten() {
-                                if self.seen(&w.full, rw, *rq)? {
-                                    any = true;
-                                    break;
-                                }
-                            }
-                            any
-                        };
-                        if seen {
+                        if self.seen(&w.full, ow, *oq, class)? {
                             let dots = cloud.entry(ow.clone()).or_insert_with(|| json!([]));
                             dots.as_array_mut().expect("array").push(json!(oq));
                         }
