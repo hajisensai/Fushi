@@ -559,7 +559,10 @@ List<BlurayTitle> selectBlurayTitles(
       <({BlurayPlaylist playlist, String? source, bool main})>[];
   for (final BlurayPlaylist playlist in kept) {
     final bool main = playlist.durationTicks == longest;
-    final List<BlurayPlaylist> episodes = splitEpisodes
+    // 各集正片段另被别的播放列表引用（盘上另有逐集播放列表、或是同片段的诱饵）的
+    // 不切；菜单循环引用什么都不算数。
+    final List<BlurayPlaylist> episodes =
+        splitEpisodes && !blurayPlaylistSharesAnchorClips(playlist, candidates)
         ? blurayEpisodePlaylists(playlist)
         : const <BlurayPlaylist>[];
     if (episodes.isEmpty) {

@@ -38,6 +38,10 @@ const Duration kBlurayEpisodeSplitMinimumDuration = Duration(minutes: 18);
 /// 两集。三段及以上不设上限（一小时一集的剧集盘照切）。
 const Duration kBlurayTwoEpisodeMaximumDuration = Duration(minutes: 40);
 
+/// 「这一段开头有章节点」的容差：每一集的开头都是一个章节点，而被无缝分支 / 换层
+/// 切成几段的电影在段的接缝处通常没有。
+const Duration kBlurayEpisodeStartChapterTolerance = Duration(seconds: 2);
+
 int _ticks(Duration duration) =>
     duration.inMilliseconds * kBlurayTimeScale ~/ 1000;
 
@@ -81,6 +85,16 @@ class BlurayEpisodeSpan {
 ///
 /// 每段 ≥ 10 分钟的 PlayItem 是一集的锚点；紧跟其后的短段（次回预告、提供画面）并入
 /// 这一集，第一集之前的短段（厂标）并入第一集。
+///
+/// 拿不准就不切的几种情形：
+///   * 有锚点开头没有章节点——几段等长的正片（被切成三段的电影）与几集的区别就在
+///     这里。《魔女の旅々》实测各段的 `connection_condition` 都是 5（无缝），与分段
+///     电影相同，所以不能拿它区分；
+///   * 锚点之间夹着短段、且整条以短段开头以锚点结尾（`OP 集 OP 集 …`）——短段是
+///     前一集的预告还是后一集的片头说不清。
+///
+/// 「这几段是不是已经各有一条逐集播放列表」要看整张盘，由
+/// [blurayPlaylistSharesAnchorClips] 判，不在这里。
 List<BlurayEpisodeSpan> splitBlurayPlaylistEpisodes(BlurayPlaylist playlist) {
   if (!blurayPlaylistLooksEpisodic(playlist)) {
     return const <BlurayEpisodeSpan>[];
@@ -105,6 +119,29 @@ List<BlurayEpisodeSpan> splitBlurayPlaylistEpisodes(BlurayPlaylist playlist) {
       }
     }
   }
+  final bool shortBetweenAnchors =
+      anchors.last - anchors.first >= anchors.length;
+  if (shortBetweenAnchors &&
+      anchors.first > 0 &&
+      anchors.last == playlist.clips.length - 1) {
+    return const <BlurayEpisodeSpan>[];
+  }
+  final int tolerance = _ticks(kBlurayEpisodeStartChapterTolerance);
+  int itemStart = 0;
+  final Set<int> chapterAtStart = <int>{};
+  for (int i = 0; i < playlist.clips.length; i++) {
+    for (final BlurayChapter chapter in playlist.chapters) {
+      if (chapter.playItemIndex == i &&
+          chapter.startTicks - itemStart <= tolerance) {
+        chapterAtStart.add(i);
+        break;
+      }
+    }
+    itemStart += playlist.clips[i].durationTicks;
+  }
+  if (!anchors.every(chapterAtStart.contains)) {
+    return const <BlurayEpisodeSpan>[];
+  }
   return <BlurayEpisodeSpan>[
     for (int i = 0; i < anchors.length; i++)
       BlurayEpisodeSpan(
@@ -115,6 +152,27 @@ List<BlurayEpisodeSpan> splitBlurayPlaylistEpisodes(BlurayPlaylist playlist) {
         anchorItem: anchors[i],
       ),
   ];
+}
+
+/// [playlist] 的各集正片段（≥ 10 分钟的片段）里，有没有哪一段也被 [others] 里别的
+/// 播放列表引用。有 = 这张盘另有逐集播放列表（[playlist] 是漏网的「全部播放」），
+/// 或它是同一批片段换个顺序的诱饵——都不该再切成集。
+bool blurayPlaylistSharesAnchorClips(
+  BlurayPlaylist playlist,
+  Iterable<BlurayPlaylist> others,
+) {
+  final int likeTicks = _ticks(kBlurayEpisodeLikeMinimumDuration);
+  final Set<String> anchors = <String>{
+    for (final BlurayClipRef clip in playlist.clips)
+      if (clip.durationTicks >= likeTicks) clip.clipId,
+  };
+  for (final BlurayPlaylist other in others) {
+    if (identical(other, playlist) || other.id == playlist.id) continue;
+    for (final BlurayClipRef clip in other.clips) {
+      if (anchors.contains(clip.clipId)) return true;
+    }
+  }
+  return false;
 }
 
 /// [span] 这一集在 [playlist] 时间轴上的起点（45 kHz tick）。

@@ -83,24 +83,80 @@ void main() {
     test('电影（一段正片 + 短段）不切', () {
       expect(_spans(<int>[20, 7200, 60]), isEmpty);
     });
+
+    test('被切成三段等长的电影不切：段的接缝处没有章节点', () {
+      final BlurayPlaylist movie = parseBlurayPlaylist(
+        buildMplsFixture(
+          playItems: <FixturePlayItem>[
+            for (int i = 1; i <= 3; i++) wholeClipItem('0000$i', 2400),
+          ],
+          marks: <FixtureMark>[
+            for (int i = 0; i < 12; i++)
+              FixtureMark(
+                playItemIndex: 0,
+                timestampTicks: kFixtureClipStartTicks + 45000 * 60 * i,
+              ),
+          ],
+        ),
+        id: '00001',
+      )!;
+      expect(blurayPlaylistLooksEpisodic(movie), isTrue);
+      expect(splitBlurayPlaylistEpisodes(movie), isEmpty);
+    });
+
+    test('每集前一段片头（OP 集 OP 集）的归属说不清，不切', () {
+      expect(_spans(<int>[90, 1350, 90, 1350, 90, 1350]), isEmpty);
+    });
+
+    test('各集另有逐集播放列表、或同片段换顺序的诱饵：正片段被别的播放列表引用', () {
+      final BlurayPlaylist playAll = _playlist(<int>[1440, 1440, 1440, 90]);
+      final BlurayPlaylist episode = parseBlurayPlaylist(
+        buildMplsFixture(
+          playItems: <FixturePlayItem>[wholeClipItem('00002', 1440)],
+        ),
+        id: '00012',
+      )!;
+      final BlurayPlaylist extra = parseBlurayPlaylist(
+        buildMplsFixture(
+          playItems: <FixturePlayItem>[wholeClipItem('00004', 90)],
+        ),
+        id: '00020',
+      )!;
+      expect(
+        blurayPlaylistSharesAnchorClips(playAll, <BlurayPlaylist>[
+          playAll,
+          episode,
+        ]),
+        isTrue,
+      );
+      expect(
+        blurayPlaylistSharesAnchorClips(playAll, <BlurayPlaylist>[
+          playAll,
+          extra,
+        ]),
+        isFalse,
+        reason: '只共用短段（NCOP）不算',
+      );
+    });
   });
 
   test('派生播放列表：片段取区间，章节平移到本集零点，id 就是分集文件名', () {
-    final BlurayPlaylist playlist = _playlist(<int>[15, 1440, 30, 1440]);
+    final BlurayPlaylist playlist = _playlist(<int>[15, 1440, 30, 1440, 30]);
     final List<BlurayPlaylist> episodes = blurayEpisodePlaylists(playlist);
     expect(episodes.map((BlurayPlaylist e) => e.id), <String>[
       '00001.p02',
       '00001.p04',
     ]);
     expect(episodes.first.clipIds, <String>['00001', '00002', '00003']);
-    expect(episodes.last.clipIds, <String>['00004']);
+    expect(episodes.last.clipIds, <String>['00004', '00005']);
     expect(
       episodes.first.chapters.map((BlurayChapter c) => c.start.inSeconds),
       <int>[0, 15, 1455],
     );
-    expect(episodes.last.chapters.single.startTicks, 0);
-    expect(episodes.last.chapters.single.playItemIndex, 0);
-    expect(episodes.last.duration, const Duration(seconds: 1440));
+    expect(episodes.last.chapters.first.startTicks, 0);
+    expect(episodes.last.chapters.first.playItemIndex, 0);
+    expect(episodes.last.chapters, hasLength(2));
+    expect(episodes.last.duration, const Duration(seconds: 1470));
     expect(blurayEpisodeForPlayItem(playlist, 4)!.id, '00001.p04');
     expect(
       blurayEpisodeForPlayItem(playlist, 3),
