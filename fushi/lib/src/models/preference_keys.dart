@@ -362,6 +362,11 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // shown / hidden}`，缺省 = auto（按面板自己的默认判据）。见
   // models/home_dashboard_panel.dart 的 [HomeDashboardPanel]。随 Profile 走。
   'home_dashboard_panels',
+  // String（JSON，默认空）：首页小组件网格的两份布局 `{"v":1,"compact":[{"k":kind,
+  // "c":列,"r":行},...],"wide":[...]}`（models/home_widget_layout.dart）。键或某份
+  // 布局缺失 = 没编辑过，渲染时由旧键 `home_dashboard_panels` 迁移现算、不落盘。
+  // kind id 与字段冻结。随 Profile 走、进备份 / 同步（同 home_dashboard_panels）。
+  'home_widget_layout',
   // String（JSON map，默认空）：从互联对端下载的有声书「下载时 host 报的内容版本」
   // `{book:<本机 bookKey> | srt:<uid>: {source, rev}}`（sync/remote_audiobook_revision.dart）。
   // 书架据此提示「对端有更新」。设备本地（SyncRepository 的设备本地清单）。
