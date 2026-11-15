@@ -288,8 +288,15 @@ void main() {
       const ModuleVisibility none = ModuleVisibility(<ModuleId>{});
       // 每一条都是一个具体的产品决定，不是「还没写」：
       // appearance/system/storage/profiles 是设备级；reading 是 books 与 manga
-      // 共用（漫画库页内嵌的就是它）；lookup 是「关页面入口但留查词能力」的例外。
+      // 共用（漫画库页内嵌的就是它）；lookup 是「关页面入口但留查词能力」的例外；
+      // general / navigation 收着语言、快捷键与功能模块开关本身（模块关光后要靠它
+      // 再打开）；webBrowser 是 app 内浏览器，视频站点入口也会打开它；models 是
+      // 本机 OCR / ASR / TTS 模型这类设备级资源。
       for (final SettingsDestinationId id in <SettingsDestinationId>[
+        SettingsDestinationId.general,
+        SettingsDestinationId.navigation,
+        SettingsDestinationId.webBrowser,
+        SettingsDestinationId.models,
         SettingsDestinationId.appearance,
         SettingsDestinationId.profiles,
         SettingsDestinationId.reading,
@@ -358,6 +365,31 @@ void main() {
       expect(isAiModuleEnabled(noServices), isTrue);
       expect(
         isSettingsDestinationVisible(SettingsDestinationId.ai, noServices),
+        isTrue,
+      );
+    });
+
+    test('听书是独立分类，跟听书模块开关走', () {
+      expect(
+        moduleOfSettingsDestination(SettingsDestinationId.listening),
+        ModuleId.listening,
+      );
+      final ModuleVisibility noListening = ModuleVisibility(
+        ModuleId.values.toSet()..remove(ModuleId.listening),
+      );
+      expect(
+        isSettingsDestinationVisible(
+          SettingsDestinationId.listening,
+          noListening,
+        ),
+        isFalse,
+      );
+      // 阅读分类不再内嵌听书分区，关听书不该连坐阅读。
+      expect(
+        isSettingsDestinationVisible(
+          SettingsDestinationId.reading,
+          noListening,
+        ),
         isTrue,
       );
     });

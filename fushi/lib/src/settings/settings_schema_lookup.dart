@@ -31,8 +31,6 @@ import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_destination_id.dart';
-import 'package:fushi/src/settings/settings_detail_page.dart';
-import 'package:fushi/src/settings/settings_schema_local_services.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/sync/texthooker_ws_client.dart';
@@ -140,22 +138,375 @@ SettingsSwitchItem _popupBottomDockedBooksOnlySwitch() {
   );
 }
 
+/// 「查词弹窗」子页：弹窗盒子本身的尺寸、停靠位置、滚动方式与关闭手势。原来是
+/// 查词页末尾一个十九项的折叠分区，用户找不到；拆成四个小分区放进子页后，外层只
+/// 留一行入口。app 外查词窗与防截屏只在桌面有，归页面顶层的「应用外查词」。
+SettingsDestination _buildLookupPopupDestination() {
+  return SettingsDestination(
+    id: SettingsDestinationId.lookup,
+    title: t.settings_lookup_popup_title,
+    icon: Icons.picture_in_picture_alt_outlined,
+    sections: <SettingsSection>[
+      SettingsSection(
+        id: 'lookup.section.popup_size',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
+        title: t.settings_lookup_section_popup_size,
+        items: <SettingsItem>[
+          SettingsSliderItem(
+            id: 'lookup.popup_max_width',
+            titleReadout: true,
+            // TODO-1352: 放宽查词弹窗最大宽度的强制上限（1000→2000），让宽屏 / 4K 下
+            // 弹窗能拉到接近占满（实际宽度仍由 resolvePopupRect 按当前屏宽 clamp，
+            // 绝不会超出屏幕）。divisions 保持 10px 步进（1750/175）。
+            title: t.popup_max_width,
+            icon: Icons.open_in_full_outlined,
+            // 用户 2026-10-05：小说阅读设置的查词里要能调宽高。真值仍是这一份全局
+            // 偏好（与弹窗右下角拖拽把手、漫画 / 视频弹窗同源），只是投影进书内面板，
+            // 不另立小说专属键——否则拖把手该写哪份就分叉了。
+            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 0),
+            min: kLookupPopupMinWidth,
+            max: kLookupPopupMaxWidth,
+            divisions: 175,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.popupMaxWidth,
+            label: (double value) => value.round().toString(),
+            onChanged: (SettingsContext settingsContext, double value) {
+              settingsContext.appModel.setPopupMaxWidth(value);
+              settingsContext.refresh();
+            },
+            defaultValue: kLookupPopupDefaultWidth,
+          ),
+          SettingsSliderItem(
+            id: 'lookup.popup_max_height',
+            titleReadout: true,
+            // TODO-1352 后续：放宽最大高度上限（800→1600），配合高分屏 / 精细调整；
+            // 实际高度仍由 resolvePopupRect 按当前屏高 clamp，绝不会超出屏幕。
+            // 步进保持 10px（1400/140）。
+            title: t.popup_max_height,
+            icon: Icons.height_outlined,
+            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 1),
+            min: kLookupPopupMinHeight,
+            max: kLookupPopupMaxHeight,
+            divisions: 140,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.popupMaxHeight,
+            label: (double value) => value.round().toString(),
+            onChanged: (SettingsContext settingsContext, double value) {
+              settingsContext.appModel.setPopupMaxHeight(value);
+              settingsContext.refresh();
+            },
+            defaultValue: kLookupPopupDefaultHeight,
+          ),
+          // 宽高滑杆写的是「上限」，实际尺寸还要按当前屏幕 / 停靠 / 竖排夹一次：
+          // 预览用宿主同一个 resolvePopupRect 画出小说里弹窗的真实落点与尺寸。
+          SettingsCustomItem(
+            id: 'lookup.popup_size_preview',
+            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 2),
+            builder: (SettingsContext settingsContext) =>
+                LookupPopupSizePreview(
+                  maxWidth:
+                      settingsContext.appModel.popupMaxWidth *
+                      settingsContext.appModel.appUiScale,
+                  maxHeight:
+                      settingsContext.appModel.popupMaxHeight *
+                      settingsContext.appModel.appUiScale,
+                  bottomDocked: settingsContext.appModel.popupBottomDockedFor(
+                    ModuleId.books,
+                  ),
+                  verticalWriting: settingsContext
+                      .readerSource
+                      .readerWritingMode
+                      .startsWith('vertical'),
+                ),
+          ),
+          // 弹窗尺寸精细化：浏览器扩展弹窗独立尺寸开关 + 仅在开启时展示的宽/高滑杆。
+          // 关闭时跟随 app 内最大宽高（extensionPopupEffectiveSize 解析，经 theme 下发）。
+          SettingsSwitchItem(
+            id: 'lookup.extension_popup_independent_size',
+            title: t.extension_popup_independent_size,
+            subtitle: t.extension_popup_independent_size_hint,
+            icon: Icons.extension_outlined,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.extensionPopupIndependentSize,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setExtensionPopupIndependentSize(
+                value,
+              );
+              settingsContext.refresh();
+            },
+            defaultValue: false,
+          ),
+          SettingsSliderItem(
+            id: 'lookup.extension_popup_max_width',
+            titleReadout: true,
+            title: t.extension_popup_max_width,
+            icon: Icons.open_in_full_outlined,
+            min: 250,
+            max: 2000,
+            divisions: 175,
+            visible: (SettingsContext settingsContext) =>
+                settingsContext.appModel.extensionPopupIndependentSize,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.extensionPopupMaxWidth,
+            label: (double value) => value.round().toString(),
+            onChanged: (SettingsContext settingsContext, double value) {
+              settingsContext.appModel.setExtensionPopupMaxWidth(value);
+              settingsContext.refresh();
+            },
+            defaultValue: kLookupPopupDefaultWidth,
+          ),
+          SettingsSliderItem(
+            id: 'lookup.extension_popup_max_height',
+            titleReadout: true,
+            title: t.extension_popup_max_height,
+            icon: Icons.height_outlined,
+            min: 200,
+            max: 1600,
+            divisions: 140,
+            visible: (SettingsContext settingsContext) =>
+                settingsContext.appModel.extensionPopupIndependentSize,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.extensionPopupMaxHeight,
+            label: (double value) => value.round().toString(),
+            onChanged: (SettingsContext settingsContext, double value) {
+              settingsContext.appModel.setExtensionPopupMaxHeight(value);
+              settingsContext.refresh();
+            },
+            defaultValue: kLookupPopupDefaultHeight,
+          ),
+        ],
+      ),
+      SettingsSection(
+        id: 'lookup.section.popup_position',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
+        title: t.settings_lookup_section_popup_position,
+        items: <SettingsItem>[
+          SettingsSwitchItem(
+            id: 'lookup.popup_bottom_docked',
+            title: t.popup_bottom_docked,
+            subtitle: t.popup_bottom_docked_hint,
+            icon: Icons.vertical_align_bottom_outlined,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.popupBottomDocked,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setPopupBottomDocked(value);
+              settingsContext.refresh();
+            },
+            defaultValue: false,
+          ),
+          // 底部停靠按模块细分：不是所有场景都要停靠（例如只在视频里固定弹窗）。
+          // 总开关打开后才出现；模块在本平台不存在（iOS 无游戏模块）或被用户在
+          // 功能模块里关掉时不出——判据走 [AppModel.moduleVisibility] 唯一合成。
+          for (final ModuleId module
+              in PreferencesRepository.kPopupBottomDockedModules)
+            _popupBottomDockedModuleSwitch(module),
+          _popupBottomDockedBooksOnlySwitch(),
+        ],
+      ),
+      SettingsSection(
+        id: 'lookup.section.popup_scroll',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
+        title: t.settings_lookup_section_popup_scroll,
+        items: <SettingsItem>[
+          // BUG-1026: 查词弹窗滚轮速度倍率。默认 1.0（与改前一致），0.5–5.0。倍率乘进
+          // popup.js 的 wheel factor，一处存储驱动 in-app 三种弹窗 + 浏览器扩展弹窗。
+          SettingsSliderItem(
+            id: 'lookup.popup_wheel_speed',
+            title: t.popup_wheel_speed,
+            subtitle: t.popup_wheel_speed_hint,
+            icon: Icons.mouse_outlined,
+            min: 0.5,
+            max: 5.0,
+            divisions: 9,
+            titleReadout: true,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.popupWheelSpeed,
+            label: (double value) => '${value.toStringAsFixed(1)}×',
+            onChanged: (SettingsContext settingsContext, double value) {
+              settingsContext.appModel.setPopupWheelSpeed(value);
+              settingsContext.refresh();
+            },
+            defaultValue: 1.0,
+          ),
+          // 墨水屏「瞬时滚动」+ 两个步长旋钮。同时经 ReaderPlacement 出现在阅读器快捷
+          // 设置的查词段（墨水屏用户是在书里查词时才发现步长不合手，不该为此退出阅读器
+          // 去翻全局设置）。步长只在开关开启时展示；滚轮 / 触摸各一个（默认值本就不同，
+          // 见 PreferencesRepository.popupInstantScrollWheelStep 的注释）。
+          SettingsSwitchItem(
+            id: 'lookup.popup_instant_scroll',
+            title: t.popup_instant_scroll,
+            subtitle: t.popup_instant_scroll_hint,
+            icon: Icons.animation_outlined,
+            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 17),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.popupInstantScroll,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setPopupInstantScroll(value);
+              settingsContext.refresh();
+            },
+            defaultValue: false,
+          ),
+          SettingsSliderItem(
+            id: 'lookup.popup_instant_scroll_wheel_step',
+            title: t.popup_instant_scroll_wheel_step,
+            subtitle: t.popup_instant_scroll_wheel_step_hint,
+            icon: Icons.mouse_outlined,
+            min: PreferencesRepository.kPopupInstantScrollStepMin,
+            max: PreferencesRepository.kPopupInstantScrollStepMax,
+            divisions: 18,
+            titleReadout: true,
+            // 拖动只跟手预览、松手提交一次：逐 tick 写穿会每帧写库并重建整个
+            // 阅读设置面板（Android 上压着正文平台视图拖动掉帧）。
+            commitOnRelease: true,
+            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 18),
+            visible: (SettingsContext settingsContext) =>
+                settingsContext.appModel.popupInstantScroll,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.popupInstantScrollWheelStep,
+            label: (double value) => '${(value * 100).round()}%',
+            onChanged: (SettingsContext settingsContext, double value) {
+              settingsContext.appModel.setPopupInstantScrollWheelStep(value);
+              settingsContext.refresh();
+            },
+            defaultValue:
+                PreferencesRepository.kPopupInstantScrollWheelStepDefault,
+          ),
+          SettingsSliderItem(
+            id: 'lookup.popup_instant_scroll_touch_step',
+            title: t.popup_instant_scroll_touch_step,
+            subtitle: t.popup_instant_scroll_touch_step_hint,
+            icon: Icons.touch_app_outlined,
+            min: PreferencesRepository.kPopupInstantScrollStepMin,
+            max: PreferencesRepository.kPopupInstantScrollStepMax,
+            divisions: 18,
+            titleReadout: true,
+            // 拖动只跟手预览、松手提交一次：逐 tick 写穿会每帧写库并重建整个
+            // 阅读设置面板（Android 上压着正文平台视图拖动掉帧）。
+            commitOnRelease: true,
+            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 19),
+            visible: (SettingsContext settingsContext) =>
+                settingsContext.appModel.popupInstantScroll,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.popupInstantScrollTouchStep,
+            label: (double value) => '${(value * 100).round()}%',
+            onChanged: (SettingsContext settingsContext, double value) {
+              settingsContext.appModel.setPopupInstantScrollTouchStep(value);
+              settingsContext.refresh();
+            },
+            defaultValue:
+                PreferencesRepository.kPopupInstantScrollTouchStepDefault,
+          ),
+        ],
+      ),
+      SettingsSection(
+        id: 'lookup.section.popup_close',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
+        title: t.settings_lookup_section_popup_close,
+        items: <SettingsItem>[
+          // TODO-436/407②/716：是否允许"水平滑动关闭查词弹窗"。这是查词弹窗窗口的
+          // 关闭手势，归「查词弹窗 › 关闭」；同时经 ReaderPlacement 出现在阅读器快捷
+          // 设置的查词段。开启后既驱动弹窗顶栏滑动关闭（[SwipeDismissWrapper]），也让
+          // 桌面在弹窗正文区（全屏 barrier）水平拖过阈关一层（TODO-716，对齐手机手势）。
+          // Windows/Linux 默认关闭（鼠标框选正文与滑动手势同形易误触），其余平台默认
+          // 开启；任何平台均可用弹窗顶栏的 X 关闭。
+          SettingsSwitchItem(
+            id: 'reading_controls.enable_swipe_to_close',
+            title: t.enable_swipe_to_close,
+            subtitle: t.settings_lookup_swipe_to_close_hint,
+            icon: Icons.swipe_left_outlined,
+            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 13),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.readerSource.enableSwipeToClose,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.readerSource.setEnableSwipeToClose(value);
+              notifyReaderSettingsChanged(settingsContext);
+            },
+          ),
+          // TODO-625：滑动关闭的灵敏度阈值，与上面的"允许水平滑动关闭查词弹窗"开关
+          // 配套，同属查词弹窗手势行为（ReaderGroup.lookup，紧邻开关），与开关相邻摆放。
+          // id/偏好 key 沿用 'reading_controls.' 前缀作向后兼容（持久化无关展示分类）。
+          SettingsSliderItem(
+            id: 'reading_controls.dismiss_swipe_sensitivity',
+            title: t.dismiss_swipe_sensitivity,
+            icon: Icons.swipe_down_outlined,
+            min: 0.1,
+            max: 1,
+            divisions: 9,
+            // 拖动只跟手预览、松手提交一次：逐 tick 写穿会每帧写库 + 推正文
+            // WebView 重注样式 / 重建阅读器页，Android 上压着平台视图拖动掉帧。
+            commitOnRelease: true,
+            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 14),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.readerSource.dismissSwipeSensitivity,
+            label: (double value) => value.toStringAsFixed(1),
+            onChanged: (SettingsContext settingsContext, double value) async {
+              await settingsContext.readerSource.setDismissSwipeSensitivity(
+                value,
+              );
+              notifyReaderSettingsChanged(settingsContext);
+            },
+            defaultValue: 0.6,
+          ),
+          // 用户诉求（2026-09-23）：滚动模式下查词后继续滚动正文（横排/竖排都算）
+          // 即关闭弹窗，并做成开关。只在滚动（连续）模式生效，故仅该模式可见
+          // （与 page_columns 只在翻页模式可见同理）。默认开启。
+          SettingsSwitchItem(
+            id: 'reading_controls.dismiss_popup_on_scroll',
+            title: t.reader_popup_scroll_dismiss,
+            subtitle: t.reader_popup_scroll_dismiss_hint,
+            icon: Icons.swap_vert_outlined,
+            visible: (SettingsContext settingsContext) =>
+                settingsContext.readerSource.readerViewMode == 'continuous',
+            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 20),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.readerSource.dismissPopupOnScroll,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.readerSource.setDismissPopupOnScroll(value);
+              notifyReaderSettingsChanged(settingsContext);
+            },
+            defaultValue: true,
+          ),
+          // 用户建议 q16Apecgbg（2026-10-13）：制卡后查词弹窗直接消失，不再挡住正文。
+          // 默认关 = 制卡后弹窗照旧留着（既有行为）。
+          SettingsSwitchItem(
+            id: 'reading_controls.close_popup_after_mining',
+            title: t.lookup_popup_close_after_mining,
+            subtitle: t.lookup_popup_close_after_mining_hint,
+            icon: Icons.playlist_add_check_outlined,
+            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 25),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.readerSource.closePopupAfterMining,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.readerSource.setClosePopupAfterMining(
+                value,
+              );
+              notifyReaderSettingsChanged(settingsContext);
+            },
+            defaultValue: false,
+          ),
+        ],
+      ),
+    ],
+  );
+}
+
 SettingsDestination buildLookupDestination() {
   return SettingsDestination(
     id: SettingsDestinationId.lookup,
     title: t.settings_destination_lookup,
-    summary: t.dictionary_settings,
+    summary: t.settings_lookup_summary,
     // 图标与底栏 / 侧栏同一真值（homeNavItemFor），不在设置里另写一份。
     icon: homeNavItemFor(HomeTab.dictionaries).icon,
     sections: <SettingsSection>[
       SettingsSection(
         id: 'lookup.section.dictionaries',
         presentation: SettingsSectionPresentation.alwaysExpanded,
-        title: t.manager,
+        title: t.settings_lookup_section_dictionaries,
         items: <SettingsItem>[
           SettingsNavigationItem(
             id: 'lookup.dictionaries',
             title: t.dictionaries,
+            subtitle: t.settings_lookup_dictionaries_hint,
             icon: Icons.auto_stories_outlined,
             onTap: (SettingsContext settingsContext) async {
               await pushSettingsPage(
@@ -168,6 +519,7 @@ SettingsDestination buildLookupDestination() {
           SettingsActionItem(
             id: 'lookup.custom_css',
             title: t.dict_style_title,
+            subtitle: t.settings_lookup_custom_css_hint,
             icon: Icons.palette_outlined,
             // CLI：读 / 写手写 CSS（全局或某本词典），与编辑对话框保存同一组 setter。
             // 可视化规则编辑器是交互式编辑，CLI 只管手写 CSS。
@@ -211,6 +563,22 @@ SettingsDestination buildLookupDestination() {
               );
             },
           ),
+          // 词典样式统一（默认关，用户 10-09）：导入词典自带的标签底色 / 强调字色 / 边框色按语义
+          // 换成当前 ColorScheme（M3E），换强调色、切明暗都跟随；关掉退回词典原样式。
+          // popup.js 读 window.__fushiDictUnifiedStyle（popup_settings_injection 注入）。
+          SettingsSwitchItem(
+            id: 'lookup.dictionary_unified_style',
+            title: t.lookup_dictionary_unified_style,
+            subtitle: t.lookup_dictionary_unified_style_hint,
+            icon: FushiIcons.appearance,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.dictionaryUnifiedStyle,
+            onChanged: (SettingsContext settingsContext, bool value) {
+              settingsContext.appModel.toggleDictionaryUnifiedStyle();
+              settingsContext.refresh();
+            },
+            defaultValue: false,
+          ),
           // 中文查词简体 ↔ 繁體双向互查（查 这个 也出 這個 的词条）。开发者要求默认关：只查
           // 原文字形。始终显示：瘦客户端本机没有中文词典也要能开（开关随远端查词发给 host）。
           SettingsSwitchItem(
@@ -228,19 +596,21 @@ SettingsDestination buildLookupDestination() {
             },
             defaultValue: false,
           ),
+          // 远端词典查询抽成共享 builder：查词分类与 Fushi 互联分类都引用（它直连
+          // 互联对端的词典，逻辑上属互联，故互联分类也提供入口）。
+          buildRemoteDictionaryLookupItem(),
         ],
       ),
-      // 原「查词行为」19+ 项平铺长列表，按职责拆为四组：查词触发 / 外部集成 /
-      // 朗读与反馈 / 弹窗窗口。纯展示重组：item id、持久化 key、
-      // onChanged、ReaderPlacement 全部不变。
+      // 查词页自己的输入与结果行为，与「在正文里怎么触发查词」分开。
       SettingsSection(
-        id: 'lookup.section.trigger',
+        id: 'lookup.section.lookup_page',
         presentation: SettingsSectionPresentation.alwaysExpanded,
-        title: t.settings_section_lookup_trigger,
+        title: t.settings_lookup_section_lookup_page,
         items: <SettingsItem>[
           SettingsSwitchItem(
             id: 'lookup.auto_search',
             title: t.auto_search,
+            subtitle: t.settings_lookup_auto_search_hint,
             icon: Icons.manage_search_outlined,
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.autoSearchEnabled,
@@ -250,20 +620,24 @@ SettingsDestination buildLookupDestination() {
             },
             defaultValue: true,
           ),
-          // 反馈 3D-JH966Kr：查词页结果顶部下拉 = 清空查询回到历史。默认开（原行为），
-          // 往上翻结果顶到头被甩回历史的用户可以关掉。
-          SettingsSwitchItem(
-            id: 'lookup.page_pull_to_clear',
-            title: t.lookup_page_pull_to_clear,
-            subtitle: t.lookup_page_pull_to_clear_hint,
-            icon: FushiIcons.arrowDown,
+          // 一等数字项：负值经 min:0 夹取（旧散装字段把负值回退成默认值——语义
+          // 收敛为「非负」，正常正值写穿完全一致）。解析失败不写（新数字项契约）。
+          SettingsNumberItem(
+            id: 'lookup.auto_search_debounce_delay',
+            title: t.auto_search_debounce_delay,
+            subtitle: t.settings_lookup_debounce_hint,
+            icon: Icons.timer_outlined,
+            integer: true,
+            min: 0,
+            suffixText: t.unit_milliseconds,
             value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.lookupPagePullToClear,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel.setLookupPagePullToClear(value);
+                settingsContext.appModel.searchDebounceDelay,
+            resetValue: (SettingsContext settingsContext) =>
+                settingsContext.appModel.defaultSearchDebounceDelay,
+            onChanged: (SettingsContext settingsContext, num value) {
+              settingsContext.appModel.setSearchDebounceDelay(value.toInt());
               settingsContext.refresh();
             },
-            defaultValue: true,
           ),
           // 反馈 cczhbM7ZOI：进入查词页 / 清空查询时自动弹键盘（BUG-2687 的有意行为）。
           // 默认开（原行为）；关掉后只有点搜索框才聚焦 / 弹键盘。桌面上同一判据管
@@ -283,6 +657,100 @@ SettingsDestination buildLookupDestination() {
             },
             defaultValue: true,
           ),
+          // 反馈 3D-JH966Kr：查词页结果顶部下拉 = 清空查询回到历史。默认开（原行为），
+          // 往上翻结果顶到头被甩回历史的用户可以关掉。
+          SettingsSwitchItem(
+            id: 'lookup.page_pull_to_clear',
+            title: t.lookup_page_pull_to_clear,
+            subtitle: t.lookup_page_pull_to_clear_hint,
+            icon: FushiIcons.arrowDown,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.lookupPagePullToClear,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setLookupPagePullToClear(value);
+              settingsContext.refresh();
+            },
+            defaultValue: true,
+          ),
+          SettingsNumberItem(
+            id: 'lookup.maximum_terms',
+            title: t.maximum_terms,
+            subtitle: t.settings_lookup_maximum_terms_hint,
+            icon: Icons.format_list_numbered_outlined,
+            integer: true,
+            min: 0,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.maximumTerms,
+            resetValue: (SettingsContext settingsContext) =>
+                settingsContext.appModel.defaultMaximumDictionaryTermsInResult,
+            onChanged: (SettingsContext settingsContext, num value) {
+              settingsContext.appModel.setMaximumTerms(value.toInt());
+              settingsContext.appModel.clearDictionaryResultsCache();
+              settingsContext.refresh();
+            },
+          ),
+          // 查词输入框希望输入法切到哪种语言。默认未设置 = 不碰用户的系统输入法
+          // 状态（桌面端切输入法是改系统全局状态，会漏到别的 app，不该默认开）。
+          //
+          // 这**不是**「查词的目标语言」：查词流水线语言无关，`targetLanguage` 那个
+          // 假抽象已删且有守卫钉着（见 preferences_repository 的 lookupImeLanguage）。
+          //
+          // 语言选项复用内容语言那份（`kContentLanguageOptions`）——用户要认的是
+          // 「哪国语言」，和给书/词典指定语言是同一件事，没必要两套清单。
+          SettingsNavigationItem(
+            id: 'lookup.ime_language',
+            title: t.settings_lookup_ime_language_title,
+            // 当前值只能进 titleBuilder（渲染期求值）——塞进 title 会被设置页缓存
+            // 成陈旧文案，`settings_schema_cache_test.dart` 钉着这条。
+            titleBuilder: (SettingsContext settingsContext) {
+              final String current =
+                  settingsContext.appModel.prefsRepo.lookupImeLanguage;
+              final String label = current.isEmpty
+                  ? t.settings_lookup_ime_language_unset
+                  : contentLanguageLabelOf(current);
+              return '${t.settings_lookup_ime_language_title} · $label';
+            },
+            subtitle: t.settings_lookup_ime_language_hint,
+            icon: Icons.keyboard_alt_outlined,
+            onTap: (SettingsContext settingsContext) async {
+              final String current =
+                  settingsContext.appModel.prefsRepo.lookupImeLanguage;
+              await showContentLanguagePicker(
+                context: settingsContext.context,
+                title: t.settings_lookup_ime_language_title,
+                description: t.settings_lookup_ime_language_description,
+                current: current.isEmpty ? null : current,
+                autoDetected: '',
+                autoLabel: t.settings_lookup_ime_language_unset,
+                onSelected: (String? tag) async {
+                  await settingsContext.appModel.prefsRepo.setLookupImeLanguage(
+                    tag ?? '',
+                  );
+                  // 原生查词界面（Android 悬浮 / 弹窗词典的 EditText）读的是这份
+                  // 持久化值，它们可能在任何 Flutter 查词页面打开之前就被拉起。
+                  await LookupImeChannel.persistForNativeSurfaces(tag);
+                  settingsContext.refresh();
+                  // 选了系统里没装的输入法时说一声。否则用户设完发现「没反应」，
+                  // 而真正的原因（系统里根本没这个输入法）他无从知道——我们又不该
+                  // 替他往系统里装一个。
+                  if (tag == null) return;
+                  if (await LookupImeChannel.isLanguageAvailable(tag)) return;
+                  if (!settingsContext.context.mounted) return;
+                  _showSettingsSnackBar(
+                    settingsContext,
+                    t.settings_lookup_ime_language_unavailable,
+                  );
+                },
+              );
+            },
+          ),
+        ],
+      ),
+      SettingsSection(
+        id: 'lookup.section.trigger',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
+        title: t.settings_lookup_section_hover,
+        items: <SettingsItem>[
           // TODO-861②（移植 Hoshi `07b5c09`）：扫描非日文文本。关闭后选区/查词遇非
           // 日文码点即停（不吃相邻拉丁词/数字）。默认 true = 现状，向后兼容。开着的
           // 阅读器经 notifyReaderSettingsChanged → updateLive 热更新
@@ -378,150 +846,8 @@ SettingsDestination buildLookupDestination() {
             },
             defaultValue: true,
           ),
-          // 一等数字项：负值经 min:0 夹取（旧散装字段把负值回退成默认值——语义
-          // 收敛为「非负」，正常正值写穿完全一致）。解析失败不写（新数字项契约）。
-          SettingsNumberItem(
-            id: 'lookup.auto_search_debounce_delay',
-            title: t.auto_search_debounce_delay,
-            icon: Icons.timer_outlined,
-            integer: true,
-            min: 0,
-            suffixText: t.unit_milliseconds,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.searchDebounceDelay,
-            resetValue: (SettingsContext settingsContext) =>
-                settingsContext.appModel.defaultSearchDebounceDelay,
-            onChanged: (SettingsContext settingsContext, num value) {
-              settingsContext.appModel.setSearchDebounceDelay(value.toInt());
-              settingsContext.refresh();
-            },
-          ),
-          SettingsNumberItem(
-            id: 'lookup.maximum_terms',
-            title: t.maximum_terms,
-            icon: Icons.format_list_numbered_outlined,
-            integer: true,
-            min: 0,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.maximumTerms,
-            resetValue: (SettingsContext settingsContext) =>
-                settingsContext.appModel.defaultMaximumDictionaryTermsInResult,
-            onChanged: (SettingsContext settingsContext, num value) {
-              settingsContext.appModel.setMaximumTerms(value.toInt());
-              settingsContext.appModel.clearDictionaryResultsCache();
-              settingsContext.refresh();
-            },
-          ),
-          // TODO-1030 M0：全局查词（应用外）抓取选中文本周围上下文句。开启后按热键
-          // 查词时，除选中词外还经 UI Automation 读取前台应用选区前后各约 600 字，裁出
-          // 当前句在弹窗展示（Yomitan {sentence} 风格）。隐私敏感——读前台应用文本，
-          // 默认关闭；关闭时只用剪贴板拿到的纯选中串（现状）。UIA 是 Windows 平台能力，
-          // 故仅桌面（DesktopLookupService.isDesktop）显示。
-          SettingsSwitchItem(
-            id: 'lookup.global_context_capture',
-            title: t.global_context_capture,
-            subtitle: t.global_context_capture_hint,
-            icon: Icons.short_text_outlined,
-            visible: (SettingsContext settingsContext) =>
-                DesktopLookupService.isDesktop,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.globalContextCaptureEnabled,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel.setGlobalContextCaptureEnabled(
-                value,
-              );
-              settingsContext.refresh();
-            },
-            defaultValue: false,
-          ),
-          // macOS：读取 / 复制其它应用的选区（AX 读选区、合成 ⌘C）都要「辅助功能」
-          // 授权；未授权时旧行为会退化为只查当前剪贴板文本。设置页和第一次
-          // 明确触发全局查词时会弹系统授权提示，应用启动时不主动打扰用户。
-          SettingsActionItem(
-            id: 'lookup.accessibility_permission',
-            title: t.lookup_accessibility_permission_request,
-            subtitle: t.lookup_accessibility_permission_hint,
-            icon: Icons.accessibility_new_outlined,
-            visible: (SettingsContext settingsContext) =>
-                SelectionCapture.needsAccessibilityTrust,
-            cli: SettingsCliAction(
-              run: (SettingsContext c, Map<String, String> args) async =>
-                  <String, Object?>{
-                    'trusted':
-                        await SelectionCapture.requestAccessibilityTrust(),
-                  },
-            ),
-            onTap: (SettingsContext settingsContext) async {
-              final bool trusted =
-                  await SelectionCapture.requestAccessibilityTrust();
-              _showSettingsSnackBar(
-                settingsContext,
-                trusted
-                    ? t.lookup_accessibility_permission_granted
-                    : t.lookup_accessibility_permission_missing,
-              );
-            },
-          ),
-          // 查词输入框希望输入法切到哪种语言。默认未设置 = 不碰用户的系统输入法
-          // 状态（桌面端切输入法是改系统全局状态，会漏到别的 app，不该默认开）。
-          //
-          // 这**不是**「查词的目标语言」：查词流水线语言无关，`targetLanguage` 那个
-          // 假抽象已删且有守卫钉着（见 preferences_repository 的 lookupImeLanguage）。
-          //
-          // 语言选项复用内容语言那份（`kContentLanguageOptions`）——用户要认的是
-          // 「哪国语言」，和给书/词典指定语言是同一件事，没必要两套清单。
-          SettingsNavigationItem(
-            id: 'lookup.ime_language',
-            title: t.settings_lookup_ime_language_title,
-            // 当前值只能进 titleBuilder（渲染期求值）——塞进 title 会被设置页缓存
-            // 成陈旧文案，`settings_schema_cache_test.dart` 钉着这条。
-            titleBuilder: (SettingsContext settingsContext) {
-              final String current =
-                  settingsContext.appModel.prefsRepo.lookupImeLanguage;
-              final String label = current.isEmpty
-                  ? t.settings_lookup_ime_language_unset
-                  : contentLanguageLabelOf(current);
-              return '${t.settings_lookup_ime_language_title} · $label';
-            },
-            subtitle: t.settings_lookup_ime_language_description,
-            icon: Icons.keyboard_alt_outlined,
-            onTap: (SettingsContext settingsContext) async {
-              final String current =
-                  settingsContext.appModel.prefsRepo.lookupImeLanguage;
-              await showContentLanguagePicker(
-                context: settingsContext.context,
-                title: t.settings_lookup_ime_language_title,
-                description: t.settings_lookup_ime_language_description,
-                current: current.isEmpty ? null : current,
-                autoDetected: '',
-                autoLabel: t.settings_lookup_ime_language_unset,
-                onSelected: (String? tag) async {
-                  await settingsContext.appModel.prefsRepo.setLookupImeLanguage(
-                    tag ?? '',
-                  );
-                  // 原生查词界面（Android 悬浮 / 弹窗词典的 EditText）读的是这份
-                  // 持久化值，它们可能在任何 Flutter 查词页面打开之前就被拉起。
-                  await LookupImeChannel.persistForNativeSurfaces(tag);
-                  settingsContext.refresh();
-                  // 选了系统里没装的输入法时说一声。否则用户设完发现「没反应」，
-                  // 而真正的原因（系统里根本没这个输入法）他无从知道——我们又不该
-                  // 替他往系统里装一个。
-                  if (tag == null) return;
-                  if (await LookupImeChannel.isLanguageAvailable(tag)) return;
-                  if (!settingsContext.context.mounted) return;
-                  _showSettingsSnackBar(
-                    settingsContext,
-                    t.settings_lookup_ime_language_unavailable,
-                  );
-                },
-              );
-            },
-          ),
         ],
       ),
-      // 原「查词显示」17 项拆两组：词条内容（词典结果怎么渲染）/ 弹窗窗口
-      //（弹窗容器的尺寸与交互，含从行为区移来的滑动关闭手势对——它们改的是
-      // 弹窗窗口的关闭手势，与尺寸/停靠为伍）。
       SettingsSection(
         id: 'lookup.section.content',
         presentation: SettingsSectionPresentation.alwaysExpanded,
@@ -530,6 +856,7 @@ SettingsDestination buildLookupDestination() {
           SettingsSwitchItem(
             id: 'lookup.collapse_dictionaries',
             title: t.collapse_dictionaries,
+            subtitle: t.settings_lookup_collapse_dictionaries_hint,
             icon: Icons.unfold_less_outlined,
             // 词条密度三件套（折叠 / 自动展开行数 / 紧凑释义）也投影进小说快捷设置：
             // 手机上弹窗调小后，内容密度是同一个取舍，不该退出阅读器去翻全局设置。
@@ -595,29 +922,10 @@ SettingsDestination buildLookupDestination() {
               settingsContext.refresh();
             },
           ),
-          // BUG-1026: 查词弹窗滚轮速度倍率。默认 1.0（与改前一致），0.5–5.0。倍率乘进
-          // popup.js 的 wheel factor，一处存储驱动 in-app 三种弹窗 + 浏览器扩展弹窗。
-          SettingsSliderItem(
-            id: 'lookup.popup_wheel_speed',
-            title: t.popup_wheel_speed,
-            subtitle: t.popup_wheel_speed_hint,
-            icon: Icons.mouse_outlined,
-            min: 0.5,
-            max: 5.0,
-            divisions: 9,
-            titleReadout: true,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.popupWheelSpeed,
-            label: (double value) => '${value.toStringAsFixed(1)}×',
-            onChanged: (SettingsContext settingsContext, double value) {
-              settingsContext.appModel.setPopupWheelSpeed(value);
-              settingsContext.refresh();
-            },
-            defaultValue: 1.0,
-          ),
           SettingsSwitchItem(
             id: 'lookup.show_expression_tags',
             title: t.show_expression_tags,
+            subtitle: t.settings_lookup_expression_tags_hint,
             icon: Icons.sell_outlined,
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.showExpressionTags,
@@ -630,6 +938,7 @@ SettingsDestination buildLookupDestination() {
           SettingsSwitchItem(
             id: 'lookup.deduplicate_pitch_accents',
             title: t.deduplicate_pitch_accents,
+            subtitle: t.settings_lookup_dedup_pitch_hint,
             icon: Icons.filter_alt_outlined,
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.deduplicatePitchAccents,
@@ -642,6 +951,7 @@ SettingsDestination buildLookupDestination() {
           SettingsSwitchItem(
             id: 'lookup.harmonic_frequency',
             title: t.harmonic_frequency,
+            subtitle: t.settings_lookup_harmonic_frequency_hint,
             icon: Icons.bar_chart_outlined,
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.harmonicFrequency,
@@ -668,28 +978,12 @@ SettingsDestination buildLookupDestination() {
             },
             defaultValue: false,
           ),
-          // 词典样式统一（默认关，用户 10-09）：导入词典自带的标签底色 / 强调字色 / 边框色按语义
-          // 换成当前 ColorScheme（M3E），换强调色、切明暗都跟随；关掉退回词典原样式。
-          // popup.js 读 window.__fushiDictUnifiedStyle（popup_settings_injection 注入）。
-          SettingsSwitchItem(
-            id: 'lookup.dictionary_unified_style',
-            title: t.lookup_dictionary_unified_style,
-            subtitle: t.lookup_dictionary_unified_style_hint,
-            icon: FushiIcons.appearance,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.dictionaryUnifiedStyle,
-            onChanged: (SettingsContext settingsContext, bool value) {
-              settingsContext.appModel.toggleDictionaryUnifiedStyle();
-              settingsContext.refresh();
-            },
-            defaultValue: false,
-          ),
           // 词典字体原本只能去「外观 · 字体库」里给某款字体勾「词典」用途，词典设置
           // 里找不到入口。这里以词典作用域打开同一个字体库：新加的字体挂到词典、
           // 预览区默认显示词典样张。
           SettingsNavigationItem(
             id: 'lookup.dictionary_font',
-            title: t.custom_fonts_catalog_title,
+            title: t.settings_lookup_dictionary_font_title,
             subtitle: t.lookup_dictionary_font_hint,
             icon: Icons.font_download_outlined,
             onTap: (SettingsContext settingsContext) async {
@@ -747,11 +1041,10 @@ SettingsDestination buildLookupDestination() {
           ),
         ],
       ),
-      // 朗读与反馈：查中词后的语音朗读与播放暂停联动。
       SettingsSection(
         id: 'lookup.section.audio',
         presentation: SettingsSectionPresentation.alwaysExpanded,
-        title: t.settings_section_lookup_audio,
+        title: t.settings_lookup_section_audio,
         items: <SettingsItem>[
           // 「管理音频来源」抽成共享 builder：查词分类与 Fushi 互联分类都引用同一份
           // 定义（互联音频源 fushiRemote 就在该对话框里管，故互联分类也提供入口）。
@@ -759,6 +1052,7 @@ SettingsDestination buildLookupDestination() {
           SettingsSwitchItem(
             id: 'lookup.auto_read_on_lookup',
             title: t.auto_read_on_lookup,
+            subtitle: t.settings_lookup_auto_read_hint,
             icon: Icons.record_voice_over_outlined,
             reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 10),
             value: (SettingsContext settingsContext) =>
@@ -772,6 +1066,7 @@ SettingsDestination buildLookupDestination() {
           SettingsSliderItem(
             id: 'lookup.audio_volume',
             title: t.lookup_audio_volume,
+            subtitle: t.settings_lookup_audio_volume_hint,
             icon: Icons.volume_up_outlined,
             // 拖动只跟手预览、松手提交一次：逐 tick 写穿会每帧写库 + 推正文
             // WebView 重注样式 / 重建阅读器页，Android 上压着平台视图拖动掉帧。
@@ -797,6 +1092,7 @@ SettingsDestination buildLookupDestination() {
           SettingsSwitchItem(
             id: 'lookup.pause_on_lookup',
             title: t.pause_on_lookup,
+            subtitle: t.settings_lookup_pause_on_lookup_hint,
             icon: Icons.pause_circle_outline,
             reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 12),
             value: (SettingsContext settingsContext) =>
@@ -830,76 +1126,76 @@ SettingsDestination buildLookupDestination() {
         ],
       ),
       SettingsSection(
-        id: 'lookup.section.popup_window',
-        presentation: SettingsSectionPresentation.collapsed,
-        title: t.settings_section_lookup_popup_window,
+        id: 'lookup.section.popup',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
+        title: t.settings_lookup_section_popup,
         items: <SettingsItem>[
-          SettingsSliderItem(
-            id: 'lookup.popup_max_width',
-            titleReadout: true,
-            // TODO-1352: 放宽查词弹窗最大宽度的强制上限（1000→2000），让宽屏 / 4K 下
-            // 弹窗能拉到接近占满（实际宽度仍由 resolvePopupRect 按当前屏宽 clamp，
-            // 绝不会超出屏幕）。divisions 保持 10px 步进（1750/175）。
-            title: t.popup_max_width,
-            icon: Icons.open_in_full_outlined,
-            // 用户 2026-10-05：小说阅读设置的查词里要能调宽高。真值仍是这一份全局
-            // 偏好（与弹窗右下角拖拽把手、漫画 / 视频弹窗同源），只是投影进书内面板，
-            // 不另立小说专属键——否则拖把手该写哪份就分叉了。
-            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 0),
-            min: kLookupPopupMinWidth,
-            max: kLookupPopupMaxWidth,
-            divisions: 175,
+          SettingsNavigationItem(
+            id: 'lookup.popup.open',
+            title: t.settings_lookup_popup_title,
+            subtitle: t.settings_lookup_popup_summary,
+            icon: Icons.picture_in_picture_alt_outlined,
+            child: _buildLookupPopupDestination,
+          ),
+        ],
+      ),
+      // 应用外查词（全局热键 / 悬浮窗）只有桌面端有：抓取上下文、辅助功能授权、
+      // app 外查词窗尺寸与防截屏都只作用于那个独立窗口，集中放一处。
+      SettingsSection(
+        id: 'lookup.section.outside_app',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
+        title: t.settings_lookup_section_outside_app,
+        footer: t.settings_lookup_outside_app_footer,
+        items: <SettingsItem>[
+          // TODO-1030 M0：全局查词（应用外）抓取选中文本周围上下文句。开启后按热键
+          // 查词时，除选中词外还经 UI Automation 读取前台应用选区前后各约 600 字，裁出
+          // 当前句在弹窗展示（Yomitan {sentence} 风格）。隐私敏感——读前台应用文本，
+          // 默认关闭；关闭时只用剪贴板拿到的纯选中串（现状）。UIA 是 Windows 平台能力，
+          // 故仅桌面（DesktopLookupService.isDesktop）显示。
+          SettingsSwitchItem(
+            id: 'lookup.global_context_capture',
+            title: t.global_context_capture,
+            subtitle: t.global_context_capture_hint,
+            icon: Icons.short_text_outlined,
+            visible: (SettingsContext settingsContext) =>
+                DesktopLookupService.isDesktop,
             value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.popupMaxWidth,
-            label: (double value) => value.round().toString(),
-            onChanged: (SettingsContext settingsContext, double value) {
-              settingsContext.appModel.setPopupMaxWidth(value);
+                settingsContext.appModel.globalContextCaptureEnabled,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setGlobalContextCaptureEnabled(
+                value,
+              );
               settingsContext.refresh();
             },
-            defaultValue: kLookupPopupDefaultWidth,
+            defaultValue: false,
           ),
-          SettingsSliderItem(
-            id: 'lookup.popup_max_height',
-            titleReadout: true,
-            // TODO-1352 后续：放宽最大高度上限（800→1600），配合高分屏 / 精细调整；
-            // 实际高度仍由 resolvePopupRect 按当前屏高 clamp，绝不会超出屏幕。
-            // 步进保持 10px（1400/140）。
-            title: t.popup_max_height,
-            icon: Icons.height_outlined,
-            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 1),
-            min: kLookupPopupMinHeight,
-            max: kLookupPopupMaxHeight,
-            divisions: 140,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.popupMaxHeight,
-            label: (double value) => value.round().toString(),
-            onChanged: (SettingsContext settingsContext, double value) {
-              settingsContext.appModel.setPopupMaxHeight(value);
-              settingsContext.refresh();
+          // macOS：读取 / 复制其它应用的选区（AX 读选区、合成 ⌘C）都要「辅助功能」
+          // 授权；未授权时旧行为会退化为只查当前剪贴板文本。设置页和第一次
+          // 明确触发全局查词时会弹系统授权提示，应用启动时不主动打扰用户。
+          SettingsActionItem(
+            id: 'lookup.accessibility_permission',
+            title: t.lookup_accessibility_permission_request,
+            subtitle: t.lookup_accessibility_permission_hint,
+            icon: Icons.accessibility_new_outlined,
+            visible: (SettingsContext settingsContext) =>
+                SelectionCapture.needsAccessibilityTrust,
+            cli: SettingsCliAction(
+              run: (SettingsContext c, Map<String, String> args) async =>
+                  <String, Object?>{
+                    'trusted':
+                        await SelectionCapture.requestAccessibilityTrust(),
+                  },
+            ),
+            onTap: (SettingsContext settingsContext) async {
+              final bool trusted =
+                  await SelectionCapture.requestAccessibilityTrust();
+              _showSettingsSnackBar(
+                settingsContext,
+                trusted
+                    ? t.lookup_accessibility_permission_granted
+                    : t.lookup_accessibility_permission_missing,
+              );
             },
-            defaultValue: kLookupPopupDefaultHeight,
-          ),
-          // 宽高滑杆写的是「上限」，实际尺寸还要按当前屏幕 / 停靠 / 竖排夹一次：
-          // 预览用宿主同一个 resolvePopupRect 画出小说里弹窗的真实落点与尺寸。
-          SettingsCustomItem(
-            id: 'lookup.popup_size_preview',
-            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 2),
-            builder: (SettingsContext settingsContext) =>
-                LookupPopupSizePreview(
-                  maxWidth:
-                      settingsContext.appModel.popupMaxWidth *
-                      settingsContext.appModel.appUiScale,
-                  maxHeight:
-                      settingsContext.appModel.popupMaxHeight *
-                      settingsContext.appModel.appUiScale,
-                  bottomDocked: settingsContext.appModel.popupBottomDockedFor(
-                    ModuleId.books,
-                  ),
-                  verticalWriting: settingsContext
-                      .readerSource
-                      .readerWritingMode
-                      .startsWith('vertical'),
-                ),
           ),
           // 弹窗尺寸精细化：app 外覆盖查词窗独立尺寸开关 + 仅在开启时展示的宽/高滑杆。
           // 关闭时跟随上面的 app 内最大宽高（overlayLookupEffectiveSize 解析）。
@@ -956,229 +1252,6 @@ SettingsDestination buildLookupDestination() {
             },
             defaultValue: kLookupPopupDefaultHeight,
           ),
-          // 弹窗尺寸精细化：浏览器扩展弹窗独立尺寸开关 + 仅在开启时展示的宽/高滑杆。
-          // 关闭时跟随 app 内最大宽高（extensionPopupEffectiveSize 解析，经 theme 下发）。
-          SettingsSwitchItem(
-            id: 'lookup.extension_popup_independent_size',
-            title: t.extension_popup_independent_size,
-            subtitle: t.extension_popup_independent_size_hint,
-            icon: Icons.extension_outlined,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.extensionPopupIndependentSize,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel.setExtensionPopupIndependentSize(
-                value,
-              );
-              settingsContext.refresh();
-            },
-            defaultValue: false,
-          ),
-          SettingsSliderItem(
-            id: 'lookup.extension_popup_max_width',
-            titleReadout: true,
-            title: t.extension_popup_max_width,
-            icon: Icons.open_in_full_outlined,
-            min: 250,
-            max: 2000,
-            divisions: 175,
-            visible: (SettingsContext settingsContext) =>
-                settingsContext.appModel.extensionPopupIndependentSize,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.extensionPopupMaxWidth,
-            label: (double value) => value.round().toString(),
-            onChanged: (SettingsContext settingsContext, double value) {
-              settingsContext.appModel.setExtensionPopupMaxWidth(value);
-              settingsContext.refresh();
-            },
-            defaultValue: kLookupPopupDefaultWidth,
-          ),
-          SettingsSliderItem(
-            id: 'lookup.extension_popup_max_height',
-            titleReadout: true,
-            title: t.extension_popup_max_height,
-            icon: Icons.height_outlined,
-            min: 200,
-            max: 1600,
-            divisions: 140,
-            visible: (SettingsContext settingsContext) =>
-                settingsContext.appModel.extensionPopupIndependentSize,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.extensionPopupMaxHeight,
-            label: (double value) => value.round().toString(),
-            onChanged: (SettingsContext settingsContext, double value) {
-              settingsContext.appModel.setExtensionPopupMaxHeight(value);
-              settingsContext.refresh();
-            },
-            defaultValue: kLookupPopupDefaultHeight,
-          ),
-          // 墨水屏「瞬时滚动」+ 两个步长旋钮。同时经 ReaderPlacement 出现在阅读器快捷
-          // 设置的查词段（墨水屏用户是在书里查词时才发现步长不合手，不该为此退出阅读器
-          // 去翻全局设置）。步长只在开关开启时展示；滚轮 / 触摸各一个（默认值本就不同，
-          // 见 PreferencesRepository.popupInstantScrollWheelStep 的注释）。
-          SettingsSwitchItem(
-            id: 'lookup.popup_instant_scroll',
-            title: t.popup_instant_scroll,
-            subtitle: t.popup_instant_scroll_hint,
-            icon: Icons.animation_outlined,
-            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 17),
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.popupInstantScroll,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel.setPopupInstantScroll(value);
-              settingsContext.refresh();
-            },
-            defaultValue: false,
-          ),
-          SettingsSliderItem(
-            id: 'lookup.popup_instant_scroll_wheel_step',
-            title: t.popup_instant_scroll_wheel_step,
-            subtitle: t.popup_instant_scroll_wheel_step_hint,
-            icon: Icons.mouse_outlined,
-            min: PreferencesRepository.kPopupInstantScrollStepMin,
-            max: PreferencesRepository.kPopupInstantScrollStepMax,
-            divisions: 18,
-            titleReadout: true,
-            // 拖动只跟手预览、松手提交一次：逐 tick 写穿会每帧写库并重建整个
-            // 阅读设置面板（Android 上压着正文平台视图拖动掉帧）。
-            commitOnRelease: true,
-            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 18),
-            visible: (SettingsContext settingsContext) =>
-                settingsContext.appModel.popupInstantScroll,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.popupInstantScrollWheelStep,
-            label: (double value) => '${(value * 100).round()}%',
-            onChanged: (SettingsContext settingsContext, double value) {
-              settingsContext.appModel.setPopupInstantScrollWheelStep(value);
-              settingsContext.refresh();
-            },
-            defaultValue:
-                PreferencesRepository.kPopupInstantScrollWheelStepDefault,
-          ),
-          SettingsSliderItem(
-            id: 'lookup.popup_instant_scroll_touch_step',
-            title: t.popup_instant_scroll_touch_step,
-            subtitle: t.popup_instant_scroll_touch_step_hint,
-            icon: Icons.touch_app_outlined,
-            min: PreferencesRepository.kPopupInstantScrollStepMin,
-            max: PreferencesRepository.kPopupInstantScrollStepMax,
-            divisions: 18,
-            titleReadout: true,
-            // 拖动只跟手预览、松手提交一次：逐 tick 写穿会每帧写库并重建整个
-            // 阅读设置面板（Android 上压着正文平台视图拖动掉帧）。
-            commitOnRelease: true,
-            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 19),
-            visible: (SettingsContext settingsContext) =>
-                settingsContext.appModel.popupInstantScroll,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.popupInstantScrollTouchStep,
-            label: (double value) => '${(value * 100).round()}%',
-            onChanged: (SettingsContext settingsContext, double value) {
-              settingsContext.appModel.setPopupInstantScrollTouchStep(value);
-              settingsContext.refresh();
-            },
-            defaultValue:
-                PreferencesRepository.kPopupInstantScrollTouchStepDefault,
-          ),
-          SettingsSwitchItem(
-            id: 'lookup.popup_bottom_docked',
-            title: t.popup_bottom_docked,
-            subtitle: t.popup_bottom_docked_hint,
-            icon: Icons.vertical_align_bottom_outlined,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.popupBottomDocked,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel.setPopupBottomDocked(value);
-              settingsContext.refresh();
-            },
-            defaultValue: false,
-          ),
-          // 底部停靠按模块细分：不是所有场景都要停靠（例如只在视频里固定弹窗）。
-          // 总开关打开后才出现；模块在本平台不存在（iOS 无游戏模块）或被用户在
-          // 功能模块里关掉时不出——判据走 [AppModel.moduleVisibility] 唯一合成。
-          for (final ModuleId module
-              in PreferencesRepository.kPopupBottomDockedModules)
-            _popupBottomDockedModuleSwitch(module),
-          _popupBottomDockedBooksOnlySwitch(),
-          // TODO-436/407②/716：是否允许"水平滑动关闭查词弹窗"。这是查词弹窗窗口的
-          // 关闭手势，与弹窗尺寸/停靠同组；同时经 ReaderPlacement 出现在阅读器快捷
-          // 设置的查词段。开启后既驱动弹窗顶栏滑动关闭（[SwipeDismissWrapper]），也让
-          // 桌面在弹窗正文区（全屏 barrier）水平拖过阈关一层（TODO-716，对齐手机手势）。
-          // Windows/Linux 默认关闭（鼠标框选正文与滑动手势同形易误触），其余平台默认
-          // 开启；任何平台均可用弹窗顶栏的 X 关闭。
-          SettingsSwitchItem(
-            id: 'reading_controls.enable_swipe_to_close',
-            title: t.enable_swipe_to_close,
-            icon: Icons.swipe_left_outlined,
-            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 13),
-            value: (SettingsContext settingsContext) =>
-                settingsContext.readerSource.enableSwipeToClose,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.readerSource.setEnableSwipeToClose(value);
-              notifyReaderSettingsChanged(settingsContext);
-            },
-          ),
-          // TODO-625：滑动关闭的灵敏度阈值，与上面的"允许水平滑动关闭查词弹窗"开关
-          // 配套，同属查词弹窗手势行为（ReaderGroup.lookup，紧邻开关），与开关相邻摆放。
-          // id/偏好 key 沿用 'reading_controls.' 前缀作向后兼容（持久化无关展示分类）。
-          SettingsSliderItem(
-            id: 'reading_controls.dismiss_swipe_sensitivity',
-            title: t.dismiss_swipe_sensitivity,
-            icon: Icons.swipe_down_outlined,
-            min: 0.1,
-            max: 1,
-            divisions: 9,
-            // 拖动只跟手预览、松手提交一次：逐 tick 写穿会每帧写库 + 推正文
-            // WebView 重注样式 / 重建阅读器页，Android 上压着平台视图拖动掉帧。
-            commitOnRelease: true,
-            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 14),
-            value: (SettingsContext settingsContext) =>
-                settingsContext.readerSource.dismissSwipeSensitivity,
-            label: (double value) => value.toStringAsFixed(1),
-            onChanged: (SettingsContext settingsContext, double value) async {
-              await settingsContext.readerSource.setDismissSwipeSensitivity(
-                value,
-              );
-              notifyReaderSettingsChanged(settingsContext);
-            },
-            defaultValue: 0.6,
-          ),
-          // 用户诉求（2026-09-23）：滚动模式下查词后继续滚动正文（横排/竖排都算）
-          // 即关闭弹窗，并做成开关。只在滚动（连续）模式生效，故仅该模式可见
-          // （与 page_columns 只在翻页模式可见同理）。默认开启。
-          SettingsSwitchItem(
-            id: 'reading_controls.dismiss_popup_on_scroll',
-            title: t.reader_popup_scroll_dismiss,
-            subtitle: t.reader_popup_scroll_dismiss_hint,
-            icon: Icons.swap_vert_outlined,
-            visible: (SettingsContext settingsContext) =>
-                settingsContext.readerSource.readerViewMode == 'continuous',
-            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 20),
-            value: (SettingsContext settingsContext) =>
-                settingsContext.readerSource.dismissPopupOnScroll,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.readerSource.setDismissPopupOnScroll(value);
-              notifyReaderSettingsChanged(settingsContext);
-            },
-            defaultValue: true,
-          ),
-          // 用户建议 q16Apecgbg（2026-10-13）：制卡后查词弹窗直接消失，不再挡住正文。
-          // 默认关 = 制卡后弹窗照旧留着（既有行为）。
-          SettingsSwitchItem(
-            id: 'reading_controls.close_popup_after_mining',
-            title: t.lookup_popup_close_after_mining,
-            subtitle: t.lookup_popup_close_after_mining_hint,
-            icon: Icons.playlist_add_check_outlined,
-            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 25),
-            value: (SettingsContext settingsContext) =>
-                settingsContext.readerSource.closePopupAfterMining,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.readerSource.setClosePopupAfterMining(
-                value,
-              );
-              notifyReaderSettingsChanged(settingsContext);
-            },
-            defaultValue: false,
-          ),
           // 防截屏（用户诉求）：桌面查词浮窗经 native
           // SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE) 从截图/录屏/串流中
           // 排除。默认关（用户要求，2026-07）。Windows / macOS 有，X11 没有（canBlockCapture）。
@@ -1203,34 +1276,12 @@ SettingsDestination buildLookupDestination() {
           ),
         ],
       ),
-      // 外部集成：远程查词 / texthooker——都是「让别的程序或设备参与查词」的接线项，
-      // 与本机查词触发行为分开。Fushi API 服务器在「本机服务」分类（见指路行）。
+      // 文本钩子：接收 Textractor / mpv / agent 推来的文本并查词。
       SettingsSection(
         id: 'lookup.section.integrations',
         presentation: SettingsSectionPresentation.alwaysExpanded,
         title: t.settings_section_lookup_integrations,
         items: <SettingsItem>[
-          // Fushi API 服务器（开关 / 允许谁连 / 端口 / 密钥 / AnkiConnect）与浏览器
-          // 扩展入口已搬到「连接 › 本机服务」：服务不只服务查词，且监听范围与端口
-          // 此前根本没有入口。这里留一条指路，从查词页找过来的用户不迷路。
-          SettingsNavigationItem(
-            id: 'lookup.local_services',
-            title: t.settings_local_services_title,
-            subtitle: t.settings_local_services_summary,
-            icon: FushiIcons.server,
-            showIcon: true,
-            onTap: (SettingsContext settingsContext) async {
-              await pushSettingsPage(
-                settingsContext,
-                (_) => SettingsDetailPage(
-                  destination: buildLocalServicesDestination(),
-                ),
-              );
-            },
-          ),
-          // 远端词典查询抽成共享 builder：查词分类与 Fushi 互联分类都引用（它直连
-          // 互联对端的词典，逻辑上属互联，故互联分类也提供入口）。
-          buildRemoteDictionaryLookupItem(),
           SettingsSwitchItem(
             id: 'lookup.texthooker',
             title: t.texthooker_enabled,
@@ -1293,6 +1344,7 @@ SettingsItem buildManageAudioSourcesItem() {
   return SettingsActionItem(
     id: 'lookup.audio_sources',
     title: t.manage_audio_sources,
+    subtitle: t.settings_lookup_audio_sources_hint,
     icon: Icons.volume_up_outlined,
     // 对话框的主视图 = 当前来源列表；增删改 / 启停 / 排序走
     // `config items lookup.audio_sources.items`，重置 / 本地子来源见

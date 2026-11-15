@@ -42,9 +42,17 @@ void main() {
   }
 
   test('查词底部停靠的模块细分开关图标与底栏一致', () {
-    final SettingsDestination lookup = buildLookupDestination();
+    // 模块细分开关住「查词弹窗」子页（入口 lookup.popup.open）的「位置」分区。
+    final SettingsDestination popup =
+        (buildLookupDestination().sections
+                    .expand((SettingsSection s) => s.items)
+                    .singleWhere(
+                      (SettingsItem i) => i.id == 'lookup.popup.open',
+                    )
+                as SettingsNavigationItem)
+            .child!();
     final Map<String, IconData?> iconById = <String, IconData?>{
-      for (final SettingsSection section in lookup.sections)
+      for (final SettingsSection section in popup.sections)
         for (final SettingsItem item in section.items) item.id: item.icon,
     };
     const Map<ModuleId, HomeTab> moduleTabs = <ModuleId, HomeTab>{
