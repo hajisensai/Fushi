@@ -229,6 +229,7 @@ SrsZstdFileDecoder _fileViaBytes(SrsZstdDecoder zstd) =>
 /// 攒成草稿，不会让它过时（恢复路径例外，它立即落库后自己刷新 [cards]）。
 class _ExistingPrefetch {
   _ExistingPrefetch({
+    required this.noteIdOfGuid,
     required this.notes,
     required this.cards,
     required this.cardEdits,
@@ -237,14 +238,17 @@ class _ExistingPrefetch {
     required this.oldCardHeirs,
   });
 
-  static final _ExistingPrefetch empty = _ExistingPrefetch(
-    notes: const <String, SrsNoteView?>{},
-    cards: const <String, SrsCardCacheRow>{},
-    cardEdits: const <String, SrsEntityEdits>{},
-    histories: const <String, SrsCardHistory>{},
-    ankiLogsAt: const <int, List<SrsAnkiLogAt>>{},
-    oldCardHeirs: const <String, String>{},
-  );
+  /// 这一块里没有本机已有的笔记：只带笔记 ID，其余预读为空。
+  _ExistingPrefetch.onlyNoteIds(this.noteIdOfGuid)
+    : notes = const <String, SrsNoteView?>{},
+      cards = const <String, SrsCardCacheRow>{},
+      cardEdits = const <String, SrsEntityEdits>{},
+      histories = const <String, SrsCardHistory>{},
+      ankiLogsAt = const <int, List<SrsAnkiLogAt>>{},
+      oldCardHeirs = const <String, String>{};
+
+  /// 这一块全部来源笔记的本机笔记 ID，按 guid（整块一次向内核要；逐条处理直接取，不再逐条跨 FFI）。
+  final Map<String, String> noteIdOfGuid;
 
   final Map<String, SrsNoteView?> notes;
   final Map<String, SrsCardCacheRow> cards;
@@ -1711,9 +1715,13 @@ class _Importer {
     final List<String> cardIds = <String>[];
     final List<int> revlogIds = <int>[];
     // 整块的笔记 ID 一次向内核要。
-    final List<String> chunkNoteIds = store.kernelIds.notes(<String>[
+    final List<String> guids = <String>[
       for (final (Row n, _) in chunk) n['guid'] as String,
-    ]);
+    ];
+    final List<String> chunkNoteIds = store.kernelIds.notes(guids);
+    final Map<String, String> noteIdOfGuid = <String, String>{
+      for (int i = 0; i < guids.length; i++) guids[i]: chunkNoteIds[i],
+    };
     int at = -1;
     for (final (Row n, List<_SrcCard> cards) in chunk) {
       at++;
@@ -1729,7 +1737,7 @@ class _Importer {
         }
       }
     }
-    if (noteIds.isEmpty) return _ExistingPrefetch.empty;
+    if (noteIds.isEmpty) return _ExistingPrefetch.onlyNoteIds(noteIdOfGuid);
     // 只有本机已有的笔记才可能已经有这条复习（新笔记的卡 ID 都是新的）：按 revlog id 一块一次查。
     final Map<int, List<SrsAnkiLogAt>> ankiLogsAt = <int, List<SrsAnkiLogAt>>{};
     if (options.withScheduling && revlogIds.isNotEmpty) {
@@ -1743,6 +1751,7 @@ class _Importer {
           if (!l.visible) l.cardId,
     };
     return _ExistingPrefetch(
+      noteIdOfGuid: noteIdOfGuid,
       notes: await store.notes(noteIds),
       cards: <String, SrsCardCacheRow>{
         for (final SrsCardCacheRow r in await store.cardRows(cardIds)) r.id: r,
@@ -1823,7 +1832,7 @@ class _Importer {
               !_schedulingTags.contains(t.toLowerCase()),
         )
         .toList();
-    final String noteId = store.kernelIds.note(guid);
+    final String noteId = pre.noteIdOfGuid[guid]!;
     final SrsNoteView? existing = !_existingNotes.contains(noteId)
         ? null
         : pre.notes.containsKey(noteId)
@@ -1862,6 +1871,7 @@ class _Importer {
           tags: tags,
           source: SrsSourceRef.fromJson(_extNotes[guid]),
           guid: guid,
+          noteId: noteId,
           createdAt: _extNoteCreatedAt[guid] ?? n['id'] as int,
         ),
       );

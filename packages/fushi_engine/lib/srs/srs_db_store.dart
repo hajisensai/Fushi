@@ -3768,6 +3768,7 @@ class SrsDbStore implements SrsSync2Host {
         tags: tags,
         source: source,
         guid: g,
+        noteId: id,
         createdAt: createdAt,
         ifChanged: true,
       ),
