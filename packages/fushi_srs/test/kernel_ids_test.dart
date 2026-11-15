@@ -124,6 +124,42 @@ void main() {
     expect(ids.note(lone), uuidV5(srsNamespace, '$_uid/note/a�b'));
   });
 
+  test('嵌套 List 里的名字含落单代理项：不抛错，按 U+FFFD 算（G5B-2）', () {
+    // 以前只清洗顶层字符串，duplicateNoteTypeAnkiNum 的字段 / 模板名在嵌套 List 里，jsonEncode 写出 `\ud800`
+    // 转义，内核 serde_json 拒收，整次导入抛错。
+    //
+    // 与改造前 Dart 公式（hash53('notetype-dup/<n>/${srsCanonicalJson(...)}')）不同值：srsCanonicalJson 把落单
+    // 代理项写成六个 ASCII 字符 `\ud800` 再哈希，实测 n=1、字段 'name:a\uD800b'、模板 'name:t' 时旧公式得
+    // 8451223386032446，换成 U+FFFD 后得 5460801798626219（下面钉住的值）。内核收到的字符串只能是合法 Unicode，
+    // 复现不了旧的转义串；只影响名字里带落单代理项的笔记类型（升级后「不合并」再导入同一个包会另建一份），按
+    // U+FFFD 与本文件其余规则一致。
+    int dup(String field, String tmpl) => SrsKernelIds.duplicateNoteTypeAnkiNum(
+      sourceAnkiNum: 1,
+      cloze: false,
+      fields: <SrsDupPart>[(configId: null, name: field)],
+      templates: <SrsDupPart>[(configId: null, name: tmpl)],
+    );
+    expect(dup('a\uD800b', 't'), dup('a�b', 't'));
+    expect(dup('a\uD800b', 't'), 5460801798626219);
+    expect(dup('f', 'x\uDC00'), dup('f', 'x�'));
+    expect(
+      ids.ask(<List<Object?>>[
+        <Object?>[
+          'dup_notetype_num',
+          1,
+          false,
+          <Object?>[
+            <Object?>[null, 'a\uD800b'],
+          ],
+          <Object?>[
+            <Object?>[null, 't'],
+          ],
+        ],
+      ]).single,
+      5460801798626219,
+    );
+  });
+
   test('内核拒绝不认识的种类与缺参数', () {
     expect(
       () => ids.ask(<List<Object?>>[

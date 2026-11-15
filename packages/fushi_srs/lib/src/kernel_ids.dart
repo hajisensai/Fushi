@@ -57,8 +57,21 @@ final class SrsKernelIds {
     return s;
   }
 
+  /// 参数里任意深度的字符串（含嵌套 List 里的，如 [duplicateNoteTypeAnkiNum] 的字段 / 模板名）都换掉落单的
+  /// 代理项：漏掉一处，`jsonEncode` 就写出 `\ud800` 这类转义，内核的 serde_json 拒收，整批请求抛错。
+  static Object? _wellFormedDeep(Object? a) => switch (a) {
+    final String s => _wellFormed(s),
+    final List<Object?> l => <Object?>[
+      for (final Object? x in l) _wellFormedDeep(x),
+    ],
+    _ => a,
+  };
+
+  /// 测试用：每次跨边界（一次 FFI）回调一次，参数是清洗后的整批请求。生产代码不设。
+  static void Function(List<List<Object?>> items)? debugOnAsk;
+
   /// 一批请求一次 FFI：每项 `[种类, 参数…]`（种类与参数见 gen4_ids/derive.rs），结果逐项对应。
-  /// 字符串参数先换掉落单的代理项（[_wellFormed]）。
+  /// 字符串参数先换掉落单的代理项（[_wellFormedDeep]）。
   List<Object?> ask(List<List<Object?>> items) =>
       askFor(profileUid, items, library: _library);
 
@@ -69,12 +82,12 @@ final class SrsKernelIds {
     FushiFsrs? library,
   }) {
     if (items.isEmpty) return const <Object?>[];
-    return _engine(library).deriveIds(profile, <List<Object?>>[
+    final List<List<Object?>> clean = <List<Object?>>[
       for (final List<Object?> item in items)
-        <Object?>[
-          for (final Object? a in item) a is String ? _wellFormed(a) : a,
-        ],
-    ]);
+        <Object?>[for (final Object? a in item) _wellFormedDeep(a)],
+    ];
+    debugOnAsk?.call(clean);
+    return _engine(library).deriveIds(profile, clean);
   }
 
   List<String> _strings(List<List<Object?>> items) => ask(items).cast<String>();
