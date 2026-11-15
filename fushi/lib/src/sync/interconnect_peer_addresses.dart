@@ -84,6 +84,40 @@ List<FushiClientUrl> interconnectPeerAddressesOf(
   return const <FushiClientUrl>[];
 }
 
+/// 设置页一条地址行在所属 host 里的位置：[index] 从 1 起、按列表顺序（也就是组内
+/// 选路的优先顺序），[count] 是这台 host 的地址总数，[rank] 同 [interconnectEntryRank]，
+/// [learned] 表示由 host 公布自动学到。
+typedef InterconnectPeerAddressSlot = ({
+  int index,
+  int count,
+  int rank,
+  bool learned,
+});
+
+/// [entry] 在 [urls] 里所属 host 的位置；这台 host 只有一条地址（含全部无 hostId 的
+/// 老条目）或 [entry] 不在列表里 → null。
+///
+/// 「已添加的设备」逐地址成行（排序 = 选路优先级、开关 / 测试结果 / 重新配对都按
+/// 地址），同一台 host 的多条地址标题都是同一个设备名；靠它给每行标出「第几条、
+/// 什么网络、是不是自动学到的」，两行才不会看起来像重复配对（BUG-4691）。
+InterconnectPeerAddressSlot? interconnectPeerAddressSlotOf(
+  List<FushiClientUrl> urls,
+  FushiClientUrl entry,
+) {
+  final List<FushiClientUrl> group = interconnectPeerAddressesOf(
+    urls,
+    entry.url,
+  );
+  if (group.length < 2) return null;
+  final int at = group.indexWhere((FushiClientUrl u) => u.url == entry.url);
+  return (
+    index: at + 1,
+    count: group.length,
+    rank: interconnectEntryRank(group[at]),
+    learned: group[at].learned,
+  );
+}
+
 /// 「忘记这台 host」：去掉 [url] 那一行；它带 [hostId] 时删的是**那台 host** 的全部
 /// 地址——同组其余地址都带着它的 token，只删一行等于没解绑（剩下的照常同步，被删的
 /// learned 地址 10 分钟内还会被学回来）。老条目（无 hostId）只删那一行。
@@ -234,10 +268,38 @@ const Duration _raceCacheTtl = Duration(seconds: 30);
 @visibleForTesting
 void resetInterconnectRaceCache() => _raceCache.clear();
 
+/// 互联请求的传输层结局观察者：[reached] = 经 [candidate] 拿到了任何 HTTP 响应（含
+/// 401 / 404 / 坏回包——对端活着），false = 连接被拒 / 超时 / 断开。
+typedef InterconnectReachabilityObserver =
+    void Function(FushiClientUrl candidate, bool reached);
+
+final List<InterconnectReachabilityObserver> _reachabilityObservers =
+    <InterconnectReachabilityObserver>[];
+
+/// 订阅 [reportInterconnectCandidateReached] / [reportInterconnectCandidateUnreachable]
+/// ——互联可达性的**唯一**上报点。按 host 的在线状态（词典服务器卡片、查词跳过死
+/// host，BUG-4692）从这里听，不再在各传输层另开一条结局回调。
+void addInterconnectReachabilityObserver(
+  InterconnectReachabilityObserver observer,
+) => _reachabilityObservers.add(observer);
+
+void removeInterconnectReachabilityObserver(
+  InterconnectReachabilityObserver observer,
+) => _reachabilityObservers.remove(observer);
+
+void _notifyReachability(FushiClientUrl candidate, bool reached) {
+  for (final InterconnectReachabilityObserver o
+      in List<InterconnectReachabilityObserver>.of(_reachabilityObservers)) {
+    o(candidate, reached);
+  }
+}
+
 /// 消费方对 [candidate]（选路结果里的一条，可以是本地转发口）的请求在传输层失败了
 /// （连接被拒 / 建连超时 / 断开）：它若正是该 host 缓存的胜出地址，作废缓存，下一次
-/// 选路重新竞速，不在缓存窗口内反复先撞那条死地址。
+/// 选路重新竞速，不在缓存窗口内反复先撞那条死地址。观察者
+/// （[addInterconnectReachabilityObserver]）照常收到这次结局。
 void reportInterconnectCandidateUnreachable(FushiClientUrl candidate) {
+  _notifyReachability(candidate, false);
   final String? hostId = candidate.hostId;
   if (hostId == null) return;
   final (String, DateTime, Set<String>)? cached = _raceCache[hostId];
@@ -247,7 +309,7 @@ void reportInterconnectCandidateUnreachable(FushiClientUrl candidate) {
 }
 
 /// 消费方经 [candidate] 拿到了 host 的应答：该 host 没有有效缓存（刚因失败作废）时
-/// 记它为胜出地址，后续请求不必重新探测一轮死地址。已有缓存不覆盖。
+/// 记它为胜出地址，后续请求不必重新探测一轮死地址。已有缓存不覆盖。观察者照常收到。
 ///
 /// 只记自带密码学身份的地址（[_credentialSafe]）：明文地址能否拿凭据要靠选路当场
 /// ping 核对 hostId（V-B4），不能凭一次应答写进缓存绕过核对——明文胜者留给下一次
@@ -256,6 +318,7 @@ void reportInterconnectCandidateReached(
   FushiClientUrl candidate, {
   DateTime Function() now = DateTime.now,
 }) {
+  _notifyReachability(candidate, true);
   final String? hostId = candidate.hostId;
   if (hostId == null || !_credentialSafe(candidate)) return;
   final (String, DateTime, Set<String>)? cached = _raceCache[hostId];
@@ -396,6 +459,10 @@ Future<InterconnectRankedCandidates> _rankGroup(
       for (final FushiClientUrl u in group)
         if (_credentialSafe(u)) u,
     ];
+    // 一条都不交给消费方（全是明文地址、全没探通）：这台 host 此刻就是不可达，消费方
+    // 不会再发请求、也就不会再上报，在这里替它报给观察者。有可拨的安全地址时由消费方
+    // 试过之后上报。
+    if (safe.isEmpty) _notifyReachability(group.first, false);
     return _dialable(safe, withheld: group.length - safe.length);
   }
   final Set<String> verifiedPlain = verified!;
@@ -840,6 +907,9 @@ List<FushiClientUrl> mergeLearnedHostAddresses(
       hostId: hostId,
       learned: true,
       addressKind: a.kind.name,
+      // 同一台 host 的「用它查词典」开关跟着锚点走：学到的新地址不能把关掉的 host
+      // 重新拉回查词候选。
+      lookupEnabled: anchor.lookupEnabled,
     );
     final int rank = interconnectAddressRank(a.kind);
     int insertAt = -1;

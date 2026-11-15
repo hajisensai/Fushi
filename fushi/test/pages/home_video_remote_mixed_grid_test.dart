@@ -23,6 +23,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/fake_anki_repository.dart';
 import '../helpers/test_platform_services.dart';
+import '../helpers/shell_layout.dart';
 
 /// 多端库联合视图（spec 2026-07-12 §2.1/§2.4/§2.5）视频页占位卡混排 widget 守卫：
 ///  ① 远端互联视频以占位卡混排进主网格（不再独立分区），带云角标 ☁；
@@ -96,6 +97,7 @@ void main() {
     ],
     child: TranslationProvider(
       child: MaterialApp(
+        theme: gridShellTheme(),
         home: Scaffold(
           body: HomeVideoPage(
             repo: VideoBookRepository(db),

@@ -38,6 +38,8 @@ import 'package:fushi/src/srs/srs_fushi_card_fields.dart' show srsPlainText;
 import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_sound_tag.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show shellRedesignActive;
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -208,6 +210,28 @@ class _SrsBrowseInspectorState extends ConsumerState<SrsBrowseInspector> {
     unawaited(_load());
   }
 
+  /// 编辑页签的一次写入（改字段 / 改标签）。开写时作废还在途的重读：它读的是这次写入之前的库，写入途中才读回来
+  /// 会被编辑页签当成「别处改了」，把刚存的格子换回旧值、编辑器整块重建（输入框失焦、刚打的字被换掉）——自己保存的
+  /// 回声只认最近一次落库的值，认不出更早一次的。写完浏览页按新 revision 重读；没有触发重读（没改动 / 写失败）时
+  /// 这里补读一次，不让被作废的那次重读把检查器停在旧数据上。
+  Future<void> _write(Future<void> Function() write) async {
+    final int seq = ++_seq;
+    try {
+      await write();
+    } finally {
+      if (mounted && seq == _seq) unawaited(_load());
+    }
+  }
+
+  Future<void> _saveField(String noteId, String fieldName, String value) =>
+      _write(() => widget.onSaveField(noteId, fieldName, value));
+
+  Future<void> _saveTags(
+    String noteId,
+    List<String> before,
+    List<String> after,
+  ) => _write(() => widget.onSaveTags(noteId, before, after));
+
   /// 编辑 / 历史页签在还没读到这张卡时的占位：读失败给错误态，否则转圈。
   Widget _pending() {
     final Object? error = _loadError;
@@ -243,8 +267,8 @@ class _SrsBrowseInspectorState extends ConsumerState<SrsBrowseInspector> {
                   'srs-browse-inspector-edit-${detail.note.id}',
                 ),
                 detail: detail,
-                onSaveField: widget.onSaveField,
-                onSaveTags: widget.onSaveTags,
+                onSaveField: _saveField,
+                onSaveTags: _saveTags,
                 onOpenEditor: widget.onOpenEditor,
               ),
       SrsBrowseInspectorTab.history =>
@@ -1295,7 +1319,8 @@ class _SrsBrowseDetailPageState extends ConsumerState<SrsBrowseDetailPage> {
       child: FushiPageScaffold(
         title: title,
         subtitle: position,
-        actions: apple
+        masthead: true,
+        actions: apple || shellRedesignActive(context)
             ? <Widget>[
                 for (final FushiToolbarItem i in nav)
                   FushiIconButton(

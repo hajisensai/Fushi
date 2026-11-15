@@ -37,6 +37,8 @@ import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi_engine/srs/srs_mining_target.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show FushiShellTheme, ShellContentLayout;
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
@@ -238,20 +240,30 @@ void main() {
 
   final GlobalKey boundaryKey = GlobalKey();
 
-  Widget app(Widget home, {required bool apple}) => ProviderScope(
-    overrides: overrides(),
-    child: TranslationProvider(
-      child: MaterialApp(
-        debugShowCheckedModeBanner: false,
-        theme: theme(apple: apple),
-        builder: (BuildContext context, Widget? child) => RepaintBoundary(
-          key: boundaryKey,
-          child: FushiGlassScope(child: child!),
+  /// [layout] 为 null = 主题默认（重设计外壳下是拼贴：首页复习块画成海报色块
+  /// `_HomeSrsPoster`）；[ShellContentLayout.grid] 钉回封面网格（原一行条面板）。
+  Widget app(Widget home, {required bool apple, ShellContentLayout? layout}) =>
+      ProviderScope(
+        overrides: overrides(),
+        child: TranslationProvider(
+          child: MaterialApp(
+            debugShowCheckedModeBanner: false,
+            theme: layout == null
+                ? theme(apple: apple)
+                : theme(apple: apple).copyWith(
+                    // 展开进显式 `<ThemeExtension<dynamic>>[...]` 时 CFE 报元素类型不匹配
+                    // （analyzer 不报），改成 toList + add。
+                    extensions: theme(apple: apple).extensions.values.toList()
+                      ..add(FushiShellTheme(contentLayout: layout)),
+                  ),
+            builder: (BuildContext context, Widget? child) => RepaintBoundary(
+              key: boundaryKey,
+              child: FushiGlassScope(child: child!),
+            ),
+            home: home,
+          ),
         ),
-        home: home,
-      ),
-    ),
-  );
+      );
 
   Widget dashboard() =>
       Scaffold(body: HomeDashboardPage(videoRepo: VideoBookRepository(db)));
@@ -327,61 +339,95 @@ void main() {
       await unmount(tester);
     });
 
-    testWidgets('$ds · 计数与牌组列表顶层行之和一致（含子牌组）', (WidgetTester tester) async {
-      useSize(tester, const Size(420, 900));
-      await tester.runAsync(() async {
-        await useSrs(target: SrsMiningTarget.srs);
-        await addNote('食べる');
-        await addNote('飲む');
-        final String parent = await store.createDeck('漫画');
-        final String child = await store.createDeck('一巻', parentId: parent);
-        await addNote('走る', deckId: child);
-      });
-      // 首页与牌组列表挂在同一个 ProviderScope 里换页：两个 scope 都覆盖成同一个
-      // [appModel] 时，各自卸载都会 dispose 它一次（ChangeNotifierProvider 拥有它）。
-      final ValueNotifier<Widget> page = ValueNotifier<Widget>(dashboard());
-      addTearDown(page.dispose);
-      await tester.pumpWidget(
-        app(
-          ValueListenableBuilder<Widget>(
-            valueListenable: page,
-            builder: (BuildContext context, Widget current, Widget? _) =>
-                current,
-          ),
-          apple: apple,
-        ),
-      );
-      await settle(tester);
-      final SrsCountTriple home = tester.widget<SrsCountTriple>(
-        find.descendant(of: panel, matching: find.byType(SrsCountTriple)),
-      );
-
-      // 牌组列表：顶层行上的三色计数（顶层已含子牌组）。
-      final List<SrsDeckSummary> decks = (await tester.runAsync(
-        store.deckSummaries,
-      ))!;
-      page.value = const SrsDeckListPage();
-      await settle(tester);
-      int sumNew = 0, sumLearn = 0, sumReview = 0;
-      for (final SrsDeckSummary d in decks.where(
-        (SrsDeckSummary d) => d.depth == 0,
-      )) {
-        final SrsCountTriple row = tester.widget<SrsCountTriple>(
-          find.descendant(
-            of: find.byKey(ValueKey<String>('srs-deck-${d.deck.id}')),
-            matching: find.byType(SrsCountTriple),
+    for (final ShellContentLayout layout in ShellContentLayout.values) {
+      testWidgets('$ds · ${layout.name} · 计数与牌组列表顶层行之和一致（含子牌组）', (
+        WidgetTester tester,
+      ) async {
+        useSize(tester, const Size(420, 900));
+        await tester.runAsync(() async {
+          await useSrs(target: SrsMiningTarget.srs);
+          await addNote('食べる');
+          await addNote('飲む');
+          final String parent = await store.createDeck('漫画');
+          final String child = await store.createDeck('一巻', parentId: parent);
+          await addNote('走る', deckId: child);
+        });
+        // 首页与牌组列表挂在同一个 ProviderScope 里换页：两个 scope 都覆盖成同一个
+        // [appModel] 时，各自卸载都会 dispose 它一次（ChangeNotifierProvider 拥有它）。
+        final ValueNotifier<Widget> page = ValueNotifier<Widget>(dashboard());
+        addTearDown(page.dispose);
+        await tester.pumpWidget(
+          app(
+            ValueListenableBuilder<Widget>(
+              valueListenable: page,
+              builder: (BuildContext context, Widget current, Widget? _) =>
+                  current,
+            ),
+            apple: apple,
+            layout: layout,
           ),
         );
-        sumNew += row.newCount;
-        sumLearn += row.learnCount;
-        sumReview += row.reviewCount;
-      }
-      expect(sumNew, 3, reason: '三张新卡（其中一张在子牌组）');
-      expect(home.newCount, sumNew);
-      expect(home.learnCount, sumLearn);
-      expect(home.reviewCount, sumReview);
-      await unmount(tester);
-    });
+        await settle(tester);
+        // 封面网格：原一行条的 SrsCountTriple；拼贴：海报色块的到期 / 学习中 / 新卡
+        // 三个计数 chip（`home-srs-panel-counts`）。
+        final bool poster = layout != ShellContentLayout.grid;
+        final SrsCountTriple? home = poster
+            ? null
+            : tester.widget<SrsCountTriple>(
+                find.descendant(
+                  of: panel,
+                  matching: find.byType(SrsCountTriple),
+                ),
+              );
+        final List<String> posterCounts = poster
+            ? tester
+                  .widgetList<Text>(
+                    find.descendant(
+                      of: find.byKey(
+                        const ValueKey<String>('home-srs-panel-counts'),
+                      ),
+                      matching: find.byType(Text),
+                    ),
+                  )
+                  .map((Text w) => w.data ?? '')
+                  .toList()
+            : const <String>[];
+
+        // 牌组列表：顶层行上的三色计数（顶层已含子牌组）。
+        final List<SrsDeckSummary> decks = (await tester.runAsync(
+          store.deckSummaries,
+        ))!;
+        page.value = const SrsDeckListPage();
+        await settle(tester);
+        int sumNew = 0, sumLearn = 0, sumReview = 0;
+        for (final SrsDeckSummary d in decks.where(
+          (SrsDeckSummary d) => d.depth == 0,
+        )) {
+          final SrsCountTriple row = tester.widget<SrsCountTriple>(
+            find.descendant(
+              of: find.byKey(ValueKey<String>('srs-deck-${d.deck.id}')),
+              matching: find.byType(SrsCountTriple),
+            ),
+          );
+          sumNew += row.newCount;
+          sumLearn += row.learnCount;
+          sumReview += row.reviewCount;
+        }
+        expect(sumNew, 3, reason: '三张新卡（其中一张在子牌组）');
+        if (home != null) {
+          expect(home.newCount, sumNew);
+          expect(home.learnCount, sumLearn);
+          expect(home.reviewCount, sumReview);
+        } else {
+          expect(posterCounts, <String>[
+            t.srs_home_meta_due(n: sumReview),
+            t.srs_home_meta_learning(n: sumLearn),
+            t.srs_home_meta_new(n: sumNew),
+          ]);
+        }
+        await unmount(tester);
+      });
+    }
 
     testWidgets('$ds · 点「开始复习」直接进复习页；点条目进牌组列表 tab', (
       WidgetTester tester,
@@ -477,42 +523,63 @@ void main() {
       await unmount(tester);
     });
 
-    testWidgets('$ds · 计数加载中挂骨架，行高与加载完一致；制卡刷新信号后计数更新', (
-      WidgetTester tester,
-    ) async {
-      useSize(tester, const Size(420, 900));
-      await tester.runAsync(() => useSrs(target: SrsMiningTarget.srs));
-      await tester.pumpWidget(app(dashboard(), apple: apple));
-      // 首帧：数据还没回来，挂骨架。
-      await tester.pump();
-      expect(
-        find.byKey(const ValueKey<String>('home-srs-panel-skeleton')),
-        findsOneWidget,
-      );
-      final double loadingHeight = tester.getSize(panel).height;
-      await settle(tester);
-      expect(tester.getSize(panel).height, loadingHeight);
-      expect(find.text(t.home_srs_panel_done), findsOneWidget);
+    // 封面网格（原一行条面板）：骨架与加载完、有卡与没卡同一行高。
+    // 拼贴（海报色块）：骨架与刷新信号照守；海报块的高度随状态变（加载中 / 今日
+    // 已完成 / 有待复习时多出计数 chip 与开始按钮），行高不变量不适用——这一点
+    // 是否算回归交所有者拍板（见 PR #3397 修复报告「拿不准」）。
+    for (final ShellContentLayout layout in ShellContentLayout.values) {
+      testWidgets('$ds · ${layout.name} · 计数加载中挂骨架，行高与加载完一致；制卡刷新信号后计数更新', (
+        WidgetTester tester,
+      ) async {
+        final bool poster = layout != ShellContentLayout.grid;
+        useSize(tester, const Size(420, 900));
+        await tester.runAsync(() => useSrs(target: SrsMiningTarget.srs));
+        await tester.pumpWidget(app(dashboard(), apple: apple, layout: layout));
+        // 首帧：数据还没回来，挂骨架。
+        await tester.pump();
+        expect(
+          find.byKey(const ValueKey<String>('home-srs-panel-skeleton')),
+          findsOneWidget,
+        );
+        final double loadingHeight = tester.getSize(panel).height;
+        await settle(tester);
+        if (!poster) expect(tester.getSize(panel).height, loadingHeight);
+        expect(find.text(t.home_srs_panel_done), findsOneWidget);
 
-      // 制卡写进复习 → 刷新信号（与 SrsMiningAnkiRepository.onCardsAdded 同一个）。
-      await tester.runAsync(() => addNote('食べる'));
-      final ProviderContainer container = ProviderScope.containerOf(
-        tester.element(panel),
-      );
-      container.read(srsRevisionProvider.notifier).state++;
-      await settle(tester);
-      expect(start, findsOneWidget);
-      expect(
-        tester
-            .widget<SrsCountTriple>(
-              find.descendant(of: panel, matching: find.byType(SrsCountTriple)),
-            )
-            .newCount,
-        1,
-      );
-      expect(tester.getSize(panel).height, loadingHeight);
-      await unmount(tester);
-    });
+        // 制卡写进复习 → 刷新信号（与 SrsMiningAnkiRepository.onCardsAdded 同一个）。
+        await tester.runAsync(() => addNote('食べる'));
+        final ProviderContainer container = ProviderScope.containerOf(
+          tester.element(panel),
+        );
+        container.read(srsRevisionProvider.notifier).state++;
+        await settle(tester);
+        expect(start, findsOneWidget);
+        if (poster) {
+          expect(
+            find.descendant(
+              of: find.byKey(const ValueKey<String>('home-srs-panel-counts')),
+              matching: find.text(t.srs_home_meta_new(n: 1)),
+            ),
+            findsOneWidget,
+          );
+          expect(find.text(t.home_srs_panel_done), findsNothing);
+        } else {
+          expect(
+            tester
+                .widget<SrsCountTriple>(
+                  find.descendant(
+                    of: panel,
+                    matching: find.byType(SrsCountTriple),
+                  ),
+                )
+                .newCount,
+            1,
+          );
+          expect(tester.getSize(panel).height, loadingHeight);
+        }
+        await unmount(tester);
+      });
+    }
 
     testWidgets('$ds · 窄列：骨架与「计数 + 开始」按可用宽度收窄，不溢出', (
       WidgetTester tester,

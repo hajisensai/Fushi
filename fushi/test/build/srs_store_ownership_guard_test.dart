@@ -3,7 +3,8 @@
 // 1. srs_* 表名（代码，不算注释）只许出现在老形态兼容代码里：主库迁移阶梯、一次性搬迁、老形态备份——它们碰的
 //    是 fushi.db 里的旧表。srs.db 的表结构与 SQL 只在内核里（native/fushi_fsrs/src/store/schema.rs、reads.rs）：
 //    Dart 读 srs.db 只发读命令（packages/fushi_engine/lib/srs/srs_reads.dart），写只发内核命令。
-// 2. Dart 侧没有 srs.db 的 SQL 句柄：srs.db 上的 Drift 视图（SrsDatabase / srsIdType / 执行器）已删，不许回来。
+// 2. Dart 侧没有 srs.db 的 SQL 句柄：srs.db 上的 Drift 视图（SrsDatabase / srsIdType / 执行器）与 Rust 只读会话
+//    （SrsCore.beginRead / SrsReadSession）已删，不许回来；只读调试查询 SrsCore.debugQuery 只许测试用。
 // 3. 主库的 Drift 声明（tables.dart / @DriftDatabase 清单）不得再声明 Srs* 表。
 // 4. Rust 源码（代码，不算注释）不得出现 `fushi.db`：Rust 绝不打开主库。
 //
@@ -42,12 +43,16 @@ const Map<String, String> _kAllowed = <String, String>{
   'fushi/lib/src/sync/backup_srs_tables.dart': '老形态备份兼容',
 };
 
-/// srs.db 的 Drift 视图与 Dart 侧 SQL 执行器的名字（已删；出现即回退）。
+/// srs.db 的 Drift 视图、Dart 侧 SQL 执行器与 Rust 只读会话的名字（已删；出现即回退）。
 final RegExp _kSrsDbSqlHandle = RegExp(
   r'\b(SrsDatabase|srsIdType|SrsIdType|srsInlineExecutor|srsDatabaseConnection|'
   r'SrsInlineExecutor|SrsReadOnlyExecutor|kSrsReadOnlyExecutor|'
-  r'kSrsNotSnapshotQuery|execQuery|snapshotQuery)\b|srs_database_executor\.dart',
+  r'kSrsNotSnapshotQuery|execQuery|snapshotQuery|'
+  r'beginRead|SrsReadSession|readQuery)\b|srs_database_executor\.dart',
 );
+
+/// [SrsCore.debugQuery] 的调用（定义处 `debugQuery(` 前面没有 `.`，不算）。
+final RegExp _kDebugQueryCall = RegExp(r'\.debugQuery\(');
 
 /// 仓库根（测试在 fushi/ 下跑）。
 final Directory _repo = Directory.current.parent;
@@ -160,8 +165,40 @@ void main() {
       offenders,
       isEmpty,
       reason:
-          '要另开一条读 srs.db 的连接就用 SrsCore.beginRead（Rust 只读会话）：'
+          '要读 srs.db 就加内核读命令（native/fushi_fsrs/src/store/reads.rs，Dart 侧 srs_reads.dart）：'
           '两份 SQLite 同开一个文件会在 POSIX 上互相清掉文件锁。$offenders',
+    );
+  });
+
+  test('SrsCore.debugQuery（srs.db 上的只读 SQL）只出现在测试文件里', () {
+    // 产品代码、工具、服务端读 srs.db 一律走内核读命令；debugQuery 只给测试断言库里的行。
+    final List<Directory> roots = <Directory>[
+      Directory(p.join(_repo.path, 'tool')),
+      for (final String sub in <String>['lib', 'tool', 'bin'])
+        Directory(p.join(_repo.path, 'fushi', sub)),
+      for (final FileSystemEntity e in Directory(
+        p.join(_repo.path, 'packages'),
+      ).listSync())
+        if (e is Directory)
+          for (final String sub in <String>['lib', 'tool', 'bin'])
+            Directory(p.join(e.path, sub)),
+    ];
+    int scanned = 0;
+    final List<String> offenders = <String>[];
+    for (final Directory root in roots) {
+      if (!root.existsSync()) continue;
+      for (final File f in _dartFiles(root)) {
+        scanned++;
+        if (_kDebugQueryCall.hasMatch(maskComments(f.readAsStringSync()))) {
+          offenders.add(_rel(f));
+        }
+      }
+    }
+    expect(scanned, greaterThan(1000), reason: '扫描面不对（cwd 应是 fushi/）');
+    expect(
+      offenders,
+      isEmpty,
+      reason: 'debugQuery 只许测试用；要读 srs.db 就加内核读命令（store/reads.rs）：$offenders',
     );
   });
 
@@ -245,6 +282,16 @@ void main() {
       isTrue,
     );
     expect(_kSrsDbSqlHandle.hasMatch('SrsDatabaseFileName'), isFalse);
+    expect(_kSrsDbSqlHandle.hasMatch('final s = core.beginRead();'), isTrue);
+    expect(_kSrsDbSqlHandle.hasMatch('SrsReadSession session'), isTrue);
+    expect(_kSrsDbSqlHandle.hasMatch('_b.readQuery,'), isTrue);
+    expect(_kSrsDbSqlHandle.hasMatch('readQueryCount'), isFalse);
+    expect(_kDebugQueryCall.hasMatch("core.debugQuery('SELECT 1')"), isTrue);
+    expect(
+      _kDebugQueryCall.hasMatch('List<Map<String, Object?>> debugQuery('),
+      isFalse,
+      reason: '定义处不算调用',
+    );
     expect(
       _maskRustComments(
         '/// opens fushi.db\nlet p = "fushi.db";',

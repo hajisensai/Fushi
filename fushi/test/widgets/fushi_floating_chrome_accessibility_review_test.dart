@@ -6,8 +6,9 @@ import 'package:fushi/src/pages/implementations/media_library_shell.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart';
 import 'package:fushi/src/utils/components/fushi_floating_page_chrome.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
-import 'package:fushi/src/pages/shared/library_section_tabs.dart';
 import 'package:fushi/src/utils/components/section_visibility.dart';
+
+import '../helpers/masthead_tabs.dart';
 
 Widget _app(
   Widget child, {
@@ -27,11 +28,16 @@ Widget _app(
   );
 }
 
+/// 经页头大字的页签切到「浏览」（PR #3397 外壳：一级切换 [FushiMastheadSwitch]，
+/// 只剩一组时由二级连体页签承担），走页签自己的 onChanged。
 Future<void> _selectBrowse(WidgetTester tester) async {
-  final FushiSectionTabBar<MediaLibraryViewKind> strip = tester.widget(
-    find.byType(FushiSectionTabBar<MediaLibraryViewKind>),
-  );
-  strip.onChanged!(MediaLibraryViewKind.browse);
+  final Finder primary = mastheadPrimaryTabs<MediaLibraryViewKind>();
+  readMastheadTabs<MediaLibraryViewKind>(
+    tester,
+    primary.evaluate().isNotEmpty
+        ? primary
+        : mastheadSecondaryTabs<MediaLibraryViewKind>(),
+  ).onChanged(MediaLibraryViewKind.browse);
   await tester.pumpAndSettle();
 }
 

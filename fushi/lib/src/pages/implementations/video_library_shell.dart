@@ -354,6 +354,23 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
           ];
     // 一级只剩一组（iOS 合规门下没有在线分区）时不画胶囊、改放该组名的标题
     // 胶囊（媒体库）；停在导入页时高亮「媒体库」组（导入管理的就是本地库）。
+    // 当前组的二级页签；组内不足两段时为 null。页头大字顶栏里交给大字行
+    // （[FushiFloatingChromeBar.secondary]），否则由下面嵌套的工具区画。
+    final Widget? subNavigation = subTabs.length < 2
+        ? null
+        : LibrarySectionTabs<VideoLibrarySection>(
+            // 换组即换一份页签（段数与段值都变），不复用旧 controller。
+            key: ValueKey<LibrarySectionGroup?>(currentGroup),
+            tabs: subTabs,
+            selected: _section,
+            onChanged: _select,
+            focusIdPrefix: 'video-library-subview',
+            secondary: true,
+            // 二级用 M3 secondary tabs（文字 + 横贯下划线），不再是第二枚浮动胶囊：
+            // 与一级按钮组胶囊拉开层级（2026-10-30 用户拍板方案 B）。
+            // 反馈 ndQ5eXLcqp：自定义页签顺序落在组内的二级胶囊上（一级恒为两组）。
+            orderKey: 'video-${currentGroup?.name}',
+          );
     final Widget navigation = groupTabs.length < 2
         ? FushiFloatingChromeSoloTitle(
             title: groupTabs.isEmpty ? '' : groupTabs.single.label,
@@ -388,6 +405,8 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
             // 工具栏叠在内容上，收起只滑出画面、不改内容视口高度（滚轮上下「回弹、
             // 滚不动」的根因是收起改了视口高度，见 [FushiFloatingChromeOverlay]）。
             child: FushiFloatingChromeOverlay(
+              // 重设计外壳下画成页头大字（`fushi_page_masthead.dart`）。
+              masthead: true,
               chrome: FushiFloatingChromeBar(
                 tabs: navigation,
                 slot: _actionsSlot,
@@ -396,6 +415,8 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
                   onTap: _toggleImport,
                   focusIdPrefix: 'video-library-view',
                 ),
+                // 页头大字顶栏里二级页签由大字行画（放得下与页名同一行）。
+                secondary: subNavigation,
               ),
               child: NotificationListener<ScrollNotification>(
                 onNotification: _onScroll,
@@ -417,7 +438,8 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
                     // 二级下划线页签贴着顶栏，不再隔 8（见 nestedGap）。
                     nestedGap: 0,
                     opaqueChrome: true,
-                    chrome: subTabs.length < 2
+                    masthead: true,
+                    chrome: subNavigation == null
                         ? const SizedBox.shrink()
                         : Padding(
                             // 与顶栏胶囊、页面内容同一条页边；两级页签之间的 12
@@ -430,23 +452,7 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
                             ),
                             child: Align(
                               alignment: AlignmentDirectional.centerStart,
-                              child: LibrarySectionTabs<VideoLibrarySection>(
-                                // 换组即换一份页签（段数与段值都变），不复用旧
-                                // controller。
-                                key: ValueKey<LibrarySectionGroup?>(
-                                  currentGroup,
-                                ),
-                                tabs: subTabs,
-                                selected: _section,
-                                onChanged: _select,
-                                focusIdPrefix: 'video-library-subview',
-                                secondary: true,
-                                // 二级用 M3 secondary tabs（文字 + 横贯下划线），不再是第二枚浮动胶囊：
-                                // 与一级按钮组胶囊拉开层级（2026-10-30 用户拍板方案 B）。
-                                // 反馈 ndQ5eXLcqp：自定义页签顺序落在组内的
-                                // 二级胶囊上（一级恒为两组）。
-                                orderKey: 'video-${currentGroup?.name}',
-                              ),
+                              child: subNavigation,
                             ),
                           ),
                     child: _buildSections(navigation),

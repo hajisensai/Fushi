@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:drift/drift.dart' hide isNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -81,6 +82,39 @@ void main() {
 
       expect(backend.activeBaseUrl, WebDavOps.normalizeUrl('http://wan:8765'));
       expect(backend.cachedRootFolderId, isNull); // poisoned cache cleared
+    },
+  );
+
+  test(
+    'connectedHostIdentity 与 remoteDictionaryHostIdOf 同口径（空串 hostId 当没有）',
+    () async {
+      // V-B4：带 hostId 的明文地址要当场 ping 核对；对端不存在，核对视为通过。
+      debugInterconnectAddressProbeOverride =
+          (FushiClientUrl candidate, String? hostId) async => true;
+      addTearDown(() {
+        debugInterconnectAddressProbeOverride = null;
+        resetInterconnectRaceCache();
+      });
+      for (final FushiClientUrl url in const <FushiClientUrl>[
+        FushiClientUrl(url: 'http://lan:8765/', hostId: ''),
+        FushiClientUrl(url: 'http://lan:8765'),
+        FushiClientUrl(url: 'http://lan:8765', hostId: 'host-1'),
+      ]) {
+        final FushiDatabase db = _testDb();
+        addTearDown(db.close);
+        final SyncRepository repo = SyncRepository(db);
+        await _seed(repo, urls: <FushiClientUrl>[url]);
+        final InterconnectSyncBackend backend =
+            InterconnectSyncBackend.withProbe(
+              (String u, String t) async => true,
+            );
+        await backend.restoreAuth(repo);
+        expect(
+          await backend.connectedHostIdentity(),
+          remoteDictionaryHostIdOf(url),
+          reason: 'hostId=${url.hostId}',
+        );
+      }
     },
   );
 

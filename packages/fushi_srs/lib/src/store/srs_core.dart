@@ -188,19 +188,6 @@ typedef _QueryDart =
       ffi.Pointer<ffi.Pointer<ffi.Char>>,
     );
 
-typedef _ReadBeginC =
-    ffi.Int32 Function(
-      ffi.Pointer<ffi.Void>,
-      ffi.Pointer<ffi.Pointer<ffi.Void>>,
-      ffi.Pointer<ffi.Pointer<ffi.Char>>,
-    );
-typedef _ReadBeginDart =
-    int Function(
-      ffi.Pointer<ffi.Void>,
-      ffi.Pointer<ffi.Pointer<ffi.Void>>,
-      ffi.Pointer<ffi.Pointer<ffi.Char>>,
-    );
-
 typedef _ExecC =
     ffi.Int32 Function(
       ffi.Pointer<ffi.Void>,
@@ -301,13 +288,6 @@ final class SrsCoreBindings {
       snapshot = lib.lookupFunction<_SnapshotC, _SnapshotDart>(
         'ffsrs_store_snapshot',
       ),
-      readBegin = lib.lookupFunction<_ReadBeginC, _ReadBeginDart>(
-        'ffsrs_store_read_begin',
-      ),
-      readQuery = lib.lookupFunction<_QueryC, _QueryDart>(
-        'ffsrs_store_read_query',
-      ),
-      readEnd = lib.lookupFunction<_CloseC, _CloseDart>('ffsrs_store_read_end'),
       debugQuery = lib.lookupFunction<_QueryC, _QueryDart>(
         'ffsrs_store_debug_query',
       ),
@@ -355,9 +335,6 @@ final class SrsCoreBindings {
   final _SimpleDart legacyMarkNone;
   final _SnapshotDart snapshot;
   final _QueryDart debugQuery;
-  final _ReadBeginDart readBegin;
-  final _QueryDart readQuery;
-  final _CloseDart readEnd;
   final _ExecDart exec;
   final _PageDart execBatch;
   final _StateDart inTransaction;
@@ -418,7 +395,6 @@ final class SrsCoreDiagCounts {
   const SrsCoreDiagCounts({
     required this.openHandles,
     required this.liveCores,
-    required this.readSessions,
     required this.pooledReaders,
     required this.sqliteBytes,
     required this.sqliteHighwaterBytes,
@@ -427,16 +403,13 @@ final class SrsCoreDiagCounts {
   });
 
   /// 原生一次写出的项数（Rust `DIAG_COUNT_LEN`）。
-  static const int length = 8;
+  static const int length = 7;
 
   /// 句柄表里打开着的库。
   final int openHandles;
 
   /// 还没释放的库结构体（含已关闭、在途调用还握着的）：大于 [openHandles] = 有退役的库还驻留。
   final int liveCores;
-
-  /// 没结束的只读会话。
-  final int readSessions;
 
   /// 各库只读连接池开着的连接总数。
   final int pooledReaders;
@@ -449,9 +422,9 @@ final class SrsCoreDiagCounts {
   final int dbBytes;
   final int walBytes;
 
-  /// 面包屑里的紧凑写法：`srs=开/存活 sess=… rd=… sqlite=当前/高水位MB db=…MB wal=…MB`。
+  /// 面包屑里的紧凑写法：`srs=开/存活 rd=… sqlite=当前/高水位MB db=…MB wal=…MB`。
   String describe() =>
-      'srs=$openHandles/$liveCores sess=$readSessions rd=$pooledReaders '
+      'srs=$openHandles/$liveCores rd=$pooledReaders '
       'sqlite=${sqliteBytes >> 20}/${sqliteHighwaterBytes >> 20}MB '
       'db=${dbBytes >> 20}MB wal=${walBytes >> 20}MB';
 }
@@ -552,12 +525,11 @@ final class SrsCore {
       return SrsCoreDiagCounts(
         openHandles: out[0],
         liveCores: out[1],
-        readSessions: out[2],
-        pooledReaders: out[3],
-        sqliteBytes: out[4],
-        sqliteHighwaterBytes: out[5],
-        dbBytes: out[6],
-        walBytes: out[7],
+        pooledReaders: out[2],
+        sqliteBytes: out[3],
+        sqliteHighwaterBytes: out[4],
+        dbBytes: out[5],
+        walBytes: out[6],
       );
     });
   }
@@ -627,16 +599,6 @@ final class SrsCore {
     String sql, [
     List<Object?> params = const <Object?>[],
   ]) => _rowsQuery(_b, _b.debugQuery, _h, sql, params);
-
-  /// 另开一条独立只读连接并开读事务：返回时快照已定下，之后的写入都不在里面（备份读快照用）。
-  /// 用完 [SrsReadSession.close]。可以在拿到句柄后交给后台 isolate（[SrsReadSession.fromAddress]）。
-  SrsReadSession beginRead() => using((Arena arena) {
-    final ffi.Pointer<ffi.Pointer<ffi.Void>> out = arena();
-    final ffi.Pointer<ffi.Pointer<ffi.Char>> err = arena();
-    err.value = ffi.nullptr;
-    _check(_b, _b.readBegin(_h, out, err), err);
-    return SrsReadSession._(_b, out.value, owned: true);
-  });
 
   static List<Map<String, Object?>> _rowsQuery(
     SrsCoreBindings b,
@@ -1081,46 +1043,6 @@ final class SrsCore {
     }
     throw SrsUpgradeNoSpaceException.tryParse(rc, message) ??
         SrsCoreException(rc, message);
-  }
-}
-
-/// srs.db 上一条独立只读连接的读事务（[SrsCore.beginRead]）：所有查询看到开会话那一刻的同一个快照，
-/// 不占 [SrsCore] 的读 / 写连接。同一时刻只许一个调用；[close] 回滚并关连接。
-final class SrsReadSession {
-  SrsReadSession._(this._b, this._handle, {required this.owned});
-
-  /// 包装别的 isolate 开的同一个会话（不拥有，[close] 不关）。
-  static SrsReadSession fromAddress(int address, {String? libraryPath}) =>
-      SrsReadSession._(
-        SrsCoreBindings.load(libraryPath: libraryPath),
-        ffi.Pointer<ffi.Void>.fromAddress(address),
-        owned: false,
-      );
-
-  final SrsCoreBindings _b;
-  ffi.Pointer<ffi.Void> _handle;
-
-  /// 本对象负责结束会话。
-  final bool owned;
-
-  /// 句柄地址（跨 isolate 传递用）。
-  int get address => _handle.address;
-
-  bool get isClosed => _handle == ffi.nullptr;
-
-  /// 在会话的读事务里跑一条只读语句（写语句报错）。返回每行一个「列名 → 值」。
-  List<Map<String, Object?>> query(
-    String sql, [
-    List<Object?> params = const <Object?>[],
-  ]) {
-    if (isClosed) throw StateError('srs read session is closed');
-    return SrsCore._rowsQuery(_b, _b.readQuery, _handle, sql, params);
-  }
-
-  void close() {
-    if (isClosed) return;
-    if (owned) _b.readEnd(_handle);
-    _handle = ffi.nullptr;
   }
 }
 

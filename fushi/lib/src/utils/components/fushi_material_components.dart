@@ -46,6 +46,17 @@ import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
         kFushiTopFadeExtent,
         kFushiTopScrimOverlayOpacity;
 import 'package:fushi/src/utils/components/fushi_floating_page_chrome.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show shellRedesignActive;
+import 'package:fushi/src/utils/components/fushi_masthead_scaffold.dart'
+    show FushiMastheadScaffold;
+import 'package:fushi/src/utils/components/fushi_page_masthead.dart'
+    show
+        FushiMastheadActionGroup,
+        FushiMastheadRole,
+        fushiMastheadRoleOf,
+        kFushiMastheadActionExtent,
+        kFushiMastheadActionGap;
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
     show fushiFloatingPillDecoration, kFushiFloatingTopBarOverflowHysteresis;
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
@@ -184,6 +195,7 @@ class FushiCard extends StatefulWidget {
     this.color,
     this.borderColor,
     this.borderRadius,
+    this.shape,
     this.selected = false,
     this.onTap,
     this.onLongPress,
@@ -223,6 +235,12 @@ class FushiCard extends StatefulWidget {
   final Color? color;
   final Color? borderColor;
   final BorderRadius? borderRadius;
+
+  /// MD3 卡面的完整外形（如 `shellShape(...)` 的平滑圆角）：给了就代替
+  /// [borderRadius] 的圆弧角，卡面 / 裁剪 / 水波 / 按压层一律按它画，与卡内同形
+  /// 的色块严丝合缝。不参与形变（[morph]）；描边仍按卡片状态叠上去。Apple 玻璃卡
+  /// 自有连续曲率圆角，只读 [borderRadius]。
+  final OutlinedBorder? shape;
   final bool selected;
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
@@ -459,6 +477,9 @@ class _FushiCardState extends State<FushiCard>
         final BorderRadius radius = _morphEnabled
             ? fushiM3eMorphRadius(baseRadius, t)
             : baseRadius;
+        final OutlinedBorder? fixedShape = widget.shape;
+        final OutlinedBorder surfaceShape =
+            fixedShape ?? RoundedRectangleBorder(borderRadius: radius);
         // 颜色走状态时长渐变（AnimatedContainer）；圆角 / 投影由弹簧逐帧给值，
         // AnimatedContainer 只在两帧之间补间，弹簧仍是形变节奏的唯一来源。
         return AnimatedContainer(
@@ -466,14 +487,14 @@ class _FushiCardState extends State<FushiCard>
           curve: fushiMd3StateCurve,
           decoration: ShapeDecoration(
             color: color,
-            shape: RoundedRectangleBorder(borderRadius: radius, side: side),
+            shape: surfaceShape.copyWith(side: side),
             shadows: elevated
                 ? fushiM3eCardShadow(context, t.clamp(0.0, 1.0))
                 : null,
           ),
           child: Material(
             type: MaterialType.transparency,
-            shape: RoundedRectangleBorder(borderRadius: radius),
+            shape: surfaceShape,
             clipBehavior: widget.clipBehavior,
             child: !_interactive
                 ? content
@@ -484,7 +505,8 @@ class _FushiCardState extends State<FushiCard>
                     onHighlightChanged: _setPressed,
                     // 状态层 / 水波按卡片圆角走：Material 裁剪时与之重合
                     // （像素不变），封面卡不裁剪时靠它保持圆角。
-                    borderRadius: radius,
+                    borderRadius: fixedShape == null ? radius : null,
+                    customBorder: fixedShape,
                     // 柔和状态层（悬停 8% / 按下 10% onSurface），水波
                     // 由外层 Material 裁在圆角里；墨水屏交回默认。
                     overlayColor: !widget.stateLayer
@@ -535,17 +557,21 @@ class _FushiCardState extends State<FushiCard>
       );
     }
     // 描边层恒在（只换颜色）：按选中态增删这一层会让卡片内容整棵重挂。
+    final BorderSide outline = BorderSide(
+      color:
+          widget.borderColor ??
+          (widget.selected ? apple.accent : Colors.transparent),
+      width: widget.borderColor == null ? 1.5 : 1,
+    );
+    final OutlinedBorder? fixedShape = widget.shape;
     body = DecoratedBox(
       position: DecorationPosition.foreground,
-      decoration: BoxDecoration(
-        borderRadius: radius,
-        border: Border.all(
-          color:
-              widget.borderColor ??
-              (widget.selected ? apple.accent : Colors.transparent),
-          width: widget.borderColor == null ? 1.5 : 1,
-        ),
-      ),
+      decoration: fixedShape != null
+          ? ShapeDecoration(shape: fixedShape.copyWith(side: outline))
+          : BoxDecoration(
+              borderRadius: radius,
+              border: Border.fromBorderSide(outline),
+            ),
       child: body,
     );
     return ContextMenuTrigger(
@@ -4318,6 +4344,14 @@ bool fushiIsCollapsibleHeaderAction(Widget item) =>
     !item.alwaysVisible &&
     item.selected != true;
 
+/// 标了 [FushiIconButton.alwaysVisible]、但派生得出菜单项的动作（有点击回调、
+/// 不在选中态）：平时恒外露，只有 `collapsePinned` 的窄位才在最后收。
+bool _isPinnedHeaderAction(Widget item) =>
+    item is FushiIconButton &&
+    item.onTap != null &&
+    item.alwaysVisible &&
+    item.selected != true;
+
 /// [actions] 里可收纳动作的收纳顺序（最先收的在前）：
 /// [FushiIconButton.overflowPriority] 低的先收，同优先级越靠后越先收。纯函数。
 List<int> fushiHeaderCollapseOrder(List<Widget> actions) {
@@ -4435,6 +4469,7 @@ FushiResolvedHeaderActions fushiResolveHeaderActions(
   required List<Widget> actions,
   required double budget,
   bool allowLabels = false,
+  bool collapsePinned = false,
   FushiHeaderOverflowFit? fit,
 }) {
   if (actions.isEmpty || !budget.isFinite) {
@@ -4453,7 +4488,15 @@ FushiResolvedHeaderActions fushiResolveHeaderActions(
     fit?.reset();
     return (items: actions, expandLabels: true);
   }
-  final List<int> order = fushiHeaderCollapseOrder(actions);
+  // [collapsePinned]：别的都收完还放不下时，标了 alwaysVisible 的按钮也收（排在
+  // 收纳顺序最后）。给没有横滑余地的窄位用——页头大字顶栏窄窗下动作槽只有一颗
+  // 按钮宽，「搜索 + ⋯」两颗排不下就只留「⋯」，不裁成半颗。
+  final List<int> order = <int>[
+    ...fushiHeaderCollapseOrder(actions),
+    if (collapsePinned)
+      for (int i = actions.length - 1; i >= 0; i--)
+        if (_isPinnedHeaderAction(actions[i])) i,
+  ];
   List<Widget> visibleWith(int collapsed) {
     final Set<int> hidden = order.take(collapsed).toSet();
     return <Widget>[
@@ -4915,15 +4958,37 @@ class _FushiShellHeaderActionsState extends State<FushiShellHeaderActions> {
   }
 
   Widget _buildActions(BuildContext context, bool apple) {
+    // 库页「页头大字」顶栏（重设计外壳，MD3 与 Apple 都生效）：每个动作一枚
+    // 连体按钮。收进「⋯」的判定照旧，只是每颗按钮更宽（48 + 间隙 3，估算口径
+    // 一颗约 44），预算按比例收紧，免得估算放得下、实际排不下。
+    final bool masthead =
+        fushiMastheadRoleOf(context) == FushiMastheadRole.primary;
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         // −16：Apple 工具栏胶囊两端的内边距与 MD3 按钮组胶囊内边距的余量。
         final List<Widget> items = fushiResolveHeaderActions(
           context,
           actions: widget.actions,
-          budget: constraints.maxWidth - 16,
+          budget: masthead
+              ? (constraints.maxWidth - 16) *
+                    (44 /
+                        (kFushiMastheadActionExtent + kFushiMastheadActionGap))
+              : constraints.maxWidth - 16,
+          collapsePinned: masthead,
           fit: _overflowFit,
         ).items;
+        if (masthead) {
+          return FushiHeaderLabelScope(
+            expandLabels: false,
+            child: HorizontalDragScrollable(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                physics: const ClampingScrollPhysics(),
+                child: FushiMastheadActionGroup(items: items),
+              ),
+            ),
+          );
+        }
         if (apple && widget.appleFloating) {
           return FushiHeaderLabelScope(
             expandLabels: false,
@@ -5014,9 +5079,23 @@ class FushiPageScaffold extends StatefulWidget {
     this.header,
     this.headerTitle,
     this.revealTitleAfterScroll,
+    this.masthead = false,
+    this.mastheadBottom,
   });
 
   final String title;
+
+  /// 重设计外壳（`shellRedesignActive`，墨水屏除外）下改用二级页的页头大字外壳
+  /// （[FushiMastheadScaffold]：返回键 + 页名大字 + 平铺裸图标动作，放不下才收
+  /// 「⋯」，滚动后页名收缩、垫 90% 底色 + 模糊底板）。[title] / [actions] /
+  /// [leading] / [automaticallyImplyLeading] / [extendBodyBehindHeader] / 悬浮
+  /// 按钮 / 底栏照用；页名行下方一行取 [mastheadBottom]，没有时取 [headerTitle]
+  /// （页签）或 [headerBottom]。[header] / [subtitle] / [revealTitleAfterScroll]
+  /// 在这一形态下不生效。墨水屏照旧走原来的页头。
+  final bool masthead;
+
+  /// [masthead] 形态页名行下方的一行（页签 / 筛选条）。
+  final Widget? mastheadBottom;
 
   /// 非 null = 页头标题初始隐藏，正文竖向滚过这个距离（逻辑像素）后淡入。
   /// 给「正文顶部已有同名大标题」的详情页用（[MediaDetailLayout] 的 hero）：
@@ -5158,6 +5237,9 @@ class _FushiPageScaffoldState extends State<FushiPageScaffold> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.masthead && shellRedesignActive(context)) {
+      return _buildMasthead(context);
+    }
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final Widget? effectiveLeading =
         widget.leading ??
@@ -5288,6 +5370,27 @@ class _FushiPageScaffoldState extends State<FushiPageScaffold> {
       ),
     );
   }
+
+  /// [FushiPageScaffold.masthead]：二级页的页头大字外壳。主滚动控制器仍是本页
+  /// 这一个（[PageScrollRegistry] 已在 initState 登记），外壳不再另挂。
+  Widget _buildMasthead(BuildContext context) => PrimaryScrollController(
+    controller: _scrollController,
+    automaticallyInheritForPlatforms: TargetPlatform.values.toSet(),
+    child: FushiMastheadScaffold(
+      ownPrimaryScroll: false,
+      title: widget.title,
+      actions: widget.actions,
+      leading: widget.leading,
+      implyBack: widget.automaticallyImplyLeading,
+      bottom:
+          widget.mastheadBottom ?? widget.headerTitle ?? widget.headerBottom,
+      extendBodyBehindHeader: widget.extendBodyBehindHeader,
+      floatingActionButton: widget.floatingActionButton,
+      floatingActionButtonLocation: widget.floatingActionButtonLocation,
+      bottomNavigationBar: widget.bottomNavigationBar,
+      body: widget.body,
+    ),
+  );
 
   /// [FushiPageScaffold.extendBodyBehindHeader]：正文占满整页（从窗口顶端画
   /// 起），页头浮在它上面；正文的 MediaQuery 顶部 padding = 状态栏 + 页头实测

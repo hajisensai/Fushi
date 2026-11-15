@@ -3,8 +3,8 @@ import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/collections/collection_detail_layout.dart'
-    show CollectionEpisodeNumberPill;
+import 'package:fushi/src/media/detail/media_poster_detail.dart'
+    show MediaPosterEpisodeTile;
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_detail_view.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_session.dart';
@@ -227,19 +227,24 @@ void main() {
     await tester.pumpWidget(harness(series));
     await tester.pumpAndSettle();
 
-    final Finder pills = find.byType(CollectionEpisodeNumberPill);
+    // 重设计外壳（非墨水屏默认）下集卡是 [MediaPosterEpisodeTile]：集号以
+    // 「N. 」前缀并进标题行，不再画 [CollectionEpisodeNumberPill]。
+    final Finder tiles = find.byType(MediaPosterEpisodeTile);
     expect(
       tester
-          .widgetList<CollectionEpisodeNumberPill>(pills)
-          .map((CollectionEpisodeNumberPill p) => p.number),
-      <String>['1', '2'],
+          .widgetList<MediaPosterEpisodeTile>(tiles)
+          .map((MediaPosterEpisodeTile tile) => tile.number),
+      <String?>['1', '2', null],
       reason: '有号的两集照常画集号；缺号那集不能画成列表位置「3」',
     );
     final Finder unnumbered = find.byKey(
       const ValueKey<String>('media-server-episode-sea1-nonum'),
     );
     expect(unnumbered, findsOneWidget);
-    expect(find.descendant(of: unnumbered, matching: pills), findsNothing);
+    expect(
+      find.descendant(of: unnumbered, matching: find.textContaining('3.')),
+      findsNothing,
+    );
     expect(
       find.descendant(
         of: unnumbered,

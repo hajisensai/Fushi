@@ -28,6 +28,7 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 
 import '../helpers/fake_anki_repository.dart';
 import '../helpers/test_platform_services.dart';
+import '../helpers/shell_layout.dart';
 
 void main() {
   final TestWidgetsFlutterBinding binding =
@@ -92,6 +93,7 @@ void main() {
     ],
     child: TranslationProvider(
       child: MaterialApp(
+        theme: gridShellTheme(),
         home: Scaffold(
           body: HomeVideoPage(
             repo: VideoBookRepository(db),

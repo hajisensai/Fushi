@@ -260,6 +260,7 @@ FushiCard shelfCoverCard({
   VoidCallback? onSecondaryTap,
   EdgeInsetsGeometry padding = EdgeInsets.zero,
   BorderRadius borderRadius = const BorderRadius.all(Radius.circular(12)),
+  OutlinedBorder? shape,
 }) {
   return FushiCard(
     key: key,
@@ -268,6 +269,7 @@ FushiCard shelfCoverCard({
     color: Colors.transparent,
     borderColor: Colors.transparent,
     borderRadius: borderRadius,
+    shape: shape,
     clipBehavior: Clip.none,
     // 封面卡不画状态层：卡面透明，悬停 / 按下的灰底会在封面后面露出一块
     // 底板（2026-10-25 用户截图指出）；反馈由 FushiHoverLift 与材质扫光负责。

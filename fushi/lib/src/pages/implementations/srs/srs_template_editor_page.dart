@@ -59,7 +59,13 @@ import 'package:fushi/src/srs/srs_native_template.dart'
     show srsForcedNativeHtmlCard, srsTemplateIsNative, srsWithTemplateNative;
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_visual_template.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show shellRedesignActive;
+import 'package:fushi/src/pages/shared/library_section_tabs.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
+import 'package:fushi/src/utils/components/fushi_page_masthead.dart'
+    show FushiMastheadRole, FushiMastheadScope;
+import 'package:fushi/src/utils/components/library_section_tab.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -696,6 +702,7 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
   @override
   Widget build(BuildContext context) {
     final bool apple = isGlassDesign(context);
+    final bool masthead = shellRedesignActive(context);
     final String title = _template?.name ?? t.srs_note_types_template_edit;
     return PopScope<Object?>(
       canPop: !_dirty,
@@ -707,8 +714,9 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
       },
       child: FushiPageScaffold(
         title: title,
+        masthead: true,
         header: apple ? null : _buildTopBar(context, title),
-        actions: apple
+        actions: apple || masthead
             ? <Widget>[
                 for (final FushiToolbarItem item in <FushiToolbarItem>[
                   ?_aiItem,
@@ -757,6 +765,13 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
     );
   }
 
+  String _tabLabel(SrsTemplateEditorTab tab) => switch (tab) {
+    SrsTemplateEditorTab.visual => t.srs_visual_tab,
+    SrsTemplateEditorTab.front => t.srs_note_types_front,
+    SrsTemplateEditorTab.back => t.srs_note_types_back,
+    SrsTemplateEditorTab.styling => t.srs_note_types_styling,
+  };
+
   Widget _buildBody(BuildContext context) {
     if (_loading) {
       return const SafeArea(bottom: false, child: FushiLoadingView());
@@ -771,31 +786,56 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
     }
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final String? error = _preview.error;
-    final Widget tabs = FushiSegmentedButton<SrsTemplateEditorTab>(
-      key: const ValueKey<String>('srs-template-tabs'),
-      showSelectedIcon: false,
-      segments: <ButtonSegment<SrsTemplateEditorTab>>[
-        ButtonSegment<SrsTemplateEditorTab>(
-          value: SrsTemplateEditorTab.visual,
-          label: Text(t.srs_visual_tab),
-        ),
-        ButtonSegment<SrsTemplateEditorTab>(
-          value: SrsTemplateEditorTab.front,
-          label: Text(t.srs_note_types_front),
-        ),
-        ButtonSegment<SrsTemplateEditorTab>(
-          value: SrsTemplateEditorTab.back,
-          label: Text(t.srs_note_types_back),
-        ),
-        ButtonSegment<SrsTemplateEditorTab>(
-          value: SrsTemplateEditorTab.styling,
-          label: Text(t.srs_note_types_styling),
-        ),
-      ],
-      selected: <SrsTemplateEditorTab>{_tab},
-      onSelectionChanged: (Set<SrsTemplateEditorTab> s) =>
-          setState(() => _tab = s.first),
-    );
+    // 重设计外壳（页头大字）：与库页二级页签同一组件——[LibrarySectionTabs] 在
+    // secondary 页头作用域里画成连体按钮组（焦点 / 方向键 / Semantics 同库页）。
+    // 仍留在正文原位（窄窗列表顶 / 宽窗左栏），只随左栏编辑区切换。墨水屏照旧。
+    final Widget tabs = shellRedesignActive(context)
+        ? FushiMastheadScope(
+            role: FushiMastheadRole.secondary,
+            child: Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: LibrarySectionTabs<SrsTemplateEditorTab>(
+                key: const ValueKey<String>('srs-template-tabs'),
+                tabs: <LibrarySectionTab<SrsTemplateEditorTab>>[
+                  for (final SrsTemplateEditorTab tab
+                      in SrsTemplateEditorTab.values)
+                    LibrarySectionTab<SrsTemplateEditorTab>(
+                      value: tab,
+                      label: _tabLabel(tab),
+                    ),
+                ],
+                selected: _tab,
+                onChanged: (SrsTemplateEditorTab tab) =>
+                    setState(() => _tab = tab),
+                focusIdPrefix: 'srs-template-tab',
+              ),
+            ),
+          )
+        : FushiSegmentedButton<SrsTemplateEditorTab>(
+            key: const ValueKey<String>('srs-template-tabs'),
+            showSelectedIcon: false,
+            segments: <ButtonSegment<SrsTemplateEditorTab>>[
+              ButtonSegment<SrsTemplateEditorTab>(
+                value: SrsTemplateEditorTab.visual,
+                label: Text(t.srs_visual_tab),
+              ),
+              ButtonSegment<SrsTemplateEditorTab>(
+                value: SrsTemplateEditorTab.front,
+                label: Text(t.srs_note_types_front),
+              ),
+              ButtonSegment<SrsTemplateEditorTab>(
+                value: SrsTemplateEditorTab.back,
+                label: Text(t.srs_note_types_back),
+              ),
+              ButtonSegment<SrsTemplateEditorTab>(
+                value: SrsTemplateEditorTab.styling,
+                label: Text(t.srs_note_types_styling),
+              ),
+            ],
+            selected: <SrsTemplateEditorTab>{_tab},
+            onSelectionChanged: (Set<SrsTemplateEditorTab> s) =>
+                setState(() => _tab = s.first),
+          );
     Widget editor({required bool wide}) => AnimatedSwitcher(
       duration: fushiMotionDuration(context, FushiMotion.short),
       switchInCurve: FushiMotion.enter,

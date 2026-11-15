@@ -58,7 +58,12 @@ import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show shellRedesignActive;
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart'
+    show FushiIconButtonControl;
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -643,48 +648,63 @@ class _MusicKaraokeStagePageState extends ConsumerState<MusicKaraokeStagePage> {
     );
     final bool showStructured =
         _overlay == MusicKaraokeOverlay.structured && lyrics != null;
-    return FushiPageScaffold(
-      title: widget.track.title,
-      header: Padding(
-        padding: EdgeInsets.fromLTRB(
-          tokens.spacing.page,
-          tokens.spacing.gap,
-          tokens.spacing.page,
-          tokens.spacing.gap,
-        ),
-        child: FushiFloatingTopBar(
-          title: widget.track.title,
-          adaptiveOverflow: true,
-          leading: <FushiToolbarItem>[
-            FushiToolbarItem(
-              icon: FushiIcons.back,
-              label: MaterialLocalizations.of(context).backButtonTooltip,
-              onPressed: () => unawaited(navigator.maybePop()),
-            ),
-          ],
-          actions: <List<FushiToolbarItem>>[
-            <FushiToolbarItem>[
-              FushiToolbarItem(
-                icon: _playing ? FushiIcons.pause : FushiIcons.play,
-                label: _playing ? t.pause : t.play,
-                onPressed: () => unawaited(_player.playOrPause()),
-              ),
-              if (_isMv) ...<FushiToolbarItem>[
-                FushiToolbarItem(
-                  icon: FushiIcons.remove,
-                  label: t.music_mv_offset_earlier,
-                  onPressed: () => unawaited(_nudge(-100)),
-                ),
-                FushiToolbarItem(
-                  icon: FushiIcons.add,
-                  label: t.music_mv_offset_later,
-                  onPressed: () => unawaited(_nudge(100)),
-                ),
-              ],
-            ],
-          ],
-        ),
+    final List<FushiToolbarItem> controls = <FushiToolbarItem>[
+      FushiToolbarItem(
+        icon: _playing ? FushiIcons.pause : FushiIcons.play,
+        label: _playing ? t.pause : t.play,
+        onPressed: () => unawaited(_player.playOrPause()),
       ),
+      if (_isMv) ...<FushiToolbarItem>[
+        FushiToolbarItem(
+          icon: FushiIcons.remove,
+          label: t.music_mv_offset_earlier,
+          onPressed: () => unawaited(_nudge(-100)),
+        ),
+        FushiToolbarItem(
+          icon: FushiIcons.add,
+          label: t.music_mv_offset_later,
+          onPressed: () => unawaited(_nudge(100)),
+        ),
+      ],
+    ];
+    // 重设计外壳（墨水屏除外）：页头大字——曲名 + 平铺的裸图标控制；墨水屏照旧
+    // 悬浮顶栏。
+    final bool masthead = shellRedesignActive(context);
+    return FushiPageScaffold(
+      masthead: true,
+      title: widget.track.title,
+      actions: masthead
+          ? <Widget>[
+              for (final FushiToolbarItem item in controls)
+                FushiIconButtonControl(
+                  icon: FushiIcon(item.icon),
+                  tooltip: item.label,
+                  onPressed: item.onPressed,
+                ),
+            ]
+          : const <Widget>[],
+      header: masthead
+          ? null
+          : Padding(
+              padding: EdgeInsets.fromLTRB(
+                tokens.spacing.page,
+                tokens.spacing.gap,
+                tokens.spacing.page,
+                tokens.spacing.gap,
+              ),
+              child: FushiFloatingTopBar(
+                title: widget.track.title,
+                adaptiveOverflow: true,
+                leading: <FushiToolbarItem>[
+                  FushiToolbarItem(
+                    icon: FushiIcons.back,
+                    label: MaterialLocalizations.of(context).backButtonTooltip,
+                    onPressed: () => unawaited(navigator.maybePop()),
+                  ),
+                ],
+                actions: <List<FushiToolbarItem>>[controls],
+              ),
+            ),
       body: _failed
           ? Center(
               child: Text(

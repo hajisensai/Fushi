@@ -155,6 +155,7 @@ class _StatisticsCenterPageState extends BasePageState<StatisticsCenterPage> {
             ],
           );
           return FushiPageScaffold(
+            masthead: true,
             title: t.stat_center_title,
             headerTitle: tabBar,
             body: body,

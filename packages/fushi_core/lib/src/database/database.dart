@@ -827,6 +827,7 @@ void _requireOneVideoMetadataOwner({
     ReadingHourlyLogs,
     Preferences,
     DictionaryMetadata,
+    RemoteDictionaryMetadata,
     DictionaryHistory,
     EpubBooks,
     BookTags,
@@ -986,7 +987,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 152;
+  int get schemaVersion => 154;
 
   /// v125–v128 四步的产物（全部幂等）：SRS 写路径索引、
   /// `collection_member_tombstones.published_at`、`bookmarks.char_offset` /
@@ -3085,6 +3086,28 @@ class FushiDatabase extends _$FushiDatabase
           await m.addColumn(
             mediaTrackingMappings,
             mediaTrackingMappings.sentCompleted,
+          );
+        }
+      }
+      if (from < 153) {
+        // v153：remote_dictionary_metadata——已配对服务器上托管的词典在本机的目录行，
+        // 每个配置按名字选用而不下载（顺序 / 开关是配置拥有的列）。纯新增、无回填：
+        // 目录由下一次刷新填；幂等守卫同 v148。
+        if (!await _tableExists('remote_dictionary_metadata')) {
+          await m.createTable(remoteDictionaryMetadata);
+        }
+      }
+      if (from < 154) {
+        // v154：remote_dictionary_metadata.local_display_name——本机给服务器词典起的
+        // 显示名（设备本地，不归配置）。v153 刚建的表已经由 createTable 带上这一列，
+        // 所以按列存在性守卫，幂等。
+        if (!await _columnExists(
+          'remote_dictionary_metadata',
+          'local_display_name',
+        )) {
+          await m.addColumn(
+            remoteDictionaryMetadata,
+            remoteDictionaryMetadata.localDisplayName,
           );
         }
       }

@@ -10,8 +10,8 @@
 //! （[SrsCore::recover_writer]），读连接结束停在半路的读事务，内存缓存丢掉重建。
 //!
 //! 关闭（[SrsCore::close]）与在途调用互斥：它先关两个读连接池、再拿写锁丢掉写连接，所以会等别的线程手上
-//! 的命令跑完；之后的命令（含另开只读会话 [SrsCore::read_session]）一律报「已关闭」。还没结束的只读
-//! 会话一并失效：在途的那次读跑完后连接随即关掉，之后经它的调用同样报「已关闭」——close 返回时
+//! 的命令跑完；之后的命令（含另开旁路连接的 [SrsCore::wal_checkpoint]）一律报「已关闭」。还开着的旁路连接
+//! （[SideConnection]）一并关掉：在途的那次操作跑完后连接随即关掉——close 返回时
 //! 本对象打开过的 srs.db 连接一条不剩（Windows 下关库后文件可删可改名）。C ABI 的句柄是
 //! 句柄表里的编号、调用期间握一份 `Arc`（见 [ffi]），结构体在最后一份引用放掉时释放。
 //!
@@ -88,11 +88,11 @@ pub struct SrsCore {
     /// 旧库搬迁的事务开着（写连接上挂着一个 BEGIN）：别的写命令一律拒绝。写连接上唯一能跨调用留着的事务——
     /// 其余写入都是一次调用里提交或回滚的内核命令（Dart 没有别的入口能在写连接上开事务）。
     legacy_open: AtomicBool,
-    /// 库文件路径（[SrsCore::read_session] 另开只读连接用）。
+    /// 库文件路径（[SrsCore::wal_checkpoint] 另开旁路连接用）。
     path: PathBuf,
-    /// 开过的只读会话（弱引用）：[SrsCore::close] 逐个关掉还没结束的。只在借着一条内核读连接时登记，close
-    /// 先关内核读连接池（等借出的放回），所以不会漏掉一个正在开的会话。
-    sessions: Mutex<Vec<Weak<ReadSession>>>,
+    /// 开过的旁路连接（弱引用）：[SrsCore::close] 逐个关掉还开着的。只在借着一条内核读连接时登记，close
+    /// 先关内核读连接池（等借出的放回），所以不会漏掉一条正在开的。
+    side_conns: Mutex<Vec<Weak<SideConnection>>>,
     /// 分批收段的阶段（[sync2::transport::IngestPhase]：没有 / 会话开着 / 收尾刷缓存中）。只经
     /// [SrsCore::set_ingest_phase] 转换。
     ingest: Mutex<sync2::transport::IngestPhase>,
@@ -165,10 +165,10 @@ pub fn live_cores() -> usize {
     LIVE_CORES.load(std::sync::atomic::Ordering::Relaxed)
 }
 
-/// 一条独立的只读连接 + 一个读事务（[SrsCore::read_session]）：整段读取看到开会话那一刻的快照，
-/// 不占 [SrsCore] 自己的读 / 写连接。[ReadSession::close]（或析构）回滚并关闭；所属的库关闭时也一并
-/// 关闭（[SrsCore::close]），之后的查询报「已关闭」。可以跨线程共享：连接在一把锁里，关闭会等在途查询跑完。
-pub struct ReadSession {
+/// 一条不占 [SrsCore] 读 / 写连接的旁路连接（[SrsCore::wal_checkpoint] 用，[SrsCore::register_side] 登记）。
+/// [SideConnection::close]（或析构）关闭；所属的库关闭时也一并关闭（[SrsCore::close]）。可以跨线程共享：连接在一把锁里，
+/// 关闭会等在途操作跑完。
+pub struct SideConnection {
     // `None` = 已关闭。
     conn: Mutex<Option<Connection>>,
 }
@@ -187,10 +187,6 @@ pub(crate) struct Conn<'a>(
 );
 
 impl<'a> Conn<'a> {
-    fn of(guard: MutexGuard<'a, Option<Connection>>) -> Result<Self, String> {
-        Self::with_hub(guard, None)
-    }
-
     fn with_hub(
         guard: MutexGuard<'a, Option<Connection>>,
         hub: Option<&'a queue::StudyHub>,
@@ -260,7 +256,7 @@ impl Deref for Conn<'_> {
     fn deref(&self) -> &Connection {
         self.0
             .as_ref()
-            .expect("Conn::of checked the connection is open")
+            .expect("Conn::with_hub checked the connection is open")
     }
 }
 
@@ -268,22 +264,12 @@ impl DerefMut for Conn<'_> {
     fn deref_mut(&mut self) -> &mut Connection {
         self.0
             .as_mut()
-            .expect("Conn::of checked the connection is open")
+            .expect("Conn::with_hub checked the connection is open")
     }
 }
 
-impl ReadSession {
-    /// 在会话的读事务里跑一条只读语句；结果编码同 [SrsCore::debug_query]（首行是列名）。
-    pub fn query(&self, sql: &str, params: &[Value]) -> Result<Vec<u8>, String> {
-        // 会话的读事务本来就要一直开着；查询只读，panic 不改它：清掉毒化照常用。
-        let conn = Conn::of(lock_recovering(&self.conn, |_| Ok(()))?)?;
-        let out = query_rows(&conn, sql, params);
-        #[cfg(feature = "id_audit")]
-        ids::audit::take(&conn, sql)?;
-        out
-    }
-
-    /// 回滚读事务并关闭连接（幂等）。会等别的线程上在途的查询跑完；之后的查询报「已关闭」。
+impl SideConnection {
+    /// 关闭连接（幂等）。会等别的线程上在途的操作跑完；之后再用报「已关闭」。
     pub fn close(&self) {
         let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner()).take();
         drop(conn);
@@ -337,7 +323,7 @@ impl Drop for SrsCore {
 /// 取一把锁；锁被 panic 毒化过（持锁的命令跑到一半 panic，FFI 接成 -100）就先用 [recover] 把锁里的状态恢复到命令
 /// 之间应有的样子，再清掉毒化标记，之后照常可用（BUG-4297）。恢复失败就保持毒化、报错：不在状态不明的连接上跑任何
 /// 命令，下一个取锁的调用再恢复。库里所有连接 / 会话状态的锁都经这里，策略一致：写连接回滚（[SrsCore::recover_writer]），
-/// 读连接结束停在半路的读事务（[end_read_tx_of]），只读会话与纯簿记照常用，收段会话作废。
+/// 读连接结束停在半路的读事务（[end_read_tx]），旁路连接与纯簿记照常用，收段会话作废。
 pub(crate) fn lock_recovering<T>(
     m: &Mutex<T>,
     recover: impl FnOnce(&mut T) -> Result<(), String>,
@@ -361,11 +347,6 @@ pub(crate) fn end_read_tx(c: &Connection) -> Result<(), String> {
     }
     c.execute_batch("ROLLBACK")
         .map_err(|e| format!("srs: end a read transaction left open by a panic: {e}"))
-}
-
-/// [end_read_tx]，锁里是 `Option<Connection>`（`None` = 已关闭）。
-fn end_read_tx_of(c: &mut Option<Connection>) -> Result<(), String> {
-    c.as_ref().map_or(Ok(()), end_read_tx)
 }
 
 impl SrsCore {
@@ -402,7 +383,7 @@ fn open_pool_reader(path: &Path) -> Result<Connection, String> {
 }
 
 /// 一条连接在 mmap 预算里的角色（BUG-4013）。SQLite 的 mmap 是**每条连接各映射一份**主库文件：写连接 + 两个
-/// 读连接池（内核读命令、查询道的查询命令，各至多 [read_pool::READERS_MAX] 条）+ 读会话，每条至多 256 MB 的**虚拟地址**（物理
+/// 读连接池（内核读命令、查询道的查询命令，各至多 [read_pool::READERS_MAX] 条），每条至多 256 MB 的**虚拟地址**（物理
 /// 页是系统文件缓存，各连接共享、干净可回收，不是每条连接真占 256 MB 内存）。
 ///
 /// 64 位进程（含 iOS，配合 extended-virtual-addressing）地址空间远大于此，全部连接照旧映射：关掉 mmap 反而让每条
@@ -413,7 +394,7 @@ fn open_pool_reader(path: &Path) -> Result<Connection, String> {
 pub(crate) enum MmapRole {
     /// 写连接。
     Primary,
-    /// 读连接池、内联执行器的只读连接、读会话、快照整理。
+    /// 读连接池、快照整理。
     Secondary,
 }
 
@@ -516,7 +497,7 @@ impl SrsCore {
             query_readers,
             legacy_open: AtomicBool::new(false),
             path: path.to_path_buf(),
-            sessions: Mutex::new(Vec::new()),
+            side_conns: Mutex::new(Vec::new()),
             ingest: Mutex::new(sync2::transport::IngestPhase::Idle),
             ingest_yield: sync2::transport::YieldSignal::default(),
             ingest_holds_cache: AtomicBool::new(false),
@@ -695,7 +676,7 @@ impl SrsCore {
 
     /// 从内核读连接池借一条只读连接（用完放回；放回时还停在读事务里——命令 panic 在 `BEGIN` 与 `ROLLBACK` 之间——
     /// 就先结束它，见 store/read_pool.rs）。库已关闭报「已关闭」：关闭先关这个池并等借出的放回，所以持着它的调用
-    /// （[SrsCore::read_session] 登记会话）与关闭互斥。
+    /// （[SrsCore::register_side] 登记旁路连接）与关闭互斥。
     pub(crate) fn reader(&self) -> Result<read_pool::Pooled<'_>, String> {
         self.readers.get()
     }
@@ -751,22 +732,21 @@ impl SrsCore {
         out
     }
 
-    /// 关闭全部连接（幂等）：读连接、还没结束的只读会话、写连接。每一条都先拿它的锁再丢，所以会等
-    /// 其它线程上在途的命令 / 会话查询跑完，关闭返回时库文件已没有打开的句柄（覆盖恢复要删换
-    /// srs.db）。写连接最后关：最后关的连接负责把 WAL 并回主文件并删掉 -wal。之后的命令与会话查询
+    /// 关闭全部连接（幂等）：读连接、还开着的旁路连接、写连接。每一条都先拿它的锁再丢，所以会等
+    /// 其它线程上在途的命令跑完，关闭返回时库文件已没有打开的句柄（覆盖恢复要删换
+    /// srs.db）。写连接最后关：最后关的连接负责把 WAL 并回主文件并删掉 -wal。之后的命令
     /// 一律报「已关闭」。
     pub fn close(&self) {
         // 测试构建：关之前与协议 4 的新存储对拍（见 `Drop for SrsCore`）。
         #[cfg(test)]
         gen4::parity::check_core(self);
-        // 先关内核读连接池（等借出的放回）：此后 read_session 报已关闭，下面拿到的会话清单就是全部。
+        // 先关内核读连接池（等借出的放回）：此后登记旁路连接报已关闭，下面拿到的清单就是全部。
         // 下面各把锁被 panic 毒化过也照拿：连接随即丢掉，关闭时 SQLite 回滚连接上没结束的事务。
         self.readers.close();
         // 等在途的查询命令把连接放回（放回即关）。
         self.query_readers.close();
-        let sessions =
-            std::mem::take(&mut *self.sessions.lock().unwrap_or_else(|e| e.into_inner()));
-        for s in sessions.iter().filter_map(Weak::upgrade) {
+        let side = std::mem::take(&mut *self.side_conns.lock().unwrap_or_else(|e| e.into_inner()));
+        for s in side.iter().filter_map(Weak::upgrade) {
             s.close();
         }
         let writer = self.writer.lock().unwrap_or_else(|e| e.into_inner()).take();
@@ -1205,63 +1185,40 @@ impl SrsCore {
         query_rows(&*self.reader()?, sql, params)
     }
 
-    /// 另开一条只读连接、开读事务并先读一次（快照在第一次读时才定下）：返回时快照已定，之后本库的
-    /// 新写入都不在里面。备份读快照用（后台 isolate 里分页读二三十秒，不占读 / 写连接）。
-    ///
-    /// 开会话期间借着一条内核读连接：与 [SrsCore::close]（先关内核读连接池、等借出的放回）互斥，库已关闭就报「已关闭」，不会按路径
-    /// 把关库后可能已被删换的库文件重新打开。会话开好之后与本对象无关，关库不结束它。
-    pub fn read_session(&self) -> Result<Arc<ReadSession>, String> {
+    /// 按库文件路径另开一条旁路连接（[flags] 打开、[setup] 配置）并登记（[SrsCore::close] 逐个关掉）。开的时候借着一条
+    /// 内核读连接：与 [SrsCore::close]（先关内核读连接池、等借出的放回）互斥，库已关闭就报「已关闭」，不会按路径
+    /// 把关库后可能已被删换的库文件重新打开。
+    fn register_side(
+        &self,
+        flags: OpenFlags,
+        setup: impl FnOnce(&Connection) -> Result<(), String>,
+    ) -> Result<Arc<SideConnection>, String> {
         let _open = self.reader()?;
-        let conn = Connection::open_with_flags(
-            &self.path,
-            OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
-        )
-        .map_err(|e| format!("open read session {}: {e}", self.path.display()))?;
-        configure(&conn)?;
-        #[cfg(any(test, feature = "id_audit"))]
-        let conn = ids::audit::installed(conn);
-        conn.execute_batch("BEGIN").map_err(|e| e.to_string())?;
-        conn.query_row("SELECT COUNT(*) FROM sqlite_master", [], |r| {
-            r.get::<_, i64>(0)
-        })
-        .map_err(|e| e.to_string())?;
-        self.register_session(conn)
-    }
-
-    /// 把 [conn] 包成只读会话并登记（[SrsCore::close] 逐个关掉）。调用方借着一条内核读连接。
-    fn register_session(&self, conn: Connection) -> Result<Arc<ReadSession>, String> {
-        let session = Arc::new(ReadSession {
+        let conn = Connection::open_with_flags(&self.path, flags)
+            .map_err(|e| format!("open side connection {}: {e}", self.path.display()))?;
+        setup(&conn)?;
+        let side = Arc::new(SideConnection {
             conn: Mutex::new(Some(conn)),
         });
         // 只是一张弱引用表：panic 毒化过照常用。
-        let mut sessions = lock_recovering(&self.sessions, |_| Ok(()))?;
-        sessions.retain(|w| w.strong_count() > 0);
-        sessions.push(Arc::downgrade(&session));
-        Ok(session)
+        let mut all = lock_recovering(&self.side_conns, |_| Ok(()))?;
+        all.retain(|w| w.strong_count() > 0);
+        all.push(Arc::downgrade(&side));
+        Ok(side)
     }
 
     /// 把 WAL 并回主库（PASSIVE），在一条单独开的连接上做：不占写连接，并回期间本机作答照常写入（SQLite 的
     /// checkpoint 锁与写锁互不相干，PASSIVE 也不等读者）。大批写入暂停自动 checkpoint 之后收尾用（Dart
     /// `SrsDbStore.bulkWrites`）：在写连接上并回几十 MB 的 WAL 要几百毫秒，那期间所有写入都排在它后面。
-    /// 这条连接登记成会话，库关闭时等它做完再关。返回 `{busy, log, checkpointed}`（`PRAGMA wal_checkpoint` 的三列）。
+    /// 这条连接登记成旁路连接，库关闭时等它做完再关。返回 `{busy, log, checkpointed}`（`PRAGMA wal_checkpoint` 的三列）。
     pub fn wal_checkpoint(&self) -> Result<serde_json::Value, String> {
-        let session = {
-            let _open = self.reader()?;
-            let conn = Connection::open_with_flags(
-                &self.path,
-                OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
-            )
-            .map_err(|e| format!("open checkpoint connection {}: {e}", self.path.display()))?;
-            conn.busy_timeout(Duration::from_millis(5000))
-                .map_err(|e| e.to_string())?;
-            let session = Arc::new(ReadSession {
-                conn: Mutex::new(Some(conn)),
-            });
-            let mut sessions = lock_recovering(&self.sessions, |_| Ok(()))?;
-            sessions.retain(|w| w.strong_count() > 0);
-            sessions.push(Arc::downgrade(&session));
-            session
-        };
+        let session = self.register_side(
+            OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+            |conn| {
+                conn.busy_timeout(Duration::from_millis(5000))
+                    .map_err(|e| e.to_string())
+            },
+        )?;
         let out = {
             let guard = lock_recovering(&session.conn, |_| Ok(()))?;
             let conn = guard.as_ref().ok_or(CLOSED)?;
@@ -1434,27 +1391,28 @@ mod tests {
         assert!(core.debug_query("SELECT 1", &[]).is_err());
         core.close();
         std::fs::remove_dir_all(p.parent().unwrap()).unwrap();
-        // 关库后另开只读会话同样报已关闭，不按路径把（已删掉的）库文件重新打开。
-        assert_eq!(core.read_session().err().as_deref(), Some(CLOSED));
-        assert!(!p.exists(), "read_session reopened srs.db after close");
+        // 关库后另开旁路连接（并回 WAL）同样报已关闭，不按路径把（已删掉的）库文件重新打开。
+        assert_eq!(core.wal_checkpoint().err().as_deref(), Some(CLOSED));
+        assert!(!p.exists(), "wal_checkpoint reopened srs.db after close");
     }
 
-    /// 关库让还没结束的只读会话失效：在途的会话查询跑完 close 才返回，之后会话查询报已关闭，
+    /// 关库关掉还开着的旁路连接：旁路连接上在途的操作跑完 close 才返回，之后再用报已关闭，
     /// close 返回时库文件已无打开的连接（Windows 下可删 / 改名）。
     #[test]
-    fn close_ends_open_read_sessions_and_releases_the_file() {
+    fn close_ends_open_side_connections_and_releases_the_file() {
         use std::sync::Barrier;
         use std::time::Instant;
 
-        let p = temp("close_sessions");
+        let p = temp("close_side");
         let core = Arc::new(SrsCore::open(&p).unwrap());
-        let idle = core.read_session().unwrap();
-        let busy = core.read_session().unwrap();
+        let ro = OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX;
+        let idle = core.register_side(ro, |_| Ok(())).unwrap();
+        let busy = core.register_side(ro, |_| Ok(())).unwrap();
         let started = Arc::new(Barrier::new(2));
         let worker = {
             let (busy, started) = (Arc::clone(&busy), Arc::clone(&started));
             std::thread::spawn(move || {
-                // 拿着会话的锁做一次慢读，close 必须等它。
+                // 拿着旁路连接的锁做一次慢读，close 必须等它。
                 let guard = busy.conn.lock().unwrap();
                 started.wait();
                 std::thread::sleep(Duration::from_millis(300));
@@ -1472,13 +1430,16 @@ mod tests {
         core.close();
         assert!(
             t0.elapsed() >= Duration::from_millis(200),
-            "close returned while a read session query was still running"
+            "close returned while a side connection was still in use"
         );
         assert!(worker.join().unwrap() > 0);
         for s in [&idle, &busy] {
-            assert_eq!(s.query("SELECT 1", &[]).err().as_deref(), Some(CLOSED));
+            assert!(
+                s.conn.lock().unwrap().is_none(),
+                "side connection left open"
+            );
         }
-        // 会话对象还活着，但连接都没了：库文件能改名、能删。
+        // 旁路连接对象还活着，但连接都没了：库文件能改名、能删。
         let moved = p.with_file_name("srs.moved.db");
         std::fs::rename(&p, &moved).unwrap();
         std::fs::remove_file(&moved).unwrap();
@@ -1719,37 +1680,6 @@ mod tests {
         assert_eq!(src_auto(&core), 0, "source database untouched");
         let s = SrsCore::open(&snap).unwrap();
         assert_eq!(count(&s, "srs_local_state"), 0);
-    }
-
-    #[test]
-    fn read_session_reads_one_snapshot_and_rejects_writes() {
-        let p = temp("session");
-        let core = SrsCore::open(&p).unwrap();
-        core.legacy_mark_none().unwrap();
-        let ins = |id: &str| {
-            core.writer()
-                .unwrap()
-                .execute(
-                    "INSERT INTO srs_unknown_events (id, profile_uid, json) VALUES (srs_id(?1), 'p', '{}')",
-                    [id],
-                )
-                .unwrap();
-        };
-        ins("e1");
-        let s = core.read_session().unwrap();
-        ins("e2");
-        let count = |s: &ReadSession| {
-            let (_, rows) = rows::decode(
-                &s.query("SELECT COUNT(*) AS c FROM srs_unknown_events", &[])
-                    .unwrap(),
-            )
-            .unwrap();
-            rows[1][0].clone()
-        };
-        assert_eq!(count(&s), Value::Integer(1), "会话开始之后的写入不在快照里");
-        assert!(s.query("DELETE FROM srs_unknown_events", &[]).is_err());
-        drop(s);
-        assert_eq!(count(&core.read_session().unwrap()), Value::Integer(2));
     }
 
     #[test]
