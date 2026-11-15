@@ -481,7 +481,8 @@ Widget buildMangaControlLayoutEditor(SettingsContext context) {
   );
 }
 
-/// 跨页与分格：跨页偏移 / 宽页独占 / 分格模型与分格导航。默认收起。
+/// 跨页与分格：跨页偏移 / 宽页独占 / 分格导航与制卡裁切两个行为开关，最后是分镜模型入口
+/// （子页只管模型下载 / 校验 / 删除）。默认收起。
 SettingsSection _mangaSpreadPanelsSection() {
   return SettingsSection(
     id: 'manga.section.spread_panels',
@@ -522,19 +523,6 @@ SettingsSection _mangaSpreadPanelsSection() {
             c.appModel.setMangaWidePageSolo(value),
         defaultValue: kMangaWidePageSoloDefault,
       ),
-      SettingsNavigationItem(
-        id: 'manga.panel_model',
-        title: t.manga_panel_model,
-        subtitle: t.manga_panel_model_desc,
-        icon: FushiIcons.modelTraining,
-        child: () => SettingsDestination(
-          id: SettingsDestinationId.manga,
-          title: t.manga_panel_model,
-          icon: FushiIcons.modelTraining,
-          sections: const <SettingsSection>[],
-          body: (_) => const MangaPanelModelSettings(),
-        ),
-      ),
       SettingsSwitchItem(
         id: 'manga.panel_navigation',
         title: t.manga_panel_navigation,
@@ -554,6 +542,19 @@ SettingsSection _mangaSpreadPanelsSection() {
         onChanged: (SettingsContext c, bool value) =>
             c.appModel.setMangaMiningCropToPanel(value),
         defaultValue: kMangaMiningCropToPanelDefault,
+      ),
+      SettingsNavigationItem(
+        id: 'manga.panel_model',
+        title: t.settings_manga_panel_model_title,
+        subtitle: t.manga_panel_model_desc,
+        icon: FushiIcons.modelTraining,
+        child: () => SettingsDestination(
+          id: SettingsDestinationId.manga,
+          title: t.settings_manga_panel_model_title,
+          icon: FushiIcons.modelTraining,
+          sections: const <SettingsSection>[],
+          body: (_) => const MangaPanelModelSettings(),
+        ),
       ),
     ],
   );

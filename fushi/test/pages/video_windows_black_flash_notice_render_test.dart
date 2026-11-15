@@ -27,7 +27,7 @@ import '../helpers/test_platform_services.dart';
 // Platform.isWindows (real host OS), NOT defaultTargetPlatform, so it cannot be
 // flipped via debugDefaultTargetPlatformOverride. On the real host this test:
 //
-// 1. Renders the real image-quality section from the real buildVideoDestination
+// 1. Renders the real image-quality section from the real video picture subpage
 //    through the real MaterialSettingsRenderer, so visibleCopy gating +
 //    SettingsCustomItem dispatch invoke the real _buildWindowsBlackFlashNotice
 //    builder, asserting the two real i18n strings mount (real render, not scan).
@@ -37,8 +37,20 @@ FushiDatabase _testDb() {
   return FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 }
 
+/// The image-quality group lives in the video "Picture" subpage; resolve it via
+/// the real entry row so the notice stays reachable from global settings.
+SettingsDestination _pictureDestination() {
+  final SettingsNavigationItem entry = buildVideoDestination().sections
+      .expand((SettingsSection section) => section.items)
+      .whereType<SettingsNavigationItem>()
+      .singleWhere(
+        (SettingsNavigationItem item) => item.id == 'video.picture.open',
+      );
+  return entry.child!();
+}
+
 SettingsDestination _noticeOnlyDestination() {
-  final SettingsDestination video = buildVideoDestination();
+  final SettingsDestination video = _pictureDestination();
   final List<SettingsItem> noticeItems = video.sections
       .expand((SettingsSection section) => section.items)
       .where(
@@ -152,7 +164,7 @@ void main() {
   );
 
   test('TODO-1116/1119: notice item is gated Windows-only via visibleCopy', () {
-    final SettingsDestination video = buildVideoDestination();
+    final SettingsDestination video = _pictureDestination();
     final SettingsSection qualitySection = video.sections.firstWhere(
       (SettingsSection section) => section.items.any(
         (SettingsItem item) =>
@@ -200,7 +212,7 @@ void main() {
       // flipped in-process, so this rebuilds the exact notice item with its
       // visible predicate forced off (what a non-Windows host resolves to) and
       // asserts the real MaterialSettingsRenderer omits the row entirely.
-      final SettingsDestination video = buildVideoDestination();
+      final SettingsDestination video = _pictureDestination();
       final SettingsItem realNotice = video.sections
           .expand((SettingsSection section) => section.items)
           .firstWhere(

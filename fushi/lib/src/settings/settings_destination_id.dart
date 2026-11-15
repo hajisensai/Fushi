@@ -1,20 +1,29 @@
 enum SettingsDestinationId {
+  // 「通用」一级分类：不属于任何一个模块的全局规则——界面与内容语言、键盘与手柄、
+  // 学习计时口径、小内存模式与上手引导（settings_schema_general.dart）。
+  general,
   appearance,
+  // 「导航与首页」一级分类：功能模块开关与底栏顺序、启动页、底栏外形、首页面板、
+  // 跳转记录（settings_schema_navigation.dart）。与「外观」分开：这些决定的是
+  // 「有哪些页面、怎么到达」，不是长什么样。
+  navigation,
   // 「悬浮球」一级分类：应用内 / 应用外开关与各场景按钮的唯一入口
   // （settings_schema_floating_ball.dart）。此前散在查词页与阅读页两处。
   floatingBall,
   profiles,
   reading,
+  // 「听书」一级分类：有声书播放、转录与悬浮字幕（settings_schema_listening.dart）。
+  // 跟随 listening 模块开关。
+  listening,
   // 「漫画」一级分类：漫画阅读器的观看偏好（方向/缩放/翻页）+ 漫画 OCR。原先
   // OCR 组寄生在 reading 末尾、观看偏好则完全不在设置里；漫画与 EPUB 阅读没有
   // 任何共享设置项，故拆成独立大类（见 settings_schema_manga.dart）。
   manga,
   lookup,
   cardCreation,
-  // 「模型」一级分类（2026-10-13 用户拍板）：LLM / OCR / 语音转录 / 语音合成 / 模型
-  // 文件的唯一的家。此前 OCR 寄生在漫画、模型文件在存储、LLM（原「AI」）在连接组，
-  // 视频图形字幕却和漫画共用同一份 OCR 配置，用户找不到。原 `ai` 分类降为本页的
-  // 「LLM」子页，枚举值保留（模块门控与入口可见性判据仍按它问）。
+  // 「本机模型」一级分类：OCR / 语音识别 / 语音合成的本机模型与引擎。漫画与视频
+  // 图形字幕共用同一份 OCR 配置，所以它不寄生在任何一个内容分类下。LLM（AI 提供商
+  // 与 AI 功能）是独立的一级分类 `ai`。
   models,
   video,
   // 「音乐」一级分类（音乐模块，docs/specs/2026-10-23-music-module-design.md §11.1）：
@@ -38,10 +47,12 @@ enum SettingsDestinationId {
   // 完全没有 settings destination，页面与其中配置项不可搜。与 games 顶层 tab
   // 同门控（仅 Windows，galgame hook 平台边界）。
   game,
-  // 「AI」一级分类：用户自配的大模型提供商（端点/凭据/模型/协议）与「哪个功能用
-  // 哪家」的映射。归在 services 模块下（同 Jimaku / OpenSubtitles / Torznab 一类
-  // 第三方在线服务），见 module_registry.dart。
+  // 「AI」一级分类：提供商与「哪个功能用哪家」的映射、AI 助手、MCP 外部访问与各
+  // AI 功能的单独配置。跟随 ai 模块开关，见 module_registry.dart。
   ai,
+  // 「浏览器」一级分类：内置浏览器、广告拦截与网页查词 / 字幕
+  // （settings_schema_web_browser.dart）。
+  webBrowser,
   // 「主屏幕小组件」一级分类（仅 Android，settings_schema_widgets.dart）：小组件读的每日
   // 目标、默认隐私与添加方法。
   widgets,

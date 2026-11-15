@@ -396,6 +396,20 @@ constexpr uint32_t kTextSourceSoftpal = 16;
 // instruction hands them to the game's message function (17 = first unused
 // id on develop and every open PR, checked 2026-11-11).
 constexpr uint32_t kTextSourceSystem4 = 17;
+// Nitroplus N2System (nss/.npa) exact text: one shown line of the engine's
+// backlog append stream (BacklogAppendChar), ended by its 0x0a (18 = first
+// unused id after System 4 took 17 on upstream/develop, checked 2026-11-15).
+constexpr uint32_t kTextSourceNitroplus = 18;
+// EntisGLS (ECSSakura2 VM) exact text: the click unit the VM hands
+// SGLSpriteMessage::AddMessage, ruby readings removed.  22, not 17: 17-21
+// are left to the engine adapters in flight in parallel (2026-11-11).
+constexpr uint32_t kTextSourceEntisGls = 22;
+// KiriKiri (KiriKiri2 / KiriKiri Z) KAG exact text: the characters the current message layer's
+// processCh drew, committed at KAG's own click waits (showLineBreak /
+// showPageBreak), ruby annotations dropped. 19 = first unused id after
+// System 4 (17) and Nitroplus (18) landed on upstream/develop and EntisGLS
+// took 22 (checked across all upstream branches 2026-11-15).
+constexpr uint32_t kTextSourceKirikiri = 19;
 constexpr uint32_t kTextEventLine = 0;
 constexpr uint32_t kTextEventThreadDiscovered = 1;
 // Some Luna engine hooks expose scenario text and system controls from the

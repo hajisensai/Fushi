@@ -50,6 +50,7 @@
 #include "adapters/unity_mono_lookup_core.h"
 #include "adapters/unity_mono_dialogue_core.h"
 #include "adapters/unity_mono_audio.h"
+#include "adapters/unity_il2cpp_api.h"
 #include "adapter.h"
 #include "module_settle.h"
 #include "host_executable_digest.h"
@@ -63,6 +64,8 @@
 // KiriKiri 第三条 exporter 路径的判据（BUG-2145）。必须在**顶层**引入：adapters/*.inc 是被
 // 包进本文件匿名命名空间里的，从那里 include 会把 std:: 解析成匿名命名空间下的名字。
 #include "adapters/kirikiri_exporter_scan.h"
+#include "adapters/kirikiri_kag_text_core.h"
+#include "adapters/kirikiri_bootstrap_diag.h"
 #include "hunex_gge_trace.h"
 #include "leaf_d3d_trace.h"
 #include "artemis_pfs.h"
@@ -667,6 +670,9 @@ bool SignalReady(DWORD pid) {
 #include "adapters/siglus_message_voice.inc"
 #include "adapters/loopback_adapter.inc"
 #include "generated/adapter_includes.inc"
+// The IL2CPP binding of the shared Unity canvas lookup: needs the IL2CPP text
+// path (unity_adapter.inc) and the shared runtime (unity_mono_adapter.inc).
+#include "adapters/unity_il2cpp_lookup.inc"
 
 #include "generic_input_shield.inc"
 #include "overlay_cursor_guard.inc"

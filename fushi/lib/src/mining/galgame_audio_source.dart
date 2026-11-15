@@ -3145,6 +3145,9 @@ class GalHookedLine {
       15 => 'malie',
       16 => 'softpal',
       17 => 'system4',
+      18 => 'nitroplus',
+      19 => 'kirikiri',
+      22 => 'entisgls',
       _ => 'hook',
     };
     return '$source:${threadId.toUnsigned(64).toRadixString(16)}';
@@ -3171,6 +3174,9 @@ class GalHookedLine {
             15 => 'Malie exact',
             16 => 'SoftPal exact',
             17 => 'System4 exact',
+            18 => 'Nitroplus exact',
+            19 => 'KiriKiri KAG exact',
+            22 => 'EntisGLS exact',
             _ => 'Text hook',
           };
     if (threadAddress == 0) return source;

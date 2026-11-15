@@ -141,6 +141,33 @@ SettingsDestination buildMusicDestination() {
             onChanged: (SettingsContext c, bool value) =>
                 c.appModel.setMusicCrossfadeContinuous(value),
           ),
+          // 在线插件取流音质：与插件音源同一道合规门（iOS 商店合规门没过时不出现）。
+          // 媒体服务器的转码码率是另一回事，在设置 › 在线服务 › 媒体服务器。
+          SettingsSegmentedItem<String>(
+            id: 'music.plugin_quality',
+            visible: (SettingsContext c) => isMusicPluginSourcesAvailable,
+            title: t.music_quality_plugin_default_title,
+            subtitle: t.music_quality_plugin_default_hint,
+            icon: FushiIcons.highQuality,
+            defaultValue: MusicPluginQuality.lossless.wire,
+            options: <SettingsSegmentOption<String>>[
+              for (final MusicPluginQuality q in MusicPluginQuality.values)
+                SettingsSegmentOption<String>(
+                  value: q.wire,
+                  label: musicPluginQualityLabel(q),
+                ),
+            ],
+            selected: (SettingsContext c) => c.appModel.musicPluginQuality.wire,
+            onChanged: (SettingsContext c, String v) => c.appModel
+                .setMusicPluginQuality(MusicPluginQuality.fromWire(v)),
+          ),
+        ],
+      ),
+      // 响度单独成组：ReplayGain 与响度测量都是让不同曲目听起来一样响，不属于播放行为。
+      SettingsSection(
+        id: 'music.section.loudness',
+        title: t.settings_music_loudness_section_title,
+        items: <SettingsItem>[
           SettingsSwitchItem(
             id: 'music.replaygain',
             title: t.music_replaygain_title,
@@ -156,6 +183,7 @@ SettingsDestination buildMusicDestination() {
           SettingsSliderItem(
             id: 'music.replaygain_preamp',
             title: t.music_replaygain_preamp_title,
+            subtitle: t.settings_music_replaygain_preamp_hint,
             icon: FushiIcons.volumeUp,
             min: -15,
             max: 15,
@@ -181,6 +209,7 @@ SettingsDestination buildMusicDestination() {
           SettingsActionItem(
             id: 'music.loudness_scan_now',
             title: t.music_loudness_scan_now,
+            subtitle: t.settings_music_loudness_scan_now_hint,
             icon: FushiIcons.highQuality,
             cli: const SettingsCliAction.tap(),
             onTap: (SettingsContext c) =>
@@ -242,6 +271,7 @@ SettingsDestination buildMusicDestination() {
           SettingsSegmentedItem<int>(
             id: 'music.dsd_rate',
             title: t.music_dsd_rate_title,
+            subtitle: t.settings_music_dsd_rate_hint,
             icon: FushiIcons.highQuality,
             defaultValue: MusicDsdPcmRate.khz176.hz,
             options: <SettingsSegmentOption<int>>[
@@ -257,35 +287,10 @@ SettingsDestination buildMusicDestination() {
           ),
         ],
       ),
-      // 在线插件取流音质（插件音源；iOS 商店合规门没过时整组不出现）。媒体服务器的转码码率
-      // 是另一回事，在设置 › 在线服务 › 媒体服务器。
-      SettingsSection(
-        title: t.music_quality_title,
-        visible: (SettingsContext c) => isMusicPluginSourcesAvailable,
-        items: <SettingsItem>[
-          SettingsSegmentedItem<String>(
-            id: 'music.plugin_quality',
-            title: t.music_quality_plugin_default_title,
-            subtitle: t.music_quality_plugin_default_hint,
-            icon: FushiIcons.highQuality,
-            defaultValue: MusicPluginQuality.lossless.wire,
-            options: <SettingsSegmentOption<String>>[
-              for (final MusicPluginQuality q in MusicPluginQuality.values)
-                SettingsSegmentOption<String>(
-                  value: q.wire,
-                  label: musicPluginQualityLabel(q),
-                ),
-            ],
-            selected: (SettingsContext c) => c.appModel.musicPluginQuality.wire,
-            onChanged: (SettingsContext c, String v) => c.appModel
-                .setMusicPluginQuality(MusicPluginQuality.fromWire(v)),
-          ),
-        ],
-      ),
       // 识别（P4，设计 §8.1）：MusicBrainz 主源；AcoustID 需要用户自己的应用 key（本仓
       // 不内置任何 key），没填时声纹这一步跳过并在这里说明；VGMdb 默认关。
       SettingsSection(
-        title: t.music_scrape_section,
+        title: t.settings_music_scrape_section_title,
         items: <SettingsItem>[
           SettingsTextItem(
             id: 'music.acoustid_api_key',
@@ -370,6 +375,7 @@ SettingsDestination buildMusicDestination() {
           SettingsSwitchItem(
             id: 'music.lyrics_lookup_pause',
             title: t.music_lyrics_lookup_pause_title,
+            subtitle: t.settings_music_lyrics_lookup_pause_hint,
             icon: FushiIcons.pause,
             defaultValue: true,
             value: (SettingsContext settingsContext) =>
@@ -427,17 +433,6 @@ SettingsDestination buildMusicDestination() {
             onChanged: (SettingsContext c, MusicAssRenderPreference value) =>
                 c.appModel.setMusicKaraokeAssRender(value),
             defaultValue: MusicAssRenderPreference.auto,
-          ),
-          SettingsSwitchItem(
-            id: 'music.listening_counts_as_study',
-            title: t.music_listening_study_title,
-            subtitle: t.music_listening_study_hint,
-            icon: FushiIcons.timer,
-            defaultValue: false,
-            value: (SettingsContext c) =>
-                c.appModel.musicListeningCountsAsStudy,
-            onChanged: (SettingsContext c, bool value) =>
-                c.appModel.setMusicListeningCountsAsStudy(value),
           ),
         ],
       ),
@@ -508,6 +503,25 @@ SettingsDestination buildMusicDestination() {
         ],
       ),
     ],
+  );
+}
+
+/// 「听歌计入学习」开关。它是学习统计口径，主家在设置 › 通用；这里只持有 id、偏好键与
+/// 回调，由通用分类调用。离开音乐分类后要自带模块门：音乐模块关掉时不显示。
+SettingsItem buildMusicListeningCountsAsStudyItem() {
+  return SettingsSwitchItem(
+    id: 'music.listening_counts_as_study',
+    visible: (SettingsContext c) => isSettingsDestinationVisible(
+      SettingsDestinationId.music,
+      c.appModel.moduleVisibility,
+    ),
+    title: t.music_listening_study_title,
+    subtitle: t.music_listening_study_hint,
+    icon: FushiIcons.timer,
+    defaultValue: false,
+    value: (SettingsContext c) => c.appModel.musicListeningCountsAsStudy,
+    onChanged: (SettingsContext c, bool value) =>
+        c.appModel.setMusicListeningCountsAsStudy(value),
   );
 }
 
