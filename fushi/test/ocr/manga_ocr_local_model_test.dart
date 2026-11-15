@@ -5,6 +5,8 @@ import 'package:fushi_engine/foundation/engine_paths.dart';
 import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart';
 import 'package:fushi_engine/ocr/manga_ocr_local_model.dart';
 import 'package:fushi_engine/ocr/manga_ocr_model_manifest.dart';
+import 'package:fushi_engine/ocr/ppocr_line_recognizer.dart'
+    show PpOcrCharacterDictFormat;
 import 'package:path/path.dart' as p;
 
 void main() {
@@ -164,6 +166,153 @@ void main() {
     expect(legacy.existsSync(), isFalse);
   });
 
+  test(
+    'manga-ctc dir: v0.2 rec and its PP-OCRv6 dictionary deleted, live files kept',
+    () async {
+      final Directory root = Directory.systemTemp.createTempSync(
+        'ocr-removed-ctc-files',
+      );
+      addTearDown(() => root.deleteSync(recursive: true));
+      final Directory ctc = Directory(p.join(root.path, 'manga-ctc'))
+        ..createSync();
+      const List<String> removed = <String>[
+        'kellenok_manga_rec_v0.2.onnx',
+        'kellenok_manga_rec_v0.2.onnx.part',
+        kPpOcrRecDictFileName,
+      ];
+      final List<String> kept = <String>[
+        for (final MangaOcrModelFile file
+            in MangaOcrLocalModel.mangaCtc.manifest)
+          file.fileName,
+        '$kMangaCtcRecFileName.part',
+      ];
+      for (final String name in <String>[...removed, ...kept]) {
+        File(p.join(ctc.path, name)).writeAsBytesSync(<int>[1]);
+      }
+      // galgame 校准 OCR 在 manga/ 里复用的同名字典不归这条清理管。
+      final File legacyDict = File(
+        p.join(root.path, 'manga', kPpOcrRecDictFileName),
+      )..createSync(recursive: true);
+
+      expect(
+        await deleteRemovedMangaOcrModelDirs(ocrModelsRoot: root),
+        removed.length,
+      );
+      for (final String name in removed) {
+        expect(
+          File(p.join(ctc.path, name)).existsSync(),
+          isFalse,
+          reason: name,
+        );
+      }
+      for (final String name in kept) {
+        expect(File(p.join(ctc.path, name)).existsSync(), isTrue, reason: name);
+      }
+      expect(legacyDict.existsSync(), isTrue);
+      expect(await deleteRemovedMangaOcrModelDirs(ocrModelsRoot: root), 0);
+    },
+  );
+
+  test(
+    'manga-ctc dir: v0.2 files are kept while v0.3 is not fully downloaded',
+    () async {
+      final Directory root = Directory.systemTemp.createTempSync(
+        'ocr-superseded-kept',
+      );
+      addTearDown(() => root.deleteSync(recursive: true));
+      final Directory ctc = Directory(p.join(root.path, 'manga-ctc'))
+        ..createSync();
+      // 老用户更新 app 后的磁盘：只有上一代的四个文件，外加半截 v0.3 下载。
+      final List<String> onDisk = <String>[
+        for (final MangaOcrModelFile file
+            in kMangaCtcSupersededGeneration.manifest)
+          file.fileName,
+        '$kMangaCtcRecFileName.part',
+      ];
+      for (final String name in onDisk) {
+        File(p.join(ctc.path, name)).writeAsBytesSync(<int>[1]);
+      }
+
+      expect(await deleteRemovedMangaOcrModelDirs(ocrModelsRoot: root), 0);
+      for (final String name in onDisk) {
+        expect(File(p.join(ctc.path, name)).existsSync(), isTrue, reason: name);
+      }
+      expect(
+        installedMangaOcrGeneration(
+          ctc,
+          current: kMangaCtcGeneration,
+          superseded: kMangaCtcSupersededGeneration,
+        ),
+        same(kMangaCtcSupersededGeneration),
+      );
+
+      // v0.3 下齐：当前一代接手，上一代独有的两个文件被删。
+      File(p.join(ctc.path, '$kMangaCtcRecFileName.part')).deleteSync();
+      for (final String name in <String>[
+        kMangaCtcRecFileName,
+        kMangaCtcRecDictFileName,
+      ]) {
+        File(p.join(ctc.path, name)).writeAsBytesSync(<int>[1]);
+      }
+      expect(
+        installedMangaOcrGeneration(
+          ctc,
+          current: kMangaCtcGeneration,
+          superseded: kMangaCtcSupersededGeneration,
+        ),
+        same(kMangaCtcGeneration),
+      );
+      expect(await deleteRemovedMangaOcrModelDirs(ocrModelsRoot: root), 2);
+      expect(
+        File(p.join(ctc.path, kMangaCtcSupersededRecFileName)).existsSync(),
+        isFalse,
+      );
+      expect(kMangaCtcGeneration.isCompleteIn(ctc), isTrue);
+    },
+  );
+
+  test('superseded generation: the exact pre-upgrade v0.2 manifest', () {
+    // 文件、顺序与签名基线都不能动：指纹按清单顺序折叠，变一处就落不到老用户
+    // 原来那批逐页缓存目录上。
+    const MangaOcrModelGeneration old = kMangaCtcSupersededGeneration;
+    expect(
+      <String>[
+        for (final MangaOcrModelFile file in old.manifest) file.fileName,
+      ],
+      <String>[
+        'detector-v4-s_int8.onnx',
+        kPpOcrDetFileName,
+        kPpOcrRecDictFileName,
+        'kellenok_manga_rec_v0.2.onnx',
+      ],
+    );
+    expect(old.cacheSignature, startsWith('local-onnx-ctc-kellenok-v0.2-'));
+    // 这一代不再下载；URL 仍指向还解析得到的 Release v0.2 提交（BUG-4492）。
+    expect(
+      old.manifest.last.url,
+      'https://huggingface.co/Kellenok/PP-OCRv6_manga/resolve/'
+      'd090c421598eadd2e179ad62c29ff0767492072c/rec/manga_rec_v0.2.onnx',
+    );
+    expect(old.manifest.last.expectedBytes, 21167540);
+    expect(old.recFileName, 'kellenok_manga_rec_v0.2.onnx');
+    expect(old.recDictFileName, kPpOcrRecDictFileName);
+    expect(old.recDictFormat, PpOcrCharacterDictFormat.paddleYaml);
+    expect(
+      MangaOcrLocalModel.mangaCtc.supersededGeneration,
+      same(kMangaCtcSupersededGeneration),
+    );
+    expect(
+      kMangaCtcGeneration.cacheSignature,
+      isNot(kMangaCtcSupersededGeneration.cacheSignature),
+    );
+  });
+
+  test('manga-ctc cleanup never lists a file of the live manifest', () {
+    for (final MangaOcrModelFile file in MangaOcrLocalModel.mangaCtc.manifest) {
+      expect(kRemovedMangaCtcFileNames, isNot(contains(file.fileName)));
+    }
+  });
+
   test('legacy cleanup never lists a PP-OCRv6 file', () {
     for (final String name in <String>[
       kPpOcrDetFileName,
@@ -225,7 +374,7 @@ void main() {
     });
 
     test(
-      'manifest: detector + PP det + dictionary + manga rec, no manga-ocr',
+      'manifest: detector + PP det + manga rec v0.3 + its own dictionary',
       () {
         final List<String> files = <String>[
           for (final MangaOcrModelFile file
@@ -235,22 +384,35 @@ void main() {
         expect(files, <String>[
           'detector-v4-s_int8.onnx',
           kPpOcrDetFileName,
-          kPpOcrRecDictFileName,
           kMangaCtcRecFileName,
+          kMangaCtcRecDictFileName,
         ]);
-        final MangaOcrModelFile rec = MangaOcrLocalModel.mangaCtc.manifest.last;
-        // BUG-4492：上游改写历史后旧 revision ba1d479e 整个 404，main 又已换成
-        // 词表不兼容的 v0.3。这里钉死「main 历史里 Release v0.2 提交 + v0.2 文件
-        // 名」这对组合（2026-11-15 实测下载 21167540 字节、LFS sha256
-        // de12c84c…1888），必须是完整 commit SHA，不能是可变的分支名。
+        // BUG-4492：上游改写历史后最早钉的 revision ba1d479e 整个 404。钉的必须是
+        // 完整 commit SHA，不能是可变的分支名。
         expect(kMangaCtcRecRevision, matches(RegExp(r'^[0-9a-f]{40}$')));
         expect(kMangaCtcRecRevision, isNot(startsWith('ba1d479e')));
+        // 落盘名带版本：v0.2 的文件不会被当成 v0.3。
+        expect(kMangaCtcRecFileName, 'kellenok_manga_rec_v0.3.onnx');
+        expect(kMangaCtcRecDictFileName, 'kellenok_manga_rec_v0.3_dict.txt');
+        final MangaOcrModelFile rec = MangaOcrLocalModel.mangaCtc.manifest[2];
         expect(
           rec.url,
-          'https://huggingface.co/Kellenok/PP-OCRv6_manga/resolve/'
-          'd090c421598eadd2e179ad62c29ff0767492072c/rec/manga_rec_v0.2.onnx',
+          endsWith('/resolve/$kMangaCtcRecRevision/rec/manga_rec.onnx'),
         );
-        expect(rec.expectedBytes, 21167540);
+        expect(rec.expectedBytes, 21334702);
+        // rec 与字典必须来自同一个 revision：字典错一版，词表长度就对不上。
+        final MangaOcrModelFile dict = MangaOcrLocalModel.mangaCtc.manifest[3];
+        expect(
+          dict.url,
+          endsWith('/resolve/$kMangaCtcRecRevision/ppocrv6_dict.txt'),
+        );
+        expect(dict.expectedBytes, 76327);
+        expect(dict.role, MangaOcrModelRole.recognizer);
+        // 换模型必须换缓存签名：v0.2 的逐页缓存不能当成 v0.3 的结果。
+        expect(
+          MangaOcrLocalModel.mangaCtc.cacheSignature,
+          startsWith('local-onnx-ctc-kellenok-v0.3-'),
+        );
         final int total = MangaOcrLocalModel.mangaCtc.manifest.fold<int>(
           0,
           (int sum, MangaOcrModelFile file) => sum + file.expectedBytes,

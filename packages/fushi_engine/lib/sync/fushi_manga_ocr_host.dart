@@ -152,7 +152,7 @@ class MangaOcrHostJobManager {
     bool modelsReady = false;
     if (supported) {
       try {
-        modelsReady = (await _service.modelStatus()).allReady;
+        modelsReady = (await _service.modelStatus()).canRun;
       } catch (_) {
         modelsReady = false;
       }
@@ -165,7 +165,7 @@ class MangaOcrHostJobManager {
       if (!entry.value.isSupportedPlatform) continue;
       bool ready = false;
       try {
-        ready = (await entry.value.modelStatus()).allReady;
+        ready = (await entry.value.modelStatus()).canRun;
       } catch (_) {
         ready = false;
       }
@@ -286,7 +286,7 @@ class MangaOcrHostJobManager {
     } catch (_) {
       return (503, 'models_not_ready');
     }
-    if (!status.allReady) return (503, 'models_not_ready');
+    if (!status.canRun) return (503, 'models_not_ready');
     job.state = MangaOcrHostJobState.running;
     job.touchedAt = _now();
     _queueTail = _queueTail.then((_) => _runJob(job));

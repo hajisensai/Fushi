@@ -9,8 +9,11 @@
 ///
 /// - 输入 `x` float32 [1,3,48,W]，**BGR**、`(x/255 - 0.5) / 0.5`。行图等比缩放到
 ///   高 48，宽 `ceil(48 * w / h)`；W = max(320, 该宽)，右侧零填充。
-/// - 输出 [1,T,18710] 逐帧 logits；索引 0 = blank，1..18708 = `inference.yml`
-///   的 `character_dict`，18709 = 空格（`use_space_char`）。
+/// - 输出 [1,T,V] 逐帧 logits；索引 0 = blank，1..V-2 = 字典，V-1 = 空格
+///   （`use_space_char`）。官方 PP-OCRv6 small rec 的字典是 `inference.yml` 的
+///   `character_dict`（18708 项，V = 18710）；漫画微调 rec 自带纯文本字典
+///   （[PpOcrCharacterDictFormat.plainText]，V 由字典行数决定）。V 与词表长度
+///   不等时识别直接抛错。
 /// - 解码：逐帧 argmax，合并相邻重复，去 blank。
 library;
 
@@ -69,6 +72,51 @@ String _yamlScalar(String raw) {
   }
   return raw;
 }
+
+/// 从纯文本字典解析字符列表：一行一个字符，行尾 `\n` 或 `\r\n`。
+///
+/// 只剥行结束符，不 trim：字典里有本身就是空白的项（U+3000 全角空格）。文件以
+/// 换行结尾时最后那段空串不是字典项；除此之外出现空行就抛——空行会让其后所有
+/// 字符错位一格，绝不静默吞掉。
+List<String> parsePlainTextCharacterDict(String text) {
+  final List<String> lines = text.split('\n');
+  if (lines.isNotEmpty && lines.last.isEmpty) {
+    lines.removeLast();
+  }
+  final List<String> chars = <String>[];
+  for (int i = 0; i < lines.length; i++) {
+    final String raw = lines[i];
+    final String line = raw.endsWith('\r')
+        ? raw.substring(0, raw.length - 1)
+        : raw;
+    if (line.isEmpty) {
+      throw FormatException('empty entry at line ${i + 1} of character dict');
+    }
+    chars.add(line);
+  }
+  if (chars.isEmpty) {
+    throw const FormatException('character dict is empty');
+  }
+  return chars;
+}
+
+/// rec 字典文件的格式。由模型清单显式指定，不看文件内容猜。
+enum PpOcrCharacterDictFormat {
+  /// PaddleX `inference.yml` 里的 `character_dict`（[parsePpOcrCharacterDict]）。
+  paddleYaml,
+
+  /// 一行一个字符的纯文本（[parsePlainTextCharacterDict]）。
+  plainText,
+}
+
+/// 按 [format] 解析字典文件内容。
+List<String> parseCharacterDict(
+  String content,
+  PpOcrCharacterDictFormat format,
+) => switch (format) {
+  PpOcrCharacterDictFormat.paddleYaml => parsePpOcrCharacterDict(content),
+  PpOcrCharacterDictFormat.plainText => parsePlainTextCharacterDict(content),
+};
 
 /// CTC 词表：blank + 字典 + 空格。
 List<String> buildPpOcrCtcVocab(List<String> characterDict) => <String>[

@@ -366,6 +366,10 @@ class SrsPurgeChunk {
   final Set<String> mediaRefs;
 }
 
+/// [SrsDbStore.nativeRatingLogsNear] 粗筛的时间窗（毫秒）。须不小于卡片历史内核判「导入日志与原生日志是同一次复习」
+/// 的时刻容差（native/fushi_fsrs/src/history.rs `IMPORT_EQUIVALENCE_TOLERANCE_MS`）：窗只决定取哪些候选，判定在内核。
+const int srsImportEquivalenceWindowMs = 1000;
+
 /// 一条 Anki 导入的复习日志（[SrsDbStore.ankiImportedLogsAt]）：在哪张卡、对应哪条 revlog、内容，以及那张卡此刻
 /// 所属的笔记与是否可见（卡没有缓存行——笔记换了类型后不再属于它的旧卡——时 [noteId] 为 null、不可见）。
 class SrsAnkiLogAt {
@@ -2763,6 +2767,44 @@ class SrsDbStore implements SrsSync2Host {
               null => false,
               final bool hidden => !hidden,
             },
+          ),
+        );
+      }
+    }
+    return out;
+  }
+
+  /// 本 profile 里发生时刻落在 [times] 任一值 ±[srsImportEquivalenceWindowMs] 内的原生（非 Anki 导入）评分类
+  /// 日志。导入器给「没有卡可比」的 Anki revlog（来源包里卡已删除，BUG-4657）判重用：Fushi 导出 apkg 时 revlog
+  /// id 就取原生日志的发生时刻（srs_apkg_export.dart），绕 Anki 一圈再导回来，这次复习本机已有原生那份。
+  /// 是否同一次复习由卡片历史内核的同一判据（[srsImportEquivalentAny]）定，这里只按落库列粗筛
+  /// （走 `idx_srs_review_logs_profile_kind_time`），按块一次查。
+  Future<List<SrsReviewLog>> nativeRatingLogsNear(Iterable<int> times) async {
+    final List<int> ts = times.toSet().toList()..sort();
+    final List<SrsReviewLog> out = <SrsReviewLog>[];
+    for (int i = 0; i < ts.length; i += 200) {
+      final List<int> chunk = ts.sublist(i, min(i + 200, ts.length));
+      for (final QueryRow q
+          in await db
+              .customSelect(
+                'SELECT l.json AS json FROM srs_review_logs l '
+                "WHERE l.profile_uid = ? AND l.kind IN ('review', 'manual') "
+                "AND l.origin != 'anki' AND (${List<String>.filled(chunk.length, 'l.occurred_at BETWEEN ? AND ?').join(' OR ')})",
+                variables: <Variable<Object>>[
+                  Variable<String>(profileUid, srsIdType),
+                  for (final int t in chunk) ...<Variable<Object>>[
+                    Variable<int>(t - srsImportEquivalenceWindowMs),
+                    Variable<int>(t + srsImportEquivalenceWindowMs),
+                  ],
+                ],
+                readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
+                  db.srsReviewLogs,
+                },
+              )
+              .get()) {
+        out.add(
+          SrsReviewLog.fromJson(
+            (jsonDecode(q.read<String>('json')) as Map).cast<String, Object?>(),
           ),
         );
       }
