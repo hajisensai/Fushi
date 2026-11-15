@@ -1353,12 +1353,12 @@ fn run(c: &Connection, src: &mut dyn Source, profile: &str, req: &Value) -> Resu
         if let Some(node) = ctx.tree.decks.get(d.as_str()) {
             let (_, ext_review) = today_extension(&node.view["ext"], ctx.today);
             let limit = int(&node.view, "rp", 200) + ext_review;
-            // 负荷上界 = 已复习的卡 + 按牌组单位今天还剩的额度（与 [LimitUnit::review_room] 同一规则，只是不夹到
-            // 0）：卡片数下化简为「上限」本身（加单位之前的口径）；次数下同一张卡多答的那几次也占额度；分钟下没用满
-            // 不截，用满了只剩已复习的。
+            // 负荷上界 = 已复习的卡 + 按牌组单位今天还会出的卡（[LimitUnit::review_room] 同一规则）：卡片数下保持
+            // 「上限」本身（加单位之前的口径，已复习超过上限时也按上限）；次数下同一张卡多答的那几次也占额度，但
+            // 已复习的卡照算、不会因为多答而让负荷变负；分钟下没用满不截，用满了只剩已复习的。
             let cap = match LimitUnit::of_view(&node.view) {
                 LimitUnit::Cards => limit,
-                LimitUnit::Reviews => limit - x.review_answers + x.review_done,
+                LimitUnit::Reviews => x.review_done + (limit - x.review_answers).max(0),
                 LimitUnit::Minutes if x.review_ms < LimitUnit::Minutes.limit_in_usage(limit) => {
                     load
                 }
@@ -3141,6 +3141,45 @@ mod tests {
         assert_eq!(got["counts"]["NM"][2], json!(0), "{got}");
         assert_eq!(got["counts"]["NM"][7], Value::Null, "{got}");
         assert_eq!(got["counts"]["NM"][5], json!(1), "{got}");
+        // 次数单位：同一张卡答的次数超过上限时负荷 = 已复习的 1 张（不变负、不误判成「复习少，多出新卡」）。
+        deck(&mut n, "NR", None, 2);
+        edit(
+            &core,
+            &mut n,
+            "NR",
+            "limits",
+            json!({"new": 1, "review": 2}),
+        );
+        edit(
+            &core,
+            &mut n,
+            "NR",
+            "newPlan",
+            json!({"auto": true, "budget": 150, "boost": 200}),
+        );
+        for i in 0..25 {
+            card(&format!("NR-due{i}"), "NR", "review", today - 1, 700 + i);
+        }
+        card("NR-new", "NR", "new", today, 800);
+        card("NR-done", "NR", "review", today + 5, 801);
+        for _ in 0..5 {
+            log_ms(
+                &core,
+                &mut logs,
+                "NR-done",
+                now - 60_000,
+                "review",
+                3,
+                "review",
+                1_000,
+            );
+        }
+        let got = study(&req);
+        // [新, 学习, 到期, 总数, 新卡上限, 新卡配额, 复习预算, 原因]：预算 10，负荷 1 → 多出 floor(2 × 0.8) = 1 张；
+        // 负荷若算成 2 − 5 + 1 = −2 会多出 floor(2 × 1.4) = 2 张。
+        assert_eq!(got["counts"]["NR"][2], json!(0), "{got}");
+        assert_eq!(got["counts"]["NR"][5], json!(2), "{got}");
+        assert_eq!(got["counts"]["NR"][7], json!("increased"), "{got}");
         core.close();
         let _ = std::fs::remove_dir_all(&dir);
     }
