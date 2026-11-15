@@ -214,15 +214,17 @@ class _SrsCustomStudyDialogState extends State<SrsCustomStudyDialog> {
         title: t.srs_custom_study_extra_reviews,
         subtitle: widget.todayExtension.reviews > 0
             ? switch (widget.reviewUnit) {
-                SrsLimitUnit.reviews => t.srs_custom_study_extended_reviews_so_far(
-                  n: widget.todayExtension.reviews,
-                ),
+                SrsLimitUnit.reviews =>
+                  t.srs_custom_study_extended_reviews_so_far(
+                    n: widget.todayExtension.reviews,
+                  ),
                 SrsLimitUnit.cards => t.srs_custom_study_extended_so_far(
                   n: widget.todayExtension.reviews,
                 ),
-                SrsLimitUnit.minutes => t.srs_custom_study_extended_minutes_so_far(
-                  n: widget.todayExtension.reviews,
-                ),
+                SrsLimitUnit.minutes =>
+                  t.srs_custom_study_extended_minutes_so_far(
+                    n: widget.todayExtension.reviews,
+                  ),
               }
             : null,
         value: _extendReviews,

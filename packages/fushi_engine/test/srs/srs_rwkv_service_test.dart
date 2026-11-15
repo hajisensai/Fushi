@@ -2046,9 +2046,7 @@ void main() {
       await f.store.editFields(
         SrsEntityKind.deck,
         f.store.defaultDeckId,
-        <String, Object?>{
-          SrsFieldKeys.deckLimitUnit: SrsLimitUnit.cards.wire,
-        },
+        <String, Object?>{SrsFieldKeys.deckLimitUnit: SrsLimitUnit.cards.wire},
       );
       expect(await f.reviewCount(), 2);
       // 分钟下：今天复习 80 秒 < 3 分钟 → 高于目标的 8 张（含今天答过、间隔守卫已过的那张）全部补上，不按 3 张截。

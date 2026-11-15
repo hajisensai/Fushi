@@ -2734,7 +2734,10 @@ void main() {
           );
         }
         expect(
-          inside('srs-settings-rwkv-min-reviews', t.srs_settings_rwkv_min_minutes),
+          inside(
+            'srs-settings-rwkv-min-reviews',
+            t.srs_settings_rwkv_min_minutes,
+          ),
           findsOneWidget,
         );
         // 默认牌组最少复习 40 > 上限 10：换成时长的说法。
