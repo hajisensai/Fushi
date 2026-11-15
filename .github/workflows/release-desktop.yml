@@ -3227,7 +3227,7 @@ jobs:
         run: |
           set -euo pipefail
           bash native/fushi_ios_umbrella/build_ios_staticlib.sh device
-      # BUG-4641：--split-debug-info 把 Dart AOT 的 CodeSourceMap 换成 DWARF 栈、调试信息拆到
+      # BUG-4655：--split-debug-info 把 Dart AOT 的 CodeSourceMap 换成 DWARF 栈、调试信息拆到
       # 单独目录（App.framework 约 -15 MB）。不加 --obfuscate：只多省 0.7 MB，而仓里有按
       # runtimeType.toString() 判断的代码，混淆后会坏。Dart 栈还原用 `flutter symbolize`
       # + 下面按序号上传的 symbols（docs/agent/build.md「iOS 包体积与崩溃符号」）。
@@ -3266,7 +3266,7 @@ jobs:
           path: fushi/build/ios/Release-iphoneos/*.dSYM
           if-no-files-found: warn
           retention-days: 90
-      # BUG-4641：Dart 侧的 dSYM——--split-debug-info 拆出来的 app.ios-arm64.symbols。没有它，
+      # BUG-4655：Dart 侧的 dSYM——--split-debug-info 拆出来的 app.ios-arm64.symbols。没有它，
       # 诊断日志 / 反馈里的 Dart 栈只剩 `abs 0x… virt 0x…`，还原不了。与 dSYM 同保留期。
       - name: Upload iOS release Dart symbols (no codesign)
         if: github.event.inputs.testflight_only != 'true'
@@ -3304,7 +3304,7 @@ jobs:
           rm -rf "$payload_dir"
           mkdir -p "$payload_dir/Payload" "$out_dir"
           ditto "$app_dir" "$payload_dir/Payload/Runner.app"
-          # BUG-4642：`flutter build ios` 走的是 Xcode 的 build（不是 archive），
+          # BUG-4656：`flutter build ios` 走的是 Xcode 的 build（不是 archive），
           # DEPLOYMENT_POSTPROCESSING=NO，Runner 的 STRIP_STYLE=non-global 根本不执行；CocoaPods
           # 嵌入的预编译 framework（Harfbuzz / PDFium / WebRTC …）两条路径都不 strip。这里对包里
           # 每个 Mach-O 做 `strip -x`（只去本地符号，= STRIP_STYLE non-global；导出符号原样保留，
@@ -3649,7 +3649,7 @@ jobs:
           plutil -lint "$RUNNER_TEMP/ExportOptions.plist"
           rm -f "$PROFILE_PATH" "$PROFILE_PLIST"
           echo "profile: $PROFILE_NAME ($PROFILE_UUID) bundle=$PROFILE_BUNDLE_ID expires=$PROFILE_EXPIRY"
-      # BUG-4641：同未签名构建，拆 Dart 调试信息、不混淆；符号目录与上面分开（两次构建的
+      # BUG-4655：同未签名构建，拆 Dart 调试信息、不混淆；符号目录与上面分开（两次构建的
       # App.framework 不保证同一个 build id），按序号单独上传。
       - name: Build signed iOS App Store IPA
         if: steps.signing.outputs.signed == 'true'
@@ -3674,7 +3674,7 @@ jobs:
           bash native/fushi_rwkv/verify_abi.sh "$runner" nm
           bash native/fushi_music/verify_abi.sh --no-plugin "$runner" nm
           bash native/fushi_corpus/verify_abi.sh "$runner" nm
-      # BUG-4642：archive 动作下 Xcode 按 STRIP_STYLE=non-global 处理了 Runner（Mac 实测 strip -x
+      # BUG-4656：archive 动作下 Xcode 按 STRIP_STYLE=non-global 处理了 Runner（Mac 实测 strip -x
       # 对它是空操作），但 CocoaPods 嵌入的预编译 framework（Harfbuzz / PDFium / inappwebview …）
       # 原样进包，带着约 9.8 MB 本地符号表。对归档里的 .app 同样 strip -x，再从归档重新导出：
       # exportArchive 按 ExportOptions 用发行证书重签每个嵌套 bundle，strip 让旧签名失效无妨。

@@ -2,7 +2,7 @@
 # 对一个 iOS .app 里的每个 Mach-O（主程序、Frameworks/*.framework、PlugIns/*.appex、散落 dylib）
 # 做 `strip -x`：只去本地符号（= Xcode 的 STRIP_STYLE=non-global），导出符号一个不动。
 #
-# BUG-4642：`flutter build ios --release --no-codesign` 走 Xcode 的 build 动作，
+# BUG-4656：`flutter build ios --release --no-codesign` 走 Xcode 的 build 动作，
 # DEPLOYMENT_POSTPROCESSING=NO，Runner 工程上的 STRIP_STYLE 不执行；CocoaPods 嵌入的预编译
 # framework 也不 strip。未签名 IPA（GitHub Release 侧载包）因此带着约 27 MB 本地符号表；TestFlight 的 archive 只 strip 了 Runner，嵌入的预编译 framework 仍带约 10 MB。
 # 崩溃符号化靠 CI 单独上传的 dSYM，本地符号表对包没有用处。

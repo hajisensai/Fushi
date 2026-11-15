@@ -33,17 +33,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3981 条。点号进各自文件。
+> 共 4041 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4642](bugs/BUG-4642-ios-unsigned-ipa-unstripped.md) | ✅ | ✅ | 未签名 IPA 的 Mach-O 没 strip 本地符号 |
-| [BUG-4641](bugs/BUG-4641-ios-dart-split-debug-info.md) | ✅ | ✅ | iOS 出包没拆 Dart 调试信息 |
-| [BUG-4640](bugs/BUG-4640-slang-flat-map-aot-size.md) | ✅ | ✅ | slang flat map 让 Dart AOT 胖 15 MB 并撑爆 Windows gen_snapshot 栈 |
-> 共 4034 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4656](bugs/BUG-4656-ios-unsigned-ipa-unstripped.md) | ✅ | ✅ | 未签名 IPA 的 Mach-O 没 strip 本地符号 |
+| [BUG-4655](bugs/BUG-4655-ios-dart-split-debug-info.md) | ✅ | ✅ | iOS 出包没拆 Dart 调试信息 |
 | [BUG-4647](bugs/BUG-4647-manual-finish-mark-not-tracked.md) | ✅ | ✅ | Marked Finished / watched by hand is not sent to the tracking site |
 | [BUG-4646](bugs/BUG-4646-tracking-reconcile-misses-watched-episodes.md) | ✅ | ✅ | 媒体追踪对账与待关联列表漏掉播放看完的集（BUG-3491 后不再写 completedAt） |
 | [BUG-4645](bugs/BUG-4645-tracking-same-link-resent.md) | ✅ | ✅ | Linking again to the same entry and number sent the progress again |
@@ -51,10 +46,7 @@
 | [BUG-4643](bugs/BUG-4643-tracking-search-focus-lost.md) | ✅ | ✅ | Tracking page search box lost focus when the list turned empty or back |
 | [BUG-4642](bugs/BUG-4642-apple-dialog-segmented-intrinsic.md) | ✅ | ✅ | Apple segmented control in a dialog broke layout: no intrinsic size inside IntrinsicWidth |
 | [BUG-4641](bugs/BUG-4641-tracking-replay-resent.md) | ✅ | ✅ | Watching a linked movie or episode again after a restart sent it to the site again |
-> 共 4025 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4640](bugs/BUG-4640-slang-flat-map-aot-size.md) | ✅ | ✅ | slang flat map 让 Dart AOT 胖 15 MB 并撑爆 Windows gen_snapshot 栈 |
 | [BUG-4627](bugs/BUG-4627-srs-admin-decks-route-shadows-ctl.md) | ✅ | ✅ | srs-admin-decks-route-shadows-ctl |
 | [BUG-4626](bugs/BUG-4626-srs-by-id-cross-profile.md) | ✅ | ✅ | 复习库按实体 ID 的读写不看 profile：点名 A 的命令能读 / 改 / 删 B 的笔记、卡片、牌组、笔记类型 |
 | [BUG-4625](bugs/BUG-4625-linux-wpe-click-pointerup-button-mask.md) | ✅ | ✅ | Linux 漫画阅读器 OCR 文字无法点击查词 |

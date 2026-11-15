@@ -1,4 +1,4 @@
-// iOS 出包体积的两道闸（BUG-4641 / BUG-4642）：
+// iOS 出包体积的两道闸（BUG-4655 / BUG-4656）：
 //   * 两条 iOS 出包命令都 `--split-debug-info`（不混淆），拆出来的 Dart 符号按序号存 artifact，
 //     与 dSYM 同保留期——没有它诊断里的 Dart 栈还原不了；
 //   * 未签名 IPA 打包前对每个 Mach-O `strip -x`，strip 后导出符号不变、再核一遍 Runner 的 C ABI。
@@ -21,7 +21,7 @@ void main() {
 
   int at(String name) => desktop.indexOf('- name: $name\n');
 
-  group('BUG-4641 Dart 调试信息拆分', () {
+  group('BUG-4655 Dart 调试信息拆分', () {
     const Map<String, String> builds = <String, String>{
       'Build iOS release app (no codesign)': 'build/ios/dart-symbols-unsigned',
       'Build signed iOS App Store IPA': 'build/ios/dart-symbols-testflight',
@@ -75,7 +75,7 @@ void main() {
     });
   });
 
-  group('BUG-4642 iOS 包 strip -x', () {
+  group('BUG-4656 iOS 包 strip -x', () {
     String prepareStep() => step('Prepare unsigned iOS IPA release asset');
     String stripScript() => File(
       '../tool/ios_strip_local_symbols.sh',

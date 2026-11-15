@@ -320,7 +320,7 @@ Android / Windows / macOS / iOS debug/beta workflow 必须使用跨 workflow 统
 - **slang 不生成 flat map**（`fushi/slang.yaml` 的 `flat_map: false`，BUG-4640）：17 个
   `_flatMapFunction` 在 iOS 快照里占 15 MB，还会让 Windows gen_snapshot 爆栈（BUG-1589）。
   文案只走生成的 getter，`t['key']` 编译不过；守卫 `test/build/slang_flat_map_disabled_guard_test.dart`。
-- **两条 iOS 出包命令都 `--split-debug-info`、不 `--obfuscate`**（BUG-4641）：未签名包拆到
+- **两条 iOS 出包命令都 `--split-debug-info`、不 `--obfuscate`**（BUG-4655）：未签名包拆到
   `build/ios/dart-symbols-unsigned`，TestFlight 包拆到 `build/ios/dart-symbols-testflight`，各按
   发布序号上传 artifact `ios-dart-symbols-{unsigned,testflight}-<序号>`（与 `ios-dsyms-*` 同为 90 天）。
   不混淆是因为仓里有 `runtimeType.toString()` 判断，混淆只多省 0.7 MB。
@@ -329,7 +329,7 @@ Android / Windows / macOS / iOS debug/beta workflow 必须使用跨 workflow 统
   **还原**：按报告里的构建号下载对应 artifact（`gh run download <run-id> -n ios-dart-symbols-unsigned-<序号>`，
   TestFlight 包换 `testflight`），把栈原文存成文件后
   `flutter symbolize -i stack.txt -d app.ios-arm64.symbols`。原生帧（`Runner+偏移`）照旧用 `ios-dsyms-*` 的 dSYM。
-- **iOS 包里每个 Mach-O 都 `strip -x`**（`tool/ios_strip_local_symbols.sh`，BUG-4642）：只去本地符号，
+- **iOS 包里每个 Mach-O 都 `strip -x`**（`tool/ios_strip_local_symbols.sh`，BUG-4656）：只去本地符号，
   逐个比对 strip 前后的导出集合与 Runner 的 FFI 前缀计数，变了就让出包失败，之后再跑一遍 7 个
   `verify_abi.sh`。崩溃符号化靠 dSYM，不受影响。
   - 未签名 IPA：`flutter build ios` 是 Xcode build 动作（`DEPLOYMENT_POSTPROCESSING=NO`），Runner 的
