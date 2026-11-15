@@ -1,26 +1,32 @@
+import 'dart:async';
+
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:fushi_engine/media/collections/collection_season_groups.dart'
-    show collectionGroupKeyForFilename, isMultiSeasonGrouped;
 import 'package:fushi_engine/media/tracking/bangumi_api_client.dart';
+import 'package:fushi/src/media/tracking/tracking_token_paste_button.dart';
+import 'package:fushi/src/media/tracking/plugin/plugin_tracking_provider.dart';
+import 'package:fushi/src/media/tracking/plugin/tracking_plugin_manager.dart';
+import 'package:fushi/src/media/tracking/plugin/tracking_plugins_section.dart';
+import 'package:fushi/src/media/tracking/tracking_sites_section.dart';
+import 'package:fushi/src/media/tracking/bangumi_watched_dialog.dart';
 import 'package:fushi/src/media/tracking/media_tracking_labels.dart';
-import 'package:fushi_engine/media/tracking/media_tracking_repository.dart';
+import 'package:fushi/src/media/tracking/page/tracking_page.dart';
+import 'package:fushi_engine/media/tracking/media_tracking_repository.dart'
+    show kTrackingProviderBangumi;
 import 'package:fushi_engine/media/tracking/media_tracking_service.dart';
+import 'package:fushi_engine/media/tracking/tracking_provider.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
-import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
-import 'package:fushi/src/utils/misc/show_app_dialog.dart';
-import 'package:fushi_core/fushi_core.dart';
 import 'package:url_launcher/url_launcher.dart';
+
+// The control channel reads the local-target helpers from here.
+export 'package:fushi/src/media/tracking/page/tracking_local_targets.dart';
 
 class MediaTrackingSettingsBody extends StatefulWidget {
   const MediaTrackingSettingsBody({required this.appModel, super.key});
@@ -33,18 +39,17 @@ class MediaTrackingSettingsBody extends StatefulWidget {
 }
 
 class _MediaTrackingSettingsBodyState extends State<MediaTrackingSettingsBody> {
-  late final MediaTrackingRepository _repository = MediaTrackingRepository(
-    widget.appModel.database,
-  );
   late final TextEditingController _tokenController = TextEditingController(
     text: widget.appModel.mediaTrackingService.accessToken,
   );
 
-  List<MediaTrackingMappingRow> _mappings = const <MediaTrackingMappingRow>[];
-  int _pending = 0;
-
-  /// 最近一次载入的状态快照（上次同步时刻/结果、失败原因）。
+  /// 最近一次载入的状态快照（自动匹配退避等全局状态）。
   MediaTrackingStatus? _status;
+
+  /// Every signed-in site's own sync state (last sync, pending, failures,
+  /// sign-in), the same per-site status the Tracking page header reads.
+  List<MediaTrackingProviderStatus> _sites =
+      const <MediaTrackingProviderStatus>[];
 
   /// 已连接账号名。取自持久化偏好而非仅本次会话的连接结果——否则重开设置页
   /// 就只剩一个填了令牌的输入框，用户无法确认连的是哪个账号。
@@ -68,15 +73,17 @@ class _MediaTrackingSettingsBodyState extends State<MediaTrackingSettingsBody> {
   Future<void> _reload() async {
     // 映射列表 / 待办数 / 上次同步结果 / 失败原因统一走服务层快照，与首页卡片同源
     // （含「隐藏 bookChapter 伴随映射」这条口径），不再各查一遍各滤一遍。
-    final MediaTrackingStatus status = await widget
-        .appModel
-        .mediaTrackingService
-        .loadStatus();
+    final MediaTrackingService service = widget.appModel.mediaTrackingService;
+    final MediaTrackingStatus status = await service.loadStatus();
+    final List<MediaTrackingProviderStatus> sites = await service
+        .loadProviderStatuses();
     if (!mounted) return;
     setState(() {
       _status = status;
-      _mappings = status.mappings;
-      _pending = status.pending;
+      _sites = <MediaTrackingProviderStatus>[
+        for (final MediaTrackingProviderStatus site in sites)
+          if (site.enabled && site.configured) site,
+      ];
     });
   }
 
@@ -107,8 +114,35 @@ class _MediaTrackingSettingsBodyState extends State<MediaTrackingSettingsBody> {
     }
   }
 
+  /// Retries automatic matching and says plainly what came of it: no match,
+  /// matched and sent, or matched but the send failed.
+  Future<void> _retryMappings() async {
+    setState(() => _busy = true);
+    try {
+      final MediaTrackingMappingRetryResult result = await widget
+          .appModel
+          .mediaTrackingService
+          .retryAutomaticMappings();
+      if (!mounted) return;
+      _message(
+        !result.matchedAny
+            ? t.media_tracking_retry_no_match
+            : (result.syncResult?.isSuccess ?? false)
+            ? t.media_tracking_retry_matched
+            : t.media_tracking_sync_failed,
+      );
+      await _reload();
+    } catch (_) {
+      _message(t.media_tracking_sync_failed);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<void> _sync() async {
-    if (!widget.appModel.mediaTrackingService.isConfigured) {
+    if (!widget.appModel.mediaTrackingService.providers.all.any(
+      (TrackingProvider provider) => provider.isConfigured,
+    )) {
       _message(t.media_tracking_token_required);
       return;
     }
@@ -127,24 +161,18 @@ class _MediaTrackingSettingsBodyState extends State<MediaTrackingSettingsBody> {
     if (mounted) setState(() => _busy = false);
   }
 
-  Future<void> _addMapping({MediaTrackingUnlinkedItem? initial}) async {
-    if (!widget.appModel.mediaTrackingService.isConfigured) {
-      _message(t.media_tracking_token_required);
-      return;
-    }
-    final bool? saved = await showAppDialog<bool>(
-      context: context,
-      builder: (BuildContext context) => _AddMappingDialog(
-        database: widget.appModel.database,
+  /// The Tracking page (links, items to link, failed sends). Its "Settings"
+  /// button comes back here.
+  void _openTrackingPage() {
+    final NavigatorState navigator = Navigator.of(context);
+    unawaited(
+      openTrackingPage(
+        context,
         service: widget.appModel.mediaTrackingService,
-        initialMediaType: initial?.mediaType,
-        initialMediaKey: initial?.mediaKey,
+        database: widget.appModel.database,
+        onOpenSettings: navigator.pop,
       ),
     );
-    if (saved != null) {
-      _message(saved ? t.media_tracking_saved : t.media_tracking_sync_failed);
-      await _reload();
-    }
   }
 
   void _message(String value) {
@@ -154,92 +182,150 @@ class _MediaTrackingSettingsBodyState extends State<MediaTrackingSettingsBody> {
       ..showSnackBar(FushiSnackBar(content: Text(value)));
   }
 
+  /// "Tracking plugins", where the platform has plugins: the sites besides
+  /// Bangumi are plugins only.
+  List<Widget> _trackingSiteSections() {
+    final AppModel appModel = widget.appModel;
+    final TrackingPluginManager? manager = appModel.trackingPluginManager;
+    final PluginTrackingProviders? providers = appModel.trackingPluginProviders;
+    if (manager == null || providers == null) return const <Widget>[];
+    return <Widget>[
+      TrackingPluginsSection(
+        manager: manager,
+        providers: providers,
+        service: appModel.mediaTrackingService,
+      ),
+    ];
+  }
+
+  String _siteName(String providerId) =>
+      widget.appModel.mediaTrackingService.providers
+          .byId(providerId)
+          ?.displayName ??
+      providerId;
+
   @override
   Widget build(BuildContext context) {
     final MediaTrackingStatus? status = _status;
-    final Map<int, MediaTrackingFailure> failureByMappingId =
-        status?.failureByMappingId ?? const <int, MediaTrackingFailure>{};
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
         AdaptiveSettingsSection(
-          title: t.media_tracking_account,
           children: <Widget>[
             AdaptiveSettingsRow(
-              title: t.media_tracking_access_token,
-              subtitle: t.media_tracking_access_token_hint,
-              controlBelow: true,
-              trailing: FushiTextFieldControl(
-                controller: _tokenController,
-                obscureText: true,
-                autocorrect: false,
-                enableSuggestions: false,
-                decoration: InputDecoration(
-                  border: const OutlineInputBorder(),
-                  suffixIcon: FushiIconButtonControl(
-                    tooltip: t.media_tracking_access_token_hint,
-                    icon: const FushiIcon(FushiIcons.openInNew),
-                    onPressed: () => launchUrl(
-                      Uri.parse(BangumiApiClient.accessTokenUrl),
-                      mode: LaunchMode.externalApplication,
+              key: const ValueKey<String>('media-tracking-open-page'),
+              title: t.media_tracking_page_open_title,
+              subtitle: t.media_tracking_page_open_hint,
+              subtitleMaxLines: 3,
+              icon: FushiIcons.tracking,
+              showIcon: true,
+              trailing: const FushiIcon(FushiIcons.chevronRight),
+              onTap: _openTrackingPage,
+            ),
+          ],
+        ),
+        // The built-in Bangumi's token block; where the bundled Bangumi plugin
+        // serves the site, its row in "Tracking plugins" is the one place.
+        if (widget.appModel.mediaTrackingService.usesBuiltInBangumi)
+          AdaptiveSettingsSection(
+            key: const ValueKey<String>('media-tracking-bangumi-account'),
+            title: t.media_tracking_account,
+            children: <Widget>[
+              AdaptiveSettingsRow(
+                title: t.media_tracking_access_token,
+                subtitle: t.media_tracking_access_token_hint,
+                controlBelow: true,
+                trailing: FushiTextFieldControl(
+                  controller: _tokenController,
+                  obscureText: true,
+                  autocorrect: false,
+                  enableSuggestions: false,
+                  decoration: InputDecoration(
+                    border: const OutlineInputBorder(),
+                    suffixIcon: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        TrackingTokenPasteButton(
+                          key: const ValueKey<String>('bangumi-token-paste'),
+                          controller: _tokenController,
+                        ),
+                        FushiIconButtonControl(
+                          tooltip: t.media_tracking_access_token_hint,
+                          icon: const FushiIcon(FushiIcons.openInNew),
+                          onPressed: () => launchUrl(
+                            Uri.parse(BangumiApiClient.accessTokenUrl),
+                            mode: LaunchMode.externalApplication,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
               ),
-            ),
-            AdaptiveSettingsRow(
-              title: t.media_tracking_signup,
-              trailing: FushiTextButton.icon(
-                onPressed: () => launchUrl(
-                  Uri.parse(BangumiApiClient.signupUrl),
-                  mode: LaunchMode.externalApplication,
+              AdaptiveSettingsRow(
+                title: t.media_tracking_signup,
+                trailing: FushiTextButton.icon(
+                  onPressed: () => launchUrl(
+                    Uri.parse(BangumiApiClient.signupUrl),
+                    mode: LaunchMode.externalApplication,
+                  ),
+                  icon: const FushiIcon(FushiIcons.personAdd),
+                  label: Text(t.media_tracking_signup),
                 ),
-                icon: const FushiIcon(FushiIcons.personAdd),
-                label: Text(t.media_tracking_signup),
               ),
-            ),
-            if (_connectedAccount != null)
+              if (_connectedAccount != null)
+                AdaptiveSettingsRow(
+                  title: t.media_tracking_connected_as,
+                  trailing: Text(_connectedAccount!),
+                ),
+              // The account's watched anime, read from Bangumi (moved here from
+              // the home page's old sync card).
+              if (_connectedAccount != null)
+                AdaptiveSettingsRow(
+                  title: t.media_tracking_watched_show,
+                  trailing: const FushiIcon(FushiIcons.chevronRight),
+                  onTap: () => showTrackingWatchedDialog(
+                    context,
+                    widget.appModel.mediaTrackingService,
+                    providerId: kTrackingProviderBangumi,
+                  ),
+                ),
               AdaptiveSettingsRow(
-                title: t.media_tracking_connected_as,
-                trailing: Text(_connectedAccount!),
+                title: t.media_tracking_connect,
+                trailing: _busy
+                    ? const SizedBox.square(
+                        dimension: 22,
+                        child: FushiCircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : FushiFilledButton.tonalIcon(
+                        onPressed: _connect,
+                        icon: const FushiIcon(FushiIcons.link),
+                        label: Text(t.media_tracking_connect),
+                      ),
               ),
-            AdaptiveSettingsRow(
-              title: t.media_tracking_connect,
-              trailing: _busy
-                  ? const SizedBox.square(
-                      dimension: 22,
-                      child: FushiCircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : FushiFilledButton.tonalIcon(
-                      onPressed: _connect,
-                      icon: const FushiIcon(FushiIcons.link),
-                      label: Text(t.media_tracking_connect),
-                    ),
-            ),
-          ],
-        ),
+            ],
+          ),
+        ..._trackingSiteSections(),
+        TrackingSitesSection(service: widget.appModel.mediaTrackingService),
         AdaptiveSettingsSection(
-          title: t.media_tracking_mappings,
+          title: t.media_tracking_sync_section,
           children: <Widget>[
-            AdaptiveSettingsRow(
-              title: t.media_tracking_pending,
-              trailing: Text('$_pending'),
-            ),
-            // 「上次同步」+ 失败原因：同步成功即删 outbox 行，没有这两行的话
-            // 「跑过但没有待办」与「从没跑过」在 UI 上完全同形。
-            AdaptiveSettingsRow(
-              title: t.media_tracking_last_sync,
-              trailing: Text(
-                status == null
-                    ? '—'
-                    : trackingLastSyncLabel(status, DateTime.now()),
-              ),
-            ),
-            if (status != null && status.unauthorized)
+            // 每个已登录站点各自的「上次同步」+ 待发送 + 失败 / 登录失效：同步成功
+            // 即删 outbox 行，没有这些的话「跑过但没有待办」与「从没跑过」同形。
+            if (_sites.isEmpty)
               AdaptiveSettingsRow(
-                title: t.media_tracking_unauthorized,
-                titleMaxLines: 4,
-                icon: FushiIcons.error,
+                key: const ValueKey<String>('media-tracking-sync-no-site'),
+                title: t.media_tracking_sync_no_site,
+              ),
+            for (final MediaTrackingProviderStatus site in _sites)
+              AdaptiveSettingsRow(
+                key: ValueKey<String>('media-tracking-sync-${site.providerId}'),
+                title: _siteName(site.providerId),
+                subtitle: trackingSiteSyncSummary(site, DateTime.now()),
+                subtitleMaxLines: 4,
+                icon: site.unauthorized || site.failures.isNotEmpty
+                    ? FushiIcons.error
+                    : FushiIcons.sync,
                 showIcon: true,
               ),
             AdaptiveSettingsRow(
@@ -250,515 +336,19 @@ class _MediaTrackingSettingsBodyState extends State<MediaTrackingSettingsBody> {
                 label: Text(t.media_tracking_sync_now),
               ),
             ),
-            AdaptiveSettingsRow(
-              title: t.media_tracking_add_mapping,
-              trailing: FushiFilledButton.icon(
-                onPressed: _busy ? null : () => _addMapping(),
-                icon: const FushiIcon(FushiIcons.link),
-                label: Text(t.media_tracking_add_mapping),
-              ),
-            ),
-            if (status != null && status.unlinked.isNotEmpty) ...<Widget>[
+            // Automatic matching backs off for 10 minutes after a miss; this
+            // clears the back-off and tries again (moved here from the home
+            // page's old sync card).
+            if (status != null && status.automaticMappingMissCount > 0)
               AdaptiveSettingsRow(
-                title: t.media_tracking_manual_required_count(
-                  n: status.unlinked.length,
-                ),
-                subtitle: t.media_tracking_manual_required_hint,
-                titleMaxLines: 3,
-                subtitleMaxLines: 4,
-                icon: FushiIcons.linkOff,
-                showIcon: true,
-              ),
-              for (final MediaTrackingUnlinkedItem item in status.unlinked)
-                AdaptiveSettingsRow(
-                  title: item.mediaTitle,
-                  subtitle:
-                      '${trackingKindLabel(item.kind.value)} · '
-                      '${t.media_tracking_manual_required}',
-                  titleMaxLines: 3,
-                  subtitleMaxLines: 2,
-                  trailing: FushiTextButton.icon(
-                    onPressed: _busy ? null : () => _addMapping(initial: item),
-                    icon: const FushiIcon(FushiIcons.link),
-                    label: Text(t.media_tracking_add_mapping),
-                  ),
-                ),
-            ],
-            if (_mappings.isEmpty)
-              AdaptiveSettingsRow(
-                title: t.media_tracking_no_mappings,
-                titleMaxLines: 4,
-              ),
-            // 失败原因挂在对应条目行的副标题上（与首页卡同口径），不另开一段把
-            // 标题重复一遍。
-            for (final MediaTrackingMappingRow mapping in _mappings)
-              AdaptiveSettingsRow(
-                title: mapping.mediaTitle,
-                subtitle: <String>[
-                  '${trackingMappingSubtitle(mapping)} '
-                      '+${mapping.progressOffset}',
-                  if (failureByMappingId[mapping.id]
-                      case final MediaTrackingFailure failure)
-                    '${t.media_tracking_last_error}: ${failure.error}',
-                ].join('\n'),
-                subtitleMaxLines: 4,
-                titleMaxLines: 3,
-                icon: FushiIcons.warning,
-                showIcon: failureByMappingId.containsKey(mapping.id),
-                trailing: FushiIconButtonControl(
-                  tooltip: t.media_tracking_delete_mapping,
-                  onPressed: () async {
-                    await _repository.deleteMapping(mapping.id);
-                    await _reload();
-                  },
-                  icon: const FushiIcon(FushiIcons.linkOff),
+                title: t.media_tracking_retry_mapping,
+                trailing: FushiFilledButton.tonalIcon(
+                  onPressed: _busy ? null : _retryMappings,
+                  icon: const FushiIcon(FushiIcons.refresh),
+                  label: Text(t.media_tracking_retry_mapping),
                 ),
               ),
           ],
-        ),
-      ],
-    );
-  }
-}
-
-/// 「添加映射」可选的本地条目（视频合集 / 视频 / 书 / 游戏）。设置页对话框与
-/// 控制通道（`ctl_settings_body_tracking.dart`）共用。
-class MediaTrackingLocalTarget {
-  const MediaTrackingLocalTarget({
-    required this.type,
-    required this.key,
-    required this.title,
-  });
-
-  final TrackingMediaType type;
-  final String key;
-  final String title;
-
-  bool get isBook => type == TrackingMediaType.book;
-
-  bool get isGame => type == TrackingMediaType.game;
-}
-
-/// 本地条目可选的 Bangumi 类别（与对话框下拉框同一口径）。
-List<TrackingKind> allowedTrackingKindsFor(TrackingMediaType type) =>
-    switch (type) {
-      TrackingMediaType.game => const <TrackingKind>[TrackingKind.game],
-      TrackingMediaType.book => const <TrackingKind>[
-        TrackingKind.novel,
-        TrackingKind.manga,
-      ],
-      _ => const <TrackingKind>[TrackingKind.anime],
-    };
-
-/// 本地条目可选的进度模式（与对话框下拉框同一口径）。
-List<TrackingProgressMode> allowedTrackingModesFor(TrackingMediaType type) =>
-    switch (type) {
-      TrackingMediaType.game => const <TrackingProgressMode>[
-        TrackingProgressMode.status,
-      ],
-      TrackingMediaType.book => const <TrackingProgressMode>[
-        TrackingProgressMode.chapter,
-        TrackingProgressMode.volume,
-      ],
-      _ => const <TrackingProgressMode>[TrackingProgressMode.episode],
-    };
-
-/// 选中本地条目时的默认类别。
-TrackingKind defaultTrackingKindFor(TrackingMediaType type) => switch (type) {
-  TrackingMediaType.game => TrackingKind.game,
-  TrackingMediaType.book => TrackingKind.novel,
-  _ => TrackingKind.anime,
-};
-
-/// 选中本地条目时的默认进度模式。
-TrackingProgressMode defaultTrackingModeFor(TrackingMediaType type) =>
-    switch (type) {
-      TrackingMediaType.game => TrackingProgressMode.status,
-      TrackingMediaType.book => TrackingProgressMode.volume,
-      _ => TrackingProgressMode.episode,
-    };
-
-/// 进度模式的默认偏移：章节 / 收藏状态为 0，其余 1。
-int defaultTrackingOffsetFor(TrackingProgressMode mode) =>
-    mode == TrackingProgressMode.chapter || mode == TrackingProgressMode.status
-    ? 0
-    : 1;
-
-/// 落库前的偏移：status 模式下 outbox.progress 存的是收藏 type 本身，任何非零
-/// offset 都会把它算成另一个状态，必须钉死为 0；其余夹到 [0, 100000]。
-int normalizeTrackingProgressOffset(TrackingProgressMode mode, int? raw) =>
-    mode == TrackingProgressMode.status
-    ? 0
-    : (raw ?? defaultTrackingOffsetFor(mode)).clamp(0, 100000);
-
-/// 「添加映射」可选的本地条目清单。
-///
-/// 多季合集（分组按各集文件名派生）不列为整合集映射目标：Bangumi 一季一条目，
-/// 「整个多季合集 → 单个 subject」结构性错位，建了也会被上报门控绕开——与其让
-/// 用户建一条永远不生效的映射，不如不提供入口。多季合集的上报走自动按集通道
-/// （季度感知刮削 subject + 季内集号），单集也仍可手动映射。
-Future<List<MediaTrackingLocalTarget>> loadMediaTrackingLocalTargets(
-  FushiDatabase database,
-) async {
-  final List<EpubBookRow> books = await database.getAllEpubBooks();
-  final List<VideoBookRow> videos = await database.allVideoBooks();
-  final List<GalgameRow> games = await database.getAllGalgames();
-  final List<MediaCollectionRow> collections = await database
-      .getAllMediaCollections();
-  final List<MediaCollectionItemRow> members = await database
-      .getAllCollectionItems();
-  final Set<int> videoPlaylists = members
-      .where((MediaCollectionItemRow row) => row.mediaType == 'video')
-      .map((MediaCollectionItemRow row) => row.collectionId)
-      .toSet();
-  final Map<String, String> videoPathByUid = <String, String>{
-    for (final VideoBookRow video in videos) video.bookUid: video.videoPath,
-  };
-  final Map<int, List<String>> groupKeysByCollection = <int, List<String>>{};
-  for (final MediaCollectionItemRow row in members) {
-    if (row.mediaType != 'video') continue;
-    final String? path = videoPathByUid[row.entryKey];
-    if (path == null) continue;
-    groupKeysByCollection
-        .putIfAbsent(row.collectionId, () => <String>[])
-        .add(collectionGroupKeyForFilename(path));
-  }
-  return <MediaTrackingLocalTarget>[
-    for (final MediaCollectionRow collection in collections)
-      if (collection.collectionType == 'playlist' &&
-          videoPlaylists.contains(collection.id) &&
-          !isMultiSeasonGrouped(
-            groupKeysByCollection[collection.id] ?? const <String>[],
-          ))
-        MediaTrackingLocalTarget(
-          type: TrackingMediaType.videoCollection,
-          key: collection.id.toString(),
-          title: collection.name,
-        ),
-    for (final VideoBookRow video in videos)
-      MediaTrackingLocalTarget(
-        type: TrackingMediaType.video,
-        key: video.bookUid,
-        title: video.title,
-      ),
-    for (final EpubBookRow book in books)
-      MediaTrackingLocalTarget(
-        type: TrackingMediaType.book,
-        key: book.bookKey,
-        title: book.title,
-      ),
-    for (final GalgameRow game in games)
-      MediaTrackingLocalTarget(
-        type: TrackingMediaType.game,
-        key: game.id,
-        title: game.name,
-      ),
-  ];
-}
-
-class _AddMappingDialog extends StatefulWidget {
-  const _AddMappingDialog({
-    required this.database,
-    required this.service,
-    this.initialMediaType,
-    this.initialMediaKey,
-  });
-
-  final FushiDatabase database;
-  final MediaTrackingService service;
-  final TrackingMediaType? initialMediaType;
-  final String? initialMediaKey;
-
-  @override
-  State<_AddMappingDialog> createState() => _AddMappingDialogState();
-}
-
-class _AddMappingDialogState extends State<_AddMappingDialog> {
-  final TextEditingController _searchController = TextEditingController();
-  final TextEditingController _offsetController = TextEditingController(
-    text: '1',
-  );
-
-  List<MediaTrackingLocalTarget> _targets = const <MediaTrackingLocalTarget>[];
-  List<BangumiSubject> _results = const <BangumiSubject>[];
-  MediaTrackingLocalTarget? _target;
-  TrackingKind _kind = TrackingKind.anime;
-  TrackingProgressMode _mode = TrackingProgressMode.episode;
-  bool _busy = true;
-  String? _error;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadTargets();
-  }
-
-  @override
-  void dispose() {
-    _searchController.dispose();
-    _offsetController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _loadTargets() async {
-    final List<MediaTrackingLocalTarget> targets =
-        await loadMediaTrackingLocalTargets(widget.database);
-    if (!mounted) return;
-    setState(() {
-      _targets = targets;
-      _busy = false;
-    });
-    if (targets.isNotEmpty) {
-      final MediaTrackingLocalTarget initial = targets.firstWhere(
-        (MediaTrackingLocalTarget target) =>
-            target.type == widget.initialMediaType &&
-            target.key == widget.initialMediaKey,
-        orElse: () => targets.first,
-      );
-      _selectTarget(initial);
-    }
-  }
-
-  void _selectTarget(MediaTrackingLocalTarget target) {
-    setState(() {
-      _target = target;
-      _kind = defaultTrackingKindFor(target.type);
-      _mode = defaultTrackingModeFor(target.type);
-      _offsetController.text = '1';
-      _searchController.text = target.title;
-      _results = const <BangumiSubject>[];
-    });
-  }
-
-  Future<void> _search() async {
-    if (_target == null || _searchController.text.trim().isEmpty) return;
-    setState(() => _busy = true);
-    try {
-      final List<BangumiSubject> results = await widget.service.searchSubjects(
-        keyword: _searchController.text,
-        kind: _kind,
-      );
-      if (mounted) {
-        setState(() {
-          _results = results;
-          _error = null;
-        });
-      }
-    } catch (error) {
-      if (mounted) setState(() => _error = error.toString());
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  Future<void> _save(BangumiSubject subject) async {
-    final MediaTrackingLocalTarget? target = _target;
-    if (target == null) return;
-    final int offset = normalizeTrackingProgressOffset(
-      _mode,
-      int.tryParse(_offsetController.text),
-    );
-    final MediaTrackingSyncResult result = await widget.service
-        .saveManualMappingAndSync(
-          mediaType: target.type,
-          mediaKey: target.key,
-          mediaTitle: target.title,
-          kind: _kind,
-          subjectId: subject.id,
-          subjectName: subject.displayName,
-          progressMode: _mode,
-          progressOffset: offset,
-        );
-    if (mounted) Navigator.of(context).pop(result.isSuccess);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return FushiAlertDialog(
-      icon: const FushiIcon(FushiIcons.tracking),
-      title: Text(t.media_tracking_add_mapping),
-      content: SizedBox(
-        width: 620,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            FushiDropdownButtonFormField<MediaTrackingLocalTarget>(
-              initialValue: _target,
-              decoration: InputDecoration(
-                labelText: t.media_tracking_local_item,
-              ),
-              items: <DropdownMenuItem<MediaTrackingLocalTarget>>[
-                for (final MediaTrackingLocalTarget target in _targets)
-                  DropdownMenuItem<MediaTrackingLocalTarget>(
-                    value: target,
-                    child: Text(target.title, overflow: TextOverflow.ellipsis),
-                  ),
-              ],
-              onChanged: (value) {
-                if (value != null) _selectTarget(value);
-              },
-            ),
-            const SizedBox(height: 12),
-            FushiDropdownButtonFormField<TrackingKind>(
-              initialValue: _kind,
-              decoration: InputDecoration(labelText: t.media_tracking_kind),
-              items: <DropdownMenuItem<TrackingKind>>[
-                if (_target?.isGame ?? false)
-                  DropdownMenuItem<TrackingKind>(
-                    value: TrackingKind.game,
-                    child: Text(t.media_tracking_game),
-                  ),
-                if (!(_target?.isBook ?? false) && !(_target?.isGame ?? false))
-                  DropdownMenuItem<TrackingKind>(
-                    value: TrackingKind.anime,
-                    child: Text(t.media_tracking_anime),
-                  ),
-                if (_target?.isBook ??
-                    false) ...<DropdownMenuItem<TrackingKind>>[
-                  DropdownMenuItem<TrackingKind>(
-                    value: TrackingKind.novel,
-                    child: Text(t.media_tracking_novel),
-                  ),
-                  DropdownMenuItem<TrackingKind>(
-                    value: TrackingKind.manga,
-                    child: Text(t.media_tracking_manga),
-                  ),
-                ],
-              ],
-              onChanged: (TrackingKind? value) {
-                if (value != null) setState(() => _kind = value);
-              },
-            ),
-            const SizedBox(height: 12),
-            FushiDropdownButtonFormField<TrackingProgressMode>(
-              initialValue: _mode,
-              decoration: InputDecoration(
-                labelText: t.media_tracking_progress_mode,
-              ),
-              items: <DropdownMenuItem<TrackingProgressMode>>[
-                if (_target?.isGame ?? false)
-                  DropdownMenuItem<TrackingProgressMode>(
-                    value: TrackingProgressMode.status,
-                    child: Text(t.media_tracking_status),
-                  ),
-                if (!(_target?.isBook ?? false) && !(_target?.isGame ?? false))
-                  DropdownMenuItem<TrackingProgressMode>(
-                    value: TrackingProgressMode.episode,
-                    child: Text(t.media_tracking_episode),
-                  ),
-                if (_target?.isBook ??
-                    false) ...<DropdownMenuItem<TrackingProgressMode>>[
-                  DropdownMenuItem<TrackingProgressMode>(
-                    value: TrackingProgressMode.chapter,
-                    child: Text(t.media_tracking_chapter),
-                  ),
-                  DropdownMenuItem<TrackingProgressMode>(
-                    value: TrackingProgressMode.volume,
-                    child: Text(t.media_tracking_volume),
-                  ),
-                ],
-              ],
-              onChanged: (TrackingProgressMode? value) {
-                if (value == null) return;
-                setState(() {
-                  _mode = value;
-                  _offsetController.text =
-                      value == TrackingProgressMode.chapter ||
-                          value == TrackingProgressMode.status
-                      ? '0'
-                      : '1';
-                });
-              },
-            ),
-            // 收藏状态模式没有进度可偏移（Bangumi 游戏条目无话数/卷数），
-            // 保留输入框只会让用户填出一个被忽略的值。
-            if (_mode != TrackingProgressMode.status) ...<Widget>[
-              const SizedBox(height: 12),
-              FushiTextFieldControl(
-                controller: _offsetController,
-                keyboardType: TextInputType.number,
-                decoration: InputDecoration(
-                  labelText: t.media_tracking_progress_offset,
-                ),
-              ),
-            ],
-            const SizedBox(height: 12),
-            FushiTextFieldControl(
-              controller: _searchController,
-              onSubmitted: (_) => _search(),
-              decoration: InputDecoration(
-                labelText: t.media_tracking_search,
-                suffixIcon: FushiIconButtonControl(
-                  onPressed: _busy ? null : _search,
-                  icon: const FushiIcon(FushiIcons.search),
-                ),
-              ),
-            ),
-            if (_busy)
-              const Padding(
-                padding: EdgeInsets.all(24),
-                child: FushiCircularProgressIndicator(),
-              ),
-            if (!_busy && _error != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 12),
-                child: FushiInlineNotice(
-                  severity: FushiNoticeSeverity.error,
-                  message: _error!,
-                ),
-              ),
-            if (!_busy && _results.isNotEmpty) ...<Widget>[
-              const SizedBox(height: 12),
-              Align(
-                alignment: AlignmentDirectional.centerStart,
-                child: Text(
-                  t.media_tracking_search_results,
-                  style: Theme.of(context).textTheme.titleSmall,
-                ),
-              ),
-              const SizedBox(height: 8),
-              // M3E 分段卡片（首尾大圆角、行间 2）。
-              FushiGroupedList(
-                children: <Widget>[
-                  for (final BangumiSubject subject in _results)
-                    FushiListItem(
-                      density: FushiListDensity.compact,
-                      leading: subject.coverUrl == null
-                          ? const FushiListLeadingIcon(
-                              FushiIcons.books,
-                              shape: FushiLeadingShape.square,
-                            )
-                          : ClipRRect(
-                              borderRadius: FushiM3eShape.smallRadius,
-                              child: Image(
-                                image: AppHttpImage(subject.coverUrl!),
-                                width: 42,
-                                height: 56,
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) =>
-                                    const FushiIcon(FushiIcons.brokenImage),
-                              ),
-                            ),
-                      title: Text(subject.displayName),
-                      subtitle: Text(
-                        <String>[
-                          if (subject.secondaryName.isNotEmpty)
-                            subject.secondaryName,
-                          '#${subject.id}',
-                        ].join(' · '),
-                      ),
-                      onTap: () => _save(subject),
-                    ),
-                ],
-              ),
-            ],
-          ],
-        ),
-      ),
-      actions: <Widget>[
-        FushiTextButton(
-          onPressed: () => Navigator.of(context).pop(false),
-          child: Text(t.cancel),
         ),
       ],
     );

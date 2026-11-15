@@ -4853,6 +4853,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     final RemoteVideoSource? source = _remoteVideoSource;
     final WatchedMarkResult result = await setVideosWatched(
       db: appModelNoUpdate.database,
+      tracking: appModelNoUpdate.libraryFinishTracking,
       watched: watched,
       localUids: localUids,
       remoteIds: remoteIds,
@@ -4914,6 +4915,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       context,
       title: t.video_watch_progress_clear,
       message: t.library_progress_reset_video_message,
+      trackingOn: appModel.isMediaTrackingOn,
       itemTitle: book.title,
     );
     if (records == null || !mounted) return;

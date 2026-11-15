@@ -20,6 +20,13 @@ enum HomeDashboardPanel {
   /// 没有复习卡的存量用户首页不多这一栏（用户拍板：老用户不提醒）。
   srsReview('srs_review'),
 
+  /// Tracking strip (Bangumi and tracking plugin sites): one line that
+  /// says whether progress reached the sites. Default rule
+  /// (`resolveHomeTrackingPanelVisible` in `home_tracking_panel.dart`): shown
+  /// only while something needs the user (a title to link, a failed send, a
+  /// site that wants a new sign-in); otherwise the home page stays as it is.
+  tracking('tracking'),
+
   /// AI 助手入口条（spec 2026-10-26 D4 ①）：点了打开 AI 浮层。默认判据（见
   /// `home_ai_agent_panel.dart` 的 `resolveHomeAiAgentPanelVisible`）：AI 模块开着且
   /// 给「AI 助手」指派了可用的提供商。

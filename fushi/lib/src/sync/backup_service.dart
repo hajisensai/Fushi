@@ -1829,6 +1829,8 @@ class BackupService {
       // result JSON, so it is both private and bulky).
       await db.customStatement('DELETE FROM search_history_items');
       await db.customStatement('DELETE FROM dictionary_history');
+      // v151: this device's log of sends to tracking sites, same kind of trace.
+      await db.customStatement('DELETE FROM media_tracking_activity');
 
       // Snapshot which collections had members BEFORE the gated member strip so
       // we can drop only the ones the strip emptied (never an always-empty,
