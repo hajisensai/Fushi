@@ -65,15 +65,16 @@ class SrsRemoteHostConnector {
     return configuredInterconnectHostTargets(repo);
   }
 
-  /// [candidates] 里声明了远程复习能力的主机（走网络探 `/api/capabilities`，没应答的不列）。
-  Future<List<InterconnectHostTarget>> supporting(
+  /// [candidates] 里声明了远程复习能力的主机（走网络探 `/api/capabilities`）：hostId → 能不能接上
+  /// （[probeSrsRemoteHosts]）。没应答、没有远程复习的不在结果里；代对不上的在，界面标明该升级哪边。
+  Future<Map<String, SrsRemoteHostCompat>> probeHosts(
     List<InterconnectHostTarget> candidates,
   ) async {
     final SyncRepository? repo = repository;
     if (repo == null || candidates.isEmpty) {
-      return const <InterconnectHostTarget>[];
+      return const <String, SrsRemoteHostCompat>{};
     }
-    return filterSrsRemoteStoreTargets(repo, candidates);
+    return probeSrsRemoteHosts(repo, candidates);
   }
 
   /// 复习首页「已配对设备」的落盘缓存（[kSrsHomePairedCachePrefKey]）；库还没开时 null（之后再读）。

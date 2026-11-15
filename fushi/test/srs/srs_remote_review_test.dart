@@ -25,6 +25,8 @@ import 'package:fushi/src/pages/implementations/srs/srs_review_page.dart';
 import 'package:fushi/src/srs/srs_card_media.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_remote_store_client.dart';
+import 'package:fushi/src/sync/interconnect_host_client.dart'
+    show InterconnectHostError;
 import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/video_remote_targets.dart';
@@ -35,6 +37,7 @@ import 'package:fushi_engine/srs/srs_builtin.dart' show srsLapisFieldId;
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_edit_history.dart';
 import 'package:fushi_engine/srs/srs_note_type_store.dart';
+import 'package:fushi_engine/srs/srs_remote_generation.dart';
 import 'package:fushi_engine/srs/srs_remote_store.dart';
 import 'package:fushi_engine/srs/srs_remote_store_routes.dart';
 import 'package:fushi_engine/srs/srs_rwkv_scheduling.dart';
@@ -249,13 +252,27 @@ class _FakeConnector extends SrsRemoteHostConnector {
   @override
   DateTime now() => clock;
 
+  /// 各主机按能力位判定出的代（没写的是现状：只声明 V1）。
+  final Map<String, SrsRemoteHostGeneration> generations =
+      <String, SrsRemoteHostGeneration>{};
+
   @override
-  Future<List<InterconnectHostTarget>> supporting(
+  Future<Map<String, SrsRemoteHostCompat>> probeHosts(
     List<InterconnectHostTarget> candidates,
-  ) async => <InterconnectHostTarget>[
-    for (final InterconnectHostTarget c in candidates)
-      if (hosts.containsKey(c.hostId) && !unsupported.contains(c.hostId)) c,
-  ];
+  ) async {
+    final Map<String, SrsRemoteHostCompat> out =
+        <String, SrsRemoteHostCompat>{};
+    for (final InterconnectHostTarget c in candidates) {
+      if (!hosts.containsKey(c.hostId) || unsupported.contains(c.hostId)) {
+        continue;
+      }
+      final SrsRemoteHostCompat compat = srsRemoteHostCompat(
+        generations[c.hostId] ?? SrsRemoteHostGeneration.v1Only,
+      );
+      if (compat != SrsRemoteHostCompat.unavailable) out[c.hostId] = compat;
+    }
+    return out;
+  }
 
   @override
   Future<SrsRemoteSession> open(
@@ -289,11 +306,11 @@ class _CountingConnector extends _FakeConnector {
   Completer<void>? openGate;
 
   @override
-  Future<List<InterconnectHostTarget>> supporting(
+  Future<Map<String, SrsRemoteHostCompat>> probeHosts(
     List<InterconnectHostTarget> candidates,
   ) {
     probed.addAll(candidates.map((InterconnectHostTarget c) => c.hostId));
-    return super.supporting(candidates);
+    return super.probeHosts(candidates);
   }
 
   @override
@@ -388,6 +405,28 @@ void main() {
         '<img src="e&amp;f.png">',
       ),
       <String>{'a.mp3', 'b.png', 'c.jpg', 'd.webp', 'e&f.png'},
+    );
+  });
+
+  test('远程复习的换代机读码各有文案，不落成「Remote review failed (<码>)」', () {
+    LocaleSettings.setLocale(AppLocale.en);
+    String textOf(String code) =>
+        srsRemoteReviewErrorText(InterconnectHostError(code, statusCode: 426));
+    expect(
+      textOf(SrsRemoteStoreError.upgradeRequired),
+      t.srs_remote_review_error_upgrade_required,
+    );
+    expect(
+      textOf(SrsRemoteStoreError.migrating),
+      t.srs_remote_review_error_host_migrating,
+    );
+    expect(
+      textOf(SrsRemoteStoreError.migrationFailed),
+      t.srs_remote_review_error_host_migration_failed,
+    );
+    expect(
+      textOf('something_else'),
+      t.srs_remote_review_error_other(code: 'something_else'),
     );
   });
 
@@ -1414,6 +1453,68 @@ void main() {
       await reopen(tester, shown);
       expect(find.byKey(pairedSection), findsNothing);
       expect(connector.homeCache, isEmpty);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 1));
+    });
+
+    testWidgets('代对不上的主机不再悄悄滤掉：列出来标明该升级哪边、不握手不发调用；重探后代对上了照常连', (
+      WidgetTester tester,
+    ) async {
+      final (_Host host, SrsDbStore local, _CountingConnector connector) =
+          await openFixture(tester);
+      // 本机这个构建仍说 V1；主机已是新代（声明 V2，V1 只是拒绝桩）→ 本机需要升级。
+      expect(kSrsRemoteClientWire, SrsRemoteWireVersion.v1);
+      connector.generations['host-1'] = SrsRemoteHostGeneration.v2;
+      final ValueNotifier<bool> shown = await pumpReopenableHome(
+        tester,
+        connector,
+        local,
+      );
+      await settle(tester);
+      expect(find.byKey(pairedSection), findsOneWidget, reason: '不再静默过滤');
+      expect(
+        pairedHeaderText(t.srs_remote_review_client_upgrade_required),
+        findsOneWidget,
+      );
+      expect(connector.probes, 1);
+      expect(connector.opens, 0, reason: '代对不上不握手');
+      expect(host.ops, isEmpty, reason: '不向主机发任何调用');
+      expect(
+        find.byKey(const ValueKey<String>('srs-paired-retry-host-1')),
+        findsNothing,
+        reason: '升级提示不是可重试的加载失败',
+      );
+      expect(connector.homeCache, isNot(contains('host-1')), reason: '没有牌组可落盘');
+
+      // 有效期内再进首页：照旧只显示提示，不握手。
+      await reopen(tester, shown);
+      expect(connector.opens, 0);
+      expect(host.ops, isEmpty);
+
+      // 主机侧回到本机能说的代（这里模拟成只声明 V1），探测过期后重探：照常握手、读牌组。
+      connector.generations.remove('host-1');
+      connector.clock = connector.clock.add(kSrsPairedProbeTtl);
+      await reopen(tester, shown);
+      expect(connector.opens, 1);
+      expect(
+        pairedHeaderText(t.srs_remote_review_client_upgrade_required),
+        findsNothing,
+      );
+      expect(pairedHeaderText(t.srs_home_deck_cards(n: 2)), findsOneWidget);
+
+      // 反方向：主机重新判成代对不上时，已有会话与上次的牌组一并作废，只留提示。
+      connector.generations['host-1'] = SrsRemoteHostGeneration.v2;
+      connector.clock = connector.clock.add(kSrsPairedProbeTtl);
+      final int opsBefore = host.ops.length;
+      await reopen(tester, shown);
+      expect(
+        pairedHeaderText(t.srs_remote_review_client_upgrade_required),
+        findsOneWidget,
+      );
+      expect(pairedHeaderText(t.srs_home_deck_cards(n: 2)), findsNothing);
+      expect(host.ops.length, opsBefore, reason: '作废的会话不再发调用');
+      expect(connector.homeCache, isNot(contains('host-1')));
 
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump(const Duration(seconds: 1));

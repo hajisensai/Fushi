@@ -17,6 +17,7 @@ import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_edit_history.dart';
 import 'package:fushi_engine/srs/srs_note_type_store.dart';
+import 'package:fushi_engine/srs/srs_remote_generation.dart';
 import 'package:fushi_engine/srs/srs_remote_store.dart';
 import 'package:fushi_engine/srs/srs_rwkv_scheduling.dart';
 import 'package:fushi_srs/fushi_srs.dart';
@@ -31,6 +32,8 @@ import 'package:fushi/src/sync/video_remote_targets.dart';
 
 export 'package:fushi_engine/srs/srs_remote_store.dart'
     show SrsRemoteStoreError, SrsRemoteWireError;
+export 'package:fushi_engine/srs/srs_remote_generation.dart'
+    show SrsRemoteHostCompat, SrsRemoteHostGeneration;
 
 /// 一台互联主机的远程复习库端点。失败抛 [InterconnectHostError]，`message` 是主机的机读码
 /// （[SrsRemoteStoreError] 的常量）或连接层的码（[InterconnectHostError.unreachableCode] 等）。
@@ -69,9 +72,15 @@ class SrsRemoteHostClient extends InterconnectHostClient {
     authErrorMessage: 'SRS remote store authentication rejected',
   );
 
-  /// 主机是否声明了远程复习库。null = 没有应答。
+  /// 主机是否声明了远程复习库（V1 能力位）。null = 没有应答。
   Future<bool?> supportsRemoteStore() =>
       declaresCapability(kSrsRemoteStoreCapability);
+
+  /// 主机远程复习的代（按 `/api/capabilities` 的能力位，[srsRemoteHostGenerationOf]）。null = 没有应答。
+  Future<SrsRemoteHostGeneration?> remoteGeneration() async {
+    final Map<Object?, Object?>? declared = await capabilities();
+    return declared == null ? null : srsRemoteHostGenerationOf(declared);
+  }
 
   /// 一个媒体文件的字节；主机没有时 null。
   Future<Uint8List?> media(String name) async {
@@ -83,8 +92,15 @@ class SrsRemoteHostClient extends InterconnectHostClient {
   }
 }
 
-/// 远程复习库的能力探测（一次性 client，探完关掉它的连接）。
-Future<bool?> _probeSrsRemoteStore(
+/// 探一台对端远程复习的代。null = 没有应答。
+typedef SrsRemoteGenerationProbe =
+    Future<SrsRemoteHostGeneration?> Function(
+      SyncRepository repository,
+      FushiClientUrl peer,
+    );
+
+/// 远程复习的代际探测（一次性 client，探完关掉它的连接）。
+Future<SrsRemoteHostGeneration?> _probeSrsRemoteGeneration(
   SyncRepository repository,
   FushiClientUrl peer,
 ) async {
@@ -93,21 +109,61 @@ Future<bool?> _probeSrsRemoteStore(
     peer: peer,
   );
   try {
-    return await client.supportsRemoteStore();
+    return await client.remoteGeneration();
   } finally {
     client.cancelPending();
   }
 }
 
-/// [candidates]（[configuredInterconnectHostTargets] 列出的）里此刻提供远程复习库的那些。
+/// [candidates]（[configuredInterconnectHostTargets] 列出的）逐台探远程复习的代，按本机能说的线格式配对
+/// （[srsRemoteHostCompat]）：hostId → 能不能接上。没应答、超过 [timeout]、探测抛错、没有远程复习
+/// （[SrsRemoteHostCompat.unavailable]）的主机不在结果里；代对不上的主机在结果里，界面列出来并标明该升级哪边，
+/// 不再悄悄滤掉。各 host 并发探测。
+Future<Map<String, SrsRemoteHostCompat>> probeSrsRemoteHosts(
+  SyncRepository repository,
+  List<InterconnectHostTarget> candidates, {
+  SrsRemoteGenerationProbe probe = _probeSrsRemoteGeneration,
+  Duration timeout = const Duration(seconds: 6),
+}) async {
+  Future<SrsRemoteHostCompat> compatOf(InterconnectHostTarget target) async {
+    try {
+      final SrsRemoteHostGeneration? generation = await probe(
+        repository,
+        target.peer,
+      ).timeout(timeout);
+      return generation == null
+          ? SrsRemoteHostCompat.unavailable
+          : srsRemoteHostCompat(generation);
+    } catch (_) {
+      return SrsRemoteHostCompat.unavailable;
+    }
+  }
+
+  final List<SrsRemoteHostCompat> results = await Future.wait(
+    candidates.map(compatOf),
+  );
+  return <String, SrsRemoteHostCompat>{
+    for (int i = 0; i < candidates.length; i++)
+      if (results[i] != SrsRemoteHostCompat.unavailable)
+        candidates[i].hostId: results[i],
+  };
+}
+
+/// [candidates] 里此刻能直接连上远程复习库的那些（[probeSrsRemoteHosts] 判为 [SrsRemoteHostCompat.ready]，
+/// 顺序不变）。
 Future<List<InterconnectHostTarget>> filterSrsRemoteStoreTargets(
   SyncRepository repository,
   List<InterconnectHostTarget> candidates,
-) => filterInterconnectHostTargets(
-  repository: repository,
-  candidates: candidates,
-  probe: _probeSrsRemoteStore,
-);
+) async {
+  final Map<String, SrsRemoteHostCompat> compat = await probeSrsRemoteHosts(
+    repository,
+    candidates,
+  );
+  return <InterconnectHostTarget>[
+    for (final InterconnectHostTarget c in candidates)
+      if (compat[c.hostId] == SrsRemoteHostCompat.ready) c,
+  ];
+}
 
 /// 主机的回包不合契约（[SrsRemoteWireError]）：按 [InterconnectHostError] 的形状抛，机读码是
 /// [SrsRemoteStoreError.badResponse]，页面与别的远程失败走同一套文案和重试。[op] 是哪一次调用，

@@ -14,6 +14,8 @@ part of 'srs_deck_list_page.dart';
 //   缓存的只是界面要画的牌组摘要（主机的库仍在主机上，翻页 / 作答都实时打到主机）。
 // - 牌组摘要连同探测时刻落盘（[kSrsHomePairedCachePrefKey]，设备本地，格式是远程复习的线格式
 //   [SrsRemoteWire.deckCache]，读回经同一套校验）：冷启动第一次进复习页也先画上次的数字，再握手重读。
+// - 代对不上的主机（只说 V1 的旧主机配说 V2 的本机，或反过来，见 srs_remote_generation.dart）不再悄悄滤掉：
+//   照样列一组，组头写明该升级哪一边（[_PairedHost.upgrade]），不握手、不发调用，也不能展开。
 // - 探测结果有效期 [kSrsPairedProbeTtl]：过期的已知主机下次进页面自动重探（关了远程复习 / 离线的去掉），
 //   不在分区里的主机（新配对、上次没应答）每次进页面都探，所以新上线的主机不用点「立即同步」也能出现。
 // - 缓存的是「网络探测」的结果，不是「本机配置门控」：每次进页面都先按本机互联配置（总开关、服务端模式、
@@ -54,6 +56,37 @@ class _PairedHost {
 
   /// 最近一次确认它声明了远程复习能力的时刻（超过 [kSrsPairedProbeTtl] 重新探）。
   DateTime? probedAt;
+
+  /// 代对不上时该升级哪一边（[SrsRemoteHostCompat.hostNeedsUpgrade] / [SrsRemoteHostCompat.clientNeedsUpgrade]）；
+  /// 能接上时为 null。非 null 时不握手、不读牌组，组头只显示升级提示，下次探测时重判。
+  SrsRemoteHostCompat? upgrade;
+
+  /// 把探测结果 [compat] 记下：能接上清掉升级提示；代对不上就作废会话与上次的牌组（那是另一代主机的数据）。
+  void applyCompat(SrsRemoteHostCompat compat) {
+    if (compat == SrsRemoteHostCompat.ready) {
+      upgrade = null;
+      return;
+    }
+    session?.client.cancelPending();
+    upgrade = compat;
+    session = null;
+    decks = null;
+    deckCache = null;
+    updatedAt = null;
+    error = null;
+    expanded = false;
+  }
+
+  /// 组头上的升级提示；能接上时为 null。
+  String? get upgradeNotice => switch (upgrade) {
+    SrsRemoteHostCompat.hostNeedsUpgrade =>
+      t.srs_remote_review_host_upgrade_required,
+    SrsRemoteHostCompat.clientNeedsUpgrade =>
+      t.srs_remote_review_client_upgrade_required,
+    SrsRemoteHostCompat.ready ||
+    SrsRemoteHostCompat.unavailable ||
+    null => null,
+  };
 
   /// 最近一次加载失败的提示（下次加载开始时清掉）。
   String? error;
@@ -287,23 +320,20 @@ class _SrsPairedHosts extends ChangeNotifier {
       for (final InterconnectHostTarget c in configured)
         if (!kept.containsKey(c.hostId) || due.contains(c.hostId)) c,
     ];
-    final Future<List<InterconnectHostTarget>> probing = connector.supporting(
-      candidates,
-    );
+    final Future<Map<String, SrsRemoteHostCompat>> probing = connector
+        .probeHosts(candidates);
     final List<Future<void>> loads = <Future<void>>[
       for (final _PairedHost h in kept.values)
         if (!due.contains(h.target.hostId)) load(h),
     ];
-    final Set<String> supported = <String>{
-      for (final InterconnectHostTarget t in await probing) t.hostId,
-    };
+    final Map<String, SrsRemoteHostCompat> supported = await probing;
     if (_disposed) {
       await Future.wait(loads);
       return;
     }
 
     // 合并：探测期间本轮外没人改 [hosts]（同一时刻只跑一轮），按配置顺序排。重探了的已有主机没应答 / 不再
-    // 声明能力就去掉（与新主机同一个判据）。
+    // 声明能力就去掉（与新主机同一个判据）；代对不上的留在列表里、只显示升级提示，不读牌组。
     final DateTime probedAt = connector.now();
     final List<_PairedHost> reload = <_PairedHost>[];
     final List<_PairedHost> next = <_PairedHost>[];
@@ -311,9 +341,11 @@ class _SrsPairedHosts extends ChangeNotifier {
       final _PairedHost? prev = kept[c.hostId];
       if (prev != null && !due.contains(c.hostId)) {
         next.add(prev);
-      } else if (supported.contains(c.hostId)) {
-        final _PairedHost h = (prev ?? _PairedHost(c))..probedAt = probedAt;
-        reload.add(h);
+      } else if (supported[c.hostId] case final SrsRemoteHostCompat compat) {
+        final _PairedHost h = (prev ?? _PairedHost(c))
+          ..probedAt = probedAt
+          ..applyCompat(compat);
+        if (h.upgrade == null) reload.add(h);
         next.add(h);
       } else {
         prev?.session?.client.cancelPending();
@@ -331,7 +363,8 @@ class _SrsPairedHosts extends ChangeNotifier {
   /// 上次的牌组缓存保留。连接层 / 主机报的错、回包不合契约（[SrsRemoteBadResponse]）按机读码出文案；其余
   /// 异常记进错误日志，组头出通用的加载失败。
   Future<void> load(_PairedHost h) async {
-    if (h.loading || _disposed) return;
+    // 代对不上的主机不发任何调用（V1 拒绝桩只会回 upgrade_required）。
+    if (h.loading || _disposed || h.upgrade != null) return;
     h
       ..loading = true
       ..error = null;
@@ -677,6 +710,8 @@ class _SrsPairedDeviceHeader extends StatelessWidget {
     _PairedDeckTotals? totals,
     String? error,
   ) {
+    final String? upgrade = host.upgradeNotice;
+    if (upgrade != null) return upgrade;
     final DateTime? at = host.updatedAt;
     final bool loading = host.loading || paired.reconciling;
     if (totals == null || at == null) {
