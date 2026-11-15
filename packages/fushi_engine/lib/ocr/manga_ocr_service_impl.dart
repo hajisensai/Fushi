@@ -36,6 +36,7 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi_engine/ocr/charspot_ocr_recognizer.dart';
 import 'package:fushi_engine/ocr/ctc_column_ocr_recognizer.dart';
+import 'package:fushi_engine/ocr/manga_ocr_custom_model.dart';
 import 'package:fushi_engine/ocr/manga_ocr_local_model.dart';
 import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart';
 import 'package:fushi_engine/ocr/manga_ocr_model_downloader.dart';
@@ -704,10 +705,17 @@ Future<void> _volumeJobIsolateMain(_JobIsolateArgs args) async {
     // 的文件（当前一代还没下齐），都按权重落盘名反查（逐列 CTC 的 rec / charspot
     // 的 model.onnx，各模型各代落盘名互不相同）。查不到（注入了自定义清单的测试）
     // 时按默认模型的当前一代算。
+    final String recName = p.basename(args.modelPaths.blockRecognizerPath);
+    if (args.engineSignature == null && recName == kCustomMangaOcrRecFileName) {
+      // The custom slot's signature comes from its import metadata, which only
+      // the service reads; guessing here would file its pages under another
+      // model's cache folder.
+      throw StateError(
+        'custom OCR model job started without a cache signature',
+      );
+    }
     final MangaOcrModelGeneration jobGeneration =
-        mangaOcrGenerationForRecFile(
-          p.basename(args.modelPaths.blockRecognizerPath),
-        ) ??
+        mangaOcrGenerationForRecFile(recName) ??
         kDefaultMangaOcrLocalModel.generation;
     final String engineSignature =
         args.engineSignature ??
@@ -1486,26 +1494,45 @@ class MangaOcrServiceImpl
     );
   }
 
+  /// The generation to check against in [dir]: [_current] for built-in
+  /// models; for the custom slot the one built from its import metadata, or
+  /// null while nothing is imported (OCR then reports "not downloaded" like a
+  /// built-in model that was never fetched).
+  Future<MangaOcrModelGeneration?> _currentIn(Directory dir) async {
+    if (!localModel.isUserImported) return _current;
+    final MangaOcrCustomModelInfo? info = await readCustomMangaOcrModelInfo(
+      dir,
+    );
+    return info == null ? null : customMangaOcrGeneration(info);
+  }
+
   /// 磁盘上实际能用来识别的那一代（当前一代，或替它读的上一代）；null = 都不齐。
   /// 模型路径与缓存签名都从这一个结果派生，两者不会各算各的。
   ///
   /// 只 stat 清单里那几个文件，不遍历目录：跑 OCR 的热路径只需要这个答案，占用
-  /// 统计（[modelStatus]）才递归遍历整个模型目录。
-  Future<MangaOcrModelGeneration?> _installedGeneration() async =>
-      installedMangaOcrGeneration(
-        await _modelsDirProvider(),
-        current: _current,
-        superseded: _superseded,
-      );
+  /// 统计（[modelStatus]）才递归遍历整个模型目录。自定义槽多读一个小 JSON。
+  Future<MangaOcrModelGeneration?> _installedGeneration() async {
+    final Directory dir = await _modelsDirProvider();
+    final MangaOcrModelGeneration? current = await _currentIn(dir);
+    if (current == null) return null;
+    return installedMangaOcrGeneration(
+      dir,
+      current: current,
+      superseded: _superseded,
+    );
+  }
 
   @override
   Future<MangaOcrModelStatus> modelStatus() async {
     final Directory dir = await _modelsDirProvider();
+    final MangaOcrModelGeneration? current = await _currentIn(dir);
     bool detectorReady = true;
-    bool recognizerReady = true;
+    // An empty custom slot has no recogniser at all; only its detector files
+    // are listed (they are what [downloadModels] fetches).
+    bool recognizerReady = current != null;
     int totalBytes = 0;
     int obtainedBytes = 0;
-    for (final MangaOcrModelFile model in _manifest) {
+    for (final MangaOcrModelFile model in current?.manifest ?? _manifest) {
       totalBytes += model.expectedBytes;
       final File file = File(p.join(dir.path, model.fileName));
       if (isMangaOcrModelFileReady(file)) {
@@ -1541,7 +1568,8 @@ class MangaOcrServiceImpl
   @override
   Stream<MangaOcrDownloadEvent> downloadModels() async* {
     final Directory dir = await _modelsDirProvider();
-    // 已就绪的文件下载器会跳过（仍发一条满额进度）。
+    // 已就绪的文件下载器会跳过（仍发一条满额进度）。自定义槽的清单只有两份共用
+    // 检测器：识别器与字典由用户导入，没有下载源。
     yield* _downloader.downloadAll(files: _manifest, targetDir: dir);
     // 当前一代下齐了：替它读的上一代文件不再有人用，当场删掉（没下齐时不删）。
     if (localModel == MangaOcrLocalModel.mangaCtc && _superseded != null) {
@@ -1644,7 +1672,9 @@ class MangaOcrServiceImpl
     // 与 [_checkedModelPaths] 同一个判据：上一代在替当前一代读时，缓存也记在上一代
     // 的签名下，下齐当前一代后那些页会按新签名重认，两代结果不混。
     final MangaOcrModelGeneration generation =
-        await _installedGeneration() ?? _current;
+        await _installedGeneration() ??
+        await _currentIn(await _modelsDirProvider()) ??
+        _current;
     return mangaOcrEngineSignatureFor(
       await model_fp.resolveLocalMangaOcrEngineSignature(
         await _modelsDirProvider(),

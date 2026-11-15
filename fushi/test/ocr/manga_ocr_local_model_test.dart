@@ -37,6 +37,7 @@ void main() {
       MangaOcrLocalModel.ppOcrV5Korean,
       MangaOcrLocalModel.charspotSmall,
       MangaOcrLocalModel.charspotNano,
+      MangaOcrLocalModel.custom,
     ]);
   });
 
@@ -732,7 +733,9 @@ void main() {
           expect(
             model.cacheSignature,
             allOf(
-              contains(model == MangaOcrLocalModel.charspotSmall ? 'small' : 'nano'),
+              contains(
+                model == MangaOcrLocalModel.charspotSmall ? 'small' : 'nano',
+              ),
               contains('charspot'),
               endsWith(kMangaOcrPipelineRevision),
             ),
@@ -744,7 +747,10 @@ void main() {
           expect(sizes.toSet(), hasLength(sizes.length), reason: model.key);
         }
         expect(
-          MangaOcrLocalModel.mangaCtc.generation.recognizer
+          MangaOcrLocalModel
+              .mangaCtc
+              .generation
+              .recognizer
               .honoursIgnoreFurigana,
           isTrue,
         );
@@ -830,7 +836,15 @@ void main() {
     });
 
     test('maps a recogniser file back to the generation that owns it', () {
-      for (final MangaOcrLocalModel model in MangaOcrLocalModel.values) {
+      // The user-imported slot's generation comes from its import metadata;
+      // the synchronous lookup never claims its recogniser file.
+      expect(
+        mangaOcrGenerationForRecFile(
+          MangaOcrLocalModel.custom.generation.recFileName,
+        ),
+        isNull,
+      );
+      for (final MangaOcrLocalModel model in MangaOcrLocalModel.builtInValues) {
         expect(
           mangaOcrGenerationForRecFile(model.generation.recFileName),
           same(model.generation),

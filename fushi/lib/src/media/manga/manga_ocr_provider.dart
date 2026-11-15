@@ -35,10 +35,11 @@ MangaOcrService createSelectedMangaOcrService(String Function() modelKey) =>
       ),
     );
 
-/// 互联 host 给对端点名的模型表：本平台列得出的每个本机模型一份服务。
+/// 互联 host 给对端点名的模型表：本平台列得出的每个本机模型一份服务。用户导入的
+/// 自定义槽不列：那份权重只在这台设备上，对端点名它没有意义。
 Map<String, MangaOcrService> createMangaOcrHostModelServices() =>
     <String, MangaOcrService>{
-      for (final MangaOcrLocalModel model in MangaOcrLocalModel.values)
+      for (final MangaOcrLocalModel model in MangaOcrLocalModel.builtInValues)
         if (MangaOcrLocalModel.forPlatform(model.key) == model)
           model.key: createMangaOcrService(localModel: model),
     };

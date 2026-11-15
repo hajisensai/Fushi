@@ -7,6 +7,8 @@
 ///   returns every character with its box and reading order
 ///   (`charspot_ocr_recognizer.dart`). Japanese only; weights are CC BY-NC-SA
 ///   4.0 and are downloaded by the user from Hugging Face, never bundled.
+/// - One user-imported slot ([MangaOcrLocalModel.custom]): a PaddleOCR CTC
+///   recogniser the user downloads and imports (`manga_ocr_custom_model.dart`).
 ///
 /// The kha-white manga-ocr model and Baberu were both removed in 2026-10.
 library;
@@ -20,6 +22,8 @@ import 'package:fushi_engine/ocr/charspot_ocr_recognizer.dart'
     show kCharspotNanoCellBudget, kCharspotSmallCellBudget;
 import 'package:fushi_engine/ocr/manga_ocr_model_manifest.dart';
 import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart';
+import 'package:fushi_engine/ocr/manga_ocr_custom_model.dart'
+    show resolveCustomMangaOcrEngineSignature;
 import 'package:fushi_engine/ocr/manga_ocr_model_fingerprint.dart' as model_fp;
 import 'package:fushi_engine/ocr/ppocr_line_recognizer.dart'
     show PpOcrCharacterDictFormat;
@@ -44,7 +48,16 @@ enum MangaOcrLocalModel {
 
   /// muscgab manga-ocr-charspot-nano：同上的 1.7M 参数版，约为 small 的四分之一
   /// 耗时，准确率略低。
-  charspotNano('charspot_nano');
+  charspotNano('charspot_nano'),
+
+  /// User-imported slot: one PaddleOCR-format CTC recogniser (`.onnx` + its
+  /// dictionary) the user downloaded and imported (`manga_ocr_custom_model.dart`).
+  /// Its files are not known at compile time: [generation] is only the slot's
+  /// static shape (the shared detector files it downloads); the generation that
+  /// actually runs is built from the metadata written at import
+  /// ([customMangaOcrGeneration]). App only: hosts and the server never list it
+  /// ([isUserImported]).
+  custom('custom');
 
   const MangaOcrLocalModel(this.key);
   final String key;
@@ -77,8 +90,19 @@ enum MangaOcrLocalModel {
     ppOcrV6Medium ||
     ppOcrV5Korean ||
     charspotSmall ||
-    charspotNano => true,
+    charspotNano ||
+    custom => true,
   };
+
+  /// The user-imported slot. Its weights live only on this device, so paired
+  /// hosts and the server do not offer it to peers ([builtInValues]).
+  bool get isUserImported => this == custom;
+
+  /// Every model that ships with a download manifest (all but [custom]).
+  static List<MangaOcrLocalModel> get builtInValues => <MangaOcrLocalModel>[
+    for (final MangaOcrLocalModel model in values)
+      if (!model.isUserImported) model,
+  ];
 
   /// 当前这一代：下载、导入、设置页展示都按它。
   MangaOcrModelGeneration get generation => switch (this) {
@@ -87,13 +111,18 @@ enum MangaOcrLocalModel {
     ppOcrV5Korean => kPpOcrV5KoreanGeneration,
     charspotSmall => kCharspotSmallGeneration,
     charspotNano => kCharspotNanoGeneration,
+    custom => kCustomMangaOcrSlotGeneration,
   };
 
   /// 上一代：当前这一代还没下齐、而它在磁盘上齐全时，识别照常用它跑
   /// （[installedMangaOcrGeneration]）。没有上一代的模型返回 null。
   MangaOcrModelGeneration? get supersededGeneration => switch (this) {
     mangaCtc => kMangaCtcSupersededGeneration,
-    ppOcrV6Medium || ppOcrV5Korean || charspotSmall || charspotNano => null,
+    ppOcrV6Medium ||
+    ppOcrV5Korean ||
+    charspotSmall ||
+    charspotNano ||
+    custom => null,
   };
 
   List<MangaOcrModelFile> get manifest => generation.manifest;
@@ -111,6 +140,7 @@ enum MangaOcrLocalModel {
       ppOcrV5Korean => kPpOcrV5KoreanModelDirName,
       charspotSmall => kCharspotSmallModelDirName,
       charspotNano => kCharspotNanoModelDirName,
+      custom => kCustomMangaOcrModelDirName,
     };
     return Directory(p.join(legacy.parent.path, sibling));
   }
@@ -207,8 +237,13 @@ MangaOcrModelGeneration? installedMangaOcrGeneration(
 ///
 /// 整卷任务的 isolate 只拿得到模型文件路径，缓存签名却必须跟着「实际在读的那份
 /// rec」走——每一代的 rec 落盘名互不相同（带模型名 / 版本），按它反查不会认错。
+///
+/// The custom slot is never returned: its generation (and cache signature) comes
+/// from the metadata written at import, which this synchronous lookup cannot
+/// read. Callers that only have paths must be handed the signature instead
+/// (`MangaOcrServiceImpl` always does).
 MangaOcrModelGeneration? mangaOcrGenerationForRecFile(String recFileName) {
-  for (final MangaOcrLocalModel model in MangaOcrLocalModel.values) {
+  for (final MangaOcrLocalModel model in MangaOcrLocalModel.builtInValues) {
     for (final MangaOcrModelGeneration? generation
         in <MangaOcrModelGeneration?>[
           model.generation,
@@ -233,6 +268,9 @@ Future<String> resolveInstalledLocalMangaOcrEngineSignature({
 }) async {
   try {
     final Directory dir = await model.modelsDirectory();
+    if (model.isUserImported) {
+      return await resolveCustomMangaOcrEngineSignature(dir);
+    }
     // 当前一代没下齐而上一代还在时，实际在读（也在写缓存）的是上一代。
     final MangaOcrModelGeneration generation =
         installedMangaOcrGeneration(
@@ -281,6 +319,32 @@ const List<String> kRemovedMangaOcrLegacyFileNames = <String>[
 
 /// 旧 manga-ocr 目录名（[model_fp.defaultMangaOcrModelsDir] 的 basename）。
 const String kLegacyMangaOcrModelDirName = 'manga';
+
+/// The custom slot's folder ([MangaOcrLocalModel.modelsDirectory] basename).
+const String kCustomMangaOcrModelDirName = 'custom';
+
+/// On-disk name of the imported recogniser (the user's file is copied to it).
+const String kCustomMangaOcrRecFileName = 'custom_rec.onnx';
+
+/// Static shape of the custom slot: only the two shared detector files, which
+/// are the part Fushi downloads itself (`downloadModels`). The recogniser, its
+/// dictionary and the cache signature come from the import metadata
+/// ([customMangaOcrGeneration]); nothing may resolve model paths from this
+/// constant, and its signature is never written to because OCR cannot run
+/// while the slot is empty.
+const MangaOcrModelGeneration kCustomMangaOcrSlotGeneration =
+    MangaOcrModelGeneration(
+      manifest: <MangaOcrModelFile>[
+        _kComicTextDetectorFile,
+        _kPpOcrSmallDetFile,
+      ],
+      cacheSignature: 'local-onnx-ctc-custom-empty-$kMangaOcrPipelineRevision',
+      recFileName: kCustomMangaOcrRecFileName,
+      recDictFileName: '',
+      recognizer: MangaOcrCtcColumnSpec(
+        dictFormat: PpOcrCharacterDictFormat.plainText,
+      ),
+    );
 
 /// 逐列 CTC 目录名（[MangaOcrLocalModel.modelsDirectory] 的 basename）。
 const String kMangaCtcModelDirName = 'manga-ctc';

@@ -976,6 +976,15 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
             t.manga_ocr_download_background_hint,
             style: theme.textTheme.bodySmall,
           ),
+        ] else if (!_builtinAvailable && selected.isUserImported) ...<Widget>[
+          // The custom slot has nothing to download until a model is imported;
+          // the import (file pickers + validation) lives on the settings card.
+          const SizedBox(height: 8),
+          Text(
+            t.manga_ocr_custom_model_wizard_hint,
+            key: const ValueKey<String>('manga_ocr_wizard_custom_model_hint'),
+            style: theme.textTheme.bodySmall,
+          ),
         ] else if (!_builtinAvailable) ...<Widget>[
           const SizedBox(height: 8),
           Row(

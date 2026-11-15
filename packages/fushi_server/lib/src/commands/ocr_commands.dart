@@ -119,9 +119,10 @@ List<int> parsePageSelection(String spec, int pageCount) {
 }
 
 /// 本平台能跑的本地 OCR 模型（key → 服务），与 `HeadlessHost` 的 `ocrModelServices` 同口径。
+/// 用户导入的自定义槽只在 app 里有导入入口，服务端不列。
 Map<String, MangaOcrServiceImpl> serverOcrModelServices() =>
     <String, MangaOcrServiceImpl>{
-      for (final MangaOcrLocalModel model in MangaOcrLocalModel.values)
+      for (final MangaOcrLocalModel model in MangaOcrLocalModel.builtInValues)
         if (MangaOcrLocalModel.forPlatform(model.key) == model)
           model.key: MangaOcrServiceImpl(localModel: model),
     };
@@ -394,7 +395,7 @@ class OcrCommands extends CliModule {
   }
 
   int _unknownModel(String key, Map<String, MangaOcrServiceImpl> services) {
-    final bool known = MangaOcrLocalModel.values.any(
+    final bool known = MangaOcrLocalModel.builtInValues.any(
       (MangaOcrLocalModel m) => m.key == key,
     );
     if (!known) {
