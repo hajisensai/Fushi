@@ -53,7 +53,8 @@ if [ ! -f "$CONFIG" ]; then
     case "$init_err" in
       # package:args: Could not find an option named "language" / "--language".
       *'option named "'*'language"'*)
-        echo "fushi: this server build has no language setting; FUSHI_LANGUAGE ignored" >&2
+        [ -z "${FUSHI_LANGUAGE:-}" ] \
+          || echo "fushi: this server build has no language setting; FUSHI_LANGUAGE ignored" >&2
         init_server
         ;;
       *)

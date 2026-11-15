@@ -84,7 +84,7 @@ Both builds give the same container: same settings, volumes and ports.
 
 - **Language.** `FUSHI_LANGUAGE` only applies to the first start. Change it later
   in WebUI → Settings → Language. A one-off CLI command in the other language:
-  `docker compose exec fushi-server env FUSHI_CLI_LANGUAGE=zh fushi_server status`.
+  `docker compose exec fushi-server env FUSHI_CLI_LANGUAGE=zh fushi_server ctl status`.
 - **Permissions.** The container starts as root only to give the config folder
   to `PUID:PGID`, then drops privileges for good. Media folders are never
   re-owned; they only need to be readable by `PUID` (writable for upload targets).
