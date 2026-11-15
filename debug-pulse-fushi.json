@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-15T08:53:18Z",
+ "generatedAt": "2026-11-15T08:58:13Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "c6e6e3664cb73137a68b797e6f6a9f5a8aa4ead0",
-  "seq": 27417
+  "sha": "dd31e1dd0bbd96045a95ea66342c71e88d5b1f78",
+  "seq": 27421
  },
  "builds": [
   {
@@ -13,7 +13,7 @@
    "sha": "8cab29af7acb28b521432a93667ad85cb85de9c7",
    "unknown": false,
    "publishedAt": "2026-11-15T08:53:05Z",
-   "testflight": false,
+   "testflight": true,
    "baseSeq": 27339,
    "prs": [
     3443,
@@ -179,9 +179,10 @@
   }
  ],
  "pending": {
-  "headSha": "c6e6e3664cb73137a68b797e6f6a9f5a8aa4ead0",
-  "headSeq": 27417,
+  "headSha": "dd31e1dd0bbd96045a95ea66342c71e88d5b1f78",
+  "headSeq": 27421,
   "prs": [
+   3148,
    3397,
    3147
   ],
@@ -198,15 +199,15 @@
     "url": "https://github.com/hajisensai/Fushi/actions/runs/43695802968"
    },
    "windows": {
-    "state": "queued",
+    "state": "building",
     "url": "https://github.com/hajisensai/Fushi/actions/runs/43695802934"
    },
    "macos": {
-    "state": "queued",
+    "state": "building",
     "url": "https://github.com/hajisensai/Fushi/actions/runs/43695802934"
    },
    "ios": {
-    "state": "queued",
+    "state": "building",
     "url": "https://github.com/hajisensai/Fushi/actions/runs/43695802934"
    }
   }
@@ -219,6 +220,17 @@
    "mergedAt": "2026-11-15T08:21:11Z",
    "additions": 25460,
    "deletions": 1189,
+   "labels": [
+    "merge-approved"
+   ]
+  },
+  "3148": {
+   "number": 3148,
+   "title": "feat(server): WebUI「词典」page for hosted dictionaries（叠在 #3100 #3101 #3147 之上）",
+   "author": "samutw",
+   "mergedAt": "2026-11-15T08:57:25Z",
+   "additions": 344,
+   "deletions": 37,
    "labels": [
     "merge-approved"
    ]
