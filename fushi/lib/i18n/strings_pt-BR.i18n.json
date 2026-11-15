@@ -11585,7 +11585,7 @@
   "video_shader_downloading": "Baixando shaders…",
   "video_shader_first_use_body": "Para uma reprodução de anime mais nítida, abra \"Aprimoramento de imagem\" e clique em \"Baixar predefinições Anime4K\". Os shaders recomendados serão baixados; depois marque os instalados para ativá-los.",
   "video_shader_first_use_download": "Baixar e ativar",
-  "video_shader_first_use_title": "Experimente o aprimoramento de imagem Anime4K",
+  "video_shader_first_use_title": "Conheça o aprimoramento de imagem Anime4K",
   "video_shader_import": "Importar shader (.glsl)",
   "video_shader_import_done": "$count shader(s) importado(s)",
   "video_shader_import_from_mpv": "Importar do mpv local",
