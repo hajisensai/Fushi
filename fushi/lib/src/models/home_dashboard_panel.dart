@@ -26,7 +26,7 @@ enum HomeDashboardPanel {
   tracking('tracking'),
 
   /// AI 助手入口条（spec 2026-10-26 D4 ①）。自动档判据：AI 模块开着且给「AI 助手」
-  /// 指派了可用的提供商（`resolveHomeAiAgentWidgetAvailable`）。
+  /// 指派了可用的提供商（`resolveHomeAiAgentAutoDefault`）。
   aiAgent('ai_agent'),
 
   /// 媒体库全景（需求 2026-10-29）。自动档 = 不显示（2026-10-30），钉成显示才放。

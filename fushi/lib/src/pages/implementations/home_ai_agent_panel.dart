@@ -16,15 +16,12 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
 
-/// AI 助手组件此刻可不可用（纯函数，判据的唯一实现）：AI 模块开着，且给「AI 助手」
-/// 指派了可用的提供商（spec 2026-11-15「显隐语义」：未指派提供商算不可用——组件整块
-/// 不渲染、也不出现在添加面板里，布局里仍保留它，配好提供商就回来）。
+/// AI 助手组件此刻可不可用（纯函数，判据的唯一实现）：只看 AI 模块门。
 ///
-/// 旧可选面板「自动」档的判据（指派了提供商）与之相同，迁移首个布局时直接用它。
-bool resolveHomeAiAgentWidgetAvailable({
-  required bool moduleEnabled,
-  required bool hasProvider,
-}) => moduleEnabled && hasProvider;
+/// 未指派提供商**不算**不可用（fushi/CLAUDE.md §13：入口可见，点击引导去设置）——
+/// 组件照常渲染，点了走 [openAiAgent]，由它提示并引导去「设置 › AI」，不发请求。
+bool resolveHomeAiAgentWidgetAvailable({required bool moduleEnabled}) =>
+    moduleEnabled;
 
 /// [resolveHomeAiAgentWidgetAvailable] 的 Riverpod 装配。
 final Provider<bool> homeAiAgentWidgetAvailableProvider = Provider<bool>((
@@ -33,6 +30,23 @@ final Provider<bool> homeAiAgentWidgetAvailableProvider = Provider<bool>((
   final AppModel app = ref.watch(appProvider);
   if (!app.isPreferencesReady) return false;
   return resolveHomeAiAgentWidgetAvailable(
+    moduleEnabled: app.moduleVisibility.isEnabled(ModuleId.ai),
+  );
+});
+
+/// 旧可选面板「自动」档的判据（迁移首个布局 / 恢复默认时决定默认模板放不放 AI
+/// 助手）：模块开着且给「AI 助手」指派了可用的提供商。只影响默认放不放，不影响
+/// 已放上的组件显不显示。
+bool resolveHomeAiAgentAutoDefault({
+  required bool moduleEnabled,
+  required bool hasProvider,
+}) => moduleEnabled && hasProvider;
+
+/// [resolveHomeAiAgentAutoDefault] 的 Riverpod 装配。
+final Provider<bool> homeAiAgentAutoDefaultProvider = Provider<bool>((Ref ref) {
+  final AppModel app = ref.watch(appProvider);
+  if (!app.isPreferencesReady) return false;
+  return resolveHomeAiAgentAutoDefault(
     moduleEnabled: app.moduleVisibility.isEnabled(ModuleId.ai),
     hasProvider: resolveAiAgentProvider(app.prefsRepo) != null,
   );

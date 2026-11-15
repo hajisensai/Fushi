@@ -519,8 +519,11 @@ class _GridTileState extends State<_GridTile> {
     if (editing) {
       final bool lifted = widget.lifted;
       final Color ring = tokens.surfaces.primary;
+      // 角标挂在圆角外沿（iOS 主屏式）：圆点中心落在圆角弧上，不压组件标题与
+      // 正文（先前 top/start 0 的角标盖住了「今日」「复习」等标题）。
       content = Stack(
         fit: StackFit.expand,
+        clipBehavior: Clip.none,
         children: <Widget>[
           content,
           // 编辑态描边：墨水屏实线，其余虚线（拿起 / 聚焦时实线强调）。
@@ -537,8 +540,8 @@ class _GridTileState extends State<_GridTile> {
             ),
           ),
           PositionedDirectional(
-            top: 0,
-            start: 0,
+            top: -_kEditBadgeHang,
+            start: -_kEditBadgeHang,
             child: _EditBadge(
               key: ValueKey<String>('home-widget-remove/${kind.id}'),
               icon: FushiIcons.remove,
@@ -550,8 +553,8 @@ class _GridTileState extends State<_GridTile> {
           ),
           if (resizable)
             PositionedDirectional(
-              bottom: 0,
-              end: 0,
+              bottom: -_kEditBadgeHang,
+              end: -_kEditBadgeHang,
               child: _EditBadge(
                 key: ValueKey<String>('home-widget-resize/${kind.id}'),
                 icon: FushiIcons.fullscreen,
@@ -640,6 +643,10 @@ class _GridTileState extends State<_GridTile> {
 
 /// 编辑态的角标按钮（左上「−」/ 右下「⤡」）：可见 24 圆，命中区 40；纯指针面，
 /// 键盘 / 手柄走整块的按键（Delete / X、`[` `]`）。
+/// 编辑角标向组件外挂出的距离：40 的命中框外挂 16，24 的圆点中心落在组件角内
+/// 4dp 处（圆角弧上），命中框仍有 24×24 落在组件内（组件外那部分不接收命中）。
+const double _kEditBadgeHang = 16;
+
 class _EditBadge extends StatelessWidget {
   const _EditBadge({
     super.key,

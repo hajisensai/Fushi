@@ -1836,8 +1836,8 @@ class _HomeDashboardPageState
             : ref.read(homeSrsAutoDefaultProvider),
         tracking: HomeTrackingSummary.of(_tracking).needsAttention,
         aiAgent: watch
-            ? ref.watch(homeAiAgentWidgetAvailableProvider)
-            : ref.read(homeAiAgentWidgetAvailableProvider),
+            ? ref.watch(homeAiAgentAutoDefaultProvider)
+            : ref.read(homeAiAgentAutoDefaultProvider),
       );
 
   /// 进入编辑态（页头「编辑首页」、长按组件、设置页「编辑首页」）。
