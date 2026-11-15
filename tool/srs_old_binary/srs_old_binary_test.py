@@ -38,6 +38,18 @@ class ManifestTest(unittest.TestCase):
         self.assertEqual({v["srs_protocol"] for v in versions if v.get("default")},
                          {"pre-sync2", "2", "3"})
 
+    def test_sources_do_not_expire(self) -> None:
+        # actions artifact 会过期、fushi-debug-rolling 会轮换：只允许正式 release 与存档 prerelease 两种不过期的来源。
+        for v in h.load_manifest():
+            src = v["source"]
+            self.assertEqual(src["kind"], "release", v["id"])
+            self.assertNotEqual(src["tag"], "fushi-debug-rolling", v["id"])
+            if v["id"].startswith("debug-"):
+                self.assertEqual(src["tag"], h.ARCHIVE_TAG, v["id"])
+                self.assertIn("origin", src, v["id"])
+            else:
+                self.assertEqual(src["tag"], v["id"], v["id"])
+
     def test_unsafe_manifest_values_are_refused(self) -> None:
         good = h.load_manifest()[0]
         for patch in ({"asset": "../evil.exe"}, {"asset": "-oProxyCommand"}, {"tag": "a b"}):
