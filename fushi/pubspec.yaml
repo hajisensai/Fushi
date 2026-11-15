@@ -307,6 +307,9 @@ flutter:
     - assets/popup/
     - assets/transforms/
     - assets/transforms/i18n/
+    # 内置追踪插件（Bangumi）打好的包；源码在仓库根 plugins/tracking/bangumi/，
+    # 与包不一致时 test/build/bundled_tracking_plugin_asset_guard_test.dart 判红。
+    - assets/tracking_plugins/
 
   # 片段着色器（Impeller 编译期转 SPIR-V / MSL / GLSL）。
   # panorama_backdrop：首页「媒体库全景」的星空 + 中心光晕（lib/src/media/panorama/）。

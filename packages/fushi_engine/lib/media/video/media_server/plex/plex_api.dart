@@ -225,9 +225,15 @@ class PlexMetadata {
     this.rating,
     this.genres = const <String>[],
     this.media = const <PlexMedia>[],
+    this.providerIds = const <String, String>{},
   });
 
   final String ratingKey;
+
+  /// External ids, keys lowercased (`tmdb` / `tvdb` / `imdb` / `anidb` …), from
+  /// the `Guid` list (needs `includeGuids=1`) and the legacy agent `guid`.
+  /// See [PlexApi.parseProviderIds].
+  final Map<String, String> providerIds;
 
   /// `movie` / `show` / `season` / `episode` / `collection` / `clip` / …
   final String type;
@@ -465,9 +471,16 @@ class PlexApi {
   );
 
   /// 单条目详情（带 Media / Part / Stream 全量）。不存在抛 [StateError]。
-  Future<PlexMetadata> metadata(String ratingKey) async {
+  /// [includeGuids] also asks for the external ids ([PlexMetadata.providerIds]).
+  Future<PlexMetadata> metadata(
+    String ratingKey, {
+    bool includeGuids = false,
+  }) async {
     final PlexMetadataPage page = parseMetadataPage(
-      await getContainer('/library/metadata/$ratingKey'),
+      await getContainer(
+        '/library/metadata/$ratingKey',
+        includeGuids ? const <String, String>{'includeGuids': '1'} : null,
+      ),
     );
     if (page.items.isEmpty) {
       throw StateError('Plex item $ratingKey not found');
@@ -742,7 +755,48 @@ class PlexApi {
         for (final Object? m in (json['Media'] as List?) ?? const <Object?>[])
           if (m is Map) _parseMedia(m.cast<String, Object?>()),
       ],
+      providerIds: parseProviderIds(json),
     );
+  }
+
+  /// External ids of one `Metadata`:
+  /// - `Guid: [{id: "tmdb://123"}, {id: "tvdb://456"}, …]` (new agents);
+  /// - legacy agent `guid`: `com.plexapp.agents.thetvdb://456/1/2`,
+  ///   `…themoviedb://123`, `…hama://anidb-789/1/2` or `…hama://tvdb-456`.
+  ///   HAMA's `tvdb2-` / `tvdb3-` / `tvdb4-` (remapped numbering) are skipped.
+  /// `plex://…` guids are Plex's own and carry no external id.
+  static Map<String, String> parseProviderIds(Map<String, Object?> json) {
+    final Map<String, String> out = <String, String>{};
+    for (final Object? g in (json['Guid'] as List?) ?? const <Object?>[]) {
+      if (g is! Map) continue;
+      final String id = _str(g['id']) ?? '';
+      final int sep = id.indexOf('://');
+      if (sep <= 0) continue;
+      final String key = id.substring(0, sep).trim().toLowerCase();
+      final String value = id.substring(sep + 3).trim();
+      if (key.isNotEmpty && key != 'plex' && value.isNotEmpty) {
+        out.putIfAbsent(key, () => value);
+      }
+    }
+    final String legacy = _str(json['guid']) ?? '';
+    final Match? agent = RegExp(
+      r'^com\.plexapp\.agents\.([a-z0-9_]+)://([^/?]+)',
+    ).firstMatch(legacy);
+    if (agent != null) {
+      final String name = agent.group(1)!;
+      final String id = agent.group(2)!;
+      if (name == 'thetvdb') {
+        out.putIfAbsent('tvdb', () => id);
+      } else if (name == 'themoviedb') {
+        out.putIfAbsent('tmdb', () => id);
+      } else if (name == 'imdb') {
+        out.putIfAbsent('imdb', () => id);
+      } else if (name == 'hama') {
+        final Match? hama = RegExp(r'^(anidb|tvdb)-(\d+)$').firstMatch(id);
+        if (hama != null) out.putIfAbsent(hama.group(1)!, () => hama.group(2)!);
+      }
+    }
+    return Map<String, String>.unmodifiable(out);
   }
 
   static PlexMedia _parseMedia(Map<String, Object?> json) => PlexMedia(

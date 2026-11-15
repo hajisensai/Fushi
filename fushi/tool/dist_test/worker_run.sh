@@ -121,7 +121,22 @@ kill_tree() {
 (while sleep 60; do touch -c "$state/lock"; done) > /dev/null 2>&1 < /dev/null &
 heartbeat=$!
 pid=
-trap 'kill "$heartbeat" 2>/dev/null; [ -n "$pid" ] && kill_tree "$pid"; rm -f "$state/run.pid" "$state/runner.pid"; exit 143' TERM INT HUP
+# Per-batch temp root, removed whichever way the batch ends: every
+# `flutter test` leaves a ~1 GB flutter_tools.* behind and suites leak their
+# own temp dirs, which piled up to 30 GB under a worker account's system
+# TMPDIR. The checkout lock keeps one batch per checkout, so any older tmp-*
+# here belongs to a batch that was killed before its cleanup ran.
+rm -rf "$state"/tmp-*
+tmp="$state/tmp-$$"
+mkdir -p "$tmp"
+export TMPDIR="$tmp"
+if [ -n "$windows" ]; then
+  # Dart reads TEMP / TMP on Windows.
+  TEMP=$(cygpath -w "$tmp")
+  TMP=$TEMP
+  export TEMP TMP
+fi
+trap 'kill "$heartbeat" 2>/dev/null; [ -n "$pid" ] && kill_tree "$pid"; rm -f "$state/run.pid" "$state/runner.pid"; rm -rf "$tmp"; exit 143' TERM INT HUP
 touch -c "$state/lock" 2>/dev/null
 
 # worker_kill.sh stops this script (whose trap takes the test tree down) so
@@ -236,4 +251,5 @@ else
 fi
 kill "$heartbeat" 2>/dev/null
 rm -f "$state/run.pid" "$state/runner.pid"
+rm -rf "$tmp"
 exit "$rc"

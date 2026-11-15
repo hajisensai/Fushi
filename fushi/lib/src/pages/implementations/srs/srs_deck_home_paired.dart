@@ -14,6 +14,8 @@ part of 'srs_deck_list_page.dart';
 //   缓存的只是界面要画的牌组摘要（主机的库仍在主机上，翻页 / 作答都实时打到主机）。
 // - 牌组摘要连同探测时刻落盘（[kSrsHomePairedCachePrefKey]，设备本地，格式是远程复习的线格式
 //   [SrsRemoteWire.deckCache]，读回经同一套校验）：冷启动第一次进复习页也先画上次的数字，再握手重读。
+// - 代对不上的主机（只说 V1 的旧主机配说 V2 的本机，或反过来，见 srs_remote_generation.dart）不再悄悄滤掉：
+//   照样列一组，组头写明该升级哪一边（[_PairedHost.upgrade]），不握手、不发调用，也不能展开。
 // - 探测结果有效期 [kSrsPairedProbeTtl]：过期的已知主机下次进页面自动重探（关了远程复习 / 离线的去掉），
 //   不在分区里的主机（新配对、上次没应答）每次进页面都探，所以新上线的主机不用点「立即同步」也能出现。
 // - 缓存的是「网络探测」的结果，不是「本机配置门控」：每次进页面都先按本机互联配置（总开关、服务端模式、
@@ -27,6 +29,11 @@ const Duration kSrsPairedProbeTtl = Duration(minutes: 15);
 
 /// 首页缓存落盘格式的版本（[kSrsHomePairedCachePrefKey]）；对不上的整份不读。
 const int _kPairedCacheVersion = 1;
+
+/// 进行中的加载被代际判定作废（[_PairedHost.epoch] 变了）。
+class _SrsPairedLoadStale implements Exception {
+  const _SrsPairedLoadStale();
+}
 
 /// 一台已配对主机在首页上的状态。
 class _PairedHost {
@@ -54,6 +61,42 @@ class _PairedHost {
 
   /// 最近一次确认它声明了远程复习能力的时刻（超过 [kSrsPairedProbeTtl] 重新探）。
   DateTime? probedAt;
+
+  /// 代对不上时该升级哪一边（[SrsRemoteHostCompat.hostNeedsUpgrade] / [SrsRemoteHostCompat.clientNeedsUpgrade]）；
+  /// 能接上时为 null。非 null 时不握手、不读牌组，组头只显示升级提示，下次探测时重判。
+  SrsRemoteHostCompat? upgrade;
+
+  /// 会话代次：判成代对不上（[applyCompat]）时加一。进行中的 [_SrsPairedHosts.load] 开头记下它，写回前对不上就
+  /// 整次作废（不挂会话、不写牌组、不落错误态），否则先于判定发出的加载会给升级提示下的主机重新挂上会话与牌组。
+  int epoch = 0;
+
+  /// 把探测结果 [compat] 记下：能接上清掉升级提示；代对不上就作废会话与上次的牌组（那是另一代主机的数据）。
+  void applyCompat(SrsRemoteHostCompat compat) {
+    if (compat == SrsRemoteHostCompat.ready) {
+      upgrade = null;
+      return;
+    }
+    session?.client.cancelPending();
+    epoch++;
+    upgrade = compat;
+    session = null;
+    decks = null;
+    deckCache = null;
+    updatedAt = null;
+    error = null;
+    expanded = false;
+  }
+
+  /// 组头上的升级提示；能接上时为 null。
+  String? get upgradeNotice => switch (upgrade) {
+    SrsRemoteHostCompat.hostNeedsUpgrade =>
+      t.srs_remote_review_host_upgrade_required,
+    SrsRemoteHostCompat.clientNeedsUpgrade =>
+      t.srs_remote_review_client_upgrade_required,
+    SrsRemoteHostCompat.ready ||
+    SrsRemoteHostCompat.unavailable ||
+    null => null,
+  };
 
   /// 最近一次加载失败的提示（下次加载开始时清掉）。
   String? error;
@@ -287,23 +330,20 @@ class _SrsPairedHosts extends ChangeNotifier {
       for (final InterconnectHostTarget c in configured)
         if (!kept.containsKey(c.hostId) || due.contains(c.hostId)) c,
     ];
-    final Future<List<InterconnectHostTarget>> probing = connector.supporting(
-      candidates,
-    );
+    final Future<Map<String, SrsRemoteHostCompat>> probing = connector
+        .probeHosts(candidates);
     final List<Future<void>> loads = <Future<void>>[
       for (final _PairedHost h in kept.values)
         if (!due.contains(h.target.hostId)) load(h),
     ];
-    final Set<String> supported = <String>{
-      for (final InterconnectHostTarget t in await probing) t.hostId,
-    };
+    final Map<String, SrsRemoteHostCompat> supported = await probing;
     if (_disposed) {
       await Future.wait(loads);
       return;
     }
 
     // 合并：探测期间本轮外没人改 [hosts]（同一时刻只跑一轮），按配置顺序排。重探了的已有主机没应答 / 不再
-    // 声明能力就去掉（与新主机同一个判据）。
+    // 声明能力就去掉（与新主机同一个判据）；代对不上的留在列表里、只显示升级提示，不读牌组。
     final DateTime probedAt = connector.now();
     final List<_PairedHost> reload = <_PairedHost>[];
     final List<_PairedHost> next = <_PairedHost>[];
@@ -311,9 +351,11 @@ class _SrsPairedHosts extends ChangeNotifier {
       final _PairedHost? prev = kept[c.hostId];
       if (prev != null && !due.contains(c.hostId)) {
         next.add(prev);
-      } else if (supported.contains(c.hostId)) {
-        final _PairedHost h = (prev ?? _PairedHost(c))..probedAt = probedAt;
-        reload.add(h);
+      } else if (supported[c.hostId] case final SrsRemoteHostCompat compat) {
+        final _PairedHost h = (prev ?? _PairedHost(c))
+          ..probedAt = probedAt
+          ..applyCompat(compat);
+        if (h.upgrade == null) reload.add(h);
         next.add(h);
       } else {
         prev?.session?.client.cancelPending();
@@ -331,27 +373,37 @@ class _SrsPairedHosts extends ChangeNotifier {
   /// 上次的牌组缓存保留。连接层 / 主机报的错、回包不合契约（[SrsRemoteBadResponse]）按机读码出文案；其余
   /// 异常记进错误日志，组头出通用的加载失败。
   Future<void> load(_PairedHost h) async {
-    if (h.loading || _disposed) return;
+    // 代对不上的主机不发任何调用（V1 拒绝桩只会回 upgrade_required）。
+    if (h.loading || _disposed || h.upgrade != null) return;
     h
       ..loading = true
       ..error = null;
     _notify();
+    final int epoch = h.epoch;
     try {
-      final SrsRemoteDeckSnapshot snapshot = await _readDecks(h);
+      final SrsRemoteDeckSnapshot snapshot = await _readDecks(h, epoch);
+      // 加载期间主机被判成代对不上：结果是另一代主机的数据，丢掉。
+      if (h.epoch != epoch) return;
       h
         ..decks = snapshot.decks
         ..deckCache = snapshot.cache
         ..updatedAt = connector.now();
+    } on _SrsPairedLoadStale {
+      // 握手期间被判成代对不上：新会话已关掉，什么都不写。
     } on InterconnectHostError catch (e, stack) {
+      // 被作废的会话上的失败（applyCompat 取消了它的请求）不落成可重试的错误态。
+      if (h.epoch != epoch) return;
       if (e is SrsRemoteBadResponse) {
         ErrorLogService.instance.log('SrsPairedHosts.load', e, stack);
       }
       _fail(h, srsRemoteReviewErrorText(e));
     } on SrsRemoteProfileChoiceCancelled {
+      if (h.epoch != epoch) return;
       // 没选复习库：组头提示去选，点组头重试时再问一次。
       _fail(h, t.srs_remote_review_choose_profile);
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsPairedHosts.load', e, stack);
+      if (h.epoch != epoch) return;
       _fail(h, t.srs_home_paired_error_load);
     } finally {
       h.loading = false;
@@ -369,7 +421,8 @@ class _SrsPairedHosts extends ChangeNotifier {
   }
 
   /// 用已有会话读牌组；没有会话、或主机回「已换配置」（这个会话绑定的 profile 作废）时握手开新会话再读。
-  Future<SrsRemoteDeckSnapshot> _readDecks(_PairedHost h) async {
+  /// 握手完成时 [h] 的代次已不是 [epoch]（期间被判成代对不上）就关掉新会话、抛 [_SrsPairedLoadStale]，不挂上去。
+  Future<SrsRemoteDeckSnapshot> _readDecks(_PairedHost h, int epoch) async {
     final SrsRemoteSession? reused = h.session;
     if (reused != null) {
       try {
@@ -384,6 +437,10 @@ class _SrsPairedHosts extends ChangeNotifier {
       h.target,
       chooseProfile: chooseProfile,
     );
+    if (h.epoch != epoch) {
+      session.client.cancelPending();
+      throw const _SrsPairedLoadStale();
+    }
     h.session = session;
     return session.store.deckSnapshot();
   }
@@ -677,6 +734,8 @@ class _SrsPairedDeviceHeader extends StatelessWidget {
     _PairedDeckTotals? totals,
     String? error,
   ) {
+    final String? upgrade = host.upgradeNotice;
+    if (upgrade != null) return upgrade;
     final DateTime? at = host.updatedAt;
     final bool loading = host.loading || paired.reconciling;
     if (totals == null || at == null) {
