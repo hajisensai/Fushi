@@ -26,6 +26,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/anki/card_source_origin.dart'
     show cardSourceLinkOfFields;
 import 'package:fushi/src/anki/card_source_router.dart' show openCardSource;
+import 'package:fushi/src/focus/focus_activation.dart';
 import 'package:fushi/src/focus/page_focus_ownership.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_browse_card_tile.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_browse_preview.dart';
@@ -1236,6 +1237,10 @@ class _SrsBrowseDetailPageState extends ConsumerState<SrsBrowseDetailPage> {
     final KeyEventResult? lookup = _lookupCtl.guardKey(event);
     if (lookup != null) return lookup;
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    // 焦点在页签 / 上一张下一张这类可激活子控件上：确认键归它，不当「翻面」吞掉。
+    if (focusedDescendantClaimsActivation(node, event.logicalKey)) {
+      return KeyEventResult.ignored;
+    }
     if (FocusManager.instance.primaryFocus?.context
             ?.findAncestorStateOfType<EditableTextState>() !=
         null) {
