@@ -33,32 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3973 条。点号进各自文件。
-> 共 3932 条。点号进各自文件。
+> 共 4025 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4388](bugs/BUG-4388-srs-by-id-cross-profile.md) | ✅ | ✅ | 复习库按实体 ID 的读写不看 profile：点名 A 的命令能读 / 改 / 删 B 的笔记、卡片、牌组、笔记类型 |
-| [BUG-4387](bugs/BUG-4387-srs-by-id-access-not-profile-scoped.md) | 🚧 | 🚧 | 复习库按 id 的读写不按 profile 过滤：点名的 profile 与 id 不属于同一份时写错库 |
-| [BUG-4386](bugs/BUG-4386-srs-edit-undo-blind-overwrite.md) | ✅ | ✅ | srs-edit-undo-blind-overwrite |
-| [BUG-4386](bugs/BUG-4386-srs-adopt-deletes-decks-without-notes.md) | ✅ | ✅ | 复习同步关联只看笔记，只建了牌组 / 改了预设的设备被自动采用对方 uid，自建牌组与预设被删 |
-> 共 3873 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-4324](bugs/BUG-4324-srs-sync2-rotated-identity-segments-deleted.md) | ✅ | ✅ | SRS 同步 v2：换身份后仍删旧身份目录里的旧小段，旧身份留着的 head 引用落空 |
-| [BUG-4323](bugs/BUG-4323-srs-sync2-segment-deleted-before-referencing-head.md) | ✅ | ✅ | SRS 同步 v2：旧小段可能先于引用它的旧 head 被删（保留代数写在 Dart，内核看不到） |
-> 共 3931 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-4387](bugs/BUG-4387-srs-sync2-bootstrap-channel-never-selected.md) | ✅ | ✅ | 复习同步 v2 的新设备收段通道在生产里一次都不会被选中 |
-> 共 3969 条。点号进各自文件。
-> 共 3972 条。点号进各自文件。
-> 共 4021 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4627](bugs/BUG-4627-srs-admin-decks-route-shadows-ctl.md) | ✅ | ✅ | srs-admin-decks-route-shadows-ctl |
 | [BUG-4626](bugs/BUG-4626-srs-by-id-cross-profile.md) | ✅ | ✅ | 复习库按实体 ID 的读写不看 profile：点名 A 的命令能读 / 改 / 删 B 的笔记、卡片、牌组、笔记类型 |
 | [BUG-4625](bugs/BUG-4625-linux-wpe-click-pointerup-button-mask.md) | ✅ | ✅ | Linux 漫画阅读器 OCR 文字无法点击查词 |
 | [BUG-4624](bugs/BUG-4624-linux-wpe-resize-stride-crash.md) | ✅ | ✅ | Linux 漫画页面出现条纹，调整窗口大小时阅读器崩溃 |
@@ -72,6 +51,9 @@
 | [BUG-4557](bugs/BUG-4557-gal-kirikiri-bootstrap-silent-stall.md) | ✅ | ✅ | KiriKiri 查词 / KAG 文本道 bootstrap 静默停住：addHook 一个钩子名被拒即整个传感器作废，安装链各出口无诊断 |
 | [BUG-4533](bugs/BUG-4533-flatpak-x11-mesa-crash.md) | ✅ | ✅ | flatpak-x11-mesa-crash |
 | [BUG-4521](bugs/BUG-4521-mokuro-import-volumes-not-grouped.md) | ✅ | ✅ | mokuro catalog import does not group volumes into a series |
+| [BUG-4513](bugs/BUG-4513-srs-browse-inspector-autosave-loses-focus.md) | ✅ | ✅ | 浏览页检查器快捷编辑自动保存后输入框重建、丢焦点 |
+| [BUG-4512](bugs/BUG-4512-srs-browse-search-ime-composing-split.md) | ✅ | ✅ | 浏览页搜索框把输入法组字中间态当提交值：Windows 中文输入法组字被拆 |
+| [BUG-4511](bugs/BUG-4511-srs-first-sync-confirm-page-disposed.md) | ✅ | ✅ | 首次同步确认后页面已卸载：No ProviderScope，首次同步不执行 |
 | [BUG-4510](bugs/BUG-4510-dict-materialize-reprobe-loop.md) | ✅ | ✅ | 词典物化探测自我喂养：预算后回报触发重装，重装又对全部目录起新 worker，启动卡在 rebuild-dict-paths、窗口无响应 |
 | [BUG-4509](bugs/BUG-4509-fushi-db-corrupt-retry-loop.md) | ✅ | ✅ | 主库页损坏（SQLITE_CORRUPT）不进终态，启动错误屏「重试」无限循环 |
 | [BUG-4508](bugs/BUG-4508-screen-ocr-mlkit-unavailable-despite-ready.md) | 🚧 | 🚧 | 悬浮球截屏 OCR 一直报「系统 OCR 模型未就绪」，配置弹窗却说已就绪 |
@@ -82,7 +64,7 @@
 | [BUG-4503](bugs/BUG-4503-voicevox-streaming-talk-styles-filtered.md) | ✅ | ✅ | VOICEVOX 0.26 风格列表为空，选不了说话人 |
 | [BUG-4502](bugs/BUG-4502-feedback-account-seen-lost-on-relaunch.md) | ✅ | ✅ | feedback-account-seen-lost-on-relaunch |
 | [BUG-4501](bugs/BUG-4501-sync-summary-ignores-settings.md) | ✅ | ✅ | sync-summary-ignores-settings |
-| [BUG-4500](bugs/BUG-4500-srs-native-card-summary-tap-triggers-lookup.md) | 🚧 | 🚧 | 复习原生卡面点「语法详情」折叠标题会同时弹出查词 |
+| [BUG-4500](bugs/BUG-4500-srs-native-card-summary-tap-triggers-lookup.md) | ✅ | ✅ | 复习原生卡面点「语法详情」折叠标题会同时弹出查词 |
 | [BUG-4499](bugs/BUG-4499-popup-image-lightbox-persists-across-lookups.md) | ✅ | ✅ | 查词弹窗里点开的放大图跨查词残留，下次查别的词仍盖在结果上 |
 | [BUG-4498](bugs/BUG-4498-study-clock-idle-resume-recredits.md) | ✅ | ✅ | 空闲门过期后恢复输入，超出阈值的暂停被整段算回学习时长 |
 | [BUG-4496](bugs/BUG-4496-collection-subtitle-batch-player-not-refreshed.md) | ✅ | ✅ | 整季下载字幕后当前视频的字幕列表仍为空，要重开视频才有 |

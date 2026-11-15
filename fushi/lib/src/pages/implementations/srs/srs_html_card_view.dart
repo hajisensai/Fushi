@@ -1166,34 +1166,38 @@ class _DetailsViewState extends State<_DetailsView> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        Semantics(
-          button: true,
-          expanded: _open,
-          child: MouseRegion(
-            cursor: SystemMouseCursors.click,
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () => setState(() => _open = !_open),
-              child: Align(
-                alignment: widget.summaryAlign,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: <Widget>[
-                    AnimatedRotation(
-                      turns: _open ? 0.25 : 0,
-                      duration: d,
-                      child: Text(
-                        '▶',
-                        style: widget.summaryStyle.copyWith(
-                          fontSize: (widget.summaryStyle.fontSize ?? 16) * 0.7,
+        // 折叠标题是控件：点它只展开 / 收起，不取词（BUG-4500，与 WebView 卡面排除 SUMMARY 同口径）。
+        srsNoLookup(
+          child: Semantics(
+            button: true,
+            expanded: _open,
+            child: MouseRegion(
+              cursor: SystemMouseCursors.click,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => setState(() => _open = !_open),
+                child: Align(
+                  alignment: widget.summaryAlign,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: <Widget>[
+                      AnimatedRotation(
+                        turns: _open ? 0.25 : 0,
+                        duration: d,
+                        child: Text(
+                          '▶',
+                          style: widget.summaryStyle.copyWith(
+                            fontSize:
+                                (widget.summaryStyle.fontSize ?? 16) * 0.7,
+                          ),
+                          textScaler: TextScaler.noScaling,
                         ),
-                        textScaler: TextScaler.noScaling,
                       ),
-                    ),
-                    const SizedBox(width: 6),
-                    Flexible(child: IntrinsicWidth(child: widget.summary)),
-                  ],
+                      const SizedBox(width: 6),
+                      Flexible(child: IntrinsicWidth(child: widget.summary)),
+                    ],
+                  ),
                 ),
               ),
             ),
