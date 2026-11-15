@@ -27,7 +27,7 @@ SettingsSection buildMangaOcrSection() {
   return SettingsSection(
     id: 'manga.section.ocr',
     presentation: SettingsSectionPresentation.alwaysExpanded,
-    title: t.manga_ocr_section,
+    title: t.settings_manga_ocr_section_title,
     items: <SettingsItem>[
       SettingsNavigationItem(
         id: 'manga.ocr',
@@ -95,6 +95,7 @@ SettingsSection buildMangaCatalogSection() {
       SettingsTextItem(
         id: 'manga.online_catalog_base_url',
         title: t.manga_online_base_url_label,
+        subtitle: t.settings_manga_online_base_url_subtitle,
         icon: FushiIcons.cloud,
         keyboardType: TextInputType.url,
         placeholder: kMokuroMoeDefaultBaseUrl,

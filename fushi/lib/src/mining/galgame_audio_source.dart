@@ -3146,6 +3146,7 @@ class GalHookedLine {
       16 => 'softpal',
       17 => 'system4',
       18 => 'nitroplus',
+      19 => 'kirikiri',
       22 => 'entisgls',
       _ => 'hook',
     };
@@ -3174,6 +3175,7 @@ class GalHookedLine {
             16 => 'SoftPal exact',
             17 => 'System4 exact',
             18 => 'Nitroplus exact',
+            19 => 'KiriKiri KAG exact',
             22 => 'EntisGLS exact',
             _ => 'Text hook',
           };

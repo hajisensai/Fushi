@@ -5,8 +5,9 @@ import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/src/settings/settings_schema_ai.dart';
 import 'package:fushi/i18n/strings.g.dart';
 
-/// 推一页独立的「设置 › 模型 › LLM」（提供商 + 功能指派），返回即回到原入口。
-/// LLM 页已不是一级分类，所以直接给构造闭包而不是按 id 在一级分类里找。
+/// 推一页独立的「设置 › AI」（提供商 + 功能指派），返回即回到原入口。
+/// 直接给构造闭包而不是按 id 在一级分类里找：调用方多在设置页之外，不依赖设置
+/// 主页当前的可见分类列表。
 ///
 /// 「AI 下视频」（首页）与「AI 下载」（浏览 › 发现的小说 / 漫画 / 游戏域）在未指派
 /// 提供商时都经这一处引导去配置。

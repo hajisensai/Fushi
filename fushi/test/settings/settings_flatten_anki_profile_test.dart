@@ -202,7 +202,6 @@ void main() {
     expect(
       cardItems.whereType<SettingsCustomItem>().map((item) => item.id).toSet(),
       <String>{
-        'card_creation.anki.route_rows',
         'card_creation.anki.rows',
         'card_creation.anki.configured_rows',
         'card_creation.anki.delivery_rows',
@@ -211,18 +210,27 @@ void main() {
         'card_creation.tags.rows',
       },
     );
-    // 层级（2026-10-31）：当前目标的 Anki 配置紧跟正文（目标切换条），再是发送与
-    // 待发、两种目标都生效的通用分组，媒体参数子页入口在最后。
+    // 层级：正文（目标切换条）之后先是同属「卡片去向」的互联服务端两项，再是当前
+    // 目标的 Anki 配置、发送与待发、两种目标都生效的通用分组、媒体参数子页入口，
+    // 最后是只在找不到单词音频时才用上的发音兜底。
     expect(cardCreation.sections.map((SettingsSection s) => s.id), <String>[
+      'card_creation.section.destination',
       'card_creation.anki',
       'card_creation.anki.delivery',
       'card_creation.content',
       'card_creation.notices',
       'card_creation.tags',
       'card_creation.configuration',
+      'models.section.tts',
     ]);
     expect(
-      cardCreation.sections.last.items.single.id,
+      cardCreation.sections
+          .firstWhere(
+            (SettingsSection s) => s.id == 'card_creation.configuration',
+          )
+          .items
+          .single
+          .id,
       'card_creation.media.open',
     );
     expect(
@@ -294,7 +302,16 @@ void main() {
       findsOneWidget,
       reason: '「连不上时暂存」同样不受「Anki 已配置」门控',
     );
-    expect(find.byType(AdaptiveSettingsSliderRow), findsNothing);
+    // 媒体参数（清晰度 / 音频质量等滑杆）都在「制卡媒体」子页，不许回流到常用正文；
+    // 页上唯一的滑杆是页尾「发音兜底」分区的兜底倍速。
+    expect(find.byType(AdaptiveSettingsSliderRow), findsOneWidget);
+    expect(
+      find.widgetWithText(
+        AdaptiveSettingsSliderRow,
+        t.models_tts_fallback_speed,
+      ),
+      findsOneWidget,
+    );
     expect(
       find.widgetWithText(AdaptiveSettingsSwitchRow, 'Add "fushi" tag'),
       findsOneWidget,
@@ -325,16 +342,17 @@ void main() {
       findsOneWidget,
       reason: '「自动添加书名」开关必须仍无条件可用（方案B会破坏，绝不退化）',
     );
-    // 「制卡到已配对设备」已移出本页，改挂 Fushi 互联 →「交给已配对设备」（它的前置
-    // 条件、目标设备、失效条件全由互联决定，互联关掉时留在这里就是纯死开关）。归属由
-    // test/sync/sync_settings_visibility_test.dart 咬住；这里只守「不得回流」。
+    // 「制卡到 Fushi 互联服务端」属于「卡片去向」，住在本页的
+    // card_creation.section.destination；但它的前置条件、目标设备、失效条件全由互联
+    // 决定，所以每一项都带互联门控——没配对（本用例的状态）时不得露出，否则就是一个
+    // 纯死开关。归属与门控由 test/sync/sync_settings_visibility_test.dart 咬住。
     expect(
       find.widgetWithText(
         AdaptiveSettingsSwitchRow,
         'Mine to Fushi Interconnect server',
       ),
       findsNothing,
-      reason: '「制卡到 Fushi 互联服务端」不应再出现在 Anki 正文',
+      reason: '互联没配对时，「制卡到 Fushi 互联服务端」不应出现在制卡页',
     );
 
     // ④「自动添加书名」开关仍真生效（写穿 prefs）——必须保留的用户目标。

@@ -57,9 +57,9 @@ void main() {
           if (!context.mounted) {
             throw StateError('Settings home was unmounted before inspection');
           }
-          final String interfaceTitle = context.t.settings_group_interface;
+          final String interfaceTitle = context.t.settings_group_general;
           final String appearanceTitle =
-              context.t.settings_destination_appearance_interaction;
+              context.t.settings_destination_appearance;
           final String scaleTitle = context.t.app_ui_scale;
           final Map<SettingsDestinationId, String> smokeDestinations =
               <SettingsDestinationId, String>{
