@@ -15,8 +15,8 @@ import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 
-/// 下载大小（显示用，小模型发布包）。
-const String _downloadSize = '5.6 MB';
+/// 下载大小（显示用，SM56 int8 权重 436,391 字节）。
+const String _downloadSize = '0.4 MB';
 
 class SrsRwkvPanel extends ConsumerStatefulWidget {
   const SrsRwkvPanel({super.key});
