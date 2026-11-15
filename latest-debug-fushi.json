@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "version": "3.3.0-debug.27339",
-  "tag": "v3.3.0-debug.27339+3823eaa",
+  "version": "3.3.0-debug.27350",
+  "tag": "v3.3.0-debug.27350+8cab29a",
   "channel": "debug",
   "prerelease": true,
-  "releaseSequence": 27339,
-  "notes": "Automated desktop debug-channel build from develop @ 3823eaa. Push releases are always prerelease and never Latest.",
+  "releaseSequence": 27350,
+  "notes": "Automated release-signed debug-channel build from develop @ 8cab29a. Push releases are always prerelease and never Latest.",
   "assets": [
     {
       "name": "fushi-3.3.0-debug.27324-macos-arm64.dmg",
@@ -26,15 +26,6 @@
       "sha256": "67e492f31c382c023d7369e41adbdd4d18a4049ea27d7da401642cc847981712"
     },
     {
-      "name": "fushi-3.3.0-debug.27328-a0f1e32-debug.apk",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.3.0-debug.27328-a0f1e32-debug.apk",
-      "releaseSequence": 27328,
-      "tag": "v3.3.0-debug.27328+a0f1e32",
-      "version": "3.3.0-debug.27328",
-      "size": 260445964,
-      "sha256": "a62596b4b1ed6728da7b69d8d9105badd8cae39114836b7202160754a2b97165"
-    },
-    {
       "name": "fushi-3.3.0-debug.27339-ios.ipa",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.3.0-debug.27339-ios.ipa",
       "releaseSequence": 27339,
@@ -51,6 +42,15 @@
       "version": "3.3.0-debug.27339",
       "size": 297001368,
       "sha256": "0931e734bb958b43382a6107e0ff88f2fee4e8cf2dec5e880b58b8db9b465e9f"
+    },
+    {
+      "name": "fushi-3.3.0-debug.27350-8cab29a-debug.apk",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.3.0-debug.27350-8cab29a-debug.apk",
+      "releaseSequence": 27350,
+      "tag": "v3.3.0-debug.27350+8cab29a",
+      "version": "3.3.0-debug.27350",
+      "size": 260445964,
+      "sha256": "1c7929f4312e65d00a60911f165da3af5512371f6716481c61aa13c297868e6c"
     }
   ]
 }
