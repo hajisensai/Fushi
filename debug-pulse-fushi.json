@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-15T07:49:33Z",
+ "generatedAt": "2026-11-15T07:55:47Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "1657548692608310461c03f7fff359f849b8c6c8",
-  "seq": 27348
+  "sha": "8cab29af7acb28b521432a93667ad85cb85de9c7",
+  "seq": 27350
  },
  "builds": [
   {
@@ -13,7 +13,7 @@
    "sha": "3823eaa74c9b3dff02b3feb04c9eb68cc2d111be",
    "unknown": false,
    "publishedAt": "2026-11-15T07:49:20Z",
-   "testflight": false,
+   "testflight": true,
    "baseSeq": 27328,
    "prs": [
     3434
@@ -208,29 +208,30 @@
   }
  ],
  "pending": {
-  "headSha": "1657548692608310461c03f7fff359f849b8c6c8",
-  "headSeq": 27348,
+  "headSha": "8cab29af7acb28b521432a93667ad85cb85de9c7",
+  "headSeq": 27350,
   "prs": [
+   3443,
    3392
   ],
   "direct": [],
   "truncated": false,
   "platforms": {
    "android": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43690256997"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43691807460"
    },
    "windows": {
-    "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43690256965"
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43691807435"
    },
    "macos": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43690256965"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43691807435"
    },
    "ios": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43690256965"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43691807435"
    }
   }
  },
@@ -660,6 +661,15 @@
    "mergedAt": "2026-11-15T06:25:02Z",
    "additions": 87,
    "deletions": 74,
+   "labels": []
+  },
+  "3443": {
+   "number": 3443,
+   "title": "test(srs): 页面写入后按真实完成信号等落库（#3440 范式推广到 test/srs 全部同类写法）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-15T07:51:27Z",
+   "additions": 650,
+   "deletions": 298,
    "labels": []
   }
  }
