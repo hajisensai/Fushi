@@ -96,8 +96,6 @@ class _SrsGen4RehearsalSectionState
         final String? savePath = await FilePicker.platform.saveFile(
           dialogTitle: t.srs_gen4_rehearsal_export,
           fileName: fileName,
-          type: FileType.custom,
-          allowedExtensions: <String>['json'],
         );
         if (savePath != null) {
           await file.copy(savePath);
