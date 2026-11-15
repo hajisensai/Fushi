@@ -95,7 +95,11 @@ impl Canon<'_> {
 
     /// 旧上下文的键换成规范写入者：前缀取大、零散 dot 取并，再按 [Dvv::merge] 的规则收紧。
     pub(super) fn dvv(&self, d: &Dvv) -> Dvv {
-        if self.writers.is_empty() {
+        let renamed_any =
+            d.vv.keys()
+                .chain(d.cloud.keys())
+                .any(|w| self.writers.contains_key(w));
+        if !renamed_any {
             return d.clone();
         }
         let mut renamed = Dvv::default();
@@ -829,7 +833,7 @@ mod tests {
         use std::collections::BTreeSet;
         use std::time::Instant;
 
-        use crate::store::gen4::derive::body_of;
+        use crate::store::gen4::derive::{R_LIVE, body_of};
         use crate::store::gen4::legacy::tests::peak_mem_mb;
         use crate::store::gen4::schema::open;
 
@@ -860,9 +864,10 @@ mod tests {
                 .unwrap()
                 .map(Result::unwrap)
                 .collect();
-            let mut by_kind: BTreeMap<i64, [u64; 7]> = BTreeMap::new();
+            let mut by_kind: BTreeMap<i64, [u64; 8]> = BTreeMap::new();
             let (mut tag_classes, mut tag_diff) = (0u64, 0u64);
             let mut samples: Vec<String> = Vec::new();
+            let mut gone: BTreeMap<i64, Vec<String>> = BTreeMap::new();
             for canon in &canons {
                 let members = ix.members(canon).unwrap();
                 let mut kinds: BTreeSet<i64> = BTreeSet::new();
@@ -940,6 +945,78 @@ mod tests {
                         }
                         if !w.conflict && raw_conflict {
                             c[5] += 1;
+                            // 不换写入者（空表）再判一次：冲突回来了 = 是写入者归回让冲突消失的。
+                            let mut rows: Vec<(i64, i64)> = Vec::new();
+                            for m in &members {
+                                let mut stmt = dst
+                                    .prepare_cached(
+                                        "SELECT key, k, state FROM reg_ix WHERE col = ?1 AND ekind = ?2 AND ent = ?3",
+                                    )
+                                    .unwrap();
+                                let got: Vec<(Vec<u8>, i64, i64)> = stmt
+                                    .query_map(params![col, kind, m], |r| {
+                                        Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+                                    })
+                                    .unwrap()
+                                    .map(Result::unwrap)
+                                    .collect();
+                                for (key, k, state) in got {
+                                    let text = read_edit_key(&mut Reader::new(&key)).unwrap();
+                                    if ix.canonical_key(&text).unwrap() == w.key {
+                                        rows.push((k, state));
+                                    }
+                                }
+                            }
+                            rows.sort_unstable();
+                            let none = BTreeMap::new();
+                            let plain = Canon {
+                                writers: &none,
+                                entity: canon.text(),
+                                key: w.key.clone(),
+                            };
+                            let (_, want) = ix.judged(&rows, Some(&plain)).unwrap();
+                            if want.contains(&R_CONFLICT) {
+                                c[7] += 1;
+                            }
+                            if gone.entry(kind).or_default().len() < 5 {
+                                // 原值冲突里各条活着的写入的值（原样与归一后）：看冲突是怎么没的。
+                                let mut live: Vec<String> = Vec::new();
+                                for m in &members {
+                                    let rows: Vec<(Vec<u8>, i64, i64)> = dst
+                                        .prepare_cached(
+                                            "SELECT key, k, state FROM reg_ix WHERE col = ?1 AND ekind = ?2 AND ent = ?3 AND state >= ?4",
+                                        )
+                                        .unwrap()
+                                        .query_map(params![col, kind, m, R_LIVE], |r| {
+                                            Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+                                        })
+                                        .unwrap()
+                                        .map(Result::unwrap)
+                                        .collect();
+                                    for (key, k, state) in rows {
+                                        let text = read_edit_key(&mut Reader::new(&key)).unwrap();
+                                        if ix.canonical_key(&text).unwrap() != w.key {
+                                            continue;
+                                        }
+                                        let raw = t.edit_value(k).unwrap().unwrap();
+                                        let v: Value =
+                                            serde_json::from_str(&raw).unwrap_or(Value::Null);
+                                        let cv = ix.canonical_value(&w.key, &v).unwrap();
+                                        live.push(format!(
+                                            "[member {} state {state} raw {raw} canon {cv}]",
+                                            m.text()
+                                        ));
+                                    }
+                                }
+                                gone.entry(kind).or_default().push(format!(
+                                    "kind {kind} canon {} key {} members_with_writes {} class {} live {}",
+                                    canon.text(),
+                                    w.key,
+                                    from.len(),
+                                    w.value,
+                                    live.join(" ")
+                                ));
+                            }
                         }
                     }
                     if ek == EntKind::Note {
@@ -963,8 +1040,8 @@ mod tests {
             );
             for (kind, c) in &by_kind {
                 println!(
-                    "SAMPLE class kind {kind} classes {} registers {} merged {} value_differs {} new_conflicts {} gone_conflicts {} class_only_keys {}",
-                    c[0], c[1], c[2], c[3], c[4], c[5], c[6]
+                    "SAMPLE class kind {kind} classes {} registers {} merged {} value_differs {} new_conflicts {} gone_conflicts {} (of which back_without_writer_aliases {}) class_only_keys {}",
+                    c[0], c[1], c[2], c[3], c[4], c[5], c[7], c[6]
                 );
             }
             println!(
@@ -972,6 +1049,9 @@ mod tests {
             );
             for s in &samples {
                 println!("SAMPLE class value_differs {s}");
+            }
+            for s in gone.values().flatten() {
+                println!("SAMPLE class gone_conflict {s}");
             }
             // ---- 归回的写入者
             let started = Instant::now();
@@ -987,6 +1067,7 @@ mod tests {
                 .map(Result::unwrap)
                 .collect();
             let mut renamed_edits = 0u64;
+            let mut ctx_mentions = 0u64;
             let mut regs: BTreeMap<(i64, Ref, Vec<u8>), Vec<(i64, i64)>> = BTreeMap::new();
             let mut touched: BTreeSet<(i64, Ref, Vec<u8>)> = BTreeSet::new();
             for (ekind, ent, key, k, state) in all {
@@ -1000,6 +1081,16 @@ mod tests {
                             .is_some_and(|s| names.contains(s.writer.as_str()))
                         {
                             renamed_edits += 1;
+                            touched.insert(reg.clone());
+                        }
+                        // 旧上下文的键里提到改名写入者的（换名会改它见过谁）。
+                        if ed.stamp.as_ref().is_some_and(|s| {
+                            s.ctx
+                                .entries()
+                                .iter()
+                                .any(|e| names.contains(e.writer.as_str()))
+                        }) {
+                            ctx_mentions += 1;
                             touched.insert(reg.clone());
                         }
                     }
@@ -1032,7 +1123,7 @@ mod tests {
                 }
             }
             println!(
-                "SAMPLE class writers {} renamed_edits {renamed_edits} multi_write_registers_touched {judged} state_differs {differ} s {:.1}",
+                "SAMPLE class writers {} renamed_edits {renamed_edits} ctx_mentions {ctx_mentions} multi_write_registers_touched {judged} state_differs {differ} s {:.1}",
                 writers.len(),
                 started.elapsed().as_secs_f64()
             );
