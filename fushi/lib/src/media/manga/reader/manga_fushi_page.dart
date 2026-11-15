@@ -192,6 +192,12 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/media/manga/ocr/system_ocr_manga_service.dart'
+    show isSystemOcrModelUnavailableFailure;
+import 'package:fushi/src/ocr/system_ocr_channel.dart'
+    show MethodChannelSystemOcr, SystemOcrModelSetup;
+import 'package:fushi/src/ocr/system_ocr_setup_dialog.dart'
+    show showSystemOcrSetupDialog;
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
@@ -628,6 +634,7 @@ class MangaFushiPage extends BaseSourcePage {
     this.sourceReview,
     this.ocrEnginesOverride,
     this.lensDisclosureOverride,
+    this.systemOcrSetupOverride,
   });
 
   /// 在线漫画：调用方点名要开的章（下标，见 [mangaReaderOpenChapterIndex]）。null =
@@ -650,6 +657,10 @@ class MangaFushiPage extends BaseSourcePage {
 
   /// Google Lens 上传同意闸门（测试缝；生产是 [ensureGoogleLensDisclosure]）。
   final GoogleLensDisclosureGate? lensDisclosureOverride;
+
+  /// 系统 OCR 引导弹窗查状态 / 下载用的平台口（测试缝；生产是
+  /// [MethodChannelSystemOcr]）。
+  final SystemOcrModelSetup? systemOcrSetupOverride;
 
   /// `EpubBooks` 主键（净化后的标题），由 `hoshi://book/<bookKey>` 解析而来。
   ///
@@ -1692,6 +1703,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
 
   /// 直读识别失败只提示一次（离线 / 源坏了时逐页失败会刷屏）。
   bool _streamOcrFailureNotified = false;
+
+  /// 本次打开阅读器已弹过系统 OCR 引导（BUG-4658）：直读逐页 / 整卷两条路径都
+  /// 可能报同一个设备级原因，弹一次就够。
+  bool _systemOcrSetupShown = false;
 
   /// 本次整卷 OCR 实际生效的推理加速状态（BUG-1163：降级必须看得见）。
   MangaOcrAcceleration? _wholeVolumeOcrAcceleration;
@@ -4883,6 +4898,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       }
       switch (setup) {
         case MangaStreamOcrReady(
+          :final MangaOcrEngineId engine,
           :final MangaStreamPageRecognizer recognizer,
           :final MangaStreamAiRefinement? ai,
         ):
@@ -4902,7 +4918,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                 setState(() => _streamOcrBusy = busy);
               }
             },
-            onError: _onStreamOcrError,
+            onError: (Object error, StackTrace stack) =>
+                _onStreamOcrError(engine, error, stack),
           );
           _streamOcr = ocr;
           ocr.focus(_currentPage);
@@ -4973,14 +4990,37 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     _companion.publishNow();
   }
 
-  void _onStreamOcrError(Object error, StackTrace stack) {
+  void _onStreamOcrError(
+    MangaOcrEngineId engine,
+    Object error,
+    StackTrace stack,
+  ) {
     ErrorLogService.instance.log('MangaFushiPage.streamOcrPage', error, stack);
     if (!mounted || _streamOcrFailureNotified) return;
     _streamOcrFailureNotified = true;
+    if (_showSystemOcrSetupFor(engine, error)) return;
     FushiToast.show(
       msg: '${t.manga_ocr_wizard_failed}: $error',
       severity: ToastSeverity.error,
     );
+  }
+
+  /// 系统 OCR 因「没有可用模型 / Play 服务」失败（BUG-4658）：弹本地化的引导弹窗
+  /// （说明缺什么、能修的给修复入口、修不了的指向本机模型），不把原始异常
+  /// `SystemOcrUnavailableException(model_unavailable)` 糊进 toast。返回 true = 已
+  /// 由弹窗接管提示，调用方不必再弹 toast。
+  bool _showSystemOcrSetupFor(MangaOcrEngineId engine, Object error) {
+    if (!isSystemOcrModelUnavailableFailure(engine, error)) return false;
+    if (_systemOcrSetupShown) return true;
+    _systemOcrSetupShown = true;
+    unawaited(
+      showSystemOcrSetupDialog(
+        context,
+        language: appModel.mangaOcrLensLanguage,
+        setup: widget.systemOcrSetupOverride ?? const MethodChannelSystemOcr(),
+      ),
+    );
+    return true;
   }
 
   void _closeStreamOcr() {
@@ -5020,6 +5060,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
             _readAloud._failWaiters(MangaPageTextUnavailableReason.failed);
             if (!mounted) return;
             setState(() => _wholeVolumeOcrRunning = false);
+            if (_showSystemOcrSetupFor(running.job.engine, error)) return;
             FushiToast.show(
               msg: '${t.manga_ocr_wizard_failed}: $error',
               severity: ToastSeverity.error,
