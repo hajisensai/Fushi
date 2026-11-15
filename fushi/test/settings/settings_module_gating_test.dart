@@ -278,15 +278,15 @@ void main() {
   });
 
   testWidgets('Media tracking module off: its settings category and the '
-      'Appearance › Home tracking row are gone', (WidgetTester tester) async {
+      'Navigation › Home tracking row are gone', (WidgetTester tester) async {
     await pumpContext(tester);
     bool homeTrackingRowVisible() {
-      final SettingsDestination appearance = buildSettingsSchema(sctx)
+      final SettingsDestination navigation = buildSettingsSchema(sctx)
           .singleWhere(
-            (SettingsDestination d) => d.id == SettingsDestinationId.appearance,
+            (SettingsDestination d) => d.id == SettingsDestinationId.navigation,
           );
       final List<SettingsItem> rows = <SettingsItem>[
-        for (final SettingsSection section in appearance.sections)
+        for (final SettingsSection section in navigation.sections)
           for (final SettingsItem item in section.items)
             if (item.id == 'appearance.home_panel.tracking') item,
       ];
