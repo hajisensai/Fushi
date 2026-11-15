@@ -49,6 +49,8 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart'
         RemoteVideoStreamUrls;
 import 'package:fushi/src/sync/remote_cover_fetcher.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
+import 'package:fushi_engine/media/tracking/remote_anime_link.dart'
+    show RemoteAnimeEpisode;
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_engine/media/video/media_server/media_server_client_identity.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
@@ -1665,6 +1667,18 @@ class JellyfinApi {
     return parseItem(json);
   }
 
+  /// Ids + numbering for media tracking (`ChildCount` = a season's episodes).
+  Future<JellyfinItem> itemTrackingIdentity({
+    required String userId,
+    required String itemId,
+  }) async {
+    final Map<String, Object?> json = await _getJson(
+      '/Users/$userId/Items/$itemId',
+      <String, String>{'Fields': 'ProviderIds,ChildCount'},
+    );
+    return parseItem(json);
+  }
+
   Future<JellyfinItem> itemDetail({
     required String userId,
     required String itemId,
@@ -2411,7 +2425,8 @@ class JellyfinVideoClient
         MediaServerBrowser,
         MediaServerLibraryItems,
         MediaServerItemVersions,
-        RemoteVideoTitleIdentityFetch {
+        RemoteVideoTitleIdentityFetch,
+        RemoteVideoTrackingEpisodeFetch {
   JellyfinVideoClient({
     required this.api,
     required this.userId,
@@ -3397,6 +3412,90 @@ class JellyfinVideoClient
       item = await api.itemIdentity(userId: userId, itemId: seriesId);
     }
     return remoteTitleIdentityOf(item);
+  }
+
+  /// Tracking identity: the episode's own number, the season's and the
+  /// series' ids, and the season's episode count.
+  @override
+  Future<RemoteAnimeEpisode?> remoteVideoTrackingEpisode(String id) async {
+    final JellyfinItem item = await api.itemTrackingIdentity(
+      userId: userId,
+      itemId: id,
+    );
+    JellyfinItem? season;
+    JellyfinItem? series;
+    if (item.type == 'Episode') {
+      final String? seasonId = item.seasonId;
+      final String? seriesId = item.seriesId;
+      if (seasonId != null && seasonId.isNotEmpty) {
+        season = await api.itemTrackingIdentity(
+          userId: userId,
+          itemId: seasonId,
+        );
+      }
+      if (seriesId != null && seriesId.isNotEmpty) {
+        series = await api.itemTrackingIdentity(
+          userId: userId,
+          itemId: seriesId,
+        );
+      }
+    }
+    return trackingEpisodeOf(
+      item,
+      season: season,
+      series: series,
+      mediaKey: trackingKeyFor(id),
+      // The server's own name only, never the host ([displayName] falls
+      // back to it): tracking shows no addresses.
+      serverName: serverName?.trim() ?? '',
+    );
+  }
+
+  /// Tracking key for item [id]: this server login + the item.
+  String trackingKeyFor(String id) => 'jellyfin|$identityServerUrl|$userId|$id';
+
+  /// Pure part of [remoteVideoTrackingEpisode] (tests).
+  static RemoteAnimeEpisode? trackingEpisodeOf(
+    JellyfinItem item, {
+    JellyfinItem? season,
+    JellyfinItem? series,
+    required String mediaKey,
+    String serverName = '',
+  }) {
+    if (item.type == 'Movie') {
+      return RemoteAnimeEpisode(
+        mediaKey: mediaKey,
+        title: item.name,
+        episodeNumber: 1,
+        isMovie: true,
+        seriesIds: item.providerIds,
+        seriesTitle: item.name,
+        serverName: serverName,
+      );
+    }
+    if (item.type != 'Episode') return null;
+    final int? number = item.episodeNumber;
+    if (number == null || number <= 0) return null;
+    final int? seasonNumber = item.seasonNumber;
+    final String show = (item.seriesName ?? series?.name ?? '').trim();
+    final String where = seasonNumber == null
+        ? 'E$number'
+        : 'S${seasonNumber}E$number';
+    final int? seasonCount = season?.childCount;
+    return RemoteAnimeEpisode(
+      mediaKey: mediaKey,
+      title: show.isEmpty ? where : '$show $where',
+      episodeNumber: number,
+      seasonNumber: seasonNumber,
+      seasonIds: season?.providerIds ?? const <String, String>{},
+      seriesIds: series?.providerIds ?? const <String, String>{},
+      seasonEpisodeCount: seasonCount != null && seasonCount > 0
+          ? seasonCount
+          : null,
+      seriesId: item.seriesId ?? series?.id,
+      seriesTitle: show,
+      serverName: serverName,
+    );
   }
 
   /// [JellyfinItem] → 字幕检索身份（纯函数，便于单测）。

@@ -24,6 +24,7 @@ class LibraryProgressResetDialog extends StatefulWidget {
     required this.message,
     this.itemTitle,
     this.showRecordOptions = true,
+    this.trackingOn = false,
     super.key,
   });
 
@@ -39,6 +40,10 @@ class LibraryProgressResetDialog extends StatefulWidget {
   /// false = 这一处没有可安全处理的统计身份（如纯字幕书），不摆勾选，恒返回
   /// [StudyRecordResetScope.keep]。
   final bool showRecordOptions;
+
+  /// Media tracking is on: say that the tracking sites keep their progress
+  /// (Fushi never lowers it there; T1 F20).
+  final bool trackingOn;
 
   @override
   State<LibraryProgressResetDialog> createState() =>
@@ -89,6 +94,14 @@ class _LibraryProgressResetDialogState
               SizedBox(height: tokens.spacing.gap),
             ],
             Text(widget.message, style: tokens.type.listSubtitle),
+            if (widget.trackingOn) ...<Widget>[
+              SizedBox(height: tokens.spacing.gap),
+              Text(
+                t.library_progress_reset_tracking_note,
+                key: const ValueKey<String>('library-progress-reset-tracking'),
+                style: tokens.type.listSubtitle,
+              ),
+            ],
             if (widget.showRecordOptions) ...<Widget>[
               SizedBox(height: tokens.spacing.gap),
               DeleteConfirmCheckboxRow(
@@ -146,6 +159,7 @@ Future<StudyRecordResetScope?> showLibraryProgressResetDialog(
   required String message,
   String? itemTitle,
   bool showRecordOptions = true,
+  bool trackingOn = false,
 }) {
   return showAppDialog<StudyRecordResetScope>(
     context: context,
@@ -154,6 +168,7 @@ Future<StudyRecordResetScope?> showLibraryProgressResetDialog(
       message: message,
       itemTitle: itemTitle,
       showRecordOptions: showRecordOptions,
+      trackingOn: trackingOn,
     ),
   );
 }

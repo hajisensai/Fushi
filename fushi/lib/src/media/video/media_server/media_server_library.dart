@@ -21,6 +21,7 @@ import 'package:drift/drift.dart'
     show TableUpdate, TableUpdateQuery, UpdateKind, Value;
 import 'package:flutter/foundation.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/tracking/remote_anime_link.dart';
 import 'package:fushi_engine/media/video/media_server_video_path.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
@@ -493,4 +494,29 @@ buildMediaServerLaunch({
     members: List<RemoteVideoInfo>.unmodifiable(members),
     startIndex: startIndex,
   );
+}
+
+/// The media tracking identity of library row [row] added from a media
+/// server, asked from that server (the row itself keeps no ids): what a hand
+/// "watched" mark reports, like playing it to the end does. Null when [row]
+/// is not such a row, its server is not signed in on this device, or the
+/// server has no tracking identity for it (not an episode or a movie, or a
+/// server type without one).
+Future<RemoteAnimeEpisode?> mediaServerTrackingEpisodeOf({
+  required VideoBookRow row,
+  required Future<List<MediaServerConfig>> Function() loadConfigs,
+}) async {
+  if (!isMediaServerVideoPath(row.videoPath)) return null;
+  final MediaServerBookSpec? spec = MediaServerBookSpec.tryParse(
+    row.streamSpecJson,
+  );
+  if (spec == null) return null;
+  for (final MediaServerConfig config in await loadConfigs()) {
+    if (config.sourceId != spec.serverId) continue;
+    final RemoteVideoClient client = config.buildBrowser().playbackClient;
+    if (client is! RemoteVideoTrackingEpisodeFetch) return null;
+    return (client as RemoteVideoTrackingEpisodeFetch)
+        .remoteVideoTrackingEpisode(spec.itemId);
+  }
+  return null;
 }
