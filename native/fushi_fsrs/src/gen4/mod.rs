@@ -7,6 +7,7 @@
 //! - [stamp]：承袭修改带的紧凑旧戳（协议 1 的 dot / 因果上下文 / HLC / 服务器时刻）。
 //! - [op]：操作信封、操作体（原生 Edit 没有旧戳、承袭 Edit 带旧戳、Log 紧凑编码、新种类 `Join` / `Salts`）、链。
 //! - [segment]：原生段（魔数 `FSG4`，每设备成链，已清除的区间是空洞）。
+//! - [relay]：中继件（魔数 `FRL4`，把作者签过的原生段原样搬到作者没去过、钥匙可能不同的位置）。
 //! - [heritage]：承袭段（魔数 `FSH4`，不成链、上传者签名）与槽（操作 / 原样件 / 副本记录 / 空洞，每个 seq 带原链值指纹）。
 //! - [head]：协议 4 的 head（`seal`、`prev`、派生口径版本；签名覆盖除 `sig` 外的全部键）。
 //!
@@ -16,6 +17,7 @@ pub mod head;
 pub mod heritage;
 pub mod name;
 pub mod op;
+pub mod relay;
 pub mod segment;
 pub mod stamp;
 pub mod translate;

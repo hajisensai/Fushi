@@ -5,13 +5,19 @@
 //!   "FSG4" | ver u8 = 1 | flags u8（bit0 加密；其余必须为 0）| collection[16] | device[16]
 //!   | first uv | last uv | prev_chain[32] | last_chain[32]
 //! 体  bytes( zstd( n_items uv | 槽 × n_items ) [再 XChaCha20-Poly1305：nonce[24] || 密文+tag] )
-//! 尾  Ed25519( blake3(头 || 体) )[64]
+//! 尾  Ed25519( blake3(头 || 明文压缩体) )[64]
 //!
 //! 槽  tag u8
 //!   0 操作  wall 增量 iv（相对上一条操作；段里第一条相对 0）| logical uv
 //!           | deps 标志 u8（0 = 与上一条操作相同，段里第一条不许用；1 + Vv）| kind uv | fmt uv | bytes(payload)
 //!   1 空洞  count uv（>= 1）| chain_after[32]
 //! ```
+//!
+//! **签名覆盖明文压缩体，加密在签名外面**（D16 定案 A）：明文段的体就是明文压缩体，与「签头 || 体」同一个值；
+//! 加密段先用位置密钥解开（AAD = 头）再验签。这样作者签过的「头 + 明文压缩体 + 签名」三样可以原样搬到钥匙不同的
+//! 位置（[super::relay] 的 `FRL4` 中继件），含空洞的段也一样——空洞处的链值始终由作者的签名担保，转发者改不了。
+//! 代价：没有密钥的读者验不了加密段的签名（反正也解不开）；签名对明文的「猜测确认」不比段头里明文的 `last_chain`
+//! 多泄露什么（链值本来就是明文操作的哈希）。承袭段 `FSH4` 不跨钥匙转发，签名构造不变（[super::heritage]）。
 //!
 //! 槽按 seq 升序首尾相接，覆盖的 seq 数之和必须等于 `last - first + 1`。段体只有一种字节形：varint 取最短形；
 //! 相邻两个空洞槽拒绝（写者合并）；依赖向量与上一条**操作槽**（跨过中间的空洞）相同时必须写标志 0，wall 增量同样相对它。
@@ -24,7 +30,7 @@
 //!   `last_chain`（段头的首尾链值不因清除而变，文件名也不变）。
 //! - 空洞处链校验是「重置」而不是「重算」：空洞之前的操作对段尾链值没有承诺，整段的真实性靠**作者的签名**。
 //!   所以含空洞的段只能由作者签出；任何「非作者重新打包、靠链接到作者签过的端点来验证」的形态（协议 3 的转发件那种）
-//!   都不能含空洞——非作者只能原样转发作者的字节。
+//!   都不能含空洞——非作者只能原样转发作者签过的字节（头 + 明文压缩体 + 签名，见上文与 [super::relay]）。
 //!
 //! 与协议 3 的段（魔数 `FSG2`）不通用：协议 3 的解码器在魔数处就拒绝本文件，本文件的解码器同样拒绝 `FSG2`。
 //! 原生段里不许出现承袭专属的内容（[super::op::native_allowed]）：写时报错，读到判段损坏。
@@ -64,7 +70,7 @@ pub struct NativeHeader {
 }
 
 impl NativeHeader {
-    fn write(&self, w: &mut Writer) {
+    pub(crate) fn write(&self, w: &mut Writer) {
         w.raw(MAGIC);
         w.u8(VERSION);
         w.u8(if self.encrypted { F_ENCRYPTED } else { 0 });
@@ -76,7 +82,7 @@ impl NativeHeader {
         w.raw(&self.last_chain);
     }
 
-    fn read(r: &mut Reader<'_>) -> DResult<NativeHeader> {
+    pub(crate) fn read(r: &mut Reader<'_>) -> DResult<NativeHeader> {
         let flags = read_magic(r, MAGIC, VERSION)?;
         let collection = Id::read(r)?;
         let device = Id::read(r)?;
@@ -204,7 +210,7 @@ pub(crate) fn read_op_slot(
     })
 }
 
-fn write_body(items: &[NativeItem]) -> Vec<u8> {
+pub(crate) fn write_body(items: &[NativeItem]) -> Vec<u8> {
     let mut w = Writer::with_capacity(items.len() * 48);
     w.uv(items.len() as u64);
     let mut wall = 0i64;
@@ -227,7 +233,8 @@ fn write_body(items: &[NativeItem]) -> Vec<u8> {
     w.into_vec()
 }
 
-/// 头 + 体（压缩、可选加密）+ 签名。原生段与承袭段共用。
+/// 承袭段（`FSH4`）的头 + 体（压缩、可选加密）+ 签名：签名覆盖 `blake3(头 || 体)`，体加密时签的是密文。
+/// 原生段不走这里（签名覆盖明文压缩体，见 [seal_native]）。
 pub(crate) fn seal(
     head_bytes: Vec<u8>,
     raw_body: &[u8],
@@ -251,7 +258,7 @@ pub(crate) fn seal(
     Ok(w.into_vec())
 }
 
-/// 验签、解密，交回压缩的段体。[r] 停在头之后。
+/// 承袭段：验签、解密，交回压缩的段体。[r] 停在头之后。
 pub(crate) fn unseal<'a>(
     bytes: &'a [u8],
     mut r: Reader<'a>,
@@ -282,6 +289,53 @@ pub(crate) fn unseal<'a>(
         k.open(body, &bytes[..head_len])
             .ok_or(SegmentError::Undecryptable)?,
     ))
+}
+
+/// 原生段签名的原文：`blake3(头 || 明文压缩体)`（D16-A：与段体是否加密无关）。
+pub(crate) fn native_digest(head_bytes: &[u8], compressed: &[u8]) -> [u8; 32] {
+    let mut h = blake3::Hasher::new();
+    h.update(head_bytes);
+    h.update(compressed);
+    *h.finalize().as_bytes()
+}
+
+/// 原生段的头 + 体（压缩、可选加密）+ 签名。签名覆盖明文压缩体（见文件头）。
+fn seal_native(
+    head_bytes: Vec<u8>,
+    raw_body: &[u8],
+    signer: &DeviceKey,
+    key: Option<&CollectionKey>,
+) -> Result<Vec<u8>, String> {
+    let compressed =
+        zstd::bulk::compress(raw_body, ZSTD_LEVEL).map_err(|e| format!("segment compress: {e}"))?;
+    let sig = signer.sign(&native_digest(&head_bytes, &compressed));
+    let body = match key {
+        Some(k) => k.seal(&compressed, &head_bytes),
+        None => compressed,
+    };
+    let mut w = Writer::with_capacity(head_bytes.len() + body.len() + 80);
+    w.raw(&head_bytes);
+    w.bytes(&body);
+    w.raw(&sig);
+    Ok(w.into_vec())
+}
+
+/// 用作者公钥验「头 + 明文压缩体」的签名，验过才交回可解码的段。原段与中继件共用这一处。
+pub(crate) fn open_signed<'a>(
+    head_bytes: &[u8],
+    header: NativeHeader,
+    compressed: Cow<'a, [u8]>,
+    sig: &[u8; 64],
+    public: &[u8; 32],
+) -> Result<OpenNative<'a>, SegmentError> {
+    if !verify(public, &native_digest(head_bytes, &compressed), sig) {
+        return Err(SegmentError::BadSignature);
+    }
+    Ok(OpenNative {
+        header,
+        compressed,
+        sig: *sig,
+    })
 }
 
 /// 打包一段。[items] 从 [first] 起首尾相接；其中的操作必须是 [device] 的、seq 对得上；[prev_chain] 是
@@ -335,7 +389,7 @@ pub fn pack_native(
     };
     let mut hw = Writer::new();
     header.write(&mut hw);
-    let bytes = seal(hw.into_vec(), &write_body(items), signer, key)?;
+    let bytes = seal_native(hw.into_vec(), &write_body(items), signer, key)?;
     Ok((header, bytes))
 }
 
@@ -456,7 +510,9 @@ impl Iterator for ItemStream<'_> {
 /// 验过签、解过密的段：段体仍是压缩的，按需流式解开。
 pub struct OpenNative<'a> {
     pub header: NativeHeader,
+    /// 明文压缩体（签名覆盖的就是它）。
     compressed: Cow<'a, [u8]>,
+    sig: [u8; 64],
 }
 
 /// [OpenNative::verify] 的结果：链已对上的全部项，按 seq 升序。
@@ -477,6 +533,13 @@ impl Iterator for VerifiedNative<'_> {
 }
 
 impl OpenNative<'_> {
+    /// 转发要搬的三样：作者签过的头（规范字节）、明文压缩体、签名。
+    pub(crate) fn signed_parts(&self) -> (Vec<u8>, &[u8], &[u8; 64]) {
+        let mut hw = Writer::new();
+        self.header.write(&mut hw);
+        (hw.into_vec(), &self.compressed, &self.sig)
+    }
+
     /// 流式解码，**不**重算链。
     pub fn items(&self) -> Result<ItemStream<'_>, SegmentError> {
         ItemStream::new(&self.compressed, &self.header)
@@ -518,7 +581,8 @@ impl OpenNative<'_> {
     }
 }
 
-/// 验签、解密一段（不解压）。[public] 是作者（段头的 `device`）的公钥。
+/// 解密、验签一段（不解压）。[public] 是作者（段头的 `device`）的公钥。加密段先解密再验签（签名覆盖明文压缩体），
+/// 所以没密钥时报 [SegmentError::Undecryptable]，不会走到签名。
 pub fn open_native_verified<'a>(
     bytes: &'a [u8],
     public: &[u8; 32],
@@ -526,8 +590,26 @@ pub fn open_native_verified<'a>(
 ) -> Result<OpenNative<'a>, SegmentError> {
     let mut r = Reader::new(bytes);
     let header = NativeHeader::read(&mut r)?;
-    let compressed = unseal(bytes, r, header.encrypted, public, key)?;
-    Ok(OpenNative { header, compressed })
+    let head_len = r.pos;
+    let body = bytes_min(&mut r)?;
+    let sig: [u8; 64] = r
+        .raw(64)?
+        .try_into()
+        .map_err(|_| SegmentError::Corrupt("sig".into()))?;
+    if !r.is_empty() {
+        return Err(SegmentError::Corrupt("trailing bytes".into()));
+    }
+    let head_bytes = &bytes[..head_len];
+    let compressed = if header.encrypted {
+        let k = key.ok_or(SegmentError::Undecryptable)?;
+        Cow::Owned(
+            k.open(body, head_bytes)
+                .ok_or(SegmentError::Undecryptable)?,
+        )
+    } else {
+        Cow::Borrowed(body)
+    };
+    open_signed(head_bytes, header, compressed, &sig, public)
 }
 
 /// 校验并整段解开（签名 → 解密 → 解压 → 解码 → 重算链），全部放进内存。给测试这类已知小段的场合。
@@ -562,7 +644,7 @@ pub(crate) mod tests {
         id(0xc0)
     }
 
-    const DEV: u8 = 0xa1;
+    pub const DEV: u8 = 0xa1;
 
     fn bodies() -> Vec<Body4> {
         vec![
@@ -586,7 +668,7 @@ pub(crate) mod tests {
     }
 
     /// seq 1..=5 的操作，后面两条共用同一个依赖向量（走「同上一条」的标志）。
-    fn ops() -> Vec<Op4> {
+    pub fn ops() -> Vec<Op4> {
         let mut out: Vec<Op4> = bodies()
             .iter()
             .enumerate()
@@ -599,11 +681,11 @@ pub(crate) mod tests {
         out
     }
 
-    fn chain_of(prev: Chain, ops: &[Op4]) -> Chain {
+    pub fn chain_of(prev: Chain, ops: &[Op4]) -> Chain {
         ops.iter().fold(prev, |c, op| chain_next4(&c, op))
     }
 
-    fn items_of(ops: &[Op4]) -> Vec<NativeItem> {
+    pub fn items_of(ops: &[Op4]) -> Vec<NativeItem> {
         ops.iter().cloned().map(NativeItem::Op).collect()
     }
 
@@ -737,7 +819,7 @@ pub(crate) mod tests {
     ) -> Vec<u8> {
         let mut hw = Writer::new();
         header.write(&mut hw);
-        seal(hw.into_vec(), raw_body, &signer(), key).unwrap()
+        seal_native(hw.into_vec(), raw_body, &signer(), key).unwrap()
     }
 
     fn header_for(ops: &[Op4], first: u64, last: u64) -> NativeHeader {
@@ -1092,7 +1174,7 @@ pub(crate) mod tests {
 
     // ------------------------------------------------------------ 黄金向量
 
-    fn golden_items() -> Vec<NativeItem> {
+    pub fn golden_items() -> Vec<NativeItem> {
         let ops = ops();
         let c1 = chain_of([0; 32], &ops[..1]);
         let c3 = chain_of(c1, &ops[1..3]);
@@ -1148,8 +1230,8 @@ pub(crate) mod tests {
 
     const GOLDEN_BODY: &str = "040082c0e285e368000101d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2050104220300010101010101010101010101010101010f7b22637265617465644174223a317d010239e787fd7631632b9006c87c296dfc1eb1fe6f2a08a159fa357c2485e20192280006000101d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d20904041300010101010101010101010101010101010174000200000e0415b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b00162010173";
     const GOLDEN_HEADER: &str = "465347340100c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1010500000000000000000000000000000000000000000000000000000000000000009181d4adc66426a9f02a885ecc46d5fb3848a8c1a1ca0f928480ae190b48b782";
-    const GOLDEN_FILE: &str = "465347340100c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1010500000000000000000000000000000000000000000000000000000000000000009181d4adc66426a9f02a885ecc46d5fb3848a8c1a1ca0f928480ae190b48b7827428b52ffd20ab5d0300a405040082c0e285e368000101d2050104220300010f7b22637265617465644174223a317d010239e787fd7631632b9006c87c296dfc1eb1fe6f2a08a159fa357c2485e20192280006090404130174000200000e0415b0016201017305007887be9809812181a0331d480245051604788e08000fad565e779833cdb549a2273a1c1227369a9bfb9e1b001829e92470b532d311f70c9e2cd09f44168cd5376b0c18cdb5c17cddd8333e4c0b";
-    const GOLDEN_FILE_SEALED: &str = "465347340101c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1010500000000000000000000000000000000000000000000000000000000000000009181d4adc66426a9f02a885ecc46d5fb3848a8c1a1ca0f928480ae190b48b7829c0153ce93315ba01b13c93c6fe034891400d8e19544764de30764841614b5f35f682dafdf9ceba58cfb46264340f253ea8cbd90224d755f69dccf01e143a55e3420e40c8809ffd9152f442b38087543bed5932cddb081b77be9f772058eb668d34e5e11968e66a10063be4ba1c28a3e5e8250311f9cea42fdb6d51cd7504eb801594fdc306c244dfdd6504882c067869a0a2fb8301dc2d0c990ce4d7befef99482fedf033bd623756e8290a201deae75a614e26d33a959accacd333d5e7b1a9ac76408a8ce2754ba46dae79521bcab3d2aeea4c985211f37ae8af145807";
+    pub const GOLDEN_FILE: &str = "465347340100c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1010500000000000000000000000000000000000000000000000000000000000000009181d4adc66426a9f02a885ecc46d5fb3848a8c1a1ca0f928480ae190b48b7827428b52ffd20ab5d0300a405040082c0e285e368000101d2050104220300010f7b22637265617465644174223a317d010239e787fd7631632b9006c87c296dfc1eb1fe6f2a08a159fa357c2485e20192280006090404130174000200000e0415b0016201017305007887be9809812181a0331d480245051604788e08000fad565e779833cdb549a2273a1c1227369a9bfb9e1b001829e92470b532d311f70c9e2cd09f44168cd5376b0c18cdb5c17cddd8333e4c0b";
+    pub const GOLDEN_FILE_SEALED: &str = "465347340101c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1010500000000000000000000000000000000000000000000000000000000000000009181d4adc66426a9f02a885ecc46d5fb3848a8c1a1ca0f928480ae190b48b7829c01a51b768d86d098db86cca83de313e64f6465a377f63bd80ccd73ce10474b4c3764cfb5e43a05a296aae1cc627b6f17c8cf263d621caa68af254adc08214ff8c8ccb33a3b67f361ba4921d1bb4a52b0e9ca40d49d1e1c9a18a34835b7810d521fa7b7bd52b2f9274aac9b0ba426f92b04d828a377ca382318fd0ff1c970530b37abe1b4e7f87d526cf415fae342e7a924d137e9b8fe06bee64cd4e95503af2e62203d4bd1aa93fe395d202b3ca974f97d7e256eef1a392c2a13ef1d35f7e1a32246bae8b46c47cee2a490d27e15da812191534ca7d390a6977fc43808";
 
     // 让导入不因只在个别测试里用到而告警。
     #[test]
