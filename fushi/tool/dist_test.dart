@@ -606,13 +606,13 @@ class _Scheduler {
         return;
       }
       stdout.writeln('[${worker.name}] ready after ${prep.elapsed.inSeconds}s');
-      _breaker.reset(worker.breakerKey);
+      _breakerLearns(worker);
     } on Object catch (e) {
       // No connection is "for now" like busy: nothing of the run got there.
       if (e is! DistWorkerBusy && e is! DistWorkerUnreachable) {
         _tally.failed(worker);
       }
-      _tripBreaker(worker, e);
+      _breakerLearns(worker, e);
       stdout.writeln(
         '[${worker.name}] DROPPED: prepare failed: $e '
         '(see prepare.${worker.name}.log)',
@@ -807,6 +807,9 @@ class _Scheduler {
         stillWanted: () =>
             !_tally.lost &&
             (_inFlight > 0 || queue.remaining.any(worker.eligible)),
+        // Each answer, not only the last of them: "in use" is the machine
+        // answering, short of disk is known at the first one.
+        answered: (DistWorkerBusy e) => _breakerLearns(worker, e),
         said: (String l) => stdout.writeln('[${worker.name}] $l'),
       ) ??
       false;
@@ -1049,19 +1052,19 @@ final DistBreaker _breaker = DistBreaker(
   File('${heavyStateDir().path}/$kDistBreakerFile'),
 );
 
-/// Remembers a prepare failure of [worker] that says its machine cannot take
-/// work for now, once per machine and run.
-void _tripBreaker(DistWorker worker, Object error) {
-  final String? why = distBreakerReason(error);
-  if (why == null || !_tripped.add(worker.breakerKey)) return;
-  final Duration hold = _breaker.trip(worker.breakerKey, why);
+/// Tells the breaker how a prepare on [worker] ended ([error] null: it went
+/// through); what that means is decided there ([DistBreaker.learn]). Says
+/// once per machine and run that it is left out.
+void _breakerLearns(DistWorker worker, [Object? error]) {
+  final DistBreakerEntry? held = _breaker.learn(worker.breakerKey, error);
+  if (held == null || !_saidHeld.add(worker.breakerKey)) return;
   stdout.writeln(
-    '[${worker.breakerKey}] $why: offloaded runs leave it out for the next '
-    '${hold.inMinutes} min',
+    '[${worker.breakerKey}] ${held.why}: offloaded runs leave it out until '
+    '${_clock(held.until)}',
   );
 }
 
-final Set<String> _tripped = <String>{};
+final Set<String> _saidHeld = <String>{};
 
 String _clock(DateTime t) =>
     '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
@@ -1151,14 +1154,14 @@ Future<({int? code, bool busy})> _jobRound(
       stdout.writeln('[${w.name}] preparing');
       await w.prepare(snapshot, runId, prepLog);
       stdout.writeln('[${w.name}] ready after ${prep.elapsed.inSeconds}s');
-      _breaker.reset(w.breakerKey);
+      _breakerLearns(w);
     } on Object catch (e) {
       if (e is DistWorkerBusy || e is DistWorkerUnreachable) {
         busy = true;
       } else {
         _tally.failed(w);
       }
-      _tripBreaker(w, e);
+      _breakerLearns(w, e);
       stdout.writeln('[${w.name}] skipped: prepare failed: $e');
       await prepLog.close();
       await w.finish(runId);

@@ -10,6 +10,12 @@
 // until the hold is over, then the next run asks it again (and doubles the
 // hold when the answer is the same).
 //
+// "The same answer again" is an answer to an ask that began after the last
+// hold was over. Runs that were already asking when the machine went away
+// (each waits in its queue for minutes) all get that one outage as their
+// answer: five of them used to count five failures in a row and hold the
+// machine for an hour after a 30-second network drop.
+//
 // Only answers that have nothing to do with the run trip it: no connection,
 // no disk. "In use by another run", "paused" and a failed prepare do not --
 // the first two end by themselves within minutes and the queue on the worker
@@ -47,6 +53,15 @@ String? distBreakerReason(Object error) {
   return null;
 }
 
+/// Whether a prepare that ended with [error] (null: it went through) is the
+/// machine answering with nothing the breaker holds against it: its
+/// failures in a row end here. A checkout in use and a pause are such
+/// answers; short of disk is not (it would start every count at one), and a
+/// failed prepare says nothing either way.
+bool distBreakerAnswered(Object? error) =>
+    error == null ||
+    (error is DistWorkerBusy && distBreakerReason(error) == null);
+
 /// One machine's entry.
 class DistBreakerEntry {
   const DistBreakerEntry({
@@ -58,6 +73,9 @@ class DistBreakerEntry {
   final DateTime until;
   final int fails;
   final String why;
+
+  /// When the failure that began this hold was recorded.
+  DateTime get since => until.subtract(distBreakerHold(fails));
 }
 
 class DistBreaker {
@@ -118,24 +136,63 @@ class DistBreaker {
     return e != null && e.until.isAfter(_now()) ? e : null;
   }
 
-  /// [machine] just failed for [why]: left out for [distBreakerHold] of its
-  /// failures in a row. Returns the hold.
-  Duration trip(String machine, String why) {
+  /// An ask of [machine] that began at [asked] failed for [why]: left out
+  /// for [distBreakerHold] of its failures in a row. Returns the entry that
+  /// keeps it out now, or null when nothing does.
+  ///
+  /// A failure only follows the last one when its ask began after that
+  /// one's hold was over. While the hold runs, and for an ask that began
+  /// before the last failure was recorded, it is the same outage seen by
+  /// another run (or by this machine's other slot): nothing is added and
+  /// the hold is not extended. That also makes two runs writing at the same
+  /// moment harmless -- whichever is second finds the first one's entry.
+  DistBreakerEntry? trip(
+    String machine,
+    String why, {
+    required DateTime asked,
+  }) {
     final Map<String, DistBreakerEntry> entries = _read();
-    final int fails = (entries[machine]?.fails ?? 0) + 1;
-    final Duration hold = distBreakerHold(fails);
-    entries[machine] = DistBreakerEntry(
-      until: _now().add(hold),
+    final DateTime now = _now();
+    final DistBreakerEntry? last = entries[machine];
+    if (last != null) {
+      if (last.until.isAfter(now)) return last;
+      if (asked.isBefore(last.since)) return null;
+    }
+    final int fails = (last?.fails ?? 0) + 1;
+    final DistBreakerEntry entry = DistBreakerEntry(
+      until: now.add(distBreakerHold(fails)),
       fails: fails,
       why: why,
     );
+    entries[machine] = entry;
     _write(entries);
-    return hold;
+    return entry;
   }
 
   /// [machine] answered: its failures are forgotten.
   void reset(String machine) {
     final Map<String, DistBreakerEntry> entries = _read();
     if (entries.remove(machine) != null) _write(entries);
+  }
+
+  /// What a prepare on [machine] that ended with [error] (null: it went
+  /// through) means here -- the one place that decides it: [reset] for an
+  /// answer ([distBreakerAnswered]), [trip] for a reason
+  /// ([distBreakerReason]), nothing otherwise. Returns the entry that keeps
+  /// the machine out after a failure, else null.
+  DistBreakerEntry? learn(String machine, Object? error) {
+    if (distBreakerAnswered(error)) {
+      reset(machine);
+      return null;
+    }
+    final String? why = distBreakerReason(error!);
+    if (why == null) return null;
+    return trip(
+      machine,
+      why,
+      asked: _now().subtract(
+        error is DistWorkerError ? error.waited : Duration.zero,
+      ),
+    );
   }
 }
