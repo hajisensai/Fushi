@@ -122,7 +122,7 @@ void main() {
       in <(ShellContentLayout, String)>[
         (ShellContentLayout.grid, 'game-recent-g1'),
         (ShellContentLayout.collage, 'game-dashboard-hero-g1'),
-      ])
+      ]) {
     testWidgets(
       'recent-played game registers focus target and Enter activates launch '
       '(${layout.name})',
@@ -228,6 +228,7 @@ void main() {
         await tester.pump(const Duration(seconds: 4));
       },
     );
+  }
 
   testWidgets(
     'texthooker thread selector and section tabs register focus ids',

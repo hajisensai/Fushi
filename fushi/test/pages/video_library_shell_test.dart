@@ -13,8 +13,6 @@ import 'package:fushi/src/utils/components/fushi_floating_chrome.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
-import 'package:fushi/src/pages/shared/library_section_tabs.dart';
-import 'package:fushi/src/utils/components/library_section_tab.dart';
 import 'package:fushi/src/utils/components/section_swipe_navigator.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -182,18 +180,18 @@ void main() {
     await tester.pumpWidget(harness());
     await tester.pump();
 
-    final MastheadTabsView<VideoLibrarySection> strip = read(tester, topStrip());
-    expect(
-      strip.labels,
-      <String>[
-        t.library_view_media,
-        // 在线组只有发现一段时用它自己的名字。
-        if (isVideoOnlineSourcesAvailable)
-          t.library_view_online
-        else
-          t.library_view_discover,
-      ],
+    final MastheadTabsView<VideoLibrarySection> strip = read(
+      tester,
+      topStrip(),
     );
+    expect(strip.labels, <String>[
+      t.library_view_media,
+      // 在线组只有发现一段时用它自己的名字。
+      if (isVideoOnlineSourcesAvailable)
+        t.library_view_online
+      else
+        t.library_view_discover,
+    ]);
     expect(
       strip.values,
       isNot(contains(VideoLibrarySection.sources)),
@@ -203,15 +201,12 @@ void main() {
     expect(topStrip(), findsOneWidget, reason: '停在媒体库组：一级切换');
     expect(subStrip(), findsOneWidget, reason: '停在媒体库组：+ 二级页签');
     final MastheadTabsView<VideoLibrarySection> sub = read(tester, subStrip());
-    expect(
-      sub.values,
-      <VideoLibrarySection>[
-        VideoLibrarySection.home,
-        VideoLibrarySection.series,
-        VideoLibrarySection.allVideos,
-        VideoLibrarySection.mediaServers,
-      ],
-    );
+    expect(sub.values, <VideoLibrarySection>[
+      VideoLibrarySection.home,
+      VideoLibrarySection.series,
+      VideoLibrarySection.allVideos,
+      VideoLibrarySection.mediaServers,
+    ]);
   });
 
   testWidgets('媒体服务器归媒体库组；在线组一级只占一段，值默认指向组内第一个「发现」', (
@@ -225,14 +220,10 @@ void main() {
     expect(sub.selected, VideoLibrarySection.mediaServers);
     // 不切进在线组：发现 / 在线源页要 ProviderScope，本宿主没挂。
     final MastheadTabsView<VideoLibrarySection> top = read(tester, topStrip());
-    expect(
-      top.values,
-      <VideoLibrarySection>[
-        VideoLibrarySection.mediaServers,
-        VideoLibrarySection.discover,
-      ],
-      reason: '媒体库组页签的值是当前分区；在线组还没进过，取组内第一个',
-    );
+    expect(top.values, <VideoLibrarySection>[
+      VideoLibrarySection.mediaServers,
+      VideoLibrarySection.discover,
+    ], reason: '媒体库组页签的值是当前分区；在线组还没进过，取组内第一个');
   });
 
   testWidgets('非本地分区访问后切走保持 State 和输入文字', (WidgetTester tester) async {

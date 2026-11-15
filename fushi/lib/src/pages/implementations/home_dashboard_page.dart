@@ -1,5 +1,7 @@
 import 'dart:io';
 import 'dart:math' as math;
+import 'package:fushi/src/utils/components/fushi_material_components.dart'
+    show FushiShellHeaderActions;
 import 'package:fushi/src/utils/components/fushi_continue_hero.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
@@ -1685,7 +1687,6 @@ class _HomeDashboardPageState
               ],
             ),
             recentEntries: recent.isEmpty ? null : recent,
-            footer: trackingCard == null ? null : entering(trackingCard),
             resumeFab: homeResumeFabEnabled(context),
             bottomInset: MediaQuery.paddingOf(context).bottom,
           );
@@ -1829,8 +1830,8 @@ class _HomeDashboardPageState
   /// 版式的整段正文（封面网格布局、首载骨架、空库引导）。
   ///
   /// [recentEntries] 非 null（色块面板版式、宽屏）时，[body] 之后再接「最近添加」
-  /// 分区：分区标题 + 规整封面色块网格（[_recentBlock]）。[footer]（Bangumi 同步
-  /// 卡）满宽排在最后。
+  /// 分区：分区标题 + 规整封面色块网格（[_recentBlock]）。媒体追踪是可选面板
+  /// （[HomeDashboardPanel.tracking]），随 [body] 里的面板行排。
   Widget _buildRedesignedDashboard({
     required FushiDesignTokens tokens,
     required AppModel appModel,
@@ -1840,7 +1841,6 @@ class _HomeDashboardPageState
     required bool resumeFab,
     required double bottomInset,
     List<_ContinueEntry>? recentEntries,
-    Widget? footer,
   }) {
     final double page = tokens.spacing.page;
     final List<_ContinueEntry>? entries = continueEntries;
@@ -1923,16 +1923,6 @@ class _HomeDashboardPageState
               ),
             ),
           ],
-          if (footer != null)
-            SliverPadding(
-              padding: EdgeInsets.fromLTRB(
-                page,
-                recent != null ? tokens.spacing.card * 2 : tokens.spacing.card,
-                page,
-                0,
-              ),
-              sliver: SliverToBoxAdapter(child: footer),
-            ),
           SliverToBoxAdapter(
             child: SizedBox(
               height:

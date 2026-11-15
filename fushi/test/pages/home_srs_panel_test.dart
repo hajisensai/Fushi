@@ -252,10 +252,10 @@ void main() {
             theme: layout == null
                 ? theme(apple: apple)
                 : theme(apple: apple).copyWith(
-                    extensions: <ThemeExtension<dynamic>>[
-                      ...theme(apple: apple).extensions.values,
-                      FushiShellTheme(contentLayout: layout),
-                    ],
+                    // 展开进显式 `<ThemeExtension<dynamic>>[...]` 时 CFE 报元素类型不匹配
+                    // （analyzer 不报），改成 toList + add。
+                    extensions: theme(apple: apple).extensions.values.toList()
+                      ..add(FushiShellTheme(contentLayout: layout)),
                   ),
             builder: (BuildContext context, Widget? child) => RepaintBoundary(
               key: boundaryKey,
@@ -340,7 +340,7 @@ void main() {
       await unmount(tester);
     });
 
-    for (final ShellContentLayout layout in ShellContentLayout.values)
+    for (final ShellContentLayout layout in ShellContentLayout.values) {
       testWidgets('$ds · ${layout.name} · 计数与牌组列表顶层行之和一致（含子牌组）', (
         WidgetTester tester,
       ) async {
@@ -428,6 +428,7 @@ void main() {
         }
         await unmount(tester);
       });
+    }
 
     testWidgets('$ds · 点「开始复习」直接进复习页；点条目进牌组列表 tab', (
       WidgetTester tester,
@@ -527,7 +528,7 @@ void main() {
     // 拼贴（海报色块）：骨架与刷新信号照守；海报块的高度随状态变（加载中 / 今日
     // 已完成 / 有待复习时多出计数 chip 与开始按钮），行高不变量不适用——这一点
     // 是否算回归交所有者拍板（见 PR #3397 修复报告「拿不准」）。
-    for (final ShellContentLayout layout in ShellContentLayout.values)
+    for (final ShellContentLayout layout in ShellContentLayout.values) {
       testWidgets('$ds · ${layout.name} · 计数加载中挂骨架，行高与加载完一致；制卡刷新信号后计数更新', (
         WidgetTester tester,
       ) async {
@@ -579,6 +580,7 @@ void main() {
         }
         await unmount(tester);
       });
+    }
 
     testWidgets('$ds · 窄列：骨架与「计数 + 开始」按可用宽度收窄，不溢出', (
       WidgetTester tester,

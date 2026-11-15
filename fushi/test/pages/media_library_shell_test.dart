@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
@@ -7,8 +8,6 @@ import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
     show FushiFloatingChromeBar, FushiFloatingChromeSoloTitle;
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
-import 'package:fushi/src/pages/shared/library_section_tabs.dart';
-import 'package:fushi/src/utils/components/library_section_tab.dart';
 import 'package:fushi/src/utils/components/section_swipe_navigator.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/utils/components/fushi_page_masthead.dart'
@@ -98,6 +97,15 @@ void main() {
     initCount = <int, int>{};
   });
 
+  MastheadTabsView<MediaLibraryViewKind> read(
+    WidgetTester tester,
+    Finder finder,
+  ) => readMastheadTabs<MediaLibraryViewKind>(tester, finder);
+
+  /// 当前组的二级页签（大字行里的连体按钮组）；当前组只有一个视图或停在导入页
+  /// 时没有。
+  Finder subStrip() => mastheadSecondaryTabs<MediaLibraryViewKind>();
+
   /// 驱动壳切换视图：走分段条自己的 onChanged（证明壳与分段条真的接上了），
   /// 而不是绕过 UI 直接调 State 的私有方法。
   Future<void> selectVia(WidgetTester tester, MediaLibraryViewKind kind) async {
@@ -122,11 +130,6 @@ void main() {
     MastheadTabsView<MediaLibraryViewKind> strip,
   ) => strip.values;
 
-  MastheadTabsView<MediaLibraryViewKind> read(
-    WidgetTester tester,
-    Finder finder,
-  ) => readMastheadTabs<MediaLibraryViewKind>(tester, finder);
-
   /// 树上一级切换 + 二级页签的总排数。
   int stripCount() =>
       mastheadPrimaryTabs<MediaLibraryViewKind>().evaluate().length +
@@ -141,10 +144,6 @@ void main() {
     importButton(tester).onTap!();
     await tester.pumpAndSettle();
   }
-
-  /// 当前组的二级页签（大字行里的连体按钮组）；当前组只有一个视图或停在导入页
-  /// 时没有。
-  Finder subStrip() => mastheadSecondaryTabs<MediaLibraryViewKind>();
 
   /// 树上全部分段导航的焦点前缀（一级 + 二级）。
   List<String> segmentedPrefixes(WidgetTester tester) => <String>[
@@ -171,11 +170,10 @@ void main() {
     await tester.pumpAndSettle();
 
     MastheadTabsView<MediaLibraryViewKind> top = read(tester, topStrip());
-    expect(
-      top.labels,
-      <String>['书架', t.library_view_online],
-      reason: '「我的」组只有书架时用它自己的名字；导入不占页签',
-    );
+    expect(top.labels, <String>[
+      '书架',
+      t.library_view_online,
+    ], reason: '「我的」组只有书架时用它自己的名字；导入不占页签');
     expect(
       valuesOf(top),
       isNot(contains(MediaLibraryViewKind.sources)),
@@ -224,10 +222,7 @@ void main() {
 
     expect(stripCount(), 1);
     final MastheadTabsView<MediaLibraryViewKind> top = read(tester, topStrip());
-    expect(
-      top.labels,
-      <String>['书架', '来源'],
-    );
+    expect(top.labels, <String>['书架', '来源']);
   });
 
   testWidgets('我的组 = 书架 + 媒体服务器：二级胶囊切换，一级用书架命名', (WidgetTester tester) async {
@@ -242,10 +237,7 @@ void main() {
     await tester.pumpAndSettle();
 
     final MastheadTabsView<MediaLibraryViewKind> top = read(tester, topStrip());
-    expect(
-      top.labels,
-      <String>['书架', '浏览'],
-    );
+    expect(top.labels, <String>['书架', '浏览']);
     final MastheadTabsView<MediaLibraryViewKind> sub = read(tester, subStrip());
     expect(valuesOf(sub), <MediaLibraryViewKind>[
       MediaLibraryViewKind.library,
@@ -548,9 +540,22 @@ void main() {
       MediaLibraryViewKind.library,
       MediaLibraryViewKind.browse,
     ]);
+    // 选中态是字色（选中 strong、其余淡墨）：守「切视图时页签有过渡、不是原地
+    // 跳变」——目标段字色从未选中渐变到选中。
+    Color labelColor(String label) => tester
+        .renderObject<RenderParagraph>(
+          find.descendant(of: stripFinder, matching: find.text(label)),
+        )
+        .text
+        .style!
+        .color!;
+    final Color fromSelected = labelColor('书架');
+    final Color fromIdle = labelColor('浏览');
+    expect(fromSelected, isNot(fromIdle));
+
     strip.onChanged(MediaLibraryViewKind.browse);
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 60));
+    await tester.pump(const Duration(milliseconds: 40));
 
     expect(
       tester.element(stripFinder),
@@ -558,10 +563,15 @@ void main() {
       reason: '壳画的同一份导航条，切视图不重建',
     );
     expect(read(tester, stripFinder).selected, MediaLibraryViewKind.browse);
+    final Color midTarget = labelColor('浏览');
+    expect(midTarget, isNot(fromIdle), reason: '「浏览」应已开始变成选中色');
+    expect(midTarget, isNot(fromSelected), reason: '切出来的那一刻应正在过渡，不是直接落位');
 
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
     expect(tester.element(stripFinder), same(before));
+    expect(labelColor('浏览'), fromSelected);
+    expect(labelColor('书架'), fromIdle);
   });
 
   testWidgets('分段导航注册可由 controller.requestById 定位的稳定 ID', (
