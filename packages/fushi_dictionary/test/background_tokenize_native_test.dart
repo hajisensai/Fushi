@@ -630,7 +630,8 @@ void _backgroundLookupGroup(String? lib, bool haveLib) {
       }
     });
 
-    test('popupOnly 与旧同步路径同口径（popupJson + 全部结果的 bestLength）', () async {
+    // 隐藏词典进引擎当排除集：同步参照也带同一排除集，全隐藏时引擎无结果、popupJson 为 null。
+    test('popupOnly 与同步路径同口径（popupJson + 排除隐藏词典后的 bestLength）', () async {
       for (final String text in <String>['食べた', '漢字を', 'ないない']) {
         for (final Set<String> hidden in <Set<String>>[
           const <String>{},
@@ -639,6 +640,7 @@ void _backgroundLookupGroup(String? lib, bool haveLib) {
           final List<FushiLookupResult> ffi = FushiDicts.instance.lookup(
             text,
             maxResults: 10,
+            excludedDictionaries: hidden,
           );
           final FushiLookupOutcome outcome = (await FushiDicts.instance
               .lookupInBackground(
