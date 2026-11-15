@@ -633,15 +633,13 @@ Future<void> _volumeJobIsolateMain(_JobIsolateArgs args) async {
     // 缓存目录带上本机已安装模型的内容指纹：上游换模型后旧页缓存自然失效，
     // 不会与新模型的结果混进同一卷（BUG-1173）。指纹按 (size, mtime) 记忆化，
     // 常态只做几次 stat。
-    // 块识别器只剩逐列 CTC（[_openIsolateOcrEngine] 已拒绝没有 CTC rec 的路径）。
-    // 路径里的 rec 是上一代的文件时（当前一代还没下齐），签名也按上一代算。
-    const MangaOcrLocalModel jobModel = MangaOcrLocalModel.mangaCtc;
-    final MangaOcrModelGeneration? superseded = jobModel.supersededGeneration;
+    // 块识别器都是逐列 CTC（[_openIsolateOcrEngine] 已拒绝没有 CTC rec 的路径），
+    // 各模型只差 rec 权重与字典。签名跟着路径里实际在读的那份 rec 走：是哪个
+    // 模型的、是不是上一代的文件（当前一代还没下齐），都按 rec 落盘名反查。
+    // 查不到（注入了自定义清单的测试）时按默认模型的当前一代算。
     final MangaOcrModelGeneration jobGeneration =
-        superseded != null &&
-            p.basename(args.modelPaths.ctcRecPath) == superseded.recFileName
-        ? superseded
-        : jobModel.generation;
+        mangaOcrGenerationForRecFile(p.basename(args.modelPaths.ctcRecPath)) ??
+        kDefaultMangaOcrLocalModel.generation;
     final String engineSignature =
         args.engineSignature ??
         mangaOcrEngineSignatureFor(
@@ -1506,6 +1504,8 @@ class MangaOcrServiceImpl
 
     switch (localModel) {
       case MangaOcrLocalModel.mangaCtc:
+      case MangaOcrLocalModel.ppOcrV6Medium:
+      case MangaOcrLocalModel.ppOcrV5Korean:
         final String ctcRecPath = pathOf(
           MangaOcrModelRole.recognizer,
           generation.recFileName,

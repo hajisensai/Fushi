@@ -929,8 +929,8 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
   /// 换模型写回全局模型偏好（与设置页引擎下拉同一份）；逐页缓存按模型签名分
   /// 目录，换模型重跑一定真正重算。
   ///
-  /// 本平台只列得出一个模型时（目前五端都只有逐列 CTC）不画下拉：只有一个
-  /// 选项的选择器是噪音；下面的下载入口照常保留。
+  /// 本平台只列得出一个模型时不画下拉（目前三个模型五端都列得出，下拉恒在）：
+  /// 只有一个选项的选择器是噪音；下面的下载入口照常保留。
   Widget _localModelSelector(ThemeData theme, bool busy) {
     final MangaOcrLocalModel selected = _engines.localModel!;
     final MangaOcrModelDownloadProgress? progress = _downloads?.progressOf(

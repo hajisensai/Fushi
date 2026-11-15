@@ -32,6 +32,8 @@ void main() {
     expect(kDefaultMangaOcrLocalModel, MangaOcrLocalModel.mangaCtc);
     expect(MangaOcrLocalModel.values, <MangaOcrLocalModel>[
       MangaOcrLocalModel.mangaCtc,
+      MangaOcrLocalModel.ppOcrV6Medium,
+      MangaOcrLocalModel.ppOcrV5Korean,
     ]);
   });
 
@@ -477,4 +479,160 @@ void main() {
       },
     );
   }
+
+  group('general PaddleOCR recognisers (ppocrv6_medium, ppocrv5_korean)', () {
+    const Map<MangaOcrLocalModel, ({String dir, String rec, String dict})>
+    expected = <MangaOcrLocalModel, ({String dir, String rec, String dict})>{
+      MangaOcrLocalModel.ppOcrV6Medium: (
+        dir: 'ppocrv6-medium',
+        rec: 'ppocrv6_medium_rec.onnx',
+        dict: 'ppocrv6_medium_rec.yml',
+      ),
+      MangaOcrLocalModel.ppOcrV5Korean: (
+        dir: 'ppocrv5-korean',
+        rec: 'ppocrv5_korean_rec.onnx',
+        dict: 'ppocrv5_korean_rec.yml',
+      ),
+    };
+
+    test('selectable on every platform, each in its own directory', () async {
+      final EnginePaths previous = enginePaths;
+      final Directory root = Directory(
+        p.join(Directory.systemTemp.path, 'ocr-model-resolution-general'),
+      );
+      enginePaths = FixedEnginePaths(
+        documents: root,
+        support: root,
+        temp: root,
+      );
+      addTearDown(() => enginePaths = previous);
+
+      for (final MapEntry<
+            MangaOcrLocalModel,
+            ({String dir, String rec, String dict})
+          >
+          entry
+          in expected.entries) {
+        final MangaOcrLocalModel model = entry.key;
+        for (final String os in <String>[
+          'windows',
+          'android',
+          'ios',
+          'macos',
+          'linux',
+        ]) {
+          expect(
+            MangaOcrLocalModel.forPlatform(model.key, operatingSystem: os),
+            model,
+            reason: '${model.key} on $os',
+          );
+        }
+        expect(model.availableOnAllPlatforms, isTrue);
+        expect(MangaOcrLocalModel.fromKey(model.key), model);
+        expect(
+          (await model.modelsDirectory()).path,
+          p.join(root.path, 'ocr_models', entry.value.dir),
+        );
+      }
+    });
+
+    test(
+      'manifest: shared detectors + own recogniser + own YAML dictionary',
+      () {
+        for (final MapEntry<
+              MangaOcrLocalModel,
+              ({String dir, String rec, String dict})
+            >
+            entry
+            in expected.entries) {
+          final MangaOcrLocalModel model = entry.key;
+          final MangaOcrModelGeneration generation = model.generation;
+          expect(
+            <String>[
+              for (final MangaOcrModelFile file in model.manifest)
+                file.fileName,
+            ],
+            <String>[
+              'detector-v4-s_int8.onnx',
+              kPpOcrDetFileName,
+              entry.value.rec,
+              entry.value.dict,
+            ],
+            reason: model.key,
+          );
+          expect(generation.recFileName, entry.value.rec);
+          expect(generation.recDictFileName, entry.value.dict);
+          expect(generation.recDictFormat, PpOcrCharacterDictFormat.paddleYaml);
+          // 没有上一代：这两个模型从未换过 rec。
+          expect(model.supersededGeneration, isNull);
+          // 离线导入按字节数认文件：同一份清单里不能有两个文件一样大。
+          final List<int> sizes = <int>[
+            for (final MangaOcrModelFile file in model.manifest)
+              file.expectedBytes,
+          ];
+          expect(sizes.toSet(), hasLength(sizes.length), reason: model.key);
+        }
+      },
+    );
+
+    test('recogniser and dictionary are pinned to a commit, not a branch', () {
+      final RegExp pinned = RegExp(r'/resolve/[0-9a-f]{40}/');
+      for (final MangaOcrLocalModel model in expected.keys) {
+        final MangaOcrModelGeneration generation = model.generation;
+        for (final MangaOcrModelFile file in model.manifest) {
+          if (file.fileName != generation.recFileName &&
+              file.fileName != generation.recDictFileName) {
+            continue;
+          }
+          expect(
+            pinned.hasMatch(file.url),
+            isTrue,
+            reason: '${model.key}: ${file.url}',
+          );
+        }
+      }
+      MangaOcrModelFile rec(MangaOcrLocalModel model) =>
+          model.manifest.firstWhere(
+            (MangaOcrModelFile f) => f.fileName == model.generation.recFileName,
+          );
+      expect(rec(MangaOcrLocalModel.ppOcrV6Medium).expectedBytes, 76554979);
+      expect(
+        rec(MangaOcrLocalModel.ppOcrV6Medium).url,
+        contains('PaddlePaddle/PP-OCRv6_medium_rec_onnx/'),
+      );
+      expect(rec(MangaOcrLocalModel.ppOcrV5Korean).expectedBytes, 13418787);
+      expect(
+        rec(MangaOcrLocalModel.ppOcrV5Korean).url,
+        contains('PaddlePaddle/korean_PP-OCRv5_mobile_rec_onnx/'),
+      );
+    });
+  });
+
+  group('mangaOcrGenerationForRecFile', () {
+    test('every generation has a recogniser file name of its own', () {
+      final List<String> names = <String>[
+        for (final MangaOcrLocalModel model in MangaOcrLocalModel.values) ...[
+          model.generation.recFileName,
+          ?model.supersededGeneration?.recFileName,
+        ],
+      ];
+      expect(names.toSet(), hasLength(names.length));
+    });
+
+    test('maps a recogniser file back to the generation that owns it', () {
+      for (final MangaOcrLocalModel model in MangaOcrLocalModel.values) {
+        expect(
+          mangaOcrGenerationForRecFile(model.generation.recFileName),
+          same(model.generation),
+          reason: model.key,
+        );
+      }
+      // 上一代（v0.2 还在替 v0.3 读）要查回上一代，签名才落在老用户原来的缓存上。
+      expect(
+        mangaOcrGenerationForRecFile(kMangaCtcSupersededRecFileName),
+        same(kMangaCtcSupersededGeneration),
+      );
+      expect(mangaOcrGenerationForRecFile('rec.onnx'), isNull);
+    });
+  });
 }

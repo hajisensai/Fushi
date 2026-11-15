@@ -1,6 +1,8 @@
-/// Selectable local recognizers. Only per-column CTC (every platform) remains:
-/// the kha-white manga-ocr model and Baberu were both removed in 2026-10. The
-/// enum and its key / platform resolution stay so a future model can plug in.
+/// Selectable local recognizers. All of them are PaddleOCR-format CTC line
+/// recognizers read through the per-column pipeline, so they differ only in
+/// their recognizer weights and dictionary: the manga-tuned default, a larger
+/// general Chinese one and a Korean one. The kha-white manga-ocr model and
+/// Baberu were both removed in 2026-10.
 library;
 
 import 'dart:io';
@@ -19,7 +21,14 @@ const MangaOcrLocalModel kDefaultMangaOcrLocalModel =
     MangaOcrLocalModel.mangaCtc;
 
 enum MangaOcrLocalModel {
-  mangaCtc('manga_ctc');
+  mangaCtc('manga_ctc'),
+
+  /// PP-OCRv6 medium rec：通用中文（简 / 繁）识别更准，体积与耗时约为默认模型的
+  /// 四倍。实测见 [kPpOcrV6MediumGeneration]。
+  ppOcrV6Medium('ppocrv6_medium'),
+
+  /// PP-OCRv5 韩文 rec：默认模型与 PP-OCRv6 都不认谚文，这是唯一能读韩文的档。
+  ppOcrV5Korean('ppocrv5_korean');
 
   const MangaOcrLocalModel(this.key);
   final String key;
@@ -48,18 +57,21 @@ enum MangaOcrLocalModel {
   /// 纯 ONNX Runtime CPU 推理、出包五端都能跑的模型；只给 Windows 的模型在
   /// 这里返回 false（目前没有：2026-10 删掉的 Baberu 曾是唯一一个）。
   bool get availableOnAllPlatforms => switch (this) {
-    mangaCtc => true,
+    mangaCtc || ppOcrV6Medium || ppOcrV5Korean => true,
   };
 
   /// 当前这一代：下载、导入、设置页展示都按它。
   MangaOcrModelGeneration get generation => switch (this) {
     mangaCtc => kMangaCtcGeneration,
+    ppOcrV6Medium => kPpOcrV6MediumGeneration,
+    ppOcrV5Korean => kPpOcrV5KoreanGeneration,
   };
 
   /// 上一代：当前这一代还没下齐、而它在磁盘上齐全时，识别照常用它跑
   /// （[installedMangaOcrGeneration]）。没有上一代的模型返回 null。
   MangaOcrModelGeneration? get supersededGeneration => switch (this) {
     mangaCtc => kMangaCtcSupersededGeneration,
+    ppOcrV6Medium || ppOcrV5Korean => null,
   };
 
   List<MangaOcrModelFile> get manifest => generation.manifest;
@@ -73,6 +85,8 @@ enum MangaOcrLocalModel {
     final Directory legacy = await model_fp.defaultMangaOcrModelsDir();
     final String sibling = switch (this) {
       mangaCtc => kMangaCtcModelDirName,
+      ppOcrV6Medium => kPpOcrV6MediumModelDirName,
+      ppOcrV5Korean => kPpOcrV5KoreanModelDirName,
     };
     return Directory(p.join(legacy.parent.path, sibling));
   }
@@ -121,6 +135,26 @@ MangaOcrModelGeneration? installedMangaOcrGeneration(
 }) {
   if (current.isCompleteIn(dir)) return current;
   if (superseded != null && superseded.isCompleteIn(dir)) return superseded;
+  return null;
+}
+
+/// rec 落盘名为 [recFileName] 的那一代（任一模型的当前一代或上一代）；没有任何
+/// 一代用这个名字时返回 null。
+///
+/// 整卷任务的 isolate 只拿得到模型文件路径，缓存签名却必须跟着「实际在读的那份
+/// rec」走——每一代的 rec 落盘名互不相同（带模型名 / 版本），按它反查不会认错。
+MangaOcrModelGeneration? mangaOcrGenerationForRecFile(String recFileName) {
+  for (final MangaOcrLocalModel model in MangaOcrLocalModel.values) {
+    for (final MangaOcrModelGeneration? generation
+        in <MangaOcrModelGeneration?>[
+          model.generation,
+          model.supersededGeneration,
+        ]) {
+      if (generation != null && generation.recFileName == recFileName) {
+        return generation;
+      }
+    }
+  }
   return null;
 }
 
@@ -410,3 +444,109 @@ const MangaOcrModelGeneration kMangaCtcSupersededGeneration =
       recDictFileName: kPpOcrRecDictFileName,
       recDictFormat: PpOcrCharacterDictFormat.paddleYaml,
     );
+
+/// 各模型共用的两份检测权重（每个模型目录各存一份，删一个模型不波及另一个）：
+/// 文字块检测器与 PP-OCRv6 small det（块内列 / 行检测）。与
+/// [kMangaCtcOcrModelManifest] 里的两项逐字相同。
+const MangaOcrModelFile _kComicTextDetectorFile = MangaOcrModelFile(
+  fileName: 'detector-v4-s_int8.onnx',
+  url:
+      'https://huggingface.co/ogkalu/comic-text-and-bubble-detector/'
+      'resolve/main/detector-v4-s_int8.onnx',
+  expectedBytes: 11120765,
+  role: MangaOcrModelRole.detector,
+);
+const MangaOcrModelFile _kPpOcrSmallDetFile = MangaOcrModelFile(
+  fileName: kPpOcrDetFileName,
+  url:
+      'https://huggingface.co/PaddlePaddle/PP-OCRv6_small_det_onnx/'
+      'resolve/$kPpOcrDetRevision/inference.onnx',
+  expectedBytes: 9880512,
+  role: MangaOcrModelRole.recognizer,
+);
+
+/// PP-OCRv6 medium rec（PaddlePaddle/PP-OCRv6_medium_rec_onnx，Apache-2.0）。与
+/// PP-OCRv6 small rec 同输入契约、同 18708 项字典（各自仓库的 `inference.yml`），
+/// 输出 18710 类。钉 revision 的理由同 [kPpOcrDetRevision]（`main` 可变）；该
+/// revision 下 rec 的 sha256 为
+/// 9c09abf0957f7968c7586464b7397b84ad2387a0497a351af40e9acc71b673ba。
+///
+/// 2026-11-14 实测（500 个合成中文对话块，同一套逐列管线、CPU 4 线程）：字错误率
+/// 10.31%（默认模型 12.51%）、整块全对 60.0%（47.0%），每块 181 ms（48 ms）。日文
+/// 漫画上不如默认模型（9.03% 对 5.87%），所以它是「中文更准」的可选档，不是默认。
+const String kPpOcrV6MediumRecRevision =
+    '50c7eacafc52fa7bcf4194e8cd08e46f8558504b';
+const String kPpOcrV6MediumModelDirName = 'ppocrv6-medium';
+const String kPpOcrV6MediumRecFileName = 'ppocrv6_medium_rec.onnx';
+const String kPpOcrV6MediumRecDictFileName = 'ppocrv6_medium_rec.yml';
+
+const MangaOcrModelGeneration kPpOcrV6MediumGeneration =
+    MangaOcrModelGeneration(
+      manifest: <MangaOcrModelFile>[
+        _kComicTextDetectorFile,
+        _kPpOcrSmallDetFile,
+        MangaOcrModelFile(
+          fileName: kPpOcrV6MediumRecFileName,
+          url:
+              'https://huggingface.co/PaddlePaddle/PP-OCRv6_medium_rec_onnx/'
+              'resolve/$kPpOcrV6MediumRecRevision/inference.onnx',
+          expectedBytes: 76554979,
+          role: MangaOcrModelRole.recognizer,
+        ),
+        MangaOcrModelFile(
+          fileName: kPpOcrV6MediumRecDictFileName,
+          url:
+              'https://huggingface.co/PaddlePaddle/PP-OCRv6_medium_rec_onnx/'
+              'resolve/$kPpOcrV6MediumRecRevision/inference.yml',
+          expectedBytes: 150580,
+          role: MangaOcrModelRole.recognizer,
+        ),
+      ],
+      cacheSignature:
+          'local-onnx-ctc-ppocrv6-medium-$kMangaOcrPipelineRevision',
+      recFileName: kPpOcrV6MediumRecFileName,
+      recDictFileName: kPpOcrV6MediumRecDictFileName,
+      recDictFormat: PpOcrCharacterDictFormat.paddleYaml,
+    );
+
+/// PP-OCRv5 韩文 rec（PaddlePaddle/korean_PP-OCRv5_mobile_rec_onnx，Apache-2.0）。
+/// 输入契约同 PP-OCRv6 rec（[1,3,48,W]、BGR），字典是它自己的 `inference.yml`
+/// （11945 项），输出 11947 类。该 revision 下 rec 的 sha256 为
+/// 92f0b7785e64fc9090106a241cf4c1eb97472824558272751b88a2a4476d3a08。
+///
+/// 2026-11-14 实测（500 个合成韩文对话块，全部横排）：字错误率 18.07%、整块全对
+/// 37.0%，每块 39 ms；默认模型与 PP-OCRv6 medium 在同一批上是 97%（不认谚文）。
+/// 它不是漫画微调的，装饰字体与竖排没有测过。
+const String kPpOcrV5KoreanRecRevision =
+    '5c6f574b8e2230adf4287b33e736d71b9fabd28e';
+const String kPpOcrV5KoreanModelDirName = 'ppocrv5-korean';
+const String kPpOcrV5KoreanRecFileName = 'ppocrv5_korean_rec.onnx';
+const String kPpOcrV5KoreanRecDictFileName = 'ppocrv5_korean_rec.yml';
+
+const MangaOcrModelGeneration
+kPpOcrV5KoreanGeneration = MangaOcrModelGeneration(
+  manifest: <MangaOcrModelFile>[
+    _kComicTextDetectorFile,
+    _kPpOcrSmallDetFile,
+    MangaOcrModelFile(
+      fileName: kPpOcrV5KoreanRecFileName,
+      url:
+          'https://huggingface.co/PaddlePaddle/korean_PP-OCRv5_mobile_rec_onnx/'
+          'resolve/$kPpOcrV5KoreanRecRevision/inference.onnx',
+      expectedBytes: 13418787,
+      role: MangaOcrModelRole.recognizer,
+    ),
+    MangaOcrModelFile(
+      fileName: kPpOcrV5KoreanRecDictFileName,
+      url:
+          'https://huggingface.co/PaddlePaddle/korean_PP-OCRv5_mobile_rec_onnx/'
+          'resolve/$kPpOcrV5KoreanRecRevision/inference.yml',
+      expectedBytes: 96039,
+      role: MangaOcrModelRole.recognizer,
+    ),
+  ],
+  cacheSignature: 'local-onnx-ctc-ppocrv5-korean-$kMangaOcrPipelineRevision',
+  recFileName: kPpOcrV5KoreanRecFileName,
+  recDictFileName: kPpOcrV5KoreanRecDictFileName,
+  recDictFormat: PpOcrCharacterDictFormat.paddleYaml,
+);
