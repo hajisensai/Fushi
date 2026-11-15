@@ -234,12 +234,13 @@ class DictionaryRepository {
     required List<RemoteDictionary> remoteDictionaries,
     required String hostId,
   }) {
-    final List<RemoteDictionary> hostRows = _unshadowedRemote(dictionaries, <
-      RemoteDictionary
-    >[
-      for (final RemoteDictionary r in remoteDictionaries)
-        if (r.hostId == hostId) r,
-    ]);
+    final List<RemoteDictionary> hostRows = _unshadowedRemote(
+      dictionaries,
+      <RemoteDictionary>[
+        for (final RemoteDictionary r in remoteDictionaries)
+          if (r.hostId == hostId) r,
+      ],
+    );
     final Set<String> excluded = <String>{
       for (final Dictionary d in dictionaries)
         if (d.isHidden(JapaneseLanguage.instance)) d.name,
@@ -299,7 +300,12 @@ class DictionaryRepository {
               ),
           for (int i = 0; i < remote.length; i++)
             if (remote[i].type == DictionaryType.term)
-              (order: remote[i].order, source: 1, index: i, name: remote[i].name),
+              (
+                order: remote[i].order,
+                source: 1,
+                index: i,
+                name: remote[i].name,
+              ),
         ]..sort((a, b) {
           final int byOrder = a.order.compareTo(b.order);
           if (byOrder != 0) return byOrder;
@@ -984,11 +990,7 @@ class DictionaryRepository {
       for (final Dictionary d in newLocalOrder) d.name,
     ];
     return _writeMetadata(() async {
-      final _SectionWrites writes = _renumberSection(
-        type,
-        names,
-        moved: moved,
-      );
+      final _SectionWrites writes = _renumberSection(type, names, moved: moved);
       await _commitDictionaries(writes.locals, remote: writes.remotes);
     });
   }
@@ -1031,7 +1033,10 @@ class DictionaryRepository {
         if (byName.containsKey(name) && named.add(name)) byName[name]!,
     ];
     if (order.isEmpty) {
-      return (locals: const <Dictionary>[], remotes: const <RemoteDictionary>[]);
+      return (
+        locals: const <Dictionary>[],
+        remotes: const <RemoteDictionary>[],
+      );
     }
     final List<RemoteDictionary> serverRows = type == DictionaryType.kanji
         ? const <RemoteDictionary>[]
@@ -1106,10 +1111,11 @@ class DictionaryRepository {
     ];
 
     // 3. 语言组规范化 + 重编号；只出序号变了的行（[replacing] 的其它字段由调用方写）。
-    final List<_SectionRow> canonical = concatenateLanguageGroupsOf<_SectionRow>(
-      next,
-      (_SectionRow r) => r.languageGroup,
-    );
+    final List<_SectionRow> canonical =
+        concatenateLanguageGroupsOf<_SectionRow>(
+          next,
+          (_SectionRow r) => r.languageGroup,
+        );
     final List<Dictionary> locals = <Dictionary>[];
     final List<RemoteDictionary> remotes = <RemoteDictionary>[];
     for (int k = 0; k < canonical.length; k++) {
@@ -1906,7 +1912,8 @@ class DictionaryLookupFilters {
   /// 同一个词按两套过滤查出的结果不能共用缓存键（配置视图、请求方词典选择都靠它）。
   String get fingerprint {
     final List<String> hidden = hiddenDictionaryNames.toList()..sort();
-    final List<String> hiddenKanji = hiddenKanjiDictionaryNames.toList()..sort();
+    final List<String> hiddenKanji = hiddenKanjiDictionaryNames.toList()
+      ..sort();
     final String raw =
         '${hidden.join('\u0000')}\u0001${termDictionaryOrder.join('\u0000')}'
         '\u0001${hiddenKanji.join('\u0000')}';

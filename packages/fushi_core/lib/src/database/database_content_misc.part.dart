@@ -86,14 +86,14 @@ mixin _FushiDbContentMisc
     required int order,
     required bool hidden,
   }) =>
-      (update(remoteDictionaryMetadata)
-            ..where((t) => t.hostId.equals(hostId) & t.name.equals(name)))
-          .write(
-            RemoteDictionaryMetadataCompanion(
-              order: Value<int>(order),
-              hidden: Value<bool>(hidden),
-            ),
-          );
+      (update(
+        remoteDictionaryMetadata,
+      )..where((t) => t.hostId.equals(hostId) & t.name.equals(name))).write(
+        RemoteDictionaryMetadataCompanion(
+          order: Value<int>(order),
+          hidden: Value<bool>(hidden),
+        ),
+      );
 
   /// 写本机显示名（v154，设备本地）；[localDisplayName] 为 null 或空白 = 清掉、回到
   /// host 的显示名。返回受影响行数（0 = 没有这条目录行）。
@@ -103,15 +103,15 @@ mixin _FushiDbContentMisc
     required String? localDisplayName,
   }) {
     final String? trimmed = localDisplayName?.trim();
-    return (update(remoteDictionaryMetadata)
-          ..where((t) => t.hostId.equals(hostId) & t.name.equals(name)))
-        .write(
-          RemoteDictionaryMetadataCompanion(
-            localDisplayName: Value<String?>(
-              trimmed == null || trimmed.isEmpty ? null : trimmed,
-            ),
-          ),
-        );
+    return (update(
+      remoteDictionaryMetadata,
+    )..where((t) => t.hostId.equals(hostId) & t.name.equals(name))).write(
+      RemoteDictionaryMetadataCompanion(
+        localDisplayName: Value<String?>(
+          trimmed == null || trimmed.isEmpty ? null : trimmed,
+        ),
+      ),
+    );
   }
 
   /// 把 [hostId] 上的 [names] 标成「从 host 目录里消失」（已标过的保留最早时刻）。
@@ -141,14 +141,14 @@ mixin _FushiDbContentMisc
   ) {
     final List<String> list = names.toList(growable: false);
     if (list.isEmpty) return Future<int>.value(0);
-    return (update(remoteDictionaryMetadata)
-          ..where((t) => t.hostId.equals(hostId) & t.name.isIn(list)))
-        .write(
-          RemoteDictionaryMetadataCompanion(
-            missingSince: const Value<int?>(null),
-            lastSeenAt: Value<int>(at),
-          ),
-        );
+    return (update(
+      remoteDictionaryMetadata,
+    )..where((t) => t.hostId.equals(hostId) & t.name.isIn(list))).write(
+      RemoteDictionaryMetadataCompanion(
+        missingSince: const Value<int?>(null),
+        lastSeenAt: Value<int>(at),
+      ),
+    );
   }
 
   /// 忘掉一台 host 的全部目录行（连同各配置在 live 表里的顺序 / 开关）。
@@ -157,10 +157,9 @@ mixin _FushiDbContentMisc
   )..where((t) => t.hostId.equals(hostId))).go();
 
   /// 忘掉一条目录行（UI 的「忘掉」：host 上已经没有这本）。
-  Future<int> deleteRemoteDictionary(String hostId, String name) =>
-      (delete(remoteDictionaryMetadata)
-            ..where((t) => t.hostId.equals(hostId) & t.name.equals(name)))
-          .go();
+  Future<int> deleteRemoteDictionary(String hostId, String name) => (delete(
+    remoteDictionaryMetadata,
+  )..where((t) => t.hostId.equals(hostId) & t.name.equals(name))).go();
 
   // ── dictionary history ──────────────────────────────────────────
   Future<List<DictionaryHistoryRow>> getAllDictionaryHistory() => (select(

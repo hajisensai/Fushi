@@ -93,7 +93,6 @@ class ProfileSettingsView {
   /// 只读的 Anki 设置存储：读到的是 [ankiSettings]。
   AnkiSettingsStore get ankiSettingsStore =>
       ProfileViewAnkiSettingsStore(jsonEncode(ankiSettings.toJson()));
-
 }
 
 /// [ProfileSettingsView] 的 Anki 设置存储：读回视图里合成好的设置 JSON。
