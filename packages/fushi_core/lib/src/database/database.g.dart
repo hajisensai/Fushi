@@ -6874,7 +6874,7 @@ class RemoteDictionaryMetaRow extends DataClass
   /// 配置拥有：这个配置是否关掉了它（新出现的词典默认启用）。
   final bool hidden;
 
-  /// v150：本机给这本服务器词典起的显示名（词典管理页详情里改名）；null = 用 host 的
+  /// v154：本机给这本服务器词典起的显示名（词典管理页详情里改名）；null = 用 host 的
   /// [displayName] / [name]。**设备本地**：既不归配置（不进 `remote_dictionary_meta`
   /// 快照），也不由目录刷新写（upsert 冲突时不碰），不导出。
   final String? localDisplayName;
@@ -25756,13 +25756,13 @@ class MediaTrackingMappingRow extends DataClass
   final int createdAt;
   final int updatedAt;
 
-  /// v145: how the link was made: `manual` (picked by the user), `id` (from
+  /// v150: how the link was made: `manual` (picked by the user), `id` (from
   /// an id another source gave, e.g. MAL or MangaBaka → AniList), `auto` (title
   /// match ≥ 0.90), `suggestion` (a title match the user approved). Null for
-  /// links made before v145.
+  /// links made before v150.
   final String? linkSource;
 
-  /// v145: title match score (0..1) for `auto` / `suggestion` links.
+  /// v150: title match score (0..1) for `auto` / `suggestion` links.
   final double? confidence;
 
   /// v152: what a send of this link last succeeded with, in the site's units
