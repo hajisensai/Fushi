@@ -315,6 +315,41 @@ Android / Windows / macOS / iOS debug/beta workflow 必须使用跨 workflow 统
 - macOS 走 **Developer ID + 公证**，不进 Mac App Store：`Release.entitlements` 已刻意
   去沙盒以支持应用内自动更新替换 `/Applications/fushi.app`，商店强制沙盒，两者不可兼得。
 
+### iOS 包体积与崩溃符号（2026-11-15）
+
+- **slang 不生成 flat map**（`fushi/slang.yaml` 的 `flat_map: false`，BUG-4640）：17 个
+  `_flatMapFunction` 在 iOS 快照里占 15 MB，还会让 Windows gen_snapshot 爆栈（BUG-1589）。
+  文案只走生成的 getter，`t['key']` 编译不过；守卫 `test/build/slang_flat_map_disabled_guard_test.dart`。
+- **两条 iOS 出包命令都 `--split-debug-info`、不 `--obfuscate`**（BUG-4655）：未签名包拆到
+  `build/ios/dart-symbols-unsigned`，TestFlight 包拆到 `build/ios/dart-symbols-testflight`，各按
+  发布序号上传 artifact `ios-dart-symbols-{unsigned,testflight}-<序号>`（与 `ios-dsyms-*` 同为 90 天）。
+  不混淆是因为仓里有 `runtimeType.toString()` 判断，混淆只多省 0.7 MB。
+  代价：release 包里的 Dart 栈是 DWARF 形式（`*** *** ***` 头 + `#00 abs 0x… virt 0x… _kDartIsolateSnapshotInstructions+0x…`），
+  诊断日志 / 反馈里看不到文件名行号；`ui_activity_probe` 的调用点归因在 iOS release 包上会退化成原始帧。
+  **还原**：按报告里的构建号下载对应 artifact（`gh run download <run-id> -n ios-dart-symbols-unsigned-<序号>`，
+  TestFlight 包换 `testflight`），把栈原文存成文件后
+  `flutter symbolize -i stack.txt -d app.ios-arm64.symbols`。原生帧（`Runner+偏移`）照旧用 `ios-dsyms-*` 的 dSYM。
+- **iOS 包里每个 Mach-O 都 `strip -x`**（`tool/ios_strip_local_symbols.sh`，BUG-4656）：只去本地符号，
+  逐个比对 strip 前后的导出集合与 Runner 的 FFI 前缀计数，变了就让出包失败，之后再跑一遍 7 个
+  `verify_abi.sh`。崩溃符号化靠 dSYM，不受影响。
+  - 未签名 IPA：`flutter build ios` 是 Xcode build 动作（`DEPLOYMENT_POSTPROCESSING=NO`），Runner 的
+    `STRIP_STYLE=non-global` 不执行，嵌入的预编译 framework 也不 strip——在「Prepare unsigned iOS IPA
+    release asset」里 ditto 之后、zip 之前 strip（Mac 实测 −27.4 MB 原始、IPA zip −4.1 MB）。
+  - TestFlight：archive 动作下 Runner 已按 `STRIP_STYLE` 处理（实测再 strip 是空操作），但 CocoaPods
+    嵌的预编译 framework 原样进包（Harfbuzz、PDFium 等，再 strip 还能省 9.8 MB）。`flutter build ipa`
+    之后对归档里的 .app strip，再 `xcodebuild -exportArchive` 用同一份 ExportOptions 重签导出。
+- **已知未修：dev_dependencies 插件的 framework 仍进 Release IPA**（integration_test 82 KB、
+  flutter_native_splash 72 KB）。根因在 Flutter 3.47.6：release 构建只把它们从
+  `GeneratedPluginRegistrant` 里滤掉（`flutter_tools/lib/src/flutter_plugins.dart:1410` 的 `releaseMode`
+  过滤），而 `bin/podhelper.rb` 的 `flutter_install_plugin_pods`（:292）不看
+  `.flutter-plugins-dependencies` 的 `dev_dependency` 标记，照样 `pod` 进所有配置。在 Podfile 里把它们
+  限到 Debug / Profile 试过（Mac 实测 Pods-Runner-frameworks.sh 的 Release 段确实不再嵌入），但注册表只在
+  跑 pub 的 `flutter build` 里按 release 重生成（`runner/flutter_command.dart:1982` 的
+  `regeneratePlatformSpecificToolingIfApplicable`，`--no-pub` 时跳过）：`--no-pub` 的 release 构建或
+  pub get 后直接用 Xcode archive，注册表仍 `@import flutter_native_splash`，编译直接
+  `Module 'flutter_native_splash' not found`。为 150 KB 引入这个坑不划算，等 Flutter 的 podhelper
+  自己按 `dev_dependency` 过滤。
+
 ## 版本号与 build number
 
 Flutter 版本号以 `fushi/pubspec.yaml` 的 `version: X.Y.Z+build` 为准。准备 push 前先判断本轮改动是否影响用户可安装/可分发产物：
