@@ -65,14 +65,12 @@ void main() {
 
   Future<int> tracking(
     List<String> args, {
-    bool enabled = true,
     Map<String, String> env = const <String, String>{},
   }) {
     final TrackingModule module = TrackingModule(
       out: out,
       err: err,
       env: env,
-      enabled: enabled,
       apiFactory: (String token) => _FakeBangumi(token, calls),
     );
     final ArgParser parser = ArgParser();
@@ -83,22 +81,6 @@ void main() {
       CliContext(configFile: configFile, verbose: false),
     );
   }
-
-  test('生产现状：下线闸关着 = 69，且不打开数据目录、不发请求', () async {
-    expect(kMediaTrackingEnabled, isFalse, reason: '闸打开后这条测试与模块文档都要改');
-    expect(const TrackingModule().enabled, kMediaTrackingEnabled);
-    expect(
-      await tracking(
-        <String>['sync'],
-        enabled: false,
-        env: <String, String>{kBangumiTokenEnv: 'good'},
-      ),
-      69,
-    );
-    expect(err.toString(), contains('kMediaTrackingEnabled'));
-    expect(calls, isEmpty);
-    expect(Directory(paths.dataDir).existsSync(), isFalse);
-  });
 
   test('环境变量令牌：connect 校验后落盘，空 outbox 同步成功', () async {
     expect(
@@ -182,6 +164,6 @@ void main() {
 
   test('用法错误 = 64', () async {
     expect(await tracking(<String>[]), 64);
-    expect(await tracking(<String>[], enabled: false), 64);
+    expect(await tracking(<String>[]), 64);
   });
 }

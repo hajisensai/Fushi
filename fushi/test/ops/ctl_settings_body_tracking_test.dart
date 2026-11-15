@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:drift/native.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/tracking/page/tracking_row_facts.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
@@ -15,6 +16,8 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/tracking/bangumi_api_client.dart';
 import 'package:fushi_engine/media/tracking/media_tracking_repository.dart';
 import 'package:fushi_engine/media/tracking/media_tracking_service.dart';
+import 'package:fushi_engine/media/tracking/tracking_provider.dart';
+import 'package:fushi_engine/media/tracking/tracking_subject_search.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../helpers/test_platform_services.dart';
@@ -99,6 +102,75 @@ class _FakeBangumiApi implements BangumiTrackingApi {
 
   @override
   void close() {}
+}
+
+final class _OtherSession implements TrackingProviderSession {
+  @override
+  void close() {}
+}
+
+/// A second signed-in site that tracks games, with a searchable catalogue.
+final class _OtherSite implements TrackingProvider, TrackingSubjectSearch {
+  final List<String> searches = <String>[];
+
+  @override
+  String get id => 'othersite';
+
+  @override
+  String get displayName => 'Other Site';
+
+  @override
+  String get siteHost => '';
+
+  @override
+  TrackingProviderCapabilities get capabilities =>
+      const TrackingProviderCapabilities(
+        kinds: <TrackingKind>{TrackingKind.game},
+        progressModes: <TrackingProgressMode>{TrackingProgressMode.status},
+      );
+
+  @override
+  bool get isConfigured => true;
+
+  @override
+  Future<TrackingProviderSession> openSession() async => _OtherSession();
+
+  @override
+  Future<void> push(
+    TrackingProviderSession session,
+    PendingTrackingUpdate update,
+  ) async {}
+
+  @override
+  TrackingFailureKind classify(Object error) => TrackingFailureKind.transient;
+
+  @override
+  Future<List<TrackingSearchHit>> searchSubjects(
+    String keyword,
+    TrackingKind kind,
+  ) async {
+    searches.add(keyword);
+    return const <TrackingSearchHit>[
+      TrackingSearchHit(
+        subjectId: 77,
+        name: 'Other Game',
+        kind: TrackingKind.game,
+      ),
+    ];
+  }
+
+  @override
+  Future<TrackingSearchHit?> subjectById(
+    int subjectId,
+    TrackingKind kind,
+  ) async => TrackingSearchHit(
+    subjectId: subjectId,
+    name: 'Other Game',
+    kind: TrackingKind.game,
+  );
+
+  @override
+  Uri? subjectPageUrl(int subjectId, TrackingKind kind) => null;
 }
 
 void main() {
@@ -346,5 +418,108 @@ void main() {
       await mappings().remove!(sc, id);
       expect(await MediaTrackingRepository(db).listMappings(), isEmpty);
     });
+  });
+  testWidgets('status counts links on every site; search / mappings take a '
+      'site and default to bangumi', (WidgetTester tester) async {
+    await pumpContext(tester);
+    await tester.runAsync(() async {
+      final _OtherSite other = _OtherSite();
+      final MediaTrackingService multi = MediaTrackingService(
+        repository: MediaTrackingRepository(db),
+        preferences: prefs,
+        userAgent: 'test-agent',
+        apiFactory: (_) => api,
+        extraProviders: <TrackingProvider>[other],
+      );
+      addTearDown(multi.dispose);
+      appModel.wireMediaTrackingServiceForTesting(multi);
+      await multi.setAccessToken('TOKEN');
+
+      final List<Object?> found =
+          await action('search').run!(sc, const <String, String>{
+                'keyword': 'Other',
+                'kind': 'game',
+                'site': 'othersite',
+              })
+              as List<Object?>;
+      expect((found.single! as Map<String, Object?>)['id'], 77);
+      expect(other.searches, <String>['Other']);
+      expect(api.searches, isEmpty, reason: 'bangumi was not asked');
+      await expectLater(
+        action('search').run!(sc, const <String, String>{
+          'keyword': 'x',
+          'site': 'nosuchsite',
+        }),
+        throwsArgumentError,
+      );
+
+      final Map<String, Object?> added =
+          await mappings().add!(sc, const <String, String>{
+                'media_type': 'game',
+                'media_key': 'g1',
+                'subject_id': '77',
+                'site': 'othersite',
+              })
+              as Map<String, Object?>;
+      expect(added['site'], 'othersite');
+      expect(added['subject_name'], 'Other Game');
+
+      final Map<String, Object?> status =
+          await action('status').run!(sc, const <String, String>{})
+              as Map<String, Object?>;
+      expect(status['mappings'], 1, reason: 'the link is on a second site');
+      expect((await multi.loadStatus()).mappings, isEmpty);
+
+      final List<Map<String, Object?>> rows = await mappings().list(sc);
+      expect(rows.single['site'], 'othersite');
+      await mappings().remove!(sc, rows.single['id']! as String);
+      expect(await MediaTrackingRepository(db).listMappings(), isEmpty);
+    });
+  });
+
+  test('unlinked kind is the label the Tracking page shows; siteKind is the '
+      'site kind', () {
+    MediaTrackingUnlinkedItem item(
+      TrackingMediaType type,
+      String key,
+      TrackingKind kind,
+    ) => MediaTrackingUnlinkedItem(
+      mediaType: type,
+      mediaKey: key,
+      mediaTitle: key,
+      kind: kind,
+      lastActivityAt: 0,
+    );
+    final MediaTrackingHomeSnapshot home = MediaTrackingHomeSnapshot(
+      sites: const <MediaTrackingProviderStatus>[],
+      siteNames: const <String, String>{},
+      mappings: const <MediaTrackingMappingRow>[],
+      unlinked: <MediaTrackingUnlinkedItem>[
+        item(TrackingMediaType.video, 'plain', TrackingKind.anime),
+        item(TrackingMediaType.video, 'live', TrackingKind.anime),
+        item(TrackingMediaType.video, 'toon', TrackingKind.anime),
+        item(TrackingMediaType.game, 'g', TrackingKind.game),
+      ],
+    );
+    final Map<String, Object?> record = mediaTrackingStatusRecord(
+      MediaTrackingStatus.empty,
+      home: home,
+      rowFacts: const TrackingRowFacts(<String, TrackingItemFacts>{
+        'video|live': TrackingItemFacts(nature: TrackingVideoNature.liveAction),
+        'video|toon': TrackingItemFacts(nature: TrackingVideoNature.anime),
+      }),
+      sites: const <MediaTrackingProviderStatus>[],
+      siteName: (String id) => id,
+    );
+    final List<Map<String, Object?>> unlinked =
+        (record['unlinked']! as List<Object?>).cast<Map<String, Object?>>();
+    expect(
+      unlinked.map((Map<String, Object?> u) => u['kind']),
+      <String>['video', 'live_action', 'anime', 'game'],
+    );
+    expect(
+      unlinked.map((Map<String, Object?> u) => u['siteKind']),
+      <String>['anime', 'anime', 'anime', 'game'],
+    );
   });
 }

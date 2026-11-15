@@ -124,6 +124,20 @@ class AnimeIdentityMapping {
     return (await _load()).byTmdbTv[tmdbId] ?? const <AnimeIdentityEntry>[];
   }
 
+  /// Entries whose TMDB id is the movie [tmdbMovieId] (TMDB movie namespace).
+  Future<List<AnimeIdentityEntry>> entriesForTmdbMovie(int tmdbMovieId) async {
+    if (tmdbMovieId <= 0) throw ArgumentError.value(tmdbMovieId, 'tmdbMovieId');
+    return (await _load()).byTmdbMovie[tmdbMovieId] ??
+        const <AnimeIdentityEntry>[];
+  }
+
+  /// Every season entry under one TVDB series (no movies), by
+  /// `tvdbEpisodeOffset` ascending.
+  Future<List<AnimeIdentityEntry>> entriesForTvdb(int tvdbId) async {
+    if (tvdbId <= 0) throw ArgumentError.value(tvdbId, 'tvdbId');
+    return (await _load()).byTvdb[tvdbId] ?? const <AnimeIdentityEntry>[];
+  }
+
   Future<_AnimeIdentityCatalog> _load() async {
     if (_catalog != null && _expiresAt!.isAfter(_now())) return _catalog!;
     if (_loading != null) return _loading!;
@@ -223,11 +237,15 @@ class _AnimeIdentityCatalog {
     required this.byAnidb,
     required this.byMal,
     required this.byTmdbTv,
+    required this.byTvdb,
+    required this.byTmdbMovie,
   });
 
   final Map<int, AnimeIdentityEntry> byAnidb;
   final Map<int, List<AnimeIdentityEntry>> byMal;
   final Map<int, List<AnimeIdentityEntry>> byTmdbTv;
+  final Map<int, List<AnimeIdentityEntry>> byTvdb;
+  final Map<int, List<AnimeIdentityEntry>> byTmdbMovie;
 
   /// [entries] 已按 anidb_id 归并（[animeIdentityEntriesFromJsonUtf8]）。
   static _AnimeIdentityCatalog fromEntries(List<AnimeIdentityEntry> entries) {
@@ -235,6 +253,10 @@ class _AnimeIdentityCatalog {
     final Map<int, List<AnimeIdentityEntry>> byMal =
         <int, List<AnimeIdentityEntry>>{};
     final Map<int, List<AnimeIdentityEntry>> byTmdbTv =
+        <int, List<AnimeIdentityEntry>>{};
+    final Map<int, List<AnimeIdentityEntry>> byTvdb =
+        <int, List<AnimeIdentityEntry>>{};
+    final Map<int, List<AnimeIdentityEntry>> byTmdbMovie =
         <int, List<AnimeIdentityEntry>>{};
     for (final AnimeIdentityEntry entry in entries) {
       byAnidb[entry.anidbId] = entry;
@@ -245,6 +267,13 @@ class _AnimeIdentityCatalog {
       if (tmdb != null && !entry.isMovie) {
         (byTmdbTv[tmdb] ??= <AnimeIdentityEntry>[]).add(entry);
       }
+      if (tmdb != null && entry.tmdbIsMovieNamespace) {
+        (byTmdbMovie[tmdb] ??= <AnimeIdentityEntry>[]).add(entry);
+      }
+      final int? tvdb = entry.tvdbId;
+      if (tvdb != null && !entry.isMovie) {
+        (byTvdb[tvdb] ??= <AnimeIdentityEntry>[]).add(entry);
+      }
     }
     for (final List<AnimeIdentityEntry> entries in byMal.values) {
       entries.sort(_byAnidbId);
@@ -252,15 +281,30 @@ class _AnimeIdentityCatalog {
     for (final List<AnimeIdentityEntry> entries in byTmdbTv.values) {
       entries.sort(_byTmdbOrder);
     }
+    for (final List<AnimeIdentityEntry> entries in byTvdb.values) {
+      entries.sort(_byTvdbOrder);
+    }
     return _AnimeIdentityCatalog(
       byAnidb: byAnidb,
       byMal: byMal,
       byTmdbTv: byTmdbTv,
+      byTvdb: byTvdb,
+      byTmdbMovie: byTmdbMovie,
     );
   }
 
   static int _byAnidbId(AnimeIdentityEntry a, AnimeIdentityEntry b) =>
       a.anidbId.compareTo(b.anidbId);
+
+  static int _byTvdbOrder(AnimeIdentityEntry a, AnimeIdentityEntry b) {
+    final int offset = (a.tvdbEpisodeOffset ?? 0).compareTo(
+      b.tvdbEpisodeOffset ?? 0,
+    );
+    if (offset != 0) return offset;
+    final int season = (a.tvdbSeason ?? 0).compareTo(b.tvdbSeason ?? 0);
+    if (season != 0) return season;
+    return a.anidbId.compareTo(b.anidbId);
+  }
 
   static int _byTmdbOrder(AnimeIdentityEntry a, AnimeIdentityEntry b) {
     final int offset = (a.tmdbEpisodeOffset ?? 0).compareTo(
