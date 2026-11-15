@@ -1355,14 +1355,13 @@ fn run(c: &Connection, src: &mut dyn Source, profile: &str, req: &Value) -> Resu
             let limit = int(&node.view, "rp", 200) + ext_review;
             // 负荷上界 = 已复习的卡 + 按牌组单位今天还会出的卡（[LimitUnit::review_room] 同一规则）：卡片数下保持
             // 「上限」本身（加单位之前的口径，已复习超过上限时也按上限）；次数下同一张卡多答的那几次也占额度，但
-            // 已复习的卡照算、不会因为多答而让负荷变负；分钟下没用满不截，用满了只剩已复习的。
+            // 已复习的卡照算、不会因为多答而让负荷变负；分钟下全天不截：时长上限不折成张数（不预估以后每张用多久），
+            // 给不出一个不随作答变化的张数上界——「用满后只剩已复习的」会让负荷在用满那一刻从 到期 + 已复习 掉到
+            // 已复习，「暂停」当天自己解除，正是上面要避免的；与复习上限设得很大的牌组同口径。
             let cap = match LimitUnit::of_view(&node.view) {
                 LimitUnit::Cards => limit,
                 LimitUnit::Reviews => x.review_done + (limit - x.review_answers).max(0),
-                LimitUnit::Minutes if x.review_ms < LimitUnit::Minutes.limit_in_usage(limit) => {
-                    load
-                }
-                LimitUnit::Minutes => x.review_done,
+                LimitUnit::Minutes => load,
             };
             load = load.min(cap);
         }
@@ -3111,7 +3110,8 @@ mod tests {
         assert_eq!(due(&got, "QC"), 10, "{got}");
         assert_eq!(due(&got, "PM"), 0, "{got}");
 
-        // 分钟单位下的新卡负荷：上限没用满时到期全算（25 张 > 2 × 预算 10 → 暂停）；用满后只剩已复习的（不暂停）。
+        // 分钟单位下的新卡负荷全天同一口径（到期 + 已复习，不截）：25 张 > 2 × 预算 10 → 暂停；时长用满后复习
+        // 不再出，但负荷仍是 24 + 1 = 25，暂停不会在当天自己解除、新卡配额仍为 0。
         deck(&mut n, "NM", Some(json!("minutes")), 1);
         edit(
             &core,
@@ -3126,6 +3126,7 @@ mod tests {
         card("NM-new", "NM", "new", today, 600);
         let got = study(&req);
         assert_eq!(got["counts"]["NM"][7], json!("paused"), "{got}");
+        assert_eq!(got["counts"]["NM"][5], json!(0), "{got}");
         log_ms(
             &core,
             &mut logs,
@@ -3139,8 +3140,8 @@ mod tests {
         card("NM-due0", "NM", "review", today + 5, 500);
         let got = study(&req);
         assert_eq!(got["counts"]["NM"][2], json!(0), "{got}");
-        assert_eq!(got["counts"]["NM"][7], Value::Null, "{got}");
-        assert_eq!(got["counts"]["NM"][5], json!(1), "{got}");
+        assert_eq!(got["counts"]["NM"][7], json!("paused"), "{got}");
+        assert_eq!(got["counts"]["NM"][5], json!(0), "{got}");
         // 次数单位：同一张卡答的次数超过上限时负荷 = 已复习的 1 张（不变负、不误判成「复习少，多出新卡」）。
         deck(&mut n, "NR", None, 2);
         edit(
