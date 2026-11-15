@@ -1388,7 +1388,20 @@ class SshDistWorker extends DistWorker {
   }
 
   Future<void> _prepare(DistSnapshot snapshot, String runId, IOSink log) async {
-    await _take(runId, log, step: _shim ? 'lock' : 'init');
+    final String step = _shim ? 'lock' : 'init';
+    if (queueWaitSeconds > 0 && !_prepared.isCompleted) {
+      // One look first. A checkout that is in use is waited for in its
+      // queue, and the machine's other slots (which only wait for this one
+      // to copy its native libraries) must not wait along: they prepare now.
+      try {
+        await _take(runId, log, step: step, wait: 0);
+      } on DistWorkerBusy {
+        _prepared.complete();
+        await _take(runId, log, step: step);
+      }
+    } else {
+      await _take(runId, log, step: step);
+    }
     claimAfterLock();
     await _push(
       snapshot,
@@ -1407,12 +1420,18 @@ class SshDistWorker extends DistWorker {
   /// heartbeat (worker_run.sh touches it while a batch runs); one silent for
   /// [kDistLockStaleMinutes] belongs to a coordinator that died and is taken
   /// over.
-  Future<void> _take(String runId, IOSink log, {required String step}) async {
+  Future<void> _take(
+    String runId,
+    IOSink log, {
+    required String step,
+    int? wait,
+  }) async {
     _asked = true;
+    final int waitSeconds = wait ?? queueWaitSeconds;
     final Stopwatch watch = Stopwatch()..start();
     final ProcessResult r;
     if (_shim) {
-      r = await _takeShim(runId);
+      r = await _takeShim(runId, waitSeconds);
     } else {
       final String workdir = shellQuote(config.workdir);
       final String seed = config.seedRepo == null
@@ -1425,7 +1444,7 @@ class SshDistWorker extends DistWorker {
         ..._sshBase,
         '${_pathPrefix}mkdir -p "\$HOME"/$workdir && cd "\$HOME"/$workdir && '
             '{ [ -d .git ] || git init -q; }$seed && '
-            '${_slotCommand('take', runId, '$queueWaitSeconds')}',
+            '${_slotCommand('take', runId, '$waitSeconds')}',
       ], input: _slotScript());
     }
     try {
@@ -1439,18 +1458,14 @@ class SshDistWorker extends DistWorker {
   }
 
   /// The shim's `lock`, with the queue wait when it knows that argument.
-  Future<ProcessResult> _takeShim(String runId) async {
+  Future<ProcessResult> _takeShim(String runId, int waitSeconds) async {
     final String slot = '${config.slotIndex}';
     Future<ProcessResult> lock(List<String> args) => _step(
       distSshExecutable(),
       <String>['-n', ..._sshBase, shimRequest('lock', args)],
     );
     if (!_legacyShim) {
-      final ProcessResult r = await lock(<String>[
-        slot,
-        runId,
-        '$queueWaitSeconds',
-      ]);
+      final ProcessResult r = await lock(<String>[slot, runId, '$waitSeconds']);
       final bool refused =
           distRemoteExitCode(
                 r.exitCode,

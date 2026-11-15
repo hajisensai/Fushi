@@ -134,7 +134,7 @@ void main() {
     expect(report, contains('2h40m queued in all'));
     final String here = report
         .split('\n')
-        .firstWhere((String l) => l.contains('test') && l.contains('here'));
+        .firstWhere((String l) => l.contains('test') && l.contains(' here '));
     expect(here, contains('   3  '));
     expect(here, contains('10m00s / 2h30m / 2h30m'));
     expect(here, contains('40s / 60s'));

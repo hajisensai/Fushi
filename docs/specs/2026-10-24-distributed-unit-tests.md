@@ -85,13 +85,14 @@
   | 动词 | 作用 |
   |---|---|
   | `hello` | 平台、Flutter 版本、核数、空闲内存 / 磁盘、槽位上限、是否暂停（`--status` 用它） |
-  | `lock <slot> <runId>` | 抢该槽位 checkout 的整轮锁（同第一期的 `mkdir` 锁 + 心跳 + 15 分钟接管），借种子仓 / 首槽位的对象库 |
+  | `lock <slot> <runId> [wait]` | 拿该槽位 checkout 的锁（同第一期的 `mkdir` 锁 + 心跳 + 15 分钟接管），借种子仓 / 首槽位的对象库。2026-11-15 起装了 `slot.sh`（`worker_slot.sh`）的机器按入队先后给锁，可在 worker 上等 `[wait]` 秒；没装的照旧先到先得、整轮占用 |
+  | `yield <slot> <runId>` | （2026-11-15）一个批次跑完后问：有别的运行在等就交出锁（回 `yielded`，本轮 ref 保留，之后再 `lock` 排队），否则 `kept` |
   | `git-receive-pack '<work\|work-N>'` | 收快照推送；只认这两种名字，映射到 shim 自己的目录，且必须先 `lock` |
   | `prepare <slot> <sha>` | checkout + clean + `worker_prepare.sh`（只带主人的 `prepare.env`） |
   | `run <slot> <concurrency> [flutter 参数]` | 跑一批，测试文件从 stdin 读（`worker_run.sh` 逐行校验） |
   | `analyze <slot> [--[no-]fatal-*]` | `flutter analyze`，路径从 stdin 读（`worker_analyze.sh` 校验） |
   | `build <slot> flutter\|gradle ...` | 编译检查（`worker_build.sh`），只回日志与退出码 |
-  | `kill <slot>` / `finish <slot> <runId>` | 停批次 / 删本轮 ref 并释放自己的锁 |
+  | `kill <slot>` / `finish <slot> <runId>` | 停批次 / 删本轮 ref、排队票并释放自己的锁 |
 
   请求先过字符集 `[A-Za-z0-9_ ,.:=+-]`（不认引号 / `$` / `;` / 反引号 / 斜杠），再逐参数按模式校验；flutter 参数只认 `--name`、`--name=朴素值` 或紧随其后的朴素值（不能以 `-` 开头），协调者在本机先用同一套规则拒绝（`shimRequest`），不把会被拒的请求发出去。
 - 主人侧设置全在 `~/.fushi-worker/`，请求方一个都改不了：`limits`（`MAX_SLOTS` 默认 1、`MAX_CONCURRENCY` 默认核数/2、`MIN_FREE_MEM_MB` 默认 4096、`MIN_FREE_DISK_GB` 默认 20；只按 `KEY=数字` 解析、不执行）、`path`（Flutter / cargo 的 bin，sshd 的非交互 shell 不读 profile）、`prepare.env`（只给准备步骤，如代理）、`seed`（公开仓的裸 clone）、`pause`。因此 `ssh-shim` 配置里出现 `workdir` / `seedRepo` / `path` / `prepareEnv` 直接报配置错误。
