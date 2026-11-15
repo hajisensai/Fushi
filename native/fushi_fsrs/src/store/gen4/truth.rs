@@ -52,6 +52,10 @@
 //! 在最外层（连接处于自动提交）时先 reset 再开事务，所以「读到的缓存」总是这个事务的快照里的。调用方自己开最外层
 //! 事务（`BEGIN …`）时，开完必须先调 [Truth::reset] 再用这个会话。新代下只有主进程写（D10），辅助进程的只读会话
 //! 同样经 [Truth::tx] 读（它在只读连接上也是一个读事务）。
+//!
+//! 这条约定有检测：会话记下缓存所对应的 `PRAGMA data_version`（reset 之后第一次写入时记；[Truth::tx] 的最外层事务
+//! 没写过的，结束前记），每次写入前比一次。别的连接在这之后提交过（值变了）= 调用方自己开了事务却没 reset，写入报错、不落库（不
+//! 毒化会话：reset 之后照常）。同一个连接自己的提交不改这个值；拿着写事务时别人提交不了，所以事务内不会误报。
 
 use std::cell::RefCell;
 use std::collections::{BTreeSet, HashMap};
@@ -251,6 +255,8 @@ struct DevRow {
 #[derive(Default)]
 struct State {
     poisoned: bool,
+    /// 缓存对应的 `PRAGMA data_version`（文件头「会话与事务」）。没记 = None。
+    data_version: Option<i64>,
     dev_ix: HashMap<(i64, Id), i64>,
     devs: HashMap<i64, DevRow>,
     writer_ix: HashMap<String, u64>,
@@ -432,6 +438,13 @@ impl<'c> Truth<'c> {
         self.conn
     }
 
+    fn data_version(&self) -> Result<i64, String> {
+        self.conn
+            .prepare_cached("PRAGMA data_version")
+            .and_then(|mut s| s.query_row([], |r| r.get(0)))
+            .map_err(sql)
+    }
+
     /// 丢掉内存里的缓存（事务回滚之后必须调）。
     pub fn reset(&self) {
         *self.st.borrow_mut() = State::default();
@@ -440,10 +453,20 @@ impl<'c> Truth<'c> {
     /// 在一个事务里跑 [f]；出错整笔回滚并 [Truth::reset]。可以嵌套。最外层的那一次开头先 [Truth::reset]（文件头
     /// 「会话与事务」：别的连接可能在上一个事务之后写过）。
     pub fn tx<T>(&self, f: impl FnOnce(&Truth<'c>) -> Result<T, String>) -> Result<T, String> {
-        if self.conn.is_autocommit() {
+        let outer = self.conn.is_autocommit();
+        if outer {
             self.reset();
         }
-        let r = in_tx(self.conn, |_| f(self));
+        let r = in_tx(self.conn, |_| {
+            let v = f(self)?;
+            if outer && self.st.borrow().data_version.is_none() {
+                // 放在 f 之后：f 里的读已经开出了事务快照，记下的就是缓存对应的版本；放在前面会让这一读先开出读
+                // 快照，f 的第一笔写就得从读升级成写（别人刚提交过会 BUSY_SNAPSHOT）。写过的话 write() 已经记了。
+                let dv = self.data_version()?;
+                self.st.borrow_mut().data_version = Some(dv);
+            }
+            Ok(v)
+        });
         if r.is_err() {
             self.reset();
         }
@@ -458,6 +481,16 @@ impl<'c> Truth<'c> {
         }
         if self.conn.is_autocommit() {
             return Err("gen4 store: write outside a transaction".to_owned());
+        }
+        let now = self.data_version()?;
+        let seen = self.st.borrow().data_version;
+        match seen {
+            None => self.st.borrow_mut().data_version = Some(now),
+            Some(v) if v != now => {
+                return Err("gen4 store: another connection committed since this session's cache was                      filled (a transaction opened without Truth::reset); reset first"
+                    .to_owned());
+            }
+            Some(_) => {}
         }
         let r = f();
         if r.is_err() {
@@ -3380,5 +3413,36 @@ pub(crate) mod tests {
             Ok(())
         })
         .unwrap();
+    }
+
+    /// 调用方自己 `BEGIN` 而没 reset：别的连接在缓存之后提交过，写入被 data_version 检测拦下、不落库、会话不毒化；
+    /// reset 之后照常。
+    #[test]
+    fn a_caller_opened_transaction_without_reset_is_caught_on_write() {
+        let dir = crate::store::sync2::tests::tempdir::new("gen4-dv-guard");
+        let path = dir.0.join("srs4.db");
+        let ca = crate::store::gen4::schema::open(&path).unwrap();
+        let cb = crate::store::gen4::schema::open(&path).unwrap();
+        let a = Truth::new(&ca);
+        let b = Truth::new(&cb);
+        let col = bound(&a);
+        let dev = native(1, "\"x\"").id.device;
+        a.tx(|t| t.append_native(col, &native(1, "\"a\"")).map(|_| ()))
+            .unwrap();
+        assert_eq!(b.tx(|t| t.last_of(col, &dev)), Ok(1));
+        a.tx(|t| t.append_native(col, &native(2, "\"a\"")).map(|_| ()))
+            .unwrap();
+        // B 的缓存还停在末尾 1；自己开事务不 reset 就写。
+        cb.execute_batch("BEGIN IMMEDIATE").unwrap();
+        let e = b.append_native(col, &native(3, "\"b\"")).unwrap_err();
+        assert!(e.contains("reset first"), "{e}");
+        b.reset();
+        b.append_native(col, &native(3, "\"b\"")).unwrap();
+        cb.execute_batch("COMMIT").unwrap();
+        assert_eq!(a.tx(|t| t.audit(col)), Ok(3));
+        // 同一个连接自己的提交不算：B 接着自己开事务写，不 reset 也不报。
+        cb.execute_batch("BEGIN IMMEDIATE").unwrap();
+        b.append_native(col, &native(4, "\"b\"")).unwrap();
+        cb.execute_batch("COMMIT").unwrap();
     }
 }

@@ -40,7 +40,12 @@ fn meta(c: &Connection, key: &str) -> Result<Option<String>, String> {
 /// schema。只改 `srs_meta` 这三行，别的页不动。
 ///
 /// 要求：库是这一版协议 3 的（`schema` = [SCHEMA_VERSION]），连接不在事务里。已经封存过、`sealed_into` 相同 = 什么也
-/// 不写（提交点之后中断、下次启动重做时幂等）；封存进了别的文件、或 schema 是别的值都报错、不改。
+/// 不写（提交点之后中断、下次启动重做时幂等：`gen4::files::open_gen4` 的 Primary 打开发现 `srs4.db` 在、`srs.db`
+/// 还是协议 3 的就重做）；封存进了别的文件、或 schema 是别的值都报错、不改。
+///
+/// 封存这一笔**返回前已经落盘**：提交时临时把连接切到 `synchronous = FULL`（WAL 下 = 提交时 fsync WAL），返回前
+/// 改回原值。协议 3 内核的连接平时是 `NORMAL`，WAL + NORMAL 的提交不 fsync，断电可能丢掉最后几笔——改名
+/// （提交点）已经落盘而封存丢了，旧版本就会把没封存的 `srs.db` 当正常库打开写入。
 pub fn seal_legacy(conn: &Connection, into: &str) -> Result<(), String> {
     if into.is_empty() {
         return Err(e("empty target name"));
@@ -48,6 +53,19 @@ pub fn seal_legacy(conn: &Connection, into: &str) -> Result<(), String> {
     if !conn.is_autocommit() {
         return Err(e("called inside a transaction"));
     }
+    let was: i64 = conn
+        .query_row("PRAGMA synchronous", [], |r| r.get(0))
+        .map_err(e)?;
+    conn.execute_batch("PRAGMA synchronous = FULL;")
+        .map_err(e)?;
+    let r = seal_in_tx(conn, into);
+    let restored = conn
+        .execute_batch(&format!("PRAGMA synchronous = {was};"))
+        .map_err(e);
+    r.and(restored)
+}
+
+fn seal_in_tx(conn: &Connection, into: &str) -> Result<(), String> {
     let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate).map_err(e)?;
     let current = meta(&tx, "schema")?;
     match current.as_deref().map(str::parse::<i64>) {
@@ -80,7 +98,7 @@ pub fn seal_legacy(conn: &Connection, into: &str) -> Result<(), String> {
     }
 }
 
-fn with_suffix(path: &Path, suffix: &str) -> PathBuf {
+pub(crate) fn with_suffix(path: &Path, suffix: &str) -> PathBuf {
     let mut s = path.as_os_str().to_owned();
     s.push(suffix);
     PathBuf::from(s)
@@ -94,7 +112,7 @@ fn remove_if_exists(path: &Path) -> Result<(), String> {
     }
 }
 
-fn remove_sqlite_files(path: &Path) -> Result<(), String> {
+pub(crate) fn remove_sqlite_files(path: &Path) -> Result<(), String> {
     remove_if_exists(path)?;
     for s in ["-wal", "-shm", "-journal"] {
         remove_if_exists(&with_suffix(path, s))?;
@@ -102,8 +120,12 @@ fn remove_sqlite_files(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// 把 [path] 的 WAL 全部检查点进主文件并截断，关掉连接后 `-wal` / `-shm` 不留（有就删）。别人还开着这个库（检查点
-/// 被挡住、或关掉后 WAL 还有内容）就报错：此时覆盖它不安全。
+/// 把 [path] 的 WAL 全部检查点进主文件并截断，关掉连接后 `-wal` / `-shm` 不留（有就删）。
+///
+/// 只挡得住**正在事务里**的别的连接（检查点被读 / 写事务挡住，或关掉后 WAL 还有内容 = 报「in use」）。只是开着、
+/// 没有事务的空闲连接挡不住：TRUNCATE 照样成功。Windows 上 SQLite 打开文件不带 `FILE_SHARE_DELETE`，之后的删除 /
+/// rename 会失败、报错；Unix 上会删掉它还映射着的 `-wal` / `-shm`、rename 换掉它的 inode，它之后写的东西静默丢失。
+/// 所以「没有别的连接」是调用方的前提（[write_tombstone]），这里的检测只是兜底。
 fn drain_wal(path: &Path) -> Result<(), String> {
     {
         let c = Connection::open_with_flags(
@@ -130,14 +152,14 @@ fn drain_wal(path: &Path) -> Result<(), String> {
 }
 
 #[cfg(unix)]
-fn sync_dir(dir: &Path) -> Result<(), String> {
+pub(crate) fn sync_dir(dir: &Path) -> Result<(), String> {
     fs::File::open(dir)
         .and_then(|f| f.sync_all())
         .map_err(|err| e(format!("sync {}: {err}", dir.display())))
 }
 
 #[cfg(not(unix))]
-fn sync_dir(_dir: &Path) -> Result<(), String> {
+pub(crate) fn sync_dir(_dir: &Path) -> Result<(), String> {
     Ok(())
 }
 
@@ -171,9 +193,11 @@ fn build_tombstone(tmp: &Path) -> Result<(), String> {
 }
 
 /// 在 [path]（保留副本 `srs.db`）放墓碑库：写临时文件 → 落盘 → 旧库的 WAL 检查点进主文件并截断 → rename 覆盖。
-/// 原路径不存在时直接放墓碑。旧库还被别人开着就报错、原样不动。出错时临时文件删掉。
+/// 原路径不存在时直接放墓碑。出错时临时文件删掉、原路径原样不动。
 ///
-/// 调用方持有换代锁（`gen4::files::GenLock`），并且已经关掉自己对旧库的全部连接。
+/// 前提（调用方保证）：持有换代锁（`gen4::files::GenLock`），并且**本机没有任何进程开着旧库**——自己的连接已经
+/// 全部关掉，协议 3 的内核也不在跑。别的连接正在事务里会被查出来报「in use」，但空闲的连接查不出来（见
+/// `drain_wal`）：Unix 上覆盖之后它写的东西会丢。
 pub fn write_tombstone(path: &Path) -> Result<(), String> {
     let tmp = with_suffix(path, TOMBSTONE_TMP_SUFFIX);
     // 上一次中途崩溃留下的临时文件：不完整也没关系，整个重写。
@@ -292,6 +316,25 @@ mod tests {
         let err = crate::store::gen4::schema::open(&path).unwrap_err();
         assert!(err.contains("sealed protocol 3 library"), "{err}");
         assert_refused_without_change(&path);
+    }
+
+    /// 封存时连接临时切到 `synchronous = FULL`（提交即 fsync），不管成败都改回调用方原来的设置。
+    #[test]
+    fn sealing_restores_the_callers_sync_setting() {
+        let dir = tempdir::new("seal-sync");
+        let path = legacy_db(&dir.0);
+        let c = Connection::open(&path).unwrap();
+        let sync = |c: &Connection| -> i64 {
+            c.query_row("PRAGMA synchronous", [], |r| r.get(0)).unwrap()
+        };
+        c.execute_batch("PRAGMA synchronous = NORMAL;").unwrap();
+        seal_legacy(&c, "srs4.db").unwrap();
+        assert_eq!(sync(&c), 1, "NORMAL restored");
+        assert!(meta_rows(&path).contains(&("schema".to_owned(), "39999".to_owned())));
+        // 出错的路径也改回原值。
+        c.execute_batch("PRAGMA synchronous = OFF;").unwrap();
+        assert!(seal_legacy(&c, "other.db").is_err());
+        assert_eq!(sync(&c), 0);
     }
 
     #[test]

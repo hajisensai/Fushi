@@ -203,7 +203,7 @@ CREATE TABLE IF NOT EXISTS held (
   device BLOB NOT NULL,
   seq INTEGER NOT NULL,
   kind TEXT NOT NULL,
-  entity NOT NULL,
+  entity TEXT NOT NULL,
   PRIMARY KEY (col, device, seq)
 ) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS checkpoints (
@@ -767,5 +767,197 @@ mod tests {
         assert_ne!(read(&conn), want);
         in_tx(&conn, install).unwrap();
         assert_eq!(read(&conn), want);
+    }
+
+    /// D7 的正向识别：有表的文件，`schema` 在新代号段里也还要 `application_id` 对、号正好是本版本的。
+    #[test]
+    fn check_kind_refuses_a_wrong_magic_an_older_and_a_newer_generation_4_schema() {
+        let conn = open_in_memory().unwrap();
+        assert_eq!(check_kind(&conn), Ok(()));
+        let set_schema = |v: i64| {
+            conn.execute(
+                "UPDATE srs_meta SET value = ?1 WHERE key = 'schema'",
+                [v.to_string()],
+            )
+            .unwrap();
+        };
+        let refused = |want: &str| {
+            let e = check_kind(&conn).unwrap_err();
+            assert!(e.contains(want), "want {want:?}: {e}");
+            // 建表也走同一个判定：拒绝时什么都不改。
+            assert!(in_tx(&conn, install).unwrap_err().contains(want));
+        };
+        // 号对、魔数不对（0 = 没写过；别的应用的值）。
+        for app in [0, 0x1234_5678] {
+            conn.execute_batch(&format!("PRAGMA application_id = {app};"))
+                .unwrap();
+            refused("application_id");
+        }
+        conn.execute_batch(&format!("PRAGMA application_id = {APPLICATION_ID};"))
+            .unwrap();
+        // 魔数对、号是新代号段里更早的一版。
+        for v in [GEN_FLOOR, SCHEMA - 1] {
+            set_schema(v);
+            refused("of this build");
+        }
+        // 魔数对、号比本版本新。
+        set_schema(SCHEMA + 1);
+        refused("is newer than this build");
+        // 号更新、魔数又不对：先报魔数（不是新代库就不谈版本）。
+        conn.execute_batch("PRAGMA application_id = 0;").unwrap();
+        refused("application_id");
+        conn.execute_batch(&format!("PRAGMA application_id = {APPLICATION_ID};"))
+            .unwrap();
+        set_schema(SCHEMA);
+        assert_eq!(check_kind(&conn), Ok(()));
+        // 有表、没有 schema 行 / 不是数字。
+        conn.execute("UPDATE srs_meta SET value = 'x' WHERE key = 'schema'", [])
+            .unwrap();
+        refused("not a generation 4 library");
+        conn.execute("DELETE FROM srs_meta WHERE key = 'schema'", [])
+            .unwrap();
+        refused("not a generation 4 library");
+    }
+
+    /// 本机状态表与 `collections` 的列（规划 §1.3）：名字、类型、NOT NULL、主键位置。
+    #[test]
+    fn the_local_state_tables_have_the_planned_columns() {
+        let conn = open_in_memory().unwrap();
+        let cols = |table: &str| -> Vec<String> {
+            conn.prepare(&format!("PRAGMA table_info({table})"))
+                .unwrap()
+                .query_map([], |r| {
+                    let name: String = r.get(1)?;
+                    let ty: String = r.get(2)?;
+                    let notnull: i64 = r.get(3)?;
+                    let pk: i64 = r.get(5)?;
+                    let mut s = format!("{name} {ty}");
+                    if notnull != 0 {
+                        s.push_str(" NN");
+                    }
+                    if pk != 0 {
+                        s.push_str(&format!(" PK{pk}"));
+                    }
+                    Ok(s)
+                })
+                .unwrap()
+                .collect::<Result<_, _>>()
+                .unwrap()
+        };
+        let want: [(&str, &[&str]); 8] = [
+            (
+                "collections",
+                &[
+                    "col INTEGER PK1",
+                    "profile_uid TEXT NN",
+                    "collection BLOB NN",
+                    "dir TEXT NN",
+                    "salts TEXT NN",
+                    "state INTEGER",
+                    "via TEXT",
+                    "at INTEGER",
+                ],
+            ),
+            (
+                "self_",
+                &[
+                    "col INTEGER PK1",
+                    "device BLOB NN",
+                    "sk BLOB NN",
+                    "hlc TEXT NN",
+                    "prev_device BLOB",
+                    "prev_seq INTEGER",
+                    "prev_chain BLOB",
+                    "created INTEGER NN",
+                ],
+            ),
+            (
+                "peers",
+                &[
+                    "col INTEGER NN PK1",
+                    "device BLOB NN PK2",
+                    "public BLOB NN",
+                    "name TEXT",
+                    "ext TEXT",
+                    "head_gen INTEGER",
+                    "first_seen INTEGER",
+                ],
+            ),
+            (
+                "held",
+                &[
+                    "col INTEGER NN PK1",
+                    "device BLOB NN PK2",
+                    "seq INTEGER NN PK3",
+                    "kind TEXT NN",
+                    "entity TEXT NN",
+                ],
+            ),
+            (
+                "checkpoints",
+                &[
+                    "col INTEGER NN PK1",
+                    "device BLOB NN PK2",
+                    "seq INTEGER NN PK3",
+                    "wall INTEGER NN",
+                    "name TEXT NN",
+                    "reason TEXT NN",
+                ],
+            ),
+            (
+                "media_local",
+                &[
+                    "col INTEGER NN PK1",
+                    "name TEXT NN PK2",
+                    "size INTEGER NN",
+                    "mtime INTEGER NN",
+                    "sha256 BLOB NN",
+                    "synced BLOB",
+                ],
+            ),
+            (
+                "media_at",
+                &[
+                    "col INTEGER NN PK1",
+                    "loc_key TEXT NN PK2",
+                    "sha BLOB NN PK3",
+                    "state INTEGER NN",
+                    "hlc TEXT NN",
+                ],
+            ),
+            (
+                "loc_state",
+                &[
+                    "col INTEGER NN PK1",
+                    "loc_key TEXT NN PK2",
+                    "loc_ids TEXT",
+                    "sealed INTEGER",
+                    "kdf TEXT",
+                    "check_ TEXT",
+                    "last_ok INTEGER",
+                ],
+            ),
+        ];
+        for (table, columns) in want {
+            assert_eq!(cols(table), columns, "{table}");
+        }
+        // 复合主键的本机表都是 WITHOUT ROWID（照搬 sync2_*）。
+        for table in [
+            "peers",
+            "held",
+            "checkpoints",
+            "media_local",
+            "media_at",
+            "loc_state",
+        ] {
+            let sql: String = conn
+                .query_row(
+                    "SELECT sql FROM sqlite_schema WHERE type = 'table' AND name = ?1",
+                    [table],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert!(sql.ends_with("WITHOUT ROWID"), "{table}: {sql}");
+        }
     }
 }

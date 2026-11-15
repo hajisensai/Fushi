@@ -5,7 +5,10 @@
 //!
 //! - [LEGACY_FILE] `srs.db`：协议 3 的库。迁移提交后原位封存（`store::schema::seal_legacy`），保留副本到期后换成墓碑库。
 //! - [GEN4_TEMP] `srs4.db-migrating`：迁移中的新代库。提交点 = 改名成 [GEN4_FILE]。
-//! - [GEN4_FILE] `srs4.db`：新代库。它在 = 迁移已经提交。
+//! - [GEN4_FILE] `srs4.db`：新代库。它在 = 迁移已经提交（全新安装也一样：库在 [GEN4_CREATING] 建好、落盘之后才改名
+//!   到位，所以这个名字上永远不会出现建到一半的库）。
+//! - [GEN4_CREATING] `srs4.db-creating`：全新安装时在锁里建空库用的临时名。只有拿着锁的进程碰它；崩溃留下的直接
+//!   删掉重建（它不是迁移，没有要接着做的东西）。
 //! - [GEN_LOCK_FILE] `srs.gen.lock`：换代锁（[GenLock]）。迁移全程持有；锁文件本身只建不删（删了别的进程可能锁在
 //!   一个已经脱离目录的文件上）。
 //!
@@ -14,15 +17,20 @@
 //! - **Primary**（主进程，唯一的写者，D10）：有新代库就打开（建缺的表）；没有新代库时，有旧库或迁移临时文件 =
 //!   [OpenError::NotMigrated]（迁移由调用方另跑，G7-2），换代锁被别人拿着 = [OpenError::Migrating]，两样都没有（全新
 //!   安装）就在锁里建一个空的新代库。
+//!
+//!   有新代库、换代锁没人拿、而 `srs.db` 还是协议 3 的库（没封存）：迁移提交之后、封存落盘之前断过电或崩过。打开前
+//!   在锁里补做封存（`store::schema::seal_legacy`，幂等），不然旧版本会把它当正常库打开写入，那些写入永远进不了
+//!   新代。锁被别人拿着时不补：正在迁移的那个进程自己会封。
 //! - **Secondary**（查词弹窗等辅助进程，只读）：不建库、不迁移、不建表；没有新代库就按锁的状态报
 //!   [OpenError::Migrating] / [OpenError::NotMigrated]。打开的连接 `query_only`，写不进去。
 
 use std::fs::{File, OpenOptions, TryLockError};
 use std::path::Path;
 
-use rusqlite::{Connection, OpenFlags};
+use rusqlite::{Connection, OpenFlags, OptionalExtension};
 
 use super::schema;
+use crate::store::seal;
 
 /// 新代库文件名。
 pub const GEN4_FILE: &str = "srs4.db";
@@ -30,6 +38,8 @@ pub const GEN4_FILE: &str = "srs4.db";
 pub const GEN4_TEMP: &str = "srs4.db-migrating";
 /// 换代锁文件名。
 pub const GEN_LOCK_FILE: &str = "srs.gen.lock";
+/// 全新安装时建空库的临时文件名。
+pub const GEN4_CREATING: &str = "srs4.db-creating";
 /// 协议 3 的库文件名（冻结）。
 pub const LEGACY_FILE: &str = "srs.db";
 
@@ -100,7 +110,13 @@ pub fn open_gen4(dir: &Path, mode: OpenMode) -> Result<Connection, OpenError> {
     let path = dir.join(GEN4_FILE);
     if path.exists() {
         return match mode {
-            OpenMode::Primary => Ok(schema::open(&path)?),
+            OpenMode::Primary => {
+                if let Some(lock) = GenLock::try_acquire(dir)? {
+                    finish_seal(dir)?;
+                    drop(lock);
+                }
+                Ok(schema::open(&path)?)
+            }
             OpenMode::Secondary => Ok(open_secondary(&path)?),
         };
     }
@@ -116,10 +132,73 @@ pub fn open_gen4(dir: &Path, mode: OpenMode) -> Result<Connection, OpenError> {
     {
         return Err(OpenError::NotMigrated);
     }
-    // 全新安装：在锁里建空库（建表在一个事务里；半路崩溃留下的空文件下次照样当新文件建）。
+    // 全新安装：在锁里另起一个名字建好、落盘，再改名到位（文件头「它在 = 已提交」）。
+    create_fresh(dir)?;
     let conn = schema::open(&path)?;
     drop(lock);
     Ok(conn)
+}
+
+/// 在 [GEN4_CREATING] 建一个空的新代库，关掉（最后一个连接关闭时 WAL 检查点进主文件、`-wal` 删掉）、落盘，再
+/// rename 成 [GEN4_FILE]。调用方拿着换代锁。
+fn create_fresh(dir: &Path) -> Result<(), String> {
+    let tmp = dir.join(GEN4_CREATING);
+    // 上一次建到一半崩溃留下的：整个重建。
+    seal::remove_sqlite_files(&tmp)?;
+    let r = (|| {
+        let conn = schema::open(&tmp)?;
+        conn.close().map_err(|(_, e)| schema::sql(e))?;
+        if seal::with_suffix(&tmp, "-wal").exists() {
+            return Err("gen4 store: the new library's WAL was not checkpointed".to_owned());
+        }
+        OpenOptions::new()
+            .write(true)
+            .open(&tmp)
+            .and_then(|f| f.sync_all())
+            .map_err(|e| format!("gen4 store: sync {}: {e}", tmp.display()))?;
+        std::fs::rename(&tmp, dir.join(GEN4_FILE))
+            .map_err(|e| format!("gen4 store: rename {}: {e}", tmp.display()))?;
+        seal::sync_dir(dir)
+    })();
+    if r.is_err() {
+        let _ = seal::remove_sqlite_files(&tmp);
+    }
+    r
+}
+
+/// 新代库已经在：`srs.db` 若还是协议 3 的库就补做封存（文件头「打开模式」）。已封存 / 墓碑 / 别的版本的协议 3
+/// 库都不动。读不了它（被别的进程写锁住、不是 SQLite 文件……）报错：不能在旧版本还可能写它的状态下照常打开。
+fn finish_seal(dir: &Path) -> Result<(), String> {
+    let legacy = dir.join(LEGACY_FILE);
+    if !legacy.exists() {
+        return Ok(());
+    }
+    let fail = |e: String| format!("gen4 store: retained {}: {e}", legacy.display());
+    let conn = Connection::open_with_flags(
+        &legacy,
+        OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .map_err(|e| fail(e.to_string()))?;
+    let has_meta: bool = conn
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = 'srs_meta')",
+            [],
+            |r| r.get(0),
+        )
+        .map_err(|e| fail(e.to_string()))?;
+    if !has_meta {
+        return Ok(());
+    }
+    let current: Option<String> = conn
+        .query_row("SELECT value FROM srs_meta WHERE key = 'schema'", [], |r| {
+            r.get(0)
+        })
+        .optional()
+        .map_err(|e| fail(e.to_string()))?;
+    if current.as_deref() == Some(crate::store::schema::SCHEMA_VERSION.to_string().as_str()) {
+        crate::store::schema::seal_legacy(&conn, GEN4_FILE).map_err(fail)?;
+    }
+    conn.close().map_err(|(_, e)| fail(e.to_string()))
 }
 
 fn open_secondary(path: &Path) -> Result<Connection, String> {
@@ -323,5 +402,69 @@ mod tests {
             assert!(e.contains("protocol 3 library"), "{mode:?}: {e}");
         }
         assert_eq!(std::fs::read(&path).unwrap(), before);
+    }
+
+    /// 全新安装经临时名建好再改名：完了目录里只有新代库与锁文件；上一次建到一半留下的临时文件被重建掉。
+    #[test]
+    fn a_fresh_install_appears_under_the_final_name_only_when_complete() {
+        let dir = tempdir::new("open-fresh");
+        std::fs::write(dir.0.join(GEN4_CREATING), b"half a library").unwrap();
+        std::fs::write(seal::with_suffix(&dir.0.join(GEN4_CREATING), "-wal"), b"x").unwrap();
+        let conn = open_gen4(&dir.0, OpenMode::Primary).unwrap();
+        drop(conn);
+        assert_eq!(
+            listing(&dir.0),
+            vec![GEN_LOCK_FILE.to_owned(), GEN4_FILE.to_owned()]
+        );
+        let ro = open_gen4(&dir.0, OpenMode::Secondary).unwrap();
+        let v: String = ro
+            .query_row("SELECT value FROM srs_meta WHERE key = 'schema'", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(v, schema::SCHEMA.to_string());
+    }
+
+    fn legacy_schema(dir: &Path) -> String {
+        Connection::open(dir.join(LEGACY_FILE))
+            .unwrap()
+            .query_row("SELECT value FROM srs_meta WHERE key = 'schema'", [], |r| {
+                r.get(0)
+            })
+            .unwrap()
+    }
+
+    /// 迁移提交了、封存那一笔没落盘（`srs4.db` 在、`srs.db` 还是协议 3 的）：Primary 打开时在锁里补封；锁被别人拿着
+    /// （迁移进程还在提交点与封存之间）时不补；Secondary 从不写它。
+    #[test]
+    fn primary_finishes_a_lost_seal_before_opening() {
+        let dir = tempdir::new("open-reseal");
+        drop(open_gen4(&dir.0, OpenMode::Primary).unwrap());
+        drop(crate::store::SrsCore::open(&dir.0.join(LEGACY_FILE)).unwrap());
+        let v3 = crate::store::schema::SCHEMA_VERSION.to_string();
+        assert_eq!(legacy_schema(&dir.0), v3);
+        drop(open_gen4(&dir.0, OpenMode::Secondary).unwrap());
+        assert_eq!(legacy_schema(&dir.0), v3);
+        let lock = GenLock::try_acquire(&dir.0).unwrap().unwrap();
+        drop(open_gen4(&dir.0, OpenMode::Primary).unwrap());
+        assert_eq!(legacy_schema(&dir.0), v3);
+        drop(lock);
+        drop(open_gen4(&dir.0, OpenMode::Primary).unwrap());
+        assert_eq!(
+            legacy_schema(&dir.0),
+            crate::store::schema::SEALED_SCHEMA.to_string()
+        );
+        let err = crate::store::SrsCore::open(&dir.0.join(LEGACY_FILE))
+            .err()
+            .expect("protocol 3 must refuse");
+        assert!(err.contains("is newer than this build"), "{err}");
+        // 已封存 / 墓碑：再开什么也不改。
+        drop(open_gen4(&dir.0, OpenMode::Primary).unwrap());
+        crate::store::schema::write_tombstone(&dir.0.join(LEGACY_FILE)).unwrap();
+        drop(open_gen4(&dir.0, OpenMode::Primary).unwrap());
+        assert_eq!(
+            legacy_schema(&dir.0),
+            crate::store::schema::SEALED_SCHEMA.to_string()
+        );
     }
 }
