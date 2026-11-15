@@ -34,6 +34,7 @@ import 'package:fushi/src/pages/implementations/discovery_ai_acquire_action.dart
 import 'package:fushi/src/pages/implementations/manual_download_task_dialog.dart';
 import 'package:fushi/src/pages/implementations/media_discovery_page.dart';
 import 'package:fushi/src/pages/implementations/torrent_detail_dialog.dart';
+import 'package:fushi/src/pages/implementations/download_location_section.dart';
 import 'package:fushi/src/pages/implementations/torrent_settings_section.dart';
 import 'package:fushi/src/pages/implementations/video_discovery_detail_page.dart';
 import 'package:fushi/src/pages/implementations/video_discovery_page.dart';
@@ -1433,6 +1434,7 @@ class BrowseDownloadSettingsPage extends ConsumerWidget {
             tokens.spacing.page + MediaQuery.paddingOf(context).bottom,
           ),
           children: <Widget>[
+            const DownloadLocationSection(),
             const TorrentSettingsSection(),
             // 索引器 / 字幕来源 / 发现来源已迁到设置 → 在线服务（第三方凭据一个家）；
             // 下载设置页留一条跳转，番剧下载对话框「去设置」落到这里仍能一步到达。

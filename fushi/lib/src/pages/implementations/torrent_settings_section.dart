@@ -19,13 +19,10 @@ import 'package:fushi_engine/media/torrent/torrent_backend.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
-import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/models/module_registry.dart';
-import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 
 /// 下载后端配置（后端二选一 + qb 连接 / 内置引擎限速·上传·做种·内存·连接数）。
 /// 从「设置→视频」搬到「下载」页——下载既已独立成页，配置就该在页内，不再埋进
@@ -142,7 +139,6 @@ class _TorrentSettingsSectionState
   bool _probing = false;
 
   /// TODO-1961：目录选择/校验进行中（按钮禁用防重入）。
-  bool _pickingFolder = false;
 
   bool _fetchingTrackers = false;
   List<String> _trackerPreview = const <String>[];
@@ -281,93 +277,6 @@ class _TorrentSettingsSectionState
     } finally {
       if (mounted) setState(() => _fetchingTrackers = false);
     }
-  }
-
-  /// TODO-1961：选新的下载目录。校验不过**不写**配置，直接 snack 报原因（不静默）。
-  /// 统一走 [pickRealDirectoryPath]（与数据根设置同一惯例）：下载根长期承载写入，
-  /// 必须是真实文件系统路径。
-  Future<void> _changeDownloadFolder() async {
-    if (_pickingFolder) return;
-    setState(() => _pickingFolder = true);
-    try {
-      final String? picked = await pickRealDirectoryPath(
-        context: context,
-        appModel: ref.read(appProvider),
-        dialogTitle: t.download_save_root_change,
-        initialDirectory: ref.read(appProvider).downloadSaveRoot,
-      );
-      if (picked == null || picked.trim().isEmpty || !mounted) return;
-      final DownloadSaveRootIssue? issue = await ref
-          .read(appProvider)
-          .setDownloadSaveRoot(picked);
-      if (!mounted) return;
-      if (issue != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          FushiSnackBar(content: Text(_saveRootIssueMessage(issue))),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _pickingFolder = false);
-    }
-  }
-
-  Future<void> _resetDownloadFolder() async {
-    if (_pickingFolder) return;
-    await ref.read(appProvider).resetDownloadSaveRoot();
-    if (mounted) setState(() {});
-  }
-
-  static String _saveRootIssueMessage(DownloadSaveRootIssue issue) =>
-      downloadSaveRootIssueMessage(issue);
-
-  /// 下载目录分组（当前路径 + 更改 / 恢复默认 + 启动回退警告）。
-  /// 只在内置引擎分支渲染：外接 qb 的落盘目录由 qb 自己管，改不到。
-  ///
-  /// 路径条目按系统设置的写法：标题 + 副标题显示当前路径 + 行尾「更改」按钮，
-  /// 整行也可点；「恢复默认」只在确实改过时作为单独一行出现（灰着的按钮在设置
-  /// 分组里只是噪音）。
-  Widget _downloadFolderGroup(AppModel appModel) {
-    final DownloadSaveRootIssue? issue = appModel.downloadSaveRootIssue;
-    return _group(
-      key: 'downloads.group.save_root',
-      footer: t.download_save_root_hint,
-      rows: <Widget>[
-        SettingsSearchTarget(
-          key: const ValueKey<String>('downloads.save_root'),
-          id: 'downloads.save_root',
-          child: AdaptiveSettingsRow(
-            title: t.download_save_root_title,
-            subtitle: appModel.downloadSaveRoot,
-            onTap: _changeDownloadFolder,
-            trailing: FushiFilledButton.tonal(
-              onPressed: _pickingFolder ? null : _changeDownloadFolder,
-              child: Text(t.download_save_root_change),
-            ),
-          ),
-        ),
-        if (!appModel.downloadSaveRootIsDefault)
-          AdaptiveSettingsRow(
-            key: const ValueKey<String>('downloads.save_root_reset'),
-            title: t.download_save_root_reset,
-            onTap: _resetDownloadFolder,
-          ),
-        if (issue != null)
-          Padding(
-            key: const ValueKey<String>('downloads.save_root_issue'),
-            padding: EdgeInsets.symmetric(
-              horizontal: FushiDesignTokens.of(context).spacing.rowHorizontal,
-              vertical: 10,
-            ),
-            child: FushiInlineNotice(
-              severity: FushiNoticeSeverity.warning,
-              message:
-                  '${t.download_save_root_fallback_warning}'
-                  '\n${appModel.downloadSaveRootRejectedPath ?? ''} — '
-                  '${_saveRootIssueMessage(issue)}',
-            ),
-          ),
-      ],
-    );
   }
 
   static int _nonNegInt(String v) {
@@ -766,8 +675,8 @@ class _TorrentSettingsSectionState
 
       // 内置引擎：下载目录 / 限速 / 上传与做种。
       if (isEmbedded && common) ...<Widget>[
-        // TODO-1961：下载目录（只影响新增任务，旧任务留在原目录）。
-        _downloadFolderGroup(appModel),
+        // 下载目录已挪到通用的「下载位置」分组（DownloadLocationSection）：下载根
+        // 不只属于内置引擎，在线漫画 / 音乐插件 / 发现页下载都落在它下面。
         // 限速默认只约束 session 全局速率：libtorrent 把局域网 peer 归入独立的
         // local peer class，该 class 不受全局上限约束（官方文档明写的默认行为，
         // 家里两台机器互传不该被限）。下面的 limitLocalPeers 开关（默认关）可以

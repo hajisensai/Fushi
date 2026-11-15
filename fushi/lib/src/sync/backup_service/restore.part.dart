@@ -1456,6 +1456,14 @@ class BackupRestoreService {
           newGameCoversRoot: effGameCoversRoot,
         );
       }
+      if (wants(BackupCategory.books)) {
+        await _restoreDownloadManga(
+          zipPath: zipPath,
+          archive: archive,
+          dbDirectory: dbDirectory,
+          onBytes: reportBytes,
+        );
+      }
 
       // 3c) Honour the per-category IMPORT selection for the DB-content
       //     categories the overwrite blob carries wholesale (TODO-1358). The
@@ -1815,6 +1823,14 @@ class BackupRestoreService {
           newGameCoversRoot: gameCoversRootDirectory,
         );
       }
+      if (wants(BackupCategory.books)) {
+        await _restoreDownloadManga(
+          zipPath: zipPath,
+          archive: archive,
+          dbDirectory: dbDirectory,
+          onBytes: reportBytes,
+        );
+      }
 
       // 7) Success: drop the merge-src temp, the bak, and the sidecar.
       await _safeDelete(mergeSrcPath);
@@ -1909,6 +1925,48 @@ class BackupRestoreService {
       await _safeDelete(tmpSrc);
       await _safeDelete('$tmpSrc-wal');
       await _safeDelete('$tmpSrc-shm');
+    }
+  }
+
+  /// 恢复在线漫画书目录（[_downloadMangaPrefix]）到**本机**当前下载根的 manga 域，
+  /// 再把行里指向源设备下载根的 `extractDir` 改成本机位置。
+  ///
+  /// 两种导入模式都用 copy-if-absent：下载根里可能有本机自己下的、备份里没有的
+  /// 漫画，整树替换会把它们删掉。行只在「原路径在本机不存在、本机下载根里有同
+  /// bookKey 目录」时改写——原路径有效（同一台机器恢复）一律不动。归档里没有这个
+  /// 前缀时零 IO 返回（旧备份 / 没有在线漫画）。
+  static Future<void> _restoreDownloadManga({
+    required String zipPath,
+    required Archive archive,
+    required String dbDirectory,
+    void Function(int deltaBytes)? onBytes,
+  }) async {
+    if (!archive.files.any(
+      (ArchiveFile f) => f.name.startsWith('$_downloadMangaPrefix/'),
+    )) {
+      return;
+    }
+    final String mangaRoot = (await DownloadRoot.current()).mangaRoot;
+    await _copyTreeIfAbsent(
+      zipPath,
+      archive,
+      _downloadMangaPrefix,
+      mangaRoot,
+      onBytes: onBytes,
+    );
+    final FushiDatabase db = FushiDatabase(dbDirectory);
+    try {
+      for (final EpubBookRow b in await db.getAllEpubBooks()) {
+        if (!DownloadLayout.isMangaBookDirectory(b.extractDir, b.bookKey)) {
+          continue;
+        }
+        if (Directory(b.extractDir).existsSync()) continue;
+        final String local = p.join(mangaRoot, b.bookKey);
+        if (!Directory(local).existsSync()) continue;
+        await db.updateEpubBookContentPaths(b.bookKey, extractDir: local);
+      }
+    } finally {
+      await db.close();
     }
   }
 

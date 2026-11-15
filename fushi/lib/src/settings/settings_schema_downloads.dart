@@ -3,6 +3,7 @@ import 'package:fushi_engine/media/torrent/anime_download_config.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/pages/implementations/browse_page.dart';
+import 'package:fushi/src/pages/implementations/download_location_section.dart';
 import 'package:fushi/src/pages/implementations/torrent_settings_section.dart';
 import 'package:fushi/src/pages/implementations/video_external_provider_settings_section.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
@@ -65,7 +66,8 @@ SettingsDestination buildDownloadsDestination() => SettingsDestination(
       visible: (SettingsContext c) => c.appModel.supportsEmbeddedTorrent,
     ),
     _entry('execution_host', t.download_execution_host_title),
-    _entry('save_root', t.download_save_root_title, visible: _embedded),
+    // 下载根是所有下载域的总目录（DownloadLocationSection），与后端无关。
+    _entry('save_root', t.download_save_root_title),
     _entry(
       'video_setting_torrent_download_limit',
       t.video_setting_torrent_download_limit,
@@ -100,7 +102,14 @@ SettingsDestination buildDownloadsDestination() => SettingsDestination(
   // 常用控件（执行设备 / 后端 / 下载目录 / 限速 / 上传做种）是多个独立分组，
   // 经 body 逃生口排在导航分组之前——塞进一个 SettingsCustomItem 会让这些分组
   // 整块嵌进外层分组的一张卡里（卡中卡 + 自绘小节标题）。
-  body: (_) => const TorrentSettingsSection(scope: TorrentSettingsScope.common),
+  body: (_) => const Column(
+    mainAxisSize: MainAxisSize.min,
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: <Widget>[
+      DownloadLocationSection(),
+      TorrentSettingsSection(scope: TorrentSettingsScope.common),
+    ],
+  ),
   bodyBeforeSections: true,
   sections: <SettingsSection>[
     SettingsSection(
