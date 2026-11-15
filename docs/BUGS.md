@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4047 条。点号进各自文件。
+> 共 4048 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4694](bugs/BUG-4694-recommended-pack-import-overwrites-library.md) | ✅ | ✅ | 导入推荐包后漫画和小说全没了（推荐包走通用导入框、默认覆盖） |
 | [BUG-4693](bugs/BUG-4693-remote-dict-profile-seed-on-insert.md) | ✅ | ✅ | 先应用配置、后拉到服务器词典目录时，配置里的服务器词典顺序 / 开关不生效（要切走再切回才生效） |
 | [BUG-4692](bugs/BUG-4692-remote-dictionary-two-reachability-trackers.md) | ✅ | ✅ | 离线时查词等远端 4.5 秒、服务器恢复后查词仍只出本机结果（查词与目录服务各记一份可达性） |
 | [BUG-4691](bugs/BUG-4691-interconnect-peer-rows-look-duplicated.md) | ✅ | ✅ | 配对与设备：同一台服务器的两条地址显示成两个同名「TestServer」，像重复配对 |

@@ -7010,7 +7010,7 @@
   "onboarding_pack_action_audio_desc": "Tambahkan sumber pelafalan daring untuk bahasa yang tidak dicakup paket ini.",
   "onboarding_pack_action_dictionary_desc": "Belajar bahasa lain? Impor kamusnya di sini saja.",
   "onboarding_pack_action_download_desc": "Mengunduh dari beberapa sumber sekaligus di latar belakang, lalu mengimpornya. Bisa dibatalkan kapan saja; dilanjutkan dari titik terakhir.",
-  "onboarding_pack_action_import_existing_desc": "Paketnya sudah ada di disk. Pilih «Gabungkan» pada dialog konfirmasi agar data Anda yang lama tetap utuh.",
+  "onboarding_pack_action_import_existing_merge_desc": "The pack is already on disk. It is merged into your data: your books, progress and settings stay untouched.",
   "onboarding_pack_action_pick_desc": "Sudah punya zip paketnya? Impor dari disk dan lewati unduhannya.",
   "onboarding_pack_action_website": "Buka halaman unduh",
   "onboarding_pack_action_website_desc": "Tautan per potongan untuk pengelola unduhan. Setelah itu kembali dan gunakan «Pilih berkas paket».",

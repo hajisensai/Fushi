@@ -7010,7 +7010,7 @@
   "onboarding_pack_action_audio_desc": "パックが対応していない言語向けに、オンラインの発音ソースを追加します。",
   "onboarding_pack_action_dictionary_desc": "他の言語を学びますか？その場合はここで辞書をインポートしてください。",
   "onboarding_pack_action_download_desc": "バックグラウンドで複数のソースから同時にダウンロードし、そのままインポートします。いつでも中止でき、中断した位置から再開します。",
-  "onboarding_pack_action_import_existing_desc": "パックはすでにディスク上にあります。確認ダイアログで「統合」を選べば、既存のデータはそのまま残ります。",
+  "onboarding_pack_action_import_existing_merge_desc": "The pack is already on disk. It is merged into your data: your books, progress and settings stay untouched.",
   "onboarding_pack_action_pick_desc": "パックの zip をすでにお持ちですか？ディスクからインポートすればダウンロードは不要です。",
   "onboarding_pack_action_website": "ダウンロードページを開く",
   "onboarding_pack_action_website_desc": "ダウンロードマネージャー用の分割リンクです。入手後はここに戻り、「パックファイルを選ぶ」を使ってください。",

@@ -7010,7 +7010,7 @@
   "onboarding_pack_action_audio_desc": "Ajoutez des sources de prononciation en ligne pour les langues que le pack ne couvre pas.",
   "onboarding_pack_action_dictionary_desc": "Vous apprenez une autre langue ? Importez plutôt ici les dictionnaires correspondants.",
   "onboarding_pack_action_download_desc": "Télécharge depuis plusieurs sources à la fois en arrière-plan, puis importe. Annulable à tout moment ; la reprise repart du point d'arrêt.",
-  "onboarding_pack_action_import_existing_desc": "Le pack est déjà sur le disque. Choisissez « Fusionner » dans la boîte de confirmation pour conserver vos données existantes.",
+  "onboarding_pack_action_import_existing_merge_desc": "The pack is already on disk. It is merged into your data: your books, progress and settings stay untouched.",
   "onboarding_pack_action_pick_desc": "Vous avez déjà le zip du pack ? Importez-le depuis le disque et sautez le téléchargement.",
   "onboarding_pack_action_website": "Ouvrir la page de téléchargement",
   "onboarding_pack_action_website_desc": "Liens par morceaux pour gestionnaires de téléchargement. Revenez ensuite et utilisez « Choisir un fichier de pack ».",

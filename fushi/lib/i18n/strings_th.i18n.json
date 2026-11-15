@@ -7010,7 +7010,7 @@
   "onboarding_pack_action_audio_desc": "เพิ่มแหล่งเสียงอ่านออนไลน์สำหรับภาษาที่แพ็กไม่ครอบคลุม",
   "onboarding_pack_action_dictionary_desc": "กำลังเรียนภาษาอื่นอยู่ใช่ไหม นำเข้าพจนานุกรมของภาษานั้นที่นี่แทน",
   "onboarding_pack_action_download_desc": "ดาวน์โหลดจากหลายแหล่งพร้อมกันในเบื้องหลัง แล้วนำเข้าให้ต่อ ยกเลิกได้ทุกเมื่อ และจะดาวน์โหลดต่อจากจุดที่หยุดไว้",
-  "onboarding_pack_action_import_existing_desc": "แพ็กอยู่ในดิสก์แล้ว เลือก «รวมเข้ากับคลังเดิม» ในกล่องยืนยัน เพื่อเก็บข้อมูลเดิมของคุณไว้",
+  "onboarding_pack_action_import_existing_merge_desc": "The pack is already on disk. It is merged into your data: your books, progress and settings stay untouched.",
   "onboarding_pack_action_pick_desc": "มีไฟล์ zip ของแพ็กอยู่แล้วหรือ นำเข้าจากดิสก์ได้เลย ข้ามการดาวน์โหลด",
   "onboarding_pack_action_website": "เปิดหน้าดาวน์โหลด",
   "onboarding_pack_action_website_desc": "ลิงก์แบบแบ่งส่วนสำหรับโปรแกรมช่วยดาวน์โหลด โหลดเสร็จแล้วกลับมาใช้ «เลือกไฟล์แพ็ก»",

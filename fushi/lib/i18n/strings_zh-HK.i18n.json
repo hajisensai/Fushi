@@ -7010,7 +7010,7 @@
   "onboarding_pack_action_audio_desc": "給推薦包沒覆蓋的語言加線上發音來源。",
   "onboarding_pack_action_dictionary_desc": "學其他語言？在這裡導入對應詞典。",
   "onboarding_pack_action_download_desc": "在背景從多個來源同時下載，下完自動導入。隨時可取消，下次從斷點續傳。",
-  "onboarding_pack_action_import_existing_desc": "包已經在硬碟上了。確認框裡選「合併」就不會動你已有的資料。",
+  "onboarding_pack_action_import_existing_merge_desc": "The pack is already on disk. It is merged into your data: your books, progress and settings stay untouched.",
   "onboarding_pack_action_pick_desc": "已經拿到包的 zip？直接從硬碟導入，跳過下載。",
   "onboarding_pack_action_website": "打開官網下載頁",
   "onboarding_pack_action_website_desc": "給下載工具用的分片直連。下完回來用「選擇包檔案」導入。",

@@ -7010,7 +7010,7 @@
   "onboarding_pack_action_audio_desc": "Thêm nguồn phát âm trực tuyến cho những ngôn ngữ mà gói không bao gồm.",
   "onboarding_pack_action_dictionary_desc": "Bạn học ngôn ngữ khác? Hãy nhập từ điển cho ngôn ngữ đó ở đây.",
   "onboarding_pack_action_download_desc": "Tải nền từ nhiều nguồn cùng lúc, rồi nhập vào. Có thể huỷ bất cứ lúc nào; sẽ tải tiếp từ chỗ đã dừng.",
-  "onboarding_pack_action_import_existing_desc": "Gói đã có sẵn trên ổ đĩa. Chọn «Gộp» trong hộp xác nhận để giữ nguyên dữ liệu hiện có.",
+  "onboarding_pack_action_import_existing_merge_desc": "The pack is already on disk. It is merged into your data: your books, progress and settings stay untouched.",
   "onboarding_pack_action_pick_desc": "Đã có tệp zip của gói? Nhập từ ổ đĩa và bỏ qua phần tải về.",
   "onboarding_pack_action_website": "Mở trang tải về",
   "onboarding_pack_action_website_desc": "Liên kết theo từng phần dành cho trình quản lý tải. Xong rồi quay lại và dùng «Chọn tệp gói».",
