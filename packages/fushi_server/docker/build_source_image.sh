@@ -23,6 +23,6 @@ COMMIT="$(git -C "$ROOT" rev-parse HEAD)"
 echo "==> $TAG from ${COMMIT:0:10}"
 (cd "$ROOT" && git ls-files -co --exclude-standard -z | tar --null -T - -cf -) \
   | docker build -t "$TAG" \
-      --build-arg TOOLCHAIN_IMAGE="$TOOLCHAIN" \
+      --build-context toolchain="docker-image://$TOOLCHAIN" \
       --build-arg FUSHI_SOURCE_COMMIT="$COMMIT" \
       -f packages/fushi_server/docker/Dockerfile.source -

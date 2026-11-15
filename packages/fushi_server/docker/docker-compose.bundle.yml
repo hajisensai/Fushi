@@ -1,0 +1,23 @@
+# fushi_server from a published release bundle instead of this checkout:
+#
+#   docker compose -f docker-compose.bundle.yml up -d --build
+#
+# Fast to build (downloads the newest release with a linux-x64 asset from
+# FUSHI_SERVER_REPO, or FUSHI_SERVER_TAG, or a tarball in dist/), but only as
+# new as the latest release. Everything else (ports, volumes, .env) is the same
+# service as docker-compose.yml.
+name: fushi-server
+
+services:
+  fushi-server:
+    extends:
+      file: docker-compose.yml
+      service: fushi-server
+    build:
+      context: .
+      dockerfile: Dockerfile
+      additional_contexts: !reset {}
+      args: !override
+        FUSHI_SERVER_REPO: ${FUSHI_SERVER_REPO:-hajisensai/fushi-server}
+        FUSHI_SERVER_TAG: ${FUSHI_SERVER_TAG:-}
+    image: ${FUSHI_IMAGE:-fushi-server:bundle}

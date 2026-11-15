@@ -4,16 +4,19 @@
 # cargo / vcpkg / pub / native build trees between builds, so later builds only
 # redo what changed.
 #
-# Don't call `docker build` on this file directly: build_source_image.sh builds
-# the toolchain image (tool/linux/Dockerfile) and sends the git-tracked source
-# (git ls-files -co --exclude-standard) as the build context.
+# Build context: the repo root (Dockerfile.source.dockerignore, next to this
+# file, keeps build output and caches out). The build stage starts from the
+# `toolchain` named context, the image tool/linux/Dockerfile builds:
+#   - docker-compose.yml provides it from its `toolchain` service, so
+#     `docker compose up -d --build` does everything;
+#   - build_source_image.sh passes --build-context toolchain=docker-image://...;
+#   - the manual publish workflow (server-docker-publish.yml) does the same.
 #
 # Keep the runtime stage in sync with Dockerfile.
 
-ARG TOOLCHAIN_IMAGE=fushi-linux-build:trixie
-
-FROM ${TOOLCHAIN_IMAGE} AS build
-# The context has no .git: fushi-anki-sync records this commit in its SOURCE.txt.
+FROM toolchain AS build
+# The context has no .git: fushi-anki-sync records this commit in its AGPL
+# SOURCE.txt. Published images pass the exact commit; local builds may leave it.
 ARG FUSHI_SOURCE_COMMIT=unknown
 ENV FUSHI_SOURCE_COMMIT=${FUSHI_SOURCE_COMMIT}
 WORKDIR /src
