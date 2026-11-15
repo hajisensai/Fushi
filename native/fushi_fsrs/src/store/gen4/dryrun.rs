@@ -1535,6 +1535,18 @@ fn unverified_logs(
 /// 预演报告在工作目录里的文件名（只在本机；诊断包导出的就是它）。
 pub const REPORT_FILE: &str = "report.json";
 
+/// 开跑时先落盘的报告的结论（[rehearse]）：跑完会被真正的结论覆盖，还留着就是进程中途死了。
+pub const VERDICT_STARTED: &str = "started";
+
+/// 原子地写 `<work>/report.json`（先写临时文件再改名，读的一方不会读到半份）。
+fn write_report(work: &Path, report: &Value) -> Result<(), String> {
+    let text = serde_json::to_string_pretty(report).map_err(|e| e.to_string())?;
+    let tmp = work.join(format!("{REPORT_FILE}.tmp"));
+    std::fs::write(&tmp, text).map_err(|e| format!("gen4 rehearsal: write report: {e}"))?;
+    std::fs::rename(&tmp, work.join(REPORT_FILE))
+        .map_err(|e| format!("gen4 rehearsal: write report: {e}"))
+}
+
 /// 在跑的预演：库文件路径 → 它的中断开关。同一个库同时只跑一个；关库（`SrsCore::close`）先停掉它并等它放开连接。
 static REHEARSALS: Mutex<BTreeMap<PathBuf, std::sync::Arc<Stop>>> = Mutex::new(BTreeMap::new());
 static REHEARSAL_DONE: std::sync::Condvar = std::sync::Condvar::new();
@@ -1554,6 +1566,10 @@ pub fn rehearsal_dir(db: &Path) -> PathBuf {
 /// 写进 `<work>/report.json`（覆盖上一次）并返回。请求：`work`（工作目录，缺省 [rehearsal_dir]）、`caches`（profile →
 /// 缓存配置对象，与 app 交给旧内核的同一份）、`appVersion`（原样记进报告，app 据此判断这个版本跑过没有）。同一个库已有
 /// 一个在跑就报错。
+///
+/// 开跑前先原子地写一份 `verdict = "started"` 的报告（带 `appVersion`），跑完覆盖：进程在中途死掉（崩溃、被杀）时留下的
+/// 就是它，app 读到「本版本 + started」就知道上次没跑完、也不再自动重跑（[VERDICT_STARTED]）。[run] 本身返回 `Err`
+/// （根本跑不起来）时写一份 `verdict = "error"` 的报告再把错误交回去。
 pub fn rehearse(db: &Path, req: &Value) -> Result<Value, String> {
     rehearse_with(db, req, &mut |_, _| {})
 }
@@ -1603,6 +1619,19 @@ fn rehearse_with(
             work_db: work.join(WORK_FILE),
         }
     };
+    let app_version = req.get("appVersion").cloned();
+    let stamp = |m: &mut Map<String, Value>| {
+        if let Some(v) = &app_version {
+            m.insert("appVersion".into(), v.clone());
+        }
+    };
+    let mut started = Map::new();
+    started.insert("version".into(), json!(REPORT_VERSION));
+    started.insert("verdict".into(), json!(VERDICT_STARTED));
+    started.insert("startedAtMs".into(), json!(now_ms()));
+    stamp(&mut started);
+    std::fs::create_dir_all(&work).map_err(|e| format!("gen4 rehearsal: work dir: {e}"))?;
+    write_report(&work, &Value::Object(started))?;
     let out = run(
         db,
         &work,
@@ -1617,18 +1646,25 @@ fn rehearse_with(
         },
     );
     drop(registration);
-    let mut report = out?;
-    if let Some(m) = report.as_object_mut() {
-        m.insert("finishedAtMs".into(), json!(now_ms()));
-        if let Some(v) = req.get("appVersion") {
-            m.insert("appVersion".into(), v.clone());
+    let mut report = match out {
+        Ok(Value::Object(m)) => m,
+        Ok(other) => return Err(format!("gen4 rehearsal: not a report: {other}")),
+        Err(e) => {
+            // 根本跑不起来：结论照样落盘（覆盖开跑标记），诊断导出拿得到。
+            let mut m = Map::new();
+            m.insert("version".into(), json!(REPORT_VERSION));
+            m.insert("verdict".into(), json!("error"));
+            m.insert("error".into(), json!(e));
+            m.insert("finishedAtMs".into(), json!(now_ms()));
+            stamp(&mut m);
+            write_report(&work, &Value::Object(m))?;
+            return Err(e);
         }
-    }
-    let text = serde_json::to_string_pretty(&report).map_err(|e| e.to_string())?;
-    let tmp = work.join(format!("{REPORT_FILE}.tmp"));
-    std::fs::write(&tmp, text).map_err(|e| format!("gen4 rehearsal: write report: {e}"))?;
-    std::fs::rename(&tmp, work.join(REPORT_FILE))
-        .map_err(|e| format!("gen4 rehearsal: write report: {e}"))?;
+    };
+    report.insert("finishedAtMs".into(), json!(now_ms()));
+    stamp(&mut report);
+    let report = Value::Object(report);
+    write_report(&work, &report)?;
     Ok(report)
 }
 
@@ -2002,6 +2038,11 @@ mod tests {
         }));
         assert!(panicked.is_err());
         assert!(saw_work_db, "the panic must hit while the work db exists");
+        // 没跑完：开跑标记还在（进程真死掉时 app 读到的就是它）。
+        let marker: Value =
+            serde_json::from_str(&std::fs::read_to_string(work.join(REPORT_FILE)).unwrap())
+                .unwrap();
+        assert_eq!(marker["verdict"], VERDICT_STARTED, "{marker:#}");
         assert!(!rehearsals().contains_key(&path));
         assert!(!work.join(WORK_FILE).exists());
         let (tx, rx) = std::sync::mpsc::channel();
@@ -2016,6 +2057,39 @@ mod tests {
             .expect("stop_rehearsal must not wait for a dead rehearsal");
         let r = rehearse(&path, &req).unwrap();
         assert_eq!(r["verdict"], "pass", "{r:#}");
+    }
+
+    /// 开跑前报告里先是带本版本号的 `started`（中途死掉就留着它），跑完被结论覆盖；根本跑不起来时落一份 `error`。
+    #[test]
+    fn a_rehearsal_marks_itself_started_and_records_errors() {
+        let d = library("g4rehearsestarted");
+        let cfg_obj: Value = serde_json::from_str(&cfg()).unwrap();
+        let work = d._dir.0.join("rehearsal");
+        let path = d._dir.0.join("srs.db");
+        let req = json!({"work": work.display().to_string(), "caches": {P: cfg_obj}, "appVersion": "2.0+7"});
+        let read = || -> Value {
+            serde_json::from_str(&std::fs::read_to_string(work.join(REPORT_FILE)).unwrap()).unwrap()
+        };
+        let mut during = Value::Null;
+        let r = rehearse_with(&path, &req, &mut |stage, _| {
+            if stage == "open" {
+                during = read();
+            }
+        })
+        .unwrap();
+        assert_eq!(during["verdict"], VERDICT_STARTED, "{during:#}");
+        assert_eq!(during["appVersion"], "2.0+7");
+        assert_eq!(during["version"], REPORT_VERSION);
+        assert_eq!(r["verdict"], "pass", "{r:#}");
+        assert_eq!(read()["verdict"], "pass");
+
+        let missing = d._dir.0.join("no-such-dir").join("srs.db");
+        let e = rehearse(&missing, &req).unwrap_err();
+        let saved = read();
+        assert_eq!(saved["verdict"], "error", "{saved:#}");
+        assert_eq!(saved["error"], e);
+        assert_eq!(saved["appVersion"], "2.0+7");
+        assert!(!rehearsals().contains_key(&missing));
     }
 
     /// 设计 §10 第 14 条的合成实测：协议 3 迁移过的旧修改记录（带旧戳）被清除之后，从槽重建的旧戳闭包比老设备累计的

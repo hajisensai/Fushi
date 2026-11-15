@@ -117,6 +117,44 @@ void main() {
       },
     );
 
+    test('an error verdict is settled: this version does not re-run', () async {
+      final _FakeRunner runner = _FakeRunner(verdict: 'error');
+      final SrsGen4RehearsalScheduler s = _scheduler(runner);
+      expect((await s.maybeRun())?.verdict, SrsGen4RehearsalVerdict.error);
+      expect(await s.maybeRun(), isNull);
+      // 新进程、同一版本：上一份报告是本版本的 error，不再跑。
+      expect(await _scheduler(runner).maybeRun(), isNull);
+      expect(runner.runs, 1);
+      // 换了版本照跑。
+      runner.verdict = 'pass';
+      expect(
+        (await _scheduler(runner, version: '1.1+2').maybeRun())?.verdict,
+        SrsGen4RehearsalVerdict.pass,
+      );
+    });
+
+    test(
+      'a started marker left by a dead run of this version is not re-run',
+      () async {
+        // 上次跑到一半进程死了：内核开跑前写的 started 报告还在。
+        final _FakeRunner runner = _FakeRunner(
+          last: _report('started', '1.0+1'),
+        );
+        expect(runner.last?.verdict, SrsGen4RehearsalVerdict.interrupted);
+        expect(await _scheduler(runner).maybeRun(), isNull);
+        expect(runner.runs, 0);
+        // 别的版本留下的 started 不算本版本的结论：照跑。
+        final _FakeRunner older = _FakeRunner(
+          last: _report('started', '0.9+1'),
+        );
+        expect(
+          (await _scheduler(older).maybeRun())?.verdict,
+          SrsGen4RehearsalVerdict.pass,
+        );
+        expect(older.runs, 1);
+      },
+    );
+
     test('an unfinished run (cancelled / no space) is retried later', () async {
       final _FakeRunner runner = _FakeRunner(verdict: 'skipped');
       final SrsGen4RehearsalScheduler s = _scheduler(runner);

@@ -41,18 +41,35 @@ enum SrsGen4RehearsalVerdict {
   /// 中途被停下（进复习页、进后台、关库）。
   cancelled,
 
-  /// 跑的过程中出错。
+  /// 上次中途死了（崩溃、被杀）：内核开跑前先落盘一份 `verdict = "started"` 的报告、跑完覆盖，读到的还是它就是这样。
+  /// 自动重跑可能再死一次，同一版本不再自动跑；报告照样可导出。
+  interrupted,
+
+  /// 跑的过程中出错（报告里有 `error`）。
   error;
 
-  static SrsGen4RehearsalVerdict parse(Object? v) => values.firstWhere(
-    (SrsGen4RehearsalVerdict e) => e.name == v,
-    orElse: () => SrsGen4RehearsalVerdict.error,
-  );
+  /// 内核开跑标记的 `verdict`（`dryrun.rs` 的 `VERDICT_STARTED`）。
+  static const String kernelStarted = 'started';
 
-  /// 这个结论算不算「这个版本跑完了」：没跑完的（停下、没空间、出错）下次空闲再试。
+  static SrsGen4RehearsalVerdict parse(Object? v) => v == kernelStarted
+      ? SrsGen4RehearsalVerdict.interrupted
+      : values.firstWhere(
+          (SrsGen4RehearsalVerdict e) => e.name == v,
+          orElse: () => SrsGen4RehearsalVerdict.error,
+        );
+
+  /// 这个结论算不算「这个版本跑完了」（同一版本不再自动重跑）。已写进报告、交给诊断导出的结论都算：出错的
+  /// （确定性的错误重跑也是同一个错，每个节拍重跑一整轮白耗电）、中途死了的（重跑可能再死）也算。没跑完的
+  /// （被停下、没空间）下次空闲再试。
   bool get settled => switch (this) {
-    pass || fail || blocked || incomplete || empty => true,
-    skipped || cancelled || error => false,
+    pass ||
+    fail ||
+    blocked ||
+    incomplete ||
+    empty ||
+    interrupted ||
+    error => true,
+    skipped || cancelled => false,
   };
 }
 
