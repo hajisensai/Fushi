@@ -3,6 +3,9 @@
 // 库里的路径不全是「一个真实存在的媒体文件」：
 //
 //   - 蓝光标题是真实的 `BDMV/PLAYLIST/*.mpls`，但媒体字节在 `STREAM/*.m2ts` 里；
+//     按集展开的分集是虚拟路径 `PLAYLIST/00001.p03.mpls`（`bluray_episode.dart`），
+//     背后真实存在的是 `00001.mpls`——三种问法里它与真实标题同口径，只有「这个路径
+//     本身是不是文件」为假；
 //   - DVD 标题是虚拟路径 `<盘根>/VIDEO_TS/TITLE_nn.dvdtitle`（盘根可以是 `.iso`），
 //     磁盘上根本没有这个文件（`dvd_title_path.dart`）；
 //   - 网络流 / `.strm` 在本机没有媒体字节（`lacksLocalMediaFile`）。
@@ -23,6 +26,8 @@
 
 import 'dart:io';
 
+import 'package:fushi_engine/media/video/bluray/bluray_episode.dart'
+    show blurayEpisodeBackingPlaylistPath;
 import 'package:fushi_engine/media/video/disc/disc_format.dart'
     show discMemberBackingFilePath;
 import 'package:fushi_engine/media/video/dvd/dvd_title_path.dart'
@@ -64,11 +69,11 @@ Future<bool> videoPathFileExists(String videoPath) async {
 /// [videoPath] 在本机是否是一个可直接读字节的媒体文件（见文件头第 2 种问法）。
 bool hasLocalMediaFileSync(String videoPath) {
   if (videoPath.isEmpty || lacksLocalMediaFile(videoPath)) return false;
-  return File(videoPath).existsSync();
+  return File(blurayEpisodeBackingPlaylistPath(videoPath)).existsSync();
 }
 
 /// [hasLocalMediaFileSync] 的异步版。
 Future<bool> hasLocalMediaFile(String videoPath) async {
   if (videoPath.isEmpty || lacksLocalMediaFile(videoPath)) return false;
-  return File(videoPath).exists();
+  return File(blurayEpisodeBackingPlaylistPath(videoPath)).exists();
 }

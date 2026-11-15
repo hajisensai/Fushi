@@ -33,6 +33,7 @@ import 'dart:typed_data';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi_engine/media/video/bluray/bluray_clip_info.dart';
+import 'package:fushi_engine/media/video/bluray/bluray_episode.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_playlist.dart';
 
 /// 一条 MPLS 解析出的可播放源。
@@ -68,7 +69,9 @@ class BluraySource {
   final List<String> streamPaths;
 }
 
-/// [path] 是不是一条蓝光播放列表。
+/// [path] 是不是一条蓝光标题的成员路径：真实的 `BDMV/PLAYLIST/*.mpls`，或按集展开
+/// 出来的虚拟分集路径（`00001.p03.mpls`，见 `bluray_episode.dart`——同样以 `.mpls`
+/// 结尾）。要读它的内容走 [readBlurayMemberPlaylist]，不要对它裸读文件。
 bool isBlurayPlaylistPath(String path) =>
     p.extension(path).toLowerCase() == '.mpls';
 
@@ -89,18 +92,7 @@ Future<BluraySource?> resolveBluraySource(String playlistPath) async {
   final String? root = blurayDiscRootForPlaylistPath(playlistPath);
   if (root == null) return null;
 
-  final File file = File(playlistPath);
-  final Uint8List bytes;
-  try {
-    if (!await file.exists()) return null;
-    bytes = await file.readAsBytes();
-  } on FileSystemException {
-    return null;
-  }
-  final BlurayPlaylist? playlist = parseBlurayPlaylist(
-    bytes,
-    id: p.basenameWithoutExtension(playlistPath),
-  );
+  final BlurayPlaylist? playlist = await readBlurayMemberPlaylist(playlistPath);
   if (playlist == null) return null;
 
   return buildBluraySource(
@@ -108,6 +100,32 @@ Future<BluraySource?> resolveBluraySource(String playlistPath) async {
     discRootPath: root,
     timebases: await _readTimebases(root, playlist),
   );
+}
+
+/// 读出蓝光成员路径 [memberPath] 对应的播放列表——全仓「按成员路径取播放列表」的
+/// 唯一入口。
+///
+/// 真实的 `.mpls` 直接解析；分集路径（`00001.p03.mpls`）读它背后的 `00001.mpls`、
+/// 按集切开、取以第 3 个 PlayItem 为锚点的那一集的派生播放列表。不是蓝光成员、文件
+/// 读不了、解析不出、或分集对不上（盘被换过 / 这条播放列表不再切集）时返回 null。
+Future<BlurayPlaylist?> readBlurayMemberPlaylist(String memberPath) async {
+  if (!isBlurayPlaylistPath(memberPath)) return null;
+  final BlurayEpisodeRef? episode = parseBlurayEpisodePath(memberPath);
+  final String filePath = episode?.playlistPath ?? memberPath;
+  final Uint8List bytes;
+  try {
+    final File file = File(filePath);
+    if (!await file.exists()) return null;
+    bytes = await file.readAsBytes();
+  } on FileSystemException {
+    return null;
+  }
+  final BlurayPlaylist? playlist = parseBlurayPlaylist(
+    bytes,
+    id: p.basenameWithoutExtension(filePath),
+  );
+  if (playlist == null || episode == null) return playlist;
+  return blurayEpisodeForPlayItem(playlist, episode.playItemNumber);
 }
 
 /// 读出播放列表用到的每个片段的时间零点。读不到的片段不进表。
