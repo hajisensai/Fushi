@@ -69,7 +69,7 @@ pub fn model_bytes() -> &'static [u8] {
     })
 }
 
-/// 小模型（sm72e25）的一个文件：`fetch_model.sh` / `fetch_model.ps1` 下载到 `model/` 的
+/// 小模型（sm98）的一个文件：`fetch_model.sh` / `fetch_model.ps1` 下载到 `model/` 的
 /// 文件名与钉死的 SHA-256。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum SmallFile {
@@ -82,10 +82,10 @@ pub enum SmallFile {
 impl SmallFile {
     pub fn file_name(self) -> &'static str {
         match self {
-            Self::Int8Weights => "sm72e25_weights.int8.bin",
-            Self::F32Weights => "sm72e25_weights.f32.bin",
-            Self::Architecture => "sm72e25_architecture.json",
-            Self::Vectors => "sm72e25-vectors.json.gz",
+            Self::Int8Weights => "sm98_weights.int8.bin",
+            Self::F32Weights => "sm98_weights.f32.bin",
+            Self::Architecture => "sm98_architecture.json",
+            Self::Vectors => "sm98-vectors.json.gz",
         }
     }
 

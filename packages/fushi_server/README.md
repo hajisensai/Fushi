@@ -601,7 +601,7 @@ Anki 不可达 / 开了「批量制卡」的卡进待发队列，同步时经互
   `bin/../lib/` 定位）。没找到时各份配置文件显示出错，其余功能照常。
 - **RWKV 调度**：算法是 RWKV 的牌组在服务端与在 app 上同一个出卡口径（按 RWKV 回忆率出卡），用随包的
   `libfushi_rwkv`（`FUSHI_RWKV_LIB` → `bin/../lib/`）。第一次用到时下载权重（436 KB，走全局代理设置）到
-  `<data>/support/srs_rwkv/models/`；不能出网的机器把 `sm72e25_weights.int8.bin` 手动放进这个目录即可（校验通过
+  `<data>/support/srs_rwkv/models/`；不能出网的机器把 `sm98_weights.int8.bin` 手动放进这个目录即可（校验通过
   就用）。状态快照在 `<data>/support/srs_rwkv/state/`。**RWKV 没准备好（权重没下到 / 正在回放历史 / 出错）时这些
   牌组不出复习卡**，远程复习页显示「准备中」或错误与「重试」，不会退回按 FSRS 的到期日出卡；各份配置文件的状态
   里有 `rwkv` 一项。`libfushi_rwkv` 是 AGPL-3.0-or-later：对外提供服务且改过这个库的运营者要向用户提供改动后的
