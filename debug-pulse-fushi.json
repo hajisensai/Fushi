@@ -1,12 +1,44 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-15T08:08:43Z",
+ "generatedAt": "2026-11-15T08:51:27Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "8cab29af7acb28b521432a93667ad85cb85de9c7",
-  "seq": 27350
+  "sha": "c6e6e3664cb73137a68b797e6f6a9f5a8aa4ead0",
+  "seq": 27417
  },
  "builds": [
+  {
+   "seq": 27350,
+   "version": "3.3.0",
+   "sha": "8cab29af7acb28b521432a93667ad85cb85de9c7",
+   "unknown": false,
+   "publishedAt": "2026-11-15T08:51:16Z",
+   "testflight": false,
+   "baseSeq": 27339,
+   "prs": [
+    3443,
+    3392
+   ],
+   "direct": [],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "ok"
+    },
+    "windows": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43691807435"
+    },
+    "macos": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43691807435"
+    },
+    "ios": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43691807435"
+    }
+   }
+  },
   {
    "seq": 27339,
    "version": "3.3.0",
@@ -107,40 +139,12 @@
    "unknown": false,
    "publishedAt": "2026-11-15T05:52:19Z",
    "testflight": true,
-   "baseSeq": 27285,
+   "baseSeq": 26884,
    "prs": [
     3431,
     3439,
     3432,
-    3438
-   ],
-   "direct": [],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43677182685"
-    },
-    "windows": {
-     "state": "ok"
-    },
-    "macos": {
-     "state": "ok"
-    },
-    "ios": {
-     "state": "ok"
-    }
-   }
-  },
-  {
-   "seq": 27285,
-   "version": "3.3.0",
-   "sha": "27b0ddf6d4983fced0c7dd32bafc58e4f4c2c6b9",
-   "unknown": false,
-   "publishedAt": "2026-11-15T05:36:42Z",
-   "testflight": false,
-   "baseSeq": 26884,
-   "prs": [
+    3438,
     3435,
     3433,
     3429,
@@ -190,52 +194,66 @@
    "truncated": false,
    "platforms": {
     "android": {
-     "state": "ok"
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43677182685"
     },
     "windows": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43672887240"
+     "state": "ok"
     },
     "macos": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43672887240"
+     "state": "ok"
     },
     "ios": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43672887240"
+     "state": "ok"
     }
    }
   }
  ],
  "pending": {
-  "headSha": "8cab29af7acb28b521432a93667ad85cb85de9c7",
-  "headSeq": 27350,
+  "headSha": "c6e6e3664cb73137a68b797e6f6a9f5a8aa4ead0",
+  "headSeq": 27417,
   "prs": [
-   3443,
-   3392
+   3397,
+   3147
   ],
-  "direct": [],
+  "direct": [
+   {
+    "sha": "af875bf5afe876d092cd9cba9416700bd3de9496",
+    "subject": "chore(bugs): settle BUG number collisions on 6428a1de9"
+   }
+  ],
   "truncated": false,
   "platforms": {
    "android": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43691807460"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43695802968"
    },
    "windows": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43691807435"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43695802934"
    },
    "macos": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43691807435"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43695802934"
    },
    "ios": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43691807435"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43695802934"
    }
   }
  },
  "prs": {
+  "3147": {
+   "number": 3147,
+   "title": "feat(dictionaries): per-profile selection of fushi_server-hosted dictionaries / 配置可选服务端词典（叠在 #3100 #3101 之上）",
+   "author": "samutw",
+   "mergedAt": "2026-11-15T08:21:11Z",
+   "additions": 25460,
+   "deletions": 1189,
+   "labels": [
+    "merge-approved"
+   ]
+  },
   "3277": {
    "number": 3277,
    "title": "设置页重整：一级分类、分区层级与描述",
@@ -378,6 +396,15 @@
    "mergedAt": "2026-11-15T07:30:37Z",
    "additions": 344,
    "deletions": 43,
+   "labels": []
+  },
+  "3397": {
+   "number": 3397,
+   "title": "feat(ui): M3E 色块 + 大字外壳改版",
+   "author": "W1ght",
+   "mergedAt": "2026-11-15T08:43:01Z",
+   "additions": 31080,
+   "deletions": 5420,
    "labels": []
   },
   "3402": {
