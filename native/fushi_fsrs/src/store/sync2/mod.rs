@@ -25,6 +25,7 @@ pub(crate) mod merge_notes;
 pub(crate) mod min_reader;
 pub(crate) mod mvr;
 pub(crate) mod note_fields_if;
+pub(crate) mod ownership;
 pub mod relay;
 pub(crate) mod sched_local;
 pub mod schema;
@@ -2222,7 +2223,8 @@ impl SrsCore {
 
     /// 本机写入（设计 §6.2 第 1 步之前：复习立即本地落盘）。[input] 是 JSON 数组，每项
     /// `{"e": <SrsEvent JSON>, "note": <日志卡片的笔记 ID | null>, "intent"?: "answer"}`。返回
-    /// `{"marks":{..见 [Marks::to_json]}, "landed":[每项是否落了], "replayed":[...]}`。
+    /// `{"marks":{..见 [Marks::to_json]}, "landed":[每项是否落了], "foreign":[被拒绝的输入项下标], "replayed":[...]}`。
+    /// 指向别的 profile 实体的输入项不追加、不投影（[ownership]，在 [apply_local_on] 里判），下标在 `foreign` 里交回。
     ///
     /// 不带旧版时钟（[apply_local_on] 的 `legacy` 为 None）：内核自己的测试 / 基准用。宿主的 `apply` 命令走分发器
     /// （store/ffi.rs `local_write`），那里必带。
@@ -2558,6 +2560,8 @@ mod tests_migrate_dedup;
 #[cfg(test)]
 mod tests_note_fields_if;
 #[cfg(test)]
+mod tests_ownership;
+#[cfg(test)]
 mod tests_perf;
 #[cfg(test)]
 mod tests_replay_pending;
@@ -2590,9 +2594,13 @@ impl SrsCore {
     ) -> Result<Value, String> {
         self.read_visible(|c| {
             let tree = config::DeckTree::load(c, profile)?;
+            // 别的 profile 的卡按「没有这张卡」算（ownership.rs）：不读它的笔记与日志，回包与不存在的卡同形。
+            let foreign = ownership::foreign(c, profile, EntKind::Card, card)?;
+            let note = if foreign { None } else { note };
             // 调用方没给笔记（作答路径不再先读一遍卡片缓存行）：按缓存行补上，结果里交回（落日志时要带上）。
             let looked_up: Option<String> = match note {
                 Some(_) => None,
+                None if foreign => None,
                 None => c
                     .prepare_cached("SELECT srs_idt(note_id) AS note_id FROM srs_cards_cache WHERE id = srs_id(?1)")
                     .map_err(sql)?
@@ -2601,7 +2609,11 @@ impl SrsCore {
                     .map_err(sql)?,
             };
             let note = note.or(looked_up.as_deref());
-            let Group { rows, note: group_note } = group_of(c, card, note)?;
+            let Group { rows, note: group_note } = if foreign {
+                Group { rows: Vec::new(), note: None }
+            } else {
+                group_of(c, card, note)?
+            };
             // 此刻的生效配置：预览的是「现在作答」，作答落库时 `sc` 记下的也是这一份（[stamp_config]）。
             let deck = if rows.is_empty() && note.is_none() { None } else { Some(config::card_deck(c, &tree, card, group_note.as_deref())?) };
             let cfg = match &deck {
@@ -2745,6 +2757,11 @@ fn clk_of(it: &Value) -> Result<Option<char>, String> {
 /// [SrsCore::sync2_apply_local] 的本体：在调用方持着的写连接、调用方开的 SAVEPOINT 里做（不自己取锁），分发器把它与
 /// 缓存刷新、排队、本机状态行合进同一个 SAVEPOINT（store/ffi.rs `local_write`）。[legacy]：旧版时钟（见
 /// [LegacyApply]）；None 时输入里不得有 `clk`。
+///
+/// 归属核对在这里（ownership.rs）：所有经这个本体落库的命令——`apply`、`change`、`import_drafts`、`note_fields_if`、
+/// `merge_notes`、`deck_delete`——共用同一处判定。指向别的 profile 实体的输入项不追加、不投影，`landed` 记 false、
+/// `stamps` 记 null，下标在回包 `foreign` 里交回。旧版时钟照走（那一项的 `clk` 已经在判定之前执行；时钟只往前走，
+/// 不落任何行）。
 pub(crate) fn apply_local_on(
     c: &Connection,
     profile: &str,
@@ -2792,9 +2809,12 @@ pub(crate) fn apply_local_on(
     let mut deps_row: Option<(Vec<u8>, i64)> = None;
     let mut landed = Vec::with_capacity(items.len());
     let mut edits: Vec<Value> = Vec::new();
+    // 指向别的 profile 实体的输入项（下标）：不追加、不投影（ownership.rs）。
+    let mut foreign: Vec<usize> = Vec::new();
+    let mut owners = ownership::Seen::new();
     // 牌组树（配置快照用）：这一批里落过非日志操作（可能改了配置 / 归属）就重读。
     let mut tree: Option<config::DeckTree> = None;
-    for it in items {
+    for (at, it) in items.iter().enumerate() {
         let stamped = it["stamped"] == Value::Bool(true);
         // 本机此刻新写的一项：时钟走一步；日志的 HLC 就是这一步的值。
         let ticked: Option<Value> = if clk_of(it)? == Some('t') {
@@ -2831,6 +2851,14 @@ pub(crate) fn apply_local_on(
             (_, Some(other)) => return Err(format!("apply: unknown intent {other}")),
             (b, None) => b,
         };
+        if ownership::targets_foreign(c, profile, &body, &mut owners)? {
+            foreign.push(at);
+            landed.push(false);
+            if want_stamps {
+                stamps.push(Value::Null);
+            }
+            continue;
+        }
         let body = stamp_local_config(c, profile, body, stamped, &mut tree)?;
         let before = t.marks.landed;
         // 戳（见 [LegacyApply::stamps]）：日志的 HLC 现在就有；修改记录的等操作追加出来再取。
@@ -2875,6 +2903,7 @@ pub(crate) fn apply_local_on(
     let mut out = json!({
         "marks": t.marks.to_json(),
         "landed": landed,
+        "foreign": foreign,
         "replayed": replayed,
         "diagnostics": t.diagnostics,
         "changed": t.entities_changed.iter().map(|(k, e)| json!([k, e])).collect::<Vec<_>>(),
@@ -2987,6 +3016,7 @@ pub(crate) fn import_drafts_on(
 }
 
 /// [SrsCore::sync2_append] 的本体：在调用方的写连接、调用方开的 SAVEPOINT 里追加并投影（不自己取锁）。
+/// 指向别的 profile 实体的操作按「没有这个实体」跳过（ownership.rs；冲突解决、彻底清除都经这里）。
 pub(crate) fn append_on(
     c: &Connection,
     profile: &str,
@@ -3000,7 +3030,12 @@ pub(crate) fn append_on(
     let mut applied = applied_vv(c, profile)?;
     let mut t = Touched::default();
     let mut edits: Vec<Value> = Vec::new();
+    let mut owners = ownership::Seen::new();
     for b in bodies {
+        // 别的 profile 的实体：按没有这个实体处理，不追加（ownership.rs）。
+        if ownership::targets_foreign(c, profile, b, &mut owners)? {
+            continue;
+        }
         let op = append_local(c, &mut local, &mut applied, b, now)?;
         note_written_edit(&mut edits, &op, b);
         project(c, profile, &op, now, true, &mut t)?;
