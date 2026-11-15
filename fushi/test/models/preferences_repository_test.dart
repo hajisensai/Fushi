@@ -113,7 +113,11 @@ void main() {
 
     for (final ({String label, String? pref, bool plugin}) signIn
         in <({String label, String? pref, bool plugin})>[
-          (label: 'Bangumi token', pref: kBangumiAccessTokenPref, plugin: false),
+          (
+            label: 'Bangumi token',
+            pref: kBangumiAccessTokenPref,
+            plugin: false,
+          ),
           (label: 'plugin sign-in', pref: null, plugin: true),
         ]) {
       test('Media tracking module starts on once with an existing '
@@ -131,11 +135,14 @@ void main() {
       });
     }
 
-    test('Media tracking module: a blank stored token is not a sign-in', () async {
-      await repo.setPref(kBangumiAccessTokenPref, '   ');
-      await repo.settleTrackingModuleInstallDefault(hasPluginSignIn: false);
-      expect(repo.moduleEnabled(ModuleId.tracking), isFalse);
-    });
+    test(
+      'Media tracking module: a blank stored token is not a sign-in',
+      () async {
+        await repo.setPref(kBangumiAccessTokenPref, '   ');
+        await repo.settleTrackingModuleInstallDefault(hasPluginSignIn: false);
+        expect(repo.moduleEnabled(ModuleId.tracking), isFalse);
+      },
+    );
 
     test('AI module off: every AiFeature resolves to no provider, '
         'stored assignments survive and come back when turned on', () async {

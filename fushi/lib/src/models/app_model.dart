@@ -4867,8 +4867,7 @@ class AppModel
       // Media tracking module: decided once from existing sign-ins (before
       // the first sync asks the switch).
       await prefsRepo.settleTrackingModuleInstallDefault(
-        hasPluginSignIn:
-            await _trackingPluginManager?.hasAnySignIn() ?? false,
+        hasPluginSignIn: await _trackingPluginManager?.hasAnySignIn() ?? false,
       );
       // After the module default is settled: the token move below removes
       // the Bangumi token preference that decision reads.

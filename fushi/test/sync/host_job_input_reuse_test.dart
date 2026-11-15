@@ -35,6 +35,10 @@ class _OwnedClient extends http.BaseClient {
 
   final http.Client _inner;
   bool closed = false;
+  final Completer<void> _closed = Completer<void>();
+
+  /// run 的 finally 等全部清理（含尽力 DELETE）落地后才关它：关掉 = 这次 run 彻底收尾。
+  Future<void> get whenClosed => _closed.future;
 
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) =>
@@ -43,6 +47,7 @@ class _OwnedClient extends http.BaseClient {
   @override
   void close() {
     closed = true;
+    if (!_closed.isCompleted) _closed.complete();
     _inner.close();
   }
 }
@@ -733,30 +738,37 @@ void main() {
   // 一条通道，工厂建出的明文 client 归这次 run、用完必关；按 host 选路，不钉死
   // target.baseUrl 那一条地址。
   group('共享 host 通道（interconnect-client-no-shared-host-channel）', () {
-    setUp(resetInterconnectRaceCache);
-    tearDown(() {
+    /// 本条用例里每次 run 建出的明文 client（[_OwnedClient.whenClosed] = 那次 run 彻底收尾）。
+    late List<_OwnedClient> made;
+
+    /// 等本条用例发起的每次 run 都收尾（清理 DELETE 落地、通道关掉）。
+    Future<void> allRunsSettled() => Future.wait(<Future<void>>[
+      for (final _OwnedClient c in made) c.whenClosed,
+    ]).timeout(const Duration(seconds: 10));
+
+    setUp(() {
+      made = <_OwnedClient>[];
+      resetInterconnectRaceCache();
+    });
+    tearDown(() async {
+      // 先等 run 收尾、再清探测替身与选路缓存：run 的尽力 DELETE 在流结束之后才发，
+      // 不等的话它会在替身清掉之后用真 ping 重新选路，竞速落空时按 hostId 作废的是
+      // 下一条用例的选路缓存（选路缓存是进程级全局，同组用例共用 hostId）。
+      await allRunsSettled();
       debugInterconnectAddressProbeOverride = null;
       resetInterconnectRaceCache();
     });
 
-    Future<void> eventually(bool Function() condition, String reason) async {
-      for (int i = 0; i < 500 && !condition(); i++) {
-        await Future<void>.delayed(const Duration(milliseconds: 10));
-      }
-      expect(condition(), isTrue, reason: reason);
-    }
-
-    InterconnectJobClient ownedClient(List<_OwnedClient> made) =>
-        InterconnectJobClient(
-          repo: repo,
-          plainClientFactory: () {
-            final _OwnedClient c = _OwnedClient(wire.client());
-            made.add(c);
-            return c;
-          },
-          pollDelay: (int _) => const Duration(milliseconds: 5),
-          hashCache: FileContentHashCache(),
-        );
+    InterconnectJobClient ownedClient() => InterconnectJobClient(
+      repo: repo,
+      plainClientFactory: () {
+        final _OwnedClient c = _OwnedClient(wire.client());
+        made.add(c);
+        return c;
+      },
+      pollDelay: (int _) => const Duration(milliseconds: 5),
+      hashCache: FileContentHashCache(),
+    );
 
     Future<HostJobTarget> target({String baseUrl = _host}) async =>
         HostJobTarget(
@@ -767,8 +779,7 @@ void main() {
         );
 
     test('完整跑完：工厂建出的每个明文 client 都在清理之后被关掉', () async {
-      final List<_OwnedClient> made = <_OwnedClient>[];
-      final InterconnectJobClient client = ownedClient(made);
+      final InterconnectJobClient client = ownedClient();
 
       final List<HostJobEvent> events = await client
           .run(
@@ -782,11 +793,9 @@ void main() {
           .timeout(const Duration(seconds: 10));
 
       expect(events.last, isA<HostJobDone>());
+      // 一次 run 建出的明文 client 必须在 run 收尾时关掉。
       expect(made, isNotEmpty);
-      await eventually(
-        () => made.every((_OwnedClient c) => c.closed),
-        '一次 run 建出的明文 client 必须在 run 收尾时关掉',
-      );
+      await allRunsSettled();
       // 关 client 不能掐掉在途的尽力清理：DELETE 照样到了 host。
       expect(wire.count('DELETE', (String _) => true), 1);
     });
@@ -797,8 +806,7 @@ void main() {
         if (!release.isCompleted) release.complete();
       });
       runner.duringFirstRun = () => release.future;
-      final List<_OwnedClient> made = <_OwnedClient>[];
-      final InterconnectJobClient client = ownedClient(made);
+      final InterconnectJobClient client = ownedClient();
 
       final Completer<void> running = Completer<void>();
       final StreamSubscription<HostJobEvent> sub = client
@@ -817,10 +825,9 @@ void main() {
       release.complete();
 
       await wire.seen('DELETE', (String _) => true);
-      await eventually(
-        () => made.isNotEmpty && made.every((_OwnedClient c) => c.closed),
-        '取消后的 run 也必须关掉它建出的明文 client',
-      );
+      // 取消后的 run 也必须关掉它建出的明文 client。
+      expect(made, isNotEmpty);
+      await allRunsSettled();
       expect(wire.count('DELETE', (String _) => true), 1);
     });
 
@@ -835,12 +842,7 @@ void main() {
       debugInterconnectAddressProbeOverride =
           (FushiClientUrl c, String? hostId) async => c.url == _host;
 
-      final InterconnectJobClient client = InterconnectJobClient(
-        repo: repo,
-        plainClientFactory: wire.client,
-        pollDelay: (int _) => const Duration(milliseconds: 5),
-        hashCache: FileContentHashCache(),
-      );
+      final InterconnectJobClient client = ownedClient();
       final List<HostJobEvent> events = await client
           .run(
             target: await target(baseUrl: dead),
@@ -893,12 +895,7 @@ void main() {
         return null;
       };
 
-      final InterconnectJobClient client = InterconnectJobClient(
-        repo: repo,
-        plainClientFactory: wire.client,
-        pollDelay: (int _) => const Duration(milliseconds: 5),
-        hashCache: FileContentHashCache(),
-      );
+      final InterconnectJobClient client = ownedClient();
       final List<HostJobEvent> events = await client
           .run(
             target: await target(baseUrl: lan),
