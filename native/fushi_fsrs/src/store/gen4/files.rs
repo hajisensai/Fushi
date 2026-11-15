@@ -17,7 +17,8 @@
 //!
 //! 打开模式（[OpenMode]）：
 //!
-//! - **Primary**（主进程，唯一的写者，D10）：有新代库就打开（建缺的表）；没有新代库时，有旧库或迁移临时文件 =
+//! - **Primary**（主进程，唯一的写者，D10）：有新代库就打开——先核对这个名字上是建好的新代库（非空、魔数、schema
+//!   号），不是就报错、什么都不动（不看 `srs.db`、不建表）；是才处理旁边的 `srs.db`（下文）、建缺的表。没有新代库时，有旧库或迁移临时文件 =
 //!   [OpenError::NotMigrated]（迁移由调用方另跑，G7-2），换代锁被别人拿着 = [OpenError::Migrating]，两样都没有（全新
 //!   安装）就在锁里建一个空的新代库。
 //!
@@ -129,12 +130,16 @@ pub fn open_gen4(dir: &Path, mode: OpenMode) -> Result<Connection, OpenError> {
     if path.exists() {
         return match mode {
             OpenMode::Primary => {
-                let conn = schema::open(&path)?;
+                // 先确认这个名字上是一份建好的新代库（非空、魔数与 schema 号对），再碰旁边的 `srs.db`、再建缺的表：
+                // 「它在 = 已提交」是这里的前提，零字节 / 协议 3 / 别的文件顶着这个名字时什么都不改（不封存、不建表），
+                // 不然会封掉真正的数据、换上一个空库。
+                let ready = open_ready(&path)?;
                 if let Some(lock) = GenLock::try_acquire(dir)? {
-                    finish_seal(dir, &conn)?;
+                    finish_seal(dir, &ready)?;
                     drop(lock);
                 }
-                Ok(conn)
+                ready.close().map_err(|(_, e)| schema::sql(e))?;
+                Ok(schema::open(&path)?)
             }
             OpenMode::Secondary => Ok(open_secondary(&path)?),
         };
@@ -257,13 +262,20 @@ fn finish_seal(dir: &Path, new: &Connection) -> Result<(), OpenError> {
     rw.close().map_err(|(_, e)| fail(e.to_string()))
 }
 
-fn open_secondary(path: &Path) -> Result<Connection, String> {
+/// 以读写、不创建的方式打开 [path]，要求它已经是一份建好的新代库（`schema::check_ready`）。不改它：不设 PRAGMA、
+/// 不建表。
+fn open_ready(path: &Path) -> Result<Connection, String> {
     let conn = Connection::open_with_flags(
         path,
         OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
     )
     .map_err(schema::sql)?;
     schema::check_ready(&conn)?;
+    Ok(conn)
+}
+
+fn open_secondary(path: &Path) -> Result<Connection, String> {
+    let conn = open_ready(path)?;
     let mode: String = conn
         .query_row("PRAGMA journal_mode", [], |r| r.get(0))
         .map_err(schema::sql)?;
@@ -458,6 +470,67 @@ mod tests {
             assert!(e.contains("protocol 3 library"), "{mode:?}: {e}");
         }
         assert_eq!(std::fs::read(&path).unwrap(), before);
+    }
+
+    /// 一份 v29 的协议 3 库（直接写 `srs_meta`，不经内核）。
+    fn v29_at(path: &Path) {
+        let c = Connection::open(path).unwrap();
+        c.execute_batch(
+            "CREATE TABLE srs_meta (key TEXT NOT NULL PRIMARY KEY, value TEXT NOT NULL);
+             INSERT INTO srs_meta VALUES ('schema', '29');",
+        )
+        .unwrap();
+    }
+
+    fn schema_at(path: &Path) -> String {
+        Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .unwrap()
+            .query_row("SELECT value FROM srs_meta WHERE key = 'schema'", [], |r| {
+                r.get(0)
+            })
+            .unwrap()
+    }
+
+    /// `srs4.db` 这个名字上不是建好的新代库（零字节、协议 3 的库）：Primary 报错，先于碰 `srs.db`、先于建表——
+    /// `srs.db` 不被封存，零字节的 `srs4.db` 不被建成空库。旁边有没有 `srs.db` 都一样。
+    #[test]
+    fn primary_refuses_a_bad_generation_4_file_before_touching_anything() {
+        // (a) 零字节 srs4.db + v29 的 srs.db。
+        let dir = tempdir::new("open-bad-empty");
+        let gen4 = dir.0.join(GEN4_FILE);
+        let legacy = dir.0.join(LEGACY_FILE);
+        std::fs::write(&gen4, b"").unwrap();
+        v29_at(&legacy);
+        let legacy_before = std::fs::read(&legacy).unwrap();
+        match open_gen4(&dir.0, OpenMode::Primary).unwrap_err() {
+            OpenError::Failed(e) => assert!(e.contains("empty"), "{e}"),
+            other => panic!("{other:?}"),
+        }
+        assert_eq!(schema_at(&legacy), "29");
+        assert_eq!(std::fs::read(&legacy).unwrap(), legacy_before);
+        assert_eq!(std::fs::metadata(&gen4).unwrap().len(), 0);
+        // (b) srs4.db 是 v29 的库 + v29 的 srs.db。
+        let dir = tempdir::new("open-bad-v3");
+        let gen4 = dir.0.join(GEN4_FILE);
+        let legacy = dir.0.join(LEGACY_FILE);
+        v29_at(&gen4);
+        v29_at(&legacy);
+        let e = open_gen4(&dir.0, OpenMode::Primary)
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("protocol 3"), "{e}");
+        assert_eq!(schema_at(&legacy), "29");
+        assert_eq!(schema_at(&gen4), "29");
+        // (c) 没有 srs.db，零字节 srs4.db。
+        let dir = tempdir::new("open-bad-empty-alone");
+        let gen4 = dir.0.join(GEN4_FILE);
+        std::fs::write(&gen4, b"").unwrap();
+        match open_gen4(&dir.0, OpenMode::Primary).unwrap_err() {
+            OpenError::Failed(e) => assert!(e.contains("empty"), "{e}"),
+            other => panic!("{other:?}"),
+        }
+        assert_eq!(std::fs::metadata(&gen4).unwrap().len(), 0);
+        assert!(!dir.0.join(LEGACY_FILE).exists());
     }
 
     /// 全新安装经临时名建好再改名：完了目录里只有新代库与锁文件；上一次建到一半留下的临时文件被重建掉。
