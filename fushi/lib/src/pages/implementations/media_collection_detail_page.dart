@@ -3291,10 +3291,11 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       context,
       title: t.video_watch_progress_clear,
       message: t.library_progress_reset_video_message,
-      trackingOn: ProviderScope.containerOf(
-        context,
-        listen: false,
-      ).read(appProvider).isMediaTrackingOn,
+      // 容器缺席（不挂 ProviderScope 的 widget 测试）按「追踪关」处理：只是少一行
+      // 「追踪站点进度不回退」的说明，与 [_downloadsAvailable] 同一容忍约定。
+      trackingOn:
+          _maybeProviderContainer()?.read(appProvider).isMediaTrackingOn ??
+          false,
       itemTitle: local.title,
     );
     if (records == null || !mounted) return;

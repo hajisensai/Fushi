@@ -329,6 +329,22 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
     '查询结果快照 JSON（词条文本），无路径。',
   ),
 
+  // ── media_tracking_mappings / media_tracking_suggestions（媒体追踪）────
+  PathRebaseColumn(
+    'MediaTrackingMappings',
+    'linkSource',
+    PathRebaseKind.notAPath,
+    'v145 关联来源标记 manual / id / auto / suggestion（TrackingLinkSource），'
+        '不是来源路径。',
+  ),
+  PathRebaseColumn(
+    'MediaTrackingSuggestions',
+    'detailsJson',
+    PathRebaseKind.notAPath,
+    '远端条目事实 JSON（titles / authors / totalChapters / finalVolume / '
+        'finished，见 toDetailsJson），无路径。',
+  ),
+
   // ── epub_books ────────────────────────────────────────────────────
   PathRebaseColumn(
     'EpubBooks',
