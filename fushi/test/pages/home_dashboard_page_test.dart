@@ -723,7 +723,7 @@ void main() {
     );
   });
 
-  testWidgets('双栏「最近添加」最多 4 条（取导入最新的）', (WidgetTester tester) async {
+  testWidgets('双栏「最近添加」按格子大小列满（取导入最新的，按加入时间倒序）', (WidgetTester tester) async {
     useSize(tester, const Size(1280, 900));
     final int now = DateTime.now().millisecondsSinceEpoch;
     final List<MediaItem> books = <MediaItem>[];
@@ -749,7 +749,8 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(
       recentRows(tester).map((({String title, String subtitle}) r) => r.title),
-      <String>['新书6', '新书5', '新书4', '新书3'],
+      // 默认 4×2 放得下 6 条以上（连续尺寸：格子越大列得越多，不再固定 4 条）。
+      <String>['新书6', '新书5', '新书4', '新书3', '新书2', '新书1'],
     );
   });
 
@@ -804,12 +805,12 @@ void main() {
     final List<String> titles = recentRows(
       tester,
     ).map((({String title, String subtitle}) r) => r.title).toList();
-    expect(titles, hasLength(4));
+    expect(titles, hasLength(6));
     expect(titles.take(2).toSet(), <String>{
       '对端旧书',
       '对端旧视频',
-    }, reason: '按 importedAt 排它们会沉到最后、被 4 条上限截掉');
-    expect(titles.skip(2), <String>['本地4', '本地3']);
+    }, reason: '按 importedAt 排它们会沉到最后');
+    expect(titles.skip(2), <String>['本地4', '本地3', '本地2', '本地1']);
   });
 
   testWidgets('「最近添加」不在窄网格默认模板里；窄网格「继续」2×2 只放主卡，2×3 才挂横滑行', (
@@ -2998,6 +2999,159 @@ void main() {
   // replaced the Bangumi sync card of BUG-1220) is covered by
   // home_tracking_panel_test.dart; the watched list and "retry matching" moved
   // to the Media tracking settings page.
+
+  // ── 连续尺寸：每种组件在最小 / 中间 / 最大尺寸都不溢出（spec「改尺寸」） ──────
+  //
+  // 一次把全部组件按同一档（下限 / 中间偏小 / 中间偏大 / 上限）放进一份布局，窄 / 宽
+  // 两种网格 × 分区卡 / 色块两套外观各 pump 一遍；视口足够高，所有格子都真的排版。
+  // 内容按格子实际宽高排版，任何允许的尺寸都不该抛溢出。
+  HomeWidgetSize sizeAt(HomeWidgetKind kind, HomeGridKind grid, int step) {
+    final HomeWidgetSize lo = kind.minFor(grid);
+    final HomeWidgetSize hi = kind.maxFor(grid);
+    int at(int a, int b) => switch (step) {
+      0 => a,
+      1 => a + (b - a) ~/ 2,
+      2 => a + (b - a + 1) ~/ 2,
+      _ => b,
+    };
+    return HomeWidgetSize(at(lo.cols, hi.cols), at(lo.rows, hi.rows));
+  }
+
+  for (final ShellContentLayout layout in const <ShellContentLayout>[
+    ShellContentLayout.grid,
+    ShellContentLayout.collage,
+  ]) {
+    for (final (HomeGridKind, Size) g in const <(HomeGridKind, Size)>[
+      (HomeGridKind.compact, Size(412, 9000)),
+      (HomeGridKind.wide, Size(1280, 12000)),
+    ]) {
+      for (int step = 0; step < 4; step++) {
+        final String stepName = <String>['下限', '中间偏小', '中间偏大', '上限'][step];
+        testWidgets('连续尺寸不溢出 · ${layout.name} · ${g.$1.wire} · $stepName', (
+          WidgetTester tester,
+        ) async {
+          dashboardLayout = layout;
+          useSize(tester, g.$2);
+          await seedSampleData();
+          final int now = DateTime.now().millisecondsSinceEpoch;
+          final List<MediaItem> books = <MediaItem>[];
+          final Map<String, int> lastRead = <String, int>{};
+          for (int i = 1; i <= 6; i++) {
+            books.add(readingBook('在读$i', '在读的书很长很长的书名第$i卷', position: 10 * i));
+            lastRead['在读$i'] = now - i * 1000;
+          }
+          for (int i = 1; i <= 8; i++) {
+            await db.insertEpubBook(
+              EpubBooksCompanion.insert(
+                bookKey: '新书$i',
+                title: '新书$i',
+                epubPath: '/abs/$i.epub',
+                extractDir: '/abs/$i',
+                chapterCount: 1,
+                chaptersJson: '[]',
+                importedAt: now - i * 1000,
+                localAddedAt: Value<int?>(now - i * 1000),
+              ),
+            );
+            books.add(readingBook('新书$i', '新书$i', position: 0));
+          }
+          final List<HomeWidgetItem> items = <HomeWidgetItem>[
+            for (final HomeWidgetKind k in HomeWidgetKind.values)
+              HomeWidgetItem(k, sizeAt(k, g.$1, step)),
+          ];
+          await storeHomeLayout(
+            compact: g.$1 == HomeGridKind.compact ? items : null,
+            wide: g.$1 == HomeGridKind.wide ? items : null,
+          );
+          await tester.pumpWidget(buildAppWithBooks(books, lastRead));
+          await pumpDashboard(tester);
+
+          expect(tester.takeException(), isNull);
+          expect(gridKind(tester), g.$1);
+          final List<HomeWidgetItem> shown = tester
+              .widget<HomeWidgetGrid>(find.byType(HomeWidgetGrid))
+              .items;
+          // 不受模块门影响的组件一定在；每块都按存下的尺寸排、都真的排版了。
+          for (final HomeWidgetKind k in <HomeWidgetKind>[
+            HomeWidgetKind.continueHero,
+            HomeWidgetKind.continueReading,
+            HomeWidgetKind.today,
+            HomeWidgetKind.week,
+            HomeWidgetKind.recentlyAdded,
+            HomeWidgetKind.panorama,
+          ]) {
+            expect(
+              shown.map((HomeWidgetItem e) => e.kind),
+              contains(k),
+              reason: k.id,
+            );
+          }
+          for (final HomeWidgetItem e in shown) {
+            expect(e.size, sizeAt(e.kind, g.$1, step), reason: e.kind.id);
+            expect(
+              find.byKey(homeWidgetTileKey(e.kind)),
+              findsOneWidget,
+              reason: '${e.kind.id} 没有排版（视口不够高？）',
+            );
+          }
+        });
+      }
+    }
+  }
+
+  testWidgets('连续尺寸 · 格子越大放得越多：最近添加 / 继续阅读条目数随格子增大', (
+    WidgetTester tester,
+  ) async {
+    useSize(tester, const Size(1280, 4000));
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    final List<MediaItem> books = <MediaItem>[];
+    final Map<String, int> lastRead = <String, int>{};
+    for (int i = 1; i <= 10; i++) {
+      books.add(readingBook('在读$i', '在读$i', position: 10 + i));
+      lastRead['在读$i'] = now - i * 1000;
+    }
+    for (int i = 1; i <= 16; i++) {
+      await db.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: '新书$i',
+          title: '新书$i',
+          epubPath: '/abs/$i.epub',
+          extractDir: '/abs/$i',
+          chapterCount: 1,
+          chaptersJson: '[]',
+          importedAt: now - i * 1000,
+          localAddedAt: Value<int?>(now - i * 1000),
+        ),
+      );
+      books.add(readingBook('新书$i', '新书$i', position: 0));
+    }
+    int count(String prefix) {
+      int n = 0;
+      while (find.byKey(ValueKey<String>('$prefix/$n')).evaluate().isNotEmpty) {
+        n++;
+      }
+      return n;
+    }
+
+    Future<(int, int)> countsAt(HomeWidgetSize size) async {
+      await storeHomeLayout(
+        wide: <HomeWidgetItem>[
+          HomeWidgetItem(HomeWidgetKind.recentlyAdded, size),
+          HomeWidgetItem(HomeWidgetKind.continueReading, size),
+        ],
+      );
+      await tester.pumpWidget(buildAppWithBooks(books, lastRead));
+      await pumpDashboard(tester);
+      expect(tester.takeException(), isNull);
+      return (count('home-recent-item'), count('home-continue_reading-item'));
+    }
+
+    final (int, int) small = await countsAt(const HomeWidgetSize(2, 2));
+    final (int, int) big = await countsAt(const HomeWidgetSize(6, 3));
+    expect(small.$1, greaterThan(0));
+    expect(big.$1, greaterThan(small.$1));
+    expect(big.$2, greaterThan(small.$2));
+  });
 }
 
 /// 16x9 横版 PNG：朝向探测（`CoverOrientationBuilder`）读的是**解码出来的固有

@@ -1,5 +1,6 @@
 // 首页「添加小组件」面板（spec 2026-11-15）：只列可用组件、已在首页的置灰且不能
-// 再加、分类与搜索筛选、选尺寸后添加返回对应组件。交互全部经焦点 + 按键。
+// 再加、分类与搜索筛选、每项显示默认尺寸与可调范围、添加按默认尺寸返回。交互全部经
+// 焦点 + 按键。
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -81,17 +82,18 @@ void main() {
     );
   });
 
-  testWidgets('尺寸档按网格给：窄网格没有 4×2', (WidgetTester tester) async {
+  testWidgets('每项显示默认尺寸 + 可调范围，按网格给（窄网格宽度封顶 2 列）', (WidgetTester tester) async {
     await _pump(tester, grid: HomeGridKind.compact);
     expect(
       find.byKey(
         homeWidgetAddSizeKey(
           HomeWidgetKind.continueHero,
-          const HomeWidgetSize(4, 2),
+          const HomeWidgetSize(2, 2),
         ),
       ),
-      findsNothing,
+      findsOneWidget,
     );
+    // 只显示默认尺寸一块，不再列一排可选档。
     expect(
       find.byKey(
         homeWidgetAddSizeKey(
@@ -99,12 +101,43 @@ void main() {
           const HomeWidgetSize(2, 3),
         ),
       ),
-      findsOneWidget,
+      findsNothing,
+    );
+    expect(
+      find.text(t.home_widget_size_range(min: '2×2', max: '2×4')),
+      findsWidgets,
+    );
+    expect(
+      tester
+          .widget<Text>(
+            find.byKey(const ValueKey<String>('home-widget-add-range/today')),
+          )
+          .data,
+      t.home_widget_size_range(min: '1×1', max: '2×2'),
     );
   });
 
-  testWidgets('选尺寸再添加：返回所选组件与尺寸（默认是第一档）', (WidgetTester tester) async {
+  testWidgets('宽网格范围到 6 列；添加按默认尺寸返回', (WidgetTester tester) async {
     final List<HomeWidgetItem> added = await _pump(tester);
+    expect(
+      tester
+          .widget<Text>(
+            find.byKey(
+              const ValueKey<String>('home-widget-add-range/continue'),
+            ),
+          )
+          .data,
+      t.home_widget_size_range(min: '2×2', max: '6×4'),
+    );
+    expect(
+      find.byKey(
+        homeWidgetAddSizeKey(
+          HomeWidgetKind.continueHero,
+          const HomeWidgetSize(4, 2),
+        ),
+      ),
+      findsOneWidget,
+    );
     await _activate(
       tester,
       find.descendant(
@@ -114,31 +147,18 @@ void main() {
     );
     expect(
       added.single,
-      const HomeWidgetItem(HomeWidgetKind.week, HomeWidgetSize(2, 1)),
-    );
-
-    await _activate(
-      tester,
-      find.descendant(
-        of: find.byKey(
-          homeWidgetAddSizeKey(
-            HomeWidgetKind.panorama,
-            const HomeWidgetSize(4, 2),
-          ),
-        ),
-        matching: find.text('4×2'),
-      ),
+      const HomeWidgetItem(HomeWidgetKind.week, HomeWidgetSize(2, 2)),
     );
     await _activate(
       tester,
       find.descendant(
-        of: find.byKey(homeWidgetAddButtonKey(HomeWidgetKind.panorama)),
+        of: find.byKey(homeWidgetAddButtonKey(HomeWidgetKind.recentlyAdded)),
         matching: find.text(t.home_widget_add_confirm),
       ),
     );
     expect(
       added.last,
-      const HomeWidgetItem(HomeWidgetKind.panorama, HomeWidgetSize(4, 2)),
+      const HomeWidgetItem(HomeWidgetKind.recentlyAdded, HomeWidgetSize(4, 2)),
     );
   });
 

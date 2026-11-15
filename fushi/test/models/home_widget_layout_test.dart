@@ -1,5 +1,5 @@
 // 首页小组件网格的纯模型（spec docs/specs/2026-11-15-home-widgets-design.md）：
-// 目录 / 尺寸档、行高、密集装箱、编辑操作与撤销、偏好编解码、从旧「首页面板」
+// 目录 / 连续尺寸范围与拖角吸附、行高、密集装箱、编辑操作与撤销、偏好编解码、从旧「首页面板」
 // 显示档迁移、可用性判据。
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/home_dashboard_panel.dart';
@@ -44,40 +44,71 @@ void main() {
       expect(HomeWidgetKind.fromId(3), isNull);
     });
 
-    test('尺寸档与规格一致；窄网格里没有 4 列宽的档', () {
-      expect(HomeWidgetKind.continueHero.sizes, <HomeWidgetSize>[
-        s22,
-        s23,
-        s42,
-      ]);
-      expect(
-        HomeWidgetKind.continueHero.sizesFor(HomeGridKind.compact),
-        <HomeWidgetSize>[s22, s23],
-      );
-      expect(HomeWidgetKind.today.sizes, <HomeWidgetSize>[s11, s21]);
-      expect(HomeWidgetKind.week.sizes, <HomeWidgetSize>[s21, s22]);
-      expect(HomeWidgetKind.srsReview.sizes, <HomeWidgetSize>[s11, s21]);
-      expect(HomeWidgetKind.recentlyAdded.sizes, <HomeWidgetSize>[s22, s42]);
-      expect(
-        HomeWidgetKind.recentlyAdded.sizesFor(HomeGridKind.compact),
-        <HomeWidgetSize>[s22],
-      );
-      expect(HomeWidgetKind.tracking.sizes, <HomeWidgetSize>[s21]);
-      expect(HomeWidgetKind.aiAgent.sizes, <HomeWidgetSize>[s11, s21]);
-      expect(HomeWidgetKind.panorama.sizes, <HomeWidgetSize>[s22, s42]);
-      for (final HomeWidgetKind k in <HomeWidgetKind>[
-        HomeWidgetKind.continueReading,
-        HomeWidgetKind.continueWatching,
-        HomeWidgetKind.continuePlaying,
-      ]) {
-        expect(k.sizes, <HomeWidgetSize>[s21, s22]);
+    test('尺寸范围与 spec 一致（宽网格口径 min…max）', () {
+      const Map<HomeWidgetKind, (HomeWidgetSize, HomeWidgetSize)> spec =
+          <HomeWidgetKind, (HomeWidgetSize, HomeWidgetSize)>{
+            HomeWidgetKind.continueHero: (s22, HomeWidgetSize(6, 4)),
+            HomeWidgetKind.continueReading: (s21, HomeWidgetSize(6, 3)),
+            HomeWidgetKind.continueWatching: (s21, HomeWidgetSize(6, 3)),
+            HomeWidgetKind.continuePlaying: (s21, HomeWidgetSize(6, 3)),
+            HomeWidgetKind.today: (s11, HomeWidgetSize(3, 2)),
+            HomeWidgetKind.week: (s21, HomeWidgetSize(6, 3)),
+            HomeWidgetKind.srsReview: (s11, HomeWidgetSize(3, 2)),
+            HomeWidgetKind.recentlyAdded: (s22, HomeWidgetSize(6, 4)),
+            HomeWidgetKind.tracking: (s21, HomeWidgetSize(6, 2)),
+            HomeWidgetKind.aiAgent: (s11, HomeWidgetSize(3, 2)),
+            HomeWidgetKind.panorama: (s22, HomeWidgetSize(6, 4)),
+          };
+      expect(spec.keys.toSet(), HomeWidgetKind.values.toSet());
+      for (final HomeWidgetKind k in HomeWidgetKind.values) {
+        expect(k.minFor(HomeGridKind.wide), spec[k]!.$1, reason: k.id);
+        expect(k.maxFor(HomeGridKind.wide), spec[k]!.$2, reason: k.id);
+        // 高度不超过 4 行；宽网格最多 6 列。
+        expect(k.maxFor(HomeGridKind.wide).rows, lessThanOrEqualTo(4));
+        expect(k.maxFor(HomeGridKind.wide).cols, lessThanOrEqualTo(6));
+        // 每种组件在两种网格里都能调（范围不止一格）。
+        expect(k.resizableIn(HomeGridKind.wide), isTrue, reason: k.id);
+        expect(k.resizableIn(HomeGridKind.compact), isTrue, reason: k.id);
       }
       expect(s21.toString(), '2×1');
     });
 
-    test('nearestHomeWidgetSize：取最近合法档，平局取目录靠前', () {
+    test('窄网格宽度封顶 2 列，高度范围不变', () {
+      for (final HomeWidgetKind k in HomeWidgetKind.values) {
+        final HomeWidgetSize max = k.maxFor(HomeGridKind.compact);
+        expect(max.cols, lessThanOrEqualTo(2), reason: k.id);
+        expect(max.rows, k.maxFor(HomeGridKind.wide).rows, reason: k.id);
+        expect(
+          k.minFor(HomeGridKind.compact),
+          k.minFor(HomeGridKind.wide),
+          reason: '下限都不超过 2 列：${k.id}',
+        );
+      }
       expect(
-        nearestHomeWidgetSize(
+        HomeWidgetKind.continueHero.maxFor(HomeGridKind.compact),
+        const HomeWidgetSize(2, 4),
+      );
+      expect(
+        HomeWidgetKind.today.maxFor(HomeGridKind.compact),
+        const HomeWidgetSize(2, 2),
+      );
+    });
+
+    test('默认尺寸落在范围内；窄 / 宽各一份', () {
+      for (final HomeWidgetKind k in HomeWidgetKind.values) {
+        for (final HomeGridKind g in HomeGridKind.values) {
+          final HomeWidgetSize d = k.defaultFor(g);
+          expect(clampHomeWidgetSize(k, g, d), d, reason: '${k.id} ${g.wire}');
+        }
+      }
+      expect(HomeWidgetKind.continueHero.defaultFor(HomeGridKind.wide), s42);
+      expect(HomeWidgetKind.continueHero.defaultFor(HomeGridKind.compact), s22);
+      expect(HomeWidgetKind.today.defaultFor(HomeGridKind.compact), s11);
+    });
+
+    test('clampHomeWidgetSize：各轴独立钳进范围（含窄网格列数封顶）', () {
+      expect(
+        clampHomeWidgetSize(
           HomeWidgetKind.continueHero,
           HomeGridKind.compact,
           s42,
@@ -85,16 +116,114 @@ void main() {
         s22,
       );
       expect(
-        nearestHomeWidgetSize(HomeWidgetKind.tracking, HomeGridKind.wide, s11),
-        s21,
+        clampHomeWidgetSize(
+          HomeWidgetKind.continueHero,
+          HomeGridKind.wide,
+          const HomeWidgetSize(9, 9),
+        ),
+        const HomeWidgetSize(6, 4),
       );
       expect(
-        nearestHomeWidgetSize(
+        clampHomeWidgetSize(
           HomeWidgetKind.today,
           HomeGridKind.wide,
           const HomeWidgetSize(0, 0),
         ),
         s11,
+      );
+      expect(
+        clampHomeWidgetSize(
+          HomeWidgetKind.tracking,
+          HomeGridKind.wide,
+          const HomeWidgetSize(5, 3),
+        ),
+        const HomeWidgetSize(5, 2),
+      );
+      // 范围内原样不动（连续尺寸，不再吸到离散档）。
+      expect(
+        clampHomeWidgetSize(
+          HomeWidgetKind.week,
+          HomeGridKind.wide,
+          const HomeWidgetSize(5, 3),
+        ),
+        const HomeWidgetSize(5, 3),
+      );
+    });
+  });
+
+  group('拖角吸附', () {
+    // 宽网格：格宽 150、行高 118、间距 14 → 列步长 164、行步长 132。
+    HomeWidgetSize drag(
+      HomeWidgetKind kind,
+      HomeWidgetSize start,
+      double dx,
+      double dy, {
+      HomeGridKind grid = HomeGridKind.wide,
+    }) => homeWidgetDragSize(
+      kind: kind,
+      grid: grid,
+      start: start,
+      dx: dx,
+      dy: dy,
+      columnExtent: 150,
+      rowExtent: 118,
+      gap: 14,
+    );
+
+    test('没动 / 动得不到半格：原尺寸', () {
+      expect(drag(HomeWidgetKind.week, s22, 0, 0), s22);
+      expect(drag(HomeWidgetKind.week, s22, 81, 65), s22);
+      expect(drag(HomeWidgetKind.week, s22, -81, -65), s22);
+    });
+
+    test('过半格就吸到下一格（四舍五入到最近格线）', () {
+      expect(drag(HomeWidgetKind.week, s22, 83, 0), const HomeWidgetSize(3, 2));
+      expect(drag(HomeWidgetKind.week, s22, 0, 67), const HomeWidgetSize(2, 3));
+      expect(
+        drag(HomeWidgetKind.week, s22, 164 * 2, 132),
+        const HomeWidgetSize(4, 3),
+      );
+      expect(
+        drag(HomeWidgetKind.week, const HomeWidgetSize(4, 3), -164 * 2, -132),
+        s22,
+      );
+    });
+
+    test('拖过头钳进范围：不小于下限、不大于上限 / 网格列数', () {
+      expect(drag(HomeWidgetKind.week, s22, -2000, -2000), s21);
+      expect(
+        drag(HomeWidgetKind.week, s22, 5000, 5000),
+        const HomeWidgetSize(6, 3),
+      );
+      expect(
+        drag(HomeWidgetKind.today, s11, 5000, 5000),
+        const HomeWidgetSize(3, 2),
+      );
+      expect(
+        drag(
+          HomeWidgetKind.continueHero,
+          s22,
+          5000,
+          5000,
+          grid: HomeGridKind.compact,
+        ),
+        const HomeWidgetSize(2, 4),
+      );
+    });
+
+    test('格宽为 0（还没排版）时不乱跳', () {
+      expect(
+        homeWidgetDragSize(
+          kind: HomeWidgetKind.week,
+          grid: HomeGridKind.wide,
+          start: s22,
+          dx: 40,
+          dy: 40,
+          columnExtent: 0,
+          rowExtent: 0,
+          gap: 0,
+        ),
+        s22,
       );
     });
   });
@@ -214,26 +343,50 @@ void main() {
       expect(moveHomeWidget(base, 1, 1), same(base));
     });
 
-    test('换尺寸在可选档里循环（正反向）；只有一档原样返回', () {
-      expect(cycleHomeWidgetSize(base, 0, HomeGridKind.compact)[0].size, s23);
+    test('设尺寸钳进范围；没变原样返回；不改入参', () {
+      final List<HomeWidgetItem> wider = setHomeWidgetSize(
+        base,
+        0,
+        HomeGridKind.wide,
+        const HomeWidgetSize(5, 3),
+      );
+      expect(wider[0].size, const HomeWidgetSize(5, 3));
+      expect(base[0].size, s22);
       expect(
-        cycleHomeWidgetSize(
-          cycleHomeWidgetSize(base, 0, HomeGridKind.compact),
+        setHomeWidgetSize(
+          base,
           0,
           HomeGridKind.compact,
+          const HomeWidgetSize(6, 6),
         )[0].size,
-        s22,
+        const HomeWidgetSize(2, 4),
+      );
+      expect(setHomeWidgetSize(base, 0, HomeGridKind.wide, s22), same(base));
+      expect(setHomeWidgetSize(base, 9, HomeGridKind.wide, s42), same(base));
+    });
+
+    test('逐格改尺寸：加减一格、到边界停住原样返回', () {
+      expect(
+        resizeHomeWidgetBy(base, 0, HomeGridKind.wide, dCols: 1)[0].size,
+        const HomeWidgetSize(3, 2),
       );
       expect(
-        cycleHomeWidgetSize(base, 0, HomeGridKind.wide, step: -1)[0].size,
-        s42,
+        resizeHomeWidgetBy(base, 0, HomeGridKind.wide, dRows: 1)[0].size,
+        s23,
       );
-      final List<HomeWidgetItem> tracking = <HomeWidgetItem>[
-        item(HomeWidgetKind.tracking, s21),
-      ];
+      // 继续 2×2 已是下限：再缩原样返回。
       expect(
-        cycleHomeWidgetSize(tracking, 0, HomeGridKind.wide),
-        same(tracking),
+        resizeHomeWidgetBy(base, 0, HomeGridKind.wide, dCols: -1),
+        same(base),
+      );
+      // 窄网格里 2 列已是上限。
+      expect(
+        resizeHomeWidgetBy(base, 0, HomeGridKind.compact, dCols: 1),
+        same(base),
+      );
+      expect(
+        resizeHomeWidgetBy(base, 1, HomeGridKind.compact, dCols: 1)[1].size,
+        s21,
       );
     });
 
@@ -306,6 +459,24 @@ void main() {
       expect(l.compact, <HomeWidgetItem>[
         item(HomeWidgetKind.continueHero, s22),
         item(HomeWidgetKind.today, s11),
+      ]);
+    });
+
+    test('解码按网格钳尺寸：范围内的连续尺寸原样保留，超出钳到边界', () {
+      final HomeWidgetLayout l = decodeHomeWidgetLayout(
+        '{"v":1,"wide":['
+        '{"k":"week","c":5,"r":3},'
+        '{"k":"tracking","c":3,"r":4},'
+        '{"k":"today","c":6,"r":1}'
+        '],"compact":[{"k":"recently_added","c":6,"r":4}]}',
+      );
+      expect(l.wide, <HomeWidgetItem>[
+        item(HomeWidgetKind.week, const HomeWidgetSize(5, 3)),
+        item(HomeWidgetKind.tracking, const HomeWidgetSize(3, 2)),
+        item(HomeWidgetKind.today, const HomeWidgetSize(3, 1)),
+      ]);
+      expect(l.compact, <HomeWidgetItem>[
+        item(HomeWidgetKind.recentlyAdded, const HomeWidgetSize(2, 4)),
       ]);
     });
   });

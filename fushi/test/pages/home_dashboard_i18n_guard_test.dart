@@ -43,6 +43,7 @@ const List<String> _sources = <String>[
   'lib/src/pages/implementations/home_widget_add_sheet.dart',
   'lib/src/pages/implementations/home_widget_frame.dart',
   'lib/src/pages/implementations/home_widget_grid.dart',
+  'lib/src/pages/implementations/home_widget_size_picker.dart',
   'lib/src/pages/implementations/updates_dashboard_banner.dart',
 ];
 

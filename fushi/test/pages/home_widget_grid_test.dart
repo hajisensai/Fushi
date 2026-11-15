@@ -1,10 +1,15 @@
 // 首页小组件网格（HomeWidgetGrid，spec 2026-11-15）：装箱几何、编辑态的焦点驱动
-// 操作（Enter 拿起 / 方向键移动 / [ ] 换尺寸 / Delete 移除 / Esc 退出）、RTL 镜像。
-// 全部经焦点与按键驱动，不点坐标。
+// 操作（Enter 拿起 / 方向键移动 / Shift+方向键逐格改尺寸 / Delete 移除 / Esc 退出）、
+// 手柄（GamepadButtonIntent：LB RB 改宽、LT RT 改高）、拖右下角改尺寸（吸附预览、
+// 其余块让位、松手提交）、RTL 镜像。键盘 / 手柄部分全部经焦点驱动，不点坐标；拖角
+// 是纯指针手势，按柄的 finder 拖。
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/home_widget_layout.dart';
 import 'package:fushi/src/pages/implementations/home_widget_grid.dart';
+import 'package:fushi/src/shortcuts/gamepad_service.dart'
+    show GamepadButtonIntent;
+import 'package:fushi/src/shortcuts/input_binding.dart' show GamepadButton;
 import 'package:fushi/src/utils/components/fushi_cover_block_layout.dart'
     show kFushiCoverBlockSpacing;
 import 'package:material_ui/material_ui.dart';
@@ -41,11 +46,10 @@ class _HostState extends State<_Host> {
         items: items,
         grid: widget.grid,
         editing: editing,
-        cellBuilder: (BuildContext context, HomeWidgetItem item, bool dense) =>
-            ColoredBox(
-              key: ValueKey<String>('cell/${item.kind.id}/$dense'),
-              color: const Color(0xFF8899AA),
-            ),
+        cellBuilder: (BuildContext context, HomeWidgetItem item) => ColoredBox(
+          key: ValueKey<String>('cell/${item.kind.id}'),
+          color: const Color(0xFF8899AA),
+        ),
         labelOf: (HomeWidgetKind kind) => kind.id,
         onEnterEdit: () {
           widget.log.add('enter');
@@ -63,15 +67,10 @@ class _HostState extends State<_Host> {
           widget.log.add('remove $index');
           setState(() => items = removeHomeWidgetAt(items, index));
         },
-        onCycleSize: (int index, int step) {
-          widget.log.add('size $index $step');
+        onResize: (int index, HomeWidgetSize size) {
+          widget.log.add('size $index $size');
           setState(
-            () => items = cycleHomeWidgetSize(
-              items,
-              index,
-              widget.grid,
-              step: step,
-            ),
+            () => items = setHomeWidgetSize(items, index, widget.grid, size),
           );
         },
       ),
@@ -122,13 +121,35 @@ List<HomeWidgetKind> _order(_HostState host) => <HomeWidgetKind>[
   for (final HomeWidgetItem e in host.items) e.kind,
 ];
 
+HomeWidgetSize _sizeOf(_HostState host, HomeWidgetKind kind) =>
+    host.items.firstWhere((HomeWidgetItem e) => e.kind == kind).size;
+
 Future<void> _key(WidgetTester tester, LogicalKeyboardKey key) async {
   await tester.sendKeyEvent(key);
   await tester.pumpAndSettle();
 }
 
+/// Shift+[key]（按住 Shift 再按方向键）。
+Future<void> _shift(WidgetTester tester, LogicalKeyboardKey key) async {
+  await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+  await tester.sendKeyEvent(key);
+  await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+  await tester.pumpAndSettle();
+}
+
+/// 走与手柄轮询同一条派发路径：从焦点节点上溯 [GamepadButtonIntent]。
+Future<Object?> _pad(WidgetTester tester, GamepadButton button) async {
+  final BuildContext focused = FocusManager.instance.primaryFocus!.context!;
+  final Object? result = Actions.maybeInvoke<GamepadButtonIntent>(
+    focused,
+    GamepadButtonIntent(button),
+  );
+  await tester.pumpAndSettle();
+  return result;
+}
+
 void main() {
-  testWidgets('装箱几何：窄网格两列、按行高与间距排位，一行高的格子是 dense', (WidgetTester tester) async {
+  testWidgets('装箱几何：窄网格两列、按行高与间距排位', (WidgetTester tester) async {
     await _pump(tester, editing: false);
     const double gap = kFushiCoverBlockSpacing;
     final double row = homeWidgetRowExtent(HomeGridKind.compact, _kWidth, gap);
@@ -145,13 +166,10 @@ void main() {
     expect(today.width, closeTo(col, 0.01));
     expect(srs.left - today.left, closeTo(col + gap, 0.01));
     expect(week.top - today.top, closeTo(row + gap, 0.01));
+    // 内容拿到的就是格子的紧约束（按实际宽高排版）。
     expect(
-      find.byKey(const ValueKey<String>('cell/today/true')),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const ValueKey<String>('cell/continue/false')),
-      findsOneWidget,
+      tester.getSize(find.byKey(const ValueKey<String>('cell/today'))),
+      today.size,
     );
   });
 
@@ -161,6 +179,10 @@ void main() {
     expect(_focusedLabel() ?? '', isNot(startsWith('home-widget/')));
     expect(
       find.byKey(const ValueKey<String>('home-widget-remove/today')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('home-widget-resize/today')),
       findsNothing,
     );
   });
@@ -174,18 +196,19 @@ void main() {
       find.byKey(const ValueKey<String>('home-widget-remove/today')),
       findsOneWidget,
     );
-    // 只有一档的组件没有换尺寸角标（这里四种都有多档）。
-    expect(
-      find.byKey(const ValueKey<String>('home-widget-resize/week')),
-      findsOneWidget,
-    );
+    // 每种组件都有可调范围，都有右下角改尺寸柄。
+    for (final HomeWidgetItem e in _items) {
+      expect(
+        find.byKey(ValueKey<String>('home-widget-resize/${e.kind.id}')),
+        findsOneWidget,
+      );
+    }
 
     await _key(tester, LogicalKeyboardKey.tab);
     expect(_focusedLabel(), 'home-widget/continue');
     await _key(tester, LogicalKeyboardKey.tab);
     expect(_focusedLabel(), 'home-widget/today');
 
-    // 没拿起时方向键不移动（交给焦点遍历）。
     await _key(tester, LogicalKeyboardKey.enter);
     await _key(tester, LogicalKeyboardKey.arrowRight);
     expect(_order(host), <HomeWidgetKind>[
@@ -204,25 +227,198 @@ void main() {
     expect(log, containsAllInOrder(<String>['move 1>2', 'move 2>0']));
   });
 
-  testWidgets('编辑态：[ ] 换尺寸，Delete 移除后焦点交给下一块，Esc 退出编辑', (
+  testWidgets('Shift+方向键逐格改宽 / 高，到范围边界停住；其余块按装箱让位', (
     WidgetTester tester,
   ) async {
     final List<String> log = <String>[];
     final _HostState host = await _pump(tester, log: log);
     await _key(tester, LogicalKeyboardKey.tab);
-    expect(_focusedLabel(), 'home-widget/continue');
+    await _key(tester, LogicalKeyboardKey.tab);
+    expect(_focusedLabel(), 'home-widget/today');
+    final double weekTop = tester.getRect(_tile(HomeWidgetKind.week)).top;
 
-    final double before = tester
-        .getSize(_tile(HomeWidgetKind.continueHero))
-        .height;
-    await _key(tester, LogicalKeyboardKey.bracketRight);
-    expect(host.items.first.size, const HomeWidgetSize(2, 3));
+    // 今日 1×1 → 2×1（变宽把复习挤到下一行）。
+    await _shift(tester, LogicalKeyboardKey.arrowRight);
+    expect(_sizeOf(host, HomeWidgetKind.today), const HomeWidgetSize(2, 1));
     expect(
-      tester.getSize(_tile(HomeWidgetKind.continueHero)).height,
-      greaterThan(before),
+      tester.getRect(_tile(HomeWidgetKind.srsReview)).top,
+      greaterThan(tester.getRect(_tile(HomeWidgetKind.today)).top),
     );
-    await _key(tester, LogicalKeyboardKey.bracketLeft);
-    expect(host.items.first.size, const HomeWidgetSize(2, 2));
+    // 窄网格 2 列已是上限：再加宽不变、不记操作。
+    final int logged = log.length;
+    await _shift(tester, LogicalKeyboardKey.arrowRight);
+    expect(_sizeOf(host, HomeWidgetKind.today), const HomeWidgetSize(2, 1));
+    expect(log.length, logged);
+
+    // 变高 → 2×2，下面的块往下让。
+    await _shift(tester, LogicalKeyboardKey.arrowDown);
+    expect(_sizeOf(host, HomeWidgetKind.today), const HomeWidgetSize(2, 2));
+    expect(
+      tester.getRect(_tile(HomeWidgetKind.week)).top,
+      greaterThan(weekTop),
+    );
+    // 今日最高 2 行。
+    await _shift(tester, LogicalKeyboardKey.arrowDown);
+    expect(_sizeOf(host, HomeWidgetKind.today), const HomeWidgetSize(2, 2));
+
+    await _shift(tester, LogicalKeyboardKey.arrowUp);
+    await _shift(tester, LogicalKeyboardKey.arrowLeft);
+    expect(_sizeOf(host, HomeWidgetKind.today), const HomeWidgetSize(1, 1));
+    // 下限 1×1 再缩不变。
+    await _shift(tester, LogicalKeyboardKey.arrowLeft);
+    expect(_sizeOf(host, HomeWidgetKind.today), const HomeWidgetSize(1, 1));
+    // 改尺寸后焦点留在这块上；没拿起，所以顺序没变。
+    expect(_focusedLabel(), 'home-widget/today');
+    expect(_order(host)[1], HomeWidgetKind.today);
+    expect(
+      log,
+      containsAllInOrder(<String>[
+        'size 1 2×1',
+        'size 1 2×2',
+        'size 1 2×1',
+        'size 1 1×1',
+      ]),
+    );
+  });
+
+  testWidgets('手柄：LB / RB 改宽、LT / RT 改高，A 拿起、X 移除；不认的键交还祖先', (
+    WidgetTester tester,
+  ) async {
+    final _HostState host = await _pump(tester);
+    await _key(tester, LogicalKeyboardKey.tab);
+    await _key(tester, LogicalKeyboardKey.tab);
+    expect(_focusedLabel(), 'home-widget/today');
+
+    expect(await _pad(tester, GamepadButton.rb), isTrue);
+    expect(_sizeOf(host, HomeWidgetKind.today), const HomeWidgetSize(2, 1));
+    expect(await _pad(tester, GamepadButton.rt), isTrue);
+    expect(_sizeOf(host, HomeWidgetKind.today), const HomeWidgetSize(2, 2));
+    expect(await _pad(tester, GamepadButton.lt), isTrue);
+    expect(_sizeOf(host, HomeWidgetKind.today), const HomeWidgetSize(2, 1));
+    expect(await _pad(tester, GamepadButton.lb), isTrue);
+    expect(_sizeOf(host, HomeWidgetKind.today), const HomeWidgetSize(1, 1));
+
+    // Y 不归网格：转发给祖先（这里没有祖先处理 → null）。
+    expect(await _pad(tester, GamepadButton.y), isNull);
+    // 没拿起时十字键交还祖先（焦点导航兜底）。
+    expect(await _pad(tester, GamepadButton.dpadRight), isNull);
+
+    // A 拿起后十字键移动。
+    expect(await _pad(tester, GamepadButton.a), isTrue);
+    expect(await _pad(tester, GamepadButton.dpadRight), isTrue);
+    expect(_order(host)[2], HomeWidgetKind.today);
+    expect(await _pad(tester, GamepadButton.a), isTrue);
+
+    expect(await _pad(tester, GamepadButton.x), isTrue);
+    expect(_tile(HomeWidgetKind.today), findsNothing);
+  });
+
+  testWidgets('非编辑态：手柄键全部交还祖先（首页 LT/RT 换 tab 不被吞）', (
+    WidgetTester tester,
+  ) async {
+    await _pump(tester, editing: false);
+    // 非编辑态块不可聚焦：直接从块的上下文上溯。
+    final BuildContext tile = tester.element(
+      find.byKey(const ValueKey<String>('cell/today')),
+    );
+    expect(
+      Actions.maybeInvoke<GamepadButtonIntent>(
+        tile,
+        const GamepadButtonIntent(GamepadButton.rt),
+      ),
+      isNull,
+    );
+  });
+
+  testWidgets('拖右下角：按格吸附、实时预览「2×2」、其余块让位，松手提交', (WidgetTester tester) async {
+    final List<String> log = <String>[];
+    final _HostState host = await _pump(tester, log: log);
+    const double gap = kFushiCoverBlockSpacing;
+    final double row = homeWidgetRowExtent(HomeGridKind.compact, _kWidth, gap);
+    final Finder handle = find.byKey(
+      const ValueKey<String>('home-widget-resize/today'),
+    );
+    final double weekTop = tester.getRect(_tile(HomeWidgetKind.week)).top;
+
+    final TestGesture g = await tester.startGesture(tester.getCenter(handle));
+    await g.moveBy(const Offset(0, 30));
+    await g.moveBy(Offset(0, row + gap - 30 + 8));
+    await tester.pumpAndSettle();
+    // 拖动中：预览框 + 标签，今日格子已按目标尺寸装箱，近 7 天往下让。
+    expect(
+      find.byKey(const ValueKey<String>('home-widget-resize-preview')),
+      findsOneWidget,
+    );
+    expect(
+      tester
+          .widget<Text>(
+            find.byKey(const ValueKey<String>('home-widget-resize-label')),
+          )
+          .data,
+      '1×2',
+    );
+    expect(
+      tester.getRect(_tile(HomeWidgetKind.week)).top,
+      greaterThan(weekTop),
+    );
+    expect(log, isNot(contains(startsWith('size'))), reason: '松手前不提交');
+
+    await g.moveBy(Offset((_kWidth - gap) / 2 + gap, 0));
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<Text>(
+            find.byKey(const ValueKey<String>('home-widget-resize-label')),
+          )
+          .data,
+      '2×2',
+    );
+    await g.up();
+    await tester.pumpAndSettle();
+    expect(_sizeOf(host, HomeWidgetKind.today), const HomeWidgetSize(2, 2));
+    expect(log.where((String l) => l.startsWith('size')), <String>[
+      'size 1 2×2',
+    ]);
+    expect(
+      find.byKey(const ValueKey<String>('home-widget-resize-preview')),
+      findsNothing,
+    );
+    // 拖柄不触发换位。
+    expect(_order(host), _items.map((HomeWidgetItem e) => e.kind).toList());
+  });
+
+  testWidgets('拖角拖过头钳在范围里；拖回原尺寸松手不记操作', (WidgetTester tester) async {
+    final List<String> log = <String>[];
+    final _HostState host = await _pump(tester, log: log);
+    final Finder handle = find.byKey(
+      const ValueKey<String>('home-widget-resize/week'),
+    );
+    final TestGesture g = await tester.startGesture(tester.getCenter(handle));
+    await g.moveBy(const Offset(0, 40));
+    await g.moveBy(const Offset(400, 2000));
+    await tester.pumpAndSettle();
+    // 近 7 天窄网格上限 2×3。
+    expect(
+      tester
+          .widget<Text>(
+            find.byKey(const ValueKey<String>('home-widget-resize-label')),
+          )
+          .data,
+      '2×3',
+    );
+    await g.moveBy(const Offset(-400, -2040));
+    await tester.pumpAndSettle();
+    await g.up();
+    await tester.pumpAndSettle();
+    expect(_sizeOf(host, HomeWidgetKind.week), const HomeWidgetSize(2, 1));
+    expect(log.where((String l) => l.startsWith('size')), isEmpty);
+  });
+
+  testWidgets('编辑态：Delete 移除后焦点交给下一块，Esc 退出编辑', (WidgetTester tester) async {
+    final List<String> log = <String>[];
+    final _HostState host = await _pump(tester, log: log);
+    await _key(tester, LogicalKeyboardKey.tab);
+    expect(_focusedLabel(), 'home-widget/continue');
 
     await _key(tester, LogicalKeyboardKey.delete);
     expect(_order(host), <HomeWidgetKind>[
@@ -254,7 +450,7 @@ void main() {
     expect(log.last, 'exit');
   });
 
-  testWidgets('RTL：起始侧在右，方向键按视觉方向移动', (WidgetTester tester) async {
+  testWidgets('RTL：起始侧在右，方向键按视觉方向移动、Shift+← 加宽', (WidgetTester tester) async {
     final _HostState host = await _pump(tester, direction: TextDirection.rtl);
     final Rect today = tester.getRect(_tile(HomeWidgetKind.today));
     final Rect srs = tester.getRect(_tile(HomeWidgetKind.srsReview));
@@ -263,6 +459,12 @@ void main() {
     await _key(tester, LogicalKeyboardKey.tab);
     await _key(tester, LogicalKeyboardKey.tab);
     expect(_focusedLabel(), 'home-widget/today');
+    // 视觉上往左 = 朝结束侧 = 加宽。
+    await _shift(tester, LogicalKeyboardKey.arrowLeft);
+    expect(_sizeOf(host, HomeWidgetKind.today), const HomeWidgetSize(2, 1));
+    await _shift(tester, LogicalKeyboardKey.arrowRight);
+    expect(_sizeOf(host, HomeWidgetKind.today), const HomeWidgetSize(1, 1));
+
     await _key(tester, LogicalKeyboardKey.enter);
     // 视觉上往左 = 列表里往后。
     await _key(tester, LogicalKeyboardKey.arrowLeft);
