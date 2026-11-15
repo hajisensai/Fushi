@@ -331,7 +331,10 @@ void main() {
     test('WebUI 有「词典」页', () {
       expect(adminWebUiHtml, contains('data-s="dictionaries"'));
       expect(adminWebUiHtml, contains('id="s-dictionaries"'));
-      expect(adminWebUiHtml, contains('dictionaries:loadDictionaries'));
+      expect(
+        adminWebUiHtml,
+        contains('if(!dictsLoaded) await loadDictionaries();'),
+      );
     });
   });
 
