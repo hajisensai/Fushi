@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-15T06:31:59Z",
+ "generatedAt": "2026-11-15T06:50:57Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "a0f1e32db2224b15ff6d23082a81b44b39acd6c4",
-  "seq": 27328
+  "sha": "3823eaa74c9b3dff02b3feb04c9eb68cc2d111be",
+  "seq": 27339
  },
  "builds": [
   {
@@ -12,7 +12,7 @@
    "version": "3.3.0",
    "sha": "4cd7c991f8e558e8b4004510e722a38374f3a2de",
    "unknown": false,
-   "publishedAt": "2026-11-15T06:31:44Z",
+   "publishedAt": "2026-11-15T06:50:44Z",
    "testflight": false,
    "baseSeq": 27301,
    "prs": [
@@ -28,16 +28,13 @@
      "state": "ok"
     },
     "windows": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43680582784"
+     "state": "ok"
     },
     "macos": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43680582784"
+     "state": "ok"
     },
     "ios": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43680582784"
+     "state": "ok"
     }
    }
   },
@@ -112,10 +109,12 @@
    "unknown": false,
    "publishedAt": "2026-11-15T04:46:56Z",
    "testflight": true,
-   "baseSeq": 27265,
+   "baseSeq": 27253,
    "prs": [
     3429,
-    3428
+    3428,
+    3372,
+    3430
    ],
    "direct": [
     {
@@ -135,37 +134,6 @@
     "macos": {
      "state": "failed",
      "url": "https://github.com/hajisensai/Fushi/actions/runs/43665108077"
-    },
-    "ios": {
-     "state": "ok"
-    }
-   }
-  },
-  {
-   "seq": 27265,
-   "version": "3.3.0",
-   "sha": "cc2408d35a7c51e40a79bf70313074e07460eac4",
-   "unknown": false,
-   "publishedAt": "2026-11-15T03:22:29Z",
-   "testflight": true,
-   "baseSeq": 27253,
-   "prs": [
-    3372,
-    3430
-   ],
-   "direct": [],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43663499517"
-    },
-    "windows": {
-     "state": "ok"
-    },
-    "macos": {
-     "state": "failed",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43663499501"
     },
     "ios": {
      "state": "ok"
@@ -238,9 +206,10 @@
   }
  ],
  "pending": {
-  "headSha": "a0f1e32db2224b15ff6d23082a81b44b39acd6c4",
-  "headSeq": 27328,
+  "headSha": "3823eaa74c9b3dff02b3feb04c9eb68cc2d111be",
+  "headSeq": 27339,
   "prs": [
+   3434,
    3442,
    3440
   ],
@@ -249,19 +218,19 @@
   "platforms": {
    "android": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43685337228"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43686952727"
    },
    "windows": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43685337361"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43686952715"
    },
    "macos": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43685337361"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43686952715"
    },
    "ios": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43685337361"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43686952715"
    }
   }
  },
@@ -599,6 +568,15 @@
    "mergedAt": "2026-11-15T03:30:17Z",
    "additions": 775,
    "deletions": 39,
+   "labels": []
+  },
+  "3434": {
+   "number": 3434,
+   "title": "fix(srs): apkg 导入保留 Anki 端已删卡的 revlog，只进统计与日历 (BUG-4626)",
+   "author": "W1ght",
+   "mergedAt": "2026-11-15T06:46:20Z",
+   "additions": 715,
+   "deletions": 3,
    "labels": []
   },
   "3435": {
