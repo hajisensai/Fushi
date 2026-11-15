@@ -8,7 +8,12 @@ import 'package:fushi/src/settings/settings_schema_appearance.dart';
 import 'package:fushi/src/settings/settings_schema_card_creation.dart';
 import 'package:fushi/src/settings/settings_schema_downloads.dart';
 import 'package:fushi/src/settings/settings_schema_floating_ball.dart';
+import 'package:fushi/src/settings/settings_schema_ai.dart';
 import 'package:fushi/src/settings/settings_schema_game.dart';
+import 'package:fushi/src/settings/settings_schema_general.dart';
+import 'package:fushi/src/settings/settings_schema_listening.dart';
+import 'package:fushi/src/settings/settings_schema_navigation.dart';
+import 'package:fushi/src/settings/settings_schema_web_browser.dart';
 import 'package:fushi/src/settings/settings_schema_music.dart';
 import 'package:fushi/src/settings/settings_schema_local_services.dart';
 import 'package:fushi/src/settings/settings_schema_lookup.dart';
@@ -96,19 +101,24 @@ List<SettingsDestination> settingsSchemaDestinations() =>
 List<SettingsDestination> _buildDestinations() {
   // 导航分组与此处共用固定顺序；平台/模块可见性仍在展示时求值。
   return List<SettingsDestination>.unmodifiable(<SettingsDestination>[
+    buildGeneralDestination(),
     buildAppearanceDestination(),
+    buildNavigationDestination(),
     buildFloatingBallDestination(),
     buildReadingDestination(),
+    buildListeningDestination(),
     buildMangaDestination(),
     buildVideoDestination(),
     buildMusicDestination(),
     buildGameDestination(),
-    if (kMediaTrackingEnabled) buildMediaTrackingDestination(),
+    buildWebBrowserDestination(),
     buildLookupDestination(),
     buildCardCreationDestination(),
+    buildAiDestination(),
     buildModelsDestination(),
     buildDownloadsDestination(),
     buildServicesDestination(),
+    if (kMediaTrackingEnabled) buildMediaTrackingDestination(),
     buildLocalServicesDestination(),
     buildProfilesDestination(),
     buildSyncBackupDestination(),
@@ -123,6 +133,38 @@ List<SettingsDestination> _buildDestinations() {
 /// 分组结果与 schema 树同寿命（惰性算一次，见 [_SettingsSchemaCache]）——阅读器快捷
 /// 面板每次 setState 都要它，此前每次都连带把整棵树重建一遍。
 ///
+/// 子页最大嵌套层数；与设置搜索 / 控制通道索引同一上限（`child` 是每次现建的闭包，
+/// 做不了基于 identical 的环检测，只能靠深度封顶）。
+const int _kPlacementSubPageMaxDepth = 3;
+
+/// 按声明顺序遍历一页里的全部 item，并递归进子页
+/// （[SettingsNavigationItem.child]）；同一个 id 只访问一次。
+///
+/// 快捷面板的投影必须看得见子页：一个带 [ReaderPlacement] / [VideoPlacement] 的
+/// item 住在一级分类里还是分类的子页里，是设置页自己的排版决定，不该让它从阅读器 /
+/// 播放页的快捷面板里消失。
+///
+/// 与投影的既有纪律一致，这里**不**求值任何 `visible`（子页入口、分区、item 都不）：
+/// 它们大量依赖运行期状态，烘进惰性缓存等于冻死首次投影那一刻的状态；item 级
+/// 可见性由渲染器每帧求值。
+void _forEachItemDeep(
+  SettingsDestination page,
+  Set<String> seenIds,
+  void Function(SettingsItem item) visit, [
+  int depth = 0,
+]) {
+  for (final SettingsSection section in page.sections) {
+    for (final SettingsItem item in section.items) {
+      if (!seenIds.add(item.id)) continue;
+      visit(item);
+      if (item is! SettingsNavigationItem) continue;
+      final SettingsDestination Function()? child = item.child;
+      if (child == null || depth >= _kPlacementSubPageMaxDepth) continue;
+      _forEachItemDeep(child(), seenIds, visit, depth + 1);
+    }
+  }
+}
+
 /// [context] 用于求值 destination 级 `visible` 谓词（见 [_collectReaderItems]）。
 Map<ReaderGroup, List<SettingsItem>> collectReaderItems(
   SettingsContext context,
@@ -152,15 +194,14 @@ Map<ReaderGroup, List<SettingsItem>> _collectReaderItems(
 ) {
   final Map<ReaderGroup, List<SettingsItem>> grouped =
       <ReaderGroup, List<SettingsItem>>{};
+  final Set<String> seenIds = <String>{};
   for (final SettingsDestination destination in destinations) {
     if (!destination.isVisible(context)) continue;
-    for (final SettingsSection section in destination.sections) {
-      for (final SettingsItem item in section.items) {
-        final ReaderPlacement? placement = item.reader;
-        if (placement == null) continue;
-        grouped.putIfAbsent(placement.group, () => <SettingsItem>[]).add(item);
-      }
-    }
+    _forEachItemDeep(destination, seenIds, (SettingsItem item) {
+      final ReaderPlacement? placement = item.reader;
+      if (placement == null) return;
+      grouped.putIfAbsent(placement.group, () => <SettingsItem>[]).add(item);
+    });
   }
   for (final List<SettingsItem> items in grouped.values) {
     items.sort(
@@ -221,15 +262,14 @@ Map<VideoGroup, List<SettingsItem>> _collectVideoItems(
 ) {
   final Map<VideoGroup, List<SettingsItem>> grouped =
       <VideoGroup, List<SettingsItem>>{};
+  final Set<String> seenIds = <String>{};
   for (final SettingsDestination destination in destinations) {
     if (!destination.isVisible(context)) continue;
-    for (final SettingsSection section in destination.sections) {
-      for (final SettingsItem item in section.items) {
-        final VideoPlacement? placement = item.video;
-        if (placement == null) continue;
-        grouped.putIfAbsent(placement.group, () => <SettingsItem>[]).add(item);
-      }
-    }
+    _forEachItemDeep(destination, seenIds, (SettingsItem item) {
+      final VideoPlacement? placement = item.video;
+      if (placement == null) return;
+      grouped.putIfAbsent(placement.group, () => <SettingsItem>[]).add(item);
+    });
   }
   for (final List<SettingsItem> items in grouped.values) {
     items.sort(

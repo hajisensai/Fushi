@@ -281,7 +281,7 @@ void main() {
       body: <String, Object?>{'profile': kJa, 'targetField': 'Sentence'},
     );
     expect(code, 400, reason: '不给目标 = 不允许改全库');
-    // 点名中文那份、id 却是日语那份的（BUG-4480 / BUG-4388）：与不存在的 id 同一个回答——批量改记进
+    // 点名中文那份、id 却是日语那份的（BUG-4480 / BUG-4626）：与不存在的 id 同一个回答——批量改记进
     // missing、合并 404，哪份都不写。
     (code, body) = await request(
       'POST',
