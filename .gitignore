@@ -72,6 +72,8 @@ tmp_screen*.png
 # full (e.g. flutter_inappwebview_android needs android/src/main/res/*.xml so
 # R.layout.*/R.id.* resolve on a fresh checkout). Re-include their XML.
 !third_party/**/*.xml
+# Unraid container template (Unraid only reads .xml).
+!packages/fushi_server/docker/unraid/*.xml
 
 # QA screenshots and debug artifacts
 qa-*.png

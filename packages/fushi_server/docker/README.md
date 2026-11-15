@@ -1,0 +1,125 @@
+# fushi_server in Docker
+
+Run the headless Fushi server (library, sync, streaming, dictionaries, review,
+downloads, WebUI) in a container. Commands below run from this directory
+(`packages/fushi_server/docker`). 中文说明见 [../README.md](../README.md#docker)。
+
+## First run
+
+1. **Settings.** Copy the example file and edit it:
+
+   ```bash
+   cp .env.example .env
+   ```
+
+   | Setting | What to put |
+   |---|---|
+   | `PUID` / `PGID` | Your user on the host (`id -u`, `id -g`). Files in the config folder belong to it. |
+   | `FUSHI_CONFIG_DIR` | Where config, database and logs live (default `./config`). Back this up. |
+   | `FUSHI_MEDIA_DIR` | Your media folder; inside the container it is `/media`. |
+   | `FUSHI_LANGUAGE` | `en` or `zh`: WebUI, CLI and log language on the first start. |
+   | `FUSHI_SYNC_PORT` / `FUSHI_WEBUI_PORT` / `FUSHI_TORRENT_PORT` | Host ports, if the defaults (38765 / 38780 / 6881) are taken. |
+   | `TZ` | Your time zone, e.g. `Europe/Berlin`. |
+
+2. **Start.**
+
+   ```bash
+   docker compose up -d --build
+   ```
+
+   This builds the server from this checkout. The first build takes a while
+   (30+ minutes: a Linux toolchain image, then libtorrent and the native
+   libraries) and needs about 15 GB of disk. Later builds reuse the BuildKit
+   cache and only redo what changed.
+
+3. **Admin token.** The first start creates the config and prints a WebUI token:
+
+   ```bash
+   docker compose logs fushi-server | grep admin_token
+   ```
+
+   It is also the `admin_token:` line in `fushi_server.yaml` in your config
+   folder. To make a new one (the server must be stopped for this):
+
+   ```bash
+   docker compose stop fushi-server
+   docker compose run --rm fushi-server admin reset-token
+   docker compose start fushi-server
+   ```
+
+4. **WebUI.** Open `https://<host>:38780/` and sign in with the token. The
+   certificate is self-signed, so the browser warns once.
+
+5. **Pair a device.** In Fushi: Settings → Interconnect → add device → enter
+   `<host>:38765` (or your `FUSHI_SYNC_PORT`). A 6-digit PIN appears on the WebUI
+   Pairing page and in the log; type it into the app. The container does not
+   show up in the app's LAN list (no mDNS from Docker), so always enter the address.
+
+6. **Add a library.** WebUI → Libraries → add a path under `/media`, e.g.
+   `/media/anime` with type `video`, then Status → Scan.
+
+## Updating
+
+```bash
+git pull
+docker compose up -d --build
+```
+
+The database schema only moves forward: once a newer server has opened your
+data, an older image refuses it. Back up first (copy `FUSHI_CONFIG_DIR` with the
+container stopped, or `docker compose exec fushi-server fushi_server ctl backup create`). The in-app remote update
+is turned off inside the container; update the image instead.
+
+## Two ways to build, plus prebuilt images
+
+| | Command | Good for |
+|---|---|---|
+| **Source** (default) | `docker compose up -d --build` | The newest code from this checkout. Slow first build. |
+| **Release bundle** | `docker compose -f docker-compose.bundle.yml up -d --build` | Packaging a published [fushi-server release](https://github.com/hajisensai/fushi-server/releases) in about a minute. Only as new as the latest release. `FUSHI_SERVER_TAG` pins one; a `fushi_server-*-linux-x64.tar.gz` in `dist/` is used instead of downloading. |
+| **Prebuilt** | `FUSHI_IMAGE=ghcr.io/hajisensai/fushi-server:latest` in `.env`, then `docker compose up -d` (no `--build`) | Once the maintainer publishes images (`.github/workflows/server-docker-publish.yml`). Not available yet. |
+
+Both builds give the same container: same settings, volumes and ports.
+
+## Settings that matter later
+
+- **Language.** `FUSHI_LANGUAGE` only applies to the first start. Change it later
+  in WebUI → Settings → Language. A one-off CLI command in the other language:
+  `docker compose exec fushi-server env FUSHI_CLI_LANGUAGE=zh fushi_server status`.
+- **Permissions.** The container starts as root only to give the config folder
+  to `PUID:PGID`, then drops privileges for good. Media folders are never
+  re-owned; they only need to be readable by `PUID` (writable for upload targets).
+- **API keys.** `FUSHI_*` keys in `.env` (OpenSubtitles, SubDL, Jimaku, AniDB,
+  Bangumi, Plex) take precedence over keys saved in the server. `.env` is
+  git-ignored; never put keys in a Dockerfile.
+- **Host networking** (Linux hosts only): uncomment `network_mode: host` in
+  `docker-compose.yml` and remove `ports:`. Still no mDNS; pair by address.
+- **CLI.** Any server command runs inside the container as `PUID`:
+  `docker compose exec fushi-server fushi_server ctl status`.
+
+## NAS
+
+- **Unraid:** [`unraid/fushi-server.xml`](unraid/fushi-server.xml) is a template
+  for a prebuilt image (Docker → Add Container → Template). Until prebuilt images
+  exist, use the Compose Manager plugin with this folder.
+- **Synology (Container Manager):** Project → Create → choose this folder as the
+  path; it picks up `docker-compose.yml`. Set `PUID`/`PGID` to your DSM user
+  (`id` over SSH), and point `FUSHI_CONFIG_DIR` / `FUSHI_MEDIA_DIR` at shared
+  folders, e.g. `/volume1/docker/fushi-server` and `/volume1/video`. Check that
+  ports 38765, 38780 and 6881 are free (e.g. Download Station settings).
+- **TrueNAS SCALE:** Apps → Discover → Custom App (or Install via YAML with this
+  compose file). Use host-path storage for `/config` and `/media`, run as the
+  dataset owner's UID/GID through `PUID`/`PGID`, and keep the container ports
+  38765, 38780 and 6881.
+
+On any NAS the source build needs the disk space and patience above; the release
+bundle or a prebuilt image is lighter.
+
+## Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| `port is already allocated` | Another program (often a desktop Fushi) uses 38765 / 38780. Set `FUSHI_SYNC_PORT` / `FUSHI_WEBUI_PORT` and pair with the new port. |
+| `Permission denied` under `/config` | `PUID`/`PGID` do not match the folder owner. Fix them in `.env` and recreate: `docker compose up -d`. |
+| Container `unhealthy` | `docker compose logs fushi-server`. The health check calls `https://127.0.0.1:38765/api/ping` inside the container. |
+| Release-bundle build fails in `check_bundle_libs.sh` | The tarball needs a newer glibc than Debian trixie has (CI `linux-server` artifacts are built on a newer Ubuntu). Use a `release-server.yml` release or the source build. |
+| Database refused after going back to an older image | Expected (no downgrade). Restore the backup taken before updating. |
