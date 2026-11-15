@@ -298,8 +298,10 @@ Future<int> _deleteRemovedMangaOcrFiles(
 /// 输入契约，但**字典不同**：v0.3 自带纯文本字典 `ppocrv6_dict.txt`（19053 项，在
 /// PP-OCRv6 的 18708 项后追加了 345 个 JIS 汉字），输出 19055 类（blank + 字典 +
 /// 空格）。拿 PP-OCRv6 的 `inference.yml` 配它会在识别时因词表长度不符抛错。
-/// 钉 revision 的理由同 PP-OCRv6（`main` 可变）；该 revision 下 rec 的 LFS sha256
-/// 为 5288bd221a9a047c6b7d1ff56bb98de8c875fb613df98ebe8754946448bda540。
+/// 钉 revision 的理由同 PP-OCRv6（`main` 可变，且上游改写过历史：最早钉的 v0.2
+/// revision ba1d479e 整个 404，BUG-4492）；钉的是 `main` 上 2026-11-06 的提交，
+/// 该 revision 下 rec 的 LFS sha256 为
+/// 5288bd221a9a047c6b7d1ff56bb98de8c875fb613df98ebe8754946448bda540。
 ///
 /// 落盘名带版本：v0.2 的文件（`kellenok_manga_rec_v0.2.onnx`）绝不会被当成 v0.3。
 /// 远端 basename 是 `manga_rec.onnx` / `ppocrv6_dict.txt`，离线导入按字节数认。
@@ -357,7 +359,7 @@ const MangaOcrModelGeneration kMangaCtcGeneration = MangaOcrModelGeneration(
   recDictFormat: PpOcrCharacterDictFormat.plainText,
 );
 
-/// 上一代 rec（Kellenok v0.2，revision ba1d479e）的落盘名。
+/// 上一代 rec（Kellenok v0.2，`main` 历史里的 Release v0.2 提交 d090c421）的落盘名。
 const String kMangaCtcSupersededRecFileName = 'kellenok_manga_rec_v0.2.onnx';
 
 /// 逐列 CTC 的上一代（Kellenok rec v0.2 + PP-OCRv6 `inference.yml` 字典）。**不再
@@ -397,7 +399,7 @@ const MangaOcrModelGeneration kMangaCtcSupersededGeneration =
           fileName: kMangaCtcSupersededRecFileName,
           url:
               'https://huggingface.co/Kellenok/PP-OCRv6_manga/'
-              'resolve/ba1d479e8a61a20e8318c9758c73fbbbd290b98d/'
+              'resolve/d090c421598eadd2e179ad62c29ff0767492072c/'
               'rec/manga_rec_v0.2.onnx',
           expectedBytes: 21167540,
           role: MangaOcrModelRole.recognizer,

@@ -287,6 +287,13 @@ void main() {
       ],
     );
     expect(old.cacheSignature, startsWith('local-onnx-ctc-kellenok-v0.2-'));
+    // 这一代不再下载；URL 仍指向还解析得到的 Release v0.2 提交（BUG-4492）。
+    expect(
+      old.manifest.last.url,
+      'https://huggingface.co/Kellenok/PP-OCRv6_manga/resolve/'
+      'd090c421598eadd2e179ad62c29ff0767492072c/rec/manga_rec_v0.2.onnx',
+    );
+    expect(old.manifest.last.expectedBytes, 21167540);
     expect(old.recFileName, 'kellenok_manga_rec_v0.2.onnx');
     expect(old.recDictFileName, kPpOcrRecDictFileName);
     expect(old.recDictFormat, PpOcrCharacterDictFormat.paddleYaml);
@@ -380,6 +387,10 @@ void main() {
           kMangaCtcRecFileName,
           kMangaCtcRecDictFileName,
         ]);
+        // BUG-4492：上游改写历史后最早钉的 revision ba1d479e 整个 404。钉的必须是
+        // 完整 commit SHA，不能是可变的分支名。
+        expect(kMangaCtcRecRevision, matches(RegExp(r'^[0-9a-f]{40}$')));
+        expect(kMangaCtcRecRevision, isNot(startsWith('ba1d479e')));
         // 落盘名带版本：v0.2 的文件不会被当成 v0.3。
         expect(kMangaCtcRecFileName, 'kellenok_manga_rec_v0.3.onnx');
         expect(kMangaCtcRecDictFileName, 'kellenok_manga_rec_v0.3_dict.txt');

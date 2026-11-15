@@ -443,4 +443,116 @@ void main() {
       expect(await svc.resolveVideoSubtitle('video/playlist'), isNull);
     });
   });
+
+  group('BUG-4430 host 视频位置清单与位置端点同口径', () {
+    /// 经 HTTP 读一条视频在清单里的 (positionMs, positionUpdatedAtMs)。
+    Future<({int positionMs, int updatedAtMs})> listedPosition(
+      String id,
+    ) async {
+      final ({int status, Object? json}) res = await get('/api/library/videos');
+      expect(res.status, 200);
+      final RemoteVideoInfo v = <RemoteVideoInfo>[
+        for (final Object? raw in res.json! as List<Object?>)
+          RemoteVideoInfo.fromJson((raw! as Map).cast<String, Object?>()),
+      ].singleWhere((RemoteVideoInfo e) => e.id == id);
+      return (positionMs: v.positionMs, updatedAtMs: v.positionUpdatedAtMs);
+    }
+
+    /// 经 HTTP 读位置端点（client sweep 之外的 GET，也是 host PUT 判定的口径）。
+    Future<({int positionMs, int updatedAtMs})> endpointPosition(
+      String id,
+    ) async {
+      final ({int status, Object? json}) res = await get(
+        '/api/library/videos/$id/position',
+      );
+      expect(res.status, 200);
+      final Map<String, Object?> m = (res.json! as Map).cast<String, Object?>();
+      return (
+        positionMs: (m['positionMs']! as num).toInt(),
+        updatedAtMs: (m['positionUpdatedAtMs']! as num).toInt(),
+      );
+    }
+
+    test('host 只有行位置（无 prefs）：清单戳是 importedAt，与 GET 相同', () async {
+      const int importedMs = 1700000000000;
+      await db.upsertVideoBook(
+        VideoBooksCompanion.insert(
+          bookUid: 'video/row-only',
+          title: 'Row only',
+          videoPath: writeVideo('RowOnly.mkv', 16).path,
+          lastPositionMs: const Value(90000),
+          importedAt: const Value(importedMs),
+        ),
+      );
+
+      final ({int positionMs, int updatedAtMs}) listed = await listedPosition(
+        'video/row-only',
+      );
+      final ({int positionMs, int updatedAtMs}) viaGet = await endpointPosition(
+        'video/row-only',
+      );
+      expect(viaGet, (positionMs: 90000, updatedAtMs: importedMs));
+      expect(listed, viaGet);
+    });
+
+    test('prefs 戳早于 importedAt：清单与 GET 取同一个胜者', () async {
+      const int importedMs = 1700000000000;
+      await db.upsertVideoBook(
+        VideoBooksCompanion.insert(
+          bookUid: 'video/both',
+          title: 'Both',
+          videoPath: writeVideo('Both.mkv', 16).path,
+          lastPositionMs: const Value(90000),
+          importedAt: const Value(importedMs),
+        ),
+      );
+      await db.setPrefTyped<int>(
+        videoRemotePositionPrefKey('video/both'),
+        30000,
+      );
+      await db.setPrefTyped<int>(
+        videoRemotePositionAtPrefKey('video/both'),
+        importedMs - 1000,
+      );
+
+      final ({int positionMs, int updatedAtMs}) listed = await listedPosition(
+        'video/both',
+      );
+      final ({int positionMs, int updatedAtMs}) viaGet = await endpointPosition(
+        'video/both',
+      );
+      expect(viaGet, (positionMs: 90000, updatedAtMs: importedMs));
+      expect(listed, viaGet);
+    });
+
+    test('prefs 戳晚于 importedAt：两边都取 prefs 断点', () async {
+      const int importedMs = 1700000000000;
+      await db.upsertVideoBook(
+        VideoBooksCompanion.insert(
+          bookUid: 'video/newer',
+          title: 'Newer',
+          videoPath: writeVideo('Newer.mkv', 16).path,
+          lastPositionMs: const Value(90000),
+          importedAt: const Value(importedMs),
+        ),
+      );
+      await db.setPrefTyped<int>(
+        videoRemotePositionPrefKey('video/newer'),
+        120000,
+      );
+      await db.setPrefTyped<int>(
+        videoRemotePositionAtPrefKey('video/newer'),
+        importedMs + 5000,
+      );
+
+      final ({int positionMs, int updatedAtMs}) listed = await listedPosition(
+        'video/newer',
+      );
+      final ({int positionMs, int updatedAtMs}) viaGet = await endpointPosition(
+        'video/newer',
+      );
+      expect(viaGet, (positionMs: 120000, updatedAtMs: importedMs + 5000));
+      expect(listed, viaGet);
+    });
+  });
 }

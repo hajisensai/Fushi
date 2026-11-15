@@ -193,16 +193,15 @@ void main() {
     // 每次缓存刷新（每次评分、每次改卡）都要找「哪些卡继承了这张卡的历史」。修前按无索引的
     // field_key 扫整张修改记录表：语句数不变，但每次的扫描量随表长线性增长。
     final BulkFixture f = await BulkFixture.open(notes: 20);
-    final String plan =
-        (await f.db
-                .customSelect(
-                  'EXPLAIN QUERY PLAN SELECT entity_id, field_key '
-                  'FROM srs_field_edits WHERE $kSrsHistoryFromCondition '
-                  "AND +entity_kind = 'card'",
-                )
-                .get())
-            .map((QueryRow r) => r.read<String>('detail'))
-            .join(' / ');
+    // EXPLAIN 不是只读执行器放行的查询（只认 SELECT / WITH / VALUES）：走测试专用的原始通道。
+    final String plan = f.store.core
+        .debugSelectRaw(
+          'EXPLAIN QUERY PLAN SELECT entity_id, field_key '
+          'FROM srs_field_edits WHERE $kSrsHistoryFromCondition '
+          "AND +entity_kind = 'card'",
+        )
+        .map((Map<String, Object?> r) => r['detail']! as String)
+        .join(' / ');
     expect(
       plan,
       contains('COVERING INDEX idx_srs_field_edits_history_from'),

@@ -8,8 +8,8 @@
 /// 集合时会新建 `meta.json`）。本机只多了收进来的操作（与一轮同步收段同一条路径，[srsSync2Pull]）。
 ///
 /// **有界**（[srsSync2PullBounded]）：调用方（首次同步确认后的第一轮 / 档案合并）在一轮同步里等它，网络慢 / 卡住
-/// 不能让这一轮无限等。旧库迁移之前按**进度**判（[SrsPullBound.progress]：还在收就一直等，停滞才放弃，另有一个
-/// 很宽的总上限防挂死）；档案合并按固定时长（[SrsPullBound.budget]）。放弃时关上
+/// 不能让这一轮无限等。两处都按**进度**判（[SrsPullBound.progress]：还在收就一直等，停滞才放弃，另有一个很宽的
+/// 总上限防挂死），没有按固定时长截断的拉取。放弃时关上
 /// [SrsSync2PullGate]：在途的那一次内核调用做完（本地、有界），开着的收段会话放掉，之后迟到的网络结果再也碰不到
 /// 本机库；已收的批次都已提交，没收到的由之后的常规同步补齐（迁移照常做，只是可能多包几条，靠收敛合并与 Dedup）。
 library;
@@ -36,8 +36,12 @@ const Duration kSrsPullBeforeMigrateStall = Duration(minutes: 2);
 /// 集合留余量；到上限照常迁移（重复的部分由 Dedup 操作收敛）。
 const Duration kSrsPullBeforeMigrateCap = Duration(minutes: 30);
 
-/// 档案合并前收目标 uid 的数据最多等多久（用户在冲突弹窗里选定之后的一次性操作）。
-const Duration kSrsPullBeforeMergeBudget = Duration(minutes: 2);
+/// 档案合并之前收目标 uid 的数据（冲突弹窗里选定之后的并入、以及之后每一轮续做没做完的并入）的**停滞判定**与
+/// **总上限**：与旧库迁移之前那轮同一套取值。收的是同一种东西（位置上一个 uid 已有的整个集合，实测 229～413 秒），
+/// 以前按固定 2 分钟截断，几乎总是没收齐就并入：目标里还没有的写入者被改名成 `merged-…`，多出一份只能靠之后的
+/// 收敛合并。停滞判定等于旧的整段预算（位置完全卡死时不比以前多等）；到停滞 / 上限照常并入（已收的照用）。
+const Duration kSrsPullBeforeMergeStall = kSrsPullBeforeMigrateStall;
+const Duration kSrsPullBeforeMergeCap = kSrsPullBeforeMigrateCap;
 
 /// [SrsSync2PullGate] 关上之后还想调内核（到点之后才回来的网络结果）。
 class SrsSync2PullClosed implements Exception {
@@ -233,20 +237,15 @@ class SrsSync2PullGate implements SrsSync2Host {
   }
 }
 
-/// 只拉不发等多久。
+/// 只拉不发等多久：按进度判，没有「固定时长到点就截断」这种形态。
 final class SrsPullBound {
-  /// 固定时长：[total] 到点没做完就放弃（档案合并之前，[kSrsPullBeforeMergeBudget]）。
-  const SrsPullBound.budget(Duration total) : stall = null, cap = total;
+  /// 连续 [stall] 没有任何进展才放弃；[cap] 只是防挂死的总上限（旧库迁移之前
+  /// [kSrsPullBeforeMigrateStall] / [kSrsPullBeforeMigrateCap]，档案合并之前
+  /// [kSrsPullBeforeMergeStall] / [kSrsPullBeforeMergeCap]）。
+  const SrsPullBound.progress({required this.stall, required this.cap});
 
-  /// 按进度：连续 [stall] 没有任何进展才放弃；[cap] 只是防挂死的总上限（旧库迁移之前，
-  /// [kSrsPullBeforeMigrateStall] / [kSrsPullBeforeMigrateCap]）。
-  const SrsPullBound.progress({
-    required Duration this.stall,
-    required this.cap,
-  });
-
-  /// 停滞判定；null = 不看进度，只看 [cap]。
-  final Duration? stall;
+  /// 停滞判定。
+  final Duration stall;
 
   /// 总上限。
   final Duration cap;
@@ -270,7 +269,7 @@ typedef SrsPullTimerFactory =
 
 /// 在 [bound] 之内跑 [body]（它只能经交给它的 [SrsSync2PullGate] 碰 [host]）。
 ///
-/// **进展**（[SrsPullBound.stall] 非 null 时才看）：经闸门的一次内核调用成功返回，或 [body] 调了交给它的
+/// **进展**：经闸门的一次内核调用成功返回，或 [body] 调了交给它的
 /// `activity`（接 [srsSync2PullOnly] 的 `onActivity`：位置上一次读取成功返回）。**停滞** = 从开跑或上一次进展起
 /// 连续 [SrsPullBound.stall] 没有新的进展。出错的调用 / 读取不算进展：只会出错的位置不能把等待无限续下去。
 ///
@@ -288,12 +287,11 @@ Future<SrsPullOutcome> srsSync2PullBounded(
     if (!outcome.isCompleted) outcome.complete(o);
   }
 
-  final Duration? stall = bound.stall;
   Timer? stallTimer;
   void activity() {
-    if (stall == null || outcome.isCompleted) return;
+    if (outcome.isCompleted) return;
     stallTimer?.cancel();
-    stallTimer = timer(stall, () => finish(SrsPullOutcome.stalled));
+    stallTimer = timer(bound.stall, () => finish(SrsPullOutcome.stalled));
   }
 
   final SrsSync2PullGate gate = SrsSync2PullGate(host, onActivity: activity);
@@ -314,18 +312,3 @@ Future<SrsPullOutcome> srsSync2PullBounded(
   await gate.close();
   return result;
 }
-
-/// 在 [budget] 之内跑 [body]（固定时长，[SrsPullBound.budget]）。返回是否在期限内做完。见 [srsSync2PullBounded]。
-Future<bool> srsSync2PullWithin(
-  SrsSync2Host host,
-  Future<void> Function(SrsSync2Host gated) body, {
-  required Duration budget,
-  required void Function(Object error, StackTrace stack) onError,
-}) async =>
-    await srsSync2PullBounded(
-      host,
-      (SrsSync2Host gated, void Function() _) => body(gated),
-      bound: SrsPullBound.budget(budget),
-      onError: onError,
-    ) ==
-    SrsPullOutcome.done;

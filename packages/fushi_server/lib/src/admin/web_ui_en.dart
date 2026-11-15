@@ -108,6 +108,25 @@ const Map<String, String> kWebUiEnglish = <String, String>{
   '{0} ({1}) 请求配对，请在该设备输入：':
       '{0} ({1}) wants to pair. Enter this on that device:',
   '未知设备': 'Unknown device',
+  '局域网': 'LAN',
+  '公网或反向代理': 'internet or reverse proxy',
+  '来自{0}的配对因多次 PIN 错误暂停至 {1}':
+      'Pairing from {0} is paused until {1} after repeated wrong PINs',
+  '解除': 'Unlock',
+  '已解除': 'Unlocked',
+  '配对链接': 'Pairing link',
+  '一次性链接自带票据，配对不用 PIN；来自公网的 PIN 配对被暂停时也能用。':
+      'A single-use link carries its own ticket, so pairing needs no PIN. It works even while PIN pairing from the internet is paused.',
+  '生成配对链接': 'Create pairing link',
+  '复制': 'Copy',
+  '{0} 分钟内有效，只能用一次。在 Fushi 的互联设置里点「粘贴配对链接」使用。':
+      'Valid for {0} minutes, single use. In the interconnect settings of Fushi, tap "Paste pairing link".',
+  '浏览器不让复制，请手动选中':
+      'The browser blocked copying; select the link and copy it manually',
+  '已复制': 'Copied',
+  '互联服务没在运行': 'The interconnect service is not running',
+  '没有能放进链接的地址：配对链接只收 HTTPS 地址或 P2P 隧道。请开启 TLS、在「设置 › 远程访问」填写 HTTPS 公网地址，或开启 P2P 隧道':
+      'No address can go into the link: pairing links only carry HTTPS addresses or a P2P tunnel. Turn on TLS, add an HTTPS public address under Settings › Remote access, or turn on the P2P tunnel',
   '已配对设备': 'Paired devices',
   '我的设备': 'My device',
   '标为我的设备': 'Mark as my device',
@@ -244,7 +263,8 @@ const Map<String, String> kWebUiEnglish = <String, String>{
   '地址（https://…/api；带 ?apikey= 会自动拆进 key 栏）':
       'Address (https://…/api; a ?apikey= part moves into the key field)',
   '优先级（小的先搜）': 'Priority (lower is searched first)',
-  '分类（逗号分隔，可空）': 'Categories (comma-separated, optional)',
+  '分类（不选 = 全部）': 'Categories (none selected = all)',
+  '其他分类 ID（逗号分隔，可空）': 'Other category IDs (comma-separated, optional)',
   '清除已存的 key': 'Clear the stored key',
   // ── 在线字幕来源 ──
   '在线字幕来源': 'Online subtitle sources',
@@ -379,9 +399,9 @@ const Map<String, String> kWebUiEnglish = <String, String>{
       'Where cards go when a paired device uses "Save to paired device". A phone can choose otherwise in its own settings; if it has not, cards go to the phone\'s current profile when this server has it, otherwise to the default profile.',
   '落到': 'Save to',
   '自动（没配好 Anki 时进复习）': 'Automatic (Review when Anki is not set up)',
-  '换日时刻（0–23 点）': 'Day starts at (hour, 0–23)',
+  '换日时刻': 'Day starts at',
   '{0} 的制卡牌组（空 = 默认牌组）': 'Deck for {0} (empty = default deck)',
-  '监听地址（127.0.0.1 = 只限本机）': 'Listen address (127.0.0.1 = this machine only)',
+  '监听地址': 'Listen address',
   '共用 key（落到默认配置文件）': 'Shared key (goes to the default profile)',
   '{0} 专用 key': 'Key for {0}',
   '清除共用 key': 'Clear shared key',
@@ -413,7 +433,6 @@ const Map<String, String> kWebUiEnglish = <String, String>{
   'ffmpeg 路径（空=PATH）': 'ffmpeg path (empty = PATH)',
   'ffprobe 路径（空=PATH）': 'ffprobe path (empty = PATH)',
   'onnxruntime 动态库': 'onnxruntime library',
-  '上传配额（字节）': 'Upload quota (bytes)',
   'WebUI 端口': 'WebUI port',
   'torrent 引擎': 'Torrent engine',
   '内置引擎库路径（空=随包/系统）': 'Embedded engine library path (empty = bundled / system)',
@@ -429,6 +448,8 @@ const Map<String, String> kWebUiEnglish = <String, String>{
   'AI 推理档位': 'AI reasoning effort',
   'AI 允许明文 HTTP（本地推理服务）': 'AI: allow plain HTTP (local inference servers)',
   'AI 联网资料（维基辅助识别作品）': 'AI web knowledge (Wikipedia helps identify titles)',
+  'AI 模型能看图（字幕校对会附上视频画面）':
+      'AI model accepts images (subtitle proofreading sends video frames)',
   '扫描入库后自动 AI 整理库（把该在一起的归进合集，按量计费）':
       'Organize the library with AI after scans (groups related items into collections; billed per use)',
 
@@ -567,4 +588,11 @@ const Map<String, String> kWebUiEnglish = <String, String>{
   '全部': 'All',
   '仅错误': 'Errors only',
   '没有错误': 'No errors',
+  // ── 下拉选项 ──
+  '其他…': 'Other…',
+  '单位': 'Unit',
+  '所有网络（0.0.0.0）': 'All networks (0.0.0.0)',
+  '仅本机（127.0.0.1）': 'This machine only (127.0.0.1)',
+  '不用 AI': 'No AI',
+  '自定义': 'Custom',
 };

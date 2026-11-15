@@ -102,6 +102,7 @@ void main() {
         "'drop +\${chars}c (not running)'",
         "'-\${chars}c taken=",
         "'reject window ",
+        "'idle-cut window ",
         "'open ",
         "'seal ",
         "'write error ",
