@@ -1,12 +1,44 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-15T06:59:14Z",
+ "generatedAt": "2026-11-15T07:46:51Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "3823eaa74c9b3dff02b3feb04c9eb68cc2d111be",
-  "seq": 27339
+  "sha": "1657548692608310461c03f7fff359f849b8c6c8",
+  "seq": 27348
  },
  "builds": [
+  {
+   "seq": 27328,
+   "version": "3.3.0",
+   "sha": "a0f1e32db2224b15ff6d23082a81b44b39acd6c4",
+   "unknown": false,
+   "publishedAt": "2026-11-15T07:46:42Z",
+   "testflight": false,
+   "baseSeq": 27324,
+   "prs": [
+    3442,
+    3440
+   ],
+   "direct": [],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "ok"
+    },
+    "windows": {
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43685337361"
+    },
+    "macos": {
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43685337361"
+    },
+    "ios": {
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43685337361"
+    }
+   }
+  },
   {
    "seq": 27324,
    "version": "3.3.0",
@@ -109,46 +141,12 @@
    "unknown": false,
    "publishedAt": "2026-11-15T04:46:56Z",
    "testflight": true,
-   "baseSeq": 27253,
+   "baseSeq": 26884,
    "prs": [
     3429,
     3428,
     3372,
-    3430
-   ],
-   "direct": [
-    {
-     "sha": "a31ddeb6ddfd9e1d897b782c0d5ef4e57315c3cf",
-     "subject": "chore(bugs): settle BUG number collisions on cc2408d35"
-    }
-   ],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43665108112"
-    },
-    "windows": {
-     "state": "ok"
-    },
-    "macos": {
-     "state": "failed",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43665108077"
-    },
-    "ios": {
-     "state": "ok"
-    }
-   }
-  },
-  {
-   "seq": 27253,
-   "version": "3.3.0",
-   "sha": "6e9b32821675d90c74959c44b535055fb552e88e",
-   "unknown": false,
-   "publishedAt": "2026-11-15T03:33:29Z",
-   "testflight": false,
-   "baseSeq": 26884,
-   "prs": [
+    3430,
     3424,
     3427,
     3381,
@@ -181,6 +179,10 @@
    ],
    "direct": [
     {
+     "sha": "a31ddeb6ddfd9e1d897b782c0d5ef4e57315c3cf",
+     "subject": "chore(bugs): settle BUG number collisions on cc2408d35"
+    },
+    {
      "sha": "dc70a7d6ca8ea009326a74a0f47d6a7a57216364",
      "subject": "chore(bugs): settle BUG number collisions on 03bcc3a1a"
     }
@@ -188,49 +190,47 @@
    "truncated": false,
    "platforms": {
     "android": {
-     "state": "ok"
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43665108112"
     },
     "windows": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43658688931"
+     "state": "ok"
     },
     "macos": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43658688931"
+     "state": "failed",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43665108077"
     },
     "ios": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43658688931"
+     "state": "ok"
     }
    }
   }
  ],
  "pending": {
-  "headSha": "3823eaa74c9b3dff02b3feb04c9eb68cc2d111be",
-  "headSeq": 27339,
+  "headSha": "1657548692608310461c03f7fff359f849b8c6c8",
+  "headSeq": 27348,
   "prs": [
-   3434,
-   3442,
-   3440
+   3392,
+   3434
   ],
   "direct": [],
   "truncated": false,
   "platforms": {
    "android": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43686952727"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43690256997"
    },
    "windows": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43686952715"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43690256965"
    },
    "macos": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43686952715"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43690256965"
    },
    "ios": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43686952715"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43690256965"
    }
   }
  },
@@ -368,6 +368,15 @@
    "mergedAt": "2026-11-15T04:53:06Z",
    "additions": 806,
    "deletions": 398,
+   "labels": []
+  },
+  "3392": {
+   "number": 3392,
+   "title": "SRS 写路径第 16 步：原始 SQL 通道改由 cargo feature raw_sql 门控",
+   "author": "W1ght",
+   "mergedAt": "2026-11-15T07:30:37Z",
+   "additions": 344,
+   "deletions": 43,
    "labels": []
   },
   "3402": {
