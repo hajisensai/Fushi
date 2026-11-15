@@ -164,6 +164,22 @@ class VideoSourceWorkPlanner {
         );
         continue;
       }
+      if (!discWork && _membersAreDifferentWorks(entry.value)) {
+        // 清单合集装的是几部不同的作品（「剧场版合集」「观看顺序」这类 m3u8：
+        // 每个成员文件名解出的作品名都不一样）。把整个合集当一部作品去认，只能
+        // 得到「候选都不像」的待确认；各成员各自识别才对得上（BUG-4696）。合集
+        // 本身不动，它仍是用户的播放清单。
+        for (final VideoBookRow book in entry.value) {
+          result.add(
+            VideoSourceScrapeWork(
+              source: source,
+              title: book.title,
+              members: <VideoBookRow>[book],
+            ),
+          );
+        }
+        continue;
+      }
       entry.value.sort((VideoBookRow a, VideoBookRow b) {
         if (discWork) {
           final int byIndex = (sortIndex[(entry.key, a.bookUid)] ?? 0)
@@ -190,5 +206,20 @@ class VideoSourceWorkPlanner {
       return a.stableKey.compareTo(b.stableKey);
     });
     return List<VideoSourceScrapeWork>.unmodifiable(result);
+  }
+
+  /// 合集里 ≥ 2 个成员、且每个成员文件名解出的作品名两两不同：这是一份装着不同
+  /// 作品的清单，不是一部作品的各集。只要有两个成员同名（哪怕其余不同）就不算——
+  /// 那种部分混装靠文件哈希按作品拆（`_splitByAnidbWork`），这里不猜归属。
+  static bool _membersAreDifferentWorks(List<VideoBookRow> members) {
+    if (members.length < 2) return false;
+    final Set<String> seen = <String>{};
+    for (final VideoBookRow member in members) {
+      final String series = parseVideoFilename(
+        p.basename(member.videoPath),
+      ).series.toLowerCase().replaceAll(RegExp(r'\s+'), ' ').trim();
+      if (series.isEmpty || !seen.add(series)) return false;
+    }
+    return true;
   }
 }

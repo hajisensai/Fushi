@@ -168,6 +168,51 @@ void main() {
     },
   );
 
+  // BUG-4696：旧整理器把剧场版命名成 `<片名> - S00E01.mkv`，按文件名猜是剧集；
+  // 标题在 AniDB 只唯一对上一部电影时，以标题命中为准、按电影刮。
+  test(
+    'single file guessed as TV adopts the unique movie hit of the title',
+    () async {
+      final SourceLibraryRow source = await _source(
+        db,
+        directory,
+        title: '大雄与天空的理想乡',
+        fileName: '大雄与天空的理想乡 - S00E01.mkv',
+      );
+      final _Provider mal = _Provider(VideoMetadataProviderKind.mal);
+      final SourceScrapeReport report = await scrape(
+        VideoSourceScrapeCoordinator(
+          primaryProvider: VideoMetadataProviderKind.mal,
+          database: db,
+          config: const VideoSourceScrapeGlobalConfig(),
+          registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[mal]),
+          offlineIdentityResolver: AnimeOfflineIdentityResolver.custom(
+            search: (String query) async => query == '大雄与天空的理想乡'
+                ? <AniDbTitleSearchResult>[_hit(17000, query)]
+                : const <AniDbTitleSearchResult>[],
+            entryForAnidb: (int anidbId) async => AnimeIdentityEntry(
+              anidbId: anidbId,
+              malIds: const <int>{50000},
+              type: 'MOVIE',
+            ),
+          ),
+        ),
+        source,
+      );
+      expect(report.succeededWorks, 1, reason: '${report.errors}');
+      expect(mal.searchCalls, 0, reason: '换形态后离线唯一命中，不该再发标题搜索');
+      expect(mal.fetchedIds, contains('50000'));
+      expect(mal.fetchedKinds, everyElement(VideoMetadataMediaKind.movie));
+      expect(
+        report.warnings.any(
+          (SourceScrapeIssue issue) => issue.message.contains('多个同名候选'),
+        ),
+        isFalse,
+        reason: '第一次按剧集查不到的说明不该留在运行记录里',
+      );
+    },
+  );
+
   test(
     'MAL identity found by search relays a TMDB id through the mapping',
     () async {

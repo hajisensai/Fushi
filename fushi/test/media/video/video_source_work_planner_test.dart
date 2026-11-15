@@ -124,6 +124,47 @@ void main() {
     );
   });
 
+  test('成员分属不同作品的清单合集按文件各自识别（BUG-4696）', () async {
+    // 用户库实测：「哆啦A梦剧场版合集 播放列表」装着两部被旧整理器命名成
+    // `<片名> - S00E01.mkv` 的剧场版，整个合集当一部作品去认只能待确认。
+    final int sourceId = await addSource('D:/video');
+    await addVideo(
+      'sky',
+      'D:/video/哆啦A梦：大雄与天空的理想乡/Season 00/哆啦A梦：大雄与天空的理想乡 - S00E01.mkv',
+      sourceId,
+    );
+    await addVideo(
+      'earth',
+      'D:/video/哆啦A梦：大雄的地球交响乐/Season 00/哆啦A梦：大雄的地球交响乐 - S00E01.mkv',
+      sourceId,
+    );
+    final int mixed = await db.createMediaCollection(
+      '哆啦A梦剧场版合集 播放列表',
+      collectionType: 'playlist',
+    );
+    await db.addToCollection(mixed, MediaKind.video, 'sky');
+    await db.addToCollection(mixed, MediaKind.video, 'earth');
+    // 对照：同一部作品的两集仍是一个剧集单元。
+    await addVideo('s-01', 'D:/video/Show/Show - S01E01.mkv', sourceId);
+    await addVideo('s-02', 'D:/video/Show/Show - S01E02.mkv', sourceId);
+    final int show = await db.createMediaCollection(
+      'Show',
+      collectionType: 'playlist',
+    );
+    await db.addToCollection(show, MediaKind.video, 's-01');
+    await db.addToCollection(show, MediaKind.video, 's-02');
+
+    final SourceLibraryRow source = (await db.getMediaSourceById(sourceId))!;
+    final List<VideoSourceScrapeWork> works = await VideoSourceWorkPlanner(
+      db,
+    ).plan(source);
+
+    expect(
+      works.map((VideoSourceScrapeWork work) => work.stableKey).toSet(),
+      <String>{'book:sky', 'book:earth', 'collection:$show'},
+    );
+  });
+
   test('re0 方括号 PV、菜单与迷你动画不产生独立刮削作品', () async {
     final int sourceId = await addSource('D:/smb/re0');
     const String root =

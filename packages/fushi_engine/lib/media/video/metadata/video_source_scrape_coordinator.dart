@@ -9,6 +9,12 @@ import 'package:drift/drift.dart' show Value;
 import 'package:http/http.dart' as http;
 import 'package:fushi_engine/media/collections/collection_cover.dart'
     show applyScrapedCollectionCover;
+import 'package:fushi_engine/media/video/bluray/bluray_disc.dart'
+    show blurayPlaylistLooksEpisodic, kBlurayMaxPlaylistBytes;
+import 'package:fushi_engine/media/video/bluray/bluray_playlist.dart'
+    show BlurayPlaylist, parseBlurayPlaylist;
+import 'package:fushi_engine/media/video/bluray/bluray_source.dart'
+    show isBlurayPlaylistPath;
 import 'package:fushi_engine/media/video/metadata/anidb_file_identity_store.dart';
 import 'package:fushi_engine/media/video/metadata/anidb_hash_identity_service.dart';
 import 'package:fushi_engine/media/video/metadata/anidb_udp_file_client.dart';
@@ -1391,6 +1397,22 @@ class VideoSourceScrapeCoordinator
         : _looksEpisodic(localWork, parsed)
         ? VideoMetadataMediaKind.tv
         : VideoMetadataMediaKind.movie;
+    // 单标题蓝光盘：文件名是播放列表号（`00001.mpls`），按它解出来的「集号」不是
+    // 形态证据。看播放列表本身——串着几段时长相近的正片就是剧集盘（只有「全部
+    // 播放」、没有逐集播放列表），否则是电影盘（BUG-4695）。
+    // 形态只是按文件名猜的（单文件、没有已确认 / 下载身份、也不是看过结构的盘）：
+    // 离线标题索引按这个形态查不到、换一种形态却唯一精确命中时，以命中为准。
+    bool kindIsFileNameGuess = false;
+    if (!localWork.isEpisodic && kindEvidence == null) {
+      final VideoMetadataMediaKind? discKind = await _blurayTitleKind(
+        localWork.members.single.videoPath,
+      );
+      if (discKind != null) {
+        kind = discKind;
+      } else {
+        kindIsFileNameGuess = true;
+      }
+    }
     VideoMetadataWork? nfo =
         await VideoNfoReader(
           generatedArtifactChecker: DatabaseSidecarGeneratedArtifactChecker(
@@ -1678,16 +1700,39 @@ class VideoSourceScrapeCoordinator
     ];
     // 离线标题索引阶段（A2）：没有任何已知身份时，先拿标题去 AniDB 标题包做
     // 唯一精确命中，再经 Fribb 换成链上两家的 id。命中后按 id 直拉，不发搜索。
-    final AnimeOfflineIdentity? offline =
-        hashDecidesIdentity && hashLookup == null && !hashMappingAmbiguous
-        ? await _identifyOffline(
-            searchTitles,
-            kind,
-            warnings,
-            localWork,
-            primaryProvider: selectedProvider,
-          )
-        : null;
+    AnimeOfflineIdentity? offline;
+    if (hashDecidesIdentity && hashLookup == null && !hashMappingAmbiguous) {
+      final List<SourceScrapeIssue> offlineNotes = <SourceScrapeIssue>[];
+      offline = await _identifyOffline(
+        searchTitles,
+        kind,
+        offlineNotes,
+        localWork,
+        primaryProvider: selectedProvider,
+      );
+      if (offline == null && kindIsFileNameGuess) {
+        // `片名 - S00E01.mkv` 这类单文件按文件名猜成剧集，而标题在 AniDB 只对得上
+        // 一部电影（或反过来）：文件名里的序号是弱证据，标题唯一精确命中是强证据
+        // （BUG-4696）。换形态仍查不到 / 有歧义就保留原形态与原说明。
+        final VideoMetadataMediaKind otherKind =
+            kind == VideoMetadataMediaKind.movie
+            ? VideoMetadataMediaKind.tv
+            : VideoMetadataMediaKind.movie;
+        final AnimeOfflineIdentity? retried = await _identifyOffline(
+          searchTitles,
+          otherKind,
+          <SourceScrapeIssue>[],
+          localWork,
+          primaryProvider: selectedProvider,
+        );
+        if (retried != null) {
+          offline = retried;
+          kind = otherKind;
+          offlineNotes.clear();
+        }
+      }
+      warnings.addAll(offlineNotes);
+    }
     final List<VideoMetadataLookup> offlineLookups = <VideoMetadataLookup>[
       if (offline != null)
         for (final VideoMetadataProviderKind providerKind in chain)
@@ -5140,6 +5185,28 @@ class VideoSourceScrapeCoordinator
     return null;
   }
 
+  /// 蓝光盘标题 [videoPath] 的作品形态：读这条播放列表，串着几集就是剧集，否则
+  /// 电影。不是蓝光标题、或播放列表读不出来 → null（调用方沿用按文件名的判断）。
+  static Future<VideoMetadataMediaKind?> _blurayTitleKind(
+    String videoPath,
+  ) async {
+    if (!isBlurayPlaylistPath(videoPath)) return null;
+    try {
+      final File file = File(videoPath);
+      if (await file.length() > kBlurayMaxPlaylistBytes) return null;
+      final BlurayPlaylist? playlist = parseBlurayPlaylist(
+        await file.readAsBytes(),
+        id: p.basenameWithoutExtension(videoPath),
+      );
+      if (playlist == null) return null;
+      return blurayPlaylistLooksEpisodic(playlist)
+          ? VideoMetadataMediaKind.tv
+          : VideoMetadataMediaKind.movie;
+    } on FileSystemException {
+      return null;
+    }
+  }
+
   /// 当前可用的 AI 能力键；本趟已失败过时也视为不可用（见 [_aiIdentityFailedRunId]）。
   /// 返回 null 时调用方完全不问 AI，并按 [_skippedAfterAiFailure] 判断是否要记账。
   String? _usableAiCapability() {
@@ -5708,11 +5775,29 @@ List<String> videoScrapeTitleCandidates({
   required String parsedSeries,
   required String videoPath,
 }) {
-  final List<String> fileDerived = <String>[workTitle, parsedSeries];
-  final List<String> directoryDerived = <String>[
-    _pathSegmentFromEnd(videoPath, 1),
-    _pathSegmentFromEnd(videoPath, 2),
-  ];
+  final List<String> fileDerived;
+  final List<String> directoryDerived;
+  final String? discDirectory = _discReleaseDirectoryName(videoPath);
+  if (discDirectory != null) {
+    // 原盘标题（BUG-4695）：成员是 `<盘根>/BDMV/PLAYLIST/00001.mpls` /
+    // `<盘根>/VIDEO_TS/TITLE_01.dvdtitle`。文件名是播放列表号，父 / 祖父目录是
+    // `PLAYLIST` / `BDMV`——照散装文件的取法，拿去搜的是这两个词，换回一屏无关候选。
+    // 能当标题的只有盘名（标题名去掉 ` - NN` 序号，再去掉「上巻 / Disc 1」这类
+    // 卷标）和盘根往上第一层不是 `Disc 1` / `BD` 的发布目录名。
+    final String discTitle = stripDiscTitleOrdinal(workTitle);
+    final String withoutVolume = stripDiscVolumeMarker(discTitle);
+    fileDerived = <String>[withoutVolume, discTitle];
+    directoryDerived = <String>[
+      stripDiscVolumeMarker(_unwrapTitleBrackets(discDirectory)),
+      discDirectory,
+    ];
+  } else {
+    fileDerived = <String>[workTitle, parsedSeries];
+    directoryDerived = <String>[
+      _pathSegmentFromEnd(videoPath, 1),
+      _pathSegmentFromEnd(videoPath, 2),
+    ];
+  }
   final List<String> rawValues = <String>[
     for (final String value in fileDerived)
       if (!isEpisodeLabelTitle(value)) value,
@@ -5735,6 +5820,80 @@ List<String> videoScrapeTitleCandidates({
       if (value.trim().isNotEmpty && seen.add(value.trim().toLowerCase()))
         value.trim(),
   ];
+}
+
+/// 原盘标题名尾部的序号：多标题盘的 `<盘名> - 02`、特典的 `<盘名> - 00008`。
+final RegExp _discTitleOrdinal = RegExp(r'\s+-\s+\d{2,5}$');
+
+/// 盘名 / 发布目录名尾部的卷标：`上巻` `下巻` `第2巻` `Vol.1` `Disc 2` `BD1`。
+/// `前編` / `後編` 不在内——它们是片名的一部分（`最終楽章 前編`）。
+final RegExp _discVolumeMarker = RegExp(
+  r'[\s　._-]*(?:[上中下][巻卷]|第?\s*\d{1,2}\s*[巻卷]|'
+  r'(?:Vol(?:ume)?\.?|Disc|Disk|BD|DVD)[\s._-]*\d{1,2})$',
+  caseSensitive: false,
+);
+
+/// 只说明「这是第几张盘 / 什么介质」、不带作品名的目录名：`Disc 1` `BD` `BDROM`
+/// `DVD2` `Vol.3` `上巻`。纯数字目录不算（目录 `86` 是番名）。
+final RegExp _genericDiscDirectory = RegExp(
+  r'^(?:(?:BD(?:MV|ROM)?|DVD|BLU-?RAY|UHD|DISC|DISK|VOL(?:UME)?\.?)'
+  r'[\s._-]*\d{0,3}|[上中下][巻卷]|第?\d{1,3}[巻卷])$',
+  caseSensitive: false,
+);
+
+/// 去掉原盘标题名尾部的 ` - NN` 序号，得到盘名。
+String stripDiscTitleOrdinal(String title) =>
+    title.trim().replaceFirst(_discTitleOrdinal, '').trim();
+
+/// 去掉盘名尾部的卷标（`魔女の旅々　上巻` → `魔女の旅々`）；整个名字就是卷标时
+/// 原样返回，不给出空标题。
+String stripDiscVolumeMarker(String name) {
+  final String trimmed = name.trim();
+  final String stripped = trimmed.replaceFirst(_discVolumeMarker, '').trim();
+  return stripped.isEmpty ? trimmed : stripped;
+}
+
+/// 去掉整个名字外面包着的一对书名号 / 引号（`『特別編 …』` → `特別編 …`）。
+String _unwrapTitleBrackets(String name) {
+  final String trimmed = name.trim();
+  if (trimmed.length < 3) return trimmed;
+  const Map<String, String> pairs = <String, String>{'『': '』', '「': '」'};
+  final String? close = pairs[trimmed[0]];
+  if (close == null || !trimmed.endsWith(close)) return trimmed;
+  return trimmed.substring(1, trimmed.length - 1).trim();
+}
+
+/// [videoPath] 是原盘标题时，返回盘根往上第一层带作品名的目录名（最多再往上找两层，
+/// 跳过 `Disc 1` / `BD` 这类目录）；不是原盘标题返回 null，是原盘但找不到返回空串。
+///
+/// 与 [_pathSegmentFromEnd] 同理只做文本切分，两种分隔符都认，不经 `package:path`。
+String? _discReleaseDirectoryName(String videoPath) {
+  final List<String> segments = videoPath
+      .split(RegExp(r'[\\/]+'))
+      .where((String segment) => segment.isNotEmpty && segment != '.')
+      .toList();
+  if (segments.length < 3) return null;
+  final String file = segments.last.toLowerCase();
+  final String container = segments[segments.length - 2];
+  final int discRootIndex;
+  if (file.endsWith('.mpls') &&
+      container == 'PLAYLIST' &&
+      segments[segments.length - 3] == 'BDMV') {
+    discRootIndex = segments.length - 4;
+  } else if (file.endsWith('.dvdtitle') && container == 'VIDEO_TS') {
+    discRootIndex = segments.length - 3;
+  } else {
+    return null;
+  }
+  for (
+    int index = discRootIndex;
+    index >= 0 && index >= discRootIndex - 2;
+    index--
+  ) {
+    final String name = segments[index].trim();
+    if (!_genericDiscDirectory.hasMatch(name)) return name;
+  }
+  return '';
 }
 
 /// 取路径倒数第 [n] 层目录名（n = 1 是直接父目录）；取不到回空串。
