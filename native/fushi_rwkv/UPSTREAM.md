@@ -120,7 +120,9 @@ INTEGRATION.md 与 `reference/small_model_recurrent.py` 实现；不含发布包
 `qt/aqt/rwkv_inference/sm98/weights.{int8,f32}.bin`、`architecture.json`（与 sm72e25 逐字节相同，SHA-256
 `9bd41f11…`）与 `rslib/src/rwkv/testdata/sm98-vectors.json.gz`，哈希见 `src/lib.rs`（与该提交的 `manifest.json`
 一致）；随之加入回放预测的 show-time 查询行（INTEGRATION.md §6.10，README「sm98」），并让 RWKV-Curve 拒绝
-Instant-Only 小模型。上游 kuma3 / JSchoreels 的回放预测（`warm_up_reviews_sequential` 的 `query_input`）仍用作答
+Instant-Only 小模型。同一提交的 Tiny Instant-Only **sm101**（`qt/aqt/rwkv_inference/sm101/` 与
+`rslib/src/rwkv/testdata/sm101-vectors.json.gz`，哈希见 `src/lib.rs` 的 `TINY_MODEL_*_SHA256`）作设置里可选的
+省内存档，同一套代码加载、测试两套都对拍。上游 kuma3 / JSchoreels 的回放预测（`warm_up_reviews_sequential` 的 `query_input`）仍用作答
 间隔；Fushi 按 §6.10 改，只影响小模型。权重与测试向量不入库，Fushi 只在用户启用时按钉死 URL 下载（运行时首选上面
 的镜像）。
 

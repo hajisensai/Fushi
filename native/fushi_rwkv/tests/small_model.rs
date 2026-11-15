@@ -1,7 +1,8 @@
 // Copyright: Fushi contributors
 // License: GNU AGPL, version 3 or later; http://www.gnu.org/licenses/agpl.html
 //
-//! 小模型（Instant-Only sm98）对拍：上游 `rslib/src/rwkv/testdata/sm98-vectors.json.gz` 里 NumPy 参考
+//! 小模型对拍，默认的 Small Instant-Only（sm98，"w64"）与省内存的 Tiny Instant-Only（sm101，"w64-c1"）
+//! 两套都跑（同一套由权重张量目录推出架构的代码）：上游 `rslib/src/rwkv/testdata/<模型>-vectors.json.gz` 里 NumPy 参考
 //! 实现的黄金值（两位用户各 500 行，无泄漏输入，show-time 查询行，f32 / int8 两种权重），逐行比对
 //! p_imm、四个评分概率、标签时刻与 6 个扫描时刻的 p_curve（曲线头没训练过，这里只当网络数值对拍），
 //! 容差 1e-5（发布包自己的验收标准）。
@@ -11,7 +12,7 @@
 
 mod common;
 
-use common::{SmallFile, small_file};
+use common::{SmallFile, SmallModelId, small_file_of};
 use fushi_rwkv::{
     Model, ModelKind, ReviewInput, RwkvError, RwkvRuntime, SmallHeads, SmallInference, SmallModel,
     StatePrecision, show_time_query,
@@ -23,10 +24,10 @@ const CARD_FEATURES: usize = 92;
 /// 训练导出里标「已删除卡」的缺失 note / deck / preset 标志（无泄漏规则恒为 0）。
 const MISSING_ID_FLAGS: [usize; 3] = [13, 14, 15];
 
-fn small_model(file: SmallFile) -> SmallModel {
-    match Model::from_bytes(small_file(file)).expect("parse weights") {
+fn small_model(id: SmallModelId, file: SmallFile) -> SmallModel {
+    match Model::from_bytes(small_file_of(id, file)).expect("parse weights") {
         Model::Small(model) => model,
-        Model::Large(_) => panic!("{file:?} parsed as the large model"),
+        Model::Large(_) => panic!("{id:?} {file:?} parsed as the large model"),
     }
 }
 
@@ -67,8 +68,8 @@ struct Vectors {
     int8: Vec<Vec<f32>>,
 }
 
-fn vectors() -> Vec<Vectors> {
-    let json = flate2::read::GzDecoder::new(small_file(SmallFile::Vectors));
+fn vectors(id: SmallModelId) -> Vec<Vectors> {
+    let json = flate2::read::GzDecoder::new(small_file_of(id, SmallFile::Vectors));
     let users: Vec<UserVectors> = serde_json::from_reader(json).expect("parse vectors");
     assert_eq!(users.len(), 2);
     users
@@ -83,7 +84,7 @@ fn vectors() -> Vec<Vectors> {
                 features.extend_from_slice(&row.features);
             }
             Vectors {
-                name: user.name,
+                name: format!("{} {}", id.name(), user.name),
                 n,
                 interval: user.rows.iter().map(|r| r.interval).collect(),
                 features,
@@ -108,10 +109,10 @@ fn outputs(heads: &SmallHeads, elapsed: f32, sweep: &[f32]) -> Vec<f32> {
     out
 }
 
-fn check(weights: SmallFile, chunk: usize) -> f32 {
-    let model = small_model(weights);
+fn check(id: SmallModelId, weights: SmallFile, chunk: usize) -> f32 {
+    let model = small_model(id, weights);
     let mut worst = 0.0f32;
-    for v in vectors() {
+    for v in vectors(id) {
         let expected = match weights {
             SmallFile::F32Weights => &v.fp32,
             SmallFile::Int8Weights => &v.int8,
@@ -139,46 +140,103 @@ fn check(weights: SmallFile, chunk: usize) -> f32 {
 
 #[test]
 fn weight_files_load_as_the_small_model_with_the_published_schedule() {
-    for file in [SmallFile::F32Weights, SmallFile::Int8Weights] {
-        let model = Model::from_bytes(small_file(file)).unwrap();
-        assert_eq!(model.kind(), ModelKind::Small, "{file:?}");
+    for id in SmallModelId::ALL {
+        for file in [SmallFile::F32Weights, SmallFile::Int8Weights] {
+            let model = Model::from_bytes(small_file_of(id, file)).unwrap();
+            assert_eq!(model.kind(), ModelKind::Small, "{id:?} {file:?}");
+        }
+        let architecture: serde_json::Value =
+            serde_json::from_slice(small_file_of(id, SmallFile::Architecture)).unwrap();
+        let published: Vec<(usize, usize)> = architecture["layer_steps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|step| {
+                (
+                    step[0].as_u64().unwrap() as usize,
+                    step[1].as_u64().unwrap() as usize,
+                )
+            })
+            .collect();
+        for file in [SmallFile::F32Weights, SmallFile::Int8Weights] {
+            assert_eq!(
+                small_model(id, file).layer_steps(),
+                published,
+                "{id:?} {file:?}"
+            );
+        }
+        assert_eq!(architecture["zero_features"], serde_json::json!([22]));
+        assert_eq!(architecture["d_model"], 64);
     }
-    let architecture: serde_json::Value =
-        serde_json::from_slice(small_file(SmallFile::Architecture)).unwrap();
-    let published: Vec<(usize, usize)> = architecture["layer_steps"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|step| {
+}
+
+/// 两套架构确实不同（层数 / 调度步），且 Tiny 的每卡状态更小：架构由权重推出，不是写死的 sm 形状。
+#[test]
+fn tiny_model_has_its_own_architecture_and_smaller_card_state() {
+    let small = small_model(SmallModelId::Sm98, SmallFile::Int8Weights);
+    let tiny = small_model(SmallModelId::Sm101, SmallFile::Int8Weights);
+    assert_ne!(small.layer_steps(), tiny.layer_steps());
+    assert_ne!(small.fingerprint(), tiny.fingerprint());
+    // 同一段复习回放进两个模型，比每张卡 / 每个笔记的状态字节数（Fushi 用的 card / note 都是 int4）。
+    let per_entity = |model: &SmallModel, id: SmallModelId| {
+        let v = vectors(id).remove(0);
+        let mut runtime = SmallInference::new(model, StatePrecision::Int4);
+        runtime.run_prepared_rows(&v.features, &v.keys, &v.commit, 1 << 20);
+        let stats = runtime.stats();
+        (
             (
-                step[0].as_u64().unwrap() as usize,
-                step[1].as_u64().unwrap() as usize,
-            )
-        })
-        .collect();
-    assert_eq!(small_model(SmallFile::F32Weights).layer_steps(), published);
-    assert_eq!(architecture["zero_features"], serde_json::json!([22]));
-    assert_eq!(architecture["d_model"], 64);
+                stats.card_state_bytes / stats.cards,
+                stats.note_state_bytes / stats.notes,
+            ),
+            runtime.snapshot(),
+        )
+    };
+    let ((s, small_snapshot), (t, tiny_snapshot)) = (
+        per_entity(&small, SmallModelId::Sm98),
+        per_entity(&tiny, SmallModelId::Sm101),
+    );
+    eprintln!("int4 state per card / note: sm98 {s:?} B, sm101 {t:?} B");
+    assert!(t.0 < s.0 && t.1 <= s.1, "sm98 {s:?}, sm101 {t:?}");
+    // 换模型（设置里切 Small / Tiny）时旧快照按权重指纹被拒，排程内核据此全量重放；同模型照常恢复。
+    for (model, own, other) in [
+        (&small, &small_snapshot, &tiny_snapshot),
+        (&tiny, &tiny_snapshot, &small_snapshot),
+    ] {
+        let mut runtime = SmallInference::new(model, StatePrecision::Int4);
+        assert!(runtime.restore_snapshot(other).is_err());
+        runtime.restore_snapshot(own).unwrap();
+        assert_eq!(&runtime.snapshot(), own);
+    }
 }
 
 #[test]
 fn matches_reference_f32_weights() {
-    let worst = check(SmallFile::F32Weights, 1 << 20);
-    eprintln!("fp32 weights: worst diff {worst:e}");
+    for id in SmallModelId::ALL {
+        let worst = check(id, SmallFile::F32Weights, 1 << 20);
+        eprintln!("{id:?} fp32 weights: worst diff {worst:e}");
+    }
 }
 
 #[test]
 fn matches_reference_int8_weights() {
-    let worst = check(SmallFile::Int8Weights, 1 << 20);
-    eprintln!("int8 weights: worst diff {worst:e}");
+    for id in SmallModelId::ALL {
+        let worst = check(id, SmallFile::Int8Weights, 1 << 20);
+        eprintln!("{id:?} int8 weights: worst diff {worst:e}");
+    }
 }
 
 /// 无泄漏规则：把缺失 ID 标志（输入 13–15）全置 1，回放与查询的每个输出逐位不变。
 /// 去掉 `LEAK_FREE_ZERO_FEATURES` 的清零即红（这些权重对这三个输入并不是零响应）。
 #[test]
 fn missing_id_flags_change_no_output() {
-    let model = small_model(SmallFile::Int8Weights);
-    for v in vectors() {
+    for id in SmallModelId::ALL {
+        missing_id_flags_change_no_output_for(id);
+    }
+}
+
+fn missing_id_flags_change_no_output_for(id: SmallModelId) {
+    let model = small_model(id, SmallFile::Int8Weights);
+    for v in vectors(id) {
         assert!(
             MISSING_ID_FLAGS
                 .iter()
@@ -219,8 +277,14 @@ fn missing_id_flags_change_no_output() {
 /// 块边界（每次引擎调用的行数）只影响批处理方式，不影响结果。
 #[test]
 fn chunking_does_not_change_results() {
-    let v = vectors().remove(0);
-    let model = small_model(SmallFile::Int8Weights);
+    for id in SmallModelId::ALL {
+        chunking_does_not_change_results_for(id);
+    }
+}
+
+fn chunking_does_not_change_results_for(id: SmallModelId) {
+    let v = vectors(id).remove(0);
+    let model = small_model(id, SmallFile::Int8Weights);
     for precision in [
         StatePrecision::F32,
         StatePrecision::Int8,
@@ -237,7 +301,7 @@ fn chunking_does_not_change_results() {
                 assert_eq!(
                     a.p_logits.map(f32::to_bits),
                     b.p_logits.map(f32::to_bits),
-                    "{precision:?} chunk {chunk} row {row}"
+                    "{id:?} {precision:?} chunk {chunk} row {row}"
                 );
             }
         }
@@ -286,11 +350,17 @@ fn replay_inputs(v: &Vectors) -> Vec<(usize, ReviewInput)> {
 /// 查询行的 2–7 列是出示时刻的间隔（§6.10，`elapsed − duration / 1000`），按作答间隔构造即红。
 #[test]
 fn replay_builds_the_trained_query_and_update_rows() {
+    for id in SmallModelId::ALL {
+        replay_builds_the_trained_query_and_update_rows_for(id);
+    }
+}
+
+fn replay_builds_the_trained_query_and_update_rows_for(id: SmallModelId) {
     const COLUMNS: [std::ops::Range<usize>; 2] = [0..22, 23..24];
-    let model = small_model(SmallFile::Int8Weights);
+    let model = small_model(id, SmallFile::Int8Weights);
     let mut checked = [0usize; 2];
     let mut show_time_rows = 0;
-    for v in vectors() {
+    for v in vectors(id) {
         let inputs = replay_inputs(&v);
         let reviews: Vec<ReviewInput> = inputs.iter().map(|(_, input)| input.clone()).collect();
         let mut runtime = SmallInference::new(&model, StatePrecision::F32);
@@ -326,7 +396,7 @@ fn replay_builds_the_trained_query_and_update_rows() {
         }
     }
     eprintln!(
-        "checked {} query rows ({show_time_rows} with a show-time interval) and {} update rows",
+        "{id:?}: checked {} query rows ({show_time_rows} with a show-time interval) and {} update rows",
         checked[0], checked[1]
     );
     assert!(checked[0] > 100 && checked[1] > 100, "{checked:?}");
@@ -336,7 +406,13 @@ fn replay_builds_the_trained_query_and_update_rows() {
 /// Instant-Only 模型的曲线头没训练过：RWKV-Curve（作答时排程）一律拒绝，不给垃圾间隔；即时头照常。
 #[test]
 fn instant_only_small_model_refuses_rwkv_curve() {
-    let model = Model::from_bytes(small_file(SmallFile::Int8Weights)).unwrap();
+    for id in SmallModelId::ALL {
+        instant_only_small_model_refuses_rwkv_curve_for(id);
+    }
+}
+
+fn instant_only_small_model_refuses_rwkv_curve_for(id: SmallModelId) {
+    let model = Model::from_bytes(small_file_of(id, SmallFile::Int8Weights)).unwrap();
     assert!(!model.kind().has_trained_curve_head());
     let mut runtime = RwkvRuntime::new(&model, StatePrecision::Int4, 1).unwrap();
     let answer = ReviewInput {

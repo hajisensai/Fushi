@@ -373,6 +373,22 @@ show-time 输入，按条加权 LogLoss，配对用户 bootstrap 95% 区间）�
 `examples/model_compare.rs`）上没有重跑 sm98——本机没有那份数据集；作者的数字是 int8 状态、打分器自己的特征
 编码。
 
+## sm101（Tiny，设置里可选的「省内存」档）
+
+同一家族的 **Tiny Instant-Only = sm101**（"w64-c1"，同一提交 `qt/aqt/rwkv_inference/sm101/`，int8 权重 409,483
+字节，哈希见 `src/lib.rs` 的 `TINY_MODEL_*_SHA256`）：card / note 流各 1 层、deck 流 4 层（deck 的第 2、3 层去掉
+channel mixer），`layer_steps` 12 步。架构由权重张量目录推出（层数、交错调度、被去掉的 channel mixer），**与 sm98
+同一套代码加载，不需要改代码**；`tests/small_model.rs` 的每个用例两套都跑。
+
+| | sm98（Small，默认） | sm101（Tiny） |
+|---|---|---|
+| 即时头 LogLoss（作者打分器，722 留出用户） | 0.276191 | 0.27672 |
+| Fushi 的每卡状态（card / note 都 int4，实测槽长） | card 1,920 B + note 1,024 B = 2,944 B | card 1,024 B + note 1,024 B = 2,048 B（**约 −30%**） |
+
+（manifest 里「约 −26%」是 card int4 + note int8 的配置：3,530 → 2,622 B；Fushi 的 note 也是 int4，所以是 −30%。）
+切换 = 不同的权重指纹，旧快照被拒、全量重放一次（`tests/small_model.rs`
+`tiny_model_has_its_own_architecture_and_smaller_card_state` 钉住两边互拒、同模型照常恢复）。
+
 ## 快照
 
 大模型：`FRWKVSNAP1\0` + precision 字节（0 / 8 / 4）+ 上游 `append_warm_up_snapshot_binary` 的布局：
@@ -442,20 +458,21 @@ cargo test --profile quick --manifest-path native/fushi_rwkv/Cargo.toml
 ```
 
 权重缺失 / SHA-256 不符时测试**失败**并提示跑 fetch_model（不跳过）；`FUSHI_RWKV_MODEL`
-可指向别处的大模型权重，`FUSHI_RWKV_SMALL_DIR` 指向放着小模型四个文件（`sm98_weights.int8.bin`、
-`sm98_weights.f32.bin`、`sm98_architecture.json`、`sm98-vectors.json.gz`）的目录。
+可指向别处的大模型权重，`FUSHI_RWKV_SMALL_DIR` 指向放着两个小模型各四个文件（`sm98_weights.int8.bin`、
+`sm98_weights.f32.bin`、`sm98_architecture.json`、`sm98-vectors.json.gz`，sm101 同名）的目录。
 
 - `tests/parity.rs`：与上游对拍（夹具由 `tools/oracle` 把上游 `rslib/src/rwkv` 原样编译后产出，
   f32 / int8 各一份），上游自己测试里写死的两个数，批量回放 vs 逐条回放的状态逐位相同，
   快照中断续跑，损坏快照拒收，线程数无关，reset。
 - `tests/c_abi.rs`：只走 `extern "C"` 的往返与错误路径。
-- `tests/small_model.rs`：小模型与上游 NumPy 参考实现的黄金向量（`sm98-vectors.json.gz`，两位用户
+- `tests/small_model.rs`：两个小模型（sm98 / sm101）各自与上游 NumPy 参考实现的黄金向量（`<模型>-vectors.json.gz`，两位用户
   各 500 行，无泄漏输入、show-time 查询行，f32 / int8 权重）逐行对拍 p_imm、p_rating、标签时刻与 6 个扫描时刻的
   p_curve（曲线头没训练过，只当网络数值对拍），容差 1e-5（实测最大 7.5e-7）；**本库回放的特征构造与向量逐列一致**：
   从向量还原回放输入，回放时每条作答构造的查询行（406 行，全部带 show-time 间隔）与更新行（593 行）的输入
   0–21、23 与训练输入相差 ≤ 1e-4（查询行改回作答间隔即红，已做变异实测）；`show_time_query` 的取整与边界；
   缺失 ID 标志（输入 13–15）置 1 时 f32 / int4 下每个输出逐位不变（去掉清零即红，已做变异实测）；块边界不改结果
-  （三种精度逐位相同）；`layer_steps` 与 `architecture.json` 一致；RWKV-Curve 对它返回 Unsupported。
+  （三种精度逐位相同）；`layer_steps` 与 `architecture.json` 一致；RWKV-Curve 对它返回 Unsupported；sm101 与 sm98
+  架构不同、每卡状态更小、快照按权重指纹互拒。
 - `tests/forecast.rs`：假设作答不改状态、与真的作答一致；排程读的遗忘曲线（只测大模型）随时间不增、次日 Again
   低于 Easy，天数是曲线上「当天 R ≤ 目标、前一天 > 目标」的那天；`src/curve.rs` 的单元测试用已知
   形状的曲线钉住求解器（越线点向上取整、评分顺序、上限 / 下限）。

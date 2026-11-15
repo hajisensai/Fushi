@@ -69,4 +69,18 @@ Get-Pinned 'sm98_architecture.json' '9bd41f1189dc0113277d371223ce805612aaec07101
 Get-Pinned 'sm98-vectors.json.gz' 'c7d8df407966fccd8f98227241816e114ce9ed1dfea799587e481c1d5926a453' @(
     "$Small/rslib/src/rwkv/testdata/sm98-vectors.json.gz"
 )
+# Tiny 小模型 sm101：同一提交；SHA-256 同 src/lib.rs 的 TINY_MODEL_*_SHA256。
+Get-Pinned 'sm101_weights.int8.bin' '77703dd2f2a21a1bcadaedfed1cec93ee0fd6fd6d3c840be221e72b5e1c05066' @(
+    "$Mirror/77703dd2f2a21a1b-sm101-weights.int8.bin",
+    "$Small/qt/aqt/rwkv_inference/sm101/weights.int8.bin"
+)
+Get-Pinned 'sm101_weights.f32.bin' '2faacb5b913bcfbdc0e363532d533e3bcff6872c8358f1ef753ca87f9d2a60fd' @(
+    "$Small/qt/aqt/rwkv_inference/sm101/weights.f32.bin"
+)
+Get-Pinned 'sm101_architecture.json' '49650457329d43ff7f3f04f68926e371d49060699142cfec9497cb759ac7a75f' @(
+    "$Small/qt/aqt/rwkv_inference/sm101/architecture.json"
+)
+Get-Pinned 'sm101-vectors.json.gz' '18de8ae77a1a40986dc432531116dfb009beae2385001ef425389a3ad7919a9e' @(
+    "$Small/rslib/src/rwkv/testdata/sm101-vectors.json.gz"
+)
 exit 0

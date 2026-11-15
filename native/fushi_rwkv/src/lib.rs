@@ -125,6 +125,22 @@ pub const SMALL_MODEL_ARCHITECTURE_SHA256: &str =
 /// 的 SHA-256。
 pub const SMALL_MODEL_VECTORS_SHA256: &str =
     "c7d8df407966fccd8f98227241816e114ce9ed1dfea799587e481c1d5926a453";
+/// 省内存的 Tiny Instant-Only 小模型 sm101（"w64-c1"：card / note 流各 1 层、deck 流 4 层，每卡状态比 sm98
+/// 小；即时头 LogLoss 0.27672，sm98 是 0.276191）。来源同 [SMALL_MODEL_SOURCE_SHA] 提交的
+/// `qt/aqt/rwkv_inference/sm101/` 与 `rslib/src/rwkv/testdata/sm101-vectors.json.gz`。架构由权重张量目录推出，
+/// 同一套小模型代码加载；快照按权重指纹区分，换模型即全量重放。
+/// `weights.int8.bin`（运行时用，409,483 字节）的 SHA-256。
+pub const TINY_MODEL_INT8_SHA256: &str =
+    "77703dd2f2a21a1bcadaedfed1cec93ee0fd6fd6d3c840be221e72b5e1c05066";
+/// sm101 `weights.f32.bin`（1,270,749 字节，测试对拍用）的 SHA-256。
+pub const TINY_MODEL_F32_SHA256: &str =
+    "2faacb5b913bcfbdc0e363532d533e3bcff6872c8358f1ef753ca87f9d2a60fd";
+/// sm101 `architecture.json`（"w64-c1"）的 SHA-256。
+pub const TINY_MODEL_ARCHITECTURE_SHA256: &str =
+    "49650457329d43ff7f3f04f68926e371d49060699142cfec9497cb759ac7a75f";
+/// sm101 黄金向量 `sm101-vectors.json.gz` 的 SHA-256。
+pub const TINY_MODEL_VECTORS_SHA256: &str =
+    "18de8ae77a1a40986dc432531116dfb009beae2385001ef425389a3ad7919a9e";
 
 // ---------------------------------------------------------------------------
 // Rust API
