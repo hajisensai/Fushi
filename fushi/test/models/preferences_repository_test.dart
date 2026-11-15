@@ -1,3 +1,5 @@
+import 'package:fushi_engine/media/tracking/media_tracking_service.dart'
+    show kBangumiAccessTokenPref;
 import 'package:drift/drift.dart' hide isNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -68,10 +70,11 @@ void main() {
       for (final ModuleId module in ModuleId.values) {
         expect(
           repo.moduleEnabled(module),
-          module != ModuleId.srs,
+          module != ModuleId.srs && module != ModuleId.tracking,
           reason: '${module.name} 的出厂默认不对',
         );
-        expect(module.defaultEnabled, isTrue);
+        // Media tracking is the one module that is off by default.
+        expect(module.defaultEnabled, module != ModuleId.tracking);
       }
       for (final ModuleId module in ModuleId.values) {
         await repo.setModuleEnabled(module, false);
@@ -94,6 +97,44 @@ void main() {
           reason: '${module.name} 不该跟着 books 一起被打开',
         );
       }
+    });
+
+    test('Media tracking module: off by default, no sign-in keeps it off '
+        'and the decision is stored', () async {
+      expect(repo.moduleEnabled(ModuleId.tracking), isFalse);
+      await repo.settleTrackingModuleInstallDefault(hasPluginSignIn: false);
+      expect(repo.moduleEnabled(ModuleId.tracking), isFalse);
+      expect(repo.getPref(ModuleId.tracking.prefKey), isFalse);
+      // A later sign-in does not flip a decision already taken.
+      await repo.setPref(kBangumiAccessTokenPref, 'token');
+      await repo.settleTrackingModuleInstallDefault(hasPluginSignIn: true);
+      expect(repo.moduleEnabled(ModuleId.tracking), isFalse);
+    });
+
+    for (final ({String label, String? pref, bool plugin}) signIn
+        in <({String label, String? pref, bool plugin})>[
+          (label: 'Bangumi token', pref: kBangumiAccessTokenPref, plugin: false),
+          (label: 'plugin sign-in', pref: null, plugin: true),
+        ]) {
+      test('Media tracking module starts on once with an existing '
+          '${signIn.label}; a later sign-out keeps it on', () async {
+        if (signIn.pref case final String key) {
+          await repo.setPref(key, ' stored ');
+        }
+        await repo.settleTrackingModuleInstallDefault(
+          hasPluginSignIn: signIn.plugin,
+        );
+        expect(repo.moduleEnabled(ModuleId.tracking), isTrue);
+        if (signIn.pref case final String key) await repo.setPref(key, '');
+        await repo.settleTrackingModuleInstallDefault(hasPluginSignIn: false);
+        expect(repo.moduleEnabled(ModuleId.tracking), isTrue);
+      });
+    }
+
+    test('Media tracking module: a blank stored token is not a sign-in', () async {
+      await repo.setPref(kBangumiAccessTokenPref, '   ');
+      await repo.settleTrackingModuleInstallDefault(hasPluginSignIn: false);
+      expect(repo.moduleEnabled(ModuleId.tracking), isFalse);
     });
 
     test('AI module off: every AiFeature resolves to no provider, '

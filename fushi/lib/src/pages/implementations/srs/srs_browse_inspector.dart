@@ -536,19 +536,31 @@ class _EditTabState extends State<_EditTab> {
   @override
   void didUpdateWidget(_EditTab old) {
     super.didUpdateWidget(old);
+    // 只在库里读回了新数据时对账，且只认库这一侧真的变了的格子（反馈 a0lR-BHuJU）。
+    //
+    // 以前每次父级重建都拿 `widget.detail` 和「最近一次落库的值」比：停笔 800 ms 自动保存一开始就把
+    // [_saved] 改成新值，而检查器在新数据读回之前会先带着旧的 detail 重建一次（写入后浏览页 revision +1、
+    // setState），旧值 ≠ 新的 [_saved] 被当成「别处改了」，[SrsFieldModel.reset] 把字段换回旧值、编辑器按
+    // generation 整块重建——输入框失焦、光标丢失、刚打的字被换掉，等读回新值又换一次。
+    // 现在：detail 没换（同一份数据的重建）就什么都不做；换了也只看库里这一格相对上一份 detail 变没变，
+    // 变成的正是自己刚存进去的值（自己保存的回声）不算外部修改。
+    if (identical(old.detail, widget.detail)) return;
     // 同一条笔记被别处写了（批量操作 / 撤销）：没在改的字段换成新值。
     for (final SrsFieldDef f in widget.detail.noteType.fields) {
       final String v = widget.detail.note.field(f.id);
+      if (v == old.detail.note.field(f.id) || v == _saved[f.id]) continue;
       final SrsFieldModel? m = _models[f.id];
       if (m == null || _pending.containsKey(f.id)) continue;
-      if (v != _saved[f.id] && m.value == _saved[f.id]) {
+      if (m.value == _saved[f.id]) {
         _saved[f.id] = v;
         m.reset(v);
       }
     }
-    // 标签同理：外部改了、这边没有未保存的改动时换成新值。
+    // 标签同理：库里的标签变了、不是自己刚存的、这边也没有未保存的改动时换成新值。
     final List<String> tags = _normalTags(widget.detail.note.tags);
-    if (!_sameTags(tags, _savedTags) && !_tagsDirty) {
+    if (!_sameTags(tags, _normalTags(old.detail.note.tags)) &&
+        !_sameTags(tags, _savedTags) &&
+        !_tagsDirty) {
       _savedTags = tags;
       _tags.text = tags.join(' ');
     }

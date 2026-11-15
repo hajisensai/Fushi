@@ -415,6 +415,8 @@ table.rt,.rt tbody,.rt tr,.rt td{display:block;width:100%}
 </section>
 
 <section id="s-pairing">
+<div id="pairing-lockout"></div>
+<div class="card"><div class="card-head"><div><h2>配对链接</h2><p class="sup" style="margin:0">一次性链接自带票据，配对不用 PIN；来自公网的 PIN 配对被暂停时也能用。</p></div><button class="b sec" id="btn-pair-link">生成配对链接</button></div><div id="pair-link-out" hidden></div></div>
 <div id="pairing-pending"><div class="list"><div class="skel"></div></div></div>
 <h3 class="sh">已配对设备</h3>
 <div class="list" id="peers"><div class="skel"></div><div class="skel"></div></div>
@@ -620,7 +622,7 @@ function ask(msg, danger){
     d.showModal(); $('#dlg-no').focus();
   });
 }
-const REASON_TEXT = {disabled:T('订阅已停用，请先启用'), unrecognized:T('无法识别这个站点'), timedOut:T('站点响应超时'), invalidUrl:T('地址无效'), insecureHttp:T('这是明文 HTTP 地址：请改用 HTTPS，或勾选「允许明文 HTTP」')};
+const REASON_TEXT = {not_running:T('互联服务没在运行'), no_reachable_address:T('没有能放进链接的地址：配对链接只收 HTTPS 地址或 P2P 隧道。请开启 TLS、在「设置 › 远程访问」填写 HTTPS 公网地址，或开启 P2P 隧道'), disabled:T('订阅已停用，请先启用'), unrecognized:T('无法识别这个站点'), timedOut:T('站点响应超时'), invalidUrl:T('地址无效'), insecureHttp:T('这是明文 HTTP 地址：请改用 HTTPS，或勾选「允许明文 HTTP」')};
 async function api(path, opts){
   const r = await fetch('/api/admin/'+path, Object.assign({headers:{'Content-Type':'application/json'}}, opts||{}));
   if (r.status===401){ location.reload(); throw new Error('unauthorized'); }
@@ -725,11 +727,33 @@ $('#btn-scan').onclick = guard(async()=>{ await post('scan'); toast(T('已开始
 
 // ── 配对 ──
 function setPairBadge(pending){ $('#pair-badge').hidden = !pending; }
+// BUG-4391：管理员签发一次性配对链接（票据配对不走 PIN 预算）。再签一张即作废上一张。
+$('#btn-pair-link').onclick = guard(async()=>{
+  const r = await post('pairing/link');
+  const out = $('#pair-link-out');
+  out.innerHTML = `<div class="row"><input id="pair-link-uri" class="mono" readonly value="${esc(r.uri)}"><button class="b sec" id="btn-pair-link-copy">${esc(T('复制'))}</button></div><p class="sup">${esc(T('{0} 分钟内有效，只能用一次。在 Fushi 的互联设置里点「粘贴配对链接」使用。', Math.max(1, Math.round(r.expiresInSeconds/60))))}</p>`;
+  out.hidden = false;
+  $('#btn-pair-link-copy').onclick = guard(async()=>{
+    const input = $('#pair-link-uri');
+    // 明文 http 访问 WebUI 时不是安全上下文，没有 navigator.clipboard，退回选中复制。
+    if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(input.value);
+    else { input.select(); if (!document.execCommand('copy')) throw new Error(T('浏览器不让复制，请手动选中')); }
+    toast(T('已复制'));
+  });
+});
 async function loadPairing(){
   const p = await api('pairing');
   setPairBadge(p.pending);
-  $('#pairing-pending').innerHTML = p.pending
-    ? `<div class="pin-card"><div><b><span class="pulse"></span>${esc(T('{0} ({1}) 请求配对，请在该设备输入：', p.pending.deviceName||T('未知设备'), p.pending.remoteAddress||'?'))}</b><p class="sup">${fmtTime(p.pending.createdAt)}</p></div><div class="pin">${esc(p.pending.pin)}</div></div>`
+  const lockClass = {lan:T('局域网'), p2p:T('P2P 隧道'), public:T('公网或反向代理')};
+  const locks = Object.entries(p.lockout||{}).filter(([,v])=>v);
+  $('#pairing-lockout').innerHTML = locks.length
+    ? `<div class="card"><div class="card-head"><div>${locks.map(([k,v])=>`<p class="sup" style="margin:0">${tag('warn', T('来自{0}的配对因多次 PIN 错误暂停至 {1}', lockClass[k]||k, fmtTime(v)))}</p>`).join('')}</div><button class="b" id="btn-pair-unlock">${esc(T('解除'))}</button></div></div>`
+    : '';
+  if (locks.length) $('#btn-pair-unlock').onclick = guard(async()=>{ await post('pairing/unlock'); toast(T('已解除')); loadPairing(); });
+  // 待输入 PIN 按会话各一条（并发配对互不覆盖）；旧后端只有 pending 时退回单条。
+  const pendings = p.pendingList || (p.pending ? [p.pending] : []);
+  $('#pairing-pending').innerHTML = pendings.length
+    ? pendings.slice().reverse().map(x=>`<div class="pin-card"><div><b><span class="pulse"></span>${esc(T('{0} ({1}) 请求配对，请在该设备输入：', x.deviceName||T('未知设备'), x.remoteAddress||'?'))}</b><p class="sup">${fmtTime(x.createdAt)}</p></div><div class="pin">${esc(x.pin)}</div></div>`).join('')
     : `<div class="list">${empty(T('没有待处理的配对。在 Fushi 里添加互联设备并输入本机地址，PIN 会显示在这里。'), 'pairing')}</div>`;
   $('#peers').innerHTML = p.peers.map(x=>`<div class="lrow"><div class="lead">${icon('device')}</div><div class="txt"><div class="t">${esc(x.deviceName||'—')}${x.ownerDevice?tag('info', T('我的设备')):''}</div><div class="s">${esc([x.lastSeenIp, fmtTime(x.pairedAtMs)].filter(Boolean).join(' · '))}</div><div class="s mono">${esc(x.peerId)}</div></div><div class="trail">${x.deviceKeyVerified ? `<button class="b ${x.ownerDevice?'out':'sec'}" data-owner="${esc(x.peerId)}" data-on="${x.ownerDevice?'1':'0'}">${esc(x.ownerDevice?T('取消我的设备'):T('标为我的设备'))}</button>` : tag('', T('未证明设备钥匙'))}<button class="b text danger" data-revoke="${esc(x.peerId)}">${esc(T('吊销'))}</button></div></div>`).join('') || empty(T('还没有已配对设备'), 'device');
   const lb = p.leaderboardLink || {};
@@ -1130,10 +1154,10 @@ async function loadSrs(){
     <label class="f">${esc(T('换日时刻'))}<select id="srs-rollover">${Array.from({length:24},(_,h)=>`<option value="${h}" ${h===Number(cfg.rolloverHour)?'selected':''}>${String(h).padStart(2,'0')}:00</option>`).join('')}</select></label>
     ${servedList.map(p=>`<label class="f">${esc(T('{0} 的制卡牌组（空 = 默认牌组）', p.name||p.uid))}<input data-srs-deck="${esc(p.uid)}" list="srs-decks-${esc(p.uid)}" autocomplete="off" value="${esc((cfg.miningDecks||{})[p.uid]||'')}"><datalist id="srs-decks-${esc(p.uid)}"></datalist></label>`).join('')}</div>
     <div class="actions"><button class="b" id="btn-srs-save">${esc(T('保存'))}</button></div>`;
-  // 牌组框的建议：各份 profile 已有的牌组（取不到就不给建议，照样可手填新牌组名）。
+  // 牌组框的建议：各份 profile 已有的牌组，取自 ctl 的 `GET srs/decks?profile=`（AdminSrsCtl，name 是 `父::子` 全名；取不到就不给建议，照样可手填新牌组名）。
   servedList.forEach(p=>api('srs/decks?profile='+encodeURIComponent(p.uid)).then(r=>{
     const dl = document.getElementById('srs-decks-'+p.uid);
-    if (dl) dl.innerHTML = (r.decks||[]).map(d=>`<option value="${esc(d)}">`).join('');
+    if (dl) dl.innerHTML = (r.decks||[]).map(d=>d.name).sort().map(n=>`<option value="${esc(n)}">`).join('');
   }, e=>console.warn('srs decks', e)));
   $('#btn-srs-save').onclick = guard(async()=>{
     const miningDecks = {}; document.querySelectorAll('[data-srs-deck]').forEach(el=>{ if(el.value.trim()) miningDecks[el.dataset.srsDeck]=el.value.trim(); });

@@ -43,7 +43,7 @@ ModuleId? moduleOfHomeTab(HomeTab tab) => switch (tab) {
 bool isHomeTabVisible(HomeTab tab, ModuleVisibility visibility) =>
     visibility.isEnabledOrUngated(moduleOfHomeTab(tab));
 
-/// 模块 → 它的顶层 tab。五个横切模块（听书/制卡/在线服务/AI/同步）**没有 tab**，
+/// 模块 → 它的顶层 tab。六个横切模块（听书/制卡/在线服务/媒体追踪/AI/同步）**没有 tab**，
 /// 返回 `null`——它们只有设置分类与散落在各页的入口。
 HomeTab? homeTabOfModule(ModuleId module) => switch (module) {
   ModuleId.home => HomeTab.home,
@@ -59,6 +59,7 @@ HomeTab? homeTabOfModule(ModuleId module) => switch (module) {
   ModuleId.listening ||
   ModuleId.cardCreation ||
   ModuleId.services ||
+  ModuleId.tracking ||
   ModuleId.ai ||
   ModuleId.sync => null,
 };
@@ -98,6 +99,10 @@ bool hasAnyNavigationModule(ModuleVisibility visibility) =>
 ///   `videoQuickSettings` / `shortcuts`）不是设置主页上的一级分类，藏它们只会
 ///   让对应的合成面板整个消失。
 ModuleId? moduleOfSettingsDestination(SettingsDestinationId id) => switch (id) {
+  // 通用 / 导航与首页 / 浏览器：设备级，不跟任何模块开关。
+  SettingsDestinationId.general => null,
+  SettingsDestinationId.navigation => null,
+  SettingsDestinationId.webBrowser => null,
   SettingsDestinationId.appearance => null,
   SettingsDestinationId.floatingBall => null,
   SettingsDestinationId.profiles => null,
@@ -114,19 +119,19 @@ ModuleId? moduleOfSettingsDestination(SettingsDestinationId id) => switch (id) {
   SettingsDestinationId.appIcon => null,
   SettingsDestinationId.videoQuickSettings => null,
   SettingsDestinationId.shortcuts => null,
-  // 模型是设备级资源（本机 OCR / ASR 模型、系统 TTS）：不属任何模块。其中的
-  // 「LLM」子页仍按 `ai` → services 门控，见下。
+  // 本机模型是设备级资源（本机 OCR / ASR 模型、系统 TTS）：不属任何模块。
   SettingsDestinationId.models => null,
+  SettingsDestinationId.listening => ModuleId.listening,
   SettingsDestinationId.manga => ModuleId.manga,
   SettingsDestinationId.video => ModuleId.video,
   SettingsDestinationId.music => ModuleId.music,
   SettingsDestinationId.cardCreation => ModuleId.cardCreation,
   SettingsDestinationId.downloads => ModuleId.browse,
   SettingsDestinationId.game => ModuleId.games,
-  // 在线服务与媒体追踪同属「第三方服务」一个开关：追踪本就是靠在线服务的
-  // 凭据跑的，分成两个开关只会让用户关了一半还留着另一半。
   SettingsDestinationId.services => ModuleId.services,
-  SettingsDestinationId.mediaTracking => ModuleId.services,
+  // Media tracking is its own module since 2026-11-10 (off by default; it no
+  // longer depends on Services).
+  SettingsDestinationId.mediaTracking => ModuleId.tracking,
   // AI 自 2026-10-13 起是独立模块（用户要能整块关掉 AI 而不连坐在线服务）。
   SettingsDestinationId.ai => ModuleId.ai,
   // 互联是从同步备份拆出去的一级分类，共享同一套后端与私有状态，同一个开关。

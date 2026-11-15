@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:bonsoir/bonsoir.dart' show BonsoirBroadcast, BonsoirService;
 import 'package:drift/drift.dart' show Value;
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi_engine/ai/ai_settings.dart';
@@ -33,6 +34,7 @@ import 'package:fushi_engine/sync/video_remote_service.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job_manager.dart';
 import 'package:fushi_engine/sync/host_update/host_update_protocol.dart';
 import 'package:fushi_engine/sync/interconnect_device_name.dart';
+import 'package:fushi_engine/sync/interconnect_host_addresses.dart';
 import 'package:fushi_engine/sync/interconnect_leaderboard_link.dart';
 import 'package:fushi_engine/sync/subscriptions/host_subscription_host.dart';
 import 'package:fushi/src/sync/lan_discovery_service.dart';
@@ -119,6 +121,9 @@ class FushiSyncServerController extends ChangeNotifier {
     PrefStore Function()? prefsStore,
     AiSettingsSource Function()? aiRelaySettings,
     PlatformDeviceInfoService? deviceInfo,
+    @visibleForTesting InterconnectP2pHostPort Function()? p2pHostPort,
+    @visibleForTesting
+    BonsoirBroadcast Function(BonsoirService service)? broadcastFactory,
   }) : _navigatorKey = navigatorKey,
        _database = database,
        _syncDataDir = syncDataDir,
@@ -148,7 +153,9 @@ class FushiSyncServerController extends ChangeNotifier {
        // the desktop (machine-hostname) source; production wires the real
        // per-platform service so mobile hosts advertise their model, not
        // Android's "localhost" (TODO-1356).
-       _deviceInfo = deviceInfo ?? DesktopDeviceInfoService();
+       _deviceInfo = deviceInfo ?? DesktopDeviceInfoService(),
+       _p2pHostPortFactory = p2pHostPort,
+       _broadcastFactory = broadcastFactory;
 
   final GlobalKey<NavigatorState> _navigatorKey;
   final FushiDatabase Function() _database;
@@ -212,6 +219,15 @@ class FushiSyncServerController extends ChangeNotifier {
   /// 开关由引擎按请求现读 [_prefsStore]。null（单测 / 老调用方）= 端点 404。
   final AiSettingsSource Function()? _aiRelaySettings;
   final PlatformDeviceInfoService _deviceInfo;
+
+  /// P2P 隧道的 host 侧操作口（测试缝）。null = 本进程的真实运行时
+  /// （[_AppInterconnectP2pHostPort]）。
+  final InterconnectP2pHostPort Function()? _p2pHostPortFactory;
+  late final InterconnectP2pHostPort _p2p =
+      _p2pHostPortFactory?.call() ?? _AppInterconnectP2pHostPort(() => _repo);
+
+  /// LAN 广播的 Bonsoir 工厂（测试缝），原样转给 [LanBroadcastService]。
+  final BonsoirBroadcast Function(BonsoirService service)? _broadcastFactory;
 
   FushiSyncServer? _server;
   LanBroadcastService? _broadcast;
@@ -504,36 +520,32 @@ class FushiSyncServerController extends ChangeNotifier {
   // dialogs on the host by hammering /api/pair.
   bool _pairDialogOpen = false;
 
-  // TODO-961 M1: 最近一次 v2 配对会话 host 屏显的 6 位 PIN（pair/v2 阶段生成、
-  // confirm 阶段的审批弹窗显示）。一次一会话（_pairDialogOpen 串行化），故单值即可。
-  String? _pendingPairPin;
+  // BUG：当前审批 / 常驻 PIN 弹窗对应的配对会话 id。PIN 跟着会话走（弹窗捕获
+  // [FushiPairRequest.pin]），server 的收起回调只在 id 相符时收起本框——别的会话的
+  // confirm / 过期不得收起它。null = 无弹窗或 v1 请求（无会话）。
+  String? _pairDialogSessionId;
 
   // TODO-1330 / BUG：pinRequired 会话在 host 点「允许」后，弹窗不关、常驻显示 PIN 等
   // 对方输入；此句柄用于外部（client confirm 到达 / TTL）收起那个常驻弹窗。null=当前
   // 没有常驻 PIN 弹窗。串行化同 _pairDialogOpen，故单值即可。
   VoidCallback? _pendingPairPinDismiss;
 
-  // TODO-1330 / BUG-708：区分「审批未决」与「已允许后常驻显示 PIN 等对方输入」两态。
-  // 常驻态只是被动显示 PIN、审批决定早已交回，不该继续占用审批槽；否则一次配对被取消 /
-  // 未 confirm 时那个常驻弹窗会驻留至 TTL（≈90s），期间任何新配对（尤其「重新配对」）都被
-  // _pairDialogOpen 挡成 declined，用户无法重配。此标记让新请求识别常驻弹窗并先收起它再开
-  // 新审批。true 仅在 host 已允许、进入常驻 PIN 显示阶段期间。
-  bool _pairDialogLingering = false;
   // 收起常驻弹窗后等它彻底 teardown（whenComplete 清共享单值态）的信号，避免新旧弹窗争用
-  // _pendingPairPin / _pendingPairPinDismiss 单值字段。仅在等待收起旧常驻弹窗期间非 null。
+  // _pairDialogSessionId / _pendingPairPinDismiss 单值字段。仅在等待收起旧常驻弹窗期间非 null。
   Completer<void>? _pairDialogClosed;
 
   // 取代旧弹窗时等它 teardown 的预算。到点仍未 teardown = 异常态，本次配对
   // 按失败收尾（见 [_promptPairApproval]），不拖着悬挂状态往下走。
   static const Duration _pairSupersedeCloseTimeout = Duration(seconds: 2);
 
-  // BUG-987：当前打开的审批弹窗对应的来源地址（remoteAddress）。用于「同源重试
+  // BUG-987：当前打开的审批弹窗对应的来源标识（[FushiPairRequest.sourceKey]）。用于「同源重试
   // supersede 未决弹窗」——第一次配对被 client 放弃（超时/断网/取消）后，host 那个仍
   // 处于「审批未决」的申请框会驻留至 60s autoDeny，期间同一 client「重新刷新」重发的
   // 配对请求都被 _pairDialogOpen 挡成 declined、看不到新申请框。此字段让 _promptPairApproval
   // 识别「新请求与滞留弹窗同源」并先收起旧框再开新框；不同来源仍保留防叠弹拒绝（防恶意
-  // peer 顶掉别人正在审批的框）。null=当前无打开的弹窗。
-  String? _pairDialogRemoteAddress;
+  // peer 顶掉别人正在审批的框）。按 sourceKey 而非展示地址比：IPv6 同一 /64 内换地址
+  // 仍算同源。null=当前无打开的弹窗或来源无法识别。
+  String? _pairDialogSourceKey;
 
   /// BUG-1573：已 [dispose]。[stop] 是异步的，它尾部的 [notifyListeners] 会在
   /// `dispose()` 之后才跑到，撞 [ChangeNotifier] 的「dispose 后不得 notify」断言；
@@ -764,6 +776,9 @@ class FushiSyncServerController extends ChangeNotifier {
   Future<void> _rollbackFailedStart(FushiSyncServer? server) async {
     if (server != null && identical(_server, server)) {
       _server = null;
+      // 广播失败时 P2P 隧道可能已挂上：经串行队列卸下（排在在飞的 attach 之后），
+      // 再关 server，否则隧道转发残留到下一次启动（BUG-4396）。
+      await _detachP2p(server);
       await server.stop();
     }
     final LanBroadcastService? broadcast = _broadcast;
@@ -847,10 +862,10 @@ class FushiSyncServerController extends ChangeNotifier {
                 ? FushiDicts.dictionaryStyles
                 : const <String, String>{},
           )
+          // 本会话 PIN 由 server 生成，经 [FushiPairRequest.pin] 随审批请求交给弹窗显示
+          // （不设 onPairPinGenerated，不在宿主存共享单槽）。
           ..onPairRequest = _promptPairApproval
-          // TODO-961 M1: host 生成并暂存本会话 PIN，供 confirm 阶段审批弹窗显示。
-          ..onPairPinGenerated = _generatePairPin
-          // TODO-1330 / BUG：client 提交 confirm（已读到 PIN）后收起 host 常驻 PIN 弹窗。
+          // TODO-1330 / BUG：client 提交 confirm（已读到 PIN）后收起该会话的常驻 PIN 弹窗。
           ..onPairSessionResolved = _dismissPendingPairPinDialog
           ..lanRequiresPinProvider = _repo.getLanRequiresPin
           // TODO-961 M1b: confirm 成功后把 per-peer 凭据落库 + 供给 auth 校验的有效 token
@@ -859,7 +874,7 @@ class FushiSyncServerController extends ChangeNotifier {
           // 复习同步：已配对设备写进同步目录后，host 自己的 SRS 同步去抖跟一轮（srs_app_runtime.dart）。
           ..onClientWrite = _onClientWrite
           ..onClientUpload = _onClientUpload
-          ..pairedPeerTokensProvider = _loadPairedPeerTokens
+          ..pairedPeerCredentialsProvider = _loadPairedPeerCredentials
           // 地址集（docs/specs/2026-09-28-interconnect-remote-reach.md §1）：公网 /
           // 反代地址每次 capabilities 实时读，改完不必重启互联服务。
           ..hostId = hostId
@@ -996,8 +1011,10 @@ class FushiSyncServerController extends ChangeNotifier {
     _broadcast = null;
     final FushiSyncServer? server = _server;
     _server = null;
-    // 端点留着（client 选路也用它），只停入站；信任区监听口随 server.stop 关。
-    currentAppInterconnectP2pRuntime?.current?.hostStop();
+    // 端点留着（client 选路也用它），只停入站。卸载与挂载同走 [_serializeP2p]：
+    // 直连 hostStop 会被落在 attach 某次 await 里的那次 hostListen 反超，隧道对公网
+    // 开着却已没有 host（BUG-4396）。这里排在所有在飞 attach 之后。
+    if (server != null) await _detachP2p(server);
     await broadcast?.stop();
     await server?.stop();
     if (server != null) await _videoRemoteStopped?.call();
@@ -1033,27 +1050,34 @@ class FushiSyncServerController extends ChangeNotifier {
 
   Future<void> _attachP2p(FushiSyncServer server, {required bool tls}) =>
       _serializeP2p(() async {
-        if (!InterconnectP2pRuntime.isAvailable) return;
+        final InterconnectP2pHostPort p2p = _p2p;
+        if (!p2p.available) return;
+        // 每次 await 之后的检查都把 stillWanted() 放在**最后**求值：先求它再 await
+        // 偏好，stop 落在这次 await 里就会漏判（BUG-4396）。最后一道检查之后到
+        // hostListen 之间不再有 await。
         bool stillWanted() => identical(_server, server);
-        if (!stillWanted() || !await _repo.isInterconnectP2pEnabled()) return;
-        final InterconnectP2pRuntime runtime = appInterconnectP2pRuntime(_repo);
-        final InterconnectP2pNode? node = await runtime.ensure();
-        if (node == null || !stillWanted()) return;
-        if (!await _repo.isInterconnectP2pEnabled()) return;
+        if (!stillWanted()) return;
+        final bool enabled = await _repo.isInterconnectP2pEnabled();
+        if (!enabled || !stillWanted()) return;
+        final bool ready = await p2p.ensure();
+        if (!ready || !stillWanted()) return;
+        final bool enabledAfterEnsure = await _repo.isInterconnectP2pEnabled();
+        if (!enabledAfterEnsure || !stillWanted()) return;
         final int port = await server.startP2pListener();
-        if (!stillWanted() || !await _repo.isInterconnectP2pEnabled()) {
+        final bool enabledAfterListen = await _repo.isInterconnectP2pEnabled();
+        if (!enabledAfterListen || !stillWanted()) {
           await server.stopP2pListener();
           return;
         }
         // 先挂身份解析器再放流量进来：限流按隧道对端 NodeId 分桶。查当前 node
         // 而不是捕获这一个——换中继会重建端点。
-        server.p2pPeerResolver = (int p) => runtime.current?.hostPeer(p);
-        node.hostListen(port);
-        server.extraAddressesProvider = () => runtime.hostAddresses(tls: tls);
+        server.p2pPeerResolver = p2p.hostPeer;
+        p2p.hostListen(port);
+        server.extraAddressesProvider = () => p2p.hostAddresses(tls: tls);
       });
 
   Future<void> _detachP2p(FushiSyncServer server) => _serializeP2p(() async {
-    currentAppInterconnectP2pRuntime?.current?.hostStop();
+    _p2p.hostStop();
     server.extraAddressesProvider = null;
     server.p2pPeerResolver = null;
     await server.stopP2pListener();
@@ -1078,9 +1102,7 @@ class FushiSyncServerController extends ChangeNotifier {
     await _repo.setInterconnectP2pRelayUrls(urls);
     final FushiSyncServer? server = _server;
     if (server != null) await _detachP2p(server);
-    await _serializeP2p(
-      () async => currentAppInterconnectP2pRuntime?.restart(),
-    );
+    await _serializeP2p(_p2p.restart);
     if (server != null) await _attachP2p(server, tls: _serverUsesTls(server));
     notifyListeners();
   }
@@ -1116,6 +1138,9 @@ class FushiSyncServerController extends ChangeNotifier {
       deviceId: deviceId,
       port: boundPort,
       tlsEnabled: tlsEnabled,
+      // 本控制器自己的测试缝原样透传；生产构造时恒为 null（走默认 Bonsoir）。
+      // ignore: invalid_use_of_visible_for_testing_member
+      broadcastFactory: _broadcastFactory,
     );
     await _broadcast!.start();
   }
@@ -1125,15 +1150,6 @@ class FushiSyncServerController extends ChangeNotifier {
   /// hostname on desktop, the real hardware model on mobile — never Android's
   /// meaningless "localhost" hostname (TODO-1356).
   Future<String> _deviceName() => resolveInterconnectDeviceName(_deviceInfo);
-
-  /// TODO-961 M1: server 在 pair/v2 创建会话时回调，host 生成本会话 6 位 PIN 并
-  /// 暂存，供随后的 confirm 审批弹窗显示给用户。返回的 PIN 同时被 server 用于
-  /// confirm 阶段重算 HMAC proof 比对——同一值，绝不过线。
-  String _generatePairPin(FushiPairSession session) {
-    final String pin = FushiPairingProtocol.generatePin();
-    _pendingPairPin = pin;
-    return pin;
-  }
 
   /// TODO-961 M1b: server confirm 成功回调——把一台新配对设备的 per-peer 凭据 upsert
   /// 进 `fushi_paired_peers`（peerId UNIQUE，重复配对同一设备只轮换其 token）。
@@ -1168,11 +1184,14 @@ class FushiSyncServerController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// TODO-961 M1b: 供给 server auth 校验用的全部有效（未吊销）per-peer token 集合。
-  /// 吊销 = 删行，故只需读全表 token。
-  Future<Set<String>> _loadPairedPeerTokens() async {
+  /// TODO-961 M1b: 供给 server auth 校验用的全部有效（未吊销）per-peer 凭据
+  /// （peerId → token）。吊销 = 删行，故只需读全表；server 按 peerId 的 `legacy-`
+  /// 前缀区分旧 client 的行（BUG-4393）。
+  Future<Map<String, String>> _loadPairedPeerCredentials() async {
     final List<FushiPairedPeerRow> peers = await _database().getPairedPeers();
-    return peers.map((FushiPairedPeerRow p) => p.token).toSet();
+    return <String, String>{
+      for (final FushiPairedPeerRow p in peers) p.peerId: p.token,
+    };
   }
 
   /// 被标记为「我的设备」的已配对 peer（peerId）。只有它们能跟随本机账户自动登录。
@@ -1218,23 +1237,24 @@ class FushiSyncServerController extends ChangeNotifier {
 
   /// TODO-1330 / BUG：client 提交 confirm 后收起 host 那个常驻显示 PIN 的审批弹窗
   /// （见 [_promptPairApproval]）。作为 server 的 [FushiSyncServer.onPairSessionResolved]
-  /// 回调接线；无常驻弹窗时（免 PIN / 已关）为 no-op。
-  void _dismissPendingPairPinDialog() {
+  /// 回调接线；只收起 [sessionId] 对应的弹窗——别的会话的 confirm / 过期不碰它。
+  /// 无常驻弹窗时（免 PIN / 已关）为 no-op。
+  void _dismissPendingPairPinDialog(String sessionId) {
+    if (sessionId != _pairDialogSessionId) return;
     _pendingPairPinDismiss?.call();
   }
 
-  /// 测试缝（BUG-708）：直接驱动 host 审批弹窗，模拟 server 在 `_handlePairV2` 里
-  /// 「先 [_generatePairPin] 暂存 PIN，再调 [onPairRequest]」的时序。[seedPin] 非空时
-  /// 先写入 [_pendingPairPin]（等价 [_generatePairPin] 的效果），供 pinRequired 会话的
-  /// 弹窗显示。返回值与真实审批一致（true=允许 / false=拒绝或被叠弹挡下）。
+  /// 测试缝：等价 server 的 [FushiSyncServer.onPairSessionResolved] 回调。
   @visibleForTesting
-  Future<bool> debugPromptPairApproval(
-    FushiPairRequest request, {
-    String? seedPin,
-  }) {
-    if (seedPin != null) _pendingPairPin = seedPin;
-    return _promptPairApproval(request);
-  }
+  void debugPairSessionResolved(String sessionId) =>
+      _dismissPendingPairPinDialog(sessionId);
+
+  /// 测试缝（BUG-708）：直接驱动 host 审批弹窗，等价 server 调 [onPairRequest]。
+  /// PIN 由 [FushiPairRequest.pin] 携带。返回值与真实审批一致（true=允许 /
+  /// false=拒绝或被叠弹挡下）。
+  @visibleForTesting
+  Future<bool> debugPromptPairApproval(FushiPairRequest request) =>
+      _promptPairApproval(request);
 
   /// Server callback: a peer POSTed /api/pair. Ask the host user to allow the
   /// token handout via the app-wide navigator so the prompt appears even when
@@ -1242,7 +1262,7 @@ class FushiSyncServerController extends ChangeNotifier {
   /// request, a missing context, an explicit deny, or a 60s no-answer timeout.
   ///
   /// TODO-1330 / BUG（公网配对 PIN 时序）：把「审批结果」与「弹窗生命周期」解耦。旧
-  /// 实现里 host 点「允许」会立刻 pop 弹窗并清 [_pendingPairPin]，但 client 要等
+  /// 实现里 host 点「允许」会立刻 pop 弹窗抹掉 PIN，但 client 要等
   /// pair/v2 收到审批结果后才弹 PIN 输入框——于是 client 要输 PIN 时，host 屏上的 PIN
   /// 早没了。现在：点允许即把结果交回 server（[approval] completer，好让 client 拿到
   /// 会话去弹 PIN 框），但对 **pinRequired** 会话**不关窗**，继续常驻显示 PIN，直到
@@ -1250,19 +1270,17 @@ class FushiSyncServerController extends ChangeNotifier {
   /// 用户手动关、或会话 TTL 超时。免 PIN 会话行为不变（无 PIN 可显示，点选即关）。
   Future<bool> _promptPairApproval(FushiPairRequest request) async {
     // 先收起一个应被本次新请求取代的旧弹窗，等它彻底 teardown（whenComplete 清共享单值
-    // 态）再开新框，并把本会话刚生成的 PIN（可能被旧 teardown 清空）恢复回来。两种取代：
-    //   (a) TODO-1330 / BUG-708：旧弹窗是「已允许、常驻显示 PIN 等对方输入」（lingering）——
-    //       它已不占审批槽，收起它让「取消后重新配对」不被误判为 stacked 而拒绝。
-    //   (b) BUG-987：旧弹窗仍「审批未决」但与本次新请求同源（同 remoteAddress）——第一次
-    //       配对被 client 放弃（超时/断网/取消）后那个未决框会驻留至 60s autoDeny，期间同一
-    //       client「重新刷新」重发的配对都被 _pairDialogOpen 挡成 declined、看不到新申请框。
-    //       同源取代它即可让重试重新弹框；不同来源的未决框保留（防恶意 peer 顶掉别人正在
-    //       审批的框），仍由 _showPairApprovalDialog 的 _pairDialogOpen 拒绝。
+    // 态）再开新框。只有**同源**（同 sourceKey）的新请求能取代旧框，无论旧框是：
+    //   (a) TODO-1330 / BUG-708：「已允许、常驻显示 PIN 等对方输入」（lingering）——同一
+    //       client「取消后重新配对」不被误判为 stacked 而拒绝；
+    //   (b) BUG-987：仍「审批未决」——第一次配对被 client 放弃后那个未决框会驻留至 60s
+    //       autoDeny，同一 client 重试要能重新弹框。
+    // 不同来源的新请求一律不取代（常驻框也不行：它显示的 PIN 正等对方输入，被任意来源
+    // 顶掉就等于把别人的 PIN 换上屏），落到 _showPairApprovalDialog 的 _pairDialogOpen
+    // 被拒，旧框和它的 PIN 原样保留。
     final bool supersedeStale =
-        _pairDialogOpen &&
-        (_pairDialogLingering || _isSamePairSource(request.remoteAddress));
+        _pairDialogOpen && _isSamePairSource(request.sourceKey);
     if (supersedeStale) {
-      final String? incomingPin = _pendingPairPin;
       final Completer<void> closed = Completer<void>();
       _pairDialogClosed = closed;
       _pendingPairPinDismiss?.call();
@@ -1272,24 +1290,23 @@ class FushiSyncServerController extends ChangeNotifier {
         onTimeout: () => closedInTime = false,
       );
       // 超时兑现：旧弹窗没在预算内 teardown（它的 whenComplete 才是清共享单值态
-      // 的唯一地方）。旧实现仍继续往下走：把新会话的 PIN 写进仍属于旧弹窗的
-      // [_pendingPairPin]（旧弹窗随后 teardown 会把它清掉），并把这个永不会被完成的
+      // 的唯一地方）。旧实现仍继续往下走：新弹窗的会话 id / 收起句柄会被旧弹窗随后的
+      // teardown 清掉，并把这个永不会被完成的
       // [_pairDialogClosed] 留在字段里——下一个要取代的请求会把它覆盖，而旧弹窗
       // 真正 teardown 时又去 complete 别人的 completer。此路径一律按失败收尾：
       // 先把自己的 completer 从共享字段摘掉，再直接拒绝本次配对（client 重试即可，
       // 那时旧弹窗已收），不开新框、不碰共享单值态。
       if (identical(_pairDialogClosed, closed)) _pairDialogClosed = null;
       if (!closedInTime) return false;
-      _pendingPairPin = incomingPin;
     }
     return _showPairApprovalDialog(request);
   }
 
-  /// BUG-987：新配对请求的来源是否与当前打开的审批弹窗同源（同 remoteAddress）。用于
-  /// 「同源重试取代未决弹窗」。任一来源为空（无法解析来源 IP）时保守判为不同源——不取代，
+  /// BUG-987：新配对请求的来源是否与当前打开的审批弹窗同源（同 sourceKey）。用于
+  /// 「同源重试取代旧弹窗」。任一来源为空（无法识别来源）时保守判为不同源——不取代，
   /// 避免把两个匿名来源误当同源互相顶掉别人的审批框。
   bool _isSamePairSource(String? incoming) {
-    final String? current = _pairDialogRemoteAddress;
+    final String? current = _pairDialogSourceKey;
     if (current == null || current.isEmpty) return false;
     if (incoming == null || incoming.isEmpty) return false;
     return current == incoming;
@@ -1305,15 +1322,17 @@ class FushiSyncServerController extends ChangeNotifier {
     final BuildContext? ctx = _navigatorKey.currentContext;
     if (ctx == null) return Future<bool>.value(false);
     _pairDialogOpen = true;
-    _pairDialogLingering = false;
-    // BUG-987：记录本框来源，供同源新请求识别并取代滞留的未决框（见 _promptPairApproval）。
-    _pairDialogRemoteAddress = request.remoteAddress;
+    // BUG-987：记录本框来源，供同源新请求识别并取代旧框（见 _promptPairApproval）；
+    // 记录会话 id，server 只为本会话的 confirm / 过期收起本框。
+    _pairDialogSourceKey = request.sourceKey;
+    _pairDialogSessionId = request.sessionId;
 
     final Completer<bool> approval = Completer<bool>();
     // 只有「真的要显示 PIN」的 pinRequired 会话才走常驻分支；免 PIN / 无 PIN 走旧的
     // 「点选即关」行为（无 PIN 可留、留了也没意义）。
-    final bool lingerAfterApprove =
-        request.pinRequired && _pendingPairPin != null;
+    // PIN 读本请求捕获的值（跟着会话走），不读任何共享字段。
+    final String? pin = request.pinRequired ? request.pin : null;
+    final bool lingerAfterApprove = pin != null;
     Timer? autoDeny;
     Timer? lingerTimeout;
     BuildContext? dialogCtx;
@@ -1354,13 +1373,11 @@ class FushiSyncServerController extends ChangeNotifier {
       if (!approval.isCompleted) approval.complete(true);
       if (lingerAfterApprove) {
         // 常驻 PIN 阶段：不关窗，转成「等对方输入此 PIN」，直到 confirm / 手动 / TTL。
-        // 标记「常驻」态：审批决定已交回，此弹窗只被动显示 PIN，不再占审批槽（BUG-708）。
         approvedPhase = true;
-        _pairDialogLingering = true;
         setDialogState?.call(() {});
         // 安全兜底：对齐 server 会话 TTL（≈90s）到点仍没 confirm 就自动收起，避免
         // host 屏上留一个永不消失的 PIN 弹窗。
-        lingerTimeout ??= Timer(const Duration(seconds: 90), popDialog);
+        lingerTimeout ??= Timer(kFushiPairSessionTtl, popDialog);
       } else {
         popDialog();
       }
@@ -1386,8 +1403,6 @@ class FushiSyncServerController extends ChangeNotifier {
               final bool waiting = approvedPhase;
               // PIN 只在 host 屏幕显示，绝不过线（client 只回传 HMAC proof）。仅当本会话
               // 真要求 PIN（request.pinRequired）才显示，免 PIN 会话不显示「幽灵 PIN」。
-              final bool showPin =
-                  request.pinRequired && _pendingPairPin != null;
               return FushiDialogFrame(
                 maxWidth: 420,
                 insetPadding: EdgeInsets.symmetric(
@@ -1427,12 +1442,25 @@ class FushiSyncServerController extends ChangeNotifier {
                           fontWeight: FontWeight.w600,
                         ),
                       ),
-                      if (showPin) ...<Widget>[
+                      // BUG-4390：app 端回环对端仍算局域网（同机多实例 / 本机联调），
+                      // 但本机跑着反代 / 穿透时它可能是外网来的——如实提醒。
+                      if (_isLoopbackPairSource(
+                        request.remoteAddress,
+                      )) ...<Widget>[
+                        SizedBox(height: tokens.spacing.gap),
+                        Text(
+                          t.sync_pair_source_loopback_hint,
+                          style: Theme.of(c).textTheme.bodySmall?.copyWith(
+                            color: Theme.of(c).colorScheme.error,
+                          ),
+                        ),
+                      ],
+                      if (pin != null) ...<Widget>[
                         SizedBox(height: tokens.spacing.gap),
                         Text(t.sync_pair_pin_label),
                         SizedBox(height: tokens.spacing.gap),
                         Text(
-                          _pendingPairPin!,
+                          pin,
                           style: Theme.of(c).textTheme.headlineMedium?.copyWith(
                             fontFeatures: const <FontFeature>[
                               FontFeature.tabularFigures(),
@@ -1490,9 +1518,8 @@ class FushiSyncServerController extends ChangeNotifier {
         autoDeny?.cancel();
         lingerTimeout?.cancel();
         _pairDialogOpen = false;
-        _pairDialogLingering = false;
-        _pairDialogRemoteAddress = null;
-        _pendingPairPin = null;
+        _pairDialogSourceKey = null;
+        _pairDialogSessionId = null;
         _pendingPairPinDismiss = null;
         // 若有新配对正等本（常驻）弹窗收起，放行它继续（BUG-708）。
         if (_pairDialogClosed?.isCompleted == false) {
@@ -1507,6 +1534,16 @@ class FushiSyncServerController extends ChangeNotifier {
     return approval.future;
   }
 
+  /// 配对来源是否本机回环（BUG-4390）。[remote] 是引擎的展示串：裸地址、
+  /// `<地址> (proxied)` / `<地址> (via <代理>)` 或隧道标记，只看第一段地址。
+  static bool _isLoopbackPairSource(String? remote) {
+    final String first = (remote ?? '').trim().split(' ').first;
+    final InternetAddress? addr = InternetAddress.tryParse(
+      FushiPairingProtocol.unmapIPv4MappedAddress(first),
+    );
+    return addr != null && addr.isLoopback;
+  }
+
   /// "<name> · <ip>" when both are known, else whichever is present, else a
   /// generic label so the prompt always names a requester.
   String _pairRequesterLabel(FushiPairRequest request) {
@@ -1517,4 +1554,64 @@ class FushiSyncServerController extends ChangeNotifier {
     if (ip.isNotEmpty) return ip;
     return t.sync_pair_unknown_device;
   }
+}
+
+/// host 侧 P2P 隧道的操作口：控制器只经它挂载 / 卸载 / 换中继，且一律在
+/// `_serializeP2p` 里调用（BUG：stop / 启动回滚曾绕过串行队列直连运行时）。
+/// [InterconnectP2pNode] 只有私有构造，测试造不出假 node，所以 [hostListen]
+/// 收进接口、接口不暴露 node。
+abstract interface class InterconnectP2pHostPort {
+  /// 原生库是否可用。
+  bool get available;
+
+  /// 确保端点已启动；不可用 / 启动失败 → false。
+  Future<bool> ensure();
+
+  /// 把隧道入站流量转到本机信任区监听口。
+  void hostListen(int port);
+
+  /// 停止接受入站隧道（端点留着，client 选路也用它）。
+  void hostStop();
+
+  /// 信任区监听口上某条连接的隧道对端 NodeId。
+  String? hostPeer(int remotePort);
+
+  /// 地址集里本机的 P2P 地址。
+  List<InterconnectHostAddress> hostAddresses({required bool tls});
+
+  /// 中继配置变了：关掉旧端点，下次 [ensure] 按新配置重建。
+  Future<void> restart();
+}
+
+/// 本进程真实的 P2P 运行时（[appInterconnectP2pRuntime]）。
+class _AppInterconnectP2pHostPort implements InterconnectP2pHostPort {
+  _AppInterconnectP2pHostPort(this._repo);
+
+  final SyncRepository Function() _repo;
+
+  @override
+  bool get available => InterconnectP2pRuntime.isAvailable;
+
+  @override
+  Future<bool> ensure() async =>
+      (await appInterconnectP2pRuntime(_repo()).ensure()) != null;
+
+  @override
+  void hostListen(int port) =>
+      currentAppInterconnectP2pRuntime?.current?.hostListen(port);
+
+  @override
+  void hostStop() => currentAppInterconnectP2pRuntime?.current?.hostStop();
+
+  @override
+  String? hostPeer(int remotePort) =>
+      currentAppInterconnectP2pRuntime?.current?.hostPeer(remotePort);
+
+  @override
+  List<InterconnectHostAddress> hostAddresses({required bool tls}) =>
+      currentAppInterconnectP2pRuntime?.hostAddresses(tls: tls) ??
+      const <InterconnectHostAddress>[];
+
+  @override
+  Future<void> restart() async => currentAppInterconnectP2pRuntime?.restart();
 }

@@ -59,6 +59,13 @@ enum StoreRestrictedCapability {
   /// YouTube），理由与插件音源的后半条相同。消费端问 `youtube_music_gate.dart`。
   onlineMusicSource,
 
+  /// Tracking site plugins: user-installed JS plugins that read and write the
+  /// user's list on a third-party tracking site. Same reason as
+  /// [onlineMusicSource]: the app downloads and runs third-party code, and the
+  /// iOS umbrella library has no JS engine
+  /// (docs/specs/2026-11-10-tracking-plugins.md).
+  trackingPlugins,
+
   /// 统一下载中心（torrent / 磁力 / 任意直链队列），含外接 qBittorrent 后端。
   ///
   /// 只指**下载中心**这一形态：用户贴任意链接 / 种子、由本 app 代为下载第三方

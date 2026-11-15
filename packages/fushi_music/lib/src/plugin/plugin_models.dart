@@ -133,6 +133,8 @@ class MusicPluginManifest {
     required this.searchTypes,
     required this.permissions,
     required this.networkDomains,
+    this.kind = kindMusic,
+    this.tracking,
     this.author,
     this.description,
     this.homepage,
@@ -140,7 +142,12 @@ class MusicPluginManifest {
 
   factory MusicPluginManifest.fromJson(Map<String, Object?> j) {
     final Map<String, Object?> net = _map(j['network']);
+    final Object? tracking = j['tracking'];
     return MusicPluginManifest(
+      kind: _str(j['kind']) ?? kindMusic,
+      tracking: tracking is Map<Object?, Object?>
+          ? Map<String, Object?>.unmodifiable(_map(tracking))
+          : null,
       id: j['id']! as String,
       name: j['name']! as String,
       version: j['version']! as String,
@@ -154,6 +161,22 @@ class MusicPluginManifest {
       homepage: _str(j['homepage']),
     );
   }
+
+  /// 清单 `kind` 缺省值：音乐插件（旧清单不带 `kind`）。
+  static const String kindMusic = 'music';
+
+  /// 追踪插件（docs/specs/2026-11-10-tracking-plugins.md）：共用沙箱引擎，但不是音乐插件，
+  /// [MusicPluginManager] 一律拒装、不列、不开。
+  static const String kindTracking = 'tracking';
+
+  /// 插件种类（Rust 侧只放行 [kindMusic] / [kindTracking]）。
+  final String kind;
+
+  /// 追踪插件的站点描述（清单 `tracking` 原样，Rust 侧已校验）；音乐插件为 null。
+  final Map<String, Object?>? tracking;
+
+  /// 是音乐插件（音乐宿主只认这一种）。
+  bool get isMusic => kind == kindMusic;
 
   final String id;
   final String name;

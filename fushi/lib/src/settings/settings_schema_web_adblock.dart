@@ -13,7 +13,8 @@ import 'package:fushi_web_core/fushi_web_core.dart';
 /// 内置过滤列表目录（Rust 给，进程内只取一次）。
 final List<AdblockCatalogEntry> _catalog = AdblockCore.catalog();
 
-/// 「系统 › 网页广告拦截」分组：总开关、订阅列表、立即更新、白名单。
+/// 「浏览器 › 广告拦截」分组（默认折叠）：总开关、订阅列表、立即更新、白名单。
+/// 浏览器页自己的设置里它是一个独立分组页，两处是同一批行。
 ///
 /// 状态全在 Rust 核心里（订阅集、开关、白名单、列表缓存），这里**只渲染**
 /// [WebAdblockService.snapshot]、把用户操作转成命令；经 [SettingsSection.liveListenable]

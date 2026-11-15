@@ -124,6 +124,10 @@ add_library(fushi_voice_hook SHARED
   "hook/adapters/softpal_lookup.inc"
   "hook/adapters/softpal_profile.h"
   "hook/adapters/softpal_text.inc"
+  "hook/adapters/entisgls_adapter.inc"
+  "hook/adapters/entisgls_core.h"
+  "hook/adapters/entisgls_profile.h"
+  "hook/adapters/entisgls_text.inc"
   "hook/adapters/nitroplus_adapter.inc"
   "hook/adapters/nitroplus_core.h"
   "hook/adapters/nitroplus_profile.h"
@@ -158,6 +162,8 @@ add_library(fushi_voice_hook SHARED
   "hook/adapters/qlie_adapter.inc"
   "hook/adapters/qlie_profile.h"
   "hook/adapters/kirikiri_adapter.inc"
+  "hook/adapters/kirikiri_kag_text_core.h"
+  "hook/adapters/kirikiri_bootstrap_diag.h"
   "hook/adapters/renpy_adapter.inc"
   "hook/adapters/text_render_adapter.inc"
   "hook/adapters/loopback_adapter.inc"
@@ -725,6 +731,22 @@ target_include_directories(fushi_kirikiri_exporter_scan_test PRIVATE "hook" "inc
 add_test(NAME fushi_kirikiri_exporter_scan_test
   COMMAND fushi_kirikiri_exporter_scan_test)
 
+# KiriKiri classic KAG3 ENGINE text lane: wire parsing, commit at KAG click waits,
+# reset on clear, ruby dropped, dedupe, overflow fail-closed, admission, lane write.
+add_executable(fushi_kirikiri_kag_text_test "tests/kirikiri_kag_text_test.cpp")
+target_include_directories(fushi_kirikiri_kag_text_test PRIVATE "hook" "include")
+target_compile_definitions(fushi_kirikiri_kag_text_test
+  PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_kirikiri_kag_text_test
+  COMMAND fushi_kirikiri_kag_text_test
+  "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/kirikiri_kag_text_replay.tsv")
+
+add_executable(fushi_kirikiri_bootstrap_diag_test "tests/kirikiri_bootstrap_diag_test.cpp")
+target_include_directories(fushi_kirikiri_bootstrap_diag_test PRIVATE "hook")
+target_compile_definitions(fushi_kirikiri_bootstrap_diag_test
+  PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_kirikiri_bootstrap_diag_test COMMAND fushi_kirikiri_bootstrap_diag_test)
+
 # 通用位图呈现器的几何换算（卡片飘出游戏窗口 == 用户看不见卡片，与"没投帧"同形）。
 add_executable(fushi_lookup_overlay_geometry_test
   "tests/lookup_overlay_geometry_test.cpp"
@@ -1065,6 +1087,21 @@ target_include_directories(fushi_unity_mono_dialogue_test PRIVATE "hook")
 add_test(NAME fushi_unity_mono_dialogue_test
   COMMAND fushi_unity_mono_dialogue_test)
 
+# Unity IL2CPP in-game lookup accessor layer (unity_il2cpp_api.h): export
+# loading / missing-name report, facade refusals, the il2cpp_* shims behind the
+# shared TMP / UI.Text site resolvers (methodPointer inside GameAssembly,
+# resolve_icall by "Ns.Class::Method", overloaded internal calls refused),
+# canvas lane identity, TMP SetText(string) nesting and the disk layout -- on a
+# fake il2cpp export table.
+add_executable(fushi_unity_il2cpp_lookup_test
+  "tests/unity_il2cpp_lookup_test.cpp")
+target_include_directories(fushi_unity_il2cpp_lookup_test PRIVATE
+  "hook" "include")
+target_compile_definitions(fushi_unity_il2cpp_lookup_test PRIVATE
+  UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_unity_il2cpp_lookup_test
+  COMMAND fushi_unity_il2cpp_lookup_test)
+
 add_executable(fushi_engine_identity_layout_test
   "tests/engine_identity_layout_test.cpp")
 target_include_directories(fushi_engine_identity_layout_test PRIVATE
@@ -1345,6 +1382,10 @@ add_executable(fushi_lookup_hover_highlight_state_test "tests/lookup_hover_highl
 target_include_directories(fushi_lookup_hover_highlight_state_test PRIVATE "hook")
 target_compile_definitions(fushi_lookup_hover_highlight_state_test PRIVATE UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 add_test(NAME fushi_lookup_hover_highlight_state_test COMMAND fushi_lookup_hover_highlight_state_test)
+add_executable(fushi_entisgls_adapter_test "tests/entisgls_adapter_test.cpp")
+target_include_directories(fushi_entisgls_adapter_test PRIVATE "hook" "hook/adapters")
+target_compile_definitions(fushi_entisgls_adapter_test PRIVATE UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_entisgls_adapter_test COMMAND fushi_entisgls_adapter_test)
 add_executable(fushi_nitroplus_adapter_test "tests/nitroplus_adapter_test.cpp")
 target_include_directories(fushi_nitroplus_adapter_test PRIVATE "hook" "hook/adapters")
 target_compile_definitions(fushi_nitroplus_adapter_test PRIVATE UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)

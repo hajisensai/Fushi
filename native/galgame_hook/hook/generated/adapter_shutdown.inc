@@ -22,3 +22,4 @@
     softpal_.shutdown();
     system4_.shutdown();
     nitroplus_.shutdown();
+    entisgls_.shutdown();

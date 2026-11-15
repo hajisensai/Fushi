@@ -322,4 +322,90 @@ void main() {
       expect(got.updatedAtMs, 0);
     });
   });
+
+  group('putBookProgress 未来时间戳防护（与视频 / 有声书同口径）', () {
+    test('host 已存毒戳（now + 1 天）→ 正常上报仍能覆盖，落库戳不超限', () async {
+      final int now = DateTime.now().millisecondsSinceEpoch;
+      await _seedHostBook(db, 'BookPoison');
+      await _seedLocalPosition(
+        db,
+        bookKey: 'BookPoison',
+        sectionIndex: 1,
+        normCharOffset: 100,
+        charOffset: 10,
+        updatedAt: now + const Duration(days: 1).inMilliseconds,
+      );
+      final LocalLibraryHostService svc = _svc(db);
+      await svc.putBookProgress(
+        'BookPoison',
+        RemoteBookProgress(
+          sectionIndex: 2,
+          normCharOffset: 200,
+          charOffset: 20,
+          updatedAtMs: now,
+        ),
+      );
+
+      final ReaderPositionRow row = (await _positionOf(db, 'BookPoison'))!;
+      expect(row.sectionIndex, 2);
+      expect(row.normCharOffset, 200);
+      expect(
+        row.updatedAt,
+        lessThanOrEqualTo(
+          DateTime.now().millisecondsSinceEpoch + kSyncFutureStampToleranceMs,
+        ),
+      );
+    });
+
+    test('上报戳 now + 1 天 → 落库戳截到 now + 余量', () async {
+      final int now = DateTime.now().millisecondsSinceEpoch;
+      await _seedHostBook(db, 'BookFuture');
+      final LocalLibraryHostService svc = _svc(db);
+      await svc.putBookProgress(
+        'BookFuture',
+        RemoteBookProgress(
+          sectionIndex: 1,
+          normCharOffset: 50,
+          charOffset: 5,
+          updatedAtMs: now + const Duration(days: 1).inMilliseconds,
+        ),
+      );
+
+      final ReaderPositionRow row = (await _positionOf(db, 'BookFuture'))!;
+      expect(row.sectionIndex, 1);
+      expect(
+        row.updatedAt,
+        lessThanOrEqualTo(
+          DateTime.now().millisecondsSinceEpoch + kSyncFutureStampToleranceMs,
+        ),
+      );
+    });
+
+    test('host 已存毒戳、上报 0 戳同位置 → no-op，不把毒戳视图的 0 戳写回库', () async {
+      final int now = DateTime.now().millisecondsSinceEpoch;
+      final int poison = now + const Duration(days: 1).inMilliseconds;
+      await _seedHostBook(db, 'BookZero');
+      await _seedLocalPosition(
+        db,
+        bookKey: 'BookZero',
+        sectionIndex: 1,
+        normCharOffset: 100,
+        charOffset: 10,
+        updatedAt: poison,
+      );
+      final LocalLibraryHostService svc = _svc(db);
+      await svc.putBookProgress(
+        'BookZero',
+        const RemoteBookProgress(
+          sectionIndex: 1,
+          normCharOffset: 100,
+          charOffset: 10,
+          updatedAtMs: 0,
+        ),
+      );
+
+      final ReaderPositionRow row = (await _positionOf(db, 'BookZero'))!;
+      expect(row.updatedAt, poison);
+    });
+  });
 }
