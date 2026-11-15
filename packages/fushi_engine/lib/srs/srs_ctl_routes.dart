@@ -21,10 +21,9 @@
 /// 操作描述与撤销（给 AI 助手的工具集）在 `srs_ctl_ops.dart`。
 library;
 
-import 'package:drift/drift.dart' show BooleanExpressionOperators;
 import 'package:fushi_cli/fushi_cli.dart';
 import 'package:fushi_core/fushi_core.dart'
-    show SrsCardCacheRow, SrsEntityRow, SrsNoteCacheRow;
+    show SrsCardCacheRow, SrsNoteCacheRow;
 import 'package:fushi_engine/srs/srs_browse.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_duplicate_notes.dart';
@@ -74,38 +73,6 @@ Future<SrsCtlTarget> srsCtlOpen(SrsCtlHost host, CtlCall call) async =>
 
 /// [call] 这次调用作用的 profile（多 profile 宿主）；单库宿主、或这次调用没取过库时 null。
 String? srsCtlProfileOf(CtlCall call) => _targetByCall[call]?.profile;
-
-/// 多 profile 宿主（[SrsCtlTarget.profile] 非空）：调用方按 id 点名的笔记必须属于这次作用的那一份。
-///
-/// 复习库按 id 的读写（[SrsDbStore.note] / `mergeNotes` / `dismissDuplicates` / 批量改字段）不按
-/// profile 过滤：一份 srs.db 里别的 profile 的 id 也取得到、也写得进。点名 A 却给了 B 的 id 时不拦就是
-/// 写错库（实测：合并会把 B 的笔记删掉，设字段会往 B 的笔记上写 A 的字段 id）。属于别的 profile 的 id
-/// 按「不存在」回 404；库里根本没有的 id 交回各路由原有的处理。
-///
-/// 单库宿主（app）不查，行为与下沉前相同——那边同样的缺口单独记在 BUG-4480。
-Future<void> _requireInTarget(SrsCtlTarget target, List<String> ids) async {
-  if (target.profile == null || ids.isEmpty) return;
-  final SrsDbStore store = target.store;
-  for (int i = 0; i < ids.length; i += _kOwnerLookupChunk) {
-    final List<String> chunk = ids.sublist(
-      i,
-      i + _kOwnerLookupChunk > ids.length ? ids.length : i + _kOwnerLookupChunk,
-    );
-    final SrsEntityRow? foreign =
-        await (store.db.select(store.db.srsEntities)
-              ..where(
-                (t) =>
-                    t.id.isIn(chunk) &
-                    t.profileUid.equals(store.profileUid).not(),
-              )
-              ..limit(1))
-            .getSingleOrNull();
-    if (foreign != null) throw CtlFailure.notFound('没有这条笔记：${foreign.id}');
-  }
-}
-
-/// [_requireInTarget] 一次查询的 id 数（SQLite 绑定变量上限之内）。
-const int _kOwnerLookupChunk = 500;
 
 /// 路由表本体：宿主依赖按 [host] 注入。
 List<CtlRoute> srsCtlRoutes(SrsCtlHost host) => <CtlRoute>[
@@ -162,7 +129,6 @@ List<CtlRoute> srsCtlRoutes(SrsCtlHost host) => <CtlRoute>[
     final SrsCtlTarget target = await srsCtlOpen(host, call);
     final SrsDbStore store = target.store;
     final String id = call.params['id']!;
-    await _requireInTarget(target, <String>[id]);
     final SrsNoteView? note = await store.note(id);
     if (note == null) throw CtlFailure.notFound('没有这条笔记：$id');
     final SrsNoteTypeView? type = await store.noteType(note.noteTypeId);
@@ -395,7 +361,6 @@ List<CtlRoute> srsCtlRoutes(SrsCtlHost host) => <CtlRoute>[
     if (absorb.isEmpty) {
       throw const CtlFailure.badRequest('absorb 至少给一条与 keep 不同的笔记');
     }
-    await _requireInTarget(target, <String>[keep, ...absorb]);
     final SrsMergeReport report;
     try {
       final (SrsMergeReport r, SrsEditUndo undo) = await store.undoable(
@@ -428,7 +393,6 @@ List<CtlRoute> srsCtlRoutes(SrsCtlHost host) => <CtlRoute>[
     if (notes.length < 2) {
       throw const CtlFailure.badRequest('notes 至少给两条笔记');
     }
-    await _requireInTarget(target, notes);
     final Map<String, SrsNoteView?> views = await store.notes(notes);
     for (final String id in notes) {
       if (views[id] == null) throw CtlFailure.notFound('没有这条笔记：$id');
@@ -444,7 +408,6 @@ List<CtlRoute> srsCtlRoutes(SrsCtlHost host) => <CtlRoute>[
     CtlRoute.post('$kSrsCtlRoot/notes/batch/${op.wire}', (CtlCall call) async {
       final SrsCtlTarget target = await srsCtlOpen(host, call);
       final SrsDbStore store = target.store;
-      await _requireInTarget(target, call.stringList('notes'));
       final (SrsNoteFieldPlan plan, Map<String, Object?> echo) =
           await srsCtlPlanNoteBatch(store, call, op);
       final bool dryRun = call.optBool('dryRun') ?? false;

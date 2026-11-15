@@ -5,7 +5,7 @@ import 'package:test/test.dart';
 /// TODO-898：手动「立即检查更新」按钮源码守卫。
 ///
 /// 不变量：
-/// - 系统设置在 `t.section_update` 分区有 `id: 'system.check_update_now'` 动作项。
+/// - 系统设置在「应用更新」分区（`t.settings_system_section_app_update`）有 `id: 'system.check_update_now'` 动作项。
 /// - 编排函数 `checkAppUpdateNow`（`updates/app_update_check.dart`，设置页与更新
 ///   中心共用）传 `neverRemind: false` + `autoInstall: false`（手动语义，防回归成
 ///   「点一下就静默自动装」/「被免提醒吞掉」）。
@@ -26,7 +26,7 @@ void main() {
         'Future<void> _exportStudyDiagLog(',
       );
       final int updateSectionIdx = systemDest.indexOf(
-        'title: t.section_update,',
+        'title: t.settings_system_section_app_update,',
       );
       expect(
         updateSectionIdx,
@@ -42,7 +42,7 @@ void main() {
       expect(
         actionIdx,
         greaterThan(updateSectionIdx),
-        reason: '按钮必须落在更新分区内（在 section_update 之后出现）',
+        reason: '按钮必须落在更新分区内（在更新分区标题之后出现）',
       );
       expect(systemDest, contains('title: t.settings_check_update_now'));
       expect(systemDest, contains('onTap: _checkUpdateNow'));
