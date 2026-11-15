@@ -2,37 +2,34 @@ part of 'home_dashboard_page.dart';
 
 /// 首页小组件网格（spec 2026-11-15）每一格的内容。
 ///
-/// 格子尺寸由网格给定（[HomeWidgetGrid] 紧约束），每种组件按自己的尺寸档排版：
-/// 外框一律走 [HomeWidgetFrame]（海报色块 / 分区卡两套外观），只有色块外观下有
-/// 条目的「继续」直接画封面色块（与库页同一套 [FushiCoverBlock]）。数据全部来自
-/// 本页已有的快照（继续条目、统计行、追踪快照），不新增查询。
+/// 格子尺寸由网格给定（[HomeWidgetGrid] 紧约束），尺寸是连续可调的（每种组件一段
+/// 范围），所以内容一律按格子的**实际宽高**（LayoutBuilder）排版，不按尺寸档
+/// switch：格子越大放得越多（更多条目 / 封面行、更高的柱条、更多行文字），任何
+/// 允许的尺寸都不溢出、不留大片空白。外框一律走 [HomeWidgetFrame]（海报色块 /
+/// 分区卡两套外观），只有色块外观下有条目的「继续」直接画封面色块（与库页同一套
+/// [FushiCoverBlock]）。数据全部来自本页已有的快照（继续条目、统计行、追踪快照），
+/// 不新增查询。
 extension _HomeWidgetCells on _HomeDashboardPageState {
-  /// [item] 这一格的内容；[dense] = 窄网格一行高的格子。
+  /// [item] 这一格的内容。
   Widget _buildWidgetCell({
     required FushiDesignTokens tokens,
     required AppModel appModel,
     required List<_ContinueEntry> entries,
     required List<MediaItem> books,
     required HomeWidgetItem item,
-    required bool dense,
   }) {
     final bool poster = _posterPanels;
-    final HomeWidgetSize size = item.size;
     return switch (item.kind) {
       HomeWidgetKind.continueHero => _continueHeroCell(
         tokens,
         appModel,
         entries,
-        size,
         poster,
       ),
       HomeWidgetKind.continueReading ||
       HomeWidgetKind.continueWatching ||
-      HomeWidgetKind.continuePlaying => _continueKindCell(
-        tokens,
-        appModel,
-        item.kind,
-        <_ContinueEntry>[
+      HomeWidgetKind.continuePlaying =>
+        _continueKindCell(tokens, appModel, item.kind, <_ContinueEntry>[
           for (final _ContinueEntry e in entries)
             if (homeWidgetContinueKindOf(
                   isBook: e.isBook,
@@ -42,39 +39,29 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
                 ) ==
                 item.kind)
               e,
-        ],
-        size,
-        poster,
-        dense,
-      ),
-      HomeWidgetKind.today => _todayCell(tokens, size, poster, dense),
-      HomeWidgetKind.week => _weekCell(poster, dense),
+        ], poster),
+      HomeWidgetKind.today => _todayCell(tokens, poster),
+      HomeWidgetKind.week => _weekCell(poster),
       HomeWidgetKind.srsReview => HomeSrsPanel(
         key: const ValueKey<String>('home-srs-card'),
         onOpenDecks: () => _goToTab(HomeTab.srs),
         onStartReview: _startSrsReview,
-        size: size,
         poster: poster,
-        dense: dense,
       ),
       HomeWidgetKind.recentlyAdded => _recentCell(
         tokens,
         appModel,
         books,
-        size,
         poster,
       ),
-      HomeWidgetKind.tracking => _trackingCell(poster, dense),
+      HomeWidgetKind.tracking => _trackingCell(poster),
       HomeWidgetKind.aiAgent => HomeAiAgentPanel(
         key: const ValueKey<String>('home-ai-agent-card'),
-        size: size,
         poster: poster,
-        dense: dense,
       ),
       HomeWidgetKind.panorama => HomePanoramaPanel(
         key: const ValueKey<String>('home-panorama-card'),
         onOpen: _openPanoramaWork,
-        size: size,
         poster: poster,
       ),
     };
@@ -82,17 +69,16 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
 
   // ── 继续 ────────────────────────────────────────────────────────────────
 
-  /// 「继续」主角：2×2 只有主卡；2×3（主卡在上、其余条目横滑在下）与 4×2（主卡在
-  /// 起始侧、横滑在旁边）再挂其余条目。没有条目时是首载骨架 / 空库引导。
+  /// 「继续」主角：最近一条放大；格子够大再挂其余条目——横向够宽（宽 ≥ 460 且
+  /// 宽高比 ≥ 1.5）挂在主卡旁，否则高度够时挂在主卡下（[_continueSplitFor]）。
+  /// 其余条目那一段按实际大小排：只放得下一行时横滑（全部条目可达），放得下多行时
+  /// 铺成多行多列（格子越大条目越多）。没有条目时是首载骨架 / 空库引导。
   Widget _continueHeroCell(
     FushiDesignTokens tokens,
     AppModel appModel,
     List<_ContinueEntry> entries,
-    HomeWidgetSize size,
     bool poster,
   ) {
-    final bool sideways = size.cols >= 4;
-    final bool withSide = entries.length > 1 && (sideways || size.rows >= 3);
     if (entries.isEmpty) {
       return HomeWidgetFrame(
         key: const ValueKey<String>('home-continue-card'),
@@ -123,13 +109,18 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
               0,
               FushiCoverBlockSize.hero,
             );
-            if (!withSide) return hero(c.maxHeight);
+            final _ContinueSplit split = _continueSplitFor(
+              c.biggest,
+              entries.length,
+              minSide: _kContinueBlockSideMin,
+            );
+            if (split == _ContinueSplit.none) return hero(c.maxHeight);
             return _heroWithSide(
               area: c.biggest,
-              sideways: sideways,
+              sideways: split == _ContinueSplit.side,
               hero: hero,
-              side: (double height) =>
-                  _continueBlockRow(tokens, appModel, entries, height),
+              side: (Size area) =>
+                  _continueBlockSide(tokens, appModel, entries, area),
             );
           },
         ),
@@ -170,17 +161,19 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
             );
           }
 
-          if (!withSide) return hero(c.maxHeight);
+          final _ContinueSplit split = _continueSplitFor(
+            c.biggest,
+            entries.length,
+            minSide: _kContinueMiniSideMin,
+          );
+          if (split == _ContinueSplit.none) return hero(c.maxHeight);
+          final bool sideways = split == _ContinueSplit.side;
           return _heroWithSide(
             area: c.biggest,
             sideways: sideways,
             hero: hero,
-            // 主卡旁（4×2）：库页同款封面卡横滑，与主卡等高。主卡下（窄网格
-            // 2×3）：手机上只剩约 80 高，封面卡（封面 + 两行标题 + 进度副行）
-            // 放不下，改成条目小行横滑（小封面 + 标题 + 进度文案完整一行）。
-            side: (double height) => sideways
-                ? _continueCoverRow(tokens, appModel, entries, height)
-                : _continueMiniRow(tokens, appModel, entries, height),
+            side: (Size area) =>
+                _continueCardSide(tokens, appModel, entries, area, sideways),
           );
         },
       ),
@@ -188,36 +181,115 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
   }
 
   /// 主卡 + 其余条目两段的分割：[sideways] 时左右（主卡占约 55%），否则上下（主卡占
-  /// 约 60%）。[hero] / [side] 拿到各自那段的高度。
+  /// 约 60%）。[hero] 拿到主卡那段的高度，[side] 拿到其余条目那段的尺寸。
   Widget _heroWithSide({
     required Size area,
     required bool sideways,
     required Widget Function(double height) hero,
-    required Widget Function(double height) side,
+    required Widget Function(Size area) side,
   }) {
     const double gap = kFushiCoverBlockSpacing;
     if (sideways) {
+      final double heroWidth = (area.width - gap) * _kContinueHeroShare;
       return Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          SizedBox(width: (area.width - gap) * 0.55, child: hero(area.height)),
+          SizedBox(width: heroWidth, child: hero(area.height)),
           const SizedBox(width: gap),
-          Expanded(child: side(area.height)),
+          Expanded(
+            child: side(Size(area.width - heroWidth - gap, area.height)),
+          ),
         ],
       );
     }
-    final double heroHeight = (area.height - gap) * 0.6;
+    final double heroHeight = (area.height - gap) * _kContinueHeroStackShare;
+    final double sideHeight = area.height - heroHeight - gap;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         SizedBox(height: heroHeight, child: hero(heroHeight)),
         const SizedBox(height: gap),
-        Expanded(child: side(area.height - heroHeight - gap)),
+        Expanded(child: side(Size(area.width, sideHeight))),
       ],
     );
   }
 
-  /// 色块外观「继续」其余条目：一行半高封面色块横滑。
+  /// 色块外观「继续」其余条目：放得下一行半高块时横滑（全部可达），放得下多行时
+  /// 铺成多行多列（格子越大块越多）。
+  Widget _continueBlockSide(
+    FushiDesignTokens tokens,
+    AppModel appModel,
+    List<_ContinueEntry> entries,
+    Size area,
+  ) {
+    const double gap = kFushiCoverBlockSpacing;
+    final int rows = math.max(
+      1,
+      ((area.height + gap) / (_kContinueBlockRowMin + gap)).floor(),
+    );
+    if (rows == 1) {
+      return _continueBlockRow(tokens, appModel, entries, area.height);
+    }
+    final double rowHeight = (area.height - gap * (rows - 1)) / rows;
+    final int cols = math.max(
+      1,
+      ((area.width + gap) / (rowHeight * 1.6 + gap)).floor(),
+    );
+    final double width = (area.width - gap * (cols - 1)) / cols;
+    final int count = math.min(entries.length - 1, rows * cols);
+    return Wrap(
+      key: const ValueKey<String>('home-continue-grid'),
+      spacing: gap,
+      runSpacing: gap,
+      children: <Widget>[
+        for (int i = 0; i < count; i++)
+          SizedBox(
+            width: width,
+            height: rowHeight,
+            child: _continueBlock(
+              tokens,
+              appModel,
+              entries[i + 1],
+              i + 1,
+              FushiCoverBlockSize.half,
+            ),
+          ),
+      ],
+    );
+  }
+
+  /// 分区卡外观「继续」其余条目：
+  /// - 主卡旁（[sideways]）不太高时：库页同款封面卡横滑，与主卡等高；
+  /// - 主卡下只放得下一行时：条目小行横滑（手机 2×3 只剩约 80 高，封面卡放不下）；
+  /// - 放得下多行时（更高 / 主卡旁很高）：条目小行铺成多行多列，格子越大条目越多。
+  Widget _continueCardSide(
+    FushiDesignTokens tokens,
+    AppModel appModel,
+    List<_ContinueEntry> entries,
+    Size area,
+    bool sideways,
+  ) {
+    if (sideways && area.height < _kContinueCoverRowMax) {
+      return _continueCoverRow(tokens, appModel, entries, area.height);
+    }
+    final List<_ContinueEntry> rest = entries.sublist(1);
+    final int rows = _miniListRows(area.height);
+    if (rows == 1) {
+      return _continueMiniRow(tokens, appModel, entries, area.height);
+    }
+    return _widgetMiniList(
+      tokens: tokens,
+      appModel: appModel,
+      key: const ValueKey<String>('home-continue-list'),
+      keyPrefix: 'home-continue-item',
+      indexOffset: 1,
+      entries: rest,
+      area: area,
+      subtitleOf: (_ContinueEntry e) => e.badgeLabel ?? _continueMetaLine(e),
+    );
+  }
+
+  /// 色块外观「继续」其余条目只放得下一行时：半高封面色块横滑（全部条目可达）。
   Widget _continueBlockRow(
     FushiDesignTokens tokens,
     AppModel appModel,
@@ -303,8 +375,8 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
     );
   }
 
-  /// 主卡下面的其余条目（窄网格 2×3）：条目小行横滑，每块约八成格宽（露出下一块
-  /// 提示能滑），行高 = 那段的高度。
+  /// 主卡下面的其余条目只放得下一行时（如手机 2×3）：条目小行横滑，每块约八成
+  /// 格宽（露出下一块提示能滑），行高 = 那段的高度。
   Widget _continueMiniRow(
     FushiDesignTokens tokens,
     AppModel appModel,
@@ -361,89 +433,105 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
     );
   }
 
-  /// 「继续阅读 / 观看 / 游玩」：同一份继续条目按类型筛出来。1 行高 = 最近一条；
-  /// 2 行高 = 能放几行放几行。窄网格一行高的格子不画小标题行，组件名改作条目的眉标。
+  /// 「继续阅读 / 观看 / 游玩」：同一份继续条目按类型筛出来，按格子实际大小放
+  /// 条目小行——放得下几行几列放几行几列（[_widgetMiniList]）。矮格（窄网格一行
+  /// 高）只放最近一条，不画小标题行，组件名改作条目的眉标。
   Widget _continueKindCell(
     FushiDesignTokens tokens,
     AppModel appModel,
     HomeWidgetKind kind,
     List<_ContinueEntry> list,
-    HomeWidgetSize size,
     bool poster,
-    bool dense,
   ) {
     final String title = homeWidgetLabel(kind);
-    final bool headerless = dense && list.isNotEmpty;
-    return HomeWidgetFrame(
-      key: ValueKey<String>('home-${kind.id}-card'),
-      title: title,
-      icon: switch (kind) {
-        HomeWidgetKind.continueWatching => FushiIcons.play,
-        HomeWidgetKind.continuePlaying => FushiIcons.games,
-        _ => FushiIcons.books,
+    String subtitleOf(_ContinueEntry e) => e.badgeLabel ?? _continueMetaLine(e);
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints c) {
+        final bool dense = homeWidgetIsDense(c.maxHeight);
+        final bool headerless = dense && list.isNotEmpty;
+        return HomeWidgetFrame(
+          key: ValueKey<String>('home-${kind.id}-card'),
+          title: title,
+          icon: switch (kind) {
+            HomeWidgetKind.continueWatching => FushiIcons.play,
+            HomeWidgetKind.continuePlaying => FushiIcons.games,
+            _ => FushiIcons.books,
+          },
+          hueKey: kind.id,
+          poster: poster,
+          dense: dense,
+          showHeader: !headerless,
+          child: list.isEmpty
+              ? _widgetEmptyLine(
+                  tokens,
+                  _initialLoadDone ? t.home_continue_empty : '',
+                )
+              : LayoutBuilder(
+                  builder: (BuildContext context, BoxConstraints box) {
+                    final bool single =
+                        _miniListRows(box.maxHeight) == 1 &&
+                        _miniListColumns(box.maxWidth) == 1;
+                    if (single) {
+                      return _widgetMiniTile(
+                        tokens: tokens,
+                        appModel: appModel,
+                        key: ValueKey<String>('home-${kind.id}-item/0'),
+                        entry: list.first,
+                        height: box.maxHeight,
+                        subtitle: subtitleOf(list.first),
+                        eyebrow: headerless ? title : null,
+                      );
+                    }
+                    return _widgetMiniList(
+                      tokens: tokens,
+                      appModel: appModel,
+                      keyPrefix: 'home-${kind.id}-item',
+                      entries: list,
+                      area: box.biggest,
+                      subtitleOf: subtitleOf,
+                    );
+                  },
+                ),
+        );
       },
-      hueKey: kind.id,
-      poster: poster,
-      dense: dense,
-      showHeader: !headerless,
-      child: list.isEmpty
-          ? _widgetEmptyLine(
-              tokens,
-              _initialLoadDone ? t.home_continue_empty : '',
-            )
-          : LayoutBuilder(
-              builder: (BuildContext context, BoxConstraints c) {
-                String subtitleOf(_ContinueEntry e) =>
-                    e.badgeLabel ?? _continueMetaLine(e);
-                if (size.rows == 1) {
-                  return _widgetMiniTile(
-                    tokens: tokens,
-                    appModel: appModel,
-                    key: ValueKey<String>('home-${kind.id}-item/0'),
-                    entry: list.first,
-                    height: c.maxHeight,
-                    subtitle: subtitleOf(list.first),
-                    eyebrow: headerless ? title : null,
-                  );
-                }
-                return _widgetMiniList(
-                  tokens: tokens,
-                  appModel: appModel,
-                  keyPrefix: 'home-${kind.id}-item',
-                  entries: list,
-                  area: c.biggest,
-                  columns: 1,
-                  subtitleOf: subtitleOf,
-                );
-              },
-            ),
     );
   }
 
-  /// 一列 / 两列的条目小行（「继续阅读」等 2 行高的格子、「最近添加」）：行高固定，
-  /// 放得下几行放几行。
+  /// [height] 高的区域里放几行条目小行（行高至少 [_kMiniRowMin]）。
+  int _miniListRows(double height) =>
+      math.max(1, ((height + _kMiniGap) / (_kMiniRowMin + _kMiniGap)).floor());
+
+  /// [width] 宽的区域里放几列条目小行（每列至少 [_kMiniTileMinWidth]）。
+  int _miniListColumns(double width) => math.max(
+    1,
+    ((width + _kMiniGap) / (_kMiniTileMinWidth + _kMiniGap)).floor(),
+  );
+
+  /// 条目小行铺满 [area]：行数按高度、列数按宽度算（[_miniListRows] /
+  /// [_miniListColumns]），行高在 [_kMiniRowMin]…[_kMiniRowMax] 之间撑满，放得下
+  /// 几条放几条——格子越大条目越多。[indexOffset] 是条目 key 的起始序号。
   Widget _widgetMiniList({
     required FushiDesignTokens tokens,
     required AppModel appModel,
     required String keyPrefix,
     required List<_ContinueEntry> entries,
     required Size area,
-    required int columns,
     required String Function(_ContinueEntry entry) subtitleOf,
+    int indexOffset = 0,
     Key? key,
   }) {
-    const double rowHeight = 56;
-    const double gap = 8;
-    final int rows = math.max(
-      1,
-      ((area.height + gap) / (rowHeight + gap)).floor(),
+    final int rows = _miniListRows(area.height);
+    final int columns = _miniListColumns(area.width);
+    final double rowHeight = math.min(
+      _kMiniRowMax,
+      (area.height - _kMiniGap * (rows - 1)) / rows,
     );
     final List<_ContinueEntry> shown = entries.take(rows * columns).toList();
-    final double width = (area.width - gap * (columns - 1)) / columns;
+    final double width = (area.width - _kMiniGap * (columns - 1)) / columns;
     return Wrap(
       key: key,
-      spacing: gap,
-      runSpacing: gap,
+      spacing: _kMiniGap,
+      runSpacing: _kMiniGap,
       children: <Widget>[
         for (int i = 0; i < shown.length; i++)
           SizedBox(
@@ -451,7 +539,7 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
             child: _widgetMiniTile(
               tokens: tokens,
               appModel: appModel,
-              key: ValueKey<String>('$keyPrefix/$i'),
+              key: ValueKey<String>('$keyPrefix/${i + indexOffset}'),
               entry: shown[i],
               height: rowHeight,
               subtitle: subtitleOf(shown[i]),
@@ -587,42 +675,104 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
 
   // ── 今日 / 近 7 天 ──────────────────────────────────────────────────────
 
-  /// 「今日」：1×1 = 今日字数大字（格子不矮时再挂时长 / 目标进度一行）；2×1 = 分区
-  /// 卡外观沿用原学习头部行（[HomeStudyHeader]），色块外观是目标环 + 大字 + 一行。
+  /// 「今日」：按格子实际大小排——
+  /// - 主体：窄格是今日字数大字（不矮时再挂时长 / 目标进度一行）；宽格在分区卡外观
+  ///   沿用原学习头部行（[HomeStudyHeader]），色块外观是目标环 + 大字 + 一行；
+  /// - 内容区够宽（≥ [_kTodayBarsSideWidth]）时结束侧再挂近 7 天柱条，不够宽但够高
+  ///   （≥ [_kTodayBarsBelowHeight]）时柱条挂在主体下面——格子变大不留空。
   /// 整块点按改目标（与原目标行同一个 key `home-goal-row`）。
-  Widget _todayCell(
-    FushiDesignTokens tokens,
-    HomeWidgetSize size,
-    bool poster,
-    bool dense,
-  ) {
+  Widget _todayCell(FushiDesignTokens tokens, bool poster) {
     void editGoal() => unawaited(_editGoal());
-    final bool wide = size.cols >= 2;
-    final Widget child;
-    if (!_initialLoadDone) {
-      child = const HomeWidgetOverflowClip(child: HomeGoalSkeleton());
-    } else if (wide && !poster) {
-      child = _fitCenter(_buildStudyHeader(tokens));
-    } else {
-      child = _todayFigure(tokens, wide: wide, dense: dense);
-    }
-    return HomeWidgetFrame(
-      key: const ValueKey<String>('home-study-card'),
-      title: t.stat_today,
-      icon: FushiIcons.barChart,
-      hueKey: HomeWidgetKind.today.id,
-      poster: poster,
-      dense: dense,
-      // 2×1 窄格子：头部行自己就写着今日时长与目标，不再占一行小标题。
-      showHeader: !(dense && wide),
-      onTap: editGoal,
-      tapKey: const ValueKey<String>('home-goal-row'),
-      child: child,
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints c) {
+        final bool dense = homeWidgetIsDense(c.maxHeight);
+        final bool wide = homeWidgetIsWide(c.maxWidth);
+        final Widget main;
+        if (!_initialLoadDone) {
+          main = const HomeWidgetOverflowClip(child: HomeGoalSkeleton());
+        } else if (wide && !poster) {
+          main = _fitCenter(_buildStudyHeader(tokens));
+        } else {
+          main = _todayFigure(tokens, wide: wide, dense: dense);
+        }
+        return HomeWidgetFrame(
+          key: const ValueKey<String>('home-study-card'),
+          title: t.stat_today,
+          icon: FushiIcons.barChart,
+          hueKey: HomeWidgetKind.today.id,
+          poster: poster,
+          dense: dense,
+          // 宽的矮格：头部行自己就写着今日时长与目标，不再占一行小标题。
+          showHeader: !(dense && wide),
+          onTap: editGoal,
+          tapKey: const ValueKey<String>('home-goal-row'),
+          child: !_initialLoadDone
+              ? main
+              : LayoutBuilder(
+                  builder: (BuildContext context, BoxConstraints box) {
+                    Widget bars(double height) => Builder(
+                      builder: (BuildContext context) {
+                        final FushiCoverBlockColors? colors =
+                            HomeWidgetStyle.maybeOf(context)?.colors;
+                        return KeyedSubtree(
+                          key: const ValueKey<String>('home-today-week'),
+                          child: colors != null
+                              ? _buildPosterWeekBars(
+                                  colors,
+                                  height: height,
+                                  key: const ValueKey<String>(
+                                    'home-today-week-bars',
+                                  ),
+                                )
+                              : _buildWeekBars(height: height),
+                        );
+                      },
+                    );
+                    if (box.maxWidth >= _kTodayBarsSideWidth) {
+                      return Row(
+                        children: <Widget>[
+                          Expanded(flex: 11, child: main),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            flex: 9,
+                            child: HomeWidgetOverflowClip(
+                              child: bars(math.max(16, box.maxHeight)),
+                            ),
+                          ),
+                        ],
+                      );
+                    }
+                    if (box.maxHeight >= _kTodayBarsBelowHeight) {
+                      final double mainHeight = math.min(
+                        _kTodayMainMaxHeight,
+                        box.maxHeight * 0.5,
+                      );
+                      const double gap = 8;
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: <Widget>[
+                          SizedBox(height: mainHeight, child: main),
+                          const SizedBox(height: gap),
+                          Expanded(
+                            child: HomeWidgetOverflowClip(
+                              child: bars(
+                                math.max(16, box.maxHeight - mainHeight - gap),
+                              ),
+                            ),
+                          ),
+                        ],
+                      );
+                    }
+                    return main;
+                  },
+                ),
+        );
+      },
     );
   }
 
   /// 「今日」的大字版：今日字数；不矮时下面一行是目标进度（没设目标时是时长）；
-  /// [wide]（色块外观 2×1）时起始侧再挂目标环。
+  /// [wide]（色块外观的宽格）时起始侧再挂目标环。
   Widget _todayFigure(
     FushiDesignTokens tokens, {
     required bool wide,
@@ -729,40 +879,43 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
     );
   }
 
-  /// 「近 7 天」学习字数柱条（今天在最后），点块进统计中心。
-  Widget _weekCell(bool poster, bool dense) => HomeWidgetFrame(
-    key: const ValueKey<String>('home-week-card'),
-    title: t.stat_week_past,
-    icon: FushiIcons.barChart,
-    hueKey: HomeWidgetKind.week.id,
-    poster: poster,
-    dense: dense,
-    onTap: _openStatisticsCenter,
-    tapKey: const ValueKey<String>('home-week-open'),
-    child: LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints c) {
-        final FushiCoverBlockColors? colors = HomeWidgetStyle.maybeOf(
-          context,
-        )?.colors;
-        final double height = math.max(16, c.maxHeight);
-        return HomeWidgetOverflowClip(
-          child: colors != null
-              ? _buildPosterWeekBars(colors, height: height)
-              : _buildWeekBars(height: height),
-        );
-      },
+  /// 「近 7 天」学习字数柱条（今天在最后），柱高 = 格子内容区的实际高度（格子越高
+  /// 柱越高），点块进统计中心。
+  Widget _weekCell(bool poster) => LayoutBuilder(
+    builder: (BuildContext context, BoxConstraints c) => HomeWidgetFrame(
+      key: const ValueKey<String>('home-week-card'),
+      title: t.stat_week_past,
+      icon: FushiIcons.barChart,
+      hueKey: HomeWidgetKind.week.id,
+      poster: poster,
+      dense: homeWidgetIsDense(c.maxHeight),
+      onTap: _openStatisticsCenter,
+      tapKey: const ValueKey<String>('home-week-open'),
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints box) {
+          final FushiCoverBlockColors? colors = HomeWidgetStyle.maybeOf(
+            context,
+          )?.colors;
+          final double height = math.max(16, box.maxHeight);
+          return HomeWidgetOverflowClip(
+            child: colors != null
+                ? _buildPosterWeekBars(colors, height: height)
+                : _buildWeekBars(height: height),
+          );
+        },
+      ),
     ),
   );
 
   // ── 最近添加 / 追踪 ──────────────────────────────────────────────────────
 
-  /// 「最近添加」：2×2 一列、4×2 两列条目小行（最多 [_kRecentLimit] 条，「继续」里
-  /// 已有的去重）。
+  /// 「最近添加」：条目小行按格子实际大小铺成几行几列（[_widgetMiniList]，格子越大
+  /// 列得越多，最多 [_HomeDashboardPageState._kRecentLimit] 条；「继续」里已有的
+  /// 去重）。
   Widget _recentCell(
     FushiDesignTokens tokens,
     AppModel appModel,
     List<MediaItem> books,
-    HomeWidgetSize size,
     bool poster,
   ) {
     final List<_ContinueEntry> list = _initialLoadDone
@@ -790,22 +943,80 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
                     keyPrefix: 'home-recent-item',
                     entries: list,
                     area: c.biggest,
-                    columns: size.cols >= 4 ? 2 : 1,
                     subtitleOf: (_ContinueEntry e) => _recentSubtitle(e, now),
                   ),
             ),
     );
   }
 
-  /// 媒体追踪同步状态（模块门控在可用性判据里）。
-  Widget _trackingCell(bool poster, bool dense) {
+  /// 媒体追踪同步状态（模块门控在可用性判据里；按格子实际大小排版在面板里）。
+  Widget _trackingCell(bool poster) {
     final HomeTrackingSummary summary = HomeTrackingSummary.of(_tracking);
     return HomeTrackingPanel(
       key: const ValueKey<String>('home-tracking-card'),
       summary: summary,
       onOpen: () => _openTrackingPage(summary),
       poster: poster,
-      dense: dense,
     );
   }
+}
+
+// ── 按实际尺寸排版的阈值（逻辑像素） ──────────────────────────────────────
+
+/// 「继续」主卡在左右分割里占的宽度比例 / 上下分割里占的高度比例。
+const double _kContinueHeroShare = 0.55;
+const double _kContinueHeroStackShare = 0.6;
+
+/// 「继续」上下分割时主卡至少多高（再矮就只放主卡）。
+const double _kContinueHeroMinHeight = 100;
+
+/// 「继续」左右分割的最小格宽与最小宽高比（其余条目那段至少约 200 宽）。
+const double _kContinueSideMinWidth = 460;
+const double _kContinueSideMinAspect = 1.5;
+
+/// 「继续」上下分割时其余条目那段的最小高度：色块外观（半高色块）/ 分区卡外观
+/// （条目小行）。
+const double _kContinueBlockSideMin = 96;
+const double _kContinueMiniSideMin = 64;
+
+/// 色块外观其余条目铺多行时每行至少多高。
+const double _kContinueBlockRowMin = 96;
+
+/// 分区卡外观主卡旁的封面卡横滑行最高多高；更高就改铺条目小行（封面放大没有意义，
+/// 多列条目更有用）。
+const double _kContinueCoverRowMax = 300;
+
+/// 条目小行：行高范围、每列最小宽、间距。
+const double _kMiniRowMin = 52;
+const double _kMiniRowMax = 72;
+const double _kMiniTileMinWidth = 220;
+const double _kMiniGap = 8;
+
+/// 「今日」内容区够宽时柱条挂在结束侧、够高时挂在下面；挂在下面时主体最多占多高。
+const double _kTodayBarsSideWidth = 380;
+const double _kTodayBarsBelowHeight = 130;
+const double _kTodayMainMaxHeight = 72;
+
+/// 「继续」主角怎么分：只放主卡 / 其余条目挂在主卡旁 / 挂在主卡下。
+enum _ContinueSplit { none, side, below }
+
+/// [area] 大小的「继续」主角格子怎么分（[count] 条条目；[minSide] = 上下分割时
+/// 其余条目那段的最小高度）。纯函数。
+_ContinueSplit _continueSplitFor(
+  Size area,
+  int count, {
+  required double minSide,
+}) {
+  if (count < 2) return _ContinueSplit.none;
+  if (area.width >= _kContinueSideMinWidth &&
+      area.width / math.max(1, area.height) >= _kContinueSideMinAspect) {
+    return _ContinueSplit.side;
+  }
+  const double gap = kFushiCoverBlockSpacing;
+  final double hero = (area.height - gap) * _kContinueHeroStackShare;
+  final double side = area.height - gap - hero;
+  if (hero >= _kContinueHeroMinHeight && side >= minSide) {
+    return _ContinueSplit.below;
+  }
+  return _ContinueSplit.none;
 }

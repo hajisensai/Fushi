@@ -1,8 +1,9 @@
 /// 首页编辑态的「添加小组件」面板（spec 2026-11-15）：手机底部弹层、宽屏居中对话框
 /// （[adaptiveModalSheet] 自己按宽度分派）。
 ///
-/// 搜索框 + 分类（全部 / 学习 / 继续 / 工具）+ 每项可选尺寸的缩略比例；选尺寸点
-/// 「添加」→ 返回 [HomeWidgetItem]（页面追加到列表末尾并滚动到它）。已在当前布局里的
+/// 搜索框 + 分类（全部 / 学习 / 继续 / 工具）+ 每项默认尺寸的缩略比例与「可调范围
+/// a×b – c×d」；点「添加」→ 按默认尺寸返回 [HomeWidgetItem]（页面追加到列表末尾并
+/// 滚动到它，之后在网格里拖角 / 尺寸网格 / 键盘手柄再调）。已在当前布局里的
 /// 组件置灰并标注「已在首页」；不可用的组件（模块关着 / 合规门）不出现。
 library;
 
@@ -15,7 +16,6 @@ import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart'
     show FushiModalSheetFrame, FushiSearchField;
-import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
@@ -72,7 +72,7 @@ ValueKey<String> homeWidgetAddItemKey(HomeWidgetKind kind) =>
 ValueKey<String> homeWidgetAddButtonKey(HomeWidgetKind kind) =>
     ValueKey<String>('home-widget-add/${kind.id}');
 
-/// 尺寸档缩略块的 key。
+/// 默认尺寸缩略块的 key。
 ValueKey<String> homeWidgetAddSizeKey(
   HomeWidgetKind kind,
   HomeWidgetSize size,
@@ -130,8 +130,6 @@ class _HomeWidgetAddSheetState extends State<HomeWidgetAddSheet> {
   final TextEditingController _query = TextEditingController();
   final FocusNode _queryFocus = FocusNode(debugLabel: 'home-widget-add-search');
   HomeWidgetAddFilter _filter = HomeWidgetAddFilter.all;
-  final Map<HomeWidgetKind, HomeWidgetSize> _sizes =
-      <HomeWidgetKind, HomeWidgetSize>{};
 
   @override
   void dispose() {
@@ -222,11 +220,6 @@ class _HomeWidgetAddSheetState extends State<HomeWidgetAddSheet> {
                     label: widget.labelOf(visible[i]),
                     description: widget.descriptionOf(visible[i]),
                     present: widget.present.contains(visible[i]),
-                    size:
-                        _sizes[visible[i]] ??
-                        visible[i].sizesFor(widget.grid).first,
-                    onSize: (HomeWidgetSize s) =>
-                        setState(() => _sizes[visible[i]] = s),
                     onAdd: widget.onAdd,
                   ),
                 ),
@@ -246,8 +239,6 @@ class _AddItem extends StatelessWidget {
     required this.label,
     required this.description,
     required this.present,
-    required this.size,
-    required this.onSize,
     required this.onAdd,
   });
 
@@ -256,15 +247,13 @@ class _AddItem extends StatelessWidget {
   final String label;
   final String description;
   final bool present;
-  final HomeWidgetSize size;
-  final ValueChanged<HomeWidgetSize> onSize;
   final ValueChanged<HomeWidgetItem> onAdd;
 
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme scheme = Theme.of(context).colorScheme;
-    final List<HomeWidgetSize> sizes = kind.sizesFor(grid);
+    final HomeWidgetSize size = kind.defaultFor(grid);
     final Widget body = DecoratedBox(
       decoration: BoxDecoration(
         color: tokens.surfaces.group,
@@ -290,22 +279,20 @@ class _AddItem extends StatelessWidget {
             Row(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: <Widget>[
+                _SizeThumb(
+                  key: homeWidgetAddSizeKey(kind, size),
+                  size: size,
+                  color: scheme,
+                ),
+                const SizedBox(width: 10),
                 Expanded(
-                  child: Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    crossAxisAlignment: WrapCrossAlignment.end,
-                    children: <Widget>[
-                      for (final HomeWidgetSize s in sizes)
-                        _SizeThumb(
-                          key: homeWidgetAddSizeKey(kind, s),
-                          size: s,
-                          selected: s == size,
-                          enabled: !present,
-                          color: scheme,
-                          onTap: () => onSize(s),
-                        ),
-                    ],
+                  child: Text(
+                    t.home_widget_size_range(
+                      min: kind.minFor(grid).toString(),
+                      max: kind.maxFor(grid).toString(),
+                    ),
+                    key: ValueKey<String>('home-widget-add-range/${kind.id}'),
+                    style: tokens.type.metadata,
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -329,55 +316,35 @@ class _AddItem extends StatelessWidget {
   }
 }
 
-/// 一个尺寸档的缩略比例块（宽高按列 × 行等比）。
+/// 默认尺寸的缩略比例块（宽高按列 × 行等比，纯展示）。
 class _SizeThumb extends StatelessWidget {
-  const _SizeThumb({
-    super.key,
-    required this.size,
-    required this.selected,
-    required this.enabled,
-    required this.color,
-    required this.onTap,
-  });
+  const _SizeThumb({super.key, required this.size, required this.color});
 
   final HomeWidgetSize size;
-  final bool selected;
-  final bool enabled;
   final ColorScheme color;
-  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    const double unit = 36;
-    final double w = size.cols * unit + (size.cols - 1) * 4;
-    final double h = size.rows * unit + (size.rows - 1) * 4;
-    final Color fill = selected ? color.primary : color.surfaceContainerHighest;
-    final Color fg = selected ? color.onPrimary : color.onSurfaceVariant;
+    const double unit = 24;
+    final double w = size.cols * unit + (size.cols - 1) * 3;
+    final double h = size.rows * unit + (size.rows - 1) * 3;
     return Semantics(
-      button: true,
-      selected: selected,
       label: '$size',
       excludeSemantics: true,
-      child: Material(
-        color: fill,
-        borderRadius: BorderRadius.circular(8),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: enabled ? onTap : null,
-          child: AnimatedContainer(
-            duration: fushiMotionDuration(context, FushiMotion.short),
-            curve: FushiMotion.standard,
-            width: w,
-            height: h,
-            alignment: Alignment.center,
-            child: Text(
-              '$size',
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                color: fg,
-              ),
-            ),
+      child: Container(
+        width: w,
+        height: h,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: color.primaryContainer,
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Text(
+          '$size',
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            color: color.onPrimaryContainer,
           ),
         ),
       ),

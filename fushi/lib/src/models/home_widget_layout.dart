@@ -1,6 +1,6 @@
 /// 首页小组件网格（spec `docs/specs/2026-11-15-home-widgets-design.md`）的纯数据层：
-/// 组件目录（[HomeWidgetKind]，持久化 id 冻结）、尺寸档、两份布局（[HomeGridKind]
-/// 窄 2 列 / 宽 6 列）、密集装箱、编辑操作（增删 / 移动 / 换尺寸 / 撤销）、编解码与
+/// 组件目录（[HomeWidgetKind]，持久化 id 冻结）、连续可调尺寸范围、两份布局（[HomeGridKind]
+/// 窄 2 列 / 宽 6 列）、密集装箱、编辑操作（增删 / 移动 / 改尺寸 / 撤销）、编解码与
 /// 从旧偏好 `home_dashboard_panels` 的迁移。
 ///
 /// 全部是纯函数：不碰 Flutter、不读偏好，页面与测试都只经这里算布局。
@@ -33,7 +33,7 @@ class HomeWidgetSize {
   @override
   int get hashCode => Object.hash(cols, rows);
 
-  /// 「2×1」：添加面板的尺寸档缩略标签（不随语言变）。
+  /// 「2×1」：尺寸标签（添加面板 / 尺寸选择网格 / 拖角预览，不随语言变）。
   @override
   String toString() => '$cols×$rows';
 }
@@ -56,92 +56,164 @@ enum HomeGridKind {
   final int columns;
 }
 
+/// 组件高度上限（行）：任何组件都不超过 4 行高（spec「尺寸」）。
+const int kHomeWidgetMaxRows = 4;
+
 /// 小组件目录。顺序 = 添加面板的展示顺序。
+///
+/// 每种组件有一段连续的可调范围 [min]…[max]（列 × 行，宽网格口径）；在窄网格里
+/// 宽度再封顶到 2 列（[maxFor]）。默认尺寸（添加 / 默认模板用）按网格分开给。
 enum HomeWidgetKind {
-  /// 「继续」主角：最近一条放大，大档再挂其余条目的横滑行。
-  continueHero('continue', HomeWidgetCategory.continueMedia, <HomeWidgetSize>[
-    HomeWidgetSize(2, 2),
-    HomeWidgetSize(2, 3),
-    HomeWidgetSize(4, 2),
-  ]),
+  /// 「继续」主角：最近一条放大，格子够大再挂其余条目（横滑小行 / 封面行）。
+  continueHero(
+    'continue',
+    HomeWidgetCategory.continueMedia,
+    min: HomeWidgetSize(2, 2),
+    max: HomeWidgetSize(6, 4),
+    compactDefault: HomeWidgetSize(2, 2),
+    wideDefault: HomeWidgetSize(4, 2),
+  ),
 
   /// 「继续阅读」：同一份继续条目里的书 / 漫画 / 字幕书 / 有声书。
   continueReading(
     'continue_reading',
     HomeWidgetCategory.continueMedia,
-    <HomeWidgetSize>[HomeWidgetSize(2, 1), HomeWidgetSize(2, 2)],
+    min: HomeWidgetSize(2, 1),
+    max: HomeWidgetSize(6, 3),
+    compactDefault: HomeWidgetSize(2, 1),
+    wideDefault: HomeWidgetSize(2, 2),
   ),
 
   /// 「继续观看」：继续条目里的视频（本地 / 远端 / 媒体服务器）。
   continueWatching(
     'continue_watching',
     HomeWidgetCategory.continueMedia,
-    <HomeWidgetSize>[HomeWidgetSize(2, 1), HomeWidgetSize(2, 2)],
+    min: HomeWidgetSize(2, 1),
+    max: HomeWidgetSize(6, 3),
+    compactDefault: HomeWidgetSize(2, 1),
+    wideDefault: HomeWidgetSize(2, 2),
   ),
 
   /// 「继续游玩」：继续条目里的游戏。
   continuePlaying(
     'continue_playing',
     HomeWidgetCategory.continueMedia,
-    <HomeWidgetSize>[HomeWidgetSize(2, 1), HomeWidgetSize(2, 2)],
+    min: HomeWidgetSize(2, 1),
+    max: HomeWidgetSize(6, 3),
+    compactDefault: HomeWidgetSize(2, 1),
+    wideDefault: HomeWidgetSize(2, 2),
   ),
 
-  /// 「今日」：目标环 + 今日字数 + 时长。
-  today('today', HomeWidgetCategory.study, <HomeWidgetSize>[
-    HomeWidgetSize(1, 1),
-    HomeWidgetSize(2, 1),
-  ]),
+  /// 「今日」：今日字数 + 时长 / 目标；格子变宽 / 变高再挂近 7 天柱条。
+  today(
+    'today',
+    HomeWidgetCategory.study,
+    min: HomeWidgetSize(1, 1),
+    max: HomeWidgetSize(3, 2),
+    compactDefault: HomeWidgetSize(1, 1),
+    wideDefault: HomeWidgetSize(2, 1),
+  ),
 
-  /// 「近 7 天」柱条。
-  week('week', HomeWidgetCategory.study, <HomeWidgetSize>[
-    HomeWidgetSize(2, 1),
-    HomeWidgetSize(2, 2),
-  ]),
+  /// 「近 7 天」柱条（格子越高柱越高）。
+  week(
+    'week',
+    HomeWidgetCategory.study,
+    min: HomeWidgetSize(2, 1),
+    max: HomeWidgetSize(6, 3),
+    compactDefault: HomeWidgetSize(2, 1),
+    wideDefault: HomeWidgetSize(2, 2),
+  ),
 
   /// 复习（内置 SRS）。
-  srsReview('srs_review', HomeWidgetCategory.study, <HomeWidgetSize>[
-    HomeWidgetSize(1, 1),
-    HomeWidgetSize(2, 1),
-  ]),
+  srsReview(
+    'srs_review',
+    HomeWidgetCategory.study,
+    min: HomeWidgetSize(1, 1),
+    max: HomeWidgetSize(3, 2),
+    compactDefault: HomeWidgetSize(1, 1),
+    wideDefault: HomeWidgetSize(1, 1),
+  ),
 
-  /// 最近添加。
+  /// 最近添加（格子越大列得越多）。
   recentlyAdded(
     'recently_added',
     HomeWidgetCategory.continueMedia,
-    <HomeWidgetSize>[HomeWidgetSize(2, 2), HomeWidgetSize(4, 2)],
+    min: HomeWidgetSize(2, 2),
+    max: HomeWidgetSize(6, 4),
+    compactDefault: HomeWidgetSize(2, 2),
+    wideDefault: HomeWidgetSize(4, 2),
   ),
 
   /// 媒体追踪同步状态。
-  tracking('tracking', HomeWidgetCategory.tools, <HomeWidgetSize>[
-    HomeWidgetSize(2, 1),
-  ]),
+  tracking(
+    'tracking',
+    HomeWidgetCategory.tools,
+    min: HomeWidgetSize(2, 1),
+    max: HomeWidgetSize(6, 2),
+    compactDefault: HomeWidgetSize(2, 1),
+    wideDefault: HomeWidgetSize(2, 1),
+  ),
 
   /// AI 助手入口。
-  aiAgent('ai_agent', HomeWidgetCategory.tools, <HomeWidgetSize>[
-    HomeWidgetSize(1, 1),
-    HomeWidgetSize(2, 1),
-  ]),
+  aiAgent(
+    'ai_agent',
+    HomeWidgetCategory.tools,
+    min: HomeWidgetSize(1, 1),
+    max: HomeWidgetSize(3, 2),
+    compactDefault: HomeWidgetSize(1, 1),
+    wideDefault: HomeWidgetSize(1, 1),
+  ),
 
   /// 媒体库全景入口（不常驻渲染 3D）。
-  panorama('panorama', HomeWidgetCategory.tools, <HomeWidgetSize>[
-    HomeWidgetSize(2, 2),
-    HomeWidgetSize(4, 2),
-  ]);
+  panorama(
+    'panorama',
+    HomeWidgetCategory.tools,
+    min: HomeWidgetSize(2, 2),
+    max: HomeWidgetSize(6, 4),
+    compactDefault: HomeWidgetSize(2, 2),
+    wideDefault: HomeWidgetSize(2, 2),
+  );
 
-  const HomeWidgetKind(this.id, this.category, this.sizes);
+  const HomeWidgetKind(
+    this.id,
+    this.category, {
+    required this.min,
+    required this.max,
+    required this.compactDefault,
+    required this.wideDefault,
+  });
 
   /// 持久化 id（冻结）。
   final String id;
   final HomeWidgetCategory category;
 
-  /// 全部尺寸档（宽网格可选的全集）。
-  final List<HomeWidgetSize> sizes;
+  /// 可调范围的下限 / 上限（宽网格口径，列 × 行）。
+  final HomeWidgetSize min;
+  final HomeWidgetSize max;
 
-  /// [grid] 里可选的尺寸档：宽度超过列数的档不出现（窄网格里没有 4×2）。
-  List<HomeWidgetSize> sizesFor(HomeGridKind grid) => <HomeWidgetSize>[
-    for (final HomeWidgetSize s in sizes)
-      if (s.cols <= grid.columns) s,
-  ];
+  /// 两种网格各自的默认尺寸（添加面板「添加」与默认模板用）。
+  final HomeWidgetSize compactDefault;
+  final HomeWidgetSize wideDefault;
+
+  /// [grid] 里的下限：宽度不超过网格列数。
+  HomeWidgetSize minFor(HomeGridKind grid) =>
+      HomeWidgetSize(math.min(min.cols, grid.columns), min.rows);
+
+  /// [grid] 里的上限：宽度封顶到网格列数，高度封顶 [kHomeWidgetMaxRows]。
+  HomeWidgetSize maxFor(HomeGridKind grid) => HomeWidgetSize(
+    math.min(max.cols, grid.columns),
+    math.min(max.rows, kHomeWidgetMaxRows),
+  );
+
+  /// [grid] 里的默认尺寸（已在范围内）。
+  HomeWidgetSize defaultFor(HomeGridKind grid) =>
+      clampHomeWidgetSize(this, grid, switch (grid) {
+        HomeGridKind.compact => compactDefault,
+        HomeGridKind.wide => wideDefault,
+      });
+
+  /// [grid] 里能不能调尺寸（范围不止一格）。
+  bool resizableIn(HomeGridKind grid) => minFor(grid) != maxFor(grid);
 
   static HomeWidgetKind? fromId(Object? id) {
     for (final HomeWidgetKind k in HomeWidgetKind.values) {
@@ -234,23 +306,51 @@ bool homeWidgetAvailable(
 
 // ── 尺寸 ────────────────────────────────────────────────────────────────
 
-/// [grid] 里离 [size] 最近的合法档（|Δ列| + |Δ行| 最小，平局取目录里靠前的）。
-HomeWidgetSize nearestHomeWidgetSize(
+/// 把 [size] 钳进 [kind] 在 [grid] 里的可调范围（各轴独立钳）。
+HomeWidgetSize clampHomeWidgetSize(
   HomeWidgetKind kind,
   HomeGridKind grid,
   HomeWidgetSize size,
 ) {
-  final List<HomeWidgetSize> allowed = kind.sizesFor(grid);
-  HomeWidgetSize best = allowed.first;
-  int bestDistance = 1 << 30;
-  for (final HomeWidgetSize s in allowed) {
-    final int d = (s.cols - size.cols).abs() + (s.rows - size.rows).abs();
-    if (d < bestDistance) {
-      best = s;
-      bestDistance = d;
-    }
+  final HomeWidgetSize lo = kind.minFor(grid);
+  final HomeWidgetSize hi = kind.maxFor(grid);
+  return HomeWidgetSize(
+    size.cols.clamp(lo.cols, hi.cols),
+    size.rows.clamp(lo.rows, hi.rows),
+  );
+}
+
+/// 拖右下角改尺寸的吸附（纯函数）：从按下时的尺寸 [start] 起，指针移了
+/// ([dx], [dy])（逻辑方向：[dx] 正 = 朝结束侧，RTL 由调用方翻号）后，右下角落在
+/// 哪一格就取那一格（四舍五入到最近的格线），再钳进可调范围。
+///
+/// [columnExtent] / [rowExtent] 是单格宽 / 高，[gap] 是格间距；一格的「步长」=
+/// 格宽 + 间距（n 格宽 = n × 步长 − 间距）。
+HomeWidgetSize homeWidgetDragSize({
+  required HomeWidgetKind kind,
+  required HomeGridKind grid,
+  required HomeWidgetSize start,
+  required double dx,
+  required double dy,
+  required double columnExtent,
+  required double rowExtent,
+  required double gap,
+}) {
+  int snap(int cells, double extent, double delta) {
+    final double step = extent + gap;
+    if (step <= 0) return cells;
+    final double span = cells * step - gap + delta;
+    return ((span + gap) / step).round();
   }
-  return best;
+
+  return clampHomeWidgetSize(
+    kind,
+    grid,
+    HomeWidgetSize(
+      snap(start.cols, columnExtent, dx),
+      snap(start.rows, rowExtent, dy),
+    ),
+  );
 }
 
 /// 网格行高（逻辑像素）：窄网格约 84、宽网格约 118 的基准，按列宽微调。
@@ -385,24 +485,38 @@ List<HomeWidgetItem> moveHomeWidget(
   return out;
 }
 
-/// 第 [index] 项在 [grid] 可选档里循环切到下一档（[step] = -1 时上一档）；只有
-/// 一档时原样返回。当前尺寸不在可选档里时从最近的合法档起算。
-List<HomeWidgetItem> cycleHomeWidgetSize(
+/// 把第 [index] 项设成 [size]（钳进 [grid] 的可调范围）；尺寸没变时原样返回。
+List<HomeWidgetItem> setHomeWidgetSize(
+  List<HomeWidgetItem> items,
+  int index,
+  HomeGridKind grid,
+  HomeWidgetSize size,
+) {
+  if (index < 0 || index >= items.length) return items;
+  final HomeWidgetItem item = items[index];
+  final HomeWidgetSize next = clampHomeWidgetSize(item.kind, grid, size);
+  if (next == item.size) return items;
+  return <HomeWidgetItem>[...items]..[index] = item.withSize(next);
+}
+
+/// 键盘 / 手柄逐格改尺寸：第 [index] 项宽加 [dCols]、高加 [dRows]（钳进范围；
+/// 当前尺寸不在范围内时先钳再加）。
+List<HomeWidgetItem> resizeHomeWidgetBy(
   List<HomeWidgetItem> items,
   int index,
   HomeGridKind grid, {
-  int step = 1,
+  int dCols = 0,
+  int dRows = 0,
 }) {
   if (index < 0 || index >= items.length) return items;
   final HomeWidgetItem item = items[index];
-  final List<HomeWidgetSize> allowed = item.kind.sizesFor(grid);
-  if (allowed.length < 2) return items;
-  final int current = allowed.indexOf(
-    nearestHomeWidgetSize(item.kind, grid, item.size),
+  final HomeWidgetSize from = clampHomeWidgetSize(item.kind, grid, item.size);
+  return setHomeWidgetSize(
+    items,
+    index,
+    grid,
+    HomeWidgetSize(from.cols + dCols, from.rows + dRows),
   );
-  final int next = (current + step) % allowed.length;
-  final HomeWidgetSize size = allowed[next < 0 ? next + allowed.length : next];
-  return <HomeWidgetItem>[...items]..[index] = item.withSize(size);
 }
 
 /// 键盘 / 手柄「上 / 下」移动：装箱后跳到上一行 / 下一行里离当前组件水平中心最近
@@ -475,7 +589,7 @@ class HomeWidgetEditSession {
 /// 当前 JSON 版本。
 const int kHomeWidgetLayoutVersion = 1;
 
-/// 解出一份布局列表：非 Map 项 / 未知 kind 丢弃，不支持的尺寸钳到最近的合法档，
+/// 解出一份布局列表：非 Map 项 / 未知 kind 丢弃，尺寸钳进该组件在这份网格里的可调范围，
 /// 重复 kind 只留第一个。
 List<HomeWidgetItem> _decodeItems(Object? raw, HomeGridKind grid) {
   final List<HomeWidgetItem> out = <HomeWidgetItem>[];
@@ -487,7 +601,7 @@ List<HomeWidgetItem> _decodeItems(Object? raw, HomeGridKind grid) {
     if (out.any((HomeWidgetItem e) => e.kind == kind)) continue;
     final Object? c = entry['c'];
     final Object? r = entry['r'];
-    final HomeWidgetSize size = nearestHomeWidgetSize(
+    final HomeWidgetSize size = clampHomeWidgetSize(
       kind,
       grid,
       HomeWidgetSize(c is int ? c : 0, r is int ? r : 0),

@@ -52,66 +52,72 @@ final Provider<bool> homeAiAgentAutoDefaultProvider = Provider<bool>((Ref ref) {
   );
 });
 
-/// 首页 AI 助手小组件（1×1 · 2×1）。可不可用由首页按
+/// 首页 AI 助手小组件（1×1…3×2，提示文字按格子高度放几行）。可不可用由首页按
 /// [homeAiAgentWidgetAvailableProvider] 决定。
 class HomeAiAgentPanel extends StatelessWidget {
-  const HomeAiAgentPanel({
-    super.key,
-    required this.size,
-    this.poster = false,
-    this.dense = false,
-  });
-
-  /// 格子尺寸档。
-  final HomeWidgetSize size;
+  const HomeAiAgentPanel({super.key, this.poster = false});
 
   /// true = 海报色块外观。
   final bool poster;
 
-  /// 格子很矮（窄网格一行高）。
-  final bool dense;
-
   @override
   Widget build(BuildContext context) {
-    return HomeWidgetFrame(
-      key: const ValueKey<String>('home-ai-agent-panel'),
-      tapKey: const ValueKey<String>('home-ai-agent-panel-open'),
-      title: t.ai_agent_title,
-      icon: FushiIcons.aiAssistant,
-      hueKey: HomeWidgetKind.aiAgent.id,
-      poster: poster,
-      dense: dense,
-      onTap: () => openAiAgent(context),
-      child: Builder(
-        builder: (BuildContext context) {
-          final HomeWidgetStyle style = HomeWidgetStyle.of(context);
-          final TextStyle base =
-              Theme.of(context).textTheme.bodyMedium ?? const TextStyle();
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            spacing: 6,
-            children: <Widget>[
-              Expanded(
-                child: Align(
-                  alignment: AlignmentDirectional.bottomStart,
-                  child: Text(
-                    t.ai_agent_input_hint,
-                    maxLines: dense ? 2 : 3,
-                    overflow: TextOverflow.ellipsis,
-                    style: base.copyWith(
-                      fontSize: dense ? 14 : 16,
-                      fontWeight: FontWeight.w700,
-                      height: 1.2,
-                      color: style.accent,
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints c) {
+        final bool dense = homeWidgetIsDense(c.maxHeight);
+        final double fontSize = dense ? 14 : 16;
+        return HomeWidgetFrame(
+          key: const ValueKey<String>('home-ai-agent-panel'),
+          tapKey: const ValueKey<String>('home-ai-agent-panel-open'),
+          title: t.ai_agent_title,
+          icon: FushiIcons.aiAssistant,
+          hueKey: HomeWidgetKind.aiAgent.id,
+          poster: poster,
+          dense: dense,
+          onTap: () => openAiAgent(context),
+          child: Builder(
+            builder: (BuildContext context) {
+              final HomeWidgetStyle style = HomeWidgetStyle.of(context);
+              final TextStyle base =
+                  Theme.of(context).textTheme.bodyMedium ?? const TextStyle();
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                spacing: 6,
+                children: <Widget>[
+                  Expanded(
+                    child: LayoutBuilder(
+                      builder: (BuildContext context, BoxConstraints box) =>
+                          Align(
+                            alignment: AlignmentDirectional.bottomStart,
+                            child: Text(
+                              t.ai_agent_input_hint,
+                              // 格子越高放越多行；按行高算，不溢出。
+                              maxLines: homeWidgetLinesFor(
+                                box.maxHeight,
+                                MediaQuery.textScalerOf(
+                                      context,
+                                    ).scale(fontSize) *
+                                    1.2,
+                                max: 6,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                              style: base.copyWith(
+                                fontSize: fontSize,
+                                fontWeight: FontWeight.w700,
+                                height: 1.2,
+                                color: style.accent,
+                              ),
+                            ),
+                          ),
                     ),
                   ),
-                ),
-              ),
-              FushiIcon(FushiIcons.forward, size: 20, color: style.accent),
-            ],
-          );
-        },
-      ),
+                  FushiIcon(FushiIcons.forward, size: 20, color: style.accent),
+                ],
+              );
+            },
+          ),
+        );
+      },
     );
   }
 }

@@ -1,4 +1,4 @@
-/// 首页「媒体库全景」小组件（[HomeWidgetKind.panorama]，2×2 · 4×2）：只是入口，不默认
+/// 首页「媒体库全景」小组件（[HomeWidgetKind.panorama]，2×2…6×4）：只是入口，不默认
 /// 渲染 3D 预览（不建图集、不跑帧循环）。点块 / 「全屏」进可操作的 [PanoramaPage]；
 /// 「分享动画」先选最后锁定的作品，再播 16 秒开场动画（只用于分享）。
 ///
@@ -24,14 +24,10 @@ class HomePanoramaPanel extends ConsumerWidget {
   const HomePanoramaPanel({
     super.key,
     required this.onOpen,
-    required this.size,
     this.poster = false,
   });
 
   final PanoramaOpenWork onOpen;
-
-  /// 格子尺寸档。
-  final HomeWidgetSize size;
 
   /// true = 海报色块外观。
   final bool poster;
@@ -103,15 +99,22 @@ class HomePanoramaPanel extends ConsumerWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
               Expanded(
-                child: Text(
-                  status,
-                  maxLines: size.cols >= 4 ? 3 : 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: base.copyWith(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                    height: 1.25,
-                    color: style.accent,
+                child: LayoutBuilder(
+                  builder: (BuildContext context, BoxConstraints box) => Text(
+                    status,
+                    // 格子越高放越多行（按行高算，不溢出）。
+                    maxLines: homeWidgetLinesFor(
+                      box.maxHeight,
+                      MediaQuery.textScalerOf(context).scale(16) * 1.25,
+                      max: 6,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                    style: base.copyWith(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      height: 1.25,
+                      color: style.accent,
+                    ),
                   ),
                 ),
               ),

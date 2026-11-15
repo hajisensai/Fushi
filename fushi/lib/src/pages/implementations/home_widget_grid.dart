@@ -6,17 +6,22 @@
 ///
 /// 编辑态（[HomeWidgetGrid.editing]）：
 /// - 组件内容不响应点击、不进焦点遍历；每块整体是一个焦点停靠点；
-/// - 左上「−」移除，有多档尺寸的右下「⤡」循环切档；
+/// - 左上「−」移除；右下角是改尺寸的柄：拖动按格吸附（实时预览框 +「3×2」标签，
+///   其余块按装箱结果让位，松手提交、进撤销栈），点按弹出尺寸选择网格
+///   （[showHomeWidgetSizePicker]）；
 /// - 长按拖动换位：拿起的块抬起跟手，原装箱位置画虚线占位，其余块按装箱让位；
-/// - 键盘 / 手柄：Enter / A 拿起 / 放下；拿着时方向键移动（左右 = 列表前后一位，上下 =
-///   装箱后上 / 下一行最近的位置）；`[` `]` / LB RB 换尺寸；Delete / X 移除；Esc / B
-///   放下（拿着时）或退出编辑（没拿着时）。
+/// - 键盘：Enter 拿起 / 放下；拿着时方向键移动（左右 = 列表前后一位，上下 = 装箱后
+///   上 / 下一行最近的位置）；Shift+方向键逐格改宽 / 高；Delete 移除；Esc 放下（拿着
+///   时）或退出编辑（没拿着时）。
+/// - 手柄（经 [GamepadButtonIntent]，不认的键转发给祖先）：A 拿起 / 放下，拿着时
+///   十字键移动；LB / RB 减 / 加宽，LT / RT 减 / 加高；X 移除；B 同 Esc。
 /// - Apple 设计系统：编辑态轻微抖动（iOS 主屏式），「减少动态效果」/ 墨水屏下不抖；
 ///   墨水屏：编辑态实线框，拿起不缩放不加阴影、改为加粗边框。
 ///
 /// 网格只认「可见」列表（不可用的组件由页面先滤掉），回调里的下标都是这份列表的下标。
 library;
 
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' show PathMetric;
 
@@ -26,6 +31,11 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/home_widget_layout.dart';
+import 'package:fushi/src/pages/implementations/home_widget_size_picker.dart';
+import 'package:fushi/src/shortcuts/gamepad_forwarding_action.dart';
+import 'package:fushi/src/shortcuts/gamepad_service.dart'
+    show GamepadButtonIntent;
+import 'package:fushi/src/shortcuts/input_binding.dart' show GamepadButton;
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_cover_block_layout.dart'
     show kFushiCoverBlockSpacing;
@@ -41,9 +51,9 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 /// 把它清回 false。
 final ValueNotifier<bool> homeWidgetEditRequested = ValueNotifier<bool>(false);
 
-/// 一块小组件的内容。[dense] = 窄网格里一行高的格子（只放最核心的一个数 / 图形）。
+/// 一块小组件的内容。格子是紧约束，内容按实际宽高（LayoutBuilder）自己排版。
 typedef HomeWidgetCellBuilder =
-    Widget Function(BuildContext context, HomeWidgetItem item, bool dense);
+    Widget Function(BuildContext context, HomeWidgetItem item);
 
 /// 格子里一块小组件的测试 / 定位 key。
 ValueKey<String> homeWidgetTileKey(HomeWidgetKind kind) =>
@@ -61,7 +71,7 @@ class HomeWidgetGrid extends StatefulWidget {
     required this.onExitEdit,
     required this.onMove,
     required this.onRemove,
-    required this.onCycleSize,
+    required this.onResize,
     this.revealKind,
     this.onRevealed,
   });
@@ -87,8 +97,8 @@ class HomeWidgetGrid extends StatefulWidget {
   /// 移除第 [index] 块。
   final void Function(int index) onRemove;
 
-  /// 第 [index] 块切到下一档（[step] = 1）/ 上一档（-1）尺寸。
-  final void Function(int index, int step) onCycleSize;
+  /// 第 [index] 块改成 [size]（网格已钳进可调范围）。
+  final void Function(int index, HomeWidgetSize size) onResize;
 
   /// 非空：下一帧把这块滚进视野（刚添加的组件），完成后回调 [onRevealed]。
   final HomeWidgetKind? revealKind;
@@ -116,6 +126,16 @@ class _HomeWidgetGridState extends State<HomeWidgetGrid>
   Offset _dragTopLeft = Offset.zero;
   Offset _dragGrab = Offset.zero;
 
+  /// 拖右下角改尺寸中的组件、按下时的尺寸、累计位移（逻辑方向）与吸附后的目标。
+  HomeWidgetKind? _resizeKind;
+  HomeWidgetSize? _resizeStart;
+  Offset _resizeDelta = Offset.zero;
+  HomeWidgetSize? _resizePreview;
+
+  /// 最近一次排版的单格宽 / 行高（拖角吸附用；只在 build 里写，不触发重建）。
+  double _colWidth = 0;
+  double _rowExtent = 0;
+
   /// Apple 编辑态抖动。
   late final AnimationController _jiggle = AnimationController(
     vsync: this,
@@ -137,6 +157,8 @@ class _HomeWidgetGridState extends State<HomeWidgetGrid>
       _lifted = null;
       _dragKind = null;
       _dragTarget = null;
+      _resizeKind = null;
+      _resizePreview = null;
     }
     final Set<HomeWidgetKind> present = <HomeWidgetKind>{
       for (final HomeWidgetItem e in widget.items) e.kind,
@@ -222,58 +244,209 @@ class _HomeWidgetGridState extends State<HomeWidgetGrid>
     if (event is KeyDownEvent) {
       if (key == LogicalKeyboardKey.enter ||
           key == LogicalKeyboardKey.numpadEnter ||
-          key == LogicalKeyboardKey.select ||
-          key == LogicalKeyboardKey.gameButtonA) {
+          key == LogicalKeyboardKey.select) {
         setState(() => _lifted = lifted ? null : kind);
         return KeyEventResult.handled;
       }
-      if (key == LogicalKeyboardKey.escape ||
-          key == LogicalKeyboardKey.gameButtonB) {
-        if (lifted) {
-          setState(() => _lifted = null);
-        } else {
-          widget.onExitEdit();
-        }
+      if (key == LogicalKeyboardKey.escape) {
+        _back(kind);
         return KeyEventResult.handled;
       }
       if (key == LogicalKeyboardKey.delete ||
-          key == LogicalKeyboardKey.backspace ||
-          key == LogicalKeyboardKey.gameButtonX) {
+          key == LogicalKeyboardKey.backspace) {
         _remove(kind);
         return KeyEventResult.handled;
       }
-      if (key == LogicalKeyboardKey.bracketLeft ||
-          key == LogicalKeyboardKey.gameButtonLeft1) {
-        widget.onCycleSize(index, -1);
-        return KeyEventResult.handled;
+    }
+    final _Direction? direction = switch (key) {
+      LogicalKeyboardKey.arrowLeft => _Direction.left,
+      LogicalKeyboardKey.arrowRight => _Direction.right,
+      LogicalKeyboardKey.arrowUp => _Direction.up,
+      LogicalKeyboardKey.arrowDown => _Direction.down,
+      _ => null,
+    };
+    if (direction == null) return KeyEventResult.ignored;
+    if (HardwareKeyboard.instance.isShiftPressed) {
+      // Shift+方向键：逐格改宽 / 高（左右按阅读方向，RTL 镜像）。
+      final bool rtl = Directionality.of(context) == TextDirection.rtl;
+      switch (direction) {
+        case _Direction.left:
+          _resizeBy(kind, dCols: rtl ? 1 : -1);
+        case _Direction.right:
+          _resizeBy(kind, dCols: rtl ? -1 : 1);
+        case _Direction.up:
+          _resizeBy(kind, dRows: -1);
+        case _Direction.down:
+          _resizeBy(kind, dRows: 1);
       }
-      if (key == LogicalKeyboardKey.bracketRight ||
-          key == LogicalKeyboardKey.gameButtonRight1) {
-        widget.onCycleSize(index, 1);
-        return KeyEventResult.handled;
-      }
+      return KeyEventResult.handled;
     }
     if (!lifted) return KeyEventResult.ignored;
+    _moveLifted(kind, direction);
+    // 拿着时方向键只移动、不让焦点跑到别的块上。
+    return KeyEventResult.handled;
+  }
+
+  /// Esc / B：拿着时放下，否则退出编辑。
+  void _back(HomeWidgetKind kind) {
+    if (_lifted == kind) {
+      setState(() => _lifted = null);
+    } else {
+      widget.onExitEdit();
+    }
+  }
+
+  /// 拿着的块按方向移动（左右 = 列表前后一位，上下 = 装箱后上 / 下一行最近处）。
+  void _moveLifted(HomeWidgetKind kind, _Direction direction) {
+    final int index = _indexOf(kind);
+    if (index < 0) return;
     final bool rtl = Directionality.of(context) == TextDirection.rtl;
-    int? target;
-    if (key == LogicalKeyboardKey.arrowLeft) {
-      target = index + (rtl ? 1 : -1);
-    } else if (key == LogicalKeyboardKey.arrowRight) {
-      target = index + (rtl ? -1 : 1);
-    } else if (key == LogicalKeyboardKey.arrowUp ||
-        key == LogicalKeyboardKey.arrowDown) {
-      target = homeWidgetVerticalTarget(
+    final int target = switch (direction) {
+      _Direction.left => index + (rtl ? 1 : -1),
+      _Direction.right => index + (rtl ? -1 : 1),
+      _Direction.up || _Direction.down => homeWidgetVerticalTarget(
         widget.items,
         index,
         widget.grid.columns,
-        up: key == LogicalKeyboardKey.arrowUp,
-      );
-    }
-    if (target == null) return KeyEventResult.ignored;
+        up: direction == _Direction.up,
+      ),
+    };
     final int clamped = target.clamp(0, widget.items.length - 1);
     if (clamped != index) widget.onMove(index, clamped);
-    // 拿着时方向键只移动、不让焦点跑到别的块上。
-    return KeyEventResult.handled;
+  }
+
+  /// 逐格改尺寸（键盘 Shift+方向键 / 手柄肩键扳机）。
+  void _resizeBy(HomeWidgetKind kind, {int dCols = 0, int dRows = 0}) {
+    final int index = _indexOf(kind);
+    if (index < 0) return;
+    final List<HomeWidgetItem> next = resizeHomeWidgetBy(
+      widget.items,
+      index,
+      widget.grid,
+      dCols: dCols,
+      dRows: dRows,
+    );
+    if (identical(next, widget.items)) return;
+    widget.onResize(index, next[index].size);
+  }
+
+  /// 手柄（[GamepadButtonIntent]，桌面轮询与 Android 原生按键同一条路）：编辑态下
+  /// 消费 A / B / X / LB / RB / LT / RT（拿着时再加十字键），其余交还祖先。
+  bool _onGamepad(HomeWidgetKind kind, GamepadButton button) {
+    if (!widget.editing || _indexOf(kind) < 0) return false;
+    final bool lifted = _lifted == kind;
+    switch (button) {
+      case GamepadButton.a:
+        setState(() => _lifted = lifted ? null : kind);
+        return true;
+      case GamepadButton.b:
+        _back(kind);
+        return true;
+      case GamepadButton.x:
+        _remove(kind);
+        return true;
+      case GamepadButton.lb:
+        _resizeBy(kind, dCols: -1);
+        return true;
+      case GamepadButton.rb:
+        _resizeBy(kind, dCols: 1);
+        return true;
+      case GamepadButton.lt:
+        _resizeBy(kind, dRows: -1);
+        return true;
+      case GamepadButton.rt:
+        _resizeBy(kind, dRows: 1);
+        return true;
+      case GamepadButton.dpadLeft when lifted:
+        _moveLifted(kind, _Direction.left);
+        return true;
+      case GamepadButton.dpadRight when lifted:
+        _moveLifted(kind, _Direction.right);
+        return true;
+      case GamepadButton.dpadUp when lifted:
+        _moveLifted(kind, _Direction.up);
+        return true;
+      case GamepadButton.dpadDown when lifted:
+        _moveLifted(kind, _Direction.down);
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  // ── 改尺寸：拖右下角 / 点柄弹网格 ─────────────────────────────────────────
+
+  void _resizeStartDrag(HomeWidgetKind kind) {
+    final int index = _indexOf(kind);
+    if (index < 0) return;
+    final HomeWidgetSize start = clampHomeWidgetSize(
+      kind,
+      widget.grid,
+      widget.items[index].size,
+    );
+    setState(() {
+      _lifted = null;
+      _dragKind = null;
+      _dragTarget = null;
+      _resizeKind = kind;
+      _resizeStart = start;
+      _resizeDelta = Offset.zero;
+      _resizePreview = start;
+    });
+  }
+
+  void _resizeUpdateDrag(Offset delta) {
+    final HomeWidgetKind? kind = _resizeKind;
+    final HomeWidgetSize? start = _resizeStart;
+    if (kind == null || start == null) return;
+    final bool rtl = Directionality.of(context) == TextDirection.rtl;
+    _resizeDelta += Offset(rtl ? -delta.dx : delta.dx, delta.dy);
+    final HomeWidgetSize next = homeWidgetDragSize(
+      kind: kind,
+      grid: widget.grid,
+      start: start,
+      dx: _resizeDelta.dx,
+      dy: _resizeDelta.dy,
+      columnExtent: _colWidth,
+      rowExtent: _rowExtent,
+      gap: kFushiCoverBlockSpacing,
+    );
+    if (next != _resizePreview) setState(() => _resizePreview = next);
+  }
+
+  void _resizeEndDrag({required bool commit}) {
+    final HomeWidgetKind? kind = _resizeKind;
+    final HomeWidgetSize? start = _resizeStart;
+    final HomeWidgetSize? preview = _resizePreview;
+    setState(() {
+      _resizeKind = null;
+      _resizeStart = null;
+      _resizePreview = null;
+      _resizeDelta = Offset.zero;
+    });
+    if (!commit || kind == null || preview == null || preview == start) {
+      return;
+    }
+    final int index = _indexOf(kind);
+    if (index >= 0) widget.onResize(index, preview);
+  }
+
+  Future<void> _openSizePicker(HomeWidgetKind kind) async {
+    final int index = _indexOf(kind);
+    if (index < 0) return;
+    final HomeWidgetSize? picked = await showHomeWidgetSizePicker(
+      context,
+      kind: kind,
+      grid: widget.grid,
+      current: widget.items[index].size,
+      label: '${t.home_widget_resize} · ${widget.labelOf(kind)}',
+    );
+    if (picked == null || !mounted || !widget.editing) return;
+    final int now = _indexOf(kind);
+    if (now >= 0 && widget.items[now].size != picked) {
+      widget.onResize(now, picked);
+    }
+    _focusNodes[kind]?.requestFocus();
   }
 
   // ── 指针拖动 ────────────────────────────────────────────────────────────
@@ -283,6 +456,8 @@ class _HomeWidgetGridState extends State<HomeWidgetGrid>
     LongPressStartDetails details,
     Rect slot,
   ) {
+    // 按在改尺寸柄上：柄自己接管（它的手势在竞技场里先赢），这里不起换位拖动。
+    if (_resizeKind != null) return;
     setState(() {
       _lifted = null;
       _dragKind = kind;
@@ -340,13 +515,27 @@ class _HomeWidgetGridState extends State<HomeWidgetGrid>
         final int columns = widget.grid.columns;
         final double rowExtent = homeWidgetRowExtent(widget.grid, width, gap);
         final double colWidth = (width - gap * (columns - 1)) / columns;
+        _colWidth = colWidth;
+        _rowExtent = rowExtent;
         final bool rtl = Directionality.of(context) == TextDirection.rtl;
 
         final HomeWidgetKind? dragKind = _dragKind;
         final int dragFrom = dragKind == null ? -1 : _indexOf(dragKind);
-        final List<HomeWidgetItem> shown = dragFrom >= 0 && _dragTarget != null
+        List<HomeWidgetItem> shown = dragFrom >= 0 && _dragTarget != null
             ? moveHomeWidget(widget.items, dragFrom, _dragTarget!)
             : widget.items;
+        // 拖角改尺寸中：按吸附后的目标尺寸装箱，其余块按结果让位。
+        final HomeWidgetKind? resizeKind = _resizeKind;
+        final HomeWidgetSize? resizePreview = _resizePreview;
+        if (resizeKind != null && resizePreview != null) {
+          final int at = shown.indexWhere(
+            (HomeWidgetItem e) => e.kind == resizeKind,
+          );
+          if (at >= 0) {
+            shown = <HomeWidgetItem>[...shown]
+              ..[at] = shown[at].withSize(resizePreview);
+          }
+        }
         final HomeWidgetPacking packing = packHomeWidgets(shown, columns);
         Rect rectOf(HomeWidgetPlacement p) {
           final double w = p.cols * colWidth + (p.cols - 1) * gap;
@@ -366,12 +555,11 @@ class _HomeWidgetGridState extends State<HomeWidgetGrid>
         final Duration slide = fushiMotionDuration(context, FushiMotion.medium);
         final List<Widget> children = <Widget>[];
         Widget? dragged;
+        Widget? resizeOverlay;
         for (int i = 0; i < packing.placements.length; i++) {
           final HomeWidgetPlacement p = packing.placements[i];
           final HomeWidgetKind kind = p.item.kind;
           final Rect rect = slots[i].rect;
-          final bool dense =
-              widget.grid == HomeGridKind.compact && p.item.size.rows == 1;
           final Widget tile = _GridTile(
             key: _tileKeyOf(kind),
             item: p.item,
@@ -385,16 +573,30 @@ class _HomeWidgetGridState extends State<HomeWidgetGrid>
             onKey: (KeyEvent e) => _onKey(kind, e),
             onEnterEdit: widget.onEnterEdit,
             onRemove: () => _remove(kind),
-            onCycleSize: () {
-              final int index = _indexOf(kind);
-              if (index >= 0) widget.onCycleSize(index, 1);
-            },
+            onGamepad: (GamepadButton b) => _onGamepad(kind, b),
+            resizing: resizeKind == kind,
+            onOpenSizePicker: () => unawaited(_openSizePicker(kind)),
+            onResizeStart: () => _resizeStartDrag(kind),
+            onResizeUpdate: _resizeUpdateDrag,
+            onResizeEnd: (bool commit) => _resizeEndDrag(commit: commit),
             onDragStart: (LongPressStartDetails d) => _dragStart(kind, d, rect),
             onDragUpdate: (LongPressMoveUpdateDetails d) =>
                 _dragUpdate(d, slots),
             onDragEnd: _dragEnd,
-            child: widget.cellBuilder(context, p.item, dense),
+            child: widget.cellBuilder(context, p.item),
           );
+          if (resizeKind == kind && resizePreview != null) {
+            resizeOverlay = AnimatedPositioned(
+              key: const ValueKey<String>('home-widget-resize-preview'),
+              duration: slide,
+              curve: FushiMotion.standard,
+              left: rect.left,
+              top: rect.top,
+              width: rect.width,
+              height: rect.height,
+              child: _ResizePreview(label: resizePreview.toString()),
+            );
+          }
           if (dragKind == kind) {
             // 原装箱位置画虚线占位，块本身跟手（画在最上层）。
             children.add(
@@ -432,6 +634,7 @@ class _HomeWidgetGridState extends State<HomeWidgetGrid>
             ),
           );
         }
+        if (resizeOverlay != null) children.add(resizeOverlay);
         if (dragged != null) children.add(dragged);
         return FocusTraversalGroup(
           policy: ReadingOrderTraversalPolicy(),
@@ -468,7 +671,12 @@ class _GridTile extends StatefulWidget {
     required this.onKey,
     required this.onEnterEdit,
     required this.onRemove,
-    required this.onCycleSize,
+    required this.resizing,
+    required this.onOpenSizePicker,
+    required this.onResizeStart,
+    required this.onResizeUpdate,
+    required this.onResizeEnd,
+    required this.onGamepad,
     required this.onDragStart,
     required this.onDragUpdate,
     required this.onDragEnd,
@@ -486,7 +694,18 @@ class _GridTile extends StatefulWidget {
   final KeyEventResult Function(KeyEvent event) onKey;
   final VoidCallback onEnterEdit;
   final VoidCallback onRemove;
-  final VoidCallback onCycleSize;
+
+  /// 正在拖右下角改尺寸（柄高亮）。
+  final bool resizing;
+  final VoidCallback onOpenSizePicker;
+  final VoidCallback onResizeStart;
+  final ValueChanged<Offset> onResizeUpdate;
+
+  /// 拖角结束：true = 松手提交，false = 取消。
+  final ValueChanged<bool> onResizeEnd;
+
+  /// 手柄键：true = 消费，false = 交还祖先。
+  final bool Function(GamepadButton button) onGamepad;
   final ValueChanged<LongPressStartDetails> onDragStart;
   final ValueChanged<LongPressMoveUpdateDetails> onDragUpdate;
   final VoidCallback onDragEnd;
@@ -507,7 +726,7 @@ class _GridTileState extends State<_GridTile> {
     final bool motion = fushiMotionEnabled(context);
     final bool editing = widget.editing;
     final HomeWidgetKind kind = widget.item.kind;
-    final bool resizable = kind.sizesFor(widget.grid).length > 1;
+    final bool resizable = kind.resizableIn(widget.grid);
     const BorderRadius radius = FushiBorderRadius.card;
 
     Widget content = widget.child;
@@ -555,13 +774,16 @@ class _GridTileState extends State<_GridTile> {
             PositionedDirectional(
               bottom: -_kEditBadgeHang,
               end: -_kEditBadgeHang,
-              child: _EditBadge(
+              child: _ResizeHandle(
                 key: ValueKey<String>('home-widget-resize/${kind.id}'),
-                icon: FushiIcons.fullscreen,
                 tooltip: t.home_widget_resize,
                 background: scheme.primary,
                 foreground: scheme.onPrimary,
-                onTap: widget.onCycleSize,
+                active: widget.resizing,
+                onTap: widget.onOpenSizePicker,
+                onStart: widget.onResizeStart,
+                onUpdate: widget.onResizeUpdate,
+                onEnd: widget.onResizeEnd,
               ),
             ),
         ],
@@ -625,28 +847,41 @@ class _GridTileState extends State<_GridTile> {
     }
 
     final HomeWidgetSize size = widget.item.size;
-    return Focus(
-      focusNode: widget.focusNode,
-      canRequestFocus: editing,
-      skipTraversal: !editing,
-      onFocusChange: (bool focused) => setState(() => _focused = focused),
-      onKeyEvent: (FocusNode _, KeyEvent event) => widget.onKey(event),
-      child: Semantics(
-        container: true,
-        label: editing ? '${widget.label} · $size' : null,
-        hint: editing ? t.home_widget_edit_hint : null,
-        child: KeyedSubtree(key: homeWidgetTileKey(kind), child: content),
+    // 手柄按钮经 GamepadButtonIntent 从焦点节点上溯；Actions 必须在 Focus 之上，
+    // 不认的键显式转发给祖先（首页 LT/RT 换 tab 等），见 [GamepadButtonForwardingAction]。
+    return Actions(
+      actions: <Type, Action<Intent>>{
+        GamepadButtonIntent: GamepadButtonForwardingAction(
+          ancestorContext: context,
+          handle: widget.onGamepad,
+        ),
+      },
+      child: Focus(
+        focusNode: widget.focusNode,
+        canRequestFocus: editing,
+        skipTraversal: !editing,
+        onFocusChange: (bool focused) => setState(() => _focused = focused),
+        onKeyEvent: (FocusNode _, KeyEvent event) => widget.onKey(event),
+        child: Semantics(
+          container: true,
+          label: editing ? '${widget.label} · $size' : null,
+          hint: editing ? t.home_widget_edit_hint : null,
+          child: KeyedSubtree(key: homeWidgetTileKey(kind), child: content),
+        ),
       ),
     );
   }
 }
 
-/// 编辑态的角标按钮（左上「−」/ 右下「⤡」）：可见 24 圆，命中区 40；纯指针面，
-/// 键盘 / 手柄走整块的按键（Delete / X、`[` `]`）。
 /// 编辑角标向组件外挂出的距离：40 的命中框外挂 16，24 的圆点中心落在组件角内
 /// 4dp 处（圆角弧上），命中框仍有 24×24 落在组件内（组件外那部分不接收命中）。
 const double _kEditBadgeHang = 16;
 
+/// 方向（键盘方向键 / 手柄十字键共用）。
+enum _Direction { left, right, up, down }
+
+/// 编辑态左上「−」角标：可见 24 圆，命中区 40；纯指针面，键盘 / 手柄走整块的
+/// 按键（Delete / X）。
 class _EditBadge extends StatelessWidget {
   const _EditBadge({
     super.key,
@@ -703,6 +938,207 @@ class _EditBadge extends StatelessWidget {
       ),
     ),
   );
+}
+
+/// 编辑态右下角的改尺寸柄：可见 24 圆（拖动中放大高亮），命中区 40。
+///
+/// 按下即用 [EagerGestureRecognizer] 赢下手势竞技场——外层的长按换位与页面纵向
+/// 滚动都拿不到这根指针，拖动不会变成滚页或换位；位移与抬起由 [Listener] 读原始
+/// 指针事件：移动超过触摸阈值算拖角（[onStart] / [onUpdate] / [onEnd]），没移动就
+/// 抬起算点按（[onTap] 弹尺寸网格）。键盘 / 手柄改尺寸走整块的按键。
+class _ResizeHandle extends StatefulWidget {
+  const _ResizeHandle({
+    super.key,
+    required this.tooltip,
+    required this.background,
+    required this.foreground,
+    required this.active,
+    required this.onTap,
+    required this.onStart,
+    required this.onUpdate,
+    required this.onEnd,
+  });
+
+  final String tooltip;
+  final Color background;
+  final Color foreground;
+  final bool active;
+  final VoidCallback onTap;
+  final VoidCallback onStart;
+  final ValueChanged<Offset> onUpdate;
+  final ValueChanged<bool> onEnd;
+
+  @override
+  State<_ResizeHandle> createState() => _ResizeHandleState();
+}
+
+class _ResizeHandleState extends State<_ResizeHandle> {
+  int? _pointer;
+  Offset _travel = Offset.zero;
+  bool _dragging = false;
+
+  void _down(PointerDownEvent e) {
+    if (_pointer != null) return;
+    _pointer = e.pointer;
+    _travel = Offset.zero;
+    _dragging = false;
+  }
+
+  void _move(PointerMoveEvent e) {
+    if (e.pointer != _pointer) return;
+    if (!_dragging) {
+      _travel += e.delta;
+      if (_travel.distance < computeHitSlop(e.kind, null)) return;
+      _dragging = true;
+      widget.onStart();
+      widget.onUpdate(_travel);
+      return;
+    }
+    widget.onUpdate(e.delta);
+  }
+
+  void _up(PointerUpEvent e) {
+    if (e.pointer != _pointer) return;
+    _pointer = null;
+    if (_dragging) {
+      _dragging = false;
+      widget.onEnd(true);
+    } else {
+      widget.onTap();
+    }
+  }
+
+  void _cancel(PointerCancelEvent e) {
+    if (e.pointer != _pointer) return;
+    _pointer = null;
+    if (_dragging) {
+      _dragging = false;
+      widget.onEnd(false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bool active = widget.active;
+    return ExcludeFocus(
+      child: Semantics(
+        button: true,
+        label: widget.tooltip,
+        excludeSemantics: true,
+        onTap: widget.onTap,
+        child: FushiTooltip(
+          message: widget.tooltip,
+          child: MouseRegion(
+            cursor: SystemMouseCursors.resizeDownRight,
+            child: RawGestureDetector(
+              behavior: HitTestBehavior.opaque,
+              gestures: <Type, GestureRecognizerFactory>{
+                EagerGestureRecognizer:
+                    GestureRecognizerFactoryWithHandlers<
+                      EagerGestureRecognizer
+                    >(
+                      EagerGestureRecognizer.new,
+                      (EagerGestureRecognizer _) {},
+                    ),
+              },
+              child: Listener(
+                behavior: HitTestBehavior.opaque,
+                onPointerDown: _down,
+                onPointerMove: _move,
+                onPointerUp: _up,
+                onPointerCancel: _cancel,
+                child: SizedBox.square(
+                  dimension: 40,
+                  child: Center(
+                    child: AnimatedScale(
+                      scale: active ? 1.25 : 1,
+                      duration: fushiMotionDuration(context, FushiMotion.short),
+                      curve: FushiMotion.standard,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: widget.background,
+                          shape: BoxShape.circle,
+                          boxShadow: const <BoxShadow>[
+                            BoxShadow(
+                              color: Color(0x33000000),
+                              blurRadius: 4,
+                              offset: Offset(0, 1),
+                            ),
+                          ],
+                        ),
+                        child: SizedBox.square(
+                          dimension: 24,
+                          child: Center(
+                            child: FushiIcon(
+                              FushiIcons.fullscreen,
+                              size: 16,
+                              color: widget.foreground,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 拖角改尺寸时目标格子上的预览框：主色实线框 + 淡底 + 居中「3×2」标签。
+class _ResizePreview extends StatelessWidget {
+  const _ResizePreview({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final Color primary = tokens.surfaces.primary;
+    return IgnorePointer(
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: primary.withValues(alpha: 0.10),
+          borderRadius: FushiBorderRadius.card,
+        ),
+        child: CustomPaint(
+          painter: _OutlinePainter(
+            color: primary,
+            width: 2.5,
+            dashed: false,
+            radius: FushiBorderRadius.card,
+          ),
+          child: Center(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: scheme.primary,
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 4,
+                ),
+                child: Text(
+                  label,
+                  key: const ValueKey<String>('home-widget-resize-label'),
+                  style: tokens.type.listTitle.copyWith(
+                    color: scheme.onPrimary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 /// 拖动时原装箱位置的虚线占位。

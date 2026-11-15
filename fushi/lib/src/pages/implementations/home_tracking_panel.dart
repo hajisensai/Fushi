@@ -200,7 +200,6 @@ class HomeTrackingPanel extends StatelessWidget {
     required this.summary,
     required this.onOpen,
     this.poster = false,
-    this.dense = false,
   });
 
   final HomeTrackingSummary summary;
@@ -211,79 +210,97 @@ class HomeTrackingPanel extends StatelessWidget {
   /// Poster block look instead of the section card.
   final bool poster;
 
-  /// The cell is one short row (compact grid).
-  final bool dense;
-
   @override
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final bool attention = summary.needsAttention;
     final bool action = attention || summary.connected == 0;
     final String text = homeTrackingPanelText(summary, DateTime.now());
-    return HomeWidgetFrame(
-      key: const ValueKey<String>('home-tracking-panel'),
-      tapKey: const ValueKey<String>('home-tracking-panel-open'),
-      title: t.home_tracking_panel_title,
-      icon: attention ? FushiIcons.syncProblem : FushiIcons.sync,
-      hueKey: HomeWidgetKind.tracking.id,
-      poster: poster,
-      dense: dense,
-      attention: attention,
-      onTap: onOpen,
-      child: Builder(
-        builder: (BuildContext context) {
-          final HomeWidgetStyle style = HomeWidgetStyle.of(context);
-          final TextStyle base =
-              Theme.of(context).textTheme.bodyMedium ?? const TextStyle();
-          return AnimatedSwitcher(
-            duration: fushiMotionDuration(context, FushiMotion.short),
-            switchInCurve: FushiMotion.enter,
-            switchOutCurve: FushiMotion.exit,
-            layoutBuilder: (Widget? current, List<Widget> previous) => Stack(
-              alignment: AlignmentDirectional.centerStart,
-              children: <Widget>[...previous, ?current],
-            ),
-            child: Row(
-              // Keyed by the text: a change of state cross-fades instead of
-              // jumping.
-              key: ValueKey<String>(text),
-              spacing: 8,
-              children: <Widget>[
-                if (!action && summary.pending == 0)
-                  FushiIcon(FushiIcons.check, size: 18, color: style.accent),
-                Expanded(
-                  child: Text(
-                    text,
-                    key: const ValueKey<String>('home-tracking-panel-text'),
-                    maxLines: dense ? 1 : 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: base.copyWith(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: attention && !poster
-                          ? scheme.error
-                          : style.foreground,
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints c) {
+        // Laid out from the real cell size: a short cell is one dense line, a
+        // taller one gives the status text more lines.
+        final bool dense = homeWidgetIsDense(c.maxHeight);
+        return HomeWidgetFrame(
+          key: const ValueKey<String>('home-tracking-panel'),
+          tapKey: const ValueKey<String>('home-tracking-panel-open'),
+          title: t.home_tracking_panel_title,
+          icon: attention ? FushiIcons.syncProblem : FushiIcons.sync,
+          hueKey: HomeWidgetKind.tracking.id,
+          poster: poster,
+          dense: dense,
+          attention: attention,
+          onTap: onOpen,
+          child: LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints box) {
+              final HomeWidgetStyle style = HomeWidgetStyle.of(context);
+              final TextStyle base =
+                  Theme.of(context).textTheme.bodyMedium ?? const TextStyle();
+              final int lines = dense
+                  ? 1
+                  : homeWidgetLinesFor(
+                      box.maxHeight,
+                      MediaQuery.textScalerOf(context).scale(13) * 1.45,
+                      max: 6,
+                    );
+              return AnimatedSwitcher(
+                duration: fushiMotionDuration(context, FushiMotion.short),
+                switchInCurve: FushiMotion.enter,
+                switchOutCurve: FushiMotion.exit,
+                layoutBuilder: (Widget? current, List<Widget> previous) =>
+                    Stack(
+                      alignment: AlignmentDirectional.centerStart,
+                      children: <Widget>[...previous, ?current],
                     ),
-                  ),
+                child: Row(
+                  // Keyed by the text: a change of state cross-fades instead of
+                  // jumping.
+                  key: ValueKey<String>(text),
+                  spacing: 8,
+                  children: <Widget>[
+                    if (!action && summary.pending == 0)
+                      FushiIcon(
+                        FushiIcons.check,
+                        size: 18,
+                        color: style.accent,
+                      ),
+                    Expanded(
+                      child: Text(
+                        text,
+                        key: const ValueKey<String>('home-tracking-panel-text'),
+                        maxLines: lines,
+                        overflow: TextOverflow.ellipsis,
+                        style: base.copyWith(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: attention && !poster
+                              ? scheme.error
+                              : style.foreground,
+                        ),
+                      ),
+                    ),
+                    if (action)
+                      FushiFilledButton.tonal(
+                        key: const ValueKey<String>(
+                          'home-tracking-panel-action',
+                        ),
+                        size: FushiButtonSize.xs,
+                        onPressed: onOpen,
+                        child: Text(
+                          summary.connected == 0
+                              ? t.home_tracking_panel_connect
+                              : t.home_tracking_panel_review,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                  ],
                 ),
-                if (action)
-                  FushiFilledButton.tonal(
-                    key: const ValueKey<String>('home-tracking-panel-action'),
-                    size: FushiButtonSize.xs,
-                    onPressed: onOpen,
-                    child: Text(
-                      summary.connected == 0
-                          ? t.home_tracking_panel_connect
-                          : t.home_tracking_panel_review,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-              ],
-            ),
-          );
-        },
-      ),
+              );
+            },
+          ),
+        );
+      },
     );
   }
 }

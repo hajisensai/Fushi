@@ -114,8 +114,9 @@ final Provider<bool> homeSrsAutoDefaultProvider = Provider<bool>((Ref ref) {
 /// 首页「复习」小组件（[HomeWidgetKind.srsReview]，1×1 · 2×1）。可不可用由首页按
 /// 复习模块开关决定；本 widget 只管画。
 ///
-/// - 1×1：今天还剩的张数大字；格子不矮（宽网格）时再挂「开始复习」。
-/// - 2×1：大字 + 新卡 / 学习中 / 到期三色计数 + 「开始复习」，格子不矮时再挂今日
+/// 按格子的实际宽高排版（[homeWidgetIsWide] / [homeWidgetIsDense]）：
+/// - 窄格：今天还剩的张数大字；高度够时再挂「开始复习」。
+/// - 宽格：大字 + 新卡 / 学习中 / 到期三色计数 + 「开始复习」，不矮时再挂今日
 ///   已复习一行（张数 · 用时 · 正确率）。
 ///
 /// 今天没有待复习的卡时收成一行「今日已完成」；计数加载中挂骨架。点块本身进牌组
@@ -125,9 +126,7 @@ class HomeSrsPanel extends ConsumerWidget {
     super.key,
     required this.onOpenDecks,
     required this.onStartReview,
-    required this.size,
     this.poster = false,
-    this.dense = false,
   });
 
   /// 点块本身：进牌组列表。
@@ -136,14 +135,8 @@ class HomeSrsPanel extends ConsumerWidget {
   /// 点「开始复习」：直接复习这个牌组（[SrsDeckListData.firstRootWithWork]）。
   final void Function(SrsDeckSummary deck) onStartReview;
 
-  /// 格子尺寸档。
-  final HomeWidgetSize size;
-
   /// true = 海报色块外观。
   final bool poster;
-
-  /// 格子很矮（窄网格一行高）：不挂按钮与今日一行。
-  final bool dense;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -154,23 +147,28 @@ class HomeSrsPanel extends ConsumerWidget {
     final SrsTodayReviewSummary? today = ref
         .watch(homeSrsTodayReviewsProvider)
         .valueOrNull;
-    return HomeWidgetFrame(
-      key: const ValueKey<String>('home-srs-panel'),
-      tapKey: const ValueKey<String>('home-srs-panel-open'),
-      title: t.nav_srs,
-      icon: FushiIcons.repeat,
-      hueKey: HomeWidgetKind.srsReview.id,
-      poster: poster,
-      dense: dense,
-      onTap: onOpenDecks,
-      child: _HomeSrsBody(
-        data: data,
-        target: target,
-        today: today,
-        wide: size.cols >= 2,
-        dense: dense,
-        onStartReview: onStartReview,
-      ),
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints c) {
+        final bool dense = homeWidgetIsDense(c.maxHeight);
+        return HomeWidgetFrame(
+          key: const ValueKey<String>('home-srs-panel'),
+          tapKey: const ValueKey<String>('home-srs-panel-open'),
+          title: t.nav_srs,
+          icon: FushiIcons.repeat,
+          hueKey: HomeWidgetKind.srsReview.id,
+          poster: poster,
+          dense: dense,
+          onTap: onOpenDecks,
+          child: _HomeSrsBody(
+            data: data,
+            target: target,
+            today: today,
+            wide: homeWidgetIsWide(c.maxWidth),
+            dense: dense,
+            onStartReview: onStartReview,
+          ),
+        );
+      },
     );
   }
 }
@@ -189,7 +187,7 @@ class _HomeSrsBody extends StatelessWidget {
   final SrsDeckSummary? target;
   final SrsTodayReviewSummary? today;
 
-  /// 2×1（有横向余量放计数与按钮）。
+  /// 宽格（有横向余量放计数与按钮）。
   final bool wide;
   final bool dense;
   final void Function(SrsDeckSummary deck) onStartReview;

@@ -78,6 +78,26 @@ class HomeWidgetStyle extends InheritedWidget {
       dense != oldWidget.dense;
 }
 
+/// 格子高度低于它算「矮格」（窄网格一行高 76…96）：内容只放最核心的一个数 /
+/// 图形，外框内边距收紧。宽网格最矮一行夹到 104，不算矮格。
+const double kHomeWidgetDenseHeight = 100;
+
+/// 格子宽度达到它算「宽格」（约 2 列起）：横向能并排挂计数 / 按钮 / 目标环。
+const double kHomeWidgetWideWidth = 240;
+
+/// [height] 高的格子是不是矮格（见 [kHomeWidgetDenseHeight]）。
+bool homeWidgetIsDense(double height) => height < kHomeWidgetDenseHeight;
+
+/// [width] 宽的格子是不是宽格（见 [kHomeWidgetWideWidth]）。
+bool homeWidgetIsWide(double width) => width >= kHomeWidgetWideWidth;
+
+/// [height] 高的区域里，行高 [lineHeight] 的文字最多放几行（至少 1 行，最多
+/// [max] 行）：格子越高、文字放得越多，又不会溢出。
+int homeWidgetLinesFor(double height, double lineHeight, {int max = 8}) {
+  if (!height.isFinite) return max;
+  return (height / lineHeight).floor().clamp(1, max);
+}
+
 /// 小组件格子的内边距：窄网格一行高的格子收紧，其余统一 14。
 double homeWidgetFramePadding({required bool dense}) => dense ? 12 : 14;
 

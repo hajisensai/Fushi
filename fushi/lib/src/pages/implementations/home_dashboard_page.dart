@@ -645,8 +645,9 @@ class _HomeDashboardPageState
   /// 首载骨架的封面高 [_kContinueCoverHeight]。
   static const double _kContinueCoverHeight = 132;
 
-  /// 「最近添加」组件最多几条：只给一眼「新进了什么」，完整列表在各库页。
-  static const int _kRecentLimit = 4;
+  /// 「最近添加」组件最多取几条：格子按实际大小放得下几条列几条（6×4 约放满），
+  /// 完整列表在各库页。
+  static const int _kRecentLimit = 24;
 
   /// 首页小组件编辑态（spec 2026-11-15）。
   bool _editingWidgets = false;
@@ -1671,16 +1672,14 @@ class _HomeDashboardPageState
                 items: visible,
                 grid: grid,
                 editing: _editingWidgets,
-                cellBuilder:
-                    (BuildContext context, HomeWidgetItem item, bool dense) =>
-                        _buildWidgetCell(
-                          tokens: tokens,
-                          appModel: appModel,
-                          entries: continueEntries,
-                          books: books,
-                          item: item,
-                          dense: dense,
-                        ),
+                cellBuilder: (BuildContext context, HomeWidgetItem item) =>
+                    _buildWidgetCell(
+                      tokens: tokens,
+                      appModel: appModel,
+                      entries: continueEntries,
+                      books: books,
+                      item: item,
+                    ),
                 labelOf: homeWidgetLabel,
                 onEnterEdit: _enterWidgetEdit,
                 onExitEdit: () => unawaited(_finishWidgetEdit()),
@@ -1695,12 +1694,12 @@ class _HomeDashboardPageState
                   (List<HomeWidgetItem> full) =>
                       removeHomeWidgetAt(full, fullIndexOf(full, index)),
                 ),
-                onCycleSize: (int index, int step) => _editWidgets(
-                  (List<HomeWidgetItem> full) => cycleHomeWidgetSize(
+                onResize: (int index, HomeWidgetSize size) => _editWidgets(
+                  (List<HomeWidgetItem> full) => setHomeWidgetSize(
                     full,
                     fullIndexOf(full, index),
                     grid,
-                    step: step,
+                    size,
                   ),
                 ),
                 revealKind: _revealWidget,
@@ -1925,9 +1924,9 @@ class _HomeDashboardPageState
       descriptionOf: homeWidgetDescription,
     );
     if (picked == null || !mounted || !_editingWidgets) return;
-    // 面板开着时窗口可能跨过断点：尺寸按此刻的网格归一。
+    // 添加用默认尺寸；面板开着时窗口可能跨过断点，所以取此刻网格的默认尺寸。
     final HomeWidgetItem item = picked.withSize(
-      nearestHomeWidgetSize(picked.kind, _widgetGrid, picked.size),
+      picked.kind.defaultFor(_widgetGrid),
     );
     _revealWidget = item.kind;
     _editWidgets((List<HomeWidgetItem> full) => addHomeWidget(full, item));
@@ -2794,6 +2793,7 @@ class _HomeDashboardPageState
   Widget _buildPosterWeekBars(
     FushiCoverBlockColors colors, {
     required double height,
+    Key key = const ValueKey<String>('home-week-bars'),
   }) {
     final List<String> keys = _statWindow.lastDayKeys(7);
     final List<int> values = <int>[
@@ -2804,7 +2804,7 @@ class _HomeDashboardPageState
         '${keys[i]} · ${formatStatChars(values[i])}',
     ];
     return Semantics(
-      key: const ValueKey<String>('home-week-bars'),
+      key: key,
       container: true,
       label: '${t.stat_week_past} · ${labels.join(', ')}',
       child: FushiPosterBars(
