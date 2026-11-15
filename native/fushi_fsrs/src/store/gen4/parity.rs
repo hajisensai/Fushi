@@ -81,6 +81,19 @@ const SKIPS: &[(&str, &str, &str)] = &[
     ),
 ];
 
+/// `store/sync2/tests.rs` 的 `legacy_library` 夹具只给五条笔记写了 `{"createdAt":2}` 的身份记录（没有 `noteTypeId`、ID
+/// 也不是 UUID）：协议 3 冻结的缓存重建在这种身份记录上整次失败（`cache.rs` 文件头「与协议 3 的差别」），缓存层没有
+/// 协议 3 的基准可比。
+const LEGACY_LIBRARY_NOTES: &str = "the legacy_library fixture writes note identity records holding only createdAt      (no noteTypeId, ids that are not UUIDs): protocol 3's frozen cache rebuild fails as a whole on them (cache.rs      header), so there is no protocol 3 cache baseline to compare against";
+
+/// `store/sync2/timeline.rs` 测试的笔记身份记录用 `notetype` 键、ID 是 `N1`：协议 3 的缓存重建在非 UUID 的笔记 ID 上整次
+/// 失败（`cache.rs` 文件头「与协议 3 的差别」）。
+const TIMELINE_NOTES: &str = "the timeline tests write note identity records keyed `notetype` with ids such as N1      (not UUIDs): protocol 3's frozen cache rebuild fails as a whole on them (cache.rs header), so there is no      protocol 3 cache baseline to compare against";
+
+/// `store/tests_v15_upgrade.rs` 的真实 v15 / v8 库（tests/fixtures 的生成器）里笔记身份记录没有 `noteTypeId`：协议 3 的
+/// 缓存重建整次失败。
+const OLD_SCHEMA_FIXTURE_NOTES: &str = "the real v15 / v8 fixture databases (tests/fixtures generators) hold note      identity records without noteTypeId: protocol 3's frozen cache rebuild fails as a whole on them (cache.rs      header), so there is no protocol 3 cache baseline to compare against";
+
 /// 对不上、而且不该对上的场景：(测试名的结尾, 类别——[against_protocol_3] 的类别或 `error`, 原因)。都是测试
 /// 手改了协议 3 的日志表或投影表、库自己已经不自洽。
 const KNOWN: &[(&str, &str, &str)] = &[
@@ -119,6 +132,86 @@ const KNOWN: &[(&str, &str, &str)] = &[
         "error",
         "the test drops sync2_ops.sc / sc_at by hand: the ops whose payload was packed against a config snapshot \
          lose the reference, so their bytes no longer hash to the stored chain (the reader refuses them)",
+    ),
+    (
+        "gen4::derive::tests::the_index_agrees_with_the_protocol_3_projection",
+        "caches",
+        LEGACY_LIBRARY_NOTES,
+    ),
+    (
+        "gen4::import::tests::a_library_that_is_not_fully_on_protocol_3_is_refused_and_nothing_lands",
+        "caches",
+        LEGACY_LIBRARY_NOTES,
+    ),
+    (
+        "gen4::legacy::tests::preflight_stops_a_library_that_is_not_fully_on_protocol_3",
+        "caches",
+        LEGACY_LIBRARY_NOTES,
+    ),
+    (
+        "sync2::tests::migration_keeps_every_schedule_and_every_legacy_row",
+        "caches",
+        LEGACY_LIBRARY_NOTES,
+    ),
+    (
+        "sync2::tests::migration_runs_in_resumable_batches",
+        "caches",
+        LEGACY_LIBRARY_NOTES,
+    ),
+    (
+        "sync2::tests_migrate_dedup::legacy_dots_lists_every_legacy_edit_in_the_op_log_including_dominated_ones",
+        "caches",
+        LEGACY_LIBRARY_NOTES,
+    ),
+    (
+        "sync2::tests_migrate_dedup::migrating_a_library_fully_covered_by_received_ops_wraps_nothing",
+        "caches",
+        LEGACY_LIBRARY_NOTES,
+    ),
+    (
+        "sync2::tests_migrate_dedup::ops_received_between_migration_batches_are_not_wrapped_again",
+        "caches",
+        LEGACY_LIBRARY_NOTES,
+    ),
+    (
+        "sync2::tests_migrate_dedup::a_second_device_migrating_the_same_legacy_library_wraps_only_what_is_missing",
+        "caches",
+        LEGACY_LIBRARY_NOTES,
+    ),
+    (
+        "sync2::timeline::tests::restore_brings_every_register_back_to_the_moment",
+        "caches",
+        TIMELINE_NOTES,
+    ),
+    (
+        "sync2::timeline::tests::restore_cuts_migrated_history_at_its_original_time",
+        "caches",
+        TIMELINE_NOTES,
+    ),
+    (
+        "sync2::timeline::tests::restore_drops_map_entries_added_after_the_moment",
+        "caches",
+        TIMELINE_NOTES,
+    ),
+    (
+        "tests_v15_upgrade::a_real_v15_database_upgrades_row_for_row",
+        "caches",
+        OLD_SCHEMA_FIXTURE_NOTES,
+    ),
+    (
+        "tests_v15_upgrade::a_real_v8_database_upgrades_row_for_row",
+        "caches",
+        OLD_SCHEMA_FIXTURE_NOTES,
+    ),
+    (
+        "dryrun::tests::a_failed_protocol_3_cache_rebuild_is_incomplete_not_pass",
+        "caches",
+        "the test adds a note identity record without noteTypeId on purpose: protocol 3's frozen cache rebuild          fails as a whole on it (cache.rs header), so there is no protocol 3 cache baseline to compare against",
+    ),
+    (
+        "dryrun::tests::parity_reports_a_failed_protocol_3_cache_rebuild_as_a_caches_diff",
+        "caches",
+        "the test adds a note identity record without noteTypeId on purpose to prove the parity gate reports a          failed protocol 3 cache rebuild instead of skipping the cache layer",
     ),
     (
         "tests_channel::channel_is_for_a_profile_holding_nothing_but_its_own_builtins",
@@ -189,22 +282,38 @@ fn protocol_3_caches(
 }
 
 /// [compare::against_protocol_3] 的测试口径：协议 3 一侧的缓存行取 [protocol_3_caches]（可写连接上先收尾再重建、
-/// 整个回滚；只读连接读现有的缓存表），不另外跳过什么；出错直接让测试失败。
+/// 整个回滚；只读连接读现有的缓存表），不另外跳过什么；出错直接让测试失败。协议 3 一侧收尾 / 重建失败
+/// （[OldCachesError::Protocol3]）在干跑里记成基准缺失（结论 `incomplete`），在这里一律报成 `caches` 差异：测试门
+/// 不接受「缓存层没比成」，真预期协议 3 重建会失败的场景写进 [KNOWN] 显式豁免。
 ///
 /// 可写连接上先在一个 SAVEPOINT 里把扣住按协议 3 自己的规则在全集上重判一遍（[rejudge_holds]）再比，比完整个回滚
 /// （库原样不动）；只读打开的库（真实样本、干跑）动不了，比它落库时的判定。
 pub(crate) fn against_protocol_3(src: &Connection, profile: &str, t: &Truth<'_>, col: i64) -> Diff {
-    let compare = || {
-        compare::against_protocol_3(
+    let compare = || -> Diff {
+        let mut protocol_3_failed: Option<String> = None;
+        let mut diff = compare::against_protocol_3(
             src,
             profile,
             t,
             col,
-            &mut |src: &Connection, profile: &str, cfg: &str| protocol_3_caches(src, profile, cfg),
+            &mut |src: &Connection, profile: &str, cfg: &str| {
+                protocol_3_caches(src, profile, cfg).inspect_err(|e| {
+                    if let OldCachesError::Protocol3(text) = e {
+                        protocol_3_failed = Some(text.clone());
+                    }
+                })
+            },
             &compare::Skip::default(),
         )
         .unwrap()
-        .0
+        .0;
+        if let Some(text) = protocol_3_failed {
+            compare::push_pair(
+                &mut diff,
+                ("caches", BTreeSet::from([text]), BTreeSet::new()),
+            );
+        }
+        diff
     };
     if src.is_readonly("main").unwrap() {
         return compare();

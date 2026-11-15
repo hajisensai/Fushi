@@ -1538,6 +1538,10 @@ pub const REPORT_FILE: &str = "report.json";
 /// 开跑时先落盘的报告的结论（[rehearse]）：跑完会被真正的结论覆盖，还留着就是进程中途死了。
 pub const VERDICT_STARTED: &str = "started";
 
+/// [rehearsal_report] 读到本进程里这个库的预演正在跑（[REHEARSALS] 里有它的登记）时，把文件里的 [VERDICT_STARTED]
+/// 换成这个：文件里的开跑标记是给「进程中途死了」留的证据，跑着的时候读到它不能当成中断。
+pub const VERDICT_RUNNING: &str = "running";
+
 /// 原子地写 `<work>/report.json`（先写临时文件再改名，读的一方不会读到半份）。
 fn write_report(work: &Path, report: &Value) -> Result<(), String> {
     let text = serde_json::to_string_pretty(report).map_err(|e| e.to_string())?;
@@ -1657,8 +1661,11 @@ fn rehearse_with(
             m.insert("error".into(), json!(e));
             m.insert("finishedAtMs".into(), json!(now_ms()));
             stamp(&mut m);
-            write_report(&work, &Value::Object(m))?;
-            return Err(e);
+            // 落报告本身也失败时两个错误都交回去，原错误不丢。
+            return Err(match write_report(&work, &Value::Object(m)) {
+                Ok(()) => e,
+                Err(w) => format!("{e} (and the error report could not be saved: {w})"),
+            });
         }
     };
     report.insert("finishedAtMs".into(), json!(now_ms()));
@@ -1668,12 +1675,17 @@ fn rehearse_with(
     Ok(report)
 }
 
-/// 上一次预演的报告（[rehearsal_dir] 里的 `report.json`）；没有就是 null。读坏了的文件当没有。
+/// 上一次预演的报告（[rehearsal_dir] 里的 `report.json`）；没有就是 null。读坏了的文件当没有。本进程里这个库的预演
+/// 正在跑时，文件里的开跑标记报成 [VERDICT_RUNNING]（不是「上次中途死了」）。
 pub fn rehearsal_report(db: &Path) -> Value {
-    std::fs::read_to_string(rehearsal_dir(db).join(REPORT_FILE))
+    let mut report = std::fs::read_to_string(rehearsal_dir(db).join(REPORT_FILE))
         .ok()
-        .and_then(|t| serde_json::from_str(&t).ok())
-        .unwrap_or(Value::Null)
+        .and_then(|t| serde_json::from_str::<Value>(&t).ok())
+        .unwrap_or(Value::Null);
+    if report["verdict"] == VERDICT_STARTED && rehearsals().contains_key(db) {
+        report["verdict"] = json!(VERDICT_RUNNING);
+    }
+    report
 }
 
 /// 请 [db] 上在跑的预演停下（不等）。没有在跑的就什么都不做。
@@ -1702,7 +1714,7 @@ mod tests {
     use serde_json::{Value, json};
 
     use super::*;
-    use crate::store::sync2::tests::{DAY, Device, P, deck_entity, edit, review};
+    use crate::store::sync2::tests::{DAY, Device, P, deck_entity, edit, review, tempdir};
 
     const T0: i64 = 1_700_000_000_000;
     const N1: &str = "0193a1b2-0000-7000-8000-0000000000b1";
@@ -1858,14 +1870,7 @@ mod tests {
     /// 三类没比成。profile 报告记下 `cacheBaseline.unavailable`，结论是 `incomplete`、不是 `pass`。
     #[test]
     fn a_failed_protocol_3_cache_rebuild_is_incomplete_not_pass() {
-        const N3: &str = "0193a1b2-0000-7000-8000-0000000000b3";
-        let d = library("g4dryincomplete");
-        d.apply(
-            T0 + 2 * DAY,
-            vec![
-                json!({"t": "entity", "x": {"id": N3, "p": P, "k": "note", "d": {"createdAt": 1, "guid": N3}}}),
-            ],
-        );
+        let d = library_with_a_malformed_note("g4dryincomplete");
         let r = dry(&d, &Stop::new(), &mut |_, _| {});
         assert_eq!(r["verdict"], "incomplete", "{r:#}");
         let p = &r["profiles"][0];
@@ -1874,6 +1879,33 @@ mod tests {
             .as_str()
             .unwrap_or_default();
         assert!(why.contains("noteTypeId missing"), "{p:#}");
+    }
+
+    /// [library] 再加一条身份记录缺 `noteTypeId` 的笔记：协议 3 的缓存重建因此整次失败（`cache.rs` 文件头「与协议 3
+    /// 的差别」）。
+    fn library_with_a_malformed_note(tag: &str) -> Device {
+        const N3: &str = "0193a1b2-0000-7000-8000-0000000000b3";
+        let d = library(tag);
+        d.apply(
+            T0 + 2 * DAY,
+            vec![
+                json!({"t": "entity", "x": {"id": N3, "p": P, "k": "note", "d": {"createdAt": 1, "guid": N3}}}),
+            ],
+        );
+        d
+    }
+
+    /// 同一种库在对拍装置里（`parity::against_protocol_3` 的测试口径）：协议 3 一侧重建失败报成 `caches` 差异，测试门
+    /// 不悄悄跳过缓存层（干跑那边记 `incomplete`，对拍装置这边没有这个兜底，只能报差异、靠 `KNOWN` 显式豁免）。
+    #[test]
+    fn parity_reports_a_failed_protocol_3_cache_rebuild_as_a_caches_diff() {
+        let d = library_with_a_malformed_note("g4parincomplete");
+        let (_, diff) = crate::store::gen4::parity::imported(&d);
+        assert!(
+            diff.iter().any(|(what, old, _)| *what == "caches"
+                && old.iter().any(|e| e.contains("noteTypeId missing"))),
+            "{diff:?}"
+        );
     }
 
     /// 协议 3 一侧的缓存行拿不到时按失败发生在哪一段分类型：重建这一步（协议 3 自己的代码）失败是 `Protocol3`，不论
@@ -2089,6 +2121,56 @@ mod tests {
         assert_eq!(saved["verdict"], "error", "{saved:#}");
         assert_eq!(saved["error"], e);
         assert_eq!(saved["appVersion"], "2.0+7");
+        assert!(!rehearsals().contains_key(&missing));
+    }
+
+    /// 本进程里正在跑的预演：报告命令把文件里的开跑标记报成 `running`，不是「上次中途死了」的 `started`；跑完读到
+    /// 结论；没有登记时残留的开跑标记照原样报 `started`。
+    #[test]
+    fn a_running_rehearsal_reads_as_running_not_started() {
+        let d = library("g4rehearserunning");
+        let cfg_obj: Value = serde_json::from_str(&cfg()).unwrap();
+        let path = d._dir.0.join("srs.db");
+        let req = json!({"caches": {P: cfg_obj}, "appVersion": "2.0+7"});
+        let mut during = Value::Null;
+        let r = rehearse_with(&path, &req, &mut |stage, _| {
+            if stage == "open" {
+                during = rehearsal_report(&path);
+            }
+        })
+        .unwrap();
+        assert_eq!(during["verdict"], VERDICT_RUNNING, "{during:#}");
+        assert_eq!(during["appVersion"], "2.0+7");
+        assert_eq!(r["verdict"], "pass", "{r:#}");
+        assert_eq!(rehearsal_report(&path)["verdict"], "pass");
+        // 进程中途死了留下的开跑标记（没有登记）：照原样报。
+        let left =
+            json!({"version": REPORT_VERSION, "verdict": VERDICT_STARTED, "appVersion": "2.0+7"});
+        write_report(&rehearsal_dir(&path), &left).unwrap();
+        assert_eq!(rehearsal_report(&path)["verdict"], VERDICT_STARTED);
+    }
+
+    /// 根本跑不起来、而且连 `error` 报告都落不了盘：交回去的错误里原错误与落盘错误都在，原错误不被落盘错误顶掉。
+    #[test]
+    fn an_unsaved_error_report_keeps_the_original_error() {
+        let d = tempdir::new("g4rehearseunsaved");
+        let work = d.0.join("rehearsal");
+        let missing = d.0.join("no-such-dir").join("srs.db");
+        let req = json!({"work": work.display().to_string(), "appVersion": "2.0+7"});
+        let e = rehearse_with(&missing, &req, &mut |stage, _| {
+            if stage == "open" {
+                // 让之后的原子写（先写临时文件）失败。
+                std::fs::create_dir_all(work.join(format!("{REPORT_FILE}.tmp"))).unwrap();
+            }
+        })
+        .unwrap_err();
+        let alone = rehearse(
+            &missing,
+            &json!({"work": d.0.join("other").display().to_string()}),
+        )
+        .unwrap_err();
+        assert!(e.starts_with(&alone), "{e}");
+        assert!(e.contains("write report"), "{e}");
         assert!(!rehearsals().contains_key(&missing));
     }
 
