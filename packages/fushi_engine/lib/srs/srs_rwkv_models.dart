@@ -6,6 +6,8 @@
 /// 即时头更准；它的曲线头没训练过，原生库对它拒绝 RWKV-Curve。见 native/fushi_rwkv/README.md「sm98」）。
 /// 换权重后旧快照按权重指纹被拒、自动全量重放一次。
 ///
+/// 设置里可改用省内存的 **Tiny Instant-Only sm101**（[SrsRwkvModelSize.tiny]）。
+///
 /// 权重不随包，用户启用时下载：首选 Fushi 自己的镜像 release（`hajisensai/Fushi` tag `rwkv-models`，文件名带
 /// 内容哈希前缀、永不覆盖），失败再用上游 JSchoreels/anki 钉死提交的 raw URL；校验只认字节数 + SHA-256，与
 /// native/fushi_rwkv/fetch_model.* 同源。
@@ -67,6 +69,51 @@ const int kSrsRwkvSmallWeightsBytes = 436391;
 const String kSrsRwkvSmallWeightsSha256 =
     'b2f335bd712b9d602150201de41ab5a0f0a4c291644705e2aa1ed2a1bf1592c3';
 
+/// 省内存的 Tiny Instant-Only 小模型 sm101 的 int8 权重，与 fushi_rwkv `TINY_MODEL_INT8_SHA256` 一致。
+/// card / note 流各 1 层：Fushi 的 int4 状态每卡 + 笔记约 2.0 KB（sm98 约 2.9 KB，约 −30%），即时头
+/// LogLoss 0.27672（sm98 0.276191）。设置里选（[SrsRwkvModelSize.tiny]）。
+const SrsRwkvModelFile kSrsRwkvTinyWeights = SrsRwkvModelFile(
+  fileName: kSrsRwkvTinyWeightsName,
+  urls: <String>[
+    '$kSrsRwkvMirrorBase/77703dd2f2a21a1b-sm101-weights.int8.bin',
+    '$kSrsRwkvUpstreamBase/sm101/weights.int8.bin',
+  ],
+  expectedBytes: kSrsRwkvTinyWeightsBytes,
+  sha256: kSrsRwkvTinyWeightsSha256,
+);
+
+const String kSrsRwkvTinyWeightsName = 'sm101_weights.int8.bin';
+const int kSrsRwkvTinyWeightsBytes = 409483;
+const String kSrsRwkvTinyWeightsSha256 =
+    '77703dd2f2a21a1bcadaedfed1cec93ee0fd6fd6d3c840be221e72b5e1c05066';
+
+/// 用哪个 RWKV 小模型（整台设备一个设置，app 与无头服务端都从 `<support>/srs_rwkv/model_size` 读，见
+/// srs_rwkv_attach.dart）。换了 = 换权重：按需下载新权重，旧快照按权重指纹被拒、全量重放一次。
+enum SrsRwkvModelSize {
+  /// Small Instant-Only（sm98），默认。
+  small('small', kSrsRwkvSmallWeights),
+
+  /// Tiny Instant-Only（sm101）：每卡状态约小 30%，即时头略差。
+  tiny('tiny', kSrsRwkvTinyWeights);
+
+  const SrsRwkvModelSize(this.persistedName, this.weights);
+
+  /// 写进设置文件的值（持久化名，不随枚举名改）。
+  final String persistedName;
+
+  /// 这一档用的权重。
+  final SrsRwkvModelFile weights;
+
+  /// 设置文件内容 → 档位；缺失 / 认不出的值一律当默认的 [small]。
+  static SrsRwkvModelSize fromPersisted(String? value) {
+    final String? trimmed = value?.trim();
+    for (final SrsRwkvModelSize size in values) {
+      if (size.persistedName == trimmed) return size;
+    }
+    return small;
+  }
+}
+
 /// 以前下载过、现在不再用的文件名（[SrsRwkvModels.deleteRetired] 清理用）：已移除的大模型
 /// （约 11 MB），被取代的 SM40 / SM56 / sm72e25 小模型权重，以及 SM56 发布包（解压后本应已删，下载中断时
 /// 可能残留）。
@@ -87,15 +134,19 @@ class SrsRwkvModelException implements Exception {
   String toString() => 'SrsRwkvModelException: $message';
 }
 
-/// [dir] 下的 RWKV 权重：是否就绪、下载、校验。[model] 是要用的那份权重（默认 [kSrsRwkvSmallWeights]）。
+/// [dir] 下的 RWKV 权重：是否就绪、下载、校验。[size] 选档（默认 [SrsRwkvModelSize.small]），[model] 缺省是
+/// 这一档的权重（测试可以直接给一份）。
 class SrsRwkvModels {
   SrsRwkvModels({
     required this.dir,
-    this.model = kSrsRwkvSmallWeights,
+    this.size = SrsRwkvModelSize.small,
+    SrsRwkvModelFile? model,
     HttpClient Function()? createClient,
-  }) : _createClient = createClient;
+  }) : model = model ?? size.weights,
+       _createClient = createClient;
 
   final Directory dir;
+  final SrsRwkvModelSize size;
   final SrsRwkvModelFile model;
   final HttpClient Function()? _createClient;
 

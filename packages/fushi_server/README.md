@@ -602,7 +602,10 @@ Anki 不可达 / 开了「批量制卡」的卡进待发队列，同步时经互
 - **RWKV 调度**：算法是 RWKV 的牌组在服务端与在 app 上同一个出卡口径（按 RWKV 回忆率出卡），用随包的
   `libfushi_rwkv`（`FUSHI_RWKV_LIB` → `bin/../lib/`）。第一次用到时下载权重（436 KB，走全局代理设置）到
   `<data>/support/srs_rwkv/models/`；不能出网的机器把 `sm98_weights.int8.bin` 手动放进这个目录即可（校验通过
-  就用）。状态快照在 `<data>/support/srs_rwkv/state/`。**RWKV 没准备好（权重没下到 / 正在回放历史 / 出错）时这些
+  就用）。状态快照在 `<data>/support/srs_rwkv/state/`。模型档位与 app 同一个设置文件
+  `<data>/support/srs_rwkv/model_size`：内容写 `tiny` 改用省内存的 Tiny 模型 sm101（权重 `sm101_weights.int8.bin`，
+  409 KB；每卡状态约小 30%，准确度略差；快照在 `state-tiny/`），缺省或其他内容是默认的 Small（sm98）；改完重启
+  服务端生效，首次会下载权重并全量重放一次。**RWKV 没准备好（权重没下到 / 正在回放历史 / 出错）时这些
   牌组不出复习卡**，远程复习页显示「准备中」或错误与「重试」，不会退回按 FSRS 的到期日出卡；各份配置文件的状态
   里有 `rwkv` 一项。`libfushi_rwkv` 是 AGPL-3.0-or-later：对外提供服务且改过这个库的运营者要向用户提供改动后的
   源码（未改动的源码就在本仓库）。

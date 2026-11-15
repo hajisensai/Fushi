@@ -346,12 +346,33 @@ srsStoreProvider = FutureProvider<SrsDbStore?>((Ref ref) async {
   return store;
 });
 
-/// RWKV 权重目录（`<support>/srs_rwkv/models`）：按需下载，走全应用代理。
+/// 本机用哪个 RWKV 小模型（`<support>/srs_rwkv/model_size`，与无头服务端同一个设置文件）。改它走
+/// [srsSetRwkvModelSize]：写文件后 invalidate 本 provider，权重库与 RWKV 服务跟着重建（下载新权重、恢复该档
+/// 的快照或全量重放）。
+final FutureProvider<SrsRwkvModelSize> srsRwkvModelSizeProvider =
+    FutureProvider<SrsRwkvModelSize>((Ref ref) async {
+      final Directory support = await ref.watch(srsSupportRootProvider)();
+      return readSrsRwkvModelSize(support);
+    });
+
+/// 换 RWKV 模型档位：写设置文件，再让 [srsRwkvModelSizeProvider] 重读（RWKV 服务随之换成新档位的）。
+Future<void> srsSetRwkvModelSize(WidgetRef ref, SrsRwkvModelSize size) async {
+  final Directory support = await ref.read(srsSupportRootProvider)();
+  await writeSrsRwkvModelSize(support, size);
+  ref.invalidate(srsRwkvModelSizeProvider);
+}
+
+/// RWKV 权重目录（`<support>/srs_rwkv/models`）：按需下载，走全应用代理；用哪份权重看
+/// [srsRwkvModelSizeProvider]。
 final FutureProvider<SrsRwkvModels> srsRwkvModelsProvider =
     FutureProvider<SrsRwkvModels>((Ref ref) async {
       final Directory support = await ref.watch(srsSupportRootProvider)();
+      final SrsRwkvModelSize size = await ref.watch(
+        srsRwkvModelSizeProvider.future,
+      );
       return SrsRwkvModels(
         dir: srsRwkvModelsDir(support),
+        size: size,
         createClient: createAppHttpClient,
       );
     });
