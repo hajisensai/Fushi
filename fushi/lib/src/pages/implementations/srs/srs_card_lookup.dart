@@ -1126,9 +1126,19 @@ List<Rect> srsNativeLookupHighlightRects(
   return rects;
 }
 
+/// [srsNoLookup] 圈出的子树的标记。
+const Object _kSrsNoLookup = Object();
+
+/// 圈出一块「点按归控件、不取词」的交互子树（`<details>` 的折叠标题等）：命中路径上经过它的点按
+/// [srsNativeLookupHitAt] 一律不取词。与 WebView 卡面 `blocked()` 把 SUMMARY / 按钮等交互元素排除在取词
+/// 之外同一口径（BUG-4500：原生卡面点「语法详情」既展开折叠又弹查词）。
+Widget srsNoLookup({required Widget child}) =>
+    MetaData(metaData: _kSrsNoLookup, child: child);
+
 /// 在 [root] 子树里按全局坐标找被点的字（纯几何，可单测）：命中路径上最深的
 /// [RenderParagraph] + 最近的 [SrsLookupTextData] 标记 → 整段纯文本里的偏移 →
-/// 查询串（命中字起到段尾；拉丁词回退到词首）。没有标记 / 点在字形盒外返回 null。
+/// 查询串（命中字起到段尾；拉丁词回退到词首）。没有标记 / 点在字形盒外 / 命中路径经过
+/// [srsNoLookup] 圈出的交互子树返回 null。
 SrsNativeLookupHit? srsNativeLookupHitAt(RenderBox root, Offset global) {
   if (!root.attached || !root.hasSize) return null;
   final Offset local = root.globalToLocal(global);
@@ -1141,6 +1151,11 @@ SrsNativeLookupHit? srsNativeLookupHitAt(RenderBox root, Offset global) {
   SrsLookupTextData? data;
   for (final HitTestEntry entry in result.path) {
     final HitTestTarget target = entry.target;
+    // 交互控件里的字（折叠标题等）不取词：标记可能在取词标记外面，整条路径都要看。
+    if (target is RenderMetaData && identical(target.metaData, _kSrsNoLookup)) {
+      return null;
+    }
+    if (data != null) continue;
     if (paragraph == null) {
       if (target is RenderParagraph) paragraph = outerParagraph = target;
       continue;
@@ -1153,7 +1168,6 @@ SrsNativeLookupHit? srsNativeLookupHitAt(RenderBox root, Offset global) {
         segment = meta;
       } else if (meta is SrsLookupTextData) {
         data = meta;
-        break;
       }
     }
   }
