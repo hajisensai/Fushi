@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
+import 'test_flow/dist_breaker.dart';
 import 'test_flow/dist_console.dart';
 import 'test_flow/dist_coverage.dart';
 import 'test_flow/dist_plan.dart';
@@ -11,6 +12,7 @@ import 'test_flow/dist_snapshot.dart';
 import 'test_flow/dist_stop.dart';
 import 'test_flow/dist_workers.dart';
 import 'test_flow/flutter_test_failure_filter.dart';
+import 'test_flow/heavy_lease.dart' show heavyStateDir;
 import 'test_flow/heavy_offload_rival.dart'
     show DistOffloadTally, HeavyOffloadClaim;
 import 'test_flow/suite_timings.dart';
@@ -250,9 +252,49 @@ Future<void> _main(_Options options) async {
   if (options.status) {
     await Future.wait(<Future<void>>[
       for (final DistWorker w in workers)
-        w.status().then((String s) => stdout.writeln('${w.name}: $s')),
+        w.status().then((String s) {
+          final DistBreakerEntry? held = _breaker.held(w.breakerKey);
+          stdout.writeln(
+            '${w.name}: $s'
+            '${held == null ? '' : ' [left out of offloaded runs until ${_clock(held.until)}: ${held.why}]'}',
+          );
+        }),
     ]);
     return;
+  }
+
+  // A machine that just had no connection or no disk is not asked by the
+  // runs heavy.dart hands over (dist_breaker.dart); a run started by hand
+  // asks every machine it was given.
+  if (offMachine) {
+    final Set<String> said = <String>{};
+    workers.removeWhere((DistWorker w) {
+      final DistBreakerEntry? held = _breaker.held(w.breakerKey);
+      if (held != null && said.add(w.breakerKey)) {
+        stdout.writeln(
+          '[${w.breakerKey}] not asked until ${_clock(held.until)}: '
+          '${held.why} on its last ${held.fails} ask(s)',
+        );
+      }
+      return held != null;
+    });
+    if (workers.isEmpty) {
+      // For now only: the caller queues here and asks again.
+      stdout.writeln(
+        'DIST OFFLOAD: every other machine is left out for now '
+        '(unreachable / short of disk)',
+      );
+      exit(_tally.declineCode);
+    }
+  }
+  // Test runs wait in a worker's own queue for its checkout
+  // (worker_slot.sh) as long as --busy-retries lets them wait at all. An
+  // analyze / compile check goes through the machines one after another:
+  // waiting on the first while the second is free would be backwards.
+  if (job == null && options.busyRetries > 0) {
+    for (final DistWorker w in workers) {
+      w.queueWaitSeconds = kDistQueueWaitSeconds;
+    }
   }
 
   if (job != null) {
@@ -564,8 +606,13 @@ class _Scheduler {
         return;
       }
       stdout.writeln('[${worker.name}] ready after ${prep.elapsed.inSeconds}s');
+      _breaker.reset(worker.breakerKey);
     } on Object catch (e) {
-      if (e is! DistWorkerBusy) _tally.failed(worker);
+      // No connection is "for now" like busy: nothing of the run got there.
+      if (e is! DistWorkerBusy && e is! DistWorkerUnreachable) {
+        _tally.failed(worker);
+      }
+      _tripBreaker(worker, e);
       stdout.writeln(
         '[${worker.name}] DROPPED: prepare failed: $e '
         '(see prepare.${worker.name}.log)',
@@ -584,6 +631,24 @@ class _Scheduler {
     bool dropped = false;
     while (true) {
       await _stop.holdIfStopping();
+      if (worker.resting) {
+        // Gave its checkout to a waiting run after the last batch: back in
+        // that worker's queue, but only while something is left for it.
+        if (!queue.remaining.any(worker.eligible)) {
+          if (_inFlight == 0) break;
+          await _changed.future;
+          continue;
+        }
+        try {
+          if (!await _resume(worker)) continue;
+        } on Object catch (e) {
+          stdout.writeln(
+            '[${worker.name}] DROPPED: did not get its checkout back: $e',
+          );
+          dropped = true;
+          break;
+        }
+      }
       final DistBatch? batch = queue.take(
         eligible: worker.eligible,
         budgetMs: distChunkBudgetMs(
@@ -697,6 +762,15 @@ class _Scheduler {
         '${queue.remaining.length} suites left',
       );
       _notify();
+      // Between two batches the checkout goes to a run that waits for it
+      // (worker_slot.sh `yield`); this run queues behind it for its next one.
+      await worker.rest(runId);
+      if (worker.resting) {
+        stdout.writeln(
+          '[${worker.name}] gave its checkout to a waiting run; queueing '
+          'there again for the next batch',
+        );
+      }
       if (infraStreak >= 2) {
         stdout.writeln(
           '[${worker.name}] DROPPED after two infrastructure '
@@ -729,12 +803,38 @@ class _Scheduler {
           return _prepareWhileNeeded(worker, log);
         },
         retries: busyRetries,
-        wait: kBusyWait,
+        // A worker that queued the run itself already waited there.
+        wait: worker.queueWaitSeconds > 0 ? kDistQueueAskAgain : kBusyWait,
         stillWanted: () =>
-            _inFlight > 0 || queue.remaining.any(worker.eligible),
+            !_tally.lost &&
+            (_inFlight > 0 || queue.remaining.any(worker.eligible)),
         said: (String l) => stdout.writeln('[${worker.name}] $l'),
       ) ??
       false;
+
+  /// [worker] back on its checkout after [DistWorker.rest]; false when
+  /// nothing was left for it by the time its turn came.
+  Future<bool> _resume(DistWorker worker) async {
+    final IOSink log = File(
+      '${out.path}/prepare.${worker.name}.log',
+    ).openWrite(mode: FileMode.append);
+    final Stopwatch sw = Stopwatch()..start();
+    try {
+      final bool back = await worker.resume(
+        log,
+        stillWanted: () => queue.remaining.any(worker.eligible),
+      );
+      if (back) {
+        stdout.writeln(
+          '[${worker.name}] has its checkout again after '
+          '${sw.elapsed.inSeconds}s',
+        );
+      }
+      return back;
+    } finally {
+      await log.close();
+    }
+  }
 
   /// Prepares [worker]; false as soon as nothing it may run is left in the
   /// queue and no batch is in flight (whose infrastructure failure could
@@ -759,13 +859,24 @@ class _Scheduler {
             },
           ),
     );
-    while (true) {
-      if (error != null) Error.throwWithStackTrace(error!, trace!);
-      if (done) return true;
-      if (_inFlight == 0 && !queue.remaining.any(worker.eligible)) {
-        return false;
+    // The caller's machine may admit the run while this worker still waits
+    // in its queue (--offload-claim): looked at every two seconds, so the
+    // place there is given up at once instead of after the wait.
+    final Timer? poll = _tally.claim == null
+        ? null
+        : Timer.periodic(const Duration(seconds: 2), (_) => _notify());
+    try {
+      while (true) {
+        if (error != null) Error.throwWithStackTrace(error!, trace!);
+        if (done) return true;
+        if (_tally.lost ||
+            (_inFlight == 0 && !queue.remaining.any(worker.eligible))) {
+          return false;
+        }
+        await _changed.future;
       }
-      await _changed.future;
+    } finally {
+      poll?.cancel();
     }
   }
 
@@ -853,6 +964,9 @@ class _Scheduler {
             final Stopwatch sw = Stopwatch()..start();
             DistBatchRun run;
             try {
+              if (e.key.resting && !await _resume(e.key)) {
+                throw DistWorkerError('did not get its checkout back');
+              }
               run = await e.key.run(
                 batch,
                 package: package,
@@ -929,6 +1043,29 @@ Future<DistSnapshot> _snapshot(String repoRoot, _Options options) async {
   );
   return snapshot;
 }
+
+/// Machines left out for a while after an answer that has nothing to do
+/// with the run (test_flow/dist_breaker.dart); shared by every checkout here.
+final DistBreaker _breaker = DistBreaker(
+  File('${heavyStateDir().path}/$kDistBreakerFile'),
+);
+
+/// Remembers a prepare failure of [worker] that says its machine cannot take
+/// work for now, once per machine and run.
+void _tripBreaker(DistWorker worker, Object error) {
+  final String? why = distBreakerReason(error);
+  if (why == null || !_tripped.add(worker.breakerKey)) return;
+  final Duration hold = _breaker.trip(worker.breakerKey, why);
+  stdout.writeln(
+    '[${worker.breakerKey}] $why: offloaded runs leave it out for the next '
+    '${hold.inMinutes} min',
+  );
+}
+
+final Set<String> _tripped = <String>{};
+
+String _clock(DateTime t) =>
+    '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
 
 /// [job] (`flutter analyze` of [paths] with [options], or a compile check) on
 /// the first of [workers] (config order) that prepares and takes it; its
@@ -1015,12 +1152,14 @@ Future<({int? code, bool busy})> _jobRound(
       stdout.writeln('[${w.name}] preparing');
       await w.prepare(snapshot, runId, prepLog);
       stdout.writeln('[${w.name}] ready after ${prep.elapsed.inSeconds}s');
+      _breaker.reset(w.breakerKey);
     } on Object catch (e) {
-      if (e is DistWorkerBusy) {
+      if (e is DistWorkerBusy || e is DistWorkerUnreachable) {
         busy = true;
       } else {
         _tally.failed(w);
       }
+      _tripBreaker(w, e);
       stdout.writeln('[${w.name}] skipped: prepare failed: $e');
       await prepLog.close();
       await w.finish(runId);

@@ -103,6 +103,21 @@ Map<String, String> distTestEnvironment(Map<String, String> parent) =>
 /// runs, and no other step takes that long).
 const int kDistLockStaleMinutes = 15;
 
+/// How long one ask waits in a worker's own queue for its checkout
+/// (tool/dist_test/worker_slot.sh `take`) before it comes back busy. Below
+/// that script's PRESENT window plus the pause before the next ask, so a run
+/// that keeps asking stays "asking right now" there and keeps its place.
+const int kDistQueueWaitSeconds = 25;
+
+/// The pause between two asks of a worker that queues runs itself: the wait
+/// happened there ([kDistQueueWaitSeconds]).
+const Duration kDistQueueAskAgain = Duration(seconds: 3);
+
+/// How often a worker that gave its checkout up between two batches asks for
+/// it back ([kDistQueueWaitSeconds] each) before it is dropped: the runs
+/// ahead of it are in the same queue, so only a hung one gets this far.
+const int kDistResumeAsks = 72;
+
 /// ssh's own exit code for connection-level failures.
 const int kSshConnectionFailure = 255;
 
@@ -507,6 +522,23 @@ class DistWorkerBusy extends DistWorkerError {
   DistWorkerBusy(super.message);
 }
 
+/// The machine did not answer at all (ssh exit [kSshConnectionFailure] at
+/// the first step of a prepare): nothing of the run is the cause.
+class DistWorkerUnreachable extends DistWorkerError {
+  DistWorkerUnreachable(super.message);
+}
+
+/// What the worker's queue said to a `yield` (worker_slot.sh): true when the
+/// checkout is no longer this run's (`yielded` to a waiting run, or `lost`
+/// to a takeover), false for `kept` and for anything unreadable -- a run
+/// that keeps a checkout it should have given up only makes the others
+/// wait, one that drops a checkout it still has would run a batch on
+/// another run's commit.
+bool distYielded(String stdout) {
+  final String last = stdout.trim().split('\n').last.trim();
+  return last == 'yielded' || last == 'lost';
+}
+
 /// [attempt], asked again after [wait] each time it throws [DistWorkerBusy],
 /// at most [retries] times in a row (then that busy error propagates; any
 /// other error at once). [stillWanted] is asked after each wait: false ends
@@ -636,6 +668,31 @@ abstract class DistWorker {
   /// Why this worker cannot take [job] right now, asked before anything is
   /// pushed or prepared there; null when it can.
   Future<String?> jobBlocker(DistJob job);
+
+  /// Seconds [prepare] may wait in the worker's own queue for its checkout
+  /// before it throws [DistWorkerBusy] (0: one look). Remote workers only.
+  int queueWaitSeconds = 0;
+
+  /// The key this worker's machine has in the breaker file
+  /// (dist_breaker.dart): the config entry's name, shared by its slots.
+  String get breakerKey => name.split('.').first;
+
+  /// Gave its checkout up to a waiting run after a batch ([rest]); [resume]
+  /// gets it back before the next one.
+  bool get resting => false;
+
+  /// After a batch: lets a run that waits for this worker's checkout have
+  /// it (worker_slot.sh `yield`). The run keeps its place in the scheduler;
+  /// the worker is [resting] until [resume].
+  Future<void> rest(String runId) async {}
+
+  /// Queues for the checkout again and puts the run's snapshot back on it.
+  /// False when [stillWanted] turned false while it waited (nothing left for
+  /// this worker); throws [DistWorkerError] when it cannot come back.
+  Future<bool> resume(
+    IOSink log, {
+    required bool Function() stillWanted,
+  }) async => true;
 
   /// Stops waiting on a [prepare] still under way (the run needs this worker
   /// no more): it fails soon after, and [finish] then releases the worker.
@@ -1147,9 +1204,25 @@ class SshDistWorker extends DistWorker {
   final SshDistWorker? primary;
   final Completer<void> _prepared = Completer<void>();
 
-  /// This run holds the checkout's lock (set once `init` got it).
+  /// This run holds the checkout's lock.
   bool _locked = false;
+
+  /// This run asked for the checkout: a ticket in its queue, the pushed ref
+  /// or the lock may be there, and [finish] drops them.
+  bool _asked = false;
+  bool _resting = false;
+
+  /// A shim installed before worker_slot.sh: `lock` takes no wait and there
+  /// is no `yield`, so the checkout stays this run's until [finish].
+  bool _legacyShim = false;
+
+  /// What [prepare] put on the checkout, for [resume].
+  DistSnapshot? _snapshot;
+  String? _runId;
   Process? _process;
+
+  @override
+  bool get resting => _resting;
 
   bool get _shim => config.kind == DistWorkerKind.sshShim;
 
@@ -1192,6 +1265,7 @@ class SshDistWorker extends DistWorker {
     List<String> args, {
     Map<String, String>? environment,
     String? workingDirectory,
+    String? input,
   }) async {
     if (_abandoned) throw DistWorkerError('$name: no longer needed');
     final Process p = await Process.start(
@@ -1201,7 +1275,7 @@ class SshDistWorker extends DistWorker {
       workingDirectory: workingDirectory,
     );
     _stepProcess = p;
-    await p.stdin.close();
+    await _feed(p, input);
     const Utf8Decoder decoder = Utf8Decoder(allowMalformed: true);
     final Future<String> out = p.stdout.transform(decoder).join();
     final Future<String> err = p.stderr.transform(decoder).join();
@@ -1226,6 +1300,73 @@ class SshDistWorker extends DistWorker {
     }
   }
 
+  /// Writes [input] (if any) to [p]'s stdin and closes it. A process that
+  /// ended before reading it all is its own exit code's business.
+  Future<void> _feed(Process p, String? input) async {
+    try {
+      if (input != null) p.stdin.write(input);
+      await p.stdin.close();
+    } on Object {
+      // Broken pipe: the exit code says what happened.
+    }
+  }
+
+  /// A remote command with [input] on its stdin (a script for `bash -s`).
+  Future<ProcessResult> _sshInput(String remoteCommand, String input) async {
+    final Process p = await Process.start(distSshExecutable(), <String>[
+      ..._sshBase,
+      remoteCommand,
+    ]);
+    const Utf8Decoder decoder = Utf8Decoder(allowMalformed: true);
+    final Future<String> out = p.stdout.transform(decoder).join();
+    final Future<String> err = p.stderr.transform(decoder).join();
+    await _feed(p, input);
+    final int code = await p.exitCode;
+    return ProcessResult(p.pid, code, await out, await err);
+  }
+
+  /// tool/dist_test/worker_slot.sh as this checkout has it. A trusted
+  /// machine gets it on stdin: the checkout there may hold any commit.
+  String _slotScript() => File(
+    '$repoRoot/fushi/tool/dist_test/worker_slot.sh',
+  ).readAsStringSync().replaceAll('\r\n', '\n');
+
+  /// `bash -s -- <verb> <checkout> <runId> [extra]` for a trusted machine.
+  String _slotCommand(String verb, String runId, [String extra = '']) =>
+      'bash -s -- $verb "\$HOME"/${shellQuote(config.workdir)} $runId'
+      '${extra.isEmpty ? '' : ' $extra'}';
+
+  /// Logs one prepare step and throws for a failed one: [DistWorkerBusy]
+  /// when the worker only turned it down for now, [DistWorkerUnreachable]
+  /// when [reach] (the run's first contact) got no connection at all.
+  void _report(
+    String step,
+    ProcessResult r,
+    Stopwatch watch,
+    IOSink log, {
+    bool reach = false,
+  }) {
+    log
+      ..writeln('== $step (exit ${r.exitCode}, ${watch.elapsed.inSeconds}s)')
+      ..write(r.stdout)
+      ..write(r.stderr);
+    if (r.exitCode == 0) return;
+    final String tail = '${r.stderr}'.trim().split('\n').last;
+    final String message = '$step failed on $name (exit ${r.exitCode}): $tail';
+    if (distRemoteExitCode(
+          r.exitCode,
+          printedNothing: '${r.stdout}'.trim().isEmpty,
+          stderr: '${r.stderr}',
+        ) ==
+        kDistShimBusy) {
+      throw DistWorkerBusy(message);
+    }
+    if (reach && r.exitCode == kSshConnectionFailure) {
+      throw DistWorkerUnreachable(message);
+    }
+    throw DistWorkerError(message);
+  }
+
   Future<void> _sshChecked(String step, String command, IOSink log) async {
     final Stopwatch watch = Stopwatch()..start();
     final ProcessResult r = await _step(distSshExecutable(), <String>[
@@ -1233,24 +1374,7 @@ class SshDistWorker extends DistWorker {
       ..._sshBase,
       command,
     ]);
-    log
-      ..writeln('== $step (exit ${r.exitCode}, ${watch.elapsed.inSeconds}s)')
-      ..write(r.stdout)
-      ..write(r.stderr);
-    if (r.exitCode != 0) {
-      final String tail = '${r.stderr}'.trim().split('\n').last;
-      final String message =
-          '$step failed on $name (exit ${r.exitCode}): $tail';
-      if (distRemoteExitCode(
-            r.exitCode,
-            printedNothing: '${r.stdout}'.trim().isEmpty,
-            stderr: '${r.stderr}',
-          ) ==
-          kDistShimBusy) {
-        throw DistWorkerBusy(message);
-      }
-      throw DistWorkerError(message);
-    }
+    _report(step, r, watch, log);
   }
 
   @override
@@ -1264,40 +1388,98 @@ class SshDistWorker extends DistWorker {
   }
 
   Future<void> _prepare(DistSnapshot snapshot, String runId, IOSink log) async {
-    if (_shim) return _prepareShim(snapshot, runId, log);
-    final String workdir = shellQuote(config.workdir);
-    final String seed = config.seedRepo == null
-        ? ''
-        : ' && { [ -s .git/objects/info/alternates ] || '
-              '[ ! -d "\$HOME"/${shellQuote(config.seedRepo!)}/.git/objects ] || '
-              'echo "\$HOME"/${shellQuote(config.seedRepo!)}/.git/objects '
-              '> .git/objects/info/alternates; }';
-    // One run per checkout: `mkdir` is the atomic test-and-set. The lock's
-    // mtime is the heartbeat (worker_run.sh touches it while a batch runs);
-    // one silent for [kDistLockStaleMinutes] belongs to a coordinator that
-    // died and is taken over. Leftover batch processes are only killed once
-    // the lock is ours: before that they may be another live run's.
-    await _sshChecked(
-      'init',
-      'mkdir -p "\$HOME"/$workdir && cd "\$HOME"/$workdir && '
-          '{ [ -d .git ] || git init -q; }$seed && '
-          'mkdir -p .git/fushi-dist && '
-          '{ mkdir .git/fushi-dist/lock 2>/dev/null || '
-          '{ [ -n "\$(find .git/fushi-dist/lock -maxdepth 0 '
-          '-mmin +$kDistLockStaleMinutes)" ] && rm -rf .git/fushi-dist/lock && '
-          'mkdir .git/fushi-dist/lock; } || '
-          '{ echo "busy: in use by dist_test run '
-          '\$(cat .git/fushi-dist/lock/owner 2>/dev/null)" >&2; exit 75; }; } && '
-          'echo $runId > .git/fushi-dist/lock/owner && '
-          '{ [ ! -f fushi/tool/dist_test/worker_kill.sh ] || '
-          'bash fushi/tool/dist_test/worker_kill.sh; }',
+    await _take(runId, log, step: _shim ? 'lock' : 'init');
+    claimAfterLock();
+    await _push(
+      snapshot,
+      runId,
+      _shim ? shimCheckoutName(config.slotIndex) : config.workdir,
       log,
     );
+    await _onto(snapshot, log);
+    _snapshot = snapshot;
+    _runId = runId;
+  }
+
+  /// Takes the checkout's lock for [runId] through the worker's queue
+  /// (worker_slot.sh `take`): one run per checkout, the oldest one asking
+  /// first, waiting there up to [queueWaitSeconds]. The lock's mtime is the
+  /// heartbeat (worker_run.sh touches it while a batch runs); one silent for
+  /// [kDistLockStaleMinutes] belongs to a coordinator that died and is taken
+  /// over.
+  Future<void> _take(String runId, IOSink log, {required String step}) async {
+    _asked = true;
+    final Stopwatch watch = Stopwatch()..start();
+    final ProcessResult r;
+    if (_shim) {
+      r = await _takeShim(runId);
+    } else {
+      final String workdir = shellQuote(config.workdir);
+      final String seed = config.seedRepo == null
+          ? ''
+          : ' && { [ -s .git/objects/info/alternates ] || '
+                '[ ! -d "\$HOME"/${shellQuote(config.seedRepo!)}/.git/objects ] || '
+                'echo "\$HOME"/${shellQuote(config.seedRepo!)}/.git/objects '
+                '> .git/objects/info/alternates; }';
+      r = await _step(distSshExecutable(), <String>[
+        ..._sshBase,
+        '${_pathPrefix}mkdir -p "\$HOME"/$workdir && cd "\$HOME"/$workdir && '
+            '{ [ -d .git ] || git init -q; }$seed && '
+            '${_slotCommand('take', runId, '$queueWaitSeconds')}',
+      ], input: _slotScript());
+    }
+    try {
+      _report(step, r, watch, log, reach: true);
+    } on DistWorkerUnreachable {
+      // Nothing of this run got there: nothing for [finish] to drop.
+      _asked = false;
+      rethrow;
+    }
     _locked = true;
-    claimAfterLock();
+  }
 
-    await _push(snapshot, runId, config.workdir, log);
+  /// The shim's `lock`, with the queue wait when it knows that argument.
+  Future<ProcessResult> _takeShim(String runId) async {
+    final String slot = '${config.slotIndex}';
+    Future<ProcessResult> lock(List<String> args) => _step(
+      distSshExecutable(),
+      <String>['-n', ..._sshBase, shimRequest('lock', args)],
+    );
+    if (!_legacyShim) {
+      final ProcessResult r = await lock(<String>[
+        slot,
+        runId,
+        '$queueWaitSeconds',
+      ]);
+      final bool refused =
+          distRemoteExitCode(
+                r.exitCode,
+                printedNothing: '${r.stdout}'.trim().isEmpty,
+                stderr: '${r.stderr}',
+              ) ==
+              kDistShimRefused &&
+          '${r.stderr}'.contains('usage: lock');
+      if (!refused) return r;
+      _legacyShim = true;
+    }
+    return lock(<String>[slot, runId]);
+  }
 
+  /// Puts [snapshot] (already pushed) on the locked checkout: checkout, then
+  /// worker_prepare.sh (dependencies, native libraries; a second or two when
+  /// nothing changed).
+  Future<void> _onto(DistSnapshot snapshot, IOSink log) async {
+    if (_shim) {
+      await _sshChecked(
+        'prepare',
+        shimRequest('prepare', <String>[
+          '${config.slotIndex}',
+          snapshot.commit,
+        ]),
+        log,
+      );
+      return;
+    }
     final String env = <String>[
       for (final MapEntry<String, String> e in config.prepareEnv.entries)
         '${e.key}=${shellQuote(e.value)}',
@@ -1322,6 +1504,69 @@ class SshDistWorker extends DistWorker {
           'cat .git/fushi-dist-prepare.log; exit \$rc',
       log,
     );
+  }
+
+  @override
+  Future<void> rest(String runId) async {
+    if (!_locked || _legacyShim || _abandoned) return;
+    final ProcessResult r;
+    try {
+      r = _shim
+          ? await _ssh(
+              shimRequest('yield', <String>['${config.slotIndex}', runId]),
+            )
+          : await _sshInput(
+              '$_pathPrefix${_slotCommand('yield', runId)}',
+              _slotScript(),
+            );
+    } on Object {
+      return; // could not ask: the checkout stays this run's
+    }
+    if (r.exitCode != 0) {
+      if (_shim &&
+          distRemoteExitCode(
+                r.exitCode,
+                printedNothing: '${r.stdout}'.trim().isEmpty,
+                stderr: '${r.stderr}',
+              ) ==
+              kDistShimRefused) {
+        _legacyShim = true;
+      }
+      return;
+    }
+    if (distYielded('${r.stdout}')) {
+      _locked = false;
+      _resting = true;
+    }
+  }
+
+  @override
+  Future<bool> resume(
+    IOSink log, {
+    required bool Function() stillWanted,
+  }) async {
+    final DistSnapshot? snapshot = _snapshot;
+    final String? runId = _runId;
+    if (!_resting || snapshot == null || runId == null) return true;
+    final int configured = queueWaitSeconds;
+    queueWaitSeconds = kDistQueueWaitSeconds;
+    try {
+      for (int ask = 1; ; ask++) {
+        try {
+          await _take(runId, log, step: 'take again');
+          break;
+        } on DistWorkerBusy {
+          if (ask >= kDistResumeAsks) rethrow;
+        }
+        if (!stillWanted()) return false;
+        await Future<void>.delayed(kDistQueueAskAgain);
+      }
+    } finally {
+      queueWaitSeconds = configured;
+    }
+    await _onto(snapshot, log);
+    _resting = false;
+    return true;
   }
 
   /// Pushes the snapshot to `refs/dist/<runId>` of the checkout at
@@ -1360,29 +1605,6 @@ class SshDistWorker extends DistWorker {
         '${'${push.stderr}'.trim()}',
       );
     }
-  }
-
-  /// The same steps through the shim's verbs: lock, push, prepare (checkout +
-  /// worker_prepare.sh with the owner's prepare.env).
-  Future<void> _prepareShim(
-    DistSnapshot snapshot,
-    String runId,
-    IOSink log,
-  ) async {
-    final int slot = config.slotIndex;
-    await _sshChecked(
-      'lock',
-      shimRequest('lock', <String>['$slot', runId]),
-      log,
-    );
-    _locked = true;
-    claimAfterLock();
-    await _push(snapshot, runId, shimCheckoutName(slot), log);
-    await _sshChecked(
-      'prepare',
-      shimRequest('prepare', <String>['$slot', snapshot.commit]),
-      log,
-    );
   }
 
   @override
@@ -1642,16 +1864,18 @@ class SshDistWorker extends DistWorker {
 
   @override
   Future<void> finish(String runId) async {
-    if (!_locked) return;
+    if (!_asked) return;
+    _asked = false;
     _locked = false;
+    _resting = false;
     if (_shim) {
       await _ssh(shimRequest('finish', <String>['${config.slotIndex}', runId]));
       return;
     }
-    await _ssh(
-      '${_prefix}git update-ref -d refs/dist/$runId; '
-      '[ "\$(cat .git/fushi-dist/lock/owner 2>/dev/null)" = $runId ] && '
-      'rm -rf .git/fushi-dist/lock',
+    // The run's place in the queue, its ref and (if it has it) the lock.
+    await _sshInput(
+      '$_pathPrefix${_slotCommand('drop', runId)}',
+      _slotScript(),
     );
   }
 

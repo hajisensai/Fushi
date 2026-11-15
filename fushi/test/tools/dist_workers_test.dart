@@ -546,4 +546,32 @@ void main() {
       );
     });
   });
+
+  test('yield: only a clear answer gives the checkout up', () {
+    expect(distYielded('yielded\n'), isTrue);
+    expect(distYielded('lost\r\n'), isTrue);
+    expect(distYielded('kept\n'), isFalse);
+    // Unreadable: keeping it only makes the others wait; dropping a checkout
+    // the run still has would run a batch on another run's commit.
+    expect(distYielded(''), isFalse);
+    expect(distYielded('yielded to nobody\n'), isFalse);
+    expect(distYielded('some banner\nkept\n'), isFalse);
+    expect(distYielded('some banner\nyielded\n'), isTrue);
+  });
+
+  test('queueing is off until dist_test turns it on; local never rests', () {
+    final DistWorker local = createDistWorkers(
+      const DistWorkerConfig(
+        name: 'self-win',
+        kind: DistWorkerKind.local,
+        platform: DistPlatform.windows,
+      ),
+      repoRoot: '.',
+    ).single;
+    expect(local.queueWaitSeconds, 0);
+    expect(local.resting, isFalse);
+    // The wait there stays under worker_slot.sh's PRESENT window (20 s) plus
+    // the pause before the next ask, or a waiting run would look gone.
+    expect(kDistQueueAskAgain.inSeconds, lessThan(20));
+  });
 }
