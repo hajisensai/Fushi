@@ -892,14 +892,6 @@ class AnotherPopupPart {
           'Android / Win32 window via FloatingLyricChannel.show (content data, '
           'renders no Flutter widgets) — same reviewed exception as '
           'audiobook_session.',
-      'lib/src/media/audiobook/now_listening_mini_bar.dart':
-          'Now-listening media mini-bar: surface role + book-cover thumbnail '
-          'radius are media-subsystem content chrome (same category as the '
-          'allowlisted reader-shelf book covers / media_item_dialog cover '
-          'hero), driven off the active ColorScheme. M3E redesign: the '
-          'Material branch is a floating capsule sharing the floating '
-          'toolbar pill decoration (surfaceContainer, full radius); only the '
-          'e-ink strip (surfaceContainerHighest) and the cover radius remain.',
       // 悬浮字幕 M3E 改造：app 级 / reader 级两个样式构造点收敛到同一个纯函数
       // buildFloatingLyricStyle，它从 AppModel / reader 搬出的正是同一类 payload。
       'lib/src/media/audiobook/floating_lyric_style.dart':
@@ -1273,6 +1265,28 @@ class AnotherPopupPart {
       'lib/src/pages/shared/library_section_tabs.dart':
           kSharedComponentImplementation,
       'lib/src/utils/misc/fushi_toast.dart': kSharedComponentImplementation,
+      // PR #3397 外壳改版（M3E 色块 + 页头大字）的共享积木本体：库页封面色块、
+      // 「继续」色块、海报色块、页头大字（页名字阶 / 连体页签）、溢出标题、海报
+      // 详情外壳（按封面取色派生整套 surfaceContainer 色阶 + 海报面板圆角）。
+      // 页面经它们出图、不再各自拍板，与 fushi_material_components 同一「共享
+      // 原语本身」类；字号由页头 / 色块的固定版式比例算出（设计稿定值），
+      // FushiTypeRoles 没有对应字阶。
+      'lib/src/media/detail/media_poster_detail.dart':
+          kSharedComponentImplementation,
+      'lib/src/pages/implementations/music/music_detail_chrome.dart':
+          kSharedComponentImplementation,
+      'lib/src/utils/components/fushi_bleed_title.dart':
+          kSharedComponentImplementation,
+      'lib/src/utils/components/fushi_continue_blocks.dart':
+          kSharedComponentImplementation,
+      'lib/src/utils/components/fushi_cover_block.dart':
+          kSharedComponentImplementation,
+      'lib/src/utils/components/fushi_floating_chrome.dart':
+          kSharedComponentImplementation,
+      'lib/src/utils/components/fushi_page_masthead.dart':
+          kSharedComponentImplementation,
+      'lib/src/utils/components/fushi_poster_block.dart':
+          kSharedComponentImplementation,
       // 2) 页面 / 功能模块里逐条审过的内容类例外（封面美术、预览、播放器浮层、
       //    Apple 分支的 HIG 尺寸——FushiTypeRoles 暂无 Apple 字阶）。
       'lib/src/lookup/lookup_popup_size_preview.dart':
@@ -1393,9 +1407,6 @@ class AnotherPopupPart {
       'lib/src/media/audiobook/floating_lyric_style.dart': <String>{
         'surfaceContainerHigh',
         'fontSize:',
-      },
-      'lib/src/media/audiobook/now_listening_mini_bar.dart': <String>{
-        'BorderRadius.circular(',
       },
       'lib/src/media/video/video_clip_subtitle_image.dart': <String>{
         'fontSize:',
@@ -1628,6 +1639,32 @@ class AnotherPopupPart {
         'fontSize:',
       },
       'lib/src/utils/components/fushi_tag.dart': <String>{'fontSize:'},
+      'lib/src/media/detail/media_poster_detail.dart': <String>{
+        'BorderRadius.circular(',
+        'surfaceContainerLow',
+        'surfaceContainerLowest',
+        'surfaceContainerHigh',
+        'surfaceContainerHighest',
+        'fontSize:',
+      },
+      'lib/src/pages/implementations/music/music_detail_chrome.dart': <String>{
+        'fontSize:',
+      },
+      'lib/src/utils/components/fushi_bleed_title.dart': <String>{'fontSize:'},
+      'lib/src/utils/components/fushi_continue_blocks.dart': <String>{
+        'fontSize:',
+      },
+      'lib/src/utils/components/fushi_cover_block.dart': <String>{
+        'BorderRadius.circular(',
+        'fontSize:',
+      },
+      'lib/src/utils/components/fushi_floating_chrome.dart': <String>{
+        'fontSize:',
+      },
+      'lib/src/utils/components/fushi_page_masthead.dart': <String>{
+        'fontSize:',
+      },
+      'lib/src/utils/components/fushi_poster_block.dart': <String>{'fontSize:'},
       'lib/src/utils/components/glass/fushi_glass_bars.dart': <String>{
         'BorderRadius.circular(',
         'fontSize:',

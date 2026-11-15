@@ -16,6 +16,12 @@ import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_floating_page_chrome.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_page_masthead.dart'
+    show
+        FushiMastheadPalette,
+        FushiMastheadPrimaryButton,
+        FushiMastheadRole,
+        fushiMastheadRoleOf;
 import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart';
 import 'package:fushi/src/pages/shared/library_section_tabs.dart';
 import 'package:fushi/src/utils/components/library_section_tab.dart';
@@ -108,8 +114,37 @@ Widget libraryImportChromeButton({
     key: anchorKey,
     child: Builder(
       // Apple：与右侧动作组同一形态（无色玻璃胶囊，高 fushiAppleFloatingExtent），
-      // 不套 56 高的 MD3 圆，否则比动作组高一截；MD3 用页头圆。
-      builder: (BuildContext context) => isGlassDesign(context)
+      // 不套 56 高的 MD3 圆，否则比动作组高一截；MD3 用页头圆。页头大字顶栏
+      // （重设计外壳）里是主按钮：indicator 底、圆角 20，悬停 / 选中弹到 28。
+      // 页头大字先判（Apple 设计系统下同样生效，只换配色）。
+      builder: (BuildContext context) =>
+          fushiMastheadRoleOf(context) == FushiMastheadRole.primary
+          ? FushiMastheadPrimaryButton(
+              selected: selected,
+              builder:
+                  (
+                    BuildContext context,
+                    OutlinedBorder shape,
+                    FushiMastheadPalette accent,
+                    double extent,
+                  ) => FushiIconButton(
+                    key: ValueKey<String>('$focusIdPrefix-import'),
+                    icon: FushiIcons.libraryAdd,
+                    tooltip: t.library_view_import,
+                    selected: selected,
+                    alwaysVisible: true,
+                    onTap: onTap,
+                    shapeBorder: shape,
+                    backgroundColor: accent.indicator,
+                    enabledColor: accent.onIndicator,
+                    padding: EdgeInsets.all((extent - 24) / 2),
+                    constraints: BoxConstraints.tightFor(
+                      width: extent,
+                      height: extent,
+                    ),
+                  ),
+            )
+          : isGlassDesign(context)
           ? FushiShellHeaderActions(
               actions: <Widget>[button],
               appleFloating: true,
@@ -415,6 +450,8 @@ class _MediaLibraryShellState extends State<MediaLibraryShell> {
             // 滚不动」的根因是收起改了视口高度，BUG-2975，见
             // [FushiFloatingChromeOverlay]）。
             child: FushiFloatingChromeOverlay(
+              // 重设计外壳下画成页头大字（`fushi_page_masthead.dart`）。
+              masthead: true,
               chrome: FushiFloatingChromeBar(
                 tabs: navigation,
                 slot: _actionsSlot,
@@ -427,6 +464,8 @@ class _MediaLibraryShellState extends State<MediaLibraryShell> {
                         focusIdPrefix: widget.focusIdPrefix,
                       )
                     : null,
+                // 页头大字顶栏里二级页签由大字行画（放得下与页名同一行）。
+                secondary: _buildSubTabs(views),
               ),
               child: NotificationListener<ScrollNotification>(
                 onNotification: _onScroll,
@@ -437,6 +476,7 @@ class _MediaLibraryShellState extends State<MediaLibraryShell> {
                   // 二级下划线页签贴着顶栏，不再隔 8（见 nestedGap）。
                   nestedGap: 0,
                   opaqueChrome: true,
+                  masthead: true,
                   chrome: _buildSubNavigation(context, views),
                   child: sections,
                 ),
@@ -551,39 +591,44 @@ class _MediaLibraryShellState extends State<MediaLibraryShell> {
     BuildContext context,
     List<MediaLibraryViewSpec> views,
   ) {
-    final MediaLibraryViewKind selected = views[_currentIndex].kind;
-    final LibrarySectionGroup? group = librarySectionGroupOf(selected);
-    if (group == null) return const SizedBox.shrink();
-    final List<MediaLibraryViewSpec> members = _membersOf(views, group);
-    if (members.length < 2) return const SizedBox.shrink();
+    final Widget? tabs = _buildSubTabs(views);
+    if (tabs == null) return const SizedBox.shrink();
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return Padding(
       // 与顶栏胶囊、页面内容同一条页边；两级页签之间的 12 由嵌套层统一给
       // （[kFushiFloatingChromeGap] + 顶栏底边 4），这里不再叠竖向留白。
       padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
-      child: Align(
-        alignment: AlignmentDirectional.centerStart,
-        child: LibrarySectionTabs<MediaLibraryViewKind>(
-          // 换组即换一份页签（段数与段值都变），不复用旧 controller。
-          key: ValueKey<LibrarySectionGroup>(group),
-          tabs: <LibrarySectionTab<MediaLibraryViewKind>>[
-            for (final MediaLibraryViewSpec spec in members)
-              LibrarySectionTab<MediaLibraryViewKind>(
-                value: spec.kind,
-                label: spec.label,
-              ),
-          ],
-          selected: selected,
-          onChanged: _select,
-          focusIdPrefix: '${widget.focusIdPrefix}-${group.name}',
-          secondary: true,
-          // 二级用 M3 secondary tabs（文字 + 横贯下划线），不再是第二枚浮动胶囊：
-          // 与一级按钮组胶囊拉开层级（2026-10-30 用户拍板方案 B）。
-          // 反馈 ndQ5eXLcqp：长按 / 右键页签栏自定义页签顺序。一级恒为两组，排序
-          // 落在组内的二级胶囊上（书 / 漫画各组各一份）。
-          orderKey: '${widget.focusIdPrefix}-${group.name}',
-        ),
-      ),
+      child: Align(alignment: AlignmentDirectional.centerStart, child: tabs),
+    );
+  }
+
+  /// 当前组的二级页签本体（不带页边 / 对齐）；组内只有一个视图或停在导入页时
+  /// 为 null。页头大字顶栏里交给大字行（[FushiFloatingChromeBar.secondary]）。
+  Widget? _buildSubTabs(List<MediaLibraryViewSpec> views) {
+    final MediaLibraryViewKind selected = views[_currentIndex].kind;
+    final LibrarySectionGroup? group = librarySectionGroupOf(selected);
+    if (group == null) return null;
+    final List<MediaLibraryViewSpec> members = _membersOf(views, group);
+    if (members.length < 2) return null;
+    return LibrarySectionTabs<MediaLibraryViewKind>(
+      // 换组即换一份页签（段数与段值都变），不复用旧 controller。
+      key: ValueKey<LibrarySectionGroup>(group),
+      tabs: <LibrarySectionTab<MediaLibraryViewKind>>[
+        for (final MediaLibraryViewSpec spec in members)
+          LibrarySectionTab<MediaLibraryViewKind>(
+            value: spec.kind,
+            label: spec.label,
+          ),
+      ],
+      selected: selected,
+      onChanged: _select,
+      focusIdPrefix: '${widget.focusIdPrefix}-${group.name}',
+      secondary: true,
+      // 二级用 M3 secondary tabs（文字 + 横贯下划线），不再是第二枚浮动胶囊：
+      // 与一级按钮组胶囊拉开层级（2026-10-30 用户拍板方案 B）。
+      // 反馈 ndQ5eXLcqp：长按 / 右键页签栏自定义页签顺序。一级恒为两组，排序
+      // 落在组内的二级胶囊上（书 / 漫画各组各一份）。
+      orderKey: '${widget.focusIdPrefix}-${group.name}',
     );
   }
 }

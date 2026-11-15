@@ -277,6 +277,8 @@ void main() {
           'lib/src/pages/implementations/fushi_web_browser_page.dart': 1,
           // 字幕工作台：定高面板，顶部控件行固定、列表区各自滚动。
           'lib/src/pages/implementations/subtitle_workbench_page.dart': 1,
+          // 文本钩子独立页：定高工作台（会话卡 + 自带滚动的台词面板）。
+          'lib/src/pages/implementations/texthooker_page.dart': 1,
           // 标签选择：与弹层共用的面板，固定标题行 + 底部动作行。
           'lib/src/pages/implementations/tag_picker_page.dart': 1,
           // 配对扫码：相机取景定高画布。

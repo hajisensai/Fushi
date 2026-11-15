@@ -56,13 +56,24 @@ void main() {
         contains(
           compactCode(
             'AspectRatio('
-            'aspectRatio: orientation == VideoCardOrientation.landscape '
-            '? 16 / 9 : 2 / 3, child: ShelfCoverFrame(child: Stack(',
+            'aspectRatio: landscapeSlot ? 16 / 9 : 2 / 3, '
+            'child: ShelfCoverFrame(child: Stack(',
           ),
         ),
         reason:
             '$name 的封面比例必须按朝向分流（TODO-2486 朝向自适应：竖版 '
             '2:3 / 横版 16:9），不得回到单一定值或随文字块浮动',
+      );
+      // PR #3397 起朝向判定先落到局部变量（色块路径与封面网格路径共用）。
+      expect(
+        compactCode(body),
+        contains(
+          compactCode(
+            'final bool landscapeSlot = '
+            'orientation == VideoCardOrientation.landscape;',
+          ),
+        ),
+        reason: '$name 的 landscapeSlot 必须由卡片朝向决定',
       );
       expect(
         body,

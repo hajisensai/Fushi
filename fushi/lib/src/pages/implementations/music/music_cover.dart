@@ -188,3 +188,35 @@ ImageProvider? musicCoverImageProvider(String? coverPath, {double size = 64}) {
   if (!File(file).existsSync()) return null;
   return ResizeImage.resizeIfNeeded(width, null, FileImage(File(file)));
 }
+
+/// 取色图源，与 [MusicCover] 同一条来源链：目录 / 缓存封面文件
+/// （[musicCoverImageProvider]）优先；没有时取曲目内嵌封面——字节来自
+/// [MusicEmbeddedCoverCache]（与 [MusicCover] 显示的同一份缓存，同一音频路径恒
+/// 返回同一份字节，故 [MemoryImage] 作取色缓存的 key 稳定）。都没有才给 null
+/// （中性色）。
+class MusicCoverTintSource extends StatelessWidget {
+  const MusicCoverTintSource({
+    required this.coverPath,
+    required this.embeddedFromPath,
+    required this.builder,
+    super.key,
+  });
+
+  final String? coverPath;
+  final String? embeddedFromPath;
+  final Widget Function(BuildContext context, ImageProvider? tint) builder;
+
+  @override
+  Widget build(BuildContext context) {
+    final ImageProvider? file = musicCoverImageProvider(coverPath, size: 128);
+    final String? embedded = embeddedFromPath;
+    if (file != null || embedded == null) return builder(context, file);
+    return FutureBuilder<Uint8List?>(
+      future: MusicEmbeddedCoverCache.instance.load(embedded),
+      builder: (BuildContext context, AsyncSnapshot<Uint8List?> snap) {
+        final Uint8List? bytes = snap.data;
+        return builder(context, bytes == null ? null : MemoryImage(bytes));
+      },
+    );
+  }
+}

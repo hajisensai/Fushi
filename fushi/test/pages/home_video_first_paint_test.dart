@@ -24,6 +24,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/fake_anki_repository.dart';
 import '../helpers/test_platform_services.dart';
+import '../helpers/shell_layout.dart';
 
 /// BUG-3235：视频库首屏「一块块加载」（用户实报：点开视频库，里面的视频是一块块
 /// 出来的）。
@@ -94,6 +95,7 @@ void main() {
     ],
     child: TranslationProvider(
       child: MaterialApp(
+        theme: gridShellTheme(),
         home: Scaffold(
           body: HomeVideoPage(repo: VideoBookRepository(db), section: section),
         ),

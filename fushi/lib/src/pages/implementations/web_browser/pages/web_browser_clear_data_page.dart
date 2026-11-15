@@ -161,6 +161,7 @@ class _WebBrowserClearDataPageState extends State<WebBrowserClearDataPage> {
         (_cookies || _cache);
     return FushiPageScaffold(
       title: t.web_browser_clear_data_title,
+      masthead: true,
       body: webBrowserPageListView(
         replayKey: 0,
         key: const ValueKey<String>('web_browser_clear_data_list'),

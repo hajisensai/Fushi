@@ -26,6 +26,7 @@ import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'package:path/path.dart' as p;
 
 import '../helpers/test_platform_services.dart';
+import '../helpers/shell_layout.dart';
 
 /// 互联有声书「对端有更新」：本机整包下载时记下**包 manifest** 里的
 /// `contentRevision`，之后 host 清单里的值不同（host 上换过音频 / 字幕）→ 书卡副行
@@ -161,6 +162,7 @@ void main() {
     container: container,
     child: TranslationProvider(
       child: MaterialApp(
+        theme: gridShellTheme(),
         builder: (BuildContext context, Widget? child) =>
             child ?? const SizedBox.shrink(),
         home: Scaffold(body: body),

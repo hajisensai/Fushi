@@ -347,13 +347,16 @@ void main() {
         size: const Size(1100, 900),
         page: const SrsDeckListPage(),
       );
-      await tester.tap(
-        find.descendant(
-          of: find.byKey(ValueKey<String>('srs-deck-$jp')),
-          matching: find.text('JP'),
-        ),
-        buttons: kSecondaryButton,
+      // 复习主页的色块头部（PR #3397）比旧头部高：牌组行可能排在首屏底边外，
+      // 像用户一样先滚进视口再右键。
+      // 排在视口外的行算 offstage，滚之前按 skipOffstage: false 找。
+      final Finder jpRow = find.descendant(
+        of: find.byKey(ValueKey<String>('srs-deck-$jp'), skipOffstage: false),
+        matching: find.text('JP', skipOffstage: false),
       );
+      await tester.ensureVisible(jpRow);
+      await _settle(tester);
+      await tester.tap(jpRow, buttons: kSecondaryButton);
       await _settle(tester, rounds: 4);
       expect(find.text(t.srs_deck_browse_cards), findsOneWidget);
       // Apple 菜单按 value / child 重建菜单项（不保留 key），按文案点。
@@ -378,6 +381,8 @@ void main() {
         size: const Size(412, 915),
         page: const SrsDeckListPage(),
       );
+      await tester.ensureVisible(find.text('Default', skipOffstage: false));
+      await _settle(tester);
       await tester.longPress(find.text('Default'));
       await _settle(tester, rounds: 4);
       expect(find.text(t.srs_deck_browse_cards), findsOneWidget);
