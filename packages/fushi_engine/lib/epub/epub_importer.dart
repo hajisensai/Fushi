@@ -119,18 +119,6 @@ class EpubImporter {
       final EpubBook book = result.book;
       final List<int> characterCounts = result.characterCounts;
 
-      final String chaptersJson = buildChaptersJson(book, characterCounts);
-
-      final String? tocJson = book.toc.isNotEmpty
-          ? jsonEncode(
-              book.toc
-                  .map(
-                    (e) => <String, Object?>{'title': e.label, 'href': e.href},
-                  )
-                  .toList(),
-            )
-          : null;
-
       final String resolvedTitle =
           book.title == p.basenameWithoutExtension(tempDir)
           ? p.basenameWithoutExtension(fileName)
@@ -182,38 +170,15 @@ class EpubImporter {
 
       final int importedAtMs = DateTime.now().millisecondsSinceEpoch;
       insertedKey = await db.insertEpubBook(
-        EpubBooksCompanion.insert(
+        bookRowFor(
+          book: book,
+          characterCounts: characterCounts,
           bookKey: bookKey,
           title: storedTitle,
-          author: book.author != null
-              ? Value(book.author)
-              : const Value.absent(),
-          coverPath: book.coverHref != null
-              ? Value(book.coverHref)
-              : const Value.absent(),
           epubPath: fileName,
           extractDir: extractDir,
-          chapterCount: book.chapters.length,
-          chaptersJson: chaptersJson,
-          tocJson: tocJson != null ? Value(tocJson) : const Value.absent(),
           importedAt: importedAtMs,
-          // TODO-817 M1b：扫描器入库时回填来源库 id；手动导入 sourceId==null
-          // → Value.absent() 落 NULL（向后兼容）。
-          sourceId: sourceId != null ? Value(sourceId) : const Value.absent(),
-          // v87：OPF 的 dc:language 回填。`EpubParser` 一直解析着这个字段，但在此
-          // 之前全仓没有任何消费方——正文字体因此只能落到 CSS 的裸 `serif`，在
-          // Windows 上就是宋体（中文字形），日文书也一样。落库后由
-          // `content_font_chain` 选链。包没声明 → NULL → 不猜，保持浏览器默认，
-          // 用户可在书籍设置里手动指定。
-          language: book.language != null && book.language!.trim().isNotEmpty
-              ? Value(book.language!.trim())
-              : const Value.absent(),
-          // v115：OPF dc:identifier 里校验通过的 ISBN（已规范成 ISBN-13），排行榜
-          // 作品匹配的强 ID。没有合法 ISBN → NULL。
-          isbn: book.isbn != null ? Value(book.isbn) : const Value.absent(),
-          // n4KC1azJvw：OPF 声明的系列（没有也写类型标记，存量回填据此跳过）。
-          // 书架系列归组优先认它，标题启发式只兜底。
-          sourceMetadata: Value(encodeEpubSeriesMetadata(book.series)),
+          sourceId: sourceId,
         ),
       );
 
@@ -249,6 +214,100 @@ class EpubImporter {
       rethrow;
     }
   }
+
+  /// 已解析的 [book] → `EpubBooks` 行：用户导入（[_persistParsed]）与「孤儿书目录
+  /// 重新登记」（[registerExtractedBook]，BUG-4695）共用的**唯一**行构造口径，
+  /// 两条路径落下的列逐字段同构。
+  static EpubBooksCompanion bookRowFor({
+    required EpubBook book,
+    required List<int> characterCounts,
+    required String bookKey,
+    required String title,
+    required String epubPath,
+    required String extractDir,
+    required int importedAt,
+    int? sourceId,
+  }) {
+    return EpubBooksCompanion.insert(
+      bookKey: bookKey,
+      title: title,
+      author: book.author != null ? Value(book.author) : const Value.absent(),
+      coverPath: book.coverHref != null
+          ? Value(book.coverHref)
+          : const Value.absent(),
+      epubPath: epubPath,
+      extractDir: extractDir,
+      chapterCount: book.chapters.length,
+      chaptersJson: buildChaptersJson(book, characterCounts),
+      tocJson: book.toc.isNotEmpty
+          ? Value(
+              jsonEncode(
+                book.toc
+                    .map(
+                      (e) => <String, Object?>{
+                        'title': e.label,
+                        'href': e.href,
+                      },
+                    )
+                    .toList(),
+              ),
+            )
+          : const Value.absent(),
+      importedAt: importedAt,
+      // TODO-817 M1b：扫描器入库时回填来源库 id；手动导入 sourceId==null
+      // → Value.absent() 落 NULL（向后兼容）。
+      sourceId: sourceId != null ? Value(sourceId) : const Value.absent(),
+      // v87：OPF 的 dc:language 回填。`EpubParser` 一直解析着这个字段，但在此
+      // 之前全仓没有任何消费方——正文字体因此只能落到 CSS 的裸 `serif`，在
+      // Windows 上就是宋体（中文字形），日文书也一样。落库后由
+      // `content_font_chain` 选链。包没声明 → NULL → 不猜，保持浏览器默认，
+      // 用户可在书籍设置里手动指定。
+      language: book.language != null && book.language!.trim().isNotEmpty
+          ? Value(book.language!.trim())
+          : const Value.absent(),
+      // v115：OPF dc:identifier 里校验通过的 ISBN（已规范成 ISBN-13），排行榜
+      // 作品匹配的强 ID。没有合法 ISBN → NULL。
+      isbn: book.isbn != null ? Value(book.isbn) : const Value.absent(),
+      // n4KC1azJvw：OPF 声明的系列（没有也写类型标记，存量回填据此跳过）。
+      // 书架系列归组优先认它，标题启发式只兜底。
+      sourceMetadata: Value(encodeEpubSeriesMetadata(book.series)),
+    );
+  }
+
+  /// 把盘上**已解压**、但没有书库行的 EPUB 目录 [extractDir] 重新登记成书
+  /// （BUG-4695：覆盖导入换掉书库后，书文件成了孤儿目录）。
+  ///
+  /// [bookKey] 由调用方给定（= 目录名），**不**按标题重新派生、不做重名后缀——
+  /// 卡片背面的来源链接按 uid → bookKey 回退找书，键不变才能重新连上。解析与字数
+  /// 统计复用导入的 isolate 内核，不另写一套。不写「added」活动事件（不是新导入）。
+  /// 返回插入的 bookKey；同键已有行时由 `insertEpubBook` 的主键约束失败抛出。
+  static Future<String> registerExtractedBook({
+    required FushiDatabase db,
+    required String bookKey,
+    required String title,
+    required String extractDir,
+  }) async {
+    final _ParseResult result = await Isolate.run(
+      () => _reparseExtractedInIsolate(extractDir),
+    );
+    return db.insertEpubBook(
+      bookRowFor(
+        book: result.book,
+        characterCounts: result.characterCounts,
+        bookKey: bookKey,
+        title: title,
+        // 原导入文件名已不可知；这一列对 EPUB 只作展示 / 导出文件名用。
+        epubPath: '${p.basename(extractDir)}.epub',
+        extractDir: extractDir,
+        importedAt: DateTime.now().millisecondsSinceEpoch,
+      ),
+    );
+  }
+
+  /// 只读解析已解压 EPUB 目录的标题（OPF `dc:title`），在 isolate 里跑。孤儿目录
+  /// 扫描用它判断「纯数字 / `~n` 后缀」这类可疑目录名是不是真的 bookKey。
+  static Future<String> readExtractedTitle(String extractDir) =>
+      Isolate.run(() => EpubParser.parseFromExtracted(extractDir).title);
 
   /// `EpubBooks.chaptersJson` 的**唯一**序列化口径：每章 `id`/`href`/`mediaType`/
   /// `characters` + 计数口径版本 [kChapterCharCountCaliber]。

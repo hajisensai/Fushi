@@ -102,17 +102,14 @@ class PdfImporter {
 
       final int importedAtMs = DateTime.now().millisecondsSinceEpoch;
       insertedKey = await db.insertEpubBook(
-        EpubBooksCompanion.insert(
+        bookRowFor(
           bookKey: bookKey,
           title: storedTitle,
-          coverPath: coverRel != null ? Value(coverRel) : const Value.absent(),
-          epubPath: kPdfFileName,
-          extractDir: bookDir,
-          chapterCount: pageCount,
-          chaptersJson: '[]',
+          coverRel: coverRel,
+          bookDir: bookDir,
+          pageCount: pageCount,
           importedAt: importedAtMs,
-          format: Value(BookFormat.pdf.dbValue),
-          sourceId: sourceId != null ? Value(sourceId) : const Value.absent(),
+          sourceId: sourceId,
         ),
       );
 
@@ -162,6 +159,68 @@ class PdfImporter {
       }
       rethrow;
     }
+  }
+
+  /// PDF 书目录 → `EpubBooks` 行：导入（[importFromPath]）与「孤儿书目录重新登记」
+  /// （[registerExistingBookDir]，BUG-4695）共用的唯一行构造口径。
+  static EpubBooksCompanion bookRowFor({
+    required String bookKey,
+    required String title,
+    required String? coverRel,
+    required String bookDir,
+    required int pageCount,
+    required int importedAt,
+    int? sourceId,
+  }) {
+    return EpubBooksCompanion.insert(
+      bookKey: bookKey,
+      title: title,
+      coverPath: coverRel != null ? Value(coverRel) : const Value.absent(),
+      epubPath: kPdfFileName,
+      extractDir: bookDir,
+      chapterCount: pageCount,
+      chaptersJson: '[]',
+      importedAt: importedAt,
+      format: Value(BookFormat.pdf.dbValue),
+      sourceId: sourceId != null ? Value(sourceId) : const Value.absent(),
+    );
+  }
+
+  /// 把盘上已有、但没有书库行的 PDF 书目录 [bookDir]（`document.pdf` [+ `cover.png`]）
+  /// 重新登记成书（BUG-4695）。[bookKey] 由调用方给定（= 目录名），不重新派生。
+  /// 页数重新从 PDF 读；封面沿用目录里已有的 `cover.png`，没有就不补渲染（书架
+  /// 回落占位图，与导入时封面渲染失败同态）。
+  static Future<String> registerExistingBookDir({
+    required FushiDatabase db,
+    required String bookKey,
+    required String title,
+    required String bookDir,
+  }) async {
+    await PdfEngine.ensureInitialized();
+    final PdfDocument document = await PdfDocument.openFile(
+      p.join(bookDir, kPdfFileName),
+    );
+    final int pageCount;
+    try {
+      pageCount = document.pages.length;
+    } finally {
+      await document.dispose();
+    }
+    if (pageCount <= 0) {
+      throw StateError('PDF 无任何页：$bookDir');
+    }
+    return db.insertEpubBook(
+      bookRowFor(
+        bookKey: bookKey,
+        title: title,
+        coverRel: File(p.join(bookDir, kCoverFileName)).existsSync()
+            ? kCoverFileName
+            : null,
+        bookDir: bookDir,
+        pageCount: pageCount,
+        importedAt: DateTime.now().millisecondsSinceEpoch,
+      ),
+    );
   }
 
   /// 把 PDF 首页栅格化成封面 PNG 字节（失败返回 null，不阻断导入——书仍可无封面入架）。
