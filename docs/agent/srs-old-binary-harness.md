@@ -12,10 +12,10 @@ SRS 存储与同步换代（协议 4，`docs/specs/2026-11-11-srs-generation-bre
 | id | 包 | SRS 协议 | 角色 |
 |---|---|---|---|
 | `v3.0.0` | Release `v3.0.0` 的 `fushi-3.0.0-windows-setup.exe` | 协议 2 之前（复习数据在 `fushi.db`，没有 `srs.db`、没有文件夹位置） | 最后一个协议 2 之前的正式版 |
-| `debug-23261-2eb0face` | Actions run 41660639578 的 `desktop-artifacts-windows`（当时的 debug-rolling 包） | 2（`srs.db` schema 22） | 最后一个只认协议 2 的**已发布**二进制 |
-| `debug-23315-b263995`（非默认） | Actions run 41777877723 的同名产物 | 3 | 最早带协议 3 的已发布二进制 |
+| `debug-23261-2eb0face` | 存档 prerelease `srs-old-binaries-2026-11`（原来源：Actions run 41660639578 的 `desktop-artifacts-windows`，当时的 debug-rolling 包） | 2（`srs.db` schema 22） | 最后一个只认协议 2 的**已发布**二进制 |
+| `debug-23315-b263995`（非默认） | 存档 prerelease（原来源：Actions run 41777877723 的同名产物） | 3 | 最早带协议 3 的已发布二进制 |
 | `v3.3.0` | Release `v3.3.0`（Latest）的 `fushi-3.3.0-windows-setup.exe` | 3（`srs.db` schema 26） | 最早带协议 3 的正式版 = 当前最新正式版 |
-| `debug-26834-017cdcf` | Release `fushi-debug-rolling` 的 `fushi-3.3.0-debug.26834-windows-setup.exe` | 3（`srs.db` schema 29） | 当前最新 debug-rolling（develop 017cdcf） |
+| `debug-26834-017cdcf` | 存档 prerelease（原来源：Release `fushi-debug-rolling` 的 `fushi-3.3.0-debug.26834-windows-setup.exe`，已被轮换删掉） | 3（`srs.db` schema 29） | 当前最新 debug-rolling（develop 017cdcf） |
 
 为什么是这几个（2026-11-15 核实）：
 
@@ -23,11 +23,14 @@ SRS 存储与同步换代（协议 4，`docs/specs/2026-11-11-srs-generation-bre
   v3.0.0（10-17）/ v3.0.1（10-21，prerelease）还没有 sync2，v3.3.0（11-06）已经是协议 3。所以「最后一个只认协议 2 的正式版」不存在，
   用两份顶替：协议 2 之前的最后一个正式版 `v3.0.0`，加上协议 2 时期最后一个 debug-rolling 包（`2eb0face`，11-03，
   `native/fushi_fsrs/src/sync2/segment.rs` 的 `PROTOCOL = 2`）。「最早带协议 3 的正式版」与「最新正式版」都是 v3.3.0。
-- **actions artifact 会过期**（`2eb0face` 的 2026-11-17、`b263995` 的 2026-11-18），`fushi-debug-rolling` 的旧资产也会被轮换删掉。
-  过期之后只剩已经下到缓存里的那一份（sha256 照样钉在 versions.json 里，换机器就没有了）。要长期保留需要把这几个安装包
-  另存到一个不过期的地方（例如一个专门的 prerelease）——这是待所有者决定的事，装置本身不做。
-- 换代之前 debug-rolling 每次 push 都会变：G7 / G8 / G11 合并时若 debug-rolling 已经更新，往 versions.json 里加一条新的
-  「当前最新 debug-rolling」（`gh release view fushi-debug-rolling --repo hajisensai/Fushi --json assets` 里有 sha256），旧那条留着。
+- **存档**：actions artifact 会过期（`2eb0face` 的 2026-11-17、`b263995` 的 2026-11-18），`fushi-debug-rolling` 的旧资产也会被轮换删掉
+  （26834 在 11-15 已经不在了）。所有者 2026-11-15 同意长期存档：三个 debug 包已传到上游 prerelease
+  [`srs-old-binaries-2026-11`](https://github.com/hajisensai/Fushi/releases/tag/srs-old-binaries-2026-11)（GitHub 资产 digest 与
+  versions.json 的 `installer_sha256` 一致），versions.json 的 `source` 指向它，原来源记在 `source.origin`。v3.0.0 / v3.3.0 在正式 release 里，不重传。
+  单测 `test_sources_do_not_expire` 钉住：清单里只允许 `release` 来源、不许指向 `fushi-debug-rolling`。
+- 换代之前 debug-rolling 每次 push 都会变：G7 / G8 / G11 合并时若 debug-rolling 已经更新，先把新的安装包
+  `gh release upload srs-old-binaries-2026-11 <文件> --repo hajisensai/Fushi` 传进存档，再往 versions.json 里加一条
+  （tag 填存档、`origin` 记 run 号与 debug 版本号；sha256 用 `gh release view … --json assets` 的 digest 核对），旧那条留着。
 
 ## 获取
 
