@@ -1357,7 +1357,7 @@ void main() {
     testWidgets(
       'changing a manga link: the dialog with its unit choice lays '
       'out (${apple ? 'Apple' : 'Material'})',
-      // Apple: BUG-4397 (the Apple dialog shell sizes its content with
+      // Apple: BUG-4642 (the Apple dialog shell sizes its content with
       // IntrinsicWidth; the Apple segmented control must answer that).
       (WidgetTester tester) async {
         await open(tester, <TrackingProvider>[

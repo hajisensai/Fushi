@@ -6,7 +6,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
 import 'package:material_ui/material_ui.dart';
 
-/// BUG-4397: the Apple segmented control (single choice, the
+/// BUG-4642: the Apple segmented control (single choice, the
 /// [adaptiveSegmentedButton] form and the multi-choice fallback) must answer
 /// intrinsic size queries: a form dialog sizes its content with
 /// [IntrinsicWidth], and a bare LayoutBuilder threw there.

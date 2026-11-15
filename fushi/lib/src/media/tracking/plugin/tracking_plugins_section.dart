@@ -288,7 +288,7 @@ class _TrackingPluginsSectionState extends State<TrackingPluginsSection> {
       ),
     );
     // Clears an earlier "rejected" state and sends what waited for the
-    // sign-in at once (BUG-4395).
+    // sign-in at once (BUG-4610).
     unawaited(
       widget.service
           .resumeAfterSignIn(provider.id)

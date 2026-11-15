@@ -3446,7 +3446,7 @@ class MediaTrackingService {
     _retryTimer?.cancel();
     _retryTimer = null;
     MediaTrackingSyncResult result = await _reconcileAndSync(force: force);
-    // Every round's outcome is kept (BUG-4395): only persisting the last
+    // Every round's outcome is kept (BUG-4610): only persisting the last
     // round lost a rejection seen in an earlier one.
     await _persistSyncOutcome(result);
     while (_syncAgainRequested) {
@@ -3458,7 +3458,7 @@ class MediaTrackingService {
     return result;
   }
 
-  /// [providerId] was signed in again (BUG-4395): its "sign-in needed" state
+  /// [providerId] was signed in again (BUG-4610): its "sign-in needed" state
   /// is cleared and what waited for it (backed off while the site refused
   /// the old sign-in) is due now and sent in this sync.
   Future<MediaTrackingSyncResult> resumeAfterSignIn(String providerId) async {
@@ -3597,7 +3597,7 @@ class MediaTrackingService {
           entry.value.succeeded,
         );
         await _preferences.setPref(keys.lastSyncFailed, entry.value.failed);
-        // Only an answer from the site changes "sign-in needed" (BUG-4395):
+        // Only an answer from the site changes "sign-in needed" (BUG-4610):
         // a round that asked it nothing (its rows backed off) proves nothing.
         if (entry.value.succeeded + entry.value.failed > 0) {
           await _preferences.setPref(

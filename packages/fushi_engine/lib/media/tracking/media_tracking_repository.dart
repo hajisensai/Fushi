@@ -2113,7 +2113,7 @@ class MediaTrackingRepository {
   /// or a saved position in the end zone of a known duration
   /// ([isEpisodePositionNearEnd]). The time of the latter is `lastPlayedAt`,
   /// written together with the position; 0 when an old row has none
-  /// (BUG-4401).
+  /// (BUG-4646).
   static int? _videoWatchedAtMs(
     VideoBookRow video,
     Map<String, int> durationsMs,
@@ -2362,7 +2362,7 @@ class MediaTrackingRepository {
         _db.mediaTrackingOutbox,
       )..where((t) => t.mappingId.equals(mapping.id))).getSingleOrNull();
       if (existing == null) {
-        // Already on the site (BUG-4396): what the link last sent covers this
+        // Already on the site (BUG-4641): what the link last sent covers this
         // event, so nothing is queued. Without this a replay after a restart
         // (the in-memory de-dup is empty then) sent the same progress again.
         if (_sentCovers(mapping, progress, completed, monotonic: monotonic)) {

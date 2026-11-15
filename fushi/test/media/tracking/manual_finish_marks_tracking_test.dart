@@ -12,7 +12,7 @@ import 'package:fushi_engine/media/tracking/media_tracking_repository.dart';
 import 'package:fushi_engine/media/tracking/media_tracking_service.dart';
 import 'package:fushi_engine/media/tracking/tracking_provider.dart';
 
-/// BUG-4402: a finished / watched mark set by hand (shelf menu, batch
+/// BUG-4647: a finished / watched mark set by hand (shelf menu, batch
 /// action, CLI) reaches media tracking like the reader's end of book does.
 
 final class _Session implements TrackingProviderSession {

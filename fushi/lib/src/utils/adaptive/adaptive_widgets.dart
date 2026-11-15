@@ -748,7 +748,7 @@ Widget adaptiveSegmentedButton<T extends Object>({
     // 以前玻璃分段的布局），无界宽（横向滚动的分段条宿主）按内容取宽。
     // expandedInsets = fill when the width is bounded, content width when it
     // is not (both Apple forms decide this from their own constraints and
-    // still answer intrinsic size queries; no LayoutBuilder here, BUG-4397).
+    // still answer intrinsic size queries; no LayoutBuilder here, BUG-4642).
     return FushiSegmentedButton<T>(
       segments: segments,
       selected: selected,

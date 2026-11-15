@@ -690,7 +690,7 @@ void main() {
     });
   });
 
-  group('BUG-4401：播放不再写 completedAt 后，看到片尾区的集仍算看完', () {
+  group('BUG-4646：播放不再写 completedAt 后，看到片尾区的集仍算看完', () {
     late PreferencesRepository prefs;
 
     setUp(() async {

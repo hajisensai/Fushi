@@ -4,7 +4,7 @@
 /// decided playback must not tick episodes), so "watched" is now either the
 /// manual mark or a saved position in the end zone of a known duration. The
 /// player (start from 0 or resume), collection continue / counts, and media
-/// tracking catch-up (BUG-4401) all read this one function; they must never
+/// tracking catch-up (BUG-4646) all read this one function; they must never
 /// disagree about whether an episode is finished.
 library;
 

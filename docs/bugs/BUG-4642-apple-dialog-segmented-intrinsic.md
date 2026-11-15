@@ -1,4 +1,4 @@
-## BUG-4397 · Apple segmented control in a dialog broke layout: no intrinsic size inside IntrinsicWidth
+## BUG-4642 · Apple segmented control in a dialog broke layout: no intrinsic size inside IntrinsicWidth
 - **报告**：2026-11-11（自动化测试发现，tracking 修复轮 F3：键盘测试打开漫画链接对话框）
 - **真实性**：✅ 真 bug。Apple 设计下 `FushiAlertDialog` 的表单式外壳用 `IntrinsicWidth` 按内容取宽（`fushi/lib/src/utils/components/glass/fushi_glass_overlays.dart:936`），而 `adaptiveSegmentedButton` 的 Apple 分支包在 `LayoutBuilder` 里（`fushi/lib/src/utils/adaptive/adaptive_widgets.dart:749`），`LayoutBuilder` 不能回报固有尺寸 → 布局断言。触发：Tracking 页改一个漫画 / 小说链接（对话框带「章 / 卷」单位分段），以及 PDF 的「Track as」种类分段。
 - **[x] ① 已修复** — 设计系统层：`adaptiveSegmentedButton` 的 Apple 分支去掉外层 `LayoutBuilder`，一律传 `expandedInsets: EdgeInsets.zero`（两种 Apple 形态本来就按自身约束「有界撑满、无界取内容宽」）；`FushiSegmentedButton` 的 Apple 分段控件外包 `_AppleSegmentedIntrinsics`（`fushi/lib/src/utils/components/glass/fushi_glass_toggles.dart`），用已算好的内容宽 / 高回答固有尺寸与 dry layout，固有尺寸查询不再走到内部的 `LayoutBuilder`。

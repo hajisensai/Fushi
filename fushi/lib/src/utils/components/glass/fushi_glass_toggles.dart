@@ -3934,7 +3934,7 @@ class _FushiSegmentedButtonState<T> extends State<FushiSegmentedButton<T>> {
     // The width is decided from the constraints (fill when bounded and
     // expanded, else the content width), but the control also answers
     // intrinsic size queries itself: inside a dialog that sizes its content
-    // with IntrinsicWidth a bare LayoutBuilder throws (BUG-4397).
+    // with IntrinsicWidth a bare LayoutBuilder throws (BUG-4642).
     return _AppleSegmentedIntrinsics(
       width: intrinsic + (insets?.horizontal ?? 0),
       height: height + (insets?.vertical ?? 0),
@@ -4659,7 +4659,7 @@ class _AppleSegmentState extends State<_AppleSegment> {
 
 /// Reports the Apple segmented control's known content size as its intrinsic
 /// size (and dry layout), so hosts that measure their content (a form dialog's
-/// IntrinsicWidth, BUG-4397) never reach the LayoutBuilder below.
+/// IntrinsicWidth, BUG-4642) never reach the LayoutBuilder below.
 class _AppleSegmentedIntrinsics extends SingleChildRenderObjectWidget {
   const _AppleSegmentedIntrinsics({
     required this.width,
