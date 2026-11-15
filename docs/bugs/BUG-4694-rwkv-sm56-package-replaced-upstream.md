@@ -5,7 +5,7 @@
   - 作者 2026-11-13 原地替换了所有旧 release 的 zip：测试向量从两位真实数据集用户 `user_4676` / `user_1745` 换成合成用户 `user_900001` / `user_900002`，`sm56/weights.{int8,f32}.bin`、`architecture.json` 逐字节未变。新包 4,136,639 字节 / SHA-256 `22a4df807806615c0d58e382127eeb8cf764ae3233ac577115f112130f268361`（2026-11-15 实下核对；包内 `sm56/weights.int8.bin` 仍是 436,391 字节 / `479b3e2b…`）。
   - 同一钉点在 CI：`native/fushi_rwkv/fetch_model.{sh,ps1}`（修前 sh `:60`）、`native/fushi_rwkv/src/lib.rs:94` `SMALL_MODEL_PACKAGE_SHA256`、`native-rwkv-gate.yml` / `main.yml` / `release.yml` 的缓存 key，旧包已无处可下、Actions 缓存也已过期。
 - **根因**：运行时依赖的是「第三方可原地替换的 release 资产」，而且下的是一个只为取其中 436 KB 权重的 5.6 MB 发布包——包里与运行时无关的测试向量一变，钉死的包哈希就失效。只认哈希是对的（拦住了内容漂移），错在钉的对象和来源。
-- **[x] ① 已修复** —
+- **[x] ① 已修复**（`dd77bc6598`）—
   - app：`packages/fushi_engine/lib/srs/srs_rwkv_models.dart` 改为直接下载 int8 权重本身 `kSrsRwkvSmallWeights`（钉 436,391 字节 + SHA-256 `479b3e2b…`），首选本仓库 release `rwkv-models` 的内容寻址镜像 `479b3e2bc6a1c900-sm56-weights.int8.bin`（永不覆盖），备用 JSchoreels/anki 钉死提交 `001440b0…` 的 raw 文件，经 `ModelFileDownloader(urlCandidates: …)` 换源；不再下 zip / 解压。本地权重文件名与哈希不变，已下载成功的用户不重下、快照不重放。旧包与 `.part` 残留进 `kSrsRwkvRetiredWeightsNames`，由 `SrsRwkvService._prepare` → `_deleteRetired` → `SrsRwkvModels.deleteRetired` 清理。设置页下载大小 `5.6 MB` → `0.4 MB`（`srs_rwkv_panel.dart`）。
   - CI / 原生测试：钉新包 `22a4df80…`（`fetch_model.{sh,ps1}` 首选 `rwkv-models` 镜像 `22a4df807806615c-sm56-package.zip`、作者 release 备用；`src/lib.rs` `SMALL_MODEL_PACKAGE_SHA256`；三个 workflow 的缓存 key / env），`tests/small_model.rs` 对拍用户改为 900001 / 900002。旧包含 gated 数据集用户的行，不再传播或镜像。
 - **[x] ② 已加自动化测试** —
