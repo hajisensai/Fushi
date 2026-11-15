@@ -8,8 +8,8 @@ library;
 
 import 'dart:io';
 
-import 'package:test/test.dart';
 import 'package:path/path.dart' as p;
+import 'package:test/test.dart';
 
 const String _stub = r'''#!/bin/bash
 echo "$GDK_BACKEND $*" >> "$STUB_LOG"
