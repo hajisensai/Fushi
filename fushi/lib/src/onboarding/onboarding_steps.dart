@@ -114,6 +114,9 @@ OnboardingFeature? onboardingFeatureOfModule(ModuleId module) =>
       // AI 默认开、向导不问：新装用户还没配任何提供商，AI 入口点了只引导去配置，
       // 「要不要 AI」不是首启该回答的问题。关 AI 在 设置 → 外观 → 功能模块。
       ModuleId.ai => null,
+      // Media tracking is off by default and not asked in the wizard: it needs
+      // a site sign-in first. Turned on in Settings › Appearance › Modules.
+      ModuleId.tracking => null,
       ModuleId.sync => OnboardingFeature.sync,
     };
 

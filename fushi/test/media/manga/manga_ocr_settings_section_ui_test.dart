@@ -717,7 +717,7 @@ void main() {
     await tester.pump();
     events.add(
       const MangaOcrDownloadEvent(
-        fileName: 'kellenok_manga_rec_v0.2.onnx',
+        fileName: 'kellenok_manga_rec_v0.3.onnx',
         receivedBytes: 10,
         totalBytes: 100,
       ),
@@ -725,7 +725,7 @@ void main() {
     await tester.pump();
     expect(
       find.text(
-        t.manga_ocr_downloading_file(file: 'kellenok_manga_rec_v0.2.onnx'),
+        t.manga_ocr_downloading_file(file: 'kellenok_manga_rec_v0.3.onnx'),
       ),
       findsOneWidget,
     );
@@ -753,7 +753,7 @@ void main() {
         imported: <String>[],
         skipped: <String>[],
         rejected: <MangaOcrModelImportRejection>[],
-        stillMissing: <String>['ppocrv6_small_rec.yml'],
+        stillMissing: <String>['kellenok_manga_rec_v0.3_dict.txt'],
       ),
       beforeReturn: () => imported.future,
     );
@@ -1181,7 +1181,7 @@ void main() {
     );
     events.add(
       const MangaOcrDownloadEvent(
-        fileName: 'kellenok_manga_rec_v0.2.onnx',
+        fileName: 'kellenok_manga_rec_v0.3.onnx',
         receivedBytes: 5 * 1024 * 1024,
         totalBytes: 30 * 1024 * 1024,
       ),
@@ -1282,7 +1282,7 @@ void main() {
     });
     final _FakeImporter importer = _FakeImporter(
       const MangaOcrModelImportResult(
-        imported: <String>['ppocrv6_small_rec.yml'],
+        imported: <String>['kellenok_manga_rec_v0.3_dict.txt'],
         skipped: <String>[],
         rejected: <MangaOcrModelImportRejection>[],
         stillMissing: <String>[],
@@ -1317,8 +1317,8 @@ void main() {
     for (final String name in <String>[
       'detector-v4-s_int8.onnx',
       'ppocrv6_small_det.onnx',
-      'ppocrv6_small_rec.yml',
-      'kellenok_manga_rec_v0.2.onnx',
+      'kellenok_manga_rec_v0.3_dict.txt',
+      'kellenok_manga_rec_v0.3.onnx',
     ]) {
       expect(find.textContaining(name), findsOneWidget);
     }
@@ -1339,7 +1339,7 @@ void main() {
         imported: <String>[],
         skipped: <String>[],
         rejected: <MangaOcrModelImportRejection>[],
-        stillMissing: <String>['ppocrv6_small_rec.yml'],
+        stillMissing: <String>['kellenok_manga_rec_v0.3_dict.txt'],
       ),
     );
     final Directory tempDir = Directory.systemTemp.createTempSync(
@@ -1408,8 +1408,8 @@ void main() {
       for (final String name in <String>[
         'detector-v4-s_int8.onnx',
         'ppocrv6_small_det.onnx',
-        'ppocrv6_small_rec.yml',
-        'kellenok_manga_rec_v0.2.onnx',
+        'kellenok_manga_rec_v0.3_dict.txt',
+        'kellenok_manga_rec_v0.3.onnx',
       ]) {
         expect(find.textContaining(name), findsOneWidget);
       }

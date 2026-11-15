@@ -5,8 +5,9 @@
 ///
 /// 为什么要它：2026-09-30 用用户真实卷《君が一等星に光るまで 01》80 页（485 块、
 /// 5564 个参考字，参考为 Google Lens）实测，漫画微调的 PP-OCRv6 CTC 识别器
-/// （Kellenok/PP-OCRv6_manga 的 rec v0.2，与随包的 `ppocrv6_small_rec.onnx` 同
-/// 输入契约、同 18710 词表）逐列识别 CER 14.86%，manga-ocr 15.82%；每列约 11 ms，
+/// （Kellenok/PP-OCRv6_manga，当时测的是 rec v0.2；与官方 `ppocrv6_small_rec.onnx`
+/// 同输入契约，现用版本与它的字典见 `kMangaCtcRecFileName`）逐列识别 CER 14.86%，
+/// manga-ocr 15.82%；每列约 11 ms，
 /// 比 manga-ocr 快约 30 倍。逐列识别天然给出每列的文本与列框，选词几何不用估算。
 /// 实测与选型见 `docs/reviews/2026-09-30-manga-ocr-select-speed.md`。
 ///

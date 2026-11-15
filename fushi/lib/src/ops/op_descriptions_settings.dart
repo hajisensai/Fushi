@@ -120,8 +120,8 @@ List<OpDescription> describeSettingsOps(OpDescribeKit kit) => <OpDescription>[
       OpParam.object(
         'args',
         description:
-            'Parameters the action row declares (see "params" in settings.get).',
-        spread: true,
+            'Parameters the action row declares (see "params" in settings.get). '
+            'Sent as body.args, the same shape the direct route reads.',
       ),
       OpParam.userGate(
         'confirm',

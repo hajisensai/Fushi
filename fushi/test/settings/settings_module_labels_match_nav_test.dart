@@ -11,6 +11,7 @@ import 'package:fushi/src/settings/settings_schema_listening.dart';
 import 'package:fushi/src/settings/settings_schema_navigation.dart';
 import 'package:fushi/src/settings/settings_schema_services.dart';
 import 'package:fushi/src/settings/settings_schema_system.dart';
+import 'package:fushi/src/settings/settings_schema_tracking.dart';
 import 'package:fushi/src/sync/sync_settings_schema.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart';
@@ -45,6 +46,7 @@ void main() {
     ModuleId.listening: 'system.module_listening',
     ModuleId.cardCreation: 'system.module_card_creation',
     ModuleId.services: 'system.module_services',
+    ModuleId.tracking: 'system.module_tracking',
     ModuleId.ai: 'system.module_ai',
     ModuleId.sync: 'system.module_sync',
   };
@@ -56,6 +58,7 @@ void main() {
         ModuleId.listening: buildListeningDestination(),
         ModuleId.cardCreation: buildCardCreationDestination(),
         ModuleId.services: buildServicesDestination(),
+        ModuleId.tracking: buildMediaTrackingDestination(),
         ModuleId.ai: buildAiDestination(),
         ModuleId.sync: buildSyncBackupDestination(),
       };
@@ -159,6 +162,7 @@ void main() {
         ModuleId.listening,
         ModuleId.cardCreation,
         ModuleId.services,
+        ModuleId.tracking,
         ModuleId.ai,
         ModuleId.sync,
       },

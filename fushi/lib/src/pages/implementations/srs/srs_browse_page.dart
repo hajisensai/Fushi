@@ -34,6 +34,7 @@ import 'package:fushi_engine/srs/srs_note_batch_edit.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/focus/focus_activation.dart';
 import 'package:fushi/src/focus/page_focus_ownership.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_browse_card_tile.dart';
@@ -1668,6 +1669,11 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
       return KeyEventResult.ignored;
     }
     final LogicalKeyboardKey key = event.logicalKey;
+    // 焦点在检查器页签 / 工具栏按钮这类可激活子控件上：确认键归它（应用级 Enter → 激活），
+    // 不当「翻面 / 打开详情」吞掉。
+    if (focusedDescendantClaimsActivation(node, key)) {
+      return KeyEventResult.ignored;
+    }
     final HardwareKeyboard kb = HardwareKeyboard.instance;
     final bool ctrl = kb.isControlPressed || kb.isMetaPressed;
     if (ctrl && key == LogicalKeyboardKey.keyF) {

@@ -18,8 +18,6 @@ import 'package:fushi/src/settings/settings_schema_music.dart';
 import 'package:fushi/src/settings/settings_schema_local_services.dart';
 import 'package:fushi/src/settings/settings_schema_lookup.dart';
 import 'package:fushi/src/settings/settings_schema_manga.dart';
-import 'package:fushi_engine/media/tracking/media_tracking_service.dart'
-    show kMediaTrackingEnabled;
 import 'package:fushi/src/settings/settings_schema_tracking.dart';
 import 'package:fushi/src/settings/settings_schema_profiles.dart';
 import 'package:fushi/src/settings/settings_schema_reading.dart';
@@ -118,7 +116,7 @@ List<SettingsDestination> _buildDestinations() {
     buildModelsDestination(),
     buildDownloadsDestination(),
     buildServicesDestination(),
-    if (kMediaTrackingEnabled) buildMediaTrackingDestination(),
+    buildMediaTrackingDestination(),
     buildLocalServicesDestination(),
     buildProfilesDestination(),
     buildSyncBackupDestination(),

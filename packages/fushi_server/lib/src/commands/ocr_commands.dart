@@ -500,7 +500,7 @@ class OcrCommands extends CliModule {
         _io.err.writeln(ortProblem);
         return kExitUnavailable;
       }
-      if (!(await service.modelStatus()).allReady) {
+      if (!(await service.modelStatus()).canRun) {
         _io.err.writeln(
           tr(
             '$key 模型未下载：先跑 fushi_server ocr models pull --model $key',
@@ -726,7 +726,7 @@ class OcrCommands extends CliModule {
         _io.err.writeln(ortProblem);
         return kExitUnavailable;
       }
-      if (!(await service.modelStatus()).allReady) {
+      if (!(await service.modelStatus()).canRun) {
         _io.err.writeln(
           tr(
             '$key 模型未下载：先跑 fushi_server ocr models pull --model $key',
