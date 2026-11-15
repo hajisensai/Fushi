@@ -1,8 +1,14 @@
-/// Selectable local recognizers. All of them are PaddleOCR-format CTC line
-/// recognizers read through the per-column pipeline, so they differ only in
-/// their recognizer weights and dictionary: the manga-tuned default, a larger
-/// general Chinese one and a Korean one. The kha-white manga-ocr model and
-/// Baberu were both removed in 2026-10.
+/// Selectable local recognizers, of two kinds ([MangaOcrRecognizerSpec]):
+///
+/// - PaddleOCR-format CTC line recognizers read through the per-column
+///   pipeline, differing only in their weights and dictionary: the manga-tuned
+///   default, a larger general Chinese one and a Korean one.
+/// - muscgab manga-ocr-charspot (small / nano): one model call per text block
+///   returns every character with its box and reading order
+///   (`charspot_ocr_recognizer.dart`). Japanese only; weights are CC BY-NC-SA
+///   4.0 and are downloaded by the user from Hugging Face, never bundled.
+///
+/// The kha-white manga-ocr model and Baberu were both removed in 2026-10.
 library;
 
 import 'dart:io';
@@ -10,6 +16,8 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi_engine/foundation/engine_log.dart';
+import 'package:fushi_engine/ocr/charspot_ocr_recognizer.dart'
+    show kCharspotNanoCellBudget, kCharspotSmallCellBudget;
 import 'package:fushi_engine/ocr/manga_ocr_model_manifest.dart';
 import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart';
 import 'package:fushi_engine/ocr/manga_ocr_model_fingerprint.dart' as model_fp;
@@ -28,7 +36,15 @@ enum MangaOcrLocalModel {
   ppOcrV6Medium('ppocrv6_medium'),
 
   /// PP-OCRv5 韩文 rec：默认模型与 PP-OCRv6 都不认谚文，这是唯一能读韩文的档。
-  ppOcrV5Korean('ppocrv5_korean');
+  ppOcrV5Korean('ppocrv5_korean'),
+
+  /// muscgab manga-ocr-charspot-small：整块一次推理出逐字框与阅读序，日文漫画上
+  /// 比默认模型准得多（实测见 [kCharspotSmallGeneration]）。只认日文。
+  charspotSmall('charspot_small'),
+
+  /// muscgab manga-ocr-charspot-nano：同上的 1.7M 参数版，约为 small 的四分之一
+  /// 耗时，准确率略低。
+  charspotNano('charspot_nano');
 
   const MangaOcrLocalModel(this.key);
   final String key;
@@ -57,7 +73,11 @@ enum MangaOcrLocalModel {
   /// 纯 ONNX Runtime CPU 推理、出包五端都能跑的模型；只给 Windows 的模型在
   /// 这里返回 false（目前没有：2026-10 删掉的 Baberu 曾是唯一一个）。
   bool get availableOnAllPlatforms => switch (this) {
-    mangaCtc || ppOcrV6Medium || ppOcrV5Korean => true,
+    mangaCtc ||
+    ppOcrV6Medium ||
+    ppOcrV5Korean ||
+    charspotSmall ||
+    charspotNano => true,
   };
 
   /// 当前这一代：下载、导入、设置页展示都按它。
@@ -65,13 +85,15 @@ enum MangaOcrLocalModel {
     mangaCtc => kMangaCtcGeneration,
     ppOcrV6Medium => kPpOcrV6MediumGeneration,
     ppOcrV5Korean => kPpOcrV5KoreanGeneration,
+    charspotSmall => kCharspotSmallGeneration,
+    charspotNano => kCharspotNanoGeneration,
   };
 
   /// 上一代：当前这一代还没下齐、而它在磁盘上齐全时，识别照常用它跑
   /// （[installedMangaOcrGeneration]）。没有上一代的模型返回 null。
   MangaOcrModelGeneration? get supersededGeneration => switch (this) {
     mangaCtc => kMangaCtcSupersededGeneration,
-    ppOcrV6Medium || ppOcrV5Korean => null,
+    ppOcrV6Medium || ppOcrV5Korean || charspotSmall || charspotNano => null,
   };
 
   List<MangaOcrModelFile> get manifest => generation.manifest;
@@ -87,12 +109,49 @@ enum MangaOcrLocalModel {
       mangaCtc => kMangaCtcModelDirName,
       ppOcrV6Medium => kPpOcrV6MediumModelDirName,
       ppOcrV5Korean => kPpOcrV5KoreanModelDirName,
+      charspotSmall => kCharspotSmallModelDirName,
+      charspotNano => kCharspotNanoModelDirName,
     };
     return Directory(p.join(legacy.parent.path, sibling));
   }
 }
 
-/// 一代模型：清单、缓存签名基线，以及块识别 rec 与它的字典。
+/// 块识别器的种类与它专属的参数。装配层（`manga_ocr_service_impl.dart`）按种类
+/// 组装 isolate 里的识别器，不从 PaddleOCR 的字段里猜。
+sealed class MangaOcrRecognizerSpec {
+  const MangaOcrRecognizerSpec();
+
+  /// 「OCR 忽略振假名」对这种识别器是否还有额外作用（见各子类）。为 false 时
+  /// 服务把开关当关处理：识别结果与缓存目录都不随开关变。
+  bool get honoursIgnoreFurigana;
+}
+
+/// PaddleOCR 格式的 CTC 行识别器，经逐列管线读（`ctc_column_ocr_recognizer.dart`）。
+/// 「忽略振假名」在逐列识别前再裁掉贴着正文的注音带（`trimOcrRubyBands`）。
+final class MangaOcrCtcColumnSpec extends MangaOcrRecognizerSpec {
+  const MangaOcrCtcColumnSpec({required this.dictFormat});
+
+  /// rec 字典的格式（官方 rec 是 `inference.yml`，漫画 rec 是纯文本）。
+  final PpOcrCharacterDictFormat dictFormat;
+
+  @override
+  bool get honoursIgnoreFurigana => true;
+}
+
+/// muscgab manga-ocr-charspot：整块一次推理（`charspot_ocr_recognizer.dart`）。
+/// 振假名在 ONNX 图里就去掉了（上游 `RUBY_THR`），开关不开也不会读进正文，所以
+/// 「忽略振假名」对它没有额外作用。
+final class MangaOcrCharspotSpec extends MangaOcrRecognizerSpec {
+  const MangaOcrCharspotSpec({required this.cellBudget});
+
+  /// 16 px 格子的预算（small 256、nano 196）。
+  final int cellBudget;
+
+  @override
+  bool get honoursIgnoreFurigana => false;
+}
+
+/// 一代模型：清单、缓存签名基线，以及块识别器的权重、字表与种类。
 ///
 /// 换 rec 版本 = 换一代。新一代的文件落盘名带版本，与上一代并存于同一个目录，
 /// 所以「磁盘上装的是哪一代」只看各自清单齐不齐（[installedMangaOcrGeneration]）。
@@ -102,7 +161,7 @@ class MangaOcrModelGeneration {
     required this.cacheSignature,
     required this.recFileName,
     required this.recDictFileName,
-    required this.recDictFormat,
+    required this.recognizer,
   });
 
   final List<MangaOcrModelFile> manifest;
@@ -111,9 +170,14 @@ class MangaOcrModelGeneration {
   /// 逐页缓存不会被当成这一代的结果，反之亦然。
   final String cacheSignature;
 
+  /// 块识别器的权重文件名（每个模型、每一代都不同，[mangaOcrGenerationForRecFile]
+  /// 按它反查）。
   final String recFileName;
+
+  /// 块识别器的字表文件名（PaddleOCR 字典 / charspot `vocab.json`）。
   final String recDictFileName;
-  final PpOcrCharacterDictFormat recDictFormat;
+
+  final MangaOcrRecognizerSpec recognizer;
 
   /// [dir] 里这一代的清单文件是否齐全（只 stat 清单里那几个文件）。
   bool isCompleteIn(Directory dir) => manifest.every(
@@ -390,7 +454,9 @@ const MangaOcrModelGeneration kMangaCtcGeneration = MangaOcrModelGeneration(
   cacheSignature: 'local-onnx-ctc-kellenok-v0.3-$kMangaOcrPipelineRevision',
   recFileName: kMangaCtcRecFileName,
   recDictFileName: kMangaCtcRecDictFileName,
-  recDictFormat: PpOcrCharacterDictFormat.plainText,
+  recognizer: MangaOcrCtcColumnSpec(
+    dictFormat: PpOcrCharacterDictFormat.plainText,
+  ),
 );
 
 /// 上一代 rec（Kellenok v0.2，`main` 历史里的 Release v0.2 提交 d090c421）的落盘名。
@@ -442,7 +508,9 @@ const MangaOcrModelGeneration kMangaCtcSupersededGeneration =
       cacheSignature: 'local-onnx-ctc-kellenok-v0.2-$kMangaOcrPipelineRevision',
       recFileName: kMangaCtcSupersededRecFileName,
       recDictFileName: kPpOcrRecDictFileName,
-      recDictFormat: PpOcrCharacterDictFormat.paddleYaml,
+      recognizer: MangaOcrCtcColumnSpec(
+        dictFormat: PpOcrCharacterDictFormat.paddleYaml,
+      ),
     );
 
 /// 各模型共用的两份检测权重（每个模型目录各存一份，删一个模型不波及另一个）：
@@ -506,7 +574,9 @@ const MangaOcrModelGeneration kPpOcrV6MediumGeneration =
           'local-onnx-ctc-ppocrv6-medium-$kMangaOcrPipelineRevision',
       recFileName: kPpOcrV6MediumRecFileName,
       recDictFileName: kPpOcrV6MediumRecDictFileName,
-      recDictFormat: PpOcrCharacterDictFormat.paddleYaml,
+      recognizer: MangaOcrCtcColumnSpec(
+        dictFormat: PpOcrCharacterDictFormat.paddleYaml,
+      ),
     );
 
 /// PP-OCRv5 韩文 rec（PaddlePaddle/korean_PP-OCRv5_mobile_rec_onnx，Apache-2.0）。
@@ -548,5 +618,103 @@ kPpOcrV5KoreanGeneration = MangaOcrModelGeneration(
   cacheSignature: 'local-onnx-ctc-ppocrv5-korean-$kMangaOcrPipelineRevision',
   recFileName: kPpOcrV5KoreanRecFileName,
   recDictFileName: kPpOcrV5KoreanRecDictFileName,
-  recDictFormat: PpOcrCharacterDictFormat.paddleYaml,
+  recognizer: MangaOcrCtcColumnSpec(
+    dictFormat: PpOcrCharacterDictFormat.paddleYaml,
+  ),
+);
+
+/// muscgab manga-ocr-charspot 的两个模型都从作者的 HF 仓库直接下载：权重是
+/// CC BY-NC-SA 4.0（非商用、署名、相同方式共享），代码 Apache-2.0。本仓不打包、
+/// 不转发权重，设置页的模型说明写明「非商用许可」并署名 muscgab；README 的模型
+/// 致谢表同样列出。
+///
+/// 清单：文字块检测器 + PP-OCRv6 small det（块大到 charspot 读不清时切列 / 行，
+/// 例如整张截图、整页字幕位图，`charspot_ocr_recognizer.dart`）+ charspot 权重 +
+/// 字表。不带 PaddleOCR rec：横排块也交 charspot 整块读，不经路由识别器。
+///
+/// 两个文件都钉了 revision 与 sha256（`main` 可变；sha256 是 HF 的 LFS 指纹 /
+/// 本机下载后实算，2026-11-14）。
+const String kCharspotSmallRevision =
+    '72ca29202673880ca9c67b1c02c107535be4472b';
+const String kCharspotSmallModelDirName = 'charspot-small';
+const String kCharspotSmallRecFileName = 'charspot_small.onnx';
+const String kCharspotSmallVocabFileName = 'charspot_small_vocab.json';
+
+/// manga-ocr-charspot-small（11M 参数）。
+///
+/// 2026-11-14 实测（JMangaBench 1000 个真实漫画文字块，CPU，整图当一块文字图）：
+/// 本管线（服务端 FFI ORT，Windows 2 线程）字错误率 1.14%、整块全对 93.6%、每块
+/// 中位 45~50 ms；Python 参考实现（上游包）1.06% / 93.7%，4 线程 31 ms、2 线程 40 ms。
+/// 默认模型（Kellenok v0.3 逐列）在本管线同一批是 5.13% / 87.2% / 36 ms。横排块
+/// 弱于竖排（全对 76.9% 对 94.7%），超过 32 字的块也偏弱。
+const MangaOcrModelGeneration
+kCharspotSmallGeneration = MangaOcrModelGeneration(
+  manifest: <MangaOcrModelFile>[
+    _kComicTextDetectorFile,
+    _kPpOcrSmallDetFile,
+    MangaOcrModelFile(
+      fileName: kCharspotSmallRecFileName,
+      url:
+          'https://huggingface.co/muscgab/manga-ocr-charspot-small/'
+          'resolve/$kCharspotSmallRevision/model.onnx',
+      expectedBytes: 43992111,
+      role: MangaOcrModelRole.recognizer,
+      sha256:
+          '05fb79760f8e3dbc989b61f23a34c46b511818a2166573ce7e41d994f4403843',
+    ),
+    MangaOcrModelFile(
+      fileName: kCharspotSmallVocabFileName,
+      url:
+          'https://huggingface.co/muscgab/manga-ocr-charspot-small/'
+          'resolve/$kCharspotSmallRevision/vocab.json',
+      expectedBytes: 62244,
+      role: MangaOcrModelRole.recognizer,
+      sha256:
+          '9f72fc7852b1432bcb61b3b94b2e4cd8abef52b01e9051550a6a3070e2b314d5',
+    ),
+  ],
+  cacheSignature: 'local-onnx-charspot-small-v1.0.0-$kMangaOcrPipelineRevision',
+  recFileName: kCharspotSmallRecFileName,
+  recDictFileName: kCharspotSmallVocabFileName,
+  recognizer: MangaOcrCharspotSpec(cellBudget: kCharspotSmallCellBudget),
+);
+
+const String kCharspotNanoRevision = '978dc91bde3bcb36eed3cf2de679d607d1d0f30b';
+const String kCharspotNanoModelDirName = 'charspot-nano';
+const String kCharspotNanoRecFileName = 'charspot_nano.onnx';
+const String kCharspotNanoVocabFileName = 'charspot_nano_vocab.json';
+
+/// manga-ocr-charspot-nano（1.7M 参数，格子预算 196）。
+///
+/// 2026-11-14 实测（同一批 1000 块）：本管线字错误率 1.40%、整块全对 91.1%、每块
+/// 中位 13 ms；Python 参考实现 1.47% / 90.6%，2 线程 8 ms。横排块全对 65.4%。
+const MangaOcrModelGeneration kCharspotNanoGeneration = MangaOcrModelGeneration(
+  manifest: <MangaOcrModelFile>[
+    _kComicTextDetectorFile,
+    _kPpOcrSmallDetFile,
+    MangaOcrModelFile(
+      fileName: kCharspotNanoRecFileName,
+      url:
+          'https://huggingface.co/muscgab/manga-ocr-charspot-nano/'
+          'resolve/$kCharspotNanoRevision/model.onnx',
+      expectedBytes: 6926056,
+      role: MangaOcrModelRole.recognizer,
+      sha256:
+          'f4fc3f4d59f982f050dd4f57bde0e8d7335041a224c3813a5dfbc20c34b0e28c',
+    ),
+    MangaOcrModelFile(
+      fileName: kCharspotNanoVocabFileName,
+      url:
+          'https://huggingface.co/muscgab/manga-ocr-charspot-nano/'
+          'resolve/$kCharspotNanoRevision/vocab.json',
+      expectedBytes: 48538,
+      role: MangaOcrModelRole.recognizer,
+      sha256:
+          '9f1059427b54216c869dbf1244157f86bef74b1a0061c46a6001402c6f0c1dbf',
+    ),
+  ],
+  cacheSignature: 'local-onnx-charspot-nano-v1.1.1-$kMangaOcrPipelineRevision',
+  recFileName: kCharspotNanoRecFileName,
+  recDictFileName: kCharspotNanoVocabFileName,
+  recognizer: MangaOcrCharspotSpec(cellBudget: kCharspotNanoCellBudget),
 );

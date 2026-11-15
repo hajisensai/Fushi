@@ -34,6 +34,7 @@ import 'dart:typed_data';
 import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
 
+import 'package:fushi_engine/ocr/charspot_ocr_recognizer.dart';
 import 'package:fushi_engine/ocr/ctc_column_ocr_recognizer.dart';
 import 'package:fushi_engine/ocr/manga_ocr_local_model.dart';
 import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart';
@@ -72,8 +73,8 @@ OcrPlatform resolveOcrPlatform(String operatingSystem) {
 
 /// 模型文件的绝对路径（isolate 参数，字段全 String 可跨 isolate 发送）。
 ///
-/// 块识别主路径目前只有逐列 CTC：[ctcRecPath] 必须非空，空的路径组合在 isolate
-/// 里建会话时直接 [StateError]（2026-10 删除 Baberu 后不再有非 CTC 的块识别器）。
+/// 块识别器二选一：逐列 CTC（[ctcRecPath] 非空）或 charspot（[charspot] 非 null）。
+/// 两者都没有的路径组合在 isolate 里建会话时直接 [StateError]。
 class MangaOcrModelPaths {
   const MangaOcrModelPaths({
     required this.detectorPath,
@@ -82,6 +83,7 @@ class MangaOcrModelPaths {
     this.ppRecDictPath = '',
     this.ppRecDictFormat = PpOcrCharacterDictFormat.paddleYaml,
     this.ctcRecPath = '',
+    this.charspot,
     this.ignoreFurigana = false,
   });
 
@@ -89,6 +91,15 @@ class MangaOcrModelPaths {
 
   /// 逐列 CTC 的列识别 rec（漫画微调的 PP-OCRv6）；空 = 不是 CTC 模型。
   final String ctcRecPath;
+
+  /// charspot 块识别器的权重 / 字表 / 格子预算；null = 不是 charspot 模型。
+  /// charspot 模型没有 PaddleOCR rec：[ppRecPath] 与 [ppRecDictPath] 为空，横排块也
+  /// 交 charspot 整块读；[ppDetPath] 仍是块大到读不清时切列 / 行用的 PP-OCRv6
+  /// small det。
+  final CharspotModelPaths? charspot;
+
+  /// 块识别器的权重文件（缓存签名按它的落盘名反查是哪个模型的哪一代）。
+  String get blockRecognizerPath => charspot?.modelPath ?? ctcRecPath;
 
   /// 横排行路径：PP-OCRv6 small det / rec / rec 字典。字典格式由
   /// [ppRecDictFormat] 显式给出（官方 rec 是 `inference.yml`，漫画 rec 是纯文本）。
@@ -102,6 +113,19 @@ class MangaOcrModelPaths {
   /// 里怎么组装识别器，跟着同一个对象跨 isolate 传；缓存签名另带后缀
   /// （[mangaOcrEngineSignatureFor]），开关前后的结果不混在同一个缓存目录。
   final bool ignoreFurigana;
+}
+
+/// charspot 块识别器的文件与参数（[MangaOcrModelPaths.charspot]）。
+class CharspotModelPaths {
+  const CharspotModelPaths({
+    required this.modelPath,
+    required this.vocabPath,
+    required this.cellBudget,
+  });
+
+  final String modelPath;
+  final String vocabPath;
+  final int cellBudget;
 }
 
 /// 缓存签名的识别选项后缀：开了「忽略振假名」的结果单独成目录。
@@ -399,6 +423,9 @@ class _IsolateOcrEngine {
 
   /// 逐列 CTC 的列识别 rec（与 [lineRecognizer] 是同一个对象时只关一次）。
   PpOcrLineRecognizer? columnRecognizer;
+
+  /// charspot 模型的块识别器（同时就是 [recognizer]；与逐列 CTC 的 rec 会话互斥）。
+  CharspotOcrRecognizer? charspotRecognizer;
   OcrRecognizer? recognizer;
 
   /// 补检（检测器弱候选复核，仅逐列 CTC 模式）：只引用 [lineDetector] /
@@ -412,6 +439,8 @@ class _IsolateOcrEngine {
     final PpOcrLineDetector? lineDetector = this.lineDetector;
     final PpOcrLineRecognizer? lineRecognizer = this.lineRecognizer;
     final PpOcrLineRecognizer? columnRecognizer = this.columnRecognizer;
+    final CharspotOcrRecognizer? charspotRecognizer = this.charspotRecognizer;
+    this.charspotRecognizer = null;
     this.detector = null;
     this.lineDetector = null;
     this.lineRecognizer = null;
@@ -432,6 +461,9 @@ class _IsolateOcrEngine {
         await columnRecognizer?.close();
       } catch (_) {}
     }
+    try {
+      await charspotRecognizer?.close();
+    } catch (_) {}
   }
 }
 
@@ -530,10 +562,51 @@ Future<void> _openIsolateOcrEngine(
     ),
   );
 
+  // 会话全部建完后上报一次实际落到的执行后端（两种块识别器共用这一个出口）。
+  void reportAcceleration() {
+    final MangaOcrAcceleration acceleration = plan.toAcceleration(
+      detection: detectionEffective,
+      recognition: recognitionEffective,
+      runtimeDegradeReasons: runtimeDegradeReasons,
+    );
+    developer.log('manga OCR acceleration: $acceleration', name: kOcrLogName);
+    onAcceleration(acceleration);
+  }
+
+  final CharspotModelPaths? charspot = modelPaths.charspot;
+  if (charspot != null) {
+    // charspot：每个块整块一次推理，不经路由识别器（路由把宽块切成横行逐行读，
+    // charspot 整块读明显更准，见 [CharspotOcrRecognizer]）；PP det 只在块大到读
+    // 不清时切列 / 行。
+    final CharspotOcrRecognizer recognizer = engine.charspotRecognizer =
+        CharspotOcrRecognizer(
+          await plan.createSession(
+            factory,
+            charspot.modelPath,
+            providers: recognitionProviders,
+            onProviderResolved: (OcrProviderResolution resolution) {
+              recognitionEffective = resolution.effective;
+              record('recognition charspot', resolution);
+            },
+          ),
+          vocab: parseCharspotVocab(
+            await File(charspot.vocabPath).readAsString(),
+          ),
+          cellBudget: charspot.cellBudget,
+          lineDetector: await openLineDetector(),
+        );
+    engine.recognizer = recognizer;
+    // 不建补检：补检按 CTC 逐帧 softmax 的置信度（kOcrSweepMinConfidence）复核
+    // 检测器的弱候选，charspot 的字分数是热力图峰值，口径不同、没有校准过，拿它套
+    // 同一个阈值会把装饰字乱补进来或一个都补不回。
+    reportAcceleration();
+    return;
+  }
+
   if (modelPaths.ctcRecPath.isEmpty) {
     throw StateError(
       'manga OCR model paths name no block recognizer '
-      '(expected a CTC column rec)',
+      '(expected a CTC column rec or a charspot model)',
     );
   }
   // 逐列 CTC：整块交它的块逐列读（漫画微调的 PP-OCRv6 rec），每列的文本与列框
@@ -587,13 +660,7 @@ Future<void> _openIsolateOcrEngine(
       lineRecognizer: columns,
     );
   }
-  final MangaOcrAcceleration acceleration = plan.toAcceleration(
-    detection: detectionEffective,
-    recognition: recognitionEffective,
-    runtimeDegradeReasons: runtimeDegradeReasons,
-  );
-  developer.log('manga OCR acceleration: $acceleration', name: kOcrLogName);
-  onAcceleration(acceleration);
+  reportAcceleration();
 }
 
 /// isolate 入口：建推理会话 → 跑目录任务 → 关会话 → 带着终局消息
@@ -633,12 +700,14 @@ Future<void> _volumeJobIsolateMain(_JobIsolateArgs args) async {
     // 缓存目录带上本机已安装模型的内容指纹：上游换模型后旧页缓存自然失效，
     // 不会与新模型的结果混进同一卷（BUG-1173）。指纹按 (size, mtime) 记忆化，
     // 常态只做几次 stat。
-    // 块识别器都是逐列 CTC（[_openIsolateOcrEngine] 已拒绝没有 CTC rec 的路径），
-    // 各模型只差 rec 权重与字典。签名跟着路径里实际在读的那份 rec 走：是哪个
-    // 模型的、是不是上一代的文件（当前一代还没下齐），都按 rec 落盘名反查。
-    // 查不到（注入了自定义清单的测试）时按默认模型的当前一代算。
+    // 签名跟着路径里实际在读的那份块识别器权重走：是哪个模型的、是不是上一代
+    // 的文件（当前一代还没下齐），都按权重落盘名反查（逐列 CTC 的 rec / charspot
+    // 的 model.onnx，各模型各代落盘名互不相同）。查不到（注入了自定义清单的测试）
+    // 时按默认模型的当前一代算。
     final MangaOcrModelGeneration jobGeneration =
-        mangaOcrGenerationForRecFile(p.basename(args.modelPaths.ctcRecPath)) ??
+        mangaOcrGenerationForRecFile(
+          p.basename(args.modelPaths.blockRecognizerPath),
+        ) ??
         kDefaultMangaOcrLocalModel.generation;
     final String engineSignature =
         args.engineSignature ??
@@ -1324,7 +1393,11 @@ class MangaOcrServiceImpl
     bool Function()? platformSupport,
     bool Function()? ignoreFurigana,
     this.localModel = kDefaultMangaOcrLocalModel,
-  }) : _ignoreFurigana = ignoreFurigana ?? _never,
+  }) : // 振假名本来就由模型去掉的识别器（charspot）不受开关影响：结果与缓存目录
+       // 都不随开关变，切换开关不会让整卷重认一遍得到同样的结果。
+       _ignoreFurigana = localModel.generation.recognizer.honoursIgnoreFurigana
+           ? ignoreFurigana ?? _never
+           : _never,
        _modelsDirProvider = modelsDirProvider ?? localModel.modelsDirectory,
        _downloader = downloader ?? MangaOcrModelDownloader(),
        _manifest = manifest ?? localModel.manifest,
@@ -1409,7 +1482,7 @@ class MangaOcrServiceImpl
       cacheSignature: generation.cacheSignature,
       recFileName: generation.recFileName,
       recDictFileName: generation.recDictFileName,
-      recDictFormat: generation.recDictFormat,
+      recognizer: generation.recognizer,
     );
   }
 
@@ -1502,10 +1575,9 @@ class MangaOcrServiceImpl
       return p.join(dir.path, model.fileName);
     }
 
-    switch (localModel) {
-      case MangaOcrLocalModel.mangaCtc:
-      case MangaOcrLocalModel.ppOcrV6Medium:
-      case MangaOcrLocalModel.ppOcrV5Korean:
+    // 按块识别器的种类组装，不按枚举值：同一种类的模型只差文件。
+    switch (generation.recognizer) {
+      case MangaOcrCtcColumnSpec(:final PpOcrCharacterDictFormat dictFormat):
         final String ctcRecPath = pathOf(
           MangaOcrModelRole.recognizer,
           generation.recFileName,
@@ -1518,8 +1590,25 @@ class MangaOcrServiceImpl
             MangaOcrModelRole.recognizer,
             generation.recDictFileName,
           ),
-          ppRecDictFormat: generation.recDictFormat,
+          ppRecDictFormat: dictFormat,
           ctcRecPath: ctcRecPath,
+          ignoreFurigana: ignoreFurigana,
+        );
+      case MangaOcrCharspotSpec(:final int cellBudget):
+        return MangaOcrModelPaths(
+          detectorPath: pathOf(MangaOcrModelRole.detector, '.onnx'),
+          ppDetPath: pathOf(MangaOcrModelRole.recognizer, kPpOcrDetFileName),
+          charspot: CharspotModelPaths(
+            modelPath: pathOf(
+              MangaOcrModelRole.recognizer,
+              generation.recFileName,
+            ),
+            vocabPath: pathOf(
+              MangaOcrModelRole.recognizer,
+              generation.recDictFileName,
+            ),
+            cellBudget: cellBudget,
+          ),
           ignoreFurigana: ignoreFurigana,
         );
     }

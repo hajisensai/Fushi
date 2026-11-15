@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:test/test.dart';
@@ -34,6 +35,8 @@ void main() {
       MangaOcrLocalModel.mangaCtc,
       MangaOcrLocalModel.ppOcrV6Medium,
       MangaOcrLocalModel.ppOcrV5Korean,
+      MangaOcrLocalModel.charspotSmall,
+      MangaOcrLocalModel.charspotNano,
     ]);
   });
 
@@ -298,7 +301,10 @@ void main() {
     expect(old.manifest.last.expectedBytes, 21167540);
     expect(old.recFileName, 'kellenok_manga_rec_v0.2.onnx');
     expect(old.recDictFileName, kPpOcrRecDictFileName);
-    expect(old.recDictFormat, PpOcrCharacterDictFormat.paddleYaml);
+    expect(
+      (old.recognizer as MangaOcrCtcColumnSpec).dictFormat,
+      PpOcrCharacterDictFormat.paddleYaml,
+    );
     expect(
       MangaOcrLocalModel.mangaCtc.supersededGeneration,
       same(kMangaCtcSupersededGeneration),
@@ -562,7 +568,10 @@ void main() {
           );
           expect(generation.recFileName, entry.value.rec);
           expect(generation.recDictFileName, entry.value.dict);
-          expect(generation.recDictFormat, PpOcrCharacterDictFormat.paddleYaml);
+          expect(
+            (generation.recognizer as MangaOcrCtcColumnSpec).dictFormat,
+            PpOcrCharacterDictFormat.paddleYaml,
+          );
           // 没有上一代：这两个模型从未换过 rec。
           expect(model.supersededGeneration, isNull);
           // 离线导入按字节数认文件：同一份清单里不能有两个文件一样大。
@@ -605,6 +614,207 @@ void main() {
         rec(MangaOcrLocalModel.ppOcrV5Korean).url,
         contains('PaddlePaddle/korean_PP-OCRv5_mobile_rec_onnx/'),
       );
+    });
+  });
+
+  group('muscgab charspot (charspot_small, charspot_nano)', () {
+    const Map<
+      MangaOcrLocalModel,
+      ({
+        String dir,
+        String rec,
+        String vocab,
+        String repo,
+        String revision,
+        int recBytes,
+        int vocabBytes,
+        int budget,
+      })
+    >
+    expected =
+        <
+          MangaOcrLocalModel,
+          ({
+            String dir,
+            String rec,
+            String vocab,
+            String repo,
+            String revision,
+            int recBytes,
+            int vocabBytes,
+            int budget,
+          })
+        >{
+          MangaOcrLocalModel.charspotSmall: (
+            dir: 'charspot-small',
+            rec: 'charspot_small.onnx',
+            vocab: 'charspot_small_vocab.json',
+            repo: 'muscgab/manga-ocr-charspot-small',
+            revision: '72ca29202673880ca9c67b1c02c107535be4472b',
+            recBytes: 43992111,
+            vocabBytes: 62244,
+            budget: 256,
+          ),
+          MangaOcrLocalModel.charspotNano: (
+            dir: 'charspot-nano',
+            rec: 'charspot_nano.onnx',
+            vocab: 'charspot_nano_vocab.json',
+            repo: 'muscgab/manga-ocr-charspot-nano',
+            revision: '978dc91bde3bcb36eed3cf2de679d607d1d0f30b',
+            recBytes: 6926056,
+            vocabBytes: 48538,
+            budget: 196,
+          ),
+        };
+
+    test('keys, every platform, own directory', () async {
+      final EnginePaths previous = enginePaths;
+      final Directory root = Directory(
+        p.join(Directory.systemTemp.path, 'ocr-model-resolution-charspot'),
+      );
+      enginePaths = FixedEnginePaths(
+        documents: root,
+        support: root,
+        temp: root,
+      );
+      addTearDown(() => enginePaths = previous);
+
+      expect(MangaOcrLocalModel.charspotSmall.key, 'charspot_small');
+      expect(MangaOcrLocalModel.charspotNano.key, 'charspot_nano');
+      for (final MangaOcrLocalModel model in expected.keys) {
+        for (final String os in <String>[
+          'windows',
+          'android',
+          'ios',
+          'macos',
+          'linux',
+        ]) {
+          expect(
+            MangaOcrLocalModel.forPlatform(model.key, operatingSystem: os),
+            model,
+            reason: '${model.key} on $os',
+          );
+        }
+        expect(MangaOcrLocalModel.fromKey(model.key), model);
+        expect(
+          (await model.modelsDirectory()).path,
+          p.join(root.path, 'ocr_models', expected[model]!.dir),
+        );
+      }
+    });
+
+    test(
+      'manifest: shared detectors + charspot weights + vocab, no PP rec',
+      () {
+        for (final MangaOcrLocalModel model in expected.keys) {
+          final MangaOcrModelGeneration generation = model.generation;
+          final String rec = expected[model]!.rec;
+          final String vocab = expected[model]!.vocab;
+          expect(
+            <String>[
+              for (final MangaOcrModelFile file in model.manifest)
+                file.fileName,
+            ],
+            <String>['detector-v4-s_int8.onnx', kPpOcrDetFileName, rec, vocab],
+            reason: model.key,
+          );
+          expect(generation.recFileName, rec);
+          expect(generation.recDictFileName, vocab);
+          final MangaOcrRecognizerSpec spec = generation.recognizer;
+          expect(spec, isA<MangaOcrCharspotSpec>());
+          expect(
+            (spec as MangaOcrCharspotSpec).cellBudget,
+            expected[model]!.budget,
+          );
+          // 振假名在模型里就去掉了：「忽略振假名」对它不起额外作用。
+          expect(spec.honoursIgnoreFurigana, isFalse);
+          expect(model.supersededGeneration, isNull);
+          expect(
+            model.cacheSignature,
+            allOf(
+              contains(model == MangaOcrLocalModel.charspotSmall ? 'small' : 'nano'),
+              contains('charspot'),
+              endsWith(kMangaOcrPipelineRevision),
+            ),
+          );
+          final List<int> sizes = <int>[
+            for (final MangaOcrModelFile file in model.manifest)
+              file.expectedBytes,
+          ];
+          expect(sizes.toSet(), hasLength(sizes.length), reason: model.key);
+        }
+        expect(
+          MangaOcrLocalModel.mangaCtc.generation.recognizer
+              .honoursIgnoreFurigana,
+          isTrue,
+        );
+      },
+    );
+
+    test('weights and vocab are pinned to a commit and a sha256', () {
+      for (final MangaOcrLocalModel model in expected.keys) {
+        final ({
+          String dir,
+          String rec,
+          String vocab,
+          String repo,
+          String revision,
+          int recBytes,
+          int vocabBytes,
+          int budget,
+        })
+        e = expected[model]!;
+        MangaOcrModelFile file(String name) => model.manifest.firstWhere(
+          (MangaOcrModelFile f) => f.fileName == name,
+        );
+        expect(
+          file(e.rec).url,
+          'https://huggingface.co/${e.repo}/resolve/${e.revision}/model.onnx',
+        );
+        expect(
+          file(e.vocab).url,
+          'https://huggingface.co/${e.repo}/resolve/${e.revision}/vocab.json',
+        );
+        expect(file(e.rec).expectedBytes, e.recBytes);
+        expect(file(e.vocab).expectedBytes, e.vocabBytes);
+        for (final String name in <String>[e.rec, e.vocab]) {
+          expect(file(name).sha256, matches(RegExp(r'^[0-9a-f]{64}$')));
+          expect(file(name).role, MangaOcrModelRole.recognizer);
+        }
+      }
+      // 与上游 HF LFS 指纹逐字一致（下载后按它校验）。
+      expect(
+        kCharspotSmallGeneration.manifest[2].sha256,
+        '05fb79760f8e3dbc989b61f23a34c46b511818a2166573ce7e41d994f4403843',
+      );
+      expect(
+        kCharspotNanoGeneration.manifest[2].sha256,
+        'f4fc3f4d59f982f050dd4f57bde0e8d7335041a224c3813a5dfbc20c34b0e28c',
+      );
+    });
+
+    test('README credits muscgab and states the non-commercial licence', () {
+      for (final String readme in <String>[
+        File('../README.md').readAsStringSync(),
+        File('../README.zh-CN.md').readAsStringSync(),
+      ]) {
+        expect(readme, contains('muscgab'));
+        expect(readme, contains('manga-ocr-charspot'));
+        expect(readme, contains('CC BY-NC-SA 4.0'));
+      }
+    });
+
+    test('model descriptions name the model and the licence', () {
+      final Map<String, Object?> en =
+          jsonDecode(File('lib/i18n/strings.i18n.json').readAsStringSync())
+              as Map<String, Object?>;
+      for (final String size in <String>['small', 'nano']) {
+        final String desc = en['manga_ocr_charspot_${size}_desc']! as String;
+        expect(desc, contains('Japanese only'));
+        expect(desc, contains('Non-commercial licence'));
+        expect(desc, contains('muscgab/manga-ocr-charspot-$size'));
+        expect(en['manga_ocr_charspot_${size}_model'], isA<String>());
+      }
     });
   });
 
