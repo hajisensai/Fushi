@@ -25,6 +25,8 @@ import 'package:fushi/src/pages/implementations/srs/srs_review_page.dart';
 import 'package:fushi/src/srs/srs_card_media.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_remote_store_client.dart';
+import 'package:fushi/src/sync/interconnect_host_client.dart'
+    show InterconnectHostError;
 import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/video_remote_targets.dart';
@@ -35,6 +37,7 @@ import 'package:fushi_engine/srs/srs_builtin.dart' show srsLapisFieldId;
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_edit_history.dart';
 import 'package:fushi_engine/srs/srs_note_type_store.dart';
+import 'package:fushi_engine/srs/srs_remote_generation.dart';
 import 'package:fushi_engine/srs/srs_remote_store.dart';
 import 'package:fushi_engine/srs/srs_remote_store_routes.dart';
 import 'package:fushi_engine/srs/srs_rwkv_scheduling.dart';
@@ -218,8 +221,9 @@ Future<_Host> _openHost(List<String> expressions, {SrsTestClock? clock}) async {
   return _Host(db, store);
 }
 
-/// 首页「已配对设备」用的连接器：本机互联配置读 [host] 的库（真实的配置门控与对账），能力探测只认
-/// [hosts] 里有的 hostId（不走网络），连主机走对应 [_Host] 的 MockClient。
+/// 首页「已配对设备」用的连接器：本机互联配置读 [host] 的库（真实的配置门控与对账），代际探测只认
+/// [hosts] 里有的 hostId（不走网络；「代 → 能不能接上 → 留哪些」走真实的 [probeSrsRemoteHosts]），连主机走对应
+/// [_Host] 的 MockClient。
 class _FakeConnector extends SrsRemoteHostConnector {
   _FakeConnector(super.app, this.host, this.dir, {Map<String, _Host>? hosts})
     : hosts = hosts ?? <String, _Host>{'host-1': host};
@@ -249,13 +253,20 @@ class _FakeConnector extends SrsRemoteHostConnector {
   @override
   DateTime now() => clock;
 
+  /// 各主机按能力位判定出的代（没写的是现状：只声明 V1）。
+  final Map<String, SrsRemoteHostGeneration> generations =
+      <String, SrsRemoteHostGeneration>{};
+
+  /// 没配的主机 / [unsupported] 里的不应答（null）；其余按 [generations]，没写的只声明 V1。
   @override
-  Future<List<InterconnectHostTarget>> supporting(
-    List<InterconnectHostTarget> candidates,
-  ) async => <InterconnectHostTarget>[
-    for (final InterconnectHostTarget c in candidates)
-      if (hosts.containsKey(c.hostId) && !unsupported.contains(c.hostId)) c,
-  ];
+  SrsRemoteGenerationProbe get generationProbe =>
+      (SyncRepository _, FushiClientUrl peer) async {
+        final String? id = peer.hostId;
+        if (id == null || !hosts.containsKey(id) || unsupported.contains(id)) {
+          return null;
+        }
+        return generations[id] ?? SrsRemoteHostGeneration.v1Only;
+      };
 
   @override
   Future<SrsRemoteSession> open(
@@ -289,11 +300,11 @@ class _CountingConnector extends _FakeConnector {
   Completer<void>? openGate;
 
   @override
-  Future<List<InterconnectHostTarget>> supporting(
+  Future<Map<String, SrsRemoteHostCompat>> probeHosts(
     List<InterconnectHostTarget> candidates,
   ) {
     probed.addAll(candidates.map((InterconnectHostTarget c) => c.hostId));
-    return super.supporting(candidates);
+    return super.probeHosts(candidates);
   }
 
   @override
@@ -388,6 +399,28 @@ void main() {
         '<img src="e&amp;f.png">',
       ),
       <String>{'a.mp3', 'b.png', 'c.jpg', 'd.webp', 'e&f.png'},
+    );
+  });
+
+  test('远程复习的换代机读码各有文案，不落成「Remote review failed (<码>)」', () {
+    LocaleSettings.setLocale(AppLocale.en);
+    String textOf(String code) =>
+        srsRemoteReviewErrorText(InterconnectHostError(code, statusCode: 426));
+    expect(
+      textOf(SrsRemoteStoreError.upgradeRequired),
+      t.srs_remote_review_error_upgrade_required,
+    );
+    expect(
+      textOf(SrsRemoteStoreError.migrating),
+      t.srs_remote_review_error_host_migrating,
+    );
+    expect(
+      textOf(SrsRemoteStoreError.migrationFailed),
+      t.srs_remote_review_error_host_migration_failed,
+    );
+    expect(
+      textOf('something_else'),
+      t.srs_remote_review_error_other(code: 'something_else'),
     );
   });
 
@@ -1414,6 +1447,121 @@ void main() {
       await reopen(tester, shown);
       expect(find.byKey(pairedSection), findsNothing);
       expect(connector.homeCache, isEmpty);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 1));
+    });
+
+    testWidgets('代对不上的主机不再悄悄滤掉：列出来标明该升级哪边、不握手不发调用；重探后代对上了照常连', (
+      WidgetTester tester,
+    ) async {
+      final (_Host host, SrsDbStore local, _CountingConnector connector) =
+          await openFixture(tester);
+      // 本机这个构建仍说 V1；主机已是新代（声明 V2，V1 只是拒绝桩）→ 本机需要升级。
+      expect(kSrsRemoteClientWire, SrsRemoteWireVersion.v1);
+      connector.generations['host-1'] = SrsRemoteHostGeneration.v2;
+      final ValueNotifier<bool> shown = await pumpReopenableHome(
+        tester,
+        connector,
+        local,
+      );
+      await settle(tester);
+      expect(find.byKey(pairedSection), findsOneWidget, reason: '不再静默过滤');
+      expect(
+        pairedHeaderText(t.srs_remote_review_client_upgrade_required),
+        findsOneWidget,
+      );
+      expect(connector.probes, 1);
+      expect(connector.opens, 0, reason: '代对不上不握手');
+      expect(host.ops, isEmpty, reason: '不向主机发任何调用');
+      expect(
+        find.byKey(const ValueKey<String>('srs-paired-retry-host-1')),
+        findsNothing,
+        reason: '升级提示不是可重试的加载失败',
+      );
+      expect(connector.homeCache, isNot(contains('host-1')), reason: '没有牌组可落盘');
+
+      // 有效期内再进首页：照旧只显示提示，不握手。
+      await reopen(tester, shown);
+      expect(connector.opens, 0);
+      expect(host.ops, isEmpty);
+
+      // 主机侧回到本机能说的代（这里模拟成只声明 V1），探测过期后重探：照常握手、读牌组。
+      connector.generations.remove('host-1');
+      connector.clock = connector.clock.add(kSrsPairedProbeTtl);
+      await reopen(tester, shown);
+      expect(connector.opens, 1);
+      expect(
+        pairedHeaderText(t.srs_remote_review_client_upgrade_required),
+        findsNothing,
+      );
+      expect(pairedHeaderText(t.srs_home_deck_cards(n: 2)), findsOneWidget);
+
+      // 反方向：主机重新判成代对不上时，已有会话与上次的牌组一并作废，只留提示。
+      connector.generations['host-1'] = SrsRemoteHostGeneration.v2;
+      connector.clock = connector.clock.add(kSrsPairedProbeTtl);
+      final int opsBefore = host.ops.length;
+      await reopen(tester, shown);
+      expect(
+        pairedHeaderText(t.srs_remote_review_client_upgrade_required),
+        findsOneWidget,
+      );
+      expect(pairedHeaderText(t.srs_home_deck_cards(n: 2)), findsNothing);
+      expect(host.ops.length, opsBefore, reason: '作废的会话不再发调用');
+      expect(connector.homeCache, isNot(contains('host-1')));
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 1));
+    });
+
+    testWidgets('加载途中主机被判成代对不上：进行中的加载作废，不挂会话、不写牌组、不落成可重试的错误态', (
+      WidgetTester tester,
+    ) async {
+      final (_Host host, SrsDbStore local, _CountingConnector connector) =
+          await openFixture(tester);
+      // 先落成可重试的错误态（会话作废），点重试时握手停在 [openGate] 上：对账一轮之外有一次加载在跑。
+      host.malformedDeckSummaries = true;
+      final ValueNotifier<bool> shown = await pumpReopenableHome(
+        tester,
+        connector,
+        local,
+      );
+      await settle(tester);
+      final Finder retry = find.byKey(
+        const ValueKey<String>('srs-paired-retry-host-1'),
+      );
+      expect(retry, findsOneWidget);
+      host.malformedDeckSummaries = false;
+      connector.openGate = Completer<void>();
+      await tester.tap(retry);
+      await settle(tester, rounds: 4);
+      expect(connector.opens, 2, reason: '重试的握手已发出、停在闸上');
+
+      // 握手途中：主机换成新代，探测过期后再进首页重探 → 判成代对不上。
+      connector.generations['host-1'] = SrsRemoteHostGeneration.v2;
+      connector.clock = connector.clock.add(kSrsPairedProbeTtl);
+      await reopen(tester, shown);
+      expect(
+        pairedHeaderText(t.srs_remote_review_client_upgrade_required),
+        findsOneWidget,
+      );
+
+      // 握手这才完成：结果作废，主机仍只显示升级提示。
+      final int opsBefore = host.ops.length;
+      connector.openGate!.complete();
+      await settle(tester);
+      expect(
+        pairedHeaderText(t.srs_remote_review_client_upgrade_required),
+        findsOneWidget,
+      );
+      expect(pairedHeaderText(t.srs_home_deck_cards(n: 2)), findsNothing);
+      expect(retry, findsNothing, reason: '作废的加载不落成可重试的错误态');
+      expect(
+        host.ops.skip(opsBefore).where((String o) => o != 'hello'),
+        isEmpty,
+        reason: '作废的会话不读牌组',
+      );
+      expect(connector.homeCache, isNot(contains('host-1')), reason: '不落盘');
 
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump(const Duration(seconds: 1));
