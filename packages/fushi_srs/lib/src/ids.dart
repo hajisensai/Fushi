@@ -203,6 +203,14 @@ abstract final class SrsIds {
   static int builtinTemplateAnkiNum(String noteTypeKey, String templateKey) =>
       hash53('fushi/builtin-notetype/$noteTypeKey/template/$templateKey');
 
+  /// 来源包里已删除的 Anki 卡（revlog 还在、cards 表里已没有这张卡）：
+  /// UUIDv5(NS, profileUid/anki-deleted-card/<来源卡 id>)。
+  ///
+  /// 只用作这些 revlog 导入后挂靠的卡 ID（BUG-4626）：它不由任何笔记 × 模板派生，所以永远没有卡片缓存行，
+  /// 挂在它上面的日志只进有效复习投影（统计 / 日历），不进任何卡的历史与排期。
+  static String deletedAnkiCard(String profileUid, int ankiCardId) =>
+      uuidV5(srsNamespace, '$profileUid/anki-deleted-card/$ankiCardId');
+
   /// 从 Anki 导入的 revlog：UUIDv5(cardId, anki-revlog/<revlog id>)。
   static String importedRevlog(String cardId, int ankiRevlogId) =>
       uuidV5(cardId, 'anki-revlog/$ankiRevlogId');

@@ -75,6 +75,7 @@ fn rule_table_matches_the_frozen_dart_vectors() {
                 rules::deck_alternate(s, text(a, "path"), int(a, "n") as u32)
             }),
             "builtin_default_deck" => rooted(c, rules::builtin_default_deck),
+            "deleted_anki_card" => rooted(c, |s| rules::deleted_anki_card(s, int(a, "ankiCardId"))),
             "field" => assert_eq!(
                 rules::field(&id(&a["noteType"]), int(a, "ankiNum")),
                 id(&c["id"]),
@@ -156,6 +157,7 @@ fn rule_table_matches_the_frozen_dart_vectors() {
         "deck",
         "deck_alternate",
         "builtin_default_deck",
+        "deleted_anki_card",
         "field",
         "template",
         "field_by_name",

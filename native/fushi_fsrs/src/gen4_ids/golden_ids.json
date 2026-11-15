@@ -1131,6 +1131,42 @@
    }
   },
   {
+   "rule": "deleted_anki_card",
+   "args": {
+    "ankiCardId": 1700000000999
+   },
+   "name": "anki-deleted-card/1700000000999",
+   "canonical": "e119ba14-083a-5bad-8eac-2239946d4b24",
+   "salted": {
+    "01928c3e-0000-7000-8000-0000000000a1": "9511175f-fe7e-52e2-bc4a-5dae472ba3c1",
+    "01928c3e-0000-7000-8000-0000000000b2": "845527ee-9684-555d-bc7a-b65d7bbb6578"
+   }
+  },
+  {
+   "rule": "deleted_anki_card",
+   "args": {
+    "ankiCardId": 1
+   },
+   "name": "anki-deleted-card/1",
+   "canonical": "e5576cf5-d967-567f-bea3-1b9e0ebfb865",
+   "salted": {
+    "01928c3e-0000-7000-8000-0000000000a1": "4a0f65f1-8748-558d-9c87-efb06977e62b",
+    "01928c3e-0000-7000-8000-0000000000b2": "73f55b4e-1a5b-5c89-a2ed-2a3f36bc34bd"
+   }
+  },
+  {
+   "rule": "deleted_anki_card",
+   "args": {
+    "ankiCardId": -7
+   },
+   "name": "anki-deleted-card/-7",
+   "canonical": "df7f804d-3ee8-5c3c-bbe6-d045db43797f",
+   "salted": {
+    "01928c3e-0000-7000-8000-0000000000a1": "ea0b2510-14d9-5941-ad79-1b0ce77deac9",
+    "01928c3e-0000-7000-8000-0000000000b2": "a8dd1280-eeee-504c-8f3b-b50af365272a"
+   }
+  },
+  {
    "rule": "field",
    "args": {
     "noteType": "23db1715-66c9-52c6-9f36-aec78a8999f1",

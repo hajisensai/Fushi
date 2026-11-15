@@ -108,6 +108,9 @@ const List<int> _deckAlternates = <int>[1, 2, 8, 17];
 
 const List<int> _revlogIds = <int>[1700000000123, 0, -1];
 
+/// 来源包里已删除的 Anki 卡 id（BUG-4626）。
+const List<int> _deletedCardIds = <int>[1700000000999, 1, -7];
+
 const List<String> _writers = <String>[
   '01928c3e-0000-7000-8000-00000000d001',
   // v1 的写入者名：<设备公钥>#<代次>。
@@ -225,6 +228,16 @@ Map<String, Object?> _build() {
       SrsIds.builtinDefaultDeck,
     ),
   );
+  for (final int cid in _deletedCardIds) {
+    cases.add(
+      _rooted(
+        'deleted_anki_card',
+        <String, Object?>{'ankiCardId': cid},
+        'anki-deleted-card/$cid',
+        (String uid) => SrsIds.deletedAnkiCard(uid, cid),
+      ),
+    );
+  }
 
   // 由父 ID 派生的规则：父取一个带盐的、一个规范的笔记类型 / 笔记。
   final List<String> noteTypes = <String>[

@@ -122,6 +122,13 @@ pub fn builtin_default_deck(salt: Salt<'_>) -> Id {
     rooted(salt, "builtin-deck/default")
 }
 
+/// 来源包里已删除的 Anki 卡（revlog 还在、卡已不在）：`v5(NS, [uid/]anki-deleted-card/<来源卡 id>)`。只当
+/// 这些 revlog 挂靠的卡 ID，不由笔记 × 模板派生、永远没有卡片缓存行（BUG-4626，Dart
+/// `SrsIds.deletedAnkiCard`）。日志上没有存来源卡 id，别名判定验不了它：存量值的规范 ID 就是它自己。
+pub fn deleted_anki_card(salt: Salt<'_>, anki_card_id: i64) -> Id {
+    rooted(salt, &format!("anki-deleted-card/{anki_card_id}"))
+}
+
 /// profile 级设置实体的规范 ID。存量里它的 ID 就是 profile uid 本身（没有公式）；规范值取
 /// `v5(NS, "profile")`。
 pub fn profile_entity() -> Id {
