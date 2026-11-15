@@ -119,6 +119,9 @@ if [[ "$macho_kind" == Mach-O* ]]; then
   echo "OK: no LINKEDIT misalignment that dyld enforces for the SDK $BIN was linked with"
 fi
 
+# verify_abi.sh 的调用方都是发布 / 随包产物：测试专用的原始 SQL 通道（cargo feature raw_sql）不能在里面。
+bash "$SCRIPT_DIR/verify_raw_sql.sh" "$BIN" absent
+
 echo "OK: all $expected_count ffsrs_* symbols exported by $BIN"
 
 # 发布产物不带 ID 审计（见 verify_id_audit.sh）。本脚本的调用方都是随包 / 发布的产物；CI 给 Dart 测试编的

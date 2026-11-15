@@ -465,6 +465,13 @@ const String kSrsNotSnapshotQuery = 'srs: not a snapshot query';
 const String kSrsReadOnlyExecutor =
     'srs: srs.db is read-only through the Drift executor';
 
+/// 这个原生库没编进测试专用的原始 SQL 通道（cargo feature `raw_sql`，native/fushi_fsrs/Cargo.toml）时
+/// [SrsCore.debugExecRaw] / [SrsCore.debugSelectRaw] / [SrsCore.debugExecBatchRaw] 的报错（与 Rust
+/// `store::RAW_SQL_ABSENT` 相同）。发布 / 随包构建都不带；测试用的库（CI 包测试 / 单测分片、dist worker、本机备库
+/// 脚本）带。
+const String kSrsRawSqlAbsent =
+    'srs: the raw SQL channel is not built into this library (cargo feature raw_sql)';
+
 final class SrsCore {
   SrsCore._(this._b, this._handle, {required this.owned});
 
@@ -673,7 +680,8 @@ final class SrsCore {
 
   /// **测试专用**的原始通道：在写连接上执行一条任意语句（测试里直接改库造场景——改缓存行、删本机状态行、装触发器、
   /// 读写 PRAGMA）。生产代码不得调用（守卫 `srs_read_only_executor_guard_test.dart`）：srs.db 的每一笔写入都是内核命令，
-  /// Drift 执行器只读（[kSrsReadOnlyExecutor]）。
+  /// Drift 执行器只读（[kSrsReadOnlyExecutor]）。只有带 cargo feature `raw_sql` 的库里有：发布构建里能写库的这段原生代码
+  /// 不在，调用抛 [SrsCoreException]（消息 [kSrsRawSqlAbsent]），所以生产代码里的调用在测试里是绿的、到发布包里才失败。
   ///
   /// [select] 时返回「列名行 + 结果行」（PRAGMA、`… RETURNING` 之类有结果行的语句），否则返回一行
   /// `[变更行数, last_insert_rowid]`；都是 [srsDecodeRows] 的页。语句跑完写连接必须回到 autocommit：BEGIN / SAVEPOINT
@@ -742,7 +750,7 @@ final class SrsCore {
       });
 
   /// [debugExecRaw] 的批量版（**测试专用**）：[applications] 每项是（语句下标, 参数），整批在写连接的一个 SAVEPOINT
-  /// 里执行，一条出错整批不落。
+  /// 里执行，一条出错整批不落。同 [debugExecRaw] 只有带 `raw_sql` 的库里有。
   void debugExecBatchRaw(
     List<String> statements,
     List<(int, List<Object?>)> applications,
