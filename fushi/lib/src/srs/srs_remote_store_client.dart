@@ -99,8 +99,8 @@ typedef SrsRemoteGenerationProbe =
       FushiClientUrl peer,
     );
 
-/// 远程复习的代际探测（一次性 client，探完关掉它的连接）。
-Future<SrsRemoteHostGeneration?> _probeSrsRemoteGeneration(
+/// 远程复习的代际探测（一次性 client，探完关掉它的连接）。[probeSrsRemoteHosts] 的默认探测。
+Future<SrsRemoteHostGeneration?> probeSrsRemoteGeneration(
   SyncRepository repository,
   FushiClientUrl peer,
 ) async {
@@ -122,7 +122,7 @@ Future<SrsRemoteHostGeneration?> _probeSrsRemoteGeneration(
 Future<Map<String, SrsRemoteHostCompat>> probeSrsRemoteHosts(
   SyncRepository repository,
   List<InterconnectHostTarget> candidates, {
-  SrsRemoteGenerationProbe probe = _probeSrsRemoteGeneration,
+  SrsRemoteGenerationProbe probe = probeSrsRemoteGeneration,
   Duration timeout = const Duration(seconds: 6),
 }) async {
   Future<SrsRemoteHostCompat> compatOf(InterconnectHostTarget target) async {
@@ -150,14 +150,18 @@ Future<Map<String, SrsRemoteHostCompat>> probeSrsRemoteHosts(
 }
 
 /// [candidates] 里此刻能直接连上远程复习库的那些（[probeSrsRemoteHosts] 判为 [SrsRemoteHostCompat.ready]，
-/// 顺序不变）。
+/// 顺序不变）。代对不上的（[SrsRemoteHostCompat.hostNeedsUpgrade] / [SrsRemoteHostCompat.clientNeedsUpgrade]）不在内。
 Future<List<InterconnectHostTarget>> filterSrsRemoteStoreTargets(
   SyncRepository repository,
-  List<InterconnectHostTarget> candidates,
-) async {
+  List<InterconnectHostTarget> candidates, {
+  SrsRemoteGenerationProbe probe = probeSrsRemoteGeneration,
+  Duration timeout = const Duration(seconds: 6),
+}) async {
   final Map<String, SrsRemoteHostCompat> compat = await probeSrsRemoteHosts(
     repository,
     candidates,
+    probe: probe,
+    timeout: timeout,
   );
   return <InterconnectHostTarget>[
     for (final InterconnectHostTarget c in candidates)

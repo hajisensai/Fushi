@@ -30,6 +30,11 @@ const Duration kSrsPairedProbeTtl = Duration(minutes: 15);
 /// 首页缓存落盘格式的版本（[kSrsHomePairedCachePrefKey]）；对不上的整份不读。
 const int _kPairedCacheVersion = 1;
 
+/// 进行中的加载被代际判定作废（[_PairedHost.epoch] 变了）。
+class _SrsPairedLoadStale implements Exception {
+  const _SrsPairedLoadStale();
+}
+
 /// 一台已配对主机在首页上的状态。
 class _PairedHost {
   _PairedHost(this.target);
@@ -61,6 +66,10 @@ class _PairedHost {
   /// 能接上时为 null。非 null 时不握手、不读牌组，组头只显示升级提示，下次探测时重判。
   SrsRemoteHostCompat? upgrade;
 
+  /// 会话代次：判成代对不上（[applyCompat]）时加一。进行中的 [_SrsPairedHosts.load] 开头记下它，写回前对不上就
+  /// 整次作废（不挂会话、不写牌组、不落错误态），否则先于判定发出的加载会给升级提示下的主机重新挂上会话与牌组。
+  int epoch = 0;
+
   /// 把探测结果 [compat] 记下：能接上清掉升级提示；代对不上就作废会话与上次的牌组（那是另一代主机的数据）。
   void applyCompat(SrsRemoteHostCompat compat) {
     if (compat == SrsRemoteHostCompat.ready) {
@@ -68,6 +77,7 @@ class _PairedHost {
       return;
     }
     session?.client.cancelPending();
+    epoch++;
     upgrade = compat;
     session = null;
     decks = null;
@@ -369,22 +379,31 @@ class _SrsPairedHosts extends ChangeNotifier {
       ..loading = true
       ..error = null;
     _notify();
+    final int epoch = h.epoch;
     try {
-      final SrsRemoteDeckSnapshot snapshot = await _readDecks(h);
+      final SrsRemoteDeckSnapshot snapshot = await _readDecks(h, epoch);
+      // 加载期间主机被判成代对不上：结果是另一代主机的数据，丢掉。
+      if (h.epoch != epoch) return;
       h
         ..decks = snapshot.decks
         ..deckCache = snapshot.cache
         ..updatedAt = connector.now();
+    } on _SrsPairedLoadStale {
+      // 握手期间被判成代对不上：新会话已关掉，什么都不写。
     } on InterconnectHostError catch (e, stack) {
+      // 被作废的会话上的失败（applyCompat 取消了它的请求）不落成可重试的错误态。
+      if (h.epoch != epoch) return;
       if (e is SrsRemoteBadResponse) {
         ErrorLogService.instance.log('SrsPairedHosts.load', e, stack);
       }
       _fail(h, srsRemoteReviewErrorText(e));
     } on SrsRemoteProfileChoiceCancelled {
+      if (h.epoch != epoch) return;
       // 没选复习库：组头提示去选，点组头重试时再问一次。
       _fail(h, t.srs_remote_review_choose_profile);
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsPairedHosts.load', e, stack);
+      if (h.epoch != epoch) return;
       _fail(h, t.srs_home_paired_error_load);
     } finally {
       h.loading = false;
@@ -402,7 +421,8 @@ class _SrsPairedHosts extends ChangeNotifier {
   }
 
   /// 用已有会话读牌组；没有会话、或主机回「已换配置」（这个会话绑定的 profile 作废）时握手开新会话再读。
-  Future<SrsRemoteDeckSnapshot> _readDecks(_PairedHost h) async {
+  /// 握手完成时 [h] 的代次已不是 [epoch]（期间被判成代对不上）就关掉新会话、抛 [_SrsPairedLoadStale]，不挂上去。
+  Future<SrsRemoteDeckSnapshot> _readDecks(_PairedHost h, int epoch) async {
     final SrsRemoteSession? reused = h.session;
     if (reused != null) {
       try {
@@ -417,6 +437,10 @@ class _SrsPairedHosts extends ChangeNotifier {
       h.target,
       chooseProfile: chooseProfile,
     );
+    if (h.epoch != epoch) {
+      session.client.cancelPending();
+      throw const _SrsPairedLoadStale();
+    }
     h.session = session;
     return session.store.deckSnapshot();
   }

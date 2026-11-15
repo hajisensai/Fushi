@@ -221,8 +221,9 @@ Future<_Host> _openHost(List<String> expressions, {SrsTestClock? clock}) async {
   return _Host(db, store);
 }
 
-/// 首页「已配对设备」用的连接器：本机互联配置读 [host] 的库（真实的配置门控与对账），能力探测只认
-/// [hosts] 里有的 hostId（不走网络），连主机走对应 [_Host] 的 MockClient。
+/// 首页「已配对设备」用的连接器：本机互联配置读 [host] 的库（真实的配置门控与对账），代际探测只认
+/// [hosts] 里有的 hostId（不走网络；「代 → 能不能接上 → 留哪些」走真实的 [probeSrsRemoteHosts]），连主机走对应
+/// [_Host] 的 MockClient。
 class _FakeConnector extends SrsRemoteHostConnector {
   _FakeConnector(super.app, this.host, this.dir, {Map<String, _Host>? hosts})
     : hosts = hosts ?? <String, _Host>{'host-1': host};
@@ -256,23 +257,16 @@ class _FakeConnector extends SrsRemoteHostConnector {
   final Map<String, SrsRemoteHostGeneration> generations =
       <String, SrsRemoteHostGeneration>{};
 
+  /// 没配的主机 / [unsupported] 里的不应答（null）；其余按 [generations]，没写的只声明 V1。
   @override
-  Future<Map<String, SrsRemoteHostCompat>> probeHosts(
-    List<InterconnectHostTarget> candidates,
-  ) async {
-    final Map<String, SrsRemoteHostCompat> out =
-        <String, SrsRemoteHostCompat>{};
-    for (final InterconnectHostTarget c in candidates) {
-      if (!hosts.containsKey(c.hostId) || unsupported.contains(c.hostId)) {
-        continue;
-      }
-      final SrsRemoteHostCompat compat = srsRemoteHostCompat(
-        generations[c.hostId] ?? SrsRemoteHostGeneration.v1Only,
-      );
-      if (compat != SrsRemoteHostCompat.unavailable) out[c.hostId] = compat;
-    }
-    return out;
-  }
+  SrsRemoteGenerationProbe get generationProbe =>
+      (SyncRepository _, FushiClientUrl peer) async {
+        final String? id = peer.hostId;
+        if (id == null || !hosts.containsKey(id) || unsupported.contains(id)) {
+          return null;
+        }
+        return generations[id] ?? SrsRemoteHostGeneration.v1Only;
+      };
 
   @override
   Future<SrsRemoteSession> open(
@@ -1515,6 +1509,59 @@ void main() {
       expect(pairedHeaderText(t.srs_home_deck_cards(n: 2)), findsNothing);
       expect(host.ops.length, opsBefore, reason: '作废的会话不再发调用');
       expect(connector.homeCache, isNot(contains('host-1')));
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 1));
+    });
+
+    testWidgets('加载途中主机被判成代对不上：进行中的加载作废，不挂会话、不写牌组、不落成可重试的错误态', (
+      WidgetTester tester,
+    ) async {
+      final (_Host host, SrsDbStore local, _CountingConnector connector) =
+          await openFixture(tester);
+      // 先落成可重试的错误态（会话作废），点重试时握手停在 [openGate] 上：对账一轮之外有一次加载在跑。
+      host.malformedDeckSummaries = true;
+      final ValueNotifier<bool> shown = await pumpReopenableHome(
+        tester,
+        connector,
+        local,
+      );
+      await settle(tester);
+      final Finder retry = find.byKey(
+        const ValueKey<String>('srs-paired-retry-host-1'),
+      );
+      expect(retry, findsOneWidget);
+      host.malformedDeckSummaries = false;
+      connector.openGate = Completer<void>();
+      await tester.tap(retry);
+      await settle(tester, rounds: 4);
+      expect(connector.opens, 2, reason: '重试的握手已发出、停在闸上');
+
+      // 握手途中：主机换成新代，探测过期后再进首页重探 → 判成代对不上。
+      connector.generations['host-1'] = SrsRemoteHostGeneration.v2;
+      connector.clock = connector.clock.add(kSrsPairedProbeTtl);
+      await reopen(tester, shown);
+      expect(
+        pairedHeaderText(t.srs_remote_review_client_upgrade_required),
+        findsOneWidget,
+      );
+
+      // 握手这才完成：结果作废，主机仍只显示升级提示。
+      final int opsBefore = host.ops.length;
+      connector.openGate!.complete();
+      await settle(tester);
+      expect(
+        pairedHeaderText(t.srs_remote_review_client_upgrade_required),
+        findsOneWidget,
+      );
+      expect(pairedHeaderText(t.srs_home_deck_cards(n: 2)), findsNothing);
+      expect(retry, findsNothing, reason: '作废的加载不落成可重试的错误态');
+      expect(
+        host.ops.skip(opsBefore).where((String o) => o != 'hello'),
+        isEmpty,
+        reason: '作废的会话不读牌组',
+      );
+      expect(connector.homeCache, isNot(contains('host-1')), reason: '不落盘');
 
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump(const Duration(seconds: 1));

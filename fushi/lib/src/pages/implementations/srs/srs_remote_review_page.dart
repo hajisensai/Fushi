@@ -65,6 +65,10 @@ class SrsRemoteHostConnector {
     return configuredInterconnectHostTargets(repo);
   }
 
+  /// 探一台主机远程复习的代（默认走网络探 `/api/capabilities`，[probeSrsRemoteGeneration]）。测试替身换掉它，
+  /// 「代 → 能不能接上 → 留哪些」的映射仍走真实的 [probeSrsRemoteHosts]。
+  SrsRemoteGenerationProbe get generationProbe => probeSrsRemoteGeneration;
+
   /// [candidates] 里声明了远程复习能力的主机（走网络探 `/api/capabilities`）：hostId → 能不能接上
   /// （[probeSrsRemoteHosts]）。没应答、没有远程复习的不在结果里；代对不上的在，界面标明该升级哪边。
   Future<Map<String, SrsRemoteHostCompat>> probeHosts(
@@ -74,7 +78,7 @@ class SrsRemoteHostConnector {
     if (repo == null || candidates.isEmpty) {
       return const <String, SrsRemoteHostCompat>{};
     }
-    return probeSrsRemoteHosts(repo, candidates);
+    return probeSrsRemoteHosts(repo, candidates, probe: generationProbe);
   }
 
   /// 复习首页「已配对设备」的落盘缓存（[kSrsHomePairedCachePrefKey]）；库还没开时 null（之后再读）。
