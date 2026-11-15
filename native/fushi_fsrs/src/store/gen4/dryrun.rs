@@ -1505,6 +1505,33 @@ pub fn rehearsal_dir(db: &Path) -> PathBuf {
 /// 缓存配置对象，与 app 交给旧内核的同一份）、`appVersion`（原样记进报告，app 据此判断这个版本跑过没有）。同一个库已有
 /// 一个在跑就报错。
 pub fn rehearse(db: &Path, req: &Value) -> Result<Value, String> {
+    rehearse_with(db, req, &mut |_, _| {})
+}
+
+/// 一个库上「预演在跑」的登记（[REHEARSALS] 里的那一项）。登记一插进去就构造它，此后不论 [run] 正常返回、提前返回
+/// 还是中途 panic（FFI 边界的 `catch_unwind` 把 panic 吞成错误码、进程照活），`Drop` 都会删掉残留的临时新库、注销
+/// 登记并唤醒在 [stop_rehearsal] 里等它的关库——登记留下来，之后的关库就永远等不到它。
+struct Registration {
+    db: PathBuf,
+    work_db: PathBuf,
+}
+
+impl Drop for Registration {
+    fn drop(&mut self) {
+        // 展开时 run 的连接已随它的栈帧关掉，临时新库删得掉。
+        remove_db(&self.work_db);
+        let mut running = rehearsals();
+        running.remove(&self.db);
+        REHEARSAL_DONE.notify_all();
+    }
+}
+
+/// [rehearse]，进度回调由调用方给（测试用它在中途 panic）。
+fn rehearse_with(
+    db: &Path,
+    req: &Value,
+    progress: &mut dyn FnMut(&str, Option<&str>),
+) -> Result<Value, String> {
     let work = req
         .get("work")
         .and_then(Value::as_str)
@@ -1515,13 +1542,17 @@ pub fn rehearse(db: &Path, req: &Value) -> Result<Value, String> {
         .map(|m| m.iter().map(|(k, v)| (k.clone(), v.to_string())).collect())
         .unwrap_or_default();
     let stop = std::sync::Arc::new(Stop::new());
-    {
+    let registration = {
         let mut running = rehearsals();
         if running.contains_key(db) {
             return Err("gen4 rehearsal: already running".to_owned());
         }
         running.insert(db.to_path_buf(), stop.clone());
-    }
+        Registration {
+            db: db.to_path_buf(),
+            work_db: work.join(WORK_FILE),
+        }
+    };
     let out = run(
         db,
         &work,
@@ -1532,14 +1563,10 @@ pub fn rehearse(db: &Path, req: &Value) -> Result<Value, String> {
             examples: DEFAULT_EXAMPLES,
             full_examples: false,
             stop: &stop,
-            progress: &mut |_, _| {},
+            progress,
         },
     );
-    {
-        let mut running = rehearsals();
-        running.remove(db);
-        REHEARSAL_DONE.notify_all();
-    }
+    drop(registration);
     let mut report = out?;
     if let Some(m) = report.as_object_mut() {
         m.insert("finishedAtMs".into(), json!(now_ms()));
@@ -1852,6 +1879,42 @@ mod tests {
             "{r:#}"
         );
         assert!(!work.join(WORK_FILE).exists());
+    }
+
+    /// 预演中途 panic（FFI 边界把它吞成错误码、进程照活）：登记照样注销、临时新库照样删，之后关库不卡、再跑不报
+    /// 「already running」。
+    #[test]
+    fn a_panicking_rehearsal_leaves_no_registration_and_no_work_db() {
+        let d = library("g4rehearsepanic");
+        let cfg_obj: Value = serde_json::from_str(&cfg()).unwrap();
+        let work = d._dir.0.join("rehearsal");
+        let path = d._dir.0.join("srs.db");
+        let req = json!({"work": work.display().to_string(), "caches": {P: cfg_obj}});
+        let mut saw_work_db = false;
+        let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            rehearse_with(&path, &req, &mut |stage, _| {
+                if stage == "compare" {
+                    saw_work_db = work.join(WORK_FILE).exists();
+                    panic!("injected panic at {stage}");
+                }
+            })
+        }));
+        assert!(panicked.is_err());
+        assert!(saw_work_db, "the panic must hit while the work db exists");
+        assert!(!rehearsals().contains_key(&path));
+        assert!(!work.join(WORK_FILE).exists());
+        let (tx, rx) = std::sync::mpsc::channel();
+        {
+            let path = path.clone();
+            std::thread::spawn(move || {
+                stop_rehearsal(&path);
+                let _ = tx.send(());
+            });
+        }
+        rx.recv_timeout(std::time::Duration::from_secs(30))
+            .expect("stop_rehearsal must not wait for a dead rehearsal");
+        let r = rehearse(&path, &req).unwrap();
+        assert_eq!(r["verdict"], "pass", "{r:#}");
     }
 
     /// 设计 §10 第 14 条的合成实测：协议 3 迁移过的旧修改记录（带旧戳）被清除之后，从槽重建的旧戳闭包比老设备累计的
