@@ -38,6 +38,7 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-4626](bugs/BUG-4626-apkg-deleted-card-revlog-dropped.md) | ✅ | ✅ | apkg 导入丢掉 Anki 端已删卡的复习记录（统计 / 日历少算） |
+| [BUG-4626](bugs/BUG-4626-srs-by-id-cross-profile.md) | ✅ | ✅ | 复习库按实体 ID 的读写不看 profile：点名 A 的命令能读 / 改 / 删 B 的笔记、卡片、牌组、笔记类型 |
 | [BUG-4625](bugs/BUG-4625-linux-wpe-click-pointerup-button-mask.md) | ✅ | ✅ | Linux 漫画阅读器 OCR 文字无法点击查词 |
 | [BUG-4624](bugs/BUG-4624-linux-wpe-resize-stride-crash.md) | ✅ | ✅ | Linux 漫画页面出现条纹，调整窗口大小时阅读器崩溃 |
 | [BUG-4623](bugs/BUG-4623-linux-wpe-borrowed-pixels-refcount.md) | ✅ | ✅ | Linux 漫画阅读器释放 WPE 借用像素缓冲区后崩溃 |
@@ -71,7 +72,7 @@
 | [BUG-4491](bugs/BUG-4491-android-permission-kill-no-killuid-prefix-misreport.md) | ✅ | ✅ | 华为改所有文件访问权限后被系统结束报成意外退出 |
 | [BUG-4490](bugs/BUG-4490-android-exit-schedulecrash-failed-misreport.md) | ✅ | ✅ | Android 系统 scheduleCrash 失败结束冻结进程被报成崩溃 |
 | [BUG-4481](bugs/BUG-4481-srs-edit-undo-blind-overwrite.md) | ✅ | ✅ | srs-edit-undo-blind-overwrite |
-| [BUG-4480](bugs/BUG-4480-srs-by-id-access-not-profile-scoped.md) | 🚧 | 🚧 | 复习库按 id 的读写不按 profile 过滤：点名的 profile 与 id 不属于同一份时写错库 |
+| [BUG-4480](bugs/BUG-4480-srs-by-id-access-not-profile-scoped.md) | ✅ | ✅ | 复习库按 id 的读写不按 profile 过滤：点名的 profile 与 id 不属于同一份时写错库 |
 | [BUG-4479](bugs/BUG-4479-mine-shortcut-focused-entry.md) | ✅ | ✅ | mine-shortcut-focused-entry |
 | [BUG-4478](bugs/BUG-4478-srs-sync2-bootstrap-channel-never-selected.md) | ✅ | ✅ | 复习同步 v2 的新设备收段通道在生产里一次都不会被选中 |
 | [BUG-4477](bugs/BUG-4477-srs-adopt-deletes-decks-without-notes.md) | ✅ | ✅ | 复习同步关联只看笔记，只建了牌组 / 改了预设的设备被自动采用对方 uid，自建牌组与预设被删 |

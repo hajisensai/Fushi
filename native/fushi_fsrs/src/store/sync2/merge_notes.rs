@@ -16,6 +16,7 @@ use super::{LegacyApply, append_on, apply_local_on, checkpoint_bodies, config, s
 use crate::card_cache::is_js_space;
 use crate::registers;
 use crate::store::caches;
+use crate::sync2::op::EntKind;
 
 /// Dart `SrsFieldKeys.cardHistoryFromPrefix` / `noteTags` / `deleted`。
 const HISTORY_FROM: &str = "historyFrom/";
@@ -74,9 +75,14 @@ pub(crate) fn merge_notes_on(
         .chain(absorb.iter().copied())
         .map(str::to_owned)
         .collect();
+    // 别的 profile 的笔记按「没有这条笔记」算（ownership.rs）：不读它的字段 / 卡，也不为它打还原点。
+    let mut owners = super::ownership::Seen::new();
     let mut views: HashMap<String, caches::NoteInfo> = HashMap::new();
     for chunk in ids.chunks(500) {
         for n in caches::note_infos(c, chunk)? {
+            if super::ownership::foreign_seen(c, profile, EntKind::Note, &n.id, &mut owners)? {
+                continue;
+            }
             views.insert(n.id.clone(), n);
         }
     }
