@@ -10,6 +10,7 @@ import 'dart:typed_data';
 import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/apkg/srs_apkg_import.dart';
+import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_stats.dart';
 import 'package:fushi_engine/srs/srs_stats_loader.dart';
@@ -166,8 +167,14 @@ void main() {
       c.toJson(),
   ];
 
-  final String deletedCard = SrsIds.deletedAnkiCard(kProfile, kDeletedCid);
-  final String noteLessCard = SrsIds.deletedAnkiCard(kProfile, kNoteLessCid);
+  final String deletedCard = SrsIds.deletedAnkiCard(
+    SrsIds.builtinDefaultDeck(kProfile),
+    kDeletedCid,
+  );
+  final String noteLessCard = SrsIds.deletedAnkiCard(
+    SrsIds.builtinDefaultDeck(kProfile),
+    kNoteLessCid,
+  );
 
   test('卡已删除的 revlog 进统计与日历，不生成卡、不碰活卡排期', () async {
     final SrsDbStore base = await open();
@@ -295,5 +302,109 @@ void main() {
     expect(rep.deletedCardRevlogsImported, 0);
     expect(rep.reviewLogsSkipped, 2 + deletedRevlogs.length);
     expect((await statsRowsOf(s)).reviews, isEmpty);
+  });
+
+  /// 只有 revlog、没有卡与笔记的包（来源卡都在 Anki 端删了）。
+  Uint8List revlogOnly(List<(int, FxRevlog)> logs) => zipOf(<String, List<int>>{
+    'collection.anki21': buildSqlite((Database db) {
+      db.execute(legacySchema);
+      db.execute(
+        'INSERT INTO col VALUES (1,?,0,0,11,0,0,0,?,?,?,?,?)',
+        <Object?>[
+          crtSecs,
+          jsonEncode(<String, Object?>{'rollover': 4, 'localOffset': 0}),
+          jsonEncode(model()),
+          jsonEncode(<String, Object?>{
+            '1': <String, Object?>{
+              'id': 1,
+              'name': 'Default',
+              'dyn': 0,
+              'conf': 1,
+            },
+          }),
+          jsonEncode(<String, Object?>{
+            '1': <String, Object?>{'id': 1, 'name': 'Default'},
+          }),
+          '{}',
+        ],
+      );
+      for (final (int cid, FxRevlog r) in logs) {
+        db.execute('INSERT INTO revlog VALUES (?,?,?,?,?,?,?,?,?)', <Object?>[
+          r.id,
+          cid,
+          0,
+          r.ease,
+          r.ivl,
+          0,
+          r.factor,
+          r.time,
+          r.type,
+        ]);
+      }
+    }),
+    'media': utf8.encode('{}'),
+  });
+
+  test('Fushi 复习 → 导出 → Anki 删卡 → 导回：原生那份已在，不再算一次', () async {
+    final SrsDbStore s = await open();
+    final String note = await s.createNote(
+      noteTypeId: s.lapisNoteTypeId,
+      fieldsById: <String, String>{
+        srsLapisFieldId(kProfile, 'Expression'): '食べる',
+      },
+    );
+    final SrsReviewLog review = await s.answer(
+      (await s.cardsOfNote(note)).single.id,
+      3,
+      durationMs: 7000,
+    );
+    expect((await statsRowsOf(s)).reviews, hasLength(1));
+
+    // 导出时 revlog id = 原生日志发生时刻、time = min(用时, 60000)；Anki 端删卡后再导出，只剩这条 revlog。
+    final SrsImportReport rep = await imp(
+      s,
+      revlogOnly(<(int, FxRevlog)>[
+        (
+          4242,
+          FxRevlog(review.occurredAt, type: 0, ease: 3, ivl: 1, time: 7000),
+        ),
+      ]),
+    );
+    expect(rep.deletedCardRevlogsImported, 0);
+    expect(rep.revlogsAlreadyPresent, 1);
+    expect((await statsRowsOf(s)).reviews, hasLength(1));
+  });
+
+  test('同一秒、同评分但用时不同的别的复习：删卡那条照常导入', () async {
+    final SrsDbStore s = await open();
+    final String note = await s.createNote(
+      noteTypeId: s.lapisNoteTypeId,
+      fieldsById: <String, String>{
+        srsLapisFieldId(kProfile, 'Expression'): '食べる',
+      },
+    );
+    final SrsReviewLog review = await s.answer(
+      (await s.cardsOfNote(note)).single.id,
+      3,
+      durationMs: 7000,
+    );
+    final SrsImportReport rep = await imp(
+      s,
+      revlogOnly(<(int, FxRevlog)>[
+        (
+          4242,
+          FxRevlog(
+            review.occurredAt + 300,
+            type: 0,
+            ease: 3,
+            ivl: 1,
+            time: 2500,
+          ),
+        ),
+      ]),
+    );
+    expect(rep.deletedCardRevlogsImported, 1);
+    expect(rep.revlogsAlreadyPresent, 0);
+    expect((await statsRowsOf(s)).reviews, hasLength(2));
   });
 }

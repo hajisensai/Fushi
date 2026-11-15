@@ -122,11 +122,12 @@ pub fn builtin_default_deck(salt: Salt<'_>) -> Id {
     rooted(salt, "builtin-deck/default")
 }
 
-/// 来源包里已删除的 Anki 卡（revlog 还在、卡已不在）：`v5(NS, [uid/]anki-deleted-card/<来源卡 id>)`。只当
-/// 这些 revlog 挂靠的卡 ID，不由笔记 × 模板派生、永远没有卡片缓存行（BUG-4626，Dart
-/// `SrsIds.deletedAnkiCard`）。日志上没有存来源卡 id，别名判定验不了它：存量值的规范 ID 就是它自己。
-pub fn deleted_anki_card(salt: Salt<'_>, anki_card_id: i64) -> Id {
-    rooted(salt, &format!("anki-deleted-card/{anki_card_id}"))
+/// 来源包里已删除的 Anki 卡（revlog 还在、卡已不在）：`v5(defaultDeckId, anki-deleted-card/<来源卡 id>)`，父 ID
+/// 是导入目标集合的内置默认牌组（[builtin_default_deck]）。只当这些 revlog 挂靠的卡 ID，不由笔记 × 模板派生、
+/// 永远没有卡片缓存行（BUG-4626，Dart `SrsIds.deletedAnkiCard`）。由父 ID 派生、公式不带盐。来源卡 id 不在任何
+/// 操作里，别名层验不了它：规范 ID 就是它自己（设计稿 §5.3「验算不上的」）。
+pub fn deleted_anki_card(default_deck: &Id, anki_card_id: i64) -> Id {
+    Id::v5(default_deck, &format!("anki-deleted-card/{anki_card_id}"))
 }
 
 /// profile 级设置实体的规范 ID。存量里它的 ID 就是 profile uid 本身（没有公式）；规范值取

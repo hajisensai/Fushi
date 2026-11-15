@@ -1133,38 +1133,50 @@
   {
    "rule": "deleted_anki_card",
    "args": {
+    "defaultDeck": "55e401ec-e17f-518e-9eb6-bea5cf5141d1",
     "ankiCardId": 1700000000999
    },
-   "name": "anki-deleted-card/1700000000999",
-   "canonical": "e119ba14-083a-5bad-8eac-2239946d4b24",
-   "salted": {
-    "01928c3e-0000-7000-8000-0000000000a1": "9511175f-fe7e-52e2-bc4a-5dae472ba3c1",
-    "01928c3e-0000-7000-8000-0000000000b2": "845527ee-9684-555d-bc7a-b65d7bbb6578"
-   }
+   "id": "e3009b85-597e-5817-90f0-e885ae7ab448"
   },
   {
    "rule": "deleted_anki_card",
    "args": {
+    "defaultDeck": "55e401ec-e17f-518e-9eb6-bea5cf5141d1",
     "ankiCardId": 1
    },
-   "name": "anki-deleted-card/1",
-   "canonical": "e5576cf5-d967-567f-bea3-1b9e0ebfb865",
-   "salted": {
-    "01928c3e-0000-7000-8000-0000000000a1": "4a0f65f1-8748-558d-9c87-efb06977e62b",
-    "01928c3e-0000-7000-8000-0000000000b2": "73f55b4e-1a5b-5c89-a2ed-2a3f36bc34bd"
-   }
+   "id": "c9072094-0522-5ed4-87f6-7ab4b7225b0f"
   },
   {
    "rule": "deleted_anki_card",
    "args": {
+    "defaultDeck": "55e401ec-e17f-518e-9eb6-bea5cf5141d1",
     "ankiCardId": -7
    },
-   "name": "anki-deleted-card/-7",
-   "canonical": "df7f804d-3ee8-5c3c-bbe6-d045db43797f",
-   "salted": {
-    "01928c3e-0000-7000-8000-0000000000a1": "ea0b2510-14d9-5941-ad79-1b0ce77deac9",
-    "01928c3e-0000-7000-8000-0000000000b2": "a8dd1280-eeee-504c-8f3b-b50af365272a"
-   }
+   "id": "20706997-9e8f-5b3c-b3f8-82767c41e104"
+  },
+  {
+   "rule": "deleted_anki_card",
+   "args": {
+    "defaultDeck": "02794a1b-ad99-5812-a13b-52217cd24bdd",
+    "ankiCardId": 1700000000999
+   },
+   "id": "10a17ad7-2e5b-5e04-9007-616eae0e7e33"
+  },
+  {
+   "rule": "deleted_anki_card",
+   "args": {
+    "defaultDeck": "02794a1b-ad99-5812-a13b-52217cd24bdd",
+    "ankiCardId": 1
+   },
+   "id": "fe779713-b99a-54bc-bfa5-8e0e75a63688"
+  },
+  {
+   "rule": "deleted_anki_card",
+   "args": {
+    "defaultDeck": "02794a1b-ad99-5812-a13b-52217cd24bdd",
+    "ankiCardId": -7
+   },
+   "id": "c7aa00ed-c654-5f85-8370-05f9e6ab0d1e"
   },
   {
    "rule": "field",

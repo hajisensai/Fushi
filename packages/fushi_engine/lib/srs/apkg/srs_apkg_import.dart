@@ -1521,9 +1521,14 @@ class _Importer {
   /// 不需要新表、新列或改内核。
   ///
   /// 同一来源卡的 revlog 按 id 升序走 [_revlogLog]（与活卡同一套 reps / lapses 推算，投影里的分类与成熟变化才对）；
-  /// 不写导入锚点（没有卡可锚）。本 profile 里已经有同一次复习的（之前导入时卡还在、或重复导入同一个包）：按
-  /// revlog id 查本机 Anki 日志，评分 / 复习类型 / 用时都相同即不写——没有笔记可比，判据同 [_importCardSchedule]
-  /// 里认不出笔记的旧卡。fushi-ext 里记着的 revlog 本来就是 Fushi 导出的日志，同样不写。
+  /// 不写导入锚点（没有卡可锚）。本 profile 里已经有同一次复习的不写，两种来路：
+  /// - Anki 导入那份（之前导入时卡还在、或重复导入同一个包）：按 revlog id 查本机 Anki 日志，评分 / 复习类型 / 用时
+  ///   都相同即是——没有笔记可比，判据同 [_importCardSchedule] 里认不出笔记的旧卡；
+  /// - 原生那份（在 Fushi 复习 → 导出 apkg → Anki 删卡 → 不带 fushi-ext 导回来）：导出时 revlog id 取原生日志的发生
+  ///   时刻，与原生日志之间没有血统链接，投影去重也只认 Anki 导入日志。按卡片历史内核的等价判据
+  ///   （[srsImportEquivalentAny]：评分类、评分相同、时刻差 ≤ 1 秒）对本 profile 里时刻相近的原生日志判；没有卡可比，
+  ///   另加用时相同（导出写的是 `min(用时, 60000)`），不把别的卡同一秒同评分的复习误判成它。
+  /// fushi-ext 里记着的 revlog 本来就是 Fushi 导出的日志，同样不写。
   Future<void> _importDeletedCardRevlogs() async {
     final PreparedStatement q = col.db.prepare(
       'SELECT r.cid AS cid, r.id AS id, r.ease AS ease, r.ivl AS ivl, '
@@ -1573,6 +1578,10 @@ class _Importer {
     ])) {
       (present[l.revlogId] ??= <SrsAnkiLogAt>[]).add(l);
     }
+    final List<SrsReviewLog> natives = await store.nativeRatingLogsNear(<int>[
+      for (final (int _, List<_SrcRevlog> logs) in chunk)
+        for (final _SrcRevlog r in logs) r.id,
+    ]);
     bool alreadyPresent(_SrcRevlog r) {
       final int? rating = r.ease >= 1 && r.ease <= 4 ? r.ease : null;
       final String rtype = SrsReviewType.fromAnki(r.type);
@@ -1585,12 +1594,15 @@ class _Importer {
     }
 
     final (int nowMs, _) = store.now();
+    // 过了 fushi-ext 与 Anki 那份判重的候选；与原生日志的等价整块一次 FFI 判。
+    final List<SrsReviewLog> candidates = <SrsReviewLog>[];
+    final List<List<SrsReviewLog>> nearby = <List<SrsReviewLog>>[];
     for (final (int cid, List<_SrcRevlog> revlogs) in chunk) {
       if (revlogs.last.id > nowMs + srsClockToleranceMs) {
         report.futureCards.add(cid);
         continue;
       }
-      final String cardId = SrsIds.deletedAnkiCard(profileUid, cid);
+      final String cardId = SrsIds.deletedAnkiCard(store.defaultDeckId, cid);
       final List<String> ids = SrsIds.importedRevlogs(cardId, <int>[
         for (final _SrcRevlog r in revlogs) r.id,
       ]);
@@ -1615,24 +1627,39 @@ class _Importer {
           report.revlogsAlreadyPresent++;
           continue;
         }
-        if (pkg.fushiExt != null) report.revlogsNotInExt++;
-        _pending.add(
-          SrsReadyDraft(
-            SrsLogEvent(
-              _revlogLog(
-                cardId,
-                r,
-                id: ids[i],
-                reps: reps,
-                lapses: lapses,
-                lastRated: lastRated,
-              ),
-            ),
+        candidates.add(
+          _revlogLog(
+            cardId,
+            r,
+            id: ids[i],
+            reps: reps,
+            lapses: lapses,
+            lastRated: lastRated,
           ),
         );
-        report.reviewLogsImported++;
-        report.deletedCardRevlogsImported++;
+        nearby.add(<SrsReviewLog>[
+          for (final SrsReviewLog n in natives)
+            if ((n.occurredAt - r.id).abs() <= srsImportEquivalenceWindowMs &&
+                min(n.durationMs, 60000) == r.time)
+              n,
+        ]);
       }
+    }
+    final List<bool> equivalent =
+        srsImportEquivalentAny(<(SrsReviewLog, List<SrsReviewLog>)>[
+          for (int i = 0; i < candidates.length; i++)
+            if (nearby[i].isNotEmpty) (candidates[i], nearby[i]),
+        ]);
+    int k = 0;
+    for (int i = 0; i < candidates.length; i++) {
+      if (nearby[i].isNotEmpty && equivalent[k++]) {
+        report.revlogsAlreadyPresent++;
+        continue;
+      }
+      if (pkg.fushiExt != null) report.revlogsNotInExt++;
+      _pending.add(SrsReadyDraft(SrsLogEvent(candidates[i])));
+      report.reviewLogsImported++;
+      report.deletedCardRevlogsImported++;
     }
   }
 

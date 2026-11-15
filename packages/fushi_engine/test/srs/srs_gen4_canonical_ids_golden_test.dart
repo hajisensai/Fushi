@@ -228,15 +228,19 @@ Map<String, Object?> _build() {
       SrsIds.builtinDefaultDeck,
     ),
   );
-  for (final int cid in _deletedCardIds) {
-    cases.add(
-      _rooted(
-        'deleted_anki_card',
-        <String, Object?>{'ankiCardId': cid},
-        'anki-deleted-card/$cid',
-        (String uid) => SrsIds.deletedAnkiCard(uid, cid),
-      ),
-    );
+  // 已删 Anki 卡由内置默认牌组派生：父取一个带盐的、一个规范的默认牌组。
+  for (final String deck in <String>[
+    SrsIds.builtinDefaultDeck(_uids.first),
+    uuidV5(srsNamespace, 'builtin-deck/default'),
+  ]) {
+    for (final int cid in _deletedCardIds) {
+      cases.add(
+        _derived('deleted_anki_card', <String, Object?>{
+          'defaultDeck': deck,
+          'ankiCardId': cid,
+        }, SrsIds.deletedAnkiCard(deck, cid)),
+      );
+    }
   }
 
   // 由父 ID 派生的规则：父取一个带盐的、一个规范的笔记类型 / 笔记。
