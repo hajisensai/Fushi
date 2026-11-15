@@ -338,11 +338,21 @@ void main() {
   Finder menuAction(String id) =>
       find.byKey(ValueKey<String>('music-menu-action-$id'));
 
+  /// 开曲目菜单：列表行点行尾「更多」；歌单详情默认的色块格（PR #3397 起歌单
+  /// 曲目默认排成色块，行尾没有「更多」）整块右键 = 同一份菜单。
   Future<void> openTrackMenu(WidgetTester tester, String id) async {
-    await tester.tap(
-      find.byKey(ValueKey<String>('music-plugin-track-menu-$id')),
+    final Finder button = find.byKey(
+      ValueKey<String>('music-plugin-track-menu-$id'),
     );
-    await tester.pumpAndSettle();
+    if (button.evaluate().isNotEmpty) {
+      await tester.tap(button);
+      await tester.pumpAndSettle();
+      return;
+    }
+    await rightClick(
+      tester,
+      find.byKey(ValueKey<String>('music-plugin-track-$id')),
+    );
   }
 
   /// 点菜单里的 [label] 一项。曲目菜单项多（「下一首播放」「加入播放队列」排在最上），

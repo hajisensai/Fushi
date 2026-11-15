@@ -33,6 +33,7 @@ SettingsDestination buildFloatingBallDestination() {
     sections: <SettingsSection>[
       SettingsSection(
         id: 'floating_ball.section.display',
+        title: t.settings_floating_ball_section_display,
         items: <SettingsItem>[
           SettingsSwitchItem(
             id: 'floating_ball.in_app',
@@ -111,51 +112,6 @@ SettingsDestination buildFloatingBallDestination() {
             },
             defaultValue: FloatingBallTapAction.fallback,
           ),
-          // 反馈 Gz7z6Y6Mbr：截屏识字 / 拍照查词制卡带所点文本块的截图（默认开）。
-          SettingsSwitchItem(
-            id: 'floating_ball.screen_ocr_card_image',
-            title: t.screen_ocr_card_image,
-            subtitle: t.screen_ocr_card_image_hint,
-            icon: FushiIcons.image,
-            value: (SettingsContext c) => _prefs(c).screenOcrCardImage,
-            onChanged: (SettingsContext c, bool value) async {
-              await _prefs(c).setScreenOcrCardImage(value);
-              c.refresh();
-            },
-            defaultValue: true,
-          ),
-          // 反馈 Eemf0HOZhj：桌面截屏识字的 OCR 引擎，和 AI 的「功能 → 提供商」一样默认
-          // 跟随全局（设置 → 模型 → OCR 的引擎偏好），想单独改的在这里选。
-          SettingsSegmentedItem<ScreenOcrEngineSetting>(
-            id: 'floating_ball.screen_ocr_engine',
-            title: t.screen_ocr_engine,
-            subtitle: t.screen_ocr_engine_hint,
-            icon: FushiIcons.ocr,
-            dropdown: true,
-            visible: (SettingsContext c) => isDesktopSystemBallPlatform,
-            options: _screenOcrEngineOptions(null),
-            optionsBuilder: _screenOcrEngineOptions,
-            selected: (SettingsContext c) => _prefs(c).screenOcrEngine,
-            onChanged: (SettingsContext c, ScreenOcrEngineSetting value) async {
-              await _prefs(c).setScreenOcrEngine(value);
-              c.refresh();
-            },
-            defaultValue: ScreenOcrEngineSetting.followGlobal,
-          ),
-          // 反馈 9bdhVTgq3A / LHyeNKyYjH：Android 截屏识字只确认一次（默认关）。
-          SettingsSwitchItem(
-            id: 'floating_ball.screen_ocr_keep_session',
-            title: t.screen_ocr_keep_session,
-            subtitle: t.screen_ocr_keep_session_hint,
-            icon: FushiIcons.cast,
-            visible: (SettingsContext c) => Platform.isAndroid,
-            value: (SettingsContext c) => _prefs(c).screenOcrKeepCaptureSession,
-            onChanged: (SettingsContext c, bool value) async {
-              await _prefs(c).setScreenOcrKeepCaptureSession(value);
-              c.refresh();
-            },
-            defaultValue: false,
-          ),
           SettingsSwitchItem(
             id: 'floating_ball.show_labels',
             title: t.floating_ball_show_labels,
@@ -199,6 +155,59 @@ SettingsDestination buildFloatingBallDestination() {
                   c.refresh();
                 },
             defaultValue: FloatingBallAutoRestore.fallback,
+          ),
+        ],
+      ),
+      // 「截屏识字」：这两项管的是截屏识字制卡的行为，与球显不显示无关；单列一组，
+      // 免得夹在显示开关中间。
+      SettingsSection(
+        id: 'floating_ball.section.screen_ocr',
+        title: t.floating_ball_action_screen_ocr,
+        items: <SettingsItem>[
+          // 反馈 Gz7z6Y6Mbr：截屏识字 / 拍照查词制卡带所点文本块的截图（默认开）。
+          SettingsSwitchItem(
+            id: 'floating_ball.screen_ocr_card_image',
+            title: t.screen_ocr_card_image,
+            subtitle: t.screen_ocr_card_image_hint,
+            icon: FushiIcons.image,
+            value: (SettingsContext c) => _prefs(c).screenOcrCardImage,
+            onChanged: (SettingsContext c, bool value) async {
+              await _prefs(c).setScreenOcrCardImage(value);
+              c.refresh();
+            },
+            defaultValue: true,
+          ),
+          // 反馈 Eemf0HOZhj：桌面截屏识字的 OCR 引擎，和 AI 的「功能 → 提供商」一样默认
+          // 跟随全局（设置 → 本机模型 → OCR 的引擎偏好），想单独改的在这里选。
+          SettingsSegmentedItem<ScreenOcrEngineSetting>(
+            id: 'floating_ball.screen_ocr_engine',
+            title: t.screen_ocr_engine,
+            subtitle: t.screen_ocr_engine_hint,
+            icon: FushiIcons.ocr,
+            dropdown: true,
+            visible: (SettingsContext c) => isDesktopSystemBallPlatform,
+            options: _screenOcrEngineOptions(null),
+            optionsBuilder: _screenOcrEngineOptions,
+            selected: (SettingsContext c) => _prefs(c).screenOcrEngine,
+            onChanged: (SettingsContext c, ScreenOcrEngineSetting value) async {
+              await _prefs(c).setScreenOcrEngine(value);
+              c.refresh();
+            },
+            defaultValue: ScreenOcrEngineSetting.followGlobal,
+          ),
+          // 反馈 9bdhVTgq3A / LHyeNKyYjH：Android 截屏识字只确认一次（默认关）。
+          SettingsSwitchItem(
+            id: 'floating_ball.screen_ocr_keep_session',
+            title: t.screen_ocr_keep_session,
+            subtitle: t.screen_ocr_keep_session_hint,
+            icon: FushiIcons.cast,
+            visible: (SettingsContext c) => Platform.isAndroid,
+            value: (SettingsContext c) => _prefs(c).screenOcrKeepCaptureSession,
+            onChanged: (SettingsContext c, bool value) async {
+              await _prefs(c).setScreenOcrKeepCaptureSession(value);
+              c.refresh();
+            },
+            defaultValue: false,
           ),
         ],
       ),

@@ -13,12 +13,14 @@ import 'package:fushi/src/anki/mined_card_tap_policy.dart';
 import 'package:fushi/src/anki/mined_card_undo.dart';
 import 'package:fushi/src/corpus/library_corpus_service.dart';
 import 'package:fushi/src/leaderboard/leaderboard_paired_login.dart';
+import 'package:fushi/src/media/library_finish_marks.dart';
 import 'package:fushi/src/media/source_library/source_folder_access.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart'
     show applyBlurayDiscCollectionArtwork;
 import 'package:fushi/src/models/asset_licenses.dart';
 import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/utils/adaptive/nav_bar_style.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart';
 import 'package:fushi/src/updates/host_self_update_service.dart';
 import 'package:fushi/src/updates/local_update_notifier.dart';
 import 'package:fushi/src/updates/update_check_scheduler.dart';
@@ -27,6 +29,8 @@ import 'package:fushi/src/updates/usage_heartbeat.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi/src/models/preference_keys.dart';
 import 'package:fushi_engine/srs/srs_miner.dart';
+import 'package:fushi_engine/media/video/media_server_video_path.dart'
+    show isMediaServerVideoPath;
 import 'package:fushi_engine/media/video/media_server/media_server_client_identity.dart'
     show mediaServerClientIdentity, resolveMediaServerClientIdentity;
 import 'package:fushi_engine/media/video/video_member_file.dart';
@@ -125,6 +129,11 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/section_tab_order.dart'
+    show
+        PrefsSectionTabOrderStore,
+        SectionTabOrderStore,
+        sectionTabOrderAppFallback;
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_audio_handler.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
@@ -220,6 +229,13 @@ import 'package:fushi/src/models/dictionary_repository.dart';
 import 'package:fushi/src/models/media_history_repository.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/media/manga/cookie/manga_cookie_jar.dart';
+import 'package:fushi/src/media/manga/library/manga_tracking_progress.dart';
+import 'package:fushi/src/media/tracking/book_link_hints.dart';
+import 'package:fushi/src/media/tracking/plugin/bangumi_token_migration.dart';
+import 'package:fushi/src/media/tracking/plugin/plugin_tracking_provider.dart';
+import 'package:fushi/src/media/tracking/plugin/tracking_plugin_engine.dart';
+import 'package:fushi/src/media/tracking/plugin/tracking_plugin_gate.dart';
+import 'package:fushi/src/media/tracking/plugin/tracking_plugin_manager.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/manga_view_prefs.dart';
 import 'package:fushi/src/media/manga/library/manga_resume_point.dart';
@@ -356,7 +372,11 @@ import 'package:fushi/src/media/video/video_immersive_control_layout.dart';
 import 'package:fushi/src/media/video/video_subtitle_mask_config.dart';
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:fushi_engine/media/tracking/media_tracking_repository.dart';
+import 'package:fushi_engine/media/tracking/tracking_provider.dart'
+    show TrackingProvider;
 import 'package:fushi_engine/media/tracking/media_tracking_service.dart';
+import 'package:fushi_engine/media/tracking/remote_anime_link.dart';
+import 'package:fushi_engine/media/video/metadata/anime_identity_mapping.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart'
     show VideoSourceScrapeTaskController;
 import 'package:fushi_engine/sync/local_library_host_service.dart';
@@ -406,6 +426,8 @@ import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_conflict_prompter.dart';
 import 'package:fushi/src/sync/sync_orchestrator.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi/src/media/video/media_server/media_server_library.dart'
+    show mediaServerTrackingEpisodeOf;
 import 'package:fushi/src/sync/sync_state_apply_lock.dart';
 import 'package:fushi/src/sync/video_remote_host.dart';
 import 'package:fushi/src/sync/video_remote_library_port.dart';
@@ -420,6 +442,8 @@ import 'package:fushi/src/models/audio_controller.dart';
 import 'package:fushi/src/media/music/lyrics/karaoke/karaoke_stage_plan.dart'
     show MusicAssRenderPreference;
 import 'package:fushi/src/media/music/lyrics/lrclib_client.dart';
+import 'package:fushi/src/media/music/music_view_style.dart'
+    show MusicViewStyleStore;
 import 'package:fushi/src/media/music/lyrics/lyrics_provider_list.dart';
 import 'package:fushi/src/media/music/lyrics/music_desktop_lyrics_surface.dart';
 import 'package:fushi/src/media/music/lyrics/music_lookup_pause.dart';
@@ -489,7 +513,11 @@ import 'package:fushi/src/models/anki_integration.dart';
 import 'package:fushi/src/sync/fushi_remote_lookup_client.dart';
 import 'package:fushi/src/sync/fushi_remote_mining_client.dart';
 import 'package:fushi/src/sync/interconnect_post_transport.dart'
-    show kInterconnectConnectTimeout;
+    show InterconnectPostTransport, kInterconnectConnectTimeout;
+import 'package:fushi/src/sync/remote_dictionary_catalog_service.dart';
+import 'package:fushi/src/sync/dictionary_transfer_service.dart';
+import 'package:fushi/src/sync/interconnect_dictionary_lookup_section.dart'
+    show applyInterconnectHostLookupIntent;
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi/src/sync/remote_audio_lookup_bytes.dart';
 import 'package:fushi/src/lookup/lookup_audio_playback.dart';
@@ -599,6 +627,24 @@ final Map<String, Field> fieldsByKey = Map.unmodifiable(
 final appProvider = ChangeNotifierProvider<AppModel>((ref) {
   return AppModel(ref.read(platformServicesProvider));
 });
+
+/// [sectionTabOrderAppFallback] 的应用实现：有 ProviderScope 且偏好已装载时读写
+/// 偏好；没有 ProviderScope（启动早期 / 裸组件）或偏好未装载时返回 null。
+SectionTabOrderStore? _appSectionTabOrderStore(BuildContext context) {
+  final bool hasScope =
+      context
+          .getElementForInheritedWidgetOfExactType<
+            UncontrolledProviderScope
+          >() !=
+      null;
+  if (!hasScope) return null;
+  final AppModel app = ProviderScope.containerOf(
+    context,
+    listen: false,
+  ).read(appProvider);
+  if (!app.isPreferencesReady) return null;
+  return PrefsSectionTabOrderStore(app.prefsRepo);
+}
 
 /// App-wide second-screen controller (main engine). Starts itself once the
 /// AppModel's preferences are loaded. Defined here rather than next to
@@ -1865,11 +1911,194 @@ class AppModel
   /// 番剧/小说/漫画进度的可靠 Bangumi 同步入口。
   MediaTrackingService? _mediaTrackingService;
   MediaTrackingService get mediaTrackingService =>
-      _mediaTrackingService ??= MediaTrackingService(
-        repository: MediaTrackingRepository(_database),
+      _mediaTrackingService ??= _buildMediaTrackingService();
+
+  /// Installed tracking plugins (docs/specs/2026-11-10-tracking-plugins.md):
+  /// packages, storage and credentials under
+  /// `<database dir>/tracking_plugins/`, not in Drift. Created by
+  /// [_startTrackingPlugins] in the main process; null before that and where
+  /// [isTrackingPluginsAvailable] is false.
+  TrackingPluginManager? _trackingPluginManager;
+  TrackingPluginManager? get trackingPluginManager => _trackingPluginManager;
+
+  /// One provider per enabled plugin package (sign-in goes through these).
+  PluginTrackingProviders? _trackingPluginProviders;
+  PluginTrackingProviders? get trackingPluginProviders =>
+      _trackingPluginProviders;
+
+  /// Creates the plugin manager; the plugin list arriving (from
+  /// [_installBundledTrackingPlugins]) and every later change re-apply the
+  /// providers.
+  void _startTrackingPlugins() {
+    if (_trackingPluginManager != null) return;
+    final TrackingPluginManager? manager = _createTrackingPluginManager();
+    if (manager == null) return;
+    _trackingPluginManager = manager;
+    _trackingPluginProviders = PluginTrackingProviders(
+      manager: manager,
+      onAccountChanged: () => _mediaTrackingService?.notifyStatusChanged(),
+    );
+    manager.changes.addListener(_applyTrackingProviders);
+  }
+
+  /// Pins / installs the bundled plugins (Bangumi built in; AniList and
+  /// MangaBaka included and removable), lists the plugins, then
+  /// moves the built-in Bangumi token into the plugin
+  /// ([startBundledTrackingPlugins]). The service was built without the
+  /// built-in Bangumi on this path, so `bangumi` is served by the plugin as
+  /// soon as it is registered and by nothing before. A moved token syncs at
+  /// once.
+  void _installBundledTrackingPlugins() {
+    final TrackingPluginManager? manager = _trackingPluginManager;
+    final PluginTrackingProviders? providers = _trackingPluginProviders;
+    if (manager == null || providers == null) return;
+    unawaited(
+      startBundledTrackingPlugins(
+        manager: manager,
+        providers: providers,
         preferences: prefsRepo,
-        userAgent: _mediaTrackingUserAgent,
+        removePref: prefsRepo.removePref,
+        onError: (Object error, StackTrace stack) => ErrorLogService.instance
+            .log('AppModel.startBundledTrackingPlugins', error, stack),
+      ).then((BangumiTokenMigration result) {
+        if (result == BangumiTokenMigration.moved) {
+          unawaited(_mediaTrackingService?.syncNow());
+        }
+      }),
+    );
+  }
+
+  TrackingPluginManager? _createTrackingPluginManager() {
+    if (!isTrackingPluginsAvailable) return null;
+    final String root = path.join(databaseDirectory.path, 'tracking_plugins');
+    return TrackingPluginManager(
+      rootDir: Directory(root),
+      engine: SharedTrackingPluginEngine.forApp(
+        rootDir: root,
+        httpClientFactory: createAppHttpClient,
+        // Plugin logs are untrusted text: diagnostics only, never UI.
+        log: (String id, String level, String message) =>
+            debugPrint('[tracking-plugin] $id $level: $message'),
+      ),
+    );
+  }
+
+  /// The sites besides Bangumi: one per enabled tracking plugin.
+  List<TrackingProvider> _trackingExtraProviders() =>
+      _trackingPluginProviders?.current() ?? const <TrackingProvider>[];
+
+  void _applyTrackingProviders() {
+    _mediaTrackingService?.setExtraProviders(_trackingExtraProviders());
+  }
+
+  /// The one place the tracking service and its providers are assembled.
+  MediaTrackingService _buildMediaTrackingService() => MediaTrackingService(
+    repository: MediaTrackingRepository(_database),
+    preferences: prefsRepo,
+    userAgent: _mediaTrackingUserAgent,
+    extraProviders: _trackingExtraProviders(),
+    // The one platform decision: where tracking plugins run, the bundled
+    // Bangumi plugin serves `bangumi` and the Dart provider is not built.
+    builtInBangumi: !isBangumiServedByPlugin,
+    trackingOn: () => isMediaTrackingOn,
+    mangaReadProgress: (EpubBookRow book) =>
+        mangaReadProgressOf(_database, book),
+    bookLinkHints: (EpubBookRow book) async => bookLinkHintsOf(
+      book,
+      displayTitle: ReaderFushiSource.instance.overrideTitleForBookKey(
+        book.bookKey,
+      ),
+    ),
+    animeCrossIds: AnimeCrossIds(
+      entryForAnidb: (int id) => _trackingAnimeIds.entryForAnidb(id),
+      entriesForTmdbTv: (int id) => _trackingAnimeIds.entriesForTmdbTv(id),
+      entriesForTvdb: (int id) => _trackingAnimeIds.entriesForTvdb(id),
+      entriesForTmdbMovie: (int id) =>
+          _trackingAnimeIds.entriesForTmdbMovie(id),
+    ),
+  );
+
+  /// Offline anime id list for linking media server episodes. Created (and
+  /// downloaded) only when an episode has no AniList / MAL id of its own.
+  AnimeIdentityMapping? _trackingAnimeIdsOrNull;
+  AnimeIdentityMapping get _trackingAnimeIds =>
+      _trackingAnimeIdsOrNull ??= AnimeIdentityMapping();
+
+  /// A manga's or PDF's read state changed (reader reached a chapter / volume
+  /// end, or chapters were marked on the series page / by a Kavita refresh).
+  /// Fire and forget: tracking never blocks or breaks reading.
+  void reportPagedBookTrackingProgress(String bookKey) {
+    if (!isMediaTrackingOn) return;
+    unawaited(
+      mediaTrackingService.recordPagedBookProgress(bookKey).catchError((
+        Object error,
+        StackTrace stack,
+      ) {
+        ErrorLogService.instance.log(
+          'AppModel.reportPagedBookTrackingProgress',
+          error,
+          stack,
+        );
+      }),
+    );
+  }
+
+  /// Finished / watched marks set by hand (shelf, video library, CLI / AI)
+  /// reach media tracking through this; see [setBooksFinished] and
+  /// [setVideosWatched]. Books are reported like a reader reaching the end;
+  /// videos start a sync whose catch-up sends every linked video watched
+  /// since the last one.
+  late final LibraryFinishTracking libraryFinishTracking =
+      LibraryFinishTracking(
+        onBooksFinished: (List<String> bookKeys) async {
+          for (final String bookKey in bookKeys) {
+            reportPagedBookTrackingProgress(bookKey);
+          }
+        },
+        onVideosWatched: (List<String> videoUids) async {
+          if (!isMediaTrackingOn) return;
+          unawaited(
+            _reportVideosWatched(videoUids).then<void>(
+              (_) {},
+              onError: (Object error, StackTrace stack) {
+                ErrorLogService.instance.log(
+                  'AppModel.libraryFinishTracking',
+                  error,
+                  stack,
+                );
+              },
+            ),
+          );
+        },
       );
+
+  /// Videos marked watched by hand: a row added from a media server reports
+  /// its server identity (asked from the server, as playing it to the end
+  /// does: T1 F3, one identity per watched thing); then a sync, whose
+  /// catch-up sends every linked local video. One row's server failing does
+  /// not stop the others.
+  Future<void> _reportVideosWatched(List<String> videoUids) async {
+    final MediaTrackingService service = mediaTrackingService;
+    for (final String uid in videoUids) {
+      final VideoBookRow? row = await _database.getVideoBookByBookUid(uid);
+      if (row == null || !isMediaServerVideoPath(row.videoPath)) continue;
+      try {
+        final RemoteAnimeEpisode? episode = await mediaServerTrackingEpisodeOf(
+          row: row,
+          loadConfigs: SyncRepository(_database).getMediaServers,
+        );
+        if (episode == null) continue;
+        await service.recordRemoteVideoCompleted(episode, libraryBookUid: uid);
+      } catch (error, stack) {
+        ErrorLogService.instance.log(
+          'AppModel.reportVideosWatched',
+          error,
+          stack,
+        );
+      }
+    }
+    await service.syncNow();
+  }
 
   String _mediaTrackingAppVersion = 'unknown';
   String get _mediaTrackingUserAgent =>
@@ -2798,6 +3027,7 @@ class AppModel
         );
       }
       _databaseOpened = false;
+      _stopRemoteDictionaryCatalog();
       if (_dictionaryRepoReady) {
         dictRepo.dispose();
         _dictionaryRepoReady = false;
@@ -3315,7 +3545,11 @@ class AppModel
       .map((Dictionary d) => d.name)
       .toSet();
 
-  bool _dictTypesMigrated = false;
+  bool _dictSourceBackfillStarted = false;
+
+  /// 本进程已经探过类型的词典目录（探测结果的落库是 unawaited，写回之前
+  /// [Dictionary.isTypeProbed] 还是 false，靠它防同一本被两条重建路径各探一遍）。
+  final Set<String> _dictTypeProbeAttempted = <String>{};
 
   /// 启动期的词典类型自愈：把历史误分类的词典改回正确的桶。
   ///
@@ -3329,14 +3563,27 @@ class AppModel
   ///
   /// 探测结果无论是否导致改判都会落库，所以第二次启动开始，这个循环对存量词典是
   /// 纯内存遍历、零 IO。
+  ///
+  /// BUG-4510：探测是主 isolate 上的同步读（`probeDictContent` / `blobs.bin`
+  /// openSync+readSync），只对 [_dictResources] **已证明物化**的目录做——OneDrive
+  /// 「按需文件」/ iCloud 驱逐成 dataless 的文件同步读会在内核里等云端回填，Timer
+  /// 看门狗全失效。没证明物化的本次不探、不落标记，等物化探测证明之后的下一次重建
+  /// 再探（两条重建路径都会调到这里）。
   void _migrateDictionaryTypes() {
-    if (_dictTypesMigrated) return;
-    _dictTypesMigrated = true;
-    unawaited(_backfillDictionarySourceMetadata());
+    if (!_dictSourceBackfillStarted) {
+      _dictSourceBackfillStarted = true;
+      unawaited(_backfillDictionarySourceMetadata());
+    }
     final dicts = dictRepo.dictionaries;
     for (final d in dicts) {
       // 探过就跳过——包括「探过、结论是什么都不用改」。
       if (d.isTypeProbed) continue;
+      final String probeDir = path.join(
+        dictionaryResourceDirectory.path,
+        d.name,
+      );
+      if (_dictTypeProbeAttempted.contains(probeDir)) continue;
+      if (!_dictResources.isReady(probeDir)) continue;
 
       // TODO-622 self-heal: a mixed JA-JA dictionary (term + embedded kanji
       // appendix) was misclassified as 'kanji' by the old detect_type, so its
@@ -3347,8 +3594,9 @@ class AppModel
       // router also registers it as a kanji dict. A genuine KANJIDIC (kanji
       // records only, no term) keeps type 'kanji' and is left untouched.
       if (d.type == DictionaryType.kanji) {
+        _dictTypeProbeAttempted.add(probeDir);
         try {
-          final dir = path.join(dictionaryResourceDirectory.path, d.name);
+          final dir = probeDir;
           // 目录不在（词典文件已被删/未落盘）时不落标记：这本压根没被探过，
           // 等文件回来再探。
           if (!Directory(dir).existsSync()) continue;
@@ -3407,10 +3655,9 @@ class AppModel
       // freq/pitch 不需要探测（它们的类型来自导入时的 mode 串，没有历史误判形态），
       // 也就不落标记：这条分支不做任何 IO，重跑的代价是零。
       if (d.type != DictionaryType.term) continue;
+      _dictTypeProbeAttempted.add(probeDir);
 
-      final blobsFile = File(
-        path.join(dictionaryResourceDirectory.path, d.name, 'blobs.bin'),
-      );
+      final blobsFile = File(path.join(probeDir, 'blobs.bin'));
       if (!blobsFile.existsSync()) continue;
 
       final raf = blobsFile.openSync();
@@ -3519,7 +3766,7 @@ class AppModel
         dictPathEntryOf(
           type: d.type,
           path: p,
-          exists: Directory(p).existsSync() && _dictDirMaterialized(p),
+          exists: Directory(p).existsSync() && _dictResources.isLoadable(p),
           hidden: d.isHidden(JapaneseLanguage.instance),
           metadata: d.metadata,
           order: d.order,
@@ -3527,6 +3774,9 @@ class AppModel
       );
     }
     final b = bucketDictPaths(entries);
+    dictRepo.noteEngineTermDictionaries(<String>[
+      for (final String p in b.term) path.basename(p),
+    ]);
     // 排期而不是就地重建：这个回调挂在**每一次**词典元数据写入上（导入每本、
     // 类型自愈每本、隐藏/折叠/语言开关），就地重建会把总代价推成 O(N²)。真正的
     // 装载推迟到下次要用引擎时，批量写入期间的 N 次排期塌成 1 次装载。
@@ -3539,45 +3789,35 @@ class AppModel
   }
 
   /// BUG-2504 不变式「同步 FFI 装载只碰已物化的字节」对**两条**装载路径都成立。
-  /// [_rebuildDictPathsCacheAsync] 自己探；同步的 [_rebuildDictPathsCache] 挂在
-  /// 每一次词典元数据写入上（隐藏 / 折叠 / 语言开关 / 导入每本），它没有预算再探
-  /// 一遍，就复用上一次探测的结论：探测明确判成 dataless / 读失败的目录不进引擎，
-  /// 否则「启动期跳过 → 用户改任一词典开关 → 同步路径全量排期 → 首次查词在主
-  /// isolate 同步读 dataless 文件」会把原症状从冷启动挪到改设置后。
+  /// [_rebuildDictPathsCacheAsync] 经 [_dictResources] 探；同步的
+  /// [_rebuildDictPathsCache] 挂在每一次词典元数据写入上（隐藏 / 折叠 / 语言开关 /
+  /// 导入每本），它没有预算再探一遍，就复用 [_dictResources] 的结论
+  /// （[DictResourceAvailability.isLoadable]）：探过且没证明可读的目录不进引擎；
+  /// **没探过的目录放行**（刚导入 / 互联传输落盘的词典是本进程自己写的字节）。
   ///
-  /// **没探过的目录放行**：刚导入 / 互联传输落盘的词典是本进程自己写的字节，本就
-  /// 在本地；把它们挡在引擎外等于导入完不装载。晚到的物化成功回报把目录补回
-  /// [_materializedDictDirs]（[_onDictDirMaterializedLate]）。
-  Set<String> _probedDictDirs = const <String>{};
-  Set<String> _materializedDictDirs = const <String>{};
-  bool _lateDictReloadScheduled = false;
-
-  bool _dictDirMaterialized(String dir) =>
-      !_probedDictDirs.contains(dir) || _materializedDictDirs.contains(dir);
-
-  /// 预算后 worker 把 pending 目录拉回本地的回报：成功即登记可读，并排一次异步
-  /// 重装——这是「字节已到本地」的确定信号，不该等下次冷启动才装上（被跳过的
-  /// 词典对用户完全不可见：列表还在、开关还开、查词没结果）。多本陆续回报只排
-  /// 一次；重装本身会重新探一遍。
-  void _onDictDirMaterializedLate(String dir, String? error) {
-    debugPrint(
+  /// BUG-4510：物化状态只在这一个对象里，单调累积、同一目录至多一个在途探测；
+  /// 在途探测全部回报完且有新目录变可读时只重装一次引擎（[_reloadDictsAfterLateMaterialize]），
+  /// 不再「每条回报 → 重装 → 对全部目录再起 worker」地自我喂养。
+  late final DictResourceAvailability _dictResources = DictResourceAvailability(
+    onLateReport: (String dir, String? error) => debugPrint(
       '[Fushi] dict resource materialized after budget: '
       '${path.basename(dir)}${error == null ? '' : ' (error: $error)'}',
-    );
-    if (error != null) return;
-    _materializedDictDirs = <String>{..._materializedDictDirs, dir};
-    if (_lateDictReloadScheduled) return;
-    _lateDictReloadScheduled = true;
-    Future<void>.delayed(const Duration(seconds: 2), () async {
-      _lateDictReloadScheduled = false;
-      try {
-        await _rebuildDictPathsCacheAsync();
-        dictRepo.clearDictionaryResultsCache();
-        dictionarySearchAgainNotifier.notifyListeners();
-      } catch (e, st) {
-        ErrorLogService.instance.log('AppModel.lateDictReload', e, st);
-      }
-    });
+    ),
+    onLateReady: () => unawaited(_reloadDictsAfterLateMaterialize()),
+  );
+
+  /// 预算后 worker 把剩余目录全部拉回本地后的一次重装：字节已到本地是确定信号，
+  /// 不该等下次冷启动才装上（被跳过的词典对用户完全不可见：列表还在、开关还开、
+  /// 查词没结果）。重装里的 [DictResourceAvailability.resolve] 不会再探已物化 /
+  /// 在途的目录。
+  Future<void> _reloadDictsAfterLateMaterialize() async {
+    try {
+      await _rebuildDictPathsCacheAsync();
+      dictRepo.clearDictionaryResultsCache();
+      dictionarySearchAgainNotifier.notifyListeners();
+    } catch (e, st) {
+      ErrorLogService.instance.log('AppModel.lateDictReload', e, st);
+    }
   }
 
   /// 查词管线预热：跑几次真实查询，把 native 侧的去屈折表、mmap 页、Dart 侧的
@@ -3714,10 +3954,18 @@ class AppModel
   /// 看门狗在同步阻塞期间根本不会触发。所以装载前先在后台 isolate 做触读物化探测
   /// （[materializeDictResources]），本次只装预算内证明了「字节在本地」的词典。
   Future<void> _rebuildDictPathsCacheAsync() async {
-    // 注意：类型自愈对**尚未探测过**的 term/kanji 词典会同步 openSync/readSync
-    // blobs.bin（一次性迁移，探过的词典零 IO），它跑在下面的物化探测之前，仍是
-    // 同步 IO 的残留——只影响首次启动 / 新导入那一次，本任务不动它。
-    _migrateDictionaryTypes();
+    await _scheduleDictPathsAsync();
+    // 在这里就把它装完（而不是留给第一次查词）：启动期是有预算做这件事的地方，
+    // 而且分批让出后它不再阻塞首帧。
+    await FushiDicts.loadPendingAsync();
+  }
+
+  /// [_rebuildDictPathsCacheAsync] 的前半段：目录 exists + 物化探测 + 类型自愈 +
+  /// 排期，**不装载**。启动期只有这一段是「数据根 IO、可能因盘掉线永不返回」，
+  /// 套 12s 看门狗；装载本身（[FushiDicts.loadPendingAsync]）每本之间让出、耗时随
+  /// 词典数线性增长，不是挂死，套看门狗只会把「词典多、盘慢」误判成启动失败
+  /// （BUG-4510：121 本词典、8s 物化预算之后只剩 4s 给装载，启动直接进错误屏）。
+  Future<void> _scheduleDictPathsAsync() async {
     final dictList = dictRepo.dictionaries;
     final List<String> paths = <String>[
       for (final d in dictList)
@@ -3734,15 +3982,12 @@ class AppModel
       for (var i = 0; i < paths.length; i++)
         if (existsResults[i]) paths[i],
     ];
-    final DictResourceMaterializeResult materialized =
-        await materializeDictResources(
-          existingDirs,
-          onLateReport: _onDictDirMaterializedLate,
-        );
+    final DictResourceResolution materialized = await _dictResources.resolve(
+      existingDirs,
+    );
     final Set<String> readyDirs = materialized.ready.toSet();
-    // 同步路径（[_rebuildDictPathsCache]）复用这轮结论，见 [_dictDirMaterialized]。
-    _probedDictDirs = existingDirs.toSet();
-    _materializedDictDirs = readyDirs;
+    // 类型自愈只探已证明物化的目录（同步读，见 [_migrateDictionaryTypes]）。
+    _migrateDictionaryTypes();
     if (materialized.pending.isNotEmpty || materialized.failed.isNotEmpty) {
       final String summary = <String>[
         if (materialized.pending.isNotEmpty)
@@ -3775,15 +4020,15 @@ class AppModel
         ),
     ];
     final b = bucketDictPaths(entries);
+    dictRepo.noteEngineTermDictionaries(<String>[
+      for (final String p in b.term) path.basename(p),
+    ]);
     FushiDicts.scheduleTyped(
       termPaths: b.term,
       freqPaths: b.freq,
       pitchPaths: b.pitch,
       kanjiPaths: b.kanji,
     );
-    // 在这里就把它装完（而不是留给第一次查词）：启动期是有预算做这件事的地方，
-    // 而且分批让出后它不再阻塞首帧。
-    await FushiDicts.loadPendingAsync();
   }
 
   List<DictionarySearchResult> get dictionaryHistory =>
@@ -4090,16 +4335,176 @@ class AppModel
     dictionarySearchAgainNotifier.notifyListeners();
   }
 
-  Future<void> updateDictionaryOrder(List<Dictionary> newDictionaries) async {
-    // dictRepo.updateDictionaryOrder persists the new order, fires
+  /// 一个分区里本机词典的新相对顺序（只取真名与先后）。同分区的服务器托管词典由
+  /// 仓库一起重编号（[DictionaryRepository.reorderDictionarySection]），不会因为只给
+  /// 本机词典重编号而在查词序里漂移。[moved]：这次只挪了这一本（ctl `position`）。
+  Future<void> updateDictionaryOrder(
+    List<Dictionary> newDictionaries, {
+    String? moved,
+  }) async {
+    // dictRepo.reorderDictionarySection persists the new order, fires
     // _onCacheRebuild (_rebuildDictPathsCache → engine reload) and drops the
     // search result caches so the next lookup re-merges in the new order. We
     // still have to nudge any already-open lookup page to re-query — otherwise
     // its current result keeps the old order until it is reopened or the app
     // restarts. Mirrors the delete paths (BUG-355).
-    await dictRepo.updateDictionaryOrder(newDictionaries);
+    await dictRepo.reorderDictionarySection(newDictionaries, moved: moved);
     dictionarySearchAgainNotifier.notifyListeners();
   }
+
+  /// 参与查词的服务器托管词典（见 [DictionaryRepository.remoteDictionaries]）。
+  List<RemoteDictionary> get remoteDictionaries => dictRepo.remoteDictionaries;
+
+  /// 词典管理页一次混排重编号：本机词典与服务器词典同一数轴，两张表同一事务落库
+  /// （[DictionaryRepository.updateDictionaryOrder] 的 `remoteDictionaries`）。
+  Future<void> updateMixedDictionaryOrder(
+    List<Dictionary> newDictionaries,
+    List<RemoteDictionary> remoteDictionaries,
+  ) async {
+    await dictRepo.updateDictionaryOrder(
+      newDictionaries,
+      remoteDictionaries: remoteDictionaries,
+    );
+    dictionarySearchAgainNotifier.notifyListeners();
+  }
+
+  /// 开关一本服务器词典（激活配置拥有的 hidden）。
+  Future<void> setRemoteDictionaryHidden(
+    RemoteDictionary dictionary,
+    bool hidden,
+  ) async {
+    await dictRepo.setRemoteDictionaryHidden(dictionary, hidden);
+    dictionarySearchAgainNotifier.notifyListeners();
+  }
+
+  /// 把开关写到**各 host**（含没开「用于查词」的）上名为 [name] 的目录行——「两者」
+  /// 行的开关镜像（[DictionaryRepository.setCatalogRowsHiddenNamed]）。这些行被本机
+  /// 同名词典遮住、不参与查词，不用重查。
+  Future<void> setCatalogRowsHiddenNamed(String name, bool hidden) =>
+      dictRepo.setCatalogRowsHiddenNamed(name, hidden);
+
+  /// 忘掉一条服务器上已没有的词典的目录行与设置。
+  Future<void> forgetRemoteDictionary(String hostId, String name) =>
+      dictRepo.forgetRemoteDictionary(hostId, name);
+
+  /// 忘掉一台 host 的全部服务器词典设置（解除配对时可选）。
+  Future<void> forgetRemoteDictionaryHost(String hostId) =>
+      dictRepo.forgetRemoteDictionaryHost(hostId);
+
+  /// 配对列表里每台 host（[remoteDictionaryHostIdOf] 口径）的展示名：配对记下的
+  /// 设备名，没有时用地址。词典管理页的来源标签与 host 提示用它。
+  Future<Map<String, String>> remoteDictionaryHostNames() async {
+    final Map<String, String> names = <String, String>{};
+    for (final FushiClientUrl u in await SyncRepository(
+      _database,
+    ).getFushiClientUrls()) {
+      final String id = remoteDictionaryHostIdOf(u);
+      final String? device = u.deviceName?.trim();
+      if (device != null && device.isNotEmpty) {
+        names[id] = device;
+      } else {
+        names.putIfAbsent(id, () => Uri.tryParse(u.url)?.host ?? u.url);
+      }
+    }
+    return names;
+  }
+
+  /// 词典管理页「来源」条的数据：配对列表里每台**有目录行**的 host（含关掉「用它查
+  /// 词典」的——卡片上要能把它打开），带全部目录行（各类型、含已缺席的）。按配对
+  /// 列表里首次出现排。
+  Future<List<RemoteDictionaryHostSource>> remoteDictionaryHostSources() async {
+    final List<FushiClientUrl> urls = await SyncRepository(
+      _database,
+    ).getFushiClientUrls();
+    final Map<String, List<RemoteDictionary>> catalogs =
+        <String, List<RemoteDictionary>>{};
+    for (final RemoteDictionaryMetaRow row
+        in await _database.getAllRemoteDictionaryMetadata()) {
+      catalogs
+          .putIfAbsent(row.hostId, () => <RemoteDictionary>[])
+          .add(RemoteDictionary.fromRow(row));
+    }
+    final Map<String, String> names = await remoteDictionaryHostNames();
+    final List<RemoteDictionaryHostSource> out = <RemoteDictionaryHostSource>[];
+    final Set<String> seen = <String>{};
+    for (final FushiClientUrl u in urls) {
+      final String id = remoteDictionaryHostIdOf(u);
+      if (!seen.add(id)) continue;
+      final List<RemoteDictionary>? catalog = catalogs[id];
+      if (catalog == null || catalog.isEmpty) continue;
+      out.add(
+        RemoteDictionaryHostSource(
+          hostId: id,
+          name: names[id] ?? id,
+          lookupEnabled: urls.any(
+            (FushiClientUrl c) =>
+                remoteDictionaryHostIdOf(c) == id && c.lookupEnabled,
+          ),
+          catalog: List<RemoteDictionary>.unmodifiable(
+            catalog..sort(RemoteDictionary.compareByOrder),
+          ),
+        ),
+      );
+    }
+    return out;
+  }
+
+  /// 「用这台服务器查词典」（词典管理页来源卡片的开关）：与配对设置页同一个写入口
+  /// （[applyInterconnectHostLookupIntent]）。写完立刻让词典仓库按新的 host 集合重读，
+  /// [remoteLookupEnabled] 随之更新——不等目录服务对配对列表广播的异步跟随。
+  Future<void> setRemoteDictionaryHostLookupEnabled(
+    String hostId,
+    bool enabled,
+  ) async {
+    await applyInterconnectHostLookupIntent(
+      hostId: hostId,
+      enabled: enabled,
+      mutateUrls:
+          (List<FushiClientUrl> Function(List<FushiClientUrl>) transform) =>
+              SyncRepository(_database).updateFushiClientUrls(transform),
+    );
+    if (_dictionaryRepoReady) await dictRepo.reloadRemoteDictionaries();
+  }
+
+  /// 每台 host 本次运行里最近一次互联往返的结局（来源卡片的在线 / 连不上）。与查词
+  /// 路径同一份（[_remoteDictionaryReachability]，BUG-4692）。
+  Map<String, RemoteDictionaryHostReachability>
+  get remoteDictionaryHostReachability => _remoteDictionaryReachability.hosts;
+
+  /// 有没有服务器词典目录服务（主进程才有；弹窗进程没有，来源卡片不给刷新钮）。
+  bool get canRefreshRemoteDictionaries => _remoteDictionaryCatalog != null;
+
+  /// 只刷新一台 host 的服务器词典目录（来源卡片的刷新）；没有目录服务时什么也不做。
+  Future<void> refreshRemoteDictionaryHost(String hostId) async {
+    await _remoteDictionaryCatalog?.refreshHost(hostId);
+  }
+
+  /// 词典管理页「推送到 <服务器>」的候选 host：已配对、开着「用它查词典」的 host
+  /// （[remoteDictionaryHostIdOf] 口径）。
+  Future<Set<String>> remoteDictionaryPushHostIds() async =>
+      remoteDictionaryLookupHostIdsOf(
+        await SyncRepository(_database).getFushiClientUrls(),
+      );
+
+  /// 按 host 推送 / 下载单本词典的服务（与目录服务同在主进程；弹窗进程没有 = null，
+  /// 管理页不给这两个动作）。导入后走与同步一样的 [refreshAfterSyncRun]。
+  DictionaryTransferService? get dictionaryTransferService =>
+      _remoteDictionaryCatalog == null
+      ? null
+      : (_dictionaryTransferService ??= DictionaryTransferService(
+          db: _database,
+          dictionaryResourceRoot: dictionaryResourceDirectory,
+          tempDir: temporaryDirectory,
+          onPostRun: refreshAfterSyncRun,
+        ));
+  DictionaryTransferService? _dictionaryTransferService;
+
+  /// 本机给一本服务器词典起显示名（设备本地，见
+  /// [DictionaryRepository.setRemoteDictionaryLocalDisplayName]）。
+  Future<void> setRemoteDictionaryLocalDisplayName(
+    RemoteDictionary dictionary,
+    String? displayName,
+  ) => dictRepo.setRemoteDictionaryLocalDisplayName(dictionary, displayName);
 
   /// 「汉字」分区的重排（混合词典只动汉字部分的位置），其余同 [updateDictionaryOrder]。
   Future<void> updateKanjiSectionOrder(List<Dictionary> newDictionaries) async {
@@ -4559,6 +4964,10 @@ class AppModel
       // 导入 / 归组后的合集 AI 排序（自动路径）按偏好里的 AI 指派决定发不发请求；
       // 每次现取，设置页改了立即生效。弹窗进程不装，自动路径在那边是 no-op。
       installCollectionAiOrderSettings(_prefsRepo);
+      // 音乐列表 / 网格的「色块 / 列表」样式记忆（按视图种类分键）读写这份仓库。
+      MusicViewStyleStore.instance.bind(prefsRepo);
+      // 库页 / 更新中心等共用的二级页签：没有显式顺序存储时读写这份偏好。
+      sectionTabOrderAppFallback = _appSectionTabOrderStore;
       // 「互联主机」AI 提供商的客户端出口：按 hostId 找已配对主机、经它的鉴权通道转发
       // （弹窗进程不装：那边没有 AI 功能入口）。
       aiRelayTransport = AppAiRelayTransport(SyncRepository(_database));
@@ -4611,6 +5020,17 @@ class AppModel
         mediaHistoryRepo.loadFromDb(),
       ]);
       StartupTimeline.mark('repositories-load');
+      // 全局「远程查词」开关并入每台 host 的「用这台服务器查词典」：原先关着的，把
+      // 已配对 host 的开关一次性关掉，更新后不会突然开始向服务器查词 / 拉目录。必须
+      // 先于目录服务启动（它一启动就给查词 host 拉目录）；改了配对列表就让词典仓库
+      // 按新的 host 集合重读。
+      if (await prefsRepo.settleRemoteLookupHostSwitches(
+        SyncRepository(_database),
+      )) {
+        await dictRepo.reloadRemoteDictionaries();
+      }
+      // v153：服务器托管词典目录（词典仓库已装载，目录对账后让它重读）。
+      _startRemoteDictionaryCatalog();
       prefsRepo.addListener(notifyListeners);
       navRailExpandedNotifier.value = prefsRepo.navRailExpanded;
       // 封面模式默认是音画同步片段：2026-09-28 被钉成 GIF 的存量安装在这里迁一次。
@@ -4654,14 +5074,18 @@ class AppModel
       // BUG-1647：lazy getter 可能已提前建过实例；替换前先取消其重试定时器，
       // 否则旧定时器会拿着旧 repository 继续同步。
       _mediaTrackingService?.dispose();
-      _mediaTrackingService = MediaTrackingService(
-        repository: MediaTrackingRepository(_database),
-        preferences: prefsRepo,
-        userAgent: _mediaTrackingUserAgent,
+      _mediaTrackingService = _buildMediaTrackingService();
+      _startTrackingPlugins();
+      // Media tracking module: decided once from existing sign-ins (before
+      // the first sync asks the switch).
+      await prefsRepo.settleTrackingModuleInstallDefault(
+        hasPluginSignIn: await _trackingPluginManager?.hasAnySignIn() ?? false,
       );
-      if (kMediaTrackingEnabled) {
-        unawaited(mediaTrackingService.syncNow());
-      }
+      // After the module default is settled: the token move below removes
+      // the Bangumi token preference that decision reads.
+      _installBundledTrackingPlugins();
+      // Does nothing while the module is off (the service asks the switch).
+      unawaited(mediaTrackingService.syncNow());
 
       final Map<String, String> prefsSnapshot = prefsRepo.prefsSnapshot;
 
@@ -4733,7 +5157,10 @@ class AppModel
       ErrorLogService.instance.markInitStep(
         'rebuild-dict-paths（词典资源目录 exists + 物化探测）',
       );
-      await _guardInitIo('rebuild-dict-paths', _rebuildDictPathsCacheAsync());
+      await _guardInitIo('rebuild-dict-paths', _scheduleDictPathsAsync());
+      // 装载不套看门狗：逐本让出、只是慢不是挂（见 [_scheduleDictPathsAsync]）。
+      ErrorLogService.instance.markInitStep('load-dicts（词典引擎装载）');
+      await FushiDicts.loadPendingAsync();
 
       StartupTimeline.mark('dict-paths');
       _localAudioManager = LocalAudioManager(
@@ -5214,11 +5641,7 @@ class AppModel
       prefsRepo.addListener(notifyListeners);
       // BUG-1647：同主进程路径，替换前取消旧实例可能挂起的重试定时器。
       _mediaTrackingService?.dispose();
-      _mediaTrackingService = MediaTrackingService(
-        repository: MediaTrackingRepository(_database),
-        preferences: prefsRepo,
-        userAgent: _mediaTrackingUserAgent,
-      );
+      _mediaTrackingService = _buildMediaTrackingService();
 
       dictRepo = DictionaryRepository(
         _database,
@@ -5230,6 +5653,16 @@ class AppModel
       // 的词头语言定语言：现读，词典增删即时生效（BUG-3669）。
       systemTtsDictionaryLanguages = () => installedDictionarySourceLanguages;
       await dictRepo.loadFromDb();
+      // 同主进程：全局「远程查词」并入每台 host 的开关（幂等，主进程先跑过就是
+      // no-op）。更新后第一次查词可能先拉起弹窗进程，不能只靠主进程迁移。
+      if (await prefsRepo.settleRemoteLookupHostSwitches(
+        SyncRepository(_database),
+      )) {
+        await dictRepo.reloadRemoteDictionaries();
+      }
+      // 本进程没有目录服务：后台再探测由查词客户端自己做（BUG-4692），判死的 host
+      // 不在查词路径上重付连接超时。
+      _remoteDictionaryReachability.probe = _probeRemoteDictionaryHost;
 
       mediaHistoryRepo = MediaHistoryRepository(_database);
       await mediaHistoryRepo.loadFromDb();
@@ -5439,6 +5872,21 @@ class AppModel
   bool get pureBlackDark => themeNotifier.pureBlackDark;
   Future<void> setPureBlackDark(bool value) =>
       themeNotifier.setPureBlackDark(value);
+
+  /// 外壳样式（侧栏样式 / 库页布局 / 平滑圆角 / 封面取色）。
+  ShellRailStyle get shellRailStyle => themeNotifier.shellRailStyle;
+  Future<void> setShellRailStyle(ShellRailStyle value) =>
+      themeNotifier.setShellRailStyle(value);
+  ShellContentLayout get shellContentLayout => themeNotifier.shellContentLayout;
+  Future<void> setShellContentLayout(ShellContentLayout value) =>
+      themeNotifier.setShellContentLayout(value);
+  ShellBlockArrangement get shellBlockArrangement =>
+      themeNotifier.shellBlockArrangement;
+  Future<void> setShellBlockArrangement(ShellBlockArrangement value) =>
+      themeNotifier.setShellBlockArrangement(value);
+  bool get shellSmoothCorners => themeNotifier.shellSmoothCorners;
+  Future<void> setShellSmoothCorners(bool value) =>
+      themeNotifier.setShellSmoothCorners(value);
 
   // TODO-930: multi custom theme list delegation. The UI (theme swatch row +
   // CustomThemePage) talks to AppModel, so mirror ThemeNotifier's list API here
@@ -8993,6 +9441,16 @@ class AppModel
     dictionaryMenuNotifier.notifyListeners();
   }
 
+  /// 当前激活配置（Profile）的名字：词典管理页顶栏副标题「配置 · 名字」。读不到
+  /// （还没有配置行）为 null。
+  Future<String?> activeProfileName() async {
+    final ProfileRepository repo = interconnectProfileRepository();
+    final ProfileRow? row = await repo.getProfileById(
+      await repo.getActiveProfileId(),
+    );
+    return row?.name;
+  }
+
   /// Show the profiles management page.
   Future<void> showProfilesMenu() async {
     final ctx = _ctx;
@@ -9330,10 +9788,19 @@ class AppModel
     try {
       await clearDictionaryHistory();
 
+      // 删本机行之前取它们的位置与开关，交给同名的服务器目录行接手。
+      final List<({String name, int order, bool hidden})> released =
+          <({String name, int order, bool hidden})>[
+            for (final Dictionary d in dictRepo.dictionaries)
+              DictionaryRepository.catalogHandoverOf(d),
+          ];
       // Commit the deletion before publishing an empty dictionary set and
       // rebuilding the engine. This must precede directory removal so native
       // mmap views are released first (BUG-171 / BUG-1756).
       await dictRepo.clearDictionaryMetadata();
+      // 同 [deleteDictionary]：被删的本机词典遮住的目录行——host 上已没有的忘掉，
+      // 还在的接手本机行的位置与开关。
+      await dictRepo.releaseCatalogRowsOf(released);
 
       // 逐个条目删而不是删掉资源根本身：隔离区（删不掉时的落脚点）建在被删目录的
       // 父级，只有这样它才落在资源根下、被启动清理扫到。根目录保留，省掉 recreate。
@@ -9374,6 +9841,15 @@ class AppModel
   Future<void> deleteDictionary(Dictionary dictionary) async {
     try {
       await clearDictionaryHistory();
+      // 删本机行之前取它此刻的位置与开关（[dictionary] 可能是旧快照），交给同名的
+      // 服务器目录行接手。
+      final ({String name, int order, bool hidden}) released =
+          DictionaryRepository.catalogHandoverOf(
+            dictRepo.dictionaries.firstWhere(
+              (Dictionary d) => d.name == dictionary.name,
+              orElse: () => dictionary,
+            ),
+          );
       // 顺序不可交换（BUG-1756）：撤 meta 必须先于删目录。
       // [DictionaryRepository.deleteDictionaryMeta] 是「移除内存 cache + 触发
       // _onCacheRebuild（= _rebuildDictPathsCache，引擎重载到不含这本的集合，
@@ -9384,6 +9860,13 @@ class AppModel
       // ERROR_USER_MAPPED_FILE → catch 弹「删除失败」，而 cache 移除与引擎重载
       // 全在抛出点之后、永不执行。用户看到的就是「提示删除失败，重启后词典却没了」。
       await dictRepo.deleteDictionaryMeta(dictionary.name);
+      // 本机那本遮住的同名目录行（各 host，含不查词的）：host 上也已经没有的忘掉，
+      // 否则删完冒出一条开着开关、只能「忘掉」的「服务器上已没有」残行；host 上还在
+      // 的留着（这本词典就此只在服务器上），并接手本机行的位置与开关——遮住期间它们
+      // 不参与重编号，序号早已过时（[DictionaryRepository.releaseCatalogRowsOf]）。
+      await dictRepo.releaseCatalogRowsOf(
+        <({String name, int order, bool hidden})>[released],
+      );
 
       await deleteDictionaryDirectory(
         Directory(path.join(dictionaryResourceDirectory.path, dictionary.name)),
@@ -9513,6 +9996,7 @@ class AppModel
     bool? requestedScriptVariants,
     List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
     ProfileSettingsView? profileView,
+    DictionaryLookupFilters? filtersOverride,
   }) async {
     final String rawSearchTerm = searchTerm;
     searchTerm = normalizeSearchTerm(
@@ -9533,10 +10017,16 @@ class AppModel
     }
 
     final int effectiveMaxTerms = overrideMaximumTerms ?? maximumTerms;
-    final bool tryRemoteFirst = allowRemoteLookup && remoteLookupEnabled;
-    // 远端优先（瘦客户端经已配对电脑查词）：远端与本地**并发**发起，语义不变——远端
-    // 给出结果就用远端，远端没有（null）才用本地。以前是先等远端（最坏 3s × 候选数
-    // 的传输超时）再开始本地，两段时间串起来。
+    // 全部查词 host 都已判为不可达（BUG-4692）：远端这一路根本不发起，本机结果不等它。
+    // 恢复由后台探测 / 目录刷新发现，下一次查词立刻重新并发远端。
+    final bool tryRemoteFirst =
+        allowRemoteLookup &&
+        remoteLookupEnabled &&
+        !_remoteDictionaryLookupKnownDead;
+    // 远端（已配对电脑 / 服务器）与本地**并发**发起，两边都有结果时**合并**成一份
+    // （用户 2026-11-09 拍板，[mergeDictionarySearchResults]）：以前远端一给结果就只用
+    // 远端，本机装的词典（Jitendex、频率词典…）随之从弹窗里消失。以前是先等远端（最坏
+    // 3s × 候选数的传输超时）再开始本地，两段时间串起来。
     final Future<DictionarySearchResult?>? remote = tryRemoteFirst
         ? _searchRemoteDictionary(
             searchTerm: searchTerm,
@@ -9555,14 +10045,54 @@ class AppModel
       requestedScriptVariants: requestedScriptVariants,
       rubySpans: rubySpans,
       profileView: profileView,
+      filtersOverride: filtersOverride,
     );
     if (remote != null) {
       final DictionarySearchResult? remoteResult = await remote;
       if (remoteResult != null) {
-        // 远端赢：本地那份照常跑完（结果写进本地缓存，无害），这里不再等它；它的
-        // 失败与旧实现「远端命中就根本不跑本地」一样不影响本次结果。
-        local.ignore();
-        return remoteResult;
+        final _LocalDictionaryLookup localLookup;
+        try {
+          localLookup = await local;
+        } catch (e, stack) {
+          // 本机这份失败不拖垮远端已给出的结果（与以前「远端命中就不看本地」同口径），
+          // 但要留痕。
+          ErrorLogService.instance.log('localDictionaryLookup', e, stack);
+          return markRemoteDictionarySearchResultAsync(remoteResult);
+        }
+        final DictionarySearchResult? localResult = localLookup.result;
+        // 本机未命中 / 引擎未就绪：只有远端那份——弹窗释义照样打上服务器来源标记
+        // （与合并结果同一口径，popup.js 画服务器小图标）。
+        if (localResult == null) {
+          return markRemoteDictionarySearchResultAsync(remoteResult);
+        }
+        // 合并结果不进缓存（远端结果本来就不缓存）；本机那份已在
+        // [_searchLocalDictionary] 里照旧写进本机缓存。
+        final DictionaryLookupFilters filters =
+            filtersOverride ??
+            profileView?.lookupFilters ??
+            dictRepo.lookupFilters;
+        // 去重名单 = 本机这次**真能查出来**的词典：引擎术语桶里的（激活配置开着、
+        // 目录在且已物化，[DictionaryRepository.engineTermDictionaryNames]）∩ 这次
+        // 查词视图开着的。只按视图开关算会把「工作配置开着、激活配置关着」或目录
+        // 缺失 / 未物化的词典也当成本机已有，服务器那份被去重丢掉，整本消失。
+        final Set<String> engineNames = dictRepo.engineTermDictionaryNames;
+        final Set<String> localDictionaryNames = <String>{
+          for (final Dictionary d
+              in profileView?.dictionaries ?? dictRepo.dictionaries)
+            if (!d.isHidden(JapaneseLanguage.instance) &&
+                engineNames.contains(d.name))
+              d.name,
+        };
+        // 大结果的合并（两份弹窗文档整份编解码）在后台 isolate 里做，见
+        // [mergeDictionarySearchResultsAsync]。
+        return (await mergeDictionarySearchResultsAsync(
+          local: localResult,
+          remote: remoteResult,
+          dictionaryOrder: filters.termDictionaryOrder,
+          localDictionaryNames: localDictionaryNames,
+          maximumTerms: effectiveMaxTerms,
+          localDictionaryStyles: FushiDicts.dictionaryStyles,
+        ))!;
       }
     }
 
@@ -9608,6 +10138,10 @@ class AppModel
   ///
   /// [profileView]（反馈 biLEesNqWb）：按某个非激活配置查——词典过滤 / 顺序、简繁回落
   /// 的默认内容语言都取它，缓存键带它的命名空间；null = App 当前生效的设置（键不变）。
+  ///
+  /// [filtersOverride]：替对端查词时按**请求方**的词典选择改写过的过滤
+  /// （[DictionaryLookupFilters.forRequesterConfig]）。给了就用它查，缓存键另加它的
+  /// 指纹命名空间（[_requesterFiltersNamespace]），不与本机 / 配置视图的结果串键。
   Future<_LocalDictionaryLookup> _searchLocalDictionary({
     required String searchTerm,
     required int effectiveMaxTerms,
@@ -9616,19 +10150,21 @@ class AppModel
     bool? requestedScriptVariants,
     List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
     ProfileSettingsView? profileView,
+    DictionaryLookupFilters? filtersOverride,
   }) async {
     // maxTerms 与 maxResults 现在恒等（引擎上限已对齐词头预算），键格式保持不变以免
     // 旧键格式守卫漂移。
     final bool simpToTrad = lookupChineseSimpToTradFor(
       lookupLanguage,
       prefs: profileView?.prefs,
-      filters: profileView?.lookupFilters,
+      filters: filtersOverride ?? profileView?.lookupFilters,
       requestedScriptVariants: requestedScriptVariants,
     );
     // 原文振假名改变同长度候选的先后：带 ruby 的查询单独成键（无 ruby 时后缀为空，
     // 键与此前逐字相同）。
     final String cacheKey =
         (profileView?.lookupCacheNamespace ?? '') +
+        _requesterFiltersNamespace(filtersOverride) +
         buildSearchCacheKey(
           term: searchTerm,
           maxTerms: effectiveMaxTerms,
@@ -9646,7 +10182,7 @@ class AppModel
     }
 
     final DictionaryLookupFilters filters =
-        profileView?.lookupFilters ?? dictRepo.lookupFilters;
+        filtersOverride ?? profileView?.lookupFilters ?? dictRepo.lookupFilters;
     // 查询在飞期间词典集合可能变了、缓存已清：回来时代次不同就不写缓存。
     final int cacheEpoch = dictRepo.resultsCacheEpoch;
     final FushiLookupOutcome? outcome = await FushiDicts.instance
@@ -9656,6 +10192,9 @@ class AppModel
             maxResults: effectiveMaxTerms,
             includeKanji: isSingleKanji(searchTerm),
             hiddenDictionaries: filters.hiddenDictionaryNames,
+            // 纯汉字词典的排除单独一个集合：hiddenDictionaries 是术语开关，混合
+            // 词典可以「术语关、汉字开」（BUG-3573），按它剔汉字结果会误删。
+            hiddenKanjiDictionaries: filters.hiddenKanjiDictionaryNames,
             dictionaryOrder: filters.termDictionaryOrder,
             ffiCacheMaxBytes: dictRepo.ffiLookupCacheBudgetBytes,
             chineseSimpToTrad: simpToTrad,
@@ -9675,16 +10214,32 @@ class AppModel
     return _LocalDictionaryLookup(result);
   }
 
-  /// 远端词典「全部配对候选不可达」后的冷却截止时刻（BUG-1302）；null = 不在冷却中。
-  /// 只被 [_searchRemoteDictionary] 读写，单 isolate 内无并发写。
-  DateTime? _remoteDictionaryUnreachableUntil;
+  /// [_searchLocalDictionary] 的 `filtersOverride` 缓存键命名空间；没有覆盖时为空串
+  /// （键与此前逐字相同）。
+  static String _requesterFiltersNamespace(DictionaryLookupFilters? filters) =>
+      filters == null ? '' : 'xrequester:${filters.fingerprint}|';
 
-  /// 测试可见：当前是否处于远端词典失败冷却窗内。
+  /// 词典服务器可达性的唯一真相源（BUG-4692）：查词客户端按它跳过判死的 host、把
+  /// 每次往返的结局写回去；目录服务（[_remoteDictionaryCatalog]）拉清单的结局也写进
+  /// 同一份，并挂上后台再探测。弹窗进程没有目录服务，后台再探测由查词客户端承担
+  /// （[_probeRemoteDictionaryHost]），两个进程的查词路径都不在已知死掉的 host 上等。
+  final RemoteDictionaryReachability _remoteDictionaryReachability =
+      RemoteDictionaryReachability();
+
+  /// 开着查词的 host 全部判为不可达：远端这一路已知是死的。
+  bool get _remoteDictionaryLookupKnownDead =>
+      _dictionaryRepoReady &&
+      _remoteDictionaryReachability.allSkipped(dictRepo.remoteLookupHostIds);
+
+  /// 测试可见：查词此刻是否因可达性追踪而整路跳过远端。
   @visibleForTesting
-  bool get isRemoteDictionaryInFailureCooldown {
-    final DateTime? until = _remoteDictionaryUnreachableUntil;
-    return until != null && DateTime.now().isBefore(until);
-  }
+  bool get isRemoteDictionaryInFailureCooldown =>
+      _remoteDictionaryLookupKnownDead;
+
+  /// 测试可见：与目录服务共用的可达性追踪（测试拿它构造目录服务，验证两边同一份）。
+  @visibleForTesting
+  RemoteDictionaryReachability get remoteDictionaryReachabilityForTesting =>
+      _remoteDictionaryReachability;
 
   /// 远端查词客户端：跨查词复用同一个实例，host 词典样式按 `stylesRevision` 指纹
   /// 只整表下发一次（BUG-3612，复用 BUG-3425 的门控）。每次查词新建实例的话指纹
@@ -9708,7 +10263,73 @@ class AppModel
       repo: SyncRepository(_database),
       httpClient: _remoteLookupClient,
       trackDictionaryStyles: true,
+      skipDictionaryHost: _remoteDictionaryReachability.shouldSkip,
     );
+  }
+
+  /// 没有目录服务的进程（`:popup` / 悬浮词典 engine）挂给 [_remoteDictionaryReachability]
+  /// 的后台再探测：查词客户端用短预算拉一次目录清单，结局照常记回追踪器。主进程由
+  /// 目录服务的 [RemoteDictionaryCatalogService.probeHost] 承担（探通顺带对账）。
+  Future<void> _probeRemoteDictionaryHost(String hostId) =>
+      _remoteDictionaryLookup.probeDictionaryHost(hostId);
+
+  /// 每台 host 最近一次是否套用了本端发去的词典选择（见
+  /// [FushiRemoteLookupClient.dictionaryConfigAppliedByHost]），UI 据此提示老 host。
+  Map<String, bool> get remoteDictionaryConfigAppliedByHost =>
+      _remoteDictionaryLookupClient?.dictionaryConfigAppliedByHost ??
+      const <String, bool>{};
+
+  /// 服务器托管词典目录的刷新者（主进程初始化后才有；弹窗进程没有）。
+  RemoteDictionaryCatalogService? get remoteDictionaryCatalog =>
+      _remoteDictionaryCatalog;
+  RemoteDictionaryCatalogService? _remoteDictionaryCatalog;
+  AppLifecycleListener? _remoteDictionaryCatalogLifecycle;
+
+  /// 建（或随数据库重建）服务器词典目录刷新者：跟随配对列表、回前台按 host 节流
+  /// 刷新，启动时先补一次。
+  void _startRemoteDictionaryCatalog() {
+    _remoteDictionaryCatalog?.dispose();
+    // 「词典服务器」行的副本跟同一条配对列表广播（先摘再挂，重建时不重复订阅）。
+    SyncRepository.fushiClientUrlsRevision
+      ..removeListener(_onPairedFushiClientUrlsChanged)
+      ..addListener(_onPairedFushiClientUrlsChanged);
+    unawaited(refreshPairedFushiClientUrls());
+    final SyncRepository syncRepository = SyncRepository(_database);
+    final RemoteDictionaryCatalogService catalog =
+        RemoteDictionaryCatalogService(
+          db: _database,
+          syncRepository: syncRepository,
+          transport: InterconnectPostTransport(
+            repo: syncRepository,
+            httpClient: _remoteLookupClient,
+          ),
+          dictionaries: dictRepo,
+          reachability: _remoteDictionaryReachability,
+        )..start();
+    _remoteDictionaryCatalog = catalog;
+    _remoteDictionaryCatalogLifecycle ??= AppLifecycleListener(
+      onResume: () {
+        final RemoteDictionaryCatalogService? current =
+            _remoteDictionaryCatalog;
+        if (current != null) _refreshRemoteDictionaryCatalog(current);
+      },
+    );
+    _refreshRemoteDictionaryCatalog(catalog);
+  }
+
+  /// 后台刷新（失败已由服务记进错误日志，这里不让它冒成未处理异常）。
+  static void _refreshRemoteDictionaryCatalog(
+    RemoteDictionaryCatalogService catalog,
+  ) => unawaited(
+    catalog.refreshOnResume().then<void>((_) {}, onError: (Object _) {}),
+  );
+
+  void _stopRemoteDictionaryCatalog() {
+    SyncRepository.fushiClientUrlsRevision.removeListener(
+      _onPairedFushiClientUrlsChanged,
+    );
+    _remoteDictionaryCatalog?.dispose();
+    _remoteDictionaryCatalog = null;
   }
 
   Future<DictionarySearchResult?> _searchRemoteDictionary({
@@ -9720,14 +10341,10 @@ class AppModel
     ProfileSettingsView? profileView,
   }) async {
     if (!remoteLookupEnabled) return null;
-    // 配对设备被证实不可达后的冷却窗内直接短路（BUG-1302）。远端查词排在本地
-    // 缓存**之前**，不短路的话设备离线/换网/休眠时每次查词都要重付一遍
-    // 「3s × 候选数」的传输层超时——这是「某些机器上查词 4-5 秒」的主因。
-    final DateTime? until = _remoteDictionaryUnreachableUntil;
-    if (until != null) {
-      if (DateTime.now().isBefore(until)) return null;
-      _remoteDictionaryUnreachableUntil = null;
-    }
+    // 全部查词 host 都已判为不可达时直接短路（BUG-1302 / BUG-4692）：不短路的话设备
+    // 离线/换网/休眠时每次查词都要重付一遍「3s × 候选数」的传输层超时。只有部分 host
+    // 判死时由客户端逐 host 跳过（[RemoteDictionaryReachability.shouldSkip]）。
+    if (_remoteDictionaryLookupKnownDead) return null;
     try {
       // await 必须收进 try：原实现直接 return 未 await 的 Future，catch 只能抓
       // 同步 throw，异步错误全部漏出成 uncaught（音频路径 lookupRemoteAudio 已
@@ -9749,14 +10366,19 @@ class AppModel
                 (profileView?.prefs ?? prefsRepo).lookupChineseScriptVariants,
             // 原文振假名（已对齐到清洗后的 searchTerm）；空时不发字段。
             rubySpans: rubySpans,
+            // 本端生效配置（作品 / 扩展所选配置视图，否则激活配置）对每台 host 的词典
+            // 选择：host 只按它排除与排序，不需要知道配置是什么。
+            dictionaryConfigFor: (FushiClientUrl candidate) {
+              final String hostId = remoteDictionaryHostIdOf(candidate);
+              return profileView != null
+                  ? profileView.filtersForHost(hostId)
+                  : dictRepo.filtersForHost(hostId);
+            },
           );
-      // 拿到任何 HTTP 响应即证明设备活着（含「可达但无结果」的 null），清冷却。
-      _remoteDictionaryUnreachableUntil = null;
+      // 每台 host 的可达 / 不可达已由传输层经全局上报点逐候选记进 [_remoteDictionaryReachability]。
       return result;
     } on RemoteLookupUnreachableError catch (e, stack) {
-      _remoteDictionaryUnreachableUntil = DateTime.now().add(
-        kRemoteDictionaryFailureCooldown,
-      );
+      // 首次发现全部不可达（之后的查词直接跳过，见上）。
       ErrorLogService.instance.log('remoteDictionaryLookup', e, stack);
       return null;
     } catch (e, stack) {
@@ -10773,6 +11395,12 @@ class AppModel
     if (module == ModuleId.browse && value) {
       unawaited(ensureAnimeDownloadServiceRunning());
     }
+    // Media tracking back on: the first sync catches up what happened while it
+    // was off (reconcile watermarks did not move); the screens re-read status.
+    if (module == ModuleId.tracking) {
+      _mediaTrackingService?.notifyStatusChanged();
+      if (value) unawaited(mediaTrackingService.syncNow());
+    }
     notifyListeners();
   }
 
@@ -10830,6 +11458,10 @@ class AppModel
     isIOS: platformServices.isIOS,
     isAndroid: platformServices.isAndroid,
   );
+
+  /// Media tracking is on ([isMediaTrackingEnabled], the one answer). The
+  /// tracking service reads it through its `trackingOn` switch.
+  bool get isMediaTrackingOn => isMediaTrackingEnabled(moduleVisibility);
 
   /// games 模块在本平台上的形态（本机 galgame 库 / 串流接收端）。平台判据同样
   /// 取自 [PlatformServices]，理由同上。
@@ -11026,6 +11658,8 @@ class AppModel
   void dispose() {
     unawaited(_extensionImageOcr?.close());
     _extensionImageOcr = null;
+    _trackingAnimeIdsOrNull?.close();
+    _trackingAnimeIdsOrNull = null;
     // BUG-913：对称释放 initialise() 起的 4 个 app-wide 常驻子系统。dispose 是同步的、
     // 这些 stop 多为 Future → fire-and-forget（unawaited）；先停常驻服务，再走现有
     // notifier/repo dispose，最后 super.dispose()。
@@ -11076,6 +11710,10 @@ class AppModel
     _lnReaderManager = null;
     unawaited(_musicPluginManager?.dispose());
     _musicPluginManager = null;
+    _trackingPluginManager?.changes.removeListener(_applyTrackingProviders);
+    unawaited(_trackingPluginManager?.dispose());
+    _trackingPluginManager = null;
+    _trackingPluginProviders = null;
     // Apple Music 账号持有桥订阅；网页桥还持有隐藏的 HeadlessInAppWebView（播放后端只借用桥）。
     _appleMusicAccount?.dispose();
     _appleMusicAccount = null;
@@ -11113,6 +11751,11 @@ class AppModel
       dictRepo.dispose();
       mediaHistoryRepo.dispose();
     }
+    _stopRemoteDictionaryCatalog();
+    // 弹窗进程挂的后台再探测（[_probeRemoteDictionaryHost]）随实例停掉。
+    _remoteDictionaryReachability.dispose();
+    _remoteDictionaryCatalogLifecycle?.dispose();
+    _remoteDictionaryCatalogLifecycle = null;
     _remoteLookupHttpClient?.close();
     _remoteLookupHttpClient = null;
     _animeDownloadService?.stop();
@@ -11770,9 +12413,34 @@ class AppModel
     FushiDatabase.statDayResetHour = statDayResetHour;
   }
 
-  bool get remoteLookupEnabled => prefsRepo.remoteLookupEnabled;
-  Future<void> setRemoteLookupEnabled(bool value) =>
-      prefsRepo.setRemoteLookupEnabled(value);
+  /// 远端词典查词的总闸：**派生值**，至少一台已配对 host 开着「用这台服务器查词典」
+  /// （[DictionaryRepository.remoteLookupHostIds]，即 [remoteDictionaryLookupHostIdsOf]
+  /// 口径）才为 true。用户拍板（2026-11-09）删掉了与每台 host 开关重复的全局开关；
+  /// 存量偏好 `remote_lookup_enabled` 只剩一次性迁移读它
+  /// （[PreferencesRepository.settleRemoteLookupHostSwitches]），没有任何 UI 再写它。
+  bool get remoteLookupEnabled =>
+      _dictionaryRepoReady && dictRepo.remoteLookupHostIds.isNotEmpty;
+
+  /// 配对列表的内存副本（主进程跟随 [SyncRepository.fushiClientUrlsRevision]），只给
+  /// 设置页「查词 › 词典服务器」那行的同步副标题用（[remoteDictionaryServersSummary]）。
+  /// 查词闸门不读它（弹窗进程没有这条广播），读 [remoteLookupEnabled]。
+  List<FushiClientUrl> get pairedFushiClientUrls => _pairedFushiClientUrls;
+  List<FushiClientUrl> _pairedFushiClientUrls = const <FushiClientUrl>[];
+
+  /// 重读 [pairedFushiClientUrls]。读失败只记日志、保留旧副本（只是一行副标题）。
+  Future<void> refreshPairedFushiClientUrls() async {
+    if (!_databaseOpened) return;
+    try {
+      _pairedFushiClientUrls = List<FushiClientUrl>.unmodifiable(
+        await SyncRepository(_database).getFushiClientUrls(),
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance.log('AppModel.pairedFushiClientUrls', e, stack);
+    }
+  }
+
+  void _onPairedFushiClientUrlsChanged() =>
+      unawaited(refreshPairedFushiClientUrls());
 
   bool get fushiApiServerEnabled => prefsRepo.fushiApiServerEnabled;
   Future<void> setFushiApiServerEnabled(bool value) =>
@@ -11897,7 +12565,7 @@ class AppModel
     // 游玩状态改动上报媒体记录（Bangumi 收藏 type）。fail-open：同步不可用时
     // 本地状态照常生效，事件留在 outbox 由后续同步重试。
     onPlayStatusChanged: (String id, GalgamePlayStatus status) {
-      if (!kMediaTrackingEnabled) return;
+      if (!isMediaTrackingOn) return;
       unawaited(
         mediaTrackingService.recordGameStatus(gameId: id, status: status.value),
       );
@@ -13661,6 +14329,7 @@ class _AppModelRemoteLookupService
         FushiRemoteTimedPopupLookupService,
         FushiRemoteLanguageLookupService,
         FushiRemoteRubyLookupService,
+        FushiRemoteFilteredLookupService,
         FushiRemoteMiningService,
         FushiRemoteMiningTargetService,
         FushiRemoteDuplicatePolicyService,
@@ -14364,10 +15033,61 @@ class _AppModelRemoteLookupService
     rubySpans: rubySpans,
   );
 
+  @override
+  Future<DictionarySearchResult?> searchDictionaryFiltered({
+    required String term,
+    required bool wildcards,
+    required int maximumTerms,
+    required RemoteLookupDictionaryConfig dictionaryConfig,
+    String? language,
+    bool? chineseScriptVariants,
+    List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
+  }) => _searchDictionary(
+    term: term,
+    wildcards: wildcards,
+    maximumTerms: maximumTerms,
+    language: language,
+    chineseScriptVariants: chineseScriptVariants,
+    rubySpans: rubySpans,
+    dictionaryConfig: dictionaryConfig,
+  );
+
+  @override
+  Future<RemoteDictionaryPopupLookup?> searchDictionaryPopupFiltered({
+    required String term,
+    required bool wildcards,
+    required int maximumTerms,
+    required RemoteLookupDictionaryConfig dictionaryConfig,
+    String? language,
+    bool? chineseScriptVariants,
+    List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
+    RemoteDictionaryPopupTiming? timing,
+  }) => _searchDictionaryPopup(
+    term: term,
+    wildcards: wildcards,
+    maximumTerms: maximumTerms,
+    timing: timing,
+    language: language,
+    chineseScriptVariants: chineseScriptVariants,
+    rubySpans: rubySpans,
+    dictionaryConfig: dictionaryConfig,
+  );
+
+  /// 请求方的词典选择 [config] 套在本机（或请求方所选配置视图）的过滤上；null = 请求
+  /// 没带选择，按原过滤。
+  DictionaryLookupFilters? _requesterFilters(
+    RemoteLookupDictionaryConfig? config,
+  ) => config == null
+      ? null
+      : (_view?.lookupFilters ?? _appModel.dictRepo.lookupFilters)
+            .forRequesterConfig(config);
+
   /// [language]：请求方声明的查词语言；null = 旧请求，按本机当前查词语言。
   /// [chineseScriptVariants]：请求方用户的简繁互查开关；null = 用本机开关。
   /// [rubySpans]：请求方原文自带的振假名（以 [term] 为坐标系）；对齐与 ruby 缓存键由
   /// [AppModel._searchDictionaryInLanguage] 负责。
+  /// [dictionaryConfig]：请求方配置的词典选择（`dictionaries` 字段）；给了就按它排除与
+  /// 排序（[DictionaryLookupFilters.forRequesterConfig]），不叠本机开关。
   Future<DictionarySearchResult?> _searchDictionary({
     required String term,
     required bool wildcards,
@@ -14375,6 +15095,7 @@ class _AppModelRemoteLookupService
     String? language,
     bool? chineseScriptVariants,
     List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
+    RemoteLookupDictionaryConfig? dictionaryConfig,
   }) async {
     // 浏览器 Shift 与 Side Panel 都会在同一词上反复落点。禁用结果缓存会在 FFI
     // 原始结果已命中时仍重复构造 DictionaryEntry 和 popupJson（冷后每次仍需数十
@@ -14394,6 +15115,7 @@ class _AppModelRemoteLookupService
           requestedScriptVariants: chineseScriptVariants,
           rubySpans: rubySpans,
           profileView: _view,
+          filtersOverride: _requesterFilters(dictionaryConfig),
         );
     if (source.entries.isEmpty) return null;
     // scrollPosition 是 DictionarySearchResult 唯一的可变字段。远端传输复用缓存内容，
@@ -14471,7 +15193,8 @@ class _AppModelRemoteLookupService
     rubySpans: rubySpans,
   );
 
-  /// [language] / [chineseScriptVariants] / [rubySpans] 同 [_searchDictionary]。
+  /// [language] / [chineseScriptVariants] / [rubySpans] / [dictionaryConfig] 同
+  /// [_searchDictionary]。
   Future<RemoteDictionaryPopupLookup?> _searchDictionaryPopup({
     required String term,
     required bool wildcards,
@@ -14480,6 +15203,7 @@ class _AppModelRemoteLookupService
     String? language,
     bool? chineseScriptVariants,
     List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
+    RemoteLookupDictionaryConfig? dictionaryConfig,
   }) async {
     timing?.reset();
     final Stopwatch? serviceWatch = timing == null
@@ -14515,16 +15239,21 @@ class _AppModelRemoteLookupService
       if (searchTerm.trim().isEmpty) return null;
 
       final ProfileSettingsView? view = _view;
+      final DictionaryLookupFilters? requesterFilters = _requesterFilters(
+        dictionaryConfig,
+      );
       final bool simpToTrad = _appModel.lookupChineseSimpToTradFor(
         language,
         prefs: view?.prefs,
-        filters: view?.lookupFilters,
+        filters: requesterFilters ?? view?.lookupFilters,
         requestedScriptVariants: chineseScriptVariants,
       );
       // 与 _searchLocalDictionary 同键：带 ruby 的查询单独成键（无 ruby 后缀为空）；
-      // 按配置视图查时带它的命名空间（App 自己的键不变）。
+      // 按配置视图查时带它的命名空间（App 自己的键不变），按请求方词典选择查时再加
+      // 它的指纹命名空间。
       final String searchCacheKey =
           (view?.lookupCacheNamespace ?? '') +
+          AppModel._requesterFiltersNamespace(requesterFilters) +
           buildSearchCacheKey(
             term: searchTerm,
             maxTerms: maximumTerms,
@@ -14573,7 +15302,9 @@ class _AppModelRemoteLookupService
       // 后台查词 isolate 只做 popupOnly：原始结果（后台缓存键带上限 maximumTerms，
       // BUG-1307）→ buildPopupJsonFromLookup，不物化 DictionaryEntry（BUG-1525）。
       final DictionaryLookupFilters filters =
-          view?.lookupFilters ?? _appModel.dictRepo.lookupFilters;
+          requesterFilters ??
+          view?.lookupFilters ??
+          _appModel.dictRepo.lookupFilters;
       final int cacheEpoch = _appModel.dictRepo.resultsCacheEpoch;
       final FushiLookupOutcome? outcome = await FushiDicts.instance
           .lookupInBackground(

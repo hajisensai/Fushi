@@ -177,10 +177,12 @@ void main() {
       ),
     ];
 
-    final List<BangumiWatchedItem> watched = await service.loadWatchedAnime();
+    final List<TrackingWatchedItem> watched = await service.loadWatchedAnime();
 
     expect(await repository.listMappings(), isEmpty);
-    expect(watched.single.subject.displayName, '以前看过的番剧');
+    expect(watched.single.name, '以前看过的番剧');
+    expect(watched.single.subjectId, 42);
+    expect(watched.single.progress, 12);
   });
 
   test(

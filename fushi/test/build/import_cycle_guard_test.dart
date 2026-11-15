@@ -56,9 +56,19 @@ import 'package:test/test.dart';
 /// （`media_cover_service` 直接 import `app_model` 与 UI 的 `video_import_dialog`）。
 /// 上限按实测调到 643；拆 `media_cover_service` 对 AppModel / 导入对话框的依赖是下一步。
 ///
+/// 2026-11-15 合入设置重整（#3277）新增两个一级分类的 schema 文件（`settings_schema_general` /
+/// `settings_schema_navigation`）。设置 schema 整族本就在环里（`settings_schema.dart`
+/// 注册它们，它们读 AppModel），新分类没有别的落脚处，上限随之 +2 到 645——
+/// 新增的是本就读 AppModel 的 UI 文件，没有把任何底层模块接进环。
+///
+/// 同日合入服务端词典（#3147）新增 `sync/dictionary_transfer_service`（词典管理页按 host
+/// 推送 / 下载单本词典）：它的唯一同步入口 `runHostDictionaryTransfer` 在 `sync_auto_trigger`
+/// 里（与其它同步路径共用忙闸 / 在飞登记），而 `sync_auto_trigger` 本就在环里，AppModel 又持有
+/// 这个服务，于是 +1 到 646。新进环的是新文件本身，没有把任何既有底层模块接进环。
+///
 /// 红了：新加的 import 把底层模块接到了 UI / AppModel 上。把用到的东西挪到
 /// 更底层的文件，或改用参数 / 回调注入，不要调大上限、不要把文件从目录里豁免。
-const int kMaxCycleFiles = 643;
+const int kMaxCycleFiles = 646;
 
 const String kAppModel = 'lib/src/models/app_model.dart';
 

@@ -10,6 +10,8 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/mining/gal_mining_settings.dart';
 import 'package:fushi/src/profile/work_profile_scope.dart';
 import 'package:fushi_engine/ai/ai_settings.dart';
+import 'package:fushi_engine/media/tracking/media_tracking_service.dart'
+    show kBangumiAccessTokenPref;
 import 'package:fushi_engine/srs/sync2/srs_folder_location.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_crypto.dart';
 import 'package:fushi_engine/sync/remote_mining_target.dart'
@@ -58,6 +60,8 @@ import 'package:fushi/src/mining/advanced_mining/advanced_mining_layout.dart';
 import 'package:fushi/src/lookup/popup_ui_scale.dart';
 import 'package:fushi/src/utils/misc/toast_severity.dart'
     show MineToastStatus, mineToastShown;
+import 'package:fushi/src/sync/sync_repository.dart'
+    show FushiClientUrl, SyncRepository;
 import 'package:fushi/src/sync/hidden_remote_book.dart'
     show HiddenRemoteBook, decodeHiddenRemoteBooks, encodeHiddenRemoteBooks;
 import 'package:fushi/src/media/manga/mihon/mihon_cover_cache.dart'
@@ -487,6 +491,18 @@ class PreferencesRepository extends ChangeNotifier
     await _db.setPref(key, strVal);
   }
 
+  /// Deletes the row of [key] (cache and database), so it reads as never set.
+  /// Unlike writing an empty value, a missing row is not exported by the
+  /// interconnect service config snapshot (it means "never configured here").
+  Future<void> removePref(String key) async {
+    _ensureWritable('removePref');
+    if (_workScoped(key)) {
+      throw ArgumentError.value(key, 'key', 'work-scoped keys are not removed');
+    }
+    _prefCache.remove(key);
+    await _db.deletePref(key);
+  }
+
   /// 一个**逻辑设置**由多个 key 承载时（三态投影成两个 bool 键、值 + 判别键……）的写入
   /// 入口：全部 key 一次性进内存缓存、再走 [FushiDatabase.setPrefs] 的**单事务**落盘。
   ///
@@ -671,12 +687,58 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
-  bool get remoteLookupEnabled =>
-      getPref('remote_lookup_enabled', defaultValue: false) as bool;
+  /// 已删除的全局「远程查词」开关的存量键（bool，默认 false）。键名冻结、留在
+  /// `preference_keys.dart` 只为兼容：用户拍板（2026-11-09）由每台 host 的「用这台
+  /// 服务器查词典」（`FushiClientUrl.lookupEnabled`）独掌，总闸改成派生值
+  /// （`AppModel.remoteLookupEnabled`）。没有任何 UI 再读写这个键；只有
+  /// [settleRemoteLookupHostSwitches] 读它，并在迁移跑过后把它写成 true——此后它的含义是
+  /// 「host 开关就是真相源」，不再是一个开关。
+  static const String legacyRemoteLookupEnabledKey = 'remote_lookup_enabled';
 
-  Future<void> setRemoteLookupEnabled(bool value) async {
-    await setPref('remote_lookup_enabled', value);
-    notifyListeners();
+  /// [settleRemoteLookupHostSwitches] 的已跑标记（bool）。本键不随 Profile 走
+  /// （`ProfileKeys` 排除）：描述本安装是否迁过；进快照的话切到老 Profile 会把它删掉，
+  /// 迁移重跑、把用户此后打开的 host 开关又关掉。它是安装级键，导入设置的恢复会清掉
+  /// 它（`_clearInstallScopedPrefs`），所以真正挡住重跑的是 [legacyRemoteLookupEnabledKey]
+  /// 已为 true（随设置走，见 [settleRemoteLookupHostSwitches]）。
+  static const String remoteLookupHostSwitchesMigratedKey =
+      'remote_lookup_host_switches_migrated';
+
+  /// 启动时（`AppModel.initialise()` 目录服务启动之前；`:popup` 进程的
+  /// `initialiseForDictionaryPopup()` 也跑）调用：全局「远程查词」并入每台 host 的开关。
+  /// 存量全局开关关着（或从没设过 = 默认关）时，把已配对 host 的「用这台服务器查词典」
+  /// 全部关掉——否则更新后 host 开关（默认开）立刻生效，没让查过服务器的用户突然开始
+  /// 向服务器查词；全局开着就原样保留 host 开关。
+  ///
+  /// 跑完把存量全局键写成 true（= host 开关是真相源）。导入设置的恢复会清掉安装级的
+  /// 标记、配对列表却留着：之后的重跑读到 true 就是 no-op，不会把用户此后打开的 host
+  /// 开关全部关掉。（恢复的是迁移前的老备份时，全局键随它回到老值，重跑照老值判——
+  /// 与恢复那份设置的语义一致。）
+  ///
+  /// 顺序：配对列表 → 全局键 → 标记。中途中断下次重跑也只是把同一批开关再关一遍。
+  /// 幂等，两个进程都跑无妨。返回是否改了配对列表。
+  Future<bool> settleRemoteLookupHostSwitches(SyncRepository sync) async {
+    _ensureWritable('settleRemoteLookupHostSwitches');
+    if (getPref(remoteLookupHostSwitchesMigratedKey, defaultValue: false) ==
+        true) {
+      return false;
+    }
+    if (getPref(legacyRemoteLookupEnabledKey, defaultValue: false) == true) {
+      // 迁移跑过（或全局本来就开着）：host 开关原样，只补上标记。
+      await setPref(remoteLookupHostSwitchesMigratedKey, true);
+      return false;
+    }
+    bool changed = false;
+    await sync.updateFushiClientUrls((List<FushiClientUrl> current) {
+      if (!current.any((FushiClientUrl u) => u.lookupEnabled)) return current;
+      changed = true;
+      return <FushiClientUrl>[
+        for (final FushiClientUrl u in current)
+          u.lookupEnabled ? u.copyWith(lookupEnabled: false) : u,
+      ];
+    });
+    await setPref(legacyRemoteLookupEnabledKey, true);
+    await setPref(remoteLookupHostSwitchesMigratedKey, true);
+    return changed;
   }
 
   // TODO-861②（移植 Hoshi `07b5c09`）：是否扫描非日文文本进选区/查词。默认 true =
@@ -4267,6 +4329,28 @@ class PreferencesRepository extends ChangeNotifier
       else if (moduleUnset && existingUser)
         ..._moduleEntry(ModuleId.srs, false),
     });
+  }
+
+  /// First run with the Media tracking module ([ModuleId.tracking], off by
+  /// default): an install that already signed in to a tracking site keeps
+  /// tracking, so nobody loses a working setup silently.
+  ///
+  /// Signed in = a stored Bangumi token or [hasPluginSignIn] (a tracking
+  /// plugin with a stored sign-in, read by the caller from the plugin
+  /// folder). The decision is written as the module switch itself, once: a
+  /// switch already stored (decided before, or set by the user) is never
+  /// touched, so a later sign-out does not flip it.
+  Future<void> settleTrackingModuleInstallDefault({
+    required bool hasPluginSignIn,
+  }) async {
+    if (_moduleStored(ModuleId.tracking)) return;
+    bool hasText(String key) {
+      final Object? value = getPref(key, defaultValue: null);
+      return value is String && value.trim().isNotEmpty;
+    }
+
+    final bool signedIn = hasPluginSignIn || hasText(kBangumiAccessTokenPref);
+    await setPrefs(_moduleEntry(ModuleId.tracking, signedIn));
   }
 
   /// 模块开关是否显式落过盘（没落过 = 读出厂默认 / 判定规则）。

@@ -198,6 +198,11 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
   // ── 书 / 视频共享 ──
   'media_tracking_outbox': BackupTableRule.follows(_bookOrVideo),
   'media_tracking_mappings': BackupTableRule.follows(_bookOrVideo),
+  'media_tracking_suggestions': BackupTableRule.follows(_bookOrVideo),
+  // v151: the do-not-track list and the remembered media server episodes go
+  // with the links they belong to.
+  'media_tracking_ignored': BackupTableRule.follows(_bookOrVideo),
+  'media_tracking_remote_episodes': BackupTableRule.follows(_bookOrVideo),
   'series': BackupTableRule.follows(_bookOrVideo),
   'collection_member_tombstones': BackupTableRule.follows(_bookOrVideo),
   // v129 作品图谱：连接跨书 / 视频 / 游戏三类内容，任一勾选就随包（端点本机不在
@@ -346,6 +351,8 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
   // ── 私人使用痕迹 ──
   'search_history_items': BackupTableRule.alwaysStripped(),
   'dictionary_history': BackupTableRule.alwaysStripped(),
+  // v151: this device's log of sends to tracking sites (capped, 500 rows).
+  'media_tracking_activity': BackupTableRule.alwaysStripped(),
 
   // ── 设备本地（= _deviceLocalTables）──
   'clipboard_history': BackupTableRule.deviceLocal(),
@@ -394,6 +401,8 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
   // v145：曲目 uid 别名，设备本地（见 _deviceLocalTables）。
   'music_track_uid_aliases': BackupTableRule.deviceLocal(),
   'remote_audio_bindings': BackupTableRule.deviceLocal(),
+  // v153：服务器托管词典的本机目录行，键是本机配对的 hostId（见 _deviceLocalTables）。
+  'remote_dictionary_metadata': BackupTableRule.deviceLocal(),
 };
 
 /// 守卫测试用：各段专门剥离逻辑点名的表清单，用来核对与 [backupTableRules]

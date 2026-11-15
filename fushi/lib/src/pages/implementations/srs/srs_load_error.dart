@@ -29,6 +29,11 @@ String srsRemoteReviewErrorText(InterconnectHostError e) => switch (e.message) {
   SrsRemoteStoreError.unavailable => t.srs_remote_review_error_unavailable,
   SrsRemoteStoreError.stale => t.srs_remote_review_card_changed,
   SrsRemoteStoreError.badResponse => t.srs_remote_review_error_bad_response,
+  SrsRemoteStoreError.upgradeRequired =>
+    t.srs_remote_review_error_upgrade_required,
+  SrsRemoteStoreError.migrating => t.srs_remote_review_error_host_migrating,
+  SrsRemoteStoreError.migrationFailed =>
+    t.srs_remote_review_error_host_migration_failed,
   _ => t.srs_remote_review_error_other(code: e.message),
 };
 

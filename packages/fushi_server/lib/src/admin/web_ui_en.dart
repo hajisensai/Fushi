@@ -108,6 +108,25 @@ const Map<String, String> kWebUiEnglish = <String, String>{
   '{0} ({1}) 请求配对，请在该设备输入：':
       '{0} ({1}) wants to pair. Enter this on that device:',
   '未知设备': 'Unknown device',
+  '局域网': 'LAN',
+  '公网或反向代理': 'internet or reverse proxy',
+  '来自{0}的配对因多次 PIN 错误暂停至 {1}':
+      'Pairing from {0} is paused until {1} after repeated wrong PINs',
+  '解除': 'Unlock',
+  '已解除': 'Unlocked',
+  '配对链接': 'Pairing link',
+  '一次性链接自带票据，配对不用 PIN；来自公网的 PIN 配对被暂停时也能用。':
+      'A single-use link carries its own ticket, so pairing needs no PIN. It works even while PIN pairing from the internet is paused.',
+  '生成配对链接': 'Create pairing link',
+  '复制': 'Copy',
+  '{0} 分钟内有效，只能用一次。在 Fushi 的互联设置里点「粘贴配对链接」使用。':
+      'Valid for {0} minutes, single use. In the interconnect settings of Fushi, tap "Paste pairing link".',
+  '浏览器不让复制，请手动选中':
+      'The browser blocked copying; select the link and copy it manually',
+  '已复制': 'Copied',
+  '互联服务没在运行': 'The interconnect service is not running',
+  '没有能放进链接的地址：配对链接只收 HTTPS 地址或 P2P 隧道。请开启 TLS、在「设置 › 远程访问」填写 HTTPS 公网地址，或开启 P2P 隧道':
+      'No address can go into the link: pairing links only carry HTTPS addresses or a P2P tunnel. Turn on TLS, add an HTTPS public address under Settings › Remote access, or turn on the P2P tunnel',
   '已配对设备': 'Paired devices',
   '我的设备': 'My device',
   '标为我的设备': 'Mark as my device',
@@ -473,10 +492,14 @@ const Map<String, String> kWebUiEnglish = <String, String>{
       'Paired devices send only the text to look up. Deinflection (食べた → 食べる) runs here with this server\'s transform tables, so they only need to be installed on the server, not on each device.',
   '导入词典': 'Import a dictionary',
   '导入': 'Import',
-  'Yomitan 格式的 zip（术语 / 频率 / 音调 / 汉字）。同名词典视为更新，保留排序与隐藏设置。导入完立即生效；也可以在 Fushi 的「词典 · 传输」推送过来。':
-      'A Yomitan zip (terms / frequency / pitch / kanji). A dictionary with the same name is treated as an update and keeps its order and hidden setting. Imports take effect immediately; you can also push one from Fushi under "Dictionaries · Transfer".',
-  '顺序决定查词结果里各词典的排列。「隐藏」对应日语查词的隐藏标记（服务端引擎目前只认这一个）：隐藏的词典不装进引擎，查词时不出结果。':
-      'The order decides how dictionaries are ranked in lookup results. "Hide" is the Japanese lookup hidden flag (the only one the server engine reads for now): hidden dictionaries are not loaded into the engine and give no results.',
+  '重新装载引擎': 'Reload engine',
+  '词典包': 'Dictionary package',
+  '支持 Fushi app 导出的 .fushidict 词典包，以及 Yomitan（.zip）、MDX、DSL 词典。同名词典视为更新，保留排序与设置。导入完立即生效，计入上传配额；也可以在 Fushi 的「词典 · 传输」推送过来。':
+      'Accepts .fushidict packages exported from the Fushi app, as well as Yomitan (.zip), MDX and DSL dictionaries. A dictionary with the same name counts as an update and keeps its order and settings. Imports take effect immediately and count toward the upload quota; you can also push one from Fushi under "Dictionaries · Transfer".',
+  '顺序决定查词结果里各词典的排列。「默认启用」只对不携带配置词典选择的请求生效（浏览器扩展、旧版 app）；Fushi app 每次查词都带自己配置（Profile）的选择，会覆盖这里的默认值。':
+      'The order decides how dictionaries are ranked in lookup results. "Enabled by default" only applies to requests that carry no profile dictionary selection (browser extension, older apps). The Fushi app sends the selection from its own profile with every lookup, which overrides this default.',
+  '词典语言同 app 里每本词典的语言设置：「自动」用词典包自己声明的词头语言。改动在设备下次刷新服务端词典目录时生效。':
+      'Dictionary language works like the per-dictionary language setting in the app: "Auto" uses the headword language the dictionary package declares. Devices pick up changes the next time they refresh the server dictionary list.',
   '试查': 'Try a lookup',
   '食べた': '食べた',
   '查词': 'Look up',
@@ -498,14 +521,36 @@ const Map<String, String> kWebUiEnglish = <String, String>{
   '上移': 'Move up',
   '下移': 'Move down',
   '文件缺失': 'File missing',
-  '已隐藏': 'Hidden',
-  '取消隐藏': 'Unhide',
-  '隐藏': 'Hide',
-  '还没有词典': 'No dictionaries yet',
-  '删除词典「{0}」？（删除服务端上的词典文件，不影响各设备本地的词典）':
-      'Delete dictionary "{0}"? (Deletes the dictionary files on the server; dictionaries on your devices are not affected)',
+  '日语 (ja)': 'Japanese (ja)',
+  '简体中文 (zh-Hans)': 'Simplified Chinese (zh-Hans)',
+  '繁体中文 (zh-Hant)': 'Traditional Chinese (zh-Hant)',
+  '韩语 (ko)': 'Korean (ko)',
+  '英语 (en)': 'English (en)',
+  '自动（包内声明：{0}）': 'Auto (package declares {0})',
+  '自动（包内未声明）': 'Auto (package declares none)',
+  '词典语言': 'Dictionary language',
+  'BCP-47 标签，如 de、pt-BR': 'BCP-47 tag, e.g. de or pt-BR',
+  '未标注语言': 'No language',
+  '版本 {0}': 'Revision {0}',
+  '默认启用': 'Enabled by default',
+  '已默认启用': 'Now enabled by default',
+  '已默认停用': 'Now disabled by default',
+  '词典语言已设为 {0}': 'Dictionary language set to {0}',
+  '词典语言已恢复自动': 'Dictionary language set back to auto',
+  '语言标签无效：{0}': 'Invalid language tag: {0}',
+  '修改显示名': 'Rename',
+  '显示名': 'Display name',
+  '回车保存，Esc 取消，留空恢复原名':
+      'Enter to save, Esc to cancel, leave empty to restore the original name',
+  '显示名已改为「{0}」': 'Display name changed to "{0}"',
+  '已恢复原名': 'Original name restored',
+  '服务端还没有词典。在上面导入词典包，或在 Fushi app 的词典管理里推送到服务器。':
+      'No dictionaries on the server yet. Import a dictionary package above, or push one from dictionary management in the Fushi app.',
+  '删除词典「{0}」？会删掉服务端上的词典文件，用它查词的设备将查不到它（不影响各设备本地的词典）。':
+      'Delete dictionary "{0}"? This deletes its files on the server, and devices that look words up with it will no longer find it (dictionaries stored on your devices are not affected).',
+  '已重新装载，{0} 本': 'Reloaded, {0} dictionaries',
   '网络错误': 'Network error',
-  '先选择一个 zip': 'Choose a zip first',
+  '先选择一个词典文件': 'Choose a dictionary file first',
   '上传中 {0}%': 'Uploading {0}%',
   '导入中…（大词典要几分钟）': 'Importing… (large dictionaries take a few minutes)',
   '已更新「{0}」（{1}，{2} 词条{3}）': 'Updated "{0}" ({1}, {2} entries{3})',

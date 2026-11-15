@@ -82,16 +82,29 @@ void main() {
     ]);
   });
 
-  test('空闲门拒窗：reject window 带原因与空闲秒数，随后封段', () async {
+  test('空闲门截窗：idle-cut window 带裁剪前后时长与空闲秒数，随后封段', () async {
     final StudyClock clock = make(idleTimeout: const Duration(minutes: 1));
     clock.start();
     clock.addChars(10);
     now = now.add(const Duration(minutes: 2));
     await clock.flushNow();
+    final String cut = lines.firstWhere((String l) => l.contains('idle-cut'));
+    expect(cut, contains('idle-cut window 120000ms → 60000ms (idle 120s)'));
+    final int cutAt = lines.indexOf(cut);
+    expect(lines[cutAt + 1], contains('seal seg'), reason: '截窗后封段');
+    await clock.stop();
+  });
+
+  test('空闲门拒窗：整窗都在到期之后时 reject window 带原因，随后封段', () async {
+    final StudyClock clock = make(idleTimeout: const Duration(minutes: 1));
+    clock.start();
+    clock.addChars(10);
+    now = now.add(const Duration(minutes: 2));
+    await clock.flushNow();
+    now = now.add(const Duration(minutes: 1));
+    await clock.flushNow();
     final String reject = lines.firstWhere((String l) => l.contains('reject'));
-    expect(reject, contains('reject window 120000ms (idle 120s)'));
-    final int rejectAt = lines.indexOf(reject);
-    expect(lines[rejectAt + 1], contains('seal seg'), reason: '拒窗后封段');
+    expect(reject, contains('reject window 60000ms (idle 180s)'));
     await clock.stop();
   });
 

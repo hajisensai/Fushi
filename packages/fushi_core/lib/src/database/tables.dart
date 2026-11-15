@@ -381,6 +381,68 @@ class DictionaryMetadata extends Table {
   Set<Column> get primaryKey => {name};
 }
 
+// ── remote_dictionary_metadata ──────────────────────────────────────
+/// v153：已配对 `fushi_server`（或当 host 的 Fushi）上**托管的词典**在本机的目录行，
+/// 让每个配置（Profile）不下载也能选用服务器上的词典（设计：
+/// `.worktrees/coordination/briefs/server-dictionaries.md`）。
+///
+/// 与 [DictionaryMetadata] 同形但**刻意分表**：`dictionary_metadata` 的行存在性就是
+/// 「这本词典装在本机」（BUG-1994），服务器词典插进去会被当成已安装、被引擎去 load
+/// 一个不存在的目录。这里的行只代表「这台 host 上有这本」。
+///
+/// 两组列的写者不同：
+/// * 目录列（[type] / [formatKey] / [revision] / [displayName] / [sourceLanguage] /
+///   [lastSeenAt] / [missingSince]）只由目录刷新（`RemoteDictionaryCatalogService`
+///   拉 `/api/library/dictionaries` 后对账）写；
+/// * 配置列（[order] / [hidden]）属于激活配置，和 `dictionary_metadata.order` /
+///   `hiddenLanguagesJson` 同一套快照 / 应用（`remote_dictionary_meta` 类别）。目录
+///   刷新的 upsert 冲突时**不碰**它们。
+///
+/// 身份 = ([hostId], [name])：[name] 是 host 上的真名（冻结主键，查词请求的
+/// `dictionaries` 名单按它点名），[hostId] 是配对时记下的 host 稳定 id（老条目没有
+/// hostId 时用地址 origin 充当）。设备本地：hostId 只在本机的配对里有意义，不进备份。
+@DataClassName('RemoteDictionaryMetaRow')
+class RemoteDictionaryMetadata extends Table {
+  TextColumn get hostId => text()();
+  TextColumn get name => text()();
+
+  /// 与 `dictionary_metadata.type` 同值域（`term` / `frequency` / `pitch` / `kanji`）。
+  TextColumn get type => text().withDefault(const Constant('term'))();
+
+  /// host 报的导入格式（如 `yomichan`）；老 host 不报为 null。
+  TextColumn get formatKey => text().nullable()();
+
+  /// 词典包版本（Yomitan `index.json` 的 `revision`）；host 不报为 null。
+  TextColumn get revision => text().nullable()();
+
+  /// host 上用户起的显示名；没改过为 null。
+  TextColumn get displayName => text().nullable()();
+
+  /// 词头语言（BCP-47，host 侧 `languageOverride` 优先，其次 index.json）；未知为 null。
+  TextColumn get sourceLanguage => text().nullable()();
+
+  /// 最近一次在 host 目录里看见它的时刻（ms）。
+  IntColumn get lastSeenAt => integer()();
+
+  /// 从 host 目录里消失的时刻（ms）；null = 上次刷新时还在。行不删：配置的顺序 / 开关
+  /// 留着，词典回来时原样生效。
+  IntColumn get missingSince => integer().nullable()();
+
+  /// 配置拥有：与本机词典混排的管理页顺序（与 `dictionary_metadata.order` 同一数轴）。
+  IntColumn get order => integer()();
+
+  /// 配置拥有：这个配置是否关掉了它（新出现的词典默认启用）。
+  BoolColumn get hidden => boolean().withDefault(const Constant(false))();
+
+  /// v154：本机给这本服务器词典起的显示名（词典管理页详情里改名）；null = 用 host 的
+  /// [displayName] / [name]。**设备本地**：既不归配置（不进 `remote_dictionary_meta`
+  /// 快照），也不由目录刷新写（upsert 冲突时不碰），不导出。
+  TextColumn get localDisplayName => text().nullable()();
+
+  @override
+  Set<Column> get primaryKey => {hostId, name};
+}
+
 // ── dictionary_history ──────────────────────────────────────────────
 @DataClassName('DictionaryHistoryRow')
 class DictionaryHistory extends Table {
@@ -425,9 +487,60 @@ class MediaTrackingMappings extends Table {
   IntColumn get createdAt => integer()();
   IntColumn get updatedAt => integer()();
 
+  /// v150: how the link was made: `manual` (picked by the user), `id` (from
+  /// an id another source gave, e.g. MAL or MangaBaka → AniList), `auto` (title
+  /// match ≥ 0.90), `suggestion` (a title match the user approved). Null for
+  /// links made before v150.
+  TextColumn get linkSource => text().nullable()();
+
+  /// v150: title match score (0..1) for `auto` / `suggestion` links.
+  RealColumn get confidence => real().nullable()();
+
+  /// v152: what a send of this link last succeeded with, in the site's units
+  /// (after [progressOffset]): the highest progress, or for a `status` link
+  /// the last status. The catch-up compares local progress with it (and with
+  /// a queued row) instead of a time watermark, so progress that arrives late
+  /// with an old timestamp is still sent once. Null = nothing sent yet (a new
+  /// or changed link). -1 = a link made before v152, nothing recorded: the
+  /// first catch-up takes the current progress as sent when the old
+  /// watermark had covered it, and queues it otherwise.
+  IntColumn get sentProgress => integer().nullable()();
+
+  /// v152: a send of this link succeeded with `completed` (see
+  /// [sentProgress]).
+  BoolColumn get sentCompleted =>
+      boolean().withDefault(const Constant(false))();
+
   @override
   List<Set<Column>> get uniqueKeys => [
     {provider, mediaType, mediaKey},
+  ];
+}
+
+/// v150: title matches waiting for the user (score 0.60–0.90, or a close
+/// second). One row per local item × provider × remote subject. Dismissed rows
+/// stay so the same match is not suggested again.
+@DataClassName('MediaTrackingSuggestionRow')
+class MediaTrackingSuggestions extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  TextColumn get provider => text()();
+  TextColumn get mediaType => text()();
+  TextColumn get mediaKey => text()();
+  IntColumn get subjectId => integer()();
+  TextColumn get subjectName => text()();
+
+  /// `TrackingKind.value` of the remote subject (novel / manga).
+  TextColumn get subjectKind => text()();
+  RealColumn get score => real()();
+
+  /// Provider facts for the review UI (titles, authors, totals, cover). JSON.
+  TextColumn get detailsJson => text().withDefault(const Constant('{}'))();
+  IntColumn get createdAt => integer()();
+  IntColumn get dismissedAt => integer().nullable()();
+
+  @override
+  List<Set<Column>> get uniqueKeys => [
+    {provider, mediaType, mediaKey, subjectId},
   ];
 }
 
@@ -447,6 +560,92 @@ class MediaTrackingOutbox extends Table {
   IntColumn get nextAttemptAt => integer().withDefault(const Constant(0))();
   TextColumn get lastError => text().nullable()();
   IntColumn get updatedAt => integer()();
+}
+
+/// v151: the do-not-track list. One row per local item the user asked not to
+/// track, keyed like a link (`TrackingMediaType.value` + media key). A
+/// collection row (`video_collection` / `book_collection` + collection id)
+/// covers every member, also members added later; a `remote_series` row
+/// covers every episode of that media server season. Ignored items are never
+/// linked automatically, queued or sent; their links stay, paused.
+@DataClassName('MediaTrackingIgnoredRow')
+class MediaTrackingIgnored extends Table {
+  @override
+  String get tableName => 'media_tracking_ignored';
+
+  IntColumn get id => integer().autoIncrement()();
+  TextColumn get mediaType => text()();
+  TextColumn get mediaKey => text()();
+
+  /// The local title when it was ignored (the "Ignored" view shows it).
+  TextColumn get mediaTitle => text().withDefault(const Constant(''))();
+
+  /// `TrackingKind.value`, when known.
+  TextColumn get kind => text().nullable()();
+  IntColumn get createdAt => integer()();
+
+  @override
+  List<Set<Column>> get uniqueKeys => [
+    {mediaType, mediaKey},
+  ];
+}
+
+/// v151: local log of sends to tracking sites (the Tracking page's
+/// "Activity"), one row per outbox row marked sent or failed. Capped: only
+/// the newest 500 rows are kept (trimmed on write).
+@DataClassName('MediaTrackingActivityRow')
+class MediaTrackingActivity extends Table {
+  @override
+  String get tableName => 'media_tracking_activity';
+
+  IntColumn get id => integer().autoIncrement()();
+  TextColumn get provider => text()();
+  TextColumn get mediaType => text()();
+  TextColumn get mediaKey => text()();
+  TextColumn get mediaTitle => text()();
+
+  /// `TrackingKind.value` of the link.
+  TextColumn get kind => text()();
+
+  /// `TrackingProgressMode.value` of the link (`status` = a game status).
+  TextColumn get progressMode => text()();
+
+  /// The remote progress (or status code) that was sent.
+  IntColumn get progress => integer()();
+  BoolColumn get completed => boolean().withDefault(const Constant(false))();
+  BoolColumn get ok => boolean()();
+
+  /// The error text when [ok] is false.
+  TextColumn get error => text().nullable()();
+  IntColumn get createdAt => integer()();
+}
+
+/// v151: media server episodes (Jellyfin / Emby / Plex) watched to the end
+/// that no tracking site could be linked to from the server's ids. Listed
+/// under "Needs attention" (grouped by [groupKey]) so the user can link them
+/// by hand; a row is removed once its group is linked or ignored.
+@DataClassName('MediaTrackingRemoteEpisodeRow')
+class MediaTrackingRemoteEpisodes extends Table {
+  @override
+  String get tableName => 'media_tracking_remote_episodes';
+
+  IntColumn get id => integer().autoIncrement()();
+
+  /// `RemoteAnimeEpisode.mediaKey` (server + user + item).
+  TextColumn get mediaKey => text().unique()();
+
+  /// One link covers the group: server + series + season for episodes
+  /// (`remote_series` links), the item's own key for a movie.
+  TextColumn get groupKey => text()();
+  TextColumn get seriesTitle => text().withDefault(const Constant(''))();
+
+  /// The episode as the server names it, e.g. "Frieren S1E3".
+  TextColumn get title => text()();
+  IntColumn get seasonNumber => integer().nullable()();
+  IntColumn get episodeNumber => integer()();
+  BoolColumn get isMovie => boolean().withDefault(const Constant(false))();
+  TextColumn get serverName => text().withDefault(const Constant(''))();
+  IntColumn get watchedAt => integer()();
 }
 
 // ── epub_books ─────────────────────────────────────────────────────

@@ -19,6 +19,7 @@ import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/test_platform_services.dart';
+import '../helpers/shell_layout.dart';
 
 /// 多端库联合视图（spec 2026-07-12 §2.1/§2.4/§2.5）书架占位卡混排 widget 守卫：
 ///  ① 远端书以占位卡混排进主网格（不再独立分区），带云角标 ☁；
@@ -85,6 +86,7 @@ void main() {
     ],
     child: TranslationProvider(
       child: MaterialApp(
+        theme: gridShellTheme(),
         builder: (BuildContext context, Widget? child) =>
             child ?? const SizedBox.shrink(),
         home: Scaffold(

@@ -281,7 +281,8 @@ void main() {
       body: <String, Object?>{'profile': kJa, 'targetField': 'Sentence'},
     );
     expect(code, 400, reason: '不给目标 = 不允许改全库');
-    // 点名中文那份、id 却是日语那份的（BUG-4480：库按 id 读写不看 profile）：404，哪份都不写。
+    // 点名中文那份、id 却是日语那份的（BUG-4480 / BUG-4626）：与不存在的 id 同一个回答——批量改记进
+    // missing、合并 404，哪份都不写。
     (code, body) = await request(
       'POST',
       'srs/notes/batch/set-field',
@@ -292,8 +293,9 @@ void main() {
         'notes': <String>[fish],
       },
     );
-    expect(code, 404, reason: '$body');
-    expect(body['reason'], 'not_found');
+    expect(code, 200, reason: '$body');
+    expect(body['missing'], <Object?>[fish]);
+    expect(body['fieldChanges'], 0);
     final String dup = await addNote(kJa, '魚');
     (code, body) = await request(
       'POST',

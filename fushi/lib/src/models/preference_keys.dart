@@ -52,6 +52,13 @@ const String kSrsDayRolloverPendingPrefKeyPrefix = 'srs_day_rollover_pending::';
 /// 统计日界（`AppModel.adoptSyncedDayRollover`）。设备本地，同上。
 const String kSrsDayRolloverSeenPrefKeyPrefix = 'srs_day_rollover_seen::';
 
+/// 音乐来源上次**全量解析**时 Rust 扫描的解析修订号（int，`musicScanParserRevision`）：后缀 = 来源 id。
+/// 与当前修订号不一致时扫描器不传已知文件清单、整源重新解析，让解析改动（如 BUG-4493 合写署名拆分）
+/// 落到已入库的曲目上，扫完才记下新值。是这台设备曲库（`music_tracks` 等设备本地表）的扫描状态：
+/// 设备本地（`PrefRedactionPolicy.deviceLocalKeyPrefixes`），不进 Profile 快照 / 备份 / 设置同步。
+const String kMusicScanParserRevisionPrefKeyPrefix =
+    'music_scan_parser_revision::';
+
 /// 库页「手动」排序的顺序（排序模式里拖出来的），后缀 = 库（`book` / `manga` /
 /// `video` / `game`），值是换行分隔的单元 tieKey（`encodeShelfManualOrder`）。
 /// 与页签顺序同族：设备本地，不进 Profile 快照（ProfileKeys._excludedPrefPrefixes）。
@@ -726,7 +733,14 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // int：每周字数目标（2026-10-10 曾删除，2026-11 反馈 CjIr9RGSCe 复活：作为
   // `reading_goal_period = weekly` 时生效的目标值，首页 / 统计页 / 小组件按周显示进度）。
   'reading_goal_weekly_chars',
+  // bool：已删除的全局「远程查词」开关（2026-11-09 用户拍板并入每台 host 的「用这台
+  // 服务器查词典」，总闸改为派生值 AppModel.remoteLookupEnabled）。键名冻结：UI 不再
+  // 读写它；PreferencesRepository.settleRemoteLookupHostSwitches 读它，跑过后写成 true
+  // （= host 开关是真相源，恢复设置后迁移重跑即 no-op）。
   'remote_lookup_enabled',
+  // bool：上面那次一次性迁移的已跑标记。设备本地（SyncRepository.installScopedPrefKeys）：
+  // 不进 Profile 快照 / 分享、不随备份出境；导入设置的恢复会清掉它，下次启动重判。
+  'remote_lookup_host_switches_migrated',
   // 用户自己添加的 BT 站清单（JSON 数组：id/name/url/enabled/domains/format/
   // nyaaCategories/allowInsecureHttp，编码在引擎 bt_site_config.dart）。String，
   // 读写见 PreferencesRepository.btSites。地址可能带站点 passkey → 与
@@ -1179,7 +1193,12 @@ const List<String> kKnownPreferenceKeyPrefixes = <String>[
   kLibraryManualOrderPrefKeyPrefix,
   kSrsDayRolloverPendingPrefKeyPrefix,
   kSrsDayRolloverSeenPrefKeyPrefix,
+  kMusicScanParserRevisionPrefKeyPrefix,
   'src:',
+  // string：`sync_remote_account__<通道槽位>`——云后端最近一次取到的账号（规整后的
+  // 小写邮箱 / 用户名，BUG-4434），文件箱进度基线按它分槽。设备本地
+  // （SyncRepository.deviceLocalPrefKeys），不进备份 / 设置同步。
+  'sync_remote_account__',
   // int（毫秒，v101）：`updates_last_check_<UpdateFeedKind.dbValue>`——某个域上次
   // 后台检查完成的时刻。到期判据只读它，失败也照记（否则断网时每个 tick 都重试）。
   'updates_last_check_',

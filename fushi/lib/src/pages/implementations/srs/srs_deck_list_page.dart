@@ -15,7 +15,8 @@ import 'dart:convert' show jsonDecode, jsonEncode;
 import 'dart:io' show Directory;
 import 'dart:math' as math;
 
-import 'package:flutter/foundation.dart' show ValueListenable;
+import 'package:flutter/foundation.dart'
+    show ValueListenable, visibleForTesting;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
@@ -64,6 +65,7 @@ import 'package:fushi/src/srs/srs_remote_store_client.dart'
     show
         SrsRemoteBadResponse,
         SrsRemoteDeckSnapshot,
+        SrsRemoteHostCompat,
         SrsRemoteProfileChoiceCancelled;
 import 'package:fushi/src/sync/interconnect_host_client.dart'
     show InterconnectHostError;
@@ -100,6 +102,18 @@ import 'package:fushi/src/srs/srs_navigation.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive_controls.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show shellRedesignActive;
+import 'package:fushi/src/utils/components/fushi_cover_block.dart'
+    show FushiCoverBlockColors;
+import 'package:fushi/src/utils/components/fushi_poster_block.dart';
+import 'package:fushi/src/utils/components/fushi_static_masthead.dart';
+import 'package:fushi/src/pages/implementations/home_dashboard_widgets.dart'
+    show HomePosterRows;
+import 'package:fushi/src/utils/components/fushi_continue_blocks.dart'
+    show FushiBlockSectionTitle;
+import 'package:fushi/src/utils/components/fushi_cover_block_layout.dart'
+    show kFushiCoverBlockSpacing;
 
 part 'srs_deck_home.dart';
 part 'srs_deck_home_paired.dart';
@@ -148,6 +162,11 @@ Set<String> srsDeckSubtreeIds(List<SrsDeckSummary> decks, String rootId) {
   }
   return out;
 }
+
+/// 测试用：「本次启动已问过首次同步」复位（静态标记跨用例共享）。
+@visibleForTesting
+void debugResetSrsFirstSyncAsked() =>
+    _SrsDeckListPageState._askedFirstSync = false;
 
 class SrsDeckListPage extends ConsumerStatefulWidget {
   const SrsDeckListPage({super.key});
@@ -206,15 +225,27 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
   }
 
   /// 问一次首次同步；刚确认就顺手跑一轮。
+  ///
+  /// 确认之后的那一轮同步归 app 级的 [SrsAppRuntime]，不归这个页面：运行时在第一个 await 之前、页面还挂着时
+  /// 就解析好。确认框挂在根导航上，用户点「开始」时首页这一页可能已经卸载（切了 tab / 换了页），以前在 await
+  /// 之后才 `ref.read`，页面已卸载就抛「No ProviderScope」，用户刚确认的首次同步不跑（反馈 nxR7tmcOjw）。
+  /// 页面卸载得比确认框弹出还早（框根本没弹）时撤回「本次启动已问过」，下次进复习页再问。
   Future<bool> _confirmFirstSync({required bool sync}) async {
     final AppModel app = ref.read(appProvider);
     if (app.srsSync2MergeConfirmed) return true;
+    final SrsAppRuntime? runtime = sync
+        ? ref.read(srsAppRuntimeProvider)
+        : null;
     final SrsDbStore? store = await readSrsStore(ref);
-    if (!mounted) return false;
+    if (!mounted) {
+      if (sync) _askedFirstSync = false;
+      return false;
+    }
     final bool ok = await ensureSrsFirstSyncConfirmed(context, app, store);
-    if (ok && sync) {
-      final SrsAppRuntime? runtime = ref.read(srsAppRuntimeProvider);
+    if (ok) {
       if (runtime != null) await runtime.syncNow();
+    } else if (sync && !app.srsSync2MergeConfirmed && !context.mounted) {
+      _askedFirstSync = false;
     }
     return ok;
   }
@@ -660,6 +691,8 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
         final SrsDeckSummary? focus = wide ? null : _deckById(list, _focusId);
         final bool nested = focus != null;
         final String title = focus?.deck.name ?? t.nav_srs;
+        // 重设计外壳（墨水屏除外，两套设计系统都换）：页头换成页头大字。
+        final bool masthead = shellRedesignActive(context);
         return PopScope(
           canPop: !nested,
           onPopInvokedWithResult: (bool didPop, Object? _) {
@@ -677,7 +710,16 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
                     onTap: () => _back(list),
                   )
                 : null,
-            header: apple
+            header: masthead
+                ? _buildMasthead(
+                    context,
+                    conflicts,
+                    list,
+                    title: title,
+                    nested: nested,
+                    onBack: () => _back(list),
+                  )
+                : apple
                 ? null
                 : _buildTopBar(
                     context,
@@ -686,7 +728,9 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
                     nested: nested,
                     onBack: () => _back(list),
                   ),
-            actions: apple ? _buildAppleActions(conflicts) : const <Widget>[],
+            actions: apple && !masthead
+                ? _buildAppleActions(conflicts)
+                : const <Widget>[],
             body: Builder(
               builder: (BuildContext context) => AnimatedSwitcher(
                 duration: fushiMotionDuration(context, FushiMotion.short),
@@ -793,6 +837,58 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
         ],
         actions: <List<FushiToolbarItem>>[_primaryItems(conflicts)],
         overflow: _secondaryItems(),
+      ),
+    );
+  }
+
+  /// 重设计外壳的页头大字（设计稿复习页 `.cap-B`）：页名（进了牌组详情就是牌组名）
+  /// + 模块徽标；右侧动作组 = 原顶栏的全部动作（高频在前，放不下按列表倒序收进
+  /// 「⋯」）；主按钮 =「开始复习」，与今日计划条的按钮同一口径（第一个还有活的
+  /// 顶层牌组，[SrsDeckListData.firstRootWithWork]），今天没活时不出。进了牌组
+  /// 详情（手机）/ 被单独推出来时前导是返回键。
+  Widget _buildMasthead(
+    BuildContext context,
+    int conflicts,
+    SrsDeckListData? list, {
+    required String title,
+    required bool nested,
+    required VoidCallback onBack,
+  }) {
+    final NavigatorState? navigator = Navigator.maybeOf(context);
+    final bool canPop = ModalRoute.of(context)?.isFirst == false;
+    final String backLabel = MaterialLocalizations.of(
+      context,
+    ).backButtonTooltip;
+    final SrsDeckSummary? go = nested ? null : list?.firstRootWithWork;
+    return Padding(
+      padding: EdgeInsets.only(top: FushiDesignTokens.of(context).spacing.gap),
+      child: FushiStaticMasthead(
+        key: const ValueKey<String>('srs_home_masthead'),
+        title: title,
+        leading: nested
+            ? FushiIconButton(
+                key: const ValueKey<String>('srs_home_back'),
+                icon: FushiIcons.back,
+                tooltip: backLabel,
+                onTap: onBack,
+              )
+            : canPop && navigator != null
+            ? FushiIconButton(
+                icon: FushiIcons.back,
+                tooltip: backLabel,
+                onTap: () => unawaited(navigator.maybePop()),
+              )
+            : null,
+        actions: _buildAppleActions(conflicts),
+        trailing: go == null
+            ? null
+            : FushiMastheadCtaButton(
+                buttonKey: const ValueKey<String>('srs-masthead-start'),
+                icon: FushiIcons.play,
+                label: t.srs_home_start,
+                onPressed: () =>
+                    srsRunLogged('SrsDeckList.review', () => _openReview(go)),
+              ),
       ),
     );
   }

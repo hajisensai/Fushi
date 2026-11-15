@@ -19,9 +19,6 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/media/media_cover_source.dart'
     show mediaCoverFallbackIcon;
 import 'package:fushi/src/anki/anki_view_model.dart';
-import 'package:fushi_engine/media/tracking/bangumi_api_client.dart';
-import 'package:fushi_engine/media/tracking/media_tracking_repository.dart';
-import 'package:fushi_engine/media/tracking/media_tracking_service.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/leaderboard/leaderboard_service.dart';
@@ -48,6 +45,8 @@ import 'package:fushi/src/utils/components/glass/fushi_expressive.dart'
 import 'package:fushi/src/pages/implementations/stat_shared.dart'
     show StatGoalEditDialog, formatStatChars, formatStatTime;
 import 'package:fushi/src/stats/stat_window.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show FushiShellTheme, ShellContentLayout;
 import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -87,12 +86,24 @@ void main() {
   late PlatformServices platformServices;
   late FakeAnkiRepository ankiRepository;
   late AppModel appModel;
+
+  /// 本用例钉的库页布局（PR #3397 外壳改版）：默认钉封面网格——网格下首页走原
+  /// 版式正文（主角卡 + 横滑行 + 今日 / 最近添加面板），下面多数用例守的是那套
+  /// 版式；拼贴（色块，产品默认）路径的同一批数据行为由各用例里
+  /// `dashboardLayout = ShellContentLayout.collage` 的分支 / 专门用例另行断言。
+  ShellContentLayout dashboardLayout = ShellContentLayout.grid;
+  ThemeData shellTheme() => ThemeData(
+    extensions: <ThemeExtension<dynamic>>[
+      FushiShellTheme(contentLayout: dashboardLayout),
+    ],
+  );
   late Directory storeDir;
 
   /// 提到外层：Bangumi 同步卡的状态全部来自偏好（令牌/账号名/上次同步），测试要能写。
   late PreferencesRepository prefs;
 
   setUp(() async {
+    dashboardLayout = ShellContentLayout.grid;
     SharedPreferences.setMockInitialValues(<String, Object>{});
     LocaleSettings.setLocale(AppLocale.zhCn);
     db = FushiDatabase.forTesting(NativeDatabase.memory());
@@ -173,6 +184,7 @@ void main() {
     ],
     child: TranslationProvider(
       child: MaterialApp(
+        theme: shellTheme(),
         home: Scaffold(
           body: HomeDashboardPage(
             videoRepo: VideoBookRepository(db),
@@ -299,6 +311,7 @@ void main() {
     ],
     child: TranslationProvider(
       child: MaterialApp(
+        theme: shellTheme(),
         home: Scaffold(
           body: HomeDashboardPage(videoRepo: VideoBookRepository(db)),
         ),
@@ -2312,6 +2325,7 @@ void main() {
         ],
         child: TranslationProvider(
           child: MaterialApp(
+            theme: shellTheme(),
             home: Scaffold(
               body: ValueListenableBuilder<bool>(
                 valueListenable: showPage,
@@ -2572,18 +2586,8 @@ void main() {
 
   // ── 2026-10 首页统一浮动工具栏 ────────────────────────────────────────────
 
-  Finder dashboardList() => find.byWidgetPredicate(
-    (Widget w) => w is ListView && w.scrollDirection == Axis.vertical,
-  );
-  HomeFloatingToolbar toolbar(WidgetTester tester) =>
-      tester.widget<HomeFloatingToolbar>(find.byType(HomeFloatingToolbar));
   HomeResumeFab resumeFab(WidgetTester tester) =>
       tester.widget<HomeResumeFab>(find.byType(HomeResumeFab));
-  bool excludedFromFocus(WidgetTester tester, Finder target) => tester
-      .widgetList<ExcludeFocus>(
-        find.ancestor(of: target, matching: find.byType(ExcludeFocus)),
-      )
-      .any((ExcludeFocus w) => w.excluding);
 
   /// 滚动后跑完弹簧（default spatial 约 0.5 s 收敛）。
   Future<void> settleSpring(WidgetTester tester) async {
@@ -2611,7 +2615,13 @@ void main() {
     );
     final double cardTop = tester.getTopLeft(find.byType(HomeStudyHeader)).dy;
     expect(tester.getTopLeft(avatar).dy, lessThan(cardTop));
-    expect(tester.getTopLeft(avatar).dx, lessThan(100));
+    // 页头大字外壳（PR #3397）：起始侧是页名「首页」大字，头像坐在页头行的
+    // 主按钮位（尾端，点开排行榜）。
+    expect(find.text(t.nav_home), findsWidgets);
+    expect(
+      tester.getTopLeft(avatar).dx,
+      greaterThan(tester.getTopRight(find.text(t.nav_home).first).dx),
+    );
     for (final String key in <String>[
       'home-toolbar-updates',
       'home-toolbar-stats',
@@ -2754,29 +2764,49 @@ void main() {
     expect(reached, keys.toSet());
   });
 
-  testWidgets('浮动工具栏随滚动：下滚退场（不可聚焦），回滚弹回', (WidgetTester tester) async {
+  // 页头大字外壳（PR #3397，非墨水屏默认）：首页动作在页头大字一行
+  // （[FushiFloatingChromeOverlay] masthead 层），随正文下滚移出视口；焦点
+  // 落到移出的动作上（Tab / 手柄）时页头弹回（外壳顶栏同一条 Focus → show
+  // 规则），不会出现焦点停在看不见的按钮上；回滚到顶同样弹回。
+  testWidgets('页头随滚动：下滚移出视口，焦点进来或回滚都弹回', (WidgetTester tester) async {
     // 首页精简后内容只剩一张卡，矮视口才滚得动。
     useSize(tester, const Size(420, 260));
     await seedSampleData();
     await tester.pumpWidget(buildApp());
     await pumpDashboard(tester);
 
-    expect(toolbar(tester).visible, isTrue);
     final Finder stats = find.byKey(
       const ValueKey<String>('home-toolbar-stats'),
       skipOffstage: false,
     );
-    expect(excludedFromFocus(tester, stats), isFalse);
+    expect(stats.hitTestable(), findsOneWidget);
+    // 重设计首页的主列表是 CustomScrollView（色块 sliver），不是 ListView。
+    final Finder mainScroll = find
+        .byWidgetPredicate(
+          (Widget w) => w is ScrollView && w.scrollDirection == Axis.vertical,
+        )
+        .first;
 
-    await tester.drag(dashboardList(), const Offset(0, -150));
+    await tester.drag(mainScroll, const Offset(0, -150));
     await settleSpring(tester);
-    expect(toolbar(tester).visible, isFalse);
-    expect(excludedFromFocus(tester, stats), isTrue, reason: '退场中的栏不能还被 Tab 到');
+    expect(stats.hitTestable(), findsNothing, reason: '下滚后页头移出视口');
 
-    await tester.drag(dashboardList(), const Offset(0, 60));
+    // 焦点进到移出的页头动作：页头弹回，按钮看得见、点得到。
+    Focus.of(
+      tester.element(
+        find.descendant(of: stats, matching: find.byType(Icon)).first,
+      ),
+    ).requestFocus();
     await settleSpring(tester);
-    expect(toolbar(tester).visible, isTrue);
-    expect(excludedFromFocus(tester, stats), isFalse);
+    expect(stats.hitTestable(), findsOneWidget, reason: '焦点进来页头必须弹回');
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pump();
+
+    await tester.drag(mainScroll, const Offset(0, -150));
+    await settleSpring(tester);
+    await tester.drag(mainScroll, const Offset(0, 300));
+    await settleSpring(tester);
+    expect(stats.hitTestable(), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -2825,215 +2855,10 @@ void main() {
     expect(state.pastHero, isFalse);
   });
 
-  // BUG-1220：追踪链路原本零可观测（成功即删 outbox 行、失败只进错误日志并退避、
-  // 没建映射就静默返回），用户「看完了没反应」时无处可看。这张卡是唯一出口，
-  // 三种断裂状态各自必须说得出话。
-  //
-  // 2026-08-19 Bangumi 同步临时下线（kMediaTrackingEnabled=false）：卡不再挂载，
-  // 整组随功能一起停用；恢复开关时删掉 skip 原样启用。
-  group(
-    'Bangumi 同步卡（BUG-1220）',
-    skip: kMediaTrackingEnabled
-        ? false
-        : 'Bangumi 同步临时下线（kMediaTrackingEnabled=false）',
-    () {
-      void useWideSurface(WidgetTester tester) {
-        tester.view.physicalSize = const Size(1400, 1800);
-        tester.view.devicePixelRatio = 1.0;
-        addTearDown(tester.view.resetPhysicalSize);
-        addTearDown(tester.view.resetDevicePixelRatio);
-      }
-
-      Future<void> connect({String account = 'Alice'}) async {
-        await prefs.setPref(kBangumiAccessTokenPref, 'token');
-        await prefs.setPref(kBangumiAccountNamePref, account);
-      }
-
-      testWidgets('未连接：明说未连接并给出连接入口', (WidgetTester tester) async {
-        useWideSurface(tester);
-        await tester.pumpWidget(buildApp());
-        await pumpDashboard(tester);
-
-        expect(tester.takeException(), isNull);
-        expect(find.text(t.media_tracking_card_title), findsOneWidget);
-        expect(find.text(t.media_tracking_not_connected), findsOneWidget);
-        expect(
-          find.widgetWithText(FilledButton, t.media_tracking_connect),
-          findsOneWidget,
-        );
-      });
-
-      testWidgets('已连接但没有本地历史：不再显示泛化的零关联警告', (WidgetTester tester) async {
-        useWideSurface(tester);
-        await connect();
-        await tester.pumpWidget(buildApp());
-        await pumpDashboard(tester);
-
-        expect(tester.takeException(), isNull);
-        // 账号名从偏好读回（不只是本次会话的连接结果）。
-        expect(find.text('Alice'), findsOneWidget);
-        // 从未同步必须与「同步过零待办」区分：成功即删 outbox 行，两者否则同形。
-        expect(
-          find.textContaining(t.media_tracking_never_synced),
-          findsOneWidget,
-        );
-        expect(find.text(t.media_tracking_no_local_history), findsOneWidget);
-        expect(find.text(t.media_tracking_watched_show), findsOneWidget);
-      });
-
-      testWidgets('以前看完但未映射的视频会明确列为需要手动关联', (WidgetTester tester) async {
-        useWideSurface(tester);
-        await connect();
-        await db.upsertVideoBook(
-          VideoBooksCompanion.insert(
-            bookUid: 'old-video',
-            title: '以前看过的番剧',
-            videoPath: 'C:/video/old.mkv',
-            completedAt: Value<DateTime?>(DateTime.now()),
-          ),
-        );
-
-        await tester.pumpWidget(buildApp());
-        await pumpDashboard(tester);
-
-        expect(tester.takeException(), isNull);
-        expect(find.text('以前看过的番剧'), findsOneWidget);
-        expect(
-          find.text(
-            '${t.media_tracking_anime} · '
-            '${t.media_tracking_manual_required}',
-          ),
-          findsOneWidget,
-        );
-        expect(
-          find.text(t.media_tracking_manual_required_count(n: 1)),
-          findsOneWidget,
-        );
-      });
-
-      testWidgets('已关联条目列出本地标题 + Bangumi 条目名，并给出打开入口', (
-        WidgetTester tester,
-      ) async {
-        useWideSurface(tester);
-        await connect();
-        await MediaTrackingRepository(db).saveMapping(
-          mediaType: TrackingMediaType.videoCollection,
-          mediaKey: '8',
-          mediaTitle: '本地动画合集',
-          kind: TrackingKind.anime,
-          subjectId: 88,
-          subjectName: 'Remote anime',
-          progressMode: TrackingProgressMode.episode,
-          progressOffset: 1,
-        );
-
-        await tester.pumpWidget(buildApp());
-        await pumpDashboard(tester);
-
-        expect(tester.takeException(), isNull);
-        expect(find.text('本地动画合集'), findsOneWidget);
-        expect(find.textContaining('Remote anime'), findsOneWidget);
-        expect(find.byIcon(FushiIcons.openInNew), findsOneWidget);
-        expect(
-          find.textContaining(t.media_tracking_linked_count(n: 1)),
-          findsOneWidget,
-        );
-        expect(find.text(t.media_tracking_no_local_history), findsNothing);
-      });
-
-      testWidgets('上报失败：退避窗口内也照说失败原因', (WidgetTester tester) async {
-        useWideSurface(tester);
-        await connect();
-        final MediaTrackingRepository repository = MediaTrackingRepository(db);
-        await repository.saveMapping(
-          mediaType: TrackingMediaType.videoCollection,
-          mediaKey: '8',
-          mediaTitle: '失败的动画',
-          kind: TrackingKind.anime,
-          subjectId: 88,
-          subjectName: 'Remote anime',
-          progressMode: TrackingProgressMode.episode,
-          progressOffset: 1,
-        );
-        await repository.enqueueProgress(
-          mediaType: TrackingMediaType.videoCollection,
-          mediaKey: '8',
-          localProgress: 1,
-          completed: false,
-        );
-        final List<PendingTrackingUpdate> due = await repository.dueUpdates();
-        await repository.markFailed(
-          due.single.outbox,
-          const BangumiApiException(statusCode: 500, message: 'boom'),
-        );
-        // 退避后发送侧已看不到这一行——展示侧仍必须说得出原因。
-        expect(await repository.dueUpdates(), isEmpty);
-
-        await tester.pumpWidget(buildApp());
-        await pumpDashboard(tester);
-
-        expect(tester.takeException(), isNull);
-        // 失败原因挂在条目行上，标题只出现一次（不另开「失败」段重复一遍）。
-        expect(find.text('失败的动画'), findsOneWidget);
-        expect(
-          find.textContaining('${t.media_tracking_last_error}: '),
-          findsOneWidget,
-        );
-        expect(find.textContaining('500'), findsOneWidget);
-        expect(find.byIcon(FushiIcons.syncProblem), findsOneWidget);
-        expect(
-          find.textContaining(t.media_tracking_pending_count(n: 1)),
-          findsOneWidget,
-        );
-      });
-
-      testWidgets('令牌被拒：给出「重新连接」提示', (WidgetTester tester) async {
-        useWideSurface(tester);
-        await connect();
-        await prefs.setPref(kMediaTrackingLastSyncUnauthorizedPref, true);
-        await prefs.setPref(
-          kMediaTrackingLastSyncAtPref,
-          DateTime.now().millisecondsSinceEpoch,
-        );
-
-        await tester.pumpWidget(buildApp());
-        await pumpDashboard(tester);
-
-        expect(tester.takeException(), isNull);
-        expect(find.text(t.media_tracking_unauthorized), findsOneWidget);
-      });
-
-      testWidgets('自动关联 miss 后显示真实重试入口并回显结果', (WidgetTester tester) async {
-        useWideSurface(tester);
-        await connect();
-        // 不存在的本地游戏会形成一次可重试 miss，且不访问真实网络。
-        await appModel.mediaTrackingService.recordGameStatus(
-          gameId: 'missing-game',
-          status: 3,
-        );
-
-        await tester.pumpWidget(buildApp());
-        await pumpDashboard(tester);
-
-        final Finder retryButton = find.widgetWithText(
-          FilledButton,
-          t.media_tracking_retry_mapping,
-        );
-        expect(retryButton, findsOneWidget);
-
-        await tester.tap(retryButton);
-        await tester.pump();
-        await tester.pump(const Duration(milliseconds: 200));
-
-        expect(
-          find.text(t.media_tracking_retry_no_match),
-          findsOneWidget,
-          reason: '重试不能被 10 分钟退避无声吞掉，匹配结果必须回显',
-        );
-        expect(tester.takeException(), isNull);
-      });
-    },
-  );
+  // Media tracking on the home page (the strip and the Continue marks that
+  // replaced the Bangumi sync card of BUG-1220) is covered by
+  // home_tracking_panel_test.dart; the watched list and "retry matching" moved
+  // to the Media tracking settings page.
 }
 
 /// 16x9 横版 PNG：朝向探测（`CoverOrientationBuilder`）读的是**解码出来的固有

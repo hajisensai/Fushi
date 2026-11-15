@@ -73,6 +73,7 @@ class FushiClientUrl {
     this.hostId,
     this.learned = false,
     this.addressKind,
+    this.lookupEnabled = true,
   });
 
   final String url;
@@ -110,6 +111,15 @@ class FushiClientUrl {
   /// 排序要用 host 的原始判断。手输条目为 null（按 URL 推断）。
   final String? addressKind;
 
+  /// 「用这台服务器查词典」（按配对 / host 的设备本地开关，默认 true = 与升级前一致）。
+  /// false 时远端查词与服务器词典目录刷新都跳过这条地址（[isDictionaryLookupCandidate]），
+  /// 同步 / 制卡 / 音频等其它互联用途不受影响。随 `sync_hibiki_client_urls` 落库，与
+  /// [token] 同为设备本地。同一台 host 的多条地址由设置页一起改。
+  final bool lookupEnabled;
+
+  /// 这条地址此刻能否承担远端**词典**查词：已启用且没关掉 [lookupEnabled]。
+  bool get isDictionaryLookupCandidate => enabled && lookupEnabled;
+
   Map<String, dynamic> toJson() => <String, dynamic>{
     'url': url,
     'enabled': enabled,
@@ -119,6 +129,8 @@ class FushiClientUrl {
     if (hostId != null) 'hostId': hostId,
     if (learned) 'learned': true,
     if (addressKind != null) 'kind': addressKind,
+    // 只记非默认值：默认开着的老条目写回后逐字节不变。
+    if (!lookupEnabled) 'lookupEnabled': false,
   };
 
   factory FushiClientUrl.fromJson(Map<String, dynamic> json) => FushiClientUrl(
@@ -130,6 +142,7 @@ class FushiClientUrl {
     hostId: json['hostId'] as String?,
     learned: json['learned'] as bool? ?? false,
     addressKind: json['kind'] as String?,
+    lookupEnabled: json['lookupEnabled'] as bool? ?? true,
   );
 
   /// 复制并覆盖部分字段（不可变更新）。`null` 入参保留原值；要显式清空请直接构造。
@@ -142,6 +155,7 @@ class FushiClientUrl {
     String? hostId,
     bool? learned,
     String? addressKind,
+    bool? lookupEnabled,
   }) => FushiClientUrl(
     url: url ?? this.url,
     enabled: enabled ?? this.enabled,
@@ -151,8 +165,68 @@ class FushiClientUrl {
     hostId: hostId ?? this.hostId,
     learned: learned ?? this.learned,
     addressKind: addressKind ?? this.addressKind,
+    lookupEnabled: lookupEnabled ?? this.lookupEnabled,
   );
 }
+
+/// 服务器托管词典（`remote_dictionary_metadata`）按哪个 host 身份归档：配对记下的
+/// [FushiClientUrl.hostId]；老条目没有 hostId 时用地址本身（去掉首尾空白与结尾 `/`）
+/// 充当伪 id——与 `InterconnectSyncBackend.connectedHostIdentity` 对老条目的口径一致，
+/// 同步编排的词典阶段拿到的身份与这里算出的能对上。
+String remoteDictionaryHostIdOf(FushiClientUrl candidate) {
+  final String? hostId = candidate.hostId;
+  if (hostId != null && hostId.isNotEmpty) return hostId;
+  final String url = candidate.url.trim();
+  return url.endsWith('/') ? url.substring(0, url.length - 1) : url;
+}
+
+/// [remoteDictionaryHostIdOf] 给出的是不是**地址充当的伪 id**（老条目没有 hostId，
+/// 拿 URL 顶上）。伪 id 是服务器地址，配置导出时必须剔掉（不把用户的服务器地址带出
+/// 本机）；真 hostId 是不透明的设备 id，照常导出。
+bool isRemoteDictionaryPseudoHostId(String hostId) => hostId.contains('://');
+
+/// 「用这台服务器查词典」是按 host 的设置：一台 host 原有的地址全都关掉了它时，
+/// 这次写入里**新加入**这台 host 的地址（新 URL，或原有 URL 新归到这台 host）也跟着
+/// 关掉——否则配对学到一条新地址 / 手动加一条地址后，用户关掉的 host 会悄悄重新
+/// 参与查词。原有地址的值（含用户刚在设置页整组打开）一律不动。没有任何变化时原样
+/// 返回 [after]（调用方靠 `identical` 判断要不要落库）。
+List<FushiClientUrl> inheritInterconnectLookupDisabled(
+  List<FushiClientUrl> before,
+  List<FushiClientUrl> after,
+) {
+  final Map<String, bool> allOffByHost = <String, bool>{};
+  final Set<String> knownMembership = <String>{};
+  for (final FushiClientUrl u in before) {
+    final String host = remoteDictionaryHostIdOf(u);
+    allOffByHost[host] = (allOffByHost[host] ?? true) && !u.lookupEnabled;
+    knownMembership.add('$host\u0000${u.url}');
+  }
+  if (!allOffByHost.containsValue(true)) return after;
+  bool changed = false;
+  final List<FushiClientUrl> out = <FushiClientUrl>[
+    for (final FushiClientUrl u in after)
+      if (u.lookupEnabled &&
+          allOffByHost[remoteDictionaryHostIdOf(u)] == true &&
+          !knownMembership.contains(
+            '${remoteDictionaryHostIdOf(u)}\u0000${u.url}',
+          ))
+        () {
+          changed = true;
+          return u.copyWith(lookupEnabled: false);
+        }()
+      else
+        u,
+  ];
+  return changed ? out : after;
+}
+
+/// [urls] 里此刻承担远端词典查词的 host 身份集合（[FushiClientUrl.isDictionaryLookupCandidate]
+/// 的地址按 [remoteDictionaryHostIdOf] 归组）。词典仓库只把这些 host 的目录行混进查词过滤。
+Set<String> remoteDictionaryLookupHostIdsOf(Iterable<FushiClientUrl> urls) =>
+    <String>{
+      for (final FushiClientUrl u in urls)
+        if (u.isDictionaryLookupCandidate) remoteDictionaryHostIdOf(u),
+    };
 
 /// BUG-1550：解析某个候选地址该用哪份凭据——地址行自带的 [FushiClientUrl.token]
 /// 优先，为空时回落全局 token（老配置 / 同 host 的备用地址）。两者都空返回 null，
@@ -1608,7 +1682,10 @@ class SyncRepository {
   ) {
     final Future<List<FushiClientUrl>> result = _urlsWriteChain.then((_) async {
       final List<FushiClientUrl> before = await getFushiClientUrls();
-      final List<FushiClientUrl> after = transform(before);
+      final List<FushiClientUrl> after = inheritInterconnectLookupDisabled(
+        before,
+        transform(before),
+      );
       if (!identical(after, before)) await setFushiClientUrls(after);
       return after;
     });
@@ -1758,6 +1835,7 @@ class SyncRepository {
             hostId: u.hostId,
             learned: u.learned,
             addressKind: u.addressKind,
+            lookupEnabled: u.lookupEnabled,
           ),
       ];
     });
@@ -1802,6 +1880,7 @@ class SyncRepository {
           hostId: existing.hostId,
           learned: existing.learned,
           addressKind: existing.addressKind,
+          lookupEnabled: existing.lookupEnabled,
         );
     });
     return cleared;
@@ -1842,8 +1921,12 @@ class SyncRepository {
   /// - `srs_mining_target_install_default`：挖词目标出厂默认（'anki' / 'srs'），兼
   ///   一次性判定标记。维护者用装了新版的机器打推荐包，包里会是 'anki'；新用户一导入
   ///   就会被当成老 Anki 用户（复习模块关、挖词发 Anki）。
+  /// - `remote_lookup_host_switches_migrated`：全局「远程查词」并入每台 host 开关的
+  ///   一次性迁移已跑标记。配对列表是设备本地的，别的机器的标记随过来会让本机跳过
+  ///   迁移，原先关着远程查词的已配对 host 更新后直接开始查服务器。
   static const List<String> installScopedPrefKeys = <String>[
     PreferencesRepository.srsMiningTargetInstallDefaultKey,
+    PreferencesRepository.remoteLookupHostSwitchesMigratedKey,
   ];
 
   /// 按通道分槽、且属设备本地的键基名（展开进 [deviceLocalPrefKeys]）。
@@ -1856,7 +1939,14 @@ class SyncRepository {
     _keyDeletionTombstonesBaselineMs,
     _keyVideoMetadataSyncSinceMs,
     _keyContentSniffCache,
+    // 云后端最近一次取到的账号（BUG-4434）：文件箱进度基线按它挑槽；随备份带到
+    // 登着别的账号的设备，邮箱缺失时会挑错槽，且把账号邮箱带进备份。
+    syncRemoteAccountPrefBase,
   ];
+
+  /// 按通道分槽的「云后端最近一次取到的账号」键基名（BUG-4434）；完整键见
+  /// `syncRemoteAccountPrefKey`（`sync_baseline_scope.dart`）。设备本地。
+  static const String syncRemoteAccountPrefBase = 'sync_remote_account';
 
   static const List<String> _deviceLocalFixedKeys = <String>[
     // 「同步浏览历史」是这台设备的隐私许可：从另一台设备恢复备份不得替这台设备

@@ -504,8 +504,9 @@ void main() {
       );
     });
 
-    // BUG-4480：SrsDbStore 按 id 的读写不看 profile。多 profile 宿主点名 A 却给 B 的 id 时路由先拦。
-    test('点名的 profile 里没有这些笔记（id 是另一份的）：一律 404，两份都没被动过', () async {
+    // BUG-4480 / BUG-4626：点名 A 却给 B 的 id——复习库自己按 profile 核对，别的 profile 的 id 与库里
+    // 根本没有的 id 同一个回答：读 / 合并 / 标记不是重复 404，批量改笔记把它记进 missing、不写。
+    test('点名的 profile 里没有这些笔记（id 是另一份的）：当不存在，两份都没被写错', () async {
       final String ja = await _addNote(env.ja, '魚', sentence: 'old');
       final String dupA = await _addNote(env.ja, '雪');
       final String dupB = await _addNote(env.ja, '雪');
@@ -524,40 +525,34 @@ void main() {
         <String, Object?>{'profile': kZh, ...body},
       );
 
-      await expectLater(
-        asZh('notes/batch/set-field', <String, Object?>{
-          'targetField': 'Sentence',
-          'value': 'X',
-          // 自己那份的笔记混着别人的：整批拒绝，自己的也不写。
-          'notes': <String>[zh, ja],
-        }),
-        _failure(404),
-      );
-      await expectLater(
-        asZh('notes/batch/set-field', <String, Object?>{
-          'targetField': 'Sentence',
-          'value': 'X',
-          'notes': <String>[ja],
-          'dryRun': true,
-        }),
-        _failure(404),
-        reason: '预演也不读别人的笔记',
-      );
-      await expectLater(
-        asZh('notes/batch/find-replace', <String, Object?>{
+      for (final bool dryRun in <bool>[true, false]) {
+        final Map<String, Object?> set = _map(
+          await asZh('notes/batch/set-field', <String, Object?>{
+            'targetField': 'Sentence',
+            'value': 'X',
+            'notes': <String>[ja],
+            'dryRun': dryRun,
+          }),
+        );
+        expect(set['missing'], <String>[ja], reason: 'dryRun=$dryRun');
+        expect(set['fieldChanges'], 0, reason: 'dryRun=$dryRun');
+      }
+      final Map<String, Object?> replaced = _map(
+        await asZh('notes/batch/find-replace', <String, Object?>{
           'find': 'old',
           'replace': 'X',
           'notes': <String>[ja],
         }),
-        _failure(404),
       );
-      await expectLater(
-        asZh('notes/batch/card-type', <String, Object?>{
+      expect(replaced['missing'], <String>[ja]);
+      expect(replaced['fieldChanges'], 0);
+      final Map<String, Object?> typed = _map(
+        await asZh('notes/batch/card-type', <String, Object?>{
           'type': 'sentence',
           'notes': <String>[ja],
         }),
-        _failure(404),
       );
+      expect(typed['missing'], <String>[ja]);
       await expectLater(
         asZh('duplicates/merge', <String, Object?>{
           'keep': dupA,
@@ -571,24 +566,31 @@ void main() {
         }),
         _failure(404),
       );
+      await expectLater(
+        _call(env.routes, 'GET', '$kSrsCtlRoot/notes/$ja', <String, Object?>{
+          'profile': kZh,
+        }),
+        _failure(404),
+      );
 
       expect(env.changed, isEmpty);
       expect(await _field(env.ja, ja, 'Sentence'), 'old');
-      expect(await _field(env.zh, zh, 'Sentence'), 'old');
       expect((await env.ja.note(dupB))!.deletedAt, isNull);
       expect(await env.ja.duplicateNoteGroups(), hasLength(1));
       expect(await edits(), editsBefore, reason: '没有往任何一份写修改记录');
 
-      // 库里根本没有的 id 不归这道核对管：照各路由原来的处理。
-      final Map<String, Object?> missing = _map(
+      // 自己的笔记混着别人的：只改自己的，别人的进 missing。
+      final Map<String, Object?> mixed = _map(
         await asZh('notes/batch/set-field', <String, Object?>{
           'targetField': 'Sentence',
           'value': 'X',
-          'notes': <String>['01928c3e-0000-7000-8000-00000000dead'],
+          'notes': <String>[zh, ja],
         }),
       );
-      expect(missing['fieldChanges'], 0);
-      expect(await edits(), editsBefore);
+      expect(mixed['missing'], <String>[ja]);
+      expect(mixed['fieldChanges'], 1);
+      expect(await _field(env.zh, zh, 'Sentence'), 'X');
+      expect(await _field(env.ja, ja, 'Sentence'), 'old');
     });
   });
 

@@ -4,6 +4,8 @@ import 'package:fushi_engine/media/video/dandanplay_file_key.dart'
     show DandanplayFileKey;
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart'
     show VideoMetadataWork;
+import 'package:fushi_engine/media/tracking/remote_anime_link.dart'
+    show RemoteAnimeEpisode;
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/remote_library_source.dart';
 
@@ -213,6 +215,15 @@ class RemoteVideoTitleIdentity {
 abstract interface class RemoteVideoTitleIdentityFetch {
   /// 远端视频 [id] 所属作品的身份；拿不到返回 null（调用方回落显示名）。
   Future<RemoteVideoTitleIdentity?> remoteVideoTitleIdentity(String id);
+}
+
+/// Optional: "which episode of which show is this", for media tracking.
+/// Media servers (Jellyfin / Emby) keep `ProviderIds` on the season and the
+/// series; tracking links from those ids, never from the title.
+abstract interface class RemoteVideoTrackingEpisodeFetch {
+  /// The episode (or movie) behind remote video [id]; null when it is neither
+  /// or has no episode number.
+  Future<RemoteAnimeEpisode?> remoteVideoTrackingEpisode(String id);
 }
 
 /// 「远端合集就是一部作品」的标记能力（BUG-2626 审查补）。

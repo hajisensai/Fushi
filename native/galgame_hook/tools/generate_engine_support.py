@@ -162,6 +162,16 @@ LOOKUP_NATIVE_PROVIDER_MANIFEST_BINDINGS = {
         "kLookupGeometryProviderIdSystem4",
     ): ("system4", "engine_exact_layout"),
 }
+# A provider id whose publisher runtime is shared by engines that can never
+# share a process (one id, one publisher, several manifest claims). Unity's
+# canvas-text lookup runtime (provider 20) serves both scripting backends;
+# Mono and IL2CPP are mutually exclusive by construction (GameAssembly.dll).
+LOOKUP_NATIVE_PROVIDER_SHARED_BINDINGS = {
+    (
+        "kLookupGeometryProviderEngineExactLayout",
+        "kLookupGeometryProviderIdUnityMono",
+    ): (("unity_il2cpp", "engine_exact_layout"),),
+}
 SIGNATURE_FIELDS = (
     "executable_names",
     "pe_architectures",
@@ -465,6 +475,10 @@ def _validate_lookup_provider_manifest_parity(
         )
         engine_id, provider = binding
         source_claims.setdefault(engine_id, set()).add(provider)
+        for engine_id, provider in LOOKUP_NATIVE_PROVIDER_SHARED_BINDINGS.get(
+            pair, ()
+        ):
+            source_claims.setdefault(engine_id, set()).add(provider)
 
     manifest_claims: dict[str, set[str]] = {}
     for record in manifest["lookup_support"]["engines"]:

@@ -13,20 +13,28 @@ import 'package:fushi/src/media/music/music_remote_tracks.dart';
 import 'package:fushi/src/media/music/music_resume.dart';
 import 'package:fushi/src/media/music/music_resume_points_watch.dart';
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart'
-    show MusicFloatingBarHost;
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
+import 'package:fushi/src/pages/implementations/music/music_detail_chrome.dart'
+    show MusicDetailHero, musicDetailHeroGap;
 import 'package:fushi/src/pages/implementations/music/music_local_playlist_actions.dart';
+import 'package:fushi/src/pages/implementations/music/music_server_pages.dart'
+    show musicBrowseScaffold;
 import 'package:fushi/src/pages/implementations/music/music_track_actions.dart';
 import 'package:fushi/src/pages/implementations/music/music_track_detail_page.dart';
-import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
+import 'package:fushi/src/pages/implementations/music/music_track_row_surface.dart';
+import 'package:fushi/src/pages/implementations/music/music_collection_view.dart';
+import 'package:fushi/src/utils/components/fushi_cover_block.dart'
+    show FushiCoverBlockSize;
+import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
+    show FushiToolbarItem;
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_reorderable_column.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show shellRedesignActive;
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
@@ -213,6 +221,8 @@ class MusicTrackList extends ConsumerStatefulWidget {
     required this.context,
     this.shrinkWrap = false,
     this.showTrackNumbers = false,
+    this.header,
+    this.style = MusicViewStyle.list,
   }) : _tracks = tracks,
        _entries = null,
        playlist = null,
@@ -228,6 +238,8 @@ class MusicTrackList extends ConsumerStatefulWidget {
     this.showTrackNumbers = false,
     this.playlist,
     this.source,
+    this.header,
+    this.style = MusicViewStyle.list,
   }) : _entries = entries,
        _tracks = null;
 
@@ -256,6 +268,16 @@ class MusicTrackList extends ConsumerStatefulWidget {
   /// 起播时记进播放流的来源（歌单页 = 这个歌单）；null = 不记。
   final MusicPlaySource? source;
 
+  /// 排在第一行之前、随列表一起滚动的头部（独立页的 [MusicDetailHero]）。只用于
+  /// 自己负责滚动的列表（非 [shrinkWrap]、非可重排）；给了头部时列表顶部让出
+  /// 外壳页头的高度（`MediaQuery.paddingOf(context).top`），头部与第一行之间隔一档
+  /// [musicDetailHeroGap]。
+  final Widget? header;
+
+  /// 曲目排成单列曲目行（缺省）或多列封面色块（[MusicTrackBlock]，重设计外壳下）。
+  /// 可重排的歌单恒为单列行（拖拽把手只在行上）。
+  final MusicViewStyle style;
+
   @override
   ConsumerState<MusicTrackList> createState() => _MusicTrackListState();
 }
@@ -268,6 +290,9 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
   late List<MusicLibraryEntry> _list = widget.entries;
 
   List<MusicLibraryEntry> get entries => _list;
+
+  /// 本列表里本地曲目的 uid → 音频路径（找专辑内嵌封面所在的那首用），随 [_list] 重算。
+  late Map<String, String> _pathByUid = musicLocalTrackPathsOf(_list);
 
   static List<String> _uids(List<MusicLibraryEntry> entries) => <String>[
     for (final MusicLibraryEntry e in entries) e.trackUid,
@@ -286,6 +311,7 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
     if (identical(oldWidget._source, widget._source)) return;
     final List<MusicLibraryEntry> previous = _list;
     _list = widget.entries;
+    _pathByUid = musicLocalTrackPathsOf(_list);
     if (!listEquals(_uids(previous), _uids(_list))) _resume.watch(_uids(_list));
   }
 
@@ -397,6 +423,35 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
         ),
       );
     }
+    final Widget? header = shrinkWrap ? null : widget.header;
+    if (widget.style == MusicViewStyle.blocks &&
+        musicTrackRowSurfaceActive(buildContext)) {
+      return MusicStyledCollection(
+        style: MusicViewStyle.blocks,
+        itemCount: entries.length,
+        shrinkWrap: shrinkWrap,
+        padding: shrinkWrap
+            ? EdgeInsets.zero
+            : withBottomSafeInset(
+                buildContext,
+                EdgeInsets.fromLTRB(
+                  tokens.spacing.page,
+                  (header == null
+                          ? 0
+                          : MediaQuery.paddingOf(buildContext).top) +
+                      tokens.spacing.gap,
+                  tokens.spacing.page,
+                  tokens.spacing.section,
+                ),
+              ),
+        header: header,
+        headerGap: musicDetailHeroGap(buildContext, tokens.spacing.gap),
+        rowBuilder: (BuildContext c, int i) => _row(c, i, mode),
+        blockBuilder: (BuildContext c, int i, FushiCoverBlockSize size) =>
+            _block(c, i, size, mode),
+      );
+    }
+    final int lead = header == null ? 0 : 1;
     return FushiEntranceScope(
       child: ListView.builder(
         shrinkWrap: shrinkWrap,
@@ -408,15 +463,28 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
                 buildContext,
                 EdgeInsets.fromLTRB(
                   tokens.spacing.page,
-                  tokens.spacing.gap,
+                  // 带头部的独立页：外壳把正文铺到页头底下，经 MediaQuery 顶部
+                  // padding 让出页头。
+                  (header == null
+                          ? 0
+                          : MediaQuery.paddingOf(buildContext).top) +
+                      tokens.spacing.gap,
                   tokens.spacing.page,
                   tokens.spacing.section,
                 ),
               ),
-        itemCount: entries.length,
-        itemBuilder: fushiStaggeredItemBuilder(
-          (BuildContext c, int i) => _row(c, i, mode),
-        ),
+        itemCount: entries.length + lead,
+        itemBuilder: fushiStaggeredItemBuilder((BuildContext c, int i) {
+          if (header != null && i == 0) {
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: musicDetailHeroGap(c, tokens.spacing.gap),
+              ),
+              child: header,
+            );
+          }
+          return _row(c, i - lead, mode);
+        }),
       ),
     );
   }
@@ -448,12 +516,53 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
       overflow: TextOverflow.ellipsis,
     );
     void play() => _play(i);
-    return musicLocalTrackMenu(
+    final MusicItemMenu menu = musicLocalTrackMenu(
       c,
       track,
       onPlay: play,
       extra: _playlistActions(i),
-    ).contextMenu(
+    );
+    if (musicTrackRowSurfaceActive(c)) {
+      // 封面来源与旧列表行同一份（[musicLocalTrackCoverOf]，BUG-4494）：行首画
+      // 专辑封面（没有内嵌封面的曲目借专辑封面曲目的），取色也用这一份。
+      final MusicTrackCoverSource cover = _localCoverSource(track);
+      return menu.contextMenu(
+        child: _surfaceRow(
+          i,
+          (bool playing) => MusicTrackRowSurface(
+            key: ValueKey<String>(_rowKey('music-track', i, track.trackUid)),
+            title: track.title,
+            subtitleWidget: musicTrackSubtitleWithResume(
+              track,
+              subtitle,
+              resume,
+            ),
+            ordinal: widget.showTrackNumbers
+                ? track.trackNo?.toString() ?? ''
+                : null,
+            leading: widget.showTrackNumbers ? null : _localCover(track),
+            coverPath: cover.coverPath,
+            embeddedFromPath: cover.embeddedFromPath,
+            durationText: musicTrackTimeLabel(track.durationMs, resume),
+            playing: playing,
+            onTap: play,
+            onLongPress: () => openMusicTrackDetail(c, track.trackUid),
+            trailing: <Widget>[
+              FushiIconButton(
+                key: ValueKey<String>(
+                  _rowKey('music-track-detail', i, track.trackUid),
+                ),
+                icon: FushiIcons.info,
+                tooltip: t.music_track_detail,
+                onTap: () => openMusicTrackDetail(c, track.trackUid),
+              ),
+              if (_onReorder != null) const MusicPlaylistDragHandle(),
+            ],
+          ),
+        ),
+      );
+    }
+    return menu.contextMenu(
       child: FushiPressScale(
         child: FushiGroupedListItem(
           key: ValueKey<String>(_rowKey('music-track', i, track.trackUid)),
@@ -471,7 +580,7 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
                       style: c.fushiType.bodySmall,
                     ),
                   )
-                : const FushiListLeadingIcon(FushiIcons.music),
+                : _localCover(track),
             title: Text(
               track.title,
               maxLines: 1,
@@ -499,6 +608,28 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
           ),
         ),
       ),
+    );
+  }
+
+  /// 本地曲目的封面来源（自带内嵌封面 / 专辑目录封面 / 专辑封面曲目的内嵌封面）。
+  MusicTrackCoverSource _localCoverSource(MusicTrackRow track) =>
+      musicLocalTrackCoverOf(
+        track,
+        album: track.albumUid == null ? null : widget.albums[track.albumUid],
+        pathByUid: _pathByUid,
+      );
+
+  /// 本地曲目行的封面缩略图（与远程行同尺寸同材质）。
+  Widget _localCover(MusicTrackRow track) {
+    final MusicTrackCoverSource cover = _localCoverSource(track);
+    return musicMaterialCover(
+      MusicCover(
+        coverPath: cover.coverPath,
+        embeddedFromPath: cover.embeddedFromPath,
+        size: 40,
+      ),
+      size: 40,
+      compact: true,
     );
   }
 
@@ -533,6 +664,40 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
       onPlay: play,
       extra: _playlistActions(i),
     );
+    if (musicTrackRowSurfaceActive(c)) {
+      return menu.contextMenu(
+        // 服务器在这台设备上没配：行留着（可移出 / 整理歌单），点了不起播、整行减淡。
+        child: Opacity(
+          opacity: available ? 1 : 0.5,
+          child: _surfaceRow(
+            i,
+            (bool playing) => MusicTrackRowSurface(
+              key: ValueKey<String>(_rowKey('music-track', i, track.trackUid)),
+              title: track.title,
+              subtitleWidget: musicSubtitleWithResume(
+                track.trackUid,
+                track.durationMs,
+                subtitle,
+                resume,
+              ),
+              leading: musicMaterialCover(
+                MusicCover(coverPath: entry.coverUrl, size: 40),
+                size: 40,
+                compact: true,
+              ),
+              coverPath: entry.coverUrl,
+              durationText: musicTrackTimeLabel(track.durationMs, resume),
+              playing: playing,
+              onTap: available ? play : null,
+              trailing: <Widget>[
+                menu.button(),
+                if (_onReorder != null) const MusicPlaylistDragHandle(),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
     return menu.contextMenu(
       child: FushiPressScale(
         child: FushiGroupedListItem(
@@ -578,9 +743,136 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
     );
   }
 
+  /// 色块样式的一格（[MusicTrackBlock]）：点按 / 右键菜单 / 长按（本地曲目 = 曲目
+  /// 详情）与行同一套，副行是歌手（远程曲目再跟来源名），底行 chip 是时长 / 剩余。
+  Widget _block(
+    BuildContext c,
+    int i,
+    FushiCoverBlockSize size,
+    MusicResumeMode mode,
+  ) {
+    void play() => _play(i);
+    switch (entries[i]) {
+      case MusicLocalEntry(:final MusicTrackRow track):
+        final Duration? resume = musicTrackResumeOf(
+          track,
+          _resume[track.trackUid],
+          mode,
+        );
+        final MusicItemMenu menu = musicLocalTrackMenu(
+          c,
+          track,
+          onPlay: play,
+          extra: _playlistActions(i),
+        );
+        return menu.contextMenu(
+          child: _surfaceRow(
+            i,
+            (bool playing) => MusicTrackBlock(
+              key: ValueKey<String>(_rowKey('music-track', i, track.trackUid)),
+              size: size,
+              title: track.title,
+              subtitle: track.artistCredit ?? t.music_artist_unknown,
+              coverPath: entries[i].playItem(widget.albums)?.coverPath,
+              embeddedFromPath: track.path,
+              durationText: musicTrackTimeLabel(track.durationMs, resume),
+              playing: playing,
+              onTap: play,
+              onLongPress: () => openMusicTrackDetail(c, track.trackUid),
+            ),
+          ),
+        );
+      case final MusicRemoteEntry entry:
+        final MusicRemoteTrackRow track = entry.track;
+        final bool available = entry.available;
+        final MusicResumePointRow? point = _resume[track.trackUid];
+        final Duration? resume = point == null
+            ? null
+            : musicResumeDisplayStart(
+                mode: mode,
+                savedPositionMs: point.positionMs,
+                durationMs: track.durationMs ?? point.durationMs,
+              );
+        final MusicItemMenu menu = musicRemoteEntryMenu(
+          c,
+          entry,
+          onPlay: play,
+          extra: _playlistActions(i),
+        );
+        return menu.contextMenu(
+          // 服务器在这台设备上没配：格子留着（可移出 / 整理歌单），点了不起播、减淡。
+          child: Opacity(
+            opacity: available ? 1 : 0.5,
+            child: _surfaceRow(
+              i,
+              (bool playing) => MusicTrackBlock(
+                key: ValueKey<String>(
+                  _rowKey('music-track', i, track.trackUid),
+                ),
+                size: size,
+                title: track.title,
+                subtitle: <String>[
+                  track.artist ?? t.music_artist_unknown,
+                  musicRemoteSourceLabel(entry),
+                ].join(' · '),
+                coverPath: entry.coverUrl,
+                durationText: musicTrackTimeLabel(track.durationMs, resume),
+                playing: playing,
+                onTap: available ? play : null,
+              ),
+            ),
+          ),
+        );
+    }
+  }
+
+  /// 重设计外壳的曲目行（[MusicTrackRowSurface]）接上「正在播放」：第 [i] 行的
+  /// 播放项（与 [_play] 排进队列的同一份）是引擎当前曲时常驻铺色 + 标题水印。
+  Widget _surfaceRow(int i, Widget Function(bool playing) row) {
+    final String? uid = entries[i].playItem(widget.albums)?.trackUid;
+    if (uid == null) return row(false);
+    final MusicPlayerEngine engine = ref.read(appProvider).musicSession.engine;
+    return MusicNowPlayingMatch(
+      listenable: engine,
+      isCurrent: () => engine.current?.trackUid == uid,
+      builder: (BuildContext context, bool playing) => row(playing),
+    );
+  }
+
   /// 行 key：歌单里同一首可以出现两次，歌单页的 key 带上行号免得撞。
   String _rowKey(String prefix, int i, String uid) =>
       widget.playlist == null ? '$prefix-$uid' : '$prefix-$i-$uid';
+}
+
+/// 本地曲目行缩略图的来源（[MusicCover] 的两个参数）。
+typedef MusicTrackCoverSource = ({String? coverPath, String? embeddedFromPath});
+
+/// [entries] 里本地曲目的 uid → 音频路径。
+Map<String, String> musicLocalTrackPathsOf(List<MusicLibraryEntry> entries) =>
+    <String, String>{
+      for (final MusicLibraryEntry e in entries)
+        if (e case MusicLocalEntry(:final MusicTrackRow track))
+          track.trackUid: track.path,
+    };
+
+/// 本地曲目行用哪张封面：与专辑网格 / 「继续收听」同一来源——专辑的目录封面
+/// （[MusicAlbumRow.coverPath]）优先，其次专辑选定的内嵌封面曲目
+/// （[MusicAlbumRow.coverTrackUid]，同一张专辑的各行共用一次读取）；那首不在本列表里
+/// （[pathByUid] 查不到）时退回这首自己的内嵌封面；都没有给占位（两个都为 null）。
+MusicTrackCoverSource musicLocalTrackCoverOf(
+  MusicTrackRow track, {
+  required MusicAlbumRow? album,
+  required Map<String, String> pathByUid,
+}) {
+  final String? albumEmbedded = switch (album?.coverTrackUid) {
+    final String uid => pathByUid[uid],
+    null => null,
+  };
+  return (
+    coverPath: album?.coverPath,
+    embeddedFromPath:
+        albumEmbedded ?? (track.hasEmbeddedCover ? track.path : null),
+  );
 }
 
 /// 当前的断点续播模式（设置 `music_resume_mode`）；设置里切档时调用方跟着重建。
@@ -671,42 +963,68 @@ class MusicTrackListPage extends StatelessWidget {
   final Map<String, MusicAlbumRow> albums;
 
   @override
-  Widget build(BuildContext context) {
-    final bool apple = isGlassDesign(context);
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final NavigatorState? navigator = Navigator.maybeOf(context);
-    return MusicFloatingBarHost(
-      child: FushiPageScaffold(
-        title: title,
-        header: apple
-            ? null
-            : Padding(
-                padding: EdgeInsets.fromLTRB(
-                  tokens.spacing.page,
-                  tokens.spacing.gap,
-                  tokens.spacing.page,
-                  tokens.spacing.gap,
-                ),
-                child: FushiFloatingTopBar(
-                  title: title,
-                  leading: <FushiToolbarItem>[
-                    if (navigator != null && navigator.canPop())
-                      FushiToolbarItem(
-                        icon: FushiIcons.back,
-                        label: MaterialLocalizations.of(
-                          context,
-                        ).backButtonTooltip,
-                        onPressed: () => unawaited(navigator.maybePop()),
-                      ),
-                  ],
-                ),
-              ),
-        body: MusicTrackList(
-          tracks: tracks,
-          albums: albums,
-          context: MusicQueueContext.mixed,
-        ),
+  Widget build(BuildContext context) => MusicViewStyleBuilder(
+    kind: MusicViewKind.tracks,
+    fallback: MusicViewStyle.list,
+    builder: _buildPage,
+  );
+
+  /// [style]：曲目排成单列曲目行（原有）或多列封面色块。
+  Widget _buildPage(BuildContext context, MusicViewStyle style) {
+    // 重设计外壳：页头大字外壳 + 列表最前一块艺人色块（艺人没有图，色块颜色由
+    // 名字折叠出色相，水印大字 = 艺人名）；墨水屏照旧是悬浮顶栏 + 纯列表。
+    final bool redesign = shellRedesignActive(context);
+    return musicBrowseScaffold(
+      context,
+      title: title,
+      titleInBody: redesign,
+      actions: <FushiToolbarItem>[
+        if (musicViewStyleSwitchable(context))
+          musicViewStyleToggle(MusicViewKind.tracks, style),
+      ],
+      body: MusicTrackList(
+        tracks: tracks,
+        albums: albums,
+        context: MusicQueueContext.mixed,
+        style: style,
+        header: redesign
+            ? MusicDetailHero(
+                title: title,
+                showCover: false,
+                eyebrow: t.music_section_artists,
+                meta: t.music_tracks_count(count: tracks.length),
+                legacy: const SizedBox.shrink(),
+              )
+            : null,
       ),
+    );
+  }
+}
+
+/// 按播放项身份（[trackUid]，与排进引擎队列的 `MusicPlayItem.trackUid` 同一口径）
+/// 认「正在播放」：从 [appProvider] 取音乐引擎交给 [MusicNowPlayingMatch]。
+/// 放在这里而不是行外观文件（`music_track_row_surface.dart`）：外观层不接
+/// AppModel，否则它会被拉进 import 大环（`import_cycle_guard_test`）。
+/// [trackUid] 为 null（认不出身份的行）恒为 false，不挂监听。
+class MusicNowPlayingTrack extends ConsumerWidget {
+  const MusicNowPlayingTrack({
+    required this.trackUid,
+    required this.builder,
+    super.key,
+  });
+
+  final String? trackUid;
+  final Widget Function(BuildContext context, bool playing) builder;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final String? uid = trackUid;
+    if (uid == null) return builder(context, false);
+    final MusicPlayerEngine engine = ref.read(appProvider).musicSession.engine;
+    return MusicNowPlayingMatch(
+      listenable: engine,
+      isCurrent: () => engine.current?.trackUid == uid,
+      builder: builder,
     );
   }
 }

@@ -7,6 +7,8 @@ import 'package:fushi/src/media/video/cover_ui/cover_aspect_probe.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
+import 'package:fushi/src/utils/components/fushi_continue_blocks.dart';
+import 'package:fushi/src/utils/components/fushi_cover_block.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
@@ -311,6 +313,26 @@ Color fushiHeroBlockColor(ColorScheme scheme) => Color.alphaBlend(
   scheme.surfaceContainerLow,
 );
 
+/// A small state mark for a Continue entry (media tracking: sent / not linked /
+/// last send failed). The cover row draws it as a round badge on the cover's
+/// top end corner; the main card shows [label] as one more meta line. It is
+/// information only: taps go to the card underneath.
+class FushiContinueMark {
+  const FushiContinueMark({
+    required this.icon,
+    required this.label,
+    this.problem = false,
+  });
+
+  final IconData icon;
+
+  /// Full sentence for the meta line and the screen reader.
+  final String label;
+
+  /// true = needs the user (error colours); false = quiet confirmation.
+  final bool problem;
+}
+
 /// 「继续」区里的一个条目（主卡与旁边封面行共用一份数据）。
 ///
 /// 主卡长什么样只看封面方向（[still]）：横图（视频剧照）走剧照叠层皮——
@@ -342,7 +364,45 @@ class FushiContinueEntry {
     this.colorSource,
     this.badge,
     this.semanticLabel,
+    this.blockArt,
+    this.blockCover,
+    this.byline,
+    this.blockEyebrow,
+    this.mark,
   });
+
+  /// 封面色块版式（[FushiContinueBlocks]）里的封面摆法；null = 按封面推断
+  /// （[blockArtResolved]）。横图剧照恒为 [FushiCoverBlockArt.landscape]。
+  final FushiCoverBlockArt? blockArt;
+
+  /// 封面色块里用的封面：裸图，不带框 / 材质（色块自己画卡面，[cover] 若自带
+  /// 卡盒框会叠两层）；null = [cover]。
+  final Widget? blockCover;
+
+  /// 封面色块标题下的署名行（作者 / 「已看 N 集」）；null = [metaLines] 连起来。
+  final String? byline;
+
+  /// 封面色块拼贴首块（[FushiCoverBlockSize.hero]）的状态 chip（游戏「游玩中」）；
+  /// null = 区块名（「继续观看」）。「继续」横滑行是半高块，不画 chip。
+  final String? blockEyebrow;
+
+  /// 封面色块里的摆法：横图剧照铺在结束侧（不裁成竖条）；否则 [blockArt]，
+  /// 没给时按封面推断——方图 = 专辑、卡盒材质 = 游戏盒、海报材质 = 斜放海报，
+  /// 其余按书封。
+  FushiCoverBlockArt get blockArtResolved {
+    if (still) return FushiCoverBlockArt.landscape;
+    final FushiCoverBlockArt? art = blockArt;
+    if (art != null) return art;
+    if ((coverAspectRatio - 1).abs() < 0.05) return FushiCoverBlockArt.square;
+    return switch (material) {
+      ShelfCoverMaterial.gameCase => FushiCoverBlockArt.box,
+      ShelfCoverMaterial.glossyPoster => FushiCoverBlockArt.portrait,
+      _ => FushiCoverBlockArt.book,
+    };
+  }
+
+  /// State mark on the cover (cover row); null = none.
+  final FushiContinueMark? mark;
 
   /// 取色卡（[FushiContinueCardRow]）标题下的状态角标（游戏的游玩状态）；
   /// null = 不画。
@@ -446,6 +506,11 @@ class FushiContinueEntry {
           colorSource: colorSource,
           badge: badge,
           semanticLabel: semanticLabel,
+          // 横图：色块里按剧照铺（[blockArtResolved] 认 [still]），封面用横槽那张；
+          // 竖图专用的裸封面 [blockCover] 不再适用。
+          byline: byline,
+          blockEyebrow: blockEyebrow,
+          mark: mark,
         );
 }
 
@@ -521,6 +586,11 @@ class _EntryAspectProbeState extends State<_EntryAspectProbe>
 ///
 /// 卡上不放按钮：点按 = 继续，长按 / 右键 = 条目菜单。主卡与每张封面都是独立
 /// 焦点站点，悬停抬升 + 光面材质（投影、扫光、倾斜、镜面高光）。
+///
+/// 重设计外壳 + 拼贴 / 规整色块布局（[FushiContinueBlocks.active]）下整段换成
+/// 封面色块横滑行（[FushiContinueBlocks]：主条目排行首，[side] 接在后面，一行
+/// 半高色块横向滑动，不分宽窄屏）——库页另一条「最近」行此时与色块重复，要按同一门控收起。上面的
+/// 主卡 / 封面行只在封面网格布局与墨水屏下用。
 class FushiContinueSpotlight extends StatelessWidget {
   const FushiContinueSpotlight({
     required this.main,
@@ -533,12 +603,25 @@ class FushiContinueSpotlight extends StatelessWidget {
     this.sideRowKey = const ValueKey<String>('fushi-continue-side-row'),
     this.staggerEntrance = true,
     this.sideBuilder,
+    this.blockLabel,
+    this.blockLeadingHero = false,
     super.key,
   });
 
+  /// 封面色块版式（[FushiContinueBlocks.active]）下的区块名（「继续观看」）：
+  /// 画成横滑行上方的分区标题；null = 不画。[blockLeadingHero] 时改作主块的
+  /// 状态 chip（主块自己就标明了是「继续」，不再另画标题）。
+  final String? blockLabel;
+
+  /// 封面色块版式下保留大封面主块（[FushiContinueBlocks.leadingHero]）：视频
+  /// 首页用；其余库页是纯一行横滑。
+  final bool blockLeadingHero;
+
   /// 自定义「其余条目」区（代替内置封面行）：宽屏并排时拿到主卡高度，窄屏挂在
   /// 主卡下面时拿到 null。视频首页用它把其余条目排成取色并列卡
-  /// （[FushiContinueCardRow]）。给了它就不看 [side]。
+  /// （[FushiContinueCardRow]）。给了它就不看 [side]——封面色块版式
+  /// （[FushiContinueBlocks.active]）除外：那里不用它、改排 [side]，所以给了它
+  /// 的调用方也应同时给 [side]。
   final Widget Function(double? height)? sideBuilder;
 
   final FushiContinueEntry main;
@@ -720,17 +803,32 @@ class FushiContinueSpotlight extends StatelessWidget {
   }
 
   Widget _stillMain(FushiContinueEntry main) {
-    final Widget card = _StillMainCard(entry: main);
+    final Widget card = FushiContinueStillCard(entry: main);
     return staggerEntrance
         ? FushiStaggeredEntrance(index: 0, child: card)
         : card;
   }
 
   @override
-  Widget build(BuildContext context) => FushiContinueOrientedEntry(
-    entry: main,
-    builder: (FushiContinueEntry m) => _layout(context, m),
-  );
+  Widget build(BuildContext context) {
+    // 重设计外壳 + 色块布局：整段换成一行封面色块横滑（主条目排行首），不再
+    // 分主卡 / 封面行；[sideBuilder] 是旧版式的并列卡，色块
+    // 版式下不用（调用方同时给 [side]）。
+    if (FushiContinueBlocks.active(context)) {
+      return FushiContinueBlocks(
+        groupKey: sideRowKey,
+        entries: <FushiContinueEntry>[main, ...side],
+        label: blockLabel,
+        showLabel: blockLabel != null && !blockLeadingHero,
+        leadingHero: blockLeadingHero,
+        staggerEntrance: staggerEntrance,
+      );
+    }
+    return FushiContinueOrientedEntry(
+      entry: main,
+      builder: (FushiContinueEntry m) => _layout(context, m),
+    );
+  }
 
   Widget _layout(BuildContext context, FushiContinueEntry main) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
@@ -825,8 +923,11 @@ class FushiContinueSpotlight extends StatelessWidget {
 }
 
 /// 剧照叠层主卡：眉标 / 片名 / 进度压在底部暗渐变上。
-class _StillMainCard extends StatelessWidget {
-  const _StillMainCard({required this.entry});
+/// 剧照叠层主卡：整张剧照按 16:9 完整铺满卡面，眉标 / 片名 / 进度压在底部暗
+/// 渐变上。视频首页色块版式的「继续观看」主卡也用它（2026-11-12 用户：「左边
+/// 大封面完整显示比例」）。
+class FushiContinueStillCard extends StatelessWidget {
+  const FushiContinueStillCard({required this.entry, super.key});
 
   final FushiContinueEntry entry;
 
@@ -1047,7 +1148,11 @@ class FushiContinueSideTile extends StatelessWidget {
           container: true,
           button: true,
           excludeSemantics: true,
-          label: subtitle == null ? entry.title : '${entry.title} · $subtitle',
+          label: <String>[
+            entry.title,
+            if (subtitle != null) subtitle,
+            if (entry.mark case final FushiContinueMark mark) mark.label,
+          ].join(' · '),
           onTap: entry.onOpen,
           onLongPress: entry.onLongPress,
           child: SizedBox(
@@ -1056,7 +1161,23 @@ class FushiContinueSideTile extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                SizedBox(width: width, height: coverHeight, child: cover),
+                SizedBox(
+                  width: width,
+                  height: coverHeight,
+                  child: entry.mark == null
+                      ? cover
+                      : Stack(
+                          fit: StackFit.expand,
+                          children: <Widget>[
+                            cover,
+                            PositionedDirectional(
+                              top: 6,
+                              end: 6,
+                              child: _ContinueMarkBadge(mark: entry.mark!),
+                            ),
+                          ],
+                        ),
+                ),
                 // 文字块也是点按面（封面那张卡只盖封面）。右键走绑定表
                 // （ContextMenuTrigger），不硬绑次按钮。
                 ContextMenuTrigger(
@@ -1086,6 +1207,41 @@ class FushiContinueSideTile extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+/// The round state badge on a cover-row cover ([FushiContinueMark]). Ignores
+/// pointers so the cover card under it keeps its tap, long press and hover.
+class _ContinueMarkBadge extends StatelessWidget {
+  const _ContinueMarkBadge({required this.mark});
+
+  final FushiContinueMark mark;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final bool eink = isEinkTheme(context);
+    final Color fill = eink
+        ? cs.surface
+        : (mark.problem ? cs.errorContainer : cs.secondaryContainer);
+    final Color ink = eink
+        ? cs.onSurface
+        : (mark.problem ? cs.onErrorContainer : cs.onSecondaryContainer);
+    return IgnorePointer(
+      child: DecoratedBox(
+        key: const ValueKey<String>('fushi-continue-mark'),
+        decoration: ShapeDecoration(
+          color: fill,
+          shape: CircleBorder(
+            side: eink ? BorderSide(color: cs.onSurface) : BorderSide.none,
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(4),
+          child: FushiIcon(mark.icon, size: 14, color: ink),
+        ),
+      ),
     );
   }
 }

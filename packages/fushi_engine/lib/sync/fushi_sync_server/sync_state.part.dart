@@ -291,7 +291,7 @@ extension _FushiSyncServerSyncState on FushiSyncServer {
         },
       );
     }
-    final String body = await request.readAsString();
+    final String body = await readBoundedBodyString(request);
     if (body.trim().isEmpty) {
       return shelf.Response(400, body: 'Empty profile payload');
     }

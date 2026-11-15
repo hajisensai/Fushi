@@ -694,6 +694,7 @@ class _SrsNoteTypeEditorPageState extends ConsumerState<SrsNoteTypeEditorPage> {
     final String title = _type?.name ?? t.srs_note_types_title;
     return FushiPageScaffold(
       title: title,
+      masthead: true,
       header: apple ? null : _buildTopBar(context, title),
       body: Builder(builder: _buildBody),
     );

@@ -14,6 +14,8 @@ import 'dart:convert';
 
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/sync/subscriptions/host_subscription_host.dart';
+import 'package:fushi_engine/sync/remote_lookup_routes.dart'
+    show readBoundedBodyString;
 import 'package:shelf/shelf.dart' as shelf;
 
 shelf.Response _json(Object body, {int status = 200}) => shelf.Response(
@@ -50,7 +52,9 @@ Future<shelf.Response> handleHostSubscriptionRequest(
         });
       }
       if (method == 'POST') {
-        final Object? decoded = jsonDecode(await request.readAsString());
+        final Object? decoded = jsonDecode(
+          await readBoundedBodyString(request),
+        );
         if (decoded is! Map) {
           return shelf.Response(400, body: 'JSON object body required');
         }
@@ -80,7 +84,9 @@ Future<shelf.Response> handleHostSubscriptionRequest(
     if (method != 'POST') return shelf.Response(405);
     switch (seg[1]) {
       case 'enable':
-        final Object? decoded = jsonDecode(await request.readAsString());
+        final Object? decoded = jsonDecode(
+          await readBoundedBodyString(request),
+        );
         final Object? enabled = decoded is Map ? decoded['enabled'] : null;
         if (enabled is! bool) {
           return shelf.Response(400, body: 'enabled (bool) required');

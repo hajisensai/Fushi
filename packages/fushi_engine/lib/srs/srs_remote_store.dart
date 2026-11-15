@@ -82,6 +82,16 @@ class SrsRemoteStoreError implements Exception {
   /// 主机的回包不合契约（客户端判定，主机不发这个码）：多半是两端版本不一致。见 [SrsRemoteWireError]。
   static const String badResponse = 'bad_response';
 
+  /// 两端的远程复习线格式不是同一代（HTTP 426，srs_remote_generation.dart）：新代主机收到 V1 请求、或 V2 请求
+  /// 带的代号不对。
+  static const String upgradeRequired = 'upgrade_required';
+
+  /// 主机正在把复习库迁移到新代（HTTP 503）：迁移完成前不提供复习。
+  static const String migrating = 'migrating';
+
+  /// 主机迁移复习库失败（HTTP 503）：要在主机上处理，客户端重试没有用。
+  static const String migrationFailed = 'migration_failed';
+
   @override
   String toString() =>
       'SrsRemoteStoreError($status, $code${detail == null ? '' : ', $detail'})';

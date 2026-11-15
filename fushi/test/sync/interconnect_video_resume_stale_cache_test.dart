@@ -120,6 +120,22 @@ Future<void> _clientWatches(
   await sync.reportLive(_uid, (positionMs: positionMs, updatedAtMs: at));
 }
 
+/// 客户端打开这条视频：走播放页开播的三方判定（[InterconnectRemotePlaybackSession.startPositionFor]），
+/// 断言开播位置为 [expectedStartMs]。之后两端在该位置有基线，实时上报按前置条件推进 host。
+Future<void> _openOnClient(
+  FushiDatabase db,
+  InterconnectSyncBackend backend,
+  int expectedStartMs,
+) async {
+  final InterconnectRemotePlaybackSession session =
+      InterconnectRemotePlaybackSession(db: db, backend: backend);
+  addTearDown(session.close);
+  expect(
+    await session.startPositionFor(_uid, fallback: () => 0),
+    expectedStartMs,
+  );
+}
+
 void main() {
   late Directory work;
   late FushiSyncServer server;
@@ -178,6 +194,11 @@ void main() {
       updatedAtMs: info.positionUpdatedAtMs,
     );
     expect(listed, (positionMs: 40000, updatedAtMs: _t0));
+
+    // 开播：与播放页同一入口（`_remoteSessionFor(...).startPositionFor`）先按三方
+    // 判定收敛——全新客户端无本机断点，取 host 的 40 s 并记基线。缺这一步直接实时
+    // 上报，无基线、两端位置不同按 BUG-4435 判冲突、上报 held（不再按墙钟 LWW）。
+    await _openOnClient(db, backend, 40000);
 
     final InterconnectPlaybackPositionSync sync =
         InterconnectPlaybackPositionSync(

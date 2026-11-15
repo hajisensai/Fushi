@@ -364,7 +364,7 @@ APPLE_OVERRIDES: dict[str, tuple[str, str]] = {
     "manga": ("photo_on_rectangle", "photo_fill_on_rectangle_fill"),
     "menu": ("line_horizontal_3", "line_horizontal_3"),
     "redo": ("arrow_uturn_right", "arrow_uturn_right"),
-    "linkOff": ("link", "link"),
+    "linkOff": ("slash_circle", "slash_circle_fill"),
     "selectAll": ("checkmark_square", "checkmark_square_fill"),
     "searchOff": ("search", "search"),
     "brokenImage": ("photo", "photo_fill"),

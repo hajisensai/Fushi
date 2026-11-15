@@ -21,6 +21,8 @@ import 'package:fushi/src/pages/implementations/home_page.dart'
 import 'package:fushi/src/pages/implementations/reader_fushi_history_page.dart';
 import 'package:fushi/src/pages/implementations/media_collection_grid_detail_page.dart';
 import 'package:fushi/src/pages/implementations/series_shelf_card.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart';
+import 'package:fushi/src/utils/components/fushi_cover_block.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/remote_book_client.dart';
@@ -75,8 +77,14 @@ void main() {
   late List<SrtBook> shelfSrtBooks;
   Completer<void>? audiobookDownloadGate;
   late PreferencesRepository prefs;
+  // 库页布局。本文件守的是远端占位卡的数据 / 下载 / 网络行为，断言借封面网格
+  // （重设计前的封面 + 标题网格：SliverGrid、封面下 [ShelfCardMeta]）定位，默认钉
+  // 网格；拼贴（默认布局）下同一张卡（同一 key、同一手势）的混排与点按下载另由
+  // 显式切到 collage 的用例覆盖。
+  late ShellContentLayout shelfLayout;
 
   setUp(() async {
+    shelfLayout = ShellContentLayout.grid;
     useRealImporter = false;
     failNextAudiobook = false;
     LocaleSettings.setLocale(AppLocale.en);
@@ -123,6 +131,11 @@ void main() {
     ],
     child: TranslationProvider(
       child: MaterialApp(
+        theme: ThemeData(
+          extensions: <ThemeExtension<dynamic>>[
+            FushiShellTheme(contentLayout: shelfLayout),
+          ],
+        ),
         builder: (BuildContext context, Widget? child) =>
             child ?? const SizedBox.shrink(),
         home: Scaffold(body: body),
@@ -521,6 +534,46 @@ void main() {
 
     expect(remoteClient.downloadedTitles, <String>['Remote Book']);
     expect(importedFiles.single.existsSync(), isTrue);
+  });
+
+  testWidgets('拼贴布局（默认）：远端占位卡同样混排进书架，副行带云标，点卡即下载入库', (
+    WidgetTester tester,
+  ) async {
+    shelfLayout = ShellContentLayout.collage;
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    final Finder card = find.byKey(
+      const ValueKey<String>('remote_book_card_Remote_Book'),
+    );
+    expect(card, findsOneWidget);
+    expect(
+      find.descendant(of: card, matching: find.byType(FushiCoverBlock)),
+      findsOneWidget,
+      reason: '拼贴下远端占位卡走封面色块',
+    );
+    expect(
+      find.byKey(const ValueKey<String>('remote_book_cloud_badge_Remote_Book')),
+      findsOneWidget,
+    );
+
+    await tester.runAsync(() async {
+      await tester.tap(card);
+      for (int i = 0; i < 30; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        if (remoteClient.downloadedTitles.isNotEmpty &&
+            importedFiles.isNotEmpty) {
+          break;
+        }
+      }
+    });
+    await tester.pump();
+
+    expect(remoteClient.downloadedTitles, <String>['Remote Book']);
+    expect(importedFiles.single.existsSync(), isTrue);
+    // 色块按封面取色（进程级 coverColorSchemeCache → 图片加载挂 10 秒超时）；
+    // 测试封面在 fakeAsync 里加载不完，走完超时（落 null）再结束。
+    await tester.pump(const Duration(seconds: 11));
   });
 
   testWidgets('remote book download uses stable bookKey for special titles', (

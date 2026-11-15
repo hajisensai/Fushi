@@ -323,10 +323,32 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
     '语言代码列表 JSON，无路径。',
   ),
   PathRebaseColumn(
+    'RemoteDictionaryMetadata',
+    'sourceLanguage',
+    PathRebaseKind.notAPath,
+    '服务器托管词典的词头语言（BCP-47 标签），无路径。',
+  ),
+  PathRebaseColumn(
     'DictionaryHistory',
     'resultJson',
     PathRebaseKind.notAPath,
     '查询结果快照 JSON（词条文本），无路径。',
+  ),
+
+  // ── media_tracking_mappings / media_tracking_suggestions（媒体追踪）────
+  PathRebaseColumn(
+    'MediaTrackingMappings',
+    'linkSource',
+    PathRebaseKind.notAPath,
+    'v145 关联来源标记 manual / id / auto / suggestion（TrackingLinkSource），'
+        '不是来源路径。',
+  ),
+  PathRebaseColumn(
+    'MediaTrackingSuggestions',
+    'detailsJson',
+    PathRebaseKind.notAPath,
+    '远端条目事实 JSON（titles / authors / totalChapters / finalVolume / '
+        'finished，见 toDetailsJson），无路径。',
   ),
 
   // ── epub_books ────────────────────────────────────────────────────

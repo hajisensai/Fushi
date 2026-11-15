@@ -17,3 +17,4 @@
     softpal_.install();
     system4_.install();
     nitroplus_.install();
+    entisgls_.install();

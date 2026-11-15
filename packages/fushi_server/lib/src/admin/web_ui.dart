@@ -269,6 +269,14 @@ input.sw:disabled{opacity:.38;cursor:default}
 .more-menu button{display:flex;align-items:center;width:100%;height:48px;padding:0 16px;border:0;background:none;text-align:left;font-size:14px;cursor:pointer;color:var(--on-surface)}
 .more-menu button:hover,.more-menu button:focus-visible{background:color-mix(in srgb,var(--on-surface) 8%,transparent);outline:0}
 .more-menu button.danger{color:var(--error)}
+/* 词典行：语言下拉 / 自定义标签输入 */
+.dict-lang{width:auto;min-width:168px;max-width:240px;height:40px;font-size:14px}
+input.dict-lang-other{width:168px;height:40px;font-size:14px}
+/* 词典行：显示名就地编辑（铅笔 → 文本框） */
+.icon-btn.sm{width:32px;height:32px}
+.icon-btn.sm .i{width:18px;height:18px}
+input.dict-name-edit{width:min(320px,100%);height:36px;font-size:14px}
+.icon-btn[hidden],input.dict-name-edit[hidden]{display:none}
 /* 日志分级 */
 .lv-error{color:var(--error)}
 .log-filter{margin:12px 0 0}
@@ -369,6 +377,7 @@ table.rt,.rt tbody,.rt tr,.rt td{display:block;width:100%}
 <symbol id="i-empty" viewBox="0 0 24 24"><path d="M19 3H4.99c-1.11 0-1.98.89-1.98 2L3 19c0 1.1.88 2 1.99 2H19c1.1 0 2-.9 2-2V5a2 2 0 0 0-2-2zm0 12h-4c0 1.66-1.35 3-3 3s-3-1.34-3-3H4.99V5H19v10z"/></symbol>
 <symbol id="i-chevron" viewBox="0 0 24 24"><path d="M9.29 6.71a1 1 0 0 0 0 1.41L13.17 12l-3.88 3.88a1 1 0 1 0 1.41 1.41l4.59-4.59a1 1 0 0 0 0-1.41L10.7 6.7a1 1 0 0 0-1.41.01z"/></symbol>
 <symbol id="i-dictionaries" viewBox="0 0 24 24"><path d="M12.87 15.07l-2.54-2.51.03-.03c1.74-1.94 2.98-4.17 3.71-6.53H17V4h-7V2H8v2H1v1.99h11.17C11.5 7.92 10.44 9.75 9 11.35 8.07 10.32 7.3 9.19 6.69 8h-2c.73 1.63 1.73 3.17 2.98 4.56l-5.09 5.02L4 19l5-5 3.11 3.11.76-2.04zM18.5 10h-2L12 22h2l1.12-3h4.75L21 22h2l-4.5-12zm-2.62 7l1.62-4.33L19.12 17h-3.24z"/></symbol>
+<symbol id="i-edit" viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></symbol>
 <symbol id="i-up" viewBox="0 0 24 24"><path d="M4 12l1.41 1.41L11 7.83V20h2V7.83l5.58 5.59L20 12l-8-8-8 8z"/></symbol>
 <symbol id="i-down" viewBox="0 0 24 24"><path d="M20 12l-1.41-1.41L13 16.17V4h-2v12.17l-5.58-5.59L4 12l8 8 8-8z"/></symbol>
 <symbol id="i-search" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></symbol>
@@ -415,6 +424,8 @@ table.rt,.rt tbody,.rt tr,.rt td{display:block;width:100%}
 </section>
 
 <section id="s-pairing">
+<div id="pairing-lockout"></div>
+<div class="card"><div class="card-head"><div><h2>配对链接</h2><p class="sup" style="margin:0">一次性链接自带票据，配对不用 PIN；来自公网的 PIN 配对被暂停时也能用。</p></div><button class="b sec" id="btn-pair-link">生成配对链接</button></div><div id="pair-link-out" hidden></div></div>
 <div id="pairing-pending"><div class="list"><div class="skel"></div></div></div>
 <h3 class="sh">已配对设备</h3>
 <div class="list" id="peers"><div class="skel"></div><div class="skel"></div></div>
@@ -453,17 +464,18 @@ table.rt,.rt tbody,.rt tr,.rt td{display:block;width:100%}
 </section>
 
 <section id="s-dictionaries">
-<h3 class="sh">查词引擎</h3>
+<h3 class="sh">查词引擎<span class="sp"></span><button class="b text" id="btn-dict-reload"><svg class="i"><use href="#i-refresh"/></svg>重新装载引擎</button></h3>
 <div class="card"><div class="grid" id="dict-engine" style="margin:0"></div></div>
 <p class="note">已配对设备查词时只把要查的文字发过来，去屈折（「食べた」→「食べる」）在本机用本机的变形表做，所以变形表装在服务端即可，各设备无需自带。</p>
 <div class="card"><h2>导入词典</h2>
-<div class="grid"><label class="f" style="grid-column:1/-1">Yomitan zip<input type="file" id="dict-file" accept=".zip" style="height:auto;padding:12px 14px"></label></div>
-<div class="actions"><button class="b" id="btn-dict-up"><svg class="i"><use href="#i-upload"/></svg>导入</button><span class="hint">Yomitan 格式的 zip（术语 / 频率 / 音调 / 汉字）。同名词典视为更新，保留排序与隐藏设置。导入完立即生效；也可以在 Fushi 的「词典 · 传输」推送过来。</span></div>
+<div class="grid"><label class="f" style="grid-column:1/-1">词典包<input type="file" id="dict-file" accept=".zip,.fushidict,.mdx,.dsl" style="height:auto;padding:12px 14px"></label></div>
+<div class="actions"><button class="b" id="btn-dict-up"><svg class="i"><use href="#i-upload"/></svg>导入</button><span class="hint">支持 Fushi app 导出的 .fushidict 词典包，以及 Yomitan（.zip）、MDX、DSL 词典。同名词典视为更新，保留排序与设置。导入完立即生效，计入上传配额；也可以在 Fushi 的「词典 · 传输」推送过来。</span></div>
 <p class="sup" id="dict-up-state"></p>
 </div>
 <h3 class="sh">词典</h3>
 <div class="list" id="dicts"><div class="skel"></div><div class="skel"></div></div>
-<p class="note">顺序决定查词结果里各词典的排列。「隐藏」对应日语查词的隐藏标记（服务端引擎目前只认这一个）：隐藏的词典不装进引擎，查词时不出结果。</p>
+<p class="note">顺序决定查词结果里各词典的排列。「默认启用」只对不携带配置词典选择的请求生效（浏览器扩展、旧版 app）；Fushi app 每次查词都带自己配置（Profile）的选择，会覆盖这里的默认值。</p>
+<p class="note">词典语言同 app 里每本词典的语言设置：「自动」用词典包自己声明的词头语言。改动在设备下次刷新服务端词典目录时生效。</p>
 <h3 class="sh">试查</h3>
 <div class="card"><div class="row" style="margin:0"><input type="text" id="dict-q" placeholder="食べた" style="flex:1 1 200px;width:auto"><button class="b" id="btn-dict-q"><svg class="i"><use href="#i-search"/></svg>查词</button></div></div>
 <div id="dict-results"></div>
@@ -620,7 +632,7 @@ function ask(msg, danger){
     d.showModal(); $('#dlg-no').focus();
   });
 }
-const REASON_TEXT = {disabled:T('订阅已停用，请先启用'), unrecognized:T('无法识别这个站点'), timedOut:T('站点响应超时'), invalidUrl:T('地址无效'), insecureHttp:T('这是明文 HTTP 地址：请改用 HTTPS，或勾选「允许明文 HTTP」')};
+const REASON_TEXT = {not_running:T('互联服务没在运行'), no_reachable_address:T('没有能放进链接的地址：配对链接只收 HTTPS 地址或 P2P 隧道。请开启 TLS、在「设置 › 远程访问」填写 HTTPS 公网地址，或开启 P2P 隧道'), disabled:T('订阅已停用，请先启用'), unrecognized:T('无法识别这个站点'), timedOut:T('站点响应超时'), invalidUrl:T('地址无效'), insecureHttp:T('这是明文 HTTP 地址：请改用 HTTPS，或勾选「允许明文 HTTP」')};
 async function api(path, opts){
   const r = await fetch('/api/admin/'+path, Object.assign({headers:{'Content-Type':'application/json'}}, opts||{}));
   if (r.status===401){ location.reload(); throw new Error('unauthorized'); }
@@ -660,6 +672,7 @@ function closeNav(){ $('#rail').classList.remove('open'); $('#scrim-nav').classL
 function go(s, push){
   const b = navButtons.find(x=>x.dataset.s===s); if(!b) return;
   current=s;
+  if (s==='dictionaries') dictsLoaded=false;
   navButtons.forEach(x=>{ x.classList.toggle('on', x===b); if(x===b) x.setAttribute('aria-current','page'); else x.removeAttribute('aria-current'); });
   document.querySelectorAll('main section').forEach(sec=>sec.classList.toggle('on', sec.id==='s-'+s));
   $('#page-title').textContent = b.querySelector('.lbl').textContent;
@@ -725,11 +738,33 @@ $('#btn-scan').onclick = guard(async()=>{ await post('scan'); toast(T('已开始
 
 // ── 配对 ──
 function setPairBadge(pending){ $('#pair-badge').hidden = !pending; }
+// BUG-4391：管理员签发一次性配对链接（票据配对不走 PIN 预算）。再签一张即作废上一张。
+$('#btn-pair-link').onclick = guard(async()=>{
+  const r = await post('pairing/link');
+  const out = $('#pair-link-out');
+  out.innerHTML = `<div class="row"><input id="pair-link-uri" class="mono" readonly value="${esc(r.uri)}"><button class="b sec" id="btn-pair-link-copy">${esc(T('复制'))}</button></div><p class="sup">${esc(T('{0} 分钟内有效，只能用一次。在 Fushi 的互联设置里点「粘贴配对链接」使用。', Math.max(1, Math.round(r.expiresInSeconds/60))))}</p>`;
+  out.hidden = false;
+  $('#btn-pair-link-copy').onclick = guard(async()=>{
+    const input = $('#pair-link-uri');
+    // 明文 http 访问 WebUI 时不是安全上下文，没有 navigator.clipboard，退回选中复制。
+    if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(input.value);
+    else { input.select(); if (!document.execCommand('copy')) throw new Error(T('浏览器不让复制，请手动选中')); }
+    toast(T('已复制'));
+  });
+});
 async function loadPairing(){
   const p = await api('pairing');
   setPairBadge(p.pending);
-  $('#pairing-pending').innerHTML = p.pending
-    ? `<div class="pin-card"><div><b><span class="pulse"></span>${esc(T('{0} ({1}) 请求配对，请在该设备输入：', p.pending.deviceName||T('未知设备'), p.pending.remoteAddress||'?'))}</b><p class="sup">${fmtTime(p.pending.createdAt)}</p></div><div class="pin">${esc(p.pending.pin)}</div></div>`
+  const lockClass = {lan:T('局域网'), p2p:T('P2P 隧道'), public:T('公网或反向代理')};
+  const locks = Object.entries(p.lockout||{}).filter(([,v])=>v);
+  $('#pairing-lockout').innerHTML = locks.length
+    ? `<div class="card"><div class="card-head"><div>${locks.map(([k,v])=>`<p class="sup" style="margin:0">${tag('warn', T('来自{0}的配对因多次 PIN 错误暂停至 {1}', lockClass[k]||k, fmtTime(v)))}</p>`).join('')}</div><button class="b" id="btn-pair-unlock">${esc(T('解除'))}</button></div></div>`
+    : '';
+  if (locks.length) $('#btn-pair-unlock').onclick = guard(async()=>{ await post('pairing/unlock'); toast(T('已解除')); loadPairing(); });
+  // 待输入 PIN 按会话各一条（并发配对互不覆盖）；旧后端只有 pending 时退回单条。
+  const pendings = p.pendingList || (p.pending ? [p.pending] : []);
+  $('#pairing-pending').innerHTML = pendings.length
+    ? pendings.slice().reverse().map(x=>`<div class="pin-card"><div><b><span class="pulse"></span>${esc(T('{0} ({1}) 请求配对，请在该设备输入：', x.deviceName||T('未知设备'), x.remoteAddress||'?'))}</b><p class="sup">${fmtTime(x.createdAt)}</p></div><div class="pin">${esc(x.pin)}</div></div>`).join('')
     : `<div class="list">${empty(T('没有待处理的配对。在 Fushi 里添加互联设备并输入本机地址，PIN 会显示在这里。'), 'pairing')}</div>`;
   $('#peers').innerHTML = p.peers.map(x=>`<div class="lrow"><div class="lead">${icon('device')}</div><div class="txt"><div class="t">${esc(x.deviceName||'—')}${x.ownerDevice?tag('info', T('我的设备')):''}</div><div class="s">${esc([x.lastSeenIp, fmtTime(x.pairedAtMs)].filter(Boolean).join(' · '))}</div><div class="s mono">${esc(x.peerId)}</div></div><div class="trail">${x.deviceKeyVerified ? `<button class="b ${x.ownerDevice?'out':'sec'}" data-owner="${esc(x.peerId)}" data-on="${x.ownerDevice?'1':'0'}">${esc(x.ownerDevice?T('取消我的设备'):T('标为我的设备'))}</button>` : tag('', T('未证明设备钥匙'))}<button class="b text danger" data-revoke="${esc(x.peerId)}">${esc(T('吊销'))}</button></div></div>`).join('') || empty(T('还没有已配对设备'), 'device');
   const lb = p.leaderboardLink || {};
@@ -1130,10 +1165,10 @@ async function loadSrs(){
     <label class="f">${esc(T('换日时刻'))}<select id="srs-rollover">${Array.from({length:24},(_,h)=>`<option value="${h}" ${h===Number(cfg.rolloverHour)?'selected':''}>${String(h).padStart(2,'0')}:00</option>`).join('')}</select></label>
     ${servedList.map(p=>`<label class="f">${esc(T('{0} 的制卡牌组（空 = 默认牌组）', p.name||p.uid))}<input data-srs-deck="${esc(p.uid)}" list="srs-decks-${esc(p.uid)}" autocomplete="off" value="${esc((cfg.miningDecks||{})[p.uid]||'')}"><datalist id="srs-decks-${esc(p.uid)}"></datalist></label>`).join('')}</div>
     <div class="actions"><button class="b" id="btn-srs-save">${esc(T('保存'))}</button></div>`;
-  // 牌组框的建议：各份 profile 已有的牌组（取不到就不给建议，照样可手填新牌组名）。
+  // 牌组框的建议：各份 profile 已有的牌组，取自 ctl 的 `GET srs/decks?profile=`（AdminSrsCtl，name 是 `父::子` 全名；取不到就不给建议，照样可手填新牌组名）。
   servedList.forEach(p=>api('srs/decks?profile='+encodeURIComponent(p.uid)).then(r=>{
     const dl = document.getElementById('srs-decks-'+p.uid);
-    if (dl) dl.innerHTML = (r.decks||[]).map(d=>`<option value="${esc(d)}">`).join('');
+    if (dl) dl.innerHTML = (r.decks||[]).map(d=>d.name).sort().map(n=>`<option value="${esc(n)}">`).join('');
   }, e=>console.warn('srs decks', e)));
   $('#btn-srs-save').onclick = guard(async()=>{
     const miningDecks = {}; document.querySelectorAll('[data-srs-deck]').forEach(el=>{ if(el.value.trim()) miningDecks[el.dataset.srsDeck]=el.value.trim(); });
@@ -1375,12 +1410,39 @@ async function loadAiDetail(){
 }
 
 // ── 词典 ──
+// 清单要统计每本词典目录的占用（遍历文件），而且行里有就地编辑的输入框：不跟 2.5 秒轮询走，
+// 进页时拉一次；改动类端点回整份 GET 回包，直接拿它重绘。
+let dictsLoaded=false;
 const DICT_TYPE = {term:T('术语'), frequency:T('频率'), pitch:T('音调'), kanji:T('汉字')};
+// 与 app 的内容语言选择器同一组常用标签（content_language_picker.dart 的 kContentLanguageOptions）。
+const DICT_LANGS = [['ja',T('日语 (ja)')], ['zh-Hans',T('简体中文 (zh-Hans)')], ['zh-Hant',T('繁体中文 (zh-Hant)')], ['ko',T('韩语 (ko)')], ['en',T('英语 (en)')]];
+const langLabel = (code) => { const o = DICT_LANGS.find(([c])=>c===code); return o ? o[1] : code; };
+const LANG_TAG_RE = /^[A-Za-z0-9-]{2,35}$/;
+// BCP-47 大小写规范化（同 app 的 canonicalDictionaryLanguageTag）：主语言小写、4 字母文字子标签首字母大写、地区大写，下划线当连字符。
+function canonLang(v){
+  const parts = String(v||'').trim().split(/[-_]+/).filter(Boolean);
+  if (!parts.length) return '';
+  return [parts[0].toLowerCase(), ...parts.slice(1).map(p=>/^[A-Za-z]{4}$/.test(p) ? p[0].toUpperCase()+p.slice(1).toLowerCase() : (/^([A-Za-z]{2}|\d{3})$/.test(p) ? p.toUpperCase() : p.toLowerCase()))].join('-');
+}
 let dictNames = [];
-async function loadDictionaries(){
-  const r = await api('dictionaries');
-  // 轮询重绘会关掉开着的菜单：菜单开着时跳过这一轮。
-  if ($('#dicts .more-menu:not([hidden])')) return;
+// PATCH /api/admin/dictionaries/<名>：任意几项（defaultEnabled / languageOverride / displayName），回整份清单。
+const patchDict = (name, body) => api('dictionaries/'+encodeURIComponent(name), {method:'PATCH', body:JSON.stringify(body)});
+function dictLangSelect(d){
+  const cur = d.languageOverride || '';
+  const opts = [['', d.packageLanguage ? T('自动（包内声明：{0}）', langLabel(d.packageLanguage)) : T('自动（包内未声明）')], ...DICT_LANGS];
+  if (cur && !opts.some(([c])=>c===cur)) opts.push([cur, cur]);
+  opts.push(['__other', T('其他…')]);
+  return `<select class="dict-lang" data-dict-lang="${esc(d.name)}" aria-label="${esc(T('词典语言'))}" title="${esc(T('词典语言'))}">${opts.map(([c,l])=>`<option value="${esc(c)}"${c===cur?' selected':''}>${esc(l)}</option>`).join('')}</select><input type="text" class="dict-lang-other" data-dict-lang-other="${esc(d.name)}" placeholder="${esc(T('BCP-47 标签，如 de、pt-BR'))}" aria-label="${esc(T('词典语言'))}" hidden>`;
+}
+function dictRow(d, i, n){
+  const label = d.displayName || d.name;
+  const lang = d.sourceLanguage ? tag(d.languageOverride ? 'info' : '', d.sourceLanguage) : tag('warn', T('未标注语言'));
+  const meta = [DICT_TYPE[d.type]||d.type, d.formatKey, d.revision ? T('版本 {0}', d.revision) : '', d.present ? fmtBytes(d.sizeBytes) : ''].filter(Boolean).join(' · ');
+  return `<div class="lrow"><div class="lead">${icon('dictionaries')}</div><div class="txt"><div class="t"><span class="dict-label"${label!==d.name?` title="${esc(d.name)}"`:''}>${esc(label)}</span><button class="icon-btn sm" data-dict-rename="${esc(d.name)}" title="${esc(T('修改显示名'))}" aria-label="${esc(T('修改显示名'))}">${icon('edit')}</button><input type="text" class="dict-name-edit" data-dict-name-edit="${esc(d.name)}" data-current="${esc(d.displayName||'')}" maxlength="200" placeholder="${esc(d.name)}" aria-label="${esc(T('显示名'))}" title="${esc(T('回车保存，Esc 取消，留空恢复原名'))}" hidden>${lang}${d.present?'':tag('err', T('文件缺失'))}</div><div class="s">${esc(meta)}</div>${label!==d.name?`<div class="s mono">${esc(d.name)}</div>`:''}</div><div class="trail more">${dictLangSelect(d)}<label class="check"><span>${esc(T('默认启用'))}</span><input type="checkbox" class="sw" data-dict-default="${esc(d.name)}"${d.defaultEnabled?' checked':''}></label><button class="icon-btn" data-mv="-1" data-i="${i}" ${i===0?'disabled':''} title="${esc(T('上移'))}" aria-label="${esc(T('上移'))}">${icon('up')}</button><button class="icon-btn" data-mv="1" data-i="${i}" ${i===n-1?'disabled':''} title="${esc(T('下移'))}" aria-label="${esc(T('下移'))}">${icon('down')}</button><button class="icon-btn" data-more title="${esc(T('更多'))}" aria-label="${esc(T('更多'))}" aria-haspopup="menu" aria-expanded="false">${icon('more')}</button><div class="more-menu" role="menu" hidden><button role="menuitem" class="danger" data-drm="${esc(d.name)}" data-label="${esc(label)}">${esc(T('删除'))}</button></div></div></div>`;
+}
+async function loadDictionaries(){ renderDictionaries(await api('dictionaries')); }
+function renderDictionaries(r){
+  dictsLoaded=true;
   const e = r.engine || {};
   $('#dict-engine').innerHTML = kvHtml([
     [T('引擎'), e.available ? tag('ok', T('已加载')) : tag('err', e.reason ? T('不可用：{0}', e.reason) : T('不可用')), true],
@@ -1388,19 +1450,69 @@ async function loadDictionaries(){
     [T('变形表（去屈折）'), e.transformsLoaded ? tag('ok', T('已加载')) : `<span style="color:var(--error)">${esc(T('缺失：只能查原形（设 FUSHI_TRANSFORMS_DIR 或随包放 share/fushi/transforms）'))}</span>`, true],
     [T('原生库'), e.libraryPath || T('默认搜索路径')],
   ]);
-  const list = r.dictionaries || [];
-  dictNames = list.map(d=>d.name);
-  $('#dicts').innerHTML = list.map((d,i)=>`<div class="lrow"><div class="lead">${icon('dictionaries')}</div><div class="txt"><div class="t">${esc(d.displayName||d.name)}${d.present?'':tag('err', T('文件缺失'))}${d.hidden?tag('', T('已隐藏')):''}</div><div class="s">${esc([DICT_TYPE[d.type]||d.type, d.displayName?d.name:''].filter(Boolean).join(' · '))}</div></div><div class="trail more"><button class="icon-btn" data-mv="-1" data-i="${i}" ${i===0?'disabled':''} title="${esc(T('上移'))}" aria-label="${esc(T('上移'))}">${icon('up')}</button><button class="icon-btn" data-mv="1" data-i="${i}" ${i===list.length-1?'disabled':''} title="${esc(T('下移'))}" aria-label="${esc(T('下移'))}">${icon('down')}</button><button class="icon-btn" data-more title="${esc(T('更多'))}" aria-label="${esc(T('更多'))}" aria-haspopup="menu" aria-expanded="false">${icon('more')}</button><div class="more-menu" role="menu" hidden><button role="menuitem" data-hide="${esc(d.name)}" data-on="${d.hidden?'0':'1'}">${esc(d.hidden?T('取消隐藏'):T('隐藏'))}</button><button role="menuitem" class="danger" data-drm="${esc(d.name)}">${esc(T('删除'))}</button></div></div></div>`).join('') || empty(T('还没有词典'), 'dictionaries');
-  bindMoreMenus($('#dicts'));
-  $('#dicts').querySelectorAll('[data-mv]').forEach(b=>b.onclick=guard(async()=>{ const i=Number(b.dataset.i), j=i+Number(b.dataset.mv); const names=dictNames.slice(); [names[i],names[j]]=[names[j],names[i]]; await put('dictionaries/order',{names}); loadDictionaries(); }));
-  $('#dicts').querySelectorAll('[data-hide]').forEach(b=>b.onclick=guard(async()=>{ await api('dictionaries/'+encodeURIComponent(b.dataset.hide),{method:'PATCH',body:JSON.stringify({hidden:b.dataset.on==='1'})}); loadDictionaries(); }));
-  $('#dicts').querySelectorAll('[data-drm]').forEach(b=>b.onclick=guard(async()=>{ if(!await ask(T('删除词典「{0}」？（删除服务端上的词典文件，不影响各设备本地的词典）', b.dataset.drm), true)) return; await del('dictionaries/'+encodeURIComponent(b.dataset.drm)); toast(T('已删除')); loadDictionaries(); }));
+  $('#btn-dict-reload').disabled = !e.available;
+  const rows = r.dictionaries || [];
+  dictNames = rows.map(d=>d.name);
+  const list = $('#dicts');
+  list.innerHTML = rows.map((d,i)=>dictRow(d, i, rows.length)).join('') || empty(T('服务端还没有词典。在上面导入词典包，或在 Fushi app 的词典管理里推送到服务器。'), 'dictionaries');
+  bindMoreMenus(list);
+  list.querySelectorAll('[data-mv]').forEach(b=>b.onclick=guard(async()=>{ const i=Number(b.dataset.i), j=i+Number(b.dataset.mv); const names=dictNames.slice(); [names[i],names[j]]=[names[j],names[i]]; renderDictionaries(await put('dictionaries/order',{names})); }));
+  list.querySelectorAll('[data-dict-default]').forEach(c=>c.onchange=async()=>{
+    const on=c.checked; c.disabled=true;
+    try{ const r2 = await patchDict(c.dataset.dictDefault, {defaultEnabled:on}); toast(on?T('已默认启用'):T('已默认停用')); renderDictionaries(r2); }
+    catch(err){ c.checked=!on; c.disabled=false; toast(T('失败: {0}', err.message), true); }
+  });
+  list.querySelectorAll('[data-dict-lang]').forEach(sel=>{
+    const prev = sel.value; const other = sel.nextElementSibling;
+    const name = sel.dataset.dictLang;
+    const apply = async(v)=>{ const r2 = await patchDict(name, {languageOverride: v || null}); toast(v ? T('词典语言已设为 {0}', langLabel(v)) : T('词典语言已恢复自动')); renderDictionaries(r2); };
+    sel.onchange = guard(async()=>{
+      if (sel.value==='__other'){ other.hidden=false; other.value=prev; other.focus(); return; }
+      other.hidden=true; sel.disabled=true;
+      try{ await apply(sel.value); }
+      catch(err){ sel.value=prev; sel.disabled=false; throw err; }
+    });
+    // 自定义标签：回车或失焦提交；留空或没改就收起，下拉回到原值。
+    const submit = guard(async()=>{
+      if (other.hidden || other.disabled) return;
+      const v = canonLang(other.value);
+      if (!v || v===prev){ other.hidden=true; sel.value=prev; return; }
+      if (!LANG_TAG_RE.test(v)) throw new Error(T('语言标签无效：{0}', v));
+      other.disabled=true; sel.disabled=true;
+      try{ await apply(v); }
+      catch(err){ other.disabled=false; sel.disabled=false; throw err; }
+    });
+    other.onkeydown = (ev)=>{ if(ev.key==='Enter'){ ev.preventDefault(); submit(); } else if(ev.key==='Escape'){ other.hidden=true; sel.value=prev; sel.focus(); } };
+    other.onblur = submit;
+  });
+  // 显示名：铅笔 → 就地文本框；回车或失焦保存，Esc 取消；留空或填回原名 = 清掉覆盖名。
+  list.querySelectorAll('[data-dict-rename]').forEach(b=>{
+    const input = b.nextElementSibling; const label = b.previousElementSibling;
+    const name = b.dataset.dictRename; const cur = input.dataset.current;
+    const close = ()=>{ input.hidden=true; label.hidden=false; b.hidden=false; };
+    b.onclick = ()=>{ label.hidden=true; b.hidden=true; input.hidden=false; input.value = cur || name; input.focus(); input.select(); };
+    const submit = guard(async()=>{
+      if (input.hidden || input.disabled) return;
+      let v = input.value.trim(); if (v===name) v='';
+      if (v===cur){ close(); return; }
+      input.disabled=true;
+      try{ const r2 = await patchDict(name, {displayName: v || null}); toast(v ? T('显示名已改为「{0}」', v) : T('已恢复原名')); renderDictionaries(r2); }
+      catch(err){ input.disabled=false; throw err; }
+    });
+    input.onkeydown = (ev)=>{ if(ev.key==='Enter'){ ev.preventDefault(); submit(); } else if(ev.key==='Escape'){ ev.preventDefault(); close(); b.focus(); } };
+    input.onblur = submit;
+  });
+  list.querySelectorAll('[data-drm]').forEach(b=>b.onclick=guard(async()=>{
+    if(!await ask(T('删除词典「{0}」？会删掉服务端上的词典文件，用它查词的设备将查不到它（不影响各设备本地的词典）。', b.dataset.label), true)) return;
+    const r2 = await del('dictionaries/'+encodeURIComponent(b.dataset.drm)); toast(T('已删除')); renderDictionaries(r2);
+  }));
 }
+// 导入：PUT 整个文件（XHR 才有上传进度），文件名放 ?filename= 让服务端按扩展名认格式。
 function uploadDictionary(file, onProgress){
   return new Promise((resolve, reject)=>{
     const x = new XMLHttpRequest();
-    x.open('PUT', '/api/admin/dictionaries');
-    x.setRequestHeader('Content-Type', 'application/zip');
+    x.open('PUT', '/api/admin/dictionaries?filename='+encodeURIComponent(file.name));
+    x.setRequestHeader('Content-Type', 'application/octet-stream');
     x.upload.onprogress = (ev)=>{ if(ev.lengthComputable) onProgress(ev.loaded/ev.total); };
     x.upload.onload = ()=>onProgress(1);
     x.onload = ()=>{ if(x.status===401){ location.reload(); return; } let j={}; try{ j=JSON.parse(x.responseText); }catch(e){} if(x.status>=200&&x.status<300) resolve(j); else reject(new Error(j.error||('HTTP '+x.status))); };
@@ -1409,15 +1521,20 @@ function uploadDictionary(file, onProgress){
   });
 }
 $('#btn-dict-up').onclick = guard(async()=>{
-  const f = $('#dict-file').files[0]; if(!f) throw new Error(T('先选择一个 zip'));
+  const f = $('#dict-file').files[0]; if(!f) throw new Error(T('先选择一个词典文件'));
   const btn=$('#btn-dict-up'), st=$('#dict-up-state'); btn.disabled=true; st.style.color='';
   try{
     const r = await uploadDictionary(f, (p)=>{ st.textContent = p<1 ? T('上传中 {0}%', Math.round(p*100)) : T('导入中…（大词典要几分钟）'); });
     const args = [r.name, DICT_TYPE[r.type]||r.type, r.termCount, r.kanjiCount?T('，{0} 汉字', r.kanjiCount):''];
     st.textContent = r.replaced ? T('已更新「{0}」（{1}，{2} 词条{3}）', ...args) : T('已导入「{0}」（{1}，{2} 词条{3}）', ...args);
-    toast(st.textContent); $('#dict-file').value=''; loadDictionaries();
+    toast(st.textContent); $('#dict-file').value=''; await loadDictionaries();
   }catch(e){ st.style.color='var(--error)'; st.textContent=T('导入失败：{0}', e.message); throw e; }
   finally{ btn.disabled=false; }
+});
+$('#btn-dict-reload').onclick = guard(async()=>{
+  $('#btn-dict-reload').disabled=true;
+  try{ const r=await post('dictionaries/reload'); toast(T('已重新装载，{0} 本', (r.engine||{}).loadedCount||0)); renderDictionaries(r); }
+  catch(e){ await loadDictionaries(); throw e; }
 });
 async function dictLookup(){
   const q = $('#dict-q').value.trim(); if(!q) return;
@@ -1451,7 +1568,7 @@ document.querySelectorAll('input[name="log-lv"]').forEach(x=>x.onchange=renderLo
 $('#btn-log-refresh').onclick = guard(loadLogs);
 
 // ── 轮询 ──
-const loaders = {status:loadStatus, pairing:loadPairing, libraries:loadLibraries, dictionaries:loadDictionaries, upload:async()=>{ await loadLibraries(); const s=await api('status'); $('#up-quota').textContent=T('配额已用 {0} / {1}', fmtBytes(s.uploadUsedBytes), fmtBytes(s.uploadQuotaBytes)); }, jobs:loadJobs, downloads:loadDownloads, subscriptions:async()=>{ await loadSubscriptions(); await loadIndexers(false); }, ai:loadAi, anki:loadAnki, srs:loadSrs, models:loadModels, settings:async()=>{ if(!settingsCache) await loadSettings(); else renderP2pState(await api('p2p')); }, logs:async()=>{ if($('#log-auto').checked) await loadLogs(); }};
+const loaders = {status:loadStatus, pairing:loadPairing, libraries:loadLibraries, dictionaries:async()=>{ if(!dictsLoaded) await loadDictionaries(); }, upload:async()=>{ await loadLibraries(); const s=await api('status'); $('#up-quota').textContent=T('配额已用 {0} / {1}', fmtBytes(s.uploadUsedBytes), fmtBytes(s.uploadQuotaBytes)); }, jobs:loadJobs, downloads:loadDownloads, subscriptions:async()=>{ await loadSubscriptions(); await loadIndexers(false); }, ai:loadAi, anki:loadAnki, srs:loadSrs, models:loadModels, settings:async()=>{ if(!settingsCache) await loadSettings(); else renderP2pState(await api('p2p')); }, logs:async()=>{ if($('#log-auto').checked) await loadLogs(); }};
 let busy=false;
 async function refresh(){ if(busy) return; busy=true; try{ await loaders[current](); }catch(e){ console.warn(e); } finally{ busy=false; } }
 const startPage = location.hash.slice(1);

@@ -4729,7 +4729,8 @@ function createGlossarySectionWrapper(entry) {
             content: g.content,
             definitionTags: g.definitionTags,
             termTags: g.termTags,
-            glossaryIndex
+            glossaryIndex,
+            remote: g.remote === true
         });
     });
     const dictNames = Object.keys(grouped);
@@ -6606,6 +6607,27 @@ function ensureDictionaryStyle(dictName, styleText) {
     if (node.textContent !== styleText) node.textContent = styleText;
 }
 
+// 服务器来源小图标（Material「dns」描边版，内联 SVG，不依赖图标字体）。颜色随
+// currentColor（跟 .dict-label 的字色走），aria-label / title 是来源说明。
+function __fushiRemoteDictGlyph() {
+    const label = window.i18nRemoteDictionarySource || 'From a paired server';
+    const ns = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(ns, 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('width', '14');
+    svg.setAttribute('height', '14');
+    svg.setAttribute('aria-hidden', 'true');
+    const path = document.createElementNS(ns, 'path');
+    path.setAttribute('fill', 'currentColor');
+    path.setAttribute('d', 'M19 15v4H5v-4h14m1-2H4c-.55 0-1 .45-1 1v6c0 .55.45 1 1 1h16c.55 0 1-.45 1-1v-6c0-.55-.45-1-1-1zM7 18.5c-.82 0-1.5-.67-1.5-1.5s.68-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM19 5v4H5V5h14m1-2H4c-.55 0-1 .45-1 1v6c0 .55.45 1 1 1h16c.55 0 1-.45 1-1V4c0-.55-.45-1-1-1zM7 8.5c-.82 0-1.5-.67-1.5-1.5S6.18 5.5 7 5.5s1.5.68 1.5 1.5S7.83 8.5 7 8.5z');
+    svg.appendChild(path);
+    const glyph = el('span', { className: 'dict-remote-glyph', title: label });
+    glyph.setAttribute('role', 'img');
+    glyph.setAttribute('aria-label', label);
+    glyph.appendChild(svg);
+    return glyph;
+}
+
 function createGlossarySection(dictName, contents, dictIdx, entryIdx, totalDicts) {
     const details = el('details', { className: 'glossary-group' });
     // BUG-2158：折叠是**三态**，优先级 显式展开 > 显式折叠 > 继承。
@@ -6628,6 +6650,12 @@ function createGlossarySection(dictName, contents, dictIdx, entryIdx, totalDicts
 
     const summary = el('summary', { className: 'dict-label' });
     summary.appendChild(el('span', { className: 'dict-name', textContent: __fushiDictDisplayName(dictName) }));
+    // 释义来自已配对服务器（宿主合并结果时给服务器那份打 `remote: true`）：词典名旁
+    // 一枚服务器小图标，悬停说明来源。没有这个标记（本机释义、浏览器扩展、旧宿主）
+    // 时什么都不画，渲染与以前逐像素一致。
+    if (Array.isArray(contents) && contents.some(c => c?.remote === true)) {
+        summary.appendChild(__fushiRemoteDictGlyph());
+    }
     details.appendChild(summary);
 
     let longPressTimer = null;
@@ -8050,6 +8078,9 @@ window.__fushiPendingScrollTop = 0;
 // 与待恢复位，否则上一次在途的 rAF / pending 会在归零后把页面又滚回去。
 window.__fushiResetPopupScroll = function() {
     popupWheelEaseStop();
+    // 新会话也关上一会话的放大图：同词重查 / app 外根 iframe 复用时内容不变、不走
+    // renderPopup，灯箱（挂在词条容器之外）否则一直盖在新会话上（反馈 GmLVWNpQKc）。
+    closeImageLightbox();
     window.__fushiPendingScrollTop = 0;
     window.scrollTo(0, 0);
     const el = document.scrollingElement || document.documentElement;
@@ -8892,6 +8923,9 @@ window.renderPopup = function() {
     const gen = ++window._renderGeneration;
     // 换词重渲染：上一个词的音频源菜单随旧 DOM 作废。
     if (typeof closeAudioSourceMenu === 'function') closeAudioSourceMenu(false);
+    // 灯箱挂在 __fushiOverlayParent()（词条容器之外），换 innerHTML 摘不掉它：上一个词的
+    // 放大图会盖在新结果上（反馈 GmLVWNpQKc）。它属于旧 DOM，随换代一起关。
+    closeImageLightbox();
     // 上一轮的 masonry ResizeObserver 还观察着即将被 innerHTML='' 摘掉的全部卡片：
     // 观察目标被 observer 强引用，热槽 WebView 跨成百上千次查词不重载，这些
     // 已脱离文档的卡片子树就一直攒在内存里。换代时整体断开，新卡片由收尾的
@@ -9246,6 +9280,7 @@ window.updatePopupIncremental = function() {
                         content: g.content,
                         definitionTags: g.definitionTags,
                         termTags: g.termTags,
+                        remote: g.remote === true,
                     });
                 });
                 // TODO-845: the auto-expand threshold keys off each block's global
