@@ -25,6 +25,61 @@ import 'package:fushi_core/fushi_core.dart';
 
 enum SubtitleWorkbenchScope { episode, collection }
 
+/// 工作台关闭后播放页要登记并应用的字幕（按应用优先级排序，首条应用、其余只登记）。
+///
+/// 「本集」作用域下载的 [episodePaths] 是用户关页前最后的显式选择，排在前面；
+/// 「整个合集」批量落到当前集的 [collectionPathForCurrent] 排在其后（已在列表里就
+/// 不重复）。两样都没有返回空列表（BUG-4496）。
+List<String> workbenchPathsToApply({
+  required List<String>? episodePaths,
+  required String? collectionPathForCurrent,
+}) => <String>[
+  ...?episodePaths,
+  if (collectionPathForCurrent != null &&
+      !(episodePaths?.contains(collectionPathForCurrent) ?? false))
+    collectionPathForCurrent,
+];
+
+/// BUG-4496：把「整个合集」批量的逐集持久化回调路由到播放页。
+///
+/// 批量不随工作台关闭而取消（页头返回 / 系统返回在批量途中照样能 pop，
+/// [SubtitleCollectionPanel] 的落盘在 dispose 之后仍会跑完并回调），所以应用时机
+/// 必须跟「持久化完成」这个事件走，而不是只在关闭时读一次快照：
+/// - 工作台还开着：先收下，关闭时由 [close] 交给播放页，与「本集」下载合并应用；
+/// - 工作台已关：直接交给 [applyLate]（播放页自己再判是否仍在同一集）。
+/// 只认打开工作台时的那一集 [workbenchBookUid]，其余集的回调忽略。
+class WorkbenchCollectionPersistRouter {
+  WorkbenchCollectionPersistRouter({
+    required this.workbenchBookUid,
+    required this.applyLate,
+  });
+
+  final String workbenchBookUid;
+  final void Function(String path) applyLate;
+
+  bool _closed = false;
+  String? _pathForCurrent;
+
+  /// 面板 `onSubtitlePersisted` 的订阅入口。
+  void onPersisted(String bookUid, String path) {
+    if (bookUid != workbenchBookUid) return;
+    if (_closed) {
+      applyLate(path);
+      return;
+    }
+    _pathForCurrent = path;
+  }
+
+  /// 工作台关闭：返回关闭前已落到当前集的那条（没有为 null），此后到达的回调
+  /// 改走 [applyLate]。
+  String? close() {
+    _closed = true;
+    final String? path = _pathForCurrent;
+    _pathForCurrent = null;
+    return path;
+  }
+}
+
 /// 「本集」作用域的输入：搜索种子 + 记忆键。
 class SubtitleEpisodeSearchSpec {
   const SubtitleEpisodeSearchSpec({
@@ -147,6 +202,7 @@ class SubtitleWorkbenchPage extends StatefulWidget {
     this.episode,
     this.collection,
     this.initialScope = SubtitleWorkbenchScope.episode,
+    this.onCollectionSubtitlePersisted,
     super.key,
   }) : assert(episode != null || collection != null);
 
@@ -163,6 +219,12 @@ class SubtitleWorkbenchPage extends StatefulWidget {
 
   final SubtitleWorkbenchScope initialScope;
 
+  /// 「整个合集」批量下载每落好一集就回调 `(bookUid, 路径)`（见
+  /// [SubtitleCollectionPanel.onSubtitlePersisted]）。播放页据此在关闭工作台后把
+  /// 当前集的新字幕登记进字幕列表并应用（BUG-4496）。
+  final void Function(String bookUid, String path)?
+  onCollectionSubtitlePersisted;
+
   /// 推整页路由。返回「本集」作用域下载落盘的**全部**字幕绝对路径，按用户勾选
   /// 顺序（用户直接返回为 null）。
   ///
@@ -178,6 +240,7 @@ class SubtitleWorkbenchPage extends StatefulWidget {
     SubtitleEpisodeSearchSpec? episode,
     SubtitleCollectionSpec? collection,
     SubtitleWorkbenchScope initialScope = SubtitleWorkbenchScope.episode,
+    void Function(String bookUid, String path)? onCollectionSubtitlePersisted,
   }) {
     return Navigator.of(context, rootNavigator: true).push<List<String>>(
       MaterialPageRoute<List<String>>(
@@ -188,6 +251,7 @@ class SubtitleWorkbenchPage extends StatefulWidget {
           episode: episode,
           collection: collection,
           initialScope: initialScope,
+          onCollectionSubtitlePersisted: onCollectionSubtitlePersisted,
         ),
       ),
     );
@@ -252,6 +316,7 @@ class _SubtitleWorkbenchPageState extends State<SubtitleWorkbenchPage> {
           host.setPreferredLanguage(spec.seriesKey, lang),
       globalDefaultContentLanguage: host.defaultContentLanguage,
       onRemoteSubtitlePersist: host.persistRemoteSubtitle,
+      onSubtitlePersisted: widget.onCollectionSubtitlePersisted,
       subtitleAligner: host.subtitleAligner,
     );
   }

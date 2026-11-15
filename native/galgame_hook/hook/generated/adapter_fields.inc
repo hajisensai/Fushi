@@ -21,3 +21,5 @@
   KnifeAdapter knife_;
   SoftpalAdapter softpal_;
   System4Adapter system4_;
+  NitroplusAdapter nitroplus_;
+  EntisglsAdapter entisgls_;
