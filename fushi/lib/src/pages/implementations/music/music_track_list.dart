@@ -523,6 +523,9 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
       extra: _playlistActions(i),
     );
     if (musicTrackRowSurfaceActive(c)) {
+      // 封面来源与旧列表行同一份（[musicLocalTrackCoverOf]，BUG-4494）：行首画
+      // 专辑封面（没有内嵌封面的曲目借专辑封面曲目的），取色也用这一份。
+      final MusicTrackCoverSource cover = _localCoverSource(track);
       return menu.contextMenu(
         child: _surfaceRow(
           i,
@@ -537,11 +540,9 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
             ordinal: widget.showTrackNumbers
                 ? track.trackNo?.toString() ?? ''
                 : null,
-            leading: widget.showTrackNumbers
-                ? null
-                : const FushiListLeadingIcon(FushiIcons.music),
-            coverPath: entries[i].playItem(widget.albums)?.coverPath,
-            embeddedFromPath: track.path,
+            leading: widget.showTrackNumbers ? null : _localCover(track),
+            coverPath: cover.coverPath,
+            embeddedFromPath: cover.embeddedFromPath,
             durationText: musicTrackTimeLabel(track.durationMs, resume),
             playing: playing,
             onTap: play,
@@ -610,13 +611,17 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
     );
   }
 
+  /// 本地曲目的封面来源（自带内嵌封面 / 专辑目录封面 / 专辑封面曲目的内嵌封面）。
+  MusicTrackCoverSource _localCoverSource(MusicTrackRow track) =>
+      musicLocalTrackCoverOf(
+        track,
+        album: track.albumUid == null ? null : widget.albums[track.albumUid],
+        pathByUid: _pathByUid,
+      );
+
   /// 本地曲目行的封面缩略图（与远程行同尺寸同材质）。
   Widget _localCover(MusicTrackRow track) {
-    final MusicTrackCoverSource cover = musicLocalTrackCoverOf(
-      track,
-      album: track.albumUid == null ? null : widget.albums[track.albumUid],
-      pathByUid: _pathByUid,
-    );
+    final MusicTrackCoverSource cover = _localCoverSource(track);
     return musicMaterialCover(
       MusicCover(
         coverPath: cover.coverPath,
