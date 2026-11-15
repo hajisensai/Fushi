@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:drift/drift.dart' hide isNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -87,6 +88,13 @@ void main() {
   test(
     'connectedHostIdentity 与 remoteDictionaryHostIdOf 同口径（空串 hostId 当没有）',
     () async {
+      // V-B4：带 hostId 的明文地址要当场 ping 核对；对端不存在，核对视为通过。
+      debugInterconnectAddressProbeOverride =
+          (FushiClientUrl candidate, String? hostId) async => true;
+      addTearDown(() {
+        debugInterconnectAddressProbeOverride = null;
+        resetInterconnectRaceCache();
+      });
       for (final FushiClientUrl url in const <FushiClientUrl>[
         FushiClientUrl(url: 'http://lan:8765/', hostId: ''),
         FushiClientUrl(url: 'http://lan:8765'),

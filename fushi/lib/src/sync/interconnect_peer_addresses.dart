@@ -449,8 +449,6 @@ Future<InterconnectRankedCandidates> _rankGroup(
     if (winner != null) {
       // 缓存记的是持久地址（P2P 是 `p2p://`，不是本次的本地转发口）。
       _raceCache[hostId] = (interconnectPersistedUrl(winner.url), now(), fresh);
-      // 当场探通 = host 活着：观察者（按 host 的在线状态）照常收到。
-      _notifyReachability(winner, true);
     }
   }
   if (winner == null) {

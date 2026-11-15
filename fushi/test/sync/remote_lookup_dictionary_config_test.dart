@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/src/sync/fushi_remote_lookup_client.dart';
 import 'package:fushi/src/sync/interconnect_post_transport.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -20,6 +21,17 @@ import 'package:http/testing.dart';
 /// * 只发给开着「用这台服务器查词典」（[FushiClientUrl.lookupEnabled]）的地址；
 /// * 回包的 `dictionaryConfigApplied` 按 host 记下（老 host 不回 = false）。
 void main() {
+  // V-B4：带 hostId 的明文地址拿凭据前要当场 ping 核对；这里的对端是 MockClient / 本机
+  // 假服务，把身份核对视为通过（选路本身由 interconnect_peer_addresses 的测试覆盖）。
+  setUp(() {
+    resetInterconnectRaceCache();
+    debugInterconnectAddressProbeOverride =
+        (FushiClientUrl candidate, String? hostId) async => true;
+  });
+  tearDown(() {
+    debugInterconnectAddressProbeOverride = null;
+    resetInterconnectRaceCache();
+  });
   late FushiDatabase db;
   late SyncRepository repo;
   late List<({String host, Map<String, Object?> body})> sent;

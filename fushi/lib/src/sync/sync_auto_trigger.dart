@@ -1409,10 +1409,13 @@ Future<HostDictionaryTransferResult?> runHostDictionaryTransfer({
   void Function()? onImporting,
   ScopedInterconnectBackendFactory? backendFor,
 }) async {
+  // 「同步与备份 + 互联」模块关着（[syncModuleGate]）同样不开跑，与另一次资产传输
+  // 在跑一样返回 null。
+  if (!syncModuleGate.isOpen) return null;
   if (!_syncingIds.add('__asset_transfer__')) return null;
   final SyncTaskHandle task = _beginSyncActivity(
     const SyncActivity(SyncActivityKind.assetTransfer),
-  );
+  )!;
   activeAssetTransfer.value = const SyncAssetTransferTarget(
     SyncAssetKind.dictionary,
     SyncAssetChannelScope.interconnect,

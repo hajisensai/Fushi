@@ -336,6 +336,14 @@ void main() {
   });
 
   group('扩展字段 / 导入格式 / 重载（#3147）', () {
+    /// 改动类端点回整份 `GET` 回包：从里面取 [name] 那一行。
+    Map<String, dynamic> entryOf(Map<String, dynamic> json, String name) =>
+        Map<String, dynamic>.from(
+          (json['dictionaries'] as List)
+              .cast<Map<Object?, Object?>>()
+              .firstWhere((Map<Object?, Object?> d) => d['name'] == name),
+        );
+
     late Directory tmp;
     late FushiDatabase db;
     late File configFile;
@@ -1186,14 +1194,6 @@ void main() {
       expect(pkg.status, 200, reason: '${pkg.json}');
       expectStagingClean(paths);
     });
-
-    /// 改动类端点回整份 `GET` 回包：从里面取 [name] 那一行。
-    Map<String, dynamic> entryOf(Map<String, dynamic> json, String name) =>
-        Map<String, dynamic>.from(
-          (json['dictionaries'] as List)
-              .cast<Map<Object?, Object?>>()
-              .firstWhere((Map<Object?, Object?> d) => d['name'] == name),
-        );
 
     test('PATCH hidden 与 defaultEnabled 同一口径：互为反义，矛盾 400', () async {
       final (:AdminApi api, paths: _) = await build();

@@ -23,7 +23,6 @@ import 'dart:io';
 
 import 'package:archive/archive_io.dart';
 import 'package:fushi_core/fushi_core.dart';
-import 'package:fushi_dictionary/fushi_dictionary_core.dart';
 import 'package:fushi_server/src/admin/admin_context.dart';
 import 'package:fushi_server/src/admin/upload_store.dart';
 import 'package:fushi_server/src/commands/dict_commands.dart';
