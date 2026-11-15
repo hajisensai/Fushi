@@ -872,7 +872,7 @@ Future<void> _showUsageStatsFieldsDialog(SettingsContext settingsContext) =>
       settingsContext,
       (BuildContext dialogContext) => FushiAlertDialog(
         title: Text(t.usage_stats_enabled),
-        content: SingleChildScrollView(child: Text(t.usage_stats_enabled_hint)),
+        content: Text(t.usage_stats_enabled_hint),
         actions: <Widget>[
           FushiTextButton(
             onPressed: () => Navigator.of(dialogContext).pop(),

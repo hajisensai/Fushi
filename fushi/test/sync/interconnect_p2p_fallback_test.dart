@@ -147,6 +147,16 @@ void main() {
       isTrue,
       reason: 'GET 与 POST 共用选路：p2p:// 换成转发口再请求',
     );
+    final SrsRemoteHostClient srsClient = SrsRemoteHostClient(
+      repository: repo,
+      peer: peerWith(_token),
+    );
+    addTearDown(srsClient.cancelPending);
+    expect(
+      await srsClient.remoteGeneration(),
+      SrsRemoteHostGeneration.v1Only,
+      reason: '换代协商骨架合入后主机仍只声明 V1（线上行为不变）',
+    );
 
     final List<InterconnectHostTarget> targets =
         await filterSrsRemoteStoreTargets(

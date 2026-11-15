@@ -314,6 +314,12 @@ impl<'s> ZstdWindow<'s> {
         Ok(self.pos == self.buf.len())
     }
 
+    /// 明文读完（[Self::at_end]）且帧后面的压缩输入也没有剩余字节（没有垃圾、没有第二个帧）。
+    /// 解码器按块精确读（块头 / 块体 / 校验和都是 `read_exact`），帧解完时底层切片剩下的就是帧后的字节。
+    pub fn at_end_of_input(&mut self) -> Result<bool, StreamError> {
+        Ok(self.at_end()? && self.decoder.get_ref().is_empty())
+    }
+
     /// 当前读窗口的容量（测试看内存上界用）。
     #[cfg(test)]
     pub fn window_capacity(&self) -> usize {
