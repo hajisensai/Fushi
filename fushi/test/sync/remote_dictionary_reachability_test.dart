@@ -12,7 +12,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
-/// BUG-4275：查词路径与目录服务共用一份词典服务器可达性。这里验追踪器本身
+/// BUG-4692：查词路径与目录服务共用一份词典服务器可达性。这里验追踪器本身
 /// （跳过判据、后台再探测节奏、立即探测、revision 只在状态变化时 bump）与查词客户端
 /// 的挂钩（含弹窗进程用的后台探测 [FushiRemoteLookupClient.probeDictionaryHost]）。
 /// 结局只经互联传输层的全局上报点进追踪器（追踪器构造时订阅），客户端不另传回调。

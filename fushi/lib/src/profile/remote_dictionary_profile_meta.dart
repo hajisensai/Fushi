@@ -7,7 +7,7 @@ import 'package:fushi_engine/profile/profile_document.dart'
 /// 配置快照里服务器托管词典那一类（`remote_dictionary_meta`）的 key / value 编解码。
 ///
 /// 唯一解析点：配置应用（`ProfileRepository.applyProfile` / 只读视图）与目录对账
-/// （`RemoteDictionaryCatalogService.reconcileHost` 插新行时，BUG-4276）都从这里解。
+/// （`RemoteDictionaryCatalogService.reconcileHost` 插新行时，BUG-4693）都从这里解。
 
 /// 一行 `remote_dictionary_meta` 快照解出的配置列。
 typedef RemoteDictionaryProfileColumns = ({

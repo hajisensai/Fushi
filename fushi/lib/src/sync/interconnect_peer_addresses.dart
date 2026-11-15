@@ -99,7 +99,7 @@ typedef InterconnectPeerAddressSlot = ({
 ///
 /// 「已添加的设备」逐地址成行（排序 = 选路优先级、开关 / 测试结果 / 重新配对都按
 /// 地址），同一台 host 的多条地址标题都是同一个设备名；靠它给每行标出「第几条、
-/// 什么网络、是不是自动学到的」，两行才不会看起来像重复配对（BUG-4274）。
+/// 什么网络、是不是自动学到的」，两行才不会看起来像重复配对（BUG-4691）。
 InterconnectPeerAddressSlot? interconnectPeerAddressSlotOf(
   List<FushiClientUrl> urls,
   FushiClientUrl entry,
@@ -278,7 +278,7 @@ final List<InterconnectReachabilityObserver> _reachabilityObservers =
 
 /// 订阅 [reportInterconnectCandidateReached] / [reportInterconnectCandidateUnreachable]
 /// ——互联可达性的**唯一**上报点。按 host 的在线状态（词典服务器卡片、查词跳过死
-/// host，BUG-4275）从这里听，不再在各传输层另开一条结局回调。
+/// host，BUG-4692）从这里听，不再在各传输层另开一条结局回调。
 void addInterconnectReachabilityObserver(
   InterconnectReachabilityObserver observer,
 ) => _reachabilityObservers.add(observer);

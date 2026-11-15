@@ -4441,7 +4441,7 @@ class AppModel
   }
 
   /// 每台 host 本次运行里最近一次互联往返的结局（来源卡片的在线 / 连不上）。与查词
-  /// 路径同一份（[_remoteDictionaryReachability]，BUG-4275）。
+  /// 路径同一份（[_remoteDictionaryReachability]，BUG-4692）。
   Map<String, RemoteDictionaryHostReachability>
   get remoteDictionaryHostReachability => _remoteDictionaryReachability.hosts;
 
@@ -5630,7 +5630,7 @@ class AppModel
       )) {
         await dictRepo.reloadRemoteDictionaries();
       }
-      // 本进程没有目录服务：后台再探测由查词客户端自己做（BUG-4275），判死的 host
+      // 本进程没有目录服务：后台再探测由查词客户端自己做（BUG-4692），判死的 host
       // 不在查词路径上重付连接超时。
       _remoteDictionaryReachability.probe = _probeRemoteDictionaryHost;
 
@@ -9972,7 +9972,7 @@ class AppModel
     }
 
     final int effectiveMaxTerms = overrideMaximumTerms ?? maximumTerms;
-    // 全部查词 host 都已判为不可达（BUG-4275）：远端这一路根本不发起，本机结果不等它。
+    // 全部查词 host 都已判为不可达（BUG-4692）：远端这一路根本不发起，本机结果不等它。
     // 恢复由后台探测 / 目录刷新发现，下一次查词立刻重新并发远端。
     final bool tryRemoteFirst =
         allowRemoteLookup &&
@@ -10174,7 +10174,7 @@ class AppModel
   static String _requesterFiltersNamespace(DictionaryLookupFilters? filters) =>
       filters == null ? '' : 'xrequester:${filters.fingerprint}|';
 
-  /// 词典服务器可达性的唯一真相源（BUG-4275）：查词客户端按它跳过判死的 host、把
+  /// 词典服务器可达性的唯一真相源（BUG-4692）：查词客户端按它跳过判死的 host、把
   /// 每次往返的结局写回去；目录服务（[_remoteDictionaryCatalog]）拉清单的结局也写进
   /// 同一份，并挂上后台再探测。弹窗进程没有目录服务，后台再探测由查词客户端承担
   /// （[_probeRemoteDictionaryHost]），两个进程的查词路径都不在已知死掉的 host 上等。
@@ -10296,7 +10296,7 @@ class AppModel
     ProfileSettingsView? profileView,
   }) async {
     if (!remoteLookupEnabled) return null;
-    // 全部查词 host 都已判为不可达时直接短路（BUG-1302 / BUG-4275）：不短路的话设备
+    // 全部查词 host 都已判为不可达时直接短路（BUG-1302 / BUG-4692）：不短路的话设备
     // 离线/换网/休眠时每次查词都要重付一遍「3s × 候选数」的传输层超时。只有部分 host
     // 判死时由客户端逐 host 跳过（[RemoteDictionaryReachability.shouldSkip]）。
     if (_remoteDictionaryLookupKnownDead) return null;

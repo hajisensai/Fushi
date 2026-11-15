@@ -272,7 +272,7 @@ Future<ObserveShot> _shot(WidgetTester tester, String name) async {
   return shot;
 }
 
-/// 焦点驱动打开改名对话框（BUG-4273 回归闸）：焦点移到 [renameBtn] → Enter，逐帧记
+/// 焦点驱动打开改名对话框（BUG-4690 回归闸）：焦点移到 [renameBtn] → Enter，逐帧记
 /// primaryFocus 与每次焦点变化的调用栈，并**断言**对话框输入框（autofocus）在几帧内
 /// 直接拿到主焦点——不再用 Tab 兜底，bug 回来这里就红。
 Future<EditableTextState> _openRenameByKeyboard(
@@ -370,7 +370,7 @@ Future<EditableTextState> _openRenameByKeyboard(
   expect(
     firstFieldFrame,
     isNotNull,
-    reason: '[$label] BUG-4273：键盘打开改名框后输入框应在 30 帧内直接获焦（无 Tab）',
+    reason: '[$label] BUG-4690：键盘打开改名框后输入框应在 30 帧内直接获焦（无 Tab）',
   );
   expect(
     firstFieldFrame!,
@@ -935,7 +935,7 @@ void main() {
           );
           await _shot(tester, 'server-dict-06d-filtered-header');
 
-          // 4d2. 本机词典行（Test Local JA）详情里同样键盘改名：证明 BUG-4273 的修复
+          // 4d2. 本机词典行（Test Local JA）详情里同样键盘改名：证明 BUG-4690 的修复
           // 不限于服务器行。
           final Finder localTitle = find.descendant(
             of: page,

@@ -1,4 +1,4 @@
-## BUG-4273 · 键盘回车打开改名对话框，焦点落在输入框的屏幕键盘按钮而非输入框
+## BUG-4690 · 键盘回车打开改名对话框，焦点落在输入框的屏幕键盘按钮而非输入框
 - **报告**：2026-11-09（Windows 集成探针 `fushi/integration_test/server_dictionaries_probe_test.dart` 改名步骤两次复现，run win-itest-20261109-201316-7340354e：回车前焦点在 `dict-detail-rename-server` 按钮，下一帧起焦点一次性跳到对话框里的 `fushi-icon-button-<hash>`，2 s 后输入框仍未获焦）
 - **真实性**：✅ 真 bug，根因在被动焦点修复与框架挂起焦点请求的时序：
   - `fushi/lib/src/focus/fushi_focus_controller.dart:648`（旧 `scheduleRepair`）在**帧后回调里同步**调 `ensureFocus()`；`:571`（旧 `ensureFocus`）直接读 `primaryFocus` 判可用性。

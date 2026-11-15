@@ -119,7 +119,7 @@ class InterconnectPostTransport {
   /// [FushiClientUrl.lookupEnabled] 的 host）。null = 不筛，与升级前逐字一致。
   /// 每个真正发出请求的候选的传输层结局一律经 [reportInterconnectCandidateReached] /
   /// [reportInterconnectCandidateUnreachable] 上报——这是互联可达性的唯一上报点，
-  /// 词典服务器在线状态（BUG-4275）也只从那里听。
+  /// 词典服务器在线状态（BUG-4692）也只从那里听。
   Future<InterconnectPostOutcome> post({
     required String path,
     required Map<String, dynamic> body,

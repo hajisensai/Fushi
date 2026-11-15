@@ -74,14 +74,14 @@ class FushiRemoteLookupClient {
 
   /// RPC 往返预算：量的是「对端还活着吗」。
   ///
-  /// 3s 保持不变（BUG-4275 复核过）：它包住的是整个查词往返（host 上的查词本身 +
+  /// 3s 保持不变（BUG-4692 复核过）：它包住的是整个查词往返（host 上的查词本身 +
   /// 回包，走 Tailscale / 公网时单程就几百 ms），缩短会把慢而活着的 host 误判成死的，
   /// 造成远端结果时有时无。离线的代价不靠缩短它来降，而是靠可达性追踪只付一次：判死
   /// 之后查词直接跳过（[_skipDictionaryHost]），恢复由后台探测发现。
   final Duration _timeout;
 
   /// 词典端点要跳过的 host（[remoteDictionaryHostIdOf] 口径）：可达性追踪判为不可达的
-  /// host 不再发请求（BUG-4275）。全部跳过 = 没有候选 = 「无结果」（返回 null），不抛
+  /// host 不再发请求（BUG-4692）。全部跳过 = 没有候选 = 「无结果」（返回 null），不抛
   /// [RemoteLookupUnreachableError]——那只留给真正试过且全失败的那一次。
   final bool Function(String hostId)? _skipDictionaryHost;
 
@@ -454,7 +454,7 @@ class FushiRemoteLookupClient {
   /// [FushiClientUrl.lookupEnabled] 的地址——关掉「用这台服务器查词典」的 host 既不该
   /// 回答查词，样式与外字也不该从它那儿取。音频端点不受这个开关影响。
   ///
-  /// 词典端点还按共享可达性追踪跳过已知不可达的 host（BUG-4275）；音频端点不跳（它有
+  /// 词典端点还按共享可达性追踪跳过已知不可达的 host（BUG-4692）；音频端点不跳（它有
   /// 自己的失败冷却）。每个候选的传输层结局由传输层经全局上报点记进可达性追踪。
   Future<InterconnectPostOutcome> _postLookup({
     required String path,

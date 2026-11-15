@@ -237,7 +237,7 @@ void main() {
     );
   });
 
-  test('BUG-4276：导入的配置在目录拉到之前应用，目录随后对账出的新行就带上它的选择', () async {
+  test('BUG-4693：导入的配置在目录拉到之前应用，目录随后对账出的新行就带上它的选择', () async {
     // 别的设备上的配置：大辞林关、排第 4；明镜开着、排第 0。
     await setLive('h1', 'Daijirin', 4, true);
     await setLive('h1', 'Meikyo', 0, false);

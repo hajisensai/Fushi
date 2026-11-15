@@ -11,7 +11,7 @@ import 'package:fushi/src/sync/sync_repository.dart'
     show FushiClientUrl, remoteDictionaryHostIdOf;
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
-/// 词典服务器被判不可达后的**再探测间隔**（BUG-1302 的失败冷却窗，BUG-4275 起改作
+/// 词典服务器被判不可达后的**再探测间隔**（BUG-1302 的失败冷却窗，BUG-4692 起改作
 /// 后台再探测的节奏）。
 ///
 /// 与音频源的 `kRemoteAudioFailureCooldown`（45s，`word_audio_resolver.dart`）同量级：
@@ -52,7 +52,7 @@ class RemoteDictionaryHostReachability {
 /// 记回来（探测函数自己负责记，追踪器只管什么时候探）。
 typedef RemoteDictionaryHostProbe = Future<void> Function(String hostId);
 
-/// 词典服务器可达性的**唯一真相源**（BUG-4275）。
+/// 词典服务器可达性的**唯一真相源**（BUG-4692）。
 ///
 /// 以前查词路径（`AppModel` 的失败冷却）与目录服务（来源卡片的在线 / 连不上）各记各的：
 /// 目录服务早就判了 host 掉线，查词仍要自己再付一遍「3s × 地址数」；目录刷新成功、

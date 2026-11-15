@@ -28,7 +28,7 @@ import 'package:fushi/src/sync/sync_repository.dart'
 // 分享 JSON 的模型与异常已下沉引擎（服务端共用），这里转出，调用方 import 不变。
 export 'package:fushi_engine/profile/profile_document.dart'
     show ProfileExport, ProfileImportException, ProfileSettingEntry;
-// 服务器词典快照 key 的编解码搬到了独立文件（目录对账也要用，BUG-4276），这里转出。
+// 服务器词典快照 key 的编解码搬到了独立文件（目录对账也要用，BUG-4693），这里转出。
 export 'package:fushi/src/profile/remote_dictionary_profile_meta.dart'
     show remoteDictionaryProfileKey, remoteDictionaryHostIdOfProfileKey;
 
@@ -269,7 +269,7 @@ class ProfileRepository {
       // v153：服务器托管词典只写回**已有**目录行的顺序 / 开关。命中 0 行 = 本机目录
       // 里没有这本（host 换了 / 配置来自别的设备 / 目录还没拉过）：跳过，绝不插行——
       // 目录只由刷新建立，快照不知道 host 上有什么。这本之后在刷新里第一次出现时，
-      // 对账插行会先读激活配置的这份快照（BUG-4276，见
+      // 对账插行会先读激活配置的这份快照（BUG-4693，见
       // `RemoteDictionaryCatalogService.reconcileHost`），所以配置的选择不必等到下一次
       // 切换才生效；之后再应用同一配置写的是同一对值，不会互相打架。快照里没有的
       // 目录行保持 live 值（与本机词典同口径）。

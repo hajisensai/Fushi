@@ -424,7 +424,7 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
 
   /// 地址行副标题：连通性测试结果；`p2p://` 地址另挂隧道路径（直连 / 中继）。
   /// [address] 非 null 时（标题已是设备名）把 URL 放在副标题首行，同一台 host 的
-  /// 多条地址靠它区分；[note] 是同 host 多地址的位置注记（BUG-4274），排在地址下面。
+  /// 多条地址靠它区分；[note] 是同 host 多地址的位置注记（BUG-4691），排在地址下面。
   Widget? _urlRowSubtitle(
     ThemeData theme,
     String url,
@@ -970,7 +970,7 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
                       builder: (BuildContext context, BoxConstraints box) {
                         final bool compact =
                             box.maxWidth < _kInterconnectPeerRowWideMinWidth;
-                        // BUG-4274：列表逐地址成行（排序 = 选路优先级，开关 / 测试 /
+                        // BUG-4691：列表逐地址成行（排序 = 选路优先级，开关 / 测试 /
                         // 重新配对都按地址），同一台 host 的几条地址标题是同一个设备
                         // 名；注记标出第几条、什么网络、是否自动学到，免得看成重复配对。
                         final Widget? status = _urlRowSubtitle(

@@ -14,7 +14,7 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 import '../helpers/test_platform_services.dart';
 
-/// BUG-4275：查词与服务器词典目录服务共用一份可达性。
+/// BUG-4692：查词与服务器词典目录服务共用一份可达性。
 ///
 /// 走真实的 `AppModel.searchDictionary` 与真实的目录服务：服务器是回环地址上的假
 /// host，「掉线」时收到请求就直接掐断连接（客户端拿不到任何 HTTP 响应 = 传输层失败）。
