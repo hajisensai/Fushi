@@ -39,6 +39,20 @@ void _addSymlinkEntry(Directory repo, String path, String target) {
   _git(repo, <String>['checkout', '--', path]);
 }
 
+/// [dir] 或它的某个上级目录含 `.git`。
+bool _hasGitAncestor(Directory dir) {
+  Directory d = dir.absolute;
+  while (true) {
+    if (Directory('${d.path}/.git').existsSync() ||
+        File('${d.path}/.git').existsSync()) {
+      return true;
+    }
+    final Directory parent = d.parent;
+    if (parent.path == d.path) return false;
+    d = parent;
+  }
+}
+
 void main() {
   late Directory tmp;
   late Directory repo;
@@ -101,10 +115,18 @@ void main() {
     );
   });
 
-  test('不在 git 检出里的文件原样返回', () {
-    final File loose = File('${tmp.path}/LICENSE')..writeAsStringSync('x\n');
-    expect(resolveNativeLicenseSymlink(loose).path, loose.absolute.path);
-  });
+  // 系统临时目录本身可能落在某个 git 仓库里（dist worker 的临时目录在 worker 检出的
+  // .git 下），那时走的是上面「外层仓库」分支；只在临时目录确实不在任何检出里时验这条。
+  test(
+    '不在任何 git 检出里的文件原样返回',
+    () {
+      final File loose = File('${tmp.path}/LICENSE')..writeAsStringSync('x\n');
+      expect(resolveNativeLicenseSymlink(loose).path, loose.absolute.path);
+    },
+    skip: _hasGitAncestor(Directory.systemTemp)
+        ? '系统临时目录 ${Directory.systemTemp.path} 在 git 检出里'
+        : false,
+  );
 
   test('最近的 .git 是不跟踪该文件的外层仓库时报错，不退回占位文本', () {
     // 依赖是没有 .git 的拷贝（vendored / 解压），落在某个外层仓库里。
