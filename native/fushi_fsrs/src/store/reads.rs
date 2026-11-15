@@ -180,6 +180,7 @@ pub(crate) fn run(
         "lapis_backfill" => single(files, lapis_backfill(c, profile, req)?),
         "logs" => single(files, logs(c, profile, req)?),
         "anki_logs_at" => single(files, anki_logs_at(c, profile, req)?),
+        "native_logs_near" => single(files, native_logs_near(c, profile, req)?),
         "today_reviews" => today_reviews(c, profile, req)?,
         "review_grid" => single(files, review_grid(c, profile, req)?),
         "server_times" => single(files, server_times(c, profile, req)?),
@@ -529,6 +530,23 @@ fn anki_logs_at(c: &Connection, profile: &str, req: &Value) -> Result<Vec<u8>, S
             ("hidden", KIND_OPT_I64),
         ],
     )
+}
+
+/// `native_logs_near {at, win}`：原生（非 Anki 导入）评分类日志里发生时刻落在 `at` 任一值 ±`win` 毫秒内的那些
+/// （`id`, `json`）。导入器给「没有卡可比」的 Anki revlog 判重用（BUG-4657）：同一次复习是否等价由卡片历史内核判，
+/// 这里只按落库列粗筛。`at` 作驱动表逐个探 `idx_srs_review_logs_profile_kind_time`，窗重叠时 DISTINCT 去重。
+fn native_logs_near(c: &Connection, profile: &str, req: &Value) -> Result<Vec<u8>, String> {
+    let mut q = Sel::of(profile);
+    let at = q.text(&need_list(req, "at")?.to_string());
+    let win = q.int(need_int(req, "win")?);
+    q.push(&format!(
+        "SELECT DISTINCT l.id, l.json FROM json_each({at}) t \
+         JOIN srs_review_logs l ON l.profile_uid = srs_id(?1) \
+         AND l.kind IN ('review', 'manual') \
+         AND l.occurred_at BETWEEN t.value - {win} AND t.value + {win} \
+         WHERE l.origin != 'anki'"
+    ));
+    q.table(c, &[("id", KIND_STR), ("json", KIND_STR)])
 }
 
 /// `today_reviews {from, to}`：有效复习投影里落在 `[from, to)` 的评分复习：`{n, ms, again}`。
