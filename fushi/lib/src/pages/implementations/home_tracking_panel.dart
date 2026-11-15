@@ -25,6 +25,7 @@ import 'package:fushi/src/utils/components/glass/fushi_expressive_controls.dart'
 import 'package:fushi/src/pages/implementations/activity_feed.dart'
     show formatActivityRelativeTime;
 import 'package:fushi/src/utils/components/fushi_continue_hero.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -116,6 +117,18 @@ String homeTrackingPanelText(HomeTrackingSummary summary, DateTime now) {
   if (summary.lastSyncAt <= 0) return t.media_tracking_all_synced;
   final String when = formatActivityRelativeTime(summary.lastSyncAt, now);
   return '${t.media_tracking_all_synced} · $when';
+}
+
+/// The short state for a half-width (one column) widget: a count instead of
+/// the whole sentence ("3 to handle", "2 pending", "All sent").
+String homeTrackingPanelShortText(HomeTrackingSummary summary) {
+  if (summary.connected == 0) return t.home_tracking_panel_not_connected;
+  final int problems = summary.signInNeeded + summary.unlinked + summary.failed;
+  if (problems > 0) return t.home_tracking_panel_attention(n: problems);
+  if (summary.pending > 0) {
+    return t.media_tracking_pending_count(n: summary.pending);
+  }
+  return t.media_tracking_all_synced;
 }
 
 /// A tracking key a Continue entry can be linked under (a video is linked
@@ -215,12 +228,19 @@ class HomeTrackingPanel extends StatelessWidget {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final bool attention = summary.needsAttention;
     final bool action = attention || summary.connected == 0;
-    final String text = homeTrackingPanelText(summary, DateTime.now());
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints c) {
         // Laid out from the real cell size: a short cell is one dense line, a
-        // taller one gives the status text more lines.
+        // taller one gives the status text more lines; a half-width (one
+        // column) cell shows a count and an icon button, not the sentence.
         final bool dense = homeWidgetIsDense(c.maxHeight);
+        final bool narrow = !homeWidgetIsWide(c.maxWidth);
+        final String text = narrow
+            ? homeTrackingPanelShortText(summary)
+            : homeTrackingPanelText(summary, DateTime.now());
+        final String actionLabel = summary.connected == 0
+            ? t.home_tracking_panel_connect
+            : t.home_tracking_panel_review;
         return HomeWidgetFrame(
           key: const ValueKey<String>('home-tracking-panel'),
           tapKey: const ValueKey<String>('home-tracking-panel-open'),
@@ -279,7 +299,20 @@ class HomeTrackingPanel extends StatelessWidget {
                         ),
                       ),
                     ),
-                    if (action)
+                    if (action && narrow)
+                      FushiIconButton(
+                        key: const ValueKey<String>(
+                          'home-tracking-panel-action',
+                        ),
+                        icon: FushiIcons.forward,
+                        tooltip: actionLabel,
+                        size: 20,
+                        // 28 高：窄网格一行高的格子里内容区只有 ~30。
+                        padding: const EdgeInsets.all(4),
+                        enabledColor: style.accent,
+                        onTap: onOpen,
+                      )
+                    else if (action)
                       FushiFilledButton.tonal(
                         key: const ValueKey<String>(
                           'home-tracking-panel-action',
@@ -287,9 +320,7 @@ class HomeTrackingPanel extends StatelessWidget {
                         size: FushiButtonSize.xs,
                         onPressed: onOpen,
                         child: Text(
-                          summary.connected == 0
-                              ? t.home_tracking_panel_connect
-                              : t.home_tracking_panel_review,
+                          actionLabel,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),

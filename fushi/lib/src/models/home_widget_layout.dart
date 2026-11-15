@@ -68,7 +68,7 @@ enum HomeWidgetKind {
   continueHero(
     'continue',
     HomeWidgetCategory.continueMedia,
-    min: HomeWidgetSize(2, 2),
+    min: HomeWidgetSize(1, 2),
     max: HomeWidgetSize(6, 4),
     compactDefault: HomeWidgetSize(2, 2),
     wideDefault: HomeWidgetSize(4, 2),
@@ -78,7 +78,7 @@ enum HomeWidgetKind {
   continueReading(
     'continue_reading',
     HomeWidgetCategory.continueMedia,
-    min: HomeWidgetSize(2, 1),
+    min: HomeWidgetSize(1, 1),
     max: HomeWidgetSize(6, 3),
     compactDefault: HomeWidgetSize(2, 1),
     wideDefault: HomeWidgetSize(2, 2),
@@ -88,7 +88,7 @@ enum HomeWidgetKind {
   continueWatching(
     'continue_watching',
     HomeWidgetCategory.continueMedia,
-    min: HomeWidgetSize(2, 1),
+    min: HomeWidgetSize(1, 1),
     max: HomeWidgetSize(6, 3),
     compactDefault: HomeWidgetSize(2, 1),
     wideDefault: HomeWidgetSize(2, 2),
@@ -98,7 +98,7 @@ enum HomeWidgetKind {
   continuePlaying(
     'continue_playing',
     HomeWidgetCategory.continueMedia,
-    min: HomeWidgetSize(2, 1),
+    min: HomeWidgetSize(1, 1),
     max: HomeWidgetSize(6, 3),
     compactDefault: HomeWidgetSize(2, 1),
     wideDefault: HomeWidgetSize(2, 2),
@@ -118,9 +118,9 @@ enum HomeWidgetKind {
   week(
     'week',
     HomeWidgetCategory.study,
-    min: HomeWidgetSize(2, 1),
+    min: HomeWidgetSize(1, 1),
     max: HomeWidgetSize(6, 3),
-    compactDefault: HomeWidgetSize(2, 1),
+    compactDefault: HomeWidgetSize(1, 1),
     wideDefault: HomeWidgetSize(2, 2),
   ),
 
@@ -138,7 +138,7 @@ enum HomeWidgetKind {
   recentlyAdded(
     'recently_added',
     HomeWidgetCategory.continueMedia,
-    min: HomeWidgetSize(2, 2),
+    min: HomeWidgetSize(1, 2),
     max: HomeWidgetSize(6, 4),
     compactDefault: HomeWidgetSize(2, 2),
     wideDefault: HomeWidgetSize(4, 2),
@@ -148,9 +148,9 @@ enum HomeWidgetKind {
   tracking(
     'tracking',
     HomeWidgetCategory.tools,
-    min: HomeWidgetSize(2, 1),
+    min: HomeWidgetSize(1, 1),
     max: HomeWidgetSize(6, 2),
-    compactDefault: HomeWidgetSize(2, 1),
+    compactDefault: HomeWidgetSize(1, 1),
     wideDefault: HomeWidgetSize(2, 1),
   ),
 
@@ -168,7 +168,7 @@ enum HomeWidgetKind {
   panorama(
     'panorama',
     HomeWidgetCategory.tools,
-    min: HomeWidgetSize(2, 2),
+    min: HomeWidgetSize(1, 1),
     max: HomeWidgetSize(6, 4),
     compactDefault: HomeWidgetSize(2, 2),
     wideDefault: HomeWidgetSize(2, 2),
@@ -676,7 +676,8 @@ class HomeWidgetAutoFacts {
 /// 可选面板不放、钉成 shown 的放上，auto 的按 [auto]（迁移那一刻的默认判据）决定。
 /// 「恢复默认」也走这里。
 ///
-/// - 窄：继续 2×2、今日 1×1、复习 1×1、近 7 天 2×1、追踪 2×1、AI 1×1、全景 2×2；
+/// - 窄：继续 2×2；半栏组件今日 / 近 7 天 / 复习 / 追踪 / AI 各 1×1 两两并排（个数为奇数
+///   时最后一个放宽成 2×1，不留半格空洞，见 [_pairHalves]）；全景 2×2。
 /// - 宽：继续 4×2、今日 2×1、复习 1×1、AI 1×1、近 7 天 2×2、最近添加 4×2、
 ///   追踪 2×1、全景 2×2。
 List<HomeWidgetItem> migrateHomeWidgetLayout({
@@ -697,14 +698,13 @@ List<HomeWidgetItem> migrateHomeWidgetLayout({
   return switch (grid) {
     HomeGridKind.compact => <HomeWidgetItem>[
       const HomeWidgetItem(HomeWidgetKind.continueHero, HomeWidgetSize(2, 2)),
-      const HomeWidgetItem(HomeWidgetKind.today, HomeWidgetSize(1, 1)),
-      if (srs)
-        const HomeWidgetItem(HomeWidgetKind.srsReview, HomeWidgetSize(1, 1)),
-      const HomeWidgetItem(HomeWidgetKind.week, HomeWidgetSize(2, 1)),
-      if (tracking)
-        const HomeWidgetItem(HomeWidgetKind.tracking, HomeWidgetSize(2, 1)),
-      if (ai)
-        const HomeWidgetItem(HomeWidgetKind.aiAgent, HomeWidgetSize(1, 1)),
+      ..._pairHalves(<HomeWidgetKind>[
+        HomeWidgetKind.today,
+        HomeWidgetKind.week,
+        if (srs) HomeWidgetKind.srsReview,
+        if (tracking) HomeWidgetKind.tracking,
+        if (ai) HomeWidgetKind.aiAgent,
+      ]),
       if (panorama)
         const HomeWidgetItem(HomeWidgetKind.panorama, HomeWidgetSize(2, 2)),
     ],
@@ -724,3 +724,16 @@ List<HomeWidgetItem> migrateHomeWidgetLayout({
     ],
   };
 }
+
+/// 窄网格默认模板里的半栏组件：按顺序两两并排（各 1×1）；个数为奇数时最后一个
+/// 放宽成 2×1 占满那一行，后面的整行组件不会在它旁边留下半格空洞。
+List<HomeWidgetItem> _pairHalves(List<HomeWidgetKind> kinds) =>
+    <HomeWidgetItem>[
+      for (int i = 0; i < kinds.length; i++)
+        HomeWidgetItem(
+          kinds[i],
+          kinds.length.isOdd && i == kinds.length - 1
+              ? const HomeWidgetSize(2, 1)
+              : const HomeWidgetSize(1, 1),
+        ),
+    ];

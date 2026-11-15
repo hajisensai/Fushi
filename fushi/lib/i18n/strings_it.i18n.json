@@ -4306,6 +4306,7 @@
   "home_today": "Oggi",
   "home_tracking_mark_failed": "Last send to $site failed",
   "home_tracking_mark_linked": "Tracked on $site",
+  "home_tracking_panel_attention": "$n da gestire",
   "home_tracking_panel_connect": "Connect",
   "home_tracking_panel_failed": "$n failed",
   "home_tracking_panel_not_connected": "No site connected",

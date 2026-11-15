@@ -67,96 +67,110 @@ class HomePanoramaPanel extends ConsumerWidget {
         ? t.home_panel_panorama_hint
         : t.panorama_empty;
 
-    return HomeWidgetFrame(
-      key: const ValueKey<String>('home-panorama-panel'),
-      tapKey: const ValueKey<String>('home-panorama-banner'),
-      title: t.home_panel_panorama_title,
-      icon: FushiIcons.blur,
-      hueKey: HomeWidgetKind.panorama.id,
-      poster: poster,
-      dense: false,
-      onTap: hasWorks ? () => _openFullscreen(context) : null,
-      child: Builder(
-        builder: (BuildContext context) {
-          final HomeWidgetStyle style = HomeWidgetStyle.of(context);
-          final TextStyle base =
-              Theme.of(context).textTheme.bodyMedium ?? const TextStyle();
-          Widget action({
-            required String id,
-            required IconData icon,
-            required String label,
-            required VoidCallback? onPressed,
-          }) => FushiIconButton(
-            key: ValueKey<String>(id),
-            icon: icon,
-            tooltip: label,
-            size: 20,
-            enabled: onPressed != null,
-            enabledColor: style.foreground,
-            onTap: onPressed,
-          );
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Expanded(
-                child: LayoutBuilder(
-                  builder: (BuildContext context, BoxConstraints box) => Text(
-                    status,
-                    // 格子越高放越多行（按行高算，不溢出）。
-                    maxLines: homeWidgetLinesFor(
-                      box.maxHeight,
-                      MediaQuery.textScalerOf(context).scale(16) * 1.25,
-                      max: 6,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                    style: base.copyWith(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      height: 1.25,
-                      color: style.accent,
-                    ),
-                  ),
-                ),
-              ),
-              Row(
-                children: <Widget>[
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints cell) => HomeWidgetFrame(
+        key: const ValueKey<String>('home-panorama-panel'),
+        tapKey: const ValueKey<String>('home-panorama-banner'),
+        title: t.home_panel_panorama_title,
+        icon: FushiIcons.blur,
+        hueKey: HomeWidgetKind.panorama.id,
+        poster: poster,
+        dense: homeWidgetIsDense(cell.maxHeight),
+        onTap: hasWorks ? () => _openFullscreen(context) : null,
+        child: LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints box) {
+            final HomeWidgetStyle style = HomeWidgetStyle.of(context);
+            final TextStyle base =
+                Theme.of(context).textTheme.bodyMedium ?? const TextStyle();
+            final TextScaler scaler = MediaQuery.textScalerOf(context);
+            final double statusLine = scaler.scale(16) * 1.25;
+            // 按钮行按剩余高度收内边距（最多默认 8）：半栏 1×1 的窄网格一行高格子
+            // 只剩按钮行那么高，也不溢出。
+            final double buttonPad = ((box.maxHeight - 20) / 2).clamp(2, 8);
+            final double buttonRow = 20 + buttonPad * 2;
+            final bool showStatus = box.maxHeight >= buttonRow + statusLine;
+            // 半栏（1 列宽）只放两枚按钮，摘要那一行留给更宽的格子。
+            final bool showSummary = homeWidgetIsWide(box.maxWidth);
+            Widget action({
+              required String id,
+              required IconData icon,
+              required String label,
+              required VoidCallback? onPressed,
+            }) => FushiIconButton(
+              key: ValueKey<String>(id),
+              icon: icon,
+              tooltip: label,
+              size: 20,
+              padding: EdgeInsets.all(buttonPad),
+              enabled: onPressed != null,
+              enabledColor: style.foreground,
+              onTap: onPressed,
+            );
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: <Widget>[
+                if (showStatus)
                   Expanded(
-                    child: ready == null
-                        ? const SizedBox.shrink()
-                        : Text(
-                            panoramaSummary(ready),
-                            key: const ValueKey<String>(
-                              'home-panorama-summary',
+                    child: Text(
+                      status,
+                      // 格子越高放越多行（按行高算，不溢出）。
+                      maxLines: homeWidgetLinesFor(
+                        box.maxHeight - buttonRow,
+                        statusLine,
+                        max: 6,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                      style: base.copyWith(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        height: 1.25,
+                        color: style.accent,
+                      ),
+                    ),
+                  ),
+                Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: ready == null || !showSummary
+                          ? const SizedBox.shrink()
+                          : Text(
+                              panoramaSummary(ready),
+                              key: const ValueKey<String>(
+                                'home-panorama-summary',
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: base.copyWith(
+                                fontSize: 12,
+                                color: style.muted,
+                              ),
                             ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: base.copyWith(
-                              fontSize: 12,
-                              color: style.muted,
-                            ),
-                          ),
-                  ),
-                  action(
-                    id: 'home-panorama-share',
-                    icon: FushiIcons.play,
-                    label: t.panorama_share_animation,
-                    onPressed: hasWorks
-                        ? () => unawaited(
-                            playPanoramaCinematic(context, ready, onOpen),
-                          )
-                        : null,
-                  ),
-                  action(
-                    id: 'home-panorama-fullscreen',
-                    icon: FushiIcons.fullscreen,
-                    label: t.panorama_open_fullscreen,
-                    onPressed: hasWorks ? () => _openFullscreen(context) : null,
-                  ),
-                ],
-              ),
-            ],
-          );
-        },
+                    ),
+                    action(
+                      id: 'home-panorama-share',
+                      icon: FushiIcons.play,
+                      label: t.panorama_share_animation,
+                      onPressed: hasWorks
+                          ? () => unawaited(
+                              playPanoramaCinematic(context, ready, onOpen),
+                            )
+                          : null,
+                    ),
+                    action(
+                      id: 'home-panorama-fullscreen',
+                      icon: FushiIcons.fullscreen,
+                      label: t.panorama_open_fullscreen,
+                      onPressed: hasWorks
+                          ? () => _openFullscreen(context)
+                          : null,
+                    ),
+                  ],
+                ),
+              ],
+            );
+          },
+        ),
       ),
     );
   }

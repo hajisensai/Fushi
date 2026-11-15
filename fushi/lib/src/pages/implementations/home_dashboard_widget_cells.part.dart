@@ -69,11 +69,52 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
 
   // ── 继续 ────────────────────────────────────────────────────────────────
 
-  /// 「继续」主角：最近一条放大；格子够大再挂其余条目——横向够宽（宽 ≥ 460 且
+  /// 「继续」主角：半栏（宽 < [kHomeWidgetWideWidth]）走 [_continueHeroNarrow]；
+  /// 否则 [_continueHeroFull]。
+  Widget _continueHeroCell(
+    FushiDesignTokens tokens,
+    AppModel appModel,
+    List<_ContinueEntry> entries,
+    bool poster,
+  ) => LayoutBuilder(
+    builder: (BuildContext context, BoxConstraints c) =>
+        entries.isNotEmpty && !homeWidgetIsWide(c.maxWidth)
+        ? _continueHeroNarrow(tokens, appModel, entries, poster)
+        : _continueHeroFull(tokens, appModel, entries, poster),
+  );
+
+  /// 半栏（1 列宽）的「继续」主角：主卡 / 封面行在 1 列宽里排不开，改成条目小行
+  /// 一列（小封面 + 两行标题，高度够再挂进度），放得下几条放几条，最近一条在最上。
+  Widget _continueHeroNarrow(
+    FushiDesignTokens tokens,
+    AppModel appModel,
+    List<_ContinueEntry> entries,
+    bool poster,
+  ) => HomeWidgetFrame(
+    key: const ValueKey<String>('home-continue-card'),
+    title: t.home_continue,
+    icon: FushiIcons.playCircle,
+    hueKey: HomeWidgetKind.continueHero.id,
+    poster: poster,
+    dense: false,
+    child: LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints box) => _widgetMiniList(
+        tokens: tokens,
+        appModel: appModel,
+        key: const ValueKey<String>('home-continue-list'),
+        keyPrefix: 'home-continue-item',
+        entries: entries,
+        area: box.biggest,
+        subtitleOf: (_ContinueEntry e) => e.badgeLabel ?? _continueMetaLine(e),
+      ),
+    ),
+  );
+
+  /// 「继续」主角（够宽时）：最近一条放大；格子够大再挂其余条目——横向够宽（宽 ≥ 460 且
   /// 宽高比 ≥ 1.5）挂在主卡旁，否则高度够时挂在主卡下（[_continueSplitFor]）。
   /// 其余条目那一段按实际大小排：只放得下一行时横滑（全部条目可达），放得下多行时
   /// 铺成多行多列（格子越大条目越多）。没有条目时是首载骨架 / 空库引导。
-  Widget _continueHeroCell(
+  Widget _continueHeroFull(
     FushiDesignTokens tokens,
     AppModel appModel,
     List<_ContinueEntry> entries,
@@ -600,39 +641,56 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
                     ),
                     const SizedBox(width: 10),
                     Expanded(
-                      child: _fitCenter(
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: <Widget>[
-                            if (brow != null)
-                              Text(
-                                brow,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: tokens.type.metadata.copyWith(
-                                  color: muted,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w600,
+                      child: LayoutBuilder(
+                        builder: (BuildContext context, BoxConstraints box) {
+                          final TextStyle titleStyle = tokens.type.listTitle
+                              .copyWith(color: fg);
+                          final TextStyle metaStyle = tokens.type.metadata
+                              .copyWith(color: muted);
+                          final TextStyle browStyle = metaStyle.copyWith(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          );
+                          // 按可用高度挑放哪几行（标题优先），整行放得下才放，
+                          // 不出半行字；半栏窄格（文字区 < 120）标题放两行。
+                          final _MiniTileLines lines = _miniTileLines(
+                            height: box.maxHeight,
+                            narrow: box.maxWidth < _kMiniNarrowTextWidth,
+                            titleLine: _lineHeight(context, titleStyle),
+                            metaLine: _lineHeight(context, metaStyle),
+                            browLine: _lineHeight(context, browStyle),
+                            hasSubtitle: subtitle.isNotEmpty,
+                            hasEyebrow: brow != null,
+                          );
+                          return _fitCenter(
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: <Widget>[
+                                if (brow != null && lines.eyebrow)
+                                  Text(
+                                    brow,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: browStyle,
+                                  ),
+                                Text(
+                                  title,
+                                  maxLines: lines.title,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: titleStyle,
                                 ),
-                              ),
-                            Text(
-                              title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: tokens.type.listTitle.copyWith(color: fg),
+                                if (lines.subtitle)
+                                  Text(
+                                    subtitle,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: metaStyle,
+                                  ),
+                              ],
                             ),
-                            if (subtitle.isNotEmpty)
-                              Text(
-                                subtitle,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: tokens.type.metadata.copyWith(
-                                  color: muted,
-                                ),
-                              ),
-                          ],
-                        ),
+                          );
+                        },
                       ),
                     ),
                   ],
@@ -1019,4 +1077,47 @@ _ContinueSplit _continueSplitFor(
     return _ContinueSplit.below;
   }
   return _ContinueSplit.none;
+}
+
+/// 条目小行文字区里文字区宽于它才放单行标题；更窄（半栏 1 列）时标题放两行。
+const double _kMiniNarrowTextWidth = 120;
+
+/// 条目小行的文字区放哪几行：标题行数、放不放副行 / 眉标。
+typedef _MiniTileLines = ({int title, bool subtitle, bool eyebrow});
+
+/// 按 [height] 挑条目小行放哪几行（纯函数）：先放一行标题；[narrow] 时再放第二行
+/// 标题；剩下的高度够一整行才放副行（进度），再够才放眉标——放不下的整行不放，
+/// 不会裁出半行字。
+_MiniTileLines _miniTileLines({
+  required double height,
+  required bool narrow,
+  required double titleLine,
+  required double metaLine,
+  required double browLine,
+  required bool hasSubtitle,
+  required bool hasEyebrow,
+}) {
+  double left = height - titleLine;
+  int title = 1;
+  if (narrow && left >= titleLine) {
+    title = 2;
+    left -= titleLine;
+  }
+  final bool subtitle = hasSubtitle && left >= metaLine;
+  if (subtitle) left -= metaLine;
+  final bool eyebrow = hasEyebrow && left >= browLine;
+  return (title: title, subtitle: subtitle, eyebrow: eyebrow);
+}
+
+/// [style] 一行字的实际高度（含系统字号缩放）。
+double _lineHeight(BuildContext context, TextStyle style) {
+  final TextPainter painter = TextPainter(
+    text: TextSpan(text: 'Ag漢', style: style),
+    textDirection: TextDirection.ltr,
+    textScaler: MediaQuery.textScalerOf(context),
+    maxLines: 1,
+  )..layout();
+  final double h = painter.height;
+  painter.dispose();
+  return h;
 }

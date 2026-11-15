@@ -4306,6 +4306,7 @@
   "home_today": "今天",
   "home_tracking_mark_failed": "发送到 $site 失败",
   "home_tracking_mark_linked": "已关联 $site",
+  "home_tracking_panel_attention": "$n 项待处理",
   "home_tracking_panel_connect": "连接",
   "home_tracking_panel_failed": "$n 项发送失败",
   "home_tracking_panel_not_connected": "尚未连接站点",
