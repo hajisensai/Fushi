@@ -1,12 +1,46 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-15T05:57:51Z",
+ "generatedAt": "2026-11-15T06:31:59Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "4cd7c991f8e558e8b4004510e722a38374f3a2de",
-  "seq": 27324
+  "sha": "a0f1e32db2224b15ff6d23082a81b44b39acd6c4",
+  "seq": 27328
  },
  "builds": [
+  {
+   "seq": 27324,
+   "version": "3.3.0",
+   "sha": "4cd7c991f8e558e8b4004510e722a38374f3a2de",
+   "unknown": false,
+   "publishedAt": "2026-11-15T06:31:44Z",
+   "testflight": false,
+   "baseSeq": 27301,
+   "prs": [
+    3437,
+    3436,
+    3441,
+    3391
+   ],
+   "direct": [],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "ok"
+    },
+    "windows": {
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43680582784"
+    },
+    "macos": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43680582784"
+    },
+    "ios": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43680582784"
+    }
+   }
+  },
   {
    "seq": 27301,
    "version": "3.3.0",
@@ -145,7 +179,7 @@
    "unknown": false,
    "publishedAt": "2026-11-15T03:33:29Z",
    "testflight": false,
-   "baseSeq": 27107,
+   "baseSeq": 26884,
    "prs": [
     3424,
     3427,
@@ -155,37 +189,7 @@
     3321,
     3365,
     3357,
-    3368
-   ],
-   "direct": [],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "ok"
-    },
-    "windows": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43658688931"
-    },
-    "macos": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43658688931"
-    },
-    "ios": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43658688931"
-    }
-   }
-  },
-  {
-   "seq": 27107,
-   "version": "3.3.0",
-   "sha": "8cf583e7866d519d5e20ff45d07fca256c0f00b6",
-   "unknown": false,
-   "publishedAt": "2026-11-15T00:48:48Z",
-   "testflight": false,
-   "baseSeq": 26884,
-   "prs": [
+    3368,
     3343,
     3402,
     3426,
@@ -220,46 +224,44 @@
     },
     "windows": {
      "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43649783969"
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43658688931"
     },
     "macos": {
      "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43649783969"
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43658688931"
     },
     "ios": {
      "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43649783969"
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43658688931"
     }
    }
   }
  ],
  "pending": {
-  "headSha": "4cd7c991f8e558e8b4004510e722a38374f3a2de",
-  "headSeq": 27324,
+  "headSha": "a0f1e32db2224b15ff6d23082a81b44b39acd6c4",
+  "headSeq": 27328,
   "prs": [
-   3437,
-   3436,
-   3441,
-   3391
+   3442,
+   3440
   ],
   "direct": [],
   "truncated": false,
   "platforms": {
    "android": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43680582806"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43685337228"
    },
    "windows": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43680582784"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43685337361"
    },
    "macos": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43680582784"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43685337361"
    },
    "ios": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43680582784"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43685337361"
    }
   }
  },
@@ -646,6 +648,15 @@
    "deletions": 142,
    "labels": []
   },
+  "3440": {
+   "number": 3440,
+   "title": "test(srs): 页面写入按修订号信号等落库（修 Apple 变体满载间歇红）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-15T06:13:43Z",
+   "additions": 71,
+   "deletions": 5,
+   "labels": []
+  },
   "3441": {
    "number": 3441,
    "title": "style(rust): fushi_music manifest.rs 过 rustfmt（修 develop Rust format 红）",
@@ -653,6 +664,15 @@
    "mergedAt": "2026-11-15T04:55:43Z",
    "additions": 12,
    "deletions": 3,
+   "labels": []
+  },
+  "3442": {
+   "number": 3442,
+   "title": "fix: 修 #3372 媒体追踪带进 develop 的 CI 红",
+   "author": "W1ght",
+   "mergedAt": "2026-11-15T06:25:02Z",
+   "additions": 87,
+   "deletions": 74,
    "labels": []
   }
  }
