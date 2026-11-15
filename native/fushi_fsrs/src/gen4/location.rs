@@ -116,7 +116,9 @@ pub fn meta4(collection: &Id, kdf: Option<&Value>, media: MediaRoot) -> Result<V
 /// [check_meta4] 不通过的原因。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MetaMismatch {
-    /// 不是新根 meta（不是 JSON 对象、缺 `fmt` 或 `fmt` 不对——旧根围栏也在这里）。
+    /// 不是本版本认得的新根 meta（不是 JSON 对象、缺 `fmt` 或 `fmt` 不对——旧根围栏也在这里）。
+    ///
+    /// 调用方只能停下报错，**不得**当成「可以覆盖重建」：位置上已有的东西可能是更新的版本以本版本不认得的外形写的。
     NotMeta(String),
     /// 是更新的版本写的，要求更高的读者。
     NeedsUpgrade { min_reader: u32 },
@@ -146,17 +148,19 @@ fn object_of(bytes: &[u8]) -> Result<Map<String, Value>, String> {
 
 /// 读到位置上已有的新根 meta 时，与本机算出的 [want]（[meta4] 的输出）按字段比（设计 §4.1）。
 ///
-/// 先看 `minReader`（比本版本新 = [MetaMismatch::NeedsUpgrade]，不论 `fmt`），再看 `fmt`，最后逐字段比（两边键的并集，
-/// 多一个、少一个、值不同都算）。按解析后的值比，不要求位置上的字节是规范形——不一致就停下报错由调用方做。
+/// 先看 `minReader`（任何 JSON 数值——整数、`5.0`、`4.5` 都算——比本版本新 = [MetaMismatch::NeedsUpgrade]，不论 `fmt`），
+/// 再看 `fmt`，最后逐字段比（两边键的并集，多一个、少一个、值不同都算）。按解析后的值比，不要求位置上的字节是规范形——
+/// 不一致就停下报错由调用方做；三种错误都只能停下，见 [MetaMismatch::NotMeta]。
 pub fn check_meta4(bytes: &[u8], want: &[u8]) -> Result<(), MetaMismatch> {
     let got = object_of(bytes).map_err(MetaMismatch::NotMeta)?;
     if let Some(mr) = got
         .get("minReader")
-        .and_then(Value::as_u64)
-        .filter(|&mr| mr > u64::from(MIN_READER))
+        .and_then(Value::as_f64)
+        .filter(|&mr| mr > f64::from(MIN_READER))
     {
+        // 非整数向上取；`as` 对超界与非有限值饱和到 u32::MAX。
         return Err(MetaMismatch::NeedsUpgrade {
-            min_reader: u32::try_from(mr).unwrap_or(u32::MAX),
+            min_reader: mr.ceil() as u32,
         });
     }
     if got.get("fmt").and_then(Value::as_str) != Some(META_FMT) {
@@ -587,10 +591,13 @@ impl std::fmt::Display for ForbiddenName {
 
 /// 写位置之前的守卫：[path] 相对位置目录（`fushi-srs/<目录名>/`）；落在 `v3/` 或 `v4/` 下时，紧跟着的那一级名字必须
 /// 通过 [top_level_name_allowed]。别的根（`v2/` 等）不归这里管。
+///
+/// 与 [top_level_name_allowed] 同一口径：根名也按 ASCII 不分大小写（`V4/` 在不分大小写的盘上就是 `v4/`），`/` 与 `\`
+/// 都当分隔符、空段跳过（`v4//cursor`、`v4\cursor` 落到的都是 `v4/cursor`）。
 pub fn guard_location_path(path: &str) -> Result<(), ForbiddenName> {
-    let mut it = path.split('/');
+    let mut it = path.split(['/', '\\']).filter(|s| !s.is_empty());
     let root = it.next().unwrap_or_default();
-    if root != NEW_ROOT && root != OLD_ROOT {
+    if !root.eq_ignore_ascii_case(NEW_ROOT) && !root.eq_ignore_ascii_case(OLD_ROOT) {
         return Ok(());
     }
     match it.next() {

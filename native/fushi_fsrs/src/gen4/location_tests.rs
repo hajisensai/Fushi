@@ -127,6 +127,28 @@ fn check_meta4_compares_fields() {
         check_meta4(&serde_json::to_vec(&newer).unwrap(), &want),
         Err(MetaMismatch::NeedsUpgrade { min_reader: 5 })
     );
+    // minReader 写成浮点也认得：5.0 → 5，4.5 向上取 5；不论 fmt 换没换。
+    for (mr, fmt) in [
+        (json!(5.0), "fushi-srs-meta/5"),
+        (json!(4.5), META_FMT),
+        (json!(5.0), META_FMT),
+    ] {
+        let mut m = extra.clone();
+        m.insert("minReader".into(), mr.clone());
+        m.insert("fmt".into(), json!(fmt));
+        assert_eq!(
+            check_meta4(&serde_json::to_vec(&m).unwrap(), &want),
+            Err(MetaMismatch::NeedsUpgrade { min_reader: 5 }),
+            "{mr} {fmt}"
+        );
+    }
+    // 4.0 不比本版本新：落到逐字段比（值类型不同也算不一致）。
+    let mut same = serde_json::from_slice::<Map<String, Value>>(&want).unwrap();
+    same.insert("minReader".into(), json!(4.0));
+    assert_eq!(
+        check_meta4(&serde_json::to_vec(&same).unwrap(), &want),
+        Err(MetaMismatch::Fields(vec!["minReader".into()]))
+    );
     // 旧根围栏、协议 3 的旧 meta、坏字节都不是新根 meta。
     let fence = fence3(DIR, &want).unwrap();
     assert!(matches!(
@@ -498,6 +520,24 @@ fn name_guard_blocks_old_writer_folder_names() {
     assert_eq!(guard_location_path("v4/meta.json"), Ok(()));
     assert_eq!(guard_location_path("v3/meta.json"), Ok(()));
     assert_eq!(guard_location_path("v4"), Ok(()));
+    // 根名不分大小写、反斜杠与空段都按同一路径看。
+    for p in [
+        "V4/cursor",
+        "V3/Probe",
+        "v4\\cursor",
+        "v3\\batch-1",
+        "v4//cursor",
+        "/v4/profile.json",
+        "V4\\Snapshot-1\\x",
+    ] {
+        assert_eq!(
+            guard_location_path(p),
+            Err(ForbiddenName(p.to_owned())),
+            "{p}"
+        );
+    }
+    assert_eq!(guard_location_path("V4/meta.json"), Ok(()));
+    assert_eq!(guard_location_path("v4\\devices"), Ok(()));
     // 别的根不归守卫管（v2 有自己的魔数行围栏）。
     assert_eq!(guard_location_path("v2/cursor"), Ok(()));
     assert_eq!(guard_location_path("cursor"), Ok(()));
