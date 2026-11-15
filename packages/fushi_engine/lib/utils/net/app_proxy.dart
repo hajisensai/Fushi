@@ -33,6 +33,7 @@ import 'dart:io';
 import 'package:fushi_engine/platform/desktop/windows_process_query.dart';
 import 'package:fushi_engine/utils/net/url_input_normalizer.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/utils/process/system_command.dart';
 import 'package:meta/meta.dart';
 
 /// 进程级「用户手填代理」读取器——[applyAppProxy] 不显式传 `userProxy` 时的取值来源。
@@ -856,9 +857,10 @@ String? _globalProxy(String proxyServer) =>
 Future<Map<String, String>> resolveMacSystemProxyEnvironment() async {
   if (!Platform.isMacOS) return const <String, String>{};
   try {
-    final ProcessResult result = await Process.run('scutil', <String>[
-      '--proxy',
-    ]);
+    final ProcessResult result = await Process.run(
+      systemCommand('scutil'),
+      <String>['--proxy'],
+    );
     final String stdout = result.stdout is String
         ? result.stdout as String
         : '';

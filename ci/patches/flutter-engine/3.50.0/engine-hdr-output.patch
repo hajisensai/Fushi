@@ -18,7 +18,7 @@ index 9979e9a2..3bec41f2 100644
  
  // An image buffer object.
 diff --git a/engine/src/flutter/shell/platform/embedder/embedder.cc b/engine/src/flutter/shell/platform/embedder/embedder.cc
-index d7f02e79..73196e1b 100644
+index 44b2ac9f..add3af85 100644
 --- a/engine/src/flutter/shell/platform/embedder/embedder.cc
 +++ b/engine/src/flutter/shell/platform/embedder/embedder.cc
 @@ -288,12 +288,21 @@ static const flutter::DlIRect FlutterRectToDlIRect(FlutterRect flutter_rect) {
@@ -231,7 +231,7 @@ index 00000000..5ab8fc20
 +
 +#endif  // FLUTTER_SHELL_PLATFORM_EMBEDDER_EMBEDDER_RENDER_TARGET_FORMAT_GENERATION_H_
 diff --git a/engine/src/flutter/shell/platform/windows/compositor_opengl.cc b/engine/src/flutter/shell/platform/windows/compositor_opengl.cc
-index d1b1f5bc..f40a7696 100644
+index 597bad4a..fd37b6a0 100644
 --- a/engine/src/flutter/shell/platform/windows/compositor_opengl.cc
 +++ b/engine/src/flutter/shell/platform/windows/compositor_opengl.cc
 @@ -6,6 +6,7 @@
@@ -433,17 +433,17 @@ index d1b1f5bc..f40a7696 100644
      gl_->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
      gl_->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
      gl_->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
--    gl_->TexImage2D(GL_TEXTURE_2D, 0, format_.sized_format, config.size.width,
--                    config.size.height, 0, format_.general_format,
--                    GL_UNSIGNED_BYTE, nullptr);
+-    gl_->TexImage2D(GL_TEXTURE_2D, 0, format_.internal_format,
+-                    config.size.width, config.size.height, 0,
+-                    format_.general_format, GL_UNSIGNED_BYTE, nullptr);
 +    if (!store->half_float) {
-+      gl_->TexImage2D(GL_TEXTURE_2D, 0, format_.sized_format,
++      gl_->TexImage2D(GL_TEXTURE_2D, 0, format_.internal_format,
 +                      config.size.width, config.size.height, 0,
 +                      format_.general_format, GL_UNSIGNED_BYTE, nullptr);
 +    } else if (half_float_sized_format_) {
 +      // Fushi patch (HDR output): ES 3.0 takes the sized internal format; an
-+      // ES 2.0 context (what the Windows embedder requests) needs the unsized
-+      // form with OES_texture_half_float.
++      // ES 2.0 context (the fallback when ANGLE cannot create ES 3.0) needs
++      // the unsized form with OES_texture_half_float.
 +      gl_->TexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, config.size.width,
 +                      config.size.height, 0, GL_RGBA, GL_HALF_FLOAT, nullptr);
 +    } else {
@@ -512,12 +512,11 @@ index d1b1f5bc..f40a7696 100644
    auto source_id = layers[0]->backing_store->open_gl.framebuffer.name;
  
    // Disable the scissor test as it can affect blit operations.
-@@ -299,10 +516,134 @@ bool CompositorOpenGL::Initialize() {
+@@ -305,10 +522,133 @@ bool CompositorOpenGL::Initialize() {
      FML_LOG(WARNING) << "Rendering without MSAA.";
    }
  
 +  // Fushi patch (HDR output): can backing stores be half float?
-+  const auto* description = gl_->GetDescription();
 +  half_float_sized_format_ =
 +      description->GetGlVersion().IsAtLeast(impeller::Version(3));
 +  half_float_renderable_ =
@@ -648,10 +647,10 @@ index d1b1f5bc..f40a7696 100644
    FML_DCHECK(is_initialized_);
  
 diff --git a/engine/src/flutter/shell/platform/windows/compositor_opengl.h b/engine/src/flutter/shell/platform/windows/compositor_opengl.h
-index 0304d168..0a167792 100644
+index 90774d42..7bd555fb 100644
 --- a/engine/src/flutter/shell/platform/windows/compositor_opengl.h
 +++ b/engine/src/flutter/shell/platform/windows/compositor_opengl.h
-@@ -69,9 +69,45 @@ class CompositorOpenGL : public Compositor {
+@@ -72,9 +72,45 @@ class CompositorOpenGL : public Compositor {
    // Whether the OpenGL context supports offscreen MSAA.
    bool supports_offscreen_msaa_ = false;
  
@@ -698,18 +697,10 @@ index 0304d168..0a167792 100644
    bool Clear(FlutterWindowsView* view);
  
 diff --git a/engine/src/flutter/shell/platform/windows/egl/manager.cc b/engine/src/flutter/shell/platform/windows/egl/manager.cc
-index 64fb765b..486f4914 100644
+index 2833b9a4..b5ceb7c2 100644
 --- a/engine/src/flutter/shell/platform/windows/egl/manager.cc
 +++ b/engine/src/flutter/shell/platform/windows/egl/manager.cc
-@@ -4,6 +4,7 @@
- 
- #include "flutter/shell/platform/windows/egl/manager.h"
- 
-+#include <string>
- #include <vector>
- 
- #include "flutter/fml/logging.h"
-@@ -196,6 +197,7 @@ bool Manager::InitializeConfig() {
+@@ -280,6 +280,7 @@ bool Manager::InitializeConfig() {
        ::eglChooseConfig(display_, config_attributes, &config_, 1, &num_config);
  
    if (result == EGL_TRUE && num_config > 0) {
@@ -717,7 +708,7 @@ index 64fb765b..486f4914 100644
      return true;
    }
  
-@@ -203,18 +205,78 @@ bool Manager::InitializeConfig() {
+@@ -287,23 +288,88 @@ bool Manager::InitializeConfig() {
    return false;
  }
  
@@ -725,14 +716,14 @@ index 64fb765b..486f4914 100644
 +// manager; without it HDR output is simply unavailable.
 +void Manager::InitializeHdrConfig() {
 +  const char* extensions = ::eglQueryString(display_, EGL_EXTENSIONS);
-+  const std::string ext = extensions != nullptr ? extensions : "";
++  const std::string_view ext = extensions != nullptr ? extensions : "";
 +  // The scRGB colour space attribute is what makes DWM keep values above 1.0:
 +  // a half-float swap chain left at its default (sRGB, G22) colour space is
 +  // composed clamped to [0, 1]. (ANGLE's D3D11 backend only gains this
 +  // extension through the companion ANGLE patch.)
-+  if (ext.find("EGL_EXT_pixel_format_float") == std::string::npos ||
-+      ext.find("EGL_KHR_no_config_context") == std::string::npos ||
-+      ext.find("EGL_EXT_gl_colorspace_scrgb_linear") == std::string::npos) {
++  if (!HasExtension(ext, "EGL_EXT_pixel_format_float") ||
++      !HasExtension(ext, "EGL_KHR_no_config_context") ||
++      !HasExtension(ext, "EGL_EXT_gl_colorspace_scrgb_linear")) {
 +    return;
 +  }
 +  const EGLint hdr_attributes[] = {
@@ -768,28 +759,52 @@ index 64fb765b..486f4914 100644
 +}
 +
  bool Manager::InitializeContexts() {
-   const EGLint context_attributes[] = {EGL_CONTEXT_CLIENT_VERSION, 2, EGL_NONE};
+   const EGLint gles3_context_attributes[] = {EGL_CONTEXT_CLIENT_VERSION, 3,
+                                              EGL_NONE};
+   const EGLint gles2_context_attributes[] = {EGL_CONTEXT_CLIENT_VERSION, 2,
+                                              EGL_NONE};
  
--  auto const render_context =
--      ::eglCreateContext(display_, config_, EGL_NO_CONTEXT, context_attributes);
 +  // Fushi patch (HDR output): a config-less context can be made current with
 +  // both 8-bit and half-float surfaces. Only used when a half-float config
 +  // exists; otherwise the stock config-bound contexts are created.
 +  no_config_contexts_ = hdr_config_ != nullptr;
 +  EGLConfig context_config = no_config_contexts_ ? EGL_NO_CONFIG_KHR : config_;
 +
-+  auto render_context = ::eglCreateContext(display_, context_config,
-+                                           EGL_NO_CONTEXT, context_attributes);
+   // Attempt to create an OpenGL ES 3.0 context first (which enables UBOs and
+   // other modern GLES3 features on ANGLE), falling back to OpenGL ES 2.0.
+   const EGLint* context_attributes = gles3_context_attributes;
+-  EGLContext render_context =
+-      ::eglCreateContext(display_, config_, EGL_NO_CONTEXT, context_attributes);
+-  if (render_context == EGL_NO_CONTEXT) {
+-    // Clear out lingering error.
++  auto create_render_context = [&]() -> EGLContext {
++    context_attributes = gles3_context_attributes;
++    EGLContext context = ::eglCreateContext(display_, context_config,
++                                            EGL_NO_CONTEXT, context_attributes);
++    if (context == EGL_NO_CONTEXT) {
++      // Clear out lingering error.
++      ::eglGetError();
++      context_attributes = gles2_context_attributes;
++      context = ::eglCreateContext(display_, context_config, EGL_NO_CONTEXT,
++                                   context_attributes);
++    }
++    return context;
++  };
++  EGLContext render_context = create_render_context();
 +  if (render_context == EGL_NO_CONTEXT && no_config_contexts_) {
 +    // Never let the optional HDR path cost the stock renderer: fall back to
 +    // config-bound contexts and report HDR surfaces as unavailable.
+     ::eglGetError();
+-    context_attributes = gles2_context_attributes;
+-    render_context = ::eglCreateContext(display_, config_, EGL_NO_CONTEXT,
+-                                        context_attributes);
 +    no_config_contexts_ = false;
 +    context_config = config_;
-+    render_context = ::eglCreateContext(display_, context_config,
-+                                        EGL_NO_CONTEXT, context_attributes);
-+  }
++    render_context = create_render_context();
+   }
+ 
    if (render_context == EGL_NO_CONTEXT) {
-     LogEGLError("Failed to create EGL render context");
+@@ -311,8 +377,8 @@ bool Manager::InitializeContexts() {
      return false;
    }
  
@@ -800,7 +815,7 @@ index 64fb765b..486f4914 100644
    if (resource_context == EGL_NO_CONTEXT) {
      LogEGLError("Failed to create EGL resource context");
      return false;
-@@ -283,9 +345,26 @@ bool Manager::IsValid() const {
+@@ -385,9 +451,26 @@ bool Manager::surface_origin_is_top_left() const {
  std::unique_ptr<WindowSurface> Manager::CreateWindowSurface(HWND hwnd,
                                                              size_t width,
                                                              size_t height) {
@@ -827,30 +842,34 @@ index 64fb765b..486f4914 100644
  
    // Disable ANGLE's automatic surface resizing and provide an explicit size.
    // The surface will need to be destroyed and re-created if the HWND is
-@@ -298,16 +377,33 @@ std::unique_ptr<WindowSurface> Manager::CreateWindowSurface(HWND hwnd,
-                                        static_cast<EGLint>(height),
-                                        EGL_NONE};
+@@ -397,23 +480,37 @@ std::unique_ptr<WindowSurface> Manager::CreateWindowSurface(HWND hwnd,
+       static_cast<EGLint>(width), EGL_HEIGHT, static_cast<EGLint>(height),
+   };
  
-+  // Fushi patch (HDR output): a half-float (R16G16B16A16_FLOAT) swap chain
-+  // tagged scRGB (DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709: linear, BT.709
-+  // primaries, 1.0 = 80 nits). Without the tag DWM treats it as sRGB and
-+  // clamps everything above 1.0.
-+  const EGLint hdr_surface_attributes[] = {EGL_FIXED_SIZE_ANGLE,
-+                                           EGL_TRUE,
-+                                           EGL_WIDTH,
-+                                           static_cast<EGLint>(width),
-+                                           EGL_HEIGHT,
-+                                           static_cast<EGLint>(height),
-+                                           EGL_GL_COLORSPACE_KHR,
-+                                           EGL_GL_COLORSPACE_SCRGB_LINEAR_EXT,
-+                                           EGL_NONE};
++  // Fushi patch: the orientation applies to every window surface (8-bit and
++  // HDR). Impeller is told once per engine that the default framebuffer is
++  // top-left, so all of them must be created the same way.
+   if (surface_orientation_ != 0) {
+     surface_attributes.push_back(EGL_SURFACE_ORIENTATION_ANGLE);
+     surface_attributes.push_back(surface_orientation_);
+   }
+ 
++  if (hdr) {
++    // Fushi patch (HDR output): a half-float (R16G16B16A16_FLOAT) swap chain
++    // tagged scRGB (DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709: linear, BT.709
++    // primaries, 1.0 = 80 nits). Without the tag DWM treats it as sRGB and
++    // clamps everything above 1.0.
++    surface_attributes.push_back(EGL_GL_COLORSPACE_KHR);
++    surface_attributes.push_back(EGL_GL_COLORSPACE_SCRGB_LINEAR_EXT);
++  }
 +
+   surface_attributes.push_back(EGL_NONE);
+ 
    auto const surface = ::eglCreateWindowSurface(
 -      display_, config_, static_cast<EGLNativeWindowType>(hwnd),
--      surface_attributes);
+-      surface_attributes.data());
 +      display_, hdr ? hdr_config_ : config_,
-+      static_cast<EGLNativeWindowType>(hwnd),
-+      hdr ? hdr_surface_attributes : surface_attributes);
++      static_cast<EGLNativeWindowType>(hwnd), surface_attributes.data());
    if (surface == EGL_NO_SURFACE) {
      LogEGLError("Surface creation failed.");
      return nullptr;
@@ -865,7 +884,7 @@ index 64fb765b..486f4914 100644
  }
  
  bool Manager::HasContextCurrent() {
-@@ -316,9 +412,13 @@ bool Manager::HasContextCurrent() {
+@@ -422,9 +519,13 @@ bool Manager::HasContextCurrent() {
  
  EGLSurface Manager::CreateSurfaceFromHandle(EGLenum handle_type,
                                              EGLClientBuffer handle,
@@ -883,10 +902,10 @@ index 64fb765b..486f4914 100644
  
  bool Manager::GetDevice(ID3D11Device** device) {
 diff --git a/engine/src/flutter/shell/platform/windows/egl/manager.h b/engine/src/flutter/shell/platform/windows/egl/manager.h
-index ca44a4b8..9327530c 100644
+index 5e19609d..eea5b744 100644
 --- a/engine/src/flutter/shell/platform/windows/egl/manager.h
 +++ b/engine/src/flutter/shell/platform/windows/egl/manager.h
-@@ -60,13 +60,30 @@ class Manager {
+@@ -80,13 +80,30 @@ class Manager {
                                                               size_t width,
                                                               size_t height);
  
@@ -918,7 +937,7 @@ index ca44a4b8..9327530c 100644
  
    // Gets the |EGLDisplay|.
    EGLDisplay egl_display() const { return display_; };
-@@ -106,6 +123,15 @@ class Manager {
+@@ -138,6 +155,15 @@ class Manager {
    // Initialize the EGL configs.
    bool InitializeConfig();
  
@@ -934,7 +953,7 @@ index ca44a4b8..9327530c 100644
    // Initialize the EGL render and resource contexts.
    bool InitializeContexts();
  
-@@ -123,6 +149,14 @@ class Manager {
+@@ -161,6 +187,14 @@ class Manager {
    // EGL framebuffer configuration.
    EGLConfig config_ = nullptr;
  
@@ -1026,10 +1045,10 @@ index 628c2065..cb8943bb 100644
    FML_DISALLOW_COPY_AND_ASSIGN(ExternalTextureD3d);
  };
 diff --git a/engine/src/flutter/shell/platform/windows/flutter_windows.cc b/engine/src/flutter/shell/platform/windows/flutter_windows.cc
-index 616fcbaa..afd18f68 100644
+index f0992779..37b496e4 100644
 --- a/engine/src/flutter/shell/platform/windows/flutter_windows.cc
 +++ b/engine/src/flutter/shell/platform/windows/flutter_windows.cc
-@@ -284,6 +284,15 @@ HWND FlutterDesktopViewGetHWND(FlutterDesktopViewRef view) {
+@@ -290,6 +290,15 @@ HWND FlutterDesktopViewGetHWND(FlutterDesktopViewRef view) {
    return ViewFromHandle(view)->GetWindowHandle();
  }
  
@@ -1046,10 +1065,10 @@ index 616fcbaa..afd18f68 100644
    auto engine = ViewFromHandle(view)->GetEngine();
    IDXGIAdapter* adapter;
 diff --git a/engine/src/flutter/shell/platform/windows/flutter_windows_engine.h b/engine/src/flutter/shell/platform/windows/flutter_windows_engine.h
-index 720a65a7..3b9f9474 100644
+index fef08a76..d1f4ed56 100644
 --- a/engine/src/flutter/shell/platform/windows/flutter_windows_engine.h
 +++ b/engine/src/flutter/shell/platform/windows/flutter_windows_engine.h
-@@ -182,6 +182,10 @@ class FlutterWindowsEngine {
+@@ -183,6 +183,10 @@ class FlutterWindowsEngine {
    // rendering using software instead of OpenGL.
    egl::Manager* egl_manager() const { return egl_manager_.get(); }
  

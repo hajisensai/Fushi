@@ -29,7 +29,7 @@
 
 ## 当前技术事实
 
-- Flutter 版本**只有一个：`3.47.6`**（本地与 CI 同版，`fushi/.fvmrc` 与全部 workflow 同钉，守卫 `flutter_version_single_source_guard_test.dart`；本机路径见 `CLAUDE.local.md`）；3.44 及更早编不过本仓。报 `Invalid kernel binary format version` 就删 `.dart_tool/hooks_runner` 用 3.47.6 重跑。升级要连 `ci/patches/flutter-engine/<版本>/` 一起移植。最低 Android API 24，`compileSdk 36` / `targetSdk 35`。（[细则](rules-detail.md#flutter-版本)）
+- Flutter 版本**只有一个：`3.50.0`**（本地与 CI 同版，`fushi/.fvmrc` 与全部 workflow 同钉，守卫 `flutter_version_single_source_guard_test.dart`；本机路径见 `CLAUDE.local.md`）；3.44 及更早编不过本仓。报 `Invalid kernel binary format version` 就删 `.dart_tool/hooks_runner` 用 3.50.0 重跑。升级要连 `ci/patches/flutter-engine/<版本>/` 一起移植。最低 Android API 24，`compileSdk 36` / `targetSdk 35`。（[细则](rules-detail.md#flutter-版本)）
 - **Material / Cupertino 走 pub 包 `material_ui` / `cupertino_ui`**：一律 `import 'package:material_ui/material_ui.dart'` / `'package:cupertino_ui/cupertino_ui.dart'`，**禁止新写 `package:flutter/material.dart` / `cupertino.dart`**（同名符号是不同类型，运行时 Theme 互相看不见；守卫 `design_widgets_import_guard_test.dart`，合并旧分支后跑 `bash tool/migrate_design_widgets.sh`）。旧 SDK Material 的第三方包靠 `LegacyDesignCompatibility` 读主题。（[细则](rules-detail.md#material_ui-迁移)）
 - **渲染后端五端全线 Impeller，不保留 Skia 回退**：渲染问题按根因在 Impeller 上修，禁止新增关 Impeller 的开关、manifest / plist 键或启动参数。（[细则](rules-detail.md#impeller)）
 - 状态管理 Riverpod；音频 just_audio（桌面经 just_audio_media_kit）；录音 record 6.0.0；视频播放走 **media_kit**（third_party vendored 全套）+ youtube_explode_dart。

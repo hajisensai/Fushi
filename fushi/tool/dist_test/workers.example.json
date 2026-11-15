@@ -13,7 +13,7 @@
       "os": "macos",
       "seedRepo": "dev/hibiki",
       "slots": 1,
-      "path": ["$HOME/flutter_3.47.6/bin", "/opt/homebrew/bin", "$HOME/.cargo/bin"],
+      "path": ["$HOME/flutter_3.50.0/bin", "/opt/homebrew/bin", "$HOME/.cargo/bin"],
       "prepareEnv": {
         "LANG": "en_US.UTF-8",
         "HTTPS_PROXY": "http://127.0.0.1:7897",

@@ -1,5 +1,5 @@
 diff --git a/engine/src/flutter/shell/platform/windows/egl/manager.cc b/engine/src/flutter/shell/platform/windows/egl/manager.cc
-index fc8eb56..07d7fd2 100644
+index 929fcc8d..63b7f00e 100644
 --- a/engine/src/flutter/shell/platform/windows/egl/manager.cc
 +++ b/engine/src/flutter/shell/platform/windows/egl/manager.cc
 @@ -4,6 +4,8 @@
@@ -8,10 +8,10 @@ index fc8eb56..07d7fd2 100644
  
 +#include <d3d10.h>  // Fushi patch: ID3D10Multithread
 +
- #include <string>
+ #include <string_view>
  #include <vector>
  
-@@ -39,6 +41,20 @@ Manager::Manager(GpuPreference gpu_preference) {
+@@ -89,6 +91,20 @@ Manager::Manager(GpuPreference gpu_preference,
      return;
    }
  
@@ -33,10 +33,10 @@ index fc8eb56..07d7fd2 100644
  }
  
 diff --git a/engine/src/flutter/shell/platform/windows/egl/manager.h b/engine/src/flutter/shell/platform/windows/egl/manager.h
-index 89ad31d..e669d86 100644
+index c6b53bf9..f01ba992 100644
 --- a/engine/src/flutter/shell/platform/windows/egl/manager.h
 +++ b/engine/src/flutter/shell/platform/windows/egl/manager.h
-@@ -104,6 +104,20 @@ class Manager {
+@@ -132,6 +132,20 @@ class Manager {
    // Gets the |ID3D11Device| chosen by ANGLE.
    bool GetDevice(ID3D11Device** device);
  
@@ -57,7 +57,7 @@ index 89ad31d..e669d86 100644
    // Get the EGL context used to render Flutter views.
    virtual Context* render_context() const;
  
-@@ -178,6 +192,10 @@ class Manager {
+@@ -216,6 +230,10 @@ class Manager {
    // The current D3D device.
    Microsoft::WRL::ComPtr<ID3D11Device> resolved_device_ = nullptr;
  
@@ -69,7 +69,7 @@ index 89ad31d..e669d86 100644
  };
  
 diff --git a/engine/src/flutter/shell/platform/windows/external_texture_d3d.cc b/engine/src/flutter/shell/platform/windows/external_texture_d3d.cc
-index 7228c4b..5012b1b 100644
+index 7228c4b6..5012b1b7 100644
 --- a/engine/src/flutter/shell/platform/windows/external_texture_d3d.cc
 +++ b/engine/src/flutter/shell/platform/windows/external_texture_d3d.cc
 @@ -60,6 +60,103 @@ void ExternalTextureD3d::ReleaseImage() {
@@ -231,7 +231,7 @@ index 7228c4b..5012b1b 100644
  
  }  // namespace flutter
 diff --git a/engine/src/flutter/shell/platform/windows/external_texture_d3d.h b/engine/src/flutter/shell/platform/windows/external_texture_d3d.h
-index cb8943b..5cfc07b 100644
+index cb8943bb..5cfc07bb 100644
 --- a/engine/src/flutter/shell/platform/windows/external_texture_d3d.h
 +++ b/engine/src/flutter/shell/platform/windows/external_texture_d3d.h
 @@ -5,6 +5,10 @@
@@ -286,10 +286,10 @@ index cb8943b..5cfc07b 100644
    FML_DISALLOW_COPY_AND_ASSIGN(ExternalTextureD3d);
  };
 diff --git a/engine/src/flutter/shell/platform/windows/flutter_windows.cc b/engine/src/flutter/shell/platform/windows/flutter_windows.cc
-index 2c05e8f..0040954 100644
+index 2122b883..24c9e225 100644
 --- a/engine/src/flutter/shell/platform/windows/flutter_windows.cc
 +++ b/engine/src/flutter/shell/platform/windows/flutter_windows.cc
-@@ -301,6 +301,10 @@ void FlutterDesktopViewSetUnderlayComposition(FlutterDesktopViewRef view,
+@@ -307,6 +307,10 @@ void FlutterDesktopViewSetUnderlayComposition(FlutterDesktopViewRef view,
    ViewFromHandle(view)->SetUnderlayComposition(enabled);
  }
  
@@ -301,7 +301,7 @@ index 2c05e8f..0040954 100644
    auto engine = ViewFromHandle(view)->GetEngine();
    IDXGIAdapter* adapter;
 diff --git a/engine/src/flutter/shell/platform/windows/public/flutter_windows.h b/engine/src/flutter/shell/platform/windows/public/flutter_windows.h
-index 248a1dc..417eab6 100644
+index 248a1dcb..417eab6e 100644
 --- a/engine/src/flutter/shell/platform/windows/public/flutter_windows.h
 +++ b/engine/src/flutter/shell/platform/windows/public/flutter_windows.h
 @@ -344,6 +344,19 @@ FLUTTER_EXPORT void FlutterDesktopViewSetUnderlayComposition(

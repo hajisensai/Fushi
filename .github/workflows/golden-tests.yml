@@ -52,7 +52,7 @@ jobs:
       # 合成器 HDR），flutter test 用的 flutter_tester 不受影响。
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
-          flutter-version: '3.47.6'
+          flutter-version: '3.50.0'
           cache: false
           pub-cache: true
       # pdfium_dart's build hook downloads PDFium from GitHub on every fresh

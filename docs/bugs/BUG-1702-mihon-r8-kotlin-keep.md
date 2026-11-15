@@ -18,7 +18,7 @@
   - 扩展需要的 63 个宿主类，**修复前缺 22 个**（`kotlin.Lazy` / `kotlin.LazyKt` / `kotlin.jvm.internal.Intrinsics` / `kotlin.coroutines.*` / `kotlin.time.*` / `JsoupExtensionsKt`），**修复后缺 0 个**。
   - 宿主 `kotlin.*` 类数 34 → 994；`HttpSource.headers$delegate` 的字段类型从 `LW4/f` 变回 `Lkotlin/Lazy`——扩展构造函数里那句 `getDeclaredField("headers$delegate")` + `Field.set` 的类型这才对得上。
   - 体积代价（同配置前后各构建一次）：dex 9.73 MB → 11.53 MB（+1.79 MB / +18.4%），**APK 238.8 MB → 239.3 MB（+0.50 MB / +0.21%）**——dex 在 APK 里是压缩存的，实际增量可忽略。
-  - 顺带踩到的环境问题：本机 Android release AOT 挂 `gen_snapshot` 栈溢出（`-1073741571`），得给 `android-arm64-release/windows-x64/gen_snapshot.exe` 单独打 `editbin /STACK:128M`（此前只给 windows-x64-release 那份打过，两者是不同文件）。与本 bug 无关，但不打就构建不出来。
+  - 顺带踩到的环境问题：本机 Android release AOT 挂 `gen_snapshot` 栈溢出（`-1073741571`），得给 `android-arm64-release/windows-x64/gen_snapshot.exe` 单独打 `editbin /STACK:128M`（此前只给 windows-x64-release 那份打过，两者是不同文件）。与本 bug 无关，但不打就构建不出来。（2026-11-15 更新：栈溢出来源是 slang flat map 的巨型 string switch，BUG-4640 关掉 flat map 后 stock gen_snapshot 已不需要改栈，见 BUG-1589 ①c。）
 - **备注**：
   - 未纳入本次修复的相邻事实，另见 BUG-1703：错误消息投递通道在 Android 上是 `Fluttertoast`（系统原生 Toast，硬上限 2 行、不可复制），所以 `MihonExtensionLoader` 在 develop 上已经带的链式根因（`03c98a0828`）**依然送不到用户眼前**，截图里就断在 `Unabl…`。用户报的 v2.1.1 更早于该提交，消息里连根因都还没有。
   - 已知但**未**处理：宿主的 QuickJS 来自 `com.github.zhanghai.quickjs-java`，类名落在 `app.cash.quickjs.*`（与扩展预期一致），本次已补 keep；但成员级兼容未验证，用 QuickJs 的扩展仍可能 `NoSuchMethodError`，需真机复验后另开条目。

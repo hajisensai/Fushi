@@ -48,7 +48,7 @@ jobs:
           ref: develop
           # 首父链判据要完整历史。
           fetch-depth: 0
-      # bug.dart 只用 dart:*，不需要 pub get。版本与 Flutter 3.47.6 自带的 Dart 一致。
+      # bug.dart 只用 dart:*，不需要 pub get。版本与 Flutter 3.50.0 自带的 Dart 一致。
       - uses: dart-lang/setup-dart@v1
         with:
           sdk: '3.12.0'

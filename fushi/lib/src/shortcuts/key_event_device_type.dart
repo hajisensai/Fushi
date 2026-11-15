@@ -8,7 +8,7 @@ import 'package:flutter/services.dart';
 /// Use this instead of [KeyEvent.deviceType] wherever a controller's D-pad
 /// must be told apart from a keyboard's arrow keys.
 ///
-/// Temporary compatibility layer for an engine limitation (Flutter 3.47.6 and
+/// Temporary compatibility layer for an engine limitation (Flutter 3.50.0 and
 /// upstream master as of 2026-11): on Android the engine puts the device type
 /// into the key data packet (`KeyData.java` writes `deviceType`, and
 /// `MainActivity` narrows a controller's combined source through

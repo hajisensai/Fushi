@@ -6,7 +6,7 @@
 
 ![Платформа](https://img.shields.io/badge/platform-Android%20%7C%20Windows%20%7C%20macOS%20%7C%20iOS%20%7C%20Linux-lightgrey)
 ![Лицензия](https://img.shields.io/badge/license-GPLv3-blue)
-![Flutter](https://img.shields.io/badge/Flutter-3.47.6-02569B?logo=flutter&logoColor=white)
+![Flutter](https://img.shields.io/badge/Flutter-3.50.0-02569B?logo=flutter&logoColor=white)
 
 [简体中文](../../README.zh-CN.md) | [English](../../README.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | **Русский** | [Tiếng Việt](README.vi.md) | [ภาษาไทย](README.th.md) | [Bahasa Indonesia](README.id.md) | [Italiano](README.it.md) | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | [العربية](README.ar.md)
 
@@ -67,14 +67,14 @@ flutter build ipa --release
 dart build cli
 ```
 
-`tool/bootstrap.sh` / `tool/bootstrap.ps1` сводят `flutter pub get` и `ci/apply-patches.sh` в одну команду. Проект привязан к Flutter 3.47.6 (Dart SDK `>=3.8.0 <4.0.0`); более ранние версии Flutter его не соберут, потому что Material и Cupertino подключаются как пакеты `material_ui` / `cupertino_ui`. Часть upstream-зависимостей vendored в `third_party/` или патчится через `ci/apply-patches.sh` — подробности, включая зависимости сборки для Linux-десктопа, см. в [docs/agent/build.md](../agent/build.md).
+`tool/bootstrap.sh` / `tool/bootstrap.ps1` сводят `flutter pub get` и `ci/apply-patches.sh` в одну команду. Проект привязан к Flutter 3.50.0 (Dart SDK `>=3.8.0 <4.0.0`); более ранние версии Flutter его не соберут, потому что Material и Cupertino подключаются как пакеты `material_ui` / `cupertino_ui`. Часть upstream-зависимостей vendored в `third_party/` или патчится через `ci/apply-patches.sh` — подробности, включая зависимости сборки для Linux-десктопа, см. в [docs/agent/build.md](../agent/build.md).
 
 <details>
 <summary><b>Технологический стек</b></summary>
 
 | Уровень | Технология |
 |---|---|
-| Фреймворк | Flutter 3.47.6 (Dart SDK `>=3.8.0 <4.0.0`), Riverpod |
+| Фреймворк | Flutter 3.50.0 (Dart SDK `>=3.8.0 <4.0.0`), Riverpod |
 | Платформы | Android / Windows / macOS / iOS / Linux, а также безголовый сервер |
 | UI | `material_ui` (Material 3 Expressive) / `cupertino_ui` (Cupertino) |
 | Читалка | Постраничный движок на WebView (на основе семейства Hoshi Reader) |

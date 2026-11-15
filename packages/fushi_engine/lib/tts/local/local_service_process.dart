@@ -12,6 +12,7 @@ import 'dart:io';
 
 import 'package:fushi_engine/foundation/engine_notifier.dart';
 import 'package:fushi_engine/utils/misc/helper_process_registry.dart';
+import 'package:fushi_engine/utils/process/system_command.dart';
 
 /// 服务状态。`starting` 期间端口还没在听（加载模型要几十秒）。
 enum LocalServicePhase { stopped, starting, running, failed }
@@ -109,7 +110,7 @@ Future<bool> localServicePidOwnerCheck(int pid, String executable) async {
     } else if (Platform.isLinux) {
       path = Link('/proc/$pid/exe').resolveSymbolicLinksSync();
     } else {
-      final ProcessResult r = await Process.run('ps', <String>[
+      final ProcessResult r = await Process.run(systemCommand('ps'), <String>[
         '-p',
         '$pid',
         '-o',
