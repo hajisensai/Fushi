@@ -19,7 +19,7 @@
 //! 笔记的 `tags` 整列表写入不进 `reg_ix`——它是标签 OR-Set 的操作（协议 3 同）。
 //!
 //! 索引里的 ID 都是操作体里的原值，没有归一成规范 ID：别名是另一张派生表的事（设计 §5.3；§10 第 18 条未决，
-//! 不在这一层焊死任何一种答法）。
+//! 不在这一层焊死任何一种答法）。按别名类判定（类内成员的写入并起来再过同一个判据）在读接口里，见 `class.rs`。
 //!
 //! # 冻结的旧判定（设计 §3.4）
 //!
@@ -709,48 +709,8 @@ impl<'t, 'c> Index<'t, 'c> {
 
     /// 重判一个寄存器，把变了的状态写回去。返回它是不是真的过了判据（写入不止一条）。
     fn judge(&mut self, r: &Reg) -> Result<bool, String> {
-        // 被清除的、作者不可信的（负状态，`weigh.rs`）不参与判定，状态原样留着。
         let all = self.reg_rows(r)?;
-        let rows: Vec<(i64, i64)> = all
-            .iter()
-            .copied()
-            .filter(|&(_, state)| state >= R_DOMINATED)
-            .collect();
-        let held: Vec<(i64, i64)> = all
-            .iter()
-            .copied()
-            .filter(|&(_, state)| state == S_HELD)
-            .collect();
-        let want = if !held.is_empty() {
-            // 被并发改动扣住的删除：它自己不生效（不当胜者、不算活着），但它见过的写入照样被它盖掉——扣住只是
-            // 「这条删除等人裁决」，不是「当它没写过」（否则一条与别人的修改并发的旧删除会绕过扣住直接生效）。
-            let mut both = rows.clone();
-            both.extend(&held);
-            let first = self.states(&both)?;
-            let alive: Vec<(i64, i64)> = rows
-                .iter()
-                .zip(&first)
-                .filter(|&(_, &s)| s != R_DOMINATED)
-                .map(|(&row, _)| row)
-                .collect();
-            let mut second = if alive.len() <= 1 {
-                vec![R_WINNER; alive.len()]
-            } else {
-                self.states(&alive)?
-            }
-            .into_iter();
-            rows.iter()
-                .zip(&first)
-                .map(|(_, &s)| match s {
-                    R_DOMINATED => R_DOMINATED,
-                    _ => second.next().unwrap_or(R_DOMINATED),
-                })
-                .collect()
-        } else if rows.len() <= 1 {
-            vec![R_WINNER; rows.len()]
-        } else {
-            self.states(&rows)?
-        };
+        let (rows, want) = self.judged(&all, None)?;
         let conn = self.t.conn();
         for (&(k, have), &want) in rows.iter().zip(&want) {
             if have != want {
@@ -766,10 +726,65 @@ impl<'t, 'c> Index<'t, 'c> {
         Ok(rows.len() > 1)
     }
 
+    /// 一组写入（(操作主键, 现状态)）过冻结判定：返回参与判定的那些（状态 ≥ [R_DOMINATED]）与它们该有的状态。
+    /// [class] = None 按原值拼行（索引层，[Index::judge]）；Some = 按别名类拼行（读侧，`class.rs`）。
+    pub(super) fn judged(
+        &mut self,
+        all: &[(i64, i64)],
+        class: Option<&super::class::Canon>,
+    ) -> Result<(Vec<(i64, i64)>, Vec<i64>), String> {
+        // 被清除的、作者不可信的（负状态，`weigh.rs`）不参与判定，状态原样留着。
+        let rows: Vec<(i64, i64)> = all
+            .iter()
+            .copied()
+            .filter(|&(_, state)| state >= R_DOMINATED)
+            .collect();
+        let held: Vec<(i64, i64)> = all
+            .iter()
+            .copied()
+            .filter(|&(_, state)| state == S_HELD)
+            .collect();
+        let want = if !held.is_empty() {
+            // 被并发改动扣住的删除：它自己不生效（不当胜者、不算活着），但它见过的写入照样被它盖掉——扣住只是
+            // 「这条删除等人裁决」，不是「当它没写过」（否则一条与别人的修改并发的旧删除会绕过扣住直接生效）。
+            let mut both = rows.clone();
+            both.extend(&held);
+            let first = self.states(&both, class)?;
+            let alive: Vec<(i64, i64)> = rows
+                .iter()
+                .zip(&first)
+                .filter(|&(_, &s)| s != R_DOMINATED)
+                .map(|(&row, _)| row)
+                .collect();
+            let mut second = if alive.len() <= 1 {
+                vec![R_WINNER; alive.len()]
+            } else {
+                self.states(&alive, class)?
+            }
+            .into_iter();
+            rows.iter()
+                .zip(&first)
+                .map(|(_, &s)| match s {
+                    R_DOMINATED => R_DOMINATED,
+                    _ => second.next().unwrap_or(R_DOMINATED),
+                })
+                .collect()
+        } else if rows.len() <= 1 {
+            vec![R_WINNER; rows.len()]
+        } else {
+            self.states(&rows, class)?
+        };
+        Ok((rows, want))
+    }
+
     /// 一个寄存器里每条写入的状态（与 [rows] 对齐）。
-    fn states(&mut self, rows: &[(i64, i64)]) -> Result<Vec<i64>, String> {
+    fn states(
+        &mut self,
+        rows: &[(i64, i64)],
+        class: Option<&super::class::Canon>,
+    ) -> Result<Vec<i64>, String> {
         let ks: Vec<i64> = rows.iter().map(|r| r.0).collect();
-        let lines = self.edit_lines(&ks, &|_| true)?;
+        let lines = self.edit_lines_as(&ks, &|_| true, class)?;
         let stored: Vec<StoredEdit<'_>> = lines
             .iter()
             .map(|l| (l.json.as_str(), l.server_time, None))
@@ -795,6 +810,18 @@ impl<'t, 'c> Index<'t, 'c> {
         &mut self,
         ks: &[i64],
         emit: &dyn Fn(usize) -> bool,
+    ) -> Result<Vec<Line>, String> {
+        self.edit_lines_as(ks, emit, None)
+    }
+
+    /// [Index::edit_lines]，[class] = Some 时按别名类拼（`class.rs` 文件头）：dot 的写入者、HLC 的写入者、旧上下文的
+    /// 键三处一起换成规范写入者（同一个规范 dot 的并成一次写入），实体、键换成规范形，值里嵌的 ID 归一。
+    /// 不带旧戳的写入「见没见过」仍按原值 dot 问闭包（闭包存的是原名）。
+    pub(super) fn edit_lines_as(
+        &mut self,
+        ks: &[i64],
+        emit: &dyn Fn(usize) -> bool,
+        class: Option<&super::class::Canon>,
     ) -> Result<Vec<Line>, String> {
         struct Write {
             id: OpId,
@@ -831,14 +858,26 @@ impl<'t, 'c> Index<'t, 'c> {
                 full,
             });
         }
-        // 同一个 dot 的并成一次写入：代表取操作号最小的，server_time 取最小值。
-        let dot = |w: &Write| match &w.ed.stamp {
+        // 同一个 dot 的并成一次写入：代表取操作号最小的，server_time 取最小值。按类拼时 dot 用规范写入者，
+        // [raw_dots] 记每个 dot 由哪些原值 dot 并来。
+        let raw_dot = |w: &Write| match &w.ed.stamp {
             Some(s) => (s.writer.clone(), s.seq),
             None => (w.id.device.text(), w.id.seq as i64),
         };
+        let dot = |w: &Write| {
+            let (writer, seq) = raw_dot(w);
+            match class {
+                Some(c) => (c.writer(&writer).to_owned(), seq),
+                None => (writer, seq),
+            }
+        };
+        let mut raw_dots: BTreeMap<(String, i64), BTreeSet<(String, i64)>> = BTreeMap::new();
         let mut by_dot: BTreeMap<(String, i64), (usize, Option<i64>)> = BTreeMap::new();
         for (i, w) in writes.iter().enumerate() {
             let st = w.ed.stamp.as_ref().and_then(|s| s.server_time);
+            if class.is_some() {
+                raw_dots.entry(dot(w)).or_default().insert(raw_dot(w));
+            }
             by_dot
                 .entry(dot(w))
                 .and_modify(|(rep, min)| {
@@ -860,12 +899,34 @@ impl<'t, 'c> Index<'t, 'c> {
                 Some(s) => {
                     let text = s.hlc.text();
                     let physical = crate::history::parse_hlc(&text).map_or(0, |h| h.0);
-                    (s.ctx.to_dvv().to_json(), text, physical)
+                    match class {
+                        None => (s.ctx.to_dvv().to_json(), text, physical),
+                        Some(c) => (
+                            c.dvv(&s.ctx.to_dvv()).to_json(),
+                            c.hlc(&s.hlc).text(),
+                            physical,
+                        ),
+                    }
                 }
                 None => {
                     let mut cloud = Map::new();
                     for (ow, oq) in by_dot.keys() {
-                        if (ow, oq) != (writer, seq) && self.seen(&w.full, ow, *oq)? {
+                        if (ow, oq) == (writer, seq) {
+                            continue;
+                        }
+                        let seen = if class.is_none() {
+                            self.seen(&w.full, ow, *oq)?
+                        } else {
+                            let mut any = false;
+                            for (rw, rq) in raw_dots.get(&(ow.clone(), *oq)).into_iter().flatten() {
+                                if self.seen(&w.full, rw, *rq)? {
+                                    any = true;
+                                    break;
+                                }
+                            }
+                            any
+                        };
+                        if seen {
                             let dots = cloud.entry(ow.clone()).or_insert_with(|| json!([]));
                             dots.as_array_mut().expect("array").push(json!(oq));
                         }
@@ -877,18 +938,24 @@ impl<'t, 'c> Index<'t, 'c> {
                     )
                 }
             };
+            let value = serde_json::from_str::<Value>(&w.ed.value).unwrap_or(Value::Null);
+            let (entity, key, value) = match class {
+                None => (w.ed.entity.text(), w.ed.key.clone(), value),
+                Some(c) => (
+                    c.entity.clone(),
+                    c.key.clone(),
+                    self.canonical_value(&c.key, &value)?,
+                ),
+            };
             let mut m = Map::new();
             m.insert("p".into(), json!(""));
             m.insert("k".into(), json!(w.ed.kind.wire()));
-            m.insert("e".into(), json!(w.ed.entity.text()));
-            m.insert("f".into(), json!(w.ed.key));
+            m.insert("e".into(), json!(entity));
+            m.insert("f".into(), json!(key));
             m.insert("w".into(), json!(writer));
             m.insert("s".into(), json!(seq));
             m.insert("ctx".into(), ctx);
-            m.insert(
-                "v".into(),
-                serde_json::from_str::<Value>(&w.ed.value).unwrap_or(Value::Null),
-            );
+            m.insert("v".into(), value);
             m.insert("hlc".into(), json!(hlc));
             if w.ed.machine {
                 m.insert("m".into(), json!(true));
