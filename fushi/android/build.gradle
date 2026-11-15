@@ -77,7 +77,7 @@ subprojects {
                     def manifestFile = android.sourceSets?.main?.manifest?.srcFile
                     if (manifestFile?.exists()) {
                         try {
-                            def pkg = new XmlParser().parse(manifestFile)?.attribute('package')
+                            def pkg = new groovy.xml.XmlParser().parse(manifestFile)?.attribute('package')
                             if (pkg) {
                                 android.namespace = pkg
                             }
