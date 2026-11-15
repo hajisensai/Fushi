@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "version": "3.3.0-debug.27265",
-  "tag": "v3.3.0-debug.27265+cc2408d",
+  "version": "3.3.0-debug.27276",
+  "tag": "v3.3.0-debug.27276+ac27de2",
   "channel": "debug",
   "prerelease": true,
-  "releaseSequence": 27265,
-  "notes": "Automated desktop debug-channel build from develop @ cc2408d. Push releases are always prerelease and never Latest.",
+  "releaseSequence": 27276,
+  "notes": "Automated desktop debug-channel build from develop @ ac27de2. Push releases are always prerelease and never Latest.",
   "assets": [
     {
       "name": "fushi-3.3.0-debug.27210-macos-arm64.dmg",
@@ -44,13 +44,13 @@
       "sha256": "133bb04abe1b7d777e32e1690f206df091a7ac5dd75f351716e506e93351654d"
     },
     {
-      "name": "fushi-3.3.0-debug.27265-windows-setup.exe",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.3.0-debug.27265-windows-setup.exe",
-      "releaseSequence": 27265,
-      "tag": "v3.3.0-debug.27265+cc2408d",
-      "version": "3.3.0-debug.27265",
-      "size": 298310192,
-      "sha256": "15802e2c11a3c595ec00b3ac0c08ee9ce7db2ab7ccdf1cb281b4bee61bd42736"
+      "name": "fushi-3.3.0-debug.27276-windows-setup.exe",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.3.0-debug.27276-windows-setup.exe",
+      "releaseSequence": 27276,
+      "tag": "v3.3.0-debug.27276+ac27de2",
+      "version": "3.3.0-debug.27276",
+      "size": 296981304,
+      "sha256": "e925748dc54b1a8c5fbc37433e6336a0f01b496f16f48f8cacde59549acf3f32"
     }
   ]
 }
