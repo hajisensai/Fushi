@@ -53,9 +53,7 @@ void main() {
       expect(
         open.describe(),
         matches(
-          RegExp(
-            r'^srs=\d+/\d+ sess=\d+ rd=\d+ sqlite=\d+/\d+MB db=\d+MB wal=\d+MB$',
-          ),
+          RegExp(r'^srs=\d+/\d+ rd=\d+ sqlite=\d+/\d+MB db=\d+MB wal=\d+MB$'),
         ),
       );
 
