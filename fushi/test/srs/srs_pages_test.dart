@@ -48,6 +48,7 @@ import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_note_type_store.dart';
 import 'srs_test_support.dart' show SrsTestAppModel, openSrsTestStorage;
+import 'support/srs_write_settle.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_engine/srs/srs_rwkv_scheduling.dart';
 import 'package:fushi_srs/fushi_srs.dart';
@@ -255,38 +256,6 @@ Future<void> _settle(WidgetTester tester, {int rounds = 12}) async {
     );
     await tester.pump(const Duration(milliseconds: 60));
   }
-}
-
-/// 页面所在的 Riverpod 容器（读写完信号 [srsRevisionProvider] 用）。
-ProviderContainer _container(WidgetTester tester) =>
-    ProviderScope.containerOf(tester.element(find.byType(MaterialApp)));
-
-/// 等页面上一个操作发起的写入落库（之后再从库里读断言）。
-///
-/// 页面的写入（拖放挪牌组、保存模板……）是内核命令，在 worker isolate 上真实往返；页面在写命令返回（已提交）
-/// 之后才 [bumpSrsRevision]，所以修订号越过 [before] 就是「写完了」的真实信号。固定几轮 [_settle] 只给了一段
-/// 固定的真实时间：全量并发跑、机器满载时 worker 排不上 CPU，写入还没回来就去读库，间歇读到旧值。
-/// 写完后牌组列表按新修订号重读（[srsDeckListProvider]），也等它读完：后面的拖放要按新树找行。
-Future<void> _settleUntilWritten(WidgetTester tester, int before) async {
-  final ProviderContainer container = _container(tester);
-  final Stopwatch waited = Stopwatch()..start();
-  Future<void> step(String what) async {
-    if (waited.elapsed > const Duration(minutes: 2)) {
-      fail('页面的写入两分钟内没有$what（srsRevisionProvider 停在 $before）');
-    }
-    await tester.runAsync(
-      () => Future<void>.delayed(const Duration(milliseconds: 5)),
-    );
-    await tester.pump(const Duration(milliseconds: 60));
-  }
-
-  while (container.read(srsRevisionProvider) <= before) {
-    await step('落库');
-  }
-  while (container.read(srsDeckListProvider).isLoading) {
-    await step('重读完牌组列表');
-  }
-  await _settle(tester);
 }
 
 Future<void> _pumpPage(
@@ -523,7 +492,6 @@ void main() {
       );
 
       // 拖着顶层牌组：没有「移到顶层」落点。
-      int revision = _container(tester).read(srsRevisionProvider);
       TestGesture g = await tester.startGesture(
         tester.getCenter(find.text('Beta')),
         kind: PointerDeviceKind.mouse,
@@ -533,12 +501,15 @@ void main() {
       expect(zone, findsNothing);
       await g.moveTo(tester.getCenter(find.text('Alpha')));
       await tester.pump();
-      await g.up();
-      await _settleUntilWritten(tester, revision);
+      // 放下 = 挪牌组（写库）；写完牌组列表按新修订号重读，后面的拖放要按新树找行。
+      await srsUntilWritten(
+        tester,
+        () => g.up(),
+        reloads: <ProviderListenable<AsyncValue<Object?>>>[srsDeckListProvider],
+      );
       expect(await names(), contains('Alpha::Beta'));
 
       // 拖着子牌组：顶上出现落点，放下 = 回到顶层。
-      revision = _container(tester).read(srsRevisionProvider);
       g = await tester.startGesture(
         tester.getCenter(find.text('Beta')),
         kind: PointerDeviceKind.mouse,
@@ -549,8 +520,12 @@ void main() {
       expect(zone, findsOneWidget);
       await g.moveTo(tester.getCenter(zone));
       await tester.pump();
-      await g.up();
-      await _settleUntilWritten(tester, revision);
+      // 放下 = 挪牌组（写库）；写完牌组列表按新修订号重读，后面的拖放要按新树找行。
+      await srsUntilWritten(
+        tester,
+        () => g.up(),
+        reloads: <ProviderListenable<AsyncValue<Object?>>>[srsDeckListProvider],
+      );
       final List<String> after = await names();
       expect(after, contains('Beta'));
       expect(after, isNot(contains('Alpha::Beta')));
@@ -564,7 +539,6 @@ void main() {
       final Rect alphaRow = tester.getRect(
         find.byKey(ValueKey<String>('srs-drag-$alphaId')),
       );
-      revision = _container(tester).read(srsRevisionProvider);
       g = await tester.startGesture(
         tester.getCenter(find.text('Beta')),
         kind: PointerDeviceKind.mouse,
@@ -573,8 +547,12 @@ void main() {
       await tester.pump();
       await g.moveTo(Offset(alphaRow.center.dx, alphaRow.top + 3));
       await tester.pump();
-      await g.up();
-      await _settleUntilWritten(tester, revision);
+      // 放下 = 挪牌组（写库）；写完牌组列表按新修订号重读，后面的拖放要按新树找行。
+      await srsUntilWritten(
+        tester,
+        () => g.up(),
+        reloads: <ProviderListenable<AsyncValue<Object?>>>[srsDeckListProvider],
+      );
       final List<String> reordered = await names();
       expect(reordered, isNot(contains('Alpha::Beta')));
       expect(reordered.indexOf('Beta'), lessThan(reordered.indexOf('Alpha')));
@@ -953,8 +931,12 @@ void main() {
         tester.element(find.byType(SrsDeckListPage)),
       );
       final int revisionBefore = container.read(srsRevisionProvider);
-      await tester.tap(toggle);
-      await _settle(tester, rounds: _kTreeSettleRounds);
+      await srsUntilStoreWritten(
+        tester,
+        store,
+        () => tester.tap(toggle),
+        settleRounds: _kTreeSettleRounds,
+      );
       expect(childHeight(), 0, reason: '收起后后代消失');
       expect(
         await tester.runAsync(
@@ -980,8 +962,7 @@ void main() {
       await _settle(tester, rounds: _kTreeSettleRounds);
       expect(childHeight(), 0);
 
-      await tester.tap(toggle);
-      await _settle(tester);
+      await srsUntilStoreWritten(tester, store, () => tester.tap(toggle));
       expect(childHeight(), greaterThan(0), reason: '再展开后代出现');
 
       // 键盘：焦点在父牌组行内（这里取行首箭头按钮；真 app 里整行卡片的焦点目标同在行内）
@@ -1002,8 +983,12 @@ void main() {
       rowFocus.requestFocus();
       await tester.pump();
       expect(rowFocus.hasPrimaryFocus, isTrue);
-      await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
-      await _settle(tester, rounds: _kTreeSettleRounds);
+      await srsUntilStoreWritten(
+        tester,
+        store,
+        () => tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft),
+        settleRounds: _kTreeSettleRounds,
+      );
       expect(childHeight(), 0);
       expect(
         await tester.runAsync(
@@ -1011,8 +996,11 @@ void main() {
         ),
         isTrue,
       );
-      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
-      await _settle(tester);
+      await srsUntilStoreWritten(
+        tester,
+        store,
+        () => tester.sendKeyEvent(LogicalKeyboardKey.arrowRight),
+      );
       expect(childHeight(), greaterThan(0));
       expect(
         await tester.runAsync(
@@ -1162,8 +1150,15 @@ void main() {
         findsWidgets,
       );
 
-      await tester.tap(find.byKey(const ValueKey<String>('srs-rate-4')));
-      await _settle(tester);
+      await srsUntilStoreWritten(
+        tester,
+        store,
+        () => tester.tap(find.byKey(const ValueKey<String>('srs-rate-4'))),
+        until: () => find
+            .byKey(const ValueKey<String>('srs-review-finished'))
+            .evaluate()
+            .isNotEmpty,
+      );
       expect(
         find.byKey(const ValueKey<String>('srs-review-finished')),
         findsOneWidget,
@@ -1259,14 +1254,24 @@ void main() {
       await toggle();
       expect(app.hidden, isTrue);
 
-      await tester.tap(rate(3));
-      await _settle(tester);
+      await srsUntilStoreWritten(
+        tester,
+        store,
+        () => tester.tap(rate(3)),
+        until: () => find
+            .byKey(const ValueKey<String>('srs-face-question'))
+            .evaluate()
+            .isNotEmpty,
+      );
       // 第二张卡：按钮隐藏了，键盘 2 照样评「困难」。
       await tester.tap(find.byKey(const ValueKey<String>('srs-show-answer')));
       await _settle(tester);
       expect(rate(2), findsNothing);
-      await tester.sendKeyEvent(LogicalKeyboardKey.digit2);
-      await _settle(tester);
+      await srsUntilStoreWritten(
+        tester,
+        store,
+        () => tester.sendKeyEvent(LogicalKeyboardKey.digit2),
+      );
 
       final List<int?> ratings = (await tester.runAsync(() async {
         final List<int?> out = <int?>[];
@@ -1317,10 +1322,12 @@ void main() {
         '飲む',
       );
       await tester.pump();
-      await tester.tap(
-        find.byKey(const ValueKey<String>('srs_note_save')).first,
+      await srsUntilWritten(
+        tester,
+        () => tester.tap(
+          find.byKey(const ValueKey<String>('srs_note_save')).first,
+        ),
       );
-      await _settle(tester);
       final List<SrsNoteCacheRow> notes = (await tester.runAsync(
         store.listNotes,
       ))!;
@@ -1350,17 +1357,33 @@ void main() {
       findsOneWidget,
     );
 
-    await tester.sendKeyEvent(LogicalKeyboardKey.digit4);
-    await _settle(tester);
+    await srsUntilStoreWritten(
+      tester,
+      store,
+      () => tester.sendKeyEvent(LogicalKeyboardKey.digit4),
+      until: () => find
+          .byKey(const ValueKey<String>('srs-review-finished'))
+          .evaluate()
+          .isNotEmpty,
+    );
     expect(
       find.byKey(const ValueKey<String>('srs-review-finished')),
       findsOneWidget,
     );
 
-    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
-    await tester.sendKeyEvent(LogicalKeyboardKey.keyZ);
-    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
-    await _settle(tester);
+    await srsUntilStoreWritten(
+      tester,
+      store,
+      () async {
+        await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+        await tester.sendKeyEvent(LogicalKeyboardKey.keyZ);
+        await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      },
+      until: () => find
+          .byKey(const ValueKey<String>('srs-face-question'))
+          .evaluate()
+          .isNotEmpty,
+    );
     expect(
       find.byKey(const ValueKey<String>('srs-face-question')),
       findsOneWidget,
@@ -2169,10 +2192,12 @@ void main() {
       await tester.pump();
       await tester.tap(replay);
       await tester.pump();
-      await tester.tap(
-        find.byKey(const ValueKey<String>('srs_settings_save')).first,
+      await srsUntilWritten(
+        tester,
+        () => tester.tap(
+          find.byKey(const ValueKey<String>('srs_settings_save')).first,
+        ),
       );
-      await _settle(tester);
       final SrsDeckTree tree = (await tester.runAsync(store.deckTree))!;
       expect(tree[store.defaultDeckId]!.autoplayAudio, isFalse);
       expect(tree[store.defaultDeckId]!.replayQuestionAudio, isFalse);
@@ -2236,10 +2261,12 @@ void main() {
       }
       await tester.tap(find.text(t.srs_settings_new_order_position).last);
       await _settle(tester);
-      await tester.tap(
-        find.byKey(const ValueKey<String>('srs_settings_save')).first,
+      await srsUntilWritten(
+        tester,
+        () => tester.tap(
+          find.byKey(const ValueKey<String>('srs_settings_save')).first,
+        ),
       );
-      await _settle(tester);
       final SrsDeckTree tree = (await tester.runAsync(store.deckTree))!;
       expect(tree[store.defaultDeckId]!.newCardOrder, SrsNewCardOrder.position);
       expect(
@@ -2327,10 +2354,12 @@ void main() {
           .widget<AdaptiveSettingsPickerRow<SrsReviewCardOrder>>(reviewOrder)
           .onChanged(SrsReviewCardOrder.difficulty);
       await tester.pump();
-      await tester.tap(
-        find.byKey(const ValueKey<String>('srs_settings_save')).first,
+      await srsUntilWritten(
+        tester,
+        () => tester.tap(
+          find.byKey(const ValueKey<String>('srs_settings_save')).first,
+        ),
       );
-      await _settle(tester);
       final SrsDeckTree tree = (await tester.runAsync(store.deckTree))!;
       expect(tree[store.defaultDeckId]!.newCardMix, SrsNewCardMix.mixed);
       expect(
@@ -2445,12 +2474,14 @@ void main() {
       await tester.tap(button);
       await _settle(tester);
       final String label = t.srs_settings_children_inherit(n: 2);
-      await tester.tap(
-        find.byWidgetPredicate(
-          (Widget w) => w is FushiDialogAction && w.label == label,
+      await srsUntilWritten(
+        tester,
+        () => tester.tap(
+          find.byWidgetPredicate(
+            (Widget w) => w is FushiDialogAction && w.label == label,
+          ),
         ),
       );
-      await _settle(tester);
       final SrsDeckTree tree = (await tester.runAsync(store.deckTree))!;
       for (final String id in <String>[kid, grandKid, plain]) {
         expect(tree[id]!.ownParams, isFalse);
@@ -2491,10 +2522,12 @@ void main() {
       await enter('srs-settings-rwkv-min-reviews', '7');
       await enter('srs-settings-rwkv-repeat-reviews', '2');
       await enter('srs-settings-rwkv-repeat-seconds', '15');
-      await tester.tap(
-        find.byKey(const ValueKey<String>('srs_settings_save')).first,
+      await srsUntilWritten(
+        tester,
+        () => tester.tap(
+          find.byKey(const ValueKey<String>('srs_settings_save')).first,
+        ),
       );
-      await _settle(tester);
       final SrsDeckTree tree = (await tester.runAsync(store.deckTree))!;
       const SrsRwkvQueueSettings want = SrsRwkvQueueSettings(
         minReviewsPerDay: 7,
@@ -2648,10 +2681,12 @@ void main() {
             .text,
         '30',
       );
-      await tester.tap(
-        find.byKey(const ValueKey<String>('srs_settings_save')).first,
+      await srsUntilWritten(
+        tester,
+        () => tester.tap(
+          find.byKey(const ValueKey<String>('srs_settings_save')).first,
+        ),
       );
-      await _settle(tester);
       final SrsDeckTree tree = (await tester.runAsync(store.deckTree))!;
       expect(tree[store.defaultDeckId]!.rwkvQueue.minReviewsPerDay, 30);
       await _unmount(tester);
@@ -2697,10 +2732,12 @@ void main() {
       );
       await _settle(tester);
       expect(byKey('srs-settings-rwkv-steps-set'), findsNothing);
-      await tester.tap(
-        find.byKey(const ValueKey<String>('srs_settings_save')).first,
+      await srsUntilWritten(
+        tester,
+        () => tester.tap(
+          find.byKey(const ValueKey<String>('srs_settings_save')).first,
+        ),
       );
-      await _settle(tester);
       final SrsDeckView deck = (await tester.runAsync(
         store.deckTree,
       ))![store.defaultDeckId]!;
@@ -2757,10 +2794,12 @@ void main() {
 
       // 保存后重开设置页（测试里设置页是根页面，保存的 maybePop 不会退出）。
       Future<void> save() async {
-        await tester.tap(
-          find.byKey(const ValueKey<String>('srs_settings_save')).first,
+        await srsUntilWritten(
+          tester,
+          () => tester.tap(
+            find.byKey(const ValueKey<String>('srs_settings_save')).first,
+          ),
         );
-        await _settle(tester);
         await _unmount(tester);
         await _pumpPage(
           tester,
@@ -2861,10 +2900,12 @@ void main() {
       }
 
       Future<void> save() async {
-        await tester.tap(
-          find.byKey(const ValueKey<String>('srs_settings_save')).first,
+        await srsUntilWritten(
+          tester,
+          () => tester.tap(
+            find.byKey(const ValueKey<String>('srs_settings_save')).first,
+          ),
         );
-        await _settle(tester);
       }
 
       await enter('srs-settings-new-load-budget', '120');
@@ -2954,10 +2995,12 @@ void main() {
         '7',
       );
       await tester.pump();
-      await tester.tap(
-        find.byKey(const ValueKey<String>('srs_settings_save')).first,
+      await srsUntilWritten(
+        tester,
+        () => tester.tap(
+          find.byKey(const ValueKey<String>('srs_settings_save')).first,
+        ),
       );
-      await _settle(tester);
       final SrsDeckTree tree = (await tester.runAsync(store.deckTree))!;
       expect(tree[store.defaultDeckId]!.newPerDay, 7);
       expect(tree[store.defaultDeckId]!.newCardPlan, plan);

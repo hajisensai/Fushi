@@ -21,6 +21,7 @@ import 'package:fushi_srs/fushi_srs.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'srs_test_support.dart';
+import 'support/srs_write_settle.dart';
 
 Future<SrsDbStore> _openStore(WidgetTester tester) async {
   final (FushiDatabase db, SrsDbStore store) = (await tester.runAsync(
@@ -148,8 +149,10 @@ void main() {
       await _settle(tester, rounds: 4);
       await tester.tap(migrate);
       await _settle(tester);
-      await tester.tap(find.text(t.srs_lapis_migration_migrate).last);
-      await _settle(tester);
+      await srsUntilWritten(
+        tester,
+        () => tester.tap(find.text(t.srs_lapis_migration_migrate).last),
+      );
 
       final SrsNoteView after = (await _db(tester, () => store.note(note)))!;
       expect(after.noteTypeId, store.fushiCardNoteTypeId);
@@ -217,8 +220,10 @@ void main() {
         ),
         findsOneWidget,
       );
-      await tester.tap(find.text(t.srs_lapis_migration_migrate).last);
-      await _settle(tester);
+      await srsUntilWritten(
+        tester,
+        () => tester.tap(find.text(t.srs_lapis_migration_migrate).last),
+      );
 
       final SrsNoteView after = (await _db(tester, () => store.note(note)))!;
       expect(after.noteTypeId, store.fushiCardNoteTypeId);
@@ -282,8 +287,10 @@ void main() {
       await _settle(tester, rounds: 4);
       await tester.tap(apply);
       await _settle(tester);
-      await tester.tap(find.text(t.srs_lapis_migration_backfill_action).last);
-      await _settle(tester);
+      await srsUntilWritten(
+        tester,
+        () => tester.tap(find.text(t.srs_lapis_migration_backfill_action).last),
+      );
       expect(
         (await _db(
           tester,

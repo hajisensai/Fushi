@@ -49,6 +49,7 @@ import 'package:shelf/shelf.dart' as shelf;
 
 import '../helpers/test_platform_services.dart';
 import 'srs_test_support.dart';
+import 'support/srs_write_settle.dart';
 
 const FushiClientUrl _peer = FushiClientUrl(
   url: 'http://host:8765',
@@ -860,8 +861,12 @@ void main() {
       expect(faces.last.cardId, first);
       expect(faces.last.showingAnswer, isTrue);
 
-      await tester.sendKeyEvent(LogicalKeyboardKey.digit3);
-      await settle(tester);
+      await srsUntilStoreWritten(
+        tester,
+        host.store,
+        () => tester.sendKeyEvent(LogicalKeyboardKey.digit3),
+        until: () => faces.last.cardId != first,
+      );
       expect(faces.last.cardId, isNot(first), reason: '评分后换到下一张');
       final SrsCardHistory afterRate = (await tester.runAsync(
         () => host.store.history(first),
@@ -869,10 +874,11 @@ void main() {
       expect(afterRate.all, hasLength(1), reason: '评分记在主机库');
       expect(afterRate.all.single.rating, 3);
 
-      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
-      await tester.sendKeyEvent(LogicalKeyboardKey.keyZ);
-      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
-      await settle(tester);
+      await srsUntilStoreWritten(tester, host.store, () async {
+        await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+        await tester.sendKeyEvent(LogicalKeyboardKey.keyZ);
+        await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      }, until: () => faces.last.cardId == first);
       expect(faces.last.cardId, first, reason: '撤销带回上一张');
       final SrsCardHistory afterUndo = (await tester.runAsync(
         () => host.store.history(first),
@@ -884,7 +890,13 @@ void main() {
       await tester.runAsync(() => host.store.answer(first, 4));
       await tester.sendKeyEvent(LogicalKeyboardKey.space);
       await settle(tester, rounds: 6);
+      // 这次作答不落库（主机回「卡已变」），没有写入信号：等页面跳过这张、重排出下一张。
       await tester.sendKeyEvent(LogicalKeyboardKey.digit3);
+      await srsPumpUntil(
+        tester,
+        () => faces.last.cardId != first,
+        what: '卡已变后跳过重排',
+      );
       await settle(tester);
       expect(faces.last.cardId, isNot(first), reason: '卡已变：跳过重排');
       final SrsCardHistory afterStale = (await tester.runAsync(
@@ -1014,8 +1026,11 @@ void main() {
       final String first = faces.last.cardId;
       await tester.sendKeyEvent(LogicalKeyboardKey.space);
       await settle(tester, rounds: 6);
-      await tester.sendKeyEvent(LogicalKeyboardKey.digit3);
-      await settle(tester);
+      await srsUntilStoreWritten(
+        tester,
+        host.store,
+        () => tester.sendKeyEvent(LogicalKeyboardKey.digit3),
+      );
       final SrsCardHistory rated = (await tester.runAsync(
         () => host.store.history(first),
       ))!;
