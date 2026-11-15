@@ -166,6 +166,7 @@ class SrsRwkvModels {
 
   /// 按 [SrsRwkvModelFile.urls] 的顺序下载（每个来源内的断点续传 / 代理 / 重连见 [ModelFileDownloader]），
   /// 每个来源下完都校验字节数 + SHA-256，不符或下载失败就删掉残留、换下一个来源。已就绪时立即结束。
+  /// 目录里已有、但没有校验标记的权重（手动放进来的）先按同一标准验收：相符就写标记、不联网，不符才删掉去下载。
   /// 全部来源失败抛 [SrsRwkvModelException]，信息里逐个写明哪个来源、为什么失败。
   ///
   /// 取消（订阅 `cancel()`）是硬停：先停掉在途的连接，之后不再碰任何文件（不读权重、不写校验标记、不删残留），
@@ -210,12 +211,22 @@ class SrsRwkvModels {
     final File weights = weightsFile;
     final File part = File('${weights.path}.part');
     final List<String> failures = <String>[];
-    for (final String url in file.urls) {
-      if (cancel.requested) return;
-      // 每个来源从头下：上一个来源的残留可能就是它失败的原因（内容不符）。
+    // 没被验收过的权重 / 残留：下一个来源必须从头下（残留可能就是上一个来源失败的原因——内容不符）。
+    void discard() {
       for (final File f in <File>[weights, part]) {
         if (f.existsSync()) f.deleteSync();
       }
+    }
+
+    // 目录里已有权重但没有标记（不能出网的机器手动放进来的，或上次下完、写标记前进程被杀）：先验收它，
+    // 相符就用，不联网；不符才丢掉、去下载。
+    if (weights.existsSync()) {
+      final String? mismatch = await _accept(weights, cancel);
+      if (cancel.requested || mismatch == null) return;
+      discard();
+    }
+    for (final String url in file.urls) {
+      if (cancel.requested) return;
       final Completer<void> done = Completer<void>();
       cancel.done = done;
       cancel.inner =
@@ -246,6 +257,7 @@ class SrsRwkvModels {
       } on Object catch (error) {
         if (cancel.requested) return;
         failures.add('$url: $error');
+        discard();
         continue;
       } finally {
         cancel
@@ -254,25 +266,31 @@ class SrsRwkvModels {
           ..client = null;
       }
       if (cancel.requested) return;
-      final List<int> bytes = await weights.readAsBytes();
-      if (cancel.requested) return;
-      final String actual = sha256.convert(bytes).toString();
-      if (bytes.length == file.expectedBytes && actual == file.sha256) {
-        await _marker(weights).writeAsString(file.sha256, flush: true);
-        return;
-      }
-      failures.add(
-        '$url: ${bytes.length} bytes, SHA-256 $actual '
-        '(want ${file.expectedBytes} bytes, ${file.sha256})',
-      );
-    }
-    if (cancel.requested) return;
-    for (final File f in <File>[weights, part]) {
-      if (f.existsSync()) f.deleteSync();
+      final String? mismatch = await _accept(weights, cancel);
+      if (cancel.requested || mismatch == null) return;
+      failures.add('$url: $mismatch');
+      discard();
     }
     throw SrsRwkvModelException(
       '${file.fileName}: every source failed: ${failures.join('; ')}',
     );
+  }
+
+  /// 唯一的验收处：读 [weights]，字节数与 SHA-256 都与 [model] 相符就写校验标记、返回 null；不符返回
+  /// 差在哪（不动文件，由调用方丢弃）。
+  ///
+  /// 遵守 [download] 的取消契约：读完发现已取消就不写标记、直接返回 null——调用方在 await 之后先查
+  /// `cancel.requested`，再看返回值。
+  Future<String?> _accept(File weights, _DownloadCancel cancel) async {
+    final List<int> bytes = await weights.readAsBytes();
+    if (cancel.requested) return null;
+    final String actual = sha256.convert(bytes).toString();
+    if (bytes.length != model.expectedBytes || actual != model.sha256) {
+      return '${bytes.length} bytes, SHA-256 $actual '
+          '(want ${model.expectedBytes} bytes, ${model.sha256})';
+    }
+    await _marker(weights).writeAsString(model.sha256, flush: true);
+    return null;
   }
 
   /// 删掉 [kSrsRwkvRetiredWeightsNames] 里以前下载的权重与校验标记；没有就什么也不做。
