@@ -163,6 +163,7 @@ add_library(fushi_voice_hook SHARED
   "hook/adapters/qlie_profile.h"
   "hook/adapters/kirikiri_adapter.inc"
   "hook/adapters/kirikiri_kag_text_core.h"
+  "hook/adapters/kirikiri_bootstrap_diag.h"
   "hook/adapters/renpy_adapter.inc"
   "hook/adapters/text_render_adapter.inc"
   "hook/adapters/loopback_adapter.inc"
@@ -740,6 +741,12 @@ add_test(NAME fushi_kirikiri_kag_text_test
   COMMAND fushi_kirikiri_kag_text_test
   "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/kirikiri_kag_text_replay.tsv")
 
+add_executable(fushi_kirikiri_bootstrap_diag_test "tests/kirikiri_bootstrap_diag_test.cpp")
+target_include_directories(fushi_kirikiri_bootstrap_diag_test PRIVATE "hook")
+target_compile_definitions(fushi_kirikiri_bootstrap_diag_test
+  PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_kirikiri_bootstrap_diag_test COMMAND fushi_kirikiri_bootstrap_diag_test)
+
 # 通用位图呈现器的几何换算（卡片飘出游戏窗口 == 用户看不见卡片，与"没投帧"同形）。
 add_executable(fushi_lookup_overlay_geometry_test
   "tests/lookup_overlay_geometry_test.cpp"
@@ -1079,6 +1086,21 @@ add_executable(fushi_unity_mono_dialogue_test
 target_include_directories(fushi_unity_mono_dialogue_test PRIVATE "hook")
 add_test(NAME fushi_unity_mono_dialogue_test
   COMMAND fushi_unity_mono_dialogue_test)
+
+# Unity IL2CPP in-game lookup accessor layer (unity_il2cpp_api.h): export
+# loading / missing-name report, facade refusals, the il2cpp_* shims behind the
+# shared TMP / UI.Text site resolvers (methodPointer inside GameAssembly,
+# resolve_icall by "Ns.Class::Method", overloaded internal calls refused),
+# canvas lane identity, TMP SetText(string) nesting and the disk layout -- on a
+# fake il2cpp export table.
+add_executable(fushi_unity_il2cpp_lookup_test
+  "tests/unity_il2cpp_lookup_test.cpp")
+target_include_directories(fushi_unity_il2cpp_lookup_test PRIVATE
+  "hook" "include")
+target_compile_definitions(fushi_unity_il2cpp_lookup_test PRIVATE
+  UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_unity_il2cpp_lookup_test
+  COMMAND fushi_unity_il2cpp_lookup_test)
 
 add_executable(fushi_engine_identity_layout_test
   "tests/engine_identity_layout_test.cpp")

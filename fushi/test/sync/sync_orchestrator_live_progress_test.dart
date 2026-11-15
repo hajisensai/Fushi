@@ -31,6 +31,8 @@ import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
+import '../helpers/interconnect_legacy_host_scope.dart';
+
 FushiDatabase _memDb() =>
     FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 
@@ -511,7 +513,10 @@ void main() {
         BookProgressBaseline.decode(
           await localDb.getSyncBaseline(
             'BookReopen',
-            kInterconnectBookProgressDimension,
+            credentialScopedDimension(
+              kInterconnectBookProgressDimension,
+              token,
+            ),
           ),
         ),
         isA<BookProgressBaseline>()
@@ -567,7 +572,7 @@ void main() {
       expect(
         await localDb.getSyncBaseline(
           'BookSame',
-          kInterconnectBookProgressDimension,
+          credentialScopedDimension(kInterconnectBookProgressDimension, token),
         ),
         BookProgressBaseline(sectionIndex: 2, normCharOffset: 200).encode(),
       );
@@ -1647,10 +1652,11 @@ void main() {
       },
     );
 
-    // 升级前从没记过基线：无基线时退回旧 LWW 一次并记下基线，不能把每条只有一端
-    // 动过的条目都弹成冲突。
-    test('video: no baseline and positions differ -> legacy LWW once '
-        '(newer host wins), baseline recorded, no conflict', () async {
+    // BUG-4435：无基线且两端位置不同时不再比较两台设备的墙钟（时钟偏快的一端会
+    // 静默盖掉另一端）；与书籍同口径判冲突，两端都不动、不记基线。升级首轮的存量
+    // 基线由按 host 分槽的领养保住（BUG-4434），不会因此批量弹冲突。
+    test('video: no baseline and positions differ -> conflict, '
+        'neither side written, no baseline recorded', () async {
       await _seedHostVideo(hostDb, work, 'video/nobase', 'NoBase');
       await hostDb.setPrefTyped<int>(
         videoRemotePositionPrefKey('video/nobase'),
@@ -1685,20 +1691,34 @@ void main() {
       await orch.syncVideoProgressLiveForTest(report, backend);
 
       expect(report.errors, isEmpty, reason: '${report.errors}');
-      expect(report.conflicts, isEmpty);
+      expect(report.conflicts, hasLength(1));
+      expect(report.conflicts.single.assetKey, 'video/nobase');
+      expect(
+        report.conflicts.single.dimension,
+        kInterconnectVideoPositionDimension,
+      );
       expect(
         await localDb.getPrefTyped<int>(
           videoRemotePositionPrefKey('video/nobase'),
           0,
         ),
+        800000,
+        reason: 'host 时间戳更新也不能在无基线时盖掉本机进度',
+      );
+      expect(
+        await hostDb.getPrefTyped<int>(
+          videoRemotePositionPrefKey('video/nobase'),
+          0,
+        ),
         300000,
+        reason: '冲突时也不能把本机进度推上 host',
       );
       expect(
         await localDb.getSyncBaseline(
           'video/nobase',
-          kInterconnectVideoPositionDimension,
+          credentialScopedDimension(kInterconnectVideoPositionDimension, token),
         ),
-        300000,
+        isNull,
       );
     });
 
@@ -1748,7 +1768,7 @@ void main() {
       expect(
         await localDb.getSyncBaseline(
           'video/same',
-          kInterconnectVideoPositionDimension,
+          credentialScopedDimension(kInterconnectVideoPositionDimension, token),
         ),
         420000,
       );
@@ -1836,7 +1856,10 @@ void main() {
       expect(
         await localDb.getSyncBaseline(
           'ABBase',
-          kInterconnectAudiobookPositionDimension,
+          credentialScopedDimension(
+            kInterconnectAudiobookPositionDimension,
+            token,
+          ),
         ),
         480000,
       );

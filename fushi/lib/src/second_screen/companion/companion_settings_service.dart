@@ -19,7 +19,8 @@ import 'package:material_ui/material_ui.dart';
 ///
 /// | context | category |
 /// |---|---|
-/// | reader, audiobook (the reader's audiobook view) | reading |
+/// | reader | reading |
+/// | audiobook (the reader's audiobook view) | listening (reading when the listening category is not on this device) |
 /// | manga | manga |
 /// | video | video |
 /// | music | music |
@@ -28,8 +29,8 @@ import 'package:material_ui/material_ui.dart';
 /// | settings | the category open on top ([CompanionContext.settingsCategory]) |
 SettingsDestinationId? companionSettingsCategoryFor(CompanionContext context) {
   return switch (context.kind) {
-    CompanionContextKind.reader ||
-    CompanionContextKind.audiobook => SettingsDestinationId.reading,
+    CompanionContextKind.reader => SettingsDestinationId.reading,
+    CompanionContextKind.audiobook => SettingsDestinationId.listening,
     CompanionContextKind.manga => SettingsDestinationId.manga,
     CompanionContextKind.video => SettingsDestinationId.video,
     CompanionContextKind.music => SettingsDestinationId.music,
@@ -112,19 +113,25 @@ class CompanionSettingsService {
     final List<SettingsDestination> destinations = _visibleDestinations(
       context,
     );
-    final SettingsDestinationId? contextId = companionSettingsCategoryFor(
-      _currentContext(),
-    );
-    final SettingsDestination? contextDestination = destinations
-        .where((SettingsDestination d) => d.id == contextId)
-        .firstOrNull;
+    final CompanionContext top = _currentContext();
+    final SettingsDestinationId? contextId = companionSettingsCategoryFor(top);
+    SettingsDestination? visible(SettingsDestinationId? id) =>
+        destinations.where((SettingsDestination d) => d.id == id).firstOrNull;
+    // The audiobook view lives inside the reader: with the listening category
+    // hidden on this device its settings still show, under reading.
+    final SettingsDestination? contextDestination =
+        visible(contextId) ??
+        (top.kind == CompanionContextKind.audiobook
+            ? visible(SettingsDestinationId.reading)
+            : null);
     CompanionSettingsPage? contextPage;
     if (contextDestination != null) {
       final Map<String, SettingsIndexEntry> index = _index(context);
       final List<CompanionSettingRow> rows = <CompanionSettingRow>[
         for (final String key in _contextKeys(
           contextDestination,
-          _currentContext(),
+          top,
+          destinations,
         ))
           if (index[key] case final SettingsIndexEntry entry
               when _listed(entry))
@@ -254,15 +261,23 @@ class CompanionSettingsService {
   /// The top screen's settings inside [destination]: the reader's quick
   /// settings (the rows the in-book panel shows; the audiobook group for the
   /// audiobook view), else the rows on the category's first page.
+  ///
+  /// The in-book panel draws its rows from both the reading and the listening
+  /// category (a reader row may sit in either), so the quick rows are
+  /// collected from those of the two that are among [destinations].
   List<String> _contextKeys(
     SettingsDestination destination,
     CompanionContext context,
+    List<SettingsDestination> destinations,
   ) {
     final List<SettingsItem> firstPage = <SettingsItem>[
       for (final SettingsSection section in destination.sections)
         ...section.items,
     ];
-    if (destination.id == SettingsDestinationId.reading &&
+    final bool readerCategory =
+        destination.id == SettingsDestinationId.reading ||
+        destination.id == SettingsDestinationId.listening;
+    if (readerCategory &&
         (context.kind == CompanionContextKind.reader ||
             context.kind == CompanionContextKind.audiobook)) {
       final bool audiobook = context.kind == CompanionContextKind.audiobook;
@@ -284,7 +299,12 @@ class CompanionSettingsService {
         }
       }
 
-      collect(destination, 0);
+      for (final SettingsDestination page in destinations) {
+        if (page.id == SettingsDestinationId.reading ||
+            page.id == SettingsDestinationId.listening) {
+          collect(page, 0);
+        }
+      }
       if (quick.isNotEmpty) {
         return <String>[for (final SettingsItem item in quick) item.id];
       }

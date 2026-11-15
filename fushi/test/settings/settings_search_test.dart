@@ -9,6 +9,7 @@ import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/src/settings/settings_schema_appearance.dart';
+import 'package:fushi/src/settings/settings_schema_general.dart';
 import 'package:fushi/src/settings/settings_search.dart';
 
 import '../helpers/test_platform_services.dart';
@@ -250,21 +251,22 @@ void main() {
 
   test('appearance theme and language selectors are now searchable (阶段C)', () {
     // 主题/语言等是 SettingsCustomItem（自绘行），阶段 C 给它们补 searchTitle
-    // （复用各自既有标题），此前空标题=不可搜，现在应能被搜索命中。
+    // （复用各自既有标题），此前空标题=不可搜，现在应能被搜索命中。主题住外观，
+    // 界面语言住「通用」（item id 的 appearance. 前缀是冻结的搜索锚点）。
     final SettingsDestination appearance = buildAppearanceDestination();
-    final Map<String, SettingsItem> byId = <String, SettingsItem>{
-      for (final SettingsSection s in appearance.sections)
-        for (final SettingsItem i in s.items) i.id: i,
-    };
-    final SettingsItem theme = byId['appearance.theme']!;
-    final SettingsItem language = byId['appearance.language']!;
+    final SettingsDestination general = buildGeneralDestination();
+    SettingsItem itemIn(SettingsDestination d, String id) => d.sections
+        .expand((SettingsSection s) => s.items)
+        .singleWhere((SettingsItem i) => i.id == id);
+    final SettingsItem theme = itemIn(appearance, 'appearance.theme');
+    final SettingsItem language = itemIn(general, 'appearance.language');
     // 声明了 searchTitle → 可搜（非空）。
     expect(settingsItemSearchTitle(theme), isNotEmpty);
     expect(settingsItemSearchTitle(language), isNotEmpty);
 
     final List<SettingsSearchEntry> entries = <SettingsSearchEntry>[
       SettingsSearchEntry(destination: appearance, item: theme),
-      SettingsSearchEntry(destination: appearance, item: language),
+      SettingsSearchEntry(destination: general, item: language),
     ];
     // 用各自的 searchTitle 精确检索都能命中（与本机 locale 无关）。
     expect(
