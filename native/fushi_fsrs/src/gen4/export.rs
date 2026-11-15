@@ -1,7 +1,7 @@
 //! 协议 4 的内核导出流 `ops.bin`（`.fushisrs` 第 2 版里的那一条；规划 g7_g11 §1.9、实现拆分 G11-1）。
 //!
 //! 纯编解码：不碰 SQLite，**没有接进导出 / 导入入口**（存储侧的导入导出是 G11-2，命令接线是 G11-3）。
-//! 一个集合的真相层整份写成一条流：每条原生日志（含空洞）、每条承袭日志（槽 + 原链值标记）、分叉的另一支。
+//! 一个集合的真相层整份写成一条流：每条原生日志（含空洞）、每条承袭日志（槽 + 原链值标记 + 分叉的另一支）。
 //! 待投递的槽（`op_pending`）不进导出（D34）。
 //!
 //! ```text
@@ -14,11 +14,11 @@
 //!           项  tag u8
 //!             0 操作  bytes(协议 4 操作的独立编码：信封 + 操作体，`Op4::encode`)
 //!             3 空洞  n uv（>= 1）| chain_after[32]          相邻两个空洞拒绝（写者合并）
-//!   1 承袭  source[16] | device[16] | count uv（槽覆盖 seq 1..=count）
+//!   1 承袭  source[16] | device[16] | count uv（日志槽覆盖 seq 1..=count）| n_forks uv（count 为 0 时必须为 0）
 //!           | n_marks uv | (seq uv, chain[32]) × n_marks    seq 严格升序、1 <= seq <= count
-//!           | (t_version uv, 槽的独立编码 `HeritageSlot::encode`) × count
-//!   2 分叉  source[16] | device[16] | n uv（>= 1）| (t_version uv, 槽) × n
-//!           按 (seq, fp) 严格升序；device 必须是前面某条承袭日志的旧设备、source 与它相同、seq <= 它的 count
+//!           | (t_version uv, 槽的独立编码 `HeritageSlot::encode`) × (count + n_forks)
+//!           槽按 (seq, fp) 严格升序：每个 seq 的第一个槽是日志里的那个，同 seq 后面跟着的是分叉的另一支（`op_forks`），
+//!           链指纹必须严格大于前一个——即真相层「每个 seq 上链指纹最小的在日志里」的不变式，同一份真相只有一种字节形
 //! ```
 //!
 //! 校验（读写两侧同一套规则，[Grammar]）：
@@ -26,8 +26,9 @@
 //! - 只收规范形：varint 最短形（`uv_min`）、`flags` 必须为 0、未知 tag 拒、读完最后一条日志后不许有尾字节。
 //! - 原生日志逐条重算链（`chain_next4`；空洞处重置为 `chain_after`），末尾必须等于 `tail_chain`；每条操作的身份与日志一致、
 //!   `seq` 连续，内容按 [super::op::native_allowed]（与原生段相同）。
-//! - 承袭日志的槽从 1 起连续、属于这台旧设备，自洽（`HeritageSlot::check`）；每个标记的链值前 8 字节必须等于那个 seq 的槽的
-//!   链指纹。标记排在槽前面，所以读者只用记标记，不用记每个槽的指纹。
+//! - 承袭日志的日志槽从 1 起连续、属于这台旧设备，自洽（`HeritageSlot::check`）；每个标记的链值前 8 字节必须等于那个 seq 的
+//!   日志槽的链指纹。标记排在槽前面、分叉支紧跟它的日志槽，所以读者只用记标记与上一个槽的 (seq, fp)，内存不随日志长度增长。
+//! - 压缩流只许一个 zstd 帧：帧后面还有字节（垃圾或第二个帧）拒。
 //! - `t_version` 逐槽记录而不是逐日志：真相层里同一条承袭日志的槽可以来自不同版本的转译（store/gen4/truth.rs「槽的落库规则」）。
 //!
 //! 与协议 3 的导出流（魔数 `FSRS2EXP`，store/sync2/transport.rs）互不误读：魔数不同，协议 3 的读者在魔数处就报
@@ -35,7 +36,7 @@
 //!
 //! 版本号与演进：`ver` 是本文件布局的版本。布局的任何变化都升 `ver`，旧读者对 `ver != 1` 一律拒收（不按已知前缀读）。
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashSet, VecDeque};
 use std::io::Write;
 
 use super::heritage::{Fp, HeritageSlot, fingerprint};
@@ -54,22 +55,21 @@ pub const ZSTD_LEVEL: i32 = 3;
 
 const LOG_NATIVE: u8 = 0;
 const LOG_HERITAGE: u8 = 1;
-const LOG_FORK: u8 = 2;
 const ITEM_OP: u8 = 0;
 const ITEM_VOID: u8 = 3;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExportHeader {
     pub collection: Id,
-    /// 流里的日志条数（原生 + 承袭 + 分叉）。
+    /// 流里的日志条数（原生 + 承袭）。
     pub logs: u64,
 }
 
 /// 流里的一项（按出现顺序）。日志抬头之后跟它的内容：
 ///
 /// - [ExportItem::NativeLog] → `NativeOp` / `NativeVoid` 若干（覆盖 1..=count）→ [ExportItem::NativeTail]；
-/// - [ExportItem::HeritageLog] → [ExportItem::Mark] × marks → [ExportItem::Slot] × count；
-/// - [ExportItem::ForkLog] → [ExportItem::Slot] × n。
+/// - [ExportItem::HeritageLog] → [ExportItem::Mark] × marks → [ExportItem::Slot] × (count + forks)，
+///   每个日志槽后面紧跟同 seq 的分叉槽（链指纹严格升序）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ExportItem {
     NativeLog {
@@ -87,6 +87,8 @@ pub enum ExportItem {
         source: Id,
         device: Id,
         count: u64,
+        /// 分叉的另一支（`op_forks`）的槽数，穿插在日志槽之间。
+        forks: u64,
         marks: u64,
     },
     Mark {
@@ -96,11 +98,6 @@ pub enum ExportItem {
     Slot {
         t_version: u32,
         slot: HeritageSlot,
-    },
-    ForkLog {
-        source: Id,
-        device: Id,
-        n: u64,
     },
 }
 
@@ -130,13 +127,6 @@ pub fn sniff(bytes: &[u8]) -> Result<ExportKind, String> {
 
 // ---------------------------------------------------------------- 语法（读写共用）
 
-/// 承袭日志的摘要：分叉支要对着它查。
-#[derive(Clone, Copy)]
-enum Seen {
-    Native,
-    Heritage { source: Id, count: u64 },
-}
-
 enum Phase {
     /// 等下一条日志的抬头（或流结束）。
     Logs,
@@ -150,21 +140,21 @@ enum Phase {
     Marks {
         device: Id,
         count: u64,
+        forks: u64,
         left: u64,
         prev: u64,
         marks: VecDeque<(u64, Fp)>,
     },
     Slots {
         device: Id,
+        /// 下一个日志槽的 seq。
         next: u64,
         last: u64,
+        /// 还没出现的分叉槽数。
+        forks: u64,
+        /// 上一个槽（日志槽或分叉槽）的 (seq, fp)：同 seq 的分叉槽要排在它后面。
+        cur: Option<(u64, Fp)>,
         marks: VecDeque<(u64, Fp)>,
-    },
-    Fork {
-        device: Id,
-        count: u64,
-        left: u64,
-        prev: Option<(u64, Fp)>,
     },
 }
 
@@ -183,7 +173,7 @@ struct Grammar {
     logs_left: u64,
     /// 上一条日志的 (tag, device)。
     prev_log: Option<(u8, Id)>,
-    seen: HashMap<Id, Seen>,
+    seen: HashSet<Id>,
     phase: Phase,
 }
 
@@ -196,7 +186,7 @@ impl Grammar {
         Grammar {
             logs_left: logs,
             prev_log: None,
-            seen: HashMap::new(),
+            seen: HashSet::new(),
             phase: Phase::Logs,
         }
     }
@@ -208,7 +198,7 @@ impl Grammar {
             Phase::Native { next, last, .. } if *next > *last => Expect::Tail,
             Phase::Native { .. } => Expect::NativeItem,
             Phase::Marks { .. } => Expect::Mark,
-            Phase::Slots { .. } | Phase::Fork { .. } => Expect::Slot,
+            Phase::Slots { .. } => Expect::Slot,
         }
     }
 
@@ -230,8 +220,8 @@ impl Grammar {
         Ok(())
     }
 
-    fn claim(&mut self, device: Id, seen: Seen) -> Result<(), String> {
-        if self.seen.insert(device, seen).is_some() {
+    fn claim(&mut self, device: Id) -> Result<(), String> {
+        if !self.seen.insert(device) {
             return err(format!("device {device} has two logs"));
         }
         Ok(())
@@ -241,7 +231,7 @@ impl Grammar {
         match it {
             ExportItem::NativeLog { device, count, .. } => {
                 self.open_log(LOG_NATIVE, *device)?;
-                self.claim(*device, Seen::Native)?;
+                self.claim(*device)?;
                 self.phase = Phase::Native {
                     device: *device,
                     next: 1,
@@ -315,33 +305,34 @@ impl Grammar {
                 self.phase = Phase::Logs;
             }
             ExportItem::HeritageLog {
-                source,
+                source: _,
                 device,
                 count,
+                forks,
                 marks,
             } => {
                 self.open_log(LOG_HERITAGE, *device)?;
-                self.claim(
-                    *device,
-                    Seen::Heritage {
-                        source: *source,
-                        count: *count,
-                    },
-                )?;
+                self.claim(*device)?;
                 if *marks > *count {
                     return err("more marks than slots");
+                }
+                if *count == 0 && *forks > 0 {
+                    return err("fork slots without log slots");
                 }
                 self.phase = if *marks == 0 {
                     Phase::Slots {
                         device: *device,
                         next: 1,
                         last: *count,
+                        forks: *forks,
+                        cur: None,
                         marks: VecDeque::new(),
                     }
                 } else {
                     Phase::Marks {
                         device: *device,
                         count: *count,
+                        forks: *forks,
                         left: *marks,
                         prev: 0,
                         marks: VecDeque::new(),
@@ -353,6 +344,7 @@ impl Grammar {
                 let Phase::Marks {
                     device,
                     count,
+                    forks,
                     left,
                     prev,
                     marks,
@@ -371,6 +363,8 @@ impl Grammar {
                         device: *device,
                         next: 1,
                         last: *count,
+                        forks: *forks,
+                        cur: None,
                         marks: std::mem::take(marks),
                     };
                     self.settle_slots();
@@ -381,64 +375,50 @@ impl Grammar {
                     return err("t_version 0");
                 }
                 slot.check().map_err(|m| format!("FSRS4EXP: {m}"))?;
-                match &mut self.phase {
-                    Phase::Slots {
-                        device,
-                        next,
-                        last,
-                        marks,
-                    } => {
-                        if *next > *last {
-                            return err("heritage log overruns its count");
+                let Phase::Slots {
+                    device,
+                    next,
+                    last,
+                    forks,
+                    cur,
+                    marks,
+                } = &mut self.phase
+                else {
+                    return err("slot outside a heritage log");
+                };
+                if slot.id.device != *device {
+                    return err("heritage slot belongs to another device");
+                }
+                let (seq, fp) = (slot.id.seq, slot.fp);
+                match *cur {
+                    // 同 seq 的第二个起是分叉支：链指纹必须严格大于前一个（日志槽是最小的那个）。
+                    Some((s, f)) if s == seq => {
+                        if *forks == 0 {
+                            return err("more fork slots than declared");
                         }
-                        if slot.id.device != *device || slot.id.seq != *next {
+                        if fp <= f {
+                            return err("fork slot does not sort after the slot before it");
+                        }
+                        *forks -= 1;
+                        *cur = Some((seq, fp));
+                    }
+                    _ => {
+                        if *next > *last || seq != *next {
                             return err("heritage slot out of sequence");
                         }
-                        if let Some(&(seq, fp)) = marks.front() {
-                            if seq == *next {
-                                if fp != slot.fp {
+                        if let Some(&(ms, mfp)) = marks.front() {
+                            if ms == seq {
+                                if mfp != fp {
                                     return err("mark does not match its slot");
                                 }
                                 marks.pop_front();
                             }
                         }
+                        *cur = Some((seq, fp));
                         *next += 1;
                     }
-                    Phase::Fork {
-                        device,
-                        count,
-                        left,
-                        prev,
-                    } => {
-                        if slot.id.device != *device || slot.id.seq > *count {
-                            return err("fork slot outside its heritage log");
-                        }
-                        let key = (slot.id.seq, slot.fp);
-                        if prev.is_some_and(|p| p >= key) {
-                            return err("fork slots out of order");
-                        }
-                        *prev = Some(key);
-                        *left -= 1;
-                    }
-                    _ => return err("slot outside a heritage or fork log"),
                 }
                 self.settle_slots();
-            }
-            ExportItem::ForkLog { source, device, n } => {
-                self.open_log(LOG_FORK, *device)?;
-                let count = match self.seen.get(device) {
-                    Some(Seen::Heritage { source: s, count }) if s == source => *count,
-                    _ => return err("fork log without a matching heritage log"),
-                };
-                if *n == 0 {
-                    return err("empty fork log");
-                }
-                self.phase = Phase::Fork {
-                    device: *device,
-                    count,
-                    left: *n,
-                    prev: None,
-                };
             }
         }
         Ok(())
@@ -447,8 +427,9 @@ impl Grammar {
     /// 槽写够了就回到日志层。
     fn settle_slots(&mut self) {
         let done = match &self.phase {
-            Phase::Slots { next, last, .. } => *next > *last,
-            Phase::Fork { left, .. } => *left == 0,
+            Phase::Slots {
+                next, last, forks, ..
+            } => *next > *last && *forks == 0,
             _ => false,
         };
         if done {
@@ -541,12 +522,14 @@ fn write_item(w: &mut crate::sync2::codec::Writer, it: &ExportItem) {
             source,
             device,
             count,
+            forks,
             marks,
         } => {
             w.u8(LOG_HERITAGE);
             source.write(w);
             device.write(w);
             w.uv(*count);
+            w.uv(*forks);
             w.uv(*marks);
         }
         ExportItem::Mark { seq, chain } => {
@@ -556,12 +539,6 @@ fn write_item(w: &mut crate::sync2::codec::Writer, it: &ExportItem) {
         ExportItem::Slot { t_version, slot } => {
             w.uv(u64::from(*t_version));
             slot.write(w);
-        }
-        ExportItem::ForkLog { source, device, n } => {
-            w.u8(LOG_FORK);
-            source.write(w);
-            device.write(w);
-            w.uv(*n);
         }
     }
 }
@@ -606,12 +583,8 @@ fn read_log(r: &mut Reader<'_>) -> DResult<ExportItem> {
             source: Id::read(r)?,
             device: Id::read(r)?,
             count: uv_min(r)?,
+            forks: uv_min(r)?,
             marks: uv_min(r)?,
-        }),
-        LOG_FORK => Ok(ExportItem::ForkLog {
-            source: Id::read(r)?,
-            device: Id::read(r)?,
-            n: uv_min(r)?,
         }),
         _ => Err(DecodeError("unknown log tag")),
     }
@@ -679,7 +652,7 @@ impl<'s> Export4Reader<'s> {
     fn next_inner(&mut self) -> Result<Option<ExportItem>, String> {
         let it = match self.grammar.expect() {
             Expect::End => {
-                if !self.window.at_end().map_err(stream)? {
+                if !self.window.at_end_of_input().map_err(stream)? {
                     return err("trailing bytes");
                 }
                 return Ok(None);
@@ -770,8 +743,40 @@ mod tests {
         ]
     }
 
-    /// 承袭日志（seq 1..=8，标记在 1 与 8）+ 它在 seq 2 处的一条分叉。
+    /// 承袭日志（seq 1..=8，标记在 1 与 8），在 seq 2 处紧跟一条分叉槽。
     fn heritage_items() -> Vec<ExportItem> {
+        let mut out = heritage_forkless();
+        if let ExportItem::HeritageLog { forks, .. } = &mut out[0] {
+            *forks = 1;
+        }
+        // 日志槽 seq 2 在下标 4（抬头、两个标记、seq 1）。
+        out.insert(5, fork_slot(2, 0xf0));
+        out
+    }
+
+    /// seq 处的一个分叉槽（seq 2 用真槽改指纹，其余用空洞）。
+    fn fork_slot(seq: u64, fp: u8) -> ExportItem {
+        let s = if seq == 2 {
+            let mut s = slots()[1].clone();
+            s.fp = [fp; 8];
+            s
+        } else {
+            HeritageSlot::void(
+                OpId {
+                    device: id(OLD),
+                    seq,
+                },
+                [fp; 8],
+            )
+        };
+        ExportItem::Slot {
+            t_version: 1,
+            slot: s,
+        }
+    }
+
+    /// 没有分叉的承袭日志。
+    fn heritage_forkless() -> Vec<ExportItem> {
         let ss = slots();
         let mark = |s: &HeritageSlot| {
             let mut c = [0x77; 32];
@@ -786,6 +791,7 @@ mod tests {
                 source: id(SRC),
                 device: id(OLD),
                 count: ss.len() as u64,
+                forks: 0,
                 marks: 2,
             },
             mark(&ss[0]),
@@ -797,17 +803,6 @@ mod tests {
                 slot: s.clone(),
             });
         }
-        let mut fork = ss[1].clone();
-        fork.fp = [0xf0; 8];
-        out.push(ExportItem::ForkLog {
-            source: id(SRC),
-            device: id(OLD),
-            n: 1,
-        });
-        out.push(ExportItem::Slot {
-            t_version: 1,
-            slot: fork,
-        });
         out
     }
 
@@ -829,9 +824,7 @@ mod tests {
             .filter(|i| {
                 matches!(
                     i,
-                    ExportItem::NativeLog { .. }
-                        | ExportItem::HeritageLog { .. }
-                        | ExportItem::ForkLog { .. }
+                    ExportItem::NativeLog { .. } | ExportItem::HeritageLog { .. }
                 )
             })
             .count() as u64
@@ -890,12 +883,12 @@ mod tests {
             h,
             ExportHeader {
                 collection: coll(),
-                logs: 4
+                logs: 3
             }
         );
         assert_eq!(got, items);
         // 写者的明文就是逐项编码首尾相接。
-        assert_eq!(plain_of(&bytes), plain(&items, 4));
+        assert_eq!(plain_of(&bytes), plain(&items, 3));
         // 空集合：只有头。
         let empty = write_all(&[]).unwrap();
         let (h, got) = read_all(&empty).unwrap();
@@ -937,6 +930,7 @@ mod tests {
                 source: id(SRC),
                 device: id(OLD),
                 count: 1,
+                forks: 1,
                 marks: 1,
             },
             ExportItem::Mark {
@@ -951,11 +945,6 @@ mod tests {
                 t_version: 1,
                 slot: HeritageSlot::void(ss[0].id, ss[0].fp),
             },
-            ExportItem::ForkLog {
-                source: id(SRC),
-                device: id(OLD),
-                n: 1,
-            },
             ExportItem::Slot {
                 t_version: 2,
                 slot: HeritageSlot::void(ss[0].id, [0xf0; 8]),
@@ -963,18 +952,18 @@ mod tests {
         ];
         golden(
             "export4_heritage_fork",
-            &plain(&her, 2)[27..],
-            "015c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0101010101010101010101777777777777777777777777777777777777777777777777010d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d01010101010101010103025c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d01020d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d01f0f0f0f0f0f0f0f003",
+            &plain(&her, 1)[27..],
+            "015c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d010101010101010101010101777777777777777777777777777777777777777777777777010d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d01010101010101010103020d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d01f0f0f0f0f0f0f0f003",
         );
         // 冻结的明文能读回同样的项。
         assert_eq!(read_all(&compress(&plain(&nat, 1))).unwrap().1, nat);
-        assert_eq!(read_all(&compress(&plain(&her, 2))).unwrap().1, her);
+        assert_eq!(read_all(&compress(&plain(&her, 1))).unwrap().1, her);
     }
 
     #[test]
     fn truncated_streams_are_rejected() {
         let items = sample();
-        let p = plain(&items, 4);
+        let p = plain(&items, 3);
         // 明文在任何位置截断（再压成完整的 zstd 帧）都报错。
         for n in 0..p.len() {
             assert!(read_all(&compress(&p[..n])).is_err(), "plain cut at {n}");
@@ -988,11 +977,22 @@ mod tests {
         let mut tail = p.clone();
         tail.push(0);
         assert!(read_all(&compress(&tail)).unwrap_err().contains("trailing"));
+        // 帧后面的压缩输入：垃圾字节、第二个完整帧（哪怕它是另一份合法的流）都拒，不静默丢掉。
+        let mut junk = bytes.clone();
+        junk.extend_from_slice(&[0xde, 0xad, 0xbe, 0xef]);
+        assert!(read_all(&junk).unwrap_err().contains("trailing"));
+        let mut two = bytes.clone();
+        two.extend_from_slice(&write_all(&[]).unwrap());
+        assert!(read_all(&two).unwrap_err().contains("trailing"));
+        // 一个字节的垃圾也拒。
+        let mut one = bytes.clone();
+        one.push(0);
+        assert!(read_all(&one).is_err());
     }
 
     #[test]
     fn bad_magic_and_unknown_versions_are_rejected() {
-        let p = plain(&sample(), 4);
+        let p = plain(&sample(), 3);
         let mut bad = p.clone();
         bad[0] = b'X';
         assert!(Export4Reader::open(&compress(&bad)).is_err());
@@ -1156,15 +1156,14 @@ mod tests {
         }
         check(v, 1, "stamped native edit");
         // 日志条数比声明的多 / 少。
-        check(sample(), 3, "more logs than declared");
-        check(sample(), 5, "fewer logs than declared");
+        check(sample(), 2, "more logs than declared");
+        check(sample(), 4, "fewer logs than declared");
         // 同 tag 内 device 不升序。
         let mut v = empty_native(0xb2);
         v.extend(empty_native(0xb1));
         check(v, 2, "devices out of order");
         // 承袭在原生之前。
-        let mut v = heritage_items();
-        let forkless: Vec<_> = v.drain(..v.len() - 2).collect();
+        let forkless = heritage_forkless();
         let mut v = forkless.clone();
         v.extend(empty_native(0xb2));
         check(v, 2, "heritage before native");
@@ -1197,42 +1196,111 @@ mod tests {
             *t_version = 0;
         }
         check(v, 1, "t_version 0");
-        // 分叉日志没有对应的承袭日志 / 来源不同 / 越过承袭日志末尾 / 不升序 / 为空。
-        let fork_slot = |seq: u64, fp: u8| {
-            let mut s = slots()[1].clone();
-            s.fp = [fp; 8];
-            if seq != 2 {
-                s = HeritageSlot::void(
-                    OpId {
-                        device: id(OLD),
-                        seq,
+        // 分叉支：紧跟同 seq 的日志槽、链指纹严格大于前一个槽、条数与声明的相同。
+        let with_forks = |forks: u64, extra: &[(usize, ExportItem)]| {
+            let mut v = forkless.clone();
+            if let ExportItem::HeritageLog { forks: f, .. } = &mut v[0] {
+                *f = forks;
+            }
+            for (at, it) in extra.iter().rev() {
+                v.insert(*at, it.clone());
+            }
+            v
+        };
+        // seq 2 的日志槽在下标 4、seq 3 在 5，最后一个（seq 8）在 10。
+        let log_fp = slots()[1].fp[0];
+        assert!(log_fp > 0 && log_fp < 0xf0);
+        // 合法：同 seq 两个分叉槽升序；最后一个日志槽后面的分叉。
+        let ok = with_forks(2, &[(5, fork_slot(2, 0xf0)), (5, fork_slot(2, 0xf1))]);
+        assert_eq!(read_all(&write_all(&ok).unwrap()).unwrap().1, ok);
+        let ok = with_forks(1, &[(11, fork_slot(8, 0xf0))]);
+        assert_eq!(read_all(&write_all(&ok).unwrap()).unwrap().1, ok);
+        // 和日志槽完全相同的重复槽。
+        let mut dup = slots()[1].clone();
+        dup.fp = [log_fp; 8];
+        let dup = ExportItem::Slot {
+            t_version: 1,
+            slot: dup,
+        };
+        assert_eq!(dup, forkless[4]);
+        check(
+            with_forks(1, &[(5, dup)]),
+            1,
+            "fork identical to the log slot",
+        );
+        // 链指纹比日志槽小（应当对调进日志）。
+        check(
+            with_forks(1, &[(5, fork_slot(2, 0))]),
+            1,
+            "fork sorting before the log slot",
+        );
+        // 两个分叉槽降序 / 相同。
+        check(
+            with_forks(2, &[(5, fork_slot(2, 0xf1)), (5, fork_slot(2, 0xf0))]),
+            1,
+            "fork slots out of order",
+        );
+        check(
+            with_forks(2, &[(5, fork_slot(2, 0xf0)), (5, fork_slot(2, 0xf0))]),
+            1,
+            "duplicate fork slots",
+        );
+        // 分叉槽没紧跟它的日志槽（seq 2 的分叉放在 seq 3 后面）。
+        check(
+            with_forks(1, &[(6, fork_slot(2, 0xf0))]),
+            1,
+            "fork away from its log slot",
+        );
+        // 声明的分叉比实际多 / 少。
+        check(with_forks(1, &[]), 1, "missing fork slot");
+        check(
+            with_forks(0, &[(5, fork_slot(2, 0xf0))]),
+            1,
+            "undeclared fork slot",
+        );
+        let mut v = with_forks(1, &[]);
+        v.extend(empty_native(0xb2));
+        check(v, 2, "fork count swallows the next log");
+        // 别的设备的分叉槽。
+        let mut foreign = slots()[1].clone();
+        foreign.id.device = id(0x99);
+        foreign.fp = [0xf0; 8];
+        check(
+            with_forks(
+                1,
+                &[(
+                    5,
+                    ExportItem::Slot {
+                        t_version: 1,
+                        slot: foreign,
                     },
-                    [fp; 8],
-                );
-            }
-            ExportItem::Slot {
-                t_version: 1,
-                slot: s,
-            }
-        };
-        let fork = |source: u8, n: u64| ExportItem::ForkLog {
-            source: id(source),
-            device: id(OLD),
-            n,
-        };
-        check(vec![fork(SRC, 1), fork_slot(2, 1)], 1, "orphan fork");
-        let mut v = forkless.clone();
-        v.extend([fork(0x99, 1), fork_slot(2, 1)]);
-        check(v, 2, "fork from another source");
-        let mut v = forkless.clone();
-        v.extend([fork(SRC, 1), fork_slot(9, 1)]);
-        check(v, 2, "fork past the heritage log");
-        let mut v = forkless.clone();
-        v.extend([fork(SRC, 2), fork_slot(2, 2), fork_slot(2, 1)]);
-        check(v, 2, "fork slots out of order");
-        let mut v = forkless.clone();
-        v.push(fork(SRC, 0));
-        check(v, 2, "empty fork log");
+                )],
+            ),
+            1,
+            "fork slot of another device",
+        );
+        // 没有日志槽却声明了分叉。
+        check(
+            vec![ExportItem::HeritageLog {
+                source: id(SRC),
+                device: id(OLD),
+                count: 0,
+                forks: 1,
+                marks: 0,
+            }],
+            1,
+            "forks without log slots",
+        );
+        // 分叉槽的 t_version 0。
+        let mut v = with_forks(1, &[(5, fork_slot(2, 0xf0))]);
+        if let ExportItem::Slot { t_version, .. } = &mut v[5] {
+            *t_version = 0;
+        }
+        check(v, 1, "fork t_version 0");
+        // 旧的分叉日志 tag 2 已不存在：未知日志 tag。
+        let mut p = plain(&empty_native(0xb2), 1);
+        p[27] = 2;
+        assert!(read_all(&compress(&p)).is_err());
     }
 
     /// 原生操作的依赖向量点名作者自己：两侧都拒。
