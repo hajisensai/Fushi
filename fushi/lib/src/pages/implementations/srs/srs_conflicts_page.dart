@@ -25,6 +25,8 @@ import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_value_diff.dart';
 import 'package:fushi/src/srs/srs_device_view.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show shellRedesignActive;
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -606,11 +608,13 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
   @override
   Widget build(BuildContext context) {
     final bool apple = isGlassDesign(context);
+    final bool masthead = shellRedesignActive(context);
     final FushiToolbarItem? bulk = _bulkItem;
     return FushiPageScaffold(
       title: t.srs_conflicts_title,
+      masthead: true,
       header: apple ? null : _buildTopBar(context, bulk),
-      actions: apple && bulk != null
+      actions: (apple || masthead) && bulk != null
           ? <Widget>[
               FushiIconButton(
                 key: bulk.key,

@@ -9,11 +9,9 @@ import 'package:fushi/src/media/audiobook/audiobook_session.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_channel.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/audio_controller.dart' show MediaSessionOwner;
-import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
-import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_player.dart'
-    show fushiPlayButtonBorder;
-import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+    show FushiPlaybackClock;
+import 'package:fushi/src/utils/components/fushi_now_playing_bar.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/cover_image.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -22,7 +20,8 @@ import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
-/// 首页「正在听书」迷你条（TODO-291 阶段2）。
+/// 首页「正在听书」迷你条（TODO-291 阶段2）。外壳是与音乐迷你条共用的
+/// [FushiNowPlayingBar]。
 ///
 /// 退出书籍后台听书时的常驻入口：显示当前书名 + 当前句字幕 + 播放/暂停 + 停止 +
 /// 点击回到书。无活动会话时收起（[SizedBox.shrink]）。监听 [appProvider]（会话起停
@@ -88,85 +87,47 @@ class _NowListeningMiniBarState extends ConsumerState<NowListeningMiniBar> {
       return const SizedBox.shrink();
     }
 
-    final ColorScheme scheme = Theme.of(context).colorScheme;
     // 书架 mini bar 字幕行同属「显示意图」（TODO-1065, BUG-509）：display cue
     // 消除首句空窗 / gap 内提前显示下一句。
     final AudioCue? cue = controller.displayCueForFloatingLyric;
-    final bool playing = controller.isPlaying;
+    final String cueText = cue?.text.trim() ?? '';
+    final String? coverPath = book.coverPath;
+    final File? coverFile = coverPath != null && File(coverPath).existsSync()
+        ? File(coverPath)
+        : null;
 
-    final bool eink = isEinkTheme(context);
-    final bool glass = isGlassDesign(context);
-    final bool expressive = !eink && !glass;
-    final Widget content = Row(
-      children: <Widget>[
-        _cover(book, scheme),
-        SizedBox(width: expressive ? 12 : 10),
-        Expanded(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Text(
-                book.title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.titleSmall,
-              ),
-              Text(
-                cue?.text.trim().isNotEmpty == true
-                    ? cue!.text.trim()
-                    : t.now_listening_label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: glass
-                      ? appleColorsOf(context).secondaryLabel
-                      : scheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-          ),
-        ),
+    // 外壳与音乐迷你条共用 [FushiNowPlayingBar]（封面取色色块 + 出血书名大字 +
+    // 圆环波浪进度 + 形变播放键）；本条只接有声书会话：书名 / 当前句、全书进度、
+    // 悬浮字幕开关与停止。点条身回到书。
+    return FushiNowPlayingBar(
+      barKey: const ValueKey<String>('now_listening_open_book'),
+      playButtonKey: const ValueKey<String>('now_listening_play_pause'),
+      title: book.title,
+      subtitle: cueText.isNotEmpty ? cueText : t.now_listening_label,
+      coverBuilder: (BuildContext context, double size) =>
+          _cover(context, coverFile),
+      tintImage: coverFile == null
+          ? null
+          : resizedFileImage(coverFile, width: kMiniCoverDecodePixelWidth),
+      clock: _AudiobookBookClock(controller),
+      isPlaying: controller.isPlaying,
+      onPlayPause: () => controller.togglePlayPause(),
+      actions: <Widget>[
         // TODO-354 ③：书架底栏迷你条上的「悬浮字幕」开关——真启停 app 外悬浮字幕
         // 窗口（复用 toggleFloatingLyricFromControls：拉起/隐藏悬浮窗 + 偏好读写）。
         // 只有有 native 悬浮窗后端的平台（FloatingLyricChannel.supported：Android /
-        // Windows / macOS）显示开关，其余（Linux）隐藏（优雅降级）。开着态用实心高亮
-        // 图标提示当前已开。
+        // Windows / macOS）显示开关，其余（Linux）隐藏（优雅降级）。开着态用实心
+        // 选中态图标提示当前已开。
         if (FloatingLyricChannel.supported)
           FushiIconButtonControl(
+            isSelected: appModel.showFloatingLyric,
             icon: FushiIcon(
               appModel.showFloatingLyric
                   ? FushiIcons.filled(FushiIcons.subtitles)
                   : FushiIcons.subtitles,
-              color: appModel.showFloatingLyric
-                  ? (glass ? appleColorsOf(context).accent : scheme.primary)
-                  : null,
             ),
             tooltip: t.floating_lyric_toggle_action,
             onPressed: () => _toggleFloatingLyric(appModel),
-          ),
-        if (expressive)
-          // M3E：播放键是迷你胶囊里唯一的实心主色钮（与浮动工具栏的 FAB
-          // 同一强调层级），外形是统一的主播放键多边形（[fushiPlayButtonBorder]）。
-          FushiIconButtonControl.filled(
-            icon: FushiIcon(
-              playing
-                  ? FushiIcons.filled(FushiIcons.pause)
-                  : FushiIcons.filled(FushiIcons.play),
-            ),
-            style: ButtonStyle(
-              shape: WidgetStatePropertyAll<OutlinedBorder>(
-                fushiPlayButtonBorder(),
-              ),
-            ),
-            tooltip: t.floating_lyric_play_pause,
-            onPressed: () => controller.togglePlayPause(),
-          )
-        else
-          FushiIconButtonControl(
-            icon: FushiIcon(playing ? FushiIcons.pause : FushiIcons.play),
-            tooltip: t.floating_lyric_play_pause,
-            onPressed: () => controller.togglePlayPause(),
           ),
         FushiIconButtonControl(
           icon: const FushiIcon(FushiIcons.stop),
@@ -174,113 +135,7 @@ class _NowListeningMiniBarState extends ConsumerState<NowListeningMiniBar> {
           onPressed: () => appModel.stopBackgroundListening(),
         ),
       ],
-    );
-    void openBook() => appModel.openBackgroundListeningBook(ref);
-
-    // eink：surfaceContainerHighest 塌成页面底色，迷你条与上方正文连成一片；
-    // 顶上描一条线切出来（推荐包下载条同款）。墨水屏保持贴边整条（阴影 /
-    // 半透明在灰阶下都会糊成脏边）。
-    if (eink) {
-      return Material(
-        color: scheme.surfaceContainerHighest,
-        shape: Border(top: BorderSide(color: scheme.outline)),
-        child: InkWell(
-          onTap: openBook,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            child: content,
-          ),
-        ),
-      );
-    }
-    if (glass) {
-      // Apple Music 式迷你播放条：离边 14 的浮动实色全胶囊（导航与控件
-      // 层，不是内容层；圆角取足够大让任何高度都是全圆角），点按整条回到书，
-      // 按下变淡、无水波。
-      // 宽屏（iPad / macOS）不铺满：与 M3E 同样封顶 560 居中。
-      return Padding(
-        padding: const EdgeInsets.fromLTRB(14, 4, 14, 10),
-        child: Center(
-          heightFactor: 1,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 560),
-            // 原生 Cupertino 实色面（无玻璃 / 实时模糊，用户 2026-10-12）。
-            child: DecoratedBox(
-              decoration: fushiAppleSolidFloatingDecoration(
-                context,
-                shape: const StadiumBorder(),
-              ),
-              child: FushiPlainButton(
-                onPressed: openBook,
-                borderRadius: BorderRadius.circular(999),
-                child: Padding(
-                  padding: const EdgeInsetsDirectional.only(
-                    start: 10,
-                    end: 8,
-                    top: 6,
-                    bottom: 6,
-                  ),
-                  child: content,
-                ),
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-    // M3E：与底部浮动导航 / 浮动工具栏同一套悬浮胶囊（fushiFloatingPillDecoration：
-    // 全圆角、surfaceContainer 底、level2 投影），高 64（kFushiFloatingToolbarExtent），
-    // 离边 16；宽屏不铺满，封顶 560 居中，读起来是「底栏上方的一颗播放胶囊」而
-    // 不是一条贴边横幅。首次出现时弹簧上浮落位（减弱动态 / 墨水屏下时长为零）。
-    final FushiMotionScheme motion = context.fushiMotion;
-    final Color pillColor = fushiFloatingToolbarPalette(context).container;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        kFushiFloatingToolbarEdgeMargin,
-        4,
-        kFushiFloatingToolbarEdgeMargin,
-        8,
-      ),
-      child: Center(
-        heightFactor: 1,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 560),
-          child: TweenAnimationBuilder<double>(
-            tween: Tween<double>(begin: 0, end: 1),
-            duration: motion.spatialDefault.duration,
-            curve: motion.spatialDefault.curve,
-            builder: (BuildContext context, double v, Widget? child) =>
-                Transform.translate(
-                  offset: Offset(0, (1 - v) * 24),
-                  child: Transform.scale(scale: 0.92 + 0.08 * v, child: child),
-                ),
-            child: SizedBox(
-              height: kFushiFloatingToolbarExtent,
-              child: DecoratedBox(
-                decoration: fushiFloatingPillDecoration(
-                  context,
-                  color: pillColor,
-                ),
-                child: Material(
-                  type: MaterialType.transparency,
-                  shape: const StadiumBorder(),
-                  clipBehavior: Clip.antiAlias,
-                  child: InkWell(
-                    onTap: openBook,
-                    child: Padding(
-                      padding: const EdgeInsetsDirectional.only(
-                        start: 12,
-                        end: 8,
-                      ),
-                      child: content,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
+      onTap: () => appModel.openBackgroundListeningBook(ref),
     );
   }
 
@@ -314,52 +169,43 @@ class _NowListeningMiniBarState extends ConsumerState<NowListeningMiniBar> {
     setState(() {});
   }
 
-  Widget _cover(SessionBookInfo book, ColorScheme scheme) {
-    final String? coverPath = book.coverPath;
-    Widget child;
-    if (coverPath != null && File(coverPath).existsSync()) {
-      child = Image.file(
-        File(coverPath),
-        width: 36,
-        height: 36,
-        fit: BoxFit.cover,
-        // BUG-959: 迷你条封面按物理像素上限解码（36 逻辑像素，144 物理已足够），
-        // 大幅省解码内存。保留 existsSync 短路（缺失走 _coverFallback），避免对
-        // 不存在文件发起无谓异步解码。
-        cacheWidth: kMiniCoverDecodePixelWidth,
-        cacheHeight: kMiniCoverDecodePixelWidth,
-        errorBuilder: (_, __, ___) => _coverFallback(scheme),
-      );
-    } else {
-      child = _coverFallback(scheme);
-    }
-    // M3E：胶囊里的封面是 40 的圆（与胶囊同一曲率家族）；Apple 圆角方 8；
-    // 墨水屏保持 6 的小圆角方。
-    final bool expressive = !isGlassDesign(context) && !isEinkTheme(context);
-    final double side = expressive ? 40 : 36;
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(
-        expressive ? side / 2 : (isGlassDesign(context) ? 8 : 6),
+  /// 迷你条封面（[FushiNowPlayingBar] 负责裁形）。在色块配色的主题下构建：
+  /// 没封面时是强调色底上的有声书图标。
+  Widget _cover(BuildContext context, File? coverFile) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final Widget fallback = ColoredBox(
+      color: scheme.primary,
+      child: Center(
+        child: FushiIcon(
+          FushiIcons.audiobook,
+          size: 20,
+          color: scheme.onPrimary,
+        ),
       ),
-      child: SizedBox(width: side, height: side, child: child),
+    );
+    if (coverFile == null) return fallback;
+    return Image.file(
+      coverFile,
+      fit: BoxFit.cover,
+      // BUG-959: 迷你条封面按物理像素上限解码（约 44 逻辑像素，144 物理已足够），
+      // 大幅省解码内存。保留 existsSync 短路（缺失走 fallback），避免对不存在
+      // 文件发起无谓异步解码。
+      cacheWidth: kMiniCoverDecodePixelWidth,
+      cacheHeight: kMiniCoverDecodePixelWidth,
+      errorBuilder: (_, __, ___) => fallback,
     );
   }
+}
 
-  // eink：primaryContainer 塌成页面底色，补描边免得只剩一枚悬空耳机图标。
-  // Apple：中性 systemFill 底 + label 色单色图标（不要彩色底块）。
-  Widget _coverFallback(ColorScheme scheme) => DecoratedBox(
-    decoration: BoxDecoration(
-      color: isGlassDesign(context)
-          ? appleColorsOf(context).fill
-          : scheme.primaryContainer,
-      border: isEinkTheme(context) ? Border.all(color: scheme.outline) : null,
-    ),
-    child: FushiIcon(
-      FushiIcons.audiobook,
-      size: 20,
-      color: isGlassDesign(context)
-          ? appleColorsOf(context).label
-          : scheme.onPrimaryContainer,
-    ),
-  );
+/// 全书时间轴上的进度读口（圆环波浪进度用）。
+class _AudiobookBookClock implements FushiPlaybackClock {
+  const _AudiobookBookClock(this.controller);
+
+  final AudiobookPlayerController controller;
+
+  @override
+  Duration get position => controller.globalPosition;
+
+  @override
+  Duration get duration => controller.totalDuration;
 }

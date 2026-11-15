@@ -115,7 +115,10 @@ class _TestAppModel extends AppModel {
   }
 
   @override
-  Future<void> updateDictionaryOrder(List<Dictionary> newDictionaries) async {
+  Future<void> updateDictionaryOrder(
+    List<Dictionary> newDictionaries, {
+    String? moved,
+  }) async {
     for (final Dictionary d in newDictionaries) {
       _stored(d.name).order = d.order;
     }

@@ -45,6 +45,8 @@ import 'package:fushi/src/utils/components/glass/fushi_expressive.dart'
 import 'package:fushi/src/pages/implementations/stat_shared.dart'
     show StatGoalEditDialog, formatStatChars, formatStatTime;
 import 'package:fushi/src/stats/stat_window.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show FushiShellTheme, ShellContentLayout;
 import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -84,12 +86,24 @@ void main() {
   late PlatformServices platformServices;
   late FakeAnkiRepository ankiRepository;
   late AppModel appModel;
+
+  /// 本用例钉的库页布局（PR #3397 外壳改版）：默认钉封面网格——网格下首页走原
+  /// 版式正文（主角卡 + 横滑行 + 今日 / 最近添加面板），下面多数用例守的是那套
+  /// 版式；拼贴（色块，产品默认）路径的同一批数据行为由各用例里
+  /// `dashboardLayout = ShellContentLayout.collage` 的分支 / 专门用例另行断言。
+  ShellContentLayout dashboardLayout = ShellContentLayout.grid;
+  ThemeData shellTheme() => ThemeData(
+    extensions: <ThemeExtension<dynamic>>[
+      FushiShellTheme(contentLayout: dashboardLayout),
+    ],
+  );
   late Directory storeDir;
 
   /// 提到外层：Bangumi 同步卡的状态全部来自偏好（令牌/账号名/上次同步），测试要能写。
   late PreferencesRepository prefs;
 
   setUp(() async {
+    dashboardLayout = ShellContentLayout.grid;
     SharedPreferences.setMockInitialValues(<String, Object>{});
     LocaleSettings.setLocale(AppLocale.zhCn);
     db = FushiDatabase.forTesting(NativeDatabase.memory());
@@ -170,6 +184,7 @@ void main() {
     ],
     child: TranslationProvider(
       child: MaterialApp(
+        theme: shellTheme(),
         home: Scaffold(
           body: HomeDashboardPage(
             videoRepo: VideoBookRepository(db),
@@ -296,6 +311,7 @@ void main() {
     ],
     child: TranslationProvider(
       child: MaterialApp(
+        theme: shellTheme(),
         home: Scaffold(
           body: HomeDashboardPage(videoRepo: VideoBookRepository(db)),
         ),
@@ -2309,6 +2325,7 @@ void main() {
         ],
         child: TranslationProvider(
           child: MaterialApp(
+            theme: shellTheme(),
             home: Scaffold(
               body: ValueListenableBuilder<bool>(
                 valueListenable: showPage,
@@ -2569,18 +2586,8 @@ void main() {
 
   // ── 2026-10 首页统一浮动工具栏 ────────────────────────────────────────────
 
-  Finder dashboardList() => find.byWidgetPredicate(
-    (Widget w) => w is ListView && w.scrollDirection == Axis.vertical,
-  );
-  HomeFloatingToolbar toolbar(WidgetTester tester) =>
-      tester.widget<HomeFloatingToolbar>(find.byType(HomeFloatingToolbar));
   HomeResumeFab resumeFab(WidgetTester tester) =>
       tester.widget<HomeResumeFab>(find.byType(HomeResumeFab));
-  bool excludedFromFocus(WidgetTester tester, Finder target) => tester
-      .widgetList<ExcludeFocus>(
-        find.ancestor(of: target, matching: find.byType(ExcludeFocus)),
-      )
-      .any((ExcludeFocus w) => w.excluding);
 
   /// 滚动后跑完弹簧（default spatial 约 0.5 s 收敛）。
   Future<void> settleSpring(WidgetTester tester) async {
@@ -2608,7 +2615,13 @@ void main() {
     );
     final double cardTop = tester.getTopLeft(find.byType(HomeStudyHeader)).dy;
     expect(tester.getTopLeft(avatar).dy, lessThan(cardTop));
-    expect(tester.getTopLeft(avatar).dx, lessThan(100));
+    // 页头大字外壳（PR #3397）：起始侧是页名「首页」大字，头像坐在页头行的
+    // 主按钮位（尾端，点开排行榜）。
+    expect(find.text(t.nav_home), findsWidgets);
+    expect(
+      tester.getTopLeft(avatar).dx,
+      greaterThan(tester.getTopRight(find.text(t.nav_home).first).dx),
+    );
     for (final String key in <String>[
       'home-toolbar-updates',
       'home-toolbar-stats',
@@ -2751,29 +2764,49 @@ void main() {
     expect(reached, keys.toSet());
   });
 
-  testWidgets('浮动工具栏随滚动：下滚退场（不可聚焦），回滚弹回', (WidgetTester tester) async {
+  // 页头大字外壳（PR #3397，非墨水屏默认）：首页动作在页头大字一行
+  // （[FushiFloatingChromeOverlay] masthead 层），随正文下滚移出视口；焦点
+  // 落到移出的动作上（Tab / 手柄）时页头弹回（外壳顶栏同一条 Focus → show
+  // 规则），不会出现焦点停在看不见的按钮上；回滚到顶同样弹回。
+  testWidgets('页头随滚动：下滚移出视口，焦点进来或回滚都弹回', (WidgetTester tester) async {
     // 首页精简后内容只剩一张卡，矮视口才滚得动。
     useSize(tester, const Size(420, 260));
     await seedSampleData();
     await tester.pumpWidget(buildApp());
     await pumpDashboard(tester);
 
-    expect(toolbar(tester).visible, isTrue);
     final Finder stats = find.byKey(
       const ValueKey<String>('home-toolbar-stats'),
       skipOffstage: false,
     );
-    expect(excludedFromFocus(tester, stats), isFalse);
+    expect(stats.hitTestable(), findsOneWidget);
+    // 重设计首页的主列表是 CustomScrollView（色块 sliver），不是 ListView。
+    final Finder mainScroll = find
+        .byWidgetPredicate(
+          (Widget w) => w is ScrollView && w.scrollDirection == Axis.vertical,
+        )
+        .first;
 
-    await tester.drag(dashboardList(), const Offset(0, -150));
+    await tester.drag(mainScroll, const Offset(0, -150));
     await settleSpring(tester);
-    expect(toolbar(tester).visible, isFalse);
-    expect(excludedFromFocus(tester, stats), isTrue, reason: '退场中的栏不能还被 Tab 到');
+    expect(stats.hitTestable(), findsNothing, reason: '下滚后页头移出视口');
 
-    await tester.drag(dashboardList(), const Offset(0, 60));
+    // 焦点进到移出的页头动作：页头弹回，按钮看得见、点得到。
+    Focus.of(
+      tester.element(
+        find.descendant(of: stats, matching: find.byType(Icon)).first,
+      ),
+    ).requestFocus();
     await settleSpring(tester);
-    expect(toolbar(tester).visible, isTrue);
-    expect(excludedFromFocus(tester, stats), isFalse);
+    expect(stats.hitTestable(), findsOneWidget, reason: '焦点进来页头必须弹回');
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pump();
+
+    await tester.drag(mainScroll, const Offset(0, -150));
+    await settleSpring(tester);
+    await tester.drag(mainScroll, const Offset(0, 300));
+    await settleSpring(tester);
+    expect(stats.hitTestable(), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

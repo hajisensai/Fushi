@@ -18,6 +18,8 @@ import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/pages/implementations/texthooker_page.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show FushiShellTheme, ShellContentLayout;
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
 
@@ -112,105 +114,121 @@ void main() {
     await tester.pump(const Duration(seconds: 4));
   });
 
-  testWidgets(
-    'recent-played thumb registers focus target and Enter activates launch',
-    (WidgetTester tester) async {
-      await tester.binding.setSurfaceSize(const Size(1200, 900));
-      addTearDown(() => tester.binding.setSurfaceSize(null));
-      final FushiDatabase db = FushiDatabase.forTesting(
-        NativeDatabase.memory(),
-      );
-      addTearDown(db.close);
-      final PreferencesRepository prefsRepo = PreferencesRepository(db);
-      await prefsRepo.loadFromDb();
-      final Directory tmpDir = Directory.systemTemp.createTempSync(
-        'fushi_recent_focus_',
-      );
-      addTearDown(() {
-        try {
-          tmpDir.deleteSync(recursive: true);
-        } catch (_) {}
-      });
-      final AppModel appModel = AppModel(testPlatformServices())
-        ..wireLocalAudioForTesting(
-          prefsRepo: prefsRepo,
-          databaseDirectory: tmpDir,
-        )
-        ..wireDatabaseForTesting(db);
-      await appModel.setGalgames(<GalgameEntry>[
-        GalgameEntry(
-          id: 'g1',
-          name: 'Recent Game',
-          exePath: r'Z:\definitely\missing\game.exe',
-          workdir: r'Z:\definitely\missing',
-          addedAt: DateTime(2026),
-        ),
-      ]);
-      // 一段游玩会话 → lastPlayedMs>0 → Focus 卡渲染「最近玩过」缩略图条。
-      final DateTime now = DateTime.now();
-      await appModel.database.insertGalgameSession(
-        GalgameSessionsCompanion.insert(
-          gameId: 'g1',
-          startMs: now.millisecondsSinceEpoch - 600000,
-          endMs: now.millisecondsSinceEpoch,
-          durationSeconds: 600,
-          dateKey: FushiTimeFormat.dayKey(now),
-        ),
-      );
+  // 封面网格布局：主卡旁 / 下的「最近玩过」缩略图条注册 `game-recent-<id>`；
+  // 拼贴（色块，默认）布局按设计不画缩略图条（最近玩过全收进「继续游戏」
+  // 色块横滑），最近玩过的游戏落在主卡色块的 `game-dashboard-hero-<id>` 上。
+  // 两种布局都必须可聚焦、Enter 走启动路径。
+  for (final (ShellContentLayout layout, String focusId)
+      in <(ShellContentLayout, String)>[
+        (ShellContentLayout.grid, 'game-recent-g1'),
+        (ShellContentLayout.collage, 'game-dashboard-hero-g1'),
+      ]) {
+    testWidgets(
+      'recent-played game registers focus target and Enter activates launch '
+      '(${layout.name})',
+      (WidgetTester tester) async {
+        await tester.binding.setSurfaceSize(const Size(1200, 900));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        final FushiDatabase db = FushiDatabase.forTesting(
+          NativeDatabase.memory(),
+        );
+        addTearDown(db.close);
+        final PreferencesRepository prefsRepo = PreferencesRepository(db);
+        await prefsRepo.loadFromDb();
+        final Directory tmpDir = Directory.systemTemp.createTempSync(
+          'fushi_recent_focus_',
+        );
+        addTearDown(() {
+          try {
+            tmpDir.deleteSync(recursive: true);
+          } catch (_) {}
+        });
+        final AppModel appModel = AppModel(testPlatformServices())
+          ..wireLocalAudioForTesting(
+            prefsRepo: prefsRepo,
+            databaseDirectory: tmpDir,
+          )
+          ..wireDatabaseForTesting(db);
+        await appModel.setGalgames(<GalgameEntry>[
+          GalgameEntry(
+            id: 'g1',
+            name: 'Recent Game',
+            exePath: r'Z:\definitely\missing\game.exe',
+            workdir: r'Z:\definitely\missing',
+            addedAt: DateTime(2026),
+          ),
+        ]);
+        // 一段游玩会话 → lastPlayedMs>0 → Focus 卡渲染「最近玩过」缩略图条。
+        final DateTime now = DateTime.now();
+        await appModel.database.insertGalgameSession(
+          GalgameSessionsCompanion.insert(
+            gameId: 'g1',
+            startMs: now.millisecondsSinceEpoch - 600000,
+            endMs: now.millisecondsSinceEpoch,
+            durationSeconds: 600,
+            dateKey: FushiTimeFormat.dayKey(now),
+          ),
+        );
 
-      final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
-      FushiToast.navigatorKey = navKey;
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: <Override>[appProvider.overrideWith((ref) => appModel)],
-          child: TranslationProvider(
-            child: MaterialApp(
-              navigatorKey: navKey,
-              home: Scaffold(
-                body: FushiFocusRoot(
-                  child: GalgameHomePage(
-                    onShowLibrary: () {},
-                    onShowMonitor: () {},
-                    onShowDiagnostics: () {},
+        final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
+        FushiToast.navigatorKey = navKey;
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: <Override>[appProvider.overrideWith((ref) => appModel)],
+            child: TranslationProvider(
+              child: MaterialApp(
+                navigatorKey: navKey,
+                theme: ThemeData(
+                  extensions: <ThemeExtension<dynamic>>[
+                    FushiShellTheme(contentLayout: layout),
+                  ],
+                ),
+                home: Scaffold(
+                  body: FushiFocusRoot(
+                    child: GalgameHomePage(
+                      onShowLibrary: () {},
+                      onShowMonitor: () {},
+                      onShowDiagnostics: () {},
+                    ),
                   ),
                 ),
               ),
             ),
           ),
-        ),
-      );
-      await tester.pumpAndSettle();
+        );
+        await tester.pumpAndSettle();
 
-      final FushiFocusController controller = FushiFocusRoot.controllerOf(
-        tester.element(find.byType(GalgameHomePage)),
-      );
-      expect(
-        controller.requestById(const FushiFocusId('game-recent-g1')),
-        isTrue,
-        reason: '最近玩过缩略图必须注册 game-recent-<id> 焦点站点（TODO-1946 焦点缺口）',
-      );
-      await tester.pump();
+        final FushiFocusController controller = FushiFocusRoot.controllerOf(
+          tester.element(find.byType(GalgameHomePage)),
+        );
+        expect(
+          controller.requestById(FushiFocusId(focusId)),
+          isTrue,
+          reason: '最近玩过的游戏必须注册 $focusId 焦点站点（TODO-1946 焦点缺口）',
+        );
+        await tester.pump();
 
-      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
-      await tester.pump();
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await tester.pump();
 
-      // Enter 触发 onTap → _launchGame：Windows 宿主提示缺 exe，非 Windows 宿主
-      // 提示平台不支持——两者都证明 ActivateIntent 激活路径与点按一致。
-      final Finder launchFeedback = find.byWidgetPredicate(
-        (Widget w) =>
-            w is Text &&
-            (w.data == t.game_exe_missing ||
-                w.data == t.game_launch_unsupported),
-      );
-      expect(
-        launchFeedback,
-        findsOneWidget,
-        reason: 'ActivateIntent 必须触发最近玩过缩略图的启动路径',
-      );
+        // Enter 触发 onTap → _launchGame：Windows 宿主提示缺 exe，非 Windows 宿主
+        // 提示平台不支持——两者都证明 ActivateIntent 激活路径与点按一致。
+        final Finder launchFeedback = find.byWidgetPredicate(
+          (Widget w) =>
+              w is Text &&
+              (w.data == t.game_exe_missing ||
+                  w.data == t.game_launch_unsupported),
+        );
+        expect(
+          launchFeedback,
+          findsOneWidget,
+          reason: 'ActivateIntent 必须触发最近玩过游戏的启动路径',
+        );
 
-      await tester.pump(const Duration(seconds: 4));
-    },
-  );
+        await tester.pump(const Duration(seconds: 4));
+      },
+    );
+  }
 
   testWidgets(
     'texthooker thread selector and section tabs register focus ids',

@@ -19,6 +19,7 @@ import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/test_platform_services.dart';
+import '../helpers/shell_layout.dart';
 
 /// BUG-2327：书架搜索只裁 EPUB 列表，SRT 有声书卡与远端占位卡走的是未过滤源，
 /// 用户实报「书架搜索不生效」——挂了有声书的书本身就以 SRT 卡渲染，等于整批
@@ -135,6 +136,7 @@ void main() {
     ],
     child: TranslationProvider(
       child: MaterialApp(
+        theme: gridShellTheme(),
         builder: (BuildContext context, Widget? child) =>
             child ?? const SizedBox.shrink(),
         home: Scaffold(

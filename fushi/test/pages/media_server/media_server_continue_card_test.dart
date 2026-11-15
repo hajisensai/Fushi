@@ -16,6 +16,7 @@ import 'package:fushi/src/utils/components/cover_badge.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
 
 import 'fake_media_server_browser.dart';
+import '../../helpers/shell_layout.dart';
 
 /// 「继续观看」横卡：视频是横屏的，这一行用 16:9 缩略图（集截图 / 剧横图逐张
 /// 回落），并写明还剩多少、看到哪，而不是 2:3 海报竖卡 + 一条 3px 细线。
@@ -329,6 +330,7 @@ void main() {
   group('缩略图回落', () {
     Widget harness(Widget child) => TranslationProvider(
       child: MaterialApp(
+        theme: gridShellTheme(),
         home: Scaffold(
           body: Center(
             child: SizedBox(width: kMediaServerContinueCardWidth, child: child),
@@ -423,6 +425,7 @@ void main() {
     await tester.pumpWidget(
       TranslationProvider(
         child: MaterialApp(
+          theme: gridShellTheme(),
           home: Scaffold(
             body: MediaServerHomeView(
               session: MediaServerSession(

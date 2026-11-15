@@ -161,11 +161,13 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_destructive_confirm_dialog.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_page_masthead.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive_controls.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart';
@@ -1937,6 +1939,7 @@ class _HomePageState extends BasePageState<HomePage>
           FushiAppUiScale.of(context),
         ) ==
         WindowSizeClass.compact,
+    redesign: shellRedesignActive(context),
   );
 
   /// 单个 [HomeTab] 的导航项（图标 + 标签）。底栏/侧栏/macOS 根侧栏共用同一顶层
@@ -2071,6 +2074,9 @@ class _HomePageState extends BasePageState<HomePage>
     return Scaffold(
       resizeToAvoidBottomInset: false,
       body: SafeArea(
+        // 镂空脊：侧栏色块铺到窗口上沿（自绘标题行浮在其上），顶部安全区改由
+        // 侧栏内容与内容区各自让开。
+        top: !navRailBleedsToTop(context),
         // 这里曾是 macOS 交通灯保留带（BUG-869）：透明标题栏 + full-size content
         // view 下交通灯不计入 SafeArea，会压住导航 rail 顶部。macOS 现在与 Windows
         // 一样自绘顶栏、交通灯在 `main()` 里被隐藏，rail 本来就落在顶栏之下，
@@ -2122,7 +2128,20 @@ class _HomePageState extends BasePageState<HomePage>
                         },
                       ),
                     ),
-                    Expanded(child: _homeContentPane()),
+                    // 镂空脊：内容区起始边读成一块大圆角「舞台」。
+                    Expanded(
+                      child: ShellStageTopBleed(
+                        top: MediaQuery.paddingOf(context).top,
+                        child: NavRailStage(
+                          child: SafeArea(
+                            left: false,
+                            right: false,
+                            bottom: false,
+                            child: _homeContentPane(),
+                          ),
+                        ),
+                      ),
+                    ),
                   ],
                 ),
         ),
@@ -2327,10 +2346,13 @@ class _HomePageState extends BasePageState<HomePage>
       resizeToAvoidBottomInset: false,
       extendBody: true,
       body: _GlassContentSurface(
-        child: SafeArea(
-          bottom: false,
-          child: _withAppleScrollChrome(
-            FocusTraversalGroup(child: _bodyWithMiniBar()),
+        child: ShellStageTopBleed(
+          top: MediaQuery.paddingOf(context).top,
+          child: SafeArea(
+            bottom: false,
+            child: _withAppleScrollChrome(
+              FocusTraversalGroup(child: _bodyWithMiniBar()),
+            ),
           ),
         ),
       ),
@@ -4224,15 +4246,19 @@ class _HomePageState extends BasePageState<HomePage>
     return FushiShellTitleScope(
       title: _shellTitleFor(tab),
       actionsSlot: _shellActions,
-      child: FushiShellInlineTitle(
-        enabled: _shellTitleInline(tab),
-        child: PrimaryScrollController(
-          controller: _tabScrollControllers.putIfAbsent(
-            tab,
-            ScrollController.new,
+      // 页头大字旁的徽标与侧栏当前项用同一枚模块多边形。
+      child: FushiMastheadBadgeScope(
+        shape: homeNavRailShapeFor(tab),
+        child: FushiShellInlineTitle(
+          enabled: _shellTitleInline(tab),
+          child: PrimaryScrollController(
+            controller: _tabScrollControllers.putIfAbsent(
+              tab,
+              ScrollController.new,
+            ),
+            automaticallyInheritForPlatforms: TargetPlatform.values.toSet(),
+            child: content,
           ),
-          automaticallyInheritForPlatforms: TargetPlatform.values.toSet(),
-          child: content,
         ),
       ),
     );
@@ -4562,10 +4588,14 @@ String? homeShellTitleFor(
   HomeTab tab, {
   required bool apple,
   required bool compact,
+  bool redesign = false,
 }) {
   if (compact && !apple && !_HomePageState._tabHasFloatingChrome(tab)) {
     return null;
   }
+  // 重设计外壳（[redesign]，[shellRedesignActive]）下查词页自己画页头大字
+  // （页名 + 徽标 + 动作），外壳不再叠一行同名标题。
+  if (redesign && tab == HomeTab.dictionaries) return null;
   return switch (tab) {
     HomeTab.books ||
     HomeTab.manga ||

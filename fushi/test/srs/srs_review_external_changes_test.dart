@@ -27,6 +27,7 @@ import 'package:fushi_srs/fushi_srs.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'srs_test_support.dart';
+import 'support/srs_write_settle.dart';
 
 class _SilentAudio implements SrsCardAudioOutput {
   @override
@@ -283,8 +284,12 @@ void main() {
     expect(faces.last.showingAnswer, isTrue);
 
     // 本页自己的评分：只发 srsLocalWrite，换卡走 _loadNext，不额外重读。
-    await tester.tap(find.byKey(const ValueKey<String>('srs-rate-3')));
-    await _settle(tester);
+    await srsUntilStoreWritten(
+      tester,
+      store,
+      () => tester.tap(find.byKey(const ValueKey<String>('srs-rate-3'))),
+      until: () => !faces.last.showingAnswer,
+    );
     expect(faces.last.cardId, isNot(current));
     expect(faces.last.showingAnswer, isFalse);
     expect(reloads(), 0);
@@ -312,8 +317,12 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey<String>('srs-show-answer')));
     await _settle(tester);
-    await tester.tap(find.byKey(const ValueKey<String>('srs-rate-3')));
-    await _settle(tester);
+    await srsUntilStoreWritten(
+      tester,
+      store,
+      () => tester.tap(find.byKey(const ValueKey<String>('srs-rate-3'))),
+      until: () => !faces.last.showingAnswer,
+    );
 
     expect(faces.last.cardId, next, reason: '前提：评分后换到的正是预取的那张');
     expect(faces.last.bodyHtml, contains('飲み物'));

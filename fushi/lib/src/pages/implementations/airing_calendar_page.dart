@@ -178,6 +178,7 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
     // 统一页面壳：M3E 浮动页头（滚动收起）/ Apple 大标题；周切换条挂在页头下沿，
     // 随页头一起收起、回滚出现。
     return FushiPageScaffold(
+      masthead: true,
       title: t.download_airing_calendar_title,
       actions: <Widget>[
         FushiIconButtonControl(

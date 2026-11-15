@@ -28,6 +28,14 @@ class SyncBackendError implements Exception {
   String toString() => 'SyncBackendError: $message';
 }
 
+/// 对端明确回了 HTTP 404（资源不存在）。是 [SyncBackendError] 的子类，既有按
+/// 基类捕获 / 重试的调用方行为不变；需要区分「不存在」的调用方按类型判断，
+/// 不要匹配 message 文本。
+class SyncNotFoundError extends SyncBackendError {
+  SyncNotFoundError(super.message, {super.isRetryable, this.statusCode = 404});
+  final int statusCode;
+}
+
 /// BUG-1693：互联「所有候选地址都探不到已配对对端」的类型化错误。
 ///
 /// 它既不是「网络故障」（本机网络多半好好的）也不该以裸英文上屏——最常见成因

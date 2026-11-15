@@ -30,6 +30,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../helpers/test_platform_services.dart';
 import 'srs_test_support.dart';
+import 'support/srs_write_settle.dart';
 
 /// Yomitan 结构化释义：列表 + 斜体词典名 + 内联样式的词条 + 第二条带 <br> 的释义。
 const String _kGlossary =
@@ -518,8 +519,10 @@ void main() {
       await pick('srs-visual-spacing-b1', t.srs_visual_spacing_loose);
       await pick('srs-visual-image-size-b1', t.srs_visual_image_full);
 
-      await tester.tap(_key('srs_template_save').first);
-      await _settle(tester);
+      await srsUntilWritten(
+        tester,
+        () => tester.tap(_key('srs_template_save').first),
+      );
       final SrsTemplateDef saved = (await _db(
         tester,
         () => store.noteType(nt),

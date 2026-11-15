@@ -878,7 +878,13 @@ class _FushiIconButtonState extends State<FushiIconButton>
         // reachable by gamepad/keyboard; an explicit focusId overrides it.
         id: widget.focusId ?? _fallbackFocusId,
         enabled: enabled,
-        child: button,
+        // The target is the button's ONE focus stop (same contract as the
+        // settings rows' _SettingsRowFocusTarget). Without ExcludeFocus the inner
+        // IconButton / InkWell keeps its own focus node, so every icon button
+        // cost two Tab presses — the second stop ring-less and outside the
+        // controller's registry. Pointer taps are unaffected; Enter / Space reach
+        // the ActivateIntent above via the target's node.
+        child: ExcludeFocus(child: button),
       ),
     );
   }

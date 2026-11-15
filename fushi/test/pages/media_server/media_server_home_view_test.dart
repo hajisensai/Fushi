@@ -13,6 +13,7 @@ import 'package:fushi/src/utils/components/cover_badge.dart';
 import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
 
 import 'fake_media_server_browser.dart';
+import '../../helpers/shell_layout.dart';
 
 /// 服务器首页：库行渲染 + 每库一行「该库最新」（海报，不是库内物理文件夹）；
 /// 装饰行（继续观看 / 最新）失败不影响页面；`listLibraries` 失败显示错误与重试。
@@ -38,10 +39,12 @@ void main() {
   Widget harness({bool apple = false}) {
     return TranslationProvider(
       child: MaterialApp(
-        theme: ThemeData(
-          extensions: <ThemeExtension<dynamic>>[
-            FushiGlassTheme(FushiGlassMaterial.off, glassDesign: apple),
-          ],
+        theme: gridShellTheme(
+          base: ThemeData(
+            extensions: <ThemeExtension<dynamic>>[
+              FushiGlassTheme(FushiGlassMaterial.off, glassDesign: apple),
+            ],
+          ),
         ),
         home: Scaffold(
           body: MediaServerHomeView(
@@ -316,6 +319,7 @@ void main() {
     await tester.pumpWidget(
       TranslationProvider(
         child: MaterialApp(
+          theme: gridShellTheme(),
           home: Scaffold(
             body: MediaServerHomeView(
               session: MediaServerSession(
@@ -367,6 +371,7 @@ void main() {
     await tester.pumpWidget(
       TranslationProvider(
         child: MaterialApp(
+          theme: gridShellTheme(),
           home: Scaffold(
             body: MediaServerHomeView(
               session: MediaServerSession(

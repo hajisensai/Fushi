@@ -394,12 +394,16 @@ std::vector<TermResult> DictionaryQuery::query(const std::string& expression) co
   return results;
 }
 
-std::vector<TermResult> DictionaryQuery::query_raw(const std::string& expression) const {
+std::vector<TermResult> DictionaryQuery::query_raw(const std::string& expression,
+                                                   const ExcludedDictNames* excluded) const {
   std::map<std::pair<std::string_view, std::string_view>, TermResult> term_map;
   // term_map 的键是指向记录的 string_view：窗口映射（32 位）下要撑住这些窗口到函数
   // 返回；64 位整份映射时 owner 恒空、不进这里。
   std::vector<std::shared_ptr<const void>> pins;
   for (const auto& [name, styles, data] : term_dicts_) {
+    if (excluded && excluded->contains(name)) {
+      continue;
+    }
     uint64_t offset_addr = data->table(expression);
     if (offset_addr == 0) {
       continue;
@@ -569,8 +573,11 @@ void DictionaryQuery::query_freq(std::vector<TermResult>& terms) const {
   }
 }
 
-void DictionaryQuery::enrich_freq(TermResult& term) const {
+void DictionaryQuery::enrich_freq(TermResult& term, const ExcludedDictNames* excluded) const {
   for (const auto& [name, styles, data] : freq_dicts_) {
+    if (excluded && excluded->contains(name)) {
+      continue;
+    }
     uint64_t offset_addr = data->table(term.expression);
     if (offset_addr == 0) {
       continue;
@@ -606,8 +613,11 @@ void DictionaryQuery::query_pitch(std::vector<TermResult>& terms) const {
   }
 }
 
-void DictionaryQuery::enrich_pitch(TermResult& term) const {
+void DictionaryQuery::enrich_pitch(TermResult& term, const ExcludedDictNames* excluded) const {
   for (const auto& [name, styles, data] : pitch_dicts_) {
+    if (excluded && excluded->contains(name)) {
+      continue;
+    }
     uint64_t offset_addr = data->table(term.expression);
     if (offset_addr == 0) {
       continue;

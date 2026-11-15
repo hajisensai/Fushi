@@ -213,12 +213,17 @@ extension _ReaderHistoryCardWidgets on _ReaderFushiHistoryPageState {
   /// 远端 ☁、下载状态、标签、进度条一律进封面下的副行（[meta] + [tags]）。封面上
   /// 只剩多选勾选圈 / 选中罩（共享 [ShelfCoverFrame] 画）和导入 / 下载中的居中
   /// 加载遮罩（[loadingOverlay]，BUG-990 / 远端下载进行中）。
+  ///
+  /// [byline]（作者）与 [continuesOnTap]（点卡 = 接着读，色块拼贴首块据此画
+  /// 「继续」按钮外观）只在封面色块卡上用；原网格卡的文字块不变。
   Widget _bookCardLayout({
     required String title,
     required Widget cover,
     required _ShelfMetaSpec meta,
     List<BookTagRow> tags = const <BookTagRow>[],
     Widget? loadingOverlay,
+    String? byline,
+    bool continuesOnTap = false,
   }) {
     final Widget metaBlock = ShelfCardMeta(
       title: title,
@@ -230,6 +235,45 @@ extension _ReaderHistoryCardWidgets on _ReaderFushiHistoryPageState {
       trailing: tags.isEmpty ? null : ShelfMetaTags(tags: _shelfMetaTags(tags)),
     );
     final String? tooltip = meta.tooltip;
+    // 库页布局为拼贴 / 规整色块时，格子包了 [FushiCoverBlockScope]：同一份信息
+    // 换成封面色块卡（[_shelfCoverBlock]），卡壳与交互不变。scope 在格子里、
+    // 不在页面 context 上，所以经 Builder 在卡内读。
+    return Builder(
+      builder: (BuildContext cellContext) {
+        final FushiCoverBlockSize? block = FushiCoverBlockScope.maybeOf(
+          cellContext,
+        );
+        if (block != null) {
+          return _shelfCoverBlock(
+            size: block,
+            title: title,
+            covers: <Widget>[cover],
+            meta: meta,
+            tags: tags,
+            coverOverlay: loadingOverlay,
+            byline: byline,
+            continuesOnTap: continuesOnTap,
+          );
+        }
+        return _bookCardGridLayout(
+          cover: cover,
+          metaBlock: metaBlock,
+          meta: meta,
+          tooltip: tooltip,
+          loadingOverlay: loadingOverlay,
+        );
+      },
+    );
+  }
+
+  /// 原封面网格的书卡：封面 + 封面下 [ShelfCardMeta]。
+  Widget _bookCardGridLayout({
+    required Widget cover,
+    required Widget metaBlock,
+    required _ShelfMetaSpec meta,
+    required String? tooltip,
+    required Widget? loadingOverlay,
+  }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [

@@ -31,6 +31,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../helpers/test_platform_services.dart';
 import 'srs_test_support.dart';
+import 'support/srs_write_settle.dart';
 
 /// Yomitan 结构化释义（class / style / data-dictionary 都要原样留下）。
 const String _kGlossary =
@@ -185,10 +186,9 @@ Future<void> _pumpEditor(
   await _settle(tester);
 }
 
-Future<void> _save(WidgetTester tester) async {
-  await tester.tap(_key('srs_note_save').first);
-  await _settle(tester);
-}
+/// 点保存并等写入落库（之后从库里读断言）。
+Future<void> _save(WidgetTester tester) =>
+    srsUntilWritten(tester, () => tester.tap(_key('srs_note_save').first));
 
 Future<String> _field(
   WidgetTester tester,

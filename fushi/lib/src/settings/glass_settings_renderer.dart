@@ -83,6 +83,7 @@ class GlassSettingsRenderer implements SettingsRenderer {
     // 分类列表的内边距按外层 context 算、不含页头让位：整体让开页头（Apple
     // 设计系统本就上下排，这里与 M3E 渲染器同一写法）。
     return FushiPageScaffold(
+      masthead: true,
       title: settingsContext.context.t.settings,
       body: SafeArea(bottom: false, child: list),
     );

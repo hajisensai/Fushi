@@ -24,6 +24,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../helpers/test_platform_services.dart';
 import 'srs_test_support.dart';
+import 'support/srs_write_settle.dart';
 
 class _SilentAudio implements SrsCardAudioOutput {
   @override
@@ -121,8 +122,12 @@ void main() {
     final String rated = faces.last.cardId;
     await tester.tap(find.byKey(const ValueKey<String>('srs-show-answer')));
     await _settle(tester);
-    await tester.tap(find.byKey(const ValueKey<String>('srs-rate-3')));
-    await _settle(tester, rounds: 24);
+    await srsUntilStoreWritten(
+      tester,
+      store,
+      () => tester.tap(find.byKey(const ValueKey<String>('srs-rate-3'))),
+      until: () => faces.last.cardId != rated,
+    );
     expect(faces.last.cardId, isNot(rated), reason: '评分后换到下一张');
     expect(
       (await tester.runAsync(() => store.history(rated)))!.lastEffective,
@@ -136,8 +141,12 @@ void main() {
     await _pumpReview(tester, store: store, faces: faces);
 
     expect(_undoButton, findsOneWidget, reason: '重新进入后仍可撤销上一次评分');
-    await tester.tap(_undoButton);
-    await _settle(tester, rounds: 24);
+    await srsUntilStoreWritten(
+      tester,
+      store,
+      () => tester.tap(_undoButton),
+      until: () => faces.last.cardId == rated,
+    );
     final SrsCardHistory after = (await tester.runAsync(
       () => store.history(rated),
     ))!;
