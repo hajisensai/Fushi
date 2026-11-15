@@ -30,6 +30,7 @@ Future<void> srsRunCustomStudy(
     deckName: deck.fullName,
     todayExtension:
         deck.deck.limitExtension?.on(today) ?? (newCards: 0, reviews: 0),
+    reviewUnit: deck.deck.limitUnit,
   );
   if (choice == null || !context.mounted) return;
   if (choice.isExtension) {
