@@ -201,6 +201,11 @@ void main() {
       ).readAsStringSync(),
     );
     expect(schema, contains("id: 'listening.audiobook_jump_threshold'"));
-    expect(schema, contains('setAudiobookJumpThresholdSec(value)'));
+    // 听书项在独立的「听书」分类里缩进更深，dart format 会把实参折到下一行；
+    // 守的是「选项写回同一个偏好」，不在乎换行。
+    expect(
+      schema,
+      matches(RegExp(r'setAudiobookJumpThresholdSec\(\s*value,?\s*\)')),
+    );
   });
 }

@@ -46,7 +46,7 @@ String get _help =>
 
 List<CtlBodyPage> buildCtlContentLanguageBodyPages() => <CtlBodyPage>[
   CtlBodyPage(
-    breadcrumb: t.settings_destination_appearance,
+    breadcrumb: t.settings_section_general,
     items: <SettingsItem>[
       SettingsCustomItem(
         id: 'appearance.content_language.cli.value',
