@@ -5,6 +5,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/home_dashboard_panel.dart';
+import 'package:fushi/src/models/home_widget_layout.dart';
 import 'package:fushi/src/pages/implementations/home_tracking_panel.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_continue_hero.dart';
@@ -147,7 +148,10 @@ void main() {
     });
   });
 
-  group('resolveHomeTrackingPanelVisible', () {
+  // 2026-11-15 小组件网格：放上首页的追踪组件常驻（不再按自动档整块消失），旧
+  // 自动档判据 `needsAttention` 只在迁移那一刻决定首个布局放不放；「不可用」
+  // （构建里没有追踪 / 关了服务模块）由 homeWidgetAvailable 管。
+  group('tracking widget: migration and availability', () {
     final HomeTrackingSummary quiet = HomeTrackingSummary.of(
       snapshot(sites: <MediaTrackingProviderStatus>[site('anilist')]),
     );
@@ -160,39 +164,68 @@ void main() {
       ),
     );
 
-    bool visible(
+    /// Whether the first layout migrated from the old panel mode places the
+    /// tracking widget, given the summary at migration time.
+    bool placed(
+      HomeGridKind grid,
       HomeDashboardPanelMode mode,
-      HomeTrackingSummary summary, {
-      bool available = true,
-    }) => resolveHomeTrackingPanelVisible(
-      available: available,
-      mode: mode,
-      summary: summary,
-    );
+      HomeTrackingSummary summary,
+    ) => migrateHomeWidgetLayout(
+      grid: grid,
+      modes: <HomeDashboardPanel, HomeDashboardPanelMode>{
+        HomeDashboardPanel.tracking: mode,
+      },
+      auto: HomeWidgetAutoFacts(tracking: summary.needsAttention),
+    ).any((HomeWidgetItem e) => e.kind == HomeWidgetKind.tracking);
 
     test('automatic: only while something needs the user', () {
-      expect(visible(HomeDashboardPanelMode.auto, quiet), isFalse);
-      expect(visible(HomeDashboardPanelMode.auto, todo), isTrue);
-      expect(
-        visible(HomeDashboardPanelMode.auto, HomeTrackingSummary.none),
-        isFalse,
-      );
+      expect(quiet.needsAttention, isFalse);
+      expect(todo.needsAttention, isTrue);
+      expect(HomeTrackingSummary.none.needsAttention, isFalse);
+      for (final HomeGridKind grid in HomeGridKind.values) {
+        expect(placed(grid, HomeDashboardPanelMode.auto, quiet), isFalse);
+        expect(placed(grid, HomeDashboardPanelMode.auto, todo), isTrue);
+        expect(
+          placed(grid, HomeDashboardPanelMode.auto, HomeTrackingSummary.none),
+          isFalse,
+        );
+      }
     });
 
-    test('pinned on shows every state, pinned off hides every state', () {
-      expect(visible(HomeDashboardPanelMode.shown, quiet), isTrue);
-      expect(
-        visible(HomeDashboardPanelMode.shown, HomeTrackingSummary.none),
-        isTrue,
-      );
-      expect(visible(HomeDashboardPanelMode.hidden, todo), isFalse);
+    test('pinned on places it in every state, pinned off in none', () {
+      for (final HomeGridKind grid in HomeGridKind.values) {
+        expect(placed(grid, HomeDashboardPanelMode.shown, quiet), isTrue);
+        expect(
+          placed(grid, HomeDashboardPanelMode.shown, HomeTrackingSummary.none),
+          isTrue,
+        );
+        expect(placed(grid, HomeDashboardPanelMode.hidden, todo), isFalse);
+      }
+    });
+
+    test('placed at 2×1 in both default templates', () {
+      for (final HomeGridKind grid in HomeGridKind.values) {
+        final HomeWidgetItem item = migrateHomeWidgetLayout(
+          grid: grid,
+          modes: const <HomeDashboardPanel, HomeDashboardPanelMode>{},
+          auto: const HomeWidgetAutoFacts(tracking: true),
+        ).singleWhere((HomeWidgetItem e) => e.kind == HomeWidgetKind.tracking);
+        expect(item.size, const HomeWidgetSize(2, 1));
+      }
     });
 
     test('never without tracking in the build or the Services module', () {
-      expect(
-        visible(HomeDashboardPanelMode.shown, todo, available: false),
-        isFalse,
+      bool available({required bool tracking}) => homeWidgetAvailable(
+        HomeWidgetKind.tracking,
+        reading: true,
+        watching: true,
+        playing: true,
+        srs: true,
+        tracking: tracking,
+        ai: true,
       );
+      expect(available(tracking: false), isFalse);
+      expect(available(tracking: true), isTrue);
     });
 
     test('the panel id is frozen', () {

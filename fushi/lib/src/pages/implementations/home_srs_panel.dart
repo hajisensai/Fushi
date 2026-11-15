@@ -25,7 +25,7 @@ import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart'
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive_controls.dart'
-    show FushiButtonSize;
+    show FushiButtonMetrics, FushiButtonSize;
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -260,11 +260,24 @@ class _HomeSrsBody extends StatelessWidget {
               ),
             );
       if (!wide) {
-        content = Column(
+        // 「格子不矮时再挂开始复习」按真实可用高度判：宽网格最矮档（行高夹到 104）
+        // 的 1×1 放不下大字 + 按钮，只放大字（大字至少留一个按钮高）。
+        final double buttonHeight = FushiButtonMetrics.of(
+          FushiButtonSize.xs,
+        ).height;
+        content = LayoutBuilder(
           key: const ValueKey<String>('counts'),
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: <Widget>[figure, ?start],
+          builder: (BuildContext context, BoxConstraints c) {
+            final bool fits = c.maxHeight >= buttonHeight * 2;
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: <Widget>[
+                Flexible(child: figure),
+                if (fits) ?start,
+              ],
+            );
+          },
         );
       } else {
         content = Row(

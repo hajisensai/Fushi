@@ -148,12 +148,24 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
           Widget hero(double height) {
             final double cover = math.max(60, height - gap * 3);
             return HomeWidgetOverflowClip(
-              child: FushiContinueSpotlight(
-                main: _continueMainEntry(tokens, appModel, entries.first),
-                heroCoverHeight: cover,
-                soloCoverHeight: cover,
-                // 整块由网格错峰进场。
-                staggerEntrance: false,
+              child: FushiContinueOrientedEntry(
+                entry: _continueMainEntry(tokens, appModel, entries.first),
+                builder: (FushiContinueEntry main) {
+                  final Widget spotlight = FushiContinueSpotlight(
+                    main: main,
+                    heroCoverHeight: cover,
+                    soloCoverHeight: cover,
+                    // 整块由网格错峰进场。
+                    staggerEntrance: false,
+                  );
+                  if (!main.still) return spotlight;
+                  // 剧照主卡（16:9）按格子高定宽：共享组件按宽定高（窄档封顶
+                  // 300），在定高的格子里会把底部的片名 / 进度叠层裁掉。
+                  return Align(
+                    alignment: AlignmentDirectional.topStart,
+                    child: SizedBox(width: height * 16 / 9, child: spotlight),
+                  );
+                },
               ),
             );
           }
@@ -163,8 +175,12 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
             area: c.biggest,
             sideways: sideways,
             hero: hero,
-            side: (double height) =>
-                _continueCoverRow(tokens, appModel, entries, height),
+            // 主卡旁（4×2）：库页同款封面卡横滑，与主卡等高。主卡下（窄网格
+            // 2×3）：手机上只剩约 80 高，封面卡（封面 + 两行标题 + 进度副行）
+            // 放不下，改成条目小行横滑（小封面 + 标题 + 进度文案完整一行）。
+            side: (double height) => sideways
+                ? _continueCoverRow(tokens, appModel, entries, height)
+                : _continueMiniRow(tokens, appModel, entries, height),
           );
         },
       ),
@@ -242,18 +258,39 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
   ) {
     const FushiContinueSideMeta meta = FushiContinueSideMeta.full;
     final double metaHeight = meta.heightFor(context);
-    final double coverHeight = math.max(48, height - metaHeight);
+    // 与共享封面行（FushiContinueSpotlight._sideRow）同一套悬停余量：卡 × 放大倍数
+    // + 上下材质上抬 = 行高，悬停放大 / 上抬不被横滚视口截平。
+    const double scale = kFushiHoverLiftScale;
+    const double rise = kShelfMaterialHoverRise * scale;
+    final double coverHeight = math.max(
+      48,
+      (height - 2 * rise) / scale - metaHeight,
+    );
+    final List<FushiContinueEntry> side = <FushiContinueEntry>[
+      for (int i = 1; i < entries.length; i++)
+        _continueSideEntry(tokens, appModel, entries[i], i),
+    ];
+    final double widest =
+        coverHeight *
+        side.fold<double>(
+          0,
+          (double m, FushiContinueEntry e) => math.max(m, e.layoutAspectRatio),
+        );
     return SectionSwipeCascade(
       child: HorizontalDragScrollable(
         child: ListView.separated(
           key: const ValueKey<String>('home-continue-row'),
           scrollDirection: Axis.horizontal,
           physics: desktopAwareScrollPhysics(),
-          itemCount: entries.length - 1,
+          padding: EdgeInsets.symmetric(
+            horizontal: widest * (scale - 1) / 2,
+            vertical: math.max(0, (height - coverHeight - metaHeight) / 2),
+          ),
+          itemCount: side.length,
           separatorBuilder: (BuildContext _, int _) =>
               SizedBox(width: tokens.spacing.gap),
           itemBuilder: (BuildContext _, int i) => FushiContinueOrientedEntry(
-            entry: _continueSideEntry(tokens, appModel, entries[i + 1], i + 1),
+            entry: side[i],
             builder: (FushiContinueEntry e) => FushiContinueSideTile(
               entry: e,
               coverHeight: coverHeight,
@@ -265,6 +302,45 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
       ),
     );
   }
+
+  /// 主卡下面的其余条目（窄网格 2×3）：条目小行横滑，每块约八成格宽（露出下一块
+  /// 提示能滑），行高 = 那段的高度。
+  Widget _continueMiniRow(
+    FushiDesignTokens tokens,
+    AppModel appModel,
+    List<_ContinueEntry> entries,
+    double height,
+  ) => LayoutBuilder(
+    builder: (BuildContext context, BoxConstraints c) {
+      final double width = math.min(260, c.maxWidth * 0.8);
+      return SectionSwipeCascade(
+        child: HorizontalDragScrollable(
+          child: ListView.separated(
+            key: const ValueKey<String>('home-continue-row'),
+            scrollDirection: Axis.horizontal,
+            physics: desktopAwareScrollPhysics(),
+            itemCount: entries.length - 1,
+            separatorBuilder: (BuildContext _, int _) =>
+                SizedBox(width: tokens.spacing.gap),
+            itemBuilder: (BuildContext _, int i) {
+              final _ContinueEntry e = entries[i + 1];
+              return SizedBox(
+                width: width,
+                child: _widgetMiniTile(
+                  tokens: tokens,
+                  appModel: appModel,
+                  key: ValueKey<String>('home-continue-item/${i + 1}'),
+                  entry: e,
+                  height: height,
+                  subtitle: e.badgeLabel ?? _continueMetaLine(e),
+                ),
+              );
+            },
+          ),
+        ),
+      );
+    },
+  );
 
   /// 空库引导：一句说明 + 去书架 / 去媒体库（首页不会是一片空白）。
   Widget _continueEmptyState(AppModel appModel) {

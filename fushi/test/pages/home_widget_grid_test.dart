@@ -132,7 +132,7 @@ void main() {
     await _pump(tester, editing: false);
     const double gap = kFushiCoverBlockSpacing;
     final double row = homeWidgetRowExtent(HomeGridKind.compact, _kWidth, gap);
-    final double col = (_kWidth - gap) / 2;
+    const double col = (_kWidth - gap) / 2;
     final Rect hero = tester.getRect(_tile(HomeWidgetKind.continueHero));
     final Rect today = tester.getRect(_tile(HomeWidgetKind.today));
     final Rect srs = tester.getRect(_tile(HomeWidgetKind.srsReview));
