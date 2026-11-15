@@ -198,3 +198,13 @@ Chromium's last periodic write; they are re-obtained on the next visit.
 Incognito (named-profile) cookie stores are not flushed: they are wiped on
 session end anyway.
 Guard: `fushi/test/build/inappwebview_android_page_finished_no_cookie_flush_guard_test.dart`.
+
+## AGP 9: no `proguard-android.txt` default file (Flutter 3.50)
+
+The Flutter 3.50 Gradle plugin requires AGP >= 9.1.1, and AGP 9 fails the
+module at configuration time on `getDefaultProguardFile('proguard-android.txt')`
+(it contains `-dontoptimize`). Both build types now use
+`proguard-android-optimize.txt` plus a module-only `proguard-dontoptimize.pro`
+holding `-dontoptimize`, so the module's own minify output is unchanged. The
+extra file is only in `proguardFiles`, never in `consumerProguardFiles`, so it
+does not reach the app's R8 configuration.

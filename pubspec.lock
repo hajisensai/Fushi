@@ -1913,13 +1913,11 @@ packages:
     source: hosted
     version: "4.1.0"
   receive_intent:
-    dependency: transitive
+    dependency: "direct overridden"
     description:
-      path: "."
-      ref: "3854d07f8f4e9d5a78589639b18b5d454ddf54a0"
-      resolved-ref: "3854d07f8f4e9d5a78589639b18b5d454ddf54a0"
-      url: "https://github.com/arianneorpilla/receive_intent"
-    source: git
+      path: "third_party/receive_intent"
+      relative: true
+    source: path
     version: "0.2.3"
   record:
     dependency: transitive
