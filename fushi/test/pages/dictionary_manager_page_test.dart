@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/dictionary_repository.dart'
+    show RemoteDictionary;
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/dictionary_dialog_page.dart';
 import 'package:fushi/src/pages/implementations/dictionary_manager_panels.dart';
@@ -43,6 +45,10 @@ class _FakeAppModel extends AppModel {
   @override
   List<Dictionary> get pitchDictionaries => _ofType(DictionaryType.pitch);
 
+  // 没配服务器：服务器托管词典为空（真 AppModel 的 dictRepo 在这里没初始化）。
+  @override
+  List<RemoteDictionary> get remoteDictionaries => const <RemoteDictionary>[];
+
   @override
   Map<String, DictionaryFormat> get dictionaryFormats =>
       <String, DictionaryFormat>{'yomichan': YomichanFormat.instance};
@@ -71,6 +77,10 @@ class _FakeAppModel extends AppModel {
       if (hidden) 'ja',
     ];
   }
+
+  // 没配服务器：没有同名目录行可镜像（真 AppModel 走 dictRepo，这里未初始化）。
+  @override
+  Future<void> setCatalogRowsHiddenNamed(String name, bool hidden) async {}
 
   @override
   Future<void> setDictionaryCollapseState(
@@ -102,7 +112,10 @@ class _FakeAppModel extends AppModel {
   }
 
   @override
-  Future<void> updateDictionaryOrder(List<Dictionary> newDictionaries) async {
+  Future<void> updateDictionaryOrder(
+    List<Dictionary> newDictionaries, {
+    String? moved,
+  }) async {
     orderWrites++;
     for (final Dictionary updated in newDictionaries) {
       store.firstWhere((Dictionary d) => d.name == updated.name).order =

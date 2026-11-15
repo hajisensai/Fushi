@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:fushi_engine/media/video/bluray/bluray_remote_title.dart';
@@ -507,21 +508,123 @@ SyncKeyDiff computeAudiobookSyncDiff({
 
 /// host 实时词典的清单条目（不含 contentHash：Phase 1 按名 union，与现有暂存
 /// 路径同语义，避免引入跨设备哈希一致性的新风险；overwrite-by-hash 列为 follow-up）。
+///
+/// [name] 是真名（`dictionary_metadata` 主键，冻结标识）。其余目录字段给客户端的
+/// 「服务端词典」目录用，全部可空：老 host 不发、值缺省时 [toJson] 不写该键，
+/// [fromJson] 对缺键 / 非字符串 / 空串一律当 null（旧客户端只读 name / type，不受影响）。
 class RemoteDictionaryInfo {
-  const RemoteDictionaryInfo({required this.name, required this.type});
+  const RemoteDictionaryInfo({
+    required this.name,
+    required this.type,
+    this.formatKey,
+    this.revision,
+    this.displayName,
+    this.sourceLanguage,
+    this.defaultEnabled,
+  });
   final String name;
   final String type;
+
+  /// 导入格式（`dictionary_metadata.formatKey`，如 `yomichan`）。
+  final String? formatKey;
+
+  /// 词典包版本（Yomitan `index.json` 的 `revision`，落在 metadataJson 里）。
+  final String? revision;
+
+  /// host 上用户起的显示名（`dictionary_metadata.displayName`）；没改过为 null。
+  final String? displayName;
+
+  /// 词头语言：host 上的 `languageOverride` 优先，其次 index.json 的 `sourceLanguage`
+  /// （与 `Dictionary.effectiveSourceLanguage` 同判据）；都没有为 null。
+  final String? sourceLanguage;
+
+  /// host 自己的默认开关（[isDictionaryHiddenByDefault] 取反）：客户端第一次见到这本
+  /// 词典时据此初始化配置的 `hidden`。老 host 不发 = null（客户端按启用处理）。
+  final bool? defaultEnabled;
 
   Map<String, Object?> toJson() => <String, Object?>{
     'name': name,
     'type': type,
+    if (formatKey != null) 'formatKey': formatKey,
+    if (revision != null) 'revision': revision,
+    if (displayName != null) 'displayName': displayName,
+    if (sourceLanguage != null) 'sourceLanguage': sourceLanguage,
+    if (defaultEnabled != null) 'defaultEnabled': defaultEnabled,
   };
 
   static RemoteDictionaryInfo fromJson(Map<String, Object?> json) =>
       RemoteDictionaryInfo(
         name: json['name']?.toString() ?? '',
         type: json['type']?.toString() ?? '',
+        formatKey: _optionalString(json['formatKey']),
+        revision: _optionalString(json['revision']),
+        displayName: _optionalString(json['displayName']),
+        sourceLanguage: _optionalString(json['sourceLanguage']),
+        defaultEnabled: json['defaultEnabled'] is bool
+            ? json['defaultEnabled']! as bool
+            : null,
       );
+
+  /// 由一条 `dictionary_metadata` 行生成清单条目（app 当 host 与无头服务端同一份）：
+  /// `revision` / `sourceLanguage` 取 metadataJson（导入时由 index.json 落进去），
+  /// 词头语言 `languageOverride` 优先（`Dictionary.effectiveSourceLanguage` 同判据），
+  /// 显示名取 `displayName` 列；空串 / 纯空白当没有。metadataJson 畸形时这两项为 null。
+  /// `defaultEnabled` 按 [isDictionaryHiddenByDefault] 取反（host 一定发）。
+  factory RemoteDictionaryInfo.fromMetadataRow(DictionaryMetaRow row) {
+    Map<Object?, Object?> metadata = const <Object?, Object?>{};
+    try {
+      final Object? decoded = jsonDecode(row.metadataJson);
+      if (decoded is Map) metadata = decoded;
+    } on FormatException {
+      // 畸形 metadataJson：目录字段缺省，name / type 照发。
+    }
+    return RemoteDictionaryInfo(
+      name: row.name,
+      type: row.type,
+      formatKey: _optionalString(row.formatKey),
+      revision: _optionalString(metadata['revision']),
+      displayName: _optionalString(row.displayName),
+      sourceLanguage:
+          _optionalString(row.languageOverride) ??
+          _optionalString(metadata['sourceLanguage']),
+      defaultEnabled: !isDictionaryHiddenByDefault(row),
+    );
+  }
+
+  /// host 的「默认关掉」判据（app 当 host 与无头服务端同一份）：`hiddenLanguagesJson`
+  /// 含 `ja`（app 推送时写入的形状、服务端 admin API 的 `defaultEnabled` 写入同一口径）。
+  /// JSON 畸形 / 不是数组当没关。
+  static bool isDictionaryHiddenByDefault(DictionaryMetaRow row) {
+    try {
+      final Object? decoded = jsonDecode(row.hiddenLanguagesJson);
+      return decoded is List && decoded.any((Object? e) => '$e' == 'ja');
+    } on FormatException {
+      return false;
+    }
+  }
+
+  /// 把 [hiddenLanguagesJson] 改成「默认关 = [hidden]」：只增删 `ja` 这一项，其余语言
+  /// 原样保留（原顺序）。JSON 畸形 / 不是数组时按空表起算。
+  static String withHiddenByDefault(String hiddenLanguagesJson, bool hidden) {
+    List<String> languages = <String>[];
+    try {
+      final Object? decoded = jsonDecode(hiddenLanguagesJson);
+      if (decoded is List) {
+        languages = <String>[for (final Object? e in decoded) '$e'];
+      }
+    } on FormatException {
+      // 畸形：按空表起算。
+    }
+    languages.removeWhere((String e) => e == 'ja');
+    if (hidden) languages.add('ja');
+    return jsonEncode(languages);
+  }
+
+  static String? _optionalString(Object? raw) {
+    if (raw is! String) return null;
+    final String trimmed = raw.trim();
+    return trimmed.isEmpty ? null : trimmed;
+  }
 }
 
 /// 旧名兼容：词典 diff 已并入 [SyncKeyDiff]。
