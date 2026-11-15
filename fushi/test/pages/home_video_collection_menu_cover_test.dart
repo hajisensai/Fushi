@@ -27,6 +27,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/fake_anki_repository.dart';
 import '../helpers/test_platform_services.dart';
+import '../helpers/shell_layout.dart';
 
 /// BUG-4201 / PR #2984 审查：视频首页同一行里的合集卡、远端卡，长按 / 右键菜单
 /// 头部必须与卡片同源（取图链、标题），且封面存在性还在异步探测时打开菜单，落定
@@ -94,6 +95,7 @@ void main() {
     ],
     child: TranslationProvider(
       child: MaterialApp(
+        theme: gridShellTheme(),
         home: Scaffold(
           body: HomeVideoPage(
             repo: VideoBookRepository(db),

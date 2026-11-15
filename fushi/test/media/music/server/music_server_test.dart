@@ -33,6 +33,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../../helpers/test_platform_services.dart';
 import 'package:fushi_music/fushi_music.dart' show MusicPluginManager;
+import '../../../helpers/shell_layout.dart';
 
 const JellyfinServerConfig _config = JellyfinServerConfig(
   serverUrl: 'http://nas:8096',
@@ -145,7 +146,7 @@ Future<void> _pump(WidgetTester tester, AppModel app, Widget home) async {
       overrides: [appProvider.overrideWith((Ref ref) => app)],
       child: TranslationProvider(
         child: MaterialApp(
-          theme: ThemeData(useMaterial3: true),
+          theme: gridShellTheme(base: ThemeData(useMaterial3: true)),
           builder: (BuildContext context, Widget? child) => MediaQuery(
             data: MediaQuery.of(context).copyWith(disableAnimations: true),
             child: child!,

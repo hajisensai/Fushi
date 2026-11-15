@@ -539,10 +539,15 @@ void main() {
       expect(row, findsOneWidget);
 
       // 右键行：两套设计系统都弹同一份牌组菜单（宽屏右栏详情也有同名，按行取）。
-      await tester.tap(
-        find.descendant(of: row, matching: find.text('Old')),
-        buttons: kSecondaryButton,
+      // 复习主页的色块头部（PR #3397）比旧头部高，行可能排在首屏底边外：先滚进
+      // 视口再右键。
+      final Finder oldLabel = find.descendant(
+        of: row,
+        matching: find.text('Old'),
       );
+      await tester.ensureVisible(oldLabel);
+      await tester.pumpAndSettle();
+      await tester.tap(oldLabel, buttons: kSecondaryButton);
       await tester.pumpAndSettle();
       await tester.tap(find.text(t.srs_deck_delete).last);
       await tester.pumpAndSettle();

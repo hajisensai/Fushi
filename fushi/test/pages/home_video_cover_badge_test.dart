@@ -25,6 +25,7 @@ import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/fake_anki_repository.dart';
 import '../helpers/test_platform_services.dart';
+import '../helpers/shell_layout.dart';
 
 /// 2026-10-25 库页材质定版（用户：「全部都不用角标设计」）：视频库卡片的封面上
 /// 不再压任何角标——原字幕 / 云端 / 播放列表集数三处 [CoverBadge] 撤掉，「远端」
@@ -89,6 +90,7 @@ void main() {
     ],
     child: TranslationProvider(
       child: MaterialApp(
+        theme: gridShellTheme(),
         home: Scaffold(
           body: HomeVideoPage(
             repo: VideoBookRepository(db),

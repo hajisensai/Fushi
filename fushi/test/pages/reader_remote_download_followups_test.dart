@@ -35,6 +35,7 @@ import 'package:fushi_engine/sync/ttu_filename.dart';
 
 import '../helpers/test_platform_services.dart';
 import '../sync/fake_asset_store.dart';
+import '../helpers/shell_layout.dart';
 
 void main() {
   group('去重与收养（数据层）', () {
@@ -183,6 +184,7 @@ void main() {
     ],
     child: TranslationProvider(
       child: MaterialApp(
+        theme: gridShellTheme(),
         home: Scaffold(
           body: ReaderFushiHistoryPage(
             remoteBookClientLoader: () async => client,

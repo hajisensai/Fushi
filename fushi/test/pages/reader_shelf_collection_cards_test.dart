@@ -19,6 +19,7 @@ import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/test_platform_services.dart';
+import '../helpers/shell_layout.dart';
 
 /// 书架合集一律「单个格子」+ 两个书架 bug 的页面级回归：
 ///  - 合集渲染成 [SeriesShelfCard]（叠层封面），与散书在**同一个网格、同一套排序**
@@ -141,6 +142,7 @@ void main() {
     ],
     child: TranslationProvider(
       child: MaterialApp(
+        theme: gridShellTheme(),
         home: Scaffold(
           body: ReaderFushiHistoryPage(
             remoteBookClientLoader: () async => null,
