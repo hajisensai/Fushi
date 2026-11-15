@@ -16,6 +16,7 @@ const List<String> srsFushiExtDeckKeys = <String>[
   SrsFieldKeys.deckRetention,
   SrsFieldKeys.deckSteps,
   SrsFieldKeys.deckLimits,
+  SrsFieldKeys.deckLimitUnit,
   SrsFieldKeys.deckMaxInterval,
   SrsFieldKeys.deckAutoplay,
   SrsFieldKeys.deckReplayQuestion,
@@ -31,6 +32,20 @@ const List<String> srsFushiExtDeckKeys = <String>[
 // EASE_ASCENDING 5 / EASE_DESCENDING 6 / RETRIEVABILITY_ASCENDING 7 / RANDOM 8 / ADDED 9 /
 // REVERSE_ADDED 10 / RETRIEVABILITY_DESCENDING 11 / RELATIVE_OVERDUENESS 12）。开着 FSRS 时 Anki 把
 // EASE_ASCENDING 当「难度从高到低」（rslib storage/card/mod.rs），所以 Fushi 的难度顺序对 5。
+
+/// Anki 预设 `rev.perDay` 的上限（Anki 牌组选项输入框的最大值）。
+const int srsAnkiMaxReviewsPerDay = 9999;
+
+/// 导出：Fushi 每日复习上限 → Anki 预设 `rev.perDay`。Anki 的复习上限按复习队列的作答逐次计（rslib
+/// `scheduler/answering/mod.rs` `update_deck_stats_from_answer`：原队列是 Review / DayLearn 的每次作答 +1，不按卡去重），
+/// 与 Fushi 的 [SrsLimitUnit.reviews] 同义、与 [SrsLimitUnit.cards] 实际几乎相同（复习卡一天通常只按复习作答一次），
+/// 数值照写；[SrsLimitUnit.minutes] 在 Anki 里没有对应，写成不限（[srsAnkiMaxReviewsPerDay]）而不是把分钟数当张数。
+/// 导入时 Anki 的上限落成缺省单位 [SrsLimitUnit.reviews]（不写单位键）；Fushi 自己的单位随 fushi-ext 往返。
+int srsAnkiReviewsPerDayOf(SrsDeckView? deck) => switch (deck) {
+  null => 200,
+  SrsDeckView(limitUnit: SrsLimitUnit.minutes) => srsAnkiMaxReviewsPerDay,
+  _ => deck.reviewsPerDay,
+};
 
 /// 导出：Fushi 新卡与复习 → Anki `newMix`。
 int srsAnkiNewMixOf(SrsNewCardMix mix) => switch (mix) {

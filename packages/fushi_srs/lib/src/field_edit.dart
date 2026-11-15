@@ -107,6 +107,11 @@ abstract final class SrsFieldKeys {
   static const String deckParent = 'parent';
   static const String deckParamsMode = 'paramsMode';
   static const String deckLimits = 'limits';
+
+  /// 每日上限的单位（[SrsLimitUnit.wire]；缺省 = 作答次数）：同时是 [deckLimits] 的 `review` 与
+  /// [deckRwkvQueue] 的 `minReviews` 的单位，数值仍存在那两个键里。单独一个键而不放进 [deckLimits]：旧版只认
+  /// [deckLimits] 的两项，改上限时整份重写会把单位冲掉。牌组自己的值，不随参数继承。
+  static const String deckLimitUnit = 'limitUnit';
   static const String deckSteps = 'steps';
   static const String deckRetention = 'retention';
 

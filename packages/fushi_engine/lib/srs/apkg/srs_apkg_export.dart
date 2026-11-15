@@ -711,7 +711,7 @@ class _Exporter {
         'ease4': 1.3,
         'ivlFct': 1.0,
         'maxIvl': o?.maxIntervalDays ?? 36500,
-        'perDay': o?.reviewsPerDay ?? 200,
+        'perDay': srsAnkiReviewsPerDayOf(o),
         'hardFactor': 1.2,
       },
       'lapse': <String, Object?>{

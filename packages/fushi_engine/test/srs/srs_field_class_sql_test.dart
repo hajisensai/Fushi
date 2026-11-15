@@ -30,6 +30,7 @@ final List<String> _keys = <String>[
   SrsFieldKeys.deckParent,
   SrsFieldKeys.deckParamsMode,
   SrsFieldKeys.deckLimits,
+  SrsFieldKeys.deckLimitUnit,
   SrsFieldKeys.deckSteps,
   SrsFieldKeys.deckRetention,
   SrsFieldKeys.deckAlgorithm,
