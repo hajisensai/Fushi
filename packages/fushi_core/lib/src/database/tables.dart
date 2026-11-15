@@ -425,13 +425,13 @@ class MediaTrackingMappings extends Table {
   IntColumn get createdAt => integer()();
   IntColumn get updatedAt => integer()();
 
-  /// v145: how the link was made: `manual` (picked by the user), `id` (from
+  /// v150: how the link was made: `manual` (picked by the user), `id` (from
   /// an id another source gave, e.g. MAL or MangaBaka → AniList), `auto` (title
   /// match ≥ 0.90), `suggestion` (a title match the user approved). Null for
-  /// links made before v145.
+  /// links made before v150.
   TextColumn get linkSource => text().nullable()();
 
-  /// v145: title match score (0..1) for `auto` / `suggestion` links.
+  /// v150: title match score (0..1) for `auto` / `suggestion` links.
   RealColumn get confidence => real().nullable()();
 
   /// v152: what a send of this link last succeeded with, in the site's units
@@ -455,7 +455,7 @@ class MediaTrackingMappings extends Table {
   ];
 }
 
-/// v145: title matches waiting for the user (score 0.60–0.90, or a close
+/// v150: title matches waiting for the user (score 0.60–0.90, or a close
 /// second). One row per local item × provider × remote subject. Dismissed rows
 /// stay so the same match is not suggested again.
 @DataClassName('MediaTrackingSuggestionRow')
