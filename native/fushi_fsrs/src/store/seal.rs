@@ -406,11 +406,13 @@ mod tests {
         static TRACED: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
     }
 
-    fn record_sql(sql: &str) {
-        TRACED.with(|t| {
-            t.borrow_mut()
-                .push(sql.trim().trim_end_matches(';').to_owned())
-        });
+    fn record_sql(ev: rusqlite::trace::TraceEvent<'_>) {
+        if let rusqlite::trace::TraceEvent::Stmt(_, sql) = ev {
+            TRACED.with(|t| {
+                t.borrow_mut()
+                    .push(sql.trim().trim_end_matches(';').to_owned())
+            });
+        }
     }
 
     /// 封存时连接临时切到 `synchronous = FULL`（提交即 fsync），封存那一笔在 FULL 下提交；不管成败都改回调用方
@@ -419,12 +421,13 @@ mod tests {
     fn sealing_restores_the_callers_sync_setting() {
         let dir = tempdir::new("seal-sync");
         let path = legacy_db(&dir.0);
-        let mut c = Connection::open(&path).unwrap();
+        let c = Connection::open(&path).unwrap();
         c.execute_batch("PRAGMA synchronous = NORMAL;").unwrap();
         TRACED.with(|t| t.borrow_mut().clear());
-        c.trace(Some(record_sql));
+        let stmt = rusqlite::trace::TraceEventCodes::SQLITE_TRACE_STMT;
+        c.trace_v2(stmt, Some(record_sql));
         seal_legacy(&c, "srs4.db").unwrap();
-        c.trace(None);
+        c.trace_v2(stmt, None);
         let traced = TRACED.with(|t| t.take());
         let at = |want: &str| {
             traced
