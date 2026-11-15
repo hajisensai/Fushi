@@ -124,8 +124,19 @@ impl From<String> for OpenError {
     }
 }
 
-/// 打开 [dir] 里的新代库（见文件头的打开模式）。返回的连接已经配好（WAL、页缓存）；Primary 的已经建齐表。
-pub fn open_gen4(dir: &Path, mode: OpenMode) -> Result<Connection, OpenError> {
+/// [open_gen4] 打开的结果。
+#[derive(Debug)]
+pub struct Opened {
+    /// 新代库的连接：已经配好（WAL、页缓存）；Primary 的已经建齐表。
+    pub conn: Connection,
+    /// 保留副本 `srs.db` 在、但不是 SQLite 文件（打开 / 读它报 `SQLITE_NOTADB`）。旧版本同样拒绝打开它，所以不挡新代库，
+    /// 但用户的保留副本已经没法用了：这个状态向上报，由 G7-5 的状态枚举呈现。只有 Primary 拿到换代锁、检查过
+    /// `srs.db` 时才可能置位；Secondary 与锁被别人拿着时不看它，恒为 `false`。
+    pub retained_copy_unreadable: bool,
+}
+
+/// 打开 [dir] 里的新代库（见文件头的打开模式）。
+pub fn open_gen4(dir: &Path, mode: OpenMode) -> Result<Opened, OpenError> {
     let path = dir.join(GEN4_FILE);
     if path.exists() {
         return match mode {
@@ -134,14 +145,21 @@ pub fn open_gen4(dir: &Path, mode: OpenMode) -> Result<Connection, OpenError> {
                 // 「它在 = 已提交」是这里的前提，零字节 / 协议 3 / 别的文件顶着这个名字时什么都不改（不封存、不建表），
                 // 不然会封掉真正的数据、换上一个空库。
                 let ready = open_ready(&path)?;
+                let mut retained_copy_unreadable = false;
                 if let Some(lock) = GenLock::try_acquire(dir)? {
-                    finish_seal(dir, &ready)?;
+                    retained_copy_unreadable = finish_seal(dir, &ready)? == Retained::Unreadable;
                     drop(lock);
                 }
                 ready.close().map_err(|(_, e)| schema::sql(e))?;
-                Ok(schema::open(&path)?)
+                Ok(Opened {
+                    conn: schema::open(&path)?,
+                    retained_copy_unreadable,
+                })
             }
-            OpenMode::Secondary => Ok(open_secondary(&path)?),
+            OpenMode::Secondary => Ok(Opened {
+                conn: open_secondary(&path)?,
+                retained_copy_unreadable: false,
+            }),
         };
     }
     let Some(lock) = GenLock::try_acquire(dir)? else {
@@ -160,7 +178,10 @@ pub fn open_gen4(dir: &Path, mode: OpenMode) -> Result<Connection, OpenError> {
     create_fresh(dir)?;
     let conn = schema::open(&path)?;
     drop(lock);
-    Ok(conn)
+    Ok(Opened {
+        conn,
+        retained_copy_unreadable: false,
+    })
 }
 
 /// 在 [GEN4_CREATING] 建一个空的新代库，关掉（最后一个连接关闭时 WAL 检查点进主文件、`-wal` 删掉）、落盘，再
@@ -227,22 +248,32 @@ fn is_unsealed_legacy(conn: &Connection) -> rusqlite::Result<bool> {
 
 /// 新代库 [new] 已经在：`srs.db` 若是没封存的协议 3 库，按 [new] 记的迁移来源处理（文件头「打开模式」）——来源就是
 /// 它 = 补做封存；不是 = [OpenError::LegacyNotMigrated]，不动它。已封存 / 墓碑 / 别的版本的协议 3 库都不动。
-/// 判断阶段只读打开 `srs.db`，确定要封了才以读写方式打开。读不了它（被别的进程写锁住、不是 SQLite 文件……）报错：
-/// 不能在旧版本还可能写它的状态下照常打开。
-fn finish_seal(dir: &Path, new: &Connection) -> Result<(), OpenError> {
+/// 判断阶段只读打开 `srs.db`，确定要封了才以读写方式打开。
+///
+/// 读不了它分两种：不是 SQLite 文件（`SQLITE_NOTADB`）= [Retained::Unreadable]，不挡新代库——旧版本同样拒绝打开它，
+/// 不会往里写；别的错误（损坏、被别的进程锁住、IO……）报错：不能在旧版本还可能写它的状态下照常打开。
+fn finish_seal(dir: &Path, new: &Connection) -> Result<Retained, OpenError> {
     let legacy = dir.join(LEGACY_FILE);
     if !legacy.exists() {
-        return Ok(());
+        return Ok(Retained::Settled);
     }
     let fail =
         |e: String| OpenError::Failed(format!("gen4 store: retained {}: {e}", legacy.display()));
+    let not_a_db =
+        |e: &rusqlite::Error| e.sqlite_error_code() == Some(rusqlite::ErrorCode::NotADatabase);
     let open = |flags: OpenFlags| {
         Connection::open_with_flags(&legacy, flags | OpenFlags::SQLITE_OPEN_NO_MUTEX)
-            .map_err(|e| fail(e.to_string()))
     };
-    let ro = open(OpenFlags::SQLITE_OPEN_READ_ONLY)?;
-    if !is_unsealed_legacy(&ro).map_err(|e| fail(e.to_string()))? {
-        return Ok(());
+    let ro = match open(OpenFlags::SQLITE_OPEN_READ_ONLY) {
+        Ok(c) => c,
+        Err(e) if not_a_db(&e) => return Ok(Retained::Unreadable),
+        Err(e) => return Err(fail(e.to_string())),
+    };
+    match is_unsealed_legacy(&ro) {
+        Ok(true) => {}
+        Ok(false) => return Ok(Retained::Settled),
+        Err(e) if not_a_db(&e) => return Ok(Retained::Unreadable),
+        Err(e) => return Err(fail(e.to_string())),
     }
     let source: Option<String> = new
         .query_row(
@@ -257,9 +288,19 @@ fn finish_seal(dir: &Path, new: &Connection) -> Result<(), OpenError> {
         return Err(OpenError::LegacyNotMigrated);
     }
     ro.close().map_err(|(_, e)| fail(e.to_string()))?;
-    let rw = open(OpenFlags::SQLITE_OPEN_READ_WRITE)?;
+    let rw = open(OpenFlags::SQLITE_OPEN_READ_WRITE).map_err(|e| fail(e.to_string()))?;
     crate::store::schema::seal_legacy(&rw, GEN4_FILE).map_err(fail)?;
-    rw.close().map_err(|(_, e)| fail(e.to_string()))
+    rw.close().map_err(|(_, e)| fail(e.to_string()))?;
+    Ok(Retained::Settled)
+}
+
+/// [finish_seal] 看到的保留副本。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Retained {
+    /// 没有、已封存 / 墓碑 / 别的版本 / 不是协议 3 的库、或刚补封完：没有要做的。
+    Settled,
+    /// 在，但不是 SQLite 文件（[Opened::retained_copy_unreadable]）。
+    Unreadable,
 }
 
 /// 以读写、不创建的方式打开 [path]，要求它已经是一份建好的新代库（`schema::check_ready`）。不改它：不设 PRAGMA、
@@ -429,7 +470,7 @@ mod tests {
         assert!(!dir.0.join(GEN4_FILE).exists());
         std::fs::remove_file(dir.0.join(GEN4_TEMP)).unwrap();
         // 全新安装：建库，锁已经放掉。
-        let conn = open_gen4(&dir.0, OpenMode::Primary).unwrap();
+        let conn = open_gen4(&dir.0, OpenMode::Primary).unwrap().conn;
         let app: i32 = conn
             .query_row("PRAGMA application_id", [], |r| r.get(0))
             .unwrap();
@@ -437,7 +478,7 @@ mod tests {
         assert!(GenLock::try_acquire(&dir.0).unwrap().is_some());
         drop(conn);
         // 辅助进程现在能开，但写不进去；主进程再开照常。
-        let ro = open_gen4(&dir.0, OpenMode::Secondary).unwrap();
+        let ro = open_gen4(&dir.0, OpenMode::Secondary).unwrap().conn;
         let n: i64 = ro
             .query_row("SELECT COUNT(*) FROM collections", [], |r| r.get(0))
             .unwrap();
@@ -446,7 +487,7 @@ mod tests {
             .execute("INSERT INTO srs_meta (key, value) VALUES ('x', 'y')", [])
             .unwrap_err();
         assert!(e.to_string().contains("readonly"), "{e}");
-        let rw = open_gen4(&dir.0, OpenMode::Primary).unwrap();
+        let rw = open_gen4(&dir.0, OpenMode::Primary).unwrap().conn;
         rw.execute("INSERT INTO srs_meta (key, value) VALUES ('x', 'y')", [])
             .unwrap();
     }
@@ -533,6 +574,52 @@ mod tests {
         assert!(!dir.0.join(LEGACY_FILE).exists());
     }
 
+    /// 保留副本 `srs.db` 不是 SQLite 文件：Primary 照常打开新代库、不动它、在结果里报出来；正常的保留副本不报。
+    #[test]
+    fn an_unreadable_retained_copy_is_reported_and_does_not_block() {
+        let dir = tempdir::new("open-notadb");
+        let legacy = dir.0.join(LEGACY_FILE);
+        let fresh = open_gen4(&dir.0, OpenMode::Primary).unwrap();
+        assert!(!fresh.retained_copy_unreadable);
+        drop(fresh);
+        let junk: Vec<u8> = b"this is not an sqlite file. ".repeat(200);
+        std::fs::write(&legacy, &junk).unwrap();
+        let opened = open_gen4(&dir.0, OpenMode::Primary).unwrap();
+        assert!(opened.retained_copy_unreadable);
+        opened
+            .conn
+            .execute("INSERT INTO srs_meta (key, value) VALUES ('x', 'y')", [])
+            .unwrap();
+        drop(opened);
+        assert_eq!(std::fs::read(&legacy).unwrap(), junk);
+        assert!(!seal::with_suffix(&legacy, "-wal").exists());
+        // 锁在别人手里时不看它；Secondary 也不看。
+        let lock = GenLock::try_acquire(&dir.0).unwrap().unwrap();
+        assert!(
+            !open_gen4(&dir.0, OpenMode::Primary)
+                .unwrap()
+                .retained_copy_unreadable
+        );
+        drop(lock);
+        assert!(
+            !open_gen4(&dir.0, OpenMode::Secondary)
+                .unwrap()
+                .retained_copy_unreadable
+        );
+        // 换成一份已封存的协议 3 库：不再报。
+        std::fs::remove_file(&legacy).unwrap();
+        v29_at(&legacy);
+        Connection::open(&legacy)
+            .unwrap()
+            .execute_batch("UPDATE srs_meta SET value = '39999' WHERE key = 'schema';")
+            .unwrap();
+        assert!(
+            !open_gen4(&dir.0, OpenMode::Primary)
+                .unwrap()
+                .retained_copy_unreadable
+        );
+    }
+
     /// 全新安装经临时名建好再改名：完了目录里只有新代库与锁文件；上一次建到一半留下的临时文件被重建掉。
     #[test]
     fn a_fresh_install_appears_under_the_final_name_only_when_complete() {
@@ -545,7 +632,7 @@ mod tests {
             listing(&dir.0),
             vec![GEN_LOCK_FILE.to_owned(), GEN4_FILE.to_owned()]
         );
-        let ro = open_gen4(&dir.0, OpenMode::Secondary).unwrap();
+        let ro = open_gen4(&dir.0, OpenMode::Secondary).unwrap().conn;
         let v: String = ro
             .query_row("SELECT value FROM srs_meta WHERE key = 'schema'", [], |r| {
                 r.get(0)
@@ -620,6 +707,7 @@ mod tests {
         // 没有来源标记的新代库没被写上标记。
         let n: i64 = open_gen4(&dir.0, OpenMode::Secondary)
             .unwrap()
+            .conn
             .query_row(
                 "SELECT COUNT(*) FROM srs_meta WHERE key = ?1",
                 [MIGRATED_FROM_KEY],
