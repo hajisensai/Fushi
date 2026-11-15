@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-15T01:44:00Z",
+ "generatedAt": "2026-11-15T01:52:25Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "a31ddeb6ddfd9e1d897b782c0d5ef4e57315c3cf",
-  "seq": 27266
+  "sha": "34be7b56ae0b39bfcd9b55e7873e9eb18d211b2d",
+  "seq": 27272
  },
  "builds": [
   {
@@ -13,7 +13,7 @@
    "sha": "262391b32640eec669f74723163cad3b11b7b39d",
    "unknown": false,
    "publishedAt": "2026-11-15T01:19:12Z",
-   "testflight": false,
+   "testflight": true,
    "baseSeq": 27107,
    "prs": [
     3318,
@@ -158,9 +158,10 @@
   }
  ],
  "pending": {
-  "headSha": "a31ddeb6ddfd9e1d897b782c0d5ef4e57315c3cf",
-  "headSeq": 27266,
+  "headSha": "34be7b56ae0b39bfcd9b55e7873e9eb18d211b2d",
+  "headSeq": 27272,
   "prs": [
+   3428,
    3372,
    3430,
    3424,
@@ -178,19 +179,19 @@
   "platforms": {
    "android": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43663499517"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43664899065"
    },
    "windows": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43663499501"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43664899114"
    },
    "macos": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43663499501"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43664899114"
    },
    "ios": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43663499501"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43664899114"
    }
   }
  },
@@ -483,6 +484,15 @@
    "mergedAt": "2026-11-15T00:30:57Z",
    "additions": 10,
    "deletions": 29,
+   "labels": []
+  },
+  "3428": {
+   "number": 3428,
+   "title": "iOS 体积：关 slang flat map、iOS --split-debug-info、IPA strip -x",
+   "author": "W1ght",
+   "mergedAt": "2026-11-15T01:49:41Z",
+   "additions": 461,
+   "deletions": 26,
    "labels": []
   },
   "3430": {
