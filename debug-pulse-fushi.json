@@ -1,12 +1,57 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-15T00:05:31Z",
+ "generatedAt": "2026-11-15T00:49:00Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "262391b32640eec669f74723163cad3b11b7b39d",
-  "seq": 27210
+  "sha": "e5e1f73a42dc3dfde2bc96c1f10775e8b8ecabd6",
+  "seq": 27255
  },
  "builds": [
+  {
+   "seq": 27107,
+   "version": "3.3.0",
+   "sha": "8cf583e7866d519d5e20ff45d07fca256c0f00b6",
+   "unknown": false,
+   "publishedAt": "2026-11-15T00:48:48Z",
+   "testflight": false,
+   "baseSeq": 27021,
+   "prs": [
+    3343,
+    3402,
+    3426,
+    3419,
+    3417,
+    3421,
+    3416,
+    3410,
+    3423,
+    3422,
+    3414,
+    3334,
+    3415,
+    3412,
+    3332
+   ],
+   "direct": [],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "ok"
+    },
+    "windows": {
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43649783969"
+    },
+    "macos": {
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43649783969"
+    },
+    "ios": {
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43649783969"
+    }
+   }
+  },
   {
    "seq": 27021,
    "version": "3.3.0",
@@ -51,10 +96,12 @@
    "unknown": false,
    "publishedAt": "2026-11-14T22:13:29Z",
    "testflight": true,
-   "baseSeq": 26879,
+   "baseSeq": 26871,
    "prs": [
     3413,
-    3411
+    3411,
+    3317,
+    3406
    ],
    "direct": [
     {
@@ -75,38 +122,6 @@
     },
     "ios": {
      "state": "ok"
-    }
-   }
-  },
-  {
-   "seq": 26879,
-   "version": "3.3.0",
-   "sha": "1d164f2e78081485c01293af0e73a0679c82a874",
-   "unknown": false,
-   "publishedAt": "2026-11-14T21:09:36Z",
-   "testflight": false,
-   "baseSeq": 26871,
-   "prs": [
-    3317,
-    3406
-   ],
-   "direct": [],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "ok"
-    },
-    "windows": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43635507859"
-    },
-    "macos": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43635507859"
-    },
-    "ios": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43635507859"
     }
    }
   },
@@ -147,52 +162,51 @@
   }
  ],
  "pending": {
-  "headSha": "262391b32640eec669f74723163cad3b11b7b39d",
-  "headSeq": 27210,
+  "headSha": "e5e1f73a42dc3dfde2bc96c1f10775e8b8ecabd6",
+  "headSeq": 27255,
   "prs": [
+   3430,
+   3424,
+   3427,
+   3381,
+   3277,
    3318,
    3321,
    3365,
    3357,
-   3368,
-   3343,
-   3402,
-   3426,
-   3419,
-   3417,
-   3421,
-   3416,
-   3410,
-   3423,
-   3422,
-   3414,
-   3334,
-   3415,
-   3412,
-   3332
+   3368
   ],
   "direct": [],
   "truncated": false,
   "platforms": {
    "android": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43654446387"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43658688934"
    },
    "windows": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43654446353"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43658688931"
    },
    "macos": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43654446353"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43658688931"
    },
    "ios": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43654446353"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43658688931"
    }
   }
  },
  "prs": {
+  "3277": {
+   "number": 3277,
+   "title": "设置页重整：一级分类、分区层级与描述",
+   "author": "W1ght",
+   "mergedAt": "2026-11-15T00:17:39Z",
+   "additions": 10063,
+   "deletions": 6703,
+   "labels": []
+  },
   "3284": {
    "number": 3284,
    "title": "srs: 内核 Drift 事务守卫（只计数、只打日志）— 收 Dart 写路径第 1 步",
@@ -326,6 +340,15 @@
    "mergedAt": "2026-11-14T18:06:33Z",
    "additions": 3157,
    "deletions": 161,
+   "labels": []
+  },
+  "3381": {
+   "number": 3381,
+   "title": "复习库按实体 ID 的读写核对 profile 归属（BUG-4388）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-15T00:20:58Z",
+   "additions": 1890,
+   "deletions": 102,
    "labels": []
   },
   "3398": {
@@ -525,6 +548,15 @@
    "deletions": 93,
    "labels": []
   },
+  "3424": {
+   "number": 3424,
+   "title": "fix(srs): 首次同步归运行时、搜索框不吃组字中间态、检查器自动保存不丢焦点、原生卡面折叠标题不取词（BUG-4511/4512/4513/4500）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-15T00:32:32Z",
+   "additions": 607,
+   "deletions": 49,
+   "labels": []
+  },
   "3426": {
    "number": 3426,
    "title": "fix(stats): 空闲门按时刻裁剪，恢复输入不再把超阈值的暂停算回时长 (BUG-4498)",
@@ -532,6 +564,24 @@
    "mergedAt": "2026-11-14T22:32:31Z",
    "additions": 178,
    "deletions": 30,
+   "labels": []
+  },
+  "3427": {
+   "number": 3427,
+   "title": "fix(server): AdminSrs 重复的 GET srs/decks 遮住 ctl 牌组端点（develop 基线红）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-15T00:30:57Z",
+   "additions": 10,
+   "deletions": 29,
+   "labels": []
+  },
+  "3430": {
+   "number": 3430,
+   "title": "docs(srs): 设计稿并入 G7–G11 定案（D1–D34）与 22 条矛盾改正；旧 debug 包存档",
+   "author": "W1ght",
+   "mergedAt": "2026-11-15T00:36:30Z",
+   "additions": 337,
+   "deletions": 118,
    "labels": []
   }
  }
