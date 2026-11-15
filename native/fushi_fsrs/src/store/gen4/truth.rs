@@ -53,8 +53,8 @@
 //! 事务（`BEGIN …`）时，开完必须先调 [Truth::reset] 再用这个会话。新代下只有主进程写（D10），辅助进程的只读会话
 //! 同样经 [Truth::tx] 读（它在只读连接上也是一个读事务）。
 //!
-//! 这条约定有检测：会话记下缓存所对应的 `PRAGMA data_version`（reset 之后第一次写入时记；[Truth::tx] 的最外层事务
-//! 没写过的，结束前记），每次写入前比一次。别的连接在这之后提交过（值变了）= 调用方自己开了事务却没 reset，写入报错、不落库（不
+//! 这条约定有检测：会话记下缓存所对应的 `PRAGMA data_version`（reset 之后、缓存第一次从库里填之前记——不管这一读
+//! 在不在事务里，见 `Truth::ensure_snapshot`），每次写入前比一次。别的连接在这之后提交过（值变了）= 调用方自己开了事务却没 reset，写入报错、不落库（不
 //! 毒化会话：reset 之后照常）。同一个连接自己的提交不改这个值；拿着写事务时别人提交不了，所以事务内不会误报。
 
 use std::cell::RefCell;
@@ -445,6 +445,17 @@ impl<'c> Truth<'c> {
             .map_err(sql)
     }
 
+    /// 缓存从空状态第一次查库之前调：还没记 `data_version` 就先记下（文件头「会话与事务」）。凡是从库里读、再把结果
+    /// 放进 `st` 的入口都在查库之前走这里，所以记下的版本不晚于缓存里任何一项的来源。在事务外调时，记下的这一读与
+    /// 随后的查询是两个隐式事务，中间别人提交了只会让之后的写入误报（拒绝、reset 后重来），不会漏报。
+    fn ensure_snapshot(&self) -> Result<(), String> {
+        if self.st.borrow().data_version.is_none() {
+            let dv = self.data_version()?;
+            self.st.borrow_mut().data_version = Some(dv);
+        }
+        Ok(())
+    }
+
     /// 丢掉内存里的缓存（事务回滚之后必须调）。
     pub fn reset(&self) {
         *self.st.borrow_mut() = State::default();
@@ -459,11 +470,10 @@ impl<'c> Truth<'c> {
         }
         let r = in_tx(self.conn, |_| {
             let v = f(self)?;
-            if outer && self.st.borrow().data_version.is_none() {
-                // 放在 f 之后：f 里的读已经开出了事务快照，记下的就是缓存对应的版本；放在前面会让这一读先开出读
-                // 快照，f 的第一笔写就得从读升级成写（别人刚提交过会 BUSY_SNAPSHOT）。写过的话 write() 已经记了。
-                let dv = self.data_version()?;
-                self.st.borrow_mut().data_version = Some(dv);
+            if outer {
+                // 放在 f 之后：f 里的读已经开出了事务快照，记下的就是这个事务的版本；放在前面会让这一读先开出读
+                // 快照，f 的第一笔写就得从读升级成写（别人刚提交过会 BUSY_SNAPSHOT）。f 填过缓存或写过的话已经记了。
+                self.ensure_snapshot()?;
             }
             Ok(v)
         });
@@ -482,15 +492,14 @@ impl<'c> Truth<'c> {
         if self.conn.is_autocommit() {
             return Err("gen4 store: write outside a transaction".to_owned());
         }
-        let now = self.data_version()?;
+        self.ensure_snapshot()?;
         let seen = self.st.borrow().data_version;
-        match seen {
-            None => self.st.borrow_mut().data_version = Some(now),
-            Some(v) if v != now => {
-                return Err("gen4 store: another connection committed since this session's cache was                      filled (a transaction opened without Truth::reset); reset first"
-                    .to_owned());
-            }
-            Some(_) => {}
+        if seen != Some(self.data_version()?) {
+            return Err(
+                "gen4 store: another connection committed since this session's cache was \
+                 filled (a transaction opened without Truth::reset); reset first"
+                    .to_owned(),
+            );
         }
         let r = f();
         if r.is_err() {
@@ -606,6 +615,7 @@ impl<'c> Truth<'c> {
         if let Some(&d) = self.st.borrow().dev_ix.get(&(col, *id)) {
             return Ok(Some(d));
         }
+        self.ensure_snapshot()?;
         let row = self
             .conn
             .prepare_cached("SELECT dev, kind, src, tail FROM devs WHERE col = ?1 AND id = ?2")
@@ -672,6 +682,7 @@ impl<'c> Truth<'c> {
         if let Some(r) = self.st.borrow().devs.get(&dev) {
             return Ok(r.clone());
         }
+        self.ensure_snapshot()?;
         let (col, id, kind, src, tail) = self
             .conn
             .prepare_cached("SELECT col, id, kind, src, tail FROM devs WHERE dev = ?1")
@@ -748,6 +759,7 @@ impl<'c> Truth<'c> {
         if let Some(n) = self.dev_row(dev)?.last {
             return Ok(n);
         }
+        self.ensure_snapshot()?;
         let (lo, hi) = k_range(dev);
         let mut n = 0u64;
         for q in [
@@ -818,6 +830,7 @@ impl<'c> Truth<'c> {
         if let Some(&i) = self.st.borrow().writer_ix.get(name) {
             return Ok(i);
         }
+        self.ensure_snapshot()?;
         let mut w = Writer::new();
         write_name(&mut w, name);
         let bytes = w.into_vec();
@@ -853,6 +866,7 @@ impl<'c> Truth<'c> {
         if let Some(n) = self.st.borrow().writer_name.get(&id) {
             return Ok(n.clone());
         }
+        self.ensure_snapshot()?;
         let bytes: Vec<u8> = self
             .conn
             .prepare_cached("SELECT name FROM writers WHERE id = ?1")
@@ -881,6 +895,7 @@ impl<'c> Truth<'c> {
         if let Some(&i) = self.st.borrow().snap_ix.get(&key) {
             return Ok(i);
         }
+        self.ensure_snapshot()?;
         let found: Option<i64> = self
             .conn
             .prepare_cached("SELECT id FROM snapshots WHERE body = ?1")
@@ -913,6 +928,7 @@ impl<'c> Truth<'c> {
         if let Some(b) = self.st.borrow().snap_body.get(&id) {
             return Ok(b.clone());
         }
+        self.ensure_snapshot()?;
         let body: String = self
             .conn
             .prepare_cached("SELECT body FROM snapshots WHERE id = ?1")
@@ -950,6 +966,7 @@ impl<'c> Truth<'c> {
         if let Some(&i) = self.st.borrow().deps_ix.get(&bytes) {
             return Ok(i);
         }
+        self.ensure_snapshot()?;
         let found: Option<i64> = self
             .conn
             .prepare_cached("SELECT id FROM op_deps WHERE bytes = ?1")
@@ -983,6 +1000,7 @@ impl<'c> Truth<'c> {
         if let Some(v) = self.st.borrow().deps_vv.get(&id) {
             return Ok(v.clone());
         }
+        self.ensure_snapshot()?;
         let bytes: Vec<u8> = self
             .conn
             .prepare_cached("SELECT bytes FROM op_deps WHERE id = ?1")
@@ -3444,5 +3462,100 @@ pub(crate) mod tests {
         cb.execute_batch("BEGIN IMMEDIATE").unwrap();
         b.append_native(col, &native(4, "\"b\"")).unwrap();
         cb.execute_batch("COMMIT").unwrap();
+    }
+
+    /// 缓存是在事务**外**填的（`last_of` 不经 [Truth::tx]）：一样记下 data_version。别的连接之后提交过，调用方自己
+    /// `BEGIN` 不 reset 就写，被拦下、不落库。
+    #[test]
+    fn a_cache_filled_outside_a_transaction_is_also_guarded() {
+        let dir = crate::store::sync2::tests::tempdir::new("gen4-dv-guard-autocommit");
+        let path = dir.0.join("srs4.db");
+        let ca = crate::store::gen4::schema::open(&path).unwrap();
+        let cb = crate::store::gen4::schema::open(&path).unwrap();
+        let a = Truth::new(&ca);
+        let b = Truth::new(&cb);
+        let col = bound(&a);
+        let dev = native(1, "\"x\"").id.device;
+        a.tx(|t| t.append_native(col, &native(1, "\"a\"")).map(|_| ()))
+            .unwrap();
+        // B 在自动提交状态下读：缓存里是设备下标与末尾 1。
+        assert!(cb.is_autocommit());
+        assert_eq!(b.last_of(col, &dev), Ok(1));
+        a.tx(|t| t.append_native(col, &native(2, "\"a\"")).map(|_| ()))
+            .unwrap();
+        cb.execute_batch("BEGIN IMMEDIATE").unwrap();
+        let e = b.append_native(col, &native(2, "\"b\"")).unwrap_err();
+        assert!(e.contains("reset first"), "{e}");
+        assert!(!e.contains("  "), "{e}");
+        cb.execute_batch("ROLLBACK").unwrap();
+        assert_eq!(a.tx(|t| t.audit(col)), Ok(2));
+        assert_eq!(a.tx(|t| t.last_of(col, &dev)), Ok(2));
+    }
+
+    /// 子进程那一半：环境变量给了库路径才动作。在自己的连接上经 [Truth::tx] 追加原生操作 `FROM..=TO`，然后退出。
+    #[test]
+    fn truth_child_process_half() {
+        let Ok(path) = std::env::var("FUSHI_TRUTH_CHILD_DB") else {
+            return;
+        };
+        let seq = |k: &str| -> u64 { std::env::var(k).unwrap().parse().unwrap() };
+        let (from, to) = (seq("FUSHI_TRUTH_CHILD_FROM"), seq("FUSHI_TRUTH_CHILD_TO"));
+        let conn = crate::store::gen4::schema::open(std::path::Path::new(&path)).unwrap();
+        let t = Truth::new(&conn);
+        let col = t
+            .tx(|t| Ok(t.binding_of(P)?.expect("bound by the parent").col))
+            .unwrap();
+        t.tx(|t| {
+            for s in from..=to {
+                t.append_native(col, &native(s, "\"child\""))?;
+            }
+            Ok(())
+        })
+        .unwrap();
+        println!("TRUTH_CHILD appended {from}..={to}");
+    }
+
+    /// 缺口 G-1 的跨进程版：本进程的会话读过（缓存里是末尾 3 与它的链值），另一个进程经 [Truth::tx] 接着写了 4..=6
+    /// 后退出。同一个会话的下一个 [Truth::tx] 追加第 7 条，必须接在子进程写的末尾和链值之后。
+    #[test]
+    fn every_outer_transaction_starts_from_what_another_process_wrote() {
+        let dir = crate::store::sync2::tests::tempdir::new("gen4-two-procs");
+        let path = dir.0.join("srs4.db");
+        let conn = crate::store::gen4::schema::open(&path).unwrap();
+        let t = Truth::new(&conn);
+        let col = bound(&t);
+        let dev = native(1, "\"x\"").id.device;
+        t.tx(|t| {
+            for s in 1..=3 {
+                t.append_native(col, &native(s, "\"parent\""))?;
+            }
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(t.tx(|t| t.last_of(col, &dev)), Ok(3));
+        t.tx(|t| t.chain_at(col, &dev, 3)).unwrap();
+        let out = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "store::gen4::truth::tests::truth_child_process_half",
+                "--nocapture",
+                "--test-threads=1",
+            ])
+            .env("FUSHI_TRUTH_CHILD_DB", &path)
+            .env("FUSHI_TRUTH_CHILD_FROM", "4")
+            .env("FUSHI_TRUTH_CHILD_TO", "6")
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(out.status.success(), "{stdout}");
+        assert!(stdout.contains("TRUTH_CHILD appended 4..=6"), "{stdout}");
+        // 期望值从另一个新开的连接上算，不经这个会话。
+        let other = crate::store::gen4::schema::open(&path).unwrap();
+        let fresh = Truth::new(&other);
+        assert_eq!(fresh.tx(|t| t.last_of(col, &dev)), Ok(6));
+        let seven = native(7, "\"parent\"");
+        let want = chain_next4(&fresh.tx(|t| t.chain_at(col, &dev, 6)).unwrap(), &seven);
+        assert_eq!(t.tx(|t| t.append_native(col, &seven)), Ok(want));
+        assert_eq!(fresh.tx(|t| t.audit(col)), Ok(7));
     }
 }
