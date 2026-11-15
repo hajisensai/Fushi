@@ -50,6 +50,8 @@ CTL_DECKS = "/api/admin/srs/decks"
 CTL_NAVIGATION = "/api/admin/navigation"
 NAV_SRS = {"page": "srs"}
 SAFE_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+# 会过期的 actions artifact / 会轮换的 debug-rolling 包都存档在这个 prerelease 里（versions.json 的 source.origin 记原来源）。
+ARCHIVE_TAG = "srs-old-binaries-2026-11"
 LOG_FILES = ("app-documents/error_log.txt", "app-documents/study_diag_log.txt")
 
 
