@@ -20,7 +20,9 @@ class MastheadTabsView<T extends Object> {
   final T selected;
   final ValueChanged<T> onChanged;
 
-  List<T> get values => <T>[for (final LibrarySectionTab<T> tab in tabs) tab.value];
+  List<T> get values => <T>[
+    for (final LibrarySectionTab<T> tab in tabs) tab.value,
+  ];
 
   List<String> get labels => <String>[
     for (final LibrarySectionTab<T> tab in tabs) tab.label,

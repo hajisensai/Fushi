@@ -121,9 +121,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 40));
 
-    final FushiMastheadSwitch<GameSection> after = tester.widget(
-      shellSwitch(),
-    );
+    final FushiMastheadSwitch<GameSection> after = tester.widget(shellSwitch());
     expect(after.selected, GameSection.discover);
     expect(
       tester.element(shellSwitch()),
