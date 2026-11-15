@@ -13,8 +13,11 @@
 //!   「值相同」——否则两个成员各写了一个「指向同一个牌组的不同别名」会被判成冲突。
 //! - **标签**（[Index::class_tags]）：类内成员的 `tag_ix` 行并起来，按 OR-Set 与顺序提示重判（`weigh.rs`
 //!   [Index::tag_states]，同一份规则）：一个成员上的删除见过另一个成员上的添加，就抹掉它。
-//! - 只有一个成员（从没并入过的存量集合里的绝大多数实体）时结果与原值读接口相同（[Index::value]、[Index::tags_of]），
-//!   测试钉住。
+//! - 只有一个成员（从没并入过的存量集合里的绝大多数实体）**且寄存器里没有归回的改名写入者**时，结果与原值读接口
+//!   相同（[Index::value]、[Index::tags_of]）。写入者归回对单成员实体同样生效：旧上下文写的是改名后的名字时，按类判
+//!   可以把原值判下的冲突判成支配（样本库 144 处都是这一种）。所以**不能**按「只有一个成员就沿用 `reg_ix` 状态」
+//!   走捷径；两种情形各有测试钉住（`a_class_of_one_reads_the_same_as_the_raw_id`、
+//!   `a_renamed_writer_on_a_class_of_one_is_not_the_raw_reading`）。
 //!
 //! # 没有并起来的（按原值实体，留在索引层）
 //!
@@ -29,13 +32,15 @@
 //!
 //! - 修改值（[Index::canonical_value]，按修改键）：值本身是 ID 的键 [ID_VALUED_KEYS]（笔记的 `noteType`、卡的 `deck`、
 //!   牌组的 `parent`、笔记类型的 `termField` / `freqField`）；`tmplDef/<模板>` 的值里 `front` / `back` 两段模板文本中的
-//!   `{{…fld:<字段>}}`。别的值（字段内容等用户文本）一个字节不动。
+//!   `{{…fld:<字段>}}`（与 `card_cache.rs` 的 `ids_to_names` 同一个分词：注释、普通文本、`{{…}}` 里不是整段
+//!   `fld:<UUID>` 的都不动）。别的值（字段内容等用户文本）一个字节不动。
 //! - 整份 JSON（[Index::canonical_json]：身份记录的载荷、日志投影、修改行）：键在 [JSON_ID_KEYS] 里的字符串（或字符串
 //!   数组）；`f` 当修改键；`front` / `back` 当模板文本；同一个对象里有 `f` 时 `v` 按那个键过 [Index::canonical_value]；
 //!   其余递归。
 //!
 //! 语义摘要（`digest.rs`）按原值 ID 记、不过别名表（两台设备的别名表可以不同，摘要不能跟着不同），这里不碰。
 
+use std::cell::RefCell;
 use std::collections::BTreeMap;
 
 use rusqlite::params;
@@ -44,6 +49,7 @@ use serde_json::{Map, Value};
 
 use super::derive::{Index, R_CONFLICT, R_WINNER, Ref};
 use super::schema::sql;
+use crate::card_cache::ids_to_names;
 use crate::gen4::name::read_edit_key;
 use crate::gen4::stamp::StampHlc;
 use crate::gen4_ids::alias::strict_id;
@@ -74,11 +80,6 @@ pub const JSON_ID_KEYS: [&str; 14] = [
     "termFieldId",
     "freqFieldId",
 ];
-
-/// 模板文本里引用字段的前缀（`card_cache.rs` 的 `ids_to_names` 认的同一种写法）。
-const FLD: &str = "fld:";
-/// 规范 UUID 文本的长度。
-const UUID_TEXT: usize = 36;
 
 /// 按类拼行要的换名（[Index::edit_lines_as]）：写入者表（只放规范名与原名不同的）、这个寄存器的规范实体与规范键。
 pub(super) struct Canon<'a> {
@@ -270,32 +271,24 @@ impl<'t, 'c> Index<'t, 'c> {
         }
     }
 
-    /// 模板文本里 `{{…fld:<UUID>}}` 的字段 ID 归一：只换在 `{{` 与 `}}` 之间、后面紧跟规范形状 UUID 的 `fld:`。
+    /// 模板文本里 `{{…fld:<UUID>}}` 的字段 ID 归一：分词与替换都走 `card_cache::ids_to_names`（模板渲染认字段引用的
+    /// 那一份），只把规范形状的 UUID 换成规范 ID；注释、普通文本原样。
     fn canonical_template(&self, text: &str) -> Result<String, String> {
-        let mut out = String::with_capacity(text.len());
-        let mut rest = text;
-        // 扫过的部分里最后一个 `{{` 是否还没被 `}}` 关上。
-        let mut open = false;
-        while let Some(at) = rest.find(FLD) {
-            let before = &rest[..at];
-            if let Some(o) = before.rfind("{{") {
-                open = before.rfind("}}").is_none_or(|c| c < o);
-            } else if before.contains("}}") {
-                open = false;
-            }
-            out.push_str(before);
-            out.push_str(FLD);
-            let after = &rest[at + FLD.len()..];
-            match after.get(..UUID_TEXT).and_then(strict_id) {
-                Some(id) if open => {
-                    out.push_str(&self.canonical(&Ref::Uuid(id.0))?.text());
-                    rest = &after[UUID_TEXT..];
+        let failed: RefCell<Option<String>> = RefCell::new(None);
+        let out = ids_to_names(text, &|id| {
+            let uuid = strict_id(id)?;
+            match self.canonical(&Ref::Uuid(uuid.0)) {
+                Ok(r) => Some(format!("fld:{}", r.text())),
+                Err(e) => {
+                    failed.borrow_mut().get_or_insert(e);
+                    None
                 }
-                _ => rest = after,
             }
+        });
+        match failed.into_inner() {
+            Some(e) => Err(e),
+            None => Ok(out),
         }
-        out.push_str(rest);
-        Ok(out)
     }
 
     /// 旧并入改名、已归回的写入者（`alias_writer_ix`）：原名 → 规范名。
@@ -621,9 +614,9 @@ mod tests {
     }
 
     /// 旧并入改名的写入者归回之后三处一起换：(w1, 2) 的旧上下文写的是改名后的名字，归一后它见过 (w1, 1)，没有
-    /// 冲突；按原值判，(w1, 1) 与它并发、值不同 = 冲突。
+    /// 冲突；按原值判，(w1, 1) 与它并发、值不同 = 冲突。实体从没并入过（类里只有它自己）——单成员也不等于原值读。
     #[test]
-    fn a_renamed_writer_is_judged_as_the_original() {
+    fn a_renamed_writer_on_a_class_of_one_is_not_the_raw_reading() {
         with(|t, col| {
             let merged = format!("merged-{}~w1", rules::merged_writer_hash(U1, "w1").text());
             let write = |value: &str, s: HeritageStamp| {
@@ -647,6 +640,7 @@ mod tests {
                 ix.settle()?;
                 assert_eq!(ix.canonical_writer(&merged)?, "w1");
                 let e = native_edit();
+                assert_eq!(ix.members(&Ref::of(&e.entity))?.len(), 1);
                 let raw = ix.register(EntKind::Note, &e.entity, &e.key)?;
                 assert!(raw.iter().any(|(_, s)| *s == R_CONFLICT), "{raw:?}");
                 let got = ix.class_winners(EntKind::Note, &Ref::of(&e.entity))?;
@@ -657,6 +651,104 @@ mod tests {
             })
             .unwrap();
             assert_rebuild_is_identity(t, col);
+        });
+    }
+
+    /// 改名写入者的名字。
+    fn merged_w1() -> String {
+        format!("merged-{}~w1", rules::merged_writer_hash(U1, "w1").text())
+    }
+
+    /// 带旧戳的一条写入（实体、键取 [native_edit]）。
+    fn stamped(value: &str, s: HeritageStamp) -> Body4 {
+        Body4::Edit(Edit4 {
+            value: format!("\"{value}\""),
+            stamp: Some(s),
+            ..native_edit()
+        })
+    }
+
+    /// 改名写入者能归回的证据（「同一套 seq」）：(w1, 1) 与 (merged, 1) 是同一条记录，落在另一个键上，不碰被测的寄存器。
+    fn renamed_writer_evidence(t: &Truth<'_>, ix: &mut Index<'_, '_>, col: i64, merged: &str) {
+        let salts = Body4::salts([U1]).unwrap();
+        native(t, ix, col, &op(0xa1, 1, 1, &[], &salts));
+        let proof = |w: &str| {
+            Body4::Edit(Edit4 {
+                key: "proof".to_owned(),
+                value: "\"p\"".to_owned(),
+                stamp: Some(stamp(w, 1, r#"{"vv":{}}"#, 50)),
+                ..native_edit()
+            })
+        };
+        heritage(t, ix, col, op(0xc1, 1, 1, &[], &proof("w1")));
+        heritage(t, ix, col, op(0xc2, 1, 2, &[], &proof(merged)));
+    }
+
+    /// HLC 里的写入者也换（设计 §5.3「三处一起换」）：两条并发、物理时刻与计数相同，胜负落到 HLC 写入者上。原名
+    /// `merged-…~w1` < `v`，原值判 `v` 胜；归回成 `w1` > `v`，按类判 `w1` 那条胜。两边都是冲突。
+    #[test]
+    fn the_hlc_writer_is_renamed_too() {
+        with(|t, col| {
+            let merged = merged_w1();
+            t.tx(|t| {
+                let mut ix = Index::new(t, col);
+                renamed_writer_evidence(t, &mut ix, col, &merged);
+                let a = stamped("a", stamp(&merged, 2, r#"{"vv":{}}"#, 100));
+                let b = stamped("b", stamp("v", 1, r#"{"vv":{}}"#, 100));
+                heritage(t, &mut ix, col, op(0xd1, 1, 1, &[], &a));
+                heritage(t, &mut ix, col, op(0xd2, 1, 2, &[], &b));
+                ix.settle()?;
+                assert_eq!(ix.canonical_writer(&merged)?, "w1");
+                let e = native_edit();
+                let raw = ix.register(EntKind::Note, &e.entity, &e.key)?;
+                let winner = raw.iter().find(|(_, s)| *s >= R_WINNER).copied().unwrap();
+                assert_eq!(winner, (op(0xd2, 1, 2, &[], &b).id, R_CONFLICT));
+                let got: Vec<ClassWinner> = ix
+                    .class_winners(EntKind::Note, &Ref::of(&e.entity))?
+                    .into_iter()
+                    .filter(|w| w.key == e.key)
+                    .collect();
+                assert_eq!(got.len(), 1);
+                assert_eq!(got[0].value, "\"a\"");
+                assert!(got[0].conflict);
+                Ok(())
+            })
+            .unwrap();
+        });
+    }
+
+    /// 不带旧戳的原生写入「见没见过」改名写入者的写入：按原名问闭包（闭包存原名）。原生写入依赖的承袭操作带
+    /// `merged-…~w1` 的旧戳，它就见过 (w1, 1)，盖掉它、没有冲突；拿规范名 `w1` 去问会答「没见过」= 误报冲突。
+    #[test]
+    fn a_native_write_sees_a_renamed_writer_by_its_raw_name() {
+        with(|t, col| {
+            let merged = merged_w1();
+            t.tx(|t| {
+                let mut ix = Index::new(t, col);
+                renamed_writer_evidence(t, &mut ix, col, &merged);
+                let x = stamped("x", stamp(&merged, 2, r#"{"vv":{}}"#, 100));
+                heritage(t, &mut ix, col, op(0xd1, 1, 1, &[], &x));
+                let z = Body4::Edit(Edit4 {
+                    value: "\"z\"".to_owned(),
+                    ..native_edit()
+                });
+                native(t, &mut ix, col, &op(0xa2, 1, 300, &[(0xd1, 1)], &z));
+                ix.settle()?;
+                assert_eq!(ix.canonical_writer(&merged)?, "w1");
+                let e = native_edit();
+                let raw = ix.register(EntKind::Note, &e.entity, &e.key)?;
+                assert!(raw.iter().all(|(_, s)| *s != R_CONFLICT), "{raw:?}");
+                let got: Vec<ClassWinner> = ix
+                    .class_winners(EntKind::Note, &Ref::of(&e.entity))?
+                    .into_iter()
+                    .filter(|w| w.key == e.key)
+                    .collect();
+                assert_eq!(got.len(), 1);
+                assert_eq!(got[0].value, "\"z\"");
+                assert!(!got[0].conflict);
+                Ok(())
+            })
+            .unwrap();
         });
     }
 
@@ -745,6 +837,18 @@ mod tests {
                 let got = ix.canonical_value(&format!("tmplDef/{}", w.tmpl[1].text()), &tpl)?;
                 let want = format!("{{{{fld:{cf}}}}} fld:{f1} {{{{#fld:{cf}}}}}x{{{{/fld:{cf}}}}}");
                 assert_eq!(got["front"], json!(want));
+                // 注释与 `{{…}}` 里不是整段字段引用的：模板渲染不认，这里也不动（与 `ids_to_names` 同一个分词）。
+                let comments = format!(
+                    "<!-- {{{{fld:{f1}}}}} --> {{{{!-- 见 fld:{f1} --}}}} {{{{Text:fld:{f1}}}}}"
+                );
+                let skipped = ix.canonical_value(
+                    &format!("tmplDef/{}", w.tmpl[1].text()),
+                    &json!({"front": comments}),
+                )?;
+                let kept = format!(
+                    "<!-- {{{{fld:{f1}}}}} --> {{{{!-- 见 fld:{f1} --}}}} {{{{Text:fld:{cf}}}}}"
+                );
+                assert_eq!(skipped["front"], json!(kept));
                 assert_eq!(got["name"], tpl["name"]);
                 assert_eq!(got["back"], tpl["back"]);
                 let doc = json!({
