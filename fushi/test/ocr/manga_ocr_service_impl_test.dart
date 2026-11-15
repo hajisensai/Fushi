@@ -51,6 +51,40 @@ const List<MangaOcrModelFile> _tinyManifest = <MangaOcrModelFile>[
   ),
 ];
 
+/// 上一代清单（缩成几字节）：老用户更新 app 后磁盘上只有这几个文件。
+const MangaOcrModelGeneration _tinySuperseded = MangaOcrModelGeneration(
+  manifest: <MangaOcrModelFile>[
+    MangaOcrModelFile(
+      fileName: 'detector-v4-s_int8.onnx',
+      url: 'http://unused.invalid/detector-v4-s_int8.onnx',
+      expectedBytes: 4,
+      role: MangaOcrModelRole.detector,
+    ),
+    MangaOcrModelFile(
+      fileName: kPpOcrDetFileName,
+      url: 'http://unused.invalid/$kPpOcrDetFileName',
+      expectedBytes: 8,
+      role: MangaOcrModelRole.recognizer,
+    ),
+    MangaOcrModelFile(
+      fileName: kPpOcrRecDictFileName,
+      url: 'http://unused.invalid/$kPpOcrRecDictFileName',
+      expectedBytes: 10,
+      role: MangaOcrModelRole.recognizer,
+    ),
+    MangaOcrModelFile(
+      fileName: kMangaCtcSupersededRecFileName,
+      url: 'http://unused.invalid/$kMangaCtcSupersededRecFileName',
+      expectedBytes: 5,
+      role: MangaOcrModelRole.recognizer,
+    ),
+  ],
+  cacheSignature: 'test-superseded-signature',
+  recFileName: kMangaCtcSupersededRecFileName,
+  recDictFileName: kPpOcrRecDictFileName,
+  recDictFormat: PpOcrCharacterDictFormat.paddleYaml,
+);
+
 /// 进程内可编排的 fake 任务。
 class _FakeJob implements MangaOcrVolumeJob {
   final Completer<String> completer = Completer<String>();
@@ -431,6 +465,107 @@ void main() {
   });
 
   group('逐列 CTC 模型（manga_ctc）', () {
+    test('当前一代没下齐、上一代齐全：用上一代的 rec / 字典 / 签名照常识别', () async {
+      for (final MangaOcrModelFile model in _tinySuperseded.manifest) {
+        File(p.join(modelsDir.path, model.fileName)).writeAsBytesSync(<int>[7]);
+      }
+      final _FakePageSessionRunner pages = _FakePageSessionRunner();
+      final MangaOcrServiceImpl ctc = MangaOcrServiceImpl(
+        localModel: MangaOcrLocalModel.mangaCtc,
+        modelsDirProvider: () async => modelsDir,
+        manifest: _tinyManifest,
+        supersededGeneration: _tinySuperseded,
+        jobRunner: _FakeRunner(),
+        pageSessionRunner: pages,
+        platformSupport: () => true,
+      );
+
+      // 设置页仍按「未下齐」给下载入口，但识别能跑。
+      final MangaOcrModelStatus status = await ctc.modelStatus();
+      expect(status.allReady, isFalse);
+      expect(status.supersededReady, isTrue);
+      expect(status.canRun, isTrue);
+
+      await ctc.openPageSession(imageDirPath: 'D:/vol');
+      final MangaOcrPageSessionRequest old = pages.sessions.single.request;
+      expect(
+        old.modelPaths.ctcRecPath,
+        p.join(modelsDir.path, kMangaCtcSupersededRecFileName),
+      );
+      expect(old.modelPaths.ppRecPath, old.modelPaths.ctcRecPath);
+      expect(
+        old.modelPaths.ppRecDictPath,
+        p.join(modelsDir.path, kPpOcrRecDictFileName),
+      );
+      // 上一代的字典是 YAML：格式跟着那一代走，不能拿纯文本解析器去读。
+      expect(
+        old.modelPaths.ppRecDictFormat,
+        PpOcrCharacterDictFormat.paddleYaml,
+      );
+      // 读与写缓存都记在上一代的签名下，不冒充当前一代的结果。
+      expect(old.engineSignature, startsWith('test-superseded-signature-'));
+      expect(
+        p.basename(await ctc.resolvePageCacheDirPath(imageDirPath: 'D:/vol')),
+        old.engineSignature,
+      );
+
+      // 当前一代下齐后立刻换过去：路径、字典格式、签名一起变。
+      for (final MangaOcrModelFile model in _tinyManifest) {
+        File(p.join(modelsDir.path, model.fileName)).writeAsBytesSync(<int>[7]);
+      }
+      final MangaOcrModelStatus ready = await ctc.modelStatus();
+      expect(ready.allReady, isTrue);
+      expect(ready.supersededReady, isFalse);
+      await ctc.openPageSession(imageDirPath: 'D:/vol');
+      final MangaOcrPageSessionRequest current = pages.sessions.last.request;
+      expect(
+        current.modelPaths.ctcRecPath,
+        p.join(modelsDir.path, kMangaCtcRecFileName),
+      );
+      expect(
+        current.modelPaths.ppRecDictFormat,
+        PpOcrCharacterDictFormat.plainText,
+      );
+      expect(
+        current.engineSignature,
+        startsWith('${MangaOcrLocalModel.mangaCtc.cacheSignature}-'),
+      );
+      expect(current.engineSignature, isNot(old.engineSignature));
+    });
+
+    test('两代都不齐：照旧报模型未下载，状态不可运行', () async {
+      // 上一代只剩检测器与字典（rec 被删）：不算齐全，不能半套硬跑。
+      for (final String name in <String>[
+        'detector-v4-s_int8.onnx',
+        kPpOcrDetFileName,
+        kPpOcrRecDictFileName,
+      ]) {
+        File(p.join(modelsDir.path, name)).writeAsBytesSync(<int>[7]);
+      }
+      final MangaOcrServiceImpl ctc = MangaOcrServiceImpl(
+        localModel: MangaOcrLocalModel.mangaCtc,
+        modelsDirProvider: () async => modelsDir,
+        manifest: _tinyManifest,
+        supersededGeneration: _tinySuperseded,
+        jobRunner: _FakeRunner(),
+        pageSessionRunner: _FakePageSessionRunner(),
+        platformSupport: () => true,
+      );
+      final MangaOcrModelStatus status = await ctc.modelStatus();
+      expect(status.supersededReady, isFalse);
+      expect(status.canRun, isFalse);
+      await expectLater(
+        ctc.openPageSession(imageDirPath: 'D:/vol'),
+        throwsA(
+          isA<StateError>().having(
+            (StateError e) => e.message,
+            'message',
+            contains('not downloaded'),
+          ),
+        ),
+      );
+    });
+
     test('漫画 rec 同时读竖列与横行；缓存自成一套', () async {
       final List<MangaOcrModelFile> tinyCtc = <MangaOcrModelFile>[
         for (final MangaOcrModelFile model

@@ -11,6 +11,8 @@ import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/ocr/manga_ocr_model_manifest.dart';
 import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart';
 import 'package:fushi_engine/ocr/manga_ocr_model_fingerprint.dart' as model_fp;
+import 'package:fushi_engine/ocr/ppocr_line_recognizer.dart'
+    show PpOcrCharacterDictFormat;
 
 /// 默认本地模型：逐列 CTC（五端都能跑、约 42 MB）。
 const MangaOcrLocalModel kDefaultMangaOcrLocalModel =
@@ -49,16 +51,20 @@ enum MangaOcrLocalModel {
     mangaCtc => true,
   };
 
-  List<MangaOcrModelFile> get manifest => switch (this) {
-    mangaCtc => kMangaCtcOcrModelManifest,
+  /// 当前这一代：下载、导入、设置页展示都按它。
+  MangaOcrModelGeneration get generation => switch (this) {
+    mangaCtc => kMangaCtcGeneration,
   };
 
-  String get cacheSignature => switch (this) {
-    // 不能以 kLocalMangaOcrEngineSignature 开头：那样已删除的 manga-ocr 留下的 v4
-    // 旧缓存会被当成可补几何的来源，把 manga-ocr 的文字冒充成 CTC 的结果
-    // （BUG-2813 的升级路径）。
-    mangaCtc => 'local-onnx-ctc-kellenok-v0.3-$kMangaOcrPipelineRevision',
+  /// 上一代：当前这一代还没下齐、而它在磁盘上齐全时，识别照常用它跑
+  /// （[installedMangaOcrGeneration]）。没有上一代的模型返回 null。
+  MangaOcrModelGeneration? get supersededGeneration => switch (this) {
+    mangaCtc => kMangaCtcSupersededGeneration,
   };
+
+  List<MangaOcrModelFile> get manifest => generation.manifest;
+
+  String get cacheSignature => generation.cacheSignature;
 
   /// 每个模型一个兄弟目录（`<support>/ocr_models/<name>`），删一个不波及另一个。
   /// 父目录由 [model_fp.defaultMangaOcrModelsDir]（旧 manga-ocr 目录）的 parent
@@ -72,6 +78,52 @@ enum MangaOcrLocalModel {
   }
 }
 
+/// 一代模型：清单、缓存签名基线，以及块识别 rec 与它的字典。
+///
+/// 换 rec 版本 = 换一代。新一代的文件落盘名带版本，与上一代并存于同一个目录，
+/// 所以「磁盘上装的是哪一代」只看各自清单齐不齐（[installedMangaOcrGeneration]）。
+class MangaOcrModelGeneration {
+  const MangaOcrModelGeneration({
+    required this.manifest,
+    required this.cacheSignature,
+    required this.recFileName,
+    required this.recDictFileName,
+    required this.recDictFormat,
+  });
+
+  final List<MangaOcrModelFile> manifest;
+
+  /// 逐页缓存签名的基线（后面再接已安装文件的内容指纹）。每代不同：上一代的
+  /// 逐页缓存不会被当成这一代的结果，反之亦然。
+  final String cacheSignature;
+
+  final String recFileName;
+  final String recDictFileName;
+  final PpOcrCharacterDictFormat recDictFormat;
+
+  /// [dir] 里这一代的清单文件是否齐全（只 stat 清单里那几个文件）。
+  bool isCompleteIn(Directory dir) => manifest.every(
+    (MangaOcrModelFile file) =>
+        isMangaOcrModelFileReady(File(p.join(dir.path, file.fileName))),
+  );
+}
+
+/// [dir] 里实际能用来识别的那一代：[current] 齐全就用它；否则 [superseded] 齐全
+/// 就用上一代；都不齐返回 null（本地 OCR 跑不起来）。
+///
+/// 为什么留上一代：换 rec 版本后老用户磁盘上只有上一代的文件。没有这一步，更新
+/// app 之后本地 OCR 会一直报「模型未下载」，直到用户去设置页再下一次——而上一代
+/// 明明还能读。下齐新一代后上一代的文件才删（[deleteSupersededMangaCtcFiles]）。
+MangaOcrModelGeneration? installedMangaOcrGeneration(
+  Directory dir, {
+  required MangaOcrModelGeneration current,
+  MangaOcrModelGeneration? superseded,
+}) {
+  if (current.isCompleteIn(dir)) return current;
+  if (superseded != null && superseded.isCompleteIn(dir)) return superseded;
+  return null;
+}
+
 /// 按 [model] 的模型目录 / 清单 / 缓存签名解析本机已安装模型的逐页缓存签名
 /// （只读缓存的消费方：向导探测 / 重开恢复；BUG-1173）。
 ///
@@ -82,10 +134,19 @@ Future<String> resolveInstalledLocalMangaOcrEngineSignature({
   MangaOcrLocalModel model = kDefaultMangaOcrLocalModel,
 }) async {
   try {
+    final Directory dir = await model.modelsDirectory();
+    // 当前一代没下齐而上一代还在时，实际在读（也在写缓存）的是上一代。
+    final MangaOcrModelGeneration generation =
+        installedMangaOcrGeneration(
+          dir,
+          current: model.generation,
+          superseded: model.supersededGeneration,
+        ) ??
+        model.generation;
     return await model_fp.resolveLocalMangaOcrEngineSignature(
-      await model.modelsDirectory(),
-      manifest: model.manifest,
-      baseSignature: model.cacheSignature,
+      dir,
+      manifest: generation.manifest,
+      baseSignature: generation.cacheSignature,
     );
   } catch (_) {
     return model.cacheSignature;
@@ -126,21 +187,23 @@ const String kLegacyMangaOcrModelDirName = 'manga';
 /// 逐列 CTC 目录名（[MangaOcrLocalModel.modelsDirectory] 的 basename）。
 const String kMangaCtcModelDirName = 'manga-ctc';
 
-/// 逐列 CTC 清单换代后留在 `<support>/ocr_models/manga-ctc/` 里的旧文件（各自的
-/// `.part` 一并删）：Kellenok rec v0.2（21 MB，2026-11 换成 v0.3）与它用的
-/// PP-OCRv6 `inference.yml` 字典（v0.3 自带纯文本字典，本目录不再有人读它）。
+/// 逐列 CTC 上一代（Kellenok rec v0.2，2026-11 换成 v0.3）独有、当前一代不再用的
+/// 文件（各自的 `.part` 一并删）：v0.2 rec（21 MB）与它用的 PP-OCRv6
+/// `inference.yml` 字典（v0.3 自带纯文本字典）。
 ///
-/// 只删本目录里的：galgame 查词校准 OCR 用的同名字典住在 `manga/` 或
-/// `gal_calibration/`，不受影响。
+/// **只在当前一代下齐之后才删**（[deleteSupersededMangaCtcFiles]）：没下齐之前
+/// 上一代还在替它读。只删 `manga-ctc/` 里的：galgame 查词校准 OCR 用的同名字典住
+/// 在 `manga/` 或 `gal_calibration/`，不受影响。
 const List<String> kRemovedMangaCtcFileNames = <String>[
-  'kellenok_manga_rec_v0.2.onnx',
+  kMangaCtcSupersededRecFileName,
   kPpOcrRecDictFileName,
 ];
 
 /// 尽力删掉已删除模型的遗留数据，返回实际删掉的**条目数**：每删掉一个
 /// [kRemovedMangaOcrModelDirNames] 目录、[kRemovedMangaOcrLegacyFileNames] 里的
 /// 一个文件（或它的 `.part`）、`manga-ctc/` 里 [kRemovedMangaCtcFileNames] 的一个
-/// 文件（或它的 `.part`）、以及删空后的那两个目录本身，各计 1。
+/// 文件（或它的 `.part`，仅当当前一代已下齐）、以及删空后的旧 `manga/` 目录本身，
+/// 各计 1。
 ///
 /// 宿主启动时调一次即可（幂等：不在就什么都不做）。删除失败（文件被占用 /
 /// 权限）只记日志不抛：不能因为清理旧档挡住启动，下次启动会再试。
@@ -169,11 +232,24 @@ Future<int> deleteRemovedMangaOcrModelDirs({Directory? ocrModelsRoot}) async {
     Directory(p.join(root.path, kLegacyMangaOcrModelDirName)),
     kRemovedMangaOcrLegacyFileNames,
   );
-  deleted += await _deleteRemovedMangaOcrFiles(
+  deleted += await deleteSupersededMangaCtcFiles(
     Directory(p.join(root.path, kMangaCtcModelDirName)),
-    kRemovedMangaCtcFileNames,
   );
   return deleted;
+}
+
+/// 逐列 CTC 当前一代在 [ctcDir] 里下齐之后，删掉上一代独有的文件
+/// （[kRemovedMangaCtcFileNames]），返回删掉的条目数；没下齐时什么都不删——那时
+/// 上一代还在替它读。启动时与模型下载完成后各调一次；幂等，失败只记日志。
+Future<int> deleteSupersededMangaCtcFiles(Directory ctcDir) async {
+  try {
+    if (!await ctcDir.exists()) return 0;
+    if (!kMangaCtcGeneration.isCompleteIn(ctcDir)) return 0;
+  } on FileSystemException catch (error, stack) {
+    engineLog.log('deleteSupersededMangaCtcFiles', error, stack);
+    return 0;
+  }
+  return _deleteRemovedMangaOcrFiles(ctcDir, kRemovedMangaCtcFileNames);
 }
 
 /// 从 [legacy] 目录删 [fileNames]（含 `.part`）；目录删空了连目录一起删。返回删掉
@@ -267,3 +343,68 @@ const List<MangaOcrModelFile> kMangaCtcOcrModelManifest = <MangaOcrModelFile>[
     role: MangaOcrModelRole.recognizer,
   ),
 ];
+
+/// 逐列 CTC 的当前一代（Kellenok rec v0.3）。
+///
+/// 缓存签名不能以 kLocalMangaOcrEngineSignature 开头：那样已删除的 manga-ocr 留下
+/// 的 v4 旧缓存会被当成可补几何的来源，把 manga-ocr 的文字冒充成 CTC 的结果
+/// （BUG-2813 的升级路径）。
+const MangaOcrModelGeneration kMangaCtcGeneration = MangaOcrModelGeneration(
+  manifest: kMangaCtcOcrModelManifest,
+  cacheSignature: 'local-onnx-ctc-kellenok-v0.3-$kMangaOcrPipelineRevision',
+  recFileName: kMangaCtcRecFileName,
+  recDictFileName: kMangaCtcRecDictFileName,
+  recDictFormat: PpOcrCharacterDictFormat.plainText,
+);
+
+/// 上一代 rec（Kellenok v0.2，revision ba1d479e）的落盘名。
+const String kMangaCtcSupersededRecFileName = 'kellenok_manga_rec_v0.2.onnx';
+
+/// 逐列 CTC 的上一代（Kellenok rec v0.2 + PP-OCRv6 `inference.yml` 字典）。**不再
+/// 下载**，只用来认磁盘上已有的文件：清单的文件、顺序与缓存签名都与换代前逐字
+/// 相同，所以回落到它时命中的就是用户原来那批逐页缓存目录。
+///
+/// 清理条件：新装机不会有这一代的文件，老用户下齐 v0.3 后文件即被删
+/// （[deleteSupersededMangaCtcFiles]）；下一次换代时把这里换成那时的「上一代」。
+const MangaOcrModelGeneration kMangaCtcSupersededGeneration =
+    MangaOcrModelGeneration(
+      manifest: <MangaOcrModelFile>[
+        MangaOcrModelFile(
+          fileName: 'detector-v4-s_int8.onnx',
+          url:
+              'https://huggingface.co/ogkalu/comic-text-and-bubble-detector/'
+              'resolve/main/detector-v4-s_int8.onnx',
+          expectedBytes: 11120765,
+          role: MangaOcrModelRole.detector,
+        ),
+        MangaOcrModelFile(
+          fileName: kPpOcrDetFileName,
+          url:
+              'https://huggingface.co/PaddlePaddle/PP-OCRv6_small_det_onnx/'
+              'resolve/$kPpOcrDetRevision/inference.onnx',
+          expectedBytes: 9880512,
+          role: MangaOcrModelRole.recognizer,
+        ),
+        MangaOcrModelFile(
+          fileName: kPpOcrRecDictFileName,
+          url:
+              'https://huggingface.co/PaddlePaddle/PP-OCRv6_small_rec_onnx/'
+              'resolve/$kPpOcrRecRevision/inference.yml',
+          expectedBytes: 150579,
+          role: MangaOcrModelRole.recognizer,
+        ),
+        MangaOcrModelFile(
+          fileName: kMangaCtcSupersededRecFileName,
+          url:
+              'https://huggingface.co/Kellenok/PP-OCRv6_manga/'
+              'resolve/ba1d479e8a61a20e8318c9758c73fbbbd290b98d/'
+              'rec/manga_rec_v0.2.onnx',
+          expectedBytes: 21167540,
+          role: MangaOcrModelRole.recognizer,
+        ),
+      ],
+      cacheSignature: 'local-onnx-ctc-kellenok-v0.2-$kMangaOcrPipelineRevision',
+      recFileName: kMangaCtcSupersededRecFileName,
+      recDictFileName: kPpOcrRecDictFileName,
+      recDictFormat: PpOcrCharacterDictFormat.paddleYaml,
+    );

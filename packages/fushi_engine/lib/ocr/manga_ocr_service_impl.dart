@@ -634,14 +634,21 @@ Future<void> _volumeJobIsolateMain(_JobIsolateArgs args) async {
     // 不会与新模型的结果混进同一卷（BUG-1173）。指纹按 (size, mtime) 记忆化，
     // 常态只做几次 stat。
     // 块识别器只剩逐列 CTC（[_openIsolateOcrEngine] 已拒绝没有 CTC rec 的路径）。
+    // 路径里的 rec 是上一代的文件时（当前一代还没下齐），签名也按上一代算。
     const MangaOcrLocalModel jobModel = MangaOcrLocalModel.mangaCtc;
+    final MangaOcrModelGeneration? superseded = jobModel.supersededGeneration;
+    final MangaOcrModelGeneration jobGeneration =
+        superseded != null &&
+            p.basename(args.modelPaths.ctcRecPath) == superseded.recFileName
+        ? superseded
+        : jobModel.generation;
     final String engineSignature =
         args.engineSignature ??
         mangaOcrEngineSignatureFor(
           await model_fp.resolveLocalMangaOcrEngineSignature(
             Directory(p.dirname(args.modelPaths.detectorPath)),
-            manifest: jobModel.manifest,
-            baseSignature: jobModel.cacheSignature,
+            manifest: jobGeneration.manifest,
+            baseSignature: jobGeneration.cacheSignature,
           ),
           ignoreFurigana: args.modelPaths.ignoreFurigana,
         );
@@ -1313,6 +1320,7 @@ class MangaOcrServiceImpl
     Future<Directory> Function()? modelsDirProvider,
     MangaOcrModelDownloader? downloader,
     List<MangaOcrModelFile>? manifest,
+    MangaOcrModelGeneration? supersededGeneration,
     MangaOcrVolumeJobRunner? jobRunner,
     MangaOcrPageSessionRunner? pageSessionRunner,
     bool Function()? platformSupport,
@@ -1322,6 +1330,10 @@ class MangaOcrServiceImpl
        _modelsDirProvider = modelsDirProvider ?? localModel.modelsDirectory,
        _downloader = downloader ?? MangaOcrModelDownloader(),
        _manifest = manifest ?? localModel.manifest,
+       // 注入了自定义清单（测试）时不自动带上真实的上一代：两者的文件名对不上。
+       _superseded =
+           supersededGeneration ??
+           (manifest == null ? localModel.supersededGeneration : null),
        _jobRunner = jobRunner ?? const IsolateMangaOcrVolumeJobRunner(),
        _pageSessionRunner =
            pageSessionRunner ?? const IsolateMangaOcrPageSessionRunner(),
@@ -1330,6 +1342,9 @@ class MangaOcrServiceImpl
   final Future<Directory> Function() _modelsDirProvider;
   final MangaOcrModelDownloader _downloader;
   final List<MangaOcrModelFile> _manifest;
+
+  /// 当前一代没下齐时可以替它读的上一代；null = 没有。
+  final MangaOcrModelGeneration? _superseded;
   final MangaOcrVolumeJobRunner _jobRunner;
   final MangaOcrPageSessionRunner _pageSessionRunner;
   final bool Function() _platformSupport;
@@ -1388,17 +1403,29 @@ class MangaOcrServiceImpl
   @override
   bool get isSupportedPlatform => _platformSupport();
 
-  /// 清单是否齐全（只 stat 清单里那几个文件，不遍历目录）。
-  ///
-  /// 与 [modelStatus] 分开：跑 OCR 的热路径只需要这个答案，而占用统计要递归遍历
-  /// 整个模型目录——把两者绑在一起等于让每次开跑都白扫一遍磁盘。
-  Future<bool> _manifestComplete() async {
-    final Directory dir = await _modelsDirProvider();
-    return _manifest.every(
-      (MangaOcrModelFile model) =>
-          isMangaOcrModelFileReady(File(p.join(dir.path, model.fileName))),
+  /// 当前一代：清单取本服务的（可注入），其余取 [localModel] 的。
+  MangaOcrModelGeneration get _current {
+    final MangaOcrModelGeneration generation = localModel.generation;
+    return MangaOcrModelGeneration(
+      manifest: _manifest,
+      cacheSignature: generation.cacheSignature,
+      recFileName: generation.recFileName,
+      recDictFileName: generation.recDictFileName,
+      recDictFormat: generation.recDictFormat,
     );
   }
+
+  /// 磁盘上实际能用来识别的那一代（当前一代，或替它读的上一代）；null = 都不齐。
+  /// 模型路径与缓存签名都从这一个结果派生，两者不会各算各的。
+  ///
+  /// 只 stat 清单里那几个文件，不遍历目录：跑 OCR 的热路径只需要这个答案，占用
+  /// 统计（[modelStatus]）才递归遍历整个模型目录。
+  Future<MangaOcrModelGeneration?> _installedGeneration() async =>
+      installedMangaOcrGeneration(
+        await _modelsDirProvider(),
+        current: _current,
+        superseded: _superseded,
+      );
 
   @override
   Future<MangaOcrModelStatus> modelStatus() async {
@@ -1429,6 +1456,9 @@ class MangaOcrServiceImpl
     return MangaOcrModelStatus(
       detectorReady: detectorReady,
       recognizerReady: recognizerReady,
+      supersededReady:
+          !(detectorReady && recognizerReady) &&
+          (_superseded?.isCompleteIn(dir) ?? false),
       // 占用按目录实际大小，不按清单累加：`.part` 残留与遗留旧档同样占磁盘，
       // 用户看到的数字必须能被「删除」兑现（BUG-1732）。
       diskBytes: await measureDirectoryBytes(dir),
@@ -1442,6 +1472,10 @@ class MangaOcrServiceImpl
     final Directory dir = await _modelsDirProvider();
     // 已就绪的文件下载器会跳过（仍发一条满额进度）。
     yield* _downloader.downloadAll(files: _manifest, targetDir: dir);
+    // 当前一代下齐了：替它读的上一代文件不再有人用，当场删掉（没下齐时不删）。
+    if (localModel == MangaOcrLocalModel.mangaCtc && _superseded != null) {
+      await deleteSupersededMangaCtcFiles(dir);
+    }
   }
 
   @override
@@ -1456,12 +1490,13 @@ class MangaOcrServiceImpl
     return freed;
   }
 
-  Future<MangaOcrModelPaths> _resolveModelPaths({
+  Future<MangaOcrModelPaths> _resolveModelPaths(
+    MangaOcrModelGeneration generation, {
     required bool ignoreFurigana,
   }) async {
     final Directory dir = await _modelsDirProvider();
     String pathOf(MangaOcrModelRole role, String suffix) {
-      final MangaOcrModelFile model = _manifest.firstWhere(
+      final MangaOcrModelFile model = generation.manifest.firstWhere(
         (MangaOcrModelFile m) => m.role == role && m.fileName.endsWith(suffix),
         orElse: () =>
             throw StateError('manifest missing $role file with suffix $suffix'),
@@ -1473,7 +1508,7 @@ class MangaOcrServiceImpl
       case MangaOcrLocalModel.mangaCtc:
         final String ctcRecPath = pathOf(
           MangaOcrModelRole.recognizer,
-          kMangaCtcRecFileName,
+          generation.recFileName,
         );
         return MangaOcrModelPaths(
           detectorPath: pathOf(MangaOcrModelRole.detector, '.onnx'),
@@ -1481,9 +1516,9 @@ class MangaOcrServiceImpl
           ppRecPath: ctcRecPath,
           ppRecDictPath: pathOf(
             MangaOcrModelRole.recognizer,
-            kMangaCtcRecDictFileName,
+            generation.recDictFileName,
           ),
-          ppRecDictFormat: PpOcrCharacterDictFormat.plainText,
+          ppRecDictFormat: generation.recDictFormat,
           ctcRecPath: ctcRecPath,
           ignoreFurigana: ignoreFurigana,
         );
@@ -1505,25 +1540,31 @@ class MangaOcrServiceImpl
     }
     // 只问「齐不齐」，不量「占多少」：占用统计要递归遍历整个模型目录，
     // 那是设置页展示的开销，没有理由压在每次开跑 OCR 的路径上。
-    if (!await _manifestComplete()) {
+    final MangaOcrModelGeneration? generation = await _installedGeneration();
+    if (generation == null) {
       throw StateError('manga OCR models are not downloaded');
     }
-    return _resolveModelPaths(ignoreFurigana: ignoreFurigana);
+    return _resolveModelPaths(generation, ignoreFurigana: ignoreFurigana);
   }
 
   /// 页级缓存签名的**唯一**来源：按本服务的模型目录与清单解析已安装模型指纹
   /// （BUG-1173）。[resolvePageCacheDirPath] 与 [openPageSession] 都经这里，
   /// 会话 isolate 直接用传进去的签名，不再按 detectorPath 重算——注入自定义
   /// 模型目录时读写缓存也不会分叉到两个目录。
-  Future<String> _pageEngineSignature({required bool ignoreFurigana}) async =>
-      mangaOcrEngineSignatureFor(
-        await model_fp.resolveLocalMangaOcrEngineSignature(
-          await _modelsDirProvider(),
-          manifest: _manifest,
-          baseSignature: localModel.cacheSignature,
-        ),
-        ignoreFurigana: ignoreFurigana,
-      );
+  Future<String> _pageEngineSignature({required bool ignoreFurigana}) async {
+    // 与 [_checkedModelPaths] 同一个判据：上一代在替当前一代读时，缓存也记在上一代
+    // 的签名下，下齐当前一代后那些页会按新签名重认，两代结果不混。
+    final MangaOcrModelGeneration generation =
+        await _installedGeneration() ?? _current;
+    return mangaOcrEngineSignatureFor(
+      await model_fp.resolveLocalMangaOcrEngineSignature(
+        await _modelsDirProvider(),
+        manifest: generation.manifest,
+        baseSignature: generation.cacheSignature,
+      ),
+      ignoreFurigana: ignoreFurigana,
+    );
+  }
 
   static String _pageCacheDirPath(String imageDirPath, String signature) =>
       p.join(
