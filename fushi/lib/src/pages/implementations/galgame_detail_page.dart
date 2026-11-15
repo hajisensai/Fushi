@@ -1,4 +1,5 @@
 import 'package:fushi/src/utils/adaptive/fushi_page_backdrop.dart';
+import 'package:fushi/src/focus/fushi_focus_scroll.dart';
 import 'package:fushi/src/media/tags/tag_picker_sheet.dart';
 import 'dart:async';
 import 'dart:io';
@@ -455,8 +456,11 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
     final BuildContext? tabs = _posterTabsKey.currentContext;
     if (tabs == null) return;
     unawaited(
-      Scrollable.ensureVisible(
+      // 程序化滚动只走 [FushiFocusScroll] 这一个实现者（守卫
+      // focus_architecture_static_test）。顶对齐 = 原 ensureVisible 默认。
+      FushiFocusScroll.ensureVisible(
         tabs,
+        alignment: 0,
         duration: fushiMotionDuration(context, FushiMotion.medium),
         curve: FushiMotion.standard,
       ),

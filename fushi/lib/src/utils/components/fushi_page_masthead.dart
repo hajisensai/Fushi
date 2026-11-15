@@ -1,7 +1,6 @@
 import 'dart:math' as math;
 import 'dart:ui' show ImageFilter;
 
-import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
@@ -14,7 +13,7 @@ import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart'
     show FushiAppleColors, appleColorsOf;
 import 'package:fushi/src/utils/components/library_section_tab.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart'
-    show WindowSizeClass, windowSizeClassReal;
+    show HorizontalDragScrollable, WindowSizeClass, windowSizeClassReal;
 import 'package:fushi/src/utils/system_transparency.dart'
     show SystemTransparency;
 import 'package:fushi/src/utils/components/fushi_typography.dart';
@@ -784,13 +783,14 @@ class _FushiMastheadSegmentedTabsState<T extends Object>
       context,
       _enter,
       ScrollConfiguration(
-        behavior: ScrollConfiguration.of(context).copyWith(
-          scrollbars: false,
-          dragDevices: <PointerDeviceKind>{...PointerDeviceKind.values},
-        ),
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: group,
+        behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
+        // 横向滚动区一律经 [HorizontalDragScrollable] 放开鼠标 / 触控板拖动
+        // （守卫 horizontal_drag_scroll_guard_test）。
+        child: HorizontalDragScrollable(
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: group,
+          ),
         ),
       ),
     );

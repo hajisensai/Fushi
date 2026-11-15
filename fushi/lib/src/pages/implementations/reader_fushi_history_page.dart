@@ -2811,9 +2811,17 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       hoverEnabled: !_selectionMode,
     );
     final String? tooltip = meta.tooltip;
+    // 色块整块都是卡面：触屏长按必须归卡壳（[_bookCardShell] 的 onLongPress =
+    // 上下文菜单 / 远端占位卡选项面板，BUG-416），tooltip 不能挂长按识别器抢走
+    // 它（原网格卡的 tooltip 只包封面下那行副行，不覆盖封面）。manual = 触屏不
+    // 触发，鼠标悬停照常显示。
     return tooltip == null
         ? block
-        : FushiTooltip(message: tooltip, child: block);
+        : FushiTooltip(
+            message: tooltip,
+            triggerMode: TooltipTriggerMode.manual,
+            child: block,
+          );
   }
 
   /// 合集「单个格子」卡：扇形封面（材质库页下组内最多 4 本，[_collectionCardCovers]）
