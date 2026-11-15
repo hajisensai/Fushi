@@ -1442,7 +1442,7 @@ class _Importer {
       'factor, reps, lapses, data FROM cards ORDER BY nid, ord, id',
     );
     // 不导排程时用不到 revlog（[_importCardSchedule] 只在带排程时走）。JOIN cards 只收还有卡的 revlog；卡已删除的
-    // 由 [_importDeletedCardRevlogs] 另走（BUG-4628）。
+    // 由 [_importDeletedCardRevlogs] 另走（BUG-4657）。
     final PreparedStatement? revlogs = options.withScheduling
         ? col.db.prepare(
             'SELECT c.nid AS nid, c.ord AS ord, r.cid AS cid, r.id AS id, '
@@ -1512,7 +1512,7 @@ class _Importer {
     }
   }
 
-  /// 来源包里卡已删除、revlog 还在的复习（BUG-4628）：cards 表里已没有这张卡（或卡所属的笔记已不在），上面的三路
+  /// 来源包里卡已删除、revlog 还在的复习（BUG-4657）：cards 表里已没有这张卡（或卡所属的笔记已不在），上面的三路
   /// 归并按卡收 revlog，这些行一条不收。所有者定案：保留，只进统计与日历的历史，不参与排期。
   ///
   /// 承载：日志挂在 [SrsIds.deletedAnkiCard] 派生的卡 ID 上。这个 ID 不由任何笔记 × 模板派生，永远没有卡片缓存行：

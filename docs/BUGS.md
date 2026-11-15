@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4042 条。点号进各自文件。
+> 共 4043 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4657](bugs/BUG-4657-apkg-deleted-card-revlog-dropped.md) | ✅ | ✅ | apkg 导入丢掉 Anki 端已删卡的复习记录（统计 / 日历少算） |
 | [BUG-4656](bugs/BUG-4656-ios-unsigned-ipa-unstripped.md) | ✅ | ✅ | 未签名 IPA 的 Mach-O 没 strip 本地符号 |
 | [BUG-4655](bugs/BUG-4655-ios-dart-split-debug-info.md) | ✅ | ✅ | iOS 出包没拆 Dart 调试信息 |
 | [BUG-4647](bugs/BUG-4647-manual-finish-mark-not-tracked.md) | ✅ | ✅ | Marked Finished / watched by hand is not sent to the tracking site |
@@ -47,7 +48,6 @@
 | [BUG-4642](bugs/BUG-4642-apple-dialog-segmented-intrinsic.md) | ✅ | ✅ | Apple segmented control in a dialog broke layout: no intrinsic size inside IntrinsicWidth |
 | [BUG-4641](bugs/BUG-4641-tracking-replay-resent.md) | ✅ | ✅ | Watching a linked movie or episode again after a restart sent it to the site again |
 | [BUG-4640](bugs/BUG-4640-slang-flat-map-aot-size.md) | ✅ | ✅ | slang flat map 让 Dart AOT 胖 15 MB 并撑爆 Windows gen_snapshot 栈 |
-| [BUG-4628](bugs/BUG-4628-apkg-deleted-card-revlog-dropped.md) | ✅ | ✅ | apkg 导入丢掉 Anki 端已删卡的复习记录（统计 / 日历少算） |
 | [BUG-4628](bugs/BUG-4628-srs-browse-enter-steals-focused-control.md) | ✅ | ✅ | SRS 浏览页按键处理抢走持焦控件的 Enter |
 | [BUG-4627](bugs/BUG-4627-srs-admin-decks-route-shadows-ctl.md) | ✅ | ✅ | srs-admin-decks-route-shadows-ctl |
 | [BUG-4626](bugs/BUG-4626-srs-by-id-cross-profile.md) | ✅ | ✅ | 复习库按实体 ID 的读写不看 profile：点名 A 的命令能读 / 改 / 删 B 的笔记、卡片、牌组、笔记类型 |

@@ -1,4 +1,4 @@
-## BUG-4628 · apkg 导入丢掉 Anki 端已删卡的复习记录（统计 / 日历少算）
+## BUG-4657 · apkg 导入丢掉 Anki 端已删卡的复习记录（统计 / 日历少算）
 - **报告**：2026-11-15（用户：所有者，SRS 协议 4 换代规划定案 d 项）
 - **真实性**：✅ 真 bug。apkg 导入按卡收 revlog：`packages/fushi_engine/lib/srs/apkg/srs_apkg_import.dart:1448`（upstream/develop 行号）的查询是 `revlog r JOIN cards c ON c.id = r.cid`，三路归并（`:1486-1499`）也只收属于来源笔记里某张卡的行。Anki 端删过的卡在 cards 表里已经没有了（卡所属笔记已删的同理），它们的 revlog 一条都不进 Fushi，统计页 / 日历上那几天的复习凭空少掉。
 - **[x] ① 已修复** — 所有者定案：这类记录保留，只进统计与日历的历史，不参与排期。新增 `_importDeletedCardRevlogs`：带排程导入时另查 `revlog` 中「cards ⋈ notes 里没有对应卡」的行，按来源卡分组、按 id 升序，用与活卡同一套 `_revlogLog` 推算写成导入日志，挂在新规则 `SrsIds.deletedAnkiCard(默认牌组 ID, 来源卡 id)`（由父 ID 派生、公式不带盐；Rust `gen4_ids::rules::deleted_anki_card`，黄金向量已加；设计稿 §5.2 / §5.3 已登记为别名层验不上的一类）派生的卡 ID 上。这个 ID 不由笔记 × 模板派生，永远没有卡片缓存行：缓存刷新只更新已有缓存行的卡（`native/fushi_fsrs/src/store/caches.rs` `flush_cards`），复习队列 / 浏览 / 卡片历史都从卡片缓存出发；有效复习投影 `refresh_stats` 对没有缓存行的卡照常投影（归属自己），统计页与日历读的就是这张投影表——不需要新表、新列或改内核。本机已有同一次复习（按 revlog id 查 Anki 日志，评分 / 复习类型 / 用时相同；或 Fushi 导出后绕 Anki 删卡再导回、本 profile 有时刻相近的原生日志，按卡片历史内核的 `srsImportEquivalentAny` 判等价且用时相同）或 fushi-ext 记着的 revlog 不写；报告新增 `deletedCardRevlogsImported`（也计入 `reviewLogsImported`）。

@@ -143,7 +143,7 @@ class SrsImportReport {
   /// 本 profile 里已经有、只是落在这张卡的前身卡或旧卡上的 revlog（不再写一份；旧卡经 `historyFrom` 接进血统，BUG-4254）。
   int revlogsAlreadyPresent = 0;
 
-  /// 来源包里卡已删除、revlog 还在的复习：写进 [reviewLogsImported] 的那部分里有多少条是这种（BUG-4628）。挂在
+  /// 来源包里卡已删除、revlog 还在的复习：写进 [reviewLogsImported] 的那部分里有多少条是这种（BUG-4657）。挂在
   /// `SrsIds.deletedAnkiCard` 上，只进统计 / 日历，不参与任何卡的排期。
   int deletedCardRevlogsImported = 0;
 
