@@ -5,4 +5,4 @@
 - **[x] ② 已加自动化测试** — `fushi/test/build/slang_flat_map_disabled_guard_test.dart`（slang.yaml 必须 `flat_map: false`、不得开 translation_overrides；生成物不得含 `_flatMapFunction` / `setFlatMapFunction`，带 `class Translations` 规模哨兵）。
 - **备注**：
   - Mac 实测（Flutter 3.47.6，`flutter build ipa --release --no-codesign`，与 BUG-4655 的 `--split-debug-info` 叠加）：App.framework/App 108,188,368 B（CI 11-14 develop 未签名 IPA）→ 75,971,968 B（−32.2 MB，−29.8%）。单项拆分取自 arm64 ELF A/B（同一份 kernel）：去 flat map −14.7 MB，DWARF 栈 −13.6 MB。
-  - 本 PR 不动 BUG-1589 的 editbin 步骤：删它要先在 Windows 上用 stock gen_snapshot 实测一次 release 构建。
+  - 本 PR 不动 BUG-1589 的 editbin 步骤：删它要先在 Windows 上用 stock gen_snapshot 实测一次 release 构建。（2026-11-15：PR #3400 已用 Flutter 3.50.0 stock gen_snapshot 实测通过并删除该步骤，见 BUG-1589 ①c。）

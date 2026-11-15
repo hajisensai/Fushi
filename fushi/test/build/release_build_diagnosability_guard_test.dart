@@ -74,32 +74,27 @@ void main() {
     );
   });
 
-  test('Windows 发布构建前必须抬高 gen_snapshot 栈保留（BUG-1589 根因）', () {
+  test('Windows 发布构建不得再 editbin gen_snapshot 栈保留（BUG-1589 已按移除条件删除）', () {
     // -v 落地后第一轮 CI（run 31700342531）拿到的真错误：`aot_elf_release` 阶段
-    // gen_snapshot.exe 以 -1073741571 = 0xC00000FD（栈溢出）退出。本仓 AOT 规模
-    // 超出其默认栈保留；gen_snapshot 不暴露栈参数，只能 editbin 改二进制头。
-    // 本机 SDK 打过同款补丁（flutter upgrade 会冲掉），CI 每次全新 SDK 没有——
-    // 所以补丁必须以 workflow 步骤形式存在，且在 release 构建**之前**执行。
-    const String stackPatch = '/STACK:134217728';
+    // gen_snapshot.exe 以 0xC00000FD（栈溢出）退出，成因是 slang flat map 的巨型
+    // string switch 在 Windows 1 MB 主线程栈上让 SSA 构建递归溢出。当时只能在
+    // workflow 里 `editbin /STACK:134217728` 改二进制头绕开。
+    //
+    // PR #3428 关掉 flat map（`slang.yaml` 的 `flat_map: false`，守卫
+    // slang_flat_map_disabled_guard_test.dart）后，stock gen_snapshot 已能编过，
+    // 栈补丁按 BUG-1589 写明的条件移除。再加回来只会把下一个超深函数藏起来——
+    // 发布构建应当和开发者本机 / 上游一样用原版工具链。
     expect(
-      releaseText,
-      contains(stackPatch),
+      releaseText.toLowerCase(),
+      isNot(contains('editbin')),
       reason:
-          'release-desktop.yml 里找不到 editbin $stackPatch——'
-          'gen_snapshot 栈补丁步骤没了，Windows 发布构建会在 aot_elf_release '
-          '阶段以 0xC00000FD 固定红（BUG-1589）。',
+          'release-desktop.yml 又出现了 editbin——gen_snapshot 栈补丁已随 flat map '
+          '关闭而移除（BUG-1589）；AOT 再栈溢出应先找出超深函数按根因改写。',
     );
     expect(
       releaseText,
-      contains('gen_snapshot.exe'),
-      reason: '栈补丁必须打在 engine artifacts 的 gen_snapshot.exe 上。',
-    );
-    expect(
-      releaseText.indexOf(stackPatch),
-      lessThan(releaseText.indexOf('flutter build windows --release')),
-      reason:
-          '栈补丁步骤必须排在 Windows release 构建之前，否则首轮构建仍然'
-          '用未打补丁的 gen_snapshot。',
+      isNot(contains('/STACK:')),
+      reason: '不得再改 gen_snapshot 的 PE 栈保留（BUG-1589）。',
     );
   });
 
