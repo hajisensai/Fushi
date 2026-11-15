@@ -7,12 +7,33 @@
 library;
 
 import 'dart:async';
+import 'dart:io' show Platform;
 import 'dart:isolate';
 
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_profile_data.dart'
     show SrsStoredProfiles, srsStoredProfiles;
 import 'package:fushi_srs/fushi_srs.dart' show SrsCore;
+
+/// 后台预演自动跑的平台（`Platform.operatingSystem` 的值）：只有桌面（设计 §8 G4b、§9 第 8 项定案）。
+///
+/// 对拍那一步的进程峰值实测约 440 MB（§6.5、§10 第 15 条），在 D4 的内存目标（灌入 150 MB、重建 350 MB）之外；手机上
+/// 后台跑一整轮可能被系统杀掉、拖慢前台，所以峰值压进目标之前移动端（Android / iOS）不自动跑。**解除条件**：对拍峰值
+/// 实测压进 D4 目标之后，把移动端加进这里（同步改设计稿 §8 G4b 行）。
+const Set<String> kSrsGen4RehearsalAutoRunOperatingSystems = <String>{
+  'windows',
+  'macos',
+  'linux',
+};
+
+/// 后台预演在 [operatingSystem]（`Platform.operatingSystem` 的值）上是否自动跑。判据只在这里写一次，消费端不散写
+/// `Platform.isXxx`；测试显式传平台，不依赖宿主。
+bool srsGen4RehearsalAutoRunsOn(String operatingSystem) =>
+    kSrsGen4RehearsalAutoRunOperatingSystems.contains(operatingSystem);
+
+/// 真实平台上的 [srsGen4RehearsalAutoRunsOn]。
+bool get srsGen4RehearsalAutoRuns =>
+    srsGen4RehearsalAutoRunsOn(Platform.operatingSystem);
 
 /// 空闲探测的节拍（满足条件且这个版本还没跑出结论才真跑）。
 const Duration kSrsGen4RehearsalTick = Duration(minutes: 10);

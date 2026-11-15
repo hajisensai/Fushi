@@ -362,12 +362,14 @@ class SrsAppRuntime {
   );
 
   /// 存储换代的预演（设计 §8 G4b）：空闲时只读地对正在用的库走一遍换代，每个 app 版本一次；报告在同步与历史页。
+  /// 只在 [srsGen4RehearsalAutoRuns] 的平台（桌面）上自动跑：对拍峰值压进内存目标之前不上手机。
   late final SrsGen4RehearsalScheduler rehearsal = SrsGen4RehearsalScheduler(
     readRunner: srsGen4RehearsalRunnerOf(_readStore),
     appVersion: () =>
         '${app.packageInfo.version}+${app.packageInfo.buildNumber}',
-    // 库关着（备份恢复 / 数据根迁移 / 退出）时不开新的一次。
-    canRunNow: () => app.isInitialised && _idleForOptimization(),
+    // 不自动跑的平台不开；库关着（备份恢复 / 数据根迁移 / 退出）时不开新的一次。
+    canRunNow: () =>
+        srsGen4RehearsalAutoRuns && app.isInitialised && _idleForOptimization(),
     onError: (Object e, StackTrace stack) =>
         ErrorLogService.instance.log('SrsAppRuntime.gen4Rehearsal', e, stack),
   );
@@ -461,7 +463,7 @@ class SrsAppRuntime {
     srsActiveReviewSessions.addListener(_onReviewSessionsChanged);
     _lifecycle = AppLifecycleListener(onStateChange: _onLifecycle);
     optimizer.start();
-    rehearsal.start();
+    if (srsGen4RehearsalAutoRuns) rehearsal.start();
     app.addDatabaseCloseQuiescer(_quiesceSync);
     app.addDatabaseCloseQuiescer(_quiesceRehearsal);
     _hostWrites = app.syncServerController.clientSyncWrites.listen(

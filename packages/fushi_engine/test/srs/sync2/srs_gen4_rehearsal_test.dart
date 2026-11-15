@@ -69,6 +69,15 @@ SrsGen4RehearsalScheduler _scheduler(
 void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
 
+  test('the background rehearsal auto-runs on desktop only', () {
+    for (final String os in <String>['windows', 'macos', 'linux']) {
+      expect(srsGen4RehearsalAutoRunsOn(os), isTrue, reason: os);
+    }
+    for (final String os in <String>['android', 'ios', 'fuchsia']) {
+      expect(srsGen4RehearsalAutoRunsOn(os), isFalse, reason: os);
+    }
+  });
+
   group('scheduler', () {
     test(
       'runs once per app version and stops after a settled verdict',
