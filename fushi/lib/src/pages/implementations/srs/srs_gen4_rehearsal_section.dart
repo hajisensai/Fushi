@@ -32,14 +32,19 @@ String srsGen4RehearsalTitle(SrsGen4RehearsalVerdict v) => switch (v) {
   SrsGen4RehearsalVerdict.blocked => t.srs_gen4_rehearsal_blocked,
   SrsGen4RehearsalVerdict.incomplete => t.srs_gen4_rehearsal_incomplete,
   SrsGen4RehearsalVerdict.interrupted => t.srs_gen4_rehearsal_interrupted,
+  SrsGen4RehearsalVerdict.running => t.srs_gen4_rehearsal_running,
   SrsGen4RehearsalVerdict.error => t.srs_gen4_rehearsal_error,
   SrsGen4RehearsalVerdict.skipped ||
   SrsGen4RehearsalVerdict.cancelled => t.srs_gen4_rehearsal_unfinished,
 };
 
-/// 这个结论要不要给诊断报告的导出入口（过了的、没数据的不给）。
-bool srsGen4RehearsalNeedsDiagnostics(SrsGen4RehearsalVerdict v) =>
-    v != SrsGen4RehearsalVerdict.pass && v != SrsGen4RehearsalVerdict.empty;
+/// 这个结论要不要给诊断报告的导出入口（过了的、没数据的不给；正在跑的还没有结论，也不给）。
+bool srsGen4RehearsalNeedsDiagnostics(SrsGen4RehearsalVerdict v) => switch (v) {
+  SrsGen4RehearsalVerdict.pass ||
+  SrsGen4RehearsalVerdict.empty ||
+  SrsGen4RehearsalVerdict.running => false,
+  _ => true,
+};
 
 class SrsGen4RehearsalSection extends ConsumerStatefulWidget {
   const SrsGen4RehearsalSection({super.key});
@@ -147,11 +152,12 @@ class _SrsGen4RehearsalSectionState
             time: at == null ? '-' : srsTimeLabel(context, at),
             version: report.appVersion ?? '-',
           ),
-          icon: ok
-              ? FushiIcons.success
-              : (v == SrsGen4RehearsalVerdict.fail
-                    ? FushiIcons.error
-                    : FushiIcons.warning),
+          icon: switch (v) {
+            _ when ok => FushiIcons.success,
+            SrsGen4RehearsalVerdict.fail => FushiIcons.error,
+            SrsGen4RehearsalVerdict.running => FushiIcons.pending,
+            _ => FushiIcons.warning,
+          },
           showIcon: true,
           subtitleMaxLines: 2,
         ),

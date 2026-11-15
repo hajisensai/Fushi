@@ -9253,6 +9253,7 @@
   "srs_gen4_rehearsal_incomplete": "预检没有比全",
   "srs_gen4_rehearsal_interrupted": "预检中途中断",
   "srs_gen4_rehearsal_pass": "可以换代",
+  "srs_gen4_rehearsal_running": "预检进行中",
   "srs_gen4_rehearsal_saved": "诊断报告已保存",
   "srs_gen4_rehearsal_section": "存储换代预检",
   "srs_gen4_rehearsal_share_subject": "Fushi 存储换代预检",

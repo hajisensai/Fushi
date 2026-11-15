@@ -164,6 +164,23 @@ void main() {
       },
     );
 
+    test('a rehearsal running elsewhere in this process is neither settled nor '
+        'an interruption, and the scheduler waits for it', () async {
+      // 内核读到本进程里这个库的登记还在时报 running，不是 started。
+      final _FakeRunner runner = _FakeRunner(last: _report('running', '1.0+1'));
+      expect(runner.last?.verdict, SrsGen4RehearsalVerdict.running);
+      expect(SrsGen4RehearsalVerdict.running.settled, isFalse);
+      final List<Object> errors = <Object>[];
+      final SrsGen4RehearsalScheduler s = _scheduler(runner, errors: errors);
+      expect(await s.maybeRun(), isNull);
+      expect(runner.runs, 0);
+      expect(errors, isEmpty);
+      // 那一次跑完、报告还不是本版本的结论（被停下了）：下个节拍照跑。
+      runner.last = _report('cancelled', '1.0+1');
+      expect((await s.maybeRun())?.verdict, SrsGen4RehearsalVerdict.pass);
+      expect(runner.runs, 1);
+    });
+
     test('an unfinished run (cancelled / no space) is retried later', () async {
       final _FakeRunner runner = _FakeRunner(verdict: 'skipped');
       final SrsGen4RehearsalScheduler s = _scheduler(runner);

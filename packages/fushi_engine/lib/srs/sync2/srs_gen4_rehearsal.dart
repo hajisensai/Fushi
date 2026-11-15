@@ -66,6 +66,9 @@ enum SrsGen4RehearsalVerdict {
   /// 自动重跑可能再死一次，同一版本不再自动跑；报告照样可导出。
   interrupted,
 
+  /// 本进程里正在跑（内核 `VERDICT_RUNNING`：报告文件还是开跑标记、但这个库的预演登记还在）。不是结论。
+  running,
+
   /// 跑的过程中出错（报告里有 `error`）。
   error;
 
@@ -81,7 +84,7 @@ enum SrsGen4RehearsalVerdict {
 
   /// 这个结论算不算「这个版本跑完了」（同一版本不再自动重跑）。已写进报告、交给诊断导出的结论都算：出错的
   /// （确定性的错误重跑也是同一个错，每个节拍重跑一整轮白耗电）、中途死了的（重跑可能再死）也算。没跑完的
-  /// （被停下、没空间）下次空闲再试。
+  /// （被停下、没空间）下次空闲再试；正在跑的还没有结论。
   bool get settled => switch (this) {
     pass ||
     fail ||
@@ -90,7 +93,7 @@ enum SrsGen4RehearsalVerdict {
     empty ||
     interrupted ||
     error => true,
-    skipped || cancelled => false,
+    skipped || cancelled || running => false,
   };
 }
 
@@ -296,6 +299,8 @@ class SrsGen4RehearsalScheduler {
         _done = true;
         return null;
       }
+      // 本进程里已经有一次在跑（不是这个调度器起的）：内核会拒绝第二次，这里不撞，下个节拍再看。
+      if (last?.verdict == SrsGen4RehearsalVerdict.running) return null;
       if (_disposed || !_canRunNow()) return null;
       _runner = runner;
       final SrsGen4RehearsalReport report = await runner.run(version);

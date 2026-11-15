@@ -9253,6 +9253,7 @@
   "srs_gen4_rehearsal_incomplete": "The check could not compare everything",
   "srs_gen4_rehearsal_interrupted": "The check was interrupted midway",
   "srs_gen4_rehearsal_pass": "Ready for the storage upgrade",
+  "srs_gen4_rehearsal_running": "The check is running",
   "srs_gen4_rehearsal_saved": "Diagnostic report saved",
   "srs_gen4_rehearsal_section": "Storage upgrade check",
   "srs_gen4_rehearsal_share_subject": "Fushi storage upgrade check",
