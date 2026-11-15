@@ -730,29 +730,34 @@ class FushiCoverBlockStrip extends StatelessWidget {
         : _kBleed;
     final EdgeInsets padding = bleed;
     Widget item(BuildContext context, int i) => _cell(context, i + first, size);
+    // 单行 / 多行两种滚动件各自包 [HorizontalDragScrollable]（桌面鼠标可横拖）。
     final Widget list = rows == 1
-        ? ListView.separated(
-            scrollDirection: Axis.horizontal,
-            physics: desktopAwareScrollPhysics(),
-            padding: padding,
-            itemCount: count,
-            separatorBuilder: (BuildContext _, int _) =>
-                SizedBox(width: spacing),
-            itemBuilder: (BuildContext context, int i) =>
-                SizedBox(width: tile, child: item(context, i)),
-          )
-        : GridView.builder(
-            scrollDirection: Axis.horizontal,
-            physics: desktopAwareScrollPhysics(),
-            padding: padding,
-            itemCount: count,
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: rows,
-              mainAxisSpacing: spacing,
-              crossAxisSpacing: spacing,
-              mainAxisExtent: tile,
+        ? HorizontalDragScrollable(
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              physics: desktopAwareScrollPhysics(),
+              padding: padding,
+              itemCount: count,
+              separatorBuilder: (BuildContext _, int _) =>
+                  SizedBox(width: spacing),
+              itemBuilder: (BuildContext context, int i) =>
+                  SizedBox(width: tile, child: item(context, i)),
             ),
-            itemBuilder: item,
+          )
+        : HorizontalDragScrollable(
+            child: GridView.builder(
+              scrollDirection: Axis.horizontal,
+              physics: desktopAwareScrollPhysics(),
+              padding: padding,
+              itemCount: count,
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: rows,
+                mainAxisSpacing: spacing,
+                crossAxisSpacing: spacing,
+                mainAxisExtent: tile,
+              ),
+              itemBuilder: item,
+            ),
           );
     return SizedBox(
       key: stripKey,
@@ -765,9 +770,7 @@ class FushiCoverBlockStrip extends StatelessWidget {
             top: -bleed.top,
             right: -bleed.right,
             bottom: -bleed.bottom,
-            child: SectionSwipeCascade(
-              child: HorizontalDragScrollable(child: list),
-            ),
+            child: SectionSwipeCascade(child: list),
           ),
         ],
       ),

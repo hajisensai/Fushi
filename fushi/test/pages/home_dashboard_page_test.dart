@@ -48,6 +48,8 @@ import 'package:fushi/src/utils/components/glass/fushi_expressive.dart'
 import 'package:fushi/src/pages/implementations/stat_shared.dart'
     show StatGoalEditDialog, formatStatChars, formatStatTime;
 import 'package:fushi/src/stats/stat_window.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show FushiShellTheme, ShellContentLayout;
 import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -87,12 +89,24 @@ void main() {
   late PlatformServices platformServices;
   late FakeAnkiRepository ankiRepository;
   late AppModel appModel;
+
+  /// 本用例钉的库页布局（PR #3397 外壳改版）：默认钉封面网格——网格下首页走原
+  /// 版式正文（主角卡 + 横滑行 + 今日 / 最近添加面板），下面多数用例守的是那套
+  /// 版式；拼贴（色块，产品默认）路径的同一批数据行为由各用例里
+  /// `dashboardLayout = ShellContentLayout.collage` 的分支 / 专门用例另行断言。
+  ShellContentLayout dashboardLayout = ShellContentLayout.grid;
+  ThemeData shellTheme() => ThemeData(
+    extensions: <ThemeExtension<dynamic>>[
+      FushiShellTheme(contentLayout: dashboardLayout),
+    ],
+  );
   late Directory storeDir;
 
   /// 提到外层：Bangumi 同步卡的状态全部来自偏好（令牌/账号名/上次同步），测试要能写。
   late PreferencesRepository prefs;
 
   setUp(() async {
+    dashboardLayout = ShellContentLayout.grid;
     SharedPreferences.setMockInitialValues(<String, Object>{});
     LocaleSettings.setLocale(AppLocale.zhCn);
     db = FushiDatabase.forTesting(NativeDatabase.memory());
@@ -173,6 +187,7 @@ void main() {
     ],
     child: TranslationProvider(
       child: MaterialApp(
+        theme: shellTheme(),
         home: Scaffold(
           body: HomeDashboardPage(
             videoRepo: VideoBookRepository(db),
@@ -299,6 +314,7 @@ void main() {
     ],
     child: TranslationProvider(
       child: MaterialApp(
+        theme: shellTheme(),
         home: Scaffold(
           body: HomeDashboardPage(videoRepo: VideoBookRepository(db)),
         ),
@@ -2312,6 +2328,7 @@ void main() {
         ],
         child: TranslationProvider(
           child: MaterialApp(
+            theme: shellTheme(),
             home: Scaffold(
               body: ValueListenableBuilder<bool>(
                 valueListenable: showPage,

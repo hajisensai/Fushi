@@ -18,7 +18,7 @@ import 'package:fushi/src/utils/components/library_section_tab.dart';
 import 'package:fushi/src/utils/components/section_swipe_navigator.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi_core/fushi_core.dart';
-import '../helpers/glass_unwrap.dart';
+import '../helpers/masthead_tabs.dart';
 
 class _NoopScrapeRunner implements VideoSourceScrapeRunner {
   @override
@@ -147,25 +147,25 @@ void main() {
     );
   }
 
-  /// 顶栏分组页签（住在浮动工具栏里）；组内有多个分区时下方另有一条二级
-  /// 胶囊，两者同类型，测试按位置区分。
+  /// 页头大字顶栏（住在浮动工具栏里）的一级分组切换（PR #3397 起是大字
+  /// 「媒体库 / 在线」）。
   Finder topStrip() => find.descendant(
     of: find.byType(FushiFloatingChromeBar),
-    matching: find.byType(FushiSectionTabBar<VideoLibrarySection>),
+    matching: mastheadPrimaryTabs<VideoLibrarySection>(),
   );
 
+  MastheadTabsView<VideoLibrarySection> read(
+    WidgetTester tester,
+    Finder finder,
+  ) => readMastheadTabs<VideoLibrarySection>(tester, finder);
+
   Future<void> select(WidgetTester tester, VideoLibrarySection section) async {
-    final FushiSectionTabBar<VideoLibrarySection> strip = tester.widget(
-      topStrip(),
-    );
-    strip.onChanged!(section);
+    read(tester, topStrip()).onChanged(section);
     await tester.pumpAndSettle();
   }
 
-  /// 顶栏下方当前组的二级胶囊。
-  Finder subStrip() => find.byWidgetPredicate(
-    (Widget w) => w is FushiSectionTabBar<VideoLibrarySection> && w.secondary,
-  );
+  /// 当前组的二级页签（大字行里的连体按钮组）。
+  Finder subStrip() => mastheadSecondaryTabs<VideoLibrarySection>();
 
   /// 工具栏右端的「导入」圆钮（切换型）。
   FushiIconButton importButton(WidgetTester tester) => tester.widget(
@@ -182,13 +182,9 @@ void main() {
     await tester.pumpWidget(harness());
     await tester.pump();
 
-    final FushiSectionTabBar<VideoLibrarySection> strip = tester.widget(
-      topStrip(),
-    );
+    final MastheadTabsView<VideoLibrarySection> strip = read(tester, topStrip());
     expect(
-      strip.tabs
-          .map((LibrarySectionTab<VideoLibrarySection> tab) => tab.label)
-          .toList(),
+      strip.labels,
       <String>[
         t.library_view_media,
         // 在线组只有发现一段时用它自己的名字。
@@ -199,24 +195,16 @@ void main() {
       ],
     );
     expect(
-      strip.tabs.map((LibrarySectionTab<VideoLibrarySection> tab) => tab.value),
+      strip.values,
       isNot(contains(VideoLibrarySection.sources)),
       reason: '导入不再是页签',
     );
     expect(importButton(tester).selected, isFalse);
-    final List<FushiSectionTabBar<VideoLibrarySection>> strips = tester
-        .widgetList<FushiSectionTabBar<VideoLibrarySection>>(
-          find.byType(FushiSectionTabBar<VideoLibrarySection>),
-        )
-        .toList();
-    expect(strips, hasLength(2), reason: '停在媒体库组：顶栏 + 二级胶囊');
-    final FushiSectionTabBar<VideoLibrarySection> sub = tester.widget(
-      subStrip(),
-    );
+    expect(topStrip(), findsOneWidget, reason: '停在媒体库组：一级切换');
+    expect(subStrip(), findsOneWidget, reason: '停在媒体库组：+ 二级页签');
+    final MastheadTabsView<VideoLibrarySection> sub = read(tester, subStrip());
     expect(
-      sub.tabs
-          .map((LibrarySectionTab<VideoLibrarySection> tab) => tab.value)
-          .toList(),
+      sub.values,
       <VideoLibrarySection>[
         VideoLibrarySection.home,
         VideoLibrarySection.series,
@@ -233,18 +221,12 @@ void main() {
     await tester.pump();
 
     await select(tester, VideoLibrarySection.mediaServers);
-    final FushiSectionTabBar<VideoLibrarySection> sub = tester.widget(
-      subStrip(),
-    );
+    final MastheadTabsView<VideoLibrarySection> sub = read(tester, subStrip());
     expect(sub.selected, VideoLibrarySection.mediaServers);
     // 不切进在线组：发现 / 在线源页要 ProviderScope，本宿主没挂。
-    final FushiSectionTabBar<VideoLibrarySection> top = tester.widget(
-      topStrip(),
-    );
+    final MastheadTabsView<VideoLibrarySection> top = read(tester, topStrip());
     expect(
-      top.tabs
-          .map((LibrarySectionTab<VideoLibrarySection> tab) => tab.value)
-          .toList(),
+      top.values,
       <VideoLibrarySection>[
         VideoLibrarySection.mediaServers,
         VideoLibrarySection.discover,
@@ -362,9 +344,7 @@ void main() {
     await tester.fling(find.text('local leaf'), const Offset(-260, 0), 1000);
     await tester.pumpAndSettle();
 
-    final FushiSectionTabBar<VideoLibrarySection> sub = tester.widget(
-      subStrip(),
-    );
+    final MastheadTabsView<VideoLibrarySection> sub = read(tester, subStrip());
     expect(
       sub.selected,
       VideoLibrarySection.mediaServers,
@@ -407,43 +387,34 @@ void main() {
     await tester.pumpWidget(harness());
     await tester.pump();
 
-    // 媒体服务器在媒体库组的二级胶囊里（首页 / 系列 / 全部视频 / 媒体服务器）：
-    // 二级胶囊在壳里只画一份，指示条在它上面滑。
+    // 媒体服务器在媒体库组的二级页签里（首页 / 系列 / 全部视频 / 媒体服务器）：
+    // 二级页签在壳里只画一份。页头大字顶栏（PR #3397）里二级页签是连体按钮组，
+    // 选中段换底色、没有滑动指示条；守的仍是「切到非本地分区不是新挂一份」。
     final Finder stripFinder = subStrip();
     final State<StatefulWidget> before = tester.state(stripFinder);
-    final State<StatefulWidget> topBefore = tester.state(topStrip());
-    final FushiSectionTabBar<VideoLibrarySection> strip = tester.widget(
+    final Element topBefore = tester.element(topStrip());
+    final MastheadTabsView<VideoLibrarySection> strip = read(
+      tester,
       stripFinder,
     );
-    strip.onChanged!(VideoLibrarySection.mediaServers);
+    strip.onChanged(VideoLibrarySection.mediaServers);
     await tester.pump();
-    // 投影在帧末 animateTo；Ticker 第一帧只记起点，再推一帧才有中途值。
-    await tester.pump(const Duration(milliseconds: 60));
     await tester.pump(const Duration(milliseconds: 60));
 
     expect(find.text('media server leaf'), findsOneWidget);
     expect(
       tester.state(stripFinder),
       same(before),
-      reason: '页签必须是同一个 State 换父节点，而不是新挂一份',
+      reason: '页签必须是同一个 State 换父节点，而不是新挂一份（新挂会重放入场动画）',
     );
-    expect(tester.state(topStrip()), same(topBefore));
-    final TabController controller = tester
-        .widget<TabBar>(
-          find.descendant(of: stripFinder, matching: find.byType(TabBar)),
-        )
-        .controller!;
-    // 二级胶囊：首页 / 系列 / 全部视频 / 媒体服务器，媒体服务器是第 4 段。
-    expect(controller.index, 3);
-    expect(controller.animation!.value, greaterThan(0));
+    expect(tester.element(topStrip()), same(topBefore));
     expect(
-      controller.animation!.value,
-      lessThan(3),
-      reason: '指示条应正从「首页」滑向「媒体服务器」，而不是直接落位',
+      read(tester, stripFinder).selected,
+      VideoLibrarySection.mediaServers,
     );
 
     await tester.pumpAndSettle();
-    expect(controller.animation!.value, 3);
+    expect(tester.takeException(), isNull);
   });
 
   // 反向切换：目标分区在布局序里排在旧分区前面，新位置的 LayoutBuilder 先布局，
@@ -453,26 +424,23 @@ void main() {
     await tester.pump();
 
     final Finder stripFinder = topStrip();
-    final State<StatefulWidget> before = tester.state(stripFinder);
+    final Element before = tester.element(stripFinder);
 
     await select(tester, VideoLibrarySection.mediaServers);
     expect(tester.takeException(), isNull);
     expect(find.text('media server leaf'), findsOneWidget);
-    expect(tester.state(stripFinder), same(before));
+    expect(tester.element(stripFinder), same(before));
 
     await select(tester, VideoLibrarySection.home);
     expect(tester.takeException(), isNull);
     expect(stripFinder, findsOneWidget);
     expect(
-      tester.state(stripFinder),
+      tester.element(stripFinder),
       same(before),
-      reason: '切回本地库也必须是同一个 State 换父节点',
+      reason: '切回本地库也必须是同一份页签换父节点',
     );
-    final TabController controller = tester
-        .widget<TabBar>(glassUnwrap<TabBar>(find.byType(TabBar)))
-        .controller!;
-    expect(controller.index, 0);
-    expect(controller.animation!.value, 0);
+    expect(read(tester, stripFinder).selected, VideoLibrarySection.home);
+    expect(read(tester, subStrip()).selected, VideoLibrarySection.home);
   });
 
   // ── 2026-10-05 M3E 浮动工具栏 ──────────────────────────────────────────

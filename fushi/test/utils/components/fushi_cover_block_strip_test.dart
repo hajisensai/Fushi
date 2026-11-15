@@ -175,11 +175,31 @@ void main() {
             );
           }
         }
-        expect(
-          cellOf(rows, 2).rect.width,
-          greaterThan(cellOf(rows, 0).rect.width * 1.3),
-          reason: 'width $width：合集比单本宽',
-        );
+        // 「合集比单本宽」在同一行内比：两端对齐按行等比缩放，跨行比较不成立
+        // ——width 1000 时首行只放得下两本单本（放进合集要压到 0.69 倍、单本
+        // 跌破 320），只能整行拉到约 493，而合集所在行压到 0.986 倍（约 592），
+        // 跨行比 1.3 倍在任何保序排法下都无解。
+        int mixedRows = 0;
+        for (final FushiCoverBlockRow row in rows) {
+          final Iterable<FushiCoverBlockCell> wides = row.cells.where(
+            (FushiCoverBlockCell c) => <int>{2, 9, 15}.contains(c.index),
+          );
+          final Iterable<FushiCoverBlockCell> singles = row.cells.where(
+            (FushiCoverBlockCell c) => !<int>{2, 9, 15}.contains(c.index),
+          );
+          if (wides.isEmpty || singles.isEmpty) continue;
+          mixedRows++;
+          for (final FushiCoverBlockCell w in wides) {
+            for (final FushiCoverBlockCell n in singles) {
+              expect(
+                w.rect.width,
+                greaterThan(n.rect.width * 1.3),
+                reason: 'width $width：同一行里合集 ${w.index} 比单本 ${n.index} 宽',
+              );
+            }
+          }
+        }
+        expect(mixedRows, greaterThan(0), reason: 'width $width：没有混排行');
       }
     });
 
