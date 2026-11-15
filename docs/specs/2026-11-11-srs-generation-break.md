@@ -727,7 +727,7 @@ G6c 接上标签 OR-Set、扣住、清除与缓存层之后（#3393 头，wight-
 | 内置默认牌组 | `v5(NS, builtin-deck/default)`（现有规则去盐，常量） |
 | profile 级设置实体 | `v5(NS, "profile")`（常量；存量 ID 是 uid 本身，每个盐都是它的别名） |
 | 导入的日志、锚点、修改记录 | 公式不变 |
-| apkg 导入时来源包里已删除的 Anki 卡（只挂它们的 revlog，BUG-4626） | `v5(内置默认牌组 ID, anki-deleted-card/<来源卡 id>)`：由父 ID 派生、公式不带盐，与卡同类留在 Dart `SrsIds.deletedAnkiCard`（`rules.rs` 的 `deleted_anki_card` 对拍）。协议 3 下默认牌组带盐，两个 profile 导入同一个包不撞号；换代后默认牌组是常量，新写入时父 ID 取规范默认牌组即得规范值，不需要别名层。永远没有卡片缓存行，只进有效复习投影（统计 / 日历），不进排期 |
+| apkg 导入时来源包里已删除的 Anki 卡（只挂它们的 revlog，BUG-4628） | `v5(内置默认牌组 ID, anki-deleted-card/<来源卡 id>)`：由父 ID 派生、公式不带盐，与卡同类留在 Dart `SrsIds.deletedAnkiCard`（`rules.rs` 的 `deleted_anki_card` 对拍）。协议 3 下默认牌组带盐，两个 profile 导入同一个包不撞号；换代后默认牌组是常量，新写入时父 ID 取规范默认牌组即得规范值，不需要别名层。永远没有卡片缓存行，只进有效复习投影（统计 / 日历），不进排期 |
 | 给事件副本补的 undo | `v5(NS, event-copy-revoke/<副本日志 ID>)`，公式不变（`store/sync2/mod.rs:469`）；它点名的日志归一了，它跟着重算 |
 | fushi-ext 导入时重映射的日志 | `v5(新卡, fushi-log/<原日志 ID>)`，公式不变；原日志 ID 没存，不参与别名 |
 | apkg 导入时与已有类型重名的副本笔记类型 | 先算一个「副本 `ankiNum`」：`hash53("notetype-dup/<来源 ankiNum>/<规范 JSON {cloze, fields, tmpls}>")`，各项是配置 ID 或 `"name:<名字>"`；再经上面笔记类型那一行的规则变成笔记类型 ID。原是 Dart 的 `_duplicateAnkiNum`，G5b 搬进规则表（`rules.rs` 的 `duplicate_note_type_anki_num`）。冻结向量在 `derive.rs` 的测试与 fushi_srs 的 `kernel_ids_test.dart`，两处都对照改造前的 Dart 公式（不在 `golden_ids.json` 里） |
@@ -796,7 +796,7 @@ Dart 侧不加规范规则的产品代码。G3 黄金向量测试改成经 Dart 
 - 备选序号超过枚举上限的牌组、候选全名超过上限的牌组（附录 C）；
 - apkg 导入时的副本笔记类型（§5.2 最后一行）：规则现在在内核、算得出，但证据是来源 apkg 里那个类型的结构，派生层手上没有，所以仍验不上；
 - 填空序号超过枚举上限、又不在证据里的卡：别名层没有装 `NoteEv.cloze_ords`（填空序号 > 500 的卡验不上，G6c-2）。
-- apkg 导入时已删 Anki 卡的卡 ID 与挂在它上面的导入日志（§5.2 规则表，BUG-4626）：自然键（来源卡 id）不在任何操作里，日志只存 `ankiId`。
+- apkg 导入时已删 Anki 卡的卡 ID 与挂在它上面的导入日志（§5.2 规则表，BUG-4628）：自然键（来源卡 id）不在任何操作里，日志只存 `ankiId`。
   存量（协议 3 写的、父 ID 是带盐默认牌组的）规范 ID 是它自己，换代前后各设备各留一份；统计层按 Anki 复习事件去重（`caches.rs` 的
   `anki_duplicate_log_ids`），同一次复习只算一次。代价：含这类 ID 的落库批次过不了增量证明第 5b 条（`store/gen4/alias.rs`），退回整表重算；
   只出现在带删卡 revlog 的 apkg 导入那几批。要让它验得上，得在日志上另存来源卡 id——交 G7 / G9 决定是否值得。

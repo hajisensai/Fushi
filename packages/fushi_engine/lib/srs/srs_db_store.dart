@@ -2811,7 +2811,7 @@ class SrsDbStore implements SrsSync2Host {
   }
 
   /// 本 profile 里发生时刻落在 [times] 任一值 ±[srsImportEquivalenceWindowMs] 内的原生（非 Anki 导入）评分类
-  /// 日志。导入器给「没有卡可比」的 Anki revlog（来源包里卡已删除，BUG-4626）判重用：Fushi 导出 apkg 时 revlog
+  /// 日志。导入器给「没有卡可比」的 Anki revlog（来源包里卡已删除，BUG-4628）判重用：Fushi 导出 apkg 时 revlog
   /// id 就取原生日志的发生时刻（srs_apkg_export.dart），绕 Anki 一圈再导回来，这次复习本机已有原生那份。
   /// 是否同一次复习由卡片历史内核的同一判据（[srsImportEquivalentAny]）定，这里只按落库列粗筛
   /// （走 `idx_srs_review_logs_profile_kind_time`），按块一次查。

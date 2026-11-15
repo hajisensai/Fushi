@@ -108,7 +108,7 @@ const List<int> _deckAlternates = <int>[1, 2, 8, 17];
 
 const List<int> _revlogIds = <int>[1700000000123, 0, -1];
 
-/// 来源包里已删除的 Anki 卡 id（BUG-4626）。
+/// 来源包里已删除的 Anki 卡 id（BUG-4628）。
 const List<int> _deletedCardIds = <int>[1700000000999, 1, -7];
 
 const List<String> _writers = <String>[
