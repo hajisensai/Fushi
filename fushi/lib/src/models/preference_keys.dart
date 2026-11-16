@@ -189,6 +189,12 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'auto_search',
   'auto_search_debounce_delay',
   'auto_update_dictionaries',
+  // string（默认空）：楽天ブックス书籍检索的 accessKey / applicationId（楽天ウェブ
+  // サービス注册应用后拿到）。两者都填了书籍刮削才出现「楽天ブックス」源。凭据 →
+  // 同时登记在 kCredentialPreferenceKeys、PrefRedactionPolicy.sensitiveKeys 与
+  // deviceLocalPrefKeys（不进备份 / 同步 / Profile）。
+  'book_scrape_rakuten_access_key',
+  'book_scrape_rakuten_application_id',
   // bool：「下载」改名「浏览」的一次性搬迁提示已处理（弹过，或判定本安装不需要
   // 弹）。描述本安装的状态，与 first_time_setup 同族、不随 Profile 走。
   'browse_moved_notice_handled',
@@ -1227,6 +1233,9 @@ const List<String> kKnownPreferenceKeyPrefixes = <String>[
 /// 🔴 凭据键：值为 base64 敏感凭据，不进日志 / 不进明文导出。
 /// （`media_source_secret_<id>` 前缀族见 [kKnownPreferenceKeyPrefixes]。）
 const Set<String> kCredentialPreferenceKeys = <String>{
+  // 楽天ブックス书籍检索凭据。
+  'book_scrape_rakuten_access_key',
+  'book_scrape_rakuten_application_id',
   // 复习同步 v2 各存储位置的集合密钥（hex）。
   'srs_sync2_location_keys',
   // 每条 AI 提供商记录里带 base64 的 apiKeyB64。
