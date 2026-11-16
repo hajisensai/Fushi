@@ -598,3 +598,58 @@ blocked 一律归 busy、去掉 `unstored` 分支、配对退回 (种类, 字段
    来自本版之前的还原，没改。「只剩封存旧库」页的文案改成「保持原样、不要用备份覆盖、带日志联系支持」，不再引导还原。
 7. **迁移中关库之后的再开始。** quiesce 之后主库已关，迁移页的「开始升级」按钮仍可点（app 未初始化时这一页通常不在
    屏上）。没加额外闸门。
+
+## 10. G7-5b 开库先取身份、绑定变化、直出入口带 profile（2026-11-17，分支 `pr/srs-gen4-g7-5b-dart-open-identity`，基于 `pr/srs-gen4-switch`）
+
+纯 Dart，Rust 未改。
+
+### 10.1 开库顺序与身份
+
+- `SrsDbStore.open`：`_loadLocal` → `identity`（`_sync2Open`，第一条按集合的命令）→ 主进程才 `_registerCacheConfig` /
+  `_ensureLocalState` / `ensureBuiltins` → `_loadRootIds`。设备号 / 集合 / 目录一律取 identity 回包（`sync2Device` /
+  `sync2Collection` / `sync2Dir`），不再发 `legacyDevice`；构造参数 `deviceId` 只剩 app 层用途。
+- 删了旧写入方身份那套、`_sync2MigrateAll` / `_sync2MigrateBatch`。`migrateLegacy` 留成空操作：唯一调用方是 G8-7 的
+  `srs_sync_scheduler.dart` `ensureMigrated`，G8-7 删调度时连同 `kSrsSync2MigrateBatch` 一起删。
+- 辅助进程（只读）开一个主进程还没建身份的 profile：内核回 READ_ONLY，这里改抛 `SrsProfileIdentityPending(profile)`，
+  `srs_load_error.dart` 映射成「先在主窗口打开一次复习」的等待文案（`srs_gen4_profile_pending_primary`，替掉
+  `srs_gen4_profile_unbound`）。`srsStoreProvider` 复用已开的库且是辅助进程时调 `refreshIdentity()`（集合 / 目录变了按绑定变化处理）。
+
+### 10.2 绑定变化
+
+- `_sync2Raw` 每个回包看 `bindingChanged`：有就 `onBindingChanged()`（`kernelIds` 置空懒重建、派生缓存 / 笔记类型缓存 /
+  RWKV 候选缓存作废、`bindingChanges` 广播）并在根上 ID 已载入时重读 `_loadRootIds`。
+- `srsStoreProvider` 与 `srsRwkvServiceProvider` 订阅 `bindingChanges` → `invalidateSelf`：旧 RWKV 服务关掉、新库挂新服务；
+  落卡键里带本地纪元，换库后不同。
+- 根上 ID（默认牌组 / Lapis / FushiCard 笔记类型）不再按 uid 本地派生，而是 `canonical_ids` 取规范形（§5.2），
+  `ensureBuiltins` 按规范 ID 判在不在。
+
+### 10.3 预览 / media_gc / C 直出入口
+
+- 去掉 Dart 侧「暂不可用」兜底；`historyStates` / `statProjection` / `optimizerItems` / `calibrationItems` / `rwkvCards`
+  五个直出入口的页里带 `[-1, profile]` 行（按 profile 的集合读，不按卡认），store 传 `profileUid`。
+
+### 10.4 备份
+
+- 未迁移的协议 3 用户：`summarizeLiveContent` 接 `SrsStoreOpenBlocked`，复习类记进 `needsUpgrade`（在 present 里、无计数），
+  导出页这一行默认不勾、禁用、副标题「需先升级」（`backup_export_srs_needs_upgrade`）；其余类别照常导出；硬勾复习仍明确失败、不出半份包。
+
+### 10.5 测试
+
+- 新增 `packages/fushi_engine/test/srs/srs_fresh_profile_e2e_test.dart`（4 条：全新 profile 开库→内置→笔记→出卡→预览→作答→统计；
+  第二个 profile 互不串且直出入口按 profile 读；辅助进程等待态→主进程建好后可开；`collection_salts_add` 的 `bindingChanged`）。
+  用当前 DLL 4 条里 3 条红（见 10.6 上游缺口 1）；用 `salt_of` 返回 `None` 的实验 DLL 4/4 绿。
+- 新增 `fushi/test/sync/backup_srs_needs_upgrade_test.dart`（4 条）+ `srs_generation_view_test.dart`：14 条全绿。
+- `test/srs/support/srs_test_storage.dart` `openTestSrsAt`：新代 `SrsCore.open` 收库目录，旧写法 `<tmp>/srs.db` 改成当目录建出来
+  （已是文件的协议 3 夹具不动、照实失败）。消掉约 76 条「gen4 lock: open …/srs.db\srs.gen.lock」。
+
+### 10.6 已知缺口与上游
+
+1. **上游：`native/fushi_fsrs/src/gen4_ids/derive.rs` `salt_of` 仍返回 `Some(profile)`**。§5.2 要求新写入去盐；现在 Dart 派生的 ID
+   全是别名，`createNote` 回的不是规范 ID，新卡被藏、学习队列空。临时把它改成 `None` 编 quick DLL 实测 E2E 4/4 绿（改动已撤回）。
+   修了之后 Dart 里大量 `srsLapisNoteTypeId(uid)` 一类的直接比较才成立。
+2. 仍红、不归本模块（实验 DLL 下 engine `test/srs` +522 ~32 -422，按类）：G8-7 未接（`location_sealed` 等，含全部
+   `fushi_server` SRS 测试——服务端首轮同步跑完才对外提供库，`storeFor` 为 null）；G9-5 未接（`meta_set_edit` / `profile_merge_mark` /
+   `profile_purge`，含「stamped items carry a foreign identity」）；G11-3 `export`；直接对协议 3 表（`sync2_self` / `srs_cards_cache` /
+   `srs_stat_reviews` / `srs_field_edits` / `srs_review_logs` 等）写原始 SQL 的用例需按新代重写或删；`srs_note_type_cache_test`
+   「作答不失效」红（作答推进了内容指纹，属 S1c refreshKeys / stamps 范围）。
+3. 本机 release 构建 `fushi_fsrs` 撞 zstd-sys `LNK1106`（环境问题），实验 DLL 用 `--profile quick --features raw_sql` 出。
