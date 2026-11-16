@@ -300,6 +300,7 @@ import 'package:fushi_engine/utils/net/fake_ip_dns.dart';
 import 'package:fushi_torrent/fushi_torrent.dart' show FtSessionStatus;
 import 'package:fushi_engine/media/torrent/bt_site_config.dart';
 import 'package:fushi_engine/media/torrent/bt_site_legacy_migration.dart';
+import 'package:fushi_engine/media/torrent/bt_site_parser_rule.dart';
 import 'package:fushi_engine/media/torrent/bt_site_probe.dart';
 import 'package:fushi_engine/media/torrent/bt_site_providers.dart';
 import 'package:fushi_engine/media/external_provider.dart';
@@ -9413,10 +9414,13 @@ class AppModel
   }
 
   /// 自动识别一个 BT 站地址是哪种站点（添加 / 重新检测）。失败抛
-  /// [BtSiteProbeException]，界面只显示中性提示。
+  /// [BtSiteProbeException]，界面只显示中性提示。给了 [parser]（用户导入的解析
+  /// 规则）就不自动识别，改为按规则验证，[cookie] 随请求发给站点。
   Future<BtSiteProbeResult> detectBtSite(
     String url, {
     bool allowInsecureHttp = false,
+    BtSiteParserRule? parser,
+    String cookie = '',
   }) async {
     final http.Client client = await createDownloadHttpClient();
     try {
@@ -9424,6 +9428,8 @@ class AppModel
         url,
         client: client,
         allowInsecureHttp: allowInsecureHttp,
+        parser: parser,
+        cookie: cookie,
       );
     } finally {
       client.close();
