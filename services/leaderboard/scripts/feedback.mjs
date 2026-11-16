@@ -33,7 +33,6 @@
 //        CLI 不经 Worker：不发 iOS APNs 推送，结案时也不清推送令牌——要推送请用网页处理台）
 //   全局：--local（读写 wrangler 本地 D1/R2，调试用；默认 --remote）
 //
-// 本机要走代理时先 export HTTPS_PROXY=http://127.0.0.1:34151（wrangler 会读）。
 
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
