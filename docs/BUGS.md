@@ -33,15 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4082 条。点号进各自文件。
+> 共 4086 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4725](bugs/BUG-4725-macos-exit-mpv-callback-after-engine-shutdown.md) | ✅ | ✅ | 桌面退出时引擎先于 libmpv 回调收尾，mpv 核心线程回调进已释放跳板崩溃 |
-> 共 4085 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4729](bugs/BUG-4729-macos-exit-mpv-callback-after-engine-shutdown.md) | ✅ | ✅ | 桌面退出时引擎先于 libmpv 回调收尾，mpv 核心线程回调进已释放跳板崩溃 |
 | [BUG-4728](bugs/BUG-4728-epub-english-default-vertical.md) | ✅ | ✅ | 英文 EPUB 未声明排版方向时被套成全局竖排，拉丁字母整行侧躺 |
 | [BUG-4727](bugs/BUG-4727-game-scrape-cross-source-same-title.md) | ✅ | ✅ | 游戏批量刮削把跨源同名当成歧义，Bangumi 与 VNDB 都收录的作品刮不出封面 |
 | [BUG-4726](bugs/BUG-4726-srs-main-dict-toggle-fill.md) | ✅ | ✅ | 复习卡背面主词典收起按钮带底色并顶出词典卡圆角 |
