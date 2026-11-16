@@ -13,6 +13,7 @@ import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
 
 import '../support/srs_test_storage.dart';
+import '../support/srs_raw_sql.dart';
 
 const String kProfile = '01928c3e-0000-7000-8000-0000000000e9';
 
@@ -22,7 +23,6 @@ void main() {
   test('写命令中途失败整笔回滚：之后的 outbox / identity 读不到它的操作，seq 不被占', () async {
     final SrsStorage st = await openTestSrsStorage();
     final SrsDbStore s = await SrsDbStore.open(
-      db: st.db,
       core: st.core,
       profileUid: kProfile,
       deviceId: 'A',
@@ -41,7 +41,7 @@ void main() {
       },
     );
     Future<int> notes() async =>
-        (await s.db
+        (await s.core
                 .customSelect('SELECT COUNT(*) AS n FROM srs_notes_cache')
                 .getSingle())
             .read<int>('n');

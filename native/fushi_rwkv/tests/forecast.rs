@@ -6,7 +6,8 @@
 //! - 与真的作答一致：预测「以评分 g 作答后第 d 天的 R」= 从快照恢复、真的回放这条作答、
 //!   再在第 d 天查询得到的 R；
 //! - next_intervals：读假设作答的遗忘曲线（单调不增）；天数在 [1, 上限]、按评分单调不减，
-//!   所选那天曲线上 R ≤ 目标、前一天 R > 目标。
+//!   所选那天曲线上 R ≤ 目标、前一天 R > 目标。只测大模型：Fushi 的小模型是 Instant-Only，
+//!   曲线头没训练过，RWKV-Curve 对它返回 Unsupported（tests/small_model.rs）。
 
 mod common;
 
@@ -132,6 +133,9 @@ fn next_intervals_are_the_first_day_below_target_on_the_answer_curve() {
     const DAY: f32 = 86_400.0;
     let (reviews, answer) = history();
     for (name, model, precision) in runtimes() {
+        if !model.kind().has_trained_curve_head() {
+            continue;
+        }
         let mut runtime = RwkvRuntime::new(&model, precision, 0).unwrap();
         runtime.replay(&reviews, false).unwrap();
         let before = runtime.snapshot().unwrap();

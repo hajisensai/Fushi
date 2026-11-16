@@ -22,6 +22,8 @@ use crate::sync2::vv::{OpId, Vv};
 
 pub(crate) const T0: i64 = 1_800_000_000_000;
 pub(crate) const SEED: [u8; 32] = [7; 32];
+/// 装置里本机身份的设备 ID（[setup] 用它建 `self_`）。
+pub(crate) const OWN: Id = Id([0x0d, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xd0]);
 
 pub(crate) fn idn(salt: u8, i: u64) -> Id {
     let mut b = [0u8; 16];
@@ -58,7 +60,7 @@ pub(crate) fn setup() -> (Connection, i64) {
     let col = {
         let t = Truth::new(&conn);
         let col = bound(&t);
-        t.tx(|t| t.init_self(col, &SEED, None, T0)).unwrap();
+        t.tx(|t| t.create_self(col, &OWN, &SEED, T0)).unwrap();
         col
     };
     (conn, col)
@@ -462,7 +464,7 @@ fn recording_a_fork_obeys_the_write_guards() {
                 logical: 1,
                 device: idn(1, 1),
             };
-            assert!(t.set_self_clock(col + 999, &h).is_err());
+            assert!(t.set_self_hlc(col + 999, &h).is_err());
             record_fork(t, col, 2)
         })
         .unwrap_err();
@@ -477,7 +479,7 @@ fn recording_a_fork_obeys_the_write_guards() {
     let b = crate::store::gen4::schema::open(&path).unwrap();
     let ta = Truth::new(&a);
     let col = crate::store::gen4::truth::tests::bound(&ta);
-    ta.tx(|t| t.init_self(col, &SEED, None, T0)).unwrap();
+    ta.tx(|t| t.create_self(col, &OWN, &SEED, T0)).unwrap();
     write_own(&ta, col, 6);
     let tb = Truth::new(&b);
     let me = tb.self_identity(col).unwrap().unwrap();

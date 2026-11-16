@@ -58,7 +58,6 @@ Future<SrsDbStore> openTestStore({
 }) async {
   final SrsStorage srsStorage = await openTestSrsStorage();
   return SrsDbStore.open(
-    db: srsStorage.db,
     core: srsStorage.core,
     profileUid: profileUid,
     deviceId: deviceId,

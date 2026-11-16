@@ -69,12 +69,12 @@ pub fn judge_own_head(t: &Truth<'_>, col: i64, h: &Head4) -> Result<OwnHead, Str
     if let Some(keep) = recorded_fork(t, col)? {
         return Ok(OwnHead::Known { keep });
     }
-    if t.chain_known(col, &me.device, h.seq)? == Some(h.chain) {
+    if t.chain_held(col, &me.device, h.seq)? == Some(h.chain) {
         return Ok(OwnHead::Prefix);
     }
     let same = |i: usize| -> Result<bool, String> {
         let (_, b, tag) = &h.segs[i];
-        Ok(t.chain_known(col, &me.device, *b)?
+        Ok(t.chain_held(col, &me.device, *b)?
             .is_some_and(|ours| chain_tag(&ours) == *tag))
     };
     // 二分：same(i) 为真 ⇒ 第 i 段末尾之前两边相同（哈希链）。不知道链值（空洞内部）当作不同，只会多拉。
@@ -166,7 +166,7 @@ impl ForkScan {
         // 本机这一段的链值：下标 i ↔ seq = first - 1 + i。
         let upto = header.last.min(local_last);
         let mut ours: Vec<Option<Chain>> = Vec::new();
-        let mut cur = t.chain_known(col, &self.device, header.first - 1)?;
+        let mut cur = t.chain_held(col, &self.device, header.first - 1)?;
         if header.first - 1 <= local_last {
             ours.push(cur);
         }

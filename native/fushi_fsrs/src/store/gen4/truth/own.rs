@@ -5,9 +5,9 @@
 //!
 //! # `self_` 的一行
 //!
-//! 每个集合一行：设备 ID、签名钥匙种子、本机 HLC、换身份之前的上一个身份（`prev_*`，没换过 = 全空）、这一行建立的时刻。
-//! HLC 的文本形是 `<wall>:<logical>`（十进制、无前导零、无符号位以外的修饰；[hlc_text] / [parse_hlc] 互逆，读到别的形状
-//! 报错）：设备就是这一行的设备，不重复写。
+//! 本机身份的类型与读写只有一套，在 `truth.rs`：[SelfId]、[Truth::self_identity]、[Truth::create_self]、
+//! [Truth::set_self_hlc]，HLC 文本 [hlc_text] / [hlc_parse]，`prev_*` 三列 [prev_cols]。这里只有换身份整行替换这一处写，
+//! 写法经同一组编码函数。
 //!
 //! # 换身份（[Truth::rotate_identity]）
 //!
@@ -35,65 +35,10 @@
 //! 行删除（那个旧操作号从此属于另一个安装）。位置进度、段清单这些按本机身份 seq 记的同步状态不在 G7-1 的表里，
 //! 由 G8-4 的表在换身份后从头对账（它们按设备 ID 记，新身份没有旧记录）。
 
-use rusqlite::{OptionalExtension, params};
+use rusqlite::params;
 
 use super::*;
-use crate::gen4::head::PrevIdentity;
 use crate::store::gen4::derive::Index;
-use crate::sync2::hlc::Clock;
-use crate::sync2::keys::DeviceKey;
-
-/// 本机在一个集合里的身份（`self_` 的一行）。
-#[derive(Clone, PartialEq, Eq)]
-pub struct SelfIdentity {
-    pub col: i64,
-    pub device: Id,
-    seed: [u8; 32],
-    /// 本机 HLC：发出过 / 吸收过的最大时刻（设备 = [SelfIdentity::device]）。
-    pub clock: Hlc,
-    /// 换身份之前的上一个身份。
-    pub prev: Option<PrevIdentity>,
-    /// 这一行（这个身份）建立的时刻（毫秒）。
-    pub created: i64,
-}
-
-impl std::fmt::Debug for SelfIdentity {
-    /// 不打印钥匙种子。
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("SelfIdentity")
-            .field("col", &self.col)
-            .field("device", &self.device)
-            .field("clock", &self.clock)
-            .field("prev", &self.prev)
-            .field("created", &self.created)
-            .finish_non_exhaustive()
-    }
-}
-
-impl SelfIdentity {
-    pub fn key(&self) -> DeviceKey {
-        DeviceKey::from_seed(&self.seed)
-    }
-
-    pub fn public(&self) -> [u8; 32] {
-        self.key().public()
-    }
-
-    pub fn seed(&self) -> [u8; 32] {
-        self.seed
-    }
-
-    /// 本机时钟（下一次 `tick` 发出的时刻严格大于 [SelfIdentity::clock]）。
-    pub fn clock(&self) -> Clock {
-        Clock {
-            device: self.device,
-            last: Hlc {
-                device: self.device,
-                ..self.clock
-            },
-        }
-    }
-}
 
 /// [Truth::rotate_identity_report] 的结果。
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -123,99 +68,13 @@ pub(crate) enum NativeStep {
     },
 }
 
-/// `self_.hlc` 的文本形。
-pub(crate) fn hlc_text(h: &Hlc) -> String {
-    format!("{}:{}", h.wall, h.logical)
-}
-
-/// [hlc_text] 的逆；只收它写得出的形状。
-pub(crate) fn parse_hlc(text: &str, device: Id) -> Result<Hlc, String> {
-    let bad = || format!("gen4 store: bad self_ hlc {text:?}");
-    let (w, l) = text.split_once(':').ok_or_else(bad)?;
-    let wall: i64 = w.parse().map_err(|_| bad())?;
-    let logical: u32 = l.parse().map_err(|_| bad())?;
-    let h = Hlc {
-        wall,
-        logical,
-        device,
-    };
-    if hlc_text(&h) != text {
-        return Err(bad());
-    }
-    Ok(h)
-}
-
 /// 分叉点记录在 `srs_meta` 里的键（`gen4::fork`；换身份时删）。
 pub(crate) fn fork_key(col: i64) -> String {
     format!("gen4_fork_at/{col}")
 }
 
-fn blob_id(b: Option<Vec<u8>>) -> Result<Option<Id>, String> {
-    b.as_deref().map(id_of).transpose()
-}
-
 impl<'c> Truth<'c> {
-    // ------------------------------------------------------------ self_
-
-    /// 本机在这个集合里的身份（还没建 = None）。
-    pub fn self_identity(&self, col: i64) -> Result<Option<SelfIdentity>, String> {
-        type Row = (
-            Vec<u8>,
-            Vec<u8>,
-            String,
-            Option<Vec<u8>>,
-            Option<i64>,
-            Option<Vec<u8>>,
-            i64,
-        );
-        let row: Option<Row> = self
-            .conn
-            .prepare_cached(
-                "SELECT device, sk, hlc, prev_device, prev_seq, prev_chain, created FROM self_ WHERE col = ?1",
-            )
-            .map_err(sql)?
-            .query_row([col], |r| {
-                Ok((
-                    r.get(0)?,
-                    r.get(1)?,
-                    r.get(2)?,
-                    r.get(3)?,
-                    r.get(4)?,
-                    r.get(5)?,
-                    r.get(6)?,
-                ))
-            })
-            .optional()
-            .map_err(sql)?;
-        let Some((device, sk, hlc, prev_device, prev_seq, prev_chain, created)) = row else {
-            return Ok(None);
-        };
-        let device = id_of(&device)?;
-        let seed: [u8; 32] = sk
-            .try_into()
-            .map_err(|_| format!("gen4 store: bad signing key seed for collection {col}"))?;
-        let prev = match (blob_id(prev_device)?, prev_seq, prev_chain) {
-            (None, None, None) => None,
-            (Some(device), Some(seq), Some(chain)) if seq >= 0 => Some(PrevIdentity {
-                device,
-                seq: seq as u64,
-                chain: chain_of(&chain)?,
-            }),
-            _ => {
-                return Err(format!(
-                    "gen4 store: self_ of collection {col} has a partial previous identity"
-                ));
-            }
-        };
-        Ok(Some(SelfIdentity {
-            col,
-            device,
-            seed,
-            clock: parse_hlc(&hlc, device)?,
-            prev,
-            created,
-        }))
-    }
+    // ------------------------------------------------------------ 换身份用到的本机身份辅助
 
     /// 一个这个集合里没出现过的新设备 ID（UUIDv7）。
     fn fresh_device(&self, col: i64, now: i64, avoid: &[Id]) -> Result<Id, String> {
@@ -226,106 +85,6 @@ impl<'c> Truth<'c> {
             }
         }
         Err("gen4 store: could not draw a fresh device id".to_owned())
-    }
-
-    /// 把本机的公钥记到 [device] 名下（本机的新身份与冻结的旧身份）。
-    fn own_peer(&self, col: i64, device: &Id, public: [u8; 32], now: i64) -> Result<(), String> {
-        let put = self.set_peer(
-            col,
-            &Peer {
-                device: *device,
-                public,
-                name: None,
-                ext: None,
-                head_gen: None,
-                first_seen: Some(now),
-            },
-        )?;
-        if put == PeerPut::KeyMismatch {
-            return Err(format!(
-                "gen4 store: device {device} is registered with another public key"
-            ));
-        }
-        Ok(())
-    }
-
-    /// 建本机身份：新设备 ID（UUIDv7），签名钥匙用 [seed]（迁移时沿用 `sync2_self.key_seed`，规划 §1.3），[prev] =
-    /// 换代之前的身份在它日志末尾的位置（设计 §3.3；全新的库 = None）。已经有身份的集合报错（换身份走
-    /// [Truth::rotate_identity]）。本机的公钥同时记进 `peers`（导出、验签与别人一样从那里取）。
-    pub fn init_self(
-        &self,
-        col: i64,
-        seed: &[u8; 32],
-        prev: Option<&PrevIdentity>,
-        now: i64,
-    ) -> Result<SelfIdentity, String> {
-        self.write(|| {
-            if self.binding(col)?.is_none() {
-                return Err(format!("gen4 store: no collection {col}"));
-            }
-            if self.self_identity(col)?.is_some() {
-                return Err(format!(
-                    "gen4 store: collection {col} already has a local identity"
-                ));
-            }
-            let avoid: Vec<Id> = prev.map(|p| p.device).into_iter().collect();
-            let device = self.fresh_device(col, now, &avoid)?;
-            let me = SelfIdentity {
-                col,
-                device,
-                seed: *seed,
-                clock: Hlc {
-                    wall: 0,
-                    logical: 0,
-                    device,
-                },
-                prev: prev.cloned(),
-                created: now,
-            };
-            self.put_self(&me)?;
-            self.own_peer(col, &device, me.public(), now)?;
-            Ok(me)
-        })
-    }
-
-    fn put_self(&self, me: &SelfIdentity) -> Result<(), String> {
-        self.conn
-            .prepare_cached(
-                "INSERT OR REPLACE INTO self_ (col, device, sk, hlc, prev_device, prev_seq, prev_chain, created) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-            )
-            .map_err(sql)?
-            .execute(params![
-                me.col,
-                &me.device.0[..],
-                &me.seed[..],
-                hlc_text(&me.clock),
-                me.prev.as_ref().map(|p| p.device.0.to_vec()),
-                me.prev.as_ref().map(|p| p.seq as i64),
-                me.prev.as_ref().map(|p| p.chain.to_vec()),
-                me.created,
-            ])
-            .map_err(sql)?;
-        Ok(())
-    }
-
-    /// 记下本机时钟走到了 [hlc]（发出 / 吸收之后）。只进不退：不比已记的大就不写。返回写没写。
-    pub fn set_self_clock(&self, col: i64, hlc: &Hlc) -> Result<bool, String> {
-        self.write(|| {
-            let me = self
-                .self_identity(col)?
-                .ok_or_else(|| format!("gen4 store: collection {col} has no local identity"))?;
-            if (hlc.wall, hlc.logical) <= (me.clock.wall, me.clock.logical) {
-                return Ok(false);
-            }
-            let text = hlc_text(hlc);
-            self.conn
-                .prepare_cached("UPDATE self_ SET hlc = ?2 WHERE col = ?1")
-                .map_err(sql)?
-                .execute(params![col, text])
-                .map_err(sql)?;
-            Ok(true)
-        })
     }
 
     /// 记下本机当前身份的分叉点（`gen4::fork::record_fork` 的落库；已有记录取较小者）。返回记下的值。走 [Truth::write]
@@ -350,8 +109,13 @@ impl<'c> Truth<'c> {
 
     // ------------------------------------------------------------ 原生日志的读（分叉检测、小段合并用）
 
-    /// 原生日志在 [seq] 处的链值；落在空洞区间内部（只有区间末有链值）或超出日志末尾 = None。
-    pub(crate) fn chain_known(
+    /// 本机库在 [seq] 处**有没有**一个可拿来比的链值，有就给出来：没有这台设备、不是原生日志、超出日志末尾、落在
+    /// 空洞区间内部，一律 None（0 = 链的起点）。
+    ///
+    /// 与 [Truth::chain_known] 的区别只在前三种情形：那边是收段的口径，设备不在、不是原生日志、超出末尾都是调用方的
+    /// bug，报错；这里是分叉检测的口径——拿另一个安装发布的 head / 段去比本机身份的日志，对面比本机长（超出末尾）、
+    /// 本机新身份还没写过（没有设备行）都是正常情形，答「本机没有，比不了」。
+    pub(crate) fn chain_held(
         &self,
         col: i64,
         device: &Id,
@@ -366,12 +130,7 @@ impl<'c> Truth<'c> {
         if self.dev_row(dev)?.kind != Some(DEV_NATIVE) || seq > self.last(dev)? {
             return Ok(None);
         }
-        if let Some(run) = self.run_at_or_before(dev, seq)? {
-            if run.end() > seq {
-                return Ok(None);
-            }
-        }
-        self.chain_at_dev(dev, seq).map(Some)
+        self.chain_known(col, device, seq)
     }
 
     /// 按 seq 升序走一台设备原生日志的 `first..=last`（超出日志末尾的部分不走）。空洞区间按与范围的交集给一项。
@@ -535,13 +294,11 @@ impl<'c> Truth<'c> {
         }
         // 3. 新身份：钥匙沿用，时钟接着旧身份的走。
         let fresh = self.fresh_device(col, now, &[old])?;
-        let mut clock = Clock {
+        let mut clock = SelfId {
             device: fresh,
-            last: Hlc {
-                device: fresh,
-                ..me.clock
-            },
-        };
+            ..me.clone()
+        }
+        .clock();
         // 先把被搬操作自己的 HLC 收进时钟：`self_.hlc` 可能落后于它们（没人推进过、或推进晚了），只接着它 tick 会在
         // `now` 早于原墙钟时发出 `(W, 0)` 这种比原操作 `(W, n)` 还小的时刻，并发写入按 HLC 定先后就会颠倒。收进来之后
         // 每条重签发的 HLC 都严格大于全部原操作的（原操作又大于它依赖的别家操作），先后关系不倒。
@@ -610,11 +367,10 @@ impl<'c> Truth<'c> {
                 .map_err(sql)?;
         }
         // 5. self_ 换成新身份；两个身份的公钥都记在 peers（冻结的旧身份之后按普通设备收、验签要用）。
-        let next = SelfIdentity {
-            col,
+        let next = SelfId {
             device: fresh,
-            seed: me.seed,
-            clock: clock.last,
+            sk: me.sk,
+            hlc: clock.last,
             prev: Some(PrevIdentity {
                 device: old,
                 seq: keep,
@@ -623,7 +379,7 @@ impl<'c> Truth<'c> {
             created: now,
         };
         self.write(|| {
-            self.put_self(&next)?;
+            self.replace_self(col, &next)?;
             self.conn
                 .prepare_cached("DELETE FROM srs_meta WHERE key = ?1")
                 .map_err(sql)?
@@ -642,6 +398,35 @@ impl<'c> Truth<'c> {
             moved,
             dropped_voids,
         })
+    }
+
+    /// 把集合 [col] 的 `self_` 整行换成 [me]（换身份）。编码与 [Truth::self_identity] 的读法同一组函数
+    /// （[hlc_text] / [prev_cols]）。
+    fn replace_self(&self, col: i64, me: &SelfId) -> Result<(), String> {
+        let (pd, ps, pc) = prev_cols(me.prev.as_ref());
+        let n = self
+            .conn
+            .prepare_cached(
+                "UPDATE self_ SET device = ?2, sk = ?3, hlc = ?4, prev_device = ?5, prev_seq = ?6,                  prev_chain = ?7, created = ?8 WHERE col = ?1",
+            )
+            .map_err(sql)?
+            .execute(params![
+                col,
+                &me.device.0[..],
+                &me.sk[..],
+                hlc_text(&me.hlc),
+                pd,
+                ps,
+                pc,
+                me.created,
+            ])
+            .map_err(sql)?;
+        if n != 1 {
+            return Err(format!(
+                "gen4 store: collection {col} has no local identity"
+            ));
+        }
+        Ok(())
     }
 
     /// 把一台设备的原生日志截到 [keep]（之后的操作、空洞、链值记号都删），末尾的链值改成 [keep_chain]。[keep] 不在
