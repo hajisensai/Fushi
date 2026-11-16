@@ -13,6 +13,7 @@ import 'dart:io';
 import 'package:fushi_anki/fushi_anki_core.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
+import 'package:fushi_engine/srs/srs_canonical_ids.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi_engine/srs/srs_mining_target.dart';
@@ -143,10 +144,15 @@ class SrsResolvedMiningDestination {
     required this.noteType,
     required this.deckFellBack,
     required this.noteTypeFellBack,
+    this.destination,
   });
 
   final String deckId;
   final String? deckName;
+
+  /// 解析时用的落点（ID 已换成规范 ID，见 [resolveSrsMiningDestination]）；字段映射按它的键查。null = 调用方
+  /// 自己造的结果（测试 / 远端），按原样的偏好查。
+  final SrsMiningDestination? destination;
 
   /// null = 内置 Lapis。
   final SrsNoteTypeView? noteType;
@@ -161,6 +167,9 @@ class SrsResolvedMiningDestination {
 /// 把偏好解析成落地位置：选中的牌组 / 笔记类型不存在（被删）时回落默认牌组 / Lapis。
 /// 没有字段的笔记类型做不出卡，同样回落 Lapis。
 ///
+/// 偏好里存的 ID 先向内核换成规范 ID（G9-6，srs_canonical_ids.dart）：补盐 / 并入之后旧的成员 ID 在牌组树里查不到，
+/// 不换的话用户选的牌组会被当成「已删除」回落默认。归一不到的（真删了）原样，照旧回落。
+///
 /// [requestedDeckName]：「高级制卡」为这一张卡选的牌组（[MiningRequestOverrides.deckName]，
 /// 复习牌组的「父::子」全名，对话框列的就是全名）。按全名在现存牌组里命中就用它，
 /// 不改偏好；命中不了（对端发来的名字 / 牌组刚被改名删掉）回落偏好里的牌组，不新建
@@ -168,9 +177,14 @@ class SrsResolvedMiningDestination {
 /// 完全不读这个覆写，对话框里的牌组选择是摆设）。
 Future<SrsResolvedMiningDestination> resolveSrsMiningDestination(
   SrsDbStore store,
-  SrsMiningDestination destination, {
+  SrsMiningDestination stored, {
   String? requestedDeckName,
 }) async {
+  final SrsMiningDestination destination =
+      await srsCanonicalizeMiningDestination(
+        stored,
+        srsStoreCanonicalIds(store),
+      );
   final SrsDeckTree tree = await store.deckTree();
   final String requested = requestedDeckName?.trim() ?? '';
   final String? requestedId = requested.isEmpty
@@ -206,6 +220,7 @@ Future<SrsResolvedMiningDestination> resolveSrsMiningDestination(
     noteType: noteType,
     deckFellBack: requestedId == null && wantsDeck && !deckExists,
     noteTypeFellBack: noteTypeFellBack,
+    destination: destination,
   );
 }
 
@@ -403,6 +418,24 @@ class SrsMiner with AnkiNoteComposer {
   final SrsMediaStore media;
   final SrsMiningDestination destination;
 
+  /// 最近一次 [resolveSrsMiningDestination] 换成规范 ID 的 [destination]（G9-6）：字段映射按笔记类型的规范 ID 查，
+  /// 偏好里还是成员 ID 时（作品级覆盖层、别的配置的视图、`bindingChanged` 之后还没重归一）也查得到。没解析过时
+  /// 用原样的 [destination]。
+  SrsMiningDestination? _canonicalDestination;
+
+  Future<SrsResolvedMiningDestination> _resolve(
+    String? requestedDeckName,
+  ) async {
+    final SrsResolvedMiningDestination target =
+        await resolveSrsMiningDestination(
+          store,
+          destination,
+          requestedDeckName: requestedDeckName,
+        );
+    _canonicalDestination = target.destination;
+    return target;
+  }
+
   /// 这个词（词形 + 读音）SRS 里有没有卡。读音为空时按词形匹配。
   Future<bool> isDuplicate(String expression, String reading) async {
     if (expression.trim().isEmpty) return false;
@@ -528,7 +561,8 @@ class SrsMiner with AnkiNoteComposer {
           type: type,
           builtinKey: type!.builtinKey,
           profileUid: store.profileUid,
-          stored: destination.fieldMappingsByType[type.id],
+          stored: (_canonicalDestination ?? destination)
+              .fieldMappingsByType[type.id],
         );
 
   /// [type] 的 fieldId → 字段名，给共享渲染里**按字段名**判定的规则用（制卡位置落
@@ -610,12 +644,7 @@ class SrsMiner with AnkiNoteComposer {
       rawPayloadJson,
       (AnkiMiningPayload p) => requested = p.overrides?.deckName,
     );
-    final SrsResolvedMiningDestination target =
-        await resolveSrsMiningDestination(
-          store,
-          destination,
-          requestedDeckName: requested,
-        );
+    final SrsResolvedMiningDestination target = await _resolve(requested);
     return target.deckName ?? '';
   }
 
@@ -652,12 +681,9 @@ class SrsMiner with AnkiNoteComposer {
       return const MineOutcome.duplicate();
     }
 
-    final SrsResolvedMiningDestination target =
-        await resolveSrsMiningDestination(
-          store,
-          destination,
-          requestedDeckName: payload.overrides?.deckName,
-        );
+    final SrsResolvedMiningDestination target = await _resolve(
+      payload.overrides?.deckName,
+    );
     final SrsNoteTypeView? noteType = target.noteType;
     final RenderedMinedFields rendered = await _renderFor(
       settings: settings,

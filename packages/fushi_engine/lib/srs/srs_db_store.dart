@@ -2352,28 +2352,86 @@ class SrsDbStore implements SrsSync2Host {
   // ------------------------------------------------------------------ 内置
 
   /// 内置默认牌组与内置笔记类型（Lapis、Fushi 卡片；确定性 ID，每台设备都生成同一份；没改过的内置定义不写修改记录）。
+  ///
+  /// 在不在按**规范 ID** 判（G9-6）：补盐 / 并入之后，按本 profile uid 加盐算出的内置 ID 只是别名类成员，内核读回来
+  /// 的是规范 ID；拿成员 ID 去比会把已有的内置实体当成缺失、每次打开都重发一遍。顺带把 [defaultDeckId] 等换成规范 ID
+  /// （[resolveBuiltinIds]）。
   Future<void> ensureBuiltins() => runExclusive(() async {
     final List<SrsEntityRecord> builtins = srsBuiltinEntities(profileUid);
-    final Set<String> present = (await _entityIdsWhere(
-      ids: <String>[for (final SrsEntityRecord r in builtins) r.id],
-    )).toSet();
+    final List<String> canon = await canonicalIds(<String>[
+      for (final SrsEntityRecord r in builtins) r.id,
+    ]);
+    final Set<String> present = (await _entityIdsWhere(ids: canon)).toSet();
     final List<SrsEventDraft> missing = <SrsEventDraft>[
-      for (final SrsEntityRecord r in builtins)
-        if (!present.contains(r.id)) SrsReadyDraft(SrsEntityEvent(r)),
+      for (final (int i, SrsEntityRecord r) in builtins.indexed)
+        if (!present.contains(canon[i])) SrsReadyDraft(SrsEntityEvent(r)),
     ];
-    if (missing.isNotEmpty) await _emit(missing);
+    if (missing.isEmpty) {
+      _setCanonicalBuiltins(canon);
+      return;
+    }
+    await _emit(missing);
+    // 刚建的内置实体在建之前不在别名表里（问到的是它自己）：建完再问一次才是规范 ID。
+    _setCanonicalBuiltins(await canonicalIds(_derivedBuiltins));
   });
 
   /// 本 profile 的根上 ID 与同步目录名（向内核要，见 [SrsKernelIds]）。
+  ///
+  /// 这些是按 profile uid 加盐算的派生值（纯函数，不碰库）：用来**新建**实体与按自然键找实体，内核收到后自己归一。
+  /// 要和内核读回来的 ID 比对时用规范 ID（[defaultDeckId] 等、`canonical_ids`）。
   late final SrsKernelIds kernelIds = SrsKernelIds(profileUid);
 
-  late final String defaultDeckId = kernelIds.defaultDeck;
-  late final String lapisNoteTypeId = kernelIds.builtinNoteType(
-    kSrsBuiltinLapisKey,
-  );
-  late final String fushiCardNoteTypeId = kernelIds.builtinNoteType(
-    kSrsBuiltinFushiCardKey,
-  );
+  /// 内置默认牌组 / Lapis / Fushi 卡片的派生 ID（[kernelIds]，按 uid 加盐），顺序同 [srsBuiltinEntities]。
+  late final List<String> _derivedBuiltins = <String>[
+    kernelIds.defaultDeck,
+    for (final SrsBuiltinNoteTypeSpec spec in kSrsBuiltinNoteTypes)
+      kernelIds.builtinNoteType(spec.key),
+  ];
+
+  /// [resolveBuiltinIds] 问到的规范 ID（顺序同 [_derivedBuiltins]）；没问过时为 null，读派生值。
+  List<String>? _canonicalBuiltins;
+
+  String _builtinId(String key) {
+    final int i = key == kSrsBuiltinDefaultDeckKey
+        ? 0
+        : 1 +
+              kSrsBuiltinNoteTypes.indexWhere(
+                (SrsBuiltinNoteTypeSpec s) => s.key == key,
+              );
+    return (_canonicalBuiltins ?? _derivedBuiltins)[i];
+  }
+
+  /// 内置默认牌组（规范 ID；[resolveBuiltinIds] 之前是按 uid 加盐的派生值）。
+  String get defaultDeckId => _builtinId(kSrsBuiltinDefaultDeckKey);
+  String get lapisNoteTypeId => _builtinId(kSrsBuiltinLapisKey);
+  String get fushiCardNoteTypeId => _builtinId(kSrsBuiltinFushiCardKey);
+
+  /// 向内核要内置实体的规范 ID（`canonical_ids`，只读）。主进程开库时由 [ensureBuiltins] 顺带做；只读打开
+  /// （Secondary，不跑 [ensureBuiltins]）与 `bindingChanged`（别名类变了）之后由调用方再调一次。
+  Future<void> resolveBuiltinIds() async =>
+      _setCanonicalBuiltins(await canonicalIds(_derivedBuiltins));
+
+  void _setCanonicalBuiltins(List<String> canon) {
+    assert(canon.length == _derivedBuiltins.length);
+    _canonicalBuiltins = List<String>.unmodifiable(canon);
+  }
+
+  /// 一批 ID 的规范 ID（内核 `canonical_ids`，只读、一个读快照，逐项对应）。一次最多 `kSrsCanonicalIdsBatchMax`
+  /// 条，多了由调用方分批（srs_canonical_ids.dart 的 `srsCanonicalIdMap`）；归一不到的 ID 原样返回。
+  Future<List<String>> canonicalIds(List<String> ids) async {
+    if (ids.isEmpty) return const <String>[];
+    final Map<String, Object?> r = await _sync2(<String, Object?>{
+      'op': 'canonical_ids',
+      'ids': ids,
+    });
+    final List<String> out = (r['ids']! as List<Object?>).cast<String>();
+    if (out.length != ids.length) {
+      throw StateError(
+        'canonical_ids answered ${out.length} ids for ${ids.length}',
+      );
+    }
+    return out;
+  }
 
   // ------------------------------------------------------------------ 物化
 
