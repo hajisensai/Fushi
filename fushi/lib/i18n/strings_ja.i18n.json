@@ -501,6 +501,7 @@
   "anime_download_category_english": "英語翻訳",
   "anime_download_category_non_english": "英語以外",
   "anime_download_category_raw": "生",
+  "anime_download_copy_link": "ダウンロードリンクをコピー",
   "anime_download_delete": "削除",
   "anime_download_episode_count": "$count 話",
   "anime_download_filter_episode": "Episode $n only",

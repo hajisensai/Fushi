@@ -501,6 +501,7 @@
   "anime_download_category_english": "แปลภาษาอังกฤษ",
   "anime_download_category_non_english": "ไม่ใช่ภาษาอังกฤษ",
   "anime_download_category_raw": "ไม่มีซับ",
+  "anime_download_copy_link": "คัดลอกลิงก์ดาวน์โหลด",
   "anime_download_delete": "ลบ",
   "anime_download_episode_count": "ตอน $count",
   "anime_download_filter_episode": "Episode $n only",

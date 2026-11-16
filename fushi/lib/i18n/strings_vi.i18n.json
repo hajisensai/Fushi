@@ -501,6 +501,7 @@
   "anime_download_category_english": "Dịch tiếng Anh",
   "anime_download_category_non_english": "Không phải tiếng Anh",
   "anime_download_category_raw": "Nguyên bản",
+  "anime_download_copy_link": "Sao chép liên kết tải xuống",
   "anime_download_delete": "Xóa",
   "anime_download_episode_count": "Tập $count",
   "anime_download_filter_episode": "Episode $n only",
