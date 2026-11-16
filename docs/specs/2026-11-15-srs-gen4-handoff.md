@@ -616,9 +616,13 @@ blocked 一律归 busy、去掉 `unstored` 分支、配对退回 (种类, 字段
   `collection_adopt`、`local_state {reload: true}` → 整份作废。只写本机状态行 / 设备信息 / 媒体回收集合的不推进。
 - 定案（所有者授权自定）：
   - 命令失败不推进（协议 3 按「可能提交了一部分」作废一次）：新代一条命令一个事务，失败什么都没落。
-  - **Secondary** 看不见主进程内存，五个键同值，一个读快照里拼 `<开库标识>:s:<纪元|unstored>:<修订号>:<gen>.<floor>`：
-    修订号（本机状态行，主进程每条改投影的写命令同一笔事务推进）+ 缓存层代号 `cache_gen`（补上修订号不覆盖的整层重建与
-    别名变化）。只用 `cache_gen` 不够：牌组收起 / 排序位、profile 设置不碰缓存行，代号不动。Secondary 只会多重读。
+  - **Secondary** 看不见主进程内存，五个键同值，一个读快照里拼
+    `<开库标识>:s:<纪元|unstored>:<修订号>:<gen>.<floor>:<绑定指纹>`：修订号（本机状态行，主进程每条改投影的写命令同一笔
+    事务推进）+ 缓存层代号 `cache_gen`（补上修订号不覆盖的整层重建）+ 绑定指纹（`collections` 那一行——集合标识、位置
+    目录名、盐集合、绑定状态——的散列，没绑定记 `-`）。只用 `cache_gen` 不够：牌组收起 / 排序位、profile 设置不碰缓存行，
+    代号不动。绑定指纹是复核后补的：`collection_salts_add` / `binding_set` 这类身份命令不推进修订号，实测补一个还没有数据
+    的盐也不推进 `cache_gen`，原先 Secondary 看不到（Primary 整份作废）。不改身份命令本身去推进修订号：修订号是 Dart
+    `changeFingerprint` 的一半、按「投影变化条数」记，身份命令不归本模块。Secondary 只会多重读。
   - 收段会话期间的 RWKV 延后（协议 3 `rwkv_held`）属于同步命令，G8-7 接 `ingest_*` 时按协议 3 口径补（`refresh_note`
     的 `merged` 入口已在）。
 - Dart：`SrsCore.refreshKeys` 改发 `refresh_keys`（`srsRefreshKeysOf` 解析、缺键报错），删 `srsRefreshKeyOf`。
@@ -646,6 +650,10 @@ blocked 一律归 busy、去掉 `unstored` 分支、配对退回 (种类, 字段
   键是规范形；`logHlcs` 与 `read logs` 一致、不要就不报。
 - 变异实测（各自让对应用例变红）：日志推进 content/rwkv、界面状态当内容、分发器不推进、`edits` 丢下标、`tagWrites` 丢下标、
   Secondary 键去掉修订号。
+- 复核补测（2026-11-17）：`import_drafts` 前面放一条会被筛掉的 `init` 项，后面的修改回包下标 = 原输入下标 1（变异：
+  `Origin::Kept` 改 `Origin::Caller` 变红）；Secondary 随 `collection_salts_add`（`saltsAdded`）与 `binding_set`
+  （provisional → settled）变、同样内容再发（`same` / 已 settled 只进不退）不变（变异：键里去掉绑定指纹变红）。
+- 小节标号：本节不带编号，代码里按节名引用（`writes.rs` / `refresh.rs` 文件头），合流统一编号时不用改代码。
 - 顺手修：`dispatch_tests.rs` `unwired_and_removed_commands_name_their_owner` 里 `binding_set` 还当 G9-4 未接线（G9-4 已接，
   集成分支上这条本来就红），删掉该行。
 

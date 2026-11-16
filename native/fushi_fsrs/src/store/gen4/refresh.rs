@@ -1,4 +1,4 @@
-//! 新代的进程内刷新键（S1c，交接说明 §9.5 第 3 条、§11）：Dart 那一侧「这份缓存还能不能用」的判据（牌组树 / profile
+//! 新代的进程内刷新键（S1c，交接说明 §9.5 第 3 条、「S1c 刷新计数与写回包」节）：Dart 那一侧「这份缓存还能不能用」的判据（牌组树 / profile
 //! 修改记录、同步冲突 / 待裁决角标、统计、RWKV 分数表）。协议 3 `store/refresh.rs` 的新代对应物，口径照它：
 //!
 //! | 键 | 随什么变 | 特意不随什么变 |
@@ -31,12 +31,15 @@
 //!   （`structure` 是 `<开库标识>:<content>:<view>`）：开库标识每次打开库随机生成（[Refresh::new]），进程重启、关库重开
 //!   （覆盖恢复、迁移后的 reopen）之后键必然不同；同一次打开里各计数只增不减，所以「键相等 = 这期间没有那一类变化」。
 //! - **Secondary**（查词弹窗等只读辅助进程）：自己不写，看不见主进程内存里的计数，**分不清别的进程写的是哪一类**——五个键
-//!   取同一个值，在一个读快照里拼：`<开库标识>:s:<纪元>:<修订号>:<缓存层代号>.<下限>`。修订号是本机状态行
+//!   取同一个值，在一个读快照里拼：`<开库标识>:s:<纪元>:<修订号>:<缓存层代号>.<下限>:<绑定指纹>`。修订号是本机状态行
 //!   （`local.rs`）的，主进程每条改投影的写命令在同一笔事务里推进它（含作答）；缓存层代号 `cache_gen`（`cache.rs` 文件头
-//!   「变更记录」）补上修订号不覆盖的整层重建与别名变化（`cache_config_set`、`rebuild_caches`、身份命令）。只用 `cache_gen`
-//!   不够：牌组收起 / 排序位、profile 设置这类修改不碰笔记 / 卡缓存行，代号不动，弹窗的牌组树会一直是旧的。纪元没落盘时
-//!   （这个 profile 还没有本机状态行）记 `unstored`，不拿内核每次现生成的纪元当键（否则每读一次都不命中）。profile 没绑定
-//!   集合时代号记 `0.0`。Secondary 只会多重读（作答也让它的五个键一起变），不会读到旧值；它不跑 RWKV 排队。
+//!   「变更记录」）补上修订号不覆盖的整层重建（`cache_config_set`、`rebuild_caches`）。只用 `cache_gen` 不够：牌组收起 /
+//!   排序位、profile 设置这类修改不碰笔记 / 卡缓存行，代号不动，弹窗的牌组树会一直是旧的。改别名 / 绑定的身份命令
+//!   （`collection_salts_add` / `collection_join` / `collection_adopt` / `binding_set`、`identity` 第一次建）既不推进修订号，
+//!   也不一定碰缓存行（实测补一个还没有数据的盐两样都不动）：它们改的是 `collections` 这一行（集合标识、位置目录名、盐集合、
+//!   绑定状态），绑定指纹就是这一行的散列（[binding_mark]）。纪元没落盘时（这个 profile 还没有本机状态行）记 `unstored`，
+//!   不拿内核每次现生成的纪元当键（否则每读一次都不命中）。profile 没绑定集合时代号记 `0.0`、指纹记 `-`。Secondary
+//!   只会多重读（作答也让它的五个键一起变），不会读到旧值；它不跑 RWKV 排队。
 //!
 //! # 别的进程
 //!
@@ -209,18 +212,34 @@ fn secondary_key(t: &Truth<'_>, open: &str, profile: &str) -> Result<String, Str
         "unstored".to_owned()
     };
     let revision = st[REVISION_KEY].as_i64().unwrap_or(0);
-    let (gen, floor): (i64, i64) = match t.binding_of(profile)? {
-        Some(b) => t
-            .conn()
-            .prepare_cached(CACHE_MARK_SQL)
-            .map_err(sql)?
-            .query_row([b.col], |r| Ok((r.get(0)?, r.get(1)?)))
-            .optional()
-            .map_err(sql)?
-            .unwrap_or((0, 0)),
-        None => (0, 0),
+    let ((gen, floor), mark): ((i64, i64), String) = match t.binding_of(profile)? {
+        Some(b) => (
+            t.conn()
+                .prepare_cached(CACHE_MARK_SQL)
+                .map_err(sql)?
+                .query_row([b.col], |r| Ok((r.get(0)?, r.get(1)?)))
+                .optional()
+                .map_err(sql)?
+                .unwrap_or((0, 0)),
+            binding_mark(t, &b)?,
+        ),
+        None => ((0, 0), "-".to_owned()),
     };
-    Ok(format!("{open}:s:{epoch}:{revision}:{gen}.{floor}"))
+    Ok(format!("{open}:s:{epoch}:{revision}:{gen}.{floor}:{mark}"))
+}
+
+/// 绑定指纹（模块文件头「读」的 Secondary）：`collections` 那一行（集合标识、位置目录名、盐集合、绑定状态）的散列。
+/// 身份命令改的就是这一行；键只比相等、只在同一个进程里比，用标准库的固定键散列即可。
+fn binding_mark(t: &Truth<'_>, b: &super::truth::Binding) -> Result<String, String> {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::hash::DefaultHasher::new();
+    b.collection.0.hash(&mut h);
+    b.dir.hash(&mut h);
+    b.salts.hash(&mut h);
+    t.binding_state(b.col)?
+        .map(|s| (s.stage.code(), s.via, s.at))
+        .hash(&mut h);
+    Ok(format!("{:016x}", h.finish()))
 }
 
 impl G4Core {

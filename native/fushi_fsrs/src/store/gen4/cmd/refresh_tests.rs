@@ -356,3 +356,75 @@ fn input_indices_survive_salted_members() {
     );
     ffsrs_store_close(h);
 }
+
+/// `import_drafts` 先筛掉「键上已有活着的修改」的 `init` 项再落：回包的输入下标按**筛掉之前**的调用方输入算
+/// （`Origin::Kept`），不是筛掉之后的位置。
+#[test]
+fn import_drafts_reports_indices_into_the_unfiltered_input() {
+    let m = migrated();
+    let mut init = draft("note", N3, "f/fa", json!("s1c init"));
+    init["init"] = json!(true);
+    let items = vec![init, draft("note", N3, "f/fb", json!("s1c import"))];
+    let (v, _) = call(m.h, &g4req("import_drafts", T1, json!({})), Some(&items))
+        .unwrap_or_else(|(rc, e)| panic!("{rc} {e}"));
+    let edits = v["edits"].as_array().unwrap();
+    assert_eq!(
+        edits.len(),
+        1,
+        "the init item on an authored key is dropped: {v}"
+    );
+    assert_eq!(edits[0][2], json!("f/fb"), "{v}");
+    assert_eq!(edits[0][6], json!(1), "{v}");
+}
+
+/// Secondary：改别名 / 绑定的身份命令（补盐、绑定状态）不经 `Session`、不推进修订号，也不一定碰笔记缓存行；Secondary
+/// 的键照样要变（Primary 同口径整份作废）。什么都没改的同一条命令不让键变。
+#[test]
+fn a_secondary_sees_binding_and_alias_writes() {
+    let m = migrated();
+    let s = open(&m.dir.0, 1).unwrap();
+    let key = || g4_keys(s)["landed"].as_str().unwrap().to_owned();
+    let k0 = key();
+    let v = g4(
+        m.h,
+        "collection_salts_add",
+        T1,
+        json!({"salts": ["s1c-old-uid"]}),
+    );
+    assert_eq!(v["outcome"], json!("saltsAdded"), "{v}");
+    let k1 = key();
+    assert_ne!(k1, k0, "salts added");
+    let v = g4(
+        m.h,
+        "collection_salts_add",
+        T1,
+        json!({"salts": ["s1c-old-uid"]}),
+    );
+    assert_eq!(v, json!({"outcome": "same"}));
+    assert_eq!(key(), k1, "nothing written");
+    g4(
+        m.h,
+        "binding_set",
+        T1,
+        json!({"state": "provisional", "via": "loc-a"}),
+    );
+    let k2 = key();
+    assert_ne!(k2, k1, "binding state");
+    g4(
+        m.h,
+        "binding_set",
+        T1 + 1,
+        json!({"state": "settled", "via": "loc-b"}),
+    );
+    let k3 = key();
+    assert_ne!(k3, k2, "binding settled");
+    // 已 settled：只进不退，什么都不改。
+    g4(
+        m.h,
+        "binding_set",
+        T1 + 2,
+        json!({"state": "provisional", "via": "loc-c"}),
+    );
+    assert_eq!(key(), k3);
+    ffsrs_store_close(s);
+}
