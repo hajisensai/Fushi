@@ -38,6 +38,12 @@ const List<String> _sources = <String>[
   'lib/src/pages/implementations/home_dashboard_page.dart',
   'lib/src/pages/implementations/home_dashboard_widgets.dart',
   'lib/src/pages/implementations/home_srs_panel.dart',
+  // 2026-11-15 首页小组件网格：格子内容、编辑态、添加面板。
+  'lib/src/pages/implementations/home_dashboard_widget_cells.part.dart',
+  'lib/src/pages/implementations/home_widget_add_sheet.dart',
+  'lib/src/pages/implementations/home_widget_frame.dart',
+  'lib/src/pages/implementations/home_widget_grid.dart',
+  'lib/src/pages/implementations/home_widget_size_picker.dart',
   'lib/src/pages/implementations/updates_dashboard_banner.dart',
 ];
 

@@ -360,6 +360,19 @@ void main() {
       expect(e.fsrsRev, matches(RegExp(r'^[0-9a-f]{40}$')));
     });
 
+    test(
+      'knows its own fsrs-rs revision and the superseded pre-release pin',
+      () {
+        expect(e.isKnownFsrsRev(e.fsrsRev), isTrue);
+        // FSRS-7 发版前钉的 git rev：升级后它产出的参数组仍要照常自动优化。
+        expect(
+          e.isKnownFsrsRev('0a5737406a0c5c7a5259b144738cbe4a0b649d76'),
+          isTrue,
+        );
+        expect(e.isKnownFsrsRev('0' * 40), isFalse);
+      },
+    );
+
     test('defaults have 21 (FSRS-6) / 34 (FSRS-7) parameters', () {
       final List<double> six = e.defaultParams(SrsAlgorithm.fsrs6);
       final List<double> seven = e.defaultParams(SrsAlgorithm.fsrs7);

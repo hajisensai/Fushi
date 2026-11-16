@@ -117,6 +117,11 @@ enum SrsLimitUnit {
   bool get counts => this != minutes;
 }
 
+/// 每日上限单位的缺省从「卡片数」改成「作答次数」的时刻（PR #3460 合入 develop，2026-11-16T05:25:36Z）。在它之前就
+/// 有卡评过分、又没写过单位（[SrsDeckView.limitUnitSet]）的牌组是按旧口径用过上限的存量牌组，牌组页提醒一次
+/// （`SrsDbStore.limitUnitLegacyDecks`）；之后才开始用的牌组从没按卡片数计过，不提醒。
+const int kSrsLimitUnitDefaultChangedAtMs = 1794806736000;
+
 /// 一种算法的参数组（整体一个字段键，按铁律 H 设置类合并）。
 class SrsParamSet {
   const SrsParamSet({
@@ -463,6 +468,7 @@ class SrsDeckView {
     required this.newPerDay,
     required this.reviewsPerDay,
     this.limitUnit = SrsLimitUnit.reviews,
+    this.limitUnitSet = true,
     required this.learnSteps,
     required this.relearnSteps,
     this.learnStepsSet = true,
@@ -511,6 +517,11 @@ class SrsDeckView {
   /// [reviewsPerDay] 的单位；参数归属牌组上的这一项同时是 [SrsRwkvQueueSettings.minReviewsPerDay] 的单位。
   /// 牌组自己的值（同 [newPerDay]）。
   final SrsLimitUnit limitUnit;
+
+  /// 牌组上写过 [SrsFieldKeys.deckLimitUnit]。没写过、又在 [kSrsLimitUnitDefaultChangedAtMs] 之前用过的牌组以前按
+  /// 卡片数计、现在按缺省的作答次数计，牌组页据此提醒一次（`SrsDbStore.limitUnitLegacyDecks`），用户选「保持按卡片数」
+  /// 写 cards、否则写 reviews，写过就不再提醒。新建牌组（`SrsDbStore.createDeck`、导入新建）直接写 reviews。
+  final bool limitUnitSet;
   final List<double> learnSteps;
   final List<double> relearnSteps;
 

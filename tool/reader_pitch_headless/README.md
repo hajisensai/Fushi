@@ -19,7 +19,6 @@ node band_period_probe.js   # 默认 5 组字号×视口；退出码 0=PASS 1=FA
 
 - 默认系统 Chrome 路径 `C:/Program Files/Google/Chrome/Application/chrome.exe`，
   可用环境变量 `CHROME_PATH` 覆盖。
-- 本机直连 GitHub 不稳，`npm install` 前可 `export HTTPS_PROXY=http://127.0.0.1:34151`。
 
 ## 断言的不变量
 
