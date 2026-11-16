@@ -1988,6 +1988,7 @@ class _HomePageState extends BasePageState<HomePage>
   /// list (video/games toggles) flows through the same enum, never int.
   Widget _buildMacosLayout() {
     _inMobileLayout = false;
+    _settingsFullscreen = false;
     _shellFabHostedByBar = false;
     final AdaptiveNavItem currentItem = _navItemFor(_visibleTab);
     // TODO-1375（症状③）：macOS ToolBar 的 automaticallyImplyLeading 只在
@@ -2040,25 +2041,29 @@ class _HomePageState extends BasePageState<HomePage>
     // 设置页因此也是「rail 常驻 + 二栏 list-detail」（用户拍板：两端一致）。
     // Linux、横屏 Android 平板仍走原分支：它们的顶栏没有 tab 名、也没有 rail 常驻
     // 的保证。
-    if (_visibleTab == HomeTab.settings && !FushiDesktopTitleBar.isEnabled) {
+    _settingsFullscreen =
+        _visibleTab == HomeTab.settings && !FushiDesktopTitleBar.isEnabled;
+    if (_settingsFullscreen) {
       // 设置标签（全部设计系统）：隐藏 3 图标侧栏，全屏二栏（内部
       // MaterialSupportingPaneLayout），左上返回箭头切回来源 tab（参考 Mihon
       // 宽屏设置）。Cupertino 桌面也走这里——叶子控件保持 Cupertino 皮肤，但外壳
       // 复用同一 Material 架构；返回出口由 SettingsHomePage 的嵌入页头提供
       // （BUG-009 R2）。否则会退化成「3 图标 rail + 嵌入式 Cupertino 设置」三栏
       // 混排、无返回出口、且详情面板溢出。
+      //
+      // 只摘掉侧栏，正文仍是同一棵 [_homeContentPane]（[_homeBodyKey] 换父
+      // 节点）：设置页由 [buildBody] 照常画出（返回箭头按 [_settingsFullscreen]
+      // 开），藏着的保活 tab 留在树上。这里曾直接返回一个只装设置页的 Scaffold，
+      // 整棵正文连同全部保活页被卸载——进一次设置，回来每个 tab 都要冷启动、
+      // 远端列表与封面重拉、滚动位置与页内状态全丢（BUG-4720）。
       return Scaffold(
         resizeToAvoidBottomInset: false,
-        body: SafeArea(
-          // 这里曾按 BUG-869 预留一条 macOS 标题栏高度：透明标题栏 +
-          // full-size content view 下交通灯不计入 MediaQuery.padding，会压住返回
-          // 箭头。macOS 改用自绘顶栏后交通灯已被隐藏（`main()` 的
-          // `windowButtonVisibility: false`），且这条分支在 macOS 上根本不再命中
-          // （[FushiDesktopTitleBar.isEnabled] 恒真），预留带随之删除。
-          child: FocusTraversalGroup(
-            child: _buildSettingsTabContent(showBackButton: true),
-          ),
-        ),
+        // 这里曾按 BUG-869 预留一条 macOS 标题栏高度：透明标题栏 +
+        // full-size content view 下交通灯不计入 MediaQuery.padding，会压住返回
+        // 箭头。macOS 改用自绘顶栏后交通灯已被隐藏（`main()` 的
+        // `windowButtonVisibility: false`），且这条分支在 macOS 上根本不再命中
+        // （[FushiDesktopTitleBar.isEnabled] 恒真），预留带随之删除。
+        body: SafeArea(child: _homeContentPane()),
       );
     }
 
@@ -2299,6 +2304,10 @@ class _HomePageState extends BasePageState<HomePage>
   /// 当前是否在手机底栏布局（[_buildMobileLayout] 每次构建时置位）。
   bool _inMobileLayout = false;
 
+  /// 当前是否是「摘掉侧栏的全屏设置」（[_buildDesktopLayout] 每次构建时置位；
+  /// 手机底栏 / macOS 布局恒为 false）。设置页头的返回箭头据它显隐。
+  bool _settingsFullscreen = false;
+
   /// 横滑切模块此刻是否启用：手机底栏布局，且当前 tab 在横滑序列里
   /// （[homeModuleSwipeArmed]，含设置，BUG-3351）。两套设计系统一致——Apple 也
   /// 要能跨分区、跨模块横滑，切模块时同样轻震（用户 2026-10-30）。
@@ -2318,6 +2327,7 @@ class _HomePageState extends BasePageState<HomePage>
 
   Widget _buildMobileLayout() {
     _inMobileLayout = true;
+    _settingsFullscreen = false;
     // MD3 在悬浮底栏 FAB 正上方叠一颗 [FushiFab]（[_buildBackgroundTasksFab]）；
     // Apple 进外壳大标题行（[_appleBackgroundTasksAction]），可见 tab 没有那一行时仍画
     // FAB（同桌面，见 [_backgroundTasksHostedByChrome]）。
@@ -2444,10 +2454,15 @@ class _HomePageState extends BasePageState<HomePage>
   /// 保活后它自己的表级变更流照常刷新数据；隐藏期间到达的变更推迟到切回时再
   /// 重载（见 `_HomeDashboardPageState._reloadDeferredWhileHidden`）。
   ///
-  /// 其余 tab（词典 / 设置）**故意不保活**、按需重建，以保留其依赖
-  /// `initState` 挂载的语义——尤其 [HomeDictionaryPage] 靠切到查词 tab 时 re-mount
-  /// 消费桌面悬浮字幕的 pending 查词（TODO-376，见 [_onHomeDictionaryTabRequested]）；
-  /// 若把它也保活会不再 re-mount 而漏消费。
+  /// 查词与复习也保活（BUG-4719）：不保活时每次切入整页从零 inflate + 全量
+  /// 布局（实测首帧 16～27 ms），查词页还要每次冷建一个预热用的查词 WebView、切走
+  /// 再销毁（切入后约 0.6 s 处 UI 线程被堵 30～40 ms）。两页原先靠「切入即重挂」
+  /// 做的事改成显式的「切入时做」：[HomeDictionaryPage] 藏着时不消费待查词 / 聚焦
+  /// 请求，变成可见的那一帧之后再消费（与挂载时消费同一条路，TODO-376）；
+  /// [SrsDeckListPage] 切回时刷新已配对主机。
+  ///
+  /// 设置与网页**不保活**、按需重建：设置每次进入从根页开始（来源 tab 的返回出口
+  /// 也按进入时算），网页页首帧本来就在一帧内。
   static const Set<HomeTab> _keepAliveTabs = <HomeTab>{
     HomeTab.home,
     HomeTab.books,
@@ -2456,6 +2471,8 @@ class _HomePageState extends BasePageState<HomePage>
     HomeTab.music,
     HomeTab.games,
     HomeTab.browse,
+    HomeTab.dictionaries,
+    HomeTab.srs,
   };
 
   /// 用户已实际打开过至少一次的保活 tab。惰性构建：没进过的视频/书架 tab 不预建，
@@ -4023,8 +4040,8 @@ class _HomePageState extends BasePageState<HomePage>
                   // 隐藏 tab 不参与焦点遍历与系统返回（HBK-AUDIT-017）；库页壳里的
                   // 视图可见性与它取与，外层 tab 藏起时里面的「当前」视图也不拦
                   // 返回、不持焦点。「切 tab 同时聚焦搜索框」只发生在查词 tab
-                  // （_selectTabFromNav），它不是保活 tab、切过去才挂载并在挂载后
-                  // 消费聚焦请求，不经过这一层。
+                  // （_selectTabFromNav）：它藏着时不消费聚焦请求，等这一层按新的
+                  // 可见性重建之后（后帧）再消费，焦点才不会被 ExcludeFocus 吞掉。
                   child: SectionVisibilityScope(
                     visible: visible == tab,
                     // 藏起的保活 tab 在 rail 展开 / 收起过渡中钉宽、不逐帧重排；
@@ -4249,9 +4266,11 @@ class _HomePageState extends BasePageState<HomePage>
       HomeTab.web => const WebHubPage(),
       HomeTab.srs => const SrsDeckListPage(),
       HomeTab.settings =>
-        // 设置 tab 走侧栏/底栏切回，不显示页头返回箭头；但仍需 PopScope 拦截系统
-        // 返回键（否则冒泡到顶层 PopScope = 退出 app，见 BUG-236）。
-        _buildSettingsTabContent(showBackButton: false),
+        // 设置 tab 走侧栏/底栏切回，不显示页头返回箭头——侧栏被摘掉的全屏设置
+        // （[_settingsFullscreen]）除外，那时页头箭头是唯一的返回出口。两种情况都
+        // 需 PopScope 拦截系统返回键（否则冒泡到顶层 PopScope = 退出 app，见
+        // BUG-236）。
+        _buildSettingsTabContent(showBackButton: _settingsFullscreen),
       HomeTab.books => const HomeReaderPage(),
       HomeTab.manga => const MangaLibraryPage(),
       HomeTab.music => const MusicLibraryPage(),

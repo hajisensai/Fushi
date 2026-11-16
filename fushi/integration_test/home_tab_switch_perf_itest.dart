@@ -22,7 +22,10 @@ import 'test_helpers.dart';
 /// 复现 2026-11-16 群反馈录屏「切 tab 变卡了」：侧栏指示器到位后正文那一帧卡
 /// 130～420 ms。与应用同一条 `_selectTab` 切页（经 [homeShellTabNotifier]），收引擎 [FrameTiming]（build /
 /// raster 分段、帧间空档）与 timeline 里 UI 线程最长的事件，以 `[tab-perf]`
-/// 前缀打进日志。第 0 轮是各页首次挂载，之后几轮是回访（保活页只换 Offstage）。
+/// 前缀打进日志。第 0 轮是各页首次挂载，之后几轮是回访（保活页只换 Offstage）：
+/// 第 1 轮是首次回访（首页攒着的延后重载在这一轮落地），抓 build 剖析；第 2、4 轮
+/// 不抓 timeline、只收帧时间（没有剖析开销，拿它们比修前修后）；第 3 轮抓 layout
+/// 剖析。
 ///
 /// 跑法同 `detail_open_perf_itest.dart`（数据根用安装版真实库的只读拷贝）：
 ///   FUSHI_TEST_HIDDEN=1 FUSHI_TEST_ONSCREEN=1
@@ -32,6 +35,8 @@ import 'test_helpers.dart';
 ///     --target=integration_test/home_tab_switch_perf_itest.dart
 ///     --dart-define=FUSHI_TEST_ROOT=<测试根>
 ///   可选：--dart-define=FUSHI_PERF_DUMP=<目录> 把抓到的 timeline 落成 JSON。
+///   可选：--dart-define=FUSHI_PERF_DESIGN=glass 先切到玻璃设计再测（外壳大标题
+///   不叠在内容上、标题栏高度按 tab 变的那条路径），测完还原。
 void main() {
   final IntegrationTestWidgetsFlutterBinding binding =
       IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -51,23 +56,34 @@ void main() {
     // 切走即销毁、每次切回都整页重建。
     final List<HomeTab> tabs = homeActiveTabs(appModel.moduleVisibility);
     final Size physical = tester.view.physicalSize;
+    const String design = String.fromEnvironment('FUSHI_PERF_DESIGN');
+    final String designBefore = appModel.themeNotifier.designSystem;
+    if (design.isNotEmpty) {
+      await appModel.themeNotifier.setDesignSystem(design);
+      await _wait(2000);
+    }
     debugPrint(
       '[tab-perf] tabs=${tabs.map((HomeTab t) => t.name).join(",")} '
       'size=${physical.width}x${physical.height} '
-      'dpr=${tester.view.devicePixelRatio}',
+      'dpr=${tester.view.devicePixelRatio} '
+      'design=${appModel.themeNotifier.designSystem}',
     );
 
-    for (int round = 0; round < 4; round++) {
-      for (final HomeTab tab in tabs) {
-        await _measure(
-          binding,
-          'r$round/${tab.name}',
-          () => select(tab),
-          // 首次挂载与两轮回访各抓一次 timeline（第 3 轮改打 layout 事件），
-          // 第 1 轮只收帧时间。
-          trace: round != 1,
-          profileLayout: round == 3,
-        );
+    try {
+      for (int round = 0; round < 5; round++) {
+        for (final HomeTab tab in tabs) {
+          await _measure(
+            binding,
+            'r$round/${tab.name}',
+            () => select(tab),
+            trace: round == 0 || round == 1 || round == 3,
+            profileLayout: round == 3,
+          );
+        }
+      }
+    } finally {
+      if (design.isNotEmpty) {
+        await appModel.themeNotifier.setDesignSystem(designBefore);
       }
     }
     debugPrint('[tab-perf] done');
