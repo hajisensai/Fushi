@@ -3748,6 +3748,24 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 楽天ブックス书籍检索 applicationId（设备本地凭据）。
+  String get bookScrapeRakutenApplicationId =>
+      getPref('book_scrape_rakuten_application_id', defaultValue: '') as String;
+
+  Future<void> setBookScrapeRakutenApplicationId(String value) async {
+    await setPref('book_scrape_rakuten_application_id', value.trim());
+    notifyListeners();
+  }
+
+  /// 楽天ブックス书籍检索 accessKey（2026 年新端点必填，设备本地凭据）。
+  String get bookScrapeRakutenAccessKey =>
+      getPref('book_scrape_rakuten_access_key', defaultValue: '') as String;
+
+  Future<void> setBookScrapeRakutenAccessKey(String value) async {
+    await setPref('book_scrape_rakuten_access_key', value.trim());
+    notifyListeners();
+  }
+
   /// SubDL（subdl.com）API key：搜索必须带 key（站点 panel 免费生成）。
   String get videoSubtitleSubdlApiKey =>
       getPref('video_subtitle_subdl_api_key', defaultValue: '') as String;

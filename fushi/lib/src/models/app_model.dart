@@ -26,6 +26,8 @@ import 'package:fushi/src/updates/local_update_notifier.dart';
 import 'package:fushi/src/updates/update_check_scheduler.dart';
 import 'package:fushi/src/updates/app_update_check.dart';
 import 'package:fushi/src/updates/usage_heartbeat.dart';
+import 'package:fushi_engine/media/metadata/books/rakuten_books.dart'
+    show RakutenBooksCredentials;
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi/src/models/preference_keys.dart';
 import 'package:fushi_engine/srs/srs_miner.dart';
@@ -6934,6 +6936,13 @@ class AppModel
     await prefsRepo.setVideoSubtitleAjattEnabled(enabled);
     await reloadVideoDownloadPipelineRuntime();
   }
+
+  /// 楽天ブックス书籍检索凭据（书籍刮削弹窗 / 控制通道据此决定楽天源是否可用）。
+  RakutenBooksCredentials get bookScrapeRakutenCredentials =>
+      RakutenBooksCredentials(
+        applicationId: prefsRepo.bookScrapeRakutenApplicationId,
+        accessKey: prefsRepo.bookScrapeRakutenAccessKey,
+      );
 
   /// SubDL API key，见 [PreferencesRepository.videoSubtitleSubdlApiKey]。
   String get videoSubtitleSubdlApiKey =>
