@@ -25,6 +25,7 @@ import 'package:fushi/src/media/audiobook/audiobook_play_bar.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session_launcher.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/media/nsfw/nsfw_card_image.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/pages/base_source_page.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
@@ -81,7 +82,7 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
   final PdfViewerController _pdfController = PdfViewerController();
 
   @override
-  ModuleId? get popupDockModule => ModuleId.books;
+  ModuleId? get lookupHostModule => ModuleId.books;
 
   /// 每页结构化文本缓存（`loadStructuredText` 有解析成本，点一次查一次会卡）。
   /// key = 0-based 页索引。
@@ -1046,6 +1047,15 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
         await file.writeAsBytes(pagePng, flush: true);
         coverPath = file.path;
       }
+      // NSFW 书 +「制卡图片也模糊」：页图与漫画页图同口径换成模糊副本（失败则
+      // 不带图，绝不退回原页面）。
+      coverPath = await resolveNsfwCardImagePath(
+        db: appModel.database,
+        path: coverPath,
+        blurCardImages: appModel.prefsRepo.blurNsfwCardImages,
+        kind: TagHostKind.epub,
+        entryKey: widget.bookKey,
+      );
 
       final AnkiMiningContext miningContext = AnkiMiningContext(
         sentence: sentence,

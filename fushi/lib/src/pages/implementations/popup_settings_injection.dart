@@ -1423,9 +1423,10 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
 }
 
 /// 词典管理里逐本设成「折叠」的词典名：查词弹窗（`collapsedDictionaryNames`）与复习卡面
-/// 释义页共用这一个真相源。
+/// 释义页共用这一个真相源。作品会话里按作品配置的视图（[AppModel.lookupViewDictionaries]），
+/// 与弹窗按会话视图出结果同一口径。
 List<String> popupCollapsedDictionaryNames(AppModel appModel) => appModel
-    .dictionaries
+    .lookupViewDictionaries
     .where((d) => d.isCollapsed(JapaneseLanguage.instance))
     .map((d) => d.name)
     .toList();
@@ -1433,7 +1434,7 @@ List<String> popupCollapsedDictionaryNames(AppModel appModel) => appModel
 /// 词典管理里逐本设成「展开」的词典名（BUG-2158 三态里优先级最高的一档）：查词弹窗
 /// （`expandedDictionaryNames`）与复习卡面释义页共用这一个真相源。
 List<String> popupExpandedDictionaryNames(AppModel appModel) => appModel
-    .dictionaries
+    .lookupViewDictionaries
     .where((d) => d.isExplicitlyExpanded(JapaneseLanguage.instance))
     .map((d) => d.name)
     .toList();

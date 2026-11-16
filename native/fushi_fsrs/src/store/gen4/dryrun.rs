@@ -6,13 +6,24 @@
 //!    app 同时在写也不影响结果，也不会被它拖住（WAL 下读不挡写；代价是干跑期间 WAL 并不回去，结束后照常）。
 //!    旧库一个字节不写：协议 3 一侧的缓存重建写进同名的**临时表**（`temp` 库里的同名表遮住 `main` 的，见 [old_caches]）。
 //! 2. 先过 `legacy::preflight`（换代前必须在旧代码上做完的事）；没做完的 profile 报 `blocked`、不往下走。
-//! 3. 按 profile 把操作日志转译、灌进工作目录里的临时新代文件（`import.rs`），由一台假想的迁移设备在它的原生日志里写
-//!    一条 `Salts`（本机 uid ∪ 已退役 uid，§6.1 第 7 步），再 `rebuild_all`（索引、别名、摘要、缓存全程）。
+//! 3. 按 profile 把操作日志转译、灌进工作目录里的临时新代文件（`import.rs`），带上本机状态（`carry.rs`），由一台假想的
+//!    迁移设备（占位钥匙）建身份、经原生写入者在它的原生日志里写一条 `Salts`（本机 uid ∪ 已退役 uid，§6.1 第 4 步），再
+//!    `rebuild_all`（索引、别名、摘要、缓存全程）。
+//!
+//! 第 2–5 步是 [profile_stages]，真迁移（`migrate.rs`，G7-2）调的是同一个函数，只有 [Mode] 的两处不同：新身份（真迁移
+//! 是新设备 ID + 沿用的签名钥匙 + 指向旧设备的 `prev`）与真迁移才拦的前提（[profile_blockers]：收段留下的待重放 / 待
+//! 刷新、没给缓存配置；预演只在 `migrationBlockers` 里报）。
 //! 4. 对拍（`compare.rs`，与测试装置同一份比法）。基准是**冻结的旧代码对旧库全量重建出来的缓存**，不是旧库里现成的
 //!    缓存表（它允许过期）；现成的与重建的另比一次，单列（§10 第 7 条，不计入判定）。协议 3 自己还欠着收尾的卡与笔记
 //!    （待重放集合、没刷新的合成标签行）只读连接上做不了，跳过并计数。
 //! 5. 在对拍之外再按规范 ID 比（§6.1 第 5 步、§5.3）：每个寄存器的胜者、每张规范卡的调度状态、每张规范卡（含不在缓存
-//!    里的历史血统卡）名下的规范日志与有效复习。
+//!    里的历史血统卡）名下的规范日志与有效复习。缓存层本身按规范 ID 物化，第 4 步的缓存三类也是按规范 ID 比的
+//!    （协议 3 一侧的行先改写成规范 ID，`compare.rs` 文件头「按规范 ID 比」）。
+//! 6. 按类判定的已知差异（§5.3「按类判定的已知差异」、§10 第 24 条，G9-2）：寄存器按别名类判与原值判不同的，逐条列出
+//!    并逐条佐证（`knownDifferences`）。佐证得了的不计入判定，缓存行里只盖它们真喂得到的列（`compare::known_effect`），
+//!    行的其余列照比、照计入判定。佐证不了的计入对拍差异
+//!    （`classRegisters`），结论是 `fail`。只有 ID、写入者名与 seq，不含内容；任何一份库都能重跑（命令行
+//!    `examples/gen4_dryrun.rs`）。
 //!
 //! 另外几项只报数、不计入判定：旧戳闭包对 `sync2_legacy`（§10 第 14 条）、归回去的改名写入者的旧戳逐条对照（G3 没验的
 //! 第一项）、验不上的日志重建后是否仍挂在同一张规范卡上（G3 没验的第二项）、别名表各类的数（与 G3 探针同口径）。
@@ -21,7 +32,7 @@
 //! 临时新库（[Options::keep] 时留下）。报告只有计数与 ID，不含笔记内容（[Options::full_examples] 时例子给整行，只供本地
 //! 排查用）。
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -32,16 +43,21 @@ use serde_json::{Map, Value, json};
 
 use super::alias::{A_UNVERIFIED, AliasCounts};
 use super::cache::CFG_KEY;
+use super::carry::{self, Carried};
+use super::class::DiffEvidence;
 use super::compare::{
-    self, CARD_COLS, CacheBaseline, CacheRows, Diff, NOTE_COLS, OldCachesError, Pair, STAT_COLS,
-    Skip, rows_of, texts,
+    self, CARD_COLS, CacheBaseline, CacheRows, CanonMap, Diff, Known, NOTE_COLS, OldCachesError,
+    Pair, STAT_COLS, Skip, rows_of, texts,
 };
 use super::derive::{Index, R_CONFLICT, R_WINNER, Ref, Settled, body_of};
 use super::import::{Imported, import_legacy_checked};
+use super::ingest::{Settle, ingest_settle};
 use super::legacy;
+use super::native::Native;
 use super::schema::{self, sql};
 use super::truth::Truth;
-use crate::gen4::op::{Body4, Op4};
+use crate::gen4::heritage::fingerprint;
+use crate::gen4::op::Body4;
 use crate::gen4::stamp::{HeritageStamp, StampHlc};
 use crate::registers::{StoredEdit, judge_register};
 use crate::store::sync2::collection_of;
@@ -49,12 +65,24 @@ use crate::store::sync2::config::default_deck_id;
 use crate::sync2::dvv::Dvv;
 use crate::sync2::hlc::Hlc;
 use crate::sync2::id::{Id, Key};
+use crate::sync2::segment::CHAIN_ZERO;
 use crate::sync2::vv::OpId;
 
 /// 报告格式的版本（[run] 的返回值里的 `version`）。
 ///
 /// - 2：profile 报告加 `cacheBaseline`（`"rebuilt"` / `"notConfigured"` / `{"unavailable": 错误}`），新结论 `incomplete`。
-pub const REPORT_VERSION: i64 = 2;
+/// - 3：缓存层按规范 ID 物化、按规范 ID 对拍（G9-2）；profile 报告加 `knownDifferences`（[known_json]），`parity` 里可能
+///   出现 `classRegisters` 类。
+/// - 4：预演与真迁移（G7-2）走同一套阶段（[profile_stages]）：重建换成 `ingest_settle(Rebuild)`，之前多了本机状态
+///   搬运与新身份 + `Salts` 两步。profile 报告加 `local`（`carry.rs` 搬过来的本机状态计数与切点）、`identity`（新身份的
+///   设备、`prev`、`Salts` 的 seq）、`migrationBlockers`（只有真迁移才拦的前提，预演只报、有才写）。旧库的本机状态
+///   形状不对（`sync2_self` 的 `next_seq` < 1、公钥冲突等，`carry.rs` 报错）时这个 profile 的结论是 `error`、整份也随之
+///   `error`（以前照样 `pass` / `fail`）。Dart 侧（`srs_gen4_rehearsal.dart`）不读 `version` 与这几个新字段，`error`
+///   早已是它认得的结论，不用跟着改。
+pub const REPORT_VERSION: i64 = 4;
+
+/// `knownDifferences.entries` 最多列几条（只有 ID；超出的只计数，`truncated` 为真）。
+pub const KNOWN_ENTRIES: usize = 5_000;
 
 /// 被中断时的错误文本（[run] 返回 `Ok`、`verdict = "cancelled"`；只有内部各步之间用它传）。
 pub const CANCELLED: &str = "gen4 dry run: cancelled";
@@ -69,7 +97,7 @@ const REHEARSAL_DEVICE: Id = Id([0x6d; 16]);
 pub const DEFAULT_EXAMPLES: usize = 8;
 
 /// 空间余量（与 `store/schema.rs` 的升级余量同值）。
-const SPACE_MARGIN: u64 = 64 << 20;
+pub(crate) const SPACE_MARGIN: u64 = 64 << 20;
 
 /// 中断开关。可以从别的线程调 [Stop::stop]。
 #[derive(Default)]
@@ -97,7 +125,7 @@ impl Stop {
         self.flag.load(Ordering::SeqCst)
     }
 
-    fn attach(&self, c: &Connection) {
+    pub(crate) fn attach(&self, c: &Connection) {
         if let Ok(mut hs) = self.handles.lock() {
             hs.push(c.get_interrupt_handle());
         }
@@ -106,13 +134,13 @@ impl Stop {
         }
     }
 
-    fn detach_all(&self) {
+    pub(crate) fn detach_all(&self) {
         if let Ok(mut hs) = self.handles.lock() {
             hs.clear();
         }
     }
 
-    fn check(&self) -> Result<(), String> {
+    pub(crate) fn check(&self) -> Result<(), String> {
         if self.stopped() {
             Err(CANCELLED.to_owned())
         } else {
@@ -135,12 +163,13 @@ pub struct Options<'a> {
     /// 例子给整行（含笔记内容；只给本地排查用）。默认只给 ID。
     pub full_examples: bool,
     pub stop: &'a Stop,
-    /// 进度：(阶段, profile)。阶段：`open`、`preflight`、`import`、`rebuild`、`compare`、`checks`、`done`。
+    /// 进度：(阶段, profile)。阶段：`open`、`preflight`、`import`（灌入期间每提交一批另报一次 `batch`）、`local`、
+    /// `salts`、`rebuild`、`compare`、`checks`、`done`。
     pub progress: &'a mut dyn FnMut(&str, Option<&str>),
 }
 
 impl Options<'_> {
-    fn note(&mut self, stage: &str, profile: Option<&str>) {
+    pub(crate) fn note(&mut self, stage: &str, profile: Option<&str>) {
         (self.progress)(stage, profile);
     }
 }
@@ -206,21 +235,21 @@ pub fn peak_mem_mb() -> (f64, f64) {
     (0.0, 0.0)
 }
 
-fn now_ms() -> i64 {
+pub(crate) fn now_ms() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |d| d.as_millis() as i64)
 }
 
-fn secs(t: Instant) -> f64 {
+pub(crate) fn secs(t: Instant) -> f64 {
     (t.elapsed().as_secs_f64() * 10.0).round() / 10.0
 }
 
-fn mb(x: f64) -> f64 {
+pub(crate) fn mb(x: f64) -> f64 {
     x.round()
 }
 
-fn file_len(p: &Path) -> u64 {
+pub(crate) fn file_len(p: &Path) -> u64 {
     std::fs::metadata(p).map_or(0, |m| m.len())
 }
 
@@ -299,7 +328,7 @@ pub fn run(old: &Path, work: &Path, mut opts: Options<'_>) -> Result<Value, Stri
         let mut profiles = Vec::new();
         for profile in legacy::profiles(&src)? {
             opts.stop.check()?;
-            let one = profile_run(&src, &t, &profile, &mut opts);
+            let one = profile_stages(&src, &t, &profile, &mut opts, &Mode::Rehearsal);
             match one {
                 Err(e) if e == CANCELLED || opts.stop.stopped() => return Err(CANCELLED.into()),
                 Err(e) => {
@@ -354,7 +383,7 @@ pub fn run(old: &Path, work: &Path, mut opts: Options<'_>) -> Result<Value, Stri
 
 /// 整个库的结论：有出错的报 `error`，否则有不过的报 `fail`，否则有没做完前提的报 `blocked`，否则有对拍没做全的
 /// （协议 3 一侧的缓存基准拿不到，profile 报 `incomplete`）报 `incomplete`，都过了才 `pass`；一个 profile 都没有是 `empty`。
-fn overall(verdicts: &[&str]) -> &'static str {
+pub(crate) fn overall(verdicts: &[&str]) -> &'static str {
     if verdicts.is_empty() {
         "empty"
     } else if verdicts.contains(&"error") {
@@ -370,21 +399,147 @@ fn overall(verdicts: &[&str]) -> &'static str {
     }
 }
 
-fn profile_run(
+/// 阶段代码的走法（[profile_stages]）。预演与真迁移只在这两处不同，其余每一步是同一份代码（规划 §1.1：「预演与真迁移
+/// 走同一套阶段代码」）。
+pub(crate) enum Mode<'a> {
+    /// 预演（G4 / G4b）：由一台假想的迁移设备写那条 `Salts`（占位钥匙，不把真签名钥匙抄进临时文件）；真迁移才拦的前提
+    /// （[profile_blockers] 的第二项）只报不拦。
+    Rehearsal,
+    /// 真迁移（G7-2）：新身份 = [Mode::Migration::new_device] 给的设备 ID + 沿用的签名钥匙，`prev` 指向协议 3 的旧设备
+    /// （设计 §3.3）；前提一项不齐就拦。`now_ms` 是本机墙钟（身份建立时刻、HLC、媒体事实的超前判断）。
+    Migration {
+        now_ms: i64,
+        new_device: &'a dyn Fn(&str, i64) -> Id,
+    },
+}
+
+/// 预演里那台假想迁移设备的签名钥匙种子（占位）。
+const REHEARSAL_SEED: [u8; 32] = [0x6d; 32];
+
+/// 一个 profile 迁不了的原因（预演与真迁移同一份判据）：(哪种走法都拦的, 只有真迁移拦的)。前者是读入器读不全的
+/// （`legacy::preflight`）；后者是读入器读得全、但对拍会跳过或宿主输入不全的（`legacy::migration_blockers`、没给缓存
+/// 配置——没有它新代的缓存层建不出内置笔记类型的行，提交后读到的就是错的）。
+pub(crate) fn profile_blockers(
+    src: &Connection,
+    profile: &str,
+    caches: &BTreeMap<String, String>,
+) -> Result<(Vec<String>, Vec<String>), String> {
+    let hard = legacy::preflight(src, profile)?;
+    let mut later = legacy::migration_blockers(src, profile)?;
+    if !caches.contains_key(profile) {
+        later.push("no cache configuration was given for this profile".to_owned());
+    }
+    Ok((hard, later))
+}
+
+/// 新身份（[Mode] 的第一处不同）。
+struct NewSelf {
+    device: Id,
+    sk: [u8; 32],
+    prev: Option<crate::gen4::head::PrevIdentity>,
+    /// 时钟的起点：协议 3 旧身份的时钟与媒体事实里不超前的最大 HLC 取大者（新身份发出的第一条 HLC 不落在本机已经
+    /// 发出 / 吸收过的之前）。
+    clock: Option<Hlc>,
+}
+
+fn new_self(
+    src: &Connection,
+    profile: &str,
+    mode: &Mode<'_>,
+    now: i64,
+    carried: &Carried,
+) -> Result<NewSelf, String> {
+    let old = carry::legacy_self(src, profile)?;
+    let (device, sk, prev) = match mode {
+        Mode::Rehearsal => (REHEARSAL_DEVICE, REHEARSAL_SEED, None),
+        Mode::Migration { new_device, .. } => {
+            let old = old.as_ref().ok_or_else(|| {
+                format!("gen4 migrate: profile {profile} has no protocol 3 identity")
+            })?;
+            let device = new_device(profile, now);
+            if device == old.device {
+                return Err(format!(
+                    "gen4 migrate: the new identity of {profile} reuses the old device id"
+                ));
+            }
+            (device, old.key_seed, Some(old.prev()))
+        }
+    };
+    let clock = [
+        old.as_ref().and_then(|o| o.clock_for(device)),
+        carried.media_hlc.map(|h| Hlc { device, ..h }),
+    ]
+    .into_iter()
+    .flatten()
+    .max_by_key(|h| (h.wall, h.logical));
+    Ok(NewSelf {
+        device,
+        sk,
+        prev,
+        clock,
+    })
+}
+
+/// 新身份的 `prev` 指得到灌进来的承袭日志（设计 §3.3：读者沿 `prev` 把新旧两个设备认成同一台）：seq ≥ 1 时旧设备
+/// 名下那一槽在日志里、链指纹等于 `prev.chain` 的指纹；seq = 0（旧设备一条没写过）时链值是 [CHAIN_ZERO]、日志里也
+/// 没有它的条目。对不上（灌入没带进末尾那一槽、`sync2_self` 与日志不一致……）报错：不在指空的 `prev` 上建新身份。
+fn check_prev(
+    t: &Truth<'_>,
+    col: i64,
+    profile: &str,
+    prev: &crate::gen4::head::PrevIdentity,
+) -> Result<(), String> {
+    let at = OpId {
+        device: prev.device,
+        seq: prev.seq,
+    };
+    let ok = if prev.seq == 0 {
+        prev.chain == CHAIN_ZERO && t.last_of(col, &prev.device)? == 0
+    } else {
+        t.entry(col, &at)?.and_then(|e| e.fp) == Some(fingerprint(&prev.chain))
+    };
+    if ok {
+        Ok(())
+    } else {
+        Err(format!(
+            "gen4 migrate: profile {profile}: the previous identity {}:{} does not match the imported log",
+            prev.device.text(),
+            prev.seq
+        ))
+    }
+}
+
+/// 一个 profile 从前提到对拍的全部阶段（预演 [run] 与真迁移 `migrate.rs` 共用）：前提 → 绑定与缓存配置 → 灌入 →
+/// 本机状态（`carry.rs`）→ 新身份与 `Salts` → `rebuild_all` → 对拍与按规范 ID 的比较。返回这个 profile 的报告；
+/// 结论在 `verdict`：`blocked` / `fail` / `incomplete` / `pass`。只有跑不下去（中断 = [CANCELLED]、IO……）才返回 `Err`。
+/// 新库 [t] 的写一律在自己开的事务里，调用方不在事务里调。
+pub(crate) fn profile_stages(
     src: &Connection,
     t: &Truth<'_>,
     profile: &str,
     opts: &mut Options<'_>,
+    mode: &Mode<'_>,
 ) -> Result<Value, String> {
     let mut out = Map::new();
     out.insert("profile".into(), json!(profile));
     opts.note("preflight", Some(profile));
-    let blockers = legacy::preflight(src, profile)?;
+    let (mut blockers, later) = profile_blockers(src, profile, opts.caches)?;
+    match mode {
+        Mode::Migration { .. } => blockers.extend(later),
+        Mode::Rehearsal if !later.is_empty() => {
+            out.insert("migrationBlockers".into(), json!(later));
+        }
+        Mode::Rehearsal => {}
+    }
     if !blockers.is_empty() {
         out.insert("verdict".into(), json!("blocked"));
         out.insert("blockers".into(), json!(blockers));
         return Ok(Value::Object(out));
     }
+    let now = match mode {
+        Mode::Rehearsal => now_ms(),
+        Mode::Migration { now_ms, .. } => *now_ms,
+    };
     let col = t.tx(|t| t.bind(profile, &collection_of(profile), profile))?;
     let cfg = opts
         .caches
@@ -405,38 +560,61 @@ fn profile_run(
     opts.note("import", Some(profile));
     let started = Instant::now();
     let stop = opts.stop;
-    let imported = import_legacy_checked(src, profile, t, col, opts.batch.max(1), &mut || {
-        stop.check()
+    let batch = opts.batch.max(1);
+    let progress = &mut *opts.progress;
+    let imported = import_legacy_checked(src, profile, t, col, batch, &mut || {
+        stop.check()?;
+        progress("batch", Some(profile));
+        Ok(())
     })?;
     out.insert("importS".into(), json!(secs(started)));
     out.insert("imported".into(), imported_json(&imported));
     out.insert("peakMbAfterImport".into(), json!(mb(peak_mem_mb().0)));
 
-    // 盐（§6.1 第 7 步）+ 重建。
+    // 本机状态（§6.1 第 3 步的「带过去」，D11；规划 §1.4 第 5、7 步）。
+    opts.note("local", Some(profile));
+    opts.stop.check()?;
+    let carried = carry::carry_local(src, t, col, profile, now)?;
+    let cut_points = carry::carry_cut_points(src, t, col, profile)?;
+    let mut local = carried.json();
+    local["cutPoints"] = json!(cut_points);
+    out.insert("local".into(), local);
+
+    // 新身份 + 盐（§6.1 第 4 步，D9：在重建与对拍之前；规划 §1.4 第 6 步）。
+    opts.note("salts", Some(profile));
+    opts.stop.check()?;
+    let salts: BTreeSet<String> = legacy::salts(src, profile)?.into_iter().collect();
+    out.insert("salts".into(), json!(salts.len()));
+    let me = new_self(src, profile, mode, now, &carried)?;
+    let salts_op = t.tx(|t| {
+        if let Some(prev) = &me.prev {
+            check_prev(t, col, profile, prev)?;
+        }
+        t.create_self(col, &me.device, &me.sk, me.prev.as_ref(), now)?;
+        if let Some(h) = &me.clock {
+            if (h.wall, h.logical) > (0, 0) {
+                t.set_self_hlc(col, h)?;
+            }
+        }
+        let mut idx = Index::new(t, col);
+        Native::open(t, col)?.write_salts(&mut idx, &salts, now)
+    })?;
+    out.insert(
+        "identity".into(),
+        json!({
+            "device": me.device.text(),
+            "prev": me.prev.as_ref().map(|p| json!({"device": p.device.text(), "seq": p.seq})),
+            "saltsSeq": salts_op.map(|id| id.seq),
+        }),
+    );
+
+    // 重建（§6.1 第 5 步）。
     opts.note("rebuild", Some(profile));
     opts.stop.check()?;
-    let salts = legacy::salts(src, profile)?;
-    out.insert("salts".into(), json!(salts.len()));
     let started = Instant::now();
     let settled = t.tx(|t| {
-        if t.last_of(col, &REHEARSAL_DEVICE)? == 0 {
-            let body = Body4::salts(salts.iter().cloned()).map_err(|e| format!("{e:?}"))?;
-            let op = Op4::of(
-                OpId {
-                    device: REHEARSAL_DEVICE,
-                    seq: 1,
-                },
-                Hlc {
-                    wall: now_ms(),
-                    logical: 0,
-                    device: REHEARSAL_DEVICE,
-                },
-                std::sync::Arc::new(t.applied(col)?),
-                &body,
-            );
-            t.append_native(col, &op)?;
-        }
-        Index::new(t, col).rebuild_all()
+        let mut idx = Index::new(t, col);
+        ingest_settle(t, &mut idx, col, Settle::Rebuild)
     })?;
     out.insert("rebuildS".into(), json!(secs(started)));
     out.insert("settled".into(), settled_json(&settled));
@@ -457,7 +635,7 @@ fn profile_run(
     let mut mark = |what: &str| {
         peaks.insert(what.into(), json!(mb(peak_mem_mb().0)));
     };
-    let (diff, baseline, collided) = compare::against_protocol_3(
+    let (diff, baseline, collided, known) = compare::against_protocol_3(
         src,
         profile,
         t,
@@ -468,6 +646,7 @@ fn profile_run(
     mark("parity");
     let failing = !diff.is_empty();
     out.insert("parity".into(), diff_json(&diff, opts));
+    out.insert("knownDifferences".into(), known_json(&known));
     // 协议 3 一侧的缓存基准拿不到：缓存层三类没比成，这个 profile 最多是 `incomplete`，不能报 `pass`。
     let incomplete = matches!(baseline, CacheBaseline::Unavailable(_));
     out.insert(
@@ -489,26 +668,31 @@ fn profile_run(
     opts.note("checks", Some(profile));
     opts.stop.check()?;
     let started = Instant::now();
-    let canon = Canon::load(t, col)?;
-    // 撞车的旧修改记录 ID 落在的笔记与它们的卡，按规范 ID 比的几类也不比（同 `compare::cache_pairs` 的口径）。
-    let mut skip = skip;
-    if !collided.notes.is_empty() {
-        skip.notes.extend(
-            collided
-                .notes
-                .iter()
-                .filter_map(|n| n.strip_prefix("note:"))
-                .map(str::to_owned),
-        );
+    let canon = CanonMap::load(t, col)?;
+    // 按规范 ID 比的几类，跳过的集合也按规范 ID：协议 3 自己欠着收尾的、撞车的旧修改记录 ID 落在的笔记（同
+    // `compare::cache_pairs` 的口径），连同这些笔记的卡。胜者变了的已知差异喂得到的列同 `compare::cache_pairs` 一样
+    // 只盖那几列（[canonical_pairs] 的 `known`），不整卡跳过。
+    let old_rows: Option<CacheRows> = baseline.rows().map(|r| canon.rows(r));
+    let mut skip = Skip {
+        notes: skip.notes.iter().map(|n| canon.text(n)).collect(),
+        cards: skip.cards.iter().map(|c| canon.text(c)).collect(),
+    };
+    skip.notes.extend(
+        collided
+            .notes
+            .iter()
+            .filter_map(|n| n.strip_prefix("note:"))
+            .map(|n| canon.text(n)),
+    );
+    if !skip.notes.is_empty() {
         let note_at = CARD_COLS
             .iter()
             .position(|c| c.0 == "note_id")
             .expect("listed column");
         let news: Vec<&str> = CARD_COLS.iter().map(|c| c.0).collect();
         let new_cards = rows_of(t.conn(), "cards", &news, "col = ?1", &col)?;
-        let cards: Vec<String> = baseline
-            .rows()
-            .into_iter()
+        let cards: Vec<String> = old_rows
+            .iter()
             .flat_map(|old| old.1.iter())
             .chain(&new_cards)
             .filter(|r| skip.notes.contains(&r[note_at]))
@@ -521,7 +705,7 @@ fn profile_run(
     let regs = registers(src, profile, t, col, &collided)?;
     mark("registerWinners");
     let mut canonical_diff = differences_of(regs);
-    match baseline.rows() {
+    match &old_rows {
         Some(old) => canonical_pairs(
             src,
             profile,
@@ -529,6 +713,7 @@ fn profile_run(
             col,
             &canon,
             &skip,
+            &known,
             old,
             &mut canonical_diff,
         )?,
@@ -540,10 +725,12 @@ fn profile_run(
             col,
             &canon,
             &skip,
+            &known,
             &Default::default(),
             &mut canonical_diff,
         )?,
     }
+    drop(old_rows);
     drop(baseline);
     mark("canonicalPairs");
     canonical_diff.sort_by_key(|d| d.0);
@@ -551,7 +738,7 @@ fn profile_run(
     out.insert("canonical".into(), diff_json(&canonical_diff, opts));
     out.insert(
         "canonicalCounts".into(),
-        canon.counts_json(src, profile, t, col)?,
+        canon_counts(&canon, src, profile, t, col)?,
     );
     mark("canonicalCounts");
     opts.stop.check()?;
@@ -635,6 +822,83 @@ fn diff_json(diff: &Diff, opts: &Options<'_>) -> Value {
             })
             .collect(),
     )
+}
+
+/// 按类判定的已知差异的报告形（模块文件头第 6 步）：总数、佐证得了 / 不了、按类别（实体种类 + 键名的头一段，如
+/// `notetype css`、`note f`、`card newPos`）分的数、牵动的缓存行，与逐条的佐证（只有 ID、写入者名与 seq）。
+fn known_json(k: &Known) -> Value {
+    let mut by: BTreeMap<String, [u64; 3]> = BTreeMap::new();
+    let mut entries = Vec::new();
+    for d in &k.diffs.diffs {
+        let head = d.key.split('/').next().unwrap_or(&d.key);
+        let c = by.entry(format!("{} {head}", d.kind.wire())).or_default();
+        c[0] += 1;
+        if d.proven {
+            c[1] += 1;
+        }
+        if d.winner_changed {
+            c[2] += 1;
+        }
+        if entries.len() >= KNOWN_ENTRIES {
+            continue;
+        }
+        let dominated: Vec<Value> = d
+            .dominated
+            .iter()
+            .map(|x| {
+                let evidence = match &x.evidence {
+                    DiffEvidence::Copy { name } => json!({"copy": name}),
+                    DiffEvidence::Overlap { name, lo, hi } => {
+                        json!({"overlap": {"name": name, "lo": lo, "hi": hi}})
+                    }
+                    DiffEvidence::Mismatch { name } => json!({"mismatch": name}),
+                    DiffEvidence::None => json!("none"),
+                };
+                json!({
+                    "op": compare::op_text(&x.op),
+                    "writer": x.writer,
+                    "seq": x.seq,
+                    "canonicalWriter": x.canonical_writer,
+                    "evidence": evidence,
+                })
+            })
+            .collect();
+        entries.push(json!({
+            "kind": d.kind.wire(),
+            "entity": d.entity.text(),
+            "key": d.key,
+            "rawConflict": d.raw_conflict,
+            "classConflict": d.class_conflict,
+            "winnerChanged": d.winner_changed,
+            "hlcTie": d.hlc_tie,
+            "proven": d.proven,
+            "dominated": dominated,
+            "revived": d.revived.iter().map(compare::op_text).collect::<Vec<_>>(),
+        }));
+    }
+    let total = k.diffs.diffs.len();
+    let unproven = k.diffs.unproven().count();
+    json!({
+        "examined": k.diffs.examined,
+        "mergedRegisters": k.diffs.merged,
+        "mergedRegistersInConflict": k.diffs.merged_conflicts,
+        "total": total,
+        "proven": total - unproven,
+        "unproven": unproven,
+        "byCategory": by
+            .into_iter()
+            .map(|(c, [n, p, w])| (c, json!({"total": n, "proven": p, "winnerChanged": w})))
+            .collect::<Map<String, Value>>(),
+        // 胜者变了的已知差异盖了列的笔记 / 卡 / 统计行所属的卡、统计行整行不比的卡、这些行（两侧合计）与其中原文不同的。
+        "cacheNotesMasked": k.note_cols.len(),
+        "cacheCardsMasked": k.card_cols.len(),
+        "cacheStatCardsMasked": k.stat_cols.len(),
+        "cacheStatCardsAside": k.stats_aside.len(),
+        "cacheRowsMasked": k.rows,
+        "cacheRowsMaskedDiffer": k.rows_differ,
+        "entries": entries,
+        "truncated": total > KNOWN_ENTRIES,
+    })
 }
 
 fn ident(what: &str, s: &str) -> String {
@@ -1003,95 +1267,59 @@ fn registers(
 
 // ---------------------------------------------------------------- 规范 ID
 
-/// 别名表的非恒等部分（出现过的 ID → 规范 ID）。
-struct Canon {
-    map: HashMap<[u8; 16], [u8; 16]>,
+/// 各种规范类的大小：规范卡 / 规范日志各有多少、其中吃进不止一个出现过的 ID 的有多少（§5.3 的基线：2,856 / 47,228）。
+fn canon_counts(
+    canon: &CanonMap,
+    src: &Connection,
+    profile: &str,
+    t: &Truth<'_>,
+    col: i64,
+) -> Result<Value, String> {
+    let classes = |ids: &[Ref]| -> (usize, usize, usize) {
+        let mut by: BTreeMap<Ref, usize> = BTreeMap::new();
+        for id in ids {
+            *by.entry(canon.of(id)).or_default() += 1;
+        }
+        (ids.len(), by.len(), by.values().filter(|n| **n > 1).count())
+    };
+    let refs = |c: &Connection, q: &str, p: &dyn rusqlite::ToSql| -> Result<Vec<Ref>, String> {
+        c.prepare(q)
+            .map_err(sql)?
+            .query_map([p], |r| r.get::<_, Ref>(0))
+            .map_err(sql)?
+            .collect::<Result<_, _>>()
+            .map_err(sql)
+    };
+    let new_cards = refs(
+        t.conn(),
+        "SELECT DISTINCT card FROM log_ix WHERE col = ?1",
+        &col,
+    )?;
+    let new_logs = refs(
+        t.conn(),
+        "SELECT DISTINCT id FROM log_ix WHERE col = ?1",
+        &col,
+    )?;
+    let old_cards = refs(
+        src,
+        "SELECT DISTINCT card_id FROM srs_review_logs WHERE profile_uid = srs_id(?1)",
+        &profile,
+    )?;
+    let old_logs = refs(
+        src,
+        "SELECT id FROM srs_review_logs WHERE profile_uid = srs_id(?1)",
+        &profile,
+    )?;
+    let row = |(n, classes, merged): (usize, usize, usize)| json!({"ids": n, "classes": classes, "merged": merged});
+    Ok(json!({
+        "cardsWithLogsNew": row(classes(&new_cards)),
+        "cardsWithLogsOld": row(classes(&old_cards)),
+        "logsNew": row(classes(&new_logs)),
+        "logsOld": row(classes(&old_logs)),
+    }))
 }
 
-impl Canon {
-    fn load(t: &Truth<'_>, col: i64) -> Result<Canon, String> {
-        let mut map = HashMap::new();
-        let mut stmt = t
-            .conn()
-            .prepare("SELECT id, canon FROM alias_ix WHERE col = ?1 AND canon != id")
-            .map_err(sql)?;
-        let rows = stmt
-            .query_map([col], |r| {
-                Ok((r.get::<_, [u8; 16]>(0)?, r.get::<_, [u8; 16]>(1)?))
-            })
-            .map_err(sql)?;
-        for row in rows {
-            let (id, canon) = row.map_err(sql)?;
-            map.insert(id, canon);
-        }
-        Ok(Canon { map })
-    }
-
-    fn of(&self, r: &Ref) -> Ref {
-        match r {
-            Ref::Uuid(b) => Ref::Uuid(*self.map.get(b).unwrap_or(b)),
-            Ref::Text(_) => r.clone(),
-        }
-    }
-
-    fn text(&self, s: &str) -> String {
-        self.of(&Ref::of(&Key::of(s))).text()
-    }
-
-    /// 各种规范类的大小：规范卡 / 规范日志各有多少、其中吃进不止一个出现过的 ID 的有多少（§5.3 的基线：2,856 / 47,228）。
-    fn counts_json(
-        &self,
-        src: &Connection,
-        profile: &str,
-        t: &Truth<'_>,
-        col: i64,
-    ) -> Result<Value, String> {
-        let classes = |ids: &[Ref]| -> (usize, usize, usize) {
-            let mut by: BTreeMap<Ref, usize> = BTreeMap::new();
-            for id in ids {
-                *by.entry(self.of(id)).or_default() += 1;
-            }
-            (ids.len(), by.len(), by.values().filter(|n| **n > 1).count())
-        };
-        let refs = |c: &Connection, q: &str, p: &dyn rusqlite::ToSql| -> Result<Vec<Ref>, String> {
-            c.prepare(q)
-                .map_err(sql)?
-                .query_map([p], |r| r.get::<_, Ref>(0))
-                .map_err(sql)?
-                .collect::<Result<_, _>>()
-                .map_err(sql)
-        };
-        let new_cards = refs(
-            t.conn(),
-            "SELECT DISTINCT card FROM log_ix WHERE col = ?1",
-            &col,
-        )?;
-        let new_logs = refs(
-            t.conn(),
-            "SELECT DISTINCT id FROM log_ix WHERE col = ?1",
-            &col,
-        )?;
-        let old_cards = refs(
-            src,
-            "SELECT DISTINCT card_id FROM srs_review_logs WHERE profile_uid = srs_id(?1)",
-            &profile,
-        )?;
-        let old_logs = refs(
-            src,
-            "SELECT id FROM srs_review_logs WHERE profile_uid = srs_id(?1)",
-            &profile,
-        )?;
-        let row = |(n, classes, merged): (usize, usize, usize)| json!({"ids": n, "classes": classes, "merged": merged});
-        Ok(json!({
-            "cardsWithLogsNew": row(classes(&new_cards)),
-            "cardsWithLogsOld": row(classes(&old_cards)),
-            "logsNew": row(classes(&new_logs)),
-            "logsOld": row(classes(&old_logs)),
-        }))
-    }
-}
-
-/// 按规范 ID 的三类（§6.1 第 5 步）：
+/// 按规范 ID 的三类（§6.1 第 5 步；[old] 是协议 3 一侧已改写成规范 ID 的缓存行，[skip] 也是规范 ID）：
 /// - `canonicalCards`：每张规范卡的调度状态（队列、到期、稳定度、难度、复习 / 遗忘次数）——同一张规范卡在一侧有几行
 ///   就有几条，两侧的多重集合要相同；
 /// - `canonicalLogs`：每张规范卡（含不在缓存里的历史血统卡）名下的规范日志 ID 集合（日志表全集，未去重前的口径）；
@@ -1101,8 +1329,9 @@ fn canonical_pairs(
     profile: &str,
     t: &Truth<'_>,
     col: i64,
-    canon: &Canon,
+    canon: &CanonMap,
     skip: &Skip,
+    known: &Known,
     old: &CacheRows,
     diff: &mut Diff,
 ) -> Result<(), String> {
@@ -1127,8 +1356,17 @@ fn canonical_pairs(
             if skip.cards.contains(&r[0]) || skip.notes.contains(&r[card_at("note_id")]) {
                 continue;
             }
-            let state: Vec<&str> = state_cols.iter().map(|c| r[card_at(c)].as_str()).collect();
-            *n.entry(format!("{} | {}", canon.text(&r[0]), state.join(" | ")))
+            // 胜者变了的已知差异喂得到的调度列盖住（[Known]），其余照比。
+            let masked = known.card_cols.get(&r[0]);
+            let state: Vec<&str> = state_cols
+                .iter()
+                .map(|c| match masked {
+                    Some(m) if m.contains(c) => compare::MASKED,
+                    _ => r[card_at(c)].as_str(),
+                })
+                .collect();
+            // 两侧的行都已是规范 ID（新代按规范 ID 物化，协议 3 一侧由调用方改写过）。
+            *n.entry(format!("{} | {}", r[0], state.join(" | ")))
                 .or_default() += 1;
         }
         n.into_iter().map(|(k, c)| format!("{k} | x{c}")).collect()
@@ -1160,6 +1398,8 @@ fn canonical_pairs(
         rows.into_iter()
             .filter(|(card, _)| !skip.cards.contains(&card.text()))
             .map(|(card, log)| (canon.of(&card), canon.of(&log)))
+            // 血统变了的卡（[Known::stats_aside]）名下有哪些日志本身就跟着变。
+            .filter(|(card, _)| !known.stats_aside.contains(&card.text()))
             .collect()
     };
     let pair_text = |(card, log): &(Ref, Ref)| format!("{} | {}", card.text(), log.text());
@@ -1177,7 +1417,9 @@ fn canonical_pairs(
     let counts = |rows: Vec<(Ref, Ref)>| -> BTreeSet<(Ref, usize)> {
         let mut by: BTreeMap<Ref, BTreeSet<Ref>> = BTreeMap::new();
         for (card, log) in rows {
-            if skip.cards.contains(&card.text()) {
+            if skip.cards.contains(&card.text())
+                || known.stats_aside.contains(&canon.of(&card).text())
+            {
                 continue;
             }
             by.entry(canon.of(&card))
@@ -1468,7 +1710,7 @@ fn unverified_logs(
     src: &Connection,
     t: &Truth<'_>,
     col: i64,
-    canon: &Canon,
+    canon: &CanonMap,
 ) -> Result<Value, String> {
     let ids: Vec<Ref> = t
         .conn()
@@ -1545,11 +1787,18 @@ pub const VERDICT_RUNNING: &str = "running";
 
 /// 原子地写 `<work>/report.json`（先写临时文件再改名，读的一方不会读到半份）。
 fn write_report(work: &Path, report: &Value) -> Result<(), String> {
-    let text = serde_json::to_string_pretty(report).map_err(|e| e.to_string())?;
-    let tmp = work.join(format!("{REPORT_FILE}.tmp"));
-    std::fs::write(&tmp, text).map_err(|e| format!("gen4 rehearsal: write report: {e}"))?;
-    std::fs::rename(&tmp, work.join(REPORT_FILE))
+    write_json_atomically(&work.join(REPORT_FILE), report)
         .map_err(|e| format!("gen4 rehearsal: write report: {e}"))
+}
+
+/// 原子地把 [value] 写到 [path]（同目录临时文件 `<名字>.tmp` 再改名）。预演报告与迁移报告共用。
+pub(crate) fn write_json_atomically(path: &Path, value: &Value) -> Result<(), String> {
+    let text = serde_json::to_string_pretty(value).map_err(|e| e.to_string())?;
+    let mut tmp = path.as_os_str().to_owned();
+    tmp.push(".tmp");
+    let tmp = PathBuf::from(tmp);
+    std::fs::write(&tmp, text).map_err(|e| format!("{}: {e}", tmp.display()))?;
+    std::fs::rename(&tmp, path).map_err(|e| format!("{}: {e}", path.display()))
 }
 
 /// 一个库上登记着的那次预演：它的中断开关、调用方给的运行号（`runId`，没给就是 None），以及登记期间
@@ -1786,15 +2035,15 @@ pub fn stop_rehearsal(db: &Path) {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use serde_json::{Value, json};
 
     use super::*;
     use crate::store::sync2::tests::{DAY, Device, P, deck_entity, edit, review, tempdir};
 
-    const T0: i64 = 1_700_000_000_000;
-    const N1: &str = "0193a1b2-0000-7000-8000-0000000000b1";
-    const N2: &str = "0193a1b2-0000-7000-8000-0000000000b2";
+    pub(crate) const T0: i64 = 1_700_000_000_000;
+    pub(crate) const N1: &str = "0193a1b2-0000-7000-8000-0000000000b1";
+    pub(crate) const N2: &str = "0193a1b2-0000-7000-8000-0000000000b2";
 
     fn note(id: &str, nt: &str) -> Value {
         json!({"t": "entity", "x": {"id": id, "p": P, "k": "note", "d": {"createdAt": 1, "guid": id, "noteTypeId": nt}}})
@@ -1804,15 +2053,21 @@ mod tests {
         json!({"t": "entity", "x": {"id": id, "p": P, "k": "notetype", "d": {"createdAt": 1, "ntKind": "standard"}}})
     }
 
-    fn cfg() -> String {
+    pub(crate) fn cfg() -> String {
         json!({"defaultDeck": default_deck_id(P)}).to_string()
     }
 
     /// 协议 3 上的一个小库：一个笔记类型两条模板、两条笔记、几次复习，缓存表按同一份配置建好。
-    fn library(tag: &str) -> Device {
+    pub(crate) fn library(tag: &str) -> Device {
+        library_with(tag, &|_| {})
+    }
+
+    /// 同 [library]，迁移进协议 3 之前先跑 [legacy]（往旧表里插迁移前的旧修改记录，迁移把它们收成旧戳）。
+    pub(crate) fn library_with(tag: &str, legacy: &dyn Fn(&Device)) -> Device {
         let d = Device::new(tag);
         d.core.sync2_identity(P, T0).unwrap();
-        d.core.sync2_migrate(P, T0, None).unwrap();
+        legacy(&d);
+        while d.core.sync2_migrate(P, T0, None).unwrap()["done"] != json!(true) {}
         let fdef = json!({"name": "Expression", "ord": 0});
         let tdef =
             |name: &str, ord: i64| json!({"name": name, "ord": ord, "front": "{{Expression}}"});
@@ -1877,7 +2132,11 @@ mod tests {
         let wal = d._dir.0.join("srs.db-wal");
         let (before, wal_before) = (bytes(&old), bytes(&wal));
         let mut stages = Vec::new();
-        let r = dry(&d, &Stop::new(), &mut |s, _| stages.push(s.to_owned()));
+        let r = dry(&d, &Stop::new(), &mut |s, _| {
+            if s != "batch" {
+                stages.push(s.to_owned())
+            }
+        });
         assert_eq!(r["verdict"], "pass", "{r:#}");
         let p = &r["profiles"][0];
         assert_eq!(p["verdict"], "pass");
@@ -1889,6 +2148,16 @@ mod tests {
             p["oldSidePending"],
             json!({"replayCards": 0, "staleTagNotes": 0})
         );
+        // 单设备、无改名写入者：没有按类判定的差异，报告里照样有这一节（版本 3）。
+        let k = &p["knownDifferences"];
+        assert_eq!(r["version"], 4);
+        assert_eq!(
+            (&k["total"], &k["unproven"]),
+            (&json!(0), &json!(0)),
+            "{k:#}"
+        );
+        assert_eq!(k["entries"], json!([]));
+        assert_eq!(k["truncated"], false);
         assert_eq!(p["closures"]["different"], 0);
         assert_eq!(p["imported"]["devices"], 1);
         assert!(p["settled"]["cacheCards"].as_u64().unwrap() >= 4);
@@ -1901,6 +2170,8 @@ mod tests {
                 "open",
                 "preflight",
                 "import",
+                "local",
+                "salts",
                 "rebuild",
                 "compare",
                 "checks",
@@ -1959,7 +2230,7 @@ mod tests {
 
     /// [library] 再加一条身份记录缺 `noteTypeId` 的笔记：协议 3 的缓存重建因此整次失败（`cache.rs` 文件头「与协议 3
     /// 的差别」）。
-    fn library_with_a_malformed_note(tag: &str) -> Device {
+    pub(crate) fn library_with_a_malformed_note(tag: &str) -> Device {
         const N3: &str = "0193a1b2-0000-7000-8000-0000000000b3";
         let d = library(tag);
         d.apply(
@@ -2467,7 +2738,8 @@ mod tests {
         if kept.exists() {
             let probe = crate::gen4_ids::probe::alias_table_sources(&c);
             let n = Connection::open_with_flags(&kept, OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
-            let mut ours: HashMap<[u8; 16], i64> = HashMap::new();
+            let mut ours: std::collections::HashMap<[u8; 16], i64> =
+                std::collections::HashMap::new();
             let mut stmt = n.prepare("SELECT id, how FROM alias_ix").unwrap();
             for row in stmt
                 .query_map([], |r| Ok((r.get::<_, Vec<u8>>(0)?, r.get::<_, i64>(1)?)))
@@ -2502,5 +2774,213 @@ mod tests {
             drop(n);
             let _ = std::fs::remove_file(&kept);
         }
+    }
+
+    // ------------------------------------------------------------ 按类判定的已知差异（端到端）
+
+    const N3: &str = "0193a1b2-0000-7000-8000-0000000000b3";
+
+    /// 本 profile 下旧并入改名的写入者 `w1` 的新名字（盐 = profile uid）。
+    fn merged_w1() -> String {
+        format!(
+            "merged-{}~w1",
+            crate::gen4_ids::rules::merged_writer_hash(P, "w1").text()
+        )
+    }
+
+    /// 旧库里笔记 [N3] 上一条带旧戳的修改记录（与 `tests_dedup.rs` 的 `legacy_edit` 同一个形状）：物理时刻
+    /// `T0 + physical`。
+    fn legacy_edit(d: &Device, writer: &str, s: i64, key: &str, v: &str, vv: Value, physical: i64) {
+        let id = crate::registers::edit_id(writer, s);
+        let j = json!({"ctx": {"vv": vv}, "e": N3, "f": key, "hlc": format!("{}:0:{writer}", T0 + physical),
+                       "id": id, "k": "note", "p": P, "s": s, "ts": "wall", "v": v, "w": writer})
+        .to_string();
+        d.core
+            .writer()
+            .unwrap()
+            .execute(
+                "INSERT INTO srs_field_edits (id, profile_uid, entity_kind, entity_id, field_key, writer_id, seq, jslim) \
+                 VALUES (srs_id(?1), srs_id(?2), 'note', srs_id(?3), ?4, ?5, ?6, ?7)",
+                rusqlite::params![id, P, N3, key, writer, s, j],
+            )
+            .unwrap();
+    }
+
+    /// [library] 再加一条笔记 [N3]（同一个笔记类型，字段内容只来自 [edits] 在迁移前写的旧修改记录），缓存表照同一份
+    /// 配置重建。
+    fn library_with_legacy(tag: &str, edits: &dyn Fn(&Device)) -> Device {
+        let d = library_with(tag, edits);
+        d.apply(T0 + 2 * DAY, vec![note(N3, "NT")]);
+        let parsed =
+            crate::store::caches::CacheConfig::parse(&serde_json::from_str(&cfg()).unwrap())
+                .unwrap();
+        let w = d.core.writer().unwrap();
+        crate::store::sync2::in_savepoint(&w, |c| crate::store::caches::rebuild(c, P, &parsed))
+            .unwrap();
+        drop(w);
+        d
+    }
+
+    /// `knownDifferences.entries` 里 `f/fa` 上的那几条。
+    fn known_on_field(p: &Value) -> Vec<Value> {
+        p["knownDifferences"]["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|e| e["key"] == "f/fa")
+            .cloned()
+            .collect()
+    }
+
+    /// 佐证得了、胜者没变（「有冲突变没冲突」，样本库的绝大多数）：`(w1, 1)` 原值判与 `(w1, 2)`（上下文只写了改名后的
+    /// `merged:1`）并发，按类判被盖掉；`(merged, 1)` 是同一条记录（同 seq 同 HLC）。列进 `knownDifferences`、佐证是副本，
+    /// 结论不是 `fail`。胜者没变，缓存行只盖 N3 笔记行的 `pending_decision`（协议 3 任一寄存器有冲突即待裁决，两侧
+    /// 确实不同），其余列照比、两侧相同；卡行一列不盖。
+    #[test]
+    fn a_proven_difference_with_the_same_winner_is_listed_and_its_rows_still_compared() {
+        let merged = merged_w1();
+        let d = library_with_legacy("g4dryknown", &|d| {
+            legacy_edit(d, "w1", 1, "f/fa", "x", json!({}), 100);
+            legacy_edit(d, &merged, 1, "f/fa", "x", json!({}), 100);
+            legacy_edit(d, "w1", 2, "f/fa", "y", json!({&merged: 1}), 200);
+        });
+        let r = dry(&d, &Stop::new(), &mut |_, _| {});
+        let p = &r["profiles"][0];
+        assert_eq!(p["verdict"], "pass", "{p:#}");
+        assert_eq!(p["parity"], json!([]), "{p:#}");
+        assert_eq!(p["canonical"], json!([]), "{p:#}");
+        let k = &p["knownDifferences"];
+        assert_eq!(k["unproven"], 0, "{k:#}");
+        let got = known_on_field(p);
+        assert_eq!(got.len(), 1, "{k:#}");
+        let e = &got[0];
+        assert_eq!(e["kind"], "note");
+        assert_eq!(e["entity"], N3);
+        assert_eq!(
+            (&e["rawConflict"], &e["classConflict"], &e["winnerChanged"]),
+            (&json!(true), &json!(false), &json!(false)),
+            "{e:#}"
+        );
+        assert_eq!(e["proven"], true);
+        assert_eq!(e["dominated"].as_array().unwrap().len(), 1, "{e:#}");
+        let dom = &e["dominated"][0];
+        assert_eq!((&dom["writer"], &dom["seq"]), (&json!("w1"), &json!(1)));
+        assert_eq!(dom["canonicalWriter"], "w1");
+        assert_eq!(dom["evidence"], json!({"copy": merged}));
+        assert_eq!(e["revived"], json!([]));
+        assert_eq!(k["byCategory"]["note f"]["proven"], 1, "{k:#}");
+        // 胜者没变：只盖这条笔记的 `pending_decision`，卡行不盖。
+        assert_eq!(
+            (&k["cacheNotesMasked"], &k["cacheCardsMasked"]),
+            (&json!(1), &json!(0)),
+            "{k:#}"
+        );
+        assert_eq!(
+            (&k["cacheRowsMasked"], &k["cacheRowsMaskedDiffer"]),
+            (&json!(2), &json!(2)),
+            "{k:#}"
+        );
+    }
+
+    /// 佐证不了的（被盖掉的 `(merged, 5)` 在另一个名字下没有副本，5 也不在已证明的重叠区间 `[1, 1]` 里）：记成
+    /// `parity` 的 `classRegisters`，结论 `fail`（所有者定案「对不上的按 bug 处理」）。
+    #[test]
+    fn an_unproven_difference_fails_the_run() {
+        let merged = merged_w1();
+        let d = library_with_legacy("g4dryunproven", &|d| {
+            legacy_edit(d, "w1", 1, "f/pp", "p", json!({}), 50);
+            legacy_edit(d, &merged, 1, "f/pp", "p", json!({}), 50);
+            legacy_edit(d, &merged, 5, "f/fa", "x", json!({}), 100);
+            legacy_edit(d, "v", 1, "f/fa", "y", json!({"w1": 5}), 200);
+        });
+        let r = dry(&d, &Stop::new(), &mut |_, _| {});
+        let p = &r["profiles"][0];
+        assert_eq!(r["verdict"], "fail", "{r:#}");
+        assert_eq!(p["verdict"], "fail");
+        let class = p["parity"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|d| d["what"] == "classRegisters")
+            .cloned()
+            .unwrap_or_else(|| panic!("{p:#}"));
+        assert_eq!(class["onlyOld"], 1, "{class:#}");
+        let k = &p["knownDifferences"];
+        assert_eq!(k["unproven"], 1, "{k:#}");
+        let got = known_on_field(p);
+        assert_eq!(got.len(), 1, "{k:#}");
+        assert_eq!(got[0]["proven"], false);
+        assert_eq!(got[0]["dominated"][0]["evidence"], "none", "{:#}", got[0]);
+    }
+
+    /// 佐证得了、胜者变了（HLC 平手：原名 `merged-…` < `v`，`v` 那条胜；归回成 `w1` > `v`，`merged` 那条胜）：N3 的
+    /// 笔记行只盖 `f/…` 喂得到的列（`sort_field` 等，两侧确实不同），行本身照比；结论不是 `fail`。
+    #[test]
+    fn a_proven_winner_change_masks_only_the_columns_it_feeds() {
+        let merged = merged_w1();
+        let d = library_with_legacy("g4drymasked", &|d| {
+            legacy_edit(d, "w1", 1, "f/pp", "p", json!({}), 50);
+            legacy_edit(d, &merged, 1, "f/pp", "p", json!({}), 50);
+            legacy_edit(d, &merged, 2, "f/fa", "a", json!({}), 100);
+            legacy_edit(d, "v", 1, "f/fa", "b", json!({}), 100);
+        });
+        let r = dry(&d, &Stop::new(), &mut |_, _| {});
+        let p = &r["profiles"][0];
+        assert_eq!(p["verdict"], "pass", "{p:#}");
+        assert_eq!(p["parity"], json!([]), "{p:#}");
+        assert_eq!(p["canonical"], json!([]), "{p:#}");
+        let k = &p["knownDifferences"];
+        let got = known_on_field(p);
+        assert_eq!(got.len(), 1, "{k:#}");
+        let e = &got[0];
+        assert_eq!(
+            (&e["winnerChanged"], &e["hlcTie"], &e["proven"]),
+            (&json!(true), &json!(true), &json!(true)),
+            "{e:#}"
+        );
+        assert_eq!(k["cacheNotesMasked"], 1, "{k:#}");
+        // N3 的两张卡（两条模板）盖 `hidden` / `freq_rank`。
+        assert_eq!(k["cacheCardsMasked"], 2, "{k:#}");
+        assert!(k["cacheRowsMaskedDiffer"].as_u64().unwrap() >= 2, "{k:#}");
+    }
+
+    /// 盖了列的行里，没被盖住的列上的真差异照样计入：胜者变了的那条笔记（同上）另有一条协议 3 投影里丢了的 `deck`
+    /// 修改（旧代码按投影重建出 `deck_id = ∅`，新代按日志是默认牌组）。`f/…` 喂不到 `deck_id`，`notes` 报差异、
+    /// 结论 `fail`——整行豁免时这一条会被藏起来。
+    #[test]
+    fn an_unrelated_column_on_a_masked_row_still_fails() {
+        let merged = merged_w1();
+        let d = library_with_legacy("g4drymaskedbug", &|d| {
+            legacy_edit(d, "w1", 1, "f/pp", "p", json!({}), 50);
+            legacy_edit(d, &merged, 1, "f/pp", "p", json!({}), 50);
+            legacy_edit(d, &merged, 2, "f/fa", "a", json!({}), 100);
+            legacy_edit(d, "v", 1, "f/fa", "b", json!({}), 100);
+        });
+        d.apply(
+            T0 + 3 * DAY,
+            vec![edit("note", N3, "deck", json!(default_deck_id(P)))],
+        );
+        d.core
+            .writer()
+            .unwrap()
+            .execute(
+                "DELETE FROM srs_field_edits WHERE entity_kind = 'note' AND entity_id = srs_id(?1) AND field_key = 'deck'",
+                [N3],
+            )
+            .unwrap();
+        let r = dry(&d, &Stop::new(), &mut |_, _| {});
+        let p = &r["profiles"][0];
+        assert_eq!(p["verdict"], "fail", "{p:#}");
+        let notes = p["parity"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|d| d["what"] == "notes")
+            .cloned()
+            .unwrap_or_else(|| panic!("{p:#}"));
+        assert_eq!(notes["examplesOld"], json!([N3]), "{notes:#}");
+        assert_eq!(notes["examplesNew"], json!([N3]), "{notes:#}");
+        assert_eq!(p["knownDifferences"]["unproven"], 0);
+        assert_eq!(known_on_field(p)[0]["winnerChanged"], true);
     }
 }

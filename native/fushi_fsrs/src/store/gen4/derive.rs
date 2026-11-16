@@ -10,7 +10,8 @@
 //!   3 = 胜者，且有值不同的并发写入（冲突）。
 //! - `log_ix(col, card, at, k, id, win)` + 索引 `log_id(col, id, k)`：日志。同一个日志 ID 的多条取操作号最小的
 //!   （`win = 1`；协议 3 是「先到的留」，再靠去重作业收敛到设备 ID 最小的那份）。统计列不在这里：它们是重放的输出，
-//!   属于缓存层（设计 §2.7 第 2 条）。
+//!   属于缓存层（设计 §2.7 第 2 条）。`log_ix` 的行进出索引时顺带维护本机落库序 `log_seq(col, n, k, card)`（本机状态，
+//!   不是派生表：重建保留还在的行的序号；`cmd/training.rs` 文件头「rowid」）。
 //! - `closure_ix(col, device, upto, ctx)`：每台承袭设备的旧闭包（协议 3 的 `sync2_legacy`，改成可重建）：它日志里全部
 //!   旧戳的 dot 与上下文之并；`upto` = 带旧戳的最大 seq。
 //!
@@ -73,6 +74,23 @@ pub const R_LIVE: i64 = 1;
 pub const R_WINNER: i64 = 2;
 /// `reg_ix.state`：胜者，且有值不同的并发写入。
 pub const R_CONFLICT: i64 = 3;
+
+/// 本机落库序 `log_seq.n` 的起点：每个集合的第一条日志操作取 `SEQ_BASE + 1`，之后逐条 + 1。
+///
+/// 为什么不从 1 起：`log_seq.n` 是协议 3 日志表 rowid 的对应物，两代的游标进同一个 RWKV 状态机（`fushi_rwkv`
+/// `sched/machine.rs`）。它判主快照、检查点还能不能用只看 (行数, 最大 rowid)，没有库代标记。协议 3 的 rowid 从 1 起
+/// 连续（没有 AUTOINCREMENT、从没删过行的库就是 1..C），新代从 1 起也是 1..C，两代的指纹就会撞上；而迁移按设备逐台
+/// 编号、协议 3 按到达交错编号，同一个前缀长度圈进的不是同一批日志——换代前留下的检查点（`count - tailRows` 的核对照样
+/// 通过）会被新库接受，一条在协议 3 里排在检查点之后、在新代排在之前的日志从此永久不进 RWKV 状态。从 2^40 起，两代的
+/// 游标空间不相交：协议 3 的 rowid 每条日志落库占一个、只增不跳号，到 2^40 要一万亿条以上；新库的最大序号恒大于任何
+/// 协议 3 的指纹或检查点的最大 rowid，旧检查点的 `count - tailRows` 恒为 0、旧主快照的指纹恒不等，第一次对齐必然全量
+/// 重放。`2^40 + 行数` 仍远在 2^53 内（JSON 数字无损）。
+pub const SEQ_BASE: i64 = 1 << 40;
+
+/// 一条日志操作第一次进 `log_ix` 时给它落库序（`log_seq` 主键上的 MAX：min/max 优化，SeekLE 一步，不随集合大小涨）。
+/// 已有序号的（整层重建时再进来的）保留原号。
+pub(crate) const SEQ_INSERT_SQL: &str = "INSERT OR IGNORE INTO log_seq (col, n, k, card) \
+     SELECT ?1, COALESCE(MAX(n), ?4) + 1, ?2, ?3 FROM log_seq WHERE col = ?1";
 
 /// 引用（实体、卡、日志的 ID）在索引里的样子：规范 UUID 存 16 字节，其余存文本。
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -211,7 +229,7 @@ impl Acc {
     }
 }
 
-/// 一条拼好的落库修改行（[Index::edit_lines]）。
+/// 一条拼好的落库修改行（[Index::edit_lines_as]）。
 pub(super) struct Line {
     pub(super) json: String,
     pub(super) server_time: Option<i64>,
@@ -290,6 +308,18 @@ pub struct Index<'t, 'c> {
     pub(super) salts_dirty: bool,
     /// 这一批里缓存层要重看的（`cache.rs`）。
     pub(super) dirt: Dirt,
+    /// 收尾时别名表变了的那几行牵动的 ID（`alias.rs` 记：变了规范 ID 的出现过的 ID，与它变之前、之后的规范 ID）。
+    /// 缓存层按它重看受影响的规范 ID（`cache.rs` 文件头「别名」第 5 条），用掉就清。
+    pub(super) alias_moves: BTreeSet<Ref>,
+    /// 收尾时归回的改名写入者变了：按类判定的寄存器都可能变，缓存层整层重建。
+    pub(super) writers_moved: bool,
+    /// 一次缓存层的物化期间缓存的写入者表（`alias_writer_ix`；读的时候索引不变）。
+    pub(super) pass_writers: Option<BTreeMap<String, String>>,
+    /// 缓存层按类拼行时没走捷径、按类重判了的寄存器数（`class.rs` [Index::class_lines]；只增不减，测试与量测读）。
+    pub(super) class_judged: u64,
+    /// 这一趟缓存刷新里行可能变了的笔记（原值 ID，含被删掉的旧 ID）：收尾时记进缓存层的变更记录（`cache.rs`
+    /// [Index::cache_log_flush]，浏览会话据此按笔记失效）。
+    pub(super) cache_touched: BTreeSet<Ref>,
 }
 
 impl<'t, 'c> Index<'t, 'c> {
@@ -317,6 +347,11 @@ impl<'t, 'c> Index<'t, 'c> {
             alias_delta: Default::default(),
             salts_dirty: false,
             dirt: Dirt::default(),
+            alias_moves: BTreeSet::new(),
+            writers_moved: false,
+            pass_writers: None,
+            class_judged: 0,
+            cache_touched: BTreeSet::new(),
         }
     }
 
@@ -542,6 +577,12 @@ impl<'t, 'c> Index<'t, 'c> {
                     .map_err(sql)?
                     .execute(params![self.col, card, l.at, k, id])
                     .map_err(sql)?;
+                    // 本机落库序（`schema.rs` `log_seq`，起点 [SEQ_BASE]）：第一次进索引时取下一个序号；重建时
+                    // 再进来的保留原序号。
+                    conn.prepare_cached(SEQ_INSERT_SQL)
+                        .map_err(sql)?
+                        .execute(params![self.col, k, card, SEQ_BASE])
+                        .map_err(sql)?;
                 } else {
                     conn.prepare_cached(
                         "DELETE FROM log_ix WHERE col = ?1 AND card = ?2 AND at = ?3 AND k = ?4",
@@ -549,6 +590,10 @@ impl<'t, 'c> Index<'t, 'c> {
                     .map_err(sql)?
                     .execute(params![self.col, card, l.at, k])
                     .map_err(sql)?;
+                    conn.prepare_cached("DELETE FROM log_seq WHERE col = ?1 AND k = ?2")
+                        .map_err(sql)?
+                        .execute(params![self.col, k])
+                        .map_err(sql)?;
                 }
                 if !bulk {
                     self.logs.insert(id);
@@ -834,18 +879,9 @@ impl<'t, 'c> Index<'t, 'c> {
 
     /// [ks] 这几条修改操作拼成寄存器内核（`crate::registers`）要的落库行（冻结的旧判定，见文件头）：同一个 dot 的
     /// 并成一行（代表取操作号最小的，`server_time` 取最小值）；[emit] 按代表在 [ks] 里的下标决定这一行要不要，
-    /// 不带旧戳的写入的上下文只回答「见没见过别的**要的**行的 dot」。寄存器判定（全要）与缓存层（只要活着的，
-    /// `cache.rs`）共用这一份。
-    pub(super) fn edit_lines(
-        &mut self,
-        ks: &[i64],
-        emit: &dyn Fn(usize) -> bool,
-    ) -> Result<Vec<Line>, String> {
-        self.edit_lines_as(ks, emit, None)
-    }
-
-    /// [Index::edit_lines]，[class] = Some 时按别名类拼（`class.rs` 文件头）：dot 的写入者、HLC 的写入者、旧上下文的
-    /// 键三处一起换成规范写入者（同一个规范 dot 的并成一次写入），实体、键换成规范形，值里嵌的 ID 归一。
+    /// 不带旧戳的写入的上下文只回答「见没见过别的**要的**行的 dot」。[class] = None 按原值拼（索引层的寄存器判定，
+    /// 全要）；Some 时按别名类拼（`class.rs` 文件头；按类判定与缓存层只要活着的，`cache.rs`）：dot 的写入者、HLC 的
+    /// 写入者、旧上下文的键三处一起换成规范写入者（同一个规范 dot 的并成一次写入），实体、键换成规范形，值里嵌的 ID 归一。
     /// 不带旧戳的写入「见没见过」按规范 dot 问，闭包过同一个换名（[Index::seen]）。
     pub(super) fn edit_lines_as(
         &mut self,
@@ -854,6 +890,7 @@ impl<'t, 'c> Index<'t, 'c> {
         class: Option<&super::class::Canon>,
     ) -> Result<Vec<Line>, String> {
         struct Write {
+            k: i64,
             id: OpId,
             ed: Edit4,
             wall: i64,
@@ -881,6 +918,7 @@ impl<'t, 'c> Index<'t, 'c> {
             let mut full = (*deps).clone();
             full.set(e.id.device, e.id.seq - 1);
             writes.push(Write {
+                k,
                 id: e.id,
                 ed,
                 wall,
@@ -953,11 +991,14 @@ impl<'t, 'c> Index<'t, 'c> {
             let value = serde_json::from_str::<Value>(&w.ed.value).unwrap_or(Value::Null);
             let (entity, key, value) = match class {
                 None => (w.ed.entity.text(), w.ed.key.clone(), value),
-                Some(c) => (
-                    c.entity.clone(),
-                    c.key.clone(),
-                    self.canonical_value(&c.key, &value)?,
-                ),
+                Some(c) => {
+                    let key = c.key_of(w.k);
+                    (
+                        c.entity.clone(),
+                        key.to_owned(),
+                        self.canonical_value(key, &value)?,
+                    )
+                }
             };
             let mut m = Map::new();
             m.insert("p".into(), json!(""));
@@ -1111,7 +1152,16 @@ impl<'t, 'c> Index<'t, 'c> {
                 out.closures += 1;
             }
         }
-        self.weigh(false, &mut out)?;
+        let trust = self.weigh_purged(false, &mut out)?;
+        // 别名表在扣住之前定：扣住按别名类判（`weigh.rs` 文件头「扣住的删除」），别名表只看清除状态、不看扣住与
+        // 寄存器的判定（`alias.rs` 文件头「证据」）。
+        if std::mem::take(&mut self.salts_dirty) {
+            self.settle_salts()?;
+        }
+        let (rows, proven) = self.settle_aliases()?;
+        out.aliases = rows;
+        out.aliases_proven = u64::from(proven);
+        self.weigh_rest(false, trust, &mut out)?;
         let mut regs = std::mem::take(&mut self.regs);
         self.dirt.registers(&regs);
         self.dirt.ids.extend(self.ents.iter().cloned());
@@ -1136,12 +1186,6 @@ impl<'t, 'c> Index<'t, 'c> {
         }
         self.heads.clear();
         out.digests = self.digest_flush()?;
-        if std::mem::take(&mut self.salts_dirty) {
-            self.settle_salts()?;
-        }
-        let (rows, proven) = self.settle_aliases()?;
-        out.aliases = rows;
-        out.aliases_proven = u64::from(proven);
         self.refresh_caches(&mut out)?;
         Ok(out)
     }
@@ -1169,6 +1213,13 @@ impl<'t, 'c> Index<'t, 'c> {
                 self.touch(&e, true)
             })?;
         }
+        // 落库序是本机状态、重建不清（还在的日志保留原序号）；真相里已经没有的日志的那几行在这里删掉。
+        conn.prepare_cached(
+            "DELETE FROM log_seq WHERE col = ?1 AND k NOT IN (SELECT k FROM log_ix WHERE col = ?1)",
+        )
+        .map_err(sql)?
+        .execute([self.col])
+        .map_err(sql)?;
         let mut acc: Vec<(Id, Acc)> = self.bulk.take().unwrap_or_default().into_iter().collect();
         acc.sort_by_key(|(d, _)| *d);
         for (d, a) in acc {
@@ -1176,7 +1227,13 @@ impl<'t, 'c> Index<'t, 'c> {
                 out.closures += 1;
             }
         }
-        self.weigh(true, &mut out)?;
+        let trust = self.weigh_purged(true, &mut out)?;
+        // 扫描时带盐的操作把「盐集合要重看」置上了；这里就地重算，别让它留着、把别名表误报成没重算（缓存层按类读
+        // 要求别名表是新的，`class.rs` [Index::aliases_stale]）。别名表在扣住之前定（同 [Index::settle]）。
+        self.salts_dirty = false;
+        self.settle_salts()?;
+        out.aliases = self.rebuild_aliases()?;
+        self.weigh_rest(true, trust, &mut out)?;
         let mut regs = std::mem::take(&mut self.regs);
         regs.extend(self.multi_regs()?);
         for r in &regs {
@@ -1196,10 +1253,6 @@ impl<'t, 'c> Index<'t, 'c> {
         self.heads.clear();
         super::digest::set_triggers(conn, true)?;
         out.digests = self.digest_rebuild()?;
-        // 扫日志时碰到带盐的操作会置 `salts_dirty`；这里已整个重算，清掉，否则 [Index::aliases_stale] 在重建刚完时仍报「没算」。
-        self.salts_dirty = false;
-        self.settle_salts()?;
-        out.aliases = self.rebuild_aliases()?;
         self.materialize_caches(&mut out)?;
         Ok(out)
     }

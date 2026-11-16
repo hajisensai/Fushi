@@ -292,6 +292,19 @@ test('findCueIndexAt 间隙/越界返回 -1（不吸附邻句）', () => {
   assert.strictEqual(findCueIndexAt(CUES, 99999), -1, '末句之后');
 });
 
+test('findCueIndexAt 时间重叠的轨（BUG-4719）：取起点最晚的有效 cue，它结束后回落到更早开始的长句', () => {
+  const OVERLAP = [
+    { startMs: 1000, endMs: 5000, text: 'long' },
+    { startMs: 1000, endMs: 3000, text: 'short' },
+    { startMs: 4000, endMs: 6000, text: 'third' },
+  ];
+  assert.strictEqual(findCueIndexAt(OVERLAP, 2000), 1, '同起点：轨内靠后那条');
+  assert.strictEqual(findCueIndexAt(OVERLAP, 3500), 0, '短句结束、长句还在：不能当成空隙');
+  assert.strictEqual(findCueIndexAt(OVERLAP, 4500), 2, '交错：起点最晚的那条');
+  assert.strictEqual(findCueIndexAt(OVERLAP, 5500), 2);
+  assert.strictEqual(findCueIndexAt(OVERLAP, 6000), -1);
+});
+
 test('findCueIndexAt 坏输入不抛', () => {
   assert.strictEqual(findCueIndexAt(null, 1000), -1);
   assert.strictEqual(findCueIndexAt([], 1000), -1);
