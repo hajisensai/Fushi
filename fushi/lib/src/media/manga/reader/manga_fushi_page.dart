@@ -6797,8 +6797,14 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     } on FormatException {
       return;
     }
-    if (decoded is! Map || decoded['page'] is! num || !mounted) return;
-    final int pageIndex = (decoded['page'] as num).toInt();
+    final MokuroPayload? payload = _payload;
+    if (decoded is! Map || payload == null || !mounted) return;
+    // 与右键菜单同一口径：越界页号不得被 _mangaPageFileAt 夹到首 / 末页拿错图。
+    final int? pageIndex = MangaFushiPage.mangaHitPageIndex(
+      decoded,
+      payload.images.length,
+    );
+    if (pageIndex == null) return;
     final _MangaOcrCopyTexts texts = _ocrCopyTextsAt(decoded);
     fushiLiftHaptic(context);
     final File? file = await _mangaPageFileAt(pageIndex);
