@@ -88,8 +88,8 @@ void main() {
     final SrsTextFile f = await parse(
       'export.txt',
       '#separator:Tab\n#html:true\n#tags:a b\n#notetype:Basic\n#deck:日本語\n'
-          '#tags column:3\n#guid column:4\n#if matches:preserve\n'
-          '#match scope:notetypeDeck\n'
+          '#tags column:3\n#guid column:4\n#if matches:keep current\n'
+          '#match scope:notetype + deck\n'
           '猫\t<b>neko</b>\tt1\tg1\n犬\tinu\t\tg2\n',
     );
     expect(f.delimiter, '\t');
