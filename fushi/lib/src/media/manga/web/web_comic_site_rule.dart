@@ -25,6 +25,7 @@ class WebComicSiteRule {
     this.headers = const <String, String>{},
     this.nextSelector,
     this.prevSelector,
+    this.detect,
     this.verified = false,
   });
 
@@ -55,6 +56,12 @@ class WebComicSiteRule {
   /// 下一章 / 上一章链接的 CSS 选择器（取 `href`）；null = 走脚本的通用文案匹配。
   final String? nextSelector;
   final String? prevSelector;
+
+  /// 「这页真是漫画页」的页面侧判据：一段函数体（可 `await`），返回真值即是。照 ComicRead
+  /// 站点适配的 `isMangaPage`：URL 认不全的站（同一种地址下有动画 / 数据异步到）由页面
+  /// 自己的数据说了算。null = URL 命中 [chapterUrlPattern] 就是漫画页。与 `script` 取图
+  /// 一样只允许随包规则使用。
+  final String? detect;
   final bool verified;
 
   /// 该规则是否覆盖 [host]。
@@ -157,6 +164,7 @@ class WebComicSiteRule {
           : const <String, String>{},
       nextSelector: _nonEmpty(map['nextSelector']),
       prevSelector: _nonEmpty(map['prevSelector']),
+      detect: _nonEmpty(map['detect']),
       verified: map['verified'] == true,
     );
   }

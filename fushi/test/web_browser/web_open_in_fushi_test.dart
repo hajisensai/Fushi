@@ -206,6 +206,36 @@ if (JSON.stringify(out) !== want) {
       });
     });
 
+    test('站点规则认作漫画页时优先于通用读数（拍板台 PWWovB_nw2：hitomi 画廊页只有缩略图）', () {
+      // hitomi 画廊页的通用读数：长滚动、只有小缩略图、几乎没有正文 → 通用启发式认不出。
+      final WebPageContentProbe gallery = WebPageContentProbe.tryParse(
+        '{"v":0,"i":0,"t":120,"p":[],"w":1280,"h":800,"s":1}',
+      )!;
+      expect(classifyWebPageContent(gallery), isNull);
+      expect(
+        resolveWebPageContentKind(siteComic: true, reading: gallery),
+        WebPageContentKind.comic,
+      );
+      // 读数缺失（探针失败）也照站点判定。
+      expect(
+        resolveWebPageContentKind(siteComic: true, reading: null),
+        WebPageContentKind.comic,
+      );
+      // 规则说不是（如 anime 画廊）/ 没有规则：回到通用启发式。
+      expect(
+        resolveWebPageContentKind(siteComic: false, reading: gallery),
+        isNull,
+      );
+      expect(
+        resolveWebPageContentKind(siteComic: null, reading: probe(v: 1)),
+        WebPageContentKind.video,
+      );
+      expect(
+        resolveWebPageContentKind(siteComic: false, reading: probe(t: 4000)),
+        WebPageContentKind.novel,
+      );
+    });
+
     test('探针脚本只读：不写 DOM', () {
       expect(kWebPageContentProbeScript, isNot(contains('.innerHTML=')));
       expect(kWebPageContentProbeScript, isNot(contains('appendChild')));

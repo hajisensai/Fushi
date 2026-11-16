@@ -151,6 +151,25 @@ WebPageContentKind? classifyWebPageContent(WebPageContentProbe probe) {
   return null;
 }
 
+/// 站点适配判定：随包站点规则（`assets/web_comic/site_rules.json`）认不认这页是漫画页。
+///
+/// 照 ComicRead 的做法——先问站点适配，认不到才走通用启发式：画廊信息页只有缩略图、
+/// 阅读页一屏一张图还能滚动，这类页面光看 DOM 形状认不出来（拍板台 PWWovB_nw2，hitomi）。
+abstract interface class WebPageSiteComicDetector {
+  /// null = 没有站点规则覆盖 [url]；true / false = 规则的判定。
+  Future<bool?> isComicPage(InAppWebViewController controller, Uri url);
+}
+
+/// 站点判定 + 通用读数 → 内容类别。站点规则说是漫画页就是漫画页（不论 DOM 上的图多小）；
+/// 否则按 [classifyWebPageContent]。
+WebPageContentKind? resolveWebPageContentKind({
+  required bool? siteComic,
+  required WebPageContentProbe? reading,
+}) {
+  if (siteComic == true) return WebPageContentKind.comic;
+  return reading == null ? null : classifyWebPageContent(reading);
+}
+
 /// 只读探针：数大视频、竖长图与最长正文段，在视口 5×3 个取样点下收大块图面（`<img>`
 /// 原图高 ≥ 600 / `<canvas>` 位图高 ≥ 600 / 背景图是 url 的元素，每点只看最上面 6 层），
 /// 再记视口尺寸与文档是否长滚动，返回 JSON 字符串。不改页面。
@@ -186,6 +205,12 @@ const String kWebPageContentProbeScript =
 /// 谁上工具栏。每次主框架加载完、单页应用换页、标签页回到前台时探一次；结果变了经
 /// [actionsChanged] 让壳重建工具栏。本身不贡献动作。
 class WebPageContentFeature extends WebBrowserFeature {
+  /// [siteComic]：站点适配判定，只在网页漫画合规门开时由装配点传入；null = 只用通用启发式。
+  WebPageContentFeature({WebPageSiteComicDetector? siteComic})
+    : _siteComic = siteComic;
+
+  final WebPageSiteComicDetector? _siteComic;
+
   final Map<String, WebPageContentKind?> _kinds =
       <String, WebPageContentKind?>{};
 
@@ -262,7 +287,28 @@ class WebPageContentFeature extends WebBrowserFeature {
     }
     if (_generation[tab.id] != generation || tab.url != url) return;
     final WebPageContentProbe? reading = WebPageContentProbe.tryParse(raw);
-    _set(tab, reading == null ? null : classifyWebPageContent(reading));
+    final WebPageContentKind? quick = resolveWebPageContentKind(
+      siteComic: null,
+      reading: reading,
+    );
+    _set(tab, quick);
+    final WebPageSiteComicDetector? site = _siteComic;
+    // 站点判定优先于通用读数（规则说是漫画页，正文 / 图再像别的也是漫画）；但它可能要等
+    // 页面数据异步到（最多几秒），所以先把通用读数的结果放上工具栏，判定到了再改。
+    // 没有规则覆盖的地址立刻返回 null，不跑页面脚本。
+    if (site == null || quick == WebPageContentKind.comic) return;
+    bool? siteComic;
+    try {
+      siteComic = await site.isComicPage(controller, url);
+    } catch (e) {
+      debugPrint('[web-browser] site comic detect failed: $e');
+      return;
+    }
+    if (_generation[tab.id] != generation || tab.url != url) return;
+    _set(
+      tab,
+      resolveWebPageContentKind(siteComic: siteComic, reading: reading),
+    );
   }
 
   void _set(WebBrowserTab tab, WebPageContentKind? kind) {
