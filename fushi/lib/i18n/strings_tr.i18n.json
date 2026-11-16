@@ -7010,7 +7010,7 @@
   "onboarding_pack_action_audio_desc": "Paketin kapsamadığı diller için çevrimiçi telaffuz kaynakları ekleyin.",
   "onboarding_pack_action_dictionary_desc": "Başka bir dil mi öğreniyorsunuz? O dilin sözlüklerini bunun yerine buradan içe aktarın.",
   "onboarding_pack_action_download_desc": "Arka planda birden çok kaynaktan aynı anda indirir, sonra içe aktarır. İstediğiniz an iptal edin; kaldığı yerden devam eder.",
-  "onboarding_pack_action_import_existing_merge_desc": "The pack is already on disk. It is merged into your data: your books, progress and settings stay untouched.",
+  "onboarding_pack_action_import_existing_merge_desc": "Paket zaten diskte. Verilerinle birleştirilir: kitapların, ilerlemen ve ayarların olduğu gibi kalır.",
   "onboarding_pack_action_pick_desc": "Paketin zip dosyası zaten sizde mi? Diskten içe aktarın ve indirmeyi atlayın.",
   "onboarding_pack_action_website": "İndirme sayfasını aç",
   "onboarding_pack_action_website_desc": "İndirme yöneticileri için parça bağlantıları. Sonra dönüp «Paket dosyası seç» seçeneğini kullanın.",

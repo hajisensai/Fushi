@@ -7010,7 +7010,7 @@
   "onboarding_pack_action_audio_desc": "Aggiungi fonti di pronuncia online per le lingue che il pacchetto non copre.",
   "onboarding_pack_action_dictionary_desc": "Stai studiando un'altra lingua? Importa qui i dizionari corrispondenti.",
   "onboarding_pack_action_download_desc": "Scarica in background da più fonti contemporaneamente, poi importa. Puoi annullare in qualsiasi momento; riprende dal punto in cui si era fermato.",
-  "onboarding_pack_action_import_existing_merge_desc": "The pack is already on disk. It is merged into your data: your books, progress and settings stay untouched.",
+  "onboarding_pack_action_import_existing_merge_desc": "Il pacchetto è già sul disco. Viene unito ai tuoi dati: libri, progressi e impostazioni restano intatti.",
   "onboarding_pack_action_pick_desc": "Hai già lo zip del pacchetto? Importalo dal disco e salta il download.",
   "onboarding_pack_action_website": "Apri la pagina di download",
   "onboarding_pack_action_website_desc": "Link a spezzoni per i download manager. Poi torna qui e usa «Scegli un file pacchetto».",

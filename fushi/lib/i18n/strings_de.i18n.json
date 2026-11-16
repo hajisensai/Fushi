@@ -7010,7 +7010,7 @@
   "onboarding_pack_action_audio_desc": "Online-Aussprachequellen für Sprachen hinzufügen, die das Paket nicht abdeckt.",
   "onboarding_pack_action_dictionary_desc": "Lernen Sie eine andere Sprache? Importieren Sie hier stattdessen passende Wörterbücher.",
   "onboarding_pack_action_download_desc": "Lädt im Hintergrund von mehreren Quellen gleichzeitig und importiert danach. Jederzeit abbrechbar; es wird an der Abbruchstelle fortgesetzt.",
-  "onboarding_pack_action_import_existing_merge_desc": "The pack is already on disk. It is merged into your data: your books, progress and settings stay untouched.",
+  "onboarding_pack_action_import_existing_merge_desc": "Das Paket liegt bereits auf der Festplatte. Es wird mit deinen Daten zusammengeführt: Bücher, Fortschritt und Einstellungen bleiben unverändert.",
   "onboarding_pack_action_pick_desc": "Sie haben das Paket-ZIP schon? Importieren Sie es von der Festplatte und überspringen Sie den Download.",
   "onboarding_pack_action_website": "Download-Seite öffnen",
   "onboarding_pack_action_website_desc": "Teil-Links für Downloadmanager. Kommen Sie danach zurück und nutzen Sie „Paketdatei wählen“.",
