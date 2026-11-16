@@ -450,7 +450,8 @@ void main() {
         );
         final MokuroPayload payload = await _readImportedPayload(db, key);
         expect(payload.images, hasLength(1));
-        expect(payload.images.single.url, '第1巻/001.png');
+        // 页图拷进书目录的 `images/` 下，保留包内子目录结构。
+        expect(payload.images.single.url, 'images/第1巻/001.png');
         expect(payload.images.single.size.width, 40);
         expect(payload.images.single.blocks.single.lines, <String>['マック']);
       },
