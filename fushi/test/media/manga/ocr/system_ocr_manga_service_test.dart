@@ -52,6 +52,30 @@ class _FakePlatform implements SystemOcrPlatform {
   }
 }
 
+/// 同时实现模型配置面的平台（Android ML Kit），modelStatus 回固定状态。
+class _ModelStatusPlatform extends _FakePlatform
+    implements SystemOcrModelSetup {
+  _ModelStatusPlatform(this.status);
+
+  final SystemOcrModelStatus status;
+  final List<String> languages = <String>[];
+
+  @override
+  Future<SystemOcrModelReport> modelStatus(String language) async {
+    languages.add(language);
+    return SystemOcrModelReport(status);
+  }
+
+  @override
+  Future<void> installModel(String language) async {}
+
+  @override
+  Future<bool> resolvePlayServices() async => false;
+
+  @override
+  Future<void> openPlayServicesSettings() async {}
+}
+
 /// 模拟支持切片的平台（iOS 26 / macOS 26 的 Vision）：记下收到的切片，回放
 /// 预置的逐片行。
 class _TiledFakePlatform implements SystemOcrPlatform {
@@ -717,6 +741,63 @@ void main() {
       expect(
         await SystemOcrMangaService(platform: _FakePlatform()).isAvailable(),
         isTrue,
+      );
+    });
+
+    test('BUG-4705：modelStatus 透传平台的模型 / Play 服务状态，按语言查', () async {
+      final _ModelStatusPlatform platform = _ModelStatusPlatform(
+        SystemOcrModelStatus.playServicesMissing,
+      );
+      expect(
+        await SystemOcrMangaService(
+          platform: platform,
+        ).modelStatus(language: 'zh'),
+        SystemOcrModelStatus.playServicesMissing,
+      );
+      expect(platform.languages, <String>['zh']);
+    });
+
+    test('BUG-4705：没有模型概念的平台（只实现识别）恒答 ready', () async {
+      expect(
+        await SystemOcrMangaService(
+          platform: _FakePlatform(),
+        ).modelStatus(language: 'ja'),
+        SystemOcrModelStatus.ready,
+      );
+    });
+
+    test('BUG-4705：model_unavailable 只在系统 OCR 引擎上算「缺模型 / Play 服务」', () {
+      const SystemOcrUnavailableException modelUnavailable =
+          SystemOcrUnavailableException(kSystemOcrModelUnavailableReason);
+      expect(
+        isSystemOcrModelUnavailableFailure(
+          MangaOcrEngineId.systemOcr,
+          modelUnavailable,
+        ),
+        isTrue,
+      );
+      expect(
+        isSystemOcrModelUnavailableFailure(
+          MangaOcrEngineId.localOnnx,
+          modelUnavailable,
+        ),
+        isFalse,
+      );
+      expect(
+        isSystemOcrModelUnavailableFailure(
+          MangaOcrEngineId.systemOcr,
+          const SystemOcrUnavailableException(
+            kSystemOcrLanguageUnavailableReason,
+          ),
+        ),
+        isFalse,
+      );
+      expect(
+        isSystemOcrModelUnavailableFailure(
+          MangaOcrEngineId.systemOcr,
+          StateError('x'),
+        ),
+        isFalse,
       );
     });
   });

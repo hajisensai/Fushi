@@ -9,7 +9,6 @@ import 'package:fushi_engine/srs/apkg/srs_anki_package.dart';
 import 'package:fushi_engine/srs/apkg/srs_apkg_export.dart';
 import 'package:fushi_engine/srs/apkg/srs_apkg_import.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
-import 'package:fushi_engine/srs/srs_database_executor.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_media_sync.dart';
 import 'package:fushi_engine/srs/srs_style_store.dart';
@@ -24,6 +23,8 @@ import 'ankiconnect/ankiconnect_harness.dart';
 import 'support/srs_sync2_peers.dart';
 import 'support/srs_test_storage.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
+import 'support/srs_raw_sql.dart';
+import 'package:fushi_engine/srs/srs_reads.dart';
 
 const String kProfile = '01928c3e-0000-7000-8000-0000000000d5';
 
@@ -56,7 +57,6 @@ void main() {
     String device, {
     String? styleDir,
   }) => SrsDbStore.open(
-    db: storage.db,
     core: storage.core,
     profileUid: kProfile,
     deviceId: device,
@@ -89,7 +89,7 @@ void main() {
   }
 
   Future<int> editBytes(SrsStorage db) async =>
-      (await db.db
+      (await db.core
               .customSelect(
                 'SELECT COALESCE(SUM(LENGTH(json)), 0) AS n FROM srs_field_edits',
               )
@@ -97,7 +97,7 @@ void main() {
           .read<int>('n');
 
   Future<int> rawStyleRows(SrsStorage db) async =>
-      (await db.db
+      (await db.core
               .customSelect(
                 "SELECT COUNT(*) AS n FROM srs_field_edits WHERE instr(json, '<style>') > 0",
               )
@@ -347,7 +347,7 @@ void main() {
 
     final SrsDbStore s = await open(db, 'dev', styleDir: 'media');
     int batches = 0;
-    SrsInlineExecutor.debugStatements = 0;
+    srsDebugReadCommands = 0;
     final int core0 = s.debugCoreCommands;
     final int first = await s.compactStoredStyles(
       batchSize: 4,
@@ -357,10 +357,7 @@ void main() {
     // 一批的往返（收掉 Dart 写路径第 5 步）：改动前 BEGIN + 选行 + 每行一条 UPDATE + 本机状态 upsert + COMMIT（4 行
     // 共 8 条语句）+ 内核 `refresh_caches` 1 条；改动后只剩选行 1 条语句 + 内核 `edits_rewrite_repr` 1 条。
     expect(
-      (
-        statements: SrsInlineExecutor.debugStatements,
-        core: s.debugCoreCommands - core0,
-      ),
+      (statements: srsDebugReadCommands, core: s.debugCoreCommands - core0),
       (statements: 1, core: 1),
     );
     expect(await rawStyleRows(db), 10);
@@ -428,6 +425,5 @@ void main() {
       },
     });
     expect(await readBack(), gloss2);
-    await h.store.db.close();
   });
 }
