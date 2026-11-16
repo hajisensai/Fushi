@@ -705,15 +705,11 @@ class SrsDbStore implements SrsSync2Host {
   /// 落库都变」的判据读 [landedFingerprint]。
   int get revision => _revision;
 
-  /// 刷新键（[SrsCore.refreshKeys]）。每次现读（一次同步 FFI 点查，在调用方 isolate 上）。
-  ///
-  /// **新代（S1 之后）五个键是同一个值**：本机状态行（`local_state`，native/fushi_fsrs/src/store/gen4/local.rs）的
-  /// `纪元:修订号`。每条改投影的写命令（含作答）在自己的事务里推进修订号；库换了 / 迁移之后纪元换新；行没落盘时是
-  /// 固定的 `unstored:修订号`（[srsRefreshKeyOf]）。协议 3 内核按类别分开的进程内计数（`store/refresh.rs`：内容 / 结构 /
-  /// RWKV / 统计 / 落库各一条）新代还没有对应物，所以下面各键原本「什么不让它变」的语义**眼下都不成立**：任何写入
-  /// （每一次作答）都让五个键一起变——只会多重读、不会读到旧值，但代价落在作答热路径上（RWKV 分数表每题整表重查、
-  /// 牌组树 / 笔记类型 / 修改记录这些按键缓存的东西每题重建）。上游要在 `G4Core` 里补回按类别的计数
-  /// （交接说明「G7-5 Dart 接线」§9.5）；补上之前别在这里加 Dart 侧的计数镜像。
+  /// 刷新键（[SrsCore.refreshKeys]）。每次现读：主进程是一次只读内存的同步 FFI（内核 `refresh_keys`，
+  /// native/fushi_fsrs/src/store/gen4/refresh.rs），一次取回五个键；计数由内核按 profile、按类别持有，写命令提交之后
+  /// 推进，Dart 不存镜像。各键「什么不让它变」与协议 3 相同（作答只动 [statsFingerprint] / [landedFingerprint]，
+  /// 界面状态类修改只动结构键与 [landedFingerprint]）。辅助进程（Secondary）分不清别的进程写的是哪一类，五个键同值，
+  /// 随主进程的任何写入变（只会多重读）。
   ///
   /// 库关了之后不会再有任何变化：读到的是关之前最后读到的那一组（[_keysAtClose]），按键记的缓存照旧命中——关库后
   /// 收尾的读者（RWKV 服务关闭时存快照要 [dayContext]）不必再去读已关的库。一次都没读到过时是 [_closedKey]。
@@ -730,18 +726,16 @@ class SrsDbStore implements SrsSync2Host {
   /// `unstored:<修订号>`）。
   static const String _closedKey = 'closed';
 
-  /// 统计指纹：统计页据此判断 [srsRevisionProvider] 的一跳要不要重读（见 `loadSrsStats`）。目标语义是「只随会改变
-  /// 统计结果的落库变」（界面状态类修改记录、同步簿记不算）；新代眼下随任何写入变（见 [_refreshKeys]）。
+  /// 统计指纹：统计页据此判断 [srsRevisionProvider] 的一跳要不要重读（见 `loadSrsStats`）。只随会改变统计结果的
+  /// 落库变（界面状态类修改记录、同步簿记不算）。
   String get statsFingerprint => _refreshKeys?.stats ?? _closedKey;
 
-  /// 内容指纹：同步冲突 / 待裁决 / 迁移提醒这类「整库扫一遍」的角标据此判断要不要重扫。目标语义是「评分只落日志时
-  /// 不变」；新代眼下每次作答都变（见 [_refreshKeys]）。
+  /// 内容指纹：同步冲突 / 待裁决 / 迁移提醒这类「整库扫一遍」的角标据此判断要不要重扫。评分只落日志时不变。
   String get contentFingerprint => _refreshKeys?.content ?? _closedKey;
 
-  /// RWKV-Instant 分数表的全量刷新信号。目标语义：只在牌组 / 配置类事件落库（预设归属、排队设置可能变了）、应用
-  /// 一批对端事件、重读本机状态时变，复习日志与卡片自己的修改不动它——整表重查跟着每题走会与作答抢内存（以前
-  /// 35 万条日志的 iPhone 收尾 OOM），排队设置里的「每答几题刷新」也靠它不随作答变。**新代眼下每次作答都变**
-  /// （见 [_refreshKeys]）：「每答几题刷新」形同每题刷新。见 `SrsRwkvService` 文件头。
+  /// RWKV-Instant 分数表的全量刷新信号：只在牌组 / 配置类事件落库（预设归属、排队设置可能变了）、应用一批对端事件、
+  /// 重读本机状态、派生层整层重建时变，复习日志与卡片自己的修改不动它——整表重查跟着每题走会与作答抢内存（以前
+  /// 35 万条日志的 iPhone 收尾 OOM），排队设置里的「每答几题刷新」也靠它不随作答变。见 `SrsRwkvService` 文件头。
   String get rwkvScoresKey => _refreshKeys?.rwkv ?? _closedKey;
 
   /// 任何事件落库或可见性变化都变：与落盘修订号同口径，但不必等下一条回包。RWKV 服务据此判断「有没有新日志」
@@ -973,8 +967,7 @@ class SrsDbStore implements SrsSync2Host {
   (int, SrsTimeSource) now() => _trusted.now();
 
   /// [deckTree] 与 profile 修改记录的缓存（作答一次以前要物化牌组树 / 日界 8–10 次）。键是
-  /// [_structureKey]（[SrsRefreshKeys.structure]）：目标语义是「复习日志不让它变」，新代眼下随任何写入变
-  /// （见 [_refreshKeys]），所以作答之后的第一次读会重建一次，同一题之内的多次读仍然命中。
+  /// [_structureKey]（[SrsRefreshKeys.structure]）：复习日志不让它变，作答之间一直命中。
   ({String key, SrsDeckTree tree})? _deckTreeCache;
   ({String key, SrsEntityEdits edits})? _profileEditsCache;
   String get _structureKey => _refreshKeys?.structure ?? _closedKey;
@@ -1325,103 +1318,70 @@ class SrsDbStore implements SrsSync2Host {
     if (!stamps || identical(applied, _Applied.stale)) {
       return const <SrsFieldEdit>[];
     }
-    return _readBackEdits(drafts, written);
+    return _readBackEdits(drafts, applied.reply);
   }
 
   /// 一批草稿里修改记录草稿落库后的修改记录（按草稿顺序；内核没写出操作的草稿——值没变、标签列表与现值相同——不在
   /// 其中）。
   ///
   /// 协议 3 由内核在 `apply` 里交回逐项的落库投影行（`stamps`，旧版时钟的产物）；新代没有旧版时钟、明确拒绝
-  /// `stamps`（native/fushi_fsrs/src/store/gen4/cmd/writes.rs 文件头），回包只有 `edits`（`[种类, 规范实体, 字段键,
-  /// 设备, 序号, 值]`，值没变的草稿已被内核丢掉）。草稿与 `edits` 按 (种类, 规范实体, 字段键) 配对
-  /// （[srsMatchWrittenEdits]）：草稿里的实体 ID 可能是别名类的非规范成员，先归一（[_canonicalDraftIds]）。再按
-  /// `edits` 读回那些实体的修改记录（`read` 的 `edits`，与别的读同一份落库行），按 (设备, 序号) 认出这批写下的。
-  /// 返回值里带调用方给的原值（落库形态里内联样式已换成共享引用）。
-  ///
-  /// 已知缺口（上游）：整列表标签草稿在新代展开成标签增删操作，不进 `edits`，这里没有它的那一项（协议 3 的 `stamps`
-  /// 有）。交接说明「G7-5 Dart 接线」§9.5。
+  /// `stamps`，改由回包按**输入下标**报写下的东西（native/fushi_fsrs/src/store/gen4/cmd/writes.rs 文件头「回包」）：
+  /// `edits` 每项第 7 列是它来自第几条输入（= 第几条草稿，[_applyInput] 一条草稿一项），整列表标签草稿展开成的标签
+  /// 操作在 `tagWrites` 里报一项（[srsWrittenByInput]）。所以草稿直接按下标认领，不按 (种类, 实体, 字段键) 猜、不逐条
+  /// 点查归一（别名类的非规范成员也对得上）。再按回包里的规范实体分块读回修改记录（`read` 的 `edits`，与别的读同一份
+  /// 落库行）：普通修改按 (设备, 序号) 认出这批写下的；标签草稿取那条笔记的 `tags` 行（读侧给碰过标签的笔记合成的
+  /// 一行，cmd/mod.rs `edit_rows`，值是标签 OR-Set 的当前值）。返回值里带调用方给的原值（落库形态里内联样式已换成
+  /// 共享引用）。
   Future<List<SrsFieldEdit>> _readBackEdits(
     List<SrsEventDraft> drafts,
-    List<Object?> written,
+    Map<String, Object?> reply,
   ) async {
-    final List<SrsEditDraft> edits = <SrsEditDraft>[
-      for (final SrsEventDraft d in drafts)
-        if (d is SrsEditDraft) d,
-    ];
-    final Map<(String, String), String> canonical = await _canonicalDraftIds(
-      edits,
-      written,
+    final List<SrsWrittenItem?> written = srsWrittenByInput(
+      drafts.length,
+      reply,
     );
-    final List<List<Object?>?> matched =
-        srsMatchWrittenEdits(<(String, String, String)>[
-          for (final SrsEditDraft d in edits)
-            (
-              d.kind.wire,
-              canonical[(d.kind.wire, d.entityId)] ?? d.entityId,
-              d.key,
-            ),
-        ], written);
     final Map<String, Set<String>> idsByKind = <String, Set<String>>{};
-    for (final List<Object?>? e in matched) {
-      if (e == null) continue;
-      (idsByKind[e[0]! as String] ??= <String>{}).add(e[1]! as String);
+    for (int i = 0; i < drafts.length; i++) {
+      final SrsWrittenItem? w = written[i];
+      if (w == null || drafts[i] is! SrsEditDraft) continue;
+      (idsByKind[w.kind] ??= <String>{}).add(w.entity);
     }
     final Map<(String, int), SrsFieldEdit> byDot =
         <(String, int), SrsFieldEdit>{};
+    final Map<String, SrsFieldEdit> tagsOf = <String, SrsFieldEdit>{};
     for (final MapEntry<String, Set<String>> k in idsByKind.entries) {
       for (final List<String> chunk in _chunks(k.value)) {
         final Map<String, List<SrsEditItem>> rows = await _editItemsById(
           <String, Object?>{'kind': k.key, 'ids': chunk},
         );
-        for (final List<SrsEditItem> items in rows.values) {
-          for (final SrsEditItem item in items) {
+        for (final MapEntry<String, List<SrsEditItem>> row in rows.entries) {
+          for (final SrsEditItem item in row.value) {
             final SrsFieldEdit edit = item.edit;
             byDot[(edit.dot.writerId, edit.dot.seq)] = edit;
+            if (k.key == SrsEntityKind.note.wire &&
+                edit.fieldKey == SrsFieldKeys.noteTags) {
+              tagsOf[row.key] = edit;
+            }
           }
         }
       }
     }
     final List<SrsFieldEdit> out = <SrsFieldEdit>[];
-    for (int i = 0; i < edits.length; i++) {
-      final List<Object?>? e = matched[i];
-      if (e == null) continue;
-      final SrsFieldEdit? edit =
-          byDot[(e[3]! as String, (e[4]! as num).toInt())];
+    for (int i = 0; i < drafts.length; i++) {
+      final SrsEventDraft d = drafts[i];
+      final SrsWrittenItem? w = written[i];
+      if (w == null || d is! SrsEditDraft) continue;
+      final SrsFieldEdit? edit = w.tags
+          ? tagsOf[w.entity]
+          : byDot[(w.writer, w.seq)];
       if (edit == null) {
         throw StateError(
-          'srs: edit ${e[3]}/${e[4]} from the `apply` reply is not readable '
-          'back (the native core and Dart do not match)',
+          'srs: ${w.tags ? 'the tags of ${w.entity}' : 'edit ${w.writer}/${w.seq}'} '
+          'from the `apply` reply is not readable back (the native core and '
+          'Dart do not match)',
         );
       }
-      out.add(_withValue(edit, edits[i].value));
-    }
-    return out;
-  }
-
-  /// 修改记录草稿里的 (种类, 实体 ID) → 规范实体 ID。`edits` 里出现过的 ID 本身就是规范的（内核写出的实体已归一），
-  /// 原样；其余（别名类的非规范成员，或值没变、没写出操作的草稿）按 `read` 的 `edits`（请求里的 ID 内核先归一、
-  /// 回包的 `e` 列是规范 ID）逐个点查——只限这批草稿的那个字段键。读不到行 = 这个键没有任何写入，原样（它不可能
-  /// 出现在 `edits` 里）。
-  Future<Map<(String, String), String>> _canonicalDraftIds(
-    List<SrsEditDraft> edits,
-    List<Object?> written,
-  ) async {
-    final Set<(String, String)> known = <(String, String)>{
-      for (final Object? w in written)
-        ((w! as List)[0]! as String, (w as List)[1]! as String),
-    };
-    final Map<(String, String), String> out = <(String, String), String>{};
-    for (final SrsEditDraft d in edits) {
-      final (String, String) k = (d.kind.wire, d.entityId);
-      if (known.contains(k) || out.containsKey(k)) continue;
-      final Map<String, List<SrsEditItem>> rows = await _editItemsById(
-        <String, Object?>{
-          'kind': d.kind.wire,
-          'ids': <String>[d.entityId],
-          'key': d.key,
-        },
-      );
-      out[k] = rows.keys.isEmpty ? d.entityId : rows.keys.single;
+      out.add(_withValue(edit, d.value));
     }
     return out;
   }
@@ -1529,7 +1489,7 @@ class SrsDbStore implements SrsSync2Host {
   /// （ops）、落投影、重放受影响的卡，一次 FFI（docs/specs/2026-10-25-srs-sync-v2-design.md §3、§4）。修改记录的
   /// dot / ID 由 Rust 按本机设备身份分配，这里只交内容；日志的结果由重放算，作者给的只是提示。旧版 HLC 时钟按各项的
   /// `clk` 在同一条命令里推进并写下（[recvNow] / [tickNow] 是收 / 走一步用的「此刻」）；本机状态行由内核在
-  /// 同一笔事务里写下（[_absorbLocalWrite]）。
+  /// 同一笔事务里写下（[_absorbLocalWrite]）。[logHlcs]：回包按输入下标带写下的日志的 HLC（`logHlcs`，作答取它）。
   Future<_Applied> _applyLocal(
     List<Map<String, Object?>> input, {
     int? recvNow,
@@ -1540,6 +1500,7 @@ class SrsDbStore implements SrsSync2Host {
     void Function(List<Object?> edits)? onEdits,
     Map<String, Object?>? expectLast,
     bool remote = false,
+    bool logHlcs = false,
   }) async {
     final Map<String, Object?> r = await _sync2(
       <String, Object?>{
@@ -1551,6 +1512,7 @@ class SrsDbStore implements SrsSync2Host {
         'tickNow': ?tickNow,
         'study': ?study,
         'expectLast': ?expectLast,
+        if (logHlcs) 'logHlcs': true,
         'anchor': ?_anchorArg(),
       },
       blobs: <Uint8List>[utf8.encode(jsonEncode(input))],
@@ -1572,7 +1534,7 @@ class SrsDbStore implements SrsSync2Host {
       }
       existed.addAll(ids.cast<String>());
     }
-    return _Applied(landed);
+    return _Applied(landed, r);
   }
 
   /// 把一次写命令的结果接进本机缓存的变更日志（[cacheChangesSince]）。修订号由内核写进本机状态行、回包带回
@@ -2703,21 +2665,22 @@ class SrsDbStore implements SrsSync2Host {
     }
   }
 
-  /// 刚落库的日志 [logId]（卡 [cardId]）的 HLC，按落库行读回（`read` 的 `logs`，与历史 / 重放读的同一份）。协议 3
-  /// 由 `apply` 的 `stamps` 交回旧版时钟的戳；新代没有旧版时钟，日志的 HLC 就是它那条操作的。
-  Future<Hlc> _storedLogHlc(String cardId, String logId) async {
-    final SrsColumns c = await _readTable('logs', <String, Object?>{
-      'cards': <String>[cardId],
-    });
-    final SrsStringColumn id = c.strings('id');
-    final SrsStringColumn json = c.strings('json');
-    for (int i = 0; i < c.rows; i++) {
-      if (id[i] != logId) continue;
-      final Object? hlc = (jsonDecode(json[i]) as Map)['hlc'];
-      if (hlc is String) return Hlc.decode(hlc);
+  /// 刚落库的日志 [logId] 的 HLC：`apply` 带 `logHlcs: true` 时回包按输入下标交回每条写下的日志的 HLC（与 `read` 的
+  /// `logs` 行里的 `hlc` 同形，native/fushi_fsrs/src/store/gen4/cmd/writes.rs 文件头「回包」）。协议 3 由 `stamps` 交回
+  /// 旧版时钟的戳；新代没有旧版时钟，日志的 HLC 就是它那条操作的。不再按卡读全部日志去找（O(该卡日志数)）。
+  static Hlc _answeredLogHlc(Map<String, Object?> reply, String logId) {
+    for (final Object? row
+        in (reply['logHlcs'] as List?) ?? const <Object?>[]) {
+      if (row case <Object?>[
+        _,
+        final String id,
+        final String hlc,
+      ] when id == logId) {
+        return Hlc.decode(hlc);
+      }
     }
     throw StateError(
-      'srs: the answered log $logId is not readable back with its HLC '
+      'srs: the `apply` reply has no HLC for the answered log $logId '
       '(the native core and Dart do not match)',
     );
   }
@@ -4299,6 +4262,7 @@ class SrsDbStore implements SrsSync2Host {
             },
           ],
           tickNow: p.nowMs,
+          logHlcs: true,
           study: request,
           onStudy: (Map<String, Object?> s) => study = s,
           expectLast: expectBase == null
@@ -4309,7 +4273,7 @@ class SrsDbStore implements SrsSync2Host {
       // 基准不成立（内核在落库的同一笔里核对的）：什么都没落。在 [_commandOrReload] 之外抛——这不是写失败，
       // 内存状态与库一致，不用重读。
       if (identical(applied, _Applied.stale)) throw SrsStaleCardError(cardId);
-      final SrsReviewLog log = logWith(await _storedLogHlc(cardId, logId));
+      final SrsReviewLog log = logWith(_answeredLogHlc(applied.reply, logId));
       return (log, study, tree);
     });
     // RWKV 状态追加这一条（不等：它在后台 isolate 里串行执行，下一次打分前会对齐）。
@@ -5523,7 +5487,7 @@ class SrsDbStore implements SrsSync2Host {
     }
     await _commandOrReload(() async {
       // `remote`：这批是别的设备的事件（同步合并），落了就带动牌组 / 全局状态，RWKV 分数表要整表重查一次
-      // （[rwkvScoresKey]；新代随任何写入变，见 [_refreshKeys]）。
+      // （[rwkvScoresKey]）。
       await _applyLocal(input, recvNow: nowMs, remote: true);
     });
   });
@@ -5861,12 +5825,15 @@ class SrsCardChangedError implements Exception {
 /// 一次 `apply` 命令（[SrsDbStore._applyLocal]）的结果：落进投影的事件数，与每项落库用的戳（没要就是空的；日志 = 它的
 /// HLC 字符串，修改记录 = 投影行，其余 null）。
 final class _Applied {
-  const _Applied(this.landed);
+  const _Applied(this.landed, [this.reply = const <String, Object?>{}]);
 
   /// `apply` 的前置条件（`expectLast`）不成立：什么都没落（按同一个对象判）。
   static const _Applied stale = _Applied(0);
 
   final int landed;
+
+  /// 内核的回包（`edits` / `tagWrites` / `logHlcs` 按输入下标读，见 [SrsDbStore._readBackEdits]）。
+  final Map<String, Object?> reply;
 }
 
 /// 一次本机手动排程命令（[SrsDbStore._schedLocal]）的结果：落库后的日志行与撤不了的条数。
@@ -6274,29 +6241,65 @@ class _SrsUndoRecorder {
   SrsEditUndo result() => SrsEditUndo(_items.values.toList());
 }
 
-/// 修改记录草稿（按顺序，每项 `(种类, 规范实体, 字段键)`）与 `apply` 回包 `edits`（每项 `[种类, 规范实体, 字段键,
-/// 设备, 序号, 值]`，按落库顺序）配对：返回与 [drafts] 等长的列表，第 i 项是第 i 条草稿写出的那条，没写出（内核按
-/// 「值没变」丢掉）= null。同一 (种类, 实体, 字段键) 的多条草稿按顺序认领。
+/// `apply` 一类命令的一条输入写下的东西（[srsWrittenByInput]）：修改记录（[tags] = false，`(writer, seq)` 是它的 dot）
+/// 或整列表标签草稿展开成的标签操作（[tags] = true，`(writer, seq)` 是展开出的最后一条操作）。[entity] / [key] 是
+/// 内核归一后的规范形。
+typedef SrsWrittenItem = ({
+  String kind,
+  String entity,
+  String key,
+  String writer,
+  int seq,
+  bool tags,
+});
+
+/// `apply` 回包按输入下标认领（native/fushi_fsrs/src/store/gen4/cmd/writes.rs 文件头「回包」）：返回长 [inputs] 的列表，
+/// 第 i 项是第 i 条输入写下的那条，没写出（内核按「值没变」丢掉、日志、身份记录）= null。
 ///
-/// 只按 (种类, 字段键) 配会张冠李戴：同一批改笔记 A、B 的同一个键、A 没变时，A 的草稿会领走 B 的那条。
+/// - `edits` 每项 `[种类, 规范实体, 字段键, 设备, 序号, 值, 输入下标]`，输入下标是 null 的（意图命令自己拼的项）不认领；
+/// - `tagWrites` 每项 `[输入下标, 规范笔记, 设备, 最后一条操作的序号]`。
+///
+/// 一条输入认领两次、下标越界 = 内核与 Dart 对不上，报错（不静默挑一条）。
 @visibleForTesting
-List<List<Object?>?> srsMatchWrittenEdits(
-  List<(String, String, String)> drafts,
-  List<Object?> written,
+List<SrsWrittenItem?> srsWrittenByInput(
+  int inputs,
+  Map<String, Object?> reply,
 ) {
-  final Map<(String, String, String), List<List<Object?>>> queue =
-      <(String, String, String), List<List<Object?>>>{};
-  for (final Object? w in written) {
-    final List<Object?> e = (w! as List).cast<Object?>();
-    (queue[(e[0]! as String, e[1]! as String, e[2]! as String)] ??=
-            <List<Object?>>[])
-        .add(e);
+  final List<SrsWrittenItem?> out = List<SrsWrittenItem?>.filled(inputs, null);
+  void claim(Object? at, SrsWrittenItem item) {
+    if (at == null) return;
+    if (at is! int || at < 0 || at >= inputs || out[at] != null) {
+      throw StateError(
+        'srs: the `apply` reply claims input $at twice or out of range '
+        '(the native core and Dart do not match)',
+      );
+    }
+    out[at] = item;
   }
-  return <List<Object?>?>[
-    for (final (String, String, String) d in drafts)
-      switch (queue[d]) {
-        final List<List<Object?>> q when q.isNotEmpty => q.removeAt(0),
-        _ => null,
-      },
-  ];
+
+  for (final Object? raw in (reply['edits'] as List?) ?? const <Object?>[]) {
+    final List<Object?> e = (raw! as List).cast<Object?>();
+    if (e.length < 7) continue;
+    claim(e[6], (
+      kind: e[0]! as String,
+      entity: e[1]! as String,
+      key: e[2]! as String,
+      writer: e[3]! as String,
+      seq: (e[4]! as num).toInt(),
+      tags: false,
+    ));
+  }
+  for (final Object? raw
+      in (reply['tagWrites'] as List?) ?? const <Object?>[]) {
+    final List<Object?> t = (raw! as List).cast<Object?>();
+    claim(t[0], (
+      kind: SrsEntityKind.note.wire,
+      entity: t[1]! as String,
+      key: SrsFieldKeys.noteTags,
+      writer: t[2]! as String,
+      seq: (t[3]! as num).toInt(),
+      tags: true,
+    ));
+  }
+  return out;
 }

@@ -9,6 +9,8 @@
 //!   `cmd/stats.rs` `snapshot_of`）。
 //! - **写入代数** [G4Core::writes]：每条写命令提交之后 +1。统计原料缓存按它判「本进程的写连接上改没改过原料」；别的进程
 //!   （只有 Primary 写）的写入由缓存层代号 `cache_gen` 兜住。
+//! - **刷新计数**（[G4Core::refresh]，`refresh.rs`）：按 profile、按类别的进程内计数，Dart 的刷新键（牌组树、角标、统计、
+//!   RWKV 分数表）据此判「这类缓存还能不能用」；写命令提交之后由分发器推进。
 //! - **批量写入深度**（`bulk_cache`）：最外层调高写连接的 `wal_autocheckpoint`、结束时另开连接并回 WAL（协议 3
 //!   `SrsCore::bulk_begin` 同一个口径）。
 //!
@@ -233,6 +235,8 @@ pub struct G4Core {
     /// 写入代数：每条写命令提交之后 +1（模块文件头）。
     pub(super) writes: AtomicU64,
     bulk: Mutex<Bulk>,
+    /// 进程内刷新计数（`refresh.rs`，S1c）：按 profile、按类别，写命令提交之后推进，`refresh_keys` 只读它。
+    pub(super) refresh: Mutex<super::refresh::Refresh>,
     /// 保留副本 `srs.db` 在、但不是 SQLite 文件（`files::Opened::retained_copy_unreadable`）。
     pub retained_copy_unreadable: bool,
     _live: Live,
@@ -279,6 +283,7 @@ impl G4Core {
             stats: Mutex::new(None),
             writes: AtomicU64::new(0),
             bulk: Mutex::new(Bulk::default()),
+            refresh: Mutex::new(super::refresh::Refresh::new()),
             retained_copy_unreadable: opened.retained_copy_unreadable,
             _live: Live::new(),
         })

@@ -67,6 +67,7 @@ pub(crate) mod pack;
 pub(crate) mod parity;
 pub(crate) mod prepare;
 pub mod receive;
+pub mod refresh;
 pub mod schema;
 pub mod sync_state;
 pub mod truth;

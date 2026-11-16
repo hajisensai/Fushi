@@ -23,7 +23,8 @@ use super::super::schema::sql;
 use super::super::truth::Truth;
 use super::ref_of;
 use super::writes::{
-    ApplyOpts, Session, apply_in, draft, fail_after, now_of, row_with_profile, stored, write,
+    ApplyOpts, Origin, Session, apply_in, draft, fail_after, now_of, row_with_profile, stored,
+    write,
 };
 use crate::card_cache::is_js_space;
 use crate::projection::Day;
@@ -93,6 +94,7 @@ fn apply_some(s: &mut Session<'_, '_>, now: i64, items: &[Value]) -> Result<Valu
         ApplyOpts {
             chg: false,
             compact: false,
+            origin: Origin::Synthesized,
         },
     )
 }
@@ -226,6 +228,7 @@ pub fn change(t: &Truth<'_>, col: i64, req: &Value, items: &[Value]) -> Result<V
                 ApplyOpts {
                     chg: true,
                     compact: true,
+                    origin: Origin::Caller,
                 },
             )?;
             if v["landed"].as_array().is_some_and(Vec::is_empty) {

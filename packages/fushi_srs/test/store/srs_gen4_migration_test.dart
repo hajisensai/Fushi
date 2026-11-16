@@ -154,43 +154,36 @@ void main() {
     });
   });
 
-  group('refresh key', () {
-    test('a stored epoch keys as epoch:revision', () {
+  group('refresh keys', () {
+    // 内核 `refresh_keys` 的回包（gen4/refresh.rs）一次带齐五个键。
+    test('the reply carries all five keys', () {
       expect(
-        srsRefreshKeyOf(<String, Object?>{
-          'epoch': 'abcd',
-          'epochStored': true,
-          'revision': 7,
+        srsRefreshKeysOf(<String, Object?>{
+          'content': 'o:1',
+          'structure': 'o:1:2',
+          'rwkv': 'o:0',
+          'stats': 'o:3',
+          'landed': 'o:4',
         }),
-        'abcd:7',
+        (
+          content: 'o:1',
+          structure: 'o:1:2',
+          rwkv: 'o:0',
+          stats: 'o:3',
+          landed: 'o:4',
+        ),
       );
     });
 
-    test('an unstored epoch (fresh every read) gives a stable key', () {
-      // local_state.rs `view`：没有行时每读一次给一个新纪元。键不能跟着变。
-      final String a = srsRefreshKeyOf(<String, Object?>{
-        'epoch': 'e1',
-        'epochStored': false,
-        'exists': false,
-        'revision': 0,
-      });
-      final String b = srsRefreshKeyOf(<String, Object?>{
-        'epoch': 'e2',
-        'epochStored': false,
-        'exists': false,
-        'revision': 0,
-      });
-      expect(a, b);
-      // 与任何落了盘的键都不相等（落盘后整份重读一次）。
-      expect(a, isNot(contains('e1')));
+    test('a missing key is a contract error, not a silent default', () {
       expect(
-        srsRefreshKeyOf(<String, Object?>{
-          'epoch': 'x',
-          'epochStored': false,
-          'revision': 3,
+        () => srsRefreshKeysOf(<String, Object?>{
+          'content': 'o:1',
+          'structure': 'o:1:2',
+          'stats': 'o:3',
+          'landed': 'o:4',
         }),
-        isNot(a),
-        reason: '修订号仍然区分',
+        throwsStateError,
       );
     });
   });

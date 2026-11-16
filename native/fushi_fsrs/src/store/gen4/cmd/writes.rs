@@ -34,6 +34,18 @@
 //!   实体）、`replayed`（写了日志的卡）、`edits`（`[种类, 实体, 字段键, 设备, 序号, 值]`，撤销据它判断之后有没有
 //!   被别人动过，与协议 3 同形）、`nextSeq`（本机身份日志的下一个 seq）与 `settled`（这条命令里派生层收尾的计数，
 //!   缓存层重算了多少笔记 / 卡 / 统计行）。协议 3 的 `marks` / `diagnostics` 是投影表的落库细节，新代没有。
+//!   S1c 起（交接说明「S1c 刷新计数与写回包」节）：
+//!   - `edits` 每项第 7 列是**输入下标**：这条修改来自调用方输入的第几项（`apply` / `change` 的输入原样计，
+//!     `import_drafts` 按筛掉初值之前的原输入计；意图命令自己拼的项、命令直接落的修改是 null）。值没变被丢掉的项不占位，
+//!     所以 Dart 按下标认领，不再按 (种类, 实体, 字段键) 猜、不再逐条点查归一（实体与键已是规范形）。
+//!   - `tagWrites`：整列表 `tags` 项展开成的标签操作每项报一条 `[输入下标, 规范笔记 ID, 设备, 最后一条操作的 seq]`
+//!     （协议 3 的 `stamps` 给这一项的也是展开出的最后一条操作的身份）。不进 `edits`：它们不是修改记录，撤销记录器按
+//!     差量撤标签（Dart `noteTags`）。
+//!   - `logHlcs`（只在 `apply` 的请求带 `logHlcs: true` 时）：每条写下的日志 `[输入下标, 规范日志 ID, HLC]`，HLC 与
+//!     `read` 的 `logs` 行里的 `hlc` 同形。导入成批的日志不要它（回包会随日志数线性涨）。
+//!   - `stamps: true` 仍然拒绝（要的是旧版时钟的戳）；替代形状就是上面三项。
+//!   - 回包里还有一项 `refreshTally`（`refresh.rs` [TALLY_KEY]）：这条命令落下的变化类别，分发器提交之后取走、推进进程内
+//!     刷新计数，**不交给 Dart**。
 //!
 //! # 读现值
 //!
@@ -49,6 +61,7 @@ use serde_json::{Map, Value, json};
 use super::super::cache::CFG_KEY;
 use super::super::derive::{Index, Ref, Settled};
 use super::super::native::Native;
+use super::super::refresh::{TALLY_KEY, Tally};
 use super::super::schema::sql;
 use super::super::truth::Truth;
 use super::{profile_of, ref_of, with_profile};
@@ -87,6 +100,15 @@ pub struct Session<'t, 'c> {
     replayed: BTreeSet<String>,
     settled: Settled,
     written: u64,
+    /// 正在落的操作来自调用方输入的第几项（[apply_in] 设、落完清；意图命令自己拼的项、命令直接落的操作是 None）：进
+    /// 回包 `edits` 每项的第 7 列与 `tagWrites` / `logHlcs` 的第 1 列（文件头「回包」）。
+    at: Option<usize>,
+    /// 刷新计数要的变化类别（`refresh.rs` [Tally]）：每条操作按种类记，[Session::finish] 写进回包，分发器提交之后取走。
+    tally: Tally,
+    /// 整列表标签项展开成的标签操作，每项一条 `[输入下标, 规范笔记 ID, 设备, 最后一条操作的 seq]`。
+    tag_writes: Vec<Value>,
+    /// 请求带 `logHlcs: true` 时（[apply]）：写下的每条日志 `[输入下标, 规范日志 ID, HLC]`。None = 不报。
+    log_hlcs: Option<Vec<Value>>,
 }
 
 /// 一条写命令（见文件头「一条命令一个事务」）：[f] 在 [Session] 里做命令本体，返回命令自己的回包（JSON 对象）；
@@ -128,6 +150,10 @@ impl<'t, 'c> Session<'t, 'c> {
             replayed: BTreeSet::new(),
             settled: Settled::default(),
             written: 0,
+            at: None,
+            tally: Tally::default(),
+            tag_writes: Vec::new(),
+            log_hlcs: None,
         })
     }
 
@@ -158,11 +184,17 @@ impl<'t, 'c> Session<'t, 'c> {
         absorb(&mut self.settled, &st);
         self.dirty = false;
         self.tree = None;
+        // 整层重建：按刷新键记的缓存全部作废。
+        self.tally.invalidate();
         Ok(st)
     }
 
     /// 本机改了某台设备的信任状态：告诉派生层，收尾时重判扣住的删除与清除（`weigh.rs` [Index::trust_changed]）。
     pub(super) fn trust_changed(&mut self) {
+        // 可见性变了（协议 3 按回包 `changed` 记进内容计数）：不是牌组 / 配置事件，RWKV 分数表不整表重查。
+        self.tally.landed = true;
+        self.tally.content = true;
+        self.tally.stats = true;
         self.ix.trust_changed();
         self.dirty = true;
         self.tree = None;
@@ -199,8 +231,13 @@ impl<'t, 'c> Session<'t, 'c> {
         if !matches!(body, Body::Log(_)) {
             self.tree = None;
         }
+        self.tally.op(&body);
         let edit = match &body {
             Body::Edit(e) => Some((e.kind, e.entity.text(), e.key.clone(), e.value.clone())),
+            _ => None,
+        };
+        let log = match &body {
+            Body::Log(l) if self.log_hlcs.is_some() => Some(l.id.text()),
             _ => None,
         };
         let b4 = native_body4(body)?;
@@ -215,7 +252,21 @@ impl<'t, 'c> Session<'t, 'c> {
                 id.device.text(),
                 id.seq,
                 serde_json::from_str::<Value>(&value).unwrap_or(Value::Null),
+                self.at,
             ]));
+        }
+        if let Some(log_id) = log {
+            // 日志的 HLC 就是它那条操作的（文件头「只写协议 4 原生能收的形」），与 `read` 的 `logs` 行里的 `hlc` 同形
+            // （`cache.rs` 拼日志行的同一个格式）。刚写下的这条按主键点读。
+            let hlc = self
+                .t
+                .entry(self.col, &id)?
+                .and_then(|e| e.op().map(|o| o.hlc))
+                .ok_or_else(|| format!("gen4 write: log {log_id} is not readable after append"))?;
+            let text = format!("{}:{}:{}", hlc.wall, hlc.logical, id.device.text());
+            if let Some(out) = self.log_hlcs.as_mut() {
+                out.push(json!([self.at, log_id, text]));
+            }
         }
         Ok(id)
     }
@@ -240,6 +291,14 @@ impl<'t, 'c> Session<'t, 'c> {
             "edits".into(),
             Value::Array(std::mem::take(&mut self.edits)),
         );
+        m.insert(
+            "tagWrites".into(),
+            Value::Array(std::mem::take(&mut self.tag_writes)),
+        );
+        if let Some(logs) = self.log_hlcs.take() {
+            m.insert("logHlcs".into(), Value::Array(logs));
+        }
+        m.insert(TALLY_KEY.into(), self.tally.json());
         m.insert("nextSeq".into(), json!(next));
         m.insert(
             "settled".into(),
@@ -491,11 +550,35 @@ pub(super) fn fail_after(req: &Value, stage: &str) -> Result<(), String> {
 
 /// [apply_in] 的选项。
 #[derive(Clone, Copy, Debug, Default)]
-pub(super) struct ApplyOpts {
+pub(super) struct ApplyOpts<'a> {
     /// 收不收 `chg` 项（`import_drafts` 不收）。
     pub(super) chg: bool,
     /// `chg` 筛掉的项不进 `landed`（协议 3 `change_on` 先就地筛掉输入项再走 `apply`，`landed` 只对留下的项）。
     pub(super) compact: bool,
+    /// 输入项与调用方输入的对应（回包里的输入下标，[Session::at]）。
+    pub(super) origin: Origin<'a>,
+}
+
+/// [apply_in] 的输入项是调用方的哪几项。
+#[derive(Clone, Copy, Debug, Default)]
+pub(super) enum Origin<'a> {
+    /// 就是调用方的输入（`apply`、`change`）：第 i 项 = 输入第 i 项。
+    #[default]
+    Caller,
+    /// 调用方输入筛掉一些之后留下的（`import_drafts` 的初值筛选）：第 i 项 = 输入第 `kept[i]` 项。
+    Kept(&'a [usize]),
+    /// 命令自己拼的（意图命令）：没有输入下标。
+    Synthesized,
+}
+
+impl Origin<'_> {
+    fn of(self, at: usize) -> Option<usize> {
+        match self {
+            Origin::Caller => Some(at),
+            Origin::Kept(kept) => kept.get(at).copied(),
+            Origin::Synthesized => None,
+        }
+    }
 }
 
 /// 一项输入解析出的操作体，与它带的标记。
@@ -575,7 +658,7 @@ pub(super) fn apply_in(
     s: &mut Session<'_, '_>,
     now: i64,
     items: &[Value],
-    opts: ApplyOpts,
+    opts: ApplyOpts<'_>,
 ) -> Result<Value, String> {
     let mut parsed = Vec::with_capacity(items.len());
     for it in items {
@@ -595,6 +678,7 @@ pub(super) fn apply_in(
         if !keep[at] {
             continue;
         }
+        s.at = opts.origin.of(at);
         // 已有的实体再发一遍身份记录：照样追加（同协议 3），但不算「落了」——协议 3 的 `landed` 是「投影里有东西
         // 变了」，身份记录只在实体第一次出现时投影（`Marks::entity`）。批内前面刚建的同一个实体也算已有。
         if let Body::Entity { id, .. } = &item.body {
@@ -603,6 +687,11 @@ pub(super) fn apply_in(
             landed[at] = !existed;
             continue;
         }
+        // 整列表标签：展开成的标签操作在回包 `tagWrites` 里报一项（最后一条操作的 dot），不进 `edits`（不是修改记录）。
+        let tags_of = match &item.body {
+            Body::Edit(e) if e.kind == EntKind::Note && e.key == "tags" => Some(e.entity.text()),
+            _ => None,
+        };
         let bodies = match item.body {
             Body::Edit(e) if e.kind == EntKind::Note && e.key == "tags" => {
                 expand_tags(s, &mut tags_now, e)?
@@ -613,11 +702,17 @@ pub(super) fn apply_in(
             }
             b => vec![b],
         };
+        let mut last = None;
         for b in bodies {
-            s.land(b, now)?;
+            last = Some(s.land(b, now)?);
             landed[at] = true;
         }
+        if let (Some(note), Some(id)) = (tags_of, last) {
+            s.tag_writes
+                .push(json!([s.at, note, id.device.text(), id.seq]));
+        }
     }
+    s.at = None;
     if opts.compact {
         let landed: Vec<bool> = landed
             .into_iter()
@@ -781,6 +876,9 @@ pub fn apply(t: &Truth<'_>, col: i64, req: &Value, items: &[Value]) -> Result<Va
         if !expect_last_holds(s, req)? {
             return Ok(json!({"stale": true}));
         }
+        if req.get("logHlcs") == Some(&Value::Bool(true)) {
+            s.log_hlcs = Some(Vec::new());
+        }
         apply_in(
             s,
             now,
@@ -788,6 +886,7 @@ pub fn apply(t: &Truth<'_>, col: i64, req: &Value, items: &[Value]) -> Result<Va
             ApplyOpts {
                 chg: true,
                 compact: false,
+                origin: Origin::Caller,
             },
         )
     })
@@ -842,7 +941,8 @@ pub fn import_drafts(
             }
         }
         let mut kept: Vec<Value> = Vec::with_capacity(items.len());
-        for it in items {
+        let mut kept_at: Vec<usize> = Vec::with_capacity(items.len());
+        for (at, it) in items.iter().enumerate() {
             if is_init(it) {
                 let x = &it["e"]["x"];
                 if let (Some(k), Some(e), Some(f)) =
@@ -856,6 +956,7 @@ pub fn import_drafts(
                 }
             }
             kept.push(it.clone());
+            kept_at.push(at);
         }
         let mut v = apply_in(
             s,
@@ -864,6 +965,7 @@ pub fn import_drafts(
             ApplyOpts {
                 chg: false,
                 compact: false,
+                origin: Origin::Kept(&kept_at),
             },
         )?;
         v["existed"] = json!(existed);

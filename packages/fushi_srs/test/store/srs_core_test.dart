@@ -132,24 +132,19 @@ void main() {
     );
   });
 
-  // 刷新键换成本机状态行的 `纪元:修订号`（`refresh_keys` 在新代已删）：关库后为 null。
-  test('refresh keys come from the local state row', () {
+  // 刷新键是内核的进程内计数（`refresh_keys`，gen4/refresh.rs）：一次取回五个键，没有写入就不变，只写本机状态行的
+  // 命令不推进；关库后为 null。
+  test('refresh keys come from the kernel counters', () {
     final SrsCore core = SrsCore.open(dir.path);
     const String profile = 'p';
+    final SrsRefreshKeys a = core.refreshKeys(profile)!;
+    expect(a.content, matches(RegExp(r'^[0-9a-f]+:0$')));
+    expect(a.structure, matches(RegExp(r'^[0-9a-f]+:0:0$')));
     core.sync2(<String, Object?>{
       'op': 'local_state_ensure',
       'profile': profile,
     });
-    final SrsRefreshKeys a = core.refreshKeys(profile)!;
-    expect(a.content, matches(RegExp(r'^.+:0$')));
-    expect(core.refreshKeys(profile)!.content, a.content);
-    expect(<String>{
-      a.content,
-      a.structure,
-      a.stats,
-      a.rwkv,
-      a.landed,
-    }, hasLength(1));
+    expect(core.refreshKeys(profile), a);
     core.close();
     expect(core.refreshKeys(profile), isNull);
   });
@@ -313,22 +308,28 @@ void main() {
       expect(u.owner, 'G9-4');
       final SrsCoreException r = SrsCoreException.of(
         -1,
-        'gen4: removed: `refresh_keys` (gen4 keeps the derived layer current)',
+        'gen4: removed: `channel_settle` (gen4 has no ingest channel)',
       );
       expect(r, isA<SrsCoreRemovedException>());
-      expect((r as SrsCoreRemovedException).op, 'refresh_keys');
+      expect((r as SrsCoreRemovedException).op, 'channel_settle');
     });
 
     test('a removed sync2 command reaches Dart typed', () {
       final SrsCore core = SrsCore.open(dir.path);
       addTearDown(core.close);
       expect(
-        () =>
-            core.sync2(<String, Object?>{'op': 'refresh_keys', 'profile': 'p'}),
+        () => core.sync2(<String, Object?>{
+          'op': 'channel_settle',
+          'profile': 'p',
+        }),
         throwsA(isA<SrsCoreRemovedException>()),
       );
       expect(
-        () => core.sync2(<String, Object?>{'op': 'identity', 'profile': 'p'}),
+        // `identity` 已由 G9-4 接线；仍未接线的拿 G9-5 的并入命令。
+        () => core.sync2(<String, Object?>{
+          'op': 'profile_merge_mark',
+          'profile': 'p',
+        }),
         throwsA(isA<SrsCoreUnwiredException>()),
       );
     });
