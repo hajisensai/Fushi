@@ -267,3 +267,7 @@ pub fn rotate_on_fork(t: &Truth<'_>, col: i64, now: i64) -> Result<Option<Rotate
         None => Ok(None),
     })
 }
+
+#[cfg(test)]
+#[path = "fork_tests.rs"]
+pub(crate) mod tests;

@@ -648,3 +648,7 @@ impl<'c> Truth<'c> {
         })
     }
 }
+
+#[cfg(test)]
+#[path = "own_tests.rs"]
+mod tests;
