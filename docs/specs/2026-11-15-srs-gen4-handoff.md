@@ -653,3 +653,32 @@ blocked 一律归 busy、去掉 `unstored` 分支、配对退回 (种类, 字段
    `srs_stat_reviews` / `srs_field_edits` / `srs_review_logs` 等）写原始 SQL 的用例需按新代重写或删；`srs_note_type_cache_test`
    「作答不失效」红（作答推进了内容指纹，属 S1c refreshKeys / stamps 范围）。
 3. 本机 release 构建 `fushi_fsrs` 撞 zstd-sys `LNK1106`（环境问题），实验 DLL 用 `--profile quick --features raw_sql` 出。
+
+### 10.7 复核修复（2026-11-17）
+
+- **RWKV 落库键对进程内换库也变**：原来 `rwkvScoresClearKey` 只是本机纪元，迁移后重开会变，但进程内的绑定变化（补盐 /
+  认领 / 并入）不重建本机状态行、纪元不变。现在加了绑定代号 `bindingKey` = `srsBindingKey(collection, dir, 升序盐集合)`
+  的 SHA-256 前 16 位（盐取自 `collection_info`，identity 回包里没有），清空键是 `纪元|绑定代号`。10.2 里「落卡键带本地纪元」
+  这句话以本节为准。
+- **绑定变化后重读失败不丢已提交回包**：`_sync2Raw` 收到 `bindingChanged` 时，`_reloadBinding` 依次重读身份、绑定代号、根上 ID。
+  中途失败时只把绑定标成过期（`_bindingStale`），原回包照常返回，因为那条命令已经在内核提交了。下一条命令（`_read` /
+  `_columnsCommand` / `_sync2Raw`）发出之前先补读，补读失败就由那条还没发出的命令报错。重读自己发的 `identity` /
+  `collection_info` / `canonical_ids` 不查过期标记，也不递归重读。
+- **辅助进程按绑定代号判变化**：`refreshIdentity` 比较 `bindingKey`，只补了盐（集合 / 目录没变）也算绑定变化。
+  identity 回包自己带了 `bindingChanged`、`_sync2Raw` 已经报过时，不再重复报。
+- `retire` 时关掉 `bindingChanges` 控制器，作废之后在途回包不再广播。
+- **ctl 备份导出与设置页一致**：用 `dropBackupCategoriesNeedingUpgrade`（`ctl_data_routes.dart`）处理。缺省类别或 `all` 时，
+  去掉 `needsUpgrade` 里的类别，回包写 `skippedCategories: [{category: srs, reason: needsUpgrade}]`，其余照常导出。
+  显式点名 srs 时返回 422 明确拒绝。只有要导出的类别里有复习时才调 `summarizeLiveContent`。
+- 导出框里「需先升级」那一行的逻辑抽成可测函数，补了 widget 测试（默认不勾、开关不可点、副标题是需先升级的文案）。
+- 测试：`packages/fushi_engine/test/srs/srs_binding_reload_test.dart`，5 条：
+  - 重开不重复写内置实体：先补盐，让请求形 ≠ 规范形，第二次打开不产生内置实体写入；
+  - RWKV 清空键补盐后变、同一绑定重开不变；
+  - 辅助进程只补盐也按绑定变化处理；
+  - 重读失败不丢回包、下一条命令前补读；
+  - 作废关控制器。
+
+  另有 `fushi/test/ops/ctl_backup_export_needs_upgrade_test.dart`（4 条）和
+  `fushi/test/sync/backup_export_picker_needs_upgrade_test.dart`（3 条）。
+  每条修复都做了变异实测：去掉修复后对应测试变红。这包括把「按规范 ID 判在不在」改回按请求 ID。
+- 仍不归本模块：10.6 第 1 条上游 `salt_of`。修好之后，`srs_fresh_profile_e2e_test` 是 §6 合并条件的必绿门，不加 skip。
