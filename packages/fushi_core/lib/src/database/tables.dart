@@ -3658,6 +3658,10 @@ abstract final class MangaDownloadJobStatus {
   static const String done = 'done';
   static const String failed = 'failed';
   static const String cancelled = 'cancelled';
+
+  /// 用户暂停：已落地的页 / `.part` 原样保留，worker 不领取；恢复回 `queued`
+  /// 后从磁盘现状续跑（与 `cancelled` 不同，取消会删半成品）。跨进程重启保持。
+  static const String paused = 'paused';
 }
 
 /// 漫画章节 / mokuro 卷的下载任务队列（schema v103，device-local）。
