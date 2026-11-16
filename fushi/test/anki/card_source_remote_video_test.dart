@@ -70,7 +70,7 @@ void main() {
     final String router = File(
       'lib/src/anki/card_source_router.dart',
     ).readAsStringSync();
-    expect(router, contains('resolveRemoteCardSourceVideo(app, ref, link)'));
+    expect(router, contains('await resolveRemoteCardSourceVideo('));
     expect(router, contains('VideoFushiPage.neutralizedRemote('));
     final String page = File(
       'lib/src/pages/implementations/video_fushi_page.dart',

@@ -25,6 +25,7 @@ enum _ChapterDownloadState {
   notDownloaded,
   queued,
   downloading,
+  paused,
   downloaded,
   failed,
 }
@@ -75,6 +76,9 @@ class MangaChapterList extends StatelessWidget {
     this.onDeleteDownload,
     this.onRevealDownload,
     this.onRetryDownload,
+    this.onPauseDownload,
+    this.onResumeDownload,
+    this.onCancelDownload,
     this.onOcr,
     this.ocrRunningChapterKey,
     this.ocrProgress,
@@ -140,6 +144,15 @@ class MangaChapterList extends StatelessWidget {
   final void Function(OnlineMangaChapter chapter)? onRevealDownload;
   final void Function(OnlineMangaChapter chapter)? onRetryDownload;
 
+  /// 排队 / 下载中的章「暂停下载」（半成品留着续跑）；null = 不出现。
+  final void Function(OnlineMangaChapter chapter)? onPauseDownload;
+
+  /// 已暂停的章「继续下载」；null = 不出现。
+  final void Function(OnlineMangaChapter chapter)? onResumeDownload;
+
+  /// 排队 / 下载中 / 已暂停的章「取消下载」（删半成品）；null = 不出现。
+  final void Function(OnlineMangaChapter chapter)? onCancelDownload;
+
   /// 「识别本章」（只对已下载的章出现）；null = 不出现。
   final void Function(OnlineMangaChapter chapter)? onOcr;
 
@@ -177,6 +190,8 @@ class MangaChapterList extends StatelessWidget {
         return _ChapterDownloadState.queued;
       case MangaDownloadJobStatus.running:
         return _ChapterDownloadState.downloading;
+      case MangaDownloadJobStatus.paused:
+        return _ChapterDownloadState.paused;
       case MangaDownloadJobStatus.failed:
         return _ChapterDownloadState.failed;
       default:
@@ -427,6 +442,7 @@ class MangaChapterList extends StatelessWidget {
               _ChapterDownloadState.queued => MediaDetailDownloadState.queued,
               _ChapterDownloadState.downloading =>
                 MediaDetailDownloadState.downloading,
+              _ChapterDownloadState.paused => MediaDetailDownloadState.paused,
               _ChapterDownloadState.downloaded =>
                 MediaDetailDownloadState.downloaded,
               _ChapterDownloadState.failed => MediaDetailDownloadState.failed,
@@ -488,6 +504,10 @@ class MangaChapterList extends StatelessWidget {
             done: '${job?.pagesDone ?? 0}',
             total: '${job?.pagesTotal ?? 0}',
           ),
+        _ChapterDownloadState.paused => t.manga_chapter_download_status_paused(
+          done: '${job?.pagesDone ?? 0}',
+          total: '${job?.pagesTotal ?? 0}',
+        ),
         _ChapterDownloadState.downloaded =>
           t.manga_chapter_download_status_downloaded,
         // 失败原因原样露出来：扩展抛的 `Log in via WebView ...` 之类正是用户要
@@ -536,6 +556,9 @@ class MangaChapterList extends StatelessWidget {
         onDeleteDownload != null ||
         onRevealDownload != null ||
         onRetryDownload != null ||
+        onPauseDownload != null ||
+        onResumeDownload != null ||
+        onCancelDownload != null ||
         onOcr != null;
     if (!hasMenu) return null;
     return FushiOverflowMenu<String>(
@@ -562,6 +585,30 @@ class MangaChapterList extends StatelessWidget {
           FushiPopupMenuItem<String>(
             value: 'retry-download',
             label: t.manga_chapter_download_retry_action,
+          ),
+        if (onPauseDownload != null &&
+            (download == _ChapterDownloadState.queued ||
+                download == _ChapterDownloadState.downloading))
+          FushiPopupMenuItem<String>(
+            key: const ValueKey<String>('manga_chapter_download_pause'),
+            value: 'pause-download',
+            label: t.manga_chapter_download_pause_action,
+          ),
+        if (onResumeDownload != null &&
+            download == _ChapterDownloadState.paused)
+          FushiPopupMenuItem<String>(
+            key: const ValueKey<String>('manga_chapter_download_resume'),
+            value: 'resume-download',
+            label: t.manga_chapter_download_resume_action,
+          ),
+        if (onCancelDownload != null &&
+            (download == _ChapterDownloadState.queued ||
+                download == _ChapterDownloadState.downloading ||
+                download == _ChapterDownloadState.paused))
+          FushiPopupMenuItem<String>(
+            key: const ValueKey<String>('manga_chapter_download_cancel'),
+            value: 'cancel-download',
+            label: t.manga_chapter_download_cancel_action,
           ),
         if (onOcr != null &&
             download == _ChapterDownloadState.downloaded &&
@@ -596,6 +643,12 @@ class MangaChapterList extends StatelessWidget {
             onDownload?.call(chapter);
           case 'retry-download':
             onRetryDownload?.call(chapter);
+          case 'pause-download':
+            onPauseDownload?.call(chapter);
+          case 'resume-download':
+            onResumeDownload?.call(chapter);
+          case 'cancel-download':
+            onCancelDownload?.call(chapter);
           case 'reveal-download':
             onRevealDownload?.call(chapter);
           case 'delete-download':
