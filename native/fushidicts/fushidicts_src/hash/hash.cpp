@@ -10,22 +10,30 @@
 #include <stdexcept>
 
 #include "../memory/memory.hpp"
+#include "../util/prefetch.hpp"
 
 namespace hash {
 linear::linear() : ptr_(std::make_unique<table>()) {};
 linear::~linear() = default;
 
 uint64_t linear::operator()(std::string_view key) const {
-  // BUG-1303: a table with no free slot (corrupt/truncated capacity, or a
-  // bloom false positive on a full table) used to spin here forever with the
-  // FFI call still on the stack -- the UI isolate calls lookup() synchronously,
-  // so that is a hard app hang, not a slow lookup. Bound the probe by the
-  // capacity: linear probing can never legitimately need more steps than that.
   if (!ptr_->table || ptr_->capacity == 0 || !bloom_) {
     return 0;
   }
   uint64_t h = XXH3_64bits(key.data(), key.size());
   if (!bloom_->contains(h)) {
+    return 0;
+  }
+  return find(h);
+}
+
+uint64_t linear::find(uint64_t h) const {
+  // BUG-1303: a table with no free slot (corrupt/truncated capacity, or a
+  // bloom false positive on a full table) used to spin here forever with the
+  // FFI call still on the stack -- the UI isolate calls lookup() synchronously,
+  // so that is a hard app hang, not a slow lookup. Bound the probe by the
+  // capacity: linear probing can never legitimately need more steps than that.
+  if (!ptr_->table || ptr_->capacity == 0) {
     return 0;
   }
   uint64_t pos = h % ptr_->capacity;
@@ -39,6 +47,23 @@ uint64_t linear::operator()(std::string_view key) const {
     pos = (pos + 1) % ptr_->capacity;
   }
   return 0;
+}
+
+void linear::prefetch(uint64_t h) const {
+  if (!ptr_->table || ptr_->capacity == 0) {
+    return;
+  }
+  FUSHI_PREFETCH(&ptr_->table[h % ptr_->capacity]);
+}
+
+uint32_t slot_capacity(const uint8_t* data, size_t size) {
+  if (!data || size < sizeof(uint32_t)) {
+    return 0;
+  }
+  uint32_t stored = 0;
+  std::memcpy(&stored, data, sizeof(uint32_t));
+  const size_t max_slots = (size - sizeof(uint32_t)) / (2 * sizeof(uint64_t));
+  return stored > max_slots ? static_cast<uint32_t>(max_slots) : stored;
 }
 
 void linear::build_to_file(const std::vector<std::pair<uint64_t, uint64_t>>& hash_entries, const std::string& path) {

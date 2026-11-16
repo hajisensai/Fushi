@@ -15,6 +15,7 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/audio_source_list_edit.dart';
+import 'package:fushi/src/models/local_audio_display_name.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 
@@ -112,7 +113,7 @@ Future<AudioSourceConfig> _importLocalDb(
   try {
     final LocalAudioDbEntry entry = await appModel.importLocalAudioDbFile(
       path,
-      displayName: label ?? p.basename(path),
+      displayName: label ?? await suggestLocalAudioDisplayName(path),
       reference: reference,
     );
     return AudioSourceConfig.localAudio(

@@ -1,6 +1,12 @@
 // This probe exercises a retained libmpv handle after its owning Dart isolate
 // exits. Like Flutter's hot restart driver, it kills remaining worker isolates
 // through the VM service. It does not recreate a Flutter engine or video page.
+//
+// Mode `quiesce` (feedback H6Vou-6uYX) uses the release NativeCallable backend
+// directly, the one macOS/Linux/Android release players use. The owner calls
+// the process-exit quiesce entry point and its isolate is then torn down
+// without disposing the player, as an engine shutdown during process
+// termination does. libmpv must no longer reach the deleted callback.
 // ignore_for_file: implementation_imports
 
 import 'dart:async';
@@ -11,7 +17,9 @@ import 'dart:isolate';
 
 import 'package:media_kit/ffi/ffi.dart';
 import 'package:media_kit/generated/libmpv/bindings.dart' as generated;
+import 'package:media_kit/native_exit.dart';
 import 'package:media_kit/src/player/native/core/initializer.dart';
+import 'package:media_kit/src/player/native/core/initializer_native_callable.dart';
 import 'package:media_kit/src/player/native/core/native_library.dart';
 import 'package:media_kit/src/values.dart' show kDebugMode;
 import 'package:vm_service/vm_service.dart' as vm;
@@ -102,16 +110,28 @@ Future<void> _stopWorkers(vm.VmService service) async {
 Future<void> _owner(List<Object> arguments) async {
   final SendPort ready = arguments[0] as SendPort;
   final String library = arguments[1] as String;
+  final String mode = arguments[2] as String;
   final ReceivePort commands = ReceivePort();
   await _checkpoint('OWNER START / LIBRARY LOAD START');
   NativeLibrary.ensureInitialized(libmpv: library);
   final generated.MPV mpv = generated.MPV(DynamicLibrary.open(library));
   await _checkpoint('LIBRARY LOADED / CREATE START');
-  final Pointer<generated.mpv_handle> handle = await Initializer(mpv).create(
-    (Pointer<generated.mpv_event> event) async {},
-    options: <String, String>{'vo': 'null', 'ao': 'null', 'config': 'no'},
-  );
+  const Map<String, String> options = <String, String>{
+    'vo': 'null',
+    'ao': 'null',
+    'config': 'no',
+  };
+  Future<void> ignoreEvent(Pointer<generated.mpv_event> event) async {}
+  final Pointer<generated.mpv_handle> handle = mode == 'quiesce'
+      ? await InitializerNativeCallable(
+          mpv,
+        ).create(ignoreEvent, options: options)
+      : await Initializer(mpv).create(ignoreEvent, options: options);
   await _checkpoint('CREATE RETURNED');
+  if (mode == 'quiesce') {
+    quiesceNativeCallbacksForProcessExit();
+    await _checkpoint('QUIESCE RETURNED');
+  }
   ready.send(<Object>[handle.address, commands.sendPort]);
   await commands.first;
   await _checkpoint('DISPOSE START');
@@ -121,8 +141,8 @@ Future<void> _owner(List<Object> arguments) async {
 
 Future<void> main(List<String> arguments) async {
   if (arguments.length != 2 ||
-      !<String>{'kill', 'dispose'}.contains(arguments[1])) {
-    throw ArgumentError('Expected <libmpv path> <kill|dispose>');
+      !<String>{'kill', 'dispose', 'quiesce'}.contains(arguments[1])) {
+    throw ArgumentError('Expected <libmpv path> <kill|dispose|quiesce>');
   }
   final String mode = arguments[1];
   await _checkpoint('PROBE START $mode debug=$kDebugMode');
@@ -140,7 +160,7 @@ Future<void> main(List<String> arguments) async {
   final Future<dynamic> exitNotification = exited.first;
   final Isolate owner = await Isolate.spawn<List<Object>>(
     _owner,
-    <Object>[ready.sendPort, arguments[0]],
+    <Object>[ready.sendPort, arguments[0], mode],
     onExit: exited.sendPort,
     onError: failed.sendPort,
   );
@@ -158,7 +178,7 @@ Future<void> main(List<String> arguments) async {
   await _checkpoint('OWNER READY / $mode REQUEST START');
   final Pointer<generated.mpv_handle> handle =
       Pointer<generated.mpv_handle>.fromAddress(created[0] as int);
-  if (mode == 'kill') {
+  if (mode != 'dispose') {
     owner.kill(priority: Isolate.immediate);
   } else {
     (created[1] as SendPort).send('dispose');
