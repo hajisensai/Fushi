@@ -238,4 +238,74 @@ describe('/dev/decisions', () => {
 
     expect((await call(env, 'GET', '/dev/decisions.json', { now: NOW })).status).toBe(401);
   });
+
+  it('乐观锁：两人同时拍同一条，后到的 409 不覆盖，回最新卡；留言也不写', async () => {
+    const env = makeEnv();
+    env.DB.raw.exec(addSql(ITEMS, NOW - 10).sql);
+    const a = await devSession(env);
+    const b = await devSession(env);
+    // 两人打开页面时都看到「未拍」（base = ''）。
+    const ra = await submit(env, a, 'pr3162a', { v: 'do', base: '' }, { accept: 'application/json' });
+    expect(ra.status).toBe(200);
+    const rb = await submit(env, b, 'pr3162a', { v: 'skip', text: '我觉得不做', base: '' }, { accept: 'application/json' });
+    expect(rb.status).toBe(409);
+    expect(rb.data.error).toBe('verdict_conflict');
+    expect(rb.data.item.html).toContain('data-verdict="do"');
+    const r = row(env, 'pr3162a');
+    expect(r.verdict).toBe('do');
+    expect(r.verdict_by).toBe(a.dev.id);
+    expect(env.DB.raw.prepare("SELECT COUNT(*) AS n FROM decision_notes WHERE decision_id = 'pr3162a'").get().n).toBe(0);
+
+    // 拿到最新卡后（base = 'do'）再拍就能改。
+    expect((await submit(env, b, 'pr3162a', { v: 'skip', base: 'do' }, { accept: 'application/json' })).status).toBe(200);
+    expect(row(env, 'pr3162a').verdict).toBe('skip');
+  });
+
+  it('乐观锁：别人拍成的正好是同一个决定 → 成功不冲突，留言照写；只留言不受锁影响', async () => {
+    const env = makeEnv();
+    env.DB.raw.exec(addSql(ITEMS, NOW - 10).sql);
+    const a = await devSession(env);
+    const b = await devSession(env);
+    await submit(env, a, 'C9wcnKaPq_', { v: 'choice:a', base: '' }, { accept: 'application/json' });
+    const same = await submit(env, b, 'C9wcnKaPq_', { v: 'choice:a', text: '同意 a', base: '' }, { accept: 'application/json' });
+    expect(same.status).toBe(200);
+    expect(row(env, 'C9wcnKaPq_').verdict_by).toBe(a.dev.id);
+    expect(same.data.item.html).toContain('同意 a');
+    const note = await submit(env, b, 'C9wcnKaPq_', { v: 'note', text: '再补一句', base: '' }, { accept: 'application/json' });
+    expect(note.status).toBe(200);
+    expect(note.data.item.html).toContain('再补一句');
+  });
+
+  it('乐观锁：读到行之后别人抢先写入（条件 UPDATE 不命中）也判冲突', async () => {
+    const env = makeEnv();
+    env.DB.raw.exec(addSql(ITEMS, NOW - 10).sql);
+    const a = await devSession(env);
+    // 在 submitDecision 读完行、写之前插一笔别人的决定。
+    const realPrepare = env.DB.prepare.bind(env.DB);
+    let injected = false;
+    env.DB.prepare = (sql) => {
+      if (!injected && sql.includes('AND COALESCE(CASE WHEN verdict')) {
+        injected = true;
+        env.DB.raw.prepare("UPDATE decisions SET verdict = 'never', updated_at = ? WHERE id = 'pr3162a'").run(NOW + 1);
+      }
+      return realPrepare(sql);
+    };
+    const r = await submit(env, a, 'pr3162a', { v: 'do', text: '做', base: '' }, { accept: 'application/json' });
+    expect(r.status).toBe(409);
+    expect(row(env, 'pr3162a').verdict).toBe('never');
+    expect(env.DB.raw.prepare("SELECT COUNT(*) AS n FROM decision_notes WHERE decision_id = 'pr3162a'").get().n).toBe(0);
+  });
+
+  it('乐观锁：无脚本表单冲突时跳回「全部」并提示', async () => {
+    const env = makeEnv();
+    env.DB.raw.exec(addSql(ITEMS, NOW - 10).sql);
+    const a = await devSession(env);
+    await submit(env, a, 'pr3162a', { v: 'later', base: '' });
+    const r = await submit(env, a, 'pr3162a', { v: 'do', base: '' });
+    expect(r.status).toBe(303);
+    expect(r.res.headers.get('Location')).toBe('/dev/decisions?stage=all&conflict=1#d-pr3162a');
+    const p = await call(env, 'GET', '/dev/decisions?stage=all&conflict=1', { headers: { Cookie: a.cookie }, now: NOW });
+    expect(p.data).toContain('已被别人改了决定');
+    expect(p.data).toContain('name="base" value="later"');
+  });
 });
