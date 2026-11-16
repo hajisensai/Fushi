@@ -1,4 +1,4 @@
-## BUG-4695 · 小米 MIUI / HyperOS 在最近任务里划掉（SwipeUpClean）被误报为闪退
+## BUG-4725 · 小米 MIUI / HyperOS 在最近任务里划掉（SwipeUpClean）被误报为闪退
 - **报告**：2026-11-16（应用内崩溃报告：反馈 lN8b_hBgKD，Xiaomi 23113RKC6C，HyperOS，SDK 36，3.3.0）
 - **真实性**：✅ 真 bug，沿代码路径确认。上次进程的 `ApplicationExitInfo` 是 `reason=OTHER description=SwipeUpClean importance=125`（MIUI / HyperOS 在最近任务里上划清掉应用；死时在跑前台服务），应用并没有崩，却弹了「意外退出」报告。
   - 根因：`fushi/lib/src/diagnostics/previous_exit_log.dart:612`（修复前）`androidExitKind` 的 `OTHER` 只认 AOSP `[KILL UID] <OP> changed.` 权限描述与 OPlus `o-stop`，`SwipeUpClean` 返回 null；条目没有种类 → `classifyPreviousExit` 只剩会话标记推断（125 + 标记停在前台 → 前台）→ `PreviousExitKind.unexpected` → `worthReporting` 为 true → 上报。与 BUG-4370（ColorOS `o-stop`）同一缺口：厂商框架明确写了「结束了应用」，分类器却只收了一家厂商的形态。
