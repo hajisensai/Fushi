@@ -1264,6 +1264,30 @@ impl<'t, 'c> Index<'t, 'c> {
         Ok(l.logs.remove(&card.text()).unwrap_or_default())
     }
 
+    /// 卡 [tail] 当链尾的归属组（链尾 + 广度优先的全部前身，`group_lineage`）的日志，按组里卡的顺序、各卡按
+    /// (发生时刻, 操作主键)：(投影行 JSON, server_time, 意图)，未经重放写回（重放的输入）。写命令 `sched`（G7-3b，
+    /// `cmd/writes_intent.rs`）据它算这张卡此刻的头状态——协议 3 `store/sync2/mod.rs` `group_of` 的新代版。
+    pub(super) fn group_rows(
+        &mut self,
+        tail: &Ref,
+    ) -> Result<Vec<(String, Option<i64>, Intent)>, String> {
+        let tail = self.canon(tail)?;
+        let lineage = {
+            let mut preds = |c: &str| -> Result<Vec<String>, String> {
+                let (ls, _) = self.live_lines(EntKind::Card, &ref_of(c))?;
+                Ok(config::predecessors(&ls))
+            };
+            group_lineage(&tail.text(), &mut preds)?
+        };
+        let mut out = Vec::new();
+        for c in &lineage {
+            for l in self.card_logs(&ref_of(c))? {
+                out.push((l.json, l.server_time, l.intent));
+            }
+        }
+        Ok(out)
+    }
+
     /// 一批卡（若干个完整的 historyFrom 连通分量）：活着的修改行、生效的前身 / 后继、按链尾重放写回的日志。
     fn lineage(&mut self, batch: &[Ref]) -> Result<Lineage, String> {
         // 卡的活着的修改行（血统、标志、链尾都从它判）与日志。

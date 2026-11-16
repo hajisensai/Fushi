@@ -35,9 +35,16 @@ use crate::sync2::op::EntKind;
 pub mod history;
 pub mod reads;
 pub mod views;
+// 写命令的新代实现（规划 §2.1 G7-3b），同样还没接分发器：见 [writes] 文件头。
+pub mod writes;
+pub mod writes_intent;
+pub mod writes_local;
+pub mod writes_restore;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod writes_tests;
 
 /// 结果里的列式表（`store/bulk.rs` 的 `FCL1`）：(名字, 字节)。
 pub type Files = Vec<(String, Vec<u8>)>;
