@@ -690,11 +690,16 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'page_backdrop_strength',
   'player_hardware_acceleration',
   'popup_auto_expand_dictionaries',
+  // bool（默认 false）：BUG-4695 起只管非模块宿主（查词页 / 外部弹窗 / 悬浮歌词）。
   'popup_bottom_docked',
-  // bool（默认 true）：底部停靠按模块细分，总开关 popup_bottom_docked 之下生效。
+  // bool：底部停靠按模块独立开关。新语义默认 false；旧语义（无下面的
+  // popup_bottom_docked_per_module 标记）默认 true、受 popup_bottom_docked 总开关门控。
   'popup_bottom_docked_books',
   'popup_bottom_docked_games',
   'popup_bottom_docked_manga',
+  // bool（缺省 = 旧语义）：上面几把键的语义版本，见
+  // PreferencesRepository.popupBottomDockedPerModuleKey。
+  'popup_bottom_docked_per_module',
   'popup_bottom_docked_video',
   // bool：查词弹窗释义紧凑排版（对齐 Hoshi Reader Android
   // "Compact Glossaries"）。默认 false。
