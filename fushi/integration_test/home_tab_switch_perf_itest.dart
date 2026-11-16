@@ -37,6 +37,10 @@ import 'test_helpers.dart';
 ///   可选：--dart-define=FUSHI_PERF_DUMP=<目录> 把抓到的 timeline 落成 JSON。
 ///   可选：--dart-define=FUSHI_PERF_DESIGN=glass 先切到玻璃设计再测（外壳大标题
 ///   不叠在内容上、标题栏高度按 tab 变的那条路径），测完还原。
+///   可选：--dart-define=FUSHI_PERF_NO_TRACE=true 五轮都不抓 timeline。抓 timeline
+///   的轮次里，录制窗口一关探针自己要在 UI isolate 上取回并解码整段 timeline
+///   （首页那轮 4 MB），看门狗会把这段记成 400 ms 之后的阻塞；要量「首次回访」
+///   不带剖析开销的真实帧时间与阻塞就用这个开关。
 void main() {
   final IntegrationTestWidgetsFlutterBinding binding =
       IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -57,6 +61,7 @@ void main() {
     final List<HomeTab> tabs = homeActiveTabs(appModel.moduleVisibility);
     final Size physical = tester.view.physicalSize;
     const String design = String.fromEnvironment('FUSHI_PERF_DESIGN');
+    const bool noTrace = bool.fromEnvironment('FUSHI_PERF_NO_TRACE');
     final String designBefore = appModel.themeNotifier.designSystem;
     if (design.isNotEmpty) {
       await appModel.themeNotifier.setDesignSystem(design);
@@ -66,7 +71,7 @@ void main() {
       '[tab-perf] tabs=${tabs.map((HomeTab t) => t.name).join(",")} '
       'size=${physical.width}x${physical.height} '
       'dpr=${tester.view.devicePixelRatio} '
-      'design=${appModel.themeNotifier.designSystem}',
+      'design=${appModel.themeNotifier.designSystem} trace=${!noTrace}',
     );
 
     try {
@@ -76,7 +81,7 @@ void main() {
             binding,
             'r$round/${tab.name}',
             () => select(tab),
-            trace: round == 0 || round == 1 || round == 3,
+            trace: !noTrace && (round == 0 || round == 1 || round == 3),
             profileLayout: round == 3,
           );
         }
