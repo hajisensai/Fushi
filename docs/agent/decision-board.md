@@ -3,7 +3,7 @@
 所有需要维护者拍板的事项（外部 PR 的取舍、PR 评论 / review 里的方向建议、issue、应用内反馈、审查发现里要人定的、设计取舍），**一律写进拍板台**，不在对话里长篇列清单、不另做清单页面。
 
 - 网页：<https://rank.fushi.moe/dev/decisions>，开发者处理台（`/dev`）顶栏的「拍板」。开发者账户邮箱验证码登录，只有 `role = dev` 的账户能进。
-- 代理读写：`services/leaderboard/scripts/decisions.mjs`（本机 wrangler 直连线上 D1，与 `feedback.mjs` 同一套 Cloudflare 凭据；要走代理先 `export HTTPS_PROXY=http://127.0.0.1:34151`）。命令在 `services/leaderboard/` 下执行，`node scripts/decisions.mjs` 不带参数打印用法。
+- 代理读写：`services/leaderboard/scripts/decisions.mjs`（本机 wrangler 直连线上 D1，与 `feedback.mjs` 同一套 Cloudflare 凭据）。命令在 `services/leaderboard/` 下执行，`node scripts/decisions.mjs` 不带参数打印用法。
 - 代码：`services/leaderboard/src/decisions.js`（SQL、校验、页面）、`src/decisions_client.js`（网页的无刷新提交 / 撤销 / 快捷键 / 自动同步），迁移 `0020_decisions.sql`，测试 `test/decisions.test.js`。
 
 ## 维护者的六个决定

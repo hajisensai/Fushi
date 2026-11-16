@@ -2409,6 +2409,9 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
       isSeekPointer: (int buttons) =>
           isMusicLyricsSeekPointer(appModel.shortcutRegistry, buttons),
       cursor: _lookupCursor,
+      appearance: KaraokeLyricsAppearance(
+        blurInactive: appModel.musicLyricsBlurInactive,
+      ),
     );
     // 字幕组特效 ASS：结构化会丢特效，提示去卡拉 OK 字幕页原样渲染（§6.3）。
     return Column(
