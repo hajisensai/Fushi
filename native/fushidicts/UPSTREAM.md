@@ -15,6 +15,7 @@
 ## 同步基线
 
 - **上游 `origin/main` 当前 tip**（批4 同步参照，2026-08-16）：`8993838`（"train zstd dict on import"）。
+- **2026-11-16 性能批的评估参照 tip**：`34074bd`（只评估了性能提交，功能提交未同步，见「2026-11 性能批」）。
 - **Hibiki 批4 同步后所含的上游主线 commit**：截至 `8993838`，但**跳过**了主线上的若干提交（见「批4 明确跳过/暂缓」）。
 - Hibiki 是 hoshidicts 的**深度 fork**：在上游主线 `2dd5199`（"count freq and pitch entries"，2026-05-16）一带分叉后，
   额外吸收了 sibling commit `feb48f5`（"add detected_type to ImportResult"，非 origin/main 主线，分叉自 `2dd5199`），
@@ -84,6 +85,69 @@
 
 真正的后续（非上游同步，产品决策）：排序选项/primary_reading 的设置 UI 与弹窗内链消费方；pitch nasal/devoice 的图形化渲染（数据模型已收全）。
 
+## 2026-11 性能批：评估上游 `9cabc17`..`c28a687` 的性能提交 + 本地查词提速
+
+上游 tip（评估参照，2026-11-16）：`34074bd`。本批**只评估性能相关提交**；同一区间里的功能
+提交（`30ad52f` 去片假名中点、`1c230f3` 原地增删词典、`fcea33f` 数字串频率、`ad0be91`
+强调っ / 片假名边界、`3f0c2d9`、`e2a007f` 歴史的仮名遣い、`8e89a5d` -やしない）未评估，留给
+下一次功能同步。
+
+| 上游 commit | 标题 | 处置 | 说明 |
+|---|---|---|---|
+| `9cabc17` | perf: reduce Japanese text preprocessing overhead (#34) | **采纳思路、重写** | `text_processor::process`：处理器表进程内只建一次、变体表 `std::map` → 排序向量、各处理器 `reserve`。fork 多走一步：「不改写」那一档不占 option 编号（不调用也不拷贝），一轮没产出新变体就不重排。变体顺序仍是码点字典序（它决定 lookup 的同长度取舍，是行为的一部分）。 |
+| `9daeea4` | query meta after filtering | **已等价** | fork 自 BUG-1304 起就是「过滤 / 去重后再查 freq、截断后再查 pitch」（`lookup.cpp`）。 |
+| `e6af33e` | fix: read media on on demand | **已等价** | fork 的 BUG-4013：`media.bin` 不映射、按请求 `file_reader` 定位读。 |
+| `2f0e5c5` | replace linear hash and bloom filter with phf | **暂缓（待决策）** | 换磁盘格式：每本词典的 `hash.table` + `bloom.filter` 换成 PHF（分区 4096 字节、256 桶 pilot、8 字节 slot + 前置 blocked bloom）。它降的是**单次探测**的成本；fork 实测耗时大头是**探测次数**（一次查词约 1.85 万次逐词典探测），下面的联合过滤器把这部分直接拿掉、且不动格式。PHF 剩下的收益是索引体积约减半，代价是存量词典要现场迁移（上游 `phf::migrate` 迁完删旧文件）——迁过的词典旧版 app 打不开（降级即坏），所以单列为待决策项，不夹在本批里。 |
+| `eb4e5dd` | preparse meta dicts during import | **暂缓（待决策）** | 导入期把 freq / pitch 的 JSON 预解析成二进制（type 3 记录）。同样是格式变更，且只有**新导入**的词典受益；fork 实测频率富化里 JSON 解析只占约三成（每次查词约 600 条、约 0.1 ms），其余是读记录的缓存未命中，已由下面的分遍预取覆盖一部分。 |
+| `c28a687` | bump format version | **不适用** | 上游为上两条把 marker 升到 `.hoshidicts_5`；fork 的格式阶梯是 `.fushidicts_1 / _2`，本批不动格式。 |
+
+**本地改动（上游没有）：**
+
+- **联合过滤器**（`fushidicts_src/hash/union_filter.{hpp,cpp}`）：引擎里全部词典的键并进一份分块
+  Bloom——键哈希选一条 64 字节缓存行，「键在词典 d 里」按（键哈希, 词典身份）在行内点 7 个位。
+  一次查库读一条缓存行就对每本词典判出「肯定不在 / 可能在」，放行的才走各自 `hash.table` 的
+  精确探测（各词典自己的 `bloom.filter` 不再碰）。无假阴性（由每本 `hash.table` 的全部非空槽位
+  建成），假阳性约千分之一、只多付一次精确探测，所以**查词结果逐字节不变**。它是派生物：不改
+  任何词典目录、存量词典不必重导；缓存文件 `union-<hash>.filter`（校验和覆盖文件头、身份列表与块区，每次装载都验；写入时不同步刷盘）放
+  宿主给的缓存目录，丢了 / 坏了 / 词典集合变了就重建，身份集合是当前集合超集的旧文件可复用
+  （关掉一本词典不重建）。约 2 字节 / 键（64 本、1200 万键 ≈ 24 MB，文件映射、可换出）。
+  - 词典身份 = `hash.table` 的大小 + 修改时间 + 首页内容 + `blobs.bin` 大小（`query.cpp
+    table_identity`），与词典在引擎里的次序无关。
+  - 生命周期：`DictionaryQuery::prepare_union_filter(cache_dir, wait)` 由宿主在装完一套词典后
+    调；后台线程归引擎独占，`add_*_dict` 作废过滤器并叫停构建，引擎析构时叫停并等线程退出
+    （毫秒级）——线程撑着各 `hash.table` 的映射，不收回的话「释放映射后马上删词典目录」会撞
+    文件占用（BUG-1756 的形状）。建好之前查询照走各词典自己的 bloom。
+  - FFI：`fushidicts_prepare_union_filter` / `fushidicts_union_filter_state`；Dart
+    `FushiDicts.unionFilterCacheDirectory`（app：平台缓存目录下 `fushidicts/`；`fushi_server`：
+    `tmp/fushidicts/`），三处装载路径装完即调。
+- **一次查库只算一次键哈希**：`KeyProbe`（`query.cpp`）。此前每本词典各算一遍 XXH3。
+- **分遍预取**（`query.cpp locate_all` + `util/prefetch.hpp`）：命中一本词典要连读
+  `hash.table` 槽位 → offset 表 → 记录三处互不相邻的内存。逐本走到底是上百次缓存未命中排队；
+  改成每遍只做一件事并预取下一遍的地址，各本词典的未命中同时在路上。窗口映射（32 位）下只
+  预取槽位。
+- **混写候选读音全程 UTF-8**（`scan/mixed_orthography.cpp reading_candidates`）：此前每个候选
+  都 UTF-8 → UTF-32 → UTF-8 往返；`run_readings` 回调改返回引用，不再每次拷贝整张读音表。
+- **解压不先清零**（`query.cpp decompress_glossary`）：`resize_and_overwrite`。
+
+**实测**（`native/fushidicts/benchmark/lookup_bench`；真实装载的 64 本词典 = 51 释义 / 10 频率 /
+3 音调，语料是青空文库公有领域文本节选，对每个码点位置各查一次共 1143 次，`scan 16 / max 16`；
+同机交替跑、各取最好一轮的平均值；改动前后结果指纹相同）：
+
+| 模式 | 改动前 | 改动后 | 倍数 |
+|---|---|---|---|
+| 弹窗查词（截断后解压释义） | 4.81 ms | 1.85 ms | 2.6× |
+| `materialize = false`（不解压） | 3.88 ms | 1.02 ms | 3.8× |
+| `materialize = false`、`max 1`（分词路径） | 4.15 ms | 1.07 ms | 3.9× |
+
+过滤器首次构建约 0.8～1.1 秒（后台线程，期间查词照走旧路径），之后每次装载约 7 ms（映射 +
+校验）。改动后「弹窗查词」剩余耗时里约一半是截断后那 16 条结果的 zstd 解压（每次查词约
+170 帧、解出约 1 MB），已到 zstd 吞吐上限，再降要靠惰性 / 并行解压，属 API 形态变化，本批不动。
+
+守卫：`tests/union_filter_test.cpp`（无假阴性 / 假阳性率 / 坏缓存与被改的身份列表被拒并重建 / 超集复用 / 叫停
+不留半截文件 / 有无过滤器时真词典上的 lookup、query 逐字段相同 / `add_dict` 后作废 / 后台构建
+就绪 / 引擎销毁后不留文件映射）+ Dart `packages/fushi_dictionary/test/union_filter_native_test.dart`。
+既有的查词守卫（混写、关西、韩语、简繁、重定向、排除词典、分词批量比对）全部照过。
+
 ## TODO-687 批3 移植的上游 commit（IPA 音标支持）
 
 | 上游 commit | 标题 | 落到 Hibiki 的文件 | 移植方式 |
@@ -104,6 +168,7 @@
 - **自研 kanji 导入**：`fushidicts_src/importer.cpp` 上游 541 行 → Hibiki **1367 行**（+826），新增 kanji bank 写盘（`write_kanji`）+ `query_kanji` + `add_kanji_dict`。
 - **多格式导入**（上游主线没有）：`fushidicts_src/mdx/`（MDX）、`fushidicts_src/stardict/`（StarDict）、`fushidicts_src/popup_json.cpp`（弹窗 JSON）、`fushidicts_src/scan/`（词边界感知扫描，对齐 Yomitan searchResolution）、`fushidicts_src/util/`。
 - **批量分词**（2026-10-19，上游没有）：`fushidicts_src/tokenize.cpp`（`fushidicts_include/fushidicts/tokenize.hpp`）——Dart `JapaneseLanguage.textToWords` 的逐位置最长匹配循环搬进原生，一次 FFI 切完整段（UTF-16 码元口径、句柄内匹配长度 LRU，`add_*_dict` / `load_transforms` 时清空）；`LookupOptions::materialize=false` 跳过截断后的 pitch 富化与释义解压（只给分词用）。新 FFI 导出 `fushidicts_tokenize` / `fushidicts_free_tokenize_result` / `fushidicts_match_length`。守卫 `tests/tokenize_batch_test.cpp`（旧 Dart 循环转写的参考实现逐段比对）。`fushidicts_tokenize` 收带长 UTF-8（`text, text_bytes`），正文里的 U+0000 不截断（HBK-AUDIT-007），守卫 `tests/tokenize_ffi_nul_test.cpp`（把 `fushidicts_ffi.cpp` 编进测试、经导出符号调用）。弹窗 JSON 拼装曾试过搬进原生，端到端比 Dart 慢（多一次 ~200 KB UTF-8 解码），已退回，仍由 Dart `buildPopupJsonFromLookup` 拼。
+- **联合过滤器 / 分遍预取 / 查词基准**（2026-11-16，上游没有）：见上「2026-11 性能批」。`benchmark/`（`lookup_bench`，不进 ctest、不进产物）是量查词耗时与「改引擎前后结果逐字节相同」的装置，用法在 `benchmark/lookup_bench.cpp` 文件头。
 - **按请求排除词典**（2026-11-09，上游没有）：`LookupOptions::excluded_dictionaries`（`fushidicts_include/fushidicts/lookup.hpp`）。`Lookup::lookup` 把排除集作为查找表传给 `DictionaryQuery::query_raw` / `enrich_freq` / `enrich_pitch`（`query.hpp` 私有接口加默认 `nullptr` 参数），名列其中的词典整本跳过：释义、跨词典合并的 rules / score、频率、音调都不进来，重定向也不跟随；Auto 频率词典序剔除它，显式指定的排序词典被排除 = 找不到。语义是「这次查词当作没装这本词典」，不占 `max_results` 名额、不影响排序。空集时传 `nullptr`，查库路径逐字不变。新 FFI 导出 `fushidicts_lookup_with_exclusions`（`fushidicts_lookup_with_ruby` 的参数 + `const char* const* excluded_names, int32_t excluded_count`），老导出不动；Dart `FushiDicts.lookup(excludedDictionaries:)`，后台查词把 `FushiLookupRequest.hiddenDictionaries` 同时交给引擎（原始结果缓存键带排除集后缀）。给服务端常驻全部词典、按客户端 profile 的启用集合逐请求切换用。守卫 `tests/excluded_dictionaries_lookup_test.cpp` + Dart `packages/fushi_dictionary/test/excluded_dictionaries_native_test.dart`。
 - **index.json 语言字段写回**（2026-11-09，上游没有）：`Index`（`fushidicts_src/json/yomitan_parser.hpp`）追加 `std::optional<std::string> sourceLanguage / targetLanguage`，`import_yomitan` 把它们写回输出目录的 `index.json`（app 与 `fushi_server` 导入后从输出目录读来源 metadata，`parseSourceMetadataFromIndexJson` 读 `revision / indexUrl / downloadUrl / sourceLanguage / targetLanguage / isUpdatable`，语言被丢则词典管理无法按语言分组）。读侧经 `yomitan_parser.cpp` 内部 `RawIndex`（语言字段先收 `raw_json_view`），只在源值是非空字符串时落进 `Index`；空串 / null / 非字符串当缺席、导入不失败（此前这两个键是未知键直接忽略，宽容度不变）。写侧两个键排在原六键之后、nullopt 时省略，因此不带语言的源输出逐字节不变。Dart 读侧不读的键（author / url / description / attribution）不搬。守卫 `tests/index_language_roundtrip_test.cpp`。
 - **安全上限**：导入/查询期的资源/尺寸上限加固。

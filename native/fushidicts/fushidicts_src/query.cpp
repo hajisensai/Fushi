@@ -2,6 +2,7 @@
 #include "fushidicts/media_path.hpp"
 
 #include <ankerl/unordered_dense.h>
+#include <xxh3.h>
 #include <zstd.h>
 
 #include "fushidicts/platform.hpp"
@@ -13,13 +14,18 @@
 #include <filesystem>
 #include <fstream>
 #include <memory>
+#include <atomic>
+#include <mutex>
 #include <optional>
 #include <ranges>
 #include <string>
 #include <string_view>
+#include <system_error>
+#include <thread>
 #include <vector>
 
 #include "hash/hash.hpp"
+#include "hash/union_filter.hpp"
 #include "json/yomitan_parser.hpp"
 #include "memory/memory.hpp"
 #include "util/fs_utf8.hpp"
@@ -122,35 +128,92 @@ void for_each_meta_record(const memory::blob_file& blobs, uint64_t at, std::stri
   });
 }
 
-// hash.table 每个非空槽位指向的 offset 表地址（整本扫描用；查询走 hash::linear）。
-// hash.table : [u32 capacity][ slot{u64 hash, u64 offset} x capacity ]，hash 0 = 空槽；
-// capacity 按文件实际能容纳的槽数截断。
+// hash.table 每个非空槽位指向的 offset 表地址（整本扫描用；查询走 DictionaryData::locate）。
+// 槽位布局与截断口径见 hash::for_each_slot。
 template <typename Visit>
 void for_each_hash_bucket(const memory::mapped_file& hash_table, Visit&& visit) {
-  if (!hash_table || hash_table.size < sizeof(uint32_t)) {
-    return;
+  hash::for_each_slot(hash_table.data, hash_table.size,
+                      [&](uint64_t, uint64_t bucket) -> bool { return visit(bucket); });
+}
+
+// 一次查库的键：XXH3 只算一次，逐词典复用（以前每本词典各算一遍）；有联合过滤器时
+// 顺带取好键所在的那一块。
+struct KeyProbe {
+  uint64_t h;
+  const hash::union_filter* filter;
+  hash::union_filter::probe at;
+
+  KeyProbe(std::string_view key, const std::shared_ptr<const hash::union_filter>& f)
+      : h(XXH3_64bits(key.data(), key.size())), filter(f.get()) {
+    if (filter) {
+      at = filter->at(h);
+    }
   }
-  uint32_t capacity = 0;
-  std::memcpy(&capacity, hash_table.data, sizeof(uint32_t));
-  const size_t slot_size = sizeof(uint64_t) * 2;
-  const size_t max_slots = (hash_table.size - sizeof(uint32_t)) / slot_size;
-  if (capacity > max_slots) {
-    capacity = static_cast<uint32_t>(max_slots);
-  }
-  const uint8_t* slots = hash_table.data + sizeof(uint32_t);
-  for (uint32_t i = 0; i < capacity; i++) {
-    const uint8_t* slot = slots + static_cast<size_t>(i) * slot_size;
-    uint64_t slot_hash = 0;
-    std::memcpy(&slot_hash, slot, sizeof(uint64_t));
-    if (slot_hash == 0) {
+};
+
+// [key] 在 [dicts] 里命中的词典及各自的 offset 表地址，按词典顺序、跳过 [excluded]。
+// 逐本 DictionaryData::locate 的等价物，只是分遍走：
+//
+// 命中一本词典要连着读三处互不相邻的内存——hash.table 的槽位、blobs.bin 里的 offset
+// 表、记录本身，三处都是缓存未命中。常用词在几十本词典里都有，逐本走到底就是上百次
+// 未命中一个接一个地等内存。这里每一遍只做一件事并把下一遍要读的地址预取出去，
+// 同一遍里各本词典的未命中同时在路上。全落空的查库（绝大多数）一遍就结束，不分配。
+template <typename Dicts, typename Excluded>
+auto locate_all(const Dicts& dicts, const KeyProbe& key, const Excluded* excluded) {
+  struct Hit {
+    const typename Dicts::value_type* dict;
+    uint64_t offset_addr;
+  };
+  std::vector<Hit> hits;
+  for (const auto& dict : dicts) {
+    if (excluded && excluded->contains(dict.name)) {
       continue;
     }
-    uint64_t bucket = 0;
-    std::memcpy(&bucket, slot + sizeof(uint64_t), sizeof(uint64_t));
-    if (!visit(bucket)) {
-      return;
+    if (!dict.data->may_contain(key)) {
+      continue;
     }
+    dict.data->table.prefetch(key.h);
+    hits.push_back({.dict = &dict, .offset_addr = 0});
   }
+  size_t live = 0;
+  for (const Hit& hit : hits) {
+    const uint64_t offset_addr = hit.dict->data->table.find(key.h);
+    if (offset_addr == 0) {
+      continue;
+    }
+    hit.dict->data->blobs->prefetch(offset_addr);
+    hits[live++] = {.dict = hit.dict, .offset_addr = offset_addr};
+  }
+  hits.resize(live);
+  for (const Hit& hit : hits) {
+    const memory::blob_file& blobs = *hit.dict->data->blobs;
+    if (blobs.windowed()) {
+      continue;
+    }
+    for_each_listed_offset(blobs, hit.offset_addr, [&](uint64_t offset) -> bool {
+      blobs.prefetch(offset);
+      return true;
+    });
+  }
+  return hits;
+}
+
+// 一本词典的身份：联合过滤器按它给每本词典分位（hash/union_filter.hpp），缓存文件
+// 也按它判断「是不是为这套词典建的」。过滤器只依赖 hash.table 里的键集合，所以身份
+// 要做到「键集合变了它就变」：hash.table 的大小 + 修改时间 + 首页内容（capacity 与
+// 最前面两百多个槽位），再加 blobs.bin 的大小——重导 / 更新过的词典这几样至少变一个
+// （导入总是新写文件）。内容没变而身份变了（拷贝后 mtime 不同）只是多重建一次。
+// 不对整张表求哈希：一套词典的 hash.table 合计几百 MB，装载期全读一遍是可感的冷启动 IO。
+uint64_t table_identity(const std::string& table_path, const memory::mapped_file& table, uint64_t blobs_size) {
+  std::error_code ec;
+  const auto mtime = std::filesystem::last_write_time(fushi::fs_path(table_path), ec);
+  const uint64_t fields[4] = {
+      XXH3_64bits(table.data, std::min<size_t>(table.size, 4096)),
+      static_cast<uint64_t>(table.size),
+      ec ? 0 : static_cast<uint64_t>(mtime.time_since_epoch().count()),
+      blobs_size,
+  };
+  return XXH3_64bits(fields, sizeof(fields));
 }
 
 }
@@ -158,6 +221,8 @@ void for_each_hash_bucket(const memory::mapped_file& hash_table, Visit&& visit) 
 struct DictionaryQuery::DictionaryData {
   hash::linear table;
   hash::bloom bloom;
+  // 本词典的身份（table_identity），联合过滤器用。
+  uint64_t identity = 0;
   // BUG-4013：映射经 map_rd_shared 按文件身份进程内共享——词典重载时 shadow 引擎与
   // 旧引擎 / 后台借用句柄同时在世，私有映射会让整套词典的虚拟地址占用翻倍，iOS 上把
   // 地址空间吃满后任何分配都 abort。
@@ -183,9 +248,65 @@ struct DictionaryQuery::DictionaryData {
   ~DictionaryData() {
     ZSTD_freeDDict(zstd_dict);
   }
+
+  // [key] 在本词典里的 offset 表地址，0 = 没有。有联合过滤器时由它判「肯定不在」
+  //（键所在的块已经取好，这里不再碰本词典的任何内存），否则探本词典自己的 bloom；
+  // 两条路径放行之后都走同一个 hash.table 精确探测，结果相同。
+  uint64_t locate(const KeyProbe& key) const { return may_contain(key) ? table.find(key.h) : 0; }
+
+  // [locate] 的前半：false = 肯定不在。
+  bool may_contain(const KeyProbe& key) const {
+    if (key.filter) {
+      return hash::union_filter::maybe(key.at, identity);
+    }
+    return !table.bloom_rejects(key.h);
+  }
 };
 
-DictionaryQuery::DictionaryQuery() = default;
+// 联合过滤器的发布槽。epoch 在词典集合变化（add_dict）与每次 prepare 时推进：后台
+// 构建线程发布前核对自己出发时的 epoch，对不上说明成果已经过时（集合变了 / 被更新的
+// 一次 prepare 取代），直接丢弃。不变式：filter 非空 ⇒ 它覆盖引擎当前装载的每一本词典。
+struct DictionaryQuery::UnionSlot {
+  std::mutex mutex;
+  std::shared_ptr<const hash::union_filter> filter;
+  uint64_t epoch = 0;
+  UnionFilterState state = UnionFilterState::None;
+};
+
+// 后台构建线程及其叫停标志。mutex 串行化 prepare / 叫停（FFI 在共享锁下调 prepare，
+// 两个线程可能同时进来）；构建线程自己从不取这把锁，所以持锁 join 不会死锁。
+struct DictionaryQuery::UnionBuilder {
+  std::mutex mutex;
+  std::thread thread;
+  std::shared_ptr<std::atomic<bool>> cancel;
+
+  // 叫停在飞的构建并等线程退出。调用方持有 mutex。
+  void stop_locked() {
+    if (cancel) {
+      cancel->store(true, std::memory_order_relaxed);
+    }
+    if (thread.joinable()) {
+      thread.join();
+    }
+    cancel.reset();
+  }
+
+  // 只置叫停标志、不等（成果反正会按 epoch 作废，线程留给下一次 prepare / 析构收）。
+  void request_stop() {
+    std::lock_guard<std::mutex> lock(mutex);
+    if (cancel) {
+      cancel->store(true, std::memory_order_relaxed);
+    }
+  }
+
+  ~UnionBuilder() {
+    std::lock_guard<std::mutex> lock(mutex);
+    stop_locked();
+  }
+};
+
+DictionaryQuery::DictionaryQuery()
+    : union_(std::make_shared<UnionSlot>()), union_builder_(std::make_unique<UnionBuilder>()) {}
 DictionaryQuery::~DictionaryQuery() = default;
 
 DictionaryQuery::DictionaryQuery(DictionaryQuery&&) noexcept = default;
@@ -310,6 +431,7 @@ void DictionaryQuery::add_dict(const std::string& path, DictionaryType type) {
   if (!dict.data->blobs) {
     return;
   }
+  dict.data->identity = table_identity(path + "/hash.table", *dict.data->hash_table, dict.data->blobs->size());
 
   // 词性有无（util/term_rules_flag.hpp）：导入端写好的 sidecar 直接读；存量词典
   // 缺 sidecar 就扫一次记录并回填（回填失败只是下次再扫，不影响本次装载）。
@@ -368,6 +490,114 @@ void DictionaryQuery::add_dict(const std::string& path, DictionaryType type) {
       kanji_dicts_.push_back(std::move(dict));
       break;
   }
+
+  // 词典集合变了：现有的联合过滤器不覆盖这本新词典，作废；在飞的后台构建按 epoch
+  // 丢弃自己的成果。宿主装完全部词典后重新 prepare_union_filter。
+  if (union_) {
+    std::lock_guard<std::mutex> lock(union_->mutex);
+    union_->epoch++;
+    union_->filter.reset();
+    union_->state = UnionFilterState::None;
+  }
+  if (union_builder_) {
+    union_builder_->request_stop();
+  }
+}
+
+DictionaryQuery::QueryScope DictionaryQuery::make_scope(const ExcludedDictNames* excluded) const {
+  QueryScope scope;
+  scope.excluded = excluded;
+  if (union_) {
+    std::lock_guard<std::mutex> lock(union_->mutex);
+    scope.filter = union_->filter;
+  }
+  return scope;
+}
+
+UnionFilterState DictionaryQuery::union_filter_state() const {
+  if (!union_) {
+    return UnionFilterState::None;
+  }
+  std::lock_guard<std::mutex> lock(union_->mutex);
+  return union_->state;
+}
+
+void DictionaryQuery::prepare_union_filter(const std::string& cache_dir, bool wait) {
+  if (!union_ || !union_builder_) {
+    return;
+  }
+  // 同一时刻只有一份构建：先叫停上一份（它的成果已被这次取代）。
+  std::lock_guard<std::mutex> builder_lock(union_builder_->mutex);
+  union_builder_->stop_locked();
+
+  // 构建线程自己撑着每本词典的 hash.table 映射（本对象在别的线程上被 add_dict 改动
+  // 也不影响它读到的那批）；本对象析构时由 UnionBuilder 叫停并等它退出。
+  struct Input {
+    uint64_t identity;
+    memory::shared_mapping table;
+  };
+  auto inputs = std::make_shared<std::vector<Input>>();
+  for (const auto* dicts : {&term_dicts_, &freq_dicts_, &pitch_dicts_, &kanji_dicts_}) {
+    for (const Dictionary& dict : *dicts) {
+      inputs->push_back({dict.data->identity, dict.data->hash_table});
+    }
+  }
+
+  uint64_t epoch = 0;
+  {
+    std::lock_guard<std::mutex> lock(union_->mutex);
+    epoch = ++union_->epoch;
+    if (inputs->empty()) {
+      union_->filter.reset();
+      union_->state = UnionFilterState::None;
+      return;
+    }
+    // 已有的过滤器（若有）对当前集合仍然有效，新的一份发布前继续用它。
+    union_->state = union_->filter ? UnionFilterState::Ready : UnionFilterState::Building;
+  }
+
+  auto publish = [slot = union_, epoch](std::shared_ptr<const hash::union_filter> filter) {
+    std::lock_guard<std::mutex> lock(slot->mutex);
+    if (slot->epoch != epoch) {
+      return;
+    }
+    if (filter) {
+      slot->filter = std::move(filter);
+    }
+    slot->state = slot->filter ? UnionFilterState::Ready : UnionFilterState::None;
+  };
+  auto cancel = std::make_shared<std::atomic<bool>>(false);
+  auto job = [inputs, cache_dir, publish, cancel]() {
+    std::shared_ptr<const hash::union_filter> filter;
+    try {
+      std::vector<hash::union_filter::source> sources;
+      sources.reserve(inputs->size());
+      for (const Input& input : *inputs) {
+        sources.push_back({.identity = input.identity, .table = input.table->data, .table_size = input.table->size});
+      }
+      filter = hash::union_filter::open_or_build(sources, cache_dir, cancel.get());
+    } catch (const std::exception& e) {
+      // 建不出来（内存不足 / 文件系统异常）：没有过滤器，查询照走各词典的 bloom。
+      FUSHI_LOGW("union filter build failed: %s", e.what());
+    }
+    try {
+      publish(std::move(filter));
+    } catch (const std::exception&) {
+      // 互斥量加锁失败：槽保持原状，查询不受影响。
+    }
+  };
+
+  if (wait) {
+    job();
+    return;
+  }
+  try {
+    union_builder_->thread = std::thread(job);
+    union_builder_->cancel = std::move(cancel);
+  } catch (const std::exception&) {
+    // 起不了线程（系统线程数到顶 / 内存不足）：当作没建成。
+    publish(nullptr);
+  }
 }
 
 void DictionaryQuery::add_term_dict(const std::string& path) { add_dict(path, DictionaryQuery::DictionaryType::TERM); }
@@ -383,31 +613,31 @@ void DictionaryQuery::add_kanji_dict(const std::string& path) {
 }
 
 std::vector<TermResult> DictionaryQuery::query(const std::string& expression) const {
-  auto results = query_raw(expression);
+  const QueryScope scope = make_scope();
+  auto results = query_raw(expression, scope);
   // query_raw() no longer enriches (BUG-1304); this single-expression entry
   // point does it itself so its contract is unchanged.
-  query_freq(results);
-  query_pitch(results);
+  for (auto& term : results) {
+    enrich_freq(term, scope);
+  }
+  for (auto& term : results) {
+    enrich_pitch(term, scope);
+  }
   for (auto& term : results) {
     materialize(term);
   }
   return results;
 }
 
-std::vector<TermResult> DictionaryQuery::query_raw(const std::string& expression,
-                                                   const ExcludedDictNames* excluded) const {
+std::vector<TermResult> DictionaryQuery::query_raw(const std::string& expression, const QueryScope& scope) const {
+  const ExcludedDictNames* excluded = scope.excluded;
+  const KeyProbe key(expression, scope.filter);
   std::map<std::pair<std::string_view, std::string_view>, TermResult> term_map;
   // term_map 的键是指向记录的 string_view：窗口映射（32 位）下要撑住这些窗口到函数
   // 返回；64 位整份映射时 owner 恒空、不进这里。
   std::vector<std::shared_ptr<const void>> pins;
-  for (const auto& [name, styles, data] : term_dicts_) {
-    if (excluded && excluded->contains(name)) {
-      continue;
-    }
-    uint64_t offset_addr = data->table(expression);
-    if (offset_addr == 0) {
-      continue;
-    }
+  for (const auto& [dict, offset_addr] : locate_all(term_dicts_, key, excluded)) {
+    const auto& [name, styles, data] = *dict;
     for_each_record_of_type(*data->blobs, offset_addr, 0, [&](BlobReader& blob, const memory::blob_span& rec) -> bool {
       auto expr_len = blob.read<uint16_t>();
       std::string_view expr = blob.read_str(expr_len);
@@ -490,8 +720,10 @@ std::vector<TermResult> DictionaryQuery::query_raw(const std::string& expression
 
 std::vector<KanjiResult> DictionaryQuery::query_kanji(const std::string& character) const {
   std::vector<KanjiResult> results;
+  const QueryScope scope = make_scope();
+  const KeyProbe key(character, scope.filter);
   for (const auto& [name, styles, data] : kanji_dicts_) {
-    uint64_t offset_addr = data->table(character);
+    uint64_t offset_addr = data->locate(key);
     if (offset_addr == 0) {
       continue;
     }
@@ -568,20 +800,20 @@ std::vector<KanjiResult> DictionaryQuery::query_kanji(const std::string& charact
 }
 
 void DictionaryQuery::query_freq(std::vector<TermResult>& terms) const {
+  const QueryScope scope = make_scope();
   for (auto& term : terms) {
-    enrich_freq(term);
+    enrich_freq(term, scope);
   }
 }
 
-void DictionaryQuery::enrich_freq(TermResult& term, const ExcludedDictNames* excluded) const {
-  for (const auto& [name, styles, data] : freq_dicts_) {
-    if (excluded && excluded->contains(name)) {
-      continue;
-    }
-    uint64_t offset_addr = data->table(term.expression);
-    if (offset_addr == 0) {
-      continue;
-    }
+void DictionaryQuery::enrich_freq(TermResult& term, const QueryScope& scope) const {
+  const ExcludedDictNames* excluded = scope.excluded;
+  if (freq_dicts_.empty()) {
+    return;
+  }
+  const KeyProbe key(term.expression, scope.filter);
+  for (const auto& [dict, offset_addr] : locate_all(freq_dicts_, key, excluded)) {
+    const auto& [name, styles, data] = *dict;
     std::vector<Frequency> frequencies;
     for_each_meta_record(*data->blobs, offset_addr, term.expression, [&](BlobReader& blob, std::string_view mode) -> bool {
       if (mode != "freq") {
@@ -608,20 +840,20 @@ void DictionaryQuery::enrich_freq(TermResult& term, const ExcludedDictNames* exc
 }
 
 void DictionaryQuery::query_pitch(std::vector<TermResult>& terms) const {
+  const QueryScope scope = make_scope();
   for (auto& term : terms) {
-    enrich_pitch(term);
+    enrich_pitch(term, scope);
   }
 }
 
-void DictionaryQuery::enrich_pitch(TermResult& term, const ExcludedDictNames* excluded) const {
-  for (const auto& [name, styles, data] : pitch_dicts_) {
-    if (excluded && excluded->contains(name)) {
-      continue;
-    }
-    uint64_t offset_addr = data->table(term.expression);
-    if (offset_addr == 0) {
-      continue;
-    }
+void DictionaryQuery::enrich_pitch(TermResult& term, const QueryScope& scope) const {
+  const ExcludedDictNames* excluded = scope.excluded;
+  if (pitch_dicts_.empty()) {
+    return;
+  }
+  const KeyProbe key(term.expression, scope.filter);
+  for (const auto& [dict, offset_addr] : locate_all(pitch_dicts_, key, excluded)) {
+    const auto& [name, styles, data] = *dict;
     std::vector<Pitch> pitches;
     std::vector<std::string> transcriptions;
 
@@ -719,15 +951,15 @@ std::string DictionaryQuery::decompress_glossary(const void* data, size_t size, 
     return "";
   }
 
+  // resize_and_overwrite：缓冲区不先清零——一次查词解压约 1 MB 正文，先 memset 一遍
+  // 再被解压结果整段覆盖是白写。失败时返回 0，串为空。
+  // 解压上下文先取好：resize_and_overwrite 的回调不允许抛异常。
+  ZSTD_DCtx* const dctx = thread_dctx();
   std::string result;
-  result.resize(decompressed_size);
-
-  size_t actual_size = ZSTD_decompress_usingDDict(thread_dctx(), result.data(), result.size(), data, size, dict);
-  if (ZSTD_isError(actual_size)) {
-    return "";
-  }
-
-  result.resize(actual_size);
+  result.resize_and_overwrite(static_cast<size_t>(decompressed_size), [&](char* buffer, size_t capacity) -> size_t {
+    const size_t actual_size = ZSTD_decompress_usingDDict(dctx, buffer, capacity, data, size, dict);
+    return ZSTD_isError(actual_size) ? 0 : actual_size;
+  });
   return result;
 }
 

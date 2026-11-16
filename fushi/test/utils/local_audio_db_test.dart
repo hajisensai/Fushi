@@ -179,6 +179,97 @@ void main() {
     expect(LocalAudioDb.queryMetaAll(dbPath, '狗', 'いぬ'), isEmpty);
   });
 
+  // 应用内反馈 Dd9HikrfRx：Yomitan 本地音频库（local-audio-yomichan 生成的
+  // android.db）里 forvo 子来源的 reading 列全是 NULL（Forvo 不给读音，实测真库
+  // 85791 行全 NULL）。旧查询 `reading = ?` 只要 nhk16 / jpod 有一行读音精确命中，
+  // forvo 的 NULL 行就整体被排除、也不再走回落 → 日语词菜单里永远没有 Forvo。
+  group(
+    'rows without a reading (forvo) still match an exact-reading lookup',
+    () {
+      setUp(() {
+        final Database db = sqlite3.open(dbPath);
+        db.execute("INSERT INTO entries VALUES ('猫','ねこ','nhk.mp3','nhk16')");
+        db.execute("INSERT INTO entries VALUES ('猫',NULL,'a/猫.mp3','forvo')");
+        db.execute("INSERT INTO entries VALUES ('猫','びょう','x.mp3','jpod')");
+        db.dispose();
+      });
+
+      test('queryMetaAll lists the NULL-reading forvo row too', () {
+        expect(
+          LocalAudioDb.queryMetaAll(
+            dbPath,
+            '猫',
+            'ねこ',
+            order: <String>['nhk16', 'forvo', 'jpod'],
+          ).map((m) => m.file).toList(),
+          <String>['nhk.mp3', 'a/猫.mp3'],
+          reason: '读音不同的 jpod 行不算命中；无读音的 forvo 行算',
+        );
+      });
+
+      test('queryMeta can pick forvo when it is the top priority', () {
+        expect(
+          LocalAudioDb.queryMeta(
+            dbPath,
+            '猫',
+            'ねこ',
+            order: <String>['forvo', 'nhk16'],
+          )?.source,
+          'forvo',
+        );
+        expect(
+          LocalAudioDb.queryMeta(
+            dbPath,
+            '猫',
+            'ねこ',
+            order: <String>['nhk16', 'forvo'],
+          )?.source,
+          'nhk16',
+        );
+      });
+
+      test('without an order the exact-reading row comes before NULL rows', () {
+        expect(
+          LocalAudioDb.queryMetaAll(
+            dbPath,
+            '猫',
+            'ねこ',
+          ).map((m) => m.file).toList(),
+          <String>['nhk.mp3', 'a/猫.mp3'],
+        );
+        expect(LocalAudioDb.queryMeta(dbPath, '猫', 'ねこ')?.file, 'nhk.mp3');
+      });
+
+      test('NULL-reading rows alone still answer the lookup', () {
+        final Database db = sqlite3.open(dbPath);
+        db.execute("INSERT INTO entries VALUES ('犬',NULL,'b/犬.mp3','forvo')");
+        db.execute("INSERT INTO entries VALUES ('犬','けん','k.mp3','jpod')");
+        db.dispose();
+        expect(
+          LocalAudioDb.queryMetaAll(
+            dbPath,
+            '犬',
+            'いぬ',
+          ).map((m) => m.file).toList(),
+          <String>['b/犬.mp3'],
+          reason: '有可用行（无读音）就不再回落到读音不符的 jpod 行',
+        );
+      });
+
+      test('an empty reading does not filter by reading at all', () {
+        expect(
+          LocalAudioDb.queryMetaAll(
+            dbPath,
+            '猫',
+            '',
+          ).map((m) => m.file).toList(),
+          <String>['nhk.mp3', 'a/猫.mp3', 'x.mp3'],
+          reason: '读音为空（制卡增强取卡片字段可能为空）时不能只剩 NULL 读音的 forvo 行',
+        );
+      });
+    },
+  );
+
   test('queryMeta with empty order keeps first-match behavior', () {
     expect(LocalAudioDb.queryMeta(dbPath, '勉強', 'べんきょう')?.source, 'src1');
   });
