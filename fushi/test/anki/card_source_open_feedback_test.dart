@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/anki/card_source_open_feedback.dart';
@@ -72,7 +71,7 @@ void main() {
     expect(result!.cancelled, isTrue);
   });
 
-  testWidgets('Esc 等同取消', (WidgetTester tester) async {
+  testWidgets('系统返回键等同取消', (WidgetTester tester) async {
     final NavigatorState navigator = await pumpHost(tester);
     CardSourceAwaited<int>? result;
     unawaited(
@@ -83,7 +82,7 @@ void main() {
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
-    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.binding.handlePopRoute();
     await tester.pump();
     await tester.pump(const Duration(seconds: 1));
     expect(result?.cancelled, isTrue);
