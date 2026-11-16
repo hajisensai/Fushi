@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:fushi_engine/media/music/apple_music/apple_music_catalog_client.dart';
@@ -344,6 +345,44 @@ void main() {
         expect(sentTokens, <String?>['stale', 'fresh']);
       },
     );
+
+    test('concurrent rejections share a single refresh', () async {
+      final List<bool> refreshCalls = <bool>[];
+      final List<String?> sentTokens = <String?>[];
+      final Completer<AppleMusicUserCredentials> refreshed =
+          Completer<AppleMusicUserCredentials>();
+      final AppleMusicLibraryClient c = AppleMusicLibraryClient(
+        credentials: ({bool refresh = false}) async {
+          refreshCalls.add(refresh);
+          if (refresh) return refreshed.future;
+          return const AppleMusicUserCredentials(
+            developerToken: 'dev',
+            userToken: 'stale',
+          );
+        },
+        client: MockClient((http.Request req) async {
+          final String? token = req.headers['Music-User-Token'];
+          sentTokens.add(token);
+          if (token != 'fresh') return _json(<String, Object?>{}, 403);
+          return _json(<String, Object?>{'data': <Object?>[]});
+        }),
+      );
+      final Future<List<Object?>> both = Future.wait(<Future<Object?>>[
+        c.listArtists(),
+        c.listArtists(),
+      ]);
+      await pumpEventQueue();
+      expect(sentTokens, <String?>['stale', 'stale']);
+      refreshed.complete(
+        const AppleMusicUserCredentials(
+          developerToken: 'dev',
+          userToken: 'fresh',
+        ),
+      );
+      await both;
+      expect(refreshCalls, <bool>[false, false, true]);
+      expect(sentTokens, <String?>['stale', 'stale', 'fresh', 'fresh']);
+    });
 
     test('refreshed token still rejected surfaces the http status', () async {
       int requests = 0;

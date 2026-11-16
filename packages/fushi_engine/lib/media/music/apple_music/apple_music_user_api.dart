@@ -78,7 +78,7 @@ class AppleMusicUserApi {
     final AppleMusicUserCredentials c = await _credentials();
     http.Response res = await _sendWith(c, method, uri, body);
     if (_isTokenRejected(res.statusCode)) {
-      final AppleMusicUserCredentials fresh = await _credentials(refresh: true);
+      final AppleMusicUserCredentials fresh = await _refreshCredentials();
       if (fresh.userToken != c.userToken ||
           fresh.developerToken != c.developerToken) {
         res = await _sendWith(fresh, method, uri, body);
@@ -98,6 +98,13 @@ class AppleMusicUserApi {
   }
 
   static bool _isTokenRejected(int status) => status == 401 || status == 403;
+
+  /// 进行中的绕缓存重取。并发请求（分页、批量评分）同时吃 401 / 403 时共用这一次，
+  /// 不让每个请求各自触发一次重新生成 token。
+  Future<AppleMusicUserCredentials>? _refreshing;
+
+  Future<AppleMusicUserCredentials> _refreshCredentials() => _refreshing ??=
+      _credentials(refresh: true).whenComplete(() => _refreshing = null);
 
   Future<http.Response> _sendWith(
     AppleMusicUserCredentials c,
