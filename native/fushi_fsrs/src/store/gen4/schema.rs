@@ -12,10 +12,16 @@
 //!   旧写入者 → 最初的写入者）；语义摘要（`digest.rs`）：`dg_ix`（每个实体一行）、`dg_dirty`（等重算的实体，静止时为空；
 //!   由 `reg_ix` / `tag_ix` / `log_ix` / `ent_ix` / `media_ix` 上的触发器记）。
 //!   缓存层（`cache.rs`）：`notes` / `cards`（出卡、浏览读的缓存，列同协议 3 的两张缓存表）、`stats`（有效复习投影）。
-//! - **本机状态**：`collections`（profile ↔ 集合的绑定，设计 §5.1）、`devs`（设备 ↔ 小整数下标；`kind` 空 = 只被别的操作
+//! - **本机状态**：`collections`（profile ↔ 集合的绑定，设计 §5.1；`state` / `via` / `at` 是绑定状态，协议 3
+//!   `srs_meta` 里 `srs_collection_bound/<uid>` 的落点，由身份接线 G9-3 读写）、`devs`（设备 ↔ 小整数下标；`kind` 空 = 只被别的操作
 //!   点过名、还没见过它的日志，0 = 原生日志，1 = 承袭日志；`src` = 承袭日志的来源集合；`tail` = 原生日志末尾的链值）、
 //!   `trust`（还没信任的设备：`state` 1 = 待确认，2 = 已拒绝；没有行 = 可信。纯本机，不同步，协议 3 的 `sync2_trust`）。
 //!   `derive_cfg`（派生层的输入里只有宿主知道的那部分，按名字存文本：内置笔记类型表、缓存配置；`truth.rs`）。
+//!   迁移时从协议 3 灌过来的其余本机状态（[LOCAL]，规划 §1.3）：`self_`（本机身份：设备 ID、签名钥匙种子、HLC、换身份前
+//!   的上一个身份 `prev_*` 三列）、`peers`（各设备的公钥、名字与扩展信息，`sync2_devices` 里本机要留的那部分；
+//!   [super::truth::Truth::device_key] / [super::truth::Truth::set_peer]）、`held` / `checkpoints` / `media_local`（照搬对应的
+//!   `sync2_*` 表，`profile_uid` 换成 `col`）、`media_at`（各位置媒体在 / 不在，按内容哈希）、`loc_state`（各位置的加密
+//!   记忆：BUG-4299 的 `location_seal`）。除 `peers` 外这一版只建表，读写 API 由各自的 PR 加（G7-2 / G8-3 / G8-4 / G8-6）。
 //!
 //! 各列的取值见 `truth.rs`（落库规则）与 `pack.rs`（操作体的存储编码）。`writers.name` 存的是名字的紧凑字节形
 //! （`gen4::name`：一个文本只有一种字节形，所以按字节唯一就是按名字唯一）。
@@ -24,14 +30,24 @@
 //! 寻址的表不再另存集合号；rowid 表的点读与顺序扫都是一次 B 树下降，行里不重复存键。
 //!
 //! `srs_meta(key, value)` 与文本形式的 `schema` 照旧（设计 §6.1 末）：协议 3 的内核把它读成整数、比自己大就拒绝打开，
-//! 所以新代文件即使被旧版本当成它的库打开，也只会报错、不会被从头建表。
+//! 所以新代文件即使被旧版本当成它的库打开，也只会报错、不会被从头建表。另外建库时在文件头写 `PRAGMA application_id`
+//! = [APPLICATION_ID] 做正向识别（D7）：[check_kind] 只认带这个魔数、`schema` 正好是 [SCHEMA] 的文件；协议 3 的封存值
+//! （`crate::store::schema::SEALED_SCHEMA` = 39999）与一切小于 [GEN_FLOOR] 的值都明确拒绝。
 
 use std::path::Path;
 
 use rusqlite::Connection;
 
 /// 新代库的 schema 号。只要求远大于协议 3 的任何一个 schema 号（最后一个是 29）；万位是代，低位是这一代里的存储版本。
-pub const SCHEMA: i64 = 40_005;
+///
+/// G7-1 起 `40006`（本机状态表、`collections` 的绑定状态列、`application_id`）。整批推送前每个改表的 PR 各自 +1。
+pub const SCHEMA: i64 = 40_006;
+
+/// 新代的号段从这里起：`schema` 小于它的都不是新代库（协议 3 的 1～29 与封存值 39999）。
+pub const GEN_FLOOR: i64 = 40_000;
+
+/// 新代文件头里的 `PRAGMA application_id`（大端 ASCII `FSR4`）。建库时写；打开时不等就拒绝。
+pub const APPLICATION_ID: i32 = 0x4653_5234;
 
 const SEQ_BITS: u32 = 40;
 const SEQ_MASK: i64 = (1 << SEQ_BITS) - 1;
@@ -68,7 +84,10 @@ CREATE TABLE IF NOT EXISTS collections (
   profile_uid TEXT NOT NULL UNIQUE,
   collection BLOB NOT NULL UNIQUE,
   dir TEXT NOT NULL,
-  salts TEXT NOT NULL
+  salts TEXT NOT NULL,
+  state INTEGER,
+  via TEXT,
+  at INTEGER
 );
 CREATE TABLE IF NOT EXISTS devs (
   dev INTEGER PRIMARY KEY,
@@ -145,6 +164,83 @@ CREATE TABLE IF NOT EXISTS op_forks (
   tv INTEGER NOT NULL,
   slot BLOB NOT NULL,
   PRIMARY KEY (k, fp)
+) WITHOUT ROWID;
+";
+
+/// 本机状态里迁移时从协议 3 灌过来的那部分（规划 §1.3；表头注释）。不同步、不可再生、不是派生表。
+///
+/// - `self_`：每个集合一行本机身份。`sk` = 签名钥匙种子（沿用 `sync2_self.key_seed`），`hlc` = HLC 的文本形，
+///   `prev_device` / `prev_seq` / `prev_chain` = 换身份之前的上一个身份在它日志末尾的位置（没换过 = 全空）。
+/// - `peers`：各设备的公钥（先到先得，换不了：[super::truth::Truth::set_peer]）、名字、扩展信息（JSON 文本）、见过的最新
+///   head 代号、第一次见到的时刻。
+/// - `held` / `checkpoints` / `media_local`：列同 `sync2_held` / `sync2_checkpoints` / `sync2_media_local`。
+/// - `media_at`：`(位置, 内容哈希)` → 在 / 不在与 HLC 文本（D18）。
+/// - `loc_state`：每个位置的加密记忆（`location_seal`）：`loc_ids` = 位置 ID 的 JSON，`sealed` 0/1，`kdf` = 派生参数 JSON，
+///   `check_` = 口令校验串，`last_ok` = 上次核对通过的时刻。
+pub(crate) const LOCAL: &str = "
+CREATE TABLE IF NOT EXISTS self_ (
+  col INTEGER PRIMARY KEY,
+  device BLOB NOT NULL,
+  sk BLOB NOT NULL,
+  hlc TEXT NOT NULL,
+  prev_device BLOB,
+  prev_seq INTEGER,
+  prev_chain BLOB,
+  created INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS peers (
+  col INTEGER NOT NULL,
+  device BLOB NOT NULL,
+  public BLOB NOT NULL,
+  name TEXT,
+  ext TEXT,
+  head_gen INTEGER,
+  first_seen INTEGER,
+  PRIMARY KEY (col, device)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS held (
+  col INTEGER NOT NULL,
+  device BLOB NOT NULL,
+  seq INTEGER NOT NULL,
+  kind TEXT NOT NULL,
+  entity TEXT NOT NULL,
+  PRIMARY KEY (col, device, seq)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS checkpoints (
+  col INTEGER NOT NULL,
+  device BLOB NOT NULL,
+  seq INTEGER NOT NULL,
+  wall INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  PRIMARY KEY (col, device, seq)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS media_local (
+  col INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  mtime INTEGER NOT NULL,
+  sha256 BLOB NOT NULL,
+  synced BLOB,
+  PRIMARY KEY (col, name)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS media_at (
+  col INTEGER NOT NULL,
+  loc_key TEXT NOT NULL,
+  sha BLOB NOT NULL,
+  state INTEGER NOT NULL,
+  hlc TEXT NOT NULL,
+  PRIMARY KEY (col, loc_key, sha)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS loc_state (
+  col INTEGER NOT NULL,
+  loc_key TEXT NOT NULL,
+  loc_ids TEXT,
+  sealed INTEGER,
+  kdf TEXT,
+  check_ TEXT,
+  last_ok INTEGER,
+  PRIMARY KEY (col, loc_key)
 ) WITHOUT ROWID;
 ";
 
@@ -286,18 +382,13 @@ pub(crate) const DERIVED_TABLES: [&str; 17] = [
     "stats",
 ];
 
-/// 这个文件是不是新代的库：空文件（还没有任何表）或 `schema` 等于 [SCHEMA] 才是。只读。
+/// 这个文件是不是新代的库：空文件（还没有任何表）才可以建；有表的必须 `schema` 等于 [SCHEMA] 且 `application_id` =
+/// [APPLICATION_ID]。只读。
 ///
-/// 协议 3 的 `srs.db`、更新版本写的新代库、别的 SQLite 文件都在这里拒掉——在动任何 PRAGMA、建任何表之前。
-fn check_kind(conn: &Connection) -> Result<(), String> {
-    let tables: i64 = conn
-        .query_row(
-            "SELECT COUNT(*) FROM sqlite_schema WHERE type = 'table'",
-            [],
-            |r| r.get(0),
-        )
-        .map_err(sql)?;
-    if tables == 0 {
+/// 协议 3 的 `srs.db`（含封存成 `SEALED_SCHEMA` 的保留副本与墓碑库）、更新版本写的新代库、别的 SQLite 文件都在这里
+/// 拒掉——在动任何 PRAGMA、建任何表之前。
+pub(crate) fn check_kind(conn: &Connection) -> Result<(), String> {
+    if table_count(conn)? == 0 {
         return Ok(());
     }
     let has_meta: bool = conn
@@ -315,15 +406,61 @@ fn check_kind(conn: &Connection) -> Result<(), String> {
     } else {
         None
     };
-    match current.as_deref().map(str::parse::<i64>) {
-        Some(Ok(v)) if v == SCHEMA => Ok(()),
-        Some(Ok(v)) if v > SCHEMA => Err(format!(
-            "gen4 store: schema {v} is newer than this build ({SCHEMA})"
-        )),
-        other => Err(format!(
-            "gen4 store: not a generation 4 library (schema {other:?})"
-        )),
+    let v = match current.as_deref().map(str::parse::<i64>) {
+        Some(Ok(v)) => v,
+        other => {
+            return Err(format!(
+                "gen4 store: not a generation 4 library (schema {other:?})"
+            ));
+        }
+    };
+    if v == crate::store::schema::SEALED_SCHEMA {
+        return Err(format!(
+            "gen4 store: a sealed protocol 3 library (schema {v}), not a generation 4 library"
+        ));
     }
+    if v < GEN_FLOOR {
+        return Err(format!(
+            "gen4 store: a protocol 3 library (schema {v}), not a generation 4 library"
+        ));
+    }
+    let app: i32 = conn
+        .query_row("PRAGMA application_id", [], |r| r.get(0))
+        .map_err(sql)?;
+    if app != APPLICATION_ID {
+        return Err(format!(
+            "gen4 store: not a generation 4 library (application_id {app:#x})"
+        ));
+    }
+    if v > SCHEMA {
+        return Err(format!(
+            "gen4 store: schema {v} is newer than this build ({SCHEMA})"
+        ));
+    }
+    if v != SCHEMA {
+        return Err(format!(
+            "gen4 store: not a generation 4 library of this build (schema {v})"
+        ));
+    }
+    Ok(())
+}
+
+fn table_count(conn: &Connection) -> Result<i64, String> {
+    conn.query_row(
+        "SELECT COUNT(*) FROM sqlite_schema WHERE type = 'table'",
+        [],
+        |r| r.get(0),
+    )
+    .map_err(sql)
+}
+
+/// [check_kind] 之上再要求已经建过表：不建库的打开（`files::OpenMode::Secondary`）用。
+pub(crate) fn check_ready(conn: &Connection) -> Result<(), String> {
+    check_kind(conn)?;
+    if table_count(conn)? == 0 {
+        return Err("gen4 store: the generation 4 library is empty".to_owned());
+    }
+    Ok(())
 }
 
 /// 查询规划器的统计：**手写、随 schema 走，不跑 `ANALYZE`**。
@@ -405,7 +542,16 @@ pub fn install(conn: &Connection) -> Result<(), String> {
         "CREATE TABLE IF NOT EXISTS srs_meta (key TEXT NOT NULL PRIMARY KEY, value TEXT NOT NULL);",
     )
     .map_err(sql)?;
+    let app: i32 = conn
+        .query_row("PRAGMA application_id", [], |r| r.get(0))
+        .map_err(sql)?;
+    if app != APPLICATION_ID {
+        // 只有空文件会走到这里（有表的在 check_kind 已经核过魔数）。文件头的这个字段随事务提交 / 回滚。
+        conn.execute_batch(&format!("PRAGMA application_id = {APPLICATION_ID};"))
+            .map_err(sql)?;
+    }
     conn.execute_batch(TRUTH).map_err(sql)?;
+    conn.execute_batch(LOCAL).map_err(sql)?;
     conn.execute_batch(DERIVED).map_err(sql)?;
     super::digest::set_triggers(conn, true)?;
     conn.execute_batch(super::cache::DDL).map_err(sql)?;
@@ -435,7 +581,7 @@ pub fn open_in_memory() -> Result<Connection, String> {
     Ok(conn)
 }
 
-fn configure(conn: &Connection) -> Result<(), String> {
+pub(crate) fn configure(conn: &Connection) -> Result<(), String> {
     // 新文件才生效；已有的文件保持它建库时的设置。
     conn.execute_batch("PRAGMA auto_vacuum = INCREMENTAL;")
         .map_err(sql)?;
@@ -621,5 +767,197 @@ mod tests {
         assert_ne!(read(&conn), want);
         in_tx(&conn, install).unwrap();
         assert_eq!(read(&conn), want);
+    }
+
+    /// D7 的正向识别：有表的文件，`schema` 在新代号段里也还要 `application_id` 对、号正好是本版本的。
+    #[test]
+    fn check_kind_refuses_a_wrong_magic_an_older_and_a_newer_generation_4_schema() {
+        let conn = open_in_memory().unwrap();
+        assert_eq!(check_kind(&conn), Ok(()));
+        let set_schema = |v: i64| {
+            conn.execute(
+                "UPDATE srs_meta SET value = ?1 WHERE key = 'schema'",
+                [v.to_string()],
+            )
+            .unwrap();
+        };
+        let refused = |want: &str| {
+            let e = check_kind(&conn).unwrap_err();
+            assert!(e.contains(want), "want {want:?}: {e}");
+            // 建表也走同一个判定：拒绝时什么都不改。
+            assert!(in_tx(&conn, install).unwrap_err().contains(want));
+        };
+        // 号对、魔数不对（0 = 没写过；别的应用的值）。
+        for app in [0, 0x1234_5678] {
+            conn.execute_batch(&format!("PRAGMA application_id = {app};"))
+                .unwrap();
+            refused("application_id");
+        }
+        conn.execute_batch(&format!("PRAGMA application_id = {APPLICATION_ID};"))
+            .unwrap();
+        // 魔数对、号是新代号段里更早的一版。
+        for v in [GEN_FLOOR, SCHEMA - 1] {
+            set_schema(v);
+            refused("of this build");
+        }
+        // 魔数对、号比本版本新。
+        set_schema(SCHEMA + 1);
+        refused("is newer than this build");
+        // 号更新、魔数又不对：先报魔数（不是新代库就不谈版本）。
+        conn.execute_batch("PRAGMA application_id = 0;").unwrap();
+        refused("application_id");
+        conn.execute_batch(&format!("PRAGMA application_id = {APPLICATION_ID};"))
+            .unwrap();
+        set_schema(SCHEMA);
+        assert_eq!(check_kind(&conn), Ok(()));
+        // 有表、没有 schema 行 / 不是数字。
+        conn.execute("UPDATE srs_meta SET value = 'x' WHERE key = 'schema'", [])
+            .unwrap();
+        refused("not a generation 4 library");
+        conn.execute("DELETE FROM srs_meta WHERE key = 'schema'", [])
+            .unwrap();
+        refused("not a generation 4 library");
+    }
+
+    /// 本机状态表与 `collections` 的列（规划 §1.3）：名字、类型、NOT NULL、主键位置。
+    #[test]
+    fn the_local_state_tables_have_the_planned_columns() {
+        let conn = open_in_memory().unwrap();
+        let cols = |table: &str| -> Vec<String> {
+            conn.prepare(&format!("PRAGMA table_info({table})"))
+                .unwrap()
+                .query_map([], |r| {
+                    let name: String = r.get(1)?;
+                    let ty: String = r.get(2)?;
+                    let notnull: i64 = r.get(3)?;
+                    let pk: i64 = r.get(5)?;
+                    let mut s = format!("{name} {ty}");
+                    if notnull != 0 {
+                        s.push_str(" NN");
+                    }
+                    if pk != 0 {
+                        s.push_str(&format!(" PK{pk}"));
+                    }
+                    Ok(s)
+                })
+                .unwrap()
+                .collect::<Result<_, _>>()
+                .unwrap()
+        };
+        let want: [(&str, &[&str]); 8] = [
+            (
+                "collections",
+                &[
+                    "col INTEGER PK1",
+                    "profile_uid TEXT NN",
+                    "collection BLOB NN",
+                    "dir TEXT NN",
+                    "salts TEXT NN",
+                    "state INTEGER",
+                    "via TEXT",
+                    "at INTEGER",
+                ],
+            ),
+            (
+                "self_",
+                &[
+                    "col INTEGER PK1",
+                    "device BLOB NN",
+                    "sk BLOB NN",
+                    "hlc TEXT NN",
+                    "prev_device BLOB",
+                    "prev_seq INTEGER",
+                    "prev_chain BLOB",
+                    "created INTEGER NN",
+                ],
+            ),
+            (
+                "peers",
+                &[
+                    "col INTEGER NN PK1",
+                    "device BLOB NN PK2",
+                    "public BLOB NN",
+                    "name TEXT",
+                    "ext TEXT",
+                    "head_gen INTEGER",
+                    "first_seen INTEGER",
+                ],
+            ),
+            (
+                "held",
+                &[
+                    "col INTEGER NN PK1",
+                    "device BLOB NN PK2",
+                    "seq INTEGER NN PK3",
+                    "kind TEXT NN",
+                    "entity TEXT NN",
+                ],
+            ),
+            (
+                "checkpoints",
+                &[
+                    "col INTEGER NN PK1",
+                    "device BLOB NN PK2",
+                    "seq INTEGER NN PK3",
+                    "wall INTEGER NN",
+                    "name TEXT NN",
+                    "reason TEXT NN",
+                ],
+            ),
+            (
+                "media_local",
+                &[
+                    "col INTEGER NN PK1",
+                    "name TEXT NN PK2",
+                    "size INTEGER NN",
+                    "mtime INTEGER NN",
+                    "sha256 BLOB NN",
+                    "synced BLOB",
+                ],
+            ),
+            (
+                "media_at",
+                &[
+                    "col INTEGER NN PK1",
+                    "loc_key TEXT NN PK2",
+                    "sha BLOB NN PK3",
+                    "state INTEGER NN",
+                    "hlc TEXT NN",
+                ],
+            ),
+            (
+                "loc_state",
+                &[
+                    "col INTEGER NN PK1",
+                    "loc_key TEXT NN PK2",
+                    "loc_ids TEXT",
+                    "sealed INTEGER",
+                    "kdf TEXT",
+                    "check_ TEXT",
+                    "last_ok INTEGER",
+                ],
+            ),
+        ];
+        for (table, columns) in want {
+            assert_eq!(cols(table), columns, "{table}");
+        }
+        // 复合主键的本机表都是 WITHOUT ROWID（照搬 sync2_*）。
+        for table in [
+            "peers",
+            "held",
+            "checkpoints",
+            "media_local",
+            "media_at",
+            "loc_state",
+        ] {
+            let sql: String = conn
+                .query_row(
+                    "SELECT sql FROM sqlite_schema WHERE type = 'table' AND name = ?1",
+                    [table],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert!(sql.ends_with("WITHOUT ROWID"), "{table}: {sql}");
+        }
     }
 }

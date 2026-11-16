@@ -140,9 +140,9 @@ void main() {
 
     final String stored = SrsMediaStore.contentName('a.png', <int>[1, 2, 3]);
     expect(await media.load(stored), <int>[1, 2, 3]);
-    final String noteId = SrsIds.note(kSrsTestProfile, 'g1');
+    final String noteId = SrsKernelIds(kSrsTestProfile).note('g1');
     final String front = SrsIds.field(
-      SrsIds.noteType(kSrsTestProfile, _kBasic),
+      SrsKernelIds(kSrsTestProfile).noteType(_kBasic),
       111,
     );
     expect((await store.note(noteId))!.field(front), '猫<img src="$stored">');
@@ -185,7 +185,7 @@ void main() {
       file: file,
       zstdDecompress: (Uint8List b) => null,
     );
-    final String ntId = SrsIds.noteType(kSrsTestProfile, _kBasic);
+    final String ntId = SrsKernelIds(kSrsTestProfile).noteType(_kBasic);
     await store.deleteNoteType(ntId);
     expect(await store.listNotes(), isEmpty);
 

@@ -68,7 +68,7 @@ void main() {
   group('新建 / 克隆的 ID（铁律 C）', () {
     test('笔记类型 / 字段 / 模板 ID 全部由 ankiNum 派生，模板正文是 fieldId 引用', () {
       final SrsNewNoteType nt = basic();
-      expect(nt.id, SrsIds.noteType(kP, 1000));
+      expect(nt.id, SrsKernelIds(kP).noteType(1000));
       expect(nt.fields[0].id, SrsIds.field(nt.id, 1001));
       expect(nt.fields[0].ankiNum, 1001);
       expect(nt.templates[0].id, SrsIds.template(nt.id, 1003));
@@ -172,7 +172,7 @@ void main() {
       final SrsNoteTypeView from = _view(basic());
       final SrsNoteTypeView to = _view(basic(name: 'B2', start: 7000));
       final SrsNoteView n = _note(
-        SrsIds.note(kP, 'g1'),
+        SrsKernelIds(kP).note('g1'),
         from.id,
         <String, String>{from.fields[0].id: '猫', from.fields[1].id: 'cat'},
       );
@@ -235,7 +235,7 @@ void main() {
         ),
       );
       final SrsNoteView n = _note(
-        SrsIds.note(kP, 'g2'),
+        SrsKernelIds(kP).note('g2'),
         std.id,
         const <String, String>{},
       );
