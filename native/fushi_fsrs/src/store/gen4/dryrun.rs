@@ -1551,11 +1551,31 @@ fn write_report(work: &Path, report: &Value) -> Result<(), String> {
         .map_err(|e| format!("gen4 rehearsal: write report: {e}"))
 }
 
-/// 在跑的预演：库文件路径 → 它的中断开关。同一个库同时只跑一个；关库（`SrsCore::close`）先停掉它并等它放开连接。
-static REHEARSALS: Mutex<BTreeMap<PathBuf, std::sync::Arc<Stop>>> = Mutex::new(BTreeMap::new());
+/// 一个库上登记着的那次预演：它的中断开关与调用方给的运行号（`runId`，没给就是 None）。
+struct Running {
+    stop: std::sync::Arc<Stop>,
+    run_id: Option<String>,
+}
+
+/// 预演的进程内登记（一把锁管两张表，登记与「先到的取消」之间没有缝）。
+#[derive(Default)]
+struct Rehearsals {
+    /// 在跑的预演：库文件路径 → 那一次。同一个库同时只跑一个；关库（`SrsCore::close`）先停掉它并等它放开连接。
+    running: BTreeMap<PathBuf, Running>,
+    /// 取消先于登记到达的运行号：库文件路径 → 运行号。调用方（Dart）起跑后要先读缓存配置、再起后台 isolate，
+    /// 内核登记之前有一段窗口；这段时间里到的 `gen4_rehearse_cancel {runId}` 记在这里，那一次一登记就带着已停的开关
+    /// 开跑（立刻报 `cancelled`），取消不会因为早到而丢。一个库上新的一次登记时清掉它之前记的全部（之前的运行号要么
+    /// 已经登记过、要么会撞「already running」，都不会再来认领）；关库时也清掉。
+    cancelled_early: BTreeMap<PathBuf, BTreeSet<String>>,
+}
+
+static REHEARSALS: Mutex<Rehearsals> = Mutex::new(Rehearsals {
+    running: BTreeMap::new(),
+    cancelled_early: BTreeMap::new(),
+});
 static REHEARSAL_DONE: std::sync::Condvar = std::sync::Condvar::new();
 
-fn rehearsals() -> std::sync::MutexGuard<'static, BTreeMap<PathBuf, std::sync::Arc<Stop>>> {
+fn rehearsals() -> std::sync::MutexGuard<'static, Rehearsals> {
     REHEARSALS.lock().unwrap_or_else(|e| e.into_inner())
 }
 
@@ -1578,7 +1598,7 @@ pub fn rehearse(db: &Path, req: &Value) -> Result<Value, String> {
     rehearse_with(db, req, &mut |_, _| {})
 }
 
-/// 一个库上「预演在跑」的登记（[REHEARSALS] 里的那一项）。登记一插进去就构造它，此后不论 [run] 正常返回、提前返回
+/// 一个库上「预演在跑」的登记（[REHEARSALS] 里 `running` 的那一项）。登记一插进去就构造它，此后不论 [run] 正常返回、提前返回
 /// 还是中途 panic（FFI 边界的 `catch_unwind` 把 panic 吞成错误码、进程照活），`Drop` 都会删掉残留的临时新库、注销
 /// 登记并唤醒在 [stop_rehearsal] 里等它的关库——登记留下来，之后的关库就永远等不到它。
 struct Registration {
@@ -1590,8 +1610,8 @@ impl Drop for Registration {
     fn drop(&mut self) {
         // 展开时 run 的连接已随它的栈帧关掉，临时新库删得掉。
         remove_db(&self.work_db);
-        let mut running = rehearsals();
-        running.remove(&self.db);
+        let mut state = rehearsals();
+        state.running.remove(&self.db);
         REHEARSAL_DONE.notify_all();
     }
 }
@@ -1611,13 +1631,25 @@ fn rehearse_with(
         .and_then(Value::as_object)
         .map(|m| m.iter().map(|(k, v)| (k.clone(), v.to_string())).collect())
         .unwrap_or_default();
+    let run_id = req.get("runId").and_then(Value::as_str).map(str::to_owned);
     let stop = std::sync::Arc::new(Stop::new());
     let registration = {
-        let mut running = rehearsals();
-        if running.contains_key(db) {
+        let mut state = rehearsals();
+        if state.running.contains_key(db) {
             return Err("gen4 rehearsal: already running".to_owned());
         }
-        running.insert(db.to_path_buf(), stop.clone());
+        // 登记前就收到了这一次的取消：带着已停的开关开跑，[run] 第一步就报 cancelled。
+        let early = state.cancelled_early.remove(db).unwrap_or_default();
+        if run_id.as_ref().is_some_and(|id| early.contains(id)) {
+            stop.stop();
+        }
+        state.running.insert(
+            db.to_path_buf(),
+            Running {
+                stop: stop.clone(),
+                run_id: run_id.clone(),
+            },
+        );
         Registration {
             db: db.to_path_buf(),
             work_db: work.join(WORK_FILE),
@@ -1682,29 +1714,41 @@ pub fn rehearsal_report(db: &Path) -> Value {
         .ok()
         .and_then(|t| serde_json::from_str::<Value>(&t).ok())
         .unwrap_or(Value::Null);
-    if report["verdict"] == VERDICT_STARTED && rehearsals().contains_key(db) {
+    if report["verdict"] == VERDICT_STARTED && rehearsals().running.contains_key(db) {
         report["verdict"] = json!(VERDICT_RUNNING);
     }
     report
 }
 
-/// 请 [db] 上在跑的预演停下（不等）。没有在跑的就什么都不做。
-pub fn cancel_rehearsal(db: &Path) {
-    if let Some(stop) = rehearsals().get(db) {
-        stop.stop();
+/// 请 [db] 上的预演停下（不等）。给了 [run_id]：登记着的正是这一次就停它，否则（还没登记，或登记着的是先前的另一次）
+/// 记下这个运行号，它登记时带着已停的开关开跑。没给 [run_id]：停下登记着的那一次，没有就什么都不做。
+pub fn cancel_rehearsal(db: &Path, run_id: Option<&str>) {
+    let mut state = rehearsals();
+    match (state.running.get(db), run_id) {
+        (Some(r), None) => r.stop.stop(),
+        (Some(r), Some(id)) if r.run_id.as_deref() == Some(id) => r.stop.stop(),
+        (_, Some(id)) => {
+            state
+                .cancelled_early
+                .entry(db.to_path_buf())
+                .or_default()
+                .insert(id.to_owned());
+        }
+        (None, None) => {}
     }
 }
 
 /// 停下 [db] 上在跑的预演并等它放开对库的连接（关库前调：之后库文件可以被换掉 / 删掉）。语句被当场打断；纯内存的
 /// 阶段（别名判定等）做完这一段才查到开关，等的就是这一段。
 pub fn stop_rehearsal(db: &Path) {
-    let mut running = rehearsals();
-    if let Some(stop) = running.get(db) {
-        stop.stop();
+    let mut state = rehearsals();
+    state.cancelled_early.remove(db);
+    if let Some(r) = state.running.get(db) {
+        r.stop.stop();
     }
-    while running.contains_key(db) {
-        running = REHEARSAL_DONE
-            .wait(running)
+    while state.running.contains_key(db) {
+        state = REHEARSAL_DONE
+            .wait(state)
             .unwrap_or_else(|e| e.into_inner());
     }
 }
@@ -2037,17 +2081,59 @@ mod tests {
             let (path, req) = (path.clone(), req.clone());
             std::thread::spawn(move || rehearse(&path, &req))
         };
-        while !rehearsals().contains_key(&path) && !runner.is_finished() {
+        while !rehearsals().running.contains_key(&path) && !runner.is_finished() {
             std::thread::yield_now();
         }
         d.core.close();
-        assert!(!rehearsals().contains_key(&path));
+        assert!(!rehearsals().running.contains_key(&path));
         let r = runner.join().unwrap().unwrap();
         assert!(
             r["verdict"] == "cancelled" || r["verdict"] == "pass",
             "{r:#}"
         );
         assert!(!work.join(WORK_FILE).exists());
+    }
+
+    /// 取消早于登记到达（Dart 起跑后还在读缓存配置、起后台 isolate）：带着运行号的取消记下来，那一次一登记就报
+    /// `cancelled`、不跑一整轮；别的运行号不受影响，新的一次登记后先前记下的运行号作废；关库清掉记下的。
+    #[test]
+    fn a_cancel_that_arrives_before_registration_is_not_lost() {
+        let d = library("g4rehearseearlycancel");
+        let cfg_obj: Value = serde_json::from_str(&cfg()).unwrap();
+        let dispatch = |req: &Value| {
+            crate::store::ffi::sync2_dispatch(&d.core, req, &mut Vec::new(), &mut Vec::new())
+                .unwrap()
+        };
+        let path = d._dir.0.join("srs.db");
+        let work = d._dir.0.join("rehearsal");
+        let run = |id: &str| {
+            dispatch(&json!({
+                "op": "gen4_rehearse",
+                "work": work.display().to_string(),
+                "caches": {P: cfg_obj.clone()},
+                "runId": id,
+            }))
+        };
+        dispatch(&json!({"op": "gen4_rehearse_cancel", "runId": "r1"}));
+        let r = run("r1");
+        assert_eq!(r["verdict"], "cancelled", "{r:#}");
+        assert!(!rehearsals().running.contains_key(&path));
+        assert!(!work.join(WORK_FILE).exists());
+        // 已被认领：同一运行号再跑不再被那次取消拦下。
+        let r = run("r1");
+        assert_eq!(r["verdict"], "pass", "{r:#}");
+        // 记下的是别的运行号：这一次照跑，且它的登记清掉了先前记下的。
+        dispatch(&json!({"op": "gen4_rehearse_cancel", "runId": "r2"}));
+        let r = run("r3");
+        assert_eq!(r["verdict"], "pass", "{r:#}");
+        assert!(!rehearsals().cancelled_early.contains_key(&path));
+        let r = run("r2");
+        assert_eq!(r["verdict"], "pass", "{r:#}");
+        // 关库清掉还没认领的。
+        dispatch(&json!({"op": "gen4_rehearse_cancel", "runId": "r4"}));
+        assert!(rehearsals().cancelled_early.contains_key(&path));
+        d.core.close();
+        assert!(!rehearsals().cancelled_early.contains_key(&path));
     }
 
     /// 预演中途 panic（FFI 边界把它吞成错误码、进程照活）：登记照样注销、临时新库照样删，之后关库不卡、再跑不报
@@ -2075,7 +2161,7 @@ mod tests {
             serde_json::from_str(&std::fs::read_to_string(work.join(REPORT_FILE)).unwrap())
                 .unwrap();
         assert_eq!(marker["verdict"], VERDICT_STARTED, "{marker:#}");
-        assert!(!rehearsals().contains_key(&path));
+        assert!(!rehearsals().running.contains_key(&path));
         assert!(!work.join(WORK_FILE).exists());
         let (tx, rx) = std::sync::mpsc::channel();
         {
@@ -2121,7 +2207,7 @@ mod tests {
         assert_eq!(saved["verdict"], "error", "{saved:#}");
         assert_eq!(saved["error"], e);
         assert_eq!(saved["appVersion"], "2.0+7");
-        assert!(!rehearsals().contains_key(&missing));
+        assert!(!rehearsals().running.contains_key(&missing));
     }
 
     /// 本进程里正在跑的预演：报告命令把文件里的开跑标记报成 `running`，不是「上次中途死了」的 `started`；跑完读到
@@ -2171,7 +2257,7 @@ mod tests {
         .unwrap_err();
         assert!(e.starts_with(&alone), "{e}");
         assert!(e.contains("write report"), "{e}");
-        assert!(!rehearsals().contains_key(&missing));
+        assert!(!rehearsals().running.contains_key(&missing));
     }
 
     /// 设计 §10 第 14 条的合成实测：协议 3 迁移过的旧修改记录（带旧戳）被清除之后，从槽重建的旧戳闭包比老设备累计的
