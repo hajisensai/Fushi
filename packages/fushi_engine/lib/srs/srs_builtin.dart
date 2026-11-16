@@ -52,9 +52,9 @@ SrsBuiltinNoteTypeSpec? srsBuiltinNoteTypeSpec(String? key) {
   return null;
 }
 
-/// 某 profile 的内置笔记类型 ID。
+/// 某 profile 的内置笔记类型 ID（向内核要）。
 String srsBuiltinNoteTypeId(String profileUid, String key) =>
-    SrsIds.noteType(profileUid, SrsIds.builtinNoteTypeAnkiNum(key));
+    SrsKernelIds(profileUid).builtinNoteType(key);
 
 /// 内置字段 ID / ankiNum 的派生种子。Fushi 卡片 2026-10-29 给 9 个字段改了名
 /// （[FushiCardFields]），ID 仍按**旧名**派生：旧卡的字段值、同步日志、词状态零迁移。
@@ -66,8 +66,12 @@ String srsBuiltinFieldSeed(String key, String fieldKey) =>
 
 /// 内置笔记类型的字段键 → fieldId。
 String srsBuiltinFieldId(String profileUid, String key, String fieldKey) =>
+    _builtinFieldIdIn(srsBuiltinNoteTypeId(profileUid, key), key, fieldKey);
+
+/// 内置笔记类型 [noteTypeId]（[key]）里字段键 [fieldKey] 的 fieldId：由笔记类型 ID 派生，不带盐。
+String _builtinFieldIdIn(String noteTypeId, String key, String fieldKey) =>
     SrsIds.field(
-      srsBuiltinNoteTypeId(profileUid, key),
+      noteTypeId,
       SrsIds.builtinFieldAnkiNum(key, srsBuiltinFieldSeed(key, fieldKey)),
     );
 
@@ -96,7 +100,7 @@ SrsBuiltinNoteType srsBuiltinNoteType(
   final AnkiNoteTypeTemplate tpl = spec.template;
   final String nt = srsBuiltinNoteTypeId(profileUid, key);
   final Map<String, String> nameToId = <String, String>{
-    for (final String f in tpl.fields) f: srsBuiltinFieldId(profileUid, key, f),
+    for (final String f in tpl.fields) f: _builtinFieldIdIn(nt, key, f),
   };
   final int tplNum = SrsIds.builtinTemplateAnkiNum(key, tpl.cardName);
   return SrsBuiltinNoteType(
@@ -168,23 +172,31 @@ String srsLapisReadingFieldId(String profileUid) =>
     srsLapisFieldId(profileUid, 'ExpressionReading');
 
 /// 内置身份记录（每台设备都会确定性地生成同一份，合并后是同一行）。
-List<SrsEntityRecord> srsBuiltinEntities(String profileUid) =>
-    <SrsEntityRecord>[
+List<SrsEntityRecord> srsBuiltinEntities(String profileUid) {
+  // 默认牌组与各内置笔记类型的 ID 一次向内核要齐。
+  final List<String> ids = SrsKernelIds(profileUid).ask(<List<Object?>>[
+    const <Object?>['default_deck'],
+    for (final SrsBuiltinNoteTypeSpec spec in kSrsBuiltinNoteTypes)
+      <Object?>['builtin_notetype', spec.key],
+  ]).cast<String>();
+  return <SrsEntityRecord>[
+    SrsEntityRecord(
+      id: ids.first,
+      profileUid: profileUid,
+      kind: SrsEntityKind.deck,
+      payload: const <String, Object?>{'builtin': kSrsBuiltinDefaultDeckKey},
+    ),
+    for (final (int i, SrsBuiltinNoteTypeSpec spec)
+        in kSrsBuiltinNoteTypes.indexed)
       SrsEntityRecord(
-        id: SrsIds.builtinDefaultDeck(profileUid),
+        id: ids[i + 1],
         profileUid: profileUid,
-        kind: SrsEntityKind.deck,
-        payload: const <String, Object?>{'builtin': kSrsBuiltinDefaultDeckKey},
+        kind: SrsEntityKind.noteType,
+        payload: <String, Object?>{
+          'ankiNum': SrsIds.builtinNoteTypeAnkiNum(spec.key),
+          'ntKind': SrsNoteTypeKind.standard,
+          'builtin': spec.key,
+        },
       ),
-      for (final SrsBuiltinNoteTypeSpec spec in kSrsBuiltinNoteTypes)
-        SrsEntityRecord(
-          id: srsBuiltinNoteTypeId(profileUid, spec.key),
-          profileUid: profileUid,
-          kind: SrsEntityKind.noteType,
-          payload: <String, Object?>{
-            'ankiNum': SrsIds.builtinNoteTypeAnkiNum(spec.key),
-            'ntKind': SrsNoteTypeKind.standard,
-            'builtin': spec.key,
-          },
-        ),
-    ];
+  ];
+}

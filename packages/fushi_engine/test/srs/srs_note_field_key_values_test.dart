@@ -127,7 +127,7 @@ void main() {
             source: book(i),
           ),
         );
-        ids.add(SrsIds.note(kProfile, 'big-$i'));
+        ids.add(SrsKernelIds(kProfile).note('big-$i'));
       }
       await s.importDrafts(drafts);
     }

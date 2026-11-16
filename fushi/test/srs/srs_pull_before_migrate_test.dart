@@ -804,7 +804,7 @@ void main() {
       SrsFieldEdit(
         profileUid: uid,
         entityKind: SrsEntityKind.deck,
-        entityId: SrsIds.builtinDefaultDeck(uid),
+        entityId: SrsKernelIds(uid).defaultDeck,
         fieldKey: 'x/$seq',
         dot: SrsDot(writer, seq),
         ctx: SrsCausalContext.empty(),

@@ -296,7 +296,7 @@ void main() {
       final List<String> ids = <String>[];
       for (int i = 0; i < n; i++) {
         final String guid = 'purge-$tag-$i';
-        ids.add(SrsIds.note(kBulkUid, guid));
+        ids.add(SrsKernelIds(kBulkUid).note(guid));
         drafts.addAll(
           s.newNoteDrafts(
             noteTypeId: basic.id,
