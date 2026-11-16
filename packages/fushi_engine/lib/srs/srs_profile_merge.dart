@@ -58,13 +58,13 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show QueryRow, Variable;
-import 'package:fushi_core/fushi_core.dart'
-    show FushiDatabase, SrsDatabase, srsIdType;
+import 'package:fushi_core/fushi_core.dart' show FushiDatabase;
 import 'package:fushi_srs/fushi_srs.dart';
 
-import 'package:fushi_engine/srs/srs_backup_merge.dart' show SrsBackupSource;
+import 'package:fushi_engine/srs/srs_backup_merge.dart' show srsEventsOf;
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_reads.dart';
 import 'package:fushi_engine/srs/srs_profile_data.dart'
     show srsCommitProfileMerge, srsMarkProfileMerge;
 
@@ -101,10 +101,7 @@ String _mergedWriterOrigin(String w) {
 /// FFI）。哈希输入与 2026-11 之前的 `merged-<UUIDv5>` 相同，后缀把最初的写入者带下去，下一次合并据此剥回最初的写入者
 /// 再算，名字与合并路径无关。
 List<String> _mergedWriterNames(String newUid, List<String> origins) {
-  final List<String> h = uuidV5Batch(<(String, String)>[
-    for (final String o in origins)
-      (srsNamespace, 'profile-merge/$newUid/writer/$o'),
-  ]);
+  final List<String> h = SrsKernelIds.mergedWriterHashes(newUid, origins);
   return <String>[
     for (int i = 0; i < origins.length; i++)
       '$kSrsMergedWriterPrefix${h[i]}$_kMergedWriterOriginSeparator${origins[i]}',
@@ -199,19 +196,14 @@ enum SrsProfileMergeStage {
 
 /// srs.db 里记着、还没做完的并入。
 Future<List<SrsPendingProfileMerge>> srsPendingProfileMerges(
-  SrsDatabase srs,
+  SrsCore core,
 ) async {
+  final SrsColumns c = (await srsReadLib(core, 'profile_merges')).table;
+  final SrsStringColumn key = c.strings('key');
+  final SrsStringColumn value = c.strings('value');
   final List<SrsPendingProfileMerge> out = <SrsPendingProfileMerge>[];
-  for (final QueryRow r
-      in await srs
-          .customSelect(
-            'SELECT key, value FROM srs_meta WHERE key LIKE ?',
-            variables: <Variable<Object>>[
-              Variable<String>('$kSrsProfileMergeMarkerPrefix%'),
-            ],
-          )
-          .get()) {
-    final Object? v = jsonDecode(r.read<String>('value'));
+  for (int i = 0; i < c.rows; i++) {
+    final Object? v = jsonDecode(value[i]);
     if (v is! Map) continue;
     final Object? id = v['profileId'];
     final Object? neu = v['newUid'];
@@ -219,9 +211,7 @@ Future<List<SrsPendingProfileMerge>> srsPendingProfileMerges(
     out.add(
       SrsPendingProfileMerge(
         profileId: id,
-        oldUid: r
-            .read<String>('key')
-            .substring(kSrsProfileMergeMarkerPrefix.length),
+        oldUid: key[i].substring(kSrsProfileMergeMarkerPrefix.length),
         newUid: neu,
       ),
     );
@@ -246,8 +236,7 @@ Future<List<SrsPendingProfileMerge>> srsPendingProfileMerges(
 /// 只在旧 uid 还是本机 profile 时拉（profile 已切到 [newUid] 的重跑只做收尾）；拉到一半被杀：已收的批次都已提交，
 /// 并入标记还在，下次启动 [srsPendingProfileMerges] 照同样参数重跑，再拉一次（只拉缺的）再并入。
 Future<SrsProfileMergeResult> srsMergeProfileUid(
-  FushiDatabase db,
-  SrsDatabase srs, {
+  FushiDatabase db, {
   required SrsCore core,
   required int profileId,
   required String oldUid,
@@ -294,7 +283,6 @@ Future<SrsProfileMergeResult> srsMergeProfileUid(
   if (mediaRoot != null) await _copyMedia(mediaRoot, oldUid, newUid);
 
   final SrsDbStore target = await SrsDbStore.open(
-    db: srs,
     core: core,
     profileUid: newUid,
     deviceId: deviceId,
@@ -304,7 +292,7 @@ Future<SrsProfileMergeResult> srsMergeProfileUid(
   if (current == oldUid) {
     if (pullTarget != null) await pullTarget(target);
     plan = await _plan(
-      srs,
+      core,
       oldUid: oldUid,
       newUid: newUid,
       targetDots: await _targetDots(target),
@@ -317,7 +305,7 @@ Future<SrsProfileMergeResult> srsMergeProfileUid(
 
   for (int round = 0; ; round++) {
     plan = await _plan(
-      srs,
+      core,
       oldUid: oldUid,
       newUid: newUid,
       targetDots: await _targetDots(target),
@@ -400,15 +388,12 @@ final RegExp _uuidToken = RegExp(
 
 /// 旧 uid 下的事件 → ID 映射 → 改写成新 uid 下的事件。
 Future<_MergePlan> _plan(
-  SrsDatabase db, {
+  SrsCore db, {
   required String oldUid,
   required String newUid,
   required Map<String, Map<int, String>> targetDots,
 }) async {
-  final List<SrsEvent> events = await SrsBackupSource.split(
-    profiles: db,
-    srs: db,
-  ).eventsOf(oldUid);
+  final List<SrsEvent> events = await srsEventsOf(db, oldUid);
   final _IdMap ids = _IdMap(oldUid, newUid);
 
   final List<SrsEntityRecord> entities = <SrsEntityRecord>[];
@@ -430,10 +415,9 @@ Future<_MergePlan> _plan(
   final _Registers regs = _Registers(edits);
 
   // 1. 内置实体（代码按 uid 现算，必须落在新 uid 的同一批 ID 上）。
-  ids.exactly(
-    SrsIds.builtinDefaultDeck(oldUid),
-    SrsIds.builtinDefaultDeck(newUid),
-  );
+  final SrsKernelIds oldIds = SrsKernelIds(oldUid);
+  final SrsKernelIds newIds = SrsKernelIds(newUid);
+  ids.exactly(oldIds.defaultDeck, newIds.defaultDeck);
   for (final SrsBuiltinNoteTypeSpec spec in kSrsBuiltinNoteTypes) {
     final SrsBuiltinNoteType o = srsBuiltinNoteType(oldUid, spec);
     final SrsBuiltinNoteType n = srsBuiltinNoteType(newUid, spec);
@@ -453,8 +437,8 @@ Future<_MergePlan> _plan(
   for (final SrsEntityRecord r in entities) {
     if (r.kind != SrsEntityKind.noteType || ids.has(r.id)) continue;
     final Object? num = r.payload['ankiNum'];
-    if (num is int && SrsIds.noteType(oldUid, num) == r.id) {
-      ids.exactly(r.id, SrsIds.noteType(newUid, num));
+    if (num is int && oldIds.noteType(num) == r.id) {
+      ids.exactly(r.id, newIds.noteType(num));
     }
   }
   ids.fallbackAll(<String>[
@@ -518,16 +502,10 @@ Future<_MergePlan> _plan(
     if (ids.has(d)) continue;
     final String? path = regs.deckPath(d);
     if (path == null) continue;
-    if (SrsIds.deck(oldUid, path) == d) {
-      ids.exactly(d, SrsIds.deck(newUid, path));
-      continue;
-    }
-    for (int n = 1; n <= 8; n++) {
-      if (SrsIds.deckAlternate(oldUid, path, n) == d) {
-        ids.exactly(d, SrsIds.deckAlternate(newUid, path, n));
-        break;
-      }
-    }
+    // 正名与前 8 个备选，旧 uid 与新 uid 各一次 FFI。
+    final List<String> was = oldIds.deckCandidates(path, 8);
+    final int hit = was.indexOf(d);
+    if (hit >= 0) ids.exactly(d, newIds.deckCandidates(path, 8)[hit]);
   }
   ids.fallbackAll(<String>[
     ...deckIds,
@@ -551,8 +529,8 @@ Future<_MergePlan> _plan(
   final List<String> guids = <String>[
     for (final SrsEntityRecord r in notes) r.payload['guid']! as String,
   ];
-  final List<String> oldNotes = SrsIds.notes(oldUid, guids);
-  final List<String> newNotes = SrsIds.notes(newUid, guids);
+  final List<String> oldNotes = oldIds.notes(guids);
+  final List<String> newNotes = newIds.notes(guids);
   for (int i = 0; i < notes.length; i++) {
     if (oldNotes[i] == notes[i].id) ids.exactly(notes[i].id, newNotes[i]);
   }
@@ -563,23 +541,23 @@ Future<_MergePlan> _plan(
   ]);
 
   // 6. 卡片：UUIDv5(noteId, templateId/clozeOrd)，用映射后的笔记与模板重算（缓存刷新就是这么生成卡的）。
+  final SrsColumns cardCols = (await srsRead(
+    db,
+    oldUid,
+    'cards',
+    const <String, Object?>{
+      'fields': <String>['id', 'note_id', 'template_id', 'cloze_ord'],
+      'ordered': true,
+    },
+  )).table;
   final List<(String, String, String, int)> cards =
       <(String, String, String, int)>[
-        for (final QueryRow r
-            in await db
-                .customSelect(
-                  'SELECT id, note_id, template_id, cloze_ord FROM '
-                  'srs_cards_cache WHERE profile_uid = ? ORDER BY id',
-                  variables: <Variable<Object>>[
-                    Variable<String>(oldUid, srsIdType),
-                  ],
-                )
-                .get())
+        for (int i = 0; i < cardCols.rows; i++)
           (
-            r.read<String>('id'),
-            r.read<String>('note_id'),
-            r.read<String>('template_id'),
-            r.read<int>('cloze_ord'),
+            cardCols.strings('id')[i],
+            cardCols.strings('note_id')[i],
+            cardCols.strings('template_id')[i],
+            cardCols.ints('cloze_ord')[i],
           ),
       ];
   ids.fallbackAll(<String>[
@@ -799,22 +777,23 @@ String _logIdentity(String cardId, SrsReviewLog l) =>
 
 /// [profileUid] 名下已有复习日志的 身份 → ID。
 Future<Map<String, String>> _logIdsByIdentity(
-  SrsDatabase db,
+  SrsCore db,
   String profileUid,
 ) async {
+  final SrsColumns c = (await srsRead(
+    db,
+    profileUid,
+    'events',
+    const <String, Object?>{
+      'parts': <String>['logs'],
+      'ordered': true,
+    },
+  )).tables['logs']!;
+  final SrsStringColumn json = c.strings('json');
   final Map<String, String> out = <String, String>{};
-  for (final QueryRow r
-      in await db
-          .customSelect(
-            'SELECT json FROM srs_review_logs WHERE profile_uid = ? '
-            'ORDER BY id',
-            variables: <Variable<Object>>[
-              Variable<String>(profileUid, srsIdType),
-            ],
-          )
-          .get()) {
+  for (int i = 0; i < c.rows; i++) {
     final SrsReviewLog l = SrsReviewLog.fromJson(
-      (jsonDecode(r.read<String>('json')) as Map).cast<String, Object?>(),
+      (jsonDecode(json[i]) as Map).cast<String, Object?>(),
     );
     out.putIfAbsent(_logIdentity(l.cardId, l), () => l.id);
   }
@@ -863,9 +842,7 @@ class _IdMap {
         if (!_m.containsKey(id.toLowerCase())) id.toLowerCase(),
     }.toList();
     if (todo.isEmpty) return;
-    final List<String> out = uuidV5Batch(<(String, String)>[
-      for (final String id in todo) (srsNamespace, 'profile-merge/$newUid/$id'),
-    ]);
+    final List<String> out = SrsKernelIds.mergeFallbacks(newUid, todo);
     for (int i = 0; i < todo.length; i++) {
       _m[todo[i]] = out[i];
     }
@@ -1112,7 +1089,7 @@ Future<int> _applyMissing(SrsDbStore target, _MergePlan plan) async {
     plan.tail,
   ]) {
     final Set<String> have = await _presentIn(
-      target.db,
+      target.core,
       target.profileUid,
       <String>[for (final SrsEvent e in part) e.id],
     );
@@ -1129,61 +1106,24 @@ Future<int> _applyMissing(SrsDbStore target, _MergePlan plan) async {
 
 /// [profileUid] 名下已有的事件 ID（含被支配而不在投影里的修改记录、被清除内容的日志：看操作索引）。
 Future<Set<String>> _presentIn(
-  SrsDatabase db,
+  SrsCore db,
   String profileUid,
   Iterable<String> ids,
 ) async {
   final List<String> all = ids.toSet().toList();
-  final Set<String> out = <String>{};
-  for (int i = 0; i < all.length; i += 400) {
-    final List<String> chunk = all.sublist(
-      i,
-      i + 400 > all.length ? all.length : i + 400,
-    );
-    final String marks = List<String>.filled(chunk.length, '?').join(', ');
-    final List<Variable<Object>> vars = <Variable<Object>>[
-      Variable<String>(profileUid, srsIdType),
-      for (final String id in chunk) Variable<String>(id, srsIdType),
-    ];
-    for (final (String table, String col) in const <(String, String)>[
-      ('srs_entities', 'id'),
-      ('srs_field_edits', 'id'),
-      ('sync2_edit_ops', 'edit_id'),
-      ('srs_review_logs', 'id'),
-      ('sync2_log_meta', 'log_id'),
-      ('srs_unknown_events', 'id'),
-    ]) {
-      for (final QueryRow r
-          in await db
-              .customSelect(
-                'SELECT $col AS i FROM $table WHERE profile_uid = ? '
-                'AND $col IN ($marks)',
-                variables: vars,
-              )
-              .get()) {
-        out.add(r.read<String>('i'));
-      }
-    }
-  }
-  return out;
+  if (all.isEmpty) return <String>{};
+  return (await srsRead(db, profileUid, 'events_present', <String, Object?>{
+    'ids': all,
+    'ops': true,
+  })).table.strings('id').toList().toSet();
 }
 
-Future<Map<String, int>> _serverTimes(
-  SrsDatabase db,
-  String profileUid,
-) async => <String, int>{
-  for (final QueryRow r
-      in await db
-          .customSelect(
-            'SELECT event_id, server_time FROM srs_event_local '
-            'WHERE profile_uid = ? AND server_time IS NOT NULL',
-            variables: <Variable<Object>>[
-              Variable<String>(profileUid, srsIdType),
-            ],
-          )
-          .get())
-    r.read<String>('event_id'): r.read<int>('server_time'),
-};
+Future<Map<String, int>> _serverTimes(SrsCore db, String profileUid) async {
+  final SrsColumns c = (await srsRead(db, profileUid, 'server_times')).table;
+  final SrsStringColumn id = c.strings('id');
+  final SrsIntColumn st = c.ints('st');
+  return <String, int>{for (int i = 0; i < c.rows; i++) id[i]: st[i]};
+}
 
 // ---------------------------------------------------------------- 媒体
 

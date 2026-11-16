@@ -294,6 +294,8 @@ abstract final class BookFormatRebuild {
         destRels: destRels,
         bookDir: bookDir,
         onProgress: onProgress,
+        // 暂存目录是本函数自己建、finally 里删掉的：页图直接移进书目录。
+        pageSource: MangaPageSource.disposable,
       );
     } finally {
       if (staging.existsSync()) {
