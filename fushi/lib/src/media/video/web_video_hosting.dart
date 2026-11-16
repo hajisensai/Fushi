@@ -127,7 +127,7 @@ WebVideoLookupRequest? parseWebVideoLookupPayload(Object? raw) {
   );
 }
 
-/// DOM 字幕层点词的制卡锚点 cue（BUG-4713）：就是被点的那一句。
+/// DOM 字幕层点词的制卡锚点 cue（BUG-4714）：就是被点的那一句。
 ///
 /// DOM 层直接读页面 store 里的活对象，载荷里的 (cueStart, cueEnd, sentence) 是用户此刻看到、
 /// 点下去的那句的权威描述；Dart 侧 [cues] 只是 glue 节流投过来的轨快照（live 轨边看边改：文本
