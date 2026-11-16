@@ -124,8 +124,15 @@ Future<void> _seedVideo(
       updatedAt: 61000,
     ),
   );
-  for (final String watchTitle in <String>[title, ...watchTitles]) {
-    await _insertWatch(db, title: watchTitle, bookUid: bookUid);
+  // (book_uid, date_key) 唯一：同一身份的每个历史 title 落在不同的日子。
+  final List<String> titles = <String>[title, ...watchTitles];
+  for (int i = 0; i < titles.length; i++) {
+    await _insertWatch(
+      db,
+      title: titles[i],
+      bookUid: bookUid,
+      dateKey: '2026-09-${10 + i}',
+    );
   }
   await db.addLookupCount(
     bookKey: bookUid,
@@ -140,13 +147,14 @@ Future<void> _insertWatch(
   FushiDatabase db, {
   required String title,
   required String? bookUid,
+  String dateKey = '2026-09-16',
 }) => db
     .into(db.videoWatchStatistics)
     .insert(
       VideoWatchStatisticsCompanion.insert(
         title: title,
         bookUid: Value(bookUid),
-        dateKey: '2026-09-16',
+        dateKey: dateKey,
         subtitleChars: 120,
         watchTimeMs: 60000,
         lastModified: 1,
@@ -322,13 +330,13 @@ void main() {
       expect(
         snapshot['watch'],
         includeUnattributed
-            ? <String>['|S', 'video/e|E', 'video/e|Shared-old']
-            : <String>['null|A-old', '|S', 'video/e|E', 'video/e|Shared-old'],
+            ? <String>['video/e|E', 'video/e|Shared-old', '|S']
+            : <String>['null|A-old', 'video/e|E', 'video/e|Shared-old', '|S'],
         reason: '歧义 title S 的无身份行任何时候都不扫',
       );
       expect(snapshot['counters'], <String>[
-        if (!includeUnattributed) '${FushiDatabase.statSourceVideo}||A-old',
         '${FushiDatabase.statSourceVideo}|video/e|E',
+        if (!includeUnattributed) '${FushiDatabase.statSourceVideo}||A-old',
       ]);
     });
   }
