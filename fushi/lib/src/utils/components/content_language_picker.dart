@@ -14,6 +14,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_localisations.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 
@@ -31,12 +32,48 @@ const List<({String? tag, String label})> kContentLanguageOptions =
       (tag: 'en', label: 'English (en)'),
     ];
 
-/// BCP-47 标签 -> 显示名。不认识的标签原样返回（用户可能手动写了别的语言）。
+/// BCP-47 标签 -> 显示名：「语言自称 (完整标签)」。
+///
+/// 选择器里的五项原样返回它们的标签；其它标签（host 报的 `ko-KR`、用户手动写的
+/// `fr` 等）按主语言子标签查自称表——App 界面语言表（[FushiLocalisations.localeNames]）
+/// 加上它没有单列的主语言（`en` / `zh` / `pt` 在那张表里只以带地区的形式出现）——
+/// 再接上完整标签，如 `한국어 (ko-KR)`。`zh` 带文字子标签时用简体 / 繁體的自称。
+/// 主语言不认识的标签原样返回（用户可能手动写了别的语言）。
 String contentLanguageLabelOf(String tag) {
   for (final ({String? tag, String label}) option in kContentLanguageOptions) {
     if (option.tag == tag) return option.label;
   }
-  return tag;
+  final List<String> parts = tag
+      .split(RegExp('[-_]'))
+      .where((String part) => part.isNotEmpty)
+      .toList();
+  if (parts.isEmpty) return tag;
+  final String base = parts.first.toLowerCase();
+  final String? native = base == 'zh'
+      ? _chineseNativeName(parts.skip(1))
+      : (_kBaseLanguageNativeNames[base] ??
+            FushiLocalisations.localeNames[base]);
+  return native == null ? tag : '$native ($tag)';
+}
+
+/// [FushiLocalisations.localeNames] 只以带地区形式列出的主语言的自称。
+const Map<String, String> _kBaseLanguageNativeNames = <String, String>{
+  'en': 'English',
+  'pt': 'Português',
+};
+
+/// `zh-*` 的自称：带 `Hans` / `Hant` 文字子标签时用简体 / 繁體，否则「中文」
+/// （地区不等于文字：`zh-SG` 用简体、`zh-HK` 多用繁体，但不替用户猜）。
+String _chineseNativeName(Iterable<String> subtags) {
+  for (final String subtag in subtags) {
+    switch (subtag.toLowerCase()) {
+      case 'hans':
+        return '简体中文';
+      case 'hant':
+        return '繁體中文';
+    }
+  }
+  return '中文';
 }
 
 /// 弹出内容语言选择框。

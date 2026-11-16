@@ -21,6 +21,7 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/nav_bar_style.dart';
 import 'package:fushi/src/utils/adaptive/nav_overflow/nav_overflow_spec.dart';
 import 'package:fushi/src/utils/adaptive/nav_shape.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart';
 import 'package:fushi/src/utils/components/fushi_glass_surface.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
     show FushiCapsuleScale, kFushiFloatingCapsuleScale;
@@ -71,6 +72,7 @@ import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart'
 
 part 'nav_rail/nav_rail_shape.part.dart';
 part 'nav_rail/nav_rail_peek.part.dart';
+part 'nav_rail/nav_rail_look.part.dart';
 part 'nav_rail/apple_sidebar_tabs.part.dart';
 
 class AdaptiveNavItem {
@@ -921,6 +923,38 @@ class _MaterialNavCluster extends StatelessWidget {
     );
   }
 
+  /// 侧栏面板：原悬浮面板 / 色脊（平滑圆角的悬浮色块）/ 镂空脊（贴边色块 +
+  /// 当前项缺口）。目的地的配色经 [_RailLookScope] 下发。
+  Widget _railSurface(
+    BuildContext context, {
+    required _RailLook? look,
+    required bool glassDesign,
+    required Widget child,
+  }) {
+    if (look == null) {
+      return _FloatingNavSurface(
+        paint: !glassDesign,
+        borderRadius: BorderRadius.circular(_kMaterialRailPanelRadius),
+        child: child,
+      );
+    }
+    final Widget scoped = _RailLookScope(look: look, child: child);
+    if (look.notch) {
+      return _RailNotchSurface(
+        color: look.accent.container,
+        // 这里的 context 在侧栏自己的 SafeArea 之外：顶部安全区 = 色块要补画的高度。
+        topBleed: MediaQuery.paddingOf(context).top,
+        child: scoped,
+      );
+    }
+    return _FloatingNavSurface(
+      borderRadius: BorderRadius.circular(_kRailSpineRadius),
+      shape: shellShape(context, BorderRadius.circular(_kRailSpineRadius)),
+      color: look.accent.container,
+      child: scoped,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final ColorScheme colors = Theme.of(context).colorScheme;
@@ -1059,10 +1093,17 @@ class _MaterialNavCluster extends StatelessWidget {
               ? kAdaptiveNavRailWidth
               : kMaterialNavRailCollapsedWidth);
     const double glassInset = _kGlassSidebarMargin + 8;
+    // 重设计侧栏（镂空脊 / 色脊，见 nav_rail_look.part.dart）；null = 原悬浮面板。
+    final _RailLook? look = glassDesign ? null : _RailLook.resolve(context);
+    final bool notchRail = look?.notch ?? false;
     final VoidCallback? toggle = glassDesign ? null : onToggleExtended;
     final Widget? menu = toggle == null
         ? null
-        : _NavRailMenuButton(extended: railExtended, onPressed: toggle);
+        : _NavRailMenuButton(
+            extended: railExtended,
+            onPressed: toggle,
+            color: look?.foreground,
+          );
     final Widget? brand = leading;
     // 品牌位：收起 rail 居中 64；展开态（玻璃侧栏 / MD3 展开 rail）靠起始边、
     // 缩到 56 的应用图标（FittedBox 等比缩）；MD3 展开态与菜单钮同排时缩到 48。
@@ -1119,7 +1160,8 @@ class _MaterialNavCluster extends StatelessWidget {
           child: SafeArea(
             right: false,
             child: Padding(
-              padding: glassDesign
+              // 镂空脊贴边铺满占位宽，不留悬浮留白。
+              padding: glassDesign || notchRail
                   ? EdgeInsets.zero
                   : const EdgeInsetsDirectional.fromSTEB(
                       _kMaterialRailFloatingStart,
@@ -1130,11 +1172,10 @@ class _MaterialNavCluster extends StatelessWidget {
               // 速览卡贴在这块悬浮面板的右缘外（见 [_NavRailPeekScope]）。
               child: _NavRailPeekScope(
                 enabled: !glassDesign,
-                child: _FloatingNavSurface(
-                  paint: !glassDesign,
-                  borderRadius: BorderRadius.circular(
-                    _kMaterialRailPanelRadius,
-                  ),
+                child: _railSurface(
+                  context,
+                  look: look,
+                  glassDesign: glassDesign,
                   child: Padding(
                     padding: glassDesign
                         ? EdgeInsets.symmetric(
@@ -1146,10 +1187,19 @@ class _MaterialNavCluster extends StatelessWidget {
                                       2,
                             vertical: glassInset,
                           )
-                        : EdgeInsets.symmetric(
-                            horizontal: railExtended ? 12 : 0,
-                            vertical: 8,
-                          ),
+                        : (notchRail
+                              // 镂空脊：目的地排在「缺口起始边 → 侧栏内缘」这一段里
+                              // 居中 / 铺开，上方多留一点给贴边的菜单钮。
+                              ? EdgeInsetsDirectional.fromSTEB(
+                                  _kRailNotchStart + (railExtended ? 12 : 0),
+                                  18,
+                                  railExtended ? 12 : 0,
+                                  12,
+                                )
+                              : EdgeInsets.symmetric(
+                                  horizontal: railExtended ? 12 : 0,
+                                  vertical: 8,
+                                )),
                     child: Column(
                       children: <Widget>[
                         if (menu != null || brand != null) header,
@@ -1164,7 +1214,7 @@ class _MaterialNavCluster extends StatelessWidget {
                             behavior: ScrollConfiguration.of(
                               context,
                             ).copyWith(scrollbars: false),
-                            child: SingleChildScrollView(
+                            child: _RailScrollView(
                               // 侧栏同样只有一枚在项间纵向滑动的指示器（2026-10-06
                               // 用户「侧边栏也要有切换动画」）：收起 rail 的 56×32
                               // 药丸、展开 rail 的整行药丸都由它滑过去，选中项超出
@@ -1182,12 +1232,21 @@ class _MaterialNavCluster extends StatelessWidget {
                                 liquid: !glassDesign,
                                 color: isEinkTheme(context)
                                     ? colors.onSurface
-                                    : (railExtended
-                                          ? colors.secondaryContainer
-                                          : colors.primary),
+                                    : (look != null
+                                          ? (railExtended
+                                                ? look.rowFill
+                                                : look.accent.indicator)
+                                          : (railExtended
+                                                ? colors.secondaryContainer
+                                                : colors.primary)),
                                 child: Column(
                                   children: <Widget>[
-                                    const SizedBox(height: 8),
+                                    // 镂空脊：首尾留出缺口内凹圆角的高度。
+                                    SizedBox(
+                                      height: notchRail
+                                          ? _kRailNotchFillet + _kRailNotchBleed
+                                          : 8,
+                                    ),
                                     for (final Widget tile in buildTiles(
                                       cellWidth: null,
                                     ))
@@ -1196,6 +1255,12 @@ class _MaterialNavCluster extends StatelessWidget {
                                           vertical: glassDesign ? 1 : 0,
                                         ),
                                         child: tile,
+                                      ),
+                                    if (notchRail)
+                                      const SizedBox(
+                                        height:
+                                            _kRailNotchFillet +
+                                            _kRailNotchBleed,
                                       ),
                                   ],
                                 ),
@@ -2076,6 +2141,7 @@ class _SlidingIndicatorScopeState extends State<_SlidingIndicatorScope>
 
   @override
   void dispose() {
+    _notchHost?.detach(this);
     _progress.animation.removeStatusListener(_onStatus);
     _progress.animation.removeListener(_onProgress);
     _progress.dispose();
@@ -2100,6 +2166,33 @@ class _SlidingIndicatorScopeState extends State<_SlidingIndicatorScope>
     final RenderObject? slot = _slotRenderObject(id);
     if (slot is! RenderBox || !slot.attached || !slot.hasSize) return null;
     return slot.localToGlobal(Offset.zero, ancestor: scope) & slot.size;
+  }
+
+  /// 指示器此刻该画在哪（相对 [scope]）：静止 = 选中槽，滑动中 = 当帧的插值
+  /// 矩形。与 [_SlidingIndicatorPainter] 同一算法，但不改任何状态；镂空脊的
+  /// 缺口（[_RailNotchSurfaceState]）按它定位。
+  Rect? _currentRect(RenderBox scope) {
+    final Rect? target = _targetIn(scope);
+    if (target == null) return null;
+    final Rect? from = _from;
+    if (from == null || !_sliding) return target;
+    final double t = _progress.value;
+    return widget.liquid
+        ? _SlidingIndicatorPainter._liquidRect(from, target, t)
+        : Rect.lerp(from, target, t)!;
+  }
+
+  _RailNotchSurfaceState? _notchHost;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final _RailNotchSurfaceState? host = _RailNotchHost.maybeOf(context);
+    if (!identical(host, _notchHost)) {
+      _notchHost?.detach(this);
+      _notchHost = host;
+    }
+    host?.attach(this);
   }
 
   /// 选中目的地药丸槽相对 [scope] 的矩形；还没布局 / 没登记时 null。
@@ -2362,13 +2455,31 @@ class _NavMenuRow extends StatelessWidget {
 ///
 /// [paint] 为 false（Apple 设计系统，玻璃另画）时只是透明直通，结构不变——
 /// 设计系统切换不重挂目的地。
+/// 侧栏目的地列表的滚动容器：镂空脊下把滚动控制器交给 [_RailNotchSurfaceState]
+/// （缺口要跟着滚动走），其它样式就是普通的 [SingleChildScrollView]。
+class _RailScrollView extends StatelessWidget {
+  const _RailScrollView({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => SingleChildScrollView(
+    controller: _RailNotchHost.maybeOf(context)?.scroll,
+    child: child,
+  );
+}
+
 class _FloatingNavSurface extends StatelessWidget {
   const _FloatingNavSurface({
     required this.borderRadius,
     required this.child,
     this.paint = true,
     this.color,
+    this.shape,
   });
+
+  /// 面板外形；null = 按 [borderRadius] 的普通圆角矩形（色脊传平滑圆角）。
+  final OutlinedBorder? shape;
 
   final BorderRadius borderRadius;
   final bool paint;
@@ -2389,12 +2500,14 @@ class _FloatingNavSurface extends StatelessWidget {
       surfaceTintColor: Colors.transparent,
       shadowColor: colors.shadow,
       elevation: paint && !eink ? 3 : 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: paint ? borderRadius : BorderRadius.zero,
-        side: paint && eink
-            ? BorderSide(color: colors.outline)
-            : BorderSide.none,
-      ),
+      shape: paint && !eink && shape != null
+          ? shape!
+          : RoundedRectangleBorder(
+              borderRadius: paint ? borderRadius : BorderRadius.zero,
+              side: paint && eink
+                  ? BorderSide(color: colors.outline)
+                  : BorderSide.none,
+            ),
       clipBehavior: paint ? Clip.antiAlias : Clip.none,
       child: Stack(
         fit: StackFit.passthrough,
@@ -2705,7 +2818,14 @@ class _AnimatedRailWidthState extends State<_AnimatedRailWidth>
 /// `autoHome: false`：被动 auto-home 仍落到第一个目的地，只有显式方向导航
 /// 才停在这里；A / 回车经 [InkWell] 的 ActivateIntent 映射触发。
 class _NavRailMenuButton extends StatelessWidget {
-  const _NavRailMenuButton({required this.extended, required this.onPressed});
+  const _NavRailMenuButton({
+    required this.extended,
+    required this.onPressed,
+    this.color,
+  });
+
+  /// 图标色；null = onSurfaceVariant（重设计侧栏传色块上的前景色）。
+  final Color? color;
 
   static const FushiFocusId focusId = FushiFocusId('nav-rail-menu');
 
@@ -2770,7 +2890,7 @@ class _NavRailMenuButton extends StatelessWidget {
                     icon,
                     key: ValueKey<IconData>(icon),
                     size: 24,
-                    color: colors.onSurfaceVariant,
+                    color: color ?? colors.onSurfaceVariant,
                   ),
                 ),
               ),
@@ -3191,6 +3311,10 @@ class _NavFocusCellState extends State<_NavFocusCell> {
   /// 的矩形裁剪，见 [_NavIndicatorInkWell]。
   final GlobalKey _indicatorKey = GlobalKey(debugLabel: 'nav-indicator');
 
+  /// 重设计侧栏展开行的图标槽：悬停 / 按压状态层只画在它上面（设计稿
+  /// `.dest .slot .hov`），不铺整行。
+  final GlobalKey _glyphKey = GlobalKey(debugLabel: 'nav-glyph');
+
   /// 所在 MD3 悬浮胶囊的滑动指示器（登记本格药丸槽，供它取目标矩形）。
   _SlidingIndicatorScopeState? _slider;
 
@@ -3239,6 +3363,7 @@ class _NavFocusCellState extends State<_NavFocusCell> {
       pillWidth: metrics.pillWidth,
       compactLabel: metrics.compact,
       indicatorKey: _indicatorKey,
+      glyphKey: _glyphKey,
       glassOwnLens: widget.glassOwnLens,
       railShape: widget.railShape,
     );
@@ -3279,6 +3404,12 @@ class _NavFocusCellState extends State<_NavFocusCell> {
     // 玻璃：按压反馈与选中态都是中性灰填充，桌面侧栏行悬停给一层最浅的
     // systemFill（macOS 源列表的 hover）；不画 MD 涟漪。
     final Color glassHover = appleColorsOf(context).tertiaryFill;
+    // 重设计侧栏（镂空脊 / 色脊）：选中由镂空 / 色脊自己表达，状态层照设计稿
+    // 只是图标槽上的一枚圆（前景色 14%），选中项不画，也不画涟漪——整行的灰色
+    // 药丸会叠在镂空上露出一截圆头，切换时涟漪还会跟着刚到的镂空一起露出来。
+    final _RailLook? railLook = horizontal || glassDesign
+        ? null
+        : _RailLookScope.maybeOf(context);
     // ActivateIntent must sit ABOVE the focus node: the gamepad/keyboard path
     // dispatches it at the primary-focus context and walks UP the Actions chain.
     final Widget cell = Actions(
@@ -3295,7 +3426,11 @@ class _NavFocusCellState extends State<_NavFocusCell> {
         // 药丸上、与选中高亮同尺寸同圆角（M3 NavigationBar 的 indicator ink；
         // 2026-10-05 用户反馈「点击灰色那个直接跟高亮范围一致」）。展开 rail 的
         // 行本身就是药丸、玻璃不画涟漪，药丸槽不挂载时状态层退回整格。
-        indicatorKey: glassDesign || materialRailRow ? null : _indicatorKey,
+        indicatorKey: glassDesign
+            ? null
+            : (materialRailRow
+                  ? (railLook != null ? _glyphKey : null)
+                  : _indicatorKey),
         onTap: onSelect,
         canRequestFocus: false,
         // MD3 Expressive：状态层与药丸同为全圆角（展开 rail 的行 28，收起
@@ -3308,7 +3443,9 @@ class _NavFocusCellState extends State<_NavFocusCell> {
               )
             : BorderRadius.circular(
                 materialRailRow
-                    ? _kMaterialRailRowHeight / 2
+                    ? (railLook != null
+                          ? _kNavRailRowShapeSize / 2
+                          : _kMaterialRailRowHeight / 2)
                     : (collapsedMaterialRail
                           ? _kNavRailShapeSize / 2
                           : _materialBarShapeSize(
@@ -3319,7 +3456,9 @@ class _NavFocusCellState extends State<_NavFocusCell> {
               ),
         // 玻璃设计系统不画 MD 涟漪（按压反馈是选中气泡本身）；InkWell 本身保留，
         // 焦点目标的父链不随设计系统变。
-        splashFactory: glassDesign ? NoSplash.splashFactory : null,
+        splashFactory: glassDesign || railLook != null
+            ? NoSplash.splashFactory
+            : null,
         overlayColor: glassDesign
             ? WidgetStateProperty.resolveWith<Color>(
                 (Set<WidgetState> states) =>
@@ -3329,7 +3468,21 @@ class _NavFocusCellState extends State<_NavFocusCell> {
                     ? glassHover
                     : Colors.transparent,
               )
-            : null,
+            : (railLook == null
+                  ? null
+                  : WidgetStateProperty.resolveWith<Color>((
+                      Set<WidgetState> states,
+                    ) {
+                      if (selected) return Colors.transparent;
+                      if (states.contains(WidgetState.pressed)) {
+                        return railLook.foreground.withValues(alpha: 0.2);
+                      }
+                      if (states.contains(WidgetState.hovered) ||
+                          states.contains(WidgetState.focused)) {
+                        return railLook.foreground.withValues(alpha: 0.14);
+                      }
+                      return Colors.transparent;
+                    })),
         child: Padding(
           padding: glassDesign || materialRailRow
               ? EdgeInsets.zero
@@ -3427,6 +3580,7 @@ class _FushiNavTile extends StatelessWidget {
     this.pillWidth = AdaptiveNavTileMetrics.fullPillWidth,
     this.compactLabel = false,
     this.indicatorKey,
+    this.glyphKey,
     this.glassOwnLens = false,
     this.railShape,
   });
@@ -3626,6 +3780,9 @@ class _FushiNavTile extends StatelessWidget {
   /// [_NavIndicatorInkWell] 把状态层裁到指示器、滑动墨滴取落点。
   final GlobalKey? indicatorKey;
 
+  /// 挂在 MD3 展开 rail 行的图标槽上：重设计侧栏把状态层裁到这一格。
+  final GlobalKey? glyphKey;
+
   /// MD3 展开 rail 的一行（M3 Expressive expanded navigation rail）：行高 56，
   /// 24 图标 + 14 号 w500 标签横排，选中是包住图标与文字的全圆角
   /// secondaryContainer 药丸（onSecondaryContainer 前景），未选中
@@ -3640,12 +3797,17 @@ class _FushiNavTile extends StatelessWidget {
     // 滑块正在纵向滑：本行先不填色；有滑块时填色瞬间切换（动效由滑块给），
     // 否则落定交接处会多一段淡入。
     final bool sliding = slider?.sliding ?? false;
+    final _RailLook? look = _RailLookScope.maybeOf(context);
     final Color pillColor = sliding
         ? Colors.transparent
-        : (eink ? colors.onSurface : colors.secondaryContainer);
-    final Color fg = selected
-        ? (eink ? colors.surface : colors.onSecondaryContainer)
-        : colors.onSurfaceVariant;
+        : (eink
+              ? colors.onSurface
+              : (look?.rowFill ?? colors.secondaryContainer));
+    final Color fg = look != null
+        ? (selected ? look.selectedLabel : look.foreground)
+        : (selected
+              ? (eink ? colors.surface : colors.onSecondaryContainer)
+              : colors.onSurfaceVariant);
     final Duration duration = slider != null
         ? Duration.zero
         : fushiMotionDuration(context, FushiMotion.short);
@@ -3656,6 +3818,7 @@ class _FushiNavTile extends StatelessWidget {
     // 形状在时图标改 onPrimary。
     final bool shapeShown = selected && !sliding && railShape != null;
     final Widget glyph = SizedBox.square(
+      key: glyphKey,
       dimension: _kNavRailRowShapeSize,
       child: Stack(
         alignment: Alignment.center,
@@ -3664,7 +3827,9 @@ class _FushiNavTile extends StatelessWidget {
             NavMorphShape(
               shape: railShape!,
               visible: shapeShown,
-              color: eink ? colors.surface : colors.primary,
+              color: eink
+                  ? colors.surface
+                  : (look?.accent.indicator ?? colors.primary),
               size: _kNavRailRowShapeSize,
             ),
           _maybeBadge(
@@ -3673,7 +3838,9 @@ class _FushiNavTile extends StatelessWidget {
               icon,
               size: 24,
               color: shapeShown
-                  ? (eink ? colors.onSurface : colors.onPrimary)
+                  ? (eink
+                        ? colors.onSurface
+                        : (look?.accent.onIndicator ?? colors.onPrimary))
                   : fg,
             ),
           ),
@@ -3705,10 +3872,18 @@ class _FushiNavTile extends StatelessWidget {
               item.label,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: (textTheme.labelLarge ?? const TextStyle()).copyWith(
-                color: fg,
-                fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-              ),
+              style: look != null
+                  // 重设计侧栏：选中项的名字加大加粗（展开态才有文字）。
+                  ? (textTheme.titleMedium ?? const TextStyle()).copyWith(
+                      color: fg,
+                      fontSize: selected ? 19 : 15,
+                      fontWeight: selected ? FontWeight.w900 : FontWeight.w700,
+                      letterSpacing: selected ? -0.4 : 0,
+                    )
+                  : (textTheme.labelLarge ?? const TextStyle()).copyWith(
+                      color: fg,
+                      fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                    ),
             ),
           ),
         ],
@@ -3726,12 +3901,15 @@ class _FushiNavTile extends StatelessWidget {
     final bool sliding =
         _SlidingIndicatorScope.maybeOf(context)?.sliding ?? false;
     final bool landed = selected && !sliding;
+    final _RailLook? look = _RailLookScope.maybeOf(context);
     // 新选中项一开始就朝 onPrimary 渐变（时长与墨滴滑行同量级），墨滴滑到
     // 它底下时字形已经是反色。此前滑行中染成 primary，与 primary 墨滴同色，
     // 图标整个被「纯色盖住」直到落定（用户 2026-10-26）。
     final Color fg = selected
-        ? (eink ? colors.surface : colors.onPrimary)
-        : colors.onSurfaceVariant;
+        ? (eink
+              ? colors.surface
+              : (look?.accent.onIndicator ?? colors.onPrimary))
+        : (look?.foreground ?? colors.onSurfaceVariant);
     final IconData icon = selected
         ? (item.selectedIcon ?? item.icon)
         : item.icon;
@@ -3744,7 +3922,9 @@ class _FushiNavTile extends StatelessWidget {
           NavMorphShape(
             shape: railShape ?? kNavRailFallbackShapes.first,
             visible: landed,
-            color: eink ? colors.onSurface : colors.primary,
+            color: eink
+                ? colors.onSurface
+                : (look?.accent.indicator ?? colors.primary),
             size: _kNavRailShapeSize,
           ),
           TweenAnimationBuilder<Color?>(

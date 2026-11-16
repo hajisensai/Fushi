@@ -498,6 +498,10 @@ const List<String> _deviceLocalTables = <String>[
   // 路径，设备本地；覆盖恢复后回灌，再由 applyMusicTrackUidAliases 改指恢复进来的
   // 歌单 / 播放记录。无外键。
   'music_track_uid_aliases',
+  // v153：已配对服务器上托管词典的本机目录行（键含本机配对记下的 hostId，配置列是本机
+  // live 值）。配对本身（sync_hibiki_client_urls）就是设备本地的，换台设备 hostId 对不上
+  // 任何配对；覆盖恢复后从本机 bak 回灌，下次目录刷新再对账。无外键。
+  'remote_dictionary_metadata',
 ];
 
 const List<String> _deviceLocalTablesParentFirst = <String>[
@@ -538,6 +542,7 @@ const List<String> _deviceLocalTablesParentFirst = <String>[
   'music_metadata_raw_snapshots',
   'music_locked_fields',
   'music_track_uid_aliases',
+  'remote_dictionary_metadata',
 ];
 
 /// Content tables stripped from the exported DB copy when the `statistics`
@@ -1138,7 +1143,7 @@ class BackupService {
   /// SRS 用户笔记数（本机 srs.db；还没搬迁时读主库里的老表）。
   Future<int> _countSrsNotes() async {
     final SrsStorage? srs = await _srsStorage?.call();
-    return srsUserNoteCount(srs?.db ?? _db);
+    return srs != null ? srsUserNoteCountIn(srs.core) : srsUserNoteCount(_db);
   }
 
   /// 音乐用户数据行数（活库）：[musicUserTables] 合计。
@@ -1277,7 +1282,7 @@ class BackupService {
       if (srs != null) {
         srsSnapshotPath = p.join(tmpDir.path, _srsDbName);
         await _snapshotSrs(srs, srsSnapshotPath);
-        srsProfileUidSet = await srsProfileUids(srs.db);
+        srsProfileUidSet = await srsProfileUidsIn(srs.core);
       }
 
       // Strip sync credentials from the copy before it leaves the device.

@@ -17,6 +17,7 @@ import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
 import 'package:fushi_engine/sync/local_directory_asset_store.dart';
 import 'package:test/test.dart';
 
+import 'support/srs_raw_sql.dart';
 import 'support/srs_test_storage.dart';
 
 class _Device {
@@ -49,7 +50,6 @@ class _Device {
   }
 
   Future<SrsDbStore> _openStore() async => SrsDbStore.open(
-    db: srs.db,
     core: srs.core,
     profileUid: await db.profileUidOf(profileId),
     deviceId: deviceId,
@@ -83,7 +83,7 @@ class _Device {
   );
 
   Future<int> metaKeys(String uid) async =>
-      (await srs.db
+      (await srs.core
               .customSelect(
                 'SELECT COUNT(*) AS c FROM srs_meta WHERE key = ?',
                 variables: <Variable<Object>>[

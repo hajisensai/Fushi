@@ -86,11 +86,17 @@ void main() {
       // AppBar，两者在「有没有 try/catch」两种情况下都成立，是恒真断言。
       // 只有这句文案能区分「异常被收敛」和「永久卡在加载态」。
       expect(find.text(t.video_load_failed_not_found), findsOneWidget);
-      // 且这一屏有可见的返回入口（AppBar 的自动 leading）。
-      expect(find.byType(BackButton), findsOneWidget);
+      // 且这一屏有可见的返回入口：墨水屏是 AppBar 的自动 leading，重设计外壳是
+      // 海报面板裸图标页头（MediaPosterDetailChrome）的返回键。
+      final Finder back = find.byWidgetPredicate(
+        (Widget w) =>
+            w is BackButton ||
+            w.key == const ValueKey<String>('media-poster-detail-back'),
+      );
+      expect(back, findsOneWidget);
 
       // 点它必须真的退得出去。
-      await tester.tap(find.byType(BackButton));
+      await tester.tap(back);
       await tester.pumpAndSettle();
       expect(find.byType(VideoWorkDetailPage), findsNothing);
       expect(find.text('open'), findsOneWidget);
@@ -100,7 +106,8 @@ void main() {
   /// 加载态本身也必须有出口 —— 出口不随内容存亡。这一条走**源码守卫**而不是 widget
   /// 行为：加载态在 widget 环境里不可靠复现（in-memory DB 一帧内就完成，FutureBuilder
   /// 直接落到 done），而 `WebVideoFushiPage` 更是要真 WebView2 环境才起得来。守的
-  /// 不变式很窄也很硬：**这两个文件里每一处 `return Scaffold(` 都必须带 `appBar:`。**
+  /// 不变式很窄也很硬：**这两个文件里每一处 `return Scaffold(` 都必须带 `appBar:`**，
+  /// 或者（重设计外壳）正文套 `MediaPosterDetailChrome(`——它自带返回键页头。
   ///
   /// 只守这两个文件，不扩到 `video_fushi_page.dart` —— 那一个是**另一种范式**
   /// （BUG-102：退出并进 media_kit 视频内顶栏，Scaffold 故意不挂 AppBar），
@@ -124,9 +131,12 @@ void main() {
             continue;
           }
           checked++;
-          // 构造体前几行里必须出现 appBar:（它总排在 body 之前）。
+          // 构造体前几行里必须出现 appBar:（它总排在 body 之前），或正文是
+          // 带返回键页头的 MediaPosterDetailChrome。
           final int end = (i + 8) > lines.length ? lines.length : (i + 8);
-          if (!lines.sublist(i, end).join('\n').contains('appBar:')) {
+          final String head = lines.sublist(i, end).join('\n');
+          if (!head.contains('appBar:') &&
+              !head.contains('MediaPosterDetailChrome(')) {
             offenders.add('$rel:${i + 1} → ${lines[i].trim()}');
           }
         }

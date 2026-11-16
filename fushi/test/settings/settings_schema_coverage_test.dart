@@ -54,6 +54,17 @@ const String _kFloatingBallSceneButtons =
     '各场景的勾选互不影响 / 勾选了但页面此刻没提供的专属按钮跳过';
 
 const Map<String, String> kCoveredElsewhere = <String, String>{
+  // 外壳样式（PR #3397）：生效点是外壳侧栏 / 库页 / 色块墙 / 主题层表面形状，
+  // harness 设置页里没有外壳与库页。偏好 → 应用主题 [FushiShellTheme] 扩展由
+  // 专项单测咬住，各消费方只读这一份扩展。
+  'appearance/Sidebar style':
+      'test/settings/shell_style_settings_effect_test.dart（切色脊 → 主题扩展跟着变）',
+  'appearance/Library layout':
+      'test/settings/shell_style_settings_effect_test.dart（切封面网格 → 主题扩展跟着变）',
+  'appearance/Block arrangement':
+      'test/settings/shell_style_settings_effect_test.dart（选交错 → 主题扩展带上所选值）',
+  'appearance/Smooth corners':
+      'test/settings/shell_style_settings_effect_test.dart（关平滑圆角 → 主题扩展跟着变）',
   // 桌面小组件隐私（仅 Android）：生效点是推给原生侧的快照 `privacy` 字段与 Glance
   // 小组件渲染，harness 设置页里没有小组件。偏好 → 快照字段由快照单测咬住，原生侧
   // 隐藏标题 / 释义 / Profile 名见 docs/agent/android-widgets.md（设备验证）。
@@ -1505,7 +1516,6 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/pages/video_hover_leave_resume_test.dart',
   'lookup/Aggregate word frequencies': 'DEVICE: popup.js frequency aggregation',
   'lookup/Auto search': 'WIDGET-TODO: HomeDictionaryPage debounce gate',
-  'lookup/Remote dictionary lookup': 'INTEGRATION: remote host lookup',
   // 「允许连接」三态：偏好 → AppModel.fushiApiAccessPolicy（seed 测试）→ 服务端监听地址与
   // 逐请求放行判定（access 测试用本机局域网地址真连，非本机无密钥 403 / 白名单外 403 /
   // 仅本机连 TCP 都建不起来）。harness 里不起真实非回环连接，观测不到。
@@ -1749,13 +1759,10 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'interconnect/Allow remote connections over a P2P tunnel':
       'test/sync/interconnect_p2p_tunnel_test.dart + '
       'INTEGRATION: 跨 NAT 真机打洞',
-  // 远端查词：与 lookup 分类共享同一份 item 定义。⚠️ 门本身
-  // （AppModel._searchRemoteDictionary 开头的 remoteLookupEnabled 短路）没有守卫，
-  // 仍是设备 backlog；下面两个文件只覆盖偏好往返与开关打开后的客户端链路。
-  'interconnect/Remote dictionary lookup':
-      'INTEGRATION: remote host lookup（门本身仍无守卫）+ '
-      'test/models/preferences_repository_test.dart + '
-      'test/sync/fushi_remote_lookup_client_test.dart',
+  // 远端查词的全局开关已删除（2026-11-09 并入每台 host 的「用这台服务器查词典」，
+  // 查词 › 词典服务器只剩导航行，不在本覆盖面内）。总闸派生见
+  // test/models/app_model_remote_local_merge_test.dart，一次性迁移见
+  // test/models/remote_lookup_host_switch_migration_test.dart。
   // 显示远端条目：与 syncBackup/Show remote entries 是同一份 item 定义、同一个消费点。
   'interconnect/Show remote entries':
       'test/pages/home_video_remote_mixed_grid_test.dart + test/pages/reader_remote_mixed_grid_test.dart',

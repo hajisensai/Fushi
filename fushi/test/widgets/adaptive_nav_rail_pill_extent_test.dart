@@ -46,62 +46,12 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  Finder pillOf(String label) => find
-      .ancestor(of: find.text(label), matching: find.byType(AnimatedContainer))
-      .first;
-
   Finder inkOf(String label) => find
       .ancestor(
         of: find.text(label),
         matching: find.byWidgetPredicate((Widget w) => w is InkWell),
       )
       .first;
-
-  testWidgets('选中药丸与悬停 / 按压状态层同尺寸同圆角', (WidgetTester tester) async {
-    await pumpRail(tester);
-    expect(tester.takeException(), isNull);
-
-    for (final AdaptiveNavItem item in items) {
-      final Size pill = tester.getSize(pillOf(item.label));
-      final Size ink = tester.getSize(inkOf(item.label));
-      expect(pill, ink, reason: '${item.label}：药丸与状态层尺寸不一致');
-
-      final AnimatedContainer container = tester.widget<AnimatedContainer>(
-        pillOf(item.label),
-      );
-      final BoxDecoration decoration = container.decoration! as BoxDecoration;
-      final InkWell inkWell = tester.widget<InkWell>(inkOf(item.label));
-      expect(
-        decoration.borderRadius,
-        inkWell.borderRadius,
-        reason: '${item.label}：药丸与状态层圆角不一致',
-      );
-    }
-
-    // 选中项只有一枚指示器：药丸有实底，且与整行同宽（不会再露出更长的灰底）。
-    final AnimatedContainer selected = tester.widget<AnimatedContainer>(
-      pillOf('视频'),
-    );
-    expect((selected.decoration! as BoxDecoration).color!.a, greaterThan(0));
-  });
-
-  testWidgets('悬停未选中项：灰色状态层与选中药丸同尺寸', (WidgetTester tester) async {
-    await pumpRail(tester);
-    final TestGesture mouse = await tester.createGesture(
-      kind: PointerDeviceKind.mouse,
-    );
-    addTearDown(mouse.removePointer);
-    await mouse.addPointer(location: Offset.zero);
-    await mouse.moveTo(tester.getCenter(inkOf('书架')));
-    await tester.pumpAndSettle();
-
-    expect(
-      tester.getSize(inkOf('书架')),
-      tester.getSize(pillOf('视频')),
-      reason: '悬停反馈区域必须与选中高亮一样大',
-    );
-    expect(tester.getRect(inkOf('书架')).left, tester.getRect(pillOf('视频')).left);
-  });
 
   // MD3 底栏 / 收起 rail：整格是点击区，但悬停 / 按压状态层（含涟漪）只画在
   // 指示器上，与选中高亮同尺寸（M3 NavigationBar 的 indicator ink）。底栏的
@@ -133,6 +83,53 @@ void main() {
       stateLayerLocalRect(tester, anchor),
     );
   }
+
+  // 重设计侧栏（镂空脊 / 色脊，PR #3397，非墨水屏默认）：展开 rail 的选中
+  // 高亮是图标背后的专属形状（[NavMorphShape]，40 方槽；镂空脊整行不填色、
+  // 由缺口表达选中），悬停 / 按压状态层画在同一个形状槽上（内切圆），不是
+  // 整行——与选中高亮同尺寸、同位置。
+  Finder glyphOf(AdaptiveNavItem item) => find
+      .ancestor(
+        of: find.byIcon(item.selectedIcon ?? item.icon),
+        matching: find.byWidgetPredicate(
+          (Widget w) => w is SizedBox && w.width == 40 && w.height == 40,
+        ),
+      )
+      .first;
+
+  testWidgets('选中形状与悬停 / 按压状态层同尺寸同圆角', (WidgetTester tester) async {
+    await pumpRail(tester);
+    expect(tester.takeException(), isNull);
+
+    for (final AdaptiveNavItem item in items) {
+      final Rect glyph = tester.getRect(glyphOf(item));
+      final Rect layer = stateLayerRect(tester, find.text(item.label));
+      expect(layer, glyph, reason: '${item.label}：状态层与选中形状槽不重合');
+      final InkWell inkWell = tester.widget<InkWell>(inkOf(item.label));
+      expect(
+        inkWell.borderRadius,
+        BorderRadius.circular(glyph.height / 2),
+        reason: '${item.label}：状态层应是形状槽的内切圆',
+      );
+    }
+  });
+
+  testWidgets('悬停未选中项：灰色状态层与选中形状同尺寸', (WidgetTester tester) async {
+    await pumpRail(tester);
+    final TestGesture mouse = await tester.createGesture(
+      kind: PointerDeviceKind.mouse,
+    );
+    addTearDown(mouse.removePointer);
+    await mouse.addPointer(location: Offset.zero);
+    await mouse.moveTo(tester.getCenter(inkOf('书架')));
+    await tester.pumpAndSettle();
+
+    expect(
+      stateLayerRect(tester, find.text('书架')).size,
+      tester.getSize(glyphOf(items[2])),
+      reason: '悬停反馈区域必须与选中高亮一样大',
+    );
+  });
 
   /// 底栏：标签所在 Column 的第一个孩子是药丸槽（pillWidth × 32）。
   Rect barPillRect(WidgetTester tester, Finder label) {

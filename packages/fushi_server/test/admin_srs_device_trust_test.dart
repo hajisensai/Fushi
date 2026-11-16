@@ -107,11 +107,9 @@ void main() {
       ..createSync();
     final SrsStorage storage = await SrsStorage.open(
       path: SrsStorage.pathIn(dir.path),
-      inline: true,
     );
     addTearDown(storage.close);
     return SrsDbStore.open(
-      db: storage.db,
       core: storage.core,
       profileUid: kJa,
       deviceId: deviceId,

@@ -20,6 +20,7 @@ import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/test_platform_services.dart';
+import '../helpers/shell_layout.dart';
 
 /// 多端库联合视图 §2.3 任务10：远端书占位卡的合集归属。host 下发的
 /// [RemoteBookInfo.collection] 经统一收养服务写入本地合集与占位成员；
@@ -84,6 +85,7 @@ void main() {
     ],
     child: TranslationProvider(
       child: MaterialApp(
+        theme: gridShellTheme(),
         builder: (BuildContext context, Widget? child) =>
             child ?? const SizedBox.shrink(),
         home: Scaffold(

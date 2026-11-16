@@ -7,6 +7,8 @@ import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary_core.dart';
+import 'package:fushi_engine/sync/fushi_library_host_service.dart'
+    show RemoteDictionaryInfo;
 import 'package:fushi_server/src/cli.dart';
 import 'package:fushi_server/src/commands/dict_commands.dart';
 import 'package:fushi_server/src/dictionary_host.dart';
@@ -217,6 +219,135 @@ void main() {
       expect(row.hiddenLanguagesJson, '["ja"]');
     });
 
+    /// 照原生导入器的行为：把 zip 里的 index.json 按 `yomitan_parser.hpp` 的 `Index`
+    /// 结构体写回输出目录——只剩 title / format / revision / isUpdatable（缺省 false）/
+    /// indexUrl / downloadUrl，语言字段丢掉。
+    Future<FushiImportResult> zipImporter(String archive, String outDir) async {
+      final Archive zip = ZipDecoder().decodeBytes(
+        File(archive).readAsBytesSync(),
+      );
+      final Map<String, dynamic> index = Map<String, dynamic>.from(
+        jsonDecode(
+              utf8.decode(zip.findFile('index.json')!.content as List<int>),
+            )
+            as Map,
+      );
+      final String title = index['title'] as String;
+      final Directory d = Directory(p.join(outDir, title))
+        ..createSync(recursive: true);
+      File(p.join(d.path, 'index.json')).writeAsStringSync(
+        jsonEncode(<String, Object?>{
+          'title': title,
+          'format': index['format'] ?? 3,
+          'revision': index['revision'] ?? '',
+          'isUpdatable': index['isUpdatable'] ?? false,
+          'indexUrl': index['indexUrl'] ?? '',
+          'downloadUrl': index['downloadUrl'] ?? '',
+        }),
+      );
+      return FushiImportResult(
+        success: true,
+        title: title,
+        termCount: 1,
+        metaCount: 0,
+        freqCount: 0,
+        pitchCount: 0,
+        mediaCount: 0,
+        kanjiCount: 1,
+        detectedType: 'term',
+        error: '',
+      );
+    }
+
+    File yomitanZip(Map<String, Object> index) {
+      final Archive archive = Archive();
+      final List<int> bytes = utf8.encode(jsonEncode(index));
+      archive.addFile(ArchiveFile('index.json', bytes.length, bytes));
+      final File zip = File(p.join(tmp.path, 'yomitan.zip'))
+        ..writeAsBytesSync(ZipEncoder().encode(archive)!);
+      return zip;
+    }
+
+    test('index.json 的来源 / 语言进 metadataJson，与 app 导入同形', () async {
+      final File zip = yomitanZip(<String, Object>{
+        'title': 'JaDict',
+        'revision': ' 2024-05 ',
+        'sourceLanguage': 'ja',
+        'targetLanguage': 'en',
+        'author': 'Someone',
+        'indexUrl': '',
+        'format': 3,
+      });
+      await importDictionaryArchive(
+        db: db,
+        resourceRoot: resources,
+        archive: zip,
+        importer: zipImporter,
+      );
+      final DictionaryMetaRow row =
+          (await db.getAllDictionaryMetadata()).single;
+      expect(row.formatKey, 'yomichan');
+      expect(jsonDecode(row.metadataJson), <String, String>{
+        'revision': '2024-05',
+        'sourceLanguage': 'ja',
+        'targetLanguage': 'en',
+        'isUpdatable': 'false',
+        'hasKanji': 'true',
+        'typeProbe': '1',
+      });
+      final RemoteDictionaryInfo info = RemoteDictionaryInfo.fromMetadataRow(
+        row,
+      );
+      expect(info.sourceLanguage, 'ja');
+      expect(info.revision, '2024-05');
+      expect(dictionaryRowJson(row, resources)['language'], 'ja');
+    });
+
+    test('同名重导：来源字段换新，汉字部分设置与语言覆盖继承', () async {
+      await importDictionaryArchive(
+        db: db,
+        resourceRoot: resources,
+        archive: yomitanZip(<String, Object>{
+          'title': 'JaDict',
+          'revision': '1',
+          'sourceLanguage': 'ja',
+        }),
+        importer: zipImporter,
+      );
+      final DictionaryMetaRow first =
+          (await db.getAllDictionaryMetadata()).single;
+      final Map<String, dynamic> meta = Map<String, dynamic>.from(
+        jsonDecode(first.metadataJson) as Map,
+      )..addAll(<String, String>{'kanjiHidden': 'true', 'kanjiOrder': '3'});
+      await db.upsertDictionaryMeta(
+        first
+            .toCompanion(true)
+            .copyWith(
+              metadataJson: Value<String>(jsonEncode(meta)),
+              languageOverride: const Value<String?>('zh'),
+            ),
+      );
+      await importDictionaryArchive(
+        db: db,
+        resourceRoot: resources,
+        archive: yomitanZip(<String, Object>{
+          'title': 'JaDict',
+          'revision': '2',
+          'sourceLanguage': 'ja',
+        }),
+        importer: zipImporter,
+      );
+      final DictionaryMetaRow row =
+          (await db.getAllDictionaryMetadata()).single;
+      final Map<String, dynamic> after = Map<String, dynamic>.from(
+        jsonDecode(row.metadataJson) as Map,
+      );
+      expect(after['revision'], '2');
+      expect(after['kanjiHidden'], 'true');
+      expect(after['kanjiOrder'], '3');
+      expect(RemoteDictionaryInfo.fromMetadataRow(row).sourceLanguage, 'zh');
+    });
+
     test('导入器报错 → DictImportException；标题为空 → DictImportException', () async {
       Future<FushiImportResult> failing(String a, String o) async =>
           const FushiImportResult(
@@ -267,6 +398,7 @@ void main() {
     add('index.json', <String, Object>{
       'title': 'CliDict',
       'revision': '1',
+      'sourceLanguage': 'ja',
       'format': 3,
     });
     add('term_bank_1.json', <Object>[
@@ -313,6 +445,8 @@ void main() {
         jsonDecode(listed.stdout.trim()) as List<dynamic>;
     expect(rows.single, containsPair('name', 'CliDict'));
     expect(rows.single, containsPair('present', true));
+    // 原生导入器写回的 index.json 带着 sourceLanguage，进了 metadataJson。
+    expect(rows.single, containsPair('language', 'ja'));
 
     expect(
       await _quiet(
