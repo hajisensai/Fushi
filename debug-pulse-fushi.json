@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-16T19:46:01Z",
+ "generatedAt": "2026-11-16T20:23:26Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "665e12a4775b6556de56bc8929b5aa055462e7dc",
-  "seq": 28362
+  "sha": "db18f6e77729ad13acc357192bc908e41ad043d7",
+  "seq": 28410
  },
  "builds": [
   {
@@ -74,16 +74,13 @@
      "state": "ok"
     },
     "windows": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43856349600"
+     "state": "none"
     },
     "macos": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43856349600"
+     "state": "none"
     },
     "ios": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43856349600"
+     "state": "none"
     }
    }
   },
@@ -121,8 +118,7 @@
    "truncated": false,
    "platforms": {
     "android": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43848933165"
+     "state": "none"
     },
     "windows": {
      "state": "ok"
@@ -235,9 +231,18 @@
   }
  ],
  "pending": {
-  "headSha": "665e12a4775b6556de56bc8929b5aa055462e7dc",
-  "headSeq": 28362,
+  "headSha": "db18f6e77729ad13acc357192bc908e41ad043d7",
+  "headSeq": 28410,
   "prs": [
+   3609,
+   3610,
+   3611,
+   3545,
+   3518,
+   3612,
+   3561,
+   3574,
+   3512,
    3577,
    3567,
    3608,
@@ -324,19 +329,19 @@
   "platforms": {
    "android": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43942523339"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43948614126"
    },
    "windows": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43942523294"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43948613822"
    },
    "macos": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43942523294"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43948613822"
    },
    "ios": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43942523294"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43948613822"
    }
   }
  },
@@ -910,6 +915,15 @@
    "deletions": 20,
    "labels": []
   },
+  "3512": {
+   "number": 3512,
+   "title": "feat(library): 库页默认改封面网格后一次性提示拼贴仍可选（拍板台 pr3454）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T19:47:58Z",
+   "additions": 431,
+   "deletions": 0,
+   "labels": []
+  },
   "3513": {
    "number": 3513,
    "title": "浏览器扩展：字幕覆盖层同时显示时间重叠的多句 cue",
@@ -944,6 +958,15 @@
    "mergedAt": "2026-11-16T15:26:31Z",
    "additions": 1143,
    "deletions": 2,
+   "labels": []
+  },
+  "3518": {
+   "number": 3518,
+   "title": "feat(backup): 覆盖前快照 30 天过期并在覆盖导入后提示；快照恢复跳过书文件已不在盘上的书（拍板台 pr3455）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T19:59:44Z",
+   "additions": 526,
+   "deletions": 53,
    "labels": []
   },
   "3519": {
@@ -1153,6 +1176,15 @@
    "deletions": 48,
    "labels": []
   },
+  "3545": {
+   "number": 3545,
+   "title": "feat(video): 解析层标出特效字幕，字幕列表加「显示特效字幕」开关 (H7r4mf_z2n)",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T20:04:56Z",
+   "additions": 673,
+   "deletions": 32,
+   "labels": []
+  },
   "3546": {
    "number": 3546,
    "title": "音乐歌词：搜索在线歌词可手动改歌名 / 歌手，LRCLIB 与歌词插件都按输入搜",
@@ -1270,6 +1302,15 @@
    "deletions": 6,
    "labels": []
   },
+  "3561": {
+   "number": 3561,
+   "title": "feat(server): RWKV 模型档位可在 WebUI / admin API 手动切换并当场生效（拍板 pr3463）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T19:52:01Z",
+   "additions": 439,
+   "deletions": 33,
+   "labels": []
+  },
   "3562": {
    "number": 3562,
    "title": "fix(anki): SelectionText 不再为 Lapis 释义高亮让位，选中内容总是填入（BUG-4756）",
@@ -1358,6 +1399,15 @@
    "mergedAt": "2026-11-16T14:00:27Z",
    "additions": 17,
    "deletions": 1,
+   "labels": []
+  },
+  "3574": {
+   "number": 3574,
+   "title": "fix(srs-browse): 系列内各集按标题自然序排（拍板台 uoEPa_RC89）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T19:50:47Z",
+   "additions": 295,
+   "deletions": 14,
    "labels": []
   },
   "3575": {
@@ -1601,6 +1651,42 @@
    "mergedAt": "2026-11-16T19:43:31Z",
    "additions": 90,
    "deletions": 45,
+   "labels": []
+  },
+  "3609": {
+   "number": 3609,
+   "title": "feat(screen-ocr): 高级制卡里像漫画那样框选截屏识字卡图",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T20:19:37Z",
+   "additions": 537,
+   "deletions": 43,
+   "labels": []
+  },
+  "3610": {
+   "number": 3610,
+   "title": "perf(mihon): 一键更新 / 批量安装改为 APK 有限并发下载（KGM2ssPVHD）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T20:17:47Z",
+   "additions": 242,
+   "deletions": 57,
+   "labels": []
+  },
+  "3611": {
+   "number": 3611,
+   "title": "fix(manga): zip 条目名按真实本地编码（Shift_JIS / GBK …）重解，判据收进 fushi_compute",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T20:16:34Z",
+   "additions": 714,
+   "deletions": 17,
+   "labels": []
+  },
+  "3612": {
+   "number": 3612,
+   "title": "feat(video): 从视频画面选取封面（拍板 wb8RZZbn90）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T19:59:01Z",
+   "additions": 910,
+   "deletions": 0,
    "labels": []
   }
  }
