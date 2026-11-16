@@ -968,6 +968,18 @@ fn sync2_dispatch_op(
         }
         // 不占写连接的 WAL 并回（store/mod.rs）：大批写入收尾用。
         "wal_checkpoint" => return c.wal_checkpoint(),
+        // 换代前的预演（store/gen4/dryrun.rs `rehearse`，设计 §8 G4b）：自己另开只读连接读这个库，不占内核的读写连接，
+        // 跑几十秒到几分钟，Dart 在后台 isolate 调。取消直接同步调（只置开关、打断语句）；两条都带同一个 runId 时，取消早于
+        // 内核登记到达也不丢（dryrun.rs `cancel_rehearsal`）。
+        "gen4_rehearse" => return crate::store::gen4::dryrun::rehearse(&c.path, req),
+        "gen4_rehearsal_report" => {
+            return Ok(json!({"report": crate::store::gen4::dryrun::rehearsal_report(&c.path)}));
+        }
+        "gen4_rehearse_cancel" => {
+            let run_id = req.get("runId").and_then(Value::as_str);
+            crate::store::gen4::dryrun::cancel_rehearsal(&c.path, run_id);
+            return Ok(json!({}));
+        }
         // 批量写入开始 / 结束（Dart `bulkWrites`）：内核按库计嵌套深度，最外层调高 / 恢复写连接的 WAL 自动 checkpoint 阈值
         // （保存原值）、结束时另开连接并回 WAL，期间写连接放回时留着页缓存（store/mod.rs `bulk_begin`，store/mem_budget.rs）。
         // 回包 `{depth}`：这条命令之后的深度。
@@ -2602,6 +2614,9 @@ mod tests {
             "bulk_cache",
             "ingest_yield",
             "refresh_keys",
+            "gen4_rehearse",
+            "gen4_rehearsal_report",
+            "gen4_rehearse_cancel",
         ] {
             assert!(
                 ops.remove(global),
