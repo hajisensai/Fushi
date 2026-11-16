@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 import 'package:test/test.dart';
-import 'package:fushi/src/media/video/video_source_fingerprint.dart';
+import 'package:fushi_engine/media/video/video_source_fingerprint.dart';
 
 void main() {
   late Directory directory;

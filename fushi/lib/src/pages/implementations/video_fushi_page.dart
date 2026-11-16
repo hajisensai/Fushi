@@ -109,7 +109,7 @@ import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
 import 'package:fushi/src/media/video/media_server/media_server_library.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_engine/media/video/media_server_video_path.dart';
-import 'package:fushi/src/media/video/video_source_fingerprint.dart';
+import 'package:fushi_engine/media/video/video_source_fingerprint.dart';
 import 'package:fushi/src/media/video/danmaku_manual_match_panel.dart';
 import 'package:fushi/src/media/source_library/source_stream_headers.dart';
 import 'package:fushi/src/media/source_library/source_folder_access.dart';
@@ -6230,8 +6230,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // The locator describes exact bytes, not merely a same-named library row.
     // Manual cross-episode navigation retains the session, without reusing the
     // original episode's locator or fingerprint for the newly selected file.
-    // 远端条目（互联 host）的字节在 host 上，本机没有文件可比指纹：身份由 host 的
-    // bookUid 担保（见 card_source_router 的远端分支），不在这里按本地指纹判死。
+    // 远端条目（互联 host）的字节在 host 上，本机没有文件可比指纹：回跳前已由 host
+    // 对原文件算指纹核验过（见 card_source_router 的 resolveRemoteCardSourceVideo），
+    // 不在这里按本地指纹判死。
     final CardSourceLink? source = _isRemote ? null : widget.sourceReview;
     // 无指纹的链接是在线内容身份（BUG-3490），身份由库 uid 担保。
     if (source != null && source.fingerprint != null) {

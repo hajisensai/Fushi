@@ -40,6 +40,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/media/music/music_format_badge.dart';
+import 'package:fushi/src/media/music/music_local_video.dart';
 import 'package:fushi/src/media/music/music_library_data.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
@@ -417,18 +418,11 @@ class _SongTile extends ConsumerWidget {
     bool preview = false;
     switch (track) {
       case MusicTrackRow r:
-        final String badge = musicFormatBadge(
-          codec: r.codec,
-          isLossless: r.isLossless,
-          sampleRate: r.sampleRate,
-          bitDepth: r.bitDepth,
-          bitrateKbps: r.bitrate,
-        );
         id = 'local-${r.trackUid}';
         title = r.title;
         subtitle = <String>[
           r.artistCredit ?? t.music_artist_unknown,
-          if (badge.isNotEmpty) badge,
+          ...musicLocalTrackBadges(r),
         ].join(' · ');
         durationMs = r.durationMs;
         playable = true;
