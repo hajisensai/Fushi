@@ -9,8 +9,10 @@ import 'package:test/test.dart';
 /// 1. 真跑 `tool/publish_settings_catalog.sh`，对着本地裸仓库（不联网）断言：只动
 ///    本通道的两个目录文件、分支上别的文件原样保留、内容没变不产生提交、坏输入
 ///    不覆盖好目录；
-/// 2. 三处靠字符串对上的接线：导出器的环境变量名、release.yml 传的 artifact 名、
-///    settings-catalog.yml 订阅的 workflow 名。任何一处改名，目录就静静地不再更新。
+/// 2. 靠字符串对上的接线：导出器的环境变量名、release.yml 传的 artifact 名，以及
+///    release.yml 里发布 job 的触发条件 / 权限。任何一处走样，目录就静静地不再更新。
+///    发布不能放进 `workflow_run` workflow：它只认默认分支 main 上的定义，main 落后
+///    develop 一个发布周期，合进 develop 后要等下一个正式版才第一次触发。
 void main() {
   final Directory workspace = Directory.current.parent;
   final File script = File(
@@ -182,6 +184,46 @@ void main() {
       expect(await commitCount(), before);
       expect(await show('settings-catalog-debug.json'), contains('"a.b"'));
     });
+
+    test('与 publish-android 并发推同一分支：被拒后在远端新 tip 上重放，不丢对方的文件', () async {
+      // 远端 pre-receive 钩子模拟发布 job 抢先一步：第一次推送时先往 update-manifest
+      // 写进一份 latest-debug-fushi.json（相当于 publish-android 刚推完），再拒掉这次推送。
+      // 钩子在隔离区里跑，要写真实对象库与 ref 得先摘掉隔离区环境变量。
+      final File hook = File(p.join(origin.path, 'hooks', 'pre-receive'));
+      hook.writeAsStringSync(r'''#!/bin/sh
+cat >/dev/null
+[ -f raced ] && exit 0
+touch raced
+env -u GIT_QUARANTINE_PATH -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES sh -ec '
+blob=$(printf "{\"tag\":\"debug-2\"}\n" | git hash-object -w --stdin)
+tree=$( { git ls-tree update-manifest; printf "100644 blob %s\tlatest-debug-fushi.json\n" "$blob"; } | git mktree)
+commit=$(git commit-tree "$tree" -p update-manifest -m "release job")
+git update-ref refs/heads/update-manifest "$commit"
+'
+echo "simulated race: update-manifest moved" >&2
+exit 1
+''');
+      if (!Platform.isWindows) {
+        expect(
+          (await Process.run('chmod', <String>['+x', hook.path])).exitCode,
+          0,
+        );
+      }
+
+      final Directory dir = catalogDir('cat', json: goodJson, md: goodMd);
+      final ProcessResult r = await publish(dir, 'debug');
+      expect(r.exitCode, 0, reason: '${r.stdout}\n${r.stderr}');
+      expect(r.stdout, contains('attempt 2'));
+      expect(await branchFiles(), <String>[
+        'latest-debug-fushi.json',
+        'latest-stable-fushi.json',
+        'settings-catalog-debug.json',
+        'settings-catalog-debug.md',
+      ]);
+      expect(await show('latest-debug-fushi.json'), '{"tag":"debug-2"}');
+      // seed + 抢先的发布提交 + 目录提交：目录提交接在对方提交之后，不是覆盖。
+      expect(await commitCount(), 3);
+    });
   });
 
   group('接线', () {
@@ -202,21 +244,39 @@ void main() {
         contains('test/settings/settings_catalog_export_test.dart'),
       );
       expect(release, contains('name: settings-catalog'));
-      expect(
-        read('.github/workflows/settings-catalog.yml'),
-        contains('--name settings-catalog '),
-      );
+      final String publishJob = _jobBlock(release, 'publish-settings-catalog');
+      expect(publishJob, contains('actions/download-artifact@'));
+      expect(publishJob, contains('name: settings-catalog\n'));
+      expect(publishJob, contains('bash tool/publish_settings_catalog.sh'));
     });
 
-    test('settings-catalog.yml 订阅的 workflow 名就是 release.yml 的 name', () {
-      final String name = RegExp(
-        r'^name:\s*(.+)$',
-        multiLine: true,
-      ).firstMatch(read('.github/workflows/release.yml'))!.group(1)!.trim();
-      expect(
-        read('.github/workflows/settings-catalog.yml'),
-        contains("workflows: ['$name']"),
+    test('发布在 release.yml 同一 run 里做，不靠只认默认分支（main）的 workflow_run', () {
+      final Directory workflows = Directory(
+        p.join(workspace.path, '.github', 'workflows'),
       );
+      final List<String> callers = <String>[
+        for (final FileSystemEntity f in workflows.listSync())
+          if (f is File &&
+              f.readAsStringSync().contains('publish_settings_catalog.sh'))
+            p.basename(f.path),
+      ];
+      expect(callers, <String>['release.yml']);
+      final String release = read('.github/workflows/release.yml');
+      final String publishJob = _jobBlock(release, 'publish-settings-catalog');
+      expect(publishJob, contains('    needs: tests\n'));
+      final String condition = RegExp(
+        r'^    if:\s*(.+)$',
+        multiLine: true,
+      ).firstMatch(publishJob)!.group(1)!;
+      // tests 是矩阵：任一单测分片红，裸 needs 会让发布被跳过；只有取消才不发。
+      expect(condition, contains('always()'));
+      expect(condition, contains("needs.tests.result != 'cancelled'"));
+      expect(condition, contains("github.event_name == 'push'"));
+      expect(condition, contains("github.ref_name == 'develop'"));
+      expect(condition, contains("github.ref_name == 'main'"));
+      // 写权限只给发布 job，跑全量单测的 tests job 仍只读。
+      expect(publishJob, contains('    permissions:\n      contents: write\n'));
+      expect(_jobBlock(release, 'tests'), isNot(contains('contents: write')));
     });
 
     test('导出器写的文件名与发布脚本读的一致', () {
@@ -233,4 +293,17 @@ void main() {
       }
     });
   });
+}
+
+/// release.yml 里一个 job 的文本块（从 `  <name>:` 到下一个 job 头或文件尾）。
+String _jobBlock(String yaml, String name) {
+  final List<String> lines = yaml.split('\n');
+  final int start = lines.indexOf('  $name:');
+  expect(start, isNot(-1), reason: 'release.yml 里没有 job `$name`');
+  final RegExp header = RegExp(r'^  [A-Za-z0-9_-]+:\s*$');
+  int end = start + 1;
+  while (end < lines.length && !header.hasMatch(lines[end])) {
+    end++;
+  }
+  return '${lines.sublist(start, end).join('\n')}\n';
 }

@@ -4,7 +4,7 @@
 # 官网 fushi.moe 的边缘 Worker 把它们代理成 /settings.md、/settings.json（给 AI 读）。
 #
 # 生成器：fushi/test/settings/settings_catalog_export_test.dart（设 FUSHI_SETTINGS_CATALOG_DIR 时落盘）。
-# 调用方：.github/workflows/settings-catalog.yml（发布 workflow 跑完后取它的 artifact）。
+# 调用方：.github/workflows/release.yml 的 publish-settings-catalog job（取同一 run 的 artifact）。
 #
 # This is a DATA FILE pushed to a git branch, NOT a GitHub Release. It never
 # creates releases or tags and never touches latest-*.json or the debug pulse:

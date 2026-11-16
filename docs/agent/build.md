@@ -189,9 +189,10 @@ Android / Windows / macOS / iOS debug/beta workflow 必须使用跨 workflow 统
 官网 `fushi.moe/settings.md`、`/settings.json` 是给 AI 读的全量设置项目录（键、中英标题、位置、类型、可选值、范围、默认值），**不手工维护**：
 
 - 导出器 `fushi/test/settings/settings_catalog_export_test.dart` 遍历 `fushi_cli config ls` 用的同一份设置索引（`buildSettingsIndex`，整棵 schema + 逃生口页面）。平时是普通单测（守「能走完整棵 schema、机密项不出值」）；设了 `FUSHI_SETTINGS_CATALOG_DIR` 才把 `settings-catalog.{json,md}` 写进那个目录。内容必须确定（不带时间戳 / commit）。
-- `release.yml` 的 `tests (checks)` 在每次 push 上跑它并传 artifact `settings-catalog`；`.github/workflows/settings-catalog.yml`（`workflow_run`）在那条 run 结束后取 artifact，由 `tool/publish_settings_catalog.sh` 推到 `update-manifest` 分支：develop → `settings-catalog-debug.*`，main → `settings-catalog-stable.*`。设置没变就不产生提交。
+- `release.yml` 的 `tests (checks)` 在每次 push 上跑它并传 artifact `settings-catalog`；同一 workflow 的 `publish-settings-catalog` job（`needs: tests` + `always()`，单测分片红不挡它，只有 run 被取消才不跑；job 级 `contents: write`，tests 仍只读）取本 run 的 artifact，由 `tool/publish_settings_catalog.sh` 推到 `update-manifest` 分支：develop → `settings-catalog-debug.*`，main → `settings-catalog-stable.*`。设置没变就不产生提交；与 `publish-android` 并发推同一分支时，脚本被拒后重取远端 tip、只在最新提交上重放这两个文件。没有 artifact 记 notice 后正常结束。
+- **不用 `workflow_run`**：它只认默认分支 main 上的 workflow 定义，main 落后 develop 一个发布周期，独立 workflow 要等下一个正式版进 main 后才第一次触发（同上一节放弃 `pull_request_target` 的原因）。
 - 官网仓（`hajisensai/fushi.moe`）的边缘 Worker `edge/src/settings-catalog.ts` 同域代理这两个文件（不带参数给 stable，没有就退回 debug；`?channel=debug` 指定），llms.txt 的「App reference」指向它。
-- 加减设置项不需要做任何事；改了目录 JSON 的字段含义才要把导出器的 `kSettingsCatalogSchema` 与 Worker 的 `CATALOG_SCHEMA` 一起加一。接线（环境变量名 / artifact 名 / workflow 名）由 `fushi/test/tools/settings_catalog_publish_script_test.dart` 守。
+- 加减设置项不需要做任何事；改了目录 JSON 的字段含义才要把导出器的 `kSettingsCatalogSchema` 与 Worker 的 `CATALOG_SCHEMA` 一起加一。接线（环境变量名 / artifact 名 / 发布 job 的触发条件与权限）由 `fushi/test/tools/settings_catalog_publish_script_test.dart` 守。
 
 ### Windows 安装器：原地升级与「数据存储位置」页
 
