@@ -36,21 +36,27 @@ enum ShellContentLayout {
   grid('grid');
 
   // 「规整色块」（落库值 `blocks`）2026-11-12 按用户拍板删掉：库页布局只剩拼贴与
-  // 封面网格。已存的 `blocks` 不在 [values] 里，[fromPref] 落到 [defaultLayout]
-  // （拼贴），偏好键与其余落库值不改。
+  // 封面网格。已存的 `blocks` 不在 [values] 里，[fromPref] 把它读成同属色块的
+  // 拼贴，偏好键与其余落库值不改。
 
   const ShellContentLayout(this.prefValue);
 
   /// 落库的字符串（冻结，改名不改它）。
   final String prefValue;
 
-  static const ShellContentLayout defaultLayout = collage;
+  /// 没选过时的布局：封面网格（用户 2026-11-15 拍板，此前是拼贴）。
+  static const ShellContentLayout defaultLayout = grid;
 
-  /// 读偏好：未知值（含已删的 `blocks`）与没选过一律是 [defaultLayout]（拼贴）。
+  /// 已删的「规整色块」落库值，读成同属色块的 [collage]。
+  static const String _removedBlocksPrefValue = 'blocks';
+
+  /// 读偏好：已删的 `blocks` 读成拼贴（它选的就是色块风格）；没选过与其余未知值
+  /// 是 [defaultLayout]（封面网格）。
   static ShellContentLayout fromPref(String? value) {
     for (final ShellContentLayout layout in values) {
       if (layout.prefValue == value) return layout;
     }
+    if (value == _removedBlocksPrefValue) return collage;
     return defaultLayout;
   }
 }

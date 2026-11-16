@@ -84,17 +84,24 @@ void inflateRawDeflate(
 ///
 /// [onBytes] 每写出一块回报该块的（解压后）字节数，供进度条持续推进。
 ///
+/// [verifyCrc32] 为 true 时边写边用 Rust 的 [ffcCrc32] 续算（每块一次 FFI），写完与
+/// 条目头的 CRC-32 核对，不符抛 [FormatException]——等价于 archive 的
+/// `verify: true`，但不必先把条目整个解进内存。
+///
 /// 不能用 `ArchiveFile.decompress(out)`：`ZipDecoder` 解出的条目 `_content` 是
 /// `ZipFile`（非 null），`decompress(out)` 直接 no-op、写出 0 字节。
 int writeZipEntryStreaming(
   ArchiveFile file,
   OutputStreamBase out, {
   void Function(int bytes)? onBytes,
+  bool verifyCrc32 = false,
 }) {
   final InputStreamBase? raw = file.rawContent;
   int written = 0;
+  int crc = 0;
   void write(List<int> chunk) {
     if (chunk.isEmpty) return;
+    if (verifyCrc32) crc = ffcCrc32(chunk, crc);
     out.writeBytes(chunk);
     written += chunk.length;
     onBytes?.call(chunk.length);
@@ -107,9 +114,14 @@ int writeZipEntryStreaming(
     inflateRawDeflate(raw, write);
     _checkEntrySize(file, written);
   } else {
+    final Object? content = file.content;
+    if (verifyCrc32 && content is List<int>) crc = ffcCrc32(content, crc);
     file.writeContent(out);
     written = file.size;
     onBytes?.call(file.size);
+  }
+  if (verifyCrc32 && crc != file.crc32) {
+    throw FormatException('Invalid CRC for file in archive: ${file.name}');
   }
   return written;
 }
@@ -129,11 +141,17 @@ int extractZipEntryToFile(
   ArchiveFile file,
   String destPath, {
   void Function(int bytes)? onBytes,
+  bool verifyCrc32 = false,
 }) {
   File(destPath).parent.createSync(recursive: true);
   final OutputFileStream out = OutputFileStream(destPath);
   try {
-    return writeZipEntryStreaming(file, out, onBytes: onBytes);
+    return writeZipEntryStreaming(
+      file,
+      out,
+      onBytes: onBytes,
+      verifyCrc32: verifyCrc32,
+    );
   } finally {
     out.closeSync();
   }

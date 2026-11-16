@@ -2,6 +2,7 @@ package app.fushi.reader;
 
 import android.app.Activity;
 import android.content.ActivityNotFoundException;
+import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
@@ -10,6 +11,8 @@ import android.graphics.BitmapFactory;
 import android.graphics.Rect;
 import android.net.Uri;
 import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
 import android.provider.Settings;
 import android.util.Log;
 
@@ -25,6 +28,7 @@ import com.google.android.gms.common.moduleinstall.ModuleInstall;
 import com.google.android.gms.common.moduleinstall.ModuleInstallClient;
 import com.google.android.gms.common.moduleinstall.ModuleInstallRequest;
 import com.google.android.gms.common.moduleinstall.ModuleInstallStatusUpdate;
+import com.google.android.gms.tasks.Tasks;
 import com.google.mlkit.common.MlKitException;
 import com.google.mlkit.vision.common.InputImage;
 import com.google.mlkit.vision.text.Text;
@@ -40,6 +44,9 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import io.flutter.embedding.engine.FlutterEngine;
@@ -104,6 +111,19 @@ public final class SystemOcrChannel {
      */
     private static final Map<String, TextRecognizer> RECOGNIZERS = new HashMap<>();
 
+    /**
+     * 识别专用的单线程执行器：解码与等待识别结果都在这里，平台主线程不再碰页图像素；
+     * 单线程即串行，保证进程里同时至多一张送检位图（BUG-4705）。
+     */
+    private static final ExecutorService RECOGNIZE_EXECUTOR =
+            Executors.newSingleThreadExecutor(runnable -> {
+                final Thread thread = new Thread(runnable, "FushiSystemOcr");
+                thread.setDaemon(true);
+                return thread;
+            });
+
+    private static final Handler MAIN_HANDLER = new Handler(Looper.getMainLooper());
+
     private SystemOcrChannel() {}
 
     /**
@@ -125,7 +145,7 @@ public final class SystemOcrChannel {
                         result.success(Boolean.TRUE);
                         return;
                     case METHOD_RECOGNIZE:
-                        handleRecognize(call.argument(ARG_BYTES),
+                        handleRecognize(activity, call.argument(ARG_BYTES),
                                 call.argument(ARG_LANGUAGE), result);
                         return;
                     case METHOD_MODEL_STATUS:
@@ -149,7 +169,17 @@ public final class SystemOcrChannel {
             });
     }
 
+    /**
+     * 识别一张页图。
+     *
+     * <p>解码与识别都不在平台主线程上做，并且**串行**（单线程 {@link #RECOGNIZE_EXECUTOR}，
+     * 一张识别完才解下一张）：整卷任务、悬浮球截屏、多本书的排队任务同时来请求时，进程里
+     * 任何时刻只有一张送检位图。解码按 {@link SystemOcrImageBudget} 的像素上限降采样，
+     * 回传的框放回原图坐标系，{@code width/height} 仍是原图尺寸——Dart 侧坐标契约不变
+     * （BUG-4705：以前在主线程全分辨率解码，大图把主线程卡死并撑爆内存）。
+     */
     private static void handleRecognize(
+            @NonNull Activity activity,
             @Nullable byte[] bytes,
             @Nullable String language,
             @NonNull MethodChannel.Result result) {
@@ -157,33 +187,111 @@ public final class SystemOcrChannel {
             result.error("INVALID_IMAGE", "image bytes must not be empty", null);
             return;
         }
-        final Bitmap bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
+        // 识别器缓存不加锁，只在主线程取；ML Kit 的识别器本身可跨线程使用。
+        final TextRecognizer recognizer = recognizerFor(language);
+        final Context appContext = activity.getApplicationContext();
+        RECOGNIZE_EXECUTOR.execute(() -> {
+            final RecognizeReply reply = recognizeOffMainThread(appContext, bytes, recognizer);
+            MAIN_HANDLER.post(() -> reply.deliver(result));
+        });
+    }
+
+    /** 跑在 {@link #RECOGNIZE_EXECUTOR} 上：解码 → 识别 → 组载荷，全程至多一张位图。 */
+    @NonNull
+    private static RecognizeReply recognizeOffMainThread(
+            @NonNull Context context,
+            @NonNull byte[] bytes,
+            @NonNull TextRecognizer recognizer) {
+        final BitmapFactory.Options bounds = new BitmapFactory.Options();
+        bounds.inJustDecodeBounds = true;
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.length, bounds);
+        final int originalWidth = bounds.outWidth;
+        final int originalHeight = bounds.outHeight;
+        if (originalWidth <= 0 || originalHeight <= 0) {
+            return RecognizeReply.error("INVALID_IMAGE", "could not decode image bytes");
+        }
+        final BitmapFactory.Options decode = new BitmapFactory.Options();
+        decode.inSampleSize = SystemOcrImageBudget.sampleSizeFor(
+                originalWidth, originalHeight, SystemOcrImageBudget.MAX_RECOGNIZE_PIXELS);
+        final Bitmap bitmap;
+        try {
+            bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.length, decode);
+        } catch (OutOfMemoryError oom) {
+            // 预算内仍分配失败 = 进程此刻已无余量：作为这一页的失败回给调用方（整卷任务按
+            // 失败结束、用户能看到并重试），而不是让 OOM 把整个进程带走。
+            Log.w(TAG, "system OCR decode out of memory: " + originalWidth + "x"
+                    + originalHeight + " sample " + decode.inSampleSize, oom);
+            return RecognizeReply.error("IMAGE_TOO_LARGE",
+                    "out of memory decoding " + originalWidth + "x" + originalHeight);
+        }
         if (bitmap == null) {
-            result.error("INVALID_IMAGE", "could not decode image bytes", null);
-            return;
+            return RecognizeReply.error("INVALID_IMAGE", "could not decode image bytes");
+        }
+        try {
+            final Text text = Tasks.await(recognizer.process(InputImage.fromBitmap(bitmap, 0)));
+            return RecognizeReply.success(toPayload(
+                    text, originalWidth, originalHeight, bitmap.getWidth(), bitmap.getHeight()));
+        } catch (ExecutionException failed) {
+            final Throwable error = failed.getCause() != null ? failed.getCause() : failed;
+            return RecognizeReply.error(
+                    modelUnavailable(context, error) ? "MODEL_UNAVAILABLE" : "RECOGNIZE_FAILED",
+                    error.getMessage());
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            return RecognizeReply.error("RECOGNIZE_FAILED", "interrupted");
+        } finally {
+            bitmap.recycle();
+        }
+    }
+
+    /**
+     * 这次失败是不是「模型 / Play 服务不在」而不是「这张图识别失败」。
+     *
+     * <p>两种都算：ML Kit 明确报 {@link MlKitException#UNAVAILABLE}（Play 服务在、模型还没
+     * 下完）；或本机 Play 服务根本不可用——此时 ML Kit 报的是加载 dynamite 模块失败之类的
+     * 内部错误（无 GMS 的 LineageOS 平板实测：「Failed to load deprecated vision dynamite
+     * module」），以前被塌成 {@code RECOGNIZE_FAILED}，用户只看到一串英文异常，不知道是
+     * 设备缺 Play 服务（BUG-4705）。
+     */
+    private static boolean modelUnavailable(@NonNull Context context, @NonNull Throwable error) {
+        if (error instanceof MlKitException
+                && ((MlKitException) error).getErrorCode() == MlKitException.UNAVAILABLE) {
+            return true;
+        }
+        return GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(context)
+                != ConnectionResult.SUCCESS;
+    }
+
+    /** 后台线程算好的回答，切回主线程再交给 Flutter（MethodChannel.Result 只在主线程回）。 */
+    private static final class RecognizeReply {
+        @Nullable private final Map<String, Object> payload;
+        @Nullable private final String errorCode;
+        @Nullable private final String errorMessage;
+
+        private RecognizeReply(
+                @Nullable Map<String, Object> payload,
+                @Nullable String errorCode,
+                @Nullable String errorMessage) {
+            this.payload = payload;
+            this.errorCode = errorCode;
+            this.errorMessage = errorMessage;
         }
 
-        final TextRecognizer recognizer = recognizerFor(language);
-        recognizer.process(InputImage.fromBitmap(bitmap, 0))
-            .addOnSuccessListener(text -> {
-                try {
-                    result.success(toPayload(text, bitmap.getWidth(), bitmap.getHeight()));
-                } finally {
-                    bitmap.recycle();
-                }
-            })
-            .addOnFailureListener(error -> {
-                bitmap.recycle();
-                // 「模型还没就绪」和「这张图识别失败」是两回事，不能塌成同一个码：
-                // 前者要么等 Play 服务把模型下完、要么换引擎，后者才该怀疑图片。
-                // unbundled 版模型缺失时 ML Kit 抛的正是 UNAVAILABLE。
-                final boolean unavailable = error instanceof MlKitException
-                    && ((MlKitException) error).getErrorCode() == MlKitException.UNAVAILABLE;
-                result.error(
-                    unavailable ? "MODEL_UNAVAILABLE" : "RECOGNIZE_FAILED",
-                    error.getMessage(),
-                    null);
-            });
+        static RecognizeReply success(@NonNull Map<String, Object> payload) {
+            return new RecognizeReply(payload, null, null);
+        }
+
+        static RecognizeReply error(@NonNull String code, @Nullable String message) {
+            return new RecognizeReply(null, code, message);
+        }
+
+        void deliver(@NonNull MethodChannel.Result result) {
+            if (errorCode != null) {
+                result.error(errorCode, errorMessage, null);
+            } else {
+                result.success(payload);
+            }
+        }
     }
 
     /**
@@ -393,7 +501,11 @@ public final class SystemOcrChannel {
      * 一模一样）。
      */
     private static Map<String, Object> toPayload(
-            @NonNull Text text, int width, int height) {
+            @NonNull Text text,
+            int width,
+            int height,
+            int recognizedWidth,
+            int recognizedHeight) {
         final List<Map<String, Object>> lines = new ArrayList<>();
         for (final Text.TextBlock block : text.getTextBlocks()) {
             for (final Text.Line line : block.getLines()) {
@@ -407,10 +519,15 @@ public final class SystemOcrChannel {
                 }
                 final Map<String, Object> entry = new HashMap<>();
                 entry.put("text", value);
-                entry.put("left", box.left);
-                entry.put("top", box.top);
-                entry.put("right", box.right);
-                entry.put("bottom", box.bottom);
+                // 识别位图可能是降采样过的：框放回原图坐标系，与 width/height 同一尺度。
+                entry.put("left",
+                        SystemOcrImageBudget.toOriginal(box.left, width, recognizedWidth));
+                entry.put("top",
+                        SystemOcrImageBudget.toOriginal(box.top, height, recognizedHeight));
+                entry.put("right",
+                        SystemOcrImageBudget.toOriginal(box.right, width, recognizedWidth));
+                entry.put("bottom",
+                        SystemOcrImageBudget.toOriginal(box.bottom, height, recognizedHeight));
                 // ML Kit 不直接报竖排；留空让 Dart 侧按包围盒推断，避免在这里
                 // 和那边各写一套判据。
                 lines.add(entry);
@@ -419,6 +536,9 @@ public final class SystemOcrChannel {
         final Map<String, Object> payload = new HashMap<>();
         payload.put("width", width);
         payload.put("height", height);
+        // 诊断字段（Dart 侧 SystemOcrPageResult.recognizedWidth/Height，与 Windows 同名）。
+        payload.put("recognizedWidth", recognizedWidth);
+        payload.put("recognizedHeight", recognizedHeight);
         payload.put("lines", lines);
         return payload;
     }
