@@ -176,7 +176,7 @@ Future<void> _openCardSource({
       ? null
       : await resolveCardSourceBook(app.database, link);
   final VideoBookRepository videos = VideoBookRepository(app.database);
-  VideoBookRow? video = link.kind == CardSourceKind.video
+  VideoBookRow? localVideo = link.kind == CardSourceKind.video
       ? await videos.getByBookUid(link.uid)
       : null;
   // 本机有同 uid 的行时先按字节核验：视频 uid 由文件名派生、跨设备会撞，对不上的不是
@@ -184,20 +184,21 @@ Future<void> _openCardSource({
   // 保证），没有本地字节可比，按库身份直接回看在线播放。
   bool localMismatch = false;
   bool localUnreadable = false;
-  if (video != null && link.fingerprint != null) {
+  if (localVideo != null && link.fingerprint != null) {
     try {
       if (!await VideoSourceFingerprint.instance.matches(
-        video.videoPath,
+        localVideo.videoPath,
         link.fingerprint!,
       )) {
         localMismatch = true;
-        video = null;
+        localVideo = null;
       }
     } catch (_) {
       localUnreadable = true;
-      video = null;
+      localVideo = null;
     }
   }
+  final VideoBookRow? video = localVideo;
   // 拍板台 IFCPPprIpT：本机没有（或字节对不上）就经互联在 host 上找同一份字节在线播
   // ——远程播放 host 视频制的卡、以及在别的设备本地制的卡都走这里。
   final ({RemoteCardSourceVideo? hit, bool fingerprintMismatch})? remoteLookup =

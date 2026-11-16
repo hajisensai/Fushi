@@ -743,11 +743,12 @@ extension _VideoLookupMining on _VideoFushiPageState {
     // 文件算指纹（与本地卡同口径），uid 是 host 的 bookUid。回跳时本机有同一份字节就
     // 本地播，没有就经互联在线播（card_source_router）。Jellyfin / Emby / Plex 没有
     // 原文件可算，仍不带链接。
-    final RemoteVideoClient? remoteClient = _isRemote
+    final RemoteVideoFingerprintSource? hostFingerprints = switch (_isRemote
         ? _effectiveRemoteClient
-        : null;
-    final RemoteVideoFingerprintSource? hostFingerprints =
-        remoteClient is RemoteVideoFingerprintSource ? remoteClient : null;
+        : null) {
+      final RemoteVideoFingerprintSource source => source,
+      _ => null,
+    };
     // A still-only card has no subtitle range, but its source is the frame
     // being viewed now; it must not accidentally link to the start of the film.
     final int sourceStartMs = clipEndMs > clipStartMs

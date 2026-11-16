@@ -112,14 +112,20 @@ void main() {
     final String mining = File(
       'lib/src/pages/implementations/video_fushi/lookup_mining.part.dart',
     ).readAsStringSync();
-    expect(mining, contains('remoteClient is RemoteVideoFingerprintSource'));
+    expect(
+      mining,
+      contains('final RemoteVideoFingerprintSource source => source'),
+    );
     expect(mining, contains('hostFingerprints.fetchRemoteVideoFingerprint('));
     final String router = File(
       'lib/src/anki/card_source_router.dart',
     ).readAsStringSync();
     expect(router, contains('backend.fetchRemoteVideoFingerprint('));
     // 本地同 uid 但字节对不上时不直接判死，继续去 host 找同一份字节。
-    expect(router, matches(RegExp(r'localMismatch = true;\s+video = null;')));
+    expect(
+      router,
+      matches(RegExp(r'localMismatch = true;\s+localVideo = null;')),
+    );
   });
 
   test('接线：本地没有时走 host 清单，远端复习不按本地指纹判死', () {
