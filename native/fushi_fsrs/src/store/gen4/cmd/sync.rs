@@ -675,6 +675,14 @@ pub(crate) const LOC_STATE_SQL: &str =
 ///   留在位置上不收，D20）。
 /// - 本位置自写的 head（`loc` 是本位置的 loc 标记）带 `seal` = 位置是加密的证据（设计 §4.4）：`sealed`。
 pub fn plan(t: &Truth<'_>, col: i64, req: &Value, heads: &[Vec<u8>]) -> Result<Value, String> {
+    // 协议 3 的 `plan` 有只读预演（`readOnly` → `needsWrite`）；新代的 `plan` 一律在写事务里记对端 / 位置 head /
+    // 取消停用，没有只读形态。明确拒绝，不静默照写（调用方以为在读连接上、实际在 Dart 写锁外写库）。
+    if req.get("readOnly").is_some_and(|v| !v.is_null()) {
+        return Err(
+            "plan: readOnly is not supported (plan always writes; run it under the write lock)"
+                .into(),
+        );
+    }
     let location = str_req(req, "location")?;
     let now = now_of(req)?;
     let loc = req.get("loc").and_then(Value::as_str);

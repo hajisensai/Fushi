@@ -504,8 +504,13 @@ impl<'c> Truth<'c> {
             let Some(device) = k.get(lo.len()..).and_then(Id::parse) else {
                 continue;
             };
-            // 记录坏了也按停用算（只影响本机的收段让步，宁可放行也不让操作永远卡住）。
-            let v = serde_json::from_str(&v).unwrap_or_else(|_| serde_json::json!({}));
+            // 停用与否只看键在不在（`set_retired` 写键、取消停用删键）；记录体只带显示用的 `at` / `applied` /
+            // `headSeq`。记录体读不懂 = `Null`，不当成空记录混过去：`status` 在这台设备的行上报 `warning`
+            // （[RETIRED_RECORD_UNREADABLE]），用户取消停用（删键）即可清掉。
+            let v = serde_json::from_str::<serde_json::Value>(&v)
+                .ok()
+                .filter(serde_json::Value::is_object)
+                .unwrap_or(serde_json::Value::Null);
             out.insert(device, v);
         }
         Ok(out)
@@ -541,6 +546,9 @@ impl<'c> Truth<'c> {
         })
     }
 }
+
+/// 停用记录体读不懂时 `status` 设备行的 `warning`（[Truth::retired]）。
+pub(crate) const RETIRED_RECORD_UNREADABLE: &str = "retired record unreadable";
 
 /// [Truth::retired] 执行的语句：`srs_meta` 主键上的一段区间（查询计划测试用同一份）。
 pub(crate) const RETIRED_SQL: &str =

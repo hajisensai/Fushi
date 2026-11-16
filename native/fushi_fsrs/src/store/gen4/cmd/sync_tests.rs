@@ -29,7 +29,7 @@ use crate::store::gen4::derive::Index;
 use crate::store::gen4::derive::tests::{assert_rebuild_is_identity, dump};
 use crate::store::gen4::files::{GEN4_FILE, OpenMode};
 use crate::store::gen4::kernel::{G4Core, REMOVED, UNWIRED};
-use crate::store::gen4::sync_state::RETIRED_SQL;
+use crate::store::gen4::sync_state::{RETIRED_RECORD_UNREADABLE, RETIRED_SQL};
 use crate::store::gen4::truth::Truth;
 use crate::store::sync2::collection_of;
 use crate::store::sync2::tests::{P, edit, tempdir};
@@ -252,6 +252,7 @@ struct Opts<'a> {
     seg_bytes: Option<u64>,
     max_bytes: Option<u64>,
     skip_unchanged: bool,
+    archive: bool,
 }
 
 /// 一轮里各步的回包（断言用）。
@@ -379,7 +380,7 @@ fn round(d: &Dev, loc: &mut Loc, location: &str, now: i64, o: Opts<'_>) -> Round
         d.h,
         "obsolete",
         now,
-        json!({"progress": progress, "present": names_of(loc, &me)}),
+        json!({"progress": progress, "present": names_of(loc, &me), "archive": o.archive}),
         &[],
     );
     for p in obs["delete"].as_array().unwrap() {
@@ -816,6 +817,206 @@ fn retiring_a_device_shows_in_status_until_it_writes_again() {
         &[],
     );
     assert_ne!(state(&a)["state"], json!("retired"));
+}
+
+const N4: &str = "0193a1b2-0000-7000-8000-0000000000a4";
+const N5: &str = "0193a1b2-0000-7000-8000-0000000000a5";
+const N6: &str = "0193a1b2-0000-7000-8000-0000000000a6";
+
+/// [d] 的 `status` 里 [device] 那一行。
+fn status_row(d: &Dev, device: &str) -> Value {
+    g4(d.h, "status", T1, json!({}))["devices"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["device"] == json!(device))
+        .cloned()
+        .unwrap_or_else(|| panic!("no status row for {device}"))
+}
+
+/// 停用的本意：因等某台设备的数据而卡在等待缓冲里的操作，停用它之后同一个事务里投递（`receive.rs` `deps_ready`、
+/// `retire` 收尾补投递），`status` 不再把卡住记到停用设备头上（`stuck`）。b 的一条操作同时依赖 c、d 还没到 a 的
+/// 操作：只停用 c 时仍等 d、不投递，c 头上不再记卡住；再停用 d 就投递。之后 c、d 的段晚到（乱序投递），四台收敛、
+/// 增量 == 重建，c、d 写了更新的 head 自动取消停用。
+#[test]
+fn retiring_a_device_delivers_what_waited_on_it() {
+    let mut a = Dev::new("g87ra");
+    let mut b = Dev::new("g87rb");
+    let mut c = Dev::new("g87rc");
+    let mut d = Dev::new("g87rd");
+    // 各有一条日志（状态表按日志登记设备），四台先在主位置上互相见过。
+    b.write(T1, N1, "b1");
+    c.write(T1, N2, "c1");
+    d.write(T1, N3, "d1");
+    let mut main = Loc::new();
+    sync_all(&[&a, &b, &c, &d], &mut main, T1 + 1, Opts::default());
+    // c、d 各写一条，只经旁路位置给了 b；b 在它们之上写一条（依赖 c:2、d:2），只发到主位置。
+    c.write(T1 + 2, N4, "c2");
+    d.write(T1 + 2, N5, "d2");
+    let mut side = Loc::new();
+    for dev in [&c, &d, &b] {
+        round(dev, &mut side, "side", T1 + 3, Opts::default());
+    }
+    assert_eq!(b.field(N4), Some(json!("c2")));
+    assert_eq!(b.field(N5), Some(json!("d2")));
+    b.write(T1 + 4, N6, "b2");
+    round(&b, &mut main, "loc", T1 + 5, Opts::default());
+    round(&a, &mut main, "loc", T1 + 5, Opts::default());
+    assert_eq!(a.field(N6), None);
+    let (cd, dd) = (c.device(), d.device());
+    for dev in [&cd, &dd] {
+        let row = status_row(&a, dev);
+        assert!(row["blocking"].as_i64().unwrap() > 0, "{row}");
+        assert_eq!(row["state"], json!("missing"), "{row}");
+    }
+    // 停用 c：还在等 d，不投递；c 头上不再记卡住，d 照记。
+    let (v, _) = cmd(
+        a.h,
+        "retire",
+        T1 + 6,
+        json!({"device": cd, "retire": true}),
+        &[],
+    );
+    assert_eq!(v["delivered"], json!(0), "{v}");
+    let row = status_row(&a, &cd);
+    assert_eq!(row["state"], json!("retired"), "{row}");
+    assert_eq!(row["blocking"], json!(0), "{row}");
+    assert!(status_row(&a, &dd)["blocking"].as_i64().unwrap() > 0);
+    assert_eq!(a.field(N6), None);
+    // 停用 d：依赖全落在停用设备上，同一个事务里投递。
+    let (v, _) = cmd(
+        a.h,
+        "retire",
+        T1 + 7,
+        json!({"device": dd, "retire": true}),
+        &[],
+    );
+    assert!(v["delivered"].as_i64().unwrap() > 0, "{v}");
+    assert_eq!(a.field(N6), Some(json!("b2")));
+    assert_eq!(status_row(&a, &dd)["blocking"], json!(0));
+    a.derived();
+    // c、d 接回主位置：晚到的依赖照收，四台收敛。
+    sync_all(&[&c, &d, &a, &b], &mut main, T1 + 8, Opts::default());
+    for dev in [&a, &b, &c, &d] {
+        assert_eq!(dev.field(N4), Some(json!("c2")));
+        assert_eq!(dev.field(N5), Some(json!("d2")));
+        assert_eq!(dev.field(N6), Some(json!("b2")));
+    }
+    for dev in [&cd, &dd] {
+        assert_ne!(status_row(&a, dev)["state"], json!("retired"));
+    }
+    let da = a.derived();
+    assert_eq!(da, b.derived());
+    assert_eq!(da, c.derived());
+    assert_eq!(da, d.derived());
+}
+
+/// 停用记录体读不懂：仍按停用算（停用只看键），但 `status` 在那一行报 `warning`，不当成空记录混过去；取消停用清掉。
+#[test]
+fn an_unreadable_retire_record_is_reported() {
+    let mut a = Dev::new("g87wa");
+    let b = Dev::new("g87wb");
+    b.write(T1, N1, "鯨");
+    let mut loc = Loc::new();
+    sync_all(&[&a, &b], &mut loc, T1 + 1, Opts::default());
+    let bd = b.device();
+    let dev = Id::parse(&bd).unwrap();
+    a.direct(|t, col| t.set_retired(col, &dev, Some(&json!("not a record"))));
+    let row = status_row(&a, &bd);
+    assert_eq!(row["state"], json!("retired"), "{row}");
+    assert_eq!(row["warning"], json!(RETIRED_RECORD_UNREADABLE), "{row}");
+    cmd(
+        a.h,
+        "retire",
+        T1 + 2,
+        json!({"device": bd, "retire": false}),
+        &[],
+    );
+    let row = status_row(&a, &bd);
+    assert_ne!(row["state"], json!("retired"), "{row}");
+    assert_eq!(row["warning"], Value::Null, "{row}");
+}
+
+/// `outbox_ack` 只认链尾标签与本机日志相符的段（发件与确认之间本机日志被改写时唯一的拒绝点，Dart 据此不写 head）：
+/// 标签对不上 → `accepted: false`、水位不动；原样的那份照收。
+#[test]
+fn outbox_ack_refuses_a_tail_tag_that_is_not_the_local_chain() {
+    let a = Dev::new("g87k");
+    a.write(T1, N1, "鯨");
+    let progress = "loc#plain";
+    let (v, files) = cmd(
+        a.h,
+        "outbox",
+        T1,
+        json!({"progress": progress, "present": []}),
+        &[],
+    );
+    assert_eq!(files.len(), 1, "{v}");
+    let segs = v["segments"].clone();
+    let mut bad = segs.clone();
+    let tag = bad[0][2].as_str().unwrap().to_owned();
+    let flipped = format!(
+        "{}{}",
+        if tag.starts_with('0') { '1' } else { '0' },
+        &tag[1..]
+    );
+    bad[0][2] = json!(flipped);
+    let (ack, _) = cmd(
+        a.h,
+        "outbox_ack",
+        T1,
+        json!({"progress": progress, "segments": bad}),
+        &[],
+    );
+    assert_eq!(ack["accepted"], json!(false), "{ack}");
+    assert_eq!(ack["uploaded"], json!(0), "{ack}");
+    // 水位没动：再发一次还是同一段。
+    let (again, _) = cmd(a.h, "outbox", T1, json!({"progress": progress}), &[]);
+    assert_eq!(again["segments"], segs);
+    let (ack, _) = cmd(
+        a.h,
+        "outbox_ack",
+        T1,
+        json!({"progress": progress, "segments": segs}),
+        &[],
+    );
+    assert_eq!(ack["accepted"], json!(true), "{ack}");
+    assert_eq!(ack["uploaded"], segs[0][1], "{ack}");
+}
+
+/// 归档位置（`obsolete` 带 `archive`）一个都不删：每轮写一代新 head，旧 head 与段全留；同一台设备换回普通位置后
+/// 只留最新两代。`plan` 没有只读预演（协议 3 的 `readOnly`），带了明确拒绝。
+#[test]
+fn an_archive_location_keeps_every_head() {
+    let a = Dev::new("g87h");
+    let mut loc = Loc::new();
+    let archive = Opts {
+        archive: true,
+        ..Opts::default()
+    };
+    for i in 0..4 {
+        a.write(T1 + i, N1, &format!("v{i}"));
+        let r = round(&a, &mut loc, "loc", T1 + 10 + i, archive);
+        assert!(r.deleted.is_empty(), "{:?}", r.deleted);
+    }
+    let heads_of = |loc: &Loc| {
+        names_of(loc, &a.device())
+            .iter()
+            .filter(|n| n.starts_with("head-"))
+            .count()
+    };
+    assert_eq!(heads_of(&loc), 4);
+    a.write(T1 + 20, N1, "v9");
+    let r = round(&a, &mut loc, "loc", T1 + 21, Opts::default());
+    assert!(!r.deleted.is_empty());
+    assert_eq!(heads_of(&loc), 2);
+    let e = raw(
+        a.h,
+        &g4req("plan", T1, json!({"location": "loc", "readOnly": true})),
+        &[],
+    )
+    .unwrap_err();
+    assert!(e.contains("readOnly"), "{e}");
 }
 
 // ---------------------------------------------------------------------- 换身份

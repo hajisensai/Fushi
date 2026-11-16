@@ -390,6 +390,12 @@ pub fn status(t: &Truth<'_>, col: i64) -> Result<Value, String> {
                     "retiredAt".into(),
                     r.get("at").cloned().unwrap_or(Value::Null),
                 );
+                if r.is_null() {
+                    m.insert(
+                        "warning".into(),
+                        json!(super::super::sync_state::RETIRED_RECORD_UNREADABLE),
+                    );
+                }
                 "retired"
             } else if protocol.is_some_and(|p| p < i64::from(crate::gen4::MIN_READER)) {
                 "upgrade"
