@@ -154,6 +154,11 @@ class SrsRwkvService implements SrsRwkvScheduling, SrsRwkvStatusSource {
   /// 本服务关完（[close] 结束时完成）。
   final Completer<void> _released = Completer<void>();
 
+  /// 本服务开始关（[close] 一进来就完成）：还在等 [_predecessor] 的 [_spawn] 不再等下去，直接放弃起内核。
+  /// 否则上一个服务关不完（内核 isolate 挂死）时，本服务的 [close] 也会经 `_starting` 卡在这里，再把宿主
+  /// 换档位 / 关库的串行队列整条拖住（交接链只该挡住起内核，不该挡住关闭）。
+  final Completer<void> _closeRequested = Completer<void>();
+
   /// 本服务排进 [_snapshotHandoff] 的队尾。
   late final Future<void> _handoffTail;
 
@@ -277,8 +282,8 @@ class SrsRwkvService implements SrsRwkvScheduling, SrsRwkvStatusSource {
   }
 
   Future<RwkvSchedWorker?> _spawn() async {
-    // 同一份快照的上一个服务还在关（存快照）：等它关完再起内核去恢复 / 写这份快照。
-    await _predecessor;
+    // 同一份快照的上一个服务还在关（存快照）：等它关完再起内核去恢复 / 写这份快照；本服务先被关了就不等了。
+    await Future.any(<Future<void>>[_predecessor, _closeRequested.future]);
     if (_closed) return null;
     try {
       final RwkvSchedWorker worker = await RwkvSchedWorker.spawn(
@@ -1011,6 +1016,7 @@ class SrsRwkvService implements SrsRwkvScheduling, SrsRwkvStatusSource {
   Future<void> close() async {
     if (_closed) return;
     _closed = true;
+    _closeRequested.complete();
     try {
       try {
         await _run(RwkvSchedWire.cmdClose, closing: true);

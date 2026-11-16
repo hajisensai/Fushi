@@ -7,6 +7,7 @@
 // - 模型档位与 app 同一个设置文件（`<support>/srs_rwkv/model_size`）：选了 Tiny，服务端加载 sm101、快照进 Tiny 的目录；
 //   WebUI / admin API 换档位当场生效，手改文件在下一次对齐配置时生效；
 // - 同一份快照的新服务等上一个服务关完（存好快照）才起内核（快速来回切档位不让两个内核同时碰一个快照）。
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -342,8 +343,11 @@ void main() {
     await until(() => a.status.phase == SrsRwkvPhase.ready, 'first ready');
     expect(first.replayedRows + first.appendedRows, 3);
 
-    // 宿主不等旧服务关完就建新服务（app 换档位时 provider 的 onDispose 不 await close）。
+    // 宿主不等旧服务关完就建新服务（app 换档位时 provider 的 onDispose 不 await close）。旧服务关 runtime
+    // 挂在闸门上：顺序由闸门钉死，不靠两个 isolate 谁快谁慢。
+    final Completer<void> gate = first.closeGate = Completer<void>();
     final Future<void> closing = a.close();
+    await until(() => first.closeCalled, 'first close reached the runtime');
     final FakeRwkvBackend second = FakeRwkvBackend();
     bool? firstClosedWhenOpened;
     final SrsRwkvService b = srsAttachRwkv(
@@ -356,7 +360,12 @@ void main() {
       },
     );
     try {
-      await b.start();
+      final Future<void> starting = b.start();
+      // 给新服务足够时间起 isolate、打开 runtime（没有交接时它会在这段时间里打开）。
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      expect(firstClosedWhenOpened, isNull, reason: '上一个服务没关完时不起内核');
+      gate.complete();
+      await starting;
       await until(() => b.status.phase == SrsRwkvPhase.ready, 'second ready');
       await closing;
       expect(firstClosedWhenOpened, isTrue, reason: '上一个服务关完才起内核');
@@ -368,6 +377,53 @@ void main() {
     } finally {
       await b.close();
     }
+  });
+
+  test('上一个服务关不完（runtime 挂住）时，排在后面的服务照样能关：交接只挡起内核、不挡关闭，'
+      '不把宿主换档位 / 关库的串行队列拖住', () async {
+    final List<int> clock = <int>[
+      DateTime.now().millisecondsSinceEpoch - 2 * _dayMs,
+    ];
+    final SrsDbStore s = await phone('phone-a', clock);
+    await seed(s, 3, clock);
+    final Directory device = Directory(p.join(tmp.path, 'device'))
+      ..createSync();
+    markRwkvWeightsReady(device);
+    final FakeRwkvBackend first = FakeRwkvBackend();
+    final SrsRwkvService a = srsAttachRwkv(
+      s,
+      support: device,
+      createClient: noNetworkHttpClient,
+      openBackend: (File _) async => first,
+    );
+    await a.start();
+    await until(() => a.status.phase == SrsRwkvPhase.ready, 'first ready');
+    final Completer<void> gate = first.closeGate = Completer<void>();
+    final Future<void> closingA = a.close();
+    await until(() => first.closeCalled, 'first close reached the runtime');
+
+    bool secondOpened = false;
+    final SrsRwkvService b = srsAttachRwkv(
+      s,
+      support: device,
+      createClient: noNetworkHttpClient,
+      openBackend: (File _) async {
+        secondOpened = true;
+        return FakeRwkvBackend();
+      },
+    );
+    final Future<void> startingB = b.start();
+    bool closedB = false;
+    final Future<void> closingB = b.close().then((_) => closedB = true);
+    await until(() => closedB, 'second close while first is stuck');
+    await startingB;
+    expect(secondOpened, isFalse, reason: '关了的服务不再起内核');
+    expect(b.ready, isFalse);
+
+    gate.complete();
+    await closingA;
+    await closingB;
+    expect(first.closed, isTrue);
   });
 
   test('服务端 RWKV 没就绪：RWKV 牌组的复习卡不出、标 rwkvPending，不退回 FSRS-7 的到期日；'
