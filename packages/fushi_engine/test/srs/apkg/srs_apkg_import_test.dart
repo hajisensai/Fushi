@@ -2603,6 +2603,12 @@ void main() {
             SrsLimitUnit.reviews,
             reason: name,
           );
+          // 导入新建的牌组明写了单位，不算「加单位设置之前的存量牌组」，牌组页不提醒。
+          expect(
+            fromAnki[srsImportedDeckId(kProfile2, name)]!.limitUnitSet,
+            isTrue,
+            reason: name,
+          );
         }
 
         final Uint8List ext = await exportAnkiPackage(store: s);

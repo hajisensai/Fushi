@@ -422,10 +422,12 @@ String? srsNavPeekCountsLabel({
   required int learnCount,
   required int reviewCount,
   bool reviewPending = false,
+  int? reviewMinutesLeft,
 }) {
   final String? review = SrsReviewCell(
     due: reviewCount,
     pending: reviewPending,
+    minutesLeft: reviewMinutesLeft,
   ).label(omitZero: true);
   final List<String> parts = <String>[
     if (newCount > 0) '${t.srs_count_new} $newCount',
@@ -458,6 +460,7 @@ Future<AdaptiveNavPeekData> _loadSrsDecks({
             learnCount: deck.learnCount,
             reviewCount: deck.reviewCount,
             reviewPending: deck.rwkvPending,
+            reviewMinutesLeft: deck.reviewMinutesLeft,
           ) ??
           t.home_srs_panel_done,
       // 有待复习的卡就直接进这个牌组的复习页（同首页复习条）；今天已复习完

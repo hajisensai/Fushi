@@ -983,6 +983,16 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
           () => openSrsStarterPacks(context, ref),
         ),
         onAddFirst: () => srsRunLogged('SrsDeckList.addFirst', _addNote),
+        legacyLimitUnitDecks:
+            ref.watch(srsLimitUnitLegacyCountProvider).valueOrNull ?? 0,
+        onKeepLegacyLimitCards: () => srsRunLogged(
+          'SrsDeckList.limitUnitKeepCards',
+          () => settleSrsLegacyLimitUnit(list.store, SrsLimitUnit.cards),
+        ),
+        onAcceptLimitAnswers: () => srsRunLogged(
+          'SrsDeckList.limitUnitAcceptAnswers',
+          () => settleSrsLegacyLimitUnit(list.store, SrsLimitUnit.reviews),
+        ),
       ),
       onFocus: _setFocus,
       onSelect: _select,
@@ -1637,6 +1647,7 @@ class _DeckRow extends StatelessWidget {
                         learnCount: deck.learnCount,
                         reviewCount: deck.reviewCount,
                         reviewPending: deck.rwkvPending,
+                        reviewMinutesLeft: deck.reviewMinutesLeft,
                       ),
                       // 没活时留位不画：各行的三色计数列照样对齐。
                       Visibility(
