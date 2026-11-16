@@ -33,15 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4067 条。点号进各自文件。
+> 共 4082 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4710](bugs/BUG-4710-game-scrape-cross-source-same-title.md) | ✅ | ✅ | 游戏批量刮削把跨源同名当成歧义，Bangumi 与 VNDB 都收录的作品刮不出封面 |
-> 共 4081 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4725](bugs/BUG-4725-game-scrape-cross-source-same-title.md) | ✅ | ✅ | 游戏批量刮削把跨源同名当成歧义，Bangumi 与 VNDB 都收录的作品刮不出封面 |
 | [BUG-4724](bugs/BUG-4724-card-source-remote-open-no-feedback.md) | ✅ | ✅ | 点卡片来源跳互联 host 上的视频时等拉清单期间毫无反馈，像点坏了 |
 | [BUG-4723](bugs/BUG-4723-lyrics-source-lrclib-reorder.md) | ✅ | ✅ | 歌词来源列表 LRCLIB 固定排第一，不能和插件一起排序 |
 | [BUG-4722](bugs/BUG-4722-cupertino-doubled-library-headers.md) | ✅ | ✅ | Cupertino 下外壳标题条与库页页头大字重复显示页名 |
