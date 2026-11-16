@@ -70,12 +70,43 @@ pub fn stats_rows(t: &Truth<'_>, col: i64, req: &Value) -> Result<Value, String>
     stats::rows_of(&snap, &req)
 }
 
-/// 原料与归一后的请求：同一个读快照里读原料、归一请求里的 ID（别名表与原料是同一个版本）。
+/// 原料与归一后的请求：同一个读快照里读原料、归一请求里的 ID（别名表与原料是同一个版本）。原料经 [snapshot_of]
+/// 读——它在已开的事务里直接沿用（[snapshot] 的约定），所以这里与接线后命令层的原料缓存走同一个入口：缓存（协议 3
+/// `StatsCache` 的新代对应物，要知道写连接上改没改过原料，归 S1 的命令层）没命中时也调它。
 fn load(t: &Truth<'_>, col: i64, req: &Value) -> Result<(Snapshot, Value), String> {
     snapshot(t, |t| {
         let req = canon_req(&Index::new(t, col), req)?;
-        Ok((read_snapshot(t, col)?, req))
+        Ok((snapshot_of(t, col)?, req))
     })
+}
+
+/// 以 ID 为键的一张表的键归一成规范 ID（模块文件头「ID」）：同一个类的几个成员各给了值时，规范 ID 自己给了就用它的，
+/// 否则用成员里 ID 的 SQLite 序最小的那个的（确定、与键的先后无关）。出卡的 `rwkv.decks`（`cmd/study.rs`）也用它。
+pub(crate) fn canon_keys(ix: &Index<'_, '_>, m: &mut Map<String, Value>) -> Result<(), String> {
+    // 规范 ID → (它自己给了没有, 给了值的成员里 ID 的 SQLite 序最小的, 值)。
+    let mut by: BTreeMap<String, (bool, (u8, Vec<u8>), Value)> = BTreeMap::new();
+    for (key, v) in m.iter() {
+        let r = ref_of(key);
+        let c = ix.canonical(&r)?;
+        let own = r == c;
+        let (o, b) = super::sql_order(&r);
+        let rank = (o, b.to_vec());
+        let ct = c.text();
+        let better = match by.get(&ct) {
+            None => true,
+            Some((had_own, had_rank, _)) => {
+                (own && !had_own) || (own == *had_own && rank < *had_rank)
+            }
+        };
+        if better {
+            by.insert(ct, (own, rank, v.clone()));
+        }
+    }
+    *m = by
+        .into_iter()
+        .map(|(k, (_, _, v))| (k, v))
+        .collect::<Map<String, Value>>();
+    Ok(())
 }
 
 /// 请求里按 ID 给的东西归一成规范 ID（模块文件头「ID」）：`decks` / `recallDecks` 两个数组，`desired` / `deckModels`
@@ -106,29 +137,7 @@ pub(crate) fn canon_req(ix: &Index<'_, '_>, req: &Value) -> Result<Value, String
     }
     for k in ["desired", "deckModels"] {
         if let Some(Value::Object(m)) = obj.get_mut(k) {
-            // 规范 ID → (它自己给了没有, 给了值的成员里 ID 的 SQLite 序最小的, 值)。
-            let mut by: BTreeMap<String, (bool, (u8, Vec<u8>), Value)> = BTreeMap::new();
-            for (key, v) in m.iter() {
-                let r = ref_of(key);
-                let c = ix.canonical(&r)?;
-                let own = r == c;
-                let (o, b) = super::sql_order(&r);
-                let rank = (o, b.to_vec());
-                let ct = c.text();
-                let better = match by.get(&ct) {
-                    None => true,
-                    Some((had_own, had_rank, _)) => {
-                        (own && !had_own) || (own == *had_own && rank < *had_rank)
-                    }
-                };
-                if better {
-                    by.insert(ct, (own, rank, v.clone()));
-                }
-            }
-            *m = by
-                .into_iter()
-                .map(|(k, (_, _, v))| (k, v))
-                .collect::<Map<String, Value>>();
+            canon_keys(ix, m)?;
         }
     }
     if let Some(Value::Object(recall)) = obj.get_mut("recall") {

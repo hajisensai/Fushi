@@ -7,6 +7,12 @@
 //! - [columns]：列式批量读 `card_columns` 与 AnkiConnect 数字 id 的 `anki_resolve` / `anki_notes_info`（协议 3 `store/bulk.rs`）。
 //! - [lineage]：`lineages`——一组卡各自的血统（协议 3 `caches::lineage_ids`，同一个判定函数，按类读前身链接）。
 //! - [stats]：复习统计 `stats_report` / `stats_recall` / `stats_rows`（协议 3 `store/stats.rs`，同一份聚合）。
+//! - [center]：冲突中心与时间线的只读命令 `conflicts` / `checkpoints` / `undo_check`（G7-4e）。
+//! - [profile]：按集合的 `binding_get` / `profile_footprint`（G7-4e）。
+//! - [study]：出卡与牌组计数 `study`（协议 3 `store/study.rs`，同一份排队规则；常驻会话与索引的取舍见那里的文件头）。
+//!
+//! 分发器命令与新代实现的逐条对照（哪条已有、归谁、S1 怎么接）见 `docs/specs/2026-11-15-srs-gen4-handoff.md`
+//! 「分发器命令对照表」。
 //!
 //! # 共同约定
 //!
@@ -24,22 +30,28 @@
 use rusqlite::types::Value as Sv;
 use serde_json::Value;
 
-use super::derive::{Index, Ref};
+use super::derive::{Index, Ref, body_of};
 use super::schema::sql;
 use super::truth::Truth;
 use crate::gen4::name::write_edit_key;
+use crate::gen4::op::{Body4, Log4};
 use crate::store::bulk::{self, Col};
 use crate::store::gen4::weigh::S_PURGED;
 use crate::store::sync2::canonical;
+use crate::store::sync2::config::DeckTree;
 use crate::sync2::codec::Writer;
 use crate::sync2::id::Key;
 use crate::sync2::op::EntKind;
+use crate::sync2::vv::OpId;
 
+pub mod center;
 pub mod columns;
 pub mod history;
 pub mod lineage;
+pub mod profile;
 pub mod reads;
 pub mod stats;
+pub mod study;
 pub mod views;
 // 写命令的新代实现（规划 §2.1 G7-3b），同样还没接分发器：见 [writes] 文件头。
 pub mod writes;
@@ -47,6 +59,10 @@ pub mod writes_intent;
 pub mod writes_local;
 pub mod writes_restore;
 
+#[cfg(test)]
+mod center_tests;
+#[cfg(test)]
+mod study_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
@@ -115,6 +131,60 @@ pub(super) fn canon_ids(ix: &Index<'_, '_>, ids: &Value) -> Result<Vec<Ref>, Str
     Ok(out)
 }
 
+/// 集合 [col] 的默认牌组（规范 ID）：缓存配置给了就用它（归一后，与缓存层同一个），否则是规范规则的内置默认牌组。
+/// 写命令（[writes]）与出卡读命令（[study]）共用。
+pub(super) fn default_deck(t: &Truth<'_>, ix: &Index<'_, '_>, col: i64) -> Result<String, String> {
+    match t.derive_cfg(col, super::cache::CFG_KEY)? {
+        Some(text) => {
+            let v: Value =
+                serde_json::from_str(&text).map_err(|e| format!("gen4: bad cache config: {e}"))?;
+            let cfg = crate::store::caches::CacheConfig::parse(&ix.canonical_config(&v)?)?;
+            Ok(cfg.default_deck().to_owned())
+        }
+        None => Ok(
+            crate::gen4_ids::rules::builtin_default_deck(crate::gen4_ids::rules::CANONICAL).text(),
+        ),
+    }
+}
+
+/// 此刻的牌组树（未删除的牌组，ID 是规范 ID）：每个规范牌组的定义 + 按类判定活着的写入拼视图，再走协议 3 同一份
+/// 拼树规则（`DeckTree::of_views`）。写命令（[writes]）与出卡读命令（[study]）共用。
+pub(super) fn deck_tree(ix: &mut Index<'_, '_>, default: String) -> Result<DeckTree, String> {
+    let ids: Vec<Ref> = {
+        let mut stmt =
+            ix.t.conn()
+                .prepare_cached(
+                    "SELECT DISTINCT id FROM ent_ix WHERE col = ?1 AND kind = ?2 AND win = 1",
+                )
+                .map_err(sql)?;
+        let rows = stmt
+            .query_map(rusqlite::params![ix.col, EntKind::Deck as i64], |r| {
+                r.get::<_, Ref>(0)
+            })
+            .map_err(sql)?;
+        rows.collect::<Result<_, _>>().map_err(sql)?
+    };
+    let mut canon: std::collections::BTreeSet<Ref> = std::collections::BTreeSet::new();
+    for id in &ids {
+        canon.insert(ix.canon(id)?);
+    }
+    let mut views = Vec::with_capacity(canon.len());
+    for c in &canon {
+        let Some((kind, _, payload)) = ix.definition(c)? else {
+            continue;
+        };
+        if kind != EntKind::Deck as i64 {
+            continue;
+        }
+        let (lines, _) = ix.class_lines(EntKind::Deck, c)?;
+        views.push((
+            c.text(),
+            crate::registers::deck_view_of(&payload, &crate::store::sync2::config::stored(&lines))?,
+        ));
+    }
+    Ok(DeckTree::of_views(views, default))
+}
+
 /// SQLite 比较 ID 列的顺序（`ORDER BY id`）：TEXT 在 BLOB 之前，各自按字节。[Ref] 自己的 `Ord` 把 UUID 排在前面，
 /// 与协议 3 `ORDER BY id`（存的是 `srs_id` 形）不同，排结果一律用这个键。
 pub(super) fn sql_order(r: &Ref) -> (u8, &[u8]) {
@@ -122,6 +192,58 @@ pub(super) fn sql_order(r: &Ref) -> (u8, &[u8]) {
         Ref::Text(s) => (0, s.as_bytes()),
         Ref::Uuid(b) => (1, b.as_slice()),
     }
+}
+
+/// 按规范日志 ID 取的日志代表：规范日志 ID → (操作号, 操作主键, 日志)。
+pub(super) type LogReps = std::collections::BTreeMap<Ref, (OpId, i64, Log4)>;
+
+/// 发生时刻落在 [lo, hi]（[hi] = None：不设上界）的日志并进 [reps]：每个规范日志 ID 取操作号最小的一份（`log_ix.win`
+/// 的规则搬到别名类上；多次调用跨区间累积，仍取最小的一份）。走 `log_at (col, at)`。按时刻读日志的读命令
+/// （[reads] 的 `anki_logs_at` / `native_logs_near`、[study] 的计数上下文与自定义学习）共用这一份代表规则。
+pub(super) fn logs_between(
+    t: &Truth<'_>,
+    ix: &Index<'_, '_>,
+    col: i64,
+    lo: i64,
+    hi: Option<i64>,
+    reps: &mut LogReps,
+) -> Result<(), String> {
+    let rows: Vec<(i64, Ref)> = match hi {
+        Some(hi) => t
+            .conn()
+            .prepare_cached(
+                "SELECT k, id FROM log_ix WHERE col = ?1 AND at BETWEEN ?2 AND ?3 AND win = 1",
+            )
+            .map_err(sql)?
+            .query_map(rusqlite::params![col, lo, hi], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
+            .map_err(sql)?
+            .collect::<Result<_, _>>()
+            .map_err(sql)?,
+        None => t
+            .conn()
+            .prepare_cached("SELECT k, id FROM log_ix WHERE col = ?1 AND at >= ?2 AND win = 1")
+            .map_err(sql)?
+            .query_map(rusqlite::params![col, lo], |r| Ok((r.get(0)?, r.get(1)?)))
+            .map_err(sql)?
+            .collect::<Result<_, _>>()
+            .map_err(sql)?,
+    };
+    for (k, id) in rows {
+        let c = ix.canonical(&id)?;
+        let op = t.id_of_key(k)?;
+        if reps.get(&c).is_some_and(|(o, _, _)| *o <= op) {
+            continue;
+        }
+        let Some(e) = t.entry_by_key(k)? else {
+            continue;
+        };
+        if let Some(Body4::Log(l)) = body_of(&e) {
+            reps.insert(c, (op, k, l));
+        }
+    }
+    Ok(())
 }
 
 /// 行 JSON（规范 JSON 文本，`p` 是空串或别的值）的分区键换成 [profile]，再按规范形写回。解不开的原样（不是本层能修的数据，
