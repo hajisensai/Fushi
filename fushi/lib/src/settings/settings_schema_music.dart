@@ -370,7 +370,7 @@ SettingsDestination buildMusicDestination() {
               title: t.music_lyrics_providers_title,
               icon: FushiIcons.lyrics,
               sections: const <SettingsSection>[],
-              // 设置里的歌词来源页同样收 .fushiplug 拖放（BUG-4695）。
+              // 设置里的歌词来源页同样收 .fushiplug 拖放（BUG-4710）。
               body: (SettingsContext c) => MusicPluginDropTarget(
                 manager: c.appModel.musicPluginManager,
                 child: MusicLyricsProvidersBody(appModel: c.appModel),

@@ -161,7 +161,7 @@ const Set<String> kDragTorrentExtensions = <String>{'torrent'};
 
 /// 插件包扩展名（不带点，小写）：`.fushiplug`（音乐 / 歌词 / 追踪插件同一种包格式，
 /// 种类写在包内 manifest 的 `kind`）。此前不在任何白名单里，拖进来落 unknown 后
-/// 一律静默（BUG-4695）。
+/// 一律静默（BUG-4710）。
 const Set<String> kDragPluginExtensions = <String>{'fushiplug'};
 
 /// 插件管理类落点认的插件包扩展名 = 安装按钮文件选择器的 `allowedExtensions`

@@ -97,7 +97,7 @@ Future<bool> pickAndInstallMusicPlugin(
 
 /// 一个插件包的字节 → 校验并展示清单 / 权限 / 签名 → 用户确认后按确认时的摘要安装。
 /// 安装按钮（[pickAndInstallMusicPlugin]）与拖放落点（[MusicPluginDropTarget]）共用
-/// 这一条流程（BUG-4695：此前它焊死在文件选择器里，拖放没有入口可接）。返回是否真的
+/// 这一条流程（BUG-4710：此前它焊死在文件选择器里，拖放没有入口可接）。返回是否真的
 /// 装上了。装上后由 [MusicPluginManager.changes] 通知各列表刷新。
 Future<bool> installMusicPluginPackage(
   BuildContext context,

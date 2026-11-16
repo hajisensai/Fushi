@@ -459,7 +459,7 @@ class _MusicSourcesPageState extends ConsumerState<MusicSourcesPage> {
     return musicBrowseScaffold(
       context,
       title: t.music_sources_title,
-      // 两个分页（音源 / 歌词）都收 .fushiplug 拖放（BUG-4695）；歌词分页的
+      // 两个分页（音源 / 歌词）都收 .fushiplug 拖放（BUG-4710）；歌词分页的
       // [MusicLyricsProvidersBody] 自己不挂落点，免得同一次拖放装两遍。
       body: MusicPluginDropTarget(
         manager: _app.musicPluginManager,

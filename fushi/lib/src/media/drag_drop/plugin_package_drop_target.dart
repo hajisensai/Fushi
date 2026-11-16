@@ -19,7 +19,7 @@ typedef PluginPackageInstaller =
 ///
 /// 拖入的插件包（[pluginPackagePathsOf]：`.fushiplug` / `.zip`，与安装按钮的文件
 /// 选择器同一份扩展名）逐个读成字节交给 [install]——和按钮走同一条安装流程，拖放
-/// 不另写一套校验 / 确认。拖进来的没有插件包时给明确提示，不静默（BUG-4695）。
+/// 不另写一套校验 / 确认。拖进来的没有插件包时给明确提示，不静默（BUG-4710）。
 ///
 /// 读文件失败等异常不在这里接：[FushiFileDropTarget.runDrop] 是所有拖放入口的唯一
 /// 错误咽喉，会弹失败提示。移动端没有桌面拖放，[FushiFileDropTarget] 直接透传 child。

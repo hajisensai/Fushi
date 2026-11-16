@@ -7,10 +7,11 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/drag_drop/drop_classification.dart';
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/pages/implementations/music/music_plugin_settings.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi_music/fushi_music.dart';
 import 'package:material_ui/material_ui.dart';
 
-/// BUG-4695：`.fushiplug` 插件包拖进插件管理类页面毫无反应。
+/// BUG-4710：`.fushiplug` 插件包拖进插件管理类页面毫无反应。
 ///
 /// 根因有两层：分类层没有任何类别认 `.fushiplug`（落 unknown，静默），而安装流程
 /// 和文件选择器焊死在 `pickAndInstallMusicPlugin` 里，拖放根本没有入口可接。这里
@@ -115,9 +116,14 @@ void main() {
       tester.view.physicalSize = const Size(900, 1200);
       addTearDown(tester.view.reset);
       final _FakeManager manager = _FakeManager();
+      // 装 navigator key，让 FushiToast 走自绘 overlay，测试里才能 find 到提示文字。
+      final GlobalKey<NavigatorState> navigatorKey =
+          GlobalKey<NavigatorState>();
+      FushiToast.navigatorKey = navigatorKey;
       await tester.pumpWidget(
         TranslationProvider(
           child: MaterialApp(
+            navigatorKey: navigatorKey,
             theme: ThemeData(useMaterial3: true),
             home: Scaffold(
               body: MusicPluginDropTarget(
@@ -153,6 +159,10 @@ void main() {
       await _settleIo(tester);
 
       expect(manager.installedDigests, <String>['digest-1']);
+
+      // 安装成功会弹 toast：等停留期满、退场播完，不留挂起的 Timer。
+      await tester.pump(const Duration(seconds: 10));
+      await tester.pumpAndSettle();
     });
 
     testWidgets('拖入的不是插件包：不碰安装流程', (WidgetTester tester) async {
@@ -165,6 +175,12 @@ void main() {
 
       expect(manager.inspected, isEmpty);
       expect(find.text(t.music_plugins_install_title), findsNothing);
+      // 不许静默：落在插件页的非插件文件要给「本页不支持」提示。
+      expect(find.text(t.drag_drop_unsupported_on_plugins), findsOneWidget);
+
+      // 等提示停留期满、退场播完，不留挂起的 Timer。
+      await tester.pump(const Duration(seconds: 10));
+      await tester.pumpAndSettle();
     });
   });
 }
