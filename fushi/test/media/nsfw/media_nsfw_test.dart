@@ -5,7 +5,6 @@ import 'dart:ui' as ui;
 
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/nsfw/nsfw_card_image.dart';
 import 'package:fushi/src/media/nsfw/media_nsfw_cover.dart';
@@ -232,13 +231,9 @@ void main() {
       Widget child,
     ) async {
       await tester.pumpWidget(
-        ProviderScope(
-          overrides: <Override>[
-            blurNsfwCoversProvider.overrideWithValue(true),
-            mediaNsfwSnapshotProvider.overrideWith(
-              (Ref ref) => Stream<MediaNsfwSnapshot>.value(snapshot),
-            ),
-          ],
+        MediaNsfwState(
+          blurCovers: true,
+          snapshot: snapshot,
           child: harness(child),
         ),
       );
@@ -280,6 +275,34 @@ void main() {
         ),
       );
       expect(blurStates(tester), <bool>[false, true]);
+    });
+
+    testWidgets('开关关着 / 树上没有 MediaNsfwState：不模糊、也不要求 ProviderScope', (
+      WidgetTester tester,
+    ) async {
+      final MediaNsfwSnapshot snap = (await tester.runAsync(() async {
+        await book('B');
+        await db.setMediaNsfw(TagHostKind.epub, 'B', true);
+        return MediaNsfwSnapshot.load(db);
+      }))!;
+      const Widget cover = MediaNsfwCover(
+        target: MediaNsfwTarget.book('B'),
+        child: ColoredBox(color: Color(0xFF336699)),
+      );
+      await tester.pumpWidget(
+        MediaNsfwState(
+          blurCovers: false,
+          snapshot: snap,
+          child: harness(cover),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(blurStates(tester), <bool>[false]);
+
+      await tester.pumpWidget(harness(cover));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(blurStates(tester), <bool>[false]);
     });
 
     testWidgets('祖先作用域已模糊时 MediaNsfwCover 不再叠一层', (WidgetTester tester) async {

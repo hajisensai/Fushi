@@ -701,17 +701,19 @@ class MediaItemDialogFrame extends StatelessWidget {
         ? BorderRadius.all(Radius.circular(radius))
         : shelfMaterialRadius(material);
     // 前景封面只画这一次（材质 / 旧卡共用）：外层再决定材质框还是圆角投影卡。
-    final Widget front = ClipRRect(
+    final Widget clipped = ClipRRect(
       borderRadius: borderRadius,
       clipBehavior: Clip.antiAlias,
-      child: switch (nsfw) {
-        final MediaNsfwTarget target => MediaNsfwCover(
-          target: target,
-          child: cover!,
-        ),
-        null => cover!,
-      },
+      child: cover!,
     );
+    // NSFW 条目（拍板台 w04vrhUAaX）：前景封面按「模糊 NSFW 封面」打模糊。
+    final Widget front = switch (nsfw) {
+      final MediaNsfwTarget target => MediaNsfwCover(
+        target: target,
+        child: clipped,
+      ),
+      null => clipped,
+    };
     final Widget card;
     if (material != null) {
       // 材质封面：外轮廓 / 投影 / 光泽全归 [ShelfCoverFrame]，不再叠本卡的

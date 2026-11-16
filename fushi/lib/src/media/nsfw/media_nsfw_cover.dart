@@ -5,6 +5,11 @@
 ///   表变更时自动重载（标 / 取消 NSFW、加入 / 移出合集、互联同步过来的标记都会
 ///   触发），消费端不用各自 invalidate；
 /// - [blurNsfwCoversProvider]：全局「模糊 NSFW 封面」开关；
+/// - [MediaNsfwStateHost]：挂在 app 根（`main.dart` MaterialApp.builder，导航器之上），
+///   把上面两份状态经 [MediaNsfwState] 广播给所有路由（含对话框 / 菜单）。封面消费端
+///   只读这一层、不直接依赖 Riverpod——视频合集详情页这类普通 StatefulWidget 页面
+///   （及其不挂 ProviderScope 的测试）也能用；没有这一层（独立的伴屏 / 弹窗 app、
+///   纯 UI 测试）时不模糊；
 /// - [MediaNsfwCoverScope]：卡壳（知道自己是哪部作品的那一层）挂它，算出「这张卡的
 ///   封面要不要模糊」后经 [ShelfCoverNsfw] 往下广播；卡内共享封面框
 ///   `ShelfCoverFrame` 读这一层，把模糊画在**封面图**上（标题 / 进度不模糊）；
@@ -105,8 +110,57 @@ bool watchIsMediaNsfw(WidgetRef ref, MediaNsfwTarget target) => target.resolve(
   ref.watch(mediaNsfwSnapshotProvider).valueOrNull ?? MediaNsfwSnapshot.none,
 );
 
+/// 全应用的 NSFW 显示状态（[MediaNsfwStateHost] 写，封面消费端经
+/// [mediaNsfwBlurOf] 读）。
+class MediaNsfwState extends InheritedWidget {
+  const MediaNsfwState({
+    required this.blurCovers,
+    required this.snapshot,
+    required super.child,
+    super.key,
+  });
+
+  /// 「模糊 NSFW 封面」开关。
+  final bool blurCovers;
+
+  /// 当前 NSFW 标记快照（首份加载完成前是 [MediaNsfwSnapshot.none]）。
+  final MediaNsfwSnapshot snapshot;
+
+  static MediaNsfwState? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<MediaNsfwState>();
+
+  @override
+  bool updateShouldNotify(MediaNsfwState oldWidget) =>
+      oldWidget.blurCovers != blurCovers ||
+      !identical(oldWidget.snapshot, snapshot);
+}
+
+/// app 根挂的 [MediaNsfwState] 来源：watch 快照与开关，变了整树里读它的封面重建。
+class MediaNsfwStateHost extends ConsumerWidget {
+  const MediaNsfwStateHost({required this.child, super.key});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) => MediaNsfwState(
+    blurCovers: ref.watch(blurNsfwCoversProvider),
+    snapshot:
+        ref.watch(mediaNsfwSnapshotProvider).valueOrNull ??
+        MediaNsfwSnapshot.none,
+    child: child,
+  );
+}
+
+/// [target] 的封面在 [context] 下要不要模糊：开关开着且 [target] 是 NSFW。
+/// [target] 为 null 或树上没有 [MediaNsfwState] 时为 false。
+bool mediaNsfwBlurOf(BuildContext context, MediaNsfwTarget? target) {
+  if (target == null) return false;
+  final MediaNsfwState? state = MediaNsfwState.maybeOf(context);
+  return state != null && state.blurCovers && target.resolve(state.snapshot);
+}
+
 /// 卡壳挂的 NSFW 作用域：[target] 为 null（远端条目等不可标的宿主）时不模糊。
-class MediaNsfwCoverScope extends ConsumerWidget {
+class MediaNsfwCoverScope extends StatelessWidget {
   const MediaNsfwCoverScope({
     required this.target,
     required this.child,
@@ -117,14 +171,8 @@ class MediaNsfwCoverScope extends ConsumerWidget {
   final Widget child;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final MediaNsfwTarget? t = target;
-    final bool blur =
-        t != null &&
-        ref.watch(blurNsfwCoversProvider) &&
-        watchIsMediaNsfw(ref, t);
-    return ShelfCoverNsfw(blur: blur, child: child);
-  }
+  Widget build(BuildContext context) =>
+      ShelfCoverNsfw(blur: mediaNsfwBlurOf(context, target), child: child);
 }
 
 /// 不经卡壳作用域的封面（继续卡、详情页 hero、合集卡里逐张判定的成员封面等）：
@@ -132,7 +180,7 @@ class MediaNsfwCoverScope extends ConsumerWidget {
 ///
 /// 祖先 [MediaNsfwCoverScope] 已判定要模糊（卡内封面框会整张打模糊）时这里不再
 /// 叠一层，免得模糊两遍、压两枚图标。
-class MediaNsfwCover extends ConsumerWidget {
+class MediaNsfwCover extends StatelessWidget {
   const MediaNsfwCover({
     required this.target,
     required this.child,
@@ -145,13 +193,9 @@ class MediaNsfwCover extends ConsumerWidget {
   final bool showIcon;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final MediaNsfwTarget? t = target;
+  Widget build(BuildContext context) {
     final bool blur =
-        t != null &&
-        !ShelfCoverNsfw.blurOf(context) &&
-        ref.watch(blurNsfwCoversProvider) &&
-        watchIsMediaNsfw(ref, t);
+        !ShelfCoverNsfw.blurOf(context) && mediaNsfwBlurOf(context, target);
     return NsfwCoverBlur(blur: blur, showIcon: showIcon, child: child);
   }
 }

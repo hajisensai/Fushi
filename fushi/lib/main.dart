@@ -34,6 +34,7 @@ import 'package:window_manager/window_manager.dart';
 import 'package:hotkey_manager/hotkey_manager.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/media/nsfw/media_nsfw_cover.dart';
 import 'package:fushi/src/models/theme_notifier.dart'
     show buildFushiFallbackTheme;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
@@ -3499,7 +3500,11 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                                     key: feedbackScreenshotBoundaryKey,
                                     // iOS / macOS 的 Live Activity / 菜单栏播放条与小组件按钮
                                     // 回调宿主（其它平台原样透传）；快照走 [WidgetSnapshotSource]。
-                                    child: AppleWidgetsHost(child: child!),
+                                    child: AppleWidgetsHost(
+                                      // NSFW 封面状态（拍板台 w04vrhUAaX）挂在
+                                      // 导航器之上，所有路由 / 对话框都读得到。
+                                      child: MediaNsfwStateHost(child: child!),
+                                    ),
                                   ),
                                   const AppFloatingBallHost(),
                                   const FloatingLyricLookupHost(),
