@@ -111,10 +111,10 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     extends BasePageState<T>
     implements PopupBodyWebViewProvider {
   /// 本页所属的媒体模块，决定「底部停靠」按模块细分开关听哪一个
-  /// （[AppModel.popupBottomDockedFor]）。`null` = 只听总开关。
+  /// （[AppModel.popupBottomDockedFor]）。`null` = 听非模块宿主的开关。
   ModuleId? get popupDockModule => null;
 
-  /// 本页查词弹窗实际是否底部停靠（总开关 ∧ [popupDockModule] 的细分开关）。
+  /// 本页查词弹窗实际是否底部停靠（[popupDockModule] 自己的开关）。
   bool get popupBottomDocked => appModel.popupBottomDockedFor(popupDockModule);
 
   /// 本页正文 WebView 的 viewId（查词弹窗打开期间给它开静态硬件层，见

@@ -233,6 +233,36 @@ class FushiDicts {
   static set nativeLibraryPath(String? path) =>
       FushidictsFfiBindings.libraryPathOverride = path;
 
+  /// 联合过滤器的缓存目录（null = 不落盘，每次装载后在内存里现建）。
+  ///
+  /// 联合过滤器是原生引擎的派生索引：把全部词典的键并进一份分块 Bloom，一次查库读
+  /// 一条缓存行就知道「这个键可能在哪几本词典里」，不必逐本探测。它不改查词结果、
+  /// 不改词典目录，文件丢了 / 词典集合变了就自动重建，所以放缓存目录即可（**不要**
+  /// 放进词典资源目录：那里的子目录会被当成词典盘点）。宿主在首次装载词典前设好；
+  /// 之后才设也只是这一轮用内存版。
+  static String? unionFilterCacheDirectory;
+
+  /// 装完一套词典后让原生引擎在它自己的后台线程里备好联合过滤器。立刻返回；建好之前
+  /// 查词照走各词典自己的过滤器，结果相同。引擎销毁时原生侧会叫停并收回那条线程。
+  void _prepareUnionFilter() {
+    final Pointer<Void>? handle = _handle;
+    if (handle == null) return;
+    final Pointer<Utf8> dir = (unionFilterCacheDirectory ?? '').toNativeUtf8(
+      allocator: calloc,
+    );
+    try {
+      _bindings!.prepareUnionFilter(handle, dir, 0);
+    } finally {
+      calloc.free(dir);
+    }
+  }
+
+  /// 联合过滤器是否已就绪（给测试 / 诊断观测；查词不需要等它）。
+  bool get unionFilterReady {
+    final Pointer<Void>? handle = _handle;
+    return handle != null && _bindings!.unionFilterState(handle) == 2;
+  }
+
   static FushiDicts get instance {
     _applyPendingIfAny();
     assert(_instance != null, 'FushiDicts.initialize() must be called first');
@@ -335,6 +365,7 @@ class FushiDicts {
       h.addFreqDict(p);
       h.addPitchDict(p);
     }
+    h._prepareUnionFilter();
     _instance = h;
     _loadedDictCount = paths.length;
     _rebuildStylesCache();
@@ -459,6 +490,7 @@ class FushiDicts {
       if (!await loadAll(pending.pitchPaths, shadow.addPitchDict)) return;
       if (!await loadAll(pending.kanjiPaths, shadow.addKanjiDict)) return;
 
+      shadow._prepareUnionFilter();
       _instance?.dispose();
       _instance = shadow;
       handedOver = true;
@@ -525,6 +557,7 @@ class FushiDicts {
     for (final p in kanjiPaths) {
       h.addKanjiDict(p);
     }
+    h._prepareUnionFilter();
     _instance = h;
     _loadedDictCount =
         termPaths.length +

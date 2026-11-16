@@ -26,6 +26,8 @@ import 'package:fushi/src/updates/local_update_notifier.dart';
 import 'package:fushi/src/updates/update_check_scheduler.dart';
 import 'package:fushi/src/updates/app_update_check.dart';
 import 'package:fushi/src/updates/usage_heartbeat.dart';
+import 'package:fushi_engine/media/metadata/books/rakuten_books.dart'
+    show RakutenBooksCredentials;
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi/src/models/preference_keys.dart';
 import 'package:fushi_engine/srs/srs_miner.dart';
@@ -170,6 +172,7 @@ import 'package:fushi/src/srs/srs_storage_host.dart';
 import 'package:fushi/src/srs/srs_review_gestures.dart';
 import 'package:fushi/src/srs/srs_review_layout.dart';
 import 'package:fushi/src/models/home_dashboard_panel.dart';
+import 'package:fushi/src/models/home_widget_layout.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/storage/books_directory.dart';
 import 'package:fushi/src/storage/download_layout.dart';
@@ -980,6 +983,12 @@ class AppModel
       dictRepo = dictionaryRepository;
       _dictionaryRepoReady = true;
     }
+  }
+
+  /// Test seam：注入词典资源目录（测试走真实的词典引擎排期路径时用，目录下按词典名建子目录）。
+  @visibleForTesting
+  void wireDictionaryResourceDirectoryForTesting(Directory directory) {
+    _dictionaryResourceDirectory = directory;
   }
 
   /// Test seam：注入已 `loadFromDb` 的偏好仓库（只接了数据库的页面测试要读 / 改偏好时用）。
@@ -2556,7 +2565,7 @@ class AppModel
         : null,
     providers: isMusicPluginSourcesAvailable
         ? () async => enabledLyricsProviderIds(
-            mergeLyricsProviders(
+            mergeLyricsSourceList(
               parseLyricsProviders(prefsRepo.musicLyricsProvidersRaw),
               <String>[
                 for (final InstalledMusicPlugin p
@@ -3543,10 +3552,22 @@ class AppModel
   /// 过滤的第二道保险：引擎重载是排期的，切换开关到下次装载之间引擎里仍是旧集合。
   /// 收口到这里是为了防漂移：之前这个表达式只在 `popup_settings_injection` 里有一份，
   /// 别的消费者（浏览器扩展的 HTTP 路径）拿不到它。
-  Set<String> get hiddenDictionaryNames => dictionaries
-      .where((Dictionary d) => d.isHidden(JapaneseLanguage.instance))
-      .map((Dictionary d) => d.name)
-      .toSet();
+  ///
+  /// 打开的作品带着作品级配置时按那份配置的视图（与本机查词同一份过滤，反馈 r9SgiayKxa）：
+  /// 按激活配置给，作品配置开着、激活配置关着的词典查出来也会被弹窗滤掉。
+  Set<String> get hiddenDictionaryNames {
+    final ProfileSettingsView? workView = WorkProfileScope.instance.lookupView;
+    if (workView != null) return workView.lookupFilters.hiddenDictionaryNames;
+    return dictionaries
+        .where((Dictionary d) => d.isHidden(JapaneseLanguage.instance))
+        .map((Dictionary d) => d.name)
+        .toSet();
+  }
+
+  /// 弹窗呈现（折叠 / 展开）该看的词典列表：打开的作品带着作品级配置时是那份配置的视图，
+  /// 否则是激活配置（与 [hiddenDictionaryNames] 同一口径，反馈 r9SgiayKxa）。
+  List<Dictionary> get lookupViewDictionaries =>
+      WorkProfileScope.instance.lookupView?.dictionaries ?? dictionaries;
 
   bool _dictSourceBackfillStarted = false;
 
@@ -3758,38 +3779,104 @@ class AppModel
     }
   }
 
-  // 隐藏的词典（四种类型）一律不进引擎（BUG-177/TODO-094/BUG-3454）。always rebuild 即使全空：删掉最后一本要落进空引擎让
+  /// 引擎装载用的开关状态（与 [live] 逐一对应）：激活配置 ∪ 当前作品会话视图，两条装载
+  /// 路径共用（[DictionaryRepository.engineLoadStatesOf]，反馈 r9SgiayKxa）。
+  List<({bool hidden, Map<String, String> metadata})> _engineLoadStates(
+    List<Dictionary> live,
+  ) => DictionaryRepository.engineLoadStatesOf(
+    live,
+    WorkProfileScope.instance.lookupView?.dictionaries,
+  );
+
+  // 隐藏的词典（四种类型）一律不进引擎（BUG-177/TODO-094/BUG-3454）；「隐藏」= 激活配置与
+  // 当前作品会话视图都关着（[_engineLoadStates]）。always rebuild 即使全空：删掉最后一本要落进空引擎让
   // 旧 in-memory 索引失效，查询不再命中（BUG-171）。分桶 switch 收口在 [bucketDictPaths]。
   void _rebuildDictPathsCache() {
     _migrateDictionaryTypes();
+    final List<Dictionary> dictList = dictRepo.dictionaries;
+    final states = _engineLoadStates(dictList);
     final List<DictPathEntry> entries = <DictPathEntry>[];
-    for (final d in dictRepo.dictionaries) {
+    for (var i = 0; i < dictList.length; i++) {
+      final Dictionary d = dictList[i];
       final p = path.join(dictionaryResourceDirectory.path, d.name);
       entries.add(
         dictPathEntryOf(
           type: d.type,
           path: p,
           exists: Directory(p).existsSync() && _dictResources.isLoadable(p),
-          hidden: d.isHidden(JapaneseLanguage.instance),
-          metadata: d.metadata,
+          hidden: states[i].hidden,
+          metadata: states[i].metadata,
           order: d.order,
         ),
       );
     }
+    // 排期而不是就地重建：这个回调挂在**每一次**词典元数据写入上（导入每本、
+    // 类型自愈每本、隐藏/折叠/语言开关），就地重建会把总代价推成 O(N²)。真正的
+    // 装载推迟到下次要用引擎时，批量写入期间的 N 次排期塌成 1 次装载。
     final b = bucketDictPaths(entries);
     dictRepo.noteEngineTermDictionaries(<String>[
       for (final String p in b.term) path.basename(p),
     ]);
-    // 排期而不是就地重建：这个回调挂在**每一次**词典元数据写入上（导入每本、
-    // 类型自愈每本、隐藏/折叠/语言开关），就地重建会把总代价推成 O(N²)。真正的
-    // 装载推迟到下次要用引擎时，批量写入期间的 N 次排期塌成 1 次装载。
     FushiDicts.scheduleTyped(
       termPaths: b.term,
       freqPaths: b.freq,
       pitchPaths: b.pitch,
       kanjiPaths: b.kanji,
     );
+    _lastScheduledDictBuckets = b;
   }
+
+  /// 最近一次排期给引擎的分桶结果（两条装载路径排期时都记下）。
+  ///
+  /// 只服务「查词视图换了」这一种重排（[_rescheduleDictsForLookupView]）：作品会话进出、
+  /// `:popup` 进程镜像会话每次换新对象都会触发它，装载集合多半没变（作品配置开着的词典
+  /// 常是激活配置的子集），没变就不该把整套词典卸了重装。元数据写入路径不比较——同名
+  /// 词典重导入后路径不变、字节变了，必须照样重装（BUG-171）。
+  ({
+    List<String> term,
+    List<String> freq,
+    List<String> pitch,
+    List<String> kanji,
+  })?
+  _lastScheduledDictBuckets;
+
+  /// [b] 与 [_lastScheduledDictBuckets] 逐桶相同（同序同路径）。
+  bool _sameAsLastScheduledDictBuckets(
+    ({
+      List<String> term,
+      List<String> freq,
+      List<String> pitch,
+      List<String> kanji,
+    })
+    b,
+  ) {
+    final last = _lastScheduledDictBuckets;
+    return last != null &&
+        _samePaths(last.term, b.term) &&
+        _samePaths(last.freq, b.freq) &&
+        _samePaths(last.pitch, b.pitch) &&
+        _samePaths(last.kanji, b.kanji);
+  }
+
+  static bool _samePaths(List<String> a, List<String> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+
+  /// 查词视图换了一份（作品会话装上 / 撤下 / 弹窗进程镜像了新会话）后的引擎重排：
+  /// 装载集合（激活配置 ∪ 作品会话视图）与上次排期相同就什么都不做（返回 false）；
+  /// 变了就走异步排期（物化探测同启动路径），返回 true，由调用方分批让出地装载
+  /// （[FushiDicts.loadPendingAsync]）——不能用同步排期把整套重装推给下一次查词，
+  /// 那会在 UI isolate 上一口气装完全部词典（反馈 r9SgiayKxa 修复的审查意见）。
+  Future<bool> _rescheduleDictsForLookupView() => _scheduleDictPathsAsync(true);
+
+  /// 测试观察点：[_rescheduleDictsForLookupView]（只排期，不装载）。
+  @visibleForTesting
+  Future<bool> debugRescheduleDictsForLookupViewForTest() =>
+      _rescheduleDictsForLookupView();
 
   /// BUG-2504 不变式「同步 FFI 装载只碰已物化的字节」对**两条**装载路径都成立。
   /// [_rebuildDictPathsCacheAsync] 经 [_dictResources] 探；同步的
@@ -3963,12 +4050,36 @@ class AppModel
     await FushiDicts.loadPendingAsync();
   }
 
+  /// 词典引擎的联合过滤器（派生索引，见 [FushiDicts.unionFilterCacheDirectory]）落
+  /// 平台缓存目录：不进数据根，不随「更改数据位置」搬、不在备份范围里，被清掉只是
+  /// 下次装载后重建。主进程与查词弹窗进程共用同一份文件。
+  ///
+  /// 缓存目录拿不到（平台通道不可用）不是装载词典的前提：留空，引擎改在内存里建
+  /// 同一份过滤器，查词结果不变，只是每次装载后多花一次构建。
+  Future<void> _ensureDictIndexCacheDirectory() async {
+    if (FushiDicts.unionFilterCacheDirectory != null) return;
+    try {
+      FushiDicts.unionFilterCacheDirectory = path.join(
+        (await AppPaths.appCacheRootDirectory()).path,
+        'fushidicts',
+      );
+    } on Exception catch (e) {
+      debugPrint(
+        '[Fushi] dict index cache dir unavailable, in-memory only: $e',
+      );
+    }
+  }
+
   /// [_rebuildDictPathsCacheAsync] 的前半段：目录 exists + 物化探测 + 类型自愈 +
   /// 排期，**不装载**。启动期只有这一段是「数据根 IO、可能因盘掉线永不返回」，
   /// 套 12s 看门狗；装载本身（[FushiDicts.loadPendingAsync]）每本之间让出、耗时随
   /// 词典数线性增长，不是挂死，套看门狗只会把「词典多、盘慢」误判成启动失败
   /// （BUG-4510：121 本词典、8s 物化预算之后只剩 4s 给装载，启动直接进错误屏）。
-  Future<void> _scheduleDictPathsAsync() async {
+  ///
+  /// 返回是否真的排了期：[onlyIfChanged] 为真且分桶结果与上次排期相同
+  /// （[_sameAsLastScheduledDictBuckets]）时不排期，返回 false。
+  Future<bool> _scheduleDictPathsAsync([bool onlyIfChanged = false]) async {
+    await _ensureDictIndexCacheDirectory();
     final dictList = dictRepo.dictionaries;
     final List<String> paths = <String>[
       for (final d in dictList)
@@ -4010,6 +4121,7 @@ class AppModel
         '$summary',
       );
     }
+    final states = _engineLoadStates(dictList);
     final List<DictPathEntry> entries = <DictPathEntry>[
       for (var i = 0; i < dictList.length; i++)
         dictPathEntryOf(
@@ -4017,12 +4129,13 @@ class AppModel
           path: paths[i],
           // 目录存在但没在预算内证明可读 → 本次当不存在处理，不进引擎。
           exists: existsResults[i] && readyDirs.contains(paths[i]),
-          hidden: dictList[i].isHidden(JapaneseLanguage.instance),
-          metadata: dictList[i].metadata,
+          hidden: states[i].hidden,
+          metadata: states[i].metadata,
           order: dictList[i].order,
         ),
     ];
     final b = bucketDictPaths(entries);
+    if (onlyIfChanged && _sameAsLastScheduledDictBuckets(b)) return false;
     dictRepo.noteEngineTermDictionaries(<String>[
       for (final String p in b.term) path.basename(p),
     ]);
@@ -4032,6 +4145,8 @@ class AppModel
       pitchPaths: b.pitch,
       kanjiPaths: b.kanji,
     );
+    _lastScheduledDictBuckets = b;
+    return true;
   }
 
   List<DictionarySearchResult> get dictionaryHistory =>
@@ -6913,6 +7028,13 @@ class AppModel
     await prefsRepo.setVideoSubtitleAjattEnabled(enabled);
     await reloadVideoDownloadPipelineRuntime();
   }
+
+  /// 楽天ブックス书籍检索凭据（书籍刮削弹窗 / 控制通道据此决定楽天源是否可用）。
+  RakutenBooksCredentials get bookScrapeRakutenCredentials =>
+      RakutenBooksCredentials(
+        applicationId: prefsRepo.bookScrapeRakutenApplicationId,
+        accessKey: prefsRepo.bookScrapeRakutenAccessKey,
+      );
 
   /// SubDL API key，见 [PreferencesRepository.videoSubtitleSubdlApiKey]。
   String get videoSubtitleSubdlApiKey =>
@@ -10169,8 +10291,8 @@ class AppModel
             filtersOverride ??
             profileView?.lookupFilters ??
             dictRepo.lookupFilters;
-        // 去重名单 = 本机这次**真能查出来**的词典：引擎术语桶里的（激活配置开着、
-        // 目录在且已物化，[DictionaryRepository.engineTermDictionaryNames]）∩ 这次
+        // 去重名单 = 本机这次**真能查出来**的词典：引擎术语桶里的（激活配置或当前作品
+        // 会话视图开着、目录在且已物化，[DictionaryRepository.engineTermDictionaryNames]）∩ 这次
         // 查词视图开着的。只按视图开关算会把「工作配置开着、激活配置关着」或目录
         // 缺失 / 未物化的词典也当成本机已有，服务器那份被去重丢掉，整本消失。
         final Set<String> engineNames = dictRepo.engineTermDictionaryNames;
@@ -11088,11 +11210,22 @@ class AppModel
     // 主题键（[ThemeNotifier.isProfileThemePrefKey]）的生效值换了一份：重建主题。
     themeNotifier.onWorkProfileScopeChanged();
     // 弹窗进程不承载 App 界面字体 / 有声书悬浮字幕（那些只在主进程里装配）。
-    if (_isDictionaryPopupProcess) return;
-    // 字体随作品配置走：界面 / 视频字幕 / 游戏文本 / 复习卡面的字体链按新会话重新解析。
-    await refreshAppFont();
-    if (audiobookSession.isActive && showFloatingLyric) {
-      await audiobookSession.applyFloatingLyricStyle();
+    if (!_isDictionaryPopupProcess) {
+      // 字体随作品配置走：界面 / 视频字幕 / 游戏文本 / 复习卡面的字体链按新会话重新解析。
+      await refreshAppFont();
+      if (audiobookSession.isActive && showFloatingLyric) {
+        await audiobookSession.applyFloatingLyricStyle();
+      }
+    }
+    // 查词视图换了一份：引擎装载集合（激活配置 ∪ 作品会话视图）跟着重排，否则作品配置
+    // 开着、激活配置关着的词典不在引擎里，作品里一个词都查不到（反馈 r9SgiayKxa）。
+    // 弹窗进程也有自己的引擎，同样要重排。装载集合没变（多数情况：作品配置开着的是激活
+    // 配置的子集；弹窗进程每次镜像会话写入）就不动引擎、不清缓存（查词缓存键带视图命名空间）。
+    // 变了就在这里分批让出地装完，不把同步全量装载推给下一次查词；按旧集合算出的结果
+    // 装完后一并作废（与词典开关切换走 `_onCacheRebuild` 清缓存同口径）。
+    if (_dictionaryRepoReady && await _rescheduleDictsForLookupView()) {
+      await FushiDicts.loadPendingAsync();
+      dictRepo.clearDictionaryResultsCache();
     }
   }
 
@@ -11431,18 +11564,18 @@ class AppModel
   Future<void> setPopupBottomDocked(bool value) =>
       prefsRepo.setPopupBottomDocked(value);
 
-  /// 底部停靠在 [module] 的媒体页里是否启用（总开关之下的按模块细分，默认开）。
-  /// 偏好仓库未装配时 fail-open（同 [moduleEnabled]）：总开关才是真正的门。
+  /// 底部停靠在 [module] 的媒体页里是否启用：每个模块一个独立开关，不受
+  /// [popupBottomDocked] 门控（BUG-4713）。偏好仓库未装配时按默认值 OFF（跟随选区）。
   bool popupBottomDockedIn(ModuleId module) =>
-      isPreferencesReady ? prefsRepo.popupBottomDockedIn(module) : true;
+      isPreferencesReady && prefsRepo.popupBottomDockedIn(module);
   Future<void> setPopupBottomDockedIn(ModuleId module, bool value) =>
       prefsRepo.setPopupBottomDockedIn(module, value);
 
-  /// 查词弹窗宿主实际是否走底部停靠：总开关 ∧ 宿主所属模块的细分开关。
-  /// [module] 为 `null`（查词页 / 外部弹窗 / 悬浮歌词等不属于四个媒体模块的
-  /// 宿主）时只听总开关。弹窗宿主一律经它判定，不再直读 [popupBottomDocked]。
+  /// 查词弹窗宿主实际是否走底部停靠：宿主所属模块自己的开关。[module] 为 `null`
+  /// （查词页 / 外部弹窗 / 悬浮歌词等不属于四个媒体模块的宿主）时听
+  /// [popupBottomDocked]。弹窗宿主一律经它判定，不再直读 [popupBottomDocked]。
   bool popupBottomDockedFor(ModuleId? module) =>
-      popupBottomDocked && (module == null || popupBottomDockedIn(module));
+      module == null ? popupBottomDocked : popupBottomDockedIn(module);
 
   bool get isFirstTimeSetup => prefsRepo.isFirstTimeSetup;
   void setFirstTimeSetupFlag() => prefsRepo.setFirstTimeSetupFlag();
@@ -11959,21 +12092,16 @@ class AppModel
   Future<void> setSrsMiningBackground(bool value) =>
       prefsRepo.setSrsMiningBackground(value: value);
 
-  // 首页 dashboard 面板显示档（透传 prefsRepo）。可空读：prefs 未装配 = 全部 auto。
-  HomeDashboardPanelMode homeDashboardPanelMode(HomeDashboardPanel panel) =>
-      decodeHomeDashboardPanelModes(
-        _prefsRepo?.homeDashboardPanels ?? '',
-      )[panel] ??
-      HomeDashboardPanelMode.auto;
-  Future<void> setHomeDashboardPanelMode(
-    HomeDashboardPanel panel,
-    HomeDashboardPanelMode mode,
-  ) => prefsRepo.setHomeDashboardPanels(
-    encodeHomeDashboardPanelModes(<HomeDashboardPanel, HomeDashboardPanelMode>{
-      ...decodeHomeDashboardPanelModes(prefsRepo.homeDashboardPanels),
-      panel: mode,
-    }),
-  );
+  // 旧首页可选面板显示档（只读，透传 prefsRepo）：首页小组件网格迁移首个布局时读
+  // （[migrateHomeWidgetLayout]），不再写。可空读：prefs 未装配 = 全部 auto。
+  Map<HomeDashboardPanel, HomeDashboardPanelMode> get homeDashboardPanelModes =>
+      decodeHomeDashboardPanelModes(_prefsRepo?.homeDashboardPanels ?? '');
+
+  // 首页小组件网格的两份布局（透传 prefsRepo）。可空读：prefs 未装配 = 都没编辑过。
+  HomeWidgetLayout get homeWidgetLayout =>
+      decodeHomeWidgetLayout(_prefsRepo?.homeWidgetLayout ?? '');
+  Future<void> setHomeWidgetLayout(HomeWidgetLayout layout) =>
+      prefsRepo.setHomeWidgetLayout(encodeHomeWidgetLayout(layout));
 
   // 复习卡片浏览器的保存视图（JSON，透传 prefsRepo）。可空读：prefs 未装配 = 没有。
   String get srsBrowseSavedViews => _prefsRepo?.srsBrowseSavedViews ?? '';

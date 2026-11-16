@@ -88,6 +88,12 @@ void main() {
     expect(apply, isNot(contains('clearOverrideImage: true')));
     // 游戏批量刮削走共享纯函数判据，恒不覆盖已有封面（书 / 漫画已无批量刮削）。
     expect(games, contains('uniqueExactScrapeTitleMatch<SourceCandidate>'));
+    // 唯一性按源判：跨源同名是同一部作品，不能被当成歧义（行为测试见
+    // test/mining/galgame_batch_scrape_match_test.dart）。
+    expect(
+      games,
+      contains('sourceOf: (SourceCandidate candidate) => candidate.source'),
+    );
     expect(games, contains('replaceExistingCover: false'));
   });
 }

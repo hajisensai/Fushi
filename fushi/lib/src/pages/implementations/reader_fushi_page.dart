@@ -3025,7 +3025,11 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
         );
 
   /// 卡片来源回看横幅的内容高（不含系统顶 inset，横幅自己的 SafeArea 让出那一条）。
-  static const double _kSourceReviewBannerHeight = 100;
+  /// 与横幅自己的单行 / 两行判断同源（[SourceReviewBanner.reservedContentHeight]）：
+  /// 矮窗口（横屏手机）横幅并成 48dp 单行，这里若仍按两行的 100dp 预留，横幅槽位
+  /// 照样占掉顶部一大截（BUG-4733）。由 [didChangeDependencies] 按窗口尺寸维护，
+  /// 变化时与系统 inset 一样回喂 WebView。
+  double _sourceReviewBannerHeight = SourceReviewBanner.regularContentHeight;
 
   /// BUG-4103：顶部 chrome（顶栏 / 悬浮顶栏 / 进度 pill / 弹窗）排布的起点 = 系统顶
   /// inset + 回看横幅。横幅改成正文 Stack 上的浮层后，阅读器的几何（MediaQuery 全窗
@@ -3034,7 +3038,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// 页底那一条（底部预留 + 末行）落到 WebView 之外。
   double get _topChromeInset =>
       _stableTopInset +
-      (_sourceReviewSession != null ? _kSourceReviewBannerHeight : 0);
+      (_sourceReviewSession != null ? _sourceReviewBannerHeight : 0);
 
   /// 歌词模式（独立 HTML 文档）此刻真正被顶部 chrome 占掉的高度：系统顶 inset +
   /// 顶栏预留（悬浮态顶栏不占正文位置，[_desktopHeaderReserve] 那时本就是 0）。
@@ -4229,10 +4233,16 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     // 淹没（症状②「调上下边距没用」）。inset 真变时回喂并 re-anchor（复用
     // setChromeInsets 的 `_reanchorPending` 串行契约，幂等）；reader 未就绪 / 歌词模式
     // 由 [_applyChromeInsets] 内部早返回挡掉。桌面 inset 多为 0（此分支不触发，零变化）。
+    final double bannerHeight = SourceReviewBanner.reservedContentHeight(
+      MediaQuery.sizeOf(context),
+    );
     final bool insetChanged =
-        vp.top != _stableTopInset || vp.bottom != _stableBottomInset;
+        vp.top != _stableTopInset ||
+        vp.bottom != _stableBottomInset ||
+        bannerHeight != _sourceReviewBannerHeight;
     _stableTopInset = vp.top;
     _stableBottomInset = vp.bottom;
+    _sourceReviewBannerHeight = bannerHeight;
     if (insetChanged) {
       unawaited(_applyChromeInsets());
     }

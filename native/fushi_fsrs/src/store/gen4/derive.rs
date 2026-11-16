@@ -299,6 +299,9 @@ pub struct Index<'t, 'c> {
     pub(super) pass_writers: Option<BTreeMap<String, String>>,
     /// 缓存层按类拼行时没走捷径、按类重判了的寄存器数（`class.rs` [Index::class_lines]；只增不减，测试与量测读）。
     pub(super) class_judged: u64,
+    /// 这一趟缓存刷新里行可能变了的笔记（原值 ID，含被删掉的旧 ID）：收尾时记进缓存层的变更记录（`cache.rs`
+    /// [Index::cache_log_flush]，浏览会话据此按笔记失效）。
+    pub(super) cache_touched: BTreeSet<Ref>,
 }
 
 impl<'t, 'c> Index<'t, 'c> {
@@ -330,6 +333,7 @@ impl<'t, 'c> Index<'t, 'c> {
             writers_moved: false,
             pass_writers: None,
             class_judged: 0,
+            cache_touched: BTreeSet::new(),
         }
     }
 

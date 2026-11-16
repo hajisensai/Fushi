@@ -212,9 +212,7 @@ impl<'t, 'c> Receiver<'t, 'c> {
         collections.insert(binding.collection);
         let mut dirs: BTreeSet<String> = joins.into_iter().map(|j| j.dir).collect();
         dirs.insert(binding.dir);
-        let me = t
-            .self_identity(col)?
-            .map(|s| (s.device, DeviceKey::from_seed(&s.sk).public()));
+        let me = t.self_identity(col)?.map(|s| (s.device, s.public()));
         Ok(Receiver {
             t,
             idx,
