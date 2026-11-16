@@ -1349,9 +1349,8 @@ class _GameCoverArt extends StatelessWidget {
       child: Image(
         image: provider,
         fit: BoxFit.cover,
-        errorBuilder:
-            (BuildContext context, Object error, StackTrace? stack) =>
-                _GameCoverPlaceholder(game: game),
+        errorBuilder: (BuildContext context, Object error, StackTrace? stack) =>
+            _GameCoverPlaceholder(game: game),
       ),
     );
   }

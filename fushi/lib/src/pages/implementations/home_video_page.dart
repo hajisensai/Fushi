@@ -8467,7 +8467,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     // 露出来（拍板台 w04vrhUAaX），这里按那一集自己再判一次。
     final String? memberUid = source.localMemberUid;
     if (memberUid == null) return cover;
-    return MediaNsfwCover(target: MediaNsfwTarget.video(memberUid), child: cover);
+    return MediaNsfwCover(
+      target: MediaNsfwTarget.video(memberUid),
+      child: cover,
+    );
   }
 
   /// 合集封面卡的取图链（[_buildCollectionCover] 画它、合集菜单头部也取它，两处
@@ -8479,7 +8482,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   ) {
     final ImageProvider? own = _collectionOwnCover(group.collection);
     if (own != null) {
-      return (image: own, errorIcon: FushiIcons.video, remoteMember: null, localMemberUid: null);
+      return (
+        image: own,
+        errorIcon: FushiIcons.video,
+        remoteMember: null,
+        localMemberUid: null,
+      );
     }
     final int? collectionId = group.collection?.id;
     if (collectionId != null) {

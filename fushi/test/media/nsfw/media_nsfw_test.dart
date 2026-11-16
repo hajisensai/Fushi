@@ -1,17 +1,21 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/nsfw/nsfw_card_image.dart';
 import 'package:fushi/src/media/nsfw/media_nsfw_cover.dart';
+import 'package:fushi/src/pages/implementations/media_item_dialog_page.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/nsfw_cover_blur.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/nsfw_image_blur.dart';
 import 'package:fushi_engine/privacy/media_nsfw.dart';
 import 'package:image/image.dart' as img;
 import 'package:material_ui/material_ui.dart';
@@ -99,6 +103,30 @@ void main() {
         )).map((MediaCollectionRow r) => r.name),
         <String>['秘'],
       );
+    });
+
+    test('按 uid 问也认：被标的书、NSFW 合集里按 uid 入的成员（合集详情页口径）', () async {
+      final String flagged = await book('F');
+      final String member = await book('M');
+      final String plain = await book('P');
+      await db.setMediaNsfw(TagHostKind.epub, 'F', true);
+      final int c = await nsfwCollection('秘');
+      await db.addToCollection(c, MediaKind.epub, member);
+
+      final MediaNsfwSnapshot snap = await MediaNsfwSnapshot.load(db);
+      expect(snap.isBookNsfw(flagged), isTrue, reason: '被标的书按 uid 问');
+      expect(snap.isBookNsfw('M'), isTrue, reason: '合集成员按 bookKey 问');
+      expect(snap.isBookNsfw(member), isTrue, reason: '合集成员按 uid 问');
+      expect(snap.isBookNsfw(plain), isFalse);
+      expect(
+        MediaNsfwTarget.collectionMember('epub', member)!.resolve(snap),
+        isTrue,
+      );
+      expect(
+        MediaNsfwTarget.collectionMember('epub', plain)!.resolve(snap),
+        isFalse,
+      );
+      expect(MediaNsfwTarget.collectionMember('bogus', 'x'), isNull);
     });
 
     test('NSFW 与私密互不蕴含', () async {
@@ -198,6 +226,109 @@ void main() {
       expect(blurOf(tester).enabled, isFalse);
     });
 
+    Future<void> pumpScoped(
+      WidgetTester tester,
+      MediaNsfwSnapshot snapshot,
+      Widget child,
+    ) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: <Override>[
+            blurNsfwCoversProvider.overrideWithValue(true),
+            mediaNsfwSnapshotProvider.overrideWith(
+              (Ref ref) => Stream<MediaNsfwSnapshot>.value(snapshot),
+            ),
+          ],
+          child: harness(child),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    List<bool> blurStates(WidgetTester tester) => <bool>[
+      for (final ImageFiltered f in tester.widgetList<ImageFiltered>(
+        find.byKey(const ValueKey<String>('nsfw-cover-blur')),
+      ))
+        f.enabled,
+    ];
+
+    testWidgets('合集卡成员封面逐张判定：没标的合集里被标的那一卷也模糊', (WidgetTester tester) async {
+      final MediaNsfwSnapshot snap = (await tester.runAsync(() async {
+        await book('A');
+        await book('B');
+        await db.setMediaNsfw(TagHostKind.epub, 'B', true);
+        return MediaNsfwSnapshot.load(db);
+      }))!;
+      await pumpScoped(
+        tester,
+        snap,
+        const Row(
+          children: <Widget>[
+            Expanded(
+              child: MediaNsfwCover(
+                target: MediaNsfwTarget.book('A'),
+                child: ColoredBox(color: Color(0xFF336699)),
+              ),
+            ),
+            Expanded(
+              child: MediaNsfwCover(
+                target: MediaNsfwTarget.book('B'),
+                child: ColoredBox(color: Color(0xFF996633)),
+              ),
+            ),
+          ],
+        ),
+      );
+      expect(blurStates(tester), <bool>[false, true]);
+    });
+
+    testWidgets('祖先作用域已模糊时 MediaNsfwCover 不再叠一层', (WidgetTester tester) async {
+      final MediaNsfwSnapshot snap = (await tester.runAsync(() async {
+        await book('B');
+        await db.setMediaNsfw(TagHostKind.epub, 'B', true);
+        return MediaNsfwSnapshot.load(db);
+      }))!;
+      await pumpScoped(
+        tester,
+        snap,
+        const MediaNsfwCoverScope(
+          target: MediaNsfwTarget.book('B'),
+          child: ShelfCoverFrame(
+            child: MediaNsfwCover(
+              target: MediaNsfwTarget.book('B'),
+              child: ColoredBox(color: Color(0xFF336699)),
+            ),
+          ),
+        ),
+      );
+      expect(blurStates(tester).where((bool b) => b), hasLength(1));
+    });
+
+    testWidgets('长按菜单头部封面按条目判定 NSFW', (WidgetTester tester) async {
+      final MediaNsfwSnapshot snap = (await tester.runAsync(() async {
+        await book('B');
+        await db.setMediaNsfw(TagHostKind.epub, 'B', true);
+        return MediaNsfwSnapshot.load(db);
+      }))!;
+      Future<void> pumpFrame(MediaNsfwTarget? nsfw) => pumpScoped(
+        tester,
+        snap,
+        SingleChildScrollView(
+          child: MediaItemDialogFrame(
+            title: 'B',
+            cover: const ColoredBox(color: Color(0xFF336699)),
+            nsfw: nsfw,
+          ),
+        ),
+      );
+      await pumpFrame(const MediaNsfwTarget.book('B'));
+      expect(blurStates(tester), contains(true));
+      await pumpFrame(const MediaNsfwTarget.book('other'));
+      expect(blurStates(tester), isNot(contains(true)));
+      await pumpFrame(null);
+      expect(blurStates(tester), isEmpty, reason: '不可标的条目不包模糊层');
+    });
+
     test('MediaNsfwTarget：游戏自己的成人向标记并入', () {
       expect(
         const MediaNsfwTarget.game(
@@ -280,6 +411,16 @@ void main() {
         if ((a - b).abs() > maxStep) maxStep = (a - b).abs();
       }
       expect(maxStep, lessThan(40));
+    });
+
+    test('副本文件名带模糊参数：参数一变旧副本不再复用', () {
+      final String name = nsfwCardImageFileName(
+        Uint8List.fromList(<int>[1, 2, 3]),
+      );
+      expect(
+        name,
+        endsWith('_s${kNsfwBlurSampleEdge}o$kNsfwBlurOutputEdge.jpg'),
+      );
     });
 
     test('图解不开：fail-closed，不带图', () async {

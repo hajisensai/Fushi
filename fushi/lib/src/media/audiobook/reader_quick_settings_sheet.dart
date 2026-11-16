@@ -1431,10 +1431,10 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
   }
 
   Widget _buildAudiobookPanelBody(BuildContext context) {
-    return widget._nsfwScope(_buildAudiobookPanel());
+    return widget._nsfwScope(_buildAudiobookPanelInner());
   }
 
-  Widget _buildAudiobookPanel() {
+  Widget _buildAudiobookPanelInner() {
     return ReaderAudiobookPanel(
       controller: widget.controller,
       toc: widget.toc,
