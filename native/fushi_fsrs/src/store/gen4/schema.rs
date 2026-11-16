@@ -475,12 +475,14 @@ pub(crate) fn check_ready(conn: &Connection) -> Result<(), String> {
 /// 平均剩下的行数；`WITHOUT ROWID` 表的主键那一行 `idx` = 表名。量级取样本库，数字只表达形状、不随数据更新：计划因此
 /// 是 schema 的函数，不因某台设备数据多少而变（`tests::lookups_with_a_key_never_walk_the_whole_collection` 钉住）。
 /// 对这个文件跑 `ANALYZE` / `PRAGMA optimize` 会把它们换成随数据变的统计——下次打开时 [install] 会写回来。
-const PLANNER_STATS: [(&str, &str, &str); 23] = [
+const PLANNER_STATS: [(&str, &str, &str); 26] = [
     ("alias_ix", "alias_canon", "1000000 1000000 2 1"),
     ("alias_ix", "alias_ix", "1000000 1000000 1"),
     ("alias_ix", "alias_pool", "5000 5000 1"),
     ("cards", "cards", "100000 100000 1"),
+    ("cards", "cards_deck", "100000 100000 5000"),
     ("cards", "cards_note", "100000 100000 2"),
+    ("cards", "cards_template", "100000 100000 5000"),
     ("dg_ix", "dg_ix", "200000 200000 40000 1"),
     ("ent_ix", "ent_ix", "50000 50000 1 1"),
     ("ent_ops", "ent_ops", "1000000 1000000 500000 20 20 1"),
@@ -489,6 +491,7 @@ const PLANNER_STATS: [(&str, &str, &str); 23] = [
     ("log_ix", "log_ix", "1000000 1000000 20 1 1"),
     ("media_ix", "media_ix", "100000 100000 1 1"),
     ("notes", "notes", "50000 50000 1"),
+    ("notes", "notes_deck", "50000 50000 5000"),
     ("notes", "notes_pending", "100 100"),
     ("notes", "notes_term", "50000 50000 2"),
     ("notes", "notes_type", "50000 50000 1000"),
@@ -766,6 +769,24 @@ mod tests {
                 )
                 .unwrap();
             assert_eq!(n, 1, "{tbl}.{idx}");
+        }
+        // 反过来：每个显式建的索引都有统计。漏一个，SQLite 就按「第一列相等剩 10 行」估它，`col = ?` 打头的索引
+        // 会被当成高选择性的、抢掉真正的键（G9-2 的 `cards_template` 曾让 `term_status` 按模板扫整个集合）。
+        let idxs: Vec<(String, String)> = conn
+            .prepare(
+                "SELECT tbl_name, name FROM sqlite_schema WHERE type = 'index' \
+                 AND name NOT LIKE 'sqlite_autoindex_%' ORDER BY tbl_name, name",
+            )
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        for (tbl, idx) in idxs {
+            assert!(
+                PLANNER_STATS.iter().any(|(t, i, _)| *t == tbl && *i == idx),
+                "index {tbl}.{idx} has no PLANNER_STATS row"
+            );
         }
         // 有人跑了 ANALYZE：下次建表时写回来。
         conn.execute_batch("ANALYZE;").unwrap();

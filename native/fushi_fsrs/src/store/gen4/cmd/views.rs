@@ -7,7 +7,7 @@
 //! ```text
 //! {"id": 规范 ID, "k": 种类,
 //!  "d": 身份记录的数据（类的定义，嵌的 ID 已归一；没有 = null）,
-//!  "edits": [[修改行 JSON, 服务器时刻 | null], …]   按类判定活着的写入，按 (键, JSON) 排（同 `read` 的 `edits`）,
+//!  "edits": [[修改行 JSON, 服务器时刻 | null], …]   按类判定活着的写入，按 (键, JSON) 排（同 `read` 的 `edits`，含合成 `tags` 行）,
 //!  "tags": [标签, …]                                  只有笔记：标签 OR-Set 的当前值（按类并起来判）,
 //!  "logs": [[日志行 JSON, 服务器时刻 | null], …]     只有卡：每个规范日志 ID 一条代表，按 (发生时刻, 操作主键),
 //!  "row": 缓存行（列名 → 值，ID 列是文本）| null      只有笔记 / 卡：`notes` / `cards` 那一行（没物化 = null）}
@@ -27,7 +27,7 @@
 use rusqlite::types::ValueRef;
 use serde_json::{Map, Value, json};
 
-use super::{canon_ids, profile_of, snapshot, with_profile};
+use super::{canon_ids, edit_rows, profile_of, snapshot, with_profile};
 use crate::store::gen4::derive::{Index, Ref};
 use crate::store::gen4::schema::sql;
 use crate::store::gen4::truth::Truth;
@@ -88,19 +88,7 @@ fn view(
         Some((k, _, d)) if k == kind as i64 => Some(d),
         _ => None,
     };
-    let (lines, _) = ix.class_lines(kind, c)?;
-    let mut edits: Vec<(String, String, Option<i64>)> = lines
-        .into_iter()
-        .map(|(j, st)| {
-            let j = with_profile(&j, profile);
-            let f = serde_json::from_str::<Value>(&j)
-                .ok()
-                .and_then(|v| v.get("f").and_then(Value::as_str).map(str::to_owned))
-                .unwrap_or_default();
-            (f, j, st)
-        })
-        .collect();
-    edits.sort();
+    let edits = edit_rows(t, ix, kind, c, profile)?;
     let mut m = Map::new();
     m.insert("id".into(), json!(c.text()));
     m.insert("k".into(), json!(kind.wire()));
@@ -108,12 +96,7 @@ fn view(
     m.insert("d".into(), d.unwrap_or(Value::Null));
     m.insert(
         "edits".into(),
-        Value::Array(
-            edits
-                .into_iter()
-                .map(|(_, j, st)| json!([j, st]))
-                .collect(),
-        ),
+        Value::Array(edits.into_iter().map(|(_, j, st)| json!([j, st])).collect()),
     );
     match kind {
         EntKind::Note => {
@@ -126,7 +109,7 @@ fn view(
         }
         EntKind::Card => {
             let logs: Vec<Value> = ix
-                .card_logs(c)?
+                .replayed_card_logs(c)?
                 .into_iter()
                 .map(|l| json!([with_profile(&l.json, profile), l.server_time]))
                 .collect();

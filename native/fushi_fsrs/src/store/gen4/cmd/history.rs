@@ -41,7 +41,9 @@ pub fn history(t: &Truth<'_>, col: i64, kind: EntKind, entity: &str) -> Result<V
         for m in &members {
             let rows: Vec<(i64, Vec<u8>, i64)> = t
                 .conn()
-                .prepare_cached("SELECT k, key, state FROM reg_ix WHERE col = ?1 AND ekind = ?2 AND ent = ?3")
+                .prepare_cached(
+                    "SELECT k, key, state FROM reg_ix WHERE col = ?1 AND ekind = ?2 AND ent = ?3",
+                )
                 .map_err(sql)?
                 .query_map(params![col, kind as i64, m], |r| {
                     Ok((r.get(0)?, r.get(1)?, r.get(2)?))
@@ -76,7 +78,7 @@ pub fn history(t: &Truth<'_>, col: i64, kind: EntKind, entity: &str) -> Result<V
                 out.push(item);
             }
         }
-        out.sort_by(|a, b| b.0.cmp(&a.0));
+        out.sort_by_key(|x| std::cmp::Reverse(x.0));
         Ok(Value::Array(out.into_iter().map(|x| x.1).collect()))
     })
 }

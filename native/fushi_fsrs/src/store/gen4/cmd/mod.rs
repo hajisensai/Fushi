@@ -24,9 +24,13 @@ use serde_json::Value;
 use super::derive::{Index, Ref};
 use super::schema::sql;
 use super::truth::Truth;
+use crate::gen4::name::write_edit_key;
 use crate::store::bulk::{self, Col};
+use crate::store::gen4::weigh::S_PURGED;
 use crate::store::sync2::canonical;
+use crate::sync2::codec::Writer;
 use crate::sync2::id::Key;
+use crate::sync2::op::EntKind;
 
 pub mod history;
 pub mod reads;
@@ -117,6 +121,95 @@ pub(super) fn with_profile(json: &str, profile: &str) -> String {
         }
         _ => json.to_owned(),
     }
+}
+
+/// 规范实体 [c]（种类 [kind]）按类判定活着的修改行：(修改键, 行 JSON（`p` = [profile]）, 服务器时刻)，按 (键, JSON) 排。
+/// `read` 的 `edits` / `events`、`entity_views` 的 `edits` 都是它。
+///
+/// 笔记的 `tags` 照协议 3 的投影出（store/sync2/semantics.rs `tags_row`）：碰过标签（`#tag` 增删或整列表 `tags` 修改）
+/// 的笔记恰有一行合成的 `tags`——写入者 `sync2:tags:<笔记>`、`s` = 1、空因果上下文、值 = 标签 OR-Set 的当前值（按类判，
+/// [Index::class_tags]）、`hlc` = 最后一条标签操作的 HLC——其它 `tags` 行不出。读者（Dart 的笔记归约）拿这一行当标签。
+pub(super) fn edit_rows(
+    t: &Truth<'_>,
+    ix: &mut Index<'_, '_>,
+    kind: EntKind,
+    c: &Ref,
+    profile: &str,
+) -> Result<Vec<(String, String, Option<i64>)>, String> {
+    let (lines, _) = ix.class_lines(kind, c)?;
+    let mut rows: Vec<(String, String, Option<i64>)> = Vec::with_capacity(lines.len() + 1);
+    for (json, st) in lines {
+        let json = with_profile(&json, profile);
+        let f = serde_json::from_str::<Value>(&json)
+            .ok()
+            .and_then(|v| v.get("f").and_then(Value::as_str).map(str::to_owned))
+            .unwrap_or_default();
+        if kind == EntKind::Note && f == "tags" {
+            continue;
+        }
+        rows.push((f, json, st));
+    }
+    if kind == EntKind::Note {
+        if let Some(json) = tags_line(t, ix, c, profile)? {
+            rows.push(("tags".to_owned(), json, None));
+        }
+    }
+    rows.sort();
+    Ok(rows)
+}
+
+/// 笔记类 [c] 的合成 `tags` 行（[edit_rows]）；没碰过标签 = None。
+fn tags_line(
+    t: &Truth<'_>,
+    ix: &mut Index<'_, '_>,
+    c: &Ref,
+    profile: &str,
+) -> Result<Option<String>, String> {
+    let tags_key = {
+        let mut w = Writer::new();
+        write_edit_key(&mut w, "tags");
+        w.into_vec()
+    };
+    let mut ks: Vec<i64> = Vec::new();
+    for m in ix.members(c)? {
+        let mut stmt = t
+            .conn()
+            .prepare_cached(
+                "SELECT k FROM tag_ix WHERE col = ?1 AND note = ?2 AND state != ?4 \
+                 UNION SELECT k FROM reg_ix WHERE col = ?1 AND ekind = ?3 AND ent = ?2 AND key = ?5 \
+                 AND state != ?4",
+            )
+            .map_err(sql)?;
+        let rows = stmt
+            .query_map(
+                rusqlite::params![ix.col, m, EntKind::Note as i64, S_PURGED, tags_key],
+                |r| r.get::<_, i64>(0),
+            )
+            .map_err(sql)?;
+        for k in rows {
+            ks.push(k.map_err(sql)?);
+        }
+    }
+    let mut last: Option<(i64, i64, [u8; 16])> = None;
+    for k in ks {
+        if let Some(h) = t.head_by_key(k)? {
+            let p = (h.wall, h.logical, h.id.device.0);
+            if last.is_none_or(|l| p > l) {
+                last = Some(p);
+            }
+        }
+    }
+    let Some((wall, logical, device)) = last else {
+        return Ok(None);
+    };
+    let note = c.text();
+    let writer = format!("sync2:tags:{note}");
+    let row = serde_json::json!({
+        "id": crate::registers::edit_id(&writer, 1), "p": profile, "k": "note", "e": note, "f": "tags",
+        "w": writer, "s": 1, "ctx": {"vv": {}}, "v": ix.class_tags(c)?,
+        "hlc": format!("{wall}:{logical}:{}", crate::sync2::id::Id(device).text()), "ts": "wall",
+    });
+    Ok(Some(canonical(&row)))
 }
 
 /// 一张列式表的构造器：列名与类型（`bulk::KIND_*`）先定，逐行往里推。

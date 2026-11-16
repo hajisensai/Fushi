@@ -8,7 +8,7 @@
 //! | `entities` `entity_count` | `srs_entities` | `ent_ix` → 每个别名类的定义（`cache.rs` `definition`） |
 //! | `edits` `conflict_edits` `lapis_backfill` | `srs_field_edits` | `reg_ix` → 按类判定活着的写入（`class.rs` `class_lines`） |
 //! | `successors` `source_note_candidates` `style_candidates` | `srs_field_edits` | `reg_ix` + 操作体 |
-//! | `logs` `anki_logs_at` `native_logs_near` | `srs_review_logs` | `log_ix` → 每个规范日志 ID 的代表（`cache.rs` `card_logs`） |
+//! | `logs` `anki_logs_at` `native_logs_near` | `srs_review_logs` | `log_ix` → 每个规范日志 ID 的代表（`cache.rs` `card_logs`），`res` 按血统重放写回（`replayed_card_logs`） |
 //! | `server_times` `events` `events_present` `has_user_data` | 四张事件表 + `srs_event_local` | 上面几张索引 + 操作体 |
 //!
 //! # 与协议 3 有意不同的地方（都出自「派生层是操作集合的函数」与 D24「按规范 ID」）
@@ -21,6 +21,10 @@
 //! - **`style_candidates` 的游标 `rid`** 是操作主键 `k`（协议 3 是修改记录表的 rowid）：同样只增、只当游标用。
 //! - **`events` 的 `unknown`** 是 `LegacyUnknown` 操作的原文；`events_present` 认的事件 ID 是：身份记录 / 日志按别名类
 //!   （类里任何一个成员在就算在）、修改记录按 `edit_id(写入者, seq)`（带旧戳的取旧戳的）、不认识的事件按 `x.id`。
+//!   `events_present` 每个 ID 一行（协议 3 按来源表 `UNION ALL`，同一 ID 在投影表与操作表各命中一次就出两行）。
+//! - **笔记的 `tags` 行**与协议 3 投影相同（`cmd::edit_rows`）：碰过标签的笔记恰有一行合成的 `sync2:tags:<笔记>`，
+//!   值 = 按类判的 OR-Set 当前值；整列表的 `tags` 修改不单独出。日志行的 `res` 是按 historyFrom 血统重放写回的那份，
+//!   与协议 3 落库的相同（不是操作里的原值）。
 //! - **`profile_merges`** 永远为空：新代没有「并入做到一半」（D23：迁移前 preflight 拦下，旧并入代码做完再迁）。
 //! - **`successors`** 只认目标是 UUID 的 `historyFrom/` 键（紧凑键，`gen4::name`）：卡 ID 恒为 UUID（`registers::card_id`
 //!   与 apkg 导入），文本形的目标不会出现；按 `reg_card_key` 索引的一段取，不扫全部卡寄存器（协议 3 BUG-3543 的同一个要求）。
@@ -52,6 +56,12 @@ use crate::store::sync2::canonical;
 use crate::sync2::codec::{Reader, Writer};
 use crate::sync2::op::EntKind;
 use crate::sync2::vv::OpId;
+
+/// 一条修改行：(修改键, 行 JSON, 服务器时刻)（[super::edit_rows]）。
+type EditRow = (String, String, Option<i64>);
+
+/// 冲突候选：(种类, 实体的 SQLite 序, 规范实体)。
+type Candidate = (i64, (u8, Vec<u8>), Ref);
 
 /// 单表结果在 `files` 里的名字（同协议 3）。
 const TABLE: &str = "t";
@@ -94,7 +104,10 @@ fn ints(v: &Value, k: &str) -> Result<Vec<i64>, String> {
     v.as_array()
         .into_iter()
         .flatten()
-        .map(|x| x.as_i64().ok_or_else(|| format!("read: {k} must hold integers")))
+        .map(|x| {
+            x.as_i64()
+                .ok_or_else(|| format!("read: {k} must hold integers"))
+        })
         .collect()
 }
 
@@ -429,9 +442,13 @@ impl<'t, 'c> Reads<'t, 'c> {
             let ks: Vec<i64> = self
                 .t
                 .conn()
-                .prepare_cached("SELECT k FROM ops WHERE k BETWEEN ?1 AND ?2 AND kind = ?3 ORDER BY k")
+                .prepare_cached(
+                    "SELECT k FROM ops WHERE k BETWEEN ?1 AND ?2 AND kind = ?3 ORDER BY k",
+                )
                 .map_err(sql)?
-                .query_map(params![lo, hi, i64::from(KIND_LEGACY_UNKNOWN)], |r| r.get(0))
+                .query_map(params![lo, hi, i64::from(KIND_LEGACY_UNKNOWN)], |r| {
+                    r.get(0)
+                })
                 .map_err(sql)?
                 .collect::<Result<_, _>>()
                 .map_err(sql)?;
@@ -451,22 +468,14 @@ impl<'t, 'c> Reads<'t, 'c> {
 
     // -------------------------------------------------------------- 修改记录
 
-    /// 一个别名类按类判定活着的修改行：(修改键, 行 JSON, 服务器时刻)，按 (键, JSON) 排（模块文件头「顺序」）。
+    /// 一个别名类按类判定活着的修改行：(修改键, 行 JSON, 服务器时刻)，按 (键, JSON) 排（模块文件头「顺序」；笔记的
+    /// `tags` 是合成的那一行，[super::edit_rows]）。
     fn class_rows(
         &mut self,
         kind: EntKind,
         c: &Ref,
     ) -> Result<Vec<(String, String, Option<i64>)>, String> {
-        let (lines, _) = self.ix.class_lines(kind, c)?;
-        let mut rows: Vec<(String, String, Option<i64>)> = lines
-            .into_iter()
-            .map(|(json, st)| {
-                let (json, f) = row_json(&json, &self.profile, "f");
-                (f, json, st)
-            })
-            .collect();
-        rows.sort();
-        Ok(rows)
+        super::edit_rows(self.t, &mut self.ix, kind, c, &self.profile)
     }
 
     /// `edits {kind, ids, key? | prefix?}`：一组实体（每个别名类一份）活着的修改记录（`e` 规范实体 ID, `j`, `st`）。
@@ -487,7 +496,8 @@ impl<'t, 'c> Reads<'t, 'c> {
         let mut out = Table::new(&[("e", KIND_STR), ("j", KIND_STR), ("st", KIND_OPT_I64)]);
         for c in ids {
             for (f, j, st) in self.class_rows(kind, &c)? {
-                if key.as_ref().is_some_and(|k| *k != f) || prefix.is_some_and(|p| !f.starts_with(p))
+                if key.as_ref().is_some_and(|k| *k != f)
+                    || prefix.is_some_and(|p| !f.starts_with(p))
                 {
                     continue;
                 }
@@ -568,7 +578,7 @@ impl<'t, 'c> Reads<'t, 'c> {
                 continue;
             }
             let rows = self.class_rows(kind, &c)?;
-            let mut by_key: BTreeMap<&str, Vec<&(String, String, Option<i64>)>> = BTreeMap::new();
+            let mut by_key: BTreeMap<&str, Vec<&EditRow>> = BTreeMap::new();
             for row in &rows {
                 by_key.entry(row.0.as_str()).or_default().push(row);
             }
@@ -591,7 +601,7 @@ impl<'t, 'c> Reads<'t, 'c> {
     }
 
     /// [Reads::conflict_edits] 的候选 (种类, 排序键, 规范实体)。
-    fn conflict_candidates(&mut self) -> Result<BTreeSet<(i64, (u8, Vec<u8>), Ref)>, String> {
+    fn conflict_candidates(&mut self) -> Result<BTreeSet<Candidate>, String> {
         let mut raw: Vec<(i64, Ref)> = Vec::new();
         let mut q = Sel::of(self.col);
         let live = q.int(R_LIVE);
@@ -688,12 +698,13 @@ impl<'t, 'c> Reads<'t, 'c> {
             let rows = self
                 .t
                 .conn()
-                .prepare_cached("SELECT k FROM ops WHERE k > ?1 AND k <= ?2 AND kind = ?3 ORDER BY k")
-                .map_err(sql)?
-                .query_map(
-                    params![after.max(lo - 1), hi, i64::from(KIND_EDIT)],
-                    |r| r.get::<_, i64>(0),
+                .prepare_cached(
+                    "SELECT k FROM ops WHERE k > ?1 AND k <= ?2 AND kind = ?3 ORDER BY k",
                 )
+                .map_err(sql)?
+                .query_map(params![after.max(lo - 1), hi, i64::from(KIND_EDIT)], |r| {
+                    r.get::<_, i64>(0)
+                })
                 .map_err(sql)?
                 .collect::<Result<Vec<_>, _>>()
                 .map_err(sql)?;
@@ -851,7 +862,7 @@ impl<'t, 'c> Reads<'t, 'c> {
             ("st", KIND_OPT_I64),
         ]);
         for c in cards {
-            for l in self.ix.card_logs(&c)? {
+            for l in self.ix.replayed_card_logs(&c)? {
                 let (json, id) = row_json(&l.json, &self.profile, "id");
                 out.push(vec![
                     Cell::S(id),
@@ -965,11 +976,27 @@ impl<'t, 'c> Reads<'t, 'c> {
             self.logs_between(a.saturating_sub(win), a.saturating_add(win), &mut reps)?;
         }
         let mut rows: Vec<(Ref, String)> = Vec::new();
+        // 日志行要的是重放写回 `res` 的那份（协议 3 落库的就是它）：按卡整段重放一次，同一张卡只算一次。
+        let mut replayed: BTreeMap<Ref, Vec<(String, String)>> = BTreeMap::new();
         for (id, (_, k, l)) in reps {
             if l.origin == "anki" || !(l.kind == "review" || l.kind == "manual") {
                 continue;
             }
-            rows.push((id, with_profile(&self.ix.log_at(k)?.json, &self.profile)));
+            let card = self.canon(&ref_of(&l.card.text()))?;
+            if !replayed.contains_key(&card) {
+                let ls = self.ix.replayed_card_logs(&card)?;
+                let ls = ls
+                    .into_iter()
+                    .map(|x| row_json(&x.json, &self.profile, "id"))
+                    .map(|(j, i)| (i, j))
+                    .collect();
+                replayed.insert(card.clone(), ls);
+            }
+            let json = match replayed[&card].iter().find(|(i, _)| *i == id.text()) {
+                Some((_, j)) => j.clone(),
+                None => with_profile(&self.ix.log_at(k)?.json, &self.profile),
+            };
+            rows.push((id, json));
         }
         rows.sort_by(|a, b| sql_order(&a.0).cmp(&sql_order(&b.0)));
         let mut out = Table::new(&[("id", KIND_STR), ("json", KIND_STR)]);
@@ -1065,17 +1092,14 @@ impl<'t, 'c> Reads<'t, 'c> {
     /// `server_times {ids?}`：事件的服务器时刻（`id`, `st`；没有时刻的不出现），按 ID 排。`ids` 没给 = 集合里全部。
     /// 日志按规范日志 ID（代表那份的时刻），修改记录按原值修改记录 ID；只有承袭来的事件有时刻（模块文件头）。
     fn server_times(&mut self, req: &Value) -> Result<Vec<u8>, String> {
-        let wanted: Option<HashSet<Ref>> = match list(req, "ids")? {
-            Some(ids) => Some(
-                ids.as_array()
-                    .into_iter()
-                    .flatten()
-                    .filter_map(Value::as_str)
-                    .map(ref_of)
-                    .collect(),
-            ),
-            None => None,
-        };
+        let wanted: Option<HashSet<Ref>> = list(req, "ids")?.map(|ids| {
+            ids.as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .map(ref_of)
+                .collect()
+        });
         let mut times: BTreeMap<(u8, Vec<u8>), (Ref, i64)> = BTreeMap::new();
         let mut put = |id: Ref, st: i64| {
             let (o, b) = sql_order(&id);
@@ -1249,7 +1273,9 @@ impl<'t, 'c> Reads<'t, 'c> {
                 q.push(&format!("(deleted_at IS NULL OR deleted_at > {p})"));
             }
             (None, None) => q.push("deleted_at IS NULL"),
-            _ => return Err("read media_refs: deletedBefore and deletedAfter are exclusive".into()),
+            _ => {
+                return Err("read media_refs: deletedBefore and deletedAfter are exclusive".into());
+            }
         }
         q.push(" AND media_refs <> '' ORDER BY id");
         q.table(self.t, &[("refs", KIND_STR)])
@@ -1263,7 +1289,7 @@ impl<'t, 'c> Reads<'t, 'c> {
         q.push(&format!(
             "SELECT n.term_key, n.reading_key, c.id, c.note_id, c.queue, c.suspended, \
              c.deck_id, c.due_day, c.due_at \
-             FROM notes n JOIN cards c ON c.col = n.col AND c.note_id = n.id \
+             FROM notes n CROSS JOIN cards c ON c.col = n.col AND c.note_id = n.id \
              WHERE n.col = ?1 AND n.term_key IN (SELECT value FROM json_each({terms})) \
              AND n.deleted_at IS NULL AND c.hidden = 0 \
              ORDER BY n.term_key, n.reading_key, c.id"
@@ -1343,7 +1369,7 @@ impl<'t, 'c> Reads<'t, 'c> {
         if wanted("logs") {
             let mut rows: Vec<(Ref, String)> = Vec::new();
             for c in self.logged_cards()? {
-                for l in self.ix.card_logs(&c)? {
+                for l in self.ix.replayed_card_logs(&c)? {
                     let (json, id) = row_json(&l.json, &self.profile, "id");
                     rows.push((ref_of(&id), json));
                 }
@@ -1432,7 +1458,9 @@ impl<'t, 'c> Reads<'t, 'c> {
             })?;
             for json in self.unknown_ops(None)? {
                 let v: Value = serde_json::from_str(&json).unwrap_or(Value::Null);
-                let id = v["x"]["id"].as_str().map_or_else(|| json.clone(), str::to_owned);
+                let id = v["x"]["id"]
+                    .as_str()
+                    .map_or_else(|| json.clone(), str::to_owned);
                 let r = ref_of(&id);
                 if rest.contains(&r) {
                     found.push(r);
@@ -1514,7 +1542,12 @@ impl Rules {
 
     fn tracks(&self, kind: EntKind, key: &str) -> bool {
         self.0.iter().any(|(k, keep, keys)| {
-            k == kind.wire() && if *keep { keys.contains(key) } else { !keys.contains(key) }
+            k == kind.wire()
+                && if *keep {
+                    keys.contains(key)
+                } else {
+                    !keys.contains(key)
+                }
         })
     }
 }

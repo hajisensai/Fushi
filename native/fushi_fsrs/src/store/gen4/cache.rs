@@ -243,6 +243,14 @@ const BATCH: usize = 512;
 const MOVES_IN_PLACE: usize = 256;
 
 /// 「前身 → 后继」链接（`historyFrom/` 键、不看值）：按卡按需查，查过的记下。
+/// 一批卡的血统（`Index::lineage`）：卡 ID（文本）→ 活着的修改行 / 重放写回的日志 / 生效的前身 / 后继。
+struct Lineage {
+    lines: BTreeMap<String, Vec<(String, Option<i64>)>>,
+    logs: HashMap<String, Vec<LogIn>>,
+    preds: HashMap<String, Vec<String>>,
+    succs: HashMap<String, Vec<String>>,
+}
+
 #[derive(Default)]
 struct Links {
     succ: HashMap<Ref, Vec<Ref>>,
@@ -1239,6 +1247,25 @@ impl<'t, 'c> Index<'t, 'c> {
         acc: &mut StatAcc,
         out: &mut Settled,
     ) -> Result<(), String> {
+        let l = self.lineage(batch)?;
+        self.cache_lineage(cfg, batch, plans, all, acc, out, l)
+    }
+
+    /// 卡 [card] 的日志，`res` 是按血统重放写回的（与缓存层、协议 3 落库的日志行同一份）：它的 historyFrom 连通分量
+    /// 整个重放一遍再取它那一段。读命令 `logs` / `entity_views` 用（G7-4）。
+    pub(super) fn replayed_card_logs(&mut self, card: &Ref) -> Result<Vec<LogIn>, String> {
+        let card = self.canon(card)?;
+        let mut links = Links::default();
+        let comp: Vec<Ref> = self
+            .link_family(&mut links, &BTreeSet::from([card.clone()]))?
+            .into_iter()
+            .collect();
+        let mut l = self.lineage(&comp)?;
+        Ok(l.logs.remove(&card.text()).unwrap_or_default())
+    }
+
+    /// 一批卡（若干个完整的 historyFrom 连通分量）：活着的修改行、生效的前身 / 后继、按链尾重放写回的日志。
+    fn lineage(&mut self, batch: &[Ref]) -> Result<Lineage, String> {
         // 卡的活着的修改行（血统、标志、链尾都从它判）与日志。
         let mut lines: BTreeMap<String, Vec<(String, Option<i64>)>> = BTreeMap::new();
         let mut logs: HashMap<String, Vec<LogIn>> = HashMap::new();
@@ -1301,6 +1328,32 @@ impl<'t, 'c> Index<'t, 'c> {
                 l.json = json;
             }
         }
+        Ok(Lineage {
+            lines,
+            logs,
+            preds,
+            succs,
+        })
+    }
+
+    /// [cache_batch] 的物化段：卡行、统计行（[l] = 这一批的 [lineage]）。
+    #[allow(clippy::too_many_arguments)]
+    fn cache_lineage(
+        &mut self,
+        cfg: &CacheConfig,
+        batch: &[Ref],
+        plans: &HashMap<Ref, Plan>,
+        all: bool,
+        acc: &mut StatAcc,
+        out: &mut Settled,
+        l: Lineage,
+    ) -> Result<(), String> {
+        let Lineage {
+            lines,
+            logs,
+            preds,
+            succs,
+        } = l;
         let stored_of = |lineage: &[String]| -> Vec<StoredLog<'_>> {
             let mut s: Vec<StoredLog<'_>> = Vec::new();
             for c in lineage {

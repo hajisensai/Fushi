@@ -3,7 +3,7 @@
 //! 真正的读命令当基准，所以原样拷一份只在测试构建里编。
 //!
 //! **清理条件**：本栈合进含 `store/reads.rs` 的 develop 之后删掉这个文件，`tests.rs` 的 `p3` 改调 `crate::store::reads::run`。
-//! 不得在这里改任何查询：改了就不再是协议 3 的基准。
+//! 不得在这里改任何查询：改了就不再是协议 3 的基准（只按本仓 rustfmt 排了版，过 `rust-format` 门）。
 //!
 //! 只读查询命令：`read`（一个 profile 的数据）与 `read_lib`（不针对单个 profile）。
 //!
@@ -924,7 +924,10 @@ fn events_present(c: &Connection, profile: &str, req: &Value) -> Result<Vec<u8>,
 /// store/profile_data.rs `MERGE_MARKER_PREFIX`）。
 fn profile_merges(c: &Connection) -> Result<Vec<u8>, String> {
     let mut q = Sel::lib();
-    let like = q.text(&format!("{}%", crate::store::profile_data::MERGE_MARKER_PREFIX));
+    let like = q.text(&format!(
+        "{}%",
+        crate::store::profile_data::MERGE_MARKER_PREFIX
+    ));
     q.push(&format!(
         "SELECT key, value FROM srs_meta WHERE key LIKE {like}"
     ));
