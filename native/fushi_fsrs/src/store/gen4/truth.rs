@@ -275,6 +275,65 @@ pub struct Binding {
     pub salts: BTreeSet<String>,
 }
 
+/// 绑定状态的阶段（设计 §5.1、D28；协议 3 `store/binding.rs` 的 `provisional` / `settled`）。存在 `collections.state`。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum BindStage {
+    /// 暂定：想先加入已有集合但没赶上，照常写入、之后由并入兜底。
+    Provisional,
+    /// 已定：已经在某个位置上跑完关联，之后在别的位置上看到别的集合只交给用户选。
+    Settled,
+}
+
+impl BindStage {
+    /// `collections.state` 里的值。
+    pub fn code(self) -> i64 {
+        match self {
+            BindStage::Provisional => 1,
+            BindStage::Settled => 2,
+        }
+    }
+
+    pub fn of_code(code: i64) -> Option<BindStage> {
+        match code {
+            1 => Some(BindStage::Provisional),
+            2 => Some(BindStage::Settled),
+            _ => None,
+        }
+    }
+
+    /// 协议 3 线上 / 命令回包里的文本（`binding_get` / `binding_set` 的形状不变，规划 §1.6）。
+    pub fn text(self) -> &'static str {
+        match self {
+            BindStage::Provisional => "provisional",
+            BindStage::Settled => "settled",
+        }
+    }
+
+    pub fn of_text(text: &str) -> Option<BindStage> {
+        match text {
+            "provisional" => Some(BindStage::Provisional),
+            "settled" => Some(BindStage::Settled),
+            _ => None,
+        }
+    }
+}
+
+/// 一个集合的绑定状态（`collections.state / via / at`）：阶段、在哪定下 / 想在哪加入（位置的 directoryKey 或
+/// `backup`）、写下的时刻（毫秒）。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BindState {
+    pub stage: BindStage,
+    pub via: String,
+    pub at: i64,
+}
+
+impl BindState {
+    /// 协议 3 `binding_get` 回包里 `binding` 那一项的形状：`{state, via, at}`。
+    pub fn json(&self) -> serde_json::Value {
+        serde_json::json!({"state": self.stage.text(), "via": self.via, "at": self.at})
+    }
+}
+
 #[derive(Clone)]
 struct DevRow {
     col: i64,
@@ -588,6 +647,11 @@ impl<'c> Truth<'c> {
         self.binding_where("col", &col)
     }
 
+    /// 绑着集合标识 [collection] 的本机集合（没有 = None）。
+    pub fn binding_of_collection(&self, collection: &Id) -> Result<Option<Binding>, String> {
+        self.binding_where("collection", &collection.0.as_slice())
+    }
+
     /// 把 profile 绑到一个集合上，返回本机集合号。同一个 profile 再绑同一个集合是幂等的；一个 profile 只能绑一个集合，
     /// 一个集合只能绑一个 profile（设计 §5.1：同机两个 profile 不能绑定同一个集合）。改绑定是身份接线（G9）的事。
     pub fn bind(&self, profile: &str, collection: &Id, dir: &str) -> Result<i64, String> {
@@ -634,6 +698,92 @@ impl<'c> Truth<'c> {
                 .execute(params![col, text])
                 .map_err(sql)?;
             Ok(true)
+        })
+    }
+
+    /// 集合 [col] 的绑定状态（没写过 = None）。`state` 列里认不出的值当作没有记录（协议 3 `binding.rs` 的 `parse`
+    /// 同口径：坏值不让读失败）。
+    pub fn binding_state(&self, col: i64) -> Result<Option<BindState>, String> {
+        let row = self
+            .conn
+            .prepare_cached("SELECT state, via, at FROM collections WHERE col = ?1")
+            .map_err(sql)?
+            .query_row([col], |r| {
+                Ok((
+                    r.get::<_, Option<i64>>(0)?,
+                    r.get::<_, Option<String>>(1)?,
+                    r.get::<_, Option<i64>>(2)?,
+                ))
+            })
+            .optional()
+            .map_err(sql)?;
+        let Some((state, via, at)) = row else {
+            return Err(format!("gen4 store: no collection {col}"));
+        };
+        Ok(state.and_then(BindStage::of_code).map(|stage| BindState {
+            stage,
+            via: via.unwrap_or_default(),
+            at: at.unwrap_or(0),
+        }))
+    }
+
+    /// 写集合 [col] 的绑定状态，返回写完之后的状态（同 [Truth::binding_state]）。语义照搬协议 3 的 `binding_set`
+    /// （`store/binding.rs` 文件头）：**只进不退**——已经 `settled` 时什么都不改（第一次定下的位置为准）；`provisional`
+    /// 可以升成 `settled`；再写 `provisional` 只换 `via` / `at`。只动本机，不随同步传。
+    pub fn settle_binding(
+        &self,
+        col: i64,
+        stage: BindStage,
+        via: &str,
+        at: i64,
+    ) -> Result<BindState, String> {
+        self.write(|| {
+            if let Some(cur) = self.binding_state(col)? {
+                if cur.stage == BindStage::Settled {
+                    return Ok(cur);
+                }
+            }
+            self.conn
+                .prepare_cached(
+                    "UPDATE collections SET state = ?2, via = ?3, at = ?4 WHERE col = ?1",
+                )
+                .map_err(sql)?
+                .execute(params![col, stage.code(), via, at])
+                .map_err(sql)?;
+            Ok(BindState {
+                stage,
+                via: via.to_owned(),
+                at,
+            })
+        })
+    }
+
+    /// 把本机集合 [col] 改绑到另一个集合标识与位置目录名上（设计 §5.4 第 2 条：集合号、操作、本机状态都不动，只换
+    /// 「这批操作现在属于哪个集合」）。**只给并入用**（`identity.rs`）：改绑必须与写进日志的那条 `Join` 同一个事务，
+    /// 单独改绑会让别的设备无从跟随。目标集合已经绑在本机别的 profile 上时报错（设计 §5.1）。
+    pub(super) fn rebind(&self, col: i64, collection: &Id, dir: &str) -> Result<(), String> {
+        self.write(|| {
+            if dir.is_empty() {
+                return Err("gen4 store: empty location directory".to_owned());
+            }
+            if let Some(b) = self.binding_where("collection", &collection.0.as_slice())? {
+                if b.col != col {
+                    return Err(format!(
+                        "gen4 store: collection {collection} is already bound to profile {}",
+                        b.profile
+                    ));
+                }
+            }
+            let n = self
+                .conn
+                .prepare_cached("UPDATE collections SET collection = ?2, dir = ?3 WHERE col = ?1")
+                .map_err(sql)?
+                .execute(params![col, collection.0.as_slice(), dir])
+                .map_err(sql)?;
+            if n != 1 {
+                return Err(format!("gen4 store: no collection {col}"));
+            }
+            Ok(())
         })
     }
 

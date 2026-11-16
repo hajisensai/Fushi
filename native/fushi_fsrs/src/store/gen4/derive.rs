@@ -575,6 +575,9 @@ impl<'t, 'c> Index<'t, 'c> {
             }
             self.salts_dirty = true;
         }
+        if let Body4::Join(j) = &body {
+            self.join_row(k, j, add)?;
+        }
         Ok(())
     }
 
