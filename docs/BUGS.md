@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4109 条。点号进各自文件。
+> 共 4110 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4753](bugs/BUG-4753-nested-lookup-webkit-zoom-hit-offset.md) | ✅ | ✅ | 嵌套查词：macOS 查词页点释义里的字查到相邻的字（WebKit 旧 zoom 坐标系 + 沙箱取字半字偏移） |
 | [BUG-4752](bugs/BUG-4752-open-with-confused-deputy.md) | ✅ | ✅ | 用其他应用打开 / 分享导入替发起方读它无权读的 content:// URI（confused deputy） |
 | [BUG-4751](bugs/BUG-4751-ja-i18n-english-fallback.md) | ✅ | ✅ | 日语界面外观设置与导航速览卡大量文案仍是英文回退 |
 | [BUG-4749](bugs/BUG-4749-srs-swipe-follow-jitter.md) | ✅ | ✅ | 复习页横向滑动评分时卡面来回抖动（WebView 卡面页内坐标随跟手平移反馈进位移） |
