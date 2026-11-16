@@ -4,25 +4,34 @@ import 'package:drift/drift.dart' show DatabaseConnection;
 import 'package:drift/native.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/lookup/desktop_lookup_startup.dart';
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/platform/gal_hook_text_overlay_channel.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/test_platform_services.dart';
 
-/// 全局查词覆盖窗跟随查词模块（BUG-2793 审查第 3 条）：此前覆盖窗只在启动时按
-/// 模块开关判一次，会话中途打开查词模块后桌面悬浮球「应用外查词」按钮出现、点了
-/// 却什么都不发生（覆盖窗要下次启动才起）。
+/// BUG-4755：全局查词覆盖窗（查词卡 surface）不跟「查词」模块走。
+///
+/// 查词模块只关查词页入口、查词能力全留（用户拍板）。覆盖窗此前按查词模块门控，
+/// 首启向导选「只看媒体」或手动关掉查词页的用户，galgame 游戏内点词不弹卡
+/// （`lookupText` 在覆盖窗未起时直接返回 false）、桌面应用外悬浮球的「应用外
+/// 查词」「截屏识字」也一起消失。现在桌面启动链 [startDesktopLookupSurfaces]
+/// 只按平台能力起覆盖窗。
 ///
 /// 控制器是进程级单例、`start` 是单向闩，所以本文件只放这一条用例。
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  test('中途打开查词模块即沿同一条 start 起覆盖窗；再通知不重复建窗，关模块不停', () async {
+  test('查词模块关、games 开：启动链照样起覆盖窗，galgame 查词有卡可弹', () async {
     GlobalLookupController.platformOverride = true;
+    // galgame 台词浮窗本身不是这里要钉的东西（它随 games 模块），关掉免得
+    // 拉起它的 native 通道。
+    GalHookTextOverlayChannel.platformOverride = false;
     final List<String> overlayCalls = <String>[];
     final TestDefaultBinaryMessenger messenger =
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
@@ -36,10 +45,11 @@ void main() {
       DatabaseConnection(NativeDatabase.memory()),
     );
     final Directory storeDir = Directory.systemTemp.createTempSync(
-      'fushi_lookup_follow',
+      'fushi_lookup_module_independence',
     );
     addTearDown(() async {
       GlobalLookupController.platformOverride = null;
+      GalHookTextOverlayChannel.platformOverride = null;
       messenger.setMockMethodCallHandler(FushiChannels.globalLookup, null);
       await db.close();
       if (storeDir.existsSync()) storeDir.deleteSync(recursive: true);
@@ -50,23 +60,24 @@ void main() {
       ..wireLocalAudioForTesting(prefsRepo: prefs, databaseDirectory: storeDir)
       ..wireDatabaseForTesting(db);
     await prefs.setModuleEnabled(ModuleId.lookup, false);
+    await prefs.setModuleEnabled(ModuleId.games, true);
+    expect(appModel.moduleVisibility.isEnabled(ModuleId.lookup), isFalse);
+
+    await startDesktopLookupSurfaces(appModel);
 
     final GlobalLookupController controller = GlobalLookupController.instance;
-    await controller.followLookupModule(appModel);
-    expect(controller.isAvailable, isFalse, reason: '模块关着不装钩子、不建窗');
-    expect(overlayCalls, isNot(contains('prepare')));
-
-    await appModel.setModuleEnabled(ModuleId.lookup, true);
-    await pumpEventQueue();
-    expect(controller.isAvailable, isTrue, reason: '打开模块当场起覆盖窗，不等下次启动');
+    expect(
+      controller.isAvailable,
+      isTrue,
+      reason: '查词模块只关查词页；覆盖窗是 galgame / 应用外球共用的查词卡',
+    );
     expect(overlayCalls.where((String m) => m == 'prepare'), hasLength(1));
 
-    // 关模块不停（「不切断进行中的任务」）；再打开也不重复建窗。
+    // 模块开关再变也不影响覆盖窗：既不重复建窗，也不因关模块而停。
+    await appModel.setModuleEnabled(ModuleId.lookup, true);
     await appModel.setModuleEnabled(ModuleId.lookup, false);
     await pumpEventQueue();
     expect(controller.isAvailable, isTrue);
-    await appModel.setModuleEnabled(ModuleId.lookup, true);
-    await pumpEventQueue();
     expect(overlayCalls.where((String m) => m == 'prepare'), hasLength(1));
   });
 }
