@@ -9,13 +9,23 @@
 //!   索引）/ `closure_ix`；语义层（`weigh.rs`）：`tag_ix`（标签 OR-Set 与顺序提示）、`media_ix`（媒体名 → 内容）、
 //!   `purge_ix`（彻底清除）、`ent_ops`（实体 → 碰过它、别的索引里查不到的操作）、`hold_ix`（被并发改动扣住的删除）。
 //!   盐与别名（`alias.rs`）：`salt_ix`（带盐的操作）、`alias_ix`（出现过的 ID → 规范 ID）、`alias_writer_ix`（改了名的
-//!   旧写入者 → 最初的写入者）；语义摘要（`digest.rs`）：`dg_ix`（每个实体一行）、`dg_dirty`（等重算的实体，静止时为空；
+//!   旧写入者 → 最初的写入者）；身份（`identity.rs`）：`join_ix`（本集合日志里的并入操作 `Join`：被并入的集合与它的
+//!   位置目录名；盐另在 `salt_ix`）；语义摘要（`digest.rs`）：`dg_ix`（每个实体一行）、`dg_dirty`（等重算的实体，静止时为空；
 //!   由 `reg_ix` / `tag_ix` / `log_ix` / `ent_ix` / `media_ix` 上的触发器记）。
 //!   缓存层（`cache.rs`）：`notes` / `cards`（出卡、浏览读的缓存，列同协议 3 的两张缓存表）、`stats`（有效复习投影）。
-//! - **本机状态**：`collections`（profile ↔ 集合的绑定，设计 §5.1）、`devs`（设备 ↔ 小整数下标；`kind` 空 = 只被别的操作
+//! - **本机状态**：`collections`（profile ↔ 集合的绑定，设计 §5.1；`state` / `via` / `at` 是绑定状态，协议 3
+//!   `srs_meta` 里 `srs_collection_bound/<uid>` 的落点，由身份接线 G9-3 读写）、`devs`（设备 ↔ 小整数下标；`kind` 空 = 只被别的操作
 //!   点过名、还没见过它的日志，0 = 原生日志，1 = 承袭日志；`src` = 承袭日志的来源集合；`tail` = 原生日志末尾的链值）、
 //!   `trust`（还没信任的设备：`state` 1 = 待确认，2 = 已拒绝；没有行 = 可信。纯本机，不同步，协议 3 的 `sync2_trust`）。
 //!   `derive_cfg`（派生层的输入里只有宿主知道的那部分，按名字存文本：内置笔记类型表、缓存配置；`truth.rs`）。
+//!   迁移时从协议 3 灌过来的其余本机状态（[LOCAL]，规划 §1.3）：`self_`（本机身份：设备 ID、签名钥匙种子、HLC、换身份前
+//!   的上一个身份 `prev_*` 三列）、`peers`（各设备的公钥、名字与扩展信息，`sync2_devices` 里本机要留的那部分；
+//!   [super::truth::Truth::device_key] / [super::truth::Truth::set_peer]）、`held` / `checkpoints` / `media_local`（照搬对应的
+//!   `sync2_*` 表，`profile_uid` 换成 `col`）、`media_at`（各位置媒体在 / 不在，按内容哈希）、`loc_state`（各位置的加密
+//!   记忆：BUG-4299 的 `location_seal`）。除 `peers` 外这一版只建表，读写 API 由各自的 PR 加（G7-2 / G8-3 / G8-4 / G8-6）。
+//!   同步运行时的本机状态（[SYNC]，G8-4，不迁移、从头对账）：`loc_heads`（各位置上各设备最新的 head）、`op_wait`（原生
+//!   操作的因果等待缓冲）、`relay_out`（本机转发到各位置的文件与两段式删除）、`oldroot_fp`（各位置旧根的清单指纹）；
+//!   读写 API 在 `sync_state.rs`，收段在 `receive.rs`。
 //!
 //! 各列的取值见 `truth.rs`（落库规则）与 `pack.rs`（操作体的存储编码）。`writers.name` 存的是名字的紧凑字节形
 //! （`gen4::name`：一个文本只有一种字节形，所以按字节唯一就是按名字唯一）。
@@ -24,14 +34,25 @@
 //! 寻址的表不再另存集合号；rowid 表的点读与顺序扫都是一次 B 树下降，行里不重复存键。
 //!
 //! `srs_meta(key, value)` 与文本形式的 `schema` 照旧（设计 §6.1 末）：协议 3 的内核把它读成整数、比自己大就拒绝打开，
-//! 所以新代文件即使被旧版本当成它的库打开，也只会报错、不会被从头建表。
+//! 所以新代文件即使被旧版本当成它的库打开，也只会报错、不会被从头建表。另外建库时在文件头写 `PRAGMA application_id`
+//! = [APPLICATION_ID] 做正向识别（D7）：[check_kind] 只认带这个魔数、`schema` 正好是 [SCHEMA] 的文件；协议 3 的封存值
+//! （`crate::store::schema::SEALED_SCHEMA` = 39999）与一切小于 [GEN_FLOOR] 的值都明确拒绝。
 
 use std::path::Path;
 
 use rusqlite::Connection;
 
 /// 新代库的 schema 号。只要求远大于协议 3 的任何一个 schema 号（最后一个是 29）；万位是代，低位是这一代里的存储版本。
-pub const SCHEMA: i64 = 40_005;
+///
+/// G7-1 起 `40006`（本机状态表、`collections` 的绑定状态列、`application_id`）；G9-3 起 `40007`（派生表 `join_ix`）；
+/// G8-4 起 `40008`（同步运行时的本机状态 [SYNC]）。整批推送前每个改表的 PR 各自 +1。
+pub const SCHEMA: i64 = 40_008;
+
+/// 新代的号段从这里起：`schema` 小于它的都不是新代库（协议 3 的 1～29 与封存值 39999）。
+pub const GEN_FLOOR: i64 = 40_000;
+
+/// 新代文件头里的 `PRAGMA application_id`（大端 ASCII `FSR4`）。建库时写；打开时不等就拒绝。
+pub const APPLICATION_ID: i32 = 0x4653_5234;
 
 const SEQ_BITS: u32 = 40;
 const SEQ_MASK: i64 = (1 << SEQ_BITS) - 1;
@@ -68,7 +89,10 @@ CREATE TABLE IF NOT EXISTS collections (
   profile_uid TEXT NOT NULL UNIQUE,
   collection BLOB NOT NULL UNIQUE,
   dir TEXT NOT NULL,
-  salts TEXT NOT NULL
+  salts TEXT NOT NULL,
+  state INTEGER,
+  via TEXT,
+  at INTEGER
 );
 CREATE TABLE IF NOT EXISTS devs (
   dev INTEGER PRIMARY KEY,
@@ -145,6 +169,131 @@ CREATE TABLE IF NOT EXISTS op_forks (
   tv INTEGER NOT NULL,
   slot BLOB NOT NULL,
   PRIMARY KEY (k, fp)
+) WITHOUT ROWID;
+";
+
+/// 本机状态里迁移时从协议 3 灌过来的那部分（规划 §1.3；表头注释）。不同步、不可再生、不是派生表。
+///
+/// - `self_`：每个集合一行本机身份。`sk` = 签名钥匙种子（沿用 `sync2_self.key_seed`），`hlc` = HLC 的文本形，
+///   `prev_device` / `prev_seq` / `prev_chain` = 换身份之前的上一个身份在它日志末尾的位置（没换过 = 全空）。
+/// - `peers`：各设备的公钥（先到先得，换不了：[super::truth::Truth::set_peer]）、名字、扩展信息（JSON 文本）、见过的最新
+///   head 代号、第一次见到的时刻。
+/// - `held` / `checkpoints` / `media_local`：列同 `sync2_held` / `sync2_checkpoints` / `sync2_media_local`。
+/// - `media_at`：`(位置, 内容哈希)` → 在 / 不在与 HLC 文本（D18）。
+/// - `loc_state`：每个位置的加密记忆（`location_seal`）：`loc_ids` = 位置 ID 的 JSON，`sealed` 0/1，`kdf` = 派生参数 JSON，
+///   `check_` = 口令校验串，`last_ok` = 上次核对通过的时刻。
+pub(crate) const LOCAL: &str = "
+CREATE TABLE IF NOT EXISTS self_ (
+  col INTEGER PRIMARY KEY,
+  device BLOB NOT NULL,
+  sk BLOB NOT NULL,
+  hlc TEXT NOT NULL,
+  prev_device BLOB,
+  prev_seq INTEGER,
+  prev_chain BLOB,
+  created INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS peers (
+  col INTEGER NOT NULL,
+  device BLOB NOT NULL,
+  public BLOB NOT NULL,
+  name TEXT,
+  ext TEXT,
+  head_gen INTEGER,
+  first_seen INTEGER,
+  PRIMARY KEY (col, device)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS held (
+  col INTEGER NOT NULL,
+  device BLOB NOT NULL,
+  seq INTEGER NOT NULL,
+  kind TEXT NOT NULL,
+  entity TEXT NOT NULL,
+  PRIMARY KEY (col, device, seq)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS checkpoints (
+  col INTEGER NOT NULL,
+  device BLOB NOT NULL,
+  seq INTEGER NOT NULL,
+  wall INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  PRIMARY KEY (col, device, seq)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS media_local (
+  col INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  mtime INTEGER NOT NULL,
+  sha256 BLOB NOT NULL,
+  synced BLOB,
+  PRIMARY KEY (col, name)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS media_at (
+  col INTEGER NOT NULL,
+  loc_key TEXT NOT NULL,
+  sha BLOB NOT NULL,
+  state INTEGER NOT NULL,
+  hlc TEXT NOT NULL,
+  PRIMARY KEY (col, loc_key, sha)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS loc_state (
+  col INTEGER NOT NULL,
+  loc_key TEXT NOT NULL,
+  loc_ids TEXT,
+  sealed INTEGER,
+  kdf TEXT,
+  check_ TEXT,
+  last_ok INTEGER,
+  PRIMARY KEY (col, loc_key)
+) WITHOUT ROWID;
+";
+
+/// 同步运行时的本机状态（G8-4，规划 §1.3：不迁移，换代后从头对账）。读写 API 在 `sync_state.rs`，`op_wait` 由
+/// `receive.rs` 写。不同步、不进导出与备份（导出不含待投递，D34）。
+///
+/// - `loc_heads`：每个位置上每台设备最新的 head（上一轮在这个位置上读到的）：代号、seq、段清单（JSON 文本数组）。
+///   本机自己那一行就是「这个位置上已经发布到哪里」（协议 3 `sync2_locations.uploaded` / `head_gen` 的落点）。
+///   协议 3 `sync2_location_heads` 的对应物。
+/// - `op_wait`：原生操作的因果等待缓冲（设计 §4.2：新库真相层只有承袭用的 `op_pending`）。每行是原生段里的一项：
+///   `k` = 它第一个 seq 的操作主键（`devs` 的下标自带集合，同 `op_pending`），`prev` / `chain` = 这一项前后的链值
+///   （作者签名担保的段里重算出来的），`span` = 占几个 seq，`op` = 操作的规范字节（空 = 空洞）。
+/// - `relay_out`：本机转发到各位置的文件（`rly-` 中继件 / `rhd-` 转发 head）与当时转发的 head 代号；`gone` = 1 是被更新的
+///   转发取代、等调用方删掉位置上的文件（两段式删除，协议 3 `sync2_relay_out` + `sync2_relay_gone`）。
+/// - `oldroot_fp`：每个位置旧根（`v3/`）上一次核对时的清单指纹与时刻（设计 §6.2 第 4 步「每轮核对旧根」）。
+pub(crate) const SYNC: &str = "
+CREATE TABLE IF NOT EXISTS loc_heads (
+  col INTEGER NOT NULL,
+  loc_key TEXT NOT NULL,
+  device BLOB NOT NULL,
+  gen INTEGER NOT NULL,
+  seq INTEGER NOT NULL,
+  segs TEXT NOT NULL,
+  PRIMARY KEY (col, loc_key, device)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS op_wait (
+  k INTEGER NOT NULL,
+  prev BLOB NOT NULL,
+  chain BLOB NOT NULL,
+  span INTEGER NOT NULL,
+  op BLOB,
+  PRIMARY KEY (k, prev, chain)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS relay_out (
+  col INTEGER NOT NULL,
+  loc_key TEXT NOT NULL,
+  device BLOB NOT NULL,
+  name TEXT NOT NULL,
+  gen INTEGER NOT NULL,
+  gone INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (col, loc_key, device, name)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS oldroot_fp (
+  col INTEGER NOT NULL,
+  loc_key TEXT NOT NULL,
+  fp BLOB NOT NULL,
+  at INTEGER NOT NULL,
+  PRIMARY KEY (col, loc_key)
 ) WITHOUT ROWID;
 ";
 
@@ -249,6 +398,13 @@ CREATE TABLE IF NOT EXISTS alias_writer_ix (
   origin TEXT NOT NULL,
   PRIMARY KEY (col, name)
 ) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS join_ix (
+  col INTEGER NOT NULL,
+  k INTEGER NOT NULL,
+  src BLOB NOT NULL,
+  dir TEXT NOT NULL,
+  PRIMARY KEY (col, k)
+) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS dg_ix (
   col INTEGER NOT NULL,
   ekind INTEGER NOT NULL,
@@ -266,7 +422,7 @@ CREATE TABLE IF NOT EXISTS dg_dirty (
 ";
 
 /// 派生表的名字（每张都有 `col` 列）。
-pub(crate) const DERIVED_TABLES: [&str; 17] = [
+pub(crate) const DERIVED_TABLES: [&str; 18] = [
     "ent_ix",
     "reg_ix",
     "log_ix",
@@ -279,6 +435,7 @@ pub(crate) const DERIVED_TABLES: [&str; 17] = [
     "salt_ix",
     "alias_ix",
     "alias_writer_ix",
+    "join_ix",
     "dg_ix",
     "dg_dirty",
     "notes",
@@ -286,18 +443,13 @@ pub(crate) const DERIVED_TABLES: [&str; 17] = [
     "stats",
 ];
 
-/// 这个文件是不是新代的库：空文件（还没有任何表）或 `schema` 等于 [SCHEMA] 才是。只读。
+/// 这个文件是不是新代的库：空文件（还没有任何表）才可以建；有表的必须 `schema` 等于 [SCHEMA] 且 `application_id` =
+/// [APPLICATION_ID]。只读。
 ///
-/// 协议 3 的 `srs.db`、更新版本写的新代库、别的 SQLite 文件都在这里拒掉——在动任何 PRAGMA、建任何表之前。
-fn check_kind(conn: &Connection) -> Result<(), String> {
-    let tables: i64 = conn
-        .query_row(
-            "SELECT COUNT(*) FROM sqlite_schema WHERE type = 'table'",
-            [],
-            |r| r.get(0),
-        )
-        .map_err(sql)?;
-    if tables == 0 {
+/// 协议 3 的 `srs.db`（含封存成 `SEALED_SCHEMA` 的保留副本与墓碑库）、更新版本写的新代库、别的 SQLite 文件都在这里
+/// 拒掉——在动任何 PRAGMA、建任何表之前。
+pub(crate) fn check_kind(conn: &Connection) -> Result<(), String> {
+    if table_count(conn)? == 0 {
         return Ok(());
     }
     let has_meta: bool = conn
@@ -315,15 +467,61 @@ fn check_kind(conn: &Connection) -> Result<(), String> {
     } else {
         None
     };
-    match current.as_deref().map(str::parse::<i64>) {
-        Some(Ok(v)) if v == SCHEMA => Ok(()),
-        Some(Ok(v)) if v > SCHEMA => Err(format!(
-            "gen4 store: schema {v} is newer than this build ({SCHEMA})"
-        )),
-        other => Err(format!(
-            "gen4 store: not a generation 4 library (schema {other:?})"
-        )),
+    let v = match current.as_deref().map(str::parse::<i64>) {
+        Some(Ok(v)) => v,
+        other => {
+            return Err(format!(
+                "gen4 store: not a generation 4 library (schema {other:?})"
+            ));
+        }
+    };
+    if v == crate::store::schema::SEALED_SCHEMA {
+        return Err(format!(
+            "gen4 store: a sealed protocol 3 library (schema {v}), not a generation 4 library"
+        ));
     }
+    if v < GEN_FLOOR {
+        return Err(format!(
+            "gen4 store: a protocol 3 library (schema {v}), not a generation 4 library"
+        ));
+    }
+    let app: i32 = conn
+        .query_row("PRAGMA application_id", [], |r| r.get(0))
+        .map_err(sql)?;
+    if app != APPLICATION_ID {
+        return Err(format!(
+            "gen4 store: not a generation 4 library (application_id {app:#x})"
+        ));
+    }
+    if v > SCHEMA {
+        return Err(format!(
+            "gen4 store: schema {v} is newer than this build ({SCHEMA})"
+        ));
+    }
+    if v != SCHEMA {
+        return Err(format!(
+            "gen4 store: not a generation 4 library of this build (schema {v})"
+        ));
+    }
+    Ok(())
+}
+
+fn table_count(conn: &Connection) -> Result<i64, String> {
+    conn.query_row(
+        "SELECT COUNT(*) FROM sqlite_schema WHERE type = 'table'",
+        [],
+        |r| r.get(0),
+    )
+    .map_err(sql)
+}
+
+/// [check_kind] 之上再要求已经建过表：不建库的打开（`files::OpenMode::Secondary`）用。
+pub(crate) fn check_ready(conn: &Connection) -> Result<(), String> {
+    check_kind(conn)?;
+    if table_count(conn)? == 0 {
+        return Err("gen4 store: the generation 4 library is empty".to_owned());
+    }
+    Ok(())
 }
 
 /// 查询规划器的统计：**手写、随 schema 走，不跑 `ANALYZE`**。
@@ -405,7 +603,17 @@ pub fn install(conn: &Connection) -> Result<(), String> {
         "CREATE TABLE IF NOT EXISTS srs_meta (key TEXT NOT NULL PRIMARY KEY, value TEXT NOT NULL);",
     )
     .map_err(sql)?;
+    let app: i32 = conn
+        .query_row("PRAGMA application_id", [], |r| r.get(0))
+        .map_err(sql)?;
+    if app != APPLICATION_ID {
+        // 只有空文件会走到这里（有表的在 check_kind 已经核过魔数）。文件头的这个字段随事务提交 / 回滚。
+        conn.execute_batch(&format!("PRAGMA application_id = {APPLICATION_ID};"))
+            .map_err(sql)?;
+    }
     conn.execute_batch(TRUTH).map_err(sql)?;
+    conn.execute_batch(LOCAL).map_err(sql)?;
+    conn.execute_batch(SYNC).map_err(sql)?;
     conn.execute_batch(DERIVED).map_err(sql)?;
     super::digest::set_triggers(conn, true)?;
     conn.execute_batch(super::cache::DDL).map_err(sql)?;
@@ -420,12 +628,49 @@ pub fn install(conn: &Connection) -> Result<(), String> {
 
 /// 打开（不存在就建）新代库文件。不做内存映射（设计 §6.5：迁移用的连接不映射）；页缓存取保守值，接线时由调用方按
 /// 现有预算（`store/mem_budget.rs`）再调。
+///
+/// 并发：同一个文件可能有别的连接正拿着写锁（另一个线程的 `BEGIN IMMEDIATE`、迁移、收段）。打开要读文件头、切 WAL、
+/// 再跑一遍 [install]（它会写：装触发器、`srs_meta`）。[install] 先读（`check_kind`、`application_id`、
+/// `CREATE … IF NOT EXISTS`）后写，放在延迟事务里时，读的那一刻定下快照，别的连接在这之后提交过，升级写锁就直接报
+/// `SQLITE_BUSY_SNAPSHOT`（「database is locked」）、**不经忙等**——这才是复核里两条并发测试在负载下随机红的根因
+/// （光设忙等不够，实测仍红）。所以 [install] 走 [in_write_tx]：`BEGIN IMMEDIATE` 一开始就经忙等排队拿写锁，之后
+/// 不会再撞快照。忙等显式设成 [BUSY_TIMEOUT]（rusqlite 的默认也是 5 秒，这里写明，不依赖库的默认值）。测试
+/// `concurrent_opens_under_a_busy_writer_all_succeed`、`in_write_tx_takes_the_write_lock_before_running`、
+/// `open_waits_for_another_connections_write_lock`。
 pub fn open(path: &Path) -> Result<Connection, String> {
     let conn = Connection::open(path).map_err(sql)?;
+    conn.busy_timeout(BUSY_TIMEOUT).map_err(sql)?;
     check_kind(&conn)?;
     configure(&conn)?;
-    in_tx(&conn, install)?;
+    in_write_tx(&conn, install)?;
     Ok(conn)
+}
+
+/// [open] 给连接设的忙等时长（别的连接拿着锁时等多久再报 `database is locked`）。与协议 3 `store/mod.rs` 的
+/// `configure_as` 同值；调用方可以再调。
+pub const BUSY_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(5000);
+
+/// 在一个**一开始就拿写锁**的事务（`BEGIN IMMEDIATE`）里跑 [f]；出错整笔回滚。只用于不嵌在别的事务里的入口
+/// （[open]）：要先读再写、又可能与别的连接并发时，延迟事务读完再升级会撞上 `SQLITE_BUSY_SNAPSHOT`（不经忙等），
+/// 这里在 `BEGIN` 时就经忙等排队。已在事务里时报错（SQLite 不许嵌套 `BEGIN`），不落任何东西。
+pub(crate) fn in_write_tx<T>(
+    conn: &Connection,
+    f: impl FnOnce(&Connection) -> Result<T, String>,
+) -> Result<T, String> {
+    conn.execute_batch("BEGIN IMMEDIATE").map_err(sql)?;
+    match f(conn) {
+        Ok(v) => match conn.execute_batch("COMMIT") {
+            Ok(()) => Ok(v),
+            Err(e) => {
+                let _ = conn.execute_batch("ROLLBACK");
+                Err(sql(e))
+            }
+        },
+        Err(e) => {
+            let _ = conn.execute_batch("ROLLBACK");
+            Err(e)
+        }
+    }
 }
 
 /// 内存库（测试）。
@@ -435,7 +680,7 @@ pub fn open_in_memory() -> Result<Connection, String> {
     Ok(conn)
 }
 
-fn configure(conn: &Connection) -> Result<(), String> {
+pub(crate) fn configure(conn: &Connection) -> Result<(), String> {
     // 新文件才生效；已有的文件保持它建库时的设置。
     conn.execute_batch("PRAGMA auto_vacuum = INCREMENTAL;")
         .map_err(sql)?;
@@ -621,5 +866,360 @@ mod tests {
         assert_ne!(read(&conn), want);
         in_tx(&conn, install).unwrap();
         assert_eq!(read(&conn), want);
+    }
+
+    /// D7 的正向识别：有表的文件，`schema` 在新代号段里也还要 `application_id` 对、号正好是本版本的。
+    #[test]
+    fn check_kind_refuses_a_wrong_magic_an_older_and_a_newer_generation_4_schema() {
+        let conn = open_in_memory().unwrap();
+        assert_eq!(check_kind(&conn), Ok(()));
+        let set_schema = |v: i64| {
+            conn.execute(
+                "UPDATE srs_meta SET value = ?1 WHERE key = 'schema'",
+                [v.to_string()],
+            )
+            .unwrap();
+        };
+        let refused = |want: &str| {
+            let e = check_kind(&conn).unwrap_err();
+            assert!(e.contains(want), "want {want:?}: {e}");
+            // 建表也走同一个判定：拒绝时什么都不改。
+            assert!(in_tx(&conn, install).unwrap_err().contains(want));
+        };
+        // 号对、魔数不对（0 = 没写过；别的应用的值）。
+        for app in [0, 0x1234_5678] {
+            conn.execute_batch(&format!("PRAGMA application_id = {app};"))
+                .unwrap();
+            refused("application_id");
+        }
+        conn.execute_batch(&format!("PRAGMA application_id = {APPLICATION_ID};"))
+            .unwrap();
+        // 魔数对、号是新代号段里更早的一版。
+        for v in [GEN_FLOOR, SCHEMA - 1] {
+            set_schema(v);
+            refused("of this build");
+        }
+        // 魔数对、号比本版本新。
+        set_schema(SCHEMA + 1);
+        refused("is newer than this build");
+        // 号更新、魔数又不对：先报魔数（不是新代库就不谈版本）。
+        conn.execute_batch("PRAGMA application_id = 0;").unwrap();
+        refused("application_id");
+        conn.execute_batch(&format!("PRAGMA application_id = {APPLICATION_ID};"))
+            .unwrap();
+        set_schema(SCHEMA);
+        assert_eq!(check_kind(&conn), Ok(()));
+        // 有表、没有 schema 行 / 不是数字。
+        conn.execute("UPDATE srs_meta SET value = 'x' WHERE key = 'schema'", [])
+            .unwrap();
+        refused("not a generation 4 library");
+        conn.execute("DELETE FROM srs_meta WHERE key = 'schema'", [])
+            .unwrap();
+        refused("not a generation 4 library");
+    }
+
+    /// 本机状态表与 `collections` 的列（规划 §1.3）：名字、类型、NOT NULL、主键位置。
+    #[test]
+    fn the_local_state_tables_have_the_planned_columns() {
+        let conn = open_in_memory().unwrap();
+        let cols = |table: &str| -> Vec<String> {
+            conn.prepare(&format!("PRAGMA table_info({table})"))
+                .unwrap()
+                .query_map([], |r| {
+                    let name: String = r.get(1)?;
+                    let ty: String = r.get(2)?;
+                    let notnull: i64 = r.get(3)?;
+                    let pk: i64 = r.get(5)?;
+                    let mut s = format!("{name} {ty}");
+                    if notnull != 0 {
+                        s.push_str(" NN");
+                    }
+                    if pk != 0 {
+                        s.push_str(&format!(" PK{pk}"));
+                    }
+                    Ok(s)
+                })
+                .unwrap()
+                .collect::<Result<_, _>>()
+                .unwrap()
+        };
+        let want: [(&str, &[&str]); 12] = [
+            (
+                "collections",
+                &[
+                    "col INTEGER PK1",
+                    "profile_uid TEXT NN",
+                    "collection BLOB NN",
+                    "dir TEXT NN",
+                    "salts TEXT NN",
+                    "state INTEGER",
+                    "via TEXT",
+                    "at INTEGER",
+                ],
+            ),
+            (
+                "self_",
+                &[
+                    "col INTEGER PK1",
+                    "device BLOB NN",
+                    "sk BLOB NN",
+                    "hlc TEXT NN",
+                    "prev_device BLOB",
+                    "prev_seq INTEGER",
+                    "prev_chain BLOB",
+                    "created INTEGER NN",
+                ],
+            ),
+            (
+                "peers",
+                &[
+                    "col INTEGER NN PK1",
+                    "device BLOB NN PK2",
+                    "public BLOB NN",
+                    "name TEXT",
+                    "ext TEXT",
+                    "head_gen INTEGER",
+                    "first_seen INTEGER",
+                ],
+            ),
+            (
+                "held",
+                &[
+                    "col INTEGER NN PK1",
+                    "device BLOB NN PK2",
+                    "seq INTEGER NN PK3",
+                    "kind TEXT NN",
+                    "entity TEXT NN",
+                ],
+            ),
+            (
+                "checkpoints",
+                &[
+                    "col INTEGER NN PK1",
+                    "device BLOB NN PK2",
+                    "seq INTEGER NN PK3",
+                    "wall INTEGER NN",
+                    "name TEXT NN",
+                    "reason TEXT NN",
+                ],
+            ),
+            (
+                "media_local",
+                &[
+                    "col INTEGER NN PK1",
+                    "name TEXT NN PK2",
+                    "size INTEGER NN",
+                    "mtime INTEGER NN",
+                    "sha256 BLOB NN",
+                    "synced BLOB",
+                ],
+            ),
+            (
+                "media_at",
+                &[
+                    "col INTEGER NN PK1",
+                    "loc_key TEXT NN PK2",
+                    "sha BLOB NN PK3",
+                    "state INTEGER NN",
+                    "hlc TEXT NN",
+                ],
+            ),
+            (
+                "loc_state",
+                &[
+                    "col INTEGER NN PK1",
+                    "loc_key TEXT NN PK2",
+                    "loc_ids TEXT",
+                    "sealed INTEGER",
+                    "kdf TEXT",
+                    "check_ TEXT",
+                    "last_ok INTEGER",
+                ],
+            ),
+            (
+                "loc_heads",
+                &[
+                    "col INTEGER NN PK1",
+                    "loc_key TEXT NN PK2",
+                    "device BLOB NN PK3",
+                    "gen INTEGER NN",
+                    "seq INTEGER NN",
+                    "segs TEXT NN",
+                ],
+            ),
+            (
+                "op_wait",
+                &[
+                    "k INTEGER NN PK1",
+                    "prev BLOB NN PK2",
+                    "chain BLOB NN PK3",
+                    "span INTEGER NN",
+                    "op BLOB",
+                ],
+            ),
+            (
+                "relay_out",
+                &[
+                    "col INTEGER NN PK1",
+                    "loc_key TEXT NN PK2",
+                    "device BLOB NN PK3",
+                    "name TEXT NN PK4",
+                    "gen INTEGER NN",
+                    "gone INTEGER NN",
+                ],
+            ),
+            (
+                "oldroot_fp",
+                &[
+                    "col INTEGER NN PK1",
+                    "loc_key TEXT NN PK2",
+                    "fp BLOB NN",
+                    "at INTEGER NN",
+                ],
+            ),
+        ];
+        for (table, columns) in want {
+            assert_eq!(cols(table), columns, "{table}");
+        }
+        // 复合主键的本机表都是 WITHOUT ROWID（照搬 sync2_*）。
+        for table in [
+            "peers",
+            "held",
+            "checkpoints",
+            "media_local",
+            "media_at",
+            "loc_state",
+            "loc_heads",
+            "op_wait",
+            "relay_out",
+            "oldroot_fp",
+        ] {
+            let sql: String = conn
+                .query_row(
+                    "SELECT sql FROM sqlite_schema WHERE type = 'table' AND name = ?1",
+                    [table],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert!(sql.ends_with("WITHOUT ROWID"), "{table}: {sql}");
+        }
+    }
+
+    /// 别的连接拿着写锁时，[open] 经忙等排队、等它提交后打开成功，而不是立刻报 `database is locked`。
+    #[test]
+    fn open_waits_for_another_connections_write_lock() {
+        let dir = crate::store::sync2::tests::tempdir::new("gen4-open-busy");
+        let path = dir.0.join("srs4.db");
+        let holder = open(&path).unwrap();
+        holder.execute_batch("BEGIN IMMEDIATE").unwrap();
+        holder
+            .execute(
+                "INSERT OR REPLACE INTO srs_meta (key, value) VALUES ('probe', '1')",
+                [],
+            )
+            .unwrap();
+        let release = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(300));
+            holder.execute_batch("COMMIT").unwrap();
+        });
+        let conn = open(&path).expect("open must wait for the other writer");
+        release.join().unwrap();
+        let probe: String = conn
+            .query_row("SELECT value FROM srs_meta WHERE key = 'probe'", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(probe, "1");
+    }
+
+    /// [in_write_tx] 在跑 [f] 之前就拿到写锁：闭包里只读，别的连接也已经拿不到写锁（延迟事务这时还没锁，读完再升级
+    /// 才会撞 `SQLITE_BUSY_SNAPSHOT`）。已在事务里时报错，外层事务不受影响。
+    #[test]
+    fn in_write_tx_takes_the_write_lock_before_running() {
+        let dir = crate::store::sync2::tests::tempdir::new("gen4-write-tx");
+        let path = dir.0.join("srs4.db");
+        let (c1, c2) = (open(&path).unwrap(), open(&path).unwrap());
+        c2.busy_timeout(std::time::Duration::ZERO).unwrap();
+        in_write_tx(&c1, |c| {
+            let _: i64 = c
+                .query_row("SELECT COUNT(*) FROM srs_meta", [], |r| r.get(0))
+                .map_err(sql)?;
+            let e = c2.execute_batch("BEGIN IMMEDIATE").unwrap_err();
+            assert!(e.to_string().contains("locked"), "{e}");
+            Ok(())
+        })
+        .unwrap();
+        c2.execute_batch("BEGIN IMMEDIATE; ROLLBACK").unwrap();
+
+        c1.execute_batch("BEGIN").unwrap();
+        assert!(in_write_tx(&c1, |_| Ok(())).is_err());
+        assert!(!c1.is_autocommit(), "the outer transaction is still open");
+        c1.execute_batch("ROLLBACK").unwrap();
+
+        // 闭包报错：整笔回滚，连接回到自动提交。
+        let e = in_write_tx(&c1, |c| {
+            c.execute("INSERT INTO srs_meta (key, value) VALUES ('gone', '1')", [])
+                .map_err(sql)?;
+            Err::<(), _>("boom".to_owned())
+        })
+        .unwrap_err();
+        assert_eq!(e, "boom");
+        assert!(c1.is_autocommit());
+        let n: i64 = c1
+            .query_row(
+                "SELECT COUNT(*) FROM srs_meta WHERE key = 'gone'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(n, 0);
+    }
+
+    /// 复核报的失败形态（G7-3a / G9-3 的两条并发测试在负载下随机报 `database is locked`）：几个线程反复 [open] 同一个
+    /// 文件，同时另一个连接不停地开写事务。每次打开都要成功。[open] 改回延迟事务（`in_tx`）跑 [install] 时这条稳定红，
+    /// 即使设了忙等（`SQLITE_BUSY_SNAPSHOT` 不经忙等）。
+    #[test]
+    fn concurrent_opens_under_a_busy_writer_all_succeed() {
+        let dir = crate::store::sync2::tests::tempdir::new("gen4-open-race");
+        let path = dir.0.join("srs4.db");
+        drop(open(&path).unwrap());
+        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let writer = {
+            let (path, stop) = (path.clone(), stop.clone());
+            std::thread::spawn(move || {
+                let conn = open(&path).unwrap();
+                conn.busy_timeout(std::time::Duration::from_secs(30))
+                    .unwrap();
+                let mut i = 0u64;
+                while !stop.load(std::sync::atomic::Ordering::Relaxed) {
+                    conn.execute_batch("BEGIN IMMEDIATE").unwrap();
+                    conn.execute(
+                        "INSERT OR REPLACE INTO srs_meta (key, value) VALUES ('w', ?1)",
+                        [i.to_string()],
+                    )
+                    .unwrap();
+                    std::thread::sleep(std::time::Duration::from_millis(2));
+                    conn.execute_batch("COMMIT").unwrap();
+                    // 让出一会儿（真实写者不会不间断地霸着写锁；不让的话是写者饿死别人，与打开无关）。
+                    std::thread::sleep(std::time::Duration::from_millis(1));
+                    i += 1;
+                }
+            })
+        };
+        let openers: Vec<_> = (0..4)
+            .map(|_| {
+                let path = path.clone();
+                std::thread::spawn(move || {
+                    for _ in 0..15 {
+                        drop(open(&path).unwrap());
+                    }
+                })
+            })
+            .collect();
+        for o in openers {
+            o.join().unwrap();
+        }
+        stop.store(true, std::sync::atomic::Ordering::Relaxed);
+        writer.join().unwrap();
     }
 }

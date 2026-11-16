@@ -33,6 +33,7 @@ import 'package:fushi/src/pages/implementations/feedback/feedback_common.dart';
 import 'package:fushi/src/floating_ball/floating_ball_scene.dart';
 import 'package:fushi/src/floating_ball/screen_ocr_card_image.dart';
 import 'package:fushi/src/floating_ball/screen_ocr_picker.dart';
+import 'package:fushi/src/floating_ball/screen_ocr_text_block.dart';
 import 'package:fushi/src/lookup/overlay_bridge_handlers.dart'
     show OverlayMiningHandler, screenOcrOverlayMiningHandler;
 import 'package:fushi/src/lookup/global_lookup_channel.dart';
@@ -1237,10 +1238,17 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
           'anchor=${_rectSummary(anchorScreenRect)} '
           'text="$linePreview"',
     );
+    // BUG-4707：查词串从被点字起、跨过 OCR 折行接上同一文本块的后续行（词被折到
+    // 下一行时不再在行尾截断）；制卡句子取块里含被点字的整句。
+    final ScreenOcrBlockLookup lookup = screenOcrBlockLookupForHit(
+      lines: lines,
+      hit: hit.line,
+      charIndex: hit.charIndex,
+    );
     unawaited(
       target.lookupText(
-        text.substring(hit.charIndex),
-        sentence: text,
+        lookup.text.substring(hit.charIndex),
+        sentence: lookup.sentence,
         physicalPlacement: GlobalLookupPhysicalPlacement(
           anchorScreenRect: anchorScreenRect,
         ),
@@ -1252,7 +1260,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
             lines: lines,
             hit: hit.line,
           ),
-          sentenceContext: text,
+          sentenceContext: lookup.sentence,
         ),
       ),
     );

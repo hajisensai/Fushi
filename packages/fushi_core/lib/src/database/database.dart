@@ -497,7 +497,8 @@ const String legacyHibikiDatabaseFileName = 'hibiki.db';
 /// - 旧版降级救援副本（`from > to` 的销毁式分支早已删除，只在老用户盘上留着）：
 ///   `<主库名>[-wal|-shm].bak.v<旧schema>.<毫秒戳>`；
 /// - `backup_service` 的导入前快照：`<主库名>.pre-restore.bak`
-///   / `<主库名>.pre-merge.bak`。
+///   / `<主库名>.pre-merge.bak`；覆盖导入成功后保留的覆盖前快照
+///   [databasePreOverwriteSnapshotFileName]（没有持有它的恢复流程，可随时删）。
 /// - 「检查数据库」动手前的备份：`<主库名>.check-bak-<毫秒戳>.db`
 ///   （[databaseCheckBackupFileName]）。
 ///
@@ -550,7 +551,18 @@ final RegExp _kLegacyDowngradeBakSuffix = RegExp(r'^\.bak\.v\d+\.\d+$');
 const List<String> _kImportBakSuffixes = <String>[
   '.pre-restore.bak',
   '.pre-merge.bak',
+  _kPreOverwriteSnapshotSuffix,
 ];
+
+const String _kPreOverwriteSnapshotSuffix = '.pre-overwrite.bak';
+
+/// 覆盖导入**成功后**保留的「覆盖前」整库快照（BUG-4701）：覆盖导入动手前的
+/// `pre-restore.bak` 在成功后改名成它，只留最近一份（下一次覆盖导入成功时替换）。
+/// 存储页「数据库备份快照」条目列出它、可删；备份页「从覆盖导入前的快照恢复书库」
+/// 从它只补缺合并书库行。不在 [_kSnapshotOwnerSidecar] 里——没有任何启动恢复流程
+/// 依赖它，删掉只是放弃这次恢复机会。
+const String databasePreOverwriteSnapshotFileName =
+    '$fushiDatabaseFileName$_kPreOverwriteSnapshotSuffix';
 
 /// 层 (b) 的所有权表：**快照文件名 → 持有它的恢复流程标记文件名**。真相源是
 /// `backup_service`（`_preserveSidecar` / `_mergeSidecar` 与 `recoverPendingRestore`

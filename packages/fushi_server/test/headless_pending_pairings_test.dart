@@ -14,6 +14,7 @@ import 'package:fushi_server/src/server_prefs.dart';
 import 'package:path/path.dart' as p;
 import 'package:shelf/shelf.dart' as shelf;
 import 'package:test/test.dart';
+import 'support/fake_rwkv.dart';
 
 /// 无头端待输入 PIN 按会话持有：两台设备先后发起要 PIN 的配对，第一台的 PIN 不被
 /// 第二台覆盖；某个会话 confirm 后只收起它自己那条（修复前是全局单槽，后来者覆盖、
@@ -44,6 +45,7 @@ void main() {
     final ServerPaths paths = ServerPaths(config.dataDir);
     await paths.ensureLayout();
     host = HeadlessHost(
+      srsRwkvHttpClient: noNetworkHttpClient,
       config: config,
       paths: paths,
       db: db,
