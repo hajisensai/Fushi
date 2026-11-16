@@ -78,7 +78,7 @@ void main() {
 
   test('_scheduleDictPathsAsync (async rebuild) skips hidden dictionaries when '
       'collecting freq/pitch paths', () {
-    final String body = bodyOf('Future<void> _scheduleDictPathsAsync(');
+    final String body = bodyOf('Future<bool> _scheduleDictPathsAsync(');
     expect(
       body.contains('isHidden'),
       isTrue,

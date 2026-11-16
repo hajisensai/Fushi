@@ -985,6 +985,12 @@ class AppModel
     }
   }
 
+  /// Test seam：注入词典资源目录（测试走真实的词典引擎排期路径时用，目录下按词典名建子目录）。
+  @visibleForTesting
+  void wireDictionaryResourceDirectoryForTesting(Directory directory) {
+    _dictionaryResourceDirectory = directory;
+  }
+
   /// Test seam：注入已 `loadFromDb` 的偏好仓库（只接了数据库的页面测试要读 / 改偏好时用）。
   @visibleForTesting
   void wirePreferencesForTesting(PreferencesRepository prefsRepo) {
@@ -3558,6 +3564,11 @@ class AppModel
         .toSet();
   }
 
+  /// 弹窗呈现（折叠 / 展开）该看的词典列表：打开的作品带着作品级配置时是那份配置的视图，
+  /// 否则是激活配置（与 [hiddenDictionaryNames] 同一口径，反馈 r9SgiayKxa）。
+  List<Dictionary> get lookupViewDictionaries =>
+      WorkProfileScope.instance.lookupView?.dictionaries ?? dictionaries;
+
   bool _dictSourceBackfillStarted = false;
 
   /// 本进程已经探过类型的词典目录（探测结果的落库是 unawaited，写回之前
@@ -3799,20 +3810,74 @@ class AppModel
         ),
       );
     }
+    // 排期而不是就地重建：这个回调挂在**每一次**词典元数据写入上（导入每本、
+    // 类型自愈每本、隐藏/折叠/语言开关），就地重建会把总代价推成 O(N²)。真正的
+    // 装载推迟到下次要用引擎时，批量写入期间的 N 次排期塌成 1 次装载。
     final b = bucketDictPaths(entries);
     dictRepo.noteEngineTermDictionaries(<String>[
       for (final String p in b.term) path.basename(p),
     ]);
-    // 排期而不是就地重建：这个回调挂在**每一次**词典元数据写入上（导入每本、
-    // 类型自愈每本、隐藏/折叠/语言开关），就地重建会把总代价推成 O(N²)。真正的
-    // 装载推迟到下次要用引擎时，批量写入期间的 N 次排期塌成 1 次装载。
     FushiDicts.scheduleTyped(
       termPaths: b.term,
       freqPaths: b.freq,
       pitchPaths: b.pitch,
       kanjiPaths: b.kanji,
     );
+    _lastScheduledDictBuckets = b;
   }
+
+  /// 最近一次排期给引擎的分桶结果（两条装载路径排期时都记下）。
+  ///
+  /// 只服务「查词视图换了」这一种重排（[_rescheduleDictsForLookupView]）：作品会话进出、
+  /// `:popup` 进程镜像会话每次换新对象都会触发它，装载集合多半没变（作品配置开着的词典
+  /// 常是激活配置的子集），没变就不该把整套词典卸了重装。元数据写入路径不比较——同名
+  /// 词典重导入后路径不变、字节变了，必须照样重装（BUG-171）。
+  ({
+    List<String> term,
+    List<String> freq,
+    List<String> pitch,
+    List<String> kanji,
+  })?
+  _lastScheduledDictBuckets;
+
+  /// [b] 与 [_lastScheduledDictBuckets] 逐桶相同（同序同路径）。
+  bool _sameAsLastScheduledDictBuckets(
+    ({
+      List<String> term,
+      List<String> freq,
+      List<String> pitch,
+      List<String> kanji,
+    })
+    b,
+  ) {
+    final last = _lastScheduledDictBuckets;
+    return last != null &&
+        _samePaths(last.term, b.term) &&
+        _samePaths(last.freq, b.freq) &&
+        _samePaths(last.pitch, b.pitch) &&
+        _samePaths(last.kanji, b.kanji);
+  }
+
+  static bool _samePaths(List<String> a, List<String> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+
+  /// 查词视图换了一份（作品会话装上 / 撤下 / 弹窗进程镜像了新会话）后的引擎重排：
+  /// 装载集合（激活配置 ∪ 作品会话视图）与上次排期相同就什么都不做（返回 false）；
+  /// 变了就走异步排期（物化探测同启动路径），返回 true，由调用方分批让出地装载
+  /// （[FushiDicts.loadPendingAsync]）——不能用同步排期把整套重装推给下一次查词，
+  /// 那会在 UI isolate 上一口气装完全部词典（反馈 r9SgiayKxa 修复的审查意见）。
+  Future<bool> _rescheduleDictsForLookupView() =>
+      _scheduleDictPathsAsync(onlyIfChanged: true);
+
+  /// 测试观察点：[_rescheduleDictsForLookupView]（只排期，不装载）。
+  @visibleForTesting
+  Future<bool> debugRescheduleDictsForLookupViewForTest() =>
+      _rescheduleDictsForLookupView();
 
   /// BUG-2504 不变式「同步 FFI 装载只碰已物化的字节」对**两条**装载路径都成立。
   /// [_rebuildDictPathsCacheAsync] 经 [_dictResources] 探；同步的
@@ -4011,7 +4076,10 @@ class AppModel
   /// 套 12s 看门狗；装载本身（[FushiDicts.loadPendingAsync]）每本之间让出、耗时随
   /// 词典数线性增长，不是挂死，套看门狗只会把「词典多、盘慢」误判成启动失败
   /// （BUG-4510：121 本词典、8s 物化预算之后只剩 4s 给装载，启动直接进错误屏）。
-  Future<void> _scheduleDictPathsAsync() async {
+  ///
+  /// 返回是否真的排了期：[onlyIfChanged] 为真且分桶结果与上次排期相同
+  /// （[_sameAsLastScheduledDictBuckets]）时不排期，返回 false。
+  Future<bool> _scheduleDictPathsAsync({bool onlyIfChanged = false}) async {
     await _ensureDictIndexCacheDirectory();
     final dictList = dictRepo.dictionaries;
     final List<String> paths = <String>[
@@ -4068,6 +4136,7 @@ class AppModel
         ),
     ];
     final b = bucketDictPaths(entries);
+    if (onlyIfChanged && _sameAsLastScheduledDictBuckets(b)) return false;
     dictRepo.noteEngineTermDictionaries(<String>[
       for (final String p in b.term) path.basename(p),
     ]);
@@ -4077,6 +4146,8 @@ class AppModel
       pitchPaths: b.pitch,
       kanjiPaths: b.kanji,
     );
+    _lastScheduledDictBuckets = b;
+    return true;
   }
 
   List<DictionarySearchResult> get dictionaryHistory =>
@@ -10221,8 +10292,8 @@ class AppModel
             filtersOverride ??
             profileView?.lookupFilters ??
             dictRepo.lookupFilters;
-        // 去重名单 = 本机这次**真能查出来**的词典：引擎术语桶里的（激活配置开着、
-        // 目录在且已物化，[DictionaryRepository.engineTermDictionaryNames]）∩ 这次
+        // 去重名单 = 本机这次**真能查出来**的词典：引擎术语桶里的（激活配置或当前作品
+        // 会话视图开着、目录在且已物化，[DictionaryRepository.engineTermDictionaryNames]）∩ 这次
         // 查词视图开着的。只按视图开关算会把「工作配置开着、激活配置关着」或目录
         // 缺失 / 未物化的词典也当成本机已有，服务器那份被去重丢掉，整本消失。
         final Set<String> engineNames = dictRepo.engineTermDictionaryNames;
@@ -11137,22 +11208,25 @@ class AppModel
     await ReaderFushiSource.instance.refreshPreferencesFromDb();
     await ReaderFushiSource.readerSettings?.refreshFromDb();
     prefsRepo.notifyWorkProfileScopeChanged();
-    // 查词视图换了一份：引擎装载集合（激活配置 ∪ 作品会话视图）跟着重排期，否则作品配置
-    // 开着、激活配置关着的词典不在引擎里，作品里一个词都查不到（反馈 r9SgiayKxa）。
-    // 弹窗进程也有自己的引擎，同样要重排。按旧装载集合算出的查词结果一并作废（与词典
-    // 开关切换走 `_onCacheRebuild` 清缓存同口径）。
-    if (_dictionaryRepoReady) {
-      _rebuildDictPathsCache();
-      dictRepo.clearDictionaryResultsCache();
-    }
     // 主题键（[ThemeNotifier.isProfileThemePrefKey]）的生效值换了一份：重建主题。
     themeNotifier.onWorkProfileScopeChanged();
     // 弹窗进程不承载 App 界面字体 / 有声书悬浮字幕（那些只在主进程里装配）。
-    if (_isDictionaryPopupProcess) return;
-    // 字体随作品配置走：界面 / 视频字幕 / 游戏文本 / 复习卡面的字体链按新会话重新解析。
-    await refreshAppFont();
-    if (audiobookSession.isActive && showFloatingLyric) {
-      await audiobookSession.applyFloatingLyricStyle();
+    if (!_isDictionaryPopupProcess) {
+      // 字体随作品配置走：界面 / 视频字幕 / 游戏文本 / 复习卡面的字体链按新会话重新解析。
+      await refreshAppFont();
+      if (audiobookSession.isActive && showFloatingLyric) {
+        await audiobookSession.applyFloatingLyricStyle();
+      }
+    }
+    // 查词视图换了一份：引擎装载集合（激活配置 ∪ 作品会话视图）跟着重排，否则作品配置
+    // 开着、激活配置关着的词典不在引擎里，作品里一个词都查不到（反馈 r9SgiayKxa）。
+    // 弹窗进程也有自己的引擎，同样要重排。装载集合没变（多数情况：作品配置开着的是激活
+    // 配置的子集；弹窗进程每次镜像会话写入）就不动引擎、不清缓存（查词缓存键带视图命名空间）。
+    // 变了就在这里分批让出地装完，不把同步全量装载推给下一次查词；按旧集合算出的结果
+    // 装完后一并作废（与词典开关切换走 `_onCacheRebuild` 清缓存同口径）。
+    if (_dictionaryRepoReady && await _rescheduleDictsForLookupView()) {
+      await FushiDicts.loadPendingAsync();
+      dictRepo.clearDictionaryResultsCache();
     }
   }
 
