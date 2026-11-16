@@ -512,14 +512,7 @@ impl AdblockCore {
         match outcome {
             Ok(Some((key, loaded))) => {
                 if let Some((engine, from_cache)) = loaded {
-                    if let Ok(mut slot) = self.engine.write() {
-                        *slot = Some(Arc::new(LoadedEngine { engine }));
-                    }
-                    if let Ok(mut ex) = self.exceptions.lock() {
-                        ex.clear();
-                    }
-                    st.from_cache = from_cache;
-                    st.built_at = Some(now);
+                    self.install_engine(&mut st, engine, from_cache, now);
                 }
                 st.engine_key = Some(key);
                 st.status = EngineStatus::Ready;
@@ -566,6 +559,68 @@ impl AdblockCore {
         st.syncing = false;
         st.sync_planned.clear();
         self.persist(&st);
+        self.snapshot_locked(&st)
+    }
+
+    /// 把新引擎换进热路径（旧的 cosmetic 例外缓存随之作废）。
+    fn install_engine(&self, st: &mut CoreState, engine: Engine, from_cache: bool, now: i64) {
+        if let Ok(mut slot) = self.engine.write() {
+            *slot = Some(Arc::new(LoadedEngine { engine }));
+        }
+        if let Ok(mut ex) = self.exceptions.lock() {
+            ex.clear();
+        }
+        st.from_cache = from_cache;
+        st.built_at = Some(now);
+    }
+
+    /// 暖机：把**磁盘上现有缓存**对应的引擎装进内存（反序列化 `.dat`，没有就按缓存的列表原文
+    /// 编译），**不联网**。打开核心时引擎是空的，而联网刷新过期列表要几秒：不先暖机，这几秒里
+    /// 打开的页面整页不拦（逐请求放行、documentStart 的 cosmetic 取到空）。Dart 侧在
+    /// [`Self::begin_sync`] 之前、后台 isolate 里调；之后的同步只在列表内容变了时才换引擎。
+    ///
+    /// 总开关关 / 已有同步在跑 / 一份可用缓存都没有 / 引擎已是这把键时什么也不做。
+    /// **慢**（反序列化几 MB）。返回最新快照。
+    pub fn load_cached(&self) -> Value {
+        let (key, present) = {
+            let mut st = self.lock();
+            if !st.persisted.enabled || st.syncing {
+                return self.snapshot_locked(&st);
+            }
+            let Some((key, present)) = self.engine_key(&st) else {
+                return self.snapshot_locked(&st);
+            };
+            let loaded = st.engine_key.as_deref() == Some(key.as_str())
+                && self.engine.read().map(|e| e.is_some()).unwrap_or(false);
+            if loaded {
+                return self.snapshot_locked(&st);
+            }
+            // 借用同步互斥：暖机期间 begin_sync 不会并发改引擎。
+            st.syncing = true;
+            st.status = EngineStatus::Loading;
+            (key, present)
+        };
+        let outcome = self.load_engine_isolated(&key, &present);
+        let now = (self.clock)();
+        let mut st = self.lock();
+        match outcome {
+            Ok((engine, from_cache)) => {
+                self.install_engine(&mut st, engine, from_cache, now);
+                st.engine_key = Some(key);
+                st.status = EngineStatus::Ready;
+                st.error = None;
+            }
+            Err(e) => {
+                let has_engine = self.engine.read().map(|e| e.is_some()).unwrap_or(false);
+                st.status = if has_engine {
+                    EngineStatus::Ready
+                } else {
+                    EngineStatus::Failed
+                };
+                st.error = Some(e);
+            }
+        }
+        st.syncing = false;
         self.snapshot_locked(&st)
     }
 

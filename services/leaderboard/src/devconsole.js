@@ -913,7 +913,9 @@ export async function routeDevConsole(request, env, url, now, ctx, ip) {
   if (method === 'GET' && path === '/dev/decisions') {
     const stage = decisionStageParam(url.searchParams.get('stage'));
     const [rows, sig] = await Promise.all([listDecisions(env), decisionsSig(env)]);
-    return html(layout('拍板台', renderDecisions(rows, stage, { sig, script: DECISIONS_SCRIPT_URL }), { signedIn: true }),
+    return html(layout('拍板台', renderDecisions(rows, stage, {
+      sig, script: DECISIONS_SCRIPT_URL, conflict: url.searchParams.get('conflict') === '1',
+    }), { signedIn: true }),
       200, { 'Content-Security-Policy': DECISIONS_CSP });
   }
   if (method === 'GET' && path === '/dev/decisions.json') {
@@ -931,11 +933,23 @@ export async function routeDevConsole(request, env, url, now, ctx, ip) {
   }
   if (method === 'POST' && (m = /^\/dev\/d\/([A-Za-z0-9_-]{1,40})$/.exec(path))) {
     const form = await readForm(request, formLimit(DECISION_LIMITS.noteMax));
-    await submitDecision(env, dev, m[1], { v: form.get('v') || 'note', text: form.get('text') || '' }, now);
-    if ((request.headers.get('Accept') || '').includes('application/json')) {
-      const [row, sig] = await Promise.all([getDecision(env, m[1]), decisionsSig(env)]);
-      return json({ item: decisionItem(row), sig }, 200, { 'Cache-Control': 'no-store' });
+    const wantsJson = (request.headers.get('Accept') || '').includes('application/json');
+    let conflict = false;
+    try {
+      await submitDecision(env, dev, m[1], {
+        v: form.get('v') || 'note', text: form.get('text') || '', base: form.has('base') ? form.get('base') : null,
+      }, now);
+    } catch (e) {
+      if (!(e instanceof HttpError) || e.code !== 'verdict_conflict') throw e;
+      conflict = true;
     }
+    if (wantsJson) {
+      // 冲突时也回最新的卡：页面换上别人刚拍的结果，留言草稿留在框里。
+      const [row, sig] = await Promise.all([getDecision(env, m[1]), decisionsSig(env)]);
+      return json({ ...(conflict ? { error: 'verdict_conflict' } : {}), item: decisionItem(row), sig },
+        conflict ? 409 : 200, { 'Cache-Control': 'no-store' });
+    }
+    if (conflict) return redirect(`/dev/decisions?stage=all&conflict=1#d-${m[1]}`);
     // 回到原来那一栏、定位到这条（拍完它可能已离开当前栏，锚点找不到就停在栏顶）。
     return redirect(`/dev/decisions?stage=${decisionStageParam(form.get('back'))}#d-${m[1]}`);
   }
