@@ -3,14 +3,17 @@
 /// 只用小模型（331,511 参数，int4 状态每卡约 2.9 KB）：SM40 在真实复习记录上已比上游大模型
 /// （2,762,884 参数，int8 状态每卡约 25.7 KB）还略准，大模型已移除（2026-10-21）；2026-10-27
 /// 换成同架构重训的 SM56（新权重，旧快照按权重指纹被拒、自动全量重放一次）。权重不随包，
-/// 用户启用时从作者的 GitHub release 下载；钉 URL + 字节数 + SHA-256（作者可以替换同名资产，所以
-/// 只认哈希），与 native/fushi_rwkv/fetch_model.* 同源。
+/// 用户启用时从 Fushi 自家镜像（hajisensai/Fushi release `rwkv-models`）直接下载 int8 权重；
+/// 钉 URL + 字节数 + SHA-256，只认哈希。
+///
+/// 3.3.x 热修：以前下载作者 release 里的 `sm56-package.zip` 再解压，作者重新打包了同名资产
+/// （字节数 5581795 → 4136639，里面的 `sm56/weights.int8.bin` 哈希没变），钉死的包大小 / 哈希
+/// 对不上，所有用户启用 RWKV 都失败。镜像上的权重与包内那份逐字节相同。
 library;
 
 import 'dart:async';
 import 'dart:io';
 
-import 'package:archive/archive.dart';
 import 'package:crypto/crypto.dart';
 import 'package:fushi_asr_core/asr_core.dart';
 import 'package:path/path.dart' as p;
@@ -33,28 +36,28 @@ class SrsRwkvModelFile implements DownloadableModelFile {
   final String sha256;
 }
 
-/// 小模型发布包（JSchoreels/anki-rwkv release small-model-sm56-2026-10-24，与 fushi_rwkv
-/// `SMALL_MODEL_PACKAGE_SHA256` 一致）。
-const SrsRwkvModelFile kSrsRwkvSmallPackage = SrsRwkvModelFile(
-  fileName: 'sm56-package.zip',
-  url:
-      'https://github.com/JSchoreels/anki-rwkv/releases/download/small-model-sm56-2026-10-24/sm56-package.zip',
-  expectedBytes: 5581795,
-  sha256: '7b1790f49fdabf1279510247cc9bc3bf3ac461b67cf0135ab8e51589b5efe71a',
-);
-
-/// 从小模型包里解出来用的 int8 权重（包内 `manifest.json` 记的哈希）。
-const String kSrsRwkvSmallWeightsEntry = 'sm56/weights.int8.bin';
+/// 小模型 SM56 的 int8 权重（作者 release small-model-sm56-2026-10-24 包内
+/// `sm56/weights.int8.bin`，与 fushi_rwkv 加载的权重同一份）。
 const String kSrsRwkvSmallWeightsName = 'sm56_weights.int8.bin';
 const int kSrsRwkvSmallWeightsBytes = 436391;
 const String kSrsRwkvSmallWeightsSha256 =
     '479b3e2bc6a1c900ba8a4a45d629965c6df2a20cc8ff294583f5aeaeea3b4fdd';
 
-/// 以前下载过、现在不再用的权重文件名（[SrsRwkvModels.deleteRetired] 清理用）：已移除的大模型
-/// （约 11 MB），以及被 SM56 取代的 SM40 小模型权重。
+/// 权重在 Fushi 镜像上的下载地址（资产名前缀是 SHA-256 的前 16 位）。
+const SrsRwkvModelFile kSrsRwkvSmallWeights = SrsRwkvModelFile(
+  fileName: kSrsRwkvSmallWeightsName,
+  url:
+      'https://github.com/hajisensai/Fushi/releases/download/rwkv-models/479b3e2bc6a1c900-sm56-weights.int8.bin',
+  expectedBytes: kSrsRwkvSmallWeightsBytes,
+  sha256: kSrsRwkvSmallWeightsSha256,
+);
+
+/// 以前下载过、现在不再用的文件（[SrsRwkvModels.deleteRetired] 清理用）：已移除的大模型
+/// （约 11 MB）、被 SM56 取代的 SM40 小模型权重，以及旧下载路径留下的 SM56 发布包。
 const List<String> kSrsRwkvRetiredWeightsNames = <String>[
   'RWKV_trained_on_5000_10000.bin',
   'sm40_weights.int8.bin',
+  'sm56-package.zip',
 ];
 
 /// 下载或校验失败。
@@ -88,46 +91,34 @@ class SrsRwkvModels {
         marker.readAsStringSync().trim() == kSrsRwkvSmallWeightsSha256;
   }
 
-  /// 下载（断点续传 / 代理 / 换源见 [ModelFileDownloader]）并校验 SHA-256，再从包里解出 int8
-  /// 权重并校验。已就绪时立即结束。哈希不符删掉文件抛 [SrsRwkvModelException]。
+  /// 下载（断点续传 / 代理 / 换源见 [ModelFileDownloader]）int8 权重并校验 SHA-256。已就绪时
+  /// 立即结束。哈希不符删掉文件抛 [SrsRwkvModelException]。
   Stream<ModelDownloadEvent> download() async* {
     if (isReady) return;
     dir.createSync(recursive: true);
-    const SrsRwkvModelFile file = kSrsRwkvSmallPackage;
-    final File downloaded = File(p.join(dir.path, file.fileName));
+    const SrsRwkvModelFile file = kSrsRwkvSmallWeights;
+    final File weights = weightsFile;
     yield* ModelFileDownloader(createClient: _createClient).downloadAll(
       files: <DownloadableModelFile>[file],
       targetDir: dir,
       isReady: (File f) =>
           f.existsSync() && f.lengthSync() == file.expectedBytes,
     );
-    final List<int> bytes = await downloaded.readAsBytes();
-    if (sha256.convert(bytes).toString() != file.sha256) {
-      await downloaded.delete();
-      throw SrsRwkvModelException(
-        '${file.fileName}: SHA-256 mismatch (download corrupted or replaced)',
-      );
-    }
-    final ArchiveFile? entry = ZipDecoder()
-        .decodeBytes(bytes)
-        .findFile(kSrsRwkvSmallWeightsEntry);
-    if (entry == null) {
+    await verifyDownloadedWeights(weights);
+  }
+
+  /// 校验下载落地的 [weights]：哈希对得上写校验标记；对不上删掉文件（下次重下）并抛
+  /// [SrsRwkvModelException]。
+  static Future<void> verifyDownloadedWeights(File weights) async {
+    final List<int> bytes = await weights.readAsBytes();
+    if (sha256.convert(bytes).toString() != kSrsRwkvSmallWeightsSha256) {
+      await weights.delete();
       throw const SrsRwkvModelException(
-        'small model package lacks $kSrsRwkvSmallWeightsEntry',
+        '$kSrsRwkvSmallWeightsName: SHA-256 mismatch (download corrupted or replaced)',
       );
     }
-    final List<int> content = entry.content as List<int>;
-    if (sha256.convert(content).toString() != kSrsRwkvSmallWeightsSha256) {
-      throw const SrsRwkvModelException(
-        '$kSrsRwkvSmallWeightsName: SHA-256 mismatch',
-      );
-    }
-    final File weights = weightsFile;
-    await weights.writeAsBytes(content, flush: true);
-    // 包里还有测试向量与 PyTorch 检查点，运行时用不到。
-    await downloaded.delete();
-    await _marker(
-      weights,
+    await File(
+      '${weights.path}.verified',
     ).writeAsString(kSrsRwkvSmallWeightsSha256, flush: true);
   }
 
