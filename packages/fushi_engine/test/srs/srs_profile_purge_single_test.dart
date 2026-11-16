@@ -5,7 +5,7 @@
 // 残留按表现查：表清单现查 sqlite_master，不手抄。
 import 'dart:async';
 
-import 'package:drift/drift.dart' show QueryRow, Variable, driftRuntimeOptions;
+import 'package:drift/drift.dart' show Variable, driftRuntimeOptions;
 import 'package:drift/native.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_backup_merge.dart';
@@ -15,21 +15,23 @@ import 'package:fushi_engine/srs/srs_profile_link.dart';
 import 'package:fushi_engine/srs/srs_profile_merge.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
+import 'package:fushi_srs/fushi_srs.dart' show SrsCore;
 import 'package:test/test.dart';
 
 import 'support/srs_fake_engine.dart';
 import 'support/srs_sync2_peers.dart';
 import 'support/srs_test_storage.dart';
+import 'support/srs_raw_sql.dart';
 
 /// 目标 uid（并入 / 采用的去处）。
 const String _kNewUid = '0193a1b2-0000-7000-8000-00000000cafe';
 
 /// [uid] 在 [db] 里的残留：每张带 `profile_uid` 列的表的行数、按 profile 记的 `srs_meta` 键数（`…/<uid>` 或
 /// `…/<uid>/…`）。只列非零项。
-Future<Map<String, int>> _residue(SrsDatabase db, String uid) async {
+Future<Map<String, int>> _residue(SrsCore db, String uid) async {
   final Map<String, int> out = <String, int>{};
   final List<String> tables = <String>[
-    for (final QueryRow r
+    for (final SrsRawRow r
         in await db
             .customSelect(
               "SELECT m.name AS n FROM sqlite_master m WHERE m.type = 'table' "
@@ -54,7 +56,7 @@ Future<Map<String, int>> _residue(SrsDatabase db, String uid) async {
     if (n > 0) out[t] = n;
   }
   final List<String> keys = <String>[
-    for (final QueryRow r
+    for (final SrsRawRow r
         in await db
             .customSelect(
               'SELECT key FROM srs_meta WHERE key LIKE ? OR key LIKE ?',
@@ -71,7 +73,7 @@ Future<Map<String, int>> _residue(SrsDatabase db, String uid) async {
 }
 
 /// 没有任何操作引用的因果上下文行数。
-Future<int> _unreferencedDeps(SrsDatabase db) async =>
+Future<int> _unreferencedDeps(SrsCore db) async =>
     (await db
             .customSelect(
               'SELECT COUNT(*) AS c FROM sync2_deps '
@@ -100,7 +102,6 @@ void main() {
   });
 
   Future<SrsDbStore> open(String uid) => SrsDbStore.open(
-    db: srs.db,
     core: srs.core,
     profileUid: uid,
     deviceId: 'devA',
@@ -120,12 +121,11 @@ void main() {
     await addNote(s, '風');
     // 发布过：同步留下的位置进度、按 profile 的 meta 键都要一起删。
     expect((await srsSyncOnce(s, SrsMemoryLocationStore())).error, isNull);
-    expect(await _residue(srs.db, oldUid), isNotEmpty);
-    final int depsBefore = await _unreferencedDeps(srs.db);
+    expect(await _residue(srs.core, oldUid), isNotEmpty);
+    final int depsBefore = await _unreferencedDeps(srs.core);
 
     await srsMergeProfileUid(
       main,
-      srs.db,
       core: srs.core,
       profileId: profileId,
       oldUid: oldUid,
@@ -134,17 +134,17 @@ void main() {
     );
 
     expect(await main.profileUidOf(profileId), _kNewUid);
-    expect(await _residue(srs.db, oldUid), isEmpty);
-    expect(await _unreferencedDeps(srs.db), lessThanOrEqualTo(depsBefore));
-    expect(await _residue(srs.db, _kNewUid), isNotEmpty, reason: '并入的数据在');
+    expect(await _residue(srs.core, oldUid), isEmpty);
+    expect(await _unreferencedDeps(srs.core), lessThanOrEqualTo(depsBefore));
+    expect(await _residue(srs.core, _kNewUid), isNotEmpty, reason: '并入的数据在');
   });
 
   test('采用：旧 uid 的 srs_* / sync2_* 行与 meta 键全删，主库改用新 uid', () async {
     // 只打开过（内置牌组 / 笔记类型经本机写入落成操作）、没有用户笔记、没发布过：可以直接采用。
     await open(oldUid);
-    expect(await _residue(srs.db, oldUid), contains('sync2_ops'));
+    expect(await _residue(srs.core, oldUid), contains('sync2_ops'));
     expect(await srsCanAdoptProfileUid(srs, oldUid), isTrue);
-    final int depsBefore = await _unreferencedDeps(srs.db);
+    final int depsBefore = await _unreferencedDeps(srs.core);
 
     await srsAdoptProfileUid(
       main,
@@ -155,8 +155,8 @@ void main() {
     );
 
     expect(await main.profileUidOf(profileId), _kNewUid);
-    expect(await _residue(srs.db, oldUid), isEmpty);
-    expect(await _unreferencedDeps(srs.db), lessThanOrEqualTo(depsBefore));
+    expect(await _residue(srs.core, oldUid), isEmpty);
+    expect(await _unreferencedDeps(srs.core), lessThanOrEqualTo(depsBefore));
   });
 
   // 采用删旧 uid（srs_profile_link.dart `_switchUid`）在旧副本的最后一段独占区里跑、之后副本作废
@@ -187,7 +187,7 @@ void main() {
     // 给不排队的实现充分的机会先删（排队的实现无论等多久都不会先删）。
     await Future<void>.delayed(const Duration(milliseconds: 300));
     expect(order, isEmpty);
-    expect(await _residue(srs.db, oldUid), isNotEmpty, reason: '在途写入还没做完就删了');
+    expect(await _residue(srs.core, oldUid), isNotEmpty, reason: '在途写入还没做完就删了');
     expect(await main.profileUidOf(profileId), oldUid);
     release.complete();
     await inFlight;
@@ -208,11 +208,11 @@ void main() {
       ),
     );
     expect(
-      await _residue(srs.db, oldUid),
+      await _residue(srs.core, oldUid),
       isEmpty,
       reason: '迟到的写入把行写回了已删的 uid',
     );
-    expect(await _residue(srs.db, _kNewUid), isNotEmpty);
+    expect(await _residue(srs.core, _kNewUid), isNotEmpty);
   });
 
   // 采用后重开的新副本没法用（这里让它的重建失败）→ 回退删新 uid。新 uid 的副本活着：删除在它的最后一段独占区
@@ -243,7 +243,7 @@ void main() {
         return open(await main.profileUidOf(profileId));
       },
     );
-    expect(await _residue(srs.db, _kNewUid), isEmpty);
+    expect(await _residue(srs.core, _kNewUid), isEmpty);
 
     await expectLater(
       linker.adopt(old, _kNewUid),
@@ -254,7 +254,7 @@ void main() {
 
     expect(reopens, 2);
     expect(await main.profileUidOf(profileId), oldUid, reason: '回到原 uid');
-    expect(await _residue(srs.db, _kNewUid), isEmpty);
+    expect(await _residue(srs.core, _kNewUid), isEmpty);
     expect(fresh!.isUsable, isFalse);
     await expectLater(
       addNote(fresh!, '迟到'),
@@ -266,7 +266,11 @@ void main() {
         ),
       ),
     );
-    expect(await _residue(srs.db, _kNewUid), isEmpty);
-    expect(await _residue(srs.db, oldUid), isNotEmpty, reason: '原 uid 重开后内置行在');
+    expect(await _residue(srs.core, _kNewUid), isEmpty);
+    expect(
+      await _residue(srs.core, oldUid),
+      isNotEmpty,
+      reason: '原 uid 重开后内置行在',
+    );
   });
 }
