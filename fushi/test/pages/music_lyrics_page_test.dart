@@ -143,6 +143,8 @@ class _LyricsAppModel extends AppModel {
   }) : super(testPlatformServices()) {
     wireLocalAudioForTesting(prefsRepo: prefs, databaseDirectory: dir);
     wireDatabaseForTesting(db);
+    // 同正式 initialise：偏好变了经 AppModel 转发，watch appProvider 的页面跟着重建。
+    prefs.addListener(notifyListeners);
   }
 
   final FushiDatabase db;
