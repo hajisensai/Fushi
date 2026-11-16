@@ -3,7 +3,7 @@
 // 都问它，不散写 Platform.isXxx。
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/srs/sync2/srs_gen4_rehearsal.dart';
 
 void main() {
