@@ -103,7 +103,7 @@ native lib 目录、macOS `Contents/Frameworks`、Linux `bundle/lib/`）；iOS �
 - **缺库 = 能力不可用，不是构建失败**：五端都是「prebuilt 有则随包」，没装 Rust 的机器照常出包。
 - 构建脚本只断言文件存在；`verify_abi.sh <二进制> [nm]` 按 Dart 绑定里 lookup 的 `ffsrs_*`
   名逐个核对导出表（ELF `.so` / Mach-O dylib 与可执行文件 / ar 静态库）。
-- `target/`、`prebuilt/` 不入库。访问 crates.io / GitHub（fsrs-rs 是钉 rev 的 git 依赖）不稳时设
+- `target/`、`prebuilt/` 不入库。访问 crates.io（fsrs-rs 是 `=7.0.0` 精确钉版本的 crates.io 依赖）不稳时设
   `CARGO_HTTP_PROXY`。
 - **带 ID 审计的本机库（只给调试构建与测试宿主）**：cargo feature `id_audit`（`src/store/ids.rs` `audit`）让 Dart
   经桥执行的 SQL 里漏写 `srs_id(?)` 的那条语句直接报 `id audit: …`（普通构建里只是静默查不到行）。桌面三端的
