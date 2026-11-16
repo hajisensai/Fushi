@@ -199,6 +199,12 @@ typedef _AddDictNative =
     Void Function(Pointer<Void> handle, Pointer<Utf8> path);
 typedef _AddDictDart = void Function(Pointer<Void> handle, Pointer<Utf8> path);
 
+typedef _PrepareUnionFilterNative =
+    Void Function(Pointer<Void> handle, Pointer<Utf8> cacheDir, Int32 wait);
+typedef _PrepareUnionFilterDart =
+    void Function(Pointer<Void> handle, Pointer<Utf8> cacheDir, int wait);
+typedef _UnionFilterStateDart = int Function(Pointer<Void> handle);
+
 typedef _LoadTransformsDart =
     void Function(Pointer<Void> handle, Pointer<Utf8> json);
 
@@ -385,6 +391,14 @@ class FushidictsFfiBindings {
     addKanjiDict = _lib.lookupFunction<_AddDictNative, _AddDictDart>(
       'fushidicts_add_kanji_dict',
     );
+    prepareUnionFilter = _lib
+        .lookupFunction<_PrepareUnionFilterNative, _PrepareUnionFilterDart>(
+          'fushidicts_prepare_union_filter',
+        );
+    unionFilterState = _lib
+        .lookupFunction<Int32 Function(Pointer<Void>), _UnionFilterStateDart>(
+          'fushidicts_union_filter_state',
+        );
     loadTransforms = _lib
         .lookupFunction<
           Void Function(Pointer<Void>, Pointer<Utf8>),
@@ -546,6 +560,13 @@ class FushidictsFfiBindings {
   late final _AddDictDart addFreqDict;
   late final _AddDictDart addPitchDict;
   late final _AddDictDart addKanjiDict;
+
+  /// 准备联合过滤器（跨词典的键过滤器，纯加速、不改结果）。`cacheDir` 空串 = 只在
+  /// 内存里建；`wait` 0 = 立刻返回、引擎在自己的后台线程里建。
+  late final _PrepareUnionFilterDart prepareUnionFilter;
+
+  /// 联合过滤器状态：0 没有 / 1 后台构建中 / 2 已就绪。
+  late final _UnionFilterStateDart unionFilterState;
   late final _LoadTransformsDart loadTransforms;
   late final _QueryDart query;
   late final _FreeQueryResultDart freeQueryResult;
