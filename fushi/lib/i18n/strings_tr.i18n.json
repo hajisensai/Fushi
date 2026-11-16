@@ -12789,6 +12789,7 @@
   "video_subtitle_list_search": "Altyazılarda ara",
   "video_subtitle_list_search_empty": "Eşleşen satır yok",
   "video_subtitle_list_search_hint": "Satırları süzmek için yazın",
+  "video_subtitle_list_show_effects": "Efektli altyazıları göster (karaoke sözleri, ekran yazıları)",
   "video_subtitle_list_tap_lookup": "Tap subtitle text to look up (off: tapping only jumps)",
   "video_subtitle_load_failed": "Bu altyazı yüklenemedi (grafik veya desteklenmeyen iz): $label",
   "video_subtitle_mask_edit_hint": "Drag to move, drag corners to resize",

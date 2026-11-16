@@ -12789,6 +12789,7 @@
   "video_subtitle_list_search": "Ondertitels doorzoeken",
   "video_subtitle_list_search_empty": "Geen overeenkomende regel",
   "video_subtitle_list_search_hint": "Typ om regels te filteren",
+  "video_subtitle_list_show_effects": "Effectondertitels tonen (karaoketeksten, schermborden)",
   "video_subtitle_list_tap_lookup": "Tap subtitle text to look up (off: tapping only jumps)",
   "video_subtitle_load_failed": "Kan deze ondertitel niet laden (grafisch of niet-ondersteund spoor): $label",
   "video_subtitle_mask_edit_hint": "Drag to move, drag corners to resize",

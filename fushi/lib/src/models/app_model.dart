@@ -6800,6 +6800,13 @@ class AppModel
   Future<void> setVideoSubtitleListTapLookup(bool value) =>
       prefsRepo.setVideoSubtitleListTapLookup(value);
 
+  /// 视频字幕列表是否列出特效字幕（H7r4mf_z2n，默认 true）。
+  bool get videoSubtitleListShowEffects =>
+      prefsRepo.videoSubtitleListShowEffects;
+
+  Future<void> setVideoSubtitleListShowEffects(bool value) =>
+      prefsRepo.setVideoSubtitleListShowEffects(value);
+
   /// 视频字幕列表上次打开的页签名（xlzGuK5YmD，`VideoSubtitleListFilter.name`）。
   String get videoSubtitleListFilter => prefsRepo.videoSubtitleListFilter;
 

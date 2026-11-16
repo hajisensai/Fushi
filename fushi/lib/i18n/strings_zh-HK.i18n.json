@@ -12789,6 +12789,7 @@
   "video_subtitle_list_search": "搜索字幕",
   "video_subtitle_list_search_empty": "沒有匹配的台詞",
   "video_subtitle_list_search_hint": "輸入以篩選台詞",
+  "video_subtitle_list_show_effects": "顯示特效字幕（歌詞特效、螢幕字）",
   "video_subtitle_list_tap_lookup": "點字幕文字查詞（關閉後點字幕只跳轉）",
   "video_subtitle_load_failed": "無法載入此字幕（可能是圖形或不支援的字幕軌）：$label",
   "video_subtitle_mask_edit_hint": "Drag to move, drag corners to resize",

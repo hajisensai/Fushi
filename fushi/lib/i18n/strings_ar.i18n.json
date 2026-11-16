@@ -12789,6 +12789,7 @@
   "video_subtitle_list_search": "البحث في الترجمات",
   "video_subtitle_list_search_empty": "لا يوجد سطر مطابق",
   "video_subtitle_list_search_hint": "اكتب لتصفية السطور",
+  "video_subtitle_list_show_effects": "إظهار الترجمات ذات المؤثرات (كلمات الكاريوكي، اللافتات على الشاشة)",
   "video_subtitle_list_tap_lookup": "Tap subtitle text to look up (off: tapping only jumps)",
   "video_subtitle_load_failed": "تعذّر تحميل هذه الترجمة (مسار رسومي أو غير مدعوم): $label",
   "video_subtitle_mask_edit_hint": "Drag to move, drag corners to resize",

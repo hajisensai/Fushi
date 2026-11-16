@@ -1104,6 +1104,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // all / favorites），下次打开恢复（反馈 xlzGuK5YmD）。
   'video_subtitle_list_filter',
   'video_subtitle_list_font_scale_index',
+  // bool（默认 true）：字幕列表是否列出特效字幕（歌词特效 / 屏幕字，判据在 Rust
+  // 字幕解析层 Markup::effect）；关掉后列表只剩普通台词（拍板台 H7r4mf_z2n）。
+  'video_subtitle_list_show_effects',
   // bool（默认 true）：字幕列表里点字幕文字是否查词；关掉后点哪里都只跳到该句
   // （手机上列表旁的查词弹窗太扁，多数人只拿列表跳转，群反馈 GbN9MoKDCQ）。
   'video_subtitle_list_tap_lookup',

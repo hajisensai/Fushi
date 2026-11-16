@@ -12789,6 +12789,7 @@
   "video_subtitle_list_search": "Tìm trong phụ đề",
   "video_subtitle_list_search_empty": "Không có dòng nào khớp",
   "video_subtitle_list_search_hint": "Nhập để lọc các dòng",
+  "video_subtitle_list_show_effects": "Hiện phụ đề hiệu ứng (lời karaoke, chữ trên màn hình)",
   "video_subtitle_list_tap_lookup": "Tap subtitle text to look up (off: tapping only jumps)",
   "video_subtitle_load_failed": "Không tải được phụ đề này (bản dạng đồ họa hoặc không hỗ trợ): $label",
   "video_subtitle_mask_edit_hint": "Drag to move, drag corners to resize",
