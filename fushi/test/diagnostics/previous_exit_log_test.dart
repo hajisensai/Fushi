@@ -413,6 +413,9 @@ void main() {
     Future<PreviousExitVerdict?> verdictFor({
       required String lifecycle,
       required List<Map<String, Object?>> reasons,
+      bool clean = false,
+      List<Map<String, Object?>> trims = const <Map<String, Object?>>[],
+      List<Map<String, Object?>> uiEvents = const <Map<String, Object?>>[],
     }) async {
       File('${tmp.path}/session_marker.json').writeAsStringSync(
         jsonEncode(<String, Object?>{
@@ -421,7 +424,7 @@ void main() {
           'version': '3.3.0-debug.23025',
           'lifecycle': lifecycle,
           'lifecycleAt': 4000,
-          'clean': false,
+          'clean': clean,
           'initialised': true,
         }),
       );
@@ -431,6 +434,8 @@ void main() {
             (MethodCall call) async => <String, Object?>{
               'sdk': 34,
               'reasons': reasons,
+              'trims': trims,
+              'uiEvents': uiEvents,
             },
           );
       addTearDown(
@@ -558,6 +563,130 @@ void main() {
       expect(v!.kind, PreviousExitKind.memoryKill);
       expect(v.foreground, isTrue);
       expect(v.worthReporting, isTrue);
+    });
+
+    Map<String, Object?> trim(int pid, int level, int timestamp) =>
+        <String, Object?>{'level': level, 'timestamp': timestamp, 'pid': pid};
+    Map<String, Object?> ui(
+      int pid, {
+      required bool visible,
+      required int at,
+    }) => <String, Object?>{'visible': visible, 'timestamp': at, 'pid': pid};
+
+    // BUG-4718（反馈 gTrf6djABo）：pid 19272 前台服务（125）时被 LOW_MEMORY 杀，会话标记
+    // 是别的进程的（已 clean），对不上；同一 pid 死前 28 分钟已收到 TRIM_MEMORY_BACKGROUND。
+    // 旧判定只看标记 → 对不上按前台 → 弹「低内存闪退」报告。
+    test(
+      'importance=125 + LOW_MEMORY + 标记对不上 + 同 pid 已 trim BACKGROUND → 后台回收',
+      () async {
+        final PreviousExitVerdict? v = await verdictFor(
+          lifecycle: 'detached',
+          clean: true,
+          reasons: <Map<String, Object?>>[
+            record(pid: 19272, importance: 125, reason: 'LOW_MEMORY'),
+          ],
+          trims: <Map<String, Object?>>[trim(19272, 40, 3000)],
+        );
+        expect(v!.kind, PreviousExitKind.memoryKill);
+        expect(v.foreground, isFalse);
+        expect(v.worthReporting, isFalse);
+        expect(v.summary, contains('uiAtDeath=hidden'));
+      },
+    );
+
+    test('trim 之后界面又可见（原生可见性切换更晚）→ 前台内存回收，照样上报', () async {
+      final PreviousExitVerdict? v = await verdictFor(
+        lifecycle: 'detached',
+        clean: true,
+        reasons: <Map<String, Object?>>[
+          record(pid: 19272, importance: 125, reason: 'LOW_MEMORY'),
+        ],
+        trims: <Map<String, Object?>>[trim(19272, 40, 3000)],
+        uiEvents: <Map<String, Object?>>[ui(19272, visible: true, at: 4000)],
+      );
+      expect(v!.kind, PreviousExitKind.memoryKill);
+      expect(v.foreground, isTrue);
+      expect(v.worthReporting, isTrue);
+      expect(v.summary, contains('uiAtDeath=visible'));
+      expect(v.summary, contains('界面可见性切换'));
+    });
+
+    test('原生说界面已隐藏，压过停在 resumed 的会话标记（125）', () async {
+      final PreviousExitVerdict? v = await verdictFor(
+        lifecycle: 'resumed',
+        reasons: <Map<String, Object?>>[
+          record(pid: 19104, importance: 125, reason: 'SIGNALED'),
+        ],
+        uiEvents: <Map<String, Object?>>[
+          ui(19104, visible: true, at: 1500),
+          ui(19104, visible: false, at: 4500),
+        ],
+      );
+      expect(v!.kind, PreviousExitKind.backgroundReclaim);
+      expect(v.worthReporting, isFalse);
+      expect(v.summary, contains('androidUiAtDeath=hidden'));
+    });
+
+    test('importance=100 是硬事实：原生说隐藏也照样算前台', () async {
+      final PreviousExitVerdict? v = await verdictFor(
+        lifecycle: 'detached',
+        clean: true,
+        reasons: <Map<String, Object?>>[
+          record(pid: 19272, importance: 100, reason: 'LOW_MEMORY'),
+        ],
+        trims: <Map<String, Object?>>[trim(19272, 40, 3000)],
+      );
+      expect(v!.foreground, isTrue);
+      expect(v.worthReporting, isTrue);
+    });
+
+    test('COMPLETE（与 onLowMemory 同值）/ RUNNING_* 不算界面已隐藏，回落到按前台', () async {
+      final PreviousExitVerdict? v = await verdictFor(
+        lifecycle: 'detached',
+        clean: true,
+        reasons: <Map<String, Object?>>[
+          record(pid: 19272, importance: 125, reason: 'LOW_MEMORY'),
+        ],
+        trims: <Map<String, Object?>>[
+          trim(19272, 80, 3000),
+          trim(19272, 15, 3500),
+        ],
+      );
+      expect(v!.foreground, isTrue);
+      expect(v.worthReporting, isTrue);
+    });
+
+    test('androidUiVisibleAtDeath：只认同 pid、死前、起始之后的证据，取最晚一条', () {
+      final Map<Object?, Object?> payload = <Object?, Object?>{
+        'trims': <Object?>[
+          trim(19272, 20, 3000),
+          trim(777, 40, 4500),
+          trim(19272, 40, 6000),
+        ],
+        'uiEvents': <Object?>[
+          ui(19272, visible: true, at: 500),
+          ui(19272, visible: true, at: 4000),
+          ui(777, visible: false, at: 4800),
+        ],
+      };
+      expect(
+        androidUiVisibleAtDeath(payload, pid: 19272, deathMs: 5000),
+        isTrue,
+      );
+      expect(
+        androidUiVisibleAtDeath(payload, pid: 19272, deathMs: 3500),
+        isFalse,
+      );
+      expect(
+        androidUiVisibleAtDeath(
+          payload,
+          pid: 19272,
+          deathMs: 2000,
+          sinceMs: 1000,
+        ),
+        isNull,
+      );
+      expect(androidUiVisibleAtDeath(payload, pid: 1, deathMs: 9000), isNull);
     });
 
     // BUG-4323（反馈 DyamYE6bPL）：用户撤销运行时权限，系统以 PERMISSION_CHANGE 结束进程
@@ -929,6 +1058,47 @@ void main() {
       expect(
         androidDiedInForeground(null, sessionSaysForeground: null),
         isTrue,
+      );
+      // 原生界面可见性证据压过标记；两头的硬事实不受它影响。
+      expect(
+        androidDiedInForeground(
+          125,
+          sessionSaysForeground: true,
+          uiVisible: false,
+        ),
+        isFalse,
+      );
+      expect(
+        androidDiedInForeground(
+          125,
+          sessionSaysForeground: null,
+          uiVisible: false,
+        ),
+        isFalse,
+      );
+      expect(
+        androidDiedInForeground(
+          125,
+          sessionSaysForeground: false,
+          uiVisible: true,
+        ),
+        isTrue,
+      );
+      expect(
+        androidDiedInForeground(
+          100,
+          sessionSaysForeground: null,
+          uiVisible: false,
+        ),
+        isTrue,
+      );
+      expect(
+        androidDiedInForeground(
+          400,
+          sessionSaysForeground: null,
+          uiVisible: true,
+        ),
+        isFalse,
       );
     });
 
