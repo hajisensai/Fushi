@@ -457,7 +457,7 @@ class VideoBookRepository {
       _db.getVideoBookByBookUid(bookUid);
 
   /// 按一批 bookUid 取行（不存在的不在结果里，顺序不保证）。批量操作别逐条
-  /// [getByBookUid]（BUG-4709：上万条 = 上万次查询）。
+  /// [getByBookUid]（BUG-4742：上万条 = 上万次查询）。
   Future<List<VideoBookRow>> getByBookUids(Iterable<String> bookUids) =>
       _db.getVideoBooksByBookUids(bookUids);
 
@@ -1288,7 +1288,7 @@ class VideoBookRepository {
 
   /// 删除传播（显式确认式）：仅当用户选「同步删除」才记 sync 删除墓碑，供同步发布
   /// 到远端标记、其他设备逐条确认后也删。best-effort：记账失败不影响视频已删。
-  /// 一批键一个 batch（BUG-4709：原来逐条独立提交，上万条要上万次 fsync）。
+  /// 一批键一个 batch（BUG-4742：原来逐条独立提交，上万条要上万次 fsync）。
   Future<void> _writeVideoDeletionTombstones(Iterable<String> bookUids) async {
     try {
       await _db.writeSyncDeletionTombstones(
@@ -1342,7 +1342,7 @@ class VideoBookRepository {
   /// 文件标 skip），删之后才做记录对账。本仓库层不认识下载管线（管线依赖仓库，
   /// 反过来会成环），所以这两步都由 `video_library_delete.dart` 在上层接线。
   ///
-  /// [onReclaimProgress]：行删掉之后的尾活进度，给大批量删除的进度条用（BUG-4709 /
+  /// [onReclaimProgress]：行删掉之后的尾活进度，给大批量删除的进度条用（BUG-4742 /
   /// 35YfcYO-zR）。逐本回收每本两步（app 副本、内嵌字幕缓存）；要删原件 / 选择器
   /// 副本时再加每本两步（sidecar 字幕扫描、原件删除，按实际条数折算）——所以
   /// `total` 是删除条数的 2 或 4 倍，最后一个文件删完才报满。之后若要压缩数据库，
@@ -1691,7 +1691,7 @@ class VideoBookRepository {
     final ({Set<String> covers, Set<String> subtitles}) refs =
         referencedAssetPathsOf(others);
     try {
-      // 护栏集合只规范化一次（BUG-4709：原来每本各算一遍 = O(删除数 × 幸存数)）。
+      // 护栏集合只规范化一次（BUG-4742：原来每本各算一遍 = O(删除数 × 幸存数)）。
       await VideoStorage.deleteBooksAssets(
         books: <DeletedVideoAssetPaths>[
           for (final _DeletedVideoSnapshot snapshot in deleted)

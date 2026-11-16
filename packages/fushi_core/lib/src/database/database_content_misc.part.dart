@@ -517,7 +517,7 @@ mixin _FushiDbContentMisc
     profileId: profileId,
   );
 
-  /// [deleteStudySegmentsForMedia] 的批量形态（BUG-4709）：一个事务、`IN` 分块删段，
+  /// [deleteStudySegmentsForMedia] 的批量形态（BUG-4742）：一个事务、`IN` 分块删段，
   /// 每个身份一条碑走同一个 batch——视频库一次删上万条时不再是上万个事务。
   /// 语义与逐条调用一致（同一 Profile 判据、同一碑戳只增规则）。返回删掉的段数。
   Future<int> deleteStudySegmentsForMediaKeys({
@@ -873,7 +873,7 @@ mixin _FushiDbContentMisc
     });
   }
 
-  /// [deleteVideoStatisticsForIdentity]（有身份形态）的批量版（BUG-4709）：视频库
+  /// [deleteVideoStatisticsForIdentity]（有身份形态）的批量版（BUG-4742）：视频库
   /// 一次删上万条视频时，逐条调用 = 上万个事务 × 每条十来条查询。这里**一个事务**、
   /// 所有 `IN (...)` 分块、墓碑走 batch，查询数与条数无关（只与分块数有关）。
   ///

@@ -1,4 +1,4 @@
-// BUG-4709 / 拍板台 35YfcYO-zR：IPTV 导入一万多条后批量删除「像没删」——其实是
+// BUG-4742 / 拍板台 35YfcYO-zR：IPTV 导入一万多条后批量删除「像没删」——其实是
 // 删得极慢且界面没反馈。根因是删除链上几处逐条 N+1：
 // ① 「同时删除统计」逐条 getByBookUid + 逐条一个事务（每条十来条查询）；
 // ② 蓝光特典墓碑规划逐条 getVideoBookByBookUid；
@@ -381,7 +381,7 @@ void main() {
   });
 
   test('删除进度：勾了删本地文件时原件删除计入总数，删完才满，压缩阶段不定态', () async {
-    final Directory root = await Directory.systemTemp.createTemp('bug4709_lf_');
+    final Directory root = await Directory.systemTemp.createTemp('bug4742_lf_');
     addTearDown(() => root.delete(recursive: true));
     final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
@@ -462,7 +462,7 @@ void main() {
   });
 
   test('批量回收 app 副本：护栏语义与逐本一致，逐本回报进度', () async {
-    final Directory root = await Directory.systemTemp.createTemp('bug4709_');
+    final Directory root = await Directory.systemTemp.createTemp('bug4742_');
     addTearDown(() => root.delete(recursive: true));
     final Directory covers = await Directory(
       p.join(root.path, 'covers'),

@@ -33,15 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4066 条。点号进各自文件。
+> 共 4098 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4709](bugs/BUG-4709-video-batch-delete-n-plus-one.md) | ✅ | ✅ | 视频库批量删一万多条「像没删」——删除链逐条 N+1 + 无进度反馈 |
-> 共 4097 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4742](bugs/BUG-4742-video-batch-delete-n-plus-one.md) | ✅ | ✅ | 视频库批量删一万多条「像没删」——删除链逐条 N+1 + 无进度反馈 |
 | [BUG-4740](bugs/BUG-4740-android-share-copy-main-thread-anr.md) | ✅ | ✅ | Android 分享在主线程同步拷贝整份文件导致 ANR |
 | [BUG-4739](bugs/BUG-4739-manga-spread-seam.md) | ✅ | ✅ | 漫画双页模式两页之间有一条细缝 |
 | [BUG-4738](bugs/BUG-4738-mihon-android-host-appinfo.md) | ✅ | ✅ | Android Mihon 宿主缺 eu.kanade.tachiyomi.AppInfo，MangaDex 等调用它的扩展 NoClassDefFoundError |
