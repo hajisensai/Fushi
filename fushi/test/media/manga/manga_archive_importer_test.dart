@@ -367,6 +367,58 @@ void main() {
     });
 
     test(
+      'names without the UTF-8 flag are decoded with their real legacy '
+      'encoding (0x5C / 0x7C trail bytes stay inside the character)',
+      () async {
+        // design-zip-cp932-names：逐字节名里「表」「ソ」的尾字节 0x5C 被当成 `\` 多切一级目录，
+        // 「ポ」的尾字节 0x7C 变成 Windows 不许出现在文件名里的 `|`（整本写盘失败）。
+        // 「第1話/」= 91 E6 31 98 62 2F；「ポ」= 83 7C；「表紙/」= 95 5C 8E 86 2F；「ソ」= 83 5C。
+        const List<int> episode = <int>[0x91, 0xE6, 0x31, 0x98, 0x62, 0x2F];
+        const List<int> po = <int>[0x83, 0x7C];
+        const List<int> cover = <int>[0x95, 0x5C, 0x8E, 0x86, 0x2F];
+        const List<int> so = <int>[0x83, 0x5C];
+        Uint8List page(int width) => Uint8List.fromList(
+          img.encodePng(img.Image(width: width, height: 60)),
+        );
+        final String path = p.join(root.path, 'sjis_trail_bytes.zip');
+        File(path).writeAsBytesSync(
+          _buildZip(<_ZipSpec>[
+            _ZipSpec(<int>[
+              ...cover,
+              ...so,
+              ...ascii.encode('1.png'),
+            ], page(10)),
+            _ZipSpec(<int>[
+              ...episode,
+              ...po,
+              ...ascii.encode('10.png'),
+            ], page(30)),
+            _ZipSpec(<int>[
+              ...episode,
+              ...po,
+              ...ascii.encode('2.png'),
+            ], page(20)),
+          ]),
+        );
+
+        final String key = await MangaArchiveImporter.importArchive(
+          db: db,
+          archivePath: path,
+        );
+        final MokuroPayload payload = await _readImportedPayload(db, key);
+        expect(payload.images.map((MokuroImage i) => i.url).toList(), <String>[
+          '第1話/ポ2.png',
+          '第1話/ポ10.png',
+          '表紙/ソ1.png',
+        ]);
+        expect(
+          payload.images.map((MokuroImage i) => i.size.width).toList(),
+          <double>[20, 30, 10],
+        );
+      },
+    );
+
+    test(
       'ZIP64 records with 8-byte data descriptors import byte-for-byte',
       () async {
         // 超过 4 GiB 的包（或流式写出的包）用 ZIP64：中央目录大小 / 偏移是 0xFFFFFFFF，
