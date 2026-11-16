@@ -202,7 +202,6 @@ void main() {
       profileUid: kProfile,
       deviceId: 'B',
       engine: FfiFsrsEngine.tryCreate(),
-      deferMigration: true,
     );
     expect(await channelInCore(b), isTrue, reason: '打开时通道还没做完');
 

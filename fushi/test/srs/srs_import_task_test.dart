@@ -479,9 +479,7 @@ void main() {
             NativeDatabase.memory(),
           );
           // 与 app 同一种连接：srs.db 上的语句跨 isolate 在 Rust 连接上执行。
-          final SrsStorage srs = await SrsStorage.open(
-            path: SrsStorage.pathIn(tmp.path),
-          );
+          final SrsStorage srs = await SrsStorage.open(directory: tmp.path);
           addTearDown(() => tester.runAsync(srs.close));
           return (
             db,
@@ -776,9 +774,7 @@ void main() {
             NativeDatabase.memory(),
           );
           // 与 app 同一种连接：srs.db 上的语句跨 isolate 在 Rust 连接上执行。
-          final SrsStorage srs = await SrsStorage.open(
-            path: SrsStorage.pathIn(tmp.path),
-          );
+          final SrsStorage srs = await SrsStorage.open(directory: tmp.path);
           addTearDown(() => tester.runAsync(srs.close));
           return (
             db,

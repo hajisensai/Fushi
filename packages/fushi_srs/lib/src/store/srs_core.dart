@@ -28,69 +28,253 @@ final class SrsCoreUnavailableError extends StateError {
 final class SrsCoreException implements Exception {
   const SrsCoreException(this.code, this.message);
 
-  /// store/ffi.rs 的状态码：-1 一般错误，-2 参数错，-100 panic。
+  /// store/ffi.rs 的状态码：-1 一般错误，-2 参数错，-4 / -5 / -6 打开时的代际状态（[SrsStoreOpenBlocked]），
+  /// -100 panic。
   final int code;
   final String message;
+
+  /// 按状态码与错误文本给出类型化的异常：打开时的代际状态（[SrsStoreOpenBlocked]）、新代还没接线 / 已删的命令
+  /// （[SrsCoreUnwiredException] / [SrsCoreRemovedException]），其余是一般的 [SrsCoreException]。
+  static SrsCoreException of(int code, String message) =>
+      SrsStoreOpenBlocked.tryParse(code, message) ??
+      SrsCoreUnwiredException.tryParse(code, message) ??
+      SrsCoreRemovedException.tryParse(code, message) ??
+      SrsProfileUnboundException.tryParse(code, message) ??
+      SrsCoreReadOnlyException.tryParse(code, message) ??
+      SrsCoreException(code, message);
 
   @override
   String toString() => 'SrsCoreException($code): $message';
 }
 
-/// 打开时 srs.db 要升级格式，而所在卷的空闲空间不够（store/ffi.rs `STORE_NO_SPACE`）：升级没开始，库一个字节没动；
-/// 腾出 [neededBytes] - [freeBytes] 以上的空间后重试即可。
-final class SrsUpgradeNoSpaceException extends SrsCoreException {
-  const SrsUpgradeNoSpaceException(
+/// 新代分发器里**还没接线**的命令（native/fushi_fsrs/src/store/gen4/kernel.rs `UNWIRED`）：归别的模块接线，
+/// 调用方要给出明确的「暂不可用」状态，不当成功、不崩。[owner] 是负责接线的模块号（如 `G9-4`、`G8-7`）。
+final class SrsCoreUnwiredException extends SrsCoreException {
+  const SrsCoreUnwiredException(
     super.code,
     super.message, {
-    required this.neededBytes,
-    required this.freeBytes,
+    required this.op,
+    required this.owner,
   });
 
-  /// store/ffi.rs 的状态码。
-  static const int statusCode = -3;
+  /// 错误文本前缀（kernel.rs `UNWIRED`），后面是 ``: `<op>` belongs to <owner>``。
+  static const String prefix = 'gen4: not wired yet';
 
-  /// Rust 侧错误文本的前缀（store/schema.rs `UPGRADE_NO_SPACE`），后面是 `{"need","free","from","to"}`。
-  static const String prefix = 'srs.db upgrade needs more free disk space: ';
+  /// 没接线的命令名（或 C 入口名）。
+  final String op;
 
-  final int neededBytes;
-  final int freeBytes;
+  /// 负责接线的模块号。
+  final String owner;
 
-  /// 按 [statusCode] 的错误文本解析；文本不是约定的形状为 null（照一般错误报）。
-  static SrsUpgradeNoSpaceException? tryParse(int code, String message) {
-    if (code != statusCode || !message.startsWith(prefix)) return null;
+  static final RegExp _shape = RegExp(
+    r'^gen4: not wired yet: `([^`]+)` belongs to (.+)$',
+  );
+
+  static SrsCoreUnwiredException? tryParse(int code, String message) {
+    final RegExpMatch? m = _shape.firstMatch(message);
+    if (m == null) return null;
+    return SrsCoreUnwiredException(
+      code,
+      message,
+      op: m.group(1)!,
+      owner: m.group(2)!,
+    );
+  }
+
+  @override
+  String toString() =>
+      'SrsCoreUnwiredException: `$op` is not wired yet ($owner)';
+}
+
+/// 新代里**已删**的命令（kernel.rs `REMOVED`）：调用方不该再发。出现 = Dart 还有没改掉的调用点。
+final class SrsCoreRemovedException extends SrsCoreException {
+  const SrsCoreRemovedException(super.code, super.message, {required this.op});
+
+  /// 错误文本前缀（kernel.rs `REMOVED`）。
+  static const String prefix = 'gen4: removed';
+
+  final String op;
+
+  static final RegExp _shape = RegExp(r'^gen4: removed: `([^`]+)`');
+
+  static SrsCoreRemovedException? tryParse(int code, String message) {
+    final RegExpMatch? m = _shape.firstMatch(message);
+    if (m == null) return null;
+    return SrsCoreRemovedException(code, message, op: m.group(1)!);
+  }
+
+  @override
+  String toString() => 'SrsCoreRemovedException: `$op` was removed in gen4';
+}
+
+/// 这个 profile 在新代库里还没有集合（native/fushi_fsrs/src/store/gen4/dispatch.rs `col_of`）：绑定由迁移或身份命令
+/// 建，身份命令 `identity` 归 G9-4（还没接线）。全新安装、迁移之后新建的 profile 在 G9-4 之前都是这个状态。
+final class SrsProfileUnboundException extends SrsCoreException {
+  const SrsProfileUnboundException(
+    super.code,
+    super.message, {
+    required this.profile,
+  });
+
+  /// 负责建绑定的模块号。
+  static const String owner = 'G9-4';
+
+  final String profile;
+
+  static final RegExp _shape = RegExp(
+    r'^gen4: profile (.+) has no collection on this device',
+  );
+
+  static SrsProfileUnboundException? tryParse(int code, String message) {
+    final RegExpMatch? m = _shape.firstMatch(message);
+    if (m == null) return null;
+    return SrsProfileUnboundException(code, message, profile: m.group(1)!);
+  }
+
+  @override
+  String toString() =>
+      'SrsProfileUnboundException: profile $profile has no gen4 collection '
+      'yet (bindings arrive with $owner)';
+}
+
+/// 只读打开（[SrsOpenMode.secondary]）的库上发了写命令（gen4/kernel.rs `READ_ONLY`）：写要交给主进程。
+final class SrsCoreReadOnlyException extends SrsCoreException {
+  const SrsCoreReadOnlyException(super.code, super.message);
+
+  /// 错误文本（kernel.rs `READ_ONLY`）的开头。
+  static const String prefix = 'gen4 store: opened read-only (secondary)';
+
+  static SrsCoreReadOnlyException? tryParse(int code, String message) =>
+      message.startsWith(prefix)
+      ? SrsCoreReadOnlyException(code, message)
+      : null;
+
+  @override
+  String toString() => 'SrsCoreReadOnlyException: $message';
+}
+
+/// 库目录的代际状态（native/fushi_fsrs/src/store/gen4/migrate.rs `GenState` 的线上名）。
+enum SrsGenState {
+  /// 新代库可用；或什么都没有、辅助进程比主进程先到（等主进程建库）。
+  ready('ready'),
+
+  /// 有协议 3 的 `srs.db` 要迁移。
+  needsMigration('needsMigration'),
+
+  /// 别的进程正在迁移（拿着换代锁）。
+  migratingElsewhere('migratingElsewhere'),
+
+  /// 只剩封存的旧库 / 墓碑，新代库不见了。不建空库顶上，给恢复页。
+  sealedOldOnly('sealedOldOnly'),
+
+  /// 上次迁移失败留下了半成品。不自动重跑，给恢复页。
+  migrationFailed('migrationFailed');
+
+  const SrsGenState(this.wire);
+
+  final String wire;
+
+  /// 线上名 → 状态；不认识的为 null（调用方当一般错误报，不猜）。
+  static SrsGenState? tryParse(Object? wire) {
+    for (final SrsGenState s in values) {
+      if (s.wire == wire) return s;
+    }
+    return null;
+  }
+}
+
+/// 打开模式（`ffsrs_store_open_mode` 的 `mode`）。
+enum SrsOpenMode {
+  /// 主进程：唯一的写者，全新安装时建空库。
+  primary(0),
+
+  /// 查词弹窗等辅助进程：只读，不建库、不迁移；写命令报只读。
+  secondary(1);
+
+  const SrsOpenMode(this.wire);
+
+  final int wire;
+}
+
+/// 打开时库目录处在某个代际状态、句柄没开出来（库一概没动）。各子类对应 store/ffi.rs 的一个返回码：
+///
+/// - [SrsStoreNotMigrated]（`STORE_NOT_MIGRATED` -4）：还没有新代库，[SrsStoreNotMigrated.state] 区分要迁移 /
+///   只剩封存旧库 / 上次迁移失败 / 辅助进程先到；
+/// - [SrsStoreMigrating]（`STORE_MIGRATING` -5）：别的进程正拿着换代锁；
+/// - [SrsStoreLegacyUnmigrated]（`STORE_LEGACY_UNMIGRATED` -6）：新代库旁边有一份没迁移过的协议 3 库。
+sealed class SrsStoreOpenBlocked extends SrsCoreException {
+  const SrsStoreOpenBlocked(super.code, super.message);
+
+  static SrsStoreOpenBlocked? tryParse(int code, String message) =>
+      switch (code) {
+        SrsStoreNotMigrated.statusCode => SrsStoreNotMigrated._parse(message),
+        SrsStoreMigrating.statusCode => SrsStoreMigrating(message),
+        SrsStoreLegacyUnmigrated.statusCode => SrsStoreLegacyUnmigrated(
+          message,
+        ),
+        _ => null,
+      };
+}
+
+/// 还没有新代库（`STORE_NOT_MIGRATED`）。
+final class SrsStoreNotMigrated extends SrsStoreOpenBlocked {
+  const SrsStoreNotMigrated(String message, this.state)
+    : super(statusCode, message);
+
+  static const int statusCode = -4;
+
+  final SrsGenState state;
+
+  /// 错误文本末尾是 `{"state": <线上名>}`（store/ffi.rs `open_error`）。状态读不出来 = null（照一般错误报）。
+  static SrsStoreNotMigrated? _parse(String message) {
+    final int at = message.lastIndexOf('{"state"');
+    if (at < 0) return null;
     try {
-      final Object? j = jsonDecode(message.substring(prefix.length));
+      final Object? j = jsonDecode(message.substring(at));
       if (j is! Map) return null;
-      final Object? need = j['need'];
-      final Object? free = j['free'];
-      if (need is! int || free is! int) return null;
-      return SrsUpgradeNoSpaceException(
-        code,
-        message,
-        neededBytes: need,
-        freeBytes: free,
-      );
+      final SrsGenState? s = SrsGenState.tryParse(j['state']);
+      return s == null ? null : SrsStoreNotMigrated(message, s);
     } on FormatException {
       return null;
     }
   }
 
   @override
-  String toString() =>
-      'SrsUpgradeNoSpaceException: upgrading srs.db needs $neededBytes bytes '
-      'free on its volume, only $freeBytes available';
+  String toString() => 'SrsStoreNotMigrated(${state.wire}): $message';
+}
+
+/// 别的进程正在迁移（`STORE_MIGRATING`）。
+final class SrsStoreMigrating extends SrsStoreOpenBlocked {
+  const SrsStoreMigrating(String message) : super(statusCode, message);
+
+  static const int statusCode = -5;
+
+  @override
+  String toString() => 'SrsStoreMigrating: $message';
+}
+
+/// 新代库旁边有一份没迁移过的协议 3 `srs.db`（`STORE_LEGACY_UNMIGRATED`）：那份库没动，新代库也没开。
+final class SrsStoreLegacyUnmigrated extends SrsStoreOpenBlocked {
+  const SrsStoreLegacyUnmigrated(String message) : super(statusCode, message);
+
+  static const int statusCode = -6;
+
+  @override
+  String toString() => 'SrsStoreLegacyUnmigrated: $message';
 }
 
 typedef _OpenC =
     ffi.Int32 Function(
       ffi.Pointer<ffi.Uint8>,
       ffi.Size,
+      ffi.Int32,
       ffi.Pointer<ffi.Pointer<ffi.Void>>,
       ffi.Pointer<ffi.Pointer<ffi.Char>>,
     );
 typedef _OpenDart =
     int Function(
       ffi.Pointer<ffi.Uint8>,
+      int,
       int,
       ffi.Pointer<ffi.Pointer<ffi.Void>>,
       ffi.Pointer<ffi.Pointer<ffi.Char>>,
@@ -262,7 +446,7 @@ typedef _CmdDart =
 final class SrsCoreBindings {
   SrsCoreBindings._(FushiFsrs fsrs, ffi.DynamicLibrary lib)
     : _fsrs = fsrs,
-      open = lib.lookupFunction<_OpenC, _OpenDart>('ffsrs_store_open'),
+      open = lib.lookupFunction<_OpenC, _OpenDart>('ffsrs_store_open_mode'),
       setTempDir = lib.lookupFunction<_SetTempDirC, _SetTempDirDart>(
         'ffsrs_set_temp_dir',
       ),
@@ -380,6 +564,35 @@ final class SrsCoreBindings {
   void _freeString(ffi.Pointer<ffi.Char> p) =>
       _fsrs.bindings.ffsrs_free_string(p);
 
+  /// 不针对已打开库的全局 JSON 命令（`ffsrs_call`，lib.rs `dispatch` → gen4/kernel.rs `global`）：回 `ok` 的值，
+  /// `error` 抛 [SrsCoreException]（按文本类型化，见 [SrsCoreException.of]）。
+  Object? callGlobal(Map<String, Object?> request) {
+    final ffi.Pointer<ffi.Char> req = jsonEncode(
+      request,
+    ).toNativeUtf8().cast<ffi.Char>();
+    final ffi.Pointer<ffi.Char> resp;
+    try {
+      resp = _fsrs.bindings.ffsrs_call(req);
+    } finally {
+      calloc.free(req);
+    }
+    if (resp == ffi.nullptr) {
+      throw const SrsCoreException(-1, 'null response from ffsrs_call');
+    }
+    final String text;
+    try {
+      text = resp.cast<Utf8>().toDartString();
+    } finally {
+      _freeString(resp);
+    }
+    final Object? body = jsonDecode(text);
+    if (body is! Map) throw SrsCoreException(-1, 'bad response: $text');
+    if (body.containsKey('error')) {
+      throw SrsCoreException.of(-1, '${body['error']}');
+    }
+    return body['ok'];
+  }
+
   void _freeBytes(ffi.Pointer<ffi.Uint8> p, int len) =>
       _fsrs.bindings.ffsrs_free_bytes(p, len);
 
@@ -436,15 +649,24 @@ final class SrsCoreDiagCounts {
 const String kSrsRawSqlAbsent =
     'srs: the raw SQL channel is not built into this library (cargo feature raw_sql)';
 
-/// 一个打开的 srs.db。
+/// 一个打开的 SRS 库（新代 `srs4.db`）。
 final class SrsCore {
-  SrsCore._(this._b, this._handle, {required this.owned});
+  SrsCore._(
+    this._b,
+    this._handle, {
+    required this.owned,
+    this.mode = SrsOpenMode.primary,
+  });
 
   final SrsCoreBindings _b;
   ffi.Pointer<ffi.Void> _handle;
 
   /// 本对象负责关闭（[fromAddress] 包出来的不负责）。
   final bool owned;
+
+  /// 打开模式：[SrsOpenMode.secondary] 的库只读（写命令报 [SrsCoreReadOnlyException]），开库时的注册类写入要跳过。
+  /// [fromAddress] 包出来的取调用方给的值（worker 只发读写命令，不看它）。
+  final SrsOpenMode mode;
 
   /// 自本次开机以来的毫秒，含睡眠、不受改系统时间影响（`ffsrs_boot_time_ms`）。可信时间
   /// （[SrsTrustedClock]）按它推算；取不到时抛 [StateError]（原生库是硬依赖，不退回别的时钟）。
@@ -465,47 +687,57 @@ final class SrsCore {
     });
   }
 
-  /// 在当前 isolate 同步打开 / 新建 [path]（`<数据库目录>/srs.db`）。可能整段做格式升级：只给测试与已在
-  /// 后台 isolate 里的代码用，app 走 [openInBackground]（守卫 fushi/test/build/srs_store_open_off_ui_isolate_guard_test.dart）。
-  static SrsCore open(String path, {String? libraryPath}) {
+  /// 在当前 isolate 同步打开库目录 [dir]（`<数据库目录>`，新代库 `srs4.db` 在它里面）的新代库
+  /// （`ffsrs_store_open_mode`，native/fushi_fsrs/src/store/gen4/files.rs 的打开模式）。[mode] 缺省 Primary：
+  /// 全新安装时建空库。只给测试与已在后台 isolate 里的代码用，app 走 [openInBackground]（守卫
+  /// fushi/test/build/srs_store_open_off_ui_isolate_guard_test.dart）。
+  ///
+  /// 打不开时库目录的代际状态抛 [SrsStoreOpenBlocked] 的子类（要迁移 / 别的进程在迁移 / 旁边有没迁移的旧库），
+  /// 绝不静默打开协议 3 的 `srs.db`；别的错误抛 [SrsCoreException]。
+  static SrsCore open(
+    String dir, {
+    SrsOpenMode mode = SrsOpenMode.primary,
+    String? libraryPath,
+  }) {
     final SrsCoreBindings b = SrsCoreBindings.load(libraryPath: libraryPath);
     return using((Arena arena) {
-      final (ffi.Pointer<ffi.Uint8> p, int n) = _utf8(arena, path);
+      final (ffi.Pointer<ffi.Uint8> p, int n) = _utf8(arena, dir);
       final ffi.Pointer<ffi.Pointer<ffi.Void>> out = arena();
       final ffi.Pointer<ffi.Pointer<ffi.Char>> err = arena();
       err.value = ffi.nullptr;
-      final int rc = b.open(p, n, out, err);
+      final int rc = b.open(p, n, mode.wire, out, err);
       _check(b, rc, err);
-      return SrsCore._(b, out.value, owned: true);
+      return SrsCore._(b, out.value, owned: true, mode: mode);
     });
   }
 
-  /// 在后台 isolate 打开 / 新建 [path]，返回的句柄归调用方拥有（[close] 关库）。产品代码一律走这里。
+  /// 在后台 isolate 打开 [dir] 的新代库（同 [open]），返回的句柄归调用方拥有（[close] 关库）。产品代码一律走这里。
   ///
-  /// 打开会把库升级到当前格式（store/schema.rs `migrate`：整表重建、单事务），库大时要几分钟。
-  /// Android / iOS 上 UI isolate 跑在平台主线程，在那里同步 [open] 就是整段升级期间主线程被占：
-  /// 一帧都出不来、系统启动画面撤不掉（3.1.0 白屏）。后台 isolate 打开后只把句柄号（原生句柄表里的编号，
-  /// 进程内通用）带回来。
+  /// Primary 首次打开要在换代锁里建库、补做中断的封存，Android / iOS 上 UI isolate 跑在平台主线程，在那里同步 [open]
+  /// 会占住主线程（3.1.0 白屏）。后台 isolate 打开后只把句柄号（原生句柄表里的编号，进程内通用）带回来；打不开时
+  /// 的 [SrsStoreOpenBlocked] 原样传回。
   static Future<SrsCore> openInBackground(
-    String path, {
+    String dir, {
+    SrsOpenMode mode = SrsOpenMode.primary,
     String? libraryPath,
   }) async {
     final SrsCoreBindings b = SrsCoreBindings.load(libraryPath: libraryPath);
     final String? resolvedLibraryPath = b.libraryPath;
     final int address = await Isolate.run(
-      () => _openAddress(path, resolvedLibraryPath),
+      () => _openAddress(dir, mode, resolvedLibraryPath),
       debugName: 'srs-store-open',
     );
     return SrsCore._(
       b,
       ffi.Pointer<ffi.Void>.fromAddress(address),
       owned: true,
+      mode: mode,
     );
   }
 
   /// [openInBackground] 的后台一半（顶层签名只带可发送的参数，闭包不捕获 [SrsCoreBindings]）。
-  static int _openAddress(String path, String? libraryPath) =>
-      open(path, libraryPath: libraryPath).address;
+  static int _openAddress(String dir, SrsOpenMode mode, String? libraryPath) =>
+      open(dir, mode: mode, libraryPath: libraryPath).address;
 
   /// 进程级内存诊断计数（`ffsrs_store_diag_counts`，不需要打开的库，任意 isolate 可调）：
   /// 移动端内存耗尽闪退（BUG-4075）的取证面包屑用。原生库加载不了返回 null。
@@ -535,10 +767,15 @@ final class SrsCore {
   }
 
   /// 包装别的 isolate 打开的同一个句柄（不拥有，[close] 不关）。
-  static SrsCore fromAddress(int address, {String? libraryPath}) => SrsCore._(
+  static SrsCore fromAddress(
+    int address, {
+    String? libraryPath,
+    SrsOpenMode mode = SrsOpenMode.primary,
+  }) => SrsCore._(
     SrsCoreBindings.load(libraryPath: libraryPath),
     ffi.Pointer<ffi.Void>.fromAddress(address),
     owned: false,
+    mode: mode,
   );
 
   /// 句柄值（跨 isolate 传递用）：原生句柄表里的编号而不是指针，拥有者关库后经它的调用一律报
@@ -752,31 +989,28 @@ final class SrsCore {
     return SrsSync2Result.decode(bytes);
   });
 
-  /// [profile] 此刻的进程内刷新键（内核 `refresh_keys`，native/fushi_fsrs/src/store/refresh.rs）：牌组树 / 修改记录 /
-  /// 角标 / 统计 / RWKV 分数表这些缓存「还能不能用」的判据，由内核在内存里按 profile 持有、在每次提交之后推进。各键
-  /// 是不透明串，只比相等：相等 = 这期间没有那一类变化（同一次打开库里只增不减；每次打开库换一个随机前缀）。
+  /// [profile] 此刻的刷新键：牌组树 / 修改记录 / 角标 / 统计 / RWKV 分数表这些缓存「还能不能用」的判据。各键是
+  /// 不透明串，只比相等：相等 = 这期间没有变化。
   ///
-  /// 只读内存（不碰通道、不拿写锁、不读库），在调用方 isolate 上同步调。库已关闭（本对象已关，或 [fromAddress]
+  /// 新代（S1 之后）没有协议 3 的进程内刷新键（`refresh_keys` 已删：派生层随写入维护，没有「待刷新」）。键取内核
+  /// 持有的本机状态行（`local_state`，native/fushi_fsrs/src/store/gen4/local.rs）的 `纪元:修订号`：每条改投影的写命令
+  /// 在自己的事务里推进修订号，库换了 / 迁移之后纪元换新。行在库里，所以别的进程（查词弹窗读主进程写的库）也看得见。
+  /// 五个键取同一个值——比协议 3 分得粗（作答也让牌组树缓存失效），只会多重读、不会读到旧值。修订号不覆盖的写入
+  /// （`cache_config_set` 改了缓存配置后的整层重建）由调用方自己作废缓存。
+  ///
+  /// 一次只读快照里的点查（`srs_meta` 主键），在调用方 isolate 上同步调。库已关闭（本对象已关，或 [fromAddress]
   /// 包的句柄的拥有者已关库）→ null。
   SrsRefreshKeys? refreshKeys(String profile) {
     if (isClosed) return null;
     final Map<String, Object?> k;
     try {
-      k = sync2(<String, Object?>{
-        'op': 'refresh_keys',
-        'profile': profile,
-      }).map;
+      k = sync2(<String, Object?>{'op': 'local_state', 'profile': profile}).map;
     } on SrsCoreException catch (e) {
       if (e.message == kSrsCoreClosed) return null;
       rethrow;
     }
-    return (
-      content: k['content']! as String,
-      structure: k['structure']! as String,
-      rwkv: k['rwkv']! as String,
-      stats: k['stats']! as String,
-      landed: k['landed']! as String,
-    );
+    final String key = srsRefreshKeyOf(k);
+    return (content: key, structure: key, rwkv: key, stats: key, landed: key);
   }
 
   /// 卡片历史的当前状态，Rust 直接从写连接读日志（含事务里未提交的行）。[lineages] 每项是一份
@@ -1041,13 +1275,23 @@ final class SrsCore {
       message = err.value.cast<Utf8>().toDartString();
       b._freeString(err.value);
     }
-    throw SrsUpgradeNoSpaceException.tryParse(rc, message) ??
-        SrsCoreException(rc, message);
+    throw SrsCoreException.of(rc, message);
   }
 }
 
 /// 已关闭的句柄上调用时内核报的错误文本（native/fushi_fsrs/src/store/mod.rs `CLOSED`）。
 const String kSrsCoreClosed = 'srs store is closed';
+
+/// `local_state` 回包 [state]（native/fushi_fsrs/src/store/local_state.rs `view`）→ 刷新键。
+///
+/// 纪元已落盘（`epochStored`）时是 `纪元:修订号`。没落盘时（这个 profile 还没有本机状态行：迁移不带协议 3 的那一行，
+/// 主进程开过这个 profile 才补上；Secondary 只读、不补）内核每次现生成一个新纪元，拿它当键会让按键缓存的东西每读一次
+/// 都不命中，所以换成固定的 `unstored:修订号`：行建起来之后纪元落盘，键随之变一次（整份重读一次），之后稳定。
+String srsRefreshKeyOf(Map<String, Object?> state) {
+  final int revision = (state['revision']! as num).toInt();
+  if (state['epochStored'] != true) return 'unstored:$revision';
+  return '${state['epoch']! as String}:$revision';
+}
 
 /// [SrsCore.refreshKeys] 的结果（键的含义见 native/fushi_fsrs/src/store/refresh.rs）：
 /// - [content]：复习日志与界面状态以外的事件落库、可见性变化、重读本机状态；

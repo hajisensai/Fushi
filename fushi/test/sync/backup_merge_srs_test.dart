@@ -114,9 +114,7 @@ void main() {
     final FushiDatabase src = FushiDatabase(dir.path);
     final int id = await insertProfile(src, name);
     final String uid = await src.profileUidOf(id);
-    final SrsStorage srcSrs = await SrsStorage.open(
-      path: SrsStorage.pathIn(dir.path),
-    );
+    final SrsStorage srcSrs = await SrsStorage.open(directory: dir.path);
     final SrsDbStore s = await SrsDbStore.open(
       core: srcSrs.core,
       profileUid: uid,
@@ -151,7 +149,7 @@ void main() {
     await src.close();
     return (
       mainPath: p.join(dir.path, 'fushi.db'),
-      srsPath: shape == _Shape.split ? SrsStorage.pathIn(dir.path) : null,
+      srsPath: shape == _Shape.split ? SrsStorage.legacyPathIn(dir.path) : null,
       uid: uid,
       noteId: noteId,
     );
@@ -162,7 +160,7 @@ void main() {
     // 新形态：备份 srs.db 的副本由 Rust 打开（与 mergeRestoreBackup 一样，Dart 不碰它）。
     final SrsStorage? source = b.srsPath == null
         ? null
-        : await SrsStorage.open(path: b.srsPath!);
+        : await SrsStorage.open(directory: p.dirname(b.srsPath!));
     await target.customStatement("ATTACH DATABASE '$safe' AS mergesrc");
     try {
       await BackupMergeEngine(
