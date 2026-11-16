@@ -175,12 +175,14 @@ int main() {
     const TextVariant* original = find(vs, "見・た");
     check("rewrite-cap-original-with-dot", original && original->max_rewrite == 1);
     // 不含点 / っ 的原文不受限。
-    const TextVariant* plain = find(text_processor::process("見た"), "見た");
+    const auto plain_vs = text_processor::process("見た");
+    const TextVariant* plain = find(plain_vs, "見た");
     check("rewrite-uncapped-plain", plain && plain->max_rewrite == SIZE_MAX);
   }
   {
     // 折叠掉的っ：「行っった」→「行った」允许改写到「った」为止。
-    const TextVariant* collapsed = find(text_processor::process("行っった"), "行った");
+    const auto vs = text_processor::process("行っった");
+    const TextVariant* collapsed = find(vs, "行った");
     check("rewrite-cap-after-collapsed-sokuon", collapsed && collapsed->max_rewrite == 2);
   }
   {
@@ -194,7 +196,9 @@ int main() {
     const auto vs = text_processor::process("行きマス");
     const TextVariant* hira = find(vs, "行きます");
     check("min-rewrite-katakana-tail", hira && hira->min_rewrite == 2);
-    check("min-rewrite-no-hiragana-before", find(text_processor::process("テスト"), "てすと")->min_rewrite == 0);
+    const auto katakana_only = text_processor::process("テスト");
+    const TextVariant* katakana_hira = find(katakana_only, "てすと");
+    check("min-rewrite-no-hiragana-before", katakana_hira && katakana_hira->min_rewrite == 0);
   }
   {
     // 结尾落在片假名词中间：只出原文一个变体，且不许还原。
