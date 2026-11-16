@@ -630,6 +630,35 @@ void main() {
       await _unmount(tester);
     });
 
+    testWidgets('[$ds] 牌组菜单「导出此牌组」：导出选项对话框标题写明只导出这个牌组（全名）', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      await tester.runAsync(
+        () => store.ensureDeckPath('Spark::JP::Vocabulary'),
+      );
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: apple,
+        page: const SrsDeckListPage(),
+        size: const Size(1100, 1600),
+      );
+      await tester.tap(find.text('Vocabulary'), buttons: kSecondaryButton);
+      await _settle(tester);
+      expect(find.text(t.srs_deck_export), findsOneWidget);
+      await tester.tap(find.text(t.srs_deck_export));
+      await _settle(tester);
+      expect(
+        find.text(t.srs_export_deck_title(deck: 'Spark::JP::Vocabulary')),
+        findsOneWidget,
+      );
+      expect(find.text(t.srs_export_options_title), findsNothing);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await _settle(tester);
+      await _unmount(tester);
+    });
+
     testWidgets(
       '[$ds] 复习首页（手机）：点行进牌组详情、返回键逐层回退、播放 / 「开始复习」/ 详情「复习这个牌组」直接复习、长按出菜单',
       (WidgetTester tester) async {

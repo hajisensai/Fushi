@@ -366,26 +366,55 @@ Future<void> showSrsImportFailureDialog(BuildContext context, Object failure) =>
       cancelLabel: t.cancel,
     );
 
-/// 牌组列表 ⋯「导出（.apkg）」：导出全部牌组（Anki 与 Fushi 自己的「导入」都能吃）。
-Future<void> openSrsExport(BuildContext context, WidgetRef ref) async {
+/// 导出包的默认文件名：整库 `fushi-review.apkg`；单个牌组用牌组全名（`父::子` 写成 `父-子`），
+/// 文件名里不能出现的字符换成 `_`，清理后为空时退回整库的名字。
+String srsExportFileName(String? deckFullName) {
+  const String whole = 'fushi-review.apkg';
+  if (deckFullName == null) return whole;
+  final String base = deckFullName
+      .replaceAll('::', '-')
+      .replaceAll(RegExp(r'[<>:"/\\|?*\x00-\x1F]'), '_')
+      .trim()
+      .replaceAll(RegExp(r'^[.\s]+|[.\s]+$'), '');
+  return base.isEmpty ? whole : '$base.apkg';
+}
+
+/// 导出 .apkg（Anki 与 Fushi 自己的「导入」都能吃）。[deckId] 为 null 时导出全部牌组（牌组列表
+/// ⋯「导出（.apkg）」）；给了就只导出该牌组的子树（牌组菜单「导出此牌组」）——祖先牌组随包写出
+/// 以保留全名，继承来的参数组即使归子树外的父牌组也照样写进包（见 `exportAnkiPackageFile`）。
+Future<void> openSrsExport(
+  BuildContext context,
+  WidgetRef ref, {
+  String? deckId,
+}) async {
   final SrsDbStore? store = await readSrsStore(ref);
   if (store == null) {
     FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
     return;
   }
+  String? deckName;
+  if (deckId != null) {
+    final SrsDeckTree tree = await store.deckTree();
+    if (tree[deckId] == null) {
+      FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
+      return;
+    }
+    deckName = tree.fullName(deckId);
+  }
   final SrsMediaStore? media = await _readMedia(ref);
-  final bool usesFsrs7 = await srsExportScopeUsesFsrs7(store);
+  final bool usesFsrs7 = await srsExportScopeUsesFsrs7(store, deckId: deckId);
   if (!context.mounted) return;
   final PrefStore prefs = ref.read(appProvider).prefsRepo;
   final SrsAnkiExportOptions? options = await showSrsExportOptionsDialog(
     context: context,
     initial: readSrsExportOptions(prefs),
     usesFsrs7: usesFsrs7,
+    deckName: deckName,
   );
   if (options == null || !context.mounted) return;
   await writeSrsExportOptions(prefs, options);
   try {
-    const String fileName = 'fushi-review.apkg';
+    final String fileName = srsExportFileName(deckName);
     final Directory staging = await (await getTemporaryDirectory()).createTemp(
       'fushi_srs_export_',
     );
@@ -393,6 +422,7 @@ Future<void> openSrsExport(BuildContext context, WidgetRef ref) async {
       store: store,
       media: media,
       file: File('${staging.path}${Platform.pathSeparator}$fileName'),
+      deckId: deckId,
       options: options,
     );
     if (!context.mounted) return;
