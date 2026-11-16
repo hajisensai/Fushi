@@ -20,11 +20,13 @@ class WebComicSiteRule {
     required this.chapterUrlPattern,
     required this.images,
     this.seriesKeyPattern,
+    this.chapterKeyPattern,
     this.referer = WebComicRefererMode.page,
     this.refererUrl,
     this.headers = const <String, String>{},
     this.nextSelector,
     this.prevSelector,
+    this.detect,
     this.verified = false,
   });
 
@@ -43,6 +45,12 @@ class WebComicSiteRule {
   /// URL 本身当作品身份（一章一本书）。
   final String? seriesKeyPattern;
 
+  /// 从**完整 URL** 推出章节身份的正则（第一个捕获组）；null / 不命中 = 以去掉
+  /// fragment 的章节 URL 当章节身份。同一章有多种入口地址的站要写（如 hitomi 的画廊页
+  /// `/doujinshi/<title>-<id>.html` 与阅读页 `/reader/<id>.html` 是同一本），否则从
+  /// 两个入口各入库一次会在同一作品下变成两个同图的章节。
+  final String? chapterKeyPattern;
+
   final WebComicImageSource images;
   final WebComicRefererMode referer;
 
@@ -55,6 +63,12 @@ class WebComicSiteRule {
   /// 下一章 / 上一章链接的 CSS 选择器（取 `href`）；null = 走脚本的通用文案匹配。
   final String? nextSelector;
   final String? prevSelector;
+
+  /// 「这页真是漫画页」的页面侧判据：一段函数体（可 `await`），返回真值即是。照 ComicRead
+  /// 站点适配的 `isMangaPage`：URL 认不全的站（同一种地址下有动画 / 数据异步到）由页面
+  /// 自己的数据说了算。null = URL 命中 [chapterUrlPattern] 就是漫画页。与 `script` 取图
+  /// 一样只允许随包规则使用。
+  final String? detect;
   final bool verified;
 
   /// 该规则是否覆盖 [host]。
@@ -83,8 +97,9 @@ class WebComicSiteRule {
   }
 
   /// 作品身份：[seriesKeyPattern] 第一个捕获组拼上 host；不命中返回 null。
-  String? seriesKeyOf(Uri url) {
-    final String? pattern = seriesKeyPattern;
+  String? seriesKeyOf(Uri url) => _hostKey(seriesKeyPattern, url);
+
+  static String? _hostKey(String? pattern, Uri url) {
     if (pattern == null || pattern.isEmpty) return null;
     final RegExpMatch? match = RegExp(pattern).firstMatch(url.toString());
     if (match == null || match.groupCount < 1) return null;
@@ -92,6 +107,9 @@ class WebComicSiteRule {
     if (group == null || group.isEmpty) return null;
     return '${url.host.toLowerCase()}/$group';
   }
+
+  /// 章节身份：[chapterKeyPattern] 第一个捕获组拼上 host；不命中返回 null。
+  String? chapterKeyOf(Uri url) => _hostKey(chapterKeyPattern, url);
 
   /// 交给扫图脚本的配置（脚本只认这一份形状）。
   Map<String, Object?> toScriptConfig() => <String, Object?>{
@@ -130,6 +148,10 @@ class WebComicSiteRule {
     }
     final String? seriesPattern = _nonEmpty(map['seriesKeyPattern']);
     if (seriesPattern != null && !_compiles(seriesPattern)) return null;
+    final String? chapterKeyPattern = _nonEmpty(map['chapterKeyPattern']);
+    if (chapterKeyPattern != null && !_compiles(chapterKeyPattern)) {
+      return null;
+    }
     final WebComicRefererMode referer = WebComicRefererMode.fromWire(
       map['referer']?.toString(),
     );
@@ -145,6 +167,7 @@ class WebComicSiteRule {
       hosts: List<String>.unmodifiable(hosts),
       chapterUrlPattern: pattern,
       seriesKeyPattern: seriesPattern,
+      chapterKeyPattern: chapterKeyPattern,
       images: images,
       referer: referer,
       refererUrl: refererUrl,
@@ -157,6 +180,7 @@ class WebComicSiteRule {
           : const <String, String>{},
       nextSelector: _nonEmpty(map['nextSelector']),
       prevSelector: _nonEmpty(map['prevSelector']),
+      detect: _nonEmpty(map['detect']),
       verified: map['verified'] == true,
     );
   }

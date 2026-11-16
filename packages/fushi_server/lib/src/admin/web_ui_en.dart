@@ -229,10 +229,26 @@ const Map<String, String> kWebUiEnglish = <String, String>{
   '允许明文 HTTP（仅受信任局域网）': 'Allow plain HTTP (trusted LAN only)',
   '只填地址即可，添加时会自动检测站点。':
       'An address is enough; the site is detected when you add it.',
+  '解析规则（可选，JSON）': 'Parser rule (optional, JSON)',
+  '登录 Cookie（可选，仅带解析规则的站点）':
+      'Login cookie (optional, only for sites with a parser rule)',
+  '自动检测认不出的站点，可以粘贴它的解析规则（JSON）；需要登录的站再填 Cookie。':
+      "For a site that automatic detection can't recognize, paste its parser "
+      'rule (JSON); add a cookie for sites that need a login.',
+  '解析规则（JSON；清空 = 改回自动检测）':
+      'Parser rule (JSON; clear it to go back to automatic detection)',
+  '新 Cookie（留空不改）': 'New cookie (leave empty to keep the current one)',
   'Torznab（Jackett / Prowlarr）': 'Torznab (Jackett / Prowlarr)',
   '添加 indexer': 'Add indexer',
   '放弃修改': 'Discard changes',
-  '无法识别这个站点': 'Could not recognize this site',
+  '无法识别这个站点：可以粘贴它的解析规则后再添加':
+      'Could not recognize this site; paste a parser rule for it and add it again',
+  '按解析规则打不开站点的搜索页：请检查地址，或登录 Cookie 是否已过期':
+      "The parser rule couldn't load the site's search page; check the address, "
+      'or whether the login cookie has expired',
+  '按解析规则在搜索页上没解析出任何结果：请检查规则里的选择器，或站点是否需要登录 Cookie':
+      "The parser rule found no results on the site's search page; check the "
+      "rule's selectors, or whether the site needs a login cookie",
   '站点响应超时': 'The site timed out',
   '地址无效': 'Invalid address',
   '这是明文 HTTP 地址：请改用 HTTPS，或勾选「允许明文 HTTP」':

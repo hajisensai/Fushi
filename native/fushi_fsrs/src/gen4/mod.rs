@@ -12,6 +12,7 @@
 //! - [head]：协议 4 的 head（`seal`、`prev`、派生口径版本；签名覆盖除 `sig` 外的全部键）。
 //! - [export]：`.fushisrs` 第 2 版的内核导出流 `ops.bin`（魔数 `FSRS4EXP`）。
 //! - [location]：位置布局（新根 / 旧根围栏 / 墓碑 head 的文件名与纯函数内容、名字守卫；G8-1）。
+//! - [manifest]：媒体清单增量文件 `mf-`（魔数 `FMF4`，每条内容哈希带在 / 不在 / 可疑与 HLC，取 HLC 最大者；G8-3）。
 //!
 //! 与协议 3 互不误读：段魔数不同，head 的必需键不同（[head] 文件头），操作体格式号从 4 起（[op::BODY_FMT]）。
 
@@ -19,6 +20,7 @@ pub mod export;
 pub mod head;
 pub mod heritage;
 pub mod location;
+pub mod manifest;
 pub mod name;
 pub mod op;
 pub mod relay;

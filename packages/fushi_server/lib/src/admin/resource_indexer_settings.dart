@@ -59,6 +59,10 @@ Map<String, Object?> btSiteToJson(BtSiteConfig site, {bool? active}) =>
       ],
       'enabled': site.enabled,
       'allowInsecureHttp': site.allowInsecureHttp,
+      // 用户导入的解析规则原样回给编辑表单（规则只描述页面结构，不含凭据）；
+      // Cookie 是凭据，只报有没有。
+      'parser': site.parser?.toJson(),
+      'cookieSet': site.cookie.isNotEmpty,
       'active': active,
     };
 

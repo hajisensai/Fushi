@@ -518,7 +518,10 @@ table.rt,.rt tbody,.rt tr,.rt td{display:block;width:100%}
 <div class="grid" style="margin:0"><label class="f">站点地址<input type="text" id="bt-url" placeholder="https://example.com"></label><label class="f">名称（可选）<input type="text" id="bt-name"></label></div>
 <div class="fchips" id="bt-domains"></div>
 <div class="row"><label class="check"><input type="checkbox" class="sw" id="bt-enabled" checked><span>启用</span></label><label class="check"><input type="checkbox" class="sw" id="bt-insecure"><span>允许明文 HTTP（仅受信任局域网）</span></label><span class="sp"></span><button class="b" id="btn-bt-add"><svg class="i"><use href="#i-add"/></svg>添加</button></div>
-<p class="sup">只填地址即可，添加时会自动检测站点。</p></div>
+<label class="f">解析规则（可选，JSON）<textarea id="bt-parser" rows="4"></textarea></label>
+<label class="f">登录 Cookie（可选，仅带解析规则的站点）<input type="password" id="bt-cookie" autocomplete="off"></label>
+<p class="sup">只填地址即可，添加时会自动检测站点。</p>
+<p class="sup">自动检测认不出的站点，可以粘贴它的解析规则（JSON）；需要登录的站再填 Cookie。</p></div>
 <h2 class="sub-h">Torznab（Jackett / Prowlarr）</h2>
 <div id="ri-torznab"></div>
 <div class="actions"><button class="b out" id="btn-ri-add"><svg class="i"><use href="#i-add"/></svg>添加 indexer</button><span class="sp"></span><button class="b text" id="btn-ri-reset">放弃修改</button><button class="b" id="btn-ri-save">保存</button></div>
@@ -636,7 +639,7 @@ function ask(msg, danger){
     d.showModal(); $('#dlg-no').focus();
   });
 }
-const REASON_TEXT = {not_running:T('互联服务没在运行'), no_reachable_address:T('没有能放进链接的地址：配对链接只收 HTTPS 地址或 P2P 隧道。请开启 TLS、在「设置 › 远程访问」填写 HTTPS 公网地址，或开启 P2P 隧道'), disabled:T('订阅已停用，请先启用'), unrecognized:T('无法识别这个站点'), timedOut:T('站点响应超时'), invalidUrl:T('地址无效'), insecureHttp:T('这是明文 HTTP 地址：请改用 HTTPS，或勾选「允许明文 HTTP」')};
+const REASON_TEXT = {not_running:T('互联服务没在运行'), no_reachable_address:T('没有能放进链接的地址：配对链接只收 HTTPS 地址或 P2P 隧道。请开启 TLS、在「设置 › 远程访问」填写 HTTPS 公网地址，或开启 P2P 隧道'), disabled:T('订阅已停用，请先启用'), unrecognized:T('无法识别这个站点：可以粘贴它的解析规则后再添加'), timedOut:T('站点响应超时'), ruleRequestFailed:T('按解析规则打不开站点的搜索页：请检查地址，或登录 Cookie 是否已过期'), ruleMatchedNothing:T('按解析规则在搜索页上没解析出任何结果：请检查规则里的选择器，或站点是否需要登录 Cookie'), invalidUrl:T('地址无效'), insecureHttp:T('这是明文 HTTP 地址：请改用 HTTPS，或勾选「允许明文 HTTP」')};
 async function api(path, opts){
   const r = await fetch('/api/admin/'+path, Object.assign({headers:{'Content-Type':'application/json'}}, opts||{}));
   if (r.status===401){ location.reload(); throw new Error('unauthorized'); }
@@ -918,6 +921,8 @@ function btRow(x){
     <div class="bt-edit" style="display:none">
       <div class="grid"><label class="f">${esc(T('名称（可选）'))}<input type="text" data-k="name" value="${esc(x.name||'')}"></label><label class="f">${esc(T('新地址（留空不改）'))}<input type="text" data-k="url"></label></div>
       <div class="fchips">${btDomainBoxes('data-bt-domain', x.domains||[])}</div>
+      <label class="f">${esc(T('解析规则（JSON；清空 = 改回自动检测）'))}<textarea rows="4" data-k="parser">${esc(x.parser ? JSON.stringify(x.parser, null, 2) : '')}</textarea></label>
+      <label class="f">${esc(T('新 Cookie（留空不改）'))}<input type="password" autocomplete="off" data-k="cookie"></label>
       <div class="row">${swLabel('data-k="enabled"', x.enabled, T('启用'))}${swLabel('data-k="allowInsecureHttp"', x.allowInsecureHttp, T('允许明文 HTTP（仅受信任局域网）'))}<span class="sp"></span><button class="b" data-bt="save">${esc(T('保存'))}</button></div>
     </div>
     <div class="row" style="margin-bottom:0"><button class="b sec" data-bt="edit">${esc(T('编辑'))}</button><button class="b text" data-bt="reprobe">${esc(T('重新检测'))}</button><span class="sp"></span><button class="b text danger" data-bt="delete">${esc(T('删除'))}</button></div></div>`;
@@ -933,6 +938,7 @@ function renderBtSites(r){
   $('#ri-bt').innerHTML = (r.btSites||[]).map(btRow).join('');
   $('#ri-bt').querySelectorAll('[data-bt]').forEach(b=>b.onclick=guard(async()=>{
     const row = b.closest('.bt-row'); const id = encodeURIComponent(row.dataset.id); const act = b.dataset.bt;
+    const x0 = (r.btSites||[]).find(s=>s.id===row.dataset.id) || {};
     if (act==='edit'){ const e=row.querySelector('.bt-edit'); e.style.display = e.style.display==='none' ? '' : 'none'; return; }
     let res;
     b.disabled = true;
@@ -945,6 +951,9 @@ function renderBtSites(r){
         if (!domains.length) throw new Error(T('至少选择一个媒体域'));
         const body = {name: v('name').value, domains, enabled: v('enabled').checked, allowInsecureHttp: v('allowInsecureHttp').checked};
         const url = v('url').value.trim(); if (url) { body.url = url; toast(T('正在检测站点…')); }
+        const parser = v('parser').value.trim(); const parserWas = x0.parser ? JSON.stringify(x0.parser, null, 2) : '';
+        if (parser !== parserWas.trim()) { body.parser = parser; toast(T('正在检测站点…')); }
+        const cookie = v('cookie').value.trim(); if (cookie) { body.cookie = cookie; toast(T('正在检测站点…')); }
         res = await put('resource-indexers/bt-sites/'+id, body); toast(T('已保存'));
       }
     } finally { b.disabled = false; }
@@ -956,8 +965,10 @@ $('#btn-bt-add').onclick = guard(async()=>{
   const domains = btPicked($('#bt-domains'), 'data-bt-add-domain'); if (!domains.length) throw new Error(T('至少选择一个媒体域'));
   $('#btn-bt-add').disabled = true; toast(T('正在检测站点…'));
   try {
-    const r = await post('resource-indexers/bt-sites', {url, name: $('#bt-name').value, domains, enabled: $('#bt-enabled').checked, allowInsecureHttp: $('#bt-insecure').checked});
-    $('#bt-url').value=''; $('#bt-name').value='';
+    const body = {url, name: $('#bt-name').value, domains, enabled: $('#bt-enabled').checked, allowInsecureHttp: $('#bt-insecure').checked};
+    const parser = $('#bt-parser').value.trim(); if (parser) { body.parser = parser; body.cookie = $('#bt-cookie').value.trim(); }
+    const r = await post('resource-indexers/bt-sites', body);
+    $('#bt-url').value=''; $('#bt-name').value=''; $('#bt-parser').value=''; $('#bt-cookie').value='';
     renderBtSites(r); renderRiState(r); toast(T('已添加')); loadSubscriptions();
   } finally { $('#btn-bt-add').disabled = false; }
 });

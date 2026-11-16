@@ -125,6 +125,10 @@ class ProfileKeys {
     // family as app_ui_scale), never a per-profile reading preference —
     // snapshotting it would flip the whole app's colors on profile switch.
     'eink_mode',
+    // 墨水屏「每 N 页全刷」的间隔 / 方式：同样描述这块屏幕（厂商通道可不可用是
+    // 设备属性），与 eink_mode 同族。
+    'eink_full_refresh_interval',
+    'eink_full_refresh_method',
     'last_selected_deck',
     'last_selected_dictionary_format',
     'last_selected_model',
