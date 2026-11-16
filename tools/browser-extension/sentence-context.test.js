@@ -24,6 +24,7 @@ const POPUP_SIZE = path.join(__dirname, 'popup-size.js');
 
 function loadContent(opts = {}) {
   const storageWrites = [];
+  const storageData = {};
   const intervals = [];
   const video = { currentTime: opts.currentTime || 0, paused: true, seeking: false, textTracks: [],
     addEventListener() {}, removeEventListener() {} };
@@ -68,7 +69,16 @@ function loadContent(opts = {}) {
     chrome: {
       runtime: { id: 'test-ext-id', lastError: null, onMessage: { addListener() {} }, sendMessage() {} },
       storage: {
-        local: { get: () => {}, set(obj) { storageWrites.push(obj); } },
+        local: {
+          // 制卡队列入队 = 对 storage 现值的读-改-写（content.js fushiQueueMutate），替身得真存。
+          get(keys, cb) {
+            const out = {};
+            for (const k of [].concat(keys || [])) if (k in storageData) out[k] = JSON.parse(JSON.stringify(storageData[k]));
+            if (cb) { cb(out); return undefined; }
+            return Promise.resolve(out);
+          },
+          set(obj) { storageWrites.push(obj); Object.assign(storageData, JSON.parse(JSON.stringify(obj))); return Promise.resolve(); },
+        },
         onChanged: { addListener() {} },
       },
     },
@@ -124,7 +134,7 @@ test('setSentenceContext：整体替换 + 轨首/轨尾封顶 + 回传实际句�
   assert.strictEqual(h.windowObj.fushiSentenceContextPreview({}).total, 0);
 });
 
-test('入队：合成句 + 并集录制窗；cueStartV/cueEndV/mineAtV 仍指当前句', () => {
+test('入队：合成句 + 并集录制窗；cueStartV/cueEndV/mineAtV 仍指当前句', async () => {
   const h = loadContent({ currentTime: 4.2 });
   withTrack(h);
   h.windowObj.fushiSetSentenceContext(1, 2);
@@ -133,7 +143,7 @@ test('入队：合成句 + 并集录制窗；cueStartV/cueEndV/mineAtV 仍指当
     "合成句必须与 app 内 joinMinedSentences 同形：逐句 trim、'\\n' 连接");
   assert.strictEqual(JSON.stringify(ctx.contextWindow), JSON.stringify({ startV: 2500, endV: 8000 }), '并集 = 首句起→末句止');
   assert.strictEqual(ctx.window.startV, 4000, '当前句窗不变');
-  const r = h.windowObj.fushiEnqueue({ expression: '当前' }, '弹窗给的单句');
+  const r = await h.windowObj.fushiEnqueue({ expression: '当前' }, '弹窗给的单句');
   assert.ok(r && r.ok);
   const item = lastQueuedItem(h);
   assert.strictEqual(item.sentence, '第二句\n第三句 当前\n第四句\n第五句', '合成句压过单句来源');
@@ -149,23 +159,23 @@ test('入队：合成句 + 并集录制窗；cueStartV/cueEndV/mineAtV 仍指当
   assert.strictEqual(again.contextWindow, null);
 });
 
-test('未选上下文时入队与旧行为逐字节一致（单句、当前句窗 ± 边距）', () => {
+test('未选上下文时入队与旧行为逐字节一致（单句、当前句窗 ± 边距）', async () => {
   const h = loadContent({ currentTime: 4.2 });
   withTrack(h);
-  h.windowObj.fushiEnqueue({ expression: '当前' }, '');
+  await h.windowObj.fushiEnqueue({ expression: '当前' }, '');
   const item = lastQueuedItem(h);
   assert.strictEqual(item.sentence, '第三句 当前');
   assert.strictEqual(item.startV, 3800);
   assert.strictEqual(item.endV, 5200);
 });
 
-test('已入队按词和当前句身份回读：草稿清空仍命中，不串词/句/视频，移除即复位', () => {
+test('已入队按词和当前句身份回读：草稿清空仍命中，不串词/句/视频，移除即复位', async () => {
   const h = loadContent({ currentTime: 4.2 });
   withTrack(h);
   const fields = { expression: '当前' };
   assert.strictEqual(h.windowObj.fushiIsEntryQueued(fields), false);
   h.windowObj.fushiSetSentenceContext(1, 2);
-  h.windowObj.fushiEnqueue(fields, '');
+  await h.windowObj.fushiEnqueue(fields, '');
   assert.strictEqual(h.windowObj.fushiIsEntryQueued(fields), true);
   assert.strictEqual(h.windowObj.fushiIsEntryQueued({ expression: '别的词' }), false);
   h.video.currentTime = 5.7;
@@ -179,12 +189,12 @@ test('已入队按词和当前句身份回读：草稿清空仍命中，不串�
   assert.strictEqual(h.windowObj.fushiIsEntryQueued(fields), false);
 });
 
-test('面板行精确窗（fushiPendingCueWindow）也能定位整轨位置取上下文', () => {
+test('面板行精确窗（fushiPendingCueWindow）也能定位整轨位置取上下文', async () => {
   const h = loadContent({ currentTime: 0 }); // 播放头不在该句上
   withTrack(h);
   // 面板行制卡入口把该行的精确窗塞进 pending。
   h.windowObj.fushiSetSentenceContext(1, 0);
-  const r = h.windowObj.fushiMineFromSidePanel({ expression: '第四' },
+  const r = await h.windowObj.fushiMineFromSidePanel({ expression: '第四' },
     { text: '第四句', startMs: 5500, endMs: 6500 });
   assert.ok(r && r.ok);
   const item = lastQueuedItem(h);

@@ -7,8 +7,8 @@ import 'package:fushi_anki/fushi_anki.dart';
 /// 带样式 HTML。`{popup-selection-text}` 保持 Yomitan 兼容的纯文本，一字不变。
 ///
 /// HTML 的产出与净化在 popup.js（`fushi/test/anki/popup_selection_html_test.js`）；
-/// 这里守 Dart 侧：wire 键解析、占位符渲染、媒体二次渲染不丢字段、让位判据与纯文本
-/// 版一致、picker 里能选到。
+/// 这里守 Dart 侧：wire 键解析、占位符渲染、媒体二次渲染不丢字段、与纯文本版一样
+/// 不让位（BUG-4756）、picker 里能选到。
 void main() {
   const String kText = '物事の大事な点';
   const String kHtml =
@@ -71,7 +71,7 @@ void main() {
     expect(fields['Plain'], kText);
   });
 
-  test('让位判据与纯文本版相同：Lapis + 高亮落地 + 映了 glossary → 两者都让位', () {
+  test('与纯文本版一样不让位：Lapis + 高亮落地 + 映了 glossary → 照填（BUG-4756）', () {
     const Map<String, String> mappings = <String, String>{
       'SelectionText': '{popup-selection-html}',
       'Glossary': '{glossary}',
@@ -81,8 +81,8 @@ void main() {
         fieldMappings: mappings,
         noteTypeName: LapisNoteType.modelName,
         highlighted: true,
-      ).containsKey('SelectionText'),
-      isFalse,
+      )['SelectionText'],
+      kHtml,
     );
     expect(
       render(

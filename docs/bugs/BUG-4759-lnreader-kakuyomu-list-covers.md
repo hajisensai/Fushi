@@ -1,0 +1,8 @@
+## BUG-4759 · LNReader kakuyomu 热门 / 搜索列表无封面、详情页才有
+- **报告**：2026-11-10（应用内反馈 `GKgimrTFgo`：「日语默认的那两个在线源小说在展示页上没有封面，详情页才有」）；拍板台 `GKgimrTFgo` 2026-11-16 维护者定「全部根本性修复，有封面就用上」，推翻 BUG-2693 里「日文源列表显示占位是预期行为」的判断。
+- **真实性**：✅ 真问题（数据来源缺字段）。kakuyomu 插件 1.0.0 的列表与详情都取 `Work.adminCoverImageUrl`，但这个字段只在作品详情页的查询里有：排行榜页（BUG-2690 宿主补丁 `fushi/assets/lnreader/lnreader_host.js` 的 `pluginFixes` → `kakuyomu.popularNovels`，`cover: work.adminCoverImageUrl || defaultCover`）与搜索页（插件自己的 `searchNovels`）内嵌的 Apollo 缓存里 `Work` 都**不带**该字段（2026-11-16 实测真站：排行榜 100 部、搜索 20 部，字段出现 0 次），于是列表整列落到 `defaultCover`，`lnreader_source_browse_page.dart` 画成书本图标；详情页同字段有值所以有封面。
+  - 站点前端用的公开 GraphQL 端点 `https://kakuyomu.jp/graphql`（无需登录）按 id 能取到同一字段，带别名可一次查整页（实测 100 个别名一次返回，无报错）。
+  - Syosetu（`yomou.syosetu` 1.1.4）列表 / 详情都是插件写死的 `defaultCover`：小説家になろう本身不给作品封面，`og:image` 是 `sbo.syosetu.com/<ncode>/twitter.png` 这种标题文字分享卡，不是封面，所以那边没有「有封面没用上」的情况，不动。
+- **[x] ① 已修复** — 宿主 kakuyomu 补丁新增 `kakuyomuFillCovers`：热门（补丁自己的实现）与搜索（包一层插件原实现）返回后，把封面仍是占位图、路径为 `/works/<数字 id>` 的作品拼成一个带别名的 GraphQL 查询（每页只多一次请求，不逐条拉详情），有 `adminCoverImageUrl` 的填上；作品本身无书籍封面（字段 null）仍是占位图，与详情页一致。封面是附加信息，查询失败时列表照常返回、保留占位图。补丁仍按 `maxVersion: '1.0.0'` 匹配，上游发新版自动退役。实测真站（真插件 1.0.0 + 真宿主 JS + 真网络）：热门第 1 页 100 部中 71 部有封面、第 2 页 48 部、搜索「転生」20 部中 5 部（此前都是 0）。
+- **[x] ② 已加自动化测试** — `test/js/lnreader_host.test.mjs`「kakuyomu 1.0.0：热门列表缺的封面一次 GraphQL 按 id 补齐」「kakuyomu 1.0.0：搜索结果的封面同样经 GraphQL 补齐」，并在原「热门改读排行榜页」用例里断言封面查询失败时列表照常、已有封面的页不发查询（真宿主脚本 + 真 cheerio；修复前新用例红）。
+- **备注**：真机 / 模拟器上浏览页未复测（本轮不做），宿主 JS 在 headless WebView 里跑，与 node 测试同一份脚本。依赖的是站点前端内部用的 GraphQL（非公开文档化 API），一次查询最多 100 个别名；站点以后若加查询复杂度 / 别名数限制或改字段，列表会静默退回占位图（不崩），届时按真站重新取样调整。

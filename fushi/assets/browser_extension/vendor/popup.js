@@ -401,6 +401,13 @@ async function runSrsStatusBatch(items) {
     items.forEach((item, index) => item.resolve(statuses[index] ?? null));
 }
 
+// 制卡目标 = Fushi 复习（宿主注入 __fushiSrsMiningTarget）时，「在 Anki 中打开」↗ 经
+// SrsMiningAnkiRepository.openWordInAnki 打开的就是这个词的复习笔记——徽标与 ↗ 是同一个
+// 入口（徽标可见时 CSS 藏掉 ↗，见 popup.css `.open-anki-srs-owned`）。
+function srsBadgeOwnsOpenWord() {
+    return window.__fushiSrsMiningTarget === true;
+}
+
 function createSrsStatusBadge(expression, reading) {
     if (window.__fushiSrsEnabled === false) return null;
     const bridge = window.flutter_inappwebview;
@@ -415,6 +422,15 @@ function createSrsStatusBadge(expression, reading) {
             if (badge.dataset.busy === '1') return;
             badge.dataset.busy = '1';
             try {
+                // BUG-4720：徽标接管 ↗ 时必须与 ↗ 走同一根桥、同一条判据（按词在点击那一刻
+                // 反查这个词最新的笔记）。状态回包里的 noteId 是「最需要复习那张卡」的笔记、
+                // 而且是取状态那一刻的快照，拿它打开会和 ↗ 跳到不同的笔记；哪颗可见又取决于
+                // 状态取回没有，于是制完卡当下与重开弹窗跳到不同地方。
+                if (srsBadgeOwnsOpenWord()) {
+                    await openWordInAnki(badge, expression || '', reading || '');
+                    return;
+                }
+                // 制卡目标 = Anki：↗ 去 Anki，徽标是唯一去复习的入口，按状态那张卡打开。
                 await bridge.callHandler('srsOpenCard', {
                     cardId: status.cardId,
                     noteId: typeof status.noteId === 'string' ? status.noteId : '',
@@ -1133,8 +1149,10 @@ function showGrammarTooltip(element, pinned) {
     tooltip.style.left = '0px';
     tooltip.style.top = '0px';
 
-    const anchor = element.getBoundingClientRect();
-    const box = tooltip.getBoundingClientRect();
+    /* 旧 WebKit（macOS / iOS 26.3 及更早）的元素框是除过 zoom 的单位，先换回视觉 px
+       （BUG-4753，判据只在 selection.js 一处）。 */
+    const anchor = __fushiClientRect(element);
+    const box = __fushiClientRect(tooltip);
 
     let left = anchor.left;
     const maxLeft = viewportWidth - box.width - margin;
@@ -2821,15 +2839,10 @@ async function buildMinePayload(expression, reading, frequencies, pitches, rules
     const dictionaryMedia = currentDictionaryMedia;
     currentDictionaryMedia = null;
     currentExportImageSizes = null;
-    // 选中段已经在释义里被 <mark> 标出来了，就不要再产出一份重复的 SelectionText。
-    // 选中的释义段已经作为 <mark> 进了导出的释义树。此时把同一段文本再原样塞进
-    // SelectionText 字段是否合适，**取决于用户的笔记类型和字段映射**——而这一层
-    // 两个都不知道：popup.js 只看得见 DOM，看不见 fieldMappings。所以这里只如实
-    // 上报「高亮是否真的落进了导出树」，让位与否交给知道映射的 Dart 层
-    // （BaseAnkiRepository.shouldYieldSelectionText）。
-    //
+    // 只如实上报「选中段是否真的作为 <mark> 落进了导出的释义树」。popupSelectionText
+    // 无论如何原样上报，Dart 侧总是把它填进 {popup-selection-text}（BUG-4756）。
     // 高亮**没**落地时（选中落在例句 / 词头 / 标签这些释义之外，或导出树文本流
-    // 校验没过）这个标志是 false，Dart 侧照旧把原文交给 SelectionText。
+    // 校验没过）这个标志是 false。
     const glossarySelectionHighlighted = currentSelectionHighlights > 0;
     currentSelectionHighlights = 0;
     // {popup-selection-html} 与 {popup-selection-text} 必须描述同一个选区：只有调用方
@@ -3671,6 +3684,25 @@ const DICT_SANDBOX_HELPER_JS = `(function () {
     var target = event.target && event.target.nodeType === 3 ? event.target.parentElement : event.target;
     return target && target.closest ? target.closest('a[href]') : null;
   }
+  // caretRangeFromPoint 给的是离点最近的字间缝：点在字的右半边，偏移已经指向下一个字
+  // （BUG-4753，点「訪」查成「問」）。与 selection.js getCharacterAtPoint 同一判据：在
+  // caret、caret-1、caret+1 里取字框真包含这一点的那个字；都不包含就不算点中字。
+  function hitOffset(node, caret, x, y) {
+    var probe = document.createRange();
+    var order = [caret, caret - 1, caret + 1];
+    for (var i = 0; i < order.length; i++) {
+      var offset = order[i];
+      if (offset < 0 || offset >= node.data.length) continue;
+      probe.setStart(node, offset);
+      probe.setEnd(node, offset + 1);
+      var rects = probe.getClientRects();
+      for (var j = 0; j < rects.length; j++) {
+        var r = rects[j];
+        if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return offset;
+      }
+    }
+    return -1;
+  }
   function isSoundLink(anchor) {
     return /^sound:/i.test((anchor.getAttribute('href') || '').trim());
   }
@@ -3700,8 +3732,8 @@ const DICT_SANDBOX_HELPER_JS = `(function () {
     var range = document.caretRangeFromPoint(event.clientX, event.clientY);
     if (!range || range.startContainer.nodeType !== 3) return;
     var data = range.startContainer.data;
-    var start = range.startOffset;
-    if (start >= data.length) return;
+    var start = hitOffset(range.startContainer, range.startOffset, event.clientX, event.clientY);
+    if (start < 0) return;
     if (!isJapanese(data.charCodeAt(start))) {
       while (start > 0 && !stop.test(data[start - 1])) start--;
     }
@@ -6037,7 +6069,7 @@ function createEntryHeader(entry, idx) {
     // 时已制卡条目就一个跳转入口都没有。现在两颗都在 DOM 里，徽标可见时由 CSS 兄弟选择器
     // 藏掉 ↗（见 popup.css `.open-anki-srs-owned`），徽标不可见时 ↗ 兜底。
     if (miningEnabled) {
-        if (srsBadge !== null && window.__fushiSrsMiningTarget === true) {
+        if (srsBadge !== null && srsBadgeOwnsOpenWord()) {
             openAnkiButton.classList.add('open-anki-srs-owned');
         }
         buttonsContainer.appendChild(openAnkiButton);
@@ -7851,7 +7883,8 @@ function createKanjiCard(kanji) {
         e.preventDefault();
         e.stopPropagation();
         if (__fushiClickEndsTextSelection(e)) return;
-        const rect = charEl.getBoundingClientRect();
+        // 宿主按客户区坐标锚嵌套弹窗（BUG-4753：旧 WebKit 的元素框要先换回客户区）。
+        const rect = __fushiClientRect(charEl);
         window.flutter_inappwebview.callHandler('onLinkClick', kanji.character, {
             x: rect.left,
             y: rect.top,
@@ -8014,6 +8047,15 @@ function _reportPopupHeight() {
 // popup_settings_injection.dart 写在 document.documentElement 上（popupContentZoom =
 // 界面大小 x 词典字号/16，Ctrl+滚轮还会就地改它，所以真值只能在 JS 侧现读）；扩展浮窗
 // 由 content.js 写在 shadow host 上。读不到或非法一律回落 1（= 不换算）。
+// 元素在客户区坐标（视觉 px）里的框。旧 WebKit 的 getBoundingClientRect 除过 CSS zoom，
+// 换算与引擎判据只在 selection.js 的 clientRectOf 里写一份（BUG-4753）；没装 selection.js
+// 的上下文按标准引擎处理。
+function __fushiClientRect(element){
+    var sel = window.fushiSelection;
+    return (sel && typeof sel.clientRectOf === 'function')
+        ? sel.clientRectOf(element)
+        : element.getBoundingClientRect();
+}
 function __fushiPopupContentZoom(){
     var host = window.__fushiRoot && window.__fushiRoot.host;
     var raw = (host && host.style && host.style.zoom) ||
