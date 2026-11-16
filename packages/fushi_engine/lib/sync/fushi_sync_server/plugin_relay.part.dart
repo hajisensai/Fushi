@@ -69,7 +69,7 @@ extension _FushiSyncServerPluginRelay on FushiSyncServer {
     try {
       if (reqPath == kInterconnectPluginRelayInvokePath) {
         final Object? m = body['method'];
-        final Object? args = body['args'] ?? const <String, Object?>{};
+        final Object args = body['args'] ?? const <String, Object?>{};
         if (m is! String || m.isEmpty || args is! Map) {
           return _pluginRelayError(400, kPluginRelayBadRequest);
         }
@@ -95,7 +95,7 @@ extension _FushiSyncServerPluginRelay on FushiSyncServer {
         return _pluginRelayJson(<String, Object?>{'covers': ok});
       }
       final Object? url = body['url'];
-      final Object? headers = body['headers'] ?? const <String, Object?>{};
+      final Object headers = body['headers'] ?? const <String, Object?>{};
       if (url is! String || url.isEmpty || headers is! Map) {
         return _pluginRelayError(400, kPluginRelayBadRequest);
       }
