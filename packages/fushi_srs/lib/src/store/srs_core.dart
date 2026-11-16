@@ -992,25 +992,26 @@ final class SrsCore {
   /// [profile] 此刻的刷新键：牌组树 / 修改记录 / 角标 / 统计 / RWKV 分数表这些缓存「还能不能用」的判据。各键是
   /// 不透明串，只比相等：相等 = 这期间没有变化。
   ///
-  /// 新代（S1 之后）没有协议 3 的进程内刷新键（`refresh_keys` 已删：派生层随写入维护，没有「待刷新」）。键取内核
-  /// 持有的本机状态行（`local_state`，native/fushi_fsrs/src/store/gen4/local.rs）的 `纪元:修订号`：每条改投影的写命令
-  /// 在自己的事务里推进修订号，库换了 / 迁移之后纪元换新。行在库里，所以别的进程（查词弹窗读主进程写的库）也看得见。
-  /// 五个键取同一个值——比协议 3 分得粗（作答也让牌组树缓存失效），只会多重读、不会读到旧值。修订号不覆盖的写入
-  /// （`cache_config_set` 改了缓存配置后的整层重建）由调用方自己作废缓存。
+  /// 内核命令 `refresh_keys`（native/fushi_fsrs/src/store/gen4/refresh.rs）一次取回五个键：主进程（Primary）里是内核
+  /// 按 profile、按类别持有的进程内计数，写命令提交之后由内核推进——只读内存，不读库、不排写锁，在调用方 isolate 上
+  /// 同步调。各键随什么变、特意不随什么变见 [SrsRefreshKeys]（作答只动 `stats` / `landed`）。辅助进程（Secondary）
+  /// 看不见主进程的计数，五个键同值（本机状态行的纪元 + 修订号 + 缓存层代号，一个读快照），随主进程的任何写入变。
+  /// Dart 不存计数的镜像。
   ///
-  /// 一次只读快照里的点查（`srs_meta` 主键），在调用方 isolate 上同步调。库已关闭（本对象已关，或 [fromAddress]
-  /// 包的句柄的拥有者已关库）→ null。
+  /// 库已关闭（本对象已关，或 [fromAddress] 包的句柄的拥有者已关库）→ null。
   SrsRefreshKeys? refreshKeys(String profile) {
     if (isClosed) return null;
     final Map<String, Object?> k;
     try {
-      k = sync2(<String, Object?>{'op': 'local_state', 'profile': profile}).map;
+      k = sync2(<String, Object?>{
+        'op': 'refresh_keys',
+        'profile': profile,
+      }).map;
     } on SrsCoreException catch (e) {
       if (e.message == kSrsCoreClosed) return null;
       rethrow;
     }
-    final String key = srsRefreshKeyOf(k);
-    return (content: key, structure: key, rwkv: key, stats: key, landed: key);
+    return srsRefreshKeysOf(k);
   }
 
   /// 卡片历史的当前状态，Rust 直接从写连接读日志（含事务里未提交的行）。[lineages] 每项是一份
@@ -1282,18 +1283,26 @@ final class SrsCore {
 /// 已关闭的句柄上调用时内核报的错误文本（native/fushi_fsrs/src/store/mod.rs `CLOSED`）。
 const String kSrsCoreClosed = 'srs store is closed';
 
-/// `local_state` 回包 [state]（native/fushi_fsrs/src/store/local_state.rs `view`）→ 刷新键。
-///
-/// 纪元已落盘（`epochStored`）时是 `纪元:修订号`。没落盘时（这个 profile 还没有本机状态行：迁移不带协议 3 的那一行，
-/// 主进程开过这个 profile 才补上；Secondary 只读、不补）内核每次现生成一个新纪元，拿它当键会让按键缓存的东西每读一次
-/// 都不命中，所以换成固定的 `unstored:修订号`：行建起来之后纪元落盘，键随之变一次（整份重读一次），之后稳定。
-String srsRefreshKeyOf(Map<String, Object?> state) {
-  final int revision = (state['revision']! as num).toInt();
-  if (state['epochStored'] != true) return 'unstored:$revision';
-  return '${state['epoch']! as String}:$revision';
+/// `refresh_keys` 回包 → [SrsRefreshKeys]（五个键都必须在、都是串；缺了是内核与 Dart 对不上，报错）。
+SrsRefreshKeys srsRefreshKeysOf(Map<String, Object?> reply) {
+  String key(String k) => switch (reply[k]) {
+    final String v => v,
+    _ => throw StateError(
+      'srs: `refresh_keys` reply lacks `$k` (the native core and Dart do not '
+      'match): $reply',
+    ),
+  };
+  return (
+    content: key('content'),
+    structure: key('structure'),
+    rwkv: key('rwkv'),
+    stats: key('stats'),
+    landed: key('landed'),
+  );
 }
 
-/// [SrsCore.refreshKeys] 的结果（键的含义见 native/fushi_fsrs/src/store/refresh.rs）：
+/// [SrsCore.refreshKeys] 的结果（键的含义见 native/fushi_fsrs/src/store/gen4/refresh.rs 文件头的表，口径同协议 3 的
+/// `store/refresh.rs`；新代没有收段会话的延后，等同步命令接线时补）：
 /// - [content]：复习日志与界面状态以外的事件落库、可见性变化、重读本机状态；
 /// - [structure]：[content] 再加界面状态类修改记录（牌组收起 / 展开、排序位）——牌组树与 profile 修改记录的缓存键；
 /// - [rwkv]：RWKV 分数表整表重查（牌组 / 配置类事件、别的设备的事件落库；收段会话期间攒着、结束时并成一次）；

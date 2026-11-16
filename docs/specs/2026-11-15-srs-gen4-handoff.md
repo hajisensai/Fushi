@@ -598,3 +598,62 @@ blocked 一律归 busy、去掉 `unstored` 分支、配对退回 (种类, 字段
    来自本版之前的还原，没改。「只剩封存旧库」页的文案改成「保持原样、不要用备份覆盖、带日志联系支持」，不再引导还原。
 7. **迁移中关库之后的再开始。** quiesce 之后主库已关，迁移页的「开始升级」按钮仍可点（app 未初始化时这一页通常不在
    屏上）。没加额外闸门。
+
+## S1c 刷新计数与写回包（2026-11-17，分支 `pr/srs-gen4-s1c-refresh-counters-apply-reply`，基于 `pr/srs-gen4-switch`）
+
+收掉 §9.5 第 3、4、5 条。schema 不变（没加表 / 索引，分到的 40021 没用）。
+
+### 刷新键（`gen4/refresh.rs`，命令 `refresh_keys` 由 Removed 改为 Wired）
+
+- `G4Core` 持有 `refresh: Mutex<Refresh>`：开库随机标识 + 按 profile 的五个计数（content / view / rwkv / stats / landed），
+  键形同协议 3（`<开库标识>:<n>`，`structure` = `<开库标识>:<content>:<view>`）。Primary 读只碰内存。
+- 推进规则（与协议 3 `store/refresh.rs` + `sync2/mod.rs` `Marks` 同口径，文件头有表）：`Session::land` 按每条操作体记
+  一份 `Tally`（日志 → landed + stats；界面状态修改 → landed + view；其余修改 / 身份记录 → landed + content + stats，
+  牌组 / profile 的再加 rwkv；标签操作、彻底清除 → landed + content + stats；还原点什么都不动），`Session::finish` 写进回包
+  `refreshTally`，`dispatch.rs` `local_write` 在**提交之后**取走（不交给 Dart）再推进；`apply {remote}` 落了东西加 rwkv。
+  信任改了 → content + stats + landed；`digest_heal` 的整层重建、`cache_config_set` 改了配置、`rebuild_caches`、
+  `refresh_caches` 实际收了东西、`identity` 第一次建绑定、`binding_set` / `collection_join` / `collection_salts_add` /
+  `collection_adopt`、`local_state {reload: true}` → 整份作废。只写本机状态行 / 设备信息 / 媒体回收集合的不推进。
+- 定案（所有者授权自定）：
+  - 命令失败不推进（协议 3 按「可能提交了一部分」作废一次）：新代一条命令一个事务，失败什么都没落。
+  - **Secondary** 看不见主进程内存，五个键同值，一个读快照里拼 `<开库标识>:s:<纪元|unstored>:<修订号>:<gen>.<floor>`：
+    修订号（本机状态行，主进程每条改投影的写命令同一笔事务推进）+ 缓存层代号 `cache_gen`（补上修订号不覆盖的整层重建与
+    别名变化）。只用 `cache_gen` 不够：牌组收起 / 排序位、profile 设置不碰缓存行，代号不动。Secondary 只会多重读。
+  - 收段会话期间的 RWKV 延后（协议 3 `rwkv_held`）属于同步命令，G8-7 接 `ingest_*` 时按协议 3 口径补（`refresh_note`
+    的 `merged` 入口已在）。
+- Dart：`SrsCore.refreshKeys` 改发 `refresh_keys`（`srsRefreshKeysOf` 解析、缺键报错），删 `srsRefreshKeyOf`。
+  `SrsDbStore` 的五个指纹与 `_structureKey` 注释恢复按类语义：作答只动 `statsFingerprint` / `landedFingerprint`，RWKV 分数表
+  不再每题整表重查（`SrsRwkvService` 读 `rwkvScoresKey`，没改代码），牌组树 / profile 修改记录不再每题重建。
+
+### `apply` 回包（`cmd/writes.rs` 文件头「回包」）
+
+- `edits` 每项第 7 列 = 输入下标（`apply` / `change` 原样，`import_drafts` 按筛掉初值之前的原输入，意图命令自己拼的 /
+  直接落的 = null）。
+- `tagWrites`：整列表 `tags` 项一条 `[输入下标, 规范笔记, 设备, 展开出的最后一条操作的 seq]`；不进 `edits`（撤销记录器的
+  `noteWritten` 按 dot 撤修改记录，标签走 `noteTags` 差量撤，混进去会改变撤销行为）。
+- `logHlcs`：请求带 `logHlcs: true` 才报，`[输入下标, 规范日志 ID, HLC]`（与 `read logs` 行的 `hlc` 同形）。默认不报：导入
+  成批日志时回包会线性涨。
+- `stamps: true` 仍拒，替代形状就是上面三项。
+- Dart：`_readBackEdits` 按下标认领（`srsWrittenByInput`，一条输入认领两次 / 越界报错），删 `srsMatchWrittenEdits` 与
+  `_canonicalDraftIds`（N+1 点查）；标签草稿取那条笔记读侧合成的 `tags` 行。作答发 `logHlcs: true`，`_answeredLogHlc` 从回包
+  取，删按卡读全部日志的 `_storedLogHlc`。
+
+### 测试（`cmd/refresh_tests.rs`，全部经 C ABI；`refresh.rs` 单元测试 4 条）
+
+- 与协议 3 对拍：迁移前后两侧发同一串写入（作答、改字段、建牌组、收起、改名、标签、no-op、还原点、彻底清除、remote、
+  reload、stale），每步「哪几个键变了」相同，并钉住作答 = `[stats, landed]`、收起 = `[structure, landed]`。
+- 整层重建作废、只写本机状态行不动；Secondary 五键同值、随作答 / 收起 / 重建变；带盐成员上的修改与标签按下标认领、实体与
+  键是规范形；`logHlcs` 与 `read logs` 一致、不要就不报。
+- 变异实测（各自让对应用例变红）：日志推进 content/rwkv、界面状态当内容、分发器不推进、`edits` 丢下标、`tagWrites` 丢下标、
+  Secondary 键去掉修订号。
+- 顺手修：`dispatch_tests.rs` `unwired_and_removed_commands_name_their_owner` 里 `binding_set` 还当 G9-4 未接线（G9-4 已接，
+  集成分支上这条本来就红），删掉该行。
+
+### 没做 / 交给谁
+
+- 撤销记录器 `_SrsUndoRecorder.noteWritten` 仍按 `(种类, 实体, 字段键)` 对 `_before`：草稿点名别名类的非规范成员时回包实体是
+  规范形，对不上、这一项的 dot 记不下（撤销退回无 dot 的比较）。现在有输入下标可以改成按下标认领，但不在本模块点名的段落里，
+  留给 G7-5b。
+- `srs_core_test.dart` 用本 worktree 编的 quick 版 `fushi_fsrs.dll`（`FUSHI_FSRS_LIB`）跑过；顺手把「未接线命令带类型」用例里的
+  `identity`（G9-4 已接）换成 G9-5 的 `profile_merge_mark`。`SrsDbStore` 层的 `srs_fingerprint_instance_test.dart` 等还按
+  `srs.db` 路径开库（新代开库要目录），且要 `fushi_compute`，本机没跑；改写归 G7-5b。
