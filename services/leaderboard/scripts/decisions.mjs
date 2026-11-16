@@ -19,7 +19,6 @@
 //       （按开发者留言校正决定（留言与按钮冲突时以留言为准）；记为无署名）
 //   全局：--local（读写 wrangler 本地 D1，调试用；默认 --remote）
 //
-// 本机要走代理时先 export HTTPS_PROXY=http://127.0.0.1:34151（wrangler 会读）。
 
 import { readFileSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
