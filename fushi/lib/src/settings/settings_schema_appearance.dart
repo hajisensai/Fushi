@@ -400,7 +400,7 @@ SettingsDestination buildAppearanceDestination() {
                     .then((_) => settingsContext.refresh()),
             // 没选过时摆放跟着布局走（拼贴 = 散落、封面网格下的色块分区 = 规整），
             // 「已改过」对照此刻布局下的真实默认；恢复默认清掉偏好回到跟着走
-            // （BUG-4701）。
+            // （BUG-4702）。
             defaultValueBuilder: (SettingsContext c) =>
                 ShellBlockArrangement.defaultFor(c.appModel.shellContentLayout),
             resetToDefault: (SettingsContext c) =>
