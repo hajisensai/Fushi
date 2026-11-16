@@ -1192,3 +1192,45 @@ G8 子规划文档在仓库里不存在（任务点名的「G8 子规划」找�
 - **G9-5**：`srsRemoveOwnProfileFolder` 遇到 `v4/` 按「别人的东西」处理（不删整个 profile 目录），安全但不清理本机在新根的目录；`srs_profile_link.dart` 列远端时只跳过 `v4/`，新根下设备的说明文件（若以后要放）还没有读法。
 - **上游（不归 G8-7）**：① `SrsDbStore.open` 在还没绑定的 profile 上直接抛 `SrsProfileUnboundException`（open 段；真内核测试得先经 `SrsCore.sync2` 发 `identity` 立绑定）；② 新代库上 `SrsDbStore.note(...)` 在 `_prefetchEdits`（`srs_db_store.dart` 约 2500 行）Null check 崩——`edits` 表读回来的 `e` 与请求的 id 对不上，自己写的笔记也一样，所以 `srs_sync4_folder_test` 改按 `status` 与语义摘要核收敛。
 - 媒体命令（`media_*`）仍归 G8-7b；文件夹位置的媒体对账在接上之前照样报未接线。
+
+## 18. W2 合流修复（2026-11-17，分支 `pr/srs-gen4-w2-merge`，integration owner）
+
+本波六个分支（G7-2b §11、S1c §12、G7-5b §13、G9-6 §14、G11-3 §15–§16、G8-7 §17）合流时与合流后自动审查发现的跨模块问题。
+
+### 合流取舍
+
+- `srs_db_store.dart`：G9-6 的 `_canonicalBuiltins` / `_derivedBuiltins` / `resolveBuiltinIds` / `open` 尾部那一行删掉，保留
+  G7-5b 的 `_loadRootIds`（§14「与 G7-5b 合流」）；G9-6 公开的 `canonicalIds`（带条数校验）顶替 G7-5b 私有的 `_canonicalIds`。
+  `srsNormalizeStoreIds` 不再手调 `resolveBuiltinIds`（绑定变化让 `srsStoreProvider` 整份重建）。
+- `dispatch_tests.rs` 未接线清单 = 合流后 `wiring` 里仍是 `Unwired` 的：G9-5（`profile_merge_mark`）、G8-7b（`relay_outbox`）。
+- §7 对照表 `import` / `export` 行取 G11-3，同步一轮各行取 G8-7。
+
+### 刷新键：不经 `Session` 落真相的写（S1c × G11-3 / G8-7）
+
+`import`、`ingest`、`ingest_finish`、`retire`、`rotate` 落真相、推进本机修订号，却不经 `Session`，合流后 Primary 的进程内
+刷新计数（`refresh.rs`）不动：Dart 按刷新键判缓存，导入 / 收段之后读旧缓存（Secondary 按修订号拼键，不受影响）。修法：
+与修订号同一个判据（`sync.rs` `bump_revision` 的 `n > 0`；导入 `!unchanged`）在回包里放 `Tally::all()`，分发器提交之后
+`noted` 取走、整份作废（`refresh.rs` 文件头「谁推进」已补）。预检、要确认、`unchanged`、没收到东西的一轮不推进。
+测试：`fushisrs_tests.rs` `an_import_that_changes_something_moves_the_refresh_keys`、`sync_tests.rs`
+`landing_sync_commands_move_the_refresh_keys`（经 C ABI；变异实测：去掉两处 `Tally::all` → 两条都红）。
+
+### 导入补盐与设备公钥要确认（G11-3 × G9-4）
+
+合流前：同一个集合 / 早已并入的 `.fushisrs`，清单里本机还不算数的盐（`collection_adopt` → 本机签名的 `Salts`，结论
+`saltsAdded`）与本机还不认识的设备公钥（清单 `peers`）不经确认直接落。查设计（§5.1 盐由受信设备签名的操作携带、§5.4 第 6 条
+同一集合另一个旧 uid 的备份「只写一条 `Salts`」）没有「同一集合的盐无需确认」的安全论证，代码里也没有证据约束：
+`gen4_ids/alias.rs` `profile_entities` 对每个盐把「ID 等于这个盐」且出现过的实体直接归到 profile 级设置实体（不看种类、
+不做自然键验算），一个自称同一集合的文件带一个等于本机某条笔记 / 某个牌组 ID 的「盐」就能把它并错；设备公钥先到先得，
+错的公钥让那台设备真正的段以后一直被拒。所以取保守做法：
+
+- 内核（`cmd/fushisrs.rs` `unconfirmed_identity`）：同一个集合 / 已并入、没带 `confirmed` 时，有新盐或新设备就回
+  `{outcome: "needsConfirm", reason: "identity", collection, dir, newSalts, newPeers}`、什么都不写；另一个集合仍是
+  `reason: "join"`（同形，也带两张表）。预检同形。确认过的再导一遍不再问。
+- Dart：`SrsFushiSrsForeign` 加 `reason` / `newSalts` / `newPeers`（`fromReply`），导入页按原因换提示
+  （新键 `srs_timeline_import_identity_confirm`，其余 15 种语言是英文占位）。
+- 测试：`new_salts_and_peers_from_a_same_collection_file_need_confirmation`（变异实测：去掉门 → 红）；既有用例里同集合带
+  新设备的导入改为确认后导入；Dart `srs_fushisrs_test.dart` 同步。
+- 代价：新装设备第一次导入自己复习库的包也会问一次（包里设备的公钥本机还没有）。流里原生日志抬头自带的公钥
+  （`import_ops_from` 的 `got.peers`）仍不经确认落下——与清单 `peers` 同样是先到先得，这一处没收，归 G11-3 / 身份负责模块定。
+- 另记（不归本次合流修）：`profile_entities` 不看实体种类就把等于盐的已出现 ID 归到 profile 设置实体，即使经确认、经同步
+  （受信设备写的 `Salts`）进来的盐也一样，归 G9 / 别名层核实是否要限定种类。

@@ -842,13 +842,21 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
           store,
           File(path),
           mediaRoot: await _mediaRoot(store),
-          // 文件来自另一个复习库：确认之前不合并（内核什么都没写）。
-          confirmForeign: (_) async =>
+          // 文件来自另一个复习库，或同一个库的文件带来新的旧 profile 标识 / 设备：确认之前不合并（内核什么都没写）。
+          confirmForeign: (SrsFushiSrsForeign f) async =>
               mounted &&
               await showFushiConfirmDialog(
                 context: context,
                 title: t.srs_timeline_import,
-                message: t.srs_timeline_import_foreign_confirm,
+                message: switch (f.reason) {
+                  SrsFushiSrsConfirmReason.join =>
+                    t.srs_timeline_import_foreign_confirm,
+                  SrsFushiSrsConfirmReason.identity =>
+                    t.srs_timeline_import_identity_confirm(
+                      salts: f.newSalts.length,
+                      devices: f.newPeers.length,
+                    ),
+                },
                 confirmLabel: t.srs_timeline_import,
                 cancelLabel: t.cancel,
                 icon: FushiIcons.importFile,

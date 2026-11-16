@@ -94,11 +94,19 @@ void main() {
     final SrsDbStore b = await device('b');
     final Directory mediaB = dir('media_b');
     final String own = await addNote(b, '犬');
+    // 同一个复习库的包，但 b 还不认识 a 的设备公钥：先问（reason: identity），确认后才导入。
+    SrsFushiSrsForeign? asked;
     final SrsFushiSrsImport imp = await srsImportFushiSrs(
       b,
       pkg,
       mediaRoot: mediaB,
+      confirmForeign: (SrsFushiSrsForeign f) async {
+        asked = f;
+        return true;
+      },
     );
+    expect(asked?.reason, SrsFushiSrsConfirmReason.identity);
+    expect(asked?.newPeers, isNotEmpty);
     expect(imp.applied, greaterThan(0));
     expect(imp.mediaFiles, 1);
     expect((await b.note(n))!.field(expr(b)), '猫');
@@ -184,6 +192,7 @@ void main() {
       b,
       pkg,
       mediaRoot: mediaB,
+      confirmForeign: (_) async => true,
     );
     expect(imp.mediaFiles, 0);
     expect(await b.note(n), isNotNull);
@@ -230,6 +239,7 @@ void main() {
       expect(refused.declined, isTrue);
       expect(refused.mediaFiles, 0);
       expect(asked?.dir, kOtherProfile);
+      expect(asked?.reason, SrsFushiSrsConfirmReason.join);
       expect(await noteCount(b), notes);
       expect((await b.sync2Status())['ops'], ops, reason: '确认之前内核什么都不写');
       expect(mediaB.listSync(), isEmpty, reason: '用户拒绝合并：媒体目录不能被写（复核：孤儿媒体）');

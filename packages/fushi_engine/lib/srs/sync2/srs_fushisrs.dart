@@ -10,8 +10,9 @@
 ///   zstd；不压缩才能在导入时不整份进内存地拷出来交给内核按文件流式读）。
 /// - 可选的 `media/<文件名>`（媒体默认带上）。
 ///
-/// 导入 = 操作**并入**（不覆盖任何一方），媒体只补本机缺的。文件来自另一个复习库（另一个集合）时内核先回「需确认」、
-/// 什么都不写；调用方确认（[srsImportFushiSrs] 的 `confirmForeign`）后两个库并成一个再导入。包里本机身份的日志与本机分叉
+/// 导入 = 操作**并入**（不覆盖任何一方），媒体只补本机缺的。文件来自另一个复习库（另一个集合），或同一个复习库的文件
+/// 带来本机还不算数的盐 / 还不认识的设备公钥时，内核先回「需确认」、什么都不写；调用方确认（[srsImportFushiSrs] 的
+/// `confirmForeign`）后才并入 / 落下这些再导入。包里本机身份的日志与本机分叉
 /// 了（拷过数据目录）时内核先换身份。
 ///
 /// 顺序：解包（不碰媒体目录）→ 内核**预检**（什么都不写，判要不要确认、会不会被拒）→ 需要时问用户，答否就此结束、本机一点
@@ -79,12 +80,56 @@ class SrsFushiSrsImport {
   final bool declined;
 }
 
-/// 文件来自另一个复习库（另一个集合）：导入会把两个库并成一个，要用户确认。
+/// 导入要用户确认的原因（内核导入命令 `needsConfirm` 回包的 `reason`，native/fushi_fsrs/src/store/gen4/cmd/fushisrs.rs
+/// 文件头第 1 步）。
+enum SrsFushiSrsConfirmReason {
+  /// 文件来自另一个复习库（另一个集合）：导入会把两个库并成一个。
+  join,
+
+  /// 同一个复习库的文件，但带来本机还不算数的旧 profile 标识（盐，[SrsFushiSrsForeign.newSalts]）或本机还不认识的
+  /// 设备公钥（[SrsFushiSrsForeign.newPeers]）：只有文件确实是自己的才该接受。
+  identity,
+}
+
+/// 导入前要用户确认的事（[SrsFushiSrsConfirmReason]）；确认之前内核什么都没写。
 class SrsFushiSrsForeign {
-  const SrsFushiSrsForeign({required this.collection, required this.dir});
+  const SrsFushiSrsForeign({
+    required this.collection,
+    required this.dir,
+    this.reason = SrsFushiSrsConfirmReason.join,
+    this.newSalts = const <String>[],
+    this.newPeers = const <String>[],
+  });
+
+  /// 内核 `needsConfirm` 回包（预检或真导入）。
+  factory SrsFushiSrsForeign.fromReply(Map<String, Object?> r) =>
+      SrsFushiSrsForeign(
+        collection: r['collection']! as String,
+        dir: r['dir']! as String,
+        reason: r['reason'] == 'identity'
+            ? SrsFushiSrsConfirmReason.identity
+            : SrsFushiSrsConfirmReason.join,
+        newSalts: <String>[
+          for (final Object? s
+              in (r['newSalts'] as List<Object?>?) ?? const <Object?>[])
+            s! as String,
+        ],
+        newPeers: <String>[
+          for (final Object? d
+              in (r['newPeers'] as List<Object?>?) ?? const <Object?>[])
+            d! as String,
+        ],
+      );
 
   final String collection;
   final String dir;
+  final SrsFushiSrsConfirmReason reason;
+
+  /// 这次会加进本复习库的旧 profile 标识（盐）。
+  final List<String> newSalts;
+
+  /// 这次会记下公钥的新设备（设备 ID）。
+  final List<String> newPeers;
 }
 
 /// v2 同步之前的事件备份：这一版不能导入（见文件头）。
@@ -184,8 +229,9 @@ Future<SrsFushiSrsExport> _writeFushiSrs(
 }
 
 /// 导入 [file]：操作并入、媒体补缺。不是 `.fushisrs`、另一个 profile 的第 1 版、来自更新版本、坏文件抛
-/// [FormatException]（v2 同步之前的事件备份抛它的子类 [SrsFushiSrsLegacyFormat]）；文件来自另一个复习库时问
-/// [confirmForeign]（没给或答否 = 不导入，[SrsFushiSrsImport.declined]）。
+/// [FormatException]（v2 同步之前的事件备份抛它的子类 [SrsFushiSrsLegacyFormat]）；文件来自另一个复习库，或同一个
+/// 复习库的文件带来新的旧 profile 标识 / 设备公钥时问 [confirmForeign]（原因见 [SrsFushiSrsForeign.reason]；没给或
+/// 答否 = 不导入，[SrsFushiSrsImport.declined]）。
 Future<SrsFushiSrsImport> srsImportFushiSrs(
   SrsDbStore store,
   File file, {
@@ -211,10 +257,7 @@ Future<SrsFushiSrsImport> srsImportFushiSrs(
     );
     bool confirmed = false;
     if (pre['outcome'] == 'needsConfirm') {
-      final SrsFushiSrsForeign foreign = SrsFushiSrsForeign(
-        collection: pre['collection']! as String,
-        dir: pre['dir']! as String,
-      );
+      final SrsFushiSrsForeign foreign = SrsFushiSrsForeign.fromReply(pre);
       if (confirmForeign == null || !await confirmForeign(foreign)) {
         return const SrsFushiSrsImport(
           applied: 0,

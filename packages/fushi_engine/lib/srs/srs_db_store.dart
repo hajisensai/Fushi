@@ -1987,7 +1987,8 @@ class SrsDbStore implements SrsSync2Host {
       (await sync2Command(<String, Object?>{'op': 'export', 'path': path})).map;
 
   /// 导入 `.fushisrs` 之前的预检（G11-3）：内核只判「要不要用户确认、会不会被拒」，**什么都不写**（回包
-  /// `{format, outcome: ready | needsConfirm, preflight: true, collection?, dir?}`；拒收照真导入的口径抛错）。调用方据此在
+  /// `{format, outcome: ready | needsConfirm, preflight: true, reason?, collection?, dir?, newSalts?, newPeers?}`；拒收照真导入
+  /// 的口径抛错）。调用方据此在
   /// 用户确认之前不打还原点、不往媒体目录写文件。
   Future<Map<String, Object?>> sync2ImportPreflight({
     required String path,
@@ -2003,8 +2004,9 @@ class SrsDbStore implements SrsSync2Host {
   );
 
   /// 并入 `.fushisrs` 的操作部分（不覆盖）：内核按文件 [path] 流式读（G11-3）。[manifest] 是第 2 版清单里归内核的
-  /// 几项（`collection` / `dir` / `salts` / `peers`；第 1 版不给）。文件来自另一个集合且没有 [confirmed] 时内核回
-  /// `{outcome: needsConfirm, collection, dir}`、什么都不写；确认后先并入再导入。包里本机身份的日志与本机分叉了时内核
+  /// 几项（`collection` / `dir` / `salts` / `peers`；第 1 版不给）。文件来自另一个集合（`reason: join`），或同一个集合的
+  /// 文件带来本机还不算数的盐 / 还不认识的设备公钥（`reason: identity`），且没有 [confirmed] 时内核回
+  /// `{outcome: needsConfirm, reason, collection, dir, newSalts, newPeers}`、什么都不写；确认后先并入 / 落下再导入。包里本机身份的日志与本机分叉了时内核
   /// 先换身份（回包 `rotated`）。回包原样返回（`applied` = 并入条数）。
   Future<Map<String, Object?>> sync2ImportOps({
     required String path,

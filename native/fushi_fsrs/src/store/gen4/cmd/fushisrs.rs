@@ -30,7 +30,7 @@
 //!      `{outcome: "needsConfirm", reason: "join", collection, dir, newSalts, newPeers}`、什么都不写（BUG-4011 / D25：
 //!      确认之前不并入），带 `confirmed` 重发就先并入（写 `Join`）再导入。
 //!      同一个集合 / 早已并入的文件若带来本机还不算数的盐（会写一条本机签名的 `Salts`）或本机还不认识的设备公钥（清单的
-//!      `peers`），同样要确认（W2 合流定案，见交接说明 §15「导入补盐与设备公钥要确认」）：没有 `confirmed` 时回
+//!      `peers`），同样要确认（W2 合流定案，见交接说明 §18「导入补盐与设备公钥要确认」）：没有 `confirmed` 时回
 //!      `{outcome: "needsConfirm", reason: "identity", collection, dir, newSalts, newPeers}`、什么都不写。盐不受证据约束：
 //!      别名层对每个盐直接把「ID 等于这个盐」的已出现实体归到 profile 级设置实体（`gen4_ids/alias.rs` `profile_entities`），
 //!      一个自称同一集合的文件带一个等于本机某实体 ID 的「盐」就能把它并错；设备公钥先到先得，错的公钥让那台设备真正的段
