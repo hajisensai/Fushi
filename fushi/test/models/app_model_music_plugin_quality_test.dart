@@ -84,7 +84,7 @@ void main() {
     expect(appModel.musicPluginQualityFor(trackA), MusicPluginQuality.hires);
     expect(appModel.musicPluginQualityFor(trackB), MusicPluginQuality.hires);
     final MusicPluginPlaybackHost? host = musicPluginPlaybackHost;
-    if (isMusicPluginSourcesAvailable) {
+    if (isMusicPluginSourcesUsable) {
       expect(host, isNotNull);
       expect(host!.quality(trackA), MusicPluginQuality.hires);
     }

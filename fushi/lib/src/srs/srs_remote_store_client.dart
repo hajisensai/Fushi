@@ -583,6 +583,15 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
   }
 
   @override
+  Future<Set<String>> limitUnitLegacyDecks() => _read(
+    'limitUnitLegacyDecks',
+    null,
+    (Object? json) => <String>{
+      for (final Object? d in json! as List<Object?>) d! as String,
+    },
+  );
+
+  @override
   Future<SrsTodayReviewSummary> todayReviewSummary() =>
       _read('todayReviewSummary', null, SrsRemoteWire.todayReviewsFrom);
 

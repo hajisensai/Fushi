@@ -189,6 +189,12 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'auto_search',
   'auto_search_debounce_delay',
   'auto_update_dictionaries',
+  // bool（默认 false）：从 NSFW 作品制卡时卡上的封面 / 页图用模糊副本。见
+  // media/nsfw/nsfw_card_image.dart。
+  'blur_nsfw_card_images',
+  // bool（默认 true）：NSFW 作品的封面在库页 / 继续卡等处打模糊。见
+  // media/nsfw/nsfw_cover_blur.dart。
+  'blur_nsfw_covers',
   // string（默认空）：楽天ブックス书籍检索的 accessKey / applicationId（楽天ウェブ
   // サービス注册应用后拿到）。两者都填了书籍刮削才出现「楽天ブックス」源。凭据 →
   // 同时登记在 kCredentialPreferenceKeys、PrefRedactionPolicy.sensitiveKeys 与
@@ -425,6 +431,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'library_organize_auto_since',
   // bool（默认 false）：用户点过 AI 整理的「会发送什么」说明并同意（设备本地）。
   'library_organize_consented',
+  // bool（默认 false）：连续收听提醒开关（反馈 5_mzP54WVx）；int 分钟（15..120，默认
+  // 60）：提醒间隔。普通偏好，随 Profile / 备份走。见 media/listening_reminder.dart。
+  'listening_reminder_enabled',
+  'listening_reminder_minutes',
   'local_audio_db_display_name',
   'local_audio_db_path',
   'local_audio_dbs',

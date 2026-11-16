@@ -1,6 +1,6 @@
 /// 「BT 站」设置区：添加时自动识别、识别失败只给中性提示且不写入、编辑时只有
-/// 改地址 / 明文 HTTP 才重新识别、删除要确认、启停写穿 store。全程假 store，
-/// 不碰网络。
+/// 改地址 / 明文 HTTP 才重新识别、删除要确认、启停写穿 store；认不出的站可粘贴
+/// 解析规则（+ 登录 Cookie）按规则验证。全程假 store，不碰网络。
 library;
 
 import 'dart:async';
@@ -10,6 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/bt_site_settings_section.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_engine/media/torrent/bt_site_config.dart';
+import 'package:fushi_engine/media/torrent/bt_site_parser_rule.dart';
 import 'package:fushi_engine/media/torrent/bt_site_probe.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -20,9 +21,11 @@ class _FakeStore implements BtSiteSettingsStore {
   List<BtSiteConfig> sites;
   final List<List<BtSiteConfig>> saves = <List<BtSiteConfig>>[];
   final List<(String, bool)> detectCalls = <(String, bool)>[];
+  final List<(BtSiteParserRule?, String)> detectRules =
+      <(BtSiteParserRule?, String)>[];
   final List<String> searchCalls = <String>[];
 
-  /// 下一次识别的结果；null = 用 [_success]。
+  /// 下一次识别的结果；null = 用 [_success]（带规则时是 custom 格式）。
   Future<BtSiteProbeResult> Function(String url)? onDetect;
   Future<int?> Function(BtSiteConfig site)? onSearch;
 
@@ -45,10 +48,21 @@ class _FakeStore implements BtSiteSettingsStore {
   Future<BtSiteProbeResult> detect(
     String url, {
     required bool allowInsecureHttp,
+    BtSiteParserRule? parser,
+    String cookie = '',
   }) {
     detectCalls.add((url, allowInsecureHttp));
+    detectRules.add((parser, cookie));
     return onDetect?.call(url) ??
-        Future<BtSiteProbeResult>.value(_success(url));
+        Future<BtSiteProbeResult>.value(
+          parser == null
+              ? _success(url)
+              : BtSiteProbeResult(
+                  format: BtSiteFormat.custom,
+                  baseUrl: Uri.parse('https://$url'),
+                  parser: parser,
+                ),
+        );
   }
 
   @override
@@ -171,8 +185,19 @@ void main() {
 
   for (final (BtSiteProbeError error, String Function() message)
       in <(BtSiteProbeError, String Function())>[
-        (BtSiteProbeError.unrecognized, () => t.bt_site_detect_failed_error),
+        (
+          BtSiteProbeError.unrecognized,
+          () => t.bt_site_detect_unrecognized_error,
+        ),
         (BtSiteProbeError.timedOut, () => t.bt_site_detect_timeout_error),
+        (
+          BtSiteProbeError.ruleRequestFailed,
+          () => t.bt_site_rule_request_failed_error,
+        ),
+        (
+          BtSiteProbeError.ruleMatchedNothing,
+          () => t.bt_site_rule_matched_nothing_error,
+        ),
         (BtSiteProbeError.invalidUrl, () => t.bt_site_url_invalid_error),
         (BtSiteProbeError.insecureHttp, () => t.bt_site_url_insecure_error),
       ]) {
@@ -333,7 +358,124 @@ void main() {
       const BtSiteProbeException(BtSiteProbeError.unrecognized),
     );
     await _tapKey(tester, 'bt-site-site1-redetect');
-    expect(find.text(t.bt_site_detect_failed_error), findsOneWidget);
+    expect(find.text(t.bt_site_detect_unrecognized_error), findsOneWidget);
     expect(store.saves, hasLength(1), reason: '识别失败不改配置');
   });
+
+  testWidgets('认不出的站：自动展开解析规则区；粘贴规则 + Cookie 后按规则验证并保存', (
+    WidgetTester tester,
+  ) async {
+    final _FakeStore store = _FakeStore()
+      ..onDetect = (String url) => Future<BtSiteProbeResult>.error(
+        const BtSiteProbeException(BtSiteProbeError.unrecognized),
+      );
+    await _pump(tester, store);
+
+    await _tapKey(tester, 'bt-site-add');
+    expect(
+      find.byKey(const ValueKey<String>('bt-site-dialog-parser')),
+      findsNothing,
+      reason: '默认收起',
+    );
+    await tester.enterText(_field('bt-site-dialog-url'), 'tracker.example');
+    await tester.pump();
+    await _tapKey(tester, 'bt-site-dialog-domain-movie');
+    await _tapKey(tester, 'bt-site-dialog-save');
+
+    expect(find.text(t.bt_site_detect_unrecognized_error), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('bt-site-dialog-parser')),
+      findsOneWidget,
+      reason: '识别失败后把下一步摆出来',
+    );
+    expect(
+      find.byKey(const ValueKey<String>('bt-site-dialog-cookie')),
+      findsNothing,
+      reason: '没有规则时 Cookie 无意义',
+    );
+
+    store.onDetect = null;
+    await tester.enterText(_field('bt-site-dialog-parser'), _ruleJson);
+    await tester.pump();
+    await tester.enterText(_field('bt-site-dialog-cookie'), 'uid=1; pass=x');
+    await tester.pump();
+    await _tapKey(tester, 'bt-site-dialog-save');
+
+    final (BtSiteParserRule? rule, String cookie) = store.detectRules.last;
+    expect(rule?.searchPath, '/browse.php?s={query}');
+    expect(cookie, 'uid=1; pass=x');
+    final BtSiteConfig saved = store.saves.single.single;
+    expect(saved.format, BtSiteFormat.custom);
+    expect(saved.parser?.rows, 'tr.row');
+    expect(saved.cookie, 'uid=1; pass=x');
+    expect(saved.effectiveDomains, <BtSiteDomain>{BtSiteDomain.movie});
+    expect(find.textContaining('pass=x'), findsNothing, reason: 'Cookie 是凭据');
+  });
+
+  testWidgets('解析规则畸形：就地报错、不发起验证、不写入', (WidgetTester tester) async {
+    final _FakeStore store = _FakeStore();
+    await _pump(tester, store);
+
+    await _tapKey(tester, 'bt-site-add');
+    await tester.enterText(_field('bt-site-dialog-url'), 'tracker.example');
+    await tester.pump();
+    await _tapKey(tester, 'bt-site-dialog-domain-movie');
+    await _tapKey(tester, 'bt-site-dialog-parser-toggle');
+    await tester.enterText(_field('bt-site-dialog-parser'), '{"rows": 1}');
+    await tester.pump();
+    await _tapKey(tester, 'bt-site-dialog-save');
+
+    expect(
+      find.byKey(const ValueKey<String>('bt-site-dialog-error')),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining(t.bt_site_parser_invalid_error(reason: '').trim()),
+      findsOneWidget,
+    );
+    expect(store.detectCalls, isEmpty);
+    expect(store.saves, isEmpty);
+  });
+
+  testWidgets('已有规则的站：重新检测带上规则与 Cookie，不退回自动识别', (WidgetTester tester) async {
+    final BtSiteParserRule rule = BtSiteParserRule.fromJson(_ruleJson);
+    final _FakeStore store = _FakeStore(<BtSiteConfig>[
+      BtSiteConfig(
+        id: 'custom1',
+        baseUrl: Uri.parse('https://tracker.example'),
+        format: BtSiteFormat.custom,
+        parser: rule,
+        cookie: 'uid=1',
+        domains: const <BtSiteDomain>{BtSiteDomain.movie},
+      ),
+    ]);
+    await _pump(tester, store);
+
+    await _tapKey(tester, 'bt-site-custom1-redetect');
+    expect(store.detectRules.single.$1?.toJson(), rule.toJson());
+    expect(store.detectRules.single.$2, 'uid=1');
+    expect(store.sites.single.format, BtSiteFormat.custom);
+    expect(store.sites.single.cookie, 'uid=1');
+
+    // 编辑对话框里规则已展开回显；只改名称不重新验证。
+    await _tapKey(tester, 'bt-site-custom1-edit');
+    expect(
+      find.byKey(const ValueKey<String>('bt-site-dialog-parser')),
+      findsOneWidget,
+    );
+    await tester.enterText(_field('bt-site-dialog-name'), 'Tracker');
+    await tester.pump();
+    await _tapKey(tester, 'bt-site-dialog-save');
+    expect(store.detectRules, hasLength(1));
+    expect(store.sites.single.name, 'Tracker');
+    expect(store.sites.single.parser?.toJson(), rule.toJson());
+  });
 }
+
+const String _ruleJson = '''
+{
+  "fushiBtSiteParser": 1,
+  "search": "/browse.php?s={query}",
+  "rows": "tr.row",
+  "fields": {"title": "a.t", "magnet": "a.m@href"}
+}''';

@@ -155,7 +155,7 @@ fn queue_of(wire: &str) -> u8 {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-struct Card {
+pub(crate) struct Card {
     id: String,
     note: String,
     tpl: String,
@@ -187,16 +187,30 @@ impl Card {
 const CARD_COLUMNS: &str = "srs_idt(id), srs_idt(note_id), srs_idt(template_id), cloze_ord, srs_idt(deck_id), suspended, buried_until_day, flag, queue, \
      due_day, due_at, scheduled_days, reps, lapses, stability, difficulty, last_reviewed_at, anki_id";
 
-fn card_of(r: &rusqlite::Row<'_>) -> rusqlite::Result<Card> {
+/// 一个 ID 列的文本形：协议 3 的读法用 `srs_idt(…)` 交回文本；新代的缓存层存 UUID 的 16 字节存储形（`gen4::derive::Ref`），
+/// 在这里解回同一种文本。
+fn id_col(r: &rusqlite::Row<'_>, i: usize) -> rusqlite::Result<String> {
+    use rusqlite::types::ValueRef;
+    match r.get_ref(i)? {
+        ValueRef::Blob(b) if b.len() == 16 => {
+            let mut a = [0u8; 16];
+            a.copy_from_slice(b);
+            Ok(crate::sync2::id::Id(a).text())
+        }
+        _ => r.get(i),
+    }
+}
+
+pub(crate) fn card_of(r: &rusqlite::Row<'_>) -> rusqlite::Result<Card> {
     let queue: String = r.get(8)?;
-    let id: String = r.get(0)?;
+    let id = id_col(r, 0)?;
     Ok(Card {
         num: anki_id_of(r.get(17)?, &id),
         id,
-        note: r.get(1)?,
-        tpl: r.get(2)?,
+        note: id_col(r, 1)?,
+        tpl: id_col(r, 2)?,
         cloze: r.get(3)?,
-        deck: r.get(4)?,
+        deck: id_col(r, 4)?,
         suspended: r.get::<_, i64>(5)? != 0,
         buried: r.get(6)?,
         flag: r.get(7)?,
@@ -213,7 +227,7 @@ fn card_of(r: &rusqlite::Row<'_>) -> rusqlite::Result<Card> {
 }
 
 #[derive(Clone, Debug)]
-struct Note {
+pub(crate) struct Note {
     id: String,
     ty: String,
     created: i64,
@@ -250,7 +264,7 @@ impl Note {
 
 const NOTE_COLUMNS: &str = "srs_idt(id), srs_idt(note_type_id), created_at, sort_field, tags_json, pending_decision, anki_id, dupe_norm";
 
-fn note_of(r: &rusqlite::Row<'_>) -> rusqlite::Result<Note> {
+pub(crate) fn note_of(r: &rusqlite::Row<'_>) -> rusqlite::Result<Note> {
     let tags: String = r.get(4)?;
     let tags = match serde_json::from_str::<Value>(&tags) {
         Ok(Value::Array(a)) => a
@@ -259,11 +273,11 @@ fn note_of(r: &rusqlite::Row<'_>) -> rusqlite::Result<Note> {
             .collect(),
         _ => Vec::new(),
     };
-    let id: String = r.get(0)?;
+    let id = id_col(r, 0)?;
     Ok(Note {
         num: anki_id_of(r.get(6)?, &id),
         id,
-        ty: r.get(1)?,
+        ty: id_col(r, 1)?,
         created: r.get(2)?,
         sort: r.get(3)?,
         tags,
@@ -1364,6 +1378,8 @@ pub(crate) struct Session {
     sources: bool,
     /// 取过行的笔记的内容（[Detail]）：笔记 id → 详情；写过的笔记丢掉，下次取行重读。
     detail: HashMap<String, Detail>,
+    /// 会话对上的库版本（[Sessions::run] 的 `refresh` 交回、建 / 重读成功后记下；协议 3 不用、恒为 0）。
+    stamp: i64,
 }
 
 /// 按笔记读修改记录（[notes] = None：本 profile 全部笔记；[keys] 非空 = 只读这几个原样的字段键），每条笔记的记录
@@ -1455,13 +1471,208 @@ fn read_edits(
     Ok(())
 }
 
+/// 会话的数据从哪读：协议 3 是 profile 的缓存表与修改记录（[P3]），新代是一个集合的缓存层与索引层
+/// （`store/gen4/cmd/browse.rs`）。会话、语料、筛选、排序、成行只有这一份实现，两代只换这几条读。
+///
+/// 每个读法交回的行与协议 3 的列一一对应（[card_of] / [note_of]，ID 列是文本、或 16 字节 UUID 的存储形）；[ids] /
+/// [notes] = None 是整个集合。行的先后不进结果（会话按自然顺序排、命中按语料下标），各实现按自己最省的顺序交回。
+pub(crate) trait Source {
+    /// 未删除的笔记缓存行（[note_of] 的列）。
+    fn notes(
+        &self,
+        ids: Option<&[String]>,
+        sink: &mut dyn FnMut(Note) -> Result<(), String>,
+    ) -> Result<(), String>;
+    /// 可见的卡片缓存行（[card_of] 的列）。
+    fn cards(
+        &self,
+        ids: Option<&[String]>,
+        sink: &mut dyn FnMut(Card) -> Result<(), String>,
+    ) -> Result<(), String>;
+    /// 按笔记的修改记录：每条笔记一次交给 [sink]（[keys] 非空 = 只要这几个原样的修改键；没有记录的笔记可以不调）。
+    fn edits(
+        &self,
+        notes: Option<&[String]>,
+        keys: &[String],
+        sink: &mut dyn FnMut(&str, &[StoredEdit<'_>]) -> Result<(), String>,
+    ) -> Result<(), String>;
+    /// `rated:`：发生时刻 ≥ [since]、有评分（[rating] = 只要这个评分）的有效复习投影所归属的卡（去重）。
+    fn rated(&self, since: i64, rating: Option<i64>) -> Result<Vec<String>, String>;
+    /// `anki_dupes`：查重规范形在 [norms] 里的未删除笔记 (笔记, 笔记类型, 规范形)。
+    fn dupe_notes(&self, norms: &[String]) -> Result<Vec<(String, String, String)>, String>;
+    /// `anki_dupes`：[notes] 这几条笔记的可见卡所在的牌组 (笔记, 牌组)。
+    fn note_decks(&self, notes: &[&str]) -> Result<Vec<(String, String)>, String>;
+}
+
+/// 协议 3 的读法：profile 的缓存表（`srs_notes_cache` / `srs_cards_cache` / `srs_stat_reviews`）与修改记录。
+pub(crate) struct P3<'a> {
+    pub(crate) c: &'a Connection,
+    pub(crate) profile: &'a str,
+}
+
+impl P3<'_> {
+    /// `id IN (srs_id(?2), …)`：[chunk] 一块的占位符。
+    fn in_list(chunk: usize) -> String {
+        (2..chunk + 2)
+            .map(|i| format!("srs_id(?{i})"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+}
+
+impl Source for P3<'_> {
+    fn notes(
+        &self,
+        ids: Option<&[String]>,
+        sink: &mut dyn FnMut(Note) -> Result<(), String>,
+    ) -> Result<(), String> {
+        let mut run = |q: &str, args: Vec<&str>| -> Result<(), String> {
+            let mut stmt = self.c.prepare_cached(q).map_err(sql)?;
+            let mut rows = stmt.query(params_from_iter(args)).map_err(sql)?;
+            while let Some(r) = rows.next().map_err(sql)? {
+                sink(note_of(r).map_err(sql)?)?;
+            }
+            Ok(())
+        };
+        match ids {
+            None => run(
+                &format!(
+                    "SELECT {NOTE_COLUMNS} FROM srs_notes_cache WHERE profile_uid = srs_id(?1) AND deleted_at IS NULL"
+                ),
+                vec![self.profile],
+            ),
+            Some(ids) => {
+                for chunk in ids.chunks(CHUNK) {
+                    run(
+                        &format!(
+                            "SELECT {NOTE_COLUMNS} FROM srs_notes_cache WHERE id IN ({}) AND +profile_uid = srs_id(?1) AND deleted_at IS NULL",
+                            Self::in_list(chunk.len())
+                        ),
+                        std::iter::once(self.profile)
+                            .chain(chunk.iter().map(String::as_str))
+                            .collect(),
+                    )?;
+                }
+                Ok(())
+            }
+        }
+    }
+
+    fn cards(
+        &self,
+        ids: Option<&[String]>,
+        sink: &mut dyn FnMut(Card) -> Result<(), String>,
+    ) -> Result<(), String> {
+        let mut run = |q: &str, args: Vec<&str>| -> Result<(), String> {
+            let mut stmt = self.c.prepare_cached(q).map_err(sql)?;
+            let mut rows = stmt.query(params_from_iter(args)).map_err(sql)?;
+            while let Some(r) = rows.next().map_err(sql)? {
+                sink(card_of(r).map_err(sql)?)?;
+            }
+            Ok(())
+        };
+        match ids {
+            None => run(
+                &format!(
+                    "SELECT {CARD_COLUMNS} FROM srs_cards_cache WHERE profile_uid = srs_id(?1) AND hidden = 0"
+                ),
+                vec![self.profile],
+            ),
+            Some(ids) => {
+                for chunk in ids.chunks(CHUNK) {
+                    run(
+                        &format!(
+                            "SELECT {CARD_COLUMNS} FROM srs_cards_cache WHERE id IN ({}) AND +profile_uid = srs_id(?1) AND +hidden = 0",
+                            Self::in_list(chunk.len())
+                        ),
+                        std::iter::once(self.profile)
+                            .chain(chunk.iter().map(String::as_str))
+                            .collect(),
+                    )?;
+                }
+                Ok(())
+            }
+        }
+    }
+
+    fn edits(
+        &self,
+        notes: Option<&[String]>,
+        keys: &[String],
+        sink: &mut dyn FnMut(&str, &[StoredEdit<'_>]) -> Result<(), String>,
+    ) -> Result<(), String> {
+        read_edits(self.c, self.profile, notes, keys, sink)
+    }
+
+    fn rated(&self, since: i64, rating: Option<i64>) -> Result<Vec<String>, String> {
+        let q = format!(
+            "SELECT DISTINCT srs_idt(card_id) FROM srs_stat_reviews WHERE profile_uid = srs_id(?1) AND occurred_at >= ?2 \
+             AND rating IS NOT NULL{}",
+            if rating.is_some() {
+                " AND rating = ?3"
+            } else {
+                ""
+            }
+        );
+        let mut args: Vec<Sql> = vec![Sql::Text(self.profile.to_owned()), Sql::Integer(since)];
+        if let Some(e) = rating {
+            args.push(Sql::Integer(e));
+        }
+        let mut stmt = self.c.prepare_cached(&q).map_err(sql)?;
+        let mut rows = stmt.query(params_from_iter(args)).map_err(sql)?;
+        let mut out = Vec::new();
+        while let Some(r) = rows.next().map_err(sql)? {
+            out.push(r.get(0).map_err(sql)?);
+        }
+        Ok(out)
+    }
+
+    fn dupe_notes(&self, norms: &[String]) -> Result<Vec<(String, String, String)>, String> {
+        let q = format!(
+            "SELECT srs_idt(id) AS id, srs_idt(note_type_id) AS note_type_id, dupe_norm FROM srs_notes_cache \
+             WHERE profile_uid = srs_id(?1) AND deleted_at IS NULL AND dupe_norm IN ({})",
+            (2..norms.len() + 2)
+                .map(|i| format!("?{i}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+        let mut stmt = self.c.prepare_cached(&q).map_err(sql)?;
+        let args = std::iter::once(self.profile).chain(norms.iter().map(String::as_str));
+        let mut rows = stmt.query(params_from_iter(args)).map_err(sql)?;
+        let mut out = Vec::new();
+        while let Some(r) = rows.next().map_err(sql)? {
+            out.push((
+                r.get(0).map_err(sql)?,
+                r.get(1).map_err(sql)?,
+                r.get(2).map_err(sql)?,
+            ));
+        }
+        Ok(out)
+    }
+
+    fn note_decks(&self, notes: &[&str]) -> Result<Vec<(String, String)>, String> {
+        let q = format!(
+            "SELECT srs_idt(note_id) AS note_id, srs_idt(deck_id) AS deck_id FROM srs_cards_cache WHERE note_id IN ({}) AND +profile_uid = srs_id(?1) AND +hidden = 0",
+            Self::in_list(notes.len())
+        );
+        let mut stmt = self.c.prepare_cached(&q).map_err(sql)?;
+        let args = std::iter::once(self.profile).chain(notes.iter().copied());
+        let mut rows = stmt.query(params_from_iter(args)).map_err(sql)?;
+        let mut out = Vec::new();
+        while let Some(r) = rows.next().map_err(sql)? {
+            out.push((r.get(0).map_err(sql)?, r.get(1).map_err(sql)?));
+        }
+        Ok(out)
+    }
+}
+
 /// 一个会话留几份查询结果。
 const KEEP_RESULTS: usize = 4;
 
 static GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 impl Session {
-    fn build(c: &Connection, profile: &str) -> Result<Session, String> {
+    fn build(src: &dyn Source) -> Result<Session, String> {
         let mut s = Session {
             cards: Vec::new(),
             card_at: HashMap::new(),
@@ -1476,34 +1687,38 @@ impl Session {
             results: Vec::new(),
             sources: false,
             detail: HashMap::new(),
+            stamp: 0,
         };
-        {
-            let q = format!(
-                "SELECT {NOTE_COLUMNS} FROM srs_notes_cache WHERE profile_uid = srs_id(?1) AND deleted_at IS NULL"
-            );
-            let mut stmt = c.prepare_cached(&q).map_err(sql)?;
-            let mut rows = stmt.query([profile]).map_err(sql)?;
-            while let Some(r) = rows.next().map_err(sql)? {
-                let n = note_of(r).map_err(sql)?;
-                s.note_at.insert(n.id.clone(), s.notes.len() as u32);
-                s.notes.push(Some(n));
-            }
-        }
-        let q = format!(
-            "SELECT {CARD_COLUMNS} FROM srs_cards_cache WHERE profile_uid = srs_id(?1) AND hidden = 0"
-        );
-        let mut stmt = c.prepare_cached(&q).map_err(sql)?;
-        let mut rows = stmt.query([profile]).map_err(sql)?;
-        while let Some(r) = rows.next().map_err(sql)? {
-            let card = card_of(r).map_err(sql)?;
+        src.notes(None, &mut |n| {
+            s.note_at.insert(n.id.clone(), s.notes.len() as u32);
+            s.notes.push(Some(n));
+            Ok(())
+        })?;
+        src.cards(None, &mut |card| {
             s.card_at.insert(card.id.clone(), s.cards.len() as u32);
             s.cards.push(Some(card));
-        }
+            Ok(())
+        })?;
         Ok(s)
     }
 
+    /// 会话对上的库版本（[Sessions::run] 记下的）。
+    pub(crate) fn stamp(&self) -> i64 {
+        self.stamp
+    }
+
+    /// 会话里属于 [notes] 这几条笔记的卡 id（新代按笔记失效时用：笔记的卡增删 / 换笔记都要连同会话里的旧卡一起重读）。
+    pub(crate) fn cards_of_notes(&self, notes: &HashSet<String>) -> Vec<String> {
+        self.cards
+            .iter()
+            .flatten()
+            .filter(|c| notes.contains(&c.note))
+            .map(|c| c.id.clone())
+            .collect()
+    }
+
     /// 按 id 重读写过的卡 / 笔记（以库里的行为准；行没了或不再可见就移出会话）。
-    fn apply(&mut self, c: &Connection, profile: &str, d: &Dirty) -> Result<(), String> {
+    fn apply(&mut self, src: &dyn Source, d: &Dirty) -> Result<(), String> {
         if d.cards.is_empty() && d.notes.is_empty() {
             return Ok(());
         }
@@ -1512,21 +1727,12 @@ impl Session {
         }
         let ids: Vec<&String> = d.cards.iter().collect();
         for chunk in ids.chunks(CHUNK) {
-            let q = format!(
-                "SELECT {CARD_COLUMNS} FROM srs_cards_cache WHERE id IN ({}) AND +profile_uid = srs_id(?1) AND +hidden = 0",
-                (2..chunk.len() + 2)
-                    .map(|i| format!("srs_id(?{i})"))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            );
-            let mut stmt = c.prepare_cached(&q).map_err(sql)?;
-            let args = std::iter::once(profile).chain(chunk.iter().map(|s| s.as_str()));
+            let want: Vec<String> = chunk.iter().map(|s| (*s).clone()).collect();
             let mut found: HashMap<String, Card> = HashMap::new();
-            let mut rows = stmt.query(params_from_iter(args)).map_err(sql)?;
-            while let Some(r) = rows.next().map_err(sql)? {
-                let card = card_of(r).map_err(sql)?;
+            src.cards(Some(&want), &mut |card| {
                 found.insert(card.id.clone(), card);
-            }
+                Ok(())
+            })?;
             for &id in chunk {
                 match (found.remove(id), self.card_at.get(id).copied()) {
                     (Some(card), Some(slot)) => {
@@ -1558,21 +1764,12 @@ impl Session {
         }
         let mut present: Vec<String> = Vec::new();
         for chunk in ids.chunks(CHUNK) {
-            let q = format!(
-                "SELECT {NOTE_COLUMNS} FROM srs_notes_cache WHERE id IN ({}) AND +profile_uid = srs_id(?1) AND deleted_at IS NULL",
-                (2..chunk.len() + 2)
-                    .map(|i| format!("srs_id(?{i})"))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            );
-            let mut stmt = c.prepare_cached(&q).map_err(sql)?;
-            let args = std::iter::once(profile).chain(chunk.iter().map(|s| s.as_str()));
+            let want: Vec<String> = chunk.iter().map(|s| (*s).clone()).collect();
             let mut found: HashMap<String, Note> = HashMap::new();
-            let mut rows = stmt.query(params_from_iter(args)).map_err(sql)?;
-            while let Some(r) = rows.next().map_err(sql)? {
-                let n = note_of(r).map_err(sql)?;
+            src.notes(Some(&want), &mut |n| {
                 found.insert(n.id.clone(), n);
-            }
+                Ok(())
+            })?;
             for &id in chunk {
                 match (found.remove(id), self.note_at.get(id).copied()) {
                     (Some(n), Some(slot)) => {
@@ -1605,11 +1802,11 @@ impl Session {
             } else {
                 Some(self.fields.iter().cloned().collect())
             };
-            self.load_values(c, profile, Some(&present), keys.as_deref())?;
+            self.load_values(src, Some(&present), keys.as_deref())?;
             self.view_dirty.extend(present.iter().cloned());
         }
         if self.sources && !present.is_empty() {
-            self.load_sources(c, profile, Some(&present))?;
+            self.load_sources(src, Some(&present))?;
         }
         Ok(())
     }
@@ -1617,8 +1814,7 @@ impl Session {
     /// 从修改记录读字段原文（[notes] = None：全部笔记；[keys] = None：全部字段 + 最后改动时刻）。
     fn load_values(
         &mut self,
-        c: &Connection,
-        profile: &str,
+        src: &dyn Source,
         notes: Option<&[String]>,
         keys: Option<&[String]>,
     ) -> Result<(), String> {
@@ -1638,7 +1834,7 @@ impl Session {
         let raw: Vec<String> = keys
             .map(|ks| ks.iter().map(|k| format!("f/{k}")).collect())
             .unwrap_or_default();
-        read_edits(c, profile, notes, &raw, &mut |id, stored| {
+        src.edits(notes, &raw, &mut |id, stored| {
             let (values, modified) = registers::note_browse_values(stored)?;
             let Some(&slot) = self.note_at.get(id) else {
                 return Ok(());
@@ -1668,47 +1864,31 @@ impl Session {
     }
 
     /// 从修改记录读出处寄存器（[notes] = None：全部笔记）。
-    fn load_sources(
-        &mut self,
-        c: &Connection,
-        profile: &str,
-        notes: Option<&[String]>,
-    ) -> Result<(), String> {
+    fn load_sources(&mut self, src: &dyn Source, notes: Option<&[String]>) -> Result<(), String> {
         self.for_notes(notes, |n| n.source = None);
-        read_edits(
-            c,
-            profile,
-            notes,
-            &["source".to_owned()],
-            &mut |id, stored| {
-                let (_, _, source) = registers::note_browse_detail(stored)?;
-                let Some(&slot) = self.note_at.get(id) else {
-                    return Ok(());
-                };
-                self.notes[slot as usize]
-                    .as_mut()
-                    .expect("indexed note")
-                    .source = (!source.is_null()).then_some(source);
-                Ok(())
-            },
-        )
+        src.edits(notes, &["source".to_owned()], &mut |id, stored| {
+            let (_, _, source) = registers::note_browse_detail(stored)?;
+            let Some(&slot) = self.note_at.get(id) else {
+                return Ok(());
+            };
+            self.notes[slot as usize]
+                .as_mut()
+                .expect("indexed note")
+                .source = (!source.is_null()).then_some(source);
+            Ok(())
+        })
     }
 
-    fn ensure_sources(&mut self, c: &Connection, profile: &str) -> Result<(), String> {
+    fn ensure_sources(&mut self, src: &dyn Source) -> Result<(), String> {
         if !self.sources {
-            self.load_sources(c, profile, None)?;
+            self.load_sources(src, None)?;
             self.sources = true;
         }
         Ok(())
     }
 
     /// 补齐 [notes] 里还没有 [Detail] 的那几条（一次读它们的全部修改记录）。
-    fn ensure_detail(
-        &mut self,
-        c: &Connection,
-        profile: &str,
-        notes: &[String],
-    ) -> Result<(), String> {
+    fn ensure_detail(&mut self, src: &dyn Source, notes: &[String]) -> Result<(), String> {
         let missing: Vec<String> = notes
             .iter()
             .filter(|id| !self.detail.contains_key(*id))
@@ -1730,7 +1910,7 @@ impl Session {
             );
         }
         let detail = &mut self.detail;
-        read_edits(c, profile, Some(&missing), &[], &mut |id, stored| {
+        src.edits(Some(&missing), &[], &mut |id, stored| {
             let (values, modified, source) = registers::note_browse_detail(stored)?;
             if let Some(d) = detail.get_mut(id) {
                 *d = Detail {
@@ -1750,8 +1930,7 @@ impl Session {
     /// 装好 [want] 要的字段列（None = 全部字段 + 最后改动时刻）。装了新列结构就变了。
     fn ensure_fields(
         &mut self,
-        c: &Connection,
-        profile: &str,
+        src: &dyn Source,
         want: Option<&HashSet<String>>,
     ) -> Result<(), String> {
         if self.full {
@@ -1759,7 +1938,7 @@ impl Session {
         }
         match want {
             None => {
-                self.load_values(c, profile, None, None)?;
+                self.load_values(src, None, None)?;
                 self.full = true;
                 self.fields.clear();
             }
@@ -1772,7 +1951,7 @@ impl Session {
                 if missing.is_empty() {
                     return Ok(());
                 }
-                self.load_values(c, profile, None, Some(&missing))?;
+                self.load_values(src, None, Some(&missing))?;
                 self.fields.extend(missing);
             }
         }
@@ -1812,7 +1991,7 @@ impl Session {
     }
 
     /// 一条查询：筛选（`node` = 搜索语法树 JSON，没有 = 全部）、排序、按模式成行。
-    fn query(&mut self, c: &Connection, profile: &str, req: &Value) -> Result<Value, String> {
+    fn query(&mut self, src: &dyn Source, req: &Value) -> Result<Value, String> {
         let ctx = Ctx::parse(req)?;
         let node = req
             .get("node")
@@ -1847,9 +2026,9 @@ impl Session {
             }
         }
         if column == Column::Source {
-            self.ensure_sources(c, profile)?;
+            self.ensure_sources(src)?;
         }
-        let hits = match self.hits(c, profile, &ctx, node, full, want)? {
+        let hits = match self.hits(src, &ctx, node, full, want)? {
             Ok(h) => h,
             Err(e) => return Ok(search_error(e)),
         };
@@ -1919,8 +2098,7 @@ impl Session {
     /// 求值，交回命中的语料卡下标（自然顺序）。查询本身不合法 / 内核不可用时交回 `Ok(Err(..))`。
     fn hits(
         &mut self,
-        c: &Connection,
-        profile: &str,
+        src: &dyn Source,
         ctx: &Ctx,
         node: Option<&Value>,
         mut full: bool,
@@ -1929,7 +2107,7 @@ impl Session {
         self.ensure_view(ctx)?;
         let rewritten = match node {
             Some(n) if SESSION_LEAVES.iter().any(|t| uses(n, t)) => {
-                Some(self.rewrite(c, profile, ctx, n)?)
+                Some(self.rewrite(src, ctx, n)?)
             }
             _ => None,
         };
@@ -1960,9 +2138,9 @@ impl Session {
             }
         }
         if full {
-            self.ensure_fields(c, profile, None)?;
+            self.ensure_fields(src, None)?;
         } else if !want.is_empty() {
-            self.ensure_fields(c, profile, Some(&want))?;
+            self.ensure_fields(src, Some(&want))?;
         }
         self.ensure_view(ctx)?;
         Ok(match &query {
@@ -2217,8 +2395,7 @@ impl Session {
     /// 进来）；字段原文 / 修改时刻 / 出处只为这一页的笔记读一次（[Session::ensure_detail]）。
     fn rows(
         &mut self,
-        c: &Connection,
-        profile: &str,
+        src: &dyn Source,
         req: &Value,
         files: &mut Vec<(String, Vec<u8>)>,
     ) -> Result<Value, String> {
@@ -2230,7 +2407,7 @@ impl Session {
                 .filter_map(|row| self.notes[row.note as usize].as_ref().map(|n| n.id.clone()))
                 .collect()
         };
-        self.ensure_detail(c, profile, &page)?;
+        self.ensure_detail(src, &page)?;
         let r = self.result(req)?;
         let (from, to) = page_range(req, r.rows.len());
         let retention = r.ctx.retention();
@@ -2351,9 +2528,9 @@ impl Session {
     /// （[source_item_key]）分的第二级（「系列 → 集」），每项 `{key, kind, data, count, due, preview, latestAddedAt,
     /// decks}`，口径与组相同；各集按标题自然序（`第2話` < `第10話`，标题取集里最近添加那条的出处，作品键兜底，
     /// [cmp_episode]）。不是系列的组 `series` = null、`children` = []。
-    fn sources(&mut self, c: &Connection, profile: &str, req: &Value) -> Result<Value, String> {
+    fn sources(&mut self, src: &dyn Source, req: &Value) -> Result<Value, String> {
         self.result(req)?;
-        self.ensure_sources(c, profile)?;
+        self.ensure_sources(src)?;
         let r = self.result(req)?;
         let mut order: Vec<Option<String>> = Vec::new();
         let mut groups: HashMap<Option<String>, SourceGroup<'_>> = HashMap::new();
@@ -2436,7 +2613,7 @@ impl Session {
 
     /// `browse_counts`：几条查询各自的命中数（同 `browse_query` 的口径与上下文；`mode = notes` 数笔记）。`nodes` 每项是
     /// 语法树 JSON、null（空查询 = 全部）或 false（Dart 侧解析不了，回 -1）；求值出错的那一条回 -1。不留查询结果。
-    fn counts(&mut self, c: &Connection, profile: &str, req: &Value) -> Result<Value, String> {
+    fn counts(&mut self, src: &dyn Source, req: &Value) -> Result<Value, String> {
         let ctx = Ctx::parse(req)?;
         let notes_mode = req.get("mode").and_then(Value::as_str) == Some("notes");
         let nodes = req
@@ -2452,7 +2629,7 @@ impl Session {
             }
             let node = Some(node)
                 .filter(|n| !n.is_null() && n.get("t").and_then(Value::as_str) != Some("all"));
-            let hits = match self.hits(c, profile, &ctx, node, false, HashSet::new())? {
+            let hits = match self.hits(src, &ctx, node, false, HashSet::new())? {
                 Ok(h) => h,
                 Err(_) => {
                     out.push(-1);
@@ -2480,24 +2657,17 @@ impl Session {
 
     /// 把只有会话才求得了值的叶子（`rated` / `src` / `dupe` / `emptyfield`）换成等价的 id 集合（`cid` / `nid`，按
     /// AnkiConnect 数字 id），其余原样。
-    fn rewrite(
-        &mut self,
-        c: &Connection,
-        profile: &str,
-        ctx: &Ctx,
-        node: &Value,
-    ) -> Result<Value, String> {
+    fn rewrite(&mut self, src: &dyn Source, ctx: &Ctx, node: &Value) -> Result<Value, String> {
         if uses(node, "src") {
-            self.ensure_sources(c, profile)?;
+            self.ensure_sources(src)?;
         }
         let mut dupes: Option<Vec<i64>> = None;
-        self.rewrite_node(c, profile, ctx, node, &mut dupes)
+        self.rewrite_node(src, ctx, node, &mut dupes)
     }
 
     fn rewrite_node(
         &self,
-        c: &Connection,
-        profile: &str,
+        src: &dyn Source,
         ctx: &Ctx,
         node: &Value,
         dupes: &mut Option<Vec<i64>>,
@@ -2522,12 +2692,12 @@ impl Session {
                     .unwrap_or_default();
                 let kids: Vec<Value> = kids
                     .iter()
-                    .map(|k| self.rewrite_node(c, profile, ctx, k, dupes))
+                    .map(|k| self.rewrite_node(src, ctx, k, dupes))
                     .collect::<Result<_, _>>()?;
                 json!({"t": t, "c": kids})
             }
             "not" => match node.get("c") {
-                Some(k) => json!({"t": "not", "c": self.rewrite_node(c, profile, ctx, k, dupes)?}),
+                Some(k) => json!({"t": "not", "c": self.rewrite_node(src, ctx, k, dupes)?}),
                 None => node.clone(),
             },
             "emptyfield" => notes_where(&|n| dart_trim(&n.sort).is_empty()),
@@ -2573,24 +2743,8 @@ impl Session {
                 let days = node.get("d").and_then(Value::as_i64).unwrap_or(1).max(1);
                 let since = ctx.day_start(ctx.today - days + 1);
                 let rating = node.get("e").and_then(Value::as_i64);
-                let q = format!(
-                    "SELECT DISTINCT srs_idt(card_id) FROM srs_stat_reviews WHERE profile_uid = srs_id(?1) AND occurred_at >= ?2 \
-                     AND rating IS NOT NULL{}",
-                    if rating.is_some() {
-                        " AND rating = ?3"
-                    } else {
-                        ""
-                    }
-                );
-                let mut args: Vec<Sql> = vec![Sql::Text(profile.to_owned()), Sql::Integer(since)];
-                if let Some(e) = rating {
-                    args.push(Sql::Integer(e));
-                }
-                let mut stmt = c.prepare_cached(&q).map_err(sql)?;
-                let mut rows = stmt.query(params_from_iter(args)).map_err(sql)?;
                 let mut ids: Vec<i64> = Vec::new();
-                while let Some(r) = rows.next().map_err(sql)? {
-                    let id: String = r.get(0).map_err(sql)?;
+                for id in src.rated(since, rating)? {
                     if let Some(card) = self
                         .card_at
                         .get(&id)
@@ -2708,8 +2862,7 @@ impl Session {
     /// 不留查询结果（不挤掉浏览页的结果）。
     fn anki_find(
         &mut self,
-        c: &Connection,
-        profile: &str,
+        src: &dyn Source,
         req: &Value,
         files: &mut Vec<(String, Vec<u8>)>,
     ) -> Result<Value, String> {
@@ -2718,7 +2871,7 @@ impl Session {
             .get("node")
             .filter(|n| !n.is_null() && n.get("t").and_then(Value::as_str) != Some("all"));
         let notes = req.get("mode").and_then(Value::as_str) == Some("notes");
-        let hits = match self.hits(c, profile, &ctx, node, false, HashSet::new())? {
+        let hits = match self.hits(src, &ctx, node, false, HashSet::new())? {
             Ok(h) => h,
             Err(e) => return Ok(search_error(e)),
         };
@@ -2771,13 +2924,13 @@ impl Session {
 
 /// `anki_dupes`：canAddNotes / addNote 的库内查重。`first` = 笔记类型 → 首字段 id（未删除、有字段的笔记类型；只用
 /// 键：不在里面的笔记类型的笔记不参与查重）；`cands` = `[{norm, type, all, decks}]`（`norm` 是候选首字段的查重规范形，
-/// 调用方已判过空；`all` = 跨笔记类型比较；`decks` = 范围牌组 id，null = 整个集合）。回 `{dup: [bool]}`，与 `cands`
-/// 等长：库里有规范形相同、笔记类型相符（`all` 时不看）、在范围内（有一张可见卡在范围牌组里）的未删除笔记。
+/// 调用方已判过空；`all` = 跨笔记类型比较；`decks` = 范围牌组 id，null = 整个集合）。回 `{dup: [bool], ids: [[笔记 id]]}`，
+/// 都与 `cands` 等长（`ids` 是命中的笔记，查询顺序）：库里有规范形相同、笔记类型相符（`all` 时不看）、在范围内（有一张可见卡在范围牌组里）的未删除笔记。
 ///
 /// 库内笔记的规范形是笔记缓存行的 `dupe_norm`（写缓存行时用同一个 [search::dupe_norm] 算好，srs.db v15），按
 /// `idx_srs_notes_cache_dupe` 查候选的规范形：不读修改记录、不建内存索引、不要浏览会话——冷启动与热查同价，开销
 /// 只与候选数和命中数有关。读快照与浏览命令相同（写连接上事务里则看得见未提交的行）。
-fn anki_dupes(c: &Connection, profile: &str, req: &Value) -> Result<Value, String> {
+fn anki_dupes(src: &dyn Source, req: &Value) -> Result<Value, String> {
     let types: HashSet<&str> = req
         .get("first")
         .and_then(Value::as_object)
@@ -2807,23 +2960,7 @@ fn anki_dupes(c: &Connection, profile: &str, req: &Value) -> Result<Value, Strin
         .collect();
     let mut by: HashMap<String, Vec<(String, String)>> = HashMap::new();
     for chunk in wanted.chunks(CHUNK) {
-        let q = format!(
-            "SELECT srs_idt(id) AS id, srs_idt(note_type_id) AS note_type_id, dupe_norm FROM srs_notes_cache \
-             WHERE profile_uid = srs_id(?1) AND deleted_at IS NULL AND dupe_norm IN ({})",
-            (2..chunk.len() + 2)
-                .map(|i| format!("?{i}"))
-                .collect::<Vec<_>>()
-                .join(", ")
-        );
-        let mut stmt = c.prepare_cached(&q).map_err(sql)?;
-        let args = std::iter::once(profile).chain(chunk.iter().map(String::as_str));
-        let mut rows = stmt.query(params_from_iter(args)).map_err(sql)?;
-        while let Some(r) = rows.next().map_err(sql)? {
-            let (id, ty, norm): (String, String, String) = (
-                r.get(0).map_err(sql)?,
-                r.get(1).map_err(sql)?,
-                r.get(2).map_err(sql)?,
-            );
+        for (id, ty, norm) in src.dupe_notes(chunk)? {
             if types.contains(ty.as_str()) {
                 by.entry(norm).or_default().push((id, ty));
             }
@@ -2851,41 +2988,33 @@ fn anki_dupes(c: &Connection, profile: &str, req: &Value) -> Result<Value, Strin
     let mut decks_of: HashMap<String, HashSet<String>> = HashMap::new();
     let deck_notes: Vec<&str> = deck_notes.into_iter().collect();
     for chunk in deck_notes.chunks(CHUNK) {
-        let q = format!(
-            "SELECT srs_idt(note_id) AS note_id, srs_idt(deck_id) AS deck_id FROM srs_cards_cache WHERE note_id IN ({}) AND +profile_uid = srs_id(?1) AND +hidden = 0",
-            (2..chunk.len() + 2)
-                .map(|i| format!("srs_id(?{i})"))
-                .collect::<Vec<_>>()
-                .join(", ")
-        );
-        let mut stmt = c.prepare_cached(&q).map_err(sql)?;
-        let args = std::iter::once(profile).chain(chunk.iter().copied());
-        let mut rows = stmt.query(params_from_iter(args)).map_err(sql)?;
-        while let Some(r) = rows.next().map_err(sql)? {
-            decks_of
-                .entry(r.get(0).map_err(sql)?)
-                .or_default()
-                .insert(r.get(1).map_err(sql)?);
+        for (note, deck) in src.note_decks(chunk)? {
+            decks_of.entry(note).or_default().insert(deck);
         }
     }
-    let out: Vec<bool> = cands
+    // 每个候选在范围内命中的库内笔记（`ids`：文本导入按它更新已有笔记）；`dup` = 有没有命中。
+    let hits: Vec<Vec<&str>> = cands
         .iter()
         .zip(&matched)
         .map(
             |(cand, hit)| match cand.get("decks").and_then(Value::as_array) {
-                None => !hit.is_empty(),
+                None => hit.clone(),
                 Some(ds) => {
                     let scope: HashSet<&str> = ds.iter().filter_map(Value::as_str).collect();
-                    hit.iter().any(|id| {
-                        decks_of
-                            .get(*id)
-                            .is_some_and(|d| d.iter().any(|x| scope.contains(x.as_str())))
-                    })
+                    hit.iter()
+                        .copied()
+                        .filter(|id| {
+                            decks_of
+                                .get(*id)
+                                .is_some_and(|d| d.iter().any(|x| scope.contains(x.as_str())))
+                        })
+                        .collect()
                 }
             },
         )
         .collect();
-    Ok(json!({"dup": out}))
+    let out: Vec<bool> = hits.iter().map(|h| !h.is_empty()).collect();
+    Ok(json!({"dup": out, "ids": hits}))
 }
 
 /// 只在浏览会话里求得了值的叶子（[Session::rewrite] 换成 id 集合）。
@@ -2918,13 +3047,151 @@ fn search_error(e: search::SearchError) -> Value {
     json!({"error": e.reason, "kind": e.kind, "at": e.at})
 }
 
+impl Sessions {
+    /// 丢掉全部会话（持有者登记留着），下次查询整份重建。
+    pub(crate) fn drop_live(&mut self) {
+        self.live.clear();
+    }
+
+    /// 会话 [key] 此刻在不在（新代的命令层据此判断会话是不是刚被丢掉）。
+    pub(crate) fn has(&self, key: &str) -> bool {
+        self.live.contains_key(key)
+    }
+
+    /// `browse_close`：注销 [owner]（没带 = 旧调用方：按唯一持有者算）；没有持有者了才释放会话。
+    pub(crate) fn close(&mut self, key: &str, owner: Option<&str>) -> Value {
+        let last = match owner {
+            Some(o) => {
+                let set = self.owners.entry(key.to_owned()).or_default();
+                set.remove(o);
+                set.is_empty()
+            }
+            None => true,
+        };
+        if last {
+            self.owners.remove(key);
+            self.live.remove(key);
+        }
+        json!({"released": last})
+    }
+
+    /// `browse_stats`：会话在不在、整份建会话的次数、这个会话整份建语料的次数、持有者。
+    pub(crate) fn stats(&self, key: &str) -> Value {
+        let mut owners: Vec<&String> = self.owners.get(key).into_iter().flatten().collect();
+        owners.sort();
+        let s = self.live.get(key);
+        json!({
+            "live": s.is_some(),
+            "sessions": self.built,
+            "builds": s.map_or(0, |s| s.builds),
+            "owners": owners,
+        })
+    }
+
+    /// 会话上的浏览命令（`browse_close` / `browse_stats` / `anki_dupes` 之外的那些）：登记持有者，问 [refresh] 会话怎么对上
+    /// 库此刻（交回待重读的 id 与对上之后的版本戳；`overflow` = 整份重建），再跑命令。[refresh] 拿到的是此刻的会话（没有 =
+    /// None）；它必须在 [src] 的同一个读快照里判断。建 / 重读 / 求值出错时丢掉会话，下次整份重建。
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn run(
+        &mut self,
+        key: &str,
+        op: &str,
+        req: &Value,
+        files: &mut Vec<(String, Vec<u8>)>,
+        src: &dyn Source,
+        refresh: &mut dyn FnMut(Option<&Session>) -> Result<(Dirty, i64), String>,
+    ) -> Result<Value, String> {
+        if let Some(o) = req.get("owner").and_then(Value::as_str) {
+            self.owners
+                .entry(key.to_owned())
+                .or_default()
+                .insert(o.to_owned());
+        }
+        let Sessions {
+            live: sessions,
+            built,
+            ..
+        } = self;
+        let (dirty, stamp) = refresh(sessions.get(key))?;
+        let fresh = dirty.overflow || !sessions.contains_key(key);
+        let ready = if fresh {
+            sessions.remove(key);
+            if op != "browse_query" && op != "browse_counts" && !op.starts_with("anki_") {
+                return Err("browse: no session (query first)".into());
+            }
+            *built += 1;
+            Session::build(src).map(|s| {
+                sessions.insert(key.to_owned(), s);
+            })
+        } else {
+            sessions
+                .get_mut(key)
+                .expect("checked above")
+                .apply(src, &dirty)
+        };
+        if let Err(e) = ready {
+            sessions.remove(key);
+            return Err(e);
+        }
+        let s = sessions.get_mut(key).expect("session");
+        s.stamp = stamp;
+        let out = match op {
+            "browse_query" => {
+                // 同一条查询、会话也没变（预览返回之类没有写入的刷新）：直接给回上次的结果。
+                let since = req.get("since").and_then(Value::as_u64);
+                if let Some(r) = since.and_then(|g| s.results.iter().find(|r| r.gen == g)) {
+                    let ctx = Ctx::parse(req)?;
+                    let same = json!([
+                        req.get("node"),
+                        req.get("sort").cloned().unwrap_or(Value::Null),
+                        req.get("mode").and_then(Value::as_str) != Some("notes"),
+                        req.get("types"),
+                        req.get("decks"),
+                        req.get("fallback"),
+                        req.get("instant"),
+                        ctx.today,
+                    ]);
+                    let prev = r
+                        .params
+                        .as_array()
+                        .map(|a| Value::Array(a[..a.len() - 1].to_vec()));
+                    if !r.stale && prev.as_ref() == Some(&same) {
+                        return Ok(json!({"gen": r.gen, "count": r.rows.len(), "same": true}));
+                    }
+                }
+                s.query(src, req)
+            }
+            "browse_rows" => s.rows(src, req, files),
+            "browse_counts" => s.counts(src, req),
+            "browse_sources" => s.sources(src, req),
+            "browse_ids" => s.ids(req),
+            "browse_targets" => s.targets(req),
+            "anki_find" => s.anki_find(src, req, files),
+            "anki_tags" => Ok(s.anki_tags()),
+            _ => Err(format!("browse: unknown op {op}")),
+        };
+        if out.is_err()
+            && (op == "browse_query" || op == "browse_counts" || op.starts_with("anki_"))
+        {
+            // 求值 / 装载出错：会话可能只装了一半，丢掉，下次整份重建。
+            sessions.remove(key);
+        }
+        out
+    }
+}
+
+/// `anki_dupes` 对外的入口（新代的命令层用；协议 3 走 [SrsCore::browse]）。
+pub(crate) fn dupes(src: &dyn Source, req: &Value) -> Result<Value, String> {
+    anki_dupes(src, req)
+}
+
 impl SrsCore {
     /// 浏览会话表的锁。建 / 增量更新到一半 panic（锁被毒化）时会话停在半截：丢掉全部会话（持有者登记留着），下次查询
     /// 整份重建——同建 / 更新出错时丢会话（BUG-4297）。
     fn browse_sessions(&self) -> MutexGuard<'_, Sessions> {
         self.browse.lock().unwrap_or_else(|poisoned| {
             let mut b = poisoned.into_inner();
-            b.live.clear();
+            b.drop_live();
             self.browse.clear_poison();
             b
         })
@@ -2941,116 +3208,22 @@ impl SrsCore {
     ) -> Result<Value, String> {
         let owner = req.get("owner").and_then(Value::as_str);
         if op == "browse_close" {
-            // 注销 [owner]（没带 = 旧调用方：按唯一持有者算）；没有持有者了才释放会话。
-            let mut b = self.browse_sessions();
-            let last = match owner {
-                Some(o) => {
-                    let set = b.owners.entry(profile.to_owned()).or_default();
-                    set.remove(o);
-                    set.is_empty()
-                }
-                None => true,
-            };
-            if last {
-                b.owners.remove(profile);
-                b.live.remove(profile);
-            }
-            return Ok(json!({"released": last}));
+            return Ok(self.browse_sessions().close(profile, owner));
         }
         if op == "browse_stats" {
-            let b = self.browse_sessions();
-            let mut owners: Vec<&String> = b.owners.get(profile).into_iter().flatten().collect();
-            owners.sort();
-            let s = b.live.get(profile);
-            return Ok(json!({
-                "live": s.is_some(),
-                "sessions": b.built,
-                "builds": s.map_or(0, |s| s.builds),
-                "owners": owners,
-            }));
+            return Ok(self.browse_sessions().stats(profile));
         }
         if op == "anki_dupes" {
             // 不碰会话（也不登记持有者）：查的是笔记缓存行上的规范形列。
-            return self.read_visible_tx(|c, _| anki_dupes(c, profile, req));
+            return self.read_visible_tx(|c, _| anki_dupes(&P3 { c, profile }, req));
         }
         self.read_visible_tx(|c, uncommitted| {
             let mut b = self.browse_sessions();
-            if let Some(o) = owner {
-                b.owners
-                    .entry(profile.to_owned())
-                    .or_default()
-                    .insert(o.to_owned());
-            }
-            let Sessions {
-                live: sessions,
-                built,
-                ..
-            } = &mut *b;
-            // 先取待重读的 id 再开快照（这条连接这次读事务里第一条读在后面）。
-            let dirty = self.study_hub.take_browse(profile, uncommitted);
-            let fresh = dirty.overflow || !sessions.contains_key(profile);
-            let ready = if fresh {
-                sessions.remove(profile);
-                if op != "browse_query" && op != "browse_counts" && !op.starts_with("anki_") {
-                    return Err("browse: no session (query first)".into());
-                }
-                *built += 1;
-                Session::build(c, profile).map(|s| {
-                    sessions.insert(profile.to_owned(), s);
-                })
-            } else {
-                sessions
-                    .get_mut(profile)
-                    .expect("checked above")
-                    .apply(c, profile, &dirty)
-            };
-            if let Err(e) = ready {
-                sessions.remove(profile);
-                return Err(e);
-            }
-            let s = sessions.get_mut(profile).expect("session");
-            let out = match op {
-                "browse_query" => {
-                    // 同一条查询、会话也没变（预览返回之类没有写入的刷新）：直接给回上次的结果。
-                    let since = req.get("since").and_then(Value::as_u64);
-                    if let Some(r) = since.and_then(|g| s.results.iter().find(|r| r.gen == g)) {
-                        let ctx = Ctx::parse(req)?;
-                        let same = json!([
-                            req.get("node"),
-                            req.get("sort").cloned().unwrap_or(Value::Null),
-                            req.get("mode").and_then(Value::as_str) != Some("notes"),
-                            req.get("types"),
-                            req.get("decks"),
-                            req.get("fallback"),
-                            req.get("instant"),
-                            ctx.today,
-                        ]);
-                        let prev = r
-                            .params
-                            .as_array()
-                            .map(|a| Value::Array(a[..a.len() - 1].to_vec()));
-                        if !r.stale && prev.as_ref() == Some(&same) {
-                            return Ok(json!({"gen": r.gen, "count": r.rows.len(), "same": true}));
-                        }
-                    }
-                    s.query(c, profile, req)
-                }
-                "browse_rows" => s.rows(c, profile, req, files),
-                "browse_counts" => s.counts(c, profile, req),
-                "browse_sources" => s.sources(c, profile, req),
-                "browse_ids" => s.ids(req),
-                "browse_targets" => s.targets(req),
-                "anki_find" => s.anki_find(c, profile, req, files),
-                "anki_tags" => Ok(s.anki_tags()),
-                _ => Err(format!("browse: unknown op {op}")),
-            };
-            if out.is_err()
-                && (op == "browse_query" || op == "browse_counts" || op.starts_with("anki_"))
-            {
-                // 求值 / 装载出错：会话可能只装了一半，丢掉，下次整份重建。
-                sessions.remove(profile);
-            }
-            out
+            let src = P3 { c, profile };
+            // 先取待重读的 id 再开快照（这条连接这次读事务里第一条读在后面）：[Sessions::run] 先调它、再读库。
+            b.run(profile, op, req, files, &src, &mut |_| {
+                Ok((self.study_hub.take_browse(profile, uncommitted), 0))
+            })
         })
     }
 }
@@ -3172,6 +3345,19 @@ mod tests {
             [true, true, false, true, false, true, true, false, false]
         );
         assert!(dupes(&d, json!([])).is_empty());
+        // `ids`：每个候选命中的笔记（文本导入按它更新已有笔记），与 `dup` 一一对应。
+        let r = call(
+            &d,
+            "anki_dupes",
+            json!({"owner": "ankiconnect", "first": {"A": "fa", "B": "x"}, "cands": [
+                cand("cat", "A", false, Value::Null),
+                cand("cat", "A", false, json!(["no-such-deck"])),
+                cand("bird", "A", false, Value::Null),
+            ]}),
+        );
+        assert!(!r["ids"][0].as_array().unwrap().is_empty());
+        assert_eq!(r["ids"][1], json!([]));
+        assert_eq!(r["ids"][2], json!([]));
 
         write(
             &d,

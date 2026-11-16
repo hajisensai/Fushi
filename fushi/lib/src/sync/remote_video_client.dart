@@ -361,6 +361,19 @@ abstract interface class RemoteVideoQualityLimit {
   set qualityPresetIndex(int index);
 }
 
+/// 「卡片来源字节身份」的可选能力（拍板台 IFCPPprIpT）：远端视频的字节在 host 上，
+/// 本机没有文件可算指纹，由 host 对它要串流的同一个文件算全文件 SHA-256（与本地
+/// 制卡的 `VideoSourceFingerprint` 同一口径）。只有互联 host 有原文件可算；Jellyfin /
+/// Emby / Plex / 在线源没有这一能力。
+abstract interface class RemoteVideoFingerprintSource {
+  /// 视频 [id] 第 [episodeIndex] 集（与 `remoteVideoStreamUrls` 同一下标）的 64 位小写
+  /// hex 指纹。host 不支持（老 host）/ 条目不存在 / 文件取不到返回 null；网络失败抛错。
+  Future<String?> fetchRemoteVideoFingerprint(
+    String id, {
+    int episodeIndex = 0,
+  });
+}
+
 /// [RemoteVideoQualityLimit.qualityPresetIndex] 的「自动」哨兵。
 const int kRemoteVideoQualityAuto = -1;
 

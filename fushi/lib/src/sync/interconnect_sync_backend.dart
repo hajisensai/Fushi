@@ -21,6 +21,9 @@ import 'package:fushi_engine/sync/interconnect_dav_tree_listing.dart';
 import 'package:fushi_engine/sync/pdf_sync_package.dart'
     show interconnectHostAcceptsPdfBooks;
 import 'package:fushi_engine/sync/interconnect_service_config.dart';
+import 'package:fushi_engine/sync/interconnect_source_share.dart';
+import 'package:fushi/src/sync/interconnect_source_share_sync.dart'
+    show SourceShareRemote;
 import 'package:fushi_engine/sync/interconnect_profile_transfer.dart';
 import 'package:fushi_engine/sync/sync_channel_scope.dart' show syncRemoteTag;
 import 'package:fushi_engine/sync/host_update/host_update_protocol.dart';
@@ -234,11 +237,13 @@ class InterconnectSyncBackend extends SyncBackend
         RemoteVideoPlaybackSync,
         RemoteVideoPlaybackRelease,
         RemoteVideoQualityLimit,
+        RemoteVideoFingerprintSource,
         RemoteVideoDanmakuKeyFetch,
         RemoteVideoWorkMetadataFetch,
         RemoteDiscShareSource,
         RemoteCoverFetcher,
-        RemoteListingCapable {
+        RemoteListingCapable,
+        SourceShareRemote {
   InterconnectSyncBackend._({FushiProbe? probe})
     : _probe = probe ?? _defaultFushiProbe,
       _candidateFilter = null;
@@ -1339,6 +1344,79 @@ class InterconnectSyncBackend extends SyncBackend
     return InterconnectServiceConfigSnapshot.fromJson(
       decoded.cast<String, Object?>(),
     );
+  }
+
+  /// 互联「来源共享」目录（`interconnect_source_share.dart`）。明文会话、旧 host（404）、
+  /// host 关着、本机不是 host 的「我的设备」（403 带短码）一律 null：这些都是「对端此刻不给」，
+  /// 不是故障，不进同步失败计数（同 [getRemoteServiceConfig] 的 BUG-1311 理由）。
+  @override
+  Future<InterconnectSourceShareCatalog?> getRemoteSourceShareCatalog() async {
+    await _ensureResolved();
+    if (Uri.tryParse(_apiBase)?.scheme != 'https') return null;
+    final HttpClientRequest req = await _ops!.buildRequest(
+      'GET',
+      '$_apiBase$kInterconnectSourceSharePath',
+    );
+    final HttpClientResponse res = await _sendBounded(req);
+    if (res.statusCode == 404) {
+      await res.drain<void>();
+      return null;
+    }
+    if (res.statusCode == 403) {
+      final SyncErrorBody? body = await readSyncErrorBody(res);
+      final String reason = body?.reason ?? '';
+      if (reason.contains('disabled') || reason.contains('not_owner_device')) {
+        return null;
+      }
+      _ops!.checkStatus(
+        res.statusCode,
+        'GET $kInterconnectSourceSharePath',
+        serverReason: body,
+      );
+    }
+    if (res.statusCode >= 400) {
+      _ops!.checkStatus(
+        res.statusCode,
+        'GET $kInterconnectSourceSharePath',
+        serverReason: await readSyncErrorBody(res),
+      );
+    }
+    final Object? decoded = jsonDecode(await _readBodyBounded(res));
+    if (decoded is! Map) {
+      throw const FormatException('Invalid source share response');
+    }
+    return InterconnectSourceShareCatalog.fromJson(
+      decoded.cast<String, Object?>(),
+    );
+  }
+
+  /// 来源共享里的一个插件包（zip 字节，上限 [kInterconnectSourceSharePackageMaxBytes]）。
+  @override
+  Future<Uint8List> getRemoteSourceSharePackage(String kind, String id) async {
+    await _ensureResolved();
+    final Uri uri = Uri.parse(
+      '$_apiBase$kInterconnectSourceSharePackagePath',
+    ).replace(queryParameters: <String, String>{'kind': kind, 'id': id});
+    final HttpClientRequest req = await _ops!.buildRequest(
+      'GET',
+      uri.toString(),
+    );
+    final HttpClientResponse res = await _sendBounded(req);
+    if (res.statusCode >= 400) {
+      _ops!.checkStatus(
+        res.statusCode,
+        'GET $kInterconnectSourceSharePackagePath',
+        serverReason: await readSyncErrorBody(res),
+      );
+    }
+    final BytesBuilder bytes = BytesBuilder(copy: false);
+    await for (final List<int> chunk in res.timeout(requestTimeout)) {
+      bytes.add(chunk);
+      if (bytes.length > kInterconnectSourceSharePackageMaxBytes) {
+        throw const FormatException('Source share package too large');
+      }
+    }
+    return bytes.takeBytes();
   }
 
   /// BUG-3147：一次性动作（配置上传/下载）的会话入口——先按 [repo] 里**此刻**的配对
@@ -3310,6 +3388,43 @@ class InterconnectSyncBackend extends SyncBackend
       urls: RemoteVideoStreamUrls.fromJson(json),
       ticket: ticket is String && ticket.isNotEmpty ? ticket : null,
     );
+  }
+
+  /// host 对整份原文件算 SHA-256：几 GB 的片子要几秒到几十秒（host 侧按文件状态缓存，
+  /// 同一文件只算一次），等响应头不能套普通端点的 [requestTimeout]。
+  static const Duration _videoFingerprintTimeout = Duration(minutes: 5);
+
+  /// GET `/api/library/videos/<id>/fingerprint`（拍板台 IFCPPprIpT）。404（老 host
+  /// 无此端点 / 条目或文件不在）→ null；回的不是 64 位小写 hex 也当取不到，不把
+  /// 不可担保的值写进卡片。
+  @override
+  Future<String?> fetchRemoteVideoFingerprint(
+    String id, {
+    int episodeIndex = 0,
+  }) async {
+    await _ensureResolved();
+    final String query = episodeIndex > 0 ? '?episode=$episodeIndex' : '';
+    final HttpClientRequest req = await _ops!.buildRequest(
+      'GET',
+      '$_apiBase/api/library/videos/${_encodeVideoId(id)}/fingerprint$query',
+    );
+    final HttpClientResponse res = await _sendBounded(
+      req,
+      timeout: _videoFingerprintTimeout,
+    );
+    if (res.statusCode == 404) {
+      await res.drain<void>();
+      return null;
+    }
+    _ops!.checkStatus(
+      res.statusCode,
+      'GET /api/library/videos/$id/fingerprint',
+    );
+    final Object? decoded = jsonDecode(await _readBodyBounded(res));
+    final Object? value = decoded is Map ? decoded['fingerprint'] : null;
+    return value is String && RegExp(r'^[0-9a-f]{64}$').hasMatch(value)
+        ? value
+        : null;
   }
 
   /// media_kit 兼容接口：当前协议走 token URL，因此无需额外 HTTP headers。
