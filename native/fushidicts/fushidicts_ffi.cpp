@@ -663,6 +663,31 @@ void fushidicts_load_transforms(void* handle, const char* json) {
   });
 }
 
+// 联合过滤器（native hash/union_filter.hpp）：宿主装完全部词典后调一次。cache_dir 非空
+// 时过滤器落盘在该目录（下次直接映射），空 / null = 只在内存里建。wait != 0 时同步
+// 建完才返回；否则立刻返回、在引擎自己的后台线程里建，建好之前查询照走旧路径，查词
+// 结果不变。取共享锁：只读词典表、写自带互斥的发布槽，同步构建期间不挡在飞的查询。
+FUSHI_EXPORT
+void fushidicts_prepare_union_filter(void* handle, const char* cache_dir, int32_t wait) {
+  ffi_guard_void("fushidicts_prepare_union_filter", [&]() {
+    if (!handle) return;
+    auto* h = static_cast<FushidictsHandle*>(handle);
+    std::shared_lock lock(h->rw);
+    h->query.prepare_union_filter(cache_dir ? std::string(cache_dir) : std::string(), wait != 0);
+  });
+}
+
+// 联合过滤器状态：0 没有 / 1 后台构建中 / 2 已就绪（UnionFilterState）。
+FUSHI_EXPORT
+int32_t fushidicts_union_filter_state(void* handle) {
+  return ffi_guard("fushidicts_union_filter_state", [&]() -> int32_t {
+    if (!handle) return 0;
+    auto* h = static_cast<FushidictsHandle*>(handle);
+    std::shared_lock lock(h->rw);
+    return static_cast<int32_t>(h->query.union_filter_state());
+  });
+}
+
 // ── query ───────────────────────────────────────────────────────────
 
 FUSHI_EXPORT
