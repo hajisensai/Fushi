@@ -1026,3 +1026,97 @@ fn study_introduces_a_salted_learn_step_once_on_the_canonical_card() {
         assert!(s.answers().all(|(x, _)| *x == c), "{s:?}");
     });
 }
+
+// ---------------------------------------------------------------------- 逐卡重放与训练集、评分预览（G7-4f）
+
+/// 逐卡重放与训练集（`cmd/training.rs`）按类：任何成员卡给的历史都是规范卡的历史，同一次 Anki 复习的两份带盐导入只出一次
+/// （日志 ID 是规范的），一份历史里给了同一个类的几个成员只算一次；RWKV 指纹按日志操作数（两份都数），尾巴只出代表。
+#[test]
+fn training_reads_see_a_log_class_once_through_any_member() {
+    use super::training::{
+        history_states, rwkv_cards, rwkv_log_tail, rwkv_replay, stat_projection,
+    };
+    use crate::projection::Day;
+    use crate::store::projections::RwkvRange;
+    with(|t, col| {
+        let w = land(t, col);
+        let c = w.c_card.text();
+        let (m0, m1) = (w.card[0].text(), w.card[1].text());
+        let one = |g: Vec<String>| history_states(t, col, &[g]).unwrap();
+        let canon = one(vec![c.clone()]);
+        assert_eq!(one(vec![m0.clone()]), canon);
+        assert_eq!(one(vec![m1.clone()]), canon);
+        assert_eq!(one(vec![m0.clone(), m1.clone(), c.clone()]), canon);
+        // 不是空状态：规范卡上有那一次复习。
+        assert_ne!(canon, one(vec!["missing".to_owned()]));
+
+        let (_, rows) = crate::store::rows::decode(
+            &stat_projection(t, col, &[vec![m0.clone(), m1.clone()]]).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(rows.len(), 1, "{rows:?}");
+        assert_eq!(rows[0][1], rusqlite::types::Value::Text(w.c_log.text()));
+
+        let day = Day {
+            utc_offset_min: 0,
+            rollover_hour: 4,
+        };
+        let word = |b: &[u8], k: usize| i64::from_le_bytes(b[8 * k..8 * k + 8].try_into().unwrap());
+        let cards = rwkv_cards(t, col, &[vec![m1.clone()]], &[1, 2, 3, 4], &day).unwrap();
+        assert_eq!(
+            (word(&cards, 0), word(&cards, 1)),
+            (1, 1),
+            "one group, one kept rating"
+        );
+        assert!(String::from_utf8_lossy(&cards).contains(&w.c_log.text()));
+
+        let replay = rwkv_replay(
+            t,
+            col,
+            &[vec![m0.clone()]],
+            &[1, 2, 3, 4],
+            &day,
+            0,
+            RwkvRange::default(),
+        )
+        .unwrap();
+        // [count, maxRowId, lastAt, n_rows, n_strays, …]：两份导入日志都是落库的操作，行只有一条，没有漏掉的卡。
+        assert_eq!(word(&replay, 0), 2);
+        assert_eq!((word(&replay, 3), word(&replay, 4)), (1, 0));
+
+        let tail = rwkv_log_tail(t, col, 0, true, false).unwrap();
+        assert_eq!((word(&tail, 0), word(&tail, 2), word(&tail, 3)), (2, 2, 1));
+        let s = String::from_utf8_lossy(&tail);
+        assert!(s.contains(&w.c_log.text()) && s.contains(&c), "{s}");
+        assert!(
+            !s.contains(&w.log[0].text()) && !s.contains(&w.log[1].text()),
+            "{s}"
+        );
+        assert!(t.conn().is_autocommit());
+    });
+}
+
+/// 评分预览（`cmd/preview.rs`）按类：用任何成员卡问都是规范卡的预览（重放那一次复习、笔记与牌组是规范 ID）；按成员给的
+/// 笔记先归一。
+#[test]
+fn preview_of_any_member_is_the_preview_of_the_canonical_card() {
+    use super::preview::preview;
+    with(|t, col| {
+        let w = land(t, col);
+        let now = ANKI_REVLOG + 2 * 86_400_000;
+        let canon = preview(t, col, &w.c_card.text(), None, now, 0, 4).unwrap();
+        assert_eq!(canon["note"], json!(w.c_note.text()), "{canon}");
+        assert_eq!(canon["deck"], json!(id(DECK).text()), "{canon}");
+        assert_eq!(canon["current"]["reps"], json!(1), "{canon}");
+        for m in [&w.card[0], &w.card[1]] {
+            assert_eq!(preview(t, col, &m.text(), None, now, 0, 4).unwrap(), canon);
+        }
+        for n in [&w.note[0], &w.note[1]] {
+            assert_eq!(
+                preview(t, col, &w.card[0].text(), Some(&n.text()), now, 0, 4).unwrap(),
+                canon
+            );
+        }
+        assert!(t.conn().is_autocommit());
+    });
+}

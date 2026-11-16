@@ -10,7 +10,8 @@
 //!   3 = 胜者，且有值不同的并发写入（冲突）。
 //! - `log_ix(col, card, at, k, id, win)` + 索引 `log_id(col, id, k)`：日志。同一个日志 ID 的多条取操作号最小的
 //!   （`win = 1`；协议 3 是「先到的留」，再靠去重作业收敛到设备 ID 最小的那份）。统计列不在这里：它们是重放的输出，
-//!   属于缓存层（设计 §2.7 第 2 条）。
+//!   属于缓存层（设计 §2.7 第 2 条）。`log_ix` 的行进出索引时顺带维护本机落库序 `log_seq(col, n, k, card)`（本机状态，
+//!   不是派生表：重建保留还在的行的序号；`cmd/training.rs` 文件头「rowid」）。
 //! - `closure_ix(col, device, upto, ctx)`：每台承袭设备的旧闭包（协议 3 的 `sync2_legacy`，改成可重建）：它日志里全部
 //!   旧戳的 dot 与上下文之并；`upto` = 带旧戳的最大 seq。
 //!
@@ -559,6 +560,14 @@ impl<'t, 'c> Index<'t, 'c> {
                     .map_err(sql)?
                     .execute(params![self.col, card, l.at, k, id])
                     .map_err(sql)?;
+                    // 本机落库序（`schema.rs` `log_seq`）：第一次进索引时取下一个序号；重建时再进来的保留原序号。
+                    conn.prepare_cached(
+                        "INSERT OR IGNORE INTO log_seq (col, n, k, card) \
+                         SELECT ?1, COALESCE(MAX(n), 0) + 1, ?2, ?3 FROM log_seq WHERE col = ?1",
+                    )
+                    .map_err(sql)?
+                    .execute(params![self.col, k, card])
+                    .map_err(sql)?;
                 } else {
                     conn.prepare_cached(
                         "DELETE FROM log_ix WHERE col = ?1 AND card = ?2 AND at = ?3 AND k = ?4",
@@ -566,6 +575,10 @@ impl<'t, 'c> Index<'t, 'c> {
                     .map_err(sql)?
                     .execute(params![self.col, card, l.at, k])
                     .map_err(sql)?;
+                    conn.prepare_cached("DELETE FROM log_seq WHERE col = ?1 AND k = ?2")
+                        .map_err(sql)?
+                        .execute(params![self.col, k])
+                        .map_err(sql)?;
                 }
                 if !bulk {
                     self.logs.insert(id);
@@ -1182,6 +1195,13 @@ impl<'t, 'c> Index<'t, 'c> {
                 self.touch(&e, true)
             })?;
         }
+        // 落库序是本机状态、重建不清（还在的日志保留原序号）；真相里已经没有的日志的那几行在这里删掉。
+        conn.prepare_cached(
+            "DELETE FROM log_seq WHERE col = ?1 AND k NOT IN (SELECT k FROM log_ix WHERE col = ?1)",
+        )
+        .map_err(sql)?
+        .execute([self.col])
+        .map_err(sql)?;
         let mut acc: Vec<(Id, Acc)> = self.bulk.take().unwrap_or_default().into_iter().collect();
         acc.sort_by_key(|(d, _)| *d);
         for (d, a) in acc {

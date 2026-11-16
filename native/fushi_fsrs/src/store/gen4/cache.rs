@@ -275,7 +275,7 @@ pub(super) struct LogIn {
     pub(super) json: String,
     pub(super) server_time: Option<i64>,
     intent: Intent,
-    /// 代表这条日志的操作主键（`log_ix.k`：本机落库序，协议 3 日志行 rowid 的对应物）。
+    /// 代表这条日志的操作主键（`log_ix.k`；本机落库序另在 `log_seq`，`cmd/training.rs` 文件头「rowid」）。
     pub(super) k: i64,
     /// 日志上记的笔记（原值，未归一；协议 3 `sync2_log_meta.note_id`）。用到的地方自己归一，缓存层的重放不付这份代价。
     pub(super) note: Option<Ref>,

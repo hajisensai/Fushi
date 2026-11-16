@@ -434,16 +434,12 @@ impl SrsCore {
         Ok(out)
     }
 
-    /// 优化器 / 校准共用的取数：同一快照里展开各组的全部前身，再取这些卡的复习日志。
+    /// 优化器 / 校准共用的取数：同一快照里展开各组的全部前身，再取这些卡的复习日志（[training_groups_on]）。
     fn fetch_training_groups(
         &self,
         groups: &[Vec<String>],
     ) -> Result<(Vec<Vec<String>>, LogsByCard), String> {
-        self.read_snapshot(|r| {
-            let groups = expand_lineages(r, groups)?;
-            let logs = fetch_logs(r, &wanted_cards(&groups))?;
-            Ok((groups, logs))
-        })
+        self.read_snapshot(|r| training_groups_on(r, groups))
     }
 
     /// 优化器训练集（`srsPrepareOptimization`）：`groups[g]` 是一张卡（调用方只给卡自己即可，全部前身由
@@ -497,7 +493,7 @@ impl SrsCore {
         rwkv_cards_of(&groups, &logs, ids, day)
     }
 
-    /// RWKV 回放行：本 profile 的日志一条语句扫出（指纹与行出自同一个快照），按 `groups`（卡的血统，
+    /// RWKV 回放行：本 profile 的日志一条语句扫出（指纹与行出自同一个快照，[rwkv_scan_on]），按 `groups`（卡的血统，
     /// 输入顺序 = 同一时刻的先后）产出保留评分行，按评分时刻稳定排序。选行与输出见 [ReplayScan]。
     pub fn rwkv_replay(
         &self,
@@ -511,39 +507,11 @@ impl SrsCore {
         if ids.len() != groups.len() * 4 {
             return Err("rwkv: id count differs from 4 × group count".into());
         }
-        let scan = self.read_snapshot(|r| {
-            let mut scan = ReplayScan::new(expand_lineages(r, groups)?, since, range);
-            // 读 `jslim` 与列（不经生成列 `json` 逐行拼回原文），每条当场解析成紧凑形态（[ScanLog]）。
-            let sql = format!(
-                "SELECT l.rowid, srs_idt(l.card_id) AS card_id, e.server_time, {} FROM srs_review_logs l \
-                 LEFT JOIN srs_event_local e ON e.event_id = l.id WHERE l.profile_uid = srs_id(?1) ORDER BY l.rowid",
-                slim::LOG_READ
-            );
-            let mut stmt = r.prepare_cached(&sql).map_err(|e| e.to_string())?;
-            let mut q = stmt.query([profile]).map_err(|e| e.to_string())?;
-            while let Some(row) = q.next().map_err(|e| e.to_string())? {
-                let rowid: i64 = row.get(0).map_err(|e| e.to_string())?;
-                let card: String = row.get(1).map_err(|e| e.to_string())?;
-                if !scan.see(rowid, &card) {
-                    continue;
-                }
-                let st: Option<i64> = row.get(2).map_err(|e| e.to_string())?;
-                let (stored, cols) = slim::log_row(row, 3).map_err(|e| e.to_string())?;
-                scan.logs.push(card, rowid, &stored, st, cols.as_ref())?;
-            }
-            drop(q);
-            Ok(scan)
-        })?;
-        scan.finish(ids, day)
+        self.read_snapshot(|r| rwkv_scan_on(r, profile, groups, since, range))?
+            .finish(ids, day)
     }
 
-    /// RWKV 对齐用的日志指纹与尾巴（同一个快照）：本 profile 的 (行数, 最大 rowid, rowid 在 `since` 之后的行数)；
-    /// `with_rows` 时再给出这些新行（按发生时刻、rowid 排序）。
-    ///
-    /// `incremental`：只数 rowid 在 `since` 之后的行（`+profile_uid` 让 SQLite 走 rowid 范围，O(新增)），
-    /// 行数 = 新增行数、最大 rowid = 新增里的最大（没有新增为 0）；调用方在已知的指纹上累加。
-    ///
-    /// 输出见 [rwkv_log_tail_of]。
+    /// RWKV 对齐用的日志指纹与尾巴（同一个快照，[rwkv_log_tail_on]）。
     pub fn rwkv_log_tail(
         &self,
         profile: &str,
@@ -551,63 +519,120 @@ impl SrsCore {
         with_rows: bool,
         incremental: bool,
     ) -> Result<Vec<u8>, String> {
-        #[derive(serde::Deserialize)]
-        struct Revokes<'a> {
-            #[serde(default, borrow)]
-            revokes: Option<std::borrow::Cow<'a, str>>,
-        }
-        let (count, max_rowid, new_rows, tail) = self.read_snapshot(|r| {
-            let (count, max_rowid, new_rows): (i64, i64, i64) = if incremental {
-                let (c, m): (i64, i64) = r
-                    .query_row(
-                        "SELECT COUNT(*), COALESCE(MAX(rowid), 0) FROM srs_review_logs \
-                         WHERE rowid > ?2 AND +profile_uid = srs_id(?1)",
-                        rusqlite::params![profile, since],
-                        |row| Ok((row.get(0)?, row.get(1)?)),
-                    )
-                    .map_err(|e| e.to_string())?;
-                (c, m, c)
-            } else {
-                r.query_row(
-                    "SELECT COUNT(*), COALESCE(MAX(rowid), 0), COALESCE(SUM(rowid > ?2), 0) \
-                     FROM srs_review_logs WHERE profile_uid = srs_id(?1)",
-                    rusqlite::params![profile, since],
-                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-                )
-                .map_err(|e| e.to_string())?
-            };
-            let mut tail: Vec<TailRow> = Vec::new();
-            if with_rows {
-                let mut stmt = r
-                    .prepare_cached(
-                        "SELECT srs_idt(id) AS id, srs_idt(card_id) AS card_id, kind, occurred_at, json FROM srs_review_logs \
-                         WHERE rowid > ?2 AND +profile_uid = srs_id(?1) ORDER BY occurred_at, rowid",
-                    )
-                    .map_err(|e| e.to_string())?;
-                let mut q = stmt.query(rusqlite::params![profile, since]).map_err(|e| e.to_string())?;
-                while let Some(row) = q.next().map_err(|e| e.to_string())? {
-                    let kind: String = row.get(2).map_err(|e| e.to_string())?;
-                    let code = tail_kind(&kind);
-                    let revokes = if code == TAIL_UNDO {
-                        let json: String = row.get(4).map_err(|e| e.to_string())?;
-                        let v: Revokes<'_> = serde_json::from_str(&json).map_err(|e| e.to_string())?;
-                        v.revokes.map(|c| c.into_owned()).unwrap_or_default()
-                    } else {
-                        String::new()
-                    };
-                    tail.push(TailRow {
-                        id: row.get(0).map_err(|e| e.to_string())?,
-                        card: row.get(1).map_err(|e| e.to_string())?,
-                        code,
-                        at: row.get(3).map_err(|e| e.to_string())?,
-                        revokes,
-                    });
-                }
-            }
-            Ok((count, max_rowid, new_rows, tail))
-        })?;
-        Ok(rwkv_log_tail_of(count, max_rowid, new_rows, &tail))
+        self.read_snapshot(|r| rwkv_log_tail_on(r, profile, since, with_rows, incremental))
     }
+}
+
+/// [SrsCore::optimizer_items] / `calibration_items` / `rwkv_cards` 在连接 [r] 上的取数：展开各组的全部前身，再取这些卡的
+/// 复习日志。调用方负责快照（对拍测试在写连接的 SAVEPOINT 里调）。
+pub(crate) fn training_groups_on(
+    r: &Connection,
+    groups: &[Vec<String>],
+) -> Result<(Vec<Vec<String>>, LogsByCard), String> {
+    let groups = expand_lineages(r, groups)?;
+    let logs = fetch_logs(r, &wanted_cards(&groups))?;
+    Ok((groups, logs))
+}
+
+/// [SrsCore::rwkv_replay] 在连接 [r] 上的扫描：本 profile 的日志按 rowid 一条语句扫出，交给 [ReplayScan]。
+pub(crate) fn rwkv_scan_on(
+    r: &Connection,
+    profile: &str,
+    groups: &[Vec<String>],
+    since: i64,
+    range: RwkvRange,
+) -> Result<ReplayScan, String> {
+    let mut scan = ReplayScan::new(expand_lineages(r, groups)?, since, range);
+    // 读 `jslim` 与列（不经生成列 `json` 逐行拼回原文），每条当场解析成紧凑形态（[ScanLog]）。
+    let sql = format!(
+        "SELECT l.rowid, srs_idt(l.card_id) AS card_id, e.server_time, {} FROM srs_review_logs l \
+         LEFT JOIN srs_event_local e ON e.event_id = l.id WHERE l.profile_uid = srs_id(?1) ORDER BY l.rowid",
+        slim::LOG_READ
+    );
+    let mut stmt = r.prepare_cached(&sql).map_err(|e| e.to_string())?;
+    let mut q = stmt.query([profile]).map_err(|e| e.to_string())?;
+    while let Some(row) = q.next().map_err(|e| e.to_string())? {
+        let rowid: i64 = row.get(0).map_err(|e| e.to_string())?;
+        let card: String = row.get(1).map_err(|e| e.to_string())?;
+        if !scan.see(rowid, &card) {
+            continue;
+        }
+        let st: Option<i64> = row.get(2).map_err(|e| e.to_string())?;
+        let (stored, cols) = slim::log_row(row, 3).map_err(|e| e.to_string())?;
+        scan.logs.push(card, rowid, &stored, st, cols.as_ref())?;
+    }
+    Ok(scan)
+}
+
+/// [SrsCore::rwkv_log_tail] 在连接 [r] 上：本 profile 的 (行数, 最大 rowid, rowid 在 `since` 之后的行数)；`with_rows` 时
+/// 再给出这些新行（按发生时刻、rowid 排序）。
+///
+/// `incremental`：只数 rowid 在 `since` 之后的行（`+profile_uid` 让 SQLite 走 rowid 范围，O(新增)），
+/// 行数 = 新增行数、最大 rowid = 新增里的最大（没有新增为 0）；调用方在已知的指纹上累加。
+///
+/// 输出见 [rwkv_log_tail_of]。
+pub(crate) fn rwkv_log_tail_on(
+    r: &Connection,
+    profile: &str,
+    since: i64,
+    with_rows: bool,
+    incremental: bool,
+) -> Result<Vec<u8>, String> {
+    #[derive(serde::Deserialize)]
+    struct Revokes<'a> {
+        #[serde(default, borrow)]
+        revokes: Option<std::borrow::Cow<'a, str>>,
+    }
+    let (count, max_rowid, new_rows): (i64, i64, i64) = if incremental {
+        let (c, m): (i64, i64) = r
+            .query_row(
+                "SELECT COUNT(*), COALESCE(MAX(rowid), 0) FROM srs_review_logs \
+                 WHERE rowid > ?2 AND +profile_uid = srs_id(?1)",
+                rusqlite::params![profile, since],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .map_err(|e| e.to_string())?;
+        (c, m, c)
+    } else {
+        r.query_row(
+            "SELECT COUNT(*), COALESCE(MAX(rowid), 0), COALESCE(SUM(rowid > ?2), 0) \
+             FROM srs_review_logs WHERE profile_uid = srs_id(?1)",
+            rusqlite::params![profile, since],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .map_err(|e| e.to_string())?
+    };
+    let mut tail: Vec<TailRow> = Vec::new();
+    if with_rows {
+        let mut stmt = r
+            .prepare_cached(
+                "SELECT srs_idt(id) AS id, srs_idt(card_id) AS card_id, kind, occurred_at, json FROM srs_review_logs \
+                 WHERE rowid > ?2 AND +profile_uid = srs_id(?1) ORDER BY occurred_at, rowid",
+            )
+            .map_err(|e| e.to_string())?;
+        let mut q = stmt
+            .query(rusqlite::params![profile, since])
+            .map_err(|e| e.to_string())?;
+        while let Some(row) = q.next().map_err(|e| e.to_string())? {
+            let kind: String = row.get(2).map_err(|e| e.to_string())?;
+            let code = tail_kind(&kind);
+            let revokes = if code == TAIL_UNDO {
+                let json: String = row.get(4).map_err(|e| e.to_string())?;
+                let v: Revokes<'_> = serde_json::from_str(&json).map_err(|e| e.to_string())?;
+                v.revokes.map(|c| c.into_owned()).unwrap_or_default()
+            } else {
+                String::new()
+            };
+            tail.push(TailRow {
+                id: row.get(0).map_err(|e| e.to_string())?,
+                card: row.get(1).map_err(|e| e.to_string())?,
+                code,
+                at: row.get(3).map_err(|e| e.to_string())?,
+                revokes,
+            });
+        }
+    }
+    Ok(rwkv_log_tail_of(count, max_rowid, new_rows, &tail))
 }
 
 /// [SrsCore::rwkv_log_tail] 的一行尾巴。
