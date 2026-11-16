@@ -357,83 +357,105 @@ class SourceReviewBanner extends StatelessWidget {
     }
   }
 
+  /// Material 3 的 compact height 窗口类（高 < 480dp，即横屏手机）：纵向空间稀缺，
+  /// 横幅把标题和按钮并成单行；更高的窗口保持「标题一行 + 按钮一行」。
+  static const double compactHeightBreakpoint = 480;
+
   @override
   Widget build(BuildContext context) {
     session.attachContext(context);
     final bool isVideo = session.link.kind == CardSourceKind.video;
+    final bool compact =
+        MediaQuery.sizeOf(context).height < compactHeightBreakpoint;
     return SourceReviewControls(
       child: ListenableBuilder(
         listenable: session,
-        builder: (BuildContext context, Widget? child) => Material(
-          color: Theme.of(context).colorScheme.secondaryContainer,
-          child: SafeArea(
-            bottom: false,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text(
-                    isVideo
-                        ? (session.isReview
-                              ? t.card_source_review_video_title
-                              : t.card_source_review_video_watching)
-                        : (session.isReview
-                              ? t.card_source_review_title
-                              : t.card_source_review_source),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  // 桌面端默认 dragDevices 不含鼠标，横向按钮条要显式放开拖动。
-                  HorizontalDragScrollable(
-                    child: SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: Row(
+        builder: (BuildContext context, Widget? child) {
+          final Widget title = Text(
+            isVideo
+                ? (session.isReview
+                      ? t.card_source_review_video_title
+                      : t.card_source_review_video_watching)
+                : (session.isReview
+                      ? t.card_source_review_title
+                      : t.card_source_review_source),
+            maxLines: compact ? 1 : 2,
+            overflow: TextOverflow.ellipsis,
+          );
+          final Widget buttons = _buildButtons(isVideo);
+          return Material(
+            color: Theme.of(context).colorScheme.secondaryContainer,
+            child: SafeArea(
+              bottom: false,
+              child: Padding(
+                padding: EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: compact ? 0 : 4,
+                ),
+                child: compact
+                    // 单行：标题与按钮条各按内容取宽，放不下时标题先省略、按钮条
+                    // 自己横向滚动——两者都不会把这一行撑高。
+                    ? Row(
                         children: <Widget>[
-                          if (session.hasDraft) ...<Widget>[
-                            FushiTextButton(
-                              onPressed: session.busy
-                                  ? null
-                                  : () => _runDialog(session.resumeDraft),
-                              child: Text(t.card_source_review_draft_resume),
-                            ),
-                            FushiTextButton(
-                              onPressed: session.busy
-                                  ? null
-                                  : () => _runDialog(session.discardDraft),
-                              child: Text(t.card_source_review_draft_discard),
-                            ),
-                          ],
-                          FushiTextButton(
-                            onPressed: session.busy
-                                ? null
-                                : () => session.returnToReading(onReturn),
-                            child: Text(
-                              isVideo
-                                  ? t.card_source_review_video_return
-                                  : t.card_source_review_return,
-                            ),
-                          ),
-                          if (session.isReview)
-                            FushiTextButton(
-                              onPressed: session.busy
-                                  ? null
-                                  : session.continueReading,
-                              child: Text(
-                                isVideo
-                                    ? t.card_source_review_video_continue
-                                    : t.card_source_review_continue,
-                              ),
-                            ),
+                          Flexible(child: title),
+                          const SizedBox(width: 8),
+                          Flexible(child: buttons),
                         ],
+                      )
+                    : Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[title, buttons],
                       ),
-                    ),
-                  ),
-                ],
               ),
             ),
-          ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildButtons(bool isVideo) {
+    // 桌面端默认 dragDevices 不含鼠标，横向按钮条要显式放开拖动。
+    return HorizontalDragScrollable(
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: <Widget>[
+            if (session.hasDraft) ...<Widget>[
+              FushiTextButton(
+                onPressed: session.busy
+                    ? null
+                    : () => _runDialog(session.resumeDraft),
+                child: Text(t.card_source_review_draft_resume),
+              ),
+              FushiTextButton(
+                onPressed: session.busy
+                    ? null
+                    : () => _runDialog(session.discardDraft),
+                child: Text(t.card_source_review_draft_discard),
+              ),
+            ],
+            FushiTextButton(
+              onPressed: session.busy
+                  ? null
+                  : () => session.returnToReading(onReturn),
+              child: Text(
+                isVideo
+                    ? t.card_source_review_video_return
+                    : t.card_source_review_return,
+              ),
+            ),
+            if (session.isReview)
+              FushiTextButton(
+                onPressed: session.busy ? null : session.continueReading,
+                child: Text(
+                  isVideo
+                      ? t.card_source_review_video_continue
+                      : t.card_source_review_continue,
+                ),
+              ),
+          ],
         ),
       ),
     );

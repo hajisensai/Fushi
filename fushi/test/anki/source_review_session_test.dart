@@ -593,4 +593,49 @@ void main() {
     expect(repository.additions, 0);
     await tester.pumpWidget(const SizedBox());
   });
+
+  /// 反馈 m6TVBNxGa9：Android 横屏手机（792×363dp）上横幅固定「标题一行 + 按钮一行」，
+  /// 占掉约 1/5 画面高度。矮窗口（高 < 480dp，M3 compact height）必须并成单行。
+  Future<Rect> mountSized(WidgetTester tester, Size size) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = size;
+    addTearDown(tester.view.reset);
+    final int previousReads = store.completedReads;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Column(
+            children: <Widget>[
+              SourceReviewBanner(session: session, onReturn: () {}),
+              const Expanded(child: SizedBox.expand()),
+            ],
+          ),
+        ),
+      ),
+    );
+    await _until(tester, () => store.completedReads > previousReads);
+    return tester.getRect(find.byType(SourceReviewBanner));
+  }
+
+  testWidgets('short landscape window folds banner into one row', (
+    WidgetTester tester,
+  ) async {
+    final Rect banner = await mountSized(tester, const Size(792, 363));
+    expect(banner.height, lessThanOrEqualTo(48));
+    final Rect title = tester.getRect(find.text(t.card_source_review_title));
+    final Rect back = tester.getRect(find.text(t.card_source_review_return));
+    expect(title.center.dy, moreOrLessEquals(back.center.dy, epsilon: 1));
+    expect(title.right, lessThanOrEqualTo(back.left));
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('tall window keeps title above the button row', (
+    WidgetTester tester,
+  ) async {
+    await mountSized(tester, const Size(411, 891));
+    final Rect title = tester.getRect(find.text(t.card_source_review_title));
+    final Rect back = tester.getRect(find.text(t.card_source_review_return));
+    expect(title.bottom, lessThanOrEqualTo(back.top));
+    await tester.pumpWidget(const SizedBox());
+  });
 }
