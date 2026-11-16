@@ -15,6 +15,16 @@
 //!
 //! - **ID**：结果里是规范 ID；请求里的 ID 先归一（模块 `cmd` 文件头）。一个别名类只出一份：`entities` 是类的定义，
 //!   `edits` 是按类判定活着的写入（实体、键、值里嵌的 ID、三处写入者都是规范形），`logs` 是每个规范日志 ID 的代表。
+//! - **回包里的 ID 按什么对回去**（请求给的是别名类的成员时）：
+//!   - 按实体出行的（`entities` `edits` `logs` `cards` `notes` `conflict_edits` …）：行里写规范 ID，一个类一份；调用方
+//!     要按自己给的 ID 对回去，先用同一份别名表把它归一（远程 / 本机共用的视图解码器就是这么做的）。
+//!   - 回答「这些 ID 在不在 / 是多少」的（`events_present` `server_times {ids}`）：**原样回请求里的 ID**（同协议 3 的
+//!     `srs_id`：小写带连字符的 UUID 文本才当 UUID，别的写法是另一个文本 ID），每个请求 ID 至多一行，成员与规范 ID 都问了就各回一行；判定按类（成员在 = 类在、时刻取
+//!     类的代表）。调用方问什么、对什么，不用知道别名。
+//!   - `server_times` 不给 `ids`（取全部）：日志写规范日志 ID、修改记录写原值修改记录 ID（修改记录 ID 没有别名），与
+//!     `logs` / `edits` / `events` 读出的 ID 同一口径。
+//!   - 请求里的键（`edits` 的 `key` / `prefix`、`conflict_edits` 的规则键）按同一条规则归一成规范键再比
+//!     （`Index::canonical_key`：以完整 ID 结尾的换成规范 ID；半截 ID 无从归一）。
 //! - **顺序**：协议 3 `edits` 同一实体按落库顺序（rowid），新代没有落库顺序：按 (修改键, 行 JSON) 排。其余没写
 //!   `ORDER BY` 的协议 3 查询这里也一律给确定顺序（按 ID 的 SQLite 序，`cmd::sql_order`）。
 //! - **`server_time`**：只有承袭来的那份（`cache.rs` 文件头「取舍」）；原生操作、身份记录没有。
@@ -42,7 +52,8 @@ use rusqlite::params;
 use serde_json::{Value, json};
 
 use super::{
-    Cell, Files, Sel, Table, canon_ids, profile_of, ref_of, snapshot, sql_order, with_profile,
+    Cell, Files, Sel, Table, canon_ids, logs_between, profile_of, ref_of, snapshot, sql_order,
+    with_profile,
 };
 use crate::gen4::name::{read_edit_key, write_edit_key};
 use crate::gen4::op::{Body4, KIND_EDIT, KIND_LEGACY_UNKNOWN};
@@ -366,29 +377,75 @@ impl<'t, 'c> Reads<'t, 'c> {
         Ok(out.encode())
     }
 
-    /// `entity_count {kind?, limit?}`：别名类的个数（`limit` 给了最多数到它）。
+    /// 集合里有身份记录的别名类，按成员 ID 的 SQLite 序**逐行**交给 [f]（每个类一次：第一次遇到它的成员时），[f] 回
+    /// `false` 就停。语句不排序不物化，停下时只读过前面那几行：不给种类时沿 `ent_ix` 主键 `(col, id, k)` 顺序走，给了
+    /// 种类时沿部分索引 `ent_kind (col, kind, id) WHERE win = 1` 只走这一种（不先走过别的种类的身份记录）——`entity_count
+    /// {kind?, limit}` 与 `has_user_data` 因此与协议 3 的 `LIMIT` / `EXISTS` 同阶（O(limit) / 碰到第一个就停），不随集合
+    /// 大小涨（`cmd/tests.rs` `keyed_reads_never_walk_the_whole_collection` 钉住给了种类的那条）。去重用的集合只装已经交
+    /// 出去的类。
+    fn each_class(
+        &self,
+        kind: Option<EntKind>,
+        mut f: impl FnMut(&Self, Ref) -> Result<bool, String>,
+    ) -> Result<(), String> {
+        let mut q = Sel::of(self.col);
+        q.push("SELECT DISTINCT id FROM ent_ix WHERE col = ?1 AND win = 1");
+        if let Some(k) = kind {
+            let p = q.int(k as i64);
+            q.push(&format!(" AND kind = {p}"));
+        }
+        // 顺序写明：两条索引（主键 / `ent_kind`）在各自的条件下都按 `id` 交出，不用排序；不写的话不给种类时规划器也
+        // 可以挑 `ent_kind`（覆盖了 `win = 1`），那就成了按 (种类, ID) 交出。
+        q.push(" ORDER BY id");
+        let mut stmt = self.t.conn().prepare_cached(&q.sql).map_err(sql)?;
+        let mut rows = stmt.query(q.params().as_slice()).map_err(sql)?;
+        let mut seen: HashSet<Ref> = HashSet::new();
+        while let Some(r) = rows.next().map_err(sql)? {
+            let c = self.canon(&r.get::<_, Ref>(0).map_err(sql)?)?;
+            if seen.insert(c.clone()) && !f(self, c)? {
+                break;
+            }
+        }
+        Ok(())
+    }
+
+    /// `entity_count {kind?, limit?}`：别名类的个数（`limit` 给了最多数到它：逐行数，到 `limit` 就停，[each_class]）。
     fn entity_count(&mut self, req: &Value) -> Result<i64, String> {
         let kind = opt_str(req, "kind");
         let want = kind.and_then(EntKind::parse);
         if kind.is_some() && want.is_none() {
             return Ok(0);
         }
-        let limit = opt_int(req, "limit");
-        let mut n = 0i64;
-        for c in self.all_entities(want)? {
-            if limit.is_some_and(|l| n >= l) {
-                break;
-            }
-            match self.definition(&c)? {
-                Some((k, _)) if want.is_none_or(|w| w == k) => n += 1,
-                _ => {}
-            }
+        // 协议 3 是 SQL 的 `LIMIT`：负数 = 不限，0 = 一个都不数。
+        let limit = opt_int(req, "limit").filter(|l| *l >= 0);
+        if limit == Some(0) {
+            return Ok(0);
         }
+        let mut n = 0i64;
+        self.each_class(want, |r, c| {
+            if matches!(r.definition(&c)?, Some((k, _)) if want.is_none_or(|w| w == k)) {
+                n += 1;
+            }
+            Ok(limit.is_none_or(|l| n < l))
+        })?;
         Ok(n)
     }
 
     /// `has_user_data {builtins}`：集合里有没有 `builtins`（内置实体的 ID，可以是任何一个盐下的存量 ID 或规范 ID）之外
-    /// 的数据——别的身份记录，或任何修改（含标签操作）/ 日志 / 不认识的事件。已清除的写入不算（协议 3 的投影里没有它们）。
+    /// 的数据——别的身份记录，或任何修改（含标签操作）/ 日志 / 不认识的事件。
+    ///
+    /// **口径**（调用方 `SrsDbStore.hasUserData`：判成「没有」= profile 关联会直接改用对方 uid、不并入本机数据，所以只许
+    /// 往「有」那边偏）：
+    ///
+    /// - 已清除的写入（[S_PURGED]）不算：用户自己要求抹掉的内容，协议 3 的投影里也没有它们。
+    /// - 被支配的写入（`R_DOMINATED`）算：盖掉它的写入同在一个寄存器里，有它就有活着的写入，结论与协议 3 相同。
+    /// - 扣住的删除（[crate::store::gen4::weigh::S_HELD]）算：扣住的前提是实体上有与它并发、没被清除的操作，那条操作本身已让结果为「有」，
+    ///   与协议 3（扣住的删除不进投影、并发的那条进）结论相同。
+    /// - 不可信作者的删除 / 清除（[crate::store::gen4::weigh::S_DISTRUSTED]）算：协议 3 把它们放在投影外的扣住表里、不算；这里有意更保守——它们是
+    ///   真实存在、等用户确认信任的操作，判成「有」只会让关联走并入而不是改用，不会丢任何东西。唯一结论不同的情形是
+    ///   「除内置实体外只有一条不可信设备的删除」。
+    ///
+    /// 代价：身份记录逐行看、碰到第一个非内置的类就停（[Reads::each_class]），之后三个 `EXISTS` 各自碰到第一行就停。
     fn has_user_data(&mut self, req: &Value) -> Result<bool, String> {
         let rules = builtin_rule_canon(
             &self
@@ -407,10 +464,13 @@ impl<'t, 'c> Reads<'t, 'c> {
             }
             builtins.insert(c);
         }
-        for c in self.all_entities(None)? {
-            if !builtins.contains(&c) {
-                return Ok(true);
-            }
+        let mut user = false;
+        self.each_class(None, |_, c| {
+            user = !builtins.contains(&c);
+            Ok(!user)
+        })?;
+        if user {
+            return Ok(true);
         }
         let mut q = Sel::of(self.col);
         let purged = q.int(S_PURGED);
@@ -479,8 +539,12 @@ impl<'t, 'c> Reads<'t, 'c> {
     }
 
     /// `edits {kind, ids, key? | prefix?}`：一组实体（每个别名类一份）活着的修改记录（`e` 规范实体 ID, `j`, `st`）。
-    /// `key` = 只要这一个字段键（请求里的键先归一）；`prefix` = 只要以它开头的。实体按 ID 的 SQLite 序，同一实体内按
-    /// (键, JSON)。
+    /// `key` = 只要这一个字段键；`prefix` = 只要以它开头的。实体按 ID 的 SQLite 序，同一实体内按 (键, JSON)。
+    ///
+    /// 行里的键是规范键（`f/<字段>` 等嵌着的 ID 换成规范 ID），所以 `key` 与 `prefix` 先按同一条规则归一
+    /// （[Index::canonical_key]）再比：以一个完整 ID 结尾的前缀（`historyFrom/<卡>`、`f/<字段>`）换成规范 ID，请求给别名
+    /// 成员的形也命中；不含 ID 的前缀（`notDup/`、`f/`）不变。停在 ID 中间的前缀（半截 UUID）无从归一，只按规范键的
+    /// 文本比——调用方（`noteFieldKeyPrefixValues` 的 `notDup/`）没有这种用法。
     fn edits(&mut self, req: &Value) -> Result<Vec<u8>, String> {
         let kind = need_kind(req, "kind")?;
         let mut ids = canon_ids(&self.ix, need_list(req, "ids")?)?;
@@ -489,15 +553,16 @@ impl<'t, 'c> Reads<'t, 'c> {
             Some(k) => Some(self.ix.canonical_key(k)?),
             None => None,
         };
-        let prefix = opt_str(req, "prefix");
-        if prefix == Some("") {
-            return Err("read edits: empty prefix".to_owned());
-        }
+        let prefix = match opt_str(req, "prefix") {
+            Some("") => return Err("read edits: empty prefix".to_owned()),
+            Some(p) => Some(self.ix.canonical_key(p)?),
+            None => None,
+        };
         let mut out = Table::new(&[("e", KIND_STR), ("j", KIND_STR), ("st", KIND_OPT_I64)]);
         for c in ids {
             for (f, j, st) in self.class_rows(kind, &c)? {
                 if key.as_ref().is_some_and(|k| *k != f)
-                    || prefix.is_some_and(|p| !f.starts_with(p))
+                    || prefix.as_ref().is_some_and(|p| !f.starts_with(p.as_str()))
                 {
                     continue;
                 }
@@ -875,41 +940,6 @@ impl<'t, 'c> Reads<'t, 'c> {
         Ok(out.encode())
     }
 
-    /// 发生时刻落在 [lo, hi] 的日志：每个规范日志 ID 取操作号最小的一份（`log_ix.win` 的规则搬到类上），交回
-    /// (规范日志 ID, 操作主键, 日志)。
-    fn logs_between(
-        &self,
-        lo: i64,
-        hi: i64,
-        reps: &mut BTreeMap<Ref, (OpId, i64, crate::gen4::op::Log4)>,
-    ) -> Result<(), String> {
-        let rows: Vec<(i64, Ref)> = self
-            .t
-            .conn()
-            .prepare_cached(
-                "SELECT k, id FROM log_ix WHERE col = ?1 AND at BETWEEN ?2 AND ?3 AND win = 1",
-            )
-            .map_err(sql)?
-            .query_map(params![self.col, lo, hi], |r| Ok((r.get(0)?, r.get(1)?)))
-            .map_err(sql)?
-            .collect::<Result<_, _>>()
-            .map_err(sql)?;
-        for (k, id) in rows {
-            let c = self.canon(&id)?;
-            let op = self.t.id_of_key(k)?;
-            if reps.get(&c).is_some_and(|(o, _, _)| *o <= op) {
-                continue;
-            }
-            let Some(e) = self.t.entry_by_key(k)? else {
-                continue;
-            };
-            if let Some(Body4::Log(l)) = body_of(&e) {
-                reps.insert(c, (op, k, l));
-            }
-        }
-        Ok(())
-    }
-
     /// `anki_logs_at {at}`：Anki 导入的评分类日志里发生时刻（= Anki revlog id）落在 `at` 的那些，连同日志所在卡（规范）
     /// 此刻的笔记与可见性（卡没有缓存行时两列为空）。走 `log_at (col, at)` 索引。按 (时刻, 卡, 日志 ID) 排。
     fn anki_logs_at(&mut self, req: &Value) -> Result<Vec<u8>, String> {
@@ -918,7 +948,7 @@ impl<'t, 'c> Reads<'t, 'c> {
         at.dedup();
         let mut reps = BTreeMap::new();
         for a in at {
-            self.logs_between(a, a, &mut reps)?;
+            logs_between(self.t, &self.ix, self.col, a, Some(a), &mut reps)?;
         }
         let mut rows = Vec::new();
         for (id, (_, _, l)) in reps {
@@ -973,7 +1003,14 @@ impl<'t, 'c> Reads<'t, 'c> {
         let win = need_int(req, "win")?;
         let mut reps = BTreeMap::new();
         for a in at {
-            self.logs_between(a.saturating_sub(win), a.saturating_add(win), &mut reps)?;
+            logs_between(
+                self.t,
+                &self.ix,
+                self.col,
+                a.saturating_sub(win),
+                Some(a.saturating_add(win)),
+                &mut reps,
+            )?;
         }
         let mut rows: Vec<(Ref, String)> = Vec::new();
         // 日志行要的是重放写回 `res` 的那份（协议 3 落库的就是它）：按卡整段重放一次，同一张卡只算一次。
@@ -1089,23 +1126,41 @@ impl<'t, 'c> Reads<'t, 'c> {
         Ok(())
     }
 
-    /// `server_times {ids?}`：事件的服务器时刻（`id`, `st`；没有时刻的不出现），按 ID 排。`ids` 没给 = 集合里全部。
-    /// 日志按规范日志 ID（代表那份的时刻），修改记录按原值修改记录 ID；只有承袭来的事件有时刻（模块文件头）。
+    /// `server_times {ids?}`：事件的服务器时刻（`id`, `st`；没有时刻的不出现），按 ID 的 SQLite 序。只有承袭来的事件有
+    /// 时刻（模块文件头）。日志的时刻是规范日志 ID 的代表那份的；修改记录按原值修改记录 ID（修改记录 ID 没有别名）。
+    ///
+    /// **回包里的 ID**（调用方按它对回去）：
+    ///
+    /// - 没给 `ids`（profile 并入一次取全部）：日志是规范日志 ID、修改记录是原值修改记录 ID——与同一集合的 `logs` /
+    ///   `edits` / `events` 读出来的 ID 同一个口径，调用方拿那几条读出的 ID 直接查这张表。
+    /// - 给了 `ids`：**原样回请求里的那个 ID**（小写带连字符的 UUID 文本才当 UUID，同协议 3），每个请求 ID 至多一行。请求给的
+    ///   是日志别名类里的某个成员时，按它的规范日志 ID 取时刻、回包仍写成员本身；同一个类的几个成员都问了，就各回一行。
+    ///   调用方因此不用知道别名：问什么、对什么。
     fn server_times(&mut self, req: &Value) -> Result<Vec<u8>, String> {
-        let wanted: Option<HashSet<Ref>> = list(req, "ids")?.map(|ids| {
-            ids.as_array()
-                .into_iter()
-                .flatten()
-                .filter_map(Value::as_str)
-                .map(ref_of)
-                .collect()
-        });
-        let mut times: BTreeMap<(u8, Vec<u8>), (Ref, i64)> = BTreeMap::new();
-        let mut put = |id: Ref, st: i64| {
-            let (o, b) = sql_order(&id);
-            times.entry((o, b.to_vec())).or_insert((id, st));
+        // 请求的 ID（规整后的文本 → (原值, 规范)）。
+        let asked: Option<Vec<(Ref, Ref)>> = match list(req, "ids")? {
+            None => None,
+            Some(ids) => {
+                let mut seen: HashSet<Ref> = HashSet::new();
+                let mut out = Vec::new();
+                for x in ids.as_array().into_iter().flatten() {
+                    let s = x.as_str().ok_or("read server_times: ids must be strings")?;
+                    let r = ref_of(s);
+                    if seen.insert(r.clone()) {
+                        let c = self.canon(&r)?;
+                        out.push((r, c));
+                    }
+                }
+                Some(out)
+            }
         };
-        // 日志：每个规范日志 ID 的代表。
+        let canon_wanted: Option<HashSet<Ref>> = asked
+            .as_ref()
+            .map(|a| a.iter().map(|(_, c)| c.clone()).collect());
+        let raw_wanted: Option<HashSet<Ref>> = asked
+            .as_ref()
+            .map(|a| a.iter().map(|(r, _)| r.clone()).collect());
+        // 日志：每个规范日志 ID 的代表（操作号最小的那份）。
         let mut reps: BTreeMap<Ref, (OpId, Option<i64>)> = BTreeMap::new();
         {
             let mut q = Sel::of(self.col);
@@ -1117,10 +1172,7 @@ impl<'t, 'c> Reads<'t, 'c> {
             })?;
             for (k, id) in rows {
                 let c = self.canon(&id)?;
-                if wanted
-                    .as_ref()
-                    .is_some_and(|w| !w.contains(&c) && !w.contains(&id))
-                {
+                if canon_wanted.as_ref().is_some_and(|w| !w.contains(&c)) {
                     continue;
                 }
                 let op = self.t.id_of_key(k)?;
@@ -1134,23 +1186,42 @@ impl<'t, 'c> Reads<'t, 'c> {
                 reps.insert(c, (op, st));
             }
         }
-        for (c, (_, st)) in reps {
-            if let Some(st) = st {
-                put(c, st);
-            }
-        }
-        // 修改记录。
-        let mut edits: Vec<(Ref, i64)> = Vec::new();
+        let logs: BTreeMap<Ref, i64> = reps
+            .into_iter()
+            .filter_map(|(c, (_, st))| st.map(|st| (c, st)))
+            .collect();
+        // 修改记录（原值 ID）。
+        let mut edits: BTreeMap<Ref, i64> = BTreeMap::new();
         self.each_edit_id(0, |id, st| {
             let r = ref_of(&id);
-            match st {
-                Some(st) if wanted.as_ref().is_none_or(|w| w.contains(&r)) => edits.push((r, st)),
-                _ => {}
+            if let Some(st) = st {
+                if raw_wanted.as_ref().is_none_or(|w| w.contains(&r)) {
+                    edits.entry(r).or_insert(st);
+                }
             }
             Ok(())
         })?;
-        for (r, st) in edits {
-            put(r, st);
+        let mut times: BTreeMap<(u8, Vec<u8>), (Ref, i64)> = BTreeMap::new();
+        let mut put = |id: Ref, st: i64| {
+            let (o, b) = sql_order(&id);
+            times.entry((o, b.to_vec())).or_insert((id, st));
+        };
+        match asked {
+            None => {
+                for (c, st) in logs {
+                    put(c, st);
+                }
+                for (r, st) in edits {
+                    put(r, st);
+                }
+            }
+            Some(asked) => {
+                for (r, c) in asked {
+                    if let Some(st) = logs.get(&c).or_else(|| edits.get(&r)) {
+                        put(r, *st);
+                    }
+                }
+            }
         }
         let mut out = Table::new(&[("id", KIND_STR), ("st", KIND_I64)]);
         for (_, (id, st)) in times {
@@ -1163,13 +1234,22 @@ impl<'t, 'c> Reads<'t, 'c> {
 
     /// `cards {fields?, ids?, notes?, decks?, templates?, visibleOnly?, queue?, studyableOn?, ordered?}`：卡片缓存行（列见
     /// `bulk::CARD_COLUMNS`）。筛选同协议 3；ID 参数先归一。按 ID 排（`ordered` 因此总成立）。
+    ///
+    /// **计划**：给了的 ID 列表里按 `ids` > `notes` > `decks` > `templates` 取第一个当外层（`CROSS JOIN` 定死连接顺序：
+    /// 先展开列表、再按 `cards` / `cards_note` / `cards_deck` / `cards_template` 逐个按键取），其余列表只当过滤条件。
+    /// 以前四个列表都写成 `col IN (SELECT … FROM json_each(?))`：规划器把 `json_each` 估成 25 行，`cards_deck` /
+    /// `cards_template` 的统计又是「一个牌组 / 模板约 5000 张」，25 × 5000 大于整集合的 10 万行，于是 `cards {decks}`
+    /// / `cards {templates}` 选了整集合扫描。按列表逐个按键取的代价只与命中的行数有关（再加一次按 ID 排序），所以
+    /// 连接顺序直接写死，不交给按统计的估算（统计只表达形状，估不出这次请求的列表有多长、命中多少）。
     fn cards(&mut self, req: &Value) -> Result<Vec<u8>, String> {
         let cols = pick(&bulk::CARD_COLUMNS, req, "cards")?;
         let mut q = Sel::of(self.col);
-        q.push(&format!(
-            "SELECT {} FROM cards WHERE col = ?1",
-            cols.iter().map(|(n, _)| *n).collect::<Vec<_>>().join(", ")
-        ));
+        let names = cols
+            .iter()
+            .map(|(n, _)| format!("c.{n}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let mut filters: Vec<(&str, Vec<Ref>)> = Vec::new();
         for (k, col) in [
             ("ids", "id"),
             ("notes", "note_id"),
@@ -1177,26 +1257,39 @@ impl<'t, 'c> Reads<'t, 'c> {
             ("templates", "template_id"),
         ] {
             if let Some(v) = list(req, k)? {
-                let ids = canon_ids(&self.ix, v)?;
-                let sub = q.ids(&ids);
-                q.push(&format!(" AND {col} IN {sub}"));
+                filters.push((col, canon_ids(&self.ix, v)?));
             }
         }
+        let mut filters = filters.into_iter();
+        match filters.next() {
+            Some((col, ids)) => {
+                let sub = q.ids(&ids);
+                q.push(&format!(
+                    "SELECT {names} FROM {sub} AS want CROSS JOIN cards c \
+                     ON c.col = ?1 AND c.{col} = want.v WHERE 1"
+                ));
+            }
+            None => q.push(&format!("SELECT {names} FROM cards c WHERE c.col = ?1")),
+        }
+        for (col, ids) in filters {
+            let sub = q.ids(&ids);
+            q.push(&format!(" AND c.{col} IN {sub}"));
+        }
         if flag(req, "visibleOnly") {
-            q.push(" AND hidden = 0");
+            q.push(" AND c.hidden = 0");
         }
         if let Some(queue) = opt_str(req, "queue") {
             let p = q.text(queue);
-            q.push(&format!(" AND queue = {p}"));
+            q.push(&format!(" AND c.queue = {p}"));
         }
         if let Some(today) = opt_int(req, "studyableOn") {
             let p = q.int(today);
             q.push(&format!(
-                " AND suspended = 0 AND scheduler = 'fushi' \
-                 AND (buried_until_day IS NULL OR buried_until_day <= {p})"
+                " AND c.suspended = 0 AND c.scheduler = 'fushi' \
+                 AND (c.buried_until_day IS NULL OR c.buried_until_day <= {p})"
             ));
         }
-        q.push(" ORDER BY id");
+        q.push(" ORDER BY c.id");
         q.table(self.t, &cols)
     }
 

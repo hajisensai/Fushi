@@ -25,6 +25,7 @@ import 'package:fushi/src/reader/reader_panel_chrome_kit.dart';
 import 'package:fushi/src/utils/components/fushi_jump_history_controls.dart'
     show JumpProgressMarksPainter;
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
+import 'package:fushi/src/utils/components/nsfw_cover_blur.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -378,14 +379,18 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
                     borderRadius: BorderRadius.all(
                       Radius.circular(isGlassDesign(context) ? 10 : 20),
                     ),
-                    child: Image.file(
-                      File(coverPath),
-                      key: const ValueKey<String>('fushi_audiobook_cover'),
-                      width: 92,
-                      height: 128,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) =>
-                          const SizedBox(width: 92, height: 128),
+                    // NSFW 书（祖先挂了要模糊的 [ShelfCoverNsfw]）封面打模糊。
+                    child: NsfwCoverBlur(
+                      blur: ShelfCoverNsfw.blurOf(context),
+                      child: Image.file(
+                        File(coverPath),
+                        key: const ValueKey<String>('fushi_audiobook_cover'),
+                        width: 92,
+                        height: 128,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) =>
+                            const SizedBox(width: 92, height: 128),
+                      ),
                     ),
                   ),
                 ),

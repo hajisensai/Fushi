@@ -21,7 +21,11 @@
 library;
 
 import 'package:fushi_core/fushi_core.dart'
-    show FushiDatabase, LocalFileDeleteReport, VideoBookRow;
+    show
+        FushiDatabase,
+        LocalFileDeleteReport,
+        VideoBookRow,
+        VideoStatisticsIdentity;
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart'
     show
         VideoDownloadPipelineService,
@@ -52,8 +56,30 @@ typedef VideoLibraryDeleteResult = ({
   LocalFileDeleteReport localFiles,
 });
 
+/// 一次视频库删除走到哪一步（35YfcYO-zR：上万条删除要有可见进度）。
+enum VideoLibraryDeleteStage {
+  /// 删统计、删行（几个批量事务，不可细分，显示不定态）。
+  removingEntries,
+
+  /// 行已删，逐本回收 app 副本 / 缓存，勾了删本地文件时还有原件删除
+  /// （[VideoLibraryDeleteProgress.done] / [VideoLibraryDeleteProgress.total]
+  /// 有意义，最后一个文件删完才到满）。
+  cleaningUp,
+
+  /// 整库压缩（可能整库 VACUUM）：与删除条数无关、不可细分，显示不定态。
+  compacting,
+}
+
+/// [deleteVideoBooksWithDecision] 的进度快照。
+typedef VideoLibraryDeleteProgress = ({
+  VideoLibraryDeleteStage stage,
+  int done,
+  int total,
+});
+
 /// 删掉 [bookUids] 对应的视频行 + app 副本；[decision].deleteLocalFiles 为真时再删
 /// 原始视频文件（含跟着它走的 sidecar 字幕）并联动下载任务；
+/// [onProgress] 按阶段报进度（批量删除的进度对话框用）；
 /// [decision].deleteStatistics 为真时先把这些视频攒下的统计一并删掉。
 ///
 /// [removeFromCollections] 见 [VideoBookRepository.deleteVideoBooks]：只有「删掉从
@@ -67,7 +93,13 @@ Future<VideoLibraryDeleteResult> deleteVideoBooksWithDecision({
   bool compactDatabase = true,
   bool removeFromCollections = true,
   Future<void> Function()? afterDeleteBeforeReclaim,
+  void Function(VideoLibraryDeleteProgress progress)? onProgress,
 }) async {
+  onProgress?.call((
+    stage: VideoLibraryDeleteStage.removingEntries,
+    done: 0,
+    total: 0,
+  ));
   // 删的是一整部作品时，它名下不在合集里的附属行（本地特典 / 下载整理出的附件）
   // 跟着一起删，否则正片没了、特典行和特典文件原样留下（fuQcFmZZxb / BUG-3817）。
   // 「只删本机副本、成员行保留」（removeFromCollections: false）的作品仍在，不扩。
@@ -137,6 +169,18 @@ Future<VideoLibraryDeleteResult> deleteVideoBooksWithDecision({
             )
           : null,
       afterDeleteBeforeReclaim: afterDeleteBeforeReclaim,
+      onReclaimProgress: onProgress == null
+          ? null
+          : (VideoReclaimPhase phase, int done, int total) => onProgress((
+              stage: switch (phase) {
+                VideoReclaimPhase.reclaiming =>
+                  VideoLibraryDeleteStage.cleaningUp,
+                VideoReclaimPhase.compacting =>
+                  VideoLibraryDeleteStage.compacting,
+              },
+              done: done,
+              total: total,
+            )),
     );
   } on VideoBooksDeleteException catch (e) {
     // 部分失败：成功的那些已删完、回收完（仓库层把尾活跑完才抛）；失败的逐条留痕。
@@ -193,36 +237,35 @@ void reportVideoLibraryDeleteFailures(
 
 /// 删这些视频攒下的统计（「同时删除统计数据」勾选的落地）。
 ///
-/// 逐条走 [FushiDatabase.deleteVideoStatisticsForIdentity]：它在一个事务里删
+/// 走 [FushiDatabase.deleteVideoStatisticsForIdentities]：**一个事务**里删
 /// `study_segments`（唯一事实表）+「已看过区间」偏好 + legacy 的观看时长/字数行 +
-/// 该视频的查词/制卡计数，并按媒体身份与 title 两级立碑——不立碑的话下一轮聚合同步
-/// 会把对端还留着的段整批灌回来（BUG-2215）。
+/// 这些视频的查词/制卡计数，并按媒体身份与 title 两级立碑——不立碑的话下一轮聚合
+/// 同步会把对端还留着的段整批灌回来（BUG-2215）。title 一次批量取（BUG-4748：原来
+/// 逐条 getByBookUid + 逐条一个事务，上万条视频就是十几万次查询）。
 ///
-/// `includeUnattributed: false`：只删挂在这条 `bookUid` 名下的行。同名视频的**无
-/// 身份**遗留行留给统计页自己处置，删一条视频不该按标题连坐别人的历史。
+/// `includeUnattributed: false`：只删挂在这些 `bookUid` 名下的行。同名视频的**无
+/// 身份**遗留行留给统计页自己处置，删视频不该按标题连坐别人的历史。
 ///
-/// 逐条 best-effort：某一条统计删失败不该拦住整批视频的删除（行还没删，用户重试
-/// 即可），失败只记日志。
+/// best-effort：统计删失败不该拦住视频的删除（行还没删，用户重试即可），失败只记
+/// 日志。整批一个事务 = 全有或全无，不会留下删了一半的统计。
 Future<void> _deleteStatisticsForVideos({
   required VideoBookRepository repo,
   required FushiDatabase database,
   required Iterable<String> bookUids,
 }) async {
-  for (final String bookUid in bookUids.toSet()) {
-    try {
-      // title 必须在行还活着时取：墓碑与同名歧义复核都以它为判据。
-      final VideoBookRow? row = await repo.getByBookUid(bookUid);
-      if (row == null) continue;
-      await database.deleteVideoStatisticsForIdentity(
-        title: row.title,
-        bookUid: bookUid,
-      );
-    } catch (e, stack) {
-      ErrorLogService.instance.log(
-        'VideoLibraryDelete.deleteStatistics',
-        e,
-        stack,
-      );
-    }
+  try {
+    // title 必须在行还活着时取：墓碑与同名歧义复核都以它为判据。
+    final List<VideoBookRow> rows = await repo.getByBookUids(bookUids);
+    if (rows.isEmpty) return;
+    await database.deleteVideoStatisticsForIdentities(<VideoStatisticsIdentity>[
+      for (final VideoBookRow row in rows)
+        (title: row.title, bookUid: row.bookUid),
+    ]);
+  } catch (e, stack) {
+    ErrorLogService.instance.log(
+      'VideoLibraryDelete.deleteStatistics',
+      e,
+      stack,
+    );
   }
 }

@@ -288,6 +288,99 @@ window.fushiSelection = {
         });
     },
 
+    // ---- 逐字几何命中的坐标系（BUG-4753）----
+    // 事件 clientX/Y、caret API、elementFromPoint 用的都是客户区坐标。Range / Element 的
+    // getClientRects / getBoundingClientRect 在实现了标准化 CSS zoom 的引擎里（Blink、
+    // Firefox、Safari 26.4 起的 WebKit）也是这一套；更早的 WebKit 却按节点自身的有效
+    // CSS zoom 再除一遍：
+    //     rect = (client + scroll) / zoom − scroll
+    // 弹窗把「界面大小 × 词典字号」写成 documentElement.style.zoom，zoom ≠ 1 时拿客户区
+    // 的点去比缩过的字框，点「昼」命中「間」、点「訪」命中「問」，或者干脆落空；交给宿主
+    // 的字框（getSelectionRect / highlightSelection）也按 zoom 偏。
+    //
+    // 外部引擎兼容层：
+    //   影响范围——macOS / iOS 26.3 及更早系统的 WKWebView（WebKit 在 Safari Technology
+    //     Preview 232 / Safari 26.4 修了「getBoundingClientRect / getClientRects 按 CSS zoom
+    //     返回缩放后的长度」，见 https://webkit.org/?p=17601 、https://webkit.org/?p=17862）。
+    //     标准引擎里探测结果为「已缩放」，下面三个换算都是恒等。
+    //   清理条件——app 在 macOS / iOS 上的最低支持系统 ≥ 26.4（浏览器扩展同时要求 Safari
+    //     ≥ 26.4）时，删掉 clientRectsZoomed / rectSpaceZoom / pointInRectSpace /
+    //     rectToClientSpace / clientRectOf 整套探测与换算，调用点直接用原始坐标。
+    // popup.js 等其它要按客户区（视觉 px）用元素框的地方一律走 clientRectOf，不另写判据。
+    clientRectsZoomed() {
+        if (typeof this.rectsZoomed === 'boolean') return this.rectsZoomed;
+        // 探针挂 documentElement：body 可能不渲染（frameset、扩展注入的任意网页），根元素
+        // 只要文档在显示就有布局。
+        const parent = document.documentElement || document.body;
+        if (!parent || typeof document.createElement !== 'function') return true;
+        // 同一父节点下两个 100px 宽的探针，一个 zoom:1、一个 zoom:2：字框随 zoom 缩放的引擎
+        // 量出 2 倍宽，旧 WebKit 量出一样宽。比的是两者之比，祖先 zoom 两边抵消。
+        const make = (zoom) => {
+            const probe = document.createElement('div');
+            probe.setAttribute('aria-hidden', 'true');
+            probe.style.cssText = 'position:absolute;left:0;top:0;width:100px;height:1px;' +
+                `visibility:hidden;pointer-events:none;zoom:${zoom};`;
+            return probe;
+        };
+        const plain = make(1);
+        const zoomed = make(2);
+        let ratio = NaN;
+        parent.appendChild(plain);
+        parent.appendChild(zoomed);
+        try {
+            ratio = zoomed.getBoundingClientRect().width / plain.getBoundingClientRect().width;
+        } finally {
+            parent.removeChild(plain);
+            parent.removeChild(zoomed);
+        }
+        // 量不出（根元素不渲染，文档根本没在显示）就按标准坐标处理并缓存：再探也量不出，
+        // 每次取字都插拔探针只会白白触发宿主页面的 MutationObserver。
+        this.rectsZoomed = (!Number.isFinite(ratio) || ratio <= 0) || Math.abs(ratio - 1) > 0.25;
+        return this.rectsZoomed;
+    },
+
+    // [node] 的字框相对客户区坐标被除掉的倍数：标准引擎恒为 1；旧 WebKit 是节点到根
+    // （跨 shadow 宿主）一路 CSS zoom 的乘积（zoom 不继承，computed 值就是各自写的那个）。
+    rectSpaceZoom(node) {
+        if (this.clientRectsZoomed()) return 1;
+        let zoom = 1;
+        let el = node?.nodeType === Node.ELEMENT_NODE ? node : node?.parentElement;
+        for (let guard = 0; el && guard < 512; guard++) {
+            const value = parseFloat(window.getComputedStyle?.(el)?.zoom);
+            if (Number.isFinite(value) && value > 0) zoom *= value;
+            el = el.parentElement || el.getRootNode?.()?.host || null;
+        }
+        return zoom;
+    },
+
+    // 客户区坐标的点 (x, y) 换到 [node] 字框所在的坐标系，交给 inCharRange 比较。
+    pointInRectSpace(node, x, y) {
+        const zoom = this.rectSpaceZoom(node);
+        if (zoom === 1) return { x, y };
+        const scrollX = window.scrollX || 0;
+        const scrollY = window.scrollY || 0;
+        return { x: (x + scrollX) / zoom - scrollX, y: (y + scrollY) / zoom - scrollY };
+    },
+
+    // pointInRectSpace 的逆：[node] 的字框 / 元素框换回客户区坐标（视觉 px），给宿主
+    // 定位嵌套弹窗、给弹窗里按视口算位置的浮层用。返回普通对象（DOMRect 的同名字段）。
+    rectToClientSpace(node, rect) {
+        const zoom = this.rectSpaceZoom(node);
+        const scrollX = zoom === 1 ? 0 : (window.scrollX || 0);
+        const scrollY = zoom === 1 ? 0 : (window.scrollY || 0);
+        const left = (rect.left + scrollX) * zoom - scrollX;
+        const top = (rect.top + scrollY) * zoom - scrollY;
+        const right = (rect.right + scrollX) * zoom - scrollX;
+        const bottom = (rect.bottom + scrollY) * zoom - scrollY;
+        return { left, top, right, bottom, x: left, y: top, width: right - left, height: bottom - top };
+    },
+
+    // 元素在客户区坐标里的 getBoundingClientRect（标准引擎下就是原值）。
+    clientRectOf(element) {
+        return this.rectToClientSpace(element, element.getBoundingClientRect());
+    },
+
+    // (x, y) 必须已在字框坐标系里（pointInRectSpace）。
     inCharRange(charRange, x, y) {
         const rects = charRange.getClientRects();
         if (rects.length) {
@@ -325,10 +418,11 @@ window.fushiSelection = {
         let node;
         while (node = walker.nextNode()) {
             const len = node.textContent.length;
+            const point = this.pointInRectSpace(node, x, y);
             for (let i = 0; i < len; i++) {
                 range.setStart(node, i);
                 range.setEnd(node, i + 1);
-                if (this.inCharRange(range, x, y)) {
+                if (this.inCharRange(range, point.x, point.y)) {
                     range.collapse(true);
                     return range;
                 }
@@ -537,13 +631,14 @@ window.fushiSelection = {
 
         const text = node.textContent;
         const caret = range.startOffset;
+        const point = this.pointInRectSpace(node, x, y);
 
         for (const offset of [caret, caret - 1, caret + 1]) {
             if (offset < 0 || offset >= text.length) continue;
             const charRange = document.createRange();
             charRange.setStart(node, offset);
             charRange.setEnd(node, offset + 1);
-            if (this.inCharRange(charRange, x, y)) {
+            if (this.inCharRange(charRange, point.x, point.y)) {
                 if (this.isScanBoundary(text[offset])) return null;
                 return { node, offset };
             }
@@ -763,9 +858,13 @@ window.fushiSelection = {
         range.setStart(first.node, first.start);
         range.setEnd(first.node, first.start + 1);
         const rects = Array.from(range.getClientRects());
-        const rect = rects.find(r => x >= r.left && x <= r.right && y >= r.top && y <= r.bottom)
+        const point = this.pointInRectSpace(first.node, x, y);
+        const rect = rects.find(r => point.x >= r.left && point.x <= r.right &&
+                point.y >= r.top && point.y <= r.bottom)
             ?? range.getBoundingClientRect();
-        return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+        // 宿主按 WebView 客户区坐标锚嵌套弹窗：字框换回客户区（BUG-4753）。
+        const client = this.rectToClientSpace(first.node, rect);
+        return { x: client.x, y: client.y, width: client.width, height: client.height };
     },
 
     highlightSelection(charCount) {
@@ -790,7 +889,9 @@ window.fushiSelection = {
             const range = document.createRange();
             range.setStart(seg.node, seg.start);
             range.setEnd(seg.node, seg.end);
-            for (const r of range.getClientRects()) {
+            // 汇总的 bbox 交给宿主重锚子弹窗，按客户区坐标算（BUG-4753）。
+            for (const raw of range.getClientRects()) {
+                const r = this.rectToClientSpace(seg.node, raw);
                 if (!bounds) {
                     bounds = { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
                 } else {

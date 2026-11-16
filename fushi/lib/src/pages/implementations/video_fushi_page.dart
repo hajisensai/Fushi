@@ -3335,7 +3335,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   String get dictionarySourceType => kStatSourceVideo;
 
   @override
-  ModuleId? get popupDockModule => ModuleId.video;
+  ModuleId? get lookupHostModule => ModuleId.video;
 
   /// TODO-1204：查词 / 制卡计数归属本视频——[title] 用 [_title]（剧集标题，与
   /// 视频统计 tile 的身份分组键对齐），[bookKey] 存
@@ -8554,12 +8554,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   Future<MinePopupResult> onMineEntry(Map<String, String> fields) =>
       _onMineEntryImpl(fields);
 
-  /// 反馈 OeS0m8tLHc：查词弹窗点「制卡」→ 弹窗立刻关、视频立刻续播（关栈走
-  /// [_popNestedPopupAt]，按 [_pausedForLookup] 恢复），卡在后台落地（本地视频也是，
-  /// 见 [resolveVideoMineDispatch]），结局由 OSD 报告、失败的结果卡带「重试」。
-  /// 视频车道因此不再看「制卡后关闭查词弹窗」偏好，也不再等卡落地才关。
+  /// 制卡后「关闭弹窗、不续播」（拍板台 8ldy3d8XFA）：撤掉查词暂停标记，随后
+  /// [_popNestedPopupAt] 关栈时就不续播。卡照旧在后台落地（反馈 OeS0m8tLHc，见
+  /// [resolveVideoMineDispatch]），弹窗关不关、续不续播由视频模块的「制卡后行为」定，
+  /// 默认「关闭并续播」。
   @override
-  bool get closePopupAfterMining => true;
+  void dropLookupPauseMark() {
+    _pausedForLookup = false;
+  }
 
   /// mixin 的纯字段制卡 / 覆盖（不带视频媒体）。网页档没有锚点 cue 时的退路：extension
   /// 里调不到 `super`，经这两个转发器。
@@ -8631,8 +8633,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 键盘 / 系统返回 / 手柄三条输入通道共用同一份语义，不再各写一份。
   Future<void> _handleBackOrExit() async {
     if (_dismissTopForegroundLayer()) return;
-    // 原盘会话：控制栏收着时「返回」只把它呼出来，开着时才真退出（回详情页）。
+    // 原盘会话：菜单阶段控制栏收着时「返回」只把它呼出来，开着时才真退出（回详情页）；
+    // 正片阶段「返回」回盘菜单，不退整个会话（全屏那一级在全屏路由里先退过了）。
     if (_discSessionShowBarOnBack()) return;
+    if (_discSessionReturnToMenuOnBack()) return;
     _exitVideoPage();
   }
 
@@ -12773,15 +12777,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           // 继续观看后这条栏必须整条消失：此刻已是普通观看，页面要和平时看视频
           // 完全一样，不能再留第二条常驻顶栏把画面挤下去（BUG-102 的单一顶栏原
           // 则）。要回卡片片段就重新点一次 Anki 里的来源链接，走完整回看链路。
+          // 横幅自己带 SafeArea（让出状态栏与横屏刘海）；外面不能再套一层，否则
+          // 横屏时刘海那一侧被外层让成横幅底色以外的空白条。
           if (_sourceReviewSession case final SourceReviewSession session
               when session.isReview)
-            SafeArea(
-              bottom: false,
-              child: SourceReviewBanner(
-                runHidden: runWithLookupPopupHidden,
-                session: session,
-                onReturn: () => unawaited(_handleBackOrExit()),
-              ),
+            SourceReviewBanner(
+              runHidden: runWithLookupPopupHidden,
+              session: session,
+              onReturn: () => unawaited(_handleBackOrExit()),
             ),
           Expanded(child: body),
         ],

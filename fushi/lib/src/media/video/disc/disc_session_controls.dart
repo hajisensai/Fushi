@@ -90,13 +90,42 @@ DiscUnconsumedClickRoute? resolveUnconsumedDiscClick({
   return DiscUnconsumedClickRoute.showBar;
 }
 
-/// Short Esc / Android back / gamepad B / iOS back swipe, after page layers.
-enum DiscSessionBackRoute { showBar, exitSession }
+/// Short Esc / Android back / gamepad B / iOS back swipe, after page layers
+/// (and, while a title plays fullscreen, after leaving fullscreen).
+enum DiscSessionBackRoute {
+  /// Menu surface with the session bar hidden: summon the bar.
+  showBar,
 
-DiscSessionBackRoute resolveDiscSessionBack({required bool barVisible}) =>
-    barVisible
-    ? DiscSessionBackRoute.exitSession
-    : DiscSessionBackRoute.showBar;
+  /// A title is playing: step back to the disc's own menu (the layer the
+  /// title was started from), not out of the session.
+  returnToMenu,
+
+  /// Leave the whole disc session for the details page.
+  exitSession,
+}
+
+/// One rung of the disc session's back ladder. The layers, innermost first:
+/// title fullscreen → title in the window → the disc's menu → details page.
+/// Fullscreen is handled before this by the player's own ladder.
+///
+/// [onMenu] is the menu phase (menu showing or no title bound yet). On a
+/// title, [menuCallAllowed] is whether the disc lets us call its top menu
+/// right now (Blu-ray UO_MENU_CALL / DVD root-menu UOP); a disc that forbids
+/// it (or has none) has no menu layer to return to, so back leaves.
+DiscSessionBackRoute resolveDiscSessionBack({
+  required bool onMenu,
+  required bool barVisible,
+  required bool menuCallAllowed,
+}) {
+  if (!onMenu) {
+    return menuCallAllowed
+        ? DiscSessionBackRoute.returnToMenu
+        : DiscSessionBackRoute.exitSession;
+  }
+  return barVisible
+      ? DiscSessionBackRoute.exitSession
+      : DiscSessionBackRoute.showBar;
+}
 
 /// Press-and-hold exit for Esc / gamepad B. A release before
 /// [kDiscExitHoldDuration] is a short press; reaching it fires [onExit]
