@@ -27,6 +27,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../helpers/fake_anki_repository.dart';
 import '../helpers/series_scrape_seed.dart';
 import '../helpers/test_platform_services.dart';
+import '../helpers/shell_layout.dart';
 
 /// 远端视频目录在本地建立合集与占位成员；系列墙按持久关系折叠，
 /// 全部视频维持散卡布局。DTO 不能覆盖本地成员墓碑或用户顺序。
@@ -98,6 +99,7 @@ void main() {
     ],
     child: TranslationProvider(
       child: MaterialApp(
+        theme: gridShellTheme(),
         home: Scaffold(
           body: HomeVideoPage(
             repo: VideoBookRepository(db),

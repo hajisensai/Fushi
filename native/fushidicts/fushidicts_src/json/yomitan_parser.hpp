@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
 #include <glaze/glaze.hpp>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -14,6 +15,12 @@ struct Index {
   bool isUpdatable = false;
   std::string_view indexUrl;
   std::string_view downloadUrl;
+  // Fushi 本地改动（上游 Index 没有）：Yomitan index.json v3 的词头 / 释义语言。
+  // 导入时原样写回输出目录的 index.json——app / fushi_server 从输出目录读来源
+  // metadata（parseSourceMetadataFromIndexJson），丢了它词典就没有语言、词典管理
+  // 无法按语言分组。缺字段或空串时为 nullopt，写盘省略该键（老词典输出逐字节不变）。
+  std::optional<std::string> sourceLanguage;
+  std::optional<std::string> targetLanguage;
 };
 
 struct Term {

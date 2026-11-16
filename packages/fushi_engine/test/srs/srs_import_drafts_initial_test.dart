@@ -67,7 +67,9 @@ void main() {
       guid: 'guid-new',
     );
     await s.importDrafts(drafts);
-    final SrsNoteView n = (await s.note(SrsIds.note(kProfile, 'guid-new')))!;
+    final SrsNoteView n = (await s.note(
+      SrsKernelIds(kProfile).note('guid-new'),
+    ))!;
     expect(n.field(fushi('Expression')), '新');
   });
 }

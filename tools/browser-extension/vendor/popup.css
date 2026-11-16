@@ -3837,3 +3837,14 @@ html.eink.global-lookup body {
     border: 1px solid var(--text-color);
     background: var(--background-color);
 }
+
+/* 服务器来源小图标（popup.js __fushiRemoteDictGlyph）：只在释义带 `remote: true`
+   时出现，跟随 .dict-label 字色、略淡，不改变标签行高。 */
+.dict-label > .dict-remote-glyph {
+    display: inline-flex;
+    align-items: center;
+    margin-inline-start: 0.35em;
+    vertical-align: middle;
+    opacity: 0.7;
+    line-height: 0;
+}

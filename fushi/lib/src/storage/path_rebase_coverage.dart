@@ -323,6 +323,12 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
     '语言代码列表 JSON，无路径。',
   ),
   PathRebaseColumn(
+    'RemoteDictionaryMetadata',
+    'sourceLanguage',
+    PathRebaseKind.notAPath,
+    '服务器托管词典的词头语言（BCP-47 标签），无路径。',
+  ),
+  PathRebaseColumn(
     'DictionaryHistory',
     'resultJson',
     PathRebaseKind.notAPath,

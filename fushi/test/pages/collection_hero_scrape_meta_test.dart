@@ -27,6 +27,10 @@ import 'package:fushi_core/fushi_core.dart';
 ///  3. 背景槽向（2026-10 M3E 重做）：有横版 backdrop 用它轻模糊铺满，无则拿封面
 ///     重模糊垫底；2:3 封面恒在独立封面卡里清晰显示（[PortraitCoverImage] 按朝向
 ///     分流），不再把海报硬塞进宽幅槽（BUG-1298）。
+///
+/// 2026-11 重设计外壳（海报面板，[VideoPosterDetailHero]）：宽屏不再左右两栏，hero
+/// 整宽在顶、自带背景带；放送日期收成年份胶囊；页头（[MediaPosterDetailChrome]）
+/// 常驻一份作品名（滚过 hero 后淡入），所以标题断言限定在 hero 卡内。
 void main() {
   final TestWidgetsFlutterBinding binding =
       TestWidgetsFlutterBinding.ensureInitialized();
@@ -162,6 +166,20 @@ void main() {
     ),
   );
 
+  /// 海报面板按封面取色（[MediaPosterDetailTheme] → 进程级 `coverColorSchemeCache`
+  /// → `extractImageProviderSeedArgb` 给图片加载挂 10 秒超时）。远程封面在
+  /// fakeAsync 里永远加载不完，这条取色请求属于进程级缓存、按设计不随页面销毁，
+  /// 测试结束时把 10 秒走完（超时落 null），免得定时器挂到 widget 树销毁之后。
+  Future<void> drainCoverTint(WidgetTester tester) =>
+      tester.pump(const Duration(seconds: 11));
+
+  /// 限定在 hero 卡里找：页头（[MediaPosterDetailChrome]）常驻一份作品名（滚过
+  /// hero 后才淡入），全页找同名文本会命中两处。
+  Finder inHero(Finder matching) => find.descendant(
+    of: find.byKey(const ValueKey<String>('video-work-hero-card')),
+    matching: matching,
+  );
+
   /// BUG-3756：hero 封面链的存在性改为 async 探测（build 里不再同步 stat），真实
   /// IO 在 fakeAsync 下不会完成。链上每级一次探测 + 一次重建，按链深各给一轮。
   Future<void> settleCoverProbes(WidgetTester tester, {int rounds = 4}) async {
@@ -176,7 +194,8 @@ void main() {
     }
   }
 
-  /// 宽屏（≥ 1080）走两栏：hero 在左栏（独立滚动 = sticky），右栏选集。
+  /// 宽屏：海报面板宽式，hero 整宽在顶；≥ 1300 时附栏（接着看 / 作品资料）单独
+  /// 成右列。
   Future<void> pumpWide(WidgetTester tester) async {
     tester.view.physicalSize = const Size(1600, 1000);
     tester.view.devicePixelRatio = 1.0;
@@ -187,7 +206,8 @@ void main() {
     await settleCoverProbes(tester);
   }
 
-  /// 单列（< 1080）但 hero 够宽（≥ 640）：封面卡在左、信息在右，hero 自己画大背景。
+  /// 中等宽（≥ 720 走宽式、< 1300 附栏接在下段）：海报在左、文字在右，hero 自己
+  /// 画大背景。
   Future<void> pumpSingleColumn(WidgetTester tester) async {
     tester.view.physicalSize = const Size(1000, 1400);
     tester.view.devicePixelRatio = 1.0;
@@ -198,26 +218,48 @@ void main() {
     await settleCoverProbes(tester);
   }
 
-  testWidgets('宽屏两栏：hero 在左栏，大背景由布局画在整页后面', (WidgetTester tester) async {
+  testWidgets('宽屏海报面板：hero 整宽在顶、自带背景带，附栏单独成右列', (WidgetTester tester) async {
     await saveMeta(backdropPath: '/covers/collections/1_backdrop.jpg');
     await pumpWide(tester);
 
+    final Finder hero = find.byKey(
+      const ValueKey<String>('video-work-hero-card'),
+    );
+    expect(hero, findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('media-detail-side-pane')),
+      findsNothing,
+      reason: '重设计外壳不再左右两栏：hero 整宽在顶，选集等区块接在下面',
+    );
+    final Rect heroRect = tester.getRect(hero);
+    expect(heroRect.left, 0, reason: 'hero 背景带从内容区左边缘铺起');
+    expect(heroRect.right, 1600, reason: 'hero 背景带铺到内容区右边缘');
     expect(
       find.descendant(
-        of: find.byKey(const ValueKey<String>('media-detail-side-pane')),
-        matching: find.byKey(const ValueKey<String>('video-work-hero-card')),
+        of: hero,
+        matching: find.byKey(
+          const ValueKey<String>('collection-hero-backdrop'),
+        ),
       ),
       findsOneWidget,
-      reason: '宽屏 hero 信息住左栏（独立滚动 = sticky），右栏放选集',
+      reason: '有横版 backdrop 时 hero 自己画背景带',
     );
     expect(
-      find.byKey(const ValueKey<String>('collection-hero-backdrop')),
-      findsNothing,
-      reason: '两栏时 hero 不重复画自己的背景（整页背景由 MediaDetailLayout 画）',
-    );
-    expect(
-      find.byKey(const ValueKey<String>('collection-hero-poster')),
+      find.descendant(
+        of: hero,
+        matching: find.byKey(const ValueKey<String>('collection-hero-poster')),
+      ),
       findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: hero,
+        matching: find.byKey(
+          const ValueKey<String>('media-poster-detail-aside'),
+        ),
+      ),
+      findsOneWidget,
+      reason: '宽 ≥ 1300 时「接着看」/ 作品资料附栏单独占右列',
     );
   });
 
@@ -227,9 +269,9 @@ void main() {
     await saveMeta();
     await pumpWide(tester);
 
-    // hayase 式：放送日期独立一行压在标题上方；话数/评分/评分人数/观看进度是
-    // 徽标 chips，各自一个 Text（不再是拼起来的一条元数据行）。
-    expect(find.text('2023-01-04'), findsOneWidget, reason: '放送日期行压在大标题上方');
+    // 海报面板：放送日期收成年份胶囊（旧刮削资料没有规范作品宿主时从放送日期
+    // 取年份）；年份/话数/评分/评分人数/观看进度是信息胶囊，各自一个 Text。
+    expect(find.text('2023'), findsOneWidget, reason: '放送年份进信息胶囊，不随版式改版丢失');
     expect(find.text('全 12 话'), findsOneWidget);
     expect(find.text('★ 8.2'), findsOneWidget);
     expect(find.text('1234 人评分'), findsOneWidget);
@@ -250,7 +292,7 @@ void main() {
     await saveMeta(confirmedTitle: '转生王女与天才令嬢的魔法革命');
     await pumpWide(tester);
 
-    expect(find.text('转生王女与天才令嬢的魔法革命'), findsOneWidget);
+    expect(inHero(find.text('转生王女与天才令嬢的魔法革命')), findsOneWidget);
     expect(
       find.text('Tensei Oujo v2 播放列表'),
       findsNothing,
@@ -266,7 +308,7 @@ void main() {
     expect(find.textContaining('公主与令嬢携手掀起魔法革命'), findsOneWidget);
     expect(find.text('転生王女と天才令嬢の魔法革命'), findsOneWidget, reason: '原名作副标题');
     // 但标题一字不动。
-    expect(find.text('Tensei Oujo v2 播放列表'), findsOneWidget);
+    expect(inHero(find.text('Tensei Oujo v2 播放列表')), findsOneWidget);
     expect(
       find.text('转生王女与天才令嬢的魔法革命'),
       findsNothing,
@@ -282,7 +324,7 @@ void main() {
       findsOneWidget,
       reason: '合集详情必须使用作品级 hero',
     );
-    expect(find.text('Tensei Oujo v2 播放列表'), findsOneWidget);
+    expect(inHero(find.text('Tensei Oujo v2 播放列表')), findsOneWidget);
     expect(find.textContaining('已看完'), findsWidgets);
     // 旧锚点是「暂无详细资料」——那是 #792 引入时就断在半截的文案
     // （`暂无详细资料。请在`，介词悬空），断句处恰好在锚点之后，所以这条断言
@@ -322,13 +364,13 @@ void main() {
     );
     expect(hero.left, 0, reason: '大背景必须从内容区左边缘开始，不能居中留白');
     expect(hero.right, 1000, reason: '大背景必须平铺到内容区右边缘');
-    expect(
-      tester
-          .getSize(find.byKey(const ValueKey<String>('collection-hero-poster')))
-          .height,
-      greaterThanOrEqualTo(300),
-      reason: '宽 hero 使用大竖版封面卡，不再缩成角落的小卡',
+    // 海报面板宽式：海报列宽取 hero 宽的 17%（夹 150..220），高按封面固有比例
+    // （测试封面解码不出 → 2:3）；压过背景带下沿，不缩成角落的小卡。
+    final Size poster = tester.getSize(
+      find.byKey(const ValueKey<String>('collection-hero-poster')),
     );
+    expect(poster.width, inInclusiveRange(150, 220));
+    expect(poster.height, closeTo(poster.width * 1.5, 1));
     expect(
       find.byType(LandscapeCoverImage),
       findsNothing,
@@ -393,8 +435,9 @@ void main() {
       reason: '安全目录判定阻止作品根图落盘时，详情页不能退回分集截图',
     );
     // settleCoverProbes 给真实 IO 的 runAsync 窗口里远程封面的磁盘缓存也真的起来了，
-    // 它排了一个 10 秒的清理定时器；走完它，免得测试结束时还有定时器挂着。
-    await tester.pump(const Duration(seconds: 11));
+    // 它排了一个 10 秒的清理定时器；海报面板取色也给远程封面挂了 10 秒加载超时。
+    // 走完它们，免得测试结束时还有定时器挂着。
+    await drainCoverTint(tester);
   });
 
   // BUG：剧集目录从 `D:\smb\<剧名>` 挪进 `D:\smb\动漫\<剧名>` 后，合集
@@ -446,6 +489,7 @@ void main() {
       (remote as CachedNetworkImageProvider).url,
       'https://image.example/moved-poster.jpg',
     );
+    await drainCoverTint(tester);
   });
 
   testWidgets('无横版 backdrop → 封面模糊垫底 + 封面卡清晰显示', (WidgetTester tester) async {
@@ -533,6 +577,7 @@ void main() {
       (remote as CachedNetworkImageProvider).url,
       'https://image.example/net-poster.jpg',
     );
+    await drainCoverTint(tester);
   });
 }
 

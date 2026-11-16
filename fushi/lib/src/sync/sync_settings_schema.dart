@@ -62,6 +62,9 @@ import 'package:fushi_engine/sync/interconnect_device_name.dart';
 import 'package:fushi/src/sync/interconnect_link_pairing.dart';
 import 'package:fushi/src/media/downloads/download_execution_target.dart';
 import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
+import 'package:fushi/src/sync/interconnect_dictionary_lookup_section.dart';
+import 'package:fushi/src/sync/remote_dictionary_catalog_service.dart'
+    show RemoteDictionaryCatalogService;
 import 'package:fushi_engine/sync/interconnect_host_addresses.dart';
 import 'package:fushi_engine/sync/interconnect_p2p.dart'
     show InterconnectP2pRuntime, parseInterconnectP2pUrl;
@@ -1145,6 +1148,22 @@ SettingsDestination buildInterconnectDestination() {
         ],
       ),
     ],
+  );
+}
+
+/// 从别的分类（查词 › 词典服务器）直达「互联 › 配对与设备」：互联开着就推与互联
+/// 主页那行同一个子页（`.subPage`，见 [SettingsNavigationItem.child]）；互联还没开时
+/// 子页里的配对控件没有意义，落到互联主页（总开关就在顶上）。
+Future<void> openInterconnectPairingPage(SettingsContext ctx) async {
+  final bool enabled = await SyncRepository(
+    ctx.appModel.database,
+  ).isInterconnectEnabled();
+  if (!ctx.context.mounted) return;
+  await pushSettingsPage(
+    ctx,
+    (_) => enabled
+        ? const SettingsDetailPage.subPage(_buildInterconnectDevicesPage)
+        : SettingsDetailPage(destination: buildInterconnectDestination()),
   );
 }
 

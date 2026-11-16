@@ -22,6 +22,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/test_platform_services.dart';
 import '../helpers/fake_image_bytes.dart';
+import '../helpers/shell_layout.dart';
 
 /// TODO-820：互联下载对端视频后必须建 VideoBooks 行，否则下载好的文件躺磁盘但视频
 /// 列表（唯一数据源是 VideoBooks 行）根本看不到。这里在真实下载路径上断言「下载完
@@ -94,6 +95,7 @@ void main() {
     overrides: <Override>[appProvider.overrideWith((ref) => appModel)],
     child: TranslationProvider(
       child: MaterialApp(
+        theme: gridShellTheme(),
         home: Scaffold(
           body: HomeVideoPage(
             repo: repo,

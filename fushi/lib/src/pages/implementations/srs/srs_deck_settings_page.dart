@@ -20,6 +20,8 @@ import 'package:fushi_engine/srs/srs_optimization_scheduler.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_rwkv_panel.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show shellRedesignActive;
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -127,6 +129,9 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
   bool _replayQuestionAudio = true;
   SrsNewCardOrder _newCardOrder = SrsNewCardOrder.frequency;
   SrsNewCardMix _newCardMix = SrsNewCardMix.afterReviews;
+
+  /// 每日上限（复习上限与 RWKV 每天最少复习数）的单位。牌组自己的值（同每日上限）。
+  SrsLimitUnit _limitUnit = SrsLimitUnit.reviews;
   SrsReviewCardOrder _reviewCardOrder = SrsReviewCardOrder.retrievability;
 
   /// 父牌组那条继承链上的参数归属牌组的算法（切到「随上级」后本牌组按它排程）；顶层为 null。
@@ -213,6 +218,7 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
         _name.text = deck.name;
         _newPerDay.text = '${deck.newPerDay}';
         _reviewsPerDay.text = '${deck.reviewsPerDay}';
+        _limitUnit = deck.limitUnit;
         final String? parent = tree.parentOf(deck.id);
         _parentOwnerAlgorithm = parent == null
             ? null
@@ -355,6 +361,10 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
         'new': newPerDay.clamp(0, 9999),
         'review': reviewsPerDay.clamp(0, 99999),
       };
+    }
+    // 单位单独一个键（数值仍在 limits / rwkvQueue 里），与每日上限一样是牌组自己的值。
+    if (_limitUnit != deck.limitUnit) {
+      out[SrsFieldKeys.deckLimitUnit] = _limitUnit.wire;
     }
     // 新卡计划与每日上限一样是牌组自己的值（不随参数继承）。
     final SrsNewCardPlan plan = _newCardPlan(deck.newCardPlan);
@@ -646,12 +656,26 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
   @override
   Widget build(BuildContext context) {
     final bool apple = isGlassDesign(context);
+    final bool masthead = shellRedesignActive(context);
     final String title = t.srs_deck_settings;
+    final String? deckName = _deck?.name;
     return FushiPageScaffold(
       title: title,
-      subtitle: _deck?.name,
+      subtitle: deckName,
+      masthead: true,
+      // 页头大字形态不画副标题：牌组名作页名下一行。
+      mastheadBottom: deckName == null
+          ? null
+          : Text(
+              deckName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: context.fushiType.titleMedium.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
       header: apple ? null : _buildTopBar(context, title),
-      actions: apple
+      actions: apple || masthead
           ? <Widget>[
               FushiIconButton(
                 key: _saveItem.key,
@@ -720,6 +744,7 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
     TextEditingController controller,
     String label, {
     String? helper,
+    String? suffix,
     bool enabled = true,
     Key? key,
   }) => FushiTextField(
@@ -728,6 +753,7 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
     enabled: enabled,
     labelText: label,
     helperText: helper,
+    suffixText: suffix,
     keyboardType: TextInputType.number,
     inputFormatters: <TextInputFormatter>[
       FilteringTextInputFormatter.digitsOnly,
@@ -880,12 +906,20 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
     );
   }
 
-  /// 每日上限：新卡 → 最多复习 →（RWKV）忽略上限 / 最少复习，三个值挨在一起，并就地提示它们之间的关系
+  /// 每日上限：新卡 → 上限单位 → 最多复习 →（RWKV）忽略上限 / 最少复习，挨在一起，并就地提示它们之间的关系
   /// （复习上限至少新卡的 10 倍、最少复习不超过上限），每条提示带一键改成参考值。只提示不联动改值：
-  /// 用户写下的数不被悄悄覆盖。
+  /// 用户写下的数不被悄悄覆盖。上限单位（[SrsLimitUnit]）同时管最多复习与最少复习，两个输入框的后缀随它变；
+  /// 「至少新卡的 10 倍」是按张数换算的，单位是分钟时不提示。
   Widget _limitsGroup(BuildContext context, bool ownsParams) {
     final bool rwkv = (ownsParams ? _algorithm : _stepsAlgorithm).usesRwkv;
     final bool ignored = _reviewLimitIgnored;
+    final SrsLimitUnit unit = _limitUnit;
+    final bool minutes = unit == SrsLimitUnit.minutes;
+    final String suffix = switch (unit) {
+      SrsLimitUnit.reviews => t.srs_settings_limit_suffix_reviews,
+      SrsLimitUnit.cards => t.srs_settings_limit_suffix_cards,
+      SrsLimitUnit.minutes => t.srs_settings_limit_suffix_minutes,
+    };
     final int newLimit = _newLimit;
     final int reviewLimit = _reviewsLimit;
     final int recommendedReviews = SrsDeckView.recommendedReviewsPerDay(
@@ -893,7 +927,10 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
     );
     final int minReviews = int.tryParse(_rwkvMinReviews.text.trim()) ?? 0;
     final List<Widget> notices = <Widget>[
-      if (!ignored && newLimit > 0 && reviewLimit < recommendedReviews)
+      if (unit.counts &&
+          !ignored &&
+          newLimit > 0 &&
+          reviewLimit < recommendedReviews)
         FushiInlineNotice(
           key: const ValueKey<String>('srs-settings-review-limit-low'),
           severity: FushiNoticeSeverity.warning,
@@ -913,10 +950,15 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
         FushiInlineNotice(
           key: const ValueKey<String>('srs-settings-min-over-limit'),
           severity: FushiNoticeSeverity.warning,
-          message: t.srs_settings_rwkv_min_over_limit(
-            min: minReviews,
-            limit: reviewLimit,
-          ),
+          message: minutes
+              ? t.srs_settings_rwkv_min_over_limit_minutes(
+                  min: minReviews,
+                  limit: reviewLimit,
+                )
+              : t.srs_settings_rwkv_min_over_limit(
+                  min: minReviews,
+                  limit: reviewLimit,
+                ),
           actions: <Widget>[
             FushiTextButton(
               key: const ValueKey<String>('srs-settings-min-reviews-fix'),
@@ -939,14 +981,43 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
         helper: t.srs_settings_new_per_day_hint,
         key: const ValueKey<String>('srs-settings-new'),
       ),
+      AdaptiveSettingsSegmentedRow<SrsLimitUnit>(
+        key: const ValueKey<String>('srs-settings-limit-unit'),
+        title: t.srs_settings_limit_unit,
+        subtitle: switch (unit) {
+          SrsLimitUnit.reviews => t.srs_settings_limit_unit_reviews_hint,
+          SrsLimitUnit.cards => t.srs_settings_limit_unit_cards_hint,
+          SrsLimitUnit.minutes => t.srs_settings_limit_unit_minutes_hint,
+        },
+        segments: <ButtonSegment<SrsLimitUnit>>[
+          ButtonSegment<SrsLimitUnit>(
+            value: SrsLimitUnit.reviews,
+            label: Text(t.srs_settings_limit_unit_reviews),
+          ),
+          ButtonSegment<SrsLimitUnit>(
+            value: SrsLimitUnit.cards,
+            label: Text(t.srs_settings_limit_unit_cards),
+          ),
+          ButtonSegment<SrsLimitUnit>(
+            value: SrsLimitUnit.minutes,
+            label: Text(t.srs_settings_limit_unit_minutes),
+          ),
+        ],
+        selected: unit,
+        onChanged: (SrsLimitUnit v) => setState(() => _limitUnit = v),
+      ),
+      _conflictNote(context, SrsFieldKeys.deckLimitUnit),
       _numberField(
         _reviewsPerDay,
         t.srs_settings_reviews_per_day,
         helper: ignored
             ? t.srs_settings_reviews_per_day_ignored
             : rwkv
-            ? t.srs_settings_reviews_per_day_rwkv_hint
+            ? (minutes
+                  ? t.srs_settings_reviews_per_day_rwkv_minutes_hint
+                  : t.srs_settings_reviews_per_day_rwkv_hint)
             : null,
+        suffix: suffix,
         enabled: !ignored,
         key: const ValueKey<String>('srs-settings-review'),
       ),
@@ -954,8 +1025,15 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
       if (rwkv && ownsParams) ...<Widget?>[
         _numberField(
           _rwkvMinReviews,
-          t.srs_settings_rwkv_min_reviews,
-          helper: t.srs_settings_rwkv_min_reviews_shared_hint,
+          minutes
+              ? t.srs_settings_rwkv_min_minutes
+              : t.srs_settings_rwkv_min_reviews,
+          helper: switch (unit) {
+            SrsLimitUnit.reviews => t.srs_settings_rwkv_min_reviews_hint,
+            SrsLimitUnit.cards => t.srs_settings_rwkv_min_cards_hint,
+            SrsLimitUnit.minutes => t.srs_settings_rwkv_min_minutes_hint,
+          },
+          suffix: suffix,
           key: const ValueKey<String>('srs-settings-rwkv-min-reviews'),
         ),
         AdaptiveSettingsSwitchRow(

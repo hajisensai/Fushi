@@ -20,6 +20,7 @@ export 'src/engine/fushidicts.dart';
 export 'src/engine/fushidicts_models.dart';
 export 'src/language/language.dart';
 export 'src/language/learning_language.dart';
+export 'src/language/merge_search_results.dart';
 export 'src/language/transform_description_i18n.dart';
 export 'src/models/dictionary_entry.dart';
 export 'src/models/dictionary_search_result.dart';

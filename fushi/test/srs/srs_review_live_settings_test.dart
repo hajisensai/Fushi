@@ -29,6 +29,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../helpers/test_platform_services.dart';
 import 'srs_test_support.dart';
+import 'support/srs_write_settle.dart';
 
 /// 记下宿主序列播了什么（解析即文件名）。
 class _RecordingAudio implements SrsCardAudioOutput {
@@ -77,12 +78,7 @@ Future<void> _addLapis(
 
 /// 让真异步（drift）与帧都推进。
 Future<void> _settle(WidgetTester tester, {int rounds = 12}) async {
-  for (int i = 0; i < rounds; i++) {
-    await tester.runAsync(
-      () => Future<void>.delayed(const Duration(milliseconds: 5)),
-    );
-    await tester.pump(const Duration(milliseconds: 60));
-  }
+  await srsSettle(tester, minRounds: rounds);
 }
 
 Future<void> _pumpReview(
@@ -379,8 +375,12 @@ void main() {
     await tester.tap(find.byKey(const ValueKey<String>('srs-show-answer')));
     await _settle(tester);
     expect(audio.played, isNotEmpty, reason: '对照：开关开着时翻面自动播');
-    await tester.tap(find.byKey(const ValueKey<String>('srs-rate-3')));
-    await _settle(tester);
+    await srsUntilStoreWritten(
+      tester,
+      store,
+      () => tester.tap(find.byKey(const ValueKey<String>('srs-rate-3'))),
+      until: () => !faces.last.showingAnswer,
+    );
     final String secondCard = faces.last.cardId;
     expect(secondCard, isNot(faces.first.cardId), reason: '换到了第二张');
 
@@ -406,8 +406,12 @@ void main() {
     expect(faces.last.autoplayMedia, isFalse);
 
     // 下一张（设置前就已预取好的那张）同样不自动播：预取快照随设置作废。
-    await tester.tap(find.byKey(const ValueKey<String>('srs-rate-3')));
-    await _settle(tester);
+    await srsUntilStoreWritten(
+      tester,
+      store,
+      () => tester.tap(find.byKey(const ValueKey<String>('srs-rate-3'))),
+      until: () => !faces.last.showingAnswer,
+    );
     expect(faces.last.showingAnswer, isFalse);
     expect(faces.last.cardId, isNot(secondCard), reason: '换到了下一张');
     expect(faces.last.autoplayMedia, isFalse);

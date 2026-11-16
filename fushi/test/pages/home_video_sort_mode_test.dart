@@ -21,6 +21,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/fake_anki_repository.dart';
 import '../helpers/test_platform_services.dart';
+import '../helpers/shell_layout.dart';
 
 /// 排序交互重设计层次 A（spec 2026-07-12）：视频库「排序方式」菜单端到端接线。
 ///
@@ -85,6 +86,7 @@ void main() {
     ],
     child: TranslationProvider(
       child: MaterialApp(
+        theme: gridShellTheme(),
         // #792 分区化后全量墙卡只在 allVideos 分区渲染,钉住该分区。
         home: Scaffold(
           body: HomeVideoPage(

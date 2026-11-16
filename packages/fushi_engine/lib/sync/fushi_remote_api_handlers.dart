@@ -216,6 +216,15 @@ Future<Map<String, dynamic>> buildRemoteDictionaryLookupResponse(
   // 原文自带振假名（可选，`[{s, e, r}]` 以 term 为坐标系）：认识它的 host 让引擎按读音
   // 一致度排同长度候选；缺省 / 旧 host = 旧排序。
   final List<FushiRubySpan> rubySpans = remoteLookupRubySpansOf(body);
+  // 请求方配置（Profile）的词典选择（可选，畸形当没给）：认识它的 host 按它排除 / 排序、
+  // 不叠加自己的全局隐藏；回执 [kRemoteLookupDictionaryConfigAppliedField] 只在真走了
+  // 这条路时回 true，旧 host / 没带选择的请求一律不带回执。
+  final RemoteLookupDictionaryConfig? dictionaryConfig =
+      remoteLookupDictionaryConfigOf(body);
+  final Map<String, Object?> configReceipt = <String, Object?>{
+    if (usesRemoteFilteredLookup(lookup, dictionaryConfig))
+      kRemoteLookupDictionaryConfigAppliedField: true,
+  };
   if (popupOnly &&
       !record &&
       hasPopupFastPath(
@@ -223,6 +232,7 @@ Future<Map<String, dynamic>> buildRemoteDictionaryLookupResponse(
         language: language,
         chineseScriptVariants: chineseScriptVariants,
         rubySpans: rubySpans,
+        dictionaryConfig: dictionaryConfig,
       )) {
     final RemoteDictionaryPopupLookup? popup =
         await searchRemoteDictionaryPopupForRequest(
@@ -234,6 +244,7 @@ Future<Map<String, dynamic>> buildRemoteDictionaryLookupResponse(
           chineseScriptVariants: chineseScriptVariants,
           timing: popupTiming,
           rubySpans: rubySpans,
+          dictionaryConfig: dictionaryConfig,
         );
     return <String, dynamic>{
       'type': 'dictionaryResult',
@@ -241,6 +252,7 @@ Future<Map<String, dynamic>> buildRemoteDictionaryLookupResponse(
           ? null
           : <String, dynamic>{'bestLength': popup.bestLength},
       'popupJson': popup?.popupJson,
+      ...configReceipt,
       ...envelope,
     };
   }
@@ -252,6 +264,7 @@ Future<Map<String, dynamic>> buildRemoteDictionaryLookupResponse(
     language: language,
     chineseScriptVariants: chineseScriptVariants,
     rubySpans: rubySpans,
+    dictionaryConfig: dictionaryConfig,
   );
   if (result != null && history != null && record) {
     history.recordHistory(result);
@@ -264,6 +277,7 @@ Future<Map<String, dynamic>> buildRemoteDictionaryLookupResponse(
         ? <String, dynamic>{'bestLength': result.bestLength}
         : jsonDecode(result.toJson()),
     'popupJson': result?.popupJson,
+    ...configReceipt,
     ...envelope,
   };
 }

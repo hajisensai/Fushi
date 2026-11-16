@@ -17,7 +17,6 @@ import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/utils/components/batch_action_bar.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart';
-import 'package:fushi/src/pages/shared/library_section_tabs.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
@@ -28,6 +27,8 @@ import 'package:fushi_engine/media/video/video_book_repository.dart';
 
 import '../helpers/fake_anki_repository.dart';
 import '../helpers/test_platform_services.dart';
+import '../helpers/masthead_tabs.dart';
+import '../helpers/shell_layout.dart';
 
 class _NoopScrapeRunner implements VideoSourceScrapeRunner {
   @override
@@ -118,6 +119,7 @@ void main() {
     ],
     child: TranslationProvider(
       child: MaterialApp(
+        theme: gridShellTheme(),
         home: Scaffold(
           body: VideoLibraryShell(
             repository: VideoBookRepository(db),
@@ -151,10 +153,11 @@ void main() {
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
-    final FushiSectionTabBar<VideoLibrarySection> strip = tester.widget(
-      find.byType(FushiSectionTabBar<VideoLibrarySection>).first,
-    );
-    strip.onChanged!(VideoLibrarySection.allVideos);
+    // 页头大字顶栏（PR #3397）：全部视频在媒体库组的二级页签里。
+    readMastheadTabs<VideoLibrarySection>(
+      tester,
+      mastheadSecondaryTabs<VideoLibrarySection>(),
+    ).onChanged(VideoLibrarySection.allVideos);
     await tester.pumpAndSettle();
 
     expect(
@@ -199,10 +202,11 @@ void main() {
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
-    final FushiSectionTabBar<VideoLibrarySection> strip = tester.widget(
-      find.byType(FushiSectionTabBar<VideoLibrarySection>).first,
-    );
-    strip.onChanged!(VideoLibrarySection.allVideos);
+    // 页头大字顶栏（PR #3397）：全部视频在媒体库组的二级页签里。
+    readMastheadTabs<VideoLibrarySection>(
+      tester,
+      mastheadSecondaryTabs<VideoLibrarySection>(),
+    ).onChanged(VideoLibrarySection.allVideos);
     await tester.pumpAndSettle();
 
     expect(
