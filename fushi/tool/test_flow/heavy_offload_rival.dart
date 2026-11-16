@@ -19,7 +19,10 @@ import 'heavy_offload.dart';
 
 /// How long a queued run waits between two attempts on the other machines.
 /// An attempt that finds every one busy costs a working-tree snapshot and an
-/// ssh `lock` per worker slot, so not much more often than this.
+/// ssh `lock` per worker slot, so not much more often than this. Since
+/// 2026-11-15 an attempt made while the run queues here stays in the
+/// workers' own queues for [kHeavyOffloadQueuedBusyRetries] rounds
+/// (heavy_offload.dart), so this is only the gap between two such waits.
 const Duration kHeavyOffloadAskEvery = Duration(minutes: 1);
 
 /// One run's claim: the side that creates [path] first runs it.
@@ -210,8 +213,9 @@ class DistOffloadTally {
   bool _lost = false;
 
   /// The caller's machine admitted the run first: asking any worker again
-  /// is pointless.
-  bool get lost => _lost;
+  /// is pointless. Seen at a worker's lock, or in the claim file itself
+  /// while a worker still waits in its queue for one.
+  bool get lost => _lost || (claim?.takenByOther ?? false);
 
   /// [worker] holds its remote checkout: false when the caller's machine
   /// admitted the run first (the worker must back out before pushing).
