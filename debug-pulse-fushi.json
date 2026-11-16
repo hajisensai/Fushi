@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-16T11:06:50Z",
+ "generatedAt": "2026-11-16T12:41:25Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "8bfb6d31e6d2ccb111cab55a1645dd6ae33696d6",
-  "seq": 27747
+  "sha": "7ec8665e60eee9338d04b500c40d599eeb7fd628",
+  "seq": 27850
  },
  "builds": [
   {
@@ -204,9 +204,27 @@
   }
  ],
  "pending": {
-  "headSha": "8bfb6d31e6d2ccb111cab55a1645dd6ae33696d6",
-  "headSeq": 27747,
+  "headSha": "7ec8665e60eee9338d04b500c40d599eeb7fd628",
+  "headSeq": 27850,
   "prs": [
+   3519,
+   3522,
+   3549,
+   3521,
+   3526,
+   3537,
+   3503,
+   3464,
+   3506,
+   3497,
+   3481,
+   3490,
+   3465,
+   3527,
+   3475,
+   3514,
+   3513,
+   3484,
    3470,
    3472,
    3482,
@@ -237,19 +255,19 @@
   "platforms": {
    "android": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43854172748"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43865220338"
    },
    "windows": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43854172483"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43865220344"
    },
    "macos": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43854172483"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43865220344"
    },
    "ios": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43854172483"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43865220344"
    }
   }
  },
@@ -447,6 +465,24 @@
    "deletions": 489,
    "labels": []
   },
+  "3464": {
+   "number": 3464,
+   "title": "feat(home): 首页改成可编辑的小组件网格",
+   "author": "W1ght",
+   "mergedAt": "2026-11-16T11:56:47Z",
+   "additions": 8059,
+   "deletions": 2409,
+   "labels": []
+  },
+  "3465": {
+   "number": 3465,
+   "title": "fix(ci): CI config guards 的 guards job 先编好 fushi_web_core",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T11:56:16Z",
+   "additions": 69,
+   "deletions": 2,
+   "labels": []
+  },
   "3469": {
    "number": 3469,
    "title": "fix(srs): has:audio 认制卡内嵌的 <audio> 标签，健康条不再误报缺单词音频 (BUG-4695)",
@@ -481,6 +517,15 @@
    "mergedAt": "2026-11-16T10:55:17Z",
    "additions": 83,
    "deletions": 4,
+   "labels": []
+  },
+  "3475": {
+   "number": 3475,
+   "title": "fix(audio): 本地发音库读音查询把无读音行（forvo）算作命中 (BUG-4695)",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T11:38:48Z",
+   "additions": 195,
+   "deletions": 15,
    "labels": []
   },
   "3476": {
@@ -519,6 +564,15 @@
    "deletions": 40,
    "labels": []
   },
+  "3481": {
+   "number": 3481,
+   "title": "fix(audio): 本地音频库显示名不再是 android.db（推荐包 + 新导入）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T11:56:31Z",
+   "additions": 276,
+   "deletions": 3,
+   "labels": []
+  },
   "3482": {
    "number": 3482,
    "title": "fix(library): 页头排序菜单从触发控件（按钮或 ⋯）下沿弹出 (BUG-4695)",
@@ -535,6 +589,15 @@
    "mergedAt": "2026-11-16T09:47:48Z",
    "additions": 526,
    "deletions": 66,
+   "labels": []
+  },
+  "3484": {
+   "number": 3484,
+   "title": "fix(reader): 有声书鼠标「跳转到点击句」后收回键盘焦点 (BUG-4695)",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T11:16:50Z",
+   "additions": 78,
+   "deletions": 4,
    "labels": []
   },
   "3485": {
@@ -562,6 +625,15 @@
    "mergedAt": "2026-11-16T09:42:00Z",
    "additions": 861,
    "deletions": 106,
+   "labels": []
+  },
+  "3490": {
+   "number": 3490,
+   "title": "perf(fushidicts): 跨词典联合过滤器 + 分遍预取，查词约快 2.6～3.9 倍",
+   "author": "W1ght",
+   "mergedAt": "2026-11-16T11:56:23Z",
+   "additions": 2499,
+   "deletions": 168,
    "labels": []
   },
   "3491": {
@@ -600,6 +672,15 @@
    "deletions": 11,
    "labels": []
   },
+  "3497": {
+   "number": 3497,
+   "title": "feat(book-scrape): 书籍刮削补 AniList / openBD / NDL / 楽天ブックス 四个源",
+   "author": "W1ght",
+   "mergedAt": "2026-11-16T11:56:36Z",
+   "additions": 2768,
+   "deletions": 172,
+   "labels": []
+  },
   "3498": {
    "number": 3498,
    "title": "fix(lookup): 底部停靠改为每个模块独立可选，删掉「仅在小说中底部停靠」(BUG-4695)",
@@ -627,6 +708,15 @@
    "deletions": 47,
    "labels": []
   },
+  "3503": {
+   "number": 3503,
+   "title": "feat(diagnostics): 状态监测页与悬浮小窗（CPU / 内存 / 帧耗时 / UI 线程延迟）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T11:59:48Z",
+   "additions": 3476,
+   "deletions": 6,
+   "labels": []
+  },
   "3504": {
    "number": 3504,
    "title": "fix(leaderboard): 拍板加乐观锁，两人同时拍同一条不再互相覆盖",
@@ -645,6 +735,15 @@
    "deletions": 50,
    "labels": []
   },
+  "3506": {
+   "number": 3506,
+   "title": "feat(settings): 设置项目录自动导出并同步到官网（给 AI 读）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T11:56:41Z",
+   "additions": 936,
+   "deletions": 0,
+   "labels": []
+  },
   "3507": {
    "number": 3507,
    "title": "feat(srs): gen4 承袭上传与旧根捡漏（G8-5，不接线）",
@@ -661,6 +760,87 @@
    "mergedAt": "2026-11-16T08:10:45Z",
    "additions": 70,
    "deletions": 6,
+   "labels": []
+  },
+  "3513": {
+   "number": 3513,
+   "title": "浏览器扩展：字幕覆盖层同时显示时间重叠的多句 cue",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T11:24:54Z",
+   "additions": 461,
+   "deletions": 118,
+   "labels": []
+  },
+  "3514": {
+   "number": 3514,
+   "title": "查词弹窗：复习徽标接管 ↗ 时与 ↗ 走同一条打开判据",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T11:36:20Z",
+   "additions": 105,
+   "deletions": 4,
+   "labels": []
+  },
+  "3519": {
+   "number": 3519,
+   "title": "feat(srs): 统计/列式/数字 id/血统读命令新代实现与第一部分复核修复（G7-4b，不接线）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T12:17:24Z",
+   "additions": 11536,
+   "deletions": 359,
+   "labels": []
+  },
+  "3521": {
+   "number": 3521,
+   "title": "feat(srs): 协议 4 迁移编排：步骤 1–11、G-2 三项搬运、预演与真迁移共用阶段（G7-2，不接线）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T12:17:07Z",
+   "additions": 2923,
+   "deletions": 118,
+   "labels": []
+  },
+  "3522": {
+   "number": 3522,
+   "title": "feat(srs): 写命令新代实现与对拍测试（G7-3b，不接线）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T12:17:20Z",
+   "additions": 9672,
+   "deletions": 242,
+   "labels": []
+  },
+  "3526": {
+   "number": 3526,
+   "title": "卡片来源跳互联 host 视频：等拉清单期间显示可取消的进度对话框",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T12:07:46Z",
+   "additions": 382,
+   "deletions": 25,
+   "labels": []
+  },
+  "3527": {
+   "number": 3527,
+   "title": "fix(shell): Cupertino 库页外壳标题条不再与页头大字重复画页名",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T11:52:28Z",
+   "additions": 205,
+   "deletions": 7,
+   "labels": []
+  },
+  "3537": {
+   "number": 3537,
+   "title": "歌词来源：LRCLIB 与歌词插件同一份有序列表，可一起排序",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T12:02:11Z",
+   "additions": 428,
+   "deletions": 237,
+   "labels": []
+  },
+  "3549": {
+   "number": 3549,
+   "title": "feat(srs): 协议 4 存储侧导出、导入与旧备份转译（G11-2，不接线）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T12:17:15Z",
+   "additions": 2043,
+   "deletions": 87,
    "labels": []
   }
  }
