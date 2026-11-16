@@ -1,4 +1,4 @@
-// BUG-4695：窗口宿主档 DOM 字幕层点词时，制卡锚点 cue 必须取自「被点的那一句」本身。
+// BUG-4713：窗口宿主档 DOM 字幕层点词时，制卡锚点 cue 必须取自「被点的那一句」本身。
 //
 // 修复前 `_onDomLookup` 拿载荷的 (cueStart, sentence) 去 Dart 侧轨副本里按起点 + 全文相等找，
 // 找不到就退回 `_controller.currentCue`。DOM 层直接读页面 store 里的活对象（live 轨边看边改：

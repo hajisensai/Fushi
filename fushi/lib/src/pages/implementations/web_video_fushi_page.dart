@@ -2010,7 +2010,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       _pausedForLookup = true;
       unawaited(_pause());
     }
-    // 锚点就是被点的那一句（BUG-4695）：DOM 层读的是 store 活对象，Dart 轨快照可能滞后 / 还没到，
+    // 锚点就是被点的那一句（BUG-4713）：DOM 层读的是 store 活对象，Dart 轨快照可能滞后 / 还没到，
     // 不能按快照找不到就退回当前播放位置那句（常为 null → 纯字段卡，无画面无音频）。
     _lastLookupCue = webVideoDomLookupAnchorCue(
       request: req,
