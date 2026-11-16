@@ -127,6 +127,9 @@ CREATE TABLE IF NOT EXISTS notes (
 ) WITHOUT ROWID;
 CREATE INDEX IF NOT EXISTS notes_type ON notes (col, note_type_id);
 CREATE INDEX IF NOT EXISTS notes_deck ON notes (col, deck_id);
+CREATE INDEX IF NOT EXISTS notes_term ON notes (col, term_key);
+CREATE INDEX IF NOT EXISTS notes_pending ON notes (col) WHERE pending_decision = 1;
+CREATE INDEX IF NOT EXISTS notes_anki ON notes (col, anki_id);
 CREATE TABLE IF NOT EXISTS cards (
   col INTEGER NOT NULL,
   id NOT NULL,
@@ -158,6 +161,7 @@ CREATE TABLE IF NOT EXISTS cards (
 CREATE INDEX IF NOT EXISTS cards_note ON cards (col, note_id);
 CREATE INDEX IF NOT EXISTS cards_deck ON cards (col, deck_id);
 CREATE INDEX IF NOT EXISTS cards_template ON cards (col, template_id);
+CREATE INDEX IF NOT EXISTS cards_anki ON cards (col, anki_id);
 CREATE TABLE IF NOT EXISTS stats (
   col INTEGER NOT NULL,
   at INTEGER NOT NULL,
@@ -216,10 +220,10 @@ struct Plan {
     note_deck: Option<String>,
 }
 
-/// 一条日志（规范日志 ID 的代表）在缓存层的样子。
-struct LogIn {
-    json: String,
-    server_time: Option<i64>,
+/// 一条日志（规范日志 ID 的代表）在缓存层的样子（读命令 `cmd/` 也读它）。
+pub(super) struct LogIn {
+    pub(super) json: String,
+    pub(super) server_time: Option<i64>,
     intent: Intent,
 }
 
@@ -239,6 +243,14 @@ const BATCH: usize = 512;
 /// 别名表一次收尾里变了的 ID（连同它们前后的规范 ID）超过这么多就整层重建，不逐个找引用它们的行（[Index::moved_rows]
 /// 每个 ID 扫一遍三张表；盐集合变了这类情形整张别名表都会动）。
 const MOVES_IN_PLACE: usize = 256;
+
+/// 一批卡的血统（`Index::lineage`）：卡 ID（文本）→ 活着的修改行 / 重放写回的日志 / 生效的前身 / 后继。
+struct Lineage {
+    lines: BTreeMap<String, Vec<(String, Option<i64>)>>,
+    logs: HashMap<String, Vec<LogIn>>,
+    preds: HashMap<String, Vec<String>>,
+    succs: HashMap<String, Vec<String>>,
+}
 
 /// 「前身 → 后继」链接（`historyFrom/` 键、不看值）：按卡按需查，查过的记下。
 #[derive(Default)]
@@ -482,7 +494,7 @@ impl<'t, 'c> Index<'t, 'c> {
 
     /// 一个实体（规范 ID）的定义：(种类, 操作主键, 身份记录的数据，嵌的 ID 已归一)。类里不止一个成员有定义时取归一后
     /// 规范 JSON 文本最小的、再取操作号最小的（[Index] 选一个 ID 的定义的同一个规则搬到类上，与到达顺序无关）。
-    fn definition(&self, id: &Ref) -> Result<Option<(i64, i64, Value)>, String> {
+    pub(super) fn definition(&self, id: &Ref) -> Result<Option<(i64, i64, Value)>, String> {
         let canon = self.canon(id)?;
         let mut best: Option<((String, crate::sync2::vv::OpId), (i64, i64, Value))> = None;
         for m in self.class_of(&canon)? {
@@ -529,6 +541,31 @@ impl<'t, 'c> Index<'t, 'c> {
         self.class_lines(kind, id)
     }
 
+    /// 一条笔记（规范 ID [n]）的视图摘要（`caches::NoteInfo`：笔记类型、字段、标签、牌组、删除、出处……）：身份记录
+    /// 的胜者 + 按类判定活着的修改 + 类里各成员的标签并起来判。返回 (身份记录的操作主键, 活着的修改里最大的 HLC 物理
+    /// 时刻, 摘要)。笔记行的物化与读命令（`cmd/columns.rs` 的 `anki_notes_info`）共用这一份。
+    ///
+    /// 不是笔记（只是种类未定的 ID）、身份记录没了、或身份记录不成形（缺 `noteTypeId`、字段类型不对）= None：真相里的
+    /// 操作来自别的设备，一条坏操作不能让整个索引层的收尾失败。协议 3 在这里让整次刷新失败（文件头「与协议 3 的差别」）。
+    pub(super) fn note_info(&mut self, n: &Ref) -> Result<Option<(i64, i64, NoteInfo)>, String> {
+        let def = self
+            .definition(n)?
+            .filter(|(kind, ..)| *kind == EntKind::Note as i64);
+        let Some((_, def_k, payload)) = def else {
+            return Ok(None);
+        };
+        let (lines, edited) = self.live_lines(EntKind::Note, n)?;
+        let stored: Vec<StoredEdit<'_>> =
+            lines.iter().map(|(j, s)| (j.as_str(), *s, None)).collect();
+        let Ok(mut view) = registers::note_view_of(&payload, &stored) else {
+            return Ok(None);
+        };
+        // 协议 3 把 OR-Set 的结果写成一条合成的 `tags` 修改行再交给视图；这里直接给结果，同一个值。类里各成员的
+        // 标签操作并起来判（文件头「别名」第 4 条）。
+        view["t"] = json!(self.class_tags(n)?);
+        Ok(Some((def_k, edited, NoteInfo::of(&n.text(), &view))))
+    }
+
     /// 一条笔记（规范 ID）没被清除的标签操作里最大的 HLC 物理时刻（没有 = 0）。
     fn tag_time(&self, note: &Ref) -> Result<i64, String> {
         let mut top = 0;
@@ -558,7 +595,7 @@ impl<'t, 'c> Index<'t, 'c> {
     /// 一张卡（规范 ID）的日志：每个规范日志 ID 一条，按代表的 (发生时刻, 操作主键)。代表是这个规范日志 ID 的全部
     /// 份（类里每个原值日志 ID 落在任何卡上的每一条）里操作号最小的那条（`log_ix.win` 的规则搬到类上，设计 §5.3
     /// `logs_of_class`）；代表落在这张卡的类里，这条日志才算这张卡的。规范日志 ID 只有一个成员时就是 `win = 1` 那条。
-    fn card_logs(&self, card: &Ref) -> Result<Vec<LogIn>, String> {
+    pub(super) fn card_logs(&self, card: &Ref) -> Result<Vec<LogIn>, String> {
         let mut reps: BTreeMap<Ref, (i64, i64)> = BTreeMap::new();
         let class = self.class_of(card)?;
         for m in &class {
@@ -629,7 +666,7 @@ impl<'t, 'c> Index<'t, 'c> {
     }
 
     /// 一条日志操作的投影行（协议 3 `log_row` 同一份拼法）。
-    fn log_at(&self, k: i64) -> Result<LogIn, String> {
+    pub(super) fn log_at(&self, k: i64) -> Result<LogIn, String> {
         let e = self
             .t
             .entry_by_key(k)?
@@ -1097,31 +1134,12 @@ impl<'t, 'c> Index<'t, 'c> {
                 rows.collect::<Result<_, _>>().map_err(sql)?
             };
             cards.extend(existing.iter().cloned());
-            let def = self
-                .definition(n)?
-                .filter(|(kind, ..)| *kind == EntKind::Note as i64);
-            let Some((_, def_k, payload)) = def else {
-                // 不是笔记（只是种类未定的 ID）、或身份记录没了：没有行。
+            let Some((def_k, edited, info)) = self.note_info(n)? else {
                 if !all {
                     self.delete_note_rows(n)?;
                 }
                 continue;
             };
-            let (lines, edited) = self.live_lines(EntKind::Note, n)?;
-            let stored: Vec<StoredEdit<'_>> =
-                lines.iter().map(|(j, s)| (j.as_str(), *s, None)).collect();
-            // 身份记录不成形（缺 `noteTypeId`、字段类型不对）的笔记没有行：真相里的操作来自别的设备，一条坏操作不能
-            // 让整个索引层的收尾失败。协议 3 在这里让整次刷新失败（文件头「与协议 3 的差别」）。
-            let Ok(mut view) = registers::note_view_of(&payload, &stored) else {
-                if !all {
-                    self.delete_note_rows(n)?;
-                }
-                continue;
-            };
-            // 协议 3 把 OR-Set 的结果写成一条合成的 `tags` 修改行再交给视图；这里直接给结果，同一个值。类里各成员的
-            // 标签操作并起来判（文件头「别名」第 4 条）。
-            view["t"] = json!(self.class_tags(n)?);
-            let info = NoteInfo::of(&n.text(), &view);
             let tref = self.canon(&ref_of(&info.note_type))?;
             if !types.contains_key(&tref) {
                 let ti = self.type_info(&tref, cfg)?;
@@ -1237,6 +1255,49 @@ impl<'t, 'c> Index<'t, 'c> {
         acc: &mut StatAcc,
         out: &mut Settled,
     ) -> Result<(), String> {
+        let l = self.lineage(batch)?;
+        self.cache_lineage(cfg, batch, plans, all, acc, out, l)
+    }
+
+    /// 卡 [card] 的日志，`res` 是按血统重放写回的（与缓存层、协议 3 落库的日志行同一份）：它的 historyFrom 连通分量
+    /// 整个重放一遍再取它那一段。读命令 `logs` / `entity_views` 用（G7-4）。
+    pub(super) fn replayed_card_logs(&mut self, card: &Ref) -> Result<Vec<LogIn>, String> {
+        let card = self.canon(card)?;
+        let mut links = Links::default();
+        let comp: Vec<Ref> = self
+            .link_family(&mut links, &BTreeSet::from([card.clone()]))?
+            .into_iter()
+            .collect();
+        let mut l = self.lineage(&comp)?;
+        Ok(l.logs.remove(&card.text()).unwrap_or_default())
+    }
+
+    /// 卡 [tail] 当链尾的归属组（链尾 + 广度优先的全部前身，`group_lineage`）的日志，按组里卡的顺序、各卡按
+    /// (发生时刻, 操作主键)：(投影行 JSON, server_time, 意图)，未经重放写回（重放的输入）。写命令 `sched`（G7-3b，
+    /// `cmd/writes_intent.rs`）据它算这张卡此刻的头状态——协议 3 `store/sync2/mod.rs` `group_of` 的新代版。
+    pub(super) fn group_rows(
+        &mut self,
+        tail: &Ref,
+    ) -> Result<Vec<(String, Option<i64>, Intent)>, String> {
+        let tail = self.canon(tail)?;
+        let lineage = {
+            let mut preds = |c: &str| -> Result<Vec<String>, String> {
+                let (ls, _) = self.live_lines(EntKind::Card, &ref_of(c))?;
+                Ok(config::predecessors(&ls))
+            };
+            group_lineage(&tail.text(), &mut preds)?
+        };
+        let mut out = Vec::new();
+        for c in &lineage {
+            for l in self.card_logs(&ref_of(c))? {
+                out.push((l.json, l.server_time, l.intent));
+            }
+        }
+        Ok(out)
+    }
+
+    /// 一批卡（若干个完整的 historyFrom 连通分量）：活着的修改行、生效的前身 / 后继、按链尾重放写回的日志。
+    fn lineage(&mut self, batch: &[Ref]) -> Result<Lineage, String> {
         // 卡的活着的修改行（血统、标志、链尾都从它判）与日志。
         let mut lines: BTreeMap<String, Vec<(String, Option<i64>)>> = BTreeMap::new();
         let mut logs: HashMap<String, Vec<LogIn>> = HashMap::new();
@@ -1299,6 +1360,32 @@ impl<'t, 'c> Index<'t, 'c> {
                 l.json = json;
             }
         }
+        Ok(Lineage {
+            lines,
+            logs,
+            preds,
+            succs,
+        })
+    }
+
+    /// [cache_batch] 的物化段：卡行、统计行（[l] = 这一批的 [lineage]）。
+    #[allow(clippy::too_many_arguments)]
+    fn cache_lineage(
+        &mut self,
+        cfg: &CacheConfig,
+        batch: &[Ref],
+        plans: &HashMap<Ref, Plan>,
+        all: bool,
+        acc: &mut StatAcc,
+        out: &mut Settled,
+        l: Lineage,
+    ) -> Result<(), String> {
+        let Lineage {
+            lines,
+            logs,
+            preds,
+            succs,
+        } = l;
         let stored_of = |lineage: &[String]| -> Vec<StoredLog<'_>> {
             let mut s: Vec<StoredLog<'_>> = Vec::new();
             for c in lineage {
