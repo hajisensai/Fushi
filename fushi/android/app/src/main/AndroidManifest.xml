@@ -104,6 +104,39 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:scheme="fushi" android:host="pair" />
             </intent-filter>
+            <!-- 「用其他应用打开」书 / 漫画（拍板台 oeJzVRQ9p1）：QQ / 微信 / 文件管理器
+                 里点 epub 等文件。只收 content://，原生 OpenWithChannel 复制进缓存后交
+                 Dart 的 LibraryCtlImporter 入库并打开。MIME 与
+                 lib/src/media/import/android_open_with.dart 的
+                 kAndroidOpenWithBookMimeTypes 逐一对应（守卫 android_open_with_test.dart）。
+                 不收 application/zip / octet-stream：会把 Fushi 挂进所有压缩包和未知文件
+                 的打开列表。text/plain 只在 VIEW 收；纯文字分享（SEND text/*）仍归
+                 PopupDictFlutterActivity 查词。 -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+                <data android:mimeType="application/epub+zip" />
+                <data android:mimeType="application/pdf" />
+                <data android:mimeType="text/plain" />
+                <data android:mimeType="application/vnd.comicbook+zip" />
+                <data android:mimeType="application/x-cbz" />
+                <data android:mimeType="application/vnd.comicbook-rar" />
+                <data android:mimeType="application/x-cbr" />
+                <data android:mimeType="application/x-cb7" />
+            </intent-filter>
+            <!-- 同一批文件经系统分享面板「分享到 Fushi」（EXTRA_STREAM）。 -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/epub+zip" />
+                <data android:mimeType="application/pdf" />
+                <data android:mimeType="application/vnd.comicbook+zip" />
+                <data android:mimeType="application/x-cbz" />
+                <data android:mimeType="application/vnd.comicbook-rar" />
+                <data android:mimeType="application/x-cbr" />
+                <data android:mimeType="application/x-cb7" />
+            </intent-filter>
         </activity>
 
         <!-- Launcher icon aliases for runtime icon switching -->
