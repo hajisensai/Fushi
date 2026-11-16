@@ -153,6 +153,30 @@ void main() {
       expect(bounds.height, 376 * kExternalPopupMaxCoverFraction);
     });
 
+    test('MANKlxTTpV tablet portrait: a narrow card already reveals the other '
+        'app sideways, so a tall max height setting is honoured', () {
+      final LookupSize bounds = resolveExternalPopupCardBounds(
+        availableWidth: 788,
+        availableHeight: 1054,
+        maxSize: const LookupSize(480, 1000),
+        uiScale: 1.0,
+      );
+      expect(bounds.width, 480);
+      expect(bounds.height, 1000);
+    });
+
+    test('tablet portrait: a near full-width card keeps the 72% ceiling even '
+        'with a tall max height setting', () {
+      final LookupSize bounds = resolveExternalPopupCardBounds(
+        availableWidth: 652,
+        availableHeight: 1054,
+        maxSize: const LookupSize(640, 1600),
+        uiScale: 1.0,
+      );
+      expect(bounds.width, 640);
+      expect(bounds.height, 1054 * kExternalPopupMaxCoverFraction);
+    });
+
     test('narrow phone: width falls back to the available width', () {
       final LookupSize bounds = resolveExternalPopupCardBounds(
         availableWidth: 344,

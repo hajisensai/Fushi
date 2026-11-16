@@ -183,6 +183,11 @@ const double kExternalPopupMaxCoverFraction = 0.72;
 /// 旧规则在两种朝向都只按竖向比例封顶，横屏手机（扣系统栏后可用高 ~376dp）只剩
 /// ~270dp，左右却空着一半屏幕。
 ///
+/// 判据刻意按「卡片占宽比例」而不是屏幕朝向：竖屏平板 / 桌面宽窗口里卡片若只占不到
+/// [kExternalPopupMaxCoverFraction] 的宽度，同样已经在横向露出其它 app，高度天花板也
+/// 放到满可用高。这种情况下默认最大高度（480）仍远低于可用高，卡片不会变大；只有用户
+/// 自己把「最大高度」调到超过可用高 × 0.72 时才按设置值更高——那是用户明确要的高度。
+///
 /// [maxSize] 是基准逻辑像素，先乘 [uiScale]（界面大小 `AppModel.appUiScale`）再封顶，
 /// 与 app 内弹窗（base_source_page `popupMaxWidth`）、桌面覆盖窗（global_lookup_controller
 /// `overlaySize × appUiScale`）同一约定：宿主页面套了 `FushiAppUiScaleNeutralizer`
