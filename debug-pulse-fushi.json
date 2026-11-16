@@ -1,12 +1,86 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-16T20:23:26Z",
+ "generatedAt": "2026-11-16T22:09:24Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "db18f6e77729ad13acc357192bc908e41ad043d7",
-  "seq": 28410
+  "sha": "131f1ec7d6a495a6a9e62c9c259e82ace568b140",
+  "seq": 28434
  },
  "builds": [
+  {
+   "seq": 28147,
+   "version": "3.3.0",
+   "sha": "202ad6d8edb89ec1cbb481605d5494e57f40beb0",
+   "unknown": false,
+   "publishedAt": "2026-11-16T22:09:12Z",
+   "testflight": false,
+   "baseSeq": 27850,
+   "prs": [
+    3585,
+    3587,
+    3590,
+    3589,
+    3536,
+    3588,
+    3586,
+    3501,
+    3564,
+    3583,
+    3580,
+    3582,
+    3558,
+    3488,
+    3581,
+    3539,
+    3544,
+    3546,
+    3517,
+    3543,
+    3461,
+    3479,
+    3540,
+    3535,
+    3578,
+    3489,
+    3559,
+    3550,
+    3575,
+    3555,
+    3508,
+    3532,
+    3529,
+    3548,
+    3473,
+    3474,
+    3547,
+    3516,
+    3560,
+    3572,
+    3571,
+    3570,
+    3573,
+    3502
+   ],
+   "direct": [],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "ok"
+    },
+    "windows": {
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43911031319"
+    },
+    "macos": {
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43911031319"
+    },
+    "ios": {
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43911031319"
+    }
+   }
+  },
   {
    "seq": 27850,
    "version": "3.3.0",
@@ -166,50 +240,6 @@
    "unknown": false,
    "publishedAt": "2026-11-16T11:02:46Z",
    "testflight": false,
-   "baseSeq": 27435,
-   "prs": [
-    3447,
-    3499,
-    3445,
-    3455,
-    3444,
-    3493,
-    3450,
-    3463,
-    3449,
-    3458,
-    3459,
-    3454,
-    3460,
-    3396,
-    3395,
-    3456,
-    3453
-   ],
-   "direct": [],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "ok"
-    },
-    "windows": {
-     "state": "none"
-    },
-    "macos": {
-     "state": "none"
-    },
-    "ios": {
-     "state": "none"
-    }
-   }
-  },
-  {
-   "seq": 27435,
-   "version": "3.3.0",
-   "sha": "f8b5260ddc54375dd9e1adfa7beb7f917d0a3970",
-   "unknown": false,
-   "publishedAt": "2026-11-16T07:00:02Z",
-   "testflight": false,
    "baseSeq": null,
    "prs": [],
    "direct": [],
@@ -231,9 +261,14 @@
   }
  ],
  "pending": {
-  "headSha": "db18f6e77729ad13acc357192bc908e41ad043d7",
-  "headSeq": 28410,
+  "headSha": "131f1ec7d6a495a6a9e62c9c259e82ace568b140",
+  "headSeq": 28434,
   "prs": [
+   3623,
+   3622,
+   3621,
+   3620,
+   3615,
    3609,
    3610,
    3611,
@@ -278,92 +313,30 @@
    3523,
    3584,
    3542,
-   3495,
-   3585,
-   3587,
-   3590,
-   3589,
-   3536,
-   3588,
-   3586,
-   3501,
-   3564,
-   3583,
-   3580,
-   3582,
-   3558,
-   3488,
-   3581,
-   3539,
-   3544,
-   3546,
-   3517,
-   3543,
-   3461,
-   3479,
-   3540,
-   3535,
-   3578,
-   3489,
-   3559,
-   3550,
-   3575,
-   3555,
-   3508,
-   3532,
-   3529,
-   3548,
-   3473,
-   3474,
-   3547,
-   3516,
-   3560,
-   3572,
-   3571,
-   3570,
-   3573,
-   3502
+   3495
   ],
   "direct": [],
   "truncated": false,
   "platforms": {
    "android": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43948614126"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43961562866"
    },
    "windows": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43948613822"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43961563002"
    },
    "macos": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43948613822"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43961563002"
    },
    "ios": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43948613822"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43961563002"
    }
   }
  },
  "prs": {
-  "3395": {
-   "number": 3395,
-   "title": "SRS 换代 G5a：srs.db 的 Dart 读站点改走内核读命令，删 Drift 执行器",
-   "author": "W1ght",
-   "mergedAt": "2026-11-16T04:20:33Z",
-   "additions": 4453,
-   "deletions": 12996,
-   "labels": []
-  },
-  "3396": {
-   "number": 3396,
-   "title": "SRS 换代 G5b：根上的 ID 与同步目录名改向内核要（含 G3 #3374 的单提交）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-16T04:20:57Z",
-   "additions": 1266,
-   "deletions": 248,
-   "labels": []
-  },
   "3399": {
    "number": 3399,
    "title": "srs(gen4): G4 真实库只读干跑 + G4b 后台预演自检",
@@ -373,24 +346,6 @@
    "deletions": 744,
    "labels": []
   },
-  "3444": {
-   "number": 3444,
-   "title": "fix(manga): zip 漫画导入（非 UTF-8 文件名 / 2 GiB 上限 / ZIP64 描述符）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-16T06:14:10Z",
-   "additions": 718,
-   "deletions": 27,
-   "labels": []
-  },
-  "3445": {
-   "number": 3445,
-   "title": "统一下载根：在线漫画跟随下载目录，删书可保留章节并重新入库 (BUG-4658)",
-   "author": "W1ght",
-   "mergedAt": "2026-11-16T06:53:43Z",
-   "additions": 3346,
-   "deletions": 388,
-   "labels": []
-  },
   "3446": {
    "number": 3446,
    "title": "fix(ocr): Android 系统 OCR 后台串行降采样解码，无 GMS 报模型不可用（BUG-4658）",
@@ -398,96 +353,6 @@
    "mergedAt": "2026-11-16T07:29:51Z",
    "additions": 1097,
    "deletions": 66,
-   "labels": []
-  },
-  "3447": {
-   "number": 3447,
-   "title": "fix(manga): 页图按显示尺寸降采样，修 4K 图集内存暴涨闪退（BUG-4658）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-16T07:00:22Z",
-   "additions": 1056,
-   "deletions": 11,
-   "labels": []
-  },
-  "3449": {
-   "number": 3449,
-   "title": "fix(onboarding): 推荐包恒合并导入，不再覆盖书库（BUG-4694）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-16T05:48:31Z",
-   "additions": 444,
-   "deletions": 50,
-   "labels": []
-  },
-  "3450": {
-   "number": 3450,
-   "title": "fix(manga,epub): 暂存页图改移动、EPUB 流式解压（大包磁盘/内存占用）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-16T06:06:37Z",
-   "additions": 544,
-   "deletions": 33,
-   "labels": []
-  },
-  "3453": {
-   "number": 3453,
-   "title": "feat(srs): 协议 4 读侧按别名类判定（G9-1，不接线）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-16T04:06:24Z",
-   "additions": 1582,
-   "deletions": 52,
-   "labels": []
-  },
-  "3454": {
-   "number": 3454,
-   "title": "feat(ui): 库页布局默认封面网格 + 修禁用分段选中段看不清",
-   "author": "W1ght",
-   "mergedAt": "2026-11-16T05:26:37Z",
-   "additions": 105,
-   "deletions": 16,
-   "labels": []
-  },
-  "3455": {
-   "number": 3455,
-   "title": "feat(storage): 覆盖导入后可找回书库——保留覆盖前快照只补缺恢复 + 孤儿书目录重新登记（BUG-4695）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-16T06:37:16Z",
-   "additions": 2629,
-   "deletions": 98,
-   "labels": []
-  },
-  "3456": {
-   "number": 3456,
-   "title": "docs(srs): 协议 4 换代交接说明（交接给 hajisensai）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-16T04:06:56Z",
-   "additions": 449,
-   "deletions": 0,
-   "labels": []
-  },
-  "3458": {
-   "number": 3458,
-   "title": "fix(scrape): 原盘与混装清单合集自动识别不出来的三个根因 (BUG-4694/4695/4696)",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-16T05:44:21Z",
-   "additions": 905,
-   "deletions": 54,
-   "labels": []
-  },
-  "3459": {
-   "number": 3459,
-   "title": "feat(dist): worker checkout 按批次占用并排队，熔断不可用机器，记录 heavy 排队历史",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-16T05:26:42Z",
-   "additions": 2651,
-   "deletions": 158,
-   "labels": []
-  },
-  "3460": {
-   "number": 3460,
-   "title": "feat(srs): 每日复习上限 / 最少复习数支持按次数、卡片数、分钟计，默认次数",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-16T05:25:36Z",
-   "additions": 1482,
-   "deletions": 62,
    "labels": []
   },
   "3461": {
@@ -509,15 +374,6 @@
    "labels": [
     "merge-approved"
    ]
-  },
-  "3463": {
-   "number": 3463,
-   "title": "feat(rwkv): 换用 Instant-Only 新模型（Small sm98 默认 / Tiny sm101），权重走自家镜像，修下载取消竞态",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-16T06:06:28Z",
-   "additions": 1930,
-   "deletions": 489,
-   "labels": []
   },
   "3464": {
    "number": 3464,
@@ -753,15 +609,6 @@
    "deletions": 308,
    "labels": []
   },
-  "3493": {
-   "number": 3493,
-   "title": "feat(leaderboard): 拍板台无刷新重写——页内提交、撤销、快捷键、自动同步",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-16T06:13:33Z",
-   "additions": 627,
-   "deletions": 41,
-   "labels": []
-  },
   "3495": {
    "number": 3495,
    "title": "fix(extension): 制卡入队只在真正写进 storage 后才报成功，读-改-写防丢项 (BUG-4695)",
@@ -796,15 +643,6 @@
    "mergedAt": "2026-11-16T10:26:56Z",
    "additions": 365,
    "deletions": 278,
-   "labels": []
-  },
-  "3499": {
-   "number": 3499,
-   "title": "fix(settings): 色块摆放的已改过/恢复默认对照随布局的真实默认 (BUG-4701)",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-16T06:55:34Z",
-   "additions": 163,
-   "deletions": 7,
    "labels": []
   },
   "3500": {
@@ -1687,6 +1525,51 @@
    "mergedAt": "2026-11-16T19:59:01Z",
    "additions": 910,
    "deletions": 0,
+   "labels": []
+  },
+  "3615": {
+   "number": 3615,
+   "title": "feat(floating-ball): Android 截屏识字跟随 OCR 引擎设置，ML Kit 不可用时退到本机模型",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T20:45:09Z",
+   "additions": 716,
+   "deletions": 33,
+   "labels": []
+  },
+  "3620": {
+   "number": 3620,
+   "title": "feat(music): 曲目多选批量操作 + 本地曲目从音乐库移除（墓碑，重扫不复活）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T20:46:09Z",
+   "additions": 2706,
+   "deletions": 355,
+   "labels": []
+  },
+  "3621": {
+   "number": 3621,
+   "title": "feat(mining): Android 跨应用语音缓存，应用外查词制卡带查词前最后一句语音",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T20:51:51Z",
+   "additions": 2357,
+   "deletions": 2,
+   "labels": []
+  },
+  "3622": {
+   "number": 3622,
+   "title": "fix(security): 逐字特效标记改线性扫描（BUG-4760）；跨应用语音缓存停止清扫的竞态与残留（BUG-4761）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T21:07:54Z",
+   "additions": 329,
+   "deletions": 50,
+   "labels": []
+  },
+  "3623": {
+   "number": 3623,
+   "title": "fix(guards): develop 合并后目录枚举型守卫 5 条真红",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T21:35:06Z",
+   "additions": 23,
+   "deletions": 20,
    "labels": []
   }
  }
