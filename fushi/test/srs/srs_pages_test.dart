@@ -7,6 +7,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show driftRuntimeOptions;
+import 'package:drift/native.dart' show NativeDatabase;
 import 'package:flutter/gestures.dart' show PointerDeviceKind, kSecondaryButton;
 import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter/services.dart';
@@ -14,6 +15,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/onboarding_wizard_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_browse_page.dart';
@@ -744,6 +747,60 @@ void main() {
       await tester.tap(find.text('Vocabulary'), buttons: kSecondaryButton);
       await _settle(tester);
       expect(find.text(t.srs_deck_rename), findsOneWidget, reason: '右键行出牌组菜单');
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await _settle(tester);
+      await _unmount(tester);
+    });
+
+    testWidgets('[$ds] 牌组菜单「导出此牌组」：导出选项对话框标题写明只导出这个牌组（全名）', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      await tester.runAsync(
+        () => store.ensureDeckPath('Spark::JP::Vocabulary'),
+      );
+      // 导出流程读写「上次的导出选项」偏好：给 app 接一份内存库上的偏好仓库。
+      final FushiDatabase prefsDb = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
+      addTearDown(prefsDb.close);
+      final PreferencesRepository prefs = PreferencesRepository(prefsDb);
+      await tester.runAsync(prefs.loadFromDb);
+      final SrsTestAppModel app = SrsTestAppModel()
+        ..wirePreferencesForTesting(prefs);
+      final int errorsBefore = ErrorLogService.instance.entries.length;
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: apple,
+        app: app,
+        page: const SrsDeckListPage(),
+        size: const Size(1100, 1600),
+        overrides: <Override>[
+          srsMediaStoreProvider.overrideWith(
+            (Ref ref) async => SrsMediaStore(Directory.systemTemp),
+          ),
+        ],
+      );
+      await tester.tap(find.text('Vocabulary'), buttons: kSecondaryButton);
+      await _settle(tester);
+      expect(find.text(t.srs_deck_export), findsOneWidget);
+      await tester.tap(find.text(t.srs_deck_export));
+      final Finder title = find.text(
+        t.srs_export_deck_title(deck: 'Spark::JP::Vocabulary'),
+      );
+      // 弹框前要读牌组树、算子树里有没有 FSRS-7（真 DB 读），等它出来。
+      await srsPumpUntil(tester, () {
+        final List<ErrorLogEntry> errors = ErrorLogService.instance.entries
+            .skip(errorsBefore)
+            .where((ErrorLogEntry e) => e.source == 'SrsDeckList.exportDeck')
+            .toList();
+        if (errors.isNotEmpty) fail('导出流程抛错：${errors.first.error}');
+        return title.evaluate().isNotEmpty;
+      }, what: '「导出此牌组」的选项对话框');
+      await _settle(tester);
+      expect(title, findsOneWidget);
+      expect(find.text(t.srs_export_options_title), findsNothing);
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await _settle(tester);
       await _unmount(tester);
