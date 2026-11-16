@@ -2396,6 +2396,10 @@ class AppModel
     FloatingLyricLookupNotifier.instance.lookupClosed.addListener(
       lookupPause.lookupClosed,
     );
+    // 制卡后「关闭弹窗、不续播」（拍板台 8ldy3d8XFA）：宿主关栈前先撤暂停标记。
+    FloatingLyricLookupNotifier.instance.lookupPauseDropped.addListener(
+      lookupPause.dropPauseMark,
+    );
     final MusicLyricsLive live = MusicLyricsLive(
       engine: engine,
       service: musicLyrics,
@@ -2426,6 +2430,7 @@ class AppModel
               // 反馈 1Mwaro8UTC：与全局查词卡同口径（floating_lyric_lookup_routing），
               // 制卡例句取被点的这一整行。
               sentence: text,
+              hostModule: ModuleId.music,
             );
           }());
         },

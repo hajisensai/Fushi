@@ -38,6 +38,13 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-4743](bugs/BUG-4743-video-batch-delete-n-plus-one.md) | ✅ | ✅ | 视频库批量删一万多条「像没删」——删除链逐条 N+1 + 无进度反馈 |
+> 共 4102 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4745](bugs/BUG-4745-lyrics-margin-left-right-swapped.md) | ✅ | ✅ | 歌词模式横排左右边距写反 |
+| [BUG-4744](bugs/BUG-4744-android-exit-fgs-trim-background.md) | ✅ | ✅ | android-exit-fgs-trim-background |
+| [BUG-4743](bugs/BUG-4743-anime-match-title-truncation.md) | ✅ | ✅ | anime-match-title-truncation |
 | [BUG-4742](bugs/BUG-4742-youtube-secondary-caption-tracks.md) | ✅ | ✅ | youtube-secondary-caption-tracks |
 | [BUG-4741](bugs/BUG-4741-work-profile-dict-engine-load.md) | ✅ | ✅ | 书籍指定配置后查不到词：引擎装载集合只看激活配置 |
 | [BUG-4740](bugs/BUG-4740-android-share-copy-main-thread-anr.md) | ✅ | ✅ | Android 分享在主线程同步拷贝整份文件导致 ANR |
