@@ -122,11 +122,128 @@ fn card(note: &str, template: &str) -> String {
     crate::registers::card_id(note, template, 0).unwrap()
 }
 
+// ---------------------------------------------------------------------- 迁移来的旧数据
+
+/// 迁移前的旧笔记（身份记录、整列表 `tags` 与字段的旧修改记录、一条旧复习，都带服务器时刻）。
+const N5: &str = "0193a1b2-0000-7000-8000-0000000000a5";
+const L5: &str = "0193a1b2-0000-7000-8000-0000000000b5";
+const LEGACY_AT: i64 = T0 - 5000;
+const ST_EDIT: i64 = T0 - 4000;
+const ST_TAGS: i64 = T0 - 3500;
+const ST_LOG: i64 = T0 - 3000;
+
+/// N5 的旧整列表 `tags` 修改记录 ID（迁移后协议 3 用合成行替掉它，`refresh_tags_row`）。
+fn legacy_tags_edit() -> String {
+    crate::registers::edit_id("old", 1)
+}
+
+fn legacy_field_edit() -> String {
+    crate::registers::edit_id("old", 2)
+}
+
+/// 笔记 [note] 合成 `tags` 行的修改记录 ID（协议 3 `semantics::tags_writer`）。
+fn tags_row_id(note: &str) -> String {
+    crate::registers::edit_id(&crate::store::sync2::semantics::tags_writer(note), 1)
+}
+
+/// 迁移前往旧库里写 N5 的旧数据（形状同 `store/sync2/tests.rs` 的 `legacy_library`）。
+fn legacy_rows(d: &Device) {
+    let w = d.core.writer().unwrap();
+    w.execute(
+        "INSERT INTO srs_entities (id, profile_uid, kind, payload_json, created_at) \
+         VALUES (srs_id(?1), srs_id(?2), 'note', json_object('createdAt', 45, 'guid', ?1, 'noteTypeId', 'NT'), 45)",
+        rusqlite::params![N5, P],
+    )
+    .unwrap();
+    for (id, s, f, v) in [
+        (legacy_tags_edit(), 1, "tags", json!(["legacy", "old"])),
+        (legacy_field_edit(), 2, "f/fa", json!("蛙")),
+    ] {
+        let j = json!({"ctx": {"vv": {}}, "e": N5, "f": f, "hlc": format!("{}:0:old", LEGACY_AT + s), "id": id,
+                       "k": "note", "p": P, "s": s, "ts": "wall", "v": v, "w": "old"})
+        .to_string();
+        w.execute(
+            "INSERT INTO srs_field_edits (id, profile_uid, entity_kind, entity_id, field_key, writer_id, seq, jslim) \
+             VALUES (srs_id(?1), srs_id(?2), 'note', srs_id(?3), ?4, 'old', ?5, ?6)",
+            rusqlite::params![id, P, N5, f, s, j],
+        )
+        .unwrap();
+    }
+    let log = json!({
+        "id": L5, "p": P, "card": card(N5, "t1"), "kind": "review", "rating": 3, "hlc": format!("{LEGACY_AT}:0:old"),
+        "at": LEGACY_AT, "ts": "anchored", "origin": "fushi", "rtype": "learn", "utcOff": 0, "rollover": 4, "fv": 1,
+        "res": {"queue": "learning", "ivl": 0, "step": 1, "reps": 1, "lapses": 0, "scheduler": "fushi"}
+    })
+    .to_string();
+    w.execute(
+        "INSERT INTO srs_review_logs (id, profile_uid, card_id, kind, rating, occurred_at, review_type, origin, jslim) \
+         VALUES (srs_id(?1), srs_id(?2), srs_id(?3), 'review', 3, ?4, 'learn', 'fushi', ?5)",
+        rusqlite::params![L5, P, card(N5, "t1"), LEGACY_AT, log],
+    )
+    .unwrap();
+    for (id, st) in [
+        (legacy_field_edit(), ST_EDIT),
+        (legacy_tags_edit(), ST_TAGS),
+        (L5.to_owned(), ST_LOG),
+    ] {
+        w.execute(
+            "INSERT INTO srs_event_local (event_id, profile_uid, outbox_seq, server_time, received_at) \
+             VALUES (srs_id(?1), srs_id(?2), NULL, ?3, ?3)",
+            rusqlite::params![id, P, st],
+        )
+        .unwrap();
+    }
+}
+
+// ---------------------------------------------------------------------- 别名类
+
+/// 别名类用的笔记类型：规范规则下的 ID（`ankiNum` 验得上），模板 ID 由它派生（卡因此也按类派生）。
+const ALIAS_NT_NUM: i64 = 7001;
+const ALIAS_GUID: &str = "g4r-alias-guid";
+
+fn alias_nt() -> String {
+    crate::gen4_ids::rules::note_type(crate::gen4_ids::rules::CANONICAL, ALIAS_NT_NUM).text()
+}
+
+fn alias_tmpl() -> String {
+    let nt = crate::sync2::id::Id::parse(&alias_nt()).unwrap();
+    crate::gen4_ids::rules::template(&nt, 0).text()
+}
+
+/// 同一个 guid 在两个盐下的笔记 ID：带盐的（盐 = profile uid，[Pair::new] 照迁移写进 `Salts`）有身份记录；规范的只由
+/// 另一台设备按规范 ID 写的修改与日志引用（同 `alias.rs` 测试「另一台设备按规范 ID 写」）。两者是一个别名类，规范 ID
+/// 是后者。规范成员不另建身份记录：协议 3 里那会是两条笔记、两行缓存，新代按类只有一行，协议 3 不再是基准。
+fn alias_salted() -> String {
+    crate::gen4_ids::rules::note(Some(P), ALIAS_GUID).text()
+}
+
+fn alias_canon() -> String {
+    crate::gen4_ids::rules::note(crate::gen4_ids::rules::CANONICAL, ALIAS_GUID).text()
+}
+
+/// 两份同一条 Anki revlog（导入到两张同类的卡上：ID 由卡派生，同一个日志类）。
+const ALIAS_REVLOG: i64 = 4242;
+const ALIAS_AT: i64 = T0 - 2000;
+
+fn alias_log(card: &str) -> (String, Value) {
+    let c = crate::sync2::id::Id::parse(card).unwrap();
+    let id = crate::gen4_ids::rules::imported_revlog(&c, ALIAS_REVLOG).text();
+    let mut ev = anki_review(&id, card, ALIAS_AT);
+    ev["x"]["ankiId"] = json!(ALIAS_REVLOG);
+    (id, ev)
+}
+
 /// 一个够全的协议 3 库：两台设备、牌组 / 笔记类型（字段、模板、词条字段）、四条笔记（字段带样式块与链接、标签、
-/// 删除）、并发改同一个字段（冲突）、评分与撤销、Anki 导入的复习、继承历史的后继卡。返回 a（两边同步完）。
+/// 删除）、并发改同一个字段（冲突）、评分与撤销、Anki 导入的复习、继承历史的后继卡；迁移来的旧笔记 N5（整列表
+/// `tags` 旧修改、带服务器时刻的旧修改与旧复习）；`#tag` 增删（N2）；一个两成员的别名类（带盐 / 规范的同一 guid
+/// 笔记，各自带修改、同一条 Anki 复习的两份副本，带盐的那条上有并发冲突）。返回 a（两边同步完）。
 fn library() -> Device {
     let deck = default_deck_id(P);
-    let (a, b) = (fresh("g4ra"), fresh("g4rb"));
+    let a = Device::new("g4ra");
+    legacy_rows(&a);
+    a.core.sync2_identity(P, T0).unwrap();
+    while a.core.sync2_migrate(P, T0, None).unwrap()["done"] != json!(true) {}
+    let b = fresh("g4rb");
     let mut bucket = Bucket::default();
     let fdef = |name: &str, ord: i64| json!({"name": name, "ord": ord});
     let tdef =
@@ -169,8 +286,47 @@ fn library() -> Device {
         T0 + DAY + 30,
         vec![anki_review("a1", &card(N3, "t1"), ANKI_AT)],
     );
+    // `#tag` 增删：先加 x，再换成 y（加 y、观察删 x）。
+    a.apply(T0 + DAY + 31, vec![edit("note", N2, "tags", json!(["x"]))]);
+    a.apply(T0 + DAY + 32, vec![edit("note", N2, "tags", json!(["y"]))]);
+    // 别名类的带盐成员（a 上）：身份记录、字段、卡上的 Anki 复习。
+    let (nt, tmpl, salted) = (alias_nt(), alias_tmpl(), alias_salted());
+    a.apply(
+        T0 + DAY + 33,
+        vec![
+            json!({"t": "entity", "x": {"id": nt, "p": P, "k": "notetype", "d": {"createdAt": 2, "ntKind": "standard", "ankiNum": ALIAS_NT_NUM}}}),
+            edit("notetype", &nt, "fieldDef/fa", fdef("Expression", 0)),
+            edit(
+                "notetype",
+                &nt,
+                &format!("tmplDef/{tmpl}"),
+                json!({"name": "A", "ord": 0, "front": "{{Expression}}", "ankiNum": 0}),
+            ),
+            json!({"t": "entity", "x": {"id": salted, "p": P, "k": "note", "d": {"createdAt": 50, "guid": ALIAS_GUID, "noteTypeId": nt}}}),
+            edit("note", &salted, "f/fa", json!("鴨")),
+            alias_log(&card(&salted, &tmpl)).1,
+        ],
+    );
     a.sync(&mut bucket, "loc", T0 + DAY + 40);
     b.sync(&mut bucket, "loc", T0 + DAY + 40);
+    // 别名类的规范成员（b 上按规范 ID 写）：它自己的字段、同一条 Anki 复习的另一份。
+    let canon = alias_canon();
+    b.apply(
+        T0 + DAY + 45,
+        vec![
+            edit("note", &canon, "f/fb", json!("duck")),
+            alias_log(&card(&canon, &tmpl)).1,
+        ],
+    );
+    // 带盐成员上两台设备并发改同一个字段：类里的冲突。
+    a.apply(
+        T0 + DAY + 50,
+        vec![edit("note", &salted, "f/fc", json!("mallard A"))],
+    );
+    b.apply(
+        T0 + DAY + 51,
+        vec![edit("note", &salted, "f/fc", json!("mallard B"))],
+    );
     // 两台设备并发改同一个字段：冲突（两条都活着）。
     a.apply(
         T0 + DAY + 50,
@@ -209,6 +365,39 @@ fn on_p3<T>(src: &Connection, cfg: &str, f: impl FnOnce(&Connection) -> T) -> T 
     out
 }
 
+/// 换代时写进集合的那条 `Salts`（设计 §5.1、§6.1 第 7 步：盐 = profile uid 并上已退役的 uid，`legacy::salts`）：
+/// 由一台迁移设备写进它的原生日志，再整体重建（同 `derive.rs` 样本测试的做法；灌入 `import_legacy` 自己不写盐）。
+/// 有了盐，带盐的 ID 才验得上、别名类才有多个成员。写完与协议 3 再对拍一遍（按规范 ID，`compare.rs`）。
+fn salted(d: &Device, t: &Truth<'_>, col: i64) {
+    use crate::gen4::op::{Body4, Op4};
+    use crate::sync2::hlc::Hlc;
+    use crate::sync2::id::Id;
+    use crate::sync2::vv::OpId;
+    let src = d.core.writer().unwrap();
+    let salts = crate::store::gen4::legacy::salts(&src, P).unwrap();
+    let migrator = Id([0x6d; 16]);
+    t.tx(|t| {
+        let op = Op4::of(
+            OpId {
+                device: migrator,
+                seq: 1,
+            },
+            Hlc {
+                wall: T0,
+                logical: 0,
+                device: migrator,
+            },
+            std::sync::Arc::new(t.applied(col)?),
+            &Body4::salts(salts.iter().cloned()).map_err(|e| format!("{e:?}"))?,
+        );
+        t.append_native(col, &op)?;
+        Index::new(t, col).rebuild_all().map(|_| ())
+    })
+    .unwrap();
+    let diff = crate::store::gen4::parity::against_protocol_3(&src, P, t, col);
+    assert!(diff.is_empty(), "after the salts: {diff:?}");
+}
+
 /// 一列怎么归一。
 #[derive(Clone, Copy)]
 enum Norm {
@@ -237,6 +426,7 @@ impl<'d> Pair<'d> {
         assert!(diff.is_empty(), "{diff:?}");
         let t = Truth::new(&g4);
         let col = t.binding_of(P).unwrap().unwrap().col;
+        salted(d, &t, col);
         let cfg = t.derive_cfg(col, CFG_KEY).unwrap().unwrap();
         Pair { d, g4, col, cfg }
     }
@@ -344,6 +534,9 @@ impl<'d> Pair<'d> {
     }
 
     /// 一条 `read` 两侧对拍：JSON 回包相同，每张表的列名相同、归一后的行相同。返回新代一侧的行（未归一）。
+    ///
+    /// 一个别名类只出一份（D24）：协议 3 里同一个类的几份（同一条 Anki 复习导入到两张同类卡上的两份副本）归一后是
+    /// 相同的几行，按一行比；新代一侧归一后不许有重复行。
     fn same(&self, req: Value, tables: &[(&str, &[Norm])]) -> Vec<Vec<String>> {
         let (pv, pf) = self.p3(req.clone());
         let (gv, gf) = self.g4(req.clone());
@@ -355,7 +548,11 @@ impl<'d> Pair<'d> {
                 Self::names(&gf, name),
                 "{req} {name}"
             );
-            let (p, g) = (self.rows(&pf, name, norms), self.rows(&gf, name, norms));
+            let (mut p, g) = (self.rows(&pf, name, norms), self.rows(&gf, name, norms));
+            p.dedup();
+            let mut once = g.clone();
+            once.dedup();
+            assert_eq!(once, g, "{req} {name}: gen4 gives a class more than once");
             if p != g {
                 let only = |a: &[Vec<String>], b: &[Vec<String>]| -> Vec<Vec<String>> {
                     a.iter().filter(|r| !b.contains(r)).cloned().collect()
@@ -382,6 +579,36 @@ use Norm::{Edit, Id, Log, Payload, Plain, Skip};
 
 // ---------------------------------------------------------------------- 对拍
 
+/// 夹具守卫：对拍库里真有多成员的别名类、承袭来的服务器时刻与 `#tag` 操作——没有它们，按类归并、代表选取、标签
+/// OR-Set 这些分支在对拍里只走平凡路径，坏了也照样全绿。
+#[test]
+fn the_library_has_alias_classes_inherited_server_times_and_tag_ops() {
+    let lib = library();
+    let p = Pair::new(&lib);
+    let count = |sql: &str| -> i64 { p.g4.query_row(sql, [p.col], |r| r.get(0)).unwrap() };
+    assert!(
+        count("SELECT COUNT(*) FROM alias_ix WHERE col = ?1 AND canon != id") > 0,
+        "the library has multi-member alias classes"
+    );
+    assert_eq!(p.canon(&alias_salted()), alias_canon());
+    let (sc, cc) = (
+        card(&alias_salted(), &alias_tmpl()),
+        card(&alias_canon(), &alias_tmpl()),
+    );
+    assert_eq!(p.canon(&sc), cc, "cards follow their note's class");
+    assert_eq!(
+        p.canon(&alias_log(&sc).0),
+        alias_log(&cc).0,
+        "the two revlog copies are one log class"
+    );
+    assert!(count("SELECT COUNT(*) FROM tag_ix WHERE col = ?1") > 0);
+    let (_, gf) = p.g4(json!({"q": "server_times"}));
+    assert!(
+        p.rows(&gf, "t", &[Id, Plain]).len() >= 2,
+        "inherited server times"
+    );
+}
+
 #[test]
 fn identity_records_and_counts_match_protocol_3() {
     let lib = library();
@@ -393,6 +620,19 @@ fn identity_records_and_counts_match_protocol_3() {
     p.same(
         json!({"q": "entities", "ids": [N1, N3, "missing"], "ordered": true}),
         &[("t", ent)],
+    );
+    // 别名类：按非规范成员（带盐的那条，协议 3 里有身份记录）要，出规范 ID 的一份；按规范 ID 要是同一份。
+    let rows = p.same(
+        json!({"q": "entities", "ids": [alias_salted(), N1], "ordered": true}),
+        &[("t", ent)],
+    );
+    assert!(rows.iter().any(|r| r[0] == alias_canon()), "{rows:?}");
+    assert_eq!(rows.len(), 2, "{rows:?}");
+    assert_eq!(
+        p.g4(json!({"q": "entities", "ids": [alias_salted()]})).1,
+        p.g4(json!({"q": "entities", "ids": [alias_canon(), alias_salted()]}))
+            .1,
+        "any member of a class asks for the same record"
     );
     p.same(
         json!({"q": "entities", "kind": "deck", "bare": true}),
@@ -442,13 +682,52 @@ fn edits_conflicts_and_field_scans_match_protocol_3() {
         json!({"q": "edits", "kind": "notetype", "ids": ["NT"]}),
         &[("t", ed)],
     );
+    // 别名类：新代按类出两个成员的写入（协议 3 里是两个实体，两个都要才是同一份）；只按任一成员要也是这一份。
+    let (salted, canon) = (alias_salted(), alias_canon());
+    let rows = p.same(
+        json!({"q": "edits", "kind": "note", "ids": [salted, canon, N1]}),
+        &[("t", ed)],
+    );
+    let class: Vec<&Vec<String>> = rows.iter().filter(|r| r[0] == canon).collect();
+    assert_eq!(
+        class.len(),
+        4,
+        "f/fa, f/fb and the two f/fc of the class: {rows:?}"
+    );
+    for member in [&salted, &canon] {
+        assert_eq!(
+            p.g4(json!({"q": "edits", "kind": "note", "ids": [member]}))
+                .1,
+            p.g4(json!({"q": "edits", "kind": "note", "ids": [canon, salted]}))
+                .1,
+            "{member}"
+        );
+    }
+    p.same(
+        json!({"q": "edits", "kind": "note", "ids": [salted], "key": "f/fc"}),
+        &[("t", ed)],
+    );
     p.same(json!({"q": "successors"}), &[("t", &[Id, Plain])]);
     let conflict: &[Norm] = &[Plain, Id, Plain, Edit, Skip];
     let rows = p.same(
         json!({"q": "conflict_edits", "rules": [{"kind": "note", "drop": []}]}),
         &[("t", conflict)],
     );
-    assert_eq!(rows.len(), 2, "the concurrent f/fb writes on N3: {rows:?}");
+    assert_eq!(
+        rows.len(),
+        4,
+        "the concurrent f/fb writes on N3 and f/fc on the alias class: {rows:?}"
+    );
+    assert_eq!(rows.iter().filter(|r| r[1] == canon).count(), 2, "{rows:?}");
+    let rows = p.same(
+        json!({"q": "conflict_edits", "rules": [{"kind": "note", "drop": []}], "kind": "note", "id": salted}),
+        &[("t", conflict)],
+    );
+    assert_eq!(rows.len(), 2, "asked by the salted member: {rows:?}");
+    assert_eq!(
+        p.g4(json!({"q": "conflict_edits", "rules": [{"kind": "note", "drop": []}], "kind": "note", "id": canon})).1,
+        p.g4(json!({"q": "conflict_edits", "rules": [{"kind": "note", "drop": []}], "kind": "note", "id": salted})).1,
+    );
     p.same(
         json!({"q": "conflict_edits", "rules": [{"kind": "note", "keep": ["f/fa"]}]}),
         &[("t", conflict)],
@@ -507,6 +786,40 @@ fn logs_stats_and_server_times_match_protocol_3() {
         json!({"q": "anki_logs_at", "at": [ANKI_AT, 5]}),
         &[("t", &[Id, Plain, Plain, Plain, Plain, Id, Plain])],
     );
+    // 别名类：同一条 Anki 复习的两份副本是一个日志类，出一份（代表）；按带盐的卡要与按规范的卡要相同。
+    let (sc, cc) = (
+        card(&alias_salted(), &alias_tmpl()),
+        card(&alias_canon(), &alias_tmpl()),
+    );
+    // 协议 3 里规范成员那份副本的卡没有缓存行（协议 3 不知道它与带盐的卡是一类，规范成员没有身份记录），笔记列是空的；
+    // 新代一个日志类出一份，就是协议 3 里认得卡的那一份。
+    {
+        let req = json!({"q": "anki_logs_at", "at": [ALIAS_AT]});
+        let norms: &[Norm] = &[Id, Plain, Plain, Plain, Plain, Id, Plain];
+        let (pf, gf) = (p.p3(req.clone()).1, p.g4(req.clone()).1);
+        let (pr, gr) = (p.rows(&pf, "t", norms), p.rows(&gf, "t", norms));
+        assert_eq!(pr.len(), 2, "{pr:?}");
+        assert_eq!(gr.len(), 1, "two copies, one log class: {gr:?}");
+        assert!(pr.contains(&gr[0]), "{gr:?} ⊄ {pr:?}");
+        assert_eq!(gr[0][5], alias_canon(), "{gr:?}");
+    }
+    let rows = p.same(
+        json!({"q": "logs", "cards": [sc, cc]}),
+        &[("t", &[Id, Id, Log, Skip])],
+    );
+    assert_eq!(rows.len(), 1, "{rows:?}");
+    p.same(
+        json!({"q": "logs", "cards": [sc]}),
+        &[("t", &[Id, Id, Log, Skip])],
+    );
+    assert_eq!(
+        p.g4(json!({"q": "logs", "cards": [sc]})).1,
+        p.g4(json!({"q": "logs", "cards": [cc]})).1
+    );
+    p.same(
+        json!({"q": "logs", "cards": [card(N5, "t1")]}),
+        &[("t", &[Id, Id, Log, Skip])],
+    );
     p.same(
         json!({"q": "native_logs_near", "at": [T0 + 10, T0 + DAY + 52], "win": 100}),
         &[("t", &[Id, Log])],
@@ -519,12 +832,29 @@ fn logs_stats_and_server_times_match_protocol_3() {
         json!({"q": "review_grid", "resetMs": 4 * 3_600_000}),
         &[("t", &[Plain, Plain, Plain, Plain])],
     );
-    // 服务器时刻：只有承袭来的事件有（这个库全是协议 3 上原生写的，新代一侧为空）；两侧比「新代给出的都对」。
-    let (_, gf) = p.g4(json!({"q": "server_times"}));
-    let (_, pf) = p.p3(json!({"q": "server_times"}));
-    let g = p.rows(&gf, "t", &[Id, Plain]);
-    let pr = p.rows(&pf, "t", &[Id, Plain]);
-    assert!(g.iter().all(|r| pr.contains(r)), "{g:?} ⊄ {pr:?}");
+    // 服务器时刻：只有承袭来的事件有（N5 迁移来的旧修改——含整列表 `tags` 那条，它在新代是标签操作——与旧复习）。
+    let st: &[Norm] = &[Id, Plain];
+    let rows = p.same(json!({"q": "server_times"}), &[("t", st)]);
+    assert_eq!(
+        rows,
+        vec![
+            vec![legacy_field_edit(), ST_EDIT.to_string()],
+            vec![legacy_tags_edit(), ST_TAGS.to_string()],
+            vec![L5.to_owned(), ST_LOG.to_string()]
+        ]
+        .into_iter()
+        .map(|mut r| {
+            r[0] = p.canon(&r[0]);
+            r
+        })
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>(),
+    );
+    p.same(
+        json!({"q": "server_times", "ids": [L5, legacy_tags_edit(), alias_log(&sc).0, "nope"]}),
+        &[("t", st)],
+    );
 }
 
 #[test]
@@ -567,6 +897,22 @@ fn cache_backed_queries_match_protocol_3() {
         json!({"q": "notes", "ids": [N2, N4], "fields": ["id", "deleted_at"]}),
         &[("t", &[Id, Plain])],
     );
+    // 别名类：按带盐成员要，出规范 ID 的那一行（笔记、卡）；按规范 ID 要相同。
+    let salted = alias_salted();
+    let rows = p.same(json!({"q": "notes", "ids": [salted]}), &[("t", note_cols)]);
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0][0], alias_canon());
+    let sc = card(&salted, &alias_tmpl());
+    let rows = p.same(
+        json!({"q": "cards", "notes": [salted], "ordered": true}),
+        &[("t", &card_cols)],
+    );
+    assert_eq!(rows.len(), 1);
+    p.same(json!({"q": "cards", "ids": [sc]}), &[("t", &card_cols)]);
+    assert_eq!(
+        p.g4(json!({"q": "cards", "ids": [sc]})).1,
+        p.g4(json!({"q": "cards", "notes": [alias_canon()]})).1
+    );
     p.same(json!({"q": "note_type_counts"}), &[("t", &[Id, Plain])]);
     for req in [
         json!({"q": "media_refs"}),
@@ -576,7 +922,7 @@ fn cache_backed_queries_match_protocol_3() {
         p.same(req, &[("t", &[Plain])]);
     }
     let rows = p.same(
-        json!({"q": "term_status", "terms": ["猫", "鳥", "犬"]}),
+        json!({"q": "term_status", "terms": ["猫", "鳥", "犬", "鴨", "蛙"]}),
         &[("t", &[Plain, Plain, Id, Id, Plain, Plain, Id, Plain, Plain])],
     );
     assert!(rows.len() >= 4, "{rows:?}");
@@ -620,17 +966,77 @@ fn whole_event_reads_match_protocol_3() {
         let (_, f) = p.p3(json!({"q": "style_candidates", "after": 0, "limit": 1}));
         decode(&f[0].1).1[0][1].clone()
     };
+    // 合成 `tags` 行（`events` / `edits` 出的那一行）、迁移来的整列表 `tags` 旧修改（投影里被合成行替掉，只在操作里）、
+    // 别名类的非规范成员与日志副本。
+    let sc = card(&alias_salted(), &alias_tmpl());
+    let cc = card(&alias_canon(), &alias_tmpl());
+    let synthetic = [tags_row_id(N1), tags_row_id(N2), tags_row_id(N5)];
+    let ids = json!([
+        N1,
+        "r1",
+        "a1",
+        live_edit,
+        edit_id,
+        "nope",
+        N1,
+        alias_salted(),
+        alias_log(&sc).0,
+        alias_log(&cc).0,
+        synthetic[0],
+        synthetic[1],
+        synthetic[2],
+        legacy_tags_edit(),
+        legacy_field_edit(),
+        L5
+    ]);
     // 比集合：协议 3 按来源表 UNION ALL，一个 ID 在投影表与操作表各命中一次就出两行；新代每个 ID 一行（读者只当集合用）。
     for ops in [false, true] {
-        let req = json!({"q": "events_present", "ids": [N1, "r1", "a1", live_edit, edit_id, "nope", N1], "ops": ops});
+        let req = json!({"q": "events_present", "ids": ids, "ops": ops});
         let (_, pf) = p.p3(req.clone());
         let (_, gf) = p.g4(req.clone());
         let mut want = p.rows(&pf, "t", &[Id]);
         want.dedup();
-        let got = p.rows(&gf, "t", &[Id]);
+        // 同一个类的两个成员（两份日志副本）各问一次：各出一行，归一后相同。
+        let mut got = p.rows(&gf, "t", &[Id]);
+        got.dedup();
         assert_eq!(want, got, "{req}");
         assert!(got.len() >= 4, "{req}: {got:?}");
+        let raw: Vec<String> = decode(&gf[0].1)
+            .1
+            .into_iter()
+            .map(|r| r[0].clone())
+            .collect();
+        for s in &synthetic {
+            assert!(
+                raw.contains(s),
+                "ops {ops}: the synthetic tags row {s} is present: {raw:?}"
+            );
+        }
+        assert_eq!(
+            raw.contains(&legacy_tags_edit()),
+            ops,
+            "the legacy whole-list tags edit is only an op, not a projected row: {raw:?}"
+        );
     }
+    // 新代自己导出的每个修改记录 ID（行里的 `id`，没写的按 `edit_id(w, s)`），用 events_present 查都在。
+    let (_, ev) = p.g4(json!({"q": "events", "parts": ["edits"]}));
+    let exported: Vec<String> = decode(&ev[0].1)
+        .1
+        .into_iter()
+        .map(|r| {
+            let v: Value = serde_json::from_str(&r[0]).unwrap();
+            v["id"].as_str().map_or_else(
+                || crate::registers::edit_id(v["w"].as_str().unwrap(), v["s"].as_i64().unwrap()),
+                str::to_owned,
+            )
+        })
+        .collect();
+    assert!(exported.iter().any(|id| synthetic.contains(id)));
+    let (_, gf) = p.g4(json!({"q": "events_present", "ids": exported}));
+    assert_eq!(decode(&gf[0].1).1.len(), exported.len());
+    // 规范成员（协议 3 里没有身份记录）按类也算在。
+    let (_, gf) = p.g4(json!({"q": "events_present", "ids": [alias_canon()]}));
+    assert_eq!(decode(&gf[0].1).1, vec![vec![alias_canon()]]);
     for q in ["user_note_count", "profile_merges", "entity_owners"] {
         let req = json!({"q": q});
         let (pv, pf) = p.p3_lib(req.clone());
@@ -930,6 +1336,36 @@ fn entity_views_carry_what_the_reads_give_and_one_class_once() {
     // 删除的笔记照样有视图（行里带删除时刻）。
     let d: Value = serde_json::from_str(&views[1].json).unwrap();
     assert!(d["row"]["deleted_at"].is_i64());
+    // 别名类：两个不同成员（带盐的、规范的）只出一份，ID 是规范 ID，修改是两个成员的并。
+    let (salted, canon) = (alias_salted(), alias_canon());
+    let views = entity_views(&t, p.col, EntKind::Note, &[salted.clone(), canon.clone()]).unwrap();
+    assert_eq!(
+        views.iter().map(|v| v.id.as_str()).collect::<Vec<_>>(),
+        vec![canon.as_str()],
+        "two members of one class: one view"
+    );
+    assert_eq!(
+        views,
+        entity_views(&t, p.col, EntKind::Note, std::slice::from_ref(&canon)).unwrap()
+    );
+    let v: Value = serde_json::from_str(&views[0].json).unwrap();
+    let keys: BTreeSet<String> = v["edits"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| {
+            serde_json::from_str::<Value>(e[0].as_str().unwrap()).unwrap()["f"]
+                .as_str()
+                .unwrap()
+                .to_owned()
+        })
+        .collect();
+    assert_eq!(
+        keys,
+        ["f/fa", "f/fb", "f/fc"].map(str::to_owned).into(),
+        "the edits of both members"
+    );
+    assert_eq!(v["row"]["id"], json!(canon));
 }
 
 /// tag 跟着视图走：缓存配置变了（语义摘要 `dg_ix` 不变）视图里的行变了，tag 必变；什么都没变 tag 不变。
@@ -1007,8 +1443,22 @@ fn history_matches_protocol_3() {
         (EntKind::Card, card(N1, "t2")),
         (EntKind::Deck, default_deck_id(P)),
         (EntKind::Note, "missing".to_owned()),
+        (EntKind::Note, N5.to_owned()),
+        (EntKind::Note, alias_salted()),
+        (EntKind::Note, alias_canon()),
     ] {
-        let old = d.core.sync2_history(P, kind.wire(), &ent).unwrap();
+        // 别名类的历史是成员历史的并（协议 3 里每个成员是一个实体，各查一遍）。
+        let members: Vec<String> = if p.canon(&ent) == alias_canon() {
+            vec![alias_salted(), alias_canon()]
+        } else {
+            vec![ent.clone()]
+        };
+        let mut old: Vec<Value> = Vec::new();
+        for m in &members {
+            let h = d.core.sync2_history(P, kind.wire(), m).unwrap();
+            old.extend(h.as_array().unwrap().iter().cloned());
+        }
+        let old = Value::Array(old);
         let new = history(&t, p.col, kind, &ent).unwrap();
         assert_eq!(norm(&old), norm(&new), "{} {ent}", kind.wire());
         // 新的在前。

@@ -20,7 +20,8 @@
 //! - **`server_time`**：只有承袭来的那份（`cache.rs` 文件头「取舍」）；原生操作、身份记录没有。
 //! - **`style_candidates` 的游标 `rid`** 是操作主键 `k`（协议 3 是修改记录表的 rowid）：同样只增、只当游标用。
 //! - **`events` 的 `unknown`** 是 `LegacyUnknown` 操作的原文；`events_present` 认的事件 ID 是：身份记录 / 日志按别名类
-//!   （类里任何一个成员在就算在）、修改记录按 `edit_id(写入者, seq)`（带旧戳的取旧戳的）、不认识的事件按 `x.id`。
+//!   （类里任何一个成员在就算在）、修改记录按 `edit_id(写入者, seq)`（带旧戳的取旧戳的；合成的 `tags` 行按它自己的 ID，
+//!   与 `events` / `edits` 出的同一份；整列表 `tags` 写入只在 `ops` 时认，它们记在 `tag_ix`）、不认识的事件按 `x.id`。
 //!   `events_present` 每个 ID 一行（协议 3 按来源表 `UNION ALL`，同一 ID 在投影表与操作表各命中一次就出两行）。
 //! - **笔记的 `tags` 行**与协议 3 投影相同（`cmd::edit_rows`）：碰过标签的笔记恰有一行合成的 `sync2:tags:<笔记>`，
 //!   值 = 按类判的 OR-Set 当前值；整列表的 `tags` 修改不单独出。日志行的 `res` 是按 historyFrom 血统重放写回的那份，
@@ -1050,28 +1051,41 @@ impl<'t, 'c> Reads<'t, 'c> {
         )
     }
 
-    /// 修改操作的 (修改记录 ID, 服务器时刻) 交给 [f]：`reg_ix` 里 [min_state] 及以上的写入（含按类不再活着的；修改记录
-    /// ID 是原值的）。不带旧戳的只看信封、不解操作体。
+    /// 修改操作的 (修改记录 ID, 服务器时刻) 交给 [f]（修改记录 ID 是原值的）：`reg_ix` 里 [min_state] 及以上的写入（含按类
+    /// 不再活着的）；[tag_edits] = 再加笔记上的整列表 `tags` 写入——它们是修改操作，但派生层把它们当标签 OR-Set 的操作
+    /// 记在 `tag_ix`（`derive.rs`），不在 `reg_ix`，投影里由合成行代表（[super::edit_rows]）。不带旧戳的寄存器写入只看
+    /// 信封、不解操作体；`tag_ix` 的行还有 `#tag` 增删与显示顺序，一律解开操作体、只认修改。
     fn each_edit_id(
         &self,
         min_state: i64,
+        tag_edits: bool,
         mut f: impl FnMut(String, Option<i64>) -> Result<(), String>,
     ) -> Result<(), String> {
+        let mut ks: Vec<(i64, bool)> = Vec::new();
         let mut q = Sel::of(self.col);
         let s = q.int(min_state);
         q.push(&format!(
-            "SELECT DISTINCT k FROM reg_ix WHERE col = ?1 AND state >= {s} ORDER BY k"
+            "SELECT DISTINCT k, 1 FROM reg_ix WHERE col = ?1 AND state >= {s}"
         ));
-        let mut ks: Vec<i64> = Vec::new();
+        if tag_edits {
+            q.push(&format!(
+                " UNION SELECT DISTINCT k, 0 FROM tag_ix WHERE col = ?1 AND state >= {s}"
+            ));
+        }
+        q.push(" ORDER BY 1");
         q.each(self.t, |r| {
-            ks.push(r.get(0).map_err(sql)?);
+            ks.push((
+                r.get(0).map_err(sql)?,
+                r.get::<_, i64>(1).map_err(sql)? == 1,
+            ));
             Ok(())
         })?;
-        for k in ks {
+        ks.dedup_by_key(|(k, _)| *k);
+        for (k, reg) in ks {
             let Some(h) = self.t.head_by_key(k)? else {
                 continue;
             };
-            if !h.stamped && !h.raw {
+            if reg && !h.stamped && !h.raw {
                 f(
                     crate::registers::edit_id(&h.id.device.text(), h.id.seq as i64),
                     None,
@@ -1141,7 +1155,7 @@ impl<'t, 'c> Reads<'t, 'c> {
         }
         // 修改记录。
         let mut edits: Vec<(Ref, i64)> = Vec::new();
-        self.each_edit_id(0, |id, st| {
+        self.each_edit_id(0, true, |id, st| {
             let r = ref_of(&id);
             match st {
                 Some(st) if wanted.as_ref().is_none_or(|w| w.contains(&r)) => edits.push((r, st)),
@@ -1424,8 +1438,9 @@ impl<'t, 'c> Reads<'t, 'c> {
     }
 
     /// `events_present {ids, ops?}`：`ids` 里已在这个集合里的事件 ID（按请求的顺序，每个一次）。身份记录与日志按别名类
-    /// 认；修改记录按原值修改记录 ID 认——不带 `ops` 只认活着的写入（协议 3 投影里的行），带 `ops` 连被支配、被清除的
-    /// 也认（协议 3 连操作索引一起看）；不认识的事件按 `x.id`。
+    /// 认；修改记录按原值修改记录 ID 认——不带 `ops` 只认投影里的行（与 `events` / `edits` 出的同一份：活着的写入，笔记的
+    /// 整列表 `tags` 写入换成合成行），带 `ops` 连被支配、被清除的、整列表 `tags` 写入也认（协议 3 连操作索引一起看）；
+    /// 合成 `tags` 行两种都认；不认识的事件按 `x.id`。
     fn events_present(&mut self, req: &Value) -> Result<Vec<u8>, String> {
         let asked: Vec<String> = need_list(req, "ids")?
             .as_array()
@@ -1447,15 +1462,24 @@ impl<'t, 'c> Reads<'t, 'c> {
             }
         }
         if !rest.is_empty() {
-            let min = if flag(req, "ops") { S_PURGED } else { R_LIVE };
+            // 不带 `ops` = 投影里的修改行（[super::edit_rows] 出的那些：活着的寄存器写入，加合成的 `tags` 行）；带 `ops`
+            // 连操作一起认（被支配、被清除的写入，整列表 `tags` 写入——协议 3 的 `sync2_edit_ops`），合成行照样在投影里。
+            let ops = flag(req, "ops");
+            let min = if ops { S_PURGED } else { R_LIVE };
             let mut found: Vec<Ref> = Vec::new();
-            self.each_edit_id(min, |id, _| {
+            self.each_edit_id(min, ops, |id, _| {
                 let r = ref_of(&id);
                 if rest.contains(&r) {
                     found.push(r);
                 }
                 Ok(())
             })?;
+            for id in super::tags_row_ids(self.t, &self.ix)? {
+                let r = ref_of(&id);
+                if rest.contains(&r) {
+                    found.push(r);
+                }
+            }
             for json in self.unknown_ops(None)? {
                 let v: Value = serde_json::from_str(&json).unwrap_or(Value::Null);
                 let id = v["x"]["id"]

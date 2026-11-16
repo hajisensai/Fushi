@@ -156,18 +156,28 @@ pub(super) fn edit_rows(
     Ok(rows)
 }
 
-/// 笔记类 [c] 的合成 `tags` 行（[edit_rows]）；没碰过标签 = None。
-fn tags_line(
+/// 修改键 [key] 在 `reg_ix.key` 里的存储形。
+fn reg_key(key: &str) -> Vec<u8> {
+    let mut w = Writer::new();
+    write_edit_key(&mut w, key);
+    w.into_vec()
+}
+
+/// 笔记 [note]（规范 ID 文本）合成 `tags` 行的写入者与修改记录 ID（协议 3 `semantics::tags_writer`，seq 恒为 1）。
+pub(super) fn tags_row_writer(note: &str) -> (String, String) {
+    let writer = format!("{}tags:{note}", crate::registers::SYNTHETIC_WRITER_PREFIX);
+    let id = crate::registers::edit_id(&writer, 1);
+    (writer, id)
+}
+
+/// 笔记类 [c] 最后一条标签操作的 HLC（`#tag` 增删与整列表 `tags` 写入，已清除的不算）：(物理, 计数, 设备)。None = 这个类
+/// 没碰过标签，没有合成行。[tags_line] 与 [tags_row_ids] 共用这一个判据。
+fn last_tag_hlc(
     t: &Truth<'_>,
-    ix: &mut Index<'_, '_>,
+    ix: &Index<'_, '_>,
     c: &Ref,
-    profile: &str,
-) -> Result<Option<String>, String> {
-    let tags_key = {
-        let mut w = Writer::new();
-        write_edit_key(&mut w, "tags");
-        w.into_vec()
-    };
+) -> Result<Option<(i64, i64, [u8; 16])>, String> {
+    let key = reg_key("tags");
     let mut ks: Vec<i64> = Vec::new();
     for m in ix.members(c)? {
         let mut stmt = t
@@ -180,7 +190,7 @@ fn tags_line(
             .map_err(sql)?;
         let rows = stmt
             .query_map(
-                rusqlite::params![ix.col, m, EntKind::Note as i64, S_PURGED, tags_key],
+                rusqlite::params![ix.col, m, EntKind::Note as i64, S_PURGED, key],
                 |r| r.get::<_, i64>(0),
             )
             .map_err(sql)?;
@@ -197,17 +207,61 @@ fn tags_line(
             }
         }
     }
-    let Some((wall, logical, device)) = last else {
+    Ok(last)
+}
+
+/// 笔记类 [c] 的合成 `tags` 行（[edit_rows]）；没碰过标签 = None。
+fn tags_line(
+    t: &Truth<'_>,
+    ix: &mut Index<'_, '_>,
+    c: &Ref,
+    profile: &str,
+) -> Result<Option<String>, String> {
+    let Some((wall, logical, device)) = last_tag_hlc(t, ix, c)? else {
         return Ok(None);
     };
     let note = c.text();
-    let writer = format!("sync2:tags:{note}");
+    let (writer, id) = tags_row_writer(&note);
     let row = serde_json::json!({
-        "id": crate::registers::edit_id(&writer, 1), "p": profile, "k": "note", "e": note, "f": "tags",
+        "id": id, "p": profile, "k": "note", "e": note, "f": "tags",
         "w": writer, "s": 1, "ctx": {"vv": {}}, "v": ix.class_tags(c)?,
         "hlc": format!("{wall}:{logical}:{}", crate::sync2::id::Id(device).text()), "ts": "wall",
     });
     Ok(Some(canonical(&row)))
+}
+
+/// 集合里全部合成 `tags` 行的修改记录 ID（[edit_rows] 对每个碰过标签的笔记类出的那一行，按规范 ID）。
+pub(super) fn tags_row_ids(t: &Truth<'_>, ix: &Index<'_, '_>) -> Result<Vec<String>, String> {
+    let mut notes: Vec<Ref> = Vec::new();
+    {
+        let mut stmt = t
+            .conn()
+            .prepare_cached(
+                "SELECT note FROM tag_ix WHERE col = ?1 AND state != ?3 \
+                 UNION SELECT ent FROM reg_ix WHERE col = ?1 AND ekind = ?2 AND key = ?4 AND state != ?3",
+            )
+            .map_err(sql)?;
+        let rows = stmt
+            .query_map(
+                rusqlite::params![ix.col, EntKind::Note as i64, S_PURGED, reg_key("tags")],
+                |r| r.get::<_, Ref>(0),
+            )
+            .map_err(sql)?;
+        for r in rows {
+            notes.push(r.map_err(sql)?);
+        }
+    }
+    let mut classes: std::collections::BTreeSet<Ref> = std::collections::BTreeSet::new();
+    for n in notes {
+        classes.insert(ix.canonical(&n)?);
+    }
+    let mut out = Vec::new();
+    for c in classes {
+        if last_tag_hlc(t, ix, &c)?.is_some() {
+            out.push(tags_row_writer(&c.text()).1);
+        }
+    }
+    Ok(out)
 }
 
 /// 一张列式表的构造器：列名与类型（`bulk::KIND_*`）先定，逐行往里推。
