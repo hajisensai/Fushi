@@ -1,4 +1,4 @@
-## BUG-4718 · Cupertino 下外壳标题条与库页页头大字重复显示页名
+## BUG-4722 · Cupertino 下外壳标题条与库页页头大字重复显示页名
 - **报告**：2026-11-16（应用内反馈 4s8SaBMfyY，iOS 3.3.0-debug.27417 截图：视频库顶部先一行小字「Video」，下面又一行带徽标的大字「Video」）
 - **真实性**：✅ 真 bug。外壳给 tab 的页面名（`homeShellTitleFor`，经 `FushiShellTitleScope` 下发）同时被两处画：
   - 库页根 overlay `masthead: true`，重设计外壳（`shellRedesignActive`，非墨水屏恒真，含 Apple）下页头大字用它画页名行：`fushi/lib/src/utils/components/fushi_floating_chrome.dart:852`（`mastheadLayer`）、`:1800`（取 `shellTitle` 当页名）。

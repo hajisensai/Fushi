@@ -33,15 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4075 条。点号进各自文件。
+> 共 4079 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4718](bugs/BUG-4718-cupertino-doubled-library-headers.md) | ✅ | ✅ | Cupertino 下外壳标题条与库页页头大字重复显示页名 |
-> 共 4078 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4722](bugs/BUG-4722-cupertino-doubled-library-headers.md) | ✅ | ✅ | Cupertino 下外壳标题条与库页页头大字重复显示页名 |
 | [BUG-4721](bugs/BUG-4721-local-audio-forvo-null-reading-excluded.md) | ✅ | ✅ | 本地发音库精确读音查询排除 reading 为 NULL 的行，日语 Forvo 发音不显示 |
 | [BUG-4720](bugs/BUG-4720-popup-srs-badge-open-card-rule.md) | ✅ | ✅ | 制完卡当下与重开弹窗后「打开卡片」跳到不同笔记 |
 | [BUG-4719](bugs/BUG-4719-ext-overlapping-cues.md) | ✅ | ✅ | 浏览器扩展：ASS 字幕两句时间重叠时覆盖层只显示一句 |
