@@ -1538,8 +1538,9 @@ pub const REPORT_FILE: &str = "report.json";
 /// 开跑时先落盘的报告的结论（[rehearse]）：跑完会被真正的结论覆盖，还留着就是进程中途死了。
 pub const VERDICT_STARTED: &str = "started";
 
-/// [rehearsal_report] 读到本进程里这个库的预演正在跑（[REHEARSALS] 里有它的登记）时，把文件里的 [VERDICT_STARTED]
-/// 换成这个：文件里的开跑标记是给「进程中途死了」留的证据，跑着的时候读到它不能当成中断。
+/// [rehearsal_report] 在本进程里这个库的预演登记着（[REHEARSALS] 的 `running` 里有它）时报的结论，不论报告文件此刻写到了
+/// 哪一步：文件里的开跑标记是给「进程中途死了」留的证据，跑着的时候读到它不能当成中断；登记了、开跑标记还没落盘时文件
+/// 里是上一次的结论，也不能当成「可以开跑」。
 pub const VERDICT_RUNNING: &str = "running";
 
 /// 原子地写 `<work>/report.json`（先写临时文件再改名，读的一方不会读到半份）。
@@ -1551,13 +1552,27 @@ fn write_report(work: &Path, report: &Value) -> Result<(), String> {
         .map_err(|e| format!("gen4 rehearsal: write report: {e}"))
 }
 
-/// 一个库上登记着的那次预演：它的中断开关与调用方给的运行号（`runId`，没给就是 None）。
+/// 一个库上登记着的那次预演：它的中断开关、调用方给的运行号（`runId`，没给就是 None），以及登记期间
+/// [rehearsal_report] 报给读者的报告（开跑标记的内容，结论是 [VERDICT_RUNNING]）。
 struct Running {
     stop: std::sync::Arc<Stop>,
     run_id: Option<String>,
+    report: Map<String, Value>,
 }
 
 /// 预演的进程内登记（一把锁管两张表，登记与「先到的取消」之间没有缝）。
+///
+/// 登记与报告文件对读者一致（[rehearsal_report]）靠三条：
+/// 1. `running` 里的登记是「在跑」的唯一判据。报告文件的每一次写（开跑标记、最终结论、`error` 报告）都在登记存续
+///    期间：先登记再写开跑标记，最终报告落盘之后才撤登记（[Registration] 的 `Drop`）。
+/// 2. 读者拿着这把锁先判登记：有登记就报登记里的 [VERDICT_RUNNING]，不读文件——登记后、开跑标记写入前文件里的旧结论
+///    读不到。
+/// 3. 没有登记时读者还拿着锁读文件：锁住期间插不进新登记，也就没有新的写；撤登记在落盘之后，所以读到的就是最后一次
+///    写的结果（最终结论；或 panic / 落盘失败留下的开跑标记，与进程中途死掉同义）。
+///
+/// 锁顺序：这把锁 → `Stop` 的连接表（[cancel_rehearsal] / [stop_rehearsal] / 登记时带已停开关）。持锁期间只做内存操作
+/// 与读报告文件；跑预演的线程写报告时不持锁，只在登记 / 撤登记时短暂拿它；[stop_rehearsal] 在条件变量上等时放开它。
+/// 没有反向的拿法。
 #[derive(Default)]
 struct Rehearsals {
     /// 在跑的预演：库文件路径 → 那一次。同一个库同时只跑一个；关库（`SrsCore::close`）先停掉它并等它放开连接。
@@ -1598,9 +1613,10 @@ pub fn rehearse(db: &Path, req: &Value) -> Result<Value, String> {
     rehearse_with(db, req, &mut |_, _| {})
 }
 
-/// 一个库上「预演在跑」的登记（[REHEARSALS] 里 `running` 的那一项）。登记一插进去就构造它，此后不论 [run] 正常返回、提前返回
+/// 一个库上「预演在跑」的登记（[REHEARSALS] 里 `running` 的那一项）。登记一插进去就构造它，此后不论正常收尾、提前返回
 /// 还是中途 panic（FFI 边界的 `catch_unwind` 把 panic 吞成错误码、进程照活），`Drop` 都会删掉残留的临时新库、注销
-/// 登记并唤醒在 [stop_rehearsal] 里等它的关库——登记留下来，之后的关库就永远等不到它。
+/// 登记并唤醒在 [stop_rehearsal] 里等它的关库——登记留下来，之后的关库就永远等不到它。正常路径上它活到最终报告落盘
+/// 之后（[Rehearsals] 文档第 1 条）。
 struct Registration {
     db: PathBuf,
     work_db: PathBuf,
@@ -1616,7 +1632,8 @@ impl Drop for Registration {
     }
 }
 
-/// [rehearse]，进度回调由调用方给（测试用它在中途 panic）。
+/// [rehearse]，进度回调由调用方给（测试用它在中途 panic、在各个时点采样）。除了 [run] 的阶段，还报两个自己的时点：
+/// `registered`（登记之后、开跑标记写入之前）与 `saving`（[run] 返回之后、最终报告 / `error` 报告落盘之前）。
 fn rehearse_with(
     db: &Path,
     req: &Value,
@@ -1632,29 +1649,6 @@ fn rehearse_with(
         .map(|m| m.iter().map(|(k, v)| (k.clone(), v.to_string())).collect())
         .unwrap_or_default();
     let run_id = req.get("runId").and_then(Value::as_str).map(str::to_owned);
-    let stop = std::sync::Arc::new(Stop::new());
-    let registration = {
-        let mut state = rehearsals();
-        if state.running.contains_key(db) {
-            return Err("gen4 rehearsal: already running".to_owned());
-        }
-        // 登记前就收到了这一次的取消：带着已停的开关开跑，[run] 第一步就报 cancelled。
-        let early = state.cancelled_early.remove(db).unwrap_or_default();
-        if run_id.as_ref().is_some_and(|id| early.contains(id)) {
-            stop.stop();
-        }
-        state.running.insert(
-            db.to_path_buf(),
-            Running {
-                stop: stop.clone(),
-                run_id: run_id.clone(),
-            },
-        );
-        Registration {
-            db: db.to_path_buf(),
-            work_db: work.join(WORK_FILE),
-        }
-    };
     let app_version = req.get("appVersion").cloned();
     let stamp = |m: &mut Map<String, Value>| {
         if let Some(v) = &app_version {
@@ -1666,6 +1660,33 @@ fn rehearse_with(
     started.insert("verdict".into(), json!(VERDICT_STARTED));
     started.insert("startedAtMs".into(), json!(now_ms()));
     stamp(&mut started);
+    let stop = std::sync::Arc::new(Stop::new());
+    let registration = {
+        let mut state = rehearsals();
+        if state.running.contains_key(db) {
+            return Err("gen4 rehearsal: already running".to_owned());
+        }
+        // 登记前就收到了这一次的取消：带着已停的开关开跑，[run] 第一步就报 cancelled。
+        let early = state.cancelled_early.remove(db).unwrap_or_default();
+        if run_id.as_ref().is_some_and(|id| early.contains(id)) {
+            stop.stop();
+        }
+        let mut shown = started.clone();
+        shown.insert("verdict".into(), json!(VERDICT_RUNNING));
+        state.running.insert(
+            db.to_path_buf(),
+            Running {
+                stop: stop.clone(),
+                run_id: run_id.clone(),
+                report: shown,
+            },
+        );
+        Registration {
+            db: db.to_path_buf(),
+            work_db: work.join(WORK_FILE),
+        }
+    };
+    progress("registered", None);
     std::fs::create_dir_all(&work).map_err(|e| format!("gen4 rehearsal: work dir: {e}"))?;
     write_report(&work, &Value::Object(started))?;
     let out = run(
@@ -1678,13 +1699,18 @@ fn rehearse_with(
             examples: DEFAULT_EXAMPLES,
             full_examples: false,
             stop: &stop,
-            progress,
+            progress: &mut *progress,
         },
     );
-    drop(registration);
-    let mut report = match out {
-        Ok(Value::Object(m)) => m,
-        Ok(other) => return Err(format!("gen4 rehearsal: not a report: {other}")),
+    progress("saving", None);
+    let saved = match out {
+        Ok(Value::Object(mut report)) => {
+            report.insert("finishedAtMs".into(), json!(now_ms()));
+            stamp(&mut report);
+            let report = Value::Object(report);
+            write_report(&work, &report).map(|()| report)
+        }
+        Ok(other) => Err(format!("gen4 rehearsal: not a report: {other}")),
         Err(e) => {
             // 根本跑不起来：结论照样落盘（覆盖开跑标记），诊断导出拿得到。
             let mut m = Map::new();
@@ -1694,29 +1720,35 @@ fn rehearse_with(
             m.insert("finishedAtMs".into(), json!(now_ms()));
             stamp(&mut m);
             // 落报告本身也失败时两个错误都交回去，原错误不丢。
-            return Err(match write_report(&work, &Value::Object(m)) {
+            Err(match write_report(&work, &Value::Object(m)) {
                 Ok(()) => e,
                 Err(w) => format!("{e} (and the error report could not be saved: {w})"),
-            });
+            })
         }
     };
-    report.insert("finishedAtMs".into(), json!(now_ms()));
-    stamp(&mut report);
-    let report = Value::Object(report);
-    write_report(&work, &report)?;
-    Ok(report)
+    // 报告落盘之后才撤登记（[Rehearsals] 文档第 1 条）。
+    drop(registration);
+    saved
 }
 
 /// 上一次预演的报告（[rehearsal_dir] 里的 `report.json`）；没有就是 null。读坏了的文件当没有。本进程里这个库的预演
-/// 正在跑时，文件里的开跑标记报成 [VERDICT_RUNNING]（不是「上次中途死了」）。
+/// 登记着时报登记里的 [VERDICT_RUNNING]，不看文件（判据与一致性见 [Rehearsals]）。
 pub fn rehearsal_report(db: &Path) -> Value {
-    let mut report = std::fs::read_to_string(rehearsal_dir(db).join(REPORT_FILE))
+    rehearsal_report_with(db, &mut || {})
+}
+
+/// [rehearsal_report]，`after_read` 在读完报告文件、交回之前调（测试用它确认读文件时还拿着登记锁）。
+fn rehearsal_report_with(db: &Path, after_read: &mut dyn FnMut()) -> Value {
+    let state = rehearsals();
+    if let Some(r) = state.running.get(db) {
+        return Value::Object(r.report.clone());
+    }
+    let report = std::fs::read_to_string(rehearsal_dir(db).join(REPORT_FILE))
         .ok()
         .and_then(|t| serde_json::from_str::<Value>(&t).ok())
         .unwrap_or(Value::Null);
-    if report["verdict"] == VERDICT_STARTED && rehearsals().running.contains_key(db) {
-        report["verdict"] = json!(VERDICT_RUNNING);
-    }
+    after_read();
+    drop(state);
     report
 }
 
@@ -1739,7 +1771,7 @@ pub fn cancel_rehearsal(db: &Path, run_id: Option<&str>) {
 }
 
 /// 停下 [db] 上在跑的预演并等它放开对库的连接（关库前调：之后库文件可以被换掉 / 删掉）。语句被当场打断；纯内存的
-/// 阶段（别名判定等）做完这一段才查到开关，等的就是这一段。
+/// 阶段（别名判定等）做完这一段才查到开关，等的就是这一段；最终报告落盘之后登记才撤（[Rehearsals]），也一并等到。
 pub fn stop_rehearsal(db: &Path) {
     let mut state = rehearsals();
     state.cancelled_early.remove(db);
@@ -2234,6 +2266,61 @@ mod tests {
             json!({"version": REPORT_VERSION, "verdict": VERDICT_STARTED, "appVersion": "2.0+7"});
         write_report(&rehearsal_dir(&path), &left).unwrap();
         assert_eq!(rehearsal_report(&path)["verdict"], VERDICT_STARTED);
+    }
+
+    /// 登记与报告文件对读者一致（[Rehearsals] 文档）：上一次的结论还在文件里时，登记之后、开跑标记写入之前读到的是
+    /// `running`（不是可以开跑的旧结论）；跑完之后、最终报告落盘之前读到的也是 `running`（不是「中途中断」的
+    /// `started`）；返回之后读到最终结论。
+    #[test]
+    fn a_reader_sees_running_from_registration_until_the_final_report_is_saved() {
+        let d = library("g4rehearseconsistent");
+        let cfg_obj: Value = serde_json::from_str(&cfg()).unwrap();
+        let path = d._dir.0.join("srs.db");
+        let req = json!({"caches": {P: cfg_obj}, "appVersion": "2.0+8"});
+        assert_eq!(rehearse(&path, &req).unwrap()["verdict"], "pass");
+        let mut seen: Vec<(String, Value)> = Vec::new();
+        let r = rehearse_with(&path, &req, &mut |stage, _| {
+            if stage == "registered" || stage == "saving" {
+                seen.push((stage.to_owned(), rehearsal_report(&path)["verdict"].clone()));
+            }
+        })
+        .unwrap();
+        assert_eq!(r["verdict"], "pass", "{r:#}");
+        assert_eq!(
+            seen,
+            [
+                ("registered".to_owned(), json!(VERDICT_RUNNING)),
+                ("saving".to_owned(), json!(VERDICT_RUNNING)),
+            ]
+        );
+        let after = rehearsal_report(&path);
+        assert_eq!(after["verdict"], "pass", "{after:#}");
+        assert_eq!(after["appVersion"], "2.0+8");
+    }
+
+    /// 读者判「没有登记」与读报告文件在同一把锁里（[Rehearsals] 文档第 3 条）：读完文件时登记锁还拿着，预演插不进
+    /// 新登记、也撤不掉登记，读到的文件与判到的登记是同一时刻的。
+    #[test]
+    fn the_report_file_is_read_under_the_registration_lock() {
+        let d = library("g4rehearselocked");
+        let path = d._dir.0.join("srs.db");
+        let left =
+            json!({"version": REPORT_VERSION, "verdict": VERDICT_STARTED, "appVersion": "2.0+8"});
+        std::fs::create_dir_all(rehearsal_dir(&path)).unwrap();
+        write_report(&rehearsal_dir(&path), &left).unwrap();
+        let mut held = None;
+        let r = rehearsal_report_with(&path, &mut || {
+            held = Some(matches!(
+                REHEARSALS.try_lock(),
+                Err(std::sync::TryLockError::WouldBlock)
+            ));
+        });
+        assert_eq!(r["verdict"], VERDICT_STARTED, "{r:#}");
+        assert_eq!(
+            held,
+            Some(true),
+            "the file must be read while the lock is held"
+        );
     }
 
     /// 根本跑不起来、而且连 `error` 报告都落不了盘：交回去的错误里原错误与落盘错误都在，原错误不被落盘错误顶掉。
