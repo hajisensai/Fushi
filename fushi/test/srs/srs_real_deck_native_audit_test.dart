@@ -8,12 +8,12 @@ import 'dart:io';
 
 import 'package:drift/drift.dart';
 import 'package:fushi/src/srs/srs_card_face_route.dart';
-import 'package:fushi_core/fushi_core.dart' show srsIdType;
 import 'package:fushi_engine/srs/srs_builtin.dart' show kSrsBuiltinFushiCardKey;
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_engine/srs/srs_style_store.dart';
 import 'package:test/test.dart';
+import '../../../packages/fushi_engine/test/srs/support/srs_raw_sql.dart';
 
 class _Bucket {
   int total = 0;
@@ -38,7 +38,6 @@ void main() {
       final SrsStorage storage = await SrsStorage.open(path: dbPath!);
       addTearDown(storage.close);
       final SrsDbStore store = await SrsDbStore.open(
-        db: storage.db,
         core: storage.core,
         profileUid: uid!,
         deviceId: 'audit',
@@ -48,7 +47,7 @@ void main() {
           SrsStyleStore.directoryFor(Directory(support!), uid),
         ),
       );
-      final List<QueryRow> rows = await storage.db
+      final List<SrsRawRow> rows = await storage.core
           .customSelect(
             'SELECT c.id AS id FROM srs_cards_cache c '
             'JOIN srs_notes_cache n ON c.note_id = n.id '
@@ -74,7 +73,7 @@ void main() {
       }
       final Map<String, _Bucket> buckets = <String, _Bucket>{};
       final Stopwatch sw = Stopwatch()..start();
-      for (final QueryRow row in rows) {
+      for (final SrsRawRow row in rows) {
         final String id = row.read<String>('id');
         final SrsCardDetail? d = await store.cardDetail(id);
         if (d == null) continue;

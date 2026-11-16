@@ -44,7 +44,7 @@ pub mod store;
 pub mod style_dedup;
 pub mod sync2;
 
-/// 协议 4 的规范 ID 与别名规则（还没有接线，见模块说明）。
+/// 协议 4 的规范 ID 与别名规则；Dart 经 `ffsrs_call` 的 `ids` 向它要 ID（见模块说明）。
 pub mod gen4_ids;
 
 use std::ffi::{CStr, CString, c_char};
@@ -65,7 +65,9 @@ use serde_json::{Value, json};
 /// C ABI 版本。Dart 侧加载时比对，不一致视为库不可用（不崩）。4：删掉整批搜索语料的 `ffsrs_search_corpus_*` / `ffsrs_search_chunk_*`（L-5）。
 /// 5：`ffsrs_history_select` 列模式每条日志从 3 个串改为 4 个串（多 cardId，`offs` 长 `4n+1`；BUG-4218）。
 /// 6：复习统计页的校准图 / UM+（`ffsrs_predict_tss` / `ffsrs_calibration_report` / `ffsrs_store_calibration_items`）。
-pub const ABI_VERSION: i32 = 6;
+/// 7：删掉 srs.db 只读会话 `ffsrs_store_read_begin` / `_read_query` / `_read_end`（G5：Dart 读 srs.db 只发内核读命令），
+/// `ffsrs_store_diag_counts` 去掉「没结束的只读会话」一项（8 → 7 项）。
+pub const ABI_VERSION: i32 = 7;
 
 /// 钉定的 fsrs-rs 源码版本，写进参数组的 algorithmRev。
 pub const FSRS_RS_REV: &str = "0a5737406a0c5c7a5259b144738cbe4a0b649d76";
@@ -257,6 +259,8 @@ fn dispatch(req: &Value) -> Result<Value, String> {
     let op = str_field(req, "op")?;
     match op {
         "version" => Ok(json!({ "abi": ABI_VERSION, "fsrsRev": FSRS_RS_REV })),
+        // 根上的 ID 与同步目录名（gen4_ids/derive.rs）。
+        "ids" => gen4_ids::derive::derive(req),
         "defaults" => {
             let algorithm = Algorithm::parse(str_field(req, "algorithm")?)?;
             Ok(json!({ "params": algorithm.defaults(), "count": algorithm.param_len() }))

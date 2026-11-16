@@ -30,7 +30,6 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi_core/fushi_core.dart';
-import 'package:fushi_engine/media/manga/manga_storage.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart' show MangaOcrPageFocus;
 import 'package:path/path.dart' as p;
@@ -168,7 +167,8 @@ Future<List<MangaOcrTarget>> mangaOcrTargetsForBook(
       ),
     ];
   }
-  final String bookDir = await MangaStorage.bookPath(row.bookKey);
+  // [row] 是书架行本身（不是章目录副本），extractDir 就是书目录。
+  final String bookDir = row.extractDir;
   final List<MangaOcrTarget> targets = <MangaOcrTarget>[];
   for (final OnlineMangaChapter chapter in entry.chapters.reversed) {
     if (!await isChapterDownloaded(bookDir, chapter.key)) continue;
