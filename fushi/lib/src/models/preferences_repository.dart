@@ -2647,6 +2647,14 @@ class PreferencesRepository extends ChangeNotifier
     }
   }
 
+  /// 互联「来源共享」把 host 的服务器来源合并进本机清单（OPDS / AList / Kavita /
+  /// OpenSubsonic 各一个键）后整份写回：缓存与库同一步更新并通知监听者。只写库的话，
+  /// 整轮同步结束前设置页 setter 会拿旧缓存把刚收下的条目抹掉。
+  Future<void> replaceSharedSourceListPref(String key, String json) async {
+    await setPref(key, json);
+    notifyListeners();
+  }
+
   Future<void> setDiscoveryOpdsServers(
     Iterable<OpdsServerConfig> servers,
   ) async {
