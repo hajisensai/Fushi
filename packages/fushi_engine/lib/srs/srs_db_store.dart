@@ -457,6 +457,9 @@ class SrsDbStore implements SrsSync2Host {
     }
     // 只读打开（查词弹窗等辅助进程）：注册类写入都是主进程的事，这里只读。
     await s._sync2Open();
+    // 内置实体的规范 ID（G9-6）：主模式 ensureBuiltins 已顺带问过；只读打开（作品会话 / 扩展的副本）在这里问
+    // （只读命令），不靠调用方记得去调。
+    if (core.mode != SrsOpenMode.primary) await s.resolveBuiltinIds();
     return s;
   }
 
@@ -2406,8 +2409,8 @@ class SrsDbStore implements SrsSync2Host {
   String get lapisNoteTypeId => _builtinId(kSrsBuiltinLapisKey);
   String get fushiCardNoteTypeId => _builtinId(kSrsBuiltinFushiCardKey);
 
-  /// 向内核要内置实体的规范 ID（`canonical_ids`，只读）。主进程开库时由 [ensureBuiltins] 顺带做；只读打开
-  /// （Secondary，不跑 [ensureBuiltins]）与 `bindingChanged`（别名类变了）之后由调用方再调一次。
+  /// 向内核要内置实体的规范 ID（`canonical_ids`，只读）。开库时主模式由 [ensureBuiltins] 顺带做、只读打开
+  /// （Secondary，不跑 [ensureBuiltins]）由 [open] 的尾部做；`bindingChanged`（别名类变了）之后由调用方再调一次。
   Future<void> resolveBuiltinIds() async =>
       _setCanonicalBuiltins(await canonicalIds(_derivedBuiltins));
 

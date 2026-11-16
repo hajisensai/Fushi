@@ -418,23 +418,14 @@ class SrsMiner with AnkiNoteComposer {
   final SrsMediaStore media;
   final SrsMiningDestination destination;
 
-  /// 最近一次 [resolveSrsMiningDestination] 换成规范 ID 的 [destination]（G9-6）：字段映射按笔记类型的规范 ID 查，
-  /// 偏好里还是成员 ID 时（作品级覆盖层、别的配置的视图、`bindingChanged` 之后还没重归一）也查得到。没解析过时
-  /// 用原样的 [destination]。
-  SrsMiningDestination? _canonicalDestination;
-
-  Future<SrsResolvedMiningDestination> _resolve(
-    String? requestedDeckName,
-  ) async {
-    final SrsResolvedMiningDestination target =
-        await resolveSrsMiningDestination(
-          store,
-          destination,
-          requestedDeckName: requestedDeckName,
-        );
-    _canonicalDestination = target.destination;
-    return target;
-  }
+  /// [destination] 换成规范 ID（G9-6，一条 `canonical_ids`）：字段映射按笔记类型的**规范** ID 查，偏好里还是成员
+  /// ID 时（作品级覆盖层、别的配置的视图、开库归一之前、`bindingChanged` 之后还没重归一）也查得到。每个要查映射的
+  /// 入口（制卡、覆写、取字段、按类型列映射）现问一次，不缓存在实例上。
+  Future<SrsMiningDestination> _canonicalDestination() =>
+      srsCanonicalizeMiningDestination(
+        destination,
+        srsStoreCanonicalIds(store),
+      );
 
   /// 这个词（词形 + 读音）SRS 里有没有卡。读音为空时按词形匹配。
   Future<bool> isDuplicate(String expression, String reading) async {
@@ -546,13 +537,21 @@ class SrsMiner with AnkiNoteComposer {
     return live == null ? null : _noteTypeNameOf(live.$2);
   }
 
-  /// [type] 制卡时实际用的字段映射（fieldId → 制卡占位符），同 [_mappingFor]。
-  Map<String, String> miningFieldMappingsFor(SrsNoteTypeView type) =>
-      _mappingFor(type);
+  /// 按笔记类型查制卡时实际用的字段映射（fieldId → 制卡占位符，同 [_mappingFor]）：先把落点换成规范 ID（一次），
+  /// 返回的查表函数可对多个类型反复用。
+  Future<Map<String, String> Function(SrsNoteTypeView type)>
+  miningFieldMappingLookup() async {
+    final SrsMiningDestination canonical = await _canonicalDestination();
+    return (SrsNoteTypeView type) => _mappingFor(type, canonical);
+  }
 
   /// 笔记类型 → 渲染用的字段映射（键 = fieldId）。内置类型（Lapis、Fushi 卡片）固定用
-  /// 各自的默认映射（按字段键定位，不受改名影响）；其它类型用按类型存的映射。
-  Map<String, String> _mappingFor(SrsNoteTypeView? type) => _isLapis(type)
+  /// 各自的默认映射（按字段键定位，不受改名影响）；其它类型用按类型存的映射，按 [canonical]
+  /// （已换成规范 ID 的落点，[_canonicalDestination]）的键查。
+  Map<String, String> _mappingFor(
+    SrsNoteTypeView? type,
+    SrsMiningDestination canonical,
+  ) => _isLapis(type)
       ? srsMiningFieldMappingsFor(
           builtinKey: kSrsBuiltinLapisKey,
           profileUid: store.profileUid,
@@ -561,8 +560,7 @@ class SrsMiner with AnkiNoteComposer {
           type: type,
           builtinKey: type!.builtinKey,
           profileUid: store.profileUid,
-          stored: (_canonicalDestination ?? destination)
-              .fieldMappingsByType[type.id],
+          stored: canonical.fieldMappingsByType[type.id],
         );
 
   /// [type] 的 fieldId → 字段名，给共享渲染里**按字段名**判定的规则用（制卡位置落
@@ -591,10 +589,11 @@ class SrsMiner with AnkiNoteComposer {
     required AnkiMiningPayload payload,
     required AnkiMiningContext context,
     required SrsNoteTypeView? noteType,
+    required SrsMiningDestination canonical,
     bool keepEmpty = false,
   }) => _render(
     settings: settings.copyWith(
-      fieldMappings: _mappingFor(noteType),
+      fieldMappings: _mappingFor(noteType, canonical),
       selectedNoteTypeName: _isLapis(noteType)
           ? LapisNoteType.modelName
           : noteType!.name,
@@ -644,7 +643,12 @@ class SrsMiner with AnkiNoteComposer {
       rawPayloadJson,
       (AnkiMiningPayload p) => requested = p.overrides?.deckName,
     );
-    final SrsResolvedMiningDestination target = await _resolve(requested);
+    final SrsResolvedMiningDestination target =
+        await resolveSrsMiningDestination(
+          store,
+          destination,
+          requestedDeckName: requested,
+        );
     return target.deckName ?? '';
   }
 
@@ -681,17 +685,23 @@ class SrsMiner with AnkiNoteComposer {
       return const MineOutcome.duplicate();
     }
 
-    final SrsResolvedMiningDestination target = await _resolve(
-      payload.overrides?.deckName,
-    );
+    final SrsResolvedMiningDestination target =
+        await resolveSrsMiningDestination(
+          store,
+          destination,
+          requestedDeckName: payload.overrides?.deckName,
+        );
+    final SrsMiningDestination canonical =
+        target.destination ?? await _canonicalDestination();
     final SrsNoteTypeView? noteType = target.noteType;
     final RenderedMinedFields rendered = await _renderFor(
       settings: settings,
       payload: payload,
       context: context,
       noteType: noteType,
+      canonical: canonical,
     );
-    final Map<String, String> mapping = _mappingFor(noteType);
+    final Map<String, String> mapping = _mappingFor(noteType, canonical);
     final Map<String, String> fieldsById = <String, String>{
       for (final MapEntry<String, String> e in rendered.fields.entries)
         if (mapping.containsKey(e.key) && e.value.isNotEmpty) e.key: e.value,
@@ -755,6 +765,7 @@ class SrsMiner with AnkiNoteComposer {
         payload: payload,
         context: context,
         noteType: _isLapis(type) ? null : type,
+        canonical: await _canonicalDestination(),
         keepEmpty: true,
       );
       final Set<String>? onlyFields = settings.overwriteFieldsFor(
@@ -827,6 +838,7 @@ class SrsMiner with AnkiNoteComposer {
       payload: payload,
       context: context,
       noteType: _isLapis(type) ? null : type,
+      canonical: await _canonicalDestination(),
       keepEmpty: true,
     );
     if (rendered.audioWarning != null) throw StateError(rendered.audioWarning!);
