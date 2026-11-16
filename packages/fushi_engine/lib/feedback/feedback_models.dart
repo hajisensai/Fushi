@@ -65,7 +65,39 @@ abstract final class FeedbackLimits {
   /// 样本文件扩展名白名单（小写、不带点）。服务端 `FILE_EXTENSIONS`
   /// （services/leaderboard/src/feedback_files.js）必须同一份，feedback_files.test.js 逐项核对；
   /// 服务端另按扩展名核对文件头魔数。
-  static const Set<String> fileExtensions = <String>{'txt', 'md', 'markdown', 'srt', 'ass', 'ssa', 'vtt', 'lrc', 'json', 'csv', 'tsv', 'epub', 'cbz', 'zip', 'pdf', 'mdx', 'mdd', 'mp3', 'aac', 'm4a', 'm4b', 'flac', 'ogg', 'opus', 'wav', 'mp4', 'm4v', 'mov', 'mkv', 'webm', 'avi'};
+  static const Set<String> fileExtensions = <String>{
+    'txt',
+    'md',
+    'markdown',
+    'srt',
+    'ass',
+    'ssa',
+    'vtt',
+    'lrc',
+    'json',
+    'csv',
+    'tsv',
+    'epub',
+    'cbz',
+    'zip',
+    'pdf',
+    'mdx',
+    'mdd',
+    'mp3',
+    'aac',
+    'm4a',
+    'm4b',
+    'flac',
+    'ogg',
+    'opus',
+    'wav',
+    'mp4',
+    'm4v',
+    'mov',
+    'mkv',
+    'webm',
+    'avi',
+  };
 
   /// 「我的反馈」账户列表每页条数上限（服务端 GET /v1/feedback/mine）。
   static const int minePage = 50;
