@@ -18,7 +18,18 @@ import 'package:fushi_engine/media/manga/manga_importer.dart';
 import 'package:fushi_engine/media/manga/manga_storage.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 
-const int _maximumArchiveExpandedBytes = 2 * 1024 * 1024 * 1024;
+/// 解出总量预算的下限：小包（几十 MB 的 CBZ）按比例算出来的预算太紧，给一个固定底。
+const int _minimumArchiveExpandedBytes = 2 * 1024 * 1024 * 1024;
+
+/// 解出总量相对**压缩包自身大小**的最大倍数。
+///
+/// 总量上限防的是解压炸弹（几 MB 的包声明 / 解出几十 GB 填满磁盘），不是「漫画太大」。
+/// 页图本身就是压缩格式（JPEG / PNG / WebP / AVIF），进 zip 几乎压不动，真实漫画包的
+/// 解出量≈包体积；8 倍给 BMP / TIFF 这类能压的页留足余量，而炸弹的压缩比在几百到上千。
+///
+/// 此前这里是一个与包大小无关的绝对 2 GiB：任何解出超过 2 GiB 的正常漫画包（高分辨率
+/// 合集、4K 扫图卷）一律报「Manga archive is too large」（不能导入 2G 以上的 zip）。
+const int _maximumArchiveExpansionRatio = 8;
 
 /// 单个页图条目解压后的上限。
 ///
@@ -34,16 +45,41 @@ const int _maximumMokuroBytes = 64 * 1024 * 1024;
 /// 而不必真的造几 GB 的包。
 class MangaArchiveExtractionLimits {
   const MangaArchiveExtractionLimits({
-    this.maxTotalBytes = _maximumArchiveExpandedBytes,
+    this.maxTotalBytes,
     this.maxEntryBytes = _maximumArchiveEntryBytes,
+    this.minTotalBytes = _minimumArchiveExpandedBytes,
+    this.maxExpansionRatio = _maximumArchiveExpansionRatio,
   });
 
   /// 一次导入里所有解出条目（页图 + 包内 `.mokuro`）的实际字节总和上限。
-  final int maxTotalBytes;
+  ///
+  /// null（生产默认）= 按压缩包大小推出：见 [totalBudgetFor]。
+  final int? maxTotalBytes;
+
+  /// 按包体积推预算时的下限（默认 2 GiB）。
+  final int minTotalBytes;
+
+  /// 按包体积推预算时的倍数（默认 8，见 [_maximumArchiveExpansionRatio]）。
+  final int maxExpansionRatio;
 
   /// 单个页图条目的实际字节上限（包内 `.mokuro` 另受 64 MB 清单上限约束）。
   final int maxEntryBytes;
+
+  /// 体积为 [archiveBytes] 的压缩包允许解出的总字节数：显式 [maxTotalBytes] 优先，
+  /// 否则 `max(minTotalBytes, 包体积 × maxExpansionRatio)`。
+  int totalBudgetFor(int archiveBytes) {
+    final int? fixed = maxTotalBytes;
+    if (fixed != null) return fixed;
+    final int proportional = archiveBytes * maxExpansionRatio;
+    return proportional > minTotalBytes ? proportional : minTotalBytes;
+  }
 }
+
+/// 体积为 [archiveBytes] 的漫画压缩包默认允许解出的总字节数：
+/// `max(2 GiB, 包体积 × 8)`（理由见 [_maximumArchiveExpansionRatio]）。ZIP 与 7-Zip
+/// 两条分支、导入与探测共用这一个口径。
+int mangaArchiveExpandedBudget(int archiveBytes) =>
+    const MangaArchiveExtractionLimits().totalBudgetFor(archiveBytes);
 
 class _MokuroSource {
   const _MokuroSource({
@@ -87,12 +123,41 @@ class _ArchivePageSet {
 /// 借用 `ZipFile.rawContent`，是同一个对象）映射回中央目录记录：流式解压要的本地
 /// 头偏移 / 压缩方法 / 压缩大小 / 加密位只在那里，`ArchiveFile` 不公开它们。
 class _OpenedArchive {
-  _OpenedArchive(this.path, this.archive, this.input, this.headers);
+  _OpenedArchive(
+    this.path,
+    this.length,
+    this.archive,
+    this.input,
+    this.headers,
+  );
 
   final String path;
   final Archive archive;
   final InputFileStream input;
   final Map<InputStreamBase, ZipFileHeader> headers;
+
+  /// 压缩包文件本身的字节数（解出总量预算按它推）。开包时从文件取：
+  /// `InputFileStream.length` 是**剩余**字节数，读完中央目录后已不是包体积。
+  final int length;
+
+  ZipFileHeader? headerOf(ArchiveFile entry) {
+    final InputStreamBase? raw = entry.rawContent;
+    return raw == null ? null : headers[raw];
+  }
+
+  /// [entry] 的解压后大小，**以中央目录为准**。
+  ///
+  /// `ArchiveFile.size` 取自 `ZipFile.uncompressedSize`：带数据描述符（通用位 3）
+  /// 的条目会被 archive 3.6.1 用描述符里读出的值覆盖，而它一律按 4 字节读——ZIP64
+  /// 描述符的大小字段是 8 字节，读出来的「解压后大小」就成了压缩大小的高 32 位
+  /// （通常是 0），流式解压随即按「超出声明大小」报损坏。中央目录（含 ZIP64 extra）
+  /// 才是规范里的权威记录。
+  int declaredSize(ArchiveFile entry) =>
+      headerOf(entry)?.uncompressedSize ?? entry.size;
+
+  /// [entry] 的 CRC-32，同 [declaredSize] 以中央目录为准。
+  int? declaredCrc32(ArchiveFile entry) =>
+      headerOf(entry)?.crc32 ?? entry.crc32;
 
   void close() {
     archive.clearSync();
@@ -228,7 +293,10 @@ class MangaSevenZipExtractor {
         'Could not list manga archive (7z exit ${listing.exitCode})',
       );
     }
-    _validateListing(listing.stdout.toString());
+    final int budget = mangaArchiveExpandedBudget(
+      await File(archivePath).length(),
+    );
+    _validateListing(listing.stdout.toString(), budget);
 
     final List<String> imageFilters = <String>[
       for (final String extension in kMangaImageExtensions) '-ir!*$extension',
@@ -250,10 +318,10 @@ class MangaSevenZipExtractor {
         'Could not extract manga archive (7z exit ${extraction.exitCode})',
       );
     }
-    await _validateExtractedImages(staging);
+    await _validateExtractedImages(staging, budget);
   }
 
-  void _validateListing(String output) {
+  void _validateListing(String output, int budget) {
     final String normalized = output.replaceAll('\r\n', '\n');
     final int marker = normalized.indexOf('\n----------\n');
     if (marker < 0) {
@@ -288,7 +356,7 @@ class MangaSevenZipExtractor {
         );
       }
       expandedImageBytes += size;
-      if (expandedImageBytes > _maximumArchiveExpandedBytes) {
+      if (expandedImageBytes > budget) {
         throw const MangaImportException('Manga archive is too large');
       }
       imageCount++;
@@ -298,7 +366,7 @@ class MangaSevenZipExtractor {
     }
   }
 
-  Future<void> _validateExtractedImages(Directory staging) async {
+  Future<void> _validateExtractedImages(Directory staging, int budget) async {
     int imageCount = 0;
     int expandedImageBytes = 0;
     await for (final FileSystemEntity entity in staging.list(
@@ -315,7 +383,7 @@ class MangaSevenZipExtractor {
         continue;
       }
       expandedImageBytes += await entity.length();
-      if (expandedImageBytes > _maximumArchiveExpandedBytes) {
+      if (expandedImageBytes > budget) {
         throw const MangaImportException('Manga archive is too large');
       }
       imageCount++;
@@ -406,7 +474,14 @@ abstract final class MangaArchiveImporter {
       // to the modern `.mokuro` payload. The manifest is a stronger manga
       // signal than those compatibility files are a text-book signal.
       return hasImage && (hasMokuro || !hasMarkup);
-    } catch (_) {
+    } catch (e) {
+      // 打不开的包在导入框里表现为「不支持的文件格式 .zip」——此前这里静默 false，
+      // 反馈日志里没有任何导入相关条目（Shift_JIS 文件名的包就是这样无声失败的）。
+      engineLog.logDiagnostic(
+        'MangaArchiveImporter',
+        'ZIP not recognised as image manga: ${p.basename(archivePath)}: '
+            'probe failed: $e',
+      );
       return false;
     } finally {
       opened?.close();
@@ -445,11 +520,12 @@ abstract final class MangaArchiveImporter {
         // 中央目录声明的大小只能当**快速预检**：它可以谎报（声明 1 KB、实际
         // inflate 出几 GB）。真正的上限在 [_ZipEntryStreamer] 里按实际解出的
         // 字节强制执行，条目也是边解边写盘、不整条进内存。
+        final int budget = limits.totalBudgetFor(opened.length);
         int expandedBytes = 0;
         for (final ArchiveFile entry in archive) {
           _validateEntry(entry);
-          expandedBytes += entry.size;
-          if (expandedBytes > limits.maxTotalBytes) {
+          expandedBytes += opened.declaredSize(entry);
+          if (expandedBytes > budget) {
             throw const MangaImportException('Manga archive is too large');
           }
         }
@@ -871,12 +947,13 @@ abstract final class MangaArchiveImporter {
     try {
       opened = _open(archivePath);
       final Archive archive = opened.archive;
+      final int budget = mangaArchiveExpandedBudget(opened.length);
       int expandedBytes = 0;
       int imageCount = 0;
       for (final ArchiveFile entry in archive) {
         _validateEntry(entry);
-        expandedBytes += entry.size;
-        if (expandedBytes > _maximumArchiveExpandedBytes) {
+        expandedBytes += opened.declaredSize(entry);
+        if (expandedBytes > budget) {
           return false;
         }
         if (entry.isFile &&
@@ -1020,7 +1097,13 @@ abstract final class MangaArchiveImporter {
         final InputStreamBase? raw = header.file?.rawContent;
         if (raw != null) headers[raw] = header;
       }
-      return _OpenedArchive(archivePath, archive, input, headers);
+      return _OpenedArchive(
+        archivePath,
+        file.lengthSync(),
+        archive,
+        input,
+        headers,
+      );
     } catch (_) {
       input.closeSync();
       rethrow;
@@ -1056,7 +1139,7 @@ class _CorruptZipEntry extends MangaImportException {
 /// * 实际字节一超过声明大小就中止（声明本身已被要求 ≤ 单条上限），所以单条在
 ///   内存里最多是一个 inflate 分片的产出（[_inflateSliceBytes] × 最大压缩比
 ///   ≈ 8 MB），之后立即写盘；
-/// * 所有条目累计的实际字节受 [MangaArchiveExtractionLimits.maxTotalBytes] 约束；
+/// * 所有条目累计的实际字节受 [MangaArchiveExtractionLimits.totalBudgetFor] 约束；
 /// * 解完后实际字节必须**等于**声明大小、CRC32 必须一致，否则按损坏包报错。
 ///
 /// CRC 用 Rust 内核的 [ffcCrc32]，按分片整块续算（每个输出分片一次 FFI 调用，
@@ -1066,8 +1149,9 @@ class _ZipEntryStreamer {
     this._opened,
     this._source,
     this._sourceLength,
-    this._limits,
-  );
+    MangaArchiveExtractionLimits limits,
+  ) : _limits = limits,
+      _maxTotalBytes = limits.totalBudgetFor(_sourceLength);
 
   /// 每次从源文件读的原始压缩字节数。
   static const int _readBufferBytes = 64 * 1024;
@@ -1083,6 +1167,9 @@ class _ZipEntryStreamer {
   final RandomAccessFile _source;
   final int _sourceLength;
   final MangaArchiveExtractionLimits _limits;
+
+  /// 本次导入允许实际解出的总字节数（[MangaArchiveExtractionLimits.totalBudgetFor]）。
+  final int _maxTotalBytes;
 
   /// 本次导入已经实际解出的字节数（跨条目累计）。
   int _expandedBytes = 0;
@@ -1121,7 +1208,7 @@ class _ZipEntryStreamer {
   /// 把 `.mokuro` 清单读进内存（≤ [maxBytes]）。声明超限、内容与记录不符时返回
   /// null（「不是候选」）；不支持的压缩 / 加密、总量超限照常抛出。
   Future<Uint8List?> readManifest(ArchiveFile entry, int maxBytes) async {
-    if (entry.size > maxBytes) return null;
+    if (_opened.declaredSize(entry) > maxBytes) return null;
     final BytesBuilder bytes = BytesBuilder(copy: false);
     try {
       await _stream(entry, maxBytes, (Uint8List chunk) async {
@@ -1139,8 +1226,7 @@ class _ZipEntryStreamer {
     Future<void> Function(Uint8List chunk) onChunk,
   ) async {
     final String name = entry.name;
-    final InputStreamBase? raw = entry.rawContent;
-    final ZipFileHeader? header = raw == null ? null : _opened.headers[raw];
+    final ZipFileHeader? header = _opened.headerOf(entry);
     final int? compressedSize = header?.compressedSize;
     final int? localHeaderOffset = header?.localHeaderOffset;
     if (header == null || compressedSize == null || localHeaderOffset == null) {
@@ -1162,7 +1248,7 @@ class _ZipEntryStreamer {
 
     // 声明大小先过一遍上限：诚实的超大条目不必白解。谎报的条目由下面按实际
     // 字节的检查兜住。
-    final int declared = entry.size;
+    final int declared = _opened.declaredSize(entry);
     if (declared > entryLimit) {
       throw MangaImportException(
         'Manga archive entry is too large: $name '
@@ -1246,7 +1332,7 @@ class _ZipEntryStreamer {
         'contains $produced): $name',
       );
     }
-    final int? expectedCrc = entry.crc32;
+    final int? expectedCrc = _opened.declaredCrc32(entry);
     if (expectedCrc != null && crc != expectedCrc) {
       throw _CorruptZipEntry(
         'Corrupt manga archive entry (CRC mismatch): $name',
@@ -1256,10 +1342,10 @@ class _ZipEntryStreamer {
   }
 
   void _ensureWithinTotal(int bytes) {
-    if (bytes > _limits.maxTotalBytes) {
+    if (bytes > _maxTotalBytes) {
       throw MangaImportException(
         'Manga archive is too large (expands beyond '
-        '${_limits.maxTotalBytes} bytes)',
+        '$_maxTotalBytes bytes)',
       );
     }
   }
