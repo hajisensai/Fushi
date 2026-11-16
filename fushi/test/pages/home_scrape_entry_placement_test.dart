@@ -68,7 +68,7 @@ void main() {
     expect(
       src,
       contains('title: _shellBarTitleFor(_visibleTab),'),
-      reason: '外壳标题条画的就是这一份（页头大字库页为 null，BUG-4712）',
+      reason: '外壳标题条画的就是这一份（页头大字库页为 null，BUG-4718）',
     );
     expect(
       src,
