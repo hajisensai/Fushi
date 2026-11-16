@@ -39,7 +39,7 @@ FROM debian:trixie-slim AS runtime
 # ffmpeg/ffprobe: video, audiobook cue split, subtitles. 7zip: archive import.
 # curl: health check. util-linux (setpriv) is in the base image.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates tzdata curl ffmpeg 7zip \
+    && apt-get install -y --no-install-recommends 7zip ca-certificates curl ffmpeg tzdata \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=build /opt/fushi_server /opt/fushi_server
 # Fail the build, not the first start, if the bundle needs a newer glibc.

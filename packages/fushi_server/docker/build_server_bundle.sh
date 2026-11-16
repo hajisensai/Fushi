@@ -49,7 +49,7 @@ cp -a fushi/assets/transforms "$BUNDLE/share/fushi/transforms"
 
 step "onnxruntime $ORT_VERSION"
 ort_tmp="$(mktemp -d)"
-curl -fsSL --retry 3 -o "$ort_tmp/ort.tgz" \
+curl -fsSL --proto "=https" --proto-redir "=https" --retry 3 -o "$ort_tmp/ort.tgz" \
   "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-${ORT_VERSION}.tgz"
 tar -xzf "$ort_tmp/ort.tgz" -C "$ort_tmp"
 cp -a "$ort_tmp/onnxruntime-linux-x64-${ORT_VERSION}/lib/"libonnxruntime.so* "$BUNDLE/lib/"

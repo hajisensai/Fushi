@@ -27,9 +27,9 @@ RUN set -eu; \
     else \
       api="https://api.github.com/repos/$FUSHI_SERVER_REPO/releases"; \
       if [ -n "$FUSHI_SERVER_TAG" ]; then \
-        curl -fsSL "$api/tags/$FUSHI_SERVER_TAG" > /tmp/release.json; \
+        curl -fsSL --proto "=https" --proto-redir "=https" "$api/tags/$FUSHI_SERVER_TAG" > /tmp/release.json; \
       else \
-        curl -fsSL "$api?per_page=20" \
+        curl -fsSL --proto "=https" --proto-redir "=https" "$api?per_page=20" \
           | jq '[.[] | select(.draft | not) | select(any(.assets[]; .name | endswith("-linux-x64.tar.gz")))][0]' \
           > /tmp/release.json; \
       fi; \
@@ -42,7 +42,7 @@ RUN set -eu; \
       case "$digest" in sha256:*) ;; *) echo "release asset $name has no sha256 digest" >&2; exit 1 ;; esac; \
       echo "downloading $(jq -r .tag_name /tmp/release.json): $name"; \
       tgz="/tmp/$name"; \
-      curl -fsSL --retry 3 -o "$tgz" "$url"; \
+      curl -fsSL --proto "=https" --proto-redir "=https" --retry 3 -o "$tgz" "$url"; \
       echo "${digest#sha256:}  $tgz" | sha256sum -c -; \
     fi; \
     tar --no-same-owner -xzf "$tgz" -C /opt; \
@@ -52,7 +52,7 @@ FROM debian:trixie-slim AS runtime
 # ffmpeg/ffprobe: video, audiobook cue split, subtitles. 7zip: archive import.
 # curl: health check. util-linux (setpriv) is in the base image.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates tzdata curl ffmpeg 7zip \
+    && apt-get install -y --no-install-recommends 7zip ca-certificates curl ffmpeg tzdata \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=fetch /opt/fushi_server /opt/fushi_server
 # Fail the build, not the first start, if the bundle needs a newer glibc.

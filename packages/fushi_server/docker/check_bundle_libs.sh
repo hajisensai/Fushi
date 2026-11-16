@@ -18,6 +18,7 @@ for f in "$ROOT"/bin/* "$ROOT"/lib/*.so*; do
       echo "$out" | grep 'not found'
       bad=1
       ;;
+    *) ;;
   esac
 done
 if [ "$bad" != 0 ]; then
