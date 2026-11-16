@@ -893,8 +893,8 @@ impl<'t, 'c> Index<'t, 'c> {
             .collect();
         // 「副本」= 另一个名字下同 seq、同 HLC 物理时刻与计数的**同一条**记录（resolver 归回写入者用的同一个判据）。
         // 只看 seq 在不在等于直接假定 resolver 的不变量成立：同 seq 不同 HLC 的记录被放行归回正是要抓的 bug，判
-        // [DiffEvidence::Mismatch]，不再拿区间佐证兜（区间内的那一个 seq 已被直接证伪）。这条写入自己的 HLC 解不开时
-        // 不给副本佐证。
+        // [DiffEvidence::Mismatch]，不再拿区间佐证兜（区间内的那一个 seq 已被直接证伪）。这条写入自己的 HLC 不是规范
+        // 文本、或另一个名字下那条的解不开时比不了：不给副本佐证，也不判 Mismatch，退到区间佐证。
         let same_seq: Vec<(&str, &Vec<(i64, i64)>)> = others
             .iter()
             .filter_map(|n| dots.get(*n).and_then(|m| m.get(&seq)).map(|hs| (*n, hs)))
@@ -907,7 +907,10 @@ impl<'t, 'c> Index<'t, 'c> {
             evidence = DiffEvidence::Copy {
                 name: (*n).to_owned(),
             };
-        } else if let Some((n, _)) = same_seq.iter().find(|(_, hs)| !hs.is_empty()) {
+        } else if let Some((n, _)) = same_seq
+            .iter()
+            .find(|(_, hs)| own.is_some() && !hs.is_empty())
+        {
             evidence = DiffEvidence::Mismatch {
                 name: (*n).to_owned(),
             };
@@ -1518,6 +1521,180 @@ mod tests {
                 .unwrap();
             });
         }
+    }
+
+    /// 「副本」要是同一条记录（resolver 归回写入者的判据：同 seq、同 HLC 物理时刻与计数）。端到端造不出来——resolver
+    /// 见到同 seq 不同 HLC 就不归回（下面先钉住这一点）——佐证正是为了在 resolver 放错时把它抓出来，所以直接喂
+    /// [Index::dominated] 一份「已归回」的写入者表与记录表：
+    ///
+    /// - 另一个名字下同 seq、同 HLC：[DiffEvidence::Copy]；
+    /// - 同 seq、HLC 不同：[DiffEvidence::Mismatch]，哪怕 seq 落在两个名字已证明的重叠区间里也不拿区间兜；
+    /// - 另一个名字下同 seq 的记录 HLC 解不开（记录表里是空的）：比不了，退到区间佐证；
+    /// - 被支配的写入自己的 HLC 不是规范文本（`0100:0:w1` 这种前导零的，[StampHlc::Raw]）：不给副本佐证。
+    #[test]
+    fn a_same_seq_record_with_another_hlc_is_not_a_copy() {
+        with(|t, col| {
+            let merged = merged_w1();
+            t.tx(|t| {
+                let mut ix = Index::new(t, col);
+                let salts = Body4::salts([U1]).unwrap();
+                native(t, &mut ix, col, &op(0xa1, 1, 1, &[], &salts));
+                let x1 = stamped("x", stamp("w1", 1, r#"{"vv":{}}"#, 100));
+                let other = Body4::Edit(Edit4 {
+                    key: "other".to_owned(),
+                    value: "\"o\"".to_owned(),
+                    stamp: Some(stamp(&merged, 1, r#"{"vv":{}}"#, 999)),
+                    ..native_edit()
+                });
+                let raw_hlc = stamped(
+                    "z",
+                    HeritageStamp {
+                        hlc: StampHlc::of("0100:0:w1"),
+                        ..stamp("w1", 3, r#"{"vv":{}}"#, 0)
+                    },
+                );
+                heritage(t, &mut ix, col, op(0xd1, 1, 1, &[], &x1));
+                heritage(t, &mut ix, col, op(0xd2, 1, 2, &[], &other));
+                heritage(t, &mut ix, col, op(0xd1, 2, 3, &[], &raw_hlc));
+                ix.settle()?;
+                // resolver 自己不放行：seq 1 两个名字下 HLC 不同，不归回。
+                assert_eq!(ix.canonical_writer(&merged)?, merged);
+                let k1 = t.key_of(col, &op(0xd1, 1, 1, &[], &x1).id)?.unwrap();
+                let k3 = t.key_of(col, &op(0xd1, 2, 3, &[], &raw_hlc).id)?.unwrap();
+                let writers = BTreeMap::from([(merged.clone(), "w1".to_owned())]);
+                let dots = |entries: &[(&str, i64, &[(i64, i64)])]| -> WriterDots {
+                    let mut d = WriterDots::new();
+                    for (n, s, hs) in entries {
+                        d.entry((*n).to_owned())
+                            .or_default()
+                            .insert(*s, hs.to_vec());
+                    }
+                    d
+                };
+                let ev = |ix: &Index<'_, '_>, k: i64, d: &WriterDots| {
+                    ix.dominated(k, &writers, d).unwrap().evidence
+                };
+                let copy = DiffEvidence::Copy {
+                    name: merged.clone(),
+                };
+                assert_eq!(ev(&ix, k1, &dots(&[(&merged, 1, &[(100, 0)])])), copy);
+                // 重叠区间 [0, 5]（两个名字下 seq 0、5 各有一对同 HLC 的）里，seq 1 却另有一条 HLC 不同的。
+                let overlap_but_mismatch = dots(&[
+                    ("w1", 0, &[(10, 0)]),
+                    (&merged, 0, &[(10, 0)]),
+                    ("w1", 1, &[(100, 0)]),
+                    ("w1", 5, &[(500, 0)]),
+                    (&merged, 1, &[(999, 0)]),
+                    (&merged, 5, &[(500, 0)]),
+                ]);
+                assert_eq!(
+                    ev(&ix, k1, &overlap_but_mismatch),
+                    DiffEvidence::Mismatch {
+                        name: merged.clone()
+                    }
+                );
+                let unparsed_copy = dots(&[
+                    ("w1", 0, &[(10, 0)]),
+                    (&merged, 0, &[(10, 0)]),
+                    ("w1", 1, &[(100, 0)]),
+                    ("w1", 5, &[(500, 0)]),
+                    (&merged, 1, &[]),
+                    (&merged, 5, &[(500, 0)]),
+                ]);
+                assert_eq!(
+                    ev(&ix, k1, &unparsed_copy),
+                    DiffEvidence::Overlap {
+                        name: merged.clone(),
+                        lo: 0,
+                        hi: 5
+                    }
+                );
+                assert_eq!(
+                    ev(&ix, k3, &dots(&[(&merged, 3, &[(0, 0)])])),
+                    DiffEvidence::None
+                );
+                assert!(copy.is_proof());
+                assert!(
+                    !DiffEvidence::Mismatch {
+                        name: merged.clone()
+                    }
+                    .is_proof()
+                );
+                Ok(())
+            })
+            .unwrap();
+        });
+    }
+
+    /// 活着的集合与冲突标志都没变、胜者却变了（HLC 平手落到换过名的 HLC 写入者上，[ClassDiff::hlc_tie]）：照样列为
+    /// 已知差异，佐证是平手本身；HLC 不平手时同样的「胜者变了」没有这种佐证。
+    #[test]
+    fn a_winner_flipped_by_a_renamed_hlc_writer_is_listed_and_proven() {
+        with(|t, col| {
+            let merged = merged_w1();
+            t.tx(|t| {
+                let mut ix = Index::new(t, col);
+                renamed_writer_evidence(t, &mut ix, col, &merged);
+                let a = stamped("a", stamp(&merged, 2, r#"{"vv":{}}"#, 100));
+                let b = stamped("b", stamp("v", 1, r#"{"vv":{}}"#, 100));
+                heritage(t, &mut ix, col, op(0xd1, 1, 1, &[], &a));
+                heritage(t, &mut ix, col, op(0xd2, 1, 2, &[], &b));
+                ix.settle()?;
+                assert_eq!(ix.canonical_writer(&merged)?, "w1");
+                let got = diffs_on_test_key(&mut ix);
+                assert_eq!(got.len(), 1, "{got:?}");
+                let d = &got[0];
+                assert!(d.raw_conflict && d.class_conflict, "{d:?}");
+                assert!(d.winner_changed && d.hlc_tie, "{d:?}");
+                assert!(d.dominated.is_empty() && d.revived.is_empty());
+                assert!(d.proven, "{d:?}");
+                Ok(())
+            })
+            .unwrap();
+        });
+    }
+
+    /// 按类拼行的捷径看的是**这个寄存器**里有没有改名相关名字的写入，不是整个集合有没有归回写入者：集合里有归回的
+    /// 写入者时，只由别的写入者写的寄存器照样直接取 `reg_ix` 的状态（[Index::class_judged] 不涨，两条并发写入都活着）；
+    /// 有改名相关名字写入的寄存器才重判。
+    #[test]
+    fn only_registers_touched_by_a_renamed_writer_are_rejudged() {
+        with(|t, col| {
+            let merged = merged_w1();
+            t.tx(|t| {
+                let mut ix = Index::new(t, col);
+                renamed_writer_evidence(t, &mut ix, col, &merged);
+                // 另一条笔记上只有原生写入者的两条并发写入（有冲突）。
+                let other = Key::Uuid(id(9));
+                let plain = |v: &str| {
+                    Body4::Edit(Edit4 {
+                        entity: other.clone(),
+                        value: format!("\"{v}\""),
+                        ..native_edit()
+                    })
+                };
+                native(t, &mut ix, col, &op(0xa2, 1, 10, &[], &plain("p")));
+                native(t, &mut ix, col, &op(0xa3, 1, 11, &[], &plain("q")));
+                ix.settle()?;
+                assert_eq!(ix.canonical_writer(&merged)?, "w1");
+                let before = ix.class_judged;
+                let (lines, _) = ix.class_lines(EntKind::Note, &Ref::of(&other))?;
+                assert_eq!(
+                    ix.class_judged, before,
+                    "a register without renamed writes takes the shortcut"
+                );
+                assert_eq!(lines.len(), 2, "{lines:?}");
+                let e = native_edit();
+                let (proof_lines, _) = ix.class_lines(EntKind::Note, &Ref::of(&e.entity))?;
+                assert!(
+                    ix.class_judged > before,
+                    "the register written by w1 / merged is rejudged"
+                );
+                assert!(!proof_lines.is_empty());
+                Ok(())
+            })
+            .unwrap();
+        });
     }
 
     /// 改名写入者的名字。

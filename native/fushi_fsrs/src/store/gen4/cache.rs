@@ -2367,6 +2367,75 @@ mod tests {
         });
     }
 
+    /// 写入者归回发生在一批只碰了别的实体的操作里（证据落在另一条笔记的 `proof` 键上）：按类判的寄存器都可能变，
+    /// 缓存层整层重建（`refresh_caches` 的 `writers_moved`）。被测笔记的字段寄存器里 `(merged, 2)` 与 `(v, 1)` HLC
+    /// 平手：归回之前原名 `merged-…` < `v`，`v` 那条胜；归回之后 `w1` > `v`，`merged` 那条胜（「三处一起换」）。这条
+    /// 笔记不在这一批碰到的实体里，只有整层重建才会更新它的 `sort_field`。
+    #[test]
+    fn a_writer_moving_back_rebuilds_rows_the_batch_did_not_touch() {
+        use crate::gen4_ids::rules;
+        use crate::store::gen4::derive::tests::{heritage, stamp};
+        with(|t, col| {
+            put_cfg(t, col);
+            let w = twin();
+            let merged = format!("merged-{}~w1", rules::merged_writer_hash(U1, "w1").text());
+            let f0 = format!("f/{}", rules::field(&w.nt[0], 0).text());
+            let write = |entity: &crate::sync2::id::Id, key: &str, value: &str, s| {
+                Body4::Edit(Edit4 {
+                    kind: EntKind::Note,
+                    entity: Key::Uuid(*entity),
+                    key: key.to_owned(),
+                    value: format!("\"{value}\""),
+                    stamp: Some(s),
+                    ..native_edit()
+                })
+            };
+            // 两份笔记都不写原生的字段内容：被测寄存器里只有两条带旧戳的写入。
+            let steps: Vec<Body4> = twin_steps(&w)
+                .into_iter()
+                .filter(|b| !matches!(b, Body4::Edit(e) if e.key.starts_with("f/")))
+                .collect();
+            let sort_field = |conn: &Connection| -> String {
+                rows(
+                    conn,
+                    &format!(
+                        "SELECT sort_field FROM notes WHERE id = {}",
+                        blob(&w.c_note)
+                    ),
+                )[0][0]
+                    .clone()
+            };
+            t.tx(|t| {
+                let mut ix = Index::new(t, col);
+                let mut first = vec![Body4::salts([U1]).unwrap()];
+                first.extend(steps.iter().cloned());
+                feed(t, &mut ix, col, 1, &first);
+                let a = write(&w.note[0], &f0, "a", stamp(&merged, 2, r#"{"vv":{}}"#, 100));
+                let b = write(&w.note[0], &f0, "b", stamp("v", 1, r#"{"vv":{}}"#, 100));
+                heritage(t, &mut ix, col, op(0xd1, 1, 1, &[], &a));
+                heritage(t, &mut ix, col, op(0xd2, 1, 2, &[], &b));
+                ix.settle()?;
+                assert_eq!(ix.canonical_writer(&merged)?, merged);
+                Ok(())
+            })
+            .unwrap();
+            assert_eq!(sort_field(t.conn()), "b");
+            t.tx(|t| {
+                let mut ix = Index::new(t, col);
+                let proof =
+                    |wr: &str| write(&w.note[1], "proof", "p", stamp(wr, 1, r#"{"vv":{}}"#, 50));
+                heritage(t, &mut ix, col, op(0xc1, 1, 3, &[], &proof("w1")));
+                heritage(t, &mut ix, col, op(0xc2, 1, 4, &[], &proof(&merged)));
+                ix.settle()?;
+                assert_eq!(ix.canonical_writer(&merged)?, "w1");
+                Ok(())
+            })
+            .unwrap();
+            assert_eq!(sort_field(t.conn()), "a");
+            assert_rebuild_is_identity(t, col);
+        });
+    }
+
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(48))]
 
