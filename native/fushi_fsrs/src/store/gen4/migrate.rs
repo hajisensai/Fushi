@@ -16,13 +16,14 @@
 //!    原因逐条列出。前提本身由调用方先用冻结代码做完（设计 §6.1「前提」），这里只核对、不代做。
 //! 4. **临时文件里走一遍阶段**：在 `srs4.db-migrating` 里逐 profile 跑 `dryrun::profile_stages`（与预演**同一个函数**）：
 //!    灌入（[Step::Translate]）→ 本机状态（公钥、信任、暂扣、检查点、本机媒体、`media_at`、加密位置记忆、绑定状态，
-//!    `carry.rs`）→ 切点 `log_marks` → 新身份（新设备 ID、沿用签名钥匙、`prev` = 旧设备的日志末尾）+ `Salts`
-//!    （[Step::Salts]）→ `rebuild_all`（[Step::Rebuild]）→ 对拍（[Step::Parity]：G4 的口径 + 按规范 ID 的比较）。
+//!    `carry.rs`）→ 切点 `log_marks` → 新身份（新设备 ID、沿用签名钥匙、`prev` = 旧设备的日志末尾，先核对它指得到灌进来的那一槽、链指纹相同）+ `Salts`
+//!    （[Step::Salts]）→ `ingest_settle(Rebuild)`（[Step::Rebuild]）→ 对拍（[Step::Parity]：G4 的口径 + 按规范 ID 的比较）。
 //! 5. **对拍有一项不过（或某个 profile 的缓存基准拿不到）就中止**（[Outcome::Aborted]）：不提交、不封存，旧库原样可用；
 //!    报告写到目录里的 [REPORT_FILE]，临时文件留作诊断（下次开跑时删掉重来）。同机多 profile 一个不过整个文件不提交
 //!    （设计 §6.3）。
 //! 6. **提交**（[Step::Commit]）：临时文件里记下迁移来源（`files::record_migrated_from`，设计 §6.1 第 7 步的「已核对」
-//!    标记）→ 检查点并关掉（确认没有残留 WAL）→ 落盘 → 改名成 `srs4.db` → 目录落盘。**改名就是提交点。**
+//!    标记：身份 + 日志水位）→ 检查点并关掉（确认没有残留 WAL）→ 落盘 → 改名成 `srs4.db` 并落盘
+//!    （`seal::rename_durable`）。**改名就是提交点。**
 //! 7. **封存**（[Step::Seal]）：在持着的旧库写事务里把 `schema` 写成 39999（`seal::seal_legacy_locked`），提交
 //!    （`synchronous = FULL`，返回前已落盘）。
 //!
@@ -33,7 +34,12 @@
 //!   协议 3 的版本写过（回退再升级），半份临时文件里的槽与旧库对不上时（例如旧库里那条后来被清成了空洞：秩不同本机一律
 //!   不动），对拍会把它报成差异、把用户永远挡在迁移外。重扫本来就要整份读一遍旧库，省下的只是写入。
 //! - **提交点之后、封存之前**：`srs4.db` 在、记着的迁移来源就是旁边这份没封存的 `srs.db`。重跑（或 Primary 打开，
-//!   `files::open_gen4`）在锁里补封（`files::finish_seal`，幂等）。
+//!   `files::open_gen4`）在锁里补封（`files::finish_seal`，幂等）。迁移来源记的是身份**和日志水位**
+//!   （`seal::legacy_log_mark`）：这段窗口里写锁随进程一起没了，退回旧版本往 `srs.db` 写过东西的，水位对不上，不封、
+//!   报「旁边有没迁移的协议 3 库」，那几笔写入不会被封进保留副本里丢掉。
+//! - **封存落了盘、改名没有**（文件系统不守序时的兜底；改名本身用 `seal::rename_durable` 落盘后才封存）：`srs.db` 已
+//!   封存进 `srs4.db`、`srs4.db` 不在、`srs4.db-migrating` 记的迁移来源就是它（[lost_rename]）。[status] 报
+//!   [GenState::NeedsMigration]，重跑补做改名，报 [Outcome::Committed]（`recoveredRename`）。
 //! - **封存之后**：重跑什么也不做，报 [Outcome::Committed]。
 //!
 //! 每一种断点都有子进程测试（`migrate_tests.rs`：子进程在指定步骤 `exit` 掉，父进程核对旧库可用、重跑结果与一次跑完的
@@ -271,7 +277,13 @@ pub fn status(dir: &Path) -> Result<GenState, String> {
     }
     let c = open_ro(&legacy)?;
     if legacy_schema(&c)? == Some(SEALED_SCHEMA) {
-        return Ok(GenState::SealedOldOnly);
+        drop(c);
+        // 改名没落盘、封存落了盘（[lost_rename]）：[run] 补做改名即可，按「要迁移」报，让调用方去跑它。
+        return Ok(if lost_rename(dir)? {
+            GenState::NeedsMigration
+        } else {
+            GenState::SealedOldOnly
+        });
     }
     let identity = seal::legacy_identity(&c)?;
     let failed = std::fs::read_to_string(dir.join(REPORT_FILE))
@@ -384,6 +396,39 @@ pub fn run(dir: &Path, opts: Options<'_>) -> Result<Outcome, String> {
     out
 }
 
+/// 封存落了盘、改名没落盘：`srs4.db` 不在，`srs.db` 已封存进 `srs4.db`，旁边的 `srs4.db-migrating` 是一份建好的
+/// 新代库（没有残留 WAL）、记着的迁移来源（身份与日志水位，`files::migrated_from_is`）就是这份旧库。提交步骤里
+/// 迁移来源只在对拍全过之后、临时文件落盘之前写进去，封存只在改名之后做，所以满足这几条的临时文件就是那次已经提交的
+/// 新代库，补做改名即可。Windows 上改名带 `MOVEFILE_WRITE_THROUGH`、Unix 上改名后目录 fsync，本不该走到这里；这是
+/// 文件系统不守序时的兜底。只读。
+fn lost_rename(dir: &Path) -> Result<bool, String> {
+    let tmp = dir.join(GEN4_TEMP);
+    if dir.join(GEN4_FILE).exists() || !tmp.exists() || seal::with_suffix(&tmp, "-wal").exists() {
+        return Ok(false);
+    }
+    let old = open_ro(&dir.join(LEGACY_FILE))?;
+    if legacy_schema(&old)? != Some(SEALED_SCHEMA) {
+        return Ok(false);
+    }
+    let into: Option<String> = old
+        .query_row(
+            "SELECT value FROM srs_meta WHERE key = 'sealed_into'",
+            [],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(schema::sql)?;
+    if into.as_deref() != Some(GEN4_FILE) {
+        return Ok(false);
+    }
+    let Ok(new) = files::open_ready(&tmp) else {
+        return Ok(false);
+    };
+    let same = files::migrated_from_is(&new, &old)?;
+    new.close().map_err(|(_, e)| schema::sql(e))?;
+    Ok(same)
+}
+
 /// 新代库已经在（拿着换代锁）：之前提交过。旁边的 `srs.db` 若就是迁移来源、还没封存，补封（提交点之后中断的续做）。
 fn resume_after_commit(dir: &Path) -> Result<Outcome, String> {
     let new = files::open_ready(&dir.join(GEN4_FILE))?;
@@ -452,9 +497,22 @@ fn migrate_locked(dir: &Path, mut opts: Options<'_>) -> Result<Outcome, String> 
         match legacy_schema(&c)? {
             Some(v) if v == SCHEMA_VERSION => {}
             Some(v) if v == SEALED_SCHEMA => {
-                return Ok(blocked(
-                    "the protocol 3 library is sealed but srs4.db is missing",
-                ));
+                drop(c);
+                if !lost_rename(dir)? {
+                    return Ok(blocked(
+                        "the protocol 3 library is sealed but srs4.db is missing",
+                    ));
+                }
+                seal::rename_durable(&tmp, &dir.join(GEN4_FILE))?;
+                // 核对时打开过它：别留下属于旧名字的 `-shm`。
+                let _ = seal::remove_sqlite_files(&tmp);
+                return match resume_after_commit(dir)? {
+                    Outcome::Committed { mut report } => {
+                        report["recoveredRename"] = json!(true);
+                        Ok(Outcome::Committed { report })
+                    }
+                    other => Ok(other),
+                };
             }
             Some(v) => {
                 return Ok(blocked(format!(
@@ -506,16 +564,16 @@ fn with_snapshot(
     };
     // 3. 前提。
     (opts.progress)(Step::Precondition, 0, 1);
-    let checked = (|| -> Result<(Vec<String>, Vec<String>), String> {
+    let checked = (|| -> Result<(Vec<String>, Vec<String>, Option<String>), String> {
         let mut blockers = legacy::library_blockers(&src)?;
         let profiles = legacy::profiles(&src)?;
         for p in &profiles {
             let (hard, later) = profile_blockers(&src, p, opts.caches)?;
             blockers.extend(hard.into_iter().chain(later).map(|b| format!("{p}: {b}")));
         }
-        Ok((profiles, blockers))
+        Ok((profiles, blockers, seal::legacy_identity(&src)?))
     })();
-    let (profiles, blockers) = match checked {
+    let (profiles, blockers, identity) = match checked {
         Ok(v) => v,
         Err(e) => {
             finish(src, opts.stop);
@@ -526,7 +584,6 @@ fn with_snapshot(
         finish(src, opts.stop);
         return Ok(blocked(blockers.join("; ")));
     }
-    let identity = seal::legacy_identity(&src)?;
     let mut report = Map::new();
     report.insert("version".into(), json!(REPORT_VERSION));
     report.insert("startedAtMs".into(), json!(opts.now_ms));
@@ -610,10 +667,16 @@ fn with_snapshot(
     finish(src, opts.stop);
     committed?;
     let new_bytes = file_len(&tmp);
-    std::fs::rename(&tmp, dir.join(GEN4_FILE))
-        .map_err(|e| format!("gen4 migrate: rename {}: {e}", tmp.display()))?;
+    let gen4 = dir.join(GEN4_FILE);
+    // 改名并落盘（Unix：目录 fsync；Windows：MOVEFILE_WRITE_THROUGH）。落盘之后才封存：不然断电后可能只剩封存了的
+    // 旧库与没改过名的临时文件（[lost_rename] 认得出、能补，但不该依赖它）。
+    let synced = seal::rename_durable(&tmp, &gen4);
+    if let Err(e) = &synced {
+        if !gen4.exists() {
+            return Err(e.clone());
+        }
+    }
     // ---- 提交点 ----
-    let synced = seal::sync_dir(dir);
     report.insert("newBytes".into(), json!(new_bytes));
 
     // 7. 封存（同一个写事务，提交即落盘）。失败不撤销提交：下次打开 / 重跑补封（files::finish_seal）。

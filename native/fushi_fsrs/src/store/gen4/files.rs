@@ -24,9 +24,10 @@
 //!
 //!   有新代库、换代锁没人拿、而 `srs.db` 还是协议 3 的库（没封存），看新代库记的迁移来源：
 //!
-//!   - 来源就是这份 `srs.db`（身份相同）：迁移提交之后、封存落盘之前断过电或崩过。在锁里补做封存
+//!   - 来源就是这份 `srs.db`（身份相同，日志水位 [MIGRATED_LOG_KEY] 也相同——中断之后旧版本没往里写过）：迁移提交
+//!     之后、封存落盘之前断过电或崩过。在锁里补做封存
 //!     （`store::schema::seal_legacy`，幂等），不然旧版本会把它当正常库打开写入，那些写入永远进不了新代。
-//!   - 没有来源（全新安装建的新代库）或来源是另一份库：这份 `srs.db` 没迁移过（协议 3 的版本在同一个目录里跑过、
+//!   - 没有来源（全新安装建的新代库）、来源是另一份库、或来源是它但中断之后又被写过：这份 `srs.db` 没迁移过（协议 3 的版本在同一个目录里跑过、
 //!     备份还原放回来的……）。**不封、不改它**，报 [OpenError::LegacyNotMigrated]——封了等于把没进新代的数据标成
 //!     「已迁入」，两个版本都读不到。并入还是提示由调用方定（G7-2）。
 //!
@@ -55,6 +56,10 @@ pub const LEGACY_FILE: &str = "srs.db";
 /// 新代库 `srs_meta` 里的迁移来源标记：值 = 迁移来源那份协议 3 库的身份（`store::seal::legacy_identity`）。只有
 /// 迁移提交出来的新代库有；全新安装建的没有。
 pub const MIGRATED_FROM_KEY: &str = "migrated_from";
+/// 新代库 `srs_meta` 里迁移来源的日志水位（`store::seal::legacy_log_mark`），与 [MIGRATED_FROM_KEY] 同时写、同时有。
+/// 补封（[finish_seal]）时身份与水位都得对上：改名之后、封存之前进程被杀，旧版本趁写锁释放往 `srs.db` 写了东西的，
+/// 水位就对不上，不封（那几笔写入没进新代）。
+pub const MIGRATED_LOG_KEY: &str = "migrated_log";
 
 /// 换代锁：`srs.gen.lock` 上的跨进程独占文件锁（`File::try_lock`：Unix 上是 `flock`，Windows 上是 `LockFileEx`）。
 /// 句柄在就持有，drop 即释放；进程死掉时由操作系统释放。同一进程里另开一个句柄也拿不到。
@@ -201,9 +206,7 @@ fn create_fresh(dir: &Path) -> Result<(), String> {
             .open(&tmp)
             .and_then(|f| f.sync_all())
             .map_err(|e| format!("gen4 store: sync {}: {e}", tmp.display()))?;
-        std::fs::rename(&tmp, dir.join(GEN4_FILE))
-            .map_err(|e| format!("gen4 store: rename {}: {e}", tmp.display()))?;
-        seal::sync_dir(dir)
+        seal::rename_durable(&tmp, &dir.join(GEN4_FILE))
     })();
     if r.is_err() {
         let _ = seal::remove_sqlite_files(&tmp);
@@ -212,19 +215,43 @@ fn create_fresh(dir: &Path) -> Result<(), String> {
 }
 
 /// 把迁移来源记进新代库：[new] = 迁移中的新代库（[GEN4_TEMP]，改名之前），[legacy] = 迁移来源那份协议 3 库的
-/// 连接（只读它）。来源没有身份（没启用过协议 3）报错——那样的库 `gen4::legacy` 的 `preflight` 本来也不让迁移。
+/// 连接（只读它；迁移里是对拍用的那个读快照）。记两行：身份（[MIGRATED_FROM_KEY]）与日志水位
+/// （[MIGRATED_LOG_KEY]）。来源没有身份（没启用过协议 3）报错——那样的库 `gen4::legacy` 的 `preflight` 本来也不让迁移。
 pub fn record_migrated_from(new: &Connection, legacy: &Connection) -> Result<(), String> {
-    let source = seal::legacy_identity(legacy)?.ok_or_else(|| {
+    let no_identity = || {
         "gen4 store: the protocol 3 library has no identity to record as the migration source"
             .to_owned()
-    })?;
-    new.execute(
-        "INSERT INTO srs_meta (key, value) VALUES (?1, ?2) \
-         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-        [MIGRATED_FROM_KEY, source.as_str()],
-    )
-    .map_err(schema::sql)?;
+    };
+    let source = seal::legacy_identity(legacy)?.ok_or_else(no_identity)?;
+    let log = seal::legacy_log_mark(legacy)?.ok_or_else(no_identity)?;
+    for (key, value) in [(MIGRATED_FROM_KEY, source), (MIGRATED_LOG_KEY, log)] {
+        new.execute(
+            "INSERT INTO srs_meta (key, value) VALUES (?1, ?2) \
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            [key, value.as_str()],
+        )
+        .map_err(schema::sql)?;
+    }
     Ok(())
+}
+
+/// 新代库 [new] 记的迁移来源是不是 [legacy] 这份协议 3 库、而且是它现在这个样子：身份（[MIGRATED_FROM_KEY]）与
+/// 日志水位（[MIGRATED_LOG_KEY]）都记着、都与 [legacy] 现在的相同。没记来源（全新安装）= 不是。
+pub(crate) fn migrated_from_is(new: &Connection, legacy: &Connection) -> Result<bool, String> {
+    let meta = |key: &str| -> Result<Option<String>, String> {
+        new.query_row("SELECT value FROM srs_meta WHERE key = ?1", [key], |r| {
+            r.get(0)
+        })
+        .optional()
+        .map_err(schema::sql)
+    };
+    let (Some(source), Some(log)) = (meta(MIGRATED_FROM_KEY)?, meta(MIGRATED_LOG_KEY)?) else {
+        return Ok(false);
+    };
+    Ok(
+        seal::legacy_identity(legacy)?.as_deref() == Some(source.as_str())
+            && seal::legacy_log_mark(legacy)?.as_deref() == Some(log.as_str()),
+    )
 }
 
 /// [conn] 是不是一份没封存的、这一版的协议 3 库（`srs_meta.schema` = 协议 3 的当前号）。已封存 / 墓碑 / 别的版本
@@ -276,16 +303,7 @@ pub(crate) fn finish_seal(dir: &Path, new: &Connection) -> Result<Retained, Open
         Err(e) if not_a_db(&e) => return Ok(Retained::Unreadable),
         Err(e) => return Err(fail(e.to_string())),
     }
-    let source: Option<String> = new
-        .query_row(
-            "SELECT value FROM srs_meta WHERE key = ?1",
-            [MIGRATED_FROM_KEY],
-            |r| r.get(0),
-        )
-        .optional()
-        .map_err(schema::sql)?;
-    let identity = seal::legacy_identity(&ro).map_err(fail)?;
-    if source.is_none() || source != identity {
+    if !migrated_from_is(new, &ro).map_err(fail)? {
         return Err(OpenError::LegacyNotMigrated);
     }
     ro.close().map_err(|(_, e)| fail(e.to_string()))?;

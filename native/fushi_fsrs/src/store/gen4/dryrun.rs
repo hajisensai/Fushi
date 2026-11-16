@@ -56,6 +56,7 @@ use super::legacy;
 use super::native::Native;
 use super::schema::{self, sql};
 use super::truth::Truth;
+use crate::gen4::heritage::fingerprint;
 use crate::gen4::op::Body4;
 use crate::gen4::stamp::{HeritageStamp, StampHlc};
 use crate::registers::{StoredEdit, judge_register};
@@ -64,13 +65,21 @@ use crate::store::sync2::config::default_deck_id;
 use crate::sync2::dvv::Dvv;
 use crate::sync2::hlc::Hlc;
 use crate::sync2::id::{Id, Key};
+use crate::sync2::segment::CHAIN_ZERO;
+use crate::sync2::vv::OpId;
 
 /// 报告格式的版本（[run] 的返回值里的 `version`）。
 ///
 /// - 2：profile 报告加 `cacheBaseline`（`"rebuilt"` / `"notConfigured"` / `{"unavailable": 错误}`），新结论 `incomplete`。
 /// - 3：缓存层按规范 ID 物化、按规范 ID 对拍（G9-2）；profile 报告加 `knownDifferences`（[known_json]），`parity` 里可能
 ///   出现 `classRegisters` 类。
-pub const REPORT_VERSION: i64 = 3;
+/// - 4：预演与真迁移（G7-2）走同一套阶段（[profile_stages]）：重建换成 `ingest_settle(Rebuild)`，之前多了本机状态
+///   搬运与新身份 + `Salts` 两步。profile 报告加 `local`（`carry.rs` 搬过来的本机状态计数与切点）、`identity`（新身份的
+///   设备、`prev`、`Salts` 的 seq）、`migrationBlockers`（只有真迁移才拦的前提，预演只报、有才写）。旧库的本机状态
+///   形状不对（`sync2_self` 的 `next_seq` < 1、公钥冲突等，`carry.rs` 报错）时这个 profile 的结论是 `error`、整份也随之
+///   `error`（以前照样 `pass` / `fail`）。Dart 侧（`srs_gen4_rehearsal.dart`）不读 `version` 与这几个新字段，`error`
+///   早已是它认得的结论，不用跟着改。
+pub const REPORT_VERSION: i64 = 4;
 
 /// `knownDifferences.entries` 最多列几条（只有 ID；超出的只计数，`truncated` 为真）。
 pub const KNOWN_ENTRIES: usize = 5_000;
@@ -471,6 +480,35 @@ fn new_self(
     })
 }
 
+/// 新身份的 `prev` 指得到灌进来的承袭日志（设计 §3.3：读者沿 `prev` 把新旧两个设备认成同一台）：seq ≥ 1 时旧设备
+/// 名下那一槽在日志里、链指纹等于 `prev.chain` 的指纹；seq = 0（旧设备一条没写过）时链值是 [CHAIN_ZERO]、日志里也
+/// 没有它的条目。对不上（灌入没带进末尾那一槽、`sync2_self` 与日志不一致……）报错：不在指空的 `prev` 上建新身份。
+fn check_prev(
+    t: &Truth<'_>,
+    col: i64,
+    profile: &str,
+    prev: &crate::gen4::head::PrevIdentity,
+) -> Result<(), String> {
+    let at = OpId {
+        device: prev.device,
+        seq: prev.seq,
+    };
+    let ok = if prev.seq == 0 {
+        prev.chain == CHAIN_ZERO && t.last_of(col, &prev.device)? == 0
+    } else {
+        t.entry(col, &at)?.and_then(|e| e.fp) == Some(fingerprint(&prev.chain))
+    };
+    if ok {
+        Ok(())
+    } else {
+        Err(format!(
+            "gen4 migrate: profile {profile}: the previous identity {}:{} does not match the imported log",
+            prev.device.text(),
+            prev.seq
+        ))
+    }
+}
+
 /// 一个 profile 从前提到对拍的全部阶段（预演 [run] 与真迁移 `migrate.rs` 共用）：前提 → 绑定与缓存配置 → 灌入 →
 /// 本机状态（`carry.rs`）→ 新身份与 `Salts` → `rebuild_all` → 对拍与按规范 ID 的比较。返回这个 profile 的报告；
 /// 结论在 `verdict`：`blocked` / `fail` / `incomplete` / `pass`。只有跑不下去（中断 = [CANCELLED]、IO……）才返回 `Err`。
@@ -549,6 +587,9 @@ pub(crate) fn profile_stages(
     out.insert("salts".into(), json!(salts.len()));
     let me = new_self(src, profile, mode, now, &carried)?;
     let salts_op = t.tx(|t| {
+        if let Some(prev) = &me.prev {
+            check_prev(t, col, profile, prev)?;
+        }
         t.create_self(col, &me.device, &me.sk, me.prev.as_ref(), now)?;
         if let Some(h) = &me.clock {
             if (h.wall, h.logical) > (0, 0) {
@@ -2109,7 +2150,7 @@ pub(crate) mod tests {
         );
         // 单设备、无改名写入者：没有按类判定的差异，报告里照样有这一节（版本 3）。
         let k = &p["knownDifferences"];
-        assert_eq!(r["version"], 3);
+        assert_eq!(r["version"], 4);
         assert_eq!(
             (&k["total"], &k["unproven"]),
             (&json!(0), &json!(0)),
@@ -2189,7 +2230,7 @@ pub(crate) mod tests {
 
     /// [library] 再加一条身份记录缺 `noteTypeId` 的笔记：协议 3 的缓存重建因此整次失败（`cache.rs` 文件头「与协议 3
     /// 的差别」）。
-    fn library_with_a_malformed_note(tag: &str) -> Device {
+    pub(crate) fn library_with_a_malformed_note(tag: &str) -> Device {
         const N3: &str = "0193a1b2-0000-7000-8000-0000000000b3";
         let d = library(tag);
         d.apply(

@@ -806,3 +806,142 @@ fn opening_after_a_lost_seal_finishes_it() {
     drop(open_gen4(&base.0, OpenMode::Primary).unwrap());
     assert_eq!(schema_of(&base.0), SEALED_SCHEMA.to_string());
 }
+
+// ---------------------------------------------------------------- 复核补的不变量
+
+/// 协议 3 一侧的缓存基准拿不到（一条笔记身份记录缺 `noteTypeId`，协议 3 的缓存重建整次失败）：对拍没做全，结论
+/// `incomplete`，与对拍不过一样中止——不提交、不封存，旧库逐字节不变，没有新代库。
+#[test]
+fn an_incomplete_parity_aborts_like_a_failure() {
+    let Device { core, _dir: dir } =
+        crate::store::gen4::dryrun::tests::library_with_a_malformed_note("g72-incomplete");
+    core.close();
+    drop(core);
+    let before = masked(&dir.0);
+    let out = migrate(&dir.0);
+    let Outcome::Aborted { report, .. } = &out else {
+        panic!("{out:?}")
+    };
+    assert_eq!(report["verdict"], "aborted");
+    assert_eq!(report["profileVerdict"], "incomplete", "{report:#}");
+    assert_eq!(report["profiles"][0]["verdict"], "incomplete", "{report:#}");
+    assert!(!dir.0.join(GEN4_FILE).exists());
+    assert_eq!(masked(&dir.0), before);
+    assert_eq!(
+        schema_of(&dir.0),
+        crate::store::schema::SCHEMA_VERSION.to_string()
+    );
+    assert_eq!(status(&dir.0), Ok(GenState::MigrationFailed));
+}
+
+/// 改名之后、封存之前被杀，之后退回旧版本往 `srs.db` 写了一笔（写锁随进程没了）：迁移来源的身份没变、日志水位
+/// 变了。重跑与 Primary 打开都不封它（封了那一笔就进不了新代），报「旁边有没迁移的协议 3 库」，旧库照常能用。
+#[test]
+fn a_write_after_the_commit_point_keeps_the_library_unsealed() {
+    let dir = legacy_dir("g72-late-write", &|_| {});
+    assert_eq!(crash_child(&dir.0, "seal:1"), Some(CRASHED));
+    assert!(dir.0.join(GEN4_FILE).exists());
+    let core = SrsCore::open(&dir.0.join(LEGACY_FILE)).unwrap();
+    let input = json!([{
+        "e": crate::store::sync2::tests::edit("note", N2, "f/fa", json!("猫")),
+        "note": "N1"
+    }]);
+    core.sync2_apply_local(P, NOW, &input.to_string()).unwrap();
+    core.close();
+    drop(core);
+    let v3 = crate::store::schema::SCHEMA_VERSION.to_string();
+    let out = migrate(&dir.0);
+    assert_eq!(out.verdict(), "blocked", "{out:?}");
+    assert_eq!(schema_of(&dir.0), v3);
+    assert_eq!(
+        open_gen4(&dir.0, OpenMode::Primary).err(),
+        Some(files::OpenError::LegacyNotMigrated)
+    );
+    assert_eq!(schema_of(&dir.0), v3);
+    drop(SrsCore::open(&dir.0.join(LEGACY_FILE)).unwrap());
+}
+
+/// 封存落了盘、改名没有（文件系统不守序时断电）：只剩封存了的 `srs.db` 与记着它为来源的 `srs4.db-migrating`。状态
+/// 报「要迁移」，重跑补做改名，结果与一次跑完的逐表相同。临时文件记的来源对不上时不碰它：照旧报「只剩封存了的
+/// 旧库」、拦下。
+#[test]
+fn a_seal_that_landed_without_its_rename_is_finished_by_a_rerun() {
+    let base = legacy_dir("g72-lost-rename", &|_| {});
+    let reference = copy_dir(&base.0, "g72-lost-rename-ref");
+    assert_eq!(migrate(&reference.0).verdict(), "committed");
+    let want = dump(&reference.0.join(GEN4_FILE));
+    for tamper in [false, true] {
+        let d = copy_dir(&base.0, &format!("g72-lost-rename-{tamper}"));
+        assert_eq!(migrate(&d.0).verdict(), "committed");
+        std::fs::rename(d.0.join(GEN4_FILE), d.0.join(GEN4_TEMP)).unwrap();
+        if tamper {
+            Connection::open(d.0.join(GEN4_TEMP))
+                .unwrap()
+                .execute(
+                    "UPDATE srs_meta SET value = 'other' WHERE key = ?1",
+                    [files::MIGRATED_LOG_KEY],
+                )
+                .unwrap();
+            assert_eq!(status(&d.0), Ok(GenState::SealedOldOnly));
+            let out = migrate(&d.0);
+            assert_eq!(out.verdict(), "blocked", "{out:?}");
+            assert!(d.0.join(GEN4_TEMP).exists());
+            assert!(!d.0.join(GEN4_FILE).exists());
+            continue;
+        }
+        assert_eq!(status(&d.0), Ok(GenState::NeedsMigration));
+        let out = migrate(&d.0);
+        let Outcome::Committed { report } = &out else {
+            panic!("{out:?}")
+        };
+        assert_eq!(report["recoveredRename"], true, "{report:#}");
+        assert!(!d.0.join(GEN4_TEMP).exists());
+        assert_eq!(dump(&d.0.join(GEN4_FILE)), want);
+        assert_eq!(schema_of(&d.0), SEALED_SCHEMA.to_string());
+        assert_eq!(status(&d.0), Ok(GenState::Ready));
+    }
+}
+
+/// 新身份的 `prev` 必须指得到灌进来的那一槽、链指纹相同：`sync2_self` 记的末尾链值与日志对不上、或末尾 seq 超出
+/// 日志，迁移报错停下，不提交、不封存，旧库不变、不留临时文件。
+#[test]
+fn a_prev_that_misses_the_imported_log_stops_the_migration() {
+    let cases: [(&str, &str); 2] = [
+        (
+            "g72-prev-chain",
+            "UPDATE sync2_self SET chain = zeroblob(32) WHERE profile_uid = srs_id(?1)",
+        ),
+        (
+            "g72-prev-seq",
+            "UPDATE sync2_self SET next_seq = next_seq + 3 WHERE profile_uid = srs_id(?1)",
+        ),
+    ];
+    for (tag, sql) in cases {
+        let dir = legacy_dir(tag, &|_| {});
+        raw(&dir.0).execute(sql, [P]).unwrap();
+        let before = masked(&dir.0);
+        let caches = caches();
+        let stop = Stop::new();
+        let r = run(
+            &dir.0,
+            Options {
+                caches: &caches,
+                batch: 2,
+                now_ms: NOW,
+                stop: &stop,
+                progress: &mut |_, _, _| {},
+                new_device: &fixed_device,
+            },
+        );
+        let e = r.expect_err(tag);
+        assert!(e.contains("previous identity"), "{tag}: {e}");
+        assert!(!dir.0.join(GEN4_FILE).exists(), "{tag}");
+        assert!(!dir.0.join(GEN4_TEMP).exists(), "{tag}");
+        assert_eq!(masked(&dir.0), before, "{tag}");
+        assert_eq!(
+            schema_of(&dir.0),
+            crate::store::schema::SCHEMA_VERSION.to_string(),
+            "{tag}"
+        );
+    }
+}

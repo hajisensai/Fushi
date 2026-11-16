@@ -149,6 +149,136 @@ pub fn legacy_identity(conn: &Connection) -> Result<Option<String>, String> {
     Ok((!devices.is_empty()).then(|| devices.join(",")))
 }
 
+/// 一份协议 3 库操作日志的水位（blake3 摘要，小写十六进制）：每个 profile 的本机身份行（设备、`next_seq`、链值）+
+/// `sync2_ops` / `sync2_pending` 按 (profile, 设备) 的条数、最大 seq、清除过的条数。只读。没有身份
+/// （[legacy_identity] 为 `None`）= `None`。
+///
+/// 用途：迁移把它与 [legacy_identity] 一起记进新代库（`gen4::files::MIGRATED_LOG_KEY`）。提交点（改名）之后、封存之前
+/// 进程被杀，写锁跟着释放：这时若退回不认识 `srs4.db` 的旧版本往 `srs.db` 写了东西，身份不变、水位变了，补封
+/// （`gen4::files::finish_seal`）据此拒绝——那几笔写入没进新代，封了就丢了。本机写、收到的别的设备的写都走这几张表，
+/// 卡片与复习记录的任何改动都会挪动水位；纯本机状态（信任、位置记忆……）的改动不在这里，那个窗口里改了只是没带过去，
+/// 不丢卡片与复习记录。
+pub fn legacy_log_mark(conn: &Connection) -> Result<Option<String>, String> {
+    if legacy_identity(conn)?.is_none() {
+        return Ok(None);
+    }
+    let mut h = blake3::Hasher::new();
+    let mut feed = |sql: &str, tag: &[u8]| -> Result<(), String> {
+        h.update(tag);
+        let mut stmt = conn.prepare(sql).map_err(e)?;
+        let n = stmt.column_count();
+        let mut rows = stmt.query([]).map_err(e)?;
+        while let Some(r) = rows.next().map_err(e)? {
+            for i in 0..n {
+                match r.get_ref(i).map_err(e)? {
+                    rusqlite::types::ValueRef::Null => {
+                        h.update(b"n");
+                    }
+                    rusqlite::types::ValueRef::Integer(v) => {
+                        h.update(b"i");
+                        h.update(&v.to_le_bytes());
+                    }
+                    rusqlite::types::ValueRef::Real(v) => {
+                        h.update(b"r");
+                        h.update(&v.to_le_bytes());
+                    }
+                    rusqlite::types::ValueRef::Text(b) | rusqlite::types::ValueRef::Blob(b) => {
+                        h.update(b"b");
+                        h.update(&(b.len() as u64).to_le_bytes());
+                        h.update(b);
+                    }
+                }
+            }
+        }
+        Ok(())
+    };
+    feed(
+        "SELECT profile_uid, device, next_seq, chain FROM sync2_self ORDER BY profile_uid, device",
+        b"self\n",
+    )?;
+    for table in ["sync2_ops", "sync2_pending"] {
+        let has: bool = conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = ?1)",
+                [table],
+                |r| r.get(0),
+            )
+            .map_err(e)?;
+        if !has {
+            continue;
+        }
+        let purged = if table == "sync2_ops" {
+            "SUM(purged)"
+        } else {
+            "0"
+        };
+        feed(
+            &format!(
+                "SELECT profile_uid, device, COUNT(*), MAX(seq), {purged} FROM {table} \
+                 GROUP BY profile_uid, device ORDER BY profile_uid, device"
+            ),
+            format!("{table}\n").as_bytes(),
+        )?;
+    }
+    Ok(Some(h.finalize().to_hex().to_string()))
+}
+
+/// 把 [from] 改名成 [to]（覆盖），**返回时改名已经落盘**：Unix 上改名后对所在目录 fsync；Windows 上用
+/// `MoveFileExW(MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)`（不带 WRITE_THROUGH 的 `std::fs::rename`
+/// 返回时目录项可能还在缓存里，断电后之后落盘的写入——迁移的封存——可能先于这次改名生效）。
+///
+/// 错误时改名可能已经做了（Unix 上 fsync 失败）：调用方以 [to] 在不在判断。
+pub(crate) fn rename_durable(from: &Path, to: &Path) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::ffi::OsStrExt;
+        const MOVEFILE_REPLACE_EXISTING: u32 = 0x1;
+        const MOVEFILE_WRITE_THROUGH: u32 = 0x8;
+        #[link(name = "kernel32")]
+        extern "system" {
+            fn MoveFileExW(existing: *const u16, new: *const u16, flags: u32) -> i32;
+        }
+        let wide = |p: &Path| -> Vec<u16> {
+            p.as_os_str()
+                .encode_wide()
+                .chain(std::iter::once(0))
+                .collect()
+        };
+        let (a, b) = (wide(from), wide(to));
+        // SAFETY: 两个参数都是以 0 结尾、在调用期间存活的 UTF-16 缓冲区。
+        let ok = unsafe {
+            MoveFileExW(
+                a.as_ptr(),
+                b.as_ptr(),
+                MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+            )
+        };
+        if ok == 0 {
+            return Err(e(format!(
+                "rename {} -> {}: {}",
+                from.display(),
+                to.display(),
+                std::io::Error::last_os_error()
+            )));
+        }
+        Ok(())
+    }
+    #[cfg(not(windows))]
+    {
+        fs::rename(from, to).map_err(|err| {
+            e(format!(
+                "rename {} -> {}: {err}",
+                from.display(),
+                to.display()
+            ))
+        })?;
+        match to.parent() {
+            Some(dir) => sync_dir(dir),
+            None => Ok(()),
+        }
+    }
+}
+
 pub(crate) fn with_suffix(path: &Path, suffix: &str) -> PathBuf {
     let mut s = path.as_os_str().to_owned();
     s.push(suffix);
@@ -209,7 +339,7 @@ pub(crate) fn sync_dir(dir: &Path) -> Result<(), String> {
         .map_err(|err| e(format!("sync {}: {err}", dir.display())))
 }
 
-#[cfg(not(unix))]
+#[cfg(not(any(unix, windows)))]
 pub(crate) fn sync_dir(_dir: &Path) -> Result<(), String> {
     Ok(())
 }
@@ -314,12 +444,7 @@ pub fn write_tombstone(path: &Path) -> Result<(), String> {
             // 旁边就不会留着一份属于旧库的 WAL 被套到墓碑上。
             drain_wal(path)?;
         }
-        fs::rename(&tmp, path)
-            .map_err(|err| e(format!("rename onto {}: {err}", path.display())))?;
-        if let Some(dir) = path.parent() {
-            sync_dir(dir)?;
-        }
-        Ok(())
+        rename_durable(&tmp, path)
     })();
     if r.is_err() {
         let _ = remove_sqlite_files(&tmp);
@@ -576,6 +701,51 @@ mod tests {
         drop(core);
         let theirs = legacy_identity(&ro(&other_path)).unwrap().unwrap();
         assert_ne!(theirs, device);
+    }
+
+    /// 日志水位：没有身份 = None；只读；本机写一笔就变；封存（只改 `srs_meta`）不动它。
+    #[test]
+    fn the_log_mark_moves_with_every_write_but_not_with_the_seal() {
+        const P: &str = crate::store::sync2::tests::P;
+        let dir = tempdir::new("seal-logmark");
+        let path = legacy_db(&dir.0);
+        let ro =
+            |p: &Path| Connection::open_with_flags(p, OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+        assert_eq!(legacy_log_mark(&ro(&path)), Ok(None));
+        let core = SrsCore::open(&path).unwrap();
+        core.sync2_identity(P, 1).unwrap();
+        drop(core);
+        drain_wal(&path).unwrap();
+        let before = fs::read(&path).unwrap();
+        let m0 = legacy_log_mark(&ro(&path)).unwrap().unwrap();
+        assert_eq!(fs::read(&path).unwrap(), before);
+        let core = SrsCore::open(&path).unwrap();
+        let input = serde_json::json!([{
+            "e": crate::store::sync2::tests::deck_entity("0193a1b2-0000-7000-8000-00000000d001"),
+            "note": "N1"
+        }]);
+        core.sync2_apply_local(P, 2, &input.to_string()).unwrap();
+        drop(core);
+        let m1 = legacy_log_mark(&ro(&path)).unwrap().unwrap();
+        assert_ne!(m0, m1);
+        let rw = Connection::open(&path).unwrap();
+        seal_legacy(&rw, "srs4.db").unwrap();
+        drop(rw);
+        assert_eq!(legacy_log_mark(&ro(&path)).unwrap().unwrap(), m1);
+    }
+
+    /// 落盘改名：覆盖已有的目标；源不在时报错、目标原样。
+    #[test]
+    fn a_durable_rename_replaces_the_target_and_fails_cleanly() {
+        let dir = tempdir::new("seal-rename");
+        let (a, b) = (dir.0.join("a"), dir.0.join("b"));
+        fs::write(&a, b"new").unwrap();
+        fs::write(&b, b"old").unwrap();
+        rename_durable(&a, &b).unwrap();
+        assert!(!a.exists());
+        assert_eq!(fs::read(&b).unwrap(), b"new");
+        assert!(rename_durable(&a, &b).is_err());
+        assert_eq!(fs::read(&b).unwrap(), b"new");
     }
 
     #[test]
