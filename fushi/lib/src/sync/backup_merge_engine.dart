@@ -73,11 +73,13 @@ class BackupMergeEngine {
     bool adoptSourcePreferences = false,
     bool mergePortableSettings = false,
     bool fillMissingOnly = false,
+    Set<String> excludedBookKeys = const <String>{},
     SrsStorage? localSrs,
     SrsCore? sourceSrs,
   }) : _srcAlias = srcAlias,
        _mergePortableSettings = mergePortableSettings,
        _fillMissingOnly = fillMissingOnly,
+       _excludedBookKeys = excludedBookKeys,
        _carriedVideoSourcePaths = carriedVideoSourcePaths,
        _enabledCategoryNames = enabledCategoryNames,
        _adoptSourcePreferences = adoptSourcePreferences,
@@ -115,6 +117,36 @@ class BackupMergeEngine {
   /// 行**——跳过全部 LWW / MAX-union 的 UPDATE、源库删除碑与合集身份合并。默认关 =
   /// 备份合并导入的一贯语义（进度 LWW、统计 MAX-union）。
   final bool _fillMissingOnly;
+
+  /// 这次合并里按删除墓碑同样处理的书（bookKey）：书库行、阅读进度、有声书 /
+  /// 字幕书行一律不落。「从覆盖前快照恢复书库」用它跳过书文件已不在盘上的书——
+  /// 插回来只是打不开的空壳（维护者 2026-11-16）。空 = 只认 `book_tombstones`。
+  final Set<String> _excludedBookKeys;
+
+  /// [_excludedBookKeys] 的连接级临时表，[_mergeMainDatabase] 事务开头建、结尾删。
+  static const String _excludedBookKeysTable = 'temp.merge_excluded_book_keys';
+
+  /// 「这本书不得落进本库」的 bookKey 子查询：删除墓碑，加上 [_excludedBookKeys]。
+  /// 只在 [_mergeMainDatabase] 内使用（临时表只在那里存在）。
+  String get _blockedBookKeysSubquery => _excludedBookKeys.isEmpty
+      ? '(SELECT book_key FROM book_tombstones)'
+      : '(SELECT book_key FROM book_tombstones '
+            'UNION ALL SELECT book_key FROM $_excludedBookKeysTable)';
+
+  Future<void> _createExcludedBookKeysTable() async {
+    if (_excludedBookKeys.isEmpty) return;
+    await _db.customStatement('DROP TABLE IF EXISTS $_excludedBookKeysTable');
+    await _db.customStatement(
+      'CREATE TEMP TABLE merge_excluded_book_keys '
+      '(book_key TEXT PRIMARY KEY)',
+    );
+    for (final String key in _excludedBookKeys) {
+      await _db.customStatement(
+        'INSERT OR IGNORE INTO $_excludedBookKeysTable (book_key) VALUES (?)',
+        <Object?>[key],
+      );
+    }
+  }
 
   /// Per-category merge gate (the `BackupCategory.name`s the user kept ticked in
   /// the import dialog); null = merge every category (legacy full merge). Only
@@ -202,6 +234,7 @@ class BackupMergeEngine {
 
   Future<void> _mergeMainDatabase() async {
     await _db.transaction(() async {
+      await _createExcludedBookKeysTable();
       // Content categories are gated by the import dialog's per-category
       // selection (merge mode). Rows with no dialog toggle (favorites / tags /
       // profiles / history / collections) always merge — they carry no bulk
@@ -318,6 +351,7 @@ class BackupMergeEngine {
       // 还挂着败者 uid（别的设备或旧备份），按别名表改指胜者。放在全部合并之后。
       await _db.applyMusicTrackUidAliases();
       await _db.customStatement('DROP TABLE IF EXISTS $_gameMapTable');
+      await _db.customStatement('DROP TABLE IF EXISTS $_excludedBookKeysTable');
     });
   }
 
@@ -671,7 +705,7 @@ class BackupMergeEngine {
     final String colList = cols.join(', ');
     final String tombCol = tombstoneKeyColumn ?? keyColumn;
     final String tombstoneGuard = skipBookTombstones
-        ? 'AND s.$tombCol NOT IN (SELECT book_key FROM book_tombstones) '
+        ? 'AND s.$tombCol NOT IN $_blockedBookKeysSubquery '
         : '';
     await _db.customStatement(
       'INSERT INTO $table ($colList) '
@@ -702,7 +736,7 @@ class BackupMergeEngine {
       'SELECT $selList FROM $_srcAlias.epub_books AS s '
       'WHERE NOT EXISTS (SELECT 1 FROM epub_books AS t '
       'WHERE t.book_key = s.book_key) '
-      'AND s.book_key NOT IN (SELECT book_key FROM book_tombstones)',
+      'AND s.book_key NOT IN $_blockedBookKeysSubquery',
     );
   }
 
@@ -1074,7 +1108,7 @@ class BackupMergeEngine {
       'WHERE NOT EXISTS (SELECT 1 FROM audio_cues AS t '
       'WHERE t.book_key = s.book_key) '
       // TODO-1195 part B: never bring back a deleted book's cues.
-      'AND s.book_key NOT IN (SELECT book_key FROM book_tombstones)',
+      'AND s.book_key NOT IN $_blockedBookKeysSubquery',
     );
   }
 
@@ -1093,8 +1127,7 @@ class BackupMergeEngine {
       'WHERE NOT EXISTS (SELECT 1 FROM reader_positions AS t '
       'WHERE t.book_uid = $_srcBookUidRekey) '
       // TODO-1195 part B: never re-add a deleted book's reading position.
-      'AND $_srcBookKeyForTombstone NOT IN '
-      '(SELECT book_key FROM book_tombstones)',
+      'AND $_srcBookKeyForTombstone NOT IN $_blockedBookKeysSubquery',
     );
     final String setClause = cols
         .where((String c) => c != '"book_uid"')
