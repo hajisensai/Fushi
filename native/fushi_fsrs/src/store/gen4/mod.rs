@@ -46,8 +46,6 @@ pub(crate) mod compare;
 pub mod derive;
 pub mod digest;
 pub mod dispatch;
-#[cfg(test)]
-mod dispatch_tests;
 pub mod dryrun;
 pub mod export;
 pub mod files;

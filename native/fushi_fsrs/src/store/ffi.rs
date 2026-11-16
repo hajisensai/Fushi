@@ -89,6 +89,12 @@ fn resolve(core: *const SrsCoreHandle) -> Option<Arc<G4Core>> {
     handles().get(&(core as usize)).cloned()
 }
 
+/// 测试用：句柄背后的库（分发器测试查命令层的常驻状态）。
+#[cfg(test)]
+pub(crate) fn core_of(core: *const SrsCoreHandle) -> Option<Arc<G4Core>> {
+    resolve(core)
+}
+
 /// 跑一段带库句柄的操作：调用期间手上握着一份 `Arc`，关库不会把结构体从脚下释放掉。
 fn run_core(
     core: *const SrsCoreHandle,
