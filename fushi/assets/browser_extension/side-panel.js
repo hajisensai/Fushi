@@ -924,6 +924,11 @@
             toast('✓ ' + tr(response.duplicate ? 'mine_already_queued' : 'mine_queued'));
             return true;
           }
+          // 页面收到了但写盘失败：如实说「入队失败」，别冒充页面不可用。
+          if (response && response.reason === 'persist-failed') {
+            toast('✗ ' + tr('mine_enqueue_failed'));
+            return false;
+          }
           toast('✗ ' + tr('mine_failed_page_unavailable'));
           return false;
         });

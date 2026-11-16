@@ -12,6 +12,9 @@
 //! - [center]：冲突中心与时间线的只读命令 `conflicts` / `checkpoints` / `undo_check`（G7-4e）。
 //! - [profile]：按集合的 `binding_get` / `profile_footprint`（G7-4e）。
 //! - [study]：出卡与牌组计数 `study`（协议 3 `store/study.rs`，同一份排队规则；常驻会话与索引的取舍见那里的文件头）。
+//! - [preview]：评分预览 `preview`（协议 3 `sync2_preview`，同一份重放与回包；G7-4f）。
+//! - [training]：逐卡重放与训练集的直读命令——C 直出入口 `ffsrs_store_history_states` / `_stat_projection` /
+//!   `_optimizer_items` / `_calibration_items` / `_rwkv_rows` / `_rwkv_log_tail` 的新代版（同一份投影与输出布局；G7-4f）。
 //!
 //! 分发器命令与新代实现的逐条对照（哪条已有、归谁、S1 怎么接）见 `docs/specs/2026-11-15-srs-gen4-handoff.md`
 //! 「分发器命令对照表」。
@@ -51,10 +54,12 @@ pub mod center;
 pub mod columns;
 pub mod history;
 pub mod lineage;
+pub mod preview;
 pub mod profile;
 pub mod reads;
 pub mod stats;
 pub mod study;
+pub mod training;
 pub mod views;
 // 写命令的新代实现（规划 §2.1 G7-3b），同样还没接分发器：见 [writes] 文件头。
 pub mod writes;
@@ -72,6 +77,8 @@ mod study_tests;
 mod tests;
 #[cfg(test)]
 mod tests_class;
+#[cfg(test)]
+mod training_tests;
 #[cfg(test)]
 mod writes_tests;
 
@@ -188,6 +195,24 @@ pub(super) fn deck_tree(ix: &mut Index<'_, '_>, default: String) -> Result<DeckT
         ));
     }
     Ok(DeckTree::of_views(views, default))
+}
+
+/// 卡（规范 ID）的有效牌组：协议 3 `config::card_deck` 同一份规则（`config::card_deck_with`），卡与笔记的修改行按类判定
+/// （[Index::class_lines]）。[note] = 卡所属笔记（规范 ID；没有 = None）。写命令（[writes] 的 `Session::card_deck`，读之前
+/// 先收尾）与评分预览（[preview]）共用。
+pub(super) fn card_deck(
+    ix: &mut Index<'_, '_>,
+    tree: &DeckTree,
+    card: &str,
+    note: Option<&str>,
+) -> Result<String, String> {
+    let note_edits = match note {
+        Some(n) => Some(ix.class_lines(EntKind::Note, &ref_of(n))?.0),
+        None => None,
+    };
+    crate::store::sync2::config::card_deck_with(tree, card, note_edits, &mut |c| {
+        Ok(ix.class_lines(EntKind::Card, &ref_of(c))?.0)
+    })
 }
 
 /// 请求里以 ID 为键的表（牌组 → 值之类）归一成规范 ID 为键：同一个类有几个键时，规范 ID 自己给了就取它的，否则取
