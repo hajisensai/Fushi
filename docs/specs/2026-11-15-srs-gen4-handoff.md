@@ -348,8 +348,13 @@ S1 没有加表或索引，本机状态行与缓存配置都放现有的 `srs_me
 - `SrsGen4Migration.status / run / cancel`（`packages/fushi_srs/lib/src/store/srs_gen4_migration.dart`）包三条全局命令；
   `run` 在后台 isolate 里阻塞到结论，进度靠轮询 `status.running`。提交点（`commit`）之前的步骤可取消。
 - `SrsGen4MigrationController`（`fushi/lib/src/srs/srs_gen4_migration_controller.dart`）：按主库 profile 表每个 uid 交
-  `srsCacheConfigFor(uid)`；提交后 `SrsStorageHost.reopen()` 再作废 `srsStorageProvider` / `srsStoreProvider`。进程级
-  provider，换页不丢进度。
+  `srsCacheConfigFor(uid)`（旧库里多出的 profile 见 §9.5 缺口 2）；提交后 `SrsStorageHost.reopen()` 再作废
+  `srsStorageProvider` / `srsStoreProvider`。进程级 provider，换页不丢进度。登记 `AppModel.addDatabaseCloseQuiescer`：关库
+  （覆盖恢复 / 换数据根 / 退出）前提交点之前叫停并等结论，过了提交点就等它跑完。
+- `blocked` 按原因分类（`SrsGen4BlockedReason.of`，只比 migrate.rs 两个常量的全文，Dart 测试读 Rust 源码核对两边一字
+  不差）：`migrating`（换代锁在别处 / 本进程已在跑）→「别的窗口在升级」；`busy`（旧库正被写）→「被占用，稍后再试」；
+  其余一律 `precondition`（协议 3 收尾没做完、缺缓存配置、schema 不对……）→「这一版还升级不了」+ 内核原因原文，**不给
+  「重新升级」**（重试不会变，见 §9.5 缺口 1）。
 - 页面 `SrsGenerationView`（`srs_generation_view.dart`）：`SrsLoadErrorView` 收到 `SrsStoreOpenBlocked` /
   `SrsLegacyMainDatabasePending` 时转过去。状态：要迁移（开始 → 步骤 n/9 + 进度条 + 取消）、结论（取消 / 被占用 / 空间
   不够〔差多少〕/ 对拍不过〔报告路径〕/ 内核报错）、上次失败（重新升级）、只剩封存旧库（不自动重建）、别的窗口在迁移、
@@ -365,9 +370,9 @@ S1 没有加表或索引，本机状态行与缓存配置都放现有的 `srs_me
 | `gen4_rehearse*`、预演调度 / 预演页 / 预演测试 | 整块删（换代后没有意义） |
 | `bulk_cache` / `cache_config_set` | 新回包 `{depth}` / `{changed, settled?}`；`changed` 时作废派生缓存 |
 | 写回包 | 不再读 `marks` / `diagnostics` / `cache`；按 `changed` / `purged` / `replayed` 吸收；只改卡时记卡号进日志，其余整份作废 |
-| `stamps` | 内核拒 `stamps:true`：改成按 `(device, seq)` 读回 `edits` 行 |
+| `stamps` | 内核拒 `stamps:true`：草稿与回包 `edits` 按 (种类, 规范实体, 字段键) 配对（`srsMatchWrittenEdits`；草稿实体不在 `edits` 里时按 `read edits` 点查归一），再按 `(device, seq)` 读回 `edits` 行。整列表标签草稿不在其中（§9.5 缺口 4） |
 | 答题的 `hlc` | 从 `logs` 读回存下的 `hlc` |
-| `refreshKeys` | 改读 sync2 `local_state`：五个键都等于 `epoch:revision`（比原来粗、但跨进程可见；纪元变 = 整份重读） |
+| `refreshKeys` | 改读 sync2 `local_state`：五个键都等于 `epoch:revision`（跨进程可见；纪元变 = 整份重读）；纪元没落盘时是固定的 `unstored:revision`。比协议 3 粗得多、作答热路径有代价，见 §9.5 缺口 3 |
 | 设备号 | 开库读 `status.device`（`_sync2Open`），`identity` 归 G9-4；`isOwnWriter` 只认本机设备 |
 | 开库时的 `afterRestore` | 删（备份恢复 G11-4 自己调 `rebuildCaches`） |
 | Secondary 开库 | 跳过登记缓存配置 / 写本机状态 / 内置实体（都是写） |
@@ -378,8 +383,10 @@ S1 没有加表或索引，本机状态行与缓存配置都放现有的 `srs_me
   （`SrsProfileUnboundException`）。
 - G9-5：`srs_profile_merge.dart` 的 `profile_uids` / `profile_purge` / `profile_merge_*` / `meta_set_edit` / `legacy_dots`。
 - G8-7：全部同步命令、`ingest_yield`、`SrsSyncScheduler.ensureMigrated`。
-- G11-3：导入 / 导出（含 `plugin_tracking_provider`）；G11-4：`ffsrs_store_snapshot` 与备份恢复（`restore.part.dart`、
-  备份测试只改到能编过）。
+- G11-3：导入 / 导出（含 `plugin_tracking_provider`）；G11-4：`ffsrs_store_snapshot` 与备份恢复。还原（覆盖 / 合并）
+  在备份带复习数据、又选了「复习」类别时**动任何文件之前**抛 `SrsRestoreUnavailableException`（提示取消勾选复习再还原
+  其余内容），见 §9.5。备份导出判断「本机有没有复习库」认 `srs4.db` 与 `srs.db` 两种文件（`SrsStorageHost.hasStoredLibrary`）：
+  只有协议 3 库、没迁移时导出打开新代库抛 `SrsStoreNotMigrated`，明确失败、不做出不带卡片的备份。
 - S1 后续：`media_gc_*`；G7-6 / D21：`srs_legacy_store_migration.dart` 与它的测试。
 
 ### 9.4 测试
@@ -389,3 +396,39 @@ S1 没有加表或索引，本机状态行与缓存配置都放现有的 `srs_me
 改写为新代。老测试按新开库改写；协议 3 专属行为（缓存修订号 `srs_local_state.cacheRev`、推迟迁移）的用例标 `skip:` 并写
 原因；被测代码已删的（存量样式压缩、`beforeMigrate` 去重）删用例。依赖 profile 绑定（G9-4）的 store 测试在新代上会红，
 不在本模块修。
+
+复核补的（2026-11-17）：`packages/fushi_srs/test/store/srs_gen4_migration_test.dart`（blocked 分类与 Rust 常量核对、
+未落盘纪元的稳定键）、`packages/fushi_engine/test/srs/srs_written_edits_match_test.dart`（混合 no-op 草稿的配对）、
+`fushi/test/sync/backup_srs_restore_refusal_test.dart`（覆盖 / 合并还原在迁移过的目录上拒绝且 `srs.db` / `srs4.db` 一字节
+不动），控制器测试加 quiesce、存储持有者测试加 `acquireIfStored`、状态页测试加三类 blocked × 两套设计。变异实测：
+blocked 一律归 busy、去掉 `unstored` 分支、配对退回 (种类, 字段键)、quiesce 不叫停、前提没满足说成「被占用」、只认
+`srs4.db`、去掉还原拒绝，各自让对应用例变红。
+
+### 9.5 已知缺口与上游（2026-11-17 复核）
+
+1. **没同步过的老用户迁不了（阻断，上游 G7-2 / 规划 §1.4 第 1 步）。** 协议 3 的 `sync2_self.migrated_at` 只在 `migrate`
+   命令（`sync2/mod.rs` `finish_migration`）或同步传输里写；`legacy::preflight` 把 NULL 当硬阻断，`sync2_migrate_queue` /
+   `sync2_replay_pending` / `sync2_cache_pending` / `sync2_boot` 残留同样拦。S1 删了 `ffsrs_store_open`、G7-5 删了 Dart 的
+   `migrate` 调用，集成分支里没有任何路径补完这些前提。要 Rust：`gen4_migrate_run` 取锁后用冻结的协议 3 代码先补完前提，
+   或另开一条全局命令专门补，Dart 在 `run` 之前调。Dart 这边已经把这类 `blocked` 单列成「这一版还升级不了」+ 原因、不再
+   说成「被占用」、不给「重新升级」；上游补上之后这里要接那条命令并恢复重试按钮。
+2. **旧库里多出的 profile 让迁移 blocked（上游 G7-2）。** 缓存配置只按主库 profile 表给；协议 3 库里删除没清干净 / 备份
+   并入留下的孤儿 uid 会报 `no cache configuration was given`。要 Rust：`gen4_migrate_status`（或新的只读全局命令）回旧库的
+   profile 列表（`legacy::profiles`），Dart 对每个 uid 给 `srsCacheConfigFor(uid)`（只取决于 uid）。在那之前这类用户看到
+   的是 1 同一页（前提没满足 + 原因原文）。
+3. **刷新键五合一（上游 S1 后续）。** 新代没有协议 3 `refresh.rs` 的按类计数，五个键都是 `纪元:修订号`，作答也推进修订号：
+   RWKV 分数表每题整表重查（「每答几题刷新」形同每题刷新；协议 3 特意不让它随日志变，以前 35 万日志的 iPhone OOM 就是
+   这么来的），牌组树 / 笔记类型 / 修改记录这些按键缓存的东西每题重建；`refreshKeys` 也从读内存变成 UI isolate 上每个
+   getter 一次同步 FFI 点查。要 Rust：`G4Core` 按 profile、按类别持有进程内刷新计数，由写路径按 `changed` / `replayed` 的
+   种类推进，Dart 只读。补上之前 Dart 不加计数镜像。
+4. **`apply` 回包不够 Dart 拼 stamps（上游）。** `edits` 不带输入序号，Dart 只能按 (种类, 规范实体, 字段键) 配、非规范草稿
+   逐条点查归一；整列表标签草稿展开成标签增删、不进 `edits`，返回里没有标签那一项（协议 3 有）。要 Rust：`edits` 每项带
+   输入序号，标签增删也报一项。
+5. **作答的 HLC 多一次往返（上游，次要）。** `apply` 回包没有作答日志的 HLC，Dart 按卡读全部日志再找 logId（O(该卡日志数)）。
+   要 Rust：回包带上，或给按 logId 点查。
+6. **还原（G11-4）。** 协议 3 的还原逻辑会删 / 换 `srs.db`（迁移后是封存的无损回退副本），换进来的协议 3 库让下次开库停在
+   -6，合并要开协议 3 库。G11-4 接上新代还原之前，备份带复习数据（`srs.db` 条目 / `srs_media/` / meta 记数 > 0；老形态 meta
+   没记数的按带算）且选了复习时整次拒绝、什么都不动。启动时重放旧 sidecar 的 `srs` 计划（`recoverPendingRestore`）只可能
+   来自本版之前的还原，没改。「只剩封存旧库」页的文案改成「保持原样、不要用备份覆盖、带日志联系支持」，不再引导还原。
+7. **迁移中关库之后的再开始。** quiesce 之后主库已关，迁移页的「开始升级」按钮仍可点（app 未初始化时这一页通常不在
+   屏上）。没加额外闸门。
