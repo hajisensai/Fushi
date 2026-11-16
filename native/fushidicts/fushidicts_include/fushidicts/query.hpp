@@ -26,6 +26,17 @@ struct DictionaryStyle {
 
 struct ZSTD_DDict_s;
 
+namespace hash {
+class union_filter;
+}
+
+// 联合过滤器（hash/union_filter.hpp）的状态，见 DictionaryQuery::prepare_union_filter。
+enum class UnionFilterState : int32_t {
+  None = 0,      // 没有：查询逐本词典探各自的 bloom（旧路径）
+  Building = 1,  // 后台正在装载 / 构建，期间查询仍走旧路径
+  Ready = 2,     // 已就绪，查询先过联合过滤器
+};
+
 struct GlossaryEntry {
   std::string dict_name;
   std::string glossary;
@@ -136,6 +147,15 @@ class DictionaryQuery {
   std::vector<DictionaryStyle> get_styles() const;
   std::vector<std::string> get_freq_dict_order() const;
 
+  // 为当前装载的全部词典准备联合过滤器（一条缓存行判定「这个键可能在哪几本词典里」，
+  // 见 hash/union_filter.hpp）。[cache_dir] 非空时过滤器落盘在该目录、下次直接映射
+  // （目录由宿主给，引擎自己建）；空串 = 只在内存里建。[wait] 为真时同步建完才返回
+  // （测试 / 基准 / 批处理宿主）；否则立刻返回、在后台线程里建，建好前查询照走旧路径，
+  // 结果不变。之后再 add_*_dict 会作废这份过滤器（在飞的后台构建成果也一并丢弃），
+  // 要重新调用。纯加速：有没有它查词结果逐字节相同。
+  void prepare_union_filter(const std::string& cache_dir, bool wait);
+  UnionFilterState union_filter_state() const;
+
  private:
   friend class Lookup;
 
@@ -159,9 +179,18 @@ class DictionaryQuery {
   // 名列其中的词典整本跳过——不读记录、不并入 rules / score、不出频率 / 音调，
   // 与「没装这本词典」逐字一致。nullptr = 不排除（默认，行为不变）。
   using ExcludedDictNames = std::unordered_set<std::string_view>;
-  std::vector<TermResult> query_raw(const std::string& expression, const ExcludedDictNames* excluded = nullptr) const;
-  void enrich_freq(TermResult& term, const ExcludedDictNames* excluded = nullptr) const;
-  void enrich_pitch(TermResult& term, const ExcludedDictNames* excluded = nullptr) const;
+  // 一次查词（Lookup::lookup）/ 一次 query() 内共用的查库上下文：排除集，加上进入时
+  // 取的联合过滤器快照——整次查词用同一份，后台构建中途发布不会让同一次查词前后
+  // 走两条路径。默认构造 = 不排除、无过滤器（逐本探 bloom）。
+  struct QueryScope {
+    const ExcludedDictNames* excluded = nullptr;
+    std::shared_ptr<const hash::union_filter> filter;
+  };
+  QueryScope make_scope(const ExcludedDictNames* excluded = nullptr) const;
+
+  std::vector<TermResult> query_raw(const std::string& expression, const QueryScope& scope) const;
+  void enrich_freq(TermResult& term, const QueryScope& scope) const;
+  void enrich_pitch(TermResult& term, const QueryScope& scope) const;
   void materialize(TermResult& term) const;
 
   struct DictionaryData;
@@ -182,6 +211,15 @@ class DictionaryQuery {
   enum DictionaryType : uint8_t { TERM, FREQ, PITCH, KANJI };
 
   void add_dict(const std::string& path, DictionaryType);
+
+  // 联合过滤器的发布槽：后台构建线程与本对象共同持有（本对象析构后线程把成果发布进
+  // 一个没人读的槽，随线程结束释放）。定义在 query.cpp。
+  struct UnionSlot;
+  std::shared_ptr<UnionSlot> union_;
+  // 联合过滤器的后台构建线程，本对象独占：析构 / 被移动赋值覆盖时叫停并等它退出
+  //（毫秒级），所以本对象没了之后不会有线程还撑着词典文件的映射。
+  struct UnionBuilder;
+  std::unique_ptr<UnionBuilder> union_builder_;
 
   static std::string decompress_glossary(const void* data, size_t size, const ZSTD_DDict_s* dict);
   std::vector<Dictionary> term_dicts_;

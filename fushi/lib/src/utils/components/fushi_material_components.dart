@@ -26,6 +26,7 @@ import 'package:macos_ui/macos_ui.dart'
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_compact_landscape.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/focus/fushi_focus_target.dart';
 import 'package:fushi/src/focus/page_scroll_registry.dart';
@@ -2955,12 +2956,20 @@ class FushiDialogFrame extends StatelessWidget {
 
   /// 屏幕越窄，边距越小：320dp 上取 16（与卡片内边距同级），随屏宽线性放大到宽屏
   /// 的 40 为止。用比例而非断点，避免在某个宽度上突然跳变。
-  EdgeInsets _resolveInsetPadding(double screenWidth) {
-    if (insetPadding != null) return insetPadding!;
-    final double horizontal = screenWidth.isFinite
-        ? (screenWidth * 0.05).clamp(16.0, 40.0)
-        : 40.0;
-    return EdgeInsets.symmetric(horizontal: horizontal, vertical: 24);
+  ///
+  /// 横屏矮窗口（横屏手机）再经 [fushiCompactLandscapeInset] 收紧（含调用方显式传的
+  /// 边距），把高度还给内容（拍板台 MANKlxTTpV）。
+  EdgeInsets _resolveInsetPadding(Size screenSize) {
+    final double screenWidth = screenSize.width;
+    final EdgeInsets base =
+        insetPadding ??
+        EdgeInsets.symmetric(
+          horizontal: screenWidth.isFinite
+              ? (screenWidth * 0.05).clamp(16.0, 40.0)
+              : 40.0,
+          vertical: 24,
+        );
+    return fushiCompactLandscapeInset(screenSize, base);
   }
 
   @override
@@ -2969,10 +2978,13 @@ class FushiDialogFrame extends StatelessWidget {
     final Size screenSize = MediaQuery.sizeOf(context);
     final double screenHeight = screenSize.height;
     final Widget padded = Padding(padding: padding, child: child);
+    // 横屏矮窗口：宽度上限放宽、屏高比例封顶取消（见 fushi_compact_landscape.dart）。
     final Widget body = ConstrainedBox(
       constraints: BoxConstraints(
-        maxWidth: maxWidth,
-        maxHeight: screenHeight * maxHeightFactor,
+        maxWidth: fushiCompactLandscapeMaxWidth(screenSize, maxWidth),
+        maxHeight:
+            screenHeight *
+            fushiCompactLandscapeHeightFraction(screenSize, maxHeightFactor),
       ),
       child: scrollable ? SingleChildScrollView(child: padded) : padded,
     );
@@ -2982,7 +2994,7 @@ class FushiDialogFrame extends StatelessWidget {
       // 柔和大阴影，见 [FushiAppleDialogPanel]），面板内是菜单式列表选中。
       return Dialog(
         clipBehavior: Clip.none,
-        insetPadding: _resolveInsetPadding(screenSize.width),
+        insetPadding: _resolveInsetPadding(screenSize),
         backgroundColor: Colors.transparent,
         surfaceTintColor: Colors.transparent,
         shadowColor: Colors.transparent,
@@ -3002,7 +3014,7 @@ class FushiDialogFrame extends StatelessWidget {
     final bool eink = isEinkTheme(context);
     return Dialog(
       clipBehavior: Clip.antiAlias,
-      insetPadding: _resolveInsetPadding(screenSize.width),
+      insetPadding: _resolveInsetPadding(screenSize),
       shape: RoundedRectangleBorder(
         borderRadius: tokens.radii.dialogRadius,
         side: eink

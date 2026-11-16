@@ -19,14 +19,15 @@ import 'package:transparent_image/transparent_image.dart';
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/media_source.dart';
 import 'package:fushi/src/media/sources/manga_fushi_source.dart';
+import 'package:fushi/src/media/nsfw/media_nsfw_cover.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
-import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
@@ -68,7 +69,6 @@ import 'package:fushi/src/media/tracking/page/tracking_page_data.dart'
     show TrackingPageTab;
 import 'package:fushi/src/pages/implementations/onboarding_wizard_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_review_page.dart';
-import 'package:fushi/src/models/home_dashboard_panel.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart' show SrsDeckSummary;
 import 'package:fushi/src/pages/implementations/home_floating_toolbar.dart';
@@ -92,7 +92,6 @@ import 'package:fushi_engine/leaderboard/leaderboard_models.dart'
     show LeaderboardSelf;
 import 'package:fushi/src/media/video/video_library_overview.dart'
     show formatVideoPosition;
-import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/adaptive/shell_style.dart'
     show ShellContentLayout, shellContentLayoutOf, shellRedesignActive;
@@ -117,7 +116,15 @@ import 'package:fushi/src/utils/components/glass/fushi_apple_scroll_chrome.dart'
 import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart'
     show FushiShellActionsSlot, FushiShellTitleScope;
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart'
-    show shelfCoverCard;
+    show ShelfCoverFrame, shelfCoverCard;
+import 'package:fushi/src/utils/components/section_swipe_navigator.dart'
+    show SectionSwipeCascade;
+import 'package:fushi/src/utils/misc/platform_utils.dart'
+    show HorizontalDragScrollable, desktopAwareScrollPhysics;
+import 'package:fushi/src/models/home_widget_layout.dart';
+import 'package:fushi/src/pages/implementations/home_widget_add_sheet.dart';
+import 'package:fushi/src/pages/implementations/home_widget_frame.dart';
+import 'package:fushi/src/pages/implementations/home_widget_grid.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_schema_tracking.dart';
@@ -173,6 +180,8 @@ import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_common.dart';
 
+part 'home_dashboard_widget_cells.part.dart';
+
 /// 书合集在首页「继续」区的续读目标下标（[sorted] 已按组内 sortIndex 排好）。
 ///
 /// 用户实报：20 卷的合集读完第 1 卷，「继续」区里这套书直接消失、第 2 卷不出现
@@ -200,16 +209,6 @@ int? dashboardBookCollectionContinueIndex(
 @visibleForTesting
 bool dashboardUsesTwoColumns(Size size) =>
     size.width >= 840 || (size.width >= 600 && size.width > size.height);
-
-/// 双栏版式下「继续」主角卡的封面高度：随主列宽放大（× 0.3），夹在 150…240。
-@visibleForTesting
-double dashboardHeroCoverHeight(double mainColumnWidth) =>
-    (mainColumnWidth * 0.3).clamp(150.0, 240.0);
-
-/// 双栏版式下「继续」横滑行的封面高度：随主列宽放大（× 0.2），夹在 132…200。
-@visibleForTesting
-double dashboardRowCoverHeight(double mainColumnWidth) =>
-    (mainColumnWidth * 0.2).clamp(132.0, 200.0);
 
 /// 首页浮动工具栏起始侧的头像胶囊（2026-10 精简：左上角原「首页」标题胶囊换成
 /// 头像）。头像来源只有现成的一处——排行榜账户头像（[LeaderboardAvatar]，本
@@ -639,18 +638,34 @@ class _HomeDashboardPageState
   /// 工具栏「更新中心」按钮的未读角标（[initState] 建，[dispose] 释放）。
   HomeUpdateCount? _updateCount;
 
-  /// 本帧「继续」区的主角条目（[_buildContinueSection] 写入，FAB 续开它）；
+  /// 本帧「继续」区的主角条目（[_collectContinueEntries] 写入，FAB 续开它）；
   /// null = 没有可继续的条目，FAB 不出现。
   _ContinueEntry? _resumeEntry;
 
   /// 「继续」横滑行（主角卡之外的其余条目）：书 / 视频 / 游戏统一 2:3 竖卡、等高
   /// 等宽（视频优先用作品海报，只有横版截帧时裁进竖卡），封面下方挂两行标题。
-  /// 单栏封面高 [_kContinueCoverHeight]，双栏按主列宽放大
-  /// （[dashboardRowCoverHeight]）。
+  /// 首载骨架的封面高 [_kContinueCoverHeight]。
   static const double _kContinueCoverHeight = 132;
 
-  /// 侧栏「最近添加」最多几条：侧栏只给一眼「新进了什么」，完整列表在各库页。
-  static const int _kRecentLimit = 4;
+  /// 「最近添加」组件最多取几条：格子按实际大小放得下几条列几条（6×4 约放满），
+  /// 完整列表在各库页。
+  static const int _kRecentLimit = 24;
+
+  /// 首页小组件编辑态（spec 2026-11-15）。
+  bool _editingWidgets = false;
+
+  /// 本次编辑会话（按网格各一份，含撤销栈）；只有改过的网格在「完成」时落盘。
+  final Map<HomeGridKind, HomeWidgetEditSession> _widgetSessions =
+      <HomeGridKind, HomeWidgetEditSession>{};
+
+  /// 本帧的网格种类、该网格的全部组件（含暂不可用的）与此刻可用的组件
+  /// （build 写入，编辑操作 / 添加面板读）。
+  HomeGridKind _widgetGrid = HomeGridKind.compact;
+  List<HomeWidgetItem> _widgetItemsShown = const <HomeWidgetItem>[];
+  Set<HomeWidgetKind> _widgetAvailableKinds = const <HomeWidgetKind>{};
+
+  /// 刚添加的组件：网格下一帧把它滚进视野并聚焦。
+  HomeWidgetKind? _revealWidget;
 
   /// 视频文件路径 → 容器时长（毫秒，[VideoFileSpecs] 探测缓存，只查在看的
   /// 视频）。`VideoBooks` 不存总时长，单视频 / 合集里的某一集要画「看到哪」的
@@ -808,6 +823,11 @@ class _HomeDashboardPageState
   @override
   void initState() {
     super.initState();
+    homeWidgetEditRequested.addListener(_onWidgetEditRequested);
+    // 设置页「编辑首页」在本页建出来之前就发了请求（首页 tab 首次进入）。
+    WidgetsBinding.instance.addPostFrameCallback(
+      (Duration _) => _onWidgetEditRequested(),
+    );
     // 有上一轮快照：首帧直接用它渲染（骨架只在「本进程第一次进首页」出现），
     // 下面的整批重拉照常跑、到达后整体替换。
     final _HomeDashboardSnapshot? snapshot =
@@ -1012,6 +1032,7 @@ class _HomeDashboardPageState
     _galgameRepo?.removeListener(_scheduleReload);
     _trackingRevision?.removeListener(_scheduleReload);
     _prefsRepoForRemoteGate?.removeListener(_onPrefsChangedForRemoteGate);
+    homeWidgetEditRequested.removeListener(_onWidgetEditRequested);
     _dashboardScrollController.dispose();
     _toolbarScroll.dispose();
     _mastheadChrome.dispose();
@@ -1579,36 +1600,37 @@ class _HomeDashboardPageState
     final Set<String> completedBookKeys =
         ref.watch(completedEpubBookKeysProvider).valueOrNull ??
         const <String>{};
-    // 可选面板（[HomeDashboardPanel] 注册表，按注册顺序）：各自判定是否出现，
-    // 紧跟「今日」之后。
-    final List<Widget> optionalPanels = <Widget>[
-      for (final HomeDashboardPanel panel in HomeDashboardPanel.values)
-        if (_buildOptionalPanel(panel) case final Widget w) w,
-    ];
+    // 组件可用性（spec「显隐语义」）：复习 / AI 的判据经 ref.watch 订阅。
+    final ModuleVisibility visibility = appModel.moduleVisibility;
+    final bool srsAvailable = ref.watch(srsModuleEnabledProvider);
+    final bool aiAvailable = ref.watch(homeAiAgentWidgetAvailableProvider);
+    final Set<HomeWidgetKind> availableKinds = <HomeWidgetKind>{
+      for (final HomeWidgetKind kind in HomeWidgetKind.values)
+        if (homeWidgetAvailable(
+          kind,
+          reading:
+              visibility.isEnabled(ModuleId.books) ||
+              visibility.isEnabled(ModuleId.manga),
+          watching: visibility.isEnabled(ModuleId.video),
+          playing: visibility.isEnabled(ModuleId.games),
+          srs: srsAvailable,
+          tracking: isMediaTrackingEnabled(visibility),
+          ai: aiAvailable,
+        ))
+          kind,
+    };
+    _widgetAvailableKinds = availableKinds;
 
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
-        // 2026-10-10 重设计（用户：「首页每一项都要有标题，加回继续阅读和 M3E 波浪
-        // 条，横屏竖屏都要好用但别信息过多」）。每个分区都是带标题的卡：
-        // - 「今日」：学习头部行（目标环 + 今日字数 + 今日时长）；
-        // - 「继续」：最近一条放大成主角卡（[FushiContinueSpotlight] 主卡：波浪进度条 +
-        //   「继续阅读 / 继续观看」主按钮），其余条目是带标题的封面横滑行；
-        // - 「最近添加」：只在双栏版式的侧栏出现（紧凑列表，最多 4 条）；
-        // - Bangumi 同步卡（模块开着时）。
-        //
-        // 版式（[dashboardUsesTwoColumns]）：
-        // - 竖屏单栏：今日 → 继续 → 同步卡。手机竖屏一屏就是「今天读了多少 +
-        //   接着读什么」，不再塞别的。
-        // - 横屏 / 宽屏（2026-10-31 用户选定方案 A「书影主卡」，取代 3/5 + 2/5
-        //   双栏）：「继续」满宽在上——主卡在起始侧、其余在读 / 在看 / 在玩的
-        //   混排封面行在它旁边（[_buildContinueSection]）；下面是今日、可选面板、
-        //   最近添加、同步卡，按剩余宽度自适应分列（[HomePanelFlow]：面板少就
-        //   每列更宽，不在右侧留空）。封面按内容宽放大（[dashboardHeroCoverHeight]
-        //   / [dashboardRowCoverHeight]）。
-        final bool twoColumn = dashboardUsesTwoColumns(constraints.biggest);
-        final double contentWidth =
-            constraints.maxWidth - tokens.spacing.card * 2;
-        final double mainWidth = contentWidth;
+        // 2026-11-15 首页小组件网格（docs/specs/2026-11-15-home-widgets-design.md，
+        // 取代 2026-10-10 起的固定分区）：用户可增删、拖动排序、调尺寸的小组件。
+        // 窄版式（[dashboardUsesTwoColumns] 为 false：竖屏手机 / 平板竖屏）是 2 列
+        // 网格、宽版式是 6 列，两份布局各存各的（[HomeWidgetLayout]）。
+        final HomeGridKind grid = dashboardUsesTwoColumns(constraints.biggest)
+            ? HomeGridKind.wide
+            : HomeGridKind.compact;
+        _widgetGrid = grid;
         final List<_ContinueEntry> continueEntries = _collectContinueEntries(
           appModel,
           books,
@@ -1616,29 +1638,17 @@ class _HomeDashboardPageState
           epubUidByKey,
           completedBookKeys,
         );
-        final Widget continueCard = _buildContinueSection(
-          tokens,
-          appModel,
-          continueEntries,
-          // 横屏手机高度紧：主卡封面再按视口高封顶（40%），「今日」等面板仍能
-          // 露在首屏。
-          heroCoverHeight: twoColumn
-              ? math.min(
-                  dashboardHeroCoverHeight(mainWidth),
-                  math.max(150.0, constraints.maxHeight * 0.4),
-                )
-              : 150,
-          rowCoverHeight: twoColumn
-              ? dashboardRowCoverHeight(mainWidth)
-              : _kContinueCoverHeight,
-        );
-        int entrance = 0;
-        Widget entering(Widget child) =>
-            FushiStaggeredEntrance(index: entrance++, child: child);
+        final List<HomeWidgetItem> items = _widgetItemsFor(appModel, grid);
+        _widgetItemsShown = items;
+        final List<HomeWidgetItem> visible = <HomeWidgetItem>[
+          for (final HomeWidgetItem item in items)
+            if (availableKinds.contains(item.kind)) item,
+        ];
         // 新手引导卡（用户 2026-10-21：跳过了引导 / 还没导入任何东西时，首页常驻
-        // 一个回到引导的入口）。排在最上面、最先进场。
+        // 一个回到引导的入口）。排在网格上面、最先进场。
         final Widget? onboardingCard =
             _initialLoadDone &&
+                !_editingWidgets &&
                 homeOnboardingCardVisible(
                   dismissed: appModel.onboardingHomeCardDismissed,
                   onboardingFinished: appModel.onboardingFinished,
@@ -1648,204 +1658,342 @@ class _HomeDashboardPageState
                       _games.isEmpty &&
                       continueEntries.isEmpty,
                 )
-            ? entering(_buildOnboardingCard(tokens, appModel))
+            ? FushiStaggeredEntrance(
+                index: 0,
+                child: _buildOnboardingCard(tokens, appModel),
+              )
             : null;
-        // 重设计外壳（库页布局不是封面网格）：「继续」是封面色块，它下面的每块面板
-        // 也一律落到海报色块语言里（用户 2026-11-12「主页还是老风格」「尽量风格
-        // 统一」）：今日 / 复习 / AI 助手 / 全景按行等高排（[HomePosterRows]，
-        // 宽屏一行最多三块、窄屏一列），「最近添加」是带分区标题的封面色块网格，
-        // Bangumi 同步卡满宽排在最后。封面网格布局与墨水屏走下面的原版式。
-        if (_posterPanels) {
-          final bool blocks = continueEntries.isNotEmpty;
-          final List<_ContinueEntry> recent = twoColumn && _initialLoadDone
-              ? _recentlyAddedEntries(appModel, books)
-              : const <_ContinueEntry>[];
-          return _buildRedesignedDashboard(
-            tokens: tokens,
-            appModel: appModel,
-            continueEntries: blocks ? continueEntries : null,
-            onboardingCard: onboardingCard,
-            body: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                // 没有可继续的条目（首载骨架 / 空库引导）：「继续」分区原样
-                // 排在色块面板上面。
-                if (!blocks) ...<Widget>[
-                  entering(continueCard),
-                  SizedBox(height: tokens.spacing.card),
-                ],
-                HomePosterRows(
-                  key: const ValueKey<String>('home-poster-rows'),
-                  // 与上面「继续」色块网格同一档间距，整页是一张网格。
-                  gap: kFushiCoverBlockSpacing,
-                  children: <Widget>[
-                    entering(_buildStudyPoster(tokens, showWeek: twoColumn)),
-                    for (final Widget panel in optionalPanels) entering(panel),
-                  ],
+        int fullIndexOf(List<HomeWidgetItem> full, int visibleIndex) =>
+            full.indexWhere(
+              (HomeWidgetItem e) => e.kind == visible[visibleIndex].kind,
+            );
+        final Widget body = visible.isEmpty
+            ? _buildWidgetEmptyState()
+            : HomeWidgetGrid(
+                key: const ValueKey<String>('home-widget-grid'),
+                items: visible,
+                grid: grid,
+                editing: _editingWidgets,
+                cellBuilder: (BuildContext context, HomeWidgetItem item) =>
+                    _buildWidgetCell(
+                      tokens: tokens,
+                      appModel: appModel,
+                      entries: continueEntries,
+                      books: books,
+                      item: item,
+                    ),
+                labelOf: homeWidgetLabel,
+                onEnterEdit: _enterWidgetEdit,
+                onExitEdit: () => unawaited(_finishWidgetEdit()),
+                onMove: (int from, int to) => _editWidgets(
+                  (List<HomeWidgetItem> full) => moveHomeWidget(
+                    full,
+                    fullIndexOf(full, from),
+                    fullIndexOf(full, to),
+                  ),
                 ),
-              ],
-            ),
-            recentEntries: recent.isEmpty ? null : recent,
-            resumeFab: homeResumeFabEnabled(context),
-            bottomInset: MediaQuery.paddingOf(context).bottom,
-          );
-        }
-        final Widget studyCard = _buildStudySection(
-          tokens,
-          showWeek: twoColumn,
-        );
-        final Widget? recentCard = twoColumn && _initialLoadDone
-            ? _buildRecentlyAddedCard(tokens, appModel, books)
-            : null;
-        final Widget body;
-        if (twoColumn) {
-          final List<Widget> panels = <Widget>[
-            entering(studyCard),
-            for (final Widget panel in optionalPanels) entering(panel),
-            if (recentCard != null) entering(recentCard),
-          ];
-          body = Column(
-            key: const ValueKey<String>('home-two-column'),
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              entering(continueCard),
-              SizedBox(height: tokens.spacing.card),
-              HomePanelFlow(
-                key: const ValueKey<String>('home-panel-flow'),
-                gap: tokens.spacing.card,
-                children: panels,
-              ),
-            ],
-          );
-        } else {
-          body = Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              entering(studyCard),
-              for (final Widget panel in optionalPanels) ...<Widget>[
-                SizedBox(height: tokens.spacing.card),
-                entering(panel),
-              ],
-              SizedBox(height: tokens.spacing.card),
-              entering(continueCard),
-            ],
-          );
-        }
-        // 2026-10 动效重做：仪表盘首屏错峰进场。
+                onRemove: (int index) => _editWidgets(
+                  (List<HomeWidgetItem> full) =>
+                      removeHomeWidgetAt(full, fullIndexOf(full, index)),
+                ),
+                onResize: (int index, HomeWidgetSize size) => _editWidgets(
+                  (List<HomeWidgetItem> full) => setHomeWidgetSize(
+                    full,
+                    fullIndexOf(full, index),
+                    grid,
+                    size,
+                  ),
+                ),
+                revealKind: _revealWidget,
+                onRevealed: () => _revealWidget = null,
+              );
         // 2026-10 首页统一浮动工具栏：顶部不再是贴边实体条，栏与「继续」FAB
         // 悬浮在列表之上（Stack），列表顶部让出栏高、底部让出 FAB 与外壳
         // 底栏（Apple 悬浮标签栏经 extendBody 并进 MediaQuery 底部内边距）。
         final double bottomInset = MediaQuery.paddingOf(context).bottom;
-        // Apple 没有 FAB：「继续」只走主角卡封面行，底部不为 FAB 让位。
-        final bool resumeFab = homeResumeFabEnabled(context);
+        // Apple 没有 FAB；编辑态底部换成编辑工具栏，FAB 让位。
+        final bool resumeFab =
+            homeResumeFabEnabled(context) && !_editingWidgets;
+        final Widget page;
         if (shellRedesignActive(context)) {
-          // 走到这里只剩封面网格布局（拼贴 / 规整色块已在上面的色块分支返回）：
-          // 页头大字外壳 + 原版式整段正文（与墨水屏同形）。
-          return _buildRedesignedDashboard(
+          page = _buildRedesignedDashboard(
             tokens: tokens,
             appModel: appModel,
-            continueEntries: null,
             onboardingCard: onboardingCard,
             body: body,
             resumeFab: resumeFab,
             bottomInset: bottomInset,
           );
-        }
-        final Widget list = ListView(
-          controller: _dashboardScrollController,
-          padding: EdgeInsets.fromLTRB(
-            tokens.spacing.card,
-            homeToolbarExtent(context) + tokens.spacing.card,
-            tokens.spacing.card,
-            tokens.spacing.card + bottomInset + homeFabClearance(context),
-          ),
-          children: <Widget>[
-            // v101 更新提醒：有未读时才占位（横幅自己在 total==0 时收成
-            // SizedBox.shrink），没有更新的日子首页不多一块空卡。
-            UpdatesDashboardBanner(service: appModel.updateFeedService),
-            // 已迁移只读态（Fushi 迁移 P1-4，仅老包生效）：首屏常驻引导。
-            if (appModel.isMigrationReadonly) ...<Widget>[
-              _MigrationReadonlyBanner(appModel: appModel),
-              SizedBox(height: tokens.spacing.card),
-            ],
-            // Fushi 侧（P2-2/P2-3）：检测到迁移数据 → 导入引导；导入完成且旧包
-            // 仍在 → 卸载引导（ACTION_DELETE + 复查）。仅 Android。
-            if (!kIsWeb &&
-                Platform.isAndroid &&
-                appModel.packageInfo.packageName !=
-                    kHibikiPackageName) ...<Widget>[
-              _FushiMigrationBanner(appModel: appModel),
-            ],
-            if (onboardingCard != null) ...<Widget>[
-              onboardingCard,
-              SizedBox(height: tokens.spacing.card),
-            ],
-            body,
-          ],
-        );
-        return FushiEntranceScope(
-          // 一个遍历组：Tab 先走顶部浮动栏（几何上在最上方），再进列表，
-          // 最后是 FAB。
-          child: FocusTraversalGroup(
-            child: Stack(
-              children: <Widget>[
-                NotificationListener<ScrollMetricsNotification>(
-                  onNotification: _toolbarScroll.handleMetrics,
-                  child: NotificationListener<ScrollNotification>(
-                    onNotification: _toolbarScroll.handle,
-                    child: list,
-                  ),
-                ),
-                Positioned(
-                  top: 0,
-                  left: tokens.spacing.card,
-                  right: tokens.spacing.card,
-                  child: _buildFloatingToolbar(),
-                ),
-                if (resumeFab)
-                  PositionedDirectional(
-                    end: kHomeFabMargin,
-                    bottom: kHomeFabMargin + bottomInset,
-                    child: _buildResumeFab(appModel),
-                  ),
-              ],
+        } else {
+          final Widget list = ListView(
+            controller: _dashboardScrollController,
+            padding: EdgeInsets.fromLTRB(
+              tokens.spacing.card,
+              homeToolbarExtent(context) + tokens.spacing.card,
+              tokens.spacing.card,
+              tokens.spacing.card + bottomInset + homeFabClearance(context),
             ),
+            children: <Widget>[
+              // v101 更新提醒：有未读时才占位（横幅自己在 total==0 时收成
+              // SizedBox.shrink），没有更新的日子首页不多一块空卡。
+              UpdatesDashboardBanner(service: appModel.updateFeedService),
+              // 已迁移只读态（Fushi 迁移 P1-4，仅老包生效）：首屏常驻引导。
+              if (appModel.isMigrationReadonly) ...<Widget>[
+                _MigrationReadonlyBanner(appModel: appModel),
+                SizedBox(height: tokens.spacing.card),
+              ],
+              // Fushi 侧（P2-2/P2-3）：检测到迁移数据 → 导入引导；导入完成且旧包
+              // 仍在 → 卸载引导（ACTION_DELETE + 复查）。仅 Android。
+              if (!kIsWeb &&
+                  Platform.isAndroid &&
+                  appModel.packageInfo.packageName !=
+                      kHibikiPackageName) ...<Widget>[
+                _FushiMigrationBanner(appModel: appModel),
+              ],
+              if (onboardingCard != null) ...<Widget>[
+                onboardingCard,
+                SizedBox(height: tokens.spacing.card),
+              ],
+              body,
+            ],
+          );
+          page = FushiEntranceScope(
+            // 一个遍历组：Tab 先走顶部浮动栏（几何上在最上方），再进列表，
+            // 最后是 FAB。
+            child: FocusTraversalGroup(
+              child: Stack(
+                children: <Widget>[
+                  NotificationListener<ScrollMetricsNotification>(
+                    onNotification: _toolbarScroll.handleMetrics,
+                    child: NotificationListener<ScrollNotification>(
+                      onNotification: _toolbarScroll.handle,
+                      child: list,
+                    ),
+                  ),
+                  Positioned(
+                    top: 0,
+                    left: tokens.spacing.card,
+                    right: tokens.spacing.card,
+                    child: _buildFloatingToolbar(),
+                  ),
+                  if (resumeFab)
+                    PositionedDirectional(
+                      end: kHomeFabMargin,
+                      bottom: kHomeFabMargin + bottomInset,
+                      child: _buildResumeFab(appModel),
+                    ),
+                ],
+              ),
+            ),
+          );
+        }
+        // 编辑态：系统返回 = 完成（保存）；底部浮动编辑工具栏（添加 / 撤销 / 完成）。
+        return PopScope(
+          canPop: !_editingWidgets,
+          onPopInvokedWithResult: (bool didPop, Object? _) {
+            if (!didPop && _editingWidgets) unawaited(_finishWidgetEdit());
+          },
+          child: Stack(
+            children: <Widget>[
+              Positioned.fill(child: page),
+              if (_editingWidgets)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: kHomeFabMargin + bottomInset,
+                  child: Center(child: _buildWidgetEditToolbar()),
+                ),
+            ],
           ),
         );
       },
     );
   }
+
+  // ── 小组件编辑态（spec 2026-11-15） ─────────────────────────────────────
+
+  /// [grid] 那份布局此刻的组件（含暂不可用的）：编辑中 = 本次编辑会话；存过 = 偏好里
+  /// 的；从没编辑过 = 由旧「首页面板」显示档现算的迁移结果（首次编辑前不落盘）。
+  /// 只在 build 里调用：迁移判据经 ref.watch 订阅。
+  List<HomeWidgetItem> _widgetItemsFor(AppModel appModel, HomeGridKind grid) {
+    final HomeWidgetEditSession? session = _widgetSessions[grid];
+    if (session != null) return session.items;
+    final List<HomeWidgetItem>? stored = appModel.homeWidgetLayout.itemsFor(
+      grid,
+    );
+    if (stored != null) return stored;
+    return migrateHomeWidgetLayout(
+      grid: grid,
+      modes: appModel.homeDashboardPanelModes,
+      auto: _widgetAutoFacts(watch: true),
+    );
+  }
+
+  /// 迁移 / 「恢复默认」用的旧自动档判据。[watch] = 在 build 里订阅。
+  HomeWidgetAutoFacts _widgetAutoFacts({required bool watch}) =>
+      HomeWidgetAutoFacts(
+        srsReview: watch
+            ? ref.watch(homeSrsAutoDefaultProvider)
+            : ref.read(homeSrsAutoDefaultProvider),
+        tracking: HomeTrackingSummary.of(_tracking).needsAttention,
+        aiAgent: watch
+            ? ref.watch(homeAiAgentAutoDefaultProvider)
+            : ref.read(homeAiAgentAutoDefaultProvider),
+      );
+
+  /// 进入编辑态（页头「编辑首页」、长按组件、设置页「编辑首页」）。
+  void _enterWidgetEdit() {
+    if (_editingWidgets || !mounted) return;
+    setState(() {
+      _editingWidgets = true;
+      _widgetSessions.clear();
+    });
+  }
+
+  /// 设置页「编辑首页」：切到首页 tab 后由这里接住请求。
+  void _onWidgetEditRequested() {
+    if (!homeWidgetEditRequested.value) return;
+    homeWidgetEditRequested.value = false;
+    _enterWidgetEdit();
+  }
+
+  /// 对当前网格那份布局做一次编辑（进本次会话的撤销栈）。
+  void _editWidgets(
+    List<HomeWidgetItem> Function(List<HomeWidgetItem> items) change,
+  ) {
+    final HomeGridKind grid = _widgetGrid;
+    final HomeWidgetEditSession session =
+        _widgetSessions[grid] ?? HomeWidgetEditSession(_widgetItemsShown);
+    setState(
+      () => _widgetSessions[grid] = session.apply(change(session.items)),
+    );
+  }
+
+  void _undoWidgetEdit() {
+    final HomeWidgetEditSession? session = _widgetSessions[_widgetGrid];
+    if (session == null || !session.canUndo) return;
+    setState(() => _widgetSessions[_widgetGrid] = session.undo());
+  }
+
+  /// 「恢复默认」：当前网格换回默认模板（与首次迁移同一结果），可撤销。
+  void _restoreWidgetDefaults() {
+    final AppModel appModel = ref.read(appProvider);
+    final List<HomeWidgetItem> defaults = migrateHomeWidgetLayout(
+      grid: _widgetGrid,
+      modes: appModel.homeDashboardPanelModes,
+      auto: _widgetAutoFacts(watch: false),
+    );
+    _editWidgets((List<HomeWidgetItem> _) => defaults);
+  }
+
+  /// 「完成」：本次会话里改过的网格写回偏好（没改过的那份不落盘，继续跟着迁移
+  /// 判据走），退出编辑态。
+  Future<void> _finishWidgetEdit() async {
+    if (!_editingWidgets) return;
+    final AppModel appModel = ref.read(appProvider);
+    HomeWidgetLayout layout = appModel.homeWidgetLayout;
+    bool changed = false;
+    for (final MapEntry<HomeGridKind, HomeWidgetEditSession> e
+        in _widgetSessions.entries) {
+      if (!e.value.canUndo) continue;
+      layout = layout.withItems(e.key, e.value.items);
+      changed = true;
+    }
+    if (changed) await appModel.setHomeWidgetLayout(layout);
+    if (!mounted) return;
+    setState(() {
+      _editingWidgets = false;
+      _widgetSessions.clear();
+      _revealWidget = null;
+    });
+  }
+
+  /// 「添加小组件」：弹添加面板，选中的组件追加到末尾并滚动到它。
+  Future<void> _addWidget() async {
+    _enterWidgetEdit();
+    final HomeGridKind grid = _widgetGrid;
+    final List<HomeWidgetItem> items =
+        _widgetSessions[grid]?.items ?? _widgetItemsShown;
+    final HomeWidgetItem? picked = await showHomeWidgetAddSheet(
+      context,
+      grid: grid,
+      available: <HomeWidgetKind>[
+        for (final HomeWidgetKind kind in HomeWidgetKind.values)
+          if (_widgetAvailableKinds.contains(kind)) kind,
+      ],
+      present: <HomeWidgetKind>{for (final HomeWidgetItem e in items) e.kind},
+      labelOf: homeWidgetLabel,
+      descriptionOf: homeWidgetDescription,
+    );
+    if (picked == null || !mounted || !_editingWidgets) return;
+    // 添加用默认尺寸；面板开着时窗口可能跨过断点，所以取此刻网格的默认尺寸。
+    final HomeWidgetItem item = picked.withSize(
+      picked.kind.defaultFor(_widgetGrid),
+    );
+    _revealWidget = item.kind;
+    _editWidgets((List<HomeWidgetItem> full) => addHomeWidget(full, item));
+  }
+
+  /// 一个组件都没有时：空态说明 + 「添加小组件」。
+  Widget _buildWidgetEmptyState() => HomeEmptyState(
+    stateKey: 'home-widget-empty',
+    icon: FushiIcons.dashboardCustomize,
+    message: t.home_widget_empty,
+    actions: <Widget>[
+      FushiFilledButton.tonalIcon(
+        key: const ValueKey<String>('home-widget-empty-add'),
+        onPressed: () => unawaited(_addWidget()),
+        icon: const FushiIcon(FushiIcons.add),
+        label: Text(t.home_widget_add),
+      ),
+    ],
+  );
+
+  /// 编辑态底部浮动工具栏：纯图标（文字进 tooltip / 读屏），添加 · 撤销 · 完成。
+  Widget _buildWidgetEditToolbar() {
+    final HomeWidgetEditSession? session = _widgetSessions[_widgetGrid];
+    return FushiFloatingToolbar(
+      key: const ValueKey<String>('home-widget-edit-toolbar'),
+      groups: <List<FushiToolbarItem>>[
+        <FushiToolbarItem>[
+          FushiToolbarItem(
+            key: const ValueKey<String>('home-widget-edit-add'),
+            icon: FushiIcons.add,
+            label: t.home_widget_add,
+            onPressed: () => unawaited(_addWidget()),
+          ),
+          FushiToolbarItem(
+            key: const ValueKey<String>('home-widget-edit-undo'),
+            icon: FushiIcons.undo,
+            label: t.undo,
+            onPressed: (session?.canUndo ?? false) ? _undoWidgetEdit : null,
+          ),
+          FushiToolbarItem(
+            key: const ValueKey<String>('home-widget-edit-done'),
+            icon: FushiIcons.check,
+            label: t.home_widget_done,
+            emphasized: true,
+            onPressed: () => unawaited(_finishWidgetEdit()),
+          ),
+        ],
+      ],
+    );
+  }
+
   // ── 重设计外壳（页头大字 + 封面色块） ─────────────────────────────────────
 
   /// 重设计外壳（墨水屏除外）下的首页：顶部是与库页同一套的页头大字（页名「首页」
-  /// + 模块徽标 + 动作组 + 头像主按钮，随滚动收缩、滚动后铺页头底板），正文从它
-  /// 下方开始、滚到它底下。
-  ///
-  /// [continueEntries] 非 null（库页布局为拼贴 / 规整色块且有可继续的条目）时，
-  /// 「继续」整段画成封面色块（[SliverFushiCoverBlocks]，拼贴首块 = 最近一条，带
-  /// 「继续」主按钮外观），[body] 是排在色块下面的其余分区；null 时 [body] 就是原
-  /// 版式的整段正文（封面网格布局、首载骨架、空库引导）。
-  ///
-  /// [recentEntries] 非 null（色块面板版式、宽屏）时，[body] 之后再接「最近添加」
-  /// 分区：分区标题 + 规整封面色块网格（[_recentBlock]）。媒体追踪是可选面板
-  /// （[HomeDashboardPanel.tracking]），随 [body] 里的面板行排。
+  /// + 模块徽标 + 动作组 + 头像主按钮，随滚动收缩、滚动后铺页头底板），正文（小组件
+  /// 网格 [body]）从它下方开始、滚到它底下。
   Widget _buildRedesignedDashboard({
     required FushiDesignTokens tokens,
     required AppModel appModel,
-    required List<_ContinueEntry>? continueEntries,
     required Widget? onboardingCard,
     required Widget body,
     required bool resumeFab,
     required double bottomInset,
-    List<_ContinueEntry>? recentEntries,
   }) {
     final double page = tokens.spacing.page;
-    final List<_ContinueEntry>? entries = continueEntries;
-    final List<_ContinueEntry>? recent = recentEntries;
-    final DateTime now = DateTime.now();
     Widget slivers(BuildContext context) {
       // 页头大字叠在正文上：正文顶部让出它的展开高度（[FushiFloatingChromeInset]）。
       final double inset = FushiFloatingChromeInset.of(context);
@@ -1873,56 +2021,10 @@ class _HomeDashboardPageState
               ],
             ),
           ),
-          if (entries != null) ...<Widget>[
-            // 首页只是一眼总览：「继续」是「主块 + 横滑条」，整段只占一个主块的
-            // 高度（窄屏是主块 + 一行半高卡），其余条目横向滑动、不往下堆行
-            // （2026-11-12 用户：「首页继续阅读不要占太多位置……窄屏需要信息效率高，
-            // 最好跟以前一样但是用新设计」）。
-            SliverPadding(
-              padding: EdgeInsets.symmetric(horizontal: page),
-              sliver: SliverToBoxAdapter(
-                child: FushiCoverBlockStrip(
-                  key: const ValueKey<String>('home-continue-blocks'),
-                  stripKey: const ValueKey<String>('home-continue-row'),
-                  itemCount: entries.length,
-                  itemBuilder:
-                      (BuildContext context, int i, FushiCoverBlockSize size) =>
-                          _continueBlock(tokens, appModel, entries[i], i, size),
-                ),
-              ),
-            ),
-            SliverToBoxAdapter(child: SizedBox(height: tokens.spacing.card)),
-          ],
           SliverPadding(
             padding: EdgeInsets.symmetric(horizontal: page),
             sliver: SliverToBoxAdapter(child: body),
           ),
-          if (recent != null) ...<Widget>[
-            SliverPadding(
-              padding: EdgeInsets.fromLTRB(
-                page,
-                tokens.spacing.card * 2,
-                page,
-                tokens.spacing.card,
-              ),
-              sliver: SliverToBoxAdapter(
-                child: _posterSectionHeader(
-                  key: const ValueKey<String>('home-recent-card'),
-                  title: t.home_recently_added,
-                ),
-              ),
-            ),
-            SliverPadding(
-              padding: EdgeInsets.symmetric(horizontal: page),
-              sliver: SliverFushiCoverBlocks(
-                key: const ValueKey<String>('home-recent-list'),
-                itemCount: recent.length,
-                itemBuilder:
-                    (BuildContext context, int i, FushiCoverBlockSize size) =>
-                        _recentBlock(tokens, appModel, recent[i], i, size, now),
-              ),
-            ),
-          ],
           SliverToBoxAdapter(
             child: SizedBox(
               height:
@@ -1975,7 +2077,7 @@ class _HomeDashboardPageState
   Widget _buildMastheadBar(AppModel appModel) {
     final HomeUpdateCount? updateCount = _updateCount;
     return FushiShellTitleScope(
-      title: t.nav_home,
+      title: _editingWidgets ? t.home_widget_edit : t.nav_home,
       actionsSlot: _mastheadActions,
       child: ListenableBuilder(
         listenable: Listenable.merge(<Listenable?>[updateCount]),
@@ -2156,58 +2258,75 @@ class _HomeDashboardPageState
     );
   }
 
-  /// 首页的页头动作（更新中心 · 统计中心 · 收藏夹 · 排行榜 · 反馈）：旧浮动工具栏
-  /// 与重设计外壳的页头大字共用同一份。
+  /// 首页的页头动作（更新中心 · 统计中心 · 收藏夹 · 排行榜 · 反馈 · 编辑首页）：旧
+  /// 浮动工具栏与重设计外壳的页头大字共用同一份。小组件编辑态只剩「恢复默认」
+  /// （添加 / 撤销 / 完成在底部编辑工具栏）。
   List<FushiToolbarItem> _toolbarItems(
     AppModel appModel,
     int unseen,
     int feedbackUnseen,
-  ) => <FushiToolbarItem>[
-    // 有未读时换成「响铃」字形并把未读数写进 tooltip / 语义标签（共享
-    // 工具栏按钮没有角标槽；逐域未读明细仍在下方更新横幅里）。
-    FushiToolbarItem(
-      key: const ValueKey<String>('home-toolbar-updates'),
-      icon: unseen > 0
-          ? FushiIcons.notificationsActive
-          : FushiIcons.notifications,
-      label: unseen > 0
-          ? '${t.updates_center_title} ($unseen)'
-          : t.updates_center_title,
-      onPressed: () => unawaited(_openUpdates(appModel)),
-    ),
-    FushiToolbarItem(
-      key: const ValueKey<String>('home-toolbar-stats'),
-      icon: FushiIcons.barChart,
-      label: t.stat_center_title,
-      onPressed: _openStatisticsCenter,
-    ),
-    // 收藏夹：唯一入口（用户定案 2026-10-14，同统计中心 2026-09-01 的收敛）。
-    // 收藏夹不按模块隔离，书架 / 视频库页头各挂一个打开的都是同一页，反而
-    // 误导成「本模块的收藏夹」，所以撤掉库页入口、统一从首页进。
-    FushiToolbarItem(
-      key: const ValueKey<String>('home-toolbar-collections'),
-      icon: FushiIcons.collection,
-      label: t.collections,
-      onPressed: _openCollections,
-    ),
-    // 排行榜：统计中心隔壁单独一颗按钮（2026-10-01 从统计中心 tab 抽出）。
-    FushiToolbarItem(
-      key: const ValueKey<String>('home-toolbar-leaderboard'),
-      icon: FushiIcons.trophy,
-      label: t.leaderboard_title,
-      onPressed: _openLeaderboard,
-    ),
-    // 反馈：提交问题 / 建议并看处理进度（悬浮球上也有同一个入口）。
-    // 开发者有新回复时把条数写进 tooltip / 语义标签（同更新中心的做法）。
-    FushiToolbarItem(
-      key: const ValueKey<String>('home-toolbar-feedback'),
-      icon: FushiIcons.forum,
-      label: feedbackUnseen > 0
-          ? '${t.feedback_title} ($feedbackUnseen)'
-          : t.feedback_title,
-      onPressed: () => unawaited(openFeedbackCenter(context)),
-    ),
-  ];
+  ) => _editingWidgets
+      ? <FushiToolbarItem>[
+          FushiToolbarItem(
+            key: const ValueKey<String>('home-toolbar-restore-widgets'),
+            icon: FushiIcons.restart,
+            label: t.home_widget_restore_default,
+            onPressed: _restoreWidgetDefaults,
+          ),
+        ]
+      : <FushiToolbarItem>[
+          // 有未读时换成「响铃」字形并把未读数写进 tooltip / 语义标签（共享
+          // 工具栏按钮没有角标槽；逐域未读明细仍在下方更新横幅里）。
+          FushiToolbarItem(
+            key: const ValueKey<String>('home-toolbar-updates'),
+            icon: unseen > 0
+                ? FushiIcons.notificationsActive
+                : FushiIcons.notifications,
+            label: unseen > 0
+                ? '${t.updates_center_title} ($unseen)'
+                : t.updates_center_title,
+            onPressed: () => unawaited(_openUpdates(appModel)),
+          ),
+          FushiToolbarItem(
+            key: const ValueKey<String>('home-toolbar-stats'),
+            icon: FushiIcons.barChart,
+            label: t.stat_center_title,
+            onPressed: _openStatisticsCenter,
+          ),
+          // 收藏夹：唯一入口（用户定案 2026-10-14，同统计中心 2026-09-01 的收敛）。
+          // 收藏夹不按模块隔离，书架 / 视频库页头各挂一个打开的都是同一页，反而
+          // 误导成「本模块的收藏夹」，所以撤掉库页入口、统一从首页进。
+          FushiToolbarItem(
+            key: const ValueKey<String>('home-toolbar-collections'),
+            icon: FushiIcons.collection,
+            label: t.collections,
+            onPressed: _openCollections,
+          ),
+          // 排行榜：统计中心隔壁单独一颗按钮（2026-10-01 从统计中心 tab 抽出）。
+          FushiToolbarItem(
+            key: const ValueKey<String>('home-toolbar-leaderboard'),
+            icon: FushiIcons.trophy,
+            label: t.leaderboard_title,
+            onPressed: _openLeaderboard,
+          ),
+          // 反馈：提交问题 / 建议并看处理进度（悬浮球上也有同一个入口）。
+          // 开发者有新回复时把条数写进 tooltip / 语义标签（同更新中心的做法）。
+          FushiToolbarItem(
+            key: const ValueKey<String>('home-toolbar-feedback'),
+            icon: FushiIcons.forum,
+            label: feedbackUnseen > 0
+                ? '${t.feedback_title} ($feedbackUnseen)'
+                : t.feedback_title,
+            onPressed: () => unawaited(openFeedbackCenter(context)),
+          ),
+          // 小组件网格（spec 2026-11-15）：进入编辑态（长按任一组件也能进）。
+          FushiToolbarItem(
+            key: const ValueKey<String>('home-toolbar-edit-home'),
+            icon: FushiIcons.dashboardCustomize,
+            label: t.home_widget_edit,
+            onPressed: _enterWidgetEdit,
+          ),
+        ];
 
   /// 「继续」FAB：「继续」封面行滚出视野后出现，续开最近一条（与点第一张封面
   /// 同一出口 [_openContinueEntry]）。为什么要 FAB：首页的首要动作就是「接着读 /
@@ -2537,36 +2656,6 @@ class _HomeDashboardPageState
     return visible;
   }
 
-  /// [HomeDashboardPanel] 注册表里一个面板此刻的 widget；不该出现时为 null。
-  /// 在 build 里（LayoutBuilder 之外）调用：各面板的显隐判据经 ref.watch 订阅。
-  Widget? _buildOptionalPanel(HomeDashboardPanel panel) => switch (panel) {
-    HomeDashboardPanel.srsReview =>
-      ref.watch(homeSrsPanelVisibleProvider)
-          ? HomeSrsPanel(
-              key: const ValueKey<String>('home-srs-card'),
-              onOpenDecks: () => _goToTab(HomeTab.srs),
-              onStartReview: _startSrsReview,
-              poster: _posterPanels,
-            )
-          : null,
-    HomeDashboardPanel.tracking => _buildTrackingPanel(),
-    HomeDashboardPanel.aiAgent =>
-      ref.watch(homeAiAgentPanelVisibleProvider)
-          ? HomeAiAgentPanel(
-              key: const ValueKey<String>('home-ai-agent-card'),
-              poster: _posterPanels,
-            )
-          : null,
-    HomeDashboardPanel.panorama =>
-      ref.watch(homePanoramaPanelVisibleProvider)
-          ? HomePanoramaPanel(
-              key: const ValueKey<String>('home-panorama-card'),
-              onOpen: _openPanoramaWork,
-              poster: _posterPanels,
-            )
-          : null,
-  };
-
   /// 色块下面的面板是否画成海报色块（重设计外壳、且库页布局不是封面网格；墨水屏
   /// 下 [shellRedesignActive] 为 false）。只在 build 期间读（依赖 inherited 外壳
   /// 设置）。
@@ -2683,35 +2772,8 @@ class _HomeDashboardPageState
     if (mounted) setState(() {});
   }
 
-  /// 「今日」分区：学习头部行（[HomeStudyHeader]），首载未结束时挂同轮廓骨架。
-  ///
-  /// [showWeek]（宽屏面板，2026-10-31 方案 A 补齐「今日」）：头部行下再挂近 7 天
-  /// 柱条（[HomeWeekBars]，与目标同口径的学习字数）。手机竖屏不挂，保持一屏
-  /// 只有「今天读了多少 + 接着读什么」。
-  Widget _buildStudySection(FushiDesignTokens tokens, {bool showWeek = false}) {
-    return _sectionCard(
-      tokens,
-      title: t.stat_today,
-      icon: FushiIcons.barChart,
-      key: const ValueKey<String>('home-study-card'),
-      child: !_initialLoadDone
-          ? const HomeGoalSkeleton()
-          : !showWeek
-          ? _buildStudyHeader(tokens)
-          : Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                _buildStudyHeader(tokens),
-                SizedBox(height: tokens.spacing.gap),
-                _buildWeekBars(),
-              ],
-            ),
-    );
-  }
-
-  /// 近 7 天学习字数柱条（今天在最后）。
-  Widget _buildWeekBars() {
+  /// 近 7 天学习字数柱条（今天在最后），柱高 [height]。
+  Widget _buildWeekBars({required double height}) {
     final List<String> keys = _statWindow.lastDayKeys(7);
     final List<int> values = <int>[
       for (final String k in keys) studyGoalCharsForDay(_dailyRows, k),
@@ -2723,199 +2785,18 @@ class _HomeDashboardPageState
     return HomeWeekBars(
       values: values,
       labels: labels,
+      height: height,
       semanticLabel: '${t.stat_week_past} · ${labels.join(', ')}',
-    );
-  }
-
-  /// 色块面板版式的「今日」（设计稿首页 `.stat`「12,480 字 · 今天读了」）：与复习页
-  /// 「今日计划」同一套海报色块——左上「今日」chip + 今日时长 chip，右上目标环
-  /// （未设目标时环里是旗子），中间今日字数大字，下面是目标进度一行（未设目标时换成
-  /// 「设定目标」按钮），宽屏再挂近 7 天柱条（今天那根实色）。数据与
-  /// [_buildStudyHeader] 同口径；设了目标时整块就是「改目标」入口（与原目标行
-  /// 同一个 key `home-goal-row`）。
-  Widget _buildStudyPoster(FushiDesignTokens tokens, {bool showWeek = false}) {
-    final FushiCoverBlockColors colors = fushiPosterColors(
-      context,
-      fushiPosterHue('home-today'),
-    );
-    final Widget todayChip = FushiPosterChip(
-      colors: colors,
-      icon: FushiIcons.barChart,
-      label: t.stat_today,
-    );
-    if (!_initialLoadDone) {
-      return FushiPosterBlock(
-        key: const ValueKey<String>('home-study-card'),
-        watermark: t.stat_today,
-        colors: colors,
-        watermarkFontSize: 110,
-        watermarkEdge: FushiPosterWatermarkEdge.bottom,
-        hoverEnabled: false,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          mainAxisSize: MainAxisSize.min,
-          spacing: 12,
-          children: <Widget>[
-            Align(
-              alignment: AlignmentDirectional.centerStart,
-              child: todayChip,
-            ),
-            const HomeGoalSkeleton(),
-          ],
-        ),
-      );
-    }
-    final AppModel appModel = ref.read(appProvider);
-    final StudyGoalPeriod period = appModel.readingGoalPeriod;
-    final int goal = appModel.readingGoalActiveChars;
-    final StatWindow w = _statWindow;
-    final String todayKey = w.todayKey;
-    final int todayChars = studyGoalCharsForDay(_dailyRows, todayKey);
-    final int goalChars = switch (period) {
-      StudyGoalPeriod.daily => todayChars,
-      StudyGoalPeriod.weekly => studyGoalCharsForWeek(_dailyRows, w),
-    };
-    int todayMs = 0;
-    for (final StatFact f in _dailyRows) {
-      if (f.dateKey == todayKey) todayMs += f.ms;
-    }
-    final bool hasGoal = goal > 0;
-    final String todayTime = formatStatTime(todayMs);
-    final String? goalLine = !hasGoal
-        ? null
-        : switch (period) {
-            StudyGoalPeriod.daily => t.stat_goal_progress(
-              read: goalChars,
-              goal: goal,
-            ),
-            StudyGoalPeriod.weekly => t.stat_goal_progress_weekly(
-              read: goalChars,
-              goal: goal,
-            ),
-          };
-    final TextStyle base =
-        Theme.of(context).textTheme.bodyMedium ?? const TextStyle();
-    final TextStyle caption = FushiPosterText.caption
-        .on(base)
-        .copyWith(color: colors.onContainer.withValues(alpha: 0.85));
-    final Duration swap = fushiMotionDuration(context, FushiMotion.short);
-    void editGoal() => unawaited(_editGoal());
-
-    final Widget poster = FushiPosterBlock(
-      watermark: t.stat_today,
-      colors: colors,
-      watermarkFontSize: 110,
-      watermarkEdge: FushiPosterWatermarkEdge.bottom,
-      hoverEnabled: hasGoal,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        mainAxisSize: MainAxisSize.min,
-        spacing: 10,
-        children: <Widget>[
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Expanded(
-                child: Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: <Widget>[
-                    todayChip,
-                    // 屏上只有图标 + 时长，读屏要说清是什么。
-                    Semantics(
-                      key: const ValueKey<String>('home-today-time'),
-                      container: true,
-                      label: '${t.stat_today} · $todayTime',
-                      excludeSemantics: true,
-                      child: FushiPosterChip(
-                        colors: colors,
-                        icon: FushiIcons.schedule,
-                        label: todayTime,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              ExcludeSemantics(
-                child: FushiPosterRing(
-                  value: hasGoal ? (goalChars / goal).clamp(0.0, 1.0) : null,
-                  colors: colors,
-                  size: 56,
-                  center: hasGoal
-                      ? null
-                      : FushiIcon(
-                          FushiIcons.flag,
-                          size: 22,
-                          color: colors.onContainer,
-                        ),
-                ),
-              ),
-            ],
-          ),
-          AnimatedSwitcher(
-            duration: swap,
-            switchInCurve: FushiMotion.enter,
-            switchOutCurve: FushiMotion.exit,
-            layoutBuilder: (Widget? current, List<Widget> previous) => Stack(
-              alignment: AlignmentDirectional.centerStart,
-              children: <Widget>[...previous, ?current],
-            ),
-            child: Semantics(
-              key: ValueKey<int>(todayChars),
-              label: formatStatChars(todayChars),
-              excludeSemantics: true,
-              child: FushiPosterFigure(
-                value: formatStatCharsAxis(todayChars),
-                unit: t.stat_goal_unit_chars,
-                colors: colors,
-                size: FushiPosterFigureSize.compact,
-              ),
-            ),
-          ),
-          if (goalLine != null)
-            Text(
-              goalLine,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: caption,
-            )
-          else
-            Align(
-              alignment: AlignmentDirectional.centerStart,
-              child: FushiPressScale(
-                child: FushiFilledButton.tonalIcon(
-                  onPressed: editGoal,
-                  icon: const FushiIcon(FushiIcons.flag),
-                  label: Text(t.stat_goal_set),
-                ),
-              ),
-            ),
-          if (showWeek) ...<Widget>[
-            const SizedBox(height: 2),
-            _buildPosterWeekBars(colors),
-          ],
-        ],
-      ),
-    );
-    return KeyedSubtree(
-      key: const ValueKey<String>('home-study-card'),
-      child: hasGoal
-          ? shelfCoverCard(
-              key: const ValueKey<String>('home-goal-row'),
-              shape: fushiCoverBlockShape(context, FushiCoverBlockSize.regular),
-              onTap: editGoal,
-              child: poster,
-            )
-          : KeyedSubtree(
-              key: const ValueKey<String>('home-goal-row'),
-              child: poster,
-            ),
     );
   }
 
   /// 「今日」色块里的近 7 天柱条（与 [_buildWeekBars] 同一份数据与读屏文案，今天
   /// 在最后、实色）。
-  Widget _buildPosterWeekBars(FushiCoverBlockColors colors) {
+  Widget _buildPosterWeekBars(
+    FushiCoverBlockColors colors, {
+    required double height,
+    Key key = const ValueKey<String>('home-week-bars'),
+  }) {
     final List<String> keys = _statWindow.lastDayKeys(7);
     final List<int> values = <int>[
       for (final String k in keys) studyGoalCharsForDay(_dailyRows, k),
@@ -2925,7 +2806,7 @@ class _HomeDashboardPageState
         '${keys[i]} · ${formatStatChars(values[i])}',
     ];
     return Semantics(
-      key: const ValueKey<String>('home-week-bars'),
+      key: key,
       container: true,
       label: '${t.stat_week_past} · ${labels.join(', ')}',
       child: FushiPosterBars(
@@ -2933,86 +2814,7 @@ class _HomeDashboardPageState
         colors: colors,
         highlightIndex: values.length - 1,
         labels: labels,
-        height: 40,
-      ),
-    );
-  }
-
-  /// 「继续」分区：第一条放大成主角卡（[FushiContinueSpotlight]），其余条目是带标题
-  /// 的封面横滑行（`home-continue-row`）。
-  ///
-  /// 首载未结束时挂同轮廓骨架，而不是先闪空态再跳成真数据；新用户空库给空态
-  /// 说明 + 去书架 / 去媒体库的引导按钮（首页不会是一片空白）。
-  Widget _buildContinueSection(
-    FushiDesignTokens tokens,
-    AppModel appModel,
-    List<_ContinueEntry> visible, {
-    required double heroCoverHeight,
-    required double rowCoverHeight,
-  }) {
-    final ModuleVisibility visibility = appModel.moduleVisibility;
-    final Widget continueContent;
-    if (visible.isNotEmpty) {
-      // 与各库页 / 视频首页同一个「继续」组件（2026-10-31 合一）：宽屏主卡在
-      // 起始侧、其余条目的封面行在旁边等高；窄屏主卡在上、封面行在下。
-      continueContent = FushiContinueSpotlight(
-        main: _continueMainEntry(tokens, appModel, visible.first),
-        side: <FushiContinueEntry>[
-          for (int i = 1; i < visible.length; i++)
-            _continueSideEntry(tokens, appModel, visible[i], i),
-        ],
-        heroCoverHeight: heroCoverHeight,
-        soloCoverHeight: heroCoverHeight,
-        showSideWhenNarrow: true,
-        narrowSideCoverHeight: rowCoverHeight,
-        sideRowKey: const ValueKey<String>('home-continue-row'),
-        // 整个「继续」分区已由 build 里的 entering(continueCard) 错峰进场。
-        staggerEntrance: false,
-      );
-    } else if (!_initialLoadDone) {
-      continueContent = HomeContinueRowSkeleton(coverHeight: rowCoverHeight);
-    } else {
-      continueContent = HomeEmptyState(
-        icon: FushiIcons.playCircle,
-        message: t.home_continue_empty,
-        actions: <Widget>[
-          for (final HomeTab tab in const <HomeTab>[
-            HomeTab.books,
-            HomeTab.video,
-          ])
-            if (isHomeTabVisible(tab, visibility))
-              FushiFilledButton.tonalIcon(
-                key: ValueKey<String>('home-empty-go-${tab.name}'),
-                onPressed: () => _goToTab(tab),
-                icon: FushiIcon(homeNavItemFor(tab).icon),
-                label: Text(homeNavItemFor(tab).label),
-              ),
-        ],
-      );
-    }
-    return _sectionCard(
-      tokens,
-      title: t.home_continue,
-      icon: FushiIcons.playCircle,
-      key: const ValueKey<String>('home-continue-card'),
-      // 数据到达 / 空库 ↔ 有内容切换时交叉淡入 + 尺寸弹簧过渡，不硬跳。
-      child: FushiAnimatedSize(
-        duration: fushiMotionDuration(context, FushiMotion.medium),
-        curve: FushiMotion.standard,
-        alignment: AlignmentDirectional.topStart,
-        child: AnimatedSwitcher(
-          duration: fushiMotionDuration(context, FushiMotion.medium),
-          switchInCurve: FushiMotion.enter,
-          switchOutCurve: FushiMotion.exit,
-          child: KeyedSubtree(
-            key: ValueKey<String>(
-              visible.isNotEmpty
-                  ? 'continue'
-                  : (_initialLoadDone ? 'empty' : 'loading'),
-            ),
-            child: continueContent,
-          ),
-        ),
+        height: height,
       ),
     );
   }
@@ -3134,100 +2936,11 @@ class _HomeDashboardPageState
     MediaKind.game => FushiIcons.games,
   };
 
-  /// 「最近添加」卡（用户 2026-10-09：桌面 / 平板横屏空白太多；10-10 起带标题、
-  /// 放进双栏版式的侧栏）。
-  ///
-  /// 只在双栏版式挂（竖屏单栏不出，免得手机首页信息过多），形态是紧凑列表
-  /// （[HomeRecentTile]：小封面 + 标题 + 「类型 · 相对时间」），最多
-  /// [_kRecentLimit] 条。数据源是本页快照里已有的书 / 视频 / 游戏行（不新增查询）：
-  /// 书按 `EpubBooks.localAddedAt`、视频按 `VideoBooks.localAddedAt`（合集按成员
-  /// 最大值收成一张，封面取合集海报）、游戏按 `addedAt` 倒序混排；已在「继续」
-  /// 出现的作品去重；关掉的模块先出局。没有可显示的条目 → null（不出空卡）。
-  ///
-  /// 书 / 视频取本机开始拥有的时刻（v118），不取原始入库时刻 importedAt：刚从互联
-  /// 对端下载的旧条目 importedAt 是对端的入库时刻，按它排就进不了这一行。
-  Widget? _buildRecentlyAddedCard(
-    FushiDesignTokens tokens,
-    AppModel appModel,
-    List<MediaItem> books,
-  ) {
-    final List<_ContinueEntry> visible = _recentlyAddedEntries(appModel, books);
-    if (visible.isEmpty) return null;
-    final DateTime now = DateTime.now();
-    return _sectionCard(
-      tokens,
-      title: t.home_recently_added,
-      icon: FushiIcons.schedule,
-      key: const ValueKey<String>('home-recent-card'),
-      child: Column(
-        key: const ValueKey<String>('home-recent-list'),
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          for (final _ContinueEntry e in visible)
-            HomeRecentTile(
-              material: _continueMaterial(e),
-              cover: _continueCover(tokens, appModel, e),
-              title: _continueDisplayTitle(e),
-              subtitle: _recentSubtitle(e, now),
-              onTap: () => unawaited(_openContinueEntry(appModel, e)),
-            ),
-        ],
-      ),
-    );
-  }
-
   /// 「最近添加」条目副行：「类型 · 相对时间」（列表行与色块同一份）。
   String _recentSubtitle(_ContinueEntry e, DateTime now) => <String>[
     if (e.kind case final MediaKind kind) _kindLabel(kind),
     formatActivityRelativeTime(e.recentMs, now),
   ].join(' · ');
-
-  /// 色块面板版式的「最近添加」一格：与「继续」色块同一个 [FushiCoverBlock]
-  /// （封面取色、作品名水印、书 / 视频 / 游戏各自的封面摆法），副行是「类型 ·
-  /// 相对时间」；点按打开（与列表行同一条 [_openContinueEntry]）。
-  Widget _recentBlock(
-    FushiDesignTokens tokens,
-    AppModel appModel,
-    _ContinueEntry entry,
-    int index,
-    FushiCoverBlockSize size,
-    DateTime now,
-  ) {
-    final ImageProvider? image = _videoCoverImage(entry);
-    final Widget cover = _continueCover(
-      tokens,
-      appModel,
-      entry,
-      videoImage: image,
-    );
-    final Widget block = _orientedBlock(
-      tokens,
-      appModel,
-      entry,
-      image: image,
-      cover: cover,
-      blockOf: (FushiCoverBlockArt art, Widget cover) => FushiCoverBlock(
-        size: size,
-        art: art,
-        title: entry.collectionName ?? entry.title,
-        covers: <Widget>[cover],
-        tintImage: image ?? fushiCoverImageOf(cover),
-        subtitle: _recentSubtitle(entry, now),
-      ),
-    );
-    return FushiHoverLift(
-      builder: (BuildContext _, bool _) => shelfCoverCard(
-        key: ValueKey<String>('home-recent-block/$index'),
-        shape: fushiCoverBlockShape(context, size),
-        onTap: () => unawaited(_openContinueEntry(appModel, entry)),
-        child: FushiTooltip(
-          message: _continueDisplayTitle(entry),
-          child: block,
-        ),
-      ),
-    );
-  }
 
   /// 「最近添加」要列的条目（按加入时间倒序、去掉「继续」里已有的、只留模块
   /// 开着的，最多 [_kRecentLimit] 条）。列表卡与色块共用。
@@ -3518,7 +3231,47 @@ class _HomeDashboardPageState
   /// 视频走 [_videoCoverImage] 选中的那一张；[videoImage] 是调用方为横竖探测已经
   /// 取好的同一个 provider（传进来才能共用一条解码流），[landscape] = 卡片已按
   /// 横图定成 16:9 横槽。
+  /// 「继续」条目的 NSFW 宿主（远端补位 / 自配服务器条目不可标，恒 null）。
+  MediaNsfwTarget? _continueNsfwTarget(_ContinueEntry entry) {
+    if (entry.remote != null || entry.server != null) return null;
+    if (entry.video case final VideoBookRow video) {
+      return MediaNsfwTarget.video(video.bookUid);
+    }
+    if (entry.game case final GalgameEntry game) {
+      return MediaNsfwTarget.game(game.id, adult: game.isNsfw);
+    }
+    if (entry.book case final MediaItem book) {
+      final String? srtUid = ReaderFushiSource.parseSrtBookUid(
+        book.mediaIdentifier,
+      );
+      if (srtUid != null) return MediaNsfwTarget.srtBook(srtUid);
+      final String? bookKey = ReaderFushiSource.parseBookKey(
+        book.mediaIdentifier,
+      );
+      if (bookKey != null) return MediaNsfwTarget.book(bookKey);
+    }
+    return null;
+  }
+
+  /// 「继续」封面：NSFW 作品按「模糊 NSFW 封面」打模糊（主卡与封面行同一出口）。
   Widget _continueCover(
+    FushiDesignTokens tokens,
+    AppModel appModel,
+    _ContinueEntry entry, {
+    ImageProvider? videoImage,
+    bool landscape = false,
+  }) => MediaNsfwCover(
+    target: _continueNsfwTarget(entry),
+    child: _continueCoverInner(
+      tokens,
+      appModel,
+      entry,
+      videoImage: videoImage,
+      landscape: landscape,
+    ),
+  );
+
+  Widget _continueCoverInner(
     FushiDesignTokens tokens,
     AppModel appModel,
     _ContinueEntry entry, {
@@ -4026,25 +3779,6 @@ class _HomeDashboardPageState
 
   // ── Media tracking (strip + marks, see home_tracking_panel.dart) ─────────
 
-  /// The Tracking strip, or null when it is not on the page. Same gate as the
-  /// settings page it opens: the Media tracking module.
-  Widget? _buildTrackingPanel() {
-    final AppModel appModel = ref.watch(appProvider);
-    final HomeTrackingSummary summary = HomeTrackingSummary.of(_tracking);
-    final bool visible = resolveHomeTrackingPanelVisible(
-      available: isMediaTrackingEnabled(appModel.moduleVisibility),
-      mode: appModel.homeDashboardPanelMode(HomeDashboardPanel.tracking),
-      summary: summary,
-    );
-    return visible
-        ? HomeTrackingPanel(
-            key: const ValueKey<String>('home-tracking-card'),
-            summary: summary,
-            onOpen: () => _openTrackingPage(summary),
-          )
-        : null;
-  }
-
   /// The tracking state of a Continue entry ([homeTrackingMark]); null for
   /// entries tracking has no key for (audiobooks, items on another device).
   FushiContinueMark? _trackingMarkOf(_ContinueEntry entry) {
@@ -4154,25 +3888,6 @@ class _HomeDashboardPageState
           ],
           child,
         ],
-      ),
-    );
-  }
-
-  /// 色块面板版式的分区标题（设计稿 `.secH b`：24 / 900 字重大字），排在封面色块
-  /// 网格上方。
-  Widget _posterSectionHeader({required String title, Key? key}) {
-    final TextStyle base =
-        Theme.of(context).textTheme.bodyMedium ?? const TextStyle();
-    return Semantics(
-      key: key,
-      header: true,
-      child: Text(
-        title,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: FushiPosterText.section
-            .on(base)
-            .copyWith(color: FushiDesignTokens.of(context).surfaces.onSurface),
       ),
     );
   }

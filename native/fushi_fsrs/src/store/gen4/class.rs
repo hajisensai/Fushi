@@ -29,10 +29,12 @@
 //!
 //! # 没有并起来的（按原值实体，留在索引层）
 //!
-//! 负状态是索引层按原值实体判的，这里原样拿来：已清除（[super::weigh::S_PURGED]：Purge 点名的是原值实体，清的是
+//! 负状态记在索引层的原值写入上，这里原样拿来：已清除（[super::weigh::S_PURGED]：Purge 点名的是原值实体，清的是
 //! 「作者没见过它」的、这个原值实体上的操作）、扣住的删除（[super::weigh::S_HELD]）、作者不可信（
-//! [super::weigh::S_DISTRUSTED]）。一条 Purge 要不要清掉整个类、一条删除的扣住要不要看全类的并发操作，是 G7
-//! 接线时定的事（G9-2 的缓存层沿用原值口径）（设计 §10 第 19 条同源）；在那之前，按类读与按原值读对这三种状态口径相同。
+//! [super::weigh::S_DISTRUSTED]）。清除与不可信按原值实体判；一条 Purge 要不要清掉整个类仍是接线时定的事（设计
+//! §10 第 19 条同源），在那之前按类读与按原值读对这两种状态口径相同。**扣住按类判**（G7-4g 定，交接说明 §7.6 方案 1）：
+//! 「被见过它的写入盖掉」与「并发的操作」都在全类成员上取（`weigh.rs` 文件头「扣住的删除」），状态仍记在删除落的
+//! 原值成员上——与这里按类读寄存器同一个口径，裁决按规范 ID 写也盖得掉落在带盐成员上的删除。
 //!
 //! # 内嵌的 ID（设计 §5.3「内嵌的 ID 同样过别名表」）
 //!
@@ -227,7 +229,7 @@ impl<'t, 'c> Index<'t, 'c> {
         kind: EntKind,
         canon: &Ref,
     ) -> Result<Vec<ClassWinner>, String> {
-        self.class_registers(kind, canon, None)
+        self.class_registers(kind, canon, None, None)
     }
 
     /// 一个别名类里一个寄存器（[canon_key] 是规范键）的生效值；没有写入 = None。
@@ -238,10 +240,48 @@ impl<'t, 'c> Index<'t, 'c> {
         canon_key: &str,
     ) -> Result<Option<String>, String> {
         Ok(self
-            .class_registers(kind, canon, Some(canon_key))?
+            .class_registers(kind, canon, Some(canon_key), None)?
             .into_iter()
             .next()
             .map(|w| w.value))
+    }
+
+    /// [Index::class_value]，但只看 [keep] 留下的写入（按操作主键）：这些写入单独重判一遍取胜者——「只有这些操作时
+    /// 这个寄存器的值」。时间线恢复（`cmd/writes_restore.rs`）求「那一刻的值」用；判定规则与 [Index::class_value]
+    /// 同一份（[Index::judged] 按类）。[keep] 一条都不留 = None。
+    pub(super) fn class_value_in(
+        &mut self,
+        kind: EntKind,
+        canon: &Ref,
+        canon_key: &str,
+        keep: &dyn Fn(i64) -> bool,
+    ) -> Result<Option<String>, String> {
+        Ok(self
+            .class_registers(kind, canon, Some(canon_key), Some(keep))?
+            .into_iter()
+            .next()
+            .map(|w| w.value))
+    }
+
+    /// [Index::class_tags]，但只看 [keep] 留下的标签操作（按操作主键），OR-Set 与顺序提示在这些操作上重判。用途同
+    /// [Index::class_value_in]。
+    pub(super) fn class_tags_in(
+        &mut self,
+        canon: &Ref,
+        keep: &dyn Fn(i64) -> bool,
+    ) -> Result<Vec<String>, String> {
+        self.aliases_settled()?;
+        let mut rows = Vec::new();
+        for m in &self.members(canon)? {
+            rows.extend(self.tags_rows(m)?.into_iter().filter(|r| keep(r.0)));
+        }
+        rows.sort();
+        rows.dedup();
+        let want = self.tag_states(&rows)?;
+        for (row, want) in rows.iter_mut().zip(want) {
+            row.3 = want;
+        }
+        self.current_tags(&rows)
     }
 
     /// 一个别名类（笔记）现在的标签：类内成员的标签操作并起来重判（文件头「标签」），顺序规则同 [Index::tags_of]。
@@ -444,12 +484,13 @@ impl<'t, 'c> Index<'t, 'c> {
         rows.collect::<Result<_, _>>().map_err(sql)
     }
 
-    /// 类内全部成员的寄存器行按规范键成组再判；[only] = 只要这一个规范键。
+    /// 类内全部成员的寄存器行按规范键成组再判；[only] = 只要这一个规范键；[keep] = 只要这些写入（按操作主键）。
     fn class_registers(
         &mut self,
         kind: EntKind,
         canon: &Ref,
         only: Option<&str>,
+        keep: Option<&dyn Fn(i64) -> bool>,
     ) -> Result<Vec<ClassWinner>, String> {
         self.aliases_settled()?;
         let entity = self.canonical(canon)?.text();
@@ -478,7 +519,7 @@ impl<'t, 'c> Index<'t, 'c> {
                 let text = read_edit_key(&mut Reader::new(&key))
                     .map_err(|e| format!("gen4 index: bad register key: {e}"))?;
                 let ck = self.canonical_key(&text)?;
-                if only.is_some_and(|o| o != ck) {
+                if only.is_some_and(|o| o != ck) || keep.is_some_and(|f| !f(k)) {
                     continue;
                 }
                 groups.entry(ck).or_default().push((k, state));

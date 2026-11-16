@@ -603,6 +603,9 @@ void main() {
         expect(idsOf(dest.sections[6]), <String>[
           'interconnect.backup_backend',
           'interconnect.service_config_sync',
+          // 来源共享（拍板台 wOMR4_Er7s）：接收开关 + 「也接收插件」（默认关）。
+          'interconnect.source_share_sync',
+          'interconnect.source_share_plugins',
           // 跟随已配对设备自动登录 Fushi 账户（client 侧开关，默认开）。
           'interconnect.leaderboard_follow_login',
           'interconnect.profile_upload',
@@ -646,6 +649,9 @@ void main() {
             'interconnect.profile_transfer_host',
             // 允许「我的设备」跟随本机 Fushi 账户自动登录（总闸，默认开）。
             'interconnect.leaderboard_link_host',
+            // 来源共享 host 总闸 + 逐项勾选子页（默认一条都不共享）。
+            'interconnect.source_share_host',
+            'interconnect.source_share_items',
             // 允许已配对设备远程更新本机（反馈 Pp8XPyve0N）：会在本机下载安装
             // 可执行文件，同样是主人的显式意愿。
             'interconnect.remote_update_host',

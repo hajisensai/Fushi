@@ -10,9 +10,14 @@ class AdaptiveNavPeekEntry {
     this.subtitle,
     this.progress,
     this.icon,
+    this.blurCover = false,
   });
 
   final String title;
+
+  /// 封面要按「模糊 NSFW 封面」打模糊（拍板台 w04vrhUAaX；判定由加载方按快照
+  /// 算好，速览卡本身不认识数据库）。
+  final bool blurCover;
 
   /// 没有封面时（以及列表式一行前面）画的图标；null = 模块图标。设置分类、
   /// 网页这类每行是不同东西的目的地用它区分。
@@ -630,9 +635,13 @@ class _NavPeekCover extends StatelessWidget {
     required this.fallbackIcon,
     required this.radius,
     this.aspectRatio = kNavPeekDefaultCoverAspect,
+    this.blur = false,
   });
 
   final ImageProvider? image;
+
+  /// NSFW 封面打模糊（[AdaptiveNavPeekEntry.blurCover]）。
+  final bool blur;
   final IconData fallbackIcon;
   final double radius;
 
@@ -652,11 +661,15 @@ class _NavPeekCover extends StatelessWidget {
     final ImageProvider? provider = image;
     final Widget cover = provider == null
         ? placeholder
-        : Image(
-            image: provider,
-            fit: BoxFit.cover,
-            gaplessPlayback: true,
-            errorBuilder: (_, _, _) => placeholder,
+        : NsfwCoverBlur(
+            blur: blur,
+            showIcon: false,
+            child: Image(
+              image: provider,
+              fit: BoxFit.cover,
+              gaplessPlayback: true,
+              errorBuilder: (_, _, _) => placeholder,
+            ),
           );
     if (shelfCoverMaterialOf(context) != null) {
       return AspectRatio(
@@ -727,6 +740,7 @@ class _NavPeekResume extends StatelessWidget {
                             fallbackIcon: fallbackIcon,
                             radius: 10,
                             aspectRatio: width / kNavPeekResumeCoverHeight,
+                            blur: entry.blurCover,
                           ),
                         );
                       },
@@ -823,6 +837,7 @@ class _NavPeekRecent extends StatelessWidget {
                       fallbackIcon: fallbackIcon,
                       radius: 10,
                       aspectRatio: aspectRatio,
+                      blur: entry.blurCover,
                     ),
                     const SizedBox(height: 4),
                     Text(

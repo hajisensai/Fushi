@@ -8,8 +8,6 @@ import 'package:fushi/src/anki/pending_mining/pending_mine_relay.dart';
 import 'package:fushi/src/epub/book_css_repository.dart';
 import 'package:fushi_engine/media/video/video_member_file.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
-import 'package:fushi_engine/media/video/strm_file.dart'
-    show lacksLocalMediaFile;
 import 'package:fushi_engine/media/video/video_sidecar.dart'
     show listSidecarSubtitles;
 import 'package:fushi/src/models/dictionary_repository.dart'
@@ -36,6 +34,9 @@ import 'package:fushi/src/sync/cloud_book_content_names.dart';
 import 'package:fushi/src/sync/font_sync.dart';
 import 'package:fushi/src/sync/interconnect_book_progress_sync.dart';
 import 'package:fushi/src/sync/interconnect_playback_position_sync.dart';
+import 'package:fushi/src/sync/interconnect_source_share_kinds.dart'
+    show sourceSharePluginStores, sourceSharePrefWriter, SharedPluginStore;
+import 'package:fushi/src/sync/interconnect_source_share_sync.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/remote_audiobook_revision.dart'
     show remoteAudiobookRevisionKeyForBook;
@@ -373,6 +374,13 @@ class SyncRunReport {
   /// even though no media row was imported.
   int serviceConfigsImported = 0;
 
+  /// 互联「来源共享」本轮在本机新增 / 更新 / 删除的服务器来源与插件条数
+  /// （`interconnect_source_share_sync.dart`）。与 [serviceConfigsImported] 同理要刷新偏好缓存。
+  int sourcesShared = 0;
+
+  /// 来源共享里签名者变了、没有自动更新、等用户在本机确认的插件名。
+  final List<String> sourceShareSignerChanged = <String>[];
+
   /// 本轮从别的设备采纳、写进本机的可移植设置项数（反馈 AWp-0BtDDv，「同步设置」）。
   /// 与 [serviceConfigsImported] 同理：没有媒体行变化，但 AppModel 的偏好缓存要刷新。
   int settingsImported = 0;
@@ -481,6 +489,7 @@ class SyncRunReport {
       tagsUpdated > 0 ||
       videoMetadataUpdated > 0 ||
       serviceConfigsImported > 0 ||
+      sourcesShared > 0 ||
       settingsImported > 0;
 
   /// 合并另一条通道的报告到本报告（option B 双通道：云备份 + 互联并行各跑一轮后，
@@ -509,6 +518,8 @@ class SyncRunReport {
     mediaLinksUpdated += other.mediaLinksUpdated;
     videoMetadataUpdated += other.videoMetadataUpdated;
     serviceConfigsImported += other.serviceConfigsImported;
+    sourcesShared += other.sourcesShared;
+    sourceShareSignerChanged.addAll(other.sourceShareSignerChanged);
     settingsImported += other.settingsImported;
     settingsExported += other.settingsExported;
     errors.addAll(other.errors);
@@ -964,6 +975,7 @@ class SyncOrchestrator {
     if (isInterconnect) {
       _checkpoint();
       await _syncServiceConfigLive(report, b);
+      await _syncSourceShareLive(report, b);
       // 互联内容（EPUB / 漫画包）走 live 端点，书籍或漫画任一开关开时执行，进去后
       // 按格式各看各的开关。
       if (syncContent || syncMangaContent) {
@@ -2100,9 +2112,10 @@ class SyncOrchestrator {
         );
         try {
           // async 判存在：视频常在网络盘上，同步 stat 冷目录时会冻结主 isolate
-          // （BUG-3756）。没有本机媒体字节的路径（网络流 / `.strm` / DVD title）
-          // 一律按缺失处理（video_member_file.dart 第 2 种问法）。
-          if (!await hasLocalMediaFile(v.videoPath)) {
+          // （BUG-3756）。下面按字节上传，只认路径本身装着全部媒体字节的单文件
+          // （video_member_file.dart 第 3 种问法）：网络流 / `.strm` / 原盘成员一律
+          // 按缺失处理。
+          if (!await hasLocalSingleMediaFile(v.videoPath)) {
             report.errors.add(
               'video "${v.title}": local file missing: ${v.videoPath}',
             );

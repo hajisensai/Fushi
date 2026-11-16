@@ -3,10 +3,10 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:drift/drift.dart' show QueryRow, Variable;
 import 'package:fushi/src/onboarding/recommended_pack_import.dart'
-    show kRecommendedPackImportPreset;
+    show kRecommendedPackImportMode;
 import 'package:fushi/src/sync/backup_service.dart';
 import 'package:fushi/src/sync/sync_settings_schema.dart'
-    show BackupImportMode, backupImportPresetCategories;
+    show BackupImportMode, BackupImportPreset, backupImportPresetCategories;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
@@ -16,8 +16,8 @@ import 'temp_dir_cleanup.dart';
 ///
 /// 推荐包是一份净化过的备份（只剩 `dictionary_metadata`、两条音频来源注册偏好与
 /// 词典资源 / 本地发音库文件，见 `tool/pack/recommended_pack_database.dart`）。app 内
-/// 入口以前弹默认「覆盖」的通用导入框，整库被替换。现在入口恒用
-/// [kRecommendedPackImportPreset]（合并）。这里按那份预设折算出的分类跑真实的
+/// 入口以前弹默认「覆盖」的通用导入框，整库被替换。现在确认框预选
+/// [kRecommendedPackImportMode]（合并），分类默认全勾。这里按同一套规则折算出的分类跑真实的
 /// [BackupRestoreService.mergeRestoreBackup]：书库行与进度原样保留（bookKey / uid 不变），
 /// 推荐包的词典与发音库全部装上——包括设备已经有自己的音频来源列表时，发音库也要
 /// 注册进去（以前合并只在本机列表为空时才收包里的列表，于是文件拷进来了却没登记）。
@@ -70,8 +70,13 @@ void main() {
     return zip;
   }
 
-  test('recommended pack import preset is a merge', () {
-    expect(kRecommendedPackImportPreset.mode, BackupImportMode.merge);
+  // 确认框预选合并、分类全勾（不碰任何开关直接确认）折算出的就是这份预设。
+  const BackupImportPreset packDefault = BackupImportPreset(
+    mode: kRecommendedPackImportMode,
+  );
+
+  test('recommended pack import preselects merge', () {
+    expect(kRecommendedPackImportMode, BackupImportMode.merge);
   });
 
   test('merging the recommended pack keeps the library and installs every '
@@ -126,10 +131,7 @@ void main() {
     await BackupRestoreService.mergeRestoreBackup(
       dbDirectory: curDbDir,
       zipPath: zip,
-      categories: backupImportPresetCategories(
-        kRecommendedPackImportPreset,
-        summary,
-      ),
+      categories: backupImportPresetCategories(packDefault, summary),
       dictionaryResourceDirectory: curDictDir,
     );
 
@@ -195,10 +197,7 @@ void main() {
     await BackupRestoreService.mergeRestoreBackup(
       dbDirectory: curDbDir,
       zipPath: zip,
-      categories: backupImportPresetCategories(
-        kRecommendedPackImportPreset,
-        summary,
-      ),
+      categories: backupImportPresetCategories(packDefault, summary),
       dictionaryResourceDirectory: curDictDir,
     );
     final FushiDatabase again = FushiDatabase(curDbDir);
