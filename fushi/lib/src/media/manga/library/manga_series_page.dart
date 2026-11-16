@@ -92,7 +92,6 @@ import 'package:fushi/src/media/links/media_link_opener.dart'
 import 'package:fushi/src/media/links/media_links_section.dart'
     show MediaLinksSection;
 import 'package:fushi/src/media/tracking/book_tracking_dialog.dart';
-import 'package:fushi/src/models/module_id.dart' show isMediaTrackingEnabled;
 
 /// 作品页要显示**哪一部**作品。
 ///
