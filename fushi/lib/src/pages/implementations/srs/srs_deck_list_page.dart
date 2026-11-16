@@ -329,6 +329,15 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
     if (mounted) bumpSrsRevision(ref);
   }
 
+  /// 回应「每日上限单位改缺省」的提醒：给存量牌组明写 [unit]，再发修订号让列表与提醒重读（[settleSrsLegacyLimitUnit]）。
+  Future<void> _settleLegacyLimitUnit(
+    SrsDbStore store,
+    SrsLimitUnit unit,
+  ) async {
+    await settleSrsLegacyLimitUnit(store, unit);
+    if (mounted) bumpSrsRevision(ref);
+  }
+
   /// 「::」是层级分隔符（导入 / AnkiConnect 按它拆路径），名字里不能出现。
   String? _validateDeckName(String value) =>
       value.contains('::') ? t.srs_deck_name_invalid : null;
@@ -987,11 +996,11 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
             ref.watch(srsLimitUnitLegacyCountProvider).valueOrNull ?? 0,
         onKeepLegacyLimitCards: () => srsRunLogged(
           'SrsDeckList.limitUnitKeepCards',
-          () => settleSrsLegacyLimitUnit(list.store, SrsLimitUnit.cards),
+          () => _settleLegacyLimitUnit(list.store, SrsLimitUnit.cards),
         ),
         onAcceptLimitAnswers: () => srsRunLogged(
           'SrsDeckList.limitUnitAcceptAnswers',
-          () => settleSrsLegacyLimitUnit(list.store, SrsLimitUnit.reviews),
+          () => _settleLegacyLimitUnit(list.store, SrsLimitUnit.reviews),
         ),
       ),
       onFocus: _setFocus,
