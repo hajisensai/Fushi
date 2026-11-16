@@ -436,9 +436,9 @@ extension _VideoSubtitle on _VideoFushiPageState {
     // 选中行前景：M3E 交给面板列表主题（secondaryContainer 色块 +
     // onSecondaryContainer），Apple 照旧强调色。
     final Color? selectedFg = videoPanelSelectedForeground(context);
-    // TODO-2837 远端分支：可用源 = host sidecar（已下载在 [_remoteSubtitlePath]）+
-    // host 内嵌文本轨（抽取下载）+ 本地字幕文件导入；全部归一成本地文件 → cue →
-    // setSecondaryCues。选中高亮按持久化编码（文件路径 / `embedded:<n>`）比对。
+    // TODO-2837 远端分支：可用源 = YouTube 字幕轨（在线 YouTube 视频，懒下载 cue）+
+    // host sidecar（已下载在 [_remoteSubtitlePath]）+ host 内嵌文本轨（抽取下载）+
+    // 本地字幕文件导入；全部归一成 cue → setSecondaryCues。选中高亮按持久化编码（文件路径 / `embedded:<n>`）比对。
     if (_isRemote) {
       return <Widget>[
         FushiListTileControl(
@@ -464,6 +464,21 @@ extension _VideoSubtitle on _VideoFushiPageState {
                   _pickAndImportRemoteSecondarySubtitle(controller),
                 ),
         ),
+        // 反馈 A41_cyNKcc：与主字幕轨行同一份 YouTube 字幕轨表（[_youtubeCaptionTracks]），
+        // 同一标签；选中态按 trackKey 比对副字幕源，点选懒下载 cue 挂副层。
+        for (final YoutubeCaptionTrack track in _youtubeCaptionTracks)
+          FushiListTileControl(
+            leading: const FushiIcon(Icons.closed_caption_outlined),
+            title: Text(_youtubeCaptionTrackLabel(track)),
+            selected: _currentSecondarySubtitleSource == track.trackKey,
+            selectedColor: selectedFg,
+            enabled: !_subtitleLoadingShown,
+            onTap: _subtitleLoadingShown
+                ? null
+                : () => unawaited(
+                    _applyYoutubeSecondaryCaptionTrack(controller, track),
+                  ),
+          ),
         // Xt3RCTPKhX：与主字幕菜单 / 手机遥控字幕列表同一份行模型
         // （[_remoteSubtitleFileRows]）：后端默认字幕 + 本机字幕档（可长按删除）。
         for (final RemoteSubtitleFileEntry entry in _remoteSubtitleFileRows)
@@ -2652,26 +2667,11 @@ extension _VideoSubtitle on _VideoFushiPageState {
     YoutubeCaptionTrack track, {
     int? loadSeq,
   }) async {
-    final RemoteVideoClient? client = _effectiveRemoteClient;
-    if (client is! UrlStreamVideoClient) return;
-    List<AudioCue> cues = client.cachedCaptionCues(track.trackKey);
-    if (cues.isEmpty) {
-      if (mounted) _rebuild(() => _subtitleMenuLoading = true);
-      try {
-        cues = await resolveYoutubeCaptionCues(
-          track,
-          bookKey: 'yt:$_activeBookUid',
-        );
-      } finally {
-        // BUG-1329：cue 解析抛错（网络/解析异常）时也必须收掉加载态。原来靠三条各自
-        // 复位的 return 路径，抛错那条谁也没走到，[_subtitleMenuLoading] 就永久留在
-        // true——字幕轨区顶部的进度条从此一直转，且再没有任何入口能把它关掉。
-        if (mounted) _rebuild(() => _subtitleMenuLoading = false);
-      }
-      if (!mounted) return;
-      if (loadSeq != null && loadSeq != _episodeLoadSeq) return;
-      if (cues.isNotEmpty) client.cacheCaptionCues(track.trackKey, cues);
-    }
+    final List<AudioCue>? cues = await _resolveYoutubeTrackCues(
+      track,
+      loadSeq: loadSeq,
+    );
+    if (cues == null) return;
     if (cues.isEmpty) {
       // 手选到空轨（机翻失败 / 该轨无文字）：提示；自动应用（loadSeq!=null）静默不打扰。
       if (loadSeq == null) {
@@ -2688,6 +2688,62 @@ extension _VideoSubtitle on _VideoFushiPageState {
         t.video_subtitle_switched(label: _youtubeCaptionTrackLabel(track)),
       );
     }
+  }
+
+  /// YouTube 字幕轨的取 cue（主 / 副字幕共用，反馈 A41_cyNKcc）：缓存命中直接用，否则
+  /// [resolveYoutubeCaptionCues] 懒下载并写回 per-track 缓存。返回 null = 结果作废
+  /// （非 YouTube 客户端 / 页面已卸载 / [loadSeq] 非空且已切到别的集），调用方什么都不做；
+  /// 返回空表 = 该轨确实没有文字，由调用方决定是否提示。
+  Future<List<AudioCue>?> _resolveYoutubeTrackCues(
+    YoutubeCaptionTrack track, {
+    int? loadSeq,
+  }) async {
+    final RemoteVideoClient? client = _effectiveRemoteClient;
+    if (client is! UrlStreamVideoClient) return null;
+    List<AudioCue> cues = client.cachedCaptionCues(track.trackKey);
+    if (cues.isNotEmpty) return cues;
+    if (mounted) _rebuild(() => _subtitleMenuLoading = true);
+    try {
+      cues = await resolveYoutubeCaptionCues(
+        track,
+        bookKey: 'yt:$_activeBookUid',
+      );
+    } finally {
+      // BUG-1329：cue 解析抛错（网络/解析异常）时也必须收掉加载态。原来靠三条各自
+      // 复位的 return 路径，抛错那条谁也没走到，[_subtitleMenuLoading] 就永久留在
+      // true——字幕轨区顶部的进度条从此一直转，且再没有任何入口能把它关掉。
+      if (mounted) _rebuild(() => _subtitleMenuLoading = false);
+    }
+    if (!mounted) return null;
+    if (loadSeq != null && loadSeq != _episodeLoadSeq) return null;
+    if (cues.isNotEmpty) client.cacheCaptionCues(track.trackKey, cues);
+    return cues;
+  }
+
+  /// 把 YouTube 字幕轨 [track] 选为**副字幕**（反馈 A41_cyNKcc：此前远端副字幕区只列 host
+  /// 外挂 / 内封轨 / 本地导入，在线 YouTube 视频的副字幕一条 YouTube 轨都选不到，与「副字幕
+  /// 与主字幕同一份可选来源」的双字幕设计矛盾）。取 cue 与主字幕同一条
+  /// [_resolveYoutubeTrackCues]，落点是 overlay 副层 [VideoPlayerController.setSecondaryCues]，
+  /// 登记 [YoutubeCaptionTrack.trackKey] 为当前副字幕源。与主字幕的 YouTube 轨一样只记内存、
+  /// 不落库（轨表是每次起播现取的，trackKey 跨会话无从重放）。下载期间切集则作废。
+  Future<void> _applyYoutubeSecondaryCaptionTrack(
+    VideoPlayerController controller,
+    YoutubeCaptionTrack track,
+  ) async {
+    final List<AudioCue>? cues = await _resolveYoutubeTrackCues(
+      track,
+      loadSeq: _episodeLoadSeq,
+    );
+    if (cues == null || _controller != controller) return;
+    if (cues.isEmpty) {
+      _showOsd(t.video_subtitle_youtube_empty, severity: ToastSeverity.error);
+      return;
+    }
+    controller.setSecondaryCues(cues);
+    _rebuild(() => _currentSecondarySubtitleSource = track.trackKey);
+    _showOsd(
+      t.video_subtitle_switched(label: _youtubeCaptionTrackLabel(track)),
+    );
   }
 
   /// 本地 / 本机媒体库条目（含网络流书）的图形轨整轨取数输入：与控制器取逐句时间表

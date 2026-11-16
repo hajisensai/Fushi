@@ -789,9 +789,29 @@ class VideoSourceScrapeTaskController extends EngineChangeNotifier {
     if (_active != null || _scanningSourceId != null) {
       throw StateError('已有视频来源扫描或刮削任务正在运行');
     }
+    final Future<T>? started = tryRunSourceScan(sourceId, operation);
+    if (started == null) throw StateError('视频刮削资料正在清理');
+    return started;
+  }
+
+  /// [runSourceScan] 的非抛出版：门被占（已有扫描 / 刮削在跑、刮削资料正在清理、
+  /// 控制器已释放）时**不启动**、返回 null，由调用方决定改天再来。来源自动扫描
+  /// 用它——自动任务撞上用户手动的刮削 / 清理是常态，不是错误。
+  Future<T>? tryRunSourceScan<T>(int sourceId, Future<T> Function() operation) {
+    if (_disposed || _active != null || _scanningSourceId != null) {
+      return null;
+    }
     final VideoScrapeOperationLease? lease =
         VideoScrapeOperationGate.tryEnterOperation();
-    if (lease == null) throw StateError('视频刮削资料正在清理');
+    if (lease == null) return null;
+    return _runSourceScanHolding(sourceId, lease, operation);
+  }
+
+  Future<T> _runSourceScanHolding<T>(
+    int sourceId,
+    VideoScrapeOperationLease lease,
+    Future<T> Function() operation,
+  ) async {
     _scanningSourceId = sourceId;
     notifyListeners();
     try {

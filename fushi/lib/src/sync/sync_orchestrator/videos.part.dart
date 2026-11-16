@@ -7,15 +7,15 @@ extension _SyncOrchestratorVideos on SyncOrchestrator {
   ///
   /// 排除：流媒体（`streamSpecJson` 非空 / `videoPath` 为网络流地址——http(s) 与
   /// IPTV 频道的 rtsp / rtmp / udp …）——无本地字节可传；`.strm` 流指针——本地那份
-  /// 只是一行地址，传给对端会被当视频下发、播不了（两者合起来就是
-  /// [lacksLocalMediaFile]）；多集播放列表（`playlistJson` 非空）——单文件资产模型
-  /// 装不下多集（多集上传是后续批的接缝，见 §2.6 seam）。
+  /// 只是一行地址，传给对端会被当视频下发、播不了；原盘成员（蓝光整卷 / 分集
+  /// `.mpls`、DVD title）——路径本身不装媒体字节，整卷 `.mpls` 只是几百字节的索引，
+  /// 分集与 DVD title 是虚拟路径（三者合起来就是 [videoPathLacksSingleMediaFile]）；
+  /// 多集播放列表（`playlistJson` 非空）——单文件资产模型装不下多集（多集上传是
+  /// 后续批的接缝，见 §2.6 seam）。
   bool _isUploadableLocalVideo(VideoBookRow v) {
     if (v.streamSpecJson != null) return false;
     if (v.playlistJson != null) return false;
-    final String path = v.videoPath;
-    if (path.isEmpty) return false;
-    if (lacksLocalMediaFile(path)) return false;
+    if (videoPathLacksSingleMediaFile(v.videoPath)) return false;
     return true;
   }
 
@@ -371,7 +371,8 @@ extension _SyncOrchestratorVideos on SyncOrchestrator {
           )) {
         continue;
       }
-      if (!hasLocalMediaFileSync(v.videoPath)) {
+      // 下面要按字节读：只认「路径本身就是装着全部媒体字节的单文件」。
+      if (!hasLocalSingleMediaFileSync(v.videoPath)) {
         report.errors.add(
           'live push video "${v.title}": local file missing: ${v.videoPath}',
         );

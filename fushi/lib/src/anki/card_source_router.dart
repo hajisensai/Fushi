@@ -8,6 +8,7 @@ import 'package:fushi/src/media/media_source.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_theme_host.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/ankimobile_repository.dart';
+import 'package:fushi/src/anki/card_source_open_feedback.dart';
 import 'package:fushi/src/anki/remote_mining_anki_repository.dart';
 import 'package:fushi/src/anki/source_review_navigation.dart';
 import 'package:fushi/src/anki/source_review_session.dart';
@@ -21,6 +22,8 @@ import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show RemoteVideoInfo;
 import 'package:fushi/src/sync/remote_library_cache.dart';
+import 'package:fushi/src/sync/remote_video_client.dart'
+    show RemoteVideoFingerprintSource;
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/pages/implementations/collections_page.dart'
     show buildCollectionReaderMediaItem;
@@ -80,57 +83,116 @@ bool cardSourceHostFingerprintAccepted({
     hostFingerprint == null ||
     linkFingerprint == hostFingerprint;
 
-/// 互联 host 上找到的回跳目标。
+/// 互联 host 上卡片指向的那条视频，连同取它字节用的客户端。
 typedef RemoteCardSourceVideo = ({
   RemoteVideoInfo info,
   InterconnectSyncBackend client,
 });
 
+/// 去 host 找卡片来源的结果：[value] / [cancelled] 同 [CardSourceAwaited]；
+/// [fingerprintMismatch] 为 true 表示 host 上同 bookUid 的那份字节与卡片指纹不符
+/// （此时 [value] 为 null，调用方提示「指纹不符」而不是「没有来源」）。
+typedef RemoteCardSourceLookup = ({
+  RemoteCardSourceVideo? value,
+  bool cancelled,
+  bool fingerprintMismatch,
+});
+
+/// 在 [listing]（host 视频清单）里按 [link] 找条目，链接带指纹时再请 [fingerprints]
+/// 对 host 要串流的同一个文件核验字节。找不到 → `info == null`；host 字节不符 →
+/// `fingerprintMismatch == true`。网络失败原样抛给调用方。
+Future<({RemoteVideoInfo? info, bool fingerprintMismatch})>
+matchRemoteCardSourceVideo({
+  required Future<List<RemoteVideoInfo>> listing,
+  required RemoteVideoFingerprintSource fingerprints,
+  required CardSourceLink link,
+}) async {
+  final RemoteVideoInfo? info = findRemoteVideoForCardSource(
+    await listing,
+    link,
+  );
+  final String? linkFingerprint = link.fingerprint;
+  if (info == null || linkFingerprint == null) {
+    return (info: info, fingerprintMismatch: false);
+  }
+  final String? hostFingerprint = await fingerprints
+      .fetchRemoteVideoFingerprint(
+        info.id,
+        episodeIndex: link.episodeIndex ?? 0,
+      );
+  return cardSourceHostFingerprintAccepted(
+        linkFingerprint: linkFingerprint,
+        hostFingerprint: hostFingerprint,
+      )
+      ? (info: info, fingerprintMismatch: false)
+      : (info: null, fingerprintMismatch: true);
+}
+
 /// 本地库没有该视频（或本地那份字节对不上）时，去已配对的互联 host 取它的清单并按
-/// [link] 找条目，再请 host 核验字节指纹。互联未启用 / 未配对 / host 不可达 / 清单里
-/// 没有都返回 `hit == null`（调用方按「没有来源」提示，不吞成别的错）；host 上那份字节
-/// 与卡片不符时 `fingerprintMismatch == true`。
-Future<({RemoteCardSourceVideo? hit, bool fingerprintMismatch})>
-resolveRemoteCardSourceVideo(
+/// [link] 找条目，再请 host 核验字节指纹（[matchRemoteCardSourceVideo]）。互联未启用 /
+/// 未配对 / host 不可达 / 清单里没有都是 `value: null`（调用方按「没有来源」提示，不吞
+/// 成别的错）；host 字节与卡片不符是 `fingerprintMismatch: true`；用户在等待时取消是
+/// `cancelled: true`（调用方静默放弃这次跳转）。
+///
+/// 要真去 host 等结果时（清单缓存不新鲜：首次 / 过了 TTL / 有在途请求；或要请 host
+/// 对整份原文件算指纹，几 GB 的片子首次要几十秒），整段等待在 [navigator] 上挂可取消
+/// 的进度反馈（[awaitWithCardSourceOpeningFeedback]，反馈 7gkdbfCXQ0）；新鲜缓存命中
+/// 且不用核验指纹是立即可得的，不弹对话框免得闪一下。
+Future<RemoteCardSourceLookup> resolveRemoteCardSourceVideo(
   AppModel app,
   WidgetRef ref,
-  CardSourceLink link,
-) async {
-  const ({RemoteCardSourceVideo? hit, bool fingerprintMismatch}) none = (
-    hit: null,
+  CardSourceLink link, {
+  required NavigatorState navigator,
+}) async {
+  const RemoteCardSourceLookup unavailable = (
+    value: null,
+    cancelled: false,
     fingerprintMismatch: false,
   );
   final SyncRepository syncRepo = SyncRepository(app.database);
-  if (!await syncRepo.isInterconnectEnabled()) return none;
+  if (!await syncRepo.isInterconnectEnabled()) return unavailable;
   final InterconnectSyncBackend backend = InterconnectSyncBackend.instance;
-  if (!await backend.restoreAuth(syncRepo)) return none;
+  if (!await backend.restoreAuth(syncRepo)) return unavailable;
   try {
-    final List<RemoteVideoInfo> videos = await ref
-        .read(remoteLibraryCacheProvider)
+    final RemoteLibraryCache cache = ref.read(remoteLibraryCacheProvider);
+    final String sourceId = backend.remoteLibrarySourceId;
+    const String key = RemoteLibraryCacheKeys.videos;
+    // 与 [RemoteLibraryCache.read] 同一判据：有在途请求（如视频页正在下拉刷新）
+    // 时 read 会等它，这里也算「不立即可得」、照样挂反馈。
+    final bool cached = cache.wouldReadImmediately(
+      sourceId: sourceId,
+      key: key,
+    );
+    final Future<List<RemoteVideoInfo>> listing = cache
         .read<List<RemoteVideoInfo>>(
-          sourceId: backend.remoteLibrarySourceId,
-          key: RemoteLibraryCacheKeys.videos,
+          sourceId: sourceId,
+          key: key,
           fetch: backend.listRemoteVideos,
         );
-    final RemoteVideoInfo? info = findRemoteVideoForCardSource(videos, link);
-    if (info == null) return none;
-    final String? linkFingerprint = link.fingerprint;
-    final String? hostFingerprint = linkFingerprint == null
-        ? null
-        : await backend.fetchRemoteVideoFingerprint(
-            info.id,
-            episodeIndex: link.episodeIndex ?? 0,
-          );
-    if (!cardSourceHostFingerprintAccepted(
-      linkFingerprint: linkFingerprint,
-      hostFingerprint: hostFingerprint,
-    )) {
-      return (hit: null, fingerprintMismatch: true);
+    final Future<({RemoteVideoInfo? info, bool fingerprintMismatch})> work =
+        matchRemoteCardSourceVideo(
+          listing: listing,
+          fingerprints: backend,
+          link: link,
+        );
+    final CardSourceAwaited<({RemoteVideoInfo? info, bool fingerprintMismatch})>
+    matched = cached && link.fingerprint == null
+        ? (value: await work, cancelled: false)
+        : await awaitWithCardSourceOpeningFeedback<
+            ({RemoteVideoInfo? info, bool fingerprintMismatch})
+          >(navigator: navigator, work: work);
+    if (matched.cancelled) {
+      return (value: null, cancelled: true, fingerprintMismatch: false);
     }
-    return (hit: (info: info, client: backend), fingerprintMismatch: false);
+    final RemoteVideoInfo? info = matched.value!.info;
+    return (
+      value: info == null ? null : (info: info, client: backend),
+      cancelled: false,
+      fingerprintMismatch: matched.value!.fingerprintMismatch,
+    );
   } on Object catch (error, stack) {
     ErrorLogService.instance.log('card_source.remoteVideo', error, stack);
-    return none;
+    return unavailable;
   }
 }
 
@@ -201,14 +263,15 @@ Future<void> _openCardSource({
   final VideoBookRow? video = localVideo;
   // 拍板台 IFCPPprIpT：本机没有（或字节对不上）就经互联在 host 上找同一份字节在线播
   // ——远程播放 host 视频制的卡、以及在别的设备本地制的卡都走这里。
-  final ({RemoteCardSourceVideo? hit, bool fingerprintMismatch})? remoteLookup =
+  final RemoteCardSourceLookup? lookup =
       link.kind == CardSourceKind.video && video == null
-      ? await resolveRemoteCardSourceVideo(app, ref, link)
+      ? await resolveRemoteCardSourceVideo(app, ref, link, navigator: navigator)
       : null;
-  final RemoteCardSourceVideo? remote = remoteLookup?.hit;
+  if (lookup != null && (lookup.cancelled || !navigator.mounted)) return;
+  final RemoteCardSourceVideo? remote = lookup?.value;
   if (link.kind == CardSourceKind.video && video == null && remote == null) {
     FushiToast.show(
-      msg: localMismatch || (remoteLookup?.fingerprintMismatch ?? false)
+      msg: localMismatch || (lookup?.fingerprintMismatch ?? false)
           ? t.card_source_review_fingerprint_mismatch
           : localUnreadable
           ? t.card_source_review_local_required

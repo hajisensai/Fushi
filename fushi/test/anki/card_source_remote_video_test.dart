@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/anki/card_source_router.dart';
+import 'package:fushi/src/sync/remote_video_client.dart'
+    show RemoteVideoFingerprintSource;
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show RemoteVideoInfo;
@@ -108,6 +110,91 @@ void main() {
     });
   });
 
+  group('拍板台 IFCPPprIpT：matchRemoteCardSourceVideo 行为', () {
+    const String a =
+        '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+    const String b =
+        'fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210';
+
+    Future<({RemoteVideoInfo? info, bool fingerprintMismatch})> run(
+      CardSourceLink link,
+      _FakeFingerprints host,
+    ) => matchRemoteCardSourceVideo(
+      listing: Future<List<RemoteVideoInfo>>.value(videos),
+      fingerprints: host,
+      link: link,
+    );
+
+    test('host 字节一致：放行，并按链接的集下标请求', () async {
+      final _FakeFingerprints host = _FakeFingerprints(a);
+      final ({RemoteVideoInfo? info, bool fingerprintMismatch}) r = await run(
+        link(CardSourceKind.video, 'uid-b'),
+        host,
+      );
+      expect(r.info?.id, 'uid-b');
+      expect(r.fingerprintMismatch, isFalse);
+      expect(host.calls, <String>['uid-b#0']);
+    });
+
+    test('host 上同 bookUid 换成了别的片子：不放行、报指纹不符', () async {
+      final ({RemoteVideoInfo? info, bool fingerprintMismatch}) r = await run(
+        link(CardSourceKind.video, 'uid-b'),
+        _FakeFingerprints(b),
+      );
+      expect(r.info, isNull);
+      expect(r.fingerprintMismatch, isTrue);
+    });
+
+    test('老 host 算不出（null）：按 bookUid 放行', () async {
+      final ({RemoteVideoInfo? info, bool fingerprintMismatch}) r = await run(
+        link(CardSourceKind.video, 'uid-a'),
+        _FakeFingerprints(null),
+      );
+      expect(r.info?.id, 'uid-a');
+      expect(r.fingerprintMismatch, isFalse);
+    });
+
+    test('清单里没有：不去请求指纹，按没有来源', () async {
+      final _FakeFingerprints host = _FakeFingerprints(a);
+      final ({RemoteVideoInfo? info, bool fingerprintMismatch}) r = await run(
+        link(CardSourceKind.video, 'nope'),
+        host,
+      );
+      expect(r.info, isNull);
+      expect(r.fingerprintMismatch, isFalse);
+      expect(host.calls, isEmpty);
+    });
+
+    test('BUG-3490 无指纹的在线内容链接：不请求 host 指纹直接放行', () async {
+      const List<RemoteVideoInfo> online = <RemoteVideoInfo>[
+        RemoteVideoInfo(id: 'video/stream/x', title: 'X'),
+      ];
+      final _FakeFingerprints host = _FakeFingerprints(b);
+      final ({RemoteVideoInfo? info, bool fingerprintMismatch}) r =
+          await matchRemoteCardSourceVideo(
+            listing: Future<List<RemoteVideoInfo>>.value(online),
+            fingerprints: host,
+            link: CardSourceLink(
+              kind: CardSourceKind.video,
+              uid: 'video/stream/x',
+              sourceId: CardSourceLink.newSourceId(),
+              episodeIndex: 0,
+              startMs: 1000,
+              endMs: 2000,
+            ),
+          );
+      expect(r.info?.id, 'video/stream/x');
+      expect(host.calls, isEmpty);
+    });
+
+    test('host 网络失败原样抛出（由调用方记日志按没有来源）', () async {
+      await expectLater(
+        run(link(CardSourceKind.video, 'uid-a'), _FakeFingerprints.failing()),
+        throwsA(isA<SocketException>()),
+      );
+    });
+  });
+
   test('接线：远程播放互联 host 制卡时向 host 取指纹写进链接', () {
     final String mining = File(
       'lib/src/pages/implementations/video_fushi/lookup_mining.part.dart',
@@ -120,7 +207,15 @@ void main() {
     final String router = File(
       'lib/src/anki/card_source_router.dart',
     ).readAsStringSync();
-    expect(router, contains('backend.fetchRemoteVideoFingerprint('));
+    expect(router, contains('matchRemoteCardSourceVideo('));
+    // 反馈 7gkdbfCXQ0 / BUG-4710：等 host 算指纹（几 GB 的片子首次几十秒）与等清单
+    // 合成同一段 work，套可取消的进度反馈；只有「缓存新鲜且不用核验指纹」才直取。
+    expect(router, contains('cached && link.fingerprint == null'));
+    expect(router, contains('>(navigator: navigator, work: work);'));
+    expect(
+      router,
+      contains('lookup != null && (lookup.cancelled || !navigator.mounted)'),
+    );
     // 本地同 uid 但字节对不上时不直接判死，继续去 host 找同一份字节。
     expect(
       router,
@@ -132,11 +227,30 @@ void main() {
     final String router = File(
       'lib/src/anki/card_source_router.dart',
     ).readAsStringSync();
-    expect(router, contains('resolveRemoteCardSourceVideo(app, ref, link)'));
+    expect(router, contains('await resolveRemoteCardSourceVideo('));
     expect(router, contains('VideoFushiPage.neutralizedRemote('));
     final String page = File(
       'lib/src/pages/implementations/video_fushi_page.dart',
     ).readAsStringSync();
     expect(page, contains('_isRemote ? null : widget.sourceReview'));
   });
+}
+
+class _FakeFingerprints implements RemoteVideoFingerprintSource {
+  _FakeFingerprints(this.fingerprint) : fail = false;
+  _FakeFingerprints.failing() : fingerprint = null, fail = true;
+
+  final String? fingerprint;
+  final bool fail;
+  final List<String> calls = <String>[];
+
+  @override
+  Future<String?> fetchRemoteVideoFingerprint(
+    String id, {
+    int episodeIndex = 0,
+  }) async {
+    calls.add('$id#$episodeIndex');
+    if (fail) throw const SocketException('host unreachable');
+    return fingerprint;
+  }
 }

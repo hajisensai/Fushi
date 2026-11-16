@@ -29,6 +29,7 @@ import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/profile/work_profile_scope.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/media/manga/manga_module.dart';
+import 'package:fushi/src/media/nsfw/nsfw_card_image.dart';
 import 'package:fushi/src/models/fushi_reader_palette.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
@@ -994,6 +995,18 @@ class MangaFushiPage extends BaseSourcePage {
     );
   }
 
+  /// 长按 / 右键 JS payload（overlay 的 `_ocrHitPayload`）里的落点页号：整卷
+  /// 0-based，与 `data-page` 同一口径。没落在页上（页外空白 / 加载失败页，JS 报
+  /// `page: null`）或越界返回 null——作用于「那一页」的动作此时没有目标，不得回落
+  /// 到当前跨页：跨页里当前页只是两页中的一页，回落就会拿错图（反馈 NfaXdQeLyD）。
+  static int? mangaHitPageIndex(Map<dynamic, dynamic> hit, int pageCount) {
+    final Object? raw = hit['page'];
+    if (raw is! num) return null;
+    final int page = raw.toInt();
+    if (page < 0 || page >= pageCount) return null;
+    return page;
+  }
+
   /// 在线直读章第 [index] 页（0-based）在 payload 里的占位 url。带章目录名一段：
   /// 各章页名同形，URL 不能在章与章之间撞（WebView 缓存）。不带扩展名、也不对应
   /// 盘上文件——页字节由会话按页序给（见 [cachedMangaPageImage]）。
@@ -1228,7 +1241,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   final WebViewMenuDismissBridge _menuDismiss = WebViewMenuDismissBridge();
 
   @override
-  ModuleId? get popupDockModule => ModuleId.manga;
+  ModuleId? get lookupHostModule => ModuleId.manga;
 
   /// BUG-2553：查词弹窗开着时全屏 dismiss barrier 盖在 WebView 之上，barrier 收到的
   /// 是**全局**指针坐标；要转发给覆盖层选字，必须用 WebView 自己的 RenderBox 逆映成
@@ -1261,6 +1274,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
 
   /// 「已经是最新/第一章了」这一章内是否已经提示过。开新章时归零。
   bool _edgeToastShown = false;
+
+  /// 墨水屏「每 N 页全刷」：翻页撞章边界换了章，这一页要等新章窗口就绪（[_windowGate]
+  /// 判 ready）才计——在 `_loadInitialWindow` 之前计会全刷到还没装好图的画面上。
+  bool _einkTurnPendingOnWindowReady = false;
 
   /// 当前选中的在线章还没下载、在线直读也没成（源不可用 / 取不到页）：正文区显示
   /// 「本章未下载」态（入队 / 选章两个出口），
@@ -3868,10 +3885,20 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     await _controller?.evaluateJavascript(
       source: mangaApplyTranslateInvocation(target),
     );
+    _noteEinkPageTurn();
     _turnStage = 'replaceOcr';
     await _replaceSpreadOcr(target);
     _updateCurrentPageImagePath();
     _recordProgress();
+  }
+
+  /// 墨水屏「每 N 页全刷」的计数入口（`EinkFullRefreshController.notePageTurn`）。
+  /// 只在读者真翻了一页时调：分页落到相邻跨页（[_commitMangaSpread]）、条漫按键
+  /// 一步（[_jumpToPageAnchor]）、条漫滚动顶页换了（[_onMangaScroll]）、翻页撞章
+  /// 边界换章后新窗口就绪。开章 / 切单双页 / 切布局 / 跳页给 `_pageNotifier` 赋值
+  /// 但不是翻页，不计。
+  void _noteEinkPageTurn() {
+    appModel.einkFullRefresh.notePageTurn();
   }
 
   // ── 换章 ───────────────────────────────────────────────────────────
@@ -3987,6 +4014,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       }
       return;
     }
+    // 换章后的这一页等新窗口就绪再计（见 [_einkTurnPendingOnWindowReady]）。
+    _einkTurnPendingOnWindowReady = true;
     await _switchToChapter(target, landOnLastPage: !forward);
   }
 
@@ -4056,6 +4085,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         _recordProgress();
       }
     } on Object catch (error, stack) {
+      _einkTurnPendingOnWindowReady = false;
       ErrorLogService.instance.log(
         'MangaFushiPage.switchChapter',
         error,
@@ -4167,6 +4197,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           'window.__mangaScrollToSpread && '
           'window.__mangaScrollToSpread($target, 0);',
     );
+    _noteEinkPageTurn();
     await _replaceSpreadOcr(target);
     _updateCurrentPageImagePath();
     _recordProgress();
@@ -4621,6 +4652,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     final bool spreadChanged = topSpread != _currentSpread;
     _currentSpread = topSpread;
     if (spreadChanged) {
+      _noteEinkPageTurn();
       await _replaceSpreadOcr(topSpread);
       _updateCurrentPageImagePath();
     }
@@ -5629,6 +5661,14 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         }
       }
 
+      // NSFW 漫画 +「制卡图片也模糊」：页图 / 裁切图换成模糊副本（失败则不带图）。
+      coverPath = await resolveNsfwCardImagePath(
+        db: appModel.database,
+        path: coverPath,
+        blurCardImages: appModel.prefsRepo.blurNsfwCardImages,
+        kind: TagHostKind.epub,
+        entryKey: widget.bookKey,
+      );
       final AnkiMiningContext miningContext = AnkiMiningContext(
         sentence: sentence,
         documentTitle: title,
@@ -6775,7 +6815,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
 
   /// 右键菜单的图片动作（保存 / 分享 / 复制）：与小说正文、插图册、缩放看图
   /// 同一份动作本体（image_actions_sheet.dart 的 [runImageAction]；保存 =
-  /// 手机写系统相册、桌面另存为）。这里只负责把当前页解析成文件。
+  /// 手机写系统相册、桌面另存为）。这里只负责把落点那一页解析成文件。
   /// 触屏长按页图（JS `onMangaPageLongPress`，payload 带被按住那页的 `data-page`）：
   /// 弹与小说正文 / 歌词插图同一个图片动作面板，作用于那一页而不是当前跨页。
   Future<void> _onMangaPageLongPress(String payloadJson) async {
@@ -6785,8 +6825,14 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     } on FormatException {
       return;
     }
-    if (decoded is! Map || decoded['page'] is! num || !mounted) return;
-    final int pageIndex = (decoded['page'] as num).toInt();
+    final MokuroPayload? payload = _payload;
+    if (decoded is! Map || payload == null || !mounted) return;
+    // 与右键菜单同一口径：越界页号不得被 _mangaPageFileAt 夹到首 / 末页拿错图。
+    final int? pageIndex = MangaFushiPage.mangaHitPageIndex(
+      decoded,
+      payload.images.length,
+    );
+    if (pageIndex == null) return;
     final _MangaOcrCopyTexts texts = _ocrCopyTextsAt(decoded);
     fushiLiftHaptic(context);
     final File? file = await _mangaPageFileAt(pageIndex);
@@ -6831,12 +6877,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 没有对应文字的项为 null，菜单 / 面板就不列它。
   _MangaOcrCopyTexts _ocrCopyTextsAt(Map<dynamic, dynamic> hit) {
     final MokuroPayload? payload = _payload;
-    final Object? rawPage = hit['page'];
-    if (payload == null || rawPage is! num) {
-      return (sentence: null, page: null);
-    }
-    final int pageIndex = rawPage.toInt();
-    if (pageIndex < 0 || pageIndex >= payload.images.length) {
+    final int? pageIndex = payload == null
+        ? null
+        : MangaFushiPage.mangaHitPageIndex(hit, payload.images.length);
+    if (payload == null || pageIndex == null) {
       return (sentence: null, page: null);
     }
     final MokuroImage image = payload.images[pageIndex];
@@ -6854,8 +6898,13 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     if (mounted) FushiToast.show(msg: t.copied_to_clipboard);
   }
 
-  Future<void> _runCurrentMangaPageImageAction(ImageAction action) async {
-    final File? file = await _currentMangaPageFile();
+  /// 右键菜单的图片动作作用于右键落点那一页 [pageIndex]（与长按面板同一口径），
+  /// 不是当前跨页的主页：双页跨页右键左页，复制出来的必须是左页（反馈 NfaXdQeLyD）。
+  Future<void> _runMangaPageImageAction(
+    ImageAction action,
+    int pageIndex,
+  ) async {
+    final File? file = await _mangaPageFileAt(pageIndex);
     if (file == null || !await file.exists()) {
       FushiToast.show(
         msg: t.reader_image_file_unavailable,
@@ -6866,8 +6915,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     await runImageAction(action, file);
   }
 
-  Future<void> _setCurrentMangaPageAsCover() async {
-    final File? source = await _currentMangaPageFile();
+  Future<void> _setMangaPageAsCover(int pageIndex) async {
+    final File? source = await _mangaPageFileAt(pageIndex);
     final EpubBookRow? row = _bookRow;
     if (source == null || row == null || !await source.exists()) return;
     final String relative = p
@@ -6888,6 +6937,12 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     }
     if (decoded is! Map || !mounted) return;
     final _MangaOcrCopyTexts ocrTexts = _ocrCopyTextsAt(decoded);
+    // 图片项（复制 / 分享 / 保存 / 设为封面）绑右键落点那一页；没落在页上就不列，
+    // 不回落当前页（跨页时当前页只是两页之一）。
+    final int? hitPage = MangaFushiPage.mangaHitPageIndex(
+      decoded,
+      _payload?.images.length ?? 0,
+    );
     final double x = (decoded['x'] as num?)?.toDouble() ?? 0;
     // JS clientY 是 WebView 视口坐标；固定态顶栏让位时 WebView 顶部不在屏幕 0。
     final double y =
@@ -6964,17 +7019,19 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
               child: Text('${t.manga_zoom} − ($_zoomPercent%)'),
             ),
             // 图片动作按平台列（与长按图片面板同一判据 [imageActionsFor]）。
-            for (final ImageAction imageAction in imageActionsFor(
-              defaultTargetPlatformForImageSave(),
-            ))
+            if (hitPage != null) ...<PopupMenuEntry<_MangaContextAction>>[
+              for (final ImageAction imageAction in imageActionsFor(
+                defaultTargetPlatformForImageSave(),
+              ))
+                PopupMenuItem<_MangaContextAction>(
+                  value: _MangaContextAction.forImageAction(imageAction),
+                  child: Text(imageActionLabel(imageAction)),
+                ),
               PopupMenuItem<_MangaContextAction>(
-                value: _MangaContextAction.forImageAction(imageAction),
-                child: Text(imageActionLabel(imageAction)),
+                value: _MangaContextAction.setCover,
+                child: Text(t.manga_page_set_cover),
               ),
-            PopupMenuItem<_MangaContextAction>(
-              value: _MangaContextAction.setCover,
-              child: Text(t.manga_page_set_cover),
-            ),
+            ],
           ],
         );
     if (!mounted || action == null) return;
@@ -7012,10 +7069,12 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       case _MangaContextAction.copyImage:
       case _MangaContextAction.shareImage:
       case _MangaContextAction.saveImage:
-        await _runCurrentMangaPageImageAction(action.imageAction!);
+        if (hitPage != null) {
+          await _runMangaPageImageAction(action.imageAction!, hitPage);
+        }
         return;
       case _MangaContextAction.setCover:
-        await _setCurrentMangaPageAsCover();
+        if (hitPage != null) await _setMangaPageAsCover(hitPage);
         return;
     }
   }
@@ -7126,8 +7185,13 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                       top: _chromeTopInset,
                       left: 0,
                       right: 0,
-                      child: SafeArea(
-                        top: _chromeTopInset == 0,
+                      // 横幅自己带 SafeArea（状态栏 + 横屏刘海），外面不能再套一层
+                      // SafeArea：外层先把左右 padding 扣掉，刘海那一侧就成了横幅底色
+                      // 以外的空白条（BUG-4733）。固定态顶栏已让出状态栏，这里只摘掉
+                      // 顶部 padding，免得横幅再让一遍。
+                      child: MediaQuery.removePadding(
+                        context: context,
+                        removeTop: _chromeTopInset > 0,
                         child: SourceReviewBanner(
                           runHidden: runWithLookupPopupHidden,
                           session: session,
@@ -8913,6 +8977,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       if (!mounted || !_windowGate.owns(ticket)) return;
     }
     _windowGate.complete(ticket, MangaWindowLoadOutcome.ready);
+    if (_einkTurnPendingOnWindowReady) {
+      _einkTurnPendingOnWindowReady = false;
+      _noteEinkPageTurn();
+    }
     _recordProgress();
     // 正文就绪的确定性落焦：整页 autofocus 会抢在 WebView 内容就绪之前，焦点落在
     // 表面层；换窗（翻到下一个加载窗口）同样会重挂平台视图。这里在每个就绪落点
