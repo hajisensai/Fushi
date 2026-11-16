@@ -558,10 +558,13 @@ class AppVideoSubtitleService {
     evidenceSource,
     SubtitleLyricsFinder Function({WebSearchClient? webSearch})? lyricsFinder,
     SubtitleFrameSource? frameSource,
+    SubtitleFrameSource? burnedInFrameSource,
     SubtitleFrameTextReader? burnedInOcr,
     int Function()? nowMs,
   }) : _evidenceSource = evidenceSource,
        _burnedInOcr = burnedInOcr,
+       _burnedInFrameSource =
+           burnedInFrameSource ?? ffmpegSubtitleFullFrameSource,
        _frameSource = frameSource ?? ffmpegSubtitleFrameSource,
        _lyricsFinder = lyricsFinder ?? buildSubtitleLyricsFinder,
        _resolveRecognizer = recognizerResolver ?? _defaultResolver,
@@ -625,6 +628,9 @@ class AppVideoSubtitleService {
   /// 读画面硬字幕的 OCR（生产 [AppBurnedInSubtitleOcr]；null = 不读）。
   final SubtitleFrameTextReader? _burnedInOcr;
 
+  /// 读硬字幕的取帧（生产 [ffmpegSubtitleFullFrameSource]：原分辨率，小字不缩）。
+  final SubtitleFrameSource _burnedInFrameSource;
+
   /// 这次运行会不会真的给 AI 发画面：开了画面参考，且指派的提供商开了图片输入。
   /// 面板据此显示「提供商没开图片输入」。
   bool get proofreadAcceptsImages =>
@@ -638,7 +644,7 @@ class AppVideoSubtitleService {
     burnedIn: switch (_burnedInOcr) {
       null => null,
       final SubtitleFrameTextReader reader => SubtitleBurnedInReader(
-        frames: _frameSource,
+        frames: _burnedInFrameSource,
         reader: reader,
       ),
     },

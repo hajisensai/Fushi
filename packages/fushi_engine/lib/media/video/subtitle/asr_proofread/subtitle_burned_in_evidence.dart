@@ -4,13 +4,17 @@
 /// 动机是制卡：视频卡的例句就是字幕行，语音识别的同音字错误（「島」/「堂」）会原样
 /// 进卡片；画面上的硬字幕是片方排好的正确写法。
 ///
-/// - 只对本机视频文件做（取帧走 [SubtitleFrameSource]，网络流取不到帧）。
+/// - 只对本机视频文件做（取帧走 [SubtitleFrameSource]，网络流取不到帧），按原分辨率
+///   取帧（小字缩了会读错字）。
 /// - **先探测再整集**：均匀抽 [kSubtitleBurnedInProbeFrames] 行试读，至少
 ///   [kSubtitleBurnedInProbeMinHits] 帧读到「目标语言、且与识别稿字面相近」的字幕才
 ///   整集读；没有硬字幕 / 硬字幕是别的语言（中文字幕组压制）的视频只花这几帧。
 /// - 文字识别由宿主注入（[SubtitleFrameTextReader]）：引擎没有 OCR 推理，无头服务端
 ///   不注入 = 不读硬字幕。
-/// - 证据只能让字幕更好，不能让生成失败：单帧取不到 / 读不出就少一行。
+/// - 证据只能让字幕更好，不能让生成失败：单帧取不到 / 读不出就少一行；但多数帧读取
+///   本身失败（OCR 会话起不来、ffmpeg 暂时不可用）时抛 [SubtitleBurnedInReadFailed]，
+///   收集方据此不缓存，下次重读——不把「读失败」记成「没有硬字幕」。
+/// - 与识别行写法不同的行再读一帧确认，两次不一致的不收。
 ///
 /// 读出的轨怎么用：S3 校对把它当同语言证据（「同语言字幕与台词吻合时优先采用其写
 /// 法」）；不开 AI 时由 `correctSubtitleDraftsFromOcrEvidence` 确定性地换掉字面相近
@@ -141,11 +145,29 @@ bool burnedInProbeAccepts(
   return language == null || sameSubtitleLanguage(language, targetLanguage);
 }
 
+/// 读硬字幕本身失败（取帧 / OCR 抛错占了多数帧，不是「读到了但不是日文硬字幕」）：结果
+/// 不可信，收集方不得把它当「没有硬字幕」缓存下来，下次要重读。
+class SubtitleBurnedInReadFailed implements Exception {
+  const SubtitleBurnedInReadFailed(this.failed, this.total);
+
+  final int failed;
+  final int total;
+
+  @override
+  String toString() =>
+      'SubtitleBurnedInReadFailed: $failed of $total frames failed to read';
+}
+
+/// 多数帧读取失败（[failed] / [total]）就不算数。
+bool _mostlyFailed(int failed, int total) =>
+    total > 0 && failed > 0 && failed * 2 >= total;
+
 /// 读硬字幕：探测 → 整集 → 证据轨。
 class SubtitleBurnedInReader {
   const SubtitleBurnedInReader({required this.frames, required this.reader});
 
-  /// 取帧（生产 `ffmpegSubtitleFrameSource`）。
+  /// 取帧（生产 `ffmpegSubtitleFullFrameSource`：原分辨率，不缩——画面参考那路缩到
+  /// 768 宽，字幕只剩二十来像素高，OCR 会把「島」读成「鳥」）。
   final SubtitleFrameSource frames;
   final SubtitleFrameTextReader reader;
 
@@ -160,8 +182,12 @@ class SubtitleBurnedInReader {
     }
   }
 
-  /// 读 [videoPath] 在 [drafts] 各行时刻的硬字幕。没有可用的硬字幕返回 null。
+  /// 读 [videoPath] 在 [drafts] 各行时刻的硬字幕。没有可用的硬字幕返回 null；多数帧
+  /// 读取本身失败时抛 [SubtitleBurnedInReadFailed]（别当「没有」缓存）。
   /// [onProgress] 报整集读到第几行（探测阶段不报）。
+  ///
+  /// 与识别行写法不同的画面字幕（纠错的候选）在同一行的另一时刻再读一帧，两次读出的
+  /// 字不一样就不收这一行：单帧 OCR 的偶发误读不会被当成「正确写法」。
   Future<SubtitleEvidenceTrack?> read({
     required String videoPath,
     required List<SubtitleDraftCue> drafts,
@@ -174,18 +200,28 @@ class SubtitleBurnedInReader {
 
     final List<int> probe = planBurnedInProbe(drafts);
     if (probe.isEmpty) return null;
+    int probeFailed = 0;
     for (final int i in probe) {
       throwIfSubtitleCancelled(cancel);
-      texts[i] = await _readAt(videoPath, drafts[i]);
+      final String? text = await _readAt(videoPath, drafts[i], 0.5);
+      if (text == null) probeFailed++;
+      texts[i] = text ?? '';
     }
     if (!burnedInProbeAccepts(<(String, String)>[
       for (final int i in probe) (texts[i]!, drafts[i].text),
     ], targetLanguage: targetLanguage)) {
+      if (_mostlyFailed(probeFailed, probe.length)) {
+        throw SubtitleBurnedInReadFailed(probeFailed, probe.length);
+      }
       fushiDebugPrint(
         '[SubtitleBurnedIn] $videoPath: no burned-in $targetLanguage '
         'subtitles in ${probe.length} probe frames',
       );
       return null;
+    }
+    for (final int i in probe) {
+      throwIfSubtitleCancelled(cancel);
+      texts[i] = await _confirmed(videoPath, drafts[i], texts[i]!);
     }
 
     final List<int> rest = <int>[
@@ -194,12 +230,20 @@ class SubtitleBurnedInReader {
     ];
     final int total = texts.length + rest.length;
     int done = texts.length;
+    int failed = 0;
     onProgress?.call(done, total);
     for (final int i in rest) {
       throwIfSubtitleCancelled(cancel);
-      texts[i] = await _readAt(videoPath, drafts[i]);
+      final String? text = await _readAt(videoPath, drafts[i], 0.5);
+      if (text == null) failed++;
+      texts[i] = text == null
+          ? ''
+          : await _confirmed(videoPath, drafts[i], text);
       done++;
       onProgress?.call(done, total);
+    }
+    if (_mostlyFailed(failed, rest.length)) {
+      throw SubtitleBurnedInReadFailed(failed, rest.length);
     }
 
     final List<SubtitleEvidenceCue> cues = <SubtitleEvidenceCue>[
@@ -227,19 +271,37 @@ class SubtitleBurnedInReader {
     );
   }
 
-  /// 行中点那一帧的字幕；取不到 / 读不出返回空串。
-  Future<String> _readAt(String videoPath, SubtitleDraftCue cue) async {
+  /// [text] 的字与识别行一样（或为空）原样返回；不一样就在行的 3/4 处再读一帧，两次
+  /// 的字一致才留，否则返回空串（这一行不当证据）。
+  Future<String> _confirmed(
+    String videoPath,
+    SubtitleDraftCue cue,
+    String text,
+  ) async {
+    final String key = subtitleSpellingKey(text);
+    if (key.isEmpty || key == subtitleSpellingKey(cue.text)) return text;
+    final String? again = await _readAt(videoPath, cue, 0.75);
+    return again != null && subtitleSpellingKey(again) == key ? text : '';
+  }
+
+  /// 行内 [at]（0~1，占行时长的比例）那一帧的字幕；这一刻没有帧 / 没有字幕返回空串，
+  /// 取帧或 OCR 抛错返回 null（读取失败，与「没有」区分）。
+  Future<String?> _readAt(
+    String videoPath,
+    SubtitleDraftCue cue,
+    double at,
+  ) async {
     final int span = cue.endMs > cue.startMs ? cue.endMs - cue.startMs : 0;
-    final int at = cue.startMs + span ~/ 2;
+    final int atMs = cue.startMs + (span * at).round();
     try {
-      final Uint8List? frame = await frames(videoPath, at);
+      final Uint8List? frame = await frames(videoPath, atMs);
       if (frame == null || frame.isEmpty) return '';
       return burnedInSubtitleText(await reader.read(frame));
     } on SubtitlePipelineCancelled {
       rethrow;
     } catch (error) {
-      fushiDebugPrint('[SubtitleBurnedIn] $videoPath @$at ms: $error');
-      return '';
+      fushiDebugPrint('[SubtitleBurnedIn] $videoPath @$atMs ms: $error');
+      return null;
     }
   }
 }

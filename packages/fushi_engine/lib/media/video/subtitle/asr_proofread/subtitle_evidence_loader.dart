@@ -80,6 +80,18 @@ class SubtitleEvidenceLoadRequest {
   final void Function(int done, int total)? onBurnedInProgress;
 }
 
+/// 这次收集不完整（某个来源读取本身失败，例如画面硬字幕 OCR 起不来）：[tracks] 是收到
+/// 的部分，本次照用，但**不得缓存**——缓存了就永远不会重读那个来源。
+class SubtitleEvidenceIncomplete implements Exception {
+  const SubtitleEvidenceIncomplete(this.tracks, this.reason);
+
+  final List<SubtitleEvidenceTrack> tracks;
+  final String reason;
+
+  @override
+  String toString() => 'SubtitleEvidenceIncomplete: $reason';
+}
+
 /// 管线的证据注入点。
 abstract interface class SubtitleEvidenceSource {
   /// 本集证据来源的身份（不读内容）：变了 `evidence.json` 就要重收。
@@ -88,7 +100,8 @@ abstract interface class SubtitleEvidenceSource {
     required bool Function(String path) isOwnOutput,
   });
 
-  /// 收集本集的证据轨。
+  /// 收集本集的证据轨。某个来源读取本身失败、结果不该缓存时抛
+  /// [SubtitleEvidenceIncomplete]（带上收到的部分）。
   Future<List<SubtitleEvidenceTrack>> load(SubtitleEvidenceLoadRequest request);
 }
 
@@ -134,7 +147,20 @@ class SubtitleEvidenceWithPinnedTracks implements SubtitleEvidenceSource {
   Future<List<SubtitleEvidenceTrack>> load(
     SubtitleEvidenceLoadRequest request,
   ) async {
-    final List<SubtitleEvidenceTrack> found = await inner.load(request);
+    try {
+      return _withPinned(await inner.load(request), request);
+    } on SubtitleEvidenceIncomplete catch (e) {
+      throw SubtitleEvidenceIncomplete(
+        _withPinned(e.tracks, request),
+        e.reason,
+      );
+    }
+  }
+
+  List<SubtitleEvidenceTrack> _withPinned(
+    List<SubtitleEvidenceTrack> found,
+    SubtitleEvidenceLoadRequest request,
+  ) {
     return <SubtitleEvidenceTrack>[
       ...found,
       for (final SubtitleEvidenceTrack t in _pinnedFor(request.videoPath))
@@ -247,6 +273,7 @@ class SubtitleEvidenceCollector implements SubtitleEvidenceSource {
     SubtitleEvidenceLoadRequest request,
   ) async {
     final List<SubtitleEvidenceTrack> tracks = <SubtitleEvidenceTrack>[];
+    String? incomplete;
     final String video = request.videoPath;
     final List<SubtitleReferenceTrack> asrReference = <SubtitleReferenceTrack>[
       SubtitleReferenceTrack(
@@ -303,15 +330,22 @@ class SubtitleEvidenceCollector implements SubtitleEvidenceSource {
           if (t != null) tracks.add(t);
         } on SubtitlePipelineCancelled {
           rethrow;
-        } catch (e) {
+        } on SubtitleBurnedInReadFailed catch (e) {
           fushiDebugPrint('[SubtitleEvidence] burned-in OCR failed: $e');
+          incomplete = e.toString();
+        } catch (e) {
+          // 探测 / 拼轨里的意外错误同样是「读失败」，不是「没有硬字幕」。
+          fushiDebugPrint('[SubtitleEvidence] burned-in OCR failed: $e');
+          incomplete = 'burned-in OCR: $e';
         }
       }
     }
-    return <SubtitleEvidenceTrack>[
+    final List<SubtitleEvidenceTrack> out = <SubtitleEvidenceTrack>[
       for (final SubtitleEvidenceTrack t in tracks)
         if (t.cues.isNotEmpty) t,
     ];
+    if (incomplete != null) throw SubtitleEvidenceIncomplete(out, incomplete);
+    return out;
   }
 
   Future<SubtitleEvidenceTrack?> _sidecarTrack(

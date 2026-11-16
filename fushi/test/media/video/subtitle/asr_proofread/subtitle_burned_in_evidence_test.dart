@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:fushi_asr_core/asr_core.dart' show AsrCueTokenTiming;
 import 'package:test/test.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_burned_in_evidence.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_draft.dart';
@@ -52,6 +53,36 @@ List<SubtitleDraftCue> _drafts(List<String> texts) => <SubtitleDraftCue>[
 ];
 
 int _second(int index) => index * 4 + 2;
+
+final AsrCueTokenTiming _timing = AsrCueTokenTiming(
+  tokens: <String>['島', 'に', '行こう'],
+  offsetsMs: <int>[0, 400, 800],
+);
+
+/// 按取帧时刻（毫秒）查表的识别器：帧字节 = 时刻的两个字节。[failing] 为真时每帧都抛。
+class _ByTimeReader implements SubtitleFrameTextReader {
+  _ByTimeReader(this.byMs, {this.failing = false});
+
+  final Map<int, String> byMs;
+  final bool failing;
+  int reads = 0;
+
+  @override
+  Future<String?> identity() async => 'model-a';
+
+  @override
+  Future<List<SubtitleFrameTextLine>> read(Uint8List frame) async {
+    reads++;
+    if (failing) throw StateError('ORT session failed');
+    final String? text = byMs[frame[0] * 256 + frame[1]];
+    return text == null
+        ? const <SubtitleFrameTextLine>[]
+        : <SubtitleFrameTextLine>[_sub(text)];
+  }
+}
+
+Future<Uint8List?> _framesByMs(String videoPath, int atMs) async =>
+    Uint8List.fromList(<int>[atMs ~/ 256, atMs % 256]);
 
 const List<String> _asr = <String>[
   '島に行こう',
@@ -160,8 +191,8 @@ void main() {
         (13000, 15000, 'そうだね本当に'),
       ],
     );
-    // 5 行全在探测样本里：每帧只读一次。
-    expect(reader.reads, 5);
+    // 5 行全在探测样本里：每帧读一次；写法与识别行不同的第 0 行再读一帧确认。
+    expect(reader.reads, 6);
     expect(progress.last, (5, 5));
   });
 
@@ -233,27 +264,107 @@ void main() {
     );
   });
 
+  test('写法与识别行不同的行再读一帧确认：两次一致才收，不一致（单帧误读）不收', () async {
+    // 第 0 行中点 2000、3/4 处 2500；第 1 行中点 6000、3/4 处 6500。
+    final _ByTimeReader reader = _ByTimeReader(<int, String>{
+      2000: '堂に行こう',
+      2500: '堂に行こう',
+      6000: '今日はいい天気だぬ',
+      6500: '今日はいい天気だね',
+      10000: 'お茶にしようか',
+      14000: 'そうだね本当に',
+      18000: '先生が来たよ。',
+    });
+    final SubtitleEvidenceTrack? track = await SubtitleBurnedInReader(
+      frames: _framesByMs,
+      reader: reader,
+    ).read(videoPath: 'ep01.mkv', drafts: _drafts(_asr), targetLanguage: 'ja');
+    expect(track!.cues.map((SubtitleEvidenceCue c) => c.text), <String>[
+      '堂に行こう',
+      'お茶にしようか',
+      'そうだね本当に',
+      '先生が来たよ。',
+    ]);
+    // 5 帧 + 第 0、1 行各确认一帧；只差句号的第 4 行不用确认。
+    expect(reader.reads, 7);
+  });
+
+  test('读取本身失败（OCR 每帧都抛）：抛 ReadFailed，收集器报不完整、不当「没有硬字幕」', () async {
+    final _ByTimeReader reader = _ByTimeReader(
+      const <int, String>{},
+      failing: true,
+    );
+    final SubtitleBurnedInReader burnedIn = SubtitleBurnedInReader(
+      frames: _framesByMs,
+      reader: reader,
+    );
+    await expectLater(
+      burnedIn.read(
+        videoPath: 'ep01.mkv',
+        drafts: _drafts(_asr),
+        targetLanguage: 'ja',
+      ),
+      throwsA(isA<SubtitleBurnedInReadFailed>()),
+    );
+
+    final Directory tmp = Directory.systemTemp.createTempSync('burned_in_');
+    addTearDown(() => tmp.deleteSync(recursive: true));
+    final String video = p.join(tmp.path, 'ep01.mkv');
+    File(video).writeAsBytesSync(List<int>.filled(16, 1));
+    await expectLater(
+      SubtitleEvidenceCollector(burnedIn: burnedIn).load(
+        SubtitleEvidenceLoadRequest(
+          videoPath: video,
+          drafts: _drafts(_asr),
+          isOwnOutput: (String path) => false,
+          targetLanguage: 'ja',
+        ),
+      ),
+      throwsA(
+        isA<SubtitleEvidenceIncomplete>().having(
+          (SubtitleEvidenceIncomplete e) => e.tracks,
+          'tracks',
+          isEmpty,
+        ),
+      ),
+    );
+  });
+
+  test('没有硬字幕（读得出帧、只是没字）不算失败：返回 null', () async {
+    final _ByTimeReader reader = _ByTimeReader(const <int, String>{});
+    expect(
+      await SubtitleBurnedInReader(frames: _framesByMs, reader: reader).read(
+        videoPath: 'ep01.mkv',
+        drafts: _drafts(_asr),
+        targetLanguage: 'ja',
+      ),
+      isNull,
+    );
+  });
+
   group('OCR 证据确定性纠错', () {
     SubtitleEvidenceIndex index(
       List<SubtitleEvidenceCue> cues, {
       SubtitleEvidenceKind kind = SubtitleEvidenceKind.ocr,
+      String label = kSubtitleBurnedInTrackLabel,
     }) => SubtitleEvidenceIndex(<SubtitleEvidenceTrack>[
       SubtitleEvidenceTrack(
-        label: 'burned-in',
+        label: label,
         kind: kind,
         language: 'ja',
         cues: cues,
       ),
     ], targetLanguage: 'ja');
 
-    test('同音字错误换成画面写法，词级时间与候选一并丢掉；别的句子不换', () {
+    test('同音字错误换成画面写法，词级时间与候选保留；别的句子不换', () {
       final List<SubtitleDraftCue> drafts = <SubtitleDraftCue>[
-        const SubtitleDraftCue(
+        SubtitleDraftCue(
           startMs: 1000,
           endMs: 3000,
           text: '島に行こう',
           speaker: 'A',
           alternatives: <String>['島に行こう？'],
+          tokenTiming: _timing,
         ),
         const SubtitleDraftCue(startMs: 5000, endMs: 7000, text: 'ありがとう'),
       ];
@@ -266,9 +377,58 @@ void main() {
       );
       expect(out[0].text, '堂に行こう');
       expect(out[0].speaker, 'A');
-      expect(out[0].alternatives, isEmpty);
-      expect(out[0].tokenTiming, isNull);
+      expect(out[0].alternatives, <String>['島に行こう？']);
+      expect(out[0].tokenTiming, same(_timing));
       expect(out[1].text, 'ありがとう');
+    });
+
+    test('只差标点 / 空白不换（硬字幕不带句号、两行直接拼接）；换字时保留识别稿的标点', () {
+      const List<SubtitleDraftCue> drafts = <SubtitleDraftCue>[
+        SubtitleDraftCue(startMs: 1000, endMs: 3000, text: '島に行こう。'),
+        SubtitleDraftCue(startMs: 4000, endMs: 6000, text: '島に行こう、待ってて'),
+        SubtitleDraftCue(startMs: 7000, endMs: 9000, text: '「堂に行こう」と言った。'),
+        SubtitleDraftCue(startMs: 10000, endMs: 12000, text: 'ＯＫ、行こう'),
+      ];
+      final List<SubtitleDraftCue> out = correctSubtitleDraftsFromOcrEvidence(
+        drafts,
+        index(const <SubtitleEvidenceCue>[
+          SubtitleEvidenceCue(startMs: 1000, endMs: 3000, text: '島に行こう'),
+          SubtitleEvidenceCue(startMs: 4000, endMs: 6000, text: '島に行こう待ってて'),
+          SubtitleEvidenceCue(startMs: 7000, endMs: 9000, text: '島に行こうと言った'),
+          SubtitleEvidenceCue(startMs: 10000, endMs: 12000, text: 'ok 行こう!'),
+        ]),
+      );
+      expect(identical(out[0], drafts[0]), isTrue);
+      expect(identical(out[1], drafts[1]), isTrue);
+      expect(out[2].text, '「島に行こう」と言った。');
+      expect(identical(out[3], drafts[3]), isTrue);
+    });
+
+    test('写法合并：只换对不上的字，标点留原位', () {
+      expect(mergeSubtitleOcrSpelling('島に行こう。', '島に行こう'), isNull);
+      expect(mergeSubtitleOcrSpelling('堂に行こう。', '島に行こう'), '島に行こう。');
+      expect(mergeSubtitleOcrSpelling('結衣が来た！', '唯が来た'), '唯が来た！');
+      expect(mergeSubtitleOcrSpelling('行こう、ね', '行こうよね'), '行こうよ、ね');
+      expect(mergeSubtitleOcrSpelling('…行こう', '島に行こう'), '…島に行こう');
+      expect(mergeSubtitleOcrSpelling('。', '島'), isNull);
+    });
+
+    test('内封图形字幕（PGS 等）的 OCR 轨不走确定性替换，只认画面硬字幕', () {
+      const List<SubtitleDraftCue> drafts = <SubtitleDraftCue>[
+        SubtitleDraftCue(startMs: 1000, endMs: 3000, text: '島に行こう'),
+      ];
+      expect(
+        identical(
+          correctSubtitleDraftsFromOcrEvidence(
+            drafts,
+            index(const <SubtitleEvidenceCue>[
+              SubtitleEvidenceCue(startMs: 1000, endMs: 3000, text: '堂に行こう'),
+            ], label: '#3 jpn hdmv_pgs_subtitle'),
+          ),
+          drafts,
+        ),
+        isTrue,
+      );
     });
 
     test('人工文字字幕不走确定性替换；补齐插入的行不动；一行压两句的不换', () {
