@@ -566,6 +566,16 @@ fn stats_requests_are_canonicalized_and_members_resolve_deterministically() {
         let members = json!({"ids": [kc], "r": [low]});
         assert_eq!(recall(json!([k1, k0]), json!([0.3, 0.1])), members);
         assert_eq!(recall(json!([k0, k1]), json!([0.1, 0.3])), members);
+        // 同一个原值 ID 出现两次：先按协议 3 `stats::Ctx` 的读法后者盖前者，再按类归一。
+        assert_eq!(
+            recall(json!([k0, k0]), json!([0.1, 0.9])),
+            json!({"ids": [kc], "r": [0.9]})
+        );
+        let low = if k0 < k1 { 0.9 } else { 0.3 };
+        assert_eq!(
+            recall(json!([k0, k1, k0]), json!([0.1, 0.3, 0.9])),
+            json!({"ids": [kc], "r": [low]})
+        );
     });
 }
 
@@ -684,6 +694,45 @@ fn numeric_ids_of_alias_members_resolve_to_the_canonical_row() {
         );
         assert!(rows.iter().any(|r| r == &vec![kc.clone(), c.clone()]));
         assert!(t.conn().is_autocommit());
+    });
+}
+
+/// 随机 ID 的笔记（规范 ID 就是它协议 3 的 ID）类里另有成员（旧并入的兜底副本）时，它配带盐模板的那张从没出现过的
+/// 卡照样查得到号：配卡公式的笔记一边带上规范 ID 自己（`cache.rs` 文件头「表」），不只取出现过的成员。逐条维护与
+/// 重建相同。
+#[test]
+fn a_random_note_with_a_fallback_member_keeps_its_unseen_card_number() {
+    use super::columns::anki_resolve;
+    use crate::store::schema::anki_numeric_id as num;
+    with(|t, col| {
+        let w = land(t, col);
+        let held = id(HELD);
+        let copy = rules::merge_fallback(U1, &held.text());
+        t.tx(|t| {
+            let mut ix = Index::new(t, col);
+            let body = entity(
+                EntKind::Note,
+                u(copy),
+                json!({"createdAt": 3, "guid": "h", "noteTypeId": w.nt[0].text()}),
+            );
+            native(t, &mut ix, col, &op(0xa3, 1, 500, &[base_seen(&w)], &body));
+            ix.settle()?;
+            assert_eq!(
+                ix.canonical(&crate::store::gen4::derive::Ref::Uuid(copy.0))?,
+                crate::store::gen4::derive::Ref::Uuid(held.0)
+            );
+            Ok(())
+        })
+        .unwrap();
+        assert_rebuild_is_identity(t, col);
+        let unseen = rules::card(&held, &w.tmpl[0], 0).text();
+        let c_tmpl = rules::template(&rules::note_type(CANONICAL, ANKI_NT), 0);
+        let held_card = rules::card(&held, &c_tmpl, 0).text();
+        let req = json!({"notes": [num(&copy.text())], "cards": [num(&unseen)]});
+        assert_eq!(
+            anki_resolve(t, col, &req).unwrap(),
+            json!({"notes": [held.text()], "cards": [held_card]})
+        );
     });
 }
 

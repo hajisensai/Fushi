@@ -452,6 +452,106 @@ fn a_late_alias_holds_the_delete_by_its_class_and_rebuilds_the_same() {
     assert_eq!(run(false), run(true));
 }
 
+/// 双盐场景、盐分两批到：[early] 的盐先到，0xa1 的定义、0xf1 的 [filler] 对两份带盐的填充笔记（每份盐一条，盐到齐时
+/// 一起换规范 ID）、0xd1 删第一份成员、0xb2 并发改第二份，再到 [late] 的盐。[late] 不空时验盐到之前没有冲突（两份
+/// 成员还不在一个类里）。每一步逐条维护与重建相同。返回最后的 `conflicts`。
+fn late_salts_conflicts(early: &[&str], late: &[&str], filler: usize) -> Value {
+    with(|t, col| {
+        let w = tests_class::twin();
+        let base = tests_class::base_ops(&w);
+        assert!(matches!(base[0], Body4::Salts { .. }));
+        let last = base.len() as u64 - 1;
+        let seen = [(0xa1, last)];
+        let field = format!("f/{}", w.field[1].text());
+        let del = tests_class::set(
+            EntKind::Note,
+            tests_class::u(w.note[0]),
+            "deleted",
+            json!(500),
+        );
+        let edit = tests_class::set(EntKind::Note, tests_class::u(w.note[1]), &field, json!("B"));
+        let salts = |t: &Truth<'_>, dev: u8, s: &[&str]| {
+            t.tx(|t| {
+                let mut ix = Index::new(t, col);
+                let body = Body4::salts(s.iter().copied()).unwrap();
+                native(t, &mut ix, col, &op(dev, 1, 50, &[], &body));
+                ix.settle().map(|_| ())
+            })
+            .unwrap();
+        };
+        if !early.is_empty() {
+            salts(t, 0xe1, early);
+        }
+        t.tx(|t| {
+            let mut ix = Index::new(t, col);
+            for (i, b) in base[1..].iter().enumerate() {
+                native(
+                    t,
+                    &mut ix,
+                    col,
+                    &op(0xa1, i as u64 + 1, 100 + i as i64, &[], b),
+                );
+            }
+            let mut seq = 0;
+            for i in 0..filler {
+                let guid = format!("fill-{i}");
+                for (s, nt) in [(tests_class::U1, w.nt[0]), (tests_class::U2, w.nt[1])] {
+                    seq += 1;
+                    let body = tests_class::entity(
+                        EntKind::Note,
+                        tests_class::u(crate::gen4_ids::rules::note(Some(s), &guid)),
+                        json!({"createdAt": 1, "guid": guid, "noteTypeId": nt.text()}),
+                    );
+                    native(t, &mut ix, col, &op(0xf1, seq, 200, &seen, &body));
+                }
+            }
+            native(t, &mut ix, col, &op(0xd1, 1, 500, &seen, &del));
+            native(t, &mut ix, col, &op(0xb2, 1, 501, &seen, &edit));
+            ix.settle().map(|_| ())
+        })
+        .unwrap();
+        assert_rebuild_is_identity(t, col);
+        if !late.is_empty() {
+            assert_eq!(conflicts(t, col).unwrap(), json!([]));
+            salts(t, 0xe2, late);
+            assert_rebuild_is_identity(t, col);
+        }
+        let v = conflicts(t, col).unwrap();
+        let rows = v.as_array().unwrap();
+        assert_eq!(rows.len(), 1, "{v}");
+        assert_eq!(rows[0]["by"], json!(id(0xd1).text()));
+        assert_eq!(rows[0]["entity"], json!(w.c_note.text()));
+        assert_eq!(rows[0]["others"], json!(1));
+        v
+    })
+}
+
+/// 并类时删除落在类里**没变动**的那个成员上：U1 先到（第一份成员已归到规范号、删除在它上面），U2 后到只让第二份成员
+/// （带着并发修改）并进来。别名表变了的行里没有删除落的那个成员，重看要按类找，不能只看变了的 ID。结果与盐一起到相同。
+#[test]
+fn a_late_member_holds_a_delete_on_a_member_that_did_not_move() {
+    let together = late_salts_conflicts(&[tests_class::U1, tests_class::U2], &[], 0);
+    assert_eq!(
+        late_salts_conflicts(&[tests_class::U1], &[tests_class::U2], 0),
+        together
+    );
+}
+
+/// 盐到时别名表大面积变动（几百个带盐 ID 一起换规范 ID，多于 `MOVES_IN_PLACE`）：扣住与重建一样看全部有删除的实体，
+/// 结果与小变动、与盐先到都相同。
+#[test]
+fn a_late_alias_moving_many_ids_still_holds_the_delete() {
+    let together = late_salts_conflicts(&[tests_class::U1, tests_class::U2], &[], 0);
+    assert_eq!(
+        late_salts_conflicts(&[], &[tests_class::U1, tests_class::U2], 200),
+        together
+    );
+    assert_eq!(
+        late_salts_conflicts(&[tests_class::U1], &[tests_class::U2], 200),
+        together
+    );
+}
+
 /// 双盐场景里的冲突中心：被并发改动扣住的删除列出来，`by` / `at` 是那条删除的作者与墙钟；`profile_footprint` 把同一次
 /// Anki 复习的两份带盐日志算一条。
 #[test]

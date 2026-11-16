@@ -32,7 +32,8 @@
 //!   （`cmd/writes.rs` `resolve` 经 `canon_body`），删除却可能落在带盐成员上；只看原值成员的话裁决盖不掉它、类里
 //!   别的成员上的并发修改也不算。状态与 `hold_ix` 的行仍记在删除落的那个原值成员名下。所以扣住在别名表重算**之后**
 //!   判（[Index::weigh_rest]；别名表只看清除状态，清除在它之前，[Index::weigh_purged]），别名表变了的行牵动的类
-//!   （`alias_moves`）一并重看：别名迟到（先按原值判过、后来才并类）时逐条维护与重建相同。并发操作按操作计数：
+//!   （`alias_moves`）一并重看：别名迟到（先按原值判过、后来才并类）时逐条维护与重建相同（只看类里有删除的；变动
+//!   多于 `cache.rs` 的 `MOVES_IN_PLACE` 时与重建一样看全部有删除的实体）。并发操作按操作计数：
 //!   同一次 Anki 复习的两份带盐日志算两条（只影响 `others` 的数，不影响扣不扣住）。
 //! - **信任**：本机还没信任的设备（`trust` 表，本机状态）写的删除（`deleted` 上值是整数的写入，带不带旧戳都算）与
 //!   Purge 不执行（[S_DISTRUSTED]），它写的 Salts / Join 里的盐不算进盐集合（`alias.rs`）。它别的操作照常。
@@ -53,6 +54,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use rusqlite::params;
 use serde_json::Value;
 
+use super::cache::MOVES_IN_PLACE;
 use super::derive::{Index, R_DOMINATED, R_LIVE, R_WINNER, Ref, Reg, Settled, body_of};
 use super::schema::sql;
 use super::truth::Head;
@@ -340,24 +342,41 @@ impl<'t, 'c> Index<'t, 'c> {
     ) -> Result<(), String> {
         let mut ents = std::mem::take(&mut self.touched);
         self.dirt.entities.extend(ents.iter().cloned());
-        if bulk || trust {
+        // 别名表变了的行（`alias.rs` 记的 `alias_moves`：变了规范 ID 的 ID 与它前后的规范 ID）：类的成员变了，
+        // 类里的删除要按新的类重看——别名迟到（先扣住、后来才并类）时逐条维护才与重建相同。变动的 ID 多于
+        // [MOVES_IN_PLACE]（盐集合变了这类情形，成千上万个带盐 ID 一起换规范 ID）时与重建一样把有删除的实体全看一遍，
+        // 不逐个类问（与缓存层同一个阈值，`cache.rs` `refresh_caches`）。
+        let moved: Vec<Ref> = if bulk || trust || self.alias_moves.len() > MOVES_IN_PLACE {
             ents.extend(self.deleted_entities()?);
+            Vec::new()
         } else {
-            // 别名表变了的行（`alias.rs` 记的 `alias_moves`：变了规范 ID 的 ID 与它前后的规范 ID）：类的成员变了，
-            // 类里的删除要按新的类重看——别名迟到（先扣住、后来才并类）时逐条维护才与重建相同。ID 不带种类，各种类都问。
-            let moved: Vec<Ref> = self.alias_moves.iter().cloned().collect();
-            for r in moved {
-                for kind in EntKind::ALL {
-                    ents.insert((kind as i64, r.clone()));
-                }
-            }
-        }
+            self.alias_moves.iter().cloned().collect()
+        };
         let mut classes: BTreeMap<(i64, Ref), Vec<Ref>> = BTreeMap::new();
         for (ekind, ent) in ents {
             let canon = self.canonical(&ent)?;
             if !classes.contains_key(&(ekind, canon.clone())) {
                 let members = self.members(&canon)?;
                 classes.insert((ekind, canon), members);
+            }
+        }
+        // 变动的 ID 不带种类：每个类取一次成员，只重看类里（任一成员上，不只是变动的那个——删除可能落在类里没变动的
+        // 第三个成员上）有 `deleted` 写入或 `hold_ix` 行的种类；都没有的种类 [Index::weigh_holds] 什么也不做。
+        let mut seen: BTreeSet<Ref> = BTreeSet::new();
+        for r in moved {
+            let canon = self.canonical(&r)?;
+            if !seen.insert(canon.clone()) {
+                continue;
+            }
+            let members = self.members(&canon)?;
+            for kind in EntKind::ALL {
+                let ekind = kind as i64;
+                if classes.contains_key(&(ekind, canon.clone()))
+                    || !self.has_deletes(ekind, &members)?
+                {
+                    continue;
+                }
+                classes.insert((ekind, canon.clone()), members.clone());
             }
         }
         for ((ekind, _), members) in &classes {
@@ -397,6 +416,33 @@ impl<'t, 'c> Index<'t, 'c> {
             })
             .map_err(sql)?;
         rows.collect::<Result<_, _>>().map_err(sql)
+    }
+
+    /// 类 [members] 的种类 [ekind] 上有没有要 [Index::weigh_holds] 重看的东西：任一成员的 `deleted` 有写入，或有
+    /// `hold_ix` 行（两条都是主键前缀点查）。
+    fn has_deletes(&self, ekind: i64, members: &[Ref]) -> Result<bool, String> {
+        let conn = self.t.conn();
+        let key = key_bytes("deleted");
+        for m in members {
+            let reg = conn
+                .prepare_cached(
+                    "SELECT EXISTS (SELECT 1 FROM reg_ix WHERE col = ?1 AND ekind = ?2 AND ent = ?3 AND key = ?4)",
+                )
+                .map_err(sql)?
+                .query_row(params![self.col, ekind, m, key], |r| r.get::<_, bool>(0))
+                .map_err(sql)?;
+            let held = conn
+                .prepare_cached(
+                    "SELECT EXISTS (SELECT 1 FROM hold_ix WHERE col = ?1 AND ekind = ?2 AND ent = ?3)",
+                )
+                .map_err(sql)?
+                .query_row(params![self.col, ekind, m], |r| r.get::<_, bool>(0))
+                .map_err(sql)?;
+            if reg || held {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 
     /// 标签状态不是插入时的默认值就能定的笔记：有删除，或顺序提示不止一条。

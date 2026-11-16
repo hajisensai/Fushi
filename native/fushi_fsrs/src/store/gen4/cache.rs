@@ -23,8 +23,10 @@
 //!   一起重写，[Index::member_numbers]）。笔记的成员 = 别名类里出现过的成员；卡的成员 = 别名类里出现过的成员，
 //!   **加上从没在操作里出现过的带盐卡**：笔记的成员 × 模板的成员按卡的公式（`gen4_ids::rules::card`）算出来的 ID
 //!   ——协议 3 给从没复习、没改过的卡也发了号（缓存行的 `anki_id`），新代的别名表里没有那个带盐 ID（它只记操作里
-//!   出现过的 ID），号从这里来。一边的类只有规范 ID 自己时那一边取规范 ID（随机 ID 的笔记配带盐的模板、带盐的笔记配
-//!   内置模板）；有出现过的成员时只取成员（规范 ID 是新代才有的，没有旧号；规范卡自己的号在 `cards.anki_id`）。
+//!   出现过的 ID），号从这里来。每一边都取规范 ID 自己加出现过的成员：随机 ID 的笔记（规范 ID 就是它协议 3 的 ID）配
+//!   带盐的模板、带盐的笔记配内置模板时规范 ID 那一边就是旧号的来源，类里另有成员（随机 ID 笔记的旧并入兜底副本，
+//!   `gen4_ids::alias` 的 `root_fallbacks`）时也不能丢；规范 ID 是新代才有的那种（带盐的类）多出来的组合没有旧号，
+//!   不撞别人的号就无害（与多盐交叉组合是同一类取舍；规范卡自己那个组合不写，它的号在 `cards.anki_id`）。
 //!   行是「别名表 + 应有的卡」的函数，所以落在缓存层、随笔记的行维护（别名表变了的行经 [Index::moved_rows] 牵动
 //!   所属笔记重算），重建同样物化。
 //!   **为什么不在迁移时把协议 3 `srs_cards_cache` 的卡 ID 写进别名表**：别名表是「操作集合 + 盐 + 内置表」的函数
@@ -317,7 +319,8 @@ const BATCH: usize = 512;
 
 /// 别名表一次收尾里变了的 ID（连同它们前后的规范 ID）超过这么多就整层重建，不逐个找引用它们的行（[Index::moved_rows]
 /// 每个 ID 扫一遍三张表；盐集合变了这类情形整张别名表都会动）。
-const MOVES_IN_PLACE: usize = 256;
+/// 扣住（`weigh.rs` `weigh_rest`）用同一个阈值：多了就与重建一样看全部有删除的实体。
+pub(super) const MOVES_IN_PLACE: usize = 256;
 
 /// 一批卡的血统（`Index::lineage`）：卡 ID（文本）→ 活着的修改行 / 重放写回的日志 / 生效的前身 / 后继。
 struct Lineage {
@@ -1257,18 +1260,14 @@ impl<'t, 'c> Index<'t, 'c> {
             .map_err(sql)?;
             Ok(())
         };
-        let note_members = self.observed_members(n)?;
+        let note_members = self.aliases_of(n)?;
         for m in &note_members {
             put(EntKind::Note, m, n)?;
         }
-        // 配卡公式的一边：有出现过的成员就取成员，没有就取规范 ID 自己（文件头「表」）。
+        // 配卡公式的一边：规范 ID 自己加出现过的成员（文件头「表」）。
         let side = |members: &[Ref], canon: &Ref| -> Vec<Id> {
-            let refs: Vec<&Ref> = if members.is_empty() {
-                vec![canon]
-            } else {
-                members.iter().collect()
-            };
-            refs.into_iter()
+            std::iter::once(canon)
+                .chain(members)
                 .filter_map(|r| match r {
                     Ref::Uuid(b) => Some(Id(*b)),
                     Ref::Text(_) => None,
@@ -1278,7 +1277,7 @@ impl<'t, 'c> Index<'t, 'c> {
         let notes = side(&note_members, n);
         for (card, tpl, ord) in cards {
             if !tmpl_members.contains_key(tpl) {
-                let m = self.observed_members(tpl)?;
+                let m = self.aliases_of(tpl)?;
                 tmpl_members.insert(tpl.clone(), m);
             }
             let tpls = side(&tmpl_members[tpl], tpl);
@@ -1290,29 +1289,11 @@ impl<'t, 'c> Index<'t, 'c> {
                     }
                 }
             }
-            for m in self.observed_members(card)? {
+            for m in self.aliases_of(card)? {
                 put(EntKind::Card, &m, card)?;
             }
         }
         Ok(())
-    }
-
-    /// 规范 ID [canon] 的别名类里出现过的、不是它自己的成员（`alias_canon` 索引的一段），升序。
-    fn observed_members(&self, canon: &Ref) -> Result<Vec<Ref>, String> {
-        let Ref::Uuid(b) = canon else {
-            return Ok(Vec::new());
-        };
-        let mut stmt = self
-            .t
-            .conn()
-            .prepare_cached(
-                "SELECT id FROM alias_ix WHERE col = ?1 AND canon = ?2 AND canon != id ORDER BY id",
-            )
-            .map_err(sql)?;
-        let rows = stmt
-            .query_map(params![self.col, b.as_slice()], |r| r.get::<_, Ref>(0))
-            .map_err(sql)?;
-        rows.collect::<Result<_, _>>().map_err(sql)
     }
 
     fn delete_note_rows(&self, note: &Ref) -> Result<(), String> {

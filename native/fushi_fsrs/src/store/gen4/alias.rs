@@ -1263,24 +1263,29 @@ impl Index<'_, '_> {
     /// [r] 所在的别名类：规范 ID 与出现过的、归到它的全部 ID，升序。
     pub fn members(&self, r: &Ref) -> Result<Vec<Ref>, String> {
         let canon = self.canonical(r)?;
-        let mut out = vec![canon.clone()];
-        if let Ref::Uuid(b) = &canon {
-            let mut stmt = self
-                .t
-                .conn()
-                .prepare_cached(
-                    "SELECT id FROM alias_ix WHERE col = ?1 AND canon = ?2 AND canon != id ORDER BY id",
-                )
-                .map_err(sql)?;
-            let rows = stmt
-                .query_map(params![self.col, b.as_slice()], |r| r.get::<_, Ref>(0))
-                .map_err(sql)?;
-            for row in rows {
-                out.push(row.map_err(sql)?);
-            }
-        }
+        let mut out = self.aliases_of(&canon)?;
+        out.push(canon);
         out.sort();
         Ok(out)
+    }
+
+    /// 规范 ID [canon] 的别名类里出现过的、不是它自己的成员（`alias_canon` 索引的一段），按 ID 的 SQLite 序。
+    /// [canon] 必须已是规范 ID（不再归一）；[Index::members] 与缓存层的 `anki_members`（`cache.rs`）共用。
+    pub(super) fn aliases_of(&self, canon: &Ref) -> Result<Vec<Ref>, String> {
+        let Ref::Uuid(b) = canon else {
+            return Ok(Vec::new());
+        };
+        let mut stmt = self
+            .t
+            .conn()
+            .prepare_cached(
+                "SELECT id FROM alias_ix WHERE col = ?1 AND canon = ?2 AND canon != id ORDER BY id",
+            )
+            .map_err(sql)?;
+        let rows = stmt
+            .query_map(params![self.col, b.as_slice()], |r| r.get::<_, Ref>(0))
+            .map_err(sql)?;
+        rows.collect::<Result<_, _>>().map_err(sql)
     }
 
     /// 修改键的规范形：键里嵌着 ID 的（`f/<字段>`、`fieldDef/<…>`、`tmplDef/<…>`、`historyFrom/<…>`、
