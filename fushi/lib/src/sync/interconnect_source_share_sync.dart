@@ -17,9 +17,16 @@
 /// | 没有 | 有、摘要 = 账本 | 有 | host 删了 / 不再共享：本机跟着删 |
 /// | 没有 | 摘要 ≠ 账本或已删 | 有 | 销账，本机的不动 |
 ///
+/// 「host 目录没有」只在 host 这一轮完整枚举过的种类（[InterconnectSourceShareCatalog.kinds]）
+/// 里才算「不再共享」；host 列不出的（unavailable）与本机列不出的插件（校验不过）都不动、
+/// 账本原样保留。
+///
 /// 插件另有一条：更新时签名者变了不自动装（换签名者 = 换了一个发布者，插件的登录凭据
 /// 与存储会被清空，必须用户在这台设备上自己确认），记进 [SourceShareResult.signerChanged]。
-/// 随 app 自带的插件（bundled）两端都不碰。
+/// 签名者以下载下来的包 inspect 出的为准、与本机已装那份比，不信 host 目录里自报的值。
+/// 随 app 自带的插件（bundled）两端都不碰。插件是第三方可执行代码，client 另有一道
+/// 「也接收插件」开关（默认关，`SyncRepository.isInterconnectSourceSharePluginsEnabled`）：
+/// 这台设备的主人自己打开了，host 才能往本机装插件。
 library;
 
 import 'dart:convert';
@@ -142,13 +149,17 @@ final class SourceSharePlan {
 typedef SourceShareLocal = ({String digest, String? signer});
 
 /// 合并规则（见文件头的表）。[local] / [offered] / [ledger] 都按 id；[untouchable] 是本机
-/// 随 app 自带的插件 id。[checkSigner] 为 true 时（插件）更新前核对签名者。
+/// 随 app 自带的插件 id；[held] 是本机列不出（校验不过）的插件 id——与 host 的
+/// unavailable 条目一样不动、留账。[checkSigner] 为 true 时（插件）更新前核对签名者。
+/// [propagateRemovals] 为 false（host 这一轮没完整枚举这个种类）时「目录里没有」不算删除。
 SourceSharePlan planSourceShare({
   required Map<String, SourceShareLocal> local,
   required Map<String, InterconnectSharedSource> offered,
   required Map<String, SourceShareLedgerEntry> ledger,
   Set<String> untouchable = const <String>{},
+  Set<String> held = const <String>{},
   bool checkSigner = false,
+  bool propagateRemovals = true,
 }) {
   final List<SourceShareStep> steps = <SourceShareStep>[];
   final Map<String, SourceShareLedgerEntry> next =
@@ -159,6 +170,8 @@ SourceSharePlan planSourceShare({
       next.remove(o.id);
       continue;
     }
+    // 一端列不出：什么都不做，账本原样（next 是 ledger 的拷贝）。
+    if (o.unavailable || held.contains(o.id)) continue;
     final SourceShareLedgerEntry? e = ledger[o.id];
     final SourceShareLocal? l = local[o.id];
     final SourceShareLedgerEntry adopted = SourceShareLedgerEntry(o.digest);
@@ -188,6 +201,7 @@ SourceSharePlan planSourceShare({
   }
   for (final MapEntry<String, SourceShareLedgerEntry> entry in ledger.entries) {
     if (offered.containsKey(entry.key)) continue;
+    if (!propagateRemovals || held.contains(entry.key)) continue;
     final SourceShareLocal? l = local[entry.key];
     final bool follows =
         !entry.value.declined &&
@@ -230,17 +244,31 @@ abstract interface class SourceShareRemote {
 
 /// client 侧：一轮把 host [hostId] 的目录合并进本机。
 final class InterconnectSourceShareSync {
-  InterconnectSourceShareSync(this._db, {required this.pluginStores});
+  InterconnectSourceShareSync(
+    this._db, {
+    required List<SharedPluginStore> pluginStores,
+    this.cachedPrefWriter,
+  }) : _pluginStores = pluginStores;
 
   final FushiDatabase _db;
-  final List<SharedPluginStore> pluginStores;
+  final List<SharedPluginStore> _pluginStores;
+
+  /// 服务器来源清单经偏好缓存写回（见 [SharedServerListKind.write]）。
+  final SourceSharePrefWriter? cachedPrefWriter;
 
   Future<SourceShareResult> run(SourceShareRemote remote, String hostId) async {
     final SourceShareResult result = SourceShareResult();
+    final SyncRepository repo = SyncRepository(_db);
     // 本机「接收共享来源」开关：关着连请求都不发（不是拉回来再丢弃）。
-    if (!await SyncRepository(_db).isInterconnectSourceShareEnabled()) {
+    if (!await repo.isInterconnectSourceShareEnabled()) {
       return result;
     }
+    // 插件是第三方可执行代码：本机主人没打开「也接收插件」时整类跳过、账本原样留着，
+    // 与本机没有插件体系同一处理。
+    final List<SharedPluginStore> pluginStores =
+        await repo.isInterconnectSourceSharePluginsEnabled()
+        ? _pluginStores
+        : const <SharedPluginStore>[];
     final InterconnectSourceShareCatalog? catalog = await remote
         .getRemoteSourceShareCatalog();
     if (catalog == null) return result;
@@ -347,6 +375,7 @@ final class InterconnectSourceShareSync {
       local: local,
       offered: offered,
       ledger: ledger,
+      propagateRemovals: catalog.kinds.contains(kind.kind),
     );
     final Map<String, SourceShareLedgerEntry> next = plan.ledger;
     if (plan.steps.isEmpty) return _keyed(kind.kind, next);
@@ -377,7 +406,7 @@ final class InterconnectSourceShareSync {
         next.remove(step.id);
       }
     }
-    await kind.write(_db, items);
+    await kind.write(_db, items, cachedWriter: cachedPrefWriter);
     return _keyed(kind.kind, next);
   }
 
@@ -389,18 +418,24 @@ final class InterconnectSourceShareSync {
     SourceShareResult result,
   ) async {
     final List<SharedPluginPackage> installed = await store.installed();
+    final Map<String, SourceShareLocal> local = <String, SourceShareLocal>{
+      for (final SharedPluginPackage p in installed)
+        if (p.available) p.id: (digest: p.digest, signer: p.signer),
+    };
     final SourceSharePlan plan = planSourceShare(
-      local: <String, SourceShareLocal>{
-        for (final SharedPluginPackage p in installed)
-          p.id: (digest: p.digest, signer: p.signer),
-      },
+      local: local,
       offered: _offered(catalog, store.kind),
       ledger: ledger,
       untouchable: <String>{
         for (final SharedPluginPackage p in installed)
           if (p.bundled) p.id,
       },
+      held: <String>{
+        for (final SharedPluginPackage p in installed)
+          if (!p.available) p.id,
+      },
       checkSigner: true,
+      propagateRemovals: catalog.kinds.contains(store.kind),
     );
     result.signerChanged.addAll(plan.signerChanged);
     final Map<String, SourceShareLedgerEntry> next = plan.ledger;
@@ -423,6 +458,13 @@ final class InterconnectSourceShareSync {
             );
           }
           if (pending.bundled) continue;
+          // 签名者以实际下载的包为准、与本机已装那份比（目录里的 signer 是 host 自报的）：
+          // 变了不装、不记账，宿主装的话会按新插件清掉本机的登录凭据与存储。
+          if (step.kind == SourceShareStepKind.update &&
+              pending.signer != local[step.id]?.signer) {
+            result.signerChanged.add(offered.label);
+            continue;
+          }
           await store.install(zip, pending.digest);
           if (step.kind == SourceShareStepKind.add) {
             result.added++;
@@ -453,15 +495,22 @@ final class AppInterconnectSourceShareHost
     required Future<bool> Function() enabled,
     required Future<bool> Function(String peerToken) isOwnerDevicePeer,
     required List<SharedPluginStore> Function() pluginStores,
+    Future<Set<String>> Function()? selected,
   }) : _db = db,
        _enabled = enabled,
        _isOwnerDevicePeer = isOwnerDevicePeer,
-       _pluginStores = pluginStores;
+       _pluginStores = pluginStores,
+       _selected =
+           selected ??
+           (() => SyncRepository(db).getInterconnectSourceShareHostItems());
 
   final FushiDatabase _db;
   final Future<bool> Function() _enabled;
   final Future<bool> Function(String peerToken) _isOwnerDevicePeer;
   final List<SharedPluginStore> Function() _pluginStores;
+
+  /// host 主人逐项勾选共享的 `kind/id`（默认空 = 一条都不共享）。
+  final Future<Set<String>> Function() _selected;
 
   @override
   Future<bool> isSourceShareEnabled() => _enabled();
@@ -470,9 +519,12 @@ final class AppInterconnectSourceShareHost
   Future<bool> isOwnerDevicePeer(String peerToken) =>
       _isOwnerDevicePeer(peerToken);
 
-  @override
-  Future<InterconnectSourceShareCatalog> sourceShareCatalog() async {
+  /// 本机全部可共享的来源（不看勾选）：设置页「选择要共享的来源」列它，
+  /// [sourceShareCatalog] 在它上面按勾选过滤。[InterconnectSourceShareCatalog.kinds]
+  /// = 这一轮完整枚举过的种类（服务器清单总在；插件体系此刻建好了才在）。
+  Future<InterconnectSourceShareCatalog> shareableSources() async {
     final List<InterconnectSharedSource> sources = <InterconnectSharedSource>[];
+    final Set<String> kinds = <String>{};
     for (final SharedServerListKind kind in kSharedServerListKinds) {
       final Set<String> seen = <String>{};
       for (final Map<String, Object?> raw in await kind.read(_db)) {
@@ -480,30 +532,51 @@ final class AppInterconnectSourceShareHost
         if (entry == null || !seen.add(entry.id)) continue;
         sources.add(sharedServerSource(kind, entry));
       }
+      kinds.add(kind.kind);
     }
     for (final SharedPluginStore store in _pluginStores()) {
       for (final SharedPluginPackage p in await store.installed()) {
         if (p.bundled) continue;
         sources.add(
-          InterconnectSharedSource(
-            kind: store.kind,
-            id: p.id,
-            label: p.label,
-            digest: p.digest,
-            signer: p.signer,
-          ),
+          p.available
+              ? InterconnectSharedSource(
+                  kind: store.kind,
+                  id: p.id,
+                  label: p.label,
+                  digest: p.digest,
+                  signer: p.signer,
+                )
+              : InterconnectSharedSource.unavailable(
+                  kind: store.kind,
+                  id: p.id,
+                  label: p.label,
+                ),
         );
       }
+      kinds.add(store.kind);
     }
-    return InterconnectSourceShareCatalog(sources);
+    return InterconnectSourceShareCatalog(sources, kinds: kinds);
+  }
+
+  /// 只出 host 主人勾选过的条目；[InterconnectSourceShareCatalog.kinds] 照实带上，
+  /// client 据此把「取消勾选 / 删了」传播成删除，把「列不出」当成不动。
+  @override
+  Future<InterconnectSourceShareCatalog> sourceShareCatalog() async {
+    final Set<String> selected = await _selected();
+    final InterconnectSourceShareCatalog all = await shareableSources();
+    return InterconnectSourceShareCatalog(<InterconnectSharedSource>[
+      for (final InterconnectSharedSource s in all.sources)
+        if (selected.contains(s.key)) s,
+    ], kinds: all.kinds);
   }
 
   @override
   Future<Uint8List?> sourceSharePackage(String kind, String id) async {
+    if (!(await _selected()).contains('$kind/$id')) return null;
     for (final SharedPluginStore store in _pluginStores()) {
       if (store.kind != kind) continue;
       final bool shared = (await store.installed()).any(
-        (SharedPluginPackage p) => p.id == id && !p.bundled,
+        (SharedPluginPackage p) => p.id == id && !p.bundled && p.available,
       );
       return shared ? store.exportPackage(id) : null;
     }

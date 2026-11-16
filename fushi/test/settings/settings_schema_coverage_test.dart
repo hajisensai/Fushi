@@ -1754,6 +1754,9 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/sync/interconnect_source_share_test.dart',
   'interconnect/Share sources with my devices':
       'test/sync/interconnect_source_share_test.dart',
+  // client「也接收插件」（默认关）：关着时插件整类跳过（专项测试咬住）。
+  'interconnect/Also receive plugins':
+      'test/sync/interconnect_source_share_test.dart',
   // 开服开关：持久化的是「想开服」的意图（绑定失败也保留），启动失败映射成
   // FushiServerStartError 而不是把开关卡在「已开启」。
   'interconnect/Enable sync server':

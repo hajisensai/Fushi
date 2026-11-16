@@ -37,7 +37,7 @@ import 'package:fushi/src/sync/font_sync.dart';
 import 'package:fushi/src/sync/interconnect_book_progress_sync.dart';
 import 'package:fushi/src/sync/interconnect_playback_position_sync.dart';
 import 'package:fushi/src/sync/interconnect_source_share_kinds.dart'
-    show sourceSharePluginStores, SharedPluginStore;
+    show sourceSharePluginStores, sourceSharePrefWriter, SharedPluginStore;
 import 'package:fushi/src/sync/interconnect_source_share_sync.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/remote_audiobook_revision.dart'

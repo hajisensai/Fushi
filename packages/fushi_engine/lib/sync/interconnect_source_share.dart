@@ -16,7 +16,13 @@
 ///
 /// 门：必须 HTTPS、必须 per-peer token、必须是 host 主人标过「我的设备」的 peer
 /// （配对审批时选「这是我的设备」或之后在已配对设备里标记）、host 侧开关开着。
-/// 载荷带服务器密码 / API key，这几道门缺一不可。
+/// 载荷带服务器密码 / API key，这几道门缺一不可。目录里只有 host 主人**逐项勾选**
+/// 过的来源（默认一条都不共享），插件包端点也只给勾选过的。
+///
+/// 「缺席 ≠ 删除」：目录带 [InterconnectSourceShareCatalog.kinds]——host 这一轮完整
+/// 枚举过的种类。client 只对这些种类把「目录里没有」当成「host 不再共享」去传播删除；
+/// host 勾选了、但这一轮列不出来的插件（文件正被更新 / 被锁、校验失败）以
+/// [InterconnectSharedSource.unavailable] 条目出现，client 原样保留本机那份。
 library;
 
 import 'dart:convert';
@@ -52,7 +58,19 @@ class InterconnectSharedSource {
     required this.digest,
     this.config,
     this.signer,
+    this.unavailable = false,
   });
+
+  /// host 勾选了这条、但此刻列不出来（插件校验失败 / 文件被占用）：client 不装、
+  /// 不更新、不删，账本原样保留。此时 [digest] 为空串。
+  const InterconnectSharedSource.unavailable({
+    required this.kind,
+    required this.id,
+    required this.label,
+  }) : digest = '',
+       config = null,
+       signer = null,
+       unavailable = true;
 
   /// 来源种类（app 侧登记表的键，例如 `opds`、`musicPlugin`）。
   final String kind;
@@ -66,6 +84,7 @@ class InterconnectSharedSource {
   final String digest;
   final Map<String, Object?>? config;
   final String? signer;
+  final bool unavailable;
 
   /// 账本键：`<kind>/<id>`。
   String get key => '$kind/$id';
@@ -77,6 +96,7 @@ class InterconnectSharedSource {
     'digest': digest,
     'config': ?config,
     'signer': ?signer,
+    if (unavailable) 'unavailable': true,
   };
 
   /// 坏条目返回 null（逐条容错：一条坏掉不连累整份目录）。
@@ -90,6 +110,13 @@ class InterconnectSharedSource {
     final Object? signer = json['signer'];
     if (kind is! String || kind.isEmpty) return null;
     if (id is! String || id.isEmpty) return null;
+    if (json['unavailable'] == true) {
+      return InterconnectSharedSource.unavailable(
+        kind: kind,
+        id: id,
+        label: label is String ? label : id,
+      );
+    }
     if (digest is! String || digest.isEmpty) return null;
     if (config != null && config is! Map) return null;
     if (signer != null && signer is! String) return null;
@@ -106,14 +133,22 @@ class InterconnectSharedSource {
 
 /// host 此刻愿意共享的全部来源。
 class InterconnectSourceShareCatalog {
-  const InterconnectSourceShareCatalog(this.sources);
+  const InterconnectSourceShareCatalog(
+    this.sources, {
+    this.kinds = const <String>{},
+  });
 
   static const int schemaVersion = 1;
 
   final List<InterconnectSharedSource> sources;
 
+  /// host 这一轮完整枚举过的种类。不在里面的种类（host 这一轮没有那个插件体系、
+  /// 读失败）client 不传播删除：「缺席」只在完整枚举过的种类里才等于「不再共享」。
+  final Set<String> kinds;
+
   Map<String, Object?> toJson() => <String, Object?>{
     'schemaVersion': schemaVersion,
+    'kinds': <String>[...kinds]..sort(),
     'sources': <Map<String, Object?>>[
       for (final InterconnectSharedSource s in sources) s.toJson(),
     ],
@@ -126,12 +161,20 @@ class InterconnectSourceShareCatalog {
       throw const FormatException('Unsupported source share catalog');
     }
     final Set<String> seen = <String>{};
-    return InterconnectSourceShareCatalog(<InterconnectSharedSource>[
-      for (final Object? item in raw)
-        if (InterconnectSharedSource.tryFromJson(item)
-            case final InterconnectSharedSource s when seen.add(s.key))
-          s,
-    ]);
+    final Object? kinds = json['kinds'];
+    return InterconnectSourceShareCatalog(
+      <InterconnectSharedSource>[
+        for (final Object? item in raw)
+          if (InterconnectSharedSource.tryFromJson(item)
+              case final InterconnectSharedSource s when seen.add(s.key))
+            s,
+      ],
+      kinds: <String>{
+        if (kinds is List)
+          for (final Object? k in kinds)
+            if (k is String && k.isNotEmpty) k,
+      },
+    );
   }
 }
 
@@ -143,9 +186,10 @@ abstract interface class InterconnectSourceShareHost {
   /// [peerToken] 是否是 host 主人标过「我的设备」的已配对 peer。
   Future<bool> isOwnerDevicePeer(String peerToken);
 
+  /// host 主人勾选共享的来源（未勾选的不出现）。
   Future<InterconnectSourceShareCatalog> sourceShareCatalog();
 
-  /// 插件 [kind] / [id] 的安装包；不共享 / 不存在为 null。
+  /// 插件 [kind] / [id] 的安装包；没勾选共享 / 不存在为 null。
   Future<Uint8List?> sourceSharePackage(String kind, String id);
 }
 

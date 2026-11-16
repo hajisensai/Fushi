@@ -5132,6 +5132,7 @@ class AppModel
       _startTrackingPlugins();
       // 互联「来源共享」收插件时用的本机插件体系（同步编排在别处建，经全局装配点取）。
       sourceSharePluginStores = sourceSharePluginStoresOf;
+      sourceSharePrefWriter = prefsRepo.replaceSharedSourceListPref;
       // Media tracking module: decided once from existing sign-ins (before
       // the first sync asks the switch).
       await prefsRepo.settleTrackingModuleInstallDefault(

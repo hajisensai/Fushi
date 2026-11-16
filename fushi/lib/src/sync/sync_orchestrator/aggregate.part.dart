@@ -71,6 +71,9 @@ extension _SyncOrchestratorAggregate on SyncOrchestrator {
         _db,
         pluginStores:
             sourceSharePluginStores?.call() ?? const <SharedPluginStore>[],
+        // 经偏好缓存写回：别等整轮同步结束才刷新缓存（期间设置页拿旧缓存整表写回会抹掉
+        // 刚收下的条目，下一轮还会被误判成「本机删了」永久退订）。
+        cachedPrefWriter: sourceSharePrefWriter,
       ).run(backend, await backend.connectedHostIdentity());
       report.sourcesShared += result.changed;
       report.sourceShareSignerChanged.addAll(result.signerChanged);
