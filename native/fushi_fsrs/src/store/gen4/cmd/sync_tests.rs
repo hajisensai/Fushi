@@ -911,6 +911,24 @@ fn retiring_a_device_delivers_what_waited_on_it() {
     assert_eq!(da, d.derived());
 }
 
+/// 改投影的同步命令（`ingest` / `ingest_finish` / `retire` / `rotate`）的回包一律带本机修订号与纪元（Dart
+/// `_absorbLocalWrite` 的契约）；没分叉的 `ingest_finish` 什么都不改，修订号不推进。
+#[test]
+fn projecting_sync_replies_carry_the_local_revision() {
+    let a = Dev::new("g87lr");
+    let b = Dev::new("g87lrb");
+    b.write(T1, N1, "鯨");
+    let mut loc = Loc::new();
+    sync_all(&[&a, &b], &mut loc, T1 + 1, Opts::default());
+    let (v, _) = cmd(a.h, "ingest", T1 + 2, json!({}), &[]);
+    let rev = v["localRevision"].as_i64().unwrap_or_else(|| panic!("{v}"));
+    assert!(!v["localEpoch"].is_null(), "{v}");
+    let (v, _) = cmd(a.h, "ingest_finish", T1 + 2, json!({}), &[]);
+    assert_eq!(v["fork"], json!(false), "{v}");
+    assert_eq!(v["localRevision"], json!(rev), "{v}");
+    assert!(!v["localEpoch"].is_null(), "{v}");
+}
+
 /// 停用记录体读不懂：仍按停用算（停用只看键），但 `status` 在那一行报 `warning`，不当成空记录混过去；取消停用清掉。
 #[test]
 fn an_unreadable_retire_record_is_reported() {

@@ -912,7 +912,11 @@ pub fn ingest(
 /// 换了操作号）。
 pub fn ingest_finish(t: &Truth<'_>, col: i64, profile: &str, now: i64) -> Result<Value, String> {
     let Some(r) = fork::rotate_on_fork(t, col, now)? else {
-        return Ok(json!({"fork": false}));
+        // 没分叉也照样带上本机修订号与纪元：Dart 把 `ingest_finish` 当改投影的命令（`kSrsSync2ProjectingOps`），
+        // 回包缺这两项按契约错误报（每一轮收了段都会调它）。什么都没变，修订号不推进。
+        let mut out = json!({"fork": false});
+        bump_revision(t, profile, 0, &mut out)?;
+        return Ok(out);
     };
     let mut out = json!({
         "fork": true,

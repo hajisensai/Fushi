@@ -398,6 +398,7 @@ void main() {
         'sealed': true,
       }),
     ];
+    v4.files['meta.json'] = _b('{"fmt":"m4"}');
     v4.files['devices/dev-b/seg-000000000001-000000000002-aaaaaaaa.bin'] = _b(
       'x1',
     );
