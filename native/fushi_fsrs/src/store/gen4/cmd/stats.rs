@@ -22,9 +22,9 @@
 //! 两条顺序扫：`cards` 沿主键（`col` 打头）走一遍这个集合的卡、每张卡按主键点读一次笔记行；`stats` 沿主键
 //! `(col, at, log)` 顺序走——统计行按发生时刻聚簇，不排序、不解码任何操作体（设计 §2.3）。与协议 3 同阶。
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::HashSet;
 
-use serde_json::{Map, Value};
+use serde_json::Value;
 
 use super::{profile_of, ref_of, snapshot};
 use crate::store::gen4::derive::Index;
@@ -80,35 +80,6 @@ fn load(t: &Truth<'_>, col: i64, req: &Value) -> Result<(Snapshot, Value), Strin
     })
 }
 
-/// 以 ID 为键的一张表的键归一成规范 ID（模块文件头「ID」）：同一个类的几个成员各给了值时，规范 ID 自己给了就用它的，
-/// 否则用成员里 ID 的 SQLite 序最小的那个的（确定、与键的先后无关）。出卡的 `rwkv.decks`（`cmd/study.rs`）也用它。
-pub(crate) fn canon_keys(ix: &Index<'_, '_>, m: &mut Map<String, Value>) -> Result<(), String> {
-    // 规范 ID → (它自己给了没有, 给了值的成员里 ID 的 SQLite 序最小的, 值)。
-    let mut by: BTreeMap<String, (bool, (u8, Vec<u8>), Value)> = BTreeMap::new();
-    for (key, v) in m.iter() {
-        let r = ref_of(key);
-        let c = ix.canonical(&r)?;
-        let own = r == c;
-        let (o, b) = super::sql_order(&r);
-        let rank = (o, b.to_vec());
-        let ct = c.text();
-        let better = match by.get(&ct) {
-            None => true,
-            Some((had_own, had_rank, _)) => {
-                (own && !had_own) || (own == *had_own && rank < *had_rank)
-            }
-        };
-        if better {
-            by.insert(ct, (own, rank, v.clone()));
-        }
-    }
-    *m = by
-        .into_iter()
-        .map(|(k, (_, _, v))| (k, v))
-        .collect::<Map<String, Value>>();
-    Ok(())
-}
-
 /// 请求里按 ID 给的东西归一成规范 ID（模块文件头「ID」）：`decks` / `recallDecks` 两个数组，`desired` / `deckModels`
 /// 两张以牌组为键的表，`recall.ids`（卡）。别的字段原样。
 pub(crate) fn canon_req(ix: &Index<'_, '_>, req: &Value) -> Result<Value, String> {
@@ -137,7 +108,7 @@ pub(crate) fn canon_req(ix: &Index<'_, '_>, req: &Value) -> Result<Value, String
     }
     for k in ["desired", "deckModels"] {
         if let Some(Value::Object(m)) = obj.get_mut(k) {
-            canon_keys(ix, m)?;
+            *m = super::canon_keyed(ix, m)?;
         }
     }
     if let Some(Value::Object(recall)) = obj.get_mut("recall") {

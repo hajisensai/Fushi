@@ -6,6 +6,8 @@
 //! - [history]：一个实体的修改历史（协议 3 `sync2_history` 的新代版）。
 //! - [columns]：列式批量读 `card_columns` 与 AnkiConnect 数字 id 的 `anki_resolve` / `anki_notes_info`（协议 3 `store/bulk.rs`）。
 //! - [lineage]：`lineages`——一组卡各自的血统（协议 3 `caches::lineage_ids`，同一个判定函数，按类读前身链接）。
+//! - [browse]：卡片浏览与 AnkiConnect 兼容层的会话读命令（`browse_*` / `anki_find` / `anki_dupes` / `anki_tags`，协议 3
+//!   `store/browse.rs`，同一份会话实现；常驻会话按缓存层的代号失效）。
 //! - [stats]：复习统计 `stats_report` / `stats_recall` / `stats_rows`（协议 3 `store/stats.rs`，同一份聚合）。
 //! - [center]：冲突中心与时间线的只读命令 `conflicts` / `checkpoints` / `undo_check`（G7-4e）。
 //! - [profile]：按集合的 `binding_get` / `profile_footprint`（G7-4e）。
@@ -44,6 +46,7 @@ use crate::sync2::id::Key;
 use crate::sync2::op::EntKind;
 use crate::sync2::vv::OpId;
 
+pub mod browse;
 pub mod center;
 pub mod columns;
 pub mod history;
@@ -59,6 +62,8 @@ pub mod writes_intent;
 pub mod writes_local;
 pub mod writes_restore;
 
+#[cfg(test)]
+mod browse_tests;
 #[cfg(test)]
 mod center_tests;
 #[cfg(test)]
@@ -183,6 +188,35 @@ pub(super) fn deck_tree(ix: &mut Index<'_, '_>, default: String) -> Result<DeckT
         ));
     }
     Ok(DeckTree::of_views(views, default))
+}
+
+/// 请求里以 ID 为键的表（牌组 → 值之类）归一成规范 ID 为键：同一个类有几个键时，规范 ID 自己给了就取它的，否则取
+/// 成员里 ID 的 SQLite 序（[sql_order]）最小的那个的——与键在请求里的先后无关。值原样。
+pub(super) fn canon_keyed(
+    ix: &Index<'_, '_>,
+    m: &serde_json::Map<String, Value>,
+) -> Result<serde_json::Map<String, Value>, String> {
+    // 规范 ID → (它自己给了没有, 给了值的成员里 ID 的 SQLite 序最小的, 值)。
+    let mut by: std::collections::BTreeMap<String, (bool, (u8, Vec<u8>), Value)> =
+        std::collections::BTreeMap::new();
+    for (key, v) in m.iter() {
+        let r = ref_of(key);
+        let c = ix.canonical(&r)?;
+        let own = r == c;
+        let (o, b) = sql_order(&r);
+        let rank = (o, b.to_vec());
+        let ct = c.text();
+        let better = match by.get(&ct) {
+            None => true,
+            Some((had_own, had_rank, _)) => {
+                (own && !had_own) || (own == *had_own && rank < *had_rank)
+            }
+        };
+        if better {
+            by.insert(ct, (own, rank, v.clone()));
+        }
+    }
+    Ok(by.into_iter().map(|(k, (_, _, v))| (k, v)).collect())
 }
 
 /// SQLite 比较 ID 列的顺序（`ORDER BY id`）：TEXT 在 BLOB 之前，各自按字节。[Ref] 自己的 `Ord` 把 UUID 排在前面，
