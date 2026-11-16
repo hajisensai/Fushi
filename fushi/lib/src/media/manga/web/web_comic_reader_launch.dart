@@ -46,7 +46,7 @@ Future<void> openWebComicScanInReader({
     nextLabel: t.manga_web_chapter_next,
     prevLabel: t.manga_web_chapter_prev,
   );
-  final String currentKey = scan.pageUrl.toString();
+  final String currentKey = webComicChapterKey(scan.pageUrl, rule: rule);
   final OnlineMangaLibraryService service = appModel.onlineMangaLibraryService(
     OnlineMangaRuntimeKind.web,
   );

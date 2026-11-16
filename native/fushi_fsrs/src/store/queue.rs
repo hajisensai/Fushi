@@ -414,17 +414,24 @@ impl LogState {
             .query(rusqlite::params![profile, from, today_start])
             .map_err(sql)?;
         while let Some(r) = q.next().map_err(sql)? {
-            s.fold_row(r, day, today)?;
+            s.fold_row(r, day, today, today_start)?;
         }
         Ok(s)
     }
 
-    fn fold_row(&mut self, r: &rusqlite::Row<'_>, day: Day, today: i64) -> Result<(), String> {
+    /// [LOGS_SQL] 的一行记进来；[today_start] = [LogState::window] 的第二项（调用方算一次，不逐行重算）。
+    fn fold_row(
+        &mut self,
+        r: &rusqlite::Row<'_>,
+        day: Day,
+        today: i64,
+        today_start: i64,
+    ) -> Result<(), String> {
         let at: i64 = r.get(1).map_err(sql)?;
         let card: String = r.get(0).map_err(sql)?;
         let id: String = r.get(4).map_err(sql)?;
         let duration_ms: Option<i64> = r.get(5).map_err(sql)?;
-        let today_log = at >= LogState::window(day, today).1;
+        let today_log = at >= today_start;
         let (review_type, learn_json) = if today_log {
             (
                 r.get::<_, String>(2).map_err(sql)?,
@@ -442,6 +449,7 @@ impl LogState {
             duration_ms,
             day,
             today,
+            today_start,
         );
         Ok(())
     }
@@ -461,7 +469,8 @@ impl LogState {
 
     /// 记一条 `kind = 'review'` 的日志（[LOGS_SQL] 的一行，列一一对应）：[review_type] / [learn_json] 只在今天的日志上
     /// 读（[learn_json] = 今天的学习步日志的行 JSON，看 `res.reps` 是不是 1；别的日志给 None）。新代读命令
-    /// （`store/gen4/cmd/study.rs`）从操作里拼出同样的几列再调这里，计数规则只有这一份。
+    /// （`store/gen4/cmd/study.rs`）从操作里拼出同样的几列再调这里，计数规则只有这一份。[today_start] =
+    /// [LogState::window] 的第二项（调用方对一整批日志算一次）。
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn fold(
         &mut self,
@@ -473,8 +482,8 @@ impl LogState {
         duration_ms: Option<i64>,
         day: Day,
         today: i64,
+        today_start: i64,
     ) {
-        let (_, today_start) = LogState::window(day, today);
         let d = day.index(at);
         let slot = d - (today - 29);
         let slot = (0..30).contains(&slot).then_some(slot as usize);
@@ -578,7 +587,7 @@ impl LogState {
             args.extend(chunk.iter().map(|s| Sql::Text((*s).clone())));
             let mut q = stmt.query(params_from_iter(args)).map_err(sql)?;
             while let Some(r) = q.next().map_err(sql)? {
-                self.fold_row(r, day, today)?;
+                self.fold_row(r, day, today, today_start)?;
             }
         }
         Ok(())
