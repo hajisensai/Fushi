@@ -1,4 +1,51 @@
+import 'dart:convert';
+
 import 'package:fushi_core/fushi_core.dart';
+
+/// 推荐包里本地音频库的公开显示名。键是维护者本机导入时沿用的原始文件名
+/// （Yomitan 本地音频服务器的 `android.db` 系列），值是分发给用户看的名字。
+/// 磁盘文件名 `local_audio_*.db` 是冻结持久化名，这里只改 `displayName`。
+const Map<String, String> kRecommendedPackAudioDisplayNames = <String, String>{
+  'android.db': 'Japanese audio',
+  'android_english.db': 'English audio',
+};
+
+/// 把 `local_audio_dbs` 偏好值（`s:` + JSON 列表）里的显示名换成公开名。
+///
+/// 已是公开名的条目原样保留（可重复执行）；出现没登记过的显示名直接抛错，
+/// 免得新加的音频库带着原始文件名混进公开包。
+String renameRecommendedPackAudioDbs(String prefValue) {
+  const String prefix = 's:';
+  if (!prefValue.startsWith(prefix)) {
+    throw StateError('local_audio_dbs 偏好格式异常：缺少 s: 前缀');
+  }
+  final Object? decoded = jsonDecode(prefValue.substring(prefix.length));
+  if (decoded is! List<Object?>) {
+    throw StateError('local_audio_dbs 偏好格式异常：不是 JSON 列表');
+  }
+  final Set<String> publicNames = kRecommendedPackAudioDisplayNames.values
+      .toSet();
+  for (final Object? entry in decoded) {
+    if (entry is! Map<String, Object?>) {
+      throw StateError('local_audio_dbs 偏好格式异常：条目不是对象');
+    }
+    final Object? name = entry['displayName'];
+    if (name == null) continue;
+    if (name is! String) {
+      throw StateError('local_audio_dbs 偏好格式异常：displayName 不是字符串');
+    }
+    if (publicNames.contains(name)) continue;
+    final String? renamed = kRecommendedPackAudioDisplayNames[name];
+    if (renamed == null) {
+      throw StateError(
+        '推荐包音频库 "$name" 没有公开显示名，'
+        '先在 kRecommendedPackAudioDisplayNames 里登记',
+      );
+    }
+    entry['displayName'] = renamed;
+  }
+  return '$prefix${jsonEncode(decoded)}';
+}
 
 /// 净化专供公开分发的数据库副本；绝不能传入用户正在使用的数据库。
 ///
@@ -32,6 +79,21 @@ Future<void> sanitizeRecommendedPackDatabase(FushiDatabase db) async {
         'DELETE FROM preferences WHERE key NOT IN '
         "('audio_source_configs', 'local_audio_dbs')",
       );
+      final List<String> audioDbs =
+          (await db
+                  .customSelect(
+                    "SELECT value FROM preferences "
+                    "WHERE key = 'local_audio_dbs'",
+                  )
+                  .get())
+              .map((row) => row.read<String>('value'))
+              .toList();
+      for (final String value in audioDbs) {
+        await db.customStatement(
+          "UPDATE preferences SET value = ? WHERE key = 'local_audio_dbs'",
+          <Object>[renameRecommendedPackAudioDbs(value)],
+        );
+      }
       final bool hasSequence =
           (await db
                   .customSelect(
