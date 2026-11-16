@@ -49,6 +49,12 @@ fn clip(s: &str) -> String {
         .collect()
 }
 
+/// `status` 设备表的一行来源：设备与它日志末尾的 seq。
+struct DevRow {
+    id: Id,
+    last: u64,
+}
+
 fn hint_key(device: &Id) -> String {
     format!("device_hint/{}", device.text())
 }
@@ -275,8 +281,17 @@ pub fn status(t: &Truth<'_>, col: i64) -> Result<Value, String> {
                 }
             }
         }
-        let mut devices = Vec::with_capacity(devs.len());
-        for d in &devs {
+        // 刚建、还没写过操作的本机身份不在 `devs` 里（设备表按日志登记），协议 3 的设备表恒有本机一行：补上。
+        let mut rows: Vec<(Id, u64)> = devs.iter().map(|d| (d.id, d.last)).collect();
+        if !rows.iter().any(|(id, _)| *id == me.device) {
+            rows.push((me.device, 0));
+        }
+        let mut devices = Vec::with_capacity(rows.len());
+        for (id, last) in &rows {
+            let d = DevRow {
+                id: *id,
+                last: *last,
+            };
             let is_self = d.id == me.device;
             let peer = t.peer(col, &d.id)?;
             let applied = d.last as i64;

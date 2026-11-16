@@ -86,7 +86,15 @@ fn apply_some(s: &mut Session<'_, '_>, now: i64, items: &[Value]) -> Result<Valu
     if items.is_empty() {
         return Ok(json!({}));
     }
-    apply_in(s, now, items, ApplyOpts { chg: false })
+    apply_in(
+        s,
+        now,
+        items,
+        ApplyOpts {
+            chg: false,
+            compact: false,
+        },
+    )
 }
 
 // ---------------------------------------------------------------------- note_fields_if
@@ -207,10 +215,24 @@ pub fn change(t: &Truth<'_>, col: i64, req: &Value, items: &[Value]) -> Result<V
                 s.land(b, now)?;
             }
         }
+        // 协议 3 先就地筛掉 `chg` 没变的项，筛完一项不剩就不走 `apply`（回包没有 `landed` / `foreign`）。
         let mut v = if items.is_empty() {
             json!({})
         } else {
-            apply_in(s, now, items, ApplyOpts { chg: true })?
+            let v = apply_in(
+                s,
+                now,
+                items,
+                ApplyOpts {
+                    chg: true,
+                    compact: true,
+                },
+            )?;
+            if v["landed"].as_array().is_some_and(Vec::is_empty) {
+                json!({})
+            } else {
+                v
+            }
         };
         fail_after(req, "apply")?;
         if req.get("move").is_some_and(Value::is_object) {

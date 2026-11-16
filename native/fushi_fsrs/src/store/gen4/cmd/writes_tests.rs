@@ -1,1 +1,1074 @@
 //! 写命令新代实现的对拍与不变量测试（G7-3b）。
+//!
+//! **对拍**：同一个协议 3 的库（`tests.rs` 的 `library`，两台设备、冲突、复习、继承、Anki 导入都有）灌进新代
+//! （`Pair::new`：重建两遍相同、逐条维护与重建相同、与协议 3 投影无差异），新代一侧再建本机身份。然后**同一串命令**
+//! 分别打到协议 3（`store/ffi.rs` 的分发器，原命令）与新代（`cmd/writes*.rs`），再用 G7-4 的读命令（`cmd/reads.rs`）
+//! 与协议 3 的原查询逐表比：身份记录、活着的修改、笔记 / 卡片缓存、日志。
+//!
+//! 两侧作者不同（协议 3 是它自己的设备、新代是新身份），新写入的修改行的写入者 / seq / HLC / 修改记录 ID 必然不同：
+//! 修改行按 (实体, 键, 值, `m`) 比，日志行去掉 `hlc`（协议 3 存的是事件里的旧 HLC，新代是操作自己的）。`sched` 的日志
+//! ID 由 `Id::new_v7` 随机生成，那一组再去掉日志 ID 与卡的 `last_log_id`。其余列逐列相同。
+
+use rusqlite::Connection;
+use serde_json::{Value, json};
+
+use super::tests::{N1, N2, N3, N4, Norm, Pair, T0, card, decode, library, library_pair, note};
+use super::writes::{self, Session, write};
+use super::{writes_intent, writes_local};
+use crate::store::gen4::derive::Ref;
+use crate::store::gen4::derive::tests::{assert_rebuild_is_identity, dump};
+use crate::store::gen4::truth::{TRUST_PENDING, Truth};
+use crate::store::sync2::canonical;
+use crate::store::sync2::config::default_deck_id;
+use crate::store::sync2::tests::{DAY, Device, P, edit, review};
+use crate::sync2::id::{Id, Key};
+use crate::sync2::op::Body;
+
+const N5: &str = "0193a1b2-0000-7000-8000-0000000000a5";
+const LANG: &str = "0193a1b2-0000-7000-8000-0000000000d1";
+const JP: &str = "0193a1b2-0000-7000-8000-0000000000d2";
+const ME: [u8; 16] = [0xe4; 16];
+const T1: i64 = T0 + 3 * DAY;
+
+/// 宿主发的修改记录草稿（Dart `_applyInput`）。协议 3 一侧要 `clk`（旧版时钟），新代不看。
+fn draft(kind: &str, entity: &str, key: &str, v: Value) -> Value {
+    json!({
+        "e": {"t": "edit", "x": {"p": P, "k": kind, "e": entity, "f": key, "v": v, "ts": "anchored"}},
+        "note": null, "clk": "t",
+    })
+}
+
+fn chg(mut it: Value) -> Value {
+    it["chg"] = json!(true);
+    it
+}
+
+fn deck_events(id: &str, name: &str, parent: Option<&str>) -> Vec<Value> {
+    let mut out = vec![
+        json!({"t": "entity", "x": {"id": id, "p": P, "k": "deck", "d": {"createdAt": 1}}}),
+        edit("deck", id, "name", json!(name)),
+    ];
+    if let Some(p) = parent {
+        out.push(edit("deck", id, "parent", json!(p)));
+    }
+    out
+}
+
+/// `library` 再加两个牌组（`Lang`、`Lang::JP`），N1 / N3 首选 `Lang`、N2 首选 `JP`。
+fn decked() -> Device {
+    let a = library();
+    let mut ev = deck_events(LANG, "Lang", None);
+    ev.extend(deck_events(JP, "JP", Some(LANG)));
+    ev.push(edit("note", N1, "deck", json!(LANG)));
+    ev.push(edit("note", N3, "deck", json!(LANG)));
+    ev.push(edit("note", N2, "deck", json!(JP)));
+    a.apply(T0 + 2 * DAY, ev);
+    a
+}
+
+/// 一对：协议 3 的设备与灌出来的新代库（新代一侧建好本机身份）。
+struct W<'d> {
+    p: Pair<'d>,
+}
+
+impl<'d> W<'d> {
+    fn new(d: &'d Device) -> W<'d> {
+        let p = Pair::new(d);
+        let t = Truth::new(&p.g4);
+        assert_eq!(
+            t.tx(|t| t.create_self(p.col, &Id(ME), &[9; 32], T0)),
+            Ok(true)
+        );
+        // 协议 3 的命令读的是它自己的缓存表（卡、笔记）：按新代同一份配置先把欠着的收尾做完、缓存整份重建（提交）。
+        // 读侧（`Pair::p3`）每次还会在 SAVEPOINT 里再重建一遍，结果相同。
+        {
+            let w = d.core.writer().unwrap();
+            crate::store::sync2::transport::replay_pending(
+                &w,
+                P,
+                &mut crate::store::sync2::transport::CommitBudget::unlimited(),
+            )
+            .unwrap();
+            let cfg =
+                crate::store::caches::CacheConfig::parse(&serde_json::from_str(&p.cfg).unwrap())
+                    .unwrap();
+            crate::store::caches::rebuild(&w, P, &cfg).unwrap();
+        }
+        W { p }
+    }
+
+    fn t(&self) -> Truth<'_> {
+        Truth::new(&self.p.g4)
+    }
+
+    /// 协议 3 一侧：经分发器发原命令。
+    fn p3(&self, op: &str, now: i64, extra: Value, items: Option<&[Value]>) -> Value {
+        let mut req = json!({
+            "op": op, "profile": P, "now": now,
+            "caches": serde_json::from_str::<Value>(&self.p.cfg).unwrap(),
+            "legacyDevice": "dev", "tickNow": now,
+        });
+        for (k, v) in extra.as_object().cloned().unwrap_or_default() {
+            req[k.as_str()] = v;
+        }
+        let mut blobs: Vec<Vec<u8>> = items
+            .map(|i| Value::Array(i.to_vec()).to_string().into_bytes())
+            .into_iter()
+            .collect();
+        let mut files = Vec::new();
+        crate::store::ffi::sync2_dispatch(&self.p.d.core, &req, &mut blobs, &mut files)
+            .unwrap_or_else(|e| panic!("protocol 3 {op}: {e}"))
+    }
+
+    fn req(now: i64, extra: Value) -> Value {
+        let mut req = json!({"now": now});
+        for (k, v) in extra.as_object().cloned().unwrap_or_default() {
+            req[k.as_str()] = v;
+        }
+        req
+    }
+
+    /// 本机身份日志里有几条操作。
+    fn mine(&self) -> u64 {
+        self.t().last_of(self.p.col, &Id(ME)).unwrap()
+    }
+
+    // ------------------------------------------------------------ 比
+
+    fn edit_norm(&self, s: &str) -> String {
+        self.p.ix(|ix| {
+            let v: Value = serde_json::from_str(s).unwrap();
+            let f = ix.canonical_key(v["f"].as_str().unwrap()).unwrap();
+            let val = ix.canonical_value(&f, &v["v"]).unwrap();
+            let e = ix
+                .canonical(&Ref::of(&Key::of(v["e"].as_str().unwrap())))
+                .unwrap()
+                .text();
+            canonical(&json!([v["k"], e, f, val, v.get("m")]))
+        })
+    }
+
+    fn log_norm(&self, s: &str, ids: bool) -> String {
+        self.p.ix(|ix| {
+            let mut v: Value = serde_json::from_str(s).unwrap();
+            let m = v.as_object_mut().unwrap();
+            m.remove("hlc");
+            m.remove("p");
+            if !ids {
+                // 随机生成的日志 ID：自己的与撤销指向的（撤的是本侧刚写的那条）。
+                m.remove("id");
+                m.remove("revokes");
+            }
+            canonical(&ix.canonical_json(&v).unwrap())
+        })
+    }
+
+    /// 一张表两侧逐行（多重集）比；[f] 把一行归一。
+    fn table(&self, req: Value, f: &dyn Fn(&[String]) -> Vec<String>) {
+        let (_, pf) = self.p.p3(req.clone());
+        let (_, gf) = self.p.g4(req.clone());
+        let (pc, pd) = decode(&pf[0].1);
+        let (gc, gd) = decode(&gf[0].1);
+        assert_eq!(pc, gc, "{req}");
+        let mut p: Vec<Vec<String>> = pd.iter().map(|r| f(r)).collect();
+        let mut g: Vec<Vec<String>> = gd.iter().map(|r| f(r)).collect();
+        p.sort();
+        g.sort();
+        if p != g {
+            let only = |a: &[Vec<String>], b: &[Vec<String>]| -> Vec<Vec<String>> {
+                a.iter().filter(|r| !b.contains(r)).cloned().collect()
+            };
+            panic!(
+                "{req}: {} vs {} rows\n only protocol 3: {:?}\n only gen4: {:?}",
+                p.len(),
+                g.len(),
+                only(&p, &g),
+                only(&g, &p)
+            );
+        }
+    }
+
+    /// 两侧此刻的状态逐表相同（模块文件头）。[generated] = 有随机生成的日志 ID（`sched`）。
+    fn same_state(&self, notes: &[&str], cards: &[String], generated: bool) {
+        self.same_state_with(notes, cards, generated, true);
+    }
+
+    /// [same_state]；[card_edits] = false 时卡的修改行不比（`deck_delete` 的处理顺序不同，见那条测试）。
+    fn same_state_with(&self, notes: &[&str], cards: &[String], generated: bool, card_edits: bool) {
+        self.p.same(
+            json!({"q": "entities"}),
+            &[("t", &[Norm::Id, Norm::Plain, Norm::Payload])],
+        );
+        for kind in ["note", "card", "deck", "notetype"] {
+            if kind == "card" && !card_edits {
+                continue;
+            }
+            let ids: Vec<String> = match kind {
+                "note" => notes.iter().map(|s| (*s).to_owned()).collect(),
+                "card" => cards.to_vec(),
+                "deck" => vec![LANG.into(), JP.into(), default_deck_id(P)],
+                _ => vec!["NT".into()],
+            };
+            self.table(json!({"q": "edits", "kind": kind, "ids": ids}), &|r| {
+                vec![self.edit_norm(&r[1])]
+            });
+        }
+        let card_cols: Vec<(&str, Norm)> = crate::store::bulk::CARD_COLUMNS
+            .iter()
+            .map(|(n, _)| {
+                (
+                    *n,
+                    match *n {
+                        "last_log_id" if generated => Norm::Skip,
+                        "id" | "note_id" | "template_id" | "deck_id" | "last_log_id" => Norm::Id,
+                        _ => Norm::Plain,
+                    },
+                )
+            })
+            .collect();
+        self.table(json!({"q": "cards"}), &|r| {
+            r.iter()
+                .zip(&card_cols)
+                .map(|(c, (_, n))| self.p.norm(*n, c))
+                .collect()
+        });
+        let note_cols = [
+            Norm::Id,
+            Norm::Id,
+            Norm::Plain,
+            Norm::Plain,
+            Norm::Id,
+            Norm::Plain,
+            Norm::Plain,
+            Norm::Plain,
+            Norm::Plain,
+            Norm::Plain,
+            Norm::Plain,
+            Norm::Skip,
+            Norm::Plain,
+        ];
+        self.table(json!({"q": "notes"}), &|r| {
+            r.iter()
+                .zip(&note_cols)
+                .map(|(c, n)| self.p.norm(*n, c))
+                .collect()
+        });
+        self.table(json!({"q": "logs", "cards": cards}), &|r| {
+            vec![
+                if generated {
+                    String::new()
+                } else {
+                    self.p.norm(Norm::Id, &r[0])
+                },
+                self.p.norm(Norm::Id, &r[1]),
+                self.log_norm(&r[2], !generated),
+            ]
+        });
+        let t = self.t();
+        assert_rebuild_is_identity(&t, self.p.col);
+    }
+}
+
+fn all_cards() -> Vec<String> {
+    let mut out = Vec::new();
+    for n in [N1, N2, N3, N4, N5] {
+        for t in ["t1", "t2"] {
+            out.push(card(n, t));
+        }
+    }
+    out
+}
+
+// ---------------------------------------------------------------------- 对拍
+
+/// `apply`：新笔记、字段、整列表标签（拆成 OR-Set）、`chg`（一条没变不落、一条落）、带 `answer` 意图的复习（盖配置
+/// 快照）。回包的 `landed` 两侧相同，状态逐表相同。
+#[test]
+fn apply_matches_protocol_3() {
+    let lib = library();
+    let w = W::new(&lib);
+    let items = vec![
+        json!({"e": note(N5, "NT", 50), "note": null}),
+        draft("note", N5, "f/fa", json!("魚")),
+        draft("note", N1, "tags", json!(["a", "c", "c"])),
+        chg(draft("note", N1, "f/fa", json!("猫"))),
+        chg(draft("note", N3, "f/fa", json!("犬2"))),
+        json!({"e": review("r9", &card(N1, "t1"), T1, 3, "review"), "note": N1, "intent": "answer"}),
+    ];
+    let pv = w.p3("apply", T1, json!({}), Some(&items));
+    let gv = writes::apply(&w.t(), w.p.col, &W::req(T1, json!({})), &items).unwrap();
+    assert_eq!(pv["landed"], gv["landed"], "{pv}\n{gv}");
+    assert_eq!(gv["landed"], json!([true, true, true, false, true, true]));
+    assert_eq!(gv["foreign"], json!([]));
+    // 写入者是新代的本机身份；`edits` 记的就是它的 dot。
+    let edits = gv["edits"].as_array().unwrap();
+    assert!(!edits.is_empty());
+    assert!(edits.iter().all(|e| e[3] == json!(Id(ME).text())), "{gv}");
+    assert_eq!(gv["nextSeq"], json!(w.mine() + 1));
+    w.same_state(&[N1, N2, N3, N4, N5], &all_cards(), false);
+    // 第二批：同一条笔记的标签再改回去，`chg` 比的是上一批写下的值。
+    let items = vec![
+        draft("note", N1, "tags", json!(["b", "a"])),
+        chg(draft("note", N3, "f/fa", json!("犬2"))),
+        chg(draft("note", N3, "f/fa", json!("犬3"))),
+        chg(draft("note", N3, "f/fa", json!("犬3"))),
+    ];
+    let pv = w.p3("apply", T1 + 1, json!({}), Some(&items));
+    let gv = writes::apply(&w.t(), w.p.col, &W::req(T1 + 1, json!({})), &items).unwrap();
+    assert_eq!(pv["landed"], gv["landed"]);
+    assert_eq!(gv["landed"], json!([true, false, true, false]));
+    w.same_state(&[N1, N2, N3, N4, N5], &all_cards(), false);
+}
+
+/// `import_drafts`：`init` 项碰到已有修改的键不落；`existed` 两侧相同。
+#[test]
+fn import_drafts_matches_protocol_3() {
+    let lib = library();
+    let w = W::new(&lib);
+    let init = |it: Value| {
+        let mut it = it;
+        it["init"] = json!(true);
+        it
+    };
+    let items = vec![
+        json!({"e": note(N1, "NT", 10), "note": null}),
+        json!({"e": note(N5, "NT", 50), "note": null}),
+        init(draft("note", N1, "f/fa", json!("源里的旧值"))),
+        init(draft("note", N1, "f/zz", json!("新字段"))),
+        init(draft("note", N5, "f/fa", json!("魚"))),
+    ];
+    let pv = w.p3("import_drafts", T1, json!({}), Some(&items));
+    let gv = writes::import_drafts(&w.t(), w.p.col, &W::req(T1, json!({})), &items).unwrap();
+    assert_eq!(pv["existed"], gv["existed"]);
+    assert_eq!(gv["existed"], json!([N1]));
+    assert_eq!(pv["landed"], gv["landed"]);
+    w.same_state(&[N1, N2, N3, N4, N5], &all_cards(), false);
+    // `chg` 项不收。
+    let e = writes::import_drafts(
+        &w.t(),
+        w.p.col,
+        &W::req(T1, json!({})),
+        &[chg(draft("note", N1, "f/fa", json!("x")))],
+    )
+    .unwrap_err();
+    assert!(e.contains("chg"), "{e}");
+}
+
+/// `purge` 与 `checkpoint`：状态相同；清除的实体进 `purged`。
+#[test]
+fn purge_and_checkpoint_match_protocol_3() {
+    let lib = library();
+    let w = W::new(&lib);
+    let req = json!({"kind": "note", "entities": [N2, N4]});
+    w.p3("purge", T1, req.clone(), None);
+    let gv = writes::purge(&w.t(), w.p.col, &W::req(T1, req)).unwrap();
+    let purged = gv["purged"].as_array().unwrap();
+    assert_eq!(purged.len(), 2, "{gv}");
+    let req = json!({"name": "before", "reason": "manual"});
+    w.p3("checkpoint", T1 + 1, req.clone(), None);
+    writes::checkpoint(&w.t(), w.p.col, &W::req(T1 + 1, req)).unwrap();
+    w.same_state(&[N1, N2, N3, N4], &all_cards(), false);
+    let e = writes::purge(
+        &w.t(),
+        w.p.col,
+        &W::req(T1, json!({"kind": "note", "entities": []})),
+    )
+    .unwrap_err();
+    assert!(e.contains("missing entities"), "{e}");
+}
+
+/// `resolve`：删除与并发的修改冲突（扣住的删除），两侧按同一个冲突 ID 找到同一个实体，「恢复」与「删除」两种裁决后
+/// 状态相同；不存在的冲突报错、什么都不写。
+#[test]
+fn resolve_matches_protocol_3() {
+    for delete in [false, true] {
+        // `library` 的两台设备（已同步完）：a 删 N1、b 并发改 N1。
+        let (a, b, mut bucket) = library_pair();
+        a.apply(T1 + 1, vec![edit("note", N1, "deleted", json!(T1 + 1))]);
+        b.apply(T1 + 2, vec![edit("note", N1, "f/fa", json!("並行"))]);
+        for _ in 0..2 {
+            a.sync(&mut bucket, "loc", T1 + 3);
+            b.sync(&mut bucket, "loc", T1 + 3);
+        }
+        let conflicts = a.core.sync2_conflicts(P).unwrap();
+        let id = conflicts
+            .as_array()
+            .and_then(|c| c.first())
+            .and_then(|c| c["id"].as_str())
+            .unwrap_or_else(|| panic!("no conflict: {conflicts}"))
+            .to_owned();
+        let w = W::new(&a);
+        let req = json!({"conflict": id, "delete": delete});
+        let before = w.mine();
+        let e = writes::resolve(
+            &w.t(),
+            w.p.col,
+            &W::req(T1 + 4, json!({"conflict": "nope"})),
+        )
+        .unwrap_err();
+        assert!(e.contains("no such conflict"), "{e}");
+        assert_eq!(w.mine(), before);
+        w.p3("resolve", T1 + 4, req.clone(), None);
+        writes::resolve(&w.t(), w.p.col, &W::req(T1 + 4, req)).unwrap();
+        assert_eq!(w.mine(), before + 1);
+        w.same_state(&[N1, N2, N3, N4], &all_cards(), false);
+    }
+}
+
+/// `note_fields_if`：`note` 模式整条笔记拒绝、`field` 模式逐项；被拒的笔记两侧相同，状态相同。
+#[test]
+fn note_fields_if_matches_protocol_3() {
+    let lib = library();
+    let w = W::new(&lib);
+    let it = |n: &str, f: &str, x: &str, v: &str| json!({"n": n, "f": f, "x": x, "v": v});
+    for (mode, items) in [
+        (
+            "note",
+            vec![
+                it(N1, "fa", "猫", "ねこ"),
+                it(N1, "fb", "wrong", "x"),
+                it(N3, "fa", "犬", "いぬ"),
+                it(N4, "fa", "鳥", "とり"),
+                it("0193a1b2-0000-7000-8000-0000000000ff", "fa", "", "x"),
+            ],
+        ),
+        (
+            "field",
+            vec![
+                it(N1, "fa", "猫", "ねこ"),
+                it(N1, "fb", "wrong", "x"),
+                it(N3, "fa", "いぬ", "犬"),
+                it(N3, "fa", "いぬ", "犬犬"),
+            ],
+        ),
+    ] {
+        let extra = json!({"mode": mode, "ts": "anchored"});
+        let pv = w.p3("note_fields_if", T1, extra.clone(), Some(&items));
+        let gv =
+            writes_intent::note_fields_if(&w.t(), w.p.col, &W::req(T1, extra), &items).unwrap();
+        assert_eq!(pv["rejected"], gv["rejected"], "{mode}");
+        w.same_state(&[N1, N2, N3, N4], &all_cards(), false);
+    }
+}
+
+/// `change`：还原点 + 修改（`chg`）+ 移牌组段（看换完之后的可见卡）。
+#[test]
+fn change_with_move_matches_protocol_3() {
+    let lib = decked();
+    let w = W::new(&lib);
+    let items = vec![
+        chg(draft("note", N1, "f/fa", json!("猫"))),
+        draft("note", N3, "f/fb", json!("dog C")),
+    ];
+    let extra = json!({
+        "checkpoint": {"name": "change", "reason": "change_notetype"},
+        "move": {"deck": JP, "notes": [N1, N3, N1]},
+        "ts": "anchored",
+    });
+    let pv = w.p3("change", T1, extra.clone(), Some(&items));
+    let gv = writes_intent::change(&w.t(), w.p.col, &W::req(T1, extra), &items).unwrap();
+    assert_eq!(pv["landed"], gv["landed"], "{pv}\n{gv}");
+    w.same_state(&[N1, N2, N3, N4], &all_cards(), false);
+}
+
+/// `merge_notes`：前身链接、补空字段、并标签、删被吸收的。
+#[test]
+fn merge_notes_matches_protocol_3() {
+    let lib = library();
+    let w = W::new(&lib);
+    let extra = json!({"keep": N3, "absorb": [N1, N3, N2], "deletedAt": T1, "ts": "anchored"});
+    let pv = w.p3("merge_notes", T1, extra.clone(), None);
+    let gv = writes_intent::merge_notes(&w.t(), w.p.col, &W::req(T1, extra)).unwrap();
+    assert_eq!(pv["linked"], gv["linked"]);
+    assert_eq!(pv["unmatched"], gv["unmatched"]);
+    w.same_state(&[N1, N2, N3, N4], &all_cards(), false);
+    // 不存在的笔记：报错、什么都不写。
+    let before = w.mine();
+    let e = writes_intent::merge_notes(
+        &w.t(),
+        w.p.col,
+        &W::req(T1 + 1, json!({"keep": N3, "absorb": ["0193a1b2-0000-7000-8000-0000000000ff"], "deletedAt": T1})),
+    )
+    .unwrap_err();
+    assert!(e.contains("not found"), "{e}");
+    assert_eq!(w.mine(), before);
+}
+
+/// `deck_delete`：plan → 分步（limit 1）直到 done（只移卡 / 连笔记一起删）；走完之后状态相同。
+#[test]
+fn deck_delete_matches_protocol_3() {
+    for delete_cards in [false, true] {
+        let lib = decked();
+        let w = W::new(&lib);
+        let plan = json!({"deck": LANG, "deleteCards": delete_cards, "plan": true});
+        let pv = w.p3("deck_delete", T1, plan.clone(), None);
+        let gv = writes_intent::deck_delete(&w.t(), w.p.col, &W::req(T1, plan)).unwrap();
+        assert_eq!(pv["total"], gv["total"], "{pv}\n{gv}");
+        assert_eq!(pv["done"], gv["done"]);
+        // 两侧各自走到 done（游标不同：协议 3 按缓存 rowid，新代按 ID）。
+        let base = json!({"deck": LANG, "deleteCards": delete_cards, "limit": 1, "deletedAt": T1 + 1, "ts": "anchored"});
+        let (mut token, mut p_counts) = (Value::Null, Vec::new());
+        for _ in 0..64 {
+            let mut r = base.clone();
+            r["token"] = token;
+            let v = w.p3("deck_delete", T1 + 1, r, None);
+            p_counts.push(v["count"].clone());
+            token = v["token"].clone();
+            if v["done"] == json!(true) {
+                break;
+            }
+        }
+        let (mut token, mut g_counts) = (Value::Null, Vec::new());
+        for _ in 0..64 {
+            let mut r = base.clone();
+            r["token"] = token;
+            let v = writes_intent::deck_delete(&w.t(), w.p.col, &W::req(T1 + 1, r)).unwrap();
+            g_counts.push(v["count"].clone());
+            token = v["token"].clone();
+            if v["done"] == json!(true) {
+                break;
+            }
+        }
+        assert!(token.is_object());
+        // 处理顺序不同带来的唯一差别：N1 的两张卡是前身 / 后继（`historyFrom`），后继卡的牌组跟着前身卡的卡级牌组走
+        // （`config::card_deck_with` 的血统规则）。协议 3 按 rowid 先移了前身，后继随之离开子树、不再单写；新代按 ID
+        // 先遇到后继、单写一条。投影（卡 / 笔记缓存、日志、身份记录、笔记与牌组的修改行）逐表相同，只有卡的修改行
+        // 多一条，所以卡的修改行不比，改为核对：新代的每步计数加起来 = plan 的 total，协议 3 少的就是那一张。
+        w.same_state_with(&[N1, N2, N3, N4], &all_cards(), false, false);
+        let sum = |c: &[Value]| c.iter().filter_map(Value::as_i64).sum::<i64>();
+        assert_eq!(
+            sum(&g_counts),
+            gv["total"].as_i64().unwrap(),
+            "{g_counts:?}"
+        );
+        assert_eq!(
+            sum(&p_counts) + 1,
+            sum(&g_counts),
+            "{p_counts:?} vs {g_counts:?}"
+        );
+        let e = writes_intent::deck_delete(
+            &w.t(),
+            w.p.col,
+            &W::req(T1 + 2, json!({"deck": default_deck_id(P), "plan": true})),
+        )
+        .unwrap_err();
+        assert!(e.contains("default deck"), "{e}");
+    }
+}
+
+/// `sched`：重置 / 改期 / 撤销（只撤最后一条生效的）/ 按牌组重排。日志 ID 随机，比状态时去掉。
+#[test]
+fn sched_matches_protocol_3() {
+    let lib = decked();
+    let w = W::new(&lib);
+    let c1 = card(N1, "t1");
+    let c3 = card(N3, "t1");
+    let base = json!({"at": T1, "utcOff": 0, "rollover": 4, "ts": "anchored"});
+    let run = |items: Value| -> (Value, Value) {
+        let mut extra = base.clone();
+        extra["items"] = items;
+        let pv = w.p3("sched", T1, extra.clone(), None);
+        let gv = writes_intent::sched(&w.t(), w.p.col, &W::req(T1, extra)).unwrap();
+        assert_eq!(pv["blocked"], gv["blocked"], "{pv}\n{gv}");
+        assert_eq!(
+            pv["logs"].as_array().map(Vec::len),
+            gv["logs"].as_array().map(Vec::len)
+        );
+        (pv, gv)
+    };
+    run(json!([{"a": "setDue", "card": c1, "due": 19_800}]));
+    w.same_state(&[N1, N2, N3, N4], &all_cards(), true);
+    run(json!([{"a": "reset", "card": c3, "skipNew": true}, {"a": "reset", "card": c1}]));
+    w.same_state(&[N1, N2, N3, N4], &all_cards(), true);
+    // 撤销：r1 不是最后一条生效的 → blocked；各侧撤自己写的那条重置。
+    let (pv, gv) = run(json!([{"a": "undo", "card": c1, "log": "r1"}]));
+    assert_eq!(gv["blocked"], json!(1), "{gv}");
+    let last = |v: &Value| v["logs"].as_array().map_or(0, Vec::len);
+    assert_eq!(last(&pv), 0);
+    run(json!([{"a": "rescheduleDeck", "deck": LANG}]));
+    w.same_state(&[N1, N2, N3, N4], &all_cards(), true);
+}
+
+/// `sched` 的撤销：撤自己刚写的那条（两侧各自的日志 ID），之后状态相同。
+#[test]
+fn sched_undo_of_its_own_log_matches_protocol_3() {
+    let lib = decked();
+    let w = W::new(&lib);
+    let c1 = card(N1, "t1");
+    let base = json!({"at": T1, "utcOff": 0, "rollover": 4, "ts": "anchored"});
+    let with = |items: Value| {
+        let mut e = base.clone();
+        e["items"] = items;
+        e
+    };
+    let pv = w.p3("sched", T1, with(json!([{"a": "reset", "card": c1}])), None);
+    let gv = writes_intent::sched(
+        &w.t(),
+        w.p.col,
+        &W::req(T1, with(json!([{"a": "reset", "card": c1}]))),
+    )
+    .unwrap();
+    let pid = pv["logs"][0]["id"].as_str().unwrap().to_owned();
+    let gid = gv["logs"][0]["id"].as_str().unwrap().to_owned();
+    let pu = w.p3(
+        "sched",
+        T1 + 1,
+        with(json!([{"a": "undo", "card": c1, "log": pid}])),
+        None,
+    );
+    let gu = writes_intent::sched(
+        &w.t(),
+        w.p.col,
+        &W::req(T1 + 1, with(json!([{"a": "undo", "card": c1, "log": gid}]))),
+    )
+    .unwrap();
+    assert_eq!(pu["blocked"], json!(0));
+    assert_eq!(gu["blocked"], json!(0), "{gu}");
+    w.same_state(&[N1, N2, N3, N4], &all_cards(), true);
+}
+
+// ---------------------------------------------------------------------- 形状
+
+/// `status` 的形状与协议 3 相同（规划 §2.1：`sync2_status` 形状不变）：顶层键、设备行与位置行的键集合。
+#[test]
+fn status_keeps_the_protocol_3_shape() {
+    let lib = library();
+    let w = W::new(&lib);
+    let keys = |v: &Value| -> Vec<String> {
+        let mut k: Vec<String> = v.as_object().unwrap().keys().cloned().collect();
+        k.sort();
+        k
+    };
+    let p = lib.core.sync2_status(P).unwrap();
+    let g = writes_local::status(&w.t(), w.p.col).unwrap();
+    assert_eq!(keys(&p), keys(&g), "{p}\n{g}");
+    let base = [
+        "applied",
+        "behind",
+        "device",
+        "digestMismatch",
+        "frozen",
+        "name",
+        "seenAt",
+        "self",
+        "warning",
+    ];
+    for row in g["devices"].as_array().unwrap() {
+        for k in base {
+            assert!(row.get(k).is_some(), "{k} missing in {row}");
+        }
+    }
+    for row in p["devices"].as_array().unwrap() {
+        for k in base {
+            assert!(row.get(k).is_some(), "protocol 3 lost {k}");
+        }
+    }
+    let selfs = g["devices"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|r| r["self"] == json!(true))
+        .count();
+    assert_eq!(selfs, 1, "{g}");
+    assert_eq!(g["device"], json!(Id(ME).text()));
+    assert_eq!(g["nextSeq"], json!(1));
+    assert_eq!(keys(&p["selfInfo"]), keys(&g["selfInfo"]));
+    // 没有本机身份：`enabled: false`（协议 3 同）。
+    let conn = crate::store::gen4::schema::open_in_memory().unwrap();
+    let t = Truth::new(&conn);
+    let col = crate::store::gen4::truth::tests::bound(&t);
+    assert_eq!(
+        writes_local::status(&t, col).unwrap(),
+        json!({"enabled": false})
+    );
+}
+
+/// `device_hint`：空串 / 同值不写（`changed: false`），新值写进去、`status` 的设备行带上；`device_info` 合并并给视图。
+#[test]
+fn device_hint_and_info_keep_their_shapes() {
+    let lib = library();
+    let w = W::new(&lib);
+    let dev = w.t().devices(w.p.col).unwrap()[0].id;
+    let hint =
+        |h: &str| writes_local::device_hint(&w.t(), &json!({"device": dev.text(), "hint": h}));
+    assert_eq!(hint("  "), Ok(json!({"changed": false})));
+    assert_eq!(hint(" 客厅\u{7}的电脑 "), Ok(json!({"changed": true})));
+    assert_eq!(hint("客厅的电脑"), Ok(json!({"changed": false})));
+    let p = lib
+        .core
+        .sync2_device_hint(&dev.text(), "客厅的电脑")
+        .unwrap();
+    assert_eq!(p, json!({"changed": true}));
+    let g = writes_local::status(&w.t(), w.p.col).unwrap();
+    let row = g["devices"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["device"] == json!(dev.text()))
+        .unwrap();
+    assert_eq!(row["hint"], json!("客厅的电脑"));
+    let v = writes_local::device_info(&w.t(), w.p.col, &json!({"model": "Pixel", "app": "3.4"}))
+        .unwrap();
+    let pv = lib
+        .core
+        .sync2_device_info(P, &json!({"model": "Pixel", "app": "3.4"}), T1)
+        .unwrap();
+    let keys = |v: &Value| -> Vec<String> {
+        let mut k: Vec<String> = v.as_object().unwrap().keys().cloned().collect();
+        k.sort();
+        k
+    };
+    assert_eq!(keys(&pv), keys(&v));
+    assert_eq!(v["name"], json!("Pixel"));
+    assert_eq!(v["changed"], json!(true));
+    let v = writes_local::device_info(&w.t(), w.p.col, &json!({"nick": "我的"})).unwrap();
+    assert_eq!(
+        (v["name"].clone(), v["model"].clone()),
+        (json!("我的"), json!("Pixel"))
+    );
+    let v = writes_local::device_info(&w.t(), w.p.col, &json!({"nick": "我的"})).unwrap();
+    assert_eq!(v["changed"], json!(false));
+    let g = writes_local::status(&w.t(), w.p.col).unwrap();
+    assert_eq!(g["selfInfo"]["name"], json!("我的"));
+}
+
+/// `trust`：本机身份不能改；把一台设备设成待确认后它的删除被扣住，信任之后放行（`released` 计数），拒绝 = 0。
+#[test]
+fn trust_releases_held_deletes() {
+    let lib = library();
+    let w = W::new(&lib);
+    let t = w.t();
+    let col = w.p.col;
+    let e = writes_local::trust(&t, col, &json!({"now": T1, "device": Id(ME).text()})).unwrap_err();
+    assert!(e.contains("always trusted"), "{e}");
+    // 库里那条删除 N4 的作者设成待确认：删除被扣住，N4 回到可见。
+    let author = t
+        .devices(col)
+        .unwrap()
+        .into_iter()
+        .find(|d| d.id != Id(ME) && d.last > 0)
+        .unwrap()
+        .id;
+    t.tx(|t| {
+        t.set_trust(col, &author, Some(TRUST_PENDING), T1)?;
+        let mut ix = crate::store::gen4::derive::Index::new(t, col);
+        ix.trust_changed();
+        ix.settle().map(|_| ())
+    })
+    .unwrap();
+    let held = {
+        let ix = crate::store::gen4::derive::Index::new(&t, col);
+        ix.distrusted().unwrap().len()
+    };
+    let rejected = writes_local::trust(
+        &t,
+        col,
+        &json!({"now": T1, "device": author.text(), "trust": false}),
+    )
+    .unwrap();
+    assert_eq!(rejected["released"], json!(0));
+    assert_eq!(rejected["trusted"], json!(false));
+    let trusted =
+        writes_local::trust(&t, col, &json!({"now": T1, "device": author.text()})).unwrap();
+    assert_eq!(trusted["released"], json!(held), "{trusted}");
+    assert_eq!(t.trust_of(col, &author), Ok(None));
+    assert_eq!(
+        writes_local::status(&t, col).unwrap()["devices"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|r| r.get("state").is_some())
+            .count(),
+        0
+    );
+    assert_rebuild_is_identity(&t, col);
+}
+
+// ---------------------------------------------------------------------- 原子性、拒写
+
+/// 状态指纹：本机身份日志末尾、`self_.hlc`、派生表的全部行。
+fn fingerprint(w: &W<'_>) -> (u64, String, Vec<String>) {
+    let t = w.t();
+    let me = t.self_identity(w.p.col).unwrap().unwrap();
+    (
+        w.mine(),
+        crate::store::gen4::truth::hlc_text(&me.hlc),
+        dump(&w.p.g4, w.p.col),
+    )
+}
+
+/// 批量写的原子性：一批里任何一项出错（坏意图、`stamped`、不认识的事件、意图命令的注入失败），整笔回滚——日志、
+/// `self_.hlc`、派生表一个字节不变；会话照常可用。
+#[test]
+fn a_failing_item_rolls_the_whole_batch_back() {
+    let lib = decked();
+    let w = W::new(&lib);
+    let before = fingerprint(&w);
+    let good = draft("note", N1, "f/fa", json!("写到一半"));
+    let bad_items = [
+        json!({"e": review("rx", &card(N1, "t1"), T1, 3, "review"), "note": N1, "intent": "nonsense"}),
+        json!({"e": edit("note", N1, "f/fa", json!("x")), "stamped": true}),
+        json!({"e": {"t": "media", "x": {}}}),
+        chg(json!({"e": review("ry", &card(N1, "t1"), T1, 3, "review")})),
+    ];
+    for bad in bad_items {
+        let e = writes::apply(
+            &w.t(),
+            w.p.col,
+            &W::req(T1, json!({})),
+            &[good.clone(), bad.clone()],
+        )
+        .unwrap_err();
+        assert!(!e.is_empty());
+        assert_eq!(fingerprint(&w), before, "{bad}");
+    }
+    let e = writes::apply(
+        &w.t(),
+        w.p.col,
+        &W::req(T1, json!({"stamps": true})),
+        &[good.clone()],
+    )
+    .unwrap_err();
+    assert!(e.contains("stamps"), "{e}");
+    assert_eq!(fingerprint(&w), before);
+    // 意图命令写完之后注入失败：已写的整笔回滚。
+    let it = json!({"n": N1, "f": "fa", "x": "猫", "v": "ねこ"});
+    let e = writes_intent::note_fields_if(
+        &w.t(),
+        w.p.col,
+        &W::req(T1, json!({"mode": "field", "failAfter": "apply"})),
+        &[it],
+    )
+    .unwrap_err();
+    assert!(e.contains("injected"), "{e}");
+    assert_eq!(fingerprint(&w), before);
+    for stage in ["apply", "move"] {
+        let e = writes_intent::change(
+            &w.t(),
+            w.p.col,
+            &W::req(
+                T1,
+                json!({"checkpoint": {"name": "c", "reason": "r"}, "move": {"deck": JP, "notes": [N1]}, "failAfter": stage}),
+            ),
+            &[draft("note", N1, "f/fb", json!("x"))],
+        )
+        .unwrap_err();
+        assert!(e.contains("injected"), "{e}");
+        assert_eq!(fingerprint(&w), before, "{stage}");
+    }
+    let e = writes_intent::merge_notes(
+        &w.t(),
+        w.p.col,
+        &W::req(
+            T1,
+            json!({"keep": N3, "absorb": [N1], "deletedAt": T1, "failAfter": "apply"}),
+        ),
+    )
+    .unwrap_err();
+    assert!(e.contains("injected"), "{e}");
+    assert_eq!(fingerprint(&w), before);
+    // 回滚之后照常写，seq 接着最后一次提交。
+    let v = writes::apply(&w.t(), w.p.col, &W::req(T1, json!({})), &[good]).unwrap();
+    assert_eq!(v["nextSeq"], json!(before.0 + 2));
+}
+
+/// 条件写：`expectLast` 不成立 = `stale`、什么都不写；成立才落。比的是规范 ID。
+#[test]
+fn expect_last_guards_the_write() {
+    let lib = library();
+    let w = W::new(&lib);
+    let c1 = card(N1, "t1");
+    let (_, gf) =
+        w.p.g4(json!({"q": "cards", "ids": [c1], "fields": ["id", "last_log_id"]}));
+    let last = decode(&gf[0].1).1[0][1].clone();
+    let before = fingerprint(&w);
+    let item = json!({"e": review("r10", &c1, T1, 3, "review"), "note": N1, "intent": "answer"});
+    for stale in [json!("r1"), Value::Null] {
+        let v = writes::apply(
+            &w.t(),
+            w.p.col,
+            &W::req(T1, json!({"expectLast": {"card": c1, "log": stale}})),
+            &[item.clone()],
+        )
+        .unwrap();
+        assert_eq!(v, json!({"stale": true}));
+        assert_eq!(fingerprint(&w), before);
+    }
+    let v = writes::apply(
+        &w.t(),
+        w.p.col,
+        &W::req(T1, json!({"expectLast": {"card": c1, "log": last}})),
+        &[item],
+    )
+    .unwrap();
+    assert_eq!(v["landed"], json!([true]));
+    assert_eq!(w.mine(), before.0 + 1);
+}
+
+/// 身份被换后拒写：命令中途本机身份被换掉（G8-6 `rotate_identity`），下一条写入报错、整笔回滚（连换身份一起）；
+/// 换身份提交之后的新命令用新身份写。
+#[test]
+fn a_rotated_identity_refuses_the_rest_of_the_command() {
+    let lib = library();
+    let w = W::new(&lib);
+    let col = w.p.col;
+    writes::checkpoint(
+        &w.t(),
+        col,
+        &W::req(T1, json!({"name": "a", "reason": "r"})),
+    )
+    .unwrap();
+    let before = fingerprint(&w);
+    let t = w.t();
+    let e = write(&t, col, |s: &mut Session<'_, '_>| {
+        s.land(
+            Body::Checkpoint {
+                name: "b".into(),
+                reason: "r".into(),
+            },
+            T1 + 1,
+        )?;
+        s.t.rotate_identity(col, 1, T1 + 1)?;
+        s.land(
+            Body::Checkpoint {
+                name: "c".into(),
+                reason: "r".into(),
+            },
+            T1 + 2,
+        )?;
+        Ok(json!({}))
+    })
+    .unwrap_err();
+    assert!(e.contains("identity changed"), "{e}");
+    assert_eq!(fingerprint(&w), before);
+    assert_eq!(t.self_identity(col).unwrap().unwrap().device, Id(ME));
+    let fresh = t.tx(|t| t.rotate_identity(col, 1, T1 + 3)).unwrap();
+    let v = writes::checkpoint(
+        &t,
+        col,
+        &W::req(T1 + 4, json!({"name": "d", "reason": "r"})),
+    )
+    .unwrap();
+    assert_eq!(
+        v["nextSeq"].as_u64(),
+        Some(t.last_of(col, &fresh).unwrap() + 1)
+    );
+    assert!(t.last_of(col, &fresh).unwrap() >= 1);
+}
+
+/// 没有本机身份的集合：写命令报错，不偷偷建身份。
+#[test]
+fn a_collection_without_identity_is_refused() {
+    let conn: Connection = crate::store::gen4::schema::open_in_memory().unwrap();
+    let t = Truth::new(&conn);
+    let col = crate::store::gen4::truth::tests::bound(&t);
+    let e =
+        writes::checkpoint(&t, col, &json!({"now": T1, "name": "a", "reason": "r"})).unwrap_err();
+    assert!(e.contains("no local identity"), "{e}");
+    assert_eq!(t.self_identity(col), Ok(None));
+}
+
+/// 新代日志不带旧 HLC：事件里的 `hlc` 丢掉，操作的 HLC 就是排序键（`native_allowed` 不会拒）；`digest_heal` 重建
+/// 之后派生表与重建前相同；`dedup` 不写。
+#[test]
+fn logs_drop_the_legacy_hlc_and_heal_rebuilds_the_same_rows() {
+    let lib = library();
+    let w = W::new(&lib);
+    let col = w.p.col;
+    let item = json!({"e": review("r11", &card(N2, "t1"), T1, 3, "review"), "note": N2});
+    writes::apply(&w.t(), col, &W::req(T1, json!({})), &[item]).unwrap();
+    let t = w.t();
+    let me = t.self_identity(col).unwrap().unwrap();
+    let op = t
+        .entry(
+            col,
+            &crate::sync2::vv::OpId {
+                device: Id(ME),
+                seq: 1,
+            },
+        )
+        .unwrap()
+        .unwrap();
+    let body = op.op().unwrap().body().unwrap();
+    let crate::gen4::op::Body4::Log(l) = body else {
+        panic!("not a log: {body:?}")
+    };
+    assert_eq!((l.hlc.is_none(), l.server_time.is_none()), (true, true));
+    assert!(
+        l.extra.contains("\"sc\""),
+        "config snapshot stamped: {}",
+        l.extra
+    );
+    assert_eq!(me.hlc, op.op().unwrap().hlc);
+    let rows = dump(&w.p.g4, col);
+    let v = writes_local::digest_heal(&t, col, &json!({"now": T1})).unwrap();
+    assert_eq!(v["healed"], json!(1));
+    assert_eq!(dump(&w.p.g4, col), rows);
+    let before = fingerprint(&w);
+    assert_eq!(writes_local::dedup(&t, col), Ok(json!({"done": true})));
+    assert_eq!(fingerprint(&w), before);
+}
+
+// ---------------------------------------------------------------------- 崩溃
+
+/// 子进程那一半：在一条写命令里写了几条操作，不提交就退出（等于写到一半被杀）。
+#[test]
+fn writes_child_process_half() {
+    let Ok(path) = std::env::var("FUSHI_G4_WRITES_CHILD_DB") else {
+        return;
+    };
+    let conn = crate::store::gen4::schema::open(std::path::Path::new(&path)).unwrap();
+    let col: i64 = conn
+        .query_row("SELECT col FROM self_", [], |r| r.get(0))
+        .unwrap();
+    let t = Truth::new(&conn);
+    let _ = write(&t, col, |s| {
+        for i in 0..3 {
+            s.land(
+                Body::Checkpoint {
+                    name: format!("crash-{i}"),
+                    reason: "r".into(),
+                },
+                T1 + i,
+            )?;
+        }
+        println!("G4_WRITES_CHILD landed, exiting without commit");
+        std::process::exit(0);
+    });
+}
+
+/// 崩溃：另一个进程写到一半退出。重开之后日志停在最后一次提交、派生表与重建相同，接着写 seq 连续。
+#[test]
+fn a_crash_mid_command_commits_nothing() {
+    let dir = crate::store::sync2::tests::tempdir::new("gen4-writes-crash");
+    let path = dir.0.join("srs4.db");
+    let col = {
+        let conn = crate::store::gen4::schema::open(&path).unwrap();
+        let t = Truth::new(&conn);
+        let col = crate::store::gen4::native::tests::ready(&t);
+        writes::checkpoint(&t, col, &json!({"now": T1, "name": "a", "reason": "r"})).unwrap();
+        col
+    };
+    let out = std::process::Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "store::gen4::cmd::writes_tests::writes_child_process_half",
+            "--nocapture",
+            "--test-threads=1",
+        ])
+        .env("FUSHI_G4_WRITES_CHILD_DB", &path)
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success(), "{stdout}");
+    assert!(stdout.contains("G4_WRITES_CHILD landed"), "{stdout}");
+    let conn = crate::store::gen4::schema::open(&path).unwrap();
+    let t = Truth::new(&conn);
+    let me = crate::store::gen4::native::tests::me();
+    assert_eq!(t.last_of(col, &me), Ok(1));
+    assert_rebuild_is_identity(&t, col);
+    let v =
+        writes::checkpoint(&t, col, &json!({"now": T1 + 9, "name": "b", "reason": "r"})).unwrap();
+    assert_eq!(v["nextSeq"], json!(3));
+    assert_eq!(t.audit(col), Ok(2));
+}

@@ -541,6 +541,8 @@ pub(super) fn fail_after(req: &Value, stage: &str) -> Result<(), String> {
 pub(super) struct ApplyOpts {
     /// 收不收 `chg` 项（`import_drafts` 不收）。
     pub(super) chg: bool,
+    /// `chg` 筛掉的项不进 `landed`（协议 3 `change_on` 先就地筛掉输入项再走 `apply`，`landed` 只对留下的项）。
+    pub(super) compact: bool,
 }
 
 /// 一项输入解析出的操作体，与它带的标记。
@@ -640,6 +642,14 @@ pub(super) fn apply_in(
         if !keep[at] {
             continue;
         }
+        // 已有的实体再发一遍身份记录：照样追加（同协议 3），但不算「落了」——协议 3 的 `landed` 是「投影里有东西
+        // 变了」，身份记录只在实体第一次出现时投影（`Marks::entity`）。批内前面刚建的同一个实体也算已有。
+        if let Body::Entity { id, .. } = &item.body {
+            let existed = s.settled()?.definition(&Ref::of(id))?.is_some();
+            s.land(item.body, now)?;
+            landed[at] = !existed;
+            continue;
+        }
         let bodies = match item.body {
             Body::Edit(e) if e.kind == EntKind::Note && e.key == "tags" => {
                 expand_tags(s, &mut tags_now, e)?
@@ -654,6 +664,15 @@ pub(super) fn apply_in(
             s.land(b, now)?;
             landed[at] = true;
         }
+    }
+    if opts.compact {
+        let landed: Vec<bool> = landed
+            .into_iter()
+            .zip(&keep)
+            .filter(|(_, k)| **k)
+            .map(|(l, _)| l)
+            .collect();
+        return Ok(json!({"landed": landed, "foreign": []}));
     }
     Ok(json!({"landed": landed, "foreign": []}))
 }
@@ -785,7 +804,15 @@ pub fn apply(t: &Truth<'_>, col: i64, req: &Value, items: &[Value]) -> Result<Va
         if !expect_last_holds(s, req)? {
             return Ok(json!({"stale": true}));
         }
-        apply_in(s, now, items, ApplyOpts { chg: true })
+        apply_in(
+            s,
+            now,
+            items,
+            ApplyOpts {
+                chg: true,
+                compact: false,
+            },
+        )
     })
 }
 
@@ -853,7 +880,15 @@ pub fn import_drafts(
             }
             kept.push(it.clone());
         }
-        let mut v = apply_in(s, now, &kept, ApplyOpts { chg: false })?;
+        let mut v = apply_in(
+            s,
+            now,
+            &kept,
+            ApplyOpts {
+                chg: false,
+                compact: false,
+            },
+        )?;
         v["existed"] = json!(existed);
         Ok(v)
     })
