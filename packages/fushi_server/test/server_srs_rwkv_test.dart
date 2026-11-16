@@ -3,13 +3,15 @@
 // - 同一组数据，app 的装配与服务端的装配下 RWKV 牌组出卡序列相同（后台 runtime 都换成按卡给同样 R 的替身）；
 // - 服务端 RWKV 没就绪（下不到权重）时 RWKV 牌组的复习卡一张不出、标 rwkvPending，**不**退回按 FSRS-7 存下的
 //   到期日出卡；远程复习的信封带准备状态与错误，客户端经 `rwkvStart` 让主机重试；
-// - 关库顺序：先关 RWKV（存快照、关后台 runtime）再退役库。
+// - 关库顺序：先关 RWKV（存快照、关后台 runtime）再退役库；
+// - 模型档位与 app 同一个设置文件（`<support>/srs_rwkv/model_size`）：选了 Tiny，服务端加载 sm101、快照进 Tiny 的目录。
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_rwkv_attach.dart';
+import 'package:fushi_engine/srs/srs_rwkv_models.dart';
 import 'package:fushi_engine/srs/srs_rwkv_service.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_engine/srs/sync2/srs_host_directory.dart';
@@ -195,6 +197,50 @@ void main() {
       ).existsSync(),
       isTrue,
       reason: '关库时把作答后的状态存成快照',
+    );
+  });
+
+  test('服务端与 app 读同一个模型档位设置：Tiny 时加载 sm101 权重、快照进 state-tiny', () async {
+    final List<int> clock = <int>[
+      DateTime.now().millisecondsSinceEpoch - 2 * _dayMs,
+    ];
+    await writeSrsRwkvModelSize(support, SrsRwkvModelSize.tiny);
+    markRwkvWeightsReady(support, size: SrsRwkvModelSize.tiny);
+    final FakeRwkvBackend backend = FakeRwkvBackend();
+    final List<String> opened = <String>[];
+    final ServerSrs host = srs = ServerSrs(
+      support: support,
+      syncData: syncData,
+      deviceId: 'server-device',
+      hostId: kHostId,
+      config: () => const ServerSrsConfig(profiles: <String>[kJa]),
+      rwkvHttpClient: noNetworkHttpClient,
+      rwkvBackend: (File weights) async {
+        opened.add(p.basename(weights.path));
+        return backend;
+      },
+    );
+    final SrsDbStore app = await phone('phone-a', clock);
+    await seed(app, 2, clock);
+    expect((await phoneSync(app)).error, isNull);
+    await host.start();
+    await host.syncNow();
+    await until(
+      () => host.profile(kJa)!.rwkvStatus?.phase == SrsRwkvPhase.ready,
+      'server RWKV ready',
+    );
+    expect(opened, <String>[kSrsRwkvTinyWeightsName]);
+    await host.stop();
+    final String snap = 'rwkv-$kJa-small-int4.snap';
+    expect(
+      File(
+        p.join(srsRwkvStateDir(support, SrsRwkvModelSize.tiny).path, snap),
+      ).existsSync(),
+      isTrue,
+    );
+    expect(
+      File(p.join(srsRwkvStateDir(support).path, snap)).existsSync(),
+      isFalse,
     );
   });
 

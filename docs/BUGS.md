@@ -38,6 +38,13 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-4698](bugs/BUG-4698-overwrite-import-unrecoverable-library.md) | ✅ | ✅ | 覆盖导入把书库换掉后无法找回：覆盖前快照成功即删、书文件成孤儿目录无法重新登记 |
+> 共 4054 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4700](bugs/BUG-4700-manga-import-staging-copy-doubles-disk.md) | ✅ | ✅ | 漫画导入从暂存目录拷贝进书目录，大包磁盘峰值是包体积的三倍 |
+| [BUG-4699](bugs/BUG-4699-epub-parse-whole-file-in-memory.md) | ✅ | ✅ | EPUB（含纯图漫画）导入整本读进内存并缓存全部解压内容，2 GiB 以上必然内存耗尽 |
+| [BUG-4698](bugs/BUG-4698-recommended-pack-import-overwrites-library.md) | ✅ | ✅ | 导入推荐包后漫画和小说全没了（推荐包走通用导入框、默认覆盖） |
 | [BUG-4697](bugs/BUG-4697-bluray-menu-loop-picked-as-main-feature.md) | ✅ | ✅ | 蓝光盘的菜单背景循环被选成正片，真正的正片反成特典 |
 | [BUG-4696](bugs/BUG-4696-mixed-works-playlist-collection-scraped-as-one.md) | ✅ | ✅ | 装着不同作品的清单合集被当成一部作品去识别 |
 | [BUG-4695](bugs/BUG-4695-disc-scrape-title-candidates-use-bdmv-dirs.md) | ✅ | ✅ | 原盘作品拿 `PLAYLIST` / `BDMV` 和带卷标的盘名去搜，换回一屏无关候选 |
