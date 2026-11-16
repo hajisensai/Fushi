@@ -66,10 +66,12 @@ void main() {
 
   group('计数', () {
     test('每 N 次翻页触发一次，之后从头数', () async {
-      final List<bool> fired = <bool>[
-        for (int i = 0; i < 7; i++) controller.notePageTurn(),
-      ];
-      await frames.releaseAll();
+      final List<bool> fired = <bool>[];
+      for (int i = 0; i < 7; i++) {
+        fired.add(controller.notePageTurn());
+        // 真实翻页之间新页早已画上屏，上一次全刷不会还在飞。
+        await frames.releaseAll();
+      }
       expect(fired, <bool>[false, false, true, false, false, true, false]);
       expect(device.calls, 2);
     });
@@ -208,6 +210,8 @@ void main() {
       expect(find.byType(ColoredBox), findsNothing);
 
       host.notePageTurn();
+      // 第一帧里跑完「等新页上屏」的续体、把 flashing 置 true；第二帧画出黑帧。
+      await tester.pump();
       await tester.pump();
       final Finder black = find.byWidgetPredicate(
         (Widget w) => w is ColoredBox && w.color == const Color(0xFF000000),
@@ -222,6 +226,8 @@ void main() {
 
       hold.complete();
       await tester.pump();
+      // 停留计时器（Duration.zero）要推进假时钟才会到期。
+      await tester.pump(const Duration(milliseconds: 1));
       await tester.pump();
       expect(find.byType(ColoredBox), findsNothing);
     });
