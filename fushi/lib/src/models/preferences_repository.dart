@@ -1823,7 +1823,7 @@ class PreferencesRepository extends ChangeNotifier
   // ON 时弹窗固定为屏幕底部一条全宽面板，忽略选区位置——适合需要稳定固定弹窗落点的
   // 用户。getPref 仅在 key 从未写过时返回默认 false，已切过开关的用户保留其存值。
   //
-  // BUG-4710 起它只管**不属于四个媒体模块的宿主**（查词页 / 外部弹窗 / 悬浮歌词），
+  // BUG-4711 起它只管**不属于四个媒体模块的宿主**（查词页 / 外部弹窗 / 悬浮歌词），
   // 不再是各模块的总开关；模块各自的值见 [popupBottomDockedIn]。键名冻结不改。
   bool get popupBottomDocked =>
       getPref('popup_bottom_docked', defaultValue: false) as bool;
@@ -1840,7 +1840,7 @@ class PreferencesRepository extends ChangeNotifier
   ///
   /// - 旧语义（缺省 / false）：模块 X 的有效值 = `popup_bottom_docked`（总开关）
   ///   ∧ `popup_bottom_docked_<X>`（细分开关，缺省 true）。
-  /// - 新语义（true，BUG-4710）：模块 X 的有效值就是 `popup_bottom_docked_<X>`
+  /// - 新语义（true，BUG-4711）：模块 X 的有效值就是 `popup_bottom_docked_<X>`
   ///   （缺省 false），`popup_bottom_docked` 只管非模块宿主。
   ///
   /// 标记与那几个键**同住一处**：随 Profile 快照 / 备份 / 同步一起走，所以老快照、
@@ -1849,11 +1849,11 @@ class PreferencesRepository extends ChangeNotifier
   /// 第一次写任一相关键时（[_popupBottomDockedPerModuleUpgrade]）把旧语义的有效值
   /// 物化成新语义的各模块值，与标记、新写入同一次 [setPrefs] 落盘。
   ///
-  /// 兼容层范围与清理条件：旧语义读路径只为「BUG-4710 之前保存的偏好 / Profile
+  /// 兼容层范围与清理条件：旧语义读路径只为「BUG-4711 之前保存的偏好 / Profile
   /// 快照 / 备份」服务。同步合并（`BackupMergeEngine`）不跨设备合并普通设置，只有
   /// 同机换包名迁移的 `adoptSourcePreferences` 会逐键取较新者——那条路径上标记与
   /// 模块键可能来自两份数据，结果按标记那一份的语义解释，属已知边界。等不再支持
-  /// 恢复 BUG-4710 之前的快照 / 备份时，删掉旧语义分支与
+  /// 恢复 BUG-4711 之前的快照 / 备份时，删掉旧语义分支与
   /// [_popupBottomDockedPerModuleUpgrade]，读侧只留新语义（标记键随之可废弃）。
   static const String popupBottomDockedPerModuleKey =
       'popup_bottom_docked_per_module';
@@ -1873,7 +1873,7 @@ class PreferencesRepository extends ChangeNotifier
   }
 
   /// 底部停靠在各媒体页里是否生效：每个模块一个独立开关，互不牵连，也不受
-  /// [popupBottomDocked] 影响（BUG-4710）。不是所有场景都需要停靠：例如只想在
+  /// [popupBottomDocked] 影响（BUG-4711）。不是所有场景都需要停靠：例如只想在
   /// 视频里固定弹窗、小说里仍跟随选区。顺序 = 设置页展示顺序。
   static const List<ModuleId> kPopupBottomDockedModules = <ModuleId>[
     ModuleId.books,

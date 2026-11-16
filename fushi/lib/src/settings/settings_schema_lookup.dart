@@ -88,7 +88,7 @@ SettingsSwitchItem _popupBottomDockedModuleSwitch(ModuleId module) {
     reader: module == ModuleId.books
         ? const ReaderPlacement(group: ReaderGroup.lookup, order: 3)
         : null,
-    // 每个模块一个独立开关，始终可见（BUG-4710：不再挂在总开关之下）；模块在本
+    // 每个模块一个独立开关，始终可见（BUG-4711：不再挂在总开关之下）；模块在本
     // 平台不存在或被用户在功能模块里关掉时不出——判据走 [AppModel.moduleVisibility]。
     visible: (SettingsContext settingsContext) =>
         settingsContext.appModel.moduleVisibility.isEnabled(module),

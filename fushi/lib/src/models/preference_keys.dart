@@ -690,7 +690,7 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'page_backdrop_strength',
   'player_hardware_acceleration',
   'popup_auto_expand_dictionaries',
-  // bool（默认 false）：BUG-4710 起只管非模块宿主（查词页 / 外部弹窗 / 悬浮歌词）。
+  // bool（默认 false）：BUG-4711 起只管非模块宿主（查词页 / 外部弹窗 / 悬浮歌词）。
   'popup_bottom_docked',
   // bool：底部停靠按模块独立开关。新语义默认 false；旧语义（无下面的
   // popup_bottom_docked_per_module 标记）默认 true、受 popup_bottom_docked 总开关门控。
