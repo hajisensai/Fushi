@@ -1,6 +1,6 @@
-/// App 里持久化的 SRS 实体 ID 归一的统一入口（G9-6，交接说明 §11）。
+/// App 里持久化的 SRS 实体 ID 归一的统一入口（G9-6，docs/specs/2026-11-15-srs-gen4-handoff.md「G9-6」一节）。
 ///
-/// 位置清单与判据见交接说明 §11.1；归一本身（分批、改写、缺失保留）在 fushi_engine 的 srs_canonical_ids.dart。
+/// 位置清单与判据见交接说明「G9-6」一节；归一本身（分批、改写、缺失保留）在 fushi_engine 的 srs_canonical_ids.dart。
 /// 这里只把偏好仓库接成 [SrsPersistedIdSite]，由 [srsNormalizeStoreIds] 在两个时刻跑：
 /// - 打开 / 重新激活激活 profile 的复习副本后（`srsStoreProvider`）；
 /// - `bindingChanged` 之后（`SrsDbStore` 的绑定变化通知，G7-5b 接）。

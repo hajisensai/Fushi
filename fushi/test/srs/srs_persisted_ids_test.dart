@@ -5,7 +5,13 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/srs/srs_persisted_ids.dart';
+import 'package:fushi/src/srs/srs_word_audio_backfill.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_storage.dart';
+import 'package:fushi_srs/fushi_srs.dart';
+
+import 'srs_test_support.dart';
 
 void main() {
   late FushiDatabase db;
@@ -104,5 +110,60 @@ void main() {
     );
     expect(view.srsMiningDeckId, 'member-deck');
     expect(batchSizes, isEmpty);
+  });
+
+  group('真内核（新库，先 `identity` 绑定）', () {
+    late SrsDbStore store;
+
+    setUp(() async {
+      final SrsStorage srs = await openSrsTestStorage();
+      srs.core.sync2(<String, Object?>{
+        'op': 'identity',
+        'profile': kSrsTestProfile,
+        'now': DateTime.now().millisecondsSinceEpoch,
+      });
+      final (FushiDatabase main, SrsDbStore opened) = await openSrsTestStore(
+        storage: srs,
+      );
+      store = opened;
+      addTearDown(main.close);
+    });
+
+    test('统一入口：createDeck 回的派生 ID 写回成牌组树里的规范 ID，内置 ID 也是规范的', () async {
+      final String member = await store.createDeck('Mining');
+      await prefs.setSrsMiningDeckId(member);
+      expect(await srsNormalizeStoreIds(store: store, prefs: prefs), <String>[
+        'srs_mining_deck_id',
+      ]);
+      final SrsDeckTree tree = await store.deckTree();
+      expect(tree[prefs.srsMiningDeckId], isNotNull);
+      expect(tree.fullName(prefs.srsMiningDeckId), 'Mining');
+      expect(tree[store.defaultDeckId], isNotNull);
+    });
+
+    test('补单词音频的笔记类型 / 字段 ID 按规范 ID 取（派生的对不上）', () async {
+      final SrsWordAudioBackfillFields fields =
+          await SrsWordAudioBackfillFields.ofStore(store);
+      expect(fields.noteTypeId, store.fushiCardNoteTypeId);
+      final SrsNoteTypeView type = (await store.noteType(fields.noteTypeId))!;
+      expect(type.id, fields.noteTypeId);
+      final Set<String> fieldIds = <String>{
+        for (final SrsFieldDef f in type.fields) f.id,
+      };
+      expect(
+        fieldIds,
+        containsAll(<String>[
+          fields.termFieldId,
+          fields.readingFieldId,
+          fields.audioFieldId,
+        ]),
+      );
+      expect(
+        fields.noteTypeId,
+        isNot(
+          SrsWordAudioBackfillFields.forProfile(kSrsTestProfile).noteTypeId,
+        ),
+      );
+    });
   });
 }

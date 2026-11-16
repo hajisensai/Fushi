@@ -2353,9 +2353,9 @@ class SrsDbStore implements SrsSync2Host {
 
   /// 内置默认牌组与内置笔记类型（Lapis、Fushi 卡片；确定性 ID，每台设备都生成同一份；没改过的内置定义不写修改记录）。
   ///
-  /// 在不在按**规范 ID** 判（G9-6）：补盐 / 并入之后，按本 profile uid 加盐算出的内置 ID 只是别名类成员，内核读回来
-  /// 的是规范 ID；拿成员 ID 去比会把已有的内置实体当成缺失、每次打开都重发一遍。顺带把 [defaultDeckId] 等换成规范 ID
-  /// （[resolveBuiltinIds]）。
+  /// 在不在按**规范 ID** 判（G9-6）：新代的规范 ID 不带盐，按本 profile uid 加盐算出的内置 ID 一旦实体建好就只是别名类
+  /// 成员（补盐 / 并入还会再变），内核读回来的是规范 ID；拿成员 ID 去比会把已有的内置实体当成缺失、每次打开都重发一遍。
+  /// 顺带把 [defaultDeckId] 等换成规范 ID（[resolveBuiltinIds]）。
   Future<void> ensureBuiltins() => runExclusive(() async {
     final List<SrsEntityRecord> builtins = srsBuiltinEntities(profileUid);
     final List<String> canon = await canonicalIds(<String>[

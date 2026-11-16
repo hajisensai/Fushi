@@ -1,7 +1,8 @@
-/// 持久化在内核之外的 SRS 实体 ID 归一（G9-6，docs/specs/2026-11-15-srs-gen4-g7-g11-plan.md §2.2、交接说明 §11）。
+/// 持久化在内核之外的 SRS 实体 ID 归一（G9-6，docs/specs/2026-11-15-srs-gen4-g7-g11-plan.md §2.2、交接说明「G9-6」一节）。
 ///
-/// 新代的实体 ID 有别名类：补盐（`collection_salts_add`）/ 并入（`collection_join` / `collection_adopt`）之后，按旧盐
-/// 算出来的成员 ID 归到另一个规范 ID（`bindingChanged`）。内核对请求里的 ID 一律先归一，所以拿成员 ID 去读写不会写
+/// 新代的实体 ID 有别名类，规范 ID 不带盐：按 profile uid 加盐算出来的 ID（协议 3 时代存下的、Dart 派生的）在实体建好
+/// 之后就只是成员；补盐（`collection_salts_add`）/ 并入（`collection_join` / `collection_adopt`）之后，别的盐算出的成员
+/// 也归过来（`bindingChanged`）。内核对请求里的 ID 一律先归一，所以拿成员 ID 去读写不会写
 /// 错实体；但 Dart 拿它去比对内核回来的规范 ID（`tree[deckId]`、`mappings[type.id]`）就对不上，用户的选择被当成
 /// 「已删除」静默回落默认。凡是把 SRS 实体 ID 存在内核之外的地方（偏好里的制卡牌组 / 笔记类型 / 字段映射……），
 /// 读的时候都经这里向内核要规范 ID（`canonical_ids`），并把规范 ID 写回去。
