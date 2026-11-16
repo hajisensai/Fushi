@@ -126,6 +126,13 @@ abstract final class FushiChannels {
     '$_prefix/picture_in_picture',
   );
 
+  /// 墨水屏全刷的厂商 EPD 通道（Onyx / 瑞芯微 / NTX，反射探测）。只有 Android 有
+  /// 原生侧（`EinkRefreshChannel.java`），Dart 门面 `AndroidEinkRefresh` 在其余
+  /// 平台恒答 false 且不发调用。
+  static const MethodChannel einkRefresh = MethodChannel(
+    '$_prefix/eink_refresh',
+  );
+
   /// 第二块屏宿主（双屏掌机下屏 / 外接显示器上的面板：副屏伴侣或串流查词面板）。
   /// 原生侧 `SecondScreenDisplay.java`（主进程）与 `SecondScreenActivity.java`
   /// （面板进程）用同一个名字；主进程 Dart 门面 `second_screen_host.dart`，

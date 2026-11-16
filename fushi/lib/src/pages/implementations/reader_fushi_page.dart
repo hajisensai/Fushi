@@ -2380,6 +2380,10 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   // 非翻页导航作废积压——用户已显式换了目的地。由 _handlePageTurnLimit 置位、
   // _beginNavigation 消费并复位。
   bool _navigationFromPageTurn = false;
+  // 墨水屏「每 N 页全刷」：翻页触发的跨章要等新章恢复完（正文画上屏）才计这一页，
+  // 否则全刷刷的是加载中的旧画面。由 _beginNavigation 按 _navigationFromPageTurn 置位、
+  // _onRestoreComplete 消费。
+  bool _einkTurnPendingOnContentReady = false;
   // 翻页动画（跨章）：本次导航落定后正文是否整体淡入（[readerChapterFadeInEnabled]）。
   // _beginNavigation 写、淡入结束（AnimatedOpacity.onEnd）清。
   bool _chapterFadeInPending = false;
