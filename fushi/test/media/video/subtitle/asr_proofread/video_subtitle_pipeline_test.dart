@@ -596,4 +596,32 @@ void main() {
     expect(ev.ownChecks.last(asr), isTrue);
     expect(ev.ownChecks.last(ja), isFalse);
   });
+
+  test('不开 AI：画面硬字幕（OCR 证据）与识别行只差几个字时换成画面写法（d-fO4eGxKx）', () async {
+    final _FakeEvidence ev = _FakeEvidence(const <SubtitleEvidenceTrack>[
+      SubtitleEvidenceTrack(
+        label: 'burned-in subtitles OCR',
+        kind: SubtitleEvidenceKind.ocr,
+        language: 'ja',
+        cues: <SubtitleEvidenceCue>[
+          // 识别「結衣が来た」，画面写的是「唯が来た」：同一句，换。
+          SubtitleEvidenceCue(startMs: 1000, endMs: 3000, text: '唯が来た'),
+          // 同时段画面是另一句：不换。
+          SubtitleEvidenceCue(startMs: 7000, endMs: 9000, text: 'さようなら'),
+        ],
+      ),
+    ]);
+    final VideoSubtitlePipelineResult r = await pipeline(
+      _FakeRecognizer(drafts),
+      evidence: ev,
+    ).run(videoPaths: <String>[video('ep01.mkv')], work: work);
+    expect(r.episodes.single.status, VideoSubtitleEpisodeStatus.exported);
+    final String srt = File(
+      p.join(videos.path, 'ep01.ja.srt'),
+    ).readAsStringSync();
+    expect(srt, contains('唯が来た'));
+    expect(srt, isNot(contains('結衣が来た')));
+    expect(srt, contains('ありがとう'));
+    expect(srt, isNot(contains('さようなら')));
+  });
 }

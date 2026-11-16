@@ -7,6 +7,8 @@ library;
 
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_draft.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_evidence.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_song_lyrics.dart'
+    show lyricsBigramDice;
 
 /// 证据行被识别稿覆盖的比例低于它，才算识别漏掉的行。
 const double kSubtitleEvidenceGapMaxCoverage = 0.2;
@@ -68,4 +70,75 @@ String normalizeEvidenceLineText(String text) {
   if (parts.isEmpty) return '';
   final bool cjk = RegExp(r'[぀-ヿ㐀-鿿]').hasMatch(parts.join());
   return parts.join(cjk ? '　' : ' ');
+}
+
+/// OCR 证据换掉识别行的字面相似度下限（字符二元组 Dice）：同一句台词差一两个同音字
+/// （「島に行こう」/「堂に行こう」0.75）在它之上；只是时间挨着的别的句子在它之下。
+const double kSubtitleOcrCorrectionMinSimilarity = 0.5;
+
+/// 一行 OCR 证据与识别行互相覆盖的比例下限：两边都至少这么多重叠，才算同一句（硬字幕
+/// 证据按识别行取帧，天然 100%；图形字幕轨的分行与识别稿不同，一行压两句的不换）。
+const double kSubtitleOcrCorrectionMinCoverage = 0.6;
+
+/// 不开 AI 时的确定性纠错（拍板台 `d-fO4eGxKx`）：识别行与同时段同语言 **OCR** 证据
+/// （画面上的硬字幕 / 图形字幕，即观众看到的片方写法）是同一句、只差几个字时，用 OCR
+/// 的写法换掉识别行——同音字错误（「島」/「堂」）不再进字幕和卡片。
+///
+/// - 只认 OCR 证据：人工文字字幕可能来自别的版本、删了口癖，交给 S3 校对判断。
+/// - 补齐插入的行（带 [SubtitleDraftCue.origin]）本来就是证据原文，不动。
+/// - 换掉的行丢掉词级时间（[SubtitleDraftCue.tokenTiming]）与候选：它们描述的是旧文字。
+/// - 开着 AI 时不调用：S3 同时看得到识别稿与证据（与画面），比字面规则判得准。
+List<SubtitleDraftCue> correctSubtitleDraftsFromOcrEvidence(
+  List<SubtitleDraftCue> drafts,
+  SubtitleEvidenceIndex index,
+) {
+  final List<SubtitleEvidenceTrack> tracks = <SubtitleEvidenceTrack>[
+    for (final SubtitleEvidenceTrack t in index.same)
+      if (t.kind == SubtitleEvidenceKind.ocr) t,
+  ];
+  if (tracks.isEmpty) return drafts;
+  return <SubtitleDraftCue>[
+    for (final SubtitleDraftCue cue in drafts)
+      if (cue.origin == null && _ocrReplacement(cue, tracks)
+          case final String text)
+        SubtitleDraftCue(
+          startMs: cue.startMs,
+          endMs: cue.endMs,
+          text: text,
+          speaker: cue.speaker,
+        )
+      else
+        cue,
+  ];
+}
+
+/// [cue] 该换成的 OCR 写法；不该换返回 null。
+String? _ocrReplacement(
+  SubtitleDraftCue cue,
+  List<SubtitleEvidenceTrack> tracks,
+) {
+  final int length = cue.endMs - cue.startMs;
+  final String original = cue.text.trim();
+  if (length <= 0 || original.isEmpty) return null;
+  for (final SubtitleEvidenceTrack track in tracks) {
+    final List<SubtitleEvidenceCue> same = <SubtitleEvidenceCue>[
+      for (final SubtitleEvidenceCue e in track.cues)
+        if (e.role == SubtitleEvidenceRole.dialogue &&
+            e.endMs > e.startMs &&
+            subtitleOverlapMs(cue.startMs, cue.endMs, e.startMs, e.endMs) >=
+                kSubtitleOcrCorrectionMinCoverage * length &&
+            subtitleOverlapMs(cue.startMs, cue.endMs, e.startMs, e.endMs) >=
+                kSubtitleOcrCorrectionMinCoverage * (e.endMs - e.startMs))
+          e,
+    ];
+    if (same.length != 1) continue;
+    final String text = normalizeEvidenceLineText(same.single.text);
+    if (text.isEmpty || text == original) return null;
+    if (lyricsBigramDice(original, text) <
+        kSubtitleOcrCorrectionMinSimilarity) {
+      continue;
+    }
+    return text;
+  }
+  return null;
 }

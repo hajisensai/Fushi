@@ -573,6 +573,13 @@ class VideoSubtitlePipeline {
         drafts: drafts,
         state: state,
         cancel: cancel,
+        onBurnedInProgress: (int done, int total) => report(
+          VideoSubtitleStage.recognize,
+          (i + 0.95 + 0.05 * done / total) / videoPaths.length,
+          'reading on-screen subtitles $done/$total',
+          videoPath: video,
+          index: i,
+        ),
       );
       final String fingerprint = subtitleEvidenceFingerprint(tracks);
       if ((state.evidenceFingerprint ?? '') != fingerprint) {
@@ -593,10 +600,15 @@ class VideoSubtitlePipeline {
         tracks,
         targetLanguage: _targetLanguage,
       );
-      final List<SubtitleDraftCue> filled = fillSubtitleGapsFromEvidence(
+      final List<SubtitleDraftCue> gapFilled = fillSubtitleGapsFromEvidence(
         drafts,
         index,
       );
+      // 不开 AI：画面上的同语言字幕（OCR 证据）与识别行只差几个字时换成画面写法；
+      // 开着 AI 交给 S3（它同时看得到识别稿、证据与画面）。
+      final List<SubtitleDraftCue> filled = ai == null
+          ? correctSubtitleDraftsFromOcrEvidence(gapFilled, index)
+          : gapFilled;
       report(
         VideoSubtitleStage.recognize,
         (i + 1) / videoPaths.length,
@@ -992,6 +1004,7 @@ class VideoSubtitlePipeline {
     required List<SubtitleDraftCue> drafts,
     required _JobState state,
     required SubtitleCancelToken cancel,
+    void Function(int done, int total)? onBurnedInProgress,
   }) async {
     final SubtitleEvidenceSource? source = evidence;
     if (source == null) return const <SubtitleEvidenceTrack>[];
@@ -1024,6 +1037,7 @@ class VideoSubtitlePipeline {
           isOwnOutput: own,
           targetLanguage: _targetLanguage,
           cancel: cancel,
+          onBurnedInProgress: onBurnedInProgress,
         ),
       );
       await writeSubtitleJobFileAtomic(

@@ -29,6 +29,7 @@ import 'package:fushi_asr_subtitles/asr_subtitles.dart'
 import 'package:fushi_audio/fushi_audio_core.dart' show readTextWithEncoding;
 import 'package:fushi_core/fushi_core.dart' show fushiDebugPrint;
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_ass_style_transfer.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_burned_in_evidence.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_draft.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_evidence.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_pipeline_cancel.dart';
@@ -62,6 +63,7 @@ class SubtitleEvidenceLoadRequest {
     required this.isOwnOutput,
     required this.targetLanguage,
     this.cancel = const SubtitleNeverCancel(),
+    this.onBurnedInProgress,
   });
 
   final String videoPath;
@@ -73,6 +75,9 @@ class SubtitleEvidenceLoadRequest {
   /// 管线的目标语言（字幕后缀，通常 `ja`）。
   final String targetLanguage;
   final SubtitleCancelToken cancel;
+
+  /// 读硬字幕（整集逐行截帧 OCR，可能要几分钟）的进度：读到第几行 / 共几行。
+  final void Function(int done, int total)? onBurnedInProgress;
 }
 
 /// 管线的证据注入点。
@@ -164,9 +169,14 @@ class SubtitleEvidenceCollector implements SubtitleEvidenceSource {
   const SubtitleEvidenceCollector({
     this.graphicRecognizer,
     this.extraSubtitleFiles,
+    this.burnedIn,
   });
 
   final SubtitleGraphicTrackRecognizer? graphicRecognizer;
+
+  /// 画面硬字幕 OCR（`subtitle_burned_in_evidence.dart`）；null = 不读（无头服务端、
+  /// 测试）。
+  final SubtitleBurnedInReader? burnedIn;
 
   /// 宿主登记过、但不在视频旁的字幕文件（app 文档目录里的手动导入 / 在线下载 /
   /// 播放时图形字幕 OCR 出的 SRT）。按外挂文件同一套规矩处理（对时间轴、判语言）。
@@ -211,6 +221,10 @@ class SubtitleEvidenceCollector implements SubtitleEvidenceSource {
     // 宿主有没有 OCR 也影响产物（同一视频装上 OCR 后应重收）。
     if (graphicRecognizer != null) {
       out.add(const SubtitleEvidenceSourceStamp('ocr', 1, 0));
+    }
+    // 硬字幕：识别器身份（模型）变了、或刚下载好模型，都要重收。
+    if (await burnedIn?.identity() case final String id) {
+      out.add(SubtitleEvidenceSourceStamp(id, 1, 0));
     }
     return out;
   }
@@ -275,6 +289,23 @@ class SubtitleEvidenceCollector implements SubtitleEvidenceSource {
         rethrow;
       } catch (e) {
         fushiDebugPrint('[SubtitleEvidence] embedded probe failed: $e');
+      }
+      final SubtitleBurnedInReader? hard = burnedIn;
+      if (hard != null) {
+        try {
+          final SubtitleEvidenceTrack? t = await hard.read(
+            videoPath: video,
+            drafts: request.drafts,
+            targetLanguage: request.targetLanguage,
+            cancel: request.cancel,
+            onProgress: request.onBurnedInProgress,
+          );
+          if (t != null) tracks.add(t);
+        } on SubtitlePipelineCancelled {
+          rethrow;
+        } catch (e) {
+          fushiDebugPrint('[SubtitleEvidence] burned-in OCR failed: $e');
+        }
       }
     }
     return <SubtitleEvidenceTrack>[
