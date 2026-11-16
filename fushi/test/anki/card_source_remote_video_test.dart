@@ -66,6 +66,62 @@ void main() {
     expect(findRemoteVideoForCardSource(videos, book), isNull);
   });
 
+  group('拍板台 IFCPPprIpT：远端回跳按 host 算的指纹核验', () {
+    const String a =
+        '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+    const String b =
+        'fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210';
+
+    test('host 那份字节与卡片一致才放行', () {
+      expect(
+        cardSourceHostFingerprintAccepted(
+          linkFingerprint: a,
+          hostFingerprint: a,
+        ),
+        isTrue,
+      );
+      expect(
+        cardSourceHostFingerprintAccepted(
+          linkFingerprint: a,
+          hostFingerprint: b,
+        ),
+        isFalse,
+        reason: 'host 上同名 bookUid 换成了别的片子，不是这张卡的来源',
+      );
+    });
+
+    test('在线内容身份（无指纹）与老 host（算不出）按 bookUid 放行', () {
+      expect(
+        cardSourceHostFingerprintAccepted(
+          linkFingerprint: null,
+          hostFingerprint: b,
+        ),
+        isTrue,
+      );
+      expect(
+        cardSourceHostFingerprintAccepted(
+          linkFingerprint: a,
+          hostFingerprint: null,
+        ),
+        isTrue,
+      );
+    });
+  });
+
+  test('接线：远程播放互联 host 制卡时向 host 取指纹写进链接', () {
+    final String mining = File(
+      'lib/src/pages/implementations/video_fushi/lookup_mining.part.dart',
+    ).readAsStringSync();
+    expect(mining, contains('remoteClient is RemoteVideoFingerprintSource'));
+    expect(mining, contains('hostFingerprints.fetchRemoteVideoFingerprint('));
+    final String router = File(
+      'lib/src/anki/card_source_router.dart',
+    ).readAsStringSync();
+    expect(router, contains('backend.fetchRemoteVideoFingerprint('));
+    // 本地同 uid 但字节对不上时不直接判死，继续去 host 找同一份字节。
+    expect(router, matches(RegExp(r'localMismatch = true;\s+video = null;')));
+  });
+
   test('接线：本地没有时走 host 清单，远端复习不按本地指纹判死', () {
     final String router = File(
       'lib/src/anki/card_source_router.dart',

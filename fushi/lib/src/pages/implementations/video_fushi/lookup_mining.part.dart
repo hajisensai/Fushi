@@ -739,6 +739,15 @@ extension _VideoLookupMining on _VideoFushiPageState {
     final bool contentAddressedStream =
         _resolvedStreamInfo != null &&
         CardSourceLink.isContentAddressedVideoUid(sourceUid);
+    // 拍板台 IFCPPprIpT：远程播放互联 host 的视频，字节在 host 上——由 host 对同一个
+    // 文件算指纹（与本地卡同口径），uid 是 host 的 bookUid。回跳时本机有同一份字节就
+    // 本地播，没有就经互联在线播（card_source_router）。Jellyfin / Emby / Plex 没有
+    // 原文件可算，仍不带链接。
+    final RemoteVideoClient? remoteClient = _isRemote
+        ? _effectiveRemoteClient
+        : null;
+    final RemoteVideoFingerprintSource? hostFingerprints =
+        remoteClient is RemoteVideoFingerprintSource ? remoteClient : null;
     // A still-only card has no subtitle range, but its source is the frame
     // being viewed now; it must not accidentally link to the start of the film.
     final int sourceStartMs = clipEndMs > clipStartMs
@@ -753,6 +762,24 @@ extension _VideoLookupMining on _VideoFushiPageState {
         );
       } else if (contentAddressedStream) {
         fingerprint = null;
+      } else if (hostFingerprints != null) {
+        // 老 host / 文件取不到（null）或这一刻连不上 host：没有可担保的字节身份，卡片
+        // 照常制、只是不带链接（远程卡以前一直如此）。与本地不同，这里不中止整张卡：
+        // 失败的是「来源链接」这一附属信息，不是卡片内容；原因进错误日志。
+        try {
+          fingerprint = await hostFingerprints.fetchRemoteVideoFingerprint(
+            sourceUid,
+            episodeIndex: sourceEpisode,
+          );
+        } on Object catch (error, stack) {
+          ErrorLogService.instance.log(
+            'video.remoteSourceFingerprint',
+            error,
+            stack,
+          );
+          return null;
+        }
+        if (fingerprint == null) return null;
       } else {
         return null;
       }

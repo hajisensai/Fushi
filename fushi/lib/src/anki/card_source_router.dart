@@ -15,7 +15,7 @@ import 'package:fushi/src/anki/source_review_draft_store.dart';
 import 'package:fushi/src/media/manga/reader/manga_fushi_page.dart';
 import 'package:fushi/src/mining/mined_origin_navigation.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
-import 'package:fushi/src/media/video/video_source_fingerprint.dart';
+import 'package:fushi_engine/media/video/video_source_fingerprint.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
@@ -68,18 +68,42 @@ RemoteVideoInfo? findRemoteVideoForCardSource(
   return null;
 }
 
-/// 本地库没有该视频时，去已配对的互联 host 取它的清单并按 [link] 找条目。互联未启用 /
-/// 未配对 / host 不可达都返回 null（调用方按「没有来源」提示，不吞成别的错）。
-Future<({RemoteVideoInfo info, InterconnectSyncBackend client})?>
+/// 远端条目的字节核验（拍板台 IFCPPprIpT）：链接带指纹时，用 host 对同一个文件算的
+/// 指纹比对（与本地卡同口径，防 host 上同名 bookUid 换成了别的片子）。链接不带指纹
+/// （在线内容身份，BUG-3490）或 host 算不出（老 host 无该端点）时按 bookUid 身份放行，
+/// 与此前远端回跳一致。
+bool cardSourceHostFingerprintAccepted({
+  required String? linkFingerprint,
+  required String? hostFingerprint,
+}) =>
+    linkFingerprint == null ||
+    hostFingerprint == null ||
+    linkFingerprint == hostFingerprint;
+
+/// 互联 host 上找到的回跳目标。
+typedef RemoteCardSourceVideo = ({
+  RemoteVideoInfo info,
+  InterconnectSyncBackend client,
+});
+
+/// 本地库没有该视频（或本地那份字节对不上）时，去已配对的互联 host 取它的清单并按
+/// [link] 找条目，再请 host 核验字节指纹。互联未启用 / 未配对 / host 不可达 / 清单里
+/// 没有都返回 `hit == null`（调用方按「没有来源」提示，不吞成别的错）；host 上那份字节
+/// 与卡片不符时 `fingerprintMismatch == true`。
+Future<({RemoteCardSourceVideo? hit, bool fingerprintMismatch})>
 resolveRemoteCardSourceVideo(
   AppModel app,
   WidgetRef ref,
   CardSourceLink link,
 ) async {
+  const ({RemoteCardSourceVideo? hit, bool fingerprintMismatch}) none = (
+    hit: null,
+    fingerprintMismatch: false,
+  );
   final SyncRepository syncRepo = SyncRepository(app.database);
-  if (!await syncRepo.isInterconnectEnabled()) return null;
+  if (!await syncRepo.isInterconnectEnabled()) return none;
   final InterconnectSyncBackend backend = InterconnectSyncBackend.instance;
-  if (!await backend.restoreAuth(syncRepo)) return null;
+  if (!await backend.restoreAuth(syncRepo)) return none;
   try {
     final List<RemoteVideoInfo> videos = await ref
         .read(remoteLibraryCacheProvider)
@@ -89,10 +113,24 @@ resolveRemoteCardSourceVideo(
           fetch: backend.listRemoteVideos,
         );
     final RemoteVideoInfo? info = findRemoteVideoForCardSource(videos, link);
-    return info == null ? null : (info: info, client: backend);
+    if (info == null) return none;
+    final String? linkFingerprint = link.fingerprint;
+    final String? hostFingerprint = linkFingerprint == null
+        ? null
+        : await backend.fetchRemoteVideoFingerprint(
+            info.id,
+            episodeIndex: link.episodeIndex ?? 0,
+          );
+    if (!cardSourceHostFingerprintAccepted(
+      linkFingerprint: linkFingerprint,
+      hostFingerprint: hostFingerprint,
+    )) {
+      return (hit: null, fingerprintMismatch: true);
+    }
+    return (hit: (info: info, client: backend), fingerprintMismatch: false);
   } on Object catch (error, stack) {
     ErrorLogService.instance.log('card_source.remoteVideo', error, stack);
-    return null;
+    return none;
   }
 }
 
@@ -138,15 +176,46 @@ Future<void> _openCardSource({
       ? null
       : await resolveCardSourceBook(app.database, link);
   final VideoBookRepository videos = VideoBookRepository(app.database);
-  final VideoBookRow? video = link.kind == CardSourceKind.video
+  VideoBookRow? video = link.kind == CardSourceKind.video
       ? await videos.getByBookUid(link.uid)
       : null;
-  final ({RemoteVideoInfo info, InterconnectSyncBackend client})? remote =
+  // 本机有同 uid 的行时先按字节核验：视频 uid 由文件名派生、跨设备会撞，对不上的不是
+  // 这张卡的来源。BUG-3490：无指纹的链接只可能指向在线内容身份（CardSourceLink 校验
+  // 保证），没有本地字节可比，按库身份直接回看在线播放。
+  bool localMismatch = false;
+  bool localUnreadable = false;
+  if (video != null && link.fingerprint != null) {
+    try {
+      if (!await VideoSourceFingerprint.instance.matches(
+        video.videoPath,
+        link.fingerprint!,
+      )) {
+        localMismatch = true;
+        video = null;
+      }
+    } catch (_) {
+      localUnreadable = true;
+      video = null;
+    }
+  }
+  // 拍板台 IFCPPprIpT：本机没有（或字节对不上）就经互联在 host 上找同一份字节在线播
+  // ——远程播放 host 视频制的卡、以及在别的设备本地制的卡都走这里。
+  final ({RemoteCardSourceVideo? hit, bool fingerprintMismatch})? remoteLookup =
       link.kind == CardSourceKind.video && video == null
       ? await resolveRemoteCardSourceVideo(app, ref, link)
       : null;
-  if ((link.kind == CardSourceKind.video && video == null && remote == null) ||
-      (link.kind != CardSourceKind.video && book == null)) {
+  final RemoteCardSourceVideo? remote = remoteLookup?.hit;
+  if (link.kind == CardSourceKind.video && video == null && remote == null) {
+    FushiToast.show(
+      msg: localMismatch || (remoteLookup?.fingerprintMismatch ?? false)
+          ? t.card_source_review_fingerprint_mismatch
+          : localUnreadable
+          ? t.card_source_review_local_required
+          : t.card_source_review_media_missing,
+    );
+    return;
+  }
+  if (link.kind != CardSourceKind.video && book == null) {
     FushiToast.show(msg: t.card_source_review_media_missing);
     return;
   }
@@ -161,22 +230,6 @@ Future<void> _openCardSource({
         (link.chapterIndex == null ||
             link.chapterIndex! >= book.chapterCount)) {
       FushiToast.show(msg: t.card_source_review_invalid);
-      return;
-    }
-  }
-  // BUG-3490：无指纹的链接只可能指向在线内容身份（CardSourceLink 校验保证），
-  // 没有本地字节可比，按库身份直接回看在线播放。
-  if (video != null && link.fingerprint != null) {
-    try {
-      if (!await VideoSourceFingerprint.instance.matches(
-        video.videoPath,
-        link.fingerprint!,
-      )) {
-        FushiToast.show(msg: t.card_source_review_fingerprint_mismatch);
-        return;
-      }
-    } catch (_) {
-      FushiToast.show(msg: t.card_source_review_local_required);
       return;
     }
   }
@@ -248,8 +301,8 @@ Future<void> _openCardSource({
         }),
   );
   if (remote != null) {
-    // 远端条目：身份是 host 的 bookUid，字节指纹只有 host 的原文件能对，本机无从核验
-    // （播放页对远端复习同样不比指纹）。
+    // 远端条目：身份是 host 的 bookUid，字节已由 host 对原文件算指纹核验过
+    // （[resolveRemoteCardSourceVideo]），播放页对远端复习不再比本地指纹。
     unawaited(
       navigator.push<void>(
         adaptivePageRoute<void>(
