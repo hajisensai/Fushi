@@ -753,31 +753,62 @@ function fushiMaybeFetchYoutubeCaptions() {
 try { setInterval(fushiMaybeFetchYoutubeCaptions, 1500); } catch (_) {}
 
 // ── 制卡队列（持久化：chrome.storage.local，跨刷新/跨剧集/跨会话累积，随时点击生成）──
-// 内存镜像 fushiQueue 以 storage 为真相源；storage.onChanged 让多标签/重载后计数一致。
+// 内存镜像 fushiQueue 只供**读**（按钮「已在队列」、Netflix 回放挑本集项），storage.onChanged
+// 让多标签/重载后它跟上；**写**一律经 fushiQueueMutate 对 storage 现值读-改-写。
+//
+// 反馈 heMh1hn8n4（「网页制卡提示加入成功，统一生成时少了很多，十几条以后全丢」）：入队曾是
+// 「push 进镜像 → fire-and-forget 写整份镜像 → 按镜像长度报成功」。镜像会被迟到的 onChanged
+// 旧值拉回，下一次入队把旧镜像整份写回、冲掉前一条或别处（图标 popup / background）刚写的；
+// 写入被拒（配额、扩展更新后旧 content script 的 context invalidated）也照样报成功。
 let fushiQueue = [];
-function fushiQueueSave() {
-  try { chrome.storage.local.set({ fushiQueue: fushiQueue }); } catch (_) {}
+// 本标签内的队列写入严格串行：两次快速入队各自读到同一份旧队列再写，后写的会冲掉先写的。
+let fushiQueueWriteChain = Promise.resolve();
+/**
+ * 对 storage 里的 fushiQueue 做一次串行读-改-写。
+ * [mutate] 拿到 storage 现值，返回 `{ queue, result }`：queue 为数组则写回（await 落盘），
+ * 为 null 表示不写。返回的 Promise 只在写入真正成功后以 result 兑现；读/写失败（含扩展上下文
+ * 失效时的同步抛）一律 reject，交给调用方如实上报。
+ * @param {(fresh: object[]) => { queue: object[]|null, result: * }} mutate
+ * @returns {Promise<*>}
+ */
+function fushiQueueMutate(mutate) {
+  const run = fushiQueueWriteChain.then(async () => {
+    const got = await chrome.storage.local.get(['fushiQueue']);
+    const fresh = Array.isArray(got && got.fushiQueue) ? got.fushiQueue : [];
+    const r = mutate(fresh);
+    if (Array.isArray(r.queue)) {
+      await chrome.storage.local.set({ fushiQueue: r.queue });
+      fushiQueue = r.queue;
+    } else {
+      fushiQueue = fresh;
+    }
+    return r.result;
+  });
+  // 链只负责排队，不传播上一次的失败。
+  fushiQueueWriteChain = run.then(() => undefined, () => undefined);
+  return run;
 }
-// 移除已成功生成的项：storage 读-改-写（不改可能被 storage.onChanged 覆盖的内存镜像），跨标签安全。
+/** 扩展被更新/重载后，旧 content script 的 chrome.runtime.id 变成 undefined。 @returns {boolean} */
+function fushiExtensionContextAlive() {
+  try { return !!(chrome.runtime && chrome.runtime.id); } catch (_) { return false; }
+}
+// 移除已成功生成的项：storage 读-改-写，跨标签安全。
 // 生成过程中别的标签/别集入队都不会被这一步误删（只按 id 剔除本次成功的）。
 async function fushiRemoveQueued(okIds) {
   if (!okIds || !okIds.length) return;
   try {
-    const got = await chrome.storage.local.get(['fushiQueue']);
-    const fresh = Array.isArray(got.fushiQueue) ? got.fushiQueue : [];
-    const remaining = fresh.filter((q) => okIds.indexOf(q.id) < 0);
-    fushiQueue = remaining;
-    await chrome.storage.local.set({ fushiQueue: remaining });
+    await fushiQueueMutate((fresh) => ({
+      queue: fresh.filter((q) => okIds.indexOf(q.id) < 0), result: null,
+    }));
   } catch (_) {}
 }
 // 把一次失败记到队列项上（判据 mine-outcome.js fushiQueueAfterMineFailure，与 background 的
 // YouTube 批量同一份）：永久失败 / 反复失败的项进失败分组，不再参与下次生成（EMI05fe8RJ）。
 async function fushiRecordQueuedFailure(id, outcome) {
   try {
-    const got = await chrome.storage.local.get(['fushiQueue']);
-    const r = window.fushiQueueAfterMineFailure(got.fushiQueue, id, outcome);
-    fushiQueue = r.queue;
-    await chrome.storage.local.set({ fushiQueue: r.queue });
+    await fushiQueueMutate((fresh) => ({
+      queue: window.fushiQueueAfterMineFailure(fresh, id, outcome).queue, result: null,
+    }));
   } catch (_) {}
 }
 // 制卡结果分类：判据住在 mine-outcome.js（与 background 的 YouTube 批量制卡共用同一份），
@@ -1243,7 +1274,10 @@ window.fushiIsEntryQueued = function (fields) {
       item.cueStartV === ctx.window.startV;
   });
 };
-window.fushiEnqueue = function (fields, sentence) {
+// 返回 Promise：只有队列真的写进 chrome.storage.local 才兑现 ok:true（count = 落盘后的长度）；
+// 写不进去兑现 { ok:false, reason:'persist-failed' | 'context-invalidated' }。上下文在 await 之前
+// 同步取，保证记下的是点击那一刻的句子与时间。
+window.fushiEnqueue = async function (fields, sentence) {
   const ctx = window.fushiMineContext();
   const w = ctx.window;
   if (!w) return { ok: false, reason: 'no-cue' };
@@ -1274,15 +1308,27 @@ window.fushiEnqueue = function (fields, sentence) {
     documentTitle: documentTitle,
   };
   // TODO-1222：已在队列（同词同句同片）→ 不重复入队，返回 duplicate 让弹窗提示「已在队列中」。
+  // 判重同样以 storage 现值为准（镜像可能落后）。
   const key = fushiQueueKey(item);
-  if (fushiQueue.some((q) => fushiQueueKey(q) === key)) {
-    return { ok: true, count: fushiQueue.length, duplicate: true };
+  let res;
+  try {
+    res = await fushiQueueMutate((fresh) => {
+      if (fresh.some((q) => fushiQueueKey(q) === key)) {
+        return { queue: null, result: { ok: true, count: fresh.length, duplicate: true } };
+      }
+      const next = fresh.concat([item]);
+      return { queue: next, result: { ok: true, count: next.length } };
+    });
+  } catch (e) {
+    return {
+      ok: false,
+      reason: fushiExtensionContextAlive() ? 'persist-failed' : 'context-invalidated',
+      error: String((e && e.message) || e),
+    };
   }
-  fushiQueue.push(item);
-  fushiQueueSave();
-  // 一次性草稿：入队即归零（与 app 内制卡成功后 _miningDraft.clear() 同事件）。
-  fushiSentenceCtx = { prev: 0, next: 0 };
-  return { ok: true, count: fushiQueue.length };
+  // 一次性草稿：入队落盘才归零（与 app 内制卡成功后 _miningDraft.clear() 同事件）。
+  if (!res.duplicate) fushiSentenceCtx = { prev: 0, next: 0 };
+  return res;
 };
 // 跨标签/重载同步：storage 变了就刷新内存镜像 + 计数。
 try {
