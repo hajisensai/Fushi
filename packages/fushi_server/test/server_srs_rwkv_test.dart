@@ -295,7 +295,9 @@ void main() {
       isTrue,
       reason: '旧档位关掉时存了快照',
     );
-    expect(backends[1].replayedRows, greaterThan(0), reason: 'Tiny 没有快照：全量重放');
+    // 喂进 runtime 的历史行（整块回放的尾巴走 append，见 SrsRwkvService.journalSeed）。
+    int fed(FakeRwkvBackend b) => b.replayedRows + b.appendedRows;
+    expect(fed(backends[1]), 3, reason: 'Tiny 没有快照：按全部历史重放');
 
     // 不经 WebUI、直接改设置文件：下一次对齐配置（改任何复习配置 / 兜底定时器）时换过去。
     await writeSrsRwkvModelSize(support, SrsRwkvModelSize.small);
@@ -310,7 +312,7 @@ void main() {
       kSrsRwkvTinyWeightsName,
       kSrsRwkvSmallWeightsName,
     ]);
-    expect(backends.last.replayedRows, 0, reason: '恢复 Small 的快照，不全量重放');
+    expect(fed(backends.last), 0, reason: '恢复 Small 的快照，不全量重放');
     expect(
       File(
         p.join(srsRwkvStateDir(support, SrsRwkvModelSize.tiny).path, snap),
@@ -338,7 +340,7 @@ void main() {
     );
     await a.start();
     await until(() => a.status.phase == SrsRwkvPhase.ready, 'first ready');
-    expect(first.replayedRows, greaterThan(0));
+    expect(first.replayedRows + first.appendedRows, 3);
 
     // 宿主不等旧服务关完就建新服务（app 换档位时 provider 的 onDispose 不 await close）。
     final Future<void> closing = a.close();
@@ -358,7 +360,11 @@ void main() {
       await until(() => b.status.phase == SrsRwkvPhase.ready, 'second ready');
       await closing;
       expect(firstClosedWhenOpened, isTrue, reason: '上一个服务关完才起内核');
-      expect(second.replayedRows, 0, reason: '恢复的是上一个服务关闭时存的快照');
+      expect(
+        second.replayedRows + second.appendedRows,
+        0,
+        reason: '恢复的是上一个服务关闭时存的快照',
+      );
     } finally {
       await b.close();
     }
