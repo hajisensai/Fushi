@@ -67,20 +67,24 @@ use std::collections::{BTreeMap, BTreeSet};
 use rusqlite::params;
 
 use super::derive::{Index, Settled};
+use super::import::HERITAGE_MARK_EVERY;
 use super::ingest::{Settle, ingest_settle};
 use super::schema::{k_dev, k_seq, sql};
 use super::sync_state::{WaitRow, chain32, op_of_bytes};
 use super::truth::{DEV_HERITAGE, DEV_NATIVE, Put, Truth};
 use crate::gen4::heritage::{
-    HeritageHeader, HeritageSlot, SlotBody, fingerprint, open_heritage_verified,
+    Fp, HeritageHeader, HeritageSlot, SlotBody, fingerprint, open_heritage_verified,
     peek_heritage_header,
 };
 use crate::gen4::op::chain_next4;
 use crate::gen4::relay::{self, open_any4, peek_relay4};
 use crate::gen4::segment::{NativeHeader, NativeItem, peek_native_header};
+use crate::gen4::translate::{T_VERSION, translate};
+use crate::store::sync2::collection_of;
 use crate::sync2::id::Id;
 use crate::sync2::keys::{CollectionKey, DeviceKey};
 use crate::sync2::segment::{CHAIN_ZERO, Chain, SegmentError};
+use crate::sync2::segment::{chain_next, open_verified, peek_header};
 use crate::sync2::vv::{OpId, Vv};
 
 /// 这一段现在收不了，留在位置上、下一轮再试。
@@ -179,6 +183,8 @@ pub struct Receiver<'t, 'c> {
     mode: Settle,
     /// 本集合与被它并入过的集合。
     collections: BTreeSet<Id>,
+    /// 它们的位置目录名（旧根捡漏认来源用）。
+    dirs: BTreeSet<String>,
     /// 本机身份（作者 / 上传者是它自己时，公钥从签名钥匙算）。
     me: Option<(Id, [u8; 32])>,
     /// 各设备日志的末尾（本批内随落库更新）。
@@ -196,8 +202,11 @@ impl<'t, 'c> Receiver<'t, 'c> {
             .binding(col)?
             .ok_or_else(|| format!("gen4 receive: no collection {col}"))?;
         let mut idx = Index::new(t, col);
-        let mut collections: BTreeSet<Id> = idx.joins()?.into_iter().map(|j| j.from).collect();
+        let joins = idx.joins()?;
+        let mut collections: BTreeSet<Id> = joins.iter().map(|j| j.from).collect();
         collections.insert(binding.collection);
+        let mut dirs: BTreeSet<String> = joins.into_iter().map(|j| j.dir).collect();
+        dirs.insert(binding.dir);
         let me = t
             .self_identity(col)?
             .map(|s| (s.device, DeviceKey::from_seed(&s.sk).public()));
@@ -207,6 +216,7 @@ impl<'t, 'c> Receiver<'t, 'c> {
             col,
             mode,
             collections,
+            dirs,
             me,
             applied: t.applied(col)?,
             tally: Received::default(),
@@ -541,26 +551,50 @@ impl<'t, 'c> Receiver<'t, 'c> {
             }
         }
         // 第二遍：落库。
+        let slots = open
+            .slots()
+            .map_err(|e| format!("gen4 receive: {e}"))?
+            .map(|s| s.map_err(|e| format!("gen4 receive: segment changed while reading: {e}")));
+        let taken = self.land_slots(
+            &header.source,
+            fingerprint(&header.prev_chain),
+            header.t_version,
+            slots,
+        )?;
+        // 段头的两端是上传者签过的完整原链值（末端另有末槽的链指纹核对），记下来给承袭上传切段用（inherit.rs）。
+        self.mark_ends(
+            &header.device,
+            &[
+                (header.first - 1, header.prev_chain),
+                (header.last, header.last_chain),
+            ],
+        )?;
+        Ok(taken)
+    }
+
+    /// 承袭槽按序落库（[Receiver::heritage] 与 [Receiver::legacy] 共用）：已有的按落库规则，正好接在末尾、依赖齐了的
+    /// 落进日志，其余进待投递、带前一环的链指纹（第一个槽的前一环是 [prev_fp]）。
+    fn land_slots(
+        &mut self,
+        src: &Id,
+        mut prev_fp: Fp,
+        tv: u32,
+        slots: impl Iterator<Item = Result<HeritageSlot, String>>,
+    ) -> Result<Taken, String> {
         let (mut landed, mut known, mut parked) = (0u64, 0u64, 0u64);
-        let mut prev_fp = fingerprint(&header.prev_chain);
-        let tv = header.t_version;
-        for s in open.slots().map_err(|e| format!("gen4 receive: {e}"))? {
-            let s = s.map_err(|e| format!("gen4 receive: segment changed while reading: {e}"))?;
-            let last = self.t.last_of(self.col, &header.device)?;
+        for s in slots {
+            let s = s?;
+            let last = self.t.last_of(self.col, &s.id.device)?;
             if s.id.seq <= last {
                 known += 1;
-                self.put_known(&header.source, &s, tv)?;
+                self.put_known(src, &s, tv)?;
             } else if s.id.seq == last + 1 && self.slot_ready(&s) {
-                if self.put_next(&header.source, &s, tv)? {
+                if self.put_next(src, &s, tv)? {
                     landed += 1;
                 } else {
                     parked += 1;
                 }
-            } else if self
-                .t
-                .put_pending(self.col, &header.source, &s, tv, Some(prev_fp))?
-                == Put::Conflict
-            {
+            } else if self.t.put_pending(self.col, src, &s, tv, Some(prev_fp))? == Put::Conflict {
                 self.tally.conflicts += 1;
             } else {
                 parked += 1;
@@ -573,6 +607,119 @@ impl<'t, 'c> Receiver<'t, 'c> {
             known,
             parked,
         })
+    }
+
+    /// 把段里给出的完整原链值记成承袭日志的链值记号：只记本机日志里已有、链指纹相符的 seq（待投递的、分叉另一支的
+    /// 不记；seq 0 是链的起点，不用记）。
+    fn mark_ends(&mut self, device: &Id, chains: &[(u64, Chain)]) -> Result<(), String> {
+        for (seq, chain) in chains {
+            if *seq == 0 {
+                continue;
+            }
+            let id = OpId {
+                device: *device,
+                seq: *seq,
+            };
+            if self.t.entry(self.col, &id)?.and_then(|e| e.fp) == Some(fingerprint(chain)) {
+                self.t.set_mark(self.col, device, *seq, chain)?;
+            }
+        }
+        Ok(())
+    }
+
+    // ------------------------------------------------------------ 旧根捡漏
+
+    /// 收旧根（协议 3 的 `v3/devices/<作者>/` 下的 `seg-…` / `rly-…`，`FSG2` / `FSRL`）里的一段（设计 §6.2 第 4 步「捡漏」）：
+    /// 按作者公钥验签、解密、重算协议 3 的链，逐条转译（T，`gen4::translate`）成承袭槽，再与 [Receiver::heritage] 一样
+    /// 按序落库。[dir] 是这个旧根所在的位置目录名（本集合或被它并入过的集合的），来源集合 = 协议 3 集合标识
+    /// `collection_of(dir)`；[key] = 这个位置的密钥。
+    ///
+    /// 与承袭段的区别：作者自己签的、链由本机重算核对，所以**不看信任**（与迁移灌入同口径：不信任的设备的旧操作照样进
+    /// 承袭日志，信任只管派生层执行不执行它的删除 / 清除）；加密位置上的明文旧段照收（协议 3 时期写下的，BUG-4299
+    /// 之前的旧客户端会写出这种段；不收就丢了那几条操作。本机从不往位置写明文，不受影响）。
+    /// 段里每 [HERITAGE_MARK_EVERY] 条与两端的完整链值记成记号（之后切承袭段用）。
+    pub fn legacy(
+        &mut self,
+        bytes: &[u8],
+        dir: &str,
+        key: Option<&CollectionKey>,
+    ) -> Result<Taken, String> {
+        let taken = self.legacy_inner(bytes, dir, key)?;
+        Ok(self.count(taken))
+    }
+
+    fn legacy_inner(
+        &mut self,
+        bytes: &[u8],
+        dir: &str,
+        key: Option<&CollectionKey>,
+    ) -> Result<Taken, String> {
+        let source = collection_of(dir);
+        if !self.dirs.contains(dir) {
+            return Ok(Taken::Rejected(Reject::WrongCollection(source)));
+        }
+        let header = match peek_header(bytes) {
+            Ok(h) => h,
+            Err(e) => return Ok(reject_of(e)),
+        };
+        if header.collection != source {
+            return Ok(Taken::Rejected(Reject::WrongCollection(header.collection)));
+        }
+        match self.kind_of(&header.device)? {
+            Some((k, _)) if k != DEV_HERITAGE => {
+                return Ok(Taken::Rejected(Reject::WrongLog(header.device)));
+            }
+            Some((_, src)) if src != Some(source) => {
+                return Ok(Taken::Rejected(Reject::WrongLog(header.device)));
+            }
+            _ => {}
+        }
+        let Some(public) = self.t.device_key(self.col, &header.device)? else {
+            return Ok(Taken::Deferred(Defer::UnknownSigner(header.device)));
+        };
+        // 整段先验完、转译完再落（坏段一条都不落）。段的操作数有上限（协议 3 `SEGMENT_MAX_OPS`）。
+        let seg = match open_verified(bytes, &public, key) {
+            Ok(s) => s,
+            Err(e) => return Ok(reject_of(e)),
+        };
+        if seg.header != header {
+            return Ok(Taken::Rejected(Reject::Corrupt(
+                "header changed under the signature".into(),
+            )));
+        }
+        let ops = match seg.verify() {
+            Ok(ops) => ops,
+            Err(e) => return Ok(reject_of(e)),
+        };
+        let mut chain = header.prev_chain;
+        let mut slots: Vec<HeritageSlot> = Vec::new();
+        let mut marks: Vec<(u64, Chain)> = vec![(header.first - 1, header.prev_chain)];
+        for op in ops {
+            let op = match op {
+                Ok(op) => op,
+                Err(e) => return Ok(reject_of(e)),
+            };
+            chain = chain_next(&chain, &op);
+            match translate(&op, &chain) {
+                Ok(slot) => slots.push(slot),
+                Err(m) => return Ok(Taken::Rejected(Reject::Corrupt(m.to_owned()))),
+            }
+            if op.id.seq % HERITAGE_MARK_EVERY == 0 {
+                marks.push((op.id.seq, chain));
+            }
+        }
+        if chain != header.last_chain {
+            return Ok(Taken::Rejected(Reject::ChainMismatch));
+        }
+        marks.push((header.last, header.last_chain));
+        let taken = self.land_slots(
+            &source,
+            fingerprint(&header.prev_chain),
+            T_VERSION,
+            slots.into_iter().map(Ok),
+        )?;
+        self.mark_ends(&header.device, &marks)?;
+        Ok(taken)
     }
 
     fn slot_ready(&self, s: &HeritageSlot) -> bool {
@@ -820,7 +967,6 @@ mod tests {
     use crate::gen4::relay::wrap_relay4;
     use crate::gen4::segment::pack_native;
     use crate::gen4::segment::tests::{chain_of, coll};
-    use crate::gen4::translate::T_VERSION;
     use crate::store::gen4::derive::tests::{assert_rebuild_is_identity, dump, op};
     use crate::store::gen4::native::tests::{edit, ready};
     use crate::store::gen4::schema::open_in_memory;

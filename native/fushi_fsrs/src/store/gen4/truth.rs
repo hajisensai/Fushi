@@ -1903,14 +1903,31 @@ impl<'c> Truth<'c> {
         col: i64,
         device: &Id,
         from: u64,
+        f: impl FnMut(Entry) -> Result<(), String>,
+    ) -> Result<(), String> {
+        self.for_range(col, device, from, u64::MAX, f)
+    }
+
+    /// 按 seq 升序走一台设备日志里 `[from, to]` 这一段。[f] 里不要改正在走的这条日志。
+    pub fn for_range(
+        &self,
+        col: i64,
+        device: &Id,
+        from: u64,
+        to: u64,
         mut f: impl FnMut(Entry) -> Result<(), String>,
     ) -> Result<(), String> {
         let Some(dev) = self.dev_find(col, device)? else {
             return Ok(());
         };
         let from = from.max(1);
+        if to < from {
+            return Ok(());
+        }
         let lo = opk(dev, from)?;
-        let (_, hi) = k_range(dev);
+        let (_, all) = k_range(dev);
+        let to = to.min(k_seq(all));
+        let hi = opk(dev, to)?;
         // 起点在 [from] 之前、但盖到它的空洞区间也要走到。
         let run_lo = match self.run_at_or_before(dev, from)? {
             Some(run) if from <= run.end() => run.k,
@@ -1962,7 +1979,7 @@ impl<'c> Truth<'c> {
             } else {
                 let run = v.take().expect("peeked row");
                 v = voids.next().transpose().map_err(sql)?;
-                for seq in k_seq(run.k).max(from)..=run.end() {
+                for seq in k_seq(run.k).max(from)..=run.end().min(to) {
                     f(self.void_entry(&run, seq)?)?;
                 }
             }
