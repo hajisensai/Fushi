@@ -24,9 +24,9 @@ class FloatingLyricLookupRequest {
   final String text;
   final int index;
 
-  /// 这次查词替哪个模块弹（拍板台 8ldy3d8XFA）：音乐桌面歌词 = [ModuleId.music]、
-  /// 有声书悬浮字幕 = [ModuleId.books]；悬浮球 / 截屏识字 / 剪贴板等为 null（归查词
-  /// 那行）。宿主据此决定「制卡后行为」听哪一行。
+  /// 这次查词替哪个模块弹（拍板台 8ldy3d8XFA）：音乐桌面歌词 = [ModuleId.music]（它会
+  /// 因查词暂停音乐）；有声书悬浮字幕（app 级、不暂停）/ 悬浮球 / 截屏识字 / 剪贴板等
+  /// 为 null（归查词那行、停靠听非模块宿主开关）。宿主据此决定「制卡后行为」听哪一行。
   final ModuleId? hostModule;
 
   /// 这次查词出自的那一句原文，制卡时补进基础层的 `{sentence}`（反馈 1Mwaro8UTC）。

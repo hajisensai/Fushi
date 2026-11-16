@@ -292,7 +292,7 @@ void main() {
       }
     });
 
-    test('悬浮歌词查词请求带来源模块：音乐桌面歌词归音乐、有声书悬浮字幕归小说', () {
+    test('悬浮歌词查词请求带来源模块：音乐桌面歌词归音乐', () {
       final String model = File(
         'lib/src/models/app_model.dart',
       ).readAsStringSync();
@@ -301,13 +301,6 @@ void main() {
           r'lookupPause\.lookupStarted\(\);\s*'
           r'FloatingLyricLookupNotifier\.instance\.requestLookup\([\s\S]{0,300}?'
           r'hostModule: ModuleId\.music,',
-        ).hasMatch(model),
-        isTrue,
-      );
-      expect(
-        RegExp(
-          r'onFloatingLyricLookup:[\s\S]{0,1200}?'
-          r'hostModule: ModuleId\.books,',
         ).hasMatch(model),
         isTrue,
       );

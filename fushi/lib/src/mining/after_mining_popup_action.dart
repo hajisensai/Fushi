@@ -56,8 +56,8 @@ void applyAfterMiningPopupAction(
 
 /// 有自己一行「制卡后行为」的模块，顺序 = 设置里的展示顺序。不属于其中任何一个的
 /// 查词宿主（查词页 / 外部弹窗 / 悬浮球与截屏识字 / 复习卡等，宿主模块为 `null`）一律
-/// 归 [ModuleId.lookup] 那一行。悬浮歌词查词宿主按请求来源归行（音乐桌面歌词 = 音乐、
-/// 有声书悬浮字幕 = 小说），网页视频窗口宿主档的顶层查词窗口归视频。
+/// 归 [ModuleId.lookup] 那一行。悬浮歌词查词宿主按请求来源归行（音乐桌面歌词 = 音乐，
+/// 其余为查词），网页视频窗口宿主档的顶层查词窗口归视频。
 const List<ModuleId> kAfterMiningPopupModules = <ModuleId>[
   ModuleId.books,
   ModuleId.manga,

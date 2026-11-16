@@ -929,14 +929,19 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/dictionary/popup_instant_scroll_step_guard_test.dart',
   'lookup/Instant scroll touch step':
       'test/dictionary/popup_instant_scroll_step_guard_test.dart',
-  // TODO-108: 底部固定弹窗开关——生效点在纯函数 dockedPopupRect 与 base_source_page/dictionary_page_mixin 的路由分流（非 reader CSS / 主题树），
-  // 无 reader/appearance 探针；由专项纯函数 + widget 测试覆盖。
-  'lookup/Bottom-docked popup':
+  // TODO-108 / BUG-4713: 底部停靠开关——每个媒体模块一条独立开关 + 非模块宿主一条。
+  // 生效点在纯函数 dockedPopupRect 与 base_source_page/dictionary_page_mixin 的路由分流
+  // （非 reader CSS / 主题树），无 reader/appearance 探针；由专项纯函数 + widget 测试覆盖。
+  'lookup/Dock in novels':
+      'test/models/popup_bottom_docked_per_module_test.dart + test/settings/popup_bottom_docked_switch_test.dart',
+  'lookup/Dock in manga':
+      'test/models/popup_bottom_docked_per_module_test.dart + test/settings/popup_bottom_docked_switch_test.dart',
+  'lookup/Dock in videos':
+      'test/models/popup_bottom_docked_per_module_test.dart + test/settings/popup_bottom_docked_switch_test.dart',
+  'lookup/Dock in games':
+      'test/models/popup_bottom_docked_per_module_test.dart + test/settings/popup_bottom_docked_switch_test.dart',
+  'lookup/Dock elsewhere (dictionary search, floating popups)':
       'test/pages/dictionary_popup_layer_test.dart + test/settings/popup_bottom_docked_switch_test.dart',
-  // 「只在小说中底部停靠」：总开关关着时出现的小说专属入口，写的是同一组停靠键
-  // （总开关 + 四个模块细分），生效点同上；只翻小说有效值的语义由专项测试咬住。
-  'lookup/Dock only in novels':
-      'test/settings/reader_lookup_popup_size_settings_test.dart',
   // AI 按句意挑词条的自动开关：生效点在 BaseSourcePage 查词完成后的 AI 重排（不进
   // reader CSS / 主题树），由 widget 测试覆盖开 / 关 / 未指派提供商不发请求三种。
   'lookup/Pick meaning from context with AI':

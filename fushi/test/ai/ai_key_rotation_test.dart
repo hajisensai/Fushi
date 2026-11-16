@@ -11,6 +11,7 @@ import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_key_rotation.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/ai/ai_rate_limiter.dart';
+import 'package:fushi_engine/ai/ai_upstream_model.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
@@ -549,10 +550,10 @@ void main() {
           200,
         ),
       });
-      final List<String> models = await clientFor(server).listModels(
+      final List<AiUpstreamModel> models = await clientFor(server).listModels(
         _provider(const <AiApiKey>[AiApiKey('sk-a'), AiApiKey('sk-b')]),
       );
-      expect(models, <String>['m1']);
+      expect(models.map((AiUpstreamModel m) => m.id), <String>['m1']);
       expect(server.calls, <String>['sk-a', 'sk-b']);
     });
 

@@ -112,12 +112,12 @@ mixin DictionaryPageMixin {
 
   /// 本页所属的功能模块：「底部停靠」按模块细分开关听哪一个
   /// （[AppModel.popupBottomDockedFor]）、「制卡后行为」听哪一行
-  /// （[afterMiningPopupAction]）。默认 `null` = 只听停靠总开关、制卡后行为归查词
-  /// 那行（查词页 / 外部弹窗）；视频页、texthooker、悬浮歌词宿主（按请求来源）覆写。与
-  /// `BaseSourcePageState` 的同名钩子对称。
+  /// （[afterMiningPopupAction]）。默认 `null` = 停靠听非模块宿主的开关、制卡后行为
+  /// 归查词那行（查词页 / 外部弹窗）；视频页、texthooker、悬浮歌词宿主（按请求来源）
+  /// 覆写。与 `BaseSourcePageState` 的同名钩子对称。
   ModuleId? get lookupHostModule => null;
 
-  /// 本页查词弹窗实际是否底部停靠（总开关 ∧ [lookupHostModule] 的细分开关）。
+  /// 本页查词弹窗实际是否底部停靠（[lookupHostModule] 自己的开关）。
   bool get _popupBottomDocked =>
       mixinAppModel.popupBottomDockedFor(lookupHostModule);
 
