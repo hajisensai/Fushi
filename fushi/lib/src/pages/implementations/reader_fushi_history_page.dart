@@ -4274,9 +4274,16 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
 
   Future<void> _scrapeEpubCover(MediaItem item) async {
     Navigator.pop(context);
+    final String? isbn = await BookMetadataScrapeFacade.isbnForItem(
+      appModel.database,
+      item,
+    );
+    if (!mounted) return;
     final File? scraped = await showBookCoverScrapeDialog(
       context: context,
       initialQuery: displayTitleForBook(item: item, rawTitle: item.title),
+      isbn: isbn,
+      rakuten: appModel.bookScrapeRakutenCredentials,
     );
     if (scraped == null || !mounted) return;
     // 写回经门面（与 `fushi_cli book scrape-apply` 同一个方法）。

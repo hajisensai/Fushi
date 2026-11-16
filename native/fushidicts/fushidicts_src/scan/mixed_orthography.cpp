@@ -114,12 +114,45 @@ std::string to_hiragana(const std::string& text) {
   return to_u8(s);
 }
 
-std::vector<std::string> reading_candidates(
-    const std::string& text, const std::function<std::vector<std::string>(const std::string&)>& run_readings) {
-  const std::u32string s = to_u32(text);
+namespace {
+
+void append_utf8(std::string& out, char32_t c) { utf8::append(c, std::back_inserter(out)); }
+
+// [text] 逐码点折成平假名后接到 [out] 末尾；返回 [text] 是否非空且全是假名。
+bool append_folded(std::string& out, std::string_view text) {
+  bool all_kana = !text.empty();
+  for (auto it = text.begin(); it != text.end();) {
+    const char32_t c = fold_kana(utf8::next(it, text.end()));
+    all_kana = all_kana && is_kana(c);
+    append_utf8(out, c);
+  }
+  return all_kana;
+}
+
+}  // namespace
+
+std::vector<std::string> reading_candidates(const std::string& text, const RunReadings& run_readings) {
+  // 全程在 UTF-8 上做：一次查词要给三十来个还原形各拼最多 kMaxCandidates 个候选，
+  // 逐候选转 UTF-32 再转回来是这条通路上最大的一笔开销。
+  //
+  // 先切成交替的段（字节区间）：一段连续汉字 / 一段非汉字。
+  struct Segment {
+    std::size_t begin;
+    std::size_t end;
+    bool kanji;
+  };
+  std::vector<Segment> segments;
   std::size_t runs = 0;
-  for (std::size_t i = 0; i < s.size(); ++i) {
-    if (is_kanji(s[i]) && (i == 0 || !is_kanji(s[i - 1]))) ++runs;
+  for (auto it = text.begin(); it != text.end();) {
+    const std::size_t at = static_cast<std::size_t>(it - text.begin());
+    const bool kanji = is_kanji(utf8::next(it, text.end()));
+    const std::size_t next = static_cast<std::size_t>(it - text.begin());
+    if (!segments.empty() && segments.back().kanji == kanji) {
+      segments.back().end = next;
+    } else {
+      segments.push_back({.begin = at, .end = next, .kanji = kanji});
+      if (kanji) ++runs;
+    }
   }
   if (runs == 0 || runs > kMaxKanjiRuns) return {};
   // 每段可取的读音数：段数越多每段越少，组合总数不超过 kMaxCandidates。读音按
@@ -132,45 +165,49 @@ std::vector<std::string> reading_candidates(
     --per_run;
   }
 
-  // 切成交替的段：汉字段换成读音，其余字符（假名转平假名）原样拼接。
-  std::vector<std::vector<std::u32string>> pieces;
-  for (std::size_t i = 0; i < s.size();) {
-    std::size_t j = i;
-    if (is_kanji(s[i])) {
-      while (j < s.size() && is_kanji(s[j])) ++j;
-      std::vector<std::u32string> options;
-      for (const std::string& reading : run_readings(to_u8(s.substr(i, j - i)))) {
-        std::u32string folded = to_u32(reading);
-        for (auto& c : folded) c = fold_kana(c);
-        if (folded.empty() || !std::ranges::all_of(folded, is_kana)) continue;
+  // 汉字段换成读音，其余字符（假名转平假名）原样拼接。
+  std::vector<std::vector<std::string>> pieces;
+  pieces.reserve(segments.size());
+  std::size_t total = 1;
+  for (const Segment& segment : segments) {
+    const std::string_view part(text.data() + segment.begin, segment.end - segment.begin);
+    std::vector<std::string> options;
+    if (segment.kanji) {
+      for (const std::string& reading : run_readings(std::string(part))) {
+        std::string folded;
+        folded.reserve(reading.size());
+        if (!append_folded(folded, reading)) continue;
         if (std::ranges::find(options, folded) != options.end()) continue;
         options.push_back(std::move(folded));
         if (options.size() >= per_run) break;
       }
       if (options.empty()) return {};
-      pieces.push_back(std::move(options));
     } else {
-      while (j < s.size() && !is_kanji(s[j])) ++j;
-      std::u32string literal = s.substr(i, j - i);
-      for (auto& c : literal) c = fold_kana(c);
-      pieces.push_back({std::move(literal)});
+      std::string literal;
+      literal.reserve(part.size());
+      append_folded(literal, part);
+      options.push_back(std::move(literal));
     }
-    i = j;
+    total *= options.size();
+    pieces.push_back(std::move(options));
   }
-  std::size_t total = 1;
-  for (const auto& options : pieces) total *= options.size();
 
+  // 只有一段汉字时候选两两不同（同一段的读音已去重、其余段是定值），不必再查重；
+  // 多段时不同的读音组合可能拼出同一个串（あ + いう / あい + う）。
+  const bool may_repeat = runs > 1;
   std::vector<std::string> out;
   out.reserve(total);
+  std::string candidate;
   for (std::size_t n = 0; n < total; ++n) {
-    std::u32string candidate;
+    candidate.clear();
     std::size_t rest = n;
     for (const auto& options : pieces) {
       candidate += options[rest % options.size()];
       rest /= options.size();
     }
-    std::string utf8 = to_u8(candidate);
-    if (utf8 != text && std::ranges::find(out, utf8) == out.end()) out.push_back(std::move(utf8));
+    if (candidate == text) continue;
+    if (may_repeat && std::ranges::find(out, candidate) != out.end()) continue;
+    out.push_back(candidate);
   }
   return out;
 }
