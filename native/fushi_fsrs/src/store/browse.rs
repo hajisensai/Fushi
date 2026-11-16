@@ -2654,8 +2654,8 @@ impl Session {
 
 /// `anki_dupes`：canAddNotes / addNote 的库内查重。`first` = 笔记类型 → 首字段 id（未删除、有字段的笔记类型；只用
 /// 键：不在里面的笔记类型的笔记不参与查重）；`cands` = `[{norm, type, all, decks}]`（`norm` 是候选首字段的查重规范形，
-/// 调用方已判过空；`all` = 跨笔记类型比较；`decks` = 范围牌组 id，null = 整个集合）。回 `{dup: [bool]}`，与 `cands`
-/// 等长：库里有规范形相同、笔记类型相符（`all` 时不看）、在范围内（有一张可见卡在范围牌组里）的未删除笔记。
+/// 调用方已判过空；`all` = 跨笔记类型比较；`decks` = 范围牌组 id，null = 整个集合）。回 `{dup: [bool], ids: [[笔记 id]]}`，
+/// 都与 `cands` 等长（`ids` 是命中的笔记，查询顺序）：库里有规范形相同、笔记类型相符（`all` 时不看）、在范围内（有一张可见卡在范围牌组里）的未删除笔记。
 ///
 /// 库内笔记的规范形是笔记缓存行的 `dupe_norm`（写缓存行时用同一个 [search::dupe_norm] 算好，srs.db v15），按
 /// `idx_srs_notes_cache_dupe` 查候选的规范形：不读修改记录、不建内存索引、不要浏览会话——冷启动与热查同价，开销
@@ -2751,24 +2751,29 @@ fn anki_dupes(c: &Connection, profile: &str, req: &Value) -> Result<Value, Strin
                 .insert(r.get(1).map_err(sql)?);
         }
     }
-    let out: Vec<bool> = cands
+    // 每个候选在范围内命中的库内笔记（`ids`：文本导入按它更新已有笔记）；`dup` = 有没有命中。
+    let hits: Vec<Vec<&str>> = cands
         .iter()
         .zip(&matched)
         .map(
             |(cand, hit)| match cand.get("decks").and_then(Value::as_array) {
-                None => !hit.is_empty(),
+                None => hit.clone(),
                 Some(ds) => {
                     let scope: HashSet<&str> = ds.iter().filter_map(Value::as_str).collect();
-                    hit.iter().any(|id| {
-                        decks_of
-                            .get(*id)
-                            .is_some_and(|d| d.iter().any(|x| scope.contains(x.as_str())))
-                    })
+                    hit.iter()
+                        .copied()
+                        .filter(|id| {
+                            decks_of
+                                .get(*id)
+                                .is_some_and(|d| d.iter().any(|x| scope.contains(x.as_str())))
+                        })
+                        .collect()
                 }
             },
         )
         .collect();
-    Ok(json!({"dup": out}))
+    let out: Vec<bool> = hits.iter().map(|h| !h.is_empty()).collect();
+    Ok(json!({"dup": out, "ids": hits}))
 }
 
 /// 只在浏览会话里求得了值的叶子（[Session::rewrite] 换成 id 集合）。
@@ -3052,6 +3057,19 @@ mod tests {
             [true, true, false, true, false, true, true, false, false]
         );
         assert!(dupes(&d, json!([])).is_empty());
+        // `ids`：每个候选命中的笔记（文本导入按它更新已有笔记），与 `dup` 一一对应。
+        let r = call(
+            &d,
+            "anki_dupes",
+            json!({"owner": "ankiconnect", "first": {"A": "fa", "B": "x"}, "cands": [
+                cand("cat", "A", false, Value::Null),
+                cand("cat", "A", false, json!(["no-such-deck"])),
+                cand("bird", "A", false, Value::Null),
+            ]}),
+        );
+        assert!(!r["ids"][0].as_array().unwrap().is_empty());
+        assert_eq!(r["ids"][1], json!([]));
+        assert_eq!(r["ids"][2], json!([]));
 
         write(
             &d,
