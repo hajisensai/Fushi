@@ -231,9 +231,15 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
   /// （不经 PopScope）；取消、点遮罩什么都不做。
   Future<void> _onPopBlocked() async {
     final NavigatorState navigator = Navigator.of(context);
+    // 直接 pop 不经 PopScope；页面是导航栈里唯一一页（没处可退）时不 pop，与 canPop 为 true 时
+    // maybePop 把返回交给上层的行为一致。
+    void leave() {
+      if (navigator.canPop()) navigator.pop();
+    }
+
     // 刚保存完的那次 maybePop：此时 canPop 还是上一帧的 false，但已经没有改动了。
     if (!_dirty) {
-      navigator.pop();
+      leave();
       return;
     }
     final _UnsavedChoice? choice = await _showUnsavedDialog(context);
@@ -242,7 +248,7 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
       case _UnsavedChoice.save:
         await _save();
       case _UnsavedChoice.discard:
-        navigator.pop();
+        leave();
       case _UnsavedChoice.cancel:
       case null:
         break;
