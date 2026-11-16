@@ -3546,16 +3546,14 @@ class AppModel
   ///
   /// 打开的作品带着作品级配置时按那份配置的视图（与本机查词同一份过滤，反馈 r9SgiayKxa）：
   /// 按激活配置给，作品配置开着、激活配置关着的词典查出来也会被弹窗滤掉。
-  Set<String> get hiddenDictionaryNames =>
-      WorkProfileScope
-          .instance
-          .lookupView
-          ?.lookupFilters
-          .hiddenDictionaryNames ??
-      dictionaries
-          .where((Dictionary d) => d.isHidden(JapaneseLanguage.instance))
-          .map((Dictionary d) => d.name)
-          .toSet();
+  Set<String> get hiddenDictionaryNames {
+    final ProfileSettingsView? workView = WorkProfileScope.instance.lookupView;
+    if (workView != null) return workView.lookupFilters.hiddenDictionaryNames;
+    return dictionaries
+        .where((Dictionary d) => d.isHidden(JapaneseLanguage.instance))
+        .map((Dictionary d) => d.name)
+        .toSet();
+  }
 
   bool _dictSourceBackfillStarted = false;
 
