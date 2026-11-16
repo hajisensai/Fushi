@@ -1504,6 +1504,9 @@ class _AdvancedMiningRangeBarState extends State<AdvancedMiningRangeBar> {
             slider: true,
             label: label,
             value: formatAdvancedMiningTime(atMs),
+            // 带 increase / decrease 动作的节点必须同时给增减后的读数。
+            increasedValue: formatAdvancedMiningTime(atMs + widget.stepMs),
+            decreasedValue: formatAdvancedMiningTime(atMs - widget.stepMs),
             hint:
                 '${t.popup_advanced_mining_audio_drag_hint} · '
                 '${t.popup_advanced_mining_step_modifier_hint}',

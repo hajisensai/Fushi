@@ -158,6 +158,9 @@ void main() {
         const ValueKey<String>('advancedMiningRangeStart'),
       );
       expect(handle, findsOneWidget);
+      // 句子音频可能排在对话框可视区以下：先滚进视口，指针才落得到把手上。
+      await tester.ensureVisible(handle);
+      await tester.pumpAndSettle();
       final int before = host.describeCalls.length;
       final TestGesture g = await tester.startGesture(tester.getCenter(handle));
       for (int i = 0; i < 6; i++) {
