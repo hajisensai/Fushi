@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-16T06:04:23Z",
+ "generatedAt": "2026-11-16T07:00:13Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "d6bc208f315c7aa17f6df89798262ffb3955360b",
-  "seq": 27513
+  "sha": "bde6fc69a07e7e08d9e08fdfeb285ae635ff114f",
+  "seq": 27568
  },
  "builds": [
   {
@@ -14,10 +14,9 @@
    "unknown": false,
    "publishedAt": "2026-11-16T05:41:33Z",
    "testflight": true,
-   "baseSeq": 27426,
+   "baseSeq": 27435,
    "prs": [
-    3453,
-    3452
+    3453
    ],
    "direct": [],
    "truncated": false,
@@ -34,6 +33,37 @@
     },
     "ios": {
      "state": "ok"
+    }
+   }
+  },
+  {
+   "seq": 27435,
+   "version": "3.3.0",
+   "sha": "f8b5260ddc54375dd9e1adfa7beb7f917d0a3970",
+   "unknown": false,
+   "publishedAt": "2026-11-16T07:00:02Z",
+   "testflight": false,
+   "baseSeq": 27426,
+   "prs": [
+    3452
+   ],
+   "direct": [],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "ok"
+    },
+    "windows": {
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43802024411"
+    },
+    "macos": {
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43802024411"
+    },
+    "ios": {
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43802024411"
     }
    }
   },
@@ -99,45 +129,19 @@
      "state": "ok"
     }
    }
-  },
-  {
-   "seq": 27350,
-   "version": "3.3.0",
-   "sha": "8cab29af7acb28b521432a93667ad85cb85de9c7",
-   "unknown": false,
-   "publishedAt": "2026-11-15T08:51:16Z",
-   "testflight": false,
-   "baseSeq": 27328,
-   "prs": [
-    3443,
-    3392,
-    3434
-   ],
-   "direct": [],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "ok"
-    },
-    "windows": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43691807435"
-    },
-    "macos": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43691807435"
-    },
-    "ios": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43691807435"
-    }
-   }
   }
  ],
  "pending": {
-  "headSha": "d6bc208f315c7aa17f6df89798262ffb3955360b",
-  "headSeq": 27513,
+  "headSha": "bde6fc69a07e7e08d9e08fdfeb285ae635ff114f",
+  "headSeq": 27568,
   "prs": [
+   3499,
+   3445,
+   3455,
+   3444,
+   3493,
+   3450,
+   3463,
    3449,
    3458,
    3459,
@@ -152,19 +156,19 @@
   "platforms": {
    "android": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43812625635"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43820139706"
    },
    "windows": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43812625610"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43820139645"
    },
    "macos": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43812625610"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43820139645"
    },
    "ios": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43812625610"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43820139645"
    }
   }
  },
@@ -190,15 +194,6 @@
    "labels": [
     "merge-approved"
    ]
-  },
-  "3392": {
-   "number": 3392,
-   "title": "SRS 写路径第 16 步：原始 SQL 通道改由 cargo feature raw_sql 门控",
-   "author": "W1ght",
-   "mergedAt": "2026-11-15T07:30:37Z",
-   "additions": 344,
-   "deletions": 43,
-   "labels": []
   },
   "3395": {
    "number": 3395,
@@ -227,22 +222,22 @@
    "deletions": 5420,
    "labels": []
   },
-  "3434": {
-   "number": 3434,
-   "title": "fix(srs): apkg 导入保留 Anki 端已删卡的 revlog，只进统计与日历 (BUG-4626)",
+  "3444": {
+   "number": 3444,
+   "title": "fix(manga): zip 漫画导入（非 UTF-8 文件名 / 2 GiB 上限 / ZIP64 描述符）",
    "author": "W1ght",
-   "mergedAt": "2026-11-15T06:46:20Z",
-   "additions": 715,
-   "deletions": 3,
+   "mergedAt": "2026-11-16T06:14:10Z",
+   "additions": 718,
+   "deletions": 27,
    "labels": []
   },
-  "3443": {
-   "number": 3443,
-   "title": "test(srs): 页面写入后按真实完成信号等落库（#3440 范式推广到 test/srs 全部同类写法）",
+  "3445": {
+   "number": 3445,
+   "title": "统一下载根：在线漫画跟随下载目录，删书可保留章节并重新入库 (BUG-4658)",
    "author": "W1ght",
-   "mergedAt": "2026-11-15T07:51:27Z",
-   "additions": 650,
-   "deletions": 298,
+   "mergedAt": "2026-11-16T06:53:43Z",
+   "additions": 3346,
+   "deletions": 388,
    "labels": []
   },
   "3449": {
@@ -252,6 +247,15 @@
    "mergedAt": "2026-11-16T05:48:31Z",
    "additions": 444,
    "deletions": 50,
+   "labels": []
+  },
+  "3450": {
+   "number": 3450,
+   "title": "fix(manga,epub): 暂存页图改移动、EPUB 流式解压（大包磁盘/内存占用）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-16T06:06:37Z",
+   "additions": 544,
+   "deletions": 33,
    "labels": []
   },
   "3451": {
@@ -290,6 +294,15 @@
    "deletions": 16,
    "labels": []
   },
+  "3455": {
+   "number": 3455,
+   "title": "feat(storage): 覆盖导入后可找回书库——保留覆盖前快照只补缺恢复 + 孤儿书目录重新登记（BUG-4695）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-16T06:37:16Z",
+   "additions": 2629,
+   "deletions": 98,
+   "labels": []
+  },
   "3456": {
    "number": 3456,
    "title": "docs(srs): 协议 4 换代交接说明（交接给 hajisensai）",
@@ -324,6 +337,33 @@
    "mergedAt": "2026-11-16T05:25:36Z",
    "additions": 1482,
    "deletions": 62,
+   "labels": []
+  },
+  "3463": {
+   "number": 3463,
+   "title": "feat(rwkv): 换用 Instant-Only 新模型（Small sm98 默认 / Tiny sm101），权重走自家镜像，修下载取消竞态",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T06:06:28Z",
+   "additions": 1930,
+   "deletions": 489,
+   "labels": []
+  },
+  "3493": {
+   "number": 3493,
+   "title": "feat(leaderboard): 拍板台无刷新重写——页内提交、撤销、快捷键、自动同步",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T06:13:33Z",
+   "additions": 627,
+   "deletions": 41,
+   "labels": []
+  },
+  "3499": {
+   "number": 3499,
+   "title": "fix(settings): 色块摆放的已改过/恢复默认对照随布局的真实默认 (BUG-4701)",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T06:55:34Z",
+   "additions": 163,
+   "deletions": 7,
    "labels": []
   }
  }
