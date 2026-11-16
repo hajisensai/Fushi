@@ -33,20 +33,16 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4086 条。点号进各自文件。
+> 共 4087 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4730](bugs/BUG-4730-home-tab-switch-hidden-pages-rebuild.md) | ✅ | ✅ | 切 tab 时所有访问过的隐藏保活页跟着重建重排（外壳顶部让位挂在共同祖先上） |
 | [BUG-4729](bugs/BUG-4729-fullscreen-settings-unmounts-home-body.md) | ✅ | ✅ | 没有自绘标题栏的平台进设置，正文连同全部保活 tab 被整棵卸载 |
 | [BUG-4728](bugs/BUG-4728-lookup-srs-tabs-remount-on-every-entry.md) | ✅ | ✅ | 查词 / 复习 tab 每次切入整页重挂（16～94 ms），查词页还要拆建一次预热的查词 WebView |
 | [BUG-4727](bugs/BUG-4727-hidden-keepalive-pages-rebuild-on-shared-state.md) | ✅ | ✅ | 回首页卡 100 ms：首页失效书列表 provider，藏着的书架与漫画书架各跟着整页重建四次 |
 | [BUG-4726](bugs/BUG-4726-shelf-activation-swaps-remote-future-double-rebuild.md) | ✅ | ✅ | 每次切到书架，书架与藏着的漫画书架各整页重建两次（切回对账无条件换远端 future） |
 | [BUG-4725](bugs/BUG-4725-games-tab-warm-popup-webview-recreated.md) | ✅ | ✅ | 切进 / 切出游戏 tab 每次销毁并冷建查词弹窗 WebView，卡 80～150 ms |
-| [BUG-4724](bugs/BUG-4724-home-tab-switch-hidden-pages-rebuild.md) | ✅ | ✅ | 切 tab 时所有访问过的隐藏保活页跟着重建重排（外壳顶部让位挂在共同祖先上） |
-> 共 4081 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
 | [BUG-4724](bugs/BUG-4724-card-source-remote-open-no-feedback.md) | ✅ | ✅ | 点卡片来源跳互联 host 上的视频时等拉清单期间毫无反馈，像点坏了 |
 | [BUG-4723](bugs/BUG-4723-lyrics-source-lrclib-reorder.md) | ✅ | ✅ | 歌词来源列表 LRCLIB 固定排第一，不能和插件一起排序 |
 | [BUG-4722](bugs/BUG-4722-cupertino-doubled-library-headers.md) | ✅ | ✅ | Cupertino 下外壳标题条与库页页头大字重复显示页名 |

@@ -1,5 +1,5 @@
 ## BUG-4726 · 每次切到书架，书架与藏着的漫画书架各整页重建两次（切回对账无条件换远端 future）
-- **报告**：2026-11-16（用户：转来群反馈录屏「切 tab 变卡了」；修完 BUG-4724 / BUG-4725 后列出的剩余项「可见 tab 自己的重建：书架约 33 ms」，用户回「都做都做，能优化就优化」）
+- **报告**：2026-11-16（用户：转来群反馈录屏「切 tab 变卡了」；修完 BUG-4730 / BUG-4725 后列出的剩余项「可见 tab 自己的重建：书架约 33 ms」，用户回「都做都做，能优化就优化」）
 - **真实性**：✅ 真 bug（Windows profile 构建实测，探针 `fushi/integration_test/home_tab_switch_perf_itest.dart`）。每次切到书 tab：首帧 build 33～38 ms，约 100 ms 后再来一帧 24～29 ms；timeline 里两帧都是 `FutureBuilder<_RemoteBookState?>` 往下整棵书架网格重建，而且各出现两份——可见的书架一份、藏着的漫画书架一份。
   - 根因：`fushi/lib/src/pages/implementations/reader_fushi_history_page.dart:851-857`（修前行号）`_onShellTabActivated` 在书 tab 被激活时无条件调 `_refreshRemoteBooks()`（`reader_history/remote.part.dart:220`），后者 `setState` 换一个新的 `_remoteBooksFuture`。换 future = 整页当帧重建一次、future 完成（TTL 缓存命中，几十毫秒内）再重建一次，即使远端态一字未变。书架与漫画书架是同一个 State 类的两个实例、订阅同一个信号、判的都是 `== HomeTab.books`（`:853`）：切到书 tab 时藏着的漫画书架跟着重建，切到漫画 tab 时漫画书架反而从不对账。
   - 同一处的第二个错：进度延后重算的可见性判据两个实例也都写死 `HomeTab.books`（`:873`），且欠账各记各的——停在漫画 tab 时到达的阅读位置写入只记欠账，要切到书 tab 才失效缓存。

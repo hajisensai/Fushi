@@ -1,5 +1,5 @@
 ## BUG-4728 · 查词 / 复习 tab 每次切入整页重挂（16～94 ms），查词页还要拆建一次预热的查词 WebView
-- **报告**：2026-11-16（用户：转来群反馈录屏「切 tab 变卡了」；修完 BUG-4724 / BUG-4725 后列出的剩余项「非保活 tab 每次切入整页重挂」与「`home_dictionary_page.dart` 有同一个 inert 即 `SizedBox.shrink()` 的写法」，用户回「都做都做，能优化就优化」）
+- **报告**：2026-11-16（用户：转来群反馈录屏「切 tab 变卡了」；修完 BUG-4730 / BUG-4725 后列出的剩余项「非保活 tab 每次切入整页重挂」与「`home_dictionary_page.dart` 有同一个 inert 即 `SizedBox.shrink()` 的写法」，用户回「都做都做，能优化就优化」）
 - **真实性**：✅ 真 bug（Windows profile 构建实测，探针 `fushi/integration_test/home_tab_switch_perf_itest.dart`）。回访切入首帧 build：查词 19～26 ms，之后 UI 线程还要被堵 35～60 ms（常驻热槽的查词 WebView 冷建）；复习 22～26 ms，第一次回访 94 ms。
   - 根因：`fushi/lib/src/pages/implementations/home_page.dart:2451`（修前行号）`_keepAliveTabs` 不含查词与复习，这两页挂在 `KeyedSubtree` 下、切走即销毁，每次切入从零 inflate + `initState` 重新取数。查词页开页即 seed 常驻热槽，于是每次切入冷建一个 WebView2 并装载 popup.html + JS + CSS、切走又销毁。
   - 同页第二处：`home_dictionary_page.dart:2236`、`:2244`（修前行号）浮层 inert 时返回 `SizedBox.shrink()`，把预热好的 WebView 整个卸载——与游戏工作台 BUG-4725 同一个坑，查词页不保活时只在「被不透明路由盖住再回来」触发，保活后每次切 tab 都会触发。

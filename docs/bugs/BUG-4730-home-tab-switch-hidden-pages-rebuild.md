@@ -1,4 +1,4 @@
-## BUG-4724 · 切 tab 时所有访问过的隐藏保活页跟着重建重排（外壳顶部让位挂在共同祖先上）
+## BUG-4730 · 切 tab 时所有访问过的隐藏保活页跟着重建重排（外壳顶部让位挂在共同祖先上）
 - **报告**：2026-11-16（用户：转来群反馈录屏「切 tab 变卡了」，只截了侧栏；逐帧拆出 7 处 130～420 ms 停顿）
 - **真实性**：✅ 真 bug（Windows profile 构建实测复现，探针 `fushi/integration_test/home_tab_switch_perf_itest.dart`，数据根为安装版真实库拷贝，3840×2160 @2x / 144 Hz）。在库页（书架 / 漫画 / 视频 / 音乐 / 游戏 / 浏览 / 浏览器）与首页 / 查词 / 复习 / 设置之间切，那一帧 build 30～100 ms；同类之间切（漫画 ↔ 视频 ↔ 浏览）是干净的（< 16 ms）。timeline 里能看到切到「设置」「音乐」的那一帧，与本次切换无关、藏着的书架网格（`reader_fushi_history_page.dart` 的 `RefreshIndicator > … > SliverGrid`）被整份重建。
   - 根因：`fushi/lib/src/pages/implementations/home_page.dart:1697-1712`（修前行号，下同）按**当前可见 tab**（`_visibleTab`）算外壳大标题让出的顶部高度 `titleInset`——叠放标题的库页是 `kFushiFloatingChromeGap`（8），其余 tab 是 0——并在 `:1743` 用 `FushiFloatingChromeInset(top: titleInset, child: content)` 挂在 `_withAppleScrollChrome` 里，也就是**全部保活 tab 的共同祖先**上。跨类一切这个 InheritedWidget 的值就翻一次（`updateShouldNotify` 为真），所有访问过的隐藏保活页里读它的浮动工具区（`FushiFloatingChromeOverlay` 再算出嵌套 inset）、主滚动视图、网格全部被通知重建 + 重排，代价随访问过的 tab 数增长。`_hiddenTabContent`（BUG-2976）只挡住了「自上而下的 widget 重建」，挡不住祖先 InheritedWidget 的通知。
