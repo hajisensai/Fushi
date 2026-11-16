@@ -1951,17 +1951,6 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                       visualDensity: VisualDensity.compact,
                       style: _kHeaderIconButtonStyle,
                     ),
-                    FushiIconButtonControl(
-                      key: const ValueKey<String>(
-                        'video-subtitle-list-show-effects',
-                      ),
-                      tooltip: t.video_subtitle_list_show_effects,
-                      icon: FushiIcon(FushiIcons.animation, size: iconSize),
-                      color: _showEffects ? cs.primary : cs.onSurfaceVariant,
-                      onPressed: _toggleShowEffects,
-                      visualDensity: VisualDensity.compact,
-                      style: _kHeaderIconButtonStyle,
-                    ),
                     if (widget.onLookupCue != null)
                       FushiIconButtonControl(
                         key: const ValueKey<String>(
@@ -2005,25 +1994,46 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                 child: HorizontalDragScrollable(
                   child: SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
-                    child: FushiSegmentedButton<VideoSubtitleListFilter>(
-                      showSelectedIcon: false,
-                      segments: VideoSubtitleListFilter.values
-                          .map(
-                            (VideoSubtitleListFilter filter) =>
-                                ButtonSegment<VideoSubtitleListFilter>(
-                                  value: filter,
-                                  label: Text(_filterLabel(filter)),
-                                ),
-                          )
-                          .toList(growable: false),
-                      selected: <VideoSubtitleListFilter>{_filter},
-                      onSelectionChanged: _setFilter,
-                      style: SegmentedButton.styleFrom(
-                        visualDensity: VisualDensity.compact,
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        padding: const EdgeInsets.symmetric(horizontal: 10),
-                        textStyle: TextStyle(fontSize: widget.fontSize - 1),
-                      ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        FushiSegmentedButton<VideoSubtitleListFilter>(
+                          showSelectedIcon: false,
+                          segments: VideoSubtitleListFilter.values
+                              .map(
+                                (VideoSubtitleListFilter filter) =>
+                                    ButtonSegment<VideoSubtitleListFilter>(
+                                      value: filter,
+                                      label: Text(_filterLabel(filter)),
+                                    ),
+                              )
+                              .toList(growable: false),
+                          selected: <VideoSubtitleListFilter>{_filter},
+                          onSelectionChanged: _setFilter,
+                          style: SegmentedButton.styleFrom(
+                            visualDensity: VisualDensity.compact,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            padding: const EdgeInsets.symmetric(horizontal: 10),
+                            textStyle: TextStyle(fontSize: widget.fontSize - 1),
+                          ),
+                        ),
+                        // H7r4mf_z2n：「显示特效字幕」开关放在筛选旁（经典版式第一行
+                        // 工具组在最窄 240 面板里已满；这一行本就可横向拖动）。
+                        const SizedBox(width: 4),
+                        FushiIconButtonControl(
+                          key: const ValueKey<String>(
+                            'video-subtitle-list-show-effects',
+                          ),
+                          tooltip: t.video_subtitle_list_show_effects,
+                          icon: FushiIcon(FushiIcons.animation, size: iconSize),
+                          color: _showEffects
+                              ? cs.primary
+                              : cs.onSurfaceVariant,
+                          onPressed: _toggleShowEffects,
+                          visualDensity: VisualDensity.compact,
+                          style: _kHeaderIconButtonStyle,
+                        ),
+                      ],
                     ),
                   ),
                 ),
