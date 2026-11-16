@@ -33,10 +33,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4115 条。点号进各自文件。
+> 共 4117 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4761](bugs/BUG-4761-cross-app-audio-stop-purge-race.md) | ✅ | ✅ | 跨应用语音缓存停止时清不干净：清扫后还能落下新快照，句子音频临时目录在进程被杀后留在缓存里 |
+| [BUG-4760](bugs/BUG-4760-subtitle-per-char-effect-quadratic.md) | ✅ | ✅ | 逐字拆开歌词的特效标记是两两比较，单字事件多又长时间同屏时解析 ASS 退化成 O(N²) |
 | [BUG-4759](bugs/BUG-4759-lnreader-kakuyomu-list-covers.md) | ✅ | ✅ | LNReader kakuyomu 热门 / 搜索列表无封面、详情页才有 |
 | [BUG-4758](bugs/BUG-4758-ios-asr-jetsam-memory-gate.md) | ✅ | ✅ | iOS 视频页生成字幕被 jetsam 杀（ASR 内存门槛只在 Android 生效） |
 | [BUG-4757](bugs/BUG-4757-miui-screenoff-cpu-kill-reported-as-crash.md) | ✅ | ✅ | MIUI 熄屏耗电检查杀进程（ScreenOffCPUCheckKill）被当成闪退 |

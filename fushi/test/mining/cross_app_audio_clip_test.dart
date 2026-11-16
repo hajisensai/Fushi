@@ -183,6 +183,69 @@ void main() {
     });
   });
 
+  group('sweepStaleCrossAppAudioDirs', () {
+    late Directory root;
+
+    setUp(() async {
+      root = await Directory.systemTemp.createTemp('cross_app_audio_sweep_');
+    });
+
+    tearDown(() async {
+      if (await root.exists()) await root.delete(recursive: true);
+    });
+
+    test('只删过了保留期的句子音频临时目录，刚建的与无关目录不动', () async {
+      final Directory stale = await Directory(
+        '${root.path}/${kCrossAppAudioTempPrefix}old',
+      ).create();
+      await File('${stale.path}/sentence.m4a').writeAsBytes(<int>[1, 2, 3]);
+      final Directory fresh = await Directory(
+        '${root.path}/${kCrossAppAudioTempPrefix}new',
+      ).create();
+      final Directory other = await Directory('${root.path}/other').create();
+      final File lookalike = await File(
+        '${root.path}/${kCrossAppAudioTempPrefix}file',
+      ).create();
+      final DateTime now = DateTime.now();
+
+      // 都是刚建的：一个不删。
+      expect(await sweepStaleCrossAppAudioDirs(root: root, now: now), 0);
+      expect(await stale.exists(), isTrue);
+
+      // 把「现在」拨到 11 分钟后、保留期 10 分钟，再让 fresh 的修改时间跟上。
+      final DateTime later = now.add(const Duration(minutes: 11));
+      await File('${fresh.path}/sentence.m4a').writeAsBytes(<int>[4]);
+      expect(
+        await sweepStaleCrossAppAudioDirs(
+          root: root,
+          now: later,
+          minAge: const Duration(minutes: 10),
+        ),
+        2,
+        reason: 'stale 与 fresh 相对 later 都已过期；先验证数量口径',
+      );
+      expect(await stale.exists(), isFalse);
+      expect(await fresh.exists(), isFalse);
+      expect(await other.exists(), isTrue);
+      expect(await lookalike.exists(), isTrue);
+    });
+
+    test('保留期内的目录留着（查词窗进程可能正在用）', () async {
+      final Directory inUse = await Directory(
+        '${root.path}/${kCrossAppAudioTempPrefix}busy',
+      ).create();
+      final DateTime now = DateTime.now();
+      expect(
+        await sweepStaleCrossAppAudioDirs(
+          root: root,
+          now: now.add(const Duration(minutes: 5)),
+        ),
+        0,
+      );
+      expect(await inUse.exists(), isTrue);
+    });
+  });
+
   group('prepareCrossAppSentenceAudio', () {
     late Directory tmp;
 

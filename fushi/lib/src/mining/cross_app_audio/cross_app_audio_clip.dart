@@ -214,7 +214,7 @@ Future<({String path, Directory dir})?> prepareCrossAppSentenceAudio(
   final Uint8List? clip = cut.clip;
   if (clip == null || clip.isEmpty) return null;
   final Directory dir = await Directory.systemTemp.createTemp(
-    'fushi_cross_app_audio_',
+    kCrossAppAudioTempPrefix,
   );
   final String out = p.join(dir.path, 'sentence.$extension');
   bool ok = false;
@@ -259,6 +259,37 @@ Future<({Uint8List? clip, String? readError})> _cutInBackground(
 }
 
 /// 删掉 [prepareCrossAppSentenceAudio] 建的临时目录（Anki 后端已拷走媒体）。
+/// [prepareCrossAppSentenceAudio] 临时目录的名字前缀。
+const String kCrossAppAudioTempPrefix = 'fushi_cross_app_audio_';
+
+/// 制卡中途进程被杀时，[prepareCrossAppSentenceAudio] 的临时目录（里面是从其他 app 的
+/// 声音里截出来的句子音频）没人删。主引擎启动与停止采集时扫一遍：只删 [minAge] 之前建的
+/// ——查词窗进程可能正在用刚建的那一个（编码 + 制卡是秒级的事）。返回删掉的目录数。
+Future<int> sweepStaleCrossAppAudioDirs({
+  Directory? root,
+  Duration minAge = const Duration(minutes: 10),
+  DateTime? now,
+}) async {
+  final Directory base = root ?? Directory.systemTemp;
+  final DateTime cutoff = (now ?? DateTime.now()).subtract(minAge);
+  int removed = 0;
+  try {
+    await for (final FileSystemEntity entity in base.list(followLinks: false)) {
+      if (entity is! Directory) continue;
+      if (!p.basename(entity.path).startsWith(kCrossAppAudioTempPrefix)) {
+        continue;
+      }
+      final FileStat stat = await entity.stat();
+      if (stat.modified.isAfter(cutoff)) continue;
+      await entity.delete(recursive: true);
+      removed++;
+    }
+  } on FileSystemException catch (error, stack) {
+    ErrorLogService.instance.log('CrossAppAudio.sweep', error, stack);
+  }
+  return removed;
+}
+
 Future<void> deleteCrossAppAudioDir(Directory dir) async {
   try {
     if (await dir.exists()) await dir.delete(recursive: true);

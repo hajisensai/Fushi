@@ -264,12 +264,14 @@ public class CrossAppAudioService extends Service {
     }
 
     private void releaseCapture() {
-        if (capturing) {
+        boolean wasCapturing = capturing;
+        // 先置假再清扫：provider 的快照与清扫互斥，清扫之后的快照请求看到的是「没在录」。
+        capturing = false;
+        if (instance == this) instance = null;
+        if (wasCapturing) {
             CrossAppAudioProvider.setCapturingMarker(this, false);
             CrossAppAudioProvider.deleteSnapshots(this);
         }
-        capturing = false;
-        if (instance == this) instance = null;
         Thread thread = captureThread;
         captureThread = null;
         AudioRecord rec = record;

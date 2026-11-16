@@ -106,26 +106,36 @@ public class CrossAppAudioProvider extends ContentProvider {
         }
     }
 
+    /**
+     * 快照落盘与停止时的清扫互斥：「确认还在录 → 取环 → 写文件」整段持锁，
+     * [#deleteSnapshots] 也持同一把锁，并且服务先把「在录」置假再清扫——所以一次快照要么
+     * 在清扫前写完（被扫掉），要么在清扫后看到「没在录」而不写，停止后不会再冒出新文件。
+     */
+    private static final Object SNAPSHOT_LOCK = new Object();
+
     @Nullable
     private static Bundle snapshot(@NonNull Context context, int backMs) {
-        if (!CrossAppAudioService.isRunning()) {
-            // 主进程被杀后重启：服务早没了，标记是陈旧的。
-            setCapturingMarker(context, false);
-            return null;
-        }
-        byte[] pcm = CrossAppAudioService.snapshot(backMs);
-        if (pcm == null || pcm.length == 0) return null;
-        File dir = new File(context.getCacheDir(), DIR);
-        if (!dir.isDirectory() && !dir.mkdirs()) return null;
-        prune(dir);
-        File out = new File(dir, "lookup_" + System.currentTimeMillis() + ".pcm");
-        try (FileOutputStream stream = new FileOutputStream(out)) {
-            stream.write(pcm);
-        } catch (IOException e) {
-            Log.w(TAG, "snapshot write failed", e);
-            //noinspection ResultOfMethodCallIgnored
-            out.delete();
-            return null;
+        File out;
+        synchronized (SNAPSHOT_LOCK) {
+            if (!CrossAppAudioService.isRunning()) {
+                // 主进程被杀后重启：服务早没了，标记是陈旧的。
+                setCapturingMarker(context, false);
+                return null;
+            }
+            byte[] pcm = CrossAppAudioService.snapshot(backMs);
+            if (pcm == null || pcm.length == 0) return null;
+            File dir = new File(context.getCacheDir(), DIR);
+            if (!dir.isDirectory() && !dir.mkdirs()) return null;
+            prune(dir);
+            out = new File(dir, "lookup_" + System.currentTimeMillis() + ".pcm");
+            try (FileOutputStream stream = new FileOutputStream(out)) {
+                stream.write(pcm);
+            } catch (IOException e) {
+                Log.w(TAG, "snapshot write failed", e);
+                //noinspection ResultOfMethodCallIgnored
+                out.delete();
+                return null;
+            }
         }
         Bundle result = new Bundle();
         result.putString("path", out.getAbsolutePath());
@@ -135,14 +145,18 @@ public class CrossAppAudioProvider extends ContentProvider {
         return result;
     }
 
-    /** 停止采集时调：其他 app 的录音不在用户关掉开关后继续留在缓存里。 */
+    /**
+     * 停止采集时调（调用前服务必须已把「在录」置假）：其他 app 的录音不在用户关掉开关后
+     * 继续留在缓存里。目录里的东西全删（含写到一半的文件与标记），不按扩展名挑。
+     */
     static void deleteSnapshots(@NonNull Context context) {
-        File[] files = new File(context.getCacheDir(), DIR)
-                .listFiles((File f) -> f.getName().endsWith(".pcm"));
-        if (files == null) return;
-        for (File f : files) {
-            //noinspection ResultOfMethodCallIgnored
-            f.delete();
+        synchronized (SNAPSHOT_LOCK) {
+            File[] files = new File(context.getCacheDir(), DIR).listFiles();
+            if (files == null) return;
+            for (File f : files) {
+                //noinspection ResultOfMethodCallIgnored
+                f.delete();
+            }
         }
     }
 
