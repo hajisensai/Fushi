@@ -77,6 +77,8 @@ pub struct Hold {
     pub kind: EntKind,
     pub entity: Ref,
     pub op: OpId,
+    /// 这条删除在 `ops` 里的键（[op] 的打包形，读它的操作头 / 正文不必再按 ID 换一次）。
+    pub k: i64,
     /// 与它并发的操作：修改（含标签、清除）、复习、挪进来的卡。
     pub edits: u64,
     pub reviews: u64,
@@ -804,6 +806,7 @@ impl<'t, 'c> Index<'t, 'c> {
                 kind: ent_kind(kind)?,
                 entity,
                 op: self.t.id_of_key(k)?,
+                k,
                 edits: edits as u64,
                 reviews: reviews as u64,
                 moves: moves as u64,

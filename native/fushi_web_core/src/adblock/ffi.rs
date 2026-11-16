@@ -5,7 +5,8 @@
 //! - 返回字节缓冲的函数把长度写进 `*out_len`，调用方用 `fwc_bytes_free(ptr, len)` 释放；
 //!   长度 0 / NULL 表示「没有」（例如 cosmetic 在白名单站点上）；
 //! - 永不 panic 过 FFI 边界；
-//! - 慢命令只有 `fwc_adblock_finish_sync`（可能要编译引擎），Dart 侧在后台 isolate 调；
+//! - 慢命令只有 `fwc_adblock_load_cached` / `fwc_adblock_finish_sync`（反序列化或编译引擎），
+//!   Dart 侧在后台 isolate 调；
 //!   `fwc_adblock_check` 是微秒级、不分配、不回调的热路径，Dart 侧绑成 leaf 调用。
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -260,6 +261,20 @@ pub unsafe extern "C" fn fwc_adblock_finish_sync(
 ) -> *mut u8 {
     guarded(core, out_len, |c| {
         serde_json::to_vec(&c.finish_sync()).unwrap_or_default()
+    })
+}
+
+/// 暖机：不联网，把磁盘缓存对应的引擎装进内存（反序列化，慢——后台 isolate 调）。返回新快照。
+///
+/// # Safety
+/// 同 `fwc_adblock_snapshot`。
+#[no_mangle]
+pub unsafe extern "C" fn fwc_adblock_load_cached(
+    core: *const AdblockCore,
+    out_len: *mut usize,
+) -> *mut u8 {
+    guarded(core, out_len, |c| {
+        serde_json::to_vec(&c.load_cached()).unwrap_or_default()
     })
 }
 
