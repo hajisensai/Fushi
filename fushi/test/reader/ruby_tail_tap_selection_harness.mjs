@@ -87,6 +87,59 @@ try {
       check(multi.classList.contains('fushi-selection-ruby-active'),
         'covering every base of a multi-pair ruby paints it once');
       selection.clearSelection();
+
+      // ssJjbvbAbs：义训把两个词标进同一个 <ruby>（じょうろ鼬 / ポットウィーゼル）。吸附后从组首
+      // 查词只能查到「じょうろ」，点「鼬」必须还能查到鼬：payload 带上被点字的位置与从被点字
+      // 起扫的整份候选 payload，由宿主按命中长度判定；采用后选区 / 高亮跟随被点字。
+      document.body.innerHTML =
+        '<p>ここ、<ruby>じょうろ鼬<rt>ポットウィーゼル</rt></ruby>が巣を作ってるの！</p>';
+      const potRuby = document.querySelector('ruby');
+      const potBase = potRuby.firstChild;
+      selection.clearSelection();
+      window.lastPayload = null;
+      const t3 = selection.selectFromPosition(potBase, 4, 20, 10, 10, false);
+      check(t3.indexOf('じょうろ鼬が') === 0, 'the snapped scan still starts at the ruby start: ' + t3);
+      const snap = window.lastPayload && window.lastPayload.rubySnap;
+      check(!!snap && snap.tapIndex === 4,
+        'the payload carries the tapped code point index inside the snapped text: ' +
+          JSON.stringify(snap && snap.tapIndex));
+      check(!!snap && snap.selection && snap.selection.text.indexOf('鼬が巣') === 0,
+        'the payload carries the lookup scanned from the tapped char: ' +
+          (snap && snap.selection && snap.selection.text));
+      check(!!snap && snap.selection && !snap.selection.rubySnap &&
+          (snap.selection.rubyReadings || []).length === 0,
+        'the tapped-char candidate carries no ruby reading for the partially covered ruby');
+      check(selection.adoptRubySnapTap('stale text') === false,
+        'adopting is refused when the live selection is no longer the reported one');
+      check(selection.adoptRubySnapTap(t3) === true, 'the host can adopt the tapped-char start');
+      check(selection.selection.startNode === potBase && selection.selection.startOffset === 4 &&
+          selection.selection.text.indexOf('鼬が') === 0,
+        'the adopted selection starts at the tapped char');
+      selection.highlightSelection(1);
+      const adopted = selRanges();
+      check(adopted.length === 1 && adopted[0].toString() === '鼬' &&
+          !potRuby.classList.contains('fushi-selection-ruby-active'),
+        'the adopted lookup highlights exactly the tapped char');
+      check(selection.designatesCurrentSelection({ node: potBase, offset: 4 },
+          selection.selectionStartFor(potBase, 4)),
+        'tapping the adopted char again designates the current selection (toggle)');
+      check(!selection.designatesCurrentSelection({ node: potBase, offset: 0 },
+          selection.selectionStartFor(potBase, 0)),
+        'tapping the ruby start after adopting is a different lookup');
+      // 点组首「じ」：不带候选（被点字就是起点）；查到「じょうろ」后点「鼬」是另一个词，不是同词取消。
+      selection.clearSelection();
+      window.lastPayload = null;
+      selection.selectFromPosition(potBase, 0, 20, 10, 10, false);
+      check(window.lastPayload && !window.lastPayload.rubySnap,
+        'tapping the ruby start carries no tapped-char candidate');
+      selection.highlightSelection(4);
+      check(!selection.designatesCurrentSelection({ node: potBase, offset: 4 },
+          selection.selectionStartFor(potBase, 4)),
+        'a ruby char outside the matched word is not the current selection');
+      check(selection.designatesCurrentSelection({ node: potBase, offset: 2 },
+          selection.selectionStartFor(potBase, 2)),
+        'a ruby char inside the matched word is the current selection');
+      selection.clearSelection();
       return results;
     })()`);
     count += result.length;

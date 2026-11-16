@@ -254,8 +254,29 @@ extension _ReaderLookup on _ReaderFushiPageState {
   LookupOrigin _lookupOriginOf(ReaderSelectionData data) =>
       data.fromHover ? LookupOrigin.hover : LookupOrigin.explicit;
 
-  Future<void> _handleTextSelected(ReaderSelectionData data) async {
-    if (data.text.isEmpty) {
+  /// ssJjbvbAbs：把正文选区换成从被点字起扫的那份（[resolveRubySnapSelection] 判定
+  /// ruby 组首查到的词覆盖不到被点的字时调）。半销毁 WebView 上 eval 抛异常时记日志并
+  /// 当作没换成——查词按吸附后的选区继续，查的与亮的仍是同一份。
+  Future<bool> _adoptRubySnapTap(String expectedText) async {
+    final InAppWebViewController? surface = _surfaceController;
+    if (surface == null) return false;
+    try {
+      final Object? raw = await surface.evaluateJavascript(
+        source: ReaderSelectionScripts.adoptRubySnapTapInvocation(expectedText),
+      );
+      return raw == 'true';
+    } catch (e, stack) {
+      ErrorLogService.instance.log(
+        'ReaderFushi.adoptRubySnapTap.eval',
+        e,
+        stack,
+      );
+      return false;
+    }
+  }
+
+  Future<void> _handleTextSelected(ReaderSelectionData selected) async {
+    if (selected.text.isEmpty) {
       return;
     }
     // Dual-screen companion: when it is up the lookup opens on the second
@@ -266,7 +287,15 @@ extension _ReaderLookup on _ReaderFushiPageState {
     // Same path for paginated, continuous and vn modes and the audiobook
     // view. The synchronous check keeps the single-screen path free of an
     // await.
-    if (_companion.isActive && await _routeLookupToCompanion(data)) return;
+    if (_companion.isActive && await _routeLookupToCompanion(selected)) return;
+    if (!mounted) return;
+    // ruby 组首吸附只是先试：组首查到的词覆盖不到被点的字（义训「じょうろ鼬」点「鼬」）就改用
+    // 从被点字起扫的选区，下面的查词 / 高亮 / 句子与偏移缓存都跟随最终采用的这一份。
+    final ReaderSelectionData data = await resolveRubySnapSelection(
+      selected,
+      matchedLength: lookupMatchedCharCount,
+      adoptTapStart: _adoptRubySnapTap,
+    );
     if (!mounted) return;
     _removeSelectionActionBar();
     // TODO-393 / BUG-缓存串味：每次新查词（换词 / 换句）都从「只制当前句」起步，丢弃

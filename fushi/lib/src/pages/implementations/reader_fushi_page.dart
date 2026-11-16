@@ -175,6 +175,7 @@ import 'package:fushi/src/reader/reader_jump_history.dart';
 import 'package:fushi/src/utils/misc/jump_history.dart';
 import 'package:fushi/src/utils/components/fushi_jump_history_controls.dart';
 import 'package:fushi/src/reader/reader_selection_data.dart';
+import 'package:fushi/src/reader/reader_ruby_snap.dart';
 import 'package:fushi/src/reader/reader_selection_toolbar_layout.dart';
 import 'package:fushi/src/reader/reader_selection_scripts.dart';
 import 'package:fushi/src/reader/reader_chrome_floating.dart';
