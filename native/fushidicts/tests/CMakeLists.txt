@@ -276,6 +276,17 @@ add_test(NAME union_filter_test
          COMMAND union_filter_test
                  "${FUSHI_ROOT}/../../fushi/assets/transforms/ja.json")
 
+# 键索引（hash/key_index.hpp，key.index）：无假阴性、枚举完整、大小在预期内、
+# 装不进 / 坏文件被拒。
+add_executable(key_index_test
+    "${CMAKE_CURRENT_SOURCE_DIR}/key_index_test.cpp")
+target_link_libraries(key_index_test PRIVATE fushidicts)
+target_include_directories(key_index_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}" "${FUSHI_SRC}")
+if(MSVC)
+  target_compile_options(key_index_test PRIVATE /utf-8 /Zc:__cplusplus /permissive-)
+endif()
+add_test(NAME key_index_test COMMAND key_index_test)
+
 # BUG-2853：Yomitan 词典自带变形（`[formOf, [rule...]]` 重定向记录）在 lookup 里被跟随。
 add_executable(yomitan_redirect_lookup_test
     "${CMAKE_CURRENT_SOURCE_DIR}/yomitan_redirect_lookup_test.cpp")
