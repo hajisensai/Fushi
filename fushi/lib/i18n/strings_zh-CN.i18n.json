@@ -7010,7 +7010,7 @@
   "onboarding_pack_action_audio_desc": "给推荐包没覆盖的语言添加在线发音来源。",
   "onboarding_pack_action_dictionary_desc": "学其他语言？在这里导入对应词典。",
   "onboarding_pack_action_download_desc": "后台从多个来源同时下载，下完自动导入。随时可取消，下次从断点续传。",
-  "onboarding_pack_action_import_existing_desc": "包已经在硬盘上了。确认框里选「合并」就不会动你已有的数据。",
+  "onboarding_pack_action_import_existing_merge_desc": "包已经在硬盘上了。导入只做合并，不会动你已有的书、进度和设置。",
   "onboarding_pack_action_pick_desc": "已经拿到包的 zip？直接从硬盘导入，跳过下载。",
   "onboarding_pack_action_website": "打开官网下载页",
   "onboarding_pack_action_website_desc": "给下载工具用的分片直链。下完回来用「选择本地包文件」导入。",

@@ -7010,7 +7010,7 @@
   "onboarding_pack_action_audio_desc": "Voeg online uitspraakbronnen toe voor talen die het pakket niet dekt.",
   "onboarding_pack_action_dictionary_desc": "Leer je een andere taal? Importeer hier de bijbehorende woordenboeken.",
   "onboarding_pack_action_download_desc": "Downloadt op de achtergrond van meerdere bronnen tegelijk en importeert daarna. Je kunt altijd annuleren; het gaat verder waar het gebleven was.",
-  "onboarding_pack_action_import_existing_desc": "Het pakket staat al op schijf. Kies «Samenvoegen» in het bevestigingsvenster om je bestaande gegevens te behouden.",
+  "onboarding_pack_action_import_existing_merge_desc": "Het pakket staat al op de schijf. Het wordt samengevoegd met je gegevens: je boeken, voortgang en instellingen blijven ongewijzigd.",
   "onboarding_pack_action_pick_desc": "Heb je de zip van het pakket al? Importeer hem van schijf en sla de download over.",
   "onboarding_pack_action_website": "Downloadpagina openen",
   "onboarding_pack_action_website_desc": "Deel-links voor downloadmanagers. Kom daarna terug en gebruik «Kies een pakketbestand».",
