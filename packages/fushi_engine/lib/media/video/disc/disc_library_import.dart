@@ -135,7 +135,8 @@ class DiscLibraryImporter {
       // 对齐合集（[_hasUnsettledEpisodeRows]）。
       if (disc == null || await _hasUnsettledEpisodeRows(disc)) {
         unreadable.add(root);
-      } else {
+      } else if (restoreDissolvedGroups ||
+          !await _legacyDiscCollectionDeleted(disc)) {
         read.add(disc);
       }
     }
@@ -243,6 +244,39 @@ class DiscLibraryImporter {
     );
   }
 
+  /// [disc] 是一张要并进发布组的剧集盘，修前它按盘名单独成一个合集，那个合集被用户
+  /// 删过（墓碑挂在旧盘名 / 它的「盘名 (上级目录)」消歧名下），且这张盘还没有任何
+  /// 分集行（从没按新方案入过库）。是的话本轮跳过整张盘，与修前「用户删过盘合集，
+  /// 重扫不复活」同一语义（§7-D5）：发布组合集改用去卷标的作品名之后，旧名下的墓碑
+  /// 不会再被 [_importReleaseSetCollection] 查到。已经有分集行的盘说明删除之后又
+  /// 入过库（下载入库 / 恢复分组），不再拿旧墓碑挡它。
+  Future<bool> _legacyDiscCollectionDeleted(BlurayDisc disc) async {
+    if (!disc.titles.any((BlurayTitle title) => title.isEpisode)) return false;
+    final String stem = blurayReleaseStem(disc);
+    // 只认盘名与「盘名 (上级目录)」两个候选：再往后的 `(2)`、`(3)` 不带这张盘的
+    // 任何特征，可能是别的同名盘的合集。
+    final String second = blurayCollectionNameCandidates(
+      disc.name,
+      disc.rootPath,
+    ).elementAt(1);
+    final List<String> legacyNames = <String>[
+      disc.name,
+      if (second != '${disc.name} (2)') second,
+    ].where((String name) => name != stem).toList();
+    bool deleted = false;
+    for (final String name in legacyNames) {
+      if (await _db.hasCollectionDeletionTombstone(name, 'playlist')) {
+        deleted = true;
+        break;
+      }
+    }
+    if (!deleted) return false;
+    for (final VideoBookRow row in await _rowsOnDisc(disc.rootPath)) {
+      if (isBlurayEpisodePath(row.videoPath)) return false;
+    }
+    return true;
+  }
+
   /// 库里盘根是 [discRootPath] 的行。
   Future<List<VideoBookRow>> _rowsOnDisc(String discRootPath) async {
     final String root = normalizeVideoPath(discRootPath);
@@ -318,8 +352,9 @@ class DiscLibraryImporter {
   }
 
   /// 存量迁移第二步：把整卷行原来的观看状态折到各集上。看完的整卷 → 各集都记看完；
-  /// 断点落在第 k 集 → 第 1～k-1 集记看完、断点减去该集起点写到第 k 集。只补空：
-  /// 分集行自己已有断点 / 看完标记的不覆盖。
+  /// 断点落在第 k 集 → 第 1～k-1 集记看完、断点减去该集起点写到第 k 集。看完标记只补空；
+  /// 第 k 集已有断点时按最后观看时刻新者胜（§7-D4：菜单绑定新建的整卷行每轮都会被
+  /// 回收，它上面较新的断点不能因为那一集早先看过而丢掉）。
   Future<void> _foldWholeTitleProgress(_WholeTitleCarry carry) async {
     final VideoBookRow whole = carry.row;
     final DateTime? completedAt = whole.completedAt;
@@ -358,9 +393,13 @@ class DiscLibraryImporter {
       }
     }
     final int playedAt = whole.lastPlayedAt ?? 0;
+    // 分集行没有断点，或整卷行上的断点更新（从原盘菜单「本編再生」接着看过）：
+    // 整卷行回收前把断点交给那一集。分集行自己的断点更新时不动。
+    bool wholeSupersedes(VideoBookRow episode) =>
+        episode.lastPositionMs <= 0 || playedAt > (episode.lastPlayedAt ?? 0);
     if (index == 0) {
-      // 断点就在第 1 集里：就地接管的行原样带着它；重复行的断点补给第 1 集。
-      if (!carry.adopted && episodes.first.lastPositionMs <= 0) {
+      // 断点就在第 1 集里：就地接管的行原样带着它；重复行的断点交给第 1 集。
+      if (!carry.adopted && wholeSupersedes(episodes.first)) {
         await _db.updateVideoBookPosition(
           episodes.first.bookUid,
           position,
@@ -381,7 +420,7 @@ class DiscLibraryImporter {
             ..where((t) => t.bookUid.equals(episodes.first.bookUid)))
           .write(const VideoBooksCompanion(lastPositionMs: Value<int>(0)));
     }
-    if (episodes[index].lastPositionMs <= 0) {
+    if (wholeSupersedes(episodes[index])) {
       await _db.updateVideoBookPosition(
         episodes[index].bookUid,
         position - startMsOf(index),

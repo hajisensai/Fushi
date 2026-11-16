@@ -230,6 +230,113 @@ void main() {
     expect(first.lastPositionMs, 600 * 1000);
   });
 
+  test('菜单整卷行上的断点比分集行新：折算时覆盖那一集的旧断点（新者胜）', () async {
+    await import(<String>[disc1]);
+    final VideoBookRow third = (await db.allVideoBooks()).singleWhere(
+      (VideoBookRow row) => row.videoPath == episodePath(disc1, 3),
+    );
+    // 早先在分集行上看到第 3 集的第 300 秒。
+    await db.updateVideoBookPosition(
+      third.bookUid,
+      300 * 1000,
+      playedAt: 1794318000000,
+    );
+    // 之后从原盘菜单「本編再生」播整卷，看到第 3 集的第 900 秒。
+    final String whole = p.join(disc1, 'BDMV', 'PLAYLIST', '00001.mpls');
+    await db.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value<String>('video/00001'),
+        title: const Value<String>('魔女の旅々　上巻 - 00001'),
+        videoPath: Value<String>(whole),
+        lastPositionMs: const Value<int>((2864 + 900) * 1000),
+        lastPlayedAt: const Value<int?>(1794318869583),
+      ),
+    );
+    await import(<String>[disc1]);
+    expect(await db.getVideoBookByBookUid('video/00001'), isNull);
+    final VideoBookRow after = (await db.getVideoBookByBookUid(third.bookUid))!;
+    expect(after.lastPositionMs, 900 * 1000);
+    expect(after.lastPlayedAt, 1794318869583);
+  });
+
+  test('菜单整卷行上的断点比分集行旧：分集行自己的断点不被覆盖', () async {
+    await import(<String>[disc1]);
+    final VideoBookRow third = (await db.allVideoBooks()).singleWhere(
+      (VideoBookRow row) => row.videoPath == episodePath(disc1, 3),
+    );
+    await db.updateVideoBookPosition(
+      third.bookUid,
+      300 * 1000,
+      playedAt: 1794318869583,
+    );
+    final String whole = p.join(disc1, 'BDMV', 'PLAYLIST', '00001.mpls');
+    await db.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value<String>('video/00001'),
+        title: const Value<String>('魔女の旅々　上巻 - 00001'),
+        videoPath: Value<String>(whole),
+        lastPositionMs: const Value<int>((2864 + 900) * 1000),
+        lastPlayedAt: const Value<int?>(1794318000000),
+      ),
+    );
+    await import(<String>[disc1]);
+    final VideoBookRow after = (await db.getVideoBookByBookUid(third.bookUid))!;
+    expect(after.lastPositionMs, 300 * 1000);
+    expect(after.lastPlayedAt, 1794318869583);
+  });
+
+  test('用户删过的旧单盘合集（墓碑在旧盘名下）：并组改名后这张盘也不复活', () async {
+    // 修前的库：上巻一个单盘合集，用户把它删了（成员行留着、合集名记了墓碑）。
+    final String whole = p.join(disc1, 'BDMV', 'PLAYLIST', '00001.mpls');
+    await db.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value<String>('video/00001 (13)'),
+        title: const Value<String>('魔女の旅々　上巻 - 01'),
+        videoPath: Value<String>(whole),
+      ),
+    );
+    final int oldCollection = await db.createMediaCollection(
+      '魔女の旅々　上巻',
+      collectionType: 'playlist',
+    );
+    await db.addToCollection(
+      oldCollection,
+      MediaKind.video,
+      'video/00001 (13)',
+      userIntent: false,
+    );
+    await db.deleteMediaCollection(oldCollection);
+
+    final DiscLibraryImportReport report = await import(<String>[disc1, disc2]);
+    expect(
+      report.discs.map((DiscLibraryImportedDisc d) => d.rootPath),
+      <String>[disc2],
+    );
+    final int collectionId = report.discs.single.collectionId;
+    expect(await memberPaths(collectionId), <String>[
+      for (int i = 1; i <= 6; i++) episodePath(disc2, i),
+    ]);
+    final VideoBookRow untouched = (await db.getVideoBookByBookUid(
+      'video/00001 (13)',
+    ))!;
+    expect(untouched.videoPath, whole, reason: '被删的那张盘一行都不碰');
+    expect(
+      (await db.allVideoBooks()).where(
+        (VideoBookRow row) => row.videoPath.startsWith(disc1),
+      ),
+      hasLength(1),
+    );
+
+    // 下载入库（恢复已解散分组）照旧把它并回来。
+    final DiscLibraryImportReport restored = await importer.importBlurayDiscs(
+      <String>[disc1, disc2],
+      sourceId: null,
+      restoreDissolvedGroups: true,
+    );
+    expect(restored.discs, hasLength(2));
+    expect(await memberPaths(collectionId), allEpisodePaths());
+  });
+
   test('盘不完整：缺片段的剧集盘重扫，分集行、进度与合集成员都不变', () async {
     final int collectionId = (await import(<String>[
       disc1,
