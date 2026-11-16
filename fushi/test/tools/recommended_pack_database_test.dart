@@ -269,6 +269,23 @@ void main() {
     ]);
   });
 
+  test('renames local audio labels in audio_source_configs too', () {
+    final String out = renameRecommendedPackAudioSourceConfigs(
+      'j:${jsonEncode(<Object>[
+        <String, Object>{'kind': 'localAudio', 'label': 'android.db', 'path': '/a'},
+        <String, Object>{'kind': 'localAudio', 'label': 'android_english.db', 'path': '/b'},
+        <String, Object>{'kind': 'remoteAudio', 'label': 'Anki', 'url': 'http://x'},
+        <String, Object>{'kind': 'hibikiRemote', 'enabled': false},
+      ])}',
+    );
+    expect(out.startsWith('j:'), isTrue);
+    final List<Object?> entries = jsonDecode(out.substring(2)) as List<Object?>;
+    expect(
+      entries.map((e) => (e! as Map<String, Object?>)['label']).toList(),
+      <Object?>['Japanese audio', 'English audio', 'Anki', null],
+    );
+  });
+
   test('refuses to publish an audio library without a public name', () {
     expect(
       () => renameRecommendedPackAudioDbs(

@@ -10,29 +10,61 @@ const Map<String, String> kRecommendedPackAudioDisplayNames = <String, String>{
   'android_english.db': 'English audio',
 };
 
-/// 把 `local_audio_dbs` 偏好值（`s:` + JSON 列表）里的显示名换成公开名。
+/// 把 `local_audio_dbs` 偏好值（`s:` + JSON 列表）里的 `displayName` 换成公开名。
 ///
 /// 已是公开名的条目原样保留（可重复执行）；出现没登记过的显示名直接抛错，
 /// 免得新加的音频库带着原始文件名混进公开包。
-String renameRecommendedPackAudioDbs(String prefValue) {
-  const String prefix = 's:';
+String renameRecommendedPackAudioDbs(String prefValue) => _renameAudioEntries(
+  prefValue,
+  key: 'local_audio_dbs',
+  prefix: 's:',
+  field: 'displayName',
+  applies: (Map<String, Object?> entry) => true,
+);
+
+/// 把 `audio_source_configs` 偏好值（`j:` + JSON 列表）里本地音频源的 `label`
+/// 换成公开名，与 [renameRecommendedPackAudioDbs] 保持一致。
+String renameRecommendedPackAudioSourceConfigs(String prefValue) =>
+    _renameAudioEntries(
+      prefValue,
+      key: 'audio_source_configs',
+      prefix: 'j:',
+      field: 'label',
+      applies: (Map<String, Object?> entry) => entry['kind'] == 'localAudio',
+    );
+
+/// 推荐包里需要改写音频库名字的偏好键 → 改写函数。
+const Map<String, String Function(String)> _kAudioNamePrefRewriters =
+    <String, String Function(String)>{
+      'local_audio_dbs': renameRecommendedPackAudioDbs,
+      'audio_source_configs': renameRecommendedPackAudioSourceConfigs,
+    };
+
+String _renameAudioEntries(
+  String prefValue, {
+  required String key,
+  required String prefix,
+  required String field,
+  required bool Function(Map<String, Object?> entry) applies,
+}) {
   if (!prefValue.startsWith(prefix)) {
-    throw StateError('local_audio_dbs 偏好格式异常：缺少 s: 前缀');
+    throw StateError('$key 偏好格式异常：缺少 $prefix 前缀');
   }
   final Object? decoded = jsonDecode(prefValue.substring(prefix.length));
   if (decoded is! List<Object?>) {
-    throw StateError('local_audio_dbs 偏好格式异常：不是 JSON 列表');
+    throw StateError('$key 偏好格式异常：不是 JSON 列表');
   }
   final Set<String> publicNames = kRecommendedPackAudioDisplayNames.values
       .toSet();
   for (final Object? entry in decoded) {
     if (entry is! Map<String, Object?>) {
-      throw StateError('local_audio_dbs 偏好格式异常：条目不是对象');
+      throw StateError('$key 偏好格式异常：条目不是对象');
     }
-    final Object? name = entry['displayName'];
+    if (!applies(entry)) continue;
+    final Object? name = entry[field];
     if (name == null) continue;
     if (name is! String) {
-      throw StateError('local_audio_dbs 偏好格式异常：displayName 不是字符串');
+      throw StateError('$key 偏好格式异常：$field 不是字符串');
     }
     if (publicNames.contains(name)) continue;
     final String? renamed = kRecommendedPackAudioDisplayNames[name];
@@ -42,7 +74,7 @@ String renameRecommendedPackAudioDbs(String prefValue) {
         '先在 kRecommendedPackAudioDisplayNames 里登记',
       );
     }
-    entry['displayName'] = renamed;
+    entry[field] = renamed;
   }
   return '$prefix${jsonEncode(decoded)}';
 }
@@ -79,20 +111,23 @@ Future<void> sanitizeRecommendedPackDatabase(FushiDatabase db) async {
         'DELETE FROM preferences WHERE key NOT IN '
         "('audio_source_configs', 'local_audio_dbs')",
       );
-      final List<String> audioDbs =
-          (await db
-                  .customSelect(
-                    'SELECT value FROM preferences '
-                    "WHERE key = 'local_audio_dbs'",
-                  )
-                  .get())
-              .map((row) => row.read<String>('value'))
-              .toList();
-      for (final String value in audioDbs) {
-        await db.customStatement(
-          "UPDATE preferences SET value = ? WHERE key = 'local_audio_dbs'",
-          <Object>[renameRecommendedPackAudioDbs(value)],
-        );
+      for (final MapEntry<String, String Function(String)> rewriter
+          in _kAudioNamePrefRewriters.entries) {
+        final List<String> values =
+            (await db
+                    .customSelect(
+                      // 键来自上面的常量表，不是外部输入。
+                      "SELECT value FROM preferences WHERE key = '${rewriter.key}'",
+                    )
+                    .get())
+                .map((row) => row.read<String>('value'))
+                .toList();
+        for (final String value in values) {
+          await db.customStatement(
+            'UPDATE preferences SET value = ? WHERE key = ?',
+            <Object>[rewriter.value(value), rewriter.key],
+          );
+        }
       }
       final bool hasSequence =
           (await db
