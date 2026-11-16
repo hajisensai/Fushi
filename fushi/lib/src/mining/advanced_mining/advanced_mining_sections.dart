@@ -1350,6 +1350,23 @@ class _AdvancedMiningRangeBarState extends State<AdvancedMiningRangeBar> {
 
   bool get _interactive => widget.onEdgeChanged != null;
 
+  /// 焦点环只在键盘（traditional）高亮模式下画：触摸拖完把手也会拿到焦点（好让外接
+  /// 键盘接着用方向键），但不能因此一直挂着放大 + 焦点环。
+  bool _keyboardHighlight =
+      FocusManager.instance.highlightMode == FocusHighlightMode.traditional;
+
+  void _onHighlightModeChanged(FocusHighlightMode mode) {
+    final bool next = mode == FocusHighlightMode.traditional;
+    if (next == _keyboardHighlight || !mounted) return;
+    setState(() => _keyboardHighlight = next);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    FocusManager.instance.addHighlightModeListener(_onHighlightModeChanged);
+  }
+
   @override
   void didUpdateWidget(AdvancedMiningRangeBar oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -1362,6 +1379,7 @@ class _AdvancedMiningRangeBarState extends State<AdvancedMiningRangeBar> {
 
   @override
   void dispose() {
+    FocusManager.instance.removeHighlightModeListener(_onHighlightModeChanged);
     _startFocus.dispose();
     _endFocus.dispose();
     super.dispose();
@@ -1469,10 +1487,17 @@ class _AdvancedMiningRangeBarState extends State<AdvancedMiningRangeBar> {
     required double x,
   }) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
-    final bool focused = start ? _startFocused : _endFocused;
+    final bool focused =
+        _keyboardHighlight && (start ? _startFocused : _endFocused);
     final bool active = _dragging == start || _hovered == start || focused;
     final Duration duration = fushiMotionDuration(context, FushiMotion.short);
     final int atMs = start ? widget.window.startMs : widget.window.endMs;
+    final ({int increased, int decreased}) stepped =
+        advancedMiningSteppedEdgeMs(
+          window: widget.window,
+          start: start,
+          stepMs: widget.stepMs,
+        );
     final String label = start
         ? t.popup_advanced_mining_audio_start
         : t.popup_advanced_mining_audio_end;
@@ -1504,9 +1529,10 @@ class _AdvancedMiningRangeBarState extends State<AdvancedMiningRangeBar> {
             slider: true,
             label: label,
             value: formatAdvancedMiningTime(atMs),
-            // 带 increase / decrease 动作的节点必须同时给增减后的读数。
-            increasedValue: formatAdvancedMiningTime(atMs + widget.stepMs),
-            decreasedValue: formatAdvancedMiningTime(atMs - widget.stepMs),
+            // 带 increase / decrease 动作的节点必须同时给增减后的读数；按控制器同一套
+            // 约束夹过，边界处不念一个到不了的时刻。
+            increasedValue: formatAdvancedMiningTime(stepped.increased),
+            decreasedValue: formatAdvancedMiningTime(stepped.decreased),
             hint:
                 '${t.popup_advanced_mining_audio_drag_hint} · '
                 '${t.popup_advanced_mining_step_modifier_hint}',

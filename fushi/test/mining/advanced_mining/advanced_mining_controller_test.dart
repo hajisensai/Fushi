@@ -576,6 +576,42 @@ void main() {
       expect(c.audioEndDeltaMs, -(3000 - 100) + 250);
     });
 
+    test('按钮发出的 describe 未回来就开拖：旧结果作废，起点仍夹在终点之前', () async {
+      final AdvancedMiningController c = await loaded(
+        AdvancedMiningController(host.videoPage()),
+      );
+      // 点一下「起点 +250」：发出 describe(250, 0)，宿主卡住不回。
+      host.describeGate = Completer<void>();
+      c.nudgeAudioEdge(start: true, deltaMs: 250);
+      expect(host.describeCalls.last, <int>[250, 0]);
+      // 宿主还没回就抓起点开拖，一路拖过终点。
+      c.setAudioEdgeDelta(start: true, deltaMs: 1500, describe: false);
+      // 在途的旧请求此时才回来：不能把乐观区间换回按 250 算的窗口。
+      host.describeGate!.complete();
+      host.describeGate = null;
+      await pumpEventQueue();
+      expect(c.audioWindow!.startMs, start0 + 1500, reason: '旧 describe 作废');
+      c.setAudioEdgeDelta(start: true, deltaMs: 99999, describe: false);
+      expect(c.audioStartDeltaMs, 3000 - kAdvancedMiningAudioMinDurationMs);
+      await c.refreshAudioWindow();
+      expect(c.audioWindow!.durationMs, kAdvancedMiningAudioMinDurationMs);
+    });
+
+    test('读屏增减读数按同一套约束夹过', () {
+      const AdvancedMiningAudioWindow w = AdvancedMiningAudioWindow(
+        startMs: 100,
+        endMs: 300,
+      );
+      expect(advancedMiningSteppedEdgeMs(window: w, start: true, stepMs: 250), (
+        increased: 300 - kAdvancedMiningAudioMinDurationMs,
+        decreased: 0,
+      ));
+      expect(
+        advancedMiningSteppedEdgeMs(window: w, start: false, stepMs: 250),
+        (increased: 550, decreased: 100 + kAdvancedMiningAudioMinDurationMs),
+      );
+    });
+
     test('起点不早于 0', () async {
       final AdvancedMiningController c = await loaded(
         AdvancedMiningController(host.videoPage()),

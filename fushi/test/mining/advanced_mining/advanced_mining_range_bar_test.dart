@@ -166,6 +166,39 @@ void main() {
     expect(endDelta, 0);
   });
 
+  testWidgets('触摸拖完不留焦点环；改用键盘后才画', (WidgetTester tester) async {
+    double ringWidth() {
+      final Iterable<AnimatedContainer> dots = tester
+          .widgetList<AnimatedContainer>(
+            find.descendant(
+              of: find.byKey(
+                const ValueKey<String>('advancedMiningRangeStart'),
+              ),
+              matching: find.byType(AnimatedContainer),
+            ),
+          )
+          .where(
+            (AnimatedContainer c) =>
+                (c.decoration as BoxDecoration?)?.shape == BoxShape.circle,
+          );
+      final BoxDecoration d = dots.single.decoration! as BoxDecoration;
+      return (d.border! as Border).top.width;
+    }
+
+    await pumpBar(tester);
+    await drag(tester, 100, 30);
+    expect(
+      FocusManager.instance.highlightMode,
+      FocusHighlightMode.touch,
+      reason: '前提：刚才是触摸输入',
+    );
+    expect(ringWidth(), 2, reason: '触摸拖完把手拿着焦点，但不画焦点环');
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pumpAndSettle();
+    expect(startDelta, 300 + 250, reason: '焦点仍在起点，方向键接着微调');
+    expect(ringWidth(), 3, reason: '键盘模式下显示焦点环');
+  });
+
   testWidgets('读屏：两个端点是 slider，带标签与当前时刻', (WidgetTester tester) async {
     final SemanticsHandle semantics = tester.ensureSemantics();
     await pumpBar(tester);

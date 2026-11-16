@@ -21,6 +21,54 @@ enum MangaCropChoice { wholePage, panel, textArea, custom, none }
 /// 整页（不裁）的归一化矩形。
 const Rect kMangaWholePageRect = Rect.fromLTRB(0, 0, 1, 1);
 
+/// 起点 / 终点按当前已知区间 [window] 可去的绝对时刻范围（毫秒）：起点不早于 0、
+/// 区间不短于 [kAdvancedMiningAudioMinDurationMs]（起点永远不越过终点）；终点往后
+/// 不设上限（媒体时长只有宿主知道，交给它夹）。
+///
+/// 区间本来就比最短时长还短（宿主夹到媒体两端）时只许往外放、不许再往里收：范围
+/// 总是包含当前时刻，不会反把端点往回拽。
+({int lo, int hi}) advancedMiningEdgeBoundsMs({
+  required AdvancedMiningAudioWindow window,
+  required bool start,
+}) {
+  if (start) {
+    return (
+      lo: math.min(0, window.startMs),
+      hi: math.max(
+        window.endMs - kAdvancedMiningAudioMinDurationMs,
+        window.startMs,
+      ),
+    );
+  }
+  return (
+    lo: math.min(
+      window.startMs + kAdvancedMiningAudioMinDurationMs,
+      window.endMs,
+    ),
+    // 只是「不设上限」：取一个远超任何媒体时长、又不会在加减里溢出的值。
+    hi: math.max(window.endMs, 1 << 52),
+  );
+}
+
+/// 端点往后 / 往前挪一步 [stepMs] 后**实际**会落到的绝对时刻（按
+/// [advancedMiningEdgeBoundsMs] 夹过）：读屏的增减读数用它，边界处不念一个到不了的
+/// 时刻。
+({int increased, int decreased}) advancedMiningSteppedEdgeMs({
+  required AdvancedMiningAudioWindow window,
+  required bool start,
+  required int stepMs,
+}) {
+  final int at = start ? window.startMs : window.endMs;
+  final ({int lo, int hi}) bounds = advancedMiningEdgeBoundsMs(
+    window: window,
+    start: start,
+  );
+  return (
+    increased: (at + stepMs).clamp(bounds.lo, bounds.hi),
+    decreased: (at - stepMs).clamp(bounds.lo, bounds.hi),
+  );
+}
+
 /// 「高级制卡」对话框的全部可变状态与宿主往返。
 ///
 /// 为什么把状态从 widget 里抽出来：宽屏双栏、窄屏折叠行、手机全屏框选是三套布局，
@@ -618,22 +666,19 @@ class AdvancedMiningController extends ChangeNotifier {
     int next = deltaMs;
     final AdvancedMiningAudioWindow? w = audioWindow;
     if (w != null) {
-      if (start) {
-        // 起点可去的范围：[0, 终点 - 最短时长]，换算回偏移。
-        final int lo = current - w.startMs;
-        final int hi =
-            current + (w.endMs - kAdvancedMiningAudioMinDurationMs - w.startMs);
-        // 区间本来就比最短时长还短（宿主夹到媒体两端）时 hi < current：只许往外
-        // 放、不许再往里收，不能反把起点往回拽。
-        next = next.clamp(math.min(lo, current), math.max(hi, current));
-      } else {
-        final int lo =
-            current - (w.endMs - kAdvancedMiningAudioMinDurationMs - w.startMs);
-        next = math.max(next, math.min(lo, current));
-      }
+      // 绝对时刻的可去范围换算回偏移：偏移与绝对时刻只差一个常数。
+      final int at = start ? w.startMs : w.endMs;
+      final ({int lo, int hi}) bounds = advancedMiningEdgeBoundsMs(
+        window: w,
+        start: start,
+      );
+      next = (at + (next - current)).clamp(bounds.lo, bounds.hi) - at + current;
     }
     final int moved = next - current;
     if (moved == 0) return;
+    // 偏移一变，所有在途的 describe 都是按旧偏移算的：一律作废，不能等它回来把
+    // 乐观区间换回旧窗口（拖动途中按旧窗口算约束会让起点越过终点）。
+    _describeGen++;
     if (start) {
       audioStartDeltaMs = next;
     } else {
