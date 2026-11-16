@@ -49,6 +49,7 @@ import 'package:fushi_engine/leaderboard/leaderboard_device_link.dart';
 import 'package:fushi_engine/sync/interconnect_leaderboard_link.dart';
 import 'package:fushi_engine/sync/interconnect_profile_transfer.dart';
 import 'package:fushi_engine/sync/interconnect_service_config.dart';
+import 'package:fushi_engine/sync/interconnect_source_share.dart';
 import 'package:fushi_engine/sync/interconnect_transcode_prefs.dart';
 import 'package:fushi_engine/sync/fushi_manga_ocr_host.dart';
 import 'package:fushi_engine/sync/fushi_screen_ocr_host.dart';
@@ -96,6 +97,7 @@ part 'fushi_sync_server/sync_state.part.dart';
 part 'fushi_sync_server/webdav.part.dart';
 part 'fushi_sync_server/game_stream.part.dart';
 part 'fushi_sync_server/leaderboard_link.part.dart';
+part 'fushi_sync_server/source_share.part.dart';
 part 'fushi_sync_server/host_update.part.dart';
 
 /// Embedded WebDAV-style server used for device-to-device LAN sync.
@@ -791,6 +793,10 @@ class FushiSyncServer {
   /// 端点 404、`/api/capabilities` 不声明，行为同升级前。
   InterconnectLeaderboardLinkHost? leaderboardLinkHost;
 
+  /// 互联「来源共享」的 host 侧（`interconnect_source_share.dart`）：把用户自配的服务器
+  /// 来源与已装插件共享给「我的设备」。null（无头服务端 / 单测）→ 端点 404、能力位不声明。
+  InterconnectSourceShareHost? sourceShareHost;
+
   /// 远程复习库（docs/specs/2026-11-01-srs-remote-review-design.md）：每个请求现取，复习模块关着时回 null →
   /// `/api/srs/remote/*` 404、`/api/capabilities` 不声明 [kSrsRemoteStoreCapability]。
   SrsRemoteStoreService? Function()? srsRemoteStoreProvider;
@@ -1479,6 +1485,10 @@ class FushiSyncServer {
     }
     if (reqPath == '/api/interconnect/service-config') {
       return _handleInterconnectServiceConfig(request, method);
+    }
+    if (reqPath == kInterconnectSourceSharePath ||
+        reqPath == kInterconnectSourceSharePackagePath) {
+      return _handleInterconnectSourceShare(request, method, reqPath);
     }
     if (reqPath == kInterconnectProfilePath) {
       return _handleInterconnectProfile(request, method);

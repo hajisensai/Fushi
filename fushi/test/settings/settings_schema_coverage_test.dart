@@ -1761,6 +1761,16 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // service-config 同步：开关是请求前的进场门（关 = 连请求都不发），且是设备本地键。
   'interconnect/Sync service configuration from host':
       'test/sync/interconnect_service_config_test.dart',
+  // 互联「来源共享」（拍板台 wOMR4_Er7s）：client 开关关 = 一个请求都不发；host 开关在
+  // HTTP 端点 /api/interconnect/source-share 里按请求现读（关着 403 disabled）。harness
+  // 里没有起 TLS server 与已配对 peer，探不到；由专项测试咬住。
+  'interconnect/Receive shared sources':
+      'test/sync/interconnect_source_share_test.dart',
+  'interconnect/Share sources with my devices':
+      'test/sync/interconnect_source_share_test.dart',
+  // client「也接收插件」（默认关）：关着时插件整类跳过（专项测试咬住）。
+  'interconnect/Also receive plugins':
+      'test/sync/interconnect_source_share_test.dart',
   // 开服开关：持久化的是「想开服」的意图（绑定失败也保留），启动失败映射成
   // FushiServerStartError 而不是把开关卡在「已开启」。
   'interconnect/Enable sync server':

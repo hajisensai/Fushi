@@ -9,7 +9,10 @@
 //! - **ID**：原料里的卡、笔记、牌组、最后一条日志都是规范 ID（缓存层按规范 ID 物化），回包里也是。请求里按 ID 给的
 //!   东西（`decks`、`desired` / `deckModels` 的键、`recallDecks`、`recall.ids`）先按同一份别名表归一（[canon_req]），
 //!   Dart 手里还拿着旧的带盐牌组 / 卡 ID 时照样对得上。同一个类的几个成员在一张映射表里各给了值：规范 ID 自己给了就
-//!   用它的，否则用成员里 ID 最小的那个的（确定、与请求里键的先后无关）。
+//!   用它的，否则用成员里 ID 的 SQLite 序最小的那个的（确定、与请求里键的先后无关；规则只有 `cmd/mod.rs` `canon_keyed`
+//!   一份）。`recall.ids` / `recall.r` 是按位置配对的「卡 → 召回率」表（协议 3 `stats::Ctx` 按位置 zip 成映射，同一个
+//!   ID 出现两次时后一个盖前一个），撞键同一条规则：先按协议 3 的方式配成表（同一个原值 ID 后者盖前者），再按类归一，
+//!   换回两个等长数组（按规范 ID 的文本序）。
 //! - **顺序**：卡片行按卡 ID（`cards` 主键序，协议 3 那句没写 `ORDER BY`、顺序随查询计划）；复习行按 (发生时刻, 日志
 //!   ID)（协议 3 只按时刻，同一时刻的先后随计划）。卡片上的浮点和按行序累加，所以与协议 3 的差最多是同一组数换个
 //!   顺序相加的末位误差，对拍按 1e-9 的相对误差比。
@@ -81,7 +84,8 @@ fn load(t: &Truth<'_>, col: i64, req: &Value) -> Result<(Snapshot, Value), Strin
 }
 
 /// 请求里按 ID 给的东西归一成规范 ID（模块文件头「ID」）：`decks` / `recallDecks` 两个数组，`desired` / `deckModels`
-/// 两张以牌组为键的表，`recall.ids`（卡）。别的字段原样。
+/// 两张以牌组为键的表，`recall.ids`（卡，与 `recall.r` 配成一张表按同一条撞键规则归一，模块文件头「ID」）。别的
+/// 字段原样。
 pub(crate) fn canon_req(ix: &Index<'_, '_>, req: &Value) -> Result<Value, String> {
     let canon = |s: &str| -> Result<String, String> { Ok(ix.canonical(&ref_of(s))?.text()) };
     let mut out = req.clone();
@@ -112,12 +116,23 @@ pub(crate) fn canon_req(ix: &Index<'_, '_>, req: &Value) -> Result<Value, String
         }
     }
     if let Some(Value::Object(recall)) = obj.get_mut("recall") {
-        if let Some(Value::Array(ids)) = recall.get_mut("ids") {
-            for x in ids.iter_mut() {
-                if let Some(s) = x.as_str() {
-                    *x = Value::String(canon(s)?);
+        if let (Some(Value::Array(ids)), Some(Value::Array(rs))) =
+            (recall.get("ids"), recall.get("r"))
+        {
+            // 协议 3 的读法（`stats::Ctx`）：按位置配对、不是字符串的 ID 跳过、同一个 ID 后者盖前者。
+            let mut by: serde_json::Map<String, Value> = serde_json::Map::new();
+            for (id, r) in ids.iter().zip(rs) {
+                if let Some(id) = id.as_str() {
+                    by.insert(id.to_owned(), r.clone());
                 }
             }
+            let keyed = super::canon_keyed(ix, &by)?;
+            let (ids, rs): (Vec<Value>, Vec<Value>) = keyed
+                .into_iter()
+                .map(|(k, v)| (Value::String(k), v))
+                .unzip();
+            recall.insert("ids".to_owned(), Value::Array(ids));
+            recall.insert("r".to_owned(), Value::Array(rs));
         }
     }
     Ok(out)
