@@ -642,7 +642,8 @@ class GlobalLookupController {
   /// [ShortcutAction.globalExternalGalgameSpeakLine] 的执行体：朗读 / 停止当前显示
   /// 的 galgame 台词。直接调台词浮窗「朗读」按钮（`onSpeakLine`）接的
   /// [GalHookTextOverlayController.speakCurrentLine]——按钮与热键同一条路径（朗读中
-  /// 再按即停、没有当前台词时提示），不另写一套 TTS 调度。
+  /// 再按即停、浮窗已启动但没有当前台词时提示），不另写一套 TTS 调度。台词浮窗
+  /// 没启动（没在 Hook 游戏）时 `speakCurrentLine` 首行直接返回，按热键静默无动作。
   Future<void> speakGalgameLine() =>
       GalHookTextOverlayController.instance.speakCurrentLine();
 
