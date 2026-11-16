@@ -79,7 +79,7 @@ fn self_key(profile: &str) -> String {
     format!("sync2_self_info/{profile}")
 }
 
-fn ext_prefix(profile: &str) -> String {
+pub(crate) fn ext_prefix(profile: &str) -> String {
     format!("sync2_device_ext/{profile}/")
 }
 
@@ -87,7 +87,7 @@ fn retired_prefix(profile: &str) -> String {
     format!("sync2_retired/{profile}/")
 }
 
-fn hint_key(device: &Id) -> String {
+pub(crate) fn hint_key(device: &Id) -> String {
     format!("sync2_device_hint/{}", device.text())
 }
 

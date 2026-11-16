@@ -108,6 +108,36 @@ mixin _FushiDbMangaDownload on _$FushiDatabase {
     ),
   );
 
+  /// 条件改状态：只改当前状态在 [from] 里的行（一条 UPDATE，判与写之间不会被
+  /// worker 领取插队）。[jobId] / [bookKey] 进一步限定范围，都不给 = 全表。
+  /// [resetAttempts] 为真时清 `last_error`、`attempt_count` 归零（恢复 = 重新排队）。
+  /// 返回受影响行数。
+  Future<int> transitionMangaDownloadJobs({
+    required Set<String> from,
+    required String to,
+    required int updatedAt,
+    String? jobId,
+    String? bookKey,
+    bool resetAttempts = false,
+  }) {
+    final UpdateStatement<$MangaDownloadJobsTable, MangaDownloadJobRow> query =
+        update(mangaDownloadJobs)..where((t) => t.status.isIn(from));
+    if (jobId != null) query.where((t) => t.jobId.equals(jobId));
+    if (bookKey != null) query.where((t) => t.bookKey.equals(bookKey));
+    return query.write(
+      MangaDownloadJobsCompanion(
+        status: Value<String>(to),
+        updatedAt: Value<int>(updatedAt),
+        lastError: resetAttempts
+            ? const Value<String?>(null)
+            : const Value<String?>.absent(),
+        attemptCount: resetAttempts
+            ? const Value<int>(0)
+            : const Value<int>.absent(),
+      ),
+    );
+  }
+
   Future<int> deleteMangaDownloadJob(String jobId) =>
       (delete(mangaDownloadJobs)..where((t) => t.jobId.equals(jobId))).go();
 
