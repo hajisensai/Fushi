@@ -111,6 +111,13 @@ Android / Windows / macOS / iOS debug/beta workflow 必须使用跨 workflow 统
 - **CI**：凡用 `setup-fushi-compute` 的 job 紧跟着用 `.github/actions/setup-fushi-rwkv`（同样的 `android-abis`，导出 `FUSHI_RWKV_LIB`）；出包 job 与 fushi_compute 同处各带 rust-cache 构建并出包后核对（APK 每个 ABI、Windows bundle、macOS Frameworks、iOS Runner 导出 `frwkv_*`、服务端 Linux / Windows bundle），dlopen 冒烟比对的 ABI 版本从 `src/lib.rs` 的 `ABI_VERSION` 读、不写死。PR 上 `native-rwkv-gate.yml` 跑三种 CPU 内核的 `cargo test --release`（权重与小模型包按 `fetch_model.sh` 钉的两个 SHA-256 缓存）+ Android 三 ABI 真编与符号核对。
 - **许可**：fushi_rwkv 是 AGPL-3.0-or-later（推理核心搬自 kuma3-anki-core，所有者 2026-10-19 拍板接受，见 `native/fushi_rwkv/UPSTREAM.md`）。动态加载它的四端 app 与静态链它的 iOS 伞形库 / Runner 都随之受 AGPL 约束（GPL-3.0 第 13 条允许与 AGPL-3.0 合并分发）。
 
+## Windows 资源管理器封面缩略图 fushi_shell_thumbs（Rust，只随安装包）
+
+- 源码 `native/fushi_shell_thumbs/`（拍板台 WoAtPpuvwm）：资源管理器里 epub / cbz / cbr / cb7 / pdf 显示封面。两个产物：`fushi_shell_thumbs.dll`（COM 进程内服务器，`IInitializeWithFile` + `IThumbnailProvider`）和 `fushi_shell_thumbs_host.exe`（每张缩略图一次性的宿主进程）。设计与边界见该目录 `README.md`。
+- **不是 app 进程的依赖**：不进 CMake bundle、不进 `tool/native_libs.ps1`；只由 `release-desktop.yml` 的「Build and bundle fushi_shell_thumbs」步（`build_windows_dll.ps1 -InstallDirectory <Release>`，签名之前）放进 Release 目录，`fushi.iss` 的 `bookassoc` 任务按用户（`HKCU64`）注册。
+- **为什么进程内 + 自己的宿主进程**：系统缩略图隔离进程（COM Surrogate）激活不到 HKCU 注册的 CLSID（2026-11-16 实测 `REGDB_E_CLASSNOTREG`），本安装器又是 `PrivilegesRequired=lowest`，所以 `DisableProcessIsolation=1`。explorer 里的 DLL 不解析文件，只把路径交给宿主进程（job 对象限 1 GiB、15 秒超时、普通优先级——低优先级在满载机器上会被饿到超时），宿主用 `{app}\7za\7z.dll`（rar / 7z）和 `{app}\pdfium.dll`（pdf）。升级时被 explorer 占着的旧 DLL 由 `[Code] FushiSetAsideThumbnailHandler` 改名挪开。
+- 本地：`cargo test --profile quick`（端到端测试要 `FUSHI_TEST_7Z_DIR` / `FUSHI_TEST_PDFIUM_DLL`，没给就 SKIP 那几条）；`examples/probe.rs` 对真实文件出 PNG。PR 上 `native-shell-thumbs-gate.yml` 用钉死 SHA-256 的真 7z.dll / pdfium.dll 跑 `cargo test --release --locked`（`FUSHI_THUMBS_REQUIRE_DEPS=1`，缺依赖判红）。
+
 ## Rust 本地开发循环（quick profile）
 
 - **改 Rust 时的「编译—测试」循环一律用 `quick` profile，不用 `--release`**：在 `native/<crate>/` 下

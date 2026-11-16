@@ -51,7 +51,9 @@ fn deps() -> &'static Deps {
             ..Deps::default()
         };
         if let Some(src) = std::env::var_os("FUSHI_TEST_7Z_DIR").map(PathBuf::from) {
-            std::fs::copy(src.join("7z.dll"), dir.join("7z.dll")).expect("copy 7z.dll");
+            // 与安装目录同布局：7-Zip 在 {app}\7za\ 下（tools/bundle_7za.ps1）。
+            std::fs::create_dir_all(dir.join("7za")).unwrap();
+            std::fs::copy(src.join("7z.dll"), dir.join("7za").join("7z.dll")).expect("copy 7z.dll");
             d.seven_zip_dir = Some(src);
         }
         if let Some(src) = std::env::var_os("FUSHI_TEST_PDFIUM_DLL").map(PathBuf::from) {

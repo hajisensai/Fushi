@@ -243,14 +243,19 @@ Root: HKCU; Subkey: "Software\Classes\.cb7\OpenWithProgids"; ValueType: string; 
 Root: HKCU; Subkey: "Software\Classes\.mokuro\OpenWithProgids"; ValueType: string; ValueName: "Fushi.Book"; ValueData: ""; Flags: uninsdeletevalue; Tasks: bookassoc
 
 ; 资源管理器封面缩略图（拍板台 WoAtPpuvwm）：epub / cbz / cbr / cb7 / pdf 显示封面而不是
-; Fushi.Book 的 exe 图标。处理器是 {app}\fushi_shell_thumbs.dll（Rust，native/fushi_shell_thumbs），
-; 只实现 IInitializeWithStream，所以系统把它放进 COM Surrogate（dllhost.exe）隔离进程跑——
-; 坏文件崩溃 / 卡死只丢一张缩略图，拖不垮资源管理器。**不要**加 DisableProcessIsolation。
-; rar / 7z 用同目录随包的 7z.dll，pdf 用同目录的 pdfium.dll（都按绝对路径加载）。
+; Fushi.Book 的 exe 图标。两件（Rust，native/fushi_shell_thumbs）：
+; - {app}\fushi_shell_thumbs.dll：COM 进程内服务器。本安装器按用户（HKCU）注册，而系统的缩略图
+;   隔离进程（COM Surrogate）激活不到 HKCU 里的 CLSID（2026-11-16 实测 REGDB_E_CLASSNOTREG），
+;   所以必须 DisableProcessIsolation=1 进 explorer.exe。它在 explorer 里**不解析任何文件**，
+;   只拿路径（IInitializeWithFile）转交下面的宿主进程，限时 15 秒、限内存 1 GiB 取回像素并校验。
+; - {app}\fushi_shell_thumbs_host.exe：每张缩略图一次性的宿主进程，真正解析不可信文件；
+;   rar / 7z 用随包的 {app}\7za\7z.dll，pdf 用 {app}\pdfium.dll（都按绝对路径加载）。
+;   坏文件崩溃 / 卡死只丢一张缩略图，拖不垮资源管理器。
 ;
 ; 全部用 HKCU64：本安装器是 32 位进程，HKCU\Software\Classes\CLSID 对 32 位进程会被重定向到
-; Wow6432Node，64 位的资源管理器 / dllhost 就找不到这个 CLSID 了。
+; Wow6432Node，64 位的资源管理器就找不到这个 CLSID 了。
 Root: HKCU64; Subkey: "Software\Classes\CLSID\{#FushiThumbClsid}"; ValueType: string; ValueData: "Fushi cover thumbnails"; Flags: uninsdeletekey; Tasks: bookassoc
+Root: HKCU64; Subkey: "Software\Classes\CLSID\{#FushiThumbClsid}"; ValueType: dword; ValueName: "DisableProcessIsolation"; ValueData: 1; Tasks: bookassoc
 Root: HKCU64; Subkey: "Software\Classes\CLSID\{#FushiThumbClsid}\InprocServer32"; ValueType: string; ValueData: "{app}\fushi_shell_thumbs.dll"; Tasks: bookassoc
 Root: HKCU64; Subkey: "Software\Classes\CLSID\{#FushiThumbClsid}\InprocServer32"; ValueType: string; ValueName: "ThreadingModel"; ValueData: "Apartment"; Tasks: bookassoc
 ; ① 挂在 Fushi.Book 自己身上：用户把某种书设成用 Fushi 打开（UserChoice = Fushi.Book）时，
@@ -287,7 +292,7 @@ Type: files; Name: "{app}\fushi-update-install-*.log"
 ; 着色器程序磁盘缓存（runner main.cpp ResolveProgramBinaryCacheDirectory，安装目录
 ; 可写时放在 exe 旁）。纯缓存，删了下次启动重编一次即可。
 Type: filesandordirs; Name: "{app}\fushi.exe.ShaderCache"
-; 升级时被 COM Surrogate 占着、改名挪开的旧缩略图处理器（见 [Code] FushiSetAsideThumbnailHandler）。
+; 升级时被 explorer.exe 占着、改名挪开的旧缩略图处理器（见 [Code] FushiSetAsideThumbnailHandler）。
 Type: files; Name: "{app}\fushi_shell_thumbs.dll.*.old"
 
 [Run]
@@ -851,10 +856,10 @@ begin
   Result := ((A = '') or (A = Ours)) and ((B = '') or (B = Ours));
 end;
 
-// 升级时旧的 fushi_shell_thumbs.dll 可能正被某个 COM Surrogate（dllhost.exe）加载着，
-// 直接覆盖会因「文件被占用」失败。被加载的 DLL 不能删、但可以改名：ssInstall（复制新文件
-// 之前）把它挪成 *.old，新文件照常落地，占着旧文件的 surrogate 空闲退出后由下次安装 /
-// ssPostInstall / 卸载清掉。
+// 升级时旧的 fushi_shell_thumbs.dll 多半正被 explorer.exe 加载着（进程内处理器），直接覆盖
+// 会因「文件被占用」失败。被加载的 DLL 不能删、但可以改名：ssInstall（复制新文件之前）把它
+// 挪成 *.old，新文件照常落地、新的缩略图请求加载新 DLL；资源管理器经 DllCanUnloadNow 卸掉
+// 旧模块之后，*.old 由下次安装的 ssPostInstall / 卸载清掉。
 procedure FushiSetAsideThumbnailHandler();
 var
   Dll: String;

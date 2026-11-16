@@ -322,6 +322,10 @@ type CreateObjectFn = unsafe extern "system" fn(
     out: *mut *mut c_void,
 ) -> HRESULT;
 
+/// 7z.dll 相对安装目录的位置：`tools/bundle_7za.ps1` 把整套 7-Zip（7z.exe + 7z.dll）放在
+/// `{app}\7za\` 下（app 的离线解压也用它）。
+pub const SEVEN_ZIP_DLL: &str = "7za\\7z.dll";
+
 /// 已加载的 7z.dll（只存 `CreateObject` 指针，模块不释放）。
 pub struct SevenZip {
     create_object: CreateObjectFn,
@@ -337,7 +341,7 @@ impl SevenZip {
         static INSTANCE: OnceLock<Result<SevenZip, ThumbError>> = OnceLock::new();
         INSTANCE
             .get_or_init(|| {
-                let module = super::load_bundled_library("7z.dll")?;
+                let module = super::load_bundled_library(SEVEN_ZIP_DLL)?;
                 let f = super::proc_address(module, b"CreateObject\0")?;
                 // SAFETY: CreateObject 的签名见 7-Zip `CPP/7zip/Archive/DllExports2.cpp`。
                 let create_object: CreateObjectFn = unsafe { std::mem::transmute(f) };

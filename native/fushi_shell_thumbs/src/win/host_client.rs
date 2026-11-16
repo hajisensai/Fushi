@@ -33,8 +33,10 @@ const TIMEOUT: Duration = Duration::from_secs(15);
 /// 宿主进程的内存上限。
 const MEMORY_LIMIT: usize = 1024 * 1024 * 1024;
 
+/// 不降优先级（不加 BELOW_NORMAL_PRIORITY_CLASS）：缩略图是用户正盯着的前台工作。实测
+/// （2026-11-16）机器满载时低优先级宿主会被饿到超时，约 1/12 的缩略图失败；普通优先级下
+/// 84/84 成功。
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-const BELOW_NORMAL_PRIORITY_CLASS: u32 = 0x0000_4000;
 
 /// 关闭时杀掉其中进程的 job（KILL_ON_JOB_CLOSE）。
 struct Job(HANDLE);
@@ -86,7 +88,7 @@ pub fn request_thumbnail(path: &Path, cx: u32) -> Result<Thumbnail, ThumbError> 
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
-        .creation_flags(CREATE_NO_WINDOW | BELOW_NORMAL_PRIORITY_CLASS)
+        .creation_flags(CREATE_NO_WINDOW)
         .spawn()?;
     if let Some(job) = &job {
         // SAFETY: 两个句柄都有效；失败只是少了内存上限 / 连坐清理，超时 kill 仍兜底。
