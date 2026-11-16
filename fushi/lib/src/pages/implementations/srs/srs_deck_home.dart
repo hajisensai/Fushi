@@ -2009,6 +2009,12 @@ List<PopupMenuEntry<_DeckAction>> _deckMenuItems({
           value: _DeckAction.fillWordAudio,
           child: Text(t.srs_word_audio_backfill_title),
         ),
+        // 只导出这个牌组的子树（拍板台 5h2vW-kVi3）；整库导出仍在牌组列表 ⋯「导出（.apkg）」。
+        PopupMenuItem<_DeckAction>(
+          key: const ValueKey<String>('srs-deck-menu-export'),
+          value: _DeckAction.export,
+          child: Text(t.srs_deck_export),
+        ),
         if (!isDefault)
           PopupMenuItem<_DeckAction>(
             value: _DeckAction.delete,

@@ -129,6 +129,7 @@ enum _DeckAction {
   moveDown,
   settings,
   fillWordAudio,
+  export,
   delete,
 }
 
@@ -459,6 +460,11 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
         srsRunLogged(
           'SrsDeckList.fillWordAudio',
           () => openSrsWordAudioBackfill(context, ref, deckId: deck.deck.id),
+        );
+      case _DeckAction.export:
+        srsRunLogged(
+          'SrsDeckList.exportDeck',
+          () => openSrsExport(context, ref, deckId: deck.deck.id),
         );
       case _DeckAction.delete:
         srsRunLogged('SrsDeckList.delete', () => _delete(deck));
