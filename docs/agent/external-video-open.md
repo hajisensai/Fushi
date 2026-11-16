@@ -16,7 +16,9 @@
    第一个受支持的视频路径，存在性校验（`File.existsSync`）后暂存到顶层
    `_pendingExternalVideoPath`。
 3. **app 初始化完成后**：`_FushiReaderAppState.build` 在 `isInitialised==true`
-   分支调度一次性 post-frame callback → `_openExternalVideo(path)`：
+   分支调度一次性 post-frame callback → `_openExternalVideo(path)`（去重 / 封面 / 落库
+   在 `lib/src/media/video/external_video_ingest.dart` 的 `upsertExternalVideoBook`，
+   音乐库本地 MV「在视频播放器中观看」也走它，见 `music_local_video.dart`）：
    - bookUid 用 `externalVideoBookUid(path)`（规范化路径的 sha1 前 12 位，前缀
      `video/ext/`）——**幂等**：同一文件重复打开复用同条记录、保留进度。
    - 不存在则 `saveVideoBook`（title=文件名，videoPath=外部绝对路径，**不复制**）。
