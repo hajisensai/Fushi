@@ -38,6 +38,7 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-4747](bugs/BUG-4747-ja-i18n-english-fallback.md) | ✅ | ✅ | 日语界面外观设置与导航速览卡大量文案仍是英文回退 |
+| [BUG-4747](bugs/BUG-4747-manga-series-key-episode-suffix.md) | ✅ | ✅ | 漫画「第N話 前編 [hash]」按话发布的各话没并成系列合集 |
 > 共 4106 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
