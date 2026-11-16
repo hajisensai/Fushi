@@ -1,4 +1,4 @@
-## BUG-4695 · 扩展 YouTube 默认挂无关语言的字幕轨；手动选的轨取不到时永远停在「选中加载」
+## BUG-4711 · 扩展 YouTube 默认挂无关语言的字幕轨；手动选的轨取不到时永远停在「选中加载」
 - **报告**：2026-11-16（应用内反馈 0RgCNJFQmJ / GitHub #3401，Win11 Edge、扩展 0.1.0 / app 3.3.0：浮层默认挂阿拉伯语 / 俄语 / 韩语轨，与视频语言无关；手动选日语后一直「待加载」）
 - **真实性**：✅ 真 bug，两处根因。
   1. 默认轨选错：`tools/browser-extension/youtube-bridge.js:72-77`（修复前）`prioritizeCaptionTracks` 只从 `#movie_player.getAudioTrack()` 返回的对象上按字段名读 `defaultCaptionTrackIndex` / `languageCode`。那是播放器内部的压缩类实例，字段名随播放器版本被混淆（反馈人实测读出为空）→ 规则 ①「默认轨」②「音轨同语言」同时失效，排序退化成「原始顺序里第一条人工轨」，急取并挂上的就是第一条翻译轨（ar…）。
