@@ -2342,6 +2342,17 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 视频字幕列表是否列出**特效字幕**（歌词特效 / 屏幕字，拍板台 H7r4mf_z2n），默认
+  /// false（拍板选项 B 原文「默认隐藏特效事件」）。与 [VideoSubtitleJumpPanel] 的
+  /// 「显示特效字幕」切换钮一一对应，跨开关 / 跨重启记住；只影响列表，不影响播放画面上的字幕。
+  bool get videoSubtitleListShowEffects =>
+      getPref('video_subtitle_list_show_effects', defaultValue: false) as bool;
+
+  Future<void> setVideoSubtitleListShowEffects(bool value) async {
+    await setPref('video_subtitle_list_show_effects', value);
+    notifyListeners();
+  }
+
   /// 视频字幕列表上次打开的页签（xlzGuK5YmD）：`VideoSubtitleListFilter.name`
   /// （`all` / `favorites`），默认 `all`。下次打开列表恢复到它，跨开关 / 跨重启记住。
   String get videoSubtitleListFilter =>

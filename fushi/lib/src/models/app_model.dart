@@ -5132,6 +5132,11 @@ class AppModel
       //    cloud backup backend can now coexist).
       StartupTimeline.mark('db-open+srs-host');
       await BackupRestoreService.recoverPendingRestore(_databaseDirectory.path);
+      // 覆盖导入保留的覆盖前快照过了保留期就删（维护者 2026-11-16 拍板）。放在
+      // recoverPendingRestore 之后：它可能刚把半途中断的覆盖导入收尾、换上新快照。
+      await BackupRestoreService.pruneExpiredOverwriteSnapshot(
+        _databaseDirectory.path,
+      );
 
       // 沙箱重定位自愈：数据根被**平台**挪走后，把库里的绝对路径重基过去。
       //
@@ -6794,6 +6799,13 @@ class AppModel
 
   Future<void> setVideoSubtitleListTapLookup(bool value) =>
       prefsRepo.setVideoSubtitleListTapLookup(value);
+
+  /// 视频字幕列表是否列出特效字幕（H7r4mf_z2n，默认 true）。
+  bool get videoSubtitleListShowEffects =>
+      prefsRepo.videoSubtitleListShowEffects;
+
+  Future<void> setVideoSubtitleListShowEffects(bool value) =>
+      prefsRepo.setVideoSubtitleListShowEffects(value);
 
   /// 视频字幕列表上次打开的页签名（xlzGuK5YmD，`VideoSubtitleListFilter.name`）。
   String get videoSubtitleListFilter => prefsRepo.videoSubtitleListFilter;
