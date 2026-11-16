@@ -32,9 +32,14 @@ Future<SrsStorage> openTestSrsStorage() async {
 /// （测试专用的原始通道：ID 参数写 `srs_id(?)`，表达式列套 `srs_idt(...)`，直接选出的 ID 列已还原成文本）。
 typedef TestSrs = ({SrsCore core});
 
-/// 在 [path] 上直接打开 srs.db（Rust 独占连接）。读命令照常在内核命令 worker 的查询道上跑（与 app 相同）。
+/// 在 [path] 上直接打开复习库（Rust 独占连接）。读命令照常在内核命令 worker 的查询道上跑（与 app 相同）。
 /// 注册清理：关 Rust 连接；不删文件（调用方管目录）。
+///
+/// 新代的 [SrsCore.open] 收的是**库目录**（里面放 `srs.gen.lock` / 代际文件），不是单个 `.db` 文件；调用方沿用
+/// 旧写法传 `<tmp>/srs.db` 时，这里把它当成目录建出来（同一路径重开仍落到同一个库，不同文件名仍是不同的库）。
 Future<TestSrs> openTestSrsAt(String path) async {
+  // 已是文件（调用方抄进来的协议 3 夹具库）就不动：那类用例本身已过时，让它照实失败。
+  if (!File(path).existsSync()) Directory(path).createSync(recursive: true);
   final SrsCore core = SrsCore.open(path);
   SrsCoreWorkers.of(core.libraryPath).setQueryConcurrency(core.readConcurrency);
   addTearDown(core.close);

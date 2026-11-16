@@ -301,6 +301,7 @@ srsStoreProvider = FutureProvider<SrsDbStore?>((Ref ref) async {
   ).getOrCreateDeviceId();
   final Directory support = await ref.watch(srsSupportRootProvider)();
   int rolloverHour() => app.statDayResetHour;
+  bool reused = false;
   final SrsDbStore store = await stores.activate(
     profileUid,
     // 同一个配置再激活（与 uid 无关的依赖重建）：同一条连接、同一台设备就沿用这份副本，换上新参数。
@@ -310,6 +311,7 @@ srsStoreProvider = FutureProvider<SrsDbStore?>((Ref ref) async {
         return false;
       }
       current.rebind(engine: engine, fallbackRolloverHour: rolloverHour);
+      reused = true;
       return true;
     },
     () => SrsDbStore.open(
@@ -326,6 +328,17 @@ srsStoreProvider = FutureProvider<SrsDbStore?>((Ref ref) async {
   );
   // 后台维护在 store 换掉（切 profile / 关模块）或副本开始作废时停下，下次从断点续。（协议 3 的存量样式去重
   // `compactStoredStyles` 改的是协议 3 的存储表示，新代没有，已删。）
+  // 辅助进程（查词弹窗）重新激活同一份副本时重取身份：绑定变化只随引起它的命令回到主进程，这里看不到回包
+  // （交接说明「G9-4」「G7-5b」）。打开时 [SrsDbStore.open] 已经取过。
+  if (reused && storage.core.mode == SrsOpenMode.secondary) {
+    await store.refreshIdentity();
+  }
+  // 绑定变了 = 库换了（设计 §5.1）：整份重建依赖这份库的东西（RWKV 服务随 [srsRwkvServiceProvider] 关旧挂新，
+  // 列表 / 统计重读）。副本对象沿用（同一条连接、同一个 profile），它自己的缓存在 [SrsDbStore.onBindingChanged] 里已作废。
+  final StreamSubscription<void> bindingChanges = store.bindingChanges.listen(
+    (_) => ref.invalidateSelf(),
+  );
+  ref.onDispose(bindingChanges.cancel);
   bool disposed = false;
   ref.onDispose(() => disposed = true);
   bool shouldStop() => disposed || store.isWindingDown;
@@ -397,6 +410,12 @@ final FutureProvider<SrsRwkvService?> srsRwkvServiceProvider =
         if (identical(store.rwkv, service)) store.rwkv = null;
         unawaited(service.close());
       });
+      // 换库（绑定变了）时按 [srsAttachRwkv] 的契约关旧服务、挂新服务：旧服务的内存态（已回放到的指纹、落库键）
+      // 属于换之前的库，不跨库沿用（交接说明 §8.6「进程内换库时 RWKV 内存态」）。迁移之后的重开换的是整个
+      // store，本 provider 随 [srsStoreProvider] 重建，同一条路径。
+      final StreamSubscription<void> bindingChanges = store.bindingChanges
+          .listen((_) => ref.invalidateSelf());
+      ref.onDispose(bindingChanges.cancel);
       await srsRwkvStartIfUsed(
         store,
         service,

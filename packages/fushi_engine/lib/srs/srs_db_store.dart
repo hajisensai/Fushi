@@ -15,6 +15,7 @@ import 'dart:typed_data' show TypedData, Uint8List;
 import 'dart:math';
 
 import 'package:fushi_anki/fushi_anki_core.dart';
+import 'package:crypto/crypto.dart' show sha256;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:meta/meta.dart' show visibleForTesting;
@@ -402,6 +403,31 @@ class SrsStoreRetiredError extends StateError {
   final SrsDbStore store;
 }
 
+/// 辅助进程（查词弹窗等只读打开的库）里，这个 profile 还没有本机身份：集合、绑定与身份只由主进程在打开 profile 时
+/// 建（[SrsDbStore.open] → 内核 `identity`），辅助进程不写库。不是坏库、也不是要迁移：页面给「先在主窗口打开一次
+/// 复习」的等待状态，主进程建好之后重试即可。
+final class SrsProfileIdentityPending implements Exception {
+  const SrsProfileIdentityPending(this.profile);
+
+  final String profile;
+
+  @override
+  String toString() =>
+      'SrsProfileIdentityPending: profile $profile has no identity yet '
+      '(the main process creates it when it opens the profile)';
+}
+
+/// 一个 profile 的绑定代号（[SrsDbStore.bindingKey]）：集合标识、同步目录名、盐集合（升序）的 SHA-256 前 16 个十六进制位。
+/// 只是 Dart 侧「库换没换」的比较值（RWKV 分数表的清空键），不进同步、不落内核。
+String srsBindingKey({
+  required String collection,
+  required String dir,
+  required List<String> salts,
+}) => sha256
+    .convert(utf8.encode(<String>[collection, dir, ...salts].join('\n')))
+    .toString()
+    .substring(0, 16);
+
 /// profile 里显式写过的翻日时刻与生效的那条修改记录 ID（[SrsDbStore.syncedDayRollover]）。
 typedef SrsDayRollover = ({int hour, String editId});
 
@@ -444,11 +470,15 @@ class SrsDbStore implements SrsSync2Host {
       localOffsetMin: localOffsetMin ?? SrsDayContext.localOffsetMin,
       styles: styles,
     );
+    // 本机状态行（`local_state`）不要集合绑定，可以在身份之前读。
     final ({bool exists, bool epochStored}) local = await s._loadLocal();
+    // 身份必须在第一条按集合的命令之前：全新安装 / 新建的 profile 在这里（主进程）建集合、绑定与本机身份，之后的
+    // `cache_config_set` 等才有集合可用（交接说明「G9-4」「G7-5b」）。辅助进程只读：主进程还没建时抛
+    // [SrsProfileIdentityPending]。
+    await s._sync2Open();
     if (core.mode == SrsOpenMode.primary) {
       // 注册本 profile 的缓存配置（只有 Dart 知道的内置笔记类型默认值与默认牌组，派生层的输入）：内核与库里存的
-      // 比，变了就整层重建（`cache_config_set`，native/fushi_fsrs/src/store/gen4/dispatch.rs）。profile 在新代里还
-      // 没有集合（全新安装 / 新建的 profile，绑定归 G9-4 的身份命令）时在这里抛 [SrsProfileUnboundException]。
+      // 比，变了就整层重建（`cache_config_set`，native/fushi_fsrs/src/store/gen4/dispatch.rs）。
       await s._registerCacheConfig();
       // 新代的派生层是真相的纯函数、随写入维护：本机状态行不在（迁移不带协议 3 的那一行，交接说明 §8.2）不代表缓存
       // 过期，不再按「有事件却没有本机状态」整层重建。行没落盘时当场落下，否则每次打开都是新纪元、指纹每次都「变了」。
@@ -456,25 +486,65 @@ class SrsDbStore implements SrsSync2Host {
       await s.ensureBuiltins();
     }
     // 只读打开（查词弹窗等辅助进程）：注册类写入都是主进程的事，这里只读。
-    await s._sync2Open();
+    // 根上 ID 的规范形最后读（内置实体建好之后；辅助进程上由主进程建过）。
+    await s._loadRootIds();
     return s;
   }
 
-  /// 本机在这个集合里的设备身份（新代 `status` 的 `device`；身份由迁移建，`identity` 命令归 G9-4）。
+  /// 本机在这个 profile 集合里的身份（内核 `identity`，native/fushi_fsrs/src/store/gen4/cmd/identity.rs）：设备 ID、
+  /// 集合标识、同步目录名都取自回包，不再按 profile uid 拼。
   ///
-  /// 协议 3 的 `identity` 在打开时建身份、顺带并旧库（`migrate`）：新代里迁移在开库之前整库做完（
-  /// [SrsGen4Migration]），开得了库就已经迁完，没有「推迟的迁移」。
+  /// 主进程上没有就建（全新 profile：集合 = 按 uid 派生、目录名 = uid；建了时回包带 `bindingChanged`，由
+  /// [_sync2Raw] 接）。辅助进程只读：已有身份照常读；没有时内核报只读（[SrsCoreReadOnlyException]），这里换成
+  /// [SrsProfileIdentityPending]（等主进程开一次这个 profile），不当成打不开的库。
   ///
-  /// `status` 在新代里统计全部设备的操作数：开库多一次扫描（交接说明「G7-5 Dart 接线」记了开销与上游缺口）。
+  /// 协议 3 的 `identity` 还顺带并旧库（`migrate`）与回旧版写入者（`legacyWriter`）：新代里迁移在开库之前整库做完
+  /// （[SrsGen4Migration]），旧版写入者状态不迁移（设计 §2.4），请求不再带 `legacyDevice`。
   Future<void> _sync2Open() async {
-    final Map<String, Object?> st = await _sync2(const <String, Object?>{
-      'op': 'status',
-    });
-    _sync2Device = st['device'] as String?;
+    final Map<String, Object?> id;
+    try {
+      id = await _sync2(<String, Object?>{'op': 'identity', 'now': now().$1});
+    } on SrsCoreReadOnlyException catch (_, stack) {
+      Error.throwWithStackTrace(SrsProfileIdentityPending(profileUid), stack);
+    }
+    final String collection = id['collection']! as String;
+    final String dir = id['dir']! as String;
+    // 盐集合不在 identity 回包里：补盐不换集合也不换目录，却会改别名表（规范 ID 可能变），所以绑定代号要带上它。
+    final List<String> salts =
+        ((await _sync2(<String, Object?>{'op': 'collection_info'}))['salts']!
+                as List<Object?>)
+            .cast<String>()
+            .toList()
+          ..sort();
+    _sync2Device = id['device']! as String;
+    _sync2Collection = collection;
+    _sync2Dir = dir;
+    _bindingKey = srsBindingKey(collection: collection, dir: dir, salts: salts);
+  }
+
+  /// 绑定代号（[srsBindingKey]：集合 + 目录 + 盐集合的摘要）。打开之后恒非空；补盐 / 并入 / 认领之后会变。
+  /// RWKV 分数表的清空键带着它（[rwkvScoresClearKey]）：换库不只发生在迁移之后重开（那时纪元会变），进程内的绑定
+  /// 变化不重建本机状态行、纪元不变，只靠这一段让落库键与换之前不同。
+  String? get bindingKey => _bindingKey;
+  String? _bindingKey;
+
+  /// 重新取一次身份（[_sync2Open]）：辅助进程（查词弹窗）每次重新激活这个 profile 时调。`bindingChanged` 只随
+  /// 引起它的那条命令的回包回到发命令的进程（主进程），别的进程看不到：这里按绑定代号（集合 / 目录 / 盐）变没变自己判，
+  /// 变了走同一条 [onBindingChanged]。主进程上调也无妨（已有身份时是一次读；这次 `identity` 自己建了身份、回包带
+  /// `bindingChanged` 时 [_sync2Raw] 已经报过，这里不重复报）。
+  Future<void> refreshIdentity() async {
+    final String? before = _bindingKey;
+    final int reportedBefore = _bindingChangeCount;
+    await _sync2Open();
+    final bool reported = _bindingChangeCount != reportedBefore;
+    final bool changed = before != null && before != _bindingKey;
+    if (changed && !reported) onBindingChanged();
+    if (changed || reported) await _loadRootIds();
   }
 
   /// 新代里开得了库就已经迁完（[SrsGen4Migration] 在开库之前整库做），没有推迟的迁移：立即返回，[beforeMigrate]
-  /// 不调。签名留给同步调度（G8-7 改写同步一轮时一并删）。
+  /// 不调。唯一的调用方是同步调度的 `ensureMigrated`（fushi/lib/src/srs/srs_sync_scheduler.dart；[sync2Migrated] 恒真，
+  /// 根本走不到这里）：那个文件归 G8-7，它删 `ensureMigrated` 时连同这里与 [kSrsSync2MigrateBatch] 一起删。
   Future<void> migrateLegacy({
     Future<void> Function(SrsDbStore store)? beforeMigrate,
     int batch = kSrsSync2MigrateBatch,
@@ -483,9 +553,44 @@ class SrsDbStore implements SrsSync2Host {
   /// 本 profile 的旧库已并成操作：新代里恒为 true（见 [migrateLegacy]）。
   bool get sync2Migrated => true;
 
-  /// 本机在这个 profile 集合里的同步 v2 设备 ID（换身份后会变）。
+  /// 本机在这个 profile 集合里的同步 v2 设备 ID（换身份后会变）。打开之后恒非空（[_sync2Open]）。
   String? get sync2Device => _sync2Device;
   String? _sync2Device;
+
+  /// 这个 profile 绑定的集合标识（`identity` 的 `collection`）。打开之后恒非空；并入 / 认领之后会变。
+  String? get sync2Collection => _sync2Collection;
+  String? _sync2Collection;
+
+  /// 这个 profile 的同步目录名（`identity` 的 `dir`，设计 §5.1：向内核要，不按 uid 拼）。打开之后恒非空。
+  String? get sync2Dir => _sync2Dir;
+  String? _sync2Dir;
+
+  /// 绑定变化（内核回包的 `bindingChanged`，或辅助进程重取身份时发现集合 / 目录换了）的通知：按「库换了」处理，
+  /// 订阅方（app 的 store provider）整份重建依赖这份库的东西——RWKV 服务按 `srsAttachRwkv` 的契约关旧挂新。
+  Stream<void> get bindingChanges => _bindingChanges.stream;
+  final StreamController<void> _bindingChanges =
+      StreamController<void>.broadcast();
+
+  /// 绑定变了：本对象按库内容记的缓存（根上 ID 的请求形、派生层缓存日志、笔记类型、牌组树、RWKV 候选）全部作废、
+  /// 下次整份重读，再通知 [bindingChanges]。根上 ID 的规范形由调用方随后重读（[_loadRootIds]：要发命令，这里是同步的）。
+  /// 由 [_sync2Raw]（回包带 `bindingChanged`）与 [refreshIdentity] 调。
+  @visibleForTesting
+  void onBindingChanged() {
+    _kernelIds = null;
+    _invalidateDerivedCaches();
+    _noteTypeCache = null;
+    _rwkvCandidateCache = null;
+    _bindingChangeCount++;
+    // 副本作废（[retire]）时控制器已关：作废之后还在途的读命令回包不再广播（订阅方也已随 provider 释放）。
+    if (!_bindingChanges.isClosed) _bindingChanges.add(null);
+  }
+
+  /// 收到过几次绑定变化（[onBindingChanged]）。
+  int _bindingChangeCount = 0;
+
+  /// 收到过几次绑定变化（[onBindingChanged]）：测试用。
+  @visibleForTesting
+  int get debugBindingChanges => _bindingChangeCount;
 
   /// srs.db 的 Rust 句柄：全部读写都是它的命令（写命令在内核里读、算、写完；读命令见 srs_reads.dart），
   /// 表结构与 SQL 只在内核里（docs/specs/2026-10-23-srs-rust-store.md）。
@@ -495,7 +600,10 @@ class SrsDbStore implements SrsSync2Host {
   Future<SrsReadResult> _read(
     String q, [
     Map<String, Object?> args = const <String, Object?>{},
-  ]) => srsRead(core, profileUid, q, args);
+  ]) async {
+    await _freshBinding(null);
+    return srsRead(core, profileUid, q, args);
+  }
 
   /// 同 [_read]，只要它的那一张表。
   Future<SrsColumns> _readTable(
@@ -767,8 +875,10 @@ class SrsDbStore implements SrsSync2Host {
     session.complete();
   }
 
-  /// 纪元：变了（覆盖恢复后本机状态重建）= 分数表清空、按历史重算。
-  String get rwkvScoresClearKey => _epoch;
+  /// 纪元 + 绑定代号：变了 = 分数表清空、按历史重算。纪元在本机状态行重建（覆盖恢复、迁移之后重开）时变；绑定代号
+  /// （[bindingKey]）在进程内换库（补盐、并入、认领）时变——那时本机状态行不重建、纪元不变，只看纪元的话新挂上的
+  /// RWKV 服务会把旧库的分数表当成仍有效（交接说明「G7-5b 复核修复」）。
+  String get rwkvScoresClearKey => '$_epoch|${_bindingKey ?? ''}';
 
   /// 本机状态的随机纪元：本机状态被清空重建（覆盖恢复）后换一个，修订号从 0 重数也不会撞上旧指纹。内核生成并
   /// 持有（本机状态行的 `epoch`），这里只由内核的回包赋值。
@@ -850,6 +960,8 @@ class SrsDbStore implements SrsSync2Host {
           'SRS store is unusable: '
           '${reason ?? 'profile $profileUid was deleted'}',
         );
+        // 副本到此为止：绑定变化的通知不会再有，关掉控制器（订阅方的 done 随之触发）。
+        unawaited(_bindingChanges.close());
       }
     });
   }
@@ -2059,7 +2171,7 @@ class SrsDbStore implements SrsSync2Host {
       );
       _absorbLocalWrite(r);
     });
-    // 包里有本机身份的操作时内核先换身份：重读本机设备 ID（`status`；`identity` 命令归 G9-4）。
+    // 包里有本机身份的操作时内核先换身份：重取身份（`identity`）。
     await _sync2Open();
     await _notifyPurged();
     return (r['applied'] as int?) ?? 0;
@@ -2121,6 +2233,7 @@ class SrsDbStore implements SrsSync2Host {
   Future<({Object? json, Map<String, SrsColumns> tables})> _columnsCommand(
     Map<String, Object?> request,
   ) async {
+    await _freshBinding(request['op']);
     debugCoreCommands++;
     final int token = SrsOpLedger.begin('core:${request['op']}');
     int bytes = 0;
@@ -2157,6 +2270,7 @@ class SrsDbStore implements SrsSync2Host {
       !kSrsSync2ProjectingOps.contains(request['op']) || holdsExclusive,
       'sync2 `${request['op']}` changes the projection outside runExclusive',
     );
+    await _freshBinding(request['op']);
     debugCoreCommands++;
     final SrsSync2Result r = await SrsOpLedger.track(
       'core:${request['op']}',
@@ -2176,7 +2290,62 @@ class SrsDbStore implements SrsSync2Host {
         0,
       ),
     );
+    // 可能改绑定的命令（`identity` 第一次建、并入 / 补盐 / 认领）在提交成功之后把 `bindingChanged` 放进回包
+    // （native/fushi_fsrs/src/store/gen4/dispatch.rs `write_binding`）：每条回包都看，内核没有另一条事件流。
+    final Object? json = r.json;
+    if (json is Map && json['bindingChanged'] != null) {
+      onBindingChanged();
+      // 打开途中（还没读过根上 ID）由 [open] 最后统一读；`identity` 自己的回包由发它的 [_sync2Open] /
+      // [refreshIdentity] 接着读。其余的绑定变化在这条命令返回之前把身份、绑定代号与根上 ID 重读完。
+      if (_rootIds != null && !_kBindingReloadOps.contains(request['op'])) {
+        try {
+          await _reloadBinding();
+        } on Object {
+          // 这条命令已经在内核提交了：重读失败不能让调用方把一次成功的写入当成失败（复核 nit）。绑定留着「过期」标记
+          // （[_reloadBinding] 没走完就不清），下一条命令发出之前先重读（[_freshBinding]），再失败由那条命令报出来。
+        }
+      }
+    }
     return r;
+  }
+
+  /// 重读绑定时自己发的命令：发它们之前不再查「绑定过期」，回包里的 `bindingChanged` 也不在 [_sync2Raw] 里递归重读。
+  static const Set<String> _kBindingReloadOps = <String>{
+    'identity',
+    'collection_info',
+    'canonical_ids',
+  };
+
+  /// 绑定变了之后还没重读成功（[_reloadBinding] 中途失败）：下一条命令之前先重读。
+  bool _bindingStale = false;
+
+  /// 绑定还没重读成功（[_bindingStale]）：测试用。
+  @visibleForTesting
+  bool get debugBindingStale => _bindingStale;
+
+  /// 测试用：非空时下一次 [_reloadBinding] 一开始就抛它（只抛一次），模拟「命令已提交、重读身份 / 根上 ID 失败」。
+  @visibleForTesting
+  StateError? debugBindingReloadFailure;
+
+  /// 绑定变了：身份（设备号 / 集合 / 目录 / 绑定代号，[_sync2Open]）与根上 ID 的规范形（[_loadRootIds]）整份重读。
+  /// 走完才清 [_bindingStale]。
+  Future<void> _reloadBinding() async {
+    _bindingStale = true;
+    final StateError? injected = debugBindingReloadFailure;
+    if (injected != null) {
+      debugBindingReloadFailure = null;
+      throw injected;
+    }
+    await _sync2Open();
+    await _loadRootIds();
+    _bindingStale = false;
+  }
+
+  /// 发命令之前：上一次绑定变化没重读成功的话先重读（失败抛给这条命令，它还没发出去）。
+  Future<void> _freshBinding(Object? op) async {
+    if (_bindingStale && !_kBindingReloadOps.contains(op)) {
+      await _reloadBinding();
+    }
   }
 
   /// 内核命令走哪条 worker 道（srs_core_workers.dart [SrsCoreLane]，集成审查【中】）：复习页的作答 / 排队 / 预览
@@ -2314,28 +2483,72 @@ class SrsDbStore implements SrsSync2Host {
   // ------------------------------------------------------------------ 内置
 
   /// 内置默认牌组与内置笔记类型（Lapis、Fushi 卡片；确定性 ID，每台设备都生成同一份；没改过的内置定义不写修改记录）。
+  ///
+  /// 「在不在」按规范 ID 比：内置实体的 ID 由 Dart 按 profile uid 加盐算（[srsBuiltinEntities]），库里存的、读命令回的
+  /// 是集合里的规范 ID（盐不同，迁移 / 全新集合都是这样），所以先经 `canonical_ids` 归一，再和 `entities` 读回的比——
+  /// 直接拿加盐 ID 比，每次开库都会把三个内置实体当成缺的再写一遍。
   Future<void> ensureBuiltins() => runExclusive(() async {
     final List<SrsEntityRecord> builtins = srsBuiltinEntities(profileUid);
+    final List<String> canonical = await _canonicalIds(<String>[
+      for (final SrsEntityRecord r in builtins) r.id,
+    ]);
     final Set<String> present = (await _entityIdsWhere(
       ids: <String>[for (final SrsEntityRecord r in builtins) r.id],
     )).toSet();
     final List<SrsEventDraft> missing = <SrsEventDraft>[
-      for (final SrsEntityRecord r in builtins)
-        if (!present.contains(r.id)) SrsReadyDraft(SrsEntityEvent(r)),
+      for (int i = 0; i < builtins.length; i++)
+        if (!present.contains(canonical[i]))
+          SrsReadyDraft(SrsEntityEvent(builtins[i])),
     ];
     if (missing.isNotEmpty) await _emit(missing);
   });
 
-  /// 本 profile 的根上 ID 与同步目录名（向内核要，见 [SrsKernelIds]）。
-  late final SrsKernelIds kernelIds = SrsKernelIds(profileUid);
+  /// [ids] 逐个归一成这个 profile 集合里的规范 ID（内核 `canonical_ids`，顺序与条数照请求）。
+  Future<List<String>> _canonicalIds(List<String> ids) async =>
+      ((await _sync2(<String, Object?>{
+                'op': 'canonical_ids',
+                'ids': ids,
+              }))['ids']!
+              as List<Object?>)
+          .cast<String>();
 
-  late final String defaultDeckId = kernelIds.defaultDeck;
-  late final String lapisNoteTypeId = kernelIds.builtinNoteType(
-    kSrsBuiltinLapisKey,
-  );
-  late final String fushiCardNoteTypeId = kernelIds.builtinNoteType(
-    kSrsBuiltinFushiCardKey,
-  );
+  /// 读根上的内置实体 ID（默认牌组、两个内置笔记类型）的规范 ID：开库最后一步（内置实体建好之后）与绑定变化之后
+  /// （[_sync2Raw]）各读一次。Dart 按 uid 加盐算的 ID 与集合里的规范 ID 不同（盐不同）；调用方拿这几个 ID 和读命令
+  /// 回的 ID 比（牌组树里找默认牌组、笔记类型列表里找 Lapis……），所以必须是规范的那一份。
+  Future<void> _loadRootIds() async {
+    final SrsKernelIds ids = kernelIds;
+    final List<String> canonical = await _canonicalIds(<String>[
+      ids.defaultDeck,
+      ids.builtinNoteType(kSrsBuiltinLapisKey),
+      ids.builtinNoteType(kSrsBuiltinFushiCardKey),
+    ]);
+    _rootIds = (
+      defaultDeck: canonical[0],
+      lapis: canonical[1],
+      fushiCard: canonical[2],
+    );
+  }
+
+  /// 根上 ID 的规范形（[_loadRootIds]）；打开完成之后恒非空。
+  ({String defaultDeck, String lapis, String fushiCard})? _rootIds;
+
+  ({String defaultDeck, String lapis, String fushiCard}) get _roots =>
+      _rootIds ??
+      (throw StateError('SrsDbStore: root ids are read when the store opens'));
+
+  /// 本 profile 的根上 ID 的请求形（向内核要，见 [SrsKernelIds]；按 uid 加盐，内核收到时归一）。绑定变了
+  /// （[onBindingChanged]）作废重取。
+  SrsKernelIds get kernelIds => _kernelIds ??= SrsKernelIds(profileUid);
+  SrsKernelIds? _kernelIds;
+
+  /// 内置默认牌组的规范 ID（[_loadRootIds]），与读命令回的 ID 同一种写法。绑定变了重读。
+  String get defaultDeckId => _roots.defaultDeck;
+
+  /// 内置 Lapis 笔记类型的规范 ID。同 [defaultDeckId]。
+  String get lapisNoteTypeId => _roots.lapis;
+
+  /// 内置 Fushi 卡片笔记类型的规范 ID。同 [defaultDeckId]。
+  String get fushiCardNoteTypeId => _roots.fushiCard;
 
   // ------------------------------------------------------------------ 物化
 
@@ -2947,6 +3160,7 @@ class SrsDbStore implements SrsSync2Host {
       await _coreOptimizerItems(
         core.address,
         core.libraryPath,
+        profileUid,
         _seedGroups(cardIds),
         numeric,
         srsProjectionAlgorithmCode(algorithm),
@@ -2968,6 +3182,7 @@ class SrsDbStore implements SrsSync2Host {
       await _coreCalibrationItems(
         core.address,
         core.libraryPath,
+        profileUid,
         _seedGroups(cardIds),
         SrsIds.ankiNumericIds(cardIds),
         srsProjectionAlgorithmCode(algorithm),
@@ -2988,6 +3203,7 @@ class SrsDbStore implements SrsSync2Host {
       await _coreRwkvCards(
         core.address,
         core.libraryPath,
+        profileUid,
         _seedGroups(cardIds),
         ids,
         day.utcOffsetMin,
@@ -5897,6 +6113,7 @@ class _RefreshPrefetch {
 Future<Uint8List> _coreOptimizerItems(
   int address,
   String? libraryPath,
+  String profile,
   List<List<String>> groups,
   List<int> cardIds,
   int algorithm,
@@ -5912,6 +6129,7 @@ Future<Uint8List> _coreOptimizerItems(
       algorithm: algorithm,
       utcOffsetMin: utcOffsetMin,
       rolloverHour: rolloverHour,
+      profile: profile,
     ),
   ),
   measure: (Uint8List b) => (b.length, 0),
@@ -5920,6 +6138,7 @@ Future<Uint8List> _coreOptimizerItems(
 Future<Uint8List> _coreCalibrationItems(
   int address,
   String? libraryPath,
+  String profile,
   List<List<String>> groups,
   List<int> cardIds,
   int algorithm,
@@ -5935,6 +6154,7 @@ Future<Uint8List> _coreCalibrationItems(
       algorithm: algorithm,
       utcOffsetMin: utcOffsetMin,
       rolloverHour: rolloverHour,
+      profile: profile,
     ),
   ),
   measure: (Uint8List b) => (b.length, 0),
@@ -5943,6 +6163,7 @@ Future<Uint8List> _coreCalibrationItems(
 Future<Uint8List> _coreRwkvCards(
   int address,
   String? libraryPath,
+  String profile,
   List<List<String>> groups,
   List<int> ids,
   int utcOffsetMin,
@@ -5956,6 +6177,7 @@ Future<Uint8List> _coreRwkvCards(
       ids,
       utcOffsetMin: utcOffsetMin,
       rolloverHour: rolloverHour,
+      profile: profile,
     ),
   ),
   measure: (Uint8List b) => (b.length, 0),
