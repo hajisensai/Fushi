@@ -278,8 +278,9 @@ final class InterconnectSourceShareSync {
     };
     for (final MapEntry<String, SourceShareLedgerEntry> e
         in hostLedger.entries) {
-      if (!handled.contains(e.key.split('/').first))
+      if (!handled.contains(e.key.split('/').first)) {
         nextLedger[e.key] = e.value;
+      }
     }
     ledger.hosts[hostId] = nextLedger;
     await ledger.save(_db);
