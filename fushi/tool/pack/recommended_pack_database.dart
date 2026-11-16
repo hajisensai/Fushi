@@ -82,7 +82,7 @@ Future<void> sanitizeRecommendedPackDatabase(FushiDatabase db) async {
       final List<String> audioDbs =
           (await db
                   .customSelect(
-                    "SELECT value FROM preferences "
+                    'SELECT value FROM preferences '
                     "WHERE key = 'local_audio_dbs'",
                   )
                   .get())
