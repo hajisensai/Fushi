@@ -1234,3 +1234,15 @@ G8 子规划文档在仓库里不存在（任务点名的「G8 子规划」找�
   （`import_ops_from` 的 `got.peers`）仍不经确认落下——与清单 `peers` 同样是先到先得，这一处没收，归 G11-3 / 身份负责模块定。
 - 另记（不归本次合流修）：`profile_entities` 不看实体种类就把等于盐的已出现 ID 归到 profile 设置实体，即使经确认、经同步
   （受信设备写的 `Salts`）进来的盐也一样，归 G9 / 别名层核实是否要限定种类。
+
+### 没做 / 交给谁
+
+- S1c 留给 G7-5b 的撤销记录器（`_SrsUndoRecorder.noteWritten` 按输入下标认领，§12「没做」）：两边 API 合流后都在，改动本身
+  很小（`_emit` 传一张「第 i 条草稿点名的键」表，`noteWritten` 有下标时按它对 `_before`），但真内核上的测试（草稿点名
+  `createDeck` 回的带盐成员）在改之前就先崩在 `noteBefore` → `_currentValues` → `_prefetchEdits` 的
+  `Null check`——即 §14「按成员 ID 读实体视图会崩」那条（请求按成员 ID、回包按规范 ID 作键），没法证明改对，本次没合入。
+  先修读路径（或上游 `salt_of`，§13.6 第 1 条），再按上面的做法补，测试照「成员 ID 改一个牌组字段 → 撤销项带 dot、撤销完整」。
+- 本波定向 Dart 测试里的红都属这一族（上游 `salt_of` 仍给 Dart 派生的 ID 加盐 → `createNote` / `createDeck` 回成员 ID）：
+  `srs_fresh_profile_e2e_test.dart` 3 条（新卡被藏，§13.6 第 1 条）、`srs_fushisrs_test.dart` 3 条与
+  `srs_write_statement_cost_test.dart` 2 条（`note` / `noteType` 按成员 ID 读崩在 `_prefetchEdits`，§14）、
+  `fushi/test/srs/srs_word_audio_backfill_test.dart` 的 store 用例（成员 / 规范 ID 对不上，§14「派生 ID 的返回值」）。
