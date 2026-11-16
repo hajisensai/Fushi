@@ -5,7 +5,8 @@ import '../ctl_commands.dart';
 /// `fushi_cli feedback …`：应用内反馈（app 侧路由见 `fushi/lib/src/ops/ctl_feedback_routes.dart`）。
 ///
 /// - `submit <标题>`：与反馈中心「提交」同一个方法，把一条反馈发给开发者。发出去撤不回，
-///   必须加 `--yes`；默认附日志与设备信息（与提交页默认一致），`--no-logs` /
+///   必须加 `--yes`；日志默认值跟类别走（只有 bug 默认附带，与提交页
+///   `feedbackDefaultIncludeLogs` 一致），`--logs` / `--no-logs` 显式改；设备信息默认附带，
 ///   `--no-device-info` 关掉。回执落进 app 的「我的反馈」，进度在反馈中心看。
 const List<CtlCommandGroup> feedbackCommandGroups = <CtlCommandGroup>[
   CtlCommandGroup(
@@ -38,7 +39,11 @@ void _configureSubmit(ArgParser parser) {
       help: '类别',
     )
     ..addOption('body', abbr: 'b', help: '详情')
-    ..addFlag('logs', defaultsTo: true, help: '附带错误 / 调试日志')
+    ..addFlag(
+      'logs',
+      defaultsTo: null,
+      help: '附带错误 / 调试日志（不指定时：bug 附带，suggestion / other 不附带）',
+    )
     ..addFlag('device-info', defaultsTo: true, help: '附带版本 / 平台 / 系统信息')
     ..addFlag(
       'link-account',
@@ -55,19 +60,24 @@ CtlRequestSpec _buildSubmit(CtlCommandContext c) {
     throw CtlUsageError('反馈发给开发者后不可撤回，确认请加 --yes');
   }
   final String? body = c.option('body')?.trim();
+  final String category = c.option('category') ?? 'bug';
   return CtlRequestSpec.post(
     _root,
     body: <String, Object?>{
-      'category': c.option('category') ?? 'bug',
+      'category': category,
       'title': title,
       if (body != null && body.isNotEmpty) 'body': body,
-      'includeLogs': c.flag('logs'),
+      'includeLogs': c.explicitFlag('logs') ?? _defaultIncludeLogs(category),
       'includeDeviceInfo': c.flag('device-info'),
       'linkAccount': c.flag('link-account'),
       'confirm': true,
     },
   );
 }
+
+/// 没指定 `--logs` / `--no-logs` 时附不附日志：只有 bug 附带（反馈 SDN2yTecu9 /
+/// LmIRnau_Fa，与提交页 `feedbackDefaultIncludeLogs` 同一口径）。
+bool _defaultIncludeLogs(String category) => category == 'bug';
 
 String renderFeedbackSubmitted(Object? data) {
   if (data is! Map) return renderCtlJson(data);

@@ -9,8 +9,8 @@ import 'package:fushi/src/ops/op_describe_kit.dart';
 /// irreversible：AI 执行前出确认卡片（卡片列出全部参数，工具条目的详情里能看到完整
 /// 正文），用户点了才注入 `confirm`。
 ///
-/// 附日志 / 附设备信息两项是必填参数：确认卡片只列模型给出的参数，必填才能保证用户在
-/// 点「执行」之前看得到要不要带日志。
+/// 附日志 / 附设备信息 / 以账户身份提交三项是必填参数：确认卡片只列模型给出的参数，
+/// 必填才能保证用户在点「执行」之前看得到要不要带日志、开发者会不会看到昵称。
 List<OpDescription> describeFeedbackOps(OpDescribeKit kit) => <OpDescription>[
   const OpDescription(
     id: 'feedback.submit',
@@ -60,7 +60,8 @@ List<OpDescription> describeFeedbackOps(OpDescribeKit kit) => <OpDescription>[
         'linkAccount',
         description:
             'When signed in to a Fushi account, submit under it so the '
-            'developers see the nickname (default true).',
+            'developers see the nickname. Ask the user if unsure.',
+        required: true,
       ),
       OpParam.userGate(
         'confirm',

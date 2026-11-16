@@ -5,7 +5,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_cli/fushi_cli.dart';
 import 'package:fushi_engine/feedback/feedback_models.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_client.dart'
-    show LeaderboardApiException;
+    show LeaderboardApiException, LeaderboardTimeoutException;
+import 'package:http/http.dart' as http;
 
 import 'package:fushi/src/feedback/feedback_service.dart';
 import 'package:fushi/src/feedback/feedback_store.dart';
@@ -56,7 +57,7 @@ void main() {
           failedAttachments: draft.includeLogs ? 1 : 0,
         );
       },
-      newSubmissionKey: () => 'key-${keys++}',
+      keys: FeedbackSubmissionKeys(newKey: () => 'key-${keys++}'),
     );
   });
 
@@ -70,6 +71,7 @@ void main() {
     'body': '接入 AI 时内置 AI 缺少反馈功能',
     'includeLogs': true,
     'includeDeviceInfo': false,
+    'linkAccount': true,
     'confirm': true,
   };
 
@@ -98,12 +100,41 @@ void main() {
     expect('$result', isNot(contains('secret-ticket-value')));
   });
 
-  test('每次调用一把新的幂等键（两次调用 = 两条反馈）', () async {
-    await post(valid);
+  test('超时后同内容重试带同一把幂等键（不建重复反馈，BUG-3489 同口径）', () async {
+    // 请求已到服务端、回执没收到：路由报 upstream_failed，模型 / 用户再发一次。
+    failWith = LeaderboardTimeoutException(
+      'POST',
+      '/v1/feedback',
+      const Duration(seconds: 30),
+    );
+    await expectLater(post(valid), _failure(502, 'upstream_failed'));
+    failWith = null;
+    // 首尾空白不同也算同一份内容。
+    await post(<String, Object?>{...valid, 'title': 'AI 助手没法反馈'});
+    // 成功之后同样内容再交 = 一次新提交，换新键。
     await post(valid);
     expect(submitted.map((FeedbackDraft d) => d.submissionKey), <String>[
       'key-0',
+      'key-0',
       'key-1',
+    ]);
+  });
+
+  test('内容（含隐私开关）变了就换新键', () async {
+    failWith = const LeaderboardApiException(503, 'unavailable');
+    await expectLater(post(valid), _failure(502));
+    await expectLater(
+      post(<String, Object?>{...valid, 'includeLogs': false}),
+      _failure(502),
+    );
+    await expectLater(
+      post(<String, Object?>{...valid, 'body': '另一段'}),
+      _failure(502),
+    );
+    expect(submitted.map((FeedbackDraft d) => d.submissionKey), <String>[
+      'key-0',
+      'key-1',
+      'key-2',
     ]);
   });
 
@@ -118,8 +149,12 @@ void main() {
     expect(submitted, isEmpty);
   });
 
-  test('附日志 / 附设备信息必须显式给出', () async {
-    for (final String key in <String>['includeLogs', 'includeDeviceInfo']) {
+  test('附日志 / 附设备信息 / 以账户身份提交必须显式给出', () async {
+    for (final String key in <String>[
+      'includeLogs',
+      'includeDeviceInfo',
+      'linkAccount',
+    ]) {
       final Map<String, Object?> body = <String, Object?>{...valid}
         ..remove(key);
       await expectLater(post(body), _failure(400), reason: key);
@@ -166,6 +201,12 @@ void main() {
   test('反馈服务拒绝 / 断网报 upstream_failed', () async {
     failWith = const LeaderboardApiException(429, 'rate_limited');
     await expectLater(post(valid), _failure(502, 'upstream_failed'));
+    // package:http 的真实断网口径是 ClientException（不是 SocketException）。
+    failWith = http.ClientException(
+      'Failed host lookup',
+      Uri.parse('https://x'),
+    );
+    await expectLater(post(valid), _failure(502, 'upstream_failed'));
     failWith = const SocketException('offline');
     await expectLater(post(valid), _failure(502, 'upstream_failed'));
   });
@@ -191,6 +232,7 @@ void main() {
         'title',
         'includeLogs',
         'includeDeviceInfo',
+        'linkAccount',
       ]),
     );
   });

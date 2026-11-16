@@ -32,7 +32,7 @@ void main() {
     expect(() => _build(<String>['  ', '--yes']), _usageError());
   });
 
-  test('submit：隐私开关总是显式进 body，默认与提交页一致', () {
+  test('submit：隐私开关总是显式进 body，默认与提交页一致（日志只有 bug 默认附带）', () {
     final CtlRequestSpec plain = _build(<String>['AI 助手没法反馈', '--yes']);
     expect(plain.method, 'POST');
     expect(plain.path, '/api/admin/feedback');
@@ -64,6 +64,28 @@ void main() {
       'linkAccount': false,
       'confirm': true,
     });
+    // 建议 / 其他不默认附日志（提交页 feedbackDefaultIncludeLogs 同口径）。
+    for (final String category in <String>['suggestion', 'other']) {
+      expect(
+        _build(<String>['x', '-c', category, '--yes']).body!['includeLogs'],
+        isFalse,
+        reason: category,
+      );
+    }
+    expect(
+      _build(<String>[
+        'x',
+        '-c',
+        'suggestion',
+        '--logs',
+        '--yes',
+      ]).body!['includeLogs'],
+      isTrue,
+    );
+    expect(
+      _build(<String>['x', '--no-logs', '--yes']).body!['includeLogs'],
+      isFalse,
+    );
     expect(
       () => _build(<String>['x', '-c', 'praise', '--yes']),
       throwsA(isA<ArgParserException>()),
