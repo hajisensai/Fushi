@@ -17,6 +17,7 @@ import 'package:fushi/src/media/drag_drop/drop_classification.dart'
 import 'package:fushi/src/media/import/pasted_text_book_dialog.dart';
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/media_source.dart' show MediaItemAppLookup;
+import 'package:fushi/src/media/import/import_inbox.dart';
 import 'package:fushi/src/media/import/quick_import_section.dart';
 import 'package:fushi_engine/media/media_extensions.dart' show kVideoExtensions;
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
@@ -203,6 +204,8 @@ class _MediaSourcesPageState extends ConsumerState<MediaSourcesPage> {
             // 网络来源（SFTP / FTP / WebDAV / AList）也是一种导入方式：在网格里
             // 给一张卡，与「常驻来源」区头的添加按钮走同一个 addSource。
             extraActions: <QuickImportAction>[
+              // iOS「文件」App 收件箱（拍板台 nLXhu0d7gV）：其它平台没有收件箱，不放空壳入口。
+              if (ImportInbox.isSupported) _inboxImportAction(),
               QuickImportAction(
                 icon: FushiIcons.cloud,
                 label: t.media_source_add_network,
@@ -231,6 +234,27 @@ class _MediaSourcesPageState extends ConsumerState<MediaSourcesPage> {
         ),
       ],
     );
+  }
+
+  /// 「从『文件』App 导入」：收 `我的 iPhone › Fushi › <本域子目录>` 里的文件。
+  QuickImportAction _inboxImportAction() => QuickImportAction(
+    icon: FushiIcons.folderOpen,
+    label: t.media_import_inbox,
+    description: t.media_import_inbox_hint(
+      folder: ImportInbox.folderNameFor(widget.mediaKind) ?? '',
+    ),
+    enabled: !_busy,
+    onTap: _importFromInbox,
+  );
+
+  Future<void> _importFromInbox() async {
+    await _viewKey.currentState?.importFromInbox();
+    if (!mounted) return;
+    if (widget.mediaKind == 'book') {
+      _invalidateBookProviders();
+    } else {
+      widget.onLibraryChanged?.call();
+    }
   }
 
   /// 拖放区「支持格式」chip 行（格式名不翻译），从导入实际认的扩展名集合派生。

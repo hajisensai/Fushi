@@ -684,6 +684,32 @@ extension _FushiSyncServerVideo on FushiSyncServer {
       }
     }
 
+    // GET /api/library/videos/<id>/fingerprint?episode=N — 卡片来源的字节身份（拍板台
+    // IFCPPprIpT）。client 远程播放 host 的视频制卡时没有本地文件可算指纹，由 host 对
+    // 它要串流的同一个文件（与 `/streamurl` 同一个 resolveVideoFile）算全文件 SHA-256，
+    // 与本地播放制卡的 [VideoSourceFingerprint] 同一口径，卡片因此能跨设备回跳并核验。
+    // 需 Basic 鉴权（不在 /stream 豁免名单）。老 host 无此分支 → 兜底 404，client 当作
+    // 「取不到指纹」（制卡不带链接 / 回跳不核验），与此前行为一致。
+    final String? fingerprintId = _extractVideoId(reqPath, 'fingerprint');
+    if (fingerprintId != null) {
+      if (method != 'GET') return shelf.Response(405);
+      final File? file = await svc.resolveVideoFile(
+        fingerprintId,
+        episodeIndex: _episodeIndexFromRequest(request),
+      );
+      if (file == null) return shelf.Response.notFound('Video not found');
+      try {
+        final String digest = await VideoSourceFingerprint.instance.fingerprint(
+          file.path,
+        );
+        return jsonResponse(<String, Object?>{'fingerprint': digest});
+      } on FileSystemException catch (error, stack) {
+        // 文件不在 / 算指纹期间被改写：没有可担保的身份，按「取不到」回。
+        engineLog.log('video.fingerprint', error, stack);
+        return shelf.Response.notFound('Video fingerprint unavailable');
+      }
+    }
+
     // GET /api/library/videos/<id>/clipaudio?startMs=&endMs=&episode=&audioStreamIndex=
     //     &audioStreamCount=&ac=&bitrate= — BUG-1004：host 端本地裁 mining 句子音频段并回传。
     // 需 Basic 鉴权（中间件已处理，clipaudio 不在 /stream 豁免名单）。client ffmpeg 打不开

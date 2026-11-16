@@ -2069,6 +2069,10 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
   /// macOS 宿主侧悬停腿（页面收不到 mousemove，BUG-2508）。
   final ReaderHostHoverLookupGate _hostHover = ReaderHostHoverLookupGate();
 
+  /// 卡面滑动的几何量在宿主侧按全局坐标量（页内坐标随卡面跟手平移而偏，见
+  /// [SrsHostPointerTrack]）。
+  final SrsHostPointerTrack _pointerTrack = SrsHostPointerTrack();
+
   /// 取词脚本整段（选区脚本 + 卡面监听）只拼一次。
   static final String _lookupInstallScript = srsCardLookupInstallScript(
     ReaderSelectionScripts.source(),
@@ -2365,6 +2369,7 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
   }
 
   /// 页内脚本回报的卡面手势（[kSrsGestureHandler]）：页面 CSS 像素换成全局逻辑像素。
+  /// 拖动 / 松手的位移与速度换成宿主侧全局读数（[SrsHostPointerTrack.rebase]）。
   void _onPageGesture(Object? raw) {
     final void Function(SrsCardGestureEvent)? onGesture =
         widget.face.onCardGesture;
@@ -2377,7 +2382,7 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
       viewHeight: box.size.height,
       toGlobal: (Offset local) => MatrixUtils.transformPoint(toGlobal, local),
     );
-    if (event != null) onGesture(event);
+    if (event != null) onGesture(_pointerTrack.rebase(event));
   }
 
   RenderBox? get _box {
@@ -2938,6 +2943,10 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
     // MissingPluginException，channel 号每张卡 +2，复习卡顿）。没有作用域时 [_onHostHover]
     // 自己 no-op。
     return Listener(
+      onPointerDown: _pointerTrack.down,
+      onPointerMove: _pointerTrack.move,
+      onPointerUp: _pointerTrack.up,
+      onPointerCancel: _pointerTrack.cancel,
       onPointerHover: hostOwnsWebViewHoverLookup ? _onHostHover : null,
       child: webView,
     );

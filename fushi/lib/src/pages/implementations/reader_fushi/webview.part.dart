@@ -2474,6 +2474,17 @@ updateLive: function(patch) {
           callback: (_) => _handleReaderScroll(),
         );
 
+        // 墨水屏「每 N 页全刷」：连续模式每滚过一屏回传一次（JS `_noteEinkScroll`）。
+        // 恢复 / 换章在飞时的程序化滚动不是用户翻页，丢弃——翻页跨章由
+        // _onRestoreComplete 自己计。
+        controller.addJavaScriptHandler(
+          handlerName: 'onEinkScrollPage',
+          callback: (_) {
+            if (!_readerContentReady || _restoreInFlight || _lyricsMode) return;
+            _noteEinkPageTurn();
+          },
+        );
+
         // BUG-117: primary internal-link path. The JS click interceptor (in the
         // reader setup script) preventDefaults <a> clicks and forwards the
         // browser-resolved absolute href here, so link navigation works on every

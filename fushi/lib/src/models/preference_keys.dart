@@ -189,6 +189,12 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'auto_search',
   'auto_search_debounce_delay',
   'auto_update_dictionaries',
+  // bool（默认 false）：从 NSFW 作品制卡时卡上的封面 / 页图用模糊副本。见
+  // media/nsfw/nsfw_card_image.dart。
+  'blur_nsfw_card_images',
+  // bool（默认 true）：NSFW 作品的封面在库页 / 继续卡等处打模糊。见
+  // media/nsfw/nsfw_cover_blur.dart。
+  'blur_nsfw_covers',
   // string（默认空）：楽天ブックス书籍检索的 accessKey / applicationId（楽天ウェブ
   // サービス注册应用后拿到）。两者都填了书籍刮削才出现「楽天ブックス」源。凭据 →
   // 同时登记在 kCredentialPreferenceKeys、PrefRedactionPolicy.sensitiveKeys 与

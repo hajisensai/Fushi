@@ -176,7 +176,7 @@ class MusicPluginSettingsBody extends StatefulWidget {
 
 class _MusicPluginSettingsBodyState extends State<MusicPluginSettingsBody> {
   MusicPluginManager get _manager => widget.appModel.musicPluginManager;
-  late Future<List<InstalledMusicPlugin>> _plugins = _manager.list();
+  late Future<List<InstalledMusicPlugin>> _plugins = _manager.listInstalled();
   bool _busy = false;
 
   /// 安装 / 卸载 / 启停一律经 [MusicPluginManager.changes] 刷新：安装可能来自本页的
@@ -198,7 +198,7 @@ class _MusicPluginSettingsBodyState extends State<MusicPluginSettingsBody> {
   void _reload() {
     if (!mounted) return;
     setState(() {
-      _plugins = _manager.list();
+      _plugins = _manager.listInstalled();
     });
   }
 

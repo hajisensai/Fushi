@@ -216,6 +216,7 @@ pub(super) fn log_state(
             Some(l.dur),
             day,
             today,
+            today_start,
         );
     }
     Ok(s)
