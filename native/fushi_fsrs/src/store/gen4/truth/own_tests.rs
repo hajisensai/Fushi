@@ -255,7 +255,7 @@ fn a_fork_reissues_the_later_ops_under_the_new_identity_and_keeps_state_in_step(
             (re.kind, re.fmt, &re.payload),
             (orig.kind, orig.fmt, &orig.payload)
         );
-        assert!(re.hlc > prev_hlc && re.hlc.wall >= orig.hlc.wall);
+        assert!(re.hlc > prev_hlc && re.hlc > orig.hlc);
         prev_hlc = re.hlc;
         assert_eq!(re.deps.get(&old.device), (from.seq - 1).min(3));
         assert_eq!(re.deps.get(&new.device), 0);
@@ -433,4 +433,54 @@ fn another_connection_sees_the_new_identity_and_a_stale_session_cannot_write() {
     drop((ta, tb));
     drop((a, b));
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn reissued_ops_come_after_the_originals_even_when_the_local_clock_lags() {
+    // self_.hlc 没人推进过（init_self 写的 0:0），原操作的 HLC 是 (W, 5)、(W, 6)、(W+1, 0)，换身份时墙钟 now < W。
+    // 只接着 self_.hlc tick 会发出 (W, 0)，比原操作还小。
+    let (conn, col) = setup();
+    let t = Truth::new(&conn);
+    let old = me(&t, col);
+    assert_eq!((old.clock.wall, old.clock.logical), (0, 0));
+    let w = T0 + 50_000;
+    let at = |wall: i64, logical: u32| Hlc {
+        wall,
+        logical,
+        device: old.device,
+    };
+    let hlcs = [at(T0, 0), at(w, 5), at(w, 6), at(w + 1, 0)];
+    let originals: Vec<Op4> = t
+        .tx(|t| {
+            let mut out = Vec::new();
+            for (i, h) in hlcs.iter().enumerate() {
+                let seq = i as u64 + 1;
+                let o = Op4::of(oid(old.device, seq), *h, Arc::new(Vv::new()), &body(seq, 0));
+                t.append_native(col, &o)?;
+                out.push(o);
+            }
+            Ok(out)
+        })
+        .unwrap();
+    let r = t.rotate_identity_report(col, 1, T0 + 10).unwrap();
+    assert_eq!(r.moved.len(), 3);
+    let top = originals.iter().map(|o| o.hlc).max().unwrap();
+    let mut prev: Option<Hlc> = None;
+    for (from, to) in &r.moved {
+        let orig = &originals[from.seq as usize - 1];
+        let re = t.entry(col, to).unwrap().unwrap().op().unwrap().clone();
+        assert!(
+            (re.hlc.wall, re.hlc.logical) > (top.wall, top.logical),
+            "{:?} must come after every moved original (max {:?})",
+            re.hlc,
+            top
+        );
+        assert!(re.hlc > orig.hlc);
+        if let Some(p) = prev {
+            assert!(re.hlc > p);
+        }
+        prev = Some(re.hlc);
+    }
+    // 新身份的时钟记到了最后一条重签发的时刻。
+    assert_eq!(me(&t, col).clock, prev.unwrap());
 }

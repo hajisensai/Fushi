@@ -204,13 +204,16 @@ fn heads_that_are_not_ours_a_prefix_or_an_impostor_are_told_apart() {
     let (head, _, _) = clone_location(&t, col, 12, 12, 5);
     // 位置上的 head 与本机相同 / 落后（前缀）。
     assert_eq!(judge_own_head(&t, col, &head), Ok(OwnHead::Prefix));
-    let mut behind = head.clone();
-    behind.seq = 7;
-    behind.chain = t.chain_at(col, &head.device, 7).unwrap();
+    let (behind, _, _) = clone_location(&t, col, 7, 7, 5);
+    assert_eq!(
+        (behind.seq, behind.chain),
+        (7, t.chain_at(col, &head.device, 7).unwrap())
+    );
     assert_eq!(judge_own_head(&t, col, &behind), Ok(OwnHead::Prefix));
     let mut empty = head.clone();
     empty.seq = 0;
     empty.chain = CHAIN_ZERO;
+    empty.segs = Vec::new();
     assert_eq!(judge_own_head(&t, col, &empty), Ok(OwnHead::Prefix));
     // 别的设备、别的集合。
     let mut other = head.clone();
@@ -410,4 +413,86 @@ fn a_bad_feed_or_record_is_refused() {
     .unwrap();
     let e = recorded_fork(&t, col).unwrap_err();
     assert!(e.contains("bad fork record"), "{e}");
+}
+
+#[test]
+fn a_malformed_own_head_is_an_error_not_a_silent_empty_fetch() {
+    // 链值对不上、段清单却是空的：以前二分得出空的 Fetch，调用方没东西可拉，分叉被悄悄漏掉。
+    let (conn, col) = setup();
+    let t = Truth::new(&conn);
+    write_own(&t, col, 12);
+    let (head, _, _) = clone_location(&t, col, 6, 12, 5);
+    assert!(matches!(
+        judge_own_head(&t, col, &head),
+        Ok(OwnHead::Fetch { .. })
+    ));
+    let mut bare = head.clone();
+    bare.segs = Vec::new();
+    let e = judge_own_head(&t, col, &bare).unwrap_err();
+    assert!(e.contains("do not cover"), "{e}");
+    // 段清单有缺口 / 没覆盖到 seq / 首段不从 1 起，同样报错。
+    let mut gap = head.clone();
+    gap.segs.remove(1);
+    let e = judge_own_head(&t, col, &gap).unwrap_err();
+    assert!(e.contains("not contiguous"), "{e}");
+    let mut short = head.clone();
+    short.segs.pop();
+    let e = judge_own_head(&t, col, &short).unwrap_err();
+    assert!(e.contains("do not cover"), "{e}");
+    let mut late = head.clone();
+    late.segs.remove(0);
+    let e = judge_own_head(&t, col, &late).unwrap_err();
+    assert!(e.contains("not contiguous"), "{e}");
+    // 别的设备的畸形 head 不归这里判（按普通设备处理，由解码 / 收段那一层拒）。
+    let mut other = bare.clone();
+    other.device = idn(1, 1);
+    assert_eq!(judge_own_head(&t, col, &other), Ok(OwnHead::Foreign));
+}
+
+#[test]
+fn recording_a_fork_obeys_the_write_guards() {
+    // 会话已毒化（同一事务里前一笔写失败）：分叉记录不许再写进这笔事务。
+    let (conn, col) = setup();
+    let t = Truth::new(&conn);
+    write_own(&t, col, 4);
+    let e = t
+        .tx(|t| {
+            let h = Hlc {
+                wall: T0,
+                logical: 1,
+                device: idn(1, 1),
+            };
+            assert!(t.set_self_clock(col + 999, &h).is_err());
+            record_fork(t, col, 2)
+        })
+        .unwrap_err();
+    assert!(e.contains("earlier write failed"), "{e}");
+    assert_eq!(recorded_fork(&t, col), Ok(None));
+
+    // 别的连接在缓存之后提交过、调用方自己开事务又没 reset：拒写，不落库。
+    let dir = std::env::temp_dir().join(format!("fushi-g8-6-fork-{}", Id::random().text()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("srs4.db");
+    let a = crate::store::gen4::schema::open(&path).unwrap();
+    let b = crate::store::gen4::schema::open(&path).unwrap();
+    let ta = Truth::new(&a);
+    let col = crate::store::gen4::truth::tests::bound(&ta);
+    ta.tx(|t| t.init_self(col, &SEED, None, T0)).unwrap();
+    write_own(&ta, col, 6);
+    let tb = Truth::new(&b);
+    let me = tb.self_identity(col).unwrap().unwrap();
+    assert_eq!(tb.last_of(col, &me.device), Ok(6));
+    write_own(&ta, col, 1);
+    b.execute_batch("BEGIN IMMEDIATE").unwrap();
+    let e = record_fork(&tb, col, 3).unwrap_err();
+    assert!(e.contains("another connection committed"), "{e}");
+    b.execute_batch("ROLLBACK").unwrap();
+    tb.reset();
+    assert_eq!(recorded_fork(&tb, col), Ok(None));
+    // 经 tx 的正常路径照常写。
+    assert_eq!(tb.tx(|t| record_fork(t, col, 3)), Ok(3));
+    assert_eq!(recorded_fork(&ta, col), Ok(Some(3)));
+    drop((ta, tb));
+    drop((a, b));
+    let _ = std::fs::remove_dir_all(&dir);
 }

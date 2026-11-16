@@ -22,7 +22,7 @@
 //! 换身份之后旧身份冻结在 `keep`，另一个安装在它下面写的操作按普通设备收：新代的 `Truth::append_native` 从 `keep` 处的
 //! 链值接着验。
 
-use rusqlite::{OptionalExtension, params};
+use rusqlite::OptionalExtension;
 
 use super::schema::sql;
 use super::truth::{NativeStep, Rotated, Truth, fork_key};
@@ -48,6 +48,10 @@ pub enum OwnHead {
 }
 
 /// 看一份位置上的 head 是不是本机身份分叉了。只读。
+///
+/// 同一个身份在位置上可能有好几份 head（两个安装各写各的）：调用方（G8-7 的同步轮）要让**每一份**本机设备 ID 的
+/// head 都过一遍，只判一份会漏掉分叉。段清单不首尾相接、不覆盖 `1..=seq` 的畸形 head 报错（`Head4` 的解码器会拒，
+/// 这里防的是不经解码器构造的值）：段清单为空时二分没东西可拉，分叉会被悄悄漏掉。
 pub fn judge_own_head(t: &Truth<'_>, col: i64, h: &Head4) -> Result<OwnHead, String> {
     let me = t
         .self_identity(col)?
@@ -61,6 +65,7 @@ pub fn judge_own_head(t: &Truth<'_>, col: i64, h: &Head4) -> Result<OwnHead, Str
     if h.public != me.public() {
         return Ok(OwnHead::Impostor);
     }
+    check_segs(h)?;
     if let Some(keep) = recorded_fork(t, col)? {
         return Ok(OwnHead::Known { keep });
     }
@@ -85,6 +90,21 @@ pub fn judge_own_head(t: &Truth<'_>, col: i64, h: &Head4) -> Result<OwnHead, Str
     Ok(OwnHead::Fetch {
         segs: h.segs[lo.saturating_sub(1)..].to_vec(),
     })
+}
+
+/// 段清单必须首尾相接、覆盖 `1..=seq`（与 `Head4` 解码器同一判据）。
+fn check_segs(h: &Head4) -> Result<(), String> {
+    let mut next = 1u64;
+    for &(a, b, _) in &h.segs {
+        if a != next || b < a {
+            return Err("gen4 fork: head segs are not contiguous".to_owned());
+        }
+        next = b + 1;
+    }
+    if next != h.seq + 1 {
+        return Err("gen4 fork: head segs do not cover its seq".to_owned());
+    }
+    Ok(())
 }
 
 /// 逐条比本机身份的段与本机日志的链值。
@@ -221,22 +241,10 @@ fn parse_record(v: &str) -> Option<(Id, u64)> {
 }
 
 /// 记下本机当前身份的分叉点（已有记录的取较小者）。返回记下的值。必须在事务里。
+///
+/// 与本模块其它写入同一套纪律（`Truth::write` 的守卫）：会话已毒化、或别的连接在缓存之后提交过，都拒写。
 pub fn record_fork(t: &Truth<'_>, col: i64, keep: u64) -> Result<u64, String> {
-    let conn = t.conn();
-    if conn.is_autocommit() {
-        return Err("gen4 fork: write outside a transaction".to_owned());
-    }
-    let me = t
-        .self_identity(col)?
-        .ok_or_else(|| format!("gen4 fork: collection {col} has no local identity"))?;
-    let keep = recorded_fork(t, col)?.map_or(keep, |k| k.min(keep));
-    conn.prepare_cached(
-        "INSERT INTO srs_meta (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-    )
-    .map_err(sql)?
-    .execute(params![fork_key(col), format!("{}:{keep}", me.device.text())])
-    .map_err(sql)?;
-    Ok(keep)
+    t.record_fork_point(col, keep)
 }
 
 /// 本机当前身份记着的分叉点（没有、或记的是换身份之前的旧身份 = None）。

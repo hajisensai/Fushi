@@ -328,6 +328,26 @@ impl<'c> Truth<'c> {
         })
     }
 
+    /// 记下本机当前身份的分叉点（`gen4::fork::record_fork` 的落库；已有记录取较小者）。返回记下的值。走 [Truth::write]
+    /// 的守卫：事务外、之前写失败过（会话已毒化）、别的连接在缓存之后提交过，一律拒写。
+    pub(crate) fn record_fork_point(&self, col: i64, keep: u64) -> Result<u64, String> {
+        self.write(|| {
+            let me = self
+                .self_identity(col)?
+                .ok_or_else(|| format!("gen4 fork: collection {col} has no local identity"))?;
+            let keep = crate::store::gen4::fork::recorded_fork(self, col)?
+                .map_or(keep, |k| k.min(keep));
+            self.conn
+                .prepare_cached(
+                    "INSERT INTO srs_meta (key, value) VALUES (?1, ?2)                      ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                )
+                .map_err(sql)?
+                .execute(params![fork_key(col), format!("{}:{keep}", me.device.text())])
+                .map_err(sql)?;
+            Ok(keep)
+        })
+    }
+
     // ------------------------------------------------------------ 原生日志的读（分叉检测、小段合并用）
 
     /// 原生日志在 [seq] 处的链值；落在空洞区间内部（只有区间末有链值）或超出日志末尾 = None。
@@ -522,6 +542,17 @@ impl<'c> Truth<'c> {
                 ..me.clock
             },
         };
+        // 先把被搬操作自己的 HLC 收进时钟：`self_.hlc` 可能落后于它们（没人推进过、或推进晚了），只接着它 tick 会在
+        // `now` 早于原墙钟时发出 `(W, 0)` 这种比原操作 `(W, n)` 还小的时刻，并发写入按 HLC 定先后就会颠倒。收进来之后
+        // 每条重签发的 HLC 都严格大于全部原操作的（原操作又大于它依赖的别家操作），先后关系不倒。
+        for op in &moved_ops {
+            if (op.hlc.wall, op.hlc.logical) > (clock.last.wall, clock.last.logical) {
+                clock.last = Hlc {
+                    device: fresh,
+                    ..op.hlc
+                };
+            }
+        }
         let applied = self.applied(col)?;
         let mut moved: Vec<(OpId, OpId)> = Vec::with_capacity(moved_ops.len());
         for (i, op) in moved_ops.iter().enumerate() {
