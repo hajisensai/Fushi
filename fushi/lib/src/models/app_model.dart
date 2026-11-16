@@ -5884,6 +5884,8 @@ class AppModel
       themeNotifier.shellBlockArrangement;
   Future<void> setShellBlockArrangement(ShellBlockArrangement value) =>
       themeNotifier.setShellBlockArrangement(value);
+  Future<void> resetShellBlockArrangement() =>
+      themeNotifier.resetShellBlockArrangement();
   bool get shellSmoothCorners => themeNotifier.shellSmoothCorners;
   Future<void> setShellSmoothCorners(bool value) =>
       themeNotifier.setShellSmoothCorners(value);

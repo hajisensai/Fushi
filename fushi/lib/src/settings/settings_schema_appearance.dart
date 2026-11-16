@@ -398,10 +398,13 @@ SettingsDestination buildAppearanceDestination() {
                 ) => settingsContext.appModel
                     .setShellBlockArrangement(value)
                     .then((_) => settingsContext.refresh()),
-            // 摆放只对拼贴生效，恢复默认取拼贴下的默认（散落），不随默认布局变。
-            defaultValue: ShellBlockArrangement.defaultFor(
-              ShellContentLayout.collage,
-            ),
+            // 没选过时摆放跟着布局走（拼贴 = 散落、封面网格下的色块分区 = 规整），
+            // 「已改过」对照此刻布局下的真实默认；恢复默认清掉偏好回到跟着走
+            // （BUG-4695）。
+            defaultValueBuilder: (SettingsContext c) =>
+                ShellBlockArrangement.defaultFor(c.appModel.shellContentLayout),
+            resetToDefault: (SettingsContext c) =>
+                c.appModel.resetShellBlockArrangement(),
           ),
           SettingsSwitchItem(
             id: 'appearance.shell_smooth_corners',
