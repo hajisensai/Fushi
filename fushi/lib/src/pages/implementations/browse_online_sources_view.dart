@@ -163,7 +163,7 @@ class BrowseSubPage extends StatelessWidget {
 
 /// 一个内容域的一节在线来源面。
 ///
-/// 书 / 视频两域的实现此前住在 `MediaSourcesPage`（书 / 视频「导入」视图的后三段），
+/// 书 / 视频两域的实现此前住在已删除的 `MediaSourcesPage`（书 / 视频「导入」视图的后三段），
 /// 漫画在 `MangaSourcesPage`；2026-09-27 起三域统一搬进「浏览」，导入页只剩本地
 /// 来源。漫画域原样委托给 [MangaOnlineSourcesView]。
 ///

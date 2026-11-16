@@ -1,6 +1,8 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/video/download/video_download_subscription_service.dart'
+    show VideoDownloadSubscriptionConfigIssue;
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/pages/implementations/video_download_subscriptions_panel.dart';
@@ -89,7 +91,7 @@ void main() {
         '{"token":"secret","codec":"HEVC","resolution":"1080p",'
         '"releaseGroup":"Group","trusted":true}',
       ),
-      <String>['Group', '1080p', 'HEVC', t.anime_download_trusted],
+      <String>['Group', '1080p', 'HEVC', t.anime_download_trusted_only],
     );
     expect(videoDownloadSubscriptionFilterSummary('invalid'), isEmpty);
   });
@@ -112,7 +114,7 @@ void main() {
 
     expect(find.text('Group'), findsOneWidget);
     expect(find.text('1080p'), findsOneWidget);
-    expect(find.text(t.anime_download_trusted), findsOneWidget);
+    expect(find.text(t.anime_download_trusted_only), findsOneWidget);
     expect(
       find.textContaining('Indexer temporarily unavailable'),
       findsOneWidget,
@@ -143,6 +145,71 @@ void main() {
       'toggle:subscription-1:false',
       'delete:subscription-1',
     ]);
+    expect(tester.takeException(), isNull);
+  });
+
+  // 拼贴改版：可信规则不再把原始布尔拼成「可信: false」。
+  test('trust rules read as human labels, unrestricted emits no tag', () {
+    expect(
+      videoDownloadSubscriptionFilterSummary('{"trusted":false}'),
+      <String>[t.subscription_rule_untrusted_only],
+    );
+    expect(
+      videoDownloadSubscriptionFilterSummary('{"trustedOnly":true}'),
+      <String>[t.anime_download_trusted_only],
+    );
+    expect(
+      videoDownloadSubscriptionFilterSummary('{"trustedOnly":false}'),
+      isEmpty,
+    );
+  });
+
+  // 引擎配置错误（冻结的英文诊断串）按分类映射成本地化文案，不直透 UI。
+  test('engine configuration errors map to localized labels', () {
+    expect(
+      videoDownloadSubscriptionErrorLabel(
+        VideoDownloadSubscriptionConfigIssue.targetSourceUnavailable.message,
+      ),
+      t.download_subscription_error_target_source,
+    );
+    for (final VideoDownloadSubscriptionConfigIssue issue
+        in VideoDownloadSubscriptionConfigIssue.values) {
+      expect(
+        videoDownloadSubscriptionErrorLabel(issue.message),
+        isNot(issue.message),
+        reason: '${issue.name} must not surface the raw English string',
+      );
+    }
+    expect(
+      videoDownloadSubscriptionErrorLabel('nyaa timeout: upstream slow'),
+      'nyaa timeout: upstream slow',
+    );
+  });
+
+  testWidgets('target-source error shows the localized line, not English', (
+    WidgetTester tester,
+  ) async {
+    await _pump(
+      tester,
+      subscriptions: <VideoDownloadSubscriptionRow>[
+        _subscription(
+          lastError: VideoDownloadSubscriptionConfigIssue
+              .targetSourceUnavailable
+              .message,
+        ),
+      ],
+      onToggle: (_, __) async {},
+      onCheck: (_) async {},
+      onDelete: (_) async {},
+    );
+    expect(
+      find.text(t.download_subscription_error_target_source),
+      findsOneWidget,
+    );
+    expect(
+      find.text('The subscription target source is unavailable'),
+      findsNothing,
+    );
     expect(tester.takeException(), isNull);
   });
 

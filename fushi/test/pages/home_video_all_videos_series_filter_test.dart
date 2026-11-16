@@ -15,12 +15,12 @@ import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/home_video_page.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/platform_services.dart';
-import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/fake_anki_repository.dart';
 import '../helpers/test_platform_services.dart';
+import '../helpers/video_header_more.dart';
 
 /// 「全部视频」的系列归属筛选。
 ///
@@ -410,7 +410,7 @@ void main() {
     await pumpSection(tester, VideoLibrarySection.allVideos);
     await pickSeriesFilter(tester, t.video_filter_series_in);
 
-    await tester.tap(find.byIcon(FushiIcons.checklist));
+    await tapVideoHeaderMoreEntry(tester, 'library_select_toggle');
     await tester.pumpAndSettle();
     await tester.tap(find.text(t.batch_select_all));
     await tester.pumpAndSettle();
@@ -429,7 +429,7 @@ void main() {
     await prefs.setVideoAllSeriesFilterName('all');
     await pumpSection(tester, VideoLibrarySection.allVideos);
 
-    await tester.tap(find.byIcon(FushiIcons.checklist));
+    await tapVideoHeaderMoreEntry(tester, 'library_select_toggle');
     await tester.pumpAndSettle();
     await tester.tap(cardOf('video/ep1'));
     await tester.pump();
@@ -460,7 +460,7 @@ void main() {
     await seedSeriesAndLoose();
     await prefs.setVideoAllSeriesFilterName('all');
     await pumpSection(tester, VideoLibrarySection.allVideos);
-    await tester.tap(find.byIcon(FushiIcons.checklist));
+    await tapVideoHeaderMoreEntry(tester, 'library_select_toggle');
     await tester.pumpAndSettle();
     await tester.tap(cardOf('video/ep1'));
     await tester.pump();
@@ -504,7 +504,7 @@ void main() {
     await prefs.setVideoAllSeriesFilterName('all');
 
     await pumpSection(tester, VideoLibrarySection.allVideos);
-    await tester.tap(find.byIcon(FushiIcons.checklist));
+    await tapVideoHeaderMoreEntry(tester, 'library_select_toggle');
     await tester.pumpAndSettle();
     await tester.tap(cardOf('video/ep1'));
     await tester.pump();
@@ -551,7 +551,7 @@ void main() {
     expect(cardOf('video/ep1'), findsNothing, reason: '前提：确实筛成了空态');
     expect(cardOf('video/ep2'), findsNothing);
 
-    await tester.tap(find.byIcon(FushiIcons.checklist));
+    await tapVideoHeaderMoreEntry(tester, 'library_select_toggle');
     await tester.pumpAndSettle();
     await tester.tap(find.text(t.batch_select_all));
     await tester.pumpAndSettle();

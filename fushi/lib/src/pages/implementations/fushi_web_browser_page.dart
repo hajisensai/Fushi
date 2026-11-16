@@ -541,6 +541,7 @@ class _FushiWebBrowserHomePageState
   Widget build(BuildContext context) {
     return FushiPageScaffold(
       title: t.web_browser_title,
+      masthead: false,
       // 作 hub 子页时页头由宿主画；独立挂载时 MD3 整条页头不画（见类注释），
       // Apple 走默认大标题。
       header: widget.hostedByHub || !isGlassDesign(context)

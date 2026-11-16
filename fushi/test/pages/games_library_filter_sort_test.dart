@@ -293,6 +293,9 @@ void main() {
     navKey.currentState!.pop();
     await tester.pumpAndSettle();
     expect(cardTitle('贝塔物语'), findsNothing);
+    // 设计稿「游戏 · 库」GA9：「管理合集」收进页头恒外露的「⋯」。
+    await tester.tap(find.byKey(const ValueKey<String>('games-library-more')));
+    await tester.pumpAndSettle();
     await tester.tap(
       find.byKey(const ValueKey<String>('library_collection_manage')),
     );

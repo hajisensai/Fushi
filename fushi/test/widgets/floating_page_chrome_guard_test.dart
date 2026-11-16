@@ -61,8 +61,25 @@ void main() {
     );
     expect(
       bars,
-      contains('_buildFloating(context, floating, scrolledUnder)'),
-      reason: 'FushiAppBar 的 Material 分支必须画悬浮胶囊顶栏',
+      contains('_buildFloating(context, scrolledUnder)'),
+      reason: 'FushiAppBar 的 Material 分支必须走悬浮顶栏',
+    );
+    // 2026-11-15 所有者「二级页还是胶囊」：FushiAppBar 的 Material 悬浮顶栏是
+    // 现行页头的一行（返回 / 页名 / 动作都是页头大字口径），不再装标题胶囊。
+    expect(
+      bars,
+      contains('FushiMastheadActionGroup(items: <Widget>[resolvedLeading])'),
+      reason: 'FushiAppBar 的返回键必须走页头大字的裸按钮组',
+    );
+    expect(
+      bars,
+      contains('FushiShellHeaderActions(actions: finalActions)'),
+      reason: 'FushiAppBar 的动作必须走页头大字口径（平铺，放不下收「⋯」）',
+    );
+    expect(
+      bars,
+      isNot(contains('_floatingTitleCapsule(')),
+      reason: 'FushiAppBar 不得再画标题胶囊',
     );
     expect(
       bars,
@@ -72,7 +89,7 @@ void main() {
     expect(
       bars,
       contains('FushiPageChromeCircle('),
-      reason: 'FushiRouteBackButton / 隐含返回键必须是圆形悬浮胶囊',
+      reason: 'FushiRouteBackButton（自定义页头用）必须是圆形悬浮胶囊',
     );
 
     final String components = maskCommentsAndScriptLines(

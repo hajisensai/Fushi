@@ -150,10 +150,9 @@ class HomePanoramaPanel extends ConsumerWidget {
           shape: fushiCoverBlockShape(context, FushiCoverBlockSize.regular),
           onTap: hasWorks ? () => _openFullscreen(context) : null,
           child: FushiPosterBlock(
-            watermark: t.home_panel_panorama_title,
+            // 统计 / 面板块不画大字水印（设计稿 G2 / H2 / H5：水印只给带封面的媒体块）。
+            watermark: '',
             colors: colors,
-            watermarkFontSize: 110,
-            watermarkEdge: FushiPosterWatermarkEdge.bottom,
             hoverEnabled: hasWorks,
             padding: const EdgeInsetsDirectional.fromSTEB(22, 14, 10, 22),
             child: Column(

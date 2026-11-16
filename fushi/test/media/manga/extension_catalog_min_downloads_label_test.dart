@@ -35,7 +35,12 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  String firstChipText(WidgetTester tester) {
+  Future<String> firstChipText(WidgetTester tester) async {
+    // 下载量门槛是下拉胶囊：先开菜单，首项（门槛 0）是菜单里的「不限」。
+    await tester.tap(
+      find.byKey(const ValueKey<String>('test_extension_min_downloads')),
+    );
+    await tester.pumpAndSettle();
     final Finder chip = find.byKey(
       const ValueKey<String>('test_extension_min_downloads_0'),
     );
@@ -90,7 +95,7 @@ void main() {
         });
       }
 
-      final String label = firstChipText(tester);
+      final String label = await firstChipText(tester);
       expect(label, t.mihon_extension_min_downloads_any);
       expect(label, isNot(t.mihon_extension_language_all));
     });

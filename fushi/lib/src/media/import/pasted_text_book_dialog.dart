@@ -3,13 +3,14 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi_core/fushi_core.dart' show FushiDatabase;
 
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/import/import_dialog_blocks.dart';
 import 'package:fushi/src/media/import/import_dialog_frame.dart';
+import 'package:fushi/src/media/import/import_surface_spec.dart';
 import 'package:fushi/src/media/import/import_flow_mixin.dart';
 import 'package:fushi/src/media/import/pasted_text_book.dart';
-import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
@@ -115,55 +116,48 @@ class _PastedTextBookDialogState extends State<PastedTextBookDialog>
 
   @override
   Widget build(BuildContext context) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     // 导入进行中禁止返回键 / 点遮罩 / Esc 关闭（HBK-AUDIT-037，见 buildImportPopGuard）。
     return buildImportPopGuard(
       child: ImportDialogFrame(
-        leadingIcon: FushiIcons.paste,
+        tone: ImportTone.amber,
         title: t.book_paste_text_dialog_title,
-        body: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+        // 粘贴文本色块（外层「粘贴文本」方式块的钉色）里放 M3E 填充式字段。
+        body: ImportSectionBlock(
+          tone: importMethodTone(ImportMethodKind.pasteText, ImportTone.coral),
           children: <Widget>[
-            FushiTextFieldControl(
+            FushiTextField(
               controller: _titleController,
               enabled: !importing,
               textInputAction: TextInputAction.next,
-              decoration: InputDecoration(
-                labelText: t.book_paste_text_title_label,
-                // 留空时实际使用的书名直接作提示，所见即所得。
-                hintText: _effectiveTitle,
-                prefixIcon: const FushiIcon(FushiIcons.title),
-              ),
+              labelText: t.book_paste_text_title_label,
+              // 留空时实际使用的书名直接作提示，所见即所得。
+              hintText: _effectiveTitle,
             ),
-            SizedBox(height: tokens.spacing.gap * 1.5),
             // 外框 body 已包 SingleChildScrollView；正文框自身 6–12 行后内部滚动。
-            FushiTextFieldControl(
+            FushiTextField(
               controller: _bodyController,
               enabled: !importing,
               keyboardType: TextInputType.multiline,
               minLines: 6,
               maxLines: 12,
-              decoration: InputDecoration(
-                labelText: t.book_paste_text_body_label,
-                hintText: t.book_paste_text_body_hint,
-                alignLabelWithHint: true,
-              ),
+              labelText: t.book_paste_text_body_label,
+              hintText: t.book_paste_text_body_hint,
               onChanged: (_) => setState(() {}),
             ),
-            SizedBox(height: tokens.spacing.gap * 1.5),
-            FushiOutlinedButton.icon(
-              onPressed: importing ? null : _pasteFromClipboard,
-              icon: const FushiIcon(FushiIcons.paste),
-              label: Text(t.book_paste_text_from_clipboard),
-            ),
-            SizedBox(height: tokens.spacing.gap * 1.5),
             FushiInlineNotice(
               message: t.book_paste_text_hint,
               icon: FushiIcons.info,
             ),
           ],
         ),
+        // 「从剪贴板粘贴」是次要但独立的动作：按钮区左侧 tonal。
+        secondaryActions: <Widget>[
+          FushiFilledButton.tonalIcon(
+            onPressed: importing ? null : _pasteFromClipboard,
+            icon: const FushiIcon(FushiIcons.paste),
+            label: Text(t.book_paste_text_from_clipboard),
+          ),
+        ],
         actions: <Widget>[
           buildCancelAction(context),
           buildImportAction(

@@ -1,7 +1,15 @@
+import 'package:flutter/rendering.dart' show RenderParagraph;
+import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/utils/components/fushi_floating_page_chrome.dart'
+    show FushiPageChromeCapsule, FushiPageChromeCircle, FushiPageChromeTitle;
 import 'package:fushi/src/utils/components/fushi_masthead_scaffold.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart'
+    show FushiPageHeader, FushiPageScaffold, FushiToolScaffold;
 import 'package:fushi/src/utils/components/fushi_page_masthead.dart'
     show FushiMastheadPanel;
+import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart'
+    show FushiAppBar;
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -117,5 +125,203 @@ void main() {
     controller.jumpTo(400);
     await tester.pump();
     expect(titleOpacity(), 1);
+  });
+
+  // 2026-11-15 所有者「二级页还是胶囊」：旧胶囊（返回圆钮 + 标题胶囊）是共用
+  // 脚手架画的。二级页统一成现行页头——FushiPageScaffold 默认（不带自定义
+  // header）、FushiToolScaffold、FushiAppBar 的 M3E 分支都不再画胶囊。
+  group('二级页共用脚手架统一现行页头', () {
+    Widget pushedFrom(Widget page) => Builder(
+      builder: (BuildContext context) => Center(
+        child: TextButton(
+          autofocus: true,
+          onPressed: () => Navigator.of(
+            context,
+          ).push(MaterialPageRoute<void>(builder: (_) => page)),
+          child: const Text('open'),
+        ),
+      ),
+    );
+
+    Future<void> openPushed(WidgetTester tester, Widget page) async {
+      await pumpHost(tester, pushedFrom(page));
+      await tester.pump();
+      // 焦点驱动：自动聚焦的入口按钮，Enter 推入二级页。
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+    }
+
+    void expectNoCapsules() {
+      expect(find.byType(FushiPageChromeTitle), findsNothing);
+      expect(find.byType(FushiPageChromeCircle), findsNothing);
+      expect(find.byType(FushiPageChromeCapsule), findsNothing);
+    }
+
+    testWidgets('FushiPageScaffold 默认（无 header）走页头大字，副标题照画', (
+      WidgetTester tester,
+    ) async {
+      await openPushed(
+        tester,
+        FushiPageScaffold(
+          title: 'Feedback',
+          subtitle: 'Profile: default',
+          body: ListView(
+            children: const <Widget>[SizedBox(height: 40, child: Text('row'))],
+          ),
+        ),
+      );
+      expect(find.byType(FushiMastheadHeader), findsOneWidget);
+      expect(find.byType(FushiPageHeader), findsNothing);
+      expectNoCapsules();
+      expect(
+        find.descendant(
+          of: find.byType(FushiMastheadHeader),
+          matching: find.text('Feedback'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byType(FushiMastheadHeader),
+          matching: find.text('Profile: default'),
+        ),
+        findsOneWidget,
+      );
+      // 推入的二级页有返回键（页头大字口径的裸图标按钮）。
+      expect(
+        find.descendant(
+          of: find.byType(FushiMastheadHeader),
+          matching: find.byTooltip('Back'),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('revealTitleAfterScroll 映射为 titleInBody + 偏移淡入', (
+      WidgetTester tester,
+    ) async {
+      final ScrollController controller = ScrollController();
+      addTearDown(controller.dispose);
+      await pumpHost(
+        tester,
+        FushiPageScaffold(
+          title: 'Work title',
+          revealTitleAfterScroll: 300,
+          body: ListView.builder(
+            controller: controller,
+            itemExtent: 80,
+            itemCount: 60,
+            itemBuilder: (BuildContext context, int i) => Text('row $i'),
+          ),
+        ),
+      );
+      double titleOpacity() => tester
+          .widget<Opacity>(
+            find
+                .ancestor(
+                  of: find.text('Work title'),
+                  matching: find.byType(Opacity),
+                )
+                .first,
+          )
+          .opacity;
+      expect(
+        tester.getSize(find.byType(FushiMastheadHeader)).height,
+        kFushiMastheadBareRowExtent,
+      );
+      expect(titleOpacity(), 0);
+      controller.jumpTo(400);
+      await tester.pump();
+      expect(titleOpacity(), 1);
+    });
+
+    testWidgets('自定义 header / 显式 masthead: false 照旧走原页头', (
+      WidgetTester tester,
+    ) async {
+      await pumpHost(
+        tester,
+        const FushiPageScaffold(
+          title: 'Custom',
+          header: Text('custom header'),
+          body: SizedBox.expand(),
+        ),
+      );
+      expect(find.byType(FushiMastheadHeader), findsNothing);
+      expect(find.text('custom header'), findsOneWidget);
+
+      await pumpHost(
+        tester,
+        const FushiPageScaffold(
+          title: 'Opt out',
+          masthead: false,
+          body: SizedBox.expand(),
+        ),
+      );
+      expect(find.byType(FushiMastheadHeader), findsNothing);
+      expect(find.byType(FushiPageHeader), findsOneWidget);
+    });
+
+    testWidgets('FushiToolScaffold 走页头大字，正文排在页头下沿以下', (
+      WidgetTester tester,
+    ) async {
+      final GlobalKey bodyKey = GlobalKey();
+      await openPushed(
+        tester,
+        FushiToolScaffold(
+          title: 'CSS editor',
+          actions: <Widget>[
+            FushiIconButtonControl(
+              tooltip: 'Save',
+              onPressed: () {},
+              icon: const FushiIcon(FushiIcons.refresh),
+            ),
+          ],
+          body: SizedBox.expand(key: bodyKey),
+        ),
+      );
+      expect(find.byType(FushiMastheadHeader), findsOneWidget);
+      expectNoCapsules();
+      expect(find.byTooltip('Save'), findsOneWidget);
+      expect(
+        tester.getRect(find.byKey(bodyKey)).top,
+        greaterThanOrEqualTo(
+          tester.getRect(find.byType(FushiMastheadHeader)).bottom - 0.5,
+        ),
+      );
+    });
+
+    testWidgets('FushiAppBar（M3E）是页头大字一行：无胶囊、页名与动作在栏内', (
+      WidgetTester tester,
+    ) async {
+      await openPushed(
+        tester,
+        Scaffold(
+          appBar: FushiAppBar(
+            title: const Text('Search resources'),
+            actions: <Widget>[
+              FushiIconButtonControl(
+                tooltip: 'Refresh',
+                onPressed: () {},
+                icon: const FushiIcon(FushiIcons.refresh),
+              ),
+            ],
+          ),
+          body: const SizedBox.expand(),
+        ),
+      );
+      expect(tester.takeException(), isNull);
+      expectNoCapsules();
+      final Rect bar = tester.getRect(find.byType(AppBar));
+      final Rect title = tester.getRect(find.text('Search resources'));
+      expect(title.top, greaterThanOrEqualTo(bar.top));
+      expect(title.bottom, lessThanOrEqualTo(bar.bottom));
+      expect(find.byTooltip('Back'), findsOneWidget);
+      expect(find.byTooltip('Refresh'), findsOneWidget);
+      // 页名取页头大字（粗体收起字号），不再是 titleLarge 胶囊标题。
+      final RenderParagraph paragraph = tester.renderObject(
+        find.text('Search resources'),
+      );
+      expect(paragraph.text.style?.fontWeight, FontWeight.w900);
+    });
   });
 }

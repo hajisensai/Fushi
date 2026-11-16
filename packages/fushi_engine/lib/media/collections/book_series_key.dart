@@ -6,6 +6,8 @@
 /// 只决定合集内顺序。
 library;
 
+import 'package:fushi_engine/media/collections/store_series_annotation.dart';
+
 /// 一个分卷标题解析出的系列身份。
 class BookSeriesKey {
   const BookSeriesKey({
@@ -91,11 +93,12 @@ String _normalizeSeriesKey(String folded) =>
 /// 改成 `~`）。
 BookSeriesKey? parseBookSeriesKey(String title) {
   final String folded = _foldWidth(title);
-  final BookSeriesKey? labelled = _seriesFromTrailingLabel(
-    title,
-    folded,
-    _hashSuffix.firstMatch(folded)?.start ?? folded.length,
+  final int end = _hashSuffix.firstMatch(folded)?.start ?? folded.length;
+  final BookSeriesKey? store = _seriesFromStoreAnnotation(
+    title.substring(0, end),
   );
+  if (store != null) return store;
+  final BookSeriesKey? labelled = _seriesFromTrailingLabel(title, folded, end);
   if (labelled != null) return labelled;
   final ({int end, num? volume}) split = _splitVolumeSuffix(folded);
   final String key = folded.substring(0, split.end).trim();
@@ -104,6 +107,28 @@ BookSeriesKey? parseBookSeriesKey(String title) {
     key: _normalizeSeriesKey(key),
     seriesTitle: title.substring(0, split.end).trim(),
     volume: split.volume,
+  );
+}
+
+/// 书店系列注记：`Re：ゼロから始める異世界生活 1<Re：ゼロから始める異世界生活> (MF文庫J)`
+/// ——正文 + 卷号、尖括号里的系列名、最后文库名（判据见
+/// [splitStoreSeriesAnnotation]，与显示名清洗共用一份）。
+///
+/// 以前只有 [_seriesFromTrailingLabel] 认结尾标签，它只看**最后一个**括号：这里最后
+/// 一个是 `(MF文庫J)`，不是正文前缀，判不成系列名；卷号路径剥掉文库标签后结尾是
+/// `<…>`，卷号也读不出，整串原样成了系列键——每卷互不相同，导入后不归合集
+/// （BUG book-series-key-store-annotation）。系列名取尖括号里的写法，卷号从正文
+/// 末尾读。
+BookSeriesKey? _seriesFromStoreAnnotation(String title) {
+  final ({String body, String series})? split = splitStoreSeriesAnnotation(
+    title,
+  );
+  if (split == null) return null;
+  final RegExpMatch? volume = _volumeSuffix.firstMatch(_foldWidth(split.body));
+  return BookSeriesKey(
+    key: _normalizeSeriesKey(_foldWidth(split.series)),
+    seriesTitle: split.series,
+    volume: volume == null ? null : num.parse(volume.group(1)!),
   );
 }
 

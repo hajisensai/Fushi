@@ -147,7 +147,7 @@ class _MangaOnlineSourcesViewState
             // 扫描根（BUG-1431）。
             leading: <Widget>[
               MokuroMoeSourceRow(onOpen: _openMokuro),
-              const SizedBox(height: 4),
+              const SizedBox(height: 8),
             ],
             onOpenSource: _openMihonSource,
             emptyLabel: t.manga_online_sources_empty,

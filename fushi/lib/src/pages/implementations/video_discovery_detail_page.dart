@@ -10,6 +10,7 @@ import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
@@ -110,6 +111,7 @@ class VideoDiscoveryActions {
     this.onSubscribe,
     this.onPlay,
     this.onOpenDownloads,
+    this.downloadTasksActive,
     this.onOpenWorkDownloads,
     this.onOpenSubscriptions,
     this.onCancelDownloads,
@@ -140,6 +142,11 @@ class VideoDiscoveryActions {
   final VideoDiscoveryAction? onSubscribe;
   final VideoDiscoveryAction? onPlay;
   final VoidCallback? onOpenDownloads;
+
+  /// 下载中心此刻是否有后台任务（进行中 / 排队）。发现页页头的「下载中心」
+  /// 按钮只在为 true 时出现（设计稿 DI10：常驻的下载钮在没有任务时只是噪声）。
+  /// null = 宿主给不出这个信号：按钮照旧常驻（判断不了就不藏入口）。
+  final ValueListenable<bool>? downloadTasksActive;
 
   /// 作品详情页的「任务」：打开下载任务并**只看这部作品**的任务（含已完成 /
   /// 失败）。null 时详情页退回 [onOpenDownloads]（只打开下载页）。
@@ -1032,7 +1039,7 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
         child: DiscoveryShelf(
           title: t.collection_related_title,
           storageKey: 'video-discovery-related',
-          itemWidth: 140,
+          itemWidth: discoveryTileWidth(context),
           itemCount: related.length,
           itemBuilder: (BuildContext context, int index) => _RelatedWorkCard(
             item: related[index],

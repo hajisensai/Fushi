@@ -470,7 +470,7 @@ void main() {
         reason: '旧的 bool「允许音频降级」开关已被三档策略取代',
       );
       // BUG-1191：超分改成**每游戏一档**后，入口挪到了游戏库卡片的右键菜单
-      // （`games_library_page.dart` 的 `_menuItems`）——这里不该再有它。工作台是
+      // （`games/galgame_item_menu.dart` 的 `galgameItemMenuItems`）——这里不该再有它。工作台是
       // 「当前会话」的界面，而档位是「这个游戏」的属性，放这儿只会诱使人以为改的是
       // 全局值。守卫用 `textContaining`：档位后缀（「· 关闭」）变了也照样红。
       expect(

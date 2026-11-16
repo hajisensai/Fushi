@@ -15,6 +15,8 @@ import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/mouse_binding_dispatch.dart';
 import 'package:fushi/src/shortcuts/page_scroll_shortcuts.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
+import 'package:fushi/src/shortcuts/text_field_key_ownership.dart'
+    show keyTypesIntoFocusedTextField;
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 import 'package:fushi/src/shortcuts/window_fullscreen_hosts.dart';
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
@@ -552,6 +554,8 @@ KeyEventResult _handleGlobalOpenAiAssistant(
   GlobalOpenAiAssistant? open,
 ) {
   if (open == null || event is! KeyDownEvent) return KeyEventResult.ignored;
+  // 改绑成裸字母时，在输入框里打这个字母是打字，不是呼出 AI。
+  if (keyTypesIntoFocusedTextField(event)) return KeyEventResult.ignored;
   ShortcutAction? action = _resolveGlobalKeyboardAction(registry, event);
   if (action == null) {
     final GamepadButton? gamepad = GamepadButton.fromKeyEvent(event);

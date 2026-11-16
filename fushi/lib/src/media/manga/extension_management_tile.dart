@@ -1,7 +1,20 @@
-import 'package:fushi/src/utils/components/fushi_animated_size.dart';
-import 'package:material_ui/material_ui.dart';
+import 'dart:math' as math;
 
+import 'package:material_ui/material_ui.dart';
+import 'package:flutter/rendering.dart';
+
+import 'package:fushi/src/media/online/installed_online_source_row.dart'
+    show onlineSourceLanguageLabel;
+import 'package:fushi/src/pages/implementations/library_filter_dropdown.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
+import 'package:fushi/src/utils/components/fushi_cover_block.dart'
+    show FushiCoverBlockColors;
+import 'package:fushi/src/utils/components/fushi_generated_cover.dart'
+    show fushiGeneratedCoverHue;
+import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
 import 'package:fushi/src/utils/components/fushi_search.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
@@ -12,11 +25,9 @@ import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_tag.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive_controls.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_chips.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
-import 'package:fushi/src/utils/misc/platform_utils.dart';
 
 /// 一行元信息：跳过空片段后用 ` · ` 串成**单行**。
 ///
@@ -54,10 +65,13 @@ enum ExtensionTileActionStyle { filled, tonal, outlined, text }
 /// Runtime-specific pages supply metadata and actions; spacing, icon fallback,
 /// warning badge, progress, enable switch and buttons stay identical.
 ///
-/// M3E 形态（2026-10-06）：行首 12 圆角方块图标；标题后跟 NSFW（error tonal
-/// 小胶囊）与「可更新」（accent tonal 小胶囊）；副标题是一排元信息小标签
-/// （[metaChips]：语言 / 版本 / lib）+ 下载量 + 可展开详情（[details]）；
-/// 动作按 [ExtensionTileActionStyle] 分级；安装中在卡片底部展开一条波浪进度。
+/// 拼贴改版形态（2026-11-16）：每个扩展一张独立圆角卡片（[FushiCard]，悬停轻抬
+/// [FushiHoverLift]），扩展目录在宽屏排成多列（[ExtensionCatalogSliver]）。卡内
+/// 一行头部 = 按名字取色的图标色块 + 名称（后跟 NSFW / 「可更新」小胶囊）+ 一行
+/// 精简元信息（`JA · 1.4.2 · lib 1.4 · ↓ 1.2k 次下载`，纯文字点分，不再是一排灰
+/// 胶囊）+ 行尾开关与动作；可展开详情（[details]，Mihon 的「包含的源」）在头部
+/// 下方；安装中在卡片底部展开一条波浪进度。有更新的卡片描一圈主色边——在一屏卡片
+/// 里一眼认出哪几张要动。
 /// 旧的整块 [subtitle] 仍可用（Aidoku 路径），与结构化参数可以并存。
 class MangaExtensionManagementTile extends StatelessWidget {
   const MangaExtensionManagementTile({
@@ -87,7 +101,7 @@ class MangaExtensionManagementTile extends StatelessWidget {
   final String title;
 
   /// 旧式整块副标题（一行元信息文本）。结构化调用点用 [metaChips] /
-  /// [downloadsLabel] / [details]，两者可以并存（先标签、后它、再详情）。
+  /// [downloadsLabel] / [details]，两者可以并存（先元信息、后它、再详情）。
   final Widget? subtitle;
   final String? iconUrl;
   final bool contentWarning;
@@ -107,17 +121,18 @@ class MangaExtensionManagementTile extends StatelessWidget {
 
   /// 本行在所属分组（同一仓库 / 同一列表段）里的位置与总行数。两者都给时
   /// 整段读作一个分组（MD3 分段 / Apple inset grouped，见
-  /// [FushiGroupedListItem]）；缺省时仍是一张张独立卡片。
+  /// [FushiGroupedListItem]）；缺省时是一张张独立卡片（扩展目录的默认形态）。
   final int? groupIndex;
   final int? groupCount;
 
-  /// 元信息小标签（语言 / 版本 / lib / 站点），每个画成一枚中性小胶囊。
+  /// 元信息片段（语言 / 版本 / lib / 站点），点分成一行文字。
   final List<String> metaChips;
 
-  /// 下载量文案（`1.2k 次下载` / `无下载数据`），排在元信息标签之后。
+  /// 下载量文案（`1.2k 次下载` / `无下载数据`），排在元信息之后、带下载图标。
   final String? downloadsLabel;
 
-  /// 仓库里有比已装版本更新的版本：标题后挂一枚「可更新」强调小胶囊。
+  /// 仓库里有比已装版本更新的版本：标题后挂一枚「可更新」强调小胶囊，卡片描
+  /// 主色边。
   final bool updateAvailable;
 
   /// 副标题下方的可展开详情（Mihon 的「包含的源」）。
@@ -162,12 +177,21 @@ class MangaExtensionManagementTile extends StatelessWidget {
         child: row,
       );
     }
-    return FushiCard(
-      // 行与行之间必须有实边距：卡片圆角 10 而外边距为 0 时，相邻卡片之间只
-      // 从圆角缺口漏出几处页面底色，看着像锯齿而不是分隔。
-      margin: EdgeInsets.only(bottom: tokens.spacing.gap),
-      padding: EdgeInsets.zero,
-      child: row,
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    // 卡片本身不可点（动作都在按钮上），悬停只做轻抬，不做整卡放大的「可点」暗示。
+    return FushiHoverLift(
+      scale: 1.01,
+      builder: (BuildContext context, bool _) => FushiCard(
+        // 卡与卡之间必须有实边距：圆角卡片外边距为 0 时，相邻卡片之间只从圆角
+        // 缺口漏出几处页面底色，看着像锯齿而不是分隔。
+        margin: EdgeInsets.only(bottom: tokens.spacing.gap),
+        padding: EdgeInsets.zero,
+        pressScale: false,
+        borderColor: updateAvailable && !isEinkTheme(context)
+            ? colors.primary.withValues(alpha: 0.55)
+            : null,
+        child: row,
+      ),
     );
   }
 
@@ -232,8 +256,8 @@ class MangaExtensionManagementTile extends StatelessWidget {
               if (metaChips.isNotEmpty || downloadsLabel != null)
                 Padding(
                   padding: const EdgeInsets.only(top: 2),
-                  child: _ExtensionMetaWrap(
-                    chips: metaChips,
+                  child: _ExtensionMetaLine(
+                    parts: metaChips,
                     downloadsLabel: downloadsLabel,
                   ),
                 ),
@@ -262,12 +286,17 @@ class MangaExtensionManagementTile extends StatelessWidget {
       ),
       titleMaxLines: 2,
       subtitleMaxLines: subtitleMaxLines,
-      leading: _ExtensionIcon(url: iconUrl ?? ''),
-      title: Row(
+      leading: _ExtensionIcon(url: iconUrl ?? '', title: title),
+      // 标题 + 徽标用 Wrap 而不是 Row：多列目录里卡片窄、尾部开关 + 按钮又占去
+      // 一大截，标题区常只剩 ~150px，「NSFW」「有更新」两枚定宽徽标在 Row 里
+      // 塞不下就横向溢出；Wrap 下放不下的徽标换到标题下一行。
+      title: Wrap(
+        spacing: 8,
+        runSpacing: 4,
+        crossAxisAlignment: WrapCrossAlignment.center,
         children: <Widget>[
-          Flexible(child: Text(title)),
+          Text(title),
           if (contentWarning) ...<Widget>[
-            const SizedBox(width: 8),
             // M3E：error tonal 小胶囊（errorContainer 底 + onErrorContainer
             // 字）；Apple 是空心胶囊 + 系统红字。
             FushiTag(
@@ -278,7 +307,6 @@ class MangaExtensionManagementTile extends StatelessWidget {
             ),
           ],
           if (updateAvailable) ...<Widget>[
-            const SizedBox(width: 8),
             FushiTag(
               key: const ValueKey<String>('extension_tile_update_badge'),
               text: t.extension_update_available,
@@ -332,44 +360,56 @@ class MangaExtensionManagementTile extends StatelessWidget {
   }
 }
 
-/// 扩展行副标题里的一排元信息：中性小胶囊（语言 / 版本 / lib）+ 下载量。
-class _ExtensionMetaWrap extends StatelessWidget {
-  const _ExtensionMetaWrap({required this.chips, required this.downloadsLabel});
+/// 扩展卡片副标题里的一行元信息：语言 / 版本 / lib 点分成纯文字 + 下载量。
+///
+/// 每个片段仍是独立的 [Text]（窄卡里按片段整体换行，不会把版本号拆成两半）；
+/// 片段之间的「·」是装饰，读屏不念。
+class _ExtensionMetaLine extends StatelessWidget {
+  const _ExtensionMetaLine({required this.parts, required this.downloadsLabel});
 
-  final List<String> chips;
+  final List<String> parts;
   final String? downloadsLabel;
 
   @override
   Widget build(BuildContext context) {
-    final TextStyle base = DefaultTextStyle.of(context).style;
+    final Color color = Theme.of(context).colorScheme.onSurfaceVariant;
+    final TextStyle? style = Theme.of(
+      context,
+    ).textTheme.labelMedium?.copyWith(color: color);
+    final List<String> visible = <String>[
+      for (final String part in parts)
+        if (part.trim().isNotEmpty) part.trim(),
+    ];
     final String? downloads = downloadsLabel;
-    return Wrap(
-      spacing: 4,
-      runSpacing: 4,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: <Widget>[
-        for (final String chip in chips)
-          if (chip.trim().isNotEmpty)
-            FushiTag(text: chip, tone: FushiTagTone.neutral, dense: true),
-        if (downloads != null)
-          Padding(
-            padding: const EdgeInsetsDirectional.only(start: 4),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                FushiIcon(FushiIcons.download, size: 14, color: base.color),
-                const SizedBox(width: 2),
-                Text(
-                  downloads,
-                  maxLines: 1,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.labelSmall?.copyWith(color: base.color),
-                ),
-              ],
-            ),
+    final List<InlineSpan> pieces = <InlineSpan>[
+      for (final String part in visible) TextSpan(text: part),
+      if (downloads != null) ...<InlineSpan>[
+        WidgetSpan(
+          alignment: PlaceholderAlignment.middle,
+          child: Padding(
+            padding: const EdgeInsetsDirectional.only(end: 2),
+            child: FushiIcon(FushiIcons.download, size: 14, color: color),
           ),
+        ),
+        TextSpan(text: downloads),
       ],
+    ];
+    // 固定一行、放不下省略：多列目录里同一行卡片要等高，元信息折成两行（已装
+    // 卡尾部多了开关 + 卸载 + 更新，留给文字的宽度更窄）会把卡片撑得参差。
+    final List<String> spoken = <String>[...visible, ?downloads];
+    return Text.rich(
+      TextSpan(
+        children: <InlineSpan>[
+          for (int i = 0; i < pieces.length; i++) ...<InlineSpan>[
+            if (i > 0) const TextSpan(text: '  ·  '),
+            pieces[i],
+          ],
+        ],
+      ),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: style,
+      semanticsLabel: spoken.join(', '),
     );
   }
 }
@@ -399,6 +439,219 @@ List<(int, int)> extensionGroupSlots(Iterable<bool> isHeader) {
   return slots;
 }
 
+/// 扩展卡片在多列目录里的最小宽度：再窄就按 [MangaExtensionManagementTile.
+/// compactActionsBreakpoint] 把动作挪到第二行，卡片会变高变碎，不如少一列。
+const double kExtensionCardMinWidth = 420;
+
+/// 扩展目录的列数：按可用宽度放下几张 [kExtensionCardMinWidth] 宽的卡片，
+/// 至少 1 列、至多 3 列（再多一行扫不过来）。
+int extensionCatalogColumns(double width, {double gap = 8}) {
+  if (!width.isFinite || width <= 0) return 1;
+  final int columns = ((width + gap) / (kExtensionCardMinWidth + gap)).floor();
+  return columns.clamp(1, 3);
+}
+
+/// 把目录行表排成「显示行」：仓库表头独占一行；表头之间的扩展按 [columns] 个
+/// 一组并成一行。返回每个显示行包含的原始行下标。纯函数，便于测试。
+List<List<int>> extensionCatalogLines(List<bool> isHeader, int columns) {
+  final int perLine = columns < 1 ? 1 : columns;
+  final List<List<int>> lines = <List<int>>[];
+  List<int>? open;
+  for (int i = 0; i < isHeader.length; i++) {
+    if (isHeader[i]) {
+      lines.add(<int>[i]);
+      open = null;
+      continue;
+    }
+    if (open == null || open.length >= perLine) {
+      open = <int>[i];
+      lines.add(open);
+    } else {
+      open.add(i);
+    }
+  }
+  return lines;
+}
+
+/// 扩展目录的懒建 sliver：仓库表头整行，扩展卡片在宽屏并成多列（窄屏单列）。
+///
+/// 🔴 仍然是 [SliverList.builder]（BUG-1441：keiyoushi 一家 1900+ 条，必须懒建）：
+/// 多列不是 [SliverGrid]——卡片高度不一（「包含的源」可展开），网格的定高格子
+/// 装不下；这里把同一显示行的几张卡放进一个顶对齐的 [Row]，行高随最高的那张。
+/// 每张卡自带身份 key（调用方给），同一行内换位不串状态。
+class ExtensionCatalogSliver extends StatelessWidget {
+  const ExtensionCatalogSliver({
+    required this.isHeader,
+    required this.itemBuilder,
+    super.key,
+  });
+
+  /// 逐行：是不是仓库表头（表头独占一行、不并列）。
+  final List<bool> isHeader;
+  final Widget Function(BuildContext context, int index) itemBuilder;
+
+  @override
+  Widget build(BuildContext context) {
+    final double gap = FushiDesignTokens.of(context).spacing.gap;
+    return SliverLayoutBuilder(
+      builder: (BuildContext context, SliverConstraints constraints) {
+        final int columns = extensionCatalogColumns(
+          constraints.crossAxisExtent,
+          gap: gap,
+        );
+        final List<List<int>> lines = extensionCatalogLines(isHeader, columns);
+        return SliverList.builder(
+          itemCount: lines.length,
+          itemBuilder: fushiStaggeredItemBuilder((
+            BuildContext context,
+            int index,
+          ) {
+            final List<int> line = lines[index];
+            if (columns == 1 || isHeader[line.first]) {
+              return itemBuilder(context, line.first);
+            }
+            // 同一显示行的卡片等高（用户 2026-11-16「高度不一致」：一张多了
+            // 「展开全部 N 个源」、另一张没有，并排时底边参差）。不用
+            // IntrinsicHeight（卡片内部有 LayoutBuilder，拿不到固有尺寸），也不用
+            // `Table` + `TableCellVerticalAlignment.fill`——fill 格不参与行高，
+            // 整行全是 fill 时行高为 0，卡片被压成 0 高、各行叠在同一处，目录
+            // 「打不开」。[ExtensionCatalogRow] 先按定宽松高排出每张卡，再以最高
+            // 那张的高度把整行拉齐。
+            return ExtensionCatalogRow(
+              columns: columns,
+              gap: gap,
+              children: <Widget>[
+                for (final int item in line) itemBuilder(context, item),
+              ],
+            );
+          }),
+        );
+      },
+    );
+  }
+}
+
+/// 扩展目录的一个多列显示行：[columns] 个等宽槽位（槽间 [gap]），子项依次占
+/// 前几个槽（不足 [columns] 个时右侧留空），**整行等高**——先以「定宽、高度
+/// 不限」排出每个子项，取最高者，再以该高度给全部子项紧约束重排。
+///
+/// 子项可以自带 [LayoutBuilder]（不要求固有尺寸）；行高恒为最高子项的高度，
+/// 不会塌成 0。
+class ExtensionCatalogRow extends MultiChildRenderObjectWidget {
+  const ExtensionCatalogRow({
+    required this.columns,
+    required this.gap,
+    required super.children,
+    super.key,
+  }) : assert(columns >= 1);
+
+  final int columns;
+  final double gap;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderExtensionCatalogRow(
+        columns: columns,
+        gap: gap,
+        textDirection: Directionality.of(context),
+      );
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderExtensionCatalogRow renderObject,
+  ) {
+    renderObject
+      ..columns = columns
+      ..gap = gap
+      ..textDirection = Directionality.of(context);
+  }
+}
+
+class _ExtensionCatalogRowParentData
+    extends ContainerBoxParentData<RenderBox> {}
+
+class _RenderExtensionCatalogRow extends RenderBox
+    with
+        ContainerRenderObjectMixin<RenderBox, _ExtensionCatalogRowParentData>,
+        RenderBoxContainerDefaultsMixin<
+          RenderBox,
+          _ExtensionCatalogRowParentData
+        > {
+  _RenderExtensionCatalogRow({
+    required int columns,
+    required double gap,
+    required TextDirection textDirection,
+  }) : _columns = columns,
+       _gap = gap,
+       _textDirection = textDirection;
+
+  int get columns => _columns;
+  int _columns;
+  set columns(int value) {
+    if (value == _columns) return;
+    _columns = value;
+    markNeedsLayout();
+  }
+
+  double get gap => _gap;
+  double _gap;
+  set gap(double value) {
+    if (value == _gap) return;
+    _gap = value;
+    markNeedsLayout();
+  }
+
+  TextDirection get textDirection => _textDirection;
+  TextDirection _textDirection;
+  set textDirection(TextDirection value) {
+    if (value == _textDirection) return;
+    _textDirection = value;
+    markNeedsLayout();
+  }
+
+  @override
+  void setupParentData(RenderBox child) {
+    if (child.parentData is! _ExtensionCatalogRowParentData) {
+      child.parentData = _ExtensionCatalogRowParentData();
+    }
+  }
+
+  @override
+  void performLayout() {
+    final double width = constraints.maxWidth;
+    final double slot = math.max(0, (width - gap * (columns - 1)) / columns);
+    double height = 0;
+    RenderBox? child = firstChild;
+    while (child != null) {
+      child.layout(BoxConstraints.tightFor(width: slot), parentUsesSize: true);
+      height = math.max(height, child.size.height);
+      child = childAfter(child);
+    }
+    int index = 0;
+    child = firstChild;
+    while (child != null) {
+      child.layout(BoxConstraints.tightFor(width: slot, height: height));
+      final double start = index * (slot + gap);
+      (child.parentData! as _ExtensionCatalogRowParentData).offset = Offset(
+        textDirection == TextDirection.rtl ? width - start - slot : start,
+        0,
+      );
+      index++;
+      child = childAfter(child);
+    }
+    size = constraints.constrain(Size(width, height));
+  }
+
+  @override
+  void paint(PaintingContext context, Offset offset) =>
+      defaultPaint(context, offset);
+
+  @override
+  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) =>
+      defaultHitTestChildren(result, position: position);
+}
+
 /// 扩展目录里超过这个条数的仓库分组默认收起。
 ///
 /// 不是拍脑袋的魔数，编码的是一条产品规则：**一眼扫得完的分组就没必要收起**。
@@ -408,8 +661,69 @@ List<(int, int)> extensionGroupSlots(Iterable<bool> isHeader) {
 /// （Mihon）与小说（LNReader）的扩展目录共用这一条。
 const int kExtensionStoreAutoCollapseThreshold = 20;
 
-/// 扩展目录的仓库分组表头：名字 + 扩展条数 + 展开箭头。漫画 / 视频 / 小说三域
-/// 的扩展页签共用，外观一致。
+/// 名字取色的拼贴色块配色（与 [FushiGeneratedCover] / 拼贴色块同一套 HSL）。
+/// 墨水屏退成主题中性色。
+FushiCoverBlockColors extensionMonogramColors(
+  BuildContext context,
+  String name,
+) {
+  final ThemeData theme = Theme.of(context);
+  return isEinkTheme(context)
+      ? FushiCoverBlockColors.resolve(theme, null)
+      : FushiCoverBlockColors.fromHue(theme, fushiGeneratedCoverHue(name));
+}
+
+/// 名字首字的方形色块（仓库表头 / 已装源行的行首）：按名字取色相，深浅两套
+/// 主题都可读。[dimmed] 时半透明（停用的源）。
+class ExtensionMonogram extends StatelessWidget {
+  const ExtensionMonogram({
+    required this.name,
+    super.key,
+    this.size = 40,
+    this.dimmed = false,
+  });
+
+  final String name;
+  final double size;
+  final bool dimmed;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiCoverBlockColors colors = extensionMonogramColors(context, name);
+    final String trimmed = name.trim();
+    final String initial = trimmed.isEmpty
+        ? '?'
+        : trimmed.characters.first.toUpperCase();
+    return ExcludeSemantics(
+      child: AnimatedOpacity(
+        opacity: dimmed ? 0.45 : 1,
+        duration: context.fushiMotion.effectsDefault.duration,
+        curve: context.fushiMotion.effectsDefault.curve,
+        child: SizedBox.square(
+          dimension: size,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: colors.container,
+              borderRadius: FushiM3eShape.smallRadius,
+            ),
+            child: Center(
+              child: Text(
+                initial,
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  color: colors.onContainer,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 扩展目录的仓库分组表头：一整条按仓库名取色的色块（拼贴语言）——首字色块 +
+/// 仓库名 + 扩展条数 + 展开箭头。漫画 / 视频 / 小说三域的扩展页签共用，外观一致。
 ///
 /// 条数不是装饰：收起态下这是「这个仓库到底有没有东西」的唯一线索，没有它
 /// 折叠就等于让列表看起来空了。
@@ -425,9 +739,8 @@ class ExtensionStoreGroupHeader extends StatelessWidget {
     this.groupCount,
   });
 
-  /// 表头所在分组的总行数（表头自己算第一行 + 展开的扩展行）。给了就把表头
-  /// 画成分组的首行（MD3 分段 / Apple inset grouped，与下面的扩展行
-  /// [MangaExtensionManagementTile.groupIndex] 连成一组），缺省时是独立卡片。
+  /// 旧的分段列表形态里表头所在分组的总行数。拼贴改版后表头是独立色块、扩展
+  /// 是独立卡片，此参数只为兼容保留，不再影响外观。
   final int? groupCount;
 
   /// 行 key 前缀（`<keyPrefix>-store-group-<indexUrl>`）。
@@ -444,113 +757,85 @@ class ExtensionStoreGroupHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final FushiSpringSpec spring = context.fushiMotion.spatialFast;
+    final FushiCoverBlockColors colors = extensionMonogramColors(
+      context,
+      label,
+    );
+    final String trimmed = label.trim();
+    final String initial = trimmed.isEmpty
+        ? '?'
+        : trimmed.characters.first.toUpperCase();
     final Widget row = FushiListItem(
       key: ValueKey<String>('$keyPrefix-store-group-$indexUrl'),
       onTap: onTap,
-      leading: AnimatedRotation(
-        turns: expanded ? 0.25 : 0,
-        duration: spring.duration,
-        curve: spring.curve,
-        child: const FushiIcon(FushiIcons.chevronRight),
-      ),
-      title: Text(label, style: theme.textTheme.titleSmall),
-      subtitle: Text(t.mihon_store_extension_count(count: count)),
-    );
-    final int? rows = groupCount;
-    if (rows != null) {
-      return FushiGroupedListItem(
-        index: 0,
-        count: rows,
-        // 收起的分组只剩表头一行：它同时是组尾，给出组间距。
-        margin: EdgeInsets.only(
-          bottom: rows <= 1 ? FushiDesignTokens.of(context).spacing.gap : 0,
-        ),
-        child: row,
-      );
-    }
-    return FushiCard(padding: EdgeInsets.zero, child: row);
-  }
-}
-
-/// 筛选 chip 行的一个选项：值 + 显示文案。
-typedef ExtensionFilterOption<T> = ({T value, String label});
-
-/// 扩展目录的一行筛选 chip（M3E choice chip，单选）：行首维度名 + 一排 chip，
-/// 放不下时横向滚动（鼠标 / 触控板也能横拖）。仓库 / 语言 / 下载量门槛三行
-/// 共用；每个 chip 的 key 是 `<chipKeyPrefix><值>`。
-///
-/// chip 是普通可聚焦控件：Tab / 方向键逐个走到，Enter / 手柄 A 选中；横滚区
-/// 会随焦点自动滚到可见。Apple 设计系统下 [FushiChoiceChip] 自动出玻璃胶囊。
-class ExtensionFilterChipRow<T> extends StatelessWidget {
-  const ExtensionFilterChipRow({
-    required this.label,
-    required this.options,
-    required this.selected,
-    required this.chipKeyPrefix,
-    required this.onSelected,
-    super.key,
-    this.icon,
-  });
-
-  final String label;
-  final IconData? icon;
-  final List<ExtensionFilterOption<T>> options;
-  final T selected;
-  final String chipKeyPrefix;
-  final ValueChanged<T> onSelected;
-
-  @override
-  Widget build(BuildContext context) {
-    final ColorScheme colors = Theme.of(context).colorScheme;
-    final TextStyle? labelStyle = Theme.of(
-      context,
-    ).textTheme.labelMedium?.copyWith(color: colors.onSurfaceVariant);
-    final IconData? icon = this.icon;
-    return Semantics(
-      label: label,
-      container: true,
-      explicitChildNodes: true,
-      child: HorizontalDragScrollable(
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          // 上下各留 2：chip 的焦点环 / 玻璃投影不被横滚区裁掉。
-          padding: const EdgeInsets.symmetric(vertical: 2),
-          child: Row(
-            children: <Widget>[
-              if (icon != null) ...<Widget>[
-                FushiIcon(icon, size: 18, color: colors.onSurfaceVariant),
-                const SizedBox(width: 6),
-              ],
-              ExcludeSemantics(child: Text(label, style: labelStyle)),
-              const SizedBox(width: 12),
-              for (int i = 0; i < options.length; i++) ...<Widget>[
-                if (i > 0) const SizedBox(width: 8),
-                FushiChoiceChip(
-                  key: ValueKey<String>('$chipKeyPrefix${options[i].value}'),
-                  label: Text(options[i].label),
-                  selected: options[i].value == selected,
-                  onSelected: (bool _) {
-                    if (options[i].value != selected) {
-                      onSelected(options[i].value);
-                    }
-                  },
+      leading: ExcludeSemantics(
+        child: SizedBox.square(
+          dimension: 40,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: colors.onContainer.withValues(alpha: 0.12),
+              borderRadius: FushiM3eShape.smallRadius,
+            ),
+            child: Center(
+              child: Text(
+                initial,
+                style: theme.textTheme.titleMedium?.copyWith(
+                  color: colors.onContainer,
+                  fontWeight: FontWeight.w700,
                 ),
-              ],
-            ],
+              ),
+            ),
           ),
         ),
       ),
+      title: Text(
+        label,
+        style: theme.textTheme.titleMedium?.copyWith(
+          color: colors.onContainer,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      subtitle: Text(
+        t.mihon_store_extension_count(count: count),
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: colors.onContainer.withValues(alpha: 0.78),
+        ),
+      ),
+      trailing: AnimatedRotation(
+        turns: expanded ? 0.5 : 0,
+        duration: spring.duration,
+        curve: spring.curve,
+        child: FushiIcon(FushiIcons.expandMore, color: colors.onContainer),
+      ),
+    );
+    return Padding(
+      padding: EdgeInsets.only(top: tokens.spacing.gap),
+      child: FushiCard(
+        margin: EdgeInsets.only(bottom: tokens.spacing.gap),
+        padding: EdgeInsets.zero,
+        color: colors.container,
+        child: row,
+      ),
     );
   }
 }
 
+/// 筛选的一个选项：值 + 显示文案。
+typedef ExtensionFilterOption<T> = ({T value, String label});
+
 /// Shared responsive search + store + language filters for extension catalogs.
 ///
-/// M3E 形态（2026-10-06）：上面一条 [FushiSearchBar]，下面是横滚 chip 行——
-/// 「仓库」（给了 [stores] 且多于一个仓库时才出现，首项「全部仓库」）与
-/// 「语言」（首项 [allLanguagesLabel]）。语言 chip 的 key 沿用旧下拉项的
-/// `<keyPrefix>_language_<code>`，仓库 chip 是 `<keyPrefix>_store_<indexUrl>`。
+/// 拼贴改版形态（2026-11-16）：一条标准 [FushiSearchBar] + 同一行（窄屏换到下一
+/// 行）的几枚下拉筛选胶囊（[LibraryFilterDropdown]，与库页工具行同一组件）——
+/// 「仓库」（给了 [stores] 且多于一个仓库时才出现）、「语言」与调用方给的
+/// [extraFilters]（最低下载量）。此前语言是一整行几十个横滚 chip，宽屏上也被切掉
+/// 一半；收成下拉后一行放得下全部维度。
+///
+/// key：胶囊 `<keyPrefix>_store_filter` / `<keyPrefix>_language_filter`；菜单项沿用
+/// 旧 chip 的 `<keyPrefix>_language_<code>`（「全部」= `_*`）与
+/// `<keyPrefix>_store_<indexUrl>`。
 class MangaExtensionFilters extends StatelessWidget {
   const MangaExtensionFilters({
     required this.languages,
@@ -569,6 +854,7 @@ class MangaExtensionFilters extends StatelessWidget {
     this.selectedStore = '*',
     this.onStoreChanged,
     this.storeLabel,
+    this.extraFilters = const <Widget>[],
   });
 
   final List<String> languages;
@@ -588,8 +874,14 @@ class MangaExtensionFilters extends StatelessWidget {
   final String selectedStore;
   final ValueChanged<String>? onStoreChanged;
 
-  /// 仓库行的维度名；缺省「仓库」。
+  /// 仓库胶囊的维度名；缺省「仓库」。
   final String? storeLabel;
+
+  /// 排在语言之后的其它筛选胶囊（[ExtensionMinDownloadsFilter]）。
+  final List<Widget> extraFilters;
+
+  /// 搜索框与筛选胶囊并排所需的最小宽度；更窄时胶囊换到搜索框下一行。
+  static const double inlineBreakpoint = 720;
 
   @override
   Widget build(BuildContext context) {
@@ -604,74 +896,106 @@ class MangaExtensionFilters extends StatelessWidget {
     final String effectiveLanguage = languages.contains(selectedLanguage)
         ? selectedLanguage
         : '*';
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        FushiSearchBar(
-          fieldKey: ValueKey<String>('${keyPrefix}_search_field'),
-          controller: searchController,
-          hintText: searchHint,
-          onQueryChanged: onSearchChanged,
-          onClear: onSearchCleared,
+    final Map<String, String> storeLabels = <String, String>{
+      for (final ExtensionFilterOption<String> store in stores)
+        store.value: store.label,
+    };
+    final List<Widget> filters = <Widget>[
+      if (showStores)
+        LibraryFilterDropdown<String>(
+          key: ValueKey<String>('${keyPrefix}_store_filter'),
+          value: effectiveStore == '*' ? null : effectiveStore,
+          options: <String>[
+            for (final ExtensionFilterOption<String> store in stores)
+              store.value,
+          ],
+          labelOf: (String value) => storeLabels[value] ?? value,
+          title: storeLabel ?? t.media_import_segment_stores,
+          allLabel: t.extension_filter_all_stores,
+          itemKeyOf: (String? value) =>
+              ValueKey<String>('${keyPrefix}_store_${value ?? '*'}'),
+          onSelected: (String? value) => onStoreChanged(value ?? '*'),
         ),
-        if (showStores) ...<Widget>[
-          const SizedBox(height: 8),
-          ExtensionFilterChipRow<String>(
-            key: ValueKey<String>('${keyPrefix}_store_filter'),
-            icon: FushiIcons.hub,
-            label: storeLabel ?? t.media_import_segment_stores,
-            chipKeyPrefix: '${keyPrefix}_store_',
-            selected: effectiveStore,
-            options: <ExtensionFilterOption<String>>[
-              (value: '*', label: t.extension_filter_all_stores),
-              ...stores,
+      if (languages.isNotEmpty)
+        LibraryFilterDropdown<String>(
+          key: ValueKey<String>('${keyPrefix}_language_filter'),
+          value: effectiveLanguage == '*' ? null : effectiveLanguage,
+          options: languages,
+          labelOf: onlineSourceLanguageLabel,
+          title: languageLabel,
+          allLabel: allLanguagesLabel,
+          itemKeyOf: (String? value) =>
+              ValueKey<String>('${keyPrefix}_language_${value ?? '*'}'),
+          onSelected: (String? value) => onLanguageChanged(value ?? '*'),
+        ),
+      ...extraFilters,
+    ];
+    final Widget search = FushiSearchBar(
+      fieldKey: ValueKey<String>('${keyPrefix}_search_field'),
+      controller: searchController,
+      hintText: searchHint,
+      onQueryChanged: onSearchChanged,
+      onClear: onSearchCleared,
+    );
+    const double gap = 8;
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        if (filters.isEmpty) return search;
+        if (constraints.maxWidth >= inlineBreakpoint) {
+          return Row(
+            children: <Widget>[
+              Expanded(child: search),
+              for (final Widget filter in filters) ...<Widget>[
+                const SizedBox(width: gap),
+                filter,
+              ],
             ],
-            onSelected: onStoreChanged,
-          ),
-        ],
-        if (languages.isNotEmpty) ...<Widget>[
-          const SizedBox(height: 8),
-          ExtensionFilterChipRow<String>(
-            key: ValueKey<String>('${keyPrefix}_language_filter'),
-            icon: FushiIcons.language,
-            label: languageLabel,
-            chipKeyPrefix: '${keyPrefix}_language_',
-            selected: effectiveLanguage,
-            options: <ExtensionFilterOption<String>>[
-              (value: '*', label: allLanguagesLabel),
-              for (final String language in languages)
-                (value: language, label: language.toUpperCase()),
-            ],
-            onSelected: onLanguageChanged,
-          ),
-        ],
-      ],
+          );
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            search,
+            const SizedBox(height: gap),
+            Wrap(spacing: gap, runSpacing: gap, children: filters),
+          ],
+        );
+      },
     );
   }
 }
 
 class _ExtensionIcon extends StatelessWidget {
-  const _ExtensionIcon({required this.url});
+  const _ExtensionIcon({required this.url, required this.title});
 
   final String url;
+  final String title;
 
   /// 有图标和没图标的行必须等宽起排：占位图标是 24、网络图标是 32 时，
   /// 同一列表里两种行的标题左缘差 8px，扫下来像没对齐。统一成一个固定
-  /// 40×40 的 12 圆角方块（M3E 列表行首尺寸），图标缺失时方块里居中放占位符。
+  /// 40×40 的圆角方块（M3E 列表行首尺寸），图标缺失时方块里居中放占位符。
+  /// 方块底色按扩展名取色（拼贴色块同一套 HSL），一屏卡片不再是一片灰。
   static const double _size = 40;
 
   @override
   Widget build(BuildContext context) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    const Widget fallback = Center(
-      child: FushiIcon(FushiIcons.browserExtension, size: 20),
+    final FushiCoverBlockColors colors = extensionMonogramColors(
+      context,
+      title,
+    );
+    final Widget fallback = Center(
+      child: FushiIcon(
+        FushiIcons.browserExtension,
+        size: 20,
+        color: colors.onContainer,
+      ),
     );
     return SizedBox.square(
       dimension: _size,
       child: DecoratedBox(
         decoration: BoxDecoration(
-          color: tokens.surfaces.group,
+          color: colors.container,
           borderRadius: FushiM3eShape.smallRadius,
         ),
         child: url.isEmpty

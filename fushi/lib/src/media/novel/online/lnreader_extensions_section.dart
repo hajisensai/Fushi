@@ -17,7 +17,6 @@ import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
 import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
-import 'package:fushi/src/utils/components/glass/fushi_expressive_controls.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
@@ -358,14 +357,13 @@ class _LnReaderExtensionsSectionState extends State<LnReaderExtensionsSection> {
   }
 
   /// 接在批量安装 / 一键更新后面的同排动作：扩展仓库。
-  List<Widget> _catalogTrailing() => <Widget>[
+  List<ExtensionCatalogAction> _catalogTrailing() => <ExtensionCatalogAction>[
     if (widget.onOpenStores case final VoidCallback openStores)
-      FushiOutlinedButton.icon(
+      ExtensionCatalogAction(
         key: const ValueKey<String>('novel_extension_open_stores'),
-        size: FushiButtonSize.s,
         onPressed: openStores,
-        icon: const FushiIcon(FushiIcons.hub),
-        label: Text(t.online_sources_stores_manage),
+        icon: FushiIcons.hub,
+        label: t.online_sources_stores_manage,
       ),
   ];
 
@@ -546,19 +544,13 @@ class _LnReaderExtensionsSectionState extends State<LnReaderExtensionsSection> {
     });
   }
 
-  Widget _buildPluginTile(
-    LnReaderRepoPlugin plugin, {
-    int? groupIndex,
-    int? groupCount,
-  }) {
+  Widget _buildPluginTile(LnReaderRepoPlugin plugin) {
     final LnReaderManager manager = widget.manager;
     final LnReaderInstalledPlugin? installed = manager.installedById(plugin.id);
     final bool update = manager.hasUpdate(plugin);
     final bool busy = manager.isBusy(plugin.id);
     return MangaExtensionManagementTile(
       key: ValueKey<String>('novel_extension_${plugin.id}'),
-      groupIndex: groupIndex,
-      groupCount: groupCount,
       title: plugin.name,
       iconUrl: plugin.iconUrl,
       busy: busy,
@@ -579,7 +571,7 @@ class _LnReaderExtensionsSectionState extends State<LnReaderExtensionsSection> {
       secondaryLabel: installed != null && update
           ? t.mihon_extension_uninstall
           : null,
-      secondaryStyle: ExtensionTileActionStyle.outlined,
+      secondaryStyle: ExtensionTileActionStyle.text,
       onSecondary: installed != null && update
           ? () => unawaited(_uninstall(installed))
           : null,
@@ -588,12 +580,11 @@ class _LnReaderExtensionsSectionState extends State<LnReaderExtensionsSection> {
           : update
           ? t.mihon_extension_update
           : t.mihon_extension_uninstall,
-      // 安装 = filled 主操作；有更新 = tonal 强调；卸载 = outlined 次要。
-      primaryStyle: installed == null
+      // 一张卡至多一颗实心按钮：安装 / 更新 = filled，卸载 = 文字按钮（与漫画 /
+      // 视频扩展卡同一口径）。
+      primaryStyle: installed == null || update
           ? ExtensionTileActionStyle.filled
-          : update
-          ? ExtensionTileActionStyle.tonal
-          : ExtensionTileActionStyle.outlined,
+          : ExtensionTileActionStyle.text,
       onPrimary: busy
           ? null
           : installed == null || update
@@ -616,10 +607,6 @@ class _LnReaderExtensionsSectionState extends State<LnReaderExtensionsSection> {
       stores: manager.stores,
       plugins: visible,
       expanded: _storeExpanded,
-    );
-    // 每个仓库（表头 + 展开的插件行）读作一个分组：逐行算出组内位置。
-    final List<(int, int)> groupSlots = extensionGroupSlots(
-      rows.map((LnReaderCatalogRow row) => row is LnReaderStoreHeaderRow),
     );
     // 已装但仓库目录里已经没有的插件（仓库删了 / 下架了）：仍要能卸载。
     final Set<String> availableIds = manager.available
@@ -659,7 +646,8 @@ class _LnReaderExtensionsSectionState extends State<LnReaderExtensionsSection> {
                 onUpdateAll: manager.loading || _bulkRunning
                     ? null
                     : () => unawaited(_updateAll()),
-                trailing: _catalogTrailing(),
+                updateCount: manager.available.where(manager.hasUpdate).length,
+                extra: _catalogTrailing(),
               ),
               const SizedBox(height: 12),
               MangaExtensionFilters(
@@ -692,29 +680,29 @@ class _LnReaderExtensionsSectionState extends State<LnReaderExtensionsSection> {
                   _searchController.clear();
                   setState(() => _searchQuery = '');
                 },
-              ),
-              const SizedBox(height: 8),
-              ExtensionMinDownloadsFilter(
-                keyPrefix: 'novel_extension',
-                minDownloads: _minDownloads,
-                onMinDownloadsChanged: (int value) =>
-                    setState(() => _minDownloads = value),
+                extraFilters: <Widget>[
+                  ExtensionMinDownloadsFilter(
+                    keyPrefix: 'novel_extension',
+                    minDownloads: _minDownloads,
+                    onMinDownloadsChanged: (int value) =>
+                        setState(() => _minDownloads = value),
+                  ),
+                ],
               ),
             ],
           ),
         ),
       ),
       const SliverToBoxAdapter(child: SizedBox(height: 8)),
-      SliverList.builder(
-        itemCount: rows.length,
-        itemBuilder: fushiStaggeredItemBuilder((
-          BuildContext context,
-          int index,
-        ) {
+      ExtensionCatalogSliver(
+        isHeader: <bool>[
+          for (final LnReaderCatalogRow row in rows)
+            row is LnReaderStoreHeaderRow,
+        ],
+        itemBuilder: (BuildContext context, int index) {
           final LnReaderCatalogRow row = rows[index];
           return switch (row) {
             LnReaderStoreHeaderRow() => ExtensionStoreGroupHeader(
-              groupCount: groupSlots[index].$2,
               keyPrefix: 'novel',
               indexUrl: row.indexUrl,
               label: row.label,
@@ -725,25 +713,16 @@ class _LnReaderExtensionsSectionState extends State<LnReaderExtensionsSection> {
                   ? null
                   : () => _toggleStore(row.indexUrl, row.count),
             ),
-            LnReaderPluginRow() => _buildPluginTile(
-              row.plugin,
-              groupIndex: groupSlots[index].$1,
-              groupCount: groupSlots[index].$2,
-            ),
+            LnReaderPluginRow() => _buildPluginTile(row.plugin),
           };
-        }),
+        },
       ),
-      SliverList.builder(
-        itemCount: orphans.length,
-        itemBuilder: fushiStaggeredItemBuilder((
-          BuildContext context,
-          int index,
-        ) {
+      ExtensionCatalogSliver(
+        isHeader: List<bool>.filled(orphans.length, false),
+        itemBuilder: (BuildContext context, int index) {
           final LnReaderInstalledPlugin plugin = orphans[index];
           return MangaExtensionManagementTile(
             key: ValueKey<String>('novel_extension_local_${plugin.id}'),
-            groupIndex: index,
-            groupCount: orphans.length,
             title: plugin.name,
             iconUrl: plugin.iconUrl,
             metaChips: <String>[
@@ -755,10 +734,10 @@ class _LnReaderExtensionsSectionState extends State<LnReaderExtensionsSection> {
             onEnabledChanged: (bool value) =>
                 unawaited(manager.setEnabled(plugin, value)),
             primaryLabel: t.mihon_extension_uninstall,
-            primaryStyle: ExtensionTileActionStyle.outlined,
+            primaryStyle: ExtensionTileActionStyle.text,
             onPrimary: () => unawaited(_uninstall(plugin)),
           );
-        }),
+        },
       ),
       // 搜索 / 筛选后一条都不剩：统一占位（M3E 色块图标 + 弹入），不是一行裸字。
       if ((_searchQuery.trim().isNotEmpty ||

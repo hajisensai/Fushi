@@ -29,6 +29,7 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import '../helpers/fake_anki_repository.dart';
 import '../helpers/test_platform_services.dart';
 import '../helpers/shell_layout.dart';
+import '../helpers/video_header_more.dart';
 
 void main() {
   final TestWidgetsFlutterBinding binding =
@@ -122,7 +123,7 @@ void main() {
       find.byKey(ValueKey<String>('remote_video_card_remote_video-$n'));
 
   Future<void> enterSelectionMode(WidgetTester tester) async {
-    await tester.tap(find.byIcon(FushiIcons.checklist));
+    await tapVideoHeaderMoreEntry(tester, 'library_select_toggle');
     await tester.pumpAndSettle();
   }
 
@@ -174,9 +175,7 @@ void main() {
 
   testWidgets('列表布局：多选态点远端行 = 勾选，不建流播', (WidgetTester tester) async {
     await pumpPage(tester);
-    await tester.tap(
-      find.byKey(const ValueKey<String>('video-all-videos-layout-toggle')),
-    );
+    await tapVideoHeaderMoreEntry(tester, 'video-all-videos-layout-toggle');
     await tester.pumpAndSettle();
     final Finder remoteRow = find.byKey(
       const ValueKey<String>('remote_video_list_remote_video-2'),

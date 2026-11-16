@@ -8,7 +8,7 @@ import 'package:fushi/src/asr_host/asr_host.dart';
 import 'package:fushi/src/media/audiobook/asr_transcribe_sheet.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/audiobook_m4b_export_flow.dart';
 import 'package:fushi/src/media/audiobook/book_import_dialog.dart'
-    show ImportDropZoneCard, ImportMatchOptionsCard, ImportProgressCard;
+    show ImportMatchOptionsCard, ImportProgressCard;
 import 'package:fushi_engine/media/audiobook/audiobook_alignment_service.dart'
     show attachAsrCueTokenTiming, finalizeAlignedCues, parseCuesForFormat;
 import 'package:fushi_engine/media/audiobook/book_text_sections.dart'
@@ -17,7 +17,9 @@ import 'package:fushi_engine/media/audiobook/audiobook_cue_file_split.dart';
 import 'package:fushi_engine/media/audiobook/audiobook_subtitle_formats.dart';
 import 'package:fushi/src/media/import/audiobook_health_summary.dart';
 import 'package:fushi_engine/media/import/epub_backed_srt_book.dart';
+import 'package:fushi/src/media/import/import_dialog_blocks.dart';
 import 'package:fushi/src/media/import/import_dialog_frame.dart';
+import 'package:fushi/src/media/import/import_surface_spec.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
@@ -39,7 +41,6 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
-import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
@@ -330,9 +331,10 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            AdaptiveSettingsSection(
+            ImportPickTileGrid(
               children: [
-                FushiFilePickerRow(
+                ImportPickTile(
+                  tone: ImportTone.rose,
                   title: (ab.audioPaths != null && ab.audioPaths!.isNotEmpty)
                       ? t.srt_import_pick_audio_files
                       : t.srt_import_pick_audio_dir,
@@ -341,7 +343,8 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
                       ? FushiIcons.audio
                       : FushiIcons.folderOpen,
                 ),
-                FushiFilePickerRow(
+                ImportPickTile(
+                  tone: ImportTone.rose,
                   title: t.audiobook_pick_alignment,
                   subtitle: ab.alignmentPath,
                   icon: FushiIcons.subtitles,
@@ -516,8 +519,8 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
   Widget _buildImportForm() {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     int step = 0;
-    // M3E 分步：拖放区卡（选音频）→ 文件分段卡 → 匹配选项分段卡 → 进度卡；
-    // 首屏错峰进场。
+    // 导入对话框统一（2026-11）：音频主色块（有声书色反色，也是拖放落点）
+    // → 对齐文件小色块 → 引用原文件开关 → 匹配选项分段卡 → 进度卡；首屏错峰进场。
     Widget stagger(Widget child) =>
         FushiStaggeredEntrance(index: step++, child: child);
     return FushiEntranceScope(
@@ -525,26 +528,11 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          stagger(
-            ImportDropZoneCard(
-              icon: FushiIcons.audiobook,
-              title: _hasAudioSource
-                  ? _audioSourceLabel
-                  : t.srt_import_pick_audio_files,
-              subtitle: _hasAudioSource ? t.srt_import_pick_audio_files : null,
-              selected: _hasAudioSource,
-              onTap: importing ? null : _pickAudioFiles,
-            ),
-          ),
-          SizedBox(height: tokens.spacing.rowVertical),
-          stagger(
-            AdaptiveSettingsSection(
-              children: [
-                _audioSourceRow(),
-                if (!widget.audioOnly) _alignmentRow(),
-              ],
-            ),
-          ),
+          stagger(_audioSourceRow()),
+          if (!widget.audioOnly) ...[
+            SizedBox(height: tokens.spacing.gap * 1.5),
+            stagger(ImportPickTileGrid(children: [_alignmentRow()])),
+          ],
           if (isDesktopPlatform) ...[
             SizedBox(height: tokens.spacing.gap),
             stagger(
@@ -597,60 +585,66 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
   /// 真正的多段章节有声书（一本书 N 个章节音频）仍可通过「选文件」多选精确选中，
   /// 由用户明确挑文件而非盲目吞整个目录 —— 多段有声书语义完好保留。
   Widget _audioSourceRow() {
-    return FushiFilePickerRow(
-      enabled: !importing,
-      title: t.srt_import_pick_audio_files,
-      subtitle: _hasAudioSource ? _audioSourceLabel : null,
+    return ImportPickBlock(
+      tone: ImportTone.rose,
       icon: FushiIcons.audio,
+      title: _hasAudioSource
+          ? _audioSourceLabel
+          : t.srt_import_pick_audio_files,
+      subtitle: _hasAudioSource ? t.srt_import_pick_audio_files : null,
+      dropHint: t.book_import_drop_hint,
+      enabled: !importing,
+      selected: _hasAudioSource,
       onTap: _pickAudioFiles,
-      actions: [
-        FushiIconButton(
-          icon: FushiIcons.folderOpen,
-          tooltip: t.srt_import_pick_audio_files,
-          isWideTapArea: true,
-          enabled: !importing,
-          onTap: _pickAudioFiles,
-        ),
-      ],
+      onClear: () => setState(() {
+        _audioPaths = null;
+        _audioDir = null;
+      }),
     );
   }
 
   /// 对齐文件行：标签 + [选文件] 按钮。
   Widget _alignmentRow() {
-    return FushiFilePickerRow(
+    // 转录回填的显示名固定是结果名（见 _transcribeAlignmentFromAudio）。
+    final bool transcribed =
+        _alignmentPath != null &&
+        _alignmentName == t.audiobook_transcribe_result_name;
+    return ImportPickTile(
+      tone: ImportTone.rose,
+      droppable: true,
       enabled: !importing,
       title: t.audiobook_pick_alignment,
       subtitle: _alignmentPath == null
           ? null
           : _alignmentName ?? p.basename(_alignmentPath!),
       icon: FushiIcons.subtitles,
-      onTap: _onAlignmentRowTap,
+      selected: _alignmentPath != null,
+      // 点格子本身 = 选文件；转录是下方常显的带字动作。
+      onTap: _pickAlignment,
+      onClear: () => setState(() {
+        _alignmentPath = null;
+        _alignmentName = null;
+        _probedCues = null;
+        _probedCuesSourcePath = null;
+      }),
       below: !isAsrSupported
           ? null
-          : SubtitleSourceSegments(
-              // 转录回填的显示名固定是结果名（见 _transcribeAlignmentFromAudio）。
-              current: _alignmentPath == null
-                  ? null
-                  : _alignmentName == t.audiobook_transcribe_result_name
-                  ? SubtitleSourceChoice.transcribe
-                  : SubtitleSourceChoice.pickFile,
-              enabled: !importing,
-              onChoose: (SubtitleSourceChoice choice) => unawaited(
-                choice == SubtitleSourceChoice.transcribe
-                    ? _transcribeAlignmentFromAudio()
-                    : _pickAlignment(),
-              ),
+          : ImportTileActions(
+              colors: ImportPickTile.colorsOf(context, ImportTone.rose),
+              // 转录要先有音频：不藏按钮，置灰并写出原因。
+              note: (_audioPaths?.isEmpty ?? true)
+                  ? t.audiobook_transcribe_needs_audio
+                  : null,
+              actions: <ImportTileAction>[
+                ImportTileAction(
+                  icon: FushiIcons.voice,
+                  label: t.import_subtitle_source_transcribe,
+                  selected: transcribed,
+                  enabled: !importing && (_audioPaths?.isNotEmpty ?? false),
+                  onTap: _transcribeAlignmentFromAudio,
+                ),
+              ],
             ),
-      actions: [
-        if (!isAsrSupported)
-          FushiIconButton(
-            icon: FushiIcons.folderOpen,
-            tooltip: t.audiobook_pick_alignment,
-            isWideTapArea: true,
-            enabled: !importing,
-            onTap: _pickAlignment,
-          ),
-      ],
     );
   }
 
@@ -694,6 +688,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
     );
     if (!mounted) return;
     final String? srtPath = await showAsrTranscribeSheet(
+      tone: ImportTone.rose,
       context: context,
       audioPaths: List<String>.of(audio),
       languageHint: asrLanguageHintFromBookLanguage(book?.language),
@@ -1350,9 +1345,9 @@ class AudiobookImportDialogFrame extends StatelessWidget {
   Widget build(BuildContext context) {
     return ImportDialogFrame(
       title: title,
-      leadingIcon: FushiIcons.audiobook,
       body: content,
       actions: actions,
+      tone: ImportTone.rose,
     );
   }
 }

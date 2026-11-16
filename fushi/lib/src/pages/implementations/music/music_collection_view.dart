@@ -26,6 +26,7 @@ import 'package:fushi/src/pages/implementations/music/music_cover.dart'
         MusicCover,
         MusicCoverTintSource,
         kMusicHoverLiftScale,
+        musicHasCoverSource,
         musicMaterialCover;
 import 'package:fushi/src/pages/implementations/music/music_track_row_surface.dart'
     show MusicTrackRowSurface;
@@ -250,19 +251,24 @@ class MusicCollectionBlock extends StatelessWidget {
           chip: _nonEmpty(chip),
           leadingIcon: leadingIcon,
           trailing: trailing,
-          covers: <Widget>[
-            if (circular)
-              MusicAvatar(
-                coverPath: coverPath,
-                embeddedFromPath: embeddedFromPath,
-              )
-            else
-              MusicCover(
-                coverPath: coverPath,
-                embeddedFromPath: embeddedFromPath,
-                borderRadius: BorderRadius.zero,
-              ),
-          ],
+          // 没有封面来源：不放音符 / 人像占位，交给色块画按标题生成的封面
+          // （与块底同一色相，设计稿 M2）。
+          covers: !musicHasCoverSource(coverPath, embeddedFromPath)
+              ? const <Widget>[]
+              : <Widget>[
+                  if (circular)
+                    MusicAvatar(
+                      coverPath: coverPath,
+                      embeddedFromPath: embeddedFromPath,
+                    )
+                  else
+                    MusicCover(
+                      coverPath: coverPath,
+                      embeddedFromPath: embeddedFromPath,
+                      borderRadius: BorderRadius.zero,
+                      title: title,
+                    ),
+                ],
           tintImage: tint,
         ),
       ),
@@ -370,9 +376,14 @@ class MusicStyledCollection extends StatelessWidget {
     this.shrinkWrap = false,
     this.controller,
     this.scrollKey,
+    this.uniformAfterHero = true,
   });
 
   final MusicViewStyle style;
+
+  /// 拼贴下只有首块加大、其余等尺寸（设计稿 M2：音乐的拼贴不出洞），见
+  /// [SliverFushiCoverBlocks.uniformAfterHero]。
+  final bool uniformAfterHero;
   final int itemCount;
   final IndexedWidgetBuilder rowBuilder;
   final FushiCoverBlockItemBuilder blockBuilder;
@@ -423,6 +434,7 @@ class MusicStyledCollection extends StatelessWidget {
     }
     return SliverFushiCoverBlocks(
       layout: shellContentLayoutOf(context),
+      uniformAfterHero: uniformAfterHero,
       itemCount: itemCount,
       itemBuilder: blockBuilder,
     );

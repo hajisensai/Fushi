@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/gestures.dart' show PointerDeviceKind;
-import 'package:fushi/src/utils/components/fushi_bleed_title.dart';
 import 'package:fushi/src/utils/components/fushi_cover_block.dart';
+import 'package:fushi/src/utils/components/fushi_fit_title.dart';
 import 'package:fushi/src/utils/components/fushi_poster_block.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -77,17 +77,17 @@ void main() {
     });
   }
 
-  /// 画出血大字的那块 CustomPaint（水印是画出来的，不是 Text）。
+  /// 色块大字水印那块 CustomPaint（装盒大字，画出来的，不是 Text）。
   Finder watermarkPaint(String text) => find.byWidgetPredicate(
     (Widget w) =>
         w is CustomPaint &&
-        w.painter is FushiBleedTitlePainter &&
-        (w.painter! as FushiBleedTitlePainter).text == text,
+        w.painter is FushiFitTitlePainter &&
+        (w.painter! as FushiFitTitlePainter).text == text,
   );
 
-  FushiBleedTitlePainter watermarkPainter(WidgetTester tester, String text) =>
+  FushiFitTitlePainter watermarkPainter(WidgetTester tester, String text) =>
       tester.widget<CustomPaint>(watermarkPaint(text)).painter!
-          as FushiBleedTitlePainter;
+          as FushiFitTitlePainter;
 
   /// 水印大字在屏幕上的实际外框（含当前悬停横移）。
   Rect watermarkRect(WidgetTester tester, String text) {
@@ -116,12 +116,15 @@ void main() {
     return shift;
   }
 
-  testWidgets('LTR 悬停：水印往左（起始边）横移', (WidgetTester tester) async {
-    expect(await hoverShift(tester, TextDirection.ltr), lessThan(0));
+  // W 原型 `.big` 悬停 `x: 6`：沿阅读方向往末端轻移，不滑出盒子。
+  testWidgets('LTR 悬停：水印往右（末端）轻移', (WidgetTester tester) async {
+    final double shift = await hoverShift(tester, TextDirection.ltr);
+    expect(shift, greaterThan(0));
+    expect(shift, lessThan(12));
   });
 
-  testWidgets('RTL 悬停：水印往右（起始边）横移', (WidgetTester tester) async {
-    expect(await hoverShift(tester, TextDirection.rtl), greaterThan(0));
+  testWidgets('RTL 悬停：水印往左（末端）轻移', (WidgetTester tester) async {
+    expect(await hoverShift(tester, TextDirection.rtl), lessThan(0));
   });
 
   testWidgets('RTL 下水印以阅读方向排版、贴右边起', (WidgetTester tester) async {

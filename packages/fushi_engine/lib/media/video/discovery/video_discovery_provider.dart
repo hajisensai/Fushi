@@ -263,6 +263,15 @@ class VideoDiscoveryItem {
   final VideoMetadataWork? metadataWork;
   final VideoMetadataLookup? confirmedLookup;
 
+  /// 标题 logo（透明底艺术字）。列表接口不带 logo，只有拉过详情、[metadataWork]
+  /// 带完整图组的条目才有；没有为 null。
+  String? get logoUrl {
+    final VideoMetadataWork? work = metadataWork;
+    return work == null
+        ? null
+        : _metadataImage(work, VideoMetadataImageKind.logo);
+  }
+
   /// 只换身份引用（如补齐别名后），其余展示字段不变。
   VideoDiscoveryItem withReference(VideoMediaReference value) =>
       VideoDiscoveryItem(

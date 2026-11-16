@@ -28,7 +28,7 @@ void main() {
     expect(shell, contains('t.library_view_import'));
     expect(shell, contains('Offstage('));
     expect(shell, contains('HomeVideoPage('));
-    expect(shell, contains('MediaSourcesPage('));
+    expect(shell, contains('VideoImportPage('));
   });
 
   test('主页只组装首屏继续观看（含下一集）、已更新未看和最近添加，系列与原始视频分流', () {
@@ -56,7 +56,14 @@ void main() {
     expect(page, contains('VideoLibrarySection.home'));
     expect(page, contains('VideoLibrarySection.series'));
     expect(page, contains('VideoLibrarySection.allVideos'));
-    expect(page, contains('video_source_scrape_tasks_open'));
+    // 后台任务入口（设计稿 #video V2）：只在有任务时由页头挂出专用按钮。
+    expect(page, contains('VideoBackgroundTasksButton('));
+    expect(
+      File(
+        'lib/src/pages/implementations/video_library_header_actions.dart',
+      ).readAsStringSync(),
+      contains('video_source_scrape_tasks_open'),
+    );
     expect(page, contains('_AllVideosLayout.grid'));
     expect(page, contains('_AllVideosLayout.list'));
     expect(page, contains('_buildAllVideoListRow('));

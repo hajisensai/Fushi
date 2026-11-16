@@ -9,7 +9,8 @@ import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 /// 通用「输入一个名字」对话框——库内**全部**改名/命名入口的唯一弹窗实现。
 ///
 /// 在此之前，每个域各自复制了一份形状相同的命名弹窗：合集走
-/// `showCollectionNameDialog`、游戏走私有 `_RenameGameDialog`、视频走一个**裸**
+/// `showCollectionNameDialog`、游戏走 `GalgameRenameDialog`
+/// （games/galgame_item_menu.dart）、视频走一个**裸**
 /// `AlertDialog`（连设计系统都没走）、Profile 走 `ProfileNameDialog`。四份实现
 /// 四种壳、四套 trim/空名规则，其中视频那份还踩过「`showDialog` 返回后立刻
 /// dispose controller」的过早释放坑。再往里加词典/扫描根就是第五、第六份。
@@ -23,7 +24,7 @@ import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 /// （留空时确认键置灰），调用方无需再判空。
 ///
 /// 收编进度：合集 / 视频 / 书 / 扫描根 / 词典五处已走本原语；游戏的
-/// `_RenameGameDialog` 与 `ProfileNameDialog` 仍是各自的独立实现（它们的空名
+/// `GalgameRenameDialog` 与 `ProfileNameDialog` 仍是各自的独立实现（它们的空名
 /// 规则是「照样 pop 空串、由调用点各自判空」），尚未收编。
 Future<String?> showNameInputDialog({
   required BuildContext context,

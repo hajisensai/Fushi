@@ -1117,6 +1117,11 @@ class ShelfMetaTags extends StatelessWidget {
   final List<ShelfMetaTag> tags;
   final int maxVisible;
 
+  /// 标签 chip 的圆角：小圆角矩形，与状态 / 规格那类全圆胶囊在外形上分开——
+  /// 用户自己打的「读完」标签不再被读成观看状态（2026-11-16 群反馈「标签和状态
+  /// 共用一行，有点丑」）。
+  static const double radius = 6;
+
   @override
   Widget build(BuildContext context) {
     if (tags.isEmpty) return const SizedBox.shrink();
@@ -1124,15 +1129,58 @@ class ShelfMetaTags extends StatelessWidget {
     final ColorScheme cs = theme.colorScheme;
     final bool eink = isEinkTheme(context);
     final bool apple = isGlassDesign(context) && !eink;
-    final Color muted = apple
-        ? appleColorsOf(context).secondaryLabel
-        : cs.onSurfaceVariant;
+    // 文字跟随所在面的前景色（拼贴色块里是块的 onContainer），不再一律用全局
+    // 灰：灰字压在取色色块上和块配色不搭。
+    final Color foreground =
+        DefaultTextStyle.of(context).style.color ??
+        (apple ? appleColorsOf(context).secondaryLabel : cs.onSurfaceVariant);
     final TextStyle style = ShelfCardMeta._subStyle(
       theme,
-    ).copyWith(color: muted);
+    ).copyWith(color: foreground, fontWeight: FontWeight.w600, height: 1.2);
     final List<ShelfMetaTag> visible = tags.take(maxVisible).toList();
     final int overflow = tags.length - visible.length;
     final String names = tags.map((ShelfMetaTag tag) => tag.label).join(' · ');
+    Widget chip(String label, Color? tint) {
+      final Color base = tint ?? foreground;
+      return DecoratedBox(
+        decoration: BoxDecoration(
+          color: eink
+              ? null
+              : base.withValues(alpha: tint == null ? 0.10 : 0.20),
+          border: eink ? Border.all(color: cs.onSurface) : null,
+          borderRadius: const BorderRadius.all(Radius.circular(radius)),
+        ),
+        child: Padding(
+          padding: const EdgeInsetsDirectional.fromSTEB(6, 2, 7, 2),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              if (tint != null && !eink) ...<Widget>[
+                SizedBox.square(
+                  dimension: 6,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: tint,
+                      borderRadius: const BorderRadius.all(Radius.circular(2)),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 4),
+              ],
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: style,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return FushiTooltip(
       message: names,
       child: Semantics(
@@ -1142,32 +1190,11 @@ class ShelfMetaTags extends StatelessWidget {
             padding: const EdgeInsetsDirectional.only(start: 6),
             child: Row(
               mainAxisSize: MainAxisSize.min,
+              spacing: 4,
               children: <Widget>[
-                for (final (int i, ShelfMetaTag tag) in visible.indexed) ...[
-                  if (i > 0) const SizedBox(width: 6),
-                  SizedBox.square(
-                    dimension: 7,
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: eink ? cs.onSurface : (tag.color ?? muted),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 3),
-                  Flexible(
-                    child: Text(
-                      tag.label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: style,
-                    ),
-                  ),
-                ],
-                if (overflow > 0) ...[
-                  const SizedBox(width: 4),
-                  Text('+$overflow', style: style),
-                ],
+                for (final ShelfMetaTag tag in visible)
+                  Flexible(child: chip(tag.label, tag.color)),
+                if (overflow > 0) chip('+$overflow', null),
               ],
             ),
           ),

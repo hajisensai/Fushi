@@ -123,11 +123,24 @@ void main() {
       isTrue,
       reason: '字幕书卡「加入合集」',
     );
+    // 游戏卡「加入合集」随卡菜单收进 games/galgame_item_menu.dart（与游戏首页
+    // 共用）；库页自己只剩合集详情页（移到其他合集）这一处。
     expect(
       'isMemberVisible: _isGameCollectionMemberVisible'
           .allMatches(games)
           .length,
-      2,
+      1,
+    );
+    final String gameMenu = File(
+      'lib/src/pages/implementations/games/galgame_item_menu.dart',
+    ).readAsStringSync();
+    expect(
+      RegExp(
+        r'isMemberVisible: \(String mediaType, String entryKey\) =>\s+'
+        r'isGameCollectionMemberVisible\(',
+      ).hasMatch(gameMenu),
+      isTrue,
+      reason: '游戏卡「加入合集」与详情页共用同一判据',
     );
     expect(
       shelf.contains('_resolveCollectionMember(mediaType, entryKey);'),

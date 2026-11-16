@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:drift/native.dart';
+import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -16,11 +17,12 @@ import 'package:fushi/src/pages/implementations/tag_filter_bar.dart';
 import 'package:fushi/src/media/tags/tag_picker_sheet.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 
 import '../helpers/test_platform_services.dart';
 
 /// BUG-1113「游戏没有标签」的 UI 侧守卫：游戏库页必须接上书架 / 视频页那套**共享**
-/// 用户标签体系——同一个 [FushiTagFilterBar]、同一个标签池、同一套 AND 筛选、
+/// 用户标签体系——同一个标签池、同一套 AND 筛选（筛选面板「我的标签」分组）、
 /// 同一个 [TagPickerPage] 打标签入口。
 ///
 /// 全部经真 [GamesLibraryPage] + 真 Drift 表（内存库）走，不 mock：接没接上、筛没筛
@@ -94,27 +96,61 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('游戏库顶部渲染共享标签筛选栏，标签 chip 出自共享标签池', (WidgetTester tester) async {
+  /// 焦点驱动：把焦点交给 [target] 所在的控件焦点节点，再按 Enter（不点坐标）。
+  Future<void> enterOn(WidgetTester tester, Finder target) async {
+    final FocusNode node = Focus.of(tester.element(target));
+    node.requestFocus();
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+  }
+
+  /// 打开筛选面板（设计稿「游戏 · 库」：用户标签筛选并进筛选面板，不再单占一行
+  /// 标签 chip）。
+  Future<void> openFilterPanel(WidgetTester tester) => enterOn(
+    tester,
+    find
+        .descendant(
+          of: find.byTooltip(t.game_filter),
+          matching: find.byType(FushiIcon),
+        )
+        .first,
+  );
+
+  Finder userTagChip(int tagId, String name) => find.descendant(
+    of: find.byKey(ValueKey<String>('games_filter_user_tag_$tagId')),
+    matching: find.text(name),
+  );
+
+  Future<void> closeFilterPanel(WidgetTester tester) async {
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('用户标签筛选并进筛选面板，chip 出自共享标签池', (WidgetTester tester) async {
     final (AppModel appModel, FushiDatabase db) = await buildModel();
-    await db.createTag('神作', 0xFFEF5350);
+    final int tagId = await db.createTag('神作', 0xFFEF5350);
     await pumpPage(tester, appModel);
 
-    // 2026-10-04 起同一组件拆两段渲染：工具行行尾的「管理标签」+ 下方标签 chip 段。
-    expect(
-      find.byType(FushiTagFilterBar),
-      findsWidgets,
-      reason: '必须复用书架/视频页同一组件，而不是游戏页自己手搓一条',
-    );
+    // 页面上不再有单独一行标签 chip（工具行行尾只留「管理标签」）。
     expect(
       find.descendant(
         of: find.byType(FushiTagFilterBar),
         matching: find.text('神作'),
       ),
-      findsOneWidget,
+      findsNothing,
     );
+
+    await openFilterPanel(tester);
+    expect(
+      find.byKey(const ValueKey<String>('games_filter_user_tags')),
+      findsOneWidget,
+      reason: '筛选面板里要有「我的标签」分组（共享标签池）',
+    );
+    expect(userTagChip(tagId, '神作'), findsOneWidget);
   });
 
-  testWidgets('点标签 chip 只留挂了该标签的游戏，再点取消恢复全部', (WidgetTester tester) async {
+  testWidgets('面板里选标签只留挂了该标签的游戏，再选取消恢复全部', (WidgetTester tester) async {
     final (AppModel appModel, FushiDatabase db) = await buildModel();
     final int tagId = await db.createTag('神作', 0xFFEF5350);
     await db.addTagToGame('g1', tagId);
@@ -123,24 +159,16 @@ void main() {
     expect(cardTitle('alpha'), findsOneWidget);
     expect(cardTitle('beta'), findsOneWidget);
 
-    await tester.tap(
-      find.descendant(
-        of: find.byType(FushiTagFilterBar),
-        matching: find.text('神作'),
-      ),
-    );
-    await tester.pumpAndSettle();
+    await openFilterPanel(tester);
+    await enterOn(tester, userTagChip(tagId, '神作'));
+    await closeFilterPanel(tester);
 
     expect(cardTitle('alpha'), findsOneWidget, reason: 'g1 挂了该标签');
     expect(cardTitle('beta'), findsNothing, reason: 'g2 没挂，必须被筛掉');
 
-    await tester.tap(
-      find.descendant(
-        of: find.byType(FushiTagFilterBar),
-        matching: find.text('神作'),
-      ),
-    );
-    await tester.pumpAndSettle();
+    await openFilterPanel(tester);
+    await enterOn(tester, userTagChip(tagId, '神作'));
+    await closeFilterPanel(tester);
 
     expect(cardTitle('alpha'), findsOneWidget);
     expect(cardTitle('beta'), findsOneWidget);
@@ -148,21 +176,19 @@ void main() {
 
   testWidgets('全部游戏都不挂选中标签时给「没有符合筛选」空态，而不是空库文案', (WidgetTester tester) async {
     final (AppModel appModel, FushiDatabase db) = await buildModel();
-    await db.createTag('神作', 0xFFEF5350);
+    final int tagId = await db.createTag('神作', 0xFFEF5350);
     await pumpPage(tester, appModel);
 
-    await tester.tap(
-      find.descendant(
-        of: find.byType(FushiTagFilterBar),
-        matching: find.text('神作'),
-      ),
-    );
-    await tester.pumpAndSettle();
+    await openFilterPanel(tester);
+    await enterOn(tester, userTagChip(tagId, '神作'));
+    await closeFilterPanel(tester);
 
     // i18n key 是 game_*（命名术语表禁用 games_ 前缀），生产代码用的也是
-    // games_library_page.dart:772/798 的 t.game_empty / t.game_no_match。
+    // games_library_page.dart 的 t.game_empty / t.game_no_match。
     expect(find.text(t.game_no_match), findsOneWidget);
     expect(find.text(t.game_empty), findsNothing);
+    // 「清除筛选」连同用户标签一起清（原 chip 行并进面板后由同一个按钮负责）。
+    expect(find.text(t.game_filter_reset), findsOneWidget);
   });
 
   testWidgets('卡片菜单有「标签」项，点开进共享标签选择器并真写穿 DB', (WidgetTester tester) async {
@@ -171,7 +197,7 @@ void main() {
     await pumpPage(tester, appModel);
 
     // 2026-10-25 卡盒卡定版（2abfd1327b）：封面上不再放 ⋯ 按钮，菜单走长按 /
-    // 右键 / 手柄长按 A，打开的是同一份 _menuItems。长按 g1（alpha）的卡。
+    // 右键 / 手柄长按 A，打开的是同一份 galgameItemMenuItems。长按 g1（alpha）的卡。
     await tester.longPress(cardTitle('alpha'));
     await tester.pumpAndSettle();
     expect(find.text(t.tag_label), findsOneWidget);

@@ -13,6 +13,7 @@ class AniListMedia {
     this.english,
     this.native,
     this.coverUrl,
+    this.bannerUrl,
     this.episodes,
     this.seasonYear,
     this.format,
@@ -26,6 +27,10 @@ class AniListMedia {
 
   /// 封面图 URL（`coverImage.large`）；旧响应/缺字段为 null。
   final String? coverUrl;
+
+  /// 横幅剧照 URL（`bannerImage`，约 1900×400 的横版图）；只有放送日历查询取
+  /// 这个字段（日历 / 今日放送色块的尾侧剧照），搜索路径与缺图番剧为 null。
+  final String? bannerUrl;
 
   /// 总集数（连载中/未知为 null）。
   final int? episodes;
@@ -353,6 +358,9 @@ AniListAiringPage parseAniListAiringResponse(String body) {
             english: title is Map ? title['english'] as String? : null,
             native: title is Map ? title['native'] as String? : null,
             coverUrl: cover is Map ? cover['large'] as String? : null,
+            bannerUrl: m is Map && m['bannerImage'] is String
+                ? m['bannerImage'] as String
+                : null,
             episodes: m is Map && m['episodes'] is int
                 ? m['episodes'] as int
                 : null,
@@ -465,6 +473,7 @@ query ($from: Int, $to: Int, $ids: [Int], $page: Int) {
       media {
         title { romaji english native }
         coverImage { large }
+        bannerImage
         episodes
         seasonYear
         format

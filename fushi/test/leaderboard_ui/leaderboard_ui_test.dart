@@ -4,7 +4,8 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:material_ui/material_ui.dart';
-import 'package:flutter/services.dart' show MethodCall, SystemChannels;
+import 'package:flutter/services.dart'
+    show LogicalKeyboardKey, MethodCall, SystemChannels;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -23,6 +24,7 @@ import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_user_pag
 import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_watermelon_page.dart';
 import 'package:fushi/src/utils/components/fushi_destructive_confirm_dialog.dart';
 import 'package:fushi/src/utils/components/fushi_loading_view.dart';
+import 'package:fushi/src/utils/components/fushi_masthead_scaffold.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_client.dart';
@@ -296,6 +298,39 @@ void main() {
   /// 服务的 `load()` future 是在 runAsync（真实 zone）里建的：对已完成 future 的
   /// `.then` 回调排在它自己的 zone 的微任务队列上，fake zone 的 pump 冲不到，所以
   /// 每轮先让真实 zone 转一圈。
+  /// 焦点驱动激活：把焦点给目标控件（取它子树里第一个 [Focus] 管的节点），再用
+  /// Enter 确认（禁 tap / 坐标点击）。
+  Future<void> activateByFocus(WidgetTester tester, Finder target) async {
+    final Finder focus = find
+        .descendant(of: target, matching: find.byType(Focus))
+        .first;
+    final Element inner = tester.element(
+      find
+          .descendant(
+            of: focus,
+            matching: find.byWidgetPredicate((Widget _) => true),
+          )
+          .first,
+    );
+    Focus.of(inner, createDependency: false).requestFocus();
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pump();
+  }
+
+  /// 页头周期分段（`leaderboard-window-<标签>` 键在段标签上）：把焦点交给包着
+  /// 这枚标签的那一段（最近的 [Focus] 祖先）再按 Enter。
+  Future<void> activateWindowSegment(WidgetTester tester, String label) async {
+    final Finder target = find.byKey(
+      ValueKey<String>('leaderboard-window-$label'),
+    );
+    expect(target, findsOneWidget);
+    Focus.of(tester.element(target), createDependency: false).requestFocus();
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pump();
+  }
+
   /// 表单页（注册 / 登录 / 账户）比默认 800x600 高：ListView 懒构建，屏外的行不存在。
   /// 把测试视口拉高，整页都建出来。
   void tallView(WidgetTester tester) {
@@ -1122,14 +1157,14 @@ void main() {
     expect(shareActionEnabled(tester, 'leaderboard-share-image'), isFalse);
 
     // 周还在加载 → 切到总（取到数据）→ 切回周：复用在途请求，不再发第二次。
-    await tester.tap(chip(t.leaderboard_window_all));
+    await activateByFocus(tester, chip(t.leaderboard_window_all));
     await settle(tester);
     expect(
       find.text(t.leaderboard_share_card_finished_all(n: 42)),
       findsOneWidget,
     );
     expect(shareActionEnabled(tester, 'leaderboard-share-image'), isTrue);
-    await tester.tap(chip(t.leaderboard_window_week));
+    await activateByFocus(tester, chip(t.leaderboard_window_week));
     await settle(tester);
     expect(weekGates, hasLength(1));
     expect(find.byType(FushiLoadingView), findsOneWidget);
@@ -1140,7 +1175,7 @@ void main() {
     await settle(tester);
     expect(find.byType(LeaderboardErrorView), findsOneWidget);
     expect(shareActionEnabled(tester, 'leaderboard-share-image'), isFalse);
-    await tester.tap(chip(t.leaderboard_window_all));
+    await activateByFocus(tester, chip(t.leaderboard_window_all));
     await settle(tester);
     expect(find.byType(LeaderboardErrorView), findsNothing);
     expect(
@@ -1149,7 +1184,7 @@ void main() {
     );
 
     // 切回周 = 重取；第二次成功后显示卡片而不是残留的错误，分享可点。
-    await tester.tap(chip(t.leaderboard_window_week));
+    await activateByFocus(tester, chip(t.leaderboard_window_week));
     await settle(tester);
     expect(weekGates, hasLength(2));
     weekGates.last.complete(true);
@@ -1201,17 +1236,13 @@ void main() {
     await tester.pumpWidget(wrap(service, const LeaderboardTab()));
     await settle(tester);
 
-    await tester.tap(
-      find.byKey(
-        ValueKey<String>('leaderboard-window-${t.leaderboard_window_all}'),
-      ),
-    );
+    await activateWindowSegment(tester, t.leaderboard_window_all);
     await settle(tester);
     final Finder share = find.byKey(
       const ValueKey<String>('leaderboard-header-share'),
     );
     expect(share, findsOneWidget);
-    await tester.tap(share);
+    await activateByFocus(tester, share);
     await settle(tester);
 
     expect(find.byType(LeaderboardShareDialog), findsOneWidget);
@@ -1593,7 +1624,7 @@ void main() {
     final LeaderboardService service = await activeService(tester);
     await tester.pumpWidget(wrap(service, const LeaderboardTab()));
     await settle(tester);
-    await tester.tap(byKey('leaderboard-header-watermelon'));
+    await activateByFocus(tester, byKey('leaderboard-header-watermelon'));
     await settle(tester);
     expect(find.byType(LeaderboardWatermelonPage), findsOneWidget);
     final http.Request req = server.requests.lastWhere(
@@ -1615,7 +1646,7 @@ void main() {
     expect(sizeOf(_otherId), greaterThan(sizeOf(_selfId)));
   });
 
-  testWidgets('从首页 push 进来时顶栏第一位是返回键，其后是头像 + 昵称#编号', (
+  testWidgets('从首页 push 进来：现行页头，返回键在最左、昵称#编号进副标题、头像按钮在末位', (
     WidgetTester tester,
   ) async {
     tallView(tester);
@@ -1640,19 +1671,35 @@ void main() {
       ),
     );
     await settleIo(tester, selfCached);
-    final Finder back = byKey('leaderboard-back');
-    expect(back, findsOneWidget);
-    final Finder title = find.descendant(
-      of: byKey('leaderboard-top-bar'),
-      matching: find.text('Me#0042'),
+    // 现行页头（masthead）：不再有「返回圆钮 + 头像标题胶囊」那条悬浮顶栏。
+    expect(byKey('leaderboard-top-bar'), findsNothing);
+    expect(find.byType(FushiMastheadScaffold), findsOneWidget);
+    final Finder back = find.descendant(
+      of: find.byType(FushiMastheadScaffold),
+      matching: find.byTooltip(
+        MaterialLocalizations.of(
+          tester.element(find.byType(LeaderboardTab)),
+        ).backButtonTooltip,
+      ),
     );
-    expect(title, findsOneWidget);
+    expect(back, findsOneWidget);
+    // 「昵称#编号」进页名下的副标题，头像按钮在动作行末位。
+    expect(find.text(t.leaderboard_title), findsWidgets);
+    expect(
+      find.descendant(
+        of: find.byType(FushiMastheadHeader),
+        matching: find.text('Me#0042'),
+      ),
+      findsOneWidget,
+    );
+    final Finder profile = byKey('leaderboard-header-profile');
+    expect(profile, findsOneWidget);
     expect(
       tester.getCenter(back).dx,
-      lessThan(tester.getCenter(title).dx),
-      reason: '返回键在头像胶囊左侧',
+      lessThan(tester.getCenter(profile).dx),
+      reason: '返回键在最左，头像按钮在动作行末位',
     );
-    await tester.tap(back);
+    await activateByFocus(tester, back);
     await settle(tester);
     // 退场转场比 settle 的十帧长：再推进一秒让路由真正移除。
     await tester.pump(const Duration(seconds: 1));
@@ -1665,6 +1712,7 @@ void main() {
         body: LeaderboardCharsSummaryCard(
           total: null,
           week: null,
+          window: LeaderboardWindow.all,
           error: error,
         ),
       ),
@@ -1685,62 +1733,116 @@ void main() {
     expect(find.text(leaderboardErrorText(error)), findsOneWidget);
   });
 
-  testWidgets('总字数卡：可在周 / 月 / 累计之间切换大数字', (WidgetTester tester) async {
-    await tester.pumpWidget(
-      const MaterialApp(
-        home: Scaffold(
-          body: LeaderboardCharsSummaryCard(
-            total: 2500000,
-            week: 40000,
-            month: 120000,
+  testWidgets('总字数卡：受控显示页面传入的周 / 月 / 累计，卡内不再另放一组选择', (
+    WidgetTester tester,
+  ) async {
+    Future<void> pumpCard(LeaderboardWindow window) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: LeaderboardCharsSummaryCard(
+              total: 2500000,
+              week: 40000,
+              month: 120000,
+              window: window,
+            ),
           ),
         ),
-      ),
-    );
-    await tester.pump(const Duration(seconds: 5));
+      );
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 5));
+    }
+
     String headline() => tester
         .widget<Text>(
           find.byKey(const ValueKey<String>('leaderboard-summary-total')),
         )
         .data!;
+    String title() => tester
+        .widget<Text>(
+          find.byKey(const ValueKey<String>('leaderboard-summary-title')),
+        )
+        .data!;
+
+    await pumpCard(LeaderboardWindow.all);
     expect(headline(), leaderboardGroupedNumber(2500000));
+    expect(title(), t.leaderboard_summary_total);
     expect(
       find.byKey(const ValueKey<String>('leaderboard-summary-week')),
       findsOneWidget,
     );
-
-    await tester.tap(
-      find.byKey(
-        ValueKey<String>(
-          'leaderboard-summary-window-${leaderboardWindowLabel(LeaderboardWindow.month)}',
+    // 卡里没有自己的窗口选择行（周 / 月 / 总 只在页面上出现一组）。
+    for (final LeaderboardWindow w in LeaderboardWindow.values) {
+      expect(
+        find.byKey(
+          ValueKey<String>(
+            'leaderboard-summary-window-${leaderboardWindowLabel(w)}',
+          ),
         ),
-      ),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(seconds: 5));
+        findsNothing,
+      );
+    }
+    expect(find.byType(FushiSelectableChip), findsNothing);
+
+    await pumpCard(LeaderboardWindow.month);
     expect(headline(), leaderboardGroupedNumber(120000));
-    expect(
-      tester
-          .widget<Text>(
-            find.byKey(const ValueKey<String>('leaderboard-summary-title')),
-          )
-          .data,
-      t.leaderboard_summary_total_month,
-    );
+    expect(title(), t.leaderboard_summary_total_month);
     expect(
       find.byKey(const ValueKey<String>('leaderboard-summary-share')),
       findsOneWidget,
     );
 
-    await tester.tap(
-      find.byKey(
-        ValueKey<String>(
-          'leaderboard-summary-window-${leaderboardWindowLabel(LeaderboardWindow.week)}',
-        ),
-      ),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(seconds: 5));
+    await pumpCard(LeaderboardWindow.week);
     expect(headline(), leaderboardGroupedNumber(40000));
+    expect(title(), t.leaderboard_summary_total_week);
+  });
+
+  testWidgets('排行页只有一组周 / 月 / 总：总字数卡跟着页面窗口切换', (WidgetTester tester) async {
+    tallView(tester);
+    final LeaderboardService service = await activeService(tester);
+    await tester.pumpWidget(wrap(service, const LeaderboardTab()));
+    await settle(tester);
+
+    expect(
+      find.byWidgetPredicate(
+        (Widget w) =>
+            w.key is ValueKey<String> &&
+            (w.key! as ValueKey<String>).value.startsWith(
+              'leaderboard-summary-window-',
+            ),
+      ),
+      findsNothing,
+    );
+    String title() => tester
+        .widget<Text>(
+          find.byKey(const ValueKey<String>('leaderboard-summary-title')),
+        )
+        .data!;
+    // 页面默认周：卡片同步显示本周。
+    expect(title(), t.leaderboard_summary_total_week);
+
+    // 周期选择只此一组，且在页头底行（不在正文筛选区）。
+    for (final String label in <String>[
+      t.leaderboard_window_week,
+      t.leaderboard_window_month,
+      t.leaderboard_window_all,
+    ]) {
+      final Finder seg = find.byKey(
+        ValueKey<String>('leaderboard-window-$label'),
+      );
+      expect(seg, findsOneWidget);
+      expect(
+        find.ancestor(of: seg, matching: find.byType(FushiMastheadHeader)),
+        findsOneWidget,
+      );
+    }
+    await activateWindowSegment(tester, t.leaderboard_window_all);
+    await settle(tester);
+    expect(title(), t.leaderboard_summary_total);
+    final http.Request rank = server.requests.lastWhere(
+      (http.Request r) =>
+          r.url.path == '/v1/rank' && r.url.queryParameters['limit'] == '50',
+    );
+    expect(rank.url.queryParameters['window'], 'all');
   });
 }

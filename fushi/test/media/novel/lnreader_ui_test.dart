@@ -179,24 +179,38 @@ void main() {
       reason: '与漫画 / 视频同口径：组内按下载量排，没有数据的同档按名字排。',
     );
     expect(
-      find.text(t.mihon_extension_download_count_unknown),
+      find.textContaining(
+        t.mihon_extension_download_count_unknown,
+        findRichText: true,
+      ),
       findsNWidgets(3),
     );
     // M3E：元信息是一排小标签（语言 / 版本跳变 / 站点），有更新时标题后挂
     // 「可更新」强调小胶囊。
-    expect(find.text('1.0.0 → 1.2.0'), findsOneWidget);
-    expect(find.text('syosetu.example'), findsOneWidget);
+    expect(
+      find.textContaining('1.0.0 → 1.2.0', findRichText: true),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining('syosetu.example', findRichText: true),
+      findsOneWidget,
+    );
     expect(find.text(t.extension_update_available), findsOneWidget);
     expect(find.text(t.mihon_extension_update), findsOneWidget);
     expect(find.text(t.mihon_extension_install), findsNWidgets(2));
 
-    // 语言筛选是一排 choice chip（key `novel_extension_language_<lang>`）。
-    final Finder english = find.byKey(
-      const ValueKey<String>('novel_extension_language_English'),
+    // 语言筛选是下拉胶囊（`novel_extension_language_filter`），菜单项 key
+    // `novel_extension_language_<lang>`。
+    final Finder languageFilter = find.byKey(
+      const ValueKey<String>('novel_extension_language_filter'),
     );
-    await tester.ensureVisible(english);
+    await tester.ensureVisible(languageFilter);
     await tester.pumpAndSettle();
-    await tester.tap(english);
+    await tester.tap(languageFilter);
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey<String>('novel_extension_language_English')),
+    );
     await tester.pumpAndSettle();
     expect(find.byType(MangaExtensionManagementTile), findsOneWidget);
     expect(find.text('royalroad'), findsOneWidget);
@@ -278,25 +292,35 @@ void main() {
         .toList();
     expect(titles(), <String>['hot', 'warm', 'syosetu', 'cold', 'unknown']);
     expect(
-      find.text(t.mihon_extension_download_count(count: '1.5k')),
+      find.textContaining(
+        t.mihon_extension_download_count(count: '1.5k'),
+        findRichText: true,
+      ),
       findsOneWidget,
     );
-    expect(find.text(t.mihon_extension_download_count_unknown), findsOneWidget);
+    expect(
+      find.textContaining(
+        t.mihon_extension_download_count_unknown,
+        findRichText: true,
+      ),
+      findsOneWidget,
+    );
 
     // 与漫画 / 视频同一个动作行：下载量门槛 + 批量安装 + 一键更新。
     expect(find.byType(ExtensionCatalogActions), findsOneWidget);
-    // 下载量门槛是一排 choice chip（行 key `novel_extension_min_downloads`，
-    // chip key `novel_extension_min_downloads_<档位>`），直接点 50 档。
-    expect(
-      find.byKey(const ValueKey<String>('novel_extension_min_downloads')),
-      findsOneWidget,
+    // 下载量门槛是下拉胶囊（key `novel_extension_min_downloads`，菜单项 key
+    // `novel_extension_min_downloads_<档位>`）：先开菜单再点 50 档。
+    final Finder minDownloads = find.byKey(
+      const ValueKey<String>('novel_extension_min_downloads'),
     );
-    final Finder fifty = find.byKey(
-      const ValueKey<String>('novel_extension_min_downloads_50'),
-    );
-    await tester.ensureVisible(fifty);
+    expect(minDownloads, findsOneWidget);
+    await tester.ensureVisible(minDownloads);
     await tester.pumpAndSettle();
-    await tester.tap(fifty);
+    await tester.tap(minDownloads);
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey<String>('novel_extension_min_downloads_50')),
+    );
     await tester.pumpAndSettle();
     expect(titles(), <String>[
       'hot',

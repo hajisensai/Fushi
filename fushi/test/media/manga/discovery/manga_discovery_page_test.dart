@@ -294,8 +294,17 @@ void main() {
       findsNothing,
       reason: '没选中的来源磁贴跟着收起',
     );
+    // 拼贴改版 DI2：选中的来源块原位展开成页头条（「← 全部来源」+「浏览 <源>」）。
     expect(
-      find.byKey(const ValueKey<String>('manga-mihon-mihon:pkg:1')),
+      find.byKey(const ValueKey<String>('manga-source-selected-mihon:pkg:1')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('discovery_source_back_to_all')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('manga-source-selected-open')),
       findsOneWidget,
     );
     // 网格按宽度自适应列数：1200 宽下前两张并排、六张全部落在视口内。

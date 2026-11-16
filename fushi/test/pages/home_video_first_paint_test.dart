@@ -18,13 +18,13 @@ import 'package:fushi/src/pages/implementations/home_video_page.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
-import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/fake_anki_repository.dart';
 import '../helpers/test_platform_services.dart';
 import '../helpers/shell_layout.dart';
+import '../helpers/video_header_more.dart';
 
 /// BUG-3235：视频库首屏「一块块加载」（用户实报：点开视频库，里面的视频是一块块
 /// 出来的）。
@@ -398,7 +398,7 @@ void main() {
     }
     expect(skeleton, findsOneWidget);
 
-    await tester.tap(find.byIcon(FushiIcons.checklist));
+    await tapVideoHeaderMoreEntry(tester, 'library_select_toggle');
     // 批量栏滑入（映射仍卡着，pumpAndSettle 会一直等不到头，逐帧推进）。
     for (int i = 0; i < 30; i++) {
       await tester.pump(const Duration(milliseconds: 50));

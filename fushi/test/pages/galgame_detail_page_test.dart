@@ -162,16 +162,92 @@ void main() {
     expect(find.text(t.game_stat_sessions), findsOneWidget);
     expect(find.text('2'), findsOneWidget);
 
-    // 折线图与会话流水都在（流水在折叠线以下，先滚上来）。
+    // 会话块的平均时长：5400 / 2 = 45 分钟。
     expect(
-      find.byWidgetPredicate(
-        (Widget w) => w is CustomPaint && w.painter is StatLineChartPainter,
+      find.text(t.game_stat_session_average(time: formatStatTime(2700 * 1000))),
+      findsOneWidget,
+    );
+    // 总时长块里是每日时长柱（设计稿 GA8），默认近 14 天。
+    final Finder bars = find.byWidgetPredicate(
+      (Widget w) => w is CustomPaint && w.painter is StatBarChartPainter,
+    );
+    expect(bars, findsOneWidget);
+    expect(
+      (tester.widget<CustomPaint>(bars).painter! as StatBarChartPainter)
+          .data
+          .length,
+      14,
+    );
+
+    // 会话列表按日分组（新 → 旧），日头带当日合计与次数；每条仍可单独删除。
+    await tester.drag(pageScroll, const Offset(0, -400));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey<String>('galgame_session_day_2026-07-02')),
+      findsOneWidget,
+    );
+    expect(
+      find.text(
+        '2026-07-01 · ${formatStatTime(3600 * 1000)} · '
+        '${t.stat_sessions_count(n: 1)}',
       ),
       findsOneWidget,
     );
-    await tester.drag(pageScroll, const Offset(0, -400));
-    await tester.pumpAndSettle();
+    expect(
+      tester
+          .getTopLeft(
+            find.byKey(
+              const ValueKey<String>('galgame_session_day_2026-07-02'),
+            ),
+          )
+          .dy,
+      lessThan(
+        tester
+            .getTopLeft(
+              find.byKey(
+                const ValueKey<String>('galgame_session_day_2026-07-01'),
+              ),
+            )
+            .dy,
+      ),
+    );
     expect(find.byIcon(FushiIcons.delete), findsNWidgets(2));
+  });
+
+  test('groupGalgameSessionsByDay：按日期新 → 旧分组、组内新 → 旧、合计秒数', () {
+    GalgameSessionRow row(int id, String day, int hour, int seconds) =>
+        GalgameSessionRow(
+          id: id,
+          gameId: 'g1',
+          startMs:
+              DateTime.parse('${day}T00:00:00').millisecondsSinceEpoch +
+              hour * 3600000,
+          endMs:
+              DateTime.parse('${day}T00:00:00').millisecondsSinceEpoch +
+              hour * 3600000 +
+              seconds * 1000,
+          durationSeconds: seconds,
+          dateKey: day,
+          profileId: 1,
+          gameTitle: '',
+        );
+    final List<GalgameSessionDay> days = groupGalgameSessionsByDay(
+      <GalgameSessionRow>[
+        row(1, '2026-07-01', 9, 600),
+        row(2, '2026-07-03', 8, 60),
+        row(3, '2026-07-01', 20, 1200),
+      ],
+    );
+    expect(days.map((GalgameSessionDay d) => d.dateKey).toList(), <String>[
+      '2026-07-03',
+      '2026-07-01',
+    ]);
+    expect(days[1].sessions.map((GalgameSessionRow r) => r.id).toList(), <int>[
+      3,
+      1,
+    ]);
+    expect(days[1].totalSeconds, 1800);
+    expect(groupGalgameSessionsByDay(const <GalgameSessionRow>[]), isEmpty);
   });
 
   testWidgets('无会话时给空态而不是崩', (WidgetTester tester) async {

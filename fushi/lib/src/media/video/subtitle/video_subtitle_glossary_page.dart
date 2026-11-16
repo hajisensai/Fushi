@@ -30,7 +30,6 @@ import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_loading_view.dart';
@@ -325,51 +324,23 @@ class _VideoSubtitleGlossaryPageState extends State<VideoSubtitleGlossaryPage> {
 
   @override
   Widget build(BuildContext context) {
-    final bool apple = isGlassDesign(context);
+    // 现行页头（返回键 + 页名大字 + 平铺裸图标动作，放不下才收「⋯」，滚动折叠），
+    // MD3 / Apple 同一套；墨水屏回落到 FushiPageHeader，动作同一组。
     return FushiPageScaffold(
+      masthead: true,
       title: t.video_subtitle_glossary_title,
       subtitle: widget.language.workTitle(widget.target.work),
-      header: apple ? null : _buildTopBar(context),
-      actions: apple
-          ? <Widget>[
-              for (final FushiToolbarItem item in _actions)
-                FushiIconButton(
-                  key: item.key,
-                  icon: item.icon,
-                  tooltip: item.label,
-                  enabled: item.onPressed != null,
-                  onTap: item.onPressed,
-                ),
-            ]
-          : const <Widget>[],
+      actions: <Widget>[
+        for (final FushiToolbarItem item in _actions)
+          FushiIconButton(
+            key: item.key,
+            icon: item.icon,
+            tooltip: item.label,
+            enabled: item.onPressed != null,
+            onTap: item.onPressed,
+          ),
+      ],
       body: Builder(builder: _buildBody),
-    );
-  }
-
-  Widget _buildTopBar(BuildContext context) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final NavigatorState? navigator = Navigator.maybeOf(context);
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        tokens.spacing.page,
-        tokens.spacing.gap,
-        tokens.spacing.page,
-        tokens.spacing.gap,
-      ),
-      // 动作默认全部平铺，放不下才按优先级（最后一个最先）收进「⋯」。
-      child: FushiFloatingTopBar(
-        title: t.video_subtitle_glossary_title,
-        subtitle: widget.language.workTitle(widget.target.work),
-        leading: <FushiToolbarItem>[
-          if (navigator != null && navigator.canPop())
-            FushiToolbarItem(
-              icon: FushiIcons.back,
-              label: MaterialLocalizations.of(context).backButtonTooltip,
-              onPressed: () => unawaited(navigator.maybePop()),
-            ),
-        ],
-        actions: <List<FushiToolbarItem>>[_actions],
-      ),
     );
   }
 

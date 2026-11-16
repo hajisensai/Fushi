@@ -6,7 +6,9 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/drag_drop/drop_classification.dart';
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/media/drag_drop/import_dialog_drop.dart';
+import 'package:fushi/src/media/import/import_dialog_blocks.dart';
 import 'package:fushi/src/media/import/import_dialog_frame.dart';
+import 'package:fushi/src/media/import/import_surface_spec.dart';
 import 'package:fushi/src/media/import/import_flow_mixin.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -30,11 +32,13 @@ import 'package:fushi/src/media/media_cover_service.dart';
 import 'package:fushi_engine/media/video/video_cover_extractor.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi_audio/fushi_audio.dart';
@@ -772,146 +776,9 @@ class _VideoImportDialogState extends State<VideoImportDialog>
         debugLabel: 'video-import-dialog',
         onDrop: _handleDialogDrop,
         child: ImportDialogFrame(
-          leadingIcon: FushiIcons.video,
+          tone: ImportTone.cyan,
           title: t.video_import_title,
-          body: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              // 粘贴 URL 在线流（TODO-850 阶段①）：直链/HLS/m3u8 即播 + 可选外挂字幕 +
-              // 可选防盗链 header。与本地文件导入区分（独立分支，不走 _pickPlaylist）。
-              FushiTextFieldControl(
-                controller: _streamUrlController,
-                enabled: !importing,
-                keyboardType: TextInputType.url,
-                autocorrect: false,
-                decoration: InputDecoration(
-                  labelText: t.video_import_stream_url_field,
-                  hintText: 'https://...',
-                  prefixIcon: const FushiIcon(FushiIcons.link),
-                  isDense: true,
-                ),
-                onChanged: (_) => setState(() {}),
-                onSubmitted: (_) {
-                  if (_streamUrlValid) _doImport();
-                },
-              ),
-              const SizedBox(height: 4),
-              Text(
-                t.video_import_stream_url_hint,
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-              // 网页视频站软提示（kKnownWebPageVideoHosts 的文档承诺、此前从未接线）：
-              // 进得了内置网页播放器就说明会用它打开；否则（总开关关着 / 非 Windows）
-              // 说明暂不可用但**不硬拒**导入。YouTube 不在此列：mpv 路径本来就经
-              // youtube_explode 解析直播，提示「无法在应用内播放」是假话。
-              if (isKnownWebPageVideoUrl(_streamUrlController.text) &&
-                  !isYoutubeUrl(_streamUrlController.text)) ...<Widget>[
-                const SizedBox(height: 4),
-                FushiInlineNotice(
-                  message: shouldOpenInWebVideoPlayer(_streamUrlController.text)
-                      ? t.web_video_import_hint
-                      : t.web_video_player_unavailable,
-                  icon: FushiIcons.globe,
-                ),
-              ],
-              const SizedBox(height: 8),
-              FushiTextFieldControl(
-                controller: _streamSubtitleUrlController,
-                enabled: !importing,
-                keyboardType: TextInputType.url,
-                autocorrect: false,
-                decoration: InputDecoration(
-                  labelText: t.video_import_stream_subtitle_url_field,
-                  hintText: 'https://...',
-                  prefixIcon: const FushiIcon(FushiIcons.subtitles),
-                  isDense: true,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Align(
-                alignment: AlignmentDirectional.centerStart,
-                child: FushiTextButton.icon(
-                  onPressed: importing
-                      ? null
-                      : () => setState(
-                          () => _streamAdvancedExpanded =
-                              !_streamAdvancedExpanded,
-                        ),
-                  icon: AnimatedRotation(
-                    turns: _streamAdvancedExpanded ? 0.5 : 0,
-                    duration: context.fushiMotion.spatialFast.duration,
-                    curve: context.fushiMotion.spatialFast.curve,
-                    child: const FushiIcon(FushiIcons.expandMore),
-                  ),
-                  label: Text(t.video_import_stream_advanced),
-                ),
-              ),
-              AnimatedSize(
-                duration: context.fushiMotion.spatialDefault.duration,
-                curve: context.fushiMotion.spatialDefault.curve,
-                alignment: AlignmentDirectional.topStart,
-                child: !_streamAdvancedExpanded
-                    ? const SizedBox(width: double.infinity)
-                    : Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: <Widget>[
-                          FushiTextFieldControl(
-                            controller: _streamRefererController,
-                            enabled: !importing,
-                            autocorrect: false,
-                            decoration: InputDecoration(
-                              labelText: t.video_import_stream_referer,
-                              isDense: true,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          FushiTextFieldControl(
-                            controller: _streamUserAgentController,
-                            enabled: !importing,
-                            autocorrect: false,
-                            decoration: InputDecoration(
-                              labelText: t.video_import_stream_user_agent,
-                              isDense: true,
-                            ),
-                          ),
-                        ],
-                      ),
-              ),
-              const FushiDividerControl(height: 24),
-              // 旧「导入文件夹（自动分组剧集）」「选择 m3u8 播放列表」按钮已删
-              // （用户 2026-08-19 指令）：文件夹导入统一走导入页「导入文件夹」
-              // （常驻来源 / 仅导入一次二选一），m3u8 保留拖入与来源扫描两条路。
-              // 本对话框只管单件：URL 流 / 单个视频文件（可选外挂字幕）。
-              FushiOutlinedButton.icon(
-                onPressed: importing ? null : _pickVideo,
-                icon: const FushiIcon(FushiIcons.video),
-                label: Text(
-                  _videoPath == null
-                      ? t.video_import_pick_video
-                      : p.basename(_videoPath!),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              const SizedBox(height: 8),
-              FushiOutlinedButton.icon(
-                onPressed: importing ? null : _pickSubtitle,
-                icon: const FushiIcon(FushiIcons.subtitles),
-                label: Text(
-                  _subtitlePath == null
-                      ? t.video_import_pick_subtitle
-                      : p.basename(_subtitlePath!),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                t.video_import_subtitle_optional,
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ],
-          ),
+          body: _buildForm(context),
           actions: <Widget>[
             FushiTextButton(
               onPressed: importing ? null : () => Navigator.pop(context),
@@ -929,6 +796,157 @@ class _VideoImportDialogState extends State<VideoImportDialog>
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// 表单（2026-11 导入对话框统一）：① 本地文件组（视频 / 外挂字幕两行，整组
+  /// 是拖放落点）；② 在线流（视频流 URL、外挂字幕 URL、可折叠的防盗链请求头），
+  /// 字段一律 M3E 填充式。旧「导入文件夹（自动分组剧集）」「选择 m3u8 播放列表」
+  /// 按钮已删（用户 2026-08-19 指令）：文件夹导入统一走导入页「导入文件夹」，
+  /// m3u8 保留拖入与来源扫描两条路；本对话框只管单件。
+  Widget _buildForm(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final FushiMotionScheme motion = context.fushiMotion;
+    final String? video = _videoPath;
+    final String? subtitle = _subtitlePath;
+    return FushiEntranceScope(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          FushiStaggeredEntrance(
+            index: 0,
+            child: ImportPickBlock(
+              tone: ImportTone.cyan,
+              icon: FushiIcons.video,
+              title: video == null
+                  ? t.video_import_pick_video
+                  : p.basename(video),
+              subtitle: video == null ? null : t.video_import_pick_video,
+              dropHint: t.book_import_drop_hint,
+              selected: video != null,
+              enabled: !importing,
+              onTap: importing ? null : _pickVideo,
+              onClear: () => setState(() {
+                _videoPath = null;
+                _videoPathIsRealPath = true;
+              }),
+            ),
+          ),
+          SizedBox(height: tokens.spacing.gap * 1.5),
+          FushiStaggeredEntrance(
+            index: 1,
+            child: ImportPickTileGrid(
+              children: <Widget>[
+                ImportPickTile(
+                  tone: ImportTone.cyan,
+                  icon: FushiIcons.subtitles,
+                  title: t.video_import_pick_subtitle,
+                  subtitle: subtitle == null
+                      ? t.video_import_subtitle_optional
+                      : p.basename(subtitle),
+                  selected: subtitle != null,
+                  enabled: !importing,
+                  droppable: true,
+                  onTap: importing ? null : _pickSubtitle,
+                  onClear: () => setState(() => _subtitlePath = null),
+                ),
+              ],
+            ),
+          ),
+          SizedBox(height: tokens.spacing.card),
+          // 粘贴 URL 在线流（TODO-850 阶段①）：直链/HLS/m3u8 即播 + 可选外挂字幕 +
+          // 可选防盗链 header。与本地文件导入区分（独立分支，不走 _pickPlaylist）。
+          FushiStaggeredEntrance(
+            index: 2,
+            child: ImportSectionBlock(
+              tone: ImportTone.cyan,
+              icon: FushiIcons.link,
+              title: t.video_import_section_stream,
+              trailing: FushiAnimatedSize(
+                duration: motion.spatialDefault.duration,
+                curve: motion.spatialDefault.curve,
+                alignment: AlignmentDirectional.topStart,
+                child: !_streamAdvancedExpanded
+                    ? const SizedBox(width: double.infinity)
+                    : Padding(
+                        padding: EdgeInsets.only(top: tokens.spacing.gap * 1.5),
+                        child: FushiFormSection(
+                          children: <Widget>[
+                            FushiTextField(
+                              controller: _streamRefererController,
+                              enabled: !importing,
+                              autocorrect: false,
+                              labelText: t.video_import_stream_referer,
+                            ),
+                            FushiTextField(
+                              controller: _streamUserAgentController,
+                              enabled: !importing,
+                              autocorrect: false,
+                              labelText: t.video_import_stream_user_agent,
+                            ),
+                          ],
+                        ),
+                      ),
+              ),
+              children: <Widget>[
+                FushiTextField(
+                  controller: _streamUrlController,
+                  enabled: !importing,
+                  keyboardType: TextInputType.url,
+                  autocorrect: false,
+                  labelText: t.video_import_stream_url_field,
+                  hintText: 'https://...',
+                  helperText: t.video_import_stream_url_hint,
+                  onChanged: (_) => setState(() {}),
+                  onSubmitted: (_) {
+                    if (_streamUrlValid) _doImport();
+                  },
+                ),
+                // 网页视频站软提示（kKnownWebPageVideoHosts 的文档承诺）：进得了内置
+                // 网页播放器就说明会用它打开；否则（总开关关着 / 非 Windows）说明暂不
+                // 可用但**不硬拒**导入。YouTube 不在此列：mpv 路径本来就经
+                // youtube_explode 解析直播，提示「无法在应用内播放」是假话。
+                if (isKnownWebPageVideoUrl(_streamUrlController.text) &&
+                    !isYoutubeUrl(_streamUrlController.text))
+                  FushiInlineNotice(
+                    message:
+                        shouldOpenInWebVideoPlayer(_streamUrlController.text)
+                        ? t.web_video_import_hint
+                        : t.web_video_player_unavailable,
+                    icon: FushiIcons.globe,
+                  ),
+                FushiTextField(
+                  controller: _streamSubtitleUrlController,
+                  enabled: !importing,
+                  keyboardType: TextInputType.url,
+                  autocorrect: false,
+                  labelText: t.video_import_stream_subtitle_url_field,
+                  hintText: 'https://...',
+                ),
+                Align(
+                  alignment: AlignmentDirectional.centerStart,
+                  child: FushiTextButton.icon(
+                    onPressed: importing
+                        ? null
+                        : () => setState(
+                            () => _streamAdvancedExpanded =
+                                !_streamAdvancedExpanded,
+                          ),
+                    icon: AnimatedRotation(
+                      turns: _streamAdvancedExpanded ? 0.5 : 0,
+                      duration: motion.spatialFast.duration,
+                      curve: motion.spatialFast.curve,
+                      child: const FushiIcon(FushiIcons.expandMore),
+                    ),
+                    label: Text(t.video_import_stream_advanced),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

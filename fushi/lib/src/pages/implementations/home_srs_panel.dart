@@ -17,6 +17,8 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/home_dashboard_panel.dart';
+import 'package:fushi/src/pages/implementations/home_collage_widgets.dart'
+    show HomeStatTile, kHomeStatTileHeightCompact;
 import 'package:fushi/src/pages/implementations/stat_shared.dart'
     show formatStatTime;
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
@@ -154,6 +156,7 @@ class HomeSrsPanel extends ConsumerWidget {
     required this.onOpenDecks,
     required this.onStartReview,
     this.poster = false,
+    this.statHeight,
   });
 
   /// 点条目本身：进牌组列表。
@@ -165,6 +168,11 @@ class HomeSrsPanel extends ConsumerWidget {
   /// true = 重设计外壳的海报色块形态（[_HomeSrsPoster]，与复习页「今日计划」
   /// 色块同一套件）；false = 原一行条。由首页按外壳门控传入。
   final bool poster;
+
+  /// 非 null = 首页拼贴版式的小统计块（[HomeStatTile]，设计稿 H2 / H5）：块高取
+  /// 这个值（手机 [kHomeStatTileHeightCompact] 并排两格、桌面
+  /// [kHomeStatTileHeight]），优先于 [poster]。
+  final double? statHeight;
 
   /// 内容行的固定高度：骨架 / 计数 / 已完成三态同高，切换时不跳布局。
   static const double rowHeight = 44;
@@ -179,6 +187,17 @@ class HomeSrsPanel extends ConsumerWidget {
     final SrsTodayReviewSummary? today = ref
         .watch(homeSrsTodayReviewsProvider)
         .valueOrNull;
+    final double? stat = statHeight;
+    if (stat != null) {
+      return _HomeSrsStatTile(
+        data: data,
+        target: target,
+        today: today,
+        height: stat,
+        onOpenDecks: onOpenDecks,
+        onStartReview: onStartReview,
+      );
+    }
     if (poster) {
       return _HomeSrsPoster(
         data: data,
@@ -471,10 +490,9 @@ class _HomeSrsPoster extends StatelessWidget {
           );
 
     final Widget poster = FushiPosterBlock(
-      watermark: t.nav_srs,
+      // 统计 / 面板块不画大字水印（设计稿 G2 / H2 / H5：水印只给带封面的媒体块）。
+      watermark: '',
       colors: colors,
-      watermarkFontSize: 110,
-      watermarkEdge: FushiPosterWatermarkEdge.bottom,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
@@ -580,6 +598,97 @@ class _HomeSrsPoster extends StatelessWidget {
         shape: fushiCoverBlockShape(context, FushiCoverBlockSize.regular),
         onTap: onOpenDecks,
         child: poster,
+      ),
+    );
+  }
+}
+
+/// 首页拼贴版式的复习统计块（[HomeSrsPanel.statHeight]，设计稿 H2 / H5）：突出
+/// 待复习数（主数字 = 到期张数），副行「学习中 · 新词」（桌面再接今天已复习一句）；
+/// 手机末端是今日完成度环，桌面「开始复习」放在块内右下。今天没有卡时副行换成
+/// 「今日已完成」。不画水印。点块本身进牌组列表。
+///
+/// 读屏 / 测试 key 沿用海报形态（`home-srs-panel` / `-open` / `-remaining` /
+/// `-start` / `-done`）。
+class _HomeSrsStatTile extends StatelessWidget {
+  const _HomeSrsStatTile({
+    required this.data,
+    required this.target,
+    required this.today,
+    required this.height,
+    required this.onOpenDecks,
+    required this.onStartReview,
+  });
+
+  final SrsDeckListData? data;
+  final SrsDeckSummary? target;
+  final SrsTodayReviewSummary? today;
+  final double height;
+  final VoidCallback onOpenDecks;
+  final void Function(SrsDeckSummary deck) onStartReview;
+
+  @override
+  Widget build(BuildContext context) {
+    final SrsDeckListData? d = data;
+    final SrsDeckSummary? go = target;
+    final SrsTodayReviewSummary? s = today;
+    final bool compact = height <= kHomeStatTileHeightCompact;
+    final FushiCoverBlockColors colors = fushiPosterColors(
+      context,
+      fushiPosterHue(go?.deck.id ?? 'srs-today'),
+    );
+    final bool allDone = d != null && !d.hasWorkToday && !d.rwkvPending;
+    final int due = d?.todayReview ?? 0;
+    final int remaining = d == null
+        ? 0
+        : d.todayNew + d.todayLearn + d.todayReview;
+    final int done = s?.count ?? 0;
+    final int total = done + remaining;
+    final double ratio = total == 0 ? (allDone ? 1 : 0) : done / total;
+    final String dueText = t.srs_home_meta_due(n: due);
+    final String? detail = d == null
+        ? null
+        : allDone
+        ? t.home_srs_panel_done
+        : <String>[
+            t.srs_home_meta_learning(n: d.todayLearn),
+            t.srs_home_meta_new(n: d.todayNew),
+            if (!compact && s != null) homeSrsTodayLine(s),
+          ].join(' · ');
+    final Widget? start = compact || go == null || allDone
+        ? null
+        : FushiPressScale(
+            child: FushiFilledButton.icon(
+              key: const ValueKey<String>('home-srs-panel-start'),
+              size: FushiButtonSize.s,
+              style: fushiPosterButtonStyle(colors),
+              onPressed: () => onStartReview(go),
+              icon: const FushiIcon(FushiIcons.play),
+              label: Text(
+                t.home_srs_panel_start,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          );
+    return KeyedSubtree(
+      key: const ValueKey<String>('home-srs-panel'),
+      child: HomeStatTile(
+        cardKey: const ValueKey<String>('home-srs-panel-open'),
+        valueKey: ValueKey<String>(
+          allDone ? 'home-srs-panel-done' : 'home-srs-panel-remaining',
+        ),
+        colors: colors,
+        icon: FushiIcons.repeat,
+        label: t.nav_srs,
+        value: d == null ? '–' : '$due',
+        unit: d == null ? null : homePosterUnitOf(dueText, '$due'),
+        semanticValue: d == null ? t.nav_srs : dueText,
+        detail: detail,
+        ring: compact && d != null ? ratio : null,
+        action: start,
+        height: height,
+        onTap: onOpenDecks,
       ),
     );
   }

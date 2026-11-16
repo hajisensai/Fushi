@@ -188,6 +188,74 @@ void main() {
     });
   });
 
+  // BUG-4701：书店写法「正文 + 卷号<系列名> (文库名)」以前只看最后一个括号
+  // `(MF文庫J)`，整串成了系列键，每卷互不相同、导入后不归合集。
+  group('parseBookSeriesKey（书店系列注记）', () {
+    const String rezero = 'Re：ゼロから始める異世界生活';
+
+    test('用户实报书名：系列名取尖括号里的写法，卷号从正文末尾读', () {
+      for (final int n in <int>[1, 2, 13]) {
+        final BookSeriesKey key = parseBookSeriesKey(
+          '$rezero $n<$rezero> (MF文庫J)',
+        )!;
+        expect(key.key, 're:ゼロから始める異世界生活');
+        expect(key.seriesTitle, rezero, reason: '合集名保留原文全角冒号');
+        expect(key.volume, n);
+      }
+      expect(
+        sharedBookSeriesKey(<String>[
+          '$rezero 1<$rezero> (MF文庫J)',
+          '$rezero 2<$rezero> (MF文庫J)',
+          '$rezero 3<$rezero>',
+        ]),
+        're:ゼロから始める異世界生活',
+      );
+    });
+
+    test('与不带注记的普通卷名同键，同一部可以混着归组', () {
+      expect(
+        parseBookSeriesKey('$rezero 4<$rezero> (MF文庫J)')!.key,
+        parseBookSeriesKey('$rezero 5')!.key,
+      );
+    });
+
+    test('全角括号 / 卷号贴假名 / 外传无卷号 / CRC 后缀', () {
+      final BookSeriesKey adachi = parseBookSeriesKey(
+        '安達としまむら10＜安達としまむら＞（電撃文庫）',
+      )!;
+      expect(adachi.key, '安達としまむら');
+      expect(adachi.volume, 10);
+      final BookSeriesKey ex = parseBookSeriesKey(
+        '$rezero Ex 獅子王の見た夢<$rezero> (MF文庫J)',
+      )!;
+      expect(ex.key, 're:ゼロから始める異世界生活');
+      expect(ex.volume, isNull);
+      final BookSeriesKey hashed = parseBookSeriesKey(
+        '$rezero 6<$rezero> (MF文庫J) [3574f94a]',
+      )!;
+      expect(hashed.key, 're:ゼロから始める異世界生活');
+      expect(hashed.volume, 6);
+    });
+
+    test('不是书店注记的写法不误伤', () {
+      // 单字分卷标签。
+      expect(parseBookSeriesKey('上野さんは不器用<上>')!.key, '上野さんは不器用');
+      // 标签不是正文前缀：照旧当出版 / 版本标签，不拿标签当系列名。
+      // （键钉成修复前的原样结果，确保注记判据没有改写这类标题。）
+      expect(parseBookSeriesKey('タイトル 2<限定版> (電撃文庫)')!.key, 'タイトル 2<限定版>');
+      // 尖括号里是别的作品名：不能并进那个系列。
+      expect(
+        parseBookSeriesKey('灼眼のシャナ 3<とらドラ!> (電撃文庫)')!.key,
+        '灼眼のシャナ 3<とらドラ!>',
+      );
+      // 只有文库标签：同文库不同作品不并组。
+      expect(
+        parseBookSeriesKey('とらドラ! (電撃文庫)')!.key,
+        isNot(parseBookSeriesKey('灼眼のシャナ (電撃文庫)')!.key),
+      );
+    });
+  });
+
   group('BookSeriesGrouper', () {
     late FushiDatabase db;
     late BookSeriesGrouper grouper;

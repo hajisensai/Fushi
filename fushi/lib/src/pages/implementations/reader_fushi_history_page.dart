@@ -49,9 +49,7 @@ import 'package:fushi_engine/media/audiobook/srt_book_reimport.dart';
 import 'package:fushi/src/media/audiobook/book_import_dialog.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_channel.dart';
 import 'package:fushi/src/media/drag_drop/card_drop_registry.dart';
-import 'package:fushi/src/media/drag_drop/drop_classification.dart';
-import 'package:fushi/src/media/drag_drop/drop_decision.dart';
-import 'package:fushi/src/media/drag_drop/image_archive_probe.dart';
+import 'package:fushi/src/media/drag_drop/reader_shelf_drop_router.dart';
 import 'package:fushi/src/media/tags/tag_drop.dart';
 import 'package:fushi/src/media/tags/tag_picker_sheet.dart';
 import 'package:fushi/src/media/collections/collection_member_view.dart'
@@ -75,10 +73,7 @@ import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_feature_flags.dart';
 import 'package:fushi/src/media/video/video_import_dialog.dart';
 import 'package:fushi/src/pages/implementations/book_drag_target.dart';
-import 'package:fushi/src/pages/implementations/manual_download_task_dialog.dart';
 import 'package:fushi/src/pages/implementations/media_library_shell.dart';
-import 'package:fushi_engine/media/discovery/discovery_models.dart'
-    show DiscoveryMediaKind;
 import 'package:fushi/src/pages/implementations/collection_name_dialog.dart';
 import 'package:fushi/src/pages/implementations/name_input_dialog.dart';
 import 'package:fushi/src/pages/implementations/library_filter_dropdown.dart';
@@ -99,6 +94,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/models/shelf_collection_open_request.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi_engine/epub/epub_storage.dart';
 import 'package:fushi/src/pages/implementations/book_css_editor_page.dart';
@@ -778,6 +774,8 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     // 两个实例都订阅。BUG-1181 担心的重复网络由共享 TTL 清单缓存（BUG-1180）吸收，
     // 两个实例命中同一份清单。
     homeShellTabNotifier.addListener(_onShellTabActivated);
+    // 首页「最近添加」系列合并卡点开 = 请本页打开对应合集（H8）。
+    shelfCollectionOpenRequest.addListener(_onCollectionOpenRequested);
     // Kavita 绑定书：服务器端改了进度时静默对账，采用后刷新书架进度条。
     _kavitaLifecycle = AppLifecycleListener(onResume: _onResumeForKavita);
     _reconcileKavitaProgress();
@@ -962,6 +960,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     _progressReloadDebounce?.cancel();
     _mokuroImported?.removeListener(_onMokuroImportedChanged);
     homeShellTabNotifier.removeListener(_onShellTabActivated);
+    shelfCollectionOpenRequest.removeListener(_onCollectionOpenRequested);
     _kavitaLifecycle?.dispose();
     appModelNoUpdate.prefsRepo.removeListener(_onPrefsChangedForRemoteGate);
     assert(() {
@@ -1338,6 +1337,14 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     );
   }
 
+  /// 库墙实际用的版式：窄屏（compact 档）一律降级成普通封面网格——拼贴色块在
+  /// 手机宽度下一屏只放得下三四本、且「每行数量」不生效（2026-11-16 用户拍板）。
+  /// 顶部「继续阅读」仍走 [FushiContinueBlocks] 的新样式，不受这里影响。
+  ShellContentLayout get _shelfWallLayout =>
+      libraryGridSizeClassOf(context) == WindowSizeClass.compact
+      ? ShellContentLayout.grid
+      : shellContentLayoutOf(context);
+
   /// 本页在网格偏好里的库（书架 / 漫画库分别记）。
   LibraryGridDomain get _gridDomain =>
       _mangaOnly ? LibraryGridDomain.manga : LibraryGridDomain.books;
@@ -1448,7 +1455,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
           ),
       // 书 / 漫画页头不再挂「全部刮削」（用户定案 2026-10-14：批量刮削只有视频
       // 和 galgame 需要，入口留在视频来源页与游戏库页）；单本封面刮削仍在卡片菜单。
-      // 「管理来源」在库页导航壳里已是一等视图（[MediaSourcesPage]），页头再放一个
+      // 「管理来源」在库页导航壳里已是一等视图（`BookImportPage` / `MangaSourcesPage`），页头再放一个
       // 按钮就是同一件事的两个入口。书架独立使用（无导航条）时才保留书籍来源按钮；
       // 漫画入口由专属导入对话框负责，不复用书籍来源管理。
       if (_pageWidget.navigation == null && !_mangaOnly)
@@ -1958,7 +1965,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     MediaItem hero,
   ) {
     if (!FushiContinueBlocks.active(context) ||
-        shellContentLayoutOf(context) != ShellContentLayout.collage ||
+        _shelfWallLayout != ShellContentLayout.collage ||
         _reordering ||
         groups.isEmpty) {
       return false;
@@ -2293,6 +2300,15 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     // _handleShelfDrop → VideoImportDialog），落库后同样只在视频 tab 可见。
     _visibleEpubBooks = epubBooks;
     _visibleSrtBooks = srtBooks;
+    // 书列表到了才接首页的「打开合集」请求（[_onCollectionOpenRequested]）。
+    if (!_shelfBooksReady) {
+      _shelfBooksReady = true;
+      if (shelfCollectionOpenRequest.value != null) {
+        WidgetsBinding.instance.addPostFrameCallback(
+          (_) => _onCollectionOpenRequested(),
+        );
+      }
+    }
     // 多端库联合视图（spec 2026-07-12 §2.1/§2.4/§2.5）：把「远端有、本地无」的书
     // 混排成主网格占位卡。远端目录拉取失败/未配对/无后端（remoteState==null 或
     // failed）→ 占位卡不出现（离线=只剩本地）；「显示远端条目」开关关闭 → 同样不
@@ -2644,7 +2660,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         const SliverToBoxAdapter(child: SizedBox(height: 96)),
       ];
     }
-    final ShellContentLayout contentLayout = shellContentLayoutOf(context);
+    final ShellContentLayout contentLayout = _shelfWallLayout;
     if (contentLayout != ShellContentLayout.grid) {
       // 封面色块布局：同一份分组、同一套直拖重排；每格包 [FushiCoverBlockScope]
       // 让散卡视觉（[_bookCardLayout]）换成色块，格子内边距清零（色块自带圆角
@@ -3222,6 +3238,29 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         ),
       ),
     );
+  }
+
+  /// 本页书列表是否已经到过一次（[_buildBodyWithSrtBooks] 置位）。之前不接「打开
+  /// 合集」请求：详情页成员可见性（[_isCollectionMemberVisible]）按本页书列表判，
+  /// 书还没到时详情页会是空的。
+  bool _shelfBooksReady = false;
+
+  /// 首页「最近添加」系列合并卡要打开本库的某个合集（[requestShelfCollectionOpen]，
+  /// H8）：请求属于本实例（书架 / 漫画库按 [_mangaOnly] 分）且书列表已到时接单，
+  /// 用与书架合集卡同一个出口 [_openCollectionDetail] 打开。tab 懒构建时请求先于
+  /// 本页存在，由书列表首次到达时补一次（见 [_buildBodyWithSrtBooks]）。
+  void _onCollectionOpenRequested() {
+    if (!mounted || !_shelfBooksReady) return;
+    final int? collectionId = takeShelfCollectionOpenRequest(manga: _mangaOnly);
+    if (collectionId == null) return;
+    unawaited(_openRequestedCollection(collectionId));
+  }
+
+  Future<void> _openRequestedCollection(int collectionId) async {
+    final MediaCollectionRow? collection = await appModelNoUpdate.database
+        .getMediaCollectionById(collectionId);
+    if (collection == null || !mounted) return;
+    _openCollectionDetail(collection);
   }
 
   /// 统一合集 Phase 4：打开合集详情页（成员网格 / 重命名 / 删除 / 移出）。写库后重载。

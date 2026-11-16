@@ -10,6 +10,9 @@ import 'package:fushi/src/shortcuts/input_binding.dart' show GamepadButton;
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// A single (value, label) choice for [GamepadMenuDropdown].
 typedef GamepadDropdownEntry<T> = ({T value, String label});
@@ -383,6 +386,7 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
                         ? controller.close()
                         : controller.open()
                   : null,
+              open: controller.isOpen,
             );
           },
     );
@@ -396,8 +400,9 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
   Widget _trigger(
     BuildContext context,
     FushiDesignTokens tokens,
-    VoidCallback? onPressed,
-  ) {
+    VoidCallback? onPressed, {
+    bool open = false,
+  }) {
     // 行内用法（与搜索框同排）同样画成全胶囊，并钉成行内控件高度。
     final bool capsule = widget.width != null || widget.inline;
     final double? inlineHeight = widget.inline
@@ -507,6 +512,7 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
       );
     }
     final ColorScheme cs = Theme.of(context).colorScheme;
+    if (!capsule) return _md3FieldTrigger(context, tokens, onPressed, open);
     final Widget md3 = FushiOutlinedButton(
       focusNode: _triggerFocus,
       onPressed: onPressed,
@@ -527,7 +533,8 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
           top: inlineHeight != null ? 0 : tokens.spacing.rowVertical,
           bottom: inlineHeight != null ? 0 : tokens.spacing.rowVertical,
         ),
-        backgroundColor: cs.surfaceContainerHigh,
+        // 与并排的填充式输入框同色（对话框里升一级，见 fushiMd3FieldFill）。
+        backgroundColor: fushiMd3FieldFill(context),
         disabledBackgroundColor: cs.onSurface.withValues(alpha: 0.04),
         foregroundColor: cs.onSurface,
         side: BorderSide.none,
@@ -554,6 +561,103 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
     return inlineHeight == null
         ? md3
         : SizedBox(height: inlineHeight, child: md3);
+  }
+
+  /// 撑满父级的表单式触发器（2026-11 M3E）：M3 filled text field 同款——上两角
+  /// [FushiM3eShape.textFieldRadius]、下两角方、下沿活动指示线（静止 1dp、
+  /// 聚焦 / 展开 2dp primary，[FushiFieldIndicatorHost] 以 FushiMotion 补间）；
+  /// 有 [GamepadMenuDropdown.label] 时标题浮在填充块内顶端、值在下；尾部箭头在
+  /// M3 尾部图标位。色块里（[FushiFieldFillScope]）随块取色。
+  Widget _md3FieldTrigger(
+    BuildContext context,
+    FushiDesignTokens tokens,
+    VoidCallback? onPressed,
+    bool open,
+  ) {
+    final String? label = widget.label;
+    final String? value = _selectedLabel ?? widget.hintText;
+    return FushiFieldIndicatorHost(
+      enabled: widget.enabled,
+      active: open,
+      builder: (BuildContext context) {
+        final ColorScheme cs = Theme.of(context).colorScheme;
+        final Color? scopedFg = FushiFieldFillScope.foregroundOf(context);
+        final Color quiet =
+            scopedFg?.withValues(alpha: 0.72) ?? cs.onSurfaceVariant;
+        final bool hasValue = _selectedLabel != null;
+        final Widget text = label == null
+            ? Text(
+                value ?? '',
+                maxLines: 2,
+                softWrap: true,
+                style: tokens.type.listTitle.copyWith(
+                  color: hasValue ? cs.onSurface : quiet,
+                ),
+              )
+            : Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  AnimatedDefaultTextStyle(
+                    duration: fushiMotionDuration(context, FushiMotion.short),
+                    curve: FushiMotion.standard,
+                    style: context.fushiType.bodySmall.copyWith(
+                      color: open ? cs.primary : quiet,
+                    ),
+                    child: Text(label, maxLines: 1),
+                  ),
+                  if (value != null)
+                    Text(
+                      value,
+                      maxLines: 2,
+                      softWrap: true,
+                      style: tokens.type.listTitle.copyWith(
+                        color: hasValue ? cs.onSurface : quiet,
+                      ),
+                    ),
+                ],
+              );
+        return FushiFieldIndicatorLine(
+          child: FushiOutlinedButton(
+            focusNode: _triggerFocus,
+            onPressed: onPressed,
+            style: OutlinedButton.styleFrom(
+              alignment: Alignment.centerLeft,
+              minimumSize: const Size(0, 56),
+              padding: const EdgeInsetsDirectional.only(
+                start: 16,
+                end: 12,
+                top: 8,
+                bottom: 8,
+              ),
+              backgroundColor: fushiMd3FieldFill(context),
+              disabledBackgroundColor: cs.onSurface.withValues(alpha: 0.04),
+              foregroundColor: cs.onSurface,
+              side: BorderSide.none,
+              shape: const RoundedRectangleBorder(
+                borderRadius: FushiM3eShape.textFieldRadius,
+              ),
+            ),
+            child: Row(
+              children: <Widget>[
+                Expanded(child: text),
+                const SizedBox(width: 4),
+                AnimatedRotation(
+                  turns: open ? 0.5 : 0,
+                  duration: fushiMotionDuration(context, FushiMotion.short),
+                  curve: FushiMotion.standard,
+                  child: FushiIcon(
+                    FushiIcons.expandMore,
+                    size: 24,
+                    color: quiet,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   /// One menu entry. The selected entry gets the MD3 "selected" state — a

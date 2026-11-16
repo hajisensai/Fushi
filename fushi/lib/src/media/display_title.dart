@@ -1,3 +1,4 @@
+import 'package:fushi/src/media/display_title_store_series.dart';
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
@@ -61,7 +62,8 @@ import 'package:fushi_core/fushi_core.dart';
 /// bookKey 非空走 EPUB 身份，否则回落 srtUid——与 `_srtBookMediaItem` 的
 /// 身份分派完全一致。
 ///
-/// 查不到 override 时回退 [rawTitle]。
+/// 查不到 override 时回退 [rawTitle]，并去掉文件名标题末尾的 `[8 位十六进制]`
+/// 哈希后缀与书店系列注记（[cleanBookDisplayTitle]，只改显示；override 原样显示）。
 String displayTitleForBook({
   MediaItem? item,
   String? bookKey,
@@ -70,17 +72,19 @@ String displayTitleForBook({
 }) {
   final ReaderFushiSource source = ReaderFushiSource.instance;
   if (item != null) {
-    // getDisplayTitleFromMediaItem = override ?? item.title；item 通道下
-    // item.title 就是 raw，语义与其余通道一致。
+    // 书族源的 getDisplayTitleFromMediaItem = override ?? 去哈希的 item.title；
+    // item 通道下 item.title 就是 raw，语义与其余通道一致。
     return source.getDisplayTitleFromMediaItem(item);
   }
   if (bookKey != null && bookKey.isNotEmpty) {
-    return source.overrideTitleForBookKey(bookKey) ?? rawTitle;
+    return source.overrideTitleForBookKey(bookKey) ??
+        cleanBookDisplayTitle(rawTitle);
   }
   if (srtUid != null && srtUid.isNotEmpty) {
-    return source.overrideTitleForSrtUid(srtUid) ?? rawTitle;
+    return source.overrideTitleForSrtUid(srtUid) ??
+        cleanBookDisplayTitle(rawTitle);
   }
-  return rawTitle;
+  return cleanBookDisplayTitle(rawTitle);
 }
 
 /// 视频的显示名解析：显式 no-op。

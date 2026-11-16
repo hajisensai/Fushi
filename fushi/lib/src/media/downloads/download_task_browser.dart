@@ -7,19 +7,19 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
-import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
-import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive_controls.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
-import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_chips.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
+import 'package:fushi/src/media/downloads/download_task_card.dart';
 import 'package:fushi/src/utils/misc/fushi_byte_format.dart';
 import 'package:fushi/src/media/downloads/download_batch.dart';
 import 'package:fushi/src/media/downloads/download_task_clear_completed_confirm.dart';
@@ -608,7 +608,7 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
           FushiIcon(icon, size: 18),
           const SizedBox(width: 6),
           Flexible(
-            child: Text(label, maxLines: 2, overflow: TextOverflow.ellipsis),
+            child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
           ),
           const FushiIcon(FushiIcons.dropDown, size: 18),
         ],
@@ -645,20 +645,52 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
     );
   }
 
-  Widget _buildStatusFilter() => FushiSegmentedStrip<DownloadTaskStatusFilter>(
-    key: const ValueKey<String>('download-task-status-filter'),
-    segments: <ButtonSegment<DownloadTaskStatusFilter>>[
-      for (final DownloadTaskStatusFilter filter
-          in DownloadTaskStatusFilter.values)
-        ButtonSegment<DownloadTaskStatusFilter>(
-          value: filter,
-          label: Text(downloadTaskStatusFilterLabel(filter)),
-        ),
-    ],
-    selected: _statusFilter,
-    onChanged: (DownloadTaskStatusFilter value) =>
-        setState(() => _statusFilter = value),
-  );
+  /// 状态筛选：可换行的选择 chip，每枚带该状态下的条数。
+  ///
+  /// 原来是一条分段条：右栏 360 宽放不下五段，末段被横滑裁成「出…」，用户以为
+  /// 「出错」那一档没了。chip 换行永不裁字，计数顺带回答了「每档有几条」。
+  Widget _buildStatusFilter(Map<DownloadTaskStatusFilter, int> counts) {
+    final TextStyle countStyle = context.fushiType.labelSmall.tabular.copyWith(
+      color: isGlassDesign(context)
+          ? appleColorsOf(context).secondaryLabel
+          : Theme.of(context).colorScheme.onSurfaceVariant,
+    );
+    return Semantics(
+      container: true,
+      label: t.download_task_status_filter,
+      child: Wrap(
+        key: const ValueKey<String>('download-task-status-filter'),
+        spacing: 6,
+        runSpacing: 6,
+        children: <Widget>[
+          for (final DownloadTaskStatusFilter filter
+              in DownloadTaskStatusFilter.values)
+            FushiChoiceChip(
+              key: ValueKey<String>('download-task-status-${filter.name}'),
+              selected: _statusFilter == filter,
+              showCheckmark: false,
+              onSelected: (_) => setState(() => _statusFilter = filter),
+              label: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  // 文字放大 2.0 + 360 宽下单枚 chip 也可能比整行宽：文字让位
+                  // 省略，计数永远可见。
+                  Flexible(
+                    child: Text(
+                      downloadTaskStatusFilterLabel(filter),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Text('${counts[filter] ?? 0}', style: countStyle),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
 
   /// [rendered] 是屏幕上真正渲染出来的行（折叠分组里的成员不算）：「清除已完成」
   /// 只对它们动手。
@@ -784,15 +816,21 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
   );
 
   /// 汇总 + 筛选（窄屏在列表顶上随列表滚动；宽屏是右侧窗格）。
+  ///
+  /// [withHeader]：宿主给的横幅（网络问题警示 / 加载失败）放进窗格顶部——宽屏
+  /// 下它不再横跨整条任务列表，而是右栏状态区里的一张警示小卡。
   Widget _buildControls(
     List<DownloadTaskEntry> visible,
     List<DownloadTaskEntry> rendered,
-  ) {
+    Map<DownloadTaskStatusFilter, int> statusCounts, {
+    bool withHeader = false,
+  }) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final Widget? header = withHeader ? widget.header : null;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        if (widget.tasks.isNotEmpty && !widget.loading) ...<Widget>[
+        if (widget.tasks.isNotEmpty && !widget.loading)
           DownloadSummaryHero(
             tasks: widget.tasks,
             executionDeviceLabel: widget.executionDeviceLabel,
@@ -800,14 +838,17 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
             onPauseAll: _allAction(DownloadBatchAction.pause),
             onResumeAll: _allAction(DownloadBatchAction.resume),
           ),
-          SizedBox(height: tokens.spacing.gap + 4),
-        ],
+        // 警示小卡紧跟在统计色块下面（宿主给横幅自带上边距、无问题时零高度，
+        // 所以没有警示时这里不多出空隙）。
+        ?header,
+        if ((widget.tasks.isNotEmpty && !widget.loading) || header != null)
+          SizedBox(height: tokens.spacing.gap),
         if (widget.workFocus
             case final DownloadTaskWorkFocus focus) ...<Widget>[
           _buildWorkFocusBar(focus),
           SizedBox(height: tokens.spacing.gap),
         ],
-        _buildStatusFilter(),
+        _buildStatusFilter(statusCounts),
         SizedBox(height: tokens.spacing.gap),
         FushiSearchBar(
           fieldKey: const ValueKey<String>('download-task-search'),
@@ -825,7 +866,15 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
     );
   }
 
-  Widget _buildGroupHeader(MapEntry<String, List<DownloadTaskEntry>> group) {
+  /// 组头：分段组的第 0 格（成员行是后面几格，拼成一组 M3E 分段列表）。
+  ///
+  /// 一行 ~52 高：折叠箭头 + 组内首条的小海报 + 组名，第二行是整体进度（折叠时
+  /// 带一条细进度条——成员卡收起后整数计数 completed/total 在「四条全在下载中」
+  /// 时恒为 0 / 4，看不出跑到哪了）与组内总速度；行尾「已完成 / 总数」+ 整组删除。
+  Widget _buildGroupHeader(
+    MapEntry<String, List<DownloadTaskEntry>> group, {
+    required int segmentCount,
+  }) {
     final String key = '${_grouping.name}:${group.key}';
     final bool expanded = _groupExpanded(key);
     final int completed = group.value
@@ -834,84 +883,143 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
               task.status == DownloadTaskStatus.completed,
         )
         .length;
-    // 组折叠后成员卡片连同各自的进度条一起消失，只剩「已完成 / 总数」这个整数
-    // 计数——一组十集全在下载中时它恒为 0 / 10，看不出到底跑到哪了。所以组头
-    // 自己带一份整体进度。
     final double groupProgress = downloadGroupProgress(group.value);
+    int down = 0;
+    for (final DownloadTaskEntry task in group.value) {
+      down += task.downRateBps ?? 0;
+    }
     final FushiMotionScheme motion = context.fushiMotion;
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final BorderRadius radius = fushiGroupedItemRadius(
+      context,
+      0,
+      segmentCount,
+    );
+    final TextStyle meta = context.fushiType.labelMedium.tabular.copyWith(
+      color: isGlassDesign(context)
+          ? appleColorsOf(context).secondaryLabel
+          : Theme.of(context).colorScheme.onSurfaceVariant,
+    );
+    final String? cover = _grouping == DownloadTaskGrouping.collection
+        ? group.value
+              .map((DownloadTaskEntry task) => task.coverUrl)
+              .firstWhere(
+                (String? url) => url?.trim().isNotEmpty ?? false,
+                orElse: () => null,
+              )
+        : null;
+    final Widget chevron = AnimatedRotation(
+      turns: expanded ? 0 : -0.25,
+      duration: motion.spatialFast.duration,
+      curve: motion.spatialFast.curve,
+      child: const FushiIcon(FushiIcons.expandMore),
+    );
     return Semantics(
       expanded: expanded,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            FushiListItem(
-              key: ValueKey<String>('download-group-$key'),
-              leading: AnimatedRotation(
-                turns: expanded ? 0 : -0.25,
-                duration: motion.spatialFast.duration,
-                curve: motion.spatialFast.curve,
-                child: const FushiIcon(FushiIcons.expandMore),
-              ),
-              title: Text(
-                _groupTitle(group.value.first),
-                style: context.fushiType.titleSmallEmphasized,
-              ),
-              titleMaxLines: 2,
-              // 百分比刻意放在第二行而不是并进 trailing：360px + 文字放大 2.0
-              // 下，trailing 只放得下「已完成 / 总数」，再接一段就把整行撑溢出。
-              subtitle: Text('${(groupProgress * 100).round()}%'),
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  Text(
-                    '$completed / ${group.value.length}',
-                    style: context.fushiType.labelLarge.tabular,
+      child: FushiCard(
+        padding: EdgeInsets.zero,
+        borderRadius: radius,
+        grouped: true,
+        child: FushiSegmentTileScope(
+          borderRadius: radius,
+          child: FushiListItem(
+            key: ValueKey<String>('download-group-$key'),
+            minHeight: 52,
+            padding: EdgeInsetsDirectional.fromSTEB(
+              tokens.spacing.rowHorizontal - 8,
+              6,
+              tokens.spacing.rowHorizontal - 8,
+              6,
+            ),
+            leading: cover == null
+                ? chevron
+                : Row(
+                    mainAxisSize: MainAxisSize.min,
+                    spacing: 4,
+                    children: <Widget>[
+                      chevron,
+                      DownloadTaskCoverThumb(
+                        url: cover,
+                        width: 26,
+                        fallback: const SizedBox.shrink(),
+                      ),
+                    ],
                   ),
-                  // 整组删除：目标是这一组的全部成员（含折叠着的）——组头就是
-                  // 这一组本身，确认框会写明条数。
-                  if (!_selectionMode &&
-                      countDownloadTasksSupporting(
-                            group.value,
-                            DownloadBatchAction.delete,
-                          ) >
-                          0)
-                    FushiIconButton(
-                      key: ValueKey<String>('download-group-delete-$key'),
-                      enabled: !_batchRunning,
-                      tooltip: t.download_task_group_delete,
-                      icon: FushiIcons.delete,
-                      onTap: () => unawaited(
-                        // 只交可删的成员：确认框里的 N 必须等于真会删掉的条数。
-                        _confirmDelete(
-                          group.value
-                              .where(
-                                (DownloadTaskEntry task) =>
-                                    downloadTaskBatchCallable(
-                                      task,
-                                      DownloadBatchAction.delete,
-                                    ) !=
-                                    null,
-                              )
-                              .toList(),
-                        ),
+            title: Text(
+              _groupTitle(group.value.first),
+              style: context.fushiType.titleSmallEmphasized,
+            ),
+            titleMaxLines: 1,
+            subtitleMaxLines: 1,
+            subtitle: Row(
+              children: <Widget>[
+                Text('${(groupProgress * 100).round()}%', style: meta),
+                if (down > 0) ...<Widget>[
+                  Text('  ·  ', style: meta),
+                  FushiIcon(FushiIcons.download, size: 13, color: meta.color),
+                  const SizedBox(width: 2),
+                  Flexible(
+                    child: Text(
+                      FushiByteFormat.speed(down.toDouble()),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: meta,
+                    ),
+                  ),
+                ],
+                if (!expanded && groupProgress < 1) ...<Widget>[
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: FushiLinearProgressIndicator(
+                      key: ValueKey<String>('download-group-progress-$key'),
+                      value: groupProgress,
+                      minHeight: 3,
+                    ),
+                  ),
+                ] else
+                  const Spacer(),
+              ],
+            ),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(
+                  '$completed / ${group.value.length}',
+                  style: context.fushiType.labelLarge.tabular,
+                ),
+                // 整组删除：目标是这一组的全部成员（含折叠着的）——组头就是
+                // 这一组本身，确认框会写明条数。
+                if (!_selectionMode &&
+                    countDownloadTasksSupporting(
+                          group.value,
+                          DownloadBatchAction.delete,
+                        ) >
+                        0)
+                  FushiIconButton(
+                    key: ValueKey<String>('download-group-delete-$key'),
+                    enabled: !_batchRunning,
+                    tooltip: t.download_task_group_delete,
+                    icon: FushiIcons.delete,
+                    onTap: () => unawaited(
+                      // 只交可删的成员：确认框里的 N 必须等于真会删掉的条数。
+                      _confirmDelete(
+                        group.value
+                            .where(
+                              (DownloadTaskEntry task) =>
+                                  downloadTaskBatchCallable(
+                                    task,
+                                    DownloadBatchAction.delete,
+                                  ) !=
+                                  null,
+                            )
+                            .toList(),
                       ),
                     ),
-                ],
-              ),
-              onTap: () => setState(() => _expandedGroups[key] = !expanded),
+                  ),
+              ],
             ),
-            if (!expanded && groupProgress < 1)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: FushiLinearProgressIndicator(
-                  key: ValueKey<String>('download-group-progress-$key'),
-                  value: groupProgress,
-                  minHeight: 2,
-                ),
-              ),
-          ],
+            onTap: () => setState(() => _expandedGroups[key] = !expanded),
+          ),
         ),
       ),
     );
@@ -985,21 +1093,31 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
   @override
   Widget build(BuildContext context) {
     final DownloadTaskWorkFocus? focus = widget.workFocus;
-    final List<DownloadTaskEntry> visible =
-        selectDownloadTasks(
-              focus == null
-                  ? widget.tasks
-                  : widget.tasks.where(focus.matches).toList(),
-              query: _search.text,
-              kind: _kind,
-              sort: _sort,
-              reverse: _reverse,
-            )
-            .where(
-              (DownloadTaskEntry task) =>
-                  downloadTaskMatchesStatusFilter(task, _statusFilter),
-            )
-            .toList();
+    final List<DownloadTaskEntry> matched = selectDownloadTasks(
+      focus == null ? widget.tasks : widget.tasks.where(focus.matches).toList(),
+      query: _search.text,
+      kind: _kind,
+      sort: _sort,
+      reverse: _reverse,
+    );
+    // 状态 chip 上的计数：其它筛选（作品定位 / 搜索 / 类型）之后、状态筛选之前。
+    final Map<DownloadTaskStatusFilter, int> statusCounts =
+        <DownloadTaskStatusFilter, int>{
+          for (final DownloadTaskStatusFilter filter
+              in DownloadTaskStatusFilter.values)
+            filter: matched
+                .where(
+                  (DownloadTaskEntry task) =>
+                      downloadTaskMatchesStatusFilter(task, filter),
+                )
+                .length,
+        };
+    final List<DownloadTaskEntry> visible = matched
+        .where(
+          (DownloadTaskEntry task) =>
+              downloadTaskMatchesStatusFilter(task, _statusFilter),
+        )
+        .toList();
     final Map<String, List<DownloadTaskEntry>> groups =
         <String, List<DownloadTaskEntry>>{};
     for (final DownloadTaskEntry task in visible) {
@@ -1008,13 +1126,29 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
           .add(task);
     }
     // Flatten headers and visible members so every task remains lazily built.
+    // 每一行同时记下它在所属分段组里的位置：组头是第 0 格、展开的成员接在后面，
+    // 拼成一组 M3E 分段列表（组首尾大圆角、中间小圆角、行间 2px 缝）；不分组时
+    // 整个列表是一组。
     final List<Object> rows = <Object>[];
-    for (final MapEntry<String, List<DownloadTaskEntry>> group
-        in groups.entries) {
-      if (_grouping != DownloadTaskGrouping.none) rows.add(group);
-      if (_grouping == DownloadTaskGrouping.none ||
-          _groupExpanded('${_grouping.name}:${group.key}')) {
-        rows.addAll(group.value);
+    final List<(int, int)> segments = <(int, int)>[];
+    if (_grouping == DownloadTaskGrouping.none) {
+      for (int i = 0; i < visible.length; i++) {
+        rows.add(visible[i]);
+        segments.add((i, visible.length));
+      }
+    } else {
+      for (final MapEntry<String, List<DownloadTaskEntry>> group
+          in groups.entries) {
+        final bool open = _groupExpanded('${_grouping.name}:${group.key}');
+        final int count = 1 + (open ? group.value.length : 0);
+        rows.add(group);
+        segments.add((0, count));
+        if (open) {
+          for (int i = 0; i < group.value.length; i++) {
+            rows.add(group.value[i]);
+            segments.add((i + 1, count));
+          }
+        }
       }
     }
     // 屏幕上真正渲染出来的任务行（折叠分组的成员不在内）：批量栏与「清除已完成」
@@ -1031,20 +1165,35 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
 
     Widget rowAt(BuildContext context, int index) {
       final Object row = rows[index];
+      final (int segmentIndex, int segmentCount) = segments[index];
+      // 组内行间是分段缝，组与组之间留一道正常间距。
+      final double gap = segmentIndex >= segmentCount - 1
+          ? tokens.spacing.gap + 4
+          : fushiGroupedListGap(context);
       if (row is DownloadTaskEntry) {
         return FushiStaggeredEntrance(
           key: ValueKey<String>('download-entry-${row.id}'),
           index: index,
           child: Padding(
-            padding: EdgeInsets.only(bottom: tokens.spacing.gap),
-            child: _selectionMode ? _selectableRow(row) : row.builder(context),
+            padding: EdgeInsets.only(bottom: gap),
+            child: DownloadTaskSegmentScope(
+              index: segmentIndex,
+              count: segmentCount,
+              child: _selectionMode
+                  ? _selectableRow(row)
+                  : row.builder(context),
+            ),
           ),
         );
       }
       return FushiStaggeredEntrance(
         index: index,
-        child: _buildGroupHeader(
-          row as MapEntry<String, List<DownloadTaskEntry>>,
+        child: Padding(
+          padding: EdgeInsets.only(bottom: gap),
+          child: _buildGroupHeader(
+            row as MapEntry<String, List<DownloadTaskEntry>>,
+            segmentCount: segmentCount,
+          ),
         ),
       );
     }
@@ -1089,7 +1238,8 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
           key: const PageStorageKey<String>('download-task-list'),
           slivers: <Widget>[
             SliverToBoxAdapter(child: SizedBox(height: chromeInset)),
-            if (widget.header != null)
+            // 宽屏时横幅进右栏（见 [_buildControls] 的 withHeader）。
+            if (widget.header != null && withControls)
               SliverPadding(
                 // 横幅自带上边距、无内容时零高度：这里只给页边。
                 padding: EdgeInsets.symmetric(horizontal: page),
@@ -1099,7 +1249,7 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
               SliverPadding(
                 padding: EdgeInsets.fromLTRB(page, tokens.spacing.gap, page, 4),
                 sliver: SliverToBoxAdapter(
-                  child: _buildControls(visible, rendered),
+                  child: _buildControls(visible, rendered, statusCounts),
                 ),
               ),
             SliverPadding(
@@ -1166,7 +1316,12 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
                           page,
                           page + listBottomInset,
                         ),
-                        child: _buildControls(visible, rendered),
+                        child: _buildControls(
+                          visible,
+                          rendered,
+                          statusCounts,
+                          withHeader: true,
+                        ),
                       ),
                     ),
                   ],
@@ -1198,7 +1353,7 @@ class _ToolPill extends StatelessWidget {
   Widget build(BuildContext context) {
     final ColorScheme cs = Theme.of(context).colorScheme;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: ShapeDecoration(
         color: isGlassDesign(context)
             ? appleColorsOf(context).fill
@@ -1210,10 +1365,10 @@ class _ToolPill extends StatelessWidget {
   }
 }
 
-/// 下载页顶部汇总 hero：总速度（↓ Display 大号等宽数字 / ↑ 次级）、活动 /
-/// 排队 / 完成计数 chip、执行设备 chip（本机 / 互联主机，点按去下载设置）、
-/// 全部暂停 / 全部继续按钮组。M3E 是 primaryContainer 饱和色块，Apple 是强调色
-/// 淡染卡。速度只计报得出实时指标的来源（torrent），其余来源不计入。
+/// 下载页汇总色块（紧凑版）：一行总速度（↓ 大号等宽数字 / ↑ 次级）+ 全部暂停 /
+/// 全部继续两颗图标钮；一行活动 / 排队 / 完成计数格与执行设备 chip（本机 / 互联
+/// 主机，点按去下载设置）。M3E 是 primaryContainer 饱和色块，Apple 是强调色淡染
+/// 卡。速度只计报得出实时指标的来源（torrent），其余来源不计入。
 class DownloadSummaryHero extends StatelessWidget {
   const DownloadSummaryHero({
     required this.tasks,
@@ -1262,94 +1417,91 @@ class DownloadSummaryHero extends StatelessWidget {
     return FushiCard(
       key: const ValueKey<String>('download-summary-hero'),
       tone: FushiCardTone.primary,
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          Text(
-            t.download_summary_speed_title,
-            style: type.labelLarge.copyWith(color: onContainer),
-          ),
-          const SizedBox(height: 4),
-          Wrap(
-            spacing: 20,
-            runSpacing: 4,
-            crossAxisAlignment: WrapCrossAlignment.end,
+          Row(
             children: <Widget>[
-              _SpeedFigure(
-                key: const ValueKey<String>('download-summary-down'),
-                icon: FushiIcons.download,
-                value: FushiByteFormat.speed(down.toDouble()),
-                style: type.displaySmallEmphasized.tabular.copyWith(
-                  color: onContainer,
+              Expanded(
+                child: Semantics(
+                  label: t.download_summary_speed_title,
+                  child: Wrap(
+                    spacing: 14,
+                    runSpacing: 2,
+                    crossAxisAlignment: WrapCrossAlignment.end,
+                    children: <Widget>[
+                      _SpeedFigure(
+                        key: const ValueKey<String>('download-summary-down'),
+                        icon: FushiIcons.download,
+                        value: FushiByteFormat.speed(down.toDouble()),
+                        style: type.headlineSmallEmphasized.tabular.copyWith(
+                          color: onContainer,
+                        ),
+                      ),
+                      _SpeedFigure(
+                        key: const ValueKey<String>('download-summary-up'),
+                        icon: FushiIcons.upload,
+                        value: FushiByteFormat.speed(up.toDouble()),
+                        style: type.titleSmallEmphasized.tabular.copyWith(
+                          color: onContainer,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-              _SpeedFigure(
-                key: const ValueKey<String>('download-summary-up'),
-                icon: FushiIcons.upload,
-                value: FushiByteFormat.speed(up.toDouble()),
-                style: type.titleLargeEmphasized.tabular.copyWith(
-                  color: onContainer,
+              if (onPauseAll != null || onResumeAll != null) ...<Widget>[
+                FushiIconButton(
+                  key: const ValueKey<String>('download-summary-pause-all'),
+                  tooltip: t.download_pause_all,
+                  icon: FushiIcons.pause,
+                  enabledColor: onContainer,
+                  enabled: onPauseAll != null,
+                  onTap: onPauseAll,
                 ),
-              ),
+                FushiIconButton(
+                  key: const ValueKey<String>('download-summary-resume-all'),
+                  tooltip: t.download_resume_all,
+                  icon: FushiIcons.play,
+                  enabledColor: onContainer,
+                  enabled: onResumeAll != null,
+                  onTap: onResumeAll,
+                ),
+              ],
             ],
           ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: <Widget>[
-              _HeroChip(
-                icon: FushiIcons.downloading,
-                label: t.download_summary_active(n: active),
-              ),
-              _HeroChip(
-                icon: FushiIcons.pending,
-                label: t.download_summary_queued(n: queued),
-              ),
-              _HeroChip(
-                icon: FushiIcons.downloadDone,
-                label: t.download_summary_completed(n: completed),
-              ),
-              _HeroChip(
-                key: const ValueKey<String>('download-summary-execution'),
-                icon: device != null ? FushiIcons.hub : FushiIcons.devices,
-                label: device != null
-                    ? t.download_target_remote(device: device)
-                    : t.download_target_local,
-                tooltip: t.download_target_label,
-                onTap: onOpenExecutionSettings,
-              ),
-            ],
-          ),
-          if (onPauseAll != null || onResumeAll != null) ...<Widget>[
-            const SizedBox(height: 16),
-            LayoutBuilder(
-              builder: (BuildContext context, BoxConstraints constraints) {
-                final List<Widget> buttons = <Widget>[
-                  FushiFilledButton.icon(
-                    key: const ValueKey<String>('download-summary-pause-all'),
-                    onPressed: onPauseAll,
-                    icon: const FushiIcon(FushiIcons.pause),
-                    label: Text(t.download_pause_all),
-                  ),
-                  FushiFilledButton.tonalIcon(
-                    key: const ValueKey<String>('download-summary-resume-all'),
-                    onPressed: onResumeAll,
-                    icon: const FushiIcon(FushiIcons.play),
-                    label: Text(t.download_resume_all),
-                  ),
-                ];
-                // 够宽时是 M3E 按钮组（按下变宽挤压邻居）；窄屏 / 大字号换行。
-                final bool roomy =
-                    constraints.maxWidth >= 360 &&
-                    MediaQuery.textScalerOf(context).scale(1) <= 1.3;
-                return roomy
-                    ? FushiButtonGroup(children: buttons)
-                    : Wrap(spacing: 8, runSpacing: 8, children: buttons);
-              },
+          const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsetsDirectional.only(end: 8),
+            child: Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: <Widget>[
+                _HeroChip(
+                  icon: FushiIcons.downloading,
+                  label: t.download_summary_active(n: active),
+                ),
+                _HeroChip(
+                  icon: FushiIcons.pending,
+                  label: t.download_summary_queued(n: queued),
+                ),
+                _HeroChip(
+                  icon: FushiIcons.downloadDone,
+                  label: t.download_summary_completed(n: completed),
+                ),
+                _HeroChip(
+                  key: const ValueKey<String>('download-summary-execution'),
+                  icon: device != null ? FushiIcons.hub : FushiIcons.devices,
+                  label: device != null
+                      ? t.download_target_remote(device: device)
+                      : t.download_target_local,
+                  tooltip: t.download_target_label,
+                  onTap: onOpenExecutionSettings,
+                ),
+              ],
             ),
-          ],
+          ),
         ],
       ),
     );
@@ -1417,18 +1569,18 @@ class _HeroChip extends StatelessWidget {
         borderRadius: radius,
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              FushiIcon(icon, size: 16, color: foreground),
+              FushiIcon(icon, size: 14, color: foreground),
               const SizedBox(width: 6),
               Flexible(
                 child: Text(
                   label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: context.fushiType.labelLarge.tabular.copyWith(
+                  style: context.fushiType.labelMedium.tabular.copyWith(
                     color: foreground,
                   ),
                 ),

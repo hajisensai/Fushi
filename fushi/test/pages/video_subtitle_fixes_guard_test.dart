@@ -275,12 +275,15 @@ void main() {
       reason: '播放页在上层时，视频库页不能继续弹 need-card-target SnackBar',
     );
 
+    // 书架的落点只把参数交给共用分发 routeReaderShelfDrop（IM2：书 / 漫画导入
+    // 视图同一份），路由门在分发入口。
+    expect(shelfSrc.contains('routeReaderShelfDrop('), isTrue);
     final String shelfDrop = region(
-      'Future<void> _handleShelfDrop(',
-      // 终点只认方法名：返回类型已从 Future<void> 改成 Future<bool?>（多文件拖放要
-      // 知道每次导入是否成功）。`({` 只命中声明，不命中区间内的调用处。
-      '_openBookImportPrefilled({',
-      source: shelfSrc,
+      'Future<void> routeReaderShelfDrop({',
+      'class _ReaderShelfDropActions',
+      source: File(
+        'lib/src/media/drag_drop/reader_shelf_drop_router.dart',
+      ).readAsStringSync(),
     );
     expect(shelfDrop.contains('ModalRoute.of(context)'), isTrue);
     expect(

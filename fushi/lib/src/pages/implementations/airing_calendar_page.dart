@@ -6,6 +6,7 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
+import 'package:fushi/src/pages/implementations/discovery/discovery_logo.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/date_symbol_data_local.dart';
@@ -16,8 +17,10 @@ import 'package:fushi/src/media/video/airing_discovery_mapping.dart';
 import 'package:fushi/src/media/video/airing_week.dart';
 import 'package:fushi/src/media/video/anilist_client.dart';
 import 'package:fushi/src/media/video/anilist_failure_notice.dart';
-import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/focus/fushi_focus_controller.dart';
+import 'package:fushi/src/pages/implementations/discovery/discovery_layout.dart';
+import 'package:fushi/src/utils/components/fushi_cover_block.dart';
 import 'package:fushi/src/pages/implementations/video_discovery_detail_page.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
@@ -26,12 +29,10 @@ import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
-import 'package:fushi/src/utils/components/fushi_tag.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
-import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
 
@@ -65,8 +66,18 @@ class AiringCalendarPage extends ConsumerStatefulWidget {
 }
 
 class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
-  /// 七列布局的最小宽度；再窄切按天分组列表。
-  static const double _wideLayoutMinWidth = 900;
+  /// 七列布局里单列至少要有的宽度：放得下一块竖海报 + 尾侧剧照的系列色块
+  /// （与视频库「系列」块同一组件）。整页凑不出七列这么宽时切按天分组的
+  /// 色块网格。
+  static const double _weekColumnMinWidth = 260;
+
+  /// 七列布局整体的左右外边距。
+  static const double _weekColumnsOuterPadding = 8;
+
+  /// 给定正文宽度能否排七列（每列扣掉两侧悬停余量后仍 ≥ [_weekColumnMinWidth]）。
+  static bool _fitsWeekColumns(double width, double headroom) =>
+      (width - _weekColumnsOuterPadding * 2) / 7 - headroom * 2 >=
+      _weekColumnMinWidth;
 
   late DateTime _weekStart = localWeekStart(DateTime.now());
   bool _loading = true;
@@ -314,64 +325,109 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
         );
     return FushiEntranceScope(
       replayKey: _bodyStateKey,
+      // 条目是发现页 / 视频库同款光面海报色块：材质与「今日放送」同档。
+      child: ShelfCoverMaterialScope(
+        material: ShelfCoverMaterial.glossyPoster,
+        child: LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints constraints) {
+            final double tileHeight = discoveryTileHeight(context);
+            final bool wide = _fitsWeekColumns(
+              constraints.maxWidth,
+              discoveryShelfLiftHeadroom(tileHeight),
+            );
+            return wide
+                ? _buildWeekColumns(theme, buckets, topInset, tileHeight)
+                : _buildDayList(theme, buckets, topInset);
+          },
+        ),
+      ),
+    );
+  }
+
+  /// 加载骨架：与正文同一套版式判据——宽屏七列（日标题条 + 两块色块轮廓），
+  /// 窄屏按天分组的色块网格。整组共享一道有界闪光，数据到达时版面不跳。
+  Widget _buildSkeleton(double topInset) {
+    return FushiSkeletonShimmer(
       child: LayoutBuilder(
+        key: const ValueKey<String>('airing-calendar-skeleton'),
         builder: (BuildContext context, BoxConstraints constraints) {
-          final bool wide = constraints.maxWidth >= _wideLayoutMinWidth;
-          return wide
-              ? _buildWeekColumns(theme, buckets, topInset)
-              : _buildDayList(theme, buckets, topInset);
+          final double tileHeight = discoveryTileHeight(context);
+          final double headroom = discoveryShelfLiftHeadroom(tileHeight);
+          final double gap = FushiDesignTokens.of(context).spacing.card;
+          final Widget block = FushiSkeleton(
+            height: tileHeight,
+            borderRadius: BorderRadius.circular(
+              fushiCoverBlockRadius(FushiCoverBlockSize.regular, tileHeight),
+            ),
+          );
+          final Widget header = FushiSkeleton(
+            height: 44,
+            borderRadius: BorderRadius.circular(FushiM3eShape.listActive),
+          );
+          if (_fitsWeekColumns(constraints.maxWidth, headroom)) {
+            return Padding(
+              padding: EdgeInsets.fromLTRB(
+                _weekColumnsOuterPadding + headroom,
+                4 + topInset,
+                _weekColumnsOuterPadding + headroom,
+                0,
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  for (int i = 0; i < 7; i++) ...<Widget>[
+                    if (i > 0) SizedBox(width: headroom * 2),
+                    Expanded(
+                      child: Column(
+                        children: <Widget>[
+                          header,
+                          SizedBox(height: 8 + headroom),
+                          block,
+                          SizedBox(height: gap),
+                          block,
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            );
+          }
+          return CustomScrollView(
+            primary: false,
+            physics: const NeverScrollableScrollPhysics(),
+            slivers: <Widget>[
+              SliverPadding(padding: EdgeInsets.only(top: topInset)),
+              for (int day = 0; day < 2; day++) ...<Widget>[
+                SliverPadding(
+                  padding: _dayHeaderPadding,
+                  sliver: SliverToBoxAdapter(child: header),
+                ),
+                DiscoveryCoverGrid(
+                  itemCount: 2,
+                  itemBuilder: (BuildContext _, int _) => block,
+                  padding: _dayGridPadding(context),
+                ),
+              ],
+            ],
+          );
         },
       ),
     );
   }
 
-  /// 加载骨架：与按天分组列表同轮廓（日标题条 + 时刻 + 封面块 + 两条文字），
-  /// 整组共享一道有界闪光。
-  Widget _buildSkeleton(double topInset) {
-    Widget row() => Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      child: Row(
-        children: <Widget>[
-          const FushiSkeleton(width: 44, height: 20),
-          const SizedBox(width: 16),
-          const FushiSkeleton(width: 40, height: 60),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                FushiSkeleton.line(widthFactor: 0.8, height: 14),
-                const SizedBox(height: 8),
-                FushiSkeleton.line(widthFactor: 0.4),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-    return FushiSkeletonShimmer(
-      child: ListView(
-        key: const ValueKey<String>('airing-calendar-skeleton'),
-        primary: false,
-        physics: const NeverScrollableScrollPhysics(),
-        padding: EdgeInsets.only(top: topInset, bottom: 12),
-        children: <Widget>[
-          for (int day = 0; day < 2; day++) ...<Widget>[
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
-              child: FushiSkeleton(
-                height: 44,
-                borderRadius: BorderRadius.circular(FushiM3eShape.listActive),
-              ),
-            ),
-            FushiGroupedList(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              children: <Widget>[for (int i = 0; i < 3; i++) row()],
-            ),
-          ],
-        ],
-      ),
-    );
+  /// 窄屏日标题的外边距（与下方色块网格同一左右页边）。
+  static const EdgeInsets _dayHeaderPadding = EdgeInsets.fromLTRB(
+    12,
+    12,
+    12,
+    0,
+  );
+
+  /// 窄屏每天一组色块网格的内边距：与日标题同一左右页边。
+  EdgeInsets _dayGridPadding(BuildContext context) {
+    final double gap = FushiDesignTokens.of(context).spacing.gap;
+    return EdgeInsets.fromLTRB(12, gap, 12, gap);
   }
 
   /// 网络失败：如实展示错误详情 + 重试按钮（不吞、不静默降级）。
@@ -410,51 +466,64 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
   }
 
   /// 宽屏：周一到周日七列；列头是日标题色块（今天 = primaryContainer），
-  /// 列内条目是分段卡片。
+  /// 列内条目是视频库「系列」同款色块（规整块高 [discoveryTileHeight]）。
+  /// 列表视口四周留出悬停余量（[discoveryShelfLiftHeadroom]），悬停放大的
+  /// 色块不被列的裁切边吃掉。
   Widget _buildWeekColumns(
     ThemeData theme,
     List<List<AniListAiringEpisode>> buckets,
     double topInset,
+    double tileHeight,
   ) {
+    final double headroom = discoveryShelfLiftHeadroom(tileHeight);
+    final double gap = FushiDesignTokens.of(context).spacing.card;
     int order = 0;
     // 七列各自滚动、列头固定：整块让开浮动页头（列内容滚到列头下，不进页头底下）。
     return Padding(
-      padding: EdgeInsets.fromLTRB(8, 4 + topInset, 8, 0),
+      padding: EdgeInsets.fromLTRB(
+        _weekColumnsOuterPadding,
+        4 + topInset,
+        _weekColumnsOuterPadding,
+        0,
+      ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           for (int i = 0; i < 7; i++)
             Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                child: Column(
-                  children: <Widget>[
-                    _buildDayHeader(theme, i, count: buckets[i].length),
-                    Expanded(
-                      // 七列各自滚动，不接页面的 PrimaryScrollController
-                      // （一个控制器挂七个视口会让手柄翻页兜底取不到唯一位置）。
-                      child: ListView(
-                        primary: false,
-                        padding: EdgeInsets.only(
-                          bottom: 12 + bottomSafeInsetOf(context),
-                        ),
-                        children: <Widget>[
-                          for (int j = 0; j < buckets[i].length; j++)
-                            FushiStaggeredEntrance(
+              child: Column(
+                children: <Widget>[
+                  Padding(
+                    padding: EdgeInsets.symmetric(horizontal: headroom),
+                    child: _buildDayHeader(theme, i, count: buckets[i].length),
+                  ),
+                  Expanded(
+                    // 七列各自滚动，不接页面的 PrimaryScrollController
+                    // （一个控制器挂七个视口会让手柄翻页兜底取不到唯一位置）。
+                    child: ListView(
+                      primary: false,
+                      padding: EdgeInsets.fromLTRB(
+                        headroom,
+                        headroom,
+                        headroom,
+                        12 + bottomSafeInsetOf(context),
+                      ),
+                      children: <Widget>[
+                        for (int j = 0; j < buckets[i].length; j++)
+                          Padding(
+                            padding: EdgeInsets.only(top: j == 0 ? 0 : gap),
+                            child: FushiStaggeredEntrance(
                               index: order++,
-                              child: _buildEpisodeTile(
-                                theme,
-                                buckets[i][j],
-                                index: j,
-                                count: buckets[i].length,
-                                compact: true,
+                              child: SizedBox(
+                                height: tileHeight,
+                                child: _buildEpisodeTile(buckets[i][j]),
                               ),
                             ),
-                        ],
-                      ),
+                          ),
+                      ],
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
         ],
@@ -462,42 +531,51 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
     );
   }
 
-  /// 窄屏：按天分组的时间轴列表（只列有条目的天）。
+  /// 窄屏：按天分组（只列有条目的天），每天一个日标题 + 一组色块网格
+  /// （[DiscoveryCoverGrid]，与发现页「查看全部」同一套列数 / 块高）。
   Widget _buildDayList(
     ThemeData theme,
     List<List<AniListAiringEpisode>> buckets,
     double topInset,
   ) {
+    final List<Widget> slivers = <Widget>[
+      SliverPadding(padding: EdgeInsets.only(top: topInset)),
+    ];
     int order = 0;
-    return ListView(
-      padding: EdgeInsets.only(
-        top: topInset,
-        bottom: 12 + bottomSafeInsetOf(context),
-      ),
-      children: <Widget>[
-        for (int i = 0; i < 7; i++)
-          if (buckets[i].isNotEmpty) ...<Widget>[
-            FushiStaggeredEntrance(
+    for (int i = 0; i < 7; i++) {
+      final List<AniListAiringEpisode> day = buckets[i];
+      if (day.isEmpty) continue;
+      slivers.add(
+        SliverPadding(
+          padding: _dayHeaderPadding,
+          sliver: SliverToBoxAdapter(
+            child: FushiStaggeredEntrance(
               index: order++,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-                child: _buildDayHeader(theme, i, count: buckets[i].length),
-              ),
+              child: _buildDayHeader(theme, i, count: day.length),
             ),
-            for (int j = 0; j < buckets[i].length; j++)
-              FushiStaggeredEntrance(
-                index: order++,
-                child: _buildEpisodeTile(
-                  theme,
-                  buckets[i][j],
-                  index: j,
-                  count: buckets[i].length,
-                  compact: false,
-                ),
-              ),
-          ],
-      ],
+          ),
+        ),
+      );
+      // 整页一条错峰序列：网格里的块接着日标题往下数。
+      final int firstOrder = order;
+      order += day.length;
+      slivers.add(
+        DiscoveryCoverGrid(
+          itemCount: day.length,
+          padding: _dayGridPadding(context),
+          itemBuilder: (BuildContext _, int j) => FushiStaggeredEntrance(
+            index: firstOrder + j,
+            child: _buildEpisodeTile(day[j]),
+          ),
+        ),
+      );
+    }
+    slivers.add(
+      SliverPadding(
+        padding: EdgeInsets.only(bottom: 12 + bottomSafeInsetOf(context)),
+      ),
     );
+    return CustomScrollView(slivers: slivers);
   }
 
   /// 日标题：星期 + 日期 + 条数。今天 = primaryContainer 饱和色块（M3E）/
@@ -559,158 +637,52 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
     );
   }
 
-  Widget _buildEpisodeTile(
-    ThemeData theme,
-    AniListAiringEpisode episode, {
-    required int index,
-    required int count,
-    required bool compact,
-  }) {
+  /// 一集放送 = 一块视频库「系列」同款色块（[DiscoveryCoverCard] 包
+  /// [FushiCoverBlock]）：AniList 封面当竖海报斜放在起始侧，有横幅
+  /// （`bannerImage`）时按原比例铺在尾侧当剧照；副行「时间 · 第 N 集」。
+  /// 「已入库 / 已订阅」收成副行前导图标（入库优先），文字进 Semantics。
+  /// 每个条目都可点：进发现详情页拿 搜索资源/订阅/字幕/播放。
+  Widget _buildEpisodeTile(AniListAiringEpisode episode) {
     final bool inLibrary = _libraryAnilistIds.contains(episode.mediaId);
     final bool subscribed = _subscribedAnilistIds.contains(episode.mediaId);
-    final DateTime local = airingAtToLocal(episode.airingAtSeconds);
+    final String time = FushiTimeFormat.hourMinute(
+      airingAtToLocal(episode.airingAtSeconds),
+    );
     final String episodeLabel = t.download_airing_calendar_episode_label(
       episode: episode.episode,
     );
-    final String time = FushiTimeFormat.hourMinute(local);
-    final Widget badges = Wrap(
-      spacing: 6,
-      runSpacing: 4,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: <Widget>[
-        Text(
-          compact ? '$time $episodeLabel' : episodeLabel,
-          style: context.fushiType.bodySmall.tabular.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-        ),
-        if (inLibrary)
-          _buildBadge(
-            theme,
-            t.download_airing_calendar_in_library,
-            FushiIcons.video,
-            theme.colorScheme.primary,
-          ),
-        if (subscribed)
-          _buildBadge(
-            theme,
-            t.download_airing_calendar_subscribed,
-            FushiIcons.notifications,
-            theme.colorScheme.tertiary,
-          ),
-      ],
-    );
-    return FushiGroupedListItem(
-      key: ValueKey<String>(
-        'airing-episode-${episode.mediaId}-${episode.episode}',
-      ),
-      index: index,
-      count: count,
-      margin: compact
-          ? EdgeInsets.zero
-          : const EdgeInsets.symmetric(horizontal: 12),
-      // 每个条目都可点：进发现详情页拿 搜索资源/订阅/字幕/播放。
+    final String cover = episode.media.coverUrl?.trim() ?? '';
+    final String banner = episode.media.bannerUrl?.trim() ?? '';
+    final String stableId = '${episode.mediaId}-${episode.episode}';
+    final List<String> status = <String>[
+      if (inLibrary) t.download_airing_calendar_in_library,
+      if (subscribed) t.download_airing_calendar_subscribed,
+    ];
+    final Widget card = DiscoveryCoverCard(
+      key: ValueKey<String>('airing-episode-$stableId'),
+      focusId: FushiFocusId('airing-calendar-episode-$stableId'),
+      title: episode.media.nativeFirstTitle,
+      subtitle: '$time · $episodeLabel',
+      leadingIcon: inLibrary
+          ? FushiIcons.video
+          : subscribed
+          ? FushiIcons.notifications
+          : null,
       onTap: () => unawaited(_openEpisode(episode)),
-      child: Padding(
-        padding: EdgeInsets.symmetric(
-          horizontal: compact ? 10 : 12,
-          vertical: compact ? 8 : 10,
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            // 窄屏时间轴：左侧放送时刻（等宽数字），上下条目一眼对齐。
-            if (!compact) ...<Widget>[
-              SizedBox(
-                width: 52,
-                child: Padding(
-                  padding: const EdgeInsets.only(top: 2),
-                  child: Text(
-                    time,
-                    style: context.fushiType.titleMediumEmphasized.tabular
-                        .copyWith(color: theme.colorScheme.primary),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-            ],
-            _buildCover(FushiDesignTokens.of(context), episode.media.coverUrl),
-            SizedBox(width: compact ? 8 : 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  // 番名普遍很长，放宽到两行——单行省略在七列窄栏里只看得到开头。
-                  Text(
-                    episode.media.nativeFirstTitle,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: compact
-                        ? context.fushiType.labelLarge
-                        : context.fushiType.titleSmall,
-                  ),
-                  const SizedBox(height: 4),
-                  badges,
-                ],
-              ),
-            ),
-          ],
-        ),
+      // 艺术字：AniList 不带 logo，按需经详情端口取 TMDB 的（与视频库系列块
+      // 一样都有艺术字；取不到回落标题文字）。
+      logoFuture: discoveryLogoFor(
+        discoveryItemFromAiringEpisode(episode),
+        widget.actions.loadDetails,
+      ),
+      backdrop: banner.isEmpty ? null : AppCachedHttpImage(banner),
+      cover: DiscoveryImageCover(
+        image: cover.isEmpty ? null : AppCachedHttpImage(cover),
+        placeholderIcon: FushiIcons.video,
       ),
     );
-  }
-
-  /// 封面缩略图（2:3，与发现页卡片同一图源与占位形态）。列表行小图走光面
-  /// 海报材质的简化档（用户 2026-10-26：圆角 + 内描边 + 轻光泽，无投影 /
-  /// 扫光）；墨水屏退回描边框。
-  Widget _buildCover(FushiDesignTokens tokens, String? coverUrl) {
-    const double width = 40;
-    const double height = 60;
-    final String url = coverUrl?.trim() ?? '';
-    // 底色走设计令牌，不直接读 colorScheme 的 surfaceContainer* —— 那是 MD3 守卫
-    // 明令的「普通页面不得就地重开局部 MD3 决策」，发现页的封面占位就是这么写的。
-    final Widget placeholder = ColoredBox(
-      color: tokens.surfaces.group,
-      child: const FushiIcon(FushiIcons.video, size: 20),
-    );
-    return SizedBox(
-      width: width,
-      height: height,
-      child: ShelfCoverMaterialScope(
-        material: ShelfCoverMaterial.glossyPoster,
-        child: ShelfCoverFrame(
-          density: ShelfCoverDensity.compact,
-          backgroundColor: tokens.surfaces.group,
-          // errorBuilder 必须给：PortraitCoverImage 在加载失败时返回
-          // SizedBox.shrink()，不给就是封面 404 / 断网留一个 40×60 的空洞（上面
-          // 那条占位分支只在 url 为空串时才走）。
-          child: url.isEmpty
-              ? placeholder
-              : PortraitCoverImage(
-                  image: AppCachedHttpImage(url),
-                  errorBuilder: (_) => placeholder,
-                ),
-        ),
-      ),
-    );
-  }
-
-  /// 「已入库」「已订阅」小标签：走共享 [FushiTag]（不可交互小标签统一语言）。
-  /// M3E = 中性 secondaryContainer 底 + 图标区分；Apple = 语义色胶囊。
-  Widget _buildBadge(
-    ThemeData theme,
-    String label,
-    IconData icon,
-    Color dotColor,
-  ) {
-    return FushiTag(
-      text: label,
-      icon: icon,
-      backgroundColor: isGlassDesign(context)
-          ? dotColor
-          : theme.colorScheme.secondaryContainer,
-      foregroundColor: theme.colorScheme.onSecondaryContainer,
-    );
+    if (status.isEmpty) return card;
+    return Semantics(value: status.join(', '), child: card);
   }
 }
 

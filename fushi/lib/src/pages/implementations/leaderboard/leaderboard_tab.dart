@@ -33,6 +33,7 @@ import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_loading_view.dart';
@@ -90,12 +91,14 @@ class _LeaderboardTabState extends ConsumerState<LeaderboardTab> {
         // 加载 / 错误态不滚动：让开悬浮页头（正文铺在页头底下）。
         if (snap.connectionState != ConnectionState.done) {
           return FushiPageScaffold(
+            masthead: true,
             title: t.leaderboard_title,
             body: const SafeArea(bottom: false, child: FushiLoadingView()),
           );
         }
         if (snap.hasError) {
           return FushiPageScaffold(
+            masthead: true,
             title: t.leaderboard_title,
             body: SafeArea(
               bottom: false,
@@ -109,6 +112,7 @@ class _LeaderboardTabState extends ConsumerState<LeaderboardTab> {
         return service.status == LeaderboardStatus.active
             ? const LeaderboardActiveView()
             : FushiPageScaffold(
+                masthead: true,
                 title: t.leaderboard_title,
                 body: const LeaderboardIntroView(),
               );
@@ -482,33 +486,55 @@ class _LeaderboardActiveViewState extends ConsumerState<LeaderboardActiveView> {
         ),
       ),
     );
-    // Apple：iOS / macOS 导航栏（返回 + 标题 + 右侧动作），不再用 M3E 悬浮
-    // 工具栏顶替导航栏；「头像 昵称#编号」进副标题与右侧头像按钮。
-    if (isGlassDesign(context)) {
-      final LeaderboardSelf? self = service.self;
-      return FushiPageScaffold(
-        title: t.leaderboard_title,
-        subtitle: _selfError != null
-            ? leaderboardErrorText(_selfError!)
-            : self?.account.tag ?? t.leaderboard_header_loading,
-        actions: _buildAppleActions(service),
-        body: page,
-      );
-    }
+    // 现行页头（MD3 / Apple 同一套）：返回 + 页名大字 + 平铺裸图标动作（放不下
+    // 收「⋯」），滚动后页名收缩。「头像 昵称#编号」拆成副标题与末位头像按钮。
+    final LeaderboardSelf? self = service.self;
     return FushiPageScaffold(
+      masthead: true,
       title: t.leaderboard_title,
-      header: _buildTopBar(service),
+      subtitle: _selfError != null
+          ? leaderboardErrorText(_selfError!)
+          : self?.account.tag ?? t.leaderboard_header_loading,
+      actions: _buildActions(service),
+      mastheadBottom: _buildWindowSelector(),
       body: page,
     );
   }
 
-  /// Apple 导航栏右侧动作：与 MD3 顶栏同一组入口（默认平铺、放不下时由
-  /// [FushiPageHeader] 收进 ⋯），末位是 App Store 式圆形头像按钮（进自己的
-  /// 主页，按下变淡）。
-  List<Widget> _buildAppleActions(LeaderboardService service) {
+  /// 页头底行：周 / 月 / 总唯一一组周期选择（总字数卡与榜单共用 [_window]）。
+  /// 每段标签带 `leaderboard-window-<标签>` 键。
+  Widget _buildWindowSelector() => Align(
+    alignment: AlignmentDirectional.centerStart,
+    child: adaptiveSegmentedButton<LeaderboardWindow>(
+      context: context,
+      segments: <ButtonSegment<LeaderboardWindow>>[
+        for (final LeaderboardWindow w in LeaderboardWindow.values)
+          ButtonSegment<LeaderboardWindow>(
+            value: w,
+            label: Text(
+              leaderboardWindowLabel(w),
+              key: ValueKey<String>(
+                'leaderboard-window-${leaderboardWindowLabel(w)}',
+              ),
+            ),
+          ),
+      ],
+      selected: <LeaderboardWindow>{_window},
+      onSelectionChanged: (Set<LeaderboardWindow> s) {
+        if (s.isEmpty || s.first == _window) return;
+        _select(() => _window = s.first);
+      },
+    ),
+  );
+
+  /// 页头动作：大西瓜 / 分享 / 好友 / 账户（默认平铺、放不下时由页头收进 ⋯），
+  /// 末位是圆形头像按钮（进自己的主页，按下变淡）。
+  List<Widget> _buildActions(LeaderboardService service) {
     final LeaderboardSelf? self = service.self;
     final String selfId = self?.account.id ?? service.account?.accountId ?? '';
-    final double extent = fushiAppleFloatingExtent(context);
+    final double extent = isGlassDesign(context)
+        ? fushiAppleFloatingExtent(context)
+        : kMinInteractiveDimension;
     final double avatar = extent - 8;
     return <Widget>[
       FushiIconButton(
@@ -559,94 +585,6 @@ class _LeaderboardActiveViewState extends ConsumerState<LeaderboardActiveView> {
     ];
   }
 
-  /// 顶栏：返回 + 「头像 昵称#编号」标题胶囊（点它进自己的主页）+ 按宽度自适应
-  /// 的动作（大西瓜优先，放不下的依次收进「⋯」）。
-  Widget _buildTopBar(LeaderboardService service) {
-    final LeaderboardSelf? self = service.self;
-    final String selfId = self?.account.id ?? service.account?.accountId ?? '';
-    final bool canPop = Navigator.maybeOf(context)?.canPop() ?? false;
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    // 页头外边距与更新中心等「整条换成悬浮工具栏」的页一致（FushiPageScaffold.header
-    // 不替调用方加边距）；下沿多 4 给标题胶囊里的头像留呼吸位。
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        tokens.spacing.page,
-        tokens.spacing.gap,
-        tokens.spacing.page,
-        tokens.spacing.gap + 4,
-      ),
-      child: FushiFloatingTopBar(
-        key: const ValueKey<String>('leaderboard-top-bar'),
-        leading: <FushiToolbarItem>[
-          if (canPop)
-            FushiToolbarItem(
-              key: const ValueKey<String>('leaderboard-back'),
-              icon: FushiIcons.back,
-              label: MaterialLocalizations.of(context).backButtonTooltip,
-              onPressed: () => unawaited(Navigator.of(context).maybePop()),
-            ),
-        ],
-        titleLeading: self == null
-            ? const SizedBox.square(
-                dimension: 32,
-                child: FushiIcon(FushiIcons.account, size: 28),
-              )
-            : LeaderboardAvatar(account: self.account, size: 32),
-        title: self?.account.tag ?? t.leaderboard_header_loading,
-        subtitle: _selfError == null ? '' : leaderboardErrorText(_selfError!),
-        titleTooltip: t.leaderboard_header_profile,
-        onTitleTap: selfId.isEmpty ? null : () => _openUser(selfId),
-        actions: <List<FushiToolbarItem>>[
-          <FushiToolbarItem>[
-            FushiToolbarItem(
-              key: const ValueKey<String>('leaderboard-header-watermelon'),
-              icon: FushiIcons.blur,
-              label: t.leaderboard_watermelon_title,
-              onPressed: () => _push(LeaderboardWatermelonPage(selfId: selfId)),
-            ),
-            FushiToolbarItem(
-              key: const ValueKey<String>('leaderboard-header-share'),
-              icon: FushiIcons.share,
-              label: t.leaderboard_header_share,
-              onPressed: self == null
-                  ? null
-                  : () => unawaited(
-                      showLeaderboardShareSheet(
-                        context,
-                        initialWindow: _window,
-                      ),
-                    ),
-            ),
-          ],
-          <FushiToolbarItem>[
-            FushiToolbarItem(
-              key: const ValueKey<String>('leaderboard-header-account'),
-              icon: FushiIcons.settings,
-              label: t.leaderboard_header_account,
-              onPressed: () =>
-                  _push(LeaderboardAccountPage(syncError: _syncError)),
-            ),
-            FushiToolbarItem(
-              key: const ValueKey<String>('leaderboard-header-profile'),
-              icon: FushiIcons.person,
-              label: t.leaderboard_header_profile,
-              onPressed: selfId.isEmpty ? null : () => _openUser(selfId),
-            ),
-          ],
-        ],
-        overflow: <FushiToolbarItem>[
-          if (LeaderboardFeatures.friendsEnabled)
-            FushiToolbarItem(
-              key: const ValueKey<String>('leaderboard-header-friends'),
-              icon: FushiIcons.group,
-              label: t.leaderboard_header_friends,
-              onPressed: () => _push(const LeaderboardFriendsPage()),
-            ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildSummary(FushiDesignTokens tokens) => Padding(
     padding: EdgeInsets.fromLTRB(
       tokens.spacing.card,
@@ -659,6 +597,7 @@ class _LeaderboardActiveViewState extends ConsumerState<LeaderboardActiveView> {
       week: _summaryWeek,
       month: _summaryMonth,
       error: _summaryError,
+      window: _window,
     ),
   );
 
@@ -739,14 +678,6 @@ class _LeaderboardActiveViewState extends ConsumerState<LeaderboardActiveView> {
             ),
             SizedBox(height: tokens.spacing.gap),
           ],
-          LeaderboardChoiceRow<LeaderboardWindow>(
-            keyPrefix: 'leaderboard-window',
-            values: LeaderboardWindow.values,
-            selected: _window,
-            labelOf: leaderboardWindowLabel,
-            onSelected: (LeaderboardWindow w) => _select(() => _window = w),
-          ),
-          SizedBox(height: tokens.spacing.gap),
           LeaderboardChoiceRow<LeaderboardMetric>(
             keyPrefix: 'leaderboard-metric',
             values: _view == _BoardView.users

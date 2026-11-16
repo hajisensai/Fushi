@@ -15,6 +15,7 @@ import 'package:fushi/src/pages/implementations/home_video_page.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/test_platform_services.dart';
+import '../helpers/video_header_more.dart';
 
 /// BUG-250 (TODO-306): 书架/视频 tab 的批量选择模式（`_selectionMode`）活在 tab
 /// 内容里、不是独立 route。修复前返回键冒泡到 HomePage 顶层 PopScope 直接退出
@@ -94,11 +95,8 @@ void main() {
   Future<void> enterSelectionMode(WidgetTester tester) async {
     // 单行页头（2026-10-14）：「批量选择」从标签栏旁并进页头动作，key 沿用
     // `library_select_toggle`。
-    final Finder selectBtn = find.byKey(
-      const ValueKey<String>('library_select_toggle'),
-    );
-    expect(selectBtn, findsOneWidget, reason: '视频页头应有「批量选择」按钮');
-    await tester.tap(selectBtn);
+    // 设计稿 #video V2：「选择」收进页头「⋯」（卡片长按 / 右键菜单里另有一项）。
+    await tapVideoHeaderMoreEntry(tester, 'library_select_toggle');
     await tester.pumpAndSettle();
   }
 

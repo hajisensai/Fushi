@@ -42,15 +42,17 @@ void main() {
     );
   });
 
+  // 游戏库卡片与游戏首页共用一份卡菜单（games/galgame_item_menu.dart）。
   test('游戏卡「打开文件位置」被 currentRevealHost 门控', () {
     final String source = read(
-      'lib/src/pages/implementations/games_library_page.dart',
+      'lib/src/pages/implementations/games/galgame_item_menu.dart',
     );
 
     expect(
       RegExp(
-        r'currentRevealHost\(\)\s*!=\s*null\s*\)\s*\(\s*'
-        r"action:\s*'file_location',\s*label:\s*t\.media_file_location_open",
+        r'currentRevealHost\(\)\s*!=\s*null\s*\)\s*GalgameItemMenuItem\(\s*'
+        r'action:\s*GalgameItemAction\.fileLocation,\s*'
+        r'label:\s*t\.media_file_location_open',
       ).hasMatch(source),
       isTrue,
       reason: '门控必须直接包住这条菜单项，移动端不得出现点了必失败的菜单项',
@@ -59,7 +61,7 @@ void main() {
 
   test('游戏卡定位先试 exe 再退回工作目录', () {
     final String source = read(
-      'lib/src/pages/implementations/games_library_page.dart',
+      'lib/src/pages/implementations/games/galgame_item_menu.dart',
     );
 
     expect(

@@ -211,8 +211,13 @@ void main() {
       );
       expect(details, findsNothing);
       expect(delete, findsNothing);
+      // 点行里的标题：行中心可能正落在标题旁可点的方式 / 来源标签上（标签
+      // 点按弹说明，不展开行）。
       await tester.tap(
-        find.byKey(const ValueKey<String>('download-task-toggle-done')),
+        find.descendant(
+          of: find.byKey(const ValueKey<String>('download-task-toggle-done')),
+          matching: find.text('Finished game'),
+        ),
       );
       await tester.pumpAndSettle();
       await tester.ensureVisible(details);

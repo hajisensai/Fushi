@@ -33,10 +33,25 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4047 条。点号进各自文件。
+> 共 4062 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4708](bugs/BUG-4708-book-manga-import-view-no-drop-target.md) | 🚧 | 🚧 | 书 / 漫画导入视图画拖放虚线与悬停态，祖先链却没有落点，拖进来什么都不发生（IM2） |
+| [BUG-4707](bugs/BUG-4707-import-network-subtitle-transports-mismatch.md) | ✅ | ✅ | 「添加来源 › 网络」副标题与本域真实可选传输不符（视频写只有 WebDAV，书/漫画/音乐漏 AList、音乐还写了 FTP，IM10） |
+| [BUG-4706](bugs/BUG-4706-video-import-view-no-drop-target.md) | ✅ | ✅ | 视频导入视图画拖放虚线与悬停态，祖先链却没有落点，拖进来什么都不发生（IM2） |
+| [BUG-4705](bugs/BUG-4705-srs-review-bottom-bar-backdrop-cut.md) | ✅ | ✅ | SRS 复习页底栏画不透明底板，页面背景（柔光等）在底部被截成白条 |
+| [BUG-4704](bugs/BUG-4704-shell-rail-preview-overflow.md) | ✅ | ✅ | 外观设置「侧栏样式」两张预览卡画出 OVERFLOWED 红黄条 |
+| [BUG-4703](bugs/BUG-4703-shell-grid-preview-blank.md) | ✅ | ✅ | 外观设置「封面网格」预览卡整块空白 |
+| [BUG-4702](bugs/BUG-4702-rail-collapse-surface-gap.md) | ✅ | ✅ | 侧栏收起过渡中色块与内容区之间露出一条竖带（镂空脊舞台圆角贴在竖带外） |
+| [BUG-4701](bugs/BUG-4701-book-series-key-store-annotation.md) | ✅ | ✅ | 书店写法「卷号<系列名> (文库名)」的分卷导入后不归合集 |
+| [BUG-4700](bugs/BUG-4700-home-desktop-continue-cut-edge-title-concat.md) | ✅ | ✅ | 首页（桌面）「继续」右侧卡被窗口切掉一半、标题拼接成「Re：ゼロ…1<Re：…」 |
+| [BUG-4699](bugs/BUG-4699-home-phone-content-covered-by-navbar-sync-fab.md) | ✅ | ✅ | 首页（手机）复习卡被浮动导航栏压住、同步悬浮球盖住内容 |
+| [BUG-4698](bugs/BUG-4698-collage-default-scattered-uneven-gaps.md) | ✅ | ✅ | 拼贴库页色块间距忽大忽小（没选过摆放时默认「散落」） |
+| [BUG-4697](bugs/BUG-4697-collage-backdrop-cropped-hover-clipped.md) | ✅ | ✅ | 拼贴视频块背景剧照被两侧裁掉、悬停放大后右列块被内容区裁切 |
+| [BUG-4696](bugs/BUG-4696-video-tag-chip-drag-reorder-lost.md) | ✅ | ✅ | 视频库标签条拖动排序在桌面鼠标下失效 |
+| [BUG-4695](bugs/BUG-4695-book-title-hash-suffix.md) | ✅ | ✅ | 书架 / 漫画库卡片标题带文件名哈希后缀「[679fb7c9]」 |
+| [BUG-4694](bugs/BUG-4694-library-switch-masthead-stale-frame.md) | ✅ | ✅ | 库页从「在线」切回「书架」：首帧大号页头压在旧滚动位置的内容上，点下去约 0.5 秒才切 |
 | [BUG-4693](bugs/BUG-4693-remote-dict-profile-seed-on-insert.md) | ✅ | ✅ | 先应用配置、后拉到服务器词典目录时，配置里的服务器词典顺序 / 开关不生效（要切走再切回才生效） |
 | [BUG-4692](bugs/BUG-4692-remote-dictionary-two-reachability-trackers.md) | ✅ | ✅ | 离线时查词等远端 4.5 秒、服务器恢复后查词仍只出本机结果（查词与目录服务各记一份可达性） |
 | [BUG-4691](bugs/BUG-4691-interconnect-peer-rows-look-duplicated.md) | ✅ | ✅ | 配对与设备：同一台服务器的两条地址显示成两个同名「TestServer」，像重复配对 |

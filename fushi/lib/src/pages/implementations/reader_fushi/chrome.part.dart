@@ -3737,6 +3737,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
     if (!mounted) return;
     final String? srtPath = await _withStudyClockPaused(
       () => showAsrTranscribeSheet(
+        tone: ImportTone.coral,
         context: context,
         audioPaths: List<String>.of(audio),
         languageHint: asrLanguageHintFromBookLanguage(book?.language),

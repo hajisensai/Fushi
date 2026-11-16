@@ -119,7 +119,6 @@ class _PageBackdropLayerState extends State<PageBackdropLayer>
       widget.settings.strength.factor,
     );
     final Widget content = switch (_preset) {
-      PageBackdropPreset.corner => _corner(palette, size),
       PageBackdropPreset.plain => const SizedBox.shrink(),
       PageBackdropPreset.confetti => _confetti(palette, size),
       PageBackdropPreset.mesh => _mesh(palette, size),
@@ -137,51 +136,6 @@ class _PageBackdropLayerState extends State<PageBackdropLayer>
     return Transform.translate(
       offset: Offset(-0.019 * size.width * e, 0.0175 * size.height * e),
       child: Transform.scale(scale: 1.04 + 0.02 * e, child: content),
-    );
-  }
-
-  Widget _corner(_BackdropPalette p, Size size) {
-    final double unit = math.min(size.width, size.height);
-    final double big = unit * 0.52;
-    final double mid = unit * 0.38;
-    final double small = unit * 0.25;
-    return Stack(
-      clipBehavior: Clip.hardEdge,
-      children: <Widget>[
-        Positioned(
-          right: -big * 0.15,
-          top: -big * 0.28,
-          width: big,
-          height: big,
-          child: _blob(
-            MaterialShapes.cookie9Sided,
-            p.primary,
-            p.alpha(0.8, 0.35),
-          ),
-        ),
-        Positioned(
-          left: unit * 0.05,
-          bottom: -mid * 0.2,
-          width: mid,
-          height: mid,
-          child: _blob(
-            MaterialShapes.clover4Leaf,
-            p.tertiary,
-            p.alpha(0.65, 0.32),
-          ),
-        ),
-        Positioned(
-          right: size.width * 0.24,
-          bottom: -small * 0.2,
-          width: small,
-          height: small,
-          child: _blob(
-            MaterialShapes.cookie6Sided,
-            p.secondary,
-            p.alpha(0.6, 0.32),
-          ),
-        ),
-      ],
     );
   }
 

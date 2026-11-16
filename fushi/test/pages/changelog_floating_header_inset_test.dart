@@ -6,7 +6,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/changelog_page.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/utils/components/fushi_floating_page_chrome.dart';
+import 'package:fushi/src/utils/components/fushi_masthead_scaffold.dart';
 
 void main() {
   testWidgets('initial changelog release stays below the floating header', (
@@ -38,7 +38,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
-    final Rect header = tester.getRect(find.byType(FushiPageChromeTitle));
+    final Rect header = tester.getRect(find.byType(FushiMastheadHeader));
     final Rect firstRelease = tester.getRect(find.text('v1.2.0'));
     expect(
       firstRelease.top,

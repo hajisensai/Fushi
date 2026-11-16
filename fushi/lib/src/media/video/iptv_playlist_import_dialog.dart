@@ -2,12 +2,13 @@ import 'dart:async' show unawaited;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/media/video/m3u8_playlist.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:path/path.dart' as p;
 
+import 'package:fushi/src/media/import/import_dialog_blocks.dart';
 import 'package:fushi/src/media/import/import_dialog_frame.dart';
+import 'package:fushi/src/media/import/import_surface_spec.dart';
 import 'package:fushi/src/media/import/import_flow_mixin.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/media/video/iptv_playlist_import.dart';
@@ -16,8 +17,10 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
 /// [IptvPlaylistImportDialog] 关窗时交回的结果。
@@ -155,47 +158,64 @@ class _IptvPlaylistImportDialogState extends State<IptvPlaylistImportDialog>
 
   @override
   Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     // 导入进行中禁止返回键 / 点遮罩 / Esc 关闭（HBK-AUDIT-037，见 buildImportPopGuard）。
     return buildImportPopGuard(
       child: ImportDialogFrame(
-        leadingIcon: FushiIcons.tv,
+        tone: ImportTone.rose,
         title: t.video_iptv_import_title,
-        body: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            FushiTextFieldControl(
-              controller: _urlController,
-              enabled: !importing,
-              keyboardType: TextInputType.url,
-              autocorrect: false,
-              decoration: InputDecoration(
-                labelText: t.video_iptv_url_field,
-                hintText: 'https://.../playlist.m3u',
-                prefixIcon: const FushiIcon(FushiIcons.link),
+        // 两种来源二选一：本地 m3u 文件（选择行，已选可清除）或播放列表 URL
+        // （M3E 填充式字段）；与其它导入对话框同一套选择行 / 字段节奏。
+        body: FushiEntranceScope(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              FushiStaggeredEntrance(
+                index: 0,
+                child: ImportPickBlock(
+                  tone: importMethodTone(
+                    ImportMethodKind.iptv,
+                    ImportTone.cyan,
+                  ),
+                  icon: FushiIcons.file,
+                  title: _localPath == null
+                      ? t.video_iptv_pick_file
+                      : p.basename(_localPath!),
+                  subtitle: _localPath == null ? null : t.video_iptv_pick_file,
+                  selected: _localPath != null,
+                  enabled: !importing,
+                  onTap: _pickFile,
+                  onClear: () => setState(() => _localPath = null),
+                ),
               ),
-              onChanged: (_) => setState(() {}),
-              onSubmitted: (_) {
-                if (_canImport) _doImport();
-              },
-            ),
-            const SizedBox(height: 12),
-            FushiOutlinedButton.icon(
-              onPressed: importing ? null : _pickFile,
-              icon: const FushiIcon(FushiIcons.file),
-              label: Text(
-                _localPath == null
-                    ? t.video_iptv_pick_file
-                    : p.basename(_localPath!),
-                overflow: TextOverflow.ellipsis,
+              SizedBox(height: tokens.spacing.card),
+              FushiStaggeredEntrance(
+                index: 1,
+                child: ImportSectionBlock(
+                  tone: ImportTone.rose,
+                  children: <Widget>[
+                    FushiTextField(
+                      controller: _urlController,
+                      enabled: !importing,
+                      keyboardType: TextInputType.url,
+                      autocorrect: false,
+                      labelText: t.video_iptv_url_field,
+                      hintText: 'https://.../playlist.m3u',
+                      onChanged: (_) => setState(() {}),
+                      onSubmitted: (_) {
+                        if (_canImport) _doImport();
+                      },
+                    ),
+                    FushiInlineNotice(
+                      message: t.video_iptv_import_hint,
+                      icon: FushiIcons.info,
+                    ),
+                  ],
+                ),
               ),
-            ),
-            const SizedBox(height: 12),
-            FushiInlineNotice(
-              message: t.video_iptv_import_hint,
-              icon: FushiIcons.info,
-            ),
-          ],
+            ],
+          ),
         ),
         actions: <Widget>[
           FushiTextButton(

@@ -301,8 +301,10 @@ void main() {
   /// 书侧装配（「继续」区的书来自 provider，测试直接喂 MediaItem）。
   Widget buildAppWithBooks(
     List<MediaItem> books,
-    Map<String, int> lastReadAt,
-  ) => ProviderScope(
+    Map<String, int> lastReadAt, {
+    void Function(int collectionId, {required bool manga})?
+    openBookCollectionOverride,
+  }) => ProviderScope(
     overrides: <Override>[
       platformServicesProvider.overrideWithValue(platformServices),
       ankiRepositoryProvider.overrideWithValue(ankiRepository),
@@ -313,7 +315,10 @@ void main() {
       child: MaterialApp(
         theme: shellTheme(),
         home: Scaffold(
-          body: HomeDashboardPage(videoRepo: VideoBookRepository(db)),
+          body: HomeDashboardPage(
+            videoRepo: VideoBookRepository(db),
+            openBookCollectionOverride: openBookCollectionOverride,
+          ),
         ),
       ),
     ),
@@ -665,6 +670,54 @@ void main() {
           .map((HomeRecentTile r) => r.title),
       <String>['新书6', '新书5', '新书4', '新书3'],
     );
+  });
+
+  // 设计稿 H8：「最近添加」里同一合集新加的几卷合成一张卡，点开进合集详情页
+  // （而不是只打开其中一卷）；不在合集里、仅按书名系列键归的组仍打开卷号最小的
+  // 一卷（[recentBookGroupTarget] 纯函数测试）。
+  testWidgets('双栏「最近添加」：同合集的系列合并卡点开 = 进该合集', (WidgetTester tester) async {
+    useSize(tester, const Size(1280, 900));
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    final int cid = await db.createMediaCollection('某轻小说');
+    final List<MediaItem> books = <MediaItem>[];
+    for (int i = 1; i <= 3; i++) {
+      final String key = '某轻小说 $i';
+      final String uid = await db.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: key,
+          title: key,
+          epubPath: '/abs/v$i.epub',
+          extractDir: '/abs/v$i',
+          chapterCount: 1,
+          chaptersJson: '[]',
+          importedAt: now - (10 - i) * 1000,
+          localAddedAt: Value<int?>(now - (10 - i) * 1000),
+        ),
+      );
+      await db.addToCollection(cid, MediaKind.epub, uid);
+      books.add(readingBook(key, key, position: 0));
+    }
+    final List<(int, bool)> opened = <(int, bool)>[];
+    await tester.pumpWidget(
+      buildAppWithBooks(
+        books,
+        const <String, int>{},
+        openBookCollectionOverride: (int id, {required bool manga}) =>
+            opened.add((id, manga)),
+      ),
+    );
+    await pumpDashboard(tester);
+
+    expect(tester.takeException(), isNull);
+    final List<HomeRecentTile> recent = tester
+        .widgetList<HomeRecentTile>(recentTiles())
+        .toList();
+    expect(recent, hasLength(1), reason: '同合集三卷合成一张');
+    expect(recent.single.subtitle, startsWith(t.home_recent_new_volumes(n: 3)));
+    // 直接调卡片的点按回调（不用坐标点击）。
+    recent.single.onTap();
+    await tester.pump();
+    expect(opened, <(int, bool)>[(cid, false)]);
   });
 
   testWidgets('双栏「最近添加」按本机拥有时刻排：刚从对端下载的旧书 / 旧视频排最前，'

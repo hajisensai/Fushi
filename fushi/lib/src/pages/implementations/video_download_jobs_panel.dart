@@ -29,6 +29,9 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/fushi_loading_view.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
@@ -955,6 +958,7 @@ class _VideoDownloadJobListState extends State<_VideoDownloadJobList> {
               snapshot?.progress ?? videoDownloadJobComparableProgress(job),
           collectionKey: collectionKey,
           collectionTitle: job.title,
+          coverUrl: job.coverUrl,
           workIdentity: DownloadTaskWorkIdentity.maybe(
             job.metadataProvider,
             job.externalId,
@@ -1070,6 +1074,28 @@ class _VideoDownloadJobCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (compact) {
+      return DownloadTaskCard(
+        coverUrl: job.coverUrl,
+        taskId: job.jobId,
+        title: job.title,
+        // 视频下载管线只走 torrent 后端（内置引擎 / 外接 qBittorrent）。
+        method: DownloadTransferMethod.torrent,
+        externalSource: true,
+        status:
+            _torrentStatusLabel ??
+            lifecycleLabel?.call(job.lifecycle) ??
+            _defaultLifecycleLabel(job.lifecycle),
+        subtitle: job.resourceTitle,
+        progress: _progress,
+        tone: _tone,
+        leading: FushiIcon(_kindIcon),
+        metrics: _compactMetrics,
+        quickAction: _quickAction,
+        menuActions: _menuActions,
+        details: _buildCompactDetails(context),
+      );
+    }
     final ThemeData theme = Theme.of(context);
     final ColorScheme colors = theme.colorScheme;
     // Apple：完成是语义绿（单色强调色在 Apple 下是黑 / 白，不表达成功）。
@@ -1320,23 +1346,7 @@ class _VideoDownloadJobCard extends StatelessWidget {
                           ),
                           tooltip: t.download_task_priority,
                           onSelected: onSetPriority!,
-                          items: <PopupMenuEntry<int>>[
-                            FushiPopupMenuItem<int>(
-                              value: 1,
-                              label: t.download_task_priority_high,
-                              selected: job.priority > 0,
-                            ),
-                            FushiPopupMenuItem<int>(
-                              value: 0,
-                              label: t.download_task_priority_normal,
-                              selected: job.priority == 0,
-                            ),
-                            FushiPopupMenuItem<int>(
-                              value: -1,
-                              label: t.download_task_priority_low,
-                              selected: job.priority < 0,
-                            ),
-                          ],
+                          items: _priorityItems,
                           child: _priorityButtonFace(),
                         ),
                 if (onOpenLocation != null)
@@ -1364,33 +1374,218 @@ class _VideoDownloadJobCard extends StatelessWidget {
         ],
       ],
     );
-    if (compact) {
-      return DownloadTaskCard(
-        taskId: job.jobId,
-        title: job.title,
-        // 视频下载管线只走 torrent 后端（内置引擎 / 外接 qBittorrent）。
-        method: DownloadTransferMethod.torrent,
-        externalSource: true,
-        status:
-            _torrentStatusLabel ??
-            lifecycleLabel?.call(job.lifecycle) ??
-            _defaultLifecycleLabel(job.lifecycle),
-        subtitle: job.resourceTitle,
-        progress: _progress,
-        tone: _tone,
-        leading: FushiIcon(_kindIcon),
-        metrics: _compactMetrics,
-        quickAction: _quickAction,
-        menuActions: _menuActions,
-        details: content,
-      );
-    }
     return FushiCard(
       padding: const EdgeInsets.all(12),
       onTap: busy ? null : onOpenDetails,
       child: content,
     );
   }
+
+  /// 紧凑任务行（统一下载列表）展开后的详情：只放折叠行里**没有**的信息——
+  /// 管线阶段、做种 / 节点、完整资源名、错误一行、补对齐提示；动作是一排图标
+  /// （tooltip 带名字）+ 优先级菜单。标题 / 状态 / 进度 / 速度 / 大小 / 剩余 /
+  /// 分享率已经在折叠行的 meta 里，不再重复一遍。
+  Widget _buildCompactDetails(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme colors = theme.colorScheme;
+    final Color secondary = isGlassDesign(context)
+        ? appleColorsOf(context).secondaryLabel
+        : colors.onSurfaceVariant;
+    final TextStyle keyStyle = context.fushiType.labelSmall.copyWith(
+      color: secondary,
+    );
+    final TextStyle valueStyle = context.fushiType.labelMedium.tabular;
+    final TorrentSnapshot? value = snapshot;
+    final List<(String, String)> pairs = <(String, String)>[
+      if (value != null) ...<(String, String)>[
+        (
+          t.download_detail_seeds_label,
+          _TaskMetrics._peerMetric(value.numSeeds, value.swarmSeeds),
+        ),
+        (
+          t.download_detail_tab_peers,
+          _TaskMetrics._peerMetric(value.numLeechs, value.swarmLeechs),
+        ),
+      ],
+    ];
+    final String? resource = job.resourceTitle?.trim();
+    final Color errorColor = fushiStatusColor(context, FushiStatusTone.error);
+    final bool hasError = job.lastError?.trim().isNotEmpty ?? false;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Wrap(
+          spacing: 14,
+          runSpacing: 6,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: <Widget>[
+            FushiTagChip(
+              label:
+                  stageLabel?.call(job.stage) ?? _defaultStageLabel(job.stage),
+              tone: FushiTagChipTone.surface,
+            ),
+            for (final (String key, String text) in pairs)
+              Text.rich(
+                TextSpan(
+                  children: <InlineSpan>[
+                    TextSpan(text: '$key  ', style: keyStyle),
+                    TextSpan(text: text, style: valueStyle),
+                  ],
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+          ],
+        ),
+        if (resource != null && resource.isNotEmpty) ...<Widget>[
+          const SizedBox(height: 6),
+          SelectableText(
+            resource,
+            maxLines: 2,
+            style: context.fushiType.bodySmall.copyWith(color: secondary),
+          ),
+        ],
+        if (hasError) ...<Widget>[
+          const SizedBox(height: 4),
+          // 摘要一行 + 点击出详情：原始引擎/后端英文诊断串不再整句铺进卡片
+          // （BUG-1540），只展示分类后的本地化摘要；完整原文进对话框可复制。
+          InkWell(
+            key: ValueKey<String>('video-download-job-error-${job.jobId}'),
+            borderRadius: FushiBorderRadius.chip,
+            onTap: () => _showErrorDetail(context),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                children: <Widget>[
+                  FushiIcon(FushiIcons.error, size: 16, color: errorColor),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      videoDownloadErrorSummary(job.lastError!.trim()),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: context.fushiType.labelMedium.copyWith(
+                        color: errorColor,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    t.download_task_error_view_detail,
+                    style: context.fushiType.labelSmall.copyWith(
+                      color: errorColor,
+                    ),
+                  ),
+                  FushiIcon(
+                    FushiIcons.chevronRight,
+                    size: 16,
+                    color: errorColor,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+        if (onPairAudiobook != null) ...<Widget>[
+          const SizedBox(height: 4),
+          Row(
+            children: <Widget>[
+              FushiIcon(FushiIcons.info, size: 16, color: colors.tertiary),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  t.download_task_audiobook_needs_alignment,
+                  style: context.fushiType.labelSmall.copyWith(
+                    color: colors.tertiary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+        const SizedBox(height: 4),
+        Row(
+          children: <Widget>[
+            if (onPairAudiobook != null)
+              Flexible(
+                child: FushiFilledButton.tonalIcon(
+                  key: ValueKey<String>(
+                    'video-download-job-pair-audiobook-${job.jobId}',
+                  ),
+                  onPressed: busy ? null : onPairAudiobook,
+                  icon: const FushiIcon(FushiIcons.libraryAdd, size: 18),
+                  label: Text(
+                    t.download_task_audiobook_pair,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ),
+            // 优先级只对「还在排队/还没做完」的任务有意义（同完整卡片）。
+            if (onSetPriority != null && _canSetPriority)
+              Flexible(
+                child: busy
+                    ? _priorityButtonFace()
+                    : FushiOverflowMenu<int>(
+                        key: ValueKey<String>(
+                          'video-download-job-priority-${job.jobId}',
+                        ),
+                        tooltip: t.download_task_priority,
+                        onSelected: onSetPriority!,
+                        items: _priorityItems,
+                        child: _priorityButtonFace(),
+                      ),
+              ),
+            const Spacer(),
+            if (onOpenDetails != null)
+              FushiIconButton(
+                key: ValueKey<String>(
+                  'video-download-job-details-${job.jobId}',
+                ),
+                tooltip: t.download_task_details,
+                icon: FushiIcons.info,
+                onTap: busy ? null : onOpenDetails,
+              ),
+            if (onOpenLocation != null)
+              FushiIconButton(
+                key: ValueKey<String>(
+                  'video-download-job-location-${job.jobId}',
+                ),
+                tooltip: t.download_task_open_location,
+                icon: FushiIcons.folderOpen,
+                onTap: busy ? null : onOpenLocation,
+              ),
+            if (onDelete != null)
+              FushiIconButton(
+                key: ValueKey<String>('video-download-job-delete-${job.jobId}'),
+                tooltip: t.download_task_delete,
+                icon: FushiIcons.delete,
+                enabledColor: errorColor,
+                onTap: busy ? null : onDelete,
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  List<PopupMenuEntry<int>> get _priorityItems => <PopupMenuEntry<int>>[
+    FushiPopupMenuItem<int>(
+      value: 1,
+      label: t.download_task_priority_high,
+      selected: job.priority > 0,
+    ),
+    FushiPopupMenuItem<int>(
+      value: 0,
+      label: t.download_task_priority_normal,
+      selected: job.priority == 0,
+    ),
+    FushiPopupMenuItem<int>(
+      value: -1,
+      label: t.download_task_priority_low,
+      selected: job.priority < 0,
+    ),
+  ];
 
   /// 卡片状态色调：下载中 primary、暂停中性、完成 tertiary、出错 error。
   DownloadTaskTone get _tone {

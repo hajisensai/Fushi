@@ -57,6 +57,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 外壳样式（PR #3397）：生效点是外壳侧栏 / 库页 / 色块墙 / 主题层表面形状，
   // harness 设置页里没有外壳与库页。偏好 → 应用主题 [FushiShellTheme] 扩展由
   // 专项单测咬住，各消费方只读这一份扩展。
+  // 拼贴打磨（设计稿 G1）起「侧栏样式 / 库页布局 / 色块排法」三行改成带预览卡的
+  // 自绘行（SettingsCustomItem → AdaptiveSettingsRow，不再是分段行），焦点遍历
+  // （_focusedSettingsRow）不识别它们、不会再产出这三个 id；登记留作证据指针，
+  // 偏好写穿与生效仍由下面的专项单测咬住；行布局（紧凑选择块、无溢出、焦点选中）
+  // 由 test/settings/shell_style_preview_layout_test.dart 咬住。原先的整块组合
+  // 预览行 appearance.shell_preview 已删（所有者反馈太占位置）。
   'appearance/Sidebar style':
       'test/settings/shell_style_settings_effect_test.dart（切色脊 → 主题扩展跟着变）',
   'appearance/Library layout':
@@ -1981,7 +1987,7 @@ void main() {
       // 「外观 › 页面背景」的强度 / 缓慢漂移不改配色，消费点是路由层背景
       // （LibraryShapeBackdrop → PageBackdropLayer）。harness 把设置页垫在真实的
       // LibraryShapeBackdrop 上，探针读**挂载出来的那一层**画了什么：各形状的
-      // 填充色（强度改不透明度）与是否在跑漂移动画（AnimatedBuilder 只在动画
+      // 填充色 / 柔光晕染的渐变色（强度改不透明度）与是否在跑漂移动画（AnimatedBuilder 只在动画
       // 控制器存在时出现）。设置页里的预设缩略图也是 PageBackdropLayer，按
       // [settingsPageKey] 排除，只看路由层那一份。
       final GlobalKey settingsPageKey = GlobalKey(debugLabel: 'settings-page');
@@ -2007,8 +2013,16 @@ void main() {
             .descendant(of: layer, matching: find.byType(DecoratedBox))
             .evaluate()
             .map((Element e) => (e.widget as DecoratedBox).decoration)
-            .whereType<ShapeDecoration>()
-            .map((ShapeDecoration d) => '${d.color}')
+            .map(
+              (Decoration d) => switch (d) {
+                // 形状类预设：形状填充色（强度改不透明度）。
+                ShapeDecoration(:final Color? color) => '$color',
+                // 柔光晕染（默认预设）：径向渐变色斑，强度改渐变各档不透明度。
+                BoxDecoration(:final Gradient gradient) => '${gradient.colors}',
+                _ => null,
+              },
+            )
+            .whereType<String>()
             .toList();
         final bool drifting = find
             .descendant(of: layer, matching: find.byType(AnimatedBuilder))

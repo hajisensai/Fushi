@@ -96,7 +96,7 @@ extension _VideoWebSource on _VideoFushiPageState {
         return;
       }
       _webUnderlayHeld = true;
-      // 站点画面从透明像素处透出来：本页的路由层页底（底色 + 角落形状）必须让开，
+      // 站点画面从透明像素处透出来：本页的路由层页底（底色 + 背景装饰）必须让开，
       // 否则网页被整个盖住、看着像「加载不出来」。
       // （initState 里同步调起本方法，路由只能在 await 之后取。）
       final Route<Object?>? route = context.mounted

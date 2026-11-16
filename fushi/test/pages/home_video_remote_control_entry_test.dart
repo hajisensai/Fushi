@@ -110,9 +110,21 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  // 设计稿 #video V2：遥控入口收进页头「⋯」菜单（独立使用的本页「⋯」里
+  // 恒有「管理来源」，所以「⋯」总在）。
   final Finder remoteButton = find.byKey(
     const ValueKey<String>('video-library-remote-control'),
   );
+
+  Future<void> openMore(WidgetTester tester) async {
+    await tester.tap(find.byKey(const ValueKey<String>('video-library-more')));
+    await tester.pumpAndSettle();
+  }
+
+  Future<void> closeMenu(WidgetTester tester) async {
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+  }
 
   VideoRemoteTarget target(String hostId, String name) => VideoRemoteTarget(
     hostId: hostId,
@@ -129,12 +141,14 @@ void main() {
       tester,
       loader: () async => <VideoRemoteTarget>[target('pc', 'Desk PC')],
     );
+    await openMore(tester);
     expect(remoteButton, findsOneWidget);
     expect(find.byIcon(FushiIcons.remoteControl), findsOneWidget);
   });
 
   testWidgets('没有可遥控的电脑：不出现', (WidgetTester tester) async {
     await pumpPage(tester, loader: () async => const <VideoRemoteTarget>[]);
+    await openMore(tester);
     expect(remoteButton, findsNothing);
   });
 
@@ -156,6 +170,7 @@ void main() {
       () => Future<void>.delayed(const Duration(milliseconds: 50)),
     );
     await tester.pumpAndSettle();
+    await openMore(tester);
     expect(remoteButton, findsNothing);
   });
 
@@ -170,7 +185,9 @@ void main() {
       },
     );
     expect(calls, 1);
+    await openMore(tester);
     expect(remoteButton, findsNothing);
+    await closeMenu(tester);
 
     await tester.pump();
     await tester.pump();
@@ -180,6 +197,7 @@ void main() {
     SyncRepository.fushiClientUrlsRevision.value++;
     await tester.pumpAndSettle();
     expect(calls, 2);
+    await openMore(tester);
     expect(remoteButton, findsOneWidget);
   });
 
@@ -194,6 +212,7 @@ void main() {
         target('laptop', 'Laptop'),
       ],
     );
+    await openMore(tester);
     await tester.tap(remoteButton);
     await tester.runAsync(
       () => Future<void>.delayed(const Duration(milliseconds: 50)),

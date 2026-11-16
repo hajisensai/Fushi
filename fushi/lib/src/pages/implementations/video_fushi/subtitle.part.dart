@@ -3665,6 +3665,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
     if (!isCurrent() || !context.mounted) return null;
     if (transcribe != null) return transcribe(audioPath);
     return showAsrTranscribeSheet(
+      tone: ImportTone.cyan,
       context: context,
       audioPaths: <String>[audioPath],
       // 视频是混音素材（BGM / 音效）：断言 mixedAudio。日语因此换成 Parakeet、

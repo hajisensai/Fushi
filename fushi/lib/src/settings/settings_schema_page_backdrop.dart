@@ -430,7 +430,6 @@ int? pageBackdropCropMaxDimension(Size display) {
 }
 
 String _presetLabel(PageBackdropPreset preset) => switch (preset) {
-  PageBackdropPreset.corner => t.page_backdrop_preset_corner,
   PageBackdropPreset.plain => t.page_backdrop_preset_plain,
   PageBackdropPreset.confetti => t.page_backdrop_preset_confetti,
   PageBackdropPreset.mesh => t.page_backdrop_preset_mesh,

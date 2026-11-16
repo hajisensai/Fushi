@@ -168,7 +168,11 @@ class DownloadTaskEntry {
     this.downRateBps,
     this.upRateBps,
     this.workIdentity,
+    this.coverUrl,
   });
+
+  /// 作品海报（远端 URL）；来源没有时为 null。分组头取组内第一条的海报。
+  final String? coverUrl;
 
   /// 所属作品的元数据身份；来源不记身份时为 null（见 [DownloadTaskWorkIdentity]）。
   final DownloadTaskWorkIdentity? workIdentity;
