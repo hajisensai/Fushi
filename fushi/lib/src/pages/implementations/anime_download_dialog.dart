@@ -214,6 +214,12 @@ DownloadTaskEntry animeDownloadTaskEntry({
     collectionKey: collectionKey,
     collectionTitle: collectionKey == null ? null : plan.seriesTitle,
     searchTerms: <String>[plan.torrentTitle, plan.qbCategory],
+    // 观测值与视频任务同口径投影进 Entry：做种位喂「做种」筛选，速率喂下载中心
+    // 顶部合计速度——此前只拿 stats 算状态，合计里 legacy 行恒按 0 计（反馈
+    // D8YKoitTvM）。
+    seeding: observed == TorrentDisplayStatus.seeding,
+    downRateBps: stats?.downRateBps,
+    upRateBps: stats?.upRateBps,
     // 旧番剧计划唯一记着的作品身份是 AniList id：有它就能被「定位到这部番」精确
     // 命中，不必退回标题兜底。
     workIdentity: DownloadTaskWorkIdentity.maybe(
