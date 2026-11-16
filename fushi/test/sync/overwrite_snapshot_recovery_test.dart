@@ -2,9 +2,12 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show Value, Variable;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/pages/implementations/overwrite_snapshot_notice.dart';
 import 'package:fushi/src/sync/backup_service.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/video/dvd/dvd_title_path.dart';
+import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
 import 'package:path/path.dart' as p;
 
 import 'temp_dir_cleanup.dart';
@@ -93,11 +96,17 @@ void main() {
       'B',
       extractDir: p.join(curDir.path, 'books', 'B'),
     );
-    await insertBook(cur, 'C', extractDir: p.join(curDir.path, 'gone', 'C'));
+    final String uidC = await insertBook(
+      cur,
+      'C',
+      extractDir: p.join(curDir.path, 'gone', 'C'),
+    );
     await position(cur, uidA, section: 2, updatedAt: 500);
+    await position(cur, uidC, section: 4, updatedAt: 700);
     await position(cur, uidB, section: 9, updatedAt: 900);
     await stat(cur, 'A', 1234);
     await stat(cur, 'B', 999);
+    await stat(cur, 'C', 77);
     await cur.close();
 
     // 推荐包一类的「别人的库」：只有书 B（进度更旧、统计更少）。
@@ -154,6 +163,9 @@ void main() {
       'C',
     });
     expect(preview.booksWithoutFiles.map((b) => b.bookKey), <String>['C']);
+    // 会补回来的只有书文件还在的 A（C 跳过，见下）。
+    expect(preview.restorableBooks.map((b) => b.bookKey), <String>['A']);
+    expect(preview.hasRestorableContent, isTrue);
     expect(preview.sizeBytes, greaterThan(0));
     await live.close();
 
@@ -168,7 +180,17 @@ void main() {
     expect(a.extractDir, bookDirA);
     expect((await after.getReaderPosition(a.uid))?.sectionIndex, 2);
     expect(await statChars(after, 'A'), 1234);
-    expect(await after.getEpubBook('C'), isNotNull);
+    // 书文件已不在盘上的 C 不恢复（维护者 2026-11-16）：不插打不开的空壳行，
+    // 它的进度也不挂到不存在的书身份上；统计按书名记，是历史，照常补回。
+    expect(await after.getEpubBook('C'), isNull);
+    expect(await after.getReaderPosition(uidC), isNull);
+    final int positions =
+        (await after
+                .customSelect('SELECT COUNT(*) AS c FROM reader_positions')
+                .getSingle())
+            .read<int>('c');
+    expect(positions, 2, reason: 'only A and B carry a reading position');
+    expect(await statChars(after, 'C'), 77);
     // 已有的不动：B 的进度（快照里更新）与统计（快照里更大）都保持当前库的值。
     final EpubBookRow b = (await after.getEpubBook('B'))!;
     expect((await after.getReaderPosition(b.uid))?.sectionIndex, 1);
@@ -281,6 +303,148 @@ void main() {
           .map((FileSystemEntity e) => p.basename(e.path))
           .where((String n) => n.contains('pre-overwrite')),
       <String>['fushi.db.pre-overwrite.bak'],
+    );
+  });
+
+  Future<String> emptyPack() async {
+    final FushiDatabase src = FushiDatabase(srcDir.path);
+    final String zipPath = p.join(zipDir.path, 'empty.zip');
+    await BackupService(
+      db: src,
+      dbDirectory: srcDir.path,
+      appVersion: '1.0.0',
+    ).createBackup(zipPath);
+    await src.close();
+    return zipPath;
+  }
+
+  test('the retained snapshot is stamped with the overwrite time and expires '
+      'after the retention period', () async {
+    final FushiDatabase cur = FushiDatabase(curDir.path);
+    await insertBook(cur, 'A', extractDir: bookDirA);
+    await cur.close();
+    // 旧主库很久没写过：保留期必须从覆盖导入完成算起，不能从它最后一次写入算起。
+    final DateTime longAgo = DateTime.now().subtract(const Duration(days: 90));
+    File(p.join(curDir.path, 'fushi.db')).setLastModifiedSync(longAgo);
+    final String zipPath = await emptyPack();
+
+    final DateTime before = DateTime.now().subtract(const Duration(minutes: 1));
+    await BackupRestoreService.restoreBackup(
+      dbDirectory: curDir.path,
+      zipPath: zipPath,
+    );
+    final File snapshot = File(
+      BackupRestoreService.overwriteSnapshotPath(curDir.path),
+    );
+    expect(snapshot.lastModifiedSync().isAfter(before), isTrue);
+
+    // 启动时没到期：不动。
+    expect(
+      await BackupRestoreService.pruneExpiredOverwriteSnapshot(curDir.path),
+      isFalse,
+    );
+    expect(snapshot.existsSync(), isTrue);
+    final DateTime stamped = snapshot.lastModifiedSync();
+    expect(
+      await BackupRestoreService.pruneExpiredOverwriteSnapshot(
+        curDir.path,
+        now: stamped.add(
+          BackupRestoreService.overwriteSnapshotRetention -
+              const Duration(hours: 1),
+        ),
+      ),
+      isFalse,
+    );
+    expect(snapshot.existsSync(), isTrue);
+
+    // 过了保留期：删掉快照，连同还没显示的提示标记。
+    expect(
+      await BackupRestoreService.pruneExpiredOverwriteSnapshot(
+        curDir.path,
+        now: stamped.add(BackupRestoreService.overwriteSnapshotRetention),
+      ),
+      isTrue,
+    );
+    expect(snapshot.existsSync(), isFalse);
+    final FushiDatabase live = FushiDatabase(curDir.path);
+    addTearDown(live.close);
+    expect(
+      await BackupRestoreService.takeOverwriteSnapshotNotice(
+        dbDirectory: curDir.path,
+        liveDb: live,
+      ),
+      isNull,
+    );
+    expect(
+      Directory(curDir.path)
+          .listSync()
+          .map((FileSystemEntity e) => p.basename(e.path))
+          .where((String n) => n.contains('overwrite')),
+      isEmpty,
+    );
+  });
+
+  test('the post-import notice is shown once, and only when the snapshot has '
+      'something the current library lacks', () async {
+    final FushiDatabase cur = FushiDatabase(curDir.path);
+    await insertBook(cur, 'A', extractDir: bookDirA);
+    await cur.close();
+    final String zipPath = await emptyPack();
+    await BackupRestoreService.restoreBackup(
+      dbDirectory: curDir.path,
+      zipPath: zipPath,
+    );
+
+    final FushiDatabase live = FushiDatabase(curDir.path);
+    addTearDown(live.close);
+    final OverwriteSnapshotPreview notice =
+        (await BackupRestoreService.takeOverwriteSnapshotNotice(
+          dbDirectory: curDir.path,
+          liveDb: live,
+        ))!;
+    expect(notice.restorableBooks.map((b) => b.bookKey), <String>['A']);
+    expect(
+      notice.expiresAt,
+      notice.modifiedAt.add(BackupRestoreService.overwriteSnapshotRetention),
+    );
+    final String body = overwriteSnapshotNoticeBody(notice);
+    expect(body, contains(FushiTimeFormat.dayKey(notice.expiresAt)));
+    expect(body, contains(t.storage_recovery_title));
+    // 一次性：消费过就不再弹。
+    expect(
+      await BackupRestoreService.takeOverwriteSnapshotNotice(
+        dbDirectory: curDir.path,
+        liveDb: live,
+      ),
+      isNull,
+    );
+    // 快照还在，「恢复书库」页照常可用。
+    expect(
+      File(
+        BackupRestoreService.overwriteSnapshotPath(curDir.path),
+      ).existsSync(),
+      isTrue,
+    );
+  });
+
+  test('no notice when the overwritten library had nothing to recover '
+      '(fresh install importing a pack)', () async {
+    final FushiDatabase fresh = FushiDatabase(curDir.path);
+    expect(await fresh.getEpubBookMetas(), isEmpty);
+    await fresh.close();
+    final String zipPath = await emptyPack();
+    await BackupRestoreService.restoreBackup(
+      dbDirectory: curDir.path,
+      zipPath: zipPath,
+    );
+    final FushiDatabase live = FushiDatabase(curDir.path);
+    addTearDown(live.close);
+    expect(
+      await BackupRestoreService.takeOverwriteSnapshotNotice(
+        dbDirectory: curDir.path,
+        liveDb: live,
+      ),
+      isNull,
     );
   });
 }

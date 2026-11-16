@@ -1,5 +1,5 @@
 // 服务端操作目录里的复习（SRS）操作（admin_ops.dart）：对真的 AdminApi + HeadlessHost
-// 跑——只读转发、立即同步要用户表态、制卡落点 / 牌组 / 翻日时刻可撤销（被手改过报
+// 跑——只读转发、立即同步要用户表态、制卡落点 / 牌组 / 翻日时刻 / RWKV 模型档位可撤销（被手改过报
 // superseded）、改一份的牌组不动别的、AnkiConnect 设置与选哪几份 profile 不进目录。
 import 'dart:convert';
 import 'dart:io';
@@ -8,6 +8,8 @@ import 'package:drift/native.dart';
 import 'package:fushi_cli/fushi_cli.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ai/agent/agent_tool.dart';
+import 'package:fushi_engine/srs/srs_rwkv_attach.dart';
+import 'package:fushi_engine/srs/srs_rwkv_models.dart';
 import 'package:fushi_server/src/admin/admin_api.dart';
 import 'package:fushi_server/src/admin/admin_context.dart';
 import 'package:fushi_server/src/admin/admin_ops.dart';
@@ -35,6 +37,7 @@ const List<String> kSrsOps = <String>[
   'server.srs.mining-target.set',
   'server.srs.mining-deck.set',
   'server.srs.rollover-hour.set',
+  'server.srs.rwkv-model.set',
 ];
 
 void main() {
@@ -152,7 +155,7 @@ void main() {
         jsonDecode(jsonEncode(record.payload)) as Map<String, Object?>,
       )).status;
 
-  test('目录：七条复习操作、风险分级；选 profile / 默认 / AnkiConnect / 信任设备不进目录、不常驻', () {
+  test('目录：八条复习操作、风险分级；选 profile / 默认 / AnkiConnect / 信任设备不进目录、不常驻', () {
     final OpCatalog catalog = invoker.catalog;
     for (final String id in kSrsOps) {
       expect(catalog[id], isNotNull, reason: id);
@@ -169,6 +172,7 @@ void main() {
       'server.srs.mining-target.set',
       'server.srs.mining-deck.set',
       'server.srs.rollover-hour.set',
+      'server.srs.rwkv-model.set',
     ]) {
       expect(catalog[id]!.risk, OpRisk.write, reason: id);
       expect(catalog[id]!.undo, isNotNull, reason: id);
@@ -441,6 +445,52 @@ void main() {
       OpUndoStatus.superseded,
     );
     expect(host.config.srs.rolloverHour, 5);
+  });
+
+  test('RWKV 模型档位（PR #3463 拍板「加手动档位」）：admin 配置里读得到；改 → 写设备设置文件、撤销写回；'
+      '认不出的值 → 400；被手改过 → superseded', () async {
+    Future<Object?> configured() async {
+      final shelf.Response r = await api.handle(
+        shelf.Request('GET', Uri.parse('http://localhost/api/admin/srs')),
+      );
+      final Map<String, Object?> body = asMap(
+        jsonDecode(await r.readAsString()),
+      );
+      return asMap(body['config'])['rwkvModel'];
+    }
+
+    final Directory support = host.paths.support;
+    expect(await configured(), 'small');
+    final OpUndoRecord rec = await runUndoable(
+      'server.srs.rwkv-model.set',
+      const <String, Object?>{'rwkvModel': 'tiny'},
+    );
+    expect(readSrsRwkvModelSize(support), SrsRwkvModelSize.tiny);
+    expect(await configured(), 'tiny');
+    expect(await revert('server.srs.rwkv-model.set', rec), OpUndoStatus.done);
+    expect(readSrsRwkvModelSize(support), SrsRwkvModelSize.small);
+
+    await expectLater(
+      run('server.srs.rwkv-model.set', const <String, Object?>{
+        'rwkvModel': 'huge',
+      }),
+      throwsA(
+        isA<CtlFailure>().having((CtlFailure f) => f.status, 'status', 400),
+      ),
+    );
+    expect(readSrsRwkvModelSize(support), SrsRwkvModelSize.small);
+
+    final OpUndoRecord second = await runUndoable(
+      'server.srs.rwkv-model.set',
+      const <String, Object?>{'rwkvModel': 'tiny'},
+    );
+    // 管理员之后在 WebUI 里又改回 Small：撤销不覆盖它。
+    await adminPut(<String, Object?>{'rwkvModel': 'small'});
+    expect(
+      await revert('server.srs.rwkv-model.set', second),
+      OpUndoStatus.superseded,
+    );
+    expect(readSrsRwkvModelSize(support), SrsRwkvModelSize.small);
   });
 
   test('ServerAgentToolbox：能搜到；写操作记进服务端库、撤销写回；同步没确认拒绝', () async {

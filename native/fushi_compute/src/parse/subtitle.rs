@@ -201,7 +201,8 @@ impl Out {
 
     /// markup：u32 存在掩码、plainText、layer，再按掩码位序写各可选部分。
     fn write_markup(&mut self, m: &Markup) {
-        let present: [bool; 16] = [
+        // 第 16 位是 [Markup::effect]（特效字幕，H7r4mf_z2n）：纯标志位、不带负载。
+        let present: [bool; 17] = [
             !m.spans.is_empty(),
             m.anchor != 0,
             m.pos.is_some(),
@@ -218,6 +219,7 @@ impl Out {
             m.shear_y.is_some(),
             m.drawing.is_some(),
             m.drawing_style.is_some(),
+            m.effect,
         ];
         let mut mask = 0u32;
         for (k, &b) in present.iter().enumerate() {

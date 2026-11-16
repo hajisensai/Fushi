@@ -4464,6 +4464,10 @@ extension _VideoSubtitle on _VideoFushiPageState {
                 initialTapLookup: appModel.videoSubtitleListTapLookup,
                 onTapLookupChanged: (bool value) =>
                     unawaited(appModel.setVideoSubtitleListTapLookup(value)),
+                // H7r4mf_z2n：「显示特效字幕」开关跨开关 / 跨重启记住。
+                initialShowEffects: appModel.videoSubtitleListShowEffects,
+                onShowEffectsChanged: (bool value) =>
+                    unawaited(appModel.setVideoSubtitleListShowEffects(value)),
                 // xlzGuK5YmD：记住上次打开的页签（全部 / 收藏），下次恢复。
                 initialFilter: videoSubtitleListFilterFromName(
                   appModel.videoSubtitleListFilter,

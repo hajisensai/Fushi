@@ -2710,6 +2710,10 @@ class AppModel
   Future<void> setMusicLyricsLookupPause(bool value) =>
       prefsRepo.setMusicLyricsLookupPause(value);
 
+  bool get musicLyricsBlurInactive => prefsRepo.musicLyricsBlurInactive;
+  Future<void> setMusicLyricsBlurInactive(bool value) =>
+      prefsRepo.setMusicLyricsBlurInactive(value);
+
   /// 后台响度扫描（缺 ReplayGain 标签的曲目，设计 §7.3）。
   late final MusicLoudnessScanner musicLoudness = MusicLoudnessScanner(
     database: () => isDatabaseReady ? database : null,
@@ -5128,6 +5132,11 @@ class AppModel
       //    cloud backup backend can now coexist).
       StartupTimeline.mark('db-open+srs-host');
       await BackupRestoreService.recoverPendingRestore(_databaseDirectory.path);
+      // 覆盖导入保留的覆盖前快照过了保留期就删（维护者 2026-11-16 拍板）。放在
+      // recoverPendingRestore 之后：它可能刚把半途中断的覆盖导入收尾、换上新快照。
+      await BackupRestoreService.pruneExpiredOverwriteSnapshot(
+        _databaseDirectory.path,
+      );
 
       // 沙箱重定位自愈：数据根被**平台**挪走后，把库里的绝对路径重基过去。
       //
@@ -6790,6 +6799,13 @@ class AppModel
 
   Future<void> setVideoSubtitleListTapLookup(bool value) =>
       prefsRepo.setVideoSubtitleListTapLookup(value);
+
+  /// 视频字幕列表是否列出特效字幕（H7r4mf_z2n，默认 true）。
+  bool get videoSubtitleListShowEffects =>
+      prefsRepo.videoSubtitleListShowEffects;
+
+  Future<void> setVideoSubtitleListShowEffects(bool value) =>
+      prefsRepo.setVideoSubtitleListShowEffects(value);
 
   /// 视频字幕列表上次打开的页签名（xlzGuK5YmD，`VideoSubtitleListFilter.name`）。
   String get videoSubtitleListFilter => prefsRepo.videoSubtitleListFilter;
@@ -11846,6 +11862,16 @@ class AppModel
   bool get browseMovedNoticeHandled => prefsRepo.browseMovedNoticeHandled;
   Future<void> setBrowseMovedNoticeHandled() =>
       prefsRepo.setBrowseMovedNoticeHandled();
+
+  /// 库页默认改封面网格后的「拼贴仍可选」一次性提示是否已处理
+  /// （见 `library_layout_default_notice.dart`）。
+  bool get libraryLayoutDefaultNoticeHandled =>
+      prefsRepo.libraryLayoutDefaultNoticeHandled;
+  Future<void> setLibraryLayoutDefaultNoticeHandled() =>
+      prefsRepo.setLibraryLayoutDefaultNoticeHandled();
+
+  /// 当前 Profile 是否显式选过库页布局（落库值非空，含已删的 `blocks`）。
+  bool get shellContentLayoutChosen => themeNotifier.shellContentLayoutChosen;
 
   int get maximumTerms => prefsRepo.maximumTerms;
   void setMaximumTerms(int value) => prefsRepo.setMaximumTerms(value);

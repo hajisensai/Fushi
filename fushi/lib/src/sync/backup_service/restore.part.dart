@@ -1560,6 +1560,23 @@ class BackupRestoreService {
   static String overwriteSnapshotPath(String dbDirectory) =>
       p.join(dbDirectory, databasePreOverwriteSnapshotFileName);
 
+  /// 覆盖前快照的保留期（维护者 2026-11-16 拍板「加过期」）：整份旧主库和主库
+  /// 一样大，无期限留在支持目录里既占空间，也让「有意清空旧数据」的用户的旧书库、
+  /// 进度、统计静默留在盘上。30 天足够发现「覆盖导入是误操作」，过期后启动时删除
+  /// （[pruneExpiredOverwriteSnapshot]）。计时起点是快照的修改时刻，
+  /// [_retainOverwriteSnapshot] 把它钉成覆盖导入完成的时刻。
+  static const Duration overwriteSnapshotRetention = Duration(days: 30);
+
+  /// 「覆盖导入完成」提示的待显示标记（[_retainOverwriteSnapshot] 落、
+  /// [takeOverwriteSnapshotNotice] 消费）。不是快照形态，存储页的快照白名单不认它；
+  /// 名字里不含 `pre-overwrite`，不会被当成快照本体。
+  static const String _overwriteSnapshotNoticeName =
+      '$_dbName.overwrite-snapshot-notice';
+
+  /// 快照到期时刻（修改时刻 + [overwriteSnapshotRetention]）。
+  static DateTime overwriteSnapshotExpiresAt(DateTime modifiedAt) =>
+      modifiedAt.add(overwriteSnapshotRetention);
+
   /// 覆盖导入成功收尾：`pre-restore.bak`（只在恢复流程进行中有意义，由
   /// `sync-preserve.json` 持有）改名成 [overwriteSnapshotPath]，只留最近一份。
   ///
@@ -1568,6 +1585,11 @@ class BackupRestoreService {
   /// 的信号（存储页的所有权门控按它 + sidecar 判活），成功后的快照要换一个没有
   /// 持有者、可随时删除的名字。改名失败只记日志并删掉 bak——导入本身已成功，丢掉
   /// 的只是这次恢复机会，不能把成功的导入翻成失败。
+  ///
+  /// 改名后把修改时刻钉成「现在」（= 覆盖导入完成的时刻）：改名保留的是旧主库最后
+  /// 一次写入的时刻，`File.copy` 在各平台上对它的处理也不一致，拿它算保留期会让
+  /// 很久没写过库的用户一覆盖导入快照就过期。再落一个提示标记，下次进首页告诉用户
+  /// 快照在哪、留多久（[takeOverwriteSnapshotNotice]）。
   static Future<void> _retainOverwriteSnapshot(
     String dbDirectory,
     String bakPath,
@@ -1577,13 +1599,54 @@ class BackupRestoreService {
     final String target = overwriteSnapshotPath(dbDirectory);
     try {
       await _safeDelete(target);
-      await bak.rename(target);
+      final File snapshot = await bak.rename(target);
+      await snapshot.setLastModified(DateTime.now());
+      await File(
+        p.join(dbDirectory, _overwriteSnapshotNoticeName),
+      ).writeAsString('');
     } on FileSystemException catch (e, st) {
       debugPrint(
         'BackupRestoreService._retainOverwriteSnapshot failed: $e\n$st',
       );
       await _safeDelete(bakPath);
     }
+  }
+
+  /// 启动时删掉过了保留期的覆盖前快照（连同未消费的提示标记）。[now] 只给测试注入。
+  /// 返回是否删了快照。
+  static Future<bool> pruneExpiredOverwriteSnapshot(
+    String dbDirectory, {
+    DateTime? now,
+  }) async {
+    final File snapshot = File(overwriteSnapshotPath(dbDirectory));
+    final FileStat stat = snapshot.statSync();
+    if (stat.type == FileSystemEntityType.notFound) return false;
+    final DateTime expiresAt = overwriteSnapshotExpiresAt(stat.modified);
+    if ((now ?? DateTime.now()).isBefore(expiresAt)) return false;
+    await _safeDelete(snapshot.path);
+    await _safeDelete(p.join(dbDirectory, _overwriteSnapshotNoticeName));
+    return true;
+  }
+
+  /// 消费「覆盖导入完成」提示标记：标记在、快照也在、且快照里确实有当前库缺的东西
+  /// （[previewOverwriteSnapshot] 的 `hasRestorableContent`）时返回预览，否则 null。
+  /// 标记无论如何都先删——提示只是告知，弹框期间杀进程也不该下次再弹。
+  ///
+  /// 「快照里没有当前库缺的东西」时不提示：例如全新安装导入推荐包，覆盖掉的是空库，
+  /// 告诉用户「旧书库已另存」只是噪音。
+  static Future<OverwriteSnapshotPreview?> takeOverwriteSnapshotNotice({
+    required String dbDirectory,
+    required FushiDatabase liveDb,
+  }) async {
+    final File marker = File(p.join(dbDirectory, _overwriteSnapshotNoticeName));
+    if (!marker.existsSync()) return null;
+    await _safeDelete(marker.path);
+    final OverwriteSnapshotPreview? preview = await previewOverwriteSnapshot(
+      dbDirectory: dbDirectory,
+      liveDb: liveDb,
+    );
+    if (preview == null || !preview.hasRestorableContent) return null;
+    return preview;
   }
 
   /// 「从覆盖导入前的快照恢复书库」只补缺合并的类别：书库行（书 / 有声书 / 视频）、
@@ -1627,9 +1690,7 @@ class BackupRestoreService {
             OverwriteSnapshotBook(
               bookKey: b.bookKey,
               title: b.title,
-              filesPresent:
-                  b.extractDir.isNotEmpty &&
-                  Directory(b.extractDir).existsSync(),
+              filesPresent: _overwriteSnapshotBookFilesPresent(b.extractDir),
             ),
       ];
       final Set<String> liveVideoUids = <String>{
@@ -1663,10 +1724,21 @@ class BackupRestoreService {
       videoPath.startsWith('$kSourceLibrarySftpScheme://') ||
       videoMemberExistsSync(videoPath);
 
+  /// 快照里的一本书在本机还能不能打开：书目录（`extract_dir`）还在盘上。
+  /// 预览与合并同一判据，预览说「会补回 N 本」就补回 N 本。
+  static bool _overwriteSnapshotBookFilesPresent(String extractDir) =>
+      extractDir.isNotEmpty && Directory(extractDir).existsSync();
+
   /// 把覆盖前快照里的书库行、阅读进度、统计**只补缺**合并进当前库（BUG-4701）：
   /// 当前库缺的行插入，已有的行一律不动（[BackupMergeEngine] 的 `fillMissingOnly`），
   /// bookKey 原样。复用合并导入的整套引擎（快照副本先迁到当前 schema 再 ATTACH），
   /// 同一个事务、同一套崩溃清理协议（merge sidecar + `pre-merge.bak`）。
+  ///
+  /// 书文件已不在盘上的书**不恢复**（维护者 2026-11-16「应该怎么做就怎么做」，
+  /// 与视频按可达性过滤同一原则）：插回来只是打不开的空壳，它的阅读进度也会挂在
+  /// 一个不存在的书身份上。这些书经 [BackupMergeEngine] 的 `excludedBookKeys`
+  /// 按删除墓碑同样处理（书库行、进度、有声书对齐都不落）；统计按书名记、是历史
+  /// 事实，照常补回。预览把它们单独列出来，提示用户重新导入。
   ///
   /// 调用方须先关掉 app 的数据库连接（与 [mergeRestoreBackup] 同一遮罩协议），
   /// 完成后重启。快照文件保留不删（存储页可删），重复执行幂等。
@@ -1687,13 +1759,20 @@ class BackupRestoreService {
     await _safeDelete('$mergeSrcPath-shm');
     await snapshot.copy(mergeSrcPath);
 
-    // 迁到当前 schema（快照可能来自升级前的版本），顺带取出还能播放的本地视频。
+    // 迁到当前 schema（快照可能来自升级前的版本），顺带取出还能播放的本地视频
+    // 与书文件已不在盘上的书。
     final Set<String> reachableVideos = <String>{};
+    final Set<String> booksWithoutFiles = <String>{};
     final FushiDatabase srcMigrate = FushiDatabase.atFile(mergeSrcPath);
     try {
       for (final VideoBookRow v in await srcMigrate.allVideoBooks()) {
         if (_overwriteSnapshotVideoReachable(v.videoPath)) {
           reachableVideos.add(v.videoPath);
+        }
+      }
+      for (final EpubBookMeta b in await srcMigrate.getEpubBookMetas()) {
+        if (!_overwriteSnapshotBookFilesPresent(b.extractDir)) {
+          booksWithoutFiles.add(b.bookKey);
         }
       }
     } finally {
@@ -1722,6 +1801,7 @@ class BackupRestoreService {
               .map((BackupCategory c) => c.name)
               .toSet(),
           fillMissingOnly: true,
+          excludedBookKeys: booksWithoutFiles,
         ).merge();
       } finally {
         await db.customStatement('DETACH DATABASE mergesrc');

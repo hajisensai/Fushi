@@ -1,14 +1,25 @@
-//! ID3 「ISO-8859-1」文本里实际装着本地多字节编码时的探测与回退。
+//! 声明为单字节 / 没声明编码的文本里实际装着本地多字节编码时的探测与回退。
 //!
-//! ID3v1 只有 Latin-1；ID3v2 的 `encoding = 0` 帧按规范也是 Latin-1。但大量日 / 中文旧
+//! **一份源码、两个 crate 复用**：本文件只依赖 `encoding_rs`、不引用任何 `crate::` 项。
+//! fushi_compute 以 `mod legacy_text` 编入（C ABI 见 `text.rs` 的 `ffc_text_legacy_decode`），
+//! native/fushi_music 以 `#[path]` 编入同一个文件（曲库 ID3 乱码修复）。改判据两边一起
+//! 生效；两个 crate 的 `cargo test` 都跑本文件的测试。
+//!
+//! 来源一，ID3：ID3v1 只有 Latin-1；ID3v2 的 `encoding = 0` 帧按规范也是 Latin-1。但大量日 / 中文旧
 //! 打标工具把 Shift_JIS / EUC-JP / GBK / Big5 原始字节直接塞进这些帧，lofty（以及 ffprobe）
 //! 按规范逐字节映成 U+0000..U+00FF，曲库里就出现 `Çà¤¤Í«¤Î¥Ê¥¤¥È` 这种乱码（EUC-JP 的
-//! 「…のナイト」）。Latin-1 解码逐字节可逆（`char as u8`），所以能无损还原出原始字节重新判。
+//! 「…のナイト」）。Latin-1 解码逐字节可逆（`char as u8`），所以能无损还原出原始字节重新判
+//! （[detect] / [repair_in_place]）。
 //!
-//! 判据（**整份标签一起判**：打标工具对同一文件只用一种编码，多字段合起来证据更足）：
+//! 来源二，ZIP 条目名：通用位 11 没置时名字按规范是 CP437，实际是打包机器的本地编码（日文
+//! Windows 的 Shift_JIS、中文 Windows 的 GBK）。调用方直接给原始字节（[detect_bytes] /
+//! [decode_batch]），不经 Latin-1 往返。
 //!
-//! 1. 参与判定的字符串必须全部落在 U+0000..U+00FF（即确实是逐字节 Latin-1 解出来的），
-//!    且至少一个含 ≥0x80 的字节；否则什么都不动。
+//! 判据（**整批一起判**：打标工具对同一文件、压缩工具对同一个包只用一种编码，多个字符串
+//! 合起来证据更足）：
+//!
+//! 1. 字符串入口（[detect]）要求参与判定的字符串全部落在 U+0000..U+00FF（即确实是逐字节
+//!    Latin-1 解出来的）；两个入口都要求至少一个含 ≥0x80 的字节，否则什么都不动。
 //! 2. 至少一个字符串的字节**不像真 Latin-1 文本**（[latin1_plausible]）。真 Latin-1
 //!    文本的高位字节是零散的重音字母（`Café`、`Pokémon`、`Größe`）：单个出现，或至多两个
 //!    字母相邻；C1 控制区 0x80–0x9F 只可能以 CP1252 标点（`’` `“` `…`）单独出现。双字节
@@ -131,18 +142,28 @@ where
     let mut raw: Vec<Vec<u8>> = Vec::new();
     for v in values {
         // 有任何一个字段不是逐字节 Latin-1 解出来的，说明这份标签本身是 Unicode 帧，不动。
-        let bytes = latin1_bytes(v)?;
-        if bytes.iter().any(|&b| b >= 0x80) {
-            raw.push(bytes);
-        }
+        raw.push(latin1_bytes(v)?);
     }
+    detect_bytes(raw.iter().map(Vec::as_slice))
+}
+
+/// 一批原始字节串（同一来源、同一种编码）里探测出的本地编码；全是 ASCII、像真 Latin-1
+/// 文本、或没有候选能零错误解开时返回 None。
+pub fn detect_bytes<'a, I>(values: I) -> Option<&'static Encoding>
+where
+    I: IntoIterator<Item = &'a [u8]>,
+{
+    let raw: Vec<&[u8]> = values
+        .into_iter()
+        .filter(|b| b.iter().any(|&c| c >= 0x80))
+        .collect();
     if raw.is_empty() || raw.iter().all(|b| latin1_plausible(b)) {
         return None;
     }
     let mut best: Option<(&'static Encoding, u32)> = None;
     'candidates: for enc in CANDIDATES {
         let mut total = 0u32;
-        for bytes in &raw {
+        for &bytes in &raw {
             let (text, had_errors) = enc.decode_without_bom_handling(bytes);
             if had_errors {
                 continue 'candidates;
@@ -178,9 +199,56 @@ pub fn repair_in_place(values: &mut [&mut String]) -> Option<&'static str> {
     Some(enc.name())
 }
 
+/// 整批探测并按判出的编码解码：返回编码与逐项结果（与输入同序）；判不出时 None，
+/// 调用方保持原样。
+pub fn decode_batch(values: &[&[u8]]) -> Option<(&'static Encoding, Vec<String>)> {
+    let enc = detect_bytes(values.iter().copied())?;
+    let out = values
+        .iter()
+        .map(|b| enc.decode_without_bom_handling(b).0.into_owned())
+        .collect();
+    Some((enc, out))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn zip_names_shift_jis_with_5c_and_7c_trail_bytes() {
+        // 「表」= 95 5C、「ソ」= 83 5C、「ポ」= 83 7C：尾字节分别撞上 `\` 与 `|`。
+        let names: Vec<Vec<u8>> = ["表紙/ソード01.jpg", "表紙/ポスター02.jpg", "readme.txt"]
+            .iter()
+            .map(|s| SHIFT_JIS.encode(s).0.into_owned())
+            .collect();
+        assert!(names[0].contains(&0x5C) && names[1].contains(&0x7C));
+        let refs: Vec<&[u8]> = names.iter().map(Vec::as_slice).collect();
+        let (enc, out) = decode_batch(&refs).expect("detected");
+        assert_eq!(enc, SHIFT_JIS);
+        assert_eq!(
+            out,
+            vec!["表紙/ソード01.jpg", "表紙/ポスター02.jpg", "readme.txt"]
+        );
+    }
+
+    #[test]
+    fn zip_names_gbk_are_recovered() {
+        let names: Vec<Vec<u8>> = ["第一话/页面01.png", "第一话/页面02.png"]
+            .iter()
+            .map(|s| GBK.encode(s).0.into_owned())
+            .collect();
+        let refs: Vec<&[u8]> = names.iter().map(Vec::as_slice).collect();
+        let (enc, out) = decode_batch(&refs).expect("detected");
+        assert_eq!(enc, GBK);
+        assert_eq!(out, vec!["第一话/页面01.png", "第一话/页面02.png"]);
+    }
+
+    #[test]
+    fn zip_names_ascii_or_undecodable_are_not_detected() {
+        assert!(decode_batch(&[b"001.jpg".as_slice(), b"002.jpg".as_slice()]).is_none());
+        assert!(decode_batch(&[[b'a', 0xFF, 0xFF, 0xFF].as_slice()]).is_none());
+        assert!(decode_batch(&[]).is_none());
+    }
 
     /// 把原始字节按 lofty 的方式（逐字节）解成 Latin-1 字符串。
     fn as_latin1(bytes: &[u8]) -> String {

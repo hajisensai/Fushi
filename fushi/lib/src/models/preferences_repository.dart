@@ -2342,6 +2342,17 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 视频字幕列表是否列出**特效字幕**（歌词特效 / 屏幕字，拍板台 H7r4mf_z2n），默认
+  /// false（拍板选项 B 原文「默认隐藏特效事件」）。与 [VideoSubtitleJumpPanel] 的
+  /// 「显示特效字幕」切换钮一一对应，跨开关 / 跨重启记住；只影响列表，不影响播放画面上的字幕。
+  bool get videoSubtitleListShowEffects =>
+      getPref('video_subtitle_list_show_effects', defaultValue: false) as bool;
+
+  Future<void> setVideoSubtitleListShowEffects(bool value) async {
+    await setPref('video_subtitle_list_show_effects', value);
+    notifyListeners();
+  }
+
   /// 视频字幕列表上次打开的页签（xlzGuK5YmD）：`VideoSubtitleListFilter.name`
   /// （`all` / `favorites`），默认 `all`。下次打开列表恢复到它，跨开关 / 跨重启记住。
   String get videoSubtitleListFilter =>
@@ -3041,6 +3052,16 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setBrowseMovedNoticeHandled() async {
     await setPref('browse_moved_notice_handled', true);
+  }
+
+  /// 库页默认布局改成封面网格（2026-11-15）后的一次性「拼贴仍可选」提示是否已处理：
+  /// 弹过，或首次启动新版时判定本安装不需要弹（全新安装 / 显式选过布局）。默认 false。
+  bool get libraryLayoutDefaultNoticeHandled =>
+      getPref('library_layout_default_notice_handled', defaultValue: false)
+          as bool;
+
+  Future<void> setLibraryLayoutDefaultNoticeHandled() async {
+    await setPref('library_layout_default_notice_handled', true);
   }
 
   /// 弹幕样式（字号/不透明度/速度/显示区域，JSON；见 [VideoDanmakuStyle]，TODO-1376）。
@@ -5946,6 +5967,16 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setMusicLyricsLookupPause(bool value) async {
     await setPref('music_lyrics_lookup_pause', value);
+    notifyListeners();
+  }
+
+  /// 逐字歌词非当前行轻模糊（[KaraokeLyricsAppearance.blurInactive]）。默认开；关掉后
+  /// 上一句 / 下一句保持清晰（GitHub #3354）。
+  bool get musicLyricsBlurInactive =>
+      getPref('music_lyrics_blur_inactive', defaultValue: true) == true;
+
+  Future<void> setMusicLyricsBlurInactive(bool value) async {
+    await setPref('music_lyrics_blur_inactive', value);
     notifyListeners();
   }
 

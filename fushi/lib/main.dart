@@ -209,17 +209,12 @@ import 'package:fushi_engine/media/video/download/video_download_pipeline_servic
 import 'package:fushi_engine/media/video/external_video.dart';
 import 'package:fushi_engine/srs/srs_op_ledger.dart';
 import 'package:fushi/src/platform/desktop/linux_external_open_channel.dart';
-import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
-import 'package:fushi_engine/media/video/scraper/cover_meta_store.dart';
-import 'package:fushi_engine/media/video/video_cover_extractor.dart'
-    show extractVideoCover;
 import 'package:fushi_engine/media/video/video_book_repository.dart';
-import 'package:fushi_engine/media/video/video_storage.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
+import 'package:fushi/src/media/video/external_video_ingest.dart';
 import 'package:fushi/src/profile/extension_profile_adapter.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
-import 'package:drift/drift.dart' show Value;
 import 'package:fushi_core/fushi_core.dart'
     show
         BookFormat,
@@ -227,8 +222,7 @@ import 'package:fushi_core/fushi_core.dart'
         FushiDatabaseFailureKind,
         kLegacySchemaBridgeAppVersion,
         kLegacySchemaBridgeReleaseUrl,
-        VideoBookRow,
-        VideoBooksCompanion;
+        VideoBookRow;
 import 'package:fushi/src/media/media_item.dart';
 import 'package:path/path.dart' as p;
 import 'package:url_launcher/url_launcher.dart' show LaunchMode, launchUrl;
@@ -263,21 +257,6 @@ final List<String> _pendingCardSourceUrls = <String>[];
 /// 完成前到达的先暂存，首帧后逐条弹确认框再配对
 /// （docs/specs/2026-09-28-interconnect-remote-reach.md §4）。
 final List<String> _pendingPairLinks = <String>[];
-
-/// 外部打开新视频时的自动封面锁边界。maintenance 已开始时 [action] 仍可按
-/// `allowAutoCover == false` 建立无封面的媒体行，但不得产生自动封面文件。
-Future<T> _runExternalVideoCoverMutation<T>(
-  Future<T> Function(bool allowAutoCover) action,
-) async {
-  final VideoScrapeOperationLease? lease =
-      VideoScrapeOperationGate.tryEnterOperation();
-  if (lease == null) return action(false);
-  try {
-    return await VideoCoverMutationGate.runExclusive<T>(() => action(true));
-  } finally {
-    lease.release();
-  }
-}
 
 /// Single source of truth for the status/navigation bar overlay style.
 ///
@@ -2533,76 +2512,12 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
 
     final VideoBookRepository repo = VideoBookRepository(appModel.database);
 
-    String bookUid;
     try {
-      bookUid = await _runExternalVideoCoverMutation((
-        bool allowAutoCover,
-      ) async {
-        // ② 去重：同一物理文件若已库内导入（`video/<basename>` 身份），复用其旧
-        // bookUid，不再派生 `video/ext/<sha1>` 第二身份插第二行。按 videoPath 命中
-        // 走仓库单一真相源 findByVideoPath（与 isDuplicateVideoPath 同比对语义）。
-        final VideoBookRow? sameFile = await repo.findByVideoPath(videoPath);
-        if (sameFile != null) return sameFile.bookUid;
-
-        final String candidateUid = externalVideoBookUid(videoPath);
-        final VideoBookRow? existing = await repo.getByBookUid(candidateUid);
-        if (existing != null) return candidateUid;
-
-        CoverMetaStore? coverMetaStore;
-        String? coverPath;
-        if (allowAutoCover) {
-          try {
-            final CoverMetaStore store = CoverMetaStore(
-              await VideoStorage.coversDir(),
-            );
-            if (await store.allowsAutoFrameWrite(candidateUid)) {
-              coverMetaStore = store;
-              // ① 封面：复用库内导入同款 extractVideoCover（桌面 ffmpeg 抽帧；移动端无
-              // ffmpeg 时返 null 留空占位）。仅新建外部条目时抽一次。
-              coverPath = await extractVideoCover(
-                videoPath: videoPath,
-                bookUid: candidateUid,
-              );
-            }
-          } on Object catch (error) {
-            // provenance 不可读时 fail closed：仍建无封面的媒体行。
-            debugPrint('[Fushi] external video cover admission failed: $error');
-          }
-        }
-        await repo.saveVideoBook(
-          VideoBooksCompanion(
-            bookUid: Value(candidateUid),
-            title: Value(p.basenameWithoutExtension(videoPath)),
-            videoPath: Value(videoPath),
-            coverPath: Value<String?>(coverPath),
-            importedAt: Value(DateTime.now().millisecondsSinceEpoch),
-          ),
-        );
-        if (coverPath != null && coverMetaStore != null) {
-          try {
-            final bool committed = await coverMetaStore.markAutoFrameAfterWrite(
-              candidateUid,
-            );
-            if (!committed) {
-              debugPrint(
-                '[Fushi] external video cover provenance changed during '
-                'automatic write: $candidateUid',
-              );
-            }
-          } on Object catch (error) {
-            debugPrint(
-              '[Fushi] external video cover provenance commit failed: '
-              '$error',
-            );
-          }
-        }
-        return candidateUid;
-      });
+      return (await upsertExternalVideoBook(repo, videoPath)).bookUid;
     } catch (e) {
       debugPrint('[Fushi] external video upsert failed: $e');
       return null;
     }
-    return bookUid;
   }
 
   void _scheduleWindowsUpdateHandoffReconcile() {

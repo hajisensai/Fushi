@@ -329,7 +329,8 @@ class SrsBrowseSourceGroup {
   /// 系列名：这一组是一个系列时非 null（[children] 是它的各集）。
   final String? seriesTitle;
 
-  /// 系列下的各集（按 [latestAddedAt] 降序，同值按键）；不是系列的组为空。「只看这一集」用集的 [key]
+  /// 系列下的各集（按集标题自然序，`第2話` < `第10話`，作品键兜底；内核 store/browse.rs `cmp_episode`）；
+  /// 不是系列的组为空。「只看这一集」用集的 [key]
   /// （[srsSourceQuery]，内核 `src:` 同时认系列键与作品键）。
   final List<SrsBrowseSourceGroup> children;
 
