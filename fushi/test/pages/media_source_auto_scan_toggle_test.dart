@@ -100,6 +100,10 @@ void main() {
     expect(find.byType(FushiLinearProgressIndicator), findsNothing);
 
     final Completer<void> hold = Completer<void>();
+    // 全局占用表跨用例共享：本用例中途失败也要放掉，不连累下一个变体。
+    addTearDown(() {
+      if (!hold.isCompleted) hold.complete();
+    });
     final Future<void> autoScan = sourceScanActivity.run(
       source,
       () => hold.future,
@@ -108,14 +112,17 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
     expect(find.byType(FushiLinearProgressIndicator), findsOneWidget);
 
+    // 扫描期间行底进度条是无限动画，pumpAndSettle 永远不会停：改有界 pump。
     await tester.tap(find.byKey(ValueKey<String>('media_source_menu_$source')));
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
     final PopupMenuItem<Object?> remove = tester.widget(
       find.byKey(ValueKey<String>('media_source_remove_$source')),
     );
     expect(remove.enabled, isFalse, reason: '扫描期间不许移除来源');
     await tester.tapAt(Offset.zero);
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
 
     hold.complete();
     await autoScan;
