@@ -113,7 +113,7 @@ public final class SystemOcrChannel {
 
     /**
      * 识别专用的单线程执行器：解码与等待识别结果都在这里，平台主线程不再碰页图像素；
-     * 单线程即串行，保证进程里同时至多一张送检位图（BUG-4658）。
+     * 单线程即串行，保证进程里同时至多一张送检位图（BUG-4705）。
      */
     private static final ExecutorService RECOGNIZE_EXECUTOR =
             Executors.newSingleThreadExecutor(runnable -> {
@@ -176,7 +176,7 @@ public final class SystemOcrChannel {
      * 一张识别完才解下一张）：整卷任务、悬浮球截屏、多本书的排队任务同时来请求时，进程里
      * 任何时刻只有一张送检位图。解码按 {@link SystemOcrImageBudget} 的像素上限降采样，
      * 回传的框放回原图坐标系，{@code width/height} 仍是原图尺寸——Dart 侧坐标契约不变
-     * （BUG-4658：以前在主线程全分辨率解码，大图把主线程卡死并撑爆内存）。
+     * （BUG-4705：以前在主线程全分辨率解码，大图把主线程卡死并撑爆内存）。
      */
     private static void handleRecognize(
             @NonNull Activity activity,
@@ -251,7 +251,7 @@ public final class SystemOcrChannel {
      * 下完）；或本机 Play 服务根本不可用——此时 ML Kit 报的是加载 dynamite 模块失败之类的
      * 内部错误（无 GMS 的 LineageOS 平板实测：「Failed to load deprecated vision dynamite
      * module」），以前被塌成 {@code RECOGNIZE_FAILED}，用户只看到一串英文异常，不知道是
-     * 设备缺 Play 服务（BUG-4658）。
+     * 设备缺 Play 服务（BUG-4705）。
      */
     private static boolean modelUnavailable(@NonNull Context context, @NonNull Throwable error) {
         if (error instanceof MlKitException

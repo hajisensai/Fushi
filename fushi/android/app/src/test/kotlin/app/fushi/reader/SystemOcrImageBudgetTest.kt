@@ -5,7 +5,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * BUG-4658：系统 OCR 送检位图的像素预算。以前全分辨率解码，8000×11300 的页图是 361 MB
+ * BUG-4705：系统 OCR 送检位图的像素预算。以前全分辨率解码，8000×11300 的页图是 361 MB
  * 位图，真机上主线程卡 1.1 s 并触发系统低内存杀进程。
  */
 class SystemOcrImageBudgetTest {

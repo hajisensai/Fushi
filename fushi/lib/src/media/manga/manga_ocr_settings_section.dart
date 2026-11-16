@@ -918,7 +918,7 @@ class _MangaOcrSettingsSectionState
     }
   }
 
-  /// 选中系统 OCR 时设备根本没有 Play 服务（BUG-4658）：选项保留、偏好照写，但
+  /// 选中系统 OCR 时设备根本没有 Play 服务（BUG-4705）：选项保留、偏好照写，但
   /// 立刻弹引导说明它在这台设备上跑不了、并指向本机模型——否则用户要等到开书
   /// 识别失败才知道。查不出来按「不确定」处理，不弹。
   Future<void> _guideSystemOcrIfPlayServicesAbsent() async {

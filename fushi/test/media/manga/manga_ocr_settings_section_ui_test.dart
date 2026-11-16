@@ -130,7 +130,7 @@ class _FakeSystemOcr implements SystemOcrMangaRunner {
 
   final bool available;
 
-  /// [modelStatus] 的回答（BUG-4658）。
+  /// [modelStatus] 的回答（BUG-4705）。
   final SystemOcrModelStatus status;
 
   @override
@@ -1515,7 +1515,7 @@ void main() {
     expect(storedEngine, 'auto');
   });
 
-  // BUG-4658：没有 Play 服务的设备上选项保留，选中后立刻弹引导（说明原因、指向
+  // BUG-4705：没有 Play 服务的设备上选项保留，选中后立刻弹引导（说明原因、指向
   // 本机模型），而不是等到开书识别失败才甩一句原始异常。
   for (final (SystemOcrModelStatus status, bool guides)
       in <(SystemOcrModelStatus, bool)>[

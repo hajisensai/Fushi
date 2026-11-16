@@ -65,7 +65,7 @@ SystemOcrSetupPhase systemOcrSetupPhaseFor(SystemOcrModelStatus status) =>
         SystemOcrSetupPhase.playServicesUnavailable,
     };
 
-/// 这一阶段要不要指向本机模型（BUG-4658）：只在设备根本没有可用 Play 服务时——
+/// 这一阶段要不要指向本机模型（BUG-4705）：只在设备根本没有可用 Play 服务时——
 /// 与 [SystemOcrModelStatus.playServicesAbsent] 同一组状态。停用 / 版本旧 / 正在更新
 /// 都是点一下就能修好的，那时推替代方案反而把用户从一步之遥的修复上引开。
 bool systemOcrSetupPhaseOffersLocalModel(SystemOcrSetupPhase phase) =>
@@ -204,7 +204,7 @@ class _SystemOcrSetupDialogState extends State<SystemOcrSetupDialog> {
         t.ocr_system_model_play_services_unavailable,
     };
     final SystemOcrPlayServicesDiagnostics? diagnostics = _playServices;
-    // 设备根本没有可用的 Play 服务时，系统 OCR 在这台设备上修不好（BUG-4658）：
+    // 设备根本没有可用的 Play 服务时，系统 OCR 在这台设备上修不好（BUG-4705）：
     // 不能只说「跑不了」，要给出能用的替代——不依赖 Play 服务的本机模型。
     final bool offerLocalModel = systemOcrSetupPhaseOffersLocalModel(_phase);
     final Widget recheck = FushiFilledButton(

@@ -1709,7 +1709,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 直读识别失败只提示一次（离线 / 源坏了时逐页失败会刷屏）。
   bool _streamOcrFailureNotified = false;
 
-  /// 本次打开阅读器已弹过系统 OCR 引导（BUG-4658）：直读逐页 / 整卷两条路径都
+  /// 本次打开阅读器已弹过系统 OCR 引导（BUG-4705）：直读逐页 / 整卷两条路径都
   /// 可能报同一个设备级原因，弹一次就够。
   bool _systemOcrSetupShown = false;
 
@@ -5049,7 +5049,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     );
   }
 
-  /// 系统 OCR 因「没有可用模型 / Play 服务」失败（BUG-4658）：弹本地化的引导弹窗
+  /// 系统 OCR 因「没有可用模型 / Play 服务」失败（BUG-4705）：弹本地化的引导弹窗
   /// （说明缺什么、能修的给修复入口、修不了的指向本机模型），不把原始异常
   /// `SystemOcrUnavailableException(model_unavailable)` 糊进 toast。返回 true = 已
   /// 由弹窗接管提示，调用方不必再弹 toast。

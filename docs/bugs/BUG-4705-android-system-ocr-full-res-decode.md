@@ -1,4 +1,4 @@
-## BUG-4658 · Android 系统 OCR 全分辨率解码在主线程、无上限，大图闪退；无 GMS 被报成识别失败
+## BUG-4705 · Android 系统 OCR 全分辨率解码在主线程、无上限，大图闪退；无 GMS 被报成识别失败
 - **报告**：2026-11-15（用户：应用内反馈 Rmgqer_zuf / z3gkQgGxYX / MHLc99lDy0 / KJJWhrQXFH，HONOR YLP-W00 平板，Android SDK 37，3.3.0 正式版。「2k 以上分辨率图片在 OCR 时闪退」「无法调用系统 OCR」，一晚崩几十次）
 - **真实性**：✅ 真 bug（结构缺陷已在真机复现到「主线程卡死 + 系统低内存杀进程」这一步；用户设备上的那一下 Java 崩溃本身没有栈，见备注）
   - 根因 1（大图）：`fushi/android/app/src/main/java/app/fushi/reader/SystemOcrChannel.java:160`（修前）——`handleRecognize` 在**平台主线程**上对每张页图 `BitmapFactory.decodeByteArray` **全分辨率**解码，没有任何像素上限，也不串行：一张 8000×11300 的页图就是 361 MB ARGB 位图。整卷任务、作品页 / 下载钩子排的多本任务、悬浮球截屏可以同时请求，每个请求各解一张。

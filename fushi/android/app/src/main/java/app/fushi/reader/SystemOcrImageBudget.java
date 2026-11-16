@@ -1,7 +1,7 @@
 package app.fushi.reader;
 
 /**
- * 系统 OCR 送检位图的内存预算（BUG-4658）。
+ * 系统 OCR 送检位图的内存预算（BUG-4705）。
  *
  * <p>以前 {@code SystemOcrChannel} 对每张页图直接 {@code BitmapFactory.decodeByteArray}
  * 全分辨率解码，而且就在平台主线程上：一张 8000×11300 的页图解出来是 361 MB 的 ARGB

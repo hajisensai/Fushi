@@ -182,7 +182,7 @@ class _FakeVolumeRunner
   Future<void> clearCache(String imageDirPath) async {}
 }
 
-/// 系统 OCR 引导弹窗的平台口：Play 服务没装（BUG-4658）。
+/// 系统 OCR 引导弹窗的平台口：Play 服务没装（BUG-4705）。
 class _NoPlayServicesSetup implements SystemOcrModelSetup {
   int statusCalls = 0;
 
@@ -908,7 +908,7 @@ void main() {
     });
   });
 
-  testWidgets('BUG-4658：系统 OCR 报 model_unavailable → 弹本地化引导弹窗（指向本机模型），不甩原始异常', (
+  testWidgets('BUG-4705：系统 OCR 报 model_unavailable → 弹本地化引导弹窗（指向本机模型），不甩原始异常', (
     WidgetTester tester,
   ) async {
     tester.view.physicalSize = const Size(600, 1000);

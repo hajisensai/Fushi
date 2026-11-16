@@ -63,7 +63,7 @@ class _FakeSystemOcr implements SystemOcrMangaRunner {
   final bool available;
   final bool throws;
 
-  /// [modelStatus] 的回答（BUG-4658）。
+  /// [modelStatus] 的回答（BUG-4705）。
   final SystemOcrModelStatus status;
   final bool statusThrows;
   final bool statusHangs;
@@ -203,7 +203,7 @@ void main() {
     });
   });
 
-  group('BUG-4658：没有 Play 服务时 auto 不选系统 OCR，选项与显式选择保留', () {
+  group('BUG-4705：没有 Play 服务时 auto 不选系统 OCR，选项与显式选择保留', () {
     for (final SystemOcrModelStatus absent in <SystemOcrModelStatus>[
       SystemOcrModelStatus.playServicesMissing,
       SystemOcrModelStatus.playServicesInvalid,

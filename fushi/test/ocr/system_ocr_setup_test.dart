@@ -547,7 +547,7 @@ void main() {
       );
     });
 
-    // BUG-4658：没有可用 Play 服务的设备上系统 OCR 修不好，弹窗要指向不依赖 Play
+    // BUG-4705：没有可用 Play 服务的设备上系统 OCR 修不好，弹窗要指向不依赖 Play
     // 服务的本机模型；能一键修好的情况不推替代方案。
     for (final (int code, bool offers) in <(int, bool)>[
       (1, true),

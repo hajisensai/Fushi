@@ -79,7 +79,7 @@ String _resultJson(int pages) => jsonEncode(<String, Object?>{
   ],
 });
 
-/// BUG-4658 用例：A 在跑，后面排着同书 / 别的书 / 别的引擎各一个。
+/// BUG-4705 用例：A 在跑，后面排着同书 / 别的书 / 别的引擎各一个。
 typedef _QueuedUp = ({
   MangaOcrJobRegistry registry,
   _FakeSource first,
@@ -407,7 +407,7 @@ void main() {
       await registry.cancelAll();
     });
 
-    group('BUG-4658：系统 OCR 报 model_unavailable 后放弃同引擎排队任务', () {
+    group('BUG-4705：系统 OCR 报 model_unavailable 后放弃同引擎排队任务', () {
       const SystemOcrUnavailableException modelUnavailable =
           SystemOcrUnavailableException(kSystemOcrModelUnavailableReason);
 
