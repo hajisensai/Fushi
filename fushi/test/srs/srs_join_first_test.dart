@@ -51,7 +51,6 @@ class _Device {
   }
 
   Future<SrsDbStore> _openStore() async => SrsDbStore.open(
-    db: srs.db,
     core: srs.core,
     profileUid: await db.profileUidOf(profileId),
     deviceId: deviceId,

@@ -462,10 +462,8 @@ class MangaDownloadService {
         case MangaDownloadJobStatus.done:
           final EpubBookRow? row = await _database.getEpubBook(bookKey);
           if (row != null &&
-              await isChapterDownloaded(
-                await MangaStorage.bookPath(row.bookKey),
-                chapter.key,
-              )) {
+              row.extractDir.isNotEmpty &&
+              await isChapterDownloaded(row.extractDir, chapter.key)) {
             return existing;
           }
       }
@@ -1134,7 +1132,8 @@ class MangaDownloadService {
       if (job.kind != MangaDownloadJobKind.chapter) return;
       final EpubBookRow? row = await _database.getEpubBook(job.bookKey);
       if (row == null) return;
-      final String bookDir = await MangaStorage.bookPath(row.bookKey);
+      final String bookDir = row.extractDir;
+      if (bookDir.isEmpty) return;
       if (await isChapterDownloaded(bookDir, job.chapterKey)) return;
       await deleteChapterDownload(bookDir, job.chapterKey);
     } on Object catch (error, stack) {
