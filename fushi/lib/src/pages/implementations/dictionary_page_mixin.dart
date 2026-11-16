@@ -223,12 +223,22 @@ mixin DictionaryPageMixin {
   get onSentenceContextPreviewToDraft => null;
 
   /// 「高级制卡」对话框里本页面提供的句子 / 音频 / 图片分区（契约见
-  /// [AdvancedMiningCapabilities]）。默认什么都不提供——对话框只有卡组分区。
-  /// 视频页覆写。[matched] 是查到的词在句中的表现形。
+  /// [AdvancedMiningCapabilities]）。默认只在有截屏识字卡图来源（[miningCardImage]，
+  /// 且偏好「截屏识字制卡带截图」开着）时给一个截图裁切分区（反馈 mOe5HjBtuG：像漫画
+  /// 那样调卡图），其余什么都不提供——对话框只有卡组分区。视频 / 漫画等页面覆写。
+  /// [matched] 是查到的词在句中的表现形。
   @protected
   Future<AdvancedMiningSections> buildAdvancedMiningSections({
     required String matched,
-  }) async => AdvancedMiningSections.none;
+  }) async {
+    final ScreenOcrCardImage? source = miningCardImage;
+    if (source == null || !mixinAppModel.prefsRepo.screenOcrCardImage) {
+      return AdvancedMiningSections.none;
+    }
+    return AdvancedMiningSections(
+      mangaImage: screenOcrAdvancedMiningImageSection(source),
+    );
+  }
 
   /// A popup search for [query] found entries ([result]); called once per
   /// search with a result, nested layers included. Default: nothing. The
@@ -674,18 +684,42 @@ mixin DictionaryPageMixin {
   @protected
   ScreenOcrCardImage? get miningCardImage => null;
 
-  /// 按 [miningCardImage] 裁出本次制卡的卡图；没有来源 / 偏好关着 / 裁不出返回 null。
-  Future<({String path, Directory dir})?> _prepareMiningCover() async {
+  /// 按 [miningCardImage] 裁出本次制卡的卡图；没有来源 / 偏好关着 / 裁不出 / 高级
+  /// 制卡选了「不要」返回 null。[overrides] 是「高级制卡」对话框的覆盖项（框选 / 打码
+  /// / 不要图，见 [resolveScreenOcrCardImagePlan]），一键「+」为 null。
+  Future<({String path, Directory dir})?> _prepareMiningCover(
+    MiningRequestOverrides? overrides,
+  ) async {
     final ScreenOcrCardImage? source = miningCardImage;
     if (source == null) return null;
     final AppModel model = mixinAppModel;
     if (!model.prefsRepo.screenOcrCardImage) return null;
-    return writeScreenOcrCardImage(source, imageTier: model.miningImageQuality);
+    final ScreenOcrCardImagePlan plan = resolveScreenOcrCardImagePlan(
+      overrides,
+    );
+    switch (plan.kind) {
+      case ScreenOcrCardImageKind.omit:
+        return null;
+      case ScreenOcrCardImageKind.auto:
+        return writeScreenOcrCardImage(
+          source,
+          imageTier: model.miningImageQuality,
+        );
+      case ScreenOcrCardImageKind.crop:
+        return writeScreenOcrCardImage(
+          source,
+          imageTier: model.miningImageQuality,
+          crop: plan.crop,
+          mosaic: plan.mosaic,
+        );
+    }
   }
 
   Future<MinePopupResult> onMineEntry(Map<String, String> fields) async {
     final repo = ref.read(ankiRepositoryProvider);
-    final ({String path, Directory dir})? cover = await _prepareMiningCover();
+    final ({String path, Directory dir})? cover = await _prepareMiningCover(
+      MiningRequestOverrides.readFrom(fields),
+    );
     try {
       return await _mineEntryWithCover(repo, fields, cover?.path);
     } finally {
@@ -763,7 +797,9 @@ mixin DictionaryPageMixin {
     Map<String, String> fields,
   ) async {
     final repo = ref.read(ankiRepositoryProvider);
-    final ({String path, Directory dir})? cover = await _prepareMiningCover();
+    final ({String path, Directory dir})? cover = await _prepareMiningCover(
+      MiningRequestOverrides.readFrom(fields),
+    );
     try {
       return await _updateEntryWithCover(repo, noteId, fields, cover?.path);
     } finally {
