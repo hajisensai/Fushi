@@ -1325,7 +1325,7 @@ String _mangaGestureJs({
           parseFloat(getComputedStyle(prevPage).marginBottom) > 0;
       page.style.marginTop = prevPage && !gapped ? (-1 / dpr) + 'px' : '';
     }
-    // 双页接缝同理（BUG-4715）：两页并排居中，页宽是小数像素，交界落在物理像素
+    // 双页接缝同理（BUG-4732）：两页并排居中，页宽是小数像素，交界落在物理像素
     // 中间，跨页中间透出一条竖缝。页宽对齐到物理像素，并让跨页里 DOM 靠后的那页
     // 向对面页压一个物理像素——margin-inline-start 跟着 .manga-spread 的 direction
     // 走，RTL / LTR 都朝向对面页。居中偏移本身可能是小数，有这一像素的重叠，交界

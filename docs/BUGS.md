@@ -33,15 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4070 条。点号进各自文件。
+> 共 4089 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4715](bugs/BUG-4715-manga-spread-seam.md) | ✅ | ✅ | 漫画双页模式两页之间有一条细缝 |
-> 共 4088 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4732](bugs/BUG-4732-manga-spread-seam.md) | ✅ | ✅ | 漫画双页模式两页之间有一条细缝 |
 | [BUG-4731](bugs/BUG-4731-ai-models-upstream-metadata.md) | ✅ | ✅ | AI 提供方选模型时丢掉上游给的显示名 / 收图能力 / 单价，只能手填 |
 | [BUG-4730](bugs/BUG-4730-macos-exit-mpv-callback-after-engine-shutdown.md) | ✅ | ✅ | 桌面退出时引擎先于 libmpv 回调收尾，mpv 核心线程回调进已释放跳板崩溃 |
 | [BUG-4729](bugs/BUG-4729-miui-swipeupclean-exit-misreport.md) | ✅ | ✅ | 小米 MIUI / HyperOS 在最近任务里划掉（SwipeUpClean）被误报为闪退 |
