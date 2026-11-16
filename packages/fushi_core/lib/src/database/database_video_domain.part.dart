@@ -2311,6 +2311,28 @@ mixin _FushiDbVideoDomain
             ]))
           .get();
 
+  /// 全部下载任务的文件行，一次读完按 `jobId` 分组；组内顺序与
+  /// [getVideoDownloadJobFiles] 相同。给「对每个任务看一眼它的文件」的批量路径用
+  /// ——逐任务调 [getVideoDownloadJobFiles] 是「任务数」次查询（BUG-4748）。
+  Future<Map<String, List<VideoDownloadJobFileRow>>>
+  getAllVideoDownloadJobFilesByJob() async {
+    final List<VideoDownloadJobFileRow> rows =
+        await (select(videoDownloadJobFiles)
+              ..orderBy(<OrderingTerm Function($VideoDownloadJobFilesTable)>[
+                ($VideoDownloadJobFilesTable t) =>
+                    OrderingTerm(expression: t.backendFileIndex),
+                ($VideoDownloadJobFilesTable t) =>
+                    OrderingTerm(expression: t.originalRelativePath),
+              ]))
+            .get();
+    final Map<String, List<VideoDownloadJobFileRow>> byJob =
+        <String, List<VideoDownloadJobFileRow>>{};
+    for (final VideoDownloadJobFileRow row in rows) {
+      (byJob[row.jobId] ??= <VideoDownloadJobFileRow>[]).add(row);
+    }
+    return byJob;
+  }
+
   Stream<List<VideoDownloadJobFileRow>> watchVideoDownloadJobFiles(
     String jobId,
   ) =>

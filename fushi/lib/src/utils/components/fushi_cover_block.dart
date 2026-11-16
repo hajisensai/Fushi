@@ -11,6 +11,7 @@ import 'package:fushi/src/utils/components/fushi_continue_card_row.dart';
 import 'package:fushi/src/utils/components/fushi_expressive_progress.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/nsfw_cover_blur.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -1065,7 +1066,7 @@ class _BlockGeometry {
   final int titleLines;
 }
 
-/// 带投影、裁圆角的一张封面。
+/// 带投影、裁圆角的一张封面。卡壳挂了要模糊的 [ShelfCoverNsfw] 时封面图打模糊。
 class _CoverCard extends StatelessWidget {
   const _CoverCard({required this.radius, required this.child});
 
@@ -1091,7 +1092,10 @@ class _CoverCard extends StatelessWidget {
         child: SizedBox.expand(
           child: ColoredBox(
             color: Theme.of(context).colorScheme.surfaceContainerHighest,
-            child: child,
+            child: NsfwCoverBlur(
+              blur: ShelfCoverNsfw.blurOf(context),
+              child: child,
+            ),
           ),
         ),
       ),

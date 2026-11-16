@@ -837,7 +837,7 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
     final RecommendedPackDownloadController controller = _packController;
     final RecommendedPackTutorialState tutorialState =
         RecommendedPackTutorialState(model.appDirectory);
-    // 推荐包恒合并导入（[importRecommendedPackFile]），不弹默认覆盖的通用确认框。
+    // 推荐包经 [importRecommendedPackFile] 导入：确认框照弹，但预选合并（不是覆盖）。
     await importRecommendedPackFile(
       model,
       filePath: path,
@@ -2001,6 +2001,8 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
         return FushiIcons.manga;
       case OnboardingFeature.video:
         return FushiIcons.video;
+      case OnboardingFeature.music:
+        return homeNavItemFor(HomeTab.music).icon;
       case OnboardingFeature.games:
         return FushiIcons.games;
       // 有 tab 的两个模块图标取底栏真值，与底栏/侧栏同一份。
@@ -2043,6 +2045,9 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
         return t.onboarding_feature_manga;
       case OnboardingFeature.video:
         return t.onboarding_feature_video;
+      // 标题取底栏标签（同一真值）。
+      case OnboardingFeature.music:
+        return homeNavItemFor(HomeTab.music).label;
       case OnboardingFeature.games:
         return t.onboarding_feature_games;
       // 新增的六个模块**零新增 i18n**：有 tab 的取底栏标签（同一真值），没 tab 的
@@ -2088,6 +2093,8 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
         return t.onboarding_feature_manga_hint;
       case OnboardingFeature.video:
         return t.onboarding_feature_video_hint;
+      case OnboardingFeature.music:
+        return t.onboarding_feature_music_hint;
       case OnboardingFeature.games:
         // 非 Windows 的 games 模块是串流接收端，旧提示「仅 Windows 的文本 hook」
         // 不适用。

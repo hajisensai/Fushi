@@ -79,10 +79,10 @@ ProcThreadStat? parseProcThreadStat(String stat) {
 }
 
 /// 线程名归组：数字折成 `#`（`fushi-rwkv-3` → `fushi-rwkv-#`、`DartWorker` 原样）。
-@visibleForTesting
 String threadGroupOf(String name) => name.replaceAll(RegExp(r'\d+'), '#');
 
-Map<int, ProcThreadStat> _readThreads() {
+/// 读本进程全部线程的 `/proc/self/task/*/stat`（tid → 读数）；没有 /proc 返回空表。
+Map<int, ProcThreadStat> readProcThreads() {
   final Map<int, ProcThreadStat> out = <int, ProcThreadStat>{};
   final Directory dir = Directory('/proc/self/task');
   final List<FileSystemEntity> tasks;
@@ -206,7 +206,7 @@ Map<int, ProcThreadStat> _lastThreads = <int, ProcThreadStat>{};
 /// 自启动以来的累计（[describeCumulativeCpu]）。
 String? threadCpuProbe() {
   if (!_hasProc) return null;
-  final Map<int, ProcThreadStat> now = _readThreads();
+  final Map<int, ProcThreadStat> now = readProcThreads();
   final String? delta = describeThreadCpuDelta(_lastThreads, now);
   _lastThreads = now;
   final String? sum = describeCumulativeCpu(_readProcessTicks(), now);
@@ -349,7 +349,7 @@ void maybeDumpNativeAttribution(
   if (!_hasProc) return;
   final String? trigger = nativeAttributionDumpTrigger(mallocMb, fileRssMb);
   if (trigger == null) return;
-  final Map<int, ProcThreadStat> threads = _readThreads();
+  final Map<int, ProcThreadStat> threads = readProcThreads();
   final String cpu =
       describeThreadCpuDelta(const <int, ProcThreadStat>{}, threads, top: 40) ??
       '-';

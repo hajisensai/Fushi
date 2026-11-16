@@ -60,7 +60,7 @@ pub(crate) fn setup() -> (Connection, i64) {
     let col = {
         let t = Truth::new(&conn);
         let col = bound(&t);
-        t.tx(|t| t.create_self(col, &OWN, &SEED, T0)).unwrap();
+        t.tx(|t| t.create_self(col, &OWN, &SEED, None, T0)).unwrap();
         col
     };
     (conn, col)
@@ -479,7 +479,8 @@ fn recording_a_fork_obeys_the_write_guards() {
     let b = crate::store::gen4::schema::open(&path).unwrap();
     let ta = Truth::new(&a);
     let col = crate::store::gen4::truth::tests::bound(&ta);
-    ta.tx(|t| t.create_self(col, &OWN, &SEED, T0)).unwrap();
+    ta.tx(|t| t.create_self(col, &OWN, &SEED, None, T0))
+        .unwrap();
     write_own(&ta, col, 6);
     let tb = Truth::new(&b);
     let me = tb.self_identity(col).unwrap().unwrap();
