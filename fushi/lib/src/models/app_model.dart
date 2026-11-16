@@ -14,6 +14,7 @@ import 'package:fushi/src/anki/mined_card_undo.dart';
 import 'package:fushi/src/corpus/library_corpus_service.dart';
 import 'package:fushi/src/leaderboard/leaderboard_paired_login.dart';
 import 'package:fushi/src/media/library_finish_marks.dart';
+import 'package:fushi/src/media/import/import_inbox.dart';
 import 'package:fushi/src/media/source_library/source_folder_access.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart'
     show applyBlurayDiscCollectionArtwork;
@@ -508,6 +509,8 @@ import 'package:fushi/src/media/audiobook/floating_lyric_context.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_style.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_routing.dart';
+import 'package:fushi/src/media/listening_reminder.dart'
+    show kListeningReminderNotificationPayload;
 import 'package:fushi/src/migration/migration_readonly.dart';
 import 'package:fushi/src/migration/migration_target_channel.dart';
 import 'package:fushi/src/models/audio_source_config.dart';
@@ -1714,13 +1717,15 @@ class AppModel
       : const NoopUpdateNotifier();
 
   /// 用户点了系统通知。先把窗口唤到前台——Windows 的 toast 激活只是回调进程，
-  /// 不会替我们把主窗拉起来。反馈回复通知 → 那条反馈的详情；其余是更新提醒：
+  /// 不会替我们把主窗拉起来。连续收听提醒 → 到此为止。反馈回复通知 → 那条反馈的详情；其余是更新提醒：
   /// 本体 / 「打开」→ 那条更新的落点（番剧 = 播放该集）；「查看更新」/ 载荷解不出 /
   /// 条目已被清 → 更新中心。
   Future<void> _onSystemNotificationResponse(
     UpdateNotificationResponse response,
   ) async {
     await DesktopLookupService.instance.bringMainWindowToFront();
+    // 连续收听提醒：唤到前台就是全部（提醒本身已经在通知里说完了）。
+    if (response.payload == kListeningReminderNotificationPayload) return;
     final BuildContext? context = navigatorKey.currentContext;
     if (context == null || !context.mounted) return;
     final String? feedbackId = decodeFeedbackNotificationPayload(
@@ -2391,6 +2396,10 @@ class AppModel
     FloatingLyricLookupNotifier.instance.lookupClosed.addListener(
       lookupPause.lookupClosed,
     );
+    // 制卡后「关闭弹窗、不续播」（拍板台 8ldy3d8XFA）：宿主关栈前先撤暂停标记。
+    FloatingLyricLookupNotifier.instance.lookupPauseDropped.addListener(
+      lookupPause.dropPauseMark,
+    );
     final MusicLyricsLive live = MusicLyricsLive(
       engine: engine,
       service: musicLyrics,
@@ -2421,6 +2430,7 @@ class AppModel
               // 反馈 1Mwaro8UTC：与全局查词卡同口径（floating_lyric_lookup_routing），
               // 制卡例句取被点的这一整行。
               sentence: text,
+              hostModule: ModuleId.music,
             );
           }());
         },
@@ -4947,6 +4957,29 @@ class AppModel
     // TODO-935 E0：三个数据根经唯一入口 [AppPaths] 解析（内部已honor测试分支
     // [fushiTestDirectory]，故行为与旧的 test/production 双分支逐字节等价）。
     _appPaths = await AppPaths.resolve();
+    // 拍板台 nLXhu0d7gV：iOS 书库搬出 Documents 时搬不动的条目要能被看见（下次启动重试）。
+    for (final String failure in AppPaths.iosDocumentsVacateFailures) {
+      ErrorLogService.instance.log(
+        'AppPaths.iosDocumentsVacateFailed',
+        failure,
+      );
+    }
+    // iOS 收件箱的分类子目录（「文件」App 里的 Books / Video / Manga）开机即建好，
+    // 用户第一次打开「我的 iPhone › Fushi」就知道往哪拖。best-effort：建不出来只是
+    // 少了引导，导入时会再建。
+    if (ImportInbox.isSupported) {
+      unawaited(
+        ImportInbox.ensureKindFolders(
+          await AppPaths.importInboxDirectory(),
+        ).catchError((Object e, StackTrace stack) {
+          ErrorLogService.instance.log(
+            'ImportInbox.ensureKindFolders',
+            e,
+            stack,
+          );
+        }),
+      );
+    }
     // TODO-1236：把上游 `fushi_audio` 的有声书持久根解析接到 `AppPaths`（它无法 import
     // AppPaths）。这样桌面自定义数据根生效后，有声书新导入落数据根下的 `audiobooks/`
     // （与 TODO-1226 迁移白名单一致），而不是落回平台 Documents。
@@ -13940,6 +13973,14 @@ class AppModel
   void toggleShowMediaNotification() => prefsRepo.toggleShowMediaNotification();
   Future<void> setShowMediaNotification(bool value) =>
       prefsRepo.setShowMediaNotification(value);
+
+  bool get listeningReminderEnabled => prefsRepo.listeningReminderEnabled;
+  Future<void> setListeningReminderEnabled({required bool value}) =>
+      prefsRepo.setListeningReminderEnabled(value: value);
+
+  int get listeningReminderMinutes => prefsRepo.listeningReminderMinutes;
+  Future<void> setListeningReminderMinutes(int value) =>
+      prefsRepo.setListeningReminderMinutes(value);
 
   bool get showFloatingLyric => prefsRepo.showFloatingLyric;
   Future<void> setShowFloatingLyric(bool value) =>

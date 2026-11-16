@@ -10,6 +10,7 @@ import 'package:flutter/services.dart';
 import 'package:fushi_core/fushi_core.dart' show kStatSourceBook;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/src/media/media_item.dart';
+import 'package:fushi/src/mining/after_mining_popup_action.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/pages/base_page.dart';
 import 'package:fushi_anki/fushi_anki.dart'
@@ -110,12 +111,13 @@ abstract class BaseSourcePage extends BasePage {
 abstract class BaseSourcePageState<T extends BaseSourcePage>
     extends BasePageState<T>
     implements PopupBodyWebViewProvider {
-  /// 本页所属的媒体模块，决定「底部停靠」按模块细分开关听哪一个
-  /// （[AppModel.popupBottomDockedFor]）。`null` = 听非模块宿主的开关。
-  ModuleId? get popupDockModule => null;
+  /// 本页所属的功能模块：「底部停靠」按模块细分开关听哪一个
+  /// （[AppModel.popupBottomDockedFor]，`null` = 听非模块宿主的开关），「制卡后行为」
+  /// 听哪一行（[afterMiningPopupAction]，`null` 归查词那行）。
+  ModuleId? get lookupHostModule => null;
 
-  /// 本页查词弹窗实际是否底部停靠（[popupDockModule] 自己的开关）。
-  bool get popupBottomDocked => appModel.popupBottomDockedFor(popupDockModule);
+  /// 本页查词弹窗实际是否底部停靠（[lookupHostModule] 自己的开关）。
+  bool get popupBottomDocked => appModel.popupBottomDockedFor(lookupHostModule);
 
   /// 本页正文 WebView 的 viewId（查词弹窗打开期间给它开静态硬件层，见
   /// [PopupBodyStaticLayerGate]）。正文不是 WebView 的宿主（PDF / 歌词页）保持 null；
@@ -1337,7 +1339,10 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         onMineEntry: cardCreationEnabled
             ? closePopupAfterAcceptedMine(
                 onMineFromPopup,
-                enabled: () => ReaderFushiSource.instance.closePopupAfterMining,
+                action: () => afterMiningPopupAction,
+                dropPauseMark: () {
+                  if (mounted) dropLookupPauseMark();
+                },
                 closeAll: () {
                   if (mounted) clearDictionaryResult();
                 },
@@ -1953,6 +1958,19 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   /// （[kStatSourceBook]）；视频走 [DictionaryPageMixin] 自己覆写，不经本基类。
   @protected
   String get dictionarySourceType => kStatSourceBook;
+
+  /// 本宿主的「制卡后行为」（拍板台 8ldy3d8XFA）：按 [lookupHostModule] 那一行取
+  /// [ReaderFushiSource.afterMiningPopupAction]，不属于任何一行的归查词那行。
+  @protected
+  AfterMiningPopupAction get afterMiningPopupAction => ReaderFushiSource
+      .instance
+      .afterMiningPopupAction(afterMiningPopupModuleFor(lookupHostModule));
+
+  /// 制卡后按「关闭弹窗、不续播」关栈之前调用：撤掉「因查词暂停」的标记、保持暂停，
+  /// 随后的关栈汇聚点（[clearDictionaryResult] → [onAllPopupsDismissed]）就不会续播。
+  /// 默认无事可做（没有查词暂停的宿主）；会因查词暂停播放的宿主覆写。
+  @protected
+  void dropLookupPauseMark() {}
 
   /// TODO-1204：本次查词归属的书身份（[bookKey] + [title]），供 per-book 查词计数。
   /// 阅读器（EPUB/有声书）覆写返回当前书（[title] 与阅读统计 tile 的 title 聚合键

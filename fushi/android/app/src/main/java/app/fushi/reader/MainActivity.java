@@ -170,6 +170,17 @@ public class MainActivity extends AudioServiceActivity {
         // 阅读器主窗口请求系统最高刷新率（收敛到共享 HighRefreshRate，与查词弹窗
         // PopupDictFlutterActivity / 悬浮窗共用同一实现，见 HighRefreshRate.java）。
         HighRefreshRate.applyToActivity(this);
+        // 「用其他应用打开」/ 分享进来的书（OpenWithChannel）。重建（savedInstanceState
+        // 非空）时 getIntent() 还是当初那个已经收过的 intent，不再收第二次。
+        if (savedInstanceState == null) {
+            OpenWithChannel.offer(this, getIntent());
+        }
+    }
+
+    @Override
+    protected void onNewIntent(@NonNull Intent intent) {
+        super.onNewIntent(intent);
+        OpenWithChannel.offer(this, intent);
     }
 
     // BUG-195: On API 26+ every View defaults to defaultFocusHighlightEnabled=true,
@@ -305,6 +316,7 @@ public class MainActivity extends AudioServiceActivity {
         }
         FloatingBallChannel.detach(getFlutterEngine());
         SecondScreenDisplay.detach();
+        OpenWithChannel.detach();
         ioExecutor.shutdownNow();
         super.onDestroy();
     }
@@ -641,6 +653,8 @@ public class MainActivity extends AudioServiceActivity {
         NetworkChangeChannel.registerWith(flutterEngine, getApplicationContext());
         // 上次进程退出原因 + onTrimMemory 记录（Dart previous_exit_log.dart 启动时读一次）。
         ProcessExitChannel.registerWith(flutterEngine, getApplicationContext());
+        // 「用其他应用打开」/ 分享进来的书：content:// 复制进缓存后交 Dart 入库。
+        OpenWithChannel.registerWith(flutterEngine, getApplicationContext());
         MigrationChannelHandler.registerWith(flutterEngine, getApplicationContext());
         DownloadKeepAliveService.registerWith(flutterEngine, getApplicationContext());
         // 全局悬浮球（系统常驻球 + 截屏 OCR）。传 Activity：申请悬浮窗权限 / 发起截屏确认
