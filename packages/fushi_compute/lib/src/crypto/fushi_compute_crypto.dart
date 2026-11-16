@@ -50,8 +50,8 @@ typedef _AacsDecryptC =
     Int32 Function(Pointer<Void>, Pointer<Uint8>, Size, Pointer<Size>);
 typedef _AacsDecryptDart =
     int Function(Pointer<Void>, Pointer<Uint8>, int, Pointer<Size>);
-typedef _EcbDecryptC = Int32 Function(Pointer<Uint8>, Pointer<Uint8>, Size);
-typedef _EcbDecryptDart = int Function(Pointer<Uint8>, Pointer<Uint8>, int);
+typedef _EcbC = Int32 Function(Pointer<Uint8>, Pointer<Uint8>, Size);
+typedef _EcbDart = int Function(Pointer<Uint8>, Pointer<Uint8>, int);
 typedef _CbcPkcs7C =
     Int32 Function(
       Pointer<Uint8>,
@@ -96,8 +96,12 @@ final class FushiComputeCrypto implements Finalizable {
             'ffc_crypto_aacs_decrypt_units',
             isLeaf: true,
           ),
-      _ecbDecrypt = lib.library.lookupFunction<_EcbDecryptC, _EcbDecryptDart>(
+      _ecbDecrypt = lib.library.lookupFunction<_EcbC, _EcbDart>(
         'ffc_crypto_aes128_ecb_decrypt',
+        isLeaf: true,
+      ),
+      _ecbEncrypt = lib.library.lookupFunction<_EcbC, _EcbDart>(
+        'ffc_crypto_aes128_ecb_encrypt',
         isLeaf: true,
       ),
       _cbcPkcs7 = lib.library.lookupFunction<_CbcPkcs7C, _CbcPkcs7Dart>(
@@ -133,7 +137,8 @@ final class FushiComputeCrypto implements Finalizable {
   final _AacsOpenDart _aacsOpen;
   final NativeFinalizer _aacsClose;
   final _AacsDecryptDart _aacsDecrypt;
-  final _EcbDecryptDart _ecbDecrypt;
+  final _EcbDart _ecbDecrypt;
+  final _EcbDart _ecbEncrypt;
   final _CbcPkcs7Dart _cbcPkcs7;
   final _CbcEncryptDart _cbcEncrypt;
   final _SyncFileDart _syncObfuscateFile;
@@ -177,8 +182,15 @@ final class FushiComputeCrypto implements Finalizable {
     }
   }
 
+  /// AES-128 ECB 原地加 [data]（长度须为 16 的倍数，填充由调用方做）。
+  void aes128EcbEncryptInPlace(Uint8List key, Uint8List data) =>
+      _ecbInPlace(_ecbEncrypt, 'ffc_crypto_aes128_ecb_encrypt', key, data);
+
   /// AES-128 ECB 原地解 [data]（长度须为 16 的倍数）。
-  void aes128EcbDecryptInPlace(Uint8List key, Uint8List data) {
+  void aes128EcbDecryptInPlace(Uint8List key, Uint8List data) =>
+      _ecbInPlace(_ecbDecrypt, 'ffc_crypto_aes128_ecb_decrypt', key, data);
+
+  void _ecbInPlace(_EcbDart op, String symbol, Uint8List key, Uint8List data) {
     if (key.length != 16) {
       throw ArgumentError.value(key.length, 'key', 'AES-128 needs 16 bytes');
     }
@@ -190,10 +202,10 @@ final class FushiComputeCrypto implements Finalizable {
     final Pointer<Uint8> buf = _scratchFor(data.length);
     final Uint8List view = buf.asTypedListOutOfLine(data.length)
       ..setAll(0, data);
-    final int code = _ecbDecrypt(_keyBuf, buf, data.length);
+    final int code = op(_keyBuf, buf, data.length);
     _keyBuf.asTypedListOutOfLine(32).fillRange(0, 32, 0);
     if (code != FfcStatus.ok) {
-      throw StateError('ffc_crypto_aes128_ecb_decrypt: $code');
+      throw StateError('$symbol: $code');
     }
     data.setAll(0, view);
   }

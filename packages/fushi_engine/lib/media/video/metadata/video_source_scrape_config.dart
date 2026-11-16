@@ -42,6 +42,13 @@ const int kVideoMetadataMaxStaffImages = 10;
 const String kVideoAniDbUsernamePref = 'video_anidb_username';
 const String kVideoAniDbPasswordPref = 'video_anidb_password';
 
+/// AniDB 个人资料里自设的 UDP API Key：UDP 登录走 ENCRYPT 会话加密，没有它
+/// 不登录（不回退明文）。
+const String kVideoAniDbUdpApiKeyPref = 'video_anidb_udp_api_key';
+
+/// 哈希识别开关的默认值：开（UDP 已加密）。只在账号 / Key 填齐后才真的跑。
+const bool kVideoAniDbHashEnabledDefault = true;
+
 /// 全局主资料源偏好（`anidb` / `mal` / `tmdb`）。2026-09-20 用户拍板对齐 Shoko：
 /// 默认 **AniDB 为主源**（哈希给出的 aid 直接就是作品身份，anime XML 出核心资料
 /// 与全集播出日），TMDB 补充 / 兜底；MAL 保留为可选主源（MAL ↔ TMDB 互为兜底），
@@ -100,9 +107,10 @@ class VideoSourceScrapeGlobalConfig {
     this.anidbClientVersion,
     this.anidbHttpClientName = '',
     this.anidbHttpClientVersion,
-    this.hashEnabled = false,
+    this.hashEnabled = kVideoAniDbHashEnabledDefault,
     this.anidbUsername = '',
     this.anidbPassword = '',
+    this.anidbUdpApiKey = '',
     this.locale = kFallbackVideoMetadataLocale,
     this.followsWorkOriginalLanguage = false,
     this.primaryProvider = kDefaultVideoMetadataPrimaryProvider,
@@ -153,9 +161,11 @@ class VideoSourceScrapeGlobalConfig {
   final bool hashEnabled;
   final String anidbUsername;
   final String anidbPassword;
+  final String anidbUdpApiKey;
   AnidbUdpConfig get anidbUdpConfig => AnidbUdpConfig(
     username: anidbUsername,
     password: anidbPassword,
+    apiKey: anidbUdpApiKey,
     clientName: anidbClientName,
     clientVersion: anidbClientVersion ?? 0,
   );
@@ -183,6 +193,7 @@ class VideoSourceScrapeGlobalConfig {
     hashEnabled,
     anidbUsername,
     anidbPassword,
+    anidbUdpApiKey,
     locale,
     followsWorkOriginalLanguage,
     primaryProvider.name,
@@ -270,12 +281,19 @@ class VideoSourceScrapeGlobalConfig {
       anidbHttpClientName: clients.http.name,
       anidbHttpClientVersion: clients.http.version,
       hashEnabled:
-          preferences.getPref(kVideoAniDbHashEnabledPref, defaultValue: false)
+          preferences.getPref(
+                kVideoAniDbHashEnabledPref,
+                defaultValue: kVideoAniDbHashEnabledDefault,
+              )
               as bool,
       anidbUsername: read(kVideoAniDbUsernamePref),
       // Password whitespace is significant; do not apply the display-string trimmer.
       anidbPassword:
           preferences.getPref(kVideoAniDbPasswordPref, defaultValue: '')
+              as String,
+      // 同密码：空白有意义，不 trim。
+      anidbUdpApiKey:
+          preferences.getPref(kVideoAniDbUdpApiKeyPref, defaultValue: '')
               as String,
       locale: locale.isEmpty ? uiLocale : locale,
       followsWorkOriginalLanguage:

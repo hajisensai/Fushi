@@ -79,6 +79,7 @@ abstract final class PrefRedactionPolicy {
     'network_proxy_username',
     'video_anidb_username',
     'video_anidb_password',
+    'video_anidb_udp_api_key',
     // 第三方服务 API key（都被 `api_key` 子串覆盖，显式列出以便审计时一眼看全）。
     'yomitan_api_key',
     'jimaku_api_key',

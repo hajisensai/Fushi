@@ -13,6 +13,7 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_transport.dart'
 const AnidbUdpConfig config = AnidbUdpConfig(
   username: 'testuser',
   password: 'secret',
+  apiKey: 'udp-key',
   clientName: 'testclient',
   clientVersion: 1,
 );
@@ -69,6 +70,7 @@ void main() {
         config: const AnidbUdpConfig(
           username: '',
           password: '',
+          apiKey: 'udp-key',
           clientName: '',
           clientVersion: 0,
         ),
