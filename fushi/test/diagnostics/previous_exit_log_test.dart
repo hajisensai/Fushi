@@ -611,6 +611,25 @@ void main() {
       expect(v.summary, contains('界面可见性切换'));
     });
 
+    test('超长 trace 摘要被截断时 uiAtDeath 标签仍在条目里', () {
+      final Map<String, Object?> r = record(
+        pid: 19272,
+        importance: 125,
+        reason: 'CRASH_NATIVE',
+      )..['trace'] = 'x' * (kExitSummaryMaxChars * 2);
+      final List<ExitReportEntry> entries = formatAndroidExitReports(
+        <Object?, Object?>{
+          'reasons': <Object?>[r],
+          'uiEvents': <Object?>[ui(19272, visible: false, at: 4000)],
+        },
+      );
+      final ExitReportEntry entry = entries.firstWhere(
+        (ExitReportEntry e) => e.source == kAndroidExitInfoSource,
+      );
+      expect(entry.text.length, lessThanOrEqualTo(kExitSummaryMaxChars + 64));
+      expect(entry.text, contains('uiAtDeath=hidden'));
+    });
+
     test('原生说界面已隐藏，压过停在 resumed 的会话标记（125）', () async {
       final PreviousExitVerdict? v = await verdictFor(
         lifecycle: 'resumed',

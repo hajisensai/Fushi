@@ -840,14 +840,6 @@ List<ExitReportEntry> formatAndroidExitReports(
         ..write(
           'at=${r['timestamp'] is int ? _iso(r['timestamp'] as int) : r['timestamp']}',
         );
-      final Object? description = r['description'];
-      if (description is String && description.isNotEmpty) {
-        b.write('\ndescription: $description');
-      }
-      final Object? trace = r['trace'];
-      if (trace is String && trace.isNotEmpty) {
-        b.write('\ntrace summary:\n$trace');
-      }
       final Object? importance = r['importance'];
       final Object? timestamp = r['timestamp'];
       final Object? pid = r['pid'];
@@ -865,6 +857,16 @@ List<ExitReportEntry> formatAndroidExitReports(
           : null;
       if (uiVisible != null) {
         b.write('\nuiAtDeath=${_uiVisibilityLabel(uiVisible)}');
+      }
+      // uiAtDeath 先于 description / trace 写入：长 trace 摘要会被 _cap 截断，
+      // 判定标签必须留在截断点之前。
+      final Object? description = r['description'];
+      if (description is String && description.isNotEmpty) {
+        b.write('\ndescription: $description');
+      }
+      final Object? trace = r['trace'];
+      if (trace is String && trace.isNotEmpty) {
+        b.write('\ntrace summary:\n$trace');
       }
       out.add(
         ExitReportEntry(
