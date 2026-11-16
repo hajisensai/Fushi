@@ -20,6 +20,7 @@
 #include "fushidicts/query.hpp"
 #include "fushidicts/popup_json.hpp"
 #include "fushidicts/tokenize.hpp"
+#include "fushidicts/upgrade.hpp"
 #include <utf8.h>
 #include <zstd.h>
 
@@ -448,6 +449,22 @@ int32_t fushidicts_ensure_redirect_flag(const char* dir) {
         return static_cast<int32_t>(ensure_redirect_glossary_flag(std::string(dir)));
       },
       []() -> int32_t { return -1; });
+}
+
+// 存量词典原地升级（语义见 fushidicts/upgrade.hpp）：0 已是最新 / 1 已升级 /
+// 2 不适用（留在旧式、照常可用）/ -1 失败（词典原样可用）。不需要句柄；只创建新文件、
+// 改名提交，绝不改动已有文件，所以引擎正装着这本词典时也可以调。升级要读遍索引与
+// 记录、写一份新索引（大词典百毫秒级），宿主应在后台 isolate 调用。新索引在下一次
+// add_*_dict 装载时生效。
+FUSHI_EXPORT
+int32_t fushidicts_upgrade_dictionary(const char* dict_dir, int32_t allow_meta_rewrite) {
+  return ffi_guard_or(
+      "fushidicts_upgrade_dictionary",
+      [&]() -> int32_t {
+        if (!dict_dir) return static_cast<int32_t>(fushidicts::UpgradeResult::Failed);
+        return static_cast<int32_t>(fushidicts::upgrade_dictionary(std::string(dict_dir), allow_meta_rewrite != 0));
+      },
+      []() -> int32_t { return static_cast<int32_t>(fushidicts::UpgradeResult::Failed); });
 }
 
 // ── query handle ────────────────────────────────────────────────────

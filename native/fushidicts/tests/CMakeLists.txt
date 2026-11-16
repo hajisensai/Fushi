@@ -395,3 +395,20 @@ add_test(NAME decompressor_null_guard_test
 # directories / pre-built zips on argv (no self-contained fixture), so they are
 # NOT auto-registered as no-arg ctest cases. dict_name_uaf_e2e_test below is the
 # self-contained, fixture-driven successor that covers the same BUG-052 path.
+
+# key.index / type 3 meta 记录 / 存量词典原地升级（hash/dict_index.hpp、json/meta_record.hpp、
+# fushidicts/upgrade.hpp）：旧式 / 旧式+升级 / 新式三种状态 lookup、query、query_kanji
+# 逐字段相同（有无联合过滤器、混装）；核对记录上的键（假候选、A 指向 B 的记录）；
+# 升级幂等、遗留临时文件 / 孤儿 blobs3.bin、key.index 损坏回退、引擎装着词典时升级。
+# C ABI 入口 fushidicts_upgrade_dictionary 经真实导出符号调，所以编进 fushidicts_ffi.cpp。
+add_executable(dict_upgrade_test
+    "${CMAKE_CURRENT_SOURCE_DIR}/dict_upgrade_test.cpp"
+    "${FUSHI_ROOT}/fushidicts_ffi.cpp")
+target_link_libraries(dict_upgrade_test PRIVATE fushidicts libzstd_static Threads::Threads)
+target_include_directories(dict_upgrade_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}" "${FUSHI_SRC}")
+if(MSVC)
+  target_compile_options(dict_upgrade_test PRIVATE /utf-8 /Zc:__cplusplus /permissive-)
+endif()
+add_test(NAME dict_upgrade_test
+         COMMAND dict_upgrade_test
+                 "${FUSHI_ROOT}/../../fushi/assets/transforms/ja.json")

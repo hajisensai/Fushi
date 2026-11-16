@@ -82,6 +82,7 @@ add_library(fushidicts STATIC
     fushidicts_src/zip/zip.cpp
     fushidicts_src/json/yomitan_parser.cpp
     fushidicts_src/json/meta_record.cpp
+    fushidicts_src/upgrade.cpp
     fushidicts_src/mdx/mdx_reader.cpp
     fushidicts_src/stardict/stardict_reader.cpp
     fushidicts_src/text_processor/text_processor.cpp

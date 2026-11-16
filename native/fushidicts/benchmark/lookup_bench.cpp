@@ -10,6 +10,10 @@
 //       [--stages]         另外单量 文本预处理 / 预处理 + 变形还原 两段
 //       [--dump <文件>]    把每次查词的完整结果写进文件（改引擎前后 diff 用）
 //       [--union <目录>]   先同步准备联合过滤器（目录 = 缓存目录；写 mem = 只在内存建）
+//       [--upgrade]        不查词：对清单里每本词典调 fushidicts::upgrade_dictionary
+//                          （允许 meta 重写；--upgrade-index-only 只换索引），打印每本的
+//                          结果与耗时、总耗时、升级前后索引文件与记录文件的总字节数。
+//                          **会改写词典目录**，只对副本用。
 //
 // manifest.tsv：每行 `类型<TAB>词典目录[<TAB>备注]`，类型取 term / frequency / pitch
 // （与 app 的 dictionary_metadata.type 同词），行序 = 注册顺序。
@@ -24,6 +28,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <numeric>
@@ -34,6 +39,7 @@
 #include "fushidicts/deinflector.hpp"
 #include "fushidicts/lookup.hpp"
 #include "fushidicts/query.hpp"
+#include "fushidicts/upgrade.hpp"
 #include "scan/word_scan.hpp"
 #include "text_processor/text_processor.hpp"
 
@@ -184,13 +190,66 @@ double elapsed_us(Clock::time_point start) {
   return std::chrono::duration<double, std::micro>(Clock::now() - start).count();
 }
 
+// 词典目录里索引文件（key.index + hash.table + bloom.filter）与记录文件（blobs.bin +
+// blobs3.bin）的字节数。
+struct DirBytes {
+  uint64_t index = 0;
+  uint64_t records = 0;
+};
+
+DirBytes dir_bytes(const std::string& dir) {
+  DirBytes out;
+  const auto size_of = [&](const char* name) -> uint64_t {
+    std::error_code ec;
+    const auto n = std::filesystem::file_size(std::filesystem::u8path(dir + "/" + name), ec);
+    return ec ? 0 : static_cast<uint64_t>(n);
+  };
+  out.index = size_of("key.index") + size_of("hash.table") + size_of("bloom.filter");
+  out.records = size_of("blobs.bin") + size_of("blobs3.bin");
+  return out;
+}
+
+int run_upgrade(const std::vector<std::string>& dirs, bool allow_meta_rewrite) {
+  const char* names[] = {"failed", "up-to-date", "upgraded", "not-applicable"};
+  DirBytes before_total;
+  DirBytes after_total;
+  int failures = 0;
+  const auto all_start = Clock::now();
+  for (const std::string& dir : dirs) {
+    const DirBytes before = dir_bytes(dir);
+    const auto start = Clock::now();
+    fushidicts::UpgradeResult r = fushidicts::UpgradeResult::Failed;
+    try {
+      r = fushidicts::upgrade_dictionary(dir, allow_meta_rewrite);
+    } catch (const std::exception& e) {
+      std::fprintf(stderr, "%s: exception %s\n", dir.c_str(), e.what());
+    }
+    const double ms = elapsed_us(start) / 1000.0;
+    const DirBytes after = dir_bytes(dir);
+    if (r == fushidicts::UpgradeResult::Failed) failures++;
+    std::printf("upgrade %-50s %-14s %9.1f ms | index %11llu -> %11llu | records %11llu -> %11llu\n", dir.c_str(),
+                names[static_cast<int>(r) + 1], ms, static_cast<unsigned long long>(before.index),
+                static_cast<unsigned long long>(after.index), static_cast<unsigned long long>(before.records),
+                static_cast<unsigned long long>(after.records));
+    before_total.index += before.index;
+    before_total.records += before.records;
+    after_total.index += after.index;
+    after_total.records += after.records;
+  }
+  std::printf("upgrade total %.1f ms | index bytes %llu -> %llu | record bytes %llu -> %llu | failures %d\n",
+              elapsed_us(all_start) / 1000.0, static_cast<unsigned long long>(before_total.index),
+              static_cast<unsigned long long>(after_total.index), static_cast<unsigned long long>(before_total.records),
+              static_cast<unsigned long long>(after_total.records), failures);
+  return failures == 0 ? 0 : 1;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
   if (argc < 4) {
     std::fprintf(stderr,
                  "usage: %s <manifest.tsv> <transforms dir> <corpus.txt> [--iters N] [--scan N] [--max N] "
-                 "[--window N] [--no-materialize] [--stages] [--dump file] [--union dir|mem]\n",
+                 "[--window N] [--no-materialize] [--stages] [--dump file] [--union dir|mem] [--upgrade|--upgrade-index-only]\n",
                  argv[0]);
     return 1;
   }
@@ -206,6 +265,7 @@ int main(int argc, char** argv) {
   std::string dump_path;
   bool use_union = false;
   std::string union_dir;
+  int upgrade = 0;  // 0 不升级 / 1 允许 meta 重写 / 2 只换索引
   for (int i = 4; i < argc; i++) {
     const std::string_view arg = argv[i];
     const auto next = [&]() -> const char* { return i + 1 < argc ? argv[++i] : "0"; };
@@ -227,7 +287,23 @@ int main(int argc, char** argv) {
       use_union = true;
       union_dir = next();
       if (union_dir == "mem") union_dir.clear();
+    } else if (arg == "--upgrade") {
+      upgrade = 1;
+    } else if (arg == "--upgrade-index-only") {
+      upgrade = 2;
     }
+  }
+
+  if (upgrade != 0) {
+    std::vector<std::string> dirs;
+    for (const std::string& line : split_lines(read_file(manifest_path))) {
+      const size_t tab = line.find('\t');
+      if (tab == std::string::npos) continue;
+      size_t tab2 = line.find('\t', tab + 1);
+      if (tab2 == std::string::npos) tab2 = line.size();
+      dirs.push_back(line.substr(tab + 1, tab2 - tab - 1));
+    }
+    return run_upgrade(dirs, upgrade == 1);
   }
 
   DictionaryQuery query;
