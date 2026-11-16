@@ -60,9 +60,12 @@ String _forumSearchPage() => '''
 <tr class="bg"><td class="nam"></td></tr>
 </table></body></html>''';
 
-String _forumDetailPage() =>
+/// [_torrentBytes] 的真实 v1 info hash（SHA-1 of info 字典）。
+const String _forumTorrentHash = 'f1f8e0f23ab55ccac8b08d1a11a41f535c2f60d0';
+
+String _forumDetailPage(String hash) =>
     '''
-<html><body><ul><li class="hash">Инфо хеш: ${_hash.toUpperCase()}</li></ul>
+<html><body><ul><li class="hash">Инфо хеш: ${hash.toUpperCase()}</li></ul>
 <a href="https://dl.forum.example/download.php?id=42">скачать</a></body></html>''';
 
 /// 一个最小合法种子（单文件，1 字节）。
@@ -81,6 +84,7 @@ MockClient _forumSite(
   _Recorded rec, {
   int searchStatus = 200,
   bool emptyResults = false,
+  String detailHash = _forumTorrentHash,
 }) => MockClient((http.Request request) async {
   rec.requests.add(request);
   final Uri url = request.url;
@@ -99,7 +103,10 @@ MockClient _forumSite(
     );
   }
   if (url.host == 'forum.example' && url.path == '/details.php') {
-    return http.Response.bytes(encodeWindows1251(_forumDetailPage()), 200);
+    return http.Response.bytes(
+      encodeWindows1251(_forumDetailPage(detailHash)),
+      200,
+    );
   }
   if (url.host == 'dl.forum.example' && url.path == '/download.php') {
     if (request.headers['Cookie'] != 'uid=1; pass=secret') {
@@ -362,6 +369,7 @@ void main() {
 
       final TorrentAddPayload payload = await provider.resolve(candidate);
       expect(payload, isA<TorrentMetainfoPayload>());
+      expect(payload.torrentId, _forumTorrentHash);
       final http.BaseRequest download = rec.requests.last;
       expect(download.url.host, 'dl.forum.example');
       expect(
@@ -376,6 +384,19 @@ void main() {
       final VideoResourceProvider provider = createBtSiteResourceProvider(
         _forumSite0(cookie: 'uid=1; pass=expired'),
         _forumSite(_Recorded()),
+      )!;
+      final ProviderBatchResult<VideoResourceCandidate> result = await provider
+          .search(VideoResourceSearchRequest(media: _matrix));
+      await expectLater(
+        provider.resolve(result.items.single),
+        throwsA(isA<FormatException>()),
+      );
+    });
+
+    test('详情页声明的 infoHash 与种子不符：拒收', () async {
+      final VideoResourceProvider provider = createBtSiteResourceProvider(
+        _forumSite0(),
+        _forumSite(_Recorded(), detailHash: _hash),
       )!;
       final ProviderBatchResult<VideoResourceCandidate> result = await provider
           .search(VideoResourceSearchRequest(media: _matrix));
