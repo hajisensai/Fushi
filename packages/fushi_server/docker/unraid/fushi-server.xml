@@ -7,8 +7,8 @@
 
   Install by hand: copy this file to /boot/config/plugins/dockerMan/templates-user/
   on the Unraid flash drive, then Docker → Add Container → Template: fushi-server.
-  Unraid runs containers as root, so PUID/PGID default to Unraid's nobody:users
-  (99:100), the usual owner of /mnt/user shares.
+  The image never runs as root: Extra Parameters sets the user to 99:100, Unraid's nobody:users
+  (the usual owner of /mnt/user shares). The appdata folder must be writable by it.
 -->
 <Container version="2">
   <Name>fushi-server</Name>
@@ -24,7 +24,7 @@
   <WebUI>https://[IP]:[PORT:38780]/</WebUI>
   <TemplateURL/>
   <Icon/>
-  <ExtraParams/>
+  <ExtraParams>--user 99:100</ExtraParams>
   <PostArgs/>
   <Requires>Pair devices by address (IP:38765): the container does not appear in the app's LAN list.</Requires>
   <Config Name="Interconnect port" Target="38765" Default="38765" Mode="tcp" Description="Pairing, sync and streaming (TLS). Enter IP:port in the Fushi app." Type="Port" Display="always" Required="true" Mask="false">38765</Config>
@@ -33,8 +33,6 @@
   <Config Name="Torrent port (UDP)" Target="6881" Default="6881" Mode="udp" Description="Embedded torrent engine." Type="Port" Display="advanced" Required="false" Mask="false">6881</Config>
   <Config Name="Config" Target="/config" Default="/mnt/user/appdata/fushi-server" Mode="rw" Description="Config, database, pairing identity, covers and logs. Back this up." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/fushi-server</Config>
   <Config Name="Media" Target="/media" Default="/mnt/user/media" Mode="rw" Description="Your media. Add libraries in the WebUI as paths under /media, e.g. /media/anime." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/media</Config>
-  <Config Name="PUID" Target="PUID" Default="99" Mode="" Description="Owner of the config folder (99 = nobody)." Type="Variable" Display="advanced" Required="true" Mask="false">99</Config>
-  <Config Name="PGID" Target="PGID" Default="100" Mode="" Description="Group of the config folder (100 = users)." Type="Variable" Display="advanced" Required="true" Mask="false">100</Config>
   <Config Name="Language" Target="FUSHI_LANGUAGE" Default="en|zh" Mode="" Description="WebUI, CLI and log language on the first start. Change it later in WebUI Settings." Type="Variable" Display="always" Required="false" Mask="false">en</Config>
   <Config Name="Device name" Target="FUSHI_DEVICE_NAME" Default="Fushi Server" Mode="" Description="Name shown to paired devices (first start)." Type="Variable" Display="advanced" Required="false" Mask="false">Fushi Server</Config>
   <Config Name="Time zone" Target="TZ" Default="Etc/UTC" Mode="" Description="e.g. Europe/Berlin" Type="Variable" Display="advanced" Required="false" Mask="false">Etc/UTC</Config>

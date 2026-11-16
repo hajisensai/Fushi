@@ -158,8 +158,9 @@ docker compose logs fushi-server # 首次启动打印 admin_token；配对时 PI
   首次启动由 `fushi_server init` 生成配置（`data_dir: /config/data`、随机 admin_token）。备份这一个目录即可。
 - **媒体库**：媒体目录挂到 `/media`（`FUSHI_MEDIA_DIR`），在 WebUI「库」里或 `libraries[]` 里按容器内
   路径添加（如 `/media/anime`，kind `video`）。
-- **权限**：容器以 root 起动，只把 `/config` 的属主改成 `PUID:PGID`（属主不对时才递归），然后
-  `setpriv` 永久降权运行；媒体目录不改属主，只需对 `PUID` 可读（上传落盘的库根要可写）。
+- **权限**：镜像不以 root 运行（默认 1000:1000，compose 用 `.env` 的 `PUID:PGID` 作 `user:`），也不改任何
+  文件属主：配置目录要对该用户可写，媒体目录可读（上传落盘的库根要可写）。首次启动前先以自己的用户
+  `mkdir -p config media`，否则 Docker 会以 root 建目录；目录不可写时日志会给出 `chown` 命令。
   `docker compose exec fushi-server fushi_server ctl …` 同样以 `PUID:PGID` 运行。
 - **端口**：38765（互联，TLS）、38780（WebUI / admin API，`https://`）、6881 tcp+udp（内置 torrent）。
   宿主侧端口可在 `.env` 改（`FUSHI_SYNC_PORT` / `FUSHI_WEBUI_PORT` / `FUSHI_TORRENT_PORT`），同机已有桌面 Fushi

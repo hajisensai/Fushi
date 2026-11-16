@@ -14,16 +14,18 @@ downloads, WebUI) in a container. Commands below run from this directory
 
    | Setting | What to put |
    |---|---|
-   | `PUID` / `PGID` | Your user on the host (`id -u`, `id -g`). Files in the config folder belong to it. |
+   | `PUID` / `PGID` | Your user on the host (`id -u`, `id -g`). The container runs as this user, never as root. |
    | `FUSHI_CONFIG_DIR` | Where config, database and logs live (default `./config`). Back this up. |
    | `FUSHI_MEDIA_DIR` | Your media folder; inside the container it is `/media`. |
    | `FUSHI_LANGUAGE` | `en` or `zh`: WebUI, CLI and log language on the first start. |
    | `FUSHI_SYNC_PORT` / `FUSHI_WEBUI_PORT` / `FUSHI_TORRENT_PORT` | Host ports, if the defaults (38765 / 38780 / 6881) are taken. |
    | `TZ` | Your time zone, e.g. `Europe/Berlin`. |
 
-2. **Start.**
+2. **Start.** Create the folders first as your own user. If Docker creates a
+   missing folder, root owns it and the server cannot write there.
 
    ```bash
+   mkdir -p config media      # or the folders you set in .env
    docker compose up -d --build
    ```
 
@@ -91,9 +93,10 @@ Both builds give the same container: same settings, volumes and ports.
 - **Language.** `FUSHI_LANGUAGE` only applies to the first start. Change it later
   in WebUI → Settings → Language. A one-off CLI command in the other language:
   `docker compose exec fushi-server env FUSHI_CLI_LANGUAGE=zh fushi_server ctl status`.
-- **Permissions.** The container starts as root only to give the config folder
-  to `PUID:PGID`, then drops privileges for good. Media folders are never
-  re-owned; they only need to be readable by `PUID` (writable for upload targets).
+- **Permissions.** The container runs as `PUID:PGID` from the start and never
+  changes file ownership. The config folder must be writable by that user, media
+  folders readable (writable for upload targets). If the config folder is not
+  writable, the log says so and shows the `chown` command to fix it.
 - **API keys.** `FUSHI_*` keys in `.env` (OpenSubtitles, SubDL, Jimaku, AniDB,
   Bangumi, Plex) take precedence over keys saved in the server. `.env` is
   git-ignored; never put keys in a Dockerfile.
@@ -105,7 +108,8 @@ Both builds give the same container: same settings, volumes and ports.
 ## NAS
 
 - **Unraid:** [`unraid/fushi-server.xml`](unraid/fushi-server.xml) is a template
-  for a prebuilt image (Docker → Add Container → Template). Until prebuilt images
+  for a prebuilt image (Docker → Add Container → Template). It runs as
+  `nobody:users` (99:100, set in Extra Parameters). Until prebuilt images
   exist, use the Compose Manager plugin with this folder.
 - **Synology (Container Manager):** Project → Create → choose this folder as the
   path; it picks up `docker-compose.yml`. Set `PUID`/`PGID` to your DSM user
@@ -125,7 +129,7 @@ bundle or a prebuilt image is lighter.
 | Symptom | Fix |
 |---|---|
 | `port is already allocated` | Another program (often a desktop Fushi) uses 38765 / 38780. Set `FUSHI_SYNC_PORT` / `FUSHI_WEBUI_PORT` and pair with the new port. |
-| `Permission denied` under `/config` | `PUID`/`PGID` do not match the folder owner. Fix them in `.env` and recreate: `docker compose up -d`. |
+| `/config is not writable by uid …` | The config folder belongs to another user (often root, when Docker created it). Run `sudo chown -R <PUID>:<PGID> <config folder>`, or set `PUID`/`PGID` in `.env` to the folder's owner, then `docker compose up -d`. |
 | Container `unhealthy` | `docker compose logs fushi-server`. The health check calls `https://127.0.0.1:38765/api/ping` inside the container. |
 | Release-bundle build fails in `check_bundle_libs.sh` | The tarball needs a newer glibc than Debian trixie has (CI `linux-server` artifacts are built on a newer Ubuntu). Use a `release-server.yml` release or the source build. |
 | Database refused after going back to an older image | Expected (no downgrade). Restore the backup taken before updating. |

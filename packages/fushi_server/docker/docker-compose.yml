@@ -35,12 +35,13 @@ services:
     container_name: fushi-server
     restart: unless-stopped
     hostname: fushi-server
+    # Runs as this user, never as root. Create the config folder as that user
+    # before the first start (mkdir -p config), or Docker creates it owned by root.
+    user: "${PUID:-1000}:${PGID:-1000}"
     env_file:
       - path: .env
         required: false
     environment:
-      PUID: ${PUID:-1000}
-      PGID: ${PGID:-1000}
       TZ: ${TZ:-Etc/UTC}
       FUSHI_DEVICE_NAME: ${FUSHI_DEVICE_NAME:-Fushi Server}
       # Language of the WebUI, CLI and logs on the first start (en | zh). Later,

@@ -1,26 +1,24 @@
 #!/bin/sh
 # Container entrypoint for fushi_server.
 #
-# Started as root only to fix ownership of /config for PUID:PGID, then drops
-# privileges for good (setpriv). First start writes /config/fushi_server.yaml
-# with `fushi_server init` (data in /config/data, a fresh admin token printed
-# to the log). Any arguments are a fushi_server command line (default: serve).
+# Runs as the image's non-root user (1000:1000) or whatever `user:` / `--user`
+# sets (compose passes PUID:PGID from .env). Nothing here needs root, and the
+# entrypoint never changes ownership: /config must already be writable by that
+# user. First start writes /config/fushi_server.yaml with `fushi_server init`
+# (data in /config/data, a fresh admin token printed to the log). Any arguments
+# are a fushi_server command line (default: serve).
 set -eu
 
-PUID="${PUID:-1000}"
-PGID="${PGID:-1000}"
 CONFIG_DIR=/config
 CONFIG="$CONFIG_DIR/fushi_server.yaml"
 
-if [ "$(id -u)" = 0 ]; then
-  mkdir -p "$CONFIG_DIR"
-  # Only walk the tree when ownership is wrong (first start, or PUID changed);
-  # media mounts are never touched.
-  if [ "$(stat -c %u:%g "$CONFIG_DIR")" != "$PUID:$PGID" ]; then
-    echo "fushi: chown -R $PUID:$PGID $CONFIG_DIR"
-    chown -R "$PUID:$PGID" "$CONFIG_DIR"
-  fi
-  exec setpriv --reuid="$PUID" --regid="$PGID" --clear-groups -- "$0" "$@"
+if [ ! -w "$CONFIG_DIR" ] || { [ -e "$CONFIG" ] && [ ! -w "$CONFIG" ]; }; then
+  uid="$(id -u)"
+  gid="$(id -g)"
+  echo "fushi: $CONFIG_DIR is not writable by uid $uid (owner: $(stat -c %u:%g "$CONFIG_DIR"))." >&2
+  echo "fushi: on the host, run: sudo chown -R $uid:$gid <your config folder>" >&2
+  echo "fushi: or set PUID/PGID in .env to the folder's owner (id -u, id -g)." >&2
+  exit 1
 fi
 
 cd "$CONFIG_DIR"

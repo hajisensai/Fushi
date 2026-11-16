@@ -50,7 +50,7 @@ RUN set -eu; \
 
 FROM debian:trixie-slim AS runtime
 # ffmpeg/ffprobe: video, audiobook cue split, subtitles. 7zip: archive import.
-# curl: health check. util-linux (setpriv) is in the base image.
+# curl: health check.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends 7zip ca-certificates curl ffmpeg tzdata \
     && rm -rf /var/lib/apt/lists/*
@@ -64,9 +64,12 @@ COPY --chmod=755 healthcheck.sh /usr/local/bin/fushi-healthcheck
 # FUSHI_CONTAINER=1: the in-app self-update refuses (pull a new image instead).
 ENV FUSHI_CONTAINER=1 \
     HOME=/config \
-    LANG=C.UTF-8 \
-    PUID=1000 \
-    PGID=1000
+    LANG=C.UTF-8
+# Runs as a non-root user. 1000:1000 owns the empty /config (a named volume
+# inherits that); compose runs it as PUID:PGID from .env instead, and a bind
+# mount must already be writable by that user (the entrypoint says so if not).
+RUN install -d -o 1000 -g 1000 /config
+USER 1000:1000
 WORKDIR /config
 VOLUME ["/config"]
 # 38765 interconnect (pairing / sync, TLS), 38780 WebUI + admin API, 6881 torrent.
