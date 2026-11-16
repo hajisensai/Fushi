@@ -1,4 +1,4 @@
-## BUG-4694 · 导入推荐包后漫画和小说全没了（推荐包走通用导入框、默认覆盖）
+## BUG-4695 · 导入推荐包后漫画和小说全没了（推荐包走通用导入框、默认覆盖）
 - **报告**：2026-11-15（用户 Android 实机：导入推荐包后漫画 / 小说全没了，SRS 卡片还在但背面的来源书没了）
 - **真实性**：✅ 真 bug（读代码确认，未实机复现）。推荐包是一份净化过的 Fushi 备份 zip（只有 `dictionary_metadata`、`audio_source_configs` / `local_audio_dbs` 两条偏好与词典资源 / 本地发音库文件，见 `tool/pack/recommended_pack_database.dart`）。app 内三个发起点——新手引导推荐包那一步（`fushi/lib/src/pages/implementations/onboarding_wizard_page.dart:841`，「现在导入」与「选择本地包文件」共用）、首页迷你条与设置 → 系统那一行（经 `fushi/lib/src/onboarding/recommended_pack_import.dart:26`）——调 `runBackupImportFlowForFile` 都不带预设，于是弹通用备份导入确认框，而它默认选「覆盖」（`fushi/lib/src/sync/sync_settings_schema/backup.part.dart:1338`）。覆盖导入用包里的库整库替换：包里没有书 → 书库行、进度、统计全没；包里也没有书文件树，`fushi_books/` 等目录不被 swap，书文件留在盘上成了孤儿。SRS 在独立的 `srs.db`，覆盖时档案留本机，所以卡片幸存，但卡片按 bookKey 指向的书行已经没了。
   - **根因**：推荐包导入复用了「通用备份导入」的交互（让用户在默认覆盖的框里选模式），而推荐包语义上只是「装资源」，永远不该替换用户库。向导文案「确认框里选『合并』就不会动你已有的数据」把安全性押在用户改默认值上。

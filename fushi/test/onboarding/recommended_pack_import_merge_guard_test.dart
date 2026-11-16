@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:test/test.dart';
 
-/// BUG-4694 守卫：app 内的推荐包入口一律经 `importRecommendedPackFile` /
+/// BUG-4695 守卫：app 内的推荐包入口一律经 `importRecommendedPackFile` /
 /// `importDownloadedRecommendedPack`（恒合并预设），不得直接调
 /// `runBackupImportFlowForFile`——那条路径不带预设时弹的是默认「覆盖」的通用导入
 /// 确认框，用户照默认点下去就整库被推荐包替换（漫画 / 小说 / 进度全没）。
