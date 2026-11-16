@@ -56,7 +56,6 @@ import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_chips.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
@@ -1440,6 +1439,57 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
     ];
   }
 
+  /// 「番剧匹配」：AniList 系列候选，每条一行单选，标题**不限行**按面板宽度换行。
+  ///
+  /// 候选之间只靠标题区分，而同系列各季的 romaji 前缀相同、差别在末尾
+  /// （`… 2nd Season`）。原先画成定宽 chip、单行省略号，几季显示成同一串
+  /// （BUG-4695）；chip 本身也装不下长标题——MD3 `RawChip` 与 Apple 胶囊都把
+  /// label 钉成单行。所以与下方「字幕版本」同构，用分组列表行承载。
+  Widget _buildSeriesMatches(ThemeData theme) {
+    final int count = _seriesMatches.length;
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6, left: 2),
+            child: Text(
+              t.video_jimaku_anime_match,
+              style: theme.textTheme.labelMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+          for (int i = 0; i < count; i++)
+            FushiStaggeredEntrance(
+              index: i,
+              child: FushiGroupedListItem(
+                index: i,
+                count: count,
+                child: FushiListItem(
+                  key: ValueKey<String>(
+                    'subtitle-series-${_seriesMatches[i].id}',
+                  ),
+                  density: FushiListDensity.compact,
+                  selected: _selectedSeriesId == _seriesMatches[i].id,
+                  onTap: _resolving || _running
+                      ? null
+                      : () => unawaited(_selectSeries(_seriesMatches[i])),
+                  leading: _selectionMark(
+                    theme,
+                    _selectedSeriesId == _seriesMatches[i].id,
+                  ),
+                  title: Text(_seriesMatches[i].displayTitle),
+                  titleMaxLines: null,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   /// 行首单选标记：选中 = 实心勾，未选 = 空心圆；切换走 effects 短时长交叉淡化。
   Widget _selectionMark(ThemeData theme, bool selected) {
     return AnimatedSwitcher(
@@ -1564,24 +1614,7 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
                         ],
                       ),
                       if (_seriesMatches.length >= 2)
-                        _chipSection(t.video_jimaku_anime_match, <Widget>[
-                          for (final AniListMedia media in _seriesMatches)
-                            ConstrainedBox(
-                              constraints: const BoxConstraints(maxWidth: 260),
-                              child: FushiChoiceChip(
-                                label: Text(
-                                  media.displayTitle,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                tooltip: media.displayTitle,
-                                selected: _selectedSeriesId == media.id,
-                                onSelected: _resolving || _running
-                                    ? null
-                                    : (_) => unawaited(_selectSeries(media)),
-                              ),
-                            ),
-                        ]),
+                        _buildSeriesMatches(theme),
                       _buildVersionPicker(theme),
                       _buildCollectionSettings(theme),
                       const FushiDividerControl(height: 20),
