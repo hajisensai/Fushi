@@ -34,7 +34,6 @@ import 'package:fushi/src/pages/implementations/discovery_ai_acquire_action.dart
 import 'package:fushi/src/pages/implementations/manual_download_task_dialog.dart';
 import 'package:fushi/src/pages/implementations/media_discovery_page.dart';
 import 'package:fushi/src/pages/implementations/torrent_detail_dialog.dart';
-import 'package:fushi/src/pages/implementations/download_location_section.dart';
 import 'package:fushi/src/pages/implementations/torrent_settings_section.dart';
 import 'package:fushi/src/pages/implementations/video_discovery_detail_page.dart';
 import 'package:fushi/src/pages/implementations/video_discovery_page.dart';

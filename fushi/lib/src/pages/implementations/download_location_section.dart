@@ -1,35 +1,8 @@
-import 'dart:async';
+part of 'torrent_settings_section.dart';
 
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:fushi_core/fushi_core.dart';
-import 'package:fushi_engine/media/torrent/anime_download_config.dart';
-import 'package:fushi_engine/media/torrent/download_save_root.dart';
-import 'package:material_ui/material_ui.dart';
-import 'package:path/path.dart' as p;
-
-import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/media/import/real_path_directory_picker.dart';
-import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/models/store_compliance.dart';
-import 'package:fushi/src/pages/implementations/torrent_settings_section.dart'
-    show downloadSaveRootIssueMessage;
-import 'package:fushi/src/settings/settings_schema_widgets.dart'
-    show SettingsSectionFooter;
-import 'package:fushi/src/settings/settings_search.dart';
-import 'package:fushi/src/storage/download_layout.dart';
-import 'package:fushi/src/storage/download_root_migrator.dart';
-import 'package:fushi/src/sync/interconnect_download_manager.dart';
-import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
-import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
-import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
-import 'package:fushi/src/utils/components/fushi_material_components.dart';
-import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
-import 'package:fushi/src/utils/components/settings_shared.dart';
-import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/src/utils/misc/fushi_toast.dart';
-import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+// 「下载位置」分组是 torrent_settings_section 库的一部分（part）：它读 AppModel，
+// 作为独立库会把自己接进 AppModel 所在的 import 环（import_cycle_guard）；
+// torrent 设置分区本来就在环里，挂在它下面不新增在环文件。
 
 /// 用户对「改下载根时搬不搬已下载内容」的回答。
 enum DownloadRootMoveChoice { move, newDownloadsOnly }

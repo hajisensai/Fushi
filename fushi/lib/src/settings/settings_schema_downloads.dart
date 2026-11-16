@@ -3,7 +3,6 @@ import 'package:fushi_engine/media/torrent/anime_download_config.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/pages/implementations/browse_page.dart';
-import 'package:fushi/src/pages/implementations/download_location_section.dart';
 import 'package:fushi/src/pages/implementations/torrent_settings_section.dart';
 import 'package:fushi/src/pages/implementations/video_external_provider_settings_section.dart';
 import 'package:fushi/src/settings/settings_actions.dart';

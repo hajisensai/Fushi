@@ -23,6 +23,22 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/models/module_registry.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:path/path.dart' as p;
+import 'package:fushi/src/media/import/real_path_directory_picker.dart';
+import 'package:fushi/src/models/store_compliance.dart';
+import 'package:fushi/src/storage/download_layout.dart';
+import 'package:fushi/src/storage/download_root_migrator.dart';
+import 'package:fushi/src/sync/interconnect_download_manager.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+
+part 'download_location_section.dart';
 
 /// 下载后端配置（后端二选一 + qb 连接 / 内置引擎限速·上传·做种·内存·连接数）。
 /// 从「设置→视频」搬到「下载」页——下载既已独立成页，配置就该在页内，不再埋进
