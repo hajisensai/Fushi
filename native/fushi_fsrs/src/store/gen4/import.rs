@@ -18,7 +18,10 @@
 //!
 //! 并入一个**正在用的**集合（还原 = 空库 + 并入、合并还原 = 并入，D34），与迁移灌入（往临时文件里分批灌）不同：
 //!
-//! - [import_ops]：`.fushisrs` 第 2 版的内核流 `FSRS4EXP`（导出在 `export.rs`）。
+//! - [import_ops] / [import_ops_from]：`.fushisrs` 第 2 版的内核流 `FSRS4EXP`（导出在 `export.rs`）；来源可以是任何
+//!   [Read]（G11-3 的导入命令直接读文件，内存不随文件大小增长）。命令层（`cmd/fushisrs.rs`）在同一个事务里先认领
+//!   （`identity::adopt_foreign`）、记清单带的设备公钥（[import_peers]，缺口 G-12）、本机身份分叉了先换身份
+//!   （[own_fork_point]），再调它。
 //! - [import_v1]：`.fushisrs` 第 1 版的内核流 `FSRS2EXP`（协议 3，冻结读入器 `legacy_export.rs`），逐条转译进承袭日志。
 //! - [import_backup]：旧整包备份 / 服务端备份里的协议 3 `srs.db`（调用方用冻结代码在临时副本上备好），与迁移灌入共用
 //!   同一份逐设备转译（`land_legacy`）。
@@ -28,11 +31,13 @@
 //! 逐格核对），所以中断之后重来不产生重复。测试在 `import_tests.rs`。
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::io::Read;
 
 use rusqlite::Connection;
 
 use super::carry::{legacy_peers, legacy_self};
 use super::derive::{Index, Settled};
+use super::fork::ForkScan;
 use super::ingest::{Settle, ingest_settle};
 use super::legacy::{self, Placement};
 use super::legacy_export::{for_each_v1, v1_collection};
@@ -41,6 +46,7 @@ use super::truth::{DEV_HERITAGE, DEV_NATIVE, Peer, PeerPut, Put, Truth};
 use crate::gen4::export::{Export4Reader, ExportHeader, ExportItem, ExportKind, sniff};
 use crate::gen4::heritage::{Fp, HeritageSlot, SlotBody, fingerprint};
 use crate::gen4::op::chain_next4;
+use crate::gen4::segment::{NativeHeader, NativeItem};
 use crate::gen4::translate::{T_VERSION, translate};
 use crate::store::sync2::collection_of;
 use crate::sync2::id::Id;
@@ -437,11 +443,28 @@ struct NativeRun {
 /// 别的连接并发提交会 `SQLITE_BUSY_SNAPSHOT` 整笔失败；嵌进调用方的事务时，拿锁的口径归调用方（命令层要么在事务外调，
 /// 要么自己用 `BEGIN IMMEDIATE` 开最外层）。
 ///
-/// 内存口径（交给 G11-3 / G11-4 接线）：[bytes] 是整条已读进内存的 `ops.bin`（G11-1 的 [Export4Reader] 借用切片，
-/// 不收 `Read`），解码只走**一遍**（边读边落，坏在中途也是整笔回滚）；峰值 ≈ 文件字节数 + 一帧解压缓冲 + 本机设备 /
-/// 分叉清单。移动端（D4）按文件大小预算，要真流式得先给 `Export4Reader` 加 `Read` 版（G11-1 的格式代码）。
+/// 内存口径（G11-3 定案）：解码只走**一遍**（边读边落，坏在中途也是整笔回滚）。来源是 [Read]（[import_ops_from]，
+/// 导入命令直接读文件），内存只有一个解压读窗口与一项、外加本机设备 / 分叉清单，不随文件大小增长；[import_ops] 是
+/// 内存切片的便利形（测试、整包备份里已经在内存的流）。
 pub fn import_ops(t: &Truth<'_>, col: i64, bytes: &[u8]) -> Result<ImportedOps, String> {
-    let header = open_ops_stream(bytes)?.1;
+    import_ops_from(t, col, open_ops_stream(bytes)?)
+}
+
+/// 打开一条来自任意 [Read] 的 `FSRS4EXP` 流（[import_ops_from] / [own_fork_point] 的输入）。不认魔数（含协议 3 的
+/// `FSRS2EXP`）、版本、标志位都拒；分辨第 1 版与第 2 版用 `crate::gen4::export::sniff_reader`。
+pub fn open_ops_reader<'s, R: Read>(
+    src: R,
+) -> Result<(Export4Reader<'s, R>, ExportHeader), String> {
+    Export4Reader::open_reader(src).map_err(|e| format!("gen4 import: unreadable export ({e})"))
+}
+
+/// [import_ops] 的一般形：流已由 [open_ops_reader]（或切片的 `open_ops_stream`）打开、读过头。
+pub fn import_ops_from<R: Read>(
+    t: &Truth<'_>,
+    col: i64,
+    opened: (Export4Reader<'_, R>, ExportHeader),
+) -> Result<ImportedOps, String> {
+    let (mut reader, header) = opened;
     t.tx_immediate(|t| {
         if !native_sources(t, col)?.contains(&header.collection) {
             return Err(format!(
@@ -456,7 +479,6 @@ pub fn import_ops(t: &Truth<'_>, col: i64, bytes: &[u8]) -> Result<ImportedOps, 
             .map(|d| (d.id, (d.kind, d.src)))
             .collect();
         let forks = known_forks(t, col)?;
-        let (mut reader, _) = open_ops_stream(bytes)?;
         let mut out = ImportedOps::default();
         let mut native: Option<NativeRun> = None;
         // 当前承袭日志：(设备, 来源集合, 这条日志的记号)。
@@ -615,6 +637,122 @@ pub fn check_ops_stream(bytes: &[u8]) -> Result<ExportHeader, String> {
         .is_some()
     {}
     Ok(header)
+}
+
+/// [own_fork_point] 每攒这么多项喂一次 [ForkScan]（内存不随本机日志长度增长）。
+const FORK_SCAN_CHUNK: usize = 4096;
+
+/// 流里本机当前身份那条原生日志的一块（[own_fork_point] 内部）。
+struct ForkChunk {
+    /// 这一块第一项的 seq 与它前一格的链值。
+    first: u64,
+    prev: Chain,
+    /// 走到的 seq 与那一格的链值。
+    seq: u64,
+    chain: Chain,
+    items: Vec<NativeItem>,
+}
+
+impl ForkChunk {
+    fn new() -> ForkChunk {
+        ForkChunk {
+            first: 1,
+            prev: CHAIN_ZERO,
+            seq: 0,
+            chain: CHAIN_ZERO,
+            items: Vec::new(),
+        }
+    }
+
+    fn flush(
+        &mut self,
+        t: &Truth<'_>,
+        col: i64,
+        scan: &mut ForkScan,
+        collection: Id,
+        device: Id,
+    ) -> Result<(), String> {
+        if self.items.is_empty() {
+            return Ok(());
+        }
+        let h = NativeHeader {
+            encrypted: false,
+            collection,
+            device,
+            first: self.first,
+            last: self.seq,
+            prev_chain: self.prev,
+            last_chain: self.chain,
+        };
+        scan.feed(t, col, &h, &self.items)?;
+        self.items.clear();
+        self.first = self.seq + 1;
+        self.prev = self.chain;
+        Ok(())
+    }
+}
+
+/// 导入之前看流里**本机当前身份**的原生日志与本机日志分没分叉（G11-3；协议 3 `import_on` 的「包里有本机身份的操作时
+/// 先换身份」，§7.3）。只读，按块喂 G8-6 的 [ForkScan]（与位置上发现分叉同一个判据）：
+///
+/// - 流里没有本机身份的日志、或它是本机日志的前缀：None，照常导入；
+/// - 两边在某个 seq 上不同（数据目录被拷过、从旧备份还原后两边都写过），或流里比本机长（另一个安装接着写了）：
+///   `Some(keep)` = 两边确认相同的最大 seq。调用方先 `Truth::rotate_identity(col, keep, now)`（本机 `keep` 之后的操作以
+///   新身份重签发、旧身份冻结在 `keep`），再导入：流里旧身份 `keep` 之后的操作按普通设备接在冻结点后面。
+///
+/// 本机还没有身份（不会发生在已绑定的 profile 上）也是 None。读到本机那条日志的末尾就停，不读流的其余部分。
+pub fn own_fork_point<R: Read>(
+    t: &Truth<'_>,
+    col: i64,
+    opened: (Export4Reader<'_, R>, ExportHeader),
+) -> Result<Option<u64>, String> {
+    let Some(me) = t.self_identity(col)? else {
+        return Ok(None);
+    };
+    let (mut reader, header) = opened;
+    let mut scan = ForkScan::new(t, col)?;
+    let mut mine: Option<ForkChunk> = None;
+    while let Some(item) = reader
+        .next_item()
+        .map_err(|e| format!("gen4 import: corrupt export ({e})"))?
+    {
+        match item {
+            ExportItem::NativeLog { device, .. } if device == me.device => {
+                mine = Some(ForkChunk::new());
+            }
+            ExportItem::NativeOp(op) => {
+                if let Some(c) = mine.as_mut() {
+                    c.chain = chain_next4(&c.chain, &op);
+                    c.seq += 1;
+                    c.items.push(NativeItem::Op(op));
+                }
+            }
+            ExportItem::NativeVoid { n, chain_after } => {
+                if let Some(c) = mine.as_mut() {
+                    c.seq += n;
+                    c.chain = chain_after;
+                    c.items.push(NativeItem::Void {
+                        count: n,
+                        chain_after,
+                    });
+                }
+            }
+            ExportItem::NativeTail(_) => {
+                if let Some(mut c) = mine.take() {
+                    c.flush(t, col, &mut scan, header.collection, me.device)?;
+                    // 每台设备在流里只有一条原生日志：本机的读完就够了。
+                    break;
+                }
+            }
+            _ => {}
+        }
+        if let Some(c) = mine.as_mut() {
+            if c.items.len() >= FORK_SCAN_CHUNK {
+                c.flush(t, col, &mut scan, header.collection, me.device)?;
+            }
+        }
+    }
+    Ok(scan.fork_point())
 }
 
 /// 认出 `FSRS4EXP` 流、读头：协议 3 的流（`FSRS2EXP`）与不认识的东西给出可读的拒绝理由。
@@ -798,16 +936,38 @@ fn backup_peers(src: &Connection, profile: &str, t: &Truth<'_>, col: i64) -> Res
         .filter(|s| s.last == 0)
         .map(|s| s.device);
     let (peers, _) = legacy_peers(src, profile)?;
+    let peers = peers
+        .into_iter()
+        .filter(|p| Some(p.device) != scratch)
+        .collect();
+    land_peers(t, col, me, peers, "backup")
+}
+
+/// 记下 `.fushisrs` 第 2 版清单带的设备（缺口 G-12，G11-3 定案：`FSRS4EXP` 的承袭日志抬头不带公钥，协议 3 设备的公钥
+/// 放在清单的 `peers` 里随文件走，格式不升版本）。与旧备份读入（[backup_peers]）同一口径：公钥先到先得、冲突整个拒绝、
+/// 本机身份必须是本机的公钥、名字 / 扩展信息只补空缺。在调用方的事务里调（导入命令与 [import_ops_from] 同一个事务）。
+///
+/// 返回新记下的设备数。
+pub fn import_peers(t: &Truth<'_>, col: i64, peers: Vec<Peer>) -> Result<u64, String> {
+    let me = t.self_identity(col)?.map(|s| (s.device, s.public()));
+    land_peers(t, col, me, peers, "file")
+}
+
+/// [backup_peers] / [import_peers] 共用的落库（[what] 只进报错文本）。
+fn land_peers(
+    t: &Truth<'_>,
+    col: i64,
+    me: Option<(Id, [u8; 32])>,
+    peers: Vec<Peer>,
+    what: &str,
+) -> Result<u64, String> {
     let mut learned = 0u64;
     for mut peer in peers {
-        if Some(peer.device) == scratch {
-            continue;
-        }
         if let Some((mine, key)) = me {
             if mine == peer.device {
                 if key != peer.public {
                     return Err(format!(
-                        "gen4 import: the backup carries another public key for this device ({mine})"
+                        "gen4 import: the {what} carries another public key for this device ({mine})"
                     ));
                 }
                 continue;

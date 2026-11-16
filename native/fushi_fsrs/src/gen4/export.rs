@@ -112,7 +112,12 @@ pub enum ExportKind {
 
 /// 看魔数分出是哪一代的导出流（只解压前 8 字节，不校验其余部分）。
 pub fn sniff(bytes: &[u8]) -> Result<ExportKind, String> {
-    let mut window = ZstdWindow::new(bytes).map_err(|e| e.to_string())?;
+    sniff_reader(bytes)
+}
+
+/// [sniff] 的一般形：来源是任何顺序读的 [std::io::Read]（只读到解出前 8 字节为止）。
+pub fn sniff_reader<R: std::io::Read>(src: R) -> Result<ExportKind, String> {
+    let mut window = ZstdWindow::from_reader(src).map_err(|e| e.to_string())?;
     let magic = window
         .parse(|r| r.raw(8).map(<[u8]>::to_vec))
         .map_err(|e| e.to_string())?;
@@ -546,8 +551,11 @@ fn write_item(w: &mut crate::sync2::codec::Writer, it: &ExportItem) {
 // ---------------------------------------------------------------- 读
 
 /// 流式读：边解压边解码（[ZstdWindow]），内存只有一个读窗口与一项（外加承袭日志的标记与每台设备一个摘要）。
-pub struct Export4Reader<'s> {
-    window: ZstdWindow<'s>,
+///
+/// 来源默认是内存里的切片（[Export4Reader::open]）；[Export4Reader::open_reader] 收任何 [std::io::Read]（导入命令
+/// 直接读文件，G11-3），两者收什么、拒什么完全相同。
+pub struct Export4Reader<'s, R: std::io::Read = &'s [u8]> {
+    window: ZstdWindow<'s, R>,
     grammar: Grammar,
     /// 读出错之后不再往下读。
     failed: bool,
@@ -611,7 +619,14 @@ fn read_native_item(r: &mut Reader<'_>) -> DResult<ExportItem> {
 impl<'s> Export4Reader<'s> {
     /// 解开头部。魔数不对（含协议 3 的 `FSRS2EXP`）、版本不认识、标志位非 0 都拒。
     pub fn open(bytes: &'s [u8]) -> Result<(Self, ExportHeader), String> {
-        let mut window = ZstdWindow::new(bytes).map_err(stream)?;
+        Export4Reader::open_reader(bytes)
+    }
+}
+
+impl<'s, R: std::io::Read> Export4Reader<'s, R> {
+    /// [Export4Reader::open] 的一般形：来源是任何顺序读的 [std::io::Read]（不整份读进内存）。
+    pub fn open_reader(src: R) -> Result<(Self, ExportHeader), String> {
+        let mut window = ZstdWindow::from_reader(src).map_err(stream)?;
         let magic = window
             .parse(|r| r.raw(8).map(<[u8]>::to_vec))
             .map_err(stream)?;
@@ -647,6 +662,12 @@ impl<'s> Export4Reader<'s> {
             self.failed = true;
         }
         r
+    }
+
+    /// 读窗口当前的容量（测试看内存上界用）。
+    #[cfg(test)]
+    pub fn window_capacity(&self) -> usize {
+        self.window.window_capacity()
     }
 
     fn next_inner(&mut self) -> Result<Option<ExportItem>, String> {
