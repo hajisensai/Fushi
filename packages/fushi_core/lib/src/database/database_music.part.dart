@@ -319,10 +319,8 @@ mixin _FushiDbMusic on _$FushiDatabase {
       (select(musicTracks)
             ..where(($MusicTracksTable t) => t.hiddenAt.isNotNull())
             ..orderBy(<OrderingTerm Function($MusicTracksTable)>[
-              ($MusicTracksTable t) => OrderingTerm(
-                expression: t.hiddenAt,
-                mode: OrderingMode.desc,
-              ),
+              ($MusicTracksTable t) =>
+                  OrderingTerm(expression: t.hiddenAt, mode: OrderingMode.desc),
               ($MusicTracksTable t) => OrderingTerm(expression: t.title),
             ]))
           .watch();
@@ -1107,6 +1105,92 @@ mixin _FushiDbMusic on _$FushiDatabase {
     }
     await _touchMusicPlaylist(playlistUid, at);
   });
+
+  /// 一次从歌单移除多条（按条目 id；同一首出现两次时只删选中的那几条），剩下的重排
+  /// 位置。返回真被删掉的行（原位置不变），[restoreMusicPlaylistEntries] 拿它撤销。
+  Future<List<MusicPlaylistEntryRow>> removeMusicPlaylistEntries(
+    String playlistUid,
+    Iterable<int> entryIds, {
+    required int at,
+  }) {
+    final Set<int> ids = entryIds.toSet();
+    if (ids.isEmpty) {
+      return Future<List<MusicPlaylistEntryRow>>.value(
+        const <MusicPlaylistEntryRow>[],
+      );
+    }
+    return transaction(() async {
+      final List<MusicPlaylistEntryRow> all = await listMusicPlaylistEntries(
+        playlistUid,
+      );
+      final List<MusicPlaylistEntryRow> removed = <MusicPlaylistEntryRow>[
+        for (final MusicPlaylistEntryRow r in all)
+          if (ids.contains(r.id)) r,
+      ];
+      if (removed.isEmpty) return removed;
+      final List<int> removedIds = <int>[
+        for (final MusicPlaylistEntryRow r in removed) r.id,
+      ];
+      await (delete(musicPlaylistEntries)..where(
+            ($MusicPlaylistEntriesTable t) =>
+                t.playlistUid.equals(playlistUid) & t.id.isIn(removedIds),
+          ))
+          .go();
+      await _renumberMusicPlaylistEntries(<MusicPlaylistEntryRow>[
+        for (final MusicPlaylistEntryRow r in all)
+          if (!ids.contains(r.id)) r,
+      ]);
+      await _touchMusicPlaylist(playlistUid, at);
+      return removed;
+    });
+  }
+
+  /// 撤销 [removeMusicPlaylistEntries]：把删掉的条目（原 id、原入列时刻）按原位置插回
+  /// 当前列表。歌单已经不在（期间被删）时什么都不做。
+  Future<void> restoreMusicPlaylistEntries(
+    String playlistUid,
+    List<MusicPlaylistEntryRow> rows, {
+    required int at,
+  }) {
+    if (rows.isEmpty) return Future<void>.value();
+    return transaction(() async {
+      final MusicPlaylistRow? playlist =
+          await (select(musicPlaylists)..where(
+                ($MusicPlaylistsTable t) =>
+                    t.playlistUid.equals(playlistUid) & t.deletedAt.isNull(),
+              ))
+              .getSingleOrNull();
+      if (playlist == null) return;
+      final List<MusicPlaylistEntryRow> order = await listMusicPlaylistEntries(
+        playlistUid,
+      );
+      final List<MusicPlaylistEntryRow> sorted =
+          List<MusicPlaylistEntryRow>.of(rows)..sort(
+            (MusicPlaylistEntryRow a, MusicPlaylistEntryRow b) =>
+                a.position.compareTo(b.position),
+          );
+      // 按原位置从小到大插回：没有别的改动时正好还原成删除前的顺序。
+      for (final MusicPlaylistEntryRow r in sorted) {
+        await into(musicPlaylistEntries).insertOnConflictUpdate(r);
+        order.insert(r.position.clamp(0, order.length), r);
+      }
+      await _renumberMusicPlaylistEntries(order);
+      await _touchMusicPlaylist(playlistUid, at);
+    });
+  }
+
+  /// 把 [ordered] 的位置写成 0..n-1（已经对的不写）。
+  Future<void> _renumberMusicPlaylistEntries(
+    List<MusicPlaylistEntryRow> ordered,
+  ) async {
+    for (int i = 0; i < ordered.length; i++) {
+      if (ordered[i].position == i) continue;
+      await (update(musicPlaylistEntries)..where(
+            ($MusicPlaylistEntriesTable t) => t.id.equals(ordered[i].id),
+          ))
+          .write(MusicPlaylistEntriesCompanion(position: Value<int>(i)));
+    }
+  }
 
   Future<void> _touchMusicPlaylist(String playlistUid, int at) =>
       (update(musicPlaylists)..where(
