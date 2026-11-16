@@ -1,12 +1,65 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-16T22:09:24Z",
+ "generatedAt": "2026-11-16T22:22:17Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "131f1ec7d6a495a6a9e62c9c259e82ace568b140",
   "seq": 28434
  },
  "builds": [
+  {
+   "seq": 28294,
+   "version": "3.3.0",
+   "sha": "49819dcec7234c4043aacfa4aeb9a5d489806f48",
+   "unknown": false,
+   "publishedAt": "2026-11-16T22:22:03Z",
+   "testflight": false,
+   "baseSeq": 28147,
+   "prs": [
+    3524,
+    3538,
+    3607,
+    3528,
+    3565,
+    3525,
+    3556,
+    3562,
+    3511,
+    3576,
+    3606,
+    3552,
+    3593,
+    3596,
+    3604,
+    3599,
+    3600,
+    3592,
+    3597,
+    3553,
+    3523,
+    3584,
+    3542,
+    3495
+   ],
+   "direct": [],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43931907788"
+    },
+    "windows": {
+     "state": "ok"
+    },
+    "macos": {
+     "state": "failed",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43931907648"
+    },
+    "ios": {
+     "state": "ok"
+    }
+   }
+  },
   {
    "seq": 28147,
    "version": "3.3.0",
@@ -165,7 +218,7 @@
    "unknown": false,
    "publishedAt": "2026-11-16T13:38:17Z",
    "testflight": true,
-   "baseSeq": 27582,
+   "baseSeq": 27576,
    "prs": [
     3498,
     3483,
@@ -186,34 +239,7 @@
     3399,
     3471,
     3485,
-    3496
-   ],
-   "direct": [],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "none"
-    },
-    "windows": {
-     "state": "ok"
-    },
-    "macos": {
-     "state": "ok"
-    },
-    "ios": {
-     "state": "ok"
-    }
-   }
-  },
-  {
-   "seq": 27582,
-   "version": "3.3.0",
-   "sha": "1846972959eb376db3f6836a6338afca32c48c47",
-   "unknown": false,
-   "publishedAt": "2026-11-16T10:33:14Z",
-   "testflight": true,
-   "baseSeq": 27576,
-   "prs": [
+    3496,
     3446
    ],
    "direct": [],
@@ -289,31 +315,7 @@
    3551,
    3595,
    3531,
-   3510,
-   3524,
-   3538,
-   3607,
-   3528,
-   3565,
-   3525,
-   3556,
-   3562,
-   3511,
-   3576,
-   3606,
-   3552,
-   3593,
-   3596,
-   3604,
-   3599,
-   3600,
-   3592,
-   3597,
-   3553,
-   3523,
-   3584,
-   3542,
-   3495
+   3510
   ],
   "direct": [],
   "truncated": false,
