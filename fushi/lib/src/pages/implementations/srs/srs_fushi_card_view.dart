@@ -1362,6 +1362,8 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     hostScript: kSrsDefsLayoutScript,
     onWheel: wide ? null : _onDefsWheel,
     onSourceLink: widget.face.onSourceLink,
+    // 词典插图点按放大：与整面卡同一个复习页全屏查看（BUG-4711，漏传时页内不装点图脚本）。
+    onImageTap: widget.face.onImageTap,
     // 释义区不在自动播放清单里（[SrsFushiCardPlan] 只收原生区画出来的媒体）：词典 HTML 里
     // 收起 / 隐藏的 `<audio autoplay>` 不许自己出声，自动播放只走宿主序列（HrB0STYm3E）。
     // 用户在释义里点按发音照常放行（闸门只拦手势外的播放）。

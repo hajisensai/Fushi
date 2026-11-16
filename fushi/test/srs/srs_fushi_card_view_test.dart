@@ -83,6 +83,7 @@ void main() {
     List<FushiCardItem>? front,
     bool defsScroll = false,
     bool thenFront = false,
+    void Function(String src)? onImageTap,
   }) async {
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
@@ -128,6 +129,7 @@ void main() {
                 css: FushiCardNoteType.template.css,
                 languageCode: 'ja',
                 onBridgeKey: (_) {},
+                onImageTap: onImageTap,
               ),
               fields: fields ?? _fields(),
               definitionsHtml: '<div class="fc-defs-only">defs</div>',
@@ -583,6 +585,27 @@ void main() {
         ),
         findsNothing,
       );
+    });
+  }
+
+  // BUG-4711（反馈 w4RAto8R0x）：释义 WebView 是 Fushi 卡片另建的一面，以前没把复习页的点图回调
+  // 带过去，页内不装点图脚本，词典插图点了不能放大。
+  for (final bool wide in <bool>[false, true]) {
+    testWidgets('${wide ? '宽' : '窄'}版式释义面带上复习页的点图放大回调', (
+      WidgetTester tester,
+    ) async {
+      final List<String> tapped = <String>[];
+      final List<SrsCardFace> faces = await pump(
+        tester,
+        answer: true,
+        size: wide ? const Size(1280, 800) : const Size(390, 844),
+        onImageTap: tapped.add,
+      );
+      final SrsCardFace defs = faces.last;
+      expect(defs.layout, wide ? SrsCardLayout.wide : SrsCardLayout.narrow);
+      expect(defs.onImageTap, isNotNull);
+      defs.onImageTap!('dict.png');
+      expect(tapped, <String>['dict.png']);
     });
   }
 
