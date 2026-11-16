@@ -16,6 +16,8 @@ import 'package:fushi/src/srs/srs_gen4_migration_controller.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi/src/utils/misc/fushi_byte_format.dart';
+import 'package:fushi_engine/srs/srs_db_store.dart'
+    show SrsProfileIdentityPending;
 import 'package:fushi_engine/srs/srs_storage.dart'
     show SrsLegacyMainDatabasePending;
 import 'package:fushi_srs/fushi_srs.dart';
@@ -325,15 +327,18 @@ void main() {
     });
   }
 
-  testWidgets('unbound profile and unwired features read as unavailable', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('profile without identity reads as waiting for the main window, '
+      'unwired features as unavailable', (WidgetTester tester) async {
     LocaleSettings.setLocale(AppLocale.en);
     expect(
       srsLoadErrorDetail(
         const SrsProfileUnboundException(-1, 'x', profile: 'p'),
       ),
-      t.srs_gen4_profile_unbound,
+      t.srs_gen4_profile_pending_primary,
+    );
+    expect(
+      srsLoadErrorDetail(const SrsProfileIdentityPending('p')),
+      t.srs_gen4_profile_pending_primary,
     );
     expect(
       srsLoadErrorDetail(

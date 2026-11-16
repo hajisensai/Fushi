@@ -24,7 +24,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi_engine/srs/srs_backup_merge.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
-import 'package:fushi_srs/fushi_srs.dart' show SrsCore;
+import 'package:fushi_srs/fushi_srs.dart' show SrsCore, SrsStoreOpenBlocked;
 import 'package:path/path.dart' as p;
 import 'package:sqlite3/sqlite3.dart' as sqlite;
 import 'package:fushi_engine/media/video/anime_source_video_path.dart';
@@ -364,6 +364,7 @@ class BackupContentSummary {
   const BackupContentSummary({
     this.counts = const <BackupCategory, int>{},
     this.present = const <BackupCategory>{},
+    this.needsUpgrade = const <BackupCategory>{},
   });
 
   /// Item count per category that carries countable content in this backup.
@@ -371,6 +372,11 @@ class BackupContentSummary {
 
   /// Every category this backup / device carries content for.
   final Set<BackupCategory> present;
+
+  /// 本机有这类数据、但要先升级才能导出的类别（导出侧）：目前只有复习——本机只有协议 3 的复习库、还没迁移成新代
+  /// （[SrsStoreOpenBlocked]）时打不开、数不了，也打不进备份。导出界面把这一行显示成「需先升级」、不可勾选，其余
+  /// 类别照常导出；它也在 [present] 里（数据在，不能让这一行凭空消失），[counts] 里没有它。
+  final Set<BackupCategory> needsUpgrade;
 
   int countFor(BackupCategory c) => counts[c] ?? 0;
   bool has(BackupCategory c) => present.contains(c);
@@ -1088,8 +1094,17 @@ class BackupService {
     final int progress = await _countProgressRows();
     final int statistics = await _countStatisticsRows();
     // 复习：用户笔记数 + 媒体文件数（预览计数 = 实际打包内容）。两者都为 0 时
-    // 不进 present，导出界面不显示这一项（SRS 是默认关闭的模块）。
-    final int srs = await _countSrsNotes() + (await _srsMediaFiles()).length;
+    // 不进 present，导出界面不显示这一项（SRS 是默认关闭的模块）。本机的复习库还没升级成新代（打开抛
+    // [SrsStoreOpenBlocked]）时数不了、也导不出：这一类记成「需先升级」，不让整个预览抛错——其余类别照常备份。
+    int? srsNotes;
+    try {
+      srsNotes = await _countSrsNotes();
+    } on SrsStoreOpenBlocked {
+      srsNotes = null;
+    }
+    final int? srs = srsNotes == null
+        ? null
+        : srsNotes + (await _srsMediaFiles()).length;
     final int music = await _countMusicRows();
     final Map<BackupCategory, int> counts = <BackupCategory, int>{
       BackupCategory.dictionary: dictionaries,
@@ -1101,15 +1116,18 @@ class BackupService {
       BackupCategory.games: games,
       BackupCategory.progress: progress,
       BackupCategory.statistics: statistics,
-      BackupCategory.srs: srs,
+      BackupCategory.srs: ?srs,
       BackupCategory.music: music,
     };
     return BackupContentSummary(
       counts: counts,
-      present: counts.entries
-          .where((MapEntry<BackupCategory, int> e) => e.value > 0)
-          .map((MapEntry<BackupCategory, int> e) => e.key)
-          .toSet(),
+      present: <BackupCategory>{
+        ...counts.entries
+            .where((MapEntry<BackupCategory, int> e) => e.value > 0)
+            .map((MapEntry<BackupCategory, int> e) => e.key),
+        if (srs == null) BackupCategory.srs,
+      },
+      needsUpgrade: <BackupCategory>{if (srs == null) BackupCategory.srs},
     );
   }
 

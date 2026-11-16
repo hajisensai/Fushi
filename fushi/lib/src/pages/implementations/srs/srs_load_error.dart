@@ -6,6 +6,8 @@
 /// 新代还没接线的功能给明确的「暂不可用」；其余照原文。
 library;
 
+import 'package:fushi_engine/srs/srs_db_store.dart'
+    show SrsProfileIdentityPending;
 import 'package:fushi_engine/srs/srs_remote_store.dart'
     show SrsRemoteStoreError;
 import 'package:fushi_engine/srs/srs_storage.dart'
@@ -44,11 +46,15 @@ String srsRemoteReviewErrorText(InterconnectHostError e) => switch (e.message) {
   _ => t.srs_remote_review_error_other(code: e.message),
 };
 
-/// 加载失败占位页的说明：远程失败按机读码出文案；profile 在新存储里还没有复习库（[SrsProfileUnboundException]）、
-/// 新代还没接线的功能（[SrsCoreUnwiredException]）给出明确的「暂不可用」；别的错误照原文。
+/// 加载失败占位页的说明：远程失败按机读码出文案；辅助进程里 profile 还没有身份（[SrsProfileIdentityPending]，主进程
+/// 打开时才建）与没有集合绑定（[SrsProfileUnboundException]，主进程打开时同样会建）给「先在主窗口打开复习」的等待
+/// 说明；新代还没接线的功能（[SrsCoreUnwiredException]）给出明确的「暂不可用」；别的错误照原文。
 String srsLoadErrorDetail(Object? error) {
   if (error is InterconnectHostError) return srsRemoteReviewErrorText(error);
-  if (error is SrsProfileUnboundException) return t.srs_gen4_profile_unbound;
+  if (error is SrsProfileIdentityPending ||
+      error is SrsProfileUnboundException) {
+    return t.srs_gen4_profile_pending_primary;
+  }
   if (error is SrsCoreUnwiredException) return t.srs_gen4_feature_unwired;
   return '$error';
 }

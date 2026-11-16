@@ -1015,69 +1015,68 @@ final class SrsCore {
 
   /// 卡片历史的当前状态，Rust 直接从写连接读日志（含事务里未提交的行）。[lineages] 每项是一份
   /// 历史的血统（自己 + 全部前身的卡 ID）。返回 `srsDecodeHistoryStates` 的布局。
-  Uint8List historyStates(List<List<String>> lineages) => using((Arena arena) {
-    final Uint8List page = srsEncodeRows(2, <List<Object?>>[
-      for (int g = 0; g < lineages.length; g++)
-        for (final String c in lineages[g]) <Object?>[g, c],
-    ]);
-    final ffi.Pointer<ffi.Pointer<ffi.Uint8>> out = arena();
-    final ffi.Pointer<ffi.Size> outLen = arena();
-    final ffi.Pointer<ffi.Pointer<ffi.Char>> err = arena();
-    err.value = ffi.nullptr;
-    _check(
-      _b,
-      _b.historyStates(
-        _h,
-        _copy(arena, page),
-        page.length,
-        lineages.length,
-        out,
-        outLen,
-        err,
-      ),
-      err,
-    );
-    final int len = outLen.value;
-    final Uint8List bytes = Uint8List.fromList(
-      out.value.asTypedListOutOfLine(len),
-    );
-    _b._freeBytes(out.value, len);
-    return bytes;
-  });
+  ///
+  /// [profile]：读哪个 profile 的集合（页里的 `[-1, profile]` 行，native/fushi_fsrs/src/store/gen4/dispatch.rs
+  /// `direct_col`）。store 的调用方一律给；不给时内核按卡认集合（只剩给裸库测试用的兜底）。
+  Uint8List historyStates(List<List<String>> lineages, {String? profile}) =>
+      using((Arena arena) {
+        final Uint8List page = _lineagePage(lineages, profile);
+        final ffi.Pointer<ffi.Pointer<ffi.Uint8>> out = arena();
+        final ffi.Pointer<ffi.Size> outLen = arena();
+        final ffi.Pointer<ffi.Pointer<ffi.Char>> err = arena();
+        err.value = ffi.nullptr;
+        _check(
+          _b,
+          _b.historyStates(
+            _h,
+            _copy(arena, page),
+            page.length,
+            lineages.length,
+            out,
+            outLen,
+            err,
+          ),
+          err,
+        );
+        final int len = outLen.value;
+        final Uint8List bytes = Uint8List.fromList(
+          out.value.asTypedListOutOfLine(len),
+        );
+        _b._freeBytes(out.value, len);
+        return bytes;
+      });
 
   /// 有效复习投影（`SrsStatReviews` 的行），Rust 直接从写连接读日志（含事务里未提交的行）。[groups]
   /// 每项是一个归属组（归属卡在前，再列出归它的前身卡），组内日志合在一起投影。返回 9 列行页
   /// （[srsDecodeRows]）：组下标, logId, occurredAt, utcOffsetMin, rating|null, kind, durationMs,
-  /// prevDueDay|null, maturityDelta。
-  Uint8List statProjection(List<List<String>> groups) => using((Arena arena) {
-    final Uint8List page = srsEncodeRows(2, <List<Object?>>[
-      for (int g = 0; g < groups.length; g++)
-        for (final String c in groups[g]) <Object?>[g, c],
-    ]);
-    final ffi.Pointer<ffi.Pointer<ffi.Uint8>> out = arena();
-    final ffi.Pointer<ffi.Size> outLen = arena();
-    final ffi.Pointer<ffi.Pointer<ffi.Char>> err = arena();
-    err.value = ffi.nullptr;
-    _check(
-      _b,
-      _b.statProjection(
-        _h,
-        _copy(arena, page),
-        page.length,
-        groups.length,
-        out,
-        outLen,
-        err,
-      ),
-      err,
-    );
-    final int len = outLen.value;
-    final Uint8List bytes = Uint8List.fromList(
-      out.value.asTypedListOutOfLine(len),
-    );
-    _b._freeBytes(out.value, len);
-    return bytes;
-  });
+  /// prevDueDay|null, maturityDelta。[profile] 同 [historyStates]。
+  Uint8List statProjection(List<List<String>> groups, {String? profile}) =>
+      using((Arena arena) {
+        final Uint8List page = _lineagePage(groups, profile);
+        final ffi.Pointer<ffi.Pointer<ffi.Uint8>> out = arena();
+        final ffi.Pointer<ffi.Size> outLen = arena();
+        final ffi.Pointer<ffi.Pointer<ffi.Char>> err = arena();
+        err.value = ffi.nullptr;
+        _check(
+          _b,
+          _b.statProjection(
+            _h,
+            _copy(arena, page),
+            page.length,
+            groups.length,
+            out,
+            outLen,
+            err,
+          ),
+          err,
+        );
+        final int len = outLen.value;
+        final Uint8List bytes = Uint8List.fromList(
+          out.value.asTypedListOutOfLine(len),
+        );
+        _b._freeBytes(out.value, len);
+        return bytes;
+      });
 
   // ---------------------------------------------------------------- P6 直读命令
   //
@@ -1085,14 +1084,15 @@ final class SrsCore {
   // projections.rs；解包在 fushi_engine `srs_projections.dart`。调用方放后台 isolate。
 
   /// 优化器训练集：[lineages] 每项是一张卡的血统，[cardIds] 是它们的 53 位数字 id；[algorithm] 0 fsrs6 /
-  /// 1 fsrs7 / 2 rwkv。
+  /// 1 fsrs7 / 2 rwkv。[profile] 同 [historyStates]。
   Uint8List optimizerItems(
     List<List<String>> lineages,
     List<int> cardIds, {
     required int algorithm,
     required int utcOffsetMin,
     required int rolloverHour,
-  }) => _command(_b.optimizerItems, _lineagePage(lineages, null), <int>[
+    String? profile,
+  }) => _command(_b.optimizerItems, _lineagePage(lineages, profile), <int>[
     lineages.length,
     algorithm,
     utcOffsetMin,
@@ -1108,7 +1108,8 @@ final class SrsCore {
     required int algorithm,
     required int utcOffsetMin,
     required int rolloverHour,
-  }) => _command(_b.calibrationItems, _lineagePage(lineages, null), <int>[
+    String? profile,
+  }) => _command(_b.calibrationItems, _lineagePage(lineages, profile), <int>[
     lineages.length,
     algorithm,
     utcOffsetMin,
@@ -1116,13 +1117,14 @@ final class SrsCore {
     ...cardIds,
   ]);
 
-  /// RWKV 逐卡的保留评分行与摘要（[ids] 每卡 4 个：卡 / 笔记 / 牌组 / 预设）。
+  /// RWKV 逐卡的保留评分行与摘要（[ids] 每卡 4 个：卡 / 笔记 / 牌组 / 预设）。[profile] 同 [historyStates]。
   Uint8List rwkvCards(
     List<List<String>> lineages,
     List<int> ids, {
     required int utcOffsetMin,
     required int rolloverHour,
-  }) => _command(_b.rwkvRows, _lineagePage(lineages, null), <int>[
+    String? profile,
+  }) => _command(_b.rwkvRows, _lineagePage(lineages, profile), <int>[
     lineages.length,
     0,
     utcOffsetMin,

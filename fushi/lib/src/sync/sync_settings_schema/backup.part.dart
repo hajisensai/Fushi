@@ -264,7 +264,9 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
   Future<Set<BackupCategory>?> _pickExportCategories(
     BackupContentSummary summary,
   ) async {
-    final Set<BackupCategory> selected = defaultBackupExportCategories();
+    // 要先升级才能导出的类别（本机复习库还没迁移成新代）不能勾：默认就不选，行上显示「需先升级」。
+    final Set<BackupCategory> selected = defaultBackupExportCategories()
+      ..removeAll(summary.needsUpgrade);
     assert(!selected.contains(BackupCategory.videos));
     assert(!selected.contains(BackupCategory.localAudio));
     // Per-book selection (TODO-1195 part A). Mutated by the nested book picker;
@@ -323,20 +325,24 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
                           index: c.index,
                           child: AdaptiveSettingsSwitchRow(
                             title: backupCategoryLabel(c),
-                            subtitle: summary.counts.containsKey(c)
+                            subtitle: summary.needsUpgrade.contains(c)
+                                ? t.backup_export_srs_needs_upgrade
+                                : summary.counts.containsKey(c)
                                 ? '${backupCategoryDescription(c)} '
                                       '(${summary.countFor(c)})'
                                 : backupCategoryDescription(c),
                             icon: backupCategoryIcon(c),
                             showIcon: true,
                             value: selected.contains(c),
-                            onChanged: (bool v) => setLocal(() {
-                              if (v) {
-                                selected.add(c);
-                              } else {
-                                selected.remove(c);
-                              }
-                            }),
+                            onChanged: summary.needsUpgrade.contains(c)
+                                ? null
+                                : (bool v) => setLocal(() {
+                                    if (v) {
+                                      selected.add(c);
+                                    } else {
+                                      selected.remove(c);
+                                    }
+                                  }),
                           ),
                         ),
                         // Per-book selection row (TODO-1195 part A): only meaningful
