@@ -400,6 +400,12 @@ class VideoMetadataResolver {
         );
         if (provider.providerKind == VideoMetadataProviderKind.anidb &&
             !summaryMatches) {
+          // 低相似度的模糊目录命中是噪声：整串原始文件名会模糊召回只共享
+          // 一个音节的作品（`kon` → Kono Oto Tomare! / Kekkon Yubiwa
+          // Monogatari），不能塞进待确认列表冒充候选。
+          if (AniDbVideoMetadataProvider.isWeakCatalogMatch(candidate)) {
+            continue;
+          }
           // AniDB's local titles dump already carries the searchable title and
           // alias set. Do not turn one fuzzy catalog query into up to fifteen
           // rate-limited HTTP detail requests merely to discover that the
