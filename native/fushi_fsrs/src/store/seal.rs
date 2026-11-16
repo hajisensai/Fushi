@@ -70,7 +70,15 @@ pub fn seal_legacy(conn: &Connection, into: &str) -> Result<(), String> {
 
 fn seal_in_tx(conn: &Connection, into: &str) -> Result<(), String> {
     let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate).map_err(e)?;
-    let current = meta(&tx, "schema")?;
+    if seal_rows(&tx, into)? {
+        tx.commit().map_err(e)?;
+    }
+    Ok(())
+}
+
+/// [seal_legacy] 的写：核对 schema、写那三行。返回写没写（已经封进 [into] = 不写）。调用方在写事务里。
+fn seal_rows(c: &Connection, into: &str) -> Result<bool, String> {
+    let current = meta(c, "schema")?;
     match current.as_deref().map(str::parse::<i64>) {
         Some(Ok(v)) if v == SCHEMA_VERSION => {
             for (key, value) in [
@@ -78,19 +86,19 @@ fn seal_in_tx(conn: &Connection, into: &str) -> Result<(), String> {
                 ("sealed_into", into.to_owned()),
                 ("sealed_from", v.to_string()),
             ] {
-                tx.execute(
+                c.execute(
                     "INSERT INTO srs_meta (key, value) VALUES (?1, ?2) \
                      ON CONFLICT(key) DO UPDATE SET value = excluded.value",
                     [key, value.as_str()],
                 )
                 .map_err(e)?;
             }
-            tx.commit().map_err(e)
+            Ok(true)
         }
         Some(Ok(v)) if v == SEALED_SCHEMA => {
-            let was = meta(&tx, "sealed_into")?;
+            let was = meta(c, "sealed_into")?;
             if was.as_deref() == Some(into) {
-                Ok(())
+                Ok(false)
             } else {
                 Err(e(format!("already sealed into {was:?}, not {into}")))
             }
@@ -99,6 +107,19 @@ fn seal_in_tx(conn: &Connection, into: &str) -> Result<(), String> {
             "cannot seal a library at schema {other:?} (this build seals {SCHEMA_VERSION})"
         ))),
     }
+}
+
+/// 同 [seal_legacy]，给**已经拿着这份库写事务**的调用方（迁移 `gen4::migrate`：从取锁到封存一直持着旧库的写锁，
+/// 提交点与封存之间插不进别的写入）。只写那三行、不提交——调用方随后 `COMMIT`，落盘口径由调用方的连接定（迁移的
+/// 持锁连接开着 `synchronous = FULL`）。连接不在事务里报错。返回写没写。
+pub fn seal_legacy_locked(conn: &Connection, into: &str) -> Result<bool, String> {
+    if into.is_empty() {
+        return Err(e("empty target name"));
+    }
+    if conn.is_autocommit() {
+        return Err(e("the caller must hold the write transaction"));
+    }
+    seal_rows(conn, into)
 }
 
 /// 一份协议 3 库的身份：`sync2_self` 里各 profile 的设备 ID（建库后各自随机生成的 UUIDv7），小写十六进制、排序后

@@ -23,8 +23,11 @@ use crate::sync2::segment::{MAGIC, RELAY_MAGIC};
 /// 记下的 kdf 序列化后的上限（参数来自不可信的 `meta.json`；Dart 侧已按界检查，这里再兜一层）。
 const KDF_MAX_BYTES: usize = 1024;
 
-fn key(profile: &str, location: &str) -> String {
-    format!("sync2_sealed/{location}/{profile}")
+/// 记账键的前缀（键 = 前缀 + 位置 + `/` + profile）。迁移把它们搬进新代 `loc_state` 时按它扫（`gen4::carry`）。
+pub(crate) const SEALED_PREFIX: &str = "sync2_sealed/";
+
+pub(crate) fn key(profile: &str, location: &str) -> String {
+    format!("{SEALED_PREFIX}{location}/{profile}")
 }
 
 fn record(c: &Connection, profile: &str, location: &str) -> Result<Option<Value>, String> {

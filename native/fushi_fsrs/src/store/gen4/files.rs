@@ -248,11 +248,12 @@ fn is_unsealed_legacy(conn: &Connection) -> rusqlite::Result<bool> {
 
 /// 新代库 [new] 已经在：`srs.db` 若是没封存的协议 3 库，按 [new] 记的迁移来源处理（文件头「打开模式」）——来源就是
 /// 它 = 补做封存；不是 = [OpenError::LegacyNotMigrated]，不动它。已封存 / 墓碑 / 别的版本的协议 3 库都不动。
-/// 判断阶段只读打开 `srs.db`，确定要封了才以读写方式打开。
+/// 判断阶段只读打开 `srs.db`，确定要封了才以读写方式打开。调用方拿着换代锁（[open_gen4] 的 Primary；迁移在提交点之后
+/// 中断、重跑时由 `migrate.rs` 调）。
 ///
 /// 读不了它分两种：不是 SQLite 文件（`SQLITE_NOTADB`）= [Retained::Unreadable]，不挡新代库——旧版本同样拒绝打开它，
 /// 不会往里写；别的错误（损坏、被别的进程锁住、IO……）报错：不能在旧版本还可能写它的状态下照常打开。
-fn finish_seal(dir: &Path, new: &Connection) -> Result<Retained, OpenError> {
+pub(crate) fn finish_seal(dir: &Path, new: &Connection) -> Result<Retained, OpenError> {
     let legacy = dir.join(LEGACY_FILE);
     if !legacy.exists() {
         return Ok(Retained::Settled);
@@ -296,7 +297,7 @@ fn finish_seal(dir: &Path, new: &Connection) -> Result<Retained, OpenError> {
 
 /// [finish_seal] 看到的保留副本。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Retained {
+pub(crate) enum Retained {
     /// 没有、已封存 / 墓碑 / 别的版本 / 不是协议 3 的库、或刚补封完：没有要做的。
     Settled,
     /// 在，但不是 SQLite 文件（[Opened::retained_copy_unreadable]）。
@@ -305,7 +306,7 @@ enum Retained {
 
 /// 以读写、不创建的方式打开 [path]，要求它已经是一份建好的新代库（`schema::check_ready`）。不改它：不设 PRAGMA、
 /// 不建表。
-fn open_ready(path: &Path) -> Result<Connection, String> {
+pub(crate) fn open_ready(path: &Path) -> Result<Connection, String> {
     let conn = Connection::open_with_flags(
         path,
         OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,

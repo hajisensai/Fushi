@@ -6,8 +6,13 @@
 //!    app 同时在写也不影响结果，也不会被它拖住（WAL 下读不挡写；代价是干跑期间 WAL 并不回去，结束后照常）。
 //!    旧库一个字节不写：协议 3 一侧的缓存重建写进同名的**临时表**（`temp` 库里的同名表遮住 `main` 的，见 [old_caches]）。
 //! 2. 先过 `legacy::preflight`（换代前必须在旧代码上做完的事）；没做完的 profile 报 `blocked`、不往下走。
-//! 3. 按 profile 把操作日志转译、灌进工作目录里的临时新代文件（`import.rs`），由一台假想的迁移设备在它的原生日志里写
-//!    一条 `Salts`（本机 uid ∪ 已退役 uid，§6.1 第 7 步），再 `rebuild_all`（索引、别名、摘要、缓存全程）。
+//! 3. 按 profile 把操作日志转译、灌进工作目录里的临时新代文件（`import.rs`），带上本机状态（`carry.rs`），由一台假想的
+//!    迁移设备（占位钥匙）建身份、经原生写入者在它的原生日志里写一条 `Salts`（本机 uid ∪ 已退役 uid，§6.1 第 4 步），再
+//!    `rebuild_all`（索引、别名、摘要、缓存全程）。
+//!
+//! 第 2–5 步是 [profile_stages]，真迁移（`migrate.rs`，G7-2）调的是同一个函数，只有 [Mode] 的两处不同：新身份（真迁移
+//! 是新设备 ID + 沿用的签名钥匙 + 指向旧设备的 `prev`）与真迁移才拦的前提（[profile_blockers]：收段留下的待重放 / 待
+//! 刷新、没给缓存配置；预演只在 `migrationBlockers` 里报）。
 //! 4. 对拍（`compare.rs`，与测试装置同一份比法）。基准是**冻结的旧代码对旧库全量重建出来的缓存**，不是旧库里现成的
 //!    缓存表（它允许过期）；现成的与重建的另比一次，单列（§10 第 7 条，不计入判定）。协议 3 自己还欠着收尾的卡与笔记
 //!    （待重放集合、没刷新的合成标签行）只读连接上做不了，跳过并计数。
@@ -38,6 +43,7 @@ use serde_json::{Map, Value, json};
 
 use super::alias::{A_UNVERIFIED, AliasCounts};
 use super::cache::CFG_KEY;
+use super::carry::{self, Carried};
 use super::class::DiffEvidence;
 use super::compare::{
     self, CARD_COLS, CacheBaseline, CacheRows, CanonMap, Diff, Known, NOTE_COLS, OldCachesError,
@@ -45,10 +51,12 @@ use super::compare::{
 };
 use super::derive::{Index, R_CONFLICT, R_WINNER, Ref, Settled, body_of};
 use super::import::{Imported, import_legacy_checked};
+use super::ingest::{Settle, ingest_settle};
 use super::legacy;
+use super::native::Native;
 use super::schema::{self, sql};
 use super::truth::Truth;
-use crate::gen4::op::{Body4, Op4};
+use crate::gen4::op::Body4;
 use crate::gen4::stamp::{HeritageStamp, StampHlc};
 use crate::registers::{StoredEdit, judge_register};
 use crate::store::sync2::collection_of;
@@ -56,7 +64,6 @@ use crate::store::sync2::config::default_deck_id;
 use crate::sync2::dvv::Dvv;
 use crate::sync2::hlc::Hlc;
 use crate::sync2::id::{Id, Key};
-use crate::sync2::vv::OpId;
 
 /// 报告格式的版本（[run] 的返回值里的 `version`）。
 ///
@@ -81,7 +88,7 @@ const REHEARSAL_DEVICE: Id = Id([0x6d; 16]);
 pub const DEFAULT_EXAMPLES: usize = 8;
 
 /// 空间余量（与 `store/schema.rs` 的升级余量同值）。
-const SPACE_MARGIN: u64 = 64 << 20;
+pub(crate) const SPACE_MARGIN: u64 = 64 << 20;
 
 /// 中断开关。可以从别的线程调 [Stop::stop]。
 #[derive(Default)]
@@ -109,7 +116,7 @@ impl Stop {
         self.flag.load(Ordering::SeqCst)
     }
 
-    fn attach(&self, c: &Connection) {
+    pub(crate) fn attach(&self, c: &Connection) {
         if let Ok(mut hs) = self.handles.lock() {
             hs.push(c.get_interrupt_handle());
         }
@@ -118,13 +125,13 @@ impl Stop {
         }
     }
 
-    fn detach_all(&self) {
+    pub(crate) fn detach_all(&self) {
         if let Ok(mut hs) = self.handles.lock() {
             hs.clear();
         }
     }
 
-    fn check(&self) -> Result<(), String> {
+    pub(crate) fn check(&self) -> Result<(), String> {
         if self.stopped() {
             Err(CANCELLED.to_owned())
         } else {
@@ -147,12 +154,13 @@ pub struct Options<'a> {
     /// 例子给整行（含笔记内容；只给本地排查用）。默认只给 ID。
     pub full_examples: bool,
     pub stop: &'a Stop,
-    /// 进度：(阶段, profile)。阶段：`open`、`preflight`、`import`、`rebuild`、`compare`、`checks`、`done`。
+    /// 进度：(阶段, profile)。阶段：`open`、`preflight`、`import`（灌入期间每提交一批另报一次 `batch`）、`local`、
+    /// `salts`、`rebuild`、`compare`、`checks`、`done`。
     pub progress: &'a mut dyn FnMut(&str, Option<&str>),
 }
 
 impl Options<'_> {
-    fn note(&mut self, stage: &str, profile: Option<&str>) {
+    pub(crate) fn note(&mut self, stage: &str, profile: Option<&str>) {
         (self.progress)(stage, profile);
     }
 }
@@ -218,21 +226,21 @@ pub fn peak_mem_mb() -> (f64, f64) {
     (0.0, 0.0)
 }
 
-fn now_ms() -> i64 {
+pub(crate) fn now_ms() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |d| d.as_millis() as i64)
 }
 
-fn secs(t: Instant) -> f64 {
+pub(crate) fn secs(t: Instant) -> f64 {
     (t.elapsed().as_secs_f64() * 10.0).round() / 10.0
 }
 
-fn mb(x: f64) -> f64 {
+pub(crate) fn mb(x: f64) -> f64 {
     x.round()
 }
 
-fn file_len(p: &Path) -> u64 {
+pub(crate) fn file_len(p: &Path) -> u64 {
     std::fs::metadata(p).map_or(0, |m| m.len())
 }
 
@@ -311,7 +319,7 @@ pub fn run(old: &Path, work: &Path, mut opts: Options<'_>) -> Result<Value, Stri
         let mut profiles = Vec::new();
         for profile in legacy::profiles(&src)? {
             opts.stop.check()?;
-            let one = profile_run(&src, &t, &profile, &mut opts);
+            let one = profile_stages(&src, &t, &profile, &mut opts, &Mode::Rehearsal);
             match one {
                 Err(e) if e == CANCELLED || opts.stop.stopped() => return Err(CANCELLED.into()),
                 Err(e) => {
@@ -366,7 +374,7 @@ pub fn run(old: &Path, work: &Path, mut opts: Options<'_>) -> Result<Value, Stri
 
 /// 整个库的结论：有出错的报 `error`，否则有不过的报 `fail`，否则有没做完前提的报 `blocked`，否则有对拍没做全的
 /// （协议 3 一侧的缓存基准拿不到，profile 报 `incomplete`）报 `incomplete`，都过了才 `pass`；一个 profile 都没有是 `empty`。
-fn overall(verdicts: &[&str]) -> &'static str {
+pub(crate) fn overall(verdicts: &[&str]) -> &'static str {
     if verdicts.is_empty() {
         "empty"
     } else if verdicts.contains(&"error") {
@@ -382,21 +390,118 @@ fn overall(verdicts: &[&str]) -> &'static str {
     }
 }
 
-fn profile_run(
+/// 阶段代码的走法（[profile_stages]）。预演与真迁移只在这两处不同，其余每一步是同一份代码（规划 §1.1：「预演与真迁移
+/// 走同一套阶段代码」）。
+pub(crate) enum Mode<'a> {
+    /// 预演（G4 / G4b）：由一台假想的迁移设备写那条 `Salts`（占位钥匙，不把真签名钥匙抄进临时文件）；真迁移才拦的前提
+    /// （[profile_blockers] 的第二项）只报不拦。
+    Rehearsal,
+    /// 真迁移（G7-2）：新身份 = [Mode::Migration::new_device] 给的设备 ID + 沿用的签名钥匙，`prev` 指向协议 3 的旧设备
+    /// （设计 §3.3）；前提一项不齐就拦。`now_ms` 是本机墙钟（身份建立时刻、HLC、媒体事实的超前判断）。
+    Migration {
+        now_ms: i64,
+        new_device: &'a dyn Fn(&str, i64) -> Id,
+    },
+}
+
+/// 预演里那台假想迁移设备的签名钥匙种子（占位）。
+const REHEARSAL_SEED: [u8; 32] = [0x6d; 32];
+
+/// 一个 profile 迁不了的原因（预演与真迁移同一份判据）：(哪种走法都拦的, 只有真迁移拦的)。前者是读入器读不全的
+/// （`legacy::preflight`）；后者是读入器读得全、但对拍会跳过或宿主输入不全的（`legacy::migration_blockers`、没给缓存
+/// 配置——没有它新代的缓存层建不出内置笔记类型的行，提交后读到的就是错的）。
+pub(crate) fn profile_blockers(
+    src: &Connection,
+    profile: &str,
+    caches: &BTreeMap<String, String>,
+) -> Result<(Vec<String>, Vec<String>), String> {
+    let hard = legacy::preflight(src, profile)?;
+    let mut later = legacy::migration_blockers(src, profile)?;
+    if !caches.contains_key(profile) {
+        later.push("no cache configuration was given for this profile".to_owned());
+    }
+    Ok((hard, later))
+}
+
+/// 新身份（[Mode] 的第一处不同）。
+struct NewSelf {
+    device: Id,
+    sk: [u8; 32],
+    prev: Option<crate::gen4::head::PrevIdentity>,
+    /// 时钟的起点：协议 3 旧身份的时钟与媒体事实里不超前的最大 HLC 取大者（新身份发出的第一条 HLC 不落在本机已经
+    /// 发出 / 吸收过的之前）。
+    clock: Option<Hlc>,
+}
+
+fn new_self(
+    src: &Connection,
+    profile: &str,
+    mode: &Mode<'_>,
+    now: i64,
+    carried: &Carried,
+) -> Result<NewSelf, String> {
+    let old = carry::legacy_self(src, profile)?;
+    let (device, sk, prev) = match mode {
+        Mode::Rehearsal => (REHEARSAL_DEVICE, REHEARSAL_SEED, None),
+        Mode::Migration { new_device, .. } => {
+            let old = old.as_ref().ok_or_else(|| {
+                format!("gen4 migrate: profile {profile} has no protocol 3 identity")
+            })?;
+            let device = new_device(profile, now);
+            if device == old.device {
+                return Err(format!(
+                    "gen4 migrate: the new identity of {profile} reuses the old device id"
+                ));
+            }
+            (device, old.key_seed, Some(old.prev()))
+        }
+    };
+    let clock = [
+        old.as_ref().and_then(|o| o.clock_for(device)),
+        carried.media_hlc.map(|h| Hlc { device, ..h }),
+    ]
+    .into_iter()
+    .flatten()
+    .max_by_key(|h| (h.wall, h.logical));
+    Ok(NewSelf {
+        device,
+        sk,
+        prev,
+        clock,
+    })
+}
+
+/// 一个 profile 从前提到对拍的全部阶段（预演 [run] 与真迁移 `migrate.rs` 共用）：前提 → 绑定与缓存配置 → 灌入 →
+/// 本机状态（`carry.rs`）→ 新身份与 `Salts` → `rebuild_all` → 对拍与按规范 ID 的比较。返回这个 profile 的报告；
+/// 结论在 `verdict`：`blocked` / `fail` / `incomplete` / `pass`。只有跑不下去（中断 = [CANCELLED]、IO……）才返回 `Err`。
+/// 新库 [t] 的写一律在自己开的事务里，调用方不在事务里调。
+pub(crate) fn profile_stages(
     src: &Connection,
     t: &Truth<'_>,
     profile: &str,
     opts: &mut Options<'_>,
+    mode: &Mode<'_>,
 ) -> Result<Value, String> {
     let mut out = Map::new();
     out.insert("profile".into(), json!(profile));
     opts.note("preflight", Some(profile));
-    let blockers = legacy::preflight(src, profile)?;
+    let (mut blockers, later) = profile_blockers(src, profile, opts.caches)?;
+    match mode {
+        Mode::Migration { .. } => blockers.extend(later),
+        Mode::Rehearsal if !later.is_empty() => {
+            out.insert("migrationBlockers".into(), json!(later));
+        }
+        Mode::Rehearsal => {}
+    }
     if !blockers.is_empty() {
         out.insert("verdict".into(), json!("blocked"));
         out.insert("blockers".into(), json!(blockers));
         return Ok(Value::Object(out));
     }
+    let now = match mode {
+        Mode::Rehearsal => now_ms(),
+        Mode::Migration { now_ms, .. } => *now_ms,
+    };
     let col = t.tx(|t| t.bind(profile, &collection_of(profile), profile))?;
     let cfg = opts
         .caches
@@ -417,38 +522,58 @@ fn profile_run(
     opts.note("import", Some(profile));
     let started = Instant::now();
     let stop = opts.stop;
-    let imported = import_legacy_checked(src, profile, t, col, opts.batch.max(1), &mut || {
-        stop.check()
+    let batch = opts.batch.max(1);
+    let progress = &mut *opts.progress;
+    let imported = import_legacy_checked(src, profile, t, col, batch, &mut || {
+        stop.check()?;
+        progress("batch", Some(profile));
+        Ok(())
     })?;
     out.insert("importS".into(), json!(secs(started)));
     out.insert("imported".into(), imported_json(&imported));
     out.insert("peakMbAfterImport".into(), json!(mb(peak_mem_mb().0)));
 
-    // 盐（§6.1 第 7 步）+ 重建。
+    // 本机状态（§6.1 第 3 步的「带过去」，D11；规划 §1.4 第 5、7 步）。
+    opts.note("local", Some(profile));
+    opts.stop.check()?;
+    let carried = carry::carry_local(src, t, col, profile, now)?;
+    let cut_points = carry::carry_cut_points(src, t, col, profile)?;
+    let mut local = carried.json();
+    local["cutPoints"] = json!(cut_points);
+    out.insert("local".into(), local);
+
+    // 新身份 + 盐（§6.1 第 4 步，D9：在重建与对拍之前；规划 §1.4 第 6 步）。
+    opts.note("salts", Some(profile));
+    opts.stop.check()?;
+    let salts: BTreeSet<String> = legacy::salts(src, profile)?.into_iter().collect();
+    out.insert("salts".into(), json!(salts.len()));
+    let me = new_self(src, profile, mode, now, &carried)?;
+    let salts_op = t.tx(|t| {
+        t.create_self(col, &me.device, &me.sk, me.prev.as_ref(), now)?;
+        if let Some(h) = &me.clock {
+            if (h.wall, h.logical) > (0, 0) {
+                t.set_self_hlc(col, h)?;
+            }
+        }
+        let mut idx = Index::new(t, col);
+        Native::open(t, col)?.write_salts(&mut idx, &salts, now)
+    })?;
+    out.insert(
+        "identity".into(),
+        json!({
+            "device": me.device.text(),
+            "prev": me.prev.as_ref().map(|p| json!({"device": p.device.text(), "seq": p.seq})),
+            "saltsSeq": salts_op.map(|id| id.seq),
+        }),
+    );
+
+    // 重建（§6.1 第 5 步）。
     opts.note("rebuild", Some(profile));
     opts.stop.check()?;
-    let salts = legacy::salts(src, profile)?;
-    out.insert("salts".into(), json!(salts.len()));
     let started = Instant::now();
     let settled = t.tx(|t| {
-        if t.last_of(col, &REHEARSAL_DEVICE)? == 0 {
-            let body = Body4::salts(salts.iter().cloned()).map_err(|e| format!("{e:?}"))?;
-            let op = Op4::of(
-                OpId {
-                    device: REHEARSAL_DEVICE,
-                    seq: 1,
-                },
-                Hlc {
-                    wall: now_ms(),
-                    logical: 0,
-                    device: REHEARSAL_DEVICE,
-                },
-                std::sync::Arc::new(t.applied(col)?),
-                &body,
-            );
-            t.append_native(col, &op)?;
-        }
-        Index::new(t, col).rebuild_all()
+        let mut idx = Index::new(t, col);
+        ingest_settle(t, &mut idx, col, Settle::Rebuild)
     })?;
     out.insert("rebuildS".into(), json!(secs(started)));
     out.insert("settled".into(), settled_json(&settled));
@@ -1621,11 +1746,18 @@ pub const VERDICT_RUNNING: &str = "running";
 
 /// 原子地写 `<work>/report.json`（先写临时文件再改名，读的一方不会读到半份）。
 fn write_report(work: &Path, report: &Value) -> Result<(), String> {
-    let text = serde_json::to_string_pretty(report).map_err(|e| e.to_string())?;
-    let tmp = work.join(format!("{REPORT_FILE}.tmp"));
-    std::fs::write(&tmp, text).map_err(|e| format!("gen4 rehearsal: write report: {e}"))?;
-    std::fs::rename(&tmp, work.join(REPORT_FILE))
+    write_json_atomically(&work.join(REPORT_FILE), report)
         .map_err(|e| format!("gen4 rehearsal: write report: {e}"))
+}
+
+/// 原子地把 [value] 写到 [path]（同目录临时文件 `<名字>.tmp` 再改名）。预演报告与迁移报告共用。
+pub(crate) fn write_json_atomically(path: &Path, value: &Value) -> Result<(), String> {
+    let text = serde_json::to_string_pretty(value).map_err(|e| e.to_string())?;
+    let mut tmp = path.as_os_str().to_owned();
+    tmp.push(".tmp");
+    let tmp = PathBuf::from(tmp);
+    std::fs::write(&tmp, text).map_err(|e| format!("{}: {e}", tmp.display()))?;
+    std::fs::rename(&tmp, path).map_err(|e| format!("{}: {e}", path.display()))
 }
 
 /// 一个库上登记着的那次预演：它的中断开关、调用方给的运行号（`runId`，没给就是 None），以及登记期间
@@ -1862,15 +1994,15 @@ pub fn stop_rehearsal(db: &Path) {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use serde_json::{Value, json};
 
     use super::*;
     use crate::store::sync2::tests::{DAY, Device, P, deck_entity, edit, review, tempdir};
 
-    const T0: i64 = 1_700_000_000_000;
-    const N1: &str = "0193a1b2-0000-7000-8000-0000000000b1";
-    const N2: &str = "0193a1b2-0000-7000-8000-0000000000b2";
+    pub(crate) const T0: i64 = 1_700_000_000_000;
+    pub(crate) const N1: &str = "0193a1b2-0000-7000-8000-0000000000b1";
+    pub(crate) const N2: &str = "0193a1b2-0000-7000-8000-0000000000b2";
 
     fn note(id: &str, nt: &str) -> Value {
         json!({"t": "entity", "x": {"id": id, "p": P, "k": "note", "d": {"createdAt": 1, "guid": id, "noteTypeId": nt}}})
@@ -1880,17 +2012,17 @@ mod tests {
         json!({"t": "entity", "x": {"id": id, "p": P, "k": "notetype", "d": {"createdAt": 1, "ntKind": "standard"}}})
     }
 
-    fn cfg() -> String {
+    pub(crate) fn cfg() -> String {
         json!({"defaultDeck": default_deck_id(P)}).to_string()
     }
 
     /// 协议 3 上的一个小库：一个笔记类型两条模板、两条笔记、几次复习，缓存表按同一份配置建好。
-    fn library(tag: &str) -> Device {
+    pub(crate) fn library(tag: &str) -> Device {
         library_with(tag, &|_| {})
     }
 
     /// 同 [library]，迁移进协议 3 之前先跑 [legacy]（往旧表里插迁移前的旧修改记录，迁移把它们收成旧戳）。
-    fn library_with(tag: &str, legacy: &dyn Fn(&Device)) -> Device {
+    pub(crate) fn library_with(tag: &str, legacy: &dyn Fn(&Device)) -> Device {
         let d = Device::new(tag);
         d.core.sync2_identity(P, T0).unwrap();
         legacy(&d);
@@ -1959,7 +2091,11 @@ mod tests {
         let wal = d._dir.0.join("srs.db-wal");
         let (before, wal_before) = (bytes(&old), bytes(&wal));
         let mut stages = Vec::new();
-        let r = dry(&d, &Stop::new(), &mut |s, _| stages.push(s.to_owned()));
+        let r = dry(&d, &Stop::new(), &mut |s, _| {
+            if s != "batch" {
+                stages.push(s.to_owned())
+            }
+        });
         assert_eq!(r["verdict"], "pass", "{r:#}");
         let p = &r["profiles"][0];
         assert_eq!(p["verdict"], "pass");
@@ -1993,6 +2129,8 @@ mod tests {
                 "open",
                 "preflight",
                 "import",
+                "local",
+                "salts",
                 "rebuild",
                 "compare",
                 "checks",

@@ -1761,8 +1761,13 @@ impl<'c> Truth<'c> {
     }
 
     /// 给集合 [col] 建本机身份：设备 [device]、签名钥匙种子 [sk]，时钟从零起；同时把本机公钥记进 `peers`（验自己的段、
-    /// 导出都按公钥表查，与别的设备同一条路）。返回建没建：已有逐项相同的身份 = `false`（迁移续做幂等）；已有另一个
-    /// 身份 = 报错（换身份是 G8-6 的 `rotate_identity`，不走这里）。
+    /// 导出都按公钥表查，与别的设备同一条路）。返回建没建：已有逐项相同（设备、钥匙、[prev]）的身份 = `false`（迁移
+    /// 续做幂等）；已有另一个身份 = 报错（换身份是 G8-6 的 `rotate_identity`，不走这里）。
+    ///
+    /// [prev] = 这个身份接替的上一个身份冻结在哪（设计 §3.3：迁移时是协议 3 的旧设备 ID、它日志的末尾 seq 与该处的
+    /// 完整链值；全新安装 = None）。存储口径同 [prev_cols]：`seq` 可以是 0，这时链值必须是 [CHAIN_ZERO]；不能是新身份
+    /// 自己。给了 [prev] 时同一把钥匙的公钥也记到旧设备名下（读者核对 `prev` 用，与换身份同口径）；旧设备已经记过
+    /// 另一个公钥 = 报错。
     ///
     /// 新身份必须是这个集合里没出现过日志的设备：同一个设备 ID 已有日志（承袭日志、或别人的原生日志）时接着写会让两条
     /// 日志撞号，报错。
@@ -1771,14 +1776,34 @@ impl<'c> Truth<'c> {
         col: i64,
         device: &Id,
         sk: &[u8; 32],
+        prev: Option<&PrevIdentity>,
         now: i64,
     ) -> Result<bool, String> {
         self.write(|| {
             if self.binding(col)?.is_none() {
                 return Err(format!("gen4 store: no collection {col}"));
             }
+            if let Some(p) = prev {
+                if p.device == *device {
+                    return Err(format!(
+                        "gen4 store: device {device} cannot be its own previous identity"
+                    ));
+                }
+                if p.seq == 0 && p.chain != CHAIN_ZERO {
+                    return Err(format!(
+                        "gen4 store: previous identity {} at seq 0 must sit at the chain start",
+                        p.device
+                    ));
+                }
+                if p.seq > i64::MAX as u64 {
+                    return Err(format!(
+                        "gen4 store: previous identity {} has a bad seq {}",
+                        p.device, p.seq
+                    ));
+                }
+            }
             if let Some(cur) = self.self_identity(col)? {
-                if cur.device == *device && cur.sk == *sk {
+                if cur.device == *device && cur.sk == *sk && cur.prev.as_ref() == prev {
                     return Ok(false);
                 }
                 return Err(format!(
@@ -1791,18 +1816,33 @@ impl<'c> Truth<'c> {
                     "gen4 store: device {device} already has a log in collection {col}"
                 ));
             }
-            self.own_peer(col, device, DeviceKey::from_seed(sk).public(), now)?;
+            let public = DeviceKey::from_seed(sk).public();
+            self.own_peer(col, device, public, now)?;
+            if let Some(p) = prev {
+                self.own_peer(col, &p.device, public, now)?;
+            }
             let zero = Hlc {
                 wall: 0,
                 logical: 0,
                 device: *device,
             };
+            let (pd, ps, pc) = prev_cols(prev);
             self.conn
                 .prepare_cached(
-                    "INSERT INTO self_ (col, device, sk, hlc, created) VALUES (?1, ?2, ?3, ?4, ?5)",
+                    "INSERT INTO self_ (col, device, sk, hlc, prev_device, prev_seq, prev_chain, created) \
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
                 )
                 .map_err(sql)?
-                .execute(params![col, &device.0[..], &sk[..], hlc_text(&zero), now])
+                .execute(params![
+                    col,
+                    &device.0[..],
+                    &sk[..],
+                    hlc_text(&zero),
+                    pd,
+                    ps,
+                    pc,
+                    now
+                ])
                 .map_err(sql)?;
             Ok(true)
         })
