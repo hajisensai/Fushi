@@ -2489,7 +2489,7 @@ class SrsDbStore implements SrsSync2Host {
   /// 直接拿加盐 ID 比，每次开库都会把三个内置实体当成缺的再写一遍。
   Future<void> ensureBuiltins() => runExclusive(() async {
     final List<SrsEntityRecord> builtins = srsBuiltinEntities(profileUid);
-    final List<String> canonical = await _canonicalIds(<String>[
+    final List<String> canonical = await canonicalIds(<String>[
       for (final SrsEntityRecord r in builtins) r.id,
     ]);
     final Set<String> present = (await _entityIdsWhere(
@@ -2503,21 +2503,29 @@ class SrsDbStore implements SrsSync2Host {
     if (missing.isNotEmpty) await _emit(missing);
   });
 
-  /// [ids] 逐个归一成这个 profile 集合里的规范 ID（内核 `canonical_ids`，顺序与条数照请求）。
-  Future<List<String>> _canonicalIds(List<String> ids) async =>
-      ((await _sync2(<String, Object?>{
-                'op': 'canonical_ids',
-                'ids': ids,
-              }))['ids']!
-              as List<Object?>)
-          .cast<String>();
+  /// 一批 ID 的规范 ID（内核 `canonical_ids`，只读、一个读快照，逐项对应）。一次最多 `kSrsCanonicalIdsBatchMax`
+  /// 条，多了由调用方分批（srs_canonical_ids.dart 的 `srsCanonicalIdMap`）；归一不到的 ID 原样返回。
+  Future<List<String>> canonicalIds(List<String> ids) async {
+    if (ids.isEmpty) return const <String>[];
+    final Map<String, Object?> r = await _sync2(<String, Object?>{
+      'op': 'canonical_ids',
+      'ids': ids,
+    });
+    final List<String> out = (r['ids']! as List<Object?>).cast<String>();
+    if (out.length != ids.length) {
+      throw StateError(
+        'canonical_ids answered ${out.length} ids for ${ids.length}',
+      );
+    }
+    return out;
+  }
 
   /// 读根上的内置实体 ID（默认牌组、两个内置笔记类型）的规范 ID：开库最后一步（内置实体建好之后）与绑定变化之后
   /// （[_sync2Raw]）各读一次。Dart 按 uid 加盐算的 ID 与集合里的规范 ID 不同（盐不同）；调用方拿这几个 ID 和读命令
   /// 回的 ID 比（牌组树里找默认牌组、笔记类型列表里找 Lapis……），所以必须是规范的那一份。
   Future<void> _loadRootIds() async {
     final SrsKernelIds ids = kernelIds;
-    final List<String> canonical = await _canonicalIds(<String>[
+    final List<String> canonical = await canonicalIds(<String>[
       ids.defaultDeck,
       ids.builtinNoteType(kSrsBuiltinLapisKey),
       ids.builtinNoteType(kSrsBuiltinFushiCardKey),

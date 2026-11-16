@@ -43,6 +43,7 @@ import 'package:fushi/src/models/preference_keys.dart'
 import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/srs/srs_card_appearance.dart';
 import 'package:fushi/src/srs/srs_device_view.dart';
+import 'package:fushi/src/srs/srs_persisted_ids.dart';
 import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi_engine/srs/srs_mining_target.dart';
 import 'package:fushi/src/srs/srs_profile_stores.dart';
@@ -342,6 +343,15 @@ srsStoreProvider = FutureProvider<SrsDbStore?>((Ref ref) async {
   bool disposed = false;
   ref.onDispose(() => disposed = true);
   bool shouldStop() => disposed || store.isWindingDown;
+  // 偏好里存的牌组 / 笔记类型 / 字段映射 ID 与内置实体 ID 换成规范 ID（G9-6，srs_persisted_ids.dart）：补盐 / 并入后
+  // 旧盐算出的成员 ID 在牌组树里查不到。归一不到的原样保留。
+  srsRunLogged('srsNormalizeStoreIds', () async {
+    await srsNormalizeStoreIds(
+      store: store,
+      prefs: app.prefsRepo,
+      shouldStop: shouldStop,
+    );
+  });
   // 媒体保留期回收：只被「删除已满 90 天」的笔记引用的本机媒体（srs_purge.dart）。历史本身永久保留。
   srsRunLogged('srsPurgeExpiredTombstones', () async {
     await srsPurgeExpiredTombstones(

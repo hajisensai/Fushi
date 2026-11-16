@@ -401,6 +401,11 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
   late final String lapisNoteTypeId = srsLapisNoteTypeId(profileUid);
   @override
   late final String fushiCardNoteTypeId = srsFushiCardNoteTypeId(profileUid);
+
+  /// 远程库的 ID 归一在主机上：主机的内核对请求里的 ID 一律先归一，远程协议还没有 `canonical_ids`（G10-2），
+  /// 这里原样返回（与改造前一样拿原 ID 比对）。
+  @override
+  Future<List<String>> canonicalIds(List<String> ids) async => ids;
   @override
   bool get canSchedule => _canSchedule;
   @override

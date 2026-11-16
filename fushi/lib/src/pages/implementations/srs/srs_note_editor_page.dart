@@ -26,7 +26,9 @@ import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
+import 'package:fushi_engine/srs/srs_canonical_ids.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_mining_target.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi/src/ai/ai_srs_field_assistant.dart';
@@ -107,6 +109,9 @@ class _SrsNoteEditorPageState extends ConsumerState<SrsNoteEditorPage> {
   /// fieldId → 制卡映射（ⓘ 里的「制卡时自动填入」）；按笔记类型缓存，换类型清空。
   Map<String, String>? _miningSlots;
 
+  /// 制卡落点换成规范 ID 之后的样子（G9-6，载入时问一次）：字段映射按规范的 type.id 查。
+  SrsMiningDestination _mining = const SrsMiningDestination();
+
   /// 预览常驻在宽窗右栏、且一屏看得到（不是横屏手机那种矮窗）；否则顶栏多一个「预览」
   /// 打开底部抽屉。
   bool _inlinePreview = false;
@@ -156,9 +161,15 @@ class _SrsNoteEditorPageState extends ConsumerState<SrsNoteEditorPage> {
                 .firstOrNull ??
             types.firstOrNull;
       }
+      final SrsMiningDestination mining =
+          await srsCanonicalizeMiningDestination(
+            ref.read(appProvider).srsMiningDestination,
+            srsStoreCanonicalIds(store),
+          );
       if (!mounted) return;
       setState(() {
         _store = store;
+        _mining = mining;
         _types = types;
         _decks = decks;
         _note = note;
@@ -898,10 +909,7 @@ class _SrsNoteEditorPageState extends ConsumerState<SrsNoteEditorPage> {
       type: type,
       builtinKey: type.builtinKey,
       profileUid: store.profileUid,
-      stored: ref
-          .read(appProvider)
-          .srsMiningDestination
-          .fieldMappingsByType[type.id],
+      stored: _mining.fieldMappingsByType[type.id],
     );
   }
 

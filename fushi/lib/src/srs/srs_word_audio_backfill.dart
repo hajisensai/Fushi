@@ -58,6 +58,26 @@ class SrsWordAudioBackfillFields {
     required this.audioFieldId,
   });
 
+  /// [store] 那个 profile 的规范 ID（G9-6）：笔记 / 笔记类型视图里的 ID 是内核的规范 ID（不带盐），按 uid 加盐派生的
+  /// [SrsWordAudioBackfillFields.forProfile] 只是别名类成员，拿它比对一条也对不上。四个 ID 一条 `canonical_ids` 问齐。
+  static Future<SrsWordAudioBackfillFields> ofStore(SrsDbStore store) async {
+    final SrsWordAudioBackfillFields derived =
+        SrsWordAudioBackfillFields.forProfile(store.profileUid);
+    final List<String> c = await store.canonicalIds(<String>[
+      derived.noteTypeId,
+      derived.termFieldId,
+      derived.readingFieldId,
+      derived.audioFieldId,
+    ]);
+    return SrsWordAudioBackfillFields(
+      noteTypeId: c[0],
+      termFieldId: c[1],
+      readingFieldId: c[2],
+      audioFieldId: c[3],
+    );
+  }
+
+  /// 按 uid 加盐派生的 ID（别名类成员，不能拿来和内核读回的 ID 比；比对用 [ofStore]）。
   factory SrsWordAudioBackfillFields.forProfile(String profileUid) =>
       SrsWordAudioBackfillFields(
         noteTypeId: srsFushiCardNoteTypeId(profileUid),
@@ -126,7 +146,7 @@ Future<List<SrsWordAudioBackfillItem>> loadSrsWordAudioBackfillItems(
   String deckId,
 ) async {
   final SrsWordAudioBackfillFields fields =
-      SrsWordAudioBackfillFields.forProfile(store.profileUid);
+      await SrsWordAudioBackfillFields.ofStore(store);
   final SrsDeckTree tree = await store.deckTree();
   final List<String> decks = tree.subtree(deckId);
   if (decks.isEmpty) return const <SrsWordAudioBackfillItem>[];

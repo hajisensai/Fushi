@@ -588,6 +588,8 @@ class SrsMiningAnkiRepository extends DelegatingAnkiRepository {
     final List<SrsNewCardEntry> entries = await miner.store.newCardsInDeck(
       deckName,
     );
+    final Map<String, String> Function(SrsNoteTypeView type) mappingOf =
+        await miner.miningFieldMappingLookup();
     final Map<String, Map<String, String>> mappingByType =
         <String, Map<String, String>>{};
     return <AnkiCardInfo>[
@@ -607,7 +609,7 @@ class SrsMiningAnkiRepository extends DelegatingAnkiRepository {
             e.noteType,
             mappingByType.putIfAbsent(
               e.noteType.id,
-              () => miner.miningFieldMappingsFor(e.noteType),
+              () => mappingOf(e.noteType),
             ),
           ),
         ),
