@@ -11432,7 +11432,7 @@ class AppModel
       prefsRepo.setPopupBottomDocked(value);
 
   /// 底部停靠在 [module] 的媒体页里是否启用：每个模块一个独立开关，不受
-  /// [popupBottomDocked] 门控（BUG-4711）。偏好仓库未装配时按默认值 OFF（跟随选区）。
+  /// [popupBottomDocked] 门控（BUG-4713）。偏好仓库未装配时按默认值 OFF（跟随选区）。
   bool popupBottomDockedIn(ModuleId module) =>
       isPreferencesReady && prefsRepo.popupBottomDockedIn(module);
   Future<void> setPopupBottomDockedIn(ModuleId module, bool value) =>
