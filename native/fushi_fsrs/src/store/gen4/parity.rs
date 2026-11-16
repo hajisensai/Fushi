@@ -81,145 +81,123 @@ const SKIPS: &[(&str, &str, &str)] = &[
     ),
 ];
 
-/// `store/sync2/tests.rs` 的 `legacy_library` 夹具只给五条笔记写了 `{"createdAt":2}` 的身份记录（没有 `noteTypeId`、ID
-/// 也不是 UUID）：协议 3 冻结的缓存重建在这种身份记录上整次失败（`cache.rs` 文件头「与协议 3 的差别」），缓存层没有
-/// 协议 3 的基准可比。
-const LEGACY_LIBRARY_NOTES: &str = "the legacy_library fixture writes note identity records holding only createdAt      (no noteTypeId, ids that are not UUIDs): protocol 3's frozen cache rebuild fails as a whole on them (cache.rs      header), so there is no protocol 3 cache baseline to compare against";
-
-/// `store/sync2/timeline.rs` 测试的笔记身份记录用 `notetype` 键、ID 是 `N1`：协议 3 的缓存重建在非 UUID 的笔记 ID 上整次
-/// 失败（`cache.rs` 文件头「与协议 3 的差别」）。
-const TIMELINE_NOTES: &str = "the timeline tests write note identity records keyed `notetype` with ids such as N1      (not UUIDs): protocol 3's frozen cache rebuild fails as a whole on them (cache.rs header), so there is no      protocol 3 cache baseline to compare against";
+/// 协议 3 冻结的缓存重建在身份记录不成形的笔记上整次失败时报的错误文本（`registers.rs`；`cache.rs` 文件头「与协议 3
+/// 的差别」）：[KNOWN] 里 `caches` 类的条目按它逐字认。
+const NOTE_TYPE_MISSING: &str = "noteTypeId missing";
 
 /// `store/tests_v15_upgrade.rs` 的真实 v15 / v8 库（tests/fixtures 的生成器）里笔记身份记录没有 `noteTypeId`：协议 3 的
 /// 缓存重建整次失败。
-const OLD_SCHEMA_FIXTURE_NOTES: &str = "the real v15 / v8 fixture databases (tests/fixtures generators) hold note      identity records without noteTypeId: protocol 3's frozen cache rebuild fails as a whole on them (cache.rs      header), so there is no protocol 3 cache baseline to compare against";
+const OLD_SCHEMA_FIXTURE_NOTES: &str = "the real v15 / v8 fixture databases (tests/fixtures generators) hold note \
+     identity records without noteTypeId: protocol 3's frozen cache rebuild fails as a whole on them (cache.rs \
+     header), so there is no protocol 3 cache baseline to compare against";
 
-/// 对不上、而且不该对上的场景：(测试名的结尾, 类别——[against_protocol_3] 的类别或 `error`, 原因)。都是测试
-/// 手改了协议 3 的日志表或投影表、库自己已经不自洽。
-const KNOWN: &[(&str, &str, &str)] = &[
-    (
-        "dryrun::tests::a_projection_that_disagrees_with_the_log_fails",
-        "edits",
-        "the test deletes one live srs_field_edits row by hand to prove the dry run catches a projection that \
-         disagrees with its own log; the field, the note row and its cards differ on purpose",
-    ),
-    (
-        "dryrun::tests::a_projection_that_disagrees_with_the_log_fails",
-        "notes",
-        "the test deletes one live srs_field_edits row by hand to prove the dry run catches a projection that \
-         disagrees with its own log; the field, the note row and its cards differ on purpose",
-    ),
-    (
-        "dryrun::tests::a_projection_that_disagrees_with_the_log_fails",
-        "cards",
-        "the test deletes one live srs_field_edits row by hand to prove the dry run catches a projection that \
-         disagrees with its own log; the field, the note row and its cards differ on purpose",
-    ),
-    (
-        "legacy::tests::a_duplicate_skeleton_in_the_log_becomes_an_alias",
-        "edits",
-        "the test rewrites one sync2_ops row into a duplicate skeleton by hand (not through dedup::apply), so the \
-         protocol 3 projection still holds the edit its own log no longer has",
-    ),
-    (
-        "tests_digest::diverged_devices_locate_the_differing_bucket",
-        "stats",
-        "the test rewrites one srs_review_logs row's rating by hand (a silent divergence that never went through \
-         sync), so the protocol 3 projection no longer matches the log op the new store reads",
-    ),
-    (
-        "tests_footprint::upgrading_from_before_v16_adds_the_snapshot_columns_before_reading_ops",
-        "error",
-        "the test drops sync2_ops.sc / sc_at by hand: the ops whose payload was packed against a config snapshot \
-         lose the reference, so their bytes no longer hash to the stored chain (the reader refuses them)",
-    ),
-    (
-        "gen4::derive::tests::the_index_agrees_with_the_protocol_3_projection",
-        "caches",
-        LEGACY_LIBRARY_NOTES,
-    ),
-    (
-        "gen4::import::tests::a_library_that_is_not_fully_on_protocol_3_is_refused_and_nothing_lands",
-        "caches",
-        LEGACY_LIBRARY_NOTES,
-    ),
-    (
-        "gen4::legacy::tests::preflight_stops_a_library_that_is_not_fully_on_protocol_3",
-        "caches",
-        LEGACY_LIBRARY_NOTES,
-    ),
-    (
-        "sync2::tests::migration_keeps_every_schedule_and_every_legacy_row",
-        "caches",
-        LEGACY_LIBRARY_NOTES,
-    ),
-    (
-        "sync2::tests::migration_runs_in_resumable_batches",
-        "caches",
-        LEGACY_LIBRARY_NOTES,
-    ),
-    (
-        "sync2::tests_migrate_dedup::legacy_dots_lists_every_legacy_edit_in_the_op_log_including_dominated_ones",
-        "caches",
-        LEGACY_LIBRARY_NOTES,
-    ),
-    (
-        "sync2::tests_migrate_dedup::migrating_a_library_fully_covered_by_received_ops_wraps_nothing",
-        "caches",
-        LEGACY_LIBRARY_NOTES,
-    ),
-    (
-        "sync2::tests_migrate_dedup::ops_received_between_migration_batches_are_not_wrapped_again",
-        "caches",
-        LEGACY_LIBRARY_NOTES,
-    ),
-    (
-        "sync2::tests_migrate_dedup::a_second_device_migrating_the_same_legacy_library_wraps_only_what_is_missing",
-        "caches",
-        LEGACY_LIBRARY_NOTES,
-    ),
-    (
-        "sync2::timeline::tests::restore_brings_every_register_back_to_the_moment",
-        "caches",
-        TIMELINE_NOTES,
-    ),
-    (
-        "sync2::timeline::tests::restore_cuts_migrated_history_at_its_original_time",
-        "caches",
-        TIMELINE_NOTES,
-    ),
-    (
-        "sync2::timeline::tests::restore_drops_map_entries_added_after_the_moment",
-        "caches",
-        TIMELINE_NOTES,
-    ),
-    (
-        "tests_v15_upgrade::a_real_v15_database_upgrades_row_for_row",
-        "caches",
-        OLD_SCHEMA_FIXTURE_NOTES,
-    ),
-    (
-        "tests_v15_upgrade::a_real_v8_database_upgrades_row_for_row",
-        "caches",
-        OLD_SCHEMA_FIXTURE_NOTES,
-    ),
-    (
-        "dryrun::tests::a_failed_protocol_3_cache_rebuild_is_incomplete_not_pass",
-        "caches",
-        "the test adds a note identity record without noteTypeId on purpose: protocol 3's frozen cache rebuild          fails as a whole on it (cache.rs header), so there is no protocol 3 cache baseline to compare against",
-    ),
-    (
-        "dryrun::tests::parity_reports_a_failed_protocol_3_cache_rebuild_as_a_caches_diff",
-        "caches",
-        "the test adds a note identity record without noteTypeId on purpose to prove the parity gate reports a          failed protocol 3 cache rebuild instead of skipping the cache layer",
-    ),
-    (
-        "tests_channel::channel_is_for_a_profile_holding_nothing_but_its_own_builtins",
-        "entities",
-        "the ch-missing-row device deletes the srs_entities row of a builtin note type by hand (to check that the \
-         channel stays shut when a projected row is gone): its own log still holds the identity record",
-    ),
+/// [KNOWN] 的一条。
+struct Known {
+    /// 测试的全名（[known_is_exactly_what_the_listed_tests_hit] 拿它 `--exact` 跑）。
+    test: &'static str,
+    /// [against_protocol_3] 的类别，或 `error`（灌入本身失败）。
+    what: &'static str,
+    /// 只认这一种差异：协议 3 一侧恰好是这一条、新代一侧为空。`caches` 类必须给（[known_caches_entries_name_their_error]）
+    /// ——那是协议 3 缓存重建失败报的错误文本，同一个场景因别的原因（协议 3 收尾里的真 bug、搭环境出错）报出的不同
+    /// 文本照样失败。`None` 只按类别认。
+    old: Option<&'static str>,
+    why: &'static str,
+}
+
+/// 对不上、而且不该对上的场景，逐条写原因。大多是测试手改了协议 3 的日志表或投影表、库自己已经不自洽；`caches` 类是
+/// 有意造出协议 3 缓存重建失败的场景。登记了却不再命中的条目让 [known_is_exactly_what_the_listed_tests_hit] 失败。
+const KNOWN: &[Known] = &[
+    Known {
+        test: "store::gen4::dryrun::tests::a_projection_that_disagrees_with_the_log_fails",
+        what: "edits",
+        old: None,
+        why: "the test deletes one live srs_field_edits row by hand to prove the dry run catches a projection that \
+              disagrees with its own log; the field, the note row and its cards differ on purpose",
+    },
+    Known {
+        test: "store::gen4::dryrun::tests::a_projection_that_disagrees_with_the_log_fails",
+        what: "notes",
+        old: None,
+        why: "the test deletes one live srs_field_edits row by hand to prove the dry run catches a projection that \
+              disagrees with its own log; the field, the note row and its cards differ on purpose",
+    },
+    Known {
+        test: "store::gen4::dryrun::tests::a_projection_that_disagrees_with_the_log_fails",
+        what: "cards",
+        old: None,
+        why: "the test deletes one live srs_field_edits row by hand to prove the dry run catches a projection that \
+              disagrees with its own log; the field, the note row and its cards differ on purpose",
+    },
+    Known {
+        test: "store::gen4::legacy::tests::a_duplicate_skeleton_in_the_log_becomes_an_alias",
+        what: "edits",
+        old: None,
+        why: "the test rewrites one sync2_ops row into a duplicate skeleton by hand (not through dedup::apply), so \
+              the protocol 3 projection still holds the edit its own log no longer has",
+    },
+    Known {
+        test: "store::sync2::tests_digest::diverged_devices_locate_the_differing_bucket",
+        what: "stats",
+        old: None,
+        why: "the test rewrites one srs_review_logs row's rating by hand (a silent divergence that never went \
+              through sync), so the protocol 3 projection no longer matches the log op the new store reads",
+    },
+    Known {
+        test: "store::sync2::tests_footprint::upgrading_from_before_v16_adds_the_snapshot_columns_before_reading_ops",
+        what: "error",
+        old: None,
+        why: "the test drops sync2_ops.sc / sc_at by hand: the ops whose payload was packed against a config \
+              snapshot lose the reference, so their bytes no longer hash to the stored chain (the reader refuses \
+              them)",
+    },
+    Known {
+        test: "store::tests_v15_upgrade::a_real_v15_database_upgrades_row_for_row",
+        what: "caches",
+        old: Some(NOTE_TYPE_MISSING),
+        why: OLD_SCHEMA_FIXTURE_NOTES,
+    },
+    Known {
+        test: "store::tests_v15_upgrade::a_real_v8_database_upgrades_row_for_row",
+        what: "caches",
+        old: Some(NOTE_TYPE_MISSING),
+        why: OLD_SCHEMA_FIXTURE_NOTES,
+    },
+    Known {
+        test: "store::gen4::dryrun::tests::a_failed_protocol_3_cache_rebuild_is_incomplete_not_pass",
+        what: "caches",
+        old: Some(NOTE_TYPE_MISSING),
+        why: "the test adds a note identity record without noteTypeId on purpose: protocol 3's frozen cache \
+              rebuild fails as a whole on it (cache.rs header), so there is no protocol 3 cache baseline to \
+              compare against",
+    },
+    Known {
+        test: "store::gen4::dryrun::tests::parity_reports_a_failed_protocol_3_cache_rebuild_as_a_caches_diff",
+        what: "caches",
+        old: Some(NOTE_TYPE_MISSING),
+        why: "the test adds a note identity record without noteTypeId on purpose to prove the parity gate reports \
+              a failed protocol 3 cache rebuild instead of skipping the cache layer",
+    },
+    Known {
+        test: "store::sync2::tests_channel::channel_is_for_a_profile_holding_nothing_but_its_own_builtins",
+        what: "entities",
+        old: None,
+        why: "the ch-missing-row device deletes the srs_entities row of a builtin note type by hand (to check \
+              that the channel stays shut when a projected row is gone): its own log still holds the identity \
+              record",
+    },
 ];
+
+/// 这个场景的一类差异（协议 3 一侧 [old]、新代一侧 [new]）在 [KNOWN] 里对得上的那条。
+fn known_entry(name: &str, what: &str, old: &[String], new: &[String]) -> Option<&'static Known> {
+    KNOWN.iter().find(|k| {
+        name.ends_with(k.test)
+            && k.what == what
+            && match k.old {
+                None => true,
+                Some(text) => new.is_empty() && old.len() == 1 && old[0] == text,
+            }
+    })
+}
 
 /// 协议 3 一侧的缓存行：在 SAVEPOINT 里先把协议 3 自己还欠着的收尾做完——待重放集合（`transport::replay_pending`：
 /// 协议 3 的日志结果是重放写回的，收段会话里推迟的重放没跑之前缓存读到的是旧结果）、合成标签行（`semantics::
@@ -749,21 +727,21 @@ fn check_profile(name: &str, w: &Connection, profile: &str) {
         return;
     }
     let outcome = imported_from(w, profile);
-    let known = |what: &str| {
-        KNOWN
-            .iter()
-            .any(|(test, kind, _)| name.ends_with(test) && *kind == what)
-    };
+    // 报告里每命中一条 [KNOWN] 记一行 `known`，详情以类别开头（[known_is_exactly_what_the_listed_tests_hit] 据此判过时）。
     let problem = match &outcome {
-        Err(e) if known("error") => {
-            report(name, profile, "known", e);
+        Err(e) if known_entry(name, "error", std::slice::from_ref(e), &[]).is_some() => {
+            report(name, profile, "known", &format!("error {e}"));
             return;
         }
         Err(e) => Some(("error", e.clone())),
         Ok((_, diff)) => {
-            let unknown: Vec<_> = diff.iter().filter(|(what, ..)| !known(what)).collect();
-            if !diff.is_empty() && unknown.is_empty() {
-                report(name, profile, "known", &format!("{diff:?}"));
+            let (hits, unknown): (Vec<_>, Vec<_>) = diff
+                .iter()
+                .partition(|(what, old, new)| known_entry(name, what, old, new).is_some());
+            if !hits.is_empty() && unknown.is_empty() {
+                for (what, old, new) in hits {
+                    report(name, profile, "known", &format!("{what} {old:?} {new:?}"));
+                }
                 return;
             }
             (!unknown.is_empty()).then(|| {
@@ -850,6 +828,87 @@ fn skips_are_exactly_the_listed_ones() {
                 .iter()
                 .any(|l| l[0].ends_with(test) && l[2] == "skip" && l[3] == *blocker),
             "{test} is listed in SKIPS but is no longer blocked by {blocker:?}: remove the entry\n{report}"
+        );
+    }
+    let bad: Vec<&Vec<&str>> = lines
+        .iter()
+        .filter(|l| !matches!(l[2], "ok" | "skip" | "known"))
+        .collect();
+    assert!(bad.is_empty(), "{bad:?}");
+}
+
+/// `caches` 类的豁免必须写明协议 3 报的是哪一句错误：只按类别认的话，同一个场景里协议 3 一侧因任何别的原因失败
+/// 都会被当成已知。
+#[test]
+fn known_caches_entries_name_their_error() {
+    for k in KNOWN {
+        assert!(
+            k.what != "caches" || k.old.is_some(),
+            "{} exempts caches without naming the expected error",
+            k.test
+        );
+    }
+    let name = "store::tests_v15_upgrade::a_real_v15_database_upgrades_row_for_row";
+    let text = |t: &str| vec![t.to_owned()];
+    assert!(known_entry(name, "caches", &text(NOTE_TYPE_MISSING), &[]).is_some());
+    assert!(known_entry(name, "caches", &text("replay_pending: boom"), &[]).is_none());
+    assert!(known_entry(name, "caches", &text(NOTE_TYPE_MISSING), &text("x")).is_none());
+    let two = vec![NOTE_TYPE_MISSING.to_owned(), "other".to_owned()];
+    assert!(known_entry(name, "caches", &two, &[]).is_none());
+    assert!(
+        known_entry(
+            "store::other::test",
+            "caches",
+            &text(NOTE_TYPE_MISSING),
+            &[]
+        )
+        .is_none()
+    );
+}
+
+/// [KNOWN] 里的每一条现在仍然命中、而且这些场景没有别的差异：在一个子进程里只跑表里的测试（报告模式，见文件头），
+/// 读报告。条目过时（场景已经对上了，或报的错误变了）就在这里失败，提醒删掉它、让场景回到对拍里。
+#[test]
+fn known_is_exactly_what_the_listed_tests_hit() {
+    let mut keys = BTreeSet::new();
+    for k in KNOWN {
+        assert!(
+            keys.insert((k.test, k.what)),
+            "{} lists {} twice",
+            k.test,
+            k.what
+        );
+    }
+    let tests: BTreeSet<&str> = KNOWN.iter().map(|k| k.test).collect();
+    let dir = tempdir::new("g4known");
+    let out = dir.0.join("report.tsv");
+    let mut cmd = std::process::Command::new(std::env::current_exe().unwrap());
+    cmd.args(tests.iter().copied())
+        .args(["--exact", "--test-threads=1", "-q"])
+        .env("FUSHI_GEN4_PARITY_REPORT", &out);
+    let run = cmd.output().unwrap();
+    assert!(
+        run.status.success(),
+        "the listed tests themselves failed: {}{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    let ran = String::from_utf8_lossy(&run.stdout);
+    assert!(
+        ran.contains(&format!("ok. {} passed;", tests.len())),
+        "every listed test must exist and run: {ran}"
+    );
+    let report = std::fs::read_to_string(&out).unwrap_or_default();
+    let lines: Vec<Vec<&str>> = report.lines().map(|l| l.split('\t').collect()).collect();
+    for k in KNOWN {
+        assert!(
+            lines.iter().any(|l| l[0].ends_with(k.test)
+                && l[2] == "known"
+                && l[3].split(' ').next() == Some(k.what)),
+            "{} is listed in KNOWN for {} ({}) but no longer hits it: remove the entry\n{report}",
+            k.test,
+            k.what,
+            k.why
         );
     }
     let bad: Vec<&Vec<&str>> = lines
