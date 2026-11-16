@@ -576,12 +576,49 @@ pub fn install(conn: &Connection) -> Result<(), String> {
 
 /// 打开（不存在就建）新代库文件。不做内存映射（设计 §6.5：迁移用的连接不映射）；页缓存取保守值，接线时由调用方按
 /// 现有预算（`store/mem_budget.rs`）再调。
+///
+/// 并发：同一个文件可能有别的连接正拿着写锁（另一个线程的 `BEGIN IMMEDIATE`、迁移、收段）。打开要读文件头、切 WAL、
+/// 再跑一遍 [install]（它会写：装触发器、`srs_meta`）。[install] 先读（`check_kind`、`application_id`、
+/// `CREATE … IF NOT EXISTS`）后写，放在延迟事务里时，读的那一刻定下快照，别的连接在这之后提交过，升级写锁就直接报
+/// `SQLITE_BUSY_SNAPSHOT`（「database is locked」）、**不经忙等**——这才是复核里两条并发测试在负载下随机红的根因
+/// （光设忙等不够，实测仍红）。所以 [install] 走 [in_write_tx]：`BEGIN IMMEDIATE` 一开始就经忙等排队拿写锁，之后
+/// 不会再撞快照。忙等显式设成 [BUSY_TIMEOUT]（rusqlite 的默认也是 5 秒，这里写明，不依赖库的默认值）。测试
+/// `concurrent_opens_under_a_busy_writer_all_succeed`、`in_write_tx_takes_the_write_lock_before_running`、
+/// `open_waits_for_another_connections_write_lock`。
 pub fn open(path: &Path) -> Result<Connection, String> {
     let conn = Connection::open(path).map_err(sql)?;
+    conn.busy_timeout(BUSY_TIMEOUT).map_err(sql)?;
     check_kind(&conn)?;
     configure(&conn)?;
-    in_tx(&conn, install)?;
+    in_write_tx(&conn, install)?;
     Ok(conn)
+}
+
+/// [open] 给连接设的忙等时长（别的连接拿着锁时等多久再报 `database is locked`）。与协议 3 `store/mod.rs` 的
+/// `configure_as` 同值；调用方可以再调。
+pub const BUSY_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(5000);
+
+/// 在一个**一开始就拿写锁**的事务（`BEGIN IMMEDIATE`）里跑 [f]；出错整笔回滚。只用于不嵌在别的事务里的入口
+/// （[open]）：要先读再写、又可能与别的连接并发时，延迟事务读完再升级会撞上 `SQLITE_BUSY_SNAPSHOT`（不经忙等），
+/// 这里在 `BEGIN` 时就经忙等排队。已在事务里时报错（SQLite 不许嵌套 `BEGIN`），不落任何东西。
+pub(crate) fn in_write_tx<T>(
+    conn: &Connection,
+    f: impl FnOnce(&Connection) -> Result<T, String>,
+) -> Result<T, String> {
+    conn.execute_batch("BEGIN IMMEDIATE").map_err(sql)?;
+    match f(conn) {
+        Ok(v) => match conn.execute_batch("COMMIT") {
+            Ok(()) => Ok(v),
+            Err(e) => {
+                let _ = conn.execute_batch("ROLLBACK");
+                Err(sql(e))
+            }
+        },
+        Err(e) => {
+            let _ = conn.execute_batch("ROLLBACK");
+            Err(e)
+        }
+    }
 }
 
 /// 内存库（测试）。
@@ -969,5 +1006,123 @@ mod tests {
                 .unwrap();
             assert!(sql.ends_with("WITHOUT ROWID"), "{table}: {sql}");
         }
+    }
+
+    /// 别的连接拿着写锁时，[open] 经忙等排队、等它提交后打开成功，而不是立刻报 `database is locked`。
+    #[test]
+    fn open_waits_for_another_connections_write_lock() {
+        let dir = crate::store::sync2::tests::tempdir::new("gen4-open-busy");
+        let path = dir.0.join("srs4.db");
+        let holder = open(&path).unwrap();
+        holder.execute_batch("BEGIN IMMEDIATE").unwrap();
+        holder
+            .execute(
+                "INSERT OR REPLACE INTO srs_meta (key, value) VALUES ('probe', '1')",
+                [],
+            )
+            .unwrap();
+        let release = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(300));
+            holder.execute_batch("COMMIT").unwrap();
+        });
+        let conn = open(&path).expect("open must wait for the other writer");
+        release.join().unwrap();
+        let probe: String = conn
+            .query_row("SELECT value FROM srs_meta WHERE key = 'probe'", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(probe, "1");
+    }
+
+    /// [in_write_tx] 在跑 [f] 之前就拿到写锁：闭包里只读，别的连接也已经拿不到写锁（延迟事务这时还没锁，读完再升级
+    /// 才会撞 `SQLITE_BUSY_SNAPSHOT`）。已在事务里时报错，外层事务不受影响。
+    #[test]
+    fn in_write_tx_takes_the_write_lock_before_running() {
+        let dir = crate::store::sync2::tests::tempdir::new("gen4-write-tx");
+        let path = dir.0.join("srs4.db");
+        let (c1, c2) = (open(&path).unwrap(), open(&path).unwrap());
+        c2.busy_timeout(std::time::Duration::ZERO).unwrap();
+        in_write_tx(&c1, |c| {
+            let _: i64 = c
+                .query_row("SELECT COUNT(*) FROM srs_meta", [], |r| r.get(0))
+                .map_err(sql)?;
+            let e = c2.execute_batch("BEGIN IMMEDIATE").unwrap_err();
+            assert!(e.to_string().contains("locked"), "{e}");
+            Ok(())
+        })
+        .unwrap();
+        c2.execute_batch("BEGIN IMMEDIATE; ROLLBACK").unwrap();
+
+        c1.execute_batch("BEGIN").unwrap();
+        assert!(in_write_tx(&c1, |_| Ok(())).is_err());
+        assert!(!c1.is_autocommit(), "the outer transaction is still open");
+        c1.execute_batch("ROLLBACK").unwrap();
+
+        // 闭包报错：整笔回滚，连接回到自动提交。
+        let e = in_write_tx(&c1, |c| {
+            c.execute("INSERT INTO srs_meta (key, value) VALUES ('gone', '1')", [])
+                .map_err(sql)?;
+            Err::<(), _>("boom".to_owned())
+        })
+        .unwrap_err();
+        assert_eq!(e, "boom");
+        assert!(c1.is_autocommit());
+        let n: i64 = c1
+            .query_row(
+                "SELECT COUNT(*) FROM srs_meta WHERE key = 'gone'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(n, 0);
+    }
+
+    /// 复核报的失败形态（G7-3a / G9-3 的两条并发测试在负载下随机报 `database is locked`）：几个线程反复 [open] 同一个
+    /// 文件，同时另一个连接不停地开写事务。每次打开都要成功。[open] 改回延迟事务（`in_tx`）跑 [install] 时这条稳定红，
+    /// 即使设了忙等（`SQLITE_BUSY_SNAPSHOT` 不经忙等）。
+    #[test]
+    fn concurrent_opens_under_a_busy_writer_all_succeed() {
+        let dir = crate::store::sync2::tests::tempdir::new("gen4-open-race");
+        let path = dir.0.join("srs4.db");
+        drop(open(&path).unwrap());
+        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let writer = {
+            let (path, stop) = (path.clone(), stop.clone());
+            std::thread::spawn(move || {
+                let conn = open(&path).unwrap();
+                conn.busy_timeout(std::time::Duration::from_secs(30))
+                    .unwrap();
+                let mut i = 0u64;
+                while !stop.load(std::sync::atomic::Ordering::Relaxed) {
+                    conn.execute_batch("BEGIN IMMEDIATE").unwrap();
+                    conn.execute(
+                        "INSERT OR REPLACE INTO srs_meta (key, value) VALUES ('w', ?1)",
+                        [i.to_string()],
+                    )
+                    .unwrap();
+                    std::thread::sleep(std::time::Duration::from_millis(2));
+                    conn.execute_batch("COMMIT").unwrap();
+                    // 让出一会儿（真实写者不会不间断地霸着写锁；不让的话是写者饿死别人，与打开无关）。
+                    std::thread::sleep(std::time::Duration::from_millis(1));
+                    i += 1;
+                }
+            })
+        };
+        let openers: Vec<_> = (0..4)
+            .map(|_| {
+                let path = path.clone();
+                std::thread::spawn(move || {
+                    for _ in 0..15 {
+                        drop(open(&path).unwrap());
+                    }
+                })
+            })
+            .collect();
+        for o in openers {
+            o.join().unwrap();
+        }
+        stop.store(true, std::sync::atomic::Ordering::Relaxed);
+        writer.join().unwrap();
     }
 }
