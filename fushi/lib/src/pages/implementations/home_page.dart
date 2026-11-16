@@ -1759,7 +1759,7 @@ class _HomePageState extends BasePageState<HomePage>
   ///
   /// 按 **tab 自己**算、由 [_buildTabContent] 在各 tab 的子树里下发
   /// [FushiFloatingChromeInset]，不能按当前可见 tab 算了挂在全部 tab 的共同祖先
-  /// 上（BUG-4707）：那样每次在库页（8）与首页 / 查词 / 复习 / 设置（0）之间切，
+  /// 上（BUG-4715）：那样每次在库页（8）与首页 / 查词 / 复习 / 设置（0）之间切，
   /// 这个值就翻一次，所有访问过的隐藏保活页里读它的浮动工具区、滚动视图、网格
   /// 都跟着在切 tab 的那一帧重建 + 重排。
   double _shellTitleInsetFor(HomeTab tab) {

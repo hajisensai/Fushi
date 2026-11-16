@@ -20,7 +20,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 
 import '../helpers/test_platform_services.dart';
 
-/// BUG-4707：切 tab 时，隐藏着的保活页不该跟着重建。
+/// BUG-4715：切 tab 时，隐藏着的保活页不该跟着重建。
 ///
 /// 群反馈（2026-11-16 录屏）「切 tab 变卡了」。profile 实测：在库页（书架 / 漫画 /
 /// 视频 / 音乐 / 游戏 / 浏览）与首页 / 查词 / 复习 / 设置之间切，那一帧 build
@@ -200,7 +200,7 @@ void main() {
       kFushiFloatingChromeGap,
       reason:
           '隐藏的保活页必须读到它自己的让位高度：值随可见 tab 翻转会让所有访问过的'
-          '隐藏页在切 tab 那一帧重建 + 重排（BUG-4707）。',
+          '隐藏页在切 tab 那一帧重建 + 重排（BUG-4715）。',
     );
 
     // 再切回书架：首页成了藏起的那一页，读到的仍是它自己的 0。
