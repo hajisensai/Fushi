@@ -10,7 +10,8 @@
 //
 //   1. 非顺序播放（`playback_type != 1`）——随机/洗牌播放列表是菜单构件，不是标题。
 //   2. 引用的 m2ts 在盘上不存在——`BACKUP/` 与主目录不一致的半张盘很常见。
-//   3. 绝对时长下限——砍掉版权警告、厂标、菜单循环。
+//   3. 绝对时长下限——砍掉版权警告、厂标；菜单背景循环（同一片段连排上百次，总时长
+//      反而最长）由 [isBlurayMenuLoop] 单独挡。
 //   4. 同签名合并——`(片段多重集, 总时长)` 相同即同一内容；诱饵播放列表正是靠打乱
 //      顺序伪装，多重集一排序就现形。同签名里保留章节最多的那条（诱饵通常只有一个
 //      章节点，真正的正片章节齐全），再以编号小的为准。
@@ -44,6 +45,53 @@ const Duration kBlurayMinimumTitleDuration = Duration(seconds: 60);
 /// 盘/MV 盘的各条目彼此在同一量级（最短的一条也有最长那条的一半以上）。0.15 把两类
 /// 盘分开，同时给「40 分钟的制作特辑」这种确实值得进库的长花絮留了余地。
 const double kBlurayRelativeTitleFloor = 0.15;
+
+/// 同一段片段在一条播放列表里至少出现这么多次，才可能是菜单背景循环。
+const int kBlurayMenuLoopMinimumRepeats = 3;
+
+/// [playlist] 是不是菜单背景循环：同一段片段被连排很多次、且这些重复占了总时长的
+/// 一半以上。
+///
+/// 菜单背景是一段几分钟的 m2ts 连排上百次（实测《魔女の旅々》BD：3.6 分钟 × 149 次
+/// = 540 分钟；《特別編 響け！ユーフォニアム》：4.2 分钟 × 15 次 = 63 分钟），算出来
+/// 的总时长比正片还长。不挡掉它，它就成了「最长标题」——正片反被相对时长下限或
+/// 特典划分挤出去（BUG-4697）。
+///
+/// 「占一半以上」把它和正常的片段复用分开：剧集盘的「全部播放」每集前复用同一段
+/// OP（1.5 分钟 × 6，占 6%）不是循环。
+bool isBlurayMenuLoop(BlurayPlaylist playlist) {
+  final Map<String, int> repeats = <String, int>{};
+  final Map<String, int> ticks = <String, int>{};
+  for (final BlurayClipRef clip in playlist.clips) {
+    repeats[clip.clipId] = (repeats[clip.clipId] ?? 0) + 1;
+    ticks[clip.clipId] = (ticks[clip.clipId] ?? 0) + clip.durationTicks;
+  }
+  final int total = playlist.durationTicks;
+  for (final MapEntry<String, int> entry in repeats.entries) {
+    if (entry.value >= kBlurayMenuLoopMinimumRepeats &&
+        ticks[entry.key]! * 2 > total) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/// [playlist] 是不是「一条播放列表串着几集」的剧集形状：至少两段各 ≥ 10 分钟、
+/// 彼此时长相近（最长不超过最短的 1.2 倍）的片段，且它们占总时长的四分之三以上。
+///
+/// 只有「全部播放」、没有逐集播放列表的剧集盘（《魔女の旅々》BD 每卷一条 6 × 24
+/// 分钟的播放列表）入库后是单标题，光看「单标题」会被当成电影去识别。
+bool blurayPlaylistLooksEpisodic(BlurayPlaylist playlist) {
+  const int minimumEpisodeTicks = 10 * 60 * kBlurayTimeScale;
+  final List<int> episodeLike = <int>[
+    for (final BlurayClipRef clip in playlist.clips)
+      if (clip.durationTicks >= minimumEpisodeTicks) clip.durationTicks,
+  ]..sort();
+  if (episodeLike.length < 2) return false;
+  if (episodeLike.last > episodeLike.first * 1.2) return false;
+  final int sum = episodeLike.fold<int>(0, (int a, int b) => a + b);
+  return sum * 4 >= playlist.durationTicks * 3;
+}
 
 /// 单条读入上限。MPLS 实测通常几 KB，上百 KB 的一律当坏数据。
 const int kBlurayMaxPlaylistBytes = 1024 * 1024;
@@ -457,6 +505,8 @@ List<BlurayTitle> selectBlurayTitles(
         )) {
       continue;
     }
+    // 菜单背景循环按总时长算往往是整张盘最长的一条，必须在取锚点之前挡掉。
+    if (isBlurayMenuLoop(playlist)) continue;
     candidates.add(playlist);
   }
   if (candidates.isEmpty) return const <BlurayTitle>[];

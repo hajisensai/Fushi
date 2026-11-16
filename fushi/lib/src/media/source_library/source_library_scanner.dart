@@ -2177,6 +2177,8 @@ class SourceLibraryScanner {
         title: title,
         sourceId: id.sourceId,
         policy: policy,
+        // 远端镜像临时目录，finally 里整个删掉：页图直接移进书目录。
+        pageSource: MangaPageSource.disposable,
       );
       await id.record(item.mokuroPath, bookKey);
       return true;
@@ -2232,6 +2234,8 @@ class SourceLibraryScanner {
         title: title,
         sourceId: id.sourceId,
         policy: policy,
+        // 远端镜像临时目录，finally 里整个删掉：页图直接移进书目录。
+        pageSource: MangaPageSource.disposable,
       );
       await id.record(item.mokuroPath, bookKey);
       return true;
@@ -2315,6 +2319,8 @@ class SourceLibraryScanner {
         title: title,
         sourceId: id.sourceId,
         policy: policy,
+        // 远端镜像临时目录，finally 里整个删掉：页图直接移进书目录。
+        pageSource: MangaPageSource.disposable,
       );
       await id.record(item.folderPath, bookKey);
       return true;

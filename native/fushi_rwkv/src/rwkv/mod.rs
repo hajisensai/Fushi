@@ -1313,6 +1313,40 @@ pub fn forecast_query(answer: &ReviewInput, days: i64, seconds: i64) -> ReviewIn
     }
 }
 
+/// Fushi: the query row asked just before the answered review `answer`, with
+/// **show-time intervals** (small-model INTEGRATION.md §6.10, sm92 and later):
+/// the card's interval runs from its previous answer to the moment it was
+/// shown, `floor(max(elapsed_seconds - duration_millis / 1000, 0))`, because
+/// `answer`'s own interval contains its answer time, which is unknown while
+/// the card is on screen. `-1` (no previous review) stays `-1`, the day
+/// interval is unchanged (day-based), rating and duration are cleared, and
+/// the cumulative interval follows from `FeatureState::features_for` (the
+/// committed answer-to-answer sums plus this interval). Without a duration
+/// the answer time is unknown and the interval stays answer-to-answer.
+///
+/// Only the small model's historical predictions use it (the big model was
+/// trained on answer-to-answer queries); live queries need nothing: their
+/// interval is "now - last answer" already.
+pub fn show_time_query(answer: &ReviewInput) -> ReviewInput {
+    let mut query = ReviewInput {
+        is_query: true,
+        ease: None,
+        duration_millis: None,
+        ..answer.clone()
+    };
+    let seconds = elapsed_seconds(&query);
+    if let (true, Some(millis)) = (seconds >= 0, answer.duration_millis) {
+        let shown = seconds
+            .saturating_mul(1000)
+            .saturating_sub(millis)
+            .div_euclid(1000)
+            .max(0);
+        query.current_elapsed_days = Some(elapsed_days(&query, seconds));
+        query.current_elapsed_seconds = Some(shown);
+    }
+    query
+}
+
 fn elapsed_seconds(input: &ReviewInput) -> i64 {
     if creation_elapsed_is_query_only(input) {
         return -1;

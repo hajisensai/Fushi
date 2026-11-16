@@ -751,7 +751,7 @@ class BackupRestoreService {
         await srcMigrate.close();
       }
       if (srsEntryName != null) {
-        srcSrs = await SrsStorage.open(path: srcSrsPath, inline: true);
+        srcSrs = await SrsStorage.open(path: srcSrsPath);
       }
       final FushiDatabase db = FushiDatabase(dbDirectory);
       try {
@@ -777,7 +777,7 @@ class BackupRestoreService {
                   ? SrsBackupSource.split(
                       profiles: db,
                       profilesSchema: 'srssrc',
-                      srs: split.db,
+                      srs: split.core,
                     )
                   : SrsBackupSource.attached(db, 'srssrc'),
             );
@@ -1456,6 +1456,14 @@ class BackupRestoreService {
           newGameCoversRoot: effGameCoversRoot,
         );
       }
+      if (wants(BackupCategory.books)) {
+        await _restoreDownloadManga(
+          zipPath: zipPath,
+          archive: archive,
+          dbDirectory: dbDirectory,
+          onBytes: reportBytes,
+        );
+      }
 
       // 3c) Honour the per-category IMPORT selection for the DB-content
       //     categories the overwrite blob carries wholesale (TODO-1358). The
@@ -1527,13 +1535,15 @@ class BackupRestoreService {
         );
       }
 
-      // 4) Success: drop the sidecar and the pre-restore copy (no disk leak).
-      // A failed device-local replay is recoverable at the next startup, but
-      // only while BOTH artifacts survive. The replay transaction starts with
-      // a child-first wipe and is therefore safe to run again.
+      // 4) Success: drop the sidecar; the pre-restore copy is RETAINED as the
+      // pre-overwrite snapshot (BUG-4701: deleting it made an accidental
+      // overwrite unrecoverable). A failed device-local replay is recoverable
+      // at the next startup, but only while BOTH artifacts survive. The replay
+      // transaction starts with a child-first wipe and is therefore safe to
+      // run again.
       if (deviceLocalTablesReapplied) {
         await _safeDelete(sidecar.path);
-        await _safeDelete(bakPath);
+        await _retainOverwriteSnapshot(dbDirectory, bakPath);
       } else {
         debugPrint(
           'BackupRestoreService.restoreBackup: device-local tables were not '
@@ -1544,6 +1554,188 @@ class BackupRestoreService {
     } finally {
       await input.close();
     }
+  }
+
+  /// 覆盖导入成功后保留的「覆盖前」整库快照路径（BUG-4701）。
+  static String overwriteSnapshotPath(String dbDirectory) =>
+      p.join(dbDirectory, databasePreOverwriteSnapshotFileName);
+
+  /// 覆盖导入成功收尾：`pre-restore.bak`（只在恢复流程进行中有意义，由
+  /// `sync-preserve.json` 持有）改名成 [overwriteSnapshotPath]，只留最近一份。
+  ///
+  /// 此前这里直接删掉 bak：覆盖导入一旦把书库换成了别的库（例如推荐包的空库），
+  /// 书库行、阅读进度、统计就再也找不回来。改名而不是原地保留：原名是「恢复进行中」
+  /// 的信号（存储页的所有权门控按它 + sidecar 判活），成功后的快照要换一个没有
+  /// 持有者、可随时删除的名字。改名失败只记日志并删掉 bak——导入本身已成功，丢掉
+  /// 的只是这次恢复机会，不能把成功的导入翻成失败。
+  static Future<void> _retainOverwriteSnapshot(
+    String dbDirectory,
+    String bakPath,
+  ) async {
+    final File bak = File(bakPath);
+    if (!bak.existsSync()) return;
+    final String target = overwriteSnapshotPath(dbDirectory);
+    try {
+      await _safeDelete(target);
+      await bak.rename(target);
+    } on FileSystemException catch (e, st) {
+      debugPrint(
+        'BackupRestoreService._retainOverwriteSnapshot failed: $e\n$st',
+      );
+      await _safeDelete(bakPath);
+    }
+  }
+
+  /// 「从覆盖导入前的快照恢复书库」只补缺合并的类别：书库行（书 / 有声书 / 视频）、
+  /// 阅读进度、统计。设置、词典、复习（SRS 不随覆盖导入丢失）不在内。
+  static const Set<BackupCategory> overwriteSnapshotCategories =
+      <BackupCategory>{
+        BackupCategory.books,
+        BackupCategory.audiobooks,
+        BackupCategory.videos,
+        BackupCategory.progress,
+        BackupCategory.statistics,
+      };
+
+  /// 预览覆盖前快照里「当前库没有」的书（不改任何库）。快照不存在返回 null。
+  ///
+  /// 快照先复制到预览临时文件并迁到当前 schema（与 [previewMergeRestore] 同一口径），
+  /// 快照本身一个字节不动。[liveDb] 是 app 正在用的连接（只读查询）。
+  static Future<OverwriteSnapshotPreview?> previewOverwriteSnapshot({
+    required String dbDirectory,
+    required FushiDatabase liveDb,
+  }) async {
+    final File snapshot = File(overwriteSnapshotPath(dbDirectory));
+    if (!snapshot.existsSync()) return null;
+    final FileStat stat = snapshot.statSync();
+    final String srcPath = p.join(dbDirectory, _mergePreviewSrcName);
+    await _safeDelete(srcPath);
+    await _safeDelete('$srcPath-wal');
+    await _safeDelete('$srcPath-shm');
+    await snapshot.copy(srcPath);
+    final FushiDatabase src = FushiDatabase.atFile(srcPath);
+    try {
+      final Set<String> liveBookKeys = <String>{
+        for (final EpubBookMeta b in await liveDb.getEpubBookMetas()) b.bookKey,
+      };
+      final Set<String> tombstones = (await liveDb.getBookTombstoneKeys())
+          .toSet();
+      final List<OverwriteSnapshotBook> books = <OverwriteSnapshotBook>[
+        for (final EpubBookMeta b in await src.getEpubBookMetas())
+          if (!liveBookKeys.contains(b.bookKey) &&
+              !tombstones.contains(b.bookKey))
+            OverwriteSnapshotBook(
+              bookKey: b.bookKey,
+              title: b.title,
+              filesPresent:
+                  b.extractDir.isNotEmpty &&
+                  Directory(b.extractDir).existsSync(),
+            ),
+      ];
+      final Set<String> liveVideoUids = <String>{
+        for (final VideoBookRow v in await liveDb.allVideoBooks()) v.bookUid,
+      };
+      int videos = 0;
+      for (final VideoBookRow v in await src.allVideoBooks()) {
+        if (liveVideoUids.contains(v.bookUid)) continue;
+        if (_overwriteSnapshotVideoReachable(v.videoPath)) videos++;
+      }
+      return OverwriteSnapshotPreview(
+        path: snapshot.path,
+        sizeBytes: stat.size,
+        modifiedAt: stat.modified,
+        missingBooks: books,
+        missingVideoCount: videos,
+      );
+    } finally {
+      await src.close();
+      await _safeDelete(srcPath);
+      await _safeDelete('$srcPath-wal');
+      await _safeDelete('$srcPath-shm');
+    }
+  }
+
+  /// 快照里的一条视频在本机还能不能放：网络流 / 在线源自包含；本地文件还在盘上。
+  /// 与合并引擎的「可达视频」同一判据，只是「随包文件」换成「盘上文件」。
+  static bool _overwriteSnapshotVideoReachable(String videoPath) =>
+      isNetworkOnlyVideoPath(videoPath) ||
+      videoPath.startsWith('$kAnimeSourceVideoPathScheme://') ||
+      videoPath.startsWith('$kSourceLibrarySftpScheme://') ||
+      videoMemberExistsSync(videoPath);
+
+  /// 把覆盖前快照里的书库行、阅读进度、统计**只补缺**合并进当前库（BUG-4701）：
+  /// 当前库缺的行插入，已有的行一律不动（[BackupMergeEngine] 的 `fillMissingOnly`），
+  /// bookKey 原样。复用合并导入的整套引擎（快照副本先迁到当前 schema 再 ATTACH），
+  /// 同一个事务、同一套崩溃清理协议（merge sidecar + `pre-merge.bak`）。
+  ///
+  /// 调用方须先关掉 app 的数据库连接（与 [mergeRestoreBackup] 同一遮罩协议），
+  /// 完成后重启。快照文件保留不删（存储页可删），重复执行幂等。
+  static Future<void> mergeFromOverwriteSnapshot({
+    required String dbDirectory,
+  }) async {
+    final File snapshot = File(overwriteSnapshotPath(dbDirectory));
+    if (!snapshot.existsSync()) {
+      throw StateError('No pre-overwrite snapshot in $dbDirectory');
+    }
+    final String dbPath = p.join(dbDirectory, _dbName);
+    final String mergeSrcPath = p.join(dbDirectory, _mergeSrcName);
+    final String bakPath = '$dbPath.pre-merge.bak';
+    final File sidecar = File(p.join(dbDirectory, _mergeSidecar));
+
+    await _safeDelete(mergeSrcPath);
+    await _safeDelete('$mergeSrcPath-wal');
+    await _safeDelete('$mergeSrcPath-shm');
+    await snapshot.copy(mergeSrcPath);
+
+    // 迁到当前 schema（快照可能来自升级前的版本），顺带取出还能播放的本地视频。
+    final Set<String> reachableVideos = <String>{};
+    final FushiDatabase srcMigrate = FushiDatabase.atFile(mergeSrcPath);
+    try {
+      for (final VideoBookRow v in await srcMigrate.allVideoBooks()) {
+        if (_overwriteSnapshotVideoReachable(v.videoPath)) {
+          reachableVideos.add(v.videoPath);
+        }
+      }
+    } finally {
+      await srcMigrate.close();
+    }
+    await _safeDelete('$mergeSrcPath-wal');
+    await _safeDelete('$mergeSrcPath-shm');
+
+    final File currentDb = File(dbPath);
+    if (currentDb.existsSync()) await currentDb.copy(bakPath);
+    await sidecar.writeAsString(
+      jsonEncode(<String, dynamic>{'mode': 'merge', 'mergeSrc': mergeSrcPath}),
+    );
+
+    final FushiDatabase db = FushiDatabase(dbDirectory);
+    try {
+      final String safeSrc = mergeSrcPath
+          .replaceAll(r'\', '/')
+          .replaceAll("'", "''");
+      await db.customStatement("ATTACH DATABASE '$safeSrc' AS mergesrc");
+      try {
+        await BackupMergeEngine(
+          db,
+          carriedVideoSourcePaths: reachableVideos,
+          enabledCategoryNames: overwriteSnapshotCategories
+              .map((BackupCategory c) => c.name)
+              .toSet(),
+          fillMissingOnly: true,
+        ).merge();
+      } finally {
+        await db.customStatement('DETACH DATABASE mergesrc');
+      }
+      await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
+    } finally {
+      await db.close();
+    }
+
+    await _safeDelete(mergeSrcPath);
+    await _safeDelete('$mergeSrcPath-wal');
+    await _safeDelete('$mergeSrcPath-shm');
+    await _safeDelete(bakPath);
+    await _safeDelete(sidecar.path);
   }
 
   /// Sidecar file marking a pending MERGE import (TODO-888). The merge runs in
@@ -1684,10 +1876,7 @@ class BackupRestoreService {
             legacy: db,
           );
           if (srsFile != null) {
-            sourceSrs = await SrsStorage.open(
-              path: mergeSrcSrsPath,
-              inline: true,
-            );
+            sourceSrs = await SrsStorage.open(path: mergeSrcSrsPath);
           }
         }
         final String safeSrc = mergeSrcPath
@@ -1706,7 +1895,7 @@ class BackupRestoreService {
             adoptSourcePreferences: adoptSourcePreferences,
             mergePortableSettings: mergePortableSettings,
             localSrs: localSrs,
-            sourceSrs: sourceSrs?.db,
+            sourceSrs: sourceSrs?.core,
           ).merge();
         } finally {
           await db.customStatement('DETACH DATABASE mergesrc');
@@ -1815,6 +2004,14 @@ class BackupRestoreService {
           newGameCoversRoot: gameCoversRootDirectory,
         );
       }
+      if (wants(BackupCategory.books)) {
+        await _restoreDownloadManga(
+          zipPath: zipPath,
+          archive: archive,
+          dbDirectory: dbDirectory,
+          onBytes: reportBytes,
+        );
+      }
 
       // 7) Success: drop the merge-src temp, the bak, and the sidecar.
       await _safeDelete(mergeSrcPath);
@@ -1909,6 +2106,48 @@ class BackupRestoreService {
       await _safeDelete(tmpSrc);
       await _safeDelete('$tmpSrc-wal');
       await _safeDelete('$tmpSrc-shm');
+    }
+  }
+
+  /// 恢复在线漫画书目录（[_downloadMangaPrefix]）到**本机**当前下载根的 manga 域，
+  /// 再把行里指向源设备下载根的 `extractDir` 改成本机位置。
+  ///
+  /// 两种导入模式都用 copy-if-absent：下载根里可能有本机自己下的、备份里没有的
+  /// 漫画，整树替换会把它们删掉。行只在「原路径在本机不存在、本机下载根里有同
+  /// bookKey 目录」时改写——原路径有效（同一台机器恢复）一律不动。归档里没有这个
+  /// 前缀时零 IO 返回（旧备份 / 没有在线漫画）。
+  static Future<void> _restoreDownloadManga({
+    required String zipPath,
+    required Archive archive,
+    required String dbDirectory,
+    void Function(int deltaBytes)? onBytes,
+  }) async {
+    if (!archive.files.any(
+      (ArchiveFile f) => f.name.startsWith('$_downloadMangaPrefix/'),
+    )) {
+      return;
+    }
+    final String mangaRoot = (await DownloadRoot.current()).mangaRoot;
+    await _copyTreeIfAbsent(
+      zipPath,
+      archive,
+      _downloadMangaPrefix,
+      mangaRoot,
+      onBytes: onBytes,
+    );
+    final FushiDatabase db = FushiDatabase(dbDirectory);
+    try {
+      for (final EpubBookRow b in await db.getAllEpubBooks()) {
+        if (!DownloadLayout.isMangaBookDirectory(b.extractDir, b.bookKey)) {
+          continue;
+        }
+        if (Directory(b.extractDir).existsSync()) continue;
+        final String local = p.join(mangaRoot, b.bookKey);
+        if (!Directory(local).existsSync()) continue;
+        await db.updateEpubBookContentPaths(b.bookKey, extractDir: local);
+      }
+    } finally {
+      await db.close();
     }
   }
 
@@ -2055,7 +2294,7 @@ class BackupRestoreService {
       }
     }
     await _safeDelete(sidecar.path);
-    await _safeDelete(bakPath);
+    await _retainOverwriteSnapshot(dbDirectory, bakPath);
   }
 
   /// Restores the settings layer (preferences + profiles + bindings) from

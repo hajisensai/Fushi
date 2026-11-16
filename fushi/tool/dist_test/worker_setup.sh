@@ -35,7 +35,9 @@ W="$HOME/.fushi-worker"
 mkdir -p "$W" "$HOME/.ssh"
 chmod 700 "$HOME/.ssh"
 install -m 0644 "$here/worker_shim.sh" "$W/shim"
-echo "installed $W/shim"
+# The shim's queue: who has a checkout, one batch at a time.
+install -m 0644 "$here/worker_slot.sh" "$W/slot.sh"
+echo "installed $W/shim and $W/slot.sh"
 
 if [ ! -f "$W/limits" ]; then
   cat > "$W/limits" <<'LIMITS'
