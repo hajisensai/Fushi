@@ -224,6 +224,7 @@ class ServerDictionaryHost {
   ServerDictionaryHost({
     required this.db,
     required this.dictionaryResourceRoot,
+    this.indexCacheDirectory,
     String? libraryPath,
     Directory? transformsDir,
   }) : _libraryPath = libraryPath ?? resolveFushiDictsLibraryPath(),
@@ -231,6 +232,9 @@ class ServerDictionaryHost {
 
   final FushiDatabase db;
   final Directory dictionaryResourceRoot;
+
+  /// 引擎派生索引（联合过滤器）的缓存目录；null = 不落盘、每次装载后在内存里现建。
+  final Directory? indexCacheDirectory;
   final String? _libraryPath;
   final Directory? _transformsDir;
 
@@ -266,6 +270,7 @@ class ServerDictionaryHost {
   /// 服务端照常起（词典只是存储中转，查词不可用）。
   Future<bool> start() async {
     FushiDicts.nativeLibraryPath = _libraryPath;
+    FushiDicts.unionFilterCacheDirectory = indexCacheDirectory?.path;
     try {
       // 空引擎探一次原生库：dlopen / 符号缺失在这里暴露，而不是在第一次查词时。
       FushiDicts.initializeTyped();

@@ -251,6 +251,8 @@ class FeedbackTicketStore {
 class FeedbackPendingStore {
   FeedbackPendingStore(this.supportRoot);
 
+  static const Set<String> _sidecars = <String>{'.type', '.name'};
+
   final Directory supportRoot;
 
   Directory get _root =>
@@ -261,6 +263,10 @@ class FeedbackPendingStore {
 
   File _typeFile(String id, String slot) =>
       File('${_file(id, slot).path}.type');
+
+  /// 样本文件的原文件名旁注（`<槽位>.name`）。
+  File _nameFile(String id, String slot) =>
+      File('${_file(id, slot).path}.name');
 
   Future<void> put(String id, String slot, List<int> bytes) async {
     final File f = _file(id, slot);
@@ -292,6 +298,34 @@ class FeedbackPendingStore {
     return f;
   }
 
+  /// 把用户选的样本文件**复制**进待传区（原件是用户自己的文件，不动它），并记下原文件名
+  /// （[nameOf]，上传时作 `X-Fushi-File-Name`）。
+  Future<File> copyFile(
+    String id,
+    String slot,
+    File source, {
+    required String name,
+  }) async {
+    final File f = _file(id, slot);
+    await f.parent.create(recursive: true);
+    if (f.existsSync()) await f.delete();
+    await source.copy(f.path);
+    await _typeFile(
+      id,
+      slot,
+    ).writeAsString('application/octet-stream', flush: true);
+    await _nameFile(id, slot).writeAsString(name, flush: true);
+    return f;
+  }
+
+  /// 待传样本文件的原文件名（没有旁注返回 null）。
+  Future<String?> nameOf(String id, String slot) async {
+    final File f = _nameFile(id, slot);
+    if (!f.existsSync()) return null;
+    final String name = (await f.readAsString()).trim();
+    return name.isEmpty ? null : name;
+  }
+
   Future<Uint8List?> read(String id, String slot) async {
     final File f = _file(id, slot);
     return f.existsSync() ? f.readAsBytes() : null;
@@ -316,6 +350,8 @@ class FeedbackPendingStore {
     if (f.existsSync()) await f.delete();
     final File type = _typeFile(id, slot);
     if (type.existsSync()) await type.delete();
+    final File name = _nameFile(id, slot);
+    if (name.existsSync()) await name.delete();
     final Directory dir = f.parent;
     if (!dir.existsSync() || dir.listSync().isNotEmpty) return;
     try {
@@ -332,7 +368,7 @@ class FeedbackPendingStore {
     if (dir.existsSync()) await dir.delete(recursive: true);
   }
 
-  /// 扫描磁盘：反馈 id → 待传槽位（`.type` 旁注不算槽位）。
+  /// 扫描磁盘：反馈 id → 待传槽位（`.type` / `.name` 旁注不算槽位）。
   Future<Map<String, Set<String>>> scan() async {
     final Map<String, Set<String>> out = <String, Set<String>>{};
     if (!_root.existsSync()) return out;
@@ -340,7 +376,8 @@ class FeedbackPendingStore {
       if (d is! Directory) continue;
       final Set<String> slots = <String>{
         for (final FileSystemEntity f in d.listSync())
-          if (f is File && p.extension(f.path) != '.type') p.basename(f.path),
+          if (f is File && !_sidecars.contains(p.extension(f.path)))
+            p.basename(f.path),
       };
       if (slots.isNotEmpty) out[p.basename(d.path)] = slots;
     }

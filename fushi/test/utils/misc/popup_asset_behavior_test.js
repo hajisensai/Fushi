@@ -4748,11 +4748,50 @@ async function testOpenAnkiButtonMergedIntoSrsBadgeWhenTargetIsSrs() {
     'no SRS badge -> open-in-Anki button stays');
 }
 
+// BUG-4720（反馈 CGtu-HjN15）：制卡目标 = Fushi 复习时徽标接管了 ↗ 的位置，可点开的却
+// 不是 ↗ 那条笔记——徽标按状态回包的 noteId（「最需要复习那张卡」的笔记，且是取状态那一刻
+// 的快照）走 srsOpenCard，↗ 按词走 openInAnki（SrsMiningAnkiRepository.openWordInAnki，
+// 最新那条笔记）。哪颗可见取决于状态取回没有，同一个词有几条笔记时制完卡当下和重开弹窗
+// 跳到不同的笔记。徽标接管时必须与 ↗ 走同一根桥、同一份参数，回包里的 noteId 不参与。
+async function testSrsOwnedBadgeOpensSameNoteAsOpenAnkiButton() {
+  const context = loadPopup();
+  context.window.__fushiSrsEnabled = true;
+  context.window.__fushiSrsMiningTarget = true;
+  const opened = [];
+  context.window.flutter_inappwebview.callHandler = (name, payload) => {
+    if (name === 'duplicateCheck') return Promise.resolve(true);
+    if (name === 'srsTermStatus') {
+      return Promise.resolve({
+        queue: 'review', dueLabel: '复习中', suspended: false,
+        cardId: 'urgent-card', noteId: 'older-note', cardCount: 2, tooltip: 'Open',
+      });
+    }
+    if (name === 'srsOpenCard' || name === 'openInAnki') {
+      opened.push({ name, payload: JSON.parse(JSON.stringify(payload)) });
+      return Promise.resolve(name === 'openInAnki' ? 'opened' : true);
+    }
+    return Promise.resolve(null);
+  };
+  const header = context.createEntryHeader(srsEntry(), 0);
+  await flush();
+  const badge = findByClassDeep(header, 'srs-status-badge');
+  const openAnki = findByClassDeep(header, 'open-anki-button');
+  assert.ok(!badge.classList.contains('srs-status-hidden'), 'status known -> badge visible');
+  await badge.onclick({ stopPropagation() {} });
+  await openAnki.onclick();
+  await flush();
+  assert.deepEqual(opened, [
+    { name: 'openInAnki', payload: { expression: '刀', reading: '刀' } },
+    { name: 'openInAnki', payload: { expression: '刀', reading: '刀' } },
+  ], 'SRS-owned badge and ↗ open the word through one bridge with one criterion');
+}
+
 Promise.all([
   testSrsBadgeAbsentAndSilentWhenModuleOff(),
   testSrsBadgeShowsHostLabelAndOpensCard(),
   testSrsBadgeHiddenWhenWordNotInSrs(),
   testOpenAnkiButtonMergedIntoSrsBadgeWhenTargetIsSrs(),
+  testSrsOwnedBadgeOpensSameNoteAsOpenAnkiButton(),
 ]).then(() => console.log('SRS badge tests passed'))
   .catch((error) => { console.error(error); process.exitCode = 1; });
 
