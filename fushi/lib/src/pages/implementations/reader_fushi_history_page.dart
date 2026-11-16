@@ -1322,7 +1322,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
 
   /// 「排序与筛选」菜单的常驻锚点（[FushiPageHeader.menuAnchor]，铺满页头
   /// 动作组）：页头里的排序按钮可能被收进「⋯」，菜单挂在这里才总能打开；弹出
-  /// 位置跟着触发控件（按钮或 ⋯，BUG-4712）。
+  /// 位置跟着触发控件（按钮或 ⋯，BUG-4715）。
   Widget _buildSortMenuAnchor(List<BookTagRow> allTags) {
     return FushiTagFilterBar(
       tags: allTags,

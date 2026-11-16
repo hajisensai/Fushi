@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:test/test.dart';
 
-/// 禁止「零尺寸菜单锚点」（BUG-4712）：`MenuAnchor` / `FushiMenuAnchor` 的锚点
+/// 禁止「零尺寸菜单锚点」（BUG-4715）：`MenuAnchor` / `FushiMenuAnchor` 的锚点
 /// 本身是 `SizedBox.shrink()`、再由别处的按钮经 MenuController 打开——菜单从
 /// 那个零尺寸盒子弹出，与真正点下去的按钮对不上（库页「排序」菜单曾叠在页头
 /// 动作组右下角，排序按钮不在最右端时菜单就偏到别处）。
