@@ -1,0 +1,52 @@
+
+/// G10-3 夹具生成器（不入库：只在生成时临时贴进 native/fushi_fsrs/src/store/gen4/prepare_tests.rs 末尾跑
+/// `FUSHI_G103_OUT=<目录> cargo test --profile quick --lib generate_g10_3_server_fixture -- --ignored`）：两个 profile 的
+/// 协议 3 库（schema 29）——[P] 有笔记 / 复习、协议 3 迁移做完；[ORPHAN] 只在投影表里（一副牌组 + 一条旧复习日志），
+/// 写到 `FUSHI_G103_OUT/srs.db`；再拿生成的这份走一次全局命令迁移，确认能提交。
+#[test]
+#[ignore]
+fn generate_g10_3_server_fixture() {
+    let Ok(out) = std::env::var("FUSHI_G103_OUT") else {
+        return;
+    };
+    let dir = unsynced_dir("g103-fixture", &|d| {
+        while d.core.sync2_migrate(P, T0, None).unwrap()["done"] != json!(true) {}
+        let w = d.core.writer().unwrap();
+        w.execute(
+            "INSERT INTO srs_entities (id, profile_uid, kind, payload_json, created_at) VALUES (srs_id(?1), srs_id(?2), 'deck', '{\"createdAt\":1}', 1)",
+            params![default_deck_id(ORPHAN), ORPHAN],
+        )
+        .unwrap();
+        legacy_log(
+            &w,
+            ORPHAN,
+            "0193a1b2-0000-7000-8000-0000000000e9",
+            "0193a1b2-0000-7000-8000-0000000000c9",
+            T0 - 600,
+        );
+    });
+    {
+        let c = raw(&dir.0);
+        c.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);").unwrap();
+    }
+    let out = std::path::PathBuf::from(out);
+    std::fs::create_dir_all(&out).unwrap();
+    std::fs::copy(dir.0.join(LEGACY_FILE), out.join(LEGACY_FILE)).unwrap();
+    let check = tempdir::new("g103-fixture-check");
+    std::fs::copy(out.join(LEGACY_FILE), check.0.join(LEGACY_FILE)).unwrap();
+    let mut listed = listed_profiles(&check.0);
+    listed.sort();
+    let mut want = vec![P.to_owned(), ORPHAN.to_owned()];
+    want.sort();
+    assert_eq!(listed, want);
+    let caches: serde_json::Map<String, Value> = listed
+        .iter()
+        .map(|p| (p.clone(), serde_json::from_str(&cfg_of(p)).unwrap()))
+        .collect();
+    let r = global(
+        "gen4_migrate_run",
+        &json!({"dir": check.0.to_str().unwrap(), "caches": caches, "now": NOW}),
+    )
+    .unwrap();
+    assert_eq!(r["verdict"], json!("committed"), "{r:#}");
+}
