@@ -25,11 +25,13 @@
 //! - [fork]：本机身份分叉的检测（换身份本身是 `truth` 的 `rotate_identity`，本机身份表 `self_` 的读写也在那里）。
 //! - [compact]：本机原生段的小段合并（分层合并的计划与重新切段、签名；不改表）。
 //! - `compare`：协议 3 的投影与新代派生层逐类对拍（干跑与测试装置共用）。
+//! - [cmd]：读命令的新代实现（`read` / `read_lib` 的各个查询、`entity_views`、修改历史）。还没接分发器。
 //! - [dryrun]：真实库干跑（设计 §8 G4）：旧库只读 → 临时新库 → 重建 → 对拍报告；也是换代前版本里的预演自检（G4b）。
 
 pub mod alias;
 pub mod cache;
 pub mod class;
+pub mod cmd;
 pub mod compact;
 pub(crate) mod compare;
 pub mod derive;
