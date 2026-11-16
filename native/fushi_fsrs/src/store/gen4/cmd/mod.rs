@@ -39,6 +39,7 @@ pub mod views;
 pub mod writes;
 pub mod writes_intent;
 pub mod writes_local;
+pub mod writes_restore;
 
 #[cfg(test)]
 mod tests;

@@ -14,7 +14,7 @@ use serde_json::{Value, json};
 
 use super::tests::{N1, N2, N3, N4, Norm, Pair, T0, card, decode, library, library_pair, note};
 use super::writes::{self, Session, write};
-use super::{writes_intent, writes_local};
+use super::{writes_intent, writes_local, writes_restore};
 use crate::store::gen4::derive::Ref;
 use crate::store::gen4::derive::tests::{assert_rebuild_is_identity, dump};
 use crate::store::gen4::truth::{TRUST_PENDING, Truth};
@@ -1316,4 +1316,160 @@ fn a_crash_mid_command_commits_nothing() {
         writes::checkpoint(&t, col, &json!({"now": T1 + 9, "name": "b", "reason": "r"})).unwrap();
     assert_eq!(v["nextSeq"], json!(3));
     assert_eq!(t.audit(col), Ok(2));
+}
+
+// ---------------------------------------------------------------------- restore（复核 major-3）
+
+/// 两侧的预览（协议 3 `sync2_plan_restore`、新代 `writes_restore::plan_restore`）相同。
+fn same_plan(w: &W<'_>, p3: &crate::store::sync2::timeline::RestoreTarget, g4: &Value, now: i64) {
+    let pv = w.p.d.core.sync2_plan_restore(P, p3, true, now).unwrap();
+    let mut req = g4.clone();
+    req["now"] = json!(now);
+    req["retract"] = json!(true);
+    let gv = writes_restore::plan_restore(&w.t(), w.p.col, &req).unwrap();
+    assert_eq!(pv, gv, "plan");
+}
+
+/// `restore` 到还原点：打还原点之后新建笔记、改字段、删笔记、改标签、作答、移卡，再恢复到还原点（连作答一起撤回）。
+/// 两侧各打各的还原点（作者不同、因果相同），恢复之后状态逐表相同；预览的计数两侧相同、且不为空。
+#[test]
+fn restore_matches_protocol_3_to_a_checkpoint() {
+    let lib = decked();
+    let w = W::new(&lib);
+    // 打还原点之前：前身卡 N1/t1 有卡级牌组，后继卡 N1/t2 没有（跟着前身走）。之后给后继单写一条，恢复时它那一刻没有
+    // 自己的记录，要写回血统继承到的值（不是 null，null 会挡住继承）。
+    let pre = vec![draft("card", &card(N1, "t1"), "deck", json!(LANG))];
+    w.p3("apply", T1 - 1, json!({}), Some(&pre));
+    writes::apply(&w.t(), w.p.col, &W::req(T1 - 1, json!({})), &pre).unwrap();
+    let cp = json!({"name": "cp", "reason": "manual"});
+    w.p3("checkpoint", T1, cp.clone(), None);
+    writes::checkpoint(&w.t(), w.p.col, &W::req(T1, cp)).unwrap();
+    let p_cp = w.p.d.core.sync2_checkpoints(P).unwrap()[0].clone();
+    let p_id = crate::sync2::vv::OpId {
+        device: Id::parse(p_cp["device"].as_str().unwrap()).unwrap(),
+        seq: p_cp["seq"].as_u64().unwrap(),
+    };
+    let g_id = json!({"device": Id(ME).text(), "seq": w.mine()});
+    let items = vec![
+        json!({"e": note(N5, "NT", 50), "note": null}),
+        draft("note", N5, "f/fa", json!("魚")),
+        draft("note", N1, "f/fa", json!("猫2")),
+        draft("note", N2, "deleted", json!(T1 + 1)),
+        draft("note", N1, "tags", json!(["z", "a"])),
+        draft("card", &card(N3, "t1"), "deck", json!(JP)),
+        draft("card", &card(N1, "t2"), "deck", json!(JP)),
+        json!({"e": review("r9", &card(N1, "t1"), T1 + 1, 3, "review"), "note": N1, "intent": "answer"}),
+    ];
+    w.p3("apply", T1 + 1, json!({}), Some(&items));
+    writes::apply(&w.t(), w.p.col, &W::req(T1 + 1, json!({})), &items).unwrap();
+    let cards = all_cards();
+    w.same_state(&[N1, N2, N3, N4, N5], &cards, false);
+    let p_target = crate::store::sync2::timeline::RestoreTarget::Checkpoint(p_id);
+    let g_target = json!({"checkpoint": g_id});
+    same_plan(&w, &p_target, &g_target, T1 + 2);
+    let plan = writes_restore::plan_restore(
+        &w.t(),
+        w.p.col,
+        &json!({"now": T1 + 2, "checkpoint": g_id, "retract": true}),
+    )
+    .unwrap();
+    assert_eq!(plan["revived"], json!(1), "{plan}");
+    assert_eq!(plan["removed"], json!(1), "{plan}");
+    assert_eq!(plan["reviews"], json!(1), "{plan}");
+    assert!(plan["fields"].as_i64().unwrap() >= 2, "{plan}");
+    assert_eq!(plan["tags"], json!(2), "{plan}");
+    w.p3(
+        "restore",
+        T1 + 2,
+        json!({"checkpoint": p_cp.clone(), "retract": true}),
+        None,
+    );
+    let gv = writes_restore::restore(
+        &w.t(),
+        w.p.col,
+        &W::req(T1 + 2, json!({"checkpoint": g_id, "retract": true})),
+    )
+    .unwrap();
+    assert!(!gv["changed"].as_array().unwrap().is_empty(), "{gv}");
+    w.same_state(&[N1, N2, N3, N4, N5], &cards, true);
+    // 再预览同一个目标：字段、标签、复活都已还原；之后才建的 N5 照协议 3 仍算一条（「之后才建的」不看它现在删没删），
+    // 两侧相同。
+    same_plan(&w, &p_target, &g_target, T1 + 3);
+    let plan = writes_restore::plan_restore(
+        &w.t(),
+        w.p.col,
+        &json!({"now": T1 + 3, "checkpoint": g_id, "retract": false}),
+    )
+    .unwrap();
+    assert_eq!(
+        plan,
+        json!({"fields": 0, "revived": 0, "removed": 1, "tags": 0, "reviews": 0})
+    );
+}
+
+/// `restore` 到时刻：落在 `library` 历史中间（继承链之后、删 N4 之前、冲突与 r3 之前；Anki 导入的复习墙钟在后但
+/// 发生时刻在前，算「那一刻之前」不撤回）。两侧逐表相同，预览相同。
+#[test]
+fn restore_matches_protocol_3_to_a_time() {
+    let lib = library();
+    let w = W::new(&lib);
+    let at = T0 + DAY + 15;
+    same_plan(
+        &w,
+        &crate::store::sync2::timeline::RestoreTarget::At(at),
+        &json!({"at": at}),
+        T1,
+    );
+    w.p3("restore", T1, json!({"at": at, "retract": true}), None);
+    writes_restore::restore(
+        &w.t(),
+        w.p.col,
+        &W::req(T1, json!({"at": at, "retract": true})),
+    )
+    .unwrap();
+    w.same_state(&[N1, N2, N3, N4], &all_cards(), true);
+    // N4 复活，N3 的冲突字段回到没有值。
+    let g =
+        w.p.ix(|ix| {
+            ix.class_value(
+                crate::sync2::op::EntKind::Note,
+                &Ref::of(&Key::of(N4)),
+                "deleted",
+            )
+        })
+        .unwrap();
+    assert_eq!(g.as_deref(), Some("null"));
+}
+
+/// `restore` 的原子性与拒写：注入失败 / 还原点不存在 = 整笔回滚（还原点、补偿操作、`self_.hlc`、派生表一个不留）。
+#[test]
+fn a_failing_restore_writes_nothing() {
+    let lib = library();
+    let w = W::new(&lib);
+    let before = fingerprint(&w);
+    let e = writes_restore::restore(
+        &w.t(),
+        w.p.col,
+        &W::req(
+            T1,
+            json!({"at": T0 + DAY + 15, "retract": true, "failAfter": "restore"}),
+        ),
+    )
+    .unwrap_err();
+    assert!(e.contains("injected failure"), "{e}");
+    assert_eq!(fingerprint(&w), before);
+    let e = writes_restore::restore(
+        &w.t(),
+        w.p.col,
+        &W::req(
+            T1,
+            json!({"checkpoint": {"device": Id([7; 16]).text(), "seq": 1}}),
+        ),
+    )
+    .unwrap_err();
+    assert_eq!(e, "checkpoint not found");
+    assert_eq!(fingerprint(&w), before);
+    let e = writes_restore::restore(&w.t(), w.p.col, &W::req(T1, json!({}))).unwrap_err();
+    assert!(e.contains("missing at"), "{e}");
+    assert_eq!(fingerprint(&w), before);
 }

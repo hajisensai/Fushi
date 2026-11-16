@@ -4,7 +4,8 @@
 //!
 //! 本文件是底座与「拼操作」一组：[Session]（一条写命令的事务、写入者、索引与回包）、`apply` / `import_drafts` /
 //! `purge` / `checkpoint` / `resolve`。意图命令（`note_fields_if`、`change`、`merge_notes`、`deck_delete`、`sched`）
-//! 在 `writes_intent.rs`，本机状态类（`trust`、`device_hint`、`status`、`dedup`、`digest_heal`）在 `writes_local.rs`。
+//! 在 `writes_intent.rs`，本机状态类（`trust`、`device_hint`、`status`、`dedup`、`digest_heal`）在 `writes_local.rs`，
+//! 时间线恢复（`restore`，与只读的预览 `plan_restore`）在 `writes_restore.rs`。
 //!
 //! # 共同约定
 //!
