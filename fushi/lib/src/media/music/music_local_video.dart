@@ -17,13 +17,31 @@ import 'package:fushi/src/media/video/external_video_ingest.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/media_extensions.dart' show isVideoMediaPath;
 import 'package:fushi_engine/media/video/video_book_repository.dart';
+import 'package:path/path.dart' as p;
 
 /// 本地 MV 登记进视频库时打的标签名（共享标签池按名跨设备合并，所以不随界面语言变）。
 const String kMusicVideoTagName = 'MV';
 
-/// 这首本地曲目是不是 MV（视频容器）。纯函数，不碰文件系统。
+/// 这首曲目是不是 MV（视频容器），只看扩展名：本地与网络来源（SFTP / WebDAV / AList，
+/// path 是 `https://…` / `sftp://…`）的 MV 都算，曲目行都标「MV」。纯函数，不碰文件系统。
+bool isMusicVideoTrack(MusicTrackRow track) => isVideoMediaPath(track.path);
+
+/// 这首曲目是不是**能在视频播放页里看的本地 MV**：视频容器且 path 是本机绝对路径。
+///
+/// 网络来源的 MV（path 带 URL scheme）在视频播放页里没有可打开的本地文件——视频库按
+/// 本机路径登记、[openMusicTrackVideo] 先查 `File.exists`——所以只放音轨、不给观看入口，
+/// 免得给出一个必然「视频文件不存在」的按钮。纯函数，不碰文件系统。
 bool isMusicLocalVideoTrack(MusicTrackRow track) =>
-    isVideoMediaPath(track.path);
+    isMusicVideoTrack(track) && isMusicLocalFilePath(track.path);
+
+final RegExp _urlSchemePrefix = RegExp(r'^[a-zA-Z][a-zA-Z0-9+.\-]*://');
+
+/// [path] 是不是本机文件系统的绝对路径（不带 `scheme://` 前缀）。
+bool isMusicLocalFilePath(String path) {
+  final String trimmed = path.trim();
+  if (trimmed.isEmpty || _urlSchemePrefix.hasMatch(trimmed)) return false;
+  return p.isAbsolute(trimmed);
+}
 
 /// 本地曲目副标题里艺人之后的徽章段：MV 标在前，后接格式徽章（视频容器的编码扫描时
 /// 读不出，格式徽章多为空）。各本地曲目列表共用，不各自拼。
@@ -36,7 +54,7 @@ List<String> musicLocalTrackBadges(MusicTrackRow track) {
     bitrateKbps: track.bitrate,
   );
   return <String>[
-    if (isMusicLocalVideoTrack(track)) t.music_track_mv_badge,
+    if (isMusicVideoTrack(track)) t.music_track_mv_badge,
     if (format.isNotEmpty) format,
   ];
 }

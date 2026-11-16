@@ -222,10 +222,10 @@ kCoverPathDerivers = <String, (CoverDeriverRole, String)>{
         'migrateLegacyDiagnostics 把旧版诊断文件搬进诊断目录（4w_veZGiQ7），'
         '与封面无关（逐函数名单见 kNonCoverRawWriters）。',
   ),
-  'lib/main.dart': (
+  'lib/src/media/video/external_video_ingest.dart': (
     CoverDeriverRole.derivesPathOnly,
-    '「用 Fushi 打开」外部视频建行时派生 coversDir 交给 CoverMetaStore 做来源准入，'
-        '抽帧仍由 extractVideoCover 落盘；main 自己一个字节都不写。',
+    '外部打开视频 / 音乐本地 MV 建行时派生 coversDir 给 CoverMetaStore 做准入，'
+        '由 extractVideoCover 落盘；本文件自己一个字节都不写。',
   ),
   // BUG-2569 起 `source_library_scanner.dart` **不再**在此列：扫描入库不碰封面了
   // （不派生 coversDir、不抽帧），封面统一由书架的补齐产线负责。它此前每个文件最坏

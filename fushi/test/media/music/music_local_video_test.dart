@@ -51,6 +51,28 @@ void main() {
       expect(isMusicLocalVideoTrack(_track('/m/Song.flac')), isFalse);
     });
 
+    test('网络来源的 MV 标 MV，但不算可在视频播放页看的本地 MV', () {
+      for (final String path in <String>[
+        'https://dav.example/music/Song MV.mkv',
+        'sftp://nas/music/Song MV.mkv',
+        'http://alist.local/d/music/Song MV.mp4?sign=1',
+      ]) {
+        expect(isMusicVideoTrack(_track(path)), isTrue, reason: path);
+        expect(isMusicLocalVideoTrack(_track(path)), isFalse, reason: path);
+      }
+      // 本机绝对路径的写法随平台（path 包按当前平台判），这里只用两端都认的根路径。
+      expect(
+        isMusicLocalVideoTrack(_track('/storage/emulated/0/Music/MV.mkv')),
+        isTrue,
+      );
+      expect(isMusicLocalVideoTrack(_track('relative/Song MV.mkv')), isFalse);
+      LocaleSettings.setLocale(AppLocale.en);
+      expect(
+        musicLocalTrackBadges(_track('sftp://nas/m/a.mkv', codec: 'unknown')),
+        <String>['MV'],
+      );
+    });
+
     test('徽章段：MV 在前、格式徽章在后；纯音频不标 MV', () {
       LocaleSettings.setLocale(AppLocale.en);
       expect(

@@ -720,6 +720,42 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
+  testWidgets('网络来源的 MV（WebDAV 上的 mkv）：标 MV，但菜单不给「在视频播放器中观看」', (
+    WidgetTester tester,
+  ) async {
+    // 网络曲目的 path 是 URL，视频播放页没有本地文件可开：只放音轨，不给必然打不开的入口。
+    const MusicTrackRow track = MusicTrackRow(
+      trackUid: 'mvnet1',
+      path: 'https://dav.example/music/Song MV.mkv',
+      title: 'Net MV',
+      artistCredit: 'Artist',
+      codec: 'unknown',
+      isLossless: false,
+      fileMtimeAt: 1,
+      fileSize: 1,
+      hasEmbeddedCover: false,
+      addedAt: 1,
+    );
+    await pumpHome(
+      tester,
+      const Scaffold(
+        body: MusicTrackList(
+          tracks: <MusicTrackRow>[track],
+          albums: <String, MusicAlbumRow>{},
+          context: MusicQueueContext.mixed,
+        ),
+      ),
+    );
+    expect(find.textContaining('Artist · MV'), findsOneWidget);
+    await rightClick(
+      tester,
+      find.byKey(const ValueKey<String>('music-track-mvnet1')),
+    );
+    expect(menuAction('play'), findsOneWidget);
+    expect(menuAction('watchVideo'), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   // ── 远程曲目加入音乐库 / 本地歌单（v148，反馈 0tRY-D2JgG）──
 
   testWidgets('插件曲目菜单：加入音乐库 → 落远程曲目行；再开菜单变成「从音乐库移除」', (
