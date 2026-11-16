@@ -1116,9 +1116,9 @@ class _ResizePreview extends StatelessWidget {
           ),
           child: Center(
             child: DecoratedBox(
-              decoration: BoxDecoration(
+              decoration: ShapeDecoration(
                 color: scheme.primary,
-                borderRadius: BorderRadius.circular(999),
+                shape: const StadiumBorder(),
               ),
               child: Padding(
                 padding: const EdgeInsets.symmetric(
