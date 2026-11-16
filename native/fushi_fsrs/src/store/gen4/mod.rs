@@ -22,17 +22,21 @@
 //! - [media]：各位置媒体「在不在」的本机缓存 `media_at` 的读写、媒体清单（`crate::gen4::manifest`）的收与发、协议 3
 //!   `sync2_media_at` 的播种（G8-3，没有调用方）。
 //! - [weigh]：派生层的语义部分——标签 OR-Set、媒体绑定、彻底清除、被扣住的删除、设备信任。
+//! - [fork]：本机身份分叉的检测（换身份本身是 `truth` 的 `rotate_identity`，本机身份表 `self_` 的读写也在那里）。
+//! - [compact]：本机原生段的小段合并（分层合并的计划与重新切段、签名；不改表）。
 //! - `compare`：协议 3 的投影与新代派生层逐类对拍（干跑与测试装置共用）。
 //! - [dryrun]：真实库干跑（设计 §8 G4）：旧库只读 → 临时新库 → 重建 → 对拍报告；也是换代前版本里的预演自检（G4b）。
 
 pub mod alias;
 pub mod cache;
 pub mod class;
+pub mod compact;
 pub(crate) mod compare;
 pub mod derive;
 pub mod digest;
 pub mod dryrun;
 pub mod files;
+pub mod fork;
 pub mod identity;
 pub mod import;
 pub mod ingest;
