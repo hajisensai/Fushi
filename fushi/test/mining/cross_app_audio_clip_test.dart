@@ -33,6 +33,30 @@ Uint8List _pcm(int totalMs, List<({int startMs, int endMs, double amp})> segs) {
   return data.buffer.asUint8List();
 }
 
+/// 整段垫连续 BGM（220 Hz，振幅按 1.5 Hz 在 0.5–1.0 倍间起伏 ≈ ±3 dB），[voice] 段里
+/// 叠一个比 BGM 平均振幅响 10 dB 的「人声」（523 Hz）。
+Uint8List _pcmOverBgm(int totalMs, List<({int startMs, int endMs})> voice) {
+  const double bgmAmp = 0.05;
+  final double voiceAmp = bgmAmp * 0.75 * math.pow(10, 10 / 20);
+  final int frames = _format.sampleRate * totalMs ~/ 1000;
+  final ByteData data = ByteData(frames * 2);
+  for (int i = 0; i < frames; i++) {
+    final double t = i / _format.sampleRate;
+    final int ms = i * 1000 ~/ _format.sampleRate;
+    double v =
+        bgmAmp *
+        (0.75 + 0.25 * math.sin(2 * math.pi * 1.5 * t)) *
+        math.sin(2 * math.pi * 220 * t);
+    for (final ({int startMs, int endMs}) s in voice) {
+      if (ms >= s.startMs && ms < s.endMs) {
+        v += voiceAmp * math.sin(2 * math.pi * 523 * t);
+      }
+    }
+    data.setInt16(i * 2, (v * 32767).round(), Endian.little);
+  }
+  return data.buffer.asUint8List();
+}
+
 void main() {
   group('crossAppAudioDefaultRange', () {
     test('picks the last utterance, merging short pauses, with padding', () {
@@ -68,6 +92,47 @@ void main() {
         crossAppAudioDefaultRange(GalAudioSlice(pcm: pcm, format: _format)),
         isNull,
       );
+    });
+
+    test('continuous BGM 10 dB under the voice: still cuts the last line', () {
+      // 手游主用例：整段 30 秒垫着 BGM（自身有 ±3 dB 起伏），人声比 BGM 平均响 10 dB。
+      // 只看全局峰值的旧判据会把 BGM 当有声，一路截到缓冲开头。
+      final Uint8List pcm = _pcmOverBgm(30000, <({int startMs, int endMs})>[
+        // 上一句（隔着 6 秒只有 BGM）——不该被截进来。
+        (startMs: 15000, endMs: 18000),
+        // 最后一句：中间 300ms 换气，之后 3 秒只有 BGM（用户在截屏识字）。
+        (startMs: 24000, endMs: 25500),
+        (startMs: 25800, endMs: 27000),
+      ]);
+      final GalWaveformRange range = crossAppAudioDefaultRange(
+        GalAudioSlice(pcm: pcm, format: _format),
+      )!;
+      expect(
+        range.startMs,
+        closeTo(24000 - kCrossAppAudioPadMs, kCrossAppAudioFrameMs),
+      );
+      expect(
+        range.endMs,
+        closeTo(27000 + kCrossAppAudioPadMs, kCrossAppAudioFrameMs),
+      );
+    });
+
+    test('BGM with no voice falls back to the most recent capped window', () {
+      final Uint8List pcm = _pcmOverBgm(
+        30000,
+        const <({int startMs, int endMs})>[],
+      );
+      final GalWaveformRange range = crossAppAudioDefaultRange(
+        GalAudioSlice(pcm: pcm, format: _format),
+      )!;
+      // 末端落在最后一个 BGM 强拍上（起伏周期约 667ms），不必正好是缓冲末尾。
+      expect(range.endMs, greaterThan(29000));
+      expect(
+        range.endMs - range.startMs,
+        lessThanOrEqualTo(kCrossAppAudioMaxClipMs + 2 * kCrossAppAudioPadMs),
+      );
+      // 不会把整段 30 秒都挂到卡上。
+      expect(range.startMs, greaterThan(10000));
     });
 
     test('padding is clamped to the snapshot bounds', () {
