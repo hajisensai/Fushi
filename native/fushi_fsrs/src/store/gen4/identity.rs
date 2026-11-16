@@ -33,7 +33,11 @@
 //! 内核在 `join` / `bind` **提交后**往事件流发 `binding_changed{profile}`，Dart 的 `SrsDbStore.onBindingChanged()`
 //! 据此让缓存的四个 ID 失效。这一层在事务里，不知道最外层什么时候提交，也还没有事件流可发（内核的事件流随 S1 / G9-4
 //! 接线）：凡是改了绑定（集合标识、目录名或盐集合）的结果都带一个 [BindingChanged]，由命令层在最外层提交成功之后发出；
-//! 回滚了就丢掉。
+//! 回滚了就丢掉。这是对规划 §1.6「`Truth::join` 结束时发 `binding_changed`」的有意偏离，已写回规划 §1.6 / 缺口 G-4。
+//!
+//! 命令层取事件一律经 [AdoptOutcome::binding_changed] / [JoinWritten::changed]，不逐个分支拆；「带事件 ⇔ 绑定真的变了」
+//! 对每个结论都成立（测试 `every_outcome_reports_a_binding_change_exactly_when_the_binding_changed`），漏发只可能出在
+//! 命令层没在提交后发——G9-4 对每个改绑定的命令要有对应测试。
 //!
 //! # 已经并入过
 //!
@@ -102,7 +106,10 @@ pub struct JoinWritten {
 pub struct Foreign {
     /// 集合标识。
     pub collection: Id,
-    /// 位置目录名。
+    /// 位置目录名：这个集合在位置上的目录名（它 `meta.json` 所在的那一级），**不是**备份 / 导出文件里记的旧 profile
+    /// uid。同一个集合在另一个旧 uid 下的备份（设计 §5.4 第 6 条「只写 Salts」）要这样构造：`collection` = 清单里的
+    /// 集合标识、`dir` = 它的位置目录名、旧 uid 放进 `salts`；把旧 uid 当 `dir` 传进来，同一个集合会因目录名不一致被
+    /// 拒（坏数据），而不是补盐（测试 `a_backup_under_an_old_uid_passes_the_uid_as_a_salt`）。G11-3 / G11-4 照此构造。
     pub dir: String,
     /// 它的盐集合（可以为空：从位置上看到、还没读到它的操作时）。
     pub salts: BTreeSet<String>,
@@ -130,6 +137,19 @@ pub enum AdoptOutcome {
         settled: Settled,
         changed: Option<BindingChanged>,
     },
+}
+
+impl AdoptOutcome {
+    /// 这次认下来改没改绑定（文件头「绑定变化的事件」）：命令层在最外层事务提交成功之后，对返回 `Some` 的发
+    /// `binding_changed{profile}`。所有结论都经这里取，不在命令层逐个分支拆（拆漏一个，Dart 缓存的四个 ID 就会过期）。
+    pub fn binding_changed(&self) -> Option<&BindingChanged> {
+        match self {
+            AdoptOutcome::Same | AdoptOutcome::AlreadyJoined | AdoptOutcome::NeedsConfirm => None,
+            AdoptOutcome::Bound { changed, .. } => Some(changed),
+            AdoptOutcome::Joined { written, .. } => written.changed.as_ref(),
+            AdoptOutcome::SaltsAdded { changed, .. } => changed.as_ref(),
+        }
+    }
 }
 
 // ------------------------------------------------------------ join_ix
@@ -371,6 +391,9 @@ impl Truth<'_> {
 /// 判定顺序：profile 没绑过 → 确认后直接绑；同一个集合 → 补盐；日志里有受信的 from = 对方的 `Join` → 补盐；对方绑在
 /// 本机别的 profile 上 → 报错（同机两个 profile 不能是同一个集合，设计 §5.1）；没确认 → `NeedsConfirm`；确认了 →
 /// 按 D27 的方向并入。同一个集合而目录名不同、或两个集合目录名相同，是坏数据，报错、什么都不写。
+///
+/// [foreign] 的 `dir` 必须是位置目录名（`meta.json` 所在的那一级），旧 profile uid 只能进 `salts`（[Foreign::dir]）。
+/// 绑定变了的结论经 [AdoptOutcome::binding_changed] 取事件，由命令层在最外层提交后发。
 ///
 /// 本机在这个集合里还没有身份、而结论要写操作时报错（写操作要作者）。
 pub fn adopt_foreign(
@@ -999,6 +1022,112 @@ mod tests {
         };
         assert!(adopt(&t, &many, true).unwrap_err().contains("at most"));
         assert_eq!(snapshot(&t, col), before);
+    }
+
+    /// 同一个集合在另一个旧 uid 下的备份（设计 §5.4 第 6 条）：旧 uid 当盐传进来 = 只写一条 Salts；把旧 uid 错当成
+    /// 目录名传进来 = 坏数据、报错、什么都不写（[Foreign::dir] 的约定，G11-3 / G11-4 照此构造）。
+    #[test]
+    fn a_backup_under_an_old_uid_passes_the_uid_as_a_salt() {
+        let conn = open_in_memory().unwrap();
+        let t = Truth::new(&conn);
+        let col = ready(&t);
+        declare(&t, col, &["u1"]);
+        const OLD_UID: &str = "0193a1b2-0000-7000-8000-0000000000aa";
+        let before = snapshot(&t, col);
+        let e = adopt(&t, &foreign(OURS, OLD_UID, &[]), true).unwrap_err();
+        assert!(e.contains("is in directory"), "{e}");
+        assert_eq!(snapshot(&t, col), before);
+        let got = adopt(&t, &foreign(OURS, OUR_DIR, &[OLD_UID]), false).unwrap();
+        let AdoptOutcome::SaltsAdded { op, .. } = got else {
+            panic!("{got:?}");
+        };
+        assert_eq!(body(&t, col, &op), Body4::salts([OLD_UID]).unwrap());
+        assert_eq!(
+            t.binding(col).unwrap().unwrap().salts,
+            salts(&[OLD_UID, "u1"])
+        );
+        assert_rebuild_is_identity(&t, col);
+    }
+
+    /// 「带事件 ⇔ 绑定真的变了」对每个结论都成立（文件头「绑定变化的事件」，复核：规划要求 join 结束时发事件，这里
+    /// 改为结果里带，命令层照 [AdoptOutcome::binding_changed] 发）。逐个走遍 7 种结论形态和 [Truth::join]，比较调用
+    /// 前后这个 profile 的绑定：变了就必须带 `Some`（漏了 Dart 缓存过期），没变就必须是 `None`；带的 profile / col
+    /// 就是这个绑定的。
+    #[test]
+    fn every_outcome_reports_a_binding_change_exactly_when_the_binding_changed() {
+        use std::collections::BTreeSet as Set;
+        fn kind(o: &AdoptOutcome) -> &'static str {
+            match o {
+                AdoptOutcome::Same => "same",
+                AdoptOutcome::AlreadyJoined => "already",
+                AdoptOutcome::NeedsConfirm => "confirm",
+                AdoptOutcome::Bound { .. } => "bound",
+                AdoptOutcome::Joined { written, .. } if written.rebound => "joined-rebound",
+                AdoptOutcome::Joined { .. } => "joined-absorbed",
+                AdoptOutcome::SaltsAdded { .. } => "salts",
+            }
+        }
+        fn check(t: &Truth<'_>, f: Foreign, confirmed: bool, seen: &mut Set<&'static str>) {
+            let before = t.binding_of(P).unwrap();
+            let got = adopt(t, &f, confirmed).unwrap();
+            let after = t.binding_of(P).unwrap();
+            let ev = got.binding_changed();
+            assert_eq!(ev.is_some(), before != after, "{got:?}");
+            if let Some(ev) = ev {
+                let after = after.unwrap();
+                assert_eq!((ev.profile.as_str(), ev.col), (P, after.col), "{got:?}");
+            }
+            seen.insert(kind(&got));
+        }
+        let mut seen = Set::new();
+
+        // 没绑过的 profile：没确认、确认后直接绑。
+        let fresh = open_in_memory().unwrap();
+        let t0 = Truth::new(&fresh);
+        check(&t0, foreign(0xa0, "a", &["u-a"]), false, &mut seen);
+        check(&t0, foreign(0xa0, "a", &["u-a"]), true, &mut seen);
+
+        let conn = open_in_memory().unwrap();
+        let t = Truth::new(&conn);
+        let col = ready(&t);
+        declare(&t, col, &["u1"]);
+        check(&t, foreign(OURS, OUR_DIR, &["u1"]), false, &mut seen);
+        check(&t, foreign(OURS, OUR_DIR, &["u1", "u2"]), false, &mut seen);
+        check(&t, foreign(0xe0, "zz-dir", &["u-z"]), false, &mut seen);
+        check(&t, foreign(0xe0, "zz-dir", &["u-z"]), true, &mut seen);
+        check(&t, foreign(0xe0, "zz-dir", &["u-z"]), false, &mut seen);
+        check(
+            &t,
+            foreign(0xe0, "zz-dir", &["u-z", "u-z2"]),
+            false,
+            &mut seen,
+        );
+        check(&t, foreign(0x0b, "b-dir", &["u-b"]), true, &mut seen);
+        assert_eq!(
+            seen,
+            Set::from([
+                "same",
+                "already",
+                "confirm",
+                "bound",
+                "joined-rebound",
+                "joined-absorbed",
+                "salts",
+            ])
+        );
+
+        // Truth::join 同口径。
+        let before = t.binding(col).unwrap();
+        let w = t.join(col, &id(0x01), "a", NOW).unwrap();
+        let after = t.binding(col).unwrap();
+        assert_ne!(before, after);
+        assert_eq!(
+            w.changed,
+            Some(BindingChanged {
+                profile: P.into(),
+                col
+            })
+        );
     }
 
     /// 不受信的作者写的 Join 不算「已经并入过」（与盐集合同口径）：列出来但 trusted = false，本机确认后照样写自己的
