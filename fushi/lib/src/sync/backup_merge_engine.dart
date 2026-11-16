@@ -1,5 +1,8 @@
 import 'dart:convert';
 
+import 'package:fushi/src/models/audio_source_config.dart' show AudioSourceKind;
+import 'package:fushi/src/sync/backup_path_rebase.dart'
+    show joinPrefTag, splitPrefTag;
 import 'package:fushi/src/sync/settings_sync.dart';
 import 'package:drift/drift.dart' show QueryRow, Variable;
 import 'package:fushi_engine/media/override_title_key.dart';
@@ -2185,22 +2188,98 @@ class BackupMergeEngine {
   /// under `localAudio/` and copied by [BackupRestoreService.mergeRestoreBackup]),
   /// so their config must travel too — otherwise the restored files are orphaned
   /// and "音频来源" is silently lost on a merge (the pref-non-merge default
-  /// dropped them). Adopt the backup's value when the device has none/an empty
-  /// list (a fresh app writes an empty `[]` placeholder, so a bare NOT-EXISTS on
-  /// the key is not enough); keep the device's own list otherwise (merge never
-  /// clobbers local). The raw value is copied verbatim so its typed prefix is
-  /// preserved; [BackupService] re-homes the embedded paths onto this device's
-  /// support dir afterwards.
+  /// dropped them).
+  ///
+  /// * Device has none / an empty list (a fresh app writes an empty `[]`
+  ///   placeholder, so a bare NOT-EXISTS on the key is not enough): adopt the
+  ///   backup's raw value verbatim (typed prefix preserved).
+  /// * Device has its own list: keep every local entry as-is (order = priority,
+  ///   never clobbered) and APPEND only the backup's FILE-BACKED local-audio
+  ///   entries this device does not have yet (see [_unionLocalAudioEntries]).
+  ///   Before this union the whole backup list was skipped as soon as the device
+  ///   had any entry (e.g. the always-present `fushiRemote` row once the user
+  ///   touched audio settings), so merging the recommended pack copied its
+  ///   `local_audio_*.db` files yet never registered them — the pack's
+  ///   pronunciation audio silently never worked.
+  ///
+  /// [BackupService] re-homes the embedded paths onto this device's support dir
+  /// afterwards (by filename), for adopted and appended entries alike.
   Future<void> _mergeAudioSourcePrefs() async {
     for (final String key in _audioSourcePrefKeys) {
       final String? src = await _readPrefValue(key, isSrc: true);
       if (_isEmptyListPref(src)) continue; // backup carries no audio sources
       final String? local = await _readPrefValue(key, isSrc: false);
-      if (!_isEmptyListPref(local)) continue; // keep the device's own list
+      final String? next = _isEmptyListPref(local)
+          ? src
+          : _unionLocalAudioEntries(
+              local: local!,
+              src: src!,
+              onlyLocalAudioKind: key == 'audio_source_configs',
+            );
+      if (next == null || next == local) continue;
       await _db.customStatement(
         'INSERT OR REPLACE INTO preferences ("key", "value") VALUES (?, ?)',
-        <Object?>[key, src],
+        <Object?>[key, next],
       );
+    }
+  }
+
+  /// Internal local-audio copies are named `local_audio_<digits>.db` and land
+  /// flat in the support dir with the SAME name on every device, so the
+  /// filename is their identity across machines (timestamp + pid naming makes
+  /// two different files with one name practically impossible).
+  static final RegExp _internalLocalAudioName = RegExp(
+    r'^local_audio_\d+\.db$',
+  );
+
+  /// Identity of a local-audio registry entry's [path]: the filename for an
+  /// internal copy (paths differ per device, the name does not), the full path
+  /// for an external reference. Null when there is no usable path.
+  static String? _localAudioIdentity(Object? path) {
+    if (path is! String || path.isEmpty) return null;
+    final String name = path.replaceAll(r'\', '/').split('/').last;
+    return _internalLocalAudioName.hasMatch(name) ? name : path;
+  }
+
+  /// Appends to the device's [local] list (a PrefCodec-tagged JSON list) every
+  /// entry of the backup's [src] list that points at a local-audio DB the
+  /// device does not already register. [onlyLocalAudioKind] restricts the
+  /// typed `audio_source_configs` union to `kind: localAudio` rows — remote /
+  /// built-in sources are this device's own settings and are never imported by
+  /// a merge. Entries without a path are skipped (nothing to point at). Returns
+  /// [local] unchanged when nothing is added or either value is unparsable
+  /// (never clobber local with a guess).
+  static String _unionLocalAudioEntries({
+    required String local,
+    required String src,
+    required bool onlyLocalAudioKind,
+  }) {
+    final ({String tag, String body}) localSplit = splitPrefTag(local);
+    try {
+      final Object? localDecoded = jsonDecode(localSplit.body);
+      final Object? srcDecoded = jsonDecode(splitPrefTag(src).body);
+      if (localDecoded is! List || srcDecoded is! List) return local;
+      bool isLocalAudio(Object? e) =>
+          !onlyLocalAudioKind ||
+          (e is Map && e['kind'] == AudioSourceKind.localAudio.wireName);
+      final Set<String> have = <String>{
+        for (final Object? e in localDecoded)
+          if (e is Map && isLocalAudio(e)) ?_localAudioIdentity(e['path']),
+      };
+      final List<Object?> added = <Object?>[];
+      for (final Object? e in srcDecoded) {
+        if (e is! Map || !isLocalAudio(e)) continue;
+        final String? id = _localAudioIdentity(e['path']);
+        if (id == null || !have.add(id)) continue;
+        added.add(e);
+      }
+      if (added.isEmpty) return local;
+      return joinPrefTag(
+        localSplit.tag,
+        jsonEncode(<Object?>[...localDecoded, ...added]),
+      );
+    } on FormatException {
+      return local;
     }
   }
 
