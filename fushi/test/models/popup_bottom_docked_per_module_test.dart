@@ -10,7 +10,7 @@ import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/test_platform_services.dart';
 
-/// BUG-4695：底部停靠改成每个模块独立可选，不再是「总开关 ∧ 细分开关（默认 ON）」。
+/// BUG-4709：底部停靠改成每个模块独立可选，不再是「总开关 ∧ 细分开关（默认 ON）」。
 ///
 /// 只用 [AppModel] / [PreferencesRepository] 的公开 API 与原始偏好行断言，覆盖：
 /// 模块开关互不牵连、不受 `popup_bottom_docked` 门控；旧语义数据（含老 Profile 快照 /

@@ -24,7 +24,7 @@ import 'package:fushi_core/fushi_core.dart';
 import '../helpers/fake_platform_services.dart';
 import '../helpers/test_platform_services.dart';
 
-/// TODO-108 / BUG-4695：底部停靠开关的专项 widget 测试——验证 lookup 设置页渲染
+/// TODO-108 / BUG-4709：底部停靠开关的专项 widget 测试——验证 lookup 设置页渲染
 /// 每个模块各一条独立开关 + 非模块宿主一条，默认 OFF，切换后真写穿偏好且互不牵连。
 /// 与 dictionary_popup_layer_test.dart 的纯函数测试互补（一个证开关、一个证位置算法）。
 FushiDatabase _testDb() {
@@ -150,7 +150,7 @@ void main() {
         expect(
           appModel.popupBottomDockedFor(module),
           isFalse,
-          reason: 'BUG-4695：它不再是各模块的总开关，$module 不被连带停靠',
+          reason: 'BUG-4709：它不再是各模块的总开关，$module 不被连带停靠',
         );
       }
 

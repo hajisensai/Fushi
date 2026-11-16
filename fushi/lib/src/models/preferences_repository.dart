@@ -1823,7 +1823,7 @@ class PreferencesRepository extends ChangeNotifier
   // ON 时弹窗固定为屏幕底部一条全宽面板，忽略选区位置——适合需要稳定固定弹窗落点的
   // 用户。getPref 仅在 key 从未写过时返回默认 false，已切过开关的用户保留其存值。
   //
-  // BUG-4695 起它只管**不属于四个媒体模块的宿主**（查词页 / 外部弹窗 / 悬浮歌词），
+  // BUG-4709 起它只管**不属于四个媒体模块的宿主**（查词页 / 外部弹窗 / 悬浮歌词），
   // 不再是各模块的总开关；模块各自的值见 [popupBottomDockedIn]。键名冻结不改。
   bool get popupBottomDocked =>
       getPref('popup_bottom_docked', defaultValue: false) as bool;
@@ -1840,7 +1840,7 @@ class PreferencesRepository extends ChangeNotifier
   ///
   /// - 旧语义（缺省 / false）：模块 X 的有效值 = `popup_bottom_docked`（总开关）
   ///   ∧ `popup_bottom_docked_<X>`（细分开关，缺省 true）。
-  /// - 新语义（true，BUG-4695）：模块 X 的有效值就是 `popup_bottom_docked_<X>`
+  /// - 新语义（true，BUG-4709）：模块 X 的有效值就是 `popup_bottom_docked_<X>`
   ///   （缺省 false），`popup_bottom_docked` 只管非模块宿主。
   ///
   /// 标记与那几个键**同住一处**：随 Profile 快照 / 备份 / 同步一起走，所以老快照、
@@ -1866,7 +1866,7 @@ class PreferencesRepository extends ChangeNotifier
   }
 
   /// 底部停靠在各媒体页里是否生效：每个模块一个独立开关，互不牵连，也不受
-  /// [popupBottomDocked] 影响（BUG-4695）。不是所有场景都需要停靠：例如只想在
+  /// [popupBottomDocked] 影响（BUG-4709）。不是所有场景都需要停靠：例如只想在
   /// 视频里固定弹窗、小说里仍跟随选区。顺序 = 设置页展示顺序。
   static const List<ModuleId> kPopupBottomDockedModules = <ModuleId>[
     ModuleId.books,
