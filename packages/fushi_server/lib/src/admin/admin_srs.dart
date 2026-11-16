@@ -12,6 +12,14 @@
 ///                                   首次出现、扣着几条删除 / 彻底清除、待确认还是已拒绝；
 /// - `POST /api/admin/srs/devices/trust`  信任 / 拒绝一台：`{"device": id, "trust": true|false, "profile": uid}`；
 ///                                   `profile` 可省（只在一份里待确认 / 已拒绝时自动认出那份）。
+/// - `GET  /api/admin/srs/migration` 复习库换代（协议 3 → 新代）的状态：`generation`（状态、步骤进度、上次结论、内核
+///                                   `code` / 原因、报告路径、处置说明 `advice`）+ 各份 profile 的状态；
+/// - `POST /api/admin/srs/migration/start`   开始 / 重新开始迁移（后台跑，202 后看状态）；在跑 / 不需要 / 别的进程在迁
+///                                   → 409 `srs_migration_running` / `srs_migration_not_needed` / `srs_migrating_elsewhere`；
+/// - `POST /api/admin/srs/migration/cancel`  叫停（提交点之前）；没在跑 / 过了提交点 → 409。
+///
+/// 复习库在升级 / 升级受阻时，按 profile 取库的端点回 503 `srs_upgrading` / `srs_upgrade_blocked`（server_srs.dart
+/// [ServerSrsUpgradeRefusal]），不是 409 `profile_unavailable`。
 ///
 /// 设备信任（BUG-4306，native/fushi_fsrs/src/store/sync2/trust.rs）：服务端开库后第一次见到的设备，它的删除与彻底
 /// 清除在服务端的库里扣着，直到这里确认。逻辑在 engine `srs_devices.dart`，与 app 冲突中心同一条路径。
@@ -63,6 +71,22 @@ class AdminSrs {
         }
         await srs.syncNow(uid as String?);
         return _json(status());
+      case ('GET', '$kAdminSrsPath/migration'):
+        final ServerSrs? srs = ctx.host.srs;
+        if (srs == null) return _err(409, 'srs_unavailable');
+        return _json(_migrationView(srs));
+      case ('POST', '$kAdminSrsPath/migration/start'):
+        final ServerSrs? srs = ctx.host.srs;
+        if (srs == null) return _err(409, 'srs_unavailable');
+        final String? refused = await srs.startMigration();
+        if (refused != null) return _err(409, refused);
+        return _json(_migrationView(srs), status: 202);
+      case ('POST', '$kAdminSrsPath/migration/cancel'):
+        final ServerSrs? srs = ctx.host.srs;
+        if (srs == null) return _err(409, 'srs_unavailable');
+        final String? refused = srs.cancelMigration();
+        if (refused != null) return _err(409, refused);
+        return _json(_migrationView(srs));
       case ('GET', '$kAdminSrsPath/devices'):
         return _devices(request.url.queryParameters['profile']);
       case ('POST', '$kAdminSrsPath/devices/trust'):
@@ -81,7 +105,7 @@ class AdminSrs {
     } else {
       final ServerSrsProfile? prof = srs.profile(uid);
       if (prof == null) return _err(404, 'profile_not_served');
-      if (prof.store == null) return _err(409, 'profile_unavailable');
+      if (prof.store == null) return _unavailable(srs);
       targets = <ServerSrsProfile>[prof];
     }
     return _json(<String, Object?>{
@@ -125,7 +149,7 @@ class AdminSrs {
     if (uid is String && uid.isNotEmpty) {
       final ServerSrsProfile? hit = srs.profile(uid);
       if (hit == null) return _err(404, 'profile_not_served');
-      if (hit.store == null) return _err(409, 'profile_unavailable');
+      if (hit.store == null) return _unavailable(srs);
       prof = hit;
     } else {
       // 没点名：在哪份里还没信任就是哪份；几份里都有（同一台设备在几门语言里都待确认）要点名。
@@ -402,3 +426,22 @@ shelf.Response _json(Map<String, Object?> body, {int status = 200}) =>
 
 shelf.Response _err(int status, String reason) =>
     _json(<String, Object?>{'error': reason, 'reason': reason}, status: status);
+
+/// 那份 profile 不可用：复习库在升级 / 升级受阻时回类型化的 503（[ServerSrsUpgradeRefusal]），其余 409。
+shelf.Response _unavailable(ServerSrs srs) => switch (srs.upgradeRefusal) {
+  final ServerSrsUpgradeRefusal r => _err(r.status, r.reason),
+  null => _err(409, 'profile_unavailable'),
+};
+
+/// `GET /api/admin/srs/migration` 等的回包：代际状态 + 各份 profile 的状态。
+Map<String, Object?> _migrationView(ServerSrs srs) => <String, Object?>{
+  'generation': srs.generation.toJson(),
+  'profiles': <Map<String, Object?>>[
+    for (final ServerSrsProfile prof in srs.profiles)
+      <String, Object?>{
+        'uid': prof.uid,
+        'state': prof.state.wire,
+        'lastError': prof.lastError,
+      },
+  ],
+};
