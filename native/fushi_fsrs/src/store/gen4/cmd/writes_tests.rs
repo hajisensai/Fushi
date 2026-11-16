@@ -103,6 +103,18 @@ impl<'d> W<'d> {
 
     /// 协议 3 一侧：经分发器发原命令。
     fn p3(&self, op: &str, now: i64, extra: Value, items: Option<&[Value]>) -> Value {
+        self.p3_try(op, now, extra, items)
+            .unwrap_or_else(|e| panic!("protocol 3 {op}: {e}"))
+    }
+
+    /// [W::p3]，报错原样返回。
+    fn p3_try(
+        &self,
+        op: &str,
+        now: i64,
+        extra: Value,
+        items: Option<&[Value]>,
+    ) -> Result<Value, String> {
         let mut req = json!({
             "op": op, "profile": P, "now": now,
             "caches": serde_json::from_str::<Value>(&self.p.cfg).unwrap(),
@@ -117,7 +129,6 @@ impl<'d> W<'d> {
             .collect();
         let mut files = Vec::new();
         crate::store::ffi::sync2_dispatch(&self.p.d.core, &req, &mut blobs, &mut files)
-            .unwrap_or_else(|e| panic!("protocol 3 {op}: {e}"))
     }
 
     fn req(now: i64, extra: Value) -> Value {
@@ -190,19 +201,11 @@ impl<'d> W<'d> {
 
     /// 两侧此刻的状态逐表相同（模块文件头）。[generated] = 有随机生成的日志 ID（`sched`）。
     fn same_state(&self, notes: &[&str], cards: &[String], generated: bool) {
-        self.same_state_with(notes, cards, generated, true);
-    }
-
-    /// [same_state]；[card_edits] = false 时卡的修改行不比（`deck_delete` 的处理顺序不同，见那条测试）。
-    fn same_state_with(&self, notes: &[&str], cards: &[String], generated: bool, card_edits: bool) {
         self.p.same(
             json!({"q": "entities"}),
             &[("t", &[Norm::Id, Norm::Plain, Norm::Payload])],
         );
         for kind in ["note", "card", "deck", "notetype"] {
-            if kind == "card" && !card_edits {
-                continue;
-            }
             let ids: Vec<String> = match kind {
                 "note" => notes.iter().map(|s| (*s).to_owned()).collect(),
                 "card" => cards.to_vec(),
@@ -471,6 +474,42 @@ fn change_with_move_matches_protocol_3() {
     w.same_state(&[N1, N2, N3, N4], &all_cards(), false);
 }
 
+/// 复核 minor-5：`change` 的 `chg` 整列表 `tags` 项按协议 3 的合成 `tags` 行判「没变」——值与此刻标签逐值相同的项筛掉
+/// （不进 `landed`，全筛掉回包是 `{}`），带重复的、从没碰过标签的笔记的照留。修复之前新代对 `tags` 恒判「变了」，
+/// `landed` 比协议 3 多一项、下标错位。
+#[test]
+fn change_drops_unchanged_tag_lists_like_protocol_3() {
+    let lib = library();
+    let w = W::new(&lib);
+    let run = |now: i64, items: Vec<Value>| -> Value {
+        let pv = w.p3("change", now, json!({"ts": "anchored"}), Some(&items));
+        let gv = writes_intent::change(
+            &w.t(),
+            w.p.col,
+            &W::req(now, json!({"ts": "anchored"})),
+            &items,
+        )
+        .unwrap();
+        assert_eq!(pv.get("landed"), gv.get("landed"), "{pv}\n{gv}");
+        gv
+    };
+    // 只有一项、值没变：两侧都筛空。
+    let gv = run(T1, vec![chg(draft("note", N1, "tags", json!(["b", "a"])))]);
+    assert!(gv.get("landed").is_none(), "{gv}");
+    // 混着：没变的筛掉，带重复的（逐值不同）与没碰过标签的笔记的留下，字段照落。
+    let gv = run(
+        T1 + 1,
+        vec![
+            chg(draft("note", N1, "tags", json!(["b", "a"]))),
+            chg(draft("note", N1, "tags", json!(["b", "a", "a"]))),
+            chg(draft("note", N3, "tags", json!([]))),
+            draft("note", N3, "f/fb", json!("dog C")),
+        ],
+    );
+    assert_eq!(gv["landed"], json!([false, false, true]), "{gv}");
+    w.same_state(&[N1, N2, N3, N4], &all_cards(), false);
+}
+
 /// `merge_notes`：前身链接、补空字段、并标签、删被吸收的。
 #[test]
 fn merge_notes_matches_protocol_3() {
@@ -530,11 +569,12 @@ fn deck_delete_matches_protocol_3() {
             }
         }
         assert!(token.is_object());
-        // 处理顺序不同带来的唯一差别：N1 的两张卡是前身 / 后继（`historyFrom`），后继卡的牌组跟着前身卡的卡级牌组走
-        // （`config::card_deck_with` 的血统规则）。协议 3 按 rowid 先移了前身，后继随之离开子树、不再单写；新代按 ID
-        // 先遇到后继、单写一条。投影（卡 / 笔记缓存、日志、身份记录、笔记与牌组的修改行）逐表相同，只有卡的修改行
-        // 多一条，所以卡的修改行不比，改为核对：新代的每步计数加起来 = plan 的 total，协议 3 少的就是那一张。
-        w.same_state_with(&[N1, N2, N3, N4], &all_cards(), false, false);
+        // N1 的两张卡是前身 / 后继（`historyFrom`），后继卡的牌组跟着前身卡走（`config::card_deck_with` 的血统规则）。
+        // 协议 3 按 rowid 先移了前身，后继随之离开子树、不再单写；新代按 ID 先遇到后继，但「前身先于后继」
+        // （`writes_intent.rs` `Mover`）先把前身移掉、后继不单写——真相逐表相同，卡的修改行也比（复核 minor-4：
+        // 修复之前新代给后继多写一条卡级牌组，这里卡的修改行比不过）。新代的计数把提前移的前身算进去：每步计数加起来 =
+        // plan 的 total；协议 3 少的就是跟着走、没被游标碰到的那张后继。
+        w.same_state(&[N1, N2, N3, N4], &all_cards(), false);
         let sum = |c: &[Value]| c.iter().filter_map(Value::as_i64).sum::<i64>();
         assert_eq!(
             sum(&g_counts),
@@ -772,16 +812,221 @@ fn trust_releases_held_deletes() {
         writes_local::trust(&t, col, &json!({"now": T1, "device": author.text()})).unwrap();
     assert_eq!(trusted["released"], json!(held), "{trusted}");
     assert_eq!(t.trust_of(col, &author), Ok(None));
+    // 信任之后设备行不再带信任项；`state` 是同步状态，每行都有。
+    let rows = writes_local::status(&t, col).unwrap()["devices"].clone();
+    for r in rows.as_array().unwrap() {
+        assert!(r.get("trust").is_none(), "{r}");
+        assert!(r.get("state").is_some(), "{r}");
+    }
+    assert_rebuild_is_identity(&t, col);
+}
+
+/// 一台设备设成待确认（两侧各自的信任表），扣住它的删除。
+fn make_pending(w: &W<'_>, device: &Id) {
+    let col = w.p.col;
+    w.t()
+        .tx(|t| {
+            t.set_trust(col, device, Some(TRUST_PENDING), T1)?;
+            let mut ix = crate::store::gen4::derive::Index::new(t, col);
+            ix.trust_changed();
+            ix.settle().map(|_| ())
+        })
+        .unwrap();
+    w.p.d
+        .core
+        .writer()
+        .unwrap()
+        .execute(
+            "INSERT INTO sync2_trust (profile_uid, device, state, since) VALUES (srs_id(?1), ?2, 1, ?3)",
+            rusqlite::params![P, device.0.to_vec(), T1],
+        )
+        .unwrap();
+}
+
+/// 协议 3 一侧的本机设备（新代一侧它只是一台对端）。
+fn p3_self(w: &W<'_>) -> Id {
+    Id::parse(
+        w.p.d.core.sync2_status(P).unwrap()["device"]
+            .as_str()
+            .unwrap(),
+    )
+    .unwrap()
+}
+
+/// 两侧都是对端、写过日志的那台设备（`library` 的另一台）。
+fn author_of(w: &W<'_>) -> Id {
+    let mine = p3_self(w);
+    w.t()
+        .devices(w.p.col)
+        .unwrap()
+        .into_iter()
+        .filter(|d| d.id != Id(ME) && d.id != mine && d.last > 0)
+        .max_by_key(|d| d.last)
+        .unwrap()
+        .id
+}
+
+/// 复核 major-1：拒绝一台**已经可信**的设备、或一台**从没见过**的设备，两侧都报同一句错、什么都不写（协议 3
+/// `trust.rs` `reject` 改到 0 行就报错）。修复之前新代照写一条拒绝：可信作者已生效的删除被回溯扣住（已删的实体
+/// 重新可见），没见过的设备预先记成拒绝。
+#[test]
+fn rejecting_a_trusted_or_unknown_device_is_refused_like_protocol_3() {
+    let lib = library();
+    let w = W::new(&lib);
+    let col = w.p.col;
+    let author = author_of(&w);
+    for device in [author, Id([7; 16])] {
+        let before = fingerprint(&w);
+        let pe = w
+            .p3_try(
+                "trust",
+                T1,
+                json!({"device": device.text(), "trust": false}),
+                None,
+            )
+            .unwrap_err();
+        let ge = writes_local::trust(
+            &w.t(),
+            col,
+            &json!({"now": T1, "device": device.text(), "trust": false}),
+        )
+        .unwrap_err();
+        assert_eq!(pe, "trust: device is already trusted");
+        assert_eq!(ge, pe);
+        assert_eq!(fingerprint(&w), before);
+        assert_eq!(w.t().trust_of(col, &device), Ok(None));
+    }
+    w.same_state(&[N1, N2, N3, N4], &all_cards(), false);
+    // 待确认的设备照常能拒绝，再拒一次也不报错（协议 3 同：行在就算改到）。
+    make_pending(&w, &author);
+    for _ in 0..2 {
+        let v = writes_local::trust(
+            &w.t(),
+            col,
+            &json!({"now": T1, "device": author.text(), "trust": false}),
+        )
+        .unwrap();
+        assert_eq!(v["trusted"], json!(false));
+    }
     assert_eq!(
-        writes_local::status(&t, col).unwrap()["devices"]
+        w.t().trust_of(col, &author),
+        Ok(Some(crate::store::gen4::truth::TRUST_REJECTED))
+    );
+}
+
+/// 复核 major-2：`status` 的设备行与协议 3 逐行同形——`state` 只放同步状态（`SrsDeviceState` 认得的值），信任单独放
+/// `trust` / `trustSince` / `heldDeletes` / `heldPurges`，`gap` / `blocking` / `protocol` 都在；Dart
+/// `SrsDeviceView.fromStatus` 读的每个键在新代行里都有（可缺省的扩展键除外）。
+#[test]
+fn status_device_rows_match_protocol_3_key_for_key() {
+    let lib = library();
+    let w = W::new(&lib);
+    let col = w.p.col;
+    let author = author_of(&w);
+    make_pending(&w, &author);
+    let p = lib.core.sync2_status(P).unwrap();
+    let g = writes_local::status(&w.t(), col).unwrap();
+    let row = |v: &Value, d: &Id| -> Value {
+        v["devices"]
             .as_array()
             .unwrap()
             .iter()
-            .filter(|r| r.get("state").is_some())
-            .count(),
-        0
+            .find(|r| r["device"] == json!(d.text()))
+            .cloned()
+            .unwrap_or_else(|| panic!("no row for {} in {v}", d.text()))
+    };
+    // 扩展键（`model` / `app` / `platform` / `protocol` / `hint` / `retiredAt` / `rules`）按有没有数据出现（对端的
+    // `protocol` 来自它自报的扩展，灌库不带 `peers.ext`），不比；其余逐个相同。
+    let optional = [
+        "model",
+        "app",
+        "platform",
+        "protocol",
+        "hint",
+        "retiredAt",
+        "rules",
+    ];
+    let keys = |r: &Value| -> Vec<String> {
+        let mut k: Vec<String> = r
+            .as_object()
+            .unwrap()
+            .keys()
+            .filter(|k| !optional.contains(&k.as_str()))
+            .cloned()
+            .collect();
+        k.sort();
+        k
+    };
+    let pa = row(&p, &author);
+    let ga = row(&g, &author);
+    assert_eq!(keys(&pa), keys(&ga), "{pa} vs {ga}");
+    assert_eq!(ga["trust"], json!("pending"));
+    assert_eq!(ga["trustSince"], json!(T1));
+    assert_eq!(ga["state"], json!("ok"));
+    // 扣着的条数：库里的删除（N4）是协议 3 本机写的，新代一侧它是对端——只在新代把它设成待确认，按作者分开计数。
+    let deleter = p3_self(&w);
+    w.t()
+        .tx(|t| {
+            t.set_trust(col, &deleter, Some(TRUST_PENDING), T1 + 5)?;
+            let mut ix = crate::store::gen4::derive::Index::new(t, col);
+            ix.trust_changed();
+            ix.settle().map(|_| ())
+        })
+        .unwrap();
+    let held = crate::store::gen4::derive::Index::new(&w.t(), col)
+        .distrusted()
+        .unwrap()
+        .into_iter()
+        .filter(|o| o.device == deleter)
+        .count() as i64;
+    let g = writes_local::status(&w.t(), col).unwrap();
+    let gd = row(&g, &deleter);
+    assert!(gd["heldDeletes"].as_i64().unwrap() >= 1, "{gd}");
+    assert_eq!(gd["trustSince"], json!(T1 + 5));
+    assert_eq!(
+        gd["heldDeletes"].as_i64().unwrap() + gd["heldPurges"].as_i64().unwrap(),
+        held
     );
-    assert_rebuild_is_identity(&t, col);
+    // 本机行：两侧各自的本机。
+    let selfrow = |v: &Value| -> Value {
+        v["devices"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["self"] == json!(true))
+            .cloned()
+            .unwrap()
+    };
+    let (ps, gs) = (selfrow(&p), selfrow(&g));
+    assert_eq!(keys(&ps), keys(&gs), "{ps} vs {gs}");
+    assert_eq!(gs["state"], json!("ok"));
+    assert_eq!(gs["protocol"], json!(crate::gen4::PROTOCOL));
+    // Dart `SrsDeviceView.fromStatus` 必读的键；`state` 是 `SrsDeviceState.parse` 认得的值。
+    let dart = [
+        "device",
+        "self",
+        "name",
+        "seenAt",
+        "behind",
+        "gap",
+        "blocking",
+        "state",
+        "digestMismatch",
+        "warning",
+    ];
+    for r in g["devices"].as_array().unwrap() {
+        for k in dart {
+            assert!(r.get(k).is_some(), "{k} missing in {r}");
+        }
+        assert!(
+            ["ok", "behind", "missing", "upgrade", "retired"]
+                .contains(&r["state"].as_str().unwrap()),
+            "{r}"
+        );
+    }
+    for k in ["trust", "trustSince", "heldDeletes", "heldPurges"] {
+        assert!(ga.get(k).is_some(), "{k} missing in {ga}");
+    }
 }
 
 // ---------------------------------------------------------------------- 原子性、拒写

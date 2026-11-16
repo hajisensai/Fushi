@@ -9,10 +9,15 @@
 //! - `device_hint` → `{"changed": bool}`。
 //! - `device_info` → `{"name", "nick", "model", "app", "platform", "changed"}`。
 //! - `status` → 没有本机身份 `{"enabled": false}`；否则顶层键与协议 3 逐个相同：`enabled`、`device`、`nextSeq`、
-//!   `migrated`、`ops`、`pending`、`unpublished`、`devices`、`selfInfo`、`locations`。`devices` 每行至少有协议 3 的
-//!   `device`、`self`、`applied`、`behind`、`seenAt`、`name`、`frozen`、`warning`、`digestMismatch`，另按情形带 `hint`
-//!   / `state`；`locations` 每行 `location`、`uploaded`、`headGen`、`lastOk`。测试 `status_keeps_the_protocol_3_shape`
-//!   把两侧的键集合钉死。
+//!   `migrated`、`ops`、`pending`、`unpublished`、`devices`、`selfInfo`、`locations`。`devices` 每行与协议 3
+//!   （`transport.rs` `sync2_status` + `devices.rs` `status_extras`）同形：恒有 `device`、`self`、`applied`、`behind`、
+//!   `seenAt`、`name`、`frozen`、`warning`、`digestMismatch`、`gap`、`blocking`、`state`（**同步状态** ok / behind /
+//!   missing / upgrade / retired，不是信任）；还没信任的设备另带 `trust`（pending / rejected）、`trustSince`、
+//!   `heldDeletes`、`heldPurges`；按有没有数据带 `model` / `app` / `platform` / `protocol` / `hint`。`locations` 每行
+//!   `location`、`uploaded`、`headGen`、`lastOk`。测试 `status_keeps_the_protocol_3_shape` 钉顶层键，
+//!   `status_device_rows_match_protocol_3_key_for_key` 逐行钉设备行的键（含 Dart `SrsDeviceView.fromStatus` 读的）。
+//! - `trust` 的拒绝只对还没信任的设备（协议 3 `reject`）：已可信 / 从没见过的设备报 `trust: device is already trusted`，
+//!   什么都不写。
 //!
 //! # 存在哪
 //!
@@ -40,6 +45,9 @@ use crate::sync2::id::Id;
 
 /// 名字 / 型号等文本的长度上限（字符；协议 3 `devices.rs` 同值）。
 const TEXT_MAX: usize = 64;
+
+/// 设备行里照抄的扩展键（协议 3 `devices.rs` `EXT_KEYS` 同一组）。
+const EXT_KEYS: [&str; 3] = ["model", "app", "platform"];
 
 fn clip(s: &str) -> String {
     s.trim()
@@ -109,6 +117,12 @@ pub fn trust(t: &Truth<'_>, col: i64, req: &Value) -> Result<Value, String> {
     write(t, col, |s| {
         if device == s.device() {
             return Err("trust: this device is always trusted".into());
+        }
+        // 拒绝只对还没信任的设备（协议 3 `trust.rs` `reject`：改到 0 行就报错）。可信设备的删除与清除早已生效，
+        // 拒绝改变不了它们——这里要是照写一条拒绝，派生层会回溯扣住它已生效的删除（已删的实体重新可见）；从没见过的
+        // 设备也不能预先记成拒绝（它以后一同步进来就是被拒状态）。宿主据这句报错显示「已信任 / 不认识的设备」。
+        if !trusted && s.t.trust_of(col, &device)?.is_none() {
+            return Err("trust: device is already trusted".into());
         }
         let held = s
             .settled()?
@@ -207,8 +221,11 @@ fn self_view(m: &Map<String, Value>, changed: bool) -> Value {
 ///   （`op_wait`，G8-4）；`migrated` 恒为 true（新代库本来就是迁移之后的）。
 /// - `devices`：真相层登记过的每台设备；`applied` = 本机日志末尾；`behind` = 各位置上它最新 head 的 seq 减
 ///   `applied`（不小于 0）；`name` = 对端自报名（`peers`），没有就是空串；`seenAt` / `warning` 为 null、`frozen` /
-///   `digestMismatch` 为 false（协议 3 的这几项来自旧 head 与旧摘要，新代的对应物由 G8-7 接）。没信任的设备带
-///   `state`（`pending` / `rejected`），有补充名的带 `hint`。
+///   `digestMismatch` 为 false（协议 3 的这几项来自旧 head 与旧摘要，新代的对应物由 G8-7 接）；`gap` / `blocking`
+///   恒 0（G8-4 `op_wait` 接）；`state` = 同步状态（本机 ok，落后 = behind，其余 ok；retired / upgrade / missing 随
+///   G8-4 / G8-7 接）。没信任的设备带 `trust`（`pending` / `rejected`）/ `trustSince` / `heldDeletes` / `heldPurges`
+///   （`weigh.rs` `distrusted_split` 按作者计）；有补充名的带 `hint`；扩展键与 `protocol` 本机取 `device_info`、对端取
+///   `peers.ext`。
 /// - `locations`：位置的加密记忆（`loc_state`）与位置上的 head（`loc_heads`）里出现过的位置；`uploaded` /
 ///   `headGen` = 本机身份在那个位置上最新 head 的 seq / 代号（没有 = 0）；`lastOk` = 上次核对通过的时刻。
 /// - `unpublished` = 本机日志末尾 − 各位置 `uploaded` 的最小值（没有位置 = 末尾）。
@@ -286,6 +303,15 @@ pub fn status(t: &Truth<'_>, col: i64) -> Result<Value, String> {
         if !rows.iter().any(|(id, _)| *id == me.device) {
             rows.push((me.device, 0));
         }
+        // 扣着的删除 / 清除，按作者分开计数（冲突中心「待确认的设备」卡片的条数）。
+        let (held_dels, held_purges) = {
+            let ix = super::super::derive::Index::new(t, col);
+            ix.distrusted_split()?
+        };
+        let count_of = |ops: &[crate::sync2::vv::OpId], d: &Id| -> i64 {
+            ops.iter().filter(|o| o.device == *d).count() as i64
+        };
+        let info = parse_obj(meta_get(t, &self_info_key(col))?);
         let mut devices = Vec::with_capacity(rows.len());
         for (id, last) in &rows {
             let d = DevRow {
@@ -304,17 +330,56 @@ pub fn status(t: &Truth<'_>, col: i64) -> Result<Value, String> {
                 "applied": applied,
                 "behind": behind,
                 "seenAt": Value::Null,
-                "name": peer.and_then(|p| p.name).unwrap_or_default(),
+                "name": peer.as_ref().and_then(|p| p.name.clone()).unwrap_or_default(),
                 "frozen": false,
                 "warning": Value::Null,
                 "digestMismatch": false,
             });
             let m = row.as_object_mut().expect("object");
+            // 扩展信息：本机取 `device_info` 存的，对端取它自报的（`peers.ext`，G8-7 收 head 时写）。协议 3
+            // `devices.rs` `status_extras` 同一组键。
+            let ext = if is_self {
+                info.clone()
+            } else {
+                parse_obj(peer.as_ref().and_then(|p| p.ext.clone()))
+            };
+            for k in EXT_KEYS {
+                let v = str_of(&ext, k);
+                if !v.is_empty() {
+                    m.insert(k.into(), json!(v));
+                }
+            }
+            let protocol = if is_self {
+                Some(i64::from(crate::gen4::PROTOCOL))
+            } else {
+                ext.get("v").and_then(Value::as_i64)
+            };
+            if let Some(p) = protocol {
+                m.insert("protocol".into(), json!(p));
+            }
             if let Some(h) = meta_get(t, &hint_key(&d.id))? {
                 m.insert("hint".into(), json!(h));
             }
-            if let Some(state) = trust_text(t.trust_of(col, &d.id)?) {
-                m.insert("state".into(), json!(state));
+            // 卡住的依赖（协议 3 的 `gap` / `blocking`）由 G8-4 的 `op_wait` 接；接上之前恒 0，`missing` 不出现。
+            m.insert("gap".into(), json!(0));
+            m.insert("blocking".into(), json!(0));
+            // `state` 只是同步状态（协议 3 同）：本机恒 ok；落后 = 位置上它的 head 比本机已应用的新。`retired` /
+            // `upgrade`（停用、最低读者）随 G8-4 / G8-7 接。
+            let state = if !is_self && behind > 0 {
+                "behind"
+            } else {
+                "ok"
+            };
+            m.insert("state".into(), json!(state));
+            // 信任单独放（协议 3 `trust.rs` `untrusted`）：只有还没信任的设备带。
+            if let Some((trust, since)) = t.trust_entry(col, &d.id)? {
+                m.insert(
+                    "trust".into(),
+                    json!(trust_text(Some(trust)).unwrap_or("pending")),
+                );
+                m.insert("trustSince".into(), json!(since));
+                m.insert("heldDeletes".into(), json!(count_of(&held_dels, &d.id)));
+                m.insert("heldPurges".into(), json!(count_of(&held_purges, &d.id)));
             }
             devices.push(row);
         }
@@ -325,7 +390,6 @@ pub fn status(t: &Truth<'_>, col: i64) -> Result<Value, String> {
             })
             .collect();
         let min_up = locs.values().map(|l| l.0).min().unwrap_or(0);
-        let info = parse_obj(meta_get(t, &self_info_key(col))?);
         let mut self_info = self_view(&info, false);
         if let Some(m) = self_info.as_object_mut() {
             m.remove("changed");

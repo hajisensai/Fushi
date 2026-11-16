@@ -517,6 +517,121 @@ fn full_name(tree: &crate::store::sync2::config::DeckTree, id: &str) -> String {
     parts.join("::")
 }
 
+/// `deck_delete` 一步里分几次落的输入项的 `landed`，按落的顺序接起来（一次也没落 = `{}`，同 [apply_some]）。
+#[derive(Default)]
+struct Landed {
+    landed: Vec<Value>,
+    any: bool,
+}
+
+impl Landed {
+    fn apply(&mut self, s: &mut Session<'_, '_>, now: i64, items: &[Value]) -> Result<(), String> {
+        let v = apply_some(s, now, items)?;
+        if let Some(l) = v["landed"].as_array() {
+            self.landed.extend(l.iter().cloned());
+            self.any = true;
+        }
+        Ok(())
+    }
+
+    fn finish(self) -> Value {
+        if self.any {
+            json!({"landed": self.landed, "foreign": []})
+        } else {
+            json!({})
+        }
+    }
+}
+
+/// 把子树里的卡移到目标牌组（`deck_delete` 的移卡段）。
+///
+/// **前身先于后继**：卡的有效牌组按血统继承（`historyFrom`，[crate::store::sync2::config::card_deck_with]）——没有自己
+/// 卡级牌组的后继卡跟着前身走。所以移一张卡之前先把它还在子树里的前身移掉（不论前身在不在这一页，最多 256 层），
+/// 再按缓存重判：后继已经跟着离开子树的不再单写一条卡级牌组。每张卡单独落、单独收尾，判定读的就是前面那些移动生效
+/// 之后的缓存。协议 3 按缓存 rowid 走、逐步提交，碰巧前身先移；按 ID 走时后继常排在前身前面，不这样做就会给后继多写
+/// 一条卡级牌组，以后前身再换牌组后继不再跟着走（复核 minor-4）。
+struct Mover<'a> {
+    sub: &'a str,
+    ts: &'a str,
+    target: &'a Value,
+    now: i64,
+}
+
+impl Mover<'_> {
+    /// 依次移 [rows]。返回额外移掉的前身张数（不在 [rows] 里、为了「前身先于后继」提前移的）。
+    fn move_cards(
+        &self,
+        s: &mut Session<'_, '_>,
+        rows: &[String],
+        out: &mut Landed,
+    ) -> Result<usize, String> {
+        let mut extra = 0;
+        let listed: HashSet<&str> = rows.iter().map(String::as_str).collect();
+        for c in rows {
+            self.move_card(s, c, &listed, &mut Vec::new(), &mut extra, out)?;
+        }
+        Ok(extra)
+    }
+
+    fn move_card(
+        &self,
+        s: &mut Session<'_, '_>,
+        card: &str,
+        listed: &HashSet<&str>,
+        stack: &mut Vec<String>,
+        extra: &mut usize,
+        out: &mut Landed,
+    ) -> Result<(), String> {
+        if !self.in_subtree(s, card)? {
+            return Ok(());
+        }
+        // 血统成环 / 过深（同 `card_deck_with` 的 256 张上限）：不再往上追，就地写。
+        if stack.len() < 256 {
+            stack.push(card.to_owned());
+            let lines = s.lines(EntKind::Card, card)?;
+            for p in crate::store::sync2::config::predecessors(&lines) {
+                if !stack.contains(&p) && self.in_subtree(s, &p)? {
+                    if !listed.contains(p.as_str()) {
+                        *extra += 1;
+                    }
+                    self.move_card(s, &p, listed, stack, extra, out)?;
+                }
+            }
+            stack.pop();
+            // 前身移走之后它跟着离开了子树：不单写。
+            if !self.in_subtree(s, card)? {
+                return Ok(());
+            }
+        }
+        let mut items = Vec::new();
+        push_edits(
+            s,
+            self.ts,
+            EntKind::Card,
+            &[card.to_owned()],
+            KEY_DECK,
+            self.target,
+            &mut items,
+        )?;
+        out.apply(s, self.now, &items)
+    }
+
+    /// 卡（规范 ID）此刻（收尾之后）的缓存行在子树里。
+    fn in_subtree(&self, s: &mut Session<'_, '_>, card: &str) -> Result<bool, String> {
+        let col = s.col;
+        let ix = s.settled()?;
+        let q = format!(
+            "SELECT 1 FROM cards c WHERE {} AND c.id = ?3",
+            cards_where()
+        );
+        let mut stmt = ix.t.conn().prepare_cached(&q).map_err(sql)?;
+        let mut rows = stmt
+            .query(params![col, self.sub, ref_of(card)])
+            .map_err(sql)?;
+        Ok(rows.next().map_err(sql)?.is_some())
+    }
+}
+
 /// `deck_delete`（删牌组连同子牌组，分步；协议 3 `deck_delete.rs`）。[req]：`{"now", "deck", "deleteCards"?,
 /// "plan"?: true}`，非 `plan` 的步另带 `{"limit"?, "token"?, "deletedAt", "ts"?}`。
 ///
@@ -574,10 +689,10 @@ pub fn deck_delete(t: &Truth<'_>, col: i64, req: &Value) -> Result<Value, String
         let token = &req["token"];
         let mut note_cursor: Option<String> = token["n"].as_str().map(str::to_owned);
         let mut card_cursor: Option<String> = token["c"].as_str().map(str::to_owned);
-        let mut items: Vec<Value> = Vec::new();
         let mut notes: Vec<String> = Vec::new();
         let mut count_done = 0usize;
         let mut done = !known;
+        let mut out = Landed::default();
         if known {
             let ts = req["ts"].as_str().unwrap_or("wall").to_owned();
             let deleted_at = req["deletedAt"]
@@ -588,6 +703,12 @@ pub fn deck_delete(t: &Truth<'_>, col: i64, req: &Value) -> Result<Value, String
             let limit = req["limit"].as_i64().unwrap_or(DEFAULT_LIMIT).max(1);
             let mut budget = limit;
             let mut notes_done = !delete_cards;
+            let mv = Mover {
+                sub: &sub_json,
+                ts: &ts,
+                target: &target,
+                now,
+            };
             if delete_cards {
                 let rows = rows_after(s, true, &sub_json, note_cursor.as_deref(), budget)?;
                 notes_done = (rows.len() as i64) < budget;
@@ -596,6 +717,7 @@ pub fn deck_delete(t: &Truth<'_>, col: i64, req: &Value) -> Result<Value, String
                 if let Some(last) = rows.last() {
                     note_cursor = Some(last.clone());
                 }
+                let mut items = Vec::new();
                 push_edits(
                     s,
                     &ts,
@@ -605,6 +727,7 @@ pub fn deck_delete(t: &Truth<'_>, col: i64, req: &Value) -> Result<Value, String
                     &deleted,
                     &mut items,
                 )?;
+                out.apply(s, now, &items)?;
                 notes.extend(rows);
             }
             let mut moved: Vec<String> = Vec::new();
@@ -616,18 +739,19 @@ pub fn deck_delete(t: &Truth<'_>, col: i64, req: &Value) -> Result<Value, String
                 if let Some(last) = rows.last() {
                     card_cursor = Some(last.clone());
                 }
-                push_edits(s, &ts, EntKind::Card, &rows, KEY_DECK, &target, &mut items)?;
+                count_done += mv.move_cards(s, &rows, &mut out)?;
                 moved = rows;
             }
             if cards_done {
                 // 收尾：游标走过之后才进子树的（缓存行按 ID 聚簇，游标之前插进来的行游标看不见），不带游标重扫。这一
-                // 步刚处理过的缓存行还没收尾、仍是旧的，按 ID 跳过。
+                // 步处理过的卡已经逐张收尾、缓存行是新的（[Mover::move_cards] 落之前还会按缓存再判一次）。
                 if delete_cards {
                     let seen: HashSet<&str> = notes.iter().map(String::as_str).collect();
                     let late: Vec<String> = rows_after(s, true, &sub_json, None, -1)?
                         .into_iter()
                         .filter(|n| !seen.contains(n.as_str()))
                         .collect();
+                    let mut items = Vec::new();
                     push_edits(
                         s,
                         &ts,
@@ -637,6 +761,7 @@ pub fn deck_delete(t: &Truth<'_>, col: i64, req: &Value) -> Result<Value, String
                         &deleted,
                         &mut items,
                     )?;
+                    out.apply(s, now, &items)?;
                     notes.extend(late);
                 }
                 let seen: HashSet<&str> = moved.iter().map(String::as_str).collect();
@@ -644,7 +769,8 @@ pub fn deck_delete(t: &Truth<'_>, col: i64, req: &Value) -> Result<Value, String
                     .into_iter()
                     .filter(|x| !seen.contains(x.as_str()))
                     .collect();
-                push_edits(s, &ts, EntKind::Card, &late, KEY_DECK, &target, &mut items)?;
+                mv.move_cards(s, &late, &mut out)?;
+                let mut items = Vec::new();
                 push_edits(
                     s,
                     &ts,
@@ -654,10 +780,11 @@ pub fn deck_delete(t: &Truth<'_>, col: i64, req: &Value) -> Result<Value, String
                     &deleted,
                     &mut items,
                 )?;
+                out.apply(s, now, &items)?;
                 done = true;
             }
         }
-        let mut v = apply_some(s, now, &items)?;
+        let mut v = out.finish();
         v["done"] = json!(done);
         v["token"] = json!({"n": note_cursor, "c": card_cursor});
         v["notes"] = json!(notes);

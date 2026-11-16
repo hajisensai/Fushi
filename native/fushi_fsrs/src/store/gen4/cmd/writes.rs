@@ -693,6 +693,9 @@ fn drop_noops(s: &mut Session<'_, '_>, items: &[Item]) -> Result<Vec<bool>, Stri
         if it.chg {
             let noop = match written.get(&slot) {
                 Some(prev) => *prev == value,
+                None if e.kind == EntKind::Note && e.key == "tags" => {
+                    tags_unchanged(s, &e.entity.text(), &value)?
+                }
                 None => {
                     let ent = (e.kind, e.entity.text());
                     if !current.contains_key(&ent) {
@@ -707,6 +710,27 @@ fn drop_noops(s: &mut Session<'_, '_>, items: &[Item]) -> Result<Vec<bool>, Stri
         written.insert(slot, value);
     }
     Ok(keep)
+}
+
+/// `chg` 的整列表 `tags` 项「没变」（[drop_noops]）。协议 3 的投影给碰过标签的每条笔记写一行合成的 `tags` 修改行，值
+/// 是此刻的标签（`semantics.rs` `tags_row`），`write_is_noop` 拿它逐值比；新代的修改行里没有这行（标签是 `tag_ix`
+/// 的 OR-Set，缓存层直接给结果），所以照协议 3 的口径单独判：这条笔记（别名类）有过标签操作（= 协议 3 有那行合成
+/// 行），且此刻的标签（[Index::class_tags]）与 [value] 逐值相同。从没碰过标签的笔记没有那行，协议 3 判「变了」，这里同。
+fn tags_unchanged(s: &mut Session<'_, '_>, note: &str, value: &Value) -> Result<bool, String> {
+    let ix = s.settled()?;
+    let canon = ix.canon(&ref_of(note))?;
+    let mut touched = false;
+    for m in ix.members(&canon)? {
+        if !ix.tags_rows(&m)?.is_empty() {
+            touched = true;
+            break;
+        }
+    }
+    if !touched {
+        return Ok(false);
+    }
+    let now = Value::from(ix.class_tags(&canon)?);
+    Ok(registers::same_value(&now, value))
 }
 
 /// 整列表 `tags` → OR-Set 操作（协议 3 `expand_tags` 同一份拼法）。[tags_now] 记这一批里每条笔记写到哪了。
