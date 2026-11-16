@@ -3,7 +3,7 @@
 /// 位置清单与判据见交接说明「G9-6」一节；归一本身（分批、改写、缺失保留）在 fushi_engine 的 srs_canonical_ids.dart。
 /// 这里只把偏好仓库接成 [SrsPersistedIdSite]，由 [srsNormalizeStoreIds] 在两个时刻跑：
 /// - 打开 / 重新激活激活 profile 的复习副本后（`srsStoreProvider`）；
-/// - `bindingChanged` 之后（`SrsDbStore` 的绑定变化通知，G7-5b 接）。
+/// - `bindingChanged` 之后（`SrsDbStore.bindingChanges` 让 `srsStoreProvider` 整份重建，随重建再跑）。
 library;
 
 import 'package:fushi_engine/srs/srs_canonical_ids.dart';
@@ -48,15 +48,14 @@ Future<List<String>> srsNormalizePersistedPreferenceIds({
   );
 }
 
-/// 统一入口：内置实体（默认牌组等）的规范 ID 向内核要一遍（[SrsDbStore.resolveBuiltinIds]；只读打开的副本不跑
-/// `ensureBuiltins`，靠这里拿到），偏好里的 ID 归一并落盘。开库后与 `bindingChanged`（补盐 / 并入，别名类变了）
-/// 之后各调一次。
+/// 统一入口：偏好里的 ID 归一并落盘。内置实体（默认牌组等）的规范 ID 由 [SrsDbStore] 自己在开库最后与绑定变化
+/// 之后读（`_loadRootIds`，主从模式都读），这里不再另问。开库后跑一次；`bindingChanged`（补盐 / 并入，别名类变了）
+/// 让 `srsStoreProvider` 整份重建，随之再跑一次。
 Future<List<String>> srsNormalizeStoreIds({
   required SrsDbStore store,
   required PreferencesRepository prefs,
   bool Function()? shouldStop,
 }) async {
-  await store.resolveBuiltinIds();
   return srsNormalizePersistedPreferenceIds(
     lookup: srsStoreCanonicalIds(store),
     prefs: prefs,

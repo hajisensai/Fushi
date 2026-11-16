@@ -99,7 +99,7 @@ void main() {
   });
 
   test('偏好位置：成员 ID → 规范 ID；归一不到的保留；实体出现后再跑重归一', () async {
-    final (SrsStorage srs, SrsDbStore s) = await _open();
+    final (_, SrsDbStore s) = await _open();
     final String member = await s.createDeck('Mining');
     final SrsDeckTree tree = await s.deckTree();
     final String canonDeck = tree.decks
@@ -151,16 +151,16 @@ void main() {
       laterCanon,
     ]);
 
-    // 补盐（bindingChanged）之后：内置重问、偏好重归一，已是规范 ID 的稳定不变。
-    final Map<String, Object?> salts = srs.core.sync2(<String, Object?>{
+    // 补盐（bindingChanged）之后：内置重读（store 收到回包里的 bindingChanged 自己重读根上 ID）、偏好重归一，
+    // 已是规范 ID 的稳定不变。
+    final String defaultBefore = s.defaultDeckId;
+    final Map<String, Object?> salts = (await s.sync2Command(<String, Object?>{
       'op': 'collection_salts_add',
-      'profile': _uid,
       'salts': <String>[_otherUid],
       'now': DateTime.now().millisecondsSinceEpoch,
-    }).map;
+    })).map;
     expect(salts['bindingChanged'], isNotNull);
-    final String defaultBefore = s.defaultDeckId;
-    await s.resolveBuiltinIds();
+    expect(s.debugBindingChanges, greaterThanOrEqualTo(1));
     expect(s.defaultDeckId, defaultBefore);
     expect(await srsNormalizePersistedIds(prefs.sites, lookup), isEmpty);
     expect(prefs.value.deckId, canonDeck);
