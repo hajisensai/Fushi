@@ -600,3 +600,50 @@ fn a_read_sees_the_write_that_just_returned() {
     );
     assert!(!core.in_transaction().unwrap());
 }
+
+/// `reviewed_decks {before}`：只看本 profile、`before` 之前评过分的卡，按卡现在所在的牌组去重升序；没评分的（rating
+/// 为空）和之后的不算。
+#[test]
+fn reviewed_decks_lists_current_decks_of_cards_rated_before_the_cutoff() {
+    let (core, _dir) = open("reads_reviewed_decks");
+    {
+        let w = core.writer().unwrap();
+        for (profile, card, deck) in [
+            (P, "C1", "DB"),
+            (P, "C2", "DA"),
+            (P, "C3", "DC"),
+            (P, "C4", "DD"),
+            (Q, "C9", "DQ"),
+        ] {
+            w.execute(
+                "INSERT INTO srs_cards_cache (id, profile_uid, note_id, template_id, deck_id, hidden, queue)                  VALUES (srs_id(?1), srs_id(?2), srs_id('N'), 'T', srs_id(?3), 0, 'review')",
+                params![card, profile, deck],
+            )
+            .unwrap();
+        }
+        for (log, profile, card, at, rating) in [
+            ("L1", P, "C1", 100i64, Some(3i64)),
+            ("L2", P, "C1", 150, Some(1)),
+            ("L3", P, "C2", 199, Some(3)),
+            ("L4", P, "C3", 200, Some(3)),
+            ("L5", P, "C4", 50, None),
+            ("L6", Q, "C9", 10, Some(3)),
+        ] {
+            w.execute(
+                "INSERT INTO srs_stat_reviews (log_id, profile_uid, card_id, occurred_at, rating)                  VALUES (srs_id(?1), srs_id(?2), srs_id(?3), ?4, ?5)",
+                params![log, profile, card, at, rating],
+            )
+            .unwrap();
+        }
+    }
+    let decks = |before: i64| {
+        read(&core, P, "reviewed_decks", json!({"before": before})).0["decks"].clone()
+    };
+    assert_eq!(decks(200), json!(["DA", "DB"]));
+    assert_eq!(decks(201), json!(["DA", "DB", "DC"]));
+    assert_eq!(decks(100), json!([]));
+    assert_eq!(
+        read(&core, Q, "reviewed_decks", json!({"before": 1000})).0["decks"],
+        json!(["DQ"])
+    );
+}
