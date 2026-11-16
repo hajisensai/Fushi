@@ -128,7 +128,18 @@ describe('样本文件上传', () => {
     expect(dart).toMatch(/static const int files = 3;/);
     const m = /static const Set<String> fileExtensions = <String>\{([^}]*)\};/.exec(dart);
     expect(m).not.toBeNull();
-    const clientExts = [...m[1].matchAll(/'([a-z0-9]+)'/g)].map((x) => x[1]).sort();
+    // 字幕部分在客户端是展开有声书字幕格式真相源（...kAudiobookSubtitleExtensions），
+    // 这里同样展开后再比对；除了这一处展开，白名单里不许出现别的非字面量项。
+    const subtitleDart = readFileSync(new URL('../../../packages/fushi_engine/lib/media/audiobook/audiobook_subtitle_formats.dart', import.meta.url), 'utf8');
+    const sm = /const Set<String> kAudiobookSubtitleExtensions = <String>\{([^}]*)\};/.exec(subtitleDart);
+    expect(sm).not.toBeNull();
+    const subtitleExts = [...sm[1].matchAll(/'([a-z0-9]+)'/g)].map((x) => x[1]);
+    expect(subtitleExts.length).toBeGreaterThan(0);
+    const body = m[1].replace(/\/\/[^\n]*/g, '');
+    const spreads = [...body.matchAll(/\.\.\.\s*([A-Za-z_]\w*)/g)].map((x) => x[1]);
+    expect(spreads).toEqual(['kAudiobookSubtitleExtensions']);
+    const clientExts = [...[...body.matchAll(/'([a-z0-9]+)'/g)].map((x) => x[1]), ...subtitleExts].sort();
+    expect(new Set(clientExts).size).toBe(clientExts.length);
     expect(clientExts).toEqual(Object.keys(FILE_EXTENSIONS).sort());
   });
 });

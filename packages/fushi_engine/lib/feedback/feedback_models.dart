@@ -3,6 +3,8 @@
 // 只做 fromJson/toJson 的忠实映射。提交侧的上限与服务端 FEEDBACK_LIMITS 一致，
 // 在本机先拦住服务端必然 400 / 413 的形状。
 
+import 'package:fushi_engine/media/audiobook/audiobook_subtitle_formats.dart';
+
 typedef FeedbackJson = Map<String, dynamic>;
 
 int _int(Object? v) => (v as num).toInt();
@@ -64,16 +66,14 @@ abstract final class FeedbackLimits {
 
   /// 样本文件扩展名白名单（小写、不带点）。服务端 `FILE_EXTENSIONS`
   /// （services/leaderboard/src/feedback_files.js）必须同一份，feedback_files.test.js 逐项核对；
-  /// 服务端另按扩展名核对文件头魔数。
+  /// 服务端另按扩展名核对文件头魔数。字幕部分直接展开有声书字幕格式的真相源
+  /// [kAudiobookSubtitleExtensions]，不另抄一份（守卫
+  /// `audiobook_subtitle_formats_guard_test.dart`）。
   static const Set<String> fileExtensions = <String>{
     'txt',
     'md',
     'markdown',
-    'srt',
-    'ass',
-    'ssa',
-    'vtt',
-    'lrc',
+    ...kAudiobookSubtitleExtensions,
     'json',
     'csv',
     'tsv',
