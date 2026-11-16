@@ -1060,3 +1060,143 @@ fn purged_writes_show_as_purged_until_they_become_holes() {
     // 协议 3 的骨架在灌入时不过界（空洞）：新代报的已清除项不多于协议 3。
     assert!(purged.len() <= old_purged, "{purged:?} vs {old_purged}");
 }
+
+// ---------------------------------------------------------------------- 统计
+
+/// 两份 JSON 相同：字符串按 ID 归一后相等，数按 1e-9 的相对误差（卡片上的浮点和按行序累加，新代按卡 ID 排，协议 3
+/// 的行序随查询计划：同一组数换个顺序相加只差末位，模块 `stats` 文件头）。
+fn close(p: &Pair<'_>, a: &Value, b: &Value, at: &str) {
+    match (a, b) {
+        (Value::String(x), Value::String(y)) => {
+            assert_eq!(p.canon(x), p.canon(y), "{at}");
+        }
+        (Value::Number(x), Value::Number(y)) => {
+            if let (Some(x), Some(y)) = (x.as_i64(), y.as_i64()) {
+                assert_eq!(x, y, "{at}");
+            } else {
+                let (x, y) = (x.as_f64().unwrap(), y.as_f64().unwrap());
+                assert!(
+                    (x - y).abs() <= 1e-9 * x.abs().max(y.abs()).max(1.0),
+                    "{at}: {x} vs {y}"
+                );
+            }
+        }
+        (Value::Array(x), Value::Array(y)) => {
+            assert_eq!(x.len(), y.len(), "{at}: {a} vs {b}");
+            for (i, (x, y)) in x.iter().zip(y).enumerate() {
+                close(p, x, y, &format!("{at}[{i}]"));
+            }
+        }
+        (Value::Object(x), Value::Object(y)) => {
+            let kx: BTreeSet<String> = x.keys().map(|k| p.canon(k)).collect();
+            let ky: BTreeSet<String> = y.keys().map(|k| p.canon(k)).collect();
+            assert_eq!(kx, ky, "{at}");
+            for (k, v) in x {
+                let w = y
+                    .iter()
+                    .find(|(k2, _)| p.canon(k2) == p.canon(k))
+                    .map(|(_, w)| w)
+                    .unwrap();
+                close(p, v, w, &format!("{at}.{k}"));
+            }
+        }
+        _ => assert_eq!(a, b, "{at}"),
+    }
+}
+
+type StatsFn = fn(&crate::store::stats::Snapshot, &Value) -> Result<Value, String>;
+
+/// 协议 3 一侧的统计：同一份缓存配置重建缓存表之后读原料，再走同一份聚合。
+fn p3_stats(p: &Pair<'_>, f: StatsFn, req: &Value) -> Value {
+    let w = p.d.core.writer().unwrap();
+    on_p3(&w, &p.cfg, |c| {
+        let snap = crate::store::stats::Snapshot::load(c, P).unwrap();
+        f(&snap, req).unwrap()
+    })
+}
+
+/// 统计三条命令与协议 3 对拍：不同范围、牌组子集、可提取度模型、RWKV 回忆率；另验回包不空（场景真有卡与复习）。
+#[test]
+fn stats_match_protocol_3() {
+    use super::stats::{stats_recall, stats_report, stats_rows};
+    use crate::store::stats::{recall_of, report_of, rows_of};
+    let d = library();
+    let p = Pair::new(&d);
+    let t = Truth::new(&p.g4);
+    let deck = default_deck_id(P);
+    let c1 = card(N1, "t1");
+    let mut base = json!({
+        "key": "k", "now": T0 + 3 * DAY, "utcOff": 0, "rollover": 4,
+        "models": [["fsrs6"]], "fallbackModel": 0, "fallbackDesired": 0.85,
+    });
+    base["deckModels"] = json!({ deck.as_str(): 0 });
+    base["desired"] = json!({ deck.as_str(): 0.9 });
+    let with = |extra: Value| -> Value {
+        let mut r = base.clone();
+        for (k, v) in extra.as_object().unwrap() {
+            r[k] = v.clone();
+        }
+        r
+    };
+    let reqs = [
+        with(json!({"range": "all"})),
+        with(json!({"range": "month", "decks": [deck.clone()]})),
+        with(json!({"range": "year", "decks": ["no-such-deck"]})),
+        with(json!({"windows": {"w": [null, 0], "v": [7, 0]}, "future": 40})),
+        with(json!({"recallDecks": [deck.clone()], "recall": {"ids": [c1.clone()], "r": [0.42]}})),
+        json!({"now": T0 + DAY, "utcOff": 540, "rollover": 0}),
+    ];
+    let sorted = |v: &Value, k: &str| -> Value {
+        let mut xs = v[k].as_array().unwrap().clone();
+        xs.sort_by_key(|x| {
+            (
+                p.canon(x[0].as_str().unwrap_or("")),
+                x.get(1).cloned().unwrap_or(Value::Null).to_string(),
+            )
+        });
+        Value::Array(xs)
+    };
+    for req in &reqs {
+        let old = p3_stats(&p, report_of, req);
+        close(
+            &p,
+            &old,
+            &stats_report(&t, p.col, req).unwrap(),
+            &format!("report {req}"),
+        );
+        // 回忆率候选按卡片行序（调用方按卡 ID 对回去，顺序没有语义）：排过再比。
+        let old = p3_stats(&p, recall_of, req);
+        let new = stats_recall(&t, p.col, req).unwrap();
+        close(
+            &p,
+            &sorted(&old, "cards"),
+            &sorted(&new, "cards"),
+            &format!("recall {req}"),
+        );
+        let (old, new) = (
+            p3_stats(&p, rows_of, req),
+            stats_rows(&t, p.col, req).unwrap(),
+        );
+        // 逐卡 / 逐条的行：按 ID 排过再比（协议 3 的行序随查询计划）。
+        for k in ["cards", "reviews", "maturity"] {
+            close(
+                &p,
+                &sorted(&old, k),
+                &sorted(&new, k),
+                &format!("rows.{k} {req}"),
+            );
+        }
+        for k in ["today", "sources", "retrievabilityAvailable"] {
+            close(&p, &old[k], &new[k], &format!("rows.{k} {req}"));
+        }
+        assert!(p.g4.is_autocommit());
+    }
+    let rows = stats_rows(&t, p.col, &reqs[0]).unwrap();
+    assert!(rows["cards"].as_array().unwrap().len() >= 4, "{rows}");
+    assert!(rows["reviews"].as_array().unwrap().len() >= 3, "{rows}");
+    let recall = stats_recall(&t, p.col, &reqs[4]).unwrap();
+    assert!(!recall["cards"].as_array().unwrap().is_empty(), "{recall}");
+    // 缺了日界是调用方的 bug：报错，不留事务。
+    assert!(stats_report(&t, p.col, &json!({"now": T0})).is_err());
+    assert!(p.g4.is_autocommit());
+}

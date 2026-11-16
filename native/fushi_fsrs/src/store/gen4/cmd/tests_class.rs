@@ -477,6 +477,83 @@ fn edit_keys_and_prefixes_are_canonicalized_before_matching() {
     });
 }
 
+// ---------------------------------------------------------------------- 统计
+
+/// 统计请求里按 ID 给的东西先归一：数组去重成规范 ID；表的键归一，同一个类的几个成员都给了值时规范 ID 自己的优先，
+/// 否则取 ID 序最小的成员的（与键的先后无关）。
+#[test]
+fn stats_requests_are_canonicalized_and_members_resolve_deterministically() {
+    use super::stats::canon_req;
+    with(|t, col| {
+        let w = land(t, col);
+        let ix = Index::new(t, col);
+        let (n0, n1, c) = (w.note[0].text(), w.note[1].text(), w.c_note.text());
+        let mut desired = serde_json::Map::new();
+        desired.insert(n0.clone(), json!(0.8));
+        desired.insert(c.clone(), json!(0.7));
+        desired.insert(n1.clone(), json!(0.6));
+        let req = json!({
+            "now": 1, "desired": desired, "deckModels": {n1.as_str(): 2, n0.as_str(): 1},
+            "decks": [n0, n1, c, "x"], "recallDecks": [n1], "recall": {"ids": [w.card[1].text()], "r": [0.3]},
+        });
+        let got = canon_req(&ix, &req).unwrap();
+        assert_eq!(got["desired"], json!({c.as_str(): 0.7}));
+        let first = if n0 < n1 { 1 } else { 2 };
+        assert_eq!(got["deckModels"], json!({c.as_str(): first}));
+        assert_eq!(got["decks"], json!([c, "x"]));
+        assert_eq!(got["recallDecks"], json!([c]));
+        assert_eq!(got["recall"]["ids"], json!([w.c_card.text()]));
+        assert_eq!(got["now"], 1);
+    });
+}
+
+/// 按类物化的卡在统计里只有一张（规范卡）；请求按成员卡给 RWKV 回忆率也落到它身上。
+#[test]
+fn stats_see_one_canonical_card_and_take_member_ids_in_the_request() {
+    use super::stats::{stats_recall, stats_report, stats_rows};
+    with(|t, col| {
+        let w = land(t, col);
+        let deck = id(DECK).text();
+        let req = json!({
+            "now": ANKI_REVLOG + 86_400_000, "utcOff": 0, "rollover": 4,
+            "recallDecks": [deck], "recall": {"ids": [w.card[1].text()], "r": [0.3]},
+        });
+        let rows = stats_rows(t, col, &req).unwrap();
+        let cards: Vec<&Value> = rows["cards"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|c| c[1] == json!(w.c_note.text()))
+            .collect();
+        assert_eq!(cards.len(), 1, "{rows}");
+        assert_eq!(cards[0][0], json!(w.c_card.text()));
+        assert_eq!(
+            cards[0][12],
+            json!(0.3),
+            "R from the member id: {}",
+            cards[0]
+        );
+        assert_eq!(cards[0][17], json!(true));
+        // 同一次 Anki 复习的两份只算一条有效复习。
+        let reviews: Vec<&Value> = rows["reviews"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|r| r[1] == json!(ANKI_REVLOG))
+            .collect();
+        assert_eq!(reviews.len(), 1, "{rows}");
+        let recall = stats_recall(t, col, &req).unwrap();
+        assert_eq!(recall["cards"][0][0], json!(w.c_card.text()), "{recall}");
+        let report = stats_report(
+            t,
+            col,
+            &json!({"now": 1, "utcOff": 0, "rollover": 4, "decks": [deck]}),
+        );
+        assert!(report.is_ok());
+        assert!(t.conn().is_autocommit());
+    });
+}
+
 // ---------------------------------------------------------------------- has_user_data 的口径
 
 /// 只有内置牌组 → 没有；不可信设备删它 → 有（有意比协议 3 保守，`has_user_data` 注释）；清除掉的写入不算。

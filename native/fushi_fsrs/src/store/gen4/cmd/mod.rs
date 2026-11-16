@@ -4,6 +4,7 @@
 //! - [reads]：`read`（一个集合的只读查询，查询名与列契约同协议 3）与 `read_lib`（不针对单个集合）。
 //! - [views]：`entity_views`——每实体一份视图 JSON（规划 §1.1 缺口 G-7；远程复习 V2 与本机共用同一个解码器）。
 //! - [history]：一个实体的修改历史（协议 3 `sync2_history` 的新代版）。
+//! - [stats]：复习统计 `stats_report` / `stats_recall` / `stats_rows`（协议 3 `store/stats.rs`，同一份聚合）。
 //!
 //! # 共同约定
 //!
@@ -34,6 +35,7 @@ use crate::sync2::op::EntKind;
 
 pub mod history;
 pub mod reads;
+pub mod stats;
 pub mod views;
 
 #[cfg(test)]
