@@ -1,12 +1,12 @@
 use super::*;
 use crate::gen4::location::{MediaRoot, meta4};
 use crate::gen4::op::tests::id;
-use crate::store::gen4::inherit::tests::{
-    NOW, OLD, key_of, landed, old_log, old_seg, peer, scavenge,
-};
+use crate::store::gen4::ingest::Settle;
+use crate::store::gen4::inherit::tests::{NOW, OLD, key_of, landed, old_log, old_seg, peer};
 use crate::store::gen4::native::tests::ready;
-use crate::store::gen4::receive::Defer;
+use crate::store::gen4::receive::{Defer, Receiver};
 use crate::store::gen4::schema::open_in_memory;
+use crate::sync2::keys::CollectionKey;
 use crate::sync2::segment::{SegmentHeader, relay_file_name};
 
 const LOC: &str = "loc-1";
@@ -21,6 +21,30 @@ fn entry(path: &str, size: u64, modified: i64) -> OldRootEntry {
 
 fn seg_path(h: &SegmentHeader) -> String {
     format!("{DEVICES_DIR}/{}/{}", h.device.text(), h.file_name())
+}
+
+/// 一批收旧根（位置目录 `dir`）的 [segs]，在同一个事务里收尾、记指纹：(逐段结论, 记了指纹没有)。[crash] = 收尾之后
+/// 这一笔回滚（崩溃 / 调用方后面的步骤出错）。
+fn round(
+    t: &Truth<'_>,
+    col: i64,
+    scan: &OldRootScan,
+    segs: &[&[u8]],
+    key: Option<&CollectionKey>,
+    (fenced, at, crash): (bool, i64, bool),
+) -> Result<(Vec<Taken>, bool), String> {
+    t.tx(|t| {
+        let mut r = Receiver::open(t, col, Settle::Incremental)?;
+        let mut out = Vec::new();
+        for s in segs {
+            out.push(r.legacy(s, "dir", key)?);
+        }
+        let (_, settled) = r.finish_oldroot(LOC, scan, fenced, at)?;
+        if crash {
+            return Err("crash after settling".to_owned());
+        }
+        Ok((out, settled))
+    })
 }
 
 /// D21：只有协议 1 旧根（`v2/`）的位置明确拒绝、给机读码；别的代照常认（`v2/` 与新旧根并存时按新旧根认）。
@@ -77,11 +101,9 @@ fn the_old_root_is_rescanned_only_when_its_listing_changes() {
     let scan = t.tx(|t| t.oldroot_scan(col, LOC, "dir", &listing)).unwrap();
     assert!(scan.changed && scan.read_meta);
     assert_eq!(scan.fetch, vec![seg_path(&h1), seg_path(&h2)]);
-    let (taken, _) = scavenge(&t, col, "dir", &[&s1, &s2], None);
-    assert_eq!(taken, vec![landed(6, 0, 0), landed(4, 0, 0)]);
     assert_eq!(
-        t.tx(|t| t.oldroot_settle(col, LOC, &scan, &taken, true, NOW)),
-        Ok(true)
+        round(&t, col, &scan, &[&s1, &s2], None, (true, NOW, false)),
+        Ok((vec![landed(6, 0, 0), landed(4, 0, 0)], true))
     );
     // 没变：什么都不读。
     let again = t.tx(|t| t.oldroot_scan(col, LOC, "dir", &listing)).unwrap();
@@ -102,25 +124,23 @@ fn the_old_root_is_rescanned_only_when_its_listing_changes() {
     listing.push(entry(&seg_path(&h3), s3.len() as u64, 3));
     let scan = t.tx(|t| t.oldroot_scan(col, LOC, "dir", &listing)).unwrap();
     assert_eq!(scan.fetch, vec![seg_path(&h3)]);
-    let waiting = [Taken::Deferred(Defer::Undecryptable)];
+    let sealed = old_seg(&ops, &chains, (11, 12), Some(&CollectionKey([9; 32]))).1;
     assert_eq!(
-        t.tx(|t| t.oldroot_settle(col, LOC, &scan, &waiting, true, NOW)),
-        Ok(false)
+        round(&t, col, &scan, &[&sealed], None, (true, NOW, false)),
+        Ok((vec![Taken::Deferred(Defer::Undecryptable)], false))
     );
-    assert!(
-        t.tx(|t| t.oldroot_settle(col, LOC, &scan, &[], true, NOW))
-            .is_err()
-    );
-    let (taken, _) = scavenge(&t, col, "dir", &[&s3], None);
+    // 这一批收的段数与清单要读的对不上：报错、整笔回滚。
+    assert!(round(&t, col, &scan, &[], None, (true, NOW, false)).is_err());
+    assert!(round(&t, col, &scan, &[&s3, &s3], None, (true, NOW, false)).is_err());
     assert_eq!(
-        t.tx(|t| t.oldroot_settle(col, LOC, &scan, &taken, false, NOW)),
-        Ok(false)
+        round(&t, col, &scan, &[&s3], None, (false, NOW, false)),
+        Ok((vec![landed(2, 0, 0)], false))
     );
     let scan = t.tx(|t| t.oldroot_scan(col, LOC, "dir", &listing)).unwrap();
     assert!(scan.changed && scan.fetch.is_empty());
     assert_eq!(
-        t.tx(|t| t.oldroot_settle(col, LOC, &scan, &[], true, NOW + 1)),
-        Ok(true)
+        round(&t, col, &scan, &[], None, (true, NOW + 1, false)),
+        Ok((vec![], true))
     );
     assert!(
         !t.tx(|t| t.oldroot_scan(col, LOC, "dir", &listing))
@@ -135,6 +155,67 @@ fn the_old_root_is_rescanned_only_when_its_listing_changes() {
     assert_eq!(other.fetch.len(), 5);
     assert!(other.fetch.contains(&tomb_seg));
     assert_eq!(t.tx(|t| t.audit(col)), Ok(12));
+}
+
+/// 指纹只和这一批的落库一起提交：收尾之后这一笔回滚（崩溃），指纹与落库一起没了，下一轮清单不变也照样把段读回来；
+/// 提交了才算核对过。
+#[test]
+fn the_fingerprint_commits_with_the_landing_or_not_at_all() {
+    let conn = open_in_memory().unwrap();
+    let t = Truth::new(&conn);
+    let col = ready(&t);
+    peer(&t, col, id(OLD), key_of(OLD).public());
+    let (ops, chains) = old_log(6);
+    let (h, s) = old_seg(&ops, &chains, (1, 6), None);
+    let listing = [entry(&seg_path(&h), s.len() as u64, 1)];
+    let scan = t.tx(|t| t.oldroot_scan(col, LOC, "dir", &listing)).unwrap();
+    assert_eq!(scan.fetch, vec![seg_path(&h)]);
+    assert!(round(&t, col, &scan, &[&s], None, (true, NOW, true)).is_err());
+    assert_eq!(t.oldroot_fp(col, LOC), Ok(None));
+    assert_eq!(t.tx(|t| t.audit(col)), Ok(0));
+    let again = t.tx(|t| t.oldroot_scan(col, LOC, "dir", &listing)).unwrap();
+    assert_eq!(again, scan);
+    assert_eq!(
+        round(&t, col, &again, &[&s], None, (true, NOW, false)),
+        Ok((vec![landed(6, 0, 0)], true))
+    );
+    assert_eq!(t.tx(|t| t.audit(col)), Ok(6));
+    assert!(
+        !t.tx(|t| t.oldroot_scan(col, LOC, "dir", &listing))
+            .unwrap()
+            .changed
+    );
+}
+
+/// 有段要等时这一轮不记指纹、下一轮重读；但已经落了库的段（段尾记着链值、标签对得上）下一轮不再读，重读的只有
+/// 还没结论的那几段。
+#[test]
+fn a_deferred_segment_does_not_refetch_what_already_landed() {
+    let conn = open_in_memory().unwrap();
+    let t = Truth::new(&conn);
+    let col = ready(&t);
+    peer(&t, col, id(OLD), key_of(OLD).public());
+    let (ops, chains) = old_log(12);
+    let (h1, s1) = old_seg(&ops, &chains, (1, 6), None);
+    let (h2, _) = old_seg(&ops, &chains, (7, 12), None);
+    let sealed = old_seg(&ops, &chains, (7, 12), Some(&CollectionKey([9; 32]))).1;
+    let listing = [
+        entry(&seg_path(&h1), s1.len() as u64, 1),
+        entry(&seg_path(&h2), sealed.len() as u64, 1),
+    ];
+    let scan = t.tx(|t| t.oldroot_scan(col, LOC, "dir", &listing)).unwrap();
+    assert_eq!(scan.fetch, vec![seg_path(&h1), seg_path(&h2)]);
+    assert_eq!(
+        round(&t, col, &scan, &[&s1, &sealed], None, (true, NOW, false)),
+        Ok((
+            vec![landed(6, 0, 0), Taken::Deferred(Defer::Undecryptable)],
+            false
+        ))
+    );
+    let again = t.tx(|t| t.oldroot_scan(col, LOC, "dir", &listing)).unwrap();
+    assert!(again.changed);
+    assert_eq!(again.fetch, vec![seg_path(&h2)]);
+    assert_eq!(again.skipped, 1);
 }
 
 /// 围栏：没有、被改过（旧客户端重建的 `minReader 3`）就写；这一轮没读到 meta 不动它；墓碑 head 不在或大小不对就写。

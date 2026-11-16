@@ -1,7 +1,15 @@
 //! 旧根捡漏与围栏（设计 §4.3、§6.2 第 3、4 步；D21；规划 §2.1 的 G8-5）。还没有调用方（第一段）：同步轮（G8-7）每轮
 //! 先 [check_root] 认位置的代，再列旧根（`v3/`）交给 [Truth::oldroot_scan]，把它要的段读来交给
 //! `Receiver::legacy`（`receive.rs`，验签、重算协议 3 的链、逐条转译、按序落进承袭日志），按 [fence_writes] 重立围栏，
-//! 最后 [Truth::oldroot_settle] 记下这一轮核对过的清单指纹。
+//! 最后用 [Receiver::finish_oldroot] 收尾这一批、记下这一轮核对过的清单指纹。
+//!
+//! # 指纹与落库同一个事务
+//!
+//! 记了指纹，下一轮清单不变就一个段都不读（[OldRootScan::changed] = false）。所以指纹**只能**和这些段的落库一起提交：
+//! 指纹先提交、落库那一笔回滚或崩溃，这批旧操作就一直丢着，直到旧根清单碰巧再变。这条约束钉在签名上——记指纹的
+//! 唯一入口是 [Receiver::finish_oldroot]：它消费这一批 `Receiver`（开在调用方的事务里），先 `finish`（投完等待缓冲、收
+//! 派生层），再在同一个事务里写指纹；判断「全部有了结论」用的是这个 `Receiver` 自己记下的 `legacy` 结论，不由调用方另报
+//! （测试 `the_fingerprint_commits_with_the_landing_or_not_at_all`）。
 //!
 //! # 为什么每轮都要捡
 //!
@@ -19,7 +27,7 @@
 //!
 //! # 什么时候算「核对过」
 //!
-//! [Truth::oldroot_settle] 只在本轮要读的段**全部有了结论**（落库、已有、坏段）、没有一段要等（公钥未知、解不开），而且
+//! [Receiver::finish_oldroot] 只在本轮要读的段**全部有了结论**（落库、已有、坏段）、没有一段要等（公钥未知、解不开），而且
 //! 围栏已经写好时才记下指纹；否则不记，下一轮清单不变也照样重来。坏段不挡：旧客户端传到一半的文件传完之后大小 /
 //! 修改时刻会变，指纹跟着变，自然重读。
 //!
@@ -34,7 +42,7 @@
 use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
 
-use super::receive::Taken;
+use super::receive::{Received, Receiver, Taken};
 use super::sync_state::{OldRootEntry, oldroot_fingerprint};
 use super::truth::{DEV_HERITAGE, Truth};
 use crate::gen4::location::{
@@ -193,7 +201,8 @@ impl Truth<'_> {
 
     /// 记下这一轮核对过的旧根指纹（文件头「什么时候算核对过」）。[taken] 是 [OldRootScan::fetch] 里每个文件交给
     /// `Receiver::legacy` 的结论（顺序一致、一个不少）；[fenced] = 本轮该写的围栏都写好了。记了返回 true。
-    pub fn oldroot_settle(
+    /// 不公开：只由 [Receiver::finish_oldroot] 在落库的同一个事务里、`finish` 之后调（文件头「指纹与落库同一个事务」）。
+    fn oldroot_settle(
         &self,
         col: i64,
         loc: &str,
@@ -214,6 +223,25 @@ impl Truth<'_> {
         }
         self.set_oldroot_fp(col, loc, &scan.fp, at)?;
         Ok(true)
+    }
+}
+
+impl Receiver<'_, '_> {
+    /// 收尾一批旧根捡漏：先 [Receiver::finish]，再在**同一个事务里**按 [Truth::oldroot_settle] 的规则记下位置 [loc] 这一轮
+    /// 核对过的旧根指纹。这一批必须正好是把 [scan] 的 [OldRootScan::fetch] 逐个按顺序交给 [Receiver::legacy]（一个不少、
+    /// 不夹别的旧根段），否则报错、整笔回滚。[fenced] = 本轮该写的围栏都写好了。返回 (这一批的计数, 记了指纹没有)。
+    pub fn finish_oldroot(
+        self,
+        loc: &str,
+        scan: &OldRootScan,
+        fenced: bool,
+        at: i64,
+    ) -> Result<(Received, bool), String> {
+        let (t, col) = self.scope();
+        let taken = self.legacy_taken().to_vec();
+        let received = self.finish()?;
+        let settled = t.oldroot_settle(col, loc, scan, &taken, fenced, at)?;
+        Ok((received, settled))
     }
 }
 

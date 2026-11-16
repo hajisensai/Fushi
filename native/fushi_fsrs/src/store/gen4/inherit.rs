@@ -26,8 +26,12 @@
 //!   覆盖写，不另起文件、不删别的），写进去的每个槽取「本机的、位置上的」里靠后的那份——只往靠后的方向改（降），永不
 //!   把空洞 / 副本记录改回完整内容（升）。本机的槽不因此改变（本机的槽只由本机自己应用 Purge / Dedup 推进，§3.2）。
 //! - 本机自己的段里有与本机日志**链指纹不同**的槽（本机后来把同号的另一支换进了日志，`Truth::rebalance`）：那个段是
-//!   另一支在位置上的一份，重写就把它从位置上抹掉了，所以永不重写（[UploadPlan::kept_forked]），新切的段名字撞上它时也
-//!   不写（两支都不丢，§3.2 第 2 种情况）。
+//!   另一支在位置上的一份，重写就把它从位置上抹掉了，所以永不重写（两支都不丢，§3.2 第 2 种情况）。本机这一支照样要
+//!   传上去：新切的段名字撞上它时（同一个区间、段尾链值也相同——`rebalance` 只换一个 seq 的槽，段尾不变），在这个区间
+//!   里面的切点上切小再传，每一小段的区间不同、名字就不同；区间里没有别的切点、切不开的，才报进
+//!   [UploadPlan::kept_forked]（位置上这里留着一个本机传不上去的分叉，同步轮必须报出来，由 G8-6 收敛）。
+//! - 本机自己的段区间越过了本机日志的末尾（理论上不会：本机日志不变短）：不重写（本机打不出那么长的一段），它落后的
+//!   那些 seq 照「位置上没有」另切新段补，名字与它不同、不覆盖它。
 //!
 //! # 切点
 //!
@@ -193,7 +197,10 @@ pub struct UploadPlan {
     /// 按 (旧设备, first) 升序。
     pub put: Vec<UploadSpec>,
     pub blocked: Vec<Blocked>,
-    /// 本机自己已传、本该重写、但段里有与本机日志不同支的槽的段（路径）：永不重写（文件头）。
+    /// 位置上有未收敛分叉的段（本机自己已传、路径）：段里有与本机日志不同支的槽，所以永不重写；而且本机这一支有的
+    /// seq 要么没法借重写补上（它本该重写），要么新切的段与它同名、区间里又没有别的切点能切开。**非空 = 位置上这几处
+    /// 本机这一支传不上去**，只从位置上收的设备收不到本机日志里那一支，各设备在那些 seq 上可能长期分叉；同步轮必须把
+    /// 它报出来，收敛交给 G8-6（另立切点、或让链指纹更小的一支有权覆盖写）。
     pub kept_forked: Vec<String>,
 }
 
@@ -519,6 +526,10 @@ impl<'t, 'c> Uploader<'t, 'c> {
                     continue;
                 }
                 let h = &m.header;
+                // 区间越过本机日志末尾：本机打不出这一段，不重写；落后的 seq 不算满足，下面照缺口另切新段补。
+                if h.last > log.last {
+                    continue;
+                }
                 plan.put.push(self.spec(
                     *device,
                     log.src,
@@ -562,10 +573,33 @@ impl<'t, 'c> Uploader<'t, 'c> {
                     if todo.gaps(at + 1, next) != Vec::new() {
                         let spec =
                             self.spec(*device, log.src, (at + 1, next), (k[&at], k[&next]), false);
-                        if forked_paths.contains(spec.path.as_str()) {
-                            plan.kept_forked.push(spec.path);
-                        } else {
+                        if !forked_paths.contains(spec.path.as_str()) {
                             plan.put.push(spec);
+                        } else {
+                            // 撞上本机那份另一支的段名：在区间里面的切点上切小（每一小段区间不同、名字不同，不覆盖它）。
+                            let inner: Vec<u64> = k.range(at + 1..next).map(|(n, _)| *n).collect();
+                            if inner.is_empty() {
+                                plan.kept_forked.push(spec.path);
+                            } else {
+                                let mut a = at;
+                                for b in inner.into_iter().chain([next]) {
+                                    if todo.gaps(a + 1, b) != Vec::new() {
+                                        let piece = self.spec(
+                                            *device,
+                                            log.src,
+                                            (a + 1, b),
+                                            (k[&a], k[&b]),
+                                            false,
+                                        );
+                                        if forked_paths.contains(piece.path.as_str()) {
+                                            plan.kept_forked.push(piece.path);
+                                        } else {
+                                            plan.put.push(piece);
+                                        }
+                                    }
+                                    a = b;
+                                }
+                            }
                         }
                     }
                     at = next;

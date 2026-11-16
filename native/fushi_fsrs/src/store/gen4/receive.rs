@@ -192,6 +192,9 @@ pub struct Receiver<'t, 'c> {
     tally: Received,
     /// 这一批段给出的完整原链值 (设备, seq, 链值)，收尾时记成记号（[Receiver::mark_due]）。
     marks_due: Vec<(Id, u64, Chain)>,
+    /// 这一批 [Receiver::legacy] 逐段的结论（按调用顺序）。旧根核对的收尾（`oldroot.rs` 的
+    /// [Receiver::finish_oldroot]）拿它判断本轮清单是否全部有了结论，不让调用方另报一份。
+    legacy_taken: Vec<Taken>,
 }
 
 impl<'t, 'c> Receiver<'t, 'c> {
@@ -223,6 +226,7 @@ impl<'t, 'c> Receiver<'t, 'c> {
             applied: t.applied(col)?,
             tally: Received::default(),
             marks_due: Vec::new(),
+            legacy_taken: Vec::new(),
         })
     }
 
@@ -642,6 +646,7 @@ impl<'t, 'c> Receiver<'t, 'c> {
         key: Option<&CollectionKey>,
     ) -> Result<Taken, String> {
         let taken = self.legacy_inner(bytes, dir, key)?;
+        self.legacy_taken.push(taken.clone());
         Ok(self.count(taken))
     }
 
@@ -759,6 +764,16 @@ impl<'t, 'c> Receiver<'t, 'c> {
     }
 
     // ------------------------------------------------------------ 收尾
+
+    /// 这一批开在哪个真相层、哪个集合上（同一个事务；`oldroot.rs` 收尾记旧根指纹用）。
+    pub(super) fn scope(&self) -> (&'t Truth<'c>, i64) {
+        (self.t, self.col)
+    }
+
+    /// 这一批 [Receiver::legacy] 逐段的结论（按调用顺序）。
+    pub(super) fn legacy_taken(&self) -> &[Taken] {
+        &self.legacy_taken
+    }
 
     /// 把等待缓冲里接得上的投完，再收派生层。消费这一批。
     pub fn finish(mut self) -> Result<Received, String> {

@@ -543,6 +543,61 @@ fn my_own_segment_holding_another_branch_is_never_overwritten() {
     assert_eq!(plan.kept_forked, vec![path]);
 }
 
+/// 本机自己那份另一支的段与新切的段同名（同区间、段尾链值相同），但区间里还有别的切点：切小了传，本机这一支照样上了
+/// 位置，那份另一支不动、也不再报未收敛。
+#[test]
+fn a_name_clash_with_my_forked_segment_is_cut_at_inner_points() {
+    let (conn, col, chains) = mine_with(&[5, 10], 10);
+    let t = Truth::new(&conn);
+    let mine = DeviceKey::from_seed(&t.self_identity(col).unwrap().unwrap().sk);
+    let fork = |s: HeritageSlot| {
+        if s.id.seq == 4 || s.id.seq == 8 {
+            HeritageSlot { fp: [0xee; 8], ..s }
+        } else {
+            s
+        }
+    };
+    let (path, bytes) = their_seg(&t, col, (me(), &mine), &chains, (1, 10), fork);
+    let (seen, plan, packed) = plan_after(&t, col, UPLOAD_MAX_SLOTS, &[(&path, &bytes)], None);
+    assert_eq!(seen, vec![Seen::Counted { matched: 8 }]);
+    assert_eq!(ranges(&plan), vec![(1, 5, false), (6, 10, false)]);
+    assert!(plan.put.iter().all(|p| p.path != path), "{plan:?}");
+    assert!(plan.kept_forked.is_empty(), "{plan:?}");
+    // 传上去之后（两份都在位置上）：本机这一支都满足了，什么都不再传。
+    let pieces: Vec<(String, Vec<u8>)> = plan
+        .put
+        .iter()
+        .zip(packed)
+        .map(|(p, b)| (p.path.clone(), b))
+        .collect();
+    let mut all: Vec<(&str, &[u8])> = vec![(&path, &bytes)];
+    all.extend(pieces.iter().map(|(p, b)| (p.as_str(), b.as_slice())));
+    let (_, plan, _) = plan_after(&t, col, UPLOAD_MAX_SLOTS, &all, None);
+    assert_eq!(plan, UploadPlan::default());
+}
+
+/// 本机自己已传的段区间越过本机日志的末尾（同一身份在别处写得更长的）：落后了也不原区间重写（打不出来、不能让整轮
+/// 失败），落后的 seq 另切新段补，名字不同、不覆盖它。
+#[test]
+fn my_segment_reaching_past_my_log_is_not_rewritten() {
+    let (longer, lcol, lchains) = mine_with(&[12], 12);
+    let (path, bytes) = {
+        let t = Truth::new(&longer);
+        let mine = DeviceKey::from_seed(&t.self_identity(lcol).unwrap().unwrap().sk);
+        their_seg(&t, lcol, (me(), &mine), &lchains, (1, 12), |s| s)
+    };
+    let (conn, col, _) = mine_with(&[10], 10);
+    let t = Truth::new(&conn);
+    assert_eq!(t.tx(|t| t.advance_purge(col, &oid(3))), Ok(true));
+    let (seen, plan, packed) = plan_after(&t, col, UPLOAD_MAX_SLOTS, &[(&path, &bytes)], None);
+    assert_eq!(seen, vec![Seen::Counted { matched: 10 }]);
+    assert_eq!(ranges(&plan), vec![(1, 10, false)]);
+    assert_ne!(plan.put[0].path, path);
+    assert!(plan.blocked.is_empty() && plan.kept_forked.is_empty());
+    let (_, slots) = open_heritage(&packed[0], &my_public(&t, col), None).unwrap();
+    assert_eq!(rank_of(&slots[2].body), Rank::Void);
+}
+
 /// 缺口之后本机不知道任何一处的完整原链值：传不了，报出来；记上链值之后就传。
 #[test]
 fn a_gap_without_a_known_chain_after_it_is_blocked() {
