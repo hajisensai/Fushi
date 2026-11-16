@@ -172,6 +172,7 @@ import 'package:fushi/src/srs/srs_storage_host.dart';
 import 'package:fushi/src/srs/srs_review_gestures.dart';
 import 'package:fushi/src/srs/srs_review_layout.dart';
 import 'package:fushi/src/models/home_dashboard_panel.dart';
+import 'package:fushi/src/models/home_widget_layout.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/storage/books_directory.dart';
 import 'package:fushi/src/storage/download_layout.dart';
@@ -11989,21 +11990,16 @@ class AppModel
   Future<void> setSrsMiningBackground(bool value) =>
       prefsRepo.setSrsMiningBackground(value: value);
 
-  // 首页 dashboard 面板显示档（透传 prefsRepo）。可空读：prefs 未装配 = 全部 auto。
-  HomeDashboardPanelMode homeDashboardPanelMode(HomeDashboardPanel panel) =>
-      decodeHomeDashboardPanelModes(
-        _prefsRepo?.homeDashboardPanels ?? '',
-      )[panel] ??
-      HomeDashboardPanelMode.auto;
-  Future<void> setHomeDashboardPanelMode(
-    HomeDashboardPanel panel,
-    HomeDashboardPanelMode mode,
-  ) => prefsRepo.setHomeDashboardPanels(
-    encodeHomeDashboardPanelModes(<HomeDashboardPanel, HomeDashboardPanelMode>{
-      ...decodeHomeDashboardPanelModes(prefsRepo.homeDashboardPanels),
-      panel: mode,
-    }),
-  );
+  // 旧首页可选面板显示档（只读，透传 prefsRepo）：首页小组件网格迁移首个布局时读
+  // （[migrateHomeWidgetLayout]），不再写。可空读：prefs 未装配 = 全部 auto。
+  Map<HomeDashboardPanel, HomeDashboardPanelMode> get homeDashboardPanelModes =>
+      decodeHomeDashboardPanelModes(_prefsRepo?.homeDashboardPanels ?? '');
+
+  // 首页小组件网格的两份布局（透传 prefsRepo）。可空读：prefs 未装配 = 都没编辑过。
+  HomeWidgetLayout get homeWidgetLayout =>
+      decodeHomeWidgetLayout(_prefsRepo?.homeWidgetLayout ?? '');
+  Future<void> setHomeWidgetLayout(HomeWidgetLayout layout) =>
+      prefsRepo.setHomeWidgetLayout(encodeHomeWidgetLayout(layout));
 
   // 复习卡片浏览器的保存视图（JSON，透传 prefsRepo）。可空读：prefs 未装配 = 没有。
   String get srsBrowseSavedViews => _prefsRepo?.srsBrowseSavedViews ?? '';
