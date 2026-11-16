@@ -2,9 +2,12 @@
 /// 时，[SrsLoadErrorView] 换成这一页（交接说明 §8.1 与「G7-5 Dart 接线」）。
 ///
 /// - [SrsGenState.needsMigration]（主进程）：说明 +「开始升级」→ 步骤与进度，提交点之前可取消；结论（取消 /
-///   别的窗口在迁移 / 被占用 / 前提没满足 / 空间不够 / 对拍不过）就地说明，旧库都没动。前提没满足
-///   （[SrsGen4BlockedReason.precondition]）重试不会变：给原因原文、不给「重新升级」。提交后存储重开，页面随之换成
-///   正常内容。
+///   别的窗口在迁移 / 被占用 / 旧库没整理好 / 更新版本写的 / 文件坏了 / 并入没做完 / 空间不够 / 对拍不过）就地说明。
+///   旧库里协议 3 没做完的收尾由迁移自己补完（G7-2b，步骤「整理旧库」）；`blocked` 按内核的 `code` 分类
+///   （[SrsGen4BlockedReason]），重试会变的（[SrsGen4BlockedReason.retryable]）给「重新升级」，其余三类不给。主库已关 /
+///   正在关（覆盖恢复、换数据根、退出）时「开始升级」置灰并说明（[SrsGen4MigrationController.canStart] /
+///   [SrsGen4MigrationController.databaseClosing]；启动还没初始化完只置灰、不说「正在关」，重新开库后恢复）。提交后存储
+///   重开，页面随之换成正常内容。
 /// - [SrsGenState.migrationFailed]（主进程）：上次没完成，可重新升级。
 /// - [SrsGenState.sealedOldOnly]：只剩封存旧库，不自动重建，给恢复说明。
 /// - [SrsStoreMigrating]（-5）/ [SrsGenState.migratingElsewhere]：别的窗口在迁移，稍后重试。
@@ -91,6 +94,7 @@ SrsGenerationKind srsGenerationKindOf(
 String srsGen4StepLabel(SrsGen4MigrationStep step) => switch (step) {
   SrsGen4MigrationStep.space => t.srs_gen4_step_space,
   SrsGen4MigrationStep.lock => t.srs_gen4_step_lock,
+  SrsGen4MigrationStep.prepare => t.srs_gen4_step_prepare,
   SrsGen4MigrationStep.precondition => t.srs_gen4_step_precondition,
   SrsGen4MigrationStep.translate => t.srs_gen4_step_translate,
   SrsGen4MigrationStep.salts => t.srs_gen4_step_salts,
@@ -100,14 +104,17 @@ String srsGen4StepLabel(SrsGen4MigrationStep step) => switch (step) {
   SrsGen4MigrationStep.seal => t.srs_gen4_step_seal,
 };
 
-/// 没提交的结论的说明（提交了页面就换掉了，不出这里）。`blocked` 按原因分三类（[SrsGen4BlockedReason]）：别的窗口在
-/// 迁移、旧库正被写（等一会再来）、前提没满足（重试不会变，不能说成「被占用」）。
+/// 没提交的结论的说明（提交了页面就换掉了，不出这里）。`blocked` 按内核 `code` 的分类（[SrsGen4BlockedReason]）各给
+/// 一句：等一会再来的两类不能与补不了的混为一谈（不能把「旧库没整理好 / 文件坏了」说成「被占用」）。
 String srsGen4OutcomeText(SrsGen4MigrationOutcome o) => switch (o.verdict) {
   SrsGen4MigrationVerdict.cancelled => t.srs_gen4_cancelled,
   SrsGen4MigrationVerdict.blocked => switch (o.blockedReason!) {
     SrsGen4BlockedReason.migrating => t.srs_gen4_migrating_elsewhere,
     SrsGen4BlockedReason.busy => t.srs_gen4_blocked,
-    SrsGen4BlockedReason.precondition => t.srs_gen4_blocked_precondition,
+    SrsGen4BlockedReason.newerBuild => t.srs_gen4_blocked_newer,
+    SrsGen4BlockedReason.damaged => t.srs_gen4_blocked_damaged,
+    SrsGen4BlockedReason.mergePending => t.srs_gen4_blocked_merge,
+    SrsGen4BlockedReason.precondition => t.srs_gen4_blocked_unfinished,
   },
   SrsGen4MigrationVerdict.noSpace => t.srs_gen4_no_space(
     size: FushiByteFormat.bytes(_shortBytes(o)),
@@ -252,14 +259,23 @@ class _MigrationPanel extends StatelessWidget {
     final bool running = controller.phase != SrsGen4MigrationPhase.idle;
     final SrsGen4MigrationOutcome? outcome = controller.outcome;
     final Object? error = controller.error;
-    // 前提没满足：这一版重试不会变（交接说明 §9.5），给原因原文、不给「重新升级」。
-    final bool preconditionUnmet =
-        outcome?.blockedReason == SrsGen4BlockedReason.precondition;
+    final SrsGen4BlockedReason? blocked = outcome?.blockedReason;
+    // 重试不会变的三类（更新版本写的 / 文件坏了 / 并入没做完）：不给「重新升级」，免得引用户反复点。
+    final bool retryable = blocked?.retryable ?? true;
+    // 等一会再来的两类说清楚就够；其余给内核原因原文（诊断用）。
+    final String reason = outcome?.reason ?? '';
+    final bool showReason =
+        blocked != null &&
+        blocked != SrsGen4BlockedReason.migrating &&
+        blocked != SrsGen4BlockedReason.busy &&
+        reason.isNotEmpty;
+    // 不能开始（主库正在关，或启动还没初始化完）：按钮置灰；只有真的在关才说「正在关闭数据库」。
+    final bool blockedStart = !running && !controller.canStart;
     final List<String> details = <String>[
       if (!running && outcome != null) srsGen4OutcomeText(outcome),
-      if (!running && preconditionUnmet && (outcome!.reason ?? '').isNotEmpty)
-        outcome.reason!,
+      if (!running && showReason) reason,
       if (!running && error != null) ...<String>[t.srs_gen4_failed, '$error'],
+      if (blockedStart && controller.databaseClosing) t.srs_gen4_closing,
     ];
     final Widget head = FushiPlaceholderMessage(
       icon: running
@@ -280,12 +296,14 @@ class _MigrationPanel extends StatelessWidget {
     final List<Widget> blocks = <Widget>[
       head,
       if (running) _ProgressBlock(controller: controller),
-      if (!running && !preconditionUnmet)
+      if (!running && retryable)
         Center(
           child: FushiPressScale(
+            enabled: !blockedStart,
             child: FushiFilledButton.icon(
               key: SrsGenerationView.startKey,
-              onPressed: controller.start,
+              // 主库已关 / 正在关：置灰（关库前的静默已经等过这个控制器，之后开始的迁移没人等）。
+              onPressed: blockedStart ? null : controller.start,
               icon: const FushiIcon(FushiIcons.refresh),
               label: Text(
                 failedBefore || outcome != null || error != null

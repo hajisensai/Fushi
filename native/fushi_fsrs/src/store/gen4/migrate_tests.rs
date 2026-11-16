@@ -189,6 +189,7 @@ fn a_ready_library_is_migrated_sealed_and_opens() {
         [
             Step::Space,
             Step::Lock,
+            Step::Prepare,
             Step::Precondition,
             Step::Translate,
             Step::Salts,
@@ -485,11 +486,18 @@ fn a_parity_failure_aborts_and_leaves_the_library_usable() {
 #[test]
 fn unmet_preconditions_block_before_anything_is_written() {
     let other = "0193a1b2-0000-7000-8000-00000000cafe";
-    let cases: [(&str, &dyn Fn(&Connection), BTreeMap<String, String>, &str); 4] = [
+    let cases: [(
+        &str,
+        &dyn Fn(&Connection),
+        BTreeMap<String, String>,
+        BlockCode,
+        &str,
+    ); 3] = [
         (
             "g72-nocfg",
             &|_| {},
             BTreeMap::new(),
+            BlockCode::MissingCacheConfig,
             "no cache configuration",
         ),
         (
@@ -502,20 +510,10 @@ fn unmet_preconditions_block_before_anything_is_written() {
                 .unwrap();
             },
             caches(),
+            BlockCode::MergeHalfDone,
             "profile merge is half done",
         ),
-        (
-            "g72-replay",
-            &|c| {
-                c.execute(
-                    "INSERT INTO sync2_replay_pending (profile_uid, card_id) VALUES (srs_id(?1), srs_id(?2))",
-                    [P, N2],
-                )
-                .unwrap();
-            },
-            caches(),
-            "waiting to be replayed",
-        ),
+        // 只在投影表里的孤儿 uid 也要缓存配置（补完与迁移都要）：没给就拦，旧库不动。
         (
             "g72-outside",
             &|c| {
@@ -526,18 +524,21 @@ fn unmet_preconditions_block_before_anything_is_written() {
                 .unwrap();
             },
             caches(),
-            "not in the protocol 3 op log",
+            BlockCode::MissingCacheConfig,
+            other,
         ),
     ];
-    for (tag, prep, caches, why) in cases {
+    for (tag, prep, caches, code, why) in cases {
         let dir = legacy_dir(tag, &|_| {});
         prep(&raw(&dir.0));
         let before = masked(&dir.0);
         let out = migrate_with(&dir.0, &caches, &Stop::new(), &mut Vec::new());
-        let Outcome::Blocked { reason } = &out else {
+        let Outcome::Blocked { code: got, reason } = &out else {
             panic!("{tag}: {out:?}")
         };
+        assert_eq!(*got, code, "{tag}: {reason}");
         assert!(reason.contains(why), "{tag}: {reason}");
+        assert_eq!(out.json()["code"], json!(code.wire()), "{tag}");
         assert_eq!(masked(&dir.0), before, "{tag}");
         assert!(!dir.0.join(GEN4_TEMP).exists(), "{tag}");
         assert!(!dir.0.join(GEN4_FILE).exists(), "{tag}");
@@ -551,40 +552,58 @@ fn unmet_preconditions_block_before_anything_is_written() {
 fn locks_busy_libraries_and_wrong_states_are_refused() {
     let dir = legacy_dir("g72-locks", &|_| {});
     let lock = GenLock::try_acquire(&dir.0).unwrap().unwrap();
-    assert_eq!(migrate(&dir.0), blocked(BLOCKED_MIGRATING));
+    assert_eq!(
+        migrate(&dir.0),
+        blocked(BlockCode::Migrating, BLOCKED_MIGRATING)
+    );
     assert_eq!(status(&dir.0), Ok(GenState::MigratingElsewhere));
     drop(lock);
     let writer = raw(&dir.0);
     writer.execute_batch("BEGIN IMMEDIATE").unwrap();
-    assert_eq!(migrate(&dir.0), blocked(BLOCKED_BUSY));
+    assert_eq!(migrate(&dir.0), blocked(BlockCode::Busy, BLOCKED_BUSY));
     writer.execute_batch("ROLLBACK").unwrap();
     drop(writer);
     assert!(!dir.0.join(GEN4_TEMP).exists());
     assert!(!dir.0.join(GEN4_FILE).exists());
 
+    // 比这一版的协议 3 新：拦下（装新版本），不是升级。不是协议 3 的库：拦下。
+    let newer = crate::store::schema::SCHEMA_VERSION + 1;
     raw(&dir.0)
-        .execute("UPDATE srs_meta SET value = '28' WHERE key = 'schema'", [])
+        .execute(
+            "UPDATE srs_meta SET value = ?1 WHERE key = 'schema'",
+            [newer.to_string()],
+        )
         .unwrap();
-    let Outcome::Blocked { reason } = migrate(&dir.0) else {
+    let Outcome::Blocked { code, reason } = migrate(&dir.0) else {
         panic!()
     };
-    assert!(reason.contains("schema 28"), "{reason}");
+    assert_eq!(code, BlockCode::SchemaNewer, "{reason}");
+    assert!(reason.contains(&format!("schema {newer}")), "{reason}");
+    raw(&dir.0)
+        .execute("UPDATE srs_meta SET value = 'x' WHERE key = 'schema'", [])
+        .unwrap();
+    let Outcome::Blocked { code, .. } = migrate(&dir.0) else {
+        panic!()
+    };
+    assert_eq!(code, BlockCode::NotProtocol3);
     raw(&dir.0)
         .execute(
             "UPDATE srs_meta SET value = ?1 WHERE key = 'schema'",
             [SEALED_SCHEMA.to_string()],
         )
         .unwrap();
-    let Outcome::Blocked { reason } = migrate(&dir.0) else {
+    let Outcome::Blocked { code, reason } = migrate(&dir.0) else {
         panic!()
     };
+    assert_eq!(code, BlockCode::SealedWithoutNew, "{reason}");
     assert!(reason.contains("sealed"), "{reason}");
     assert_eq!(status(&dir.0), Ok(GenState::SealedOldOnly));
 
     let empty = tempdir::new("g72-empty");
-    let Outcome::Blocked { reason } = migrate(&empty.0) else {
+    let Outcome::Blocked { code, reason } = migrate(&empty.0) else {
         panic!()
     };
+    assert_eq!(code, BlockCode::NoLibrary, "{reason}");
     assert!(reason.contains("no protocol 3 library"), "{reason}");
     assert_eq!(status(&empty.0), Ok(GenState::Ready));
 }

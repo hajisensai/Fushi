@@ -19,7 +19,8 @@
 //! 接线」错误——C 入口照常解析输入，接线的模块只替换方法体。逐卡重放与训练集的 C 入口已接（S1b，`dispatch.rs` 末尾
 //! 「C 直出入口」一节）。
 //!
-//! 迁移（`gen4_migrate_status` / `gen4_migrate_run` / `gen4_migrate_cancel`）是不针对已打开库的全局命令（[global]）：
+//! 迁移（`gen4_migrate_status` / `gen4_migrate_profiles` / `gen4_migrate_run` / `gen4_migrate_cancel`）是不针对已打开库的
+//! 全局命令（[global]）：
 //! 没迁移的目录根本打不开新代库，迁移入口不能挂在库句柄上。
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -617,7 +618,11 @@ fn dir_of(req: &Value) -> Result<PathBuf, String> {
 /// 全局命令（不需要库句柄，`lib.rs` 的 JSON 入口转进来）：
 ///
 /// - `gen4_migrate_status {dir}` → `{state, running}`：`state` 是 `migrate::GenState` 的线上名；`running` = 本进程里
-///   这个目录正在跑的迁移的进度 `{step, done, total}`（没有 = null）。
+///   这个目录正在跑的迁移的进度 `{step, done, total}`（没有 = null）。只看文件与锁、读旧库的一行 schema，Dart 在 UI
+///   isolate 上轮询它。
+/// - `gen4_migrate_profiles {dir}` → `{profiles}`：旧库里全部有数据的 profile uid（`legacy::all_profiles`，含主库
+///   profile 表里没有的孤儿 uid；`gen4_migrate_run` 的 `caches` 要每个都有）。要读旧库的几张大表（按 profile 跳着取），
+///   调用方在后台 isolate 调（G7-2b）。没有旧库 = 报错。
 /// - `gen4_migrate_run {dir, caches: {profile: 缓存配置}, now, batch?, runId?}` → `migrate::Outcome::json`
 ///   （`{verdict, ...}`）。几十秒到几分钟，调用方在后台 isolate 调。同一目录在本进程里已经在跑 = `blocked`。
 /// - `gen4_migrate_cancel {dir, runId?}` → `{cancelled}`：叫停（提交点之前有效）；带 `runId` 时早于开跑到达也不丢。
@@ -633,6 +638,10 @@ pub fn global(op: &str, req: &Value) -> Result<Value, String> {
                 "state": migrate::status(&dir)?.wire(),
                 "running": running.unwrap_or(Value::Null),
             }))
+        }
+        "gen4_migrate_profiles" => {
+            let dir = dir_of(req)?;
+            Ok(json!({"profiles": migrate::legacy_profiles(&dir)?}))
         }
         "gen4_migrate_run" => run_migration(req),
         "gen4_migrate_cancel" => {
@@ -687,7 +696,11 @@ fn run_migration(req: &Value) -> Result<Value, String> {
     });
     // 登记随 `_reg` 析构摘掉（返回、报错、panic 都一样）。
     let Some(_reg) = Registration::new(&dir, &run) else {
-        return Ok(json!({"verdict": "blocked", "reason": migrate::BLOCKED_MIGRATING}));
+        return Ok(migrate::Outcome::Blocked {
+            code: migrate::BlockCode::Migrating,
+            reason: migrate::BLOCKED_MIGRATING.to_owned(),
+        }
+        .json());
     };
     if let Some(id) = req.get("runId").and_then(Value::as_str) {
         if cancelled_early().remove(&(dir.clone(), id.to_owned())) {

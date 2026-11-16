@@ -65,6 +65,7 @@ pub mod oldroot;
 pub(crate) mod pack;
 #[cfg(test)]
 pub(crate) mod parity;
+pub(crate) mod prepare;
 pub mod receive;
 pub mod schema;
 pub mod sync_state;

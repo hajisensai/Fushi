@@ -1,8 +1,9 @@
 /// 协议 3 → 新代（gen4）的迁移命令（native/fushi_fsrs/src/store/gen4/kernel.rs `global`：`gen4_migrate_status` /
-/// `gen4_migrate_run` / `gen4_migrate_cancel`，经 `ffsrs_call`，不要库句柄）。
+/// `gen4_migrate_profiles` / `gen4_migrate_run` / `gen4_migrate_cancel`，经 `ffsrs_call`，不要库句柄）。
 ///
 /// 迁移是无损的：协议 3 的 `srs.db` 提交后原位封存（不删），新代库 `srs4.db` 在临时名上建好、对拍通过才改名到位
-/// （提交点）。提交点之前任何一步失败或取消，目录回到迁移前的样子。
+/// （提交点）。旧库没做完的协议 3 收尾（前提补完，G7-2b）在旧库的副本上做：提交点之前任何一步失败或取消，旧库逐字节
+/// 是迁移前的样子（写它的那个版本照样能打开），目录回到迁移前的样子。
 ///
 /// Dart 侧的顺序（交接说明 §8.1）：开库 → [SrsStoreNotMigrated] 且 [SrsGenState.needsMigration] → 关掉所有协议 3
 /// 句柄（S1 之后进程里不会再有：`ffsrs_store_open` 已删）→ [SrsGen4Migration.run] → 再开。
@@ -17,6 +18,10 @@ import 'srs_core.dart';
 enum SrsGen4MigrationStep {
   space('space'),
   lock('lock'),
+
+  /// 前提补完（G7-2b）：旧库里协议 3 自己还没做完的收尾（从没同步过的旧行、去重、收段收尾、schema 升级）先用冻结的
+  /// 协议 3 代码在旧库的副本上做完（旧库本身不写）。
+  prepare('prepare'),
   precondition('precondition'),
   translate('translate'),
   salts('salts'),
@@ -109,32 +114,57 @@ enum SrsGen4MigrationVerdict {
   }
 }
 
-/// [SrsGen4MigrationVerdict.blocked] 的原因分类。三类给用户的处置不同：前两类等一会再来就行；第三类重试不会变，
-/// 页面要说清楚原因、不能说成「被占用」引用户反复重试。
+/// [SrsGen4MigrationVerdict.blocked] 的原因分类，按内核给的机器可读 `code`（migrate.rs `BlockCode::wire`）分，不比
+/// 原因原文。旧库里协议 3 没做完的收尾现在由迁移自己补完（G7-2b），剩下的分类决定页面怎么说、给不给「重新升级」。
 enum SrsGen4BlockedReason {
-  /// 换代锁在别的进程手里（migrate.rs `BLOCKED_MIGRATING`；本进程里同一目录已经在跑也回这一条，kernel.rs `global`）。
+  /// 换代锁在别的进程手里，或本进程里同一目录已经在跑（`migrating`）：等一会再来。
   migrating,
 
-  /// 协议 3 的旧库正被别的连接写（migrate.rs `BLOCKED_BUSY`）：等一会再来。
+  /// 协议 3 的旧库正被别的连接写（`busy`）：等一会再来。
   busy,
 
-  /// 其余：旧库没满足迁移前提（协议 3 的收尾没做完——旧行还没迁成操作、待重放 / 待刷新缓存、并入做了一半；缺某个
-  /// profile 的缓存配置）、旧库 schema 不对、目录状态对不上……原因原文在 [SrsGen4MigrationOutcome.reason]。
+  /// 旧库是更新的版本写的（`schemaNewer`）：这一版读不了，要装新版本；重试不会变。
+  newerBuild,
+
+  /// 旧库文件坏了 / 不是复习库（`corrupt` / `notProtocol3`）：重试不会变，原样保留、带日志联系支持。
+  damaged,
+
+  /// 旧的 profile 并入做到一半（`mergeHalfDone`）：这一版补不了，重试不会变。
+  mergePending,
+
+  /// 其余（`missingCacheConfig` / `precondition` / 目录状态对不上 / 不认识的 code）：原因原文给用户看，可以重新升级
+  /// （前提补完每次都会重做一遍能补的部分）。
   precondition;
 
-  /// migrate.rs `BLOCKED_MIGRATING` 的原文（两边一字不差，`srs_gen4_migration_test.dart` 读 Rust 源码核对）。
-  static const String migratingWire =
-      'migrating: another process holds the generation lock';
-
-  /// migrate.rs `BLOCKED_BUSY` 的原文。
-  static const String busyWire =
-      'busy: the protocol 3 library is being written';
-
-  /// 内核给的原因原文 → 分类（只比两个常量的全文，其余一律 [precondition]）。
-  static SrsGen4BlockedReason of(String? reason) => switch (reason) {
-    migratingWire => migrating,
-    busyWire => busy,
+  /// 内核 `code` → 分类。
+  static SrsGen4BlockedReason of(String? code) => switch (code) {
+    'migrating' => migrating,
+    'busy' => busy,
+    'schemaNewer' => newerBuild,
+    'corrupt' || 'notProtocol3' => damaged,
+    'mergeHalfDone' => mergePending,
     _ => precondition,
+  };
+
+  /// 内核会给的全部 `code`（Dart 测试读 migrate.rs 核对两边一致）。
+  static const List<String> kernelCodes = <String>[
+    'migrating',
+    'busy',
+    'missingCacheConfig',
+    'mergeHalfDone',
+    'schemaNewer',
+    'notProtocol3',
+    'corrupt',
+    'noLibrary',
+    'sealedWithoutNew',
+    'legacyBesideNew',
+    'precondition',
+  ];
+
+  /// 再点一次可能就过了：等一会再来的两类，以及前提补完会再做一遍的 [precondition]。其余三类重试不会变。
+  bool get retryable => switch (this) {
+    migrating || busy || precondition => true,
+    newerBuild || damaged || mergePending => false,
   };
 }
 
@@ -142,6 +172,7 @@ enum SrsGen4BlockedReason {
 final class SrsGen4MigrationOutcome {
   const SrsGen4MigrationOutcome({
     required this.verdict,
+    this.code,
     this.reason,
     this.reportPath,
     this.report,
@@ -151,7 +182,10 @@ final class SrsGen4MigrationOutcome {
 
   final SrsGen4MigrationVerdict verdict;
 
-  /// [SrsGen4MigrationVerdict.blocked] 的原因（内核原文）。
+  /// [SrsGen4MigrationVerdict.blocked] 的机器可读原因（migrate.rs `BlockCode::wire`）。
+  final String? code;
+
+  /// [SrsGen4MigrationVerdict.blocked] 的原因（内核原文，给人看）。
   final String? reason;
 
   /// [SrsGen4MigrationVerdict.aborted] 时诊断报告的文件路径（只含 ID 与计数）。
@@ -166,7 +200,7 @@ final class SrsGen4MigrationOutcome {
   /// [SrsGen4MigrationVerdict.blocked] 时的原因分类；其余结论 = null。
   SrsGen4BlockedReason? get blockedReason =>
       verdict == SrsGen4MigrationVerdict.blocked
-      ? SrsGen4BlockedReason.of(reason)
+      ? SrsGen4BlockedReason.of(code)
       : null;
 
   static SrsGen4MigrationOutcome fromJson(Map<String, Object?> j) {
@@ -178,6 +212,7 @@ final class SrsGen4MigrationOutcome {
     }
     return SrsGen4MigrationOutcome(
       verdict: v,
+      code: j['code'] as String?,
       reason: j['reason'] as String?,
       reportPath: j['reportPath'] as String?,
       report: j['report'],
@@ -189,7 +224,7 @@ final class SrsGen4MigrationOutcome {
 
 /// 迁移的三条全局命令。全部按库目录 [dir]（`<数据库目录>`，与 [SrsCore.open] 同一个）。
 abstract final class SrsGen4Migration {
-  /// 目录的代际状态与本进程里正在跑的进度（只读，快）。
+  /// 目录的代际状态与本进程里正在跑的进度（只读，快：只看文件与锁、读旧库的一行 schema，可在 UI isolate 上轮询）。
   static SrsGen4MigrationStatus status(String dir, {String? libraryPath}) {
     final Object? r = SrsCoreBindings.load(
       libraryPath: libraryPath,
@@ -197,9 +232,32 @@ abstract final class SrsGen4Migration {
     return SrsGen4MigrationStatus.fromJson((r! as Map).cast<String, Object?>());
   }
 
+  /// 旧库里全部有数据的 profile uid（内核 `legacy::all_profiles`，含主库 profile 表里没有的孤儿 uid）：[run] 的
+  /// `caches` 要每个都有。要读旧库的几张大表（每张按 profile 跳着取），在后台 isolate 里调。没有旧库 / 读不了 =
+  /// [SrsCoreException]。
+  static Future<List<String>> legacyProfiles(
+    String dir, {
+    String? libraryPath,
+  }) async {
+    final String? lib = SrsCoreBindings.load(
+      libraryPath: libraryPath,
+    ).libraryPath;
+    final Map<String, Object?> request = <String, Object?>{
+      'op': 'gen4_migrate_profiles',
+      'dir': dir,
+    };
+    final Object? r = await Isolate.run(
+      () =>
+          (SrsCoreBindings.load(libraryPath: lib).callGlobal(request)!
+              as Map)['profiles'],
+      debugName: 'srs-gen4-profiles',
+    );
+    return <String>[for (final Object? u in (r as List?) ?? const []) '$u'];
+  }
+
   /// 跑一次迁移（阻塞几十秒到几分钟，放后台 isolate）。[caches]：每个 profile uid → 它的缓存配置（只有 Dart 知道
-  /// 的内置笔记类型默认值与默认牌组；协议 3 库里每个 profile 都要有，缺了迁移按前提不满足放弃）。[runId] 让早于开跑
-  /// 到达的 [cancel] 不丢。进度用 [status] 轮询。
+  /// 的内置笔记类型默认值与默认牌组；[legacyProfiles] 里每个都要有，缺了迁移拦下、`code` 为 `missingCacheConfig`）。
+  /// [runId] 让早于开跑到达的 [cancel] 不丢。进度用 [status] 轮询。
   static Future<SrsGen4MigrationOutcome> run(
     String dir, {
     required Map<String, Map<String, Object?>> caches,

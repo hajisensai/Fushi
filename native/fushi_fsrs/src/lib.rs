@@ -283,9 +283,10 @@ fn dispatch(req: &Value) -> Result<Value, String> {
         // 根上的 ID 与同步目录名（gen4_ids/derive.rs）。
         "ids" => gen4_ids::derive::derive(req),
         // SRS 换代的迁移（store/gen4/kernel.rs `global`）：不针对已打开的库（没迁移的目录根本打不开新代库）。
-        "gen4_migrate_status" | "gen4_migrate_run" | "gen4_migrate_cancel" => {
-            store::gen4::kernel::global(op, req)
-        }
+        "gen4_migrate_status"
+        | "gen4_migrate_profiles"
+        | "gen4_migrate_run"
+        | "gen4_migrate_cancel" => store::gen4::kernel::global(op, req),
         "defaults" => {
             let algorithm = Algorithm::parse(str_field(req, "algorithm")?)?;
             Ok(json!({ "params": algorithm.defaults(), "count": algorithm.param_len() }))

@@ -5,12 +5,13 @@
 /// S1 之后进程里不会有协议 3 的句柄（`ffsrs_store_open` 已删），不用另关。[SrsGenState.sealedOldOnly] /
 /// [SrsGenState.migrationFailed] 由页面给恢复说明，这里不自动重跑。
 ///
-/// 迁移无损：旧库提交后原位封存、不删；提交点之前失败或取消，目录回到迁移前的样子。
+/// 迁移无损：旧库提交后原位封存、不删；旧库没做完的协议 3 收尾在它的副本上补（G7-2b），提交点之前失败或取消，旧库
+/// 逐字节不变、目录回到迁移前的样子。
 library;
 
 import 'dart:async';
 
-import 'package:flutter/foundation.dart' show ChangeNotifier;
+import 'package:flutter/foundation.dart' show ChangeNotifier, Listenable;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_core/fushi_core.dart' show ProfileRow;
 import 'package:fushi_engine/srs/srs_db_store.dart' show srsCacheConfigFor;
@@ -23,6 +24,9 @@ import 'package:fushi/src/utils/misc/error_log_service.dart';
 /// 迁移命令的执行端（测试换成假的）。
 abstract interface class SrsGen4MigrationBackend {
   SrsGen4MigrationStatus status(String dir);
+
+  /// 旧库里全部有数据的 profile（[SrsGen4Migration.legacyProfiles]，后台 isolate）。
+  Future<List<String>> legacyProfiles(String dir);
 
   Future<SrsGen4MigrationOutcome> run(
     String dir, {
@@ -40,6 +44,10 @@ final class SrsNativeGen4MigrationBackend implements SrsGen4MigrationBackend {
 
   @override
   SrsGen4MigrationStatus status(String dir) => SrsGen4Migration.status(dir);
+
+  @override
+  Future<List<String>> legacyProfiles(String dir) =>
+      SrsGen4Migration.legacyProfiles(dir);
 
   @override
   Future<SrsGen4MigrationOutcome> run(
@@ -73,15 +81,25 @@ class SrsGen4MigrationController extends ChangeNotifier {
     required this.onCommitted,
     this.backend = const SrsNativeGen4MigrationBackend(),
     this.pollInterval = const Duration(milliseconds: 250),
+    bool Function()? databaseOpen,
+    Listenable? databaseClosing,
+    Listenable? databaseChanged,
     int Function()? nowMs,
-  }) : _nowMs = nowMs ?? (() => DateTime.now().millisecondsSinceEpoch);
+  }) : _nowMs = nowMs ?? (() => DateTime.now().millisecondsSinceEpoch),
+       _databaseOpen = databaseOpen ?? (() => true),
+       _databaseClosing = databaseClosing,
+       _databaseChanged = databaseChanged {
+    _lastCanStart = canStart;
+    _databaseClosing?.addListener(_onClosing);
+    _databaseChanged?.addListener(_onDatabaseChanged);
+  }
 
   /// 库目录（`<数据库目录>`）。
   final String directory;
 
-  /// 本机全部 profile 的 uid（主库的 profile 表）：每个都按 [srsCacheConfigFor] 交一份缓存配置。协议 3 库里另有
-  /// 主库里没有的 profile（删除时没清干净、备份并入留下的孤儿 uid）时迁移报前提不满足（[SrsGen4MigrationVerdict.blocked]
-  /// + [SrsGen4BlockedReason.precondition]，旧库没动）：旧库的 profile 列表要内核给（上游缺口，交接说明 §9.5）。
+  /// 本机全部 profile 的 uid（主库的 profile 表）。迁移给缓存配置的是它与内核列出的旧库 profile
+  /// （[SrsGen4MigrationStatus.profiles]，含主库里没有的孤儿 uid：删除没清干净、备份并入留下的）的并集，每个按
+  /// [srsCacheConfigFor] 交一份（只取决于 uid）：孤儿 profile 的卡片与日志照样迁过去，不丢。
   final Future<List<String>> Function() profileUids;
 
   /// 提交之后：让存储重开、作废缓存着错误的 provider。
@@ -90,6 +108,22 @@ class SrsGen4MigrationController extends ChangeNotifier {
   final SrsGen4MigrationBackend backend;
   final Duration pollInterval;
   final int Function() _nowMs;
+
+  /// 主库此刻开着（[AppModel.isDatabaseOpen]）。关库（覆盖恢复 / 换数据根 / 退出）一开始就置假、先于等关库前的写手：
+  /// 之后不再开始新的迁移（交接说明 §9.5 第 7 条）。启动初始化完成之前也是假。
+  final bool Function() _databaseOpen;
+
+  /// 关库开始的信号（[AppModel.databaseCloseNotifier]）：之后到主库重新开好之前算「正在关」（[databaseClosing]）。
+  final Listenable? _databaseClosing;
+
+  /// 主库状态可能变了（[AppModel] 本身：初始化 / 重新开库完成时通知）：「开始升级」能不能点随之重算，变了才通知页面。
+  final Listenable? _databaseChanged;
+
+  /// 收到过关库信号、主库还没重新开好。
+  bool _closeSignalled = false;
+
+  /// 上次通知页面时的 [canStart]（[_onDatabaseChanged] 只在它变了时通知，[AppModel] 的通知很频繁）。
+  bool _lastCanStart = true;
 
   SrsGen4MigrationPhase _phase = SrsGen4MigrationPhase.idle;
   SrsGen4MigrationProgress? _progress;
@@ -115,15 +149,24 @@ class SrsGen4MigrationController extends ChangeNotifier {
   /// 已请求取消、还没有结论。
   bool get cancelRequested => _cancelRequested;
 
+  /// 现在能开始一次迁移：没在跑、主库开着。关库开始之后（关库前的静默已经等过 / 正在等这个控制器）不再开始：不然
+  /// 迁移会跑在已关的主库与正被换掉的目录上。启动初始化完成之前也不能开始（主库的 profile 表还读不了）。
+  bool get canStart =>
+      _phase != SrsGen4MigrationPhase.running && _databaseOpen();
+
+  /// 主库正在关（收到关库信号之后、重新开好之前）：页面说明「正在关闭数据库」。只是还没初始化完（启动中）不算。
+  bool get databaseClosing => _closeSignalled && !_databaseOpen();
+
   /// 现在还能取消：在跑、没请求过、还没到提交点。
   bool get canCancel =>
       _phase == SrsGen4MigrationPhase.running &&
       !_cancelRequested &&
       (_progress?.step.cancellable ?? true);
 
-  /// 开始一次迁移（已在跑时无操作）。结论落在 [outcome] / [error]，提交了就调 [onCommitted]。
+  /// 开始一次迁移（已在跑、或主库已关 / 正在关时无操作，见 [canStart]）。结论落在 [outcome] / [error]，提交了就调
+  /// [onCommitted]。
   Future<void> start() async {
-    if (_phase == SrsGen4MigrationPhase.running) return;
+    if (!canStart) return;
     final String runId = 'gen4-${_nowMs()}';
     final Completer<void> finished = _finished = Completer<void>();
     _runId = runId;
@@ -135,9 +178,24 @@ class SrsGen4MigrationController extends ChangeNotifier {
     _notify();
     _poll = Timer.periodic(pollInterval, (_) => _pollStatus());
     try {
+      // 主库的 profile ∪ 旧库里的（内核列，含孤儿 uid；读旧库的大表，后台 isolate）。列表读不到只记日志、按主库的
+      // 给：结论以 run 为准，真缺了哪个 profile 的配置，内核拦下并点名（missingCacheConfig），旧库不动。
+      List<String> legacy = const <String>[];
+      try {
+        legacy = await backend.legacyProfiles(directory);
+      } catch (e, stack) {
+        ErrorLogService.instance.log(
+          'SrsGen4Migration.legacyProfiles',
+          e,
+          stack,
+        );
+      }
       final Map<String, Map<String, Object?>> caches =
           <String, Map<String, Object?>>{
-            for (final String uid in await profileUids())
+            for (final String uid in <String>{
+              ...await profileUids(),
+              ...legacy,
+            })
               uid: srsCacheConfigFor(uid),
           };
       final SrsGen4MigrationOutcome o = await backend.run(
@@ -204,13 +262,26 @@ class SrsGen4MigrationController extends ChangeNotifier {
     _poll = null;
   }
 
+  void _onClosing() {
+    _closeSignalled = true;
+    _notify();
+  }
+
+  void _onDatabaseChanged() {
+    if (_closeSignalled && _databaseOpen()) _closeSignalled = false;
+    if (canStart != _lastCanStart) _notify();
+  }
+
   void _notify() {
+    _lastCanStart = canStart;
     if (!_disposed) notifyListeners();
   }
 
   @override
   void dispose() {
     _disposed = true;
+    _databaseClosing?.removeListener(_onClosing);
+    _databaseChanged?.removeListener(_onDatabaseChanged);
     _stopPolling();
     super.dispose();
   }
@@ -227,6 +298,12 @@ final Provider<SrsGen4MigrationController> srsGen4MigrationProvider =
       final AppModel app = ref.read(appProvider);
       final SrsGen4MigrationController c = SrsGen4MigrationController(
         directory: app.srsStorage.directory,
+        // 关库一开始 isDatabaseOpen 就为假（先于等关库前的写手）：provider 晚于关库才建、或关库之后页面还在，都开始
+        // 不了，所以只在这里登记静默就够——能开始迁移的控制器一定已经建好、登记过。重新开库完成时 AppModel 通知，
+        // 按钮随之恢复。
+        databaseOpen: () => app.isDatabaseOpen,
+        databaseClosing: app.databaseCloseNotifier,
+        databaseChanged: app,
         profileUids: () async => <String>[
           for (final ProfileRow row in await app.database.getAllProfiles())
             if (row.uid case final String uid) uid,

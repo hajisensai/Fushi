@@ -598,3 +598,124 @@ blocked 一律归 busy、去掉 `unstored` 分支、配对退回 (种类, 字段
    来自本版之前的还原，没改。「只剩封存旧库」页的文案改成「保持原样、不要用备份覆盖、带日志联系支持」，不再引导还原。
 7. **迁移中关库之后的再开始。** quiesce 之后主库已关，迁移页的「开始升级」按钮仍可点（app 未初始化时这一页通常不在
    屏上）。没加额外闸门。
+
+## 11. G7-2b 迁移前提补完（2026-11-17，分支 `pr/srs-gen4-g7-2b-migrate-preconditions`，基于 `pr/srs-gen4-switch`）
+
+补 §9.5 第 1、2、7 条。schema 不变（40019；分给本块的 40020 没用上：没有加表 / 索引），`ABI_VERSION` 不变。
+复核（同日第二轮）之后改成「在副本上补完」，下文是改完的样子。
+
+### 前提补完（`store/gen4/prepare.rs`，新步骤 `Step::Prepare`，线上 `prepare`）
+
+- 位置：`migrate::run` 拿到换代锁、读过旧库 schema、**拿到原件的写锁**（`hold_legacy`，`BEGIN IMMEDIATE`，不写）之后，
+  前提核对（`Step::Precondition`）之前。写锁从这里一直持到封存。步骤数 9 → 10。
+- `prepare::plan`（只读）：先拦补不了的——并入做到一半（`legacy::merge_marks`）、旧库里有 profile 没给缓存配置；再按
+  `legacy::preflight` + `migration_blockers` 列出要补的 profile。schema 比这一版协议 3 旧时全部 profile 都走一遍（表形态
+  不同，`preflight` 读不了）。计划为空 = 不拷副本，读快照直接开在原件上。
+- `prepare::complete`：写之前对原件 `PRAGMA quick_check`（不过 = `corrupt`）；用 SQLite 在线备份把原件逐页拷成
+  `srs.db-gen4-prepare`（`files::PREPARE_COPY`；一个读快照，含 WAL 里已提交的部分；每 4096 页看一次叫停）；在**副本**上
+  `SrsCore::open`（协议 3 的升级阶梯；空间守卫 `UPGRADE_NO_SPACE` 换成 `noSpace`）并经协议 3 分发器 `sync2_dispatch` 发与
+  旧 app 同形的命令：`migrate`（`limit` = 迁移的 `batch`）到 `done` → `dedup` 到 `done` 不为假 → `replay_pending`（带缓存
+  配置）到 `more` 不为真。每条命令之前看叫停、之后报进度 `(prepare, 已做完的 profile, 要补的 profile 数)`。拷副本前按
+  「原件 + WAL 的大小」多核一份空间，补完后按副本再核一次。之后的前提核对、灌入、对拍都开在副本的读快照上。
+- 迁移结束（不论结论）删副本；崩溃留下的由下一次迁移（取锁后先删）或 Primary 打开（`files::open_gen4` 补封之后删）删掉。
+- **原件在提交点之前逐字节不变**：叫停、panic、进程被杀、对拍中止、补完报错之后，原件都还是写它的那个协议 3 版本能打开
+  的库——包括 v3.3.0（schema 26，见下）。所以 `srs_gen4_cancelled` / `srs_gen4_failed` / `srs_gen4_aborted` 里「旧库没有任何
+  改动」仍然成立，文案不用改。
+- 提交与封存针对原件：新代库记的迁移来源是**原件**的指纹（`files::source_mark`：有身份 = 身份 + 日志水位，与以前相同；
+  原件没有协议 3 身份——从没启用过协议 3、或数据只在投影表里，身份是补完在副本里才建的——记 `NO_IDENTITY`（`-`）+ 除
+  `srs_meta` 以外全部表的内容摘要，封存只改 `srs_meta`，封存前后一致，别的写入都会改它）。`seal::seal_legacy` 接受
+  1..=29（v3.3.0 的原件封存时保持 26，`sealed_from` 记原号）；`files::finish_seal` 对比这一版旧的原件只在它就是迁移来源时
+  补封，不是就不动（与以前一样，不当「没迁移的库」拦）。报告的 `legacyIdentity` 也按原件记。
+- 只在投影表里的孤儿 uid：`migrate` 在副本里给它建本机身份并把旧行包成操作，迁移时成为新代库里的一个集合，卡片与日志
+  不丢。
+- 并入做到一半不补（D23：由冻结的旧并入代码做完，它由 Dart 驱动、带着主库那一侧的状态，归 G9-5）。
+
+### 定案
+
+- **schema 较老的旧库升级后迁移，升级只在副本上做。** v3.3.0（最新的协议 3 正式版、D2 的回退目标）是 schema 26
+  （`git show v3.3.0:native/fushi_fsrs/src/store/schema.rs`），这一版是 29：从正式版升上来的用户全部走这条路，是主路径。
+  第一轮在原件上升级，之后对拍中止 / 取消 / 崩溃，用户就回不到 v3.3.0（它遇到更新的 schema 直接拒绝打开），而这一版又没有
+  协议 3 的开库入口；复核后改成在副本上补完，原件提交前不动。代价：补完期间多占一份旧库的空间（空间核对算进去了）、
+  每次重跑都从原件重拷重补（不在半份副本上续做，与「提交点之前整个删掉从头来」一致）。
+- **不先只拉不发（BUG-4011 的推迟迁移语义没有保留）。** 协议 3 的 app 要等首次同步确认、先从同步位置收一轮才执行
+  `migrate`（`srs_sync_scheduler.dart` `ensureMigrated`），为的是只包装还没有任何设备的操作代表的旧行。补完直接在本机
+  `migrate`：多台设备、协议 3 同步从没确认过、却共享同一份旧行的用户，每台设备各自把旧行包一遍，迁到新代之后存储里是
+  两份操作流。新代派生层按 dot / 日志 ID 取操作号最小的那份（`derive.rs`），用户看到的结果不会错，只是体积与同步量多一份
+  （推测，没有实测）。补完时联网收一轮不在迁移的职责里（迁移不碰同步位置）；**交 G8 / G9 判断要不要在新代做副本收敛**。
+- 缓存配置不放进内核（§9.5 第 2 条取方案 B）：Dart `srsCacheConfigFor` 虽然只取决于 uid，但内容是内置笔记类型的代码
+  默认值（模板 / CSS / 字段，`kSrsBuiltinNoteTypes`），搬进 Rust 等于维护两份、漂移了就是对拍不过；由 Dart 按列表给最稳。
+
+### `blocked` 的机器可读 `code`（`migrate::BlockCode`）
+
+`migrating` / `busy` / `missingCacheConfig` / `mergeHalfDone` / `schemaNewer` / `notProtocol3` / `corrupt` / `noLibrary` /
+`sealedWithoutNew` / `legacyBesideNew` / `precondition`（补完之后核对仍不过，不该出现）。`Outcome::Blocked {code, reason}`，
+回包 `{verdict: "blocked", code, reason}`；本进程里同一目录已在跑也回 `migrating`。`reason` 只给人看，Dart 不再比对原文。
+旧库读不出页头 / schema 表（`SQLITE_CORRUPT` / `SQLITE_NOTADB`）在空间检查之前就报 `corrupt`；页头完好、页内坏了的由补完前的
+`quick_check` 报 `corrupt`。
+
+### 旧库的 profile 列表（§9.5 第 2 条）
+
+独立的全局命令 `gen4_migrate_profiles {dir}` → `{profiles}`（`legacy::all_profiles`：协议 3 一侧的并上只在投影表里的，缺表
+跳过；没有旧库 / 读不了 = 报错）。`gen4_migrate_status` 回到 `{state, running}`，只看文件与锁、读一行 schema，Dart 在 UI
+isolate 上轮询它。列表要读旧库的大表：每张表按 `profile_uid` 跳着取（`legacy::PROFILES_OF_TABLE_SQL`，递归 CTE 的松散
+索引扫描，每步一次「`profile_uid > 上一个`」的 `MIN`，代价 profile 数 × log(行数)；以前是 `SELECT DISTINCT
+srs_idt(profile_uid)`，对函数结果去重要整索引扫，BUG-4011 现场光修改记录就有 64.5 万行），协议 3 一侧也不再
+`UNION` 整个 `sync2_ops`。`srs_unknown_events` 没有 `profile_uid` 打头的索引（通常没几行），每步是一次全表扫描。Dart 在
+后台 isolate 调（`SrsGen4Migration.legacyProfiles`，`Isolate.run`）。
+
+### Dart
+
+- `SrsGen4MigrationStep.prepare`（第 3 步，提交点之前可取消）；`SrsGen4Migration.legacyProfiles`（后台 isolate）；
+  `SrsGen4MigrationStatus` 去掉 `profiles`；`SrsGen4MigrationOutcome.code`；`SrsGen4BlockedReason` 按 `code` 分 `migrating` /
+  `busy` / `newerBuild`（schemaNewer）/ `damaged`（corrupt、notProtocol3）/ `mergePending` / `precondition`（其余与不认识的
+  code），`retryable` 只有 migrating、busy、precondition。`kernelCodes` 与 migrate.rs `BlockCode::wire`、步骤与 `Step::wire`
+  由 Dart 测试读 Rust 源码核对；另核 `gen4_migrate_profiles` 在 kernel.rs / lib.rs 有路由、Dart 侧在 `Isolate.run` 里调。
+- 控制器：缓存配置给「主库 profile ∪ `legacyProfiles`」（列表读不到只记日志、按主库的给，缺了内核点名拦下）。`canStart` =
+  没在跑且主库开着（`AppModel.isDatabaseOpen`）；新增 `databaseClosing` = 收到过关库信号（`databaseCloseNotifier`）且主库
+  还没重新开好——启动中还没初始化完只置灰、不说「正在关闭」；控制器同时听 `AppModel` 本身（初始化 / 重新开库完成时通知），
+  `canStart` 变了才通知页面，关库再开库后按钮恢复。§9.5 第 7 条：关库后「开始升级」置灰并说明（`srs_gen4_closing`），
+  `start` 无操作。「静默在 provider 建之前也登记」没有另做：`closeDatabase` 先置 `isDatabaseOpen` 为假再等静默，provider 晚于
+  关库才建、或在静默清单拷贝之后才建的控制器都开始不了迁移；能开始迁移的控制器一定已经建好、登记过。另找启动时的登记点要
+  改 `srs_app_runtime.dart` / `app_model.dart`（别的模块的热点），闸门之后已无必要（复核认可这一论证）。
+- 页面：步骤「整理旧库」；`blocked` 每类一句（`srs_gen4_blocked_unfinished` / `_newer` / `_damaged` / `_merge`，删
+  `srs_gen4_blocked_precondition`），等一会再来的两类不给原文，其余给原文；`retryable` 的恢复「重新升级」。
+
+### 测试
+
+- Rust `store/gen4/prepare_tests.rs`（17 条）：从没同步过（`migrated_at` 为空、旧修改与旧日志在投影表）、协议 3 迁移做到
+  一半（队列有残留）、收段残留（待重放 + 待刷新缓存 + 去重作业）、**只剩待重放 / 待刷新缓存**（`migrated_at` 已写，只有
+  `migration_blockers` 判得出）、孤儿 profile（经 `gen4_migrate_profiles` 取列表、按列表给配置后提交、两个集合；只给主库配置 =
+  `missingCacheConfig` 且旧库逐字节不变）、**没有协议 3 身份的原件**（记 `NO_IDENTITY`）各一次提交、对拍全过、新代库日志条数
+  不少于旧库，且原件里补完前的状态原样（`migrated_at` 仍空、队列 / 残留表行数不变）。**v3.3.0 的库**：夹具把这一版的库去掉
+  `sync2_trust` / `sync2_trust_held`、号写回 26（26→29 的阶梯只有 v29 建这两张表，v27 / v28 只改数据；≤26 的步骤与 v3.3.0
+  逐字相同，见 `git diff v3.3.0 HEAD -- native/fushi_fsrs/src/store/schema.rs native/fushi_fsrs/src/store/sync2/schema.rs`），
+  计划 = 升级 + 全部 profile、列表命令在旧表形态上列得出、对拍与提交两步时原件逐字节不变、提交后原件只多了封存（仍是 26 的
+  表形态）；叫停 / panic 后原件仍是 26 且逐字节不变、重跑提交；子进程被杀（三个断点 × 这一版 / v3.3.0 两种库）后原件逐字节
+  不变、重跑提交；**提交点之后、封存之前被杀**（v3.3.0 原件与无身份原件）由 Primary 打开补封、清掉副本，之后原件又被写过的
+  不封、不动。页内损坏（页头与 `srs_meta` 完好、缓存表索引页坏）= `corrupt`、不拷副本、原件逐字节不变；整文件垃圾 =
+  `corrupt`；并入做到一半 = `mergeHalfDone`；就绪库计划为空、不拷副本。EXPLAIN：`PROFILES_OF_TABLE_SQL`（实现执行的同一个
+  常量）在六张有 `profile_uid` 索引的表上每一处都是 `SEARCH … INDEX / PRIMARY KEY`。`files.rs`：无身份来源按内容摘要记、封存
+  前后对得上、写入后对不上。`seal.rs`：schema 26 照封、`sealed_from` = 26，0 / 40006 拒绝。
+  `migrate_tests.rs` 改：步骤序列含 `prepare`、各拦下带 code、schema 新于这一版 = `schemaNewer`、非数字 = `notProtocol3`。
+- 变异实测（每条都让对应用例变红，复核轮全部重做）：旧 schema 一律拦下（`v == SCHEMA_VERSION`，v3.3.0 四条红）、计划去掉
+  `migration_blockers`（只剩残留那条红）、吃掉 `quick_check` 结论（页内损坏那条红）、补完不拷副本直接写原件（11 条红）、
+  封存只认 29（v3.3.0 四条红）、补封不认旧 schema（提交点后被杀那条红）、迁移来源按副本记（无身份两条红）、列 profile
+  换回 `SELECT DISTINCT srs_idt(profile_uid)`（EXPLAIN 那条红）。第一轮的：跳过补完、去掉 `dedup`、去掉 `replay_pending`、
+  列表只认协议 3 一侧、补完里不看叫停。
+- Dart：`srs_gen4_migration_test.dart`（code 与 Rust 核对、分类、retryable、状态只带 state / running、列表命令的路由与
+  isolate、步骤与 Rust 核对）、控制器测试（孤儿 uid 并集、列表读不到退回主库 profile、启动中不算正在关、关库后再开库恢复、
+  关库后不开始）、页面测试（七种 code × 两套设计、关库置灰 × 两套设计、启动中置灰不说正在关 + 再开库恢复 × 两套设计、
+  步骤 n/10）。
+
+### 已知 / 交出去的
+
+- 集成分支上 `cmd/dispatch_tests.rs::unwired_and_removed_commands_name_their_owner` 本来就红（G9-4 已把 `binding_set` 接上，
+  用例仍断言它未接线），不在本块文件边界内，没改。
+- 并入做到一半的旧库仍迁不了（`mergeHalfDone`），归 G9-5。
+- 协议 1 主库（D21）不在此列，归 G7-6。
+- 多设备、从没同步过的用户迁移后多一份操作流（见「定案」第二条），交 G8 / G9。
+- 没有协议 3 身份的原件对拍中止后，`gen4_migrate_status` 不报 `migrationFailed`（报告的 `legacyIdentity` 为空，状态命令按
+  身份认报告，算内容摘要太重不放进 UI isolate 上的状态命令），页面显示「需要升级」、重跑会再中止一次并重写报告。不丢数据，
+  只是少一个「上次失败」的提示。
+- v3.3.0 夹具是由这一版的库改出来的表形态（理由见「测试」），不是 v3.3.0 二进制建的库；v3.3.0 的协议 3 代码在别的方面
+  （例如投影的写法）与这一版的差别不在夹具里。真机 / 真实 v3.3.0 用户库的回归没做（本机没有 v3.3.0 构建）。
