@@ -11,7 +11,7 @@ import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi_music/fushi_music.dart';
 import 'package:material_ui/material_ui.dart';
 
-/// BUG-4710：`.fushiplug` 插件包拖进插件管理类页面毫无反应。
+/// BUG-4712：`.fushiplug` 插件包拖进插件管理类页面毫无反应。
 ///
 /// 根因有两层：分类层没有任何类别认 `.fushiplug`（落 unknown，静默），而安装流程
 /// 和文件选择器焊死在 `pickAndInstallMusicPlugin` 里，拖放根本没有入口可接。这里

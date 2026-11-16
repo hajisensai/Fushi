@@ -289,7 +289,7 @@ void main() {
   });
 
   testSection('dropping a .fushiplug file runs the same install flow as the '
-      'file picker (BUG-4710)', (WidgetTester tester) async {
+      'file picker (BUG-4712)', (WidgetTester tester) async {
     await pumpSection(tester);
     final Directory drops = Directory.systemTemp.createTempSync(
       'fushi-tracking-plugin-drop-',

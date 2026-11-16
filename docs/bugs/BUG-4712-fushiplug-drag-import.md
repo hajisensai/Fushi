@@ -1,4 +1,4 @@
-## BUG-4710 · .fushiplug 插件包拖进插件管理 / 音源 / 歌词来源 / 追踪插件页毫无反应，只能走文件选择器
+## BUG-4712 · .fushiplug 插件包拖进插件管理 / 音源 / 歌词来源 / 追踪插件页毫无反应，只能走文件选择器
 - **报告**：2026-11-16（维护者应用内反馈 izO74oG7IE：把 ASMR.ONE 音乐插件包拖进窗口没有任何反应）
 - **真实性**：✅ 真 bug。两层根因：
   - `fushi/lib/src/media/drag_drop/drop_classification.dart:408`（develop be81d1c091）：没有任何类别认 `.fushiplug`，拖入一律落 `unknown`，各落点静默忽略；

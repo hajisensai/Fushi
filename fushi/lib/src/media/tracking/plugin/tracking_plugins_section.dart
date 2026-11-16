@@ -165,7 +165,7 @@ class _TrackingPluginsSectionState extends State<TrackingPluginsSection> {
   }
 
   /// Inspect, confirm, install: shared by the install button ([_install]) and
-  /// files dropped on the section ([PluginPackageDropTarget], BUG-4710).
+  /// files dropped on the section ([PluginPackageDropTarget], BUG-4712).
   Future<void> _installPackage(Uint8List bytes) async {
     if (!mounted) return;
     setState(() => _busy = true);
