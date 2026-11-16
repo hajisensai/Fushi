@@ -99,7 +99,7 @@ List<SubtitleDraftCue> correctSubtitleDraftsFromOcrEvidence(
   if (tracks.isEmpty) return drafts;
   return <SubtitleDraftCue>[
     for (final SubtitleDraftCue cue in drafts)
-      if (cue.origin == null && _ocrReplacement(cue, tracks)
+      if ((cue.origin == null ? _ocrReplacement(cue, tracks) : null)
           case final String text)
         SubtitleDraftCue(
           startMs: cue.startMs,
