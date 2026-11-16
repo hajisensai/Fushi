@@ -259,6 +259,98 @@ void main() {
     });
   });
 
+  group('isVideoFrameCoverPickableSource', () {
+    test('local media file is pickable', () {
+      expect(isVideoFrameCoverPickableSource('D:/v/ep01.mkv'), isTrue);
+      expect(
+        isVideoFrameCoverPickableSource('D:/Disc/BDMV/PLAYLIST/00001.mpls'),
+        isTrue,
+      );
+    });
+
+    test('blu-ray episode virtual path is not pickable', () {
+      expect(
+        isVideoFrameCoverPickableSource('D:/Disc/BDMV/PLAYLIST/00001.p03.mpls'),
+        isFalse,
+      );
+    });
+
+    test('stream / strm / playlist manifest are not pickable', () {
+      expect(isVideoFrameCoverPickableSource(''), isFalse);
+      expect(isVideoFrameCoverPickableSource('https://x/y.mp4'), isFalse);
+      expect(isVideoFrameCoverPickableSource('D:/v/a.strm'), isFalse);
+      expect(isVideoFrameCoverPickableSource('D:/v/list.m3u8'), isFalse);
+    });
+  });
+
+  group('grabVideoFramePreviewBytes', () {
+    test('reads the preview bytes and deletes the preview file', () async {
+      final Directory dir = await Directory.systemTemp.createTemp('pr3612_a_');
+      addTearDown(() async {
+        if (dir.existsSync()) await dir.delete(recursive: true);
+      });
+      String? written;
+      final Uint8List? bytes = await grabVideoFramePreviewBytes(
+        videoPath: 'v.mkv',
+        atMs: 1000,
+        seq: 1,
+        tempDir: dir,
+        isClosed: () => false,
+        grabFrame:
+            ({
+              required String videoPath,
+              required int atMs,
+              required String outputPath,
+              required int? scaleWidth,
+            }) async {
+              File(outputPath).writeAsBytesSync(_png);
+              written = outputPath;
+              return outputPath;
+            },
+      );
+      expect(bytes, _png);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(File(written!).existsSync(), isFalse);
+      expect(dir.existsSync(), isTrue);
+    });
+
+    test(
+      'grab finishing after the dialog closed removes the temp dir',
+      () async {
+        final Directory dir = await Directory.systemTemp.createTemp(
+          'pr3612_b_',
+        );
+        addTearDown(() async {
+          if (dir.existsSync()) await dir.delete(recursive: true);
+        });
+        bool closed = false;
+        final Uint8List? bytes = await grabVideoFramePreviewBytes(
+          videoPath: 'v.mkv',
+          atMs: 1000,
+          seq: 2,
+          tempDir: dir,
+          isClosed: () => closed,
+          grabFrame:
+              ({
+                required String videoPath,
+                required int atMs,
+                required String outputPath,
+                required int? scaleWidth,
+              }) async {
+                // 弹窗关闭：目录被删；在途的抽帧随后又把目录建出来写了预览。
+                closed = true;
+                dir.deleteSync(recursive: true);
+                File(outputPath).parent.createSync(recursive: true);
+                File(outputPath).writeAsBytesSync(_png);
+                return outputPath;
+              },
+        );
+        expect(bytes, isNull);
+        expect(dir.existsSync(), isFalse);
+      },
+    );
+  });
+
   test(
     'single-video menu wires the frame picker into the manual cover path',
     () {

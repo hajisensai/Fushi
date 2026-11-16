@@ -4561,8 +4561,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           },
         ),
         // 从视频画面选封面（拍板 wb8RZZbn90）：紧跟「选择封面图片」，同一条手选落盘。
-        // 只对本地可抽帧的源出现（网络流 / .strm / 播放列表清单抽不了帧）。
-        if (isLocalFrameExtractableVideoSource(book.videoPath))
+        // 只对本地可抽帧的源出现（网络流 / .strm / 播放列表清单 / 蓝光分集虚拟路径
+        // 抽不了帧）。
+        if (isVideoFrameCoverPickableSource(book.videoPath))
           DialogQuickAction(
             label: t.video_cover_from_frame,
             icon: Icons.photo_camera_back_outlined,

@@ -15,6 +15,10 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi_engine/media/video/bluray/bluray_episode.dart'
+    show isBlurayEpisodePath;
+import 'package:fushi_engine/media/video/video_cover_extractor.dart'
+    show isLocalFrameExtractableVideoSource;
 import 'package:fushi_engine/media/video/video_duration_probe.dart';
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart'
     show extractVideoFrameViaFfmpeg;
@@ -51,6 +55,15 @@ Future<bool> pickAndApplyVideoFrameCover({
   );
 }
 
+/// 纯函数：单集菜单是否给 [videoPath] 出「从视频画面选取」入口。
+///
+/// 在「本地可抽帧」（[isLocalFrameExtractableVideoSource]）之外再排除蓝光分集的
+/// **虚拟**路径（`<n>.pNN.mpls`，[isBlurayEpisodePath]）：它不是真实文件，
+/// ffmpeg 抽帧对本地输入先查文件存在，必然失败，入口点开只会是失败态。
+bool isVideoFrameCoverPickableSource(String videoPath) =>
+    isLocalFrameExtractableVideoSource(videoPath) &&
+    !isBlurayEpisodePath(videoPath.trim());
+
 /// 打开挑帧弹窗，返回用户确认的时刻（毫秒）；null = 取消。
 ///
 /// 预览帧写进本次弹窗专属的临时目录，读成字节后立刻删文件，弹窗关闭时整个
@@ -64,29 +77,28 @@ Future<int?> showVideoFrameCoverPicker({
   final Directory tempDir = await Directory.systemTemp.createTemp(
     'fushi_frame_preview_',
   );
+  // 弹窗关掉时仍在跑的预览 ffmpeg 会把已删的目录重新建出来（抽帧前
+  // `createSync(recursive: true)`），所以在途请求回来后发现弹窗已关，
+  // 就由它自己把整个目录删掉并丢弃结果。
+  bool closed = false;
   try {
     if (!context.mounted) return null;
     return await showAppDialog<int>(
       context: context,
       builder: (_) => VideoFrameCoverPickerDialog(
         loadDurationMs: () => probeDurationMs(videoPath),
-        grabPreview: (int ms, int seq) async {
-          final String? path = await grabFrame(
-            videoPath: videoPath,
-            atMs: ms,
-            outputPath: p.join(tempDir.path, 'preview_$seq.jpg'),
-            scaleWidth: kVideoFrameCoverPreviewWidth,
-          );
-          if (path == null) return null;
-          final File file = File(path);
-          final Uint8List bytes = await file.readAsBytes();
-          // 预览字节已在内存里，文件立刻删，拖动几十次也不堆临时文件。
-          unawaited(file.delete().then((_) {}, onError: (Object _) {}));
-          return bytes;
-        },
+        grabPreview: (int ms, int seq) => grabVideoFramePreviewBytes(
+          videoPath: videoPath,
+          atMs: ms,
+          seq: seq,
+          tempDir: tempDir,
+          isClosed: () => closed,
+          grabFrame: grabFrame,
+        ),
       ),
     );
   } finally {
+    closed = true;
     await _deleteQuietly(tempDir);
   }
 }
@@ -128,6 +140,37 @@ Future<bool> applyVideoFrameCoverAt({
   } finally {
     if (tempDir != null) await _deleteQuietly(tempDir);
   }
+}
+
+/// 弹窗里的一次预览取帧：截缩略帧到 [tempDir]，读成字节后删文件。
+///
+/// 请求回来时弹窗已关（[isClosed]）就丢弃结果并删掉整个 [tempDir]——关弹窗时
+/// 删过的目录可能已被这次在途的抽帧重新建出来。
+@visibleForTesting
+Future<Uint8List?> grabVideoFramePreviewBytes({
+  required String videoPath,
+  required int atMs,
+  required int seq,
+  required Directory tempDir,
+  required bool Function() isClosed,
+  required VideoFrameFileGrabber grabFrame,
+}) async {
+  final String? path = await grabFrame(
+    videoPath: videoPath,
+    atMs: atMs,
+    outputPath: p.join(tempDir.path, 'preview_$seq.jpg'),
+    scaleWidth: kVideoFrameCoverPreviewWidth,
+  );
+  if (isClosed()) {
+    await _deleteQuietly(tempDir);
+    return null;
+  }
+  if (path == null) return null;
+  final File file = File(path);
+  final Uint8List bytes = await file.readAsBytes();
+  // 预览字节已在内存里，文件立刻删，拖动几十次也不堆临时文件。
+  unawaited(file.delete().then((_) {}, onError: (Object _) {}));
+  return bytes;
 }
 
 Future<void> _deleteQuietly(Directory dir) async {
