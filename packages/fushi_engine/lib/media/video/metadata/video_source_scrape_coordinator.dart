@@ -1406,20 +1406,21 @@ class VideoSourceScrapeCoordinator
         : _looksEpisodic(localWork, parsed)
         ? VideoMetadataMediaKind.tv
         : VideoMetadataMediaKind.movie;
+    _MediaKindSource kindSource = _mediaKindSource(
+      localWork,
+      parsed,
+      hasIdentityEvidence: kindEvidence != null,
+    );
     // 单标题蓝光盘：文件名是播放列表号（`00001.mpls`），按它解出来的「集号」不是
     // 形态证据。看播放列表本身——串着几段时长相近的正片就是剧集盘（只有「全部
     // 播放」、没有逐集播放列表），否则是电影盘（BUG-4695）。
-    // 形态只是按文件名猜的（单文件、没有已确认 / 下载身份、也不是看过结构的盘）：
-    // 离线标题索引按这个形态查不到、换一种形态却唯一精确命中时，以命中为准。
-    bool kindIsFileNameGuess = false;
     if (!localWork.isEpisodic && kindEvidence == null) {
       final VideoMetadataMediaKind? discKind = await _blurayTitleKind(
         localWork.members.single.videoPath,
       );
       if (discKind != null) {
         kind = discKind;
-      } else {
-        kindIsFileNameGuess = true;
+        kindSource = _MediaKindSource.discStructure;
       }
     }
     VideoMetadataWork? nfo =
@@ -1711,36 +1712,22 @@ class VideoSourceScrapeCoordinator
     // 唯一精确命中，再经 Fribb 换成链上两家的 id。命中后按 id 直拉，不发搜索。
     AnimeOfflineIdentity? offline;
     if (hashDecidesIdentity && hashLookup == null && !hashMappingAmbiguous) {
-      final List<SourceScrapeIssue> offlineNotes = <SourceScrapeIssue>[];
-      offline = await _identifyOffline(
+      final _OfflineIdentification? identified = await _identifyOffline(
         searchTitles,
         kind,
-        offlineNotes,
+        warnings,
         localWork,
         primaryProvider: selectedProvider,
+        // `片名 - S00E01.mkv` 这类单文件只凭文件名里的序号猜成剧集，而标题在
+        // AniDB 只对得上一部电影：序号是弱证据，标题唯一精确命中是强证据
+        // （BUG-4696）。反方向不成立：电影关键词 / 没有集号都是电影证据，标题
+        // 只对上 TV 本体时改成剧集会把剧场版绑到 TV 上（BUG-2828）。
+        adoptOtherKindAsMovie: kindSource == _MediaKindSource.fileNameEpisode,
       );
-      if (offline == null && kindIsFileNameGuess) {
-        // `片名 - S00E01.mkv` 这类单文件按文件名猜成剧集，而标题在 AniDB 只对得上
-        // 一部电影（或反过来）：文件名里的序号是弱证据，标题唯一精确命中是强证据
-        // （BUG-4696）。换形态仍查不到 / 有歧义就保留原形态与原说明。
-        final VideoMetadataMediaKind otherKind =
-            kind == VideoMetadataMediaKind.movie
-            ? VideoMetadataMediaKind.tv
-            : VideoMetadataMediaKind.movie;
-        final AnimeOfflineIdentity? retried = await _identifyOffline(
-          searchTitles,
-          otherKind,
-          <SourceScrapeIssue>[],
-          localWork,
-          primaryProvider: selectedProvider,
-        );
-        if (retried != null) {
-          offline = retried;
-          kind = otherKind;
-          offlineNotes.clear();
-        }
+      if (identified != null) {
+        offline = identified.identity;
+        kind = identified.kind;
       }
-      warnings.addAll(offlineNotes);
     }
     final List<VideoMetadataLookup> offlineLookups = <VideoMetadataLookup>[
       if (offline != null)
@@ -2946,12 +2933,15 @@ class VideoSourceScrapeCoordinator
 
   /// 离线标题索引阶段：唯一精确命中才返回身份；歧义 / 查无 / 不可用都只记一条
   /// 说明并返回 null，让在线链继续，绝不因离线数据拉不到而判整条失败。
-  Future<AnimeOfflineIdentity?> _identifyOffline(
+  /// [adoptOtherKindAsMovie]：按剧集查、标题只唯一命中一部电影时，以电影身份
+  /// 返回（形态跟着改成电影）；只有调用方的剧集形态仅凭文件名序号时才可打开。
+  Future<_OfflineIdentification?> _identifyOffline(
     List<String> titles,
     VideoMetadataMediaKind kind,
     List<SourceScrapeIssue> warnings,
     VideoSourceScrapeWork work, {
     required VideoMetadataProviderKind primaryProvider,
+    required bool adoptOtherKindAsMovie,
   }) async {
     final AnimeOfflineIdentityResolver? resolver = offlineIdentityResolver;
     if (resolver == null) return null;
@@ -2961,22 +2951,36 @@ class VideoSourceScrapeCoordinator
     );
     switch (resolution.status) {
       case AnimeOfflineIdentityStatus.matched:
-        final AnimeOfflineIdentity identity = resolution.identity!;
-        // AniDB 主源：离线索引命中的 aid 本身就是主源身份，不要求映射表有 MAL/TMDB。
-        if (!identity.hasOnlineIdentity &&
-            !_providerChain(
-              primaryProvider,
-            ).contains(VideoMetadataProviderKind.anidb)) {
-          warnings.add(
-            SourceScrapeIssue(
-              workTitle: work.title,
-              message:
-                  '离线标题索引命中 AniDB ${identity.anidbId}（${identity.matchedTitle}），但跨站映射表里没有它的 MAL/TMDB id；继续在线标题搜索。',
-            ),
+        final AnimeOfflineIdentity? identity = _usableOfflineIdentity(
+          resolution.identity!,
+          warnings,
+          work,
+          primaryProvider: primaryProvider,
+        );
+        return identity == null ? null : (identity: identity, kind: kind);
+      case AnimeOfflineIdentityStatus.onlyOtherKind:
+        final AnimeOfflineIdentity? other = resolution.otherKindIdentity;
+        if (adoptOtherKindAsMovie &&
+            kind == VideoMetadataMediaKind.tv &&
+            other != null &&
+            other.isMovie) {
+          final AnimeOfflineIdentity? identity = _usableOfflineIdentity(
+            other,
+            warnings,
+            work,
+            primaryProvider: primaryProvider,
           );
-          return null;
+          return identity == null
+              ? null
+              : (identity: identity, kind: VideoMetadataMediaKind.movie);
         }
-        return identity;
+        warnings.add(
+          SourceScrapeIssue(
+            workTitle: work.title,
+            message: '离线标题索引只命中另一种形态的条目，不自动改形态（${resolution.reason}）；继续在线标题搜索。',
+          ),
+        );
+        return null;
       case AnimeOfflineIdentityStatus.ambiguous:
         warnings.add(
           SourceScrapeIssue(
@@ -2996,6 +3000,44 @@ class VideoSourceScrapeCoordinator
       case AnimeOfflineIdentityStatus.notFound:
         return null;
     }
+  }
+
+  /// 离线命中能否直接当身份用：AniDB 主源下 aid 本身就是主源身份，不要求映射表
+  /// 有 MAL/TMDB；其他主源缺跨站 id 时记一条说明并返回 null。
+  AnimeOfflineIdentity? _usableOfflineIdentity(
+    AnimeOfflineIdentity identity,
+    List<SourceScrapeIssue> warnings,
+    VideoSourceScrapeWork work, {
+    required VideoMetadataProviderKind primaryProvider,
+  }) {
+    if (identity.hasOnlineIdentity ||
+        _providerChain(
+          primaryProvider,
+        ).contains(VideoMetadataProviderKind.anidb)) {
+      return identity;
+    }
+    warnings.add(
+      SourceScrapeIssue(
+        workTitle: work.title,
+        message:
+            '离线标题索引命中 AniDB ${identity.anidbId}（${identity.matchedTitle}），但跨站映射表里没有它的 MAL/TMDB id；继续在线标题搜索。',
+      ),
+    );
+    return null;
+  }
+
+  /// 单元形态的来源（蓝光盘结构由调用方看过播放列表后另行覆盖）。只有
+  /// [_MediaKindSource.fileNameEpisode] 是可被离线标题命中推翻的弱证据。
+  _MediaKindSource _mediaKindSource(
+    VideoSourceScrapeWork work,
+    VideoNameInfo parsed, {
+    required bool hasIdentityEvidence,
+  }) {
+    if (work.isEpisodic) return _MediaKindSource.episodicWork;
+    if (hasIdentityEvidence) return _MediaKindSource.identityEvidence;
+    if (parsed.isMovieHint) return _MediaKindSource.movieKeyword;
+    if (parsed.episode != null) return _MediaKindSource.fileNameEpisode;
+    return _MediaKindSource.noEpisodeDefault;
   }
 
   /// 多季一张卡（设计稿 B）。MAL 一个 id = 一季；本地合集出现「非首季的季号」或
@@ -6290,3 +6332,30 @@ class VideoScrapedWorkNotice {
   /// 刮出来的规范元数据（含 ids / seasons / episodes / runtimeMinutes）。
   final VideoMetadataWork metadata;
 }
+
+/// 单元形态从哪来；决定离线标题命中能不能改形态。
+enum _MediaKindSource {
+  /// 多文件剧集单元。
+  episodicWork,
+
+  /// 已确认身份 / 下载任务记下的形态。
+  identityEvidence,
+
+  /// 看过播放列表结构的蓝光盘。
+  discStructure,
+
+  /// 文件名带剧场版 / Movie 等电影关键词。
+  movieKeyword,
+
+  /// 单文件、文件名没有集号，默认按电影。
+  noEpisodeDefault,
+
+  /// 单文件、只凭文件名里的集号猜成剧集。
+  fileNameEpisode,
+}
+
+/// 离线标题索引阶段的结论：身份连同它对应的形态。
+typedef _OfflineIdentification = ({
+  AnimeOfflineIdentity identity,
+  VideoMetadataMediaKind kind,
+});

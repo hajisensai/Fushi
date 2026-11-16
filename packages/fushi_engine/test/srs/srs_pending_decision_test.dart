@@ -13,6 +13,7 @@ import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
 
 import 'support/srs_test_storage.dart';
+import 'support/srs_raw_sql.dart';
 
 const String kProfile = '01928c3e-0000-7000-8000-0000000000e1';
 
@@ -24,12 +25,8 @@ void main() {
     st = await openTestSrsStorage();
   });
 
-  Future<SrsDbStore> open() => SrsDbStore.open(
-    db: st.db,
-    core: st.core,
-    profileUid: kProfile,
-    deviceId: 'dev',
-  );
+  Future<SrsDbStore> open() =>
+      SrsDbStore.open(core: st.core, profileUid: kProfile, deviceId: 'dev');
 
   String lapis(String key) => srsLapisFieldId(kProfile, key);
 
@@ -74,7 +71,7 @@ void main() {
     final SrsDbStore reopened = await open();
     expect(await reopened.notesPendingDecision(), isEmpty);
     final String json =
-        (await st.db
+        (await st.core
                 .customSelect('SELECT json FROM srs_local_state')
                 .getSingle())
             .read<String>('json');

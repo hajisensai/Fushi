@@ -313,7 +313,6 @@ srsStoreProvider = FutureProvider<SrsDbStore?>((Ref ref) async {
       return true;
     },
     () => SrsDbStore.open(
-      db: storage.db,
       core: storage.core,
       profileUid: profileUid,
       deviceId: deviceId,
