@@ -218,6 +218,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // theme_app_icon_link_test（发布到全局开关）与 mascot_glow_test（光晕层）咬住。
   'appearance/Mascot glow':
       'test/models/theme_app_icon_link_test.dart + test/utils/components/mascot_glow_test.dart',
+  // NSFW 两个开关（拍板台 w04vrhUAaX）：生效点是库页 / 继续卡的封面框（模糊）与
+  // 制卡时的卡图（模糊副本）——harness 设置页里既没有库页封面也不制卡。封面框读
+  // ShelfCoverNsfw 打模糊、制卡图片开关关 / 开的行为由 media_nsfw_test 咬住。
+  'appearance/Blur NSFW covers': 'test/media/nsfw/media_nsfw_test.dart',
+  'appearance/Blur card images too': 'test/media/nsfw/media_nsfw_test.dart',
   // 词典统一 M3E 配色：生效点在查词弹窗 WebView 里的 popup.js / popup.css，
   // harness 没有 WebView。注入接线、默认值与 CSS 层由
   // popup_dict_unified_style_test 咬住。

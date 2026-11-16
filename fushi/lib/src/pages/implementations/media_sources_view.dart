@@ -592,7 +592,7 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
                   ),
                 ),
         ),
-      // 自动扫描（v156）：启动 / 回前台时按节流自动重扫，全部来源种类都有。
+      // 自动扫描（v157）：启动 / 回前台时按节流自动重扫，全部来源种类都有。
       _SourceRowMenuAction(
         key: ValueKey<String>('media_source_auto_scan_${row.id}'),
         label: row.autoScan
@@ -1676,7 +1676,7 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     }
   }
 
-  /// 切换来源的自动扫描开关（v156）。打开时提示何时会扫；扫描本身由首页调度在下一次
+  /// 切换来源的自动扫描开关（v157）。打开时提示何时会扫；扫描本身由首页调度在下一次
   /// 启动 / 回前台时进行，这里不立即扫（要立刻扫用旁边的「重新扫描」）。
   Future<void> _toggleAutoScan(SourceLibraryRow row) async {
     final bool next = !row.autoScan;
