@@ -12,6 +12,7 @@ import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/foundation/pref_store.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_remote_title.dart';
 import 'package:fushi_engine/media/video/live_transcode.dart';
+import 'package:fushi_engine/media/video/video_source_fingerprint.dart';
 import 'package:fushi_engine/sync/ai_relay_routes.dart';
 import 'package:fushi_engine/sync/bluray_clip_relay_pool.dart';
 import 'package:fushi_engine/sync/disc_share_routes.dart';
