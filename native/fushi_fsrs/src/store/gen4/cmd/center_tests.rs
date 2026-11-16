@@ -1,0 +1,625 @@
+//! G7-4e 小命令（`center.rs`、`profile.rs`、`writes_local.rs` 的 `status` 设备行状态）的测试。
+//!
+//! **对拍**：同一个协议 3 的库（`tests.rs` 的 `library` / `library_pair`）灌进新代（`Pair::new`），同一个请求分别问协议 3
+//! 的原命令（`SrsCore::sync2_conflicts` / `sync2_checkpoints` / `sync2_undo_check` / `binding_get` /
+//! `profile_footprint`）与新代实现，结果逐键比。**别名类**：`tests_class.rs` 的双盐场景（同一条笔记两份带盐 ID），只有
+//! 新代才有。**代价**：集合大 40 倍，各条语句交出的行数不变。
+
+use std::cell::Cell;
+
+use serde_json::{Value, json};
+
+use super::center::{checkpoints, conflicts, undo_check};
+use super::profile::{binding_get, profile_footprint};
+use super::tests::{N1, N2, Pair, T0, library, library_pair};
+use super::writes_local::status;
+use super::{tests_class, writes};
+use crate::gen4::op::tests::id;
+use crate::gen4::op::{Body4, Edit4};
+use crate::store::gen4::derive::Index;
+use crate::store::gen4::derive::tests::{native, op, with};
+use crate::store::gen4::schema::{opk, sql};
+use crate::store::gen4::truth::{BindStage, Peer, Truth};
+use crate::store::sync2::tests::{DAY, P, edit};
+use crate::sync2::codec::Writer;
+use crate::sync2::id::{Id, Key};
+use crate::sync2::op::EntKind;
+
+const T1: i64 = T0 + 3 * DAY;
+const ME: [u8; 16] = [0xe4; 16];
+
+// ---------------------------------------------------------------------- 对拍
+
+/// `conflicts`：`library_pair` 的两台设备，一台删 N1、另一台并发改它（删除被扣住）。两侧逐键相同；列出的 ID 交给新代的
+/// `resolve` 找得到（同一个公式）。
+#[test]
+fn conflicts_match_protocol_3() {
+    let (a, b, mut bucket) = library_pair();
+    assert_eq!(a.core.sync2_conflicts(P).unwrap(), json!([]));
+    a.apply(T1 + 1, vec![edit("note", N1, "deleted", json!(T1 + 1))]);
+    b.apply(T1 + 2, vec![edit("note", N1, "f/fa", json!("並行"))]);
+    for _ in 0..2 {
+        a.sync(&mut bucket, "loc", T1 + 3);
+        b.sync(&mut bucket, "loc", T1 + 3);
+    }
+    let p3 = a.core.sync2_conflicts(P).unwrap();
+    assert!(!p3.as_array().unwrap().is_empty(), "{p3}");
+    let p = Pair::new(&a);
+    let t = Truth::new(&p.g4);
+    let g4 = conflicts(&t, p.col).unwrap();
+    assert_eq!(g4, p3);
+    assert!(t.conn().is_autocommit());
+    // 新代的 `resolve` 认这个 ID。
+    t.tx(|t| t.create_self(p.col, &Id(ME), &[9; 32], None, T0))
+        .unwrap();
+    let cid = g4[0]["id"].as_str().unwrap();
+    writes::resolve(
+        &t,
+        p.col,
+        &json!({"now": T1 + 4, "conflict": cid, "delete": false}),
+    )
+    .unwrap();
+    assert_eq!(conflicts(&t, p.col).unwrap(), json!([]));
+}
+
+/// `checkpoints`：协议 3 写的两个还原点（灌进新代成了承袭日志里的操作）两侧逐键相同；没有还原点时都是空表。
+#[test]
+fn checkpoints_match_protocol_3() {
+    let a = library();
+    {
+        let p = Pair::new(&a);
+        assert_eq!(a.core.sync2_checkpoints(P).unwrap(), json!([]));
+        assert_eq!(checkpoints(&Truth::new(&p.g4), p.col).unwrap(), json!([]));
+    }
+    for (i, name) in ["before import", "manual"].into_iter().enumerate() {
+        a.core
+            .sync2_append(
+                P,
+                T1 + i as i64,
+                crate::store::sync2::checkpoint_bodies(name, "manual"),
+            )
+            .unwrap();
+    }
+    let p3 = a.core.sync2_checkpoints(P).unwrap();
+    assert_eq!(p3.as_array().unwrap().len(), 2, "{p3}");
+    let p = Pair::new(&a);
+    assert_eq!(checkpoints(&Truth::new(&p.g4), p.col).unwrap(), p3);
+}
+
+/// 新代单侧：换代之后新写的还原点（原生日志）出现在列表里、排最前；迁移照搬的本机表 `checkpoints` 里的行并进来，同一个
+/// (设备, seq) 只出一次、以真相层为准。
+#[test]
+fn checkpoints_take_new_ones_and_the_carried_table() {
+    let a = library();
+    a.core
+        .sync2_append(P, T1, crate::store::sync2::checkpoint_bodies("old", "r"))
+        .unwrap();
+    let p = Pair::new(&a);
+    let t = Truth::new(&p.g4);
+    let col = p.col;
+    let before = checkpoints(&t, col).unwrap();
+    let old = before[0].clone();
+    t.tx(|t| t.create_self(col, &Id(ME), &[9; 32], None, T0))
+        .unwrap();
+    writes::checkpoint(
+        &t,
+        col,
+        &json!({"now": T1 + DAY, "name": "new", "reason": "manual"}),
+    )
+    .unwrap();
+    // 迁移照搬的行：一条只在表里的（设备 0x77），一条与真相层同号、内容不同（真相层为准）。
+    let carried = |device: &[u8], seq: i64, wall: i64, name: &str| {
+        t.conn()
+            .execute(
+                "INSERT INTO checkpoints (col, device, seq, wall, name, reason) VALUES (?1, ?2, ?3, ?4, ?5, 'carried')",
+                rusqlite::params![col, device, seq, wall, name],
+            )
+            .unwrap();
+    };
+    carried(&[0x77; 16], 3, T0, "carried");
+    let old_dev = Id::parse(old["device"].as_str().unwrap()).unwrap();
+    carried(&old_dev.0, old["seq"].as_i64().unwrap(), 1, "stale copy");
+    let v = checkpoints(&t, col).unwrap();
+    let names: Vec<&str> = v
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|x| x["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, ["new", "old", "carried"], "{v}");
+    assert_eq!(v[0]["device"], json!(Id(ME).text()));
+    assert_eq!(v[0]["at"].as_i64().unwrap() >= T1 + DAY, true, "{v}");
+    assert_eq!(v[1], old);
+    assert_eq!(v[2]["device"], json!(Id([0x77; 16]).text()));
+}
+
+/// `undo_check`：拿协议 3 修改历史里每条 dot（含被覆盖的旧写入）各问一次，再加只按值的、dot 不存在的、dot 指向别的
+/// 实体的、旧载荷没有 dot 也没有值的，两侧逐项相同，且「能撤」「不能撤」都出现过。
+#[test]
+fn undo_check_matches_protocol_3() {
+    let a = library();
+    // N1 的字段先改再改：第一次写入已被覆盖（不能撤），第二次能撤；再一次改回第一次的值（按值能撤）。
+    a.apply(T1, vec![edit("note", N1, "f/fa", json!("x1"))]);
+    a.apply(T1 + 1, vec![edit("note", N1, "f/fa", json!("x2"))]);
+    let mut items: Vec<Value> = Vec::new();
+    for (kind, entity) in [("note", N1), ("note", N2)] {
+        let h = a.core.sync2_history(P, kind, entity).unwrap();
+        for e in h.as_array().unwrap() {
+            let Some(key) = e["key"].as_str().filter(|k| *k != "tags") else {
+                continue;
+            };
+            items.push(json!({"k": kind, "e": entity, "f": key, "w": e["device"], "s": e["seq"]}));
+            items.push(json!({"k": kind, "e": entity, "f": key, "v": e["value"]}));
+        }
+    }
+    let some = items[0].clone();
+    items.push(json!({"k": "note", "e": N1, "f": "f/fa", "w": some["w"], "s": 99_999}));
+    items.push(json!({"k": "note", "e": N2, "f": "f/fa", "w": some["w"], "s": some["s"]}));
+    items.push(json!({"k": "note", "e": N1, "f": "f/fa"}));
+    items.push(json!({"k": "note", "e": N1, "f": "f/nothing", "v": "x"}));
+    let req = json!({ "items": items });
+    let p3 = a.core.sync2_undo_check(P, &req).unwrap();
+    let p = Pair::new(&a);
+    let t = Truth::new(&p.g4);
+    let g4 = undo_check(&t, p.col, &req).unwrap();
+    assert_eq!(g4, p3);
+    let oks: Vec<bool> = g4["r"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["ok"].as_bool().unwrap())
+        .collect();
+    assert!(oks.contains(&true) && oks.contains(&false), "{g4}");
+    assert!(t.conn().is_autocommit());
+    // 坏请求照协议 3 报错。
+    assert!(undo_check(&t, p.col, &json!({})).is_err());
+    assert!(
+        undo_check(
+            &t,
+            p.col,
+            &json!({"items": [{"k": "bad", "e": N1, "f": "x"}]})
+        )
+        .is_err()
+    );
+}
+
+/// `binding_get`：没有记录时两侧都是 null；同样写成 settled 之后两侧逐键相同。
+#[test]
+fn binding_get_matches_protocol_3() {
+    let a = library();
+    let p = Pair::new(&a);
+    let t = Truth::new(&p.g4);
+    assert_eq!(
+        binding_get(&t, p.col).unwrap(),
+        a.core.binding_get(P).unwrap()
+    );
+    a.core.binding_set(P, "provisional", "join", 7).unwrap();
+    t.tx(|t| t.settle_binding(p.col, BindStage::Provisional, "join", 7))
+        .unwrap();
+    assert_eq!(
+        binding_get(&t, p.col).unwrap(),
+        a.core.binding_get(P).unwrap()
+    );
+    a.core.binding_set(P, "settled", "pick", 9).unwrap();
+    t.tx(|t| t.settle_binding(p.col, BindStage::Settled, "pick", 9))
+        .unwrap();
+    let g = binding_get(&t, p.col).unwrap();
+    assert_eq!(g, a.core.binding_get(P).unwrap());
+    assert_eq!(
+        g,
+        json!({"binding": {"state": "settled", "via": "pick", "at": 9}})
+    );
+}
+
+/// `profile_footprint`：笔记、卡、复习条数两侧相同（含删过的笔记），`rows` 都不是 0；一个绑了却没写过东西的集合与
+/// 协议 3 一个没有数据的 profile 一样全 0。
+#[test]
+fn profile_footprint_matches_protocol_3() {
+    let a = library();
+    a.apply(T1, vec![edit("note", N2, "deleted", json!(T1))]);
+    let p = Pair::new(&a);
+    // 协议 3 的规模数它自己的缓存表：按新代同一份配置先把缓存整份建好（提交；`writes_tests.rs` 的 `W::new` 同一步）。
+    {
+        let w = a.core.writer().unwrap();
+        crate::store::sync2::transport::replay_pending(
+            &w,
+            P,
+            &mut crate::store::sync2::transport::CommitBudget::unlimited(),
+        )
+        .unwrap();
+        let cfg = crate::store::caches::CacheConfig::parse(&serde_json::from_str(&p.cfg).unwrap())
+            .unwrap();
+        crate::store::caches::rebuild(&w, P, &cfg).unwrap();
+    }
+    let p3 = a.core.profile_footprint(P).unwrap();
+    let t = Truth::new(&p.g4);
+    let g4 = profile_footprint(&t, p.col).unwrap();
+    for k in ["notes", "cards", "reviews"] {
+        assert_eq!(g4[k], p3[k], "{k}: {g4} vs {p3}");
+    }
+    assert!(p3["notes"].as_i64().unwrap() > 0, "{p3}");
+    assert!(g4["rows"].as_i64().unwrap() > 0, "{g4}");
+    let empty = t
+        .tx(|t| t.bind("other-profile", &Id([0x31; 16]), "dir-x"))
+        .unwrap();
+    assert_eq!(
+        profile_footprint(&t, empty).unwrap(),
+        a.core.profile_footprint("other-profile").unwrap()
+    );
+    assert_eq!(
+        profile_footprint(&t, empty).unwrap(),
+        json!({"notes": 0, "cards": 0, "reviews": 0, "rows": 0})
+    );
+}
+
+// ---------------------------------------------------------------------- 别名类（只有新代）
+
+/// 双盐场景：两份带盐的同一条笔记被两台设备互不相见地各改一次——按类是冲突。撤销校验点名任何一份成员、用带盐的键都
+/// 先归一，按类判：有并发候选，不能撤；现值是类的胜者。
+#[test]
+fn undo_check_judges_the_whole_alias_class() {
+    with(|t, col| {
+        let w = tests_class::land(t, col);
+        let ask = |e: &Id, f: &Id, dev: u8| -> Value {
+            undo_check(
+                t,
+                col,
+                &json!({"items": [{"k": "note", "e": e.text(), "f": format!("f/{}", f.text()),
+                    "w": id(dev).text(), "s": 1}]}),
+            )
+            .unwrap()["r"][0]
+                .clone()
+        };
+        let by_member = ask(&w.note[1], &w.field[1], 0xb2);
+        let by_canon = ask(&w.c_note, &w.c_field, 0xb2);
+        assert_eq!(by_member, by_canon);
+        assert_eq!(by_member["ok"], json!(false), "{by_member}");
+        assert!(["A", "B"].contains(&by_member["cur"].as_str().unwrap()));
+        // 写入的另一份（0xb1 写在第一份成员上）也一样：类里两条都活着。
+        assert_eq!(ask(&w.note[0], &w.field[0], 0xb1)["ok"], json!(false));
+    });
+}
+
+/// 类里只剩一条活着的修改（0xb3 见过 0xb1 / 0xb2 两份之后写在第二份成员上）：用写入那份成员的号、另一份成员的号、
+/// 规范号点名同一个 dot，都能撤、现值相同。请求里的实体不先归一时，dot 那次写入（归一后是规范号）与请求对不上，会被
+/// 误判成「不能撤」——上面的双盐并发场景期望的本来就是不能撤，钉不住这一步。
+#[test]
+fn undo_check_by_any_member_finds_a_lone_write() {
+    with(|t, col| {
+        let w = tests_class::land(t, col);
+        let seen = [tests_class::base_seen(&w), (0xb1, 1), (0xb2, 1)];
+        let body = Body4::Edit(Edit4 {
+            kind: EntKind::Note,
+            entity: Key::Uuid(w.note[1]),
+            key: format!("f/{}", w.field[1].text()),
+            value: "\"C\"".into(),
+            ..crate::gen4::op::tests::native_edit()
+        });
+        t.tx(|t| {
+            let mut ix = Index::new(t, col);
+            native(t, &mut ix, col, &op(0xb3, 1, 500, &seen, &body));
+            ix.settle().map(|_| ())
+        })
+        .unwrap();
+        for (e, f) in [
+            (w.note[1], w.field[1]),
+            (w.note[0], w.field[0]),
+            (w.c_note, w.c_field),
+            (w.note[0], w.c_field),
+        ] {
+            let r = undo_check(
+                t,
+                col,
+                &json!({"items": [{"k": "note", "e": e.text(), "f": format!("f/{}", f.text()),
+                    "w": id(0xb3).text(), "s": 1}]}),
+            )
+            .unwrap();
+            assert_eq!(
+                r,
+                json!({"r": [{"ok": true, "cur": "C"}]}),
+                "{} / {}",
+                e.text(),
+                f.text()
+            );
+        }
+    });
+}
+
+/// 被扣住的删除落在带盐成员上（0xd1 没见过 0xb2 写在第二份成员上的修改就删了它）：`conflicts` 的 `entity` 是规范号，
+/// 用列出来的 ID 交给 `resolve` 找得到这条冲突，裁决后它从列表里消失（另一条待裁决的笔记还在）。
+#[test]
+fn conflicts_name_a_salted_member_by_its_class() {
+    with(|t, col| {
+        let w = tests_class::land(t, col);
+        let seen = [tests_class::base_seen(&w)];
+        let del = Body4::Edit(Edit4 {
+            kind: EntKind::Note,
+            entity: Key::Uuid(w.note[1]),
+            key: "deleted".into(),
+            value: "600".into(),
+            ..crate::gen4::op::tests::native_edit()
+        });
+        t.tx(|t| {
+            let mut ix = Index::new(t, col);
+            native(t, &mut ix, col, &op(0xd1, 1, 600, &seen, &del));
+            ix.settle().map(|_| ())
+        })
+        .unwrap();
+        let v = conflicts(t, col).unwrap();
+        let ours = |v: &Value| -> Option<Value> {
+            v.as_array()
+                .unwrap()
+                .iter()
+                .find(|r| r["by"] == json!(id(0xd1).text()))
+                .cloned()
+        };
+        let row = ours(&v).unwrap_or_else(|| panic!("{v}"));
+        assert_eq!(row["entity"], json!(w.c_note.text()), "{v}");
+        assert_eq!(row["entityKind"], json!("note"));
+        assert_eq!(row["kind"], json!("delete_edit"));
+        assert_eq!(row["at"], json!(600));
+        // 列出的 ID 交给 `resolve` 找得到（找不到时报 `no such conflict`）。裁决之后这条扣住**不会**消失：`resolve`
+        // 的恢复按规范号写（`canon_body`），扣住却按原值成员判（`weigh.rs` `weigh_holds`；`class.rs` 文件头「没有并
+        // 起来的」——扣住要不要看全类是 G7 接线时定的事）。已记进交接说明 §7.6「已知缺口」，归 S1，这里不钉这一步。
+        t.tx(|t| t.create_self(col, &Id(ME), &[9; 32], None, T0))
+            .unwrap();
+        writes::resolve(
+            t,
+            col,
+            &json!({"now": T1, "conflict": row["id"], "delete": false}),
+        )
+        .unwrap();
+    });
+}
+
+/// 双盐场景里的冲突中心：被并发改动扣住的删除列出来，`by` / `at` 是那条删除的作者与墙钟；`profile_footprint` 把同一次
+/// Anki 复习的两份带盐日志算一条。
+#[test]
+fn conflicts_and_footprint_read_by_class() {
+    with(|t, col| {
+        tests_class::land(t, col);
+        let v = conflicts(t, col).unwrap();
+        let rows = v.as_array().unwrap();
+        assert_eq!(rows.len(), 1, "{v}");
+        assert_eq!(rows[0]["entity"], json!(id(0x4e).text()));
+        assert_eq!(rows[0]["entityKind"], json!("note"));
+        assert_eq!(rows[0]["kind"], json!("delete_edit"));
+        assert_eq!(rows[0]["by"], json!(id(0xc1).text()));
+        assert_eq!(rows[0]["at"], json!(400));
+        assert_eq!(rows[0]["others"], json!(1));
+        let f = profile_footprint(t, col).unwrap();
+        assert_eq!(f["reviews"], json!(1), "{f}");
+    });
+}
+
+// ---------------------------------------------------------------------- status 的设备行状态
+
+fn waiting(t: &Truth<'_>, col: i64, dev: u8, seq: u64, deps: &[(u8, u64)]) {
+    let o = op(dev, seq, 900, deps, &note_edit(dev));
+    let mut w = Writer::new();
+    o.write(&mut w);
+    let d = t
+        .devices(col)
+        .unwrap()
+        .into_iter()
+        .find(|d| d.id == id(dev))
+        .unwrap()
+        .dev;
+    t.conn()
+        .execute(
+            "INSERT INTO op_wait (k, prev, chain, span, op) VALUES (?1, zeroblob(32), zeroblob(32), 1, ?2)",
+            rusqlite::params![opk(d, seq).unwrap(), w.into_vec()],
+        )
+        .map_err(sql)
+        .unwrap();
+}
+
+fn note_edit(dev: u8) -> Body4 {
+    Body4::Edit(Edit4 {
+        kind: EntKind::Note,
+        entity: Key::Uuid(id(0x50)),
+        key: format!("f/x{dev}"),
+        value: "\"v\"".into(),
+        ..crate::gen4::op::tests::native_edit()
+    })
+}
+
+/// 设备行的 `state` 按协议 3 的判定顺序：自己的日志缺一截 = missing（`gap`）；别人在等它还没到的操作 = missing
+/// （`blocking` 记在它头上）；自报协议低于最低读者 = upgrade；其余 ok。本机恒 ok。
+#[test]
+fn status_rows_report_gaps_blocking_and_upgrades() {
+    with(|t, col| {
+        t.tx(|t| {
+            let mut ix = Index::new(t, col);
+            for dev in [0xa1, 0xb1, 0xc1, 0xd1] {
+                native(t, &mut ix, col, &op(dev, 1, 100, &[], &note_edit(dev)));
+            }
+            ix.settle().map(|_| ())
+        })
+        .unwrap();
+        t.tx(|t| t.create_self(col, &Id(ME), &[9; 32], None, T0))
+            .unwrap();
+        // 0xa1：缺 seq 2，等着的是 seq 4。0xb1：seq 2 接得上，但依赖 0xc1 的 seq 3（本机只有 1）。
+        waiting(t, col, 0xa1, 4, &[]);
+        waiting(t, col, 0xa1, 5, &[]);
+        waiting(t, col, 0xb1, 2, &[(0xc1, 3)]);
+        // 0xd1 自报协议 3。
+        t.tx(|t| {
+            t.set_peer(
+                col,
+                &Peer {
+                    device: id(0xd1),
+                    public: [5; 32],
+                    name: Some("old".into()),
+                    ext: Some(json!({"v": 3}).to_string()),
+                    head_gen: None,
+                    first_seen: Some(T0),
+                },
+            )
+            .map(|_| ())
+        })
+        .unwrap();
+        let v = status(t, col).unwrap();
+        let row = |dev: Id| -> Value {
+            v["devices"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|r| r["device"] == json!(dev.text()))
+                .cloned()
+                .unwrap_or_else(|| panic!("no row in {v}"))
+        };
+        let a1 = row(id(0xa1));
+        assert_eq!(
+            (a1["gap"].clone(), a1["blocking"].clone()),
+            (json!(2), json!(0))
+        );
+        assert_eq!(a1["state"], json!("missing"));
+        let b1 = row(id(0xb1));
+        assert_eq!(
+            (b1["gap"].clone(), b1["blocking"].clone()),
+            (json!(0), json!(0))
+        );
+        assert_eq!(b1["state"], json!("ok"));
+        let c1 = row(id(0xc1));
+        assert_eq!(
+            (c1["gap"].clone(), c1["blocking"].clone()),
+            (json!(0), json!(1))
+        );
+        assert_eq!(c1["state"], json!("missing"));
+        let d1 = row(id(0xd1));
+        assert_eq!(d1["protocol"], json!(3));
+        assert_eq!(d1["state"], json!("upgrade"));
+        let me = row(Id(ME));
+        assert_eq!(me["state"], json!("ok"));
+        assert_eq!(v["pending"], json!(3));
+    });
+}
+
+// ---------------------------------------------------------------------- 代价
+
+thread_local! {
+    static STEPS: Cell<u64> = const { Cell::new(0) };
+}
+
+/// [f] 里一共执行了多少条 SQLite 虚拟机指令（`sqlite3_progress_handler` 每条指令回调一次）。数的是语句实际干的活，
+/// 不是交出的结果行：表扫描在 SQL 内部按 WHERE 滤掉的行同样要一条条走指令，所以「按条件过滤的全表扫」也会让它随
+/// 集合变大；走索引定位（一次 seek 一条指令，不管 B 树多深）则不变。
+fn stepped(t: &Truth<'_>, f: impl FnOnce()) -> u64 {
+    use std::os::raw::{c_int, c_void};
+    unsafe extern "C" fn tick(_: *mut c_void) -> c_int {
+        STEPS.with(|s| s.set(s.get() + 1));
+        0
+    }
+    STEPS.with(|s| s.set(0));
+    // SAFETY: 句柄来自这条活着的连接；回调不碰连接，只加线程局部计数，`f` 跑完立刻摘掉。
+    unsafe {
+        rusqlite::ffi::sqlite3_progress_handler(
+            t.conn().handle(),
+            1,
+            Some(tick),
+            std::ptr::null_mut(),
+        );
+        f();
+        rusqlite::ffi::sqlite3_progress_handler(t.conn().handle(), 0, None, std::ptr::null_mut());
+    }
+    STEPS.with(|s| s.get())
+}
+
+/// 双盐场景再加 [n] 条别的笔记修改（设备 0xf1）。
+fn grown(t: &Truth<'_>, col: i64, n: u64) {
+    t.tx(|t| {
+        let mut ix = Index::new(t, col);
+        for i in 0..n {
+            let mut b = [0x66u8; 16];
+            b[8..].copy_from_slice(&i.to_be_bytes());
+            let body = Body4::Edit(Edit4 {
+                kind: EntKind::Note,
+                entity: Key::Uuid(Id(b)),
+                key: "f/z".into(),
+                value: "\"z\"".into(),
+                ..crate::gen4::op::tests::native_edit()
+            });
+            native(
+                t,
+                &mut ix,
+                col,
+                &op(0xf1, i + 1, 2000 + i as i64, &[], &body),
+            );
+        }
+        ix.settle().map(|_| ())
+    })
+    .unwrap();
+}
+
+/// `conflicts`、`checkpoints`、`undo_check` 不随集合大小走：日志大 40 倍，执行的虚拟机指令数不变（还原点走部分索引
+/// `ops_checkpoint`、冲突走 `hold_ix`、撤销校验走一个类的寄存器）。数指令而不是交出的行，WHERE 过滤式的扫表也抓得到。
+#[test]
+fn center_reads_do_not_walk_the_collection() {
+    let measure = |n: u64| -> (u64, u64, u64) {
+        with(|t, col| {
+            let w = tests_class::land(t, col);
+            grown(t, col, n);
+            let req = json!({"items": [{"k": "note", "e": w.c_note.text(),
+                "f": format!("f/{}", w.c_field.text()), "w": id(0xb1).text(), "s": 1}]});
+            (
+                stepped(t, || {
+                    conflicts(t, col).unwrap();
+                }),
+                stepped(t, || {
+                    checkpoints(t, col).unwrap();
+                }),
+                stepped(t, || {
+                    undo_check(t, col, &req).unwrap();
+                }),
+            )
+        })
+    };
+    let small = measure(25);
+    let big = measure(1000);
+    for (s, b, what) in [
+        (small.0, big.0, "conflicts"),
+        (small.1, big.1, "checkpoints"),
+        (small.2, big.2, "undo_check"),
+    ] {
+        assert!(
+            b <= s + 2,
+            "{what}: {s} VM steps with 25 more ops, {b} with 1000"
+        );
+    }
+}
+
+/// 还原点的查询计划用部分索引 `ops_checkpoint`，不按主键区间扫这台设备的整条日志。
+#[test]
+fn checkpoints_read_only_checkpoint_rows() {
+    with(|t, _| {
+        let plan: Vec<String> = t
+            .conn()
+            .prepare(&format!(
+                "EXPLAIN QUERY PLAN SELECT k FROM ops INDEXED BY ops_checkpoint WHERE kind = {} AND k BETWEEN ?1 AND ?2",
+                crate::gen4::op::KIND_CHECKPOINT
+            ))
+            .unwrap()
+            .query_map([0i64, 0], |r| r.get::<_, String>(3))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert!(
+            plan.iter().any(|s| s.contains("ops_checkpoint")),
+            "{plan:?}"
+        );
+        // 不写 INDEXED BY 时规划器自己也选它（统计里它只有 100 行）。
+        let free: Vec<String> = t
+            .conn()
+            .prepare("EXPLAIN QUERY PLAN SELECT k FROM ops WHERE kind = 6 AND k BETWEEN ?1 AND ?2")
+            .unwrap()
+            .query_map([0i64, 0], |r| r.get::<_, String>(3))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert!(
+            free.iter().any(|s| s.contains("ops_checkpoint")),
+            "{free:?}"
+        );
+    });
+}
