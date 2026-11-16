@@ -404,15 +404,19 @@ function parseBilibiliJson(text) {
  */
 function findCueIndexAt(cues, timeMs) {
   if (!Array.isArray(cues) || !cues.length || typeof timeMs !== 'number') return -1;
+  // 轨允许时间重叠（BUG-4719）：取此刻有效的 cue 里起点最晚的那条；它已结束而起点更早的长句
+  // 还在时回落到长句。endMs 无序，所以从最后一条已开始的 cue 往前扫。
   let lo = 0;
   let hi = cues.length - 1;
-  let ans = -1;
+  let last = -1;
   while (lo <= hi) {
     const mid = (lo + hi) >> 1;
-    if (cues[mid].startMs <= timeMs) { ans = mid; lo = mid + 1; } else { hi = mid - 1; }
+    if (cues[mid].startMs <= timeMs) { last = mid; lo = mid + 1; } else { hi = mid - 1; }
   }
-  if (ans < 0) return -1;
-  return timeMs < cues[ans].endMs ? ans : -1;
+  for (let i = last; i >= 0; i--) {
+    if (timeMs < cues[i].endMs) return i;
+  }
+  return -1;
 }
 
 /**

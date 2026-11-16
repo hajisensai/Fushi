@@ -319,22 +319,20 @@ void main() {
     await tester.pumpAndSettle();
     await tester.enterText(
       find.descendant(
-        of: find.byKey(const ValueKey<String>('web_browser_form_field_0')),
+        of: find.byKey(const ValueKey<String>('fushi_form_field_0')),
         matching: find.byType(EditableText),
       ),
       'Wiki',
     );
     await tester.enterText(
       find.descendant(
-        of: find.byKey(const ValueKey<String>('web_browser_form_field_1')),
+        of: find.byKey(const ValueKey<String>('fushi_form_field_1')),
         matching: find.byType(EditableText),
       ),
       'https://wiki.example/?search=%s',
     );
     await tester.pumpAndSettle();
-    await tester.tap(
-      find.byKey(const ValueKey<String>('web_browser_form_confirm')),
-    );
+    await tester.tap(find.byKey(const ValueKey<String>('fushi_form_confirm')));
     await tester.pumpAndSettle();
 
     final List<WebBrowserCustomSearchEngine> customs =

@@ -766,6 +766,87 @@ mixin _FushiDbTagsSync on _$FushiDatabase, _FushiDbInfra {
     return true;
   });
 
+  // ── media_nsfw_flags（v156 作品级 NSFW 标记）─────────────────────────
+
+  /// 把宿主标为 / 取消 NSFW：只推进对应那只时钟（[at] 缺省取当前时刻），另一只
+  /// 原样保留，互联合并才能按 LWW 裁决并发的设 / 取消。
+  Future<void> setMediaNsfw(
+    TagHostKind kind,
+    String entryKey,
+    bool nsfw, {
+    int? at,
+  }) => transaction(() async {
+    final int now = at ?? DateTime.now().millisecondsSinceEpoch;
+    final MediaNsfwClock current = await mediaNsfwClock(kind, entryKey);
+    await into(mediaNsfwFlags).insertOnConflictUpdate(
+      MediaNsfwFlagsCompanion.insert(
+        mediaKind: kind.dbValue,
+        entryKey: entryKey,
+        nsfwAt: Value(nsfw ? now : current.nsfwAt),
+        clearedAt: Value(nsfw ? current.clearedAt : now),
+      ),
+    );
+  });
+
+  /// 宿主当前的 NSFW 时钟（没有行 = 两只戳都为 null）。
+  Future<MediaNsfwClock> mediaNsfwClock(
+    TagHostKind kind,
+    String entryKey,
+  ) async {
+    final MediaNsfwFlagRow? row =
+        await (select(mediaNsfwFlags)..where(
+              (t) =>
+                  t.mediaKind.equals(kind.dbValue) &
+                  t.entryKey.equals(entryKey),
+            ))
+            .getSingleOrNull();
+    return (nsfwAt: row?.nsfwAt, clearedAt: row?.clearedAt);
+  }
+
+  Future<bool> isMediaNsfw(TagHostKind kind, String entryKey) async =>
+      isNsfwByClock(await mediaNsfwClock(kind, entryKey));
+
+  /// 某宿主种类当前是 NSFW 的全部 entryKey（一趟批查）。
+  Future<Set<String>> nsfwEntryKeys(TagHostKind kind) async => <String>{
+    for (final MapEntry<String, MediaNsfwClock> e
+        in (await allNsfwClocksForKind(kind)).entries)
+      if (isNsfwByClock(e.value)) e.key,
+  };
+
+  /// 某宿主种类全部 NSFW 时钟（含已取消的），供互联标签同步构建本机清单。
+  Future<Map<String, MediaNsfwClock>> allNsfwClocksForKind(
+    TagHostKind kind,
+  ) async {
+    final List<MediaNsfwFlagRow> rows = await (select(
+      mediaNsfwFlags,
+    )..where((t) => t.mediaKind.equals(kind.dbValue))).get();
+    return <String, MediaNsfwClock>{
+      for (final MediaNsfwFlagRow r in rows)
+        r.entryKey: (nsfwAt: r.nsfwAt, clearedAt: r.clearedAt),
+    };
+  }
+
+  /// 把对端 NSFW 时钟并入宿主（逐戳取大）。只在合并结果与本机不同时写库，返回
+  /// 是否改了（理由同 [mergeRemotePrivacyClock]）。
+  Future<bool> mergeRemoteNsfwClock(
+    TagHostKind kind,
+    String entryKey,
+    MediaNsfwClock remote,
+  ) => transaction(() async {
+    final MediaNsfwClock local = await mediaNsfwClock(kind, entryKey);
+    final MediaNsfwClock merged = mergeNsfwClocks(local, remote);
+    if (merged == local) return false;
+    await into(mediaNsfwFlags).insertOnConflictUpdate(
+      MediaNsfwFlagsCompanion.insert(
+        mediaKind: kind.dbValue,
+        entryKey: entryKey,
+        nsfwAt: Value(merged.nsfwAt),
+        clearedAt: Value(merged.clearedAt),
+      ),
+    );
+    return true;
+  });
+
   Future<int?> _tagIdByName(String name) async {
     final BookTagRow? row =
         await (select(bookTags)
@@ -1007,6 +1088,34 @@ mixin _FushiDbTagsSync on _$FushiDatabase, _FushiDbInfra {
       cloudFolderState: TombstoneCloudFolderState.pending.dbValue,
     ),
   );
+
+  /// [writeSyncDeletionTombstone] 的批量形态（BUG-4748）：同一 [mediaType]、同一
+  /// [deletedAt] 的一批键走一个 batch（一个事务），视频库一次删上万条时不再是上万次
+  /// 独立提交。逐键语义与单条版一致（无云盘文件夹名）。
+  Future<void> writeSyncDeletionTombstones(
+    String mediaType,
+    Iterable<String> itemKeys,
+    int deletedAt,
+  ) {
+    final List<String> keys = itemKeys.toSet().toList(growable: false);
+    if (keys.isEmpty) return Future<void>.value();
+    return batch((Batch b) {
+      b.insertAllOnConflictUpdate(
+        syncDeletionTombstones,
+        <SyncDeletionTombstoneRow>[
+          for (final String key in keys)
+            SyncDeletionTombstoneRow(
+              mediaType: mediaType,
+              itemKey: key,
+              deletedAt: deletedAt,
+              remotePublishedAt: 0,
+              cloudFolderName: null,
+              cloudFolderState: TombstoneCloudFolderState.pending.dbValue,
+            ),
+        ],
+      );
+    });
+  }
 
   /// 清除某资产的删除墓碑（重新导入 / 新增同 (mediaType, itemKey) 时调，防误删复活）。
   Future<void> clearSyncDeletionTombstone(String mediaType, String itemKey) =>

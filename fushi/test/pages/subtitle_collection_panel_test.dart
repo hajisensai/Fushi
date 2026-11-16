@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -16,6 +17,8 @@ import 'package:fushi_engine/media/video/subtitle/subtitle_content_language.dart
 import 'package:fushi/src/media/video/subtitle/subtitle_version_groups.dart'
     show legacySubtitleVersionKeyOf, subtitleVersionKeyOf;
 import 'package:fushi/src/pages/implementations/subtitle_collection_panel.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
+    show FushiGlassMaterial, FushiGlassTheme;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -114,6 +117,7 @@ void main() {
     required _Search onSearch,
     Future<http.Client> Function()? httpClientFactory,
     bool withProvider = true,
+    ThemeData? theme,
   }) {
     final VideoSubtitleRegistry registry = VideoSubtitleRegistry(
       withProvider
@@ -122,6 +126,7 @@ void main() {
     );
     return TranslationProvider(
       child: MaterialApp(
+        theme: theme,
         home: Scaffold(
           body: SubtitleCollectionPanel(
             database: db,
@@ -1120,4 +1125,86 @@ void main() {
     );
     expect(host.bottom - button.bottom, lessThan(24));
   });
+
+  // 番剧匹配候选是**靠标题**区分的；同系列各季标题前缀相同，截成一行省略号后
+  // 两个 chip 显示成同一串，用户无从选系列（应用内反馈 rB3cuyTXBr）。
+  for (final (String design, ThemeData? theme) in <(String, ThemeData?)>[
+    ('MD3', null),
+    (
+      'Apple',
+      ThemeData(
+        extensions: const <ThemeExtension<dynamic>>[
+          FushiGlassTheme(FushiGlassMaterial.off, glassDesign: true),
+        ],
+      ),
+    ),
+  ]) {
+    testWidgets('$design：番剧匹配候选标题完整显示，同前缀的季能区分', (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(480, 1400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      const String season1 =
+          'Tensei shitara Slime Datta Ken: Coleus no Yume to Kanata no '
+          'Tomodachi';
+      const String season2 =
+          'Tensei shitara Slime Datta Ken: Coleus no Yume to Kanata no '
+          'Tomodachi 2nd Season';
+      final VideoBookRow member = await seedMember();
+      final MediaCollectionRow collection = await seedCollection();
+      await tester.pumpWidget(
+        wrap(
+          collection: collection,
+          member: member,
+          theme: theme,
+          httpClientFactory: () async => MockClient((
+            http.Request request,
+          ) async {
+            if (request.url.host != 'graphql.anilist.co') {
+              return http.Response('not found', 404);
+            }
+            return http.Response(
+              jsonEncode(<String, Object?>{
+                'data': <String, Object?>{
+                  'Page': <String, Object?>{
+                    'media': <Object?>[
+                      for (final (int id, String romaji)
+                          in const <(int, String)>[(1, season1), (2, season2)])
+                        <String, Object?>{
+                          'id': id,
+                          'title': <String, Object?>{'romaji': romaji},
+                        },
+                    ],
+                  },
+                },
+              }),
+              200,
+            );
+          }),
+          onSearch: (_) async =>
+              ProviderBatchResult<VideoSubtitleCandidate>.success(
+                const <VideoSubtitleCandidate>[],
+              ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+
+      for (final String title in <String>[season1, season2]) {
+        final Finder label = find.text(title);
+        expect(label, findsOneWidget, reason: '候选 chip 必须渲染出来');
+        final RenderParagraph paragraph = tester.renderObject<RenderParagraph>(
+          label,
+        );
+        expect(
+          paragraph.didExceedMaxLines,
+          isFalse,
+          reason: '「$title」被截断：同前缀的季在界面上无法区分',
+        );
+        // 整段标题都在面板宽度内（换行而不是溢出到屏外）。
+        final Rect rect = tester.getRect(label);
+        expect(rect.right, lessThanOrEqualTo(480));
+      }
+    });
+  }
 }
