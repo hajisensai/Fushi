@@ -5,7 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-import 'package:fushi/src/media/music/music_format_badge.dart';
+import 'package:fushi/src/media/music/music_local_video.dart';
 import 'package:fushi/src/media/music/music_library_data.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
@@ -13,6 +13,9 @@ import 'package:fushi/src/media/music/music_remote_tracks.dart';
 import 'package:fushi/src/media/music/music_resume.dart';
 import 'package:fushi/src/media/music/music_resume_points_watch.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/pages/implementations/music/music_mv_page.dart'
+    show openMusicTrackVideo;
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
 import 'package:fushi/src/pages/implementations/music/music_detail_chrome.dart'
     show MusicDetailHero, musicDetailHeroGap;
@@ -92,6 +95,17 @@ MusicItemMenu musicLocalTrackMenu(
           ).read(appProvider).musicSession.engine,
           () => musicPlayItemOf(track),
         ),
+        // 本地 MV（拍板台 jeNKF9u0WJ）：在视频播放页看画面（ASS 特效字幕 / 暂停识别
+        // 画面文字）。视频模块关掉时不给入口。
+        if (isMusicLocalVideoTrack(track) &&
+            _appOf(context).moduleVisibility.isEnabled(ModuleId.video))
+          MusicMenuAction(
+            id: 'watchVideo',
+            label: t.music_mv_watch_in_player,
+            icon: FushiIcons.video,
+            run: (BuildContext c) =>
+                openMusicTrackVideo(context: c, track: track),
+          ),
         MusicMenuAction(
           id: 'detail',
           label: t.music_track_detail,
@@ -495,13 +509,6 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
     MusicTrackRow track,
     MusicResumeMode mode,
   ) {
-    final String badge = musicFormatBadge(
-      codec: track.codec,
-      isLossless: track.isLossless,
-      sampleRate: track.sampleRate,
-      bitDepth: track.bitDepth,
-      bitrateKbps: track.bitrate,
-    );
     final Duration? resume = musicTrackResumeOf(
       track,
       _resume[track.trackUid],
@@ -510,7 +517,7 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
     final Text subtitle = Text(
       <String>[
         track.artistCredit ?? t.music_artist_unknown,
-        if (badge.isNotEmpty) badge,
+        ...musicLocalTrackBadges(track),
       ].join(' · '),
       maxLines: 1,
       overflow: TextOverflow.ellipsis,

@@ -268,7 +268,6 @@ Android / Windows / macOS / iOS debug/beta workflow 必须使用跨 workflow 统
 2. 预构建（同一 ref 上两条一起 dispatch；不给 `tag_name` 时两条按同一 commit 算出同一个 `v<version>` / `v<version>-beta.<seq>`，落到同一个 Release）：
 
    ```bash
-   export HTTPS_PROXY=http://127.0.0.1:34151 HTTP_PROXY=http://127.0.0.1:34151
    gh workflow run release.yml         --repo hajisensai/fushi --ref develop -f channel=formal
    gh workflow run release-desktop.yml --repo hajisensai/fushi --ref develop -f channel=formal
    ```

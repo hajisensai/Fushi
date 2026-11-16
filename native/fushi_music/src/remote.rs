@@ -260,7 +260,7 @@ fn plan_items(listing: &Listing) -> VecDeque<Item> {
             }
         }
         for f in &files {
-            if covered.contains(&f.path) || !tags::is_audio_extension(&f.ext) {
+            if covered.contains(&f.path) || !tags::is_track_extension(&f.ext) {
                 continue;
             }
             items.push(Item::Audio {
