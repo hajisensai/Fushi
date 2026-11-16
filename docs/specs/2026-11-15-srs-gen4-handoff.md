@@ -324,3 +324,68 @@ S1 没有加表或索引，本机状态行与缓存配置都放现有的 `srs_me
   `device_info` 接成 `device_hint`，各自都红。
 - 统计缓存两个失效条件各一条（去掉键里的写入代数 / 缓存层代号各自变红）；Secondary 上 `wal_checkpoint` 报只读；
   迁移中途 panic 之后登记摘掉、提前取消清掉。查询计划测试用实现执行的同一份语句常量（`CACHE_MARK_SQL` / `STORED_SQL`）。
+
+## 9. G7-5 Dart 接线（2026-11-17，分支 `pr/srs-gen4-g7-5-dart-wiring`，基于 `pr/srs-gen4-switch`）
+
+顺序：能启动 → 能迁移 → 页面。Rust 没动。
+
+### 9.1 开库
+
+- `kFushiFsrsAbiVersion` 7 → 8；`SrsCore.open(dir, mode:)` / `openInBackground` / `fromAddress` 走
+  `ffsrs_store_open_mode(dir, mode)`，参数是**库目录**（`srs4.db` 新库、`srs.db` 封存旧库、`srs.gen.lock`）。
+- 进程角色：主进程 Primary（`SrsStorageHost` 带主库），弹窗 / 查词窗 Secondary（不带主库，只读）。Secondary 遇到
+  `NotMigrated(ready)`（主进程还没建库）返回 null、不缓存；其余代际状态原样抛给页面、不缓存。`fushi_server` 只改了开库
+  调用（`SrsStorage.open(directory: support.path)`），无头状态机归 G10-3。
+- 返回码类型化（`SrsCoreException.of`）：-4 `SrsStoreNotMigrated(state)`、-5 `SrsStoreMigrating`、-6
+  `SrsStoreLegacyUnmigrated`（三者是 sealed `SrsStoreOpenBlocked`）；`SrsCoreUnwiredException{op, owner}`、
+  `SrsCoreRemovedException{op}`、`SrsProfileUnboundException{profile}`（归 G9-4）、`SrsCoreReadOnlyException`。
+  STORE_NO_SPACE(-3) 分支与 `SrsUpgradeNoSpaceException` 删了（空间不够现在是迁移结论 `noSpace`）。
+- `SrsStorage.open` 不再调 `srsMigrateLegacyStore`：主库里还有协议 1 的 `srs_entities` 且目录里两份库都没有时抛
+  `SrsLegacyMainDatabasePending`，页面给「原样保留、等后续导入」（G7-6 / D21），主库不动。
+
+### 9.2 迁移
+
+- `SrsGen4Migration.status / run / cancel`（`packages/fushi_srs/lib/src/store/srs_gen4_migration.dart`）包三条全局命令；
+  `run` 在后台 isolate 里阻塞到结论，进度靠轮询 `status.running`。提交点（`commit`）之前的步骤可取消。
+- `SrsGen4MigrationController`（`fushi/lib/src/srs/srs_gen4_migration_controller.dart`）：按主库 profile 表每个 uid 交
+  `srsCacheConfigFor(uid)`；提交后 `SrsStorageHost.reopen()` 再作废 `srsStorageProvider` / `srsStoreProvider`。进程级
+  provider，换页不丢进度。
+- 页面 `SrsGenerationView`（`srs_generation_view.dart`）：`SrsLoadErrorView` 收到 `SrsStoreOpenBlocked` /
+  `SrsLegacyMainDatabasePending` 时转过去。状态：要迁移（开始 → 步骤 n/9 + 进度条 + 取消）、结论（取消 / 被占用 / 空间
+  不够〔差多少〕/ 对拍不过〔报告路径〕/ 内核报错）、上次失败（重新升级）、只剩封存旧库（不自动重建）、别的窗口在迁移、
+  -6、协议 1 主库、非主进程（去主窗口）。MD3 / Apple 都走 `FushiPlaceholderMessage` + Fushi 按钮，错峰进场 + 按压缩放。
+
+### 9.3 调用点（`srs_db_store.dart` 等）
+
+| 调用点 | 处理 |
+|---|---|
+| `migrate` / `_sync2MigrateAll` / `beforeMigrate` / `deferMigration` | 删；`migrateLegacy` 留成空操作、`sync2Migrated` 恒 true（调度器 G8-7 改） |
+| `edits_rewrite_repr` / `compactStoredStyles` / `_styleCursor` | 删（协议 3 存储细节） |
+| `backfill_*`、`legacy_dots`（store 内） | 删 |
+| `gen4_rehearse*`、预演调度 / 预演页 / 预演测试 | 整块删（换代后没有意义） |
+| `bulk_cache` / `cache_config_set` | 新回包 `{depth}` / `{changed, settled?}`；`changed` 时作废派生缓存 |
+| 写回包 | 不再读 `marks` / `diagnostics` / `cache`；按 `changed` / `purged` / `replayed` 吸收；只改卡时记卡号进日志，其余整份作废 |
+| `stamps` | 内核拒 `stamps:true`：改成按 `(device, seq)` 读回 `edits` 行 |
+| 答题的 `hlc` | 从 `logs` 读回存下的 `hlc` |
+| `refreshKeys` | 改读 sync2 `local_state`：五个键都等于 `epoch:revision`（比原来粗、但跨进程可见；纪元变 = 整份重读） |
+| 设备号 | 开库读 `status.device`（`_sync2Open`），`identity` 归 G9-4；`isOwnWriter` 只认本机设备 |
+| 开库时的 `afterRestore` | 删（备份恢复 G11-4 自己调 `rebuildCaches`） |
+| Secondary 开库 | 跳过登记缓存配置 / 写本机状态 / 内置实体（都是写） |
+
+未接线、保留为类型化错误（不崩、页面显示「暂不可用」，不当成功）：
+
+- G9-4：`identity`（同步轮次）、`binding_set`、新 profile 建绑定——**全新安装与新建 profile 现在开不出复习库**
+  （`SrsProfileUnboundException`）。
+- G9-5：`srs_profile_merge.dart` 的 `profile_uids` / `profile_purge` / `profile_merge_*` / `meta_set_edit` / `legacy_dots`。
+- G8-7：全部同步命令、`ingest_yield`、`SrsSyncScheduler.ensureMigrated`。
+- G11-3：导入 / 导出（含 `plugin_tracking_provider`）；G11-4：`ffsrs_store_snapshot` 与备份恢复（`restore.part.dart`、
+  备份测试只改到能编过）。
+- S1 后续：`media_gc_*`；G7-6 / D21：`srs_legacy_store_migration.dart` 与它的测试。
+
+### 9.4 测试
+
+新增：`fushi/test/srs/srs_storage_host_gen4_test.dart`（开库状态机）、`srs_gen4_migration_controller_test.dart`（假执行端）、
+`srs_generation_view_test.dart`（每种状态 × MD3 / Apple、迁移全流程）；`packages/fushi_srs/test/store/srs_core_test.dart`
+改写为新代。老测试按新开库改写；协议 3 专属行为（缓存修订号 `srs_local_state.cacheRev`、推迟迁移）的用例标 `skip:` 并写
+原因；被测代码已删的（存量样式压缩、`beforeMigrate` 去重）删用例。依赖 profile 绑定（G9-4）的 store 测试在新代上会红，
+不在本模块修。
