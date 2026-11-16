@@ -1,6 +1,6 @@
 //! 身份（设计 §5.1、§5.4；规划 §1.6，G9-3）：绑定状态、并入（`Join`，种类 14）与改绑、外来数据该怎么认
-//! （[adopt_foreign]）、派生表 `join_ix`。还没有任何命令接到这里（第一段：没有生产调用方）；命令 `collection_join` /
-//! `binding_get` / `binding_set` 等由 G9-4 包。
+//! （[adopt_foreign]）、派生表 `join_ix`。命令外壳（`collection_join` / `collection_salts_add` / `collection_adopt` /
+//! `binding_set` 等）在 `cmd/identity.rs`（G9-4），绑定变化由那里交给分发器在提交后发。
 //!
 //! # 并入的方向（D27）
 //!

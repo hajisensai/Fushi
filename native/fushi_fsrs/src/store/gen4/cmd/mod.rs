@@ -11,6 +11,8 @@
 //! - [stats]：复习统计 `stats_report` / `stats_recall` / `stats_rows`（协议 3 `store/stats.rs`，同一份聚合）。
 //! - [center]：冲突中心与时间线的只读命令 `conflicts` / `checkpoints` / `undo_check`（G7-4e）。
 //! - [profile]：按集合的 `binding_get` / `profile_footprint`（G7-4e）。
+//! - [identity]：身份命令 `identity` / `binding_set` / `collection_*` / `canonical_ids` / `key_evidence` / `divergence`
+//!   （G9-4；存储层是 `store/gen4/identity.rs` 与 `truth.rs`）。
 //! - [study]：出卡与牌组计数 `study`（协议 3 `store/study.rs`，同一份排队规则；常驻会话与索引的取舍见那里的文件头）。
 //! - [preview]：评分预览 `preview`（协议 3 `sync2_preview`，同一份重放与回包；G7-4f）。
 //! - [training]：逐卡重放与训练集的直读命令——C 直出入口 `ffsrs_store_history_states` / `_stat_projection` /
@@ -55,6 +57,7 @@ pub mod browse;
 pub mod center;
 pub mod columns;
 pub mod history;
+pub mod identity;
 pub mod lineage;
 pub mod media_gc;
 pub mod preview;
@@ -76,6 +79,8 @@ mod browse_tests;
 mod center_tests;
 #[cfg(test)]
 mod dispatch_tests;
+#[cfg(test)]
+mod identity_tests;
 #[cfg(test)]
 mod study_tests;
 #[cfg(test)]

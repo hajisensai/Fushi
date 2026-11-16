@@ -5,7 +5,7 @@
 //! # 命令的三种去向（[wiring]）
 //!
 //! - [Wiring::Wired]：接到新代实现（[run] 里有它的臂）。
-//! - [Wiring::Unwired]：归别的模块接线（G9-4 身份、G8-7 同步、G9-5 并入、G11-3 导入导出），报
+//! - [Wiring::Unwired]：归别的模块接线（G8-7 同步、G9-5 并入、G11-3 导入导出），报
 //!   `kernel::UNWIRED` 开头的明确错误——不 panic、不回落到协议 3。
 //! - [Wiring::Removed]：新代不需要（派生层随写入维护、没有收段通道、没有协议 3 的存储表示），报 `kernel::REMOVED` 开头的
 //!   错误，调用方（Dart，G7-5）不再发。
@@ -15,8 +15,12 @@
 //!
 //! # 一条命令的形状
 //!
-//! - **按集合**：请求的 `profile` 经 `Truth::binding_of` 换成本机集合号；没绑定 = 明确报错（绑定由 G9-4 的身份命令建，
-//!   迁移来的库已经绑好）。本机状态行（`local_state*`）只按 profile 记，不要绑定。
+//! - **按集合**：请求的 `profile` 经 `Truth::binding_of` 换成本机集合号；没绑定 = 明确报错（绑定由迁移或身份命令
+//!   `identity` / `collection_adopt` 建，其余命令不顺手建，`cmd/identity.rs` 文件头「谁在什么时候建」）。本机状态行
+//!   （`local_state*`）只按 profile 记，不要绑定。
+//! - **改绑定的写**（`identity` 第一次建、`collection_join` / `collection_salts_add` / `collection_adopt`）：命令返回
+//!   绑定变化，[write_binding] 在写事务**提交成功之后**把它放进回包的 `bindingChanged`；回滚就没有回包、事件丢掉
+//!   （规划缺口 G-4）。
 //! - **读**（读连接）：集合号的换算与命令本体在**同一个读快照**里（`cmd::snapshot`，命令自己的快照沿用它）。浏览例外：
 //!   浏览会话要分清「在调用方的写事务里读」（`cmd/browse.rs` 文件头），所以集合号先单独换算、命令自己开快照。
 //! - **写**（写连接，[G4Core::write]）：集合号、命令本体（`cmd/writes*.rs`，自己开 SAVEPOINT）、请求带 `study` 时的排队
@@ -46,6 +50,7 @@ use serde_json::{Value, json};
 use super::cache::CFG_KEY;
 use super::cmd::{self, snapshot};
 use super::derive::{Index, Ref, Settled};
+use super::identity::BindingChanged;
 use super::ingest::{Settle, ingest_settle};
 use super::kernel::{G4Core, StatsEntry, removed, unwired};
 use super::local;
@@ -100,8 +105,16 @@ pub fn wiring(op: &str) -> Option<Wiring> {
         "seal" | "open" | "open_v1" | "seal_file" | "open_file" | "derive_key" => Wired,
         // 媒体回收（`cmd/media_gc.rs`）：待回收集合存在本机状态行里，存活引用读缓存层。
         "media_gc_queue" | "media_gc_collect" | "media_live_refs" => Wired,
-        // 身份
-        "identity" | "binding_set" => Unwired("G9-4"),
+        // 身份（G9-4，`cmd/identity.rs`）
+        "identity" | "binding_set" => Wired,
+        // 身份：新代才有的命令（协议 3 没有对应物，规划 §1.6）
+        "collection_info"
+        | "collection_join"
+        | "collection_salts_add"
+        | "collection_adopt"
+        | "canonical_ids"
+        | "key_evidence"
+        | "divergence" => Wired,
         // profile 并入 / 清除 / 旧 uid 集合
         "profile_uids"
         | "orphan_sweep_done"
@@ -197,6 +210,34 @@ fn write_col(
     f: impl FnOnce(&Truth<'_>, i64) -> Result<Value, String>,
 ) -> Result<Value, String> {
     c.write(|t| f(t, col_of(t, profile)?))
+}
+
+/// 可能改绑定的写命令（模块文件头）：[f] 返回回包与绑定变化；写事务提交成功之后才把变化放进回包的
+/// `bindingChanged`（`{"profile": uid}`）。[G4Core::write] 报错（含提交失败、命令中途 panic 被回滚）就没有回包，
+/// 事件随之丢掉。
+fn write_binding(
+    c: &G4Core,
+    f: impl FnOnce(&Truth<'_>) -> Result<(Value, Option<BindingChanged>), String>,
+) -> Result<Value, String> {
+    let (mut v, changed) = c.write(f)?;
+    if let Some(ch) = changed {
+        v["bindingChanged"] = json!({"profile": ch.profile});
+    }
+    Ok(v)
+}
+
+/// `identity`：身份已在就是一次读（读连接的快照，不排写锁，同协议 3 `sync2_identity`）；没有才进写事务建
+/// （`cmd/identity.rs` 文件头「谁在什么时候建」），在事务里重查一遍，并发的两个调用方只建一份。Secondary 上没有身份
+/// 报只读（[G4Core::write]）。
+fn identity(c: &G4Core, profile: &str, req: &Value) -> Result<Value, String> {
+    if let Some(v) = c.read(|t| cmd::identity::identity_read(t, profile))? {
+        return Ok(v);
+    }
+    let now = req
+        .get("now")
+        .and_then(Value::as_i64)
+        .ok_or("identity: missing now")?;
+    write_binding(c, |t| cmd::identity::identity_ensure(t, profile, now))
 }
 
 /// 本机写命令：命令本体 → 请求带 `study` 时排队 → 本机状态行，一个事务（模块文件头）。
@@ -325,6 +366,14 @@ fn run(
             let after = int_of(req, "aliveAfter")?;
             c.read(|t| snapshot(t, |t| cmd::media_gc::live_refs_json(t, profile, after)))?
         }
+        "collection_info" => read_col(c, profile, cmd::identity::collection_info)?,
+        "canonical_ids" => read_col(c, profile, |t, col| {
+            cmd::identity::canonical_ids(t, col, req)
+        })?,
+        "key_evidence" => read_col(c, profile, |t, col| {
+            cmd::identity::key_evidence(t, col, req)
+        })?,
+        "divergence" => read_col(c, profile, cmd::identity::divergence)?,
         // ------------------------------------------------------------ 浏览会话
         "browse_query" | "browse_rows" | "browse_ids" | "browse_targets" | "browse_close"
         | "browse_stats" | "browse_counts" | "browse_sources" | "anki_find" | "anki_dupes"
@@ -385,6 +434,19 @@ fn run(
         "digest_heal" => local_write(c, profile, req, |t, col| {
             cmd::writes_local::digest_heal(t, col, req)
         })?,
+        // ------------------------------------------------------------ 身份（cmd/identity.rs）
+        "identity" => identity(c, profile, req)?,
+        "binding_set" => write_col(c, profile, |t, col| cmd::identity::binding_set(t, col, req))?,
+        "collection_join" => write_binding(c, |t| {
+            cmd::identity::collection_join(t, col_of(t, profile)?, req)
+        })?,
+        "collection_salts_add" => write_binding(c, |t| {
+            cmd::identity::collection_salts_add(t, col_of(t, profile)?, req)
+        })?,
+        // 不要已有绑定：profile 还没绑过时确认后直接绑（「先加入」）。
+        "collection_adopt" => {
+            write_binding(c, |t| cmd::identity::collection_adopt(t, profile, req))?
+        }
         // ------------------------------------------------------------ 其余写
         "device_info" => write_col(c, profile, |t, col| {
             cmd::writes_local::device_info(t, col, req)
