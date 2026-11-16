@@ -10,6 +10,7 @@ import 'package:fushi/src/media/manga/library/online_manga_library_service.dart'
 import 'package:fushi/src/media/manga/library/online_manga_reshelf.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
 import 'package:fushi/src/media/manga/library/online_manga_shelf_sidecar.dart';
+import 'package:fushi/src/storage/data_root_migrator.dart';
 import 'package:fushi/src/storage/directory_move.dart';
 import 'package:fushi/src/storage/download_layout.dart';
 import 'package:fushi/src/storage/download_root_migrator.dart';
@@ -427,6 +428,78 @@ void main() {
 
       expect(File(p.join(mangaDir, 'a.jpg')).existsSync(), isTrue);
       expect((await db.getEpubBook('k1'))!.extractDir, mangaDir);
+    });
+
+    /// 旧根下 manga 与 music 都有内容；manga 先落地，music 失败时不能把 manga 留在
+    /// 新根（调用方失败时不切根，留下的 manga 就在一个谁都不扫的目录里）。
+    Future<({String oldRoot, String newRoot, String mangaDir})>
+    twoDomains() async {
+      final String oldRoot = p.join(temp.path, 'old');
+      final String newRoot = p.join(temp.path, 'new');
+      final String mangaDir = p.join(oldRoot, 'manga', 'k1');
+      File(p.join(mangaDir, 'manga.json'))
+        ..createSync(recursive: true)
+        ..writeAsStringSync('{}');
+      // 删书保留下来的无行目录：也必须跟着撤回，否则扫描找不回它。
+      File(p.join(oldRoot, 'manga', 'kept', 'fushi_shelf.json'))
+        ..createSync(recursive: true)
+        ..writeAsStringSync('{}');
+      File(p.join(oldRoot, 'music', 'p', 'a.flac'))
+        ..createSync(recursive: true)
+        ..writeAsStringSync('flac');
+      await insertBook('k1', mangaDir);
+      return (oldRoot: oldRoot, newRoot: newRoot, mangaDir: mangaDir);
+    }
+
+    void expectUntouched(
+      ({String oldRoot, String newRoot, String mangaDir}) fx,
+    ) {
+      expect(File(p.join(fx.mangaDir, 'manga.json')).existsSync(), isTrue);
+      expect(
+        File(
+          p.join(fx.oldRoot, 'manga', 'kept', 'fushi_shelf.json'),
+        ).existsSync(),
+        isTrue,
+      );
+      expect(
+        File(p.join(fx.oldRoot, 'music', 'p', 'a.flac')).existsSync(),
+        isTrue,
+      );
+      expect(Directory(p.join(fx.newRoot, 'manga')).existsSync(), isFalse);
+    }
+
+    test('第二个域复制失败：已落地的第一个域一并撤回，书库不动', () async {
+      final ({String oldRoot, String newRoot, String mangaDir}) fx =
+          await twoDomains();
+      // music 目标已存在 → 走合并复制；目标里同名位置是目录 → 文件改名失败。
+      Directory(
+        p.join(fx.newRoot, 'music', 'p', 'a.flac'),
+      ).createSync(recursive: true);
+
+      final DownloadRootMoveReport report = await DownloadRootMigrator(
+        database: db,
+      ).move(oldRoot: fx.oldRoot, newRoot: fx.newRoot);
+
+      expect(report.failure, DownloadRootMoveFailure.copyFailed);
+      expect(report.movedDomains, isEmpty);
+      expectUntouched(fx);
+      expect((await db.getEpubBook('k1'))!.extractDir, fx.mangaDir);
+    });
+
+    test('改书库失败：事务回滚，全部域撤回', () async {
+      final ({String oldRoot, String newRoot, String mangaDir}) fx =
+          await twoDomains();
+      DataRootMigrator.debugFailMidRebase = true;
+      addTearDown(() => DataRootMigrator.debugFailMidRebase = false);
+
+      final DownloadRootMoveReport report = await DownloadRootMigrator(
+        database: db,
+      ).move(oldRoot: fx.oldRoot, newRoot: fx.newRoot);
+
+      expect(report.failure, DownloadRootMoveFailure.databaseFailed);
+      expectUntouched(fx);
+      expect(Directory(p.join(fx.newRoot, 'music')).existsSync(), isFalse);
+      expect((await db.getEpubBook('k1'))!.extractDir, fx.mangaDir);
     });
   });
 
