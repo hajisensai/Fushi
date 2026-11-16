@@ -27,7 +27,7 @@ const KDF_MAX_BYTES: usize = 1024;
 pub(crate) const SEALED_PREFIX: &str = "sync2_sealed/";
 
 pub(crate) fn key(profile: &str, location: &str) -> String {
-    format!("{SEALED_PREFIX}{location}/{profile}")
+    format!("sync2_sealed/{location}/{profile}")
 }
 
 fn record(c: &Connection, profile: &str, location: &str) -> Result<Option<Value>, String> {

@@ -333,7 +333,8 @@ fn sealed_locations(
     profile: &str,
     out: &mut Carried,
 ) -> Result<(), String> {
-    let suffix = format!("/{profile}");
+    // 记账键 `sync2_sealed/<位置>/<profile>`（前缀已在 profile_data.rs 登记）的尾段，只用来筛选读，不是新键。
+    let suffix = ["/", profile].concat();
     let records: Vec<(String, String)> = src
         .prepare(
             "SELECT key, value FROM srs_meta WHERE substr(key, 1, length(?1)) = ?1 \
