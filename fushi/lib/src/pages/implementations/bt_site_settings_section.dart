@@ -27,6 +27,7 @@ import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
@@ -656,7 +657,7 @@ class _BtSiteEditDialogState extends State<BtSiteEditDialog> {
             ),
           ),
         ),
-        AnimatedSize(
+        FushiAnimatedSize(
           duration: duration,
           curve: FushiMotion.standard,
           alignment: Alignment.topCenter,
