@@ -3,7 +3,7 @@
 //! 整份物化，[Index::settle] 收尾时只重算这一批碰到的笔记 / 卡，两条路出来的行逐行相同（测试与 `parity.rs` 钉死）。
 //!
 //! **行值只有一份实现**：从索引拼出协议 3 那批纯函数要的输入——实体的身份记录、活着的修改行（`derive.rs`
-//! [Index::edit_lines]，冻结判定同一份拼法）、标签（[Index::tags_of]）、日志的投影行 JSON（`store/sync2` 的
+//! [Index::edit_lines_as]，冻结判定同一份拼法）、标签（[Index::tags_of]）、日志的投影行 JSON（`store/sync2` 的
 //! `log_json`）——再调同一批函数：笔记视图 / 笔记类型视图 / 卡片血统与标志（`crate::registers`）、笔记行与卡行的
 //! 列（`store/caches.rs` 的 `note_row` / `card_row` / `Material`）、重放（`crate::sync2::replay`，链尾与归属组的
 //! 选取规则 `tails_with` / `group_lineage`）、卡片状态与有效复习投影（`crate::history`）、统计归属与 Anki 副本去重
@@ -124,6 +124,7 @@ CREATE TABLE IF NOT EXISTS notes (
   PRIMARY KEY (col, id)
 ) WITHOUT ROWID;
 CREATE INDEX IF NOT EXISTS notes_type ON notes (col, note_type_id);
+CREATE INDEX IF NOT EXISTS notes_deck ON notes (col, deck_id);
 CREATE TABLE IF NOT EXISTS cards (
   col INTEGER NOT NULL,
   id NOT NULL,
@@ -153,6 +154,8 @@ CREATE TABLE IF NOT EXISTS cards (
   PRIMARY KEY (col, id)
 ) WITHOUT ROWID;
 CREATE INDEX IF NOT EXISTS cards_note ON cards (col, note_id);
+CREATE INDEX IF NOT EXISTS cards_deck ON cards (col, deck_id);
+CREATE INDEX IF NOT EXISTS cards_template ON cards (col, template_id);
 CREATE TABLE IF NOT EXISTS stats (
   col INTEGER NOT NULL,
   at INTEGER NOT NULL,
@@ -231,6 +234,10 @@ struct StatAcc {
 /// 一批卡（若干个完整的连通分量）。
 const BATCH: usize = 512;
 
+/// 别名表一次收尾里变了的 ID（连同它们前后的规范 ID）超过这么多就整层重建，不逐个找引用它们的行（[Index::moved_rows]
+/// 每个 ID 扫一遍三张表；盐集合变了这类情形整张别名表都会动）。
+const MOVES_IN_PLACE: usize = 256;
+
 /// 「前身 → 后继」链接（`historyFrom/` 键、不看值）：按卡按需查，查过的记下。
 #[derive(Default)]
 struct Links {
@@ -288,19 +295,22 @@ fn is_anki_review(l: &Log4) -> bool {
 impl<'t, 'c> Index<'t, 'c> {
     // ------------------------------------------------------------ 别名的接缝
 
-    /// 一个 ID 的规范 ID（设计 §5.3）。恒等：缓存层按原值 ID 建（文件头「别名」一节）。
-    pub fn canon(&self, id: &Ref) -> Ref {
-        id.clone()
+    /// 一个 ID 的规范 ID（设计 §5.3，别名表 `alias.rs` [Index::canonical]）。
+    pub fn canon(&self, id: &Ref) -> Result<Ref, String> {
+        self.canonical(id)
     }
 
-    /// 一个规范 ID 的别名类：它的全部原值 ID（规范 ID 自己在前）。现在只有它自己（文件头「别名」一节）。
-    pub fn class_of(&self, canon: &Ref) -> Vec<Ref> {
-        vec![canon.clone()]
+    /// 一个 ID 所在的别名类：规范 ID 在前，其后是归到它的、出现过的原值 ID（升序）。
+    pub fn class_of(&self, id: &Ref) -> Result<Vec<Ref>, String> {
+        let canon = self.canonical(id)?;
+        let mut out = vec![canon.clone()];
+        out.extend(self.members(&canon)?.into_iter().filter(|m| *m != canon));
+        Ok(out)
     }
 
     /// 文本形式的 ID（嵌在修改键 / 值里的）的规范形。
-    pub fn canon_text(&self, text: &str) -> String {
-        self.canon(&ref_of(text)).text()
+    pub fn canon_text(&self, text: &str) -> Result<String, String> {
+        Ok(self.canon(&ref_of(text))?.text())
     }
 
     // ------------------------------------------------------------ 入口
@@ -311,7 +321,8 @@ impl<'t, 'c> Index<'t, 'c> {
         };
         let v: Value =
             serde_json::from_str(&text).map_err(|e| format!("gen4 cache: bad config: {e}"))?;
-        Ok(Some(CacheConfig::parse(&v)?))
+        // 配置里的 ID 是宿主给的，可能是带盐的存量 ID、也可能没在操作里出现过：按规范 ID 物化之前先归一（文件头「别名」）。
+        Ok(Some(CacheConfig::parse(&self.canonical_config(&v)?)?))
     }
 
     /// 只重建缓存层（缓存配置变了之后调；索引不动）。在调用方的事务里。
@@ -331,6 +342,8 @@ impl<'t, 'c> Index<'t, 'c> {
     /// 整份物化（[Index::rebuild_all] 的最后一步；表已经清空）。
     pub(super) fn materialize_caches(&mut self, out: &mut Settled) -> Result<(), String> {
         self.dirt = Dirt::default();
+        self.alias_moves.clear();
+        self.writers_moved = false;
         let Some(cfg) = self.cache_config()? else {
             return Ok(());
         };
@@ -347,19 +360,35 @@ impl<'t, 'c> Index<'t, 'c> {
                 .map_err(sql)?;
             let mut out = BTreeSet::new();
             for r in rows {
-                out.insert(self.canon(&r.map_err(sql)?));
+                out.insert(self.canon(&r.map_err(sql)?)?);
             }
             out
         };
         self.cache_pass(&cfg, notes, BTreeSet::new(), true, out)
     }
 
-    /// 收尾（[Index::settle] 的最后一步）：只重算这一批碰到的。
+    /// 收尾（[Index::settle] 的最后一步）：只重算这一批碰到的。别名表还没重算（[Index::hold_aliases] 攒着）时不动、
+    /// 攒着的东西留到别名表重算之后的那次收尾：缓存行按规范 ID 建，拿旧别名表算出来的行是错的。
     pub(super) fn refresh_caches(&mut self, out: &mut Settled) -> Result<(), String> {
+        if self.aliases_stale() {
+            return Ok(());
+        }
         let dirt = std::mem::take(&mut self.dirt);
+        let moves = std::mem::take(&mut self.alias_moves);
+        let writers_moved = std::mem::take(&mut self.writers_moved);
         let Some(cfg) = self.cache_config()? else {
             return Ok(());
         };
+        if writers_moved || moves.len() > MOVES_IN_PLACE {
+            // 归回的写入者变了（按类判定的寄存器都可能变），或别名表大面积变了（盐集合变了之类）：整层重建。
+            for table in TABLES {
+                self.t
+                    .conn()
+                    .execute(&format!("DELETE FROM {table} WHERE col = ?1"), [self.col])
+                    .map_err(sql)?;
+            }
+            return self.materialize_caches(out);
+        }
         let (note, notetype, card) = (
             EntKind::Note as i64,
             EntKind::NoteType as i64,
@@ -369,7 +398,7 @@ impl<'t, 'c> Index<'t, 'c> {
         let mut types: BTreeSet<Ref> = BTreeSet::new();
         let mut cards: BTreeSet<Ref> = BTreeSet::new();
         for (kind, ent) in &dirt.entities {
-            let ent = self.canon(ent);
+            let ent = self.canon(ent)?;
             match *kind {
                 k if k == note => notes.insert(ent),
                 k if k == notetype => types.insert(ent),
@@ -378,24 +407,36 @@ impl<'t, 'c> Index<'t, 'c> {
             };
         }
         for id in &dirt.ids {
-            // 身份记录进出：按现在的定义认种类；定义没了的，按缓存里它曾经是什么认。
-            let id = self.canon(id);
-            let kinds: Vec<i64> = {
+            // 身份记录进出：按现在的定义认种类（类里任何一个成员）；定义没了的，按缓存里它曾经是什么认。
+            let id = self.canon(id)?;
+            let mut kinds: Vec<i64> = Vec::new();
+            for m in self.class_of(&id)? {
                 let mut stmt = self
                     .t
                     .conn()
                     .prepare_cached("SELECT DISTINCT kind FROM ent_ix WHERE col = ?1 AND id = ?2")
                     .map_err(sql)?;
                 let rows = stmt
-                    .query_map(params![self.col, id], |r| r.get(0))
+                    .query_map(params![self.col, m], |r| r.get(0))
                     .map_err(sql)?;
-                rows.collect::<Result<_, _>>().map_err(sql)?
-            };
+                for k in rows {
+                    kinds.push(k.map_err(sql)?);
+                }
+            }
             notes.insert(id.clone());
             types.insert(id.clone());
             if kinds.contains(&card) {
                 cards.insert(id);
             }
+        }
+        // 别名表变了（`alias.rs` 记的：变了规范 ID 的 ID 与它前后的规范 ID）：按新表的规范 ID 重看，引用过这些 ID 的
+        // 行也重看；不再是规范 ID 的那些 ID 名下的行删掉（行只按规范 ID 存）。
+        for r in &moves {
+            self.moved_rows(r, &mut notes, &mut cards)?;
+            let c = self.canon(r)?;
+            notes.insert(c.clone());
+            types.insert(c.clone());
+            cards.insert(c);
         }
         if dirt.closure {
             // 「待裁决」看删除与内容修改并不并发，答案经旧闭包：有活着的删除的笔记重看。
@@ -412,7 +453,7 @@ impl<'t, 'c> Index<'t, 'c> {
                 })
                 .map_err(sql)?;
             for r in rows {
-                notes.insert(self.canon(&r.map_err(sql)?));
+                notes.insert(self.canon(&r.map_err(sql)?)?);
             }
         }
         for t in &types {
@@ -437,9 +478,12 @@ impl<'t, 'c> Index<'t, 'c> {
 
     // ------------------------------------------------------------ 读索引
 
-    /// 一个实体（规范 ID）的定义：(种类, 身份记录的数据)。类里多个成员时取第一个有定义的。
+    /// 一个实体（规范 ID）的定义：(种类, 操作主键, 身份记录的数据，嵌的 ID 已归一)。类里不止一个成员有定义时取归一后
+    /// 规范 JSON 文本最小的、再取操作号最小的（[Index] 选一个 ID 的定义的同一个规则搬到类上，与到达顺序无关）。
     fn definition(&self, id: &Ref) -> Result<Option<(i64, i64, Value)>, String> {
-        for m in self.class_of(id) {
+        let canon = self.canon(id)?;
+        let mut best: Option<((String, crate::sync2::vv::OpId), (i64, i64, Value))> = None;
+        for m in self.class_of(&canon)? {
             let row: Option<(i64, i64)> = {
                 let mut stmt = self
                     .t
@@ -459,57 +503,34 @@ impl<'t, 'c> Index<'t, 'c> {
                 .t
                 .entry_by_key(k)?
                 .ok_or_else(|| format!("gen4 cache: entity row {k} has no op"))?;
-            if let Some(Body4::Entity { data, .. }) = body_of(&e) {
+            if let Some(Body4::Entity { kind: ek, data, .. }) = body_of(&e) {
                 // 协议 3 `project_entity` 存的就是这份数据的规范 JSON。
                 let d: Value = serde_json::from_str(&data).unwrap_or(Value::Null);
-                return Ok(Some((kind, k, d)));
+                let d = self.canonical_json(&d)?;
+                let rec = json!({"id": canon.text(), "p": "", "k": ek.wire(), "d": d}).to_string();
+                let rank = (rec, e.id);
+                if best.as_ref().is_none_or(|(b, _)| rank < *b) {
+                    best = Some((rank, (kind, k, d)));
+                }
             }
         }
-        Ok(None)
+        Ok(best.map(|(_, d)| d))
     }
 
-    /// 一个实体（规范 ID）活着的修改行（寄存器内核的输入）与其中最大的 HLC 物理时刻（没有 = 0）。
+    /// 一个实体（规范 ID）按类判定活着的修改行（寄存器内核的输入，规范形）与其中最大的 HLC 物理时刻（没有 = 0）：
+    /// `class.rs` [Index::class_lines]（文件头「别名」第 2、3 条）。
     fn live_lines(
         &mut self,
         kind: EntKind,
         id: &Ref,
     ) -> Result<(Vec<(String, Option<i64>)>, i64), String> {
-        let mut ks: Vec<i64> = Vec::new();
-        let mut states: Vec<i64> = Vec::new();
-        for m in self.class_of(id) {
-            let mut stmt = self
-                .t
-                .conn()
-                .prepare_cached(
-                    "SELECT k, state FROM reg_ix WHERE col = ?1 AND ekind = ?2 AND ent = ?3 AND state >= 0 ORDER BY key, k",
-                )
-                .map_err(sql)?;
-            let rows = stmt
-                .query_map(params![self.col, kind as i64, m], |r| {
-                    Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?))
-                })
-                .map_err(sql)?;
-            for r in rows {
-                let (k, s) = r.map_err(sql)?;
-                ks.push(k);
-                states.push(s);
-            }
-        }
-        if ks.is_empty() {
-            return Ok((Vec::new(), 0));
-        }
-        let lines = self.edit_lines(&ks, &|i| states[i] >= R_LIVE)?;
-        let top = lines.iter().map(|l| l.physical).max().unwrap_or(0);
-        Ok((
-            lines.into_iter().map(|l| (l.json, l.server_time)).collect(),
-            top,
-        ))
+        self.class_lines(kind, id)
     }
 
     /// 一条笔记（规范 ID）没被清除的标签操作里最大的 HLC 物理时刻（没有 = 0）。
     fn tag_time(&self, note: &Ref) -> Result<i64, String> {
         let mut top = 0;
-        for m in self.class_of(note) {
+        for m in self.class_of(note)? {
             let ks: Vec<i64> = {
                 let mut stmt = self
                     .t
@@ -532,33 +553,73 @@ impl<'t, 'c> Index<'t, 'c> {
         Ok(top)
     }
 
-    /// 一张卡（规范 ID）的日志：每个规范日志 ID 一条（`log_ix.win` 的代表），按 (发生时刻, 操作主键)。
+    /// 一张卡（规范 ID）的日志：每个规范日志 ID 一条，按代表的 (发生时刻, 操作主键)。代表是这个规范日志 ID 的全部
+    /// 份（类里每个原值日志 ID 落在任何卡上的每一条）里操作号最小的那条（`log_ix.win` 的规则搬到类上，设计 §5.3
+    /// `logs_of_class`）；代表落在这张卡的类里，这条日志才算这张卡的。规范日志 ID 只有一个成员时就是 `win = 1` 那条。
     fn card_logs(&self, card: &Ref) -> Result<Vec<LogIn>, String> {
-        let mut out: Vec<LogIn> = Vec::new();
-        let mut seen: HashSet<Ref> = HashSet::new();
-        for m in self.class_of(card) {
-            let rows: Vec<(i64, Ref)> = {
+        let mut reps: BTreeMap<Ref, (i64, i64)> = BTreeMap::new();
+        let class = self.class_of(card)?;
+        for m in &class {
+            let rows: Vec<(i64, Ref, i64)> = {
                 let mut stmt = self
                     .t
                     .conn()
                     .prepare_cached(
-                        "SELECT k, id FROM log_ix WHERE col = ?1 AND card = ?2 AND win = 1 ORDER BY at, k",
+                        "SELECT k, id, at FROM log_ix WHERE col = ?1 AND card = ?2 AND win = 1 ORDER BY at, k",
                     )
                     .map_err(sql)?;
                 let rows = stmt
-                    .query_map(params![self.col, m], |r| Ok((r.get(0)?, r.get(1)?)))
+                    .query_map(params![self.col, m], |r| {
+                        Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+                    })
                     .map_err(sql)?;
                 rows.collect::<Result<_, _>>().map_err(sql)?
             };
-            for (k, id) in rows {
-                let id = self.canon(&id);
-                if !seen.insert(id.clone()) {
+            for (k, id, at) in rows {
+                let canon = self.canon(&id)?;
+                if reps.contains_key(&canon) {
                     continue;
                 }
-                out.push(self.log_at(k)?);
+                let log_class = self.class_of(&canon)?;
+                let pick = if log_class.len() == 1 {
+                    Some((at, k))
+                } else {
+                    self.log_rep(&log_class, &class)?
+                };
+                if let Some(p) = pick {
+                    reps.insert(canon, p);
+                }
             }
         }
-        Ok(out)
+        let mut order: Vec<(i64, i64)> = reps.into_values().collect();
+        order.sort_unstable();
+        order.into_iter().map(|(_, k)| self.log_at(k)).collect()
+    }
+
+    /// 一个规范日志 ID（类 [log_class]）的代表：全部份里操作号最小的；它落在 [cards] 里才返回 (发生时刻, 操作主键)。
+    fn log_rep(&self, log_class: &[Ref], cards: &[Ref]) -> Result<Option<(i64, i64)>, String> {
+        let mut best: Option<(crate::sync2::vv::OpId, i64, i64, Ref)> = None;
+        for id in log_class {
+            let mut stmt = self
+                .t
+                .conn()
+                .prepare_cached("SELECT k, at, card FROM log_ix WHERE col = ?1 AND id = ?2 AND win = 1")
+                .map_err(sql)?;
+            let rows: Vec<(i64, i64, Ref)> = stmt
+                .query_map(params![self.col, id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+                .map_err(sql)?
+                .collect::<Result<_, _>>()
+                .map_err(sql)?;
+            for (k, at, card) in rows {
+                let op = self.t.id_of_key(k)?;
+                if best.as_ref().is_none_or(|b| op < b.0) {
+                    best = Some((op, k, at, card));
+                }
+            }
+        }
+        Ok(best
+            .filter(|b| cards.contains(&b.3))
+            .map(|(_, k, at, _)| (at, k)))
     }
 
     /// 一条日志操作的投影行（协议 3 `log_row` 同一份拼法）。
@@ -584,6 +645,8 @@ impl<'t, 'c> Index<'t, 'c> {
         let row = log_json("", &log_body(l), || {
             format!("{wall}:{logical}:{}", device.text())
         });
+        // 日志 ID、卡、笔记、`revokes` 归一（文件头「别名」第 3 条）：重放与统计读的是规范 ID。
+        let row = self.canonical_json(&row)?;
         Ok(LogIn {
             json: canonical(&row),
             server_time,
@@ -600,7 +663,7 @@ impl<'t, 'c> Index<'t, 'c> {
         }
         let mut succ: BTreeSet<Ref> = BTreeSet::new();
         let mut pred: BTreeSet<Ref> = BTreeSet::new();
-        for m in self.class_of(card) {
+        for m in self.class_of(card)? {
             {
                 let mut stmt = self
                     .t
@@ -620,7 +683,7 @@ impl<'t, 'c> Index<'t, 'c> {
                     )
                     .map_err(sql)?;
                 for r in rows {
-                    succ.insert(self.canon(&r.map_err(sql)?));
+                    succ.insert(self.canon(&r.map_err(sql)?)?);
                 }
             }
             let mut stmt = self
@@ -635,7 +698,7 @@ impl<'t, 'c> Index<'t, 'c> {
                 .map_err(sql)?;
             for r in rows {
                 if let Some(p) = history_from(&r.map_err(sql)?)? {
-                    pred.insert(ref_of(&self.canon_text(&p)));
+                    pred.insert(ref_of(&self.canon_text(&p)?));
                 }
             }
         }
@@ -668,7 +731,7 @@ impl<'t, 'c> Index<'t, 'c> {
     fn anki_partners(&self, cards: &BTreeSet<Ref>) -> Result<BTreeSet<Ref>, String> {
         let mut times: BTreeSet<i64> = BTreeSet::new();
         for c in cards {
-            for m in self.class_of(c) {
+            for m in self.class_of(c)? {
                 let ks: Vec<i64> = {
                     let mut stmt = self
                         .t
@@ -707,7 +770,7 @@ impl<'t, 'c> Index<'t, 'c> {
             for k in ks {
                 if let Some(l) = self.log4_at(k)? {
                     if is_anki_review(&l) {
-                        out.insert(self.canon(&Ref::of(&l.card)));
+                        out.insert(self.canon(&Ref::of(&l.card))?);
                     }
                 }
             }
@@ -738,7 +801,7 @@ impl<'t, 'c> Index<'t, 'c> {
                 .query_map([self.col], |r| r.get::<_, Ref>(0))
                 .map_err(sql)?;
             for r in rows {
-                nodes.insert(self.canon(&r.map_err(sql)?));
+                nodes.insert(self.canon(&r.map_err(sql)?)?);
             }
         }
         let mut edges: Vec<(Ref, Ref)> = Vec::new();
@@ -758,7 +821,7 @@ impl<'t, 'c> Index<'t, 'c> {
                     _ => return Err("gen4 cache: bad register key".to_owned()),
                 };
                 if let Some(p) = history_from(&key)? {
-                    let (a, b) = (self.canon(&ent), ref_of(&self.canon_text(&p)));
+                    let (a, b) = (self.canon(&ent)?, ref_of(&self.canon_text(&p)?));
                     nodes.insert(a.clone());
                     nodes.insert(b.clone());
                     edges.push((a, b));
@@ -789,30 +852,145 @@ impl<'t, 'c> Index<'t, 'c> {
     }
 
     /// 上一次物化时与 [cards] 在同一个归属关系里的卡：这些卡的日志现在归谁、这些卡名下的统计行是谁的日志。链接被撤掉
-    /// 后旧分量裂开，裂出去的那半不在新的连通分量里，但它的日志原来记在这边的卡名下——不一起重算就会丢行。
+    /// 后旧分量裂开，裂出去的那半不在新的连通分量里，但它的日志原来记在这边的卡名下——不一起重算就会丢行。统计行按
+    /// 规范日志 ID 存、日志索引按原值存，两边经别名类对上。
     fn old_partners(&self, cards: &BTreeSet<Ref>) -> Result<BTreeSet<Ref>, String> {
         let mut out = BTreeSet::new();
         for c in cards {
-            for m in self.class_of(c) {
+            // 这张卡名下的统计行的日志，现在落在哪些卡上。
+            let logs: Vec<Ref> = {
                 let mut stmt = self
                     .t
                     .conn()
-                    .prepare_cached(
-                        "SELECT DISTINCT l.card FROM stats s JOIN log_ix l ON l.col = s.col AND l.id = s.log \
-                         WHERE s.col = ?1 AND s.card = ?2 \
-                         UNION SELECT DISTINCT s.card FROM log_ix l JOIN stats s \
-                         ON s.col = l.col AND s.at = l.at AND s.log = l.id WHERE l.col = ?1 AND l.card = ?2",
-                    )
+                    .prepare_cached("SELECT log FROM stats WHERE col = ?1 AND card = ?2")
                     .map_err(sql)?;
                 let rows = stmt
-                    .query_map(params![self.col, m], |r| r.get::<_, Ref>(0))
+                    .query_map(params![self.col, c], |r| r.get::<_, Ref>(0))
                     .map_err(sql)?;
-                for r in rows {
-                    out.insert(self.canon(&r.map_err(sql)?));
+                rows.collect::<Result<_, _>>().map_err(sql)?
+            };
+            for log in logs {
+                for id in self.class_of(&log)? {
+                    let mut stmt = self
+                        .t
+                        .conn()
+                        .prepare_cached("SELECT DISTINCT card FROM log_ix WHERE col = ?1 AND id = ?2")
+                        .map_err(sql)?;
+                    let rows = stmt
+                        .query_map(params![self.col, id], |r| r.get::<_, Ref>(0))
+                        .map_err(sql)?;
+                    for r in rows {
+                        out.insert(self.canon(&r.map_err(sql)?)?);
+                    }
+                }
+            }
+            // 这张卡（类里每个成员）上的日志，统计行记在谁名下。
+            for m in self.class_of(c)? {
+                let copies: Vec<(Ref, i64)> = {
+                    let mut stmt = self
+                        .t
+                        .conn()
+                        .prepare_cached("SELECT DISTINCT id, at FROM log_ix WHERE col = ?1 AND card = ?2")
+                        .map_err(sql)?;
+                    let rows = stmt
+                        .query_map(params![self.col, m], |r| Ok((r.get(0)?, r.get(1)?)))
+                        .map_err(sql)?;
+                    rows.collect::<Result<_, _>>().map_err(sql)?
+                };
+                for (id, at) in copies {
+                    // 统计行的发生时刻就是日志的发生时刻：按主键 (col, at, log) 点读。
+                    let log = self.canon(&id)?;
+                    for owner in self.stat_owners(at, &log)? {
+                        out.insert(owner);
+                    }
                 }
             }
         }
         Ok(out)
+    }
+
+    /// 规范日志 [log]（发生在 [at]）的统计行记在谁名下。
+    fn stat_owners(&self, at: i64, log: &Ref) -> Result<Vec<Ref>, String> {
+        let mut stmt = self
+            .t
+            .conn()
+            .prepare_cached("SELECT card FROM stats WHERE col = ?1 AND at = ?2 AND log = ?3")
+            .map_err(sql)?;
+        let rows = stmt
+            .query_map(params![self.col, at, log], |r| r.get::<_, Ref>(0))
+            .map_err(sql)?;
+        rows.collect::<Result<_, _>>().map_err(sql)
+    }
+
+    /// 别名表里变了的一个 ID [r]（`alias.rs` 记的）牵动的缓存行：引用它的笔记行（ID、笔记类型、牌组）与卡行（ID、
+    /// 笔记、模板、牌组）所属的笔记进 [notes]；它名下的统计行的归属卡、它当日志时落在的卡（卡行的最后一条日志随卡重算）
+    /// 进 [cards]。它已不是规范 ID 时，它名下的笔记行、卡行、统计行删掉（行只按规范 ID 存，重算按新的规范 ID 写回）。
+    /// 每一问都是按键查（`notes_deck` / `cards_deck` / `cards_template` 三个索引就是为它建的）。
+    fn moved_rows(
+        &self,
+        r: &Ref,
+        notes: &mut BTreeSet<Ref>,
+        cards: &mut BTreeSet<Ref>,
+    ) -> Result<(), String> {
+        let conn = self.t.conn();
+        let refs = |q: &str| -> Result<Vec<Ref>, String> {
+            let mut stmt = conn.prepare_cached(q).map_err(sql)?;
+            let rows = stmt
+                .query_map(params![self.col, r], |x| x.get::<_, Ref>(0))
+                .map_err(sql)?;
+            rows.collect::<Result<_, _>>().map_err(sql)
+        };
+        for q in [
+            "SELECT id FROM notes WHERE col = ?1 AND id = ?2",
+            "SELECT id FROM notes WHERE col = ?1 AND note_type_id = ?2",
+            "SELECT id FROM notes WHERE col = ?1 AND deck_id = ?2",
+            "SELECT note_id FROM cards WHERE col = ?1 AND id = ?2",
+            "SELECT note_id FROM cards WHERE col = ?1 AND note_id = ?2",
+            "SELECT note_id FROM cards WHERE col = ?1 AND template_id = ?2",
+            "SELECT note_id FROM cards WHERE col = ?1 AND deck_id = ?2",
+        ] {
+            for n in refs(q)? {
+                notes.insert(self.canon(&n)?);
+            }
+        }
+        for c in refs("SELECT DISTINCT card FROM stats WHERE col = ?1 AND card = ?2")? {
+            cards.insert(self.canon(&c)?);
+        }
+        let copies: Vec<(Ref, i64)> = {
+            let mut stmt = conn
+                .prepare_cached("SELECT card, at FROM log_ix WHERE col = ?1 AND id = ?2")
+                .map_err(sql)?;
+            let rows = stmt
+                .query_map(params![self.col, r], |x| Ok((x.get(0)?, x.get(1)?)))
+                .map_err(sql)?;
+            rows.collect::<Result<_, _>>().map_err(sql)?
+        };
+        let gone = self.canon(r)? != *r;
+        for (card, at) in &copies {
+            cards.insert(self.canon(card)?);
+            for owner in self.stat_owners(*at, r)? {
+                cards.insert(self.canon(&owner)?);
+            }
+            if gone {
+                conn.prepare_cached("DELETE FROM stats WHERE col = ?1 AND at = ?2 AND log = ?3")
+                    .map_err(sql)?
+                    .execute(params![self.col, at, r])
+                    .map_err(sql)?;
+            }
+        }
+        if gone {
+            self.delete_note_rows(r)?;
+            for q in [
+                "DELETE FROM cards WHERE col = ?1 AND id = ?2",
+                "DELETE FROM stats WHERE col = ?1 AND card = ?2",
+            ] {
+                conn.prepare_cached(q)
+                    .map_err(sql)?
+                    .execute(params![self.col, r])
+                    .map_err(sql)?;
+            }
+        }
+        Ok(())
     }
 
     /// 一批碰到的卡扩成连通分量，再按 Anki 复习时刻与旧的归属关系扩到不动点；按分量返回。
@@ -873,6 +1051,21 @@ impl<'t, 'c> Index<'t, 'c> {
         &mut self,
         cfg: &CacheConfig,
         notes: BTreeSet<Ref>,
+        cards: BTreeSet<Ref>,
+        all: bool,
+        out: &mut Settled,
+    ) -> Result<(), String> {
+        // 归回的写入者表在这一趟里不变：按类拼行（`class.rs` [Index::class_lines]）每个实体都要它，读一次。
+        self.pass_writers = Some(self.writer_aliases()?);
+        let done = self.cache_pass_with(cfg, notes, cards, all, out);
+        self.pass_writers = None;
+        done
+    }
+
+    fn cache_pass_with(
+        &mut self,
+        cfg: &CacheConfig,
+        notes: BTreeSet<Ref>,
         mut cards: BTreeSet<Ref>,
         all: bool,
         out: &mut Settled,
@@ -915,15 +1108,18 @@ impl<'t, 'c> Index<'t, 'c> {
                 }
                 continue;
             };
-            // 协议 3 把 OR-Set 的结果写成一条合成的 `tags` 修改行再交给视图；这里直接给结果，同一个值。
-            view["t"] = json!(self.tags_of(&Key::of(&n.text()))?);
+            // 协议 3 把 OR-Set 的结果写成一条合成的 `tags` 修改行再交给视图；这里直接给结果，同一个值。类里各成员的
+            // 标签操作并起来判（文件头「别名」第 4 条）。
+            view["t"] = json!(self.class_tags(n)?);
             let info = NoteInfo::of(&n.text(), &view);
-            let tref = self.canon(&ref_of(&info.note_type));
+            let tref = self.canon(&ref_of(&info.note_type))?;
             if !types.contains_key(&tref) {
                 let ti = self.type_info(&tref, cfg)?;
                 types.insert(tref.clone(), ti);
             }
-            // 卡 ID 由笔记 ID 派生（`registers::card_id`）：笔记 ID 不是 UUID 时算不出，同不成形的身份记录。
+            // 卡 ID 由笔记 ID 派生（`registers::card_id`）：笔记 ID 不是 UUID 时算不出，同不成形的身份记录。笔记 ID 与
+            // 笔记类型视图里的模板 ID 都已是规范 ID，派生出来的就是规范卡 ID（`gen4_ids::rules::card` 同一个公式，别名表
+            // 对出现过的卡的派生判定也是它），不查表：一张从没出现在操作里的卡别名表里没有行（文件头「别名」第 1 条）。
             let Ok(row) = note_row(&info, types[&tref].as_ref()) else {
                 if !all {
                     self.delete_note_rows(n)?;
@@ -947,7 +1143,7 @@ impl<'t, 'c> Index<'t, 'c> {
                     tref,
                     info.guid,
                     info.created_at,
-                    info.deck.as_deref().map(|d| ref_of(&self.canon_text(d))),
+                    info.deck.as_deref().map(ref_of),
                     info.deleted_at,
                     row.term,
                     row.reading,
@@ -964,11 +1160,7 @@ impl<'t, 'c> Index<'t, 'c> {
                 ])
                 .map_err(sql)?;
             out.cache_notes += 1;
-            let expected: Vec<Ref> = row
-                .expected
-                .iter()
-                .map(|e| self.canon(&ref_of(&e.0)))
-                .collect();
+            let expected: Vec<Ref> = row.expected.iter().map(|e| ref_of(&e.0)).collect();
             for c in existing.iter().filter(|c| !expected.contains(c)) {
                 self.t
                     .conn()
@@ -983,7 +1175,7 @@ impl<'t, 'c> Index<'t, 'c> {
                     c,
                     Plan {
                         note: n.clone(),
-                        template: ref_of(&self.canon_text(tpl)),
+                        template: ref_of(tpl),
                         ord: *ord,
                         hidden: row.gone || *empty,
                         created: info.created_at,
@@ -1049,10 +1241,8 @@ impl<'t, 'c> Index<'t, 'c> {
         let mut preds: HashMap<String, Vec<String>> = HashMap::new();
         let mut succs: HashMap<String, Vec<String>> = HashMap::new();
         for (c, ls) in &lines {
-            let ps: Vec<String> = config::predecessors(ls)
-                .into_iter()
-                .map(|p| self.canon_text(&p))
-                .collect();
+            // 修改行已是规范形（键里的 `historyFrom/<卡>` 也归了一），前身就是规范卡 ID。
+            let ps: Vec<String> = config::predecessors(ls);
             for p in &ps {
                 succs.entry(p.clone()).or_default().push(c.clone());
             }
@@ -1231,7 +1421,7 @@ impl<'t, 'c> Index<'t, 'c> {
                     t.note,
                     t.template,
                     t.ord,
-                    ref_of(&self.canon_text(r.deck)),
+                    ref_of(r.deck),
                     r.suspended,
                     r.buried_until_day,
                     r.flag,
@@ -1245,7 +1435,7 @@ impl<'t, 'c> Index<'t, 'c> {
                     s.memory.map(|m| m.0),
                     s.memory.map(|m| m.1),
                     s.last_reviewed_at,
-                    s.last_log_id.as_deref().map(|l| ref_of(&self.canon_text(l))),
+                    s.last_log_id.as_deref().map(ref_of),
                     s.scheduler,
                     t.created,
                     r.new_position,
@@ -1290,7 +1480,7 @@ impl<'t, 'c> Index<'t, 'c> {
         for (k, o) in order.iter().enumerate() {
             let owner = ref_of(o);
             for r in history::stats_from_stored(&stored_of(&groups[o]))? {
-                let log = self.canon_text(&r.log_id);
+                let log = r.log_id.clone();
                 self.t
                     .conn()
                     .prepare_cached(

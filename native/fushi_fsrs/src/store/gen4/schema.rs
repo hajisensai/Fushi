@@ -40,8 +40,10 @@ use rusqlite::Connection;
 
 /// 新代库的 schema 号。只要求远大于协议 3 的任何一个 schema 号（最后一个是 29）；万位是代，低位是这一代里的存储版本。
 ///
-/// G7-1 起 `40006`（本机状态表、`collections` 的绑定状态列、`application_id`）。整批推送前每个改表的 PR 各自 +1。
-pub const SCHEMA: i64 = 40_006;
+/// G7-1 起 `40006`（本机状态表、`collections` 的绑定状态列、`application_id`）；G9-2 `40007`（缓存层按规范 ID 建后，
+/// 别名变了要按牌组 / 模板找回引用它的行：`notes_deck`、`cards_deck`、`cards_template` 三个索引）。整批推送前每个改表的
+/// PR 各自 +1。
+pub const SCHEMA: i64 = 40_007;
 
 /// 新代的号段从这里起：`schema` 小于它的都不是新代库（协议 3 的 1～29 与封存值 39999）。
 pub const GEN_FLOOR: i64 = 40_000;
