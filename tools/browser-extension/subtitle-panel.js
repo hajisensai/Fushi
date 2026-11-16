@@ -2055,8 +2055,13 @@
         var result = typeof window.fushiMineFromSidePanel === 'function'
           ? window.fushiMineFromSidePanel(msg.fields || {}, mineCue)
           : { ok: false, reason: 'no-queue' };
-        sendResponse(result || { ok: false });
-        return false;
+        // 入队是异步落盘（只在真写进 storage 后才 ok）：等结果再回，异步 sendResponse 要 return true。
+        Promise.resolve(result).then(function (r) {
+          sendResponse(r || { ok: false });
+        }, function () {
+          sendResponse({ ok: false, reason: 'persist-failed' });
+        });
+        return true;
       }
       return false;
     });
