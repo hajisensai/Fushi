@@ -243,7 +243,9 @@ Fushi 基于以下项目与生态：
 
 ## 许可证
 
-本项目基于 GNU General Public License v3.0 发布。详情见 [LICENSE](LICENSE)。
+本项目基于 GNU General Public License v3.0 发布，并依其第 7 条附加了条款。详情见 [LICENSE](LICENSE) 与 [ADDITIONAL_TERMS.md](ADDITIONAL_TERMS.md)。“Fushi”名称与标志不在 GPL 授权范围内，见 [TRADEMARK.md](TRADEMARK.md)。
+
+**Fushi 官方版本免费。** 如果你是付费买到的，你买的是一个免费软件，而且卖家依照 GPL 必须向你提供完整源代码。官方下载：[GitHub Releases](https://github.com/hajisensai/Fushi/releases) 与 [fushi.moe](https://fushi.moe)。
 
 ## 维护者
 
