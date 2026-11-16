@@ -8633,8 +8633,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 键盘 / 系统返回 / 手柄三条输入通道共用同一份语义，不再各写一份。
   Future<void> _handleBackOrExit() async {
     if (_dismissTopForegroundLayer()) return;
-    // 原盘会话：控制栏收着时「返回」只把它呼出来，开着时才真退出（回详情页）。
+    // 原盘会话：菜单阶段控制栏收着时「返回」只把它呼出来，开着时才真退出（回详情页）；
+    // 正片阶段「返回」回盘菜单，不退整个会话（全屏那一级在全屏路由里先退过了）。
     if (_discSessionShowBarOnBack()) return;
+    if (_discSessionReturnToMenuOnBack()) return;
     _exitVideoPage();
   }
 
