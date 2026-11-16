@@ -492,7 +492,7 @@ void main() {
     });
   });
 
-  group('BUG-4718 wouldReadImmediately 与 read 同判据', () {
+  group('BUG-4724 wouldReadImmediately 与 read 同判据', () {
     bool immediate() => cache.wouldReadImmediately(sourceId: ic, key: 'videos');
 
     test('空槽 / 新鲜值 / 过期值', () async {

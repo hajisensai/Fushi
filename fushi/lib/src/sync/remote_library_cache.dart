@@ -150,7 +150,7 @@ class RemoteLibraryCache {
   ///
   /// 与 [read] 共用同一套判据：信任期内有在途请求时 [read] 会去等它，这里就是 false
   /// ——哪怕槽里同时还有新鲜值（[peek] 只看值，口径不同，不能拿来模拟 [read]）。
-  /// 调用方据此决定等待期间要不要挂进度反馈（BUG-4718）。
+  /// 调用方据此决定等待期间要不要挂进度反馈（BUG-4724）。
   bool wouldReadImmediately({
     required String sourceId,
     required String key,
