@@ -6,6 +6,8 @@ import 'package:fushi_dictionary/fushi_dictionary.dart'
     show DictionarySearchResult, FushiRubySpan, shiftRubySpans;
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/floating_ball/screen_ocr_card_image.dart';
+import 'package:fushi/src/mining/cross_app_audio/cross_app_audio_clip.dart'
+    show CrossAppAudioSnapshot;
 import 'package:fushi/src/lookup/lookup_ime_binding.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart'
     show
@@ -51,6 +53,7 @@ class PopupDictionaryPage extends ConsumerStatefulWidget {
     this.sourceBlock,
     this.sourceBlockOffset = -1,
     this.cardImage,
+    this.miningAudio,
     this.anchorRect,
     this.subtitleWindowRect,
     this.closeInApp,
@@ -81,6 +84,10 @@ class PopupDictionaryPage extends ConsumerStatefulWidget {
   /// 反馈 Gz7z6Y6Mbr：截屏识字这次点字的卡图来源（定格帧文件 + 文本块），制卡时裁成
   /// 卡图（[DictionaryPageMixin.miningCardImage]）。其它入口为 null。
   final ScreenOcrCardImage? cardImage;
+
+  /// 跨应用语音挖掘（拍板 oqk37s3QFL）：这次查词那一刻落下的最近一段其他 app 声音
+  /// （宿主在收到新词时就发起，不拖慢查词）。没开「缓存其他应用的声音」时结果为 null。
+  final Future<CrossAppAudioSnapshot?>? miningAudio;
 
   /// TODO-872：app 外悬浮字幕条点字传来的「被查字屏幕矩形」（逻辑像素，与本全屏查词
   /// 窗同坐标系）。非空 → 卡片贴被查字旁定位（[computeFloatingLyricPopupRect]）；为 null
@@ -179,6 +186,9 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
 
   @override
   ScreenOcrCardImage? get miningCardImage => widget.cardImage;
+
+  @override
+  Future<CrossAppAudioSnapshot?>? get miningAudioSnapshot => widget.miningAudio;
 
   @override
   ThemeData get mixinTheme => Theme.of(context);
