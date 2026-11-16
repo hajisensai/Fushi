@@ -6398,7 +6398,7 @@
   "music_lyrics_backdrop_style_pixi": "Pixi renderer",
   "music_lyrics_backdrop_style_title": "Fluid style",
   "music_lyrics_backdrop_title": "Lyrics page background",
-  "music_lyrics_blur_inactive_hint": "歌詞頁中當前行以外的歌詞輕微模糊；關閉後上一句和下一句保持清晰",
+  "music_lyrics_blur_inactive_hint": "歌詞（含 MV 頁）中當前行以外的歌詞輕微模糊；關閉後上一句和下一句保持清晰",
   "music_lyrics_blur_inactive_title": "模糊非當前行",
   "music_lyrics_choose_source": "Choose lyrics source",
   "music_lyrics_empty": "No lyrics for this track",
