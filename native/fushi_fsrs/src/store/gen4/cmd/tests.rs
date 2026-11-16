@@ -39,7 +39,7 @@ const ANKI_AT: i64 = T0 - 1000;
 // ---------------------------------------------------------------------- 列式表
 
 /// 结果里的一格（`FCL1` 解码后统一成文本，空 = `∅`）。
-fn decode(b: &[u8]) -> (Vec<String>, Vec<Vec<String>>) {
+pub(super) fn decode(b: &[u8]) -> (Vec<String>, Vec<Vec<String>>) {
     assert_eq!(&b[0..4], b"FCL1");
     let u32_at = |at: usize| u32::from_le_bytes(b[at..at + 4].try_into().unwrap()) as usize;
     let pad = |x: usize| (x + 7) & !7;
@@ -812,6 +812,10 @@ fn keyed_reads_never_walk_the_whole_collection() {
         json!({"q": "notes", "ids": [N1]}),
         json!({"q": "cards", "notes": [N1]}),
         json!({"q": "cards", "ids": [c1]}),
+        json!({"q": "cards", "decks": [default_deck_id(P)]}),
+        json!({"q": "cards", "templates": ["t1"]}),
+        json!({"q": "cards", "decks": [default_deck_id(P)], "templates": ["t1"], "visibleOnly": true}),
+        json!({"q": "cards", "notes": [N1], "decks": [default_deck_id(P)]}),
         json!({"q": "pending_notes"}),
         json!({"q": "edits", "kind": "note", "ids": [N1]}),
         json!({"q": "logs", "cards": [c1]}),

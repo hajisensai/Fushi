@@ -242,7 +242,6 @@ const BATCH: usize = 512;
 /// 每个 ID 扫一遍三张表；盐集合变了这类情形整张别名表都会动）。
 const MOVES_IN_PLACE: usize = 256;
 
-/// 「前身 → 后继」链接（`historyFrom/` 键、不看值）：按卡按需查，查过的记下。
 /// 一批卡的血统（`Index::lineage`）：卡 ID（文本）→ 活着的修改行 / 重放写回的日志 / 生效的前身 / 后继。
 struct Lineage {
     lines: BTreeMap<String, Vec<(String, Option<i64>)>>,
@@ -251,6 +250,7 @@ struct Lineage {
     succs: HashMap<String, Vec<String>>,
 }
 
+/// 「前身 → 后继」链接（`historyFrom/` 键、不看值）：按卡按需查，查过的记下。
 #[derive(Default)]
 struct Links {
     succ: HashMap<Ref, Vec<Ref>>,

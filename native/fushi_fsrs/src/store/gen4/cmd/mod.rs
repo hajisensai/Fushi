@@ -38,6 +38,8 @@ pub mod views;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_class;
 
 /// 结果里的列式表（`store/bulk.rs` 的 `FCL1`）：(名字, 字节)。
 pub type Files = Vec<(String, Vec<u8>)>;
@@ -324,7 +326,7 @@ impl Sel {
             .collect();
         let p = self.text(&Value::Array(list).to_string());
         format!(
-            "(SELECT CASE value ->> 0 WHEN 1 THEN unhex(value ->> 1) ELSE value ->> 1 END FROM json_each({p}))"
+            "(SELECT CASE value ->> 0 WHEN 1 THEN unhex(value ->> 1) ELSE value ->> 1 END AS v FROM json_each({p}))"
         )
     }
 
@@ -332,7 +334,7 @@ impl Sel {
         self.sql.push_str(s);
     }
 
-    fn params(&self) -> Vec<&dyn rusqlite::ToSql> {
+    pub(super) fn params(&self) -> Vec<&dyn rusqlite::ToSql> {
         self.args
             .iter()
             .map(|a| a as &dyn rusqlite::ToSql)
