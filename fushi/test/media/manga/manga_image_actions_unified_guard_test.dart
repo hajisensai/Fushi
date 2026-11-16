@@ -35,7 +35,7 @@ void main() {
     );
     expect(runner, contains('await runImageAction(action, file);'));
     expect(runner, isNot(contains('.copy(')), reason: '不得自己复制文件落盘');
-    // BUG-4706（反馈 NfaXdQeLyD）：取右键落点那一页，不是当前跨页主页。
+    // BUG-4710（反馈 NfaXdQeLyD）：取右键落点那一页，不是当前跨页主页。
     expect(runner, contains('await _mangaPageFileAt(pageIndex);'));
     expect(runner, isNot(contains('_currentMangaPageFile')));
 
@@ -53,7 +53,7 @@ void main() {
       reason: '图片项按平台列，与长按面板同一判据',
     );
     expect(menu, contains('imageActionLabel(imageAction)'));
-    // BUG-4706（反馈 NfaXdQeLyD）：双页跨页右键左页却复制出右页。图片项与「设为封面」
+    // BUG-4710（反馈 NfaXdQeLyD）：双页跨页右键左页却复制出右页。图片项与「设为封面」
     // 绑 payload 的落点页号，没落在页上就不列，不回落当前页。
     expect(menu, contains('MangaFushiPage.mangaHitPageIndex('));
     expect(menu, contains('if (hitPage != null) ...<PopupMenuEntry'));
