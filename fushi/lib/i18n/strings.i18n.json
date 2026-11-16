@@ -501,6 +501,7 @@
   "anime_download_category_english": "English-translated",
   "anime_download_category_non_english": "Non-English",
   "anime_download_category_raw": "Raw",
+  "anime_download_copy_link": "Copy download link",
   "anime_download_delete": "Delete",
   "anime_download_episode_count": "EP $count",
   "anime_download_filter_episode": "Episode $n only",

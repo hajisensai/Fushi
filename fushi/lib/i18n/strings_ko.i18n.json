@@ -501,6 +501,7 @@
   "anime_download_category_english": "영어 번역",
   "anime_download_category_non_english": "영어 외",
   "anime_download_category_raw": "무자막",
+  "anime_download_copy_link": "다운로드 링크 복사",
   "anime_download_delete": "삭제",
   "anime_download_episode_count": "$count화",
   "anime_download_filter_episode": "Episode $n only",

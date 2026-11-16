@@ -501,6 +501,7 @@
   "anime_download_category_english": "İngilizce altyazılı",
   "anime_download_category_non_english": "İngilizce dışı",
   "anime_download_category_raw": "Ham",
+  "anime_download_copy_link": "İndirme bağlantısını kopyala",
   "anime_download_delete": "Sil",
   "anime_download_episode_count": "BL $count",
   "anime_download_filter_episode": "Episode $n only",

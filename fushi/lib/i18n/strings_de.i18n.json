@@ -501,6 +501,7 @@
   "anime_download_category_english": "Englisch übersetzt",
   "anime_download_category_non_english": "Nicht-Englisch",
   "anime_download_category_raw": "Roh",
+  "anime_download_copy_link": "Download-Link kopieren",
   "anime_download_delete": "Löschen",
   "anime_download_episode_count": "Folge $count",
   "anime_download_filter_episode": "Episode $n only",
