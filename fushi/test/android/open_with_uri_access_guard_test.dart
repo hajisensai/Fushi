@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import '../helpers/source_guard.dart';
 
-/// BUG-4746 source-scan guard：「用其他应用打开 / 分享」收到的 content:// URI
+/// BUG-4752 source-scan guard：「用其他应用打开 / 分享」收到的 content:// URI
 /// 必须先过 `OpenWithUriPolicy` 访问判定才复制，否则 Fushi 会以自己的权限替
 /// 发起方读它无权读的 provider（confused deputy）。判据本身由 JVM 单测
 /// `android/app/src/test/kotlin/app/fushi/reader/OpenWithUriPolicyTest.kt` 覆盖；

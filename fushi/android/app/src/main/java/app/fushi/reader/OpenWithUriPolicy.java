@@ -9,7 +9,7 @@ import java.util.List;
 
 /**
  * 「用其他应用打开 / 分享到 Fushi」收到的 {@code content://} URI 能不能替对方读
- * （BUG-4746，{@code docs/bugs/BUG-4746-open-with-confused-deputy.md}）。纯函数，不碰 Android
+ * （BUG-4752，{@code docs/bugs/BUG-4752-open-with-confused-deputy.md}）。纯函数，不碰 Android
  * 类型，JVM 单测 {@code OpenWithUriPolicyTest} 直接覆盖；{@link OpenWithChannel} 负责从
  * PackageManager / ContentResolver 取事实再交给这里裁决。
  *

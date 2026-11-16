@@ -8,7 +8,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-/** BUG-4746：「用其他应用打开 / 分享」不能替发起方读它无权读的 content:// URI。 */
+/** BUG-4752：「用其他应用打开 / 分享」不能替发起方读它无权读的 content:// URI。 */
 class OpenWithUriPolicyTest {
     private val own = "app.fushi.reader"
     private val ankiPerm = "com.ichi2.anki.permission.READ_WRITE_DATABASE"

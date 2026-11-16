@@ -53,7 +53,7 @@ import io.flutter.plugin.common.MethodChannel;
  * <p>只收 {@code content://}：Android 7+ 跨应用传 {@code file://} 会被系统拦下，留着它
  * 反而让别的 app 能指使 Fushi 读自己的私有文件。{@code content://} 也只在「Fushi 除了对方的
  * URI grant 外读不到」时才读（自家 provider、Fushi 凭自身特权权限能读的 exported provider 一律
- * 拒），见 {@link OpenWithUriPolicy}（BUG-4746）。
+ * 拒），见 {@link OpenWithUriPolicy}（BUG-4752）。
  */
 public final class OpenWithChannel {
     private static final String METHOD_TAKE = "takeIncomingDocuments";
@@ -155,7 +155,7 @@ public final class OpenWithChannel {
 
     /**
      * 能否替发起方读这个 URI：只在 Fushi 除了对方的 URI grant 外读不到它时才读，防止
-     * confused deputy（BUG-4746）。判据与威胁模型见 {@link OpenWithUriPolicy}，这里只取事实。
+     * confused deputy（BUG-4752）。判据与威胁模型见 {@link OpenWithUriPolicy}，这里只取事实。
      */
     private static boolean mayReadOnBehalfOfSender(@NonNull Context app, @NonNull Uri uri) {
         final OpenWithUriPolicy.Verdict verdict;

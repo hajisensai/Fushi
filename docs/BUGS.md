@@ -33,15 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4103 条。点号进各自文件。
+> 共 4109 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4746](bugs/BUG-4746-open-with-confused-deputy.md) | ✅ | ✅ | 用其他应用打开 / 分享导入替发起方读它无权读的 content:// URI（confused deputy） |
-> 共 4108 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4752](bugs/BUG-4752-open-with-confused-deputy.md) | ✅ | ✅ | 用其他应用打开 / 分享导入替发起方读它无权读的 content:// URI（confused deputy） |
 | [BUG-4751](bugs/BUG-4751-ja-i18n-english-fallback.md) | ✅ | ✅ | 日语界面外观设置与导航速览卡大量文案仍是英文回退 |
 | [BUG-4749](bugs/BUG-4749-srs-swipe-follow-jitter.md) | ✅ | ✅ | 复习页横向滑动评分时卡面来回抖动（WebView 卡面页内坐标随跟手平移反馈进位移） |
 | [BUG-4748](bugs/BUG-4748-video-batch-delete-n-plus-one.md) | ✅ | ✅ | 视频库批量删一万多条「像没删」——删除链逐条 N+1 + 无进度反馈 |
