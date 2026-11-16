@@ -3026,7 +3026,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// 卡片来源回看横幅的内容高（不含系统顶 inset，横幅自己的 SafeArea 让出那一条）。
   /// 与横幅自己的单行 / 两行判断同源（[SourceReviewBanner.reservedContentHeight]）：
   /// 矮窗口（横屏手机）横幅并成 48dp 单行，这里若仍按两行的 100dp 预留，横幅槽位
-  /// 照样占掉顶部一大截（BUG-4725）。由 [didChangeDependencies] 按窗口尺寸维护，
+  /// 照样占掉顶部一大截（BUG-4733）。由 [didChangeDependencies] 按窗口尺寸维护，
   /// 变化时与系统 inset 一样回喂 WebView。
   double _sourceReviewBannerHeight = SourceReviewBanner.regularContentHeight;
 
