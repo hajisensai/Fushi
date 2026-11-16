@@ -176,7 +176,10 @@ CSS/JS 能突破。所以「侧边栏里的查词弹窗被那 ~400px 夹住」�
 
 - **鼠标**：文字上按下/拖动 = 浏览器原生选区（Ctrl+C 可复制），只有按在左侧拖柄（悬停时出现）
   才挪位；**触屏**没有拖选，整块仍可拖。
-- **同一条 cue 不重建文本节点**（`st.overlayRenderedCue`），tick 只重摆位置。
+- **同一组 cue 不重建文本节点**（`st.overlayRenderedCues`），tick 只重摆位置。
+- **时间重叠的 cue 全部同屏**（反馈 -Rbr-U5FNr）：tick 用 `activeCueIndicesAt` 取此刻所有
+  `startMs <= t < endMs` 的 cue，多条时每条一个 `.fushi-subtitle-overlay-line` 块级行（轨内顺序），
+  点击 / 悬浮查词按指针所在的行带对应 cue 的时间窗。
 - 拖选完松手的合成 `click` 不查词（`overlayHasNativeSelection()`），点两枚把手也不查词。
 - **右下角拖拽改大小**（用户 2026-09-21，与查词弹窗右下角把手同一手势）：拖把手写的是
   `subtitleStyle.boxWidth/boxHeight`（与 options 两根滑杆**同一份真相源**，夹取都走 `boxFromPx` →

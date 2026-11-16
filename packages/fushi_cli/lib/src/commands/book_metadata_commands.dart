@@ -4,17 +4,20 @@ import '../ctl_commands.dart';
 
 /// `fushi_cli book …`：书的元数据与封面刮削（app 侧路由见 `fushi/lib/src/ops/ctl_book_metadata_routes.dart`）。
 ///
-/// 与书架卡「在线刮削封面」弹窗同一套源（Bangumi 书籍条目 / DLsite 音声·漫画·小说）：
+/// 与书架卡「在线刮削封面」弹窗同一套源（Bangumi 书籍条目 / DLsite 音声·漫画·小说 /
+/// AniList 轻小说 / openBD（只按 ISBN）/ NDL Search / 楽天ブックス（要先在 app 设置里填凭据））：
 /// `search` 搜候选、`get` 按 id 看详情、`apply` 把选中的候选写回某本书（默认只换封面，
 /// `--title` / `--author` 一并写显示名与作者）。条目键与 `library ls` 一致（`book:` / `srt:`）。
 const List<CtlCommandGroup> bookMetadataCommandGroups = <CtlCommandGroup>[
   CtlCommandGroup(
     name: 'book',
-    summary: '书的在线元数据与封面刮削（Bangumi / DLsite）',
+    summary: '书的在线元数据与封面刮削（Bangumi / DLsite / AniList / openBD / NDL / 楽天）',
     commands: <CtlCommandSpec>[
       CtlCommandSpec(
         name: 'search',
-        summary: '搜候选：书名 / Bangumi 条目 URL / DLsite 编号（--source dlsite）',
+        summary:
+            '搜候选：书名 / Bangumi 条目 URL / DLsite 编号（--source dlsite）/ '
+            'ISBN（--source openbd|ndl|rakuten）',
         usage: '<query...>',
         configure: _configureSource,
         build: _buildSearch,
@@ -23,7 +26,7 @@ const List<CtlCommandGroup> bookMetadataCommandGroups = <CtlCommandGroup>[
       CtlCommandSpec(
         name: 'get',
         summary: '按源内 id 取一个候选的详情',
-        usage: '<bangumi|dlsite> <id>',
+        usage: '<bangumi|dlsite|anilist|openbd|ndl|rakuten> <id>',
         build: _buildGet,
         render: _renderCandidate,
       ),
@@ -43,10 +46,22 @@ const String _search = '/api/admin/book/scrape';
 const String _items = '/api/admin/book/items';
 
 /// `--source` 的值域。
-const List<String> kBookScrapeSources = <String>['bangumi', 'dlsite'];
+const List<String> kBookScrapeSources = <String>[
+  'bangumi',
+  'dlsite',
+  'anilist',
+  'openbd',
+  'ndl',
+  'rakuten',
+];
 
 void _configureSource(ArgParser parser) {
-  parser.addOption('source', help: '刮削源：bangumi（默认）| dlsite');
+  parser.addOption(
+    'source',
+    help:
+        '刮削源：bangumi（默认）| dlsite | anilist（轻小说）| openbd（只按 ISBN）'
+        '| ndl（国立国会図書館）| rakuten（楽天ブックス，需先在 app 设置里填凭据）',
+  );
 }
 
 String? _sourceOption(CtlCommandContext context) {
@@ -115,6 +130,7 @@ String _renderSearch(Object? data) => renderCtlTable(
     ('id', 'id'),
     ('标题', 'title'),
     ('作者', 'author'),
+    ('出版社', 'publisher'),
     ('年份', 'year'),
   ],
   listKey: 'candidates',
@@ -128,8 +144,13 @@ String _renderCandidate(Object? data) {
   for (final (String label, String field) in const <(String, String)>[
     ('原名', 'originalTitle'),
     ('作者', 'author'),
+    ('出版社', 'publisher'),
+    ('系列', 'series'),
+    ('卷', 'volume'),
+    ('ISBN', 'isbn'),
     ('年份', 'year'),
     ('封面', 'coverUrl'),
+    ('横幅', 'bannerUrl'),
     ('条目', 'detailUrl'),
     ('简介', 'summary'),
   ]) {
