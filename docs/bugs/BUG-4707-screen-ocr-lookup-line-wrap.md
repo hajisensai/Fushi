@@ -1,4 +1,4 @@
-## BUG-4706 · 截屏识字点字查词只扫被点那一行，折行处把词截断
+## BUG-4707 · 截屏识字点字查词只扫被点那一行，折行处把词截断
 - **报告**：2026-11-16（用户：应用内反馈 il3dIBVGJq——安卓悬浮球与 PC 应用外截屏识字，分行处单词被截断）
 - **真实性**：✅ 真 bug。OCR 的行是排版折行（BUG-3487 已定「换行不是句界」），但三条截屏识字查词入口的查词串都只取被点那一行：
   - Android 应用外查词窗：`fushi/lib/src/pages/implementations/popup_dictionary_page.dart:268`（`_lookupWidgetSource` 只对行做 `sourceLookupSuffixAt`，原生已传来的 ML Kit 块全文只用于截句）与 `:429`（条上点字同样只取行内后缀）；

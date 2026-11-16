@@ -598,7 +598,7 @@ void main() {
   );
 
   testWidgets(
-    'BUG-4706: a word wrapped onto the next OCR line is looked up across the '
+    'BUG-4707: a word wrapped onto the next OCR line is looked up across the '
     'line break, from the host and from the strip',
     (WidgetTester tester) async {
       final _SourceLineAppModel appModel = _SourceLineAppModel();
@@ -638,7 +638,7 @@ void main() {
   );
 
   testWidgets(
-    'BUG-4706: a Latin line with trailing whitespace still joins the next '
+    'BUG-4707: a Latin line with trailing whitespace still joins the next '
     'line with one space',
     (WidgetTester tester) async {
       final _SourceLineAppModel appModel = _SourceLineAppModel();

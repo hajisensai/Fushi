@@ -321,7 +321,7 @@ class ScreenOcrPickerPage extends StatelessWidget {
                 Navigator.of(context).maybePop();
                 return;
               }
-              // BUG-4706：查词文字 = 被点行 + 同一文本块后续行的续文（词折到下一行
+              // BUG-4707：查词文字 = 被点行 + 同一文本块后续行的续文（词折到下一行
               // 时不在行尾截断）；制卡例句 = 块里含被点字的整句（反馈 1Mwaro8UTC）。
               final ScreenOcrBlockLookup lookup = screenOcrBlockLookupForHit(
                 lines: result.lines,

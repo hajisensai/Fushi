@@ -91,7 +91,7 @@ void main() {
     expect(ocrBlockSentenceAt('あいう', 3), isNull);
   });
 
-  group('ocrBlockContinuationAfterLine (BUG-4706)', () {
+  group('ocrBlockContinuationAfterLine (BUG-4707)', () {
     test(
       'CJK: the following lines are joined directly, line breaks dropped',
       () {
