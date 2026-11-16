@@ -6,6 +6,8 @@
 //! - [history]：一个实体的修改历史（协议 3 `sync2_history` 的新代版）。
 //! - [columns]：列式批量读 `card_columns` 与 AnkiConnect 数字 id 的 `anki_resolve` / `anki_notes_info`（协议 3 `store/bulk.rs`）。
 //! - [lineage]：`lineages`——一组卡各自的血统（协议 3 `caches::lineage_ids`，同一个判定函数，按类读前身链接）。
+//! - [browse]：卡片浏览与 AnkiConnect 兼容层的会话读命令（`browse_*` / `anki_find` / `anki_dupes` / `anki_tags`，协议 3
+//!   `store/browse.rs`，同一份会话实现；常驻会话按缓存层的代号失效）。
 //! - [stats]：复习统计 `stats_report` / `stats_recall` / `stats_rows`（协议 3 `store/stats.rs`，同一份聚合）。
 //!
 //! # 共同约定
@@ -35,6 +37,7 @@ use crate::sync2::codec::Writer;
 use crate::sync2::id::Key;
 use crate::sync2::op::EntKind;
 
+pub mod browse;
 pub mod columns;
 pub mod history;
 pub mod lineage;
@@ -47,6 +50,8 @@ pub mod writes_intent;
 pub mod writes_local;
 pub mod writes_restore;
 
+#[cfg(test)]
+mod browse_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
