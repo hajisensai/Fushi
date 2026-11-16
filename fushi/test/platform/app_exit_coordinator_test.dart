@@ -86,6 +86,19 @@ void main() {
     ]);
   });
 
+  test('H6Vou-6uYX：摘回调抛异常也不阻止退出（意图照样落盘、照样 exit）', () {
+    final AppExitCoordinator throwing = AppExitCoordinator(
+      marker: sink,
+      exitProcess: exits.add,
+      quiesceNativeCallbacks: () => throw StateError('mpv gone'),
+    );
+    expect(throwing.begin('windowClose'), isTrue);
+    expect(throwing.exitReason, 'windowClose');
+    throwing.terminate('windowClose');
+    expect(sink.events, <String>['requested:windowClose', 'clean:windowClose']);
+    expect(exits, <int>[0]);
+  });
+
   test('意图先于退出链里第一个 await 落盘', () async {
     final Completer<void> stuck = Completer<void>();
     Future<void> chain() async {

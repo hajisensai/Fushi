@@ -111,7 +111,12 @@ class AppExitCoordinator {
   /// false = 已有退出在跑（意图保持第一次的原因）。
   bool begin(String reason) {
     if (_reason != null) return false;
-    _quiesceNativeCallbacks();
+    // 退出清理失败不能阻止退出（同 [runStep]）：摘回调抛了也要继续落盘意图。
+    try {
+      _quiesceNativeCallbacks();
+    } catch (e) {
+      debugPrint('[Fushi] exit quiesce native callbacks failed: $e');
+    }
     _reason = reason;
     _marker.exitRequested(reason);
     return true;
