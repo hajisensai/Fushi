@@ -1,4 +1,4 @@
-## BUG-4695 · youtube-secondary-caption-tracks
+## BUG-4742 · youtube-secondary-caption-tracks
 - **报告**：2026-11-16（用户：应用内反馈 A41_cyNKcc「在线 YouTube 视频副字幕选不了 YouTube 字幕轨，主字幕可以」）
 - **真实性**：✅ 真 bug。远端副字幕列表 `fushi/lib/src/pages/implementations/video_fushi/subtitle.part.dart:442-507`（`_buildSecondarySubtitleRows` 的 `_isRemote` 分支）只列「关闭」/ 导入 / host 外挂（`_remoteSubtitleFileRows`）/ host 内封轨，漏了主字幕列表 `:273-282` 已经在列的 `_youtubeCaptionTracks`；取 cue 逻辑（缓存 + 懒下载）被焊死在主字幕落点 `_applyYoutubeCaptionTrack`（`:2650`，只调 `controller.setCues`）里，副字幕没有可复用的入口。手机遥控字幕列表 `playback_remote.part.dart:256` 同样把 YouTube 行写死成 `secondarySelectable: false`。与双字幕「副字幕与主字幕同一份可选来源」的设计矛盾。
 - **[x] ① 已修复** — 取 cue 抽成主 / 副共用的 `_resolveYoutubeTrackCues`（缓存命中直用，否则懒下载并写缓存，BUG-1329 的 finally 收加载态照搬，`loadSeq` 防串集）；新增 `_applyYoutubeSecondaryCaptionTrack` 落副层 `setSecondaryCues` 并登记 trackKey；面板远端副字幕区与手机遥控字幕列表都按同一份 YouTube 轨表列行、按副字幕源高亮。YouTube 副字幕与主字幕的 YouTube 轨一样只记内存不落库（轨表每次起播现取）。
