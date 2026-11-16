@@ -8,3 +8,7 @@
 - **备注**：
   - 已中招用户的恢复：覆盖导入前的 `fushi.db.pre-restore.bak` 在**成功**的覆盖导入末尾就被删掉（`fushi/lib/src/sync/backup_service/restore.part.dart:1536`，仅当本机表回灌失败时保留到下次启动恢复，`recoverPendingRestore` 成功后同样删除，`:2058`），存储页「删除数据库快照」也会清它。所以正常走完覆盖导入的用户机器上没有这份快照，「从 bak 恢复书库」对他们不可用；书文件本身仍在 `fushi_books/` 等目录里。恢复方案待拍板，未在本 PR 实现。
   - 未在 Android 真机复测。
+
+## 后续（拍板台 pr3449）
+
+维护者拍板「要弹就得弹吧，默认合并」：app 内推荐包入口恢复弹通用备份导入确认框（导入前的最终确认、内容摘要、分类取舍、取消都在），只是打开时预选「合并」。`kRecommendedPackImportPreset` 改为 `kRecommendedPackImportMode`（合并），经 `runBackupImportFlowForFile(confirmInitialMode:)` 传给确认框；`importRecommendedPackFile` / `importDownloadedRecommendedPack` 的 `preset` 回到可空、缺省 null（弹框），只有控制通道 `dict pack-import --merge|--replace` 传预设跳过确认框。设置页通用「导入备份」预选仍是「覆盖」。测试：`fushi/test/sync/backup_import_confirm_initial_mode_test.dart`（真弹框，不碰选项直接确认 → 推荐包得合并、通用导入得覆盖，预选合并时仍可改选覆盖，取消返回 null）；守卫测试同步改为「共享函数预选合并、app 内入口不传预设」。覆盖导入后 `pre-restore.bak` 被删（PR 描述里的未做项）已由 BUG-4701 修复（成功后改名保留为覆盖前快照），本条不再处理。
