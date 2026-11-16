@@ -25,7 +25,7 @@ abstract final class MusicLyricsSource {
   static String? pluginIdOf(String source) =>
       isPlugin(source) ? source.substring(_pluginPrefix.length) : null;
 
-  /// 歌词插件（`lyricsSearch` + `lyricsFetch`，LRCLIB 之后按用户排序）按标题 / 艺人搜到的
+  /// 歌词插件（`lyricsSearch` + `lyricsFetch`，与 LRCLIB 同在用户排序的来源列表里）按标题 / 艺人搜到的
   /// 歌词：`provider:lyrics:<插件 id>`。与 [plugin] 分开成两条缓存：同一个插件既给平台曲目
   /// 自带歌词、又做歌词来源时，两条路径的结果（与负缓存）互不覆盖。
   static const String _lyricsPluginPrefix = 'provider:lyrics:';
@@ -41,7 +41,7 @@ abstract final class MusicLyricsSource {
       : null;
 
   /// 自动来源的优先级（高 → 低），不含 [user]。插件自带歌词（[plugin]）排在 [asr] 与
-  /// [lrclib] 之间，歌词插件（[lyricsPlugin]）排在 [lrclib] 之后（按用户排序）。
+  /// [lrclib] 之间；歌词插件（[lyricsPlugin]）与 [lrclib] 在 resolve 里按用户排的来源列表问。
   static const List<String> automaticPriority = <String>[
     sidecar,
     embedded,
@@ -49,8 +49,9 @@ abstract final class MusicLyricsSource {
     lrclib,
   ];
 
-  /// 自动来源的档位（越小越优先），与 [MusicLyricsService.resolve] 的查找顺序一致：
-  /// sidecar > 内嵌 > 生成字幕 > 插件自带 > LRCLIB > 歌词插件 > 其它。
+  /// 自动来源的档位（越小越优先）：sidecar > 内嵌 > 生成字幕 > 插件自带 > LRCLIB > 歌词插件 > 其它。
+  /// 前四档与 [MusicLyricsService.resolve] 的查找顺序一致；LRCLIB 与歌词插件在 resolve 里按用户排的
+  /// 来源列表（`music_lyrics_providers`）问，这里是不读偏好的纯判据，按默认顺序（LRCLIB 在前）近似。
   static int automaticRank(String source) {
     if (source == sidecar) return 0;
     if (source == embedded) return 1;
