@@ -398,8 +398,9 @@ SettingsDestination buildAppearanceDestination() {
                 ) => settingsContext.appModel
                     .setShellBlockArrangement(value)
                     .then((_) => settingsContext.refresh()),
+            // 摆放只对拼贴生效，恢复默认取拼贴下的默认（散落），不随默认布局变。
             defaultValue: ShellBlockArrangement.defaultFor(
-              ShellContentLayout.defaultLayout,
+              ShellContentLayout.collage,
             ),
           ),
           SettingsSwitchItem(
