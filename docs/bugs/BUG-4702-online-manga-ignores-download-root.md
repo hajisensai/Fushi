@@ -1,4 +1,4 @@
-## BUG-4658 · 在线漫画不跟随下载目录设置，删书后已下载章节无法重新入库
+## BUG-4702 · 在线漫画不跟随下载目录设置，删书后已下载章节无法重新入库
 - **报告**：2026-11-15（用户：Android 用户反馈，经委托方转述）
 - **真实性**：✅ 真 bug，三个根因：
   1. 下载根偏好 `download_save_root` 只被 torrent / 发现页消费（`fushi/lib/src/models/app_model.dart:7619`（`downloadSaveRoot` getter，消费方只有 torrent 与 `discoveryDownloadDirFor`）），在线漫画书目录从书库根派生：`fushi/lib/src/media/manga/library/online_manga_library_service.dart:127`（`MangaStorage.bookDirectory(bookKey)`）与 `:378`（`ensureBookDirectory` 目标 `MangaStorage.bookPath`），改下载目录对漫画无效；音乐插件下载同理固定在 `<documents>/music_downloads`。

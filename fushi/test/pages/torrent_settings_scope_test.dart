@@ -108,7 +108,7 @@ void main() {
   ) async {
     await tester.pumpWidget(_harness(TorrentSettingsScope.common));
     await tester.pumpAndSettle();
-    // 下载根搬到了通用的「下载位置」分组（DownloadLocationSection，BUG-4658），
+    // 下载根搬到了通用的「下载位置」分组（DownloadLocationSection，BUG-4702），
     // torrent 区不再重复一份。
     expect(find.text(t.download_save_root_title), findsNothing);
     expect(find.text(t.video_setting_torrent_download_limit), findsOneWidget);

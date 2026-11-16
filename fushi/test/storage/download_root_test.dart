@@ -21,7 +21,7 @@ import 'package:fushi_engine/epub/epub_storage.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:path/path.dart' as p;
 
-/// 统一下载根（BUG-4658）：路径派生、在线漫画跟随下载根、旧位置搬家、改根搬移、
+/// 统一下载根（BUG-4702）：路径派生、在线漫画跟随下载根、旧位置搬家、改根搬移、
 /// 保留文件后重新入库、备份带走下载根里的漫画。
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

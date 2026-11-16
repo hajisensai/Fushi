@@ -102,7 +102,7 @@ void main() {
     });
   });
 
-  group('「保留已下载章节」（在线漫画删除，BUG-4658）', () {
+  group('「保留已下载章节」（在线漫画删除，BUG-4702）', () {
     Widget dialog(
       void Function(DeleteDecision) onConfirm, {
       bool keep = true,

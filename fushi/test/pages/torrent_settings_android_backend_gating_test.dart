@@ -163,7 +163,7 @@ void main() {
     );
 
     // ② torrent 区不渲染下载目录：外接 qb 的落盘目录 qb 自己管；总下载根在通用的
-    //    「下载位置」分组（DownloadLocationSection，BUG-4658）。
+    //    「下载位置」分组（DownloadLocationSection，BUG-4702）。
     expect(
       find.text(t.download_save_root_title),
       findsNothing,
@@ -195,7 +195,7 @@ void main() {
 
     expect(find.byType(FushiSegmentedStrip<String>), findsOneWidget);
     expect(find.text(t.video_setting_torrent_backend_embedded), findsOneWidget);
-    // 下载根搬到了通用的「下载位置」分组（DownloadLocationSection，BUG-4658）：它也管
+    // 下载根搬到了通用的「下载位置」分组（DownloadLocationSection，BUG-4702）：它也管
     // 在线漫画 / 音乐插件，与后端无关；torrent 区在任何后端下都不再重复一份。
     expect(find.text(t.download_save_root_title), findsNothing);
     expect(find.text(t.download_backend_unsupported_note), findsNothing);
