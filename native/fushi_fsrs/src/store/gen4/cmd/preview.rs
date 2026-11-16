@@ -71,12 +71,12 @@ pub fn preview(
     })
 }
 
+/// [cached_note] 的点读（`cards` 主键 `(col, id)`）。
+pub(super) const NOTE_SQL: &str = "SELECT note_id FROM cards WHERE col = ?1 AND id = ?2";
+
 /// 卡片缓存行上的笔记（规范 ID；没有这张卡的缓存行 = None）。走 `cards` 主键。
 fn cached_note(t: &Truth<'_>, col: i64, card: &Ref) -> Result<Option<String>, String> {
-    let mut stmt = t
-        .conn()
-        .prepare_cached("SELECT note_id FROM cards WHERE col = ?1 AND id = ?2")
-        .map_err(sql)?;
+    let mut stmt = t.conn().prepare_cached(NOTE_SQL).map_err(sql)?;
     let mut rows = stmt.query(rusqlite::params![col, card]).map_err(sql)?;
     match rows.next().map_err(sql)? {
         Some(r) => Ok(Some(r.get::<_, Ref>(0).map_err(sql)?.text())),

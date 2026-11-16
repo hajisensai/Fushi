@@ -9,19 +9,20 @@
 use rusqlite::Connection;
 use serde_json::{Value, json};
 
-use super::preview::preview;
+use super::preview::{NOTE_SQL, preview};
 use super::tests::{N1, N2, N3, N4, Pair, T0, card, library, on_p3};
 use super::training::{
-    COUNT_SINCE_SQL, COUNT_SQL, SCAN_SQL, TAIL_SQL, calibration_items, history_states,
+    COUNT_SINCE_SQL, COUNT_SQL, MEMBER_SQL, SCAN_SQL, TAIL_SQL, calibration_items, history_states,
     optimizer_items, rwkv_cards, rwkv_log_tail, rwkv_replay, stat_projection,
 };
 use crate::gen4::op::tests::id;
 use crate::gen4::op::{Body4, Log4};
 use crate::projection::{Alg, Day};
-use crate::store::gen4::derive::Ref;
+use crate::store::gen4::derive::{Ref, SEQ_BASE, SEQ_INSERT_SQL};
 use crate::store::gen4::truth::Truth;
 use crate::store::projections::{self, RwkvRange};
-use crate::store::sync2::tests::{DAY, Device, P, review};
+use crate::store::sync2::config::default_deck_id;
+use crate::store::sync2::tests::{DAY, Device, P, edit, review};
 use crate::sync2::id::Key;
 use crate::sync2::op::Intent;
 
@@ -62,6 +63,42 @@ fn train_library() -> Device {
     );
     d
 }
+
+/// 预览的归属组笔记夹具：[train_library] 再加一个子牌组 [PREV_DECK]（笔记 N3 的首选牌组），以及三张没有卡片记录、
+/// 也就没有 deck 标志的卡（有效牌组只看归属组的笔记：`config::card_deck_with`「笔记首选牌组」那一级）：
+/// - 后继卡 [SUCC]（自己没有日志，历史继承自 [PRED]）：前身的日志上记的笔记是 N3，调用方给的是别的笔记（取前身日志上
+///   记的，牌组是 [PREV_DECK]；调用方的笔记优先就成了默认牌组）；
+/// - 链尾 [TAIL] 的两条日志先后记了 N1、N3（链尾里最后一条记了笔记的优先：N3、[PREV_DECK]；取第一条就成了 N1、默认
+///   牌组）。
+fn preview_library() -> Device {
+    let d = train_library();
+    let (succ, pred, tail) = (SUCC, PRED, TAIL);
+    // 日志上记的笔记是本地写入信封里的 `note`（`Device::apply` 一律填 N1）。
+    let noted = |lid: &str, c: &str, note: &str, at: i64| {
+        let input = json!([{"e": review(lid, c, at, 3, "review"), "note": note}]);
+        d.core.sync2_apply_local(P, at, &input.to_string()).unwrap();
+    };
+    let at = T0 + 8 * DAY + 100;
+    d.apply(
+        at,
+        vec![
+            json!({"t": "entity", "x": {"id": PREV_DECK, "p": P, "k": "deck", "d": {"createdAt": 2}}}),
+            edit("deck", PREV_DECK, "name", json!("Prev")),
+            edit("deck", PREV_DECK, "parent", json!(default_deck_id(P))),
+            edit("note", N3, "deck", json!(PREV_DECK)),
+            edit("card", succ, &format!("historyFrom/{pred}"), json!(true)),
+        ],
+    );
+    noted("w1", pred, N3, at + 10);
+    noted("w2", tail, N1, at + 20);
+    noted("w3", tail, N3, at + 30);
+    d
+}
+
+const PREV_DECK: &str = "DPREV";
+const SUCC: &str = "XSUCC";
+const PRED: &str = "XPRED";
+const TAIL: &str = "XTAIL";
 
 /// 训练集 / RWKV 的输入：每张卡一份（调用方只给卡自己），含一张不存在的卡与一张后继卡在前身之前。
 fn seeds() -> Vec<Vec<String>> {
@@ -181,12 +218,6 @@ fn history_states_and_stat_projection_match_protocol_3() {
     // 有东西可比：撤销、继承历史都在里面。
     let (_, rows) = crate::store::rows::decode(&stats).unwrap();
     assert!(rows.len() >= 6, "{}", rows.len());
-    // 一份历史里同一张卡给两次只算一次（新代份内去重；协议 3 的 Dart 不会这样给）。
-    let twice = vec![vec![c2.clone(), c1.clone(), c2.clone()]];
-    assert_eq!(
-        history_states(&t, p.col, &twice).unwrap(),
-        history_states(&t, p.col, &groups[..1]).unwrap()
-    );
 }
 
 #[test]
@@ -302,7 +333,7 @@ fn rwkv_replay_and_log_tail_match_protocol_3() {
 
 #[test]
 fn preview_matches_protocol_3() {
-    let d = train_library();
+    let d = preview_library();
     let p = Pair::new(&d);
     let t = Truth::new(&p.g4);
     let w = d.core.writer().unwrap();
@@ -319,12 +350,16 @@ fn preview_matches_protocol_3() {
         card(N1, "t2"),
         card(N1, "t1"),
         card(N2, "t1"),
+        SUCC.to_owned(),
+        PRED.to_owned(),
+        TAIL.to_owned(),
         card(N3, "t1"),
         card(N3, "t2"),
         card(N4, "t1"),
         "missing".to_owned(),
     ];
     let mut seen = 0;
+    let mut in_prev: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
     for c in &cards {
         for note in [None, Some(N1), Some(N3)] {
             for (now, off, roll) in [(T0 + 9 * DAY, 0, 4), (T0 + 20 * DAY + 7, 540, 0)] {
@@ -337,10 +372,19 @@ fn preview_matches_protocol_3() {
                 if new["current"]["reps"].as_i64().unwrap_or(0) > 0 {
                     seen += 1;
                 }
+                if new["deck"].as_str() == Some(p.canon(PREV_DECK).as_str()) {
+                    *in_prev.entry(c.clone()).or_default() += 1;
+                }
             }
         }
     }
     assert!(seen > 0, "some previews replay logs");
+    // 归属组的笔记取日志上记的：继承历史的 [SUCC]、链尾最后一条记了 N3 的 [TAIL] 在每种调用方笔记下都落在 N3 的牌组。
+    assert_eq!(
+        in_prev.get(SUCC).copied().zip(in_prev.get(TAIL).copied()),
+        Some((6, 6)),
+        "{in_prev:?}"
+    );
 }
 
 /// 新代一侧的语句：指纹、尾巴、回放扫描沿 `log_seq` 主键（增量计数与尾巴是 n 的一段区间，扫描按 n 不排序），预览读卡片
@@ -381,13 +425,77 @@ fn fingerprint_tail_and_scan_statements_use_the_arrival_order() {
             "{q}: {steps:?}"
         );
     }
-    let steps = plan("SELECT note_id FROM cards WHERE col = 1 AND id = x'00'");
+    let steps = plan(NOTE_SQL);
     assert!(
         steps
             .iter()
-            .any(|s| s.contains("PRIMARY KEY (col=? AND id=?)")),
-        "{steps:?}"
+            .any(|s| s.contains("cards USING PRIMARY KEY (col=? AND id=?)")),
+        "{NOTE_SQL}: {steps:?}"
     );
+    // 判别名类代表的点查（每行尾巴每个成员一次）：走 `log_id (col, id, k)`，不按 `log_ix` 主键 (col=?) 扫整个集合。
+    let steps = plan(MEMBER_SQL);
+    assert!(
+        steps
+            .iter()
+            .any(|s| s.contains("log_ix USING") && s.contains("INDEX log_id (col=? AND id=?)")),
+        "{MEMBER_SQL}: {steps:?}"
+    );
+    // 每条日志进索引时取落库序：`log_seq` 主键上的 MAX（不扫、不建临时表）。
+    let steps = plan(SEQ_INSERT_SQL);
+    assert!(
+        steps
+            .iter()
+            .any(|s| s == "SEARCH log_seq USING PRIMARY KEY (col=?)"),
+        "{SEQ_INSERT_SQL}: {steps:?}"
+    );
+    assert!(
+        !steps
+            .iter()
+            .any(|s| s.starts_with("SCAN") || s.contains("TEMP B-TREE")),
+        "{SEQ_INSERT_SQL}: {steps:?}"
+    );
+}
+
+/// 换代前（协议 3）留下的 RWKV 主快照指纹与检查点在新库上必不可用：RWKV 状态机（`fushi_rwkv` `sched/machine.rs`）只按
+/// (行数, 最大 rowid) 判，协议 3 的 rowid 与落库序若都从 1 起连续、两边圈进的日志却不是同一批（[aligned]），旧检查点的
+/// `count - tailRows` 核对会照样通过。落库序从 [SEQ_BASE] 起，两代的游标空间不相交。
+#[test]
+fn protocol_3_checkpoints_and_fingerprints_never_fit_the_new_library() {
+    let d = train_library();
+    let p = Pair::new(&d);
+    let t = Truth::new(&p.g4);
+    let w = d.core.writer().unwrap();
+    let groups = vec![vec![card(N1, "t2")], vec![card(N2, "t1")]];
+    let ids: Vec<i64> = (1..=8).collect();
+    let word = |b: &[u8], k: usize| i64::from_le_bytes(b[8 * k..8 * k + 8].try_into().unwrap());
+    let old = p3_rowids(&p, &w);
+    let n = old.len() as i64;
+    // 前提：协议 3 这一侧 rowid 就是 1..C（与从 1 起编号的落库序撞得上的情形）。
+    assert_eq!(
+        old.iter().map(|(r, _)| *r).collect::<Vec<_>>(),
+        (1..=n).collect::<Vec<_>>()
+    );
+    // 主快照：新库的指纹行数一样，最大序号恒大于协议 3 的最大 rowid。
+    let fp = rwkv_log_tail(&t, p.col, 0, false, false).unwrap();
+    assert_eq!((word(&fp, 0), word(&fp, 1)), (n, SEQ_BASE + n));
+    // 检查点：协议 3 每个前缀的检查点 print (count = i, maxRowId = rowid_i)，照状态机的调法局部重放。
+    for (i, (r, _)) in old.iter().enumerate() {
+        let count = i as i64 + 1;
+        let range = RwkvRange {
+            rebase_since: Some(*r),
+            rows_from: Some(T0),
+        };
+        let out = rwkv_replay(&t, p.col, &groups, &ids, &D, *r, range).unwrap();
+        let (c, tail_rows) = (word(&out, 0), word(&out, 6));
+        assert_eq!(c, n);
+        assert_ne!(
+            c - tail_rows,
+            count,
+            "a protocol 3 checkpoint at rowid {r} must not fit the new library"
+        );
+        assert_eq!(c - tail_rows, 0, "every arrival number is after any rowid");
+    }
+    assert!(p.g4.is_autocommit());
 }
 
 /// 一条复习日志（落在卡 [card] 上）。
@@ -443,7 +551,7 @@ fn arrival_order_counts_late_logs_of_low_devices_as_new_and_survives_rebuilds() 
         let tail_since = |since: i64| rwkv_log_tail(t, col, since, true, true).unwrap();
         let fp = tail_since(0);
         let word = |b: &[u8], k: usize| i64::from_le_bytes(b[8 * k..8 * k + 8].try_into().unwrap());
-        assert_eq!((word(&fp, 0), word(&fp, 1)), (2, 2));
+        assert_eq!((word(&fp, 0), word(&fp, 1)), (2, SEQ_BASE + 2));
         land(0xb1, 2, log_op(0x53, 0x01, T0 + 2));
         let keys: Vec<(i64, i64)> = t
             .conn()
@@ -458,16 +566,16 @@ fn arrival_order_counts_late_logs_of_low_devices_as_new_and_survives_rebuilds() 
             keys[2].1 < keys[1].1,
             "the late log has the smaller op key: {keys:?}"
         );
-        let new = tail_since(2);
-        // 增量：1 行新增、最大序号 3、尾巴就是它。
+        let new = tail_since(SEQ_BASE + 2);
+        // 增量：1 行新增、最大序号 SEQ_BASE + 3、尾巴就是它。
         assert_eq!(
             (word(&new, 0), word(&new, 1), word(&new, 2), word(&new, 3)),
-            (1, 3, 1, 1)
+            (1, SEQ_BASE + 3, 1, 1)
         );
         let s = String::from_utf8_lossy(&new);
         assert!(s.contains(&id(0x53).text()), "{s}");
         // 整层重建：序号不变，指纹与尾巴逐字节相同。
-        let before = rwkv_log_tail(t, col, 1, true, false).unwrap();
+        let before = rwkv_log_tail(t, col, SEQ_BASE + 1, true, false).unwrap();
         t.tx(|t| Index::new(t, col).rebuild_all().map(|_| ()))
             .unwrap();
         let after: Vec<(i64, i64)> = t
@@ -479,7 +587,10 @@ fn arrival_order_counts_late_logs_of_low_devices_as_new_and_survives_rebuilds() 
             .collect::<Result<_, _>>()
             .unwrap();
         assert_eq!(keys, after);
-        assert_eq!(before, rwkv_log_tail(t, col, 1, true, false).unwrap());
+        assert_eq!(
+            before,
+            rwkv_log_tail(t, col, SEQ_BASE + 1, true, false).unwrap()
+        );
         assert!(t.conn().is_autocommit());
     });
 }

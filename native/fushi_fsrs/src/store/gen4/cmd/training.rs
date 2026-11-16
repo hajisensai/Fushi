@@ -18,8 +18,8 @@
 //! - **rowid**：协议 3 的日志行 rowid 是本机落库序：同步收来的、别的设备早就写下的日志也排在已有的之后，RWKV 才能按
 //!   「游标之后的新行」增量对齐。新代的操作主键 `k` = 设备下标 × 2^40 + seq，**不随落库单调**（晚到的、下标小的设备的
 //!   日志落在游标之前，增量对齐看不见它，只能靠行数核对退回全量重放），所以不拿它当游标：落库序单独记在本机状态表
-//!   `log_seq`（schema 40018，`derive.rs` 随 `log_ix` 逐条维护：一条日志操作第一次进索引时取集合里下一个序号 `n`，删出
-//!   索引时删掉；整层重建保留还在的行的序号）。指纹（行数、最大序号、某序号之后的行数）、回放扫描、尾巴都沿 `log_seq`
+//!   `log_seq`（schema 40018，`derive.rs` 随 `log_ix` 逐条维护：一条日志操作第一次进索引时取集合里下一个序号 `n`（从
+//!   `SEQ_BASE` + 1 起，见文件头「与协议 3 的差别」），删出索引时删掉；整层重建保留还在的行的序号）。指纹（行数、最大序号、某序号之后的行数）、回放扫描、尾巴都沿 `log_seq`
 //!   主键 `(col, n)`：增量计数与取尾巴是 n 的一段区间，O(新增)，与协议 3 走 rowid 范围同阶。
 //! - **指纹数的是日志操作**：`log_seq` 一条日志操作一行（同一个原值日志 ID 若有几份操作各算一行，协议 3 的日志表按 ID 只
 //!   存一行）。几份同 ID 的操作只在复制出来的旧库各自续写时出现；这样数，指纹只随「落库 / 删出」变，不随 `win` 归属变，
@@ -34,7 +34,10 @@
 //!   代表那一行（类里别的份落在 `since` 之后也不再出一行）。**指纹仍按操作行数**（与 `rwkv_replay` 的 `count` /
 //!   `tailRows` 同一口径）。
 //! - 指纹里的「最大序号」是新代的落库序，不是协议 3 的 rowid：两代库各自的游标，调用方只拿它回传给同一个库（`since` /
-//!   `rebase_since`），不跨库比较。换代后 RWKV 的检查点对不上新库的指纹，第一次对齐走全量重放。
+//!   `rebase_since`）。RWKV 状态机判快照 / 检查点只看 (行数, 最大序号)、没有库代标记，所以落库序从
+//!   `derive.rs` `SEQ_BASE`（2^40）起、与协议 3 的 rowid 空间不相交：换代前留下的主快照指纹必不相等、检查点的
+//!   `count - tailRows` 必为 0，第一次对齐必然全量重放（`training_tests.rs`
+//!   `protocol_3_checkpoints_and_fingerprints_never_fit_the_new_library` 钉死）。S1 换代时不必删 RWKV 快照目录。
 //! - 输入里不存在、或属于别的集合的卡：没有日志，与协议 3 不存在的卡同形。
 
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -192,6 +195,8 @@ pub fn rwkv_replay(
                     .ok_or_else(|| format!("gen4 rwkv: log op {} has no arrival order", l.k))?;
                 ranked.push((n, l));
             }
+            // 卡内按落库序排：协议 3 `ReplayScan` 收进的是 rowid 序。输出不依赖它（`history::select` 自己按日志 ID
+            // 去重、按排序键排序，分歧判断只看序号过滤），保留它只为让两代往同一份计算里灌的输入同序。
             ranked.sort_by_key(|(n, _)| *n);
             for (n, l) in ranked {
                 logs.push(card.to_owned(), n, &l.json, l.server_time, None)?;
@@ -219,12 +224,17 @@ pub(super) const COUNT_SINCE_SQL: &str =
 pub(super) const TAIL_SQL: &str = "SELECT n, k FROM log_seq WHERE col = ?1 AND n > ?2";
 
 /// 一个原值日志 ID 的 `win = 1` 行（`log_id` 索引）：判别名类的代表用。
-const MEMBER_SQL: &str = "SELECT k FROM log_ix WHERE col = ?1 AND id = ?2 AND win = 1";
+pub(super) const MEMBER_SQL: &str = "SELECT k FROM log_ix WHERE col = ?1 AND id = ?2 AND win = 1";
 
 /// `rwkv_log_tail`：RWKV 对齐用的日志指纹与尾巴（同一个快照），输出同协议 3 `SrsCore::rwkv_log_tail`：(行数, 最大序号,
 /// 序号在 `since` 之后的行数)；`with_rows` 时再给出这些新行里每个规范日志 ID 的代表（按发生时刻、序号排）。
 /// `incremental`：只数 `since` 之后的行（行数 = 新增行数、最大序号 = 新增里的最大，没有新增为 0），调用方在已知的指纹上
 /// 累加。序号是本机落库序（模块文件头「rowid」）。
+///
+/// **只适合取增量尾巴**：指纹是 `log_seq` 主键上的一两条语句，但 `with_rows` 的每一行尾巴要再回真相读操作体、归一卡 /
+/// 日志 / 撤销目标、对日志类里每个成员各点查一次 `log_id`（[is_rep]），一行 5～8 次点查（协议 3 一条语句）。RWKV 的
+/// 调用方（`fushi_rwkv` `sched/machine.rs`）传的 `since` 是上次的最大序号，尾巴只有新增那几行；`since = 0` 加
+/// `with_rows` 会随日志总量线性地多次往返——要全量的日志走 [rwkv_replay]（一次扫描 + 按批重放）。
 pub fn rwkv_log_tail(
     t: &Truth<'_>,
     col: i64,
@@ -324,7 +334,8 @@ fn is_rep(
     Ok(best.is_some_and(|(_, x)| x == k))
 }
 
-/// 每份历史里的卡归一成规范 ID，份内去重（保第一次出现的顺序）。
+/// 每份历史里的卡归一成规范 ID，份内去重（保第一次出现的顺序）。去重不改输出（同一张卡的日志重复灌进去，
+/// `history::select` 也按日志 ID 去重），只省掉同一张卡的第二次取数。
 fn canon_groups(ix: &Index<'_, '_>, groups: &[Vec<String>]) -> Result<Vec<Vec<String>>, String> {
     groups
         .iter()

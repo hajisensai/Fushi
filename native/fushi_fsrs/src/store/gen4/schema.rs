@@ -368,7 +368,7 @@ CREATE TABLE IF NOT EXISTS log_ix (
 ) WITHOUT ROWID;
 CREATE INDEX IF NOT EXISTS log_id ON log_ix (col, id, k);
 -- 本机落库序（本机状态，不在 DERIVED_TABLES、不参与对拍）：log_ix 每一行（一条日志操作）第一次进索引时取集合里下一个
--- 序号 n，删出索引时删掉；整层重建保留还在的行的序号。协议 3 日志表 rowid 的对应物（cmd/training.rs 文件头「rowid」）。
+-- 序号 n（起点 derive.rs SEQ_BASE = 2^40，与协议 3 rowid 不相交），删出索引时删掉；整层重建保留还在的行的序号。协议 3 日志表 rowid 的对应物（cmd/training.rs 文件头「rowid」）。
 CREATE TABLE IF NOT EXISTS log_seq (
   col INTEGER NOT NULL,
   n INTEGER NOT NULL,

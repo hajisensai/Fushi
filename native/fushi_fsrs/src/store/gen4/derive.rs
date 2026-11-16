@@ -75,6 +75,23 @@ pub const R_WINNER: i64 = 2;
 /// `reg_ix.state`：胜者，且有值不同的并发写入。
 pub const R_CONFLICT: i64 = 3;
 
+/// 本机落库序 `log_seq.n` 的起点：每个集合的第一条日志操作取 `SEQ_BASE + 1`，之后逐条 + 1。
+///
+/// 为什么不从 1 起：`log_seq.n` 是协议 3 日志表 rowid 的对应物，两代的游标进同一个 RWKV 状态机（`fushi_rwkv`
+/// `sched/machine.rs`）。它判主快照、检查点还能不能用只看 (行数, 最大 rowid)，没有库代标记。协议 3 的 rowid 从 1 起
+/// 连续（没有 AUTOINCREMENT、从没删过行的库就是 1..C），新代从 1 起也是 1..C，两代的指纹就会撞上；而迁移按设备逐台
+/// 编号、协议 3 按到达交错编号，同一个前缀长度圈进的不是同一批日志——换代前留下的检查点（`count - tailRows` 的核对照样
+/// 通过）会被新库接受，一条在协议 3 里排在检查点之后、在新代排在之前的日志从此永久不进 RWKV 状态。从 2^40 起，两代的
+/// 游标空间不相交：协议 3 的 rowid 每条日志落库占一个、只增不跳号，到 2^40 要一万亿条以上；新库的最大序号恒大于任何
+/// 协议 3 的指纹或检查点的最大 rowid，旧检查点的 `count - tailRows` 恒为 0、旧主快照的指纹恒不等，第一次对齐必然全量
+/// 重放。`2^40 + 行数` 仍远在 2^53 内（JSON 数字无损）。
+pub const SEQ_BASE: i64 = 1 << 40;
+
+/// 一条日志操作第一次进 `log_ix` 时给它落库序（`log_seq` 主键上的 MAX：min/max 优化，SeekLE 一步，不随集合大小涨）。
+/// 已有序号的（整层重建时再进来的）保留原号。
+pub(crate) const SEQ_INSERT_SQL: &str = "INSERT OR IGNORE INTO log_seq (col, n, k, card) \
+     SELECT ?1, COALESCE(MAX(n), ?4) + 1, ?2, ?3 FROM log_seq WHERE col = ?1";
+
 /// 引用（实体、卡、日志的 ID）在索引里的样子：规范 UUID 存 16 字节，其余存文本。
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Ref {
@@ -560,14 +577,12 @@ impl<'t, 'c> Index<'t, 'c> {
                     .map_err(sql)?
                     .execute(params![self.col, card, l.at, k, id])
                     .map_err(sql)?;
-                    // 本机落库序（`schema.rs` `log_seq`）：第一次进索引时取下一个序号；重建时再进来的保留原序号。
-                    conn.prepare_cached(
-                        "INSERT OR IGNORE INTO log_seq (col, n, k, card) \
-                         SELECT ?1, COALESCE(MAX(n), 0) + 1, ?2, ?3 FROM log_seq WHERE col = ?1",
-                    )
-                    .map_err(sql)?
-                    .execute(params![self.col, k, card])
-                    .map_err(sql)?;
+                    // 本机落库序（`schema.rs` `log_seq`，起点 [SEQ_BASE]）：第一次进索引时取下一个序号；重建时
+                    // 再进来的保留原序号。
+                    conn.prepare_cached(SEQ_INSERT_SQL)
+                        .map_err(sql)?
+                        .execute(params![self.col, k, card, SEQ_BASE])
+                        .map_err(sql)?;
                 } else {
                     conn.prepare_cached(
                         "DELETE FROM log_ix WHERE col = ?1 AND card = ?2 AND at = ?3 AND k = ?4",
