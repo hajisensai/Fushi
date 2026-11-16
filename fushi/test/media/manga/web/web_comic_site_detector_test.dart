@@ -151,7 +151,10 @@ ${webComicDetectFunctionBody(hitomi.detect!, budget: const Duration(milliseconds
         name: 'P',
         hosts: <String>['p.test'],
         chapterUrlPattern: r'^/c/\d+$',
-        images: WebComicDomImageSource(selector: 'img'),
+        images: WebComicDomImageSource(
+          selector: 'img',
+          attributes: <String>['src'],
+        ),
       );
       expect(plain.chapterKeyOf(Uri.parse('https://p.test/c/1')), isNull);
       expect(
