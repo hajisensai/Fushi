@@ -636,6 +636,13 @@ class SubtitleMarkup {
   /// [cueStyle]）。渲染层用它给路径取填充 / 描边画笔，与文字字形同一套解析。
   final SubtitleSpan? drawingStyle;
 
+  /// 特效字幕（H7r4mf_z2n）：本事件是歌词特效 / 屏幕字一类的排版事件（卡拉 OK `\k`、
+  /// `\pos` / `\move`、`\t` 动画、`\clip`、`\p` 绘图、旋转 / 切变、ASS `Effect` 列、
+  /// 样式旋转）。判据只在 Rust 解析层（`native/fushi_compute/src/parse/subtitle/markup.rs`
+  /// 的 `Markup::effect`）写一次，这里只是解码出的标志位；字幕列表的「显示特效字幕」
+  /// 开关据此过滤，播放渲染不读它。
+  final bool isEffect;
+
   const SubtitleMarkup({
     required this.plainText,
     required this.spans,
@@ -658,6 +665,7 @@ class SubtitleMarkup {
     this.shearY,
     this.drawing,
     this.drawingStyle,
+    this.isEffect = false,
   });
 }
 

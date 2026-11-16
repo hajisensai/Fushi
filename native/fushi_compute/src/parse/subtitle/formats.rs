@@ -434,6 +434,7 @@ pub fn parse_ass(content: &[u16], include_drawings: bool) -> DResult<AssResult> 
     let (mut start_col, mut end_col, mut text_col, mut style_col) = (-1i64, -1i64, -1i64, -1i64);
     let (mut margin_l_col, mut margin_r_col, mut margin_v_col, mut layer_col) =
         (-1i64, -1i64, -1i64, -1i64);
+    let mut effect_col = -1i64;
     let mut play_res_x: Option<f64> = None;
     let mut play_res_y: Option<f64> = None;
 
@@ -513,6 +514,7 @@ pub fn parse_ass(content: &[u16], include_drawings: bool) -> DResult<AssResult> 
             margin_r_col = index_of_col(&cols, b"marginr");
             margin_v_col = index_of_col(&cols, b"marginv");
             layer_col = index_of_col(&cols, b"layer");
+            effect_col = index_of_col(&cols, b"effect");
             continue;
         }
 
@@ -576,9 +578,23 @@ pub fn parse_ass(content: &[u16], include_drawings: bool) -> DResult<AssResult> 
             };
             let prx = play_res_x.unwrap_or(384.0);
             let pry = play_res_y.unwrap_or(288.0);
-            let markup = parse_markup(&raw_text, Some(prx), Some(pry), layer)?;
+            let mut markup = parse_markup(&raw_text, Some(prx), Some(pry), layer)?;
             if markup.plain_text.is_empty() && !(include_drawings && markup.drawing.is_some()) {
                 continue;
+            }
+            // 特效字幕判据（H7r4mf_z2n，见 [Markup::effect]）的事件级补充：`Effect` 列非空
+            // （`Karaoke` / `Banner;…` / `Scroll up;…` 等 ASS 内建效果）与样式级 `Angle`
+            // 旋转——这两样不在覆盖标签里，parse_markup 看不到。
+            let effect_column_set = effect_col >= 0
+                && effect_col < text_col
+                && effect_col < len
+                && !trim(parts[effect_col as usize]).is_empty();
+            let style_rotated = style_id >= 0
+                && style_objects[style_id as usize]
+                    .angle_deg
+                    .is_some_and(|a| a != 0.0);
+            if effect_column_set || style_rotated {
+                markup.effect = true;
             }
             raw_cues.push(RawCue {
                 start: start_ms,
@@ -674,5 +690,58 @@ mod tests {
         assert_eq!(r.cues[1].markup.layer, 1);
         assert_eq!(r.cues[1].style_id, 0);
         assert_eq!(r.cues[1].play_res, Some((1920.0, 1080.0)));
+    }
+
+    /// H7r4mf_z2n：特效字幕判据——排版 / 动画类标签、`Effect` 列、样式旋转算特效；
+    /// 普通台词（含 `\fad` 淡入淡出、`\an8` 顶部、颜色 / 粗体、静态 `\fscx`、`\frz0`）不算。
+    #[test]
+    fn ass_effect_flag() {
+        let src = concat!(
+            "[Script Info]\nPlayResX: 1920\nPlayResY: 1080\n\n",
+            "[V4+ Styles]\nFormat: Name, Fontname, Fontsize, Angle\n",
+            "Style: Default,Arial,60,0\nStyle: Tilted,Arial,60,12\n\n",
+            "[Events]\nFormat: Layer, Start, End, Style, Effect, Text\n",
+            "Dialogue: 0,0:00:01.00,0:00:02.00,Default,,{\\fad(200,200)}plain1\n",
+            "Dialogue: 0,0:00:01.01,0:00:02.00,Default,,{\\an8\\c&H0000FF&\\b1}plain2\n",
+            "Dialogue: 0,0:00:01.02,0:00:02.00,Default,,{\\fscx90\\frz0}plain3\n",
+            "Dialogue: 0,0:00:01.03,0:00:02.00,Default,,{\\k20}そ{\\k30}よ\n",
+            "Dialogue: 0,0:00:01.04,0:00:02.00,Default,,{\\kf20}lyric\n",
+            "Dialogue: 0,0:00:01.05,0:00:02.00,Default,,{\\pos(960,100)}sign\n",
+            "Dialogue: 0,0:00:01.06,0:00:02.00,Default,,{\\move(0,0,100,100)}moving\n",
+            "Dialogue: 0,0:00:01.07,0:00:02.00,Default,,{\\t(\\alpha&HFF&)}anim\n",
+            "Dialogue: 0,0:00:01.08,0:00:02.00,Default,,{\\clip(0,0,10,10)}clipped\n",
+            "Dialogue: 0,0:00:01.09,0:00:02.00,Default,,{\\frz15}rotated\n",
+            "Dialogue: 0,0:00:01.10,0:00:02.00,Default,Banner;10,banner\n",
+            "Dialogue: 0,0:00:01.11,0:00:02.00,Tilted,,tilted style\n",
+        );
+        let r = parse_ass(&w(src), false).unwrap();
+        let got: Vec<(String, bool)> = r
+            .cues
+            .iter()
+            .map(|c| {
+                (
+                    String::from_utf16_lossy(&c.markup.plain_text),
+                    c.markup.effect,
+                )
+            })
+            .collect();
+        let want: Vec<(String, bool)> = [
+            ("plain1", false),
+            ("plain2", false),
+            ("plain3", false),
+            ("そよ", true),
+            ("lyric", true),
+            ("sign", true),
+            ("moving", true),
+            ("anim", true),
+            ("clipped", true),
+            ("rotated", true),
+            ("banner", true),
+            ("tilted style", true),
+        ]
+        .iter()
+        .map(|(t, e)| (t.to_string(), *e))
+        .collect();
+        assert_eq!(got, want);
     }
 }

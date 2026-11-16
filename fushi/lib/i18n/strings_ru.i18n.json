@@ -12538,6 +12538,7 @@
   "video_subtitle_list_search": "Поиск по субтитрам",
   "video_subtitle_list_search_empty": "Нет подходящих строк",
   "video_subtitle_list_search_hint": "Введите текст, чтобы отфильтровать строки",
+  "video_subtitle_list_show_effects": "Показывать субтитры с эффектами (караоке-тексты, надписи на экране)",
   "video_subtitle_list_tap_lookup": "Tap subtitle text to look up (off: tapping only jumps)",
   "video_subtitle_load_failed": "Не удалось загрузить эти субтитры (графическая или неподдерживаемая дорожка): $label",
   "video_subtitle_mask_edit_hint": "Drag to move, drag corners to resize",

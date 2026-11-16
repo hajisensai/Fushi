@@ -12538,6 +12538,7 @@
   "video_subtitle_list_search": "Search subtitles",
   "video_subtitle_list_search_empty": "No line matches",
   "video_subtitle_list_search_hint": "Type to filter lines",
+  "video_subtitle_list_show_effects": "Show effect subtitles (karaoke lyrics, on-screen signs)",
   "video_subtitle_list_tap_lookup": "Tap subtitle text to look up (off: tapping only jumps)",
   "video_subtitle_load_failed": "Couldn't load this subtitle (graphic or unsupported track): $label",
   "video_subtitle_mask_edit_hint": "Drag to move, drag corners to resize",

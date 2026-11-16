@@ -12538,6 +12538,7 @@
   "video_subtitle_list_search": "Buscar subtítulos",
   "video_subtitle_list_search_empty": "Ninguna línea coincide",
   "video_subtitle_list_search_hint": "Escriba para filtrar líneas",
+  "video_subtitle_list_show_effects": "Mostrar subtítulos con efectos (letras karaoke, carteles en pantalla)",
   "video_subtitle_list_tap_lookup": "Tap subtitle text to look up (off: tapping only jumps)",
   "video_subtitle_load_failed": "No se pudo cargar este subtítulo (pista gráfica o no compatible): $label",
   "video_subtitle_mask_edit_hint": "Drag to move, drag corners to resize",

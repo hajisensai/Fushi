@@ -12538,6 +12538,7 @@
   "video_subtitle_list_search": "ค้นหาคำบรรยาย",
   "video_subtitle_list_search_empty": "ไม่มีบรรทัดที่ตรงกัน",
   "video_subtitle_list_search_hint": "พิมพ์เพื่อกรองบรรทัด",
+  "video_subtitle_list_show_effects": "แสดงซับไตเติลเอฟเฟกต์ (เนื้อเพลงคาราโอเกะ ป้ายบนจอ)",
   "video_subtitle_list_tap_lookup": "Tap subtitle text to look up (off: tapping only jumps)",
   "video_subtitle_load_failed": "โหลดคำบรรยายนี้ไม่ได้ (อาจเป็นแบบกราฟิกหรือแทร็กที่ไม่รองรับ): $label",
   "video_subtitle_mask_edit_hint": "Drag to move, drag corners to resize",

@@ -12538,6 +12538,7 @@
   "video_subtitle_list_search": "Rechercher dans les sous-titres",
   "video_subtitle_list_search_empty": "Aucune ligne correspondante",
   "video_subtitle_list_search_hint": "Saisissez du texte pour filtrer les lignes",
+  "video_subtitle_list_show_effects": "Afficher les sous-titres à effets (paroles karaoké, panneaux à l'écran)",
   "video_subtitle_list_tap_lookup": "Tap subtitle text to look up (off: tapping only jumps)",
   "video_subtitle_load_failed": "Impossible de charger ce sous-titre (piste graphique ou non prise en charge) : $label",
   "video_subtitle_mask_edit_hint": "Drag to move, drag corners to resize",

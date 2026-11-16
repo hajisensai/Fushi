@@ -567,6 +567,8 @@ class VideoSubtitleJumpPanel extends StatefulWidget {
     this.onAutoScrollChanged,
     this.initialTapLookup = true,
     this.onTapLookupChanged,
+    this.initialShowEffects = true,
+    this.onShowEffectsChanged,
     this.initialFilter = VideoSubtitleListFilter.all,
     this.onFilterChanged,
     this.initialFontScaleIndex = _kDefaultFontScaleIndex,
@@ -656,6 +658,14 @@ class VideoSubtitleJumpPanel extends StatefulWidget {
 
   /// 用户切换「点字幕查词」时回调，页面层落 Drift preferences（null 时纯本地切换）。
   final ValueChanged<bool>? onTapLookupChanged;
+
+  /// 「显示特效字幕」初值（拍板台 H7r4mf_z2n）：false = 列表不列出特效字幕（歌词特效 /
+  /// 屏幕字，判据是解析层标出的 [AudioCue.isEffect]），只剩普通台词。全部 / 收藏两档
+  /// 与搜索都在此之上过滤；只影响列表，画面上的字幕照常渲染。默认 true（加开关前的行为）。
+  final bool initialShowEffects;
+
+  /// 用户切换「显示特效字幕」时回调，页面层落 Drift preferences（null 时纯本地切换）。
+  final ValueChanged<bool>? onShowEffectsChanged;
 
   /// 打开列表时停在哪个页签（xlzGuK5YmD：记住上次打开的页签，下次打开恢复；不按
   /// 「有收藏就开收藏」硬判）。
@@ -781,6 +791,9 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
   /// 「点字幕查词」当前开关（见 [VideoSubtitleJumpPanel.initialTapLookup]）。
   late bool _tapLookup = widget.initialTapLookup;
 
+  /// 「显示特效字幕」当前开关（见 [VideoSubtitleJumpPanel.initialShowEffects]）。
+  late bool _showEffects = widget.initialShowEffects;
+
   /// 本面板此刻生效的查词回调：关掉「点字幕查词」后视同调用方没接查词——行文本不登记
   /// 命中、点按与悬停都不查词，整行点按回到纯跳转（与无查词能力的历史行为同一条路）。
   void Function(AudioCue cue, int graphemeIndex, Rect charRect)?
@@ -837,6 +850,9 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
   List<AudioCue>? _cachedCues;
   int _cachedCuesLength = -1;
   VideoSubtitleListFilter? _cachedFilter;
+
+  /// [_cachedVisibleIndexes] 算出时的「显示特效字幕」开关（缓存键的一部分）。
+  bool? _cachedShowEffects;
   List<int> _cachedVisibleIndexes = const <int>[];
   Map<int, int> _cachedVisibleIndexByRawIndex = const <int, int>{};
 
@@ -1404,6 +1420,19 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     }
   }
 
+  void _toggleShowEffects() {
+    setState(() {
+      _showEffects = !_showEffects;
+      _hoveredIndex = -1;
+      _lastScrolledIndex = -1;
+      // 可见集变 → visibleIndex 重排，旧 visibleIndex→key 映射作废（同 [_setFilter]）。
+      _rowKeys.clear();
+      _clearCueCaches();
+    });
+    widget.onShowEffectsChanged?.call(_showEffects);
+    _scheduleScrollToCurrentCue();
+  }
+
   void _toggleTapLookup() {
     setState(() {
       _tapLookup = !_tapLookup;
@@ -1599,13 +1628,23 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     if (cacheable &&
         identical(_cachedCues, cues) &&
         _cachedCuesLength == cues.length &&
-        _cachedFilter == _filter) {
+        _cachedFilter == _filter &&
+        _cachedShowEffects == _showEffects) {
       return _cachedVisibleIndexes;
     }
     // BUG-841：两档都以**去重后**的代表行为基（特效叠加同句拷贝只出一行）；收藏
     // 再在代表行上过滤，计数 chip 走同一去重集合（[_favoriteCueCount]）
     // 故数量与列表一致。
-    final List<int> base = _dedupedRawIndexes(cues);
+    final List<int> deduped = _dedupedRawIndexes(cues);
+    // H7r4mf_z2n：关掉「显示特效字幕」时先剔掉特效代表行。看的是**原始代表 cue**
+    // （`cues[i]`）而不是 [_rowCue]：逐字卡拉 OK 合成的整句 cue 不带 markup，判定在
+    // 组首原事件上；被折叠的同句拷贝跟随代表行。
+    final List<int> base = _showEffects
+        ? deduped
+        : <int>[
+            for (final int i in deduped)
+              if (!cues[i].isEffect) i,
+          ];
     late List<int> indexes;
     switch (_filter) {
       case VideoSubtitleListFilter.all:
@@ -1626,6 +1665,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     _cachedCues = cues;
     _cachedCuesLength = cues.length;
     _cachedFilter = _filter;
+    _cachedShowEffects = _showEffects;
     _cachedVisibleIndexes = indexes;
     _cachedVisibleIndexByRawIndex = <int, int>{
       for (int i = 0; i < indexes.length; i++) indexes[i]: i,
@@ -1673,6 +1713,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     _cachedCues = null;
     _cachedCuesLength = -1;
     _cachedFilter = null;
+    _cachedShowEffects = null;
     _cachedVisibleIndexes = const <int>[];
     _cachedVisibleIndexByRawIndex = const <int, int>{};
     _cachedDedupCues = null;
@@ -1907,6 +1948,17 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                       ),
                       color: _autoScroll ? cs.primary : cs.onSurfaceVariant,
                       onPressed: _toggleAutoScroll,
+                      visualDensity: VisualDensity.compact,
+                      style: _kHeaderIconButtonStyle,
+                    ),
+                    FushiIconButtonControl(
+                      key: const ValueKey<String>(
+                        'video-subtitle-list-show-effects',
+                      ),
+                      tooltip: t.video_subtitle_list_show_effects,
+                      icon: FushiIcon(FushiIcons.animation, size: iconSize),
+                      color: _showEffects ? cs.primary : cs.onSurfaceVariant,
+                      onPressed: _toggleShowEffects,
                       visualDensity: VisualDensity.compact,
                       style: _kHeaderIconButtonStyle,
                     ),
@@ -2584,6 +2636,25 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                             tooltip: t.video_subtitle_list_auto_scroll,
                             selected: _autoScroll,
                             onPressed: _toggleAutoScroll,
+                          ),
+                        ),
+                        // H7r4mf_z2n：「显示特效字幕」开关，与自动滚动 / 点字幕查词同一种
+                        // 切换钮；放不下时随其余动作收进「⋯」。
+                        FushiAdaptiveAction(
+                          icon: FushiIcons.animation,
+                          label: t.video_subtitle_list_show_effects,
+                          onPressed: _toggleShowEffects,
+                          selected: _showEffects,
+                          inlineBuilder: (BuildContext _) => KeyedSubtree(
+                            key: const ValueKey<String>(
+                              'video-subtitle-list-show-effects',
+                            ),
+                            child: toolButton(
+                              icon: FushiIcons.animation,
+                              tooltip: t.video_subtitle_list_show_effects,
+                              selected: _showEffects,
+                              onPressed: _toggleShowEffects,
+                            ),
                           ),
                         ),
                         if (widget.onLookupCue != null)

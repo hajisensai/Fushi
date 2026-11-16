@@ -12538,6 +12538,7 @@
   "video_subtitle_list_search": "Buscar legendas",
   "video_subtitle_list_search_empty": "Nenhuma linha corresponde",
   "video_subtitle_list_search_hint": "Digite para filtrar as linhas",
+  "video_subtitle_list_show_effects": "Mostrar legendas com efeitos (letras de karaokê, placas na tela)",
   "video_subtitle_list_tap_lookup": "Tap subtitle text to look up (off: tapping only jumps)",
   "video_subtitle_load_failed": "Não foi possível carregar esta legenda (faixa gráfica ou não suportada): $label",
   "video_subtitle_mask_edit_hint": "Drag to move, drag corners to resize",

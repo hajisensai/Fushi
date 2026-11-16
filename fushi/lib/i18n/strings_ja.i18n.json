@@ -12538,6 +12538,7 @@
   "video_subtitle_list_search": "字幕を検索",
   "video_subtitle_list_search_empty": "一致する行がありません",
   "video_subtitle_list_search_hint": "入力して行を絞り込み",
+  "video_subtitle_list_show_effects": "エフェクト字幕を表示（カラオケ歌詞・画面テロップ）",
   "video_subtitle_list_tap_lookup": "字幕の文字をタップして辞書検索（オフ：タップはジャンプのみ）",
   "video_subtitle_load_failed": "この字幕を読み込めませんでした（画像字幕または非対応のトラックの可能性があります）：$label",
   "video_subtitle_mask_edit_hint": "Drag to move, drag corners to resize",

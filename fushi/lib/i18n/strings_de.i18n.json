@@ -12538,6 +12538,7 @@
   "video_subtitle_list_search": "Untertitel durchsuchen",
   "video_subtitle_list_search_empty": "Keine passende Zeile",
   "video_subtitle_list_search_hint": "Tippen, um Zeilen zu filtern",
+  "video_subtitle_list_show_effects": "Effekt-Untertitel anzeigen (Karaoke-Liedtexte, Bildschirmschilder)",
   "video_subtitle_list_tap_lookup": "Tap subtitle text to look up (off: tapping only jumps)",
   "video_subtitle_load_failed": "Dieser Untertitel konnte nicht geladen werden (Grafik- oder nicht unterstützte Spur): $label",
   "video_subtitle_mask_edit_hint": "Drag to move, drag corners to resize",
