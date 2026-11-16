@@ -47,6 +47,13 @@ void main() {
     document.indexOf(end, document.indexOf(start)),
   );
 
+  /// `_layoutSource` 末尾调 `_refitPage`（按显示尺寸取图，BUG-4658）：抽生成文档里
+  /// 真实的取图段（`FIT_IMAGES` … `_scheduleRefit`）一起跑。
+  String fitSection(String doc) => doc.substring(
+    doc.indexOf('  var FIT_IMAGES = '),
+    doc.indexOf('  function _layoutSource(page){'),
+  );
+
   test('generated gesture script parses as executable JavaScript', () async {
     final String script = section('(function(){', '</script>');
     await runJs('new Function(${_jsString(script)});');
@@ -73,6 +80,7 @@ const page={dataset:{pw:'1000',ph:'600',spreadPages:'1'},style:{},
 const window={innerWidth:1000,innerHeight:800};
 const document={querySelector:()=>page};
 const ROTATE_WIDE=true,IS_WEBTOON=false;
+${fitSection(document)}
 $layout
 $inverse
 _layoutSource(page);
@@ -114,6 +122,7 @@ const document={body:{style:{}},documentElement:{style:{}},querySelector:()=>pag
   createElement:()=>({getContext:()=>({drawImage:()=>{},getImageData:()=>({data:pixels})})})};
 const ROTATE_WIDE=true,IS_WEBTOON=false,CURRENT=0;
 function _bridge(){return null;}
+${fitSection(document)}
 $inspect
 _inspectSource(page);
 assert.deepEqual(page.__crop,{x:100,y:60,width:800,height:480});
@@ -159,6 +168,7 @@ function mk(prev, gap){
 const window={innerWidth:393,innerHeight:852,devicePixelRatio:2.75};
 function getComputedStyle(el){return {marginBottom:el.__gap?'12px':'0px'};}
 const ROTATE_WIDE=false,IS_WEBTOON=true,IS_VERTICAL_PAGED=false;
+${fitSection(webtoon)}
 $layout
 const first=mk(null,false), second=mk(first,false), afterGap=mk(mk(null,true),false);
 [first,second,afterGap].forEach(_layoutSource);
