@@ -33,19 +33,28 @@ class FfiFsrsEngine implements FsrsBatchEngine {
 
   FushiFsrsBindings get _b => library.bindings;
 
-  String? _fsrsRev;
+  ({String rev, Set<String> known})? _version;
 
-  @override
-  String get fsrsRev {
-    final String? cached = _fsrsRev;
+  /// 原生库的 `version`：当前 fsrs-rs 源码版本与本库认识的全部版本（当前版本 + 取代了的旧版本）。
+  ({String rev, Set<String> known}) get _fsrsVersion {
+    final ({String rev, Set<String> known})? cached = _version;
     if (cached != null) return cached;
     final Object? result = _call(<String, Object?>{'op': 'version'});
     final Object? rev = result is Map ? result['fsrsRev'] : null;
-    if (rev is! String) {
+    final Object? known = result is Map ? result['knownFsrsRevs'] : null;
+    if (rev is! String ||
+        known is! List ||
+        known.any((Object? r) => r is! String)) {
       throw SrsFsrsException('bad version response: $result');
     }
-    return _fsrsRev = rev;
+    return _version = (rev: rev, known: <String>{rev, ...known.cast<String>()});
   }
+
+  @override
+  String get fsrsRev => _fsrsVersion.rev;
+
+  @override
+  bool isKnownFsrsRev(String rev) => _fsrsVersion.known.contains(rev);
 
   @override
   List<double> defaultParams(SrsAlgorithm algorithm) {
