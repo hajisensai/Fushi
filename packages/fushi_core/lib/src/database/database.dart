@@ -926,6 +926,7 @@ void _requireOneVideoMetadataOwner({
     VideoSubtitleGlossaries,
     VideoSubtitleTextOverrides,
     MediaPrivacyFlags,
+    MediaNsfwFlags,
     LibraryOrganizeRuns,
     LibraryOrganizeChanges,
     WebBrowserHistory,
@@ -999,7 +1000,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 154;
+  int get schemaVersion => 155;
 
   /// v125–v128 四步的产物（全部幂等）：SRS 写路径索引、
   /// `collection_member_tombstones.published_at`、`bookmarks.char_offset` /
@@ -3121,6 +3122,13 @@ class FushiDatabase extends _$FushiDatabase
             remoteDictionaryMetadata,
             remoteDictionaryMetadata.localDisplayName,
           );
+        }
+      }
+      if (from < 155) {
+        // v155：作品级「NSFW」标记表 media_nsfw_flags（模糊封面 / 制卡图片，拍板台
+        // w04vrhUAaX）。纯新表、不动数据；幂等守卫同 v122。
+        if (!await _tableExists('media_nsfw_flags')) {
+          await m.createTable(mediaNsfwFlags);
         }
       }
     },

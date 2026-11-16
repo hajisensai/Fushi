@@ -3914,6 +3914,35 @@ class MediaPrivacyFlags extends Table {
   Set<Column> get primaryKey => <Column>{mediaKind, entryKey};
 }
 
+// ── media_nsfw_flags（v155：作品级「NSFW」标记）────────────────────────
+/// 用户手动把一部作品标成 NSFW（拍板台 w04vrhUAaX：所有媒体都能标是否 NSFW）：
+/// 「模糊 NSFW 封面」开着时库页 / 继续卡等封面消费端把它的封面打模糊，「制卡图片
+/// 也模糊」开着时从它制的卡用模糊后的封面 / 页图。
+///
+/// 与 [MediaPrivacyFlags] 同形、同一套逻辑外键（[mediaKind] = `TagHostKind.dbValue`，
+/// [entryKey]：epub=bookKey / srt=uid / video=bookUid / collection=合集 id 字符串），
+/// 跨端也搭互联标签同步清单（条目上的可选 `nsfw` 字段）。两件事刻意分表：私密管
+/// 出站（排行榜 / Bangumi），NSFW 管显示，两者互不蕴含。游戏不落这张表——游戏早有
+/// 自己的成人向标记（`GalgameCustomData.nsfw` / 刮削 `metadata.nsfw`）。
+///
+/// 一行两只时钟（LWW）：[nsfwAt] = 最近一次标 NSFW，[clearedAt] = 最近一次取消；
+/// NSFW ⇔ nsfwAt 非空且（clearedAt 为空或 nsfwAt > clearedAt），相等取消胜。取消
+/// 不删行（理由同 [MediaPrivacyFlags]）。宿主删除不级联。
+@DataClassName('MediaNsfwFlagRow')
+class MediaNsfwFlags extends Table {
+  TextColumn get mediaKind => text()();
+  TextColumn get entryKey => text()();
+
+  /// 最近一次标 NSFW 的毫秒戳；NULL = 从没标过。
+  IntColumn get nsfwAt => integer().nullable()();
+
+  /// 最近一次取消 NSFW 的毫秒戳；NULL = 从没取消过。
+  IntColumn get clearedAt => integer().nullable()();
+
+  @override
+  Set<Column> get primaryKey => <Column>{mediaKind, entryKey};
+}
+
 // ── library_organize_runs / library_organize_changes（AI 整理记录，schema v124）──
 // spec `docs/specs/2026-10-20-ai-library-organize-design.md` §5.3：本机这一次整理
 // 做了什么，供「整理记录」页与撤销用。**设备本地**：不同步、不进备份——别的设备有

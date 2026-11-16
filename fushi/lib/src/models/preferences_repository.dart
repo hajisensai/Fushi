@@ -2725,6 +2725,27 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 「模糊 NSFW 封面」：标成 NSFW 的作品（`media_nsfw_flags`、NSFW 合集成员、
+  /// 成人向游戏）封面在库页 / 继续卡等处打模糊。默认开——用户标 NSFW 就是为了
+  /// 不露封面；想临时看清再到设置里关。
+  bool get blurNsfwCovers =>
+      getPref('blur_nsfw_covers', defaultValue: true) as bool;
+
+  Future<void> setBlurNsfwCovers(bool value) async {
+    await setPref('blur_nsfw_covers', value);
+    notifyListeners();
+  }
+
+  /// 「制卡图片也模糊」：从 NSFW 作品制卡时，卡上的封面 / 页图用模糊后的副本。
+  /// 默认关：卡里存的是模糊图，以后取消也恢复不了已制的卡（拍板台 w04vrhUAaX 建议）。
+  bool get blurNsfwCardImages =>
+      getPref('blur_nsfw_card_images', defaultValue: false) as bool;
+
+  Future<void> setBlurNsfwCardImages(bool value) async {
+    await setPref('blur_nsfw_card_images', value);
+    notifyListeners();
+  }
+
   Future<void> setDiscoveryAudiobookshelfServers(
     Iterable<AudiobookshelfServerConfig> servers,
   ) async {
