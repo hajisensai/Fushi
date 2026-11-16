@@ -237,10 +237,18 @@ pub(crate) fn source_mark(legacy: &Connection) -> Result<(String, String), Strin
     Ok((NO_IDENTITY.to_owned(), content_digest(legacy)?))
 }
 
+#[cfg(test)]
+thread_local! {
+    /// 测试：本线程算过几次 [content_digest]（「只算一次并记下结论」的测试按它数）。
+    pub(crate) static DIGESTS: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+}
+
 /// 除 `srs_meta` 与 SQLite 内部表以外全部表的内容摘要（blake3，小写十六进制）：表名有序，每表的行按「每行一个
 /// blake3、逐位相加」合起来（与行序、规划器选的扫描方式无关）。只读存储列（生成列不算：不用注册 SQL 函数），一行
 /// 一行流过、不整表进内存。只给没有身份的迁移来源用（[source_mark]），在提交与补封时各算一次。
 fn content_digest(conn: &Connection) -> Result<String, String> {
+    #[cfg(test)]
+    DIGESTS.with(|n| n.set(n.get() + 1));
     let tables: Vec<String> = conn
         .prepare(
             "SELECT name FROM sqlite_schema WHERE type = 'table' AND substr(name, 1, 7) <> 'sqlite_' \
@@ -343,7 +351,61 @@ pub(crate) fn migrated_from_is(new: &Connection, legacy: &Connection) -> Result<
     let (Some(source), Some(log)) = (meta(MIGRATED_FROM_KEY)?, meta(MIGRATED_LOG_KEY)?) else {
         return Ok(false);
     };
+    // 先比身份（一次点读）：一边有身份、一边没有就不是，不必算整库摘要（[source_mark] 没有身份时要扫全部表）。
+    let identity = seal::legacy_identity(legacy)?;
+    if identity.is_some() != (source != NO_IDENTITY) {
+        return Ok(false);
+    }
     Ok(source_mark(legacy)? == (source, log))
+}
+
+/// 新代库 `srs_meta` 里记的结论：旁边那份 `srs.db` 在某个文件状态下**不是**迁移来源（值 = 当时的 [file_state]）。
+/// 没有身份的迁移来源要算整库摘要才判得出（[content_digest]），而一份更老 schema、没封存、又不是迁移来源的 `srs.db`
+/// 会一直留在旁边（[finish_seal] 不动它）：不记下结论的话，每次 Primary 打开都把整个旧库扫一遍（G7-2b 复核遗留）。
+/// 文件一变（长度或修改时刻，含 `-wal`）就重判。
+pub const RETAINED_UNRELATED_KEY: &str = "retained_unrelated";
+
+/// [path] 与它的 `-wal` 的 (长度, 修改时刻纳秒)：判「从上次判过之后有没有被动过」。拿不到的项记 0。
+fn file_state(path: &Path) -> String {
+    let one = |p: &Path| match std::fs::metadata(p) {
+        Ok(m) => {
+            let at = m
+                .modified()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map_or(0, |d| d.as_nanos());
+            format!("{}@{at}", m.len())
+        }
+        Err(_) => "0@0".to_owned(),
+    };
+    format!("{}|{}", one(path), one(&seal::with_suffix(path, "-wal")))
+}
+
+/// [finish_seal] 用：[legacy]（`srs.db` 的路径，只读连接 [ro]）是不是 [new] 记的迁移来源。同一个文件状态之前已经判过
+/// 「不是」（[RETAINED_UNRELATED_KEY]）就直接答不是；这次判出「不是」就记下（[new] 是读写连接）。
+fn source_is(new: &Connection, ro: &Connection, legacy: &Path) -> Result<bool, String> {
+    let state = file_state(legacy);
+    let known: Option<String> = new
+        .query_row(
+            "SELECT value FROM srs_meta WHERE key = ?1",
+            [RETAINED_UNRELATED_KEY],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(schema::sql)?;
+    if known.as_deref() == Some(state.as_str()) {
+        return Ok(false);
+    }
+    let same = migrated_from_is(new, ro)?;
+    if !same {
+        new.execute(
+            "INSERT INTO srs_meta (key, value) VALUES (?1, ?2) \
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            [RETAINED_UNRELATED_KEY, state.as_str()],
+        )
+        .map_err(schema::sql)?;
+    }
+    Ok(same)
 }
 
 /// [conn] 若是一份没封存的协议 3 库（`srs_meta.schema` 在 1..=协议 3 的当前号），它的 schema 号；已封存 / 墓碑 /
@@ -399,7 +461,7 @@ pub(crate) fn finish_seal(dir: &Path, new: &Connection) -> Result<Retained, Open
         Err(e) if not_a_db(&e) => return Ok(Retained::Unreadable),
         Err(e) => return Err(fail(e.to_string())),
     };
-    if !migrated_from_is(new, &ro).map_err(fail)? {
+    if !source_is(new, &ro, &legacy).map_err(fail)? {
         return if current == crate::store::schema::SCHEMA_VERSION {
             Err(OpenError::LegacyNotMigrated)
         } else {

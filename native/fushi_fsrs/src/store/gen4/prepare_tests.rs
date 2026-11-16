@@ -898,22 +898,182 @@ fn a_kill_after_the_commit_point_seals_the_original_on_open() {
     assert_eq!(legacy_bytes(&dir.0), before);
 }
 
-/// 补完之后的前提核对仍然拦得住补完管不到的：补完只跑协议 3 自己的命令，并入标记它不碰（[plan] 先拦下）。
+/// 一个孤儿 uid（[ORPHAN]：一副牌组、一条还没包成操作的旧复习日志）加在 P 已经包完的库上（P 不再需要补完）。
+fn with_orphan(d: &Device) {
+    while d.core.sync2_migrate(P, T0, None).unwrap()["done"] != json!(true) {}
+    let w = d.core.writer().unwrap();
+    w.execute(
+        "INSERT INTO srs_entities (id, profile_uid, kind, payload_json, created_at) VALUES (srs_id(?1), srs_id(?2), 'deck', '{\"createdAt\":1}', 1)",
+        params![default_deck_id(ORPHAN), ORPHAN],
+    )
+    .unwrap();
+    legacy_log(
+        &w,
+        ORPHAN,
+        "0193a1b2-0000-7000-8000-0000000000e9",
+        "0193a1b2-0000-7000-8000-0000000000c9",
+        T0 - 600,
+    );
+}
+
+/// 发给 [profile] 的一条新代命令（经 C ABI，时刻在迁移之后）。
+fn g4_as(
+    h: *mut crate::store::ffi::SrsCoreHandle,
+    profile: &str,
+    op: &str,
+    extra: Value,
+) -> Result<Value, String> {
+    let mut req = crate::store::gen4::cmd::dispatch_tests::g4req(op, NOW + 1_000, extra);
+    req["profile"] = json!(profile);
+    crate::store::gen4::cmd::dispatch_tests::call(h, &req, None)
+        .map(|(v, _)| v)
+        .map_err(|(rc, e)| format!("{rc} {e}"))
+}
+
+/// 并入做到一半（G9-5，修 G7-2b 的 `mergeHalfDone` 卡死）：迁移不拦，旧 uid（[ORPHAN]）与新 uid（P）各迁成一个集合，
+/// 标记与 `meta_set_edit` 的集合原样带进新代库；`profile_merge_commit` 一个事务把旧 uid 的集合并进 P：P 的复习日志多了
+/// 旧 uid 那一条（一条不丢），旧 uid 的绑定、标记、本机状态行都没了；`to` 对不上 / 再来一次都报错、什么都不改。
 #[test]
-fn a_half_done_merge_is_not_completed() {
-    let dir = unsynced_dir("g72b-merge", &|d| {
+fn a_half_done_merge_is_migrated_and_finished_in_the_new_generation() {
+    let marker = json!({"profileId": 7, "newUid": P}).to_string();
+    let dir = unsynced_dir("g95-merge", &|d| {
+        with_orphan(d);
         let w = d.core.writer().unwrap();
         w.execute(
-            "INSERT INTO srs_meta (key, value) VALUES (?1, '{}')",
-            [format!("profile_merge/{ORPHAN}")],
+            "INSERT INTO srs_meta (key, value) VALUES (?1, ?2)",
+            params![format!("profile_merge/{ORPHAN}"), marker],
+        )
+        .unwrap();
+        w.execute(
+            "INSERT INTO srs_meta (key, value) VALUES ('srs_retired_profile_uids', ?1)",
+            [json!(["old-a"]).to_string()],
         )
         .unwrap();
     });
-    let before = legacy_bytes(&dir.0);
+    let logs = count(&raw(&dir.0), "SELECT COUNT(*) FROM srs_review_logs");
     let out = migrate_with(&dir.0, &caches(), &Stop::new());
-    let migrate::Outcome::Blocked { code, .. } = &out else {
-        panic!("{out:?}")
+    assert_committed(&dir.0, &out, logs, 2);
+    let carried = |key: &str| -> Option<String> {
+        Connection::open_with_flags(dir.0.join(GEN4_FILE), OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .unwrap()
+            .query_row("SELECT value FROM srs_meta WHERE key = ?1", [key], |r| {
+                r.get(0)
+            })
+            .ok()
     };
-    assert_eq!(*code, BlockCode::MergeHalfDone);
-    assert_eq!(legacy_bytes(&dir.0), before);
+    assert_eq!(
+        carried(&format!("profile_merge/{ORPHAN}")),
+        Some(marker.clone())
+    );
+
+    let h = crate::store::gen4::cmd::dispatch_tests::open(&dir.0, 0).unwrap();
+    let uids = g4_as(h, P, "profile_uids", json!({})).unwrap();
+    let mut want = vec![P, ORPHAN];
+    want.sort();
+    assert_eq!(uids["uids"], json!(want), "{uids}");
+    assert_eq!(
+        g4_as(h, P, "meta_set_edit", json!({"set": "retiredUids"})).unwrap(),
+        json!({"values": ["old-a"]})
+    );
+    let p_reviews = g4_as(h, P, "profile_footprint", json!({})).unwrap()["reviews"]
+        .as_i64()
+        .unwrap();
+    let o_reviews = g4_as(h, ORPHAN, "profile_footprint", json!({})).unwrap()["reviews"]
+        .as_i64()
+        .unwrap();
+    assert_eq!(o_reviews, 1);
+
+    // 标记说的是并进 P：并进别的 uid 报错。
+    let e = g4_as(
+        h,
+        P,
+        "profile_merge_commit",
+        json!({"from": ORPHAN, "to": "0193a1b2-0000-7000-8000-00000000d00d"}),
+    )
+    .unwrap_err();
+    assert!(e.contains("no half-done merge"), "{e}");
+    let v = g4_as(
+        h,
+        P,
+        "profile_merge_commit",
+        json!({"from": ORPHAN, "to": P}),
+    )
+    .unwrap();
+    assert_eq!(v["done"], json!(true), "{v}");
+    assert_eq!(v["folded"], json!(true), "{v}");
+    assert_eq!(v["bindingChanged"], json!({"profile": P}), "{v}");
+
+    assert_eq!(
+        g4_as(h, P, "profile_uids", json!({})).unwrap()["uids"],
+        json!([P])
+    );
+    assert_eq!(
+        g4_as(h, P, "profile_footprint", json!({})).unwrap()["reviews"],
+        json!(p_reviews + o_reviews),
+        "旧 uid 的复习日志并进来了"
+    );
+    let e = g4_as(h, ORPHAN, "binding_get", json!({})).unwrap_err();
+    assert!(e.contains("has no collection"), "{e}");
+    let e = g4_as(
+        h,
+        P,
+        "profile_merge_commit",
+        json!({"from": ORPHAN, "to": P}),
+    )
+    .unwrap_err();
+    assert!(e.contains("no half-done merge"), "{e}");
+    crate::store::ffi::ffsrs_store_close(h);
+    assert_eq!(carried(&format!("profile_merge/{ORPHAN}")), None);
+    assert_eq!(carried(&format!("local_state/{ORPHAN}")), None);
+}
+
+/// 升级路径（G9-5 补 G7-2b 复核遗留的变异缺口）：v3.3.0 的库升级之后**每个** profile 都要补完，包括升级之前已经包完、
+/// 照前提核对不需要补完的 P。同一份库不降级时只补孤儿——两个分支给的清单不同，换掉任何一个都过不了。
+#[test]
+fn a_v3_3_0_upgrade_completes_every_profile_even_clean_ones() {
+    let dir = unsynced_dir("g95-v330-all", &with_orphan);
+    let p = plan_of(&dir.0);
+    assert!(!p.upgrade);
+    assert_eq!(p.profiles, vec![ORPHAN.to_owned()]);
+    downgrade_to_v3_3_0(&dir.0);
+    let p = plan_of(&dir.0);
+    assert!(p.upgrade);
+    let mut got = p.profiles.clone();
+    got.sort();
+    let mut want = vec![P.to_owned(), ORPHAN.to_owned()];
+    want.sort();
+    assert_eq!(got, want);
+    let logs = count(&raw(&dir.0), "SELECT COUNT(*) FROM srs_review_logs");
+    let out = migrate_with(&dir.0, &caches(), &Stop::new());
+    assert_committed(&dir.0, &out, logs, 2);
+}
+
+/// 新代库旁边一份更老 schema、没封存、又不是迁移来源的 `srs.db`（来源没有身份：要算整库摘要才判得出）：Primary 打开
+/// 只在它的文件状态第一次出现时算一次摘要、记下结论，之后再打开不算；文件被动过就重判（G9-5 修 G7-2b 复核遗留）。
+#[test]
+fn an_unrelated_older_library_is_digested_once_per_file_state() {
+    let dir = no_identity_dir("g95-digest");
+    crash_child(&dir.0, "seal");
+    raw(&dir.0)
+        .execute_batch(
+            "UPDATE srs_entities SET created_at = created_at + 1 WHERE kind = 'deck'; \
+             UPDATE srs_meta SET value = '26' WHERE key = 'schema';",
+        )
+        .unwrap();
+    let digests = || crate::store::gen4::files::DIGESTS.with(|n| n.get());
+    let n0 = digests();
+    drop(open_gen4(&dir.0, OpenMode::Primary).unwrap());
+    assert_eq!(digests(), n0 + 1);
+    assert_eq!(schema_of(&dir.0), 26, "不是迁移来源：不封");
+    drop(open_gen4(&dir.0, OpenMode::Primary).unwrap());
+    assert_eq!(digests(), n0 + 1, "同一个文件状态：不再算");
+    raw(&dir.0)
+        .execute(
+            "UPDATE srs_entities SET created_at = created_at + 1 WHERE kind = 'deck'",
+            [],
+        )
+        .unwrap();
+    drop(open_gen4(&dir.0, OpenMode::Primary).unwrap());
+    assert_eq!(digests(), n0 + 2, "文件动过：重判");
+    assert_eq!(schema_of(&dir.0), 26);
 }

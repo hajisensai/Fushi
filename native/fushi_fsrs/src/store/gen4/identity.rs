@@ -39,6 +39,16 @@
 //! 对每个结论都成立（测试 `every_outcome_reports_a_binding_change_exactly_when_the_binding_changed`），漏发只可能出在
 //! 命令层没在提交后发——G9-4 对每个改绑定的命令要有对应测试。
 //!
+//! # 空集合可换绑（G9-5，规划 §6 合并条件）
+//!
+//! 全新 profile 在第一次 `identity`（打开 profile）时就建了集合并绑定（G9-4 定案 1），之后 [adopt_foreign] 遇到另一个
+//! 集合只能并入：本机目录名较小时按 D27 是对方并入本机，别的设备看到 `Join` 还要再确认一次（D25）——「新设备加入已有
+//! 集合」在 app 里走不到设计 §5.4 第 5 条的「先加入」。所以：确认之后，本机这个集合若是**空集合**
+//! （`discard.rs` [disposable]：日志只有本机身份写的 `Salts`、没有别的设备、从没发布到任何位置），同一个事务里丢掉它
+//! （[discard_collection]）、把 profile 直接绑到对方，结论 [AdoptOutcome::Bound]，不写 `Join`；本机身份由命令层在对方
+//! 集合里重建（`cmd/identity.rs` `collection_adopt`）。派生层配置（`derive_cfg`：Dart 按 profile 给的缓存配置）照搬到
+//! 新集合号。不是空集合的照旧按 D27 并入。没确认之前一律 `NeedsConfirm`、什么都不动（与以前相同）。
+//!
 //! # 已经并入过
 //!
 //! `join_ix(col, k, src, dir)`：日志里每条 `Join` 一行（被并入的集合标识、它的目录名；盐在 `salt_ix`）。派生表：
@@ -52,6 +62,7 @@ use std::collections::BTreeSet;
 use rusqlite::params;
 
 use super::derive::{Index, Settled};
+use super::discard::{discard_collection, disposable};
 use super::ingest::{Settle, ingest_settle};
 use super::native::Native;
 use super::schema::sql;
@@ -124,7 +135,8 @@ pub enum AdoptOutcome {
     AlreadyJoined,
     /// 另一个集合，调用方还没拿到用户的确认（BUG-4011 / D25：确认之前不绑定、不并入）：什么都没写。
     NeedsConfirm,
-    /// 这个 profile 还没绑过集合：确认后直接绑到对方（设计 §5.4 第 5 条「先加入」）。没有写任何操作。
+    /// 这个 profile 还没绑过集合，或绑着的是空集合（文件头「空集合可换绑」，那个空集合同一个事务里丢掉）：确认后直接
+    /// 绑到对方（设计 §5.4 第 5 条「先加入」）。没有写任何操作；[col] 是新的本机集合号。
     Bound { col: i64, changed: BindingChanged },
     /// 并入了（方向见文件头）。本机改绑到对方之后，对方带来的、本机还不算数的盐另写一条 `Salts`（[salts]）。
     Joined {
@@ -389,8 +401,8 @@ impl Truth<'_> {
 /// （[AdoptOutcome]）。[confirmed] = 调用方已经问过用户「是不是同一个库」并得到肯定（BUG-4011 / D25）。
 ///
 /// 判定顺序：profile 没绑过 → 确认后直接绑；同一个集合 → 补盐；日志里有受信的 from = 对方的 `Join` → 补盐；对方绑在
-/// 本机别的 profile 上 → 报错（同机两个 profile 不能是同一个集合，设计 §5.1）；没确认 → `NeedsConfirm`；确认了 →
-/// 按 D27 的方向并入。同一个集合而目录名不同、或两个集合目录名相同，是坏数据，报错、什么都不写。
+/// 本机别的 profile 上 → 报错（同机两个 profile 不能是同一个集合，设计 §5.1）；没确认 → `NeedsConfirm`；确认了、本机
+/// 集合是空集合 → 丢掉它、直接绑到对方（文件头「空集合可换绑」）；否则按 D27 的方向并入。同一个集合而目录名不同、或两个集合目录名相同，是坏数据，报错、什么都不写。
 ///
 /// [foreign] 的 `dir` 必须是位置目录名（`meta.json` 所在的那一级），旧 profile uid 只能进 `salts`（[Foreign::dir]）。
 /// 绑定变了的结论经 [AdoptOutcome::binding_changed] 取事件，由命令层在最外层提交后发。
@@ -479,6 +491,10 @@ pub fn adopt_foreign(
         if !confirmed {
             return Ok(AdoptOutcome::NeedsConfirm);
         }
+        if disposable(t, col)? {
+            // 空集合可换绑（文件头「空集合可换绑」）：丢掉本机这个空集合、直接绑到对方，不写 Join。
+            return rebind_empty(t, profile, col, foreign);
+        }
         let (rebound, (op, chain, join), salts) = if dir == Ordering::Greater {
             // 本机的目录名更大：本机并入对方。本机的盐整份带进 Join；对方的盐本机还不算数的，改绑后另写一条 Salts。
             let wrote = join_into(
@@ -510,6 +526,41 @@ pub fn adopt_foreign(
             },
             salts,
         })
+    })
+}
+
+/// [derive_cfg] 换绑时带过去的派生层配置（缓存配置等：只取决于 profile，与集合无关）。
+pub(crate) const DERIVE_CFG_OF_SQL: &str =
+    "SELECT key, value FROM derive_cfg WHERE col = ?1 ORDER BY key";
+
+/// 「空集合可换绑」（[adopt_foreign] 的确认之后、本机集合 [col] 是 [disposable] 时）：同一个事务里丢掉 [col]
+/// （[discard_collection]）、把 [profile] 绑到对方（[Truth::bind]），派生层配置（`derive_cfg`，Dart 按 profile 给的缓存
+/// 配置）照搬到新集合号。结论 `Bound`：本机身份由命令层在对方集合里重建（`cmd/identity.rs` `collection_adopt`），不写
+/// `Join`、别的设备不用再确认（规划 §6 / D25）。
+fn rebind_empty(
+    t: &Truth<'_>,
+    profile: &str,
+    col: i64,
+    foreign: &Foreign,
+) -> Result<AdoptOutcome, String> {
+    let cfg: Vec<(String, String)> = {
+        let mut stmt = t.conn().prepare_cached(DERIVE_CFG_OF_SQL).map_err(sql)?;
+        let rows = stmt
+            .query_map([col], |r| Ok((r.get(0)?, r.get(1)?)))
+            .map_err(sql)?;
+        rows.collect::<Result<_, _>>().map_err(sql)?
+    };
+    discard_collection(t, col)?;
+    let fresh = t.bind(profile, &foreign.collection, &foreign.dir)?;
+    for (key, value) in &cfg {
+        t.set_derive_cfg(fresh, key, Some(value))?;
+    }
+    Ok(AdoptOutcome::Bound {
+        col: fresh,
+        changed: BindingChanged {
+            profile: profile.to_owned(),
+            col: fresh,
+        },
     })
 }
 
@@ -549,6 +600,18 @@ mod tests {
             let mut ix = Index::new(t, col);
             Native::open(t, col)?.write_salts(&mut ix, &salts(s), NOW)?;
             ingest_settle(t, &mut ix, col, Settle::Incremental).map(|_| ())
+        })
+        .unwrap();
+    }
+
+    /// 本机身份写一条修改（不是 `Salts`）：集合有了实质内容、不再是「空集合」（[disposable]），确认后照常 `Join`
+    /// 而不是换绑（G9-5）。
+    fn substantive(t: &Truth<'_>, col: i64) {
+        t.tx(|t| {
+            let mut ix = Index::new(t, col);
+            let mut n = Native::open(t, col)?;
+            n.write(&mut ix, crate::store::gen4::native::tests::edit("x"), NOW)?;
+            n.finish(&mut ix).map(|_| ())
         })
         .unwrap();
     }
@@ -919,6 +982,7 @@ mod tests {
         let t = Truth::new(&conn);
         let col = ready(&t);
         declare(&t, col, &["u1"]);
+        substantive(&t, col);
         let f = foreign(0xe0, "zz-dir", &["u-z"]);
         let before = snapshot(&t, col);
         assert_eq!(adopt(&t, &f, false), Ok(AdoptOutcome::NeedsConfirm));
@@ -957,7 +1021,7 @@ mod tests {
             panic!("{got:?}");
         };
         assert_eq!(body(&t, col, &op), Body4::salts(["u-z2"]).unwrap());
-        assert_eq!(audit(&t, col), 3);
+        assert_eq!(audit(&t, col), 4, "Salts、修改、Join、补盐");
         assert_rebuild_is_identity(&t, col);
     }
 
@@ -969,6 +1033,7 @@ mod tests {
         let t = Truth::new(&conn);
         let col = ready(&t);
         declare(&t, col, &["u1"]);
+        substantive(&t, col);
         let f = foreign(0xa0, "a-dir", &["u-a", "u1"]);
         let got = adopt(&t, &f, true).unwrap();
         let AdoptOutcome::Joined {
@@ -987,7 +1052,7 @@ mod tests {
                 salts: vec!["u1".into()]
             }
         );
-        assert_eq!((w.op.seq, s.seq), (2, 3));
+        assert_eq!((w.op.seq, s.seq), (3, 4), "第 2 条是让集合不空的那条修改");
         assert_eq!(body(&t, col, &s), Body4::salts(["u-a"]).unwrap());
         let b = t.binding(col).unwrap().unwrap();
         assert_eq!((b.collection, b.dir.as_str()), (id(0xa0), "a-dir"));
@@ -1091,6 +1156,7 @@ mod tests {
         let t = Truth::new(&conn);
         let col = ready(&t);
         declare(&t, col, &["u1"]);
+        substantive(&t, col);
         check(&t, foreign(OURS, OUR_DIR, &["u1"]), false, &mut seen);
         check(&t, foreign(OURS, OUR_DIR, &["u1", "u2"]), false, &mut seen);
         check(&t, foreign(0xe0, "zz-dir", &["u-z"]), false, &mut seen);
@@ -1188,6 +1254,8 @@ mod tests {
         let col_b = bind(&tb, 0xb0, "b");
         declare(&ta, col_a, &["ua"]);
         declare(&tb, col_b, &["ub"]);
+        substantive(&ta, col_a);
+        substantive(&tb, col_b);
         // B 这边认 A、A 这边认 B：各自只知道对方的集合标识、目录名与盐。
         let from_b = adopt(&tb, &foreign(0xa0, "a", &["ua"]), true).unwrap();
         let from_a = adopt(&ta, &foreign(0xb0, "b", &["ub"]), true).unwrap();
@@ -1216,7 +1284,10 @@ mod tests {
         let path = dir.0.join("srs4.db");
         let col = {
             let conn = open(&path).unwrap();
-            ready(&Truth::new(&conn))
+            let t = Truth::new(&conn);
+            let col = ready(&t);
+            substantive(&t, col);
+            col
         };
         let (c1, c2) = (open(&path).unwrap(), open(&path).unwrap());
         let (t1, t2) = (Truth::new(&c1), Truth::new(&c2));
@@ -1234,7 +1305,7 @@ mod tests {
             Ok(AdoptOutcome::Joined { .. })
         ));
         assert_eq!(adopt(&t1, &small, true), Ok(AdoptOutcome::Same));
-        assert_eq!(audit(&t1, col), 2);
+        assert_eq!(audit(&t1, col), 3, "修改 + 一条 Join");
         drop(t1);
         drop(t2);
         drop(c1);
@@ -1262,7 +1333,7 @@ mod tests {
         assert_eq!(got[1], AdoptOutcome::AlreadyJoined);
         let conn = open(&path).unwrap();
         let t = Truth::new(&conn);
-        assert_eq!(audit(&t, col), 3);
+        assert_eq!(audit(&t, col), 4, "修改 + 两条 Join");
         assert_eq!(
             joins(&t, col).iter().filter(|j| j.from == id(0xf0)).count(),
             1

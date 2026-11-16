@@ -199,8 +199,6 @@ pub enum BlockCode {
     /// 旧库里有 profile 没给缓存配置（`legacy::all_profiles` 里每个都要有；Dart 按 `gen4_migrate_profiles` 的 `profiles`
     /// 给）。调用方的 bug，补上再跑。
     MissingCacheConfig,
-    /// 并入做到一半（`profile_merge/<uid>` 标记）：要冻结的旧并入代码做完，迁移补不了（D23）。
-    MergeHalfDone,
     /// 旧库的 schema 比这一版的协议 3 新（用更新的版本写过）：这一版读不了，要装新版本。
     SchemaNewer,
     /// `srs.db` 不是协议 3 的库（没有 `srs_meta.schema`）。
@@ -223,7 +221,6 @@ impl BlockCode {
             BlockCode::Migrating => "migrating",
             BlockCode::Busy => "busy",
             BlockCode::MissingCacheConfig => "missingCacheConfig",
-            BlockCode::MergeHalfDone => "mergeHalfDone",
             BlockCode::SchemaNewer => "schemaNewer",
             BlockCode::NotProtocol3 => "notProtocol3",
             BlockCode::Corrupt => "corrupt",
@@ -428,13 +425,37 @@ fn temp_bytes(tmp: &Path) -> u64 {
         .sum()
 }
 
+/// 补完副本在空间核对时的身份（[reclaimable]）。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PrepCopy {
+    /// 上一次留下的、开跑前会删掉的：算可用空间。
+    Stale,
+    /// 这一次补完出来、之后的阶段还要读的：**不算**可用空间（G7-2b 复核遗留：补完之后的第二次核对曾把它算成可用，
+    /// 副本有多大就多报多大的可用空间）。
+    InUse,
+}
+
+/// 核对空间时可以算进可用空间的字节：上一次留下的迁移临时文件（开跑前删掉），加上 [copy] 为 [PrepCopy::Stale] 时的补完副本。
+fn reclaimable(dir: &Path, copy: PrepCopy) -> u64 {
+    let stale_copy = match copy {
+        PrepCopy::Stale => temp_bytes(&dir.join(PREPARE_COPY)),
+        PrepCopy::InUse => 0,
+    };
+    temp_bytes(&dir.join(GEN4_TEMP)) + stale_copy
+}
+
 /// 第 1 步的空间核对：[source]（之后读的那份旧库）要的空间再加 [extra]，不够 = [Outcome::NoSpace]。上一次留下的临时
-/// 文件与补完副本算可用空间（开跑前会删掉）。前提补完要拷副本（[extra] = 原件连同 WAL 的大小），补完之后按副本（变大
-/// 了）再核一次。
-fn check_space(dir: &Path, source: &Path, extra: u64) -> Result<Option<Outcome>, String> {
+/// 文件算可用空间（开跑前会删掉）；补完副本只在它是上一次留下的时候算（[PrepCopy]）。前提补完要拷副本（[extra] = 原件
+/// 连同 WAL 的大小），补完之后按副本（变大了）再核一次——那时副本在用，不算可用。
+fn check_space(
+    dir: &Path,
+    source: &Path,
+    extra: u64,
+    copy: PrepCopy,
+) -> Result<Option<Outcome>, String> {
     let needed = space_needed(source)? + extra;
     if let Some(free) = crate::store::compact::free_bytes(dir) {
-        let free = free + temp_bytes(&dir.join(GEN4_TEMP)) + temp_bytes(&dir.join(PREPARE_COPY));
+        let free = free + reclaimable(dir, copy);
         if free < needed {
             return Ok(Some(Outcome::NoSpace { needed, free }));
         }
@@ -489,7 +510,7 @@ pub fn run(dir: &Path, opts: Options<'_>) -> Result<Outcome, String> {
             Err(Ok(damaged)) => return Ok(blocked(BlockCode::Corrupt, damaged)),
             Err(Err(e)) => return Err(e),
         }
-        if let Some(out) = check_space(dir, &legacy, 0)? {
+        if let Some(out) = check_space(dir, &legacy, 0, PrepCopy::Stale)? {
             return Ok(out);
         }
     }
@@ -604,6 +625,48 @@ fn empty_source(dir: &Path) -> Result<bool, String> {
     Ok(empty)
 }
 
+/// 迁移原样带进新代库 `srs_meta` 的协议 3 库级键（G9-5）：
+///
+/// - `profile_merge/<旧 uid>`（并入做到一半的标记，值 `{profileId, newUid}`）：新代里由 Dart 发 `profile_merge_commit`
+///   收尾（`cmd/profile_data.rs`），扫无主数据时据此不动并入涉及的 uid；
+/// - `srs_retired_v2_devices` / `srs_retired_profile_uids`（`meta_set_edit` 的两个集合，profile 链接记「本机退役的 v2
+///   设备身份 / 离开的旧 uid」，清同步位置上本机留下的旧目录用）。
+///
+/// 只认这几个键（不按前缀猜别的）；值原样。读 [src] 的 `srs_meta`（没有这张表 = 什么都不带）。
+pub(super) const CARRIED_META_SQL: &str = "SELECT key, value FROM srs_meta WHERE \
+     (key >= 'profile_merge/' AND key < 'profile_merge0') \
+     OR key IN ('srs_retired_v2_devices', 'srs_retired_profile_uids') ORDER BY key";
+
+/// 把 [CARRIED_META_SQL] 选出的键从协议 3 库 [src] 原样写进新代库 [dst]。
+pub(crate) fn carry_library_meta(src: &Connection, dst: &Connection) -> Result<usize, String> {
+    let has_meta: bool = src
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = 'srs_meta')",
+            [],
+            |r| r.get(0),
+        )
+        .map_err(schema::sql)?;
+    if !has_meta {
+        return Ok(0);
+    }
+    let rows: Vec<(String, String)> = src
+        .prepare(CARRIED_META_SQL)
+        .map_err(schema::sql)?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+        .map_err(schema::sql)?
+        .collect::<Result<_, _>>()
+        .map_err(schema::sql)?;
+    for (key, value) in &rows {
+        dst.execute(
+            "INSERT INTO srs_meta (key, value) VALUES (?1, ?2) \
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            [key, value],
+        )
+        .map_err(schema::sql)?;
+    }
+    Ok(rows.len())
+}
+
 /// 拿着换代锁、还没有新代库：第 2 步后半起。
 fn migrate_locked(dir: &Path, mut opts: Options<'_>) -> Result<Outcome, String> {
     let legacy = dir.join(LEGACY_FILE);
@@ -702,7 +765,7 @@ fn prepare_and_stage(
     } else {
         // 副本要一份原件（连同 WAL）的空间。
         let whole = file_len(&legacy) + file_len(&seal::with_suffix(&legacy, "-wal"));
-        if let Some(out) = check_space(dir, &legacy, whole)? {
+        if let Some(out) = check_space(dir, &legacy, whole, PrepCopy::Stale)? {
             return Ok(out);
         }
         let copy = match prepare::complete(dir, &plan, opts)? {
@@ -710,7 +773,7 @@ fn prepare_and_stage(
             Err(out) => return Ok(out),
         };
         // 补完的副本（升级、包进旧行之后变大了）：之后的阶段按它再核一次空间。
-        if let Some(out) = check_space(dir, &copy, 0)? {
+        if let Some(out) = check_space(dir, &copy, 0, PrepCopy::InUse)? {
             return Ok(out);
         }
         copy
@@ -836,6 +899,8 @@ fn with_snapshot(
     }
     let committed = (|| -> Result<(), String> {
         let dst = staged.dst;
+        // 协议 3 库级的本机记录：半截并入的标记、profile 链接记的两个集合（[carry_library_meta]）。
+        carry_library_meta(origin, &dst)?;
         // 记原件的指纹（没有身份的原件记内容摘要，`files::source_mark`）：补封核对的是原件。
         files::record_migrated_from(&dst, origin)?;
         dst.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)")

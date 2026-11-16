@@ -35,7 +35,8 @@
 //! - **笔记的 `tags` 行**与协议 3 投影相同（`cmd::edit_rows`）：碰过标签的笔记恰有一行合成的 `sync2:tags:<笔记>`，
 //!   值 = 按类判的 OR-Set 当前值；整列表的 `tags` 修改不单独出。日志行的 `res` 是按 historyFrom 血统重放写回的那份，
 //!   与协议 3 落库的相同（不是操作里的原值）。
-//! - **`profile_merges`** 永远为空：新代没有「并入做到一半」（D23：迁移前 preflight 拦下，旧并入代码做完再迁）。
+//! - **`profile_merges`** 是迁移带过来的「并入做到一半」标记（G9-5：迁移不再拦，标记原样进新代库的 `srs_meta`，由
+//!   `profile_merge_commit` 收尾后删掉）；新代自己不再起并入。
 //! - **`successors`** 只认目标是 UUID 的 `historyFrom/` 键（紧凑键，`gen4::name`）：卡 ID 恒为 UUID（`registers::card_id`
 //!   与 apkg 导入），文本形的目标不会出现；按 `reg_card_key` 索引的一段取，不扫全部卡寄存器（协议 3 BUG-3543 的同一个要求）。
 //!
@@ -249,15 +250,31 @@ pub fn run(t: &Truth<'_>, col: i64, req: &Value, files: &mut Files) -> Result<Va
     })
 }
 
+/// `profile_merges`：迁移带过来的「并入做到一半」标记（`profile_merge/<旧 uid>` 的键与原值，键升序；G9-5，
+/// `cmd/profile_data.rs` 文件头「半截并入的收尾」）。语句同 `profile_merge_commit` 认的那份
+/// （[super::profile_data::MERGE_MARKS_SQL]，`srs_meta` 主键区间）。
+fn profile_merges(t: &Truth<'_>) -> Result<Vec<u8>, String> {
+    let mut out = Table::new(&[("key", KIND_STR), ("value", KIND_STR)]);
+    let mut stmt = t
+        .conn()
+        .prepare_cached(super::profile_data::MERGE_MARKS_SQL)
+        .map_err(sql)?;
+    let rows = stmt
+        .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+        .map_err(sql)?;
+    for row in rows {
+        let (k, v) = row.map_err(sql)?;
+        out.push(vec![Cell::S(k), Cell::S(v)])?;
+    }
+    Ok(out.encode())
+}
+
 /// `read_lib`：不针对单个集合的只读查询（整个新代库）。
 pub fn run_lib(t: &Truth<'_>, req: &Value, files: &mut Files) -> Result<Value, String> {
     snapshot(t, |t| {
         let q = need_str(req, "q")?;
         Ok(match q {
-            "profile_merges" => single(
-                files,
-                Table::new(&[("key", KIND_STR), ("value", KIND_STR)]).encode(),
-            ),
+            "profile_merges" => single(files, profile_merges(t)?),
             "user_note_count" => json!({"n": user_note_count(t)?}),
             "entity_owners" => single(files, entity_owners(t)?),
             other => return Err(format!("read_lib: unknown query {other}")),
