@@ -1,5 +1,5 @@
-## BUG-4718 · 回首页卡 100 ms：首页失效书列表 provider，藏着的书架与漫画书架各跟着整页重建四次
-- **报告**：2026-11-16（用户：转来群反馈录屏「切 tab 变卡了」；修完 BUG-4715 / BUG-4716 后列出的剩余项「回首页时延后的刷新偶发到 90 ms」，用户回「都做都做，能优化就优化」）
+## BUG-4727 · 回首页卡 100 ms：首页失效书列表 provider，藏着的书架与漫画书架各跟着整页重建四次
+- **报告**：2026-11-16（用户：转来群反馈录屏「切 tab 变卡了」；修完 BUG-4724 / BUG-4725 后列出的剩余项「回首页时延后的刷新偶发到 90 ms」，用户回「都做都做，能优化就优化」）
 - **真实性**：✅ 真 bug（Windows profile 构建实测，探针 `fushi/integration_test/home_tab_switch_perf_itest.dart`）。逛过别的 tab 再回首页：首帧 build 103 ms，随后 +130 ms / +210 ms / +405 ms 处再各来一帧 57 / 36 / 37 ms。timeline 拆开看，首页自己的构建只有 12.7 ms，其余全是**藏着的**书架与漫画书架：`FutureBuilder<_RemoteBookState?>` 往下整棵网格，每帧两份。
   - 根因：保活 tab 用 `Offstage` 藏着，但页面 State 仍订阅着全局状态，被动标脏照样整页 `build`。触发方是 `fushi/lib/src/pages/implementations/home_dashboard_page.dart:990-1000`（修前行号）`_reloadNow`：首页被藏着时到达的数据变更只记一笔（`_reloadDeferredWhileHidden`），切回时（`:895` `onTabActivated`）补做，其中无条件失效 `fushiBooksProvider` / `bookLastReadAtProvider` / `completedEpubBookKeysProvider`。两个书架实例在 `build` 里 `ref.watch` 前两个（`reader_fushi_history_page.dart:1005`、`:1662`），每个 provider 先通知一次 loading、算完再通知一次 data——两个实例 × 两个 provider × 两次通知，藏着的页面白白重建 8 遍，分摊在四帧里。外壳的 `_hiddenTabContent`（BUG-2976）只挡得住自上而下的 widget 更新，挡不住页面自己被标脏。
   - 触发面不止测速：读一会儿书 / 看一会儿视频再回首页就是这条路径（阅读位置写入 → 首页记欠账 → 回首页补做）。

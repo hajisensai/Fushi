@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/components/section_deferred_build.dart';
 import 'package:fushi/src/utils/components/section_visibility.dart';
 
-/// BUG-4718：保活分区里的页面藏着时不重建，切回可见时有欠账才补一次。
+/// BUG-4727：保活分区里的页面藏着时不重建，切回可见时有欠账才补一次。
 ///
 /// 起因是实测：首页切回时失效书列表 provider，藏着的书架与漫画书架各跟着整页
 /// 重建四次（每次 7～30 ms），用户看到「回首页卡一下」。这里钉死

@@ -12,7 +12,7 @@ import 'package:test/test.dart';
 ///
 /// 修复——让**书架 + 视频 + 游戏**保活（State 常驻、用 `Offstage` 隐藏未选中者），
 /// 切回沿用已加载列表/封面/滚动位置；游戏保活则保证 Hook 会话不因切 tab 停止。
-/// 查词与复习后来也保活（BUG-4719：不保活时每次切入整页重挂，查词页还要
+/// 查词与复习后来也保活（BUG-4728：不保活时每次切入整页重挂，查词页还要
 /// 每次冷建一个查词 WebView）。它们原先靠「切入即重挂」做的事改成显式的「切入时
 /// 做」，由下面「保活的查词 / 复习页……」那条守卫钉住——尤其 HomeDictionaryPage
 /// 消费桌面悬浮字幕 pending 查词（TODO-376）。设置与网页仍按需重建。
@@ -71,13 +71,13 @@ void main() {
       literal.contains('HomeTab.dictionaries'),
       isTrue,
       reason:
-          '查词 tab 必须保活（BUG-4719：不保活时每次切入整页重挂，并冷建 / '
+          '查词 tab 必须保活（BUG-4728：不保活时每次切入整页重挂，并冷建 / '
           '销毁一个预热用的查词 WebView）',
     );
     expect(
       literal.contains('HomeTab.srs'),
       isTrue,
-      reason: '复习 tab 必须保活（BUG-4719：不保活时每次切入整页重挂）',
+      reason: '复习 tab 必须保活（BUG-4728：不保活时每次切入整页重挂）',
     );
     expect(
       literal.contains('HomeTab.settings'),
@@ -297,7 +297,7 @@ void main() {
       reason: 'BUG-995：远端续播卡点按走 _openRemote（流播）',
     );
   });
-  test('书架与首页藏着时不重建（BUG-4718）：带 SectionDeferredBuild，State 不直接依赖可见性', () {
+  test('书架与首页藏着时不重建（BUG-4727）：带 SectionDeferredBuild，State 不直接依赖可见性', () {
     final String shelfSrc = File(
       'lib/src/pages/implementations/reader_fushi_history_page.dart',
     ).readAsStringSync();
