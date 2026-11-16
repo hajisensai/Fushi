@@ -16,6 +16,7 @@ import 'package:fushi_server/src/server_prefs.dart';
 import 'package:path/path.dart' as p;
 import 'package:shelf/shelf.dart' as shelf;
 import 'package:test/test.dart';
+import 'support/fake_rwkv.dart';
 
 /// 服务端「中文查词简繁互查」开关（PR #3003 遗留：之前只读一个服务端上没有任何入口
 /// 能写的偏好键，浏览器扩展经服务端查词永远不互查）：配置项 `lookup_chinese_script_variants`
@@ -45,6 +46,7 @@ void main() {
     final ServerIdentity identity = await ServerIdentity.loadOrCreate(prefs);
     final ServerPaths paths = ServerPaths(config.dataDir);
     final HeadlessHost host = HeadlessHost(
+      srsRwkvHttpClient: noNetworkHttpClient,
       config: config,
       paths: paths,
       db: db,

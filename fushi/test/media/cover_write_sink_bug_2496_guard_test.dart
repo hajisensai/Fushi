@@ -24,17 +24,16 @@ import '../helpers/source_guard.dart';
 final RegExp kRawWrite = RegExp(r'writeAsBytes\(|\.copy\(|copySync\(');
 
 /// 文件 → 允许保留的裸写行锚点（每条锚点恰好命中一行，且那一行搬的不是封面）。
-const Map<String, List<String>> kAllowedRawWriteAnchors =
-    <String, List<String>>{
-      'lib/src/media/media_source.dart': <String>[],
-      'lib/src/media/audiobook/book_import_dialog.dart': <String>[],
-      // PDF 本体拷进书目录（document.pdf），不是封面。
-      'lib/src/pdf/pdf_importer.dart': <String>['kPdfFileName'],
-      // 旧 <runtimeRoot>/library 目录整体搬家（跨卷回退到逐项 copy），不是封面写入。
-      'lib/src/media/manga/library/online_manga_library_service.dart': <String>[
-        'entity.copy(targetPath)',
-      ],
-    };
+const Map<String, List<String>>
+kAllowedRawWriteAnchors = <String, List<String>>{
+  'lib/src/media/media_source.dart': <String>[],
+  'lib/src/media/audiobook/book_import_dialog.dart': <String>[],
+  // PDF 本体拷进书目录（document.pdf），不是封面。
+  'lib/src/pdf/pdf_importer.dart': <String>['kPdfFileName'],
+  // 旧位置目录整体搬家的逐项 copy 已收进 lib/src/storage/directory_move.dart
+  // 的 copyTreeMerging（通用目录搬移，不写封面），这里不再有裸写。
+  'lib/src/media/manga/library/online_manga_library_service.dart': <String>[],
+};
 
 void main() {
   kAllowedRawWriteAnchors.forEach((String path, List<String> anchors) {

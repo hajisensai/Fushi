@@ -36,6 +36,7 @@ import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_profile_merge.dart';
 import 'srs_location_store.dart' show kSrsSync2Folder, kSrsSync2Namespace;
 import 'package:fushi_engine/sync/sync_asset_store.dart';
+import '../../support/srs_raw_sql.dart';
 
 /// srs.db `srs_meta`：本设备改用别的 uid 之前用过的同步 v2 设备身份（JSON 数组）。换 uid 后本机在新集合里是新的
 /// v2 设备，旧集合的本机身份行也随并入删掉了——不记下来就认不出同步目录里那个旧 uid 目录是自己留下的孤儿。
@@ -557,7 +558,7 @@ class SrsDbProfileLinker implements SrsProfileLinker {
 
   /// srs.db `srs_meta` 里 [key] 存的字符串集合（JSON 数组；没有 / 坏了为空）。
   Future<Set<String>> _readMetaSet(SrsDbStore store, String key) async {
-    final QueryRow? row = await store.db
+    final SrsRawRow? row = await store.core
         .customSelect(
           'SELECT value FROM srs_meta WHERE key = ?',
           variables: <Variable<Object>>[Variable<String>(key)],
@@ -611,12 +612,11 @@ class SrsDbProfileLinker implements SrsProfileLinker {
     final int profileId = await activeProfileId();
     bool resumed = false;
     for (final SrsPendingProfileMerge m in await srsPendingProfileMerges(
-      store.db,
+      store.core,
     )) {
       if (m.profileId != profileId) continue;
       await srsMergeProfileUid(
         db,
-        store.db,
         core: store.core,
         profileId: m.profileId,
         oldUid: m.oldUid,
@@ -649,7 +649,6 @@ class SrsDbProfileLinker implements SrsProfileLinker {
     if (merge) {
       await srsMergeProfileUid(
         db,
-        store.db,
         core: store.core,
         profileId: profileId,
         oldUid: oldUid,
