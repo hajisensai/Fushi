@@ -1180,7 +1180,7 @@ mod tests {
         let (ta, tb) = (Truth::new(&ca), Truth::new(&cb));
         let bind = |t: &Truth<'_>, c: u8, dir: &str| -> i64 {
             let col = t.tx(|t| t.bind(P, &id(c), dir)).unwrap();
-            t.tx(|t| t.create_self(col, &id(c ^ 0x0f), &[3; 32], NOW))
+            t.tx(|t| t.create_self(col, &id(c ^ 0x0f), &[3; 32], None, NOW))
                 .unwrap();
             col
         };
