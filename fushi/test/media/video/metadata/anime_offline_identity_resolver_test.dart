@@ -174,6 +174,55 @@ void main() {
   );
 
   test(
+    'exact hits of only the other media type are onlyOtherKind, not ambiguous',
+    () async {
+      final AnimeOfflineIdentityResolution result =
+          await resolver(
+            index: <String, List<AniDbTitleSearchResult>>{
+              '名探偵コナン': <AniDbTitleSearchResult>[hit(266, '名探偵コナン')],
+            },
+            entries: <int, AnimeIdentityEntry>{
+              266: entry(266, malIds: <int>{235}),
+            },
+          ).resolve(
+            titleCandidates: <String>['名探偵コナン'],
+            mediaKind: VideoMetadataMediaKind.movie,
+          );
+      expect(result.status, AnimeOfflineIdentityStatus.onlyOtherKind);
+      expect(result.identity, isNull, reason: '另一形态的条目不当本形态的命中');
+      expect(result.otherKindIdentity?.anidbId, 266);
+      expect(result.otherKindIdentity?.malId, 235);
+      expect(result.otherKindIdentity?.isMovie, isFalse);
+    },
+  );
+
+  test(
+    'several other-kind hits are onlyOtherKind without a candidate',
+    () async {
+      final AnimeOfflineIdentityResolution result =
+          await resolver(
+            index: <String, List<AniDbTitleSearchResult>>{
+              'Show': <AniDbTitleSearchResult>[
+                hit(601, 'Show'),
+                hit(602, 'Show'),
+              ],
+            },
+            entries: <int, AnimeIdentityEntry>{
+              601: entry(601, type: 'MOVIE'),
+              602: entry(602, type: 'MOVIE'),
+            },
+          ).resolve(
+            titleCandidates: <String>['Show'],
+            mediaKind: VideoMetadataMediaKind.tv,
+          );
+      expect(result.status, AnimeOfflineIdentityStatus.onlyOtherKind);
+      expect(result.otherKindIdentity, isNull);
+      expect(result.reason, contains('601'));
+      expect(result.reason, contains('602'));
+    },
+  );
+
+  test(
     'media type gate picks the TV entry over the movie of the same name',
     () async {
       final AnimeOfflineIdentityResolution result =
