@@ -220,4 +220,78 @@ void main() {
       }
     },
   );
+
+  test('renames packed local audio libraries to public display names', () async {
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    await db.customStatement(
+      'INSERT INTO preferences (key, value) VALUES (?, ?)',
+      <Object>[
+        'local_audio_dbs',
+        's:${jsonEncode(<Object>[
+          <String, Object>{'path': '/support/local_audio_1.db', 'displayName': 'android.db', 'enabled': true},
+          <String, Object>{
+            'path': '/support/local_audio_2.db',
+            'displayName': 'android_english.db',
+            'enabled': true,
+            'sources': <Object>[
+              <String, Object>{'name': 'oald10', 'enabled': true},
+            ],
+          },
+        ])}',
+      ],
+    );
+
+    await sanitizeRecommendedPackDatabase(db);
+    await sanitizeRecommendedPackDatabase(db);
+
+    final String value =
+        (await db
+                .customSelect(
+                  "SELECT value FROM preferences WHERE key = 'local_audio_dbs'",
+                )
+                .getSingle())
+            .read<String>('value');
+    expect(value.startsWith('s:'), isTrue);
+    final List<Object?> entries =
+        jsonDecode(value.substring(2)) as List<Object?>;
+    expect(
+      entries.map((e) => (e! as Map<String, Object?>)['displayName']).toList(),
+      <String>['Japanese audio', 'English audio'],
+    );
+    expect(
+      (entries[0]! as Map<String, Object?>)['path'],
+      '/support/local_audio_1.db',
+      reason: 'frozen on-disk file names must not change',
+    );
+    expect((entries[1]! as Map<String, Object?>)['sources'], <Object>[
+      <String, Object>{'name': 'oald10', 'enabled': true},
+    ]);
+  });
+
+  test('renames local audio labels in audio_source_configs too', () {
+    final String out = renameRecommendedPackAudioSourceConfigs(
+      'j:${jsonEncode(<Object>[
+        <String, Object>{'kind': 'localAudio', 'label': 'android.db', 'path': '/a'},
+        <String, Object>{'kind': 'localAudio', 'label': 'android_english.db', 'path': '/b'},
+        <String, Object>{'kind': 'remoteAudio', 'label': 'Anki', 'url': 'http://x'},
+        <String, Object>{'kind': 'hibikiRemote', 'enabled': false},
+      ])}',
+    );
+    expect(out.startsWith('j:'), isTrue);
+    final List<Object?> entries = jsonDecode(out.substring(2)) as List<Object?>;
+    expect(
+      entries.map((e) => (e! as Map<String, Object?>)['label']).toList(),
+      <Object?>['Japanese audio', 'English audio', 'Anki', null],
+    );
+  });
+
+  test('refuses to publish an audio library without a public name', () {
+    expect(
+      () => renameRecommendedPackAudioDbs(
+        's:[{"path":"/support/local_audio_3.db","displayName":"private.db"}]',
+      ),
+      throwsA(isA<StateError>()),
+    );
+  });
 }
