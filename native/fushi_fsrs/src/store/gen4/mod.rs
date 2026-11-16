@@ -7,7 +7,8 @@
 //! - [files]：新代的文件名、换代锁（[files::GenLock]）与打开模式（[files::open_gen4]）。
 //! - `pack`：操作体的本机存储编码（旧戳内部化、配置快照剪出、压缩），逐字节可逆。
 //! - [truth]：真相层——每台设备一条日志（承袭槽 / 原生操作 / 空洞），槽的落库规则，待投递与分叉，原生日志的链。
-//! - [import]：把一份协议 3 的库灌进真相层。
+//! - [import]：把一份协议 3 的库灌进真相层；导入 `.fushisrs` 第 2 版 / 第 1 版的内核流、旧备份读入（G11-2）。
+//! - [export]：把一个集合的真相层写成 `.fushisrs` 第 2 版的内核流 `FSRS4EXP`（G11-2，没有调用方）。
 //! - [identity]：身份——绑定状态、并入（`Join`，改绑）、外来数据该怎么认（[identity::adopt_foreign]）、`join_ix`，G9-3。
 //! - [native]：本机原生写入者（seq / 依赖 / HLC / 链，`Salts` 去重），G7-3a。
 //! - [ingest]：一批落库之后收派生层（逐条维护 / 整个重建），本机写入、收段、导入共用。
@@ -42,6 +43,7 @@ pub(crate) mod compare;
 pub mod derive;
 pub mod digest;
 pub mod dryrun;
+pub mod export;
 pub mod files;
 pub mod fork;
 pub mod identity;
