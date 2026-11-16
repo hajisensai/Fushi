@@ -501,6 +501,7 @@
   "anime_download_category_english": "Англ. перевод",
   "anime_download_category_non_english": "Не английский",
   "anime_download_category_raw": "Без перевода",
+  "anime_download_copy_link": "Копировать ссылку для загрузки",
   "anime_download_delete": "Удалить",
   "anime_download_episode_count": "Серия $count",
   "anime_download_filter_episode": "Episode $n only",

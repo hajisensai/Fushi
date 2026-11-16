@@ -501,6 +501,7 @@
   "anime_download_category_english": "英譯",
   "anime_download_category_non_english": "非英譯",
   "anime_download_category_raw": "生肉",
+  "anime_download_copy_link": "複製下載連結",
   "anime_download_delete": "刪除",
   "anime_download_episode_count": "$count 集",
   "anime_download_filter_episode": "Episode $n only",

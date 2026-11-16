@@ -501,6 +501,7 @@
   "anime_download_category_english": "مترجم للإنجليزية",
   "anime_download_category_non_english": "غير إنجليزي",
   "anime_download_category_raw": "بدون ترجمة",
+  "anime_download_copy_link": "نسخ رابط التنزيل",
   "anime_download_delete": "حذف",
   "anime_download_episode_count": "حلقة $count",
   "anime_download_filter_episode": "Episode $n only",
