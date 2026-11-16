@@ -91,6 +91,10 @@ class VideoBooksDeleteException implements Exception {
 }
 
 /// 被删行删前的快照：行一删，封面/字幕/附加图路径就再也推导不出来。
+/// 删除后逐本回收的进度：已完成步数 / 总步数（见
+/// [VideoBookRepository.deleteVideoBooksAndReclaimAssets] 的 `onReclaimProgress`）。
+typedef VideoReclaimProgressCallback = void Function(int done, int total);
+
 typedef _DeletedVideoSnapshot = ({
   String bookUid,
   String? coverPath,
@@ -437,6 +441,11 @@ class VideoBookRepository {
 
   Future<VideoBookRow?> getByBookUid(String bookUid) =>
       _db.getVideoBookByBookUid(bookUid);
+
+  /// 按一批 bookUid 取行（不存在的不在结果里，顺序不保证）。批量操作别逐条
+  /// [getByBookUid]（BUG-4709：上万条 = 上万次查询）。
+  Future<List<VideoBookRow>> getByBookUids(Iterable<String> bookUids) =>
+      _db.getVideoBooksByBookUids(bookUids);
 
   /// 统一合集：某合集的成员引用行（按 sortIndex 有序）。播放器据此建播放列表兄弟集。
   Future<List<MediaCollectionItemRow>> getCollectionItems(int collectionId) =>
@@ -1265,18 +1274,17 @@ class VideoBookRepository {
 
   /// 删除传播（显式确认式）：仅当用户选「同步删除」才记 sync 删除墓碑，供同步发布
   /// 到远端标记、其他设备逐条确认后也删。best-effort：记账失败不影响视频已删。
+  /// 一批键一个 batch（BUG-4709：原来逐条独立提交，上万条要上万次 fsync）。
   Future<void> _writeVideoDeletionTombstones(Iterable<String> bookUids) async {
-    final int now = DateTime.now().millisecondsSinceEpoch;
-    for (final String bookUid in bookUids) {
-      try {
-        await _db.writeSyncDeletionTombstone(
-          SyncTombstoneKind.video.dbValue,
-          bookUid,
-          now,
-        );
-      } catch (_) {
-        // best-effort：记账失败不影响视频已删。
-      }
+    try {
+      await _db.writeSyncDeletionTombstones(
+        SyncTombstoneKind.video.dbValue,
+        bookUids,
+        DateTime.now().millisecondsSinceEpoch,
+      );
+    } catch (e, stack) {
+      // best-effort：记账失败不影响视频已删。
+      engineLog.log('VideoBookRepository.writeDeletionTombstones', e, stack);
     }
   }
 
@@ -1320,6 +1328,9 @@ class VideoBookRepository {
   /// 文件标 skip），删之后才做记录对账。本仓库层不认识下载管线（管线依赖仓库，
   /// 反过来会成环），所以这两步都由 `video_library_delete.dart` 在上层接线。
   ///
+  /// [onReclaimProgress]：行删掉之后的逐本回收（app 副本 + 内嵌字幕缓存，每本两步）
+  /// 每推进一步回调一次 `(done, total)`，给大批量删除的进度条用（BUG-4709）。
+  ///
   /// [keepLocalFiles]：调用方确认已转交给别的库的原始文件，与幸存行引用的文件同等
   /// 进删除护栏（含 iOS 选择器副本的强制回收）。
   Future<int> deleteVideoBooksAndReclaimAssets(
@@ -1331,6 +1342,7 @@ class VideoBookRepository {
     LocalVideoFileDeleteHooks? localFileHooks,
     Future<void> Function()? afterDeleteBeforeReclaim,
     Iterable<String> keepLocalFiles = const <String>[],
+    VideoReclaimProgressCallback? onReclaimProgress,
   }) {
     final VideoScrapeOperationLease? lease =
         VideoScrapeOperationGate.tryEnterOperation();
@@ -1347,6 +1359,7 @@ class VideoBookRepository {
         localFileHooks: localFileHooks,
         afterDeleteBeforeReclaim: afterDeleteBeforeReclaim,
         keepLocalFiles: keepLocalFiles,
+        onReclaimProgress: onReclaimProgress,
       ),
     ).whenComplete(lease.release);
   }
@@ -1360,6 +1373,7 @@ class VideoBookRepository {
     required LocalVideoFileDeleteHooks? localFileHooks,
     required Future<void> Function()? afterDeleteBeforeReclaim,
     required Iterable<String> keepLocalFiles,
+    required VideoReclaimProgressCallback? onReclaimProgress,
   }) async {
     final List<String> uids = bookUids.toSet().toList(growable: false);
     // v68：附加图行随删行 FK cascade 消失，路径必须删行**前**快照（与 coverPath
@@ -1438,7 +1452,11 @@ class VideoBookRepository {
           ? const <VideoBookRow>[]
           : await listAll();
       if (deleted.isNotEmpty) {
-        await _reclaimDeletedVideoBooksAssetsUnlocked(deleted, survivors);
+        await _reclaimDeletedVideoBooksAssetsUnlocked(
+          deleted,
+          survivors,
+          onProgress: onReclaimProgress,
+        );
       }
       // 选择器导入副本（iOS 容器 `tmp/` 里 app 拷出来的整份视频，BUG-2863）是 app
       // 自有资产：没勾「同时删除本地文件」也要回收，只是候选限定在副本目录之内，
@@ -1614,8 +1632,9 @@ class VideoBookRepository {
   /// 单独 best-effort，一步失败不拦后续步骤、不翻转「行已删」。
   Future<void> _reclaimDeletedVideoBooksAssetsUnlocked(
     List<_DeletedVideoSnapshot> deleted,
-    List<VideoBookRow> survivors,
-  ) async {
+    List<VideoBookRow> survivors, {
+    VideoReclaimProgressCallback? onProgress,
+  }) async {
     if (deleted.isEmpty) return;
     final Set<String> deletedUids = <String>{
       for (final _DeletedVideoSnapshot snapshot in deleted) snapshot.bookUid,
@@ -1626,21 +1645,29 @@ class VideoBookRepository {
     ];
     final ({Set<String> covers, Set<String> subtitles}) refs =
         referencedAssetPathsOf(others);
-    for (final _DeletedVideoSnapshot snapshot in deleted) {
-      try {
-        await VideoStorage.deleteBookAssets(
-          deletedCoverPath: snapshot.coverPath,
-          deletedSubtitlePath: snapshot.subtitlePath,
-          deletedSecondarySubtitlePath: snapshot.secondarySubtitlePath,
-          stillReferencedCoverPaths: refs.covers,
-          stillReferencedSubtitlePaths: refs.subtitles,
-        );
-      } catch (e, stack) {
-        fushiDebugPrint(
-          'VideoBookRepository: video asset cleanup failed: $e\n$stack',
-        );
-      }
+    // 两步（app 副本、内嵌字幕缓存）各算 deleted.length 步。
+    final int total = deleted.length * 2;
+    try {
+      // 护栏集合只规范化一次（BUG-4709：原来每本各算一遍 = O(删除数 × 幸存数)）。
+      await VideoStorage.deleteBooksAssets(
+        books: <DeletedVideoAssetPaths>[
+          for (final _DeletedVideoSnapshot snapshot in deleted)
+            (
+              coverPath: snapshot.coverPath,
+              subtitlePath: snapshot.subtitlePath,
+              secondarySubtitlePath: snapshot.secondarySubtitlePath,
+            ),
+        ],
+        stillReferencedCoverPaths: refs.covers,
+        stillReferencedSubtitlePaths: refs.subtitles,
+        onBookDone: (int done) => onProgress?.call(done, total),
+      );
+    } catch (e, stack) {
+      fushiDebugPrint(
+        'VideoBookRepository: video asset cleanup failed: $e\n$stack',
+      );
     }
+    onProgress?.call(deleted.length, total);
     // v68：附加图文件（video_covers/images/，行已 cascade 删除）。护栏：仍被
     // 幸存行引用的路径保留（同名共享理论上不存在——文件名按 bookUid 派生——
     // 但护栏与封面/字幕同纪律，宁可漏删）。
@@ -1677,7 +1704,9 @@ class VideoBookRepository {
     final Set<String> survivingVideoPaths = <String>{
       for (final VideoBookRow row in others) normalizeVideoPath(row.videoPath),
     };
+    int cacheDone = 0;
     for (final _DeletedVideoSnapshot snapshot in deleted) {
+      onProgress?.call(deleted.length + ++cacheDone, total);
       final String videoPath = snapshot.videoPath;
       if (videoPath.isNotEmpty &&
           survivingVideoPaths.contains(normalizeVideoPath(videoPath))) {

@@ -520,6 +520,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       !_dismissedPendingScrapeKeys.containsAll(_pendingScrapeKeys);
   bool _pendingScrapeInFlight = false;
 
+  /// 批量删除在飞（35YfcYO-zR）：进度对话框挡住了页面，这里再挡一层，快捷键 /
+  /// 手柄等绕过遮罩的入口也不能在删除期间再起一轮。
+  bool _batchDeleteInFlight = false;
+
   /// 计数重算在飞时又来了一次请求：在飞那次读到的可能是旧状态（批次结束前那
   /// 一刻），完成后必须再补一次，不能整个吞掉（BUG-3085）。
   bool _pendingScrapeRecountQueued = false;
@@ -2704,6 +2708,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// - 选中散卡 → 删媒体本体（[VideoBookRepository.deleteVideoBook]，现状语义）；
   /// - 混选 → 确认框文案写明「删 N 个媒体、解散 M 个合集」。
   Future<void> _batchDeleteConfirm() async {
+    if (_batchDeleteInFlight) return;
     // 先剔幽灵键再取数：确认框里的 N / M 必须是真会被删的条数。
     if (!await _pruneStaleSelection() || !mounted) return;
     // **在弹确认框之前就把目标定死**。选中集现在是派生视图（只暴露当前可见的
@@ -2743,11 +2748,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     if (collectionCount == 0) {
       // 「同时删除本地文件」只在选中集里至少有一条是本地文件时才摆出来
       // （全是远端流就没有文件可删，与同步勾选框「兑现不了就不显示」同一纪律）。
-      final Set<String> selected = _selectedLocalUids;
-      final bool anyLocalFile = (await widget.repo.listAll()).any(
-        (VideoBookRow b) =>
-            selected.contains(b.bookUid) && videoBookHasLocalFiles(b),
-      );
+      // 只取选中的那些行（BUG-4709：原来整表 listAll 再过滤，大库全选时白读一遍）。
+      final bool anyLocalFile = (await widget.repo.getByBookUids(
+        targetUids,
+      )).any(videoBookHasLocalFiles);
       if (!mounted) return;
       decision = await showDeleteScopeConfirm(
         context,
@@ -2825,8 +2829,44 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         ),
       );
     }
-    if (decision == null || !mounted) return;
+    if (decision == null || !mounted || _batchDeleteInFlight) return;
 
+    // 35YfcYO-zR：上万条删除要跑一阵，确认之后立刻挂上不可点掉的进度对话框（同时
+    // 挡住重复点删除），按删除阶段更新文案 / 进度，结束（含失败）一定关掉。
+    _batchDeleteInFlight = true;
+    final FushiProgressDialogHandle progress = showFushiProgressDialog(
+      context: context,
+      title: t.video_library_delete_progress_title,
+      message: t.video_library_delete_progress_removing(
+        n: mediaCount + collectionCount,
+      ),
+    );
+    try {
+      await _runBatchDelete(
+        decision: decision,
+        targetUids: targetUids,
+        targetCollectionIds: targetCollectionIds,
+        collectionCount: collectionCount,
+        subscriptions: subscriptions,
+        deleteSubscriptions: deleteSubscriptions,
+        progress: progress,
+      );
+    } finally {
+      progress.close();
+      _batchDeleteInFlight = false;
+    }
+  }
+
+  /// [_batchDeleteConfirm] 点头之后的真删除（进度对话框已挂上）。
+  Future<void> _runBatchDelete({
+    required DeleteDecision decision,
+    required Set<String> targetUids,
+    required Set<int> targetCollectionIds,
+    required int collectionCount,
+    required CollectionOwnedSubscriptions subscriptions,
+    required bool deleteSubscriptions,
+    required FushiProgressDialogHandle progress,
+  }) async {
     final AppModel appModel = ref.read(appProvider);
     final FushiDatabase db = appModel.database;
     // 先解散选中合集（只删合集容器 + 成员引用行，绝不删媒体本体）。
@@ -2858,6 +2898,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           _refreshAfterTagChange();
           await _waitForVideoCardsToUnmount();
         },
+        onProgress: (VideoLibraryDeleteProgress p) =>
+            _showBatchDeleteProgress(progress, p),
       );
     } catch (e, stack) {
       // BUG-2754：整批删除抛出（如刮削清理占着操作闸门）不能半截中断、无提示、
@@ -2906,6 +2948,21 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       result,
       source: 'HomeVideoPage.batchDeleteLocalFiles',
     );
+  }
+
+  /// 把一次删除进度写进对话框：删行阶段不定态，回收阶段按已处理 / 总数。
+  void _showBatchDeleteProgress(
+    FushiProgressDialogHandle handle,
+    VideoLibraryDeleteProgress p,
+  ) {
+    if (handle.isClosed) return;
+    switch (p.stage) {
+      case VideoLibraryDeleteStage.removingEntries:
+        handle.progress.value = null;
+      case VideoLibraryDeleteStage.cleaningUp:
+        handle.message.value = t.video_library_delete_progress_cleanup;
+        handle.progress.value = p.total <= 0 ? null : p.done / p.total;
+    }
   }
 
   Future<void> _waitForVideoCardsToUnmount() async {
