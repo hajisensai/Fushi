@@ -7,7 +7,7 @@
   "en",
   "zh-CN"
  ],
- "count": 864,
+ "count": 874,
  "settings": [
   {
    "key": "appearance.language",
@@ -635,6 +635,109 @@
    "default": false
   },
   {
+   "key": "appearance.eink_full_refresh_interval",
+   "kind": "value",
+   "type": "choice",
+   "title": {
+    "en": "E-ink full refresh",
+    "zh-CN": "墨水屏全刷"
+   },
+   "path": {
+    "en": "Appearance › Theme",
+    "zh-CN": "外观 › 主题"
+   },
+   "description": {
+    "en": "While reading novels or manga, do a full e-ink refresh every few page turns to clear ghosting",
+    "zh-CN": "阅读小说或漫画时，每翻若干页做一次墨水屏全刷，清除残影"
+   },
+   "options": [
+    {
+     "value": "0",
+     "label": {
+      "en": "Off",
+      "zh-CN": "关闭"
+     }
+    },
+    {
+     "value": "1",
+     "label": {
+      "en": "Every page",
+      "zh-CN": "每页"
+     }
+    },
+    {
+     "value": "2",
+     "label": {
+      "en": "Every 2 pages",
+      "zh-CN": "每 2 页"
+     }
+    },
+    {
+     "value": "3",
+     "label": {
+      "en": "Every 3 pages",
+      "zh-CN": "每 3 页"
+     }
+    },
+    {
+     "value": "5",
+     "label": {
+      "en": "Every 5 pages",
+      "zh-CN": "每 5 页"
+     }
+    },
+    {
+     "value": "10",
+     "label": {
+      "en": "Every 10 pages",
+      "zh-CN": "每 10 页"
+     }
+    },
+    {
+     "value": "20",
+     "label": {
+      "en": "Every 20 pages",
+      "zh-CN": "每 20 页"
+     }
+    }
+   ],
+   "default": "0"
+  },
+  {
+   "key": "appearance.eink_full_refresh_method",
+   "kind": "value",
+   "type": "choice",
+   "title": {
+    "en": "Full refresh method",
+    "zh-CN": "全刷方式"
+   },
+   "path": {
+    "en": "Appearance › Theme",
+    "zh-CN": "外观 › 主题"
+   },
+   "description": {
+    "en": "Auto uses the e-reader's own full refresh when supported (Onyx BOOX, Rockchip-based readers, Nook / Tolino) and briefly flashes the screen black otherwise. Choose Black flash if Auto has no effect on your device.",
+    "zh-CN": "自动：设备支持时调用阅读器自带的全刷（文石 BOOX、瑞芯微方案、Nook / Tolino），否则让屏幕短暂闪一下黑。自动在你的设备上没效果时选「黑屏闪刷」。"
+   },
+   "options": [
+    {
+     "value": "auto",
+     "label": {
+      "en": "Auto",
+      "zh-CN": "自动"
+     }
+    },
+    {
+     "value": "flash",
+     "label": {
+      "en": "Black flash",
+      "zh-CN": "黑屏闪刷"
+     }
+    }
+   ],
+   "default": "auto"
+  },
+  {
    "key": "appearance.glass_material",
    "kind": "value",
    "type": "choice",
@@ -1240,6 +1343,42 @@
    "default": false
   },
   {
+   "key": "appearance.nsfw_blur_covers",
+   "kind": "value",
+   "type": "bool",
+   "title": {
+    "en": "Blur NSFW covers",
+    "zh-CN": "模糊 NSFW 封面"
+   },
+   "path": {
+    "en": "Appearance › NSFW content",
+    "zh-CN": "外观 › NSFW 内容"
+   },
+   "description": {
+    "en": "Covers of titles marked NSFW (long-press menu › NSFW; games: Adult title), and of everything in an NSFW collection, are blurred in the library and on Continue cards.",
+    "zh-CN": "标为 NSFW 的作品（长按菜单 › NSFW；游戏为编辑页的「成人向」）以及 NSFW 合集里的全部作品，封面在库页和「继续」卡上模糊显示。"
+   },
+   "default": true
+  },
+  {
+   "key": "appearance.nsfw_blur_card_images",
+   "kind": "value",
+   "type": "bool",
+   "title": {
+    "en": "Blur card images too",
+    "zh-CN": "制卡图片也模糊"
+   },
+   "path": {
+    "en": "Appearance › NSFW content",
+    "zh-CN": "外观 › NSFW 内容"
+   },
+   "description": {
+    "en": "Cards mined from an NSFW book or manga get a blurred cover or page image. The blurred image is what gets saved in the card, so turning NSFW off later does not restore cards already made.",
+    "zh-CN": "从 NSFW 书或漫画制的卡，卡上的封面或页图用模糊后的图片。卡里存的就是模糊图，以后取消 NSFW 也不会恢复已制的卡。"
+   },
+   "default": false
+  },
+  {
    "key": "appearance.nav_module_order",
    "kind": "custom",
    "type": "custom",
@@ -1803,6 +1942,25 @@
     "zh-CN": "同意一次录屏后，之后截屏识字不再每次弹系统确认框"
    },
    "default": false
+  },
+  {
+   "key": "floating_ball.app_audio_capture",
+   "kind": "value",
+   "type": "bool",
+   "title": {
+    "en": "Capture other apps' audio",
+    "zh-CN": "缓存其他应用的声音"
+   },
+   "path": {
+    "en": "Floating ball › Game voice",
+    "zh-CN": "悬浮球 › 游戏语音"
+   },
+   "description": {
+    "en": "Keeps the last 60 seconds of sound played by other apps in memory (Android 10+). Cards mined from out-of-app lookups get the voice line from just before the lookup as sentence audio. Some games block capture and record silence.",
+    "zh-CN": "在内存里循环保留其他应用最近 60 秒的声音（Android 10 及以上）。应用外查词制卡时，把查词前最后一句语音作为句子音频放进卡片。部分游戏禁止被录音，录到的是静音。"
+   },
+   "default": false,
+   "userOnly": true
   },
   {
    "key": "floating_ball.reader.back",
@@ -8247,6 +8405,24 @@
    "default": true
   },
   {
+   "key": "music.lyrics_blur_inactive",
+   "kind": "value",
+   "type": "bool",
+   "title": {
+    "en": "Blur surrounding lines",
+    "zh-CN": "模糊非当前行"
+   },
+   "path": {
+    "en": "Music › Lyrics",
+    "zh-CN": "音乐 › 歌词"
+   },
+   "description": {
+    "en": "Softly blur lyric lines other than the current one. Turn off to keep the previous and next lines sharp",
+    "zh-CN": "歌词（含 MV 页）中当前行以外的歌词轻微模糊；关闭后上一句和下一句保持清晰"
+   },
+   "default": true
+  },
+  {
    "key": "music.desktop_lyrics",
    "kind": "value",
    "type": "bool",
@@ -12594,6 +12770,37 @@
    "default": true
   },
   {
+   "key": "interconnect.source_share_host",
+   "kind": "value",
+   "type": "bool",
+   "title": {
+    "en": "Share sources with my devices",
+    "zh-CN": "把来源共享给我的设备"
+   },
+   "path": {
+    "en": "Fushi Interconnect › Devices › Host service › Paired devices can…",
+    "zh-CN": "Fushi 互联 › 设备 › 主机服务 › 已配对设备可以…"
+   },
+   "description": {
+    "en": "Paired devices marked as yours get the servers and plugins you choose below, including their passwords and API keys, over the encrypted connection.",
+    "zh-CN": "标为「我的设备」的已配对设备会经加密连接收到你在下面勾选的服务器（含账号密码与 API key）和插件。"
+   },
+   "default": true
+  },
+  {
+   "key": "interconnect.source_share_items.list",
+   "kind": "custom",
+   "type": "custom",
+   "title": {
+    "en": "interconnect.source_share_items.list",
+    "zh-CN": "interconnect.source_share_items.list"
+   },
+   "path": {
+    "en": "Fushi Interconnect › Devices › Host service › Paired devices can… › Choose what to share",
+    "zh-CN": "Fushi 互联 › 设备 › 主机服务 › 已配对设备可以… › 选择要共享的来源"
+   }
+  },
+  {
    "key": "interconnect.remote_update_host",
    "kind": "value",
    "type": "bool",
@@ -12860,6 +13067,42 @@
     "zh-CN": "经加密通道接收主机的外部服务设定与 API key。需启用 TLS。"
    },
    "default": true
+  },
+  {
+   "key": "interconnect.source_share_sync",
+   "kind": "value",
+   "type": "bool",
+   "title": {
+    "en": "Receive shared sources",
+    "zh-CN": "接收共享来源"
+   },
+   "path": {
+    "en": "Fushi Interconnect › Use the host's capabilities",
+    "zh-CN": "Fushi 互联 › 使用主机的能力"
+   },
+   "description": {
+    "en": "Servers (OPDS, AList, Kavita, OpenSubsonic, Jellyfin, Plex) the host chose to share join this device automatically, sign-in included. Only from hosts that marked this device as one of their own.",
+    "zh-CN": "主机勾选共享的服务器（OPDS、AList、Kavita、OpenSubsonic、Jellyfin、Plex）会自动出现在本机，连同登录信息。只接收把本机标为「我的设备」的主机。"
+   },
+   "default": true
+  },
+  {
+   "key": "interconnect.source_share_plugins",
+   "kind": "value",
+   "type": "bool",
+   "title": {
+    "en": "Also receive plugins",
+    "zh-CN": "也接收插件"
+   },
+   "path": {
+    "en": "Fushi Interconnect › Use the host's capabilities",
+    "zh-CN": "Fushi 互联 › 使用主机的能力"
+   },
+   "description": {
+    "en": "Lets the host install the plugins it shares on this device. Plugins are third-party code: only turn this on if the host is yours.",
+    "zh-CN": "允许主机把它共享的插件装到本机。插件是第三方代码：只在主机是你自己的设备时打开。"
+   },
+   "default": false
   },
   {
    "key": "interconnect.leaderboard_follow_login",
@@ -17210,6 +17453,17 @@
      "name": "insecure_http",
      "help": "true/false，允许明文 http（局域网），默认 false；改动会重新识别",
      "required": false
+    },
+    {
+     "name": "parser",
+     "help": "解析规则 JSON（自动识别不了的站点用；空串 = 去掉规则改回自动识别）；改动会按规则重新验证",
+     "required": false
+    },
+    {
+     "name": "cookie",
+     "help": "登录 Cookie（只用于带解析规则的站点；凭据，只收 stdin / 环境变量）",
+     "required": false,
+     "secret": true
     }
    ]
   },

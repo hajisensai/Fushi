@@ -1,6 +1,6 @@
 # Fushi settings reference
 
-> Every setting of the Fushi app (version 3.3.0), generated from the app's own settings schema on each change. 864 entries. Machine-readable copy: <https://fushi.moe/settings.json>.
+> Every setting of the Fushi app (version 3.3.0), generated from the app's own settings schema on each change. 874 entries. Machine-readable copy: <https://fushi.moe/settings.json>.
 
 How to read this:
 
@@ -38,6 +38,8 @@ How to read this:
 | `appearance.brightness` | Dark mode | 深色模式 | Theme | choice | `light`, `system`, `dark` | `system` |  |
 | `appearance.pure_black_dark` | Pure black dark | 纯黑深色背景 | Theme | bool |  | `false` | Use true black backgrounds in dark mode (OLED) |
 | `appearance.eink_mode` | E-ink mode | 墨水屏模式 | Theme | bool |  | `false` | Pure black-and-white theme with no animations and line-style highlights, for e-ink displays |
+| `appearance.eink_full_refresh_interval` | E-ink full refresh | 墨水屏全刷 | Theme | choice | `0`, `1`, `2`, `3`, `5`, `10`, `20` | `0` | While reading novels or manga, do a full e-ink refresh every few page turns to clear ghosting |
+| `appearance.eink_full_refresh_method` | Full refresh method | 全刷方式 | Theme | choice | `auto`, `flash` | `auto` | Auto uses the e-reader's own full refresh when supported (Onyx BOOX, Rockchip-based readers, Nook / Tolino) and briefly flashes the screen black otherwise. Choose Black flash if Auto has no effect on your device. |
 | `appearance.glass_material` | Glass material | 玻璃材质 | Theme | choice | `frosted`, `liquid` | `off` | Frosted blurs whatever is behind a surface; liquid glass adds refraction and highlights where the graphics engine supports it (otherwise it shows as frosted). On Windows 11 and macOS the window background shows the desktop through. Falls back to solid surfaces in e-ink mode and with increased contrast. |
 | `appearance.shell_rail_style` | Sidebar style | 侧栏样式 | Theme | choice | `notch`, `spine` | `notch` |  |
 | `appearance.shell_content_layout` | Library layout | 库页布局 | Theme | choice | `collage`, `grid` | `grid` |  |
@@ -67,6 +69,8 @@ How to read this:
 | `appearance.tint_app_logo` | Logo follows theme color | 图标跟随主题色 | App icon | bool |  | `false` | Recolor the built-in mascot icon to match the accent color. When off, the original artwork is always shown. |
 | `appearance.mascot_glow` | Mascot glow | 吉祥物光晕 | App icon | bool |  | `false` | A soft breathing glow around the mascot on the floating ball. It brightens and speeds up while background sync is running. |
 | `appearance.follow_app_icon_accent` | Theme color follows custom icon | 主题色跟随图标 | App icon | bool |  | `false` | Take the accent color from your custom icon image. Turn off to return to the theme you picked. |
+| `appearance.nsfw_blur_covers` | Blur NSFW covers | 模糊 NSFW 封面 | NSFW content | bool |  | `true` | Covers of titles marked NSFW (long-press menu › NSFW; games: Adult title), and of everything in an NSFW collection, are blurred in the library and on Continue cards. |
+| `appearance.nsfw_blur_card_images` | Blur card images too | 制卡图片也模糊 | NSFW content | bool |  | `false` | Cards mined from an NSFW book or manga get a blurred cover or page image. The blurred image is what gets saved in the card, so turning NSFW off later does not restore cards already made. |
 | `appearance.font_catalog.cli.fonts` | Font library | 字体库 | Font library | list |  |  |  |
 | `appearance.font_catalog.cli.target.appUi` | Font library · appUi | 字体库 · appUi | Font library | text |  |  | 该用途使用的字体显示名（或 id），逗号分隔；顺序跟随目录顺序（用 items set --position 调）；空串 = 清空 |
 | `appearance.font_catalog.cli.target.body` | Font library · body | 字体库 · body | Font library | text |  |  | 该用途使用的字体显示名（或 id），逗号分隔；顺序跟随目录顺序（用 items set --position 调）；空串 = 清空 |
@@ -113,6 +117,7 @@ How to read this:
 | `floating_ball.screen_ocr_card_image` | Add screenshot to cards | 截屏识字制卡带截图 | Screen OCR | bool |  | `true` | When making a card, put the text block around the tapped text into the card's image field |
 | `floating_ball.screen_ocr_engine` | Screen OCR engine | 截屏识字引擎 | Screen OCR | choice | `followGlobal`, `localModel`, `googleLens` | `followGlobal` | Follows the OCR engine in Settings › Models › OCR by default. Built-in OCR is fastest on horizontal on-screen text, vertical text needs the local model, and Google Lens uploads the whole screenshot. If the followed local model isn't downloaded yet, built-in OCR is used. |
 | `floating_ball.screen_ocr_keep_session` | Keep screen capture session | 保持截屏会话 | Screen OCR | bool |  | `false` | After allowing screen recording once, screen OCR stops showing the system confirmation every time |
+| `floating_ball.app_audio_capture` | Capture other apps' audio | 缓存其他应用的声音 | Game voice | bool |  | `false` | Keeps the last 60 seconds of sound played by other apps in memory (Android 10+). Cards mined from out-of-app lookups get the voice line from just before the lookup as sentence audio. Some games block capture and record silence. · *user only* |
 | `floating_ball.reader.back` | Back | 返回 | Book reader | bool |  | `false` |  |
 | `floating_ball.reader.modeToggle` | Lyrics mode | 歌词模式 | Book reader | bool |  | `false` |  |
 | `floating_ball.reader.navigation` | Navigation | 导航 | Book reader | bool |  | `false` |  |
@@ -452,6 +457,7 @@ How to read this:
 | `music.identify_library` | Identify library | 识别整个曲库 | Library identification | action |  |  | MusicBrainz, at most one request per second |
 | `music.lyrics_online` | Online lyrics (LRCLIB) | 在线歌词（LRCLIB） | Lyrics | bool |  | `true` | When no local lyrics exist, match title, artist, album and duration on LRCLIB |
 | `music.lyrics_lookup_pause` | Pause while looking up words | 查词时暂停 | Lyrics | bool |  | `true` | Pause playback while looking up a word on the lyrics page; resume when the popup closes |
+| `music.lyrics_blur_inactive` | Blur surrounding lines | 模糊非当前行 | Lyrics | bool |  | `true` | Softly blur lyric lines other than the current one. Turn off to keep the previous and next lines sharp |
 | `music.desktop_lyrics` | Desktop lyrics | 桌面歌词 | Lyrics | bool |  | `false` | Show the current lyric line in a floating always-on-top window while music plays |
 | `music.lyrics_media_session` | Lyrics on the lock screen | 锁屏显示歌词 | Lyrics | bool |  | `true` | Show the current line as the subtitle of the media notification and lock screen |
 | `music.karaoke_ass_render` | ASS karaoke subtitles | ASS 卡拉 OK 字幕 | Lyrics | choice | `auto`, `original`, `structured` | `auto` | Automatic: subtitles with effects render as authored; plain karaoke timing uses synced lyrics. |
@@ -837,6 +843,8 @@ How to read this:
 | `interconnect.game_stream_remote_launch` | Launch games remotely | 远程启动游戏 | Devices › Host service › Paired devices can… | bool |  | `false` | Paired devices can start games from this PC's library and stream them |
 | `interconnect.profile_transfer_host` | Read and write this device's profiles | 读写本机配置方案 | Devices › Host service › Paired devices can… | bool |  | `false` | Off by default. Requires HTTPS and a paired-device token. Incoming configurations are always added as new ones. |
 | `interconnect.leaderboard_link_host` | Sign in to my account automatically | 自动登录我的账户 | Devices › Host service › Paired devices can… | bool |  | `true` | Only applies to paired devices marked as "my device". |
+| `interconnect.source_share_host` | Share sources with my devices | 把来源共享给我的设备 | Devices › Host service › Paired devices can… | bool |  | `true` | Paired devices marked as yours get the servers and plugins you choose below, including their passwords and API keys, over the encrypted connection. |
+| `interconnect.source_share_items.list` | interconnect.source_share_items.list | interconnect.source_share_items.list | Devices › Host service › Paired devices can… › Choose what to share | custom |  |  |  |
 | `interconnect.remote_update_host` | Update this device remotely | 远程更新本机 | Devices › Host service › Paired devices can… | bool |  | `false` | Paired devices can see this app's version and start an update here, on the local network or remotely. On Android you still confirm the install on this device. |
 | `interconnect.download_tasks` | Interconnect downloads | 互联下载 | Interconnect features | action |  |  | Pause, resume or cancel downloads from paired devices |
 | `interconnect.game_stream` | Join game stream | 加入游戏串流 | Interconnect features | action |  |  | Stream a paired PC's game screen to this device |
@@ -853,6 +861,8 @@ How to read this:
 | `interconnect.fonts_transfer` | Fonts and font settings | 字体与字体设置 | Upload to peer | custom |  |  |  |
 | `interconnect.backup_backend` | interconnect.backup_backend | interconnect.backup_backend | Use the host's capabilities | custom |  |  |  |
 | `interconnect.service_config_sync` | Sync service configuration from host | 同步主机服务配置 | Use the host's capabilities | bool |  | `true` | Receive the host's external service settings and API keys over the encrypted channel. Requires TLS. |
+| `interconnect.source_share_sync` | Receive shared sources | 接收共享来源 | Use the host's capabilities | bool |  | `true` | Servers (OPDS, AList, Kavita, OpenSubsonic, Jellyfin, Plex) the host chose to share join this device automatically, sign-in included. Only from hosts that marked this device as one of their own. |
+| `interconnect.source_share_plugins` | Also receive plugins | 也接收插件 | Use the host's capabilities | bool |  | `false` | Lets the host install the plugins it shares on this device. Plugins are third-party code: only turn this on if the host is yours. |
 | `interconnect.leaderboard_follow_login` | Sign in with a paired device's account | 跟随已配对设备自动登录 | Use the host's capabilities | bool |  | `true` | When this device has no Fushi account, sign in with a paired device's account automatically. |
 | `interconnect.profile_upload` | Upload configuration to host | 上传配置到对端 | Use the host's capabilities | custom |  |  |  |
 | `interconnect.profile_download` | Download configuration from host | 从对端下载配置 | Use the host's capabilities | custom |  |  |  |
