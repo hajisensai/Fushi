@@ -1,7 +1,8 @@
 //! 逐卡重放与训练集的直读命令的新代实现（规划 §2.1 G7-4f）：协议 3 的 C 直出入口 `ffsrs_store_history_states` /
 //! `ffsrs_store_stat_projection`（`store/mod.rs`）与 `ffsrs_store_optimizer_items` / `ffsrs_store_calibration_items` /
-//! `ffsrs_store_rwkv_rows` / `ffsrs_store_rwkv_log_tail`（`store/projections.rs`）。**还没接分发器**：C 入口原地不动，接线
-//! （规划 §2.2 S1）时入口照旧解码输入页与参数，再按集合号调这里。
+//! `ffsrs_store_rwkv_rows` / `ffsrs_store_rwkv_log_tail`（`store/projections.rs`）。S1b 接线：C 入口（`store/ffi.rs`）照旧
+//! 解码输入页与参数，经 `gen4/dispatch.rs` 的「C 直出入口」一节换出集合号（输入页带 profile 行就按它，否则按卡认集合），
+//! 在一个读快照里调这里。
 //!
 //! # 一份规则
 //!
@@ -223,9 +224,6 @@ pub(super) const COUNT_SINCE_SQL: &str =
 /// [rwkv_log_tail] 的尾巴行（`log_seq` 主键上 n 的一段区间）。
 pub(super) const TAIL_SQL: &str = "SELECT n, k FROM log_seq WHERE col = ?1 AND n > ?2";
 
-/// 一个原值日志 ID 的 `win = 1` 行（`log_id` 索引）：判别名类的代表用。
-pub(super) const MEMBER_SQL: &str = "SELECT k FROM log_ix WHERE col = ?1 AND id = ?2 AND win = 1";
-
 /// `rwkv_log_tail`：RWKV 对齐用的日志指纹与尾巴（同一个快照），输出同协议 3 `SrsCore::rwkv_log_tail`：(行数, 最大序号,
 /// 序号在 `since` 之后的行数)；`with_rows` 时再给出这些新行里每个规范日志 ID 的代表（按发生时刻、序号排）。
 /// `incremental`：只数 `since` 之后的行（行数 = 新增行数、最大序号 = 新增里的最大，没有新增为 0），调用方在已知的指纹上
@@ -277,7 +275,7 @@ pub fn rwkv_log_tail(
                     return Err(format!("gen4 rwkv: op {k} is not a log"));
                 };
                 let canon = ix.canonical(&Ref::of(&l.id))?;
-                if !is_rep(t, &ix, col, &canon, k)? {
+                if !is_rep(&ix, &canon, k)? {
                     continue;
                 }
                 let code = tail_kind(&l.kind);
@@ -304,34 +302,12 @@ pub fn rwkv_log_tail(
     })
 }
 
-/// 操作主键 [k] 的那条日志操作是不是规范日志 ID [canon] 的代表：类里每个成员的 `win = 1` 行（每个原值日志 ID 操作号最小
-/// 的那份）中操作号最小的那条（`cache.rs` `card_logs` / `cmd::logs_between` 的同一条规则）。同一个原值日志 ID 的别的份
-/// （`win = 0`）不是代表。
-fn is_rep(
-    t: &Truth<'_>,
-    ix: &Index<'_, '_>,
-    col: i64,
-    canon: &Ref,
-    k: i64,
-) -> Result<bool, String> {
-    let mut best: Option<(crate::sync2::vv::OpId, i64)> = None;
-    for m in ix.class_of(canon)? {
-        let ks: Vec<i64> = t
-            .conn()
-            .prepare_cached(MEMBER_SQL)
-            .map_err(sql)?
-            .query_map(params![col, m], |r| r.get(0))
-            .map_err(sql)?
-            .collect::<Result<_, _>>()
-            .map_err(sql)?;
-        for x in ks {
-            let op = t.id_of_key(x)?;
-            if best.as_ref().is_none_or(|(b, _)| op < *b) {
-                best = Some((op, x));
-            }
-        }
-    }
-    Ok(best.is_some_and(|(_, x)| x == k))
+/// 操作主键 [k] 的那条日志操作是不是规范日志 ID [canon] 的代表（`cache.rs` [Index::log_class_rep]，缓存层
+/// `card_logs` 同一份「按类取代表」）。同一个原值日志 ID 的别的份（`win = 0`）不是代表。
+fn is_rep(ix: &Index<'_, '_>, canon: &Ref, k: i64) -> Result<bool, String> {
+    Ok(ix
+        .log_class_rep(&ix.class_of(canon)?)?
+        .is_some_and(|(x, _, _)| x == k))
 }
 
 /// 每份历史里的卡归一成规范 ID，份内去重（保第一次出现的顺序）。去重不改输出（同一张卡的日志重复灌进去，

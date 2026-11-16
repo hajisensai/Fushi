@@ -9,8 +9,10 @@
 //! - 纪元 `epoch`：行第一次写下时生成。**迁移不带协议 3 的行过来**（`carry.rs` 不收它）：迁移之后第一次写下是新纪元，
 //!   Dart 的指纹（`纪元:修订号`）随之全换，缓存全部重读——换代本来就要重读。
 //! - 校时状态 `anchor`：随写命令交来或 `local_anchor` 单独交来。迁移同样不带：迁移后第一次校时之前当没校过。
-//! - 协议 3 的 `styleCursor`（存量样式去重）、`cacheRev`（缓存推导口径）、`mediaGc`（待回收集合）在新代没有：前两个是
-//!   协议 3 存储表示的事；媒体回收的待回收集合随 `media_gc_*` 接线另定（交接说明「S1 接线设计」）。
+//! - 媒体回收的待回收集合 `mediaGc`（[media_gc_pending] / [set_media_gc_pending]，`cmd/media_gc.rs`）：键名与形态同协议 3
+//!   （排序的字符串数组，空集合时没有这个键），整行读改写时原样留着。**迁移同样不带**：换代时还没回收的名字留在旧库
+//!   里，那些文件这一轮不删（宁可多留；以后引用它们的笔记删除满保留期时会重新成为候选）。
+//! - 协议 3 的 `styleCursor`（存量样式去重）、`cacheRev`（缓存推导口径）在新代没有：是协议 3 存储表示的事。
 //!
 //! 不需要 profile 已经绑定集合（与协议 3 相同：这一行只按 profile uid 记）。
 //!
@@ -95,6 +97,48 @@ pub fn ensure(t: &Truth<'_>, profile: &str) -> Result<Value, String> {
 pub fn set_anchor(t: &Truth<'_>, profile: &str, anchor: &Value) -> Result<(), String> {
     edit(t, profile, |row| {
         row.insert(ANCHOR_KEY.to_owned(), anchor.clone());
+    })?;
+    Ok(())
+}
+
+/// 本机状态行里待回收集合的键（协议 3 `store/media_gc.rs` `KEY` 同一个）。
+const MEDIA_GC_KEY: &str = crate::store::media_gc::KEY;
+
+/// [profile] 的待回收集合（没有行、没有这个键、行损坏 = 空；同协议 3 `media_gc::pending`）。
+pub fn media_gc_pending(
+    t: &Truth<'_>,
+    profile: &str,
+) -> Result<std::collections::BTreeSet<String>, String> {
+    Ok(stored(t, profile)?
+        .and_then(|row| row.get(MEDIA_GC_KEY).cloned())
+        .and_then(|v| match v {
+            Value::Array(a) => Some(a),
+            _ => None,
+        })
+        .into_iter()
+        .flatten()
+        .filter_map(|n| n.as_str().map(str::to_owned))
+        .collect())
+}
+
+/// 写下 [profile] 的待回收集合（调用方的写事务里，只动这一个键）：空集合删掉这个键（没有行就什么都不写）；非空时没有
+/// 行先建行（同协议 3 `media_gc::save`）。
+pub fn set_media_gc_pending(
+    t: &Truth<'_>,
+    profile: &str,
+    names: &std::collections::BTreeSet<String>,
+) -> Result<(), String> {
+    if names.is_empty() {
+        if stored(t, profile)?.is_some_and(|row| row.contains_key(MEDIA_GC_KEY)) {
+            edit(t, profile, |row| {
+                row.remove(MEDIA_GC_KEY);
+            })?;
+        }
+        return Ok(());
+    }
+    let list = Value::Array(names.iter().cloned().map(Value::String).collect());
+    edit(t, profile, |row| {
+        row.insert(MEDIA_GC_KEY.to_owned(), list);
     })?;
     Ok(())
 }

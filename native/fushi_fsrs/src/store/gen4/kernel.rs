@@ -15,8 +15,9 @@
 //! 关库（[G4Core::close]）：先关读连接池（等借出的放回），再关写连接（最后关的连接把 WAL 并回主文件）。之后经它的命令
 //! 一律报 `CLOSED`（与协议 3 同文，Dart 按它认「已关闭」）。
 //!
-//! 还没有新代实现的 C 直出入口（`ffsrs_store_history_states` 等）在这里有同名方法，报 [unwired] 的「尚未接线」错误——C 入口
-//! 照常解析输入，接线的模块（G7-4f 等）只替换方法体。
+//! 还没有新代实现的 C 直出入口（`ffsrs_store_legacy_*` / `ffsrs_store_snapshot`）在这里有同名方法，报 [unwired] 的「尚未
+//! 接线」错误——C 入口照常解析输入，接线的模块只替换方法体。逐卡重放与训练集的 C 入口已接（S1b，`dispatch.rs` 末尾
+//! 「C 直出入口」一节）。
 //!
 //! 迁移（`gen4_migrate_status` / `gen4_migrate_run` / `gen4_migrate_cancel`）是不针对已打开库的全局命令（[global]）：
 //! 没迁移的目录根本打不开新代库，迁移入口不能挂在库句柄上。
@@ -516,72 +517,10 @@ impl G4Core {
     pub fn snapshot_into(&self, _target: &Path, _strip_device_local: bool) -> Result<(), String> {
         Err(unwired("ffsrs_store_snapshot", "G11-4"))
     }
-
-    pub fn history_states(&self, _groups: &[Vec<String>]) -> Result<Vec<u8>, String> {
-        Err(unwired("ffsrs_store_history_states", REPLAY_OWNER))
-    }
-
-    pub fn stat_projection(&self, _groups: &[Vec<String>]) -> Result<Vec<u8>, String> {
-        Err(unwired("ffsrs_store_stat_projection", REPLAY_OWNER))
-    }
-
-    pub fn optimizer_items(
-        &self,
-        _lineages: &[Vec<String>],
-        _ids: &[i64],
-        _alg: crate::projection::Alg,
-        _day: &crate::projection::Day,
-    ) -> Result<Vec<u8>, String> {
-        Err(unwired("ffsrs_store_optimizer_items", REPLAY_OWNER))
-    }
-
-    pub fn calibration_items(
-        &self,
-        _lineages: &[Vec<String>],
-        _ids: &[i64],
-        _alg: crate::projection::Alg,
-        _day: &crate::projection::Day,
-    ) -> Result<Vec<u8>, String> {
-        Err(unwired("ffsrs_store_calibration_items", REPLAY_OWNER))
-    }
-
-    pub fn rwkv_cards(
-        &self,
-        _lineages: &[Vec<String>],
-        _ids: &[i64],
-        _day: &crate::projection::Day,
-    ) -> Result<Vec<u8>, String> {
-        Err(unwired("ffsrs_store_rwkv_rows", REPLAY_OWNER))
-    }
-
-    pub fn rwkv_replay(
-        &self,
-        _profile: &str,
-        _lineages: &[Vec<String>],
-        _ids: &[i64],
-        _day: &crate::projection::Day,
-        _since: i64,
-        _range: crate::store::projections::RwkvRange,
-    ) -> Result<Vec<u8>, String> {
-        Err(unwired("ffsrs_store_rwkv_rows", REPLAY_OWNER))
-    }
-
-    pub fn rwkv_log_tail(
-        &self,
-        _profile: &str,
-        _since: i64,
-        _with_rows: bool,
-        _incremental: bool,
-    ) -> Result<Vec<u8>, String> {
-        Err(unwired("ffsrs_store_rwkv_log_tail", REPLAY_OWNER))
-    }
 }
 
 /// 协议 1 旧主库搬迁（`ffsrs_store_legacy_*`）：协议 1 旧库按 D21 走只读转译（`gen4/import.rs`），入口由 G7-6 删 / 改。
 const LEGACY_OWNER: &str = "G7-6 (D21: protocol 1 libraries go through gen4/import.rs)";
-
-/// 逐卡重放与训练集的 C 直出入口：G7-4f 正在实现、尚未合入。
-const REPLAY_OWNER: &str = "G7-4f (pending merge)";
 
 // ---------------------------------------------------------------------- 全局命令：迁移
 

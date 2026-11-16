@@ -263,6 +263,10 @@ const TABLES: [&str; 4] = ["notes", "cards", "stats", "anki_members"];
 /// `derive_cfg` 里缓存配置的键。
 pub const CFG_KEY: &str = "caches";
 
+/// [Index::log_class_rep] 每个成员一次的点查（走 `log_id (col, id, k)`；查询计划测试用同一份）。
+pub(crate) const LOG_REP_SQL: &str =
+    "SELECT k, at, card FROM log_ix WHERE col = ?1 AND id = ?2 AND win = 1";
+
 /// 一批碰到的东西里缓存层要重看的（[Index::settle] 边判边记，收尾时 [Index::refresh_caches] 用掉）。
 #[derive(Default, Debug)]
 pub(crate) struct Dirt {
@@ -411,7 +415,8 @@ impl<'t, 'c> Index<'t, 'c> {
 
     // ------------------------------------------------------------ 入口
 
-    fn cache_config(&self) -> Result<Option<CacheConfig>, String> {
+    /// 这个集合的缓存配置（已按规范 ID 归一）；没设 = None（缓存层没物化，三张表这个集合没有行）。
+    pub(crate) fn cache_config(&self) -> Result<Option<CacheConfig>, String> {
         let Some(text) = self.t.derive_cfg(self.col, CFG_KEY)? else {
             return Ok(None);
         };
@@ -788,14 +793,25 @@ impl<'t, 'c> Index<'t, 'c> {
 
     /// 一个规范日志 ID（类 [log_class]）的代表：全部份里操作号最小的；它落在 [cards] 里才返回 (发生时刻, 操作主键)。
     fn log_rep(&self, log_class: &[Ref], cards: &[Ref]) -> Result<Option<(i64, i64)>, String> {
+        Ok(self
+            .log_class_rep(log_class)?
+            .filter(|(_, _, card)| cards.contains(card))
+            .map(|(k, at, _)| (at, k)))
+    }
+
+    /// 一个规范日志 ID（类 [log_class]：规范 ID 与出现过的成员）的代表：类里每个成员的 `win = 1` 行（每个原值日志 ID
+    /// 操作号最小的那份）中操作号最小的那条，(操作主键, 发生时刻, 落在哪张卡上（原值）)；类里一条日志都没有 = None。
+    /// 「按类取代表」只有这一份：缓存层的 [Index::card_logs]、`cmd/training.rs` 的 RWKV 尾巴都调它。
+    pub(crate) fn log_class_rep(
+        &self,
+        log_class: &[Ref],
+    ) -> Result<Option<(i64, i64, Ref)>, String> {
         let mut best: Option<(crate::sync2::vv::OpId, i64, i64, Ref)> = None;
         for id in log_class {
             let mut stmt = self
                 .t
                 .conn()
-                .prepare_cached(
-                    "SELECT k, at, card FROM log_ix WHERE col = ?1 AND id = ?2 AND win = 1",
-                )
+                .prepare_cached(LOG_REP_SQL)
                 .map_err(sql)?;
             let rows: Vec<(i64, i64, Ref)> = stmt
                 .query_map(params![self.col, id], |r| {
@@ -811,9 +827,7 @@ impl<'t, 'c> Index<'t, 'c> {
                 }
             }
         }
-        Ok(best
-            .filter(|b| cards.contains(&b.3))
-            .map(|(_, k, at, _)| (at, k)))
+        Ok(best.map(|(_, k, at, card)| (k, at, card)))
     }
 
     /// 一条日志操作的投影行（协议 3 `log_row` 同一份拼法）。

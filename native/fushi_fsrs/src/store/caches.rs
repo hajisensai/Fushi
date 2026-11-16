@@ -63,7 +63,7 @@ impl CacheConfig {
     }
 
     /// 笔记类型身份记录里的 `builtin` 对应的代码默认值（不是内置类型 / 配置里没有 = null）。
-    fn builtin_of(&self, payload: &Value) -> Value {
+    pub(crate) fn builtin_of(&self, payload: &Value) -> Value {
         payload["builtin"]
             .as_str()
             .and_then(|k| self.builtins.get(k))
@@ -600,18 +600,24 @@ pub(crate) fn note_type_texts(
             .and_then(|k| cfg.builtins.get(k))
             .map_or(Value::Null, |b| b.0.clone());
         let view = registers::note_type_view_of(payload, &es, &builtin)?;
-        for t in view["ts"].as_array().into_iter().flatten() {
-            for side in ["front", "back"] {
-                if let Some(s) = t[side].as_str() {
-                    out.push(s.to_owned());
-                }
-            }
-        }
-        if let Some(css) = view["css"].as_str() {
-            out.push(css.to_owned());
-        }
+        note_type_view_texts(&view, &mut out);
     }
     Ok(out)
+}
+
+/// 一份笔记类型物化视图里媒体回收要扫的文本（[note_type_texts]）：每个现行模板的正面、背面，再加 CSS。新代的
+/// 存活引用（`gen4/cmd/media_gc.rs`）用同一份。
+pub(crate) fn note_type_view_texts(view: &Value, out: &mut Vec<String>) {
+    for t in view["ts"].as_array().into_iter().flatten() {
+        for side in ["front", "back"] {
+            if let Some(s) = t[side].as_str() {
+                out.push(s.to_owned());
+            }
+        }
+    }
+    if let Some(css) = view["css"].as_str() {
+        out.push(css.to_owned());
+    }
 }
 
 /// 笔记缓存行的 `dupe_norm`（srs.db v15）：首字段（笔记类型字段顺序第一个）的 AnkiConnect 查重规范形

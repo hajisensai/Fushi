@@ -15,6 +15,8 @@
 //! - [preview]：评分预览 `preview`（协议 3 `sync2_preview`，同一份重放与回包；G7-4f）。
 //! - [training]：逐卡重放与训练集的直读命令——C 直出入口 `ffsrs_store_history_states` / `_stat_projection` /
 //!   `_optimizer_items` / `_calibration_items` / `_rwkv_rows` / `_rwkv_log_tail` 的新代版（同一份投影与输出布局；G7-4f）。
+//! - [media_gc]：媒体回收 `media_gc_queue` / `media_gc_collect` / `media_live_refs`（协议 3 `store/media_gc.rs`，同一份
+//!   逐名规则；待回收集合在本机状态行里，存活引用读缓存层；S1b）。
 //!
 //! 分发器命令与新代实现的逐条对照（哪条已有、归谁、S1 怎么接）见 `docs/specs/2026-11-15-srs-gen4-handoff.md`
 //! 「分发器命令对照表」。
@@ -54,6 +56,7 @@ pub mod center;
 pub mod columns;
 pub mod history;
 pub mod lineage;
+pub mod media_gc;
 pub mod preview;
 pub mod profile;
 pub mod reads;

@@ -5,7 +5,7 @@
 //! # 命令的三种去向（[wiring]）
 //!
 //! - [Wiring::Wired]：接到新代实现（[run] 里有它的臂）。
-//! - [Wiring::Unwired]：归别的模块接线（G9-4 身份、G8-7 同步、G9-5 并入、G11-3 导入导出、G7-4f 预览），报
+//! - [Wiring::Unwired]：归别的模块接线（G9-4 身份、G8-7 同步、G9-5 并入、G11-3 导入导出），报
 //!   `kernel::UNWIRED` 开头的明确错误——不 panic、不回落到协议 3。
 //! - [Wiring::Removed]：新代不需要（派生层随写入维护、没有收段通道、没有协议 3 的存储表示），报 `kernel::REMOVED` 开头的
 //!   错误，调用方（Dart，G7-5）不再发。
@@ -32,6 +32,13 @@
 //! - 统计原料缓存：键是 (集合, 统计指纹, 写入代数, 缓存层代号)；本进程每条写命令提交之后写入代数 +1，别的进程的写入
 //!   由缓存层代号兜住。`stats_release` 丢掉。
 //! - 出卡：`cmd/study.rs` 每条命令在一个读快照里现读（不常驻，见交接说明「S1 接线设计」的取舍），没有要失效的。
+//!
+//! # C 直出入口（S1b）
+//!
+//! 逐卡重放与训练集的 C 入口（`ffsrs_store_history_states` / `_stat_projection` / `_optimizer_items` /
+//! `_calibration_items` / `_rwkv_rows` / `_rwkv_log_tail`，`store/ffi.rs`）照旧解码输入页，经本文件末尾那一节换出集合号
+//! （[direct_col]：页里带 profile 行就按它，否则按卡认集合）后调 `cmd/training.rs`，集合号与命令本体同一个读快照；
+//! 输出布局与协议 3 逐字节相同（`cmd/dispatch_tests.rs` 经 C ABI 对拍）。
 
 use rusqlite::OptionalExtension;
 use serde_json::{Value, json};
@@ -44,6 +51,8 @@ use super::kernel::{G4Core, StatsEntry, removed, unwired};
 use super::local;
 use super::schema::sql;
 use super::truth::Truth;
+use crate::projection::{Alg, Day};
+use crate::store::projections::RwkvRange;
 use crate::sync2::op::EntKind;
 
 /// 一条命令在新代里的去向（模块文件头）。
@@ -75,7 +84,7 @@ pub fn wiring(op: &str) -> Option<Wiring> {
         "read" | "card_columns" | "stats_report" | "stats_recall" | "stats_rows"
         | "stats_release" | "anki_resolve" | "anki_notes_info" | "lineages" | "history"
         | "conflicts" | "checkpoints" | "undo_check" | "plan_restore" | "binding_get"
-        | "profile_footprint" | "status" | "study" | "local_state" => Wired,
+        | "profile_footprint" | "status" | "study" | "local_state" | "preview" => Wired,
         // 浏览会话
         "browse_query" | "browse_rows" | "browse_ids" | "browse_targets" | "browse_close"
         | "browse_stats" | "browse_counts" | "browse_sources" | "anki_find" | "anki_dupes"
@@ -89,10 +98,8 @@ pub fn wiring(op: &str) -> Option<Wiring> {
         | "cache_config_set" | "refresh_caches" | "rebuild_caches" => Wired,
         // 纯加解密（不碰库）
         "seal" | "open" | "open_v1" | "seal_file" | "open_file" | "derive_key" => Wired,
-        // 媒体回收：待回收集合的新代存处与存活引用的新代读法还没接（交接说明「S1 接线设计」未完成项）。
-        "media_gc_queue" | "media_gc_collect" | "media_live_refs" => {
-            Unwired("S1 follow-up (media GC)")
-        }
+        // 媒体回收（`cmd/media_gc.rs`）：待回收集合存在本机状态行里，存活引用读缓存层。
+        "media_gc_queue" | "media_gc_collect" | "media_live_refs" => Wired,
         // 身份
         "identity" | "binding_set" => Unwired("G9-4"),
         // profile 并入 / 清除 / 旧 uid 集合
@@ -113,8 +120,6 @@ pub fn wiring(op: &str) -> Option<Wiring> {
         }
         // 导入 / 导出
         "import" | "export" => Unwired("G11-3"),
-        // 评分预览
-        "preview" => Unwired("G7-4f (pending merge)"),
         // 新代不需要
         "refresh_keys" => Removed(NO_PENDING),
         "channel_settle" => Removed(NO_CHANNEL),
@@ -155,6 +160,12 @@ pub(crate) const NO_ARM: &str = "gen4 dispatch: marked wired but has no arm";
 fn str_of<'a>(req: &'a Value, k: &str) -> Result<&'a str, String> {
     req.get(k)
         .and_then(Value::as_str)
+        .ok_or_else(|| format!("sync2: missing {k}"))
+}
+
+fn int_of(req: &Value, k: &str) -> Result<i64, String> {
+    req.get(k)
+        .and_then(Value::as_i64)
         .ok_or_else(|| format!("sync2: missing {k}"))
 }
 
@@ -294,6 +305,25 @@ fn run(
         "status" => read_col(c, profile, cmd::writes_local::status)?,
         "study" => read_col(c, profile, |t, col| cmd::study::study(t, col, req))?,
         "local_state" => c.read(|t| snapshot(t, |t| local::read(t, profile)))?,
+        "preview" => {
+            let card = str_of(req, "card")?;
+            let note = req.get("note").and_then(Value::as_str);
+            let (now, utc_off, rollover) = (
+                int_of(req, "now")?,
+                int_of(req, "utcOff")?,
+                int_of(req, "rollover")?,
+            );
+            read_col(c, profile, |t, col| {
+                cmd::preview::preview(t, col, card, note, now, utc_off, rollover)
+            })?
+        }
+        // ------------------------------------------------------------ 媒体回收（本机状态 + 读缓存层，不推进修订号）
+        "media_gc_queue" => c.write(|t| cmd::media_gc::queue(t, profile, req))?,
+        "media_gc_collect" => c.write(|t| cmd::media_gc::collect(t, profile, req))?,
+        "media_live_refs" => {
+            let after = int_of(req, "aliveAfter")?;
+            c.read(|t| snapshot(t, |t| cmd::media_gc::live_refs_json(t, profile, after)))?
+        }
         // ------------------------------------------------------------ 浏览会话
         "browse_query" | "browse_rows" | "browse_ids" | "browse_targets" | "browse_close"
         | "browse_stats" | "browse_counts" | "browse_sources" | "anki_find" | "anki_dupes"
@@ -462,6 +492,181 @@ fn stats(c: &G4Core, profile: &str, op: &str, req: &Value) -> Result<Value, Stri
                 _ => crate::store::stats::rows_of(&snap, &canon),
             }
         })
+    })
+}
+
+// ---------------------------------------------------------------------- C 直出入口（逐卡重放与训练集）
+
+/// 一个集合都对不上时用的集合号（[direct_col]）：`collections.col` 是从 1 起分配的整数主键，0 不属于任何集合，派生层
+/// 里没有它的行——在它上面算出的结果就是「这些卡都不存在」的形状（与协议 3 不存在的卡同形）。
+const NO_COLLECTION: i64 = 0;
+
+/// [direct_col] 列出这个文件里的全部集合（`collections` 只有绑定数那么几行）。
+pub(crate) const COLLECTIONS_SQL: &str = "SELECT col FROM collections ORDER BY col";
+
+/// [direct_col] 判「集合 ?1 里有没有卡 ?2 的历史」：卡上的日志（`log_ix` 主键前缀 `(col, card)`）或卡自己的修改
+/// （前身链接等，`reg_ix` 主键前缀 `(col, ekind, ent)`）。查询计划测试用同一份。
+pub(crate) const HOLDS_CARD_SQL: &str = "SELECT EXISTS(SELECT 1 FROM log_ix WHERE col = ?1 AND card = ?2) \
+     OR EXISTS(SELECT 1 FROM reg_ix WHERE col = ?1 AND ekind = ?3 AND ent = ?2)";
+
+/// C 直出入口按哪个集合读（在调用方的读快照里）。协议 3 的这些入口按全局唯一的卡 ID 读、不分 profile，输入页里
+/// `history_states` / `stat_projection` / `optimizer_items` / `calibration_items` / `rwkv_rows` 模式 0 没有 profile 行
+/// （Dart 这一段不改；G7-5 可以补上 `[-1, profile]` 行）。规则：
+///
+/// - 页里有 profile 行：按它的绑定（没绑定 = 明确报错，同 `ffsrs_store_sync2` 的命令）。
+/// - 没有：文件里只有一个集合就是它（通常的情形：一个 profile 目录一个 profile）；一个都没有 = [NO_COLLECTION]；有几个
+///   时按请求里的卡认——卡（归一后的类里任何成员）在哪个集合里有日志或修改就是哪个。全都对不上 = [NO_COLLECTION]
+///   （这些卡在哪儿都没有历史，结果与「卡不存在」相同）；对上不止一个 = 明确报错（分不清该读谁的历史，不拼两份）。
+///   迁移来的多 profile 库里协议 3 的实体本来就只属于一个 profile，按卡认不会撞。
+fn direct_col(t: &Truth<'_>, profile: Option<&str>, groups: &[Vec<String>]) -> Result<i64, String> {
+    if let Some(p) = profile {
+        return col_of(t, p);
+    }
+    let cols: Vec<i64> = t
+        .conn()
+        .prepare_cached(COLLECTIONS_SQL)
+        .map_err(sql)?
+        .query_map([], |r| r.get(0))
+        .map_err(sql)?
+        .collect::<Result<_, _>>()
+        .map_err(sql)?;
+    match cols.as_slice() {
+        [] => return Ok(NO_COLLECTION),
+        [one] => return Ok(*one),
+        _ => {}
+    }
+    let mut hits: Vec<i64> = Vec::new();
+    for &col in &cols {
+        let ix = Index::new(t, col);
+        let mut holds = false;
+        'cards: for card in groups.iter().flatten() {
+            for m in ix.class_of(&cmd::ref_of(card))? {
+                let found: bool = t
+                    .conn()
+                    .prepare_cached(HOLDS_CARD_SQL)
+                    .map_err(sql)?
+                    .query_row(rusqlite::params![col, m, EntKind::Card as i64], |r| {
+                        r.get(0)
+                    })
+                    .map_err(sql)?;
+                if found {
+                    holds = true;
+                    break 'cards;
+                }
+            }
+        }
+        if holds {
+            hits.push(col);
+        }
+    }
+    match hits.as_slice() {
+        [] => Ok(NO_COLLECTION),
+        [one] => Ok(*one),
+        _ => Err(format!(
+            "gen4: the cards of this request have history in {} collections; pass the profile row ([-1, profile])",
+            hits.len()
+        )),
+    }
+}
+
+/// 一条 C 直出命令：集合号的换算与命令本体在同一个读快照里。
+fn direct<T>(
+    c: &G4Core,
+    profile: Option<&str>,
+    groups: &[Vec<String>],
+    f: impl FnOnce(&Truth<'_>, i64) -> Result<T, String>,
+) -> Result<T, String> {
+    c.read(|t| snapshot(t, |t| f(t, direct_col(t, profile, groups)?)))
+}
+
+/// `ffsrs_store_history_states`（`cmd/training.rs`，输出同协议 3）。
+pub fn history_states(
+    c: &G4Core,
+    profile: Option<&str>,
+    groups: &[Vec<String>],
+) -> Result<Vec<u8>, String> {
+    direct(c, profile, groups, |t, col| {
+        cmd::training::history_states(t, col, groups)
+    })
+}
+
+/// `ffsrs_store_stat_projection`。
+pub fn stat_projection(
+    c: &G4Core,
+    profile: Option<&str>,
+    groups: &[Vec<String>],
+) -> Result<Vec<u8>, String> {
+    direct(c, profile, groups, |t, col| {
+        cmd::training::stat_projection(t, col, groups)
+    })
+}
+
+/// `ffsrs_store_optimizer_items`。
+pub fn optimizer_items(
+    c: &G4Core,
+    profile: Option<&str>,
+    groups: &[Vec<String>],
+    ids: &[i64],
+    alg: Alg,
+    day: &Day,
+) -> Result<Vec<u8>, String> {
+    direct(c, profile, groups, |t, col| {
+        cmd::training::optimizer_items(t, col, groups, ids, alg, day)
+    })
+}
+
+/// `ffsrs_store_calibration_items`。
+pub fn calibration_items(
+    c: &G4Core,
+    profile: Option<&str>,
+    groups: &[Vec<String>],
+    ids: &[i64],
+    alg: Alg,
+    day: &Day,
+) -> Result<Vec<u8>, String> {
+    direct(c, profile, groups, |t, col| {
+        cmd::training::calibration_items(t, col, groups, ids, alg, day)
+    })
+}
+
+/// `ffsrs_store_rwkv_rows` 模式 0（逐卡）。
+pub fn rwkv_cards(
+    c: &G4Core,
+    profile: Option<&str>,
+    groups: &[Vec<String>],
+    ids: &[i64],
+    day: &Day,
+) -> Result<Vec<u8>, String> {
+    direct(c, profile, groups, |t, col| {
+        cmd::training::rwkv_cards(t, col, groups, ids, day)
+    })
+}
+
+/// `ffsrs_store_rwkv_rows` 模式 1（回放；页里一定有 profile 行，协议 3 同样要它）。
+pub fn rwkv_replay(
+    c: &G4Core,
+    profile: &str,
+    groups: &[Vec<String>],
+    ids: &[i64],
+    day: &Day,
+    since: i64,
+    range: RwkvRange,
+) -> Result<Vec<u8>, String> {
+    read_col(c, profile, |t, col| {
+        cmd::training::rwkv_replay(t, col, groups, ids, day, since, range)
+    })
+}
+
+/// `ffsrs_store_rwkv_log_tail`（页里一定有 profile 行）。
+pub fn rwkv_log_tail(
+    c: &G4Core,
+    profile: &str,
+    since: i64,
+    with_rows: bool,
+    incremental: bool,
+) -> Result<Vec<u8>, String> {
+    read_col(c, profile, |t, col| {
+        cmd::training::rwkv_log_tail(t, col, since, with_rows, incremental)
     })
 }
 

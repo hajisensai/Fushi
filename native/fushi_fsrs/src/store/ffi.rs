@@ -23,6 +23,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use super::gen4::files::{OpenError, OpenMode};
+use super::gen4::dispatch as gen4_dispatch;
 use super::gen4::kernel::G4Core;
 use super::{CLOSED, SrsCore};
 
@@ -566,8 +567,9 @@ pub extern "C" fn ffsrs_store_in_transaction(
     })
 }
 
-/// 卡片历史的当前状态（直读写连接）。`groups` 是两列页 `[历史下标 i64, 卡 ID 文本]`，共
-/// `n_groups` 份历史；输出布局同 `ffsrs_history_states`，用 `ffsrs_free_bytes` 释放。
+/// 卡片历史的当前状态（新代：`gen4/dispatch.rs` `history_states`，一个读快照）。`groups` 是两列页 `[历史下标 i64,
+/// 卡 ID 文本]`，共 `n_groups` 份历史，可另带一行 `[-1, profile]` 指定集合（没有就按卡认集合，`dispatch.rs`
+/// `direct_col`）；输出布局同 `ffsrs_history_states`，用 `ffsrs_free_bytes` 释放。
 #[no_mangle]
 pub extern "C" fn ffsrs_store_history_states(
     core: *const SrsCoreHandle,
@@ -578,33 +580,25 @@ pub extern "C" fn ffsrs_store_history_states(
     out_len: *mut usize,
     error_out: *mut *mut c_char,
 ) -> i32 {
-    use rusqlite::types::Value;
     if out.is_null() || out_len.is_null() {
         set_error(error_out, "null out");
         return STORE_BAD_ARGUMENT;
     }
     run_core(core, error_out, |c| {
-        let (_, rows) = super::rows::decode(bytes(groups, groups_len).ok_or("null groups")?)?;
-        let mut lineages: Vec<Vec<String>> = vec![Vec::new(); n_groups];
-        for r in rows {
-            let mut it = r.into_iter();
-            match (it.next(), it.next()) {
-                (Some(Value::Integer(g)), Some(Value::Text(card)))
-                    if g >= 0 && (g as usize) < n_groups =>
-                {
-                    lineages[g as usize].push(card)
-                }
-                _ => return Err("bad history group row".into()),
-            }
-        }
-        hand_out(c.history_states(&lineages)?, out, out_len);
+        let (lineages, profile) =
+            lineage_page(bytes(groups, groups_len).ok_or("null groups")?, n_groups)?;
+        hand_out(
+            gen4_dispatch::history_states(c, profile.as_deref(), &lineages)?,
+            out,
+            out_len,
+        );
         Ok(())
     })
 }
 
-/// 有效复习投影（直读写连接）。`groups` 同 [ffsrs_store_history_states]（两列页 `[组下标, 卡 ID]`），
-/// 每组是一个归属组（归属卡 + 归它的前身卡）；输出是 9 列行页（见 `SrsCore::stat_projection`），
-/// 用 `ffsrs_free_bytes` 释放。
+/// 有效复习投影（新代：`gen4/dispatch.rs` `stat_projection`）。`groups` 同 [ffsrs_store_history_states]（两列页
+/// `[组下标, 卡 ID]`，可带 `[-1, profile]`），每组是一个归属组（归属卡 + 归它的前身卡）；输出是 9 列行页（见
+/// `SrsCore::stat_projection`），用 `ffsrs_free_bytes` 释放。
 #[no_mangle]
 pub extern "C" fn ffsrs_store_stat_projection(
     core: *const SrsCoreHandle,
@@ -620,29 +614,15 @@ pub extern "C" fn ffsrs_store_stat_projection(
         return STORE_BAD_ARGUMENT;
     }
     run_core(core, error_out, |c| {
-        let lineages = decode_groups(bytes(groups, groups_len).ok_or("null groups")?, n_groups)?;
-        hand_out(c.stat_projection(&lineages)?, out, out_len);
+        let (lineages, profile) =
+            lineage_page(bytes(groups, groups_len).ok_or("null groups")?, n_groups)?;
+        hand_out(
+            gen4_dispatch::stat_projection(c, profile.as_deref(), &lineages)?,
+            out,
+            out_len,
+        );
         Ok(())
     })
-}
-
-/// 两列页 `[组下标 i64, 卡 ID 文本]` → 每组的卡 ID（组内保持页里的顺序）。
-fn decode_groups(page: &[u8], n_groups: usize) -> Result<Vec<Vec<String>>, String> {
-    use rusqlite::types::Value;
-    let (_, rows) = super::rows::decode(page)?;
-    let mut groups: Vec<Vec<String>> = vec![Vec::new(); n_groups];
-    for r in rows {
-        let mut it = r.into_iter();
-        match (it.next(), it.next()) {
-            (Some(Value::Integer(g)), Some(Value::Text(card)))
-                if g >= 0 && (g as usize) < n_groups =>
-            {
-                groups[g as usize].push(card)
-            }
-            _ => return Err("bad history group row".into()),
-        }
-    }
-    Ok(groups)
 }
 
 // ---------------------------------------------------------------- P6 直读命令（store/projections.rs）
@@ -738,6 +718,7 @@ fn lineage_command(
     error_out: *mut *mut c_char,
     body: impl FnOnce(
         &G4Core,
+        Option<&str>,
         Vec<Vec<String>>,
         &[i64],
         crate::projection::Alg,
@@ -755,10 +736,10 @@ fn lineage_command(
         error_out,
         |c, page, args| {
             let n = group_count(args)?;
-            let (lineages, _) = lineage_page(page, n)?;
+            let (lineages, profile) = lineage_page(page, n)?;
             let alg = crate::projection::Alg::from_code(arg(args, 1)?)?;
             let ids = args.get(4..4 + n).ok_or("missing card ids")?;
-            body(c, lineages, ids, alg, day_of(args, 2)?)
+            body(c, profile.as_deref(), lineages, ids, alg, day_of(args, 2)?)
         },
     )
 }
@@ -784,7 +765,9 @@ pub extern "C" fn ffsrs_store_optimizer_items(
         out,
         out_len,
         error_out,
-        |c, lineages, ids, alg, day| c.optimizer_items(&lineages, ids, alg, &day),
+        |c, profile, lineages, ids, alg, day| {
+            gen4_dispatch::optimizer_items(c, profile, &lineages, ids, alg, &day)
+        },
     )
 }
 
@@ -809,7 +792,9 @@ pub extern "C" fn ffsrs_store_calibration_items(
         out,
         out_len,
         error_out,
-        |c, lineages, ids, alg, day| c.calibration_items(&lineages, ids, alg, &day),
+        |c, profile, lineages, ids, alg, day| {
+            gen4_dispatch::calibration_items(c, profile, &lineages, ids, alg, &day)
+        },
     )
 }
 
@@ -843,12 +828,15 @@ pub extern "C" fn ffsrs_store_rwkv_rows(
             let day = day_of(args, 2)?;
             let opt = |v: i64| (v != crate::history::NONE_I64).then_some(v);
             match arg(args, 1)? {
-                0 => c.rwkv_cards(
+                0 => gen4_dispatch::rwkv_cards(
+                    c,
+                    profile.as_deref(),
                     &lineages,
                     args.get(5..5 + 4 * n).ok_or("missing rwkv ids")?,
                     &day,
                 ),
-                1 => c.rwkv_replay(
+                1 => gen4_dispatch::rwkv_replay(
+                    c,
                     profile.as_deref().ok_or("missing profile")?,
                     &lineages,
                     args.get(7..7 + 4 * n).ok_or("missing rwkv ids")?,
@@ -889,7 +877,8 @@ pub extern "C" fn ffsrs_store_rwkv_log_tail(
         error_out,
         |c, page, args| {
             let (_, profile) = lineage_page(page, 0)?;
-            c.rwkv_log_tail(
+            gen4_dispatch::rwkv_log_tail(
+                c,
                 profile.as_deref().ok_or("missing profile")?,
                 arg(args, 0)?,
                 arg(args, 1)? != 0,
