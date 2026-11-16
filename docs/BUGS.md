@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4083 条。点号进各自文件。
+> 共 4084 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4727](bugs/BUG-4727-game-scrape-cross-source-same-title.md) | ✅ | ✅ | 游戏批量刮削把跨源同名当成歧义，Bangumi 与 VNDB 都收录的作品刮不出封面 |
 | [BUG-4726](bugs/BUG-4726-srs-main-dict-toggle-fill.md) | ✅ | ✅ | 复习卡背面主词典收起按钮带底色并顶出词典卡圆角 |
 | [BUG-4725](bugs/BUG-4725-windows-taskbar-activation-starved-by-deferred-task.md) | ✅ | ✅ | 任何真实常驻动画 + idle 任务让调度器零延迟空转，任务栏点 Fushi 唤不到前台（BUG-4387 复发） |
 | [BUG-4724](bugs/BUG-4724-card-source-remote-open-no-feedback.md) | ✅ | ✅ | 点卡片来源跳互联 host 上的视频时等拉清单期间毫无反馈，像点坏了 |
