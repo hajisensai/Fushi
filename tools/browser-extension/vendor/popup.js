@@ -1149,8 +1149,10 @@ function showGrammarTooltip(element, pinned) {
     tooltip.style.left = '0px';
     tooltip.style.top = '0px';
 
-    const anchor = element.getBoundingClientRect();
-    const box = tooltip.getBoundingClientRect();
+    /* 旧 WebKit（macOS / iOS 26.3 及更早）的元素框是除过 zoom 的单位，先换回视觉 px
+       （BUG-4753，判据只在 selection.js 一处）。 */
+    const anchor = __fushiClientRect(element);
+    const box = __fushiClientRect(tooltip);
 
     let left = anchor.left;
     const maxLeft = viewportWidth - box.width - margin;
@@ -3688,7 +3690,7 @@ const DICT_SANDBOX_HELPER_JS = `(function () {
     return target && target.closest ? target.closest('a[href]') : null;
   }
   // caretRangeFromPoint 给的是离点最近的字间缝：点在字的右半边，偏移已经指向下一个字
-  // （BUG-4747，点「訪」查成「問」）。与 selection.js getCharacterAtPoint 同一判据：在
+  // （BUG-4753，点「訪」查成「問」）。与 selection.js getCharacterAtPoint 同一判据：在
   // caret、caret-1、caret+1 里取字框真包含这一点的那个字；都不包含就不算点中字。
   function hitOffset(node, caret, x, y) {
     var probe = document.createRange();
@@ -7886,7 +7888,8 @@ function createKanjiCard(kanji) {
         e.preventDefault();
         e.stopPropagation();
         if (__fushiClickEndsTextSelection(e)) return;
-        const rect = charEl.getBoundingClientRect();
+        // 宿主按客户区坐标锚嵌套弹窗（BUG-4753：旧 WebKit 的元素框要先换回客户区）。
+        const rect = __fushiClientRect(charEl);
         window.flutter_inappwebview.callHandler('onLinkClick', kanji.character, {
             x: rect.left,
             y: rect.top,
@@ -8049,6 +8052,15 @@ function _reportPopupHeight() {
 // popup_settings_injection.dart 写在 document.documentElement 上（popupContentZoom =
 // 界面大小 x 词典字号/16，Ctrl+滚轮还会就地改它，所以真值只能在 JS 侧现读）；扩展浮窗
 // 由 content.js 写在 shadow host 上。读不到或非法一律回落 1（= 不换算）。
+// 元素在客户区坐标（视觉 px）里的框。旧 WebKit 的 getBoundingClientRect 除过 CSS zoom，
+// 换算与引擎判据只在 selection.js 的 clientRectOf 里写一份（BUG-4753）；没装 selection.js
+// 的上下文按标准引擎处理。
+function __fushiClientRect(element){
+    var sel = window.fushiSelection;
+    return (sel && typeof sel.clientRectOf === 'function')
+        ? sel.clientRectOf(element)
+        : element.getBoundingClientRect();
+}
 function __fushiPopupContentZoom(){
     var host = window.__fushiRoot && window.__fushiRoot.host;
     var raw = (host && host.style && host.style.zoom) ||

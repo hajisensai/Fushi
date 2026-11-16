@@ -1,4 +1,4 @@
-// BUG-4747（反馈 lfbYCEfnt7）：macOS 查词页展开明鏡释义，点「昼」查到「間」、点「訪」查到
+// BUG-4753（反馈 lfbYCEfnt7）：macOS 查词页展开明鏡释义，点「昼」查到「間」、点「訪」查到
 // 「問」——嵌套查词的起点与点的字差一个。
 //
 // 根因：弹窗把「界面大小 × 词典字号」写成 documentElement.style.zoom。旧 WebKit（2025-10
@@ -10,9 +10,10 @@
 // 这里在 fake DOM 里真执行 assets/popup/selection.js，按两种引擎的规则产出字框：
 //   - legacy：探针 zoom:2 与 zoom:1 量出同宽，字框按上式缩；
 //   - standard：探针量出 2 倍宽，字框就是客户区坐标（Blink / 新 WebKit / Firefox）。
-// 断言两种引擎下点每个字（含字的右半边、页面滚动后）都命中那个字本身。
+// 断言两种引擎下点每个字（含字的右半边、页面滚动后）都命中那个字本身；交给宿主的字框
+// （getSelectionRect / highlightSelection）与 clientRectOf 给的元素框都回到客户区坐标。
 //
-// 运行：node fushi/test/lookup/webkit_legacy_zoom_hit_bug4747_test.js
+// 运行：node fushi/test/lookup/webkit_legacy_zoom_hit_bug4753_test.js
 
 const assert = require('node:assert');
 const fs = require('node:fs');
@@ -56,8 +57,10 @@ function load({ engine, zoom, scrollX, scrollY }) {
         return null;
       },
       getRootNode() { return documentStub; },
-      // 只有 clientRectsZoomed 的探针会量元素：宽 100px，按引擎规则缩放。
+      // clientBox：元素在客户区里的框，按引擎规则报出；没有 clientBox 的是 clientRectsZoomed
+      // 的探针：宽 100px，按引擎规则缩放。
       getBoundingClientRect() {
+        if (node.clientBox) return reportedRect(node.clientBox);
         const m = /zoom:([\d.]+)/.exec(node.style.cssText);
         const own = m ? parseFloat(m[1]) : 1;
         const width = engine === 'legacy' ? 100 : 100 * own * zoom;
@@ -81,8 +84,10 @@ function load({ engine, zoom, scrollX, scrollY }) {
   }
   // 引擎从 Range 报出来的字框。
   function reportedCharRect(i) {
-    const c = clientCharRect(i);
-    if (engine !== 'legacy') return { ...c, x: c.left, y: c.top, width: CHAR_W, height: LINE_H };
+    return reportedRect(clientCharRect(i));
+  }
+  function reportedRect(c) {
+    if (engine !== 'legacy') return { ...c, x: c.left, y: c.top, width: c.right - c.left, height: c.bottom - c.top };
     const fx = (v) => (v + scrollX) / zoom - scrollX;
     const fy = (v) => (v + scrollY) / zoom - scrollY;
     const r = { left: fx(c.left), right: fx(c.right), top: fy(c.top), bottom: fy(c.bottom) };
@@ -96,6 +101,7 @@ function load({ engine, zoom, scrollX, scrollY }) {
     createRange() {
       return {
         setStart(node, offset) { this.startContainer = node; this.startOffset = offset; },
+        // 测试只量单字 Range（getSelectionRect）或 1 字的高亮段，按起点取字框即可。
         setEnd(node, offset) { this.endContainer = node; this.endOffset = offset; },
         collapse() {},
         getClientRects() { return this.startContainer === textNode ? [reportedCharRect(this.startOffset)] : []; },
@@ -118,19 +124,25 @@ function load({ engine, zoom, scrollX, scrollY }) {
     getSelection: () => ({ removeAllRanges() {} }),
     flutter_inappwebview: { callHandler() {} },
   };
+  // CSS Custom Highlight 可用：highlightSelection 只登记高亮、不动 DOM。
+  class Highlight { constructor(...ranges) { this.ranges = ranges; } }
+  const css = { highlights: { set() {} } };
+  window.CSS = css;
+  window.Highlight = Highlight;
   const sandbox = {
     window,
     document: documentStub,
     Node: { ELEMENT_NODE: 1, TEXT_NODE: 3 },
     NodeFilter: { SHOW_TEXT: 4, FILTER_ACCEPT: 1, FILTER_REJECT: 2 },
-    CSS: undefined,
+    CSS: css,
+    Highlight,
     Map,
     console,
   };
   sandbox.globalThis = sandbox;
   vm.createContext(sandbox);
   vm.runInContext(src, sandbox);  // NOSONAR: harness 在本地 Node 沙箱里执行仓库自身的取词脚本（固定路径读入），无用户可控数据
-  return { sel: sandbox.window.fushiSelection, textNode, clientCharRect, body };
+  return { sel: sandbox.window.fushiSelection, textNode, clientCharRect, html, glossary };
 }
 
 const cases = [];
@@ -140,10 +152,18 @@ for (const engine of ['legacy', 'standard']) {
   }
 }
 
+function assertClientRect(actual, expected, label) {
+  assert.ok(actual, `${label} must return a rect`);
+  const near = (a, b) => Math.abs(a - b) < 1e-6;
+  const ok = near(actual.x, expected.left) && near(actual.y, expected.top) &&
+    near(actual.width, expected.right - expected.left) && near(actual.height, expected.bottom - expected.top);
+  assert.ok(ok, `${label}: got ${JSON.stringify(actual)}, want client ${JSON.stringify(expected)}`);
+}
+
 let checked = 0;
 const detected = [];
 for (const c of cases) {
-  const { sel, textNode, clientCharRect, body } = load(c);
+  const { sel, textNode, clientCharRect, html, glossary } = load(c);
   const text = textNode.textContent;
   for (const target of ['昼', '間', '訪', '問', 'り', '語']) {
     const i = text.indexOf(target);
@@ -157,10 +177,20 @@ for (const c of cases) {
       assert.strictEqual(hit.node, textNode, label);
       assert.strictEqual(text[hit.offset], target, `${label} hit ${text[hit.offset]}`);
       checked++;
+
+      // 交给宿主锚嵌套弹窗的字框必须是客户区坐标（宿主拿它和 WebView 视口比）。
+      sel.selection = { ranges: [{ node: textNode, start: hit.offset, end: hit.offset + 1 }] };
+      assertClientRect(sel.getSelectionRect(x, y), r, `${label} getSelectionRect`);
+      assertClientRect(sel.highlightSelection(1), r, `${label} highlightSelection`);
     }
   }
+  // 弹窗里按视口定位的浮层 / 上报给宿主的元素框（popup.js __fushiClientRect）。
+  const box = { left: LEFT, top: LINE_TOP, right: LEFT + 600, bottom: LINE_TOP + LINE_H };
+  glossary.clientBox = box;
+  assertClientRect(sel.clientRectOf(glossary), box, `${c.engine} zoom=${c.zoom} clientRectOf`);
+  delete glossary.clientBox;
   // 探针量完必须摘干净，不在宿主文档里留节点。
-  assert.strictEqual(body.childNodes.length, 1, 'zoom probes must be removed after measuring');
+  assert.strictEqual(html.childNodes.length, 1, 'zoom probes must be removed after measuring');
   detected.push([c.engine, sel.rectsZoomed]);
 }
 

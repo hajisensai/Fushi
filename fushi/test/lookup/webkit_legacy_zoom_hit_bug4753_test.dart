@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import '../helpers/node_runtime.dart';
 
-/// BUG-4747（反馈 lfbYCEfnt7）：macOS 查词页点释义里的「昼」查到「間」、点「訪」查到「問」。
+/// BUG-4753（反馈 lfbYCEfnt7）：macOS 查词页点释义里的「昼」查到「間」、点「訪」查到「問」。
 ///
 /// 旧 WebKit 的 `Range.getClientRects` 按节点有效 CSS zoom 缩过（弹窗把界面大小 × 词典字号
 /// 写成 `documentElement.style.zoom`），事件坐标却是客户区坐标；`selection.js` 拿客户区的点
@@ -20,7 +20,7 @@ void main() {
       'legacy WebKit CSS zoom (executes selection.js via node)', () async {
     final String node = runtime.requireNode();
     final ProcessResult result = await Process.run(node, <String>[
-      'test/lookup/webkit_legacy_zoom_hit_bug4747_test.js',
+      'test/lookup/webkit_legacy_zoom_hit_bug4753_test.js',
     ]);
     expect(
       result.exitCode,
