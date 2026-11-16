@@ -153,20 +153,36 @@ class OverwriteSnapshotPreview {
   final String path;
   final int sizeBytes;
 
-  /// 快照文件的修改时刻（= 被覆盖前主库最后一次写入，约等于覆盖导入的时刻）。
+  /// 快照文件的修改时刻（= 覆盖导入完成的时刻，保留期从这里起算）。
   final DateTime modifiedAt;
 
-  /// 快照里有、当前库没有（也没被删除墓碑挡住）的书。
+  /// 快照里有、当前库没有（也没被删除墓碑挡住）的书，含书文件已不在盘上的。
   final List<OverwriteSnapshotBook> missingBooks;
 
   /// 快照里有、当前库没有、且本机还能播放的视频条数。
   final int missingVideoCount;
 
-  /// 书文件已不在盘上的书（恢复后书库行回来了，但打不开，需要重新导入）。
+  /// 到这一刻快照会在启动时被自动删除
+  /// （`BackupRestoreService.overwriteSnapshotRetention`）。
+  DateTime get expiresAt =>
+      BackupRestoreService.overwriteSnapshotExpiresAt(modifiedAt);
+
+  /// 恢复时真正会补回来的书（书文件还在盘上）。
+  List<OverwriteSnapshotBook> get restorableBooks => <OverwriteSnapshotBook>[
+    for (final OverwriteSnapshotBook b in missingBooks)
+      if (b.filesPresent) b,
+  ];
+
+  /// 书文件已不在盘上的书：恢复时**跳过**（插回来只是打不开的空壳），
+  /// 界面列出书名、提示重新导入。
   List<OverwriteSnapshotBook> get booksWithoutFiles => <OverwriteSnapshotBook>[
     for (final OverwriteSnapshotBook b in missingBooks)
       if (!b.filesPresent) b,
   ];
+
+  /// 从快照恢复会不会补回任何书 / 视频。
+  bool get hasRestorableContent =>
+      restorableBooks.isNotEmpty || missingVideoCount > 0;
 }
 
 /// 覆盖前快照里的一本书。
