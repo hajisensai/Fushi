@@ -56,15 +56,15 @@ fn u(i: Id) -> Key {
 }
 
 /// 两份带盐的笔记，连同它们规范的那一套。
-struct Twin {
+pub(super) struct Twin {
     nt: [Id; 2],
-    field: [Id; 2],
+    pub(super) field: [Id; 2],
     tmpl: [Id; 2],
-    note: [Id; 2],
+    pub(super) note: [Id; 2],
     card: [Id; 2],
     log: [Id; 2],
-    c_field: Id,
-    c_note: Id,
+    pub(super) c_field: Id,
+    pub(super) c_note: Id,
     c_card: Id,
     c_log: Id,
 }
@@ -181,9 +181,14 @@ fn base_ops(w: &Twin) -> Vec<Body4> {
     out
 }
 
+/// [land] 里 0xa1 写完身份与定义之后的那个点 (设备, 最后一个 seq)：在场景上续写、要「见过全部定义」的操作拿它当依赖。
+pub(super) fn base_seen(w: &Twin) -> (u8, u64) {
+    (0xa1, base_ops(w).len() as u64)
+}
+
 /// 灌进集合 [col]：0xa1 的定义，再 0xb1 / 0xb2 互不相见地各改一份的同一字段，0xc1 删待裁决的笔记、0xc2 没见过这条删除
-/// 就改它的字段（删除被扣住）。返回场景。
-fn land(t: &Truth<'_>, col: i64) -> Twin {
+/// 就改它的字段（删除被扣住）。返回场景。`center_tests.rs` 的别名类场景也用它。
+pub(super) fn land(t: &Truth<'_>, col: i64) -> Twin {
     let w = twin();
     let cfg = json!({"defaultDeck": id(DECK).text()}).to_string();
     t.tx(|t| {

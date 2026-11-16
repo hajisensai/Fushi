@@ -7,6 +7,11 @@
 //! - [columns]：列式批量读 `card_columns` 与 AnkiConnect 数字 id 的 `anki_resolve` / `anki_notes_info`（协议 3 `store/bulk.rs`）。
 //! - [lineage]：`lineages`——一组卡各自的血统（协议 3 `caches::lineage_ids`，同一个判定函数，按类读前身链接）。
 //! - [stats]：复习统计 `stats_report` / `stats_recall` / `stats_rows`（协议 3 `store/stats.rs`，同一份聚合）。
+//! - [center]：冲突中心与时间线的只读命令 `conflicts` / `checkpoints` / `undo_check`（G7-4e）。
+//! - [profile]：按集合的 `binding_get` / `profile_footprint`（G7-4e）。
+//!
+//! 分发器命令与新代实现的逐条对照（哪条已有、归谁、S1 怎么接）见 `docs/specs/2026-11-15-srs-gen4-handoff.md`
+//! 「分发器命令对照表」。
 //!
 //! # 共同约定
 //!
@@ -35,9 +40,11 @@ use crate::sync2::codec::Writer;
 use crate::sync2::id::Key;
 use crate::sync2::op::EntKind;
 
+pub mod center;
 pub mod columns;
 pub mod history;
 pub mod lineage;
+pub mod profile;
 pub mod reads;
 pub mod stats;
 pub mod views;
@@ -47,6 +54,8 @@ pub mod writes_intent;
 pub mod writes_local;
 pub mod writes_restore;
 
+#[cfg(test)]
+mod center_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

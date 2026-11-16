@@ -70,11 +70,13 @@ pub fn stats_rows(t: &Truth<'_>, col: i64, req: &Value) -> Result<Value, String>
     stats::rows_of(&snap, &req)
 }
 
-/// 原料与归一后的请求：同一个读快照里读原料、归一请求里的 ID（别名表与原料是同一个版本）。
+/// 原料与归一后的请求：同一个读快照里读原料、归一请求里的 ID（别名表与原料是同一个版本）。原料经 [snapshot_of]
+/// 读——它在已开的事务里直接沿用（[snapshot] 的约定），所以这里与接线后命令层的原料缓存走同一个入口：缓存（协议 3
+/// `StatsCache` 的新代对应物，要知道写连接上改没改过原料，归 S1 的命令层）没命中时也调它。
 fn load(t: &Truth<'_>, col: i64, req: &Value) -> Result<(Snapshot, Value), String> {
     snapshot(t, |t| {
         let req = canon_req(&Index::new(t, col), req)?;
-        Ok((read_snapshot(t, col)?, req))
+        Ok((snapshot_of(t, col)?, req))
     })
 }
 
