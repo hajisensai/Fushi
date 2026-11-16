@@ -1194,7 +1194,7 @@ async function loadSrs(){
   });
 
   $('#srs-rwkv').innerHTML = `<div class="grid"><label class="f">${esc(T('使用的模型'))}<select id="srs-rwkv-model">${[['small',T('Small（默认，准确度最好）')],['tiny',T('Tiny（每张卡省约 30% 内存，准确度略差）')]].map(([v,l])=>`<option value="${v}" ${(cfg.rwkvModel||'small')===v?'selected':''}>${esc(l)}</option>`).join('')}</select></label></div>`;
-  $('#srs-rwkv-model').onchange = guard(async()=>{ await put('srs', {rwkvModel: $('#srs-rwkv-model').value}); toast(T('已切换 RWKV 模型')); srsFormKey=null; loadSrs(); });
+  $('#srs-rwkv-model').onchange = guard(async()=>{ try { await put('srs', {rwkvModel: $('#srs-rwkv-model').value}); toast(T('已切换 RWKV 模型')); } finally { srsFormKey=null; loadSrs(); } });
 
   const setNote = (isSet) => isSet ? ` <span class="muted">${esc(T('(已设置，留空不改)'))}</span>` : '';
   $('#srs-ankiconnect').innerHTML = `<div class="row" style="margin-top:16px">${swLabel('id="ac-enabled"', ac.enabled, T('开关'))}</div>
