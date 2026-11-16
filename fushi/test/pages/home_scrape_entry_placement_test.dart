@@ -3,7 +3,7 @@
 //
 // 回归原样：Apple（Cupertino）下 `_shellFabHostedByBar` 在桌面与移动布局都恒为
 // true，右下 FAB 不再画；替代入口只在外壳大标题行右侧出现——而首页 / 设置 /
-// 浏览器扩展这几个 tab 的外壳大标题行高度为 0（`_shellTitleFor` 返回 null），
+// 浏览器扩展这几个 tab 的外壳大标题行高度为 0（`_shellBarTitleFor` 返回 null），
 // 按钮根本画不出来。后台任务跑着时用户既看不到进度也打不开面板。
 //
 // MD3 手机（2026-11-04 用户）：入口不许顶替悬浮底栏的「查词」FAB，而是在它正上方
@@ -62,8 +62,13 @@ void main() {
     );
     expect(
       src,
-      contains('shellTitleVisible: _shellTitleFor(_visibleTab) != null'),
+      contains('shellTitleVisible: _shellBarTitleFor(_visibleTab) != null'),
       reason: '「标题行可见」必须取外壳标题条判「有标题」的同一份数据',
+    );
+    expect(
+      src,
+      contains('title: _shellBarTitleFor(_visibleTab),'),
+      reason: '外壳标题条画的就是这一份（页头大字库页为 null，BUG-4722）',
     );
     expect(
       src,

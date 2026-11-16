@@ -1,7 +1,8 @@
 //! 读侧按别名类判定（设计 §5.3「一个寄存器的写入按实体的整个别名类归并」，G9-1）。[Index] 的一部分，**只读**：
 //! 索引表（`reg_ix`、`tag_ix`）照旧存操作体里的原值 ID、按原值实体各判各的（`derive.rs` / `weigh.rs`），这里在读的
 //! 时候把一个别名类的全部成员并起来，用**同一个**冻结判据（`crate::registers::judge_register`，拼行在
-//! [Index::edit_lines_as]）再判一次。没有调用方：缓存层（`cache.rs`）接到这里是 G9-2，写命令按规范 ID 写是 G7-3b。
+//! [Index::edit_lines_as]）再判一次。调用方只有缓存层（`cache.rs`，[Index::class_lines]，G9-2）与迁移报告的已知差异（[Index::class_differences]）；
+//! 写命令按规范 ID 写是 G7-3b。
 //!
 //! # 并起来的是什么
 //!
@@ -30,8 +31,8 @@
 //!
 //! 负状态是索引层按原值实体判的，这里原样拿来：已清除（[super::weigh::S_PURGED]：Purge 点名的是原值实体，清的是
 //! 「作者没见过它」的、这个原值实体上的操作）、扣住的删除（[super::weigh::S_HELD]）、作者不可信（
-//! [super::weigh::S_DISTRUSTED]）。一条 Purge 要不要清掉整个类、一条删除的扣住要不要看全类的并发操作，是 G9-2 /
-//! G7 接线时随缓存层一起定的事（设计 §10 第 19 条同源）；在那之前，按类读与按原值读对这三种状态口径相同。
+//! [super::weigh::S_DISTRUSTED]）。一条 Purge 要不要清掉整个类、一条删除的扣住要不要看全类的并发操作，是 G7
+//! 接线时定的事（G9-2 的缓存层沿用原值口径）（设计 §10 第 19 条同源）；在那之前，按类读与按原值读对这三种状态口径相同。
 //!
 //! # 内嵌的 ID（设计 §5.3「内嵌的 ID 同样过别名表」）
 //!
@@ -48,18 +49,21 @@
 //! 语义摘要（`digest.rs`）按原值 ID 记、不过别名表（两台设备的别名表可以不同，摘要不能跟着不同），这里不碰。
 
 use std::cell::RefCell;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use rusqlite::params;
 use rusqlite::types::ValueRef;
 use serde_json::{Map, Value};
 
-use super::derive::{Index, R_CONFLICT, R_WINNER, Ref};
+use super::derive::{Index, R_CONFLICT, R_DOMINATED, R_LIVE, R_WINNER, Ref, body_of};
 use super::schema::sql;
 use crate::card_cache::ids_to_names;
 use crate::gen4::name::read_edit_key;
+use crate::gen4::op::Body4;
 use crate::gen4::stamp::StampHlc;
 use crate::gen4_ids::alias::strict_id;
+use crate::gen4_ids::builtins::BUILTIN_NOTE_TYPES;
+use crate::gen4_ids::rules;
 use crate::sync2::codec::Reader;
 use crate::sync2::dvv::Dvv;
 use crate::sync2::id::Id;
@@ -96,6 +100,8 @@ pub(super) struct Canon<'a> {
     renamed: &'a Renamed,
     pub(super) entity: String,
     pub(super) key: String,
+    /// 一次拼几个寄存器的行时（缓存层，[Index::class_lines]）每条写入（操作主键）各自的规范键；没有的取 `key`。
+    keys: Option<&'a HashMap<i64, String>>,
 }
 
 /// 一份闭包是哪一段：整份（`closure_ix` 里那台设备的旧闭包，按 `upto` 记）还是只并到某个 seq 的一部分（[Index] 的
@@ -111,6 +117,13 @@ pub(super) enum Span {
 pub(super) type Renamed = RefCell<BTreeMap<(Id, Span, u64), Option<Dvv>>>;
 
 impl Canon<'_> {
+    /// 操作 [k] 这条写入的规范键。
+    pub(super) fn key_of(&self, k: i64) -> &str {
+        self.keys
+            .and_then(|m| m.get(&k))
+            .map_or(self.key.as_str(), String::as_str)
+    }
+
     /// 规范写入者（表里没有 = 它自己）。
     pub(super) fn writer<'w>(&'w self, w: &'w str) -> &'w str {
         self.writers.get(w).map_or(w, String::as_str)
@@ -214,7 +227,7 @@ impl<'t, 'c> Index<'t, 'c> {
         kind: EntKind,
         canon: &Ref,
     ) -> Result<Vec<ClassWinner>, String> {
-        self.class_registers(kind, canon, None)
+        self.class_registers(kind, canon, None, None)
     }
 
     /// 一个别名类里一个寄存器（[canon_key] 是规范键）的生效值；没有写入 = None。
@@ -225,10 +238,48 @@ impl<'t, 'c> Index<'t, 'c> {
         canon_key: &str,
     ) -> Result<Option<String>, String> {
         Ok(self
-            .class_registers(kind, canon, Some(canon_key))?
+            .class_registers(kind, canon, Some(canon_key), None)?
             .into_iter()
             .next()
             .map(|w| w.value))
+    }
+
+    /// [Index::class_value]，但只看 [keep] 留下的写入（按操作主键）：这些写入单独重判一遍取胜者——「只有这些操作时
+    /// 这个寄存器的值」。时间线恢复（`cmd/writes_restore.rs`）求「那一刻的值」用；判定规则与 [Index::class_value]
+    /// 同一份（[Index::judged] 按类）。[keep] 一条都不留 = None。
+    pub(super) fn class_value_in(
+        &mut self,
+        kind: EntKind,
+        canon: &Ref,
+        canon_key: &str,
+        keep: &dyn Fn(i64) -> bool,
+    ) -> Result<Option<String>, String> {
+        Ok(self
+            .class_registers(kind, canon, Some(canon_key), Some(keep))?
+            .into_iter()
+            .next()
+            .map(|w| w.value))
+    }
+
+    /// [Index::class_tags]，但只看 [keep] 留下的标签操作（按操作主键），OR-Set 与顺序提示在这些操作上重判。用途同
+    /// [Index::class_value_in]。
+    pub(super) fn class_tags_in(
+        &mut self,
+        canon: &Ref,
+        keep: &dyn Fn(i64) -> bool,
+    ) -> Result<Vec<String>, String> {
+        self.aliases_settled()?;
+        let mut rows = Vec::new();
+        for m in &self.members(canon)? {
+            rows.extend(self.tags_rows(m)?.into_iter().filter(|r| keep(r.0)));
+        }
+        rows.sort();
+        rows.dedup();
+        let want = self.tag_states(&rows)?;
+        for (row, want) in rows.iter_mut().zip(want) {
+            row.3 = want;
+        }
+        self.current_tags(&rows)
     }
 
     /// 一个别名类（笔记）现在的标签：类内成员的标签操作并起来重判（文件头「标签」），顺序规则同 [Index::tags_of]。
@@ -252,9 +303,72 @@ impl<'t, 'c> Index<'t, 'c> {
 
     /// 修改值里嵌的 ID 归一（文件头「内嵌的 ID」）。[key] 是修改键（原值或规范形都行，只看前缀与名字）。
     pub fn canonical_value(&self, key: &str, v: &Value) -> Result<Value, String> {
+        self.canonical_value_by(key, v, &|s| self.canonical_text(s))
+    }
+
+    /// 整份 JSON 里嵌的 ID 归一（文件头「内嵌的 ID」）。
+    pub fn canonical_json(&self, v: &Value) -> Result<Value, String> {
+        self.canonical_json_by(v, &|s| self.canonical_text(s))
+    }
+
+    /// 缓存配置（`cache.rs` 的 `derive_cfg("caches")`，宿主给的）归一：默认牌组、内置笔记类型的代码默认定义（字段 /
+    /// 模板 ID、模板文本里的字段引用）、读音字段。配置里的 ID 不一定在操作里出现过（别名表只收出现过的），所以先查表、
+    /// 查不到再按规则认内置实体在每个盐下的存量 ID（[builtin_rule_canon]）——否则一个从没被改过的内置模板保持带盐 ID，
+    /// 由它派生的应有的卡就不是别名表认的那张规范卡，卡上的日志挂不上来。别的值原样。
+    pub fn canonical_config(&self, v: &Value) -> Result<Value, String> {
+        let rules = builtin_rule_canon(&self.salts()?);
+        let text = |s: &str| -> Result<String, String> {
+            let Some(id) = strict_id(s) else {
+                return Ok(s.to_owned());
+            };
+            let canon = self.canonical(&Ref::Uuid(id.0))?;
+            Ok(match (&canon, rules.get(&id.0)) {
+                (Ref::Uuid(c), Some(r)) if *c == id.0 => Id(*r).text(),
+                _ => canon.text(),
+            })
+        };
+        let Value::Object(m) = v else {
+            return Ok(v.clone());
+        };
+        let mut out = m.clone();
+        if let Some(Value::String(d)) = m.get("defaultDeck") {
+            out.insert("defaultDeck".to_owned(), Value::String(text(d)?));
+        }
+        if let Some(Value::Object(bs)) = m.get("builtins") {
+            let mut canon = Map::new();
+            for (k, b) in bs {
+                let mut b2 = match b {
+                    Value::Object(x) => x.clone(),
+                    _ => {
+                        canon.insert(k.clone(), b.clone());
+                        continue;
+                    }
+                };
+                if let Some(def) = b2.get("b").cloned() {
+                    b2.insert("b".to_owned(), self.canonical_json_by(&def, &text)?);
+                }
+                if let Some(Value::String(r)) = b2.get("reading").cloned() {
+                    b2.insert("reading".to_owned(), Value::String(text(&r)?));
+                }
+                canon.insert(k.clone(), Value::Object(b2));
+            }
+            out.insert("builtins".to_owned(), Value::Object(canon));
+        }
+        Ok(Value::Object(out))
+    }
+
+    // ------------------------------------------------------------ 内部
+
+    /// [Index::canonical_value]，文本形式的 ID 由 [text] 归一。
+    fn canonical_value_by(
+        &self,
+        key: &str,
+        v: &Value,
+        text: &dyn Fn(&str) -> Result<String, String>,
+    ) -> Result<Value, String> {
         if ID_VALUED_KEYS.contains(&key) {
             return Ok(match v {
-                Value::String(s) => Value::String(self.canonical_text(s)?),
+                Value::String(s) => Value::String(text(s)?),
                 _ => v.clone(),
             });
         }
@@ -262,10 +376,10 @@ impl<'t, 'c> Index<'t, 'c> {
             if let Value::Object(m) = v {
                 let mut out = m.clone();
                 for side in ["front", "back"] {
-                    if let Some(Value::String(text)) = m.get(side) {
+                    if let Some(Value::String(t)) = m.get(side) {
                         out.insert(
                             side.to_owned(),
-                            Value::String(self.canonical_template(text)?),
+                            Value::String(self.canonical_template_by(t, text)?),
                         );
                     }
                 }
@@ -275,8 +389,12 @@ impl<'t, 'c> Index<'t, 'c> {
         Ok(v.clone())
     }
 
-    /// 整份 JSON 里嵌的 ID 归一（文件头「内嵌的 ID」）。
-    pub fn canonical_json(&self, v: &Value) -> Result<Value, String> {
+    /// [Index::canonical_json]，文本形式的 ID 由 [text] 归一。
+    fn canonical_json_by(
+        &self,
+        v: &Value,
+        text: &dyn Fn(&str) -> Result<String, String>,
+    ) -> Result<Value, String> {
         Ok(match v {
             Value::Object(m) => {
                 let edit_key = m.get("f").and_then(Value::as_str);
@@ -284,25 +402,25 @@ impl<'t, 'c> Index<'t, 'c> {
                 for (k, x) in m {
                     let y = match (k.as_str(), x) {
                         (k, Value::String(s)) if JSON_ID_KEYS.contains(&k) => {
-                            Value::String(self.canonical_text(s)?)
+                            Value::String(text(s)?)
                         }
                         (k, Value::Array(xs))
                             if JSON_ID_KEYS.contains(&k) && xs.iter().all(Value::is_string) =>
                         {
                             let mut ys = Vec::with_capacity(xs.len());
                             for s in xs.iter().filter_map(Value::as_str) {
-                                ys.push(Value::String(self.canonical_text(s)?));
+                                ys.push(Value::String(text(s)?));
                             }
                             Value::Array(ys)
                         }
                         ("f", Value::String(s)) => Value::String(self.canonical_key(s)?),
                         ("front" | "back", Value::String(s)) => {
-                            Value::String(self.canonical_template(s)?)
+                            Value::String(self.canonical_template_by(s, text)?)
                         }
                         ("v", x) if edit_key.is_some() => {
-                            self.canonical_value(edit_key.unwrap_or_default(), x)?
+                            self.canonical_value_by(edit_key.unwrap_or_default(), x, text)?
                         }
-                        (_, x) => self.canonical_json(x)?,
+                        (_, x) => self.canonical_json_by(x, text)?,
                     };
                     out.insert(k.clone(), y);
                 }
@@ -311,15 +429,13 @@ impl<'t, 'c> Index<'t, 'c> {
             Value::Array(xs) => {
                 let mut ys = Vec::with_capacity(xs.len());
                 for x in xs {
-                    ys.push(self.canonical_json(x)?);
+                    ys.push(self.canonical_json_by(x, text)?);
                 }
                 Value::Array(ys)
             }
             _ => v.clone(),
         })
     }
-
-    // ------------------------------------------------------------ 内部
 
     /// 文本形式的 ID 的规范形：规范形状的 UUID 过别名表，别的原样。
     fn canonical_text(&self, s: &str) -> Result<String, String> {
@@ -330,13 +446,17 @@ impl<'t, 'c> Index<'t, 'c> {
     }
 
     /// 模板文本里 `{{…fld:<UUID>}}` 的字段 ID 归一：分词与替换都走 `card_cache::ids_to_names`（模板渲染认字段引用的
-    /// 那一份），只把规范形状的 UUID 换成规范 ID；注释、普通文本原样。
-    fn canonical_template(&self, text: &str) -> Result<String, String> {
+    /// 那一份），只把规范形状的 UUID 换成 [text] 给的规范形；注释、普通文本原样。
+    fn canonical_template_by(
+        &self,
+        source: &str,
+        text: &dyn Fn(&str) -> Result<String, String>,
+    ) -> Result<String, String> {
         let failed: RefCell<Option<String>> = RefCell::new(None);
-        let out = ids_to_names(text, &|id| {
-            let uuid = strict_id(id)?;
-            match self.canonical(&Ref::Uuid(uuid.0)) {
-                Ok(r) => Some(format!("fld:{}", r.text())),
+        let out = ids_to_names(source, &|id| {
+            strict_id(id)?;
+            match text(id) {
+                Ok(c) => Some(format!("fld:{c}")),
                 Err(e) => {
                     failed.borrow_mut().get_or_insert(e);
                     None
@@ -350,7 +470,7 @@ impl<'t, 'c> Index<'t, 'c> {
     }
 
     /// 旧并入改名、已归回的写入者（`alias_writer_ix`）：原名 → 规范名。
-    fn writer_aliases(&self) -> Result<BTreeMap<String, String>, String> {
+    pub(super) fn writer_aliases(&self) -> Result<BTreeMap<String, String>, String> {
         let mut stmt = self
             .t
             .conn()
@@ -362,12 +482,13 @@ impl<'t, 'c> Index<'t, 'c> {
         rows.collect::<Result<_, _>>().map_err(sql)
     }
 
-    /// 类内全部成员的寄存器行按规范键成组再判；[only] = 只要这一个规范键。
+    /// 类内全部成员的寄存器行按规范键成组再判；[only] = 只要这一个规范键；[keep] = 只要这些写入（按操作主键）。
     fn class_registers(
         &mut self,
         kind: EntKind,
         canon: &Ref,
         only: Option<&str>,
+        keep: Option<&dyn Fn(i64) -> bool>,
     ) -> Result<Vec<ClassWinner>, String> {
         self.aliases_settled()?;
         let entity = self.canonical(canon)?.text();
@@ -396,7 +517,7 @@ impl<'t, 'c> Index<'t, 'c> {
                 let text = read_edit_key(&mut Reader::new(&key))
                     .map_err(|e| format!("gen4 index: bad register key: {e}"))?;
                 let ck = self.canonical_key(&text)?;
-                if only.is_some_and(|o| o != ck) {
+                if only.is_some_and(|o| o != ck) || keep.is_some_and(|f| !f(k)) {
                     continue;
                 }
                 groups.entry(ck).or_default().push((k, state));
@@ -412,6 +533,7 @@ impl<'t, 'c> Index<'t, 'c> {
                 renamed: &renamed,
                 entity: entity.clone(),
                 key,
+                keys: None,
             };
             let (live, want) = self.judged(&rows, Some(&c))?;
             let Some((&(k, _), &state)) = live.iter().zip(&want).find(|&(_, &s)| s >= R_WINNER)
@@ -438,6 +560,619 @@ impl<'t, 'c> Index<'t, 'c> {
         }
         Ok(out)
     }
+
+    /// 缓存层（`cache.rs`）要的：一个别名类（[canon] 可以是类里任何一个 ID）全部寄存器里**按类判定**活着的写入，拼成
+    /// 寄存器内核的落库行（实体、键、值、三处写入者都是规范形，[Index::edit_lines_as]），与其中最大的 HLC 物理时刻
+    /// （没有 = 0）。别名表没重算时报错。
+    ///
+    /// 捷径只在「按类判与按原值判一定相同」时走：类里只有一个成员、这个规范键只来自一个原值键、寄存器里没有归回涉及的
+    /// 名字（改名后的名字或它的规范名）写的写入（dot 与 HLC 的写入者都看；集合里别处有归回写入者不影响这个寄存器）——
+    /// 这时支配关系逐条相同（dot 不换名、闭包不换名、不并寄存器），活着的集合直接取 `reg_ix` 的状态，只把行拼成规范形。
+    /// 值归一只会让「值不同」变少，不影响谁活着（文件头「只有一个成员」一条说的是冲突标志，缓存层取的是活着的写入，
+    /// 由寄存器内核在视图里再判）。
+    pub(super) fn class_lines(
+        &mut self,
+        kind: EntKind,
+        canon: &Ref,
+    ) -> Result<(Vec<(String, Option<i64>)>, i64), String> {
+        self.aliases_settled()?;
+        let entity = self.canonical(canon)?.text();
+        let members = self.members(canon)?;
+        let writers = match &self.pass_writers {
+            Some(w) => w.clone(),
+            None => self.writer_aliases()?,
+        };
+        // 规范键 → (写入 (k, state), 来自哪几个 (成员, 原值键))。
+        type Group = (Vec<(i64, i64)>, BTreeSet<(Ref, Vec<u8>)>);
+        let mut groups: BTreeMap<String, Group> = BTreeMap::new();
+        for m in &members {
+            for (key, k, state) in self.member_registers(kind, m)? {
+                let text = read_edit_key(&mut Reader::new(&key))
+                    .map_err(|e| format!("gen4 index: bad register key: {e}"))?;
+                let g = groups.entry(self.canonical_key(&text)?).or_default();
+                g.0.push((k, state));
+                g.1.insert((m.clone(), key));
+            }
+        }
+        // 归回涉及的名字（改名后的名字与它的规范名）：寄存器里没有这些名字写的写入时，换名不改变谁见过谁（支配只问
+        // 「上下文里这条写入的写入者那一格 ≥ 它的 seq」，那一格的写入者不在换名表里就不变），按类判与按原值判相同。
+        let renamed_names: BTreeSet<&str> = writers
+            .iter()
+            .flat_map(|(n, o)| [n.as_str(), o.as_str()])
+            .collect();
+        let single = members.len() == 1;
+        let renamed = Renamed::default();
+        // 每个规范键各自判活着的，行最后一次拼：不带旧戳的写入的上下文回答的是「见没见过别的要的行」，要的行跨键算
+        // （笔记的「待裁决」看删除见没见过别的键上的内容修改，原值拼法也是整个实体一次拼）。
+        let (mut ks, mut emit) = (Vec::new(), Vec::new());
+        let mut keys: HashMap<i64, String> = HashMap::new();
+        for (key, (mut rows, raw)) in groups {
+            rows.sort_unstable();
+            if single && raw.len() == 1 && !self.touches_renamed(&rows, &renamed_names)? {
+                for &(k, s) in rows.iter().filter(|&&(_, s)| s >= R_DOMINATED) {
+                    ks.push(k);
+                    emit.push(s >= R_LIVE);
+                    keys.insert(k, key.clone());
+                }
+                continue;
+            }
+            let c = Canon {
+                writers: &writers,
+                renamed: &renamed,
+                entity: entity.clone(),
+                key: key.clone(),
+                keys: None,
+            };
+            self.class_judged += 1;
+            let (live, want) = self.judged(&rows, Some(&c))?;
+            for (&(k, _), &w) in live.iter().zip(&want) {
+                ks.push(k);
+                emit.push(w >= R_LIVE);
+                keys.insert(k, key.clone());
+            }
+        }
+        if !emit.iter().any(|&e| e) {
+            return Ok((Vec::new(), 0));
+        }
+        let c = Canon {
+            writers: &writers,
+            renamed: &renamed,
+            entity,
+            key: String::new(),
+            keys: Some(&keys),
+        };
+        let (mut out, mut top) = (Vec::new(), 0i64);
+        for l in self.edit_lines_as(&ks, &|i| emit[i], Some(&c))? {
+            top = top.max(l.physical);
+            out.push((l.json, l.server_time));
+        }
+        Ok((out, top))
+    }
+
+    /// 这组写入（(操作主键, 状态)）里有没有 [names] 里的名字写的（dot 的写入者：带旧戳的取旧戳的写入者，不带的取设备）。
+    /// [names] 空时不读操作。
+    fn touches_renamed(&self, rows: &[(i64, i64)], names: &BTreeSet<&str>) -> Result<bool, String> {
+        if names.is_empty() {
+            return Ok(false);
+        }
+        for &(k, _) in rows {
+            let d = self.dot_of(k)?;
+            // HLC 的写入者也换（胜负平手时落到它上），一并看。
+            let hlc_writer = d.hlc.as_ref().map(|h| h.2.as_str());
+            if names.contains(d.writer.as_str()) || hlc_writer.is_some_and(|w| names.contains(w)) {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    /// 一条修改的 dot 与旧 HLC 的物理时刻、计数（带旧戳且 HLC 解得开时才有）。
+    fn dot_of(&self, k: i64) -> Result<DotOf, String> {
+        let e = self
+            .t
+            .entry_by_key(k)?
+            .ok_or_else(|| format!("gen4 index: register row {k} has no op"))?;
+        let Some(Body4::Edit(ed)) = body_of(&e) else {
+            return Err(format!("gen4 index: register row {k} is not an edit"));
+        };
+        Ok(match &ed.stamp {
+            Some(s) => DotOf {
+                writer: s.writer.clone(),
+                seq: s.seq,
+                hlc: match &s.hlc {
+                    StampHlc::Parsed {
+                        physical,
+                        counter,
+                        writer,
+                    } => Some((*physical, *counter, writer.clone())),
+                    StampHlc::Raw(_) => None,
+                },
+                op: e.id,
+            },
+            None => DotOf {
+                writer: e.id.device.text(),
+                seq: e.id.seq as i64,
+                hlc: None,
+                op: e.id,
+            },
+        })
+    }
+
+    /// 一个原值实体在 `reg_ix` 里的全部写入：(修改键的紧凑形, 操作主键, 状态)。
+    fn member_registers(
+        &self,
+        kind: EntKind,
+        member: &Ref,
+    ) -> Result<Vec<(Vec<u8>, i64, i64)>, String> {
+        let mut stmt = self
+            .t
+            .conn()
+            .prepare_cached(
+                "SELECT key, k, state FROM reg_ix WHERE col = ?1 AND ekind = ?2 AND ent = ?3",
+            )
+            .map_err(sql)?;
+        let rows = stmt
+            .query_map(params![self.col, kind as i64, member], |r| {
+                let key = match r.get_ref(0)? {
+                    ValueRef::Blob(b) => b.to_vec(),
+                    _ => Vec::new(),
+                };
+                Ok((key, r.get(1)?, r.get(2)?))
+            })
+            .map_err(sql)?;
+        rows.collect::<Result<_, _>>().map_err(sql)
+    }
+
+    /// 按类判定相对原值判定的差异（设计 §5.3「按类判定的已知差异」、§10 第 24 条）：迁移报告里逐条列出、逐条佐证的那份。
+    /// 只读，别名表没重算时报错。
+    ///
+    /// 看哪些寄存器：有不止一个成员的类的全部寄存器；有归回的改名写入者时再加全部写入不止一条的寄存器（换名可能
+    /// 改变支配，只有一条写入的寄存器怎么判都是它自己胜）。每个寄存器按规范键成组，与原值判定（`reg_ix.state`，干跑的
+    /// `registerWinners` 已逐个核对过它与协议 3 相同）逐条比活着的集合与冲突标志：
+    ///
+    /// - 规范键来自不止一个原值寄存器（两个成员各有一份）：协议 3 里是两个寄存器，没有一对一的基准，只计数
+    ///   （[ClassDiffs::merged]）；
+    /// - 其余逐条比：原值判下活着、按类判被支配的写入（[Dominated]）要佐证——被支配的 `(w, s)` 在这个集合里另有归到
+    ///   同一个规范写入者的名字下的同 seq 记录（[DiffEvidence::Copy]），或 s 落在那两个名字已证明的重叠区间里
+    ///   （两个名字下同 seq、同 HLC 物理时刻与计数的记录的最小到最大 seq，[DiffEvidence::Overlap]）；原值判下被支配、
+    ///   按类判反而活着的（[ClassDiff::revived]）与按类判多出来的冲突没有这种佐证，一律算佐证不了。佐证不了的按 bug
+    ///   处理（回 resolver 收紧），干跑据此判失败。
+    pub fn class_differences(&mut self) -> Result<ClassDiffs, String> {
+        self.aliases_settled()?;
+        let writers = self.writer_aliases()?;
+        let mut cands: BTreeSet<(i64, Ref)> = BTreeSet::new();
+        let canons: Vec<Ref> = {
+            let mut stmt = self
+                .t
+                .conn()
+                .prepare_cached(
+                    "SELECT DISTINCT canon FROM alias_ix WHERE col = ?1 AND canon != id",
+                )
+                .map_err(sql)?;
+            let rows = stmt.query_map([self.col], |r| r.get(0)).map_err(sql)?;
+            rows.collect::<Result<_, _>>().map_err(sql)?
+        };
+        for canon in &canons {
+            for m in self.members(canon)? {
+                let mut stmt = self
+                    .t
+                    .conn()
+                    .prepare_cached("SELECT DISTINCT ekind FROM reg_ix WHERE col = ?1 AND ent = ?2")
+                    .map_err(sql)?;
+                let kinds = stmt
+                    .query_map(params![self.col, m], |r| r.get::<_, i64>(0))
+                    .map_err(sql)?;
+                for k in kinds {
+                    cands.insert((k.map_err(sql)?, canon.clone()));
+                }
+            }
+        }
+        if !writers.is_empty() {
+            let rows: Vec<(i64, Ref)> = {
+                let mut stmt = self
+                    .t
+                    .conn()
+                    .prepare_cached(
+                        "SELECT DISTINCT ekind, ent FROM (SELECT ekind, ent FROM reg_ix WHERE col = ?1 \
+                         GROUP BY ekind, ent, key HAVING COUNT(*) > 1)",
+                    )
+                    .map_err(sql)?;
+                let rows = stmt
+                    .query_map([self.col], |r| Ok((r.get(0)?, r.get(1)?)))
+                    .map_err(sql)?;
+                rows.collect::<Result<_, _>>().map_err(sql)?
+            };
+            for (k, ent) in rows {
+                cands.insert((k, self.canonical(&ent)?));
+            }
+        }
+        let renamed = Renamed::default();
+        let mut out = ClassDiffs::default();
+        let mut dots: Option<WriterDots> = None;
+        for (kind, canon) in cands {
+            let ek = EntKind::ALL[kind as usize];
+            let entity = canon.text();
+            let mut groups: BTreeMap<String, Vec<(Ref, Vec<u8>, i64, i64)>> = BTreeMap::new();
+            for m in self.members(&canon)? {
+                for (key, k, state) in self.member_registers(ek, &m)? {
+                    let text = read_edit_key(&mut Reader::new(&key))
+                        .map_err(|e| format!("gen4 index: bad register key: {e}"))?;
+                    groups.entry(self.canonical_key(&text)?).or_default().push((
+                        m.clone(),
+                        key,
+                        k,
+                        state,
+                    ));
+                }
+            }
+            for (key, items) in groups {
+                let raw: BTreeSet<(&Ref, &Vec<u8>)> = items.iter().map(|x| (&x.0, &x.1)).collect();
+                let mut rows: Vec<(i64, i64)> = items.iter().map(|x| (x.2, x.3)).collect();
+                rows.sort_unstable();
+                let c = Canon {
+                    writers: &writers,
+                    renamed: &renamed,
+                    entity: entity.clone(),
+                    key: key.clone(),
+                    keys: None,
+                };
+                let (live, want) = self.judged(&rows, Some(&c))?;
+                let class_conflict = want.contains(&R_CONFLICT);
+                if raw.len() > 1 {
+                    out.merged += 1;
+                    if class_conflict {
+                        out.merged_conflicts += 1;
+                    }
+                    continue;
+                }
+                out.examined += 1;
+                let raw_conflict = live.iter().any(|&(_, s)| s == R_CONFLICT);
+                let same = live
+                    .iter()
+                    .zip(&want)
+                    .all(|(&(_, have), &w)| (have >= R_LIVE) == (w >= R_LIVE));
+                let raw_winner = live.iter().find(|r| r.1 >= R_WINNER).map(|r| r.0);
+                let class_winner = live
+                    .iter()
+                    .zip(&want)
+                    .find(|(_, w)| **w >= R_WINNER)
+                    .map(|(r, _)| r.0);
+                let winner_changed = match (raw_winner, class_winner) {
+                    (Some(a), Some(b)) if a == b => false,
+                    (Some(a), Some(b)) => {
+                        self.winner_value(a, &key)? != self.winner_value(b, &key)?
+                    }
+                    (a, b) => a.is_some() != b.is_some(),
+                };
+                // 活着的集合与冲突标志都相同、胜者也没变：没有差异。活着的集合相同而胜者变了的（HLC 平手落到改名的
+                // HLC 写入者上，「三处一起换」）照样列出来。
+                if same && raw_conflict == class_conflict && !winner_changed {
+                    continue;
+                }
+                let mut dominated = Vec::new();
+                let mut revived = Vec::new();
+                for (&(k, have), &w) in live.iter().zip(&want) {
+                    match (have >= R_LIVE, w >= R_LIVE) {
+                        (true, false) => {
+                            if dots.is_none() {
+                                dots = Some(self.writer_dots(&writers)?);
+                            }
+                            let d = dots.as_ref().expect("filled above");
+                            dominated.push(self.dominated(k, &writers, d)?);
+                        }
+                        (false, true) => revived.push(self.t.id_of_key(k)?),
+                        _ => {}
+                    }
+                }
+                // 胜者变了、却没有哪条写入的死活变了：只可能是 HLC 平手落到了换名的 HLC 写入者上，要佐证这一点。
+                let hlc_tie = match (raw_winner, class_winner) {
+                    (Some(a), Some(b)) if winner_changed && dominated.is_empty() => {
+                        self.hlc_tie_on_renamed(a, b, &writers)?
+                    }
+                    _ => false,
+                };
+                let proven = proven_of(
+                    &revived,
+                    raw_conflict,
+                    class_conflict,
+                    &dominated,
+                    winner_changed,
+                    hlc_tie,
+                );
+                out.diffs.push(ClassDiff {
+                    kind: ek,
+                    entity: canon.clone(),
+                    key,
+                    raw_conflict,
+                    class_conflict,
+                    winner_changed,
+                    hlc_tie,
+                    dominated,
+                    revived,
+                    proven,
+                });
+            }
+        }
+        Ok(out)
+    }
+
+    /// 一条写入的生效值（规范形，嵌的 ID 归一）。
+    fn winner_value(&self, k: i64, key: &str) -> Result<Value, String> {
+        let raw = self
+            .t
+            .edit_value(k)?
+            .ok_or_else(|| format!("gen4 index: register row {k} has no edit"))?;
+        let parsed: Value = serde_json::from_str(&raw).unwrap_or(Value::Null);
+        self.canonical_value(key, &parsed)
+    }
+
+    /// 一条按类判被支配的写入与它的佐证（[Index::class_differences]）。
+    fn dominated(
+        &self,
+        k: i64,
+        writers: &BTreeMap<String, String>,
+        dots: &WriterDots,
+    ) -> Result<Dominated, String> {
+        let DotOf {
+            writer,
+            seq,
+            hlc,
+            op,
+        } = self.dot_of(k)?;
+        let own = hlc.map(|(p, c, _)| (p, c));
+        let canonical = writers
+            .get(&writer)
+            .cloned()
+            .unwrap_or_else(|| writer.clone());
+        // 归到同一个规范写入者的其它名字（规范名自己与它的每个原名，去掉这条写入自己的名字）。
+        let others: Vec<&str> = std::iter::once(canonical.as_str())
+            .chain(
+                writers
+                    .iter()
+                    .filter(|(_, o)| **o == canonical)
+                    .map(|(n, _)| n.as_str()),
+            )
+            .filter(|n| *n != writer)
+            .collect();
+        // 「副本」= 另一个名字下同 seq、同 HLC 物理时刻与计数的**同一条**记录（resolver 归回写入者用的同一个判据）。
+        // 只看 seq 在不在等于直接假定 resolver 的不变量成立：同 seq 不同 HLC 的记录被放行归回正是要抓的 bug，判
+        // [DiffEvidence::Mismatch]，不再拿区间佐证兜（区间内的那一个 seq 已被直接证伪）。这条写入自己的 HLC 不是规范
+        // 文本、或另一个名字下那条的解不开时比不了：不给副本佐证，也不判 Mismatch，退到区间佐证。
+        let same_seq: Vec<(&str, &Vec<(i64, i64)>)> = others
+            .iter()
+            .filter_map(|n| dots.get(*n).and_then(|m| m.get(&seq)).map(|hs| (*n, hs)))
+            .collect();
+        let mut evidence = DiffEvidence::None;
+        if let Some((n, _)) = same_seq
+            .iter()
+            .find(|(_, hs)| own.is_some_and(|h| hs.contains(&h)))
+        {
+            evidence = DiffEvidence::Copy {
+                name: (*n).to_owned(),
+            };
+        } else if let Some((n, _)) = same_seq
+            .iter()
+            .find(|(_, hs)| own.is_some() && !hs.is_empty())
+        {
+            evidence = DiffEvidence::Mismatch {
+                name: (*n).to_owned(),
+            };
+        } else {
+            for n in &others {
+                if let Some((lo, hi)) = overlap(dots, &writer, n) {
+                    if lo <= seq && seq <= hi {
+                        evidence = DiffEvidence::Overlap {
+                            name: (*n).to_owned(),
+                            lo,
+                            hi,
+                        };
+                        break;
+                    }
+                }
+            }
+        }
+        Ok(Dominated {
+            op,
+            writer,
+            seq,
+            canonical_writer: canonical,
+            evidence,
+        })
+    }
+
+    /// 原值判的胜者 [raw] 与按类判的胜者 [class] 是不是「HLC 平手、按类判换了 HLC 写入者才翻过来」：两条都带解得开的旧
+    /// HLC、物理时刻与计数相同，且至少一条的 HLC 写入者是改名后的名字（[writers] 的键）。
+    fn hlc_tie_on_renamed(
+        &self,
+        raw: i64,
+        class: i64,
+        writers: &BTreeMap<String, String>,
+    ) -> Result<bool, String> {
+        let (a, b) = (self.dot_of(raw)?, self.dot_of(class)?);
+        Ok(match (a.hlc, b.hlc) {
+            (Some((pa, ca, wa)), Some((pb, cb, wb))) => {
+                (pa, ca) == (pb, cb) && (writers.contains_key(&wa) || writers.contains_key(&wb))
+            }
+            _ => false,
+        })
+    }
+
+    /// 改名写入者与它们的最初写入者名下的全部带旧戳记录：名字 → seq → [(HLC 物理时刻, 计数)]（解不开的 HLC 不记）。
+    fn writer_dots(&self, writers: &BTreeMap<String, String>) -> Result<WriterDots, String> {
+        let names: BTreeSet<&str> = writers
+            .iter()
+            .flat_map(|(n, o)| [n.as_str(), o.as_str()])
+            .collect();
+        let mut out = WriterDots::new();
+        for d in self.t.devices(self.col)? {
+            self.t.for_each(self.col, &d.id, 1, |e| {
+                if let Some(Body4::Edit(ed)) = body_of(&e) {
+                    if let Some(s) = ed
+                        .stamp
+                        .as_ref()
+                        .filter(|s| names.contains(s.writer.as_str()))
+                    {
+                        let at = out
+                            .entry(s.writer.clone())
+                            .or_default()
+                            .entry(s.seq)
+                            .or_default();
+                        if let StampHlc::Parsed {
+                            physical, counter, ..
+                        } = &s.hlc
+                        {
+                            at.push((*physical, *counter));
+                        }
+                    }
+                }
+                Ok(())
+            })?;
+        }
+        Ok(out)
+    }
+}
+
+/// 一个按类判与原值判不同的寄存器佐证不佐证得了（[ClassDiff::proven]）：没有复活的写入、没有多出来的冲突、每条被
+/// 支配的写入都有佐证；胜者变了而没有被支配的写入时（死活一条没变、只有胜者翻了），只认 HLC 平手落到改名的 HLC 写入者
+/// 上（[hlc_tie]）——冻结判据下别的情形翻不过来，翻了就是 bug。
+fn proven_of(
+    revived: &[OpId],
+    raw_conflict: bool,
+    class_conflict: bool,
+    dominated: &[Dominated],
+    winner_changed: bool,
+    hlc_tie: bool,
+) -> bool {
+    revived.is_empty()
+        && !(class_conflict && !raw_conflict)
+        && dominated.iter().all(|d| d.evidence.is_proof())
+        && (!winner_changed || !dominated.is_empty() || hlc_tie)
+}
+
+/// 一条修改的 dot（带旧戳的取旧戳，不带的取 (设备, seq)）与旧 HLC（物理时刻, 计数, 写入者；带旧戳且解得开时才有）。
+struct DotOf {
+    writer: String,
+    seq: i64,
+    hlc: Option<(i64, i64, String)>,
+    op: OpId,
+}
+
+/// 改名写入者相关名字下的带旧戳记录（[Index::writer_dots]）。
+type WriterDots = BTreeMap<String, BTreeMap<i64, Vec<(i64, i64)>>>;
+
+/// 两个名字已证明的重叠区间：两个名字下同 seq、同 HLC 物理时刻与计数的记录（resolver 归回写入者用的同一个判据）的
+/// 最小到最大 seq；一条都没有 = None。
+fn overlap(dots: &WriterDots, a: &str, b: &str) -> Option<(i64, i64)> {
+    let (xa, xb) = (dots.get(a)?, dots.get(b)?);
+    let mut shared = xa.iter().filter(|(seq, hs)| {
+        xb.get(seq)
+            .is_some_and(|other| hs.iter().any(|h| other.contains(h)))
+    });
+    let first = *shared.next()?.0;
+    let last = shared.last().map_or(first, |(s, _)| *s);
+    Some((first, last))
+}
+
+/// 一条按类判被支配的写入的佐证（[Index::class_differences]）。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum DiffEvidence {
+    /// 同一个规范写入者的另一个名字下有同 seq、同 HLC 物理时刻与计数的同一条记录（被支配的 `(w, s)` 另有
+    /// `(merged-…, s)` 副本，或反过来）。
+    Copy { name: String },
+    /// s 落在这条写入的名字与 [name] 已证明的重叠区间 `[lo, hi]` 里。
+    Overlap { name: String, lo: i64, hi: i64 },
+    /// [name] 下有同 seq 的记录、HLC 却不同：不是同一条记录，归回本身可疑（resolver bug），佐证不了。
+    Mismatch { name: String },
+    /// 佐证不了：按 bug 处理。
+    None,
+}
+
+impl DiffEvidence {
+    /// 佐证得了（[Copy](DiffEvidence::Copy) 或 [Overlap](DiffEvidence::Overlap)）。
+    pub fn is_proof(&self) -> bool {
+        matches!(
+            self,
+            DiffEvidence::Copy { .. } | DiffEvidence::Overlap { .. }
+        )
+    }
+}
+
+/// 一条原值判下活着、按类判被支配的写入。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Dominated {
+    pub op: OpId,
+    /// 这条写入的 dot：(原名, seq)。不带旧戳的是 (设备, seq)。
+    pub writer: String,
+    pub seq: i64,
+    pub canonical_writer: String,
+    pub evidence: DiffEvidence,
+}
+
+/// 一个按类判与原值判不同的寄存器（[Index::class_differences]）。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ClassDiff {
+    pub kind: EntKind,
+    /// 规范实体、规范键。
+    pub entity: Ref,
+    pub key: String,
+    /// 原值判 / 按类判有没有冲突。
+    pub raw_conflict: bool,
+    pub class_conflict: bool,
+    /// 生效值（规范形）变了。
+    pub winner_changed: bool,
+    /// 胜者变了、没有哪条写入的死活变：两边胜者 HLC 物理时刻与计数相同、至少一边的 HLC 写入者是改名后的名字
+    /// （平手落到换过名的 HLC 写入者上，[Index::hlc_tie_on_renamed]）。这种差异的佐证就是它。
+    pub hlc_tie: bool,
+    pub dominated: Vec<Dominated>,
+    /// 原值判下被支配、按类判反而活着的写入（没有佐证的形态）。
+    pub revived: Vec<OpId>,
+    /// 每条被支配的写入都有佐证、没有复活的写入、没有多出来的冲突；胜者变了而没有被支配的写入时还要 [hlc_tie]。
+    pub proven: bool,
+}
+
+/// [Index::class_differences] 的结果。
+#[derive(Clone, Debug, Default)]
+pub struct ClassDiffs {
+    /// 逐条比过的寄存器（规范键只来自一个原值寄存器的）。
+    pub examined: u64,
+    /// 规范键来自不止一个原值寄存器的（只计数），与其中按类判有冲突的。
+    pub merged: u64,
+    pub merged_conflicts: u64,
+    pub diffs: Vec<ClassDiff>,
+}
+
+impl ClassDiffs {
+    /// 佐证不了的那几个。
+    pub fn unproven(&self) -> impl Iterator<Item = &ClassDiff> {
+        self.diffs.iter().filter(|d| !d.proven)
+    }
+}
+
+/// 内置实体在每个盐下的存量 ID → 规范 ID：内置笔记类型、它们的字段与模板、内置默认牌组。由规则直接算（规则只在
+/// `gen4_ids::rules` 一处，表在 `gen4_ids::builtins`），与别名表对出现过的那些 ID 的判定相同（resolver 用的是同两份），
+/// 对没在操作里出现过的（别名表不收）也给得出。宿主给的缓存配置（[Index::canonical_config]）与对拍时协议 3 一侧的行
+/// （`compare.rs`）用它。
+pub(crate) fn builtin_rule_canon(salts: &[String]) -> HashMap<[u8; 16], [u8; 16]> {
+    let mut out = HashMap::new();
+    let deck = rules::builtin_default_deck(rules::CANONICAL);
+    for salt in salts {
+        out.insert(rules::builtin_default_deck(Some(salt)).0, deck.0);
+        for b in BUILTIN_NOTE_TYPES {
+            let num = rules::builtin_note_type_anki_num(b.key);
+            let salted = rules::note_type(Some(salt), num);
+            let canon = rules::note_type(rules::CANONICAL, num);
+            out.insert(salted.0, canon.0);
+            for seed in b.field_seeds {
+                let n = rules::builtin_field_anki_num(b.key, seed);
+                out.insert(rules::field(&salted, n).0, rules::field(&canon, n).0);
+            }
+            for t in b.template_keys {
+                let n = rules::builtin_template_anki_num(b.key, t);
+                out.insert(rules::template(&salted, n).0, rules::template(&canon, n).0);
+            }
+        }
+    }
+    out
 }
 
 #[cfg(test)]
@@ -712,6 +1447,358 @@ mod tests {
             })
             .unwrap();
             assert_rebuild_is_identity(t, col);
+        });
+    }
+
+    /// 改名写入者的另一对同一套 seq 的证据：`(w1, seq)` 与 `(merged, seq)` 同一个 HLC，落在 `proof` 键上。
+    fn proof_pair(
+        t: &Truth<'_>,
+        ix: &mut Index<'_, '_>,
+        col: i64,
+        merged: &str,
+        seq: i64,
+        slot: u64,
+    ) {
+        let proof = |w: &str| {
+            Body4::Edit(Edit4 {
+                key: "proof".to_owned(),
+                value: "\"p\"".to_owned(),
+                stamp: Some(stamp(w, seq, r#"{"vv":{}}"#, 50 + seq)),
+                ..native_edit()
+            })
+        };
+        heritage(t, ix, col, op(0xc1, slot, seq, &[], &proof("w1")));
+        heritage(t, ix, col, op(0xc2, slot, seq, &[], &proof(merged)));
+    }
+
+    /// 被测寄存器上的已知差异（`proof` 键上的证据不算）。
+    fn diffs_on_test_key(ix: &mut Index<'_, '_>) -> Vec<ClassDiff> {
+        let e = native_edit();
+        ix.class_differences()
+            .unwrap()
+            .diffs
+            .into_iter()
+            .filter(|d| d.key == e.key)
+            .collect()
+    }
+
+    /// 已知差异的「同 seq 副本」佐证：`(w1, 1)` 原值判与 `(w1, 2)` 并发（`(w1, 2)` 的上下文只写了改名后的
+    /// `merged:1`），按类判被盖掉；同一个规范写入者另一个名字下有 `(merged, 1)` = 同一条记录，佐证得了。胜者没变。
+    #[test]
+    fn a_dominated_write_with_a_copy_under_the_other_name_is_proven() {
+        with(|t, col| {
+            let merged = merged_w1();
+            let ctx = format!(r#"{{"vv":{{"{merged}":1}}}}"#);
+            t.tx(|t| {
+                let mut ix = Index::new(t, col);
+                let salts = Body4::salts([U1]).unwrap();
+                native(t, &mut ix, col, &op(0xa1, 1, 1, &[], &salts));
+                let x1 = stamped("x", stamp("w1", 1, r#"{"vv":{}}"#, 100));
+                let x2 = stamped("x", stamp(&merged, 1, r#"{"vv":{}}"#, 100));
+                let y = stamped("y", stamp("w1", 2, &ctx, 200));
+                heritage(t, &mut ix, col, op(0xd1, 1, 1, &[], &x1));
+                heritage(t, &mut ix, col, op(0xd2, 1, 2, &[], &x2));
+                heritage(t, &mut ix, col, op(0xd1, 2, 3, &[], &y));
+                ix.settle()?;
+                let got = diffs_on_test_key(&mut ix);
+                assert_eq!(got.len(), 1, "{got:?}");
+                let d = &got[0];
+                assert!(
+                    d.raw_conflict && !d.class_conflict && !d.winner_changed,
+                    "{d:?}"
+                );
+                assert_eq!(d.dominated.len(), 1);
+                assert_eq!(d.dominated[0].op, op(0xd1, 1, 1, &[], &x1).id);
+                assert_eq!(
+                    (d.dominated[0].writer.as_str(), d.dominated[0].seq),
+                    ("w1", 1)
+                );
+                assert_eq!(
+                    d.dominated[0].evidence,
+                    DiffEvidence::Copy {
+                        name: merged.clone()
+                    }
+                );
+                assert!(d.proven && d.revived.is_empty());
+                assert_eq!(ix.class_differences()?.unproven().count(), 0);
+                Ok(())
+            })
+            .unwrap();
+        });
+    }
+
+    /// `(merged, 5)` 原值判与 `(v, 1)` 并发（`(v, 1)` 的上下文写的是原名 `w1:5`），按类判被盖掉。另一个名字下没有
+    /// seq 5 的副本：两个名字已证明重叠的区间是 `[1, 9]` 时佐证得了（区间佐证）；只到 `[1, 1]` 时 5 落在区间外，
+    /// 佐证不了，按 bug 计（`unproven`）。
+    #[test]
+    fn a_dominated_write_is_proven_only_inside_the_shared_seq_range() {
+        for (top, want) in [(9, true), (1, false)] {
+            with(|t, col| {
+                let merged = merged_w1();
+                t.tx(|t| {
+                    let mut ix = Index::new(t, col);
+                    let salts = Body4::salts([U1]).unwrap();
+                    native(t, &mut ix, col, &op(0xa1, 1, 1, &[], &salts));
+                    proof_pair(t, &mut ix, col, &merged, 1, 1);
+                    if top > 1 {
+                        proof_pair(t, &mut ix, col, &merged, top, 2);
+                    }
+                    let x = stamped("x", stamp(&merged, 5, r#"{"vv":{}}"#, 100));
+                    let y = stamped("y", stamp("v", 1, r#"{"vv":{"w1":5}}"#, 200));
+                    heritage(t, &mut ix, col, op(0xd1, 1, 20, &[], &x));
+                    heritage(t, &mut ix, col, op(0xd2, 1, 21, &[], &y));
+                    ix.settle()?;
+                    assert_eq!(ix.canonical_writer(&merged)?, "w1");
+                    let got = diffs_on_test_key(&mut ix);
+                    assert_eq!(got.len(), 1, "{got:?}");
+                    let d = &got[0];
+                    assert!(d.raw_conflict && !d.class_conflict, "{d:?}");
+                    assert_eq!(d.dominated.len(), 1);
+                    assert_eq!(
+                        (d.dominated[0].writer.as_str(), d.dominated[0].seq),
+                        (merged.as_str(), 5)
+                    );
+                    let evidence = &d.dominated[0].evidence;
+                    if want {
+                        assert_eq!(
+                            *evidence,
+                            DiffEvidence::Overlap {
+                                name: "w1".to_owned(),
+                                lo: 1,
+                                hi: top
+                            }
+                        );
+                    } else {
+                        assert_eq!(*evidence, DiffEvidence::None);
+                    }
+                    assert_eq!(d.proven, want);
+                    assert_eq!(
+                        ix.class_differences()?.unproven().count(),
+                        usize::from(!want)
+                    );
+                    Ok(())
+                })
+                .unwrap();
+            });
+        }
+    }
+
+    /// 「副本」要是同一条记录（resolver 归回写入者的判据：同 seq、同 HLC 物理时刻与计数）。端到端造不出来——resolver
+    /// 见到同 seq 不同 HLC 就不归回（下面先钉住这一点）——佐证正是为了在 resolver 放错时把它抓出来，所以直接喂
+    /// [Index::dominated] 一份「已归回」的写入者表与记录表：
+    ///
+    /// - 另一个名字下同 seq、同 HLC：[DiffEvidence::Copy]；
+    /// - 同 seq、HLC 不同：[DiffEvidence::Mismatch]，哪怕 seq 落在两个名字已证明的重叠区间里也不拿区间兜；
+    /// - 另一个名字下同 seq 的记录 HLC 解不开（记录表里是空的）：比不了，退到区间佐证；
+    /// - 被支配的写入自己的 HLC 不是规范文本（`0100:0:w1` 这种前导零的，[StampHlc::Raw]）：不给副本佐证。
+    #[test]
+    fn a_same_seq_record_with_another_hlc_is_not_a_copy() {
+        with(|t, col| {
+            let merged = merged_w1();
+            t.tx(|t| {
+                let mut ix = Index::new(t, col);
+                let salts = Body4::salts([U1]).unwrap();
+                native(t, &mut ix, col, &op(0xa1, 1, 1, &[], &salts));
+                let x1 = stamped("x", stamp("w1", 1, r#"{"vv":{}}"#, 100));
+                let other = Body4::Edit(Edit4 {
+                    key: "other".to_owned(),
+                    value: "\"o\"".to_owned(),
+                    stamp: Some(stamp(&merged, 1, r#"{"vv":{}}"#, 999)),
+                    ..native_edit()
+                });
+                let raw_hlc = stamped(
+                    "z",
+                    HeritageStamp {
+                        hlc: StampHlc::of("0100:0:w1"),
+                        ..stamp("w1", 3, r#"{"vv":{}}"#, 0)
+                    },
+                );
+                heritage(t, &mut ix, col, op(0xd1, 1, 1, &[], &x1));
+                heritage(t, &mut ix, col, op(0xd2, 1, 2, &[], &other));
+                heritage(t, &mut ix, col, op(0xd1, 2, 3, &[], &raw_hlc));
+                ix.settle()?;
+                // resolver 自己不放行：seq 1 两个名字下 HLC 不同，不归回。
+                assert_eq!(ix.canonical_writer(&merged)?, merged);
+                let k1 = t.key_of(col, &op(0xd1, 1, 1, &[], &x1).id)?.unwrap();
+                let k3 = t.key_of(col, &op(0xd1, 2, 3, &[], &raw_hlc).id)?.unwrap();
+                let writers = BTreeMap::from([(merged.clone(), "w1".to_owned())]);
+                let dots = |entries: &[(&str, i64, &[(i64, i64)])]| -> WriterDots {
+                    let mut d = WriterDots::new();
+                    for (n, s, hs) in entries {
+                        d.entry((*n).to_owned())
+                            .or_default()
+                            .insert(*s, hs.to_vec());
+                    }
+                    d
+                };
+                let ev = |ix: &Index<'_, '_>, k: i64, d: &WriterDots| {
+                    ix.dominated(k, &writers, d).unwrap().evidence
+                };
+                let copy = DiffEvidence::Copy {
+                    name: merged.clone(),
+                };
+                assert_eq!(ev(&ix, k1, &dots(&[(&merged, 1, &[(100, 0)])])), copy);
+                // 重叠区间 [0, 5]（两个名字下 seq 0、5 各有一对同 HLC 的）里，seq 1 却另有一条 HLC 不同的。
+                let overlap_but_mismatch = dots(&[
+                    ("w1", 0, &[(10, 0)]),
+                    (&merged, 0, &[(10, 0)]),
+                    ("w1", 1, &[(100, 0)]),
+                    ("w1", 5, &[(500, 0)]),
+                    (&merged, 1, &[(999, 0)]),
+                    (&merged, 5, &[(500, 0)]),
+                ]);
+                assert_eq!(
+                    ev(&ix, k1, &overlap_but_mismatch),
+                    DiffEvidence::Mismatch {
+                        name: merged.clone()
+                    }
+                );
+                let unparsed_copy = dots(&[
+                    ("w1", 0, &[(10, 0)]),
+                    (&merged, 0, &[(10, 0)]),
+                    ("w1", 1, &[(100, 0)]),
+                    ("w1", 5, &[(500, 0)]),
+                    (&merged, 1, &[]),
+                    (&merged, 5, &[(500, 0)]),
+                ]);
+                assert_eq!(
+                    ev(&ix, k1, &unparsed_copy),
+                    DiffEvidence::Overlap {
+                        name: merged.clone(),
+                        lo: 0,
+                        hi: 5
+                    }
+                );
+                assert_eq!(
+                    ev(&ix, k3, &dots(&[(&merged, 3, &[(0, 0)])])),
+                    DiffEvidence::None
+                );
+                assert!(copy.is_proof());
+                assert!(
+                    !DiffEvidence::Mismatch {
+                        name: merged.clone()
+                    }
+                    .is_proof()
+                );
+                Ok(())
+            })
+            .unwrap();
+        });
+    }
+
+    /// 活着的集合与冲突标志都没变、胜者却变了（HLC 平手落到换过名的 HLC 写入者上，[ClassDiff::hlc_tie]）：照样列为
+    /// 已知差异，佐证是平手本身；HLC 不平手时同样的「胜者变了」没有这种佐证。
+    #[test]
+    fn a_winner_flipped_by_a_renamed_hlc_writer_is_listed_and_proven() {
+        with(|t, col| {
+            let merged = merged_w1();
+            t.tx(|t| {
+                let mut ix = Index::new(t, col);
+                renamed_writer_evidence(t, &mut ix, col, &merged);
+                let a = stamped("a", stamp(&merged, 2, r#"{"vv":{}}"#, 100));
+                let b = stamped("b", stamp("v", 1, r#"{"vv":{}}"#, 100));
+                heritage(t, &mut ix, col, op(0xd1, 1, 1, &[], &a));
+                heritage(t, &mut ix, col, op(0xd2, 1, 2, &[], &b));
+                ix.settle()?;
+                assert_eq!(ix.canonical_writer(&merged)?, "w1");
+                let got = diffs_on_test_key(&mut ix);
+                assert_eq!(got.len(), 1, "{got:?}");
+                let d = &got[0];
+                assert!(d.raw_conflict && d.class_conflict, "{d:?}");
+                assert!(d.winner_changed && d.hlc_tie, "{d:?}");
+                assert!(d.dominated.is_empty() && d.revived.is_empty());
+                assert!(d.proven, "{d:?}");
+                Ok(())
+            })
+            .unwrap();
+        });
+    }
+
+    /// 佐证门槛逐条：复活的写入、多出来的冲突、没佐证的被支配写入都判佐证不了；胜者变了、死活一条没变时只认 HLC 平手。
+    #[test]
+    fn the_proof_gate_needs_every_piece() {
+        let dom = |evidence: DiffEvidence| Dominated {
+            op: OpId {
+                device: id(1),
+                seq: 1,
+            },
+            writer: "w1".to_owned(),
+            seq: 1,
+            canonical_writer: "w1".to_owned(),
+            evidence,
+        };
+        let copy = dom(DiffEvidence::Copy {
+            name: "m".to_owned(),
+        });
+        let none = dom(DiffEvidence::None);
+        let revived = [OpId {
+            device: id(2),
+            seq: 1,
+        }];
+        // (复活, 原值冲突, 按类冲突, 被支配, 胜者变, 平手) → 佐证得了。
+        assert!(proven_of(&[], true, false, &[copy.clone()], false, false));
+        assert!(proven_of(&[], true, false, &[copy.clone()], true, false));
+        assert!(!proven_of(
+            &revived,
+            true,
+            false,
+            &[copy.clone()],
+            false,
+            false
+        ));
+        assert!(!proven_of(&[], false, true, &[copy.clone()], false, false));
+        assert!(!proven_of(
+            &[],
+            true,
+            false,
+            &[copy.clone(), none],
+            false,
+            false
+        ));
+        assert!(proven_of(&[], true, true, &[], true, true));
+        assert!(!proven_of(&[], true, true, &[], true, false));
+    }
+
+    /// 按类拼行的捷径看的是**这个寄存器**里有没有改名相关名字的写入，不是整个集合有没有归回写入者：集合里有归回的
+    /// 写入者时，只由别的写入者写的寄存器照样直接取 `reg_ix` 的状态（[Index::class_judged] 不涨，两条并发写入都活着）；
+    /// 有改名相关名字写入的寄存器才重判。
+    #[test]
+    fn only_registers_touched_by_a_renamed_writer_are_rejudged() {
+        with(|t, col| {
+            let merged = merged_w1();
+            t.tx(|t| {
+                let mut ix = Index::new(t, col);
+                renamed_writer_evidence(t, &mut ix, col, &merged);
+                // 另一条笔记上只有原生写入者的两条并发写入（有冲突）。
+                let other = Key::Uuid(id(9));
+                let plain = |v: &str| {
+                    Body4::Edit(Edit4 {
+                        entity: other.clone(),
+                        value: format!("\"{v}\""),
+                        ..native_edit()
+                    })
+                };
+                native(t, &mut ix, col, &op(0xa2, 1, 10, &[], &plain("p")));
+                native(t, &mut ix, col, &op(0xa3, 1, 11, &[], &plain("q")));
+                ix.settle()?;
+                assert_eq!(ix.canonical_writer(&merged)?, "w1");
+                let before = ix.class_judged;
+                let (lines, _) = ix.class_lines(EntKind::Note, &Ref::of(&other))?;
+                assert_eq!(
+                    ix.class_judged, before,
+                    "a register without renamed writes takes the shortcut"
+                );
+                assert_eq!(lines.len(), 2, "{lines:?}");
+                let e = native_edit();
+                let (proof_lines, _) = ix.class_lines(EntKind::Note, &Ref::of(&e.entity))?;
+                assert!(
+                    ix.class_judged > before,
+                    "the register written by w1 / merged is rejudged"
+                );
+                assert!(!proof_lines.is_empty());
+                Ok(())
+            })
+            .unwrap();
         });
     }
 
@@ -1236,6 +2323,7 @@ mod tests {
                                 renamed: &fresh,
                                 entity: canon.text(),
                                 key: w.key.clone(),
+                                keys: None,
                             };
                             let (_, want) = ix.judged(&rows, Some(&plain)).unwrap();
                             if want.contains(&R_CONFLICT) {
@@ -1374,6 +2462,7 @@ mod tests {
                     renamed: &renamed,
                     entity: reg.1.text(),
                     key: key.clone(),
+                    keys: None,
                 };
                 let (live, want) = ix.judged(rows, Some(&c)).unwrap();
                 let have: Vec<i64> = live.iter().map(|x| x.1).collect();
