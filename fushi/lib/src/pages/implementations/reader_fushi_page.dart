@@ -175,6 +175,7 @@ import 'package:fushi/src/reader/reader_jump_history.dart';
 import 'package:fushi/src/utils/misc/jump_history.dart';
 import 'package:fushi/src/utils/components/fushi_jump_history_controls.dart';
 import 'package:fushi/src/reader/reader_selection_data.dart';
+import 'package:fushi/src/reader/reader_ruby_snap.dart';
 import 'package:fushi/src/reader/reader_selection_toolbar_layout.dart';
 import 'package:fushi/src/reader/reader_selection_scripts.dart';
 import 'package:fushi/src/reader/reader_chrome_floating.dart';
@@ -1824,7 +1825,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   ModuleVisibility get _moduleVisibility => appModelNoUpdate.moduleVisibility;
 
   @override
-  ModuleId? get popupDockModule => ModuleId.books;
+  ModuleId? get lookupHostModule => ModuleId.books;
 
   EpubBook? _book;
 
@@ -2379,6 +2380,10 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   // 非翻页导航作废积压——用户已显式换了目的地。由 _handlePageTurnLimit 置位、
   // _beginNavigation 消费并复位。
   bool _navigationFromPageTurn = false;
+  // 墨水屏「每 N 页全刷」：翻页触发的跨章要等新章恢复完（正文画上屏）才计这一页，
+  // 否则全刷刷的是加载中的旧画面。由 _beginNavigation 按 _navigationFromPageTurn 置位、
+  // _onRestoreComplete 消费。
+  bool _einkTurnPendingOnContentReady = false;
   // 翻页动画（跨章）：本次导航落定后正文是否整体淡入（[readerChapterFadeInEnabled]）。
   // _beginNavigation 写、淡入结束（AnimatedOpacity.onEnd）清。
   bool _chapterFadeInPending = false;
@@ -3024,7 +3029,11 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
         );
 
   /// 卡片来源回看横幅的内容高（不含系统顶 inset，横幅自己的 SafeArea 让出那一条）。
-  static const double _kSourceReviewBannerHeight = 100;
+  /// 与横幅自己的单行 / 两行判断同源（[SourceReviewBanner.reservedContentHeight]）：
+  /// 矮窗口（横屏手机）横幅并成 48dp 单行，这里若仍按两行的 100dp 预留，横幅槽位
+  /// 照样占掉顶部一大截（BUG-4733）。由 [didChangeDependencies] 按窗口尺寸维护，
+  /// 变化时与系统 inset 一样回喂 WebView。
+  double _sourceReviewBannerHeight = SourceReviewBanner.regularContentHeight;
 
   /// BUG-4103：顶部 chrome（顶栏 / 悬浮顶栏 / 进度 pill / 弹窗）排布的起点 = 系统顶
   /// inset + 回看横幅。横幅改成正文 Stack 上的浮层后，阅读器的几何（MediaQuery 全窗
@@ -3033,7 +3042,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// 页底那一条（底部预留 + 末行）落到 WebView 之外。
   double get _topChromeInset =>
       _stableTopInset +
-      (_sourceReviewSession != null ? _kSourceReviewBannerHeight : 0);
+      (_sourceReviewSession != null ? _sourceReviewBannerHeight : 0);
 
   /// 歌词模式（独立 HTML 文档）此刻真正被顶部 chrome 占掉的高度：系统顶 inset +
   /// 顶栏预留（悬浮态顶栏不占正文位置，[_desktopHeaderReserve] 那时本就是 0）。
@@ -4228,10 +4237,16 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     // 淹没（症状②「调上下边距没用」）。inset 真变时回喂并 re-anchor（复用
     // setChromeInsets 的 `_reanchorPending` 串行契约，幂等）；reader 未就绪 / 歌词模式
     // 由 [_applyChromeInsets] 内部早返回挡掉。桌面 inset 多为 0（此分支不触发，零变化）。
+    final double bannerHeight = SourceReviewBanner.reservedContentHeight(
+      MediaQuery.sizeOf(context),
+    );
     final bool insetChanged =
-        vp.top != _stableTopInset || vp.bottom != _stableBottomInset;
+        vp.top != _stableTopInset ||
+        vp.bottom != _stableBottomInset ||
+        bannerHeight != _sourceReviewBannerHeight;
     _stableTopInset = vp.top;
     _stableBottomInset = vp.bottom;
+    _sourceReviewBannerHeight = bannerHeight;
     if (insetChanged) {
       unawaited(_applyChromeInsets());
     }
@@ -5374,6 +5389,11 @@ $liveConfigJs
       routeIsCurrent: owner == null || owner.isCurrent,
     );
   }
+
+  /// 制卡后「关闭弹窗、不续播」（拍板台 8ldy3d8XFA）：撤掉有声书的查词暂停标记，
+  /// 随后的 [onAllPopupsDismissed] → `_clearLookupState` 就不续播。
+  @override
+  void dropLookupPauseMark() => _releaseLookupPause(resume: false);
 
   @override
   void onAllPopupsDismissed() {

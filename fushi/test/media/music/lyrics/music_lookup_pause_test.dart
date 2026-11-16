@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
 import 'package:fushi/src/media/music/lyrics/music_lookup_pause.dart';
+import 'package:fushi/src/mining/after_mining_popup_action.dart';
 
 /// BUG-4198：桌面歌词点词查词不遵守「查词时暂停」。
 class _FakePlayback extends ChangeNotifier {
@@ -115,6 +116,61 @@ void main() {
     addTearDown(() => notifier.lookupClosed.removeListener(listener));
     notifier.notifyLookupClosed();
     expect(closed, 1);
+  });
+
+  test('dropPauseMark keeps music paused when the card then closes', () {
+    gate.lookupStarted();
+    gate.dropPauseMark();
+    expect(gate.pausedForLookup, isFalse);
+    gate.lookupClosed();
+    expect(playback.playCalls, 0);
+    expect(playback.playing, isFalse);
+  });
+
+  // 拍板台 8ldy3d8XFA：悬浮歌词查词宿主制卡后按「制卡后行为」关栈——宿主侧经
+  // applyAfterMiningPopupAction 发 notifyLookupPauseDropped（不续播时）再关栈发
+  // notifyLookupClosed；暂停方按 app_model 的接线订阅这两个信号。
+  group('after-mining close through the floating lyric host signals', () {
+    late FloatingLyricLookupNotifier notifier;
+
+    setUp(() {
+      notifier = FloatingLyricLookupNotifier.instance;
+      notifier.lookupClosed.addListener(gate.lookupClosed);
+      notifier.lookupPauseDropped.addListener(gate.dropPauseMark);
+    });
+
+    tearDown(() {
+      notifier.lookupClosed.removeListener(gate.lookupClosed);
+      notifier.lookupPauseDropped.removeListener(gate.dropPauseMark);
+    });
+
+    void mineAccepted(AfterMiningPopupAction action) =>
+        applyAfterMiningPopupAction(
+          action,
+          dropPauseMark: notifier.notifyLookupPauseDropped,
+          closeAll: notifier.notifyLookupClosed,
+        );
+
+    test('close: card closes, music stays paused', () {
+      gate.lookupStarted();
+      mineAccepted(AfterMiningPopupAction.close);
+      expect(playback.playCalls, 0);
+      expect(playback.playing, isFalse);
+    });
+
+    test('close and resume: card closes, music resumes', () {
+      gate.lookupStarted();
+      mineAccepted(AfterMiningPopupAction.closeAndResume);
+      expect(playback.playCalls, 1);
+      expect(playback.playing, isTrue);
+    });
+
+    test('keep open: nothing happens, still paused for lookup', () {
+      gate.lookupStarted();
+      mineAccepted(AfterMiningPopupAction.keepOpen);
+      expect(playback.playCalls, 0);
+      expect(gate.pausedForLookup, isTrue);
+    });
   });
 
   group('wiring (source scan)', () {

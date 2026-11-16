@@ -65,4 +65,34 @@ void main() {
       throwsFormatException,
     );
   });
+
+  test('kinds 与 unavailable 条目往返；没带 kinds 的目录按「什么都没枚举」处理', () {
+    final InterconnectSourceShareCatalog catalog =
+        InterconnectSourceShareCatalog.fromJson(<String, Object?>{
+          'schemaVersion': 1,
+          'kinds': <Object?>['opds', 'musicPlugin', 3],
+          'sources': <Object?>[
+            <String, Object?>{
+              'kind': 'musicPlugin',
+              'id': 'p',
+              'label': 'P',
+              'unavailable': true,
+            },
+          ],
+        });
+    expect(catalog.kinds, <String>{'opds', 'musicPlugin'});
+    expect(catalog.sources.single.unavailable, isTrue);
+    expect(catalog.sources.single.digest, isEmpty);
+    final InterconnectSourceShareCatalog round =
+        InterconnectSourceShareCatalog.fromJson(catalog.toJson());
+    expect(round.kinds, catalog.kinds);
+    expect(round.sources.single.unavailable, isTrue);
+    expect(
+      InterconnectSourceShareCatalog.fromJson(<String, Object?>{
+        'schemaVersion': 1,
+        'sources': <Object?>[],
+      }).kinds,
+      isEmpty,
+    );
+  });
 }

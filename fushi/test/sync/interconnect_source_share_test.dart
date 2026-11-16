@@ -20,7 +20,12 @@ import 'package:fushi_engine/sync/tls/fushi_tls_identity.dart';
 /// - host 删了（不再共享）只删「本机仍是收下时那份」的条目；
 /// - 插件换了签名者不自动装；摘要与 host 上确认过的那份对不上不装；随 app 自带的插件不碰；
 /// - 本机开关关着一个请求都不发；
-/// - 端点：明文 / 共享 token / host 关着 / 不是「我的设备」一律 403，未装配 404。
+/// - 端点：明文 / 共享 token / host 关着 / 不是「我的设备」一律 403，未装配 404；
+/// - host 只出主人逐项勾选过的（默认一条都不出）；
+/// - 「列不出」不等于「卸载了」：host 侧 unavailable、host 这一轮没枚举的种类、本机校验
+///   不过的插件都不传播删除；
+/// - 签名者以实际下载的包为准；client「也接收插件」关着时不装任何插件；
+/// - 服务器清单经偏好缓存写回。
 
 const String _hostId = 'host-1';
 
@@ -68,7 +73,9 @@ final class _FakeStore implements SharedPluginStore {
 
   @override
   Future<Uint8List?> exportPackage(String id) async =>
-      plugins[id] == null ? null : zipOf(plugins[id]!);
+      plugins[id] == null || !plugins[id]!.available
+      ? null
+      : zipOf(plugins[id]!);
 
   @override
   Future<SharedPluginPackage> inspect(Uint8List zip) async {
@@ -235,6 +242,41 @@ void main() {
       expect(plan.signerChanged, <String>['p']);
       expect(plan.ledger['p'], const SourceShareLedgerEntry('v1'));
     });
+
+    test('列不出不等于删除：unavailable / 本机 held / 种类没枚举都不动、留账', () {
+      final SourceSharePlan plan = planSourceShare(
+        local: <String, SourceShareLocal>{
+          'hostLocked': (digest: 'v1', signer: null),
+          'gone': (digest: 'g', signer: null),
+        },
+        offered: const <String, InterconnectSharedSource>{
+          'hostLocked': InterconnectSharedSource.unavailable(
+            kind: 'k',
+            id: 'hostLocked',
+            label: 'L',
+          ),
+          'localBroken': InterconnectSharedSource(
+            kind: 'k',
+            id: 'localBroken',
+            label: 'B',
+            digest: 'v9',
+          ),
+        },
+        ledger: const <String, SourceShareLedgerEntry>{
+          'hostLocked': SourceShareLedgerEntry('v1'),
+          'localBroken': SourceShareLedgerEntry('v1'),
+          'gone': SourceShareLedgerEntry('g'),
+        },
+        held: const <String>{'localBroken'},
+        propagateRemovals: false,
+      );
+      expect(plan.steps, isEmpty);
+      expect(plan.ledger, const <String, SourceShareLedgerEntry>{
+        'hostLocked': SourceShareLedgerEntry('v1'),
+        'localBroken': SourceShareLedgerEntry('v1'),
+        'gone': SourceShareLedgerEntry('g'),
+      });
+    });
   });
 
   group('两端真实偏好', () {
@@ -243,20 +285,31 @@ void main() {
     late _FakeStore hostPlugins;
     late _FakeStore phonePlugins;
     late _DirectRemote remote;
+    late List<SharedPluginStore> hostStores;
+    late AppInterconnectSourceShareHost host;
 
-    setUp(() {
+    setUp(() async {
       hostDb = FushiDatabase.forTesting(NativeDatabase.memory());
       phoneDb = FushiDatabase.forTesting(NativeDatabase.memory());
       hostPlugins = _FakeStore('musicPlugin');
       phonePlugins = _FakeStore('musicPlugin');
-      remote = _DirectRemote(
-        AppInterconnectSourceShareHost(
-          db: hostDb,
-          enabled: () async => true,
-          isOwnerDevicePeer: (String _) async => true,
-          pluginStores: () => <SharedPluginStore>[hostPlugins],
-        ),
+      hostStores = <SharedPluginStore>[hostPlugins];
+      // 这一组测合并规则：host 主人把本机所有来源都勾上（勾选本身另有测试）。
+      host = AppInterconnectSourceShareHost(
+        db: hostDb,
+        enabled: () async => true,
+        isOwnerDevicePeer: (String _) async => true,
+        pluginStores: () => hostStores,
+        selected: () async => <String>{
+          for (final InterconnectSharedSource s
+              in (await host.shareableSources()).sources)
+            s.key,
+        },
       );
+      remote = _DirectRemote(host);
+      await SyncRepository(
+        phoneDb,
+      ).setInterconnectSourceSharePluginsEnabled(true);
     });
 
     tearDown(() async {
@@ -450,6 +503,161 @@ void main() {
       );
     });
 
+    test('host 一时列不出插件 / 这一轮没有插件体系：本机那份不卸载', () async {
+      hostPlugins.plugins['p'] = const SharedPluginPackage(
+        id: 'p',
+        label: 'P',
+        digest: 'v1',
+        signer: null,
+      );
+      expect((await sync()).added, 1);
+
+      // host 上文件正被更新 / 被锁：校验不过，列成 unavailable。
+      hostPlugins.plugins['p'] = const SharedPluginPackage.unavailable(
+        id: 'p',
+        label: 'p',
+      );
+      SourceShareResult r = await sync();
+      expect(r.changed, 0);
+      expect(phonePlugins.uninstalls, isEmpty);
+
+      // host 这一轮整个插件体系都没建好（目录 kinds 里没有 musicPlugin）。
+      hostStores = <SharedPluginStore>[];
+      r = await sync();
+      expect(r.changed, 0);
+      expect(phonePlugins.uninstalls, isEmpty);
+      expect(
+        (await SourceShareLedger.load(
+          phoneDb,
+        )).hosts[_hostId]!['musicPlugin/p'],
+        const SourceShareLedgerEntry('v1'),
+      );
+
+      // 恢复后照常跟随；真卸载了才跟着卸。
+      hostStores = <SharedPluginStore>[hostPlugins];
+      hostPlugins.plugins.remove('p');
+      r = await sync();
+      expect(r.removed, 1);
+      expect(phonePlugins.uninstalls, <String>['p']);
+    });
+
+    test('本机插件校验不过：不更新也不删', () async {
+      hostPlugins.plugins['p'] = const SharedPluginPackage(
+        id: 'p',
+        label: 'P',
+        digest: 'v1',
+        signer: null,
+      );
+      await sync();
+      phonePlugins.plugins['p'] = const SharedPluginPackage.unavailable(
+        id: 'p',
+        label: 'p',
+      );
+      hostPlugins.plugins.remove('p');
+      final SourceShareResult r = await sync();
+      expect(r.changed, 0);
+      expect(phonePlugins.uninstalls, isEmpty);
+    });
+
+    test('签名者以下载的包为准：目录自报不变、包里换了人也不装', () async {
+      hostPlugins.plugins['p'] = const SharedPluginPackage(
+        id: 'p',
+        label: 'P',
+        digest: 'v1',
+        signer: 'alice',
+      );
+      await sync();
+      hostPlugins.plugins['p'] = const SharedPluginPackage(
+        id: 'p',
+        label: 'P',
+        digest: 'v2',
+        signer: 'alice',
+      );
+      remote.tamper = (String _, String _) =>
+          Uint8List.fromList(utf8.encode('pkg|p|v2|mallory'));
+      SourceShareResult r = await sync();
+      expect(r.changed, 0);
+      expect(r.signerChanged, <String>['P']);
+      expect(phonePlugins.installs, <String>['p@v1']);
+
+      remote.tamper = null;
+      r = await sync();
+      expect(r.updated, 1);
+    });
+
+    test('「也接收插件」关着：不装插件', () async {
+      await SyncRepository(
+        phoneDb,
+      ).setInterconnectSourceSharePluginsEnabled(false);
+      hostPlugins.plugins['p'] = const SharedPluginPackage(
+        id: 'p',
+        label: 'P',
+        digest: 'v1',
+        signer: null,
+      );
+      await _setOpds(hostDb, <OpdsServerConfig>[_opds('a')]);
+      final SourceShareResult r = await sync();
+      expect(r.added, 1);
+      expect(phonePlugins.installs, isEmpty);
+    });
+
+    test('服务器清单经偏好缓存写回', () async {
+      final List<String> written = <String>[];
+      await _setOpds(hostDb, <OpdsServerConfig>[_opds('a')]);
+      final SourceShareResult r = await InterconnectSourceShareSync(
+        phoneDb,
+        pluginStores: <SharedPluginStore>[phonePlugins],
+        cachedPrefWriter: (String key, String value) async {
+          written.add(key);
+          await phoneDb.setPref(key, PrefCodec.encode(value));
+        },
+      ).run(remote, _hostId);
+      expect(r.added, 1);
+      expect(written, <String>['discovery_opds_servers']);
+      expect((await _opdsOf(phoneDb)).single.id, 'a');
+    });
+
+    test('host 只出勾选过的：默认一条都不共享', () async {
+      await _setOpds(hostDb, <OpdsServerConfig>[_opds('a'), _opds('b')]);
+      hostPlugins.plugins['p'] = const SharedPluginPackage(
+        id: 'p',
+        label: 'P',
+        digest: 'v1',
+        signer: null,
+      );
+      final AppInterconnectSourceShareHost real =
+          AppInterconnectSourceShareHost(
+            db: hostDb,
+            enabled: () async => true,
+            isOwnerDevicePeer: (String _) async => true,
+            pluginStores: () => hostStores,
+          );
+      InterconnectSourceShareCatalog catalog = await real.sourceShareCatalog();
+      expect(catalog.sources, isEmpty);
+      expect(catalog.kinds, containsAll(<String>['opds', 'musicPlugin']));
+      expect(await real.sourceSharePackage('musicPlugin', 'p'), isNull);
+
+      final SyncRepository repo = SyncRepository(hostDb);
+      await repo.setInterconnectSourceShareHostItem('opds/b', shared: true);
+      await repo.setInterconnectSourceShareHostItem(
+        'musicPlugin/p',
+        shared: true,
+      );
+      catalog = await real.sourceShareCatalog();
+      expect(
+        catalog.sources.map((InterconnectSharedSource s) => s.key),
+        <String>['opds/b', 'musicPlugin/p'],
+      );
+      expect(await real.sourceSharePackage('musicPlugin', 'p'), isNotNull);
+
+      await repo.setInterconnectSourceShareHostItem('opds/b', shared: false);
+      catalog = await real.sourceShareCatalog();
+      expect(
+        catalog.sources.map((InterconnectSharedSource s) => s.key),
+        <String>['musicPlugin/p'],
+      );
+    });
+
     test('本机开关关着：一个请求都不发', () async {
       await SyncRepository(phoneDb).setInterconnectSourceShareEnabled(false);
       await _setOpds(hostDb, <OpdsServerConfig>[_opds('a')]);
@@ -465,6 +673,8 @@ void main() {
           SourceShareLedger.prefKey,
           'interconnect_sync_source_share',
           'interconnect_source_share_host',
+          'interconnect_source_share_host_items',
+          'interconnect_sync_source_share_plugins',
         ]),
       );
     });
@@ -493,6 +703,12 @@ void main() {
       await _setOpds(hostDb, <OpdsServerConfig>[
         _opds('a', password: 'secret'),
       ]);
+      final SyncRepository repo = SyncRepository(hostDb);
+      await repo.setInterconnectSourceShareHostItem('opds/a', shared: true);
+      await repo.setInterconnectSourceShareHostItem(
+        'musicPlugin/p',
+        shared: true,
+      );
     });
 
     tearDown(() async {

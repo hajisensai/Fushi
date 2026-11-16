@@ -48,6 +48,8 @@ import 'package:fushi/src/dictionary/dict_style_rules.dart';
 import 'package:fushi/src/floating_ball/floating_ball_config.dart';
 import 'package:fushi/src/media/music/music_resume.dart';
 import 'package:fushi/src/media/audiobook/audiobook_jump_threshold.dart';
+import 'package:fushi/src/media/listening_reminder.dart'
+    show kListeningReminderMinutesDefault, normalizeListeningReminderMinutes;
 import 'package:fushi/src/media/discovery/alist_site_config.dart';
 import 'package:fushi/src/media/discovery/audiobookshelf_server_config.dart';
 import 'package:fushi/src/media/discovery/opds_server_config.dart';
@@ -104,6 +106,7 @@ import 'package:fushi/src/media/video/video_danmaku_model.dart';
 import 'package:fushi/src/media/video/video_hdr_output.dart'
     show VideoHdrOutputMode, kVideoHdrOutputPref;
 import 'package:fushi/src/media/video/video_control_customization.dart';
+import 'package:fushi/src/reader/eink_full_refresh.dart';
 import 'package:fushi/src/reader/reader_control_layout.dart';
 import 'package:fushi/src/media/manga/reader/manga_control_layout.dart';
 import 'package:fushi/src/media/video/video_remote_control_layout.dart';
@@ -2642,6 +2645,14 @@ class PreferencesRepository extends ChangeNotifier
       );
       return const <OpdsServerConfig>[];
     }
+  }
+
+  /// 互联「来源共享」把 host 的服务器来源合并进本机清单（OPDS / AList / Kavita /
+  /// OpenSubsonic 各一个键）后整份写回：缓存与库同一步更新并通知监听者。只写库的话，
+  /// 整轮同步结束前设置页 setter 会拿旧缓存把刚收下的条目抹掉。
+  Future<void> replaceSharedSourceListPref(String key, String json) async {
+    await setPref(key, json);
+    notifyListeners();
   }
 
   Future<void> setDiscoveryOpdsServers(
@@ -5186,6 +5197,31 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 连续收听提醒（反馈 5_mzP54WVx）：音乐 / 有声书 / 视频连续在播满 N 分钟提醒一次。
+  /// 默认关。
+  bool get listeningReminderEnabled =>
+      getPref('listening_reminder_enabled', defaultValue: false) == true;
+
+  Future<void> setListeningReminderEnabled({required bool value}) async {
+    await setPref('listening_reminder_enabled', value);
+    notifyListeners();
+  }
+
+  /// 连续收听提醒的间隔（分钟）：存值归到最近的档位，没写过取出厂 60 分钟。
+  int get listeningReminderMinutes {
+    final Object? stored = getPref('listening_reminder_minutes');
+    if (stored is num) return normalizeListeningReminderMinutes(stored);
+    return kListeningReminderMinutesDefault;
+  }
+
+  Future<void> setListeningReminderMinutes(int value) async {
+    await setPref(
+      'listening_reminder_minutes',
+      normalizeListeningReminderMinutes(value),
+    );
+    notifyListeners();
+  }
+
   bool get showFloatingLyric =>
       getPref('show_floating_lyric', defaultValue: false) as bool;
 
@@ -7439,6 +7475,43 @@ class PreferencesRepository extends ChangeNotifier
       kStudyIdleTimeoutPrefKey,
       value.clamp(readingIdleTimeoutMinutesMin, readingIdleTimeoutMinutesMax),
     );
+    notifyListeners();
+  }
+
+  /// 墨水屏「每 N 页全刷」的间隔（翻页次数，0 = 关）。与 `eink_mode` 同族：描述的是
+  /// 这台设备的屏幕，不随 Profile 快照（见 ProfileKeys 排除表）。
+  static const String einkFullRefreshIntervalKey = 'eink_full_refresh_interval';
+
+  /// 墨水屏全刷方式（[EinkFullRefreshMethod.storageKey]），设备本地。
+  static const String einkFullRefreshMethodKey = 'eink_full_refresh_method';
+
+  int get einkFullRefreshInterval => normalizeEinkFullRefreshInterval(
+    getPref(
+          einkFullRefreshIntervalKey,
+          defaultValue: kEinkFullRefreshIntervalDefault,
+        )
+        as int,
+  );
+
+  Future<void> setEinkFullRefreshInterval(int value) async {
+    await setPref(
+      einkFullRefreshIntervalKey,
+      normalizeEinkFullRefreshInterval(value),
+    );
+    notifyListeners();
+  }
+
+  EinkFullRefreshMethod get einkFullRefreshMethod =>
+      EinkFullRefreshMethod.fromStorageKey(
+        getPref(
+              einkFullRefreshMethodKey,
+              defaultValue: EinkFullRefreshMethod.auto.storageKey,
+            )
+            as String,
+      );
+
+  Future<void> setEinkFullRefreshMethod(EinkFullRefreshMethod method) async {
+    await setPref(einkFullRefreshMethodKey, method.storageKey);
     notifyListeners();
   }
 

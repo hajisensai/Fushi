@@ -69,6 +69,28 @@ class _FakeEvidence implements SubtitleEvidenceSource {
   }
 }
 
+/// 收集不完整的证据来源（某个来源读失败）：给出部分轨，但要求不缓存。
+class _IncompleteEvidence implements SubtitleEvidenceSource {
+  _IncompleteEvidence(this.tracks);
+
+  final List<SubtitleEvidenceTrack> tracks;
+  int loads = 0;
+
+  @override
+  Future<String> sourceKey(
+    String videoPath, {
+    required bool Function(String path) isOwnOutput,
+  }) async => 'v1';
+
+  @override
+  Future<List<SubtitleEvidenceTrack>> load(
+    SubtitleEvidenceLoadRequest request,
+  ) async {
+    loads++;
+    throw SubtitleEvidenceIncomplete(tracks, 'burned-in OCR failed');
+  }
+}
+
 List<SubtitleDraftCue> _lines(List<String> texts) => <SubtitleDraftCue>[
   for (int i = 0; i < texts.length; i++)
     SubtitleDraftCue(
@@ -595,5 +617,101 @@ void main() {
     await runOnce();
     expect(ev.ownChecks.last(asr), isTrue);
     expect(ev.ownChecks.last(ja), isFalse);
+  });
+
+  test('不开 AI：画面硬字幕（OCR 证据）与识别行只差几个字时换成画面写法（d-fO4eGxKx）', () async {
+    final _FakeEvidence ev = _FakeEvidence(const <SubtitleEvidenceTrack>[
+      SubtitleEvidenceTrack(
+        label: 'burned-in subtitles OCR',
+        kind: SubtitleEvidenceKind.ocr,
+        language: 'ja',
+        cues: <SubtitleEvidenceCue>[
+          // 识别「結衣が来た」，画面写的是「唯が来た」：同一句，换。
+          SubtitleEvidenceCue(startMs: 1000, endMs: 3000, text: '唯が来た'),
+          // 同时段画面是另一句：不换。
+          SubtitleEvidenceCue(startMs: 7000, endMs: 9000, text: 'さようなら'),
+        ],
+      ),
+    ]);
+    final VideoSubtitlePipelineResult r = await pipeline(
+      _FakeRecognizer(drafts),
+      evidence: ev,
+    ).run(videoPaths: <String>[video('ep01.mkv')], work: work);
+    expect(r.episodes.single.status, VideoSubtitleEpisodeStatus.exported);
+    final String srt = File(
+      p.join(videos.path, 'ep01.ja.srt'),
+    ).readAsStringSync();
+    expect(srt, contains('唯が来た'));
+    expect(srt, isNot(contains('結衣が来た')));
+    expect(srt, contains('ありがとう'));
+    expect(srt, isNot(contains('さようなら')));
+  });
+
+  SubtitleEvidenceTrack burnedIn(List<SubtitleEvidenceCue> cues) =>
+      SubtitleEvidenceTrack(
+        label: 'burned-in subtitles OCR',
+        kind: SubtitleEvidenceKind.ocr,
+        language: 'ja',
+        cues: cues,
+      );
+
+  test('开着 AI：不做确定性替换，画面硬字幕原样当证据交给 S3（d-fO4eGxKx）', () async {
+    final FakeAiCompleter ai = FakeAiCompleter(_answer);
+    await pipeline(
+      _FakeRecognizer(drafts),
+      ai: ai,
+      evidence: _FakeEvidence(<SubtitleEvidenceTrack>[
+        burnedIn(const <SubtitleEvidenceCue>[
+          SubtitleEvidenceCue(startMs: 1000, endMs: 3000, text: '唯が来た'),
+        ]),
+      ]),
+    ).run(videoPaths: <String>[video('ep01.mkv')], work: work);
+    final String s3 = ai.prompts.firstWhere(
+      (String s) => s.startsWith('あなたは日本語アニメ字幕の校正者'),
+    );
+    expect(s3, contains('主: 結衣が来た'));
+    expect(s3, contains(']: 唯が来た'));
+  });
+
+  test('不开 AI：画面硬字幕只差标点时不换，识别稿的标点留着（d-fO4eGxKx）', () async {
+    await pipeline(
+      _FakeRecognizer(drafts),
+      evidence: _FakeEvidence(<SubtitleEvidenceTrack>[
+        burnedIn(const <SubtitleEvidenceCue>[
+          SubtitleEvidenceCue(startMs: 4000, endMs: 6000, text: 'こんにちは'),
+        ]),
+      ]),
+    ).run(videoPaths: <String>[video('ep01.mkv')], work: work);
+    final String srt = File(
+      p.join(videos.path, 'ep01.ja.srt'),
+    ).readAsStringSync();
+    expect(srt, matches(RegExp('こんにちは[?？]')));
+  });
+
+  test('证据收集不完整（硬字幕 OCR 读失败）：这次照用，但不落 evidence.json，下次重收', () async {
+    final _IncompleteEvidence ev = _IncompleteEvidence(<SubtitleEvidenceTrack>[
+      burnedIn(const <SubtitleEvidenceCue>[
+        SubtitleEvidenceCue(startMs: 1000, endMs: 3000, text: '唯が来た'),
+      ]),
+    ]);
+    await pipeline(
+      _FakeRecognizer(drafts),
+      evidence: ev,
+    ).run(videoPaths: <String>[video('ep01.mkv')], work: work);
+    expect(
+      File(p.join(videos.path, 'ep01.ja.srt')).readAsStringSync(),
+      contains('唯が来た'),
+    );
+    final List<File> caches = jobs
+        .listSync(recursive: true)
+        .whereType<File>()
+        .where((File f) => p.basename(f.path) == VideoSubtitleJobFiles.evidence)
+        .toList();
+    expect(caches, isEmpty);
+    await pipeline(
+      _FakeRecognizer(drafts),
+      evidence: ev,
+    ).run(videoPaths: <String>[video('ep01.mkv')], work: work);
+    expect(ev.loads, 2);
   });
 }

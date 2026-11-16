@@ -99,9 +99,20 @@ final class SharedServerListKind {
   }
 
   /// 整份写回（与各清单自己的写入同一形状：媒体服务器空清单 = 删键）。
-  Future<void> write(FushiDatabase db, List<Map<String, Object?>> items) async {
+  ///
+  /// [cachedWriter] 非 null 时 [prefCodec] 清单经它写（AppModel 装的是
+  /// `PreferencesRepository` 的写入：内存缓存与库同一步更新）。这几份清单的设置页
+  /// setter 拿内存缓存整表写回；只写库、等整轮同步跑完才刷新缓存的话，这段时间里
+  /// 用户改任何一台服务器都会把刚收下的条目抹掉，下一轮还会被当成「本机删了」永久退订。
+  Future<void> write(
+    FushiDatabase db,
+    List<Map<String, Object?>> items, {
+    SourceSharePrefWriter? cachedWriter,
+  }) async {
     final String json = jsonEncode(items);
-    if (prefCodec) {
+    if (prefCodec && cachedWriter != null) {
+      await cachedWriter(prefKey, json);
+    } else if (prefCodec) {
       await db.setPref(prefKey, PrefCodec.encode(json));
     } else if (items.isEmpty) {
       await db.deletePref(prefKey);
@@ -201,6 +212,9 @@ final List<SharedServerListKind> kSharedServerListKinds =
       ),
     ]);
 
+/// 经偏好缓存写一个 [PrefCodec] 偏好（值是未编码的字符串）。
+typedef SourceSharePrefWriter = Future<void> Function(String key, String value);
+
 /// 一个已安装插件包在本机的样子。
 final class SharedPluginPackage {
   const SharedPluginPackage({
@@ -209,7 +223,16 @@ final class SharedPluginPackage {
     required this.digest,
     required this.signer,
     this.bundled = false,
-  });
+  }) : available = true;
+
+  /// 目录在、但此刻校验不过（文件正被更新 / 被杀软锁住 / 被改过）：列不出摘要与签名者。
+  /// 来源共享对它一律不动——host 侧发 unavailable 条目、client 侧不更新也不删，
+  /// 「列不出」不等于「卸载了」。
+  const SharedPluginPackage.unavailable({required this.id, required this.label})
+    : digest = '',
+      signer = null,
+      bundled = false,
+      available = false;
 
   final String id;
   final String label;
@@ -222,6 +245,8 @@ final class SharedPluginPackage {
 
   /// 随 app 自带的包（内置 / 预装）：每台设备各有一份，不共享、也不被共享覆盖或卸载。
   final bool bundled;
+
+  final bool available;
 }
 
 /// 一类插件在本机的读写面（音乐 / 追踪各一个实现）。
@@ -229,7 +254,8 @@ abstract interface class SharedPluginStore {
   /// wire 上的种类名（冻结）。
   String get kind;
 
-  /// 已安装、校验通过的插件（含 [SharedPluginPackage.bundled] 的）。
+  /// 已安装的插件（含 [SharedPluginPackage.bundled] 的；校验不过的以
+  /// [SharedPluginPackage.unavailable] 列出，不能漏掉——漏掉会被对端当成卸载）。
   Future<List<SharedPluginPackage>> installed();
 
   Future<Uint8List?> exportPackage(String id);
@@ -261,7 +287,9 @@ final class MusicSharedPluginStore implements SharedPluginStore {
           label: info.manifest.name,
           digest: info.digest,
           signer: info.signer,
-        ),
+        )
+      else
+        SharedPluginPackage.unavailable(id: p.id, label: p.id),
   ];
 
   @override
@@ -311,7 +339,12 @@ final class TrackingSharedPluginStore implements SharedPluginStore {
               p.included ||
               _manager.isBundled(p.id) ||
               _manager.isIncluded(p.id),
-        ),
+        )
+      else if (!p.builtIn &&
+          !p.included &&
+          !_manager.isBundled(p.id) &&
+          !_manager.isIncluded(p.id))
+        SharedPluginPackage.unavailable(id: p.id, label: p.id),
   ];
 
   @override
@@ -341,6 +374,10 @@ final class TrackingSharedPluginStore implements SharedPluginStore {
 /// 全局装配点：本机此刻可用的插件体系（AppModel 在插件管理器建好后装上；iOS / 原生库不带
 /// 插件运行时时对应体系不在列表里——那边经互联中继用对端的插件，不装包）。null = 没有。
 List<SharedPluginStore> Function()? sourceSharePluginStores;
+
+/// 全局装配点：服务器来源清单经偏好缓存写回（AppModel 装 `PreferencesRepository`
+/// 的写入）。null（单测 / 偏好仓库还没建）= 直接写库。
+SourceSharePrefWriter? sourceSharePrefWriter;
 
 /// 一条共享来源的 wire 表示。
 InterconnectSharedSource sharedServerSource(

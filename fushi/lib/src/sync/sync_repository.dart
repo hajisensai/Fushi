@@ -406,6 +406,14 @@ class SyncRepository {
       'interconnect_sync_source_share';
   static const _keyInterconnectSourceShareHost =
       'interconnect_source_share_host';
+  // host 主人逐项勾选共享的来源（`kind/id` 的 JSON 数组）。拍板台原文「凭据由用户逐项
+  // 勾选，不能默认全量下发」：默认空 = 一条都不共享。
+  static const _keyInterconnectSourceShareHostItems =
+      'interconnect_source_share_host_items';
+  // client 侧「也接收插件」：插件是第三方可执行代码，host 是谁标的「我的设备」是 host 单方面
+  // 的判断，往本机装代码必须这台设备的主人自己点头。默认关。
+  static const _keyInterconnectSourceSharePlugins =
+      'interconnect_sync_source_share_plugins';
   static const _keyWebDavUrl = 'sync_webdav_url';
   static const _keyWebDavUsername = 'sync_webdav_username';
   static const _keyWebDavPassword = 'sync_webdav_password';
@@ -1084,6 +1092,44 @@ class SyncRepository {
       _db.getPrefTyped<bool>(_keyInterconnectSourceShareHost, true);
   Future<void> setInterconnectSourceShareHostEnabled(bool v) =>
       _db.setPrefTyped<bool>(_keyInterconnectSourceShareHost, v);
+
+  /// client 侧：是否也接收 host 共享的插件包（默认关，见 [_keyInterconnectSourceSharePlugins]）。
+  Future<bool> isInterconnectSourceSharePluginsEnabled() =>
+      _db.getPrefTyped<bool>(_keyInterconnectSourceSharePlugins, false);
+  Future<void> setInterconnectSourceSharePluginsEnabled(bool v) =>
+      _db.setPrefTyped<bool>(_keyInterconnectSourceSharePlugins, v);
+
+  /// host 侧：主人勾选共享的来源（`kind/id`）。坏值当空（= 不共享），不会因解析失败多发。
+  Future<Set<String>> getInterconnectSourceShareHostItems() async {
+    final String raw = await _db.getPrefTyped<String>(
+      _keyInterconnectSourceShareHostItems,
+      '',
+    );
+    if (raw.isEmpty) return <String>{};
+    try {
+      final Object? decoded = jsonDecode(raw);
+      return <String>{
+        if (decoded is List)
+          for (final Object? k in decoded)
+            if (k is String && k.isNotEmpty) k,
+      };
+    } on FormatException {
+      return <String>{};
+    }
+  }
+
+  /// 勾选 / 取消勾选一条（[key] = `kind/id`）。
+  Future<void> setInterconnectSourceShareHostItem(
+    String key, {
+    required bool shared,
+  }) async {
+    final Set<String> items = await getInterconnectSourceShareHostItems();
+    if (shared ? !items.add(key) : !items.remove(key)) return;
+    await _db.setPrefTyped<String>(
+      _keyInterconnectSourceShareHostItems,
+      jsonEncode(<String>[...items]..sort()),
+    );
+  }
 
   Future<bool> isInterconnectServiceConfigSyncEnabled() =>
       _db.getPrefTyped<bool>(_keyInterconnectServiceConfigSync, true);
@@ -2097,6 +2143,8 @@ class SyncRepository {
     // 都只对这台设备成立。
     _keyInterconnectSourceShareSync,
     _keyInterconnectSourceShareHost,
+    _keyInterconnectSourceShareHostItems,
+    _keyInterconnectSourceSharePlugins,
     'interconnect_source_share_ledger',
     // 「当 host 时愿不愿意为对端转码视频」是本机算力的意愿：一台台式机说「可以」，
     // 不代表那台跑着同一份备份的旧笔记本也愿意被烤。

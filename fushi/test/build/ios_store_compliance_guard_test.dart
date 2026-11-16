@@ -721,6 +721,14 @@ void main() {
       );
       expect(
         features,
+        contains(
+          'siteComic:webComicReaderActionAvailable()'
+          '?WebComicSiteComicDetector():null',
+        ),
+        reason: '漫画站点适配判定（随包站点规则）也只在同一道合规门开时装。',
+      );
+      expect(
+        features,
         contains('.where((WebBrowserFeaturef)=>f.available)'),
         reason: '装配点只保留 available 的插件。',
       );

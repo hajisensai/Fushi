@@ -293,6 +293,7 @@
   "mine_queued_generate_later": "拡張機能のマイニングボタンを押すとまとめて生成します",
   "mine_no_cue": "現在の字幕行が見つかりません。少し待ってから再試行してください",
   "mine_enqueue_failed": "キューに追加できませんでした",
+  "mine_enqueue_context_invalidated": "キューに追加できませんでした：拡張機能が更新されました。ページを再読み込み（F5）してやり直してください",
   "mine_failed": "マイニングに失敗しました",
   "mine_done": "カードを作成しました",
   "mine_duplicate_exists": "この単語のカードはすでに存在します",
