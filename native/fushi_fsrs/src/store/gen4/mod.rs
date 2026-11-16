@@ -13,11 +13,13 @@
 //! - [cache]：缓存层——笔记 / 卡片缓存、逐卡重放、有效复习投影（统计列）。
 //! - [weigh]：派生层的语义部分——标签 OR-Set、媒体绑定、彻底清除、被扣住的删除、设备信任。
 //! - `compare`：协议 3 的投影与新代派生层逐类对拍（干跑与测试装置共用）。
+//! - [cmd]：读命令的新代实现（`read` / `read_lib` 的各个查询、`entity_views`、修改历史）。还没接分发器。
 //! - [dryrun]：真实库干跑（设计 §8 G4）：旧库只读 → 临时新库 → 重建 → 对拍报告；也是换代前版本里的预演自检（G4b）。
 
 pub mod alias;
 pub mod cache;
 pub mod class;
+pub mod cmd;
 pub(crate) mod compare;
 pub mod derive;
 pub mod digest;
