@@ -240,7 +240,7 @@ void reportVideoLibraryDeleteFailures(
 /// 走 [FushiDatabase.deleteVideoStatisticsForIdentities]：**一个事务**里删
 /// `study_segments`（唯一事实表）+「已看过区间」偏好 + legacy 的观看时长/字数行 +
 /// 这些视频的查词/制卡计数，并按媒体身份与 title 两级立碑——不立碑的话下一轮聚合
-/// 同步会把对端还留着的段整批灌回来（BUG-2215）。title 一次批量取（BUG-4743：原来
+/// 同步会把对端还留着的段整批灌回来（BUG-2215）。title 一次批量取（BUG-4746：原来
 /// 逐条 getByBookUid + 逐条一个事务，上万条视频就是十几万次查询）。
 ///
 /// `includeUnattributed: false`：只删挂在这些 `bookUid` 名下的行。同名视频的**无

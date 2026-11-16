@@ -2749,7 +2749,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     if (collectionCount == 0) {
       // 「同时删除本地文件」只在选中集里至少有一条是本地文件时才摆出来
       // （全是远端流就没有文件可删，与同步勾选框「兑现不了就不显示」同一纪律）。
-      // 只取选中的那些行（BUG-4743：原来整表 listAll 再过滤，大库全选时白读一遍）。
+      // 只取选中的那些行（BUG-4746：原来整表 listAll 再过滤，大库全选时白读一遍）。
       final bool anyLocalFile = (await widget.repo.getByBookUids(
         targetUids,
       )).any(videoBookHasLocalFiles);

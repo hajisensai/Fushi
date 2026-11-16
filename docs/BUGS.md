@@ -33,15 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4100 条。点号进各自文件。
+> 共 4103 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4743](bugs/BUG-4743-video-batch-delete-n-plus-one.md) | ✅ | ✅ | 视频库批量删一万多条「像没删」——删除链逐条 N+1 + 无进度反馈 |
-> 共 4102 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4746](bugs/BUG-4746-video-batch-delete-n-plus-one.md) | ✅ | ✅ | 视频库批量删一万多条「像没删」——删除链逐条 N+1 + 无进度反馈 |
 | [BUG-4745](bugs/BUG-4745-lyrics-margin-left-right-swapped.md) | ✅ | ✅ | 歌词模式横排左右边距写反 |
 | [BUG-4744](bugs/BUG-4744-android-exit-fgs-trim-background.md) | ✅ | ✅ | android-exit-fgs-trim-background |
 | [BUG-4743](bugs/BUG-4743-anime-match-title-truncation.md) | ✅ | ✅ | anime-match-title-truncation |

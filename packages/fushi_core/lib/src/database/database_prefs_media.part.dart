@@ -565,7 +565,7 @@ mixin _FushiDbPrefsMedia
   Future<List<VideoBookRow>> allVideoBooks() => select(videoBooks).get();
 
   /// 按一批 bookUid 取行（`IN` 分块；不存在的 uid 不在结果里，顺序不保证）。
-  /// 批量操作取删前快照用，代替逐条 [getVideoBookByBookUid]（BUG-4743）。
+  /// 批量操作取删前快照用，代替逐条 [getVideoBookByBookUid]（BUG-4746）。
   Future<List<VideoBookRow>> getVideoBooksByBookUids(
     Iterable<String> bookUids,
   ) async {

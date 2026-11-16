@@ -163,7 +163,7 @@ class VideoStorage {
     subtitlesDirectory: subtitlesDirectory,
   );
 
-  /// [deleteBookAssets] 的批量形态（BUG-4743）：护栏集合只规范化一次、两个 app
+  /// [deleteBookAssets] 的批量形态（BUG-4746）：护栏集合只规范化一次、两个 app
   /// 目录只解析一次，再逐本回收。原来每本被删视频各把**全部**幸存引用路径
   /// canonicalize 三遍——大库删一大批是 O(删除数 × 幸存数)。逐本语义不变：只删
   /// 非空 + 落在对应 app 目录内 + 不被幸存行引用的文件。
