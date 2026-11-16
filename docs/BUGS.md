@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4111 条。点号进各自文件。
+> 共 4112 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4756](bugs/BUG-4756-lapis-selection-text-yield-empty.md) | ✅ | ✅ | Lapis 下选中弹窗释义后制卡，SelectionText 是空的 |
 | [BUG-4755](bugs/BUG-4755-disc-title-back-exits-session.md) | ✅ | ✅ | 原盘正片阶段按返回越级退出整个原盘会话，应先回盘菜单 |
 | [BUG-4754](bugs/BUG-4754-manga-series-key-episode-suffix.md) | ✅ | ✅ | 漫画「第N話 前編 [hash]」按话发布的各话没并成系列合集 |
 | [BUG-4753](bugs/BUG-4753-nested-lookup-webkit-zoom-hit-offset.md) | ✅ | ✅ | 嵌套查词：macOS 查词页点释义里的字查到相邻的字（WebKit 旧 zoom 坐标系 + 沙箱取字半字偏移） |

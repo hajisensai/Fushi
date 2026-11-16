@@ -2839,15 +2839,10 @@ async function buildMinePayload(expression, reading, frequencies, pitches, rules
     const dictionaryMedia = currentDictionaryMedia;
     currentDictionaryMedia = null;
     currentExportImageSizes = null;
-    // 选中段已经在释义里被 <mark> 标出来了，就不要再产出一份重复的 SelectionText。
-    // 选中的释义段已经作为 <mark> 进了导出的释义树。此时把同一段文本再原样塞进
-    // SelectionText 字段是否合适，**取决于用户的笔记类型和字段映射**——而这一层
-    // 两个都不知道：popup.js 只看得见 DOM，看不见 fieldMappings。所以这里只如实
-    // 上报「高亮是否真的落进了导出树」，让位与否交给知道映射的 Dart 层
-    // （BaseAnkiRepository.shouldYieldSelectionText）。
-    //
+    // 只如实上报「选中段是否真的作为 <mark> 落进了导出的释义树」。popupSelectionText
+    // 无论如何原样上报，Dart 侧总是把它填进 {popup-selection-text}（BUG-4756）。
     // 高亮**没**落地时（选中落在例句 / 词头 / 标签这些释义之外，或导出树文本流
-    // 校验没过）这个标志是 false，Dart 侧照旧把原文交给 SelectionText。
+    // 校验没过）这个标志是 false。
     const glossarySelectionHighlighted = currentSelectionHighlights > 0;
     currentSelectionHighlights = 0;
     // {popup-selection-html} 与 {popup-selection-text} 必须描述同一个选区：只有调用方
