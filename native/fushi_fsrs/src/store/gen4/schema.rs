@@ -43,7 +43,7 @@ use rusqlite::Connection;
 /// 新代库的 schema 号。只要求远大于协议 3 的任何一个 schema 号（最后一个是 29）；万位是代，低位是这一代里的存储版本。
 ///
 /// G7-1 起 `40006`（本机状态表、`collections` 的绑定状态列、`application_id`）；G8-3 `40007`（`media_at.pend`、
-/// `media_seen`、`media_listed`）。整批推送前每个改表的 PR 各自 +1。
+/// `media_seen`、`media_listed`、`media_gen`）。整批推送前每个改表的 PR 各自 +1。
 pub const SCHEMA: i64 = 40_007;
 
 /// 新代的号段从这里起：`schema` 小于它的都不是新代库（协议 3 的 1～29 与封存值 39999）。
@@ -181,6 +181,7 @@ CREATE TABLE IF NOT EXISTS op_forks (
 ///   要随本机下一份清单发出去（G8-3，`media.rs`）。`loc_key` = 协议 3 同口径的「位置/媒体目录#sha256」。
 /// - `media_seen`：每个位置上每个作者的清单已收到的最大代号（只收更大的；本机自己那行 = 已发出的最大代号）。
 /// - `media_listed`：哪些「位置/媒体目录」有人完整列举过（协议 3 的 SEEDED）；`pend` = 是本机列的、还没随清单发出。
+/// - `media_gen`：本机在每个位置上已预留的最大清单代号（只升不降，换根 / 对账也不清：一个代号只对应一个文件）。
 /// - `loc_state`：每个位置的加密记忆（`location_seal`）：`loc_ids` = 位置 ID 的 JSON，`sealed` 0/1，`kdf` = 派生参数 JSON，
 ///   `check_` = 口令校验串，`last_ok` = 上次核对通过的时刻。
 pub(crate) const LOCAL: &str = "
@@ -251,6 +252,13 @@ CREATE TABLE IF NOT EXISTS media_listed (
   loc_key TEXT NOT NULL,
   pend INTEGER NOT NULL,
   PRIMARY KEY (col, loc_key)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS media_gen (
+  col INTEGER NOT NULL,
+  loc TEXT NOT NULL,
+  device BLOB NOT NULL,
+  gen INTEGER NOT NULL,
+  PRIMARY KEY (col, loc, device)
 ) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS loc_state (
   col INTEGER NOT NULL,
@@ -864,7 +872,7 @@ mod tests {
                 .collect::<Result<_, _>>()
                 .unwrap()
         };
-        let want: [(&str, &[&str]); 10] = [
+        let want: [(&str, &[&str]); 11] = [
             (
                 "collections",
                 &[
@@ -964,6 +972,15 @@ mod tests {
                 ],
             ),
             (
+                "media_gen",
+                &[
+                    "col INTEGER NN PK1",
+                    "loc TEXT NN PK2",
+                    "device BLOB NN PK3",
+                    "gen INTEGER NN",
+                ],
+            ),
+            (
                 "loc_state",
                 &[
                     "col INTEGER NN PK1",
@@ -988,6 +1005,7 @@ mod tests {
             "media_at",
             "media_seen",
             "media_listed",
+            "media_gen",
             "loc_state",
         ] {
             let sql: String = conn

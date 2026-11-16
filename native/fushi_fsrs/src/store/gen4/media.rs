@@ -18,8 +18,15 @@
 //!
 //! # 调用方契约（G8-4 / G8-7 接线时照办）
 //!
-//! - 本机时钟由写入器（G7-3a `Native`）持有：[record] 的 HLC 由调用方 tick 出来；[ingest] 返回清单里最大的 HLC，调用方
-//!   拿它 `Clock::absorb`，之后本机记的事实才压得过已见的。
+//! - 本机时钟由写入器（G7-3a `Native`）持有：[record] 的 HLC 由调用方 tick 出来；[ingest] / [seed_legacy] 返回读进来的
+//!   **不超前**的最大 HLC（`seen.max_hlc`，调用方拿它 `Clock::absorb`）和超前作者集合（`seen.ahead`，调用方打
+//!   `clock_ahead` 告警），口径同协议 3 `observe_remote`。吸收只是让本机 HLC 跟上；正确性不靠它：[record] 记的是读到
+//!   当前那条之后的观察，因果上更晚，当前那条的 HLC 不比它小（调用方没吸收、或来自超前 `MAX_AHEAD_MS` 以上的设备）
+//!   时就把本次 HLC 盖到当前那条之上（[after]），照常写入待发——墙钟超前的设备记下的事实因此压得住，与协议 3 mvr
+//!   的「因果优先」一致；各设备仍按 D18 取 HLC 最大，合并结果不变。
+//! - **一个代号只对应一个文件**：代号由 [reserve_gen] 在本机 `media_gen` 里持久预留，只升不降、崩溃后也不重用，不依赖
+//!   列目录的结果（网盘列举滞后时也不会发出同代号、不同内容的两份——读者按代号去重，会静默丢掉其中一份）。[build]
+//!   内部预留；[compact] 的新代号也由调用方用 [reserve_gen] 取。
 //! - 一台设备的清单按代号升序收（[pending_gens]），某一份下载失败就停在那里、这一轮不收它之后的：水位只升不降，跳过的
 //!   文件不会再收。合并出的新文件代号比被合并者都大，所以先合并后删旧的写法不会让读者漏掉内容。
 //! - [ingest] 返回 [IngestError::UnknownDevice] / [IngestError::Untrusted] 时不推进水位：等 head 带来公钥、或用户信任了
@@ -35,7 +42,7 @@ use super::truth::Truth;
 use crate::gen4::manifest::{
     Fact, Manifest, ManifestError, MediaState, open, tag_of, valid_folder,
 };
-use crate::sync2::hlc::Hlc;
+use crate::sync2::hlc::{Hlc, MAX_AHEAD_MS};
 use crate::sync2::id::Id;
 use crate::sync2::keys::DeviceKey;
 
@@ -93,6 +100,50 @@ pub fn parse_hlc_text(s: &str) -> Result<Hlc, String> {
         return Err(bad());
     }
     Ok(h)
+}
+
+/// 因果上紧接在 [cur] 之后的本机 HLC：`(cur.wall, cur.logical + 1, device)`，logical 满了进位到 `(wall + 1, 0)`。
+/// 严格大于 [cur]（wall 也满了 = 无法再大，报错）。
+pub fn after(cur: &Hlc, device: Id) -> Result<Hlc, String> {
+    match cur.logical.checked_add(1) {
+        Some(logical) => Ok(Hlc {
+            wall: cur.wall,
+            logical,
+            device,
+        }),
+        None => Ok(Hlc {
+            wall: cur
+                .wall
+                .checked_add(1)
+                .ok_or_else(|| "media: hlc overflow".to_owned())?,
+            logical: 0,
+            device,
+        }),
+    }
+}
+
+/// [hlc] 是否超出本机墙钟 [MAX_AHEAD_MS]（与 `Clock::absorb` 同口径）。
+fn is_ahead(hlc: &Hlc, now_ms: i64) -> bool {
+    hlc.wall.saturating_sub(now_ms) > MAX_AHEAD_MS
+}
+
+/// 读进来的 HLC 的汇总（[ingest] / [seed_legacy] 共用，口径同协议 3 `observe_remote`）。
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct SeenHlc {
+    /// 不超前的最大 HLC（调用方拿去 `Clock::absorb`）。超前的混进来会让 absorb 整个失效，所以分开。
+    pub max_hlc: Option<Hlc>,
+    /// 带了超前 HLC 的作者（HLC 里的设备）：调用方告警，不吸收。
+    pub ahead: BTreeSet<Id>,
+}
+
+impl SeenHlc {
+    fn see(&mut self, h: &Hlc, now_ms: i64) {
+        if is_ahead(h, now_ms) {
+            self.ahead.insert(h.device);
+        } else {
+            self.max_hlc = self.max_hlc.max(Some(*h));
+        }
+    }
 }
 
 fn sha_of(b: Vec<u8>) -> Result<[u8; 32], String> {
@@ -291,13 +342,14 @@ pub struct Recorded {
     pub written: usize,
     /// 与当前状态相同、没写的（不往清单里灌重复事实）。
     pub unchanged: usize,
-    /// 当前那条的 HLC 不小于本次的：按 D18 本次在任何设备上都会输，本机也不写（否则本机缓存与别人分叉）。
-    /// 调用方的时钟没吸收已见的 HLC 才会出现；或那条来自超前 `MAX_AHEAD_MS` 以上的设备。
-    pub stale: usize,
+    /// [Self::written] 里 HLC 被抬过的：当前那条的 HLC 不小于本次的（调用方时钟没吸收已见的、或那条来自超前
+    /// `MAX_AHEAD_MS` 以上的设备），本次观察因果上更晚，按 [after] 盖到它之上再写。诊断用。
+    pub lifted: usize,
 }
 
 /// 记下本机对一个媒体目录的观察（传上 / 拉下 / 确认在、确认不在、下载到的内容对不上）。[hlc] 是这次观察的本机 HLC
 /// （调用方 tick）。[listed] = 这是一次完整列举的结果。同一个哈希在 [facts] 里出现两次且状态不同 = 调用方的错，整批拒。
+/// 与当前那条状态不同的一律写下：本次观察发生在读到当前那条之后，HLC 不比它大时盖到它之上（[Recorded::lifted]）。
 pub fn record(
     t: &Truth<'_>,
     col: i64,
@@ -318,15 +370,22 @@ pub fn record(
         let c = t.conn();
         let mut out = Recorded::default();
         for (sha, state) in want {
-            let f = Fact { state, hlc };
-            match row(c, col, &key, &sha)? {
-                Some((cur, _)) if cur.state == state => out.unchanged += 1,
-                Some((cur, _)) if cur.hlc >= hlc => out.stale += 1,
-                _ => {
-                    put(c, col, &key, &sha, &f, true)?;
-                    out.written += 1;
+            let f = match row(c, col, &key, &sha)?.map(|(f, _)| f) {
+                Some(cur) if cur.state == state => {
+                    out.unchanged += 1;
+                    continue;
                 }
-            }
+                Some(cur) if cur.hlc >= hlc => {
+                    out.lifted += 1;
+                    Fact {
+                        state,
+                        hlc: after(&cur.hlc, hlc.device)?,
+                    }
+                }
+                _ => Fact { state, hlc },
+            };
+            put(c, col, &key, &sha, &f, true)?;
+            out.written += 1;
         }
         if listed {
             set_listed(c, col, &key, true)?;
@@ -346,10 +405,48 @@ pub struct Built {
     pub name: String,
 }
 
-/// 把本机在这个位置上待发的事实打成下一份清单（没有待发的 = None）。[loc] = 这个位置的 loc 标记之一（D17）；
-/// [own_gens] = 位置上本机设备目录里现有的清单代号（新代号比它们与水位都大，不会撞名）。[signer] 必须是 [device]
-/// 的签名钥匙：`peers` 里记了本机公钥而对不上时拒绝（签出去的文件谁都验不过）。只读，不改任何行；传成功后调
-/// [mark_published]。
+/// 在这个位置上为本机 [device] 预留下一个清单代号并持久化（`media_gen`）：比已预留的、本机水位、[own_gens]（位置上
+/// 本机设备目录里现有的代号）都大。预留随调用方的事务提交后就算用掉——上传失败、崩溃都不回收，同一个代号绝不会
+/// 对应两份内容（读者按代号去重）。代号之间有空洞无妨：读者只要求升序。[forget] 不清它。
+pub fn reserve_gen(
+    t: &Truth<'_>,
+    col: i64,
+    location: &str,
+    device: &Id,
+    own_gens: &[u64],
+) -> Result<u64, String> {
+    if location.is_empty() {
+        return Err("media: empty location".into());
+    }
+    t.tx(|t| {
+        let c = t.conn();
+        let reserved: Option<i64> = c
+            .prepare_cached("SELECT gen FROM media_gen WHERE col = ?1 AND loc = ?2 AND device = ?3")
+            .map_err(sql)?
+            .query_row(params![col, location, &device.0[..]], |r| r.get(0))
+            .optional()
+            .map_err(sql)?;
+        let gen = watermark(t, col, location, device)?
+            .max(reserved.map_or(0, |g| g.max(0) as u64))
+            .max(own_gens.iter().copied().max().unwrap_or(0))
+            .checked_add(1)
+            .ok_or_else(|| "media: gen overflow".to_owned())?;
+        let g = i64::try_from(gen).map_err(|_| "media: gen overflow".to_owned())?;
+        c.prepare_cached(
+            "INSERT INTO media_gen (col, loc, device, gen) VALUES (?1, ?2, ?3, ?4) \
+             ON CONFLICT(col, loc, device) DO UPDATE SET gen = MAX(gen, excluded.gen)",
+        )
+        .map_err(sql)?
+        .execute(params![col, location, &device.0[..], g])
+        .map_err(sql)?;
+        Ok(gen)
+    })
+}
+
+/// 把本机在这个位置上待发的事实打成下一份清单（没有待发的 = None，也不预留代号）。[loc] = 这个位置的 loc 标记之一
+/// （D17）；[own_gens] = 位置上本机设备目录里现有的清单代号。代号由 [reserve_gen] 在同一个事务里预留（一个代号只
+/// 对应一个文件）。[signer] 必须是 [device] 的签名钥匙：`peers` 里记了本机公钥而对不上时拒绝（签出去的文件谁都验不
+/// 过）。除预留代号外不改任何行（待发标记不动）；传成功后调 [mark_published]。
 #[allow(clippy::too_many_arguments)]
 pub fn build(
     t: &Truth<'_>,
@@ -373,11 +470,8 @@ pub fn build(
     }
     t.tx(|t| {
         let c = t.conn();
-        let gen = watermark(t, col, location, &device)?
-            .max(own_gens.iter().copied().max().unwrap_or(0))
-            .checked_add(1)
-            .ok_or_else(|| "media: gen overflow".to_owned())?;
-        let mut m = Manifest::new(binding.collection, device, loc, gen);
+        // 先用占位代号收集，非空才预留真代号（没东西发不烧代号）。
+        let mut m = Manifest::new(binding.collection, device, loc, 0);
         // 键按位置 ID 加 `/` 起头的区间：`/` 之后的下一个字符是 `0`。
         let lo = format!("{location}/");
         let hi = format!("{location}0");
@@ -436,6 +530,7 @@ pub fn build(
         if m.is_empty() {
             return Ok(None);
         }
+        m.gen = reserve_gen(t, col, location, &device, own_gens)?;
         let (bytes, name) = m.encode(signer)?;
         Ok(Some(Built {
             manifest: m,
@@ -517,7 +612,7 @@ impl From<String> for IngestError {
 }
 
 /// [ingest] 的结果。
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Ingested {
     /// 代号不大于水位：整份跳过（什么都没读进来）。
     pub already: bool,
@@ -529,12 +624,12 @@ pub struct Ingested {
     pub older: usize,
     /// 带 listed 的节数。
     pub listed: usize,
-    /// 清单里最大的 HLC（调用方拿去 `Clock::absorb`）。
-    pub max_hlc: Option<Hlc>,
+    /// 清单里不超前的最大 HLC 与超前的作者（[SeenHlc]）。整份跳过时为空。
+    pub seen: SeenHlc,
 }
 
 /// 收一份清单。[device] / [gen] / [tag] 是从它的路径解出来的（`parse_v4_path` 的 `V4File::Manifest`）；[locs] 是这个
-/// 位置的 loc 标记集合。
+/// 位置的 loc 标记集合；[now_ms] = 本机墙钟（只用来把超前的 HLC 从 `seen.max_hlc` 里分出去）。
 #[allow(clippy::too_many_arguments)]
 pub fn ingest(
     t: &Truth<'_>,
@@ -545,6 +640,7 @@ pub fn ingest(
     gen: u64,
     tag: &str,
     bytes: &[u8],
+    now_ms: i64,
 ) -> Result<Ingested, IngestError> {
     if location.is_empty() {
         return Err(IngestError::Store("media: empty location".into()));
@@ -596,7 +692,7 @@ pub fn ingest(
         for (folder, sec) in &m.sections {
             let key = presence_key(location, folder)?;
             for (sha, f) in &sec.entries {
-                out.max_hlc = out.max_hlc.max(Some(f.hlc));
+                out.seen.see(&f.hlc, now_ms);
                 match row(c, col, &key, sha)? {
                     Some((cur, pend)) if cur == *f => {
                         if pend {
@@ -645,7 +741,7 @@ pub fn compact(parts: &[Manifest], loc: Id, gen: u64) -> Result<Manifest, String
 // ------------------------------------------------------------------------------------------------ 迁移与对账
 
 /// [seed_legacy] 的结果。
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Seeded {
     /// 写进来（待发）的行。
     pub rows: usize,
@@ -653,18 +749,21 @@ pub struct Seeded {
     pub skipped: usize,
     /// 带过来的「完整列举过」标记。
     pub listed: usize,
+    /// 读到的全部内容寻址旧事实的 HLC 汇总（[SeenHlc]；调用方照 [ingest] 的口径吸收 / 告警）。
+    pub seen: SeenHlc,
 }
 
 /// 迁移播种（规划 §1.4 第 5 步、D11）：把协议 3 库里 [profile] 的 `sync2_media_at` / `sync2_media_seeded` 灌进新代
 /// 集合 [col] 的 `media_at` / `media_listed`。旧 HLC 原样保留（只是合并时的次序，不重新盖章：重新盖章会让较晚迁移、
 /// 视图较旧的设备压过别人较新的事实）。灌进来的行与列举标记都待发：第一台迁移的设备把它们发到位置上，之后迁移的
 /// 设备收到同一条事实就不再发（[ingest]）；全新加入的设备从清单里拿到，不必自己列目录。可重放（按 [Fact::beats] 合并）。
-/// [legacy] 上要注册过 `srs_id`（`store::ids::register`，与 `legacy.rs` 相同）。
+/// [legacy] 上要注册过 `srs_id`（`store::ids::register`，与 `legacy.rs` 相同）。[now_ms] = 本机墙钟（见 [SeenHlc]）。
 pub fn seed_legacy(
     t: &Truth<'_>,
     col: i64,
     legacy: &Connection,
     profile: &str,
+    now_ms: i64,
 ) -> Result<Seeded, String> {
     let mut rows: Vec<(String, [u8; 32], Fact)> = Vec::new();
     let mut out = Seeded::default();
@@ -697,6 +796,7 @@ pub fn seed_legacy(
                     device,
                 },
             };
+            out.seen.see(&fact.hlc, now_ms);
             rows.push((key, sha, fact));
         }
     }
@@ -741,6 +841,7 @@ fn unhex_sha(s: &str) -> Option<[u8; 32]> {
 }
 
 /// 丢掉这个位置的全部缓存与进度（改绑定 / 换根时从头对账）。本机还没发出的观察也一起丢：下一轮对账会重新观察到。
+/// 本机的代号预留（`media_gen`）不丢：位置上可能还留着本机用过那些代号的文件，重用就会撞出同代号、不同内容的两份。
 /// 返回删掉的 `media_at` 行数。
 pub fn forget(t: &Truth<'_>, col: i64, location: &str) -> Result<usize, String> {
     if location.is_empty() {

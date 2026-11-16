@@ -13,6 +13,8 @@ use crate::store::gen4::truth::{Peer, TRUST_PENDING};
 const P: &str = crate::store::sync2::tests::P;
 const LOC: &str = "loc-a";
 const SEALED: &str = "media-e/ab12";
+/// 测试里的本机墙钟（各测试的 HLC 墙钟都远小于它；超前的用 `NOW + MAX_AHEAD_MS + …`）。
+const NOW: i64 = 10_000;
 
 fn id(b: u8) -> Id {
     Id([b; 16])
@@ -97,6 +99,7 @@ impl Dev {
             gen,
             &tag,
             &b.bytes,
+            NOW,
         )
     }
 
@@ -211,23 +214,34 @@ fn recording_writes_only_changes_that_would_win() {
         false,
         100,
     );
-    assert_eq!((r.written, r.unchanged, r.stale), (2, 0, 0));
+    assert_eq!((r.written, r.unchanged, r.lifted), (2, 0, 0));
     // 同一事实再记：不变。
     let r = a.record(
         &[(sha(1), MediaState::Present), (sha(1), MediaState::Present)],
         false,
         200,
     );
-    assert_eq!((r.written, r.unchanged, r.stale), (0, 1, 0));
-    // 改成可疑，但 HLC 比现有的旧：不写。
+    assert_eq!((r.written, r.unchanged, r.lifted), (0, 1, 0));
+    // 改成可疑，但调用方给的 HLC 比现有的旧：观察在读到现有那条之后，盖到它之上写下（不丢）。
     let r = a.record(&[(sha(1), MediaState::Suspect)], false, 50);
-    assert_eq!((r.written, r.unchanged, r.stale), (0, 0, 1));
+    assert_eq!((r.written, r.unchanged, r.lifted), (1, 0, 1));
+    assert_eq!(
+        fact(&a.t(), a.col, LOC, PLAIN_FOLDER, &sha(1)).unwrap(),
+        Some(Fact {
+            state: MediaState::Suspect,
+            hlc: Hlc {
+                wall: 100,
+                logical: 1,
+                device: id(0xa1)
+            }
+        })
+    );
     let r = a.record(
         &[(sha(1), MediaState::Suspect), (sha(3), MediaState::Present)],
         true,
         300,
     );
-    assert_eq!((r.written, r.unchanged, r.stale), (2, 0, 0));
+    assert_eq!((r.written, r.unchanged, r.lifted), (1, 1, 0));
     assert_eq!(
         a.known(),
         MediaKnown {
@@ -238,11 +252,16 @@ fn recording_writes_only_changes_that_would_win() {
         }
     );
     assert_eq!(
-        fact(&a.t(), a.col, LOC, PLAIN_FOLDER, &sha(1)).unwrap(),
-        Some(Fact {
-            state: MediaState::Suspect,
-            hlc: hlc(300, 0xa1)
-        })
+        fact(&a.t(), a.col, LOC, PLAIN_FOLDER, &sha(1))
+            .unwrap()
+            .unwrap()
+            .hlc,
+        Hlc {
+            wall: 100,
+            logical: 1,
+            device: id(0xa1)
+        },
+        "unchanged state keeps its fact"
     );
     assert_eq!(
         fact(&a.t(), a.col, LOC, PLAIN_FOLDER, &sha(9)).unwrap(),
@@ -429,7 +448,8 @@ fn two_devices_converge_and_absence_is_not_lost() {
     mark_published(&a.t(), a.col, LOC, &ma.manifest).unwrap();
     let got = b.ingest(&ma).unwrap();
     assert_eq!((got.applied, got.listed), (2, 1));
-    assert_eq!(got.max_hlc, Some(hlc(100, 0xa1)));
+    assert_eq!(got.seen.max_hlc, Some(hlc(100, 0xa1)));
+    assert!(got.seen.ahead.is_empty());
     assert!(b.known().seeded);
     assert_eq!(
         b.pending(),
@@ -514,7 +534,7 @@ fn ingest_refuses_what_it_cannot_trust_and_writes_nothing() {
     // r 还不认识 a。
     let r = Dev::new(0xee, &[]);
     let go = |locs: &BTreeSet<Id>, dev: &Id, gen: u64, tag: &str, bytes: &[u8]| {
-        ingest(&r.t(), r.col, LOC, locs, dev, gen, tag, bytes)
+        ingest(&r.t(), r.col, LOC, locs, dev, gen, tag, bytes, NOW)
     };
     assert_eq!(
         go(&markers(), &dev, gen, &tag, &ma.bytes),
@@ -595,7 +615,17 @@ fn ingest_refuses_what_it_cannot_trust_and_writes_nothing() {
     );
     // 没绑定的集合。
     assert_eq!(
-        ingest(&r.t(), 999, LOC, &markers(), &dev, gen, &tag, &ma.bytes),
+        ingest(
+            &r.t(),
+            999,
+            LOC,
+            &markers(),
+            &dev,
+            gen,
+            &tag,
+            &ma.bytes,
+            NOW
+        ),
         Err(IngestError::Unbound)
     );
 }
@@ -652,7 +682,8 @@ fn writes_roll_back_with_the_enclosing_transaction() {
                 hlc(1, 0xee),
             )?;
             let (d, g, tag) = named(&m);
-            ingest(t, r.col, LOC, &markers(), &d, g, &tag, &m.bytes).map_err(|e| e.to_string())?;
+            ingest(t, r.col, LOC, &markers(), &d, g, &tag, &m.bytes, NOW)
+                .map_err(|e| e.to_string())?;
             mark_published(t, r.col, LOC, &m.manifest)?;
             Err("boom".into())
         })
@@ -707,7 +738,7 @@ fn a_reader_on_another_connection_sees_only_committed_snapshots() {
                 .unwrap();
                 if i == 50 {
                     let (d, g, tag) = named(&mb);
-                    ingest(&t, col, LOC, &markers(), &d, g, &tag, &mb.bytes).unwrap();
+                    ingest(&t, col, LOC, &markers(), &d, g, &tag, &mb.bytes, NOW).unwrap();
                 }
             }
             done.store(true, std::sync::atomic::Ordering::SeqCst);
@@ -780,7 +811,7 @@ fn seeding_from_protocol_3_carries_content_facts_and_listings() {
         .unwrap();
     let a = Dev::new(0xa1, &[]);
     let w = d.core.writer().unwrap();
-    let s = seed_legacy(&a.t(), a.col, &w, P).unwrap();
+    let s = seed_legacy(&a.t(), a.col, &w, P, NOW).unwrap();
     assert_eq!((s.rows, s.skipped, s.listed), (3, 2, 1));
     assert_eq!(
         a.known(),
@@ -798,14 +829,14 @@ fn seeding_from_protocol_3_carries_content_facts_and_listings() {
     assert_eq!(f.hlc.wall, 1_000);
     // 重放：什么都不变。
     let before = a.dump();
-    assert_eq!(seed_legacy(&a.t(), a.col, &w, P).unwrap().rows, 0);
+    assert_eq!(seed_legacy(&a.t(), a.col, &w, P, NOW).unwrap().rows, 0);
     assert_eq!(a.dump(), before);
     // 第一台发出；第二台同样播种，收到第一台的就没有要发的。
     let ma = a.build(&[]).unwrap();
     assert_eq!(ma.manifest.len(), 3);
     assert!(ma.manifest.sections[PLAIN_FOLDER].listed);
     let b = Dev::new(0xb2, &[0xa1]);
-    seed_legacy(&b.t(), b.col, &w, P).unwrap();
+    seed_legacy(&b.t(), b.col, &w, P, NOW).unwrap();
     let got = b.ingest(&ma).unwrap();
     assert_eq!(got.covered, 3);
     assert_eq!(b.build(&[]), None);
@@ -903,4 +934,254 @@ fn compaction_is_an_upper_bound_of_its_parts() {
     alien.device = id(0xb2);
     assert!(compact(&[parts[0].clone(), alien], marker(), 9).is_err());
     let _ = Section::default();
+}
+
+/// 墙钟超前 `MAX_AHEAD_MS` 以上的设备记下的「在」压不住本机后来的「不在」：本机观察因果上更晚，HLC 盖到它之上
+/// 写下待发；发出去后各设备（含超前的那台、收到顺序不同的第三台）都收敛到「不在」。
+#[test]
+fn a_fact_from_a_clock_far_ahead_does_not_pin_the_location() {
+    let a = Dev::new(0xa1, &[0xb2]);
+    let b = Dev::new(0xb2, &[0xa1]);
+    let ahead_wall = NOW + 3 * 24 * 60 * 60 * 1000;
+    b.record(&[(sha(1), MediaState::Present)], true, ahead_wall);
+    let mb = b.build(&[]).unwrap();
+    mark_published(&b.t(), b.col, LOC, &mb.manifest).unwrap();
+    let got = a.ingest(&mb).unwrap();
+    assert_eq!(got.applied, 1);
+    assert_eq!(
+        got.seen.max_hlc, None,
+        "an ahead HLC is not offered to absorb"
+    );
+    assert_eq!(got.seen.ahead, [id(0xb2)].into_iter().collect());
+    // a 的时钟吸收不了它（Clock::absorb 拒超前），照常 tick 出一个小得多的 HLC 记「不在」。
+    let r = a.record(&[(sha(1), MediaState::Absent)], false, 2_000);
+    assert_eq!((r.written, r.unchanged, r.lifted), (1, 0, 1));
+    let f = fact(&a.t(), a.col, LOC, PLAIN_FOLDER, &sha(1))
+        .unwrap()
+        .unwrap();
+    assert_eq!(f.state, MediaState::Absent);
+    assert_eq!(
+        f.hlc,
+        Hlc {
+            wall: ahead_wall,
+            logical: 1,
+            device: id(0xa1)
+        }
+    );
+    assert_eq!(a.known().absent, vec![sha(1)]);
+    let ma = a.build(&[]).unwrap();
+    assert_eq!(
+        ma.manifest.sections[PLAIN_FOLDER].entries[&sha(1)].state,
+        MediaState::Absent
+    );
+    let got = b.ingest(&ma).unwrap();
+    assert_eq!(got.applied, 1);
+    assert_eq!(b.known(), a.known());
+    for order in [[&ma, &mb], [&mb, &ma]] {
+        let c = Dev::new(0xc3, &[0xa1, 0xb2]);
+        for m in order {
+            c.ingest(m).unwrap();
+        }
+        assert_eq!(c.known(), a.known());
+    }
+}
+
+/// [after]：严格大于输入；logical 满了进位到 wall + 1；wall 也满了报错（record 整批不写）。
+#[test]
+fn after_is_strictly_later_and_carries_logical_overflow() {
+    let h = Hlc {
+        wall: 7,
+        logical: 3,
+        device: id(0xff),
+    };
+    let n = after(&h, id(0x01)).unwrap();
+    assert!(n > h);
+    assert_eq!((n.wall, n.logical, n.device), (7, 4, id(0x01)));
+    let full = Hlc {
+        wall: 7,
+        logical: u32::MAX,
+        device: id(0x01),
+    };
+    let n = after(&full, id(0x01)).unwrap();
+    assert!(n > full);
+    assert_eq!((n.wall, n.logical), (8, 0));
+    let end = Hlc {
+        wall: i64::MAX,
+        logical: u32::MAX,
+        device: id(0x01),
+    };
+    assert!(after(&end, id(0x01)).is_err());
+    // 经 record：现有那条的 logical 已满，抬起来进位。
+    let a = Dev::new(0xa1, &[]);
+    record(
+        &a.t(),
+        a.col,
+        LOC,
+        PLAIN_FOLDER,
+        &[(sha(1), MediaState::Present)],
+        false,
+        full,
+    )
+    .unwrap();
+    a.record(&[(sha(1), MediaState::Absent)], false, 1);
+    let f = fact(&a.t(), a.col, LOC, PLAIN_FOLDER, &sha(1))
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        (f.hlc.wall, f.hlc.logical, f.state),
+        (8, 0, MediaState::Absent)
+    );
+    // 到顶了：报错，整批不写。
+    let z = Dev::new(0xa1, &[]);
+    record(
+        &z.t(),
+        z.col,
+        LOC,
+        PLAIN_FOLDER,
+        &[(sha(1), MediaState::Present)],
+        false,
+        end,
+    )
+    .unwrap();
+    let before = z.dump();
+    assert!(
+        record(
+            &z.t(),
+            z.col,
+            LOC,
+            PLAIN_FOLDER,
+            &[(sha(2), MediaState::Present), (sha(1), MediaState::Absent)],
+            false,
+            hlc(1, 0xa1),
+        )
+        .is_err()
+    );
+    assert_eq!(z.dump(), before);
+}
+
+/// `seen.max_hlc` 只取不超前的：一份清单里混了超前的，正常范围的那条仍交给调用方吸收；播种同口径。
+#[test]
+fn ahead_hlcs_are_kept_out_of_what_the_caller_absorbs() {
+    let a = Dev::new(0xa1, &[0xb2]);
+    let b = Dev::new(0xb2, &[0xa1]);
+    b.record(
+        &[(sha(1), MediaState::Present)],
+        false,
+        NOW + 2 * 24 * 60 * 60 * 1000,
+    );
+    b.record(&[(sha(2), MediaState::Present)], false, 5_000);
+    let mb = b.build(&[]).unwrap();
+    let got = a.ingest(&mb).unwrap();
+    assert_eq!(got.seen.max_hlc, Some(hlc(5_000, 0xb2)));
+    assert_eq!(got.seen.ahead, [id(0xb2)].into_iter().collect());
+    let mut clock = crate::sync2::hlc::Clock::new(id(0xa1));
+    assert!(!clock.absorb(got.seen.max_hlc.unwrap(), NOW).ahead);
+    assert_eq!(clock.last.wall, 5_000);
+    // 整份跳过的：什么都没读，seen 为空。
+    let again = a.ingest(&mb).unwrap();
+    assert!(again.already);
+    assert_eq!(again.seen, SeenHlc::default());
+    // 播种：同一批旧事实，本机墙钟正常时给最大 HLC；墙钟远落后时全算超前。
+    let d = crate::store::sync2::tests::Device::new("g4-media-seed-seen");
+    let hex = |x: u8| -> String { format!("{x:02x}").repeat(32) };
+    d.core
+        .sync2_media_record_with_suspect(
+            P,
+            "loc-a/media#sha256",
+            &[hex(1)],
+            &[hex(2)],
+            &[],
+            true,
+            1_000,
+        )
+        .unwrap();
+    let w = d.core.writer().unwrap();
+    let s = seed_legacy(&a.t(), a.col, &w, P, NOW).unwrap();
+    let top = s.seen.max_hlc.unwrap();
+    assert!(top.wall >= 1_000, "{top:?}");
+    assert!(s.seen.ahead.is_empty());
+    let s = seed_legacy(&a.t(), a.col, &w, P, top.wall - MAX_AHEAD_MS - 1).unwrap();
+    assert_eq!(s.seen.max_hlc, None);
+    assert_eq!(s.seen.ahead, [top.device].into_iter().collect());
+}
+
+/// 代号持久预留：上传后没来得及 mark_published 就崩了、下一轮列目录又没列出刚传的那份（网盘列举滞后），再发的也
+/// 绝不与它同代号；读者两份都收。没东西发不烧代号；forget 之后也不重用。
+#[test]
+fn a_gen_is_never_reused_even_when_the_listing_lags() {
+    let a = Dev::new(0xa1, &[]);
+    let r = Dev::new(0xee, &[0xa1]);
+    a.record(&[(sha(1), MediaState::Present)], false, 100);
+    let first = a.build(&[]).unwrap();
+    assert_eq!(first.manifest.gen, 1);
+    // 「崩溃」，重启后待发集合变了，列目录（滞后）什么都没列出。
+    a.record(&[(sha(2), MediaState::Present)], false, 200);
+    let second = a.build(&[]).unwrap();
+    assert_eq!(
+        second.manifest.gen, 2,
+        "a reserved gen is never handed out twice"
+    );
+    assert_ne!(first.name, second.name);
+    let pg = pending_gens(&r.t(), r.col, LOC, &id(0xa1), &[1, 2]).unwrap();
+    assert_eq!(pg, vec![1, 2]);
+    assert_eq!(r.ingest(&first).unwrap().applied, 1);
+    let got = r.ingest(&second).unwrap();
+    assert_eq!(
+        (got.applied, got.covered),
+        (1, 1),
+        "the second file is read, not skipped"
+    );
+    assert_eq!(r.known().present, vec![sha(1), sha(2)]);
+    mark_published(&a.t(), a.col, LOC, &second.manifest).unwrap();
+    assert_eq!(a.build(&[]), None);
+    assert_eq!(
+        reserve_gen(&a.t(), a.col, LOC, &id(0xa1), &[]).unwrap(),
+        3,
+        "an empty build reserved nothing"
+    );
+    // 换根 / 从头对账：水位清了，预留不清。
+    forget(&a.t(), a.col, LOC).unwrap();
+    assert_eq!(watermark(&a.t(), a.col, LOC, &id(0xa1)).unwrap(), 0);
+    a.record(&[(sha(3), MediaState::Present)], false, 300);
+    assert_eq!(a.build(&[]).unwrap().manifest.gen, 4);
+    // 位置上列出更大的代号（别的副本 / 旧库发的）：照样压过。
+    assert_eq!(a.build(&[9]).unwrap().manifest.gen, 10);
+    // 预留跟着事务走：外层事务回滚，预留也回滚（没提交的代号没人见过，可以再用）。
+    let t = a.t();
+    let e = t
+        .tx(|t| {
+            reserve_gen(t, a.col, LOC, &id(0xa1), &[])?;
+            Err::<(), String>("boom".into())
+        })
+        .unwrap_err();
+    assert_eq!(e, "boom");
+    assert_eq!(reserve_gen(&a.t(), a.col, LOC, &id(0xa1), &[]).unwrap(), 11);
+    // 按位置、按设备分开。
+    assert_eq!(
+        reserve_gen(&a.t(), a.col, "loc-b", &id(0xa1), &[]).unwrap(),
+        1
+    );
+    assert_eq!(reserve_gen(&a.t(), a.col, LOC, &id(0xa2), &[]).unwrap(), 1);
+    assert!(reserve_gen(&a.t(), a.col, "", &id(0xa1), &[]).is_err());
+}
+
+/// mark_published 要状态与 HLC 都相同才清：打包后本机改「不在」又改回「在」，状态与打包时相同但 HLC 更大，这条
+/// 仍待发（误清就发不出去，吸收过别人更新事实的设备从此分叉）。
+#[test]
+fn publishing_keeps_a_fact_rewritten_to_the_same_state_with_a_newer_hlc() {
+    let a = Dev::new(0xa1, &[]);
+    a.record(&[(sha(1), MediaState::Present)], false, 100);
+    let b = a.build(&[]).unwrap();
+    a.record(&[(sha(1), MediaState::Absent)], false, 200);
+    a.record(&[(sha(1), MediaState::Present)], false, 300);
+    assert_eq!(mark_published(&a.t(), a.col, LOC, &b.manifest).unwrap(), 0);
+    assert_eq!(a.pending(), 1);
+    let next = a.build(&[]).unwrap();
+    assert_eq!(
+        next.manifest.sections[PLAIN_FOLDER].entries[&sha(1)],
+        Fact {
+            state: MediaState::Present,
+            hlc: hlc(300, 0xa1)
+        }
+    );
 }
