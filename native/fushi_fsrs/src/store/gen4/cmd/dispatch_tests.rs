@@ -33,9 +33,9 @@ use crate::store::sync2::tests::{DAY, Device, P, edit, review, tempdir};
 
 type Files = Vec<(String, Vec<u8>)>;
 
-const T1: i64 = T0 + 3 * DAY;
+pub(super) const T1: i64 = T0 + 3 * DAY;
 
-fn cfg() -> Value {
+pub(super) fn cfg() -> Value {
     json!({"defaultDeck": default_deck_id(P)})
 }
 
@@ -51,7 +51,7 @@ fn take_error(err: *mut std::ffi::c_char) -> String {
 }
 
 /// 经 C ABI 打开 [dir]（[mode] 0 = Primary，1 = Secondary）。
-fn open(dir: &Path, mode: i32) -> Result<*mut SrsCoreHandle, (i32, String)> {
+pub(super) fn open(dir: &Path, mode: i32) -> Result<*mut SrsCoreHandle, (i32, String)> {
     let p = dir.to_str().unwrap();
     let (mut h, mut err) = (null_mut(), null_mut());
     let rc = ffsrs_store_open_mode(p.as_ptr(), p.len(), mode, &mut h, &mut err);
@@ -65,7 +65,7 @@ fn open(dir: &Path, mode: i32) -> Result<*mut SrsCoreHandle, (i32, String)> {
 }
 
 /// 经 `ffsrs_store_sync2` 发一条命令（[items] = `apply` 一类命令的输入项，第一个字节块）。回包解帧成 (JSON, 文件)。
-fn call(
+pub(super) fn call(
     h: *mut SrsCoreHandle,
     req: &Value,
     items: Option<&[Value]>,
@@ -117,7 +117,7 @@ fn call(
 }
 
 /// 新代一侧的请求：`{op, profile, now}` 加 [extra]。
-fn g4req(op: &str, now: i64, extra: Value) -> Value {
+pub(super) fn g4req(op: &str, now: i64, extra: Value) -> Value {
     let mut req = json!({"op": op, "profile": P, "now": now});
     for (k, v) in extra.as_object().cloned().unwrap_or_default() {
         req[k.as_str()] = v;
@@ -125,7 +125,7 @@ fn g4req(op: &str, now: i64, extra: Value) -> Value {
     req
 }
 
-fn g4(h: *mut SrsCoreHandle, op: &str, now: i64, extra: Value) -> Value {
+pub(super) fn g4(h: *mut SrsCoreHandle, op: &str, now: i64, extra: Value) -> Value {
     g4_files(h, op, now, extra, None).0
 }
 
@@ -141,7 +141,13 @@ fn g4_files(
 }
 
 /// 协议 3 一侧：经协议 3 的分发器（`sync2_dispatch`）发同一条命令（带协议 3 要的 `caches` / 旧版时钟参数）。
-fn p3(d: &Device, op: &str, now: i64, extra: Value, items: Option<&[Value]>) -> (Value, Files) {
+pub(super) fn p3(
+    d: &Device,
+    op: &str,
+    now: i64,
+    extra: Value,
+    items: Option<&[Value]>,
+) -> (Value, Files) {
     let mut req = json!({
         "op": op, "profile": P, "now": now, "caches": cfg(), "legacyDevice": "dev", "tickNow": now,
     });
@@ -159,10 +165,10 @@ fn p3(d: &Device, op: &str, now: i64, extra: Value, items: Option<&[Value]>) -> 
 }
 
 /// 迁移前的协议 3 库与它迁移出来的新代库（经 C ABI 打开）。
-struct Migrated {
-    d: Device,
-    h: *mut SrsCoreHandle,
-    dir: tempdir::Dir,
+pub(super) struct Migrated {
+    pub(super) d: Device,
+    pub(super) h: *mut SrsCoreHandle,
+    pub(super) dir: tempdir::Dir,
 }
 
 impl Drop for Migrated {
@@ -189,7 +195,7 @@ fn legacy_copy(d: &Device, tag: &str) -> tempdir::Dir {
     _dir
 }
 
-fn migrated() -> Migrated {
+pub(super) fn migrated() -> Migrated {
     migrated_with(false)
 }
 
@@ -740,7 +746,6 @@ fn a_migration_cancelled_before_it_starts_does_nothing() {
 fn unwired_and_removed_commands_name_their_owner() {
     let m = migrated();
     for (op, owner) in [
-        ("identity", "G9-4"),
         ("profile_merge_mark", "G9-5"),
         ("plan", "G8-7"),
         ("import", "G11-3"),

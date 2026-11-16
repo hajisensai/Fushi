@@ -202,6 +202,16 @@ pub fn device_info(t: &Truth<'_>, col: i64, req: &Value) -> Result<Value, String
     })
 }
 
+/// 本机在集合 [col] 里的人读名（昵称，没有就是型号；都没设过 = 空串）：`identity` 回包的 `name`（`cmd/identity.rs`），
+/// 与 `device_info` 回包的 `name` 同一个取法。
+pub(super) fn self_name(t: &Truth<'_>, col: i64) -> Result<String, String> {
+    let m = parse_obj(meta_get(t, &self_info_key(col))?);
+    Ok(self_view(&m, false)["name"]
+        .as_str()
+        .unwrap_or_default()
+        .to_owned())
+}
+
 fn self_view(m: &Map<String, Value>, changed: bool) -> Value {
     let nick = str_of(m, "nick");
     json!({
