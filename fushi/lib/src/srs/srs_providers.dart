@@ -317,9 +317,6 @@ srsStoreProvider = FutureProvider<SrsDbStore?>((Ref ref) async {
       profileUid: profileUid,
       deviceId: deviceId,
       engine: engine,
-      // 旧库迁移推迟到首次同步确认之后、第一轮上传之前，先从同步位置收一轮再迁移（BUG-4011，
-      // SrsSyncScheduler.ensureMigrated）。确认弹框没回答前不迁移也不拉。
-      deferMigration: true,
       // 复习的「今天」与统计页共用日界（stats_day_reset_hour）；profile 设置里
       // 有同步来的翻日时刻时以它为准（见 SrsDbStore.dayContext）。
       fallbackRolloverHour: rolloverHour,
@@ -327,13 +324,11 @@ srsStoreProvider = FutureProvider<SrsDbStore?>((Ref ref) async {
       styles: SrsStyleStore(SrsStyleStore.directoryFor(support, profileUid)),
     ),
   );
-  // 存量去重在后台分批跑，不挡打开；store 换掉（切 profile / 关模块）或副本开始作废时停下，下次从断点续。
+  // 后台维护在 store 换掉（切 profile / 关模块）或副本开始作废时停下，下次从断点续。（协议 3 的存量样式去重
+  // `compactStoredStyles` 改的是协议 3 的存储表示，新代没有，已删。）
   bool disposed = false;
   ref.onDispose(() => disposed = true);
   bool shouldStop() => disposed || store.isWindingDown;
-  srsRunLogged('srsCompactStoredStyles', () async {
-    await store.compactStoredStyles(shouldStop: shouldStop);
-  });
   // 媒体保留期回收：只被「删除已满 90 天」的笔记引用的本机媒体（srs_purge.dart）。历史本身永久保留。
   srsRunLogged('srsPurgeExpiredTombstones', () async {
     await srsPurgeExpiredTombstones(

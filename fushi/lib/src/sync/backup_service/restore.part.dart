@@ -751,16 +751,16 @@ class BackupRestoreService {
         await srcMigrate.close();
       }
       if (srsEntryName != null) {
-        srcSrs = await SrsStorage.open(path: srcSrsPath);
+        srcSrs = await SrsStorage.open(directory: p.dirname(srcSrsPath));
       }
       final FushiDatabase db = FushiDatabase(dbDirectory);
       try {
         // 覆盖进来的老 SRS 表挂在备份的 uid 上（孤儿）：删掉，下面按档案重新归位。不删的话，
         // 本机 srs.db 重开时的一次性搬迁会把它们原样搬进去。
         await dropLegacySrsTables(db);
-        await _deleteSrsDbFiles(SrsStorage.pathIn(dbDirectory));
+        await _deleteSrsDbFiles(SrsStorage.legacyPathIn(dbDirectory));
         final SrsStorage local = await SrsStorage.open(
-          path: SrsStorage.pathIn(dbDirectory),
+          directory: dbDirectory,
           legacy: db,
         );
         try {
@@ -892,7 +892,7 @@ class BackupRestoreService {
 
   /// [_srsPlanReplace] 的暂存文件（与 srs.db 同目录，换文件是同盘 rename）。
   static String _srsStagedPath(String dbDirectory) =>
-      '${SrsStorage.pathIn(dbDirectory)}.restore-new';
+      '${SrsStorage.legacyPathIn(dbDirectory)}.restore-new';
 
   /// 删 srs.db 及其 -wal / -shm（-wal 先删：残留的 WAL 帧绝不能重放到换进来的库上）。
   static Future<void> _deleteSrsDbFiles(String srsPath) async {
@@ -907,7 +907,7 @@ class BackupRestoreService {
     String dbDirectory,
     String plan,
   ) async {
-    final String srsPath = SrsStorage.pathIn(dbDirectory);
+    final String srsPath = SrsStorage.legacyPathIn(dbDirectory);
     switch (plan) {
       case _srsPlanReplace:
         final File staged = File(_srsStagedPath(dbDirectory));
@@ -1871,12 +1871,11 @@ class BackupRestoreService {
       try {
         if (mergeSrs) {
           // 调用方关库时已关 app 的 SRS 存储；这里自己开一份（主进程，带一次性搬迁）。
-          localSrs = await SrsStorage.open(
-            path: SrsStorage.pathIn(dbDirectory),
-            legacy: db,
-          );
+          localSrs = await SrsStorage.open(directory: dbDirectory, legacy: db);
           if (srsFile != null) {
-            sourceSrs = await SrsStorage.open(path: mergeSrcSrsPath);
+            sourceSrs = await SrsStorage.open(
+              directory: p.dirname(mergeSrcSrsPath),
+            );
           }
         }
         final String safeSrc = mergeSrcPath

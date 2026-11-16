@@ -508,9 +508,7 @@ class ServerSrs {
     }
     final SrsStorage storage;
     try {
-      storage = _storage ??= await SrsStorage.open(
-        path: SrsStorage.pathIn(support.path),
-      );
+      storage = _storage ??= await SrsStorage.open(directory: support.path);
     } catch (e, stack) {
       // 原生库 libfushi_fsrs 不在 / srs.db 打不开：各份标成出错，服务照常起（其余功能不受影响），兜底定时器再试。
       engineLog.log('ServerSrs.storage', e, stack);
