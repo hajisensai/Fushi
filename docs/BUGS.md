@@ -33,6 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
+> 共 4104 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4747](bugs/BUG-4747-manga-series-key-episode-suffix.md) | ✅ | ✅ | 漫画「第N話 前編 [hash]」按话发布的各话没并成系列合集 |
 > 共 4106 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
