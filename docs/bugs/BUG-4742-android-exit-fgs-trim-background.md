@@ -1,4 +1,4 @@
-## BUG-4718 · android-exit-fgs-trim-background
+## BUG-4742 · android-exit-fgs-trim-background
 - **报告**：2026-11-16（用户：应用内反馈 gTrf6djABo，经拍板台 gTrf6djABo 定「怎么根本性怎么来」）
 - **真实性**：✅ 真 bug。pid 19272 前台服务（importance=125）时被 LOW_MEMORY 杀，死前 28 分钟同一 pid 已收到 `TRIM_MEMORY_BACKGROUND`，会话标记却是别的进程的（中间夹了一个 `PRESTART WITHOUT START ACTIVITY`、Flutter 没起来的进程），对不上。`fushi/lib/src/diagnostics/previous_exit_log.dart` 的 `androidDiedInForeground`（101–125 只看会话标记，对不上按前台）→ `memoryKill + foreground=true` → 弹「低内存闪退」报告。根因是「死时界面在不在屏幕上」只有 Dart 会话标记一个来源，而标记只认得写它的那个进程；原生侧既没有按 pid 记界面可见性，也没用已经记着的同 pid trim 级别。
 - **[x] ① 已修复** — 原生 `ProcessExitChannel.installUiVisibilityTracking`（`FushiApplication.onCreate` 主进程装）按 pid 同步落盘界面可见 / 不可见切换，随 `consumeExitReports` 交出（本进程的留着）；trim / 可见性两个事件环加锁防 consume 覆盖。Dart `androidUiVisibleAtDeath` 把同 pid、死前的可见性切换与「界面已隐藏」trim（UI_HIDDEN / BACKGROUND / MODERATE；COMPLETE 与 onLowMemory 同值、RUNNING_* 前台也收，都不算）合成最晚一条证据，`androidDiedInForeground` 在 101–125 按「原生证据 → 会话标记 → 按前台」依次判；ApplicationExitInfo 条目与会话标记推断共用。
