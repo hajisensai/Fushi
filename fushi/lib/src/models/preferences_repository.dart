@@ -4381,6 +4381,15 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  // 首页小组件网格布局（JSON，见 models/home_widget_layout.dart）。空串 = 没编辑过。
+  String get homeWidgetLayout =>
+      getPref('home_widget_layout', defaultValue: '') as String;
+
+  Future<void> setHomeWidgetLayout(String json) async {
+    await setPref('home_widget_layout', json);
+    notifyListeners();
+  }
+
   // 复习卡片浏览器的保存视图（JSON 数组，见 SrsBrowseSavedView）。空串 = 没有。
   String get srsBrowseSavedViews =>
       getPref('srs_browse_saved_views', defaultValue: '') as String;
