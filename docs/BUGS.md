@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4096 条。点号进各自文件。
+> 共 4097 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4740](bugs/BUG-4740-android-share-copy-main-thread-anr.md) | ✅ | ✅ | Android 分享在主线程同步拷贝整份文件导致 ANR |
 | [BUG-4739](bugs/BUG-4739-manga-spread-seam.md) | ✅ | ✅ | 漫画双页模式两页之间有一条细缝 |
 | [BUG-4738](bugs/BUG-4738-mihon-android-host-appinfo.md) | ✅ | ✅ | Android Mihon 宿主缺 eu.kanade.tachiyomi.AppInfo，MangaDex 等调用它的扩展 NoClassDefFoundError |
 | [BUG-4737](bugs/BUG-4737-browser-adblock-cold-engine.md) | ✅ | ✅ | 内置浏览器广告拦截在联网刷新过期列表期间整页失效 |
