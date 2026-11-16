@@ -361,12 +361,30 @@ class SourceReviewBanner extends StatelessWidget {
   /// 横幅把标题和按钮并成单行；更高的窗口保持「标题一行 + 按钮一行」。
   static const double compactHeightBreakpoint = 480;
 
+  /// 单行横幅的内容高（不含系统顶 inset）＝按钮的 48dp 命中区。
+  static const double compactContentHeight = 48;
+
+  /// 两行横幅的内容高上限（不含系统顶 inset）：上下各 4 + 标题至多两行 + 48dp 按钮行。
+  static const double regularContentHeight = 100;
+
+  /// 单行布局里标题至少留的宽度；按钮条按内容取宽，只在挤占这一截时才横向滚动。
+  static const double _compactTitleMinWidth = 96;
+  static const double _compactGap = 8;
+
+  /// 窗口 [windowSize] 下横幅是否并成单行（M3 compact height）。
+  static bool isCompactHeight(Size windowSize) =>
+      windowSize.height < compactHeightBreakpoint;
+
+  /// 把横幅放进固定高槽位的页面（阅读器）按这个值预留内容高，与横幅自己的
+  /// 单行 / 两行判断同源——不能另写一个与窗口高无关的常数。
+  static double reservedContentHeight(Size windowSize) =>
+      isCompactHeight(windowSize) ? compactContentHeight : regularContentHeight;
+
   @override
   Widget build(BuildContext context) {
     session.attachContext(context);
     final bool isVideo = session.link.kind == CardSourceKind.video;
-    final bool compact =
-        MediaQuery.sizeOf(context).height < compactHeightBreakpoint;
+    final bool compact = isCompactHeight(MediaQuery.sizeOf(context));
     return SourceReviewControls(
       child: ListenableBuilder(
         listenable: session,
@@ -393,14 +411,33 @@ class SourceReviewBanner extends StatelessWidget {
                   vertical: compact ? 0 : 4,
                 ),
                 child: compact
-                    // 单行：标题与按钮条各按内容取宽，放不下时标题先省略、按钮条
-                    // 自己横向滚动——两者都不会把这一行撑高。
-                    ? Row(
-                        children: <Widget>[
-                          Flexible(child: title),
-                          const SizedBox(width: 8),
-                          Flexible(child: buttons),
-                        ],
+                    // 单行：按钮条按内容取宽（有草稿时四颗按钮也优先摆全），标题拿剩下
+                    // 的宽度并省略；只有按钮多到挤占标题保底宽度时按钮条才横向滚动。
+                    // 两者都不会把这一行撑高。
+                    ? LayoutBuilder(
+                        builder:
+                            (BuildContext context, BoxConstraints constraints) {
+                              final double buttonsMaxWidth =
+                                  (constraints.maxWidth -
+                                          _compactTitleMinWidth -
+                                          _compactGap)
+                                      .clamp(0.0, constraints.maxWidth);
+                              return SizedBox(
+                                height: compactContentHeight,
+                                child: Row(
+                                  children: <Widget>[
+                                    Expanded(child: title),
+                                    const SizedBox(width: _compactGap),
+                                    ConstrainedBox(
+                                      constraints: BoxConstraints(
+                                        maxWidth: buttonsMaxWidth,
+                                      ),
+                                      child: buttons,
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
                       )
                     : Column(
                         mainAxisSize: MainAxisSize.min,
