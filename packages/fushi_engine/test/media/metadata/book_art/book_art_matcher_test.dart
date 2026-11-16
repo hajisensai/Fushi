@@ -85,6 +85,18 @@ void main() {
       );
     });
 
+    test('前缀里含代理对（补充平面字符）时分隔符与副标题仍按边界切', () {
+      expect(
+        compareBookTitles('𠮷野家の𩸽', '𠮷野家の𩸽 -the Beautiful World-'),
+        BookArtTitleTier.prefixSubtitle,
+      );
+      expect(
+        compareBookTitles('𠮷野家の𩸽 -the Beautiful World-', '𠮷野家の𩸽'),
+        BookArtTitleTier.localExtends,
+      );
+      expect(compareBookTitles('𠮷野家の𩸽', '𠮷野家の𩸽𩸽'), BookArtTitleTier.none);
+    });
+
     test('拉丁衍生词按整词比：副标题里的 class 不算 ss', () {
       expect(
         compareBookTitles('Assassination', 'Assassination - the classroom'),

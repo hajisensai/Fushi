@@ -321,11 +321,10 @@ BookArtTitleTier? _prefixTier(
 }) {
   if (shorter.isEmpty || longer.length <= shorter.length) return null;
   if (!longer.startsWith(shorter)) return null;
-  final int next = longer.runes.elementAt(shorter.runes.length);
-  if (!_isSeparator(next)) return null;
-  final String remainderLight = String.fromCharCodes(
-    longer.runes.skip(shorter.runes.length),
-  );
+  // startsWith 已保证代码单元下标 shorter.length 落在 shorter 的结尾边界上，
+  // 且 longer 更长 → 余下部分非空，不必按码点计数。
+  final String remainderLight = longer.substring(shorter.length);
+  if (!_isSeparator(remainderLight.runes.first)) return null;
   if (strictBookTitleKey(remainderLight).isEmpty) {
     return BookArtTitleTier.strict;
   }
