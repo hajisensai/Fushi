@@ -8,8 +8,8 @@ import app.fushi.reader.BuildConfig
  * `source-api`, so `prepareMihonSourceApi` never brings it in; the Android host
  * has to declare it itself (BUG-4695). Extensions compile it `compileOnly` and
  * resolve `AppInfo.INSTANCE.getVersionName()` etc. by name at runtime, so the
- * shape must stay a Kotlin `object` with plain instance methods (no
- * `@JvmStatic`), and R8 must keep it (proguard-rules.pro, Mihon host ABI block).
+ * shape must stay a Kotlin `object` with instance methods of exactly these
+ * signatures, and R8 must keep it (proguard-rules.pro, Mihon host ABI block).
  *
  * Version values differ between forks; extensions only use them for
  * User-Agent strings.

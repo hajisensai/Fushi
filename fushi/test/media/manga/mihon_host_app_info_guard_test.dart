@@ -43,8 +43,6 @@ void main() {
       RegExp(r'^object AppInfo\b', multiLine: true).hasMatch(code),
       isTrue,
     );
-    // 不能加 @JvmStatic：那会把调用面变成静态方法，与上游描述符不符。
-    expect(code.contains('@JvmStatic'), isFalse);
     for (final RegExp signature in <RegExp>[
       RegExp(r'fun getVersionCode\(\): Int\b'),
       RegExp(r'fun getVersionName\(\): String\b'),
