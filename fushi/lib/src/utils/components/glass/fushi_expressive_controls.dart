@@ -936,6 +936,10 @@ class _FushiFabDefaultHeroTag {
 /// `maxLines` / `ellipsis` 永远不触发，长文字直接画出按钮外。所以图标与文字
 /// 由这里自己排：外层按 [maxWidth]（父级上限减掉左右 extendedPadding）收口，
 /// 文字放 [Flexible] 里单行省略；短文字仍按内容收窄。
+///
+/// 限制：带文字的 [FushiFab] 外层因此套了一层 [LayoutBuilder]，它不支持
+/// intrinsic / dry layout。不要把带文字的 FushiFab 放进 [IntrinsicWidth] /
+/// [IntrinsicHeight] 或会对子节点调 `getDryLayout` 的容器，否则 debug 下断言。
 class _FushiFabExtendedContent extends StatelessWidget {
   const _FushiFabExtendedContent({
     required this.icon,
