@@ -310,8 +310,8 @@ class MusicTrackSelectionBarHost extends StatelessWidget {
             child: Material(
               color: Theme.of(context).colorScheme.surfaceContainer,
               elevation: 3,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(28),
+              shape: const RoundedRectangleBorder(
+                borderRadius: FushiM3eShape.containerLargeRadius,
               ),
               clipBehavior: Clip.antiAlias,
               child: bar,

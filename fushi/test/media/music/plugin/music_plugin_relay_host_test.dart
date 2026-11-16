@@ -8,7 +8,7 @@ import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
 import 'package:crypto/crypto.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/media/music/plugin/music_plugin_relay_host.dart';
 import 'package:fushi_engine/sync/interconnect_plugin_relay.dart';
 import 'package:fushi_music/fushi_music.dart';
