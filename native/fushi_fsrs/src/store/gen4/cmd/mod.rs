@@ -53,6 +53,7 @@ use crate::sync2::id::Key;
 use crate::sync2::op::EntKind;
 use crate::sync2::vv::OpId;
 
+pub mod backup;
 pub mod browse;
 pub mod center;
 pub mod columns;
@@ -76,6 +77,8 @@ pub mod writes_intent;
 pub mod writes_local;
 pub mod writes_restore;
 
+#[cfg(test)]
+mod backup_tests;
 #[cfg(test)]
 mod browse_tests;
 #[cfg(test)]

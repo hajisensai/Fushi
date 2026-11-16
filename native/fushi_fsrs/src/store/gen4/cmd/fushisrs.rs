@@ -307,18 +307,18 @@ pub fn export(
 
 // ---------------------------------------------------------------------- import
 
-/// 清单里归内核的部分（模块文件头）。
-struct Manifest {
-    collection: Id,
-    dir: String,
-    salts: BTreeSet<String>,
-    peers: Vec<Peer>,
+/// 清单里归内核的部分（模块文件头）。整包备份里协议 3 旧库的读入（`cmd/backup.rs`）按同一形状拼出来、走同一道确认。
+pub(super) struct Manifest {
+    pub(super) collection: Id,
+    pub(super) dir: String,
+    pub(super) salts: BTreeSet<String>,
+    pub(super) peers: Vec<Peer>,
 }
 
 /// 同一个集合 / 早已并入的文件带来、要用户确认才落的身份变化（模块文件头第 1 步）：本机还不算数的盐、本机还不认识的设备
 /// （清单 `peers` 里不是本机、也没记过公钥的）。另一个集合（`collection_adopt` 本来就问）或还没绑定时 = None；没有新东西
 /// 也是 None。只读。
-fn unconfirmed_identity(
+pub(super) fn unconfirmed_identity(
     t: &Truth<'_>,
     profile: &str,
     m: &Manifest,

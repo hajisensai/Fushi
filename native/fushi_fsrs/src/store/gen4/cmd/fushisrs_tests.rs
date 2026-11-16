@@ -76,13 +76,18 @@ fn call_blob(h: *mut SrsCoreHandle, req: &Value, blob: &[u8]) -> Result<Value, S
     Ok(serde_json::from_slice(&b[4..4 + n]).unwrap())
 }
 
-fn as_profile(profile: &str, op: &str, extra: Value) -> Value {
+pub(super) fn as_profile(profile: &str, op: &str, extra: Value) -> Value {
     let mut req = g4req(op, T1, extra);
     req["profile"] = json!(profile);
     req
 }
 
-fn try_g4(h: *mut SrsCoreHandle, profile: &str, op: &str, extra: Value) -> Result<Value, String> {
+pub(super) fn try_g4(
+    h: *mut SrsCoreHandle,
+    profile: &str,
+    op: &str,
+    extra: Value,
+) -> Result<Value, String> {
     call(h, &as_profile(profile, op, extra), None)
         .map(|r| r.0)
         .map_err(|(_, e)| e)
@@ -121,7 +126,7 @@ fn import_path(
 }
 
 /// 新代库文件的只读连接。
-fn reader(dir: &Path) -> Connection {
+pub(super) fn reader(dir: &Path) -> Connection {
     Connection::open_with_flags(
         dir.join(GEN4_FILE),
         OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
@@ -129,19 +134,19 @@ fn reader(dir: &Path) -> Connection {
     .unwrap()
 }
 
-fn col_in(c: &Connection, profile: &str) -> i64 {
+pub(super) fn col_in(c: &Connection, profile: &str) -> i64 {
     Truth::new(c).binding_of(profile).unwrap().unwrap().col
 }
 
 /// 本机身份的设备 ID（`identity` 已建过）。
-fn self_device(h: *mut SrsCoreHandle, profile: &str) -> Id {
+pub(super) fn self_device(h: *mut SrsCoreHandle, profile: &str) -> Id {
     let v = try_g4(h, profile, "identity", json!({})).unwrap();
     Id::parse(v["device"].as_str().unwrap()).unwrap()
 }
 
 /// 派生表逐行：操作主键 `k` 换成「设备:seq」（设备下标是各库的落库顺序），去掉 `col`；`k` 属于 [skip] 里设备的行不算
 /// （导入方 / 导出方各自的本机原生日志）。
-fn derived(dir: &Path, profile: &str, skip: &[Id]) -> Vec<String> {
+pub(super) fn derived(dir: &Path, profile: &str, skip: &[Id]) -> Vec<String> {
     let c = reader(dir);
     let t = Truth::new(&c);
     let col = col_in(&c, profile);
@@ -195,7 +200,7 @@ fn stream(bytes: &[u8], skip: &[Id]) -> Vec<String> {
     out
 }
 
-fn export_bytes(h: *mut SrsCoreHandle, profile: &str) -> Vec<u8> {
+pub(super) fn export_bytes(h: *mut SrsCoreHandle, profile: &str) -> Vec<u8> {
     let (_, files) = call(h, &as_profile(profile, "export", json!({})), None).unwrap();
     assert_eq!(files.len(), 1);
     assert_eq!(files[0].0, "ops.bin");
@@ -203,7 +208,7 @@ fn export_bytes(h: *mut SrsCoreHandle, profile: &str) -> Vec<u8> {
 }
 
 /// `peers` 逐行（设备、公钥、名字）。
-fn peer_lines(dir: &Path, profile: &str) -> BTreeSet<String> {
+pub(super) fn peer_lines(dir: &Path, profile: &str) -> BTreeSet<String> {
     let c = reader(dir);
     let col = col_in(&c, profile);
     let mut stmt = c
@@ -253,7 +258,7 @@ fn apply_edit(h: *mut SrsCoreHandle, profile: &str, note: &str, key: &str, v: Va
 }
 
 /// 全新库：经 `identity` 建出 [profile] 的集合（`collection_of(uid)`，目录名 = uid）与本机身份，配好缓存。
-fn fresh(tag: &str, profile: &str) -> (tempdir::Dir, *mut SrsCoreHandle) {
+pub(super) fn fresh(tag: &str, profile: &str) -> (tempdir::Dir, *mut SrsCoreHandle) {
     let dir = tempdir::new(tag);
     let h = open(&dir.0, 0).unwrap();
     try_g4(h, profile, "identity", json!({})).unwrap();

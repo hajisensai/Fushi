@@ -320,7 +320,8 @@ pub extern "C" fn ffsrs_store_legacy_mark_none(
     run_core(core, error_out, |c| c.legacy_mark_none())
 }
 
-/// `VACUUM INTO` 一份快照；`strip_device_local != 0` 时清空设备本地表。
+/// 新代库的整库一致快照（`G4Core::snapshot_into`，G11-4：`VACUUM INTO`，读不挡写；Secondary 报只读；
+/// `strip_device_local != 0` 报错——新代的 app 备份是按集合导出的流，不是剥了本机表的快照）。
 #[no_mangle]
 pub extern "C" fn ffsrs_store_snapshot(
     core: *const SrsCoreHandle,
