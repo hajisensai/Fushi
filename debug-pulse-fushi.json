@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-16T07:43:41Z",
+ "generatedAt": "2026-11-16T08:41:11Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "1846972959eb376db3f6836a6338afca32c48c47",
-  "seq": 27582
+  "sha": "145ab69b9423173dd009a0e909f2ca9cdc4091d7",
+  "seq": 27668
  },
  "builds": [
   {
@@ -13,7 +13,7 @@
    "sha": "a76f9dabda27195f29ab8144a16d35c22bd20d19",
    "unknown": false,
    "publishedAt": "2026-11-16T07:43:28Z",
-   "testflight": false,
+   "testflight": true,
    "baseSeq": 27441,
    "prs": [
     3459,
@@ -166,12 +166,51 @@
      "url": "https://github.com/hajisensai/Fushi/actions/runs/43695802934"
     }
    }
+  },
+  {
+   "seq": 24503,
+   "version": "3.3.0",
+   "sha": null,
+   "unknown": true,
+   "publishedAt": "2026-11-16T08:24:52Z",
+   "testflight": false,
+   "baseSeq": null,
+   "prs": [],
+   "direct": [],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "none"
+    },
+    "windows": {
+     "state": "ok"
+    },
+    "macos": {
+     "state": "ok"
+    },
+    "ios": {
+     "state": "ok"
+    }
+   }
   }
  ],
  "pending": {
-  "headSha": "1846972959eb376db3f6836a6338afca32c48c47",
-  "headSeq": 27582,
+  "headSha": "145ab69b9423173dd009a0e909f2ca9cdc4091d7",
+  "headSeq": 27668,
   "prs": [
+   3492,
+   3478,
+   3462,
+   3507,
+   3500,
+   3476,
+   3491,
+   3509,
+   3477,
+   3399,
+   3471,
+   3485,
+   3496,
    3446,
    3447,
    3499,
@@ -189,19 +228,19 @@
   "platforms": {
    "android": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43824276701"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43831492269"
    },
    "windows": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43824276685"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43831492279"
    },
    "macos": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43824276685"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43831492279"
    },
    "ios": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43824276685"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43831492279"
    }
   }
  },
@@ -253,6 +292,15 @@
    "mergedAt": "2026-11-15T08:43:01Z",
    "additions": 31080,
    "deletions": 5420,
+   "labels": []
+  },
+  "3399": {
+   "number": 3399,
+   "title": "srs(gen4): G4 真实库只读干跑 + G4b 后台预演自检",
+   "author": "W1ght",
+   "mergedAt": "2026-11-16T08:10:07Z",
+   "additions": 5205,
+   "deletions": 744,
    "labels": []
   },
   "3444": {
@@ -390,6 +438,17 @@
    "deletions": 62,
    "labels": []
   },
+  "3462": {
+   "number": 3462,
+   "title": "fix(browser-ext): keep the Netflix fullscreen button clickable",
+   "author": "back2era",
+   "mergedAt": "2026-11-16T08:11:42Z",
+   "additions": 504,
+   "deletions": 102,
+   "labels": [
+    "merge-approved"
+   ]
+  },
   "3463": {
    "number": 3463,
    "title": "feat(rwkv): 换用 Instant-Only 新模型（Small sm98 默认 / Tiny sm101），权重走自家镜像，修下载取消竞态",
@@ -397,6 +456,69 @@
    "mergedAt": "2026-11-16T06:06:28Z",
    "additions": 1930,
    "deletions": 489,
+   "labels": []
+  },
+  "3471": {
+   "number": 3471,
+   "title": "fix(downloads): 下载中心合计速度计入 legacy 番剧下载计划的实时速率",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T07:52:57Z",
+   "additions": 103,
+   "deletions": 2,
+   "labels": []
+  },
+  "3476": {
+   "number": 3476,
+   "title": "fix(manga): 漫画阅读器顶栏去掉 1080 限宽，与小说一样铺满全宽",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T08:11:00Z",
+   "additions": 67,
+   "deletions": 41,
+   "labels": []
+  },
+  "3477": {
+   "number": 3477,
+   "title": "feat(srs): gen4 原生写入者 Native + write_salts + ingest_settle（G7-3a，不接线）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T08:10:25Z",
+   "additions": 1379,
+   "deletions": 5,
+   "labels": []
+  },
+  "3478": {
+   "number": 3478,
+   "title": "feat(srs): 媒体清单 + media_at 读写 API（G8-3，不接线）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T08:19:52Z",
+   "additions": 2986,
+   "deletions": 5,
+   "labels": []
+  },
+  "3485": {
+   "number": 3485,
+   "title": "fix(screen-ocr): 截屏识字查词跨 OCR 折行，不再在行尾截断单词 (BUG-4695)",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T07:51:41Z",
+   "additions": 436,
+   "deletions": 69,
+   "labels": []
+  },
+  "3491": {
+   "number": 3491,
+   "title": "feat(srs): gen4 绑定状态、join、join_ix、adopt_foreign（G9-3，不接线）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T08:10:57Z",
+   "additions": 1635,
+   "deletions": 10,
+   "labels": []
+  },
+  "3492": {
+   "number": 3492,
+   "title": "feat(srs): gen4 缓存层按规范 ID 物化、对拍按规范 ID 比、迁移报告列已知差异并逐条佐证（G9-2，不接线）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T08:28:25Z",
+   "additions": 2853,
+   "deletions": 308,
    "labels": []
   },
   "3493": {
@@ -408,6 +530,15 @@
    "deletions": 41,
    "labels": []
   },
+  "3496": {
+   "number": 3496,
+   "title": "fix(library): 导入页点高亮的「书架」页签照常切回书架 (BUG-4695)",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T07:48:10Z",
+   "additions": 337,
+   "deletions": 11,
+   "labels": []
+  },
   "3499": {
    "number": 3499,
    "title": "fix(settings): 色块摆放的已改过/恢复默认对照随布局的真实默认 (BUG-4701)",
@@ -415,6 +546,33 @@
    "mergedAt": "2026-11-16T06:55:34Z",
    "additions": 163,
    "deletions": 7,
+   "labels": []
+  },
+  "3500": {
+   "number": 3500,
+   "title": "feat(srs): gen4 新库同步状态与收段（G8-4，不接线）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T08:11:14Z",
+   "additions": 2925,
+   "deletions": 47,
+   "labels": []
+  },
+  "3507": {
+   "number": 3507,
+   "title": "feat(srs): gen4 承袭上传与旧根捡漏（G8-5，不接线）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T08:11:40Z",
+   "additions": 2091,
+   "deletions": 17,
+   "labels": []
+  },
+  "3509": {
+   "number": 3509,
+   "title": "feat(feedback-cli): show --attachments 下载截图，分诊能直接看图",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T08:10:45Z",
+   "additions": 70,
+   "deletions": 6,
    "labels": []
   }
  }
