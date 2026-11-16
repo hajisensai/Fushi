@@ -29,6 +29,7 @@ import 'package:path/path.dart' as p;
 import 'package:sqlite3/sqlite3.dart' as sqlite;
 import 'package:fushi_engine/media/video/anime_source_video_path.dart';
 import 'package:fushi/src/sync/backup_path_rebase.dart';
+import 'package:fushi/src/storage/download_layout.dart';
 
 part 'backup_service/fs_retry.part.dart';
 part 'backup_service/path_rebase.part.dart';
@@ -390,6 +391,14 @@ const String _dictionaryResourcesPrefix = 'dictionaryResources';
 /// Hibiki 归档（前缀 `hoshi_books`）做 legacy 回退（Never break userspace，
 /// 同 [_dbName] 的 `_findDbEntry` 先例）。
 const String _booksPrefix = 'fushi_books';
+
+/// 在线漫画书目录的归档前缀：`download_manga/<bookKey>/<书目录内相对路径>`。
+///
+/// 在线漫画住在下载根 `<下载根>/manga/<bookKey>`（不在书库根下，下载根还可能是
+/// 用户自选的外置目录），书库树打包碰不到它们。单独一个前缀、按 bookKey 分目录，
+/// 恢复时落进**本机**当前下载根的 manga 域（[DownloadRoot]），与源设备的下载根在哪
+/// 无关。归档前缀是持久化名，冻结。
+const String _downloadMangaPrefix = 'download_manga';
 
 /// 旧 Hibiki 时代备份/迁移归档的书树前缀（W2-7 读侧回退输入；旧字面量只
 /// 允许活在读旧归档的回退里）。
@@ -1623,6 +1632,14 @@ class BackupService {
           );
         }
       }
+      if (includeBooks) {
+        await _collectDownloadMangaFiles(
+          bookKeys,
+          books,
+          _booksRootDirectory,
+          files,
+        );
+      }
       if (_audiobooksRootDirectory != null &&
           wants(BackupCategory.audiobooks)) {
         await _collectTreeFiles(
@@ -2172,6 +2189,36 @@ class BackupService {
           rootNorm,
           into,
         );
+      }
+    }
+  }
+
+  /// 打包下载根里的在线漫画书目录（[_downloadMangaPrefix]）。只收书目录形如
+  /// `<某个下载根>/manga/<bookKey>`（[DownloadLayout.isMangaBookDirectory]）且不在
+  /// 书库根下的行——还在 `fushi_books` 里的旧条目已随书库树打包。[bookKeys] 非空时
+  /// 只收选中的书（按书导出）。
+  static Future<void> _collectDownloadMangaFiles(
+    Set<String>? bookKeys,
+    List<EpubBookRow> allBooks,
+    String? booksRootDirectory,
+    Map<String, String> into,
+  ) async {
+    final String? rootNorm = booksRootDirectory?.replaceAll(r'\', '/');
+    for (final EpubBookRow b in allBooks) {
+      if (bookKeys != null && !bookKeys.contains(b.bookKey)) continue;
+      if (!DownloadLayout.isMangaBookDirectory(b.extractDir, b.bookKey)) {
+        continue;
+      }
+      if (rootNorm != null && _isUnderRoot(b.extractDir, rootNorm)) continue;
+      final Directory dir = Directory(b.extractDir);
+      if (!await dir.exists()) continue;
+      await for (final FileSystemEntity entity in dir.list(recursive: true)) {
+        if (entity is! File) continue;
+        final String relative = p
+            .relative(entity.path, from: b.extractDir)
+            .replaceAll(r'\', '/');
+        into[p.posix.join(_downloadMangaPrefix, b.bookKey, relative)] =
+            entity.path;
       }
     }
   }

@@ -13,6 +13,9 @@ import 'package:fushi/src/media/manga/download/manga_download_progress_label.dar
 import 'package:fushi/src/media/manga/download/manga_download_service.dart';
 import 'package:fushi/src/media/manga/library/manga_chapter_list.dart'
     show mangaChapterDownloadFailedLabel;
+import 'package:fushi/src/media/manga/library/online_manga_reshelf.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
@@ -31,12 +34,13 @@ import 'package:fushi/src/utils/misc/error_log_service.dart';
 class MangaDownloadTasksSection extends ConsumerStatefulWidget {
   const MangaDownloadTasksSection({
     super.key,
-    this.downloadsOverride,
+    this.sourcesOverride,
     this.tasksBuilder,
   });
 
-  /// 测试注入服务（null = 取 [AppModel.mangaDownloadService]）。
-  final MangaDownloadService? downloadsOverride;
+  /// 测试注入的全部数据来源（null = 全部取自 [AppModel]）。注入了就**整体**用它，
+  /// 不再碰 app 数据库——没注入的那一项就是没有。
+  final MangaDownloadTaskSources? sourcesOverride;
 
   /// Parent owns unified filtering, sorting and grouping, including empty lists.
   final DownloadTasksBuilder? tasksBuilder;
@@ -49,13 +53,25 @@ class MangaDownloadTasksSection extends ConsumerStatefulWidget {
 class _MangaDownloadTasksSectionState
     extends ConsumerState<MangaDownloadTasksSection> {
   MangaDownloadService? _downloads;
+  OnlineMangaReshelf? _reshelf;
   List<MangaDownloadJobRow> _jobs = const <MangaDownloadJobRow>[];
+  List<RecoverableOnlineManga> _recoverable = const <RecoverableOnlineManga>[];
   StreamSubscription<void>? _watch;
+  StreamSubscription<void>? _reshelfWatch;
 
   @override
   void initState() {
     super.initState();
-    _downloads = widget.downloadsOverride ?? _appService();
+    final MangaDownloadTaskSources sources =
+        widget.sourcesOverride ?? _appSources();
+    _downloads = sources.downloads;
+    _reshelf = sources.reshelf;
+    // 删书时保留下来的章节目录（「重新入库」候选）：删书 / 重新入库 / 改下载根
+    // 后由 [OnlineMangaReshelf.changes] 通知重扫。
+    _reshelfWatch = OnlineMangaReshelf.changes.listen(
+      (_) => unawaited(_reloadRecoverable()),
+    );
+    unawaited(_reloadRecoverable());
     final MangaDownloadService? downloads = _downloads;
     if (downloads == null) return;
     _watch = downloads.watchJobs().listen(
@@ -75,13 +91,35 @@ class _MangaDownloadTasksSectionState
   void dispose() {
     unawaited(_watch?.cancel());
     _watch = null;
+    unawaited(_reshelfWatch?.cancel());
+    _reshelfWatch = null;
     super.dispose();
   }
 
-  /// Do not initialize the database-backed service when one is injected.
-  MangaDownloadService? _appService() {
+  /// 没注入时的唯一来源：app 持有的服务（库没就绪 = 两项都没有）。
+  MangaDownloadTaskSources _appSources() {
     final AppModel appModel = ref.read(appProvider);
-    return appModel.isDatabaseReady ? appModel.mangaDownloadService : null;
+    if (!appModel.isDatabaseReady) return const MangaDownloadTaskSources();
+    return MangaDownloadTaskSources(
+      downloads: appModel.mangaDownloadService,
+      reshelf: appModel.onlineMangaReshelf,
+    );
+  }
+
+  Future<void> _reloadRecoverable() async {
+    final OnlineMangaReshelf? reshelf = _reshelf;
+    if (reshelf == null) return;
+    try {
+      final OnlineMangaReshelfScan scan = await reshelf.scan();
+      if (!mounted) return;
+      setState(() => _recoverable = scan.recoverable);
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log(
+        'MangaDownloadTasksSection.scanRecoverable',
+        error,
+        stack,
+      );
+    }
   }
 
   Future<void> _reload() async {
@@ -95,10 +133,14 @@ class _MangaDownloadTasksSectionState
   @override
   Widget build(BuildContext context) {
     final MangaDownloadService? downloads = _downloads;
+    final OnlineMangaReshelf? reshelf = _reshelf;
     final List<DownloadTaskEntry> entries = <DownloadTaskEntry>[
       if (downloads != null)
         for (final MangaDownloadJobRow job in _jobs)
           mangaDownloadTaskEntry(job, downloads),
+      if (reshelf != null)
+        for (final RecoverableOnlineManga item in _recoverable)
+          recoverableMangaTaskEntry(item, reshelf),
     ];
     final DownloadTasksBuilder? builder = widget.tasksBuilder;
     if (builder != null) return builder(context, entries);
@@ -110,6 +152,108 @@ class _MangaDownloadTasksSectionState
       ],
     );
   }
+}
+
+/// [MangaDownloadTasksSection] 的数据来源：任务表服务 + 「重新入库」扫描器。
+///
+/// 两项一起注入或一起取自 app，不按项各自回退（注入了一项、另一项回头去读 app
+/// 数据库，单测没覆盖 appProvider 时就会在 initState 里炸）。
+class MangaDownloadTaskSources {
+  const MangaDownloadTaskSources({this.downloads, this.reshelf});
+
+  /// null = 不显示任务表里的漫画任务。
+  final MangaDownloadService? downloads;
+
+  /// null = 不显示「可重新入库」条目。
+  final OnlineMangaReshelf? reshelf;
+}
+
+/// 下载根里一部「有章节、没书架行」的在线漫画 → 统一下载中心条目。
+///
+/// 与有声书任务的「补对齐文件」同一类入口：卡片主操作就是「重新入库」（bookKey / uid
+/// 原样还原，旧卡片的来源随之重新连上），菜单里另有「删除已下载文件」（确认后删目录）。
+DownloadTaskEntry recoverableMangaTaskEntry(
+  RecoverableOnlineManga item,
+  OnlineMangaReshelf reshelf,
+) {
+  final String id = 'manga-shelf:${item.bookKey}';
+  final String status = t.download_task_manga_removed_status(
+    n: item.downloadedChapterCount,
+  );
+  Future<void> reshelve() async {
+    try {
+      await reshelf.reshelve(item);
+      FushiToast.show(
+        msg: t.download_task_manga_reshelved(title: item.title),
+        severity: ToastSeverity.success,
+      );
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log('MangaDownloadTasks.reshelve', error, stack);
+      FushiToast.show(msg: error.toString(), severity: ToastSeverity.error);
+    }
+  }
+
+  Future<void> discard(BuildContext context) async {
+    final bool confirmed = await showFushiConfirmDialog(
+      context: context,
+      title: t.download_task_manga_discard,
+      message: t.download_task_manga_discard_confirm(title: item.title),
+      icon: FushiIcons.delete,
+      confirmLabel: t.dialog_delete,
+      destructive: true,
+    );
+    if (!confirmed) return;
+    try {
+      await reshelf.discard(item);
+      FushiToast.show(msg: t.storage_entry_delete_done);
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log('MangaDownloadTasks.discard', error, stack);
+      FushiToast.show(msg: error.toString(), severity: ToastSeverity.error);
+    }
+  }
+
+  return DownloadTaskEntry(
+    id: id,
+    title: item.title,
+    createdAt: item.sidecar.importedAt,
+    kind: DownloadTaskKind.manga,
+    status: DownloadTaskStatus.attention,
+    progress: 1,
+    collectionKey: item.bookKey,
+    collectionTitle: item.title,
+    searchTerms: <String>[item.title],
+    builder: (BuildContext context) => DownloadTaskCard(
+      key: ValueKey<String>(id),
+      taskId: id,
+      title: item.title,
+      status: status,
+      progress: 1,
+      tone: DownloadTaskTone.paused,
+      leading: const FushiIcon(FushiIcons.manga),
+      quickAction: DownloadTaskQuickAction(
+        key: ValueKey<String>('manga-reshelve-${item.bookKey}'),
+        icon: FushiIcons.libraryAdd,
+        tooltip: t.download_task_manga_reshelve,
+        onPressed: () => unawaited(reshelve()),
+      ),
+      menuActions: <DownloadTaskMenuAction>[
+        DownloadTaskMenuAction(
+          id: 'reshelve',
+          icon: FushiIcons.libraryAdd,
+          label: t.download_task_manga_reshelve,
+          onSelected: () => unawaited(reshelve()),
+        ),
+        DownloadTaskMenuAction(
+          id: 'discard',
+          icon: FushiIcons.delete,
+          label: t.download_task_manga_discard,
+          destructive: true,
+          onSelected: () => unawaited(discard(context)),
+        ),
+      ],
+      details: Text(item.directory),
+    ),
+  );
 }
 
 /// 一条任务行 → 统一下载中心条目。
