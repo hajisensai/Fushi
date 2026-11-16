@@ -23,6 +23,7 @@ import 'package:fushi_server/src/server_subtitle_providers.dart';
 import 'package:path/path.dart' as p;
 import 'package:shelf/shelf.dart' as shelf;
 import 'package:test/test.dart';
+import 'support/fake_rwkv.dart';
 
 import 'dictionary_host_test.dart' show importTestDictionary;
 
@@ -70,6 +71,7 @@ void main() {
       );
     }
     host = HeadlessHost(
+      srsRwkvHttpClient: noNetworkHttpClient,
       config: config,
       paths: paths,
       db: db,

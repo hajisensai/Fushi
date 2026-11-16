@@ -1079,11 +1079,13 @@ class SrsAnkiConnectHandler {
         await _attachNoteMedia(r.type, fields, _asNoteMap(raws[i]));
         if (!_producesCard(r.type, fields)) continue;
         final String guid = newNoteGuid();
+        final String noteId = s.store.kernelIds.note(guid);
         drafts.addAll(
           s.store.newNoteDrafts(
             noteTypeId: r.type.id,
             fieldsById: fields,
             guid: guid,
+            noteId: noteId,
             deckId: r.deckId,
             tags: r.tags,
             source: SrsSourceRef(SrsSourceKind.web, <String, Object?>{
@@ -1093,7 +1095,7 @@ class SrsAnkiConnectHandler {
           ),
         );
         accepted.add((c, norm));
-        created.add((i, SrsIds.note(s.store.profileUid, guid)));
+        created.add((i, noteId));
       } on Object {
         // 与逐条加一样：这一条算失败（null），不影响别的。
       }

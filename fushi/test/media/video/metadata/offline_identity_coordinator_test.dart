@@ -168,6 +168,127 @@ void main() {
     },
   );
 
+  // BUG-4696：旧整理器把剧场版命名成 `<片名> - S00E01.mkv`，按文件名猜是剧集；
+  // 标题在 AniDB 只唯一对上一部电影时，以标题命中为准、按电影刮。
+  test(
+    'single file guessed as TV adopts the unique movie hit of the title',
+    () async {
+      final SourceLibraryRow source = await _source(
+        db,
+        directory,
+        title: '大雄与天空的理想乡',
+        fileName: '大雄与天空的理想乡 - S00E01.mkv',
+      );
+      final _Provider mal = _Provider(VideoMetadataProviderKind.mal);
+      final SourceScrapeReport report = await scrape(
+        VideoSourceScrapeCoordinator(
+          primaryProvider: VideoMetadataProviderKind.mal,
+          database: db,
+          config: const VideoSourceScrapeGlobalConfig(),
+          registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[mal]),
+          offlineIdentityResolver: AnimeOfflineIdentityResolver.custom(
+            search: (String query) async => query == '大雄与天空的理想乡'
+                ? <AniDbTitleSearchResult>[_hit(17000, query)]
+                : const <AniDbTitleSearchResult>[],
+            entryForAnidb: (int anidbId) async => AnimeIdentityEntry(
+              anidbId: anidbId,
+              malIds: const <int>{50000},
+              type: 'MOVIE',
+            ),
+          ),
+        ),
+        source,
+      );
+      expect(report.succeededWorks, 1, reason: '${report.errors}');
+      expect(mal.searchCalls, 0, reason: '换形态后离线唯一命中，不该再发标题搜索');
+      expect(mal.fetchedIds, contains('50000'));
+      expect(mal.fetchedKinds, everyElement(VideoMetadataMediaKind.movie));
+      expect(
+        report.warnings.any(
+          (SourceScrapeIssue issue) => issue.message.contains('多个同名候选'),
+        ),
+        isFalse,
+        reason: '第一次按剧集查不到的说明不该留在运行记录里',
+      );
+    },
+  );
+
+  // 反方向不成立：电影关键词 / 没有集号都是电影证据。标题在 AniDB 只对上 TV
+  // 本体时改成剧集，会把剧场版自动绑到 TV 本体上（BUG-2828 要防的误绑）。
+  for (final (String label, String fileName) in <(String, String)>[
+    ('movie keyword', '名探偵コナン 劇場版 01.mkv'),
+    ('no episode number', '名探偵コナン.mkv'),
+  ]) {
+    test('single file with $label never adopts the TV-only hit', () async {
+      final SourceLibraryRow source = await _source(
+        db,
+        directory,
+        title: '名探偵コナン',
+        fileName: fileName,
+      );
+      final _Provider mal = _Provider(VideoMetadataProviderKind.mal);
+      final SourceScrapeReport report = await scrape(
+        VideoSourceScrapeCoordinator(
+          primaryProvider: VideoMetadataProviderKind.mal,
+          database: db,
+          config: const VideoSourceScrapeGlobalConfig(),
+          registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[mal]),
+          offlineIdentityResolver: _offlineEntries(<int, String>{555: 'TV'}),
+        ),
+        source,
+      );
+      expect(report.errors, isEmpty);
+      expect(mal.fetchedIds, isNot(contains('1555')), reason: '不得绑到 TV 本体');
+      expect(mal.searchKinds, isNotEmpty, reason: '仍按电影走在线搜索');
+      expect(mal.searchKinds, everyElement(VideoMetadataMediaKind.movie));
+      expect(report.pendingConfirmations, 1, reason: '搜索结果对不上片名，交人工');
+      expect(
+        report.warnings.any(
+          (SourceScrapeIssue issue) => issue.message.contains('另一种形态'),
+        ),
+        isTrue,
+      );
+    });
+  }
+
+  test(
+    'movie-keyword file whose title names two movies and a TV stays ambiguous',
+    () async {
+      final SourceLibraryRow source = await _source(
+        db,
+        directory,
+        title: '名探偵コナン',
+        fileName: '名探偵コナン 劇場版 01.mkv',
+      );
+      final _Provider mal = _Provider(VideoMetadataProviderKind.mal);
+      final SourceScrapeReport report = await scrape(
+        VideoSourceScrapeCoordinator(
+          primaryProvider: VideoMetadataProviderKind.mal,
+          database: db,
+          config: const VideoSourceScrapeGlobalConfig(),
+          registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[mal]),
+          offlineIdentityResolver: _offlineEntries(<int, String>{
+            555: 'TV',
+            601: 'MOVIE',
+            602: 'MOVIE',
+          }),
+        ),
+        source,
+      );
+      expect(report.errors, isEmpty);
+      expect(mal.fetchedIds, isNot(contains('1555')), reason: '不得翻成 TV 本体');
+      expect(mal.searchKinds, isNotEmpty);
+      expect(mal.searchKinds, everyElement(VideoMetadataMediaKind.movie));
+      expect(report.pendingConfirmations, 1);
+      expect(
+        report.warnings.any(
+          (SourceScrapeIssue issue) => issue.message.contains('多个同名候选'),
+        ),
+        isTrue,
+      );
+    },
+  );
+
   test(
     'MAL identity found by search relays a TMDB id through the mapping',
     () async {
@@ -448,6 +569,19 @@ AnimeOfflineIdentityResolver _offline(Map<String, int> exactByTitle) =>
           : null,
     );
 
+/// 每个标题都 exact 命中 [typeByAnidb] 里的全部条目；MAL id = anidb id + 1000。
+AnimeOfflineIdentityResolver _offlineEntries(Map<int, String> typeByAnidb) =>
+    AnimeOfflineIdentityResolver.custom(
+      search: (String query) async => <AniDbTitleSearchResult>[
+        for (final int animeId in typeByAnidb.keys) _hit(animeId, query),
+      ],
+      entryForAnidb: (int anidbId) async => AnimeIdentityEntry(
+        anidbId: anidbId,
+        malIds: <int>{anidbId + 1000},
+        type: typeByAnidb[anidbId]!,
+      ),
+    );
+
 AniDbTitleSearchResult _hit(int animeId, String title) {
   final AniDbTitle matched = AniDbTitle(
     value: title,
@@ -521,6 +655,7 @@ class _Provider implements VideoMetadataProvider {
   final List<String> fetchedIds = <String>[];
   final List<VideoMetadataMediaKind> fetchedKinds = <VideoMetadataMediaKind>[];
   final List<int?> searchYears = <int?>[];
+  final List<VideoMetadataMediaKind> searchKinds = <VideoMetadataMediaKind>[];
 
   @override
   bool get isAvailable => true;
@@ -551,6 +686,7 @@ class _Provider implements VideoMetadataProvider {
   ) async {
     searchCalls++;
     searchYears.add(request.year);
+    searchKinds.add(request.mediaKind);
     if (failure != null) throw failure!;
     return <VideoMetadataWork>[_work('42', request.mediaKind)];
   }

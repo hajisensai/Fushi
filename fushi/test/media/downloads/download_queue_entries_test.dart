@@ -191,7 +191,7 @@ void main() {
       await _pump(
         tester,
         MangaDownloadTasksSection(
-          downloadsOverride: service,
+          sourcesOverride: MangaDownloadTaskSources(downloads: service),
           tasksBuilder: (BuildContext context, List<DownloadTaskEntry> tasks) {
             entries = tasks;
             return const SizedBox();
@@ -268,7 +268,7 @@ void main() {
       await _pump(
         tester,
         MangaDownloadTasksSection(
-          downloadsOverride: service,
+          sourcesOverride: MangaDownloadTaskSources(downloads: service),
           tasksBuilder: (BuildContext context, List<DownloadTaskEntry> tasks) =>
               Column(
                 children: <Widget>[

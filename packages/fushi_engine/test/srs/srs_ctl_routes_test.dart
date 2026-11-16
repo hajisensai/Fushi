@@ -19,6 +19,7 @@ import 'package:fushi_engine/srs/srs_duplicate_notes.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:test/test.dart';
 
+import 'support/srs_raw_sql.dart';
 import 'support/srs_test_storage.dart';
 
 const String kJa = '01928c3e-0000-7000-8000-0000000000a1';
@@ -97,12 +98,8 @@ class _Env {
 
   static Future<_Env> open() async {
     final SrsStorage st = await openTestSrsStorage();
-    Future<SrsDbStore> store(String uid) => SrsDbStore.open(
-      db: st.db,
-      core: st.core,
-      profileUid: uid,
-      deviceId: 'dev',
-    );
+    Future<SrsDbStore> store(String uid) =>
+        SrsDbStore.open(core: st.core, profileUid: uid, deviceId: 'dev');
     return _Env(await store(kJa), await store(kZh));
   }
 }
@@ -512,10 +509,10 @@ void main() {
       final String dupB = await _addNote(env.ja, '雪');
       final String zh = await _addNote(env.zh, '鱼', sentence: 'old');
       Future<Object?> edits() async =>
-          (await env.ja.db
+          (await env.ja.core
                   .customSelect('SELECT COUNT(*) AS c FROM srs_field_edits')
                   .getSingle())
-              .data['c'];
+              .read<int>('c');
       final Object? editsBefore = await edits();
 
       Future<Object?> asZh(String path, Map<String, Object?> body) => _call(

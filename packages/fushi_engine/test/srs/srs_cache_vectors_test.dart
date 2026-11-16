@@ -23,14 +23,14 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:drift/drift.dart' show QueryRow, Variable, driftRuntimeOptions;
-import 'package:fushi_core/fushi_core.dart' show srsIdType;
+import 'package:drift/drift.dart' show Variable, driftRuntimeOptions;
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
 
 import 'support/srs_test_storage.dart';
+import 'support/srs_raw_sql.dart';
 
 const List<String> kRawTables = <String>[
   'srs_entities',
@@ -117,7 +117,6 @@ void main() {
   int t = DateTime.utc(2031, 1, 1).millisecondsSinceEpoch;
 
   Future<SrsDbStore> openOn(SrsStorage st) => SrsDbStore.open(
-    db: st.db,
     core: st.core,
     profileUid: profile,
     deviceId: deviceId,
@@ -150,7 +149,7 @@ void main() {
     }
     for (final String name in kRawTables) {
       final int n =
-          (await s.db
+          (await s.core
                   .customSelect('SELECT COUNT(*) AS n FROM $name')
                   .getSingle())
               .read<int>('n');
@@ -163,7 +162,7 @@ void main() {
   /// 读出一张缓存表（列取向量的列，按向量的主键排序）。
   Future<List<List<Object?>>> read(SrsDbStore s, String name) async {
     final Table want = _table(expected[name]);
-    final List<QueryRow> rows = await s.db
+    final List<SrsRawRow> rows = await s.core
         .customSelect(
           'SELECT ${want.columns.map((String c) => '"$c"').join(', ')} FROM $name '
           'WHERE profile_uid = ? ORDER BY ${want.pk.map((String c) => '"$c"').join(', ')}',
@@ -171,7 +170,7 @@ void main() {
         )
         .get();
     return <List<Object?>>[
-      for (final QueryRow r in rows)
+      for (final SrsRawRow r in rows)
         <Object?>[for (final String c in want.columns) r.data[c]],
     ];
   }
@@ -329,7 +328,7 @@ void main() {
       ]),
       greaterThan(100),
     );
-    final QueryRow ls = await s.db
+    final SrsRawRow ls = await s.core
         .customSelect(
           'SELECT json FROM srs_local_state WHERE profile_uid = ?',
           variables: <Variable<Object>>[Variable<String>(profile, srsIdType)],
