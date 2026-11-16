@@ -84,6 +84,10 @@ abstract final class PrefRedactionPolicy {
     'jimaku_api_key',
     'video_subtitle_subdl_api_key',
     'manga_cloud_ocr_api_key',
+    // 楽天ブックス书籍检索凭据：键名没有 api_key / token 形状，必须点名。也在
+    // deviceLocalPrefKeys 中。
+    'book_scrape_rakuten_access_key',
+    'book_scrape_rakuten_application_id',
     'video_scraper_tmdb_api_key',
     'music_acoustid_api_key',
     'video_metadata_fanart_api_key',

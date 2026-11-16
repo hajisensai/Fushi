@@ -183,6 +183,14 @@ const KNOWN: &[Known] = &[
               compare against",
     },
     Known {
+        test: "store::gen4::migrate::tests::an_incomplete_parity_aborts_like_a_failure",
+        what: "caches",
+        old: Some(NOTE_TYPE_MISSING),
+        why: "the same fixture as the dry run's incomplete test, used to prove the migration aborts on an \
+              incomplete parity: protocol 3's frozen cache rebuild fails as a whole on the note without \
+              noteTypeId, so there is no protocol 3 cache baseline to compare against",
+    },
+    Known {
         test: "store::gen4::dryrun::tests::parity_reports_a_failed_protocol_3_cache_rebuild_as_a_caches_diff",
         what: "caches",
         old: Some(NOTE_TYPE_MISSING),
