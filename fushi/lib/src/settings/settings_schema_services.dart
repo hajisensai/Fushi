@@ -382,8 +382,8 @@ SettingsDestination buildServicesDestination() {
                             },
                       ),
                     ),
-                    // HTTP 资料接口与 UDP 是 AniDB 上两条登记（BUG-2623）：随包
-                    // 身份只登记了 UDP，让用户看得到 anime XML 资料链此时不会请求。
+                    // HTTP 资料接口与 UDP 是 AniDB 上两条登记（BUG-2623），
+                    // 状态行只按解析出的 HTTP 身份展示，不借用 UDP 身份。
                     SettingsStatusItem(
                       id: 'services.metadata.anidb_http_api',
                       title: t.video_anidb_http_api,
