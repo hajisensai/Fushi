@@ -27,12 +27,13 @@ pub(crate) const BINDING_PREFIX: &str = "srs_collection_bound/";
 const PROVISIONAL: &str = "provisional";
 const SETTLED: &str = "settled";
 
-fn key(profile: &str) -> String {
+pub(crate) fn key(profile: &str) -> String {
     format!("{BINDING_PREFIX}{profile}")
 }
 
-/// 解析存着的值；坏了 / 认不出的状态当作没有记录。
-fn parse(raw: &str) -> Option<Value> {
+/// 解析存着的值；坏了 / 认不出的状态当作没有记录。迁移把它搬进新代 `collections` 的三列时也用这一份
+/// （`gen4::carry`）。
+pub(crate) fn parse(raw: &str) -> Option<Value> {
     let v: Value = serde_json::from_str(raw).ok()?;
     let state = v.get("state")?.as_str()?;
     if state != PROVISIONAL && state != SETTLED {

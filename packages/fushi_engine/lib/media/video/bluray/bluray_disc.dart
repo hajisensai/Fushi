@@ -10,7 +10,8 @@
 //
 //   1. 非顺序播放（`playback_type != 1`）——随机/洗牌播放列表是菜单构件，不是标题。
 //   2. 引用的 m2ts 在盘上不存在——`BACKUP/` 与主目录不一致的半张盘很常见。
-//   3. 绝对时长下限——砍掉版权警告、厂标、菜单循环。
+//   3. 绝对时长下限——砍掉版权警告、厂标；菜单背景循环（同一片段连排上百次，总时长
+//      反而最长）由 [isBlurayMenuLoop] 单独挡。
 //   4. 同签名合并——`(片段多重集, 总时长)` 相同即同一内容；诱饵播放列表正是靠打乱
 //      顺序伪装，多重集一排序就现形。同签名里保留章节最多的那条（诱饵通常只有一个
 //      章节点，真正的正片章节齐全），再以编号小的为准。
@@ -20,6 +21,9 @@
 //      这一条让「电影盘只进正片」和「MV 盘全进」用同一个判据表达，不需要先猜盘的类型。
 //      锚点（最长者）不取「片段集合包住另外 ≥2 条」的 play-all 形状——⑤ 漏网的
 //      play-all 若当锚，7 集以上的剧集盘各集会被它整批砍掉。
+//   7. 按集展开——留下来的标题若是「一条播放列表串着几集」（只有全部播放、没有逐集
+//      播放列表的剧集盘），按 PlayItem 切成各集，每集一个标题、身份是虚拟的分集路径
+//      （`bluray_episode.dart`）。
 //
 // 另有一条前置判据：没有视频轨的播放列表（纯音轨）不是标题。
 //
@@ -32,8 +36,12 @@ import 'dart:typed_data';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi_engine/media/video/bluray/bluray_disc_meta_files.dart';
+import 'package:fushi_engine/media/video/bluray/bluray_episode.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_playlist.dart';
 import 'package:fushi_engine/media/video/disc/disc_title_selection.dart';
+
+export 'package:fushi_engine/media/video/bluray/bluray_episode.dart'
+    show blurayPlaylistLooksEpisodic;
 
 /// 标题的绝对时长下限。低于此的几乎只可能是厂标、警告画面或菜单循环。
 const Duration kBlurayMinimumTitleDuration = Duration(seconds: 60);
@@ -45,6 +53,36 @@ const Duration kBlurayMinimumTitleDuration = Duration(seconds: 60);
 /// 盘分开，同时给「40 分钟的制作特辑」这种确实值得进库的长花絮留了余地。
 const double kBlurayRelativeTitleFloor = 0.15;
 
+/// 同一段片段在一条播放列表里至少出现这么多次，才可能是菜单背景循环。
+const int kBlurayMenuLoopMinimumRepeats = 3;
+
+/// [playlist] 是不是菜单背景循环：同一段片段被连排很多次、且这些重复占了总时长的
+/// 一半以上。
+///
+/// 菜单背景是一段几分钟的 m2ts 连排上百次（实测《魔女の旅々》BD：3.6 分钟 × 149 次
+/// = 540 分钟；《特別編 響け！ユーフォニアム》：4.2 分钟 × 15 次 = 63 分钟），算出来
+/// 的总时长比正片还长。不挡掉它，它就成了「最长标题」——正片反被相对时长下限或
+/// 特典划分挤出去（BUG-4697）。
+///
+/// 「占一半以上」把它和正常的片段复用分开：剧集盘的「全部播放」每集前复用同一段
+/// OP（1.5 分钟 × 6，占 6%）不是循环。
+bool isBlurayMenuLoop(BlurayPlaylist playlist) {
+  final Map<String, int> repeats = <String, int>{};
+  final Map<String, int> ticks = <String, int>{};
+  for (final BlurayClipRef clip in playlist.clips) {
+    repeats[clip.clipId] = (repeats[clip.clipId] ?? 0) + 1;
+    ticks[clip.clipId] = (ticks[clip.clipId] ?? 0) + clip.durationTicks;
+  }
+  final int total = playlist.durationTicks;
+  for (final MapEntry<String, int> entry in repeats.entries) {
+    if (entry.value >= kBlurayMenuLoopMinimumRepeats &&
+        ticks[entry.key]! * 2 > total) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /// 单条读入上限。MPLS 实测通常几 KB，上百 KB 的一律当坏数据。
 const int kBlurayMaxPlaylistBytes = 1024 * 1024;
 
@@ -55,9 +93,18 @@ class BlurayTitle {
     required this.discRootPath,
     required this.name,
     required this.isMainFeature,
+    this.sourcePlaylistId,
   });
 
+  /// 这条标题播的内容。按集展开出来的标题是**派生**播放列表（id 形如 `00001.p03`，
+  /// 只含这一集的 PlayItem），盘上没有同名文件。
   final BlurayPlaylist playlist;
+
+  /// 按集展开出来的标题：它切自哪条真实播放列表（`00001`）；整条播放列表就是一个
+  /// 标题时为 null。
+  final String? sourcePlaylistId;
+
+  bool get isEpisode => sourcePlaylistId != null;
 
   /// 含 `BDMV` 的那一层目录。
   final String discRootPath;
@@ -73,7 +120,8 @@ class BlurayTitle {
   /// 这条标题的稳定身份：它自己的 `.mpls` 绝对路径。
   ///
   /// 用真实存在的文件而不是虚构的 `bd://` 串做身份，是为了让下游所有「这文件还在不
-  /// 在」「这路径被谁引用着」的判据原样可用。
+  /// 在」「这路径被谁引用着」的判据原样可用。按集展开出来的标题没有自己的文件，
+  /// 身份是同目录下的虚拟分集路径（`00001.p03.mpls`，见 `bluray_episode.dart`）。
   String get playlistPath =>
       p.join(discRootPath, 'BDMV', 'PLAYLIST', playlist.fileName);
 }
@@ -86,10 +134,24 @@ class BlurayDisc {
     required this.playlists,
     required this.titles,
     this.extras = const <BlurayTitle>[],
+    this.presentClipIds,
   });
 
   /// 含 `BDMV` 的那一层目录。
   final String rootPath;
+
+  /// `BDMV/STREAM` 里实际在的片段号（大写、去扩展名）；STREAM 读不动时为 null
+  /// （无从确证哪些片段在）。
+  final Set<String>? presentClipIds;
+
+  /// [playlist] 引用的片段是否**确证**全都在盘上：STREAM 读不动时为 false。
+  bool hasAllClipsOf(BlurayPlaylist playlist) {
+    final Set<String>? present = presentClipIds;
+    if (present == null) return false;
+    return playlist.clipIds.every(
+      (String id) => present.contains(id.toUpperCase()),
+    );
+  }
 
   /// 盘名：优先取 `BDMV/META` 里的盘内标题，否则用目录名。
   final String name;
@@ -288,6 +350,9 @@ Future<BlurayDisc?> readBlurayDisc(String rootPath) async {
         presentClipIds: presentClips,
       ),
     ),
+    presentClipIds: presentClips == null
+        ? null
+        : Set<String>.unmodifiable(presentClips),
   );
 }
 
@@ -315,7 +380,11 @@ List<BlurayTitle> selectBlurayExtras(
   final int minimumTicks =
       minimumDuration.inMilliseconds * kBlurayTimeScale ~/ 1000;
   final Set<String> titleIds = <String>{
-    for (final BlurayTitle title in titles) title.playlist.id,
+    for (final BlurayTitle title in titles) ...<String>[
+      title.playlist.id,
+      // 被切成集的那条整条播放列表已经以各集的形态入库了，不是特典。
+      if (title.sourcePlaylistId case final String source) source,
+    ],
   };
   final List<Set<String>> titleClips = <Set<String>>[
     for (final BlurayTitle title in titles) title.playlist.clipIds.toSet(),
@@ -442,6 +511,7 @@ List<BlurayTitle> selectBlurayTitles(
   Set<String>? presentClipIds,
   Duration minimumDuration = kBlurayMinimumTitleDuration,
   double relativeDurationFloor = kBlurayRelativeTitleFloor,
+  bool splitEpisodes = true,
 }) {
   // 1 / 2 / 3：逐条判据，都只看这条播放列表自己。
   final int minimumTicks =
@@ -457,6 +527,8 @@ List<BlurayTitle> selectBlurayTitles(
         )) {
       continue;
     }
+    // 菜单背景循环按总时长算往往是整张盘最长的一条，必须在取锚点之前挡掉。
+    if (isBlurayMenuLoop(playlist)) continue;
     candidates.add(playlist);
   }
   if (candidates.isEmpty) return const <BlurayTitle>[];
@@ -499,18 +571,38 @@ List<BlurayTitle> selectBlurayTitles(
         ..sort((BlurayPlaylist a, BlurayPlaylist b) => a.id.compareTo(b.id));
   if (kept.isEmpty) return const <BlurayTitle>[];
 
-  final bool single = kept.length == 1;
+  // 7：按集展开。展开后的每一集与逐集播放列表的盘上的一条标题同形。
+  final List<({BlurayPlaylist playlist, String? source, bool main})> expanded =
+      <({BlurayPlaylist playlist, String? source, bool main})>[];
+  for (final BlurayPlaylist playlist in kept) {
+    final bool main = playlist.durationTicks == longest;
+    // 各集正片段另被别的播放列表引用（盘上另有逐集播放列表、或是同片段的诱饵）的
+    // 不切；菜单循环引用什么都不算数。
+    final List<BlurayPlaylist> episodes =
+        splitEpisodes && !blurayPlaylistSharesAnchorClips(playlist, candidates)
+        ? blurayEpisodePlaylists(playlist)
+        : const <BlurayPlaylist>[];
+    if (episodes.isEmpty) {
+      expanded.add((playlist: playlist, source: null, main: main));
+      continue;
+    }
+    for (final BlurayPlaylist episode in episodes) {
+      expanded.add((playlist: episode, source: playlist.id, main: main));
+    }
+  }
+
+  final bool single = expanded.length == 1;
   final List<BlurayTitle> titles = <BlurayTitle>[];
-  for (int i = 0; i < kept.length; i++) {
-    final BlurayPlaylist playlist = kept[i];
+  for (int i = 0; i < expanded.length; i++) {
     titles.add(
       BlurayTitle(
-        playlist: playlist,
+        playlist: expanded[i].playlist,
         discRootPath: discRootPath,
         name: single
             ? discName
             : '$discName - ${(i + 1).toString().padLeft(2, '0')}',
-        isMainFeature: playlist.durationTicks == longest,
+        isMainFeature: expanded[i].main,
+        sourcePlaylistId: expanded[i].source,
       ),
     );
   }

@@ -61,11 +61,11 @@ BtSiteFormat? legacyBuiltinBtProviderFormat(String providerId) {
   final BtSiteFormat? format = BtSiteFormat.fromWire(
     colon < 0 ? trimmed : trimmed.substring(0, colon),
   );
-  if (format == null) return null;
+  // 没有旧实例名的格式（用户导入规则的 custom）从来不是内置源。
+  final Set<String>? legacyIds = _legacyInstanceIds[format];
+  if (format == null || legacyIds == null) return null;
   if (colon < 0) return format;
-  return _legacyInstanceIds[format]!.contains(trimmed.substring(colon + 1))
-      ? format
-      : null;
+  return legacyIds.contains(trimmed.substring(colon + 1)) ? format : null;
 }
 
 /// 本机数据里对旧内置 BT 源的引用（订阅 / 下载任务上存的 provider id）。

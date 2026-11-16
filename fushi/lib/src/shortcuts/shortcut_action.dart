@@ -902,6 +902,23 @@ enum ShortcutAction {
     'global_external_audiobook_replay_sentence',
   ),
 
+  // 反馈 N8qzDdzIvD（拍板台「做」）：galgame 台词朗读（TTS）的全局快捷键，方便跟读。
+  // 游戏窗口在前台、Fushi 不在前台时也要能按，所以只能是 OS 级热键（本 scope）。
+  //
+  // 执行体登记在 GlobalLookupController._osHotKeyActions，落到
+  // `GalHookTextOverlayController.speakCurrentLine`——台词浮窗「朗读」按钮
+  // （`onSpeakLine`）调的同一个方法，热键与按钮行为一致：朗读当前显示的台词，
+  // 正在朗读时再按即停止，再按一次从头重读（= 重播）。
+  //
+  // 只在有台词浮窗的平台注册（`GalHookTextOverlayController.isSupported`，即
+  // Windows，见 GlobalLookupController.osHotKeyActionWorksHere）。键盘-only，理由同
+  // globalExternalOpenLookupPage：鼠标侧键的 native 触发链只登记了
+  // globalExternalLookup 一个消费者。桌面默认不绑键，理由同有声书热键。
+  globalExternalGalgameSpeakLine(
+    ShortcutScope.globalExternal,
+    'global_external_galgame_speak_line',
+  ),
+
   // 查词弹窗「上/下一个词条」（用户请求，Yomitan 的 Next/Previous entry）：一次查询
   // 常返回多个词条（.entry），这两个动作把弹窗的词条级焦点（蓝三角 .entry-current）
   // 移到相邻词条并滚进视口。默认 Alt+滚轮下 / Alt+滚轮上，与 Yomitan 手感一致。
@@ -990,8 +1007,10 @@ enum ShortcutAction {
     ShortcutAction.globalExternalAudiobookPlayPause ||
     ShortcutAction.globalExternalAudiobookPrevSentence ||
     ShortcutAction.globalExternalAudiobookNextSentence ||
-    ShortcutAction.globalExternalAudiobookReplaySentence =>
-      const <ShortcutChannel>{ShortcutChannel.keyboard},
+    ShortcutAction.globalExternalAudiobookReplaySentence ||
+    ShortcutAction.globalExternalGalgameSpeakLine => const <ShortcutChannel>{
+      ShortcutChannel.keyboard,
+    },
     _ => scope.channels,
   };
 

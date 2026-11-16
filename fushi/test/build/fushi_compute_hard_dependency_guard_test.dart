@@ -131,9 +131,11 @@ void main() {
   });
 
   group('CI：跑 Dart / Flutter 测试的 job 先编好 fushi_compute', () {
-    /// 只跑 workflow / 发布脚本守卫（纯源码扫描，不加载原生库），不需要真库。
+    /// 只跑引用 .github / tool 文件的测试。其中少数会编 app 代码，但目前用到的原生库只有
+    /// fushi_web_core（该 job 已备好，见 ci_config_gate_web_core_guard_test），不碰
+    /// fushi_compute；哪天那批测试用到它，guards 会以缺库红出来，到时再把这一条删掉。
     const Map<String, String> exempt = <String, String>{
-      'ci-config-gate.yml/guards': '只跑扫 .github / tool 文本的守卫测试',
+      'ci-config-gate.yml/guards': '引用 .github / tool 的测试，不加载 fushi_compute',
     };
     final RegExp testCommand = RegExp(
       r'flutter_test_failures\.dart|\bflutter test\b',

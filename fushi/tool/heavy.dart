@@ -65,6 +65,7 @@ import 'dart:io';
 
 import 'test_flow/dist_plan.dart' show kDistOffloadDeclined;
 import 'test_flow/heavy_budget.dart';
+import 'test_flow/heavy_history.dart';
 import 'test_flow/heavy_i18n.dart';
 import 'test_flow/heavy_lease.dart';
 import 'test_flow/heavy_offload.dart';
@@ -74,14 +75,20 @@ import 'test_flow/heavy_test_closure.dart';
 
 Future<void> main(List<String> args) async {
   if (args.contains('--status')) return _status();
+  if (args.isNotEmpty && args.first.startsWith('--stats')) {
+    return _stats(_intArg(args, '--stats=') ?? 7);
+  }
   final int sep = args.indexOf('--');
   if (sep < 0 || sep == args.length - 1) {
     stderr.writeln(
       'usage: dart run tool/heavy.dart [options] -- <command...>\n'
-      '       dart run tool/heavy.dart --status',
+      '       dart run tool/heavy.dart --status\n'
+      '       dart run tool/heavy.dart --stats[=days]',
     );
     exit(64);
   }
+  // From here to the moment the command runs somewhere is what it queued.
+  final Stopwatch total = Stopwatch()..start();
   final List<String> own = args.sublist(0, sep);
   final String? checkout = locateCheckoutRoot();
   final HeavySdkCheck sdk = checkHeavyCommandSdk(
@@ -114,6 +121,24 @@ Future<void> main(List<String> args) async {
   final int waitMax = _intArg(own, '--wait-max-min=') ?? 0;
   final int maxMinutes = _intArg(own, '--max-minutes=') ?? 120;
   final String label = command.take(3).join(' ');
+  // One line per finished run in the state directory (heavy.dart --stats).
+  void record(HeavyRanWhere where, Duration queued, int code, {int? peakMb}) {
+    appendHeavyHistory(
+      heavyStateDir(),
+      HeavyHistoryEntry(
+        at: DateTime.now(),
+        kind: classified.kind.name,
+        label: label,
+        where: where,
+        queued: queued,
+        ran: total.elapsed - queued,
+        exitCode: code,
+        bookMb: need.bookMb,
+        peakMb: peakMb,
+      ),
+    );
+  }
+
   // The same command from the same directory is one run: submitted again
   // while it still queues here, it takes the queued one's place.
   final String runKey = heavyRunKey(
@@ -143,6 +168,7 @@ Future<void> main(List<String> args) async {
     final int code = await _askElsewhere(offload, maxMinutes: maxMinutes);
     switch (heavyOffloadNext(code, offload.plan.kind)) {
       case HeavyOffloadNext.done:
+        record(HeavyRanWhere.elsewhere, Duration.zero, code);
         exit(code);
       case HeavyOffloadNext.runHere:
         _sayRunHere(code, offload.plan.kind);
@@ -231,10 +257,12 @@ Future<void> main(List<String> args) async {
       'heavy: another machine took $label while it queued here; '
       'following that run',
     );
+    final Duration queuedUntilTaken = total.elapsed;
     final int code = await there.follow(maxMinutes: maxMinutes);
     await asking.close();
     switch (heavyOffloadNext(code, target!.plan.kind)) {
       case HeavyOffloadNext.done:
+        record(HeavyRanWhere.elsewhere, queuedUntilTaken, code);
         exit(code);
       case HeavyOffloadNext.runHere:
         _sayRunHere(code, target.plan.kind);
@@ -247,6 +275,7 @@ Future<void> main(List<String> args) async {
     }
   }
   final HeavyLease lease = admitted;
+  final Duration queuedHere = total.elapsed;
 
   final Stopwatch ran = Stopwatch()..start();
   final Process p;
@@ -283,6 +312,7 @@ Future<void> main(List<String> args) async {
   await rival?.close();
 
   final int? peak = job?.peakMb();
+  record(HeavyRanWhere.here, queuedHere, cut ? 124 : code, peakMb: peak);
   stderr.writeln(
     'heavy: $label -> exit $code'
     '${lease.skipReason != null ? ' (no lease: ${lease.skipReason})' : ', slot ${lease.slot}'}'
@@ -382,6 +412,7 @@ HeavyOffloadRival _rivalFor(_OffloadTarget t, {required int maxMinutes}) {
         claim: claim,
         maxMinutes: maxMinutes,
         echo: false,
+        queued: true,
       );
       // One line when the answer changes, not dist_test's whole output.
       unawaited(
@@ -420,11 +451,16 @@ class _DistAttempt implements HeavyOffloadAttempt {
     required HeavyOffloadClaim claim,
     required int maxMinutes,
     required this.echo,
+    this.queued = false,
   }) {
     unawaited(_start(t, claim, maxMinutes));
   }
 
   final bool echo;
+
+  /// Made while the run queues here: it may wait in the workers' own queues
+  /// (heavy_offload.dart kHeavyOffloadQueuedBusyRetries).
+  final bool queued;
   final Stopwatch _age = Stopwatch()..start();
   final Completer<int> _code = Completer<int>();
   Process? _process;
@@ -460,7 +496,9 @@ class _DistAttempt implements HeavyOffloadAttempt {
           // dist_test keeps the deadline itself: it kills the remote run and
           // releases the worker's checkout before exiting 124.
           if (maxMinutes > 0) '--max-minutes=$maxMinutes',
-          ...t.plan.distArgs,
+          ...(queued
+              ? heavyOffloadQueuedArgs(t.plan.distArgs)
+              : t.plan.distArgs),
         ],
         workingDirectory: t.appDir,
         mode: echo ? ProcessStartMode.inheritStdio : ProcessStartMode.normal,
@@ -575,6 +613,20 @@ void _killTree(Process p) {
   } else {
     p.kill(ProcessSignal.sigkill);
   }
+}
+
+/// `--stats[=days]`: how long the runs of the last [days] days queued and
+/// ran, and how many went to another machine (test_flow/heavy_history.dart).
+void _stats(int days) {
+  stdout.write(
+    renderHeavyStats(
+      readHeavyHistory(
+        heavyStateDir(),
+        since: DateTime.now().subtract(Duration(days: days)),
+      ),
+      days: days,
+    ),
+  );
 }
 
 void _status() {

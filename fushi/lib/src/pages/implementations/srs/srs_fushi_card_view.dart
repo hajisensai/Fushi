@@ -1328,16 +1328,13 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     );
   }
 
-  SrsCardFace _defsFace({required bool wide}) => SrsCardFace(
+  // 键盘桥、页面缩放 / Ctrl+滚轮缩放、来源链接、发音、卡面手势、点图放大由 [SrsCardFace.derived]
+  // 沿用整面卡的宿主回调（以前逐字段手抄漏了点图放大，BUG-4734）。
+  SrsCardFace _defsFace({required bool wide}) => widget.face.derived(
     cardId: '${widget.face.cardId}#defs',
     showingAnswer: true,
     bodyHtml: widget.definitionsHtml,
-    css: widget.face.css,
-    languageCode: widget.face.languageCode,
-    onBridgeKey: widget.face.onBridgeKey,
-    bridgeKeys: widget.face.bridgeKeys,
     layout: wide ? SrsCardLayout.wide : SrsCardLayout.narrow,
-    pageZoom: widget.face.pageZoom,
     fushiCard: true,
     onContentHeight: wide ? null : _onDefsHeight,
     pageWindow: wide ? null : _defsWindow,
@@ -1361,16 +1358,13 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
         '${srsDefsAppearanceCss(ref.watch(srsCardAppearanceProvider))}',
     hostScript: kSrsDefsLayoutScript,
     onWheel: wide ? null : _onDefsWheel,
-    onSourceLink: widget.face.onSourceLink,
     // 释义区不在自动播放清单里（[SrsFushiCardPlan] 只收原生区画出来的媒体）：词典 HTML 里
     // 收起 / 隐藏的 `<audio autoplay>` 不许自己出声，自动播放只走宿主序列（HrB0STYm3E）。
     // 用户在释义里点按发音照常放行（闸门只拦手势外的播放）。
     autoplayMedia: false,
-    // 释义里的发音按钮同样交给复习页的序列（同一时刻只出一路声音）。
-    onPlayAudio: widget.face.onPlayAudio,
-    // 释义区的卡面手势由页内指针脚本回报（原生区那一层见 [SrsCardGestureRegion]）。
-    onCardGesture: widget.face.onCardGesture,
-    gestureArming: widget.face.gestureArming,
+    // 同理不上报可见发音键：自动播放 / 底栏重播 / R 重播的清单只认原生区（释义里的发音按钮照样
+    // 经沿用的 onPlayAudio 交给复习页的序列，同一时刻只出一路声音）。
+    onVisibleSounds: null,
     // 释义页整页就是释义字段：选区序号对得上字段里的序号，且只在释义字段里找。
     onEditSelection: widget.face.onEditSelection == null
         ? null

@@ -37,6 +37,8 @@ import 'dart:io';
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
+import 'package:fushi/src/media/source_library/source_auto_scan.dart'
+    show sourceScanActivity;
 
 import 'package:fushi/src/media/music/music_audio_intake.dart';
 import 'package:fushi/src/media/music/music_library_scanner.dart';
@@ -1066,6 +1068,25 @@ class SourceLibraryScanner {
     SourceFileSystem? fs,
     bool restoreDissolvedGroups = false,
     bool oneShot = false,
+  }) {
+    // 每来源互斥（[sourceScanActivity]）：曲库页重扫、来源页重扫、ctl 路由、自动扫描等
+    // 所有入口都经这里，同一来源不会被并发扫；先拿来源锁再拿视频刮削门，不持门等锁。
+    return sourceScanActivity.run(
+      source.id,
+      () => _scanGated(
+        source,
+        fs: fs,
+        restoreDissolvedGroups: restoreDissolvedGroups,
+        oneShot: oneShot,
+      ),
+    );
+  }
+
+  Future<SourceScanSummary> _scanGated(
+    SourceLibraryRow source, {
+    SourceFileSystem? fs,
+    required bool restoreDissolvedGroups,
+    required bool oneShot,
   }) {
     if (source.mediaKind != SourceLibraryKind.video.dbValue) {
       return _scanUnlocked(source, fs: fs);
@@ -2177,6 +2198,8 @@ class SourceLibraryScanner {
         title: title,
         sourceId: id.sourceId,
         policy: policy,
+        // 远端镜像临时目录，finally 里整个删掉：页图直接移进书目录。
+        pageSource: MangaPageSource.disposable,
       );
       await id.record(item.mokuroPath, bookKey);
       return true;
@@ -2232,6 +2255,8 @@ class SourceLibraryScanner {
         title: title,
         sourceId: id.sourceId,
         policy: policy,
+        // 远端镜像临时目录，finally 里整个删掉：页图直接移进书目录。
+        pageSource: MangaPageSource.disposable,
       );
       await id.record(item.mokuroPath, bookKey);
       return true;
@@ -2315,6 +2340,8 @@ class SourceLibraryScanner {
         title: title,
         sourceId: id.sourceId,
         policy: policy,
+        // 远端镜像临时目录，finally 里整个删掉：页图直接移进书目录。
+        pageSource: MangaPageSource.disposable,
       );
       await id.record(item.folderPath, bookKey);
       return true;
