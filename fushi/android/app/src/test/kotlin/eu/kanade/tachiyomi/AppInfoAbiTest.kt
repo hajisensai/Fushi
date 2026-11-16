@@ -6,7 +6,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * BUG-4695：Mihon 扩展把 `eu.kanade.tachiyomi.AppInfo` 当 compileOnly，dex 里写死的是
+ * BUG-4731：Mihon 扩展把 `eu.kanade.tachiyomi.AppInfo` 当 compileOnly，dex 里写死的是
  * `getstatic AppInfo.INSTANCE` + `invoke-virtual AppInfo.getVersionName()Ljava/lang/String;`
  * 这类按名解析的引用（keiyoushi MangaDex 拼 User-Agent 就这么用）。宿主缺这个类或签名
  * 不对，扩展一加载 / 一发请求就 `NoClassDefFoundError` / `NoSuchMethodError`。

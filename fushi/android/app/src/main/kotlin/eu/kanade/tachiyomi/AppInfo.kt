@@ -6,7 +6,7 @@ import app.fushi.reader.BuildConfig
  * Host API that Mihon extensions link against (extension-lib 1.3+, image MIME
  * types since 1.5). Upstream Mihon declares it in its **app** module, not in
  * `source-api`, so `prepareMihonSourceApi` never brings it in; the Android host
- * has to declare it itself (BUG-4695). Extensions compile it `compileOnly` and
+ * has to declare it itself (BUG-4731). Extensions compile it `compileOnly` and
  * resolve `AppInfo.INSTANCE.getVersionName()` etc. by name at runtime, so the
  * shape must stay a Kotlin `object` with instance methods of exactly these
  * signatures, and R8 must keep it (proguard-rules.pro, Mihon host ABI block).

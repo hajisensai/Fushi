@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:test/test.dart';
 
-/// BUG-4695 守卫：Android Mihon 宿主必须提供 extension-lib 约定的
+/// BUG-4731 守卫：Android Mihon 宿主必须提供 extension-lib 约定的
 /// `eu.kanade.tachiyomi.AppInfo`。
 ///
 /// Mihon 的 extension-lib 1.3 起把 `AppInfo`（`getVersionCode` / `getVersionName`，
