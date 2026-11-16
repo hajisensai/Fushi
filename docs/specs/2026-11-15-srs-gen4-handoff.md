@@ -140,7 +140,7 @@
 | `preview` | 读 | `sync2/mod.rs` `sync2_preview`（计算与回包抽成 `preview_of`，连接级 `preview_on`） | `cmd/preview.rs:preview` | **G7-4f 已补**。牌组树 / 默认牌组 / 卡的有效牌组都是 `cmd/mod.rs` 的只读函数（`deck_tree` / `default_deck` / `card_deck`；`Session::card_deck` 改为先收尾再调它）；归属组日志与笔记取 `cache.rs:Index::group`（写命令 `sched` 同一份）。卡与笔记先归一，回包 ID 是规范 ID。已知差别：协议 3 `group_of` 读链尾日志不带 `ORDER BY`（`idx_srs_review_logs_card` 上的 rowid 序 = 落库序），「链尾最后一条记了笔记的」在新代按 (发生时刻, 操作主键) 取；只在链尾晚到的旧日志记了另一个笔记时两边可能不同，新代的序与时间一致，不改 |
 | `read` | 读 | `reads.rs` `run`（27 个查询名） | `cmd/reads.rs:run`（同 27 个，逐名核过） | G7-4 已有；S1 接线 |
 | `card_columns` | 读 | `bulk.rs` `card_columns` | `cmd/columns.rs:card_columns` | G7-4b 已有 |
-| `anki_resolve` / `anki_notes_info` | 读 | `bulk.rs` | `cmd/columns.rs:anki_resolve` / `anki_notes_info` | G7-4b 已有 |
+| `anki_resolve` / `anki_notes_info` | 读 | `bulk.rs` | `cmd/columns.rs:anki_resolve` / `anki_notes_info` | G7-4b 已有；G7-4g 成员号改按缓存层反查表 `anki_members` 点查，从没出现在操作里的带盐卡的号也查得到（schema 40019） |
 | `stats_report` / `stats_recall` / `stats_rows` | 读 | `stats.rs` | `cmd/stats.rs:stats_report` / `stats_recall` / `stats_rows` | G7-4b 已有；原料缓存（协议 3 `StatsCache`）归 S1 命令层，未命中时调 `cmd/stats.rs:snapshot_of` |
 | `stats_release` | 无 | `stats.rs` `stats_release` | 缺（随缓存） | S1 |
 | `browse_query` / `browse_rows` / `browse_ids` / `browse_targets` / `browse_close` / `browse_stats` / `browse_counts` / `browse_sources` / `anki_find` / `anki_dupes` / `anki_tags` | 读（常驻会话） | `browse.rs` `SrsCore::browse` | 缺 | **G7-4d** |
@@ -180,20 +180,26 @@
 | `ffsrs_set_temp_dir` | — | `ffi.rs` | 不需要（与库代无关） | S1 原样保留 |
 | `ffsrs_store_sync2` | — | `ffi.rs` 分发器入口 | — | S1：本表全部命令的入口 |
 
-### 7.6 已知缺口：带盐成员上被扣住的删除，`resolve` 之后扣不掉（归 S1 / G7 接线）
+### 7.6 带盐成员上被扣住的删除，`resolve` 之后扣不掉（**已修**，G7-4g，按方案 1）
 
-G7-4e 复核补测试时发现（`cmd/center_tests.rs` `conflicts_name_a_salted_member_by_its_class`）：删除落在别名类的某个
-带盐成员上、被并发修改扣住时，`conflicts` 按规范号列出它，`resolve` 用列出的 ID 也找得到；但 `resolve` 写下的恢复 /
-再删经 `Session::land` → `canon_body` 换成了**规范号**，而扣住是 `weigh.rs` `weigh_holds` 按**原值成员**的 `deleted`
-寄存器判的（「见过这条删除的同寄存器写入」与「并发操作」都只看这个成员）。规范号上的写入不在那个寄存器里，于是
-`hold_ix` 那一行一直在，冲突中心反复列出同一条冲突（单成员的类不受影响：规范号就是原值号）。连带：`others`
-只数同一成员上的并发修改，类里别的成员上的并发修改不算。
+原缺口（G7-4e 复核补测试时发现）：删除落在别名类的某个带盐成员上、被并发修改扣住时，`resolve` 写下的恢复 / 再删
+经 `Session::land` → `canon_body` 换成了**规范号**，而 `weigh.rs` `weigh_holds` 只按**原值成员**的 `deleted` 寄存器
+判「已被见过它的写入盖掉」，于是 `hold_ix` 那一行一直在、冲突中心反复列出同一条冲突；`others` 也只数同一成员上的
+并发修改。
 
-这正是 `class.rs` 文件头「没有并起来的」一节留给「G7 接线时定」的事（扣住的删除要不要看全类的并发操作，设计 §10
-第 19 条同源）。接线前不影响用户（新代命令还没有调用方）。S1 接线前要二选一并补测试：
+修法（方案 1，扣住按类判）：`weigh_holds` 一次看一个别名类（`alias.rs` `Index::members`），「被见过它的写入盖掉」取
+全类成员的 `deleted`，`others_of` 取全类成员上的并发操作；状态与 `hold_ix` 的行仍按删除落的原值成员存。为此收尾
+顺序改成「清除 → 盐 / 别名表 → 扣住 / 标签 / 媒体 → 寄存器判定 → …」（`derive.rs` `settle` / `rebuild_all`；别名表只看
+清除状态，不看扣住与判定），别名表整表重算时总是记下变了的行（`alias_moves`，原先只有物化了缓存的集合才记），
+它们牵动的类在同一次收尾里重看——别名迟到（先扣住、后来才并类，或清除让证据变少、类拆开，设计 §10 第 19 条）
+时逐条维护与重建相同。测试：`cmd/center_tests.rs` `conflicts_name_a_salted_member_by_its_class`（裁决后消失、
+类内别的成员上的并发修改计入 `others`、重建相同）、`a_late_alias_holds_the_delete_by_its_class_and_rebuilds_the_same`
+（盐后到 / 先到两种到达顺序结果相同、每步重建相同）。
 
-1. 扣住按类判：`weigh_holds` 的「已被见过它的写入盖掉」与 `others_of` 都在全类成员的寄存器上取（写到规范号上的
-   写入要触发重看各成员的 `deleted`），`hold_ix` 仍按原值行存；或
-2. `resolve` 对被扣住的删除按 `Hold.entity` 的原值成员写（绕开 `canon_body`），与扣住的口径一致。
+复核补（G7-4g 复核）：变动牵动的类只重看类里任一成员（不只是变动的那个——删除可能落在类里没变动的成员上）有
+`deleted` 写入或 `hold_ix` 行的种类；变动的 ID 多于缓存层的 `MOVES_IN_PLACE`（新盐一到成千上万个带盐 ID 一起换规范
+ID）时与重建一样看全部有删除的实体，不逐类点查。测试 `a_late_member_holds_a_delete_on_a_member_that_did_not_move`、
+`a_late_alias_moving_many_ids_still_holds_the_delete`（增量 == 重建）。
 
-倾向 1（与寄存器、标签按类读同一个口径；2 会让「新写一律规范号」多一个例外）。
+清除（Purge）与作者不可信仍按原值实体判；一条 Purge 要不要清掉整个类仍归 S1 / G7 接线定（`class.rs` 文件头
+「没有并起来的」）。

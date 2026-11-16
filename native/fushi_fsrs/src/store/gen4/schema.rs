@@ -60,8 +60,11 @@ use rusqlite::Connection;
 /// `checkpoints`：真相表 `ops` 上只收种类 6（`Checkpoint`）的部分索引 `ops_checkpoint`，按设备主键区间读还原点、
 /// 不扫日志）；G7-4f 起 `40018`（RWKV 对齐的日志指纹与尾巴、回放扫描 `cmd/training.rs`：本机落库序 `log_seq` 与它的
 /// 唯一索引 `log_seq_k`——协议 3 按日志表 rowid（本机落库序）数行、取 rowid 之后的新行；新代的操作主键是
-/// 「设备下标 × 2^40 + seq」，不随落库单调，晚到的低下标设备的日志会落在游标之前）。整批推送前每个改表的 PR 各自用分到的号。
-pub const SCHEMA: i64 = 40_018;
+/// 「设备下标 × 2^40 + seq」，不随落库单调，晚到的低下标设备的日志会落在游标之前）；G7-4g 起 `40019`
+/// （AnkiConnect 数字 id 的成员反查表 `anki_members` 与它按笔记维护用的 `anki_members_note`——`cmd/columns.rs`
+/// 按号点查，不再扫别名表逐个算号，`cache.rs` 文件头「表」；`entity_count {kind, limit}` 按种类数到 `limit` 就停用的
+/// `ent_ix` 部分索引 `ent_kind`，`cmd/reads.rs` `each_class`）。整批推送前每个改表的 PR 各自用分到的号。
+pub const SCHEMA: i64 = 40_019;
 
 /// 新代的号段从这里起：`schema` 小于它的都不是新代库（协议 3 的 1～29 与封存值 39999）。
 pub const GEN_FLOOR: i64 = 40_000;
@@ -348,6 +351,7 @@ CREATE TABLE IF NOT EXISTS ent_ix (
   win INTEGER NOT NULL,
   PRIMARY KEY (col, id, k)
 ) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS ent_kind ON ent_ix (col, kind, id) WHERE win = 1;
 CREATE TABLE IF NOT EXISTS reg_ix (
   col INTEGER NOT NULL,
   ekind INTEGER NOT NULL,
@@ -473,7 +477,7 @@ CREATE TABLE IF NOT EXISTS dg_dirty (
 ";
 
 /// 派生表的名字（每张都有 `col` 列）。
-pub(crate) const DERIVED_TABLES: [&str; 18] = [
+pub(crate) const DERIVED_TABLES: [&str; 19] = [
     "ent_ix",
     "reg_ix",
     "log_ix",
@@ -492,6 +496,7 @@ pub(crate) const DERIVED_TABLES: [&str; 18] = [
     "notes",
     "cards",
     "stats",
+    "anki_members",
 ];
 
 /// 这个文件是不是新代的库：空文件（还没有任何表）才可以建；有表的必须 `schema` 等于 [SCHEMA] 且 `application_id` =
@@ -584,10 +589,12 @@ pub(crate) fn check_ready(conn: &Connection) -> Result<(), String> {
 /// 平均剩下的行数；`WITHOUT ROWID` 表的主键那一行 `idx` = 表名。量级取样本库，数字只表达形状、不随数据更新：计划因此
 /// 是 schema 的函数，不因某台设备数据多少而变（`tests::lookups_with_a_key_never_walk_the_whole_collection` 钉住）。
 /// 对这个文件跑 `ANALYZE` / `PRAGMA optimize` 会把它们换成随数据变的统计——下次打开时 [install] 会写回来。
-const PLANNER_STATS: [(&str, &str, &str); 39] = [
+const PLANNER_STATS: [(&str, &str, &str); 42] = [
     ("alias_ix", "alias_canon", "1000000 1000000 2 1"),
     ("alias_ix", "alias_ix", "1000000 1000000 1"),
     ("alias_ix", "alias_pool", "5000 5000 1"),
+    ("anki_members", "anki_members", "100000 100000 50000 1 1"),
+    ("anki_members", "anki_members_note", "100000 100000 3"),
     ("cache_log", "cache_log", "4096 4096 8 1"),
     ("cards", "cards", "100000 100000 1"),
     ("cards", "cards_anki", "100000 100000 1"),
@@ -601,6 +608,7 @@ const PLANNER_STATS: [(&str, &str, &str); 39] = [
     ("cards", "cards_template", "100000 100000 5000"),
     ("dg_ix", "dg_ix", "200000 200000 40000 1"),
     ("ent_ix", "ent_ix", "50000 50000 1 1"),
+    ("ent_ix", "ent_kind", "40000 40000 10000 1"),
     ("ent_ops", "ent_ops", "1000000 1000000 500000 20 20 1"),
     ("log_ix", "log_at", "1000000 1000000 2"),
     ("log_ix", "log_id", "1000000 1000000 1 1"),
