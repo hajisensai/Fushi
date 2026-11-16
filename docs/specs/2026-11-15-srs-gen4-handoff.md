@@ -137,7 +137,7 @@
 | `migrate` | 写 | `sync2/mod.rs` `sync2_migrate`（v1→v2） | 不需要（`gen4/migrate.rs` 是协议 3→4 的另一件事） | G7-6 删 |
 | `replay_all` | 写 | `sync2/mod.rs` | 不需要（派生层是真相的纯函数） | G7-6 删 |
 | `study` | 读 | `study.rs` `SrsCore::study` | 缺 | **G7-4c**（学习 / 出卡） |
-| `preview` | 读 | `sync2/mod.rs` `sync2_preview` | 缺 | **G7-4c**（评分预览在作答路径上）。要先把 `cmd/writes.rs` 里 `Session` 的 `deck_tree` / `default_deck` / `card_deck` 抽成只读可用的函数（`study` 的牌组计数同样要），与 `study` 一个 PR 做，避免两处各改一遍 `writes.rs` |
+| `preview` | 读 | `sync2/mod.rs` `sync2_preview` | 缺 | **G7-4c**（评分预览在作答路径上）。要先把 `cmd/writes.rs` 里 `Session` 的 `deck_tree` / `default_deck` / `card_deck` 抽成只读可用的函数（`study` 的牌组计数同样要），与 `study` 一个 PR 做，避免两处各改一遍 `writes.rs`。**待协调方确认 G7-4c 接收**（任务书原把它列在 G7-4e；G7-4c 不收就另派） |
 | `read` | 读 | `reads.rs` `run`（27 个查询名） | `cmd/reads.rs:run`（同 27 个，逐名核过） | G7-4 已有；S1 接线 |
 | `card_columns` | 读 | `bulk.rs` `card_columns` | `cmd/columns.rs:card_columns` | G7-4b 已有 |
 | `anki_resolve` / `anki_notes_info` | 读 | `bulk.rs` | `cmd/columns.rs:anki_resolve` / `anki_notes_info` | G7-4b 已有 |
@@ -179,3 +179,21 @@
 | `ffsrs_store_optimizer_items` / `ffsrs_store_calibration_items` / `ffsrs_store_rwkv_rows` / `ffsrs_store_rwkv_log_tail` | 读 | `calibration.rs` / 优化器 / RWKV 训练集 | 缺 | 同上：训练集读血统日志，新代按 `cache.rs:replayed_card_logs` 取日志即可 |
 | `ffsrs_set_temp_dir` | — | `ffi.rs` | 不需要（与库代无关） | S1 原样保留 |
 | `ffsrs_store_sync2` | — | `ffi.rs` 分发器入口 | — | S1：本表全部命令的入口 |
+
+### 7.6 已知缺口：带盐成员上被扣住的删除，`resolve` 之后扣不掉（归 S1 / G7 接线）
+
+G7-4e 复核补测试时发现（`cmd/center_tests.rs` `conflicts_name_a_salted_member_by_its_class`）：删除落在别名类的某个
+带盐成员上、被并发修改扣住时，`conflicts` 按规范号列出它，`resolve` 用列出的 ID 也找得到；但 `resolve` 写下的恢复 /
+再删经 `Session::land` → `canon_body` 换成了**规范号**，而扣住是 `weigh.rs` `weigh_holds` 按**原值成员**的 `deleted`
+寄存器判的（「见过这条删除的同寄存器写入」与「并发操作」都只看这个成员）。规范号上的写入不在那个寄存器里，于是
+`hold_ix` 那一行一直在，冲突中心反复列出同一条冲突（单成员的类不受影响：规范号就是原值号）。连带：`others`
+只数同一成员上的并发修改，类里别的成员上的并发修改不算。
+
+这正是 `class.rs` 文件头「没有并起来的」一节留给「G7 接线时定」的事（扣住的删除要不要看全类的并发操作，设计 §10
+第 19 条同源）。接线前不影响用户（新代命令还没有调用方）。S1 接线前要二选一并补测试：
+
+1. 扣住按类判：`weigh_holds` 的「已被见过它的写入盖掉」与 `others_of` 都在全类成员的寄存器上取（写到规范号上的
+   写入要触发重看各成员的 `deleted`），`hold_ix` 仍按原值行存；或
+2. `resolve` 对被扣住的删除按 `Hold.entity` 的原值成员写（绕开 `canon_body`），与扣住的口径一致。
+
+倾向 1（与寄存器、标签按类读同一个口径；2 会让「新写一律规范号」多一个例外）。

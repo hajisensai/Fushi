@@ -58,11 +58,8 @@ pub fn conflicts(t: &Truth<'_>, col: i64) -> Result<Value, String> {
         let ix = Index::new(t, col);
         let mut out: Vec<(i64, String, Value)> = Vec::new();
         for h in ix.holds()? {
-            let k = t
-                .key_of(col, &h.op)?
-                .ok_or_else(|| format!("gen4 conflicts: held op {:?} is not in the log", h.op))?;
             let at = t
-                .head_by_key(k)?
+                .head_by_key(h.k)?
                 .ok_or_else(|| format!("gen4 conflicts: held op {:?} has no head", h.op))?
                 .wall;
             let entity = ix.canonical(&h.entity)?.text();
