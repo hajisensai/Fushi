@@ -68,6 +68,11 @@ abstract final class FushiChannels {
   static const MethodChannel feedbackReplyWork = MethodChannel(
     '$_prefix/feedback_reply_work',
   );
+
+  /// Android 文件分享（BUG-4740）。share_plus 7.2.2 在 Android 主线程上整份拷贝
+  /// 待分享文件，大文件直接 ANR；`FushiShare.shareFiles` 在 Android 上先异步落
+  /// 快照再走这条。原生侧 `FushiShareChannel.kt`。
+  static const MethodChannel share = MethodChannel('$_prefix/share');
   static const MethodChannel clipboardImage = MethodChannel(
     '$_prefix/clipboard_image',
   );
