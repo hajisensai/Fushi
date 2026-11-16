@@ -19,6 +19,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:fushi/src/anki/mine_failure_notice.dart';
 import 'package:fushi/src/lookup/overlay_auto_read.dart';
+import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart';
 import 'package:fushi/src/lookup/gal_lookup_latency_trace.dart';
 import 'package:fushi/src/lookup/global_lookup_channel.dart';
@@ -634,7 +635,17 @@ class GlobalLookupController {
               'replaySentence',
               (AudiobookPlayerController c) => c.replayCurrentCue(),
             ),
+        // galgame 台词朗读（反馈 N8qzDdzIvD）：台词浮窗「朗读」按钮的同一个方法。
+        ShortcutAction.globalExternalGalgameSpeakLine: speakGalgameLine,
       };
+
+  /// [ShortcutAction.globalExternalGalgameSpeakLine] 的执行体：朗读 / 停止当前显示
+  /// 的 galgame 台词。直接调台词浮窗「朗读」按钮（`onSpeakLine`）接的
+  /// [GalHookTextOverlayController.speakCurrentLine]——按钮与热键同一条路径（朗读中
+  /// 再按即停、浮窗已启动但没有当前台词时提示），不另写一套 TTS 调度。台词浮窗
+  /// 没启动（没在 Hook 游戏）时 `speakCurrentLine` 首行直接返回，按热键静默无动作。
+  Future<void> speakGalgameLine() =>
+      GalHookTextOverlayController.instance.speakCurrentLine();
 
   /// 有声书全局热键的播放控制执行体：落到 app 级会话的控制器——悬浮字幕窗的
   /// 「上一句 / 播放暂停 / 下一句」按钮（`AudiobookSession._setupFloatingLyricHandlers`）
@@ -789,7 +800,8 @@ class GlobalLookupController {
 
   /// Screen OCR needs the overlay (freeze layer + lookup card); showing /
   /// hiding the audiobook floating subtitles needs a native floating-lyric
-  /// window (none on Linux, see [floatingLyricBackendAvailableOn]). The other
+  /// window (none on Linux, see [floatingLyricBackendAvailableOn]); reading the
+  /// galgame line aloud needs the galgame text overlay (Windows only). The other
   /// actions work without either ([triggerSelectionLookup] falls back to the
   /// main window, [openLookupPageInMainWindow] never needed it, the audiobook
   /// playback controls only drive the player).
@@ -798,6 +810,9 @@ class GlobalLookupController {
         ShortcutAction.globalExternalScreenOcr => isSupported,
         ShortcutAction.globalExternalFloatingLyricToggle =>
           FloatingLyricChannel.supported,
+        // 台词浮窗（与它的 TTS）只在 Windows 有：别的平台注册了也没有执行对象。
+        ShortcutAction.globalExternalGalgameSpeakLine =>
+          GalHookTextOverlayController.isSupported,
         _ => true,
       };
 
