@@ -127,6 +127,8 @@ CREATE TABLE IF NOT EXISTS notes (
 ) WITHOUT ROWID;
 CREATE INDEX IF NOT EXISTS notes_type ON notes (col, note_type_id);
 CREATE INDEX IF NOT EXISTS notes_deck ON notes (col, deck_id);
+CREATE INDEX IF NOT EXISTS notes_term ON notes (col, term_key);
+CREATE INDEX IF NOT EXISTS notes_pending ON notes (col) WHERE pending_decision = 1;
 CREATE TABLE IF NOT EXISTS cards (
   col INTEGER NOT NULL,
   id NOT NULL,
@@ -216,10 +218,10 @@ struct Plan {
     note_deck: Option<String>,
 }
 
-/// 一条日志（规范日志 ID 的代表）在缓存层的样子。
-struct LogIn {
-    json: String,
-    server_time: Option<i64>,
+/// 一条日志（规范日志 ID 的代表）在缓存层的样子（读命令 `cmd/` 也读它）。
+pub(super) struct LogIn {
+    pub(super) json: String,
+    pub(super) server_time: Option<i64>,
     intent: Intent,
 }
 
@@ -241,6 +243,14 @@ const BATCH: usize = 512;
 const MOVES_IN_PLACE: usize = 256;
 
 /// 「前身 → 后继」链接（`historyFrom/` 键、不看值）：按卡按需查，查过的记下。
+/// 一批卡的血统（`Index::lineage`）：卡 ID（文本）→ 活着的修改行 / 重放写回的日志 / 生效的前身 / 后继。
+struct Lineage {
+    lines: BTreeMap<String, Vec<(String, Option<i64>)>>,
+    logs: HashMap<String, Vec<LogIn>>,
+    preds: HashMap<String, Vec<String>>,
+    succs: HashMap<String, Vec<String>>,
+}
+
 #[derive(Default)]
 struct Links {
     succ: HashMap<Ref, Vec<Ref>>,
@@ -482,7 +492,7 @@ impl<'t, 'c> Index<'t, 'c> {
 
     /// 一个实体（规范 ID）的定义：(种类, 操作主键, 身份记录的数据，嵌的 ID 已归一)。类里不止一个成员有定义时取归一后
     /// 规范 JSON 文本最小的、再取操作号最小的（[Index] 选一个 ID 的定义的同一个规则搬到类上，与到达顺序无关）。
-    fn definition(&self, id: &Ref) -> Result<Option<(i64, i64, Value)>, String> {
+    pub(super) fn definition(&self, id: &Ref) -> Result<Option<(i64, i64, Value)>, String> {
         let canon = self.canon(id)?;
         let mut best: Option<((String, crate::sync2::vv::OpId), (i64, i64, Value))> = None;
         for m in self.class_of(&canon)? {
@@ -558,7 +568,7 @@ impl<'t, 'c> Index<'t, 'c> {
     /// 一张卡（规范 ID）的日志：每个规范日志 ID 一条，按代表的 (发生时刻, 操作主键)。代表是这个规范日志 ID 的全部
     /// 份（类里每个原值日志 ID 落在任何卡上的每一条）里操作号最小的那条（`log_ix.win` 的规则搬到类上，设计 §5.3
     /// `logs_of_class`）；代表落在这张卡的类里，这条日志才算这张卡的。规范日志 ID 只有一个成员时就是 `win = 1` 那条。
-    fn card_logs(&self, card: &Ref) -> Result<Vec<LogIn>, String> {
+    pub(super) fn card_logs(&self, card: &Ref) -> Result<Vec<LogIn>, String> {
         let mut reps: BTreeMap<Ref, (i64, i64)> = BTreeMap::new();
         let class = self.class_of(card)?;
         for m in &class {
@@ -629,7 +639,7 @@ impl<'t, 'c> Index<'t, 'c> {
     }
 
     /// 一条日志操作的投影行（协议 3 `log_row` 同一份拼法）。
-    fn log_at(&self, k: i64) -> Result<LogIn, String> {
+    pub(super) fn log_at(&self, k: i64) -> Result<LogIn, String> {
         let e = self
             .t
             .entry_by_key(k)?
@@ -1237,6 +1247,25 @@ impl<'t, 'c> Index<'t, 'c> {
         acc: &mut StatAcc,
         out: &mut Settled,
     ) -> Result<(), String> {
+        let l = self.lineage(batch)?;
+        self.cache_lineage(cfg, batch, plans, all, acc, out, l)
+    }
+
+    /// 卡 [card] 的日志，`res` 是按血统重放写回的（与缓存层、协议 3 落库的日志行同一份）：它的 historyFrom 连通分量
+    /// 整个重放一遍再取它那一段。读命令 `logs` / `entity_views` 用（G7-4）。
+    pub(super) fn replayed_card_logs(&mut self, card: &Ref) -> Result<Vec<LogIn>, String> {
+        let card = self.canon(card)?;
+        let mut links = Links::default();
+        let comp: Vec<Ref> = self
+            .link_family(&mut links, &BTreeSet::from([card.clone()]))?
+            .into_iter()
+            .collect();
+        let mut l = self.lineage(&comp)?;
+        Ok(l.logs.remove(&card.text()).unwrap_or_default())
+    }
+
+    /// 一批卡（若干个完整的 historyFrom 连通分量）：活着的修改行、生效的前身 / 后继、按链尾重放写回的日志。
+    fn lineage(&mut self, batch: &[Ref]) -> Result<Lineage, String> {
         // 卡的活着的修改行（血统、标志、链尾都从它判）与日志。
         let mut lines: BTreeMap<String, Vec<(String, Option<i64>)>> = BTreeMap::new();
         let mut logs: HashMap<String, Vec<LogIn>> = HashMap::new();
@@ -1299,6 +1328,32 @@ impl<'t, 'c> Index<'t, 'c> {
                 l.json = json;
             }
         }
+        Ok(Lineage {
+            lines,
+            logs,
+            preds,
+            succs,
+        })
+    }
+
+    /// [cache_batch] 的物化段：卡行、统计行（[l] = 这一批的 [lineage]）。
+    #[allow(clippy::too_many_arguments)]
+    fn cache_lineage(
+        &mut self,
+        cfg: &CacheConfig,
+        batch: &[Ref],
+        plans: &HashMap<Ref, Plan>,
+        all: bool,
+        acc: &mut StatAcc,
+        out: &mut Settled,
+        l: Lineage,
+    ) -> Result<(), String> {
+        let Lineage {
+            lines,
+            logs,
+            preds,
+            succs,
+        } = l;
         let stored_of = |lineage: &[String]| -> Vec<StoredLog<'_>> {
             let mut s: Vec<StoredLog<'_>> = Vec::new();
             for c in lineage {
