@@ -312,7 +312,10 @@ void main() {
   test('生产接线守卫：异步重建经 _dictResources 探测、先探后排期再装载', () {
     final String src = File('lib/src/models/app_model.dart').readAsStringSync();
     final String body = maskCommentsAndStrings(
-      methodBody(src, 'Future<void> _scheduleDictPathsAsync() async {'),
+      methodBody(
+        src,
+        'Future<bool> _scheduleDictPathsAsync([bool onlyIfChanged = false]) async {',
+      ),
     );
     final int resolve = body.indexOf('await _dictResources.resolve(');
     final int migrate = body.indexOf('_migrateDictionaryTypes();');

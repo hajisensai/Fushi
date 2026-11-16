@@ -46,7 +46,7 @@ void main() {
   Future<void> reopen(String path) async {
     final FushiDatabase db = FushiDatabase.atFile(path, isMainProcess: false);
     try {
-      expect(db.schemaVersion, 155);
+      expect(db.schemaVersion, 156);
       expect(await db.getGalgame('g1'), isNotNull, reason: '游戏本身不受影响');
     } finally {
       await db.close();

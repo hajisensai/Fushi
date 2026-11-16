@@ -8009,7 +8009,7 @@ class MediaSourceRow extends DataClass implements Insertable<MediaSourceRow> {
   /// `deleteMediaSource`）。
   final bool isPrivate;
 
-  /// 自动扫描（schema v155，拍板台 C_8oheua0H / ICOLa6LZLU / enSm2GOuFA）：true =
+  /// 自动扫描（schema v156，拍板台 C_8oheua0H / ICOLa6LZLU / enSm2GOuFA）：true =
   /// app 启动与回到前台时，这个来源按节流间隔自动重扫一次（调度见 fushi
   /// `source_auto_scan.dart`），扫完照手动「重新扫描」的收尾走（视频来源串联
   /// 「扫描后自动刮削」）。设备本地配置（来源只存在于本机，不进互联同步）；

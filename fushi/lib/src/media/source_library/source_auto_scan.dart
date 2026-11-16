@@ -1,6 +1,6 @@
 /// 来源「自动扫描」（拍板台 C_8oheua0H / ICOLa6LZLU / enSm2GOuFA，维护者拍板）。
 ///
-/// - **开关每来源一个**（`media_sources.auto_scan`，schema v155），默认关；书 / 有声书
+/// - **开关每来源一个**（`media_sources.auto_scan`，schema v156），默认关；书 / 有声书
 ///   （书籍来源里的音频 + 字幕组）/ 漫画 / 视频 / 音乐 / 游戏全部来源种类都支持——它们
 ///   本来就走同一个 [SourceLibraryScanner.scan]。
 /// - **触发 = app 启动 + 回到前台**（拍板选项 A）。不做文件系统监听：Android SAF、iOS

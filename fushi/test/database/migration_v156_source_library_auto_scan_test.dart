@@ -4,7 +4,7 @@ import 'package:test/test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:sqlite3/sqlite3.dart' as sqlite;
 
-/// v155：`media_sources` 加「自动扫描」开关 `auto_scan`（拍板台 C_8oheua0H /
+/// v156：`media_sources` 加「自动扫描」开关 `auto_scan`（拍板台 C_8oheua0H /
 /// ICOLa6LZLU / enSm2GOuFA）。纯加列、默认关，存量来源 false；列已存在（早期步骤
 /// 按当前定义建的表）时跳过。
 void main() {
@@ -26,14 +26,14 @@ void main() {
       row['name'] as String,
   };
 
-  test('v154 → v155 adds auto_scan; existing sources stay off', () async {
+  test('v155 → v156 adds auto_scan; existing sources stay off', () async {
     final Directory directory = Directory.systemTemp.createTempSync(
-      'sourceautoscan155',
+      'sourceautoscan156',
     );
     addTearDown(() => directory.deleteSync(recursive: true));
     final String path = await createDbAt(directory);
 
-    // 退回 v154 形态：没有 auto_scan 列，已有两条来源。
+    // 退回 v155 形态：没有 auto_scan 列，已有两条来源。
     final sqlite.Database raw = sqlite.sqlite3.open(path);
     raw.execute('ALTER TABLE media_sources DROP COLUMN auto_scan');
     raw.execute(
@@ -44,7 +44,7 @@ void main() {
       'INSERT INTO media_sources (label, media_kind, transport, root_path, '
       "sort_order, created_at) VALUES ('Anime', 'video', 'local', '/anime', 0, 2)",
     );
-    raw.execute('PRAGMA user_version = 154');
+    raw.execute('PRAGMA user_version = 155');
     expect(columnsOf(raw), isNot(contains('auto_scan')));
     raw.dispose();
 
@@ -52,7 +52,7 @@ void main() {
       path,
       isMainProcess: false,
     );
-    expect(migrated.schemaVersion, 155);
+    expect(migrated.schemaVersion, 156);
     final List<MediaSourceRow> rows = await migrated
         .select(migrated.mediaSources)
         .get();
@@ -89,19 +89,19 @@ void main() {
 
     final sqlite.Database probe = sqlite.sqlite3.open(path);
     addTearDown(probe.dispose);
-    expect(probe.select('PRAGMA user_version').first.values.first, 155);
+    expect(probe.select('PRAGMA user_version').first.values.first, 156);
     expect(columnsOf(probe), contains('auto_scan'));
   });
 
-  test('v155 step is idempotent when the column already exists', () async {
+  test('v156 step is idempotent when the column already exists', () async {
     final Directory directory = Directory.systemTemp.createTempSync(
-      'sourceautoscan155idem',
+      'sourceautoscan156idem',
     );
     addTearDown(() => directory.deleteSync(recursive: true));
     final String path = await createDbAt(directory);
 
     final sqlite.Database raw = sqlite.sqlite3.open(path);
-    raw.execute('PRAGMA user_version = 154');
+    raw.execute('PRAGMA user_version = 155');
     raw.dispose();
 
     final FushiDatabase migrated = FushiDatabase.atFile(
@@ -113,7 +113,7 @@ void main() {
 
     final sqlite.Database probe = sqlite.sqlite3.open(path);
     addTearDown(probe.dispose);
-    expect(probe.select('PRAGMA user_version').first.values.first, 155);
+    expect(probe.select('PRAGMA user_version').first.values.first, 156);
     expect(columnsOf(probe), contains('auto_scan'));
   });
 }

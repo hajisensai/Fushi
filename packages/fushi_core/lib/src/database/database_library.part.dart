@@ -275,7 +275,7 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
         MediaSourcesCompanion(isPrivate: Value(isPrivate)),
       );
 
-  /// 设置来源的自动扫描开关（v155，`media_sources.auto_scan`）。只写这一列。
+  /// 设置来源的自动扫描开关（v156，`media_sources.auto_scan`）。只写这一列。
   Future<void> updateMediaSourceAutoScan(int id, bool autoScan) =>
       (update(mediaSources)..where((t) => t.id.equals(id))).write(
         MediaSourcesCompanion(autoScan: Value(autoScan)),
