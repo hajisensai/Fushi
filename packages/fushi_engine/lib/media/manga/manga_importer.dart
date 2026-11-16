@@ -18,6 +18,21 @@ import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
 
+/// 页图来源目录归谁——决定页图是**拷**进书目录还是**移**进去。
+enum MangaPageSource {
+  /// 用户自己的目录（选中的页图文件夹、`.mokuro` 同级页图、来源库）：只读，逐页拷贝，
+  /// 绝不动原文件。所有入口的默认值。
+  borrowed,
+
+  /// 调用方自己建的临时目录、导入完即整个删掉（压缩包解出的 staging、PDF 栅格化 /
+  /// EPUB 铺页的暂存目录）：页图直接**移动**进书目录。同卷是一次 rename、不占额外
+  /// 空间；跨卷（临时目录与书目录不在同一文件系统）才回退成「拷贝 + 删源」。
+  ///
+  /// 此前这些暂存目录也走拷贝：导入一个 4 GiB 的包，磁盘峰值是「原包 + 暂存 4 GiB +
+  /// 书目录 4 GiB」，空间紧的平板会在拷贝中途写满。
+  disposable,
+}
+
 /// 已知漫画页图扩展名（mokuro 惯例）＝漫画页图共享表（基集 + `.avif`）。
 ///
 /// 与整卷 OCR 的白名单 `kMangaOcrImageExtensions`（manga_ocr_folder_job.dart）
@@ -109,6 +124,7 @@ class MangaImporter {
     void Function(int done, int total)? onProgress,
     int? sourceId,
     String? sourceMetadata,
+    MangaPageSource pageSource = MangaPageSource.borrowed,
   }) async {
     final Directory root = Directory(imageDirPath);
     final MokuroPayload payload = await payloadFromImageFolder(root);
@@ -124,6 +140,7 @@ class MangaImporter {
       onProgress: onProgress,
       sourceId: sourceId,
       sourceMetadata: sourceMetadata,
+      pageSource: pageSource,
     );
   }
 
@@ -212,17 +229,33 @@ class MangaImporter {
     required List<String> destRels,
     required String bookDir,
     void Function(int done, int total)? onProgress,
+    MangaPageSource pageSource = MangaPageSource.borrowed,
   }) async {
     // 逐页 await 让主 isolate 有机会喂进度不卡 UI。
     final int total = payload.images.length;
     final List<MokuroImage> rewritten = <MokuroImage>[];
+    // disposable 模式下已经移走的源 → 它在书目录里的新位置：多页引用同一张源图时，
+    // 第二次起从书目录里那份拷（源已经不在原处）。
+    final Map<String, File> moved = <String, File>{};
     for (int i = 0; i < total; i++) {
       final MokuroImage page = payload.images[i];
       final String destRel = destRels[i];
       final File src = mokuroPageFile(srcDir.path, page.url);
       final File dest = MangaStorage.destFile(bookDir, destRel);
       dest.parent.createSync(recursive: true);
-      await src.copy(dest.path);
+      switch (pageSource) {
+        case MangaPageSource.borrowed:
+          await src.copy(dest.path);
+        case MangaPageSource.disposable:
+          final String key = p.canonicalize(src.path);
+          final File? earlier = moved[key];
+          if (earlier != null) {
+            await earlier.copy(dest.path);
+          } else {
+            await movePageFile(src, dest);
+            moved[key] = dest;
+          }
+      }
       rewritten.add(
         MokuroImage(url: destRel, size: page.size, blocks: page.blocks),
       );
@@ -240,6 +273,26 @@ class MangaImporter {
     return (pageCount: total, coverRel: destRels.first);
   }
 
+  /// 把 [src] 移到 [dest]（覆盖已存在的 [dest]）：同一文件系统内是一次 rename；
+  /// 跨文件系统（EXDEV / Windows ERROR_NOT_SAME_DEVICE）回退成拷贝后删源。其它失败
+  /// 照常抛出。
+  static Future<void> movePageFile(File src, File dest) async {
+    try {
+      await src.rename(dest.path);
+    } on FileSystemException catch (e) {
+      if (!_isCrossDevice(e)) rethrow;
+      await src.copy(dest.path);
+      await src.delete();
+    }
+  }
+
+  /// rename 失败是不是「源与目标不在同一文件系统」：POSIX `EXDEV`（18）、Windows
+  /// `ERROR_NOT_SAME_DEVICE`（17）。
+  static bool _isCrossDevice(FileSystemException e) {
+    final int? code = e.osError?.errorCode;
+    return Platform.isWindows ? code == 17 : code == 18;
+  }
+
   /// 从 [mokuroPath] 指向的 `.mokuro` 文件导入一本漫画，返回新建的 `bookKey`。
   ///
   /// [title]：由导入对话框传入的用户可编辑标题（优先）；缺省则从 mokuro 顶层 `title`/
@@ -254,6 +307,7 @@ class MangaImporter {
     DuplicatePolicy policy = const DuplicatePolicy.suffix(),
     void Function(int done, int total)? onProgress,
     int? sourceId,
+    MangaPageSource pageSource = MangaPageSource.borrowed,
   }) async {
     final File mokuroFile = File(mokuroPath);
     if (!mokuroFile.existsSync()) {
@@ -317,6 +371,7 @@ class MangaImporter {
       policy: policy,
       onProgress: onProgress,
       sourceId: sourceId,
+      pageSource: pageSource,
     );
   }
 
@@ -388,6 +443,7 @@ class MangaImporter {
     void Function(int done, int total)? onProgress,
     int? sourceId,
     String? sourceMetadata,
+    MangaPageSource pageSource = MangaPageSource.borrowed,
   }) async {
     // 第一遍：规划每页 destRel（sanitize + 保留子目录 + 去重）并校验源图存在 + 防路径穿越。
     // 全部在任何落盘/落库之前完成——校验失败零副作用，无需回滚。
@@ -416,6 +472,7 @@ class MangaImporter {
             destRels: destRels,
             bookDir: bookDir,
             onProgress: onProgress,
+            pageSource: pageSource,
           );
       final int total = artifacts.pageCount;
       final String coverRel = artifacts.coverRel;
