@@ -211,7 +211,7 @@ impl Acc {
     }
 }
 
-/// 一条拼好的落库修改行（[Index::edit_lines]）。
+/// 一条拼好的落库修改行（[Index::edit_lines_as]）。
 pub(super) struct Line {
     pub(super) json: String,
     pub(super) server_time: Option<i64>,
@@ -290,6 +290,18 @@ pub struct Index<'t, 'c> {
     pub(super) salts_dirty: bool,
     /// 这一批里缓存层要重看的（`cache.rs`）。
     pub(super) dirt: Dirt,
+    /// 收尾时别名表变了的那几行牵动的 ID（`alias.rs` 记：变了规范 ID 的出现过的 ID，与它变之前、之后的规范 ID）。
+    /// 缓存层按它重看受影响的规范 ID（`cache.rs` 文件头「别名」第 5 条），用掉就清。
+    pub(super) alias_moves: BTreeSet<Ref>,
+    /// 收尾时归回的改名写入者变了：按类判定的寄存器都可能变，缓存层整层重建。
+    pub(super) writers_moved: bool,
+    /// 一次缓存层的物化期间缓存的写入者表（`alias_writer_ix`；读的时候索引不变）。
+    pub(super) pass_writers: Option<BTreeMap<String, String>>,
+    /// 缓存层按类拼行时没走捷径、按类重判了的寄存器数（`class.rs` [Index::class_lines]；只增不减，测试与量测读）。
+    pub(super) class_judged: u64,
+    /// 这一趟缓存刷新里行可能变了的笔记（原值 ID，含被删掉的旧 ID）：收尾时记进缓存层的变更记录（`cache.rs`
+    /// [Index::cache_log_flush]，浏览会话据此按笔记失效）。
+    pub(super) cache_touched: BTreeSet<Ref>,
 }
 
 impl<'t, 'c> Index<'t, 'c> {
@@ -317,6 +329,11 @@ impl<'t, 'c> Index<'t, 'c> {
             alias_delta: Default::default(),
             salts_dirty: false,
             dirt: Dirt::default(),
+            alias_moves: BTreeSet::new(),
+            writers_moved: false,
+            pass_writers: None,
+            class_judged: 0,
+            cache_touched: BTreeSet::new(),
         }
     }
 
@@ -834,18 +851,9 @@ impl<'t, 'c> Index<'t, 'c> {
 
     /// [ks] 这几条修改操作拼成寄存器内核（`crate::registers`）要的落库行（冻结的旧判定，见文件头）：同一个 dot 的
     /// 并成一行（代表取操作号最小的，`server_time` 取最小值）；[emit] 按代表在 [ks] 里的下标决定这一行要不要，
-    /// 不带旧戳的写入的上下文只回答「见没见过别的**要的**行的 dot」。寄存器判定（全要）与缓存层（只要活着的，
-    /// `cache.rs`）共用这一份。
-    pub(super) fn edit_lines(
-        &mut self,
-        ks: &[i64],
-        emit: &dyn Fn(usize) -> bool,
-    ) -> Result<Vec<Line>, String> {
-        self.edit_lines_as(ks, emit, None)
-    }
-
-    /// [Index::edit_lines]，[class] = Some 时按别名类拼（`class.rs` 文件头）：dot 的写入者、HLC 的写入者、旧上下文的
-    /// 键三处一起换成规范写入者（同一个规范 dot 的并成一次写入），实体、键换成规范形，值里嵌的 ID 归一。
+    /// 不带旧戳的写入的上下文只回答「见没见过别的**要的**行的 dot」。[class] = None 按原值拼（索引层的寄存器判定，
+    /// 全要）；Some 时按别名类拼（`class.rs` 文件头；按类判定与缓存层只要活着的，`cache.rs`）：dot 的写入者、HLC 的
+    /// 写入者、旧上下文的键三处一起换成规范写入者（同一个规范 dot 的并成一次写入），实体、键换成规范形，值里嵌的 ID 归一。
     /// 不带旧戳的写入「见没见过」按规范 dot 问，闭包过同一个换名（[Index::seen]）。
     pub(super) fn edit_lines_as(
         &mut self,
@@ -854,6 +862,7 @@ impl<'t, 'c> Index<'t, 'c> {
         class: Option<&super::class::Canon>,
     ) -> Result<Vec<Line>, String> {
         struct Write {
+            k: i64,
             id: OpId,
             ed: Edit4,
             wall: i64,
@@ -881,6 +890,7 @@ impl<'t, 'c> Index<'t, 'c> {
             let mut full = (*deps).clone();
             full.set(e.id.device, e.id.seq - 1);
             writes.push(Write {
+                k,
                 id: e.id,
                 ed,
                 wall,
@@ -953,11 +963,14 @@ impl<'t, 'c> Index<'t, 'c> {
             let value = serde_json::from_str::<Value>(&w.ed.value).unwrap_or(Value::Null);
             let (entity, key, value) = match class {
                 None => (w.ed.entity.text(), w.ed.key.clone(), value),
-                Some(c) => (
-                    c.entity.clone(),
-                    c.key.clone(),
-                    self.canonical_value(&c.key, &value)?,
-                ),
+                Some(c) => {
+                    let key = c.key_of(w.k);
+                    (
+                        c.entity.clone(),
+                        key.to_owned(),
+                        self.canonical_value(key, &value)?,
+                    )
+                }
             };
             let mut m = Map::new();
             m.insert("p".into(), json!(""));
@@ -1196,7 +1209,8 @@ impl<'t, 'c> Index<'t, 'c> {
         self.heads.clear();
         super::digest::set_triggers(conn, true)?;
         out.digests = self.digest_rebuild()?;
-        // 扫日志时碰到带盐的操作会置 `salts_dirty`；这里已整个重算，清掉，否则 [Index::aliases_stale] 在重建刚完时仍报「没算」。
+        // 扫描时带盐的操作把「盐集合要重看」置上了；这里就地重算，别让它留着、把别名表误报成没重算（缓存层按类读
+        // 要求别名表是新的，`class.rs` [Index::aliases_stale]）。
         self.salts_dirty = false;
         self.settle_salts()?;
         out.aliases = self.rebuild_aliases()?;

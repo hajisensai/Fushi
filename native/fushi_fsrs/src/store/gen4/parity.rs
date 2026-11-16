@@ -129,6 +129,18 @@ const KNOWN: &[Known] = &[
               disagrees with its own log; the field, the note row and its cards differ on purpose",
     },
     Known {
+        test: "store::gen4::dryrun::tests::an_unrelated_column_on_a_masked_row_still_fails",
+        what: "edits",
+        old: None,
+        why: "the test deletes one live srs_field_edits row (the note's deck) by hand to prove a column the known               difference does not feed is still compared on a masked row; the edit and the note row differ on purpose",
+    },
+    Known {
+        test: "store::gen4::dryrun::tests::an_unrelated_column_on_a_masked_row_still_fails",
+        what: "notes",
+        old: None,
+        why: "the test deletes one live srs_field_edits row (the note's deck) by hand to prove a column the known               difference does not feed is still compared on a masked row; the edit and the note row differ on purpose",
+    },
+    Known {
         test: "store::gen4::legacy::tests::a_duplicate_skeleton_in_the_log_becomes_an_alias",
         what: "edits",
         old: None,
@@ -169,6 +181,14 @@ const KNOWN: &[Known] = &[
         why: "the test adds a note identity record without noteTypeId on purpose: protocol 3's frozen cache \
               rebuild fails as a whole on it (cache.rs header), so there is no protocol 3 cache baseline to \
               compare against",
+    },
+    Known {
+        test: "store::gen4::migrate::tests::an_incomplete_parity_aborts_like_a_failure",
+        what: "caches",
+        old: Some(NOTE_TYPE_MISSING),
+        why: "the same fixture as the dry run's incomplete test, used to prove the migration aborts on an \
+              incomplete parity: protocol 3's frozen cache rebuild fails as a whole on the note without \
+              noteTypeId, so there is no protocol 3 cache baseline to compare against",
     },
     Known {
         test: "store::gen4::dryrun::tests::parity_reports_a_failed_protocol_3_cache_rebuild_as_a_caches_diff",

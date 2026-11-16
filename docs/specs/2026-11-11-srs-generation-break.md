@@ -1028,7 +1028,7 @@ BUG-4011 的拍板不变：首次同步的确认弹框没回答之前不绑定�
 大于自己就拒绝（`:526-530`）。所以「旧版本拒绝打开」只在原路径有一个它读得懂、又比它大的 `schema` 时才成立——封存库与墓碑库都满足。
 **封存值必须避开新代号段**：`gen4/schema.rs:300`、`:319` 的 `check_kind` 把空库或 `schema == SCHEMA` 的文件认作新代库，所以取 39999（< 40000），
 再加新代文件的 `application_id` 双重区分（D7）。新代文件自己也保留 `srs_meta(key TEXT, value TEXT)` 与文本形式的 `schema`，以防被旧版本当成它的库打开。
-取值的万位是代：G6 第一部分是 `40001`，之后每次结构变化直接换号——G6c-1 `40002`、G6c-2 `40003`、G6c-3 `40004`、G6c-4 `40005`（新索引 `alias_pool`）、G7-1 `40006`（本机状态表 `self_` / `peers` / `held` / `checkpoints` / `media_local` / `media_at` / `loc_state`、`collections` 的绑定状态三列、`application_id`）。
+取值的万位是代：G6 第一部分是 `40001`，之后每次结构变化直接换号——G6c-1 `40002`、G6c-2 `40003`、G6c-3 `40004`、G6c-4 `40005`（新索引 `alias_pool`）、G7-1 `40006`（本机状态表 `self_` / `peers` / `held` / `checkpoints` / `media_local` / `media_at` / `loc_state`、`collections` 的绑定状态三列、`application_id`）、G8-3 `40007`（`media_at.pend`、媒体清单进度表 `media_seen` / `media_listed` / `media_gen`）。
 **冻结时机（2026-11-15 统一，§11.5 第 11 条）**：整批（G7–G11 的第二段）合入的那次 develop 推送里冻结；在此之前每个改 `gen4/schema.rs` 的 PR 各自 +1
 （G7、G8、G9、G11 都要加表：公钥、位置状态、等待缓冲、中继记账、`media_at`、绑定状态）。新代文件没发布过，换号只是让开发期的旧探针文件打不开。
 协议 3 的内核打开它报「比本版本新」、不建表；新代的打开函数在动任何 PRAGMA 之前先判文件种类，协议 3 的库报「不是新代库」、什么都不改（两个方向都有测试）。
