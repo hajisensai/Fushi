@@ -2,6 +2,7 @@ import 'package:fushi_cli/fushi_cli.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
+import 'package:fushi_engine/ai/ai_upstream_model.dart';
 
 import 'package:fushi/src/ai/ai_failure_text.dart';
 import 'package:fushi/src/models/module_id.dart';
@@ -240,12 +241,16 @@ Future<Object?> _probeProvider(OpContext context, CtlCall call) async {
   final AiChatClient client = AiChatClient();
   try {
     if (collectModels || target.model.trim().isEmpty) {
-      final List<String> models = await client.listModels(target);
+      final List<AiUpstreamModel> models = await client.listModels(target);
       return <String, Object?>{
         'id': target.id,
         'ok': true,
         'checked': 'models',
-        'models': models,
+        'models': <String>[for (final AiUpstreamModel m in models) m.id],
+        // 上游给了的显示名 / 收图能力 / 单价（每百万 token、USD），没给的项不出现。
+        'details': <Map<String, Object?>>[
+          for (final AiUpstreamModel m in models) m.toJson(),
+        ],
       };
     }
     await client.ping(target);

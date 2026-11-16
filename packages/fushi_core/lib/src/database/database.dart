@@ -999,7 +999,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 154;
+  int get schemaVersion => 155;
 
   /// v125–v128 四步的产物（全部幂等）：SRS 写路径索引、
   /// `collection_member_tombstones.published_at`、`bookmarks.char_offset` /
@@ -3120,6 +3120,29 @@ class FushiDatabase extends _$FushiDatabase
           await m.addColumn(
             remoteDictionaryMetadata,
             remoteDictionaryMetadata.localDisplayName,
+          );
+        }
+      }
+      if (from < 155) {
+        // v155：manga_download_jobs.status 值域加 'paused'（拍板台 7LwxAtJ6r0：
+        // 漫画下载可暂停 / 恢复，暂停态跨重启保持）。CHECK 是建表内联约束，SQLite
+        // 不能单独改，走 alterTable 按当前 Dart 定义重建 + 按列名拷贝（v110 先例），
+        // 存量行原样保留。表没有外键、也没有表引用它，不需要 FK OFF/ON 夹住；两条
+        // 索引由 alterTable 按 sqlite_master 原文重建，下面再按 v103 的同一 SQL 幂等
+        // 补一次。幂等守卫：只在建表 SQL 还不认 'paused' 时重建，mid-ladder 由 v103
+        // createTable fresh 建出的表已是新 shape 直接短路。
+        if (await _tableExists('manga_download_jobs') &&
+            !(await _tableCreateSql(
+              'manga_download_jobs',
+            )).contains("'paused'")) {
+          await m.alterTable(TableMigration(mangaDownloadJobs));
+          await customStatement(
+            'CREATE UNIQUE INDEX IF NOT EXISTS idx_manga_download_jobs_identity '
+            'ON manga_download_jobs (kind, book_key, chapter_key)',
+          );
+          await customStatement(
+            'CREATE INDEX IF NOT EXISTS idx_manga_download_jobs_status_created '
+            'ON manga_download_jobs (status, created_at)',
           );
         }
       }

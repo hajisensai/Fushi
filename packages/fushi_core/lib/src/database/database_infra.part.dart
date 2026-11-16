@@ -100,6 +100,24 @@ mixin _FushiDbInfra on _$FushiDatabase {
     return rows.isNotEmpty;
   }
 
+  /// [tableName] 在 sqlite_master 里的建表 SQL 原文；表不存在返回空串。迁移步据此
+  /// 判断内联 CHECK 是不是已是新值域（v155）。
+  Future<String> _tableCreateSql(String tableName) async {
+    if (!_identifierRe.hasMatch(tableName)) {
+      throw ArgumentError.value(
+        tableName,
+        'tableName',
+        'not a valid identifier',
+      );
+    }
+    final rows = await customSelect(
+      "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?",
+      variables: [Variable<String>(tableName)],
+    ).get();
+    if (rows.isEmpty) return '';
+    return rows.single.read<String?>('sql') ?? '';
+  }
+
   /// v118 迁移：把 [tableName] 里尚未记录的 `local_added_at` 回填成
   /// `imported_at`（理由见迁移步注释）。只碰 NULL 行，重跑幂等。没有
   /// `imported_at` 列的表（阶梯上的合成 / 残缺库，与其它加列步的 `_columnExists`

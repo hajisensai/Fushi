@@ -38,6 +38,19 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-4731](bugs/BUG-4731-android-share-copy-main-thread-anr.md) | ✅ | ✅ | Android 分享在主线程同步拷贝整份文件导致 ANR |
+> 共 4096 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4739](bugs/BUG-4739-manga-spread-seam.md) | ✅ | ✅ | 漫画双页模式两页之间有一条细缝 |
+| [BUG-4738](bugs/BUG-4738-mihon-android-host-appinfo.md) | ✅ | ✅ | Android Mihon 宿主缺 eu.kanade.tachiyomi.AppInfo，MangaDex 等调用它的扩展 NoClassDefFoundError |
+| [BUG-4737](bugs/BUG-4737-browser-adblock-cold-engine.md) | ✅ | ✅ | 内置浏览器广告拦截在联网刷新过期列表期间整页失效 |
+| [BUG-4736](bugs/BUG-4736-fsrs7-crate-release.md) | ✅ | ✅ | fsrs 依赖从钉 git rev 切到 crates.io 7.0.0；升级 rev 后旧参数组被当成不认识的版本、自动优化永久停掉 |
+| [BUG-4735](bugs/BUG-4735-fab-extended-label-overflow.md) | ✅ | ✅ | 详情页「继续观看」扩展 FAB 长标题画出按钮外、不省略（MD3） |
+| [BUG-4734](bugs/BUG-4734-srs-fushi-defs-image-tap.md) | ✅ | ✅ | 复习页 Fushi 卡片释义里的词典插图点按不能放大 |
+| [BUG-4733](bugs/BUG-4733-source-review-banner-compact-height.md) | ✅ | ✅ | Android 横屏手机上卡片来源回看横幅固定两行，占顶部约 1/5 画面高度 |
+| [BUG-4732](bugs/BUG-4732-apple-music-stale-user-token.md) | ✅ | ✅ | macOS Apple Music 重新授权后一直用作废的 Music-User-Token，资料库 403 |
+| [BUG-4731](bugs/BUG-4731-ai-models-upstream-metadata.md) | ✅ | ✅ | AI 提供方选模型时丢掉上游给的显示名 / 收图能力 / 单价，只能手填 |
 | [BUG-4730](bugs/BUG-4730-macos-exit-mpv-callback-after-engine-shutdown.md) | ✅ | ✅ | 桌面退出时引擎先于 libmpv 回调收尾，mpv 核心线程回调进已释放跳板崩溃 |
 | [BUG-4729](bugs/BUG-4729-miui-swipeupclean-exit-misreport.md) | ✅ | ✅ | 小米 MIUI / HyperOS 在最近任务里划掉（SwipeUpClean）被误报为闪退 |
 | [BUG-4728](bugs/BUG-4728-epub-english-default-vertical.md) | ✅ | ✅ | 英文 EPUB 未声明排版方向时被套成全局竖排，拉丁字母整行侧躺 |
