@@ -887,9 +887,12 @@ class MihonManager extends ChangeNotifier {
             // finally 放互斥。
             final _BulkDownload download = await pending;
             window.removeFirst();
-            fill();
             MihonInstallProposal? proposal;
             try {
+              // 补窗放在 try 里：这格已移出窗口，外层 finally 不再管它；fill 里
+              // 的回调（cancelled / shouldSkip）若同步抛错，也得由下面的 finally
+              // 放掉这条的互斥。
+              fill();
               final MihonAvailableExtension? resolved = download.resolved;
               final Uint8List? bytes = download.bytes;
               if (resolved == null || bytes == null) {
