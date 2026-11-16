@@ -242,6 +242,22 @@ void main() {
     final DownloadTaskEntry seeded = entry(game, stats: seeding);
     expect(seeded.seeding, isTrue);
     expect(seeded.upRateBps, 4096);
+    // 做种位投影后，legacy 行与视频任务同口径：从「下载中」筛选移到「做种」筛选。
+    expect(
+      downloadTaskMatchesStatusFilter(seeded, DownloadTaskStatusFilter.seeding),
+      isTrue,
+    );
+    expect(
+      downloadTaskMatchesStatusFilter(
+        seeded,
+        DownloadTaskStatusFilter.downloading,
+      ),
+      isFalse,
+    );
+    expect(
+      downloadTaskMatchesStatusFilter(task, DownloadTaskStatusFilter.seeding),
+      isFalse,
+    );
 
     final DownloadTaskEntry unobserved = entry(game);
     expect(unobserved.downRateBps, isNull);
