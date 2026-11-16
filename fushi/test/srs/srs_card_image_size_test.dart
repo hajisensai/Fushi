@@ -144,7 +144,7 @@ assert.deepEqual(calls, [], '链接 / onclick 里的图、已拦截、右键、�
     });
   });
 
-  // BUG-4711（反馈 w4RAto8R0x）：BUG-2825 起词典插图照上游导出成
+  // BUG-4725（反馈 w4RAto8R0x）：BUG-2825 起词典插图照上游导出成
   // `<a class="gloss-image-link" href="<媒体文件名>"><span class="gloss-image-container">…<img>`。
   // 链接脚本（捕获）与点图脚本（冒泡）同时挂在页面上，跑生产常量本身，一次点击走完两段：
   // 以前链接脚本把它当查词链接（preventDefault + 按链接文字查词，文字为空就返回），点图脚本

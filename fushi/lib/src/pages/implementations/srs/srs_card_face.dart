@@ -210,7 +210,7 @@ class SrsCardFace {
   /// 宿主样式 / 自动播放 / 选区 / 发音上报这些按参数逐个给（全部 required，可为 null，
   /// 不给就编不过）；宿主交互回调（键盘桥、页面缩放与 Ctrl+滚轮缩放、来源链接、发音、
   /// 卡面手势、点图放大）一律沿用本面，不在调用方逐字段手抄——以前手抄漏了
-  /// [onImageTap]，释义里的词典插图点了不能放大（BUG-4711）。
+  /// [onImageTap]，释义里的词典插图点了不能放大（BUG-4725）。
   SrsCardFace derived({
     required String cardId,
     required bool showingAnswer,
@@ -618,7 +618,7 @@ const String kSrsCardLinkHandler = 'onSrsCardLink';
 /// - `a.gloss-image-link`：词典插图（结构化内容图片；BUG-2825 起照上游 `_setImageData`
 ///   导出成 `<a class="gloss-image-link" href="<媒体文件名>"><img></a>`，见 popup.js）。
 ///   href 是图片自己的文件名，既不是导航也不是查词目标：只拦默认导航，点按放大交给
-///   [kSrsCardImageTapScript]（BUG-4711）。
+///   [kSrsCardImageTapScript]（BUG-4725）。
 ///
 /// 不 stopPropagation：卡片模板自己挂在链接上的点击脚本照常执行。
 const String kSrsCardLinkScript = r'''
@@ -773,7 +773,7 @@ const String kSrsImageTapHandler = 'onSrsImageTap';
 /// 卡片模板自己处理了的点击（链接里的图、带 `onclick` 的图或祖先、已
 /// `preventDefault`）不抢，模板的点图翻转 / 显示提示照常。
 ///
-/// 例外是词典插图链接 `a.gloss-image-link[href]`（BUG-4711）：它的 href 是图片自己的媒体
+/// 例外是词典插图链接 `a.gloss-image-link[href]`（BUG-4725）：它的 href 是图片自己的媒体
 /// 文件名，[kSrsCardLinkScript] 在捕获阶段已拦下它的默认导航（所以这里 `defaultPrevented`
 /// 恒真）且不查词；点在这个图片盒里任何位置（img 本身、盒内的底色 / 占位层）都认作点这张图。
 const String kSrsCardImageTapScript = r'''

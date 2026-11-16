@@ -1329,7 +1329,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
   }
 
   // 键盘桥、页面缩放 / Ctrl+滚轮缩放、来源链接、发音、卡面手势、点图放大由 [SrsCardFace.derived]
-  // 沿用整面卡的宿主回调（以前逐字段手抄漏了点图放大，BUG-4711）。
+  // 沿用整面卡的宿主回调（以前逐字段手抄漏了点图放大，BUG-4725）。
   SrsCardFace _defsFace({required bool wide}) => widget.face.derived(
     cardId: '${widget.face.cardId}#defs',
     showingAnswer: true,
