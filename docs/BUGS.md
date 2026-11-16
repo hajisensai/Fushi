@@ -33,15 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4097 条。点号进各自文件。
+> 共 4101 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4741](bugs/BUG-4741-lyrics-margin-left-right-swapped.md) | ✅ | ✅ | 歌词模式横排左右边距写反 |
-> 共 4100 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4744](bugs/BUG-4744-lyrics-margin-left-right-swapped.md) | ✅ | ✅ | 歌词模式横排左右边距写反 |
 | [BUG-4743](bugs/BUG-4743-anime-match-title-truncation.md) | ✅ | ✅ | anime-match-title-truncation |
 | [BUG-4742](bugs/BUG-4742-youtube-secondary-caption-tracks.md) | ✅ | ✅ | youtube-secondary-caption-tracks |
 | [BUG-4741](bugs/BUG-4741-work-profile-dict-engine-load.md) | ✅ | ✅ | 书籍指定配置后查不到词：引擎装载集合只看激活配置 |
