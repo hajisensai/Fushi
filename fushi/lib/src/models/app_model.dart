@@ -26,6 +26,8 @@ import 'package:fushi/src/updates/local_update_notifier.dart';
 import 'package:fushi/src/updates/update_check_scheduler.dart';
 import 'package:fushi/src/updates/app_update_check.dart';
 import 'package:fushi/src/updates/usage_heartbeat.dart';
+import 'package:fushi_engine/media/metadata/books/rakuten_books.dart'
+    show RakutenBooksCredentials;
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi/src/models/preference_keys.dart';
 import 'package:fushi_engine/srs/srs_miner.dart';
@@ -170,6 +172,7 @@ import 'package:fushi/src/srs/srs_storage_host.dart';
 import 'package:fushi/src/srs/srs_review_gestures.dart';
 import 'package:fushi/src/srs/srs_review_layout.dart';
 import 'package:fushi/src/models/home_dashboard_panel.dart';
+import 'package:fushi/src/models/home_widget_layout.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/storage/books_directory.dart';
 import 'package:fushi/src/storage/download_layout.dart';
@@ -2556,7 +2559,7 @@ class AppModel
         : null,
     providers: isMusicPluginSourcesAvailable
         ? () async => enabledLyricsProviderIds(
-            mergeLyricsProviders(
+            mergeLyricsSourceList(
               parseLyricsProviders(prefsRepo.musicLyricsProvidersRaw),
               <String>[
                 for (final InstalledMusicPlugin p
@@ -3983,12 +3986,33 @@ class AppModel
     await FushiDicts.loadPendingAsync();
   }
 
+  /// 词典引擎的联合过滤器（派生索引，见 [FushiDicts.unionFilterCacheDirectory]）落
+  /// 平台缓存目录：不进数据根，不随「更改数据位置」搬、不在备份范围里，被清掉只是
+  /// 下次装载后重建。主进程与查词弹窗进程共用同一份文件。
+  ///
+  /// 缓存目录拿不到（平台通道不可用）不是装载词典的前提：留空，引擎改在内存里建
+  /// 同一份过滤器，查词结果不变，只是每次装载后多花一次构建。
+  Future<void> _ensureDictIndexCacheDirectory() async {
+    if (FushiDicts.unionFilterCacheDirectory != null) return;
+    try {
+      FushiDicts.unionFilterCacheDirectory = path.join(
+        (await AppPaths.appCacheRootDirectory()).path,
+        'fushidicts',
+      );
+    } on Exception catch (e) {
+      debugPrint(
+        '[Fushi] dict index cache dir unavailable, in-memory only: $e',
+      );
+    }
+  }
+
   /// [_rebuildDictPathsCacheAsync] 的前半段：目录 exists + 物化探测 + 类型自愈 +
   /// 排期，**不装载**。启动期只有这一段是「数据根 IO、可能因盘掉线永不返回」，
   /// 套 12s 看门狗；装载本身（[FushiDicts.loadPendingAsync]）每本之间让出、耗时随
   /// 词典数线性增长，不是挂死，套看门狗只会把「词典多、盘慢」误判成启动失败
   /// （BUG-4510：121 本词典、8s 物化预算之后只剩 4s 给装载，启动直接进错误屏）。
   Future<void> _scheduleDictPathsAsync() async {
+    await _ensureDictIndexCacheDirectory();
     final dictList = dictRepo.dictionaries;
     final List<String> paths = <String>[
       for (final d in dictList)
@@ -6934,6 +6958,13 @@ class AppModel
     await prefsRepo.setVideoSubtitleAjattEnabled(enabled);
     await reloadVideoDownloadPipelineRuntime();
   }
+
+  /// 楽天ブックス书籍检索凭据（书籍刮削弹窗 / 控制通道据此决定楽天源是否可用）。
+  RakutenBooksCredentials get bookScrapeRakutenCredentials =>
+      RakutenBooksCredentials(
+        applicationId: prefsRepo.bookScrapeRakutenApplicationId,
+        accessKey: prefsRepo.bookScrapeRakutenAccessKey,
+      );
 
   /// SubDL API key，见 [PreferencesRepository.videoSubtitleSubdlApiKey]。
   String get videoSubtitleSubdlApiKey =>
@@ -11460,18 +11491,18 @@ class AppModel
   Future<void> setPopupBottomDocked(bool value) =>
       prefsRepo.setPopupBottomDocked(value);
 
-  /// 底部停靠在 [module] 的媒体页里是否启用（总开关之下的按模块细分，默认开）。
-  /// 偏好仓库未装配时 fail-open（同 [moduleEnabled]）：总开关才是真正的门。
+  /// 底部停靠在 [module] 的媒体页里是否启用：每个模块一个独立开关，不受
+  /// [popupBottomDocked] 门控（BUG-4713）。偏好仓库未装配时按默认值 OFF（跟随选区）。
   bool popupBottomDockedIn(ModuleId module) =>
-      isPreferencesReady ? prefsRepo.popupBottomDockedIn(module) : true;
+      isPreferencesReady && prefsRepo.popupBottomDockedIn(module);
   Future<void> setPopupBottomDockedIn(ModuleId module, bool value) =>
       prefsRepo.setPopupBottomDockedIn(module, value);
 
-  /// 查词弹窗宿主实际是否走底部停靠：总开关 ∧ 宿主所属模块的细分开关。
-  /// [module] 为 `null`（查词页 / 外部弹窗 / 悬浮歌词等不属于四个媒体模块的
-  /// 宿主）时只听总开关。弹窗宿主一律经它判定，不再直读 [popupBottomDocked]。
+  /// 查词弹窗宿主实际是否走底部停靠：宿主所属模块自己的开关。[module] 为 `null`
+  /// （查词页 / 外部弹窗 / 悬浮歌词等不属于四个媒体模块的宿主）时听
+  /// [popupBottomDocked]。弹窗宿主一律经它判定，不再直读 [popupBottomDocked]。
   bool popupBottomDockedFor(ModuleId? module) =>
-      popupBottomDocked && (module == null || popupBottomDockedIn(module));
+      module == null ? popupBottomDocked : popupBottomDockedIn(module);
 
   bool get isFirstTimeSetup => prefsRepo.isFirstTimeSetup;
   void setFirstTimeSetupFlag() => prefsRepo.setFirstTimeSetupFlag();
@@ -11988,21 +12019,16 @@ class AppModel
   Future<void> setSrsMiningBackground(bool value) =>
       prefsRepo.setSrsMiningBackground(value: value);
 
-  // 首页 dashboard 面板显示档（透传 prefsRepo）。可空读：prefs 未装配 = 全部 auto。
-  HomeDashboardPanelMode homeDashboardPanelMode(HomeDashboardPanel panel) =>
-      decodeHomeDashboardPanelModes(
-        _prefsRepo?.homeDashboardPanels ?? '',
-      )[panel] ??
-      HomeDashboardPanelMode.auto;
-  Future<void> setHomeDashboardPanelMode(
-    HomeDashboardPanel panel,
-    HomeDashboardPanelMode mode,
-  ) => prefsRepo.setHomeDashboardPanels(
-    encodeHomeDashboardPanelModes(<HomeDashboardPanel, HomeDashboardPanelMode>{
-      ...decodeHomeDashboardPanelModes(prefsRepo.homeDashboardPanels),
-      panel: mode,
-    }),
-  );
+  // 旧首页可选面板显示档（只读，透传 prefsRepo）：首页小组件网格迁移首个布局时读
+  // （[migrateHomeWidgetLayout]），不再写。可空读：prefs 未装配 = 全部 auto。
+  Map<HomeDashboardPanel, HomeDashboardPanelMode> get homeDashboardPanelModes =>
+      decodeHomeDashboardPanelModes(_prefsRepo?.homeDashboardPanels ?? '');
+
+  // 首页小组件网格的两份布局（透传 prefsRepo）。可空读：prefs 未装配 = 都没编辑过。
+  HomeWidgetLayout get homeWidgetLayout =>
+      decodeHomeWidgetLayout(_prefsRepo?.homeWidgetLayout ?? '');
+  Future<void> setHomeWidgetLayout(HomeWidgetLayout layout) =>
+      prefsRepo.setHomeWidgetLayout(encodeHomeWidgetLayout(layout));
 
   // 复习卡片浏览器的保存视图（JSON，透传 prefsRepo）。可空读：prefs 未装配 = 没有。
   String get srsBrowseSavedViews => _prefsRepo?.srsBrowseSavedViews ?? '';

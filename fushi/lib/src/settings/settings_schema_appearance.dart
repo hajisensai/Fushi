@@ -16,7 +16,8 @@ import 'package:fushi/src/pages/implementations/custom_fonts_page.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart';
 import 'package:fushi/src/pages/implementations/miscellaneous_settings_page.dart';
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/models/home_dashboard_panel.dart';
+import 'package:fushi/src/pages/implementations/home_widget_grid.dart'
+    show homeWidgetEditRequested;
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/second_screen/input/controller_lookup_target.dart';
@@ -710,19 +711,28 @@ SettingsSection buildModulesSection() {
   );
 }
 
-// 「首页面板」：首页 dashboard 上按用户情况出现的可选面板
-// （[HomeDashboardPanel] 注册表），每个面板一行 自动 / 显示 / 隐藏。首页
-// 模块关着时整段隐藏；面板所属模块关着时那一行隐藏。
+// 「首页」：首页小组件网格（spec 2026-11-15）的入口。原「首页面板」分区（每个可选
+// 面板一行 自动 / 显示 / 隐藏）撤掉：组件的增删、排序、尺寸都在首页编辑态里做，这里
+// 只留一个「编辑首页」——切到首页 tab 并进入编辑态。首页模块关着时整段隐藏。
 SettingsSection buildHomePanelsSection() {
   return SettingsSection(
-    id: 'appearance.section.home_panels',
+    id: 'navigation.section.home_widgets',
     presentation: SettingsSectionPresentation.alwaysExpanded,
-    title: t.settings_section_home_panels,
+    title: t.nav_home,
     visible: (SettingsContext c) =>
         c.appModel.moduleVisibility.isEnabled(ModuleId.home),
     items: <SettingsItem>[
-      for (final HomeDashboardPanel panel in HomeDashboardPanel.values)
-        _homePanelModeItem(panel),
+      SettingsNavigationItem(
+        id: 'navigation.home_widgets.edit',
+        title: t.home_widget_edit,
+        subtitle: t.settings_home_widgets_edit_subtitle,
+        icon: FushiIcons.dashboardCustomize,
+        showIcon: true,
+        onTap: (SettingsContext settingsContext) {
+          homeShellTabNotifier.value = HomeTab.home;
+          homeWidgetEditRequested.value = true;
+        },
+      ),
     ],
   );
 }
@@ -861,70 +871,6 @@ SettingsItem buildReverseNavigationBarItem() {
       settingsContext.refresh();
     },
     defaultValue: false,
-  );
-}
-
-/// 「首页面板」分区里一个面板的显示档（自动 / 显示 / 隐藏）。
-SettingsItem _homePanelModeItem(HomeDashboardPanel panel) {
-  final (
-    String title,
-    String hint,
-    IconData icon,
-    ModuleId module,
-  ) = switch (panel) {
-    HomeDashboardPanel.srsReview => (
-      t.nav_srs,
-      t.home_panel_srs_hint,
-      FushiIcons.repeat,
-      ModuleId.srs,
-    ),
-    HomeDashboardPanel.tracking => (
-      t.home_tracking_panel_title,
-      t.home_panel_tracking_hint,
-      FushiIcons.sync,
-      ModuleId.tracking,
-    ),
-    HomeDashboardPanel.aiAgent => (
-      t.ai_agent_title,
-      t.home_panel_ai_agent_hint,
-      FushiIcons.aiAssistant,
-      ModuleId.ai,
-    ),
-    HomeDashboardPanel.panorama => (
-      t.home_panel_panorama_title,
-      t.home_panel_panorama_hint,
-      FushiIcons.blur,
-      ModuleId.home,
-    ),
-  };
-  return SettingsSegmentedItem<HomeDashboardPanelMode>(
-    id: 'appearance.home_panel.${panel.id}',
-    title: title,
-    subtitle: hint,
-    icon: icon,
-    // The tracking strip follows the Media tracking module
-    // ([isMediaTrackingEnabled] is `isEnabled(ModuleId.tracking)`).
-    visible: (SettingsContext c) =>
-        c.appModel.moduleVisibility.isEnabled(module),
-    options: <SettingsSegmentOption<HomeDashboardPanelMode>>[
-      SettingsSegmentOption<HomeDashboardPanelMode>(
-        value: HomeDashboardPanelMode.auto,
-        label: t.home_panel_mode_auto,
-      ),
-      SettingsSegmentOption<HomeDashboardPanelMode>(
-        value: HomeDashboardPanelMode.shown,
-        label: t.home_panel_mode_shown,
-      ),
-      SettingsSegmentOption<HomeDashboardPanelMode>(
-        value: HomeDashboardPanelMode.hidden,
-        label: t.home_panel_mode_hidden,
-      ),
-    ],
-    selected: (SettingsContext c) => c.appModel.homeDashboardPanelMode(panel),
-    onChanged: (SettingsContext c, HomeDashboardPanelMode value) => c.appModel
-        .setHomeDashboardPanelMode(panel, value)
-        .then((_) => c.refresh()),
-    defaultValue: HomeDashboardPanelMode.auto,
   );
 }
 
