@@ -6,11 +6,13 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/downloads/download_task_browser.dart';
 import 'package:fushi/src/media/downloads/download_task_entry.dart';
 import 'package:fushi/src/media/torrent/anime_download_plan.dart';
 import 'package:fushi/src/media/torrent/anime_download_service.dart';
 import 'package:fushi/src/pages/implementations/anime_download_dialog.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/utils/misc/fushi_byte_format.dart';
 
 import '../helpers/test_platform_services.dart';
 
@@ -205,6 +207,91 @@ void main() {
         stats: paused,
       ).status,
       DownloadTaskStatus.attention,
+    );
+  });
+
+  // BUG：legacy 番剧下载计划的 stats 只用来算状态，没写进 Entry 的速率 / 做种位，
+  // 下载中心顶部合计速度把它当 null 按 0 算（反馈 D8YKoitTvM）。
+  const DownloadTaskStats downloading = DownloadTaskStats(
+    progress: 0.3,
+    downRateBps: 1500000,
+    upRateBps: 2048,
+    downloadedBytes: 100,
+    uploadedBytes: 10,
+    numPeers: 4,
+    state: 'downloading',
+    amountLeft: 900,
+  );
+
+  test('observed stats project live rates and seeding into the entry', () {
+    final DownloadTaskEntry task = entry(game, stats: downloading);
+    expect(task.downRateBps, 1500000);
+    expect(task.upRateBps, 2048);
+    expect(task.seeding, isFalse);
+
+    const DownloadTaskStats seeding = DownloadTaskStats(
+      progress: 1,
+      downRateBps: 0,
+      upRateBps: 4096,
+      downloadedBytes: 1000,
+      uploadedBytes: 50,
+      numPeers: 2,
+      state: 'stalledUP',
+      amountLeft: 0,
+    );
+    final DownloadTaskEntry seeded = entry(game, stats: seeding);
+    expect(seeded.seeding, isTrue);
+    expect(seeded.upRateBps, 4096);
+    // 做种位投影后，legacy 行与视频任务同口径：从「下载中」筛选移到「做种」筛选。
+    expect(
+      downloadTaskMatchesStatusFilter(seeded, DownloadTaskStatusFilter.seeding),
+      isTrue,
+    );
+    expect(
+      downloadTaskMatchesStatusFilter(
+        seeded,
+        DownloadTaskStatusFilter.downloading,
+      ),
+      isFalse,
+    );
+    expect(
+      downloadTaskMatchesStatusFilter(task, DownloadTaskStatusFilter.seeding),
+      isFalse,
+    );
+
+    final DownloadTaskEntry unobserved = entry(game);
+    expect(unobserved.downRateBps, isNull);
+    expect(unobserved.upRateBps, isNull);
+    expect(unobserved.seeding, isFalse);
+  });
+
+  testWidgets('download summary hero totals legacy plan rates', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      TranslationProvider(
+        child: MaterialApp(
+          home: Scaffold(
+            body: DownloadSummaryHero(
+              tasks: <DownloadTaskEntry>[entry(game, stats: downloading)],
+            ),
+          ),
+        ),
+      ),
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('download-summary-down')),
+        matching: find.text(FushiByteFormat.speed(1500000)),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('download-summary-up')),
+        matching: find.text(FushiByteFormat.speed(2048)),
+      ),
+      findsOneWidget,
     );
   });
 }
