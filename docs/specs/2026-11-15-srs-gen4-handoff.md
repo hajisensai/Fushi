@@ -92,7 +92,7 @@
 | `wal_checkpoint` | 写 | `store/mod.rs` `SrsCore::wal_checkpoint` | 缺 | S1（连接层：新代文件同样是 WAL，命令外壳照搬） | 已接 |
 | `gen4_rehearse` / `gen4_rehearsal_report` / `gen4_rehearse_cancel` | 读（写临时文件） | `gen4/dryrun.rs` | `gen4/dryrun.rs`（本来就是新代） | 换代后无用，G7-6 删 | 已删（报 `gen4: removed`）；实现 G7-6 删 |
 | `bulk_cache` | 写 | `store/mod.rs` `bulk_begin` / `bulk_end`（大批写入期间暂缓缓存刷新） | 缺（新代大批写入走 `ingest.rs:ingest_settle(Settle::Rebuild)`） | S1：决定保留开关还是删入口 | 保留，已接（嵌套深度 + 放宽 WAL 自动检查点） |
-| `ingest_yield` | 无 | `sync2/transport.rs` `sync2_ingest_yield`（收段让路标记） | 缺 | G8-7（收段调度） | 未接线（报 `gen4: not wired yet`），归 G8-7 |
+| `ingest_yield` | 无 | `sync2/transport.rs` `sync2_ingest_yield`（收段让路标记） | 缺 | G8-7（收段调度） | 已删（G8-7：没有收段通道，报 `gen4: removed`） |
 | `refresh_keys` | 读 | `refresh.rs` `refresh_keys` | 缺（派生层随写入维护，无「待刷新」集合） | S1：新代不需要，接线时删 | 已删（报 `gen4: removed`） |
 
 ### 7.2 缓存 / 本机状态（`sync2_dispatch_op` 后半，分发器自己处理的特殊臂）
@@ -105,7 +105,7 @@
 | `edits_rewrite_repr` | 写 | `repr_rewrite.rs` | 不需要（存量样式去重是协议 3 存储表示的事） | G7-6 删 | 已删（报 `gen4: removed`）；实现 G7-6 删 |
 | `media_gc_queue` / `media_gc_collect` | 写 | `media_gc.rs`（逐名规则抽成 `sweep` / `CollectArgs` / `add_names`，两代共用） | `cmd/media_gc.rs:queue` / `collect` | S1b：待回收集合存在新代本机状态行（`srs_meta` 键 `local_state/<profile>`）的 `mediaGc` 键，键名与形态同协议 3；存活引用读缓存层 `notes.media_refs` + 按类判定的笔记类型视图；没绑定 / 没设缓存配置时 `collect` 回 `deferred` 不删（§8.6） | 已接（S1b；经分发器对拍） |
 | `media_live_refs` | 读 | `media_gc.rs` `live_refs`（后一半抽成 `finish_live_refs`，笔记类型文本抽成 `caches::note_type_view_texts`） | `cmd/media_gc.rs:live_refs_json` | 同上；读不全（没绑定 / 没缓存配置）明确报错，不回空集合 | 已接（S1b；经分发器对拍） |
-| `ingest_commit` | 写 | `sync2/transport.rs` | 缺（新代收段 `receive.rs` 是存储层） | G8-7 | 未接线（报 `gen4: not wired yet`），归 G8-7 |
+| `ingest_commit` | 写 | `sync2/transport.rs` | 缺（新代收段 `receive.rs` 是存储层） | G8-7 | 已删（G8-7：没有收段通道） |
 
 ### 7.3 写命令（`local_write_body`，`LOCAL_WRITE_OPS`）
 
@@ -126,7 +126,7 @@
 | `dedup` | 写 | `sync2/dedup.rs` | `cmd/writes_local.rs:dedup`（换代后恒 `{"done": true}`） | 同上 | 已接 |
 | `digest_heal` | 写 | `sync2/heal.rs` | `cmd/writes_local.rs:digest_heal`（整集合派生重建） | 同上 | 已接 |
 | `import` | 写 | `sync2/transport.rs` `import_on` | 部分：`gen4/import.rs:import_ops` / `import_backup`（存储层） | G11-3（`.fushisrs` v2 接线） | 未接线（报 `gen4: not wired yet`），归 G11-3 |
-| `retire` | 写 | `sync2/devices.rs` `retire` | 缺（停用标记不迁移，`carry.rs` 文件头） | G8-7：连同 `status` 设备行的 `retired` 状态一起接 | 未接线（报 `gen4: not wired yet`），归 G8-7 |
+| `retire` | 写 | `sync2/devices.rs` `retire` | 缺（停用标记不迁移，`carry.rs` 文件头） | G8-7：连同 `status` 设备行的 `retired` 状态一起接 | 已接（G8-7 `cmd/sync.rs:retire`；`status` 设备行出 `retired` / `retiredAt`） |
 
 ### 7.4 读命令与其余（`sync2_command`）
 
@@ -157,15 +157,15 @@
 | `profile_purge` | 写 | `profile_data.rs` `profile_purge` | 缺 | 建议 G9-5（删一个集合 = 删 `collections` 行与该集合的设备、派生、本机状态；与并入收薄同一处） | 未接线（报 `gen4: not wired yet`），归 G9-5 |
 | `status` | 读 | `sync2/transport.rs` `sync2_status` + `devices.rs` `status_extras` | `cmd/writes_local.rs:status` | G7-3b 已有；G7-4e 补设备行 `gap` / `blocking`（`op_wait`）与 `state` 的 `missing` / `upgrade`；`retired` 归 G8-7（随 `retire`）；`seenAt` / `warning` / `frozen` / `digestMismatch` 仍是占位值，归 G8-7 | 已接 |
 | `device_info` / `device_hint` | 写 | `sync2/devices.rs` | `cmd/writes_local.rs:device_info` / `device_hint` | G7-3b 已有 | 已接 |
-| `outbox` / `outbox_ack` / `head` / `plan` / `relay_outbox` / `relay_ack` / `obsolete` / `obsolete_former` / `obsolete_ack` | 读写 | `sync2/transport.rs`、`relay.rs` | 部分：`gen4/sync_state.rs`（`loc_heads` / `relay_out` / `oldroot_fp`）、`gen4/oldroot.rs`、`gen4/compact.rs`（存储层） | G8-7（同步一轮 `g4_*` + 调度） | 未接线（报 `gen4: not wired yet`），归 G8-7 |
-| `ingest` / `ingest_begin` / `ingest_batch` / `ingest_prepare` / `ingest_end` / `ingest_finish` / `replay_pending` | 写 | `sync2/transport.rs`、`channel.rs` | 部分：`gen4/receive.rs:Receiver`（`native` / `heritage` / `legacy` / `finish`）+ `ingest.rs:ingest_settle` | G8-7 | 未接线（报 `gen4: not wired yet`），归 G8-7 |
-| `rotate` | 写 | `sync2/transport.rs` `sync2_rotate` | 部分：`gen4/fork.rs:rotate_on_fork` | G8-6 / G8-7（规划：`Truth::rotate_identity` 归 G8-6） | 未接线（报 `gen4: not wired yet`），归 G8-7 |
+| `outbox` / `outbox_ack` / `head` / `plan` / `relay_outbox` / `relay_ack` / `obsolete` / `obsolete_former` / `obsolete_ack` | 读写 | `sync2/transport.rs`、`relay.rs` | 部分：`gen4/sync_state.rs`（`loc_heads` / `relay_out` / `oldroot_fp`）、`gen4/oldroot.rs`、`gen4/compact.rs`（存储层） | G8-7（同步一轮 `g4_*` + 调度） | `outbox` / `outbox_ack` / `head` / `plan` / `obsolete` 已接（G8-7 `cmd/sync.rs`）；`obsolete_ack` 已删（无待删清单）；`relay_outbox` / `relay_ack` / `obsolete_former` 未接线，归 G8-7b |
+| `ingest` / `ingest_begin` / `ingest_batch` / `ingest_prepare` / `ingest_end` / `ingest_finish` / `replay_pending` | 写 | `sync2/transport.rs`、`channel.rs` | 部分：`gen4/receive.rs:Receiver`（`native` / `heritage` / `legacy` / `finish`）+ `ingest.rs:ingest_settle` | G8-7 | `ingest` / `ingest_finish` 已接（G8-7）；`ingest_begin` / `ingest_batch` / `ingest_prepare` / `ingest_end` / `replay_pending` 已删（没有收段通道） |
+| `rotate` | 写 | `sync2/transport.rs` `sync2_rotate` | 部分：`gen4/fork.rs:rotate_on_fork` | G8-6 / G8-7（规划：`Truth::rotate_identity` 归 G8-6） | 已接（G8-7 `cmd/sync.rs:rotate`） |
 | `export` | 读 | `sync2/transport.rs` `sync2_export` | 部分：`gen4/export.rs:export_ops` | G11-3 | 未接线（报 `gen4: not wired yet`），归 G11-3 |
-| `digest` / `digest_buckets` | 读 | `sync2/transport.rs` `sync2_digest` / `sync2_digest_buckets` | 部分：`gen4/digest.rs:Index::digest` / `digest_buckets` | G8-7（随 head 发） | 未接线（报 `gen4: not wired yet`），归 G8-7 |
+| `digest` / `digest_buckets` | 读 | `sync2/transport.rs` `sync2_digest` / `sync2_digest_buckets` | 部分：`gen4/digest.rs:Index::digest` / `digest_buckets` | G8-7（随 head 发） | `digest` 已接（读，回 `{digest}` = `Index::digest`）；`digest_buckets` 已删 |
 | `legacy_dots` | 读 | `sync2/mod.rs` | 不需要（旧 v1 dot，承袭日志自带） | G7-6 删 | 已删（报 `gen4: removed`）；实现 G7-6 删 |
 | `local_state` / `local_state_ensure` / `local_anchor` | 读 / 写 | `local_state.rs` | 缺 | 建议 S1（内核持有的本机状态行：修订号、校时锚点；协议 3 存 `srs_meta`，新代沿用 `srs_meta` 键即可） | 已接（`srs_meta` 键 `local_state/<profile>`；迁移不带旧行） |
-| `location_sealed` / `location_seal` | 读 / 写 | `sync2/sealed.rs` | 部分：`loc_state` 表（G7-1）、迁移已灌（`carry.rs`），读写 API 缺 | G8-7 | 未接线（报 `gen4: not wired yet`），归 G8-7 |
-| `media_known` / `media_record` / `media_hash` / `media_scan` / `media_landed` / `media_bind_unbound` / `media_doomed` | 读写 | `sync2/media*.rs` | 部分：`gen4/media.rs`（`known` / `record` / `ingest` / …，存储层） | G8-7（G8-3 存储层已合） | 未接线（报 `gen4: not wired yet`），归 G8-7 |
+| `location_sealed` / `location_seal` | 读 / 写 | `sync2/sealed.rs` | 部分：`loc_state` 表（G7-1）、迁移已灌（`carry.rs`），读写 API 缺 | G8-7 | 已接（G8-7，读写 `loc_state`，回包形状同协议 3） |
+| `media_known` / `media_record` / `media_hash` / `media_scan` / `media_landed` / `media_bind_unbound` / `media_doomed` | 读写 | `sync2/media*.rs` | 部分：`gen4/media.rs`（`known` / `record` / `ingest` / …，存储层） | G8-7（G8-3 存储层已合） | 未接线，归 G8-7b |
 | `seal` / `open` / `open_v1` / `seal_file` / `open_file` / `derive_key` | 无 | `crate::sync2::media_seal` / `keys` | 不需要新实现（纯加解密，不碰库） | S1 原样接（与库代无关） | 已接 |
 
 ### 7.5 C 直出入口（`ffsrs_store_*`）
@@ -598,3 +598,83 @@ blocked 一律归 busy、去掉 `unstored` 分支、配对退回 (种类, 字段
    来自本版之前的还原，没改。「只剩封存旧库」页的文案改成「保持原样、不要用备份覆盖、带日志联系支持」，不再引导还原。
 7. **迁移中关库之后的再开始。** quiesce 之后主库已关，迁移页的「开始升级」按钮仍可点（app 未初始化时这一页通常不在
    屏上）。没加额外闸门。
+
+## 11. G8-7 同步一轮（2026-11-17，分支 `pr/srs-gen4-g8-7-sync-round`，基于 `pr/srs-gen4-switch`）
+
+G8 子规划文档在仓库里不存在（任务点名的「G8 子规划」找不到），本节按规划 §2.2 / §1.7 / §1.5、本交接说明 §7 与设计
+2026-11-11 §4 / §6.2 定。存储层全部复用第一段（G8-1 布局、G8-4 收段与同步状态、G8-6 分叉换身份、原生段打包、head），
+命令层在 `native/fushi_fsrs/src/store/gen4/cmd/sync.rs`，测试 `cmd/sync_tests.rs`（经 C ABI，内存位置）。
+
+### 11.1 命令（全部按 profile，一条命令一个读快照或一个写事务）
+
+| 命令 | 事务 | 做什么 |
+|---|---|---|
+| `location_root {location, now, has4, has3, locs, enableKdf?}` + 块 `v4/meta.json`、`v3/meta.json` | `write_local` | 新根 meta（`meta4`，只读不改；唯一改写 = 位置上没 `kdf`、本机要开加密）、loc 标记（没有就建）、旧根围栏（`fence3`；没有 `v3/meta.json` = 新集合：预先立围栏，墓碑 head 进 `ensure`「不存在才写」）。新根 meta 要更新的读者 → `needsUpgrade`，别的集合 / 坏 meta → `refused`，都不写。回包 `{state, loc, kdf, media, fresh, ensure}`，文件路径带 `v4/` / `v3/` 前缀，按顺序写（先新根后围栏）。 |
+| `plan {location, loc?, now, listing?}` + 块 = 各设备代号最大的 head | `write_local` | `Head4::decode`；要求更新的读者 → `needsUpgrade`；别的集合不认；对端：`set_peer`（公钥先到先得、对不上 = 冒名）、`put_loc_head`、停用过又写了更新 head 的取消停用；本机身份：`fork::judge_own_head`（`Fetch` 的段一并拉、`Known` = `finishPending`）；承袭段按 `listing` 的文件名定区间。`sealed` = 本位置 loc 的 head 带 `seal`。 |
+| `ingest {key?}` + 块 = 段 | `write` | `Receiver`（增量收尾）收一批；本机当前身份的原生段再喂 `ForkScan`，找到分叉点 `record_fork`。推进本机修订号。 |
+| `ingest_finish {now}` | `write` | `fork::rotate_on_fork`；换了身份推进修订号。 |
+| `outbox {progress, key?, maxBytes?, segBytes?, present?}` | `write_local` | 本机当前身份从已传水位起切段（`native_walk`，到 `segBytes` 就在链值已知处切，累计到 `maxBytes` 停这一批）、签名、按位置钥匙封装。水位（`srs_meta` `gen4_out/<col>/<progress>`）记已传段（首尾、链尾标签、传时空洞条数）；`present` 里缺了水位以下的段 / 已传段里后来多了空洞（清除了已发布的操作）→ 退水位重切重传。 |
+| `outbox_ack {progress, segments}` | `write_local` | 必须正好接在水位上且链尾标签与本机相符，否则 `accepted: false`、不记。 |
+| `head {location, progress, loc?, seal?, now, skipUnchangedMs?}` | `write_local` | 水位签成 `Head4`（`ack` = 已应用、`digest` = `Index::digest`、`derive` = 1、名字 / 扩展信息、`prev`）；内容指纹没变且没满心跳 = `unchanged`。代号 = 位置上本机最新 head 与水位里记的取大 + 1；记进 `loc_heads`（`status` 的 `uploaded` / `headGen`）。 |
+| `obsolete {progress, present, archive?}` | 读 | 比最新两代旧的本机 head、不在已传段清单里的本机 `seg-`；归档 / 还没写过 head 不删。不记待删清单（`obsolete_ack` 已删）。 |
+| `retire {device, retire, now}` | `write` | 停用记录 `srs_meta` `gen4_retired/<col>/<device>`（`Truth::retired` / `set_retired`）；`Receiver` 把停用设备上的依赖当成已满足（`deps_ready`），同一事务里投递等它的操作；`status` 设备行 `state = retired` + `retiredAt`，`blocking` 不再记到停用设备头上。 |
+| `rotate {now}` | `write` | `Truth::rotate_identity(col, 本机末尾, now)`。 |
+| `location_sealed` / `location_seal` | 读 / `write_local` | 协议 3 `sealed.rs` 同语义同回包，存 `loc_state`（`sealed` / `kdf` / `check_`）；段前缀判密封认 `FSG4` / `FRL4` / `FSH4` 的 flags bit0。 |
+| `digest` | 读 | `{digest}` = `Index::digest`（测试与诊断比收敛）。 |
+
+已删：`ingest_yield` / `ingest_commit` / `ingest_begin` / `ingest_batch` / `ingest_prepare` / `ingest_end` /
+`replay_pending`（没有收段通道）、`digest_buckets`、`obsolete_ack`。未接线、归 **G8-7b**：`relay_outbox` / `relay_ack` /
+`obsolete_former` / `media_*`。
+
+### 11.2 定案（所有者授权自定）
+
+- **不加表、不升 schema**：水位、停用记录放 `srs_meta`（主键区间读），loc 标记记进已有的 `loc_state.loc_ids`；分配的
+  40022 没用上。新语句（`RETIRED_SQL` / `VOIDS_SQL` / `LOC_STATE_SQL` / `LOC_HEAD_SEQ_SQL`）有查询计划测试。
+- **水位按「位置 + 密钥指纹」**（Dart 的进度身份，同协议 3）：换钥匙全部重传；换身份水位从 0 起（旧身份目录留在位置上，
+  清理归 G8-7b 的 `obsolete_former`）。
+- **清除改写**：比「传时空洞条数」与现在的，变了就退到那一段之前重切。空洞记着该处链值，重切出的段区间与链尾标签不变 =
+  同名覆盖写，位置上不留已清除的原文。
+- **新集合判据只看 `v3/meta.json` 在不在**（规划 §4 补记），不看目录名。
+- **旧版本互斥（D3）**：新根 meta `minReader` 4、旧根围栏 `minReader` 4 + `moved: v4`、新集合的墓碑 head——协议 3 的版本
+  读到这三样都停下报升级，字节由本版本写定（`location.rs`，G8-1 的测试覆盖）；本版本读到要更新读者的新根 meta / head 停下、
+  什么都不写（`sync_tests.rs`）。
+- **Dart `kSrsSync2Protocol` / `kSrsSync2MinReader` 升到 4**；加密握手（`srsLocationHandshake`）照旧判口令，但对 meta 只看
+  不写：它想写的 `kdf` 经 `_SrsMetaView` 截下来交给 `location_root` 的 `enableKdf`。
+- **位置目录名取 `identity` 的 `dir`**（`srsLocationDir` / `srsFolderLocationDir`），新根 `fushi-srs/<dir>/v4/`、旧根
+  `…/v3/`（只读 meta、写围栏；存量集合的媒体仍在旧根，新根 meta 记 `media: v3`）。
+- **收段会话**：Dart 的 `sync2IngestBegin` / `sync2IngestEnd` 只剩「整 profile RWKV 回放排到收段之后」的 Dart 侧标记；
+  `sync2IngestBatch` = 一条 `ingest`（一批一个写事务），`sync2IngestFinish` = `ingest_finish`。按片投递、`ingest_yield`
+  收片、`replay_pending` 全删。
+
+### 11.3 委托描述与代码不符
+
+- 「调度器『已在运行』导致永久 `_failed`」：`srs_sync_scheduler.dart` 里没有 `_failed` 状态；同一后端排着没开跑的轮次
+  本来就合并（`syncWithBackend` 的 `_queuedRounds`）。「already running」只出现在内核 `dryrun.rs` 的换代预演里（G7-5 已删
+  Dart 侧的预演调度）。协议 3 收段会话的并发冲突随会话一起删了。没有改调度器。
+- `ensureMigrated` / `deferMigration`：G7-5 已把 `sync2Migrated` 定成恒真，`ensureMigrated` 开头即返回；它后面整套「迁移前
+  只拉不发」（`_pullInto`、`srsSync2PullOnly`）成了死路径，删除连带调度器上千行，留给 G9-5（规划：`srs_sync_scheduler.dart`
+  G8-7 → G9-5）。
+
+### 11.4 没做 / 交给谁
+
+- **G8-7b**：转发（`relay_outbox` / `relay_ack`，要存收到的作者段原字节）、旧身份目录清理（`obsolete_former`）、媒体命令
+  （`media_*`，`srsRunLocationMedia` 接上之前报未接线）。
+- **旧根接手**：协议 1 根 `v2/` 的一次性迁移（`srsPrepareLocation`，按协议 3 命令写）与协议 3 根 `v3/` 上的段的接手
+  （`oldroot.rs` 的 `oldroot_scan` / 承袭上传 `Uploader`）都没接；`srsRunLocationRound` 不再调 `srsPrepareLocation`，
+  文件夹位置那条仍调（只碰 `v2/` 与 `v3/`）。存量集合的协议 3 段因此要等这一步才进新根——**接上之前，迁移过的设备之间
+  只同步迁移之后的新操作**（迁移本身把各自的旧数据带进了本机库，不丢）。
+- **摘要核对**：head 带 `digest`，但对端摘要不一致时的定位 / 自愈（协议 3 `heal.rs`）没接；`healFailed` 恒空。
+- **`status` 的 `seenAt` / `warning` / `frozen` / `digestMismatch`** 仍是占位值。
+- **上游缺口**：`purge` 命令只追加「删除 + 清除」两条操作、不把目标落成空洞（`Truth::advance_purge` 没有生产调用方），
+  所以清除改写目前只有测试能触发（`purging_published_ops_rewrites_the_uploaded_segments` 直接推进真相层的槽）。
+- **Dart 测试**：删了只测协议 3 机制的 5 个文件（收段通道 `channel_settle`、两段式删除回执 `delete_ack`、旧身份清理
+  `former_identity`、按片投递 `ingest_slices`、收段中作废 `retire_mid_ingest`）；其余用真内核跑协议 3 一轮的老测试
+  （`srs_sync2_round_test` 等）在新代上跑不通，按新命令重写归后续。新增 `srs_sync4_round_test.dart`（假内核 + 内存位置）。
+
+### 11.5 测试（`cmd/sync_tests.rs`，12 条 + `sync.rs` 单元 2 条）
+
+两台全新设备经文件夹位置互相同步（并发改同一字段收敛、语义摘要相同、增量 == 重建、没变不重写 head、每台最多两代 head、
+根与围栏）；小段小批多段多批续传；丢段重传；清除已发布操作后同名重写；加密位置（段密封、`plan.sealed`、无钥匙收不进、
+`location_seal(ed)` 形状）；位置的根（存量协议 3 改写围栏、媒体根 v3、新根要更新读者 / 别的集合 / 坏 meta 停下、旧根别的
+集合停下）；要更新读者的 head；停用与自动取消；主动换身份；复制目录分叉 → 换身份 → 三方收敛；已删 / 未接线命令的原因；
+新语句查询计划。
