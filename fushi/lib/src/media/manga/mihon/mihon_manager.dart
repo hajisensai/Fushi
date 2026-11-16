@@ -870,20 +870,26 @@ class MihonManager extends ChangeNotifier {
           fill();
           while (window.isNotEmpty) {
             if (cancelled()) break;
-            final _BulkSlot slot = window.removeFirst();
-            // 先补满窗口再处理当前这条：它安装期间，后面几条继续在下。
-            fill();
+            final _BulkSlot slot = window.first;
             final MihonAvailableExtension target = slot.target;
             onProgress?.call(done, total, target);
             done++;
             final Future<_BulkDownload>? pending = slot.download;
             if (pending == null) {
+              window.removeFirst();
+              fill();
               skippedPackages.add(target.packageName);
               continue;
             }
+            // 这条落地之后才让出窗口里的位置（在途下载严格不超过上限），并
+            // 立刻补满：它安装期间，后面几条继续在下。下载 future 不抛，见
+            // [_downloadForBulk]；落地前出任何异常，这格仍在窗口里由下面的
+            // finally 放互斥。
+            final _BulkDownload download = await pending;
+            window.removeFirst();
+            fill();
             MihonInstallProposal? proposal;
             try {
-              final _BulkDownload download = await pending;
               final MihonAvailableExtension? resolved = download.resolved;
               final Uint8List? bytes = download.bytes;
               if (resolved == null || bytes == null) {
