@@ -26,6 +26,8 @@
 //!   同步运行时的本机状态（[SYNC]，G8-4，不迁移、从头对账）：`loc_heads`（各位置上各设备最新的 head）、`op_wait`（原生
 //!   操作的因果等待缓冲）、`relay_out`（本机转发到各位置的文件与两段式删除）、`oldroot_fp`（各位置旧根的清单指纹）；
 //!   读写 API 在 `sync_state.rs`，收段在 `receive.rs`。
+//!   媒体清单（G8-3，`media.rs`）另有两张不迁移的进度表：`media_seen`（各作者清单收到第几代）、`media_listed`（哪些媒体
+//!   目录有人完整列举过）；`media_at` 多一列 `pend`（还没随本机清单发出）。
 //!
 //! 各列的取值见 `truth.rs`（落库规则）与 `pack.rs`（操作体的存储编码）。`writers.name` 存的是名字的紧凑字节形
 //! （`gen4::name`：一个文本只有一种字节形，所以按字节唯一就是按名字唯一）。
@@ -45,8 +47,9 @@ use rusqlite::Connection;
 /// 新代库的 schema 号。只要求远大于协议 3 的任何一个 schema 号（最后一个是 29）；万位是代，低位是这一代里的存储版本。
 ///
 /// G7-1 起 `40006`（本机状态表、`collections` 的绑定状态列、`application_id`）；G9-3 起 `40007`（派生表 `join_ix`）；
-/// G8-4 起 `40008`（同步运行时的本机状态 [SYNC]）。整批推送前每个改表的 PR 各自 +1。
-pub const SCHEMA: i64 = 40_008;
+/// G8-4 起 `40008`（同步运行时的本机状态 [SYNC]）；G8-3 起 `40009`（`media_at.pend`、`media_seen`、`media_listed`、
+/// `media_gen`）。整批推送前每个改表的 PR 各自 +1。
+pub const SCHEMA: i64 = 40_009;
 
 /// 新代的号段从这里起：`schema` 小于它的都不是新代库（协议 3 的 1～29 与封存值 39999）。
 pub const GEN_FLOOR: i64 = 40_000;
@@ -179,7 +182,11 @@ CREATE TABLE IF NOT EXISTS op_forks (
 /// - `peers`：各设备的公钥（先到先得，换不了：[super::truth::Truth::set_peer]）、名字、扩展信息（JSON 文本）、见过的最新
 ///   head 代号、第一次见到的时刻。
 /// - `held` / `checkpoints` / `media_local`：列同 `sync2_held` / `sync2_checkpoints` / `sync2_media_local`。
-/// - `media_at`：`(位置, 内容哈希)` → 在 / 不在与 HLC 文本（D18）。
+/// - `media_at`：`(位置, 内容哈希)` → 在 / 不在 / 可疑与 HLC 文本（D18）；`pend` = 这条还没出现在位置上的任何清单里、
+///   要随本机下一份清单发出去（G8-3，`media.rs`）。`loc_key` = 协议 3 同口径的「位置/媒体目录#sha256」。
+/// - `media_seen`：每个位置上每个作者的清单已收到的最大代号（只收更大的；本机自己那行 = 已发出的最大代号）。
+/// - `media_listed`：哪些「位置/媒体目录」有人完整列举过（协议 3 的 SEEDED）；`pend` = 是本机列的、还没随清单发出。
+/// - `media_gen`：本机在每个位置上已预留的最大清单代号（只升不降，换根 / 对账也不清：一个代号只对应一个文件）。
 /// - `loc_state`：每个位置的加密记忆（`location_seal`）：`loc_ids` = 位置 ID 的 JSON，`sealed` 0/1，`kdf` = 派生参数 JSON，
 ///   `check_` = 口令校验串，`last_ok` = 上次核对通过的时刻。
 pub(crate) const LOCAL: &str = "
@@ -235,7 +242,28 @@ CREATE TABLE IF NOT EXISTS media_at (
   sha BLOB NOT NULL,
   state INTEGER NOT NULL,
   hlc TEXT NOT NULL,
+  pend INTEGER NOT NULL DEFAULT 1,
   PRIMARY KEY (col, loc_key, sha)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS media_seen (
+  col INTEGER NOT NULL,
+  loc TEXT NOT NULL,
+  device BLOB NOT NULL,
+  gen INTEGER NOT NULL,
+  PRIMARY KEY (col, loc, device)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS media_listed (
+  col INTEGER NOT NULL,
+  loc_key TEXT NOT NULL,
+  pend INTEGER NOT NULL,
+  PRIMARY KEY (col, loc_key)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS media_gen (
+  col INTEGER NOT NULL,
+  loc TEXT NOT NULL,
+  device BLOB NOT NULL,
+  gen INTEGER NOT NULL,
+  PRIMARY KEY (col, loc, device)
 ) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS loc_state (
   col INTEGER NOT NULL,
@@ -943,7 +971,7 @@ mod tests {
                 .collect::<Result<_, _>>()
                 .unwrap()
         };
-        let want: [(&str, &[&str]); 12] = [
+        let want: [(&str, &[&str]); 15] = [
             (
                 "collections",
                 &[
@@ -1022,6 +1050,33 @@ mod tests {
                     "sha BLOB NN PK3",
                     "state INTEGER NN",
                     "hlc TEXT NN",
+                    "pend INTEGER NN",
+                ],
+            ),
+            (
+                "media_seen",
+                &[
+                    "col INTEGER NN PK1",
+                    "loc TEXT NN PK2",
+                    "device BLOB NN PK3",
+                    "gen INTEGER NN",
+                ],
+            ),
+            (
+                "media_listed",
+                &[
+                    "col INTEGER NN PK1",
+                    "loc_key TEXT NN PK2",
+                    "pend INTEGER NN",
+                ],
+            ),
+            (
+                "media_gen",
+                &[
+                    "col INTEGER NN PK1",
+                    "loc TEXT NN PK2",
+                    "device BLOB NN PK3",
+                    "gen INTEGER NN",
                 ],
             ),
             (
@@ -1088,6 +1143,9 @@ mod tests {
             "checkpoints",
             "media_local",
             "media_at",
+            "media_seen",
+            "media_listed",
+            "media_gen",
             "loc_state",
             "loc_heads",
             "op_wait",
