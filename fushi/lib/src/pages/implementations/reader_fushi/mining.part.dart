@@ -246,6 +246,14 @@ extension _ReaderMining on _ReaderFushiPageState {
     final String? displayDocumentTitle = _book == null
         ? null
         : displayTitleForBook(bookKey: widget.bookKey, rawTitle: _book!.title);
+    // NSFW 书 +「制卡图片也模糊」：书封换成模糊副本（失败则不带图，绝不退回原图）。
+    coverPath = await resolveNsfwCardImagePath(
+      db: appModel.database,
+      path: coverPath,
+      blurCardImages: appModel.prefsRepo.blurNsfwCardImages,
+      kind: TagHostKind.epub,
+      entryKey: widget.bookKey,
+    );
     final AnkiMiningContext miningContext = AnkiMiningContext(
       sourceLink: sourceLink,
       sentence: sentence,

@@ -59,10 +59,11 @@ Future<void> openMusicSourcesPage(BuildContext context) =>
       ),
     );
 
-/// 读齐本机全部在线来源（插件音源 + 服务器），未排序。合规门没过的平台没有插件。
+/// 读齐本机全部在线来源（插件音源 + 服务器），未排序。插件含本机装的与经互联中继的
+/// （[isMusicPluginSourcesUsable]）；两者都没有的平台没有插件。
 Future<List<MusicOnlineSource>> loadMusicOnlineSources(AppModel app) async {
   final List<MusicOnlineSource> out = <MusicOnlineSource>[];
-  if (isMusicPluginSourcesAvailable) {
+  if (isMusicPluginSourcesUsable) {
     for (final InstalledMusicPlugin p in await app.musicPluginManager.list()) {
       if (p.isMusicSource) out.add(MusicPluginOnlineSource(p.info!.manifest));
     }

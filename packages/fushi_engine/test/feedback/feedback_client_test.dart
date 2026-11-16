@@ -147,6 +147,83 @@ void main() {
     );
   });
 
+  test('样本文件：流式 PUT f0..f2、带 ticket 与编码后的原文件名；越界槽位 / 体积本机就拒', () async {
+    final h = _harness(
+      (http.Request r) async => r.url.path.endsWith('/f1')
+          ? _json(<String, dynamic>{'error': 'slot_taken'}, 409)
+          : _json(<String, dynamic>{'slot': 'f0'}, 201),
+      identity: _id,
+    );
+    final List<int> sent = <int>[];
+    await h.client.uploadFeedbackFile(
+      'abcdefghij',
+      'T' * 32,
+      slot: 'f0',
+      name: '第1話 字幕.srt',
+      body: Stream<List<int>>.value(utf8.encode('ab')),
+      length: 2,
+      onProgress: sent.add,
+    );
+    final http.Request r = h.requests.single;
+    expect(r.method, 'PUT');
+    expect(r.url.path, '/v1/feedback/abcdefghij/attachments/f0');
+    expect(r.headers['X-Fushi-Ticket'], 'T' * 32);
+    expect(r.headers['X-Fushi-Account'], isNull);
+    expect(Uri.decodeComponent(r.headers['X-Fushi-File-Name']!), '第1話 字幕.srt');
+    expect(r.headers['X-Fushi-File-Name'], isNot(contains(' ')));
+    expect(r.bodyBytes, utf8.encode('ab'));
+    expect(sent, <int>[2]);
+
+    // 同槽位 409 slot_taken = 上次已传成功。
+    await h.client.uploadFeedbackFile(
+      'abcdefghij',
+      'T' * 32,
+      slot: 'f1',
+      name: 'a.md',
+      body: Stream<List<int>>.value(<int>[0x61]),
+      length: 1,
+    );
+    expect(
+      () => h.client.uploadFeedbackFile(
+        'abcdefghij',
+        'T' * 32,
+        slot: 'v0',
+        name: 'a.md',
+        body: const Stream<List<int>>.empty(),
+        length: 1,
+      ),
+      throwsArgumentError,
+    );
+    expect(
+      () => h.client.uploadFeedbackFile(
+        'abcdefghij',
+        'T' * 32,
+        slot: 'f2',
+        name: 'a.mkv',
+        body: const Stream<List<int>>.empty(),
+        length: FeedbackLimits.fileMaxBytes + 1,
+      ),
+      throwsArgumentError,
+    );
+    expect(h.requests, hasLength(2));
+  });
+
+  test('附件元数据：样本文件带原文件名', () {
+    final FeedbackAttachmentInfo a =
+        FeedbackAttachmentInfo.fromJson(<String, dynamic>{
+          'slot': 'f0',
+          'kind': 'file',
+          'bytes': 3,
+          'type': 'application/octet-stream',
+          'name': 'notes.md',
+        });
+    expect(a.isFile, isTrue);
+    expect(a.name, 'notes.md');
+    expect(FeedbackLimits.isFileSlot('f2'), isTrue);
+    expect(FeedbackLimits.isFileSlot('f3'), isFalse);
+    expect(FeedbackLimits.fileSlot(1), 'f1');
+  });
+
   test('批量进度 / 详情 / 追加说明：不签名，ticket 在 body 或头里', () async {
     final h = _harness((http.Request r) async {
       if (r.url.path == '/v1/feedback/status') {

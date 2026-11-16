@@ -8,6 +8,7 @@ import 'package:fushi/src/media/media_source.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_theme_host.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/ankimobile_repository.dart';
+import 'package:fushi/src/anki/card_source_open_feedback.dart';
 import 'package:fushi/src/anki/remote_mining_anki_repository.dart';
 import 'package:fushi/src/anki/source_review_navigation.dart';
 import 'package:fushi/src/anki/source_review_session.dart';
@@ -68,31 +69,66 @@ RemoteVideoInfo? findRemoteVideoForCardSource(
   return null;
 }
 
+/// 互联 host 上卡片指向的那条视频，连同取它字节用的客户端。
+typedef RemoteCardSourceVideo = ({
+  RemoteVideoInfo info,
+  InterconnectSyncBackend client,
+});
+
 /// 本地库没有该视频时，去已配对的互联 host 取它的清单并按 [link] 找条目。互联未启用 /
-/// 未配对 / host 不可达都返回 null（调用方按「没有来源」提示，不吞成别的错）。
-Future<({RemoteVideoInfo info, InterconnectSyncBackend client})?>
-resolveRemoteCardSourceVideo(
+/// 未配对 / host 不可达都是 `value: null`（调用方按「没有来源」提示，不吞成别的错）；
+/// 用户在等清单时取消是 `cancelled: true`（调用方静默放弃这次跳转）。
+///
+/// 要真去 host 拉清单（缓存不新鲜：首次 / 过了 TTL / 有在途请求）时，等待期间在
+/// [navigator] 上挂进度反馈（[awaitWithCardSourceOpeningFeedback]，反馈 7gkdbfCXQ0）；
+/// 新鲜缓存命中是立即可得的，不弹对话框免得闪一下。
+Future<CardSourceAwaited<RemoteCardSourceVideo>> resolveRemoteCardSourceVideo(
   AppModel app,
   WidgetRef ref,
-  CardSourceLink link,
-) async {
+  CardSourceLink link, {
+  required NavigatorState navigator,
+}) async {
+  const CardSourceAwaited<RemoteCardSourceVideo> unavailable = (
+    value: null,
+    cancelled: false,
+  );
   final SyncRepository syncRepo = SyncRepository(app.database);
-  if (!await syncRepo.isInterconnectEnabled()) return null;
+  if (!await syncRepo.isInterconnectEnabled()) return unavailable;
   final InterconnectSyncBackend backend = InterconnectSyncBackend.instance;
-  if (!await backend.restoreAuth(syncRepo)) return null;
+  if (!await backend.restoreAuth(syncRepo)) return unavailable;
   try {
-    final List<RemoteVideoInfo> videos = await ref
-        .read(remoteLibraryCacheProvider)
+    final RemoteLibraryCache cache = ref.read(remoteLibraryCacheProvider);
+    final String sourceId = backend.remoteLibrarySourceId;
+    const String key = RemoteLibraryCacheKeys.videos;
+    // 与 [RemoteLibraryCache.read] 同一判据：有在途请求（如视频页正在下拉刷新）
+    // 时 read 会等它，这里也算「不立即可得」、照样挂反馈。
+    final bool cached = cache.wouldReadImmediately(
+      sourceId: sourceId,
+      key: key,
+    );
+    final Future<List<RemoteVideoInfo>> listing = cache
         .read<List<RemoteVideoInfo>>(
-          sourceId: backend.remoteLibrarySourceId,
-          key: RemoteLibraryCacheKeys.videos,
+          sourceId: sourceId,
+          key: key,
           fetch: backend.listRemoteVideos,
         );
-    final RemoteVideoInfo? info = findRemoteVideoForCardSource(videos, link);
-    return info == null ? null : (info: info, client: backend);
+    final CardSourceAwaited<List<RemoteVideoInfo>> videos = cached
+        ? (value: await listing, cancelled: false)
+        : await awaitWithCardSourceOpeningFeedback<List<RemoteVideoInfo>>(
+            navigator: navigator,
+            work: listing,
+          );
+    if (videos.cancelled) return (value: null, cancelled: true);
+    final RemoteVideoInfo? info = findRemoteVideoForCardSource(
+      videos.value!,
+      link,
+    );
+    return info == null
+        ? unavailable
+        : (value: (info: info, client: backend), cancelled: false);
   } on Object catch (error, stack) {
     ErrorLogService.instance.log('card_source.remoteVideo', error, stack);
-    return null;
+    return unavailable;
   }
 }
 
@@ -141,10 +177,12 @@ Future<void> _openCardSource({
   final VideoBookRow? video = link.kind == CardSourceKind.video
       ? await videos.getByBookUid(link.uid)
       : null;
-  final ({RemoteVideoInfo info, InterconnectSyncBackend client})? remote =
+  final CardSourceAwaited<RemoteCardSourceVideo>? lookup =
       link.kind == CardSourceKind.video && video == null
-      ? await resolveRemoteCardSourceVideo(app, ref, link)
+      ? await resolveRemoteCardSourceVideo(app, ref, link, navigator: navigator)
       : null;
+  if (lookup != null && (lookup.cancelled || !navigator.mounted)) return;
+  final RemoteCardSourceVideo? remote = lookup?.value;
   if ((link.kind == CardSourceKind.video && video == null && remote == null) ||
       (link.kind != CardSourceKind.video && book == null)) {
     FushiToast.show(msg: t.card_source_review_media_missing);

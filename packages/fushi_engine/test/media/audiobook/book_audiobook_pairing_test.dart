@@ -137,6 +137,23 @@ void main() {
       ]);
     });
 
+    test(
+      'R3: per-chapter books of one volume vs a volume audiobook give up',
+      () {
+        // 「X 第3巻 第12話」读得出卷号 3（话号不当卷号）：同卷多话各是一本书，
+        // 一份第 3 卷有声书不能判给其中哪一话，整组记歧义、不配。
+        final BookAudiobookPairingPlan plan = _pair(
+          books: <String>['/s/物語 第3巻 第12話.epub', '/s/物語 第3巻 第13話.epub'],
+          audio: <String>['/s/第3巻/01.mp3', '/s/第3巻/02.mp3'],
+        );
+        expect(plan.byBook, isEmpty);
+        expect(plan.ambiguousBookPaths, <String>[
+          '/s/物語 第3巻 第12話.epub',
+          '/s/物語 第3巻 第13話.epub',
+        ]);
+      },
+    );
+
     test('R3: bare numbered loose tracks are not volumes (sole book → R4)', () {
       final BookAudiobookPairingPlan plan = _pair(
         books: <String>['/b/Book 1.epub'],

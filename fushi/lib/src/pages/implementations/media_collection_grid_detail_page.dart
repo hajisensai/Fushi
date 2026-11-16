@@ -12,6 +12,7 @@ import 'package:fushi/src/media/collections/collection_drag.dart'
     show LibraryDragReorderScope, LibraryReorderCell;
 import 'package:fushi/src/media/collections/collection_poster_header.dart';
 import 'package:fushi/src/media/detail/media_poster_detail.dart';
+import 'package:fushi/src/media/nsfw/media_nsfw_cover.dart';
 import 'package:fushi/src/utils/adaptive/shell_style.dart'
     show ShellContentLayout, shellContentLayoutOf, shellRedesignActive;
 import 'package:fushi/src/utils/components/fushi_cover_block.dart'
@@ -107,6 +108,7 @@ class MediaCollectionGridDetailPage extends StatefulWidget {
     this.isMemberVisible,
     this.collectionAiSettings,
     this.memberCoverOf,
+    this.memberNsfwOf,
     this.aiClientFactory,
     super.key,
   });
@@ -180,6 +182,12 @@ class MediaCollectionGridDetailPage extends StatefulWidget {
   /// 这类没有阅读进度（不传 [memberInfoOf]，否则会冒出读完筛选 / 标记读完）但有
   /// 封面的成员用；null = 只认 [memberInfoOf] 的封面。
   final Widget? Function(String mediaType, String entryKey)? memberCoverOf;
+
+  /// 头部成员封面（扇形 / 大封面）逐张判定 NSFW 用的宿主（拍板台 w04vrhUAaX）。
+  /// null = 按成员行 [MediaNsfwTarget.collectionMember]；游戏要并入自己的成人向
+  /// 标记，由调用方给。成员卡自己的封面由 [memberCardBuilder] 的卡壳负责。
+  final MediaNsfwTarget? Function(String mediaType, String entryKey)?
+  memberNsfwOf;
 
   /// [memberInfoOf] 背后的数据（最后阅读时刻 / 进度 / 读完）变了的通知。详情页是压在
   /// 阅读器之下的独立路由，不会因调用方的 provider 变化而重建；不订阅这条，读完一本
@@ -941,6 +949,29 @@ class _MediaCollectionGridDetailPageState
         widget.memberCoverOf?.call(e.row.mediaType, e.row.entryKey);
   }
 
+  /// [_coverOf] 再按该成员判定 NSFW 包一层模糊（头部封面用；取色 / 宽高比仍用
+  /// [_coverOf] 的原图源，只用于配色、不显示原图）。
+  Widget? _displayCoverOf(CollectionMemberEntry? e) {
+    final Widget? cover = _coverOf(e);
+    if (e == null || cover == null) return cover;
+    final String mediaType = e.row.mediaType;
+    final String entryKey = e.row.entryKey;
+    final MediaNsfwTarget? target = widget.memberNsfwOf != null
+        ? widget.memberNsfwOf!(mediaType, entryKey)
+        : MediaNsfwTarget.collectionMember(mediaType, entryKey);
+    return MediaNsfwCover(target: target, child: cover);
+  }
+
+  /// [_heroCover] 那一本，按它判定 NSFW 后的显示版本。
+  Widget? _heroDisplayCover(List<CollectionMemberEntry> entries) {
+    final CollectionMemberEntry? current = pickContinueMember(entries);
+    if (_coverOf(current) != null) return _displayCoverOf(current);
+    for (final CollectionMemberEntry e in entries) {
+      if (_coverOf(e) != null) return _displayCoverOf(e);
+    }
+    return null;
+  }
+
   ImageProvider? _heroCoverImage(List<CollectionMemberEntry> entries) {
     final Widget? cover = _heroCover(entries);
     return cover == null ? null : fushiCoverImageOf(cover);
@@ -990,10 +1021,10 @@ class _MediaCollectionGridDetailPageState
         // 后面当叠层。
         final CollectionMemberEntry? current = pickContinueMember(entries);
         final List<Widget> covers = <Widget>[
-          if (_coverOf(current) case final Widget cover) cover,
+          if (_displayCoverOf(current) case final Widget cover) cover,
           for (final CollectionMemberEntry e in entries)
             if (!identical(e, current))
-              if (_coverOf(e) case final Widget cover) cover,
+              if (_displayCoverOf(e) case final Widget cover) cover,
         ];
         // 任何排序下都可拖：拖一次即把当前显示顺序连同这次移动存为手动序
         // （[_onReorder]）。此前只在「手动」下才进拖排网格，而默认排序是卷号，
@@ -1308,6 +1339,7 @@ class _MediaCollectionGridDetailPageState
     required double hPad,
   }) {
     final Widget? cover = _heroCover(entries);
+    final Widget? displayCover = _heroDisplayCover(entries);
     return CollectionPosterHeader(
       key: const ValueKey<String>('collection_detail_poster_hero'),
       title: _name,
@@ -1316,7 +1348,7 @@ class _MediaCollectionGridDetailPageState
       covers: covers,
       coverMaterial: _dominantCoverMaterial(_rows),
       horizontalPadding: hPad,
-      cover: cover == null ? null : SizedBox.expand(child: cover),
+      cover: displayCover == null ? null : SizedBox.expand(child: displayCover),
       coverImage: cover == null ? null : fushiCoverImageOf(cover),
       // 游戏：卡盒比例 + 卡盒材质（与成员卡一致）；书 / 漫画按封面真实比例。
       caseMaterial: _isGameDomain() ? ShelfCoverMaterial.gameCase : null,
