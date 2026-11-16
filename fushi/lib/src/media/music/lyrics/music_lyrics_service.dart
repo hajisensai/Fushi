@@ -1296,8 +1296,9 @@ class MusicLyricsService {
   ///
   /// [title] / [artist] 是用户在搜索框里改过的关键词（YouTube 翻唱等标题与歌名对不上时
   /// 手动找）：null = 用曲目元数据；[artist] 传空串 = 不限艺人。所有在线来源都按同一组
-  /// 关键词搜：LRCLIB 在前，之后是已启用的歌词插件（按用户排序，每个插件取评分前
-  /// [kPluginLyricsScriptProbeLimit] 条——插件候选不带正文，只能逐条取来）。
+  /// 关键词搜，来源与顺序同自动解析：来源列表里已启用的 LRCLIB 与歌词插件按用户排序逐个问
+  /// （没装配来源列表时只有 LRCLIB）；每个插件取评分前 [kPluginLyricsScriptProbeLimit] 条——
+  /// 插件候选不带正文，只能逐条取来。
   ///
   /// 书写系统与关键词对得上的（原文版）排前，组内保持来源顺序与各来源自己的排序。某个
   /// 来源出错只跳过它；全部来源都没结果且有来源出错时抛出第一个错误（界面显示错误，而不是
@@ -1328,7 +1329,7 @@ class MusicLyricsService {
     Object? firstError;
     StackTrace? firstStack;
 
-    try {
+    Future<void> searchLrclib() async {
       for (final LrclibRecord r in await _lrclib.search(
         title: effectiveTitle,
         artist: effectiveArtist,
@@ -1347,57 +1348,69 @@ class MusicLyricsService {
           ),
         );
       }
-    } on Object catch (e, st) {
-      firstError = e;
-      firstStack = st;
     }
 
-    final MusicLyricsProviderIds? listProviders = _providers;
+    Future<void> searchPlugin(
+      String id,
+      MusicPluginLyricsSearcher search,
+      MusicPluginLyricsRefFetcher fetch,
+    ) async {
+      final List<MusicPluginLyricsCandidate> hits = await _rankedPluginHits(
+        id,
+        track,
+        search,
+        title: effectiveTitle,
+        artist: effectiveArtist,
+        durationMs: null,
+      );
+      for (final MusicPluginLyricsCandidate hit in hits.take(
+        kPluginLyricsScriptProbeLimit,
+      )) {
+        final MusicPluginLyrics? lyrics = await fetch(id, hit.ref);
+        if (lyrics?.original == null) continue;
+        final ({Uint8List raw, String format, LyricTimeline timeline}) built;
+        try {
+          built = await buildMusicPluginLyrics(
+            lyrics!,
+            track.durationMs,
+            _parse,
+          );
+        } on LyricsParseException {
+          continue;
+        }
+        final String? hitArtist = hit.artist?.trim();
+        add(
+          MusicLyricsCandidate(
+            source: MusicLyricsSource.lyricsPlugin(id),
+            label: hitArtist == null || hitArtist.isEmpty
+                ? hit.title
+                : '${hit.title} — $hitArtist',
+            // 原始各轨不是歌词格式：展示合并后时间轴的格式（与 [localCandidates] 一致）。
+            format: built.format == kMusicPluginLyricsTracksFormat
+                ? built.timeline.format
+                : built.format,
+            raw: built.raw,
+            timeline: built.timeline,
+          ),
+        );
+      }
+    }
+
+    // 与自动解析同一份来源列表（[_onlineSourceOrder]）：用户排的顺序、停用的 LRCLIB /
+    // 插件都照办。
     final MusicPluginLyricsSearcher? search = _pluginSearch;
     final MusicPluginLyricsRefFetcher? fetch = _pluginFetch;
-    if (listProviders != null && search != null && fetch != null) {
-      for (final String id in await listProviders()) {
+    for (final String id in await _onlineSourceOrder()) {
+      if (id == MusicLyricsSource.lrclib) {
         try {
-          final List<MusicPluginLyricsCandidate> hits = await _rankedPluginHits(
-            id,
-            track,
-            search,
-            title: effectiveTitle,
-            artist: effectiveArtist,
-            durationMs: null,
-          );
-          for (final MusicPluginLyricsCandidate hit in hits.take(
-            kPluginLyricsScriptProbeLimit,
-          )) {
-            final MusicPluginLyrics? lyrics = await fetch(id, hit.ref);
-            if (lyrics?.original == null) continue;
-            final ({Uint8List raw, String format, LyricTimeline timeline})
-            built;
-            try {
-              built = await buildMusicPluginLyrics(
-                lyrics!,
-                track.durationMs,
-                _parse,
-              );
-            } on LyricsParseException {
-              continue;
-            }
-            final String? hitArtist = hit.artist?.trim();
-            add(
-              MusicLyricsCandidate(
-                source: MusicLyricsSource.lyricsPlugin(id),
-                label: hitArtist == null || hitArtist.isEmpty
-                    ? hit.title
-                    : '${hit.title} — $hitArtist',
-                // 原始各轨不是歌词格式：展示合并后时间轴的格式（与 [localCandidates] 一致）。
-                format: built.format == kMusicPluginLyricsTracksFormat
-                    ? built.timeline.format
-                    : built.format,
-                raw: built.raw,
-                timeline: built.timeline,
-              ),
-            );
-          }
+          await searchLrclib();
+        } on Object catch (e, st) {
+          firstError ??= e;
+          firstStack ??= st;
+        }
+      } else if (search != null && fetch != null) {
+        try {
+          await searchPlugin(id, search, fetch);
         } on MusicPluginException catch (e, st) {
           firstError ??= e;
           firstStack ??= st;

@@ -543,8 +543,52 @@ void main() {
       expect(found, hasLength(1));
     });
 
+    test('来源与顺序照来源列表：插件排在 LRCLIB 前就先列，停用的 LRCLIB 不问', () async {
+      enabled = <String>['a', MusicLyricsSource.lrclib];
+      lrclibStatus = 200;
+      lrclibBody = jsonEncode(<Map<String, Object?>>[
+        <String, Object?>{
+          'id': 1,
+          'trackName': 'Song',
+          'artistName': 'Artist',
+          'duration': 320,
+          'syncedLyrics': '[00:02.00]from lrclib',
+        },
+      ]);
+      plugins.candidates['a'] = <MusicPluginLyricsCandidate>[_cand('a')];
+      plugins.lyrics['a'] = _lyr('[00:01.00]from plugin');
+      final List<MusicLyricsCandidate> found = await service().searchOnline(
+        youtube,
+        title: 'Song',
+        artist: 'Artist',
+      );
+      expect(found.map((MusicLyricsCandidate c) => c.source), <String>[
+        MusicLyricsSource.lyricsPlugin('a'),
+        MusicLyricsSource.lrclib,
+      ]);
+      // 来源列表里的 LRCLIB 项不是插件，不交给插件搜索。
+      expect(plugins.searched, <String>['a']);
+
+      enabled = <String>['a'];
+      lrclibCalls.clear();
+      final List<MusicLyricsCandidate> onlyPlugin = await service()
+          .searchOnline(youtube, title: 'Song', artist: 'Artist');
+      expect(lrclibCalls, isEmpty);
+      expect(onlyPlugin.single.source, MusicLyricsSource.lyricsPlugin('a'));
+    });
+
+    test('没装配来源列表（无插件宿主）时只搜 LRCLIB', () async {
+      lrclibStatus = 200;
+      lrclibBody = '[]';
+      await service(
+        withPlugins: false,
+      ).searchOnline(youtube, title: 'Song', artist: 'Artist');
+      expect(lrclibCalls, hasLength(1));
+      expect(plugins.searched, isEmpty);
+    });
+
     test('艺人留空 = 不限艺人；不传关键词 = 用曲目元数据', () async {
-      enabled = <String>[];
+      enabled = <String>[MusicLyricsSource.lrclib];
       lrclibStatus = 200;
       lrclibBody = '[]';
       await service().searchOnline(youtube, title: 'Song', artist: '  ');
@@ -555,7 +599,7 @@ void main() {
     });
 
     test('所有来源都出错且没有结果时抛出（界面显示错误而不是「没有候选」）', () async {
-      enabled = <String>['b'];
+      enabled = <String>[MusicLyricsSource.lrclib, 'b'];
       await expectLater(
         service().searchOnline(youtube, title: 'Song', artist: 'Artist'),
         throwsA(isA<HttpException>()),
