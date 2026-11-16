@@ -12,13 +12,17 @@
 //! - [class]：读侧按别名类判定——寄存器、标签按别名类并起来再过冻结判据，内嵌 ID 归一（只读，没有调用方）。
 //! - [cache]：缓存层——笔记 / 卡片缓存、逐卡重放、有效复习投影（统计列）。
 //! - [weigh]：派生层的语义部分——标签 OR-Set、媒体绑定、彻底清除、被扣住的删除、设备信任。
+//! - [fork]：本机身份分叉的检测（换身份本身是 `truth` 的 `rotate_identity`，本机身份表 `self_` 的读写也在那里）。
+//! - [compact]：本机原生段的小段合并（分层合并的计划与重新切段、签名；不改表）。
 
 pub mod alias;
 pub mod cache;
 pub mod class;
+pub mod compact;
 pub mod derive;
 pub mod digest;
 pub mod files;
+pub mod fork;
 pub mod import;
 pub mod legacy;
 pub mod legacy_export;

@@ -79,6 +79,11 @@ use crate::sync2::op as v3;
 use crate::sync2::segment::{CHAIN_ZERO, Chain};
 use crate::sync2::vv::{OpId, Vv};
 
+/// 本机身份（`self_`）与换身份（G8-6）。
+mod own;
+pub(crate) use own::{NativeStep, fork_key};
+pub use own::{Rotated, SelfIdentity};
+
 /// `devs.kind`：原生日志。
 pub const DEV_NATIVE: i64 = 0;
 /// `devs.kind`：承袭日志。
