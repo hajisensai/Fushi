@@ -149,22 +149,28 @@ Future<Map<String, Object?>> _runInIsolate(
 }
 
 /// 对 [core] 的库跑一次预演（后台 isolate），返回报告。报告同时写进库旁边的 `gen4-rehearsal/report.json`。
+///
+/// [runId] 把这一次和它的取消绑在一起：先读缓存配置、再起 isolate，内核登记这一次之前有一段窗口，这段时间里带同一个
+/// [runId] 调的 [srsGen4RehearsalCancel] 由内核记下，这一次一登记就报 `cancelled`、不跑一整轮。
 Future<SrsGen4RehearsalReport> srsGen4Rehearse(
   SrsCore core, {
   required String appVersion,
+  String? runId,
 }) async {
   final Map<String, Object?> caches = await _rehearsalCaches(core);
   final Map<String, Object?> r = await _runInIsolate(core, <String, Object?>{
     'op': 'gen4_rehearse',
     'caches': caches,
     'appVersion': appVersion,
+    'runId': ?runId,
   });
   return SrsGen4RehearsalReport.fromJson(r);
 }
 
-/// 请 [core] 的库上在跑的预演停下（同步调：只置开关、打断语句，不等）。没在跑就什么都不做。
-void srsGen4RehearsalCancel(SrsCore core) {
-  core.sync2(const <String, Object?>{'op': 'gen4_rehearse_cancel'});
+/// 请 [core] 的库上的预演停下（同步调：只置开关、打断语句，不等）。给了 [runId]：那一次还没在内核登记时取消记下、
+/// 登记即停；没给：只停正在跑的那一次，没在跑就什么都不做。
+void srsGen4RehearsalCancel(SrsCore core, {String? runId}) {
+  core.sync2(<String, Object?>{'op': 'gen4_rehearse_cancel', 'runId': ?runId});
 }
 
 /// 上一次预演的报告；没跑过就是 null。
@@ -179,11 +185,15 @@ Future<SrsGen4RehearsalReport?> srsGen4RehearsalLastReport(SrsCore core) async {
       : null;
 }
 
-/// 一个库上的预演执行端（生产：上面三个内核命令；测试注入假实现）。
+/// 一个库上的预演执行端（生产：上面三个内核命令；测试注入假实现）。[run] 与 [cancel] 用同一个 `runId` 认同一次运行：
+/// [cancel] 早于这一次真正开跑（执行端登记它）到达也不能丢。
 abstract interface class SrsGen4RehearsalRunner {
   Future<SrsGen4RehearsalReport?> lastReport();
-  Future<SrsGen4RehearsalReport> run(String appVersion);
-  void cancel();
+  Future<SrsGen4RehearsalReport> run(
+    String appVersion, {
+    required String runId,
+  });
+  void cancel(String runId);
 }
 
 /// 生产实现：[core] 那个库上的内核命令。
@@ -197,11 +207,13 @@ class SrsKernelGen4RehearsalRunner implements SrsGen4RehearsalRunner {
       srsGen4RehearsalLastReport(core);
 
   @override
-  Future<SrsGen4RehearsalReport> run(String appVersion) =>
-      srsGen4Rehearse(core, appVersion: appVersion);
+  Future<SrsGen4RehearsalReport> run(
+    String appVersion, {
+    required String runId,
+  }) => srsGen4Rehearse(core, appVersion: appVersion, runId: runId);
 
   @override
-  void cancel() => srsGen4RehearsalCancel(core);
+  void cancel(String runId) => srsGen4RehearsalCancel(core, runId: runId);
 }
 
 /// 从「当前的复习库」取执行端（库没开 = null）。
@@ -211,6 +223,26 @@ Future<SrsGen4RehearsalRunner?> Function() srsGen4RehearsalRunnerOf(
   final SrsDbStore? store = await readStore();
   return store == null ? null : SrsKernelGen4RehearsalRunner(store.core);
 };
+
+/// 调度器的一次尝试：从 [SrsGen4RehearsalScheduler.maybeRun] 放行那一刻起就存在，取消记在它身上（不等执行端到手）。
+class _RehearsalAttempt {
+  _RehearsalAttempt(this.runId);
+
+  /// 交给执行端的运行号（本进程内唯一）。
+  final String runId;
+
+  /// 已请求停下：之后每个 await 回来都先看它。
+  bool cancelled = false;
+
+  /// 已经交给 [runner] 开跑：此后的取消要转给它（带 [runId]）。
+  SrsGen4RehearsalRunner? runner;
+}
+
+/// 本进程里下一个运行号的序号（与启动时刻一起拼成运行号）。
+int _nextRehearsalRunSeq = 0;
+
+String _newRehearsalRunId() =>
+    '${DateTime.now().microsecondsSinceEpoch}-${_nextRehearsalRunSeq++}';
 
 /// 预演的空闲调度：每 [kSrsGen4RehearsalTick] 看一次，app 空闲（[canRunNow]：前台、不在复习页）且这个 app 版本还没
 /// 跑出结论（上一份报告不是本版本的，或本版本的那次没跑完）才跑。进复习页 / 进后台 / 关库时 [cancel]。跑的过程中
@@ -238,7 +270,7 @@ class SrsGen4RehearsalScheduler {
   bool _disposed = false;
   bool _done = false;
   bool _failed = false;
-  SrsGen4RehearsalRunner? _runner;
+  _RehearsalAttempt? _attempt;
   Future<SrsGen4RehearsalReport?>? _running;
 
   /// 是否有一次正在跑。
@@ -259,12 +291,16 @@ class SrsGen4RehearsalScheduler {
     cancel();
   }
 
-  /// 停下在跑的那一次（不等）。
+  /// 停下在跑的那一次（不等）。还在取执行端 / 读上一份报告时取消记在这一次上、不再开跑；已经交给执行端的，带运行号
+  /// 转给它（执行端还没登记这一次也不丢）。
   void cancel() {
-    final SrsGen4RehearsalRunner? runner = _runner;
-    if (_running == null || runner == null) return;
+    final _RehearsalAttempt? attempt = _attempt;
+    if (attempt == null) return;
+    attempt.cancelled = true;
+    final SrsGen4RehearsalRunner? runner = attempt.runner;
+    if (runner == null) return;
     try {
-      runner.cancel();
+      runner.cancel(attempt.runId);
     } catch (e, stack) {
       _onError?.call(e, stack);
     }
@@ -281,18 +317,20 @@ class SrsGen4RehearsalScheduler {
     if (_disposed || _done || _failed || _running != null || !_canRunNow()) {
       return Future<SrsGen4RehearsalReport?>.value();
     }
-    final Future<SrsGen4RehearsalReport?> f = _attempt();
+    final _RehearsalAttempt attempt = _RehearsalAttempt(_newRehearsalRunId());
+    _attempt = attempt;
+    final Future<SrsGen4RehearsalReport?> f = _run(attempt);
     _running = f;
     return f.whenComplete(() {
       if (identical(_running, f)) _running = null;
-      _runner = null;
+      if (identical(_attempt, attempt)) _attempt = null;
     });
   }
 
-  Future<SrsGen4RehearsalReport?> _attempt() async {
+  Future<SrsGen4RehearsalReport?> _run(_RehearsalAttempt attempt) async {
     try {
       final SrsGen4RehearsalRunner? runner = await _readRunner();
-      if (runner == null) return null;
+      if (runner == null || attempt.cancelled) return null;
       final String version = _appVersion();
       final SrsGen4RehearsalReport? last = await runner.lastReport();
       if (last != null && last.appVersion == version && last.verdict.settled) {
@@ -301,9 +339,12 @@ class SrsGen4RehearsalScheduler {
       }
       // 本进程里已经有一次在跑（不是这个调度器起的）：内核会拒绝第二次，这里不撞，下个节拍再看。
       if (last?.verdict == SrsGen4RehearsalVerdict.running) return null;
-      if (_disposed || !_canRunNow()) return null;
-      _runner = runner;
-      final SrsGen4RehearsalReport report = await runner.run(version);
+      if (_disposed || attempt.cancelled || !_canRunNow()) return null;
+      attempt.runner = runner;
+      final SrsGen4RehearsalReport report = await runner.run(
+        version,
+        runId: attempt.runId,
+      );
       if (report.verdict.settled) _done = true;
       _onReport?.call(report);
       return report;

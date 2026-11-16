@@ -21,36 +21,72 @@ SrsGen4RehearsalReport _report(String verdict, String? version) =>
       'finishedAtMs': 1,
     });
 
+/// 按内核的契约做的假执行端：[run] 先过一段「登记之前」的窗口（真内核里是读缓存配置、起后台 isolate），然后登记
+/// 这一次的运行号；取消只停登记着的那一次，登记之前到的按运行号记下、那一次一登记就停（不是黏性的「取消过就算」）。
 class _FakeRunner implements SrsGen4RehearsalRunner {
   _FakeRunner({this.last, this.verdict = 'pass'});
 
   SrsGen4RehearsalReport? last;
   String verdict;
   Object? error;
+
+  /// 登记之后的那一整轮：停下（或放行）前一直挂着。
   Completer<void>? gate;
+
+  /// 登记之前的窗口。
+  Completer<void>? beforeRegistration;
+
+  /// 读上一份报告的窗口。
+  Completer<void>? lastReportGate;
+  int lastReads = 0;
   int runs = 0;
   int cancels = 0;
+  String? _registered;
+  bool _stopped = false;
+  final Set<String> _cancelledEarly = <String>{};
 
   @override
-  Future<SrsGen4RehearsalReport?> lastReport() async => last;
-
-  @override
-  Future<SrsGen4RehearsalReport> run(String appVersion) async {
-    runs++;
-    if (gate case final Completer<void> g) await g.future;
-    if (error case final Object e) throw e;
-    final SrsGen4RehearsalReport r = _report(
-      cancels > 0 ? 'cancelled' : verdict,
-      appVersion,
-    );
-    last = r;
-    return r;
+  Future<SrsGen4RehearsalReport?> lastReport() async {
+    lastReads++;
+    if (lastReportGate case final Completer<void> g) await g.future;
+    return last;
   }
 
   @override
-  void cancel() {
+  Future<SrsGen4RehearsalReport> run(
+    String appVersion, {
+    required String runId,
+  }) async {
+    runs++;
+    if (beforeRegistration case final Completer<void> g) await g.future;
+    _stopped = _cancelledEarly.contains(runId);
+    _cancelledEarly.clear();
+    _registered = runId;
+    try {
+      if (!_stopped) {
+        if (gate case final Completer<void> g) await g.future;
+      }
+      if (error case final Object e) throw e;
+      final SrsGen4RehearsalReport r = _report(
+        _stopped ? 'cancelled' : verdict,
+        appVersion,
+      );
+      last = r;
+      return r;
+    } finally {
+      _registered = null;
+    }
+  }
+
+  @override
+  void cancel(String runId) {
     cancels++;
-    gate?.complete();
+    if (_registered == runId) {
+      _stopped = true;
+      if (gate case final Completer<void> g when !g.isCompleted) g.complete();
+    } else {
+      _cancelledEarly.add(runId);
+    }
   }
 }
 
@@ -218,6 +254,52 @@ void main() {
       expect((await s.maybeRun())?.verdict, SrsGen4RehearsalVerdict.pass);
     });
 
+    test('a cancel while the last report is read starts no run, and quiesce '
+        'does not wait for a whole round', () async {
+      final _FakeRunner runner = _FakeRunner()
+        ..lastReportGate = Completer<void>()
+        ..gate = Completer<void>();
+      final SrsGen4RehearsalScheduler s = _scheduler(runner);
+      final Future<SrsGen4RehearsalReport?> f = s.maybeRun();
+      while (runner.lastReads == 0) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      final Future<void> q = s.quiesce();
+      runner.lastReportGate!.complete();
+      await q.timeout(const Duration(seconds: 5));
+      expect(await f, isNull);
+      expect(runner.runs, 0);
+      expect(s.isRunning, isFalse);
+      // 没跑出结论：下个节拍照跑。
+      runner
+        ..lastReportGate = null
+        ..gate = null;
+      expect((await s.maybeRun())?.verdict, SrsGen4RehearsalVerdict.pass);
+    });
+
+    test(
+      'a cancel before the runner registers the run still stops it',
+      () async {
+        final _FakeRunner runner = _FakeRunner()
+          ..beforeRegistration = Completer<void>()
+          ..gate = Completer<void>();
+        final SrsGen4RehearsalScheduler s = _scheduler(runner);
+        final Future<SrsGen4RehearsalReport?> f = s.maybeRun();
+        while (runner.runs == 0) {
+          await Future<void>.delayed(Duration.zero);
+        }
+        final Future<void> q = s.quiesce();
+        expect(runner.cancels, 1);
+        runner.beforeRegistration!.complete();
+        await q.timeout(const Duration(seconds: 5));
+        expect((await f)?.verdict, SrsGen4RehearsalVerdict.cancelled);
+        runner
+          ..beforeRegistration = null
+          ..gate = null;
+        expect((await s.maybeRun())?.verdict, SrsGen4RehearsalVerdict.pass);
+      },
+    );
+
     test(
       'a command error is logged once and not retried in this process',
       () async {
@@ -283,6 +365,14 @@ void main() {
       expect(saved?.appVersion, '9.9+9');
       // 没在跑时取消是空操作。
       srsGen4RehearsalCancel(st.core);
+      // 带运行号的取消早于这一次开跑（内核登记它）到达：不丢，那一次报 cancelled。
+      srsGen4RehearsalCancel(st.core, runId: 'early');
+      final SrsGen4RehearsalReport stopped = await srsGen4Rehearse(
+        st.core,
+        appVersion: '9.9+9',
+        runId: 'early',
+      );
+      expect(stopped.verdict, SrsGen4RehearsalVerdict.cancelled);
       await st.close();
     },
   );
