@@ -185,6 +185,7 @@ import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/components/content_language_picker.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
+import 'package:fushi/src/utils/components/fushi_header_menu_anchor.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
@@ -480,7 +481,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       );
 
   /// 页头「排序与筛选」按钮打开的菜单（常驻锚点见 [_buildSortMenuAnchor]）。
-  final MenuController _sortMenu = MenuController();
+  final FushiHeaderMenuController _sortMenu = FushiHeaderMenuController();
 
   /// BUG-2327：书架搜索命中判据，**四路**卡源（本地 EPUB / 本地 SRT / 远端 EPUB
   /// 占位 / 远端 SRT 占位）共用同一口径 [matchesMediaSearch]（空查询恒命中）。
@@ -1319,8 +1320,9 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         },
       );
 
-  /// 「排序与筛选」菜单的零尺寸锚点（[FushiPageHeader.menuAnchor]，叠在页头
-  /// 动作组右下角）：页头里的排序按钮可能被收进「⋯」，菜单挂在这里才总能打开。
+  /// 「排序与筛选」菜单的常驻锚点（[FushiPageHeader.menuAnchor]，铺满页头
+  /// 动作组）：页头里的排序按钮可能被收进「⋯」，菜单挂在这里才总能打开；弹出
+  /// 位置跟着触发控件（按钮或 ⋯，BUG-4715）。
   Widget _buildSortMenuAnchor(List<BookTagRow> allTags) {
     return FushiTagFilterBar(
       tags: allTags,
@@ -3616,6 +3618,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     DeletionDisclosure? disclosure,
     String? localFilesSubtitle,
     String? statisticsSubtitle,
+    String? keepDownloadsSubtitle,
   }) async {
     // TODO-2470 死角②：本机没有任何删除传播通道时不摆那个兑现不了的勾选框。
     // 纯本地零网络判据，在弹窗弹出前解析完（弹窗自身不做 IO）。
@@ -3636,6 +3639,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         showSyncScope: canSyncEverywhere,
         localFilesSubtitle: localFilesSubtitle,
         statisticsSubtitle: statisticsSubtitle,
+        keepDownloadsSubtitle: keepDownloadsSubtitle,
         rememberedChoices: rememberedChoices,
         onPersistChoices: preferenceStore.write,
         onConfirm: (DeleteDecision d) => Navigator.pop(ctx, d),

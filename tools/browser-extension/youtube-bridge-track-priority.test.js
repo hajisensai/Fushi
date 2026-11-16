@@ -16,7 +16,9 @@ const vm = require('node:vm');
 
 const SOURCE = fs.readFileSync(path.join(__dirname, 'youtube-bridge.js'), 'utf8');
 
-function loadBridge(captionTracks, audioTrack) {
+// options.playerResponse → #movie_player.getPlayerResponse()；options.initialResponse →
+// window.ytInitialPlayerResponse（服务端 JSON，键名不混淆）。
+function loadBridge(captionTracks, audioTrack, options = {}) {
   const fetches = [];
   let fetchStatus = 200; // setFetchStatus 改它模拟服务端失败
   const posted = [];
@@ -26,10 +28,12 @@ function loadBridge(captionTracks, audioTrack) {
     addEventListener(type, fn) { (winListeners[type] = winListeners[type] || []).push(fn); },
     postMessage(msg) { posted.push(msg); },
   };
+  if (options.initialResponse) windowObject.ytInitialPlayerResponse = options.initialResponse;
   const player = {
     getVideoData() { return { video_id: 'vid1' }; },
     getAudioTrack() { return Object.assign({ captionTracks: captionTracks }, audioTrack || {}); },
   };
+  if (options.playerResponse) player.getPlayerResponse = () => options.playerResponse;
   const sandbox = {
     window: windowObject,
     document: {
@@ -170,4 +174,118 @@ test('按需取轨请求失败 / 空轨：发 cuesFailed，不发 cues', async (
   const failed = after.filter((m) => m.__fushiStream === 'cuesFailed');
   assert.strictEqual(failed.length, 1);
   assert.strictEqual(failed[0].lang, 'ta (auto)');
+});
+
+// ── 反馈 0RgCNJFQmJ / GitHub #3401：默认挂上无关语言的翻译轨 ──
+// getAudioTrack() 返回的是播放器内部类实例，字段名被压缩混淆：defaultCaptionTrackIndex /
+// languageCode 读出来都是空。旧排序于是退化成「原始顺序里第一条人工轨」——阿拉伯语。
+// 排序信号要从结构稳定的数据来：同视频的播放器响应（服务端 JSON）与 ASR 轨的语言。
+function track(lang, kind, name) {
+  const asr = kind === 'asr';
+  return {
+    languageCode: lang, kind: asr ? 'asr' : '', vssId: (asr ? 'a.' : '.') + lang,
+    name: { simpleText: name },
+    baseUrl: 'https://www.youtube.com/api/timedtext?v=vid1&lang=' + lang + (asr ? '&kind=asr' : '&kind=manual'),
+  };
+}
+// 混淆后的音轨对象：有 captionTracks（播放器自己要用），默认轨索引 / 语言藏在压缩字段名下。
+const OBFUSCATED_AUDIO = { Xa: 3, zE: 'ja' };
+
+test('#3401：音轨字段被混淆、无播放器响应 → 按唯一 ASR 语言认出音轨语言，同语言人工轨先挂', async () => {
+  const list = [
+    track('ja', 'asr', '日本語 (auto)'),
+    track('ar', '', 'العربية'),
+    track('ru', '', 'Русский'),
+    track('ko', '', '한국어'),
+    track('ja', '', '日本語'),
+  ];
+  const h = loadBridge(list, OBFUSCATED_AUDIO);
+  await h.flush();
+  const order = h.posted.find((m) => m.__fushiStream === 'tracks').tracks.map((t) => t.languageCode + '/' + t.lang);
+  assert.deepStrictEqual(Array.from(order.slice(0, 2)), ['ja/日本語', 'ja/日本語 (auto)'],
+    '音轨语言（ja）的人工轨第一、ASR 轨第二，无关翻译轨在后');
+  assert.strictEqual(h.fetches.length, 1);
+  assert.ok(/lang=ja&kind=manual/.test(h.fetches[0]), '急取的是日语人工轨，不是阿拉伯语');
+});
+
+test('#3401：播放器响应的 audioTracks.defaultCaptionTrackIndex 给出默认轨（按 vssId 对上运行时轨）', async () => {
+  const list = [track('ar', '', 'Arabic'), track('en', 'asr', 'English (auto)'), track('en', '', 'English'), track('fr', '', 'French')];
+  const response = {
+    videoDetails: { videoId: 'vid1' },
+    captions: { playerCaptionsTracklistRenderer: {
+      captionTracks: [track('ar', '', 'Arabic'), track('en', 'asr', 'English (auto)'), track('en', '', 'English'), track('fr', '', 'French')],
+      audioTracks: [{ captionTrackIndices: [0, 1, 2, 3], defaultCaptionTrackIndex: 3, hasDefaultTrack: true }],
+      defaultAudioTrackIndex: 0,
+    } },
+  };
+  const h = loadBridge(list, OBFUSCATED_AUDIO, { playerResponse: response });
+  await h.flush();
+  const order = h.posted.find((m) => m.__fushiStream === 'tracks').tracks.map((t) => t.lang);
+  assert.deepStrictEqual(Array.from(order.slice(0, 3)), ['French', 'English', 'English (auto)'],
+    '上传者设的默认轨第一，其后音轨语言（唯一 ASR = en）人工轨、ASR 轨');
+  assert.ok(/lang=fr&/.test(h.fetches[0]));
+});
+
+test('#3401：hasDefaultTrack=false 时默认索引不作数；自动配音多 ASR 时按当前音轨的 captionTrackIndices 认语言', async () => {
+  const langs = ['ru', 'de', 'ar', 'en', 'ko'];
+  const list = langs.map((l) => track(l, 'asr', l + ' (auto)'));
+  const response = {
+    videoDetails: { videoId: 'vid1' },
+    captions: { playerCaptionsTracklistRenderer: {
+      captionTracks: langs.map((l) => track(l, 'asr', l + ' (auto)')),
+      audioTracks: [
+        { captionTrackIndices: [0], defaultCaptionTrackIndex: 0, hasDefaultTrack: false },
+        { captionTrackIndices: [3], defaultCaptionTrackIndex: 0, hasDefaultTrack: false },
+      ],
+      defaultAudioTrackIndex: 1,
+    } },
+  };
+  const h = loadBridge(list, OBFUSCATED_AUDIO, { playerResponse: response });
+  await h.flush();
+  const order = h.posted.find((m) => m.__fushiStream === 'tracks').tracks.map((t) => t.lang);
+  assert.strictEqual(order[0], 'en (auto)', '原声音轨（默认音轨）范围里唯一的 ASR 语言 = en');
+  assert.ok(/lang=en&/.test(h.fetches[0]));
+});
+
+test('#3401：SPA 换视频后残留的 ytInitialPlayerResponse（别的视频）不当排序依据', async () => {
+  const list = [track('ar', '', 'Arabic'), track('ja', 'asr', 'Japanese (auto)'), track('ja', '', 'Japanese')];
+  const stale = {
+    videoDetails: { videoId: 'other' },
+    captions: { playerCaptionsTracklistRenderer: {
+      captionTracks: [track('ar', '', 'Arabic')],
+      audioTracks: [{ captionTrackIndices: [0], defaultCaptionTrackIndex: 0, hasDefaultTrack: true }],
+      defaultAudioTrackIndex: 0,
+    } },
+  };
+  const h = loadBridge(list, OBFUSCATED_AUDIO, { initialResponse: stale });
+  await h.flush();
+  const order = h.posted.find((m) => m.__fushiStream === 'tracks').tracks.map((t) => t.lang);
+  assert.strictEqual(order[0], 'Japanese', '上一个视频的默认轨（ar）不得带到这个视频');
+});
+
+// 审查 #3487：第三路兜底（页面里的播放器响应）以前直接用 ytInitialPlayerResponse，不核对
+// videoId——SPA 换片后会把上一个视频的整份轨清单当成当前视频发布。
+test('#3401：运行时 / Android 都取不到时，兜底只用 videoId 对得上的播放器响应', async () => {
+  const renderer = (tracks) => ({ playerCaptionsTracklistRenderer: {
+    captionTracks: tracks,
+    audioTracks: [{ captionTrackIndices: tracks.map((_, i) => i), defaultCaptionTrackIndex: 0, hasDefaultTrack: true }],
+    defaultAudioTrackIndex: 0,
+  } });
+  const staleTrack = track('ar', '', 'Arabic');
+  staleTrack.baseUrl = 'https://www.youtube.com/api/timedtext?v=other&lang=ar&kind=manual';
+  const stale = loadBridge([], null, {
+    initialResponse: { videoDetails: { videoId: 'other' }, captions: renderer([staleTrack]) },
+  });
+  await stale.flush();
+  assert.strictEqual(stale.posted.filter((m) => m.__fushiStream === 'tracks').length, 0,
+    '上一个视频的轨清单不得当成当前视频发布');
+  assert.ok(!stale.fetches.some((u) => /v=other/.test(u)), stale.fetches.join('\n'));
+
+  const fresh = loadBridge([], null, {
+    initialResponse: { videoDetails: { videoId: 'vid1' }, captions: renderer([track('ja', '', 'Japanese')]) },
+  });
+  await fresh.flush();
+  const published = fresh.posted.find((m) => m.__fushiStream === 'tracks');
+  assert.ok(published, '当前视频自己的响应照常作为兜底');
+  assert.strictEqual(published.tracks[0].lang, 'Japanese');
 });

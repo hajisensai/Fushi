@@ -1,7 +1,7 @@
-//! 只读连接池：Drift 执行器的查询（[super::SrsCore::snapshot_select]）与内核只读命令（[super::SrsCore::reader]，
+//! 只读连接池：Dart 查询道发来的只读查询命令（[super::SrsCore::read_query]）与内核只读命令（[super::SrsCore::reader]，
 //! BUG-4298）各一个。
 //!
-//! 以前 Drift 的查询只有一条读连接、外加 Dart 侧整条 Drift 连接是一个顺序队列：同步里一条几秒的长读
+//! 最早 Dart 的查询只有一条读连接、外加 Dart 侧整条连接是一个顺序队列：同步里一条几秒的长读
 //! （全量冲突扫描、媒体对账）跑着时，打开卡片 / 牌组设置的毫秒级短读排在它后面等满全程。WAL 下只读连接互不
 //! 阻塞，这里按需开到 [ReadPool::cap] 条，同时在途的查询各占一条，用完放回。
 //!
@@ -17,11 +17,11 @@
 //!   返回时池子开过的连接一条不剩；之后取连接一律报「已关闭」。
 //! - 放回时连接还停在读事务里（借用方 panic 在 `BEGIN` 与 `ROLLBACK` 之间）就先结束它，结束不了就关掉不放回：池里
 //!   的空闲连接一律不在事务里（BUG-4297）。
-//! - 两个池用同一套机制（store/mod.rs）：内核读命令一个（[super::SrsCore::reader]）、Drift 执行器的查询一个，上限都是
+//! - 两个池用同一套机制（store/mod.rs）：内核读命令一个（[super::SrsCore::reader]）、查询道的查询命令一个，上限都是
 //!   [read_concurrency]，互不占用。
-//! - Drift 那个池的每条连接每条语句自成一个读事务（语句跑完 rusqlite 即复位，不留跨调用的读事务）：开读事务时取最新的
-//!   WAL 尾，所以调用方等到写返回后再发的查询一定看得见它。不同连接上并行的两条查询各自看各自开始时刻的
-//!   已提交数据——与以前单条读连接上前后两条语句之间可能隔着一次提交是同一种保证（从来没有跨语句快照）。
+//! - 查询道那个池的每条查询命令自成一个读事务（[super::SrsCore::read_query]：`BEGIN` … `ROLLBACK`，不留跨调用的读
+//!   事务）：开读事务时取最新的 WAL 尾，所以调用方等到写返回后再发的查询一定看得见它。不同连接上并行的两条查询各自
+//!   看各自开始时刻的已提交数据。
 
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
@@ -273,7 +273,7 @@ mod tests {
 
     use rusqlite::Connection;
 
-    use super::super::{CLOSED, NOT_SNAPSHOT, SrsCore, rows};
+    use super::super::{CLOSED, SrsCore};
 
     fn open(name: &str) -> SrsCore {
         let dir = std::env::temp_dir().join(format!("ffsrs_pool_{name}_{}", std::process::id()));
@@ -295,27 +295,19 @@ mod tests {
         .unwrap();
     }
 
-    fn scalar(page: &[u8]) -> Value {
-        let (_, rows) = rows::decode(page).unwrap();
-        rows[1][0].clone()
-    }
-
     const COUNT: &str = "SELECT COUNT(*) FROM srs_unknown_events";
 
     /// 一条借出的连接被长读占着（这里直接攥着它）时，另一条线程上的查询照样立刻返回：它借到的是另一条连接。
-    /// 以前只有一条 Drift 读连接（一把锁），这条查询要等长读跑完。
+    /// 最早只有一条读连接（一把锁），这条查询要等长读跑完。
     #[test]
     fn a_query_does_not_wait_for_another_in_flight_query() {
         let core = Arc::new(open("overlap"));
         insert(&core, "a");
-        let held = core.drift_readers.get().unwrap();
+        let held = core.query_readers.get().unwrap();
         let (tx, rx) = mpsc::channel::<Value>();
         let t = {
             let core = Arc::clone(&core);
-            std::thread::spawn(move || {
-                tx.send(scalar(&core.snapshot_select(COUNT, &[]).unwrap()))
-                    .unwrap()
-            })
+            std::thread::spawn(move || tx.send(core.query_scalar(COUNT).unwrap()).unwrap())
         };
         let seen = rx
             .recv_timeout(Duration::from_secs(5))
@@ -324,7 +316,7 @@ mod tests {
         t.join().unwrap();
         drop(held);
         assert_eq!(
-            core.drift_readers.live(),
+            core.query_readers.live(),
             2,
             "the second reader stays open for reuse"
         );
@@ -341,9 +333,8 @@ mod tests {
             std::thread::spawn(move || {
                 started_tx.send(()).unwrap();
                 let t = std::time::Instant::now();
-                core.snapshot_select(
+                core.query_scalar(
                     "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 30000000) SELECT SUM(i) FROM n",
-                    &[],
                 )
                 .unwrap();
                 t.elapsed()
@@ -352,10 +343,7 @@ mod tests {
         started_rx.recv().unwrap();
         std::thread::sleep(Duration::from_millis(50));
         let t = std::time::Instant::now();
-        assert_eq!(
-            scalar(&core.snapshot_select(COUNT, &[]).unwrap()),
-            Value::Integer(1)
-        );
+        assert_eq!(core.query_scalar(COUNT).unwrap(), Value::Integer(1));
         let short = t.elapsed();
         assert!(
             !long.is_finished(),
@@ -365,8 +353,7 @@ mod tests {
         assert!(short < long / 4, "short {short:?} vs long {long:?}");
     }
 
-    /// 一笔写命令的事务开着（写连接上写了一行没提交）：Drift 执行器的两条查询入口（查询道 mode 3、内联那一路
-    /// mode 2）都只看已提交的数据、不碰写连接。提交后立刻看得见。
+    /// 一笔写命令的事务开着（写连接上写了一行没提交）：查询道的查询只看已提交的数据、不碰写连接。提交后立刻看得见。
     #[test]
     fn queries_see_committed_data_while_a_write_transaction_is_open() {
         let core = open("tx");
@@ -378,53 +365,18 @@ mod tests {
             )
             .unwrap();
             assert_eq!(
-                scalar(&core.select(COUNT, &[]).unwrap()),
+                core.query_scalar(COUNT).unwrap(),
                 Value::Integer(1),
-                "the inline query read dirty data"
+                "the query read dirty data"
             );
             assert_eq!(
-                scalar(&core.snapshot_select(COUNT, &[]).unwrap()),
-                Value::Integer(1),
-                "the pooled query read dirty data"
+                core.query_scalar("SELECT last_insert_rowid()").unwrap(),
+                Value::Integer(0),
+                "the query ran on the writer"
             );
-            for page in [
-                core.select("SELECT last_insert_rowid()", &[]).unwrap(),
-                core.snapshot_select("SELECT last_insert_rowid()", &[])
-                    .unwrap(),
-            ] {
-                assert_eq!(
-                    scalar(&page),
-                    Value::Integer(0),
-                    "the query ran on the writer"
-                );
-            }
             w.execute_batch("RELEASE t").unwrap();
         }
-        assert_eq!(scalar(&core.select(COUNT, &[]).unwrap()), Value::Integer(2));
-        assert_eq!(
-            scalar(&core.snapshot_select(COUNT, &[]).unwrap()),
-            Value::Integer(2)
-        );
-    }
-
-    /// 不是只读查询的语句不执行、报 [NOT_SNAPSHOT]（Dart 侧当场报只读错误，不再改发别的入口）。
-    #[test]
-    fn non_queries_are_refused_without_running() {
-        let core = open("refuse");
-        for sql in [
-            "PRAGMA wal_autocheckpoint",
-            "BEGIN",
-            "INSERT INTO srs_unknown_events (id, profile_uid, json) VALUES ('r', 'p', '{}') RETURNING id",
-            "WITH x AS (SELECT 1) INSERT INTO srs_unknown_events (id, profile_uid, json) SELECT 'w', 'p', '{}' FROM x",
-        ] {
-            assert_eq!(
-                core.snapshot_select(sql, &[]).err().as_deref(),
-                Some(NOT_SNAPSHOT),
-                "{sql}"
-            );
-        }
-        assert_eq!(scalar(&core.select(COUNT, &[]).unwrap()), Value::Integer(0));
-        assert!(!core.in_transaction().unwrap());
+        assert_eq!(core.query_scalar(COUNT).unwrap(), Value::Integer(2));
     }
 
     /// 连接数封顶：借满上限条后再借要等一条放回，不会多开。
@@ -433,14 +385,14 @@ mod tests {
         let core = Arc::new(open("cap"));
         let cap = core.read_concurrency();
         let held: Vec<_> = (0..cap)
-            .map(|_| core.drift_readers.get().unwrap())
+            .map(|_| core.query_readers.get().unwrap())
             .collect();
-        assert_eq!(core.drift_readers.live(), cap);
+        assert_eq!(core.query_readers.live(), cap);
         let (tx, rx) = mpsc::channel::<()>();
         let t = {
             let core = Arc::clone(&core);
             std::thread::spawn(move || {
-                core.snapshot_select(COUNT, &[]).unwrap();
+                core.query_scalar(COUNT).unwrap();
                 tx.send(()).unwrap();
             })
         };
@@ -452,37 +404,42 @@ mod tests {
         rx.recv_timeout(Duration::from_secs(5))
             .expect("waiter not woken by a returned connection");
         t.join().unwrap();
-        assert_eq!(core.drift_readers.live(), cap);
+        assert_eq!(core.query_readers.live(), cap);
     }
 
-    /// 查询道把池借满（几条长读各占一条）时，内联执行器（mode 2，[SrsCore::select]）的查询不在池上等：
-    /// 它有自己的一条只读连接，立即返回（PR 2771 审查：它是调用方 isolate 上的同步调用，不该等长读）。
+    /// 查询道把池借满（几条长读各占一条）时，内核读命令（[SrsCore::reader]：复习排队）不在这个池上等：它有自己的池，
+    /// 立即拿到连接（BUG-4298）。
     #[test]
-    fn writer_lane_query_does_not_wait_for_a_full_pool() {
-        let core = Arc::new(open("writer_lane"));
+    fn kernel_reads_do_not_wait_for_a_full_query_pool() {
+        let core = Arc::new(open("kernel_lane"));
         insert(&core, "a");
         let cap = core.read_concurrency();
         let held: Vec<_> = (0..cap)
-            .map(|_| core.drift_readers.get().unwrap())
+            .map(|_| core.query_readers.get().unwrap())
             .collect();
-        let (tx, rx) = mpsc::channel::<Value>();
+        let (tx, rx) = mpsc::channel::<i64>();
         let t = {
             let core = Arc::clone(&core);
-            std::thread::spawn(move || tx.send(scalar(&core.select(COUNT, &[]).unwrap())).unwrap())
+            std::thread::spawn(move || {
+                let n = core
+                    .read_visible(|c| {
+                        c.query_row(COUNT, [], |r| r.get(0))
+                            .map_err(|e| e.to_string())
+                    })
+                    .unwrap();
+                tx.send(n).unwrap()
+            })
         };
         let seen = rx
             .recv_timeout(Duration::from_secs(5))
-            .expect("writer-lane query waited for the full read pool");
-        assert_eq!(seen, Value::Integer(1));
+            .expect("kernel read waited for the full query pool");
+        assert_eq!(seen, 1);
         t.join().unwrap();
         assert_eq!(
-            core.drift_readers.live(),
+            core.query_readers.live(),
             cap,
-            "writer-lane query borrowed from the read pool"
+            "kernel read borrowed from the query pool"
         );
-        // 写后立即读：内联执行器的专用连接同样看得见刚提交的行。
-        insert(&core, "b");
-        assert_eq!(scalar(&core.select(COUNT, &[]).unwrap()), Value::Integer(2));
         drop(held);
     }
 
@@ -490,8 +447,8 @@ mod tests {
     #[test]
     fn close_waits_for_borrowed_connections_and_closes_them_all() {
         let core = Arc::new(open("close"));
-        let a = core.drift_readers.get().unwrap();
-        let b = core.drift_readers.get().unwrap();
+        let a = core.query_readers.get().unwrap();
+        let b = core.query_readers.get().unwrap();
         let (closed_tx, closed_rx) = mpsc::channel::<()>();
         let closer = {
             let core = Arc::clone(&core);
@@ -511,12 +468,8 @@ mod tests {
             .recv_timeout(Duration::from_secs(5))
             .expect("close never returned");
         closer.join().unwrap();
-        assert_eq!(core.drift_readers.live(), 0);
-        assert_eq!(
-            core.snapshot_select(COUNT, &[]).err().as_deref(),
-            Some(CLOSED)
-        );
-        assert_eq!(core.select(COUNT, &[]).err().as_deref(), Some(CLOSED));
+        assert_eq!(core.query_readers.live(), 0);
+        assert_eq!(core.query_scalar(COUNT).err().as_deref(), Some(CLOSED));
     }
 
     #[test]
@@ -561,7 +514,7 @@ mod tests {
             &path,
             4,
             Duration::from_secs(60),
-            super::super::open_drift_reader,
+            super::super::open_pool_reader,
             clock,
         )
         .unwrap();
@@ -692,7 +645,7 @@ mod tests {
             }
             (count, t.elapsed())
         }
-        let open = || super::super::open_drift_reader(&path).unwrap();
+        let open = || super::super::open_pool_reader(&path).unwrap();
         // 开一条连接 + 第一条点查的代价（空闲回收后重开要付的）。
         let t = Instant::now();
         let probe = open();

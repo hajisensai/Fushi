@@ -25,6 +25,8 @@ import 'package:fushi/src/media/manga/manga_json_writeback.dart';
 import 'package:fushi/src/media/manga/manga_ocr_background_job.dart';
 import 'package:fushi/src/media/manga/mihon/manga_page_provider.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
+import 'package:fushi/src/media/manga/ocr/system_ocr_manga_service.dart'
+    show isSystemOcrModelUnavailableFailure;
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service_impl.dart'
@@ -442,6 +444,12 @@ class MangaOcrJobRegistry {
             );
             // 任务失败：没有整卷结果可落，跟随步骤也就没有落点。
             unawaited(running._cancelFollower());
+            // 系统 OCR 报「没有可用模型 / Play 服务」是设备级的（BUG-4705）：同引擎
+            // 排着的其它卷必然一样失败，每卷再各弹一次失败只是噪音。必须在
+            // _forget / _end 之前摘：_end 一完成，同书排队链就会把下一个 start 起来。
+            if (isSystemOcrModelUnavailableFailure(job.engine, error)) {
+              _dropQueuedForEngine(job.engine);
+            }
             running._error = error;
             if (!running._observers.isClosed) {
               running._observers.addError(error, stack);
@@ -639,6 +647,20 @@ class MangaOcrJobRegistry {
       if (resume(ref.bookKey, ref.directory)) resumed += 1;
     }
     return resumed;
+  }
+
+  /// 放弃所有排着队、还没开始的 [engine] 任务（各书都算）。排队链轮到它们时发现
+  /// 已不在队里，以 null 结束 [enqueue] 的 Future，不会启动。运行中 / 已暂停的
+  /// 不动：前者自己会失败结束，后者是用户主动暂停的、继续时再判。
+  void _dropQueuedForEngine(MangaOcrEngineId engine) {
+    bool dropped = false;
+    for (final List<_QueuedJob> list in _queued.values) {
+      final int before = list.length;
+      list.removeWhere((_QueuedJob queued) => queued.job.engine == engine);
+      if (list.length != before) dropped = true;
+    }
+    _queued.removeWhere((String _, List<_QueuedJob> list) => list.isEmpty);
+    if (dropped) _notifyChanged();
   }
 
   void _dropPaused(String bookKey, String directory) {
