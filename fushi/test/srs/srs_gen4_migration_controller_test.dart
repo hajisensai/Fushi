@@ -17,6 +17,9 @@ class FakeGen4Backend implements SrsGen4MigrationBackend {
   String? lastRunId;
   Error? statusError;
 
+  /// `gen4_migrate_status` 的 `profiles`（旧库里的 profile，内核列）。
+  List<String>? legacyProfiles;
+
   @override
   SrsGen4MigrationStatus status(String dir) {
     final Error? e = statusError;
@@ -30,6 +33,7 @@ class FakeGen4Backend implements SrsGen4MigrationBackend {
               'done': running!.done,
               'total': running!.total,
             },
+      'profiles': legacyProfiles,
     });
   }
 
@@ -95,6 +99,46 @@ void main() {
     await done;
     expect(c.phase, SrsGen4MigrationPhase.idle);
     expect(c.outcome?.verdict, SrsGen4MigrationVerdict.cancelled);
+  });
+
+  test(
+    'orphan profiles listed by the kernel get a cache config too (union)',
+    () async {
+      final FakeGen4Backend b = FakeGen4Backend()
+        ..legacyProfiles = <String>['p2', 'orphan'];
+      final SrsGen4MigrationController c = controllerFor(b);
+      addTearDown(c.dispose);
+      final Future<void> done = c.start();
+      await settle();
+      expect(b.runs.single.keys.toSet(), <String>{'p1', 'p2', 'orphan'});
+      // 配置只取决于 uid：孤儿 uid 拿到的就是它自己的那份。
+      expect(b.runs.single['orphan'], isNotEmpty);
+      b.finish(<String, Object?>{'verdict': 'cancelled'});
+      await done;
+    },
+  );
+
+  test('no new run once the database is closing', () async {
+    final FakeGen4Backend b = FakeGen4Backend();
+    bool open = true;
+    final SrsGen4MigrationController c = SrsGen4MigrationController(
+      directory: 'dir',
+      profileUids: () async => <String>['p1'],
+      onCommitted: () async {},
+      backend: b,
+      databaseOpen: () => open,
+      pollInterval: const Duration(milliseconds: 5),
+      nowMs: () => 1000,
+    );
+    addTearDown(c.dispose);
+    expect(c.canStart, isTrue);
+    open = false;
+    expect(c.canStart, isFalse);
+    await c.start();
+    expect(b.runs, isEmpty, reason: '关库之后开始的迁移没人等（静默已经过了）');
+    expect(c.phase, SrsGen4MigrationPhase.idle);
+    await c.quiesce();
+    expect(b.cancels, isEmpty);
   });
 
   test(

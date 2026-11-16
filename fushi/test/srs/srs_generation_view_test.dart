@@ -191,7 +191,7 @@ void main() {
         b.running = (step: SrsGen4MigrationStep.translate, done: 2, total: 4);
         await tester.pump(const Duration(milliseconds: 120));
         expect(find.text(t.srs_gen4_running), findsOneWidget);
-        expect(find.text('4/9  ${t.srs_gen4_step_translate}'), findsOneWidget);
+        expect(find.text('5/10  ${t.srs_gen4_step_translate}'), findsOneWidget);
         expect(find.text(t.srs_gen4_cancel_hint), findsOneWidget);
         expect(find.byKey(SrsGenerationView.startKey), findsNothing);
 
@@ -209,7 +209,7 @@ void main() {
         b.running = (step: SrsGen4MigrationStep.commit, done: 0, total: 1);
         await tester.tap(find.byKey(SrsGenerationView.startKey));
         await tester.pump(const Duration(milliseconds: 120));
-        expect(find.text('8/9  ${t.srs_gen4_step_commit}'), findsOneWidget);
+        expect(find.text('9/10  ${t.srs_gen4_step_commit}'), findsOneWidget);
         expect(find.byKey(SrsGenerationView.cancelKey), findsNothing);
         b.finish(<String, Object?>{
           'verdict': 'noSpace',
@@ -264,22 +264,69 @@ void main() {
       expect(find.text(t.srs_gen4_restart), findsOneWidget);
     });
 
-    testWidgets('blocked outcomes say why, by reason ($design)', (
+    testWidgets('blocked outcomes say why, by code ($design)', (
       WidgetTester tester,
     ) async {
-      const String unmet =
-          'p1: legacy rows are not migrated into the op log yet; '
-          'p2: no cache configuration was given for this profile';
-      // (内核原因原文, 该出的说明, 还给不给「重新升级」)
-      for (final (String reason, String text, bool restart)
-          in <(String, String, bool)>[
+      // (内核 code, 原因原文, 该出的说明, 原文给不给, 还给不给「重新升级」)
+      for (final (
+            String code,
+            String reason,
+            String text,
+            bool shown,
+            bool restart,
+          )
+          in <(String, String, String, bool, bool)>[
             (
-              SrsGen4BlockedReason.migratingWire,
+              'migrating',
+              'migrating: another process holds the generation lock',
               t.srs_gen4_migrating_elsewhere,
+              false,
               true,
             ),
-            (SrsGen4BlockedReason.busyWire, t.srs_gen4_blocked, true),
-            (unmet, t.srs_gen4_blocked_precondition, false),
+            (
+              'busy',
+              'busy: the protocol 3 library is being written',
+              t.srs_gen4_blocked,
+              false,
+              true,
+            ),
+            // 补完之后仍不过 / 缺缓存配置：原文给出来，可以重新升级（补完每次重做能补的）。
+            (
+              'precondition',
+              'p1: legacy rows are not migrated into the op log yet',
+              t.srs_gen4_blocked_unfinished,
+              true,
+              true,
+            ),
+            (
+              'missingCacheConfig',
+              'no cache configuration was given for profile(s) p9',
+              t.srs_gen4_blocked_unfinished,
+              true,
+              true,
+            ),
+            // 重试不会变的三类：不给「重新升级」。
+            (
+              'schemaNewer',
+              'the protocol 3 library is at schema 31',
+              t.srs_gen4_blocked_newer,
+              true,
+              false,
+            ),
+            (
+              'corrupt',
+              'srs.db is damaged: file is not a database',
+              t.srs_gen4_blocked_damaged,
+              true,
+              false,
+            ),
+            (
+              'mergeHalfDone',
+              'a profile merge is half done (profile_merge/x)',
+              t.srs_gen4_blocked_merge,
+              true,
+              false,
+            ),
           ]) {
         final FakeGen4Backend b = FakeGen4Backend();
         final SrsGen4MigrationController c = SrsGen4MigrationController(
@@ -297,31 +344,72 @@ void main() {
         );
         await tester.tap(find.byKey(SrsGenerationView.startKey));
         await tester.pump();
-        b.finish(<String, Object?>{'verdict': 'blocked', 'reason': reason});
+        b.finish(<String, Object?>{
+          'verdict': 'blocked',
+          'code': code,
+          'reason': reason,
+        });
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 100));
-        expect(find.text(text), findsOneWidget, reason: reason);
+        expect(find.text(text), findsOneWidget, reason: code);
         if (text != t.srs_gen4_blocked) {
           expect(
             find.text(t.srs_gen4_blocked),
             findsNothing,
-            reason: '不能把 $reason 说成「被占用」',
+            reason: '不能把 $code 说成「被占用」',
           );
         }
-        // 前提没满足：原因原文给出来、不引用户反复重试。
         expect(
-          find.text(unmet),
-          reason == unmet ? findsOneWidget : findsNothing,
-          reason: reason,
+          find.text(reason),
+          shown ? findsOneWidget : findsNothing,
+          reason: code,
         );
         expect(
           find.byKey(SrsGenerationView.startKey),
           restart ? findsOneWidget : findsNothing,
-          reason: reason,
+          reason: code,
         );
         await tester.pumpWidget(const SizedBox());
         c.dispose();
       }
+    });
+  }
+
+  for (final bool apple in <bool>[false, true]) {
+    final String design = apple ? 'Apple' : 'MD3';
+    testWidgets('a closing database greys out the start button ($design)', (
+      WidgetTester tester,
+    ) async {
+      final FakeGen4Backend b = FakeGen4Backend();
+      final ChangeNotifier closing = ChangeNotifier();
+      addTearDown(closing.dispose);
+      bool open = true;
+      final SrsGen4MigrationController c = SrsGen4MigrationController(
+        directory: 'dir',
+        profileUids: () async => <String>['p1'],
+        onCommitted: () async {},
+        backend: b,
+        databaseOpen: () => open,
+        databaseClosing: closing,
+        nowMs: () => 1,
+      );
+      addTearDown(c.dispose);
+      await pumpView(
+        tester,
+        apple: apple,
+        controller: c,
+        child: const SrsLoadErrorView(error: needs, onRetry: null),
+      );
+      expect(find.text(t.srs_gen4_closing), findsNothing);
+      // 关库开始（AppModel.closeDatabase 先置 isDatabaseOpen 为假、再通知）：按钮置灰、说明原因，点了也不开始。
+      open = false;
+      closing.notifyListeners();
+      await tester.pump();
+      expect(find.text(t.srs_gen4_closing), findsOneWidget);
+      await tester.tap(find.byKey(SrsGenerationView.startKey));
+      await tester.pump();
+      expect(b.runs, isEmpty);
+      expect(c.phase, SrsGen4MigrationPhase.idle);
     });
   }
 

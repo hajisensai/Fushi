@@ -598,3 +598,74 @@ blocked 一律归 busy、去掉 `unstored` 分支、配对退回 (种类, 字段
    来自本版之前的还原，没改。「只剩封存旧库」页的文案改成「保持原样、不要用备份覆盖、带日志联系支持」，不再引导还原。
 7. **迁移中关库之后的再开始。** quiesce 之后主库已关，迁移页的「开始升级」按钮仍可点（app 未初始化时这一页通常不在
    屏上）。没加额外闸门。
+
+## 11. G7-2b 迁移前提补完（2026-11-17，分支 `pr/srs-gen4-g7-2b-migrate-preconditions`，基于 `pr/srs-gen4-switch`）
+
+补 §9.5 第 1、2、7 条。schema 不变（40019；分给本块的 40020 没用上：没有加表 / 索引），`ABI_VERSION` 不变。
+
+### 前提补完（`store/gen4/prepare.rs`，新步骤 `Step::Prepare`，线上 `prepare`）
+
+- 位置：`migrate::run` 拿到换代锁、读过旧库 schema 之后，前提核对（`Step::Precondition`）之前。步骤数 9 → 10。
+- `prepare::plan`（只读）：先拦补不了的——并入做到一半（`legacy::merge_marks`）、旧库里有 profile 没给缓存配置；再按
+  `legacy::preflight` + `migration_blockers` 列出要补的 profile。schema 比这一版协议 3 旧时全部 profile 都走一遍（表形态
+  不同，`preflight` 读不了）。计划为空 = 不开写连接，旧库一个字节不写（断点测试的逐字节核对照旧成立）。
+- `prepare::complete`：旧库正被写 = `busy`；写之前 `PRAGMA quick_check`（不过 = `corrupt`，不往坏文件里写）；
+  `SrsCore::open`（协议 3 的升级阶梯；空间守卫 `UPGRADE_NO_SPACE` 换成 `noSpace`）；逐 profile 经协议 3 分发器
+  `sync2_dispatch` 发与旧 app 同形的命令：`migrate`（`limit` = 迁移的 `batch`）到 `done` → `dedup` 到 `done` 不为假 →
+  `replay_pending`（带缓存配置）到 `more` 不为真。收段通道由分发器在 `migrate` / `dedup` 之前自己按片做完，`replay_pending`
+  收待重放与待刷新缓存。每条命令之前看叫停、之后报进度 `(prepare, 已做完的 profile, 要补的 profile 数)`。关库（WAL 并回）后
+  空间再核一次（旧库变大了），再进前提核对。
+- 定案：**schema 较老的旧库现在升级后迁移**（任务书写「schema 太旧留 blocked」，但协议 3 的升级阶梯从 v1 起都能升，
+  `ffsrs_store_open` 删了之后这一版没有别的路径升它；留 blocked = 永远卡在打不开。只有比这一版新的（`schemaNewer`）、
+  不是协议 3 的、坏了的才拦）。补完写进旧库的都是协议 3 自己本来会写的东西：之后对拍中止 / 取消 / 崩溃，旧库仍是
+  这一版协议 3 能打开的库；协议 3 之前的版本本来就打不开升级过的库（与以前用户升级 app 一样）。
+- 只在投影表里的孤儿 uid：`migrate` 给它建本机身份并把旧行包成操作，迁移时成为新代库里的一个集合，卡片与日志不丢。
+- 并入做到一半不补（D23：由冻结的旧并入代码做完，它由 Dart 驱动、带着主库那一侧的状态，归 G9-5）。
+
+### `blocked` 的机器可读 `code`（`migrate::BlockCode`）
+
+`migrating` / `busy` / `missingCacheConfig` / `mergeHalfDone` / `schemaNewer` / `notProtocol3` / `corrupt` / `noLibrary` /
+`sealedWithoutNew` / `legacyBesideNew` / `precondition`（补完之后核对仍不过，不该出现）。`Outcome::Blocked {code, reason}`，
+回包 `{verdict: "blocked", code, reason}`；本进程里同一目录已在跑也回 `migrating`。`reason` 只给人看，Dart 不再比对原文。
+旧库读不出页头 / schema 表（`SQLITE_CORRUPT` / `SQLITE_NOTADB`）在空间检查之前就报 `corrupt`。
+
+### 旧库的 profile 列表（§9.5 第 2 条，取方案 B）
+
+`gen4_migrate_status` 在 `needsMigration` 时回 `profiles`（`legacy::all_profiles`：协议 3 一侧的并上只在投影表里的，缺表
+跳过），其余状态 null；列不出来（文件坏了等）时 `profiles` 为 null 并带 `profilesError`，状态照回，`run` 会给明确结论。
+没把缓存配置放进内核：Dart `srsCacheConfigFor` 虽然只取决于 uid，但内容是内置笔记类型的代码默认值（模板 / CSS / 字段，
+`kSrsBuiltinNoteTypes`），搬进 Rust 等于维护两份、漂移了就是对拍不过；由 Dart 按列表给最稳。
+
+### Dart
+
+- `SrsGen4MigrationStep.prepare`（第 3 步，提交点之前可取消）；`SrsGen4MigrationStatus.profiles`；
+  `SrsGen4MigrationOutcome.code`；`SrsGen4BlockedReason` 按 `code` 分 `migrating` / `busy` / `newerBuild`（schemaNewer）/
+  `damaged`（corrupt、notProtocol3）/ `mergePending` / `precondition`（其余与不认识的 code），`retryable` 只有 migrating、
+  busy、precondition。`kernelCodes` 与 migrate.rs `BlockCode::wire`、步骤与 `Step::wire` 由 Dart 测试读 Rust 源码核对。
+- 控制器：缓存配置给「主库 profile ∪ `status.profiles`」；`canStart` = 没在跑且主库开着（`AppModel.isDatabaseOpen`），关库
+  信号（`databaseCloseNotifier`）到时通知页面。§9.5 第 7 条：关库后「开始升级」置灰并说明（`srs_gen4_closing`），`start`
+  无操作。「静默在 provider 建之前也登记」没有另做：`closeDatabase` 先置 `isDatabaseOpen` 为假再等静默，provider 晚于关库
+  才建、或在静默清单拷贝之后才建的控制器都开始不了迁移；能开始迁移的控制器一定已经建好、登记过。另找启动时的登记点要
+  改 `srs_app_runtime.dart` / `app_model.dart`（别的模块的热点），闸门之后已无必要。
+- 页面：步骤「整理旧库」；`blocked` 每类一句（`srs_gen4_blocked_unfinished` / `_newer` / `_damaged` / `_merge`，删
+  `srs_gen4_blocked_precondition`），等一会再来的两类不给原文，其余给原文；`retryable` 的恢复「重新升级」。
+
+### 测试
+
+- Rust `store/gen4/prepare_tests.rs`（10 条）：从没同步过（`migrated_at` 为空、旧修改与旧日志在投影表）、协议 3 迁移做到
+  一半（队列有残留）、收段残留（待重放 + 待刷新缓存 + 去重作业）、孤儿 profile（经全局命令取列表、按列表给配置后提交、
+  两个集合；只给主库配置 = `missingCacheConfig` 且旧库逐字节不变）各一次提交、对拍全过、新代日志条数不少于旧库；补完中途
+  叫停 / panic / 子进程被杀（三个断点）后协议 3 能打开、`quick_check` 过、旧日志不少、未封存，重跑提交；坏文件 = `corrupt`
+  不写；并入做到一半 = `mergeHalfDone` 不写；就绪库计划为空。`migrate_tests.rs` 改：步骤序列含 `prepare`、各拦下带 code、
+  schema 新于这一版 = `schemaNewer`、非数字 = `notProtocol3`（原「schema 28 拦下」改了：老 schema 现在升级）。
+- 变异实测（各自让对应用例变红）：跳过补完（7 条红）、去掉 `dedup`、去掉 `replay_pending`、状态列表只认协议 3 一侧、
+  补完里不看叫停。
+- Dart：`srs_gen4_migration_test.dart`（code 与 Rust 核对、分类、retryable、状态带列表、步骤与 Rust 核对）、
+  控制器测试（孤儿 uid 并集、关库后不开始）、页面测试（七种 code × 两套设计、关库置灰 × 两套设计、步骤 n/10）。
+
+### 已知 / 交出去的
+
+- 集成分支上 `cmd/dispatch_tests.rs::unwired_and_removed_commands_name_their_owner` 本来就红（G9-4 已把 `binding_set` 接上，
+  用例仍断言它未接线），不在本块文件边界内，没改。
+- 并入做到一半的旧库仍迁不了（`mergeHalfDone`），归 G9-5。
+- 协议 1 主库（D21）不在此列，归 G7-6。
