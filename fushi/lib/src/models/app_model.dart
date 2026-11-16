@@ -1214,6 +1214,8 @@ class AppModel
             isOwnerDevicePeer: (String token) =>
                 SyncRepository(database).isOwnerDevicePeerToken(token),
             httpClientFactory: createAppHttpClient,
+            sharedItems: () =>
+                SyncRepository(database).getInterconnectSourceShareHostItems(),
           )
         : null,
     libraryServiceFactory: () => LocalLibraryHostService(

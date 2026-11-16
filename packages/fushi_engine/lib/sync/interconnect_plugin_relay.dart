@@ -1,7 +1,8 @@
 /// 互联「插件中继」：没有插件运行时的设备（iOS）经互联让已配对 host 代跑音乐 / 歌词插件
 /// （拍板台 wOMR4_Er7s 方案 b，`docs/specs/2026-11-16-interconnect-source-share.md` §5）。
 ///
-/// client 不执行第三方代码、不直连插件的平台：能力调用、封面核对、媒体地址解析都在 host 的
+/// client 不执行第三方代码、不连插件的平台取流 / 调接口（封面图例外：host 只核对封面地址，图片由
+/// client 直接从插件平台的图片 CDN 加载）：能力调用、封面核对、媒体地址解析都在 host 的
 /// 插件实例上做，**媒体字节也经 host 转发**（插件给的地址常绑定请求方 IP / 地区、要防盗链
 /// 请求头，且请求头里可能带 host 上的登录 Cookie——这些都不该交给另一台设备）。
 ///
@@ -14,7 +15,8 @@
 /// GET  /api/interconnect/plugin-relay              → {plugins: [MusicPluginPackageInfo JSON…]}
 /// POST /api/interconnect/plugin-relay/invoke       {plugin, method, args}  → {value}
 /// POST /api/interconnect/plugin-relay/covers       {plugin, urls}          → {covers: {原地址: 地址}}
-/// POST /api/interconnect/plugin-relay/media        {plugin, url, headers}  → {url}（流票地址）
+/// POST /api/interconnect/plugin-relay/media        {plugin, url, headers}  → {path}（流票路径，
+///                                                   client 拼到本次实际走的 host 地址上）
 /// GET  /api/interconnect/plugin-relay/stream/<票>  → 媒体字节（Range 透传；免 Basic，门是流票）
 /// ```
 ///

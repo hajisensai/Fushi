@@ -141,8 +141,9 @@ bool get userConfiguredServersAvailable =>
 /// 与 [StoreRestrictedCapability.onlineMusicSource] 的分界：那一条管的是「本机下载并执行第三方
 /// 插件代码」，iOS 依然不装插件宿主、伞形静态库依然不编入 JS 引擎，iOS 上不能装插件。中继是另一
 /// 种形态——插件只在用户自己的、已配对且被标为「我的设备」的 host 上运行，iOS 只收 host 代跑的
-/// 结果与经 host 转发的媒体字节，本机不执行第三方代码、不直连插件的平台
-/// （`docs/specs/2026-11-16-interconnect-source-share.md` §5）。
+/// 结果与经 host 转发的媒体字节，本机不执行第三方代码、不连插件的平台取流 / 调接口。**例外：封面图**
+/// ——host 只核对封面地址（授权、不落私网），图片仍由 iOS 直接从插件平台的图片 CDN 加载
+/// （`docs/specs/2026-11-16-interconnect-source-share.md` §5「封面」）。评估审核风险时按这个实际行为算。
 ///
 /// 恒 true 仍保留成函数：消费端（`music_plugin_gate.dart` 的中继门）只问这里，若审核以此拒绝，
 /// 收回只改这一行；守卫 `test/build/ios_store_compliance_guard_test.dart` 钉住它。

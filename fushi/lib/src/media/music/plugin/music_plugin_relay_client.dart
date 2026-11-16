@@ -1,13 +1,16 @@
 /// 互联「插件中继」的 client 侧（拍板台 wOMR4_Er7s 方案 b，协议见
 /// `package:fushi_engine/sync/interconnect_plugin_relay.dart`）：本机没有插件运行时（iOS）时，
 /// 已配对 host 上装着的音乐 / 歌词插件经 [MusicPluginManager.relay] 出现在本机，调用、封面核对、
-/// 取流都转给 host 代跑，媒体从 host 的流票地址播放。本机不执行第三方代码、不直连插件的平台。
+/// 取流都转给 host 代跑，媒体从 host 的流票地址播放。本机不执行第三方代码、不连插件的平台取流 /
+/// 调接口；封面图例外——host 只核对地址，图片由本机直接从插件平台的图片 CDN 加载。
 ///
 /// 只问把本机标为「我的设备」、开着「把来源共享给我的设备」的 host（门在 host 侧）；本机的
 /// 「接收共享来源」关着时一个请求都不发。多台 host 装了同一个插件时用配对表里靠前的那台。
 library;
 
 import 'dart:async';
+
+import 'package:flutter/foundation.dart' show debugPrint;
 
 import 'package:fushi/src/sync/interconnect_host_channel.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -197,8 +200,18 @@ class InterconnectMusicPluginRelay implements MusicPluginRelay {
 
   Future<Map<String, _RelayEntry>> _load() async {
     final Map<String, _RelayEntry> next = <String, _RelayEntry>{};
-    if (await _enabled()) {
-      final List<MusicPluginRelayHostRef> hosts = await _transport.hosts();
+    // 契约（[MusicPluginRelay.list]）：取不到时为空、不抛。读开关 / 配对表失败（库关着、
+    // 迁移中）若往上抛，[MusicPluginManager.list] 会连本机已装插件一起列不出来。
+    final List<MusicPluginRelayHostRef> hosts;
+    try {
+      hosts = await _enabled()
+          ? await _transport.hosts()
+          : const <MusicPluginRelayHostRef>[];
+    } on Object catch (e) {
+      debugPrint('[music-plugin-relay] host list unavailable: $e');
+      return _catalog ?? next;
+    }
+    {
       final List<List<MusicPluginRelayedPlugin>> perHost = await Future.wait(
         <Future<List<MusicPluginRelayedPlugin>>>[
           for (final MusicPluginRelayHostRef h in hosts) _catalogOf(h),

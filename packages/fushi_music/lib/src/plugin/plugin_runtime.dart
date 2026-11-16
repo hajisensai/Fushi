@@ -6,7 +6,8 @@ import 'plugin_models.dart';
 /// - [MusicPluginInstance]：本机 JS 沙箱里跑的插件（带插件运行时的平台）；
 /// - 经互联中继的插件（拍板台 wOMR4_Er7s 方案 b，`docs/specs/2026-11-16-interconnect-source-share.md`
 ///   §5）：没有插件运行时的设备（iOS）把调用转给已配对 host，由 host 上的实例代跑，
-///   本机不执行第三方代码、不直连插件的平台。
+///   本机不执行第三方代码、不连插件的平台取流 / 调接口。封面图例外：host 只核对地址，图片仍由
+///   本机直接从插件平台的图片 CDN 加载（见 [checkCoverUrls]）。
 ///
 /// 两种实现给出的结果形状一致（插件原始返回值 + 宿主核对过的地址），类型化解析只在
 /// [MusicPluginSource] 写一次。

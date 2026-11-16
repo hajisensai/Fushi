@@ -93,7 +93,14 @@
 ## 5. 中继（方案 b）
 
 没有插件运行时的设备（iOS）经互联让 host 代跑音乐 / 歌词插件（搜索、首页、详情、取流、歌词、喜欢 /
-歌单编辑），媒体字节也经 host 转发：iOS 端不执行第三方代码，也不连插件的平台去取流。
+歌单编辑），媒体字节也经 host 转发：iOS 端不执行第三方代码，也不连插件的平台去取流 / 调接口。
+
+- **封面（例外，iOS 直连图片 CDN）**：`…/covers` 只让 host 核对封面地址（授权、不落私网），回来的仍是插件
+  平台图片 CDN 的原地址，iOS 直接加载图片。没有经 host 转发：封面地址散在曲目 / 专辑 / 收藏等处、会持久化，
+  改成 host 地址就得让所有出图的地方换成带证书钉扎的加载器（`RemoteCoverImage`），且 host 离线时收藏里的封面
+  全部失效。评估审核风险时按这个实际行为算；要改成转发需另行拍板。
+- **只中继 host 主人勾选共享的插件**：中继目录与每次调用都按 §2 的逐项勾选（`musicPlugin/<id>`）过滤，
+  没勾的插件对「我的设备」不存在。
 
 - **合规**：判据只在 `store_compliance.dart` 写一次——`interconnectPluginRelayAvailableOn` 恒 true（维护者
   2026-11-16「可以放行」）。`onlineMusicSource` 不动：iOS 依然不装插件宿主、不编入 JS 引擎、没有插件管理 /
@@ -104,11 +111,11 @@
   同 id 优先），`listInstalled()` 只列本机装的（管理页、来源共享打包用）。
 - **wire**（`packages/fushi_engine/lib/sync/interconnect_plugin_relay.dart`，路由
   `fushi_sync_server/plugin_relay.part.dart`，能力位 `pluginRelay`）：
-  - `GET /api/interconnect/plugin-relay` → host 上已装、启用的音乐插件清单（去掉 `login`）；
+  - `GET /api/interconnect/plugin-relay` → host 上已装、启用、主人勾选共享的音乐插件清单（去掉 `login`）；
   - `POST …/invoke {plugin, method, args}` → 插件原始返回值；`login` 与清单没声明的能力拒绝；
   - `POST …/covers {plugin, urls}` → host 实例核对过的封面地址；
   - `POST …/media {plugin, url, headers}` → host 实例解析（授权、请求头白名单、逐跳重定向核对）后签一张流票，
-    回 `…/stream/<票>`；
+    回 `{path: "…/stream/<票>"}`（client 拼到本次实际走的 host 地址上）；
   - `GET|HEAD …/stream/<票>`：免 Basic（播放器带不了 Authorization），门是 32 字节随机流票 + 每次取流现查签发
     凭据（仍是已配对的「我的设备」、host 开关开着）。host 连接只连核对过的 IP，上游再重定向不跟，只转发
     `content-type / length / range`、`accept-ranges`、`etag`、`last-modified`，平台 Set-Cookie 不出 host。

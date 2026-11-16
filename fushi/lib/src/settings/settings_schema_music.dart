@@ -364,18 +364,24 @@ SettingsDestination buildMusicDestination() {
             subtitle: t.music_lyrics_providers_hint,
             icon: FushiIcons.lyrics,
             showIcon: true,
-            // 与插件音源同一道合规门（music_plugin_gate，iOS 不渲染）。
-            visible: (_) => isMusicPluginSourcesAvailable,
+            // 能「用」插件歌词就要能启停 / 排序（iOS 经互联中继用 host 的歌词插件，查歌词也
+            // 走 isMusicPluginSourcesUsable）；安装入口与拖放只在本机能跑插件时出现。
+            visible: (_) => isMusicPluginSourcesUsable,
             child: () => SettingsDestination(
               id: SettingsDestinationId.music,
               title: t.music_lyrics_providers_title,
               icon: FushiIcons.lyrics,
               sections: const <SettingsSection>[],
               // 设置里的歌词来源页同样收 .fushiplug 拖放（BUG-4712）。
-              body: (SettingsContext c) => MusicPluginDropTarget(
-                manager: c.appModel.musicPluginManager,
-                child: MusicLyricsProvidersBody(appModel: c.appModel),
-              ),
+              body: (SettingsContext c) => isMusicPluginSourcesAvailable
+                  ? MusicPluginDropTarget(
+                      manager: c.appModel.musicPluginManager,
+                      child: MusicLyricsProvidersBody(appModel: c.appModel),
+                    )
+                  : MusicLyricsProvidersBody(
+                      appModel: c.appModel,
+                      canInstall: false,
+                    ),
             ),
           ),
           SettingsSwitchItem(

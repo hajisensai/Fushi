@@ -5,6 +5,9 @@
 /// 核对全部在这里、按本机插件的网络授权做，与本机自己播放同一套判据：能力必须是清单声明过且
 /// 不在 [kMusicPluginRelayExcludedCapabilities] 里的；封面 / 媒体地址经实例核对；取流时连接只连
 /// 核对过的 IP（[MusicPluginGuardedHttp]），上游再重定向一律不跟。
+///
+/// 只中继 host 主人在「选择要共享的来源」里勾过的插件（`musicPlugin/<id>`，与来源共享同一份
+/// 勾选）：没勾的插件不进目录，按 id 直接调也当「不可用」。
 library;
 
 import 'dart:async';
@@ -22,11 +25,13 @@ class AppMusicPluginRelayHost implements InterconnectPluginRelayHost {
     required Future<bool> Function() enabled,
     required Future<bool> Function(String peerToken) isOwnerDevicePeer,
     required MusicPluginHttpClientFactory httpClientFactory,
+    required Future<Set<String>> Function() sharedItems,
     MusicPluginResolver? resolver,
     MusicPluginAddressBlocker? addressBlocker,
   }) : _manager = manager,
        _enabled = enabled,
        _isOwnerDevicePeer = isOwnerDevicePeer,
+       _sharedItems = sharedItems,
        _httpClientFactory = httpClientFactory,
        _resolver = resolver,
        _addressBlocker = addressBlocker;
@@ -34,6 +39,9 @@ class AppMusicPluginRelayHost implements InterconnectPluginRelayHost {
   final MusicPluginManager Function() _manager;
   final Future<bool> Function() _enabled;
   final Future<bool> Function(String peerToken) _isOwnerDevicePeer;
+
+  /// host 主人勾选共享的来源（`kind/id`）。
+  final Future<Set<String>> Function() _sharedItems;
   final MusicPluginHttpClientFactory _httpClientFactory;
   final MusicPluginResolver? _resolver;
   final MusicPluginAddressBlocker? _addressBlocker;
@@ -45,23 +53,35 @@ class AppMusicPluginRelayHost implements InterconnectPluginRelayHost {
   Future<bool> isOwnerDevicePeer(String peerToken) =>
       _isOwnerDevicePeer(peerToken);
 
+  static String _shareKey(String pluginId) => 'musicPlugin/$pluginId';
+
   @override
-  Future<List<Map<String, Object?>>> pluginRelayCatalog() async =>
-      <Map<String, Object?>>[
-        for (final InstalledMusicPlugin p in await _manager().listInstalled())
-          if (p.usable && p.info!.manifest.isMusic)
-            MusicPluginPackageInfo(
-              manifest: p.info!.manifest.withoutCapabilities(
-                kMusicPluginRelayExcludedCapabilities,
-              ),
-              digest: p.info!.digest,
-              signer: p.info!.signer,
-              files: p.info!.files,
-            ).toJson(),
-      ];
+  Future<List<Map<String, Object?>>> pluginRelayCatalog() async {
+    final Set<String> shared = await _sharedItems();
+    return <Map<String, Object?>>[
+      for (final InstalledMusicPlugin p in await _manager().listInstalled())
+        if (p.usable &&
+            p.info!.manifest.isMusic &&
+            shared.contains(_shareKey(p.id)))
+          MusicPluginPackageInfo(
+            manifest: p.info!.manifest.withoutCapabilities(
+              kMusicPluginRelayExcludedCapabilities,
+            ),
+            digest: p.info!.digest,
+            signer: p.info!.signer,
+            files: p.info!.files,
+          ).toJson(),
+    ];
+  }
 
   /// 本机已装、启用的插件实例；不可用折成 [kPluginRelayNotAvailable]。
   Future<MusicPluginInstance> _instance(String pluginId) async {
+    if (!(await _sharedItems()).contains(_shareKey(pluginId))) {
+      throw const InterconnectPluginRelayError(
+        kPluginRelayNotAvailable,
+        '主人没有共享这个插件',
+      );
+    }
     try {
       return await _manager().instance(pluginId);
     } on MusicPluginUnavailableException catch (e) {

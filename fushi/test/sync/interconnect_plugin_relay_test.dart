@@ -37,6 +37,7 @@ AppMusicPluginRelayHost _forwarder() => AppMusicPluginRelayHost(
   enabled: () async => true,
   isOwnerDevicePeer: (String _) async => true,
   httpClientFactory: HttpClient.new,
+  sharedItems: () async => const <String>{},
   resolver: (String _) async => <InternetAddress>[InternetAddress.loopbackIPv4],
   addressBlocker: (InternetAddress _) => false,
 );
@@ -410,6 +411,23 @@ void main() {
     clientEnabled = false;
     expect(await manager.list(), isEmpty);
     expect(transport.requests, 0);
+  });
+
+  test('读开关 / 配对表抛错：中继按「取不到」处理，不连累本机插件列表', () async {
+    final InterconnectMusicPluginRelay broken = InterconnectMusicPluginRelay(
+      transport: transport,
+      enabled: () async => throw StateError('database closed'),
+    );
+    addTearDown(broken.dispose);
+    expect(await broken.list(), isEmpty);
+    final MusicPluginManager m = MusicPluginManager(
+      rootDir: Directory('${root.path}/broken_plugins'),
+      httpClientFactory: HttpClient.new,
+      log: (_, _, _) {},
+      relay: broken,
+    );
+    addTearDown(m.dispose);
+    expect(await m.list(), isEmpty);
   });
 
   test('端点门：共享 token 拒、未装配 404', () async {
