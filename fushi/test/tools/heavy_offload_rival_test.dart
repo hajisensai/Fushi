@@ -274,4 +274,28 @@ void main() {
     expect(here.takenByOther, isTrue);
     expect(there.takenByOther, isFalse);
   });
+
+  test(
+    'a worker still waiting in its queue sees the run was admitted here',
+    () {
+      // dist_test's side has not reached any lock yet (it waits in the
+      // worker's queue): the claim file alone tells it the run is gone.
+      final HeavyOffloadClaim here = HeavyOffloadClaim('${tmp.path}/q.claim');
+      final DistOffloadTally there = DistOffloadTally(
+        HeavyOffloadClaim('${tmp.path}/q.claim'),
+      );
+      expect(there.lost, isFalse);
+      expect(here.take(), isTrue);
+      expect(there.lost, isTrue);
+
+      // Taken there instead: not lost.
+      final DistOffloadTally taken = DistOffloadTally(
+        HeavyOffloadClaim('${tmp.path}/r.claim'),
+      );
+      expect(taken.locked('mac'), isTrue);
+      expect(taken.lost, isFalse);
+      // No claim (a run by hand): never lost.
+      expect(DistOffloadTally(null).lost, isFalse);
+    },
+  );
 }

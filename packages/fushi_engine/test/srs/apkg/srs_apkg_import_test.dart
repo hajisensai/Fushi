@@ -322,8 +322,8 @@ void main() {
   Future<void> syncAll(List<SrsDbStore> stores) =>
       srsSyncPeers(stores, dir, rounds: 3);
 
-  String basicNt(String profile) => SrsIds.noteType(profile, kBasic);
-  String clozeNt(String profile) => SrsIds.noteType(profile, kCloze);
+  String basicNt(String profile) => SrsKernelIds(profile).noteType(kBasic);
+  String clozeNt(String profile) => SrsKernelIds(profile).noteType(kCloze);
 
   test(
     '① 导入：笔记 / 卡片 / 日志数正确，ID 按 SrsIds 规则；⑤ 遗忘卡写锚点为新卡；⑥ 开 RWKV 时 FSRS 预设的步长不带过来',
@@ -357,7 +357,7 @@ void main() {
       expect(cv.fields.first.id, SrsIds.fieldByName(clozeNt(kProfile), 'Text'));
 
       // 笔记：guid 原样，createdAt = 来源笔记 id，媒体引用改写。
-      final String n1 = SrsIds.note(kProfile, 'g1');
+      final String n1 = SrsKernelIds(kProfile).note('g1');
       final SrsNoteView? note = await s.note(n1);
       expect(note!.guid, 'g1');
       expect(note.createdAt, ms(2026, 2, 28));
@@ -414,7 +414,7 @@ void main() {
       expect((await s.history(c12)).all, isEmpty);
 
       // ⑤ 遗忘过的卡：最后一条是 Manual 重置 → 写锚点，结果是新卡。
-      final String n2 = SrsIds.note(kProfile, 'g2');
+      final String n2 = SrsKernelIds(kProfile).note('g2');
       final String ct = cv.templates.single.id;
       final String c21 = SrsIds.card(n2, ct, 1);
       final String c22 = SrsIds.card(n2, ct, 2);
@@ -485,7 +485,7 @@ void main() {
       expect(names, <String>['Default', 'Lang', 'Lang::JP']);
       expect(await s.notesPendingDecision(), isEmpty);
       expect(await s.syncConflicts(), isEmpty);
-      final String n1 = SrsIds.note(kProfile, 'g1');
+      final String n1 = SrsKernelIds(kProfile).note('g1');
       final String c11 = SrsIds.card(
         n1,
         SrsIds.template(basicNt(kProfile), 333),
@@ -502,7 +502,7 @@ void main() {
       now: () => t,
     );
     await importInto(s, legacyApkg(t));
-    final String n1 = SrsIds.note(kProfile, 'g1');
+    final String n1 = SrsKernelIds(kProfile).note('g1');
     final String back = SrsIds.field(basicNt(kProfile), 222);
     await s.updateNote(n1, fieldsById: <String, String>{back: 'local edit'});
     final int logsBefore = (await s.exportAll())
@@ -700,7 +700,9 @@ void main() {
     expect(rep2.notesAdded, 1);
     expect(rep2.anchorsWritten, 0);
     expect(rep2.fushiLogsRestored, 1);
-    final String noteId2 = SrsIds.note(kProfile2, (await s.note(noteId))!.guid);
+    final String noteId2 = SrsKernelIds(
+      kProfile2,
+    ).note((await s.note(noteId))!.guid);
     final String cardId2 = (await other.cardsOfNote(noteId2)).single.id;
     expect((await other.note(noteId2))!.noteTypeId, other.lapisNoteTypeId);
     final SrsCardHistory h2 = await other.history(cardId2);
@@ -1032,7 +1034,7 @@ void main() {
     expect(rep.latestFormat, isTrue);
     expect(rep.notesAdded, 1);
     expect(mediaBytes, <int>[9, 8, 7]);
-    final String nt = SrsIds.noteType(kProfile, 4242);
+    final String nt = SrsKernelIds(kProfile).noteType(4242);
     final SrsNoteTypeView v = (await s.noteType(nt))!;
     expect(v.fields.map((SrsFieldDef f) => f.id), <String>[
       SrsIds.field(nt, 9001),
@@ -1045,7 +1047,7 @@ void main() {
       v.templates.single.front,
       '{{fld:${SrsIds.field(nt, 9001)}}}<img src="h_pic.jpg">',
     );
-    final String noteId = SrsIds.note(kProfile, 'nf1');
+    final String noteId = SrsKernelIds(kProfile).note('nf1');
     expect(
       (await s.note(noteId))!.field(SrsIds.field(nt, 9001)),
       '犬<img src="h_pic.jpg">',
@@ -1101,7 +1103,7 @@ void main() {
     }
 
     test('更新笔记：较新时按来源 mod 与本机最后修改比；总是 / 从不', () async {
-      final String n1 = SrsIds.note(kProfile, 'g1');
+      final String n1 = SrsKernelIds(kProfile).note('g1');
       final String back = SrsIds.field(basicNt(kProfile), 222);
       final int localEditAt = t + 60000;
       // 来源 g1 的背面改成 neko，mod 分别早于 / 晚于本机修改。
@@ -1139,7 +1141,7 @@ void main() {
     });
 
     test('更新笔记时已有卡片：本机在来源卡片之后挪过牌组 / 暂停过的不改回（BUG-3554）', () async {
-      final String n1 = SrsIds.note(kProfile, 'g1');
+      final String n1 = SrsKernelIds(kProfile).note('g1');
       final String nt = basicNt(kProfile);
       final String c11 = SrsIds.card(n1, SrsIds.template(nt, 333), 0);
       final String c12 = SrsIds.card(
@@ -1316,8 +1318,8 @@ void main() {
       }
 
       final String nt = basicNt(kProfile);
-      final String g1 = SrsIds.note(kProfile, 'g1');
-      final String g4 = SrsIds.note(kProfile, 'g4');
+      final String g1 = SrsKernelIds(kProfile).note('g1');
+      final String g4 = SrsKernelIds(kProfile).note('g4');
 
       // 合并。
       final SrsDbStore m = await seeded();
@@ -1429,9 +1431,9 @@ void main() {
         );
       }
 
-      final String kiku = SrsIds.noteType(kProfile, kKiku);
-      final String g1 = SrsIds.note(kProfile, 'g1');
-      final String g3 = SrsIds.note(kProfile, 'g3');
+      final String kiku = SrsKernelIds(kProfile).noteType(kKiku);
+      final String g1 = SrsKernelIds(kProfile).note('g1');
+      final String g3 = SrsKernelIds(kProfile).note('g3');
       final SrsDbStore s = await seeded();
 
       // 本机笔记还在：与 Anki 相同，不擅自换类型，记冲突且报告带笔记类型名。
@@ -1508,7 +1510,7 @@ void main() {
           expect(c.suspended, isFalse);
         }
       }
-      expect((await s.note(SrsIds.note(kProfile, 'g1')))!.tags, <String>[
+      expect((await s.note(SrsKernelIds(kProfile).note('g1')))!.tags, <String>[
         'animal',
         'n5',
       ]);
@@ -2142,7 +2144,6 @@ void main() {
     final _FailFirstValidate engine = _FailFirstValidate();
     final SrsStorage srsStorage = await openTestSrsStorage();
     final SrsDbStore s = await SrsDbStore.open(
-      db: srsStorage.db,
       core: srsStorage.core,
       profileUid: kProfile,
       deviceId: 'a',
@@ -2550,6 +2551,75 @@ void main() {
       expect(back.newCardMix, SrsNewCardMix.beforeReviews);
       expect(back.reviewCardOrder, SrsReviewCardOrder.random);
     });
+
+    test(
+      '每日上限单位：Anki 预设的复习上限按次数 / 卡片数照写，分钟写成不限；只走 Anki 预设回导落成缺省单位（次数），带 fushi-ext 还原单位',
+      () async {
+        final SrsDbStore s = await openTestStore(
+          profileUid: kProfile,
+          deviceId: 'a',
+          now: () => t,
+        );
+        final Map<String, SrsLimitUnit?> units = <String, SrsLimitUnit?>{
+          'Plain': null,
+          'Cards': SrsLimitUnit.cards,
+          'Minutes': SrsLimitUnit.minutes,
+        };
+        for (final MapEntry<String, SrsLimitUnit?> e in units.entries) {
+          final String d = await s.createDeck(e.key);
+          await s.editFields(SrsEntityKind.deck, d, <String, Object?>{
+            SrsFieldKeys.deckLimits: <String, Object?>{'new': 20, 'review': 30},
+            if (e.value != null) SrsFieldKeys.deckLimitUnit: e.value!.wire,
+          });
+          await s.createNote(
+            noteTypeId: s.lapisNoteTypeId,
+            deckId: d,
+            fieldsById: <String, String>{
+              srsLapisFieldId(kProfile, 'Expression'): '聞く${e.key}',
+            },
+          );
+        }
+        final Uint8List anki = await exportAnkiPackage(
+          store: s,
+          options: const SrsAnkiExportOptions(ankiCompatible: true),
+        );
+        expect((await exportedPreset(anki, 'Plain')).reviewsPerDay, 30);
+        expect((await exportedPreset(anki, 'Cards')).reviewsPerDay, 30);
+        expect(
+          (await exportedPreset(anki, 'Minutes')).reviewsPerDay,
+          srsAnkiMaxReviewsPerDay,
+          reason: '30 分钟不能在 Anki 里变成 30 张',
+        );
+        final SrsDbStore viaAnki = await openTestStore(
+          profileUid: kProfile2,
+          deviceId: 'b',
+          now: () => t,
+        );
+        await importInto(viaAnki, anki);
+        final SrsDeckTree fromAnki = await viaAnki.deckTree();
+        for (final String name in units.keys) {
+          expect(
+            fromAnki[srsImportedDeckId(kProfile2, name)]!.limitUnit,
+            SrsLimitUnit.reviews,
+            reason: name,
+          );
+        }
+
+        final Uint8List ext = await exportAnkiPackage(store: s);
+        final SrsDbStore viaExt = await openTestStore(
+          profileUid: kProfile2,
+          deviceId: 'c',
+          now: () => t,
+        );
+        await importInto(viaExt, ext);
+        final SrsDeckTree back = await viaExt.deckTree();
+        for (final MapEntry<String, SrsLimitUnit?> e in units.entries) {
+          final SrsDeckView d = back[srsImportedDeckId(kProfile2, e.key)]!;
+          expect(d.limitUnit, e.value ?? SrsLimitUnit.reviews, reason: e.key);
+          expect(d.reviewsPerDay, 30, reason: e.key);
+        }
+      },
+    );
   });
 
   group('从 Anki 迁移的复习数据与新卡顺序（Lapis 用户反馈）', () {

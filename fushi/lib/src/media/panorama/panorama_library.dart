@@ -541,15 +541,10 @@ Future<PanoramaLibrary> loadPanoramaLibrary({
       minedTotal: 0,
     );
   }
-  final List<SrsNoteCacheRow> rows =
-      await (srs.db.select(srs.db.srsNotesCache)
-            ..where(
-              (n) => n.profileUid.equals(srs.profileUid) & n.deletedAt.isNull(),
-            )
-            ..orderBy(<OrderClauseGenerator<$SrsNotesCacheTable>>[
-              (n) => OrderingTerm.asc(n.createdAt),
-            ]))
-          .get();
+  final List<SrsNoteCacheRow> rows = await srs.noteRows(const <String, Object?>{
+    'alive': true,
+    'order': 'created_asc',
+  });
   // 不物化整条笔记：全景只要每条笔记的出处，和抽中笔记里 sort_field 是内部编号的那几条的字段。
   // 以前对「带出处修改记录的笔记」整批 [SrsDbStore.notes]——假设这种笔记很少（开发机 1.48 万条里
   // 113 条），但全在 Fushi 里制卡的用户每条都带出处：2 万卡、字段里带整段释义 HTML 的库，每次打开首页
