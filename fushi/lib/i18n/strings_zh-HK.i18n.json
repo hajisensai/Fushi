@@ -6530,6 +6530,7 @@
   "music_plugin_radio_personal": "Personal radio",
   "music_plugin_radio_personal_hint": "Nonstop songs picked for you",
   "music_plugin_radio_seeded": "${title} radio",
+  "music_plugin_relay_login_hint": "在執行這個插件的那部裝置上登入${name}，這裡也會一併使用這個帳戶。",
   "music_plugin_released_on": "Released ${date}",
   "music_plugin_search_hint": "Search this source",
   "music_plugin_search_prompt": "Type something to search",

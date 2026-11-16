@@ -6530,6 +6530,7 @@
   "music_plugin_radio_personal": "Personal radio",
   "music_plugin_radio_personal_hint": "Nonstop songs picked for you",
   "music_plugin_radio_seeded": "${title} radio",
+  "music_plugin_relay_login_hint": "이 플러그인을 실행하는 기기에서 ${name}에 로그인하면 여기서도 그 계정을 사용할 수 있습니다.",
   "music_plugin_released_on": "Released ${date}",
   "music_plugin_search_hint": "Search this source",
   "music_plugin_search_prompt": "Type something to search",

@@ -6530,6 +6530,7 @@
   "music_plugin_radio_personal": "私人电台",
   "music_plugin_radio_personal_hint": "为你连续推荐，听不完",
   "music_plugin_radio_seeded": "「${title}」电台",
+  "music_plugin_relay_login_hint": "在运行这个插件的那台设备上登录${name}，这里会一起用上这个账号。",
   "music_plugin_released_on": "${date} 发行",
   "music_plugin_search_hint": "搜索这个音源",
   "music_plugin_search_prompt": "输入关键词开始搜索",

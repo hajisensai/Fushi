@@ -318,8 +318,9 @@ class InterconnectMusicPluginRelay implements MusicPluginRelay {
         code == 'disabled' ||
         code == 'not_owner_device' ||
         res.status == 404) {
+      // 目录作废并通知订阅方重列（重列时现拉），不在这里另起一个没人等的请求。
       invalidate();
-      unawaited(_entries(force: true));
+      if (!_changes.isClosed) _changes.add(null);
       throw MusicPluginUnavailableException(
         '${entry.plugin.via}上的插件此刻不可用',
         pluginId: id,

@@ -6530,6 +6530,7 @@
   "music_plugin_radio_personal": "Personal radio",
   "music_plugin_radio_personal_hint": "Nonstop songs picked for you",
   "music_plugin_radio_seeded": "${title} radio",
+  "music_plugin_relay_login_hint": "Đăng nhập ${name} trên thiết bị đang chạy plugin này, tài khoản của bạn cũng sẽ dùng được ở đây.",
   "music_plugin_released_on": "Released ${date}",
   "music_plugin_search_hint": "Search this source",
   "music_plugin_search_prompt": "Type something to search",
