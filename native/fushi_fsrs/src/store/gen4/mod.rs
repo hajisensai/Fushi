@@ -12,12 +12,16 @@
 //! - [class]：读侧按别名类判定——寄存器、标签按别名类并起来再过冻结判据，内嵌 ID 归一（只读，没有调用方）。
 //! - [cache]：缓存层——笔记 / 卡片缓存、逐卡重放、有效复习投影（统计列）。
 //! - [weigh]：派生层的语义部分——标签 OR-Set、媒体绑定、彻底清除、被扣住的删除、设备信任。
+//! - `compare`：协议 3 的投影与新代派生层逐类对拍（干跑与测试装置共用）。
+//! - [dryrun]：真实库干跑（设计 §8 G4）：旧库只读 → 临时新库 → 重建 → 对拍报告；也是换代前版本里的预演自检（G4b）。
 
 pub mod alias;
 pub mod cache;
 pub mod class;
+pub(crate) mod compare;
 pub mod derive;
 pub mod digest;
+pub mod dryrun;
 pub mod files;
 pub mod import;
 pub mod legacy;

@@ -2717,8 +2717,8 @@ pub(crate) fn legacy_library(d: &Device) {
     }
     for k in 0..5i64 {
         w.execute(
-            "INSERT INTO srs_entities (id, profile_uid, kind, payload_json, created_at) VALUES (srs_id(?1), srs_id(?2), 'note', '{\"createdAt\":2}', ?3)",
-            rusqlite::params![format!("N{k}"), P, 2 + k],
+            "INSERT INTO srs_entities (id, profile_uid, kind, payload_json, created_at) VALUES (srs_id(?1), srs_id(?2), 'note', json_object('createdAt', 2, 'guid', ?1, 'noteTypeId', 'NT'), ?3)",
+            rusqlite::params![format!("0193a1b2-0000-7000-8000-00000000c00{k}"), P, 2 + k],
         )
         .unwrap();
     }
