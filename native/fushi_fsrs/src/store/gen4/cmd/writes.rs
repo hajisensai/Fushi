@@ -276,6 +276,13 @@ impl<'t, 'c> Session<'t, 'c> {
         let st = self.native.finish(&mut self.ix)?;
         absorb(&mut self.settled, &st);
         self.dirty = false;
+        // 派生层判成「已清除」的操作在真相层落成空洞（设计 §3.2；`weigh.rs` [Index::execute_purges]）：本机的 `purge`、
+        // 改信任放开了扣住的清除都在这里执行，同一个事务。发件按日志里的空洞条数重切、重传（`cmd/sync.rs` 已传水位）。
+        if self.ix.execute_purges()? > 0 {
+            self.tally.landed = true;
+            self.tally.content = true;
+            self.tally.stats = true;
+        }
         let next = self.t.last_of(self.col, &self.native.device())? + 1;
         if !v.is_object() {
             *v = json!({});

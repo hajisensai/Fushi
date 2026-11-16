@@ -5,7 +5,7 @@
 //! # 命令的三种去向（[wiring]）
 //!
 //! - [Wiring::Wired]：接到新代实现（[run] 里有它的臂）。
-//! - [Wiring::Unwired]：归别的模块接线（G9-5 并入 / 清除；G8-7b 转发、旧身份目录清理、媒体同步），报
+//! - [Wiring::Unwired]：归别的模块接线（G9-5 并入 / 清除；G8-7b 转发），报
 //!   `kernel::UNWIRED` 开头的明确错误——不 panic、不回落到协议 3。
 //! - [Wiring::Removed]：新代不需要（派生层随写入维护、没有收段通道、没有协议 3 的存储表示），报 `kernel::REMOVED` 开头的
 //!   错误，调用方（Dart，G7-5）不再发。
@@ -132,15 +132,32 @@ pub fn wiring(op: &str) -> Option<Wiring> {
         "location_root" | "plan" | "ingest" | "ingest_finish" | "outbox" | "outbox_ack"
         | "head" | "obsolete" | "retire" | "rotate" | "location_sealed" | "location_seal"
         | "digest" => Wired,
-        "ingest_yield" | "ingest_commit" | "ingest_begin" | "ingest_batch" | "ingest_prepare"
-        | "ingest_end" | "replay_pending" => Removed(NO_CHANNEL),
+        "ingest_yield" | "ingest_commit" | "ingest_batch" | "ingest_prepare" | "replay_pending" => {
+            Removed(NO_CHANNEL)
+        }
+        // 收段会话（G8-7b）：只在会话期间把 RWKV 刷新键攒住（`refresh.rs` `rwkv_held`），没有收段通道。
+        "ingest_begin" | "ingest_end" => Wired,
         "digest_buckets" => Removed(NO_DIGEST_BUCKETS),
         "obsolete_ack" => Removed(NO_OBSOLETE_ACK),
-        // 同步一轮里还没接的部分（交接说明「G8-7 同步一轮」未做项）：转发、旧身份目录清理、媒体。
-        "relay_outbox" | "relay_ack" | "obsolete_former" | "media_known" | "media_record"
-        | "media_hash" | "media_scan" | "media_landed" | "media_bind_unbound" | "media_doomed" => {
-            Unwired("G8-7b")
-        }
+        // 旧身份目录清理（G8-7b，`cmd/sync.rs` `obsolete_former`）
+        "obsolete_former" => Wired,
+        // 媒体同步（G8-7b，`cmd/media_sync.rs`；清单收发是新代才有的命令）
+        "media_known"
+        | "media_record"
+        | "media_hash"
+        | "media_scan"
+        | "media_landed"
+        | "media_bind_unbound"
+        | "media_doomed"
+        | "media_manifests"
+        | "media_manifest_ingest"
+        | "media_manifest_build"
+        | "media_manifest_published" => Wired,
+        // 旧根接手与承袭上传（G8-7b，`cmd/sync_oldroot.rs`）
+        "oldroot_scan" | "oldroot_ingest" | "heritage_plan" | "heritage_outbox"
+        | "heritage_ack" => Wired,
+        // 转发（FRL4）：要收下的作者段原字节，存储表还没有（交接说明「G8-7b 同步补全」未做项）。
+        "relay_outbox" | "relay_ack" => Unwired("G8-7b"),
         // 导入 / 导出（G11-3，`cmd/fushisrs.rs`）
         "import" | "export" => Wired,
         // 新代不需要
@@ -559,6 +576,14 @@ fn run(
             })?;
             noted(c, profile, v)
         }
+        "ingest_begin" => {
+            c.refresh_hold(profile);
+            json!({})
+        }
+        "ingest_end" => {
+            c.refresh_release(profile);
+            json!({})
+        }
         "ingest_finish" => {
             let now = int_of(req, "now")?;
             let v = c.write(|t| cmd::sync::ingest_finish(t, col_of(t, profile)?, profile, now))?;
@@ -589,6 +614,104 @@ fn run(
         }
         "location_seal" => {
             c.write_local(|t| cmd::sync::location_seal(t, col_of(t, profile)?, req, blobs))?
+        }
+        "obsolete_former" => {
+            read_col(c, profile, |t, col| cmd::sync::obsolete_former(t, col, req))?
+        }
+        // ------------------------------------------------------------ 旧根接手（cmd/sync_oldroot.rs）
+        "oldroot_scan" => read_col(c, profile, |t, col| {
+            cmd::sync_oldroot::oldroot_scan(t, col, req)
+        })?,
+        "oldroot_ingest" => {
+            let key = cmd::sync::key_of(req)?;
+            let v = c.write(|t| {
+                cmd::sync_oldroot::oldroot_ingest(
+                    t,
+                    col_of(t, profile)?,
+                    profile,
+                    req,
+                    blobs,
+                    key.as_ref(),
+                )
+            })?;
+            noted(c, profile, v)
+        }
+        "heritage_plan" => read_col(c, profile, |t, col| {
+            cmd::sync_oldroot::heritage_plan(t, col, req)
+        })?,
+        "heritage_outbox" => {
+            let key = cmd::sync::key_of(req)?;
+            read_col(c, profile, |t, col| {
+                cmd::sync_oldroot::heritage_outbox(t, col, req, blobs, key.as_ref(), files)
+            })?
+        }
+        "heritage_ack" => {
+            c.write_local(|t| cmd::sync_oldroot::heritage_ack(t, col_of(t, profile)?, req))?
+        }
+        // ------------------------------------------------------------ 媒体同步（cmd/media_sync.rs）
+        "media_hash" => {
+            let root = str_of(req, "root")?.to_owned();
+            let names: Vec<String> = req
+                .get("names")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .map(str::to_owned)
+                .collect();
+            // 缓存行在一个读快照里读；读文件、算哈希在锁外。
+            let cached = read_col(c, profile, |t, col| {
+                cmd::media_sync::hash_cached(t, col, &names)
+            })?;
+            cmd::media_sync::hash_files(&root, &names, &cached)
+        }
+        "media_scan" => {
+            let v = c.write(|t| cmd::media_sync::scan(t, col_of(t, profile)?, req))?;
+            noted(c, profile, v)
+        }
+        "media_landed" => {
+            let now = int_of(req, "now")?;
+            // 文件的 stat 在进写事务之前做完。
+            let (items, stats) = cmd::media_sync::landed_items(req)?;
+            let v =
+                c.write(|t| cmd::media_sync::landed(t, col_of(t, profile)?, &items, &stats, now))?;
+            noted(c, profile, v)
+        }
+        "media_bind_unbound" => {
+            let v = c.write(|t| cmd::media_sync::bind_unbound(t, col_of(t, profile)?, req))?;
+            noted(c, profile, v)
+        }
+        "media_doomed" => read_col(c, profile, |t, col| cmd::media_sync::doomed(t, col, req))?,
+        "media_known" => read_col(c, profile, |t, col| cmd::media_sync::known(t, col, req))?,
+        "media_record" => {
+            c.write_local(|t| cmd::media_sync::record(t, col_of(t, profile)?, req))?
+        }
+        "media_manifests" => {
+            read_col(c, profile, |t, col| cmd::media_sync::manifests(t, col, req))?
+        }
+        "media_manifest_ingest" => {
+            let present: Vec<bool> = req
+                .get("present")
+                .and_then(Value::as_array)
+                .ok_or("media_manifest_ingest: missing present")?
+                .iter()
+                .map(|v| v == &Value::Bool(true))
+                .collect();
+            c.write_local(|t| {
+                cmd::media_sync::manifest_ingest(t, col_of(t, profile)?, req, blobs, &present)
+            })?
+        }
+        "media_manifest_build" => {
+            c.write_local(|t| cmd::media_sync::manifest_build(t, col_of(t, profile)?, req, files))?
+        }
+        "media_manifest_published" => {
+            let blob = blobs
+                .first()
+                .ok_or("media_manifest_published: missing manifest")?
+                .clone();
+            c.write_local(|t| {
+                cmd::media_sync::manifest_published(t, col_of(t, profile)?, req, &blob)
+            })?
         }
         // ------------------------------------------------------------ 其余写
         "device_info" => write_col(c, profile, |t, col| {

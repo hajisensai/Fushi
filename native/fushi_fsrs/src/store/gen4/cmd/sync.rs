@@ -132,7 +132,7 @@ fn me_of(t: &Truth<'_>, col: i64) -> Result<SelfId, String> {
     })
 }
 
-fn meta_get(t: &Truth<'_>, key: &str) -> Result<Option<String>, String> {
+pub(crate) fn meta_get(t: &Truth<'_>, key: &str) -> Result<Option<String>, String> {
     t.conn()
         .prepare_cached("SELECT value FROM srs_meta WHERE key = ?1")
         .map_err(sql)?
@@ -141,7 +141,7 @@ fn meta_get(t: &Truth<'_>, key: &str) -> Result<Option<String>, String> {
         .map_err(sql)
 }
 
-fn meta_set(t: &Truth<'_>, key: &str, value: &str) -> Result<(), String> {
+pub(crate) fn meta_set(t: &Truth<'_>, key: &str, value: &str) -> Result<(), String> {
     t.write(|| {
         t.conn()
             .prepare_cached(
@@ -155,13 +155,18 @@ fn meta_set(t: &Truth<'_>, key: &str, value: &str) -> Result<(), String> {
     })
 }
 
-fn settled_json(s: &Settled) -> Value {
+pub(crate) fn settled_json(s: &Settled) -> Value {
     json!({"cacheNotes": s.cache_notes, "cacheCards": s.cache_cards, "cacheStats": s.cache_stats})
 }
 
 /// 落了真相的同步命令推进本机修订号（`local.rs` `persist` 按回包里数组的条数推进）：[n] 条，回包补 `localRevision` /
 /// `localEpoch`。
-fn bump_revision(t: &Truth<'_>, profile: &str, n: u64, out: &mut Value) -> Result<(), String> {
+pub(crate) fn bump_revision(
+    t: &Truth<'_>,
+    profile: &str,
+    n: u64,
+    out: &mut Value,
+) -> Result<(), String> {
     let mut tmp = json!({"replayed": vec![Value::Null; n as usize]});
     local::persist(t, profile, None, &mut tmp)?;
     out["localRevision"] = tmp["localRevision"].clone();
@@ -175,7 +180,10 @@ fn bump_revision(t: &Truth<'_>, profile: &str, n: u64, out: &mut Value) -> Resul
 }
 
 /// 本集合与被它并入过的集合（段头 / head 的集合必须是其中之一，同 `receive.rs`）。
-fn collections_of(t: &Truth<'_>, col: i64) -> Result<(BTreeSet<Id>, Id, String), String> {
+pub(crate) fn collections_of(
+    t: &Truth<'_>,
+    col: i64,
+) -> Result<(BTreeSet<Id>, Id, String), String> {
     let binding = t
         .binding(col)?
         .ok_or_else(|| format!("sync: no collection {col}"))?;
@@ -493,6 +501,22 @@ pub fn location_root(
         }
     }
     let refuse = |state: &str, error: String| -> Value { json!({"state": state, "error": error}) };
+    // 只有协议 1 旧根 `v2/`（`has2`）的位置：明确拒绝、一个字节不写（D21，`oldroot.rs` [check_root]；本机卡片与复习
+    // 记录不受影响）。新集合的判据仍只看 `v3/meta.json`：`v2/` 在而 `v3/` 不在的位置不能当成空位置立围栏。
+    let has2 = req.get("has2") == Some(&Value::Bool(true));
+    let top: Vec<&str> = [
+        (has4, NEW_ROOT),
+        (has3, OLD_ROOT),
+        (has2, crate::store::gen4::oldroot::PROTOCOL1_ROOT),
+    ]
+    .into_iter()
+    .filter_map(|(h, n)| h.then_some(n))
+    .collect();
+    if let Err(r) = crate::store::gen4::oldroot::check_root(&top) {
+        let mut v = refuse(ROOT_REFUSED, r.message);
+        v["code"] = json!(r.code);
+        return Ok(v);
+    }
     // 旧根 meta：存量集合的 kdf 来源；集合标识必须是这个目录的。
     let v3_obj: Option<Map<String, Value>> = match v3 {
         None => None,
@@ -738,6 +762,11 @@ pub fn plan(t: &Truth<'_>, col: i64, req: &Value, heads: &[Vec<u8>]) -> Result<V
         }
         let mut ext = h.ext.clone().unwrap_or_default();
         ext.insert("v".into(), Value::from(h.protocol));
+        // 同步页的「最后见到」与摘要核对（`status` 的 `seenAt` / `digestMismatch`，[SEEN_AT_KEY] 一组）：本机按 head
+        // 写，盖过对端自报扩展信息里的同名键。
+        ext.insert(SEEN_AT_KEY.into(), Value::from(h.at_ms));
+        ext.insert(SEEN_ACK_KEY.into(), Value::from(ack_fp(&h.ack)));
+        ext.insert(SEEN_DIGEST_KEY.into(), Value::from(h.digest.clone()));
         let peer = Peer {
             device: h.device,
             public: h.public,
@@ -908,8 +937,9 @@ pub fn ingest(
         "fork": fork_at.is_some(),
         "errors": errors,
         "settled": settled_json(&r.settled),
+        "purged": r.purged,
     });
-    bump_revision(t, profile, applied, &mut out)?;
+    bump_revision(t, profile, applied + r.purged, &mut out)?;
     Ok(out)
 }
 
@@ -1089,6 +1119,11 @@ pub fn head(t: &Truth<'_>, col: i64, req: &Value, files: &mut Files) -> Result<V
     let mut out = load_out(t, col, progress, &me.device)?;
     let ack = t.applied(col)?;
     let digest = Index::new(t, col).digest()?;
+    // 本机此刻的 (版本向量指纹, 摘要)：`status` 拿对端 head 上同一个版本向量下的摘要与它比（[SEEN_ACK_KEY]）。
+    let mine = json!({"ack": ack_fp(&ack), "digest": digest}).to_string();
+    if meta_get(t, &self_digest_key(col))?.as_deref() != Some(mine.as_str()) {
+        meta_set(t, &self_digest_key(col), &mine)?;
+    }
     let name = super::writes_local::self_name(t, col)?;
     let ext = self_ext(t, col)?;
     let loc = req
@@ -1163,6 +1198,22 @@ pub fn head(t: &Truth<'_>, col: i64, req: &Value, files: &mut Files) -> Result<V
     Ok(json!({"unchanged": false, "path": path, "gen": gen}))
 }
 
+/// 对端 head 的写出时刻、版本向量指纹、摘要在 `peers.ext` 里的键（[plan] 写、`status` 读；下划线开头，不与对端自报的
+/// 扩展信息键冲突，`status` 只按白名单转发扩展信息）。
+pub(crate) const SEEN_AT_KEY: &str = "_seenAt";
+pub(crate) const SEEN_ACK_KEY: &str = "_ack";
+pub(crate) const SEEN_DIGEST_KEY: &str = "_digest";
+
+/// 版本向量的指纹（摘要核对只比「同一个版本向量」，[SEEN_ACK_KEY]）。
+pub(crate) fn ack_fp(ack: &crate::sync2::vv::Vv) -> String {
+    hex(&blake3::hash(&ack.encode()).as_bytes()[..16])
+}
+
+/// 本机上次写 head 时的 `{"ack": 版本向量指纹, "digest": 摘要}` 在 `srs_meta` 里的键。
+pub(crate) fn self_digest_key(col: i64) -> String {
+    format!("gen4_self_digest/{col}")
+}
+
 /// 本机的扩展信息（`device_info` 存的型号 / App 版本 / 平台 / 昵称，非空的才带）。
 fn self_ext(t: &Truth<'_>, col: i64) -> Result<Map<String, Value>, String> {
     // `device_info` 存的本机扩展信息（`writes_local.rs` `self_info_key` 同一个键）。
@@ -1190,6 +1241,10 @@ fn self_ext(t: &Truth<'_>, col: i64) -> Result<Map<String, Value>, String> {
 pub fn obsolete(t: &Truth<'_>, col: i64, req: &Value) -> Result<Value, String> {
     let progress = str_req(req, "progress")?;
     let me = me_of(t, col)?;
+    let former: Vec<String> = super::sync_oldroot::former_identities(t, col)?
+        .iter()
+        .map(Id::text)
+        .collect();
     if req.get("archive") == Some(&Value::Bool(true)) {
         return Ok(json!({"delete": [], "again": false, "former": []}));
     }
@@ -1218,7 +1273,41 @@ pub fn obsolete(t: &Truth<'_>, col: i64, req: &Value) -> Result<Value, String> {
             _ => {}
         }
     }
-    Ok(json!({"delete": delete, "again": false, "former": []}))
+    Ok(json!({"delete": delete, "again": false, "former": former}))
+}
+
+/// `obsolete_former {device, present, archive?}`：本机的一个旧身份（[obsolete] 回包的 `former`：换身份前的、同一把签名
+/// 钥匙签的别的设备 ID）在这个位置上的目录（`present` = 列出来的文件名）里该删什么。只删比目录里最新的 head 旧
+/// [HEAD_KEEP_GENS] 代以上的 head；段一个不删——别的设备（含还没连过这个位置的新设备）要从这些段拿到旧身份的全部操作，
+/// 旧身份的 head 是它们认公钥、找段的入口，所以最新的几代也留着。不是本机旧身份的设备、归档位置：什么都不删。回包
+/// `{"delete": [路径相对 v4/]}`。
+pub fn obsolete_former(t: &Truth<'_>, col: i64, req: &Value) -> Result<Value, String> {
+    let device = Id::parse(str_req(req, "device")?).ok_or("obsolete_former: bad device")?;
+    if req.get("archive") == Some(&Value::Bool(true))
+        || !super::sync_oldroot::former_identities(t, col)?.contains(&device)
+    {
+        return Ok(json!({"delete": []}));
+    }
+    let mut heads: Vec<(u64, String)> = Vec::new();
+    for name in req
+        .get("present")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+    {
+        let path = device_path(&device, name);
+        if let Some(V4File::Head { gen, .. }) = parse_v4_path(&path) {
+            heads.push((gen, path));
+        }
+    }
+    let top = heads.iter().map(|(g, _)| *g).max().unwrap_or(0);
+    let delete: Vec<String> = heads
+        .into_iter()
+        .filter(|(g, _)| g + HEAD_KEEP_GENS <= top)
+        .map(|(_, p)| p)
+        .collect();
+    Ok(json!({"delete": delete}))
 }
 
 // ---------------------------------------------------------------------- 设备：停用、换身份

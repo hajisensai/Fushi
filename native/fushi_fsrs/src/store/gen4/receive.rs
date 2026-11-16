@@ -156,6 +156,8 @@ pub struct Received {
     pub conflicts: u64,
     /// 派生层的收尾。
     pub settled: Settled,
+    /// 收尾时在真相层落成空洞的操作数（[Index::execute_purges]）。
+    pub purged: u64,
 }
 
 fn reject_of(e: SegmentError) -> Taken {
@@ -800,6 +802,9 @@ impl<'t, 'c> Receiver<'t, 'c> {
         self.tally.pending = self.t.pending(self.col)?.len() as u64;
         self.mark_due()?;
         self.tally.settled = ingest_settle(self.t, &mut self.idx, self.col, self.mode)?;
+        // 收进来的清除（或它的目标）让派生层判成「已清除」的操作：同一个事务里在真相层落成空洞（设计 §3.2，
+        // `weigh.rs` [Index::execute_purges]）。本机已传的段里有它们 → 发件按空洞条数重切、重传。
+        self.tally.purged = self.idx.execute_purges()?;
         Ok(self.tally)
     }
 

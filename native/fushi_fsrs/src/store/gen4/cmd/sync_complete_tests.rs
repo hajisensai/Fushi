@@ -1,0 +1,745 @@
+//! G8-7b 同步补全的端到端测试：一律经 C ABI，装置与一轮的走法沿用 `sync_tests.rs`（位置是内存里的「路径 → 字节」表）。
+//!
+//! - 媒体：两台设备经文件夹位置对账（本机文件 → 绑定操作 → 位置上「在不在」→ 清单 → 对端知道并下载落地）。
+//! - 旧根接手：协议 3 的段在 `v3/` 上；两台各自接手（捡旧根 + 承袭上传）的设备与一台只连新根的新设备收敛到同一个
+//!   状态；只有协议 1 `v2/` 的位置被明确拒绝、什么都不写；空位置（新集合）立围栏，存量位置不当成新集合。
+//! - 清除：`purge` 命令把目标落成空洞，已传的段重切重传，对端收到后也落成空洞。
+//! - 收段会话把 RWKV 刷新键攒到会话结束；状态页的 `seenAt` / `frozen` / `digestMismatch`；旧身份目录只删旧 head。
+//! - 新语句的查询计划。
+
+use rusqlite::{Connection, OpenFlags};
+use serde_json::{Value, json};
+
+use super::dispatch_tests::{T1, g4};
+use super::media_sync::{BINDING_SQL, LOCAL_SQL};
+use super::sync_oldroot::{ALIAS_COUNT_SQL, SAME_KEY_SQL, VOID_COUNT_SQL};
+use super::sync_tests::{Dev, Loc, Opts, cmd, listing, names_of, round, status_row, sync_all};
+use super::tests::{N1, N2};
+use crate::gen4::op::tests::id;
+use crate::store::gen4::files::GEN4_FILE;
+use crate::store::sync2::collection_of;
+use crate::store::sync2::tests::{P, tempdir};
+use crate::sync2::id::Id;
+use crate::sync2::keys::DeviceKey;
+use crate::sync2::segment::{
+    self as seg3, CHAIN_ZERO, Head as Head3, chain_next, chain_tag, head_file_name,
+};
+use crate::sync2::vv::{OpId, Vv};
+
+// ---------------------------------------------------------------------- 媒体
+
+/// 一台设备上的一次媒体对账（Dart `srs_media_sync.dart` 的上传半边）：哈希 → 定绑定 → 「上传」→ 记「在」。
+fn media_publish(d: &Dev, root: &std::path::Path, names: &[&str], now: i64) -> Value {
+    let root_s = root.to_str().unwrap();
+    let (hash, _) = cmd(
+        d.h,
+        "media_hash",
+        now,
+        json!({"root": root_s, "names": names}),
+        &[],
+    );
+    let (scan, _) = cmd(
+        d.h,
+        "media_scan",
+        now,
+        json!({"names": names, "files": hash["files"]}),
+        &[],
+    );
+    let present: Vec<Value> = scan["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|i| i["have"] == json!(true))
+        .map(|i| i["sha"].clone())
+        .collect();
+    let (rec, _) = cmd(
+        d.h,
+        "media_record",
+        now,
+        json!({"location": "loc/media#sha256", "present": present}),
+        &[],
+    );
+    if !present.is_empty() {
+        let n = rec["appended"].as_u64().unwrap() + rec["unchanged"].as_u64().unwrap();
+        assert_eq!(n, present.len() as u64, "{rec}");
+    }
+    scan
+}
+
+/// 本机待发的媒体事实打成清单写上位置（`media_manifest_build` → 写 → `media_manifest_published`）。
+fn manifests_out(d: &Dev, loc: &mut Loc, loc_id: &str, now: i64) -> bool {
+    let (b, files) = cmd(
+        d.h,
+        "media_manifest_build",
+        now,
+        json!({"location": "loc", "loc": loc_id, "ownGens": []}),
+        &[],
+    );
+    if b["built"] != json!(true) {
+        return false;
+    }
+    let (path, bytes) = files.into_iter().next().unwrap();
+    assert_eq!(b["path"], json!(path));
+    loc.insert(format!("v4/{path}"), bytes.clone());
+    let (p, _) = cmd(
+        d.h,
+        "media_manifest_published",
+        now,
+        json!({"location": "loc"}),
+        &[bytes],
+    );
+    assert!(p["cleared"].as_u64().unwrap() > 0, "{p}");
+    true
+}
+
+/// 收位置上别的设备的清单（`media_manifests` → 读 → `media_manifest_ingest`）。
+fn manifests_in(d: &Dev, loc: &Loc, now: i64) -> Value {
+    let (m, _) = cmd(
+        d.h,
+        "media_manifests",
+        now,
+        json!({"location": "loc", "listing": listing(loc)}),
+        &[],
+    );
+    let paths: Vec<String> = m["fetch"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| p.as_str().unwrap().to_owned())
+        .collect();
+    let got: Vec<Option<Vec<u8>>> = paths
+        .iter()
+        .map(|p| loc.get(&format!("v4/{p}")).cloned())
+        .collect();
+    let present: Vec<bool> = got.iter().map(Option::is_some).collect();
+    let blobs: Vec<Vec<u8>> = got.into_iter().flatten().collect();
+    cmd(
+        d.h,
+        "media_manifest_ingest",
+        now,
+        json!({"location": "loc", "paths": paths, "present": present}),
+        &blobs,
+    )
+    .0
+}
+
+fn loc_id(loc: &Loc) -> String {
+    loc.keys()
+        .filter_map(|k| k.strip_prefix("v4/loc/"))
+        .min()
+        .unwrap()
+        .to_owned()
+}
+
+/// 两台设备经文件夹位置对账媒体：A 的文件绑定、记成「在」、发清单；B 收段拿到绑定、收清单知道位置上有、下载落地后
+/// 记成与绑定对齐；A 再改文件 → 新绑定传到 B，B 的 `media_scan` 要下载新内容。
+#[test]
+fn media_reconciles_between_two_devices_through_a_folder_location() {
+    let a = Dev::new("g87bma");
+    let b = Dev::new("g87bmb");
+    let ra = tempdir::new("g87bma-media");
+    let rb = tempdir::new("g87bmb-media");
+    std::fs::write(ra.0.join("x.png"), b"hello").unwrap();
+    let mut loc = Loc::new();
+    round(&a, &mut loc, "loc", T1 + 1, Opts::default());
+    let scan = media_publish(&a, &ra.0, &["x.png"], T1 + 2);
+    assert_eq!(scan["appended"], json!(1), "{scan}");
+    let sha = scan["items"][0]["sha"].as_str().unwrap().to_owned();
+    assert_eq!(scan["items"][0]["have"], json!(true));
+    // 第二次对账：文件没变，什么都不追加。
+    let again = media_publish(&a, &ra.0, &["x.png"], T1 + 3);
+    assert_eq!(again["appended"], json!(0), "{again}");
+    round(&a, &mut loc, "loc", T1 + 4, Opts::default());
+    let lid = loc_id(&loc);
+    assert!(manifests_out(&a, &mut loc, &lid, T1 + 5));
+    // 没有新事实：不烧代号。
+    assert!(!manifests_out(&a, &mut loc, &lid, T1 + 6));
+
+    round(&b, &mut loc, "loc", T1 + 10, Opts::default());
+    let ing = manifests_in(&b, &loc, T1 + 11);
+    assert_eq!(ing["ingested"], json!(1), "{ing}");
+    assert_eq!(ing["errors"], json!([]), "{ing}");
+    let (known, _) = cmd(
+        b.h,
+        "media_known",
+        T1 + 11,
+        json!({"location": "loc/media#sha256"}),
+        &[],
+    );
+    assert_eq!(known["present"], json!([sha]), "{known}");
+    // 再收一次：没有新清单。
+    assert_eq!(manifests_in(&b, &loc, T1 + 12)["ingested"], json!(0));
+    // B 本机没有文件：要下载 A 绑定的内容。
+    let (s, _) = cmd(
+        b.h,
+        "media_scan",
+        T1 + 12,
+        json!({"names": ["x.png"], "files": []}),
+        &[],
+    );
+    assert_eq!(s["items"][0]["sha"], json!(sha), "{s}");
+    assert_eq!(s["items"][0]["have"], json!(false));
+    std::fs::write(rb.0.join("x.png"), b"hello").unwrap();
+    let (l, _) = cmd(
+        b.h,
+        "media_landed",
+        T1 + 13,
+        json!({"root": rb.0.to_str().unwrap(), "items": [{"name": "x.png", "sha": sha}]}),
+        &[],
+    );
+    assert_eq!(l["appended"], json!(0), "{l}");
+    let s = media_publish(&b, &rb.0, &["x.png"], T1 + 14);
+    assert_eq!(s["appended"], json!(0), "{s}");
+    assert_eq!(s["items"][0]["have"], json!(true));
+
+    // A 改了文件：新绑定，B 上次对齐之后没改过本地文件 → 下载新内容（不是把旧内容绑回去）。
+    std::fs::write(ra.0.join("x.png"), b"hello, again").unwrap();
+    let s = media_publish(&a, &ra.0, &["x.png"], T1 + 20);
+    assert_eq!(s["appended"], json!(1), "{s}");
+    let sha2 = s["items"][0]["sha"].as_str().unwrap().to_owned();
+    assert_ne!(sha2, sha);
+    round(&a, &mut loc, "loc", T1 + 21, Opts::default());
+    round(&b, &mut loc, "loc", T1 + 22, Opts::default());
+    let (hash, _) = cmd(
+        b.h,
+        "media_hash",
+        T1 + 23,
+        json!({"root": rb.0.to_str().unwrap(), "names": ["x.png"]}),
+        &[],
+    );
+    let (s, _) = cmd(
+        b.h,
+        "media_scan",
+        T1 + 23,
+        json!({"names": ["x.png"], "files": hash["files"]}),
+        &[],
+    );
+    assert_eq!(s["items"][0]["sha"], json!(sha2), "{s}");
+    assert_eq!(s["items"][0]["have"], json!(false));
+    assert_eq!(s["appended"], json!(0));
+    // 过期名字的内容（不被存活名字绑定）。
+    let (doomed, _) = cmd(
+        b.h,
+        "media_doomed",
+        T1 + 24,
+        json!({"expired": ["x.png"], "live": []}),
+        &[],
+    );
+    assert_eq!(doomed["sha"], json!([sha2]));
+}
+
+/// 一个从没绑过的名字补绑；已有绑定的不动。
+#[test]
+fn binding_unbound_names_never_overrides_a_binding() {
+    let a = Dev::new("g87bbu");
+    let sha = "ab".repeat(32);
+    let other = "cd".repeat(32);
+    let (v, _) = cmd(
+        a.h,
+        "media_bind_unbound",
+        T1,
+        json!({"items": [{"name": "y.ogg", "sha": sha, "size": 3}]}),
+        &[],
+    );
+    assert_eq!(v["bound"], json!(["y.ogg"]), "{v}");
+    let (v, _) = cmd(
+        a.h,
+        "media_bind_unbound",
+        T1 + 1,
+        json!({"items": [{"name": "y.ogg", "sha": other, "size": 4}]}),
+        &[],
+    );
+    assert_eq!(v["appended"], json!(0), "{v}");
+    let (s, _) = cmd(
+        a.h,
+        "media_scan",
+        T1 + 2,
+        json!({"names": ["y.ogg"], "files": []}),
+        &[],
+    );
+    assert_eq!(s["items"][0]["sha"], json!(sha));
+}
+
+// ---------------------------------------------------------------------- 旧根接手
+
+const OLD: u8 = 0xd7;
+
+fn old_key() -> DeviceKey {
+    DeviceKey::from_seed(&[OLD; 32])
+}
+
+/// 协议 3 旧根：设备 OLD 的 [n] 条操作按 [cuts] 切段写在 `v3/devices/<OLD>/`，带它的 head 与旧根 meta。
+fn old_root(loc: &mut Loc, n: u64, cuts: &[(u64, u64)]) {
+    let dev = id(OLD);
+    let ops = crate::sync2::segment::tests::ops_for(dev, n);
+    let mut chain = CHAIN_ZERO;
+    let chains: Vec<_> = ops
+        .iter()
+        .map(|op| {
+            chain = chain_next(&chain, op);
+            chain
+        })
+        .collect();
+    let mut segments = Vec::new();
+    for &(a, b) in cuts {
+        let prev = if a == 1 {
+            CHAIN_ZERO
+        } else {
+            chains[a as usize - 2]
+        };
+        let (h, bytes) = seg3::pack(
+            collection_of(P),
+            &ops[a as usize - 1..b as usize],
+            prev,
+            &old_key(),
+            None,
+        )
+        .unwrap();
+        loc.insert(
+            format!("v3/devices/{}/{}", dev.text(), h.file_name()),
+            bytes,
+        );
+        segments.push((a, b, chain_tag(&chains[b as usize - 1])));
+    }
+    let head = Head3 {
+        gen: 1,
+        protocol: 3,
+        min_reader: 3,
+        collection: collection_of(P),
+        device: dev,
+        public: old_key().public(),
+        seq: n,
+        chain: chains[n as usize - 1],
+        segments,
+        ack: Vv::new(),
+        digest: String::new(),
+        at_ms: T1,
+        name: "old phone".into(),
+        ext: None,
+    };
+    loc.insert(
+        format!("v3/devices/{}/{}", dev.text(), head.file_name()),
+        head.encode(&old_key()),
+    );
+    loc.entry("v3/meta.json".into()).or_insert_with(|| {
+        json!({"collection": collection_of(P).text(), "v": 3, "minReader": 3})
+            .to_string()
+            .into_bytes()
+    });
+}
+
+/// 旧根清单（`oldroot_scan` 的 `listing`，路径相对 `v3/`）。
+fn old_listing(loc: &Loc) -> Vec<Value> {
+    loc.iter()
+        .filter_map(|(k, v)| {
+            k.strip_prefix("v3/")
+                .filter(|r| r.starts_with("devices/"))
+                .map(|r| json!({"path": r, "size": v.len(), "modified": 7}))
+        })
+        .collect()
+}
+
+/// 捡旧根（Dart：扫 → 读 head 与段 → 带 `settle` 一批收完）。回 (扫的回包, 收的回包)。
+fn take_old_root(d: &Dev, loc: &Loc, now: i64) -> (Value, Option<Value>) {
+    let listing = old_listing(loc);
+    let (scan, _) = cmd(
+        d.h,
+        "oldroot_scan",
+        now,
+        json!({"location": "loc", "listing": listing}),
+        &[],
+    );
+    if scan["changed"] != json!(true) {
+        return (scan, None);
+    }
+    let strs = |v: &Value| -> Vec<String> {
+        v.as_array()
+            .unwrap()
+            .iter()
+            .map(|p| p.as_str().unwrap().to_owned())
+            .collect()
+    };
+    let heads = strs(&scan["heads"]);
+    let fetch = strs(&scan["fetch"]);
+    let blobs: Vec<Vec<u8>> = heads
+        .iter()
+        .chain(&fetch)
+        .map(|p| loc[&format!("v3/{p}")].clone())
+        .collect();
+    let (ing, _) = cmd(
+        d.h,
+        "oldroot_ingest",
+        now,
+        json!({"location": "loc", "listing": listing, "paths": fetch, "heads": heads.len(), "settle": true}),
+        &blobs,
+    );
+    (scan, Some(ing))
+}
+
+/// 承袭上传（Dart：`heritage_plan` → 读 → `heritage_outbox` → 写 → `heritage_ack`）。回写上的文件数。
+fn upload_heritage(d: &Dev, loc: &mut Loc, now: i64) -> usize {
+    let (plan, _) = cmd(
+        d.h,
+        "heritage_plan",
+        now,
+        json!({"progress": "loc#plain", "listing": listing(loc)}),
+        &[],
+    );
+    if plan["skip"] == json!(true) {
+        return 0;
+    }
+    let paths: Vec<String> = plan["read"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| p.as_str().unwrap().to_owned())
+        .collect();
+    let blobs: Vec<Vec<u8>> = paths
+        .iter()
+        .map(|p| loc[&format!("v4/{p}")].clone())
+        .collect();
+    let (out, files) = cmd(d.h, "heritage_outbox", now, json!({"paths": paths}), &blobs);
+    assert_eq!(out["blocked"], json!([]), "{out}");
+    assert_eq!(out["keptForked"], json!([]), "{out}");
+    assert_eq!(out["errors"], json!([]), "{out}");
+    let n = files.len();
+    for (p, b) in files {
+        assert!(p.contains("/hrt-"), "{p}");
+        loc.insert(format!("v4/{p}"), b);
+    }
+    cmd(
+        d.h,
+        "heritage_ack",
+        now,
+        json!({"progress": "loc#plain", "listing": listing(loc)}),
+        &[],
+    );
+    n
+}
+
+/// 一轮带旧根接手：根 → 收新根 → 捡旧根 → 承袭上传 → 发本机原生段 → head（`round` 的根与收、发两半之间插进旧根两步，
+/// 用两次 `round`：第一次立根并收，第二次发；中间做旧根）。
+fn takeover_round(d: &Dev, loc: &mut Loc, now: i64) -> (Option<Value>, usize) {
+    round(d, loc, "loc", now, Opts::default());
+    let (_, ing) = take_old_root(d, loc, now);
+    let up = upload_heritage(d, loc, now);
+    round(d, loc, "loc", now + 1, Opts::default());
+    (ing, up)
+}
+
+/// 旧根接手（硬条件）：协议 3 位置上有旧设备 OLD 的历史；两台各自升级的设备 A、B 各自捡旧根、各自承袭上传（B 看见 A
+/// 已传的承袭段就不重传）；从没跑过协议 3 的新设备 C 只连新根，从承袭段拿到 OLD 的全部历史。三台的派生层相同。旧根
+/// 指纹记下之后，清单没变的下一轮不再读；承袭指纹没变的下一轮不再对账。
+#[test]
+fn old_root_takeover_reaches_migrated_and_new_devices_alike() {
+    let mut a = Dev::new("g87boa");
+    let mut b = Dev::new("g87bob");
+    let mut c = Dev::new("g87boc");
+    let mut loc = Loc::new();
+    old_root(&mut loc, 12, &[(1, 5), (6, 12)]);
+    a.write(T1 + 1, N1, "鯨");
+    b.write(T1 + 2, N2, "猫");
+
+    let (ing, up) = takeover_round(&a, &mut loc, T1 + 10);
+    let ing = ing.expect("a scans the old root");
+    assert_eq!(ing["recorded"], json!(true), "{ing}");
+    assert_eq!(ing["errors"], json!([]), "{ing}");
+    assert_eq!(ing["landed"], json!(12), "{ing}");
+    assert!(up > 0, "a uploads the heritage it took");
+    // 旧根清单没变：不再读；承袭：不再对账。
+    let (scan, again) = take_old_root(&a, &loc, T1 + 12);
+    assert_eq!(scan["changed"], json!(false), "{scan}");
+    assert!(again.is_none());
+    assert_eq!(upload_heritage(&a, &mut loc, T1 + 12), 0);
+
+    let (ing, up) = takeover_round(&b, &mut loc, T1 + 20);
+    assert_eq!(ing.expect("b scans")["recorded"], json!(true));
+    assert_eq!(up, 0, "b sees a's heritage segments and uploads nothing");
+
+    // 新设备：只连新根（不捡旧根），从承袭段拿到旧历史。
+    sync_all(&[&a, &b, &c], &mut loc, T1 + 30, Opts::default());
+    for d in [&a, &b, &c] {
+        assert_eq!(d.field(N1), Some(json!("鯨")));
+        assert_eq!(d.field(N2), Some(json!("猫")));
+        assert_eq!(d_old_len(d), 12, "every device holds OLD's whole log");
+    }
+    let (da, db, dc) = (a.derived(), b.derived(), c.derived());
+    assert_eq!(da, db);
+    assert_eq!(da, dc);
+}
+
+/// 设备上 OLD 的承袭日志末尾。
+fn d_old_len(d: &Dev) -> u64 {
+    let st = g4(d.h, "status", T1, json!({}));
+    st["devices"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["device"] == json!(id(OLD).text()))
+        .map_or(0, |r| r["applied"].as_u64().unwrap())
+}
+
+/// 位置的根：空位置（新集合）立围栏与墓碑 head、媒体根是新根；有 `v3/meta.json` 的存量位置媒体根是旧根、不立墓碑；
+/// 只有协议 1 `v2/` 的位置明确拒绝（机读码）、一个字节都不写。
+#[test]
+fn a_new_collection_is_never_taken_for_an_existing_one() {
+    let a = Dev::new("g87bfr");
+    let (r, files) = cmd(
+        a.h,
+        "location_root",
+        T1,
+        json!({"location": "loc", "has4": false, "has3": false, "has2": false, "locs": []}),
+        &[],
+    );
+    assert_eq!(r["state"], json!("ok"), "{r}");
+    assert_eq!(r["media"], json!("v4"));
+    assert!(!r["ensure"].as_array().unwrap().is_empty(), "{r}");
+    assert!(files.iter().any(|(p, _)| p == "v3/meta.json"));
+
+    let (r, files) = cmd(
+        a.h,
+        "location_root",
+        T1,
+        json!({"location": "loc2", "has4": false, "has3": false, "has2": true, "locs": []}),
+        &[],
+    );
+    assert_eq!(r["state"], json!("refused"), "{r}");
+    assert_eq!(
+        r["code"],
+        json!(crate::store::gen4::oldroot::ERR_PROTOCOL1_ROOT)
+    );
+    assert!(files.is_empty());
+
+    let mut loc = Loc::new();
+    old_root(&mut loc, 2, &[(1, 2)]);
+    let (r, _) = cmd(
+        a.h,
+        "location_root",
+        T1,
+        json!({"location": "loc3", "has4": false, "has3": true, "has2": true, "locs": []}),
+        &[loc["v3/meta.json"].clone()],
+    );
+    assert_eq!(r["state"], json!("ok"), "{r}");
+    assert_eq!(r["media"], json!("v3"));
+    assert_eq!(r["ensure"], json!([]));
+}
+
+// ---------------------------------------------------------------------- 清除
+
+/// `purge` 命令把目标落成空洞（同一个事务）：已传的段重切重传，对端收到清除后也把它落成空洞，派生层相同。
+#[test]
+fn the_purge_command_voids_published_ops_everywhere() {
+    let mut a = Dev::new("g87bpa");
+    let mut b = Dev::new("g87bpb");
+    a.write(T1 + 1, N1, "秘密");
+    let mut loc = Loc::new();
+    sync_all(&[&a, &b], &mut loc, T1 + 2, Opts::default());
+    assert_eq!(b.field(N1), Some(json!("秘密")));
+    let dev = Id::parse(&a.device()).unwrap();
+    let whole = |d: &mut Dev| -> Option<bool> {
+        d.direct(|t, col| {
+            Ok(t.entry(
+                col,
+                &OpId {
+                    device: dev,
+                    seq: 2,
+                },
+            )?
+            .map(|e| e.is_whole()))
+        })
+    };
+    assert_eq!(whole(&mut a), Some(true));
+    let (v, _) = cmd(
+        a.h,
+        "purge",
+        T1 + 3,
+        json!({"kind": "note", "entities": [N1]}),
+        &[],
+    );
+    assert!(v.get("localRevision").is_some(), "{v}");
+    assert_eq!(whole(&mut a), Some(false), "the purge voids the target");
+    let r = round(&a, &mut loc, "loc", T1 + 4, Opts::default());
+    assert!(r.batches >= 1);
+    let r = round(&b, &mut loc, "loc", T1 + 5, Opts::default());
+    assert!(
+        r.ingest
+            .iter()
+            .any(|v| v["purged"].as_u64().unwrap_or(0) > 0),
+        "{:?}",
+        r.ingest
+    );
+    assert_eq!(whole(&mut b), Some(false), "the peer voids it too");
+    sync_all(&[&a, &b], &mut loc, T1 + 6, Opts::default());
+    assert_eq!(a.derived(), b.derived());
+}
+
+// ---------------------------------------------------------------------- 收段会话、状态、旧身份
+
+/// 收段会话（`ingest_begin` … `ingest_end`）期间 RWKV 键不动、别的键照常推进；会话结束放出一次。
+#[test]
+fn an_ingest_session_holds_the_rwkv_key_until_it_ends() {
+    let keys = |d: &Dev| g4(d.h, "refresh_keys", T1, json!({}));
+    let a = Dev::new("g87bha");
+    let b = Dev::new("g87bhb");
+    let mut loc = Loc::new();
+    sync_all(&[&a, &b], &mut loc, T1, Opts::default());
+    b.write(T1 + 1, N1, "鯨");
+    round(&b, &mut loc, "loc", T1 + 2, Opts::default());
+    let k0 = keys(&a);
+    cmd(a.h, "ingest_begin", T1 + 3, json!({}), &[]);
+    let r = round(&a, &mut loc, "loc", T1 + 3, Opts::default());
+    assert!(
+        r.ingest
+            .iter()
+            .any(|v| v["applied"].as_u64().unwrap_or(0) > 0)
+    );
+    let k1 = keys(&a);
+    assert_ne!(k1["content"], k0["content"]);
+    assert_eq!(k1["rwkv"], k0["rwkv"], "held during the session");
+    cmd(a.h, "ingest_end", T1 + 4, json!({}), &[]);
+    let k2 = keys(&a);
+    assert_ne!(k2["rwkv"], k1["rwkv"], "released once at the end");
+    cmd(a.h, "ingest_end", T1 + 5, json!({}), &[]);
+    assert_eq!(
+        keys(&a)["rwkv"],
+        k2["rwkv"],
+        "ending twice releases nothing"
+    );
+}
+
+/// 状态页：对端的 `seenAt` = 它最新 head 的写出时刻；同一个版本向量下摘要不同 → `digestMismatch` + `warning`；换身份
+/// 之后旧身份 `frozen`。
+#[test]
+fn status_reports_seen_at_digest_mismatch_and_frozen_identities() {
+    let mut a = Dev::new("g87bsa");
+    let b = Dev::new("g87bsb");
+    let mut loc = Loc::new();
+    a.write(T1 + 1, N1, "鯨");
+    sync_all(&[&a, &b], &mut loc, T1 + 10, Opts::default());
+    let bd = b.device();
+    let row = status_row(&a, &bd);
+    assert_eq!(row["seenAt"], json!(T1 + 10), "{row}");
+    assert_eq!(row["digestMismatch"], json!(false), "{row}");
+    assert_eq!(row["frozen"], json!(false));
+    // 对端 head 记下的摘要被改成别的（同一个版本向量）：报不一致。
+    let bid = Id::parse(&bd).unwrap();
+    a.direct(|t, col| {
+        let p = t.peer(col, &bid)?.unwrap();
+        let mut ext: serde_json::Map<String, Value> =
+            serde_json::from_str(p.ext.as_deref().unwrap()).unwrap();
+        ext.insert(super::sync::SEEN_DIGEST_KEY.into(), json!("00"));
+        t.conn()
+            .execute(
+                "UPDATE peers SET ext = ?1 WHERE col = ?2 AND device = ?3",
+                rusqlite::params![Value::Object(ext).to_string(), col, &bid.0[..]],
+            )
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    });
+    let row = status_row(&a, &bd);
+    assert_eq!(row["digestMismatch"], json!(true), "{row}");
+    assert_eq!(
+        row["warning"],
+        json!(super::writes_local::DIGEST_MISMATCH_WARNING)
+    );
+    // 换身份：旧身份冻结。
+    let before = a.device();
+    cmd(a.h, "rotate", T1 + 20, json!({}), &[]);
+    assert_ne!(a.device(), before);
+    let row = status_row(&a, &before);
+    assert_eq!(row["frozen"], json!(true), "{row}");
+}
+
+/// 旧身份目录清理：`obsolete` 报出本机的旧身份；`obsolete_former` 只删它目录里比最新 head 旧两代以上的 head，段一个
+/// 不删；别的设备、归档位置什么都不删。
+#[test]
+fn obsolete_former_deletes_only_old_heads_of_former_identities() {
+    let a = Dev::new("g87bfo");
+    let b = Dev::new("g87bfob");
+    let mut loc = Loc::new();
+    a.write(T1 + 1, N1, "鯨");
+    sync_all(&[&a, &b], &mut loc, T1 + 2, Opts::default());
+    let former = a.device();
+    cmd(a.h, "rotate", T1 + 3, json!({}), &[]);
+    round(&a, &mut loc, "loc", T1 + 4, Opts::default());
+    let (obs, _) = cmd(
+        a.h,
+        "obsolete",
+        T1 + 5,
+        json!({"progress": "loc#plain", "present": names_of(&loc, &a.device())}),
+        &[],
+    );
+    assert_eq!(obs["former"], json!([former]), "{obs}");
+    let tag = chain_tag(&CHAIN_ZERO);
+    let mut present: Vec<String> = (1..=4).map(|g| head_file_name(g, &tag)).collect();
+    let segs: Vec<String> = names_of(&loc, &former)
+        .into_iter()
+        .filter(|n| n.starts_with("seg-"))
+        .collect();
+    assert!(!segs.is_empty());
+    present.extend(segs);
+    let (v, _) = cmd(
+        a.h,
+        "obsolete_former",
+        T1 + 6,
+        json!({"device": former, "present": present}),
+        &[],
+    );
+    let del: Vec<&str> = v["delete"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| p.as_str().unwrap())
+        .collect();
+    assert_eq!(
+        del,
+        vec![
+            format!("devices/{former}/{}", head_file_name(1, &tag)),
+            format!("devices/{former}/{}", head_file_name(2, &tag)),
+        ],
+        "{v}"
+    );
+    for (dev, archive) in [(b.device(), false), (former.clone(), true)] {
+        let (v, _) = cmd(
+            a.h,
+            "obsolete_former",
+            T1 + 7,
+            json!({"device": dev, "present": present, "archive": archive}),
+            &[],
+        );
+        assert_eq!(v["delete"], json!([]), "{v}");
+    }
+}
+
+/// 新语句按键找、不扫表。
+#[test]
+fn g87b_lookups_use_their_keys() {
+    let a = Dev::new("g87bq");
+    let c = Connection::open_with_flags(
+        a.dir.0.join(GEN4_FILE),
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .unwrap();
+    for (q, n) in [
+        (BINDING_SQL, 3),
+        (LOCAL_SQL, 2),
+        (VOID_COUNT_SQL, 2),
+        (ALIAS_COUNT_SQL, 2),
+        (SAME_KEY_SQL, 2),
+    ] {
+        let params: Vec<i64> = (0..n).map(|i| i + 1).collect();
+        let plan: Vec<String> = c
+            .prepare(&format!("EXPLAIN QUERY PLAN {q}"))
+            .unwrap()
+            .query_map(rusqlite::params_from_iter(params), |r| {
+                r.get::<_, String>(3)
+            })
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert!(
+            plan.iter().all(|p| p.starts_with("SEARCH")),
+            "{q}: {plan:?}"
+        );
+    }
+}

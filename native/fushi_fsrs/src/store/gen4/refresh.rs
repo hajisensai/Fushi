@@ -157,15 +157,34 @@ struct Counters {
     rwkv: u64,
     stats: u64,
     landed: u64,
+    /// 收段会话（`ingest_begin` … `ingest_end`）期间攒着的 RWKV 推进：None = 没有会话，Some(攒到没有)。会话里每批收段
+    /// 都会推进 RWKV 键，逐批放出去的话分数表整表重查跟着每批来一次、与下一批抢内存（协议 3 `rwkv_held` 同一个
+    /// 起因：35 万条日志的 iPhone 收尾 OOM），所以攒到会话结束并成一次（[Counters::release]）。别的键照常逐批推进。
+    rwkv_held: Option<bool>,
 }
 
 impl Counters {
     fn absorb(&mut self, t: Tally) {
         self.content += u64::from(t.content);
         self.view += u64::from(t.view);
-        self.rwkv += u64::from(t.rwkv);
+        if t.rwkv {
+            match &mut self.rwkv_held {
+                Some(held) => *held = true,
+                None => self.rwkv += 1,
+            }
+        }
         self.stats += u64::from(t.stats);
         self.landed += u64::from(t.landed);
+    }
+
+    fn hold(&mut self) {
+        self.rwkv_held.get_or_insert(false);
+    }
+
+    fn release(&mut self) {
+        if self.rwkv_held.take() == Some(true) {
+            self.rwkv += 1;
+        }
     }
 }
 
@@ -282,6 +301,23 @@ impl G4Core {
     /// [profile] 按这些键记的缓存全部作废（模块文件头「谁推进」里不经 `Session` 的写）。
     pub fn refresh_invalidate(&self, profile: &str) {
         self.refresh_note(profile, Tally::all(), false);
+    }
+
+    /// `ingest_begin`：[profile] 开一段收段会话，之后的 RWKV 推进攒到 [G4Core::refresh_release] 并成一次（[Counters]
+    /// `rwkv_held`）。重复开是同一段。
+    pub fn refresh_hold(&self, profile: &str) {
+        self.refresh_lock()
+            .by_profile
+            .entry(profile.to_owned())
+            .or_default()
+            .hold();
+    }
+
+    /// `ingest_end`：结束 [G4Core::refresh_hold] 开的一段，攒着的 RWKV 推进放出一次。没开过 = 什么都不做。
+    pub fn refresh_release(&self, profile: &str) {
+        if let Some(c) = self.refresh_lock().by_profile.get_mut(profile) {
+            c.release();
+        }
     }
 }
 
