@@ -134,10 +134,12 @@ class _MediaItemEditDialogPageState
                         _nameOverrideController.text.trim().isNotEmpty
                         ? _nameOverrideController.text.trim()
                         : widget.item.title;
-                    final File? scraped = await showBookCoverScrapeDialog(
+                    // 编辑弹窗只取封面（保存才落地，取消不留副作用）；条目资料
+                    // 走书架卡菜单的「在线刮削封面」（选中即写回）。
+                    final File? scraped = (await showBookCoverScrapeDialog(
                       context: context,
                       initialQuery: query,
-                    );
+                    ))?.cover;
                     if (scraped != null) {
                       _newFile = scraped;
                       _coverImageProvider = FileImage(scraped);

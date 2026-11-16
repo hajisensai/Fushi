@@ -5,7 +5,7 @@ import '../ctl_commands.dart';
 /// `fushi_cli book …`：书的元数据与封面刮削（app 侧路由见 `fushi/lib/src/ops/ctl_book_metadata_routes.dart`）。
 ///
 /// 与书架卡「在线刮削封面」弹窗同一套源（Bangumi 书籍条目 / DLsite 音声·漫画·小说）：
-/// `search` 搜候选、`get` 按 id 看详情、`apply` 把选中的候选写回某本书（默认只换封面，
+/// `search` 搜候选、`get` 按 id 看详情、`apply` 把选中的候选写回某本书（默认换封面并写条目资料，
 /// `--title` / `--author` 一并写显示名与作者）。条目键与 `library ls` 一致（`book:` / `srt:`）。
 const List<CtlCommandGroup> bookMetadataCommandGroups = <CtlCommandGroup>[
   CtlCommandGroup(
@@ -29,7 +29,7 @@ const List<CtlCommandGroup> bookMetadataCommandGroups = <CtlCommandGroup>[
       ),
       CtlCommandSpec(
         name: 'apply',
-        summary: '把候选写回一本书：默认换封面，--title / --author 一并写显示名与作者',
+        summary: '把候选写回一本书：默认换封面 + 条目资料，--title / --author 一并写显示名与作者',
         usage: '<key> <id>',
         configure: _configureApply,
         build: _buildApply,
@@ -84,7 +84,12 @@ void _configureApply(ArgParser parser) {
   parser
     ..addFlag('title', negatable: false, help: '同时把候选标题写成显示名（不改原始书名）')
     ..addFlag('author', negatable: false, help: '同时写作者')
-    ..addFlag('cover', defaultsTo: true, help: '换封面（--no-cover 只写文字字段）');
+    ..addFlag('cover', defaultsTo: true, help: '换封面（--no-cover 只写文字字段）')
+    ..addFlag(
+      'details',
+      defaultsTo: true,
+      help: '写条目资料：简介 / 日期 / 评分 / 类型 / 源给的横版背景（--no-details 不写）',
+    );
 }
 
 CtlRequestSpec _buildApply(CtlCommandContext context) {
@@ -97,9 +102,12 @@ CtlRequestSpec _buildApply(CtlCommandContext context) {
     if (context.flag('cover')) 'cover',
     if (context.flag('title')) 'title',
     if (context.flag('author')) 'author',
+    if (context.flag('details')) 'details',
   ];
   if (fields.isEmpty) {
-    throw const CtlUsageError('--no-cover 时至少要给 --title 或 --author');
+    throw const CtlUsageError(
+      '--no-cover --no-details 时至少要给 --title 或 --author',
+    );
   }
   final String? source = _sourceOption(context);
   return CtlRequestSpec.post(
@@ -144,6 +152,7 @@ String describeBookMetadataField(String field) => switch (field) {
   'cover' => '封面',
   'title' => '显示名',
   'author' => '作者',
+  'details' => '条目资料',
   _ => field,
 };
 

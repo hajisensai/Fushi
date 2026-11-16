@@ -82,6 +82,15 @@ class VideoStorage {
   static Future<Directory> imagesDir() async =>
       Directory(p.join((await coversDir()).path, imagesDirName));
 
+  /// 单本书 / 漫画 / 字幕书 / 游戏的附加图（item_images，v155）子目录名。同
+  /// [imagesDirName] 的理由放子目录（[gcOrphanCovers] 非递归，子目录整体免疫）；
+  /// 本目录只归 item_images 所有，回收按「不被任何 item_images 行引用」扫。
+  static const String itemImagesDirName = 'items';
+
+  /// 单条目附加图目录绝对路径（不创建）。见 [itemImagesDirName]。
+  static Future<Directory> itemImagesDir() async =>
+      Directory(p.join((await coversDir()).path, itemImagesDirName));
+
   /// 回收一批附加图文件（media_images 行已随归属 cascade 删除后调用）。
   ///
   /// 纪律与 [deleteBookAssets] 逐字一致：只删**非空 + 落在 [ownedDir] 内 + 不在

@@ -15,6 +15,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/media/collections/add_to_collection_dialog.dart';
+import 'package:fushi/src/media/detail/item_scrape_detail.dart';
 import 'package:fushi/src/media/detail/media_detail_kit.dart';
 import 'package:fushi/src/media/detail/media_poster_detail.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
@@ -25,6 +26,8 @@ import 'package:fushi/src/mining/galgame_scrape_dialog.dart';
 import 'package:fushi/src/mining/metadata/galgame_metadata_draft.dart';
 import 'package:fushi/src/mining/metadata/galgame_metadata_merge.dart';
 import 'package:fushi_engine/mining/metadata/galgame_metadata_source.dart';
+import 'package:fushi_engine/media/item_scrape/item_scrape_store.dart'
+    show ItemScrapeKey;
 import 'package:fushi/src/pages/implementations/game_shared.dart'
     show
         galHookAudioBackendLabel,
@@ -157,6 +160,10 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
   /// 本游戏挂的共享用户标签，与 bgm/vndb 元数据标签分开。
   List<BookTagRow> _userTags = const <BookTagRow>[];
 
+  /// 单条目刮削附加数据（v155 `item_scrape_meta` + `item_images`）：横版背景 /
+  /// 艺术字进 hero，资料行只补游戏合并资料里缺的简介 / 评分。
+  ItemScrapeDetail _scrapeDetail = ItemScrapeDetail.empty;
+
   bool _loading = true;
 
   @override
@@ -190,6 +197,10 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
     final List<BookTagRow> userTags = await _appModel.database.getTagsForGame(
       game.id,
     );
+    final ItemScrapeDetail scrapeDetail = await ItemScrapeDetail.load(
+      _appModel.database,
+      ItemScrapeKey(MediaKind.game, game.id),
+    );
     final Map<String, int> daily = await _loadRange(game.id, _rangeDays);
     final String todayKey = formatGalgameDate(DateTime.now());
     final Map<String, int> today = await _repo.dailySeconds(
@@ -203,6 +214,7 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
       _sessions = sessions;
       _sources = sources;
       _userTags = userTags;
+      _scrapeDetail = scrapeDetail;
       _dailyRange = daily;
       _todaySeconds = today[todayKey] ?? 0;
       _loading = false;
@@ -321,7 +333,7 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
       // 与其它作品详情页同一套骨架（[MediaDetailLayout]）：窄屏 hero 在顶、页签
       // 吃掉剩余高度；横屏 / 宽屏两栏，左栏 hero、右栏页签。
       body: MediaDetailLayout(
-        backdrop: _coverImage(game),
+        backdrop: _scrapeDetail.backdrop ?? _coverImage(game),
         header: _buildHero(context, game),
         body: Column(
           children: <Widget>[
@@ -430,6 +442,7 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
     ImageProvider? cover,
   ) {
     final String? release = game.effectiveReleaseDate;
+    final ItemScrapeMetaRow? scrape = _scrapeDetail.meta;
     return MediaPosterDetailHero(
       title: game.displayName,
       titleKey: const ValueKey<String>('galgame-hero-title'),
@@ -438,7 +451,10 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
       selectableHeading: true,
       poster: SizedBox.expand(child: _buildCover(context, game)),
       posterImage: cover,
+      backdrop: _scrapeDetail.backdrop,
       backdropFallback: cover,
+      logo: _scrapeDetail.logo,
+      logoSemanticsName: game.displayName,
       pills: <MediaDetailChip>[
         MediaDetailChip(
           galgamePlayStatusLabel(game.playStatus),
@@ -454,13 +470,17 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
         if (game.siteScore != null)
           MediaDetailChip(
             '${t.game_site_score} ${game.siteScore!.toStringAsFixed(1)}',
-          ),
+          )
+        else if (scrape?.rating case final double rating when rating > 0)
+          MediaDetailChip('${t.game_site_score} ${rating.toStringAsFixed(1)}'),
         if (game.userRating != null)
           MediaDetailChip(
             '${t.game_user_rating} ${game.userRating!.toStringAsFixed(1)}',
           ),
       ],
-      summary: game.metadata.summary,
+      summary:
+          _displaySummary(game.metadata.summary) ??
+          _displaySummary(scrape?.summary),
       summaryKey: const ValueKey<String>('galgame-hero-summary'),
       primaryAction: _primaryAction(game),
       secondaryActions: _secondaryActions(game),
@@ -566,7 +586,7 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
   /// 背景（MD3 再叠一层 primaryContainer 色晕，墨水屏不画）；两栏左栏里背景由
   /// [MediaDetailLayout] 铺在整页后面。
   Widget _buildHero(BuildContext context, GalgameEntry game) {
-    final String? summary = game.metadata.summary?.trim();
+    final String? summary = _displaySummary(game.metadata.summary);
     final Widget content = Padding(
       padding: EdgeInsets.fromLTRB(
         16,
@@ -1454,7 +1474,7 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
   List<Widget> _summarySections(BuildContext context, GalgameEntry game) {
     final ThemeData theme = Theme.of(context);
     final GalgameMetadataDraft meta = game.metadata;
-    final String? summary = meta.summary;
+    final String? summary = _displaySummary(meta.summary);
     final List<Widget> details = <Widget>[
       if (meta.aliases.isNotEmpty)
         _summarySection(theme, t.game_summary_aliases, meta.aliases.join('、')),
@@ -2040,3 +2060,17 @@ double? parseGalgameRating(String raw) {
 
 // （旧 `_ScrapeQueryDialog` / `_SourcePickerDialog` 已被统一刮削弹窗
 // `showGalgameScrapeDialog` 取代：单弹窗内搜索 + 带缩略图候选 + 行内应用。）
+
+/// 去首尾空白后非空才返回（简介兜底：合并资料没有时退到刮削资料行）。
+/// 简介显示文本：去掉 VNDB 格式码（[stripVndbMarkup]；旧库里已存的原文同样
+/// 生效），空白 → null。
+String? _displaySummary(String? s) {
+  final String? v = _nonBlank(s);
+  if (v == null) return null;
+  return _nonBlank(stripVndbMarkup(v));
+}
+
+String? _nonBlank(String? s) {
+  final String? v = s?.trim();
+  return v == null || v.isEmpty ? null : v;
+}

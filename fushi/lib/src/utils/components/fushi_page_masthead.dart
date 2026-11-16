@@ -252,6 +252,26 @@ class FushiMastheadGeometry {
       fushiMastheadBadgeExtent(compact: compact, p: p) /
       fushiMastheadBadgeExtent(compact: compact);
 
+  /// 主按钮缩放：收起态页名缩到 28 时主按钮（头像 / 导入）跟着从 48 缩到 40，
+  /// 免得一颗大圆压过页名（2026-11-16 用户：顶栏比例不协调）。
+  double primaryScaleAt(double p) =>
+      primary.height <= 0 ? 1 : _lerp(1, 40 / primary.height, p).clamp(0, 1);
+
+  /// 第一行里动作组 / 主按钮占的高度（主按钮按 [primaryScaleAt] 缩放后）。
+  double actionRowExtentAt(double p) =>
+      math.max(actions.height, primary.height * primaryScaleAt(p));
+
+  /// 页名的下边距：展开态贴底（大字压住整行）；收起态逐步抬到与动作组垂直
+  /// 居中，小字页名不再坠在一排图标的下沿。
+  double titleLiftAt(double p) {
+    if (title.height <= 0) return 0;
+    final double centered =
+        actionLiftAt(p) +
+        actionRowExtentAt(p) / 2 -
+        title.height * titleScaleAt(p) / 2;
+    return math.max(0.0, centered) * p;
+  }
+
   /// 面板上内边距：桌面 26 → 10；手机的状态栏由外壳让开，只留 8。
   double topPadAt(double p) => compact ? 8 : _lerp(26, 10, p);
 
@@ -279,7 +299,9 @@ class FushiMastheadGeometry {
   double firstRowHeightAt(double p) {
     double h = 0;
     if (leading.height > 0) h = math.max(h, leading.height + actionLiftAt(p));
-    if (title.height > 0) h = math.max(h, title.height * titleScaleAt(p));
+    if (title.height > 0) {
+      h = math.max(h, title.height * titleScaleAt(p) + titleLiftAt(p));
+    }
     if (badge.height > 0) {
       h = math.max(h, badge.height * badgeScaleAt(p) + badgeLiftAt(p));
     }
@@ -290,7 +312,9 @@ class FushiMastheadGeometry {
       );
     }
     if (actions.height > 0) h = math.max(h, actions.height + actionLiftAt(p));
-    if (primary.height > 0) h = math.max(h, primary.height + actionLiftAt(p));
+    if (primary.height > 0) {
+      h = math.max(h, primary.height * primaryScaleAt(p) + actionLiftAt(p));
+    }
     return h;
   }
 
@@ -298,9 +322,10 @@ class FushiMastheadGeometry {
   double rowGapAt(double p) =>
       math.max(0.0, _lerp(14, 8, p) - _kSegmentHitBand);
 
-  /// 面板下内边距：桌面 12、手机 8（二级页签的下命中带算在里面）。
+  /// 面板下内边距：桌面 12、手机 16（二级页签的下命中带算在里面）。手机原为 8，
+  /// 比页边距 / 卡片间距都小，首张卡贴着顶栏（2026-11-16 用户反馈）。
   double get bottomPad =>
-      (compact ? 8 : 12) - (hasSecondary ? _kSegmentHitBand : 0);
+      (compact ? 16 : 12) - (hasSecondary ? _kSegmentHitBand : 0);
 
   double secondaryTopAt(double p) =>
       topPadAt(p) + firstRowHeightAt(p) + rowGapAt(p);

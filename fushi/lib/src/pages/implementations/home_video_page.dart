@@ -2,7 +2,7 @@ import 'package:fushi/src/media/privacy/media_privacy_dialog.dart';
 import 'package:fushi/src/media/tags/tag_picker_sheet.dart';
 
 import 'dart:async' show StreamSubscription, Timer, unawaited;
-import 'dart:convert' show jsonDecode, utf8;
+import 'dart:convert' show utf8;
 import 'dart:io';
 
 import 'package:crypto/crypto.dart' show sha1;
@@ -217,6 +217,7 @@ import 'package:fushi/src/utils/components/fushi_continue_card_row.dart';
 import 'package:fushi/src/utils/adaptive/shell_style.dart';
 import 'package:fushi/src/utils/components/fushi_cover_block.dart';
 import 'package:fushi/src/utils/components/fushi_cover_block_layout.dart';
+import 'package:fushi/src/utils/components/fushi_series_cover_block.dart';
 import 'package:fushi/src/utils/components/fushi_continue_hero.dart';
 import 'package:fushi/src/utils/cover_image.dart';
 import 'package:fushi/src/pages/implementations/collection_name_dialog.dart';
@@ -11865,7 +11866,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     List<_VideoTagChip> tags = const <_VideoTagChip>[],
     Widget? discBadge,
     String? specsPath,
-    _VideoBlockMeta? poster,
+    FushiSeriesMeta? poster,
     bool playsOnTap = false,
     ImageProvider? memberArt,
   }) {
@@ -11875,15 +11876,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     // 就是背景图，有 2:3 作品封面时左侧再斜放它（设计稿 `.vb` 的 bd + ps）。
     // 都没有时退回原摆法：竖版海报斜放在右 / 横版剧照铺右侧。
     final ImageProvider? posterImage = landscape ? poster?.poster : null;
-    final Widget? scrapedBackdrop = poster?.backdrop == null
-        ? null
-        : Image(
-            image: poster!.backdrop!,
-            fit: BoxFit.cover,
-            excludeFromSemantics: true,
-            errorBuilder: (BuildContext _, Object __, StackTrace? ___) =>
-                const SizedBox.shrink(),
-          );
+    final Widget? scrapedBackdrop = fushiSeriesBackdrop(poster?.backdrop);
     final Widget? backdrop = landscape
         ? (posterImage != null ? covers.first : null)
         : scrapedBackdrop;
@@ -11913,16 +11906,14 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       required FushiCoverBlockArt art,
       required List<Widget> covers,
       required Widget? backdrop,
-    }) => FushiCoverBlock(
+    }) => fushiSeriesCoverBlock(
       size: size,
       art: art,
       title: title,
       covers: covers,
+      meta: poster,
       backdrop: backdrop,
-      logo: poster?.logo,
       eyebrow: statusAsEyebrow ? subtitle : null,
-      overview: poster?.overview,
-      chip: poster?.chip,
       action: playsOnTap && started
           ? FushiCoverBlockAction(
               icon: Icons.play_arrow_rounded,
@@ -12057,7 +12048,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// - 概览：合集刮削标签前两个 · ★ 评分。
   ///
   /// [bookUid] 给出而这本视频自己没有作品资料时（剧集里的一集），借它主合集的。
-  _VideoBlockMeta _videoBlockMeta({int? collectionId, String? bookUid}) {
+  FushiSeriesMeta _videoBlockMeta({int? collectionId, String? bookUid}) {
     int? cid = collectionId;
     VideoMetadataWorkRow? work = cid != null
         ? _metadataWorkByCollection[cid]
@@ -12156,38 +12147,14 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       if (episodes != null && episodes > 0)
         t.video_playlist_episodes(count: episodes),
     ];
-    final double? rating = work?.rating ?? scrape?.rating;
-    final List<String> genres = _scrapeTagNames(scrape?.tagsJson, limit: 2);
-    final List<String> overviewParts = <String>[
-      if (genres.isNotEmpty) genres.join(' / '),
-      if (rating != null && rating > 0) '★ ${rating.toStringAsFixed(1)}',
-    ];
-    return (
+    return FushiSeriesMeta.fromParts(
       backdrop: backdrop,
       logo: logo,
       poster: poster,
-      overview: overviewParts.isEmpty ? null : overviewParts.join(' · '),
-      chip: chipParts.isEmpty ? null : chipParts.join(' · '),
+      genres: fushiScrapeTagNames(scrape?.tagsJson, limit: 2),
+      rating: work?.rating ?? scrape?.rating,
+      chipParts: chipParts,
     );
-  }
-
-  /// 刮削标签 JSON（`[{"name":"日常","count":1234}]`，按热度降序）的前 [limit]
-  /// 个名字；解析失败 / 没有为空表。
-  static List<String> _scrapeTagNames(String? json, {required int limit}) {
-    if (json == null || json.isEmpty) return const <String>[];
-    try {
-      final Object? decoded = jsonDecode(json);
-      if (decoded is! List<Object?>) return const <String>[];
-      return <String>[
-        for (final Object? tag in decoded)
-          if (tag is Map<String, Object?> &&
-              tag['name'] is String &&
-              (tag['name']! as String).isNotEmpty)
-            tag['name']! as String,
-      ].take(limit).toList(growable: false);
-    } on FormatException {
-      return const <String>[];
-    }
   }
 
   /// 视频书的用户标签（BUG-1808）：墙卡与首页横滚卡共用同一口径，别再各处 inline
@@ -12295,15 +12262,6 @@ class _VideoLooseCard {
 /// `SliverGrid.builder`，只有滚进视口的格才会调 [build]；这里不再预先持有封面
 /// provider——旧的 `cover` 字段在构造 cells 列表时就对每条目同步求值（含
 /// `existsSync`），几千条目的库首帧先付几千次磁盘 stat。
-/// 视频色块卡的海报元数据（见 [_HomeVideoPageState._videoBlockMeta]）。
-typedef _VideoBlockMeta = ({
-  ImageProvider? backdrop,
-  ImageProvider? logo,
-  ImageProvider? poster,
-  String? overview,
-  String? chip,
-});
-
 class _VideoWallEntry {
   const _VideoWallEntry({required this.build});
 

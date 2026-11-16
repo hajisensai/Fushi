@@ -99,6 +99,7 @@ void main() {
         'cover',
         'complete',
         'reset',
+        'scrape-meta',
       ],
     );
   });

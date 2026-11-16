@@ -229,6 +229,12 @@ ImageProvider? fushiCoverImageOf(Widget cover) => switch (cover) {
   _ => null,
 };
 
+/// 前景封面槽按封面真实比例定宽时的夹取范围（宽 / 高）：超出的极端比例
+/// （横幅图、超长条）仍按边界比例定槽，fitHeight 从两侧裁或露衬底，不让
+/// 封面挤掉文字区。与合集详情页头部封面同一范围。
+const double kFushiCoverBlockCoverAspectMin = 0.55;
+const double kFushiCoverBlockCoverAspectMax = 0.85;
+
 /// 色块圆角：规整 / 拼贴首块 30，半高卡与窄窗（高 < 200）26。
 double fushiCoverBlockRadius(FushiCoverBlockSize size, double height) =>
     size == FushiCoverBlockSize.half || height < 200 ? 26 : 30;
@@ -448,7 +454,8 @@ class _FushiCoverBlockState extends State<FushiCoverBlock>
 
   @override
   void dispose() {
-    _stopAspectStream();
+    _backdropProbe.stop();
+    _coverProbe.stop();
     _pose.dispose();
     _watermark.dispose();
     super.dispose();
@@ -547,14 +554,15 @@ class _FushiCoverBlockState extends State<FushiCoverBlock>
     });
   }
 
-  // ---- 横版背景图的真实宽高比（V1：槽宽按原比例，不从两侧裁） ----
+  // ---- 图片的真实宽高比：横版背景图（V1：槽宽按原比例，不从两侧裁）与前景
+  // 封面（封面槽按封面原比例定宽，fitHeight 铺满不裁、不露衬底） ----
 
-  ImageProvider? _aspectFor;
-  ImageStream? _aspectStream;
-  ImageStreamListener? _aspectListener;
+  late final _ImageAspectProbe _backdropProbe = _ImageAspectProbe(_onAspect);
+  late final _ImageAspectProbe _coverProbe = _ImageAspectProbe(_onAspect);
 
-  /// 背景图解码出的宽高比；null = 还没解出 / 取不到图源（几何按 16:9）。
-  double? _imageAspect;
+  void _onAspect() {
+    if (mounted) setState(() {});
+  }
 
   /// 背景槽里那张图的图源：背景图 + 海报摆法取 [FushiCoverBlock.backdrop]，
   /// 横版摆法取首个封面；只认 `Image` / `FadeInImage`（[fushiCoverImageOf]）。
@@ -569,53 +577,33 @@ class _FushiCoverBlockState extends State<FushiCoverBlock>
     return source == null ? null : fushiCoverImageOf(source);
   }
 
-  void _resolveImageAspect() {
-    final ImageProvider? image = _aspectSource();
-    if (image == _aspectFor) return;
-    _stopAspectStream();
-    _aspectFor = image;
-    _imageAspect = null;
-    if (image == null) return;
-    // 缓存命中时监听器在 addListener 里同步回调：此刻正处在
-    // didChangeDependencies / didUpdateWidget（随后必 build），直接赋值即可。
-    bool synchronous = true;
-    final ImageStream stream = image.resolve(
-      createLocalImageConfiguration(context),
-    );
-    final ImageStreamListener listener = ImageStreamListener(
-      (ImageInfo info, bool _) {
-        final int w = info.image.width;
-        final int h = info.image.height;
-        info.dispose();
-        if (_aspectFor != image) return;
-        final double? aspect = w > 0 && h > 0 ? w / h : null;
-        _stopAspectStream();
-        if (synchronous) {
-          _imageAspect = aspect;
-        } else if (mounted && aspect != _imageAspect) {
-          setState(() => _imageAspect = aspect);
-        }
-      },
-      // 解码失败：图本身由背景图 widget 自己的 errorBuilder 处理，这里只是拿
-      // 不到比例，几何回落 16:9。
-      onError: (Object _, StackTrace? __) => _stopAspectStream(),
-    );
-    _aspectStream = stream;
-    _aspectListener = listener;
-    stream.addListener(listener);
-    synchronous = false;
+  /// 前景封面槽（海报 / 书封）按比例定宽用的图源：首个封面（最前那本）。
+  /// 横版摆法的首个封面是背景剧照、唱片摆法另有几何，不探。
+  ImageProvider? _coverAspectSource() {
+    if (_hasDisc ||
+        widget.covers.isEmpty ||
+        widget.art == FushiCoverBlockArt.landscape) {
+      return null;
+    }
+    return fushiCoverImageOf(widget.covers.first);
   }
 
-  void _stopAspectStream() {
-    final ImageStreamListener? listener = _aspectListener;
-    if (listener != null) _aspectStream?.removeListener(listener);
-    _aspectStream = null;
-    _aspectListener = null;
+  void _resolveImageAspect() {
+    final ImageConfiguration config = createLocalImageConfiguration(context);
+    _backdropProbe.track(_aspectSource(), config);
+    _coverProbe.track(_coverAspectSource(), config);
   }
 
   /// 背景槽用的宽高比：调用方显式给的 → 解码出的 → 16:9。
   double get _backdropAspect =>
-      widget.backdropAspectRatio ?? _imageAspect ?? 16 / 9;
+      widget.backdropAspectRatio ?? _backdropProbe.aspect ?? 16 / 9;
+
+  /// 前景封面的真实宽高比（夹在 [kFushiCoverBlockCoverAspectMin] /
+  /// [kFushiCoverBlockCoverAspectMax] 内）；null = 还没解出 / 取不到图源，
+  /// 几何用各摆法的默认比例。
+  double? get _coverAspect => _coverProbe.aspect
+      ?.clamp(kFushiCoverBlockCoverAspectMin, kFushiCoverBlockCoverAspectMax)
+      .toDouble();
 
   @override
   Widget build(BuildContext context) {
@@ -709,13 +697,19 @@ class _FushiCoverBlockState extends State<FushiCoverBlock>
   ) {
     // 几何一律按 LTR（封面在左 / 在右与设计稿一致）算，RTL 整体水平镜像。
     final _BlockGeometry ltrGeo = _posterLead
-        ? _BlockGeometry.backdropPoster(widget.size, size, _backdropAspect)
+        ? _BlockGeometry.backdropPoster(
+            widget.size,
+            size,
+            _backdropAspect,
+            coverAspect: _coverAspect,
+          )
         : _BlockGeometry.of(
             widget.art,
             widget.size,
             size,
             coverCount: widget.covers.length,
             backdropAspect: _backdropAspect,
+            coverAspect: _coverAspect,
           );
     final _BlockGeometry geo = direction == TextDirection.rtl
         ? ltrGeo.mirrored(size.width)
@@ -777,12 +771,10 @@ class _FushiCoverBlockState extends State<FushiCoverBlock>
     final String? chip = widget.chip;
     return <Widget>[
       _posed(geo.disc, _DiscFace(child: widget.disc!)),
-      _posed(geo.cover, _CoverCard(radius: 14, child: cover)),
-      if (widget.coverOverlay != null)
-        Positioned.fromRect(
-          rect: geo.cover.rect,
-          child: Center(child: widget.coverOverlay),
-        ),
+      _posed(
+        geo.cover,
+        _CoverCard(radius: 14, overlay: widget.coverOverlay, child: cover),
+      ),
       Positioned.fromRect(
         rect: geo.title,
         child: KeyedSubtree(
@@ -866,27 +858,23 @@ class _FushiCoverBlockState extends State<FushiCoverBlock>
         ],
         _posed(
           geo.slots[1],
-          _CoverCard(radius: geo.coverRadius, child: covers.first),
-        ),
-        if (widget.coverOverlay != null)
-          Positioned.fromRect(
-            rect: geo.slots[1].rect,
-            child: Center(child: widget.coverOverlay),
+          _CoverCard(
+            radius: geo.coverRadius,
+            overlay: widget.coverOverlay,
+            child: covers.first,
           ),
+        ),
       ];
     }
     if (widget.art == FushiCoverBlockArt.landscape) {
       return <Widget>[
         _posed(
           geo.slots.first,
-          _fadedBackdrop(covers.first, direction, geo.backdropFadeStart),
+          _withCoverOverlay(
+            _fadedBackdrop(covers.first, direction, geo.backdropFadeStart),
+          ),
         ),
         _shade(colors),
-        if (widget.coverOverlay != null)
-          Positioned.fromRect(
-            rect: geo.slots.first.rect,
-            child: Center(child: widget.coverOverlay),
-          ),
       ];
     }
     // 摆放序：后面的先画、最前那张最后画（压在最上面）。
@@ -895,18 +883,32 @@ class _FushiCoverBlockState extends State<FushiCoverBlock>
     for (int i = count - 1; i >= 0; i--) {
       final _CoverSlot slot = geo.slots[i];
       out.add(
-        _posed(slot, _CoverCard(radius: geo.coverRadius, child: covers[i])),
-      );
-    }
-    if (widget.coverOverlay != null) {
-      out.add(
-        Positioned.fromRect(
-          rect: geo.slots.first.rect,
-          child: Center(child: widget.coverOverlay),
+        _posed(
+          slot,
+          _CoverCard(
+            radius: geo.coverRadius,
+            // 盖层只压最前那张（i == 0），与它同一个姿态变换 / 圆角裁切。
+            overlay: i == 0 ? widget.coverOverlay : null,
+            child: covers[i],
+          ),
         ),
       );
     }
     return out;
+  }
+
+  /// 横版剧照槽没有 [_CoverCard]：盖层同样叠进剧照所在的那个 [_posed] 里，
+  /// 不另起一个不随姿态变换走的兄弟层。
+  Widget _withCoverOverlay(Widget art) {
+    final Widget? overlay = widget.coverOverlay;
+    if (overlay == null) return art;
+    return Stack(
+      fit: StackFit.expand,
+      children: <Widget>[
+        art,
+        Positioned.fill(child: overlay),
+      ],
+    );
   }
 
   /// 横版背景图：起始缘（LTR 左 / RTL 右）渐隐进色块。图按原比例铺满槽、不裁，
@@ -986,6 +988,62 @@ class _FushiCoverBlockState extends State<FushiCoverBlock>
   }
 }
 
+/// 一张图的固有宽高比探针（解出前 / 取不到图源 / 解码失败 = null）。
+///
+/// 缓存命中时监听器在 `addListener` 里同步回调：此刻正处在
+/// `didChangeDependencies` / `didUpdateWidget`（随后必 build），直接赋值；异步解出
+/// 才经 [onChanged] 让宿主重建。解码失败只是拿不到比例（图本身由封面 widget
+/// 自己的 errorBuilder 处理），几何回落默认比例。
+class _ImageAspectProbe {
+  _ImageAspectProbe(this.onChanged);
+
+  final VoidCallback onChanged;
+
+  ImageProvider? _image;
+  ImageStream? _stream;
+  ImageStreamListener? _listener;
+
+  /// 宽 / 高。
+  double? aspect;
+
+  /// 换成追踪 [image]（同一图源不重解）。
+  void track(ImageProvider? image, ImageConfiguration config) {
+    if (image == _image) return;
+    stop();
+    _image = image;
+    aspect = null;
+    if (image == null) return;
+    bool synchronous = true;
+    final ImageStream stream = image.resolve(config);
+    final ImageStreamListener listener = ImageStreamListener((
+      ImageInfo info,
+      bool _,
+    ) {
+      final int w = info.image.width;
+      final int h = info.image.height;
+      info.dispose();
+      if (_image != image) return;
+      final double? resolved = w > 0 && h > 0 ? w / h : null;
+      stop();
+      if (resolved == aspect) return;
+      aspect = resolved;
+      if (!synchronous) onChanged();
+    }, onError: (Object _, StackTrace? __) => stop());
+    _stream = stream;
+    _listener = listener;
+    stream.addListener(listener);
+    synchronous = false;
+  }
+
+  /// 停止监听（保留已解出的 [aspect]）。
+  void stop() {
+    final ImageStreamListener? listener = _listener;
+    if (listener != null) _stream?.removeListener(listener);
+    _stream = null;
+    _listener = null;
+  }
+}
+
 /// 一张封面的姿态：位移（逻辑像素）、旋转（度）、缩放。
 @immutable
 class _Pose {
@@ -1027,6 +1085,9 @@ class _CoverSlot {
 Rect _mirrorRect(Rect rect, double width) =>
     Rect.fromLTRB(width - rect.right, rect.top, width - rect.left, rect.bottom);
 
+/// 背景图 + 海报摆法里，斜放海报（静止 / 悬停姿态）的外接框离色块边缘的最小距离。
+const double _kPosterEdgeMargin = 4;
+
 /// 各摆法的几何（设计稿 `.vb` / `.bk` / `.mb` / `.ab` / `.gb` 换算）。
 @immutable
 class _BlockGeometry {
@@ -1061,6 +1122,7 @@ class _BlockGeometry {
     Size box, {
     required int coverCount,
     double backdropAspect = 16 / 9,
+    double? coverAspect,
   }) {
     final double w = box.width;
     final double h = box.height;
@@ -1074,7 +1136,7 @@ class _BlockGeometry {
       case FushiCoverBlockArt.portrait:
         // 竖版海报：右侧斜放、略出血（设计稿 `.mb .cv`）；后面的成员叠在左后方。
         final double ch = h * 1.08;
-        final double cw = math.min(ch * 2 / 3, w * 0.42);
+        final double cw = math.min(ch * (coverAspect ?? 2 / 3), w * 0.42);
         final Rect front = Rect.fromLTWH(w - cw + 10, h * 0.04, cw, ch);
         // 文字让开实际画出来的每一张封面：叠层往左后方错开、封面又是斜放的
         // （绕中心转 θ 后左缘外扩 (ch/2)·sin θ − (cw/2)·(1 − cos θ)）。
@@ -1137,7 +1199,12 @@ class _BlockGeometry {
         final double fanLeft = half ? 18 : (hero ? 34 : 26);
         final double fanW = w * (hero ? 0.38 : 0.44);
         final double ch = h - top * 2;
-        final double cw = math.min(ch * kShelfBookCoverAspectRatio, fanW);
+        // 书封槽按最前那本的真实比例定宽（fitHeight 铺满、不裁不露衬底）；
+        // 解出前按书封默认比例。
+        final double cw = math.min(
+          ch * (coverAspect ?? kShelfBookCoverAspectRatio),
+          fanW,
+        );
         final int n = coverCount.clamp(1, 3);
         const List<(_Pose, _Pose)> fan = <(_Pose, _Pose)>[
           (_Pose(rotation: 6), _Pose(rotation: 15, dx: 14)),
@@ -1236,32 +1303,63 @@ class _BlockGeometry {
   /// 背景图 + 左侧封面（设计稿 `.vb` 有 `bd` 又有 `ps`）：slots[0] = 右侧按原
   /// 比例铺的背景图（[_backdropSlot]：槽宽 = 块高 × [aspect]，悬停以右缘为轴只
   /// 放大 1.06），slots[1] =
-  /// 左侧 2:3 封面（`r:-5` / `r:-10;x:-3;y:-3;s:1.04`）；文字从封面右侧起
-  /// （`left: 16 + (bh-32)/1.5 + 22`），压在背景图上。
+  /// 左侧封面（`r:-5` / `r:-10;x:-3;y:-3;s:1.04`）：槽宽 = 槽高 × 封面真实
+  /// 比例 [coverAspect]（解出前 2:3）。封面图按 fitHeight 铺，槽比图窄就从两侧
+  /// 裁、比图宽就露衬底，所以槽必须跟图同比例——漫画 / 轻小说封面多在
+  /// 0.64～0.70，固定 2:3 会把竖排书名所在的左右边裁掉。文字从封面右侧起
+  /// （`left: 16 + 封面宽 + 22`），压在背景图上。
   factory _BlockGeometry.backdropPoster(
     FushiCoverBlockSize size,
     Size box,
-    double aspect,
-  ) {
+    double aspect, {
+    double? coverAspect,
+  }) {
     final double w = box.width;
     final double h = box.height;
     final bool half = size == FushiCoverBlockSize.half;
     final bool compact = !half && h < 200;
     final double inset = half ? 10 : (compact ? 12 : 16);
-    final double left = half ? 12 : inset;
-    final double ph = h - inset * 2;
-    final double pw = ph * 2 / 3;
-    final Rect poster = Rect.fromLTWH(left, inset, pw, ph);
+    final double a = coverAspect ?? 2 / 3;
+    const _Pose rest = _Pose(rotation: -5);
+    const _Pose hover = _Pose(rotation: -10, dx: -3, dy: -3, scale: 1.04);
+    // 斜放的海报绕中心转 θ、放大 s、再平移 (dx, dy) 后，外接框半高 =
+    // s·(pw·|sinθ| + ph·|cosθ|)/2、半宽 = s·(pw·|cosθ| + ph·|sinθ|)/2。静止与
+    // 悬停两个姿态都要整张落在色块里（离边 [_kPosterEdgeMargin]）：色块有大圆角
+    // 并裁切，越界的那角 / 那条边会被裁掉（2026-11-16 用户截图：悬停时海报左上
+    // 角探出色块、被圆角吃掉）。海报高取设计高（上下各让 inset）与两个姿态
+    // 放得下的高里较小者，垂直居中；左缘取设计位与两个姿态不越左缘的位里较大者。
+    double halfH(_Pose pose, double ph) {
+      final double t = pose.rotation.abs() * math.pi / 180;
+      return pose.scale * ph * (a * math.sin(t) + math.cos(t)) / 2;
+    }
+
+    double halfW(_Pose pose, double ph) {
+      final double t = pose.rotation.abs() * math.pi / 180;
+      return pose.scale * ph * (a * math.cos(t) + math.sin(t)) / 2;
+    }
+
+    double ph = h - inset * 2;
+    for (final _Pose pose in const <_Pose>[rest, hover]) {
+      // halfH 对 ph 线性：halfH(pose, ph) + |dy| ≤ h/2 − margin。
+      final double room = h / 2 - _kPosterEdgeMargin - pose.dy.abs();
+      ph = math.min(ph, room / halfH(pose, 1));
+    }
+    final double pw = ph * a;
+    double left = half ? 12 : inset;
+    for (final _Pose pose in const <_Pose>[rest, hover]) {
+      // 中心 x = left + pw/2；外接框左缘 = 中心 + dx − halfW ≥ margin。
+      left = math.max(
+        left,
+        _kPosterEdgeMargin - pose.dx + halfW(pose, ph) - pw / 2,
+      );
+    }
+    final Rect poster = Rect.fromLTWH(left, (h - ph) / 2, pw, ph);
     final (_CoverSlot backdrop, double fade) = _backdropSlot(w, h, aspect);
     return _BlockGeometry(
       backdropFadeStart: fade,
       slots: <_CoverSlot>[
         backdrop,
-        _CoverSlot(
-          rect: poster,
-          rest: const _Pose(rotation: -5),
-          hover: const _Pose(rotation: -10, dx: -3, dy: -3, scale: 1.04),
-        ),
+        _CoverSlot(rect: poster, rest: rest, hover: hover),
       ],
       text: Rect.fromLTRB(
         math.min(poster.right + 22, w - 80),
@@ -1399,12 +1497,16 @@ class _DiscFace extends StatelessWidget {
   }
 }
 
-/// 带投影、裁圆角的一张封面。
+/// 带投影、裁圆角的一张封面。[overlay]（下载进度压暗等）叠在封面之上、同在
+/// 圆角裁切里——整张卡由 [_FushiCoverBlockState._posed] 变换，盖层随封面一起
+/// 旋转 / 缩放 / 位移并按同一圆角裁切（盖层曾是姿态变换外的兄弟层，画成一块
+/// 不旋转的直角暗块）。
 class _CoverCard extends StatelessWidget {
-  const _CoverCard({required this.radius, required this.child});
+  const _CoverCard({required this.radius, required this.child, this.overlay});
 
   final double radius;
   final Widget child;
+  final Widget? overlay;
 
   @override
   Widget build(BuildContext context) {
@@ -1422,11 +1524,15 @@ class _CoverCard extends StatelessWidget {
       ),
       child: ShellClip(
         radius: r,
-        child: SizedBox.expand(
-          child: ColoredBox(
-            color: Theme.of(context).colorScheme.surfaceContainerHighest,
-            child: child,
-          ),
+        child: Stack(
+          fit: StackFit.expand,
+          children: <Widget>[
+            ColoredBox(
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              child: child,
+            ),
+            if (overlay != null) Positioned.fill(child: overlay!),
+          ],
         ),
       ),
     );

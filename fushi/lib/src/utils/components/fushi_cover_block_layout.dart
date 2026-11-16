@@ -466,6 +466,10 @@ double _edgeHoverOverflow(List<FushiCoverBlockRow> rows, double width) {
 /// 的放大溢出量，再把行宽缩进去排：放大后的块整块留在 [width] 之内，块与块之间的
 /// 间距不变。留边会让列宽变窄，按新宽度重算到稳定（列数变了就再量一次）。
 ///
+/// [hoverBleed]：块外两侧本来就有、放大后可以越进去的空白（调用点 sliver 外的
+/// 页边距）。只有溢出量超出它的那部分才往行里留边——否则行首 / 行尾的块会比页边
+/// 再缩进一截，与页面其它内容的左右竖线对不齐（合集详情色块成员墙，2026-11-16）。
+///
 /// [SliverFushiCoverBlocks] / [FushiCoverBlocks] 都按它摆；在外面按行数算容量的
 /// 调用点（「前 N 行放得下几块」）也要用它，几何才与真正摆出来的一致。
 FushiCoverBlockPlacement computeFushiCoverBlockPlacement({
@@ -477,6 +481,7 @@ FushiCoverBlockPlacement computeFushiCoverBlockPlacement({
   double? narrowTargetWidth,
   FushiCoverBlockWideOf? isWideItem,
   bool uniformAfterHero = false,
+  double hoverBleed = 0,
 }) {
   List<FushiCoverBlockRow> plan(double w) => computeFushiCoverBlockPlan(
     width: w,
@@ -497,8 +502,8 @@ FushiCoverBlockPlacement computeFushiCoverBlockPlacement({
       rows,
       width - inset * 2,
     ).ceilToDouble();
-    if (need <= inset) break;
-    inset = need;
+    if (need <= inset + hoverBleed) break;
+    inset = need - hoverBleed;
     rows = plan(math.max(0, width - inset * 2));
   }
   if (inset == 0) return FushiCoverBlockPlacement(rows: rows, inset: 0);
@@ -649,8 +654,13 @@ class SliverFushiCoverBlocks extends StatelessWidget {
     this.isWideItem,
     this.layout,
     this.uniformAfterHero = false,
+    this.hoverBleed = 0,
     super.key,
   });
+
+  /// 调用点 sliver 外两侧的页边距：悬停放大可以越进去，不再往行里额外留边
+  /// （见 [computeFushiCoverBlockPlacement]）。
+  final double hoverBleed;
 
   /// [ShellContentLayout.collage] = 拼贴；null = 等尺寸色块。
   final ShellContentLayout? layout;
@@ -686,6 +696,7 @@ class SliverFushiCoverBlocks extends StatelessWidget {
           narrowTargetWidth: narrowTargetWidth,
           isWideItem: isWideItem,
           uniformAfterHero: uniformAfterHero,
+          hoverBleed: hoverBleed,
         ).rows;
         final int? cap = maxRows;
         final List<FushiCoverBlockRow> rows = cap == null

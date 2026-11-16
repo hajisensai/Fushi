@@ -105,6 +105,9 @@ List<CtlRoute> buildBookMetadataCtlRoutes(OpContext context) {
           author: fields.contains(BookMetadataField.author)
               ? candidate.author
               : null,
+          details: fields.contains(BookMetadataField.details)
+              ? candidate
+              : null,
           keepBackup: true,
         );
         if (result.applied.isEmpty) {
@@ -218,11 +221,18 @@ BookScrapeSource _source(String? raw) {
 }
 
 Set<BookMetadataField> _fields(List<String> raw) {
-  if (raw.isEmpty) return <BookMetadataField>{BookMetadataField.cover};
+  if (raw.isEmpty) {
+    return <BookMetadataField>{
+      BookMetadataField.cover,
+      BookMetadataField.details,
+    };
+  }
   return <BookMetadataField>{
     for (final String r in raw)
       BookMetadataField.tryParse(r.toLowerCase()) ??
-          (throw CtlFailure.badRequest('fields 只能是 cover / title / author：$r')),
+          (throw CtlFailure.badRequest(
+            'fields 只能是 cover / title / author / details：$r',
+          )),
   };
 }
 

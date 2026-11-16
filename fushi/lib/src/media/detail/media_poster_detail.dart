@@ -590,10 +590,16 @@ class MediaPosterDetailHero extends StatelessWidget {
     this.actionsKey,
     this.footer,
     this.aside,
+    this.compact = false,
     super.key,
   });
 
   final String title;
+
+  /// true = 不论面板宽窄一律走窄式版式、顶部不给页头让位：hero 放在一条窄栏
+  /// 里（合集详情宽屏左栏，栏宽约 300～380）时用，背景带 / 斜放封面 / 标题按栏宽
+  /// 排，不按整页的宽式排出溢出。
+  final bool compact;
 
   /// 尾侧附栏（视频合集详情的「接着看」卡 + 作品资料）：宽式且宽度够
   /// （≥ [kMediaPosterDetailAsideMinWidth]）时与标题块顶端对齐、单独占右列，
@@ -667,8 +673,8 @@ class MediaPosterDetailHero extends StatelessWidget {
     final _MediaPosterDetailScope? scope = _MediaPosterDetailScope.maybeOf(
       context,
     );
-    final bool wide = scope?.wide ?? true;
-    final double topInset = scope?.topInset ?? 0;
+    final bool wide = !compact && (scope?.wide ?? true);
+    final double topInset = compact ? 0 : scope?.topInset ?? 0;
     final double radius = scope?.radius ?? 0;
     Widget layout(_HeroPosterFit fit, double? backdropAspect) => LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
@@ -1135,9 +1141,12 @@ class MediaPosterDetailHero extends StatelessWidget {
     final Widget titleText = Semantics(
       header: true,
       child: selectableHeading
+          // minLines: 1——SelectableText 只给 maxLines 时按 maxLines 行固定占高，
+          // 一行标题下面空出两三行（2026-11-16 游戏详情标题与开发商之间的空白）。
           ? SelectableText(
               title,
               key: titleKey,
+              minLines: 1,
               maxLines: wide ? 3 : 4,
               style: titleStyle,
             )
@@ -1178,6 +1187,7 @@ class MediaPosterDetailHero extends StatelessWidget {
                 ? SelectableText(
                     originalTitle,
                     key: originalTitleKey,
+                    minLines: 1,
                     maxLines: 2,
                     style: (text.bodyMedium ?? const TextStyle()).copyWith(
                       color: cs.primary,

@@ -1052,27 +1052,28 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
                 );
                 final double width = (area.maxWidth - gap * (cols - 1)) / cols;
                 final int count = math.min(list.length, rows * cols);
-                return ClipRect(
-                  child: Wrap(
-                    key: const ValueKey<String>('home-recent-list'),
-                    spacing: gap,
-                    runSpacing: gap,
-                    children: <Widget>[
-                      for (int i = 0; i < count; i++)
-                        SizedBox(
-                          width: width,
-                          height: rowHeight,
-                          child: _recentBlock(
-                            tokens,
-                            appModel,
-                            list[i],
-                            i,
-                            FushiCoverBlockSize.half,
-                            now,
-                          ),
+                // 不裁切：块数按行列算好（count ≤ rows × cols、块尺寸恰好铺满），
+                // 不会溢出；包 ClipRect 会把色块投影齐格子边切成直角矩形（与
+                // 「继续」的 [_continueBlockSide] 同口径，投影伸进格间距）。
+                return Wrap(
+                  key: const ValueKey<String>('home-recent-list'),
+                  spacing: gap,
+                  runSpacing: gap,
+                  children: <Widget>[
+                    for (int i = 0; i < count; i++)
+                      SizedBox(
+                        width: width,
+                        height: rowHeight,
+                        child: _recentBlock(
+                          tokens,
+                          appModel,
+                          list[i],
+                          i,
+                          FushiCoverBlockSize.half,
+                          now,
                         ),
-                    ],
-                  ),
+                      ),
+                  ],
                 );
               },
             ),

@@ -2546,7 +2546,7 @@ class _RenderMastheadLayout extends RenderBox
       cursor = g.leading.width + FushiMastheadGeometry.leadingGap;
     }
     final double sT = g.titleScaleAt(p);
-    place(_kSlotTitle, cursor, rowBottom, sT);
+    place(_kSlotTitle, cursor, rowBottom - g.titleLiftAt(p), sT);
     cursor += g.title.width * sT;
     if (g.badge.width > 0) {
       cursor += g.titleBadgeGap;
@@ -2561,8 +2561,9 @@ class _RenderMastheadLayout extends RenderBox
       rowBottom - g.switchBottomLiftAt(p),
       g.switchScaleAt(p),
     );
-    final double primaryX = w - g.primary.width;
-    place(_kSlotPrimary, primaryX, actionBottom, 1);
+    final double sP = g.primaryScaleAt(p);
+    final double primaryX = w - g.primary.width * sP;
+    place(_kSlotPrimary, primaryX, actionBottom, sP);
     place(
       _kSlotActions,
       primaryX -

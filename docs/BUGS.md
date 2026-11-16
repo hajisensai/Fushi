@@ -33,10 +33,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4062 条。点号进各自文件。
+> 共 4065 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4711](bugs/BUG-4711-cli-ignores-test-root-ctl-dir.md) | 🚧 | 🚧 | CLI 不认 FUSHI_TEST_ROOT，ctl 命令打到用户安装版 |
+| [BUG-4710](bugs/BUG-4710-home-recent-cell-shadow-clipped.md) | ✅ | ✅ | home-recent-cell-shadow-clipped |
+| [BUG-4709](bugs/BUG-4709-collage-remote-cover-shadow-mismatch.md) | ✅ | ✅ | collage-remote-cover-shadow-mismatch |
 | [BUG-4708](bugs/BUG-4708-book-manga-import-view-no-drop-target.md) | 🚧 | 🚧 | 书 / 漫画导入视图画拖放虚线与悬停态，祖先链却没有落点，拖进来什么都不发生（IM2） |
 | [BUG-4707](bugs/BUG-4707-import-network-subtitle-transports-mismatch.md) | ✅ | ✅ | 「添加来源 › 网络」副标题与本域真实可选传输不符（视频写只有 WebDAV，书/漫画/音乐漏 AList、音乐还写了 FTP，IM10） |
 | [BUG-4706](bugs/BUG-4706-video-import-view-no-drop-target.md) | ✅ | ✅ | 视频导入视图画拖放虚线与悬停态，祖先链却没有落点，拖进来什么都不发生（IM2） |

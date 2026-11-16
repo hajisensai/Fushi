@@ -4,6 +4,7 @@ import 'package:fushi/src/utils/components/fushi_continue_hero.dart';
 import 'package:fushi/src/utils/adaptive/shell_style.dart';
 import 'package:fushi/src/utils/components/fushi_cover_block.dart';
 import 'package:fushi/src/utils/components/fushi_cover_block_layout.dart';
+import 'package:fushi/src/utils/components/fushi_series_cover_block.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
 import 'package:fushi/src/media/collections/library_organize_runner.dart';
 import 'package:fushi/src/media/downloads/download_source_method.dart';
@@ -221,6 +222,25 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
   Map<String, int> _primaryCollectionByEntry = const <String, int>{};
   Map<String, int> _memberSortIndex = const <String, int>{};
 
+  /// 单个游戏的刮削资料 / 横版背景图 / 艺术字（`item_scrape_meta` +
+  /// `item_images`，[GameItemScrapeArt.load] 两类查询批量预取、文件存在性在那里
+  /// 探好），与合集映射同一次 [_loadCollectionMaps] 重载，build 零 IO。
+  GameItemScrapeArt _gameScrapeArt = GameItemScrapeArt.empty;
+
+  /// 合集刮削资料（collectionId → 行）与含游戏成员的合集附加图组里**文件还在**
+  /// 的横版背景图 / 艺术字（collectionId → 路径）：合集色块卡据此画系列色块
+  /// （[_collectionSeriesMeta]，与书架合集卡同口径）。
+  Map<int, CollectionScrapeMetaRow> _collectionScrapeMetaById =
+      const <int, CollectionScrapeMetaRow>{};
+  Map<int, String> _collectionBackdropPathById = const <int, String>{};
+  Map<int, String> _collectionLogoPathById = const <int, String>{};
+
+  /// 刮削资料 / 附加图变化订阅（单个游戏的 `item_*` 两表、合集刮削资料与
+  /// `media_images`），合并成一次映射重载。
+  StreamSubscription<void>? _itemScrapeSub;
+  StreamSubscription<void>? _collectionScrapeSub;
+  Timer? _scrapeReloadDebounce;
+
   /// 启动流程的**再入守卫**：一次启动含位数探测、helper 确认/下载对话框、注入会话等多个 await，
   /// 全程可能持续数秒。没有此守卫时，用户在等待期间重复点击游戏卡片会各自开一条 _launchGame，
   /// 叠出多个「需要下载 galgame 引擎组件」对话框（用户实测症状）。true 期间忽略新的启动点击。
@@ -252,7 +272,25 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
     if (galgameLibraryViewRequestNotifier.value != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _onViewRequest());
     }
+    // 刮削写回 / 控制通道脚本写的单个游戏资料与附加图、合集刮削资料与附加图：
+    // 系列色块的背景图 / 概览走预取映射，任何写入者落库后都重载一次。
+    _itemScrapeSub = _appModel.database.watchItemScrapeChanged().listen(
+      _onScrapeTablesChanged,
+    );
+    _collectionScrapeSub = _appModel.database
+        .watchVideoScrapePresentationChanged()
+        .listen(_onScrapeTablesChanged);
     unawaited(_reload());
+  }
+
+  /// 刮削相关表写入回调：300 ms 合并窗口（与书架 `_onCollectionTablesChanged`
+  /// 同一节奏，批量写入只重载一次），只重取映射、不重载游戏仓储。
+  void _onScrapeTablesChanged(void _) {
+    _scrapeReloadDebounce?.cancel();
+    _scrapeReloadDebounce = Timer(const Duration(milliseconds: 300), () {
+      if (!mounted) return;
+      unawaited(_afterItemAction());
+    });
   }
 
   void _onViewRequest() {
@@ -267,6 +305,9 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
 
   @override
   void dispose() {
+    _itemScrapeSub?.cancel();
+    _collectionScrapeSub?.cancel();
+    _scrapeReloadDebounce?.cancel();
     _collectionDisplayCounts.dispose();
     _appModel.prefsRepo.removeListener(_onPrefsChanged);
     _repo.removeListener(_refresh);
@@ -295,15 +336,59 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
     final Map<String, int> primaryMap = await db
         .getPrimaryCollectionIdByEntry();
     final Map<String, int> memberSortIndex = <String, int>{};
+    // 有游戏成员的合集：只给它们探系列色块的背景图 / 艺术字文件。
+    final Set<int> gameCollectionIds = <int>{};
     for (final MediaCollectionItemRow m in await db.getAllCollectionItems()) {
       final String key = '${m.mediaType}|${m.entryKey}';
       if (primaryMap[key] == m.collectionId) memberSortIndex[key] = m.sortIndex;
+      if (m.mediaType == MediaKind.game.dbValue) {
+        gameCollectionIds.add(m.collectionId);
+      }
     }
+    final Map<int, CollectionScrapeMetaRow> scrapeById =
+        <int, CollectionScrapeMetaRow>{
+          for (final CollectionScrapeMetaRow row
+              in await db.getAllCollectionScrapeMeta())
+            if (gameCollectionIds.contains(row.collectionId))
+              row.collectionId: row,
+        };
+    final Map<int, String> backdropById =
+        await _firstExistingGameCollectionImages(
+          db,
+          MediaImageKind.backdrop,
+          gameCollectionIds,
+        );
+    final Map<int, String> logoById = await _firstExistingGameCollectionImages(
+      db,
+      MediaImageKind.logo,
+      gameCollectionIds,
+    );
+    final GameItemScrapeArt scrapeArt = await GameItemScrapeArt.load(db);
     _collectionsById = <int, MediaCollectionRow>{
       for (final MediaCollectionRow c in collections) c.id: c,
     };
     _primaryCollectionByEntry = primaryMap;
     _memberSortIndex = memberSortIndex;
+    _collectionScrapeMetaById = scrapeById;
+    _collectionBackdropPathById = backdropById;
+    _collectionLogoPathById = logoById;
+    _gameScrapeArt = scrapeArt;
+  }
+
+  /// 合集的系列色块元数据（[collectionSeriesMeta]，与书架合集卡同口径）：合集
+  /// 有刮削资料或横版背景图时非 null。只读预取映射，零查询 / 零 IO。
+  FushiSeriesMeta? _collectionSeriesMeta(
+    MediaCollectionRow collection,
+    int memberCount,
+  ) {
+    final String? backdrop = _collectionBackdropPathById[collection.id];
+    final String? logo = _collectionLogoPathById[collection.id];
+    return collectionSeriesMeta(
+      scrape: _collectionScrapeMetaById[collection.id],
+      backdrop: backdrop == null ? null : resizedFileImage(File(backdrop)),
+      logo: logo == null ? null : resizedFileImage(File(logo)),
+      countLabel: t.game_collection_work_count(n: memberCount),
+    );
   }
 
   /// 把仓储缓存同步到本页（仓储的每个写方法内部已重载）。
@@ -568,6 +653,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
                 games: _games,
                 mediaType: mediaType,
                 entryKey: entryKey,
+                scrapeArt: _gameScrapeArt,
               ),
           isMemberVisible: _isGameCollectionMemberVisible,
           // 合集头部的成员封面扇形（游戏没有阅读进度，不走 memberInfoOf）。
@@ -596,6 +682,18 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
     final GalgameEntry? game = _repo.byId(entryKey);
     if (game == null) return;
     unawaited(_openDetail(game));
+  }
+
+  /// 点 / Enter / 手柄 A 激活游戏卡（2026-11-16 所有者：与小说同规则）：刮削过的
+  /// 游戏（[GameItemScrapeArt.hasScrapeFor]）先进详情页（[_openDetail]，「启动游戏」
+  /// 在那里），没刮削的照旧直接启动。「继续游玩」行 / 伴屏的启动入口仍直接启动
+  /// （[_launchGame]）；多选态由卡片自己接管点按，不走这里。
+  Future<void> _activateGame(GalgameEntry game) async {
+    if (_gameScrapeArt.hasScrapeFor(game)) {
+      await _openDetail(game);
+      return;
+    }
+    await _launchGame(game);
   }
 
   /// 启动一个游戏 → 台词进查词弹窗：非 Windows 优雅提示不支持；Windows 上交给
@@ -1998,6 +2096,9 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
           ? _GameCoverBlockCard(
               size: block,
               art: FushiCoverBlockArt.book,
+              // 有刮削资料 / 横版背景图的合集：系列色块（竖版海报斜放 + 背景图 +
+              // 概览 / chip），与书架合集卡、视频库系列卡同一个（2026-11-16）。
+              series: _collectionSeriesMeta(collection, members.length),
               covers: covers.take(3).toList(growable: false),
               tintImage: hasOwnCover
                   ? resizedFileImage(File(own))
@@ -2083,11 +2184,12 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
   }) {
     return _GameCard(
       game: game,
+      series: _gameScrapeArt.seriesOf(game),
       listIndex: listIndex,
       listCount: listCount,
       block: block,
       sortLabel: galgameSortValueLabel(game, _view.sortField),
-      onTap: () => unawaited(_launchGame(game)),
+      onTap: () => unawaited(_activateGame(game)),
       actions: _itemActionsFor(game),
     );
   }
@@ -2432,10 +2534,14 @@ bool isGameCollectionMemberVisible({
 /// 成员在 [games] 里找不到（已从库移除的孤儿引用）也返回 null。卡片不带 onTap——
 /// 详情页网格统一接管激活（[MediaCollectionGridDetailPage.onOpenMember]）与
 /// 上下文菜单（移出合集）。
+///
+/// [scrapeArt]：单个游戏的刮削资料 / 横版背景图（库页预取的
+/// [GameItemScrapeArt]），色块下画系列色块用；不给 = 只看游戏自己的合并资料。
 Widget? buildGameCollectionMemberCard({
   required List<GalgameEntry> games,
   required String mediaType,
   required String entryKey,
+  GameItemScrapeArt scrapeArt = GameItemScrapeArt.empty,
 }) {
   if (MediaKind.tryParse(mediaType) != MediaKind.game) return null;
   for (final GalgameEntry game in games) {
@@ -2454,9 +2560,14 @@ Widget? buildGameCollectionMemberCard({
               title: game.displayName,
             );
           }
-          return FushiCoverBlock(
+          final FushiSeriesMeta? series = scrapeArt.seriesOf(game);
+          return fushiSeriesCoverBlock(
             size: block,
-            art: FushiCoverBlockArt.box,
+            art: series == null
+                ? FushiCoverBlockArt.box
+                : FushiCoverBlockArt.portrait,
+            meta: series,
+            backdrop: fushiSeriesBackdrop(series?.backdrop),
             covers: <Widget>[GameCoverThumb(game: game)],
             tintImage: _gameCoverImage(game),
             title: game.displayName,
@@ -2474,6 +2585,153 @@ Widget? buildGameCollectionMemberCard({
     }
   }
   return null;
+}
+
+/// 游戏的系列色块元数据（与视频库系列卡同一套 [FushiSeriesMeta]）：标签 / 评分 /
+/// 发行年任一项、或横版背景图 / 艺术字（[backdrop] / [logo]，来自 `item_images`）
+/// 存在时非 null。概览 = 标签前两个 · ★ 站点评分，chip = 发行年。
+///
+/// 标签 / 评分 / 年份以游戏自己的合并资料为准；[scrape]（`item_scrape_meta` 行）
+/// 只补合并资料里缺的那几项，不覆盖。
+FushiSeriesMeta? galgameSeriesMeta(
+  GalgameEntry game, {
+  ItemScrapeMetaRow? scrape,
+  ImageProvider? backdrop,
+  ImageProvider? logo,
+}) {
+  final GalgameMetadataDraft meta = game.metadata;
+  final List<String> tags = meta.tags.isNotEmpty
+      ? meta.tags.take(2).toList(growable: false)
+      : fushiScrapeTagNames(scrape?.tagsJson, limit: 2);
+  final double? ownScore = meta.score;
+  final double? score = ownScore != null && ownScore > 0
+      ? ownScore
+      : scrape?.rating;
+  final int? year =
+      fushiScrapeYear(game.releaseDate ?? meta.releaseDate) ??
+      fushiScrapeYear(scrape?.airDate);
+  if (tags.isEmpty &&
+      (score == null || score <= 0) &&
+      year == null &&
+      backdrop == null &&
+      logo == null) {
+    return null;
+  }
+  return FushiSeriesMeta.fromParts(
+    backdrop: backdrop,
+    logo: logo,
+    genres: tags,
+    rating: score,
+    chipParts: <String>[if (year != null) '$year'],
+  );
+}
+
+/// 游戏库预取的单个游戏刮削附加数据（`item_scrape_meta` + `item_images`，键 =
+/// `Galgames.id`）：库页 [GameItemScrapeArt.load] 一次批量取好、文件存在性也在
+/// 那里探好，卡片构建只查内存映射（零查询 / 零 IO）。
+@immutable
+class GameItemScrapeArt {
+  const GameItemScrapeArt({
+    this.scrapeById = const <String, ItemScrapeMetaRow>{},
+    this.backdropPathById = const <String, String>{},
+    this.logoPathById = const <String, String>{},
+  });
+
+  /// 没有任何刮削附加数据。
+  static const GameItemScrapeArt empty = GameItemScrapeArt();
+
+  /// 游戏 id → 刮削资料行。
+  final Map<String, ItemScrapeMetaRow> scrapeById;
+
+  /// 游戏 id → position 最小且文件还在的横版背景图路径。
+  final Map<String, String> backdropPathById;
+
+  /// 游戏 id → position 最小且文件还在的艺术字路径。
+  final Map<String, String> logoPathById;
+
+  /// 一条资料查询 + 每种图一条查询，按游戏分桶；文件存在性异步探好。
+  static Future<GameItemScrapeArt> load(FushiDatabase db) async {
+    final String game = MediaKind.game.dbValue;
+    final Map<String, ItemScrapeMetaRow> scrape = <String, ItemScrapeMetaRow>{
+      for (final ItemScrapeMetaRow row in await db.getAllItemScrapeMeta())
+        if (row.mediaType == game) row.entryKey: row,
+    };
+    Future<Map<String, String>> firstExisting(MediaImageKind kind) async {
+      final List<ItemImageRow> rows =
+          (await db.getItemImagesOfKind(kind))
+              .where(
+                (ItemImageRow r) => r.mediaType == game && r.path.isNotEmpty,
+              )
+              .toList()
+            ..sort(
+              (ItemImageRow a, ItemImageRow b) =>
+                  a.position.compareTo(b.position),
+            );
+      final Map<String, String> out = <String, String>{};
+      for (final ItemImageRow row in rows) {
+        if (out.containsKey(row.entryKey)) continue;
+        if (await File(row.path).exists()) out[row.entryKey] = row.path;
+      }
+      return out;
+    }
+
+    return GameItemScrapeArt(
+      scrapeById: scrape,
+      backdropPathById: await firstExisting(MediaImageKind.backdrop),
+      logoPathById: await firstExisting(MediaImageKind.logo),
+    );
+  }
+
+  /// [game] 刮削过没有：游戏自己的合并资料（[GalgameEntry.metadata]，元数据刮削
+  /// 写回的）非空，或本映射里有它的刮削资料行 / 横版背景图 / 艺术字。库页点卡据此
+  /// 决定先进详情页还是直接启动。
+  bool hasScrapeFor(GalgameEntry game) =>
+      !game.metadata.isEmpty ||
+      scrapeById.containsKey(game.id) ||
+      backdropPathById.containsKey(game.id) ||
+      logoPathById.containsKey(game.id);
+
+  /// [game] 的系列色块元数据（[galgameSeriesMeta] 叠上本映射里的刮削资料 /
+  /// 背景图 / 艺术字）。
+  FushiSeriesMeta? seriesOf(GalgameEntry game) {
+    final String? backdrop = backdropPathById[game.id];
+    final String? logo = logoPathById[game.id];
+    return galgameSeriesMeta(
+      game,
+      scrape: scrapeById[game.id],
+      backdrop: backdrop == null ? null : resizedFileImage(File(backdrop)),
+      logo: logo == null ? null : resizedFileImage(File(logo)),
+    );
+  }
+}
+
+/// [collectionIds] 里各合集附加图组中 [kind] 种类、position 最小且文件还在的那张
+/// （collectionId → 路径）：一条 [FushiDatabase.getMediaImagesOfKind] 查询取全库
+/// 该种类再按归属分桶（书架 `_firstExistingCollectionImages` 同口径）。
+Future<Map<int, String>> _firstExistingGameCollectionImages(
+  FushiDatabase db,
+  MediaImageKind kind,
+  Set<int> collectionIds,
+) async {
+  if (collectionIds.isEmpty) return const <int, String>{};
+  final List<MediaImageRow> rows =
+      (await db.getMediaImagesOfKind(kind))
+          .where(
+            (MediaImageRow r) =>
+                collectionIds.contains(r.collectionId) && r.path.isNotEmpty,
+          )
+          .toList()
+        ..sort(
+          (MediaImageRow a, MediaImageRow b) =>
+              a.position.compareTo(b.position),
+        );
+  final Map<int, String> out = <int, String>{};
+  for (final MediaImageRow row in rows) {
+    final int cid = row.collectionId!;
+    if (out.containsKey(cid)) continue;
+    if (await File(row.path).exists()) out[cid] = row.path;
+  }
+  return out;
 }
 
 /// 合集详情头部扇形用的 game 成员纯封面（与 [buildGameCollectionMemberCard] 同一
@@ -2556,6 +2814,7 @@ class _GameCard extends StatelessWidget {
     required this.game,
     required this.onTap,
     required this.actions,
+    this.series,
     this.sortLabel,
     this.listIndex,
     this.listCount,
@@ -2563,6 +2822,10 @@ class _GameCard extends StatelessWidget {
   });
 
   final GalgameEntry game;
+
+  /// 系列色块元数据（库页预取映射算好的 [GameItemScrapeArt.seriesOf]；null =
+  /// 没有任何刮削资料 / 背景图，色块保持盒封摆法）。
+  final FushiSeriesMeta? series;
 
   /// 非 null = 封面色块卡（库页布局为拼贴 / 规整色块，见 [SliverFushiCoverBlocks]）；
   /// 菜单与回调与海报卡同一份。列表布局（[listIndex]）优先。
@@ -2656,6 +2919,8 @@ class _GameCard extends StatelessWidget {
                 game.developer,
               ),
               onScrape: _gameCoverImage(game) == null ? _onScrape : null,
+              // 没有封面时系列色块无从斜放海报，仍走盒封摆法（首字生成封面）。
+              series: _gameCoverImage(game) == null ? null : series,
               action: block == FushiCoverBlockSize.hero
                   ? FushiCoverBlockAction(
                       icon: FushiIcons.play,
@@ -2894,7 +3159,13 @@ class _GameCoverBlockCard extends StatelessWidget {
     this.action,
     this.statusChip,
     this.onScrape,
+    this.series,
   });
+
+  /// 非 null = 有刮削资料 / 横版背景图的游戏或合集：与视频库系列卡同一个系列
+  /// 色块（竖版封面斜放 + 背景图 + 概览「类型 · ★ 评分」+ chip「年份」，见
+  /// [galgameSeriesMeta] / [collectionSeriesMeta]），[art] 让位给竖版海报摆法。
+  final FushiSeriesMeta? series;
 
   /// 底部附加件：游玩状态 chip（时长为 0 时代替大数字，见 [GalgamePlayStatusChip]）。
   final Widget? statusChip;
@@ -2927,9 +3198,11 @@ class _GameCoverBlockCard extends StatelessWidget {
       onTap: onTap,
       onLongPress: onLongPress,
       onSecondaryTap: onLongPress,
-      child: FushiCoverBlock(
+      child: fushiSeriesCoverBlock(
         size: size,
-        art: art,
+        art: series == null ? art : FushiCoverBlockArt.portrait,
+        meta: series,
+        backdrop: fushiSeriesBackdrop(series?.backdrop),
         covers: covers,
         tintImage: tintImage,
         title: title,

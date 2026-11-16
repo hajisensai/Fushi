@@ -50,7 +50,8 @@ import 'package:fushi/src/pages/implementations/stat_shared.dart'
 import 'package:fushi/src/stats/stat_window.dart';
 import 'package:fushi/src/utils/adaptive/shell_style.dart'
     show FushiShellTheme, ShellContentLayout;
-import 'package:flutter/rendering.dart' show RenderParagraph;
+import 'package:flutter/rendering.dart'
+    show RenderClipPath, RenderClipRRect, RenderClipRect, RenderParagraph;
 import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -764,6 +765,61 @@ void main() {
       // 默认 4×2 放得下 6 条以上（连续尺寸：格子越大列得越多，不再固定 4 条）。
       <String>['新书F', '新书E', '新书D', '新书C', '新书B', '新书A'],
     );
+  });
+
+  // BUG-4710：色块外观「最近添加」的半高色块外面曾包一层 ClipRect，把块的投影
+  // 齐格子边切成直角矩形（左上角 / 右缘能看到一条直边）。块到格子之间不许有
+  // 任何裁切层，投影要伸进格间距（与「继续」的半高块同口径）。
+  testWidgets('色块「最近添加」：半高色块到格子之间没有裁切层，投影不被切成直角矩形（BUG-4710）', (
+    WidgetTester tester,
+  ) async {
+    dashboardLayout = ShellContentLayout.collage;
+    useSize(tester, const Size(1280, 900));
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    final List<MediaItem> books = <MediaItem>[];
+    for (int i = 1; i <= 6; i++) {
+      final String key = '新书${_seriesFreeSuffix(i)}';
+      await db.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: key,
+          title: key,
+          epubPath: '/abs/$i.epub',
+          extractDir: '/abs/$i',
+          chapterCount: 1,
+          chaptersJson: '[]',
+          importedAt: now - (10 - i) * 1000,
+          localAddedAt: Value<int?>(now - (10 - i) * 1000),
+        ),
+      );
+      books.add(readingBook(key, key, position: 0));
+    }
+    await tester.pumpWidget(buildAppWithBooks(books, const <String, int>{}));
+    await pumpDashboard(tester);
+
+    expect(tester.takeException(), isNull);
+    final RenderObject tile = tester.renderObject(
+      find.byKey(homeWidgetTileKey(HomeWidgetKind.recentlyAdded)),
+    );
+    final Finder blocks = find.byWidgetPredicate(
+      (Widget w) =>
+          w.key is ValueKey<String> &&
+          (w.key! as ValueKey<String>).value.startsWith('home-recent-block/'),
+    );
+    expect(blocks, findsAtLeastNWidgets(2));
+    for (final Element block in blocks.evaluate()) {
+      final List<String> clips = <String>[];
+      RenderObject? node = block.renderObject?.parent;
+      while (node != null && !identical(node, tile)) {
+        if (node is RenderClipRect ||
+            node is RenderClipRRect ||
+            node is RenderClipPath) {
+          clips.add(node.runtimeType.toString());
+        }
+        node = node.parent;
+      }
+      expect(node, same(tile), reason: '色块应在「最近添加」格子里');
+      expect(clips, isEmpty, reason: '${block.widget.key} 外面有裁切层');
+    }
   });
 
   // 设计稿 H8：「最近添加」里同一合集新加的几卷合成一张卡，点开进合集详情页

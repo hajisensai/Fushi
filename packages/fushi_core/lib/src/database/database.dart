@@ -44,6 +44,7 @@ part 'database_library.part.dart';
 part 'database_statistics.part.dart';
 part 'database_content_misc.part.dart';
 part 'database_tags_sync.part.dart';
+part 'database_item_scrape.part.dart';
 part 'database_update_feed.part.dart';
 part 'database_manga_download.part.dart';
 part 'database_srs.part.dart';
@@ -881,6 +882,8 @@ void _requireOneVideoMetadataOwner({
     MangaTrustedSigners,
     CollectionRelations,
     MediaImages,
+    ItemScrapeMeta,
+    ItemImages,
     VideoMetadataWorks,
     VideoMetadataSeasons,
     VideoMetadataEpisodes,
@@ -966,7 +969,8 @@ class FushiDatabase extends _$FushiDatabase
         _FushiDbMusicScrape,
         _FushiDbThemeSongSpans,
         _FushiDbPeople,
-        _FushiDbAiAgent {
+        _FushiDbAiAgent,
+        _FushiDbItemScrape {
   /// [isMainProcess] gates the TODO-905 sidecar rebuild: the main app passes
   /// the default `true` (it may physically delete a poisoned `-wal`/`-shm`),
   /// while the separate `:popup` process passes `false` so it backs off on an
@@ -987,7 +991,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 154;
+  int get schemaVersion => 155;
 
   /// v125–v128 四步的产物（全部幂等）：SRS 写路径索引、
   /// `collection_member_tombstones.published_at`、`bookmarks.char_offset` /
@@ -3109,6 +3113,17 @@ class FushiDatabase extends _$FushiDatabase
             remoteDictionaryMetadata,
             remoteDictionaryMetadata.localDisplayName,
           );
+        }
+      }
+      if (from < 155) {
+        // v155：item_scrape_meta / item_images——单本书 / 漫画 / 字幕书 / 游戏的
+        // 刮削资料与横版背景图（2026-11-16 所有者：刮削过的条目都走系列色块）。
+        // 纯新增、无回填：重刮 / 脚本写入时填；幂等守卫同 v151。
+        if (!await _tableExists('item_scrape_meta')) {
+          await m.createTable(itemScrapeMeta);
+        }
+        if (!await _tableExists('item_images')) {
+          await m.createTable(itemImages);
         }
       }
     },

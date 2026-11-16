@@ -1,5 +1,7 @@
 import 'package:fushi/src/media/collections/collection_continue.dart';
 import 'package:fushi/src/media/video/cover_ui/cover_aspect_probe.dart';
+import 'package:fushi/src/utils/components/fushi_series_cover_block.dart'
+    show fushiScrapeYear;
 import 'package:fushi_core/fushi_core.dart' show VideoMetadataImageRow;
 import 'package:fushi_engine/media/video/disc/disc_format.dart' show DiscFormat;
 
@@ -139,14 +141,7 @@ double videoDiscoveryHeroHeightForViewport(double width, double height) {
 
 /// 刮削 airDate（TMDB `YYYY-MM-DD` 或裸年份 `YYYY`）→ 年份；解析不出返回
 /// null（归「未知」桶，条目在年份筛选下不消失）。
-int? videoAirYear(String? airDate) {
-  if (airDate == null) return null;
-  final RegExpMatch? m = RegExp(r'^(\d{4})').firstMatch(airDate.trim());
-  if (m == null) return null;
-  final int year = int.parse(m.group(1)!);
-  // 1900 以前当脏数据，不当有效年份。
-  return year >= 1900 ? year : null;
-}
+int? videoAirYear(String? airDate) => fushiScrapeYear(airDate);
 
 /// airDate 月份 → 季度序号（1=冬 1-3 月、2=春 4-6、3=夏 7-9、4=秋 10-12，
 /// 对齐番剧季度习惯）；无月份信息返回 null（hero 只显年份）。

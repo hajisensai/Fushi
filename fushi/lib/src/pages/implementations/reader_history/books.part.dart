@@ -85,7 +85,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       // `srtBookId`（`_addSrtToCollection` 同源）——两者不可混用。
       dragMediaRef: MediaRef(kind: MediaKind.srt, entryKey: book.uid),
       dragLabel: displayTitle,
-      onTap: () => _openSrtBook(book),
+      onTap: () => _activateSrtCard(book),
       onLongPress: () => _companionPressed(
         FushiFocusId('${focusIdPrefix}reader-shelf-srt-${book.uid}'),
         () => _showSrtBookDialog(
@@ -101,7 +101,9 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
         // BUG-990：两阶段下载末段卡已变 SRT 卡但有声书包仍在下 → 继续显示加载覆盖层。
         loadingOverlay: _audiobookDownloadingOverlay(book.bookKey),
         byline: srtItem.author,
-        continuesOnTap: true,
+        // 刮削过的点卡先进详情页（[_activateSrtCard]），首块不画「继续」按钮外观。
+        continuesOnTap: _itemScrapeKeyForSrt(book) == null,
+        series: _itemSeriesMetaFor(_itemScrapeKeyForSrt(book)),
       ),
     );
   }
@@ -259,6 +261,16 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       book.bookKey.isNotEmpty &&
       _epubProgressByBookKey.containsKey(book.bookKey);
 
+  /// 点 / Enter / 手柄 A 激活 SRT 卡：刮削过（[_itemScrapeKeyForSrt] 非 null）先进
+  /// 元数据详情页，没刮削的照旧直接开书（同 [_activateEpubCard]）。
+  Future<void> _activateSrtCard(SrtBook book) async {
+    if (_itemScrapeKeyForSrt(book) != null) {
+      await _pushSrtDetail(book);
+      return;
+    }
+    await _openSrtBook(book);
+  }
+
   Future<void> _openSrtBook(SrtBook book) async {
     if (book.bookKey.isEmpty) {
       FushiToast.show(msg: t.srt_epub_not_ready, severity: ToastSeverity.error);
@@ -342,6 +354,13 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
         label: t.book_rename,
         icon: Icons.drive_file_rename_outline,
         onPressed: () => _renameBook(dialogContext, item),
+      ),
+      // 元数据详情页（与视频卡「详情」同一套海报面板外观）：封面 / 刮削资料 /
+      // 进度 / 开始阅读 / 刮削。
+      DialogListAction(
+        label: t.book_detail_open_action,
+        icon: FushiIcons.info,
+        onPressed: () => _openSrtDetail(dialogContext, book),
       ),
       // 合集详情页成员卡：补「移出合集」（网格右键 / 长按与键盘/手柄长按 A 都走这
       // 一个菜单，BUG-2969）。

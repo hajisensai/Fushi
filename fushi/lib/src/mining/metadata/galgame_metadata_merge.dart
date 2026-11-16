@@ -150,6 +150,7 @@ class GalgameCustomData {
 /// | nsfw | 任一源为 true 即 true（DLsite 是商店分级），否则 bgm → vndb → dlsite |
 /// | developer | **vndb → bgm → dlsite** |
 /// | coverUrl | `custom.coverSource` 手选优先，否则 bgm → vndb |
+/// | backdropUrl | 第一个有的源（VNDB 截图是带 UI 的实机画面，不当横版海报，目前没有源给） |
 /// | rank | 仅 bgm |
 /// | averageHours | 仅 vndb |
 /// | tags / aliases / allTitles | 各源并集（去重保序，按枚举声明顺序） |
@@ -225,5 +226,6 @@ GalgameMetadataDraft mergeDrafts(
             : pick<bool>((GalgameMetadataDraft d) => d.nsfw)),
     averageHours: vndb?.averageHours,
     coverUrl: coverUrl,
+    backdropUrl: pick<String>((GalgameMetadataDraft d) => d.backdropUrl),
   );
 }

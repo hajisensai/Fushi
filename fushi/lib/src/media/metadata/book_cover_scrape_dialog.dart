@@ -26,21 +26,28 @@ import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 /// 两个源用分段切换（[BookScrapeSource]）：Bangumi 书籍条目（`filter.type=[1]`）与 DLsite
 /// 音声 / 漫画 / 小说作品。默认 Bangumi——DLsite 的搜索含成人向作品，不混进普通书搜索；
 /// 预填词里认得出 DLsite 编号时默认切到 DLsite 并只填编号（直取）。选中候选后下载其封面
-/// 到临时文件并经 `Navigator.pop(file)` 返回给调用方（候选解析与下载都经
+/// 到临时文件并经 `Navigator.pop(`[BookCoverScrapeSelection]`)` 连同候选本身返回给调用方（候选解析与下载都经
 /// [BookMetadataScrapeFacade]，书架页的写回也经它）（书籍编辑对话框把它当作新的封面
 /// override，走既有 `setOverrideThumbnailFromMediaItem` 落地——不新增任何存储路径）。
 ///
 /// 返回 `null` = 用户取消 / 未选。
-Future<File?> showBookCoverScrapeDialog({
+Future<BookCoverScrapeSelection?> showBookCoverScrapeDialog({
   required BuildContext context,
   required String initialQuery,
 }) {
-  return showAppDialog<File>(
+  return showAppDialog<BookCoverScrapeSelection>(
     context: context,
     builder: (BuildContext ctx) =>
         BookCoverScrapeDialog(initialQuery: initialQuery),
   );
 }
+
+/// 弹窗的选择结果：下载好的封面临时文件 + 选中的候选（写回时连同简介 / 评分 /
+/// 标签等条目资料一起落库，书架系列色块读它）。
+typedef BookCoverScrapeSelection = ({
+  File cover,
+  BookScrapeCandidate candidate,
+});
 
 /// 弹窗主体（导出便于 widget 测试直接构造并注入 [scraperOverride]）。
 class BookCoverScrapeDialog extends StatefulWidget {
@@ -180,7 +187,9 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
       );
       return;
     }
-    Navigator.of(context).pop(file);
+    Navigator.of(
+      context,
+    ).pop<BookCoverScrapeSelection>((cover: file, candidate: candidate));
   }
 
   @override

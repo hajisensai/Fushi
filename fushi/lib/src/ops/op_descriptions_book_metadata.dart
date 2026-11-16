@@ -67,8 +67,10 @@ List<OpDescription> describeBookMetadataOps(OpDescribeKit kit) =>
         pattern: '$kBookMetadataCtlItems/:key/scrape',
         summary:
             'Write a chosen candidate back to a book on the shelf: its cover '
-            '(default), and optionally its title (as a display-name override) '
-            'and author. Same as "match cover online" on the book card.',
+            'and scrape details (summary, date, rating, genres, landscape '
+            'backdrop when the source has one) by default, and optionally its '
+            'title (as a display-name override) and author. Same as "match '
+            'cover online" on the book card.',
         risk: OpRisk.write,
         params: const <OpParam>[
           OpParam.string(
@@ -90,7 +92,8 @@ List<OpDescription> describeBookMetadataOps(OpDescribeKit kit) =>
           OpParam.stringList(
             'fields',
             description:
-                'What to write back: cover, title, author. Default [cover].',
+                'What to write back: cover, title, author, details. '
+                'Default [cover, details].',
           ),
         ],
         availability: kit.whenModule(ModuleId.services),

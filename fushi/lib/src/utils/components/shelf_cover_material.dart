@@ -697,6 +697,35 @@ double shelfFanMaxDegrees({
   return theta.clamp(0.0, kShelfFanMaxDegrees).toDouble();
 }
 
+/// 海报 / 专辑碟盒式叠层（[ShelfCoverPile]）每往后一层往右上错开的步长。
+const double kShelfCoverPileStackStep = 4;
+
+/// [material] 下 [ShelfCoverPile] 是碟盒式叠层（海报 / 专辑）而非扇形（书 / 卡盒）。
+bool shelfCoverPileStacks(ShelfCoverMaterial material) =>
+    material == ShelfCoverMaterial.glossyPoster ||
+    material == ShelfCoverMaterial.glossyAlbum;
+
+/// [ShelfCoverPile] 在 [material] 下最多画最前那本后面的几本。
+int shelfCoverPileMaxBehind(ShelfCoverMaterial material) =>
+    shelfCoverPileStacks(material) ? 2 : 3;
+
+/// 要让 [ShelfCoverPile] 里每本封面恰好是 [item] 大小，外层盒子该给多大：扇形
+/// 每本与单本同大、铺满整盒（盒 = 单本，转开的边角画在盒外）；叠层后面每多一层
+/// 往右上让 [kShelfCoverPileStackStep]。[behindCount] = 最前那本后面的本数（按
+/// [shelfCoverPileMaxBehind] 截断）。调用方按封面真实比例定 [item]，封面图就
+/// 不会被 fitHeight 从两侧裁掉。
+Size shelfCoverPileExtent({
+  required ShelfCoverMaterial material,
+  required Size item,
+  required int behindCount,
+}) {
+  if (!shelfCoverPileStacks(material)) return item;
+  final double grow =
+      kShelfCoverPileStackStep *
+      behindCount.clamp(0, shelfCoverPileMaxBehind(material));
+  return Size(item.width + grow, item.height + grow);
+}
+
 /// 多本排列（系列 / 多季 / 多作）：[covers] 首个是最前面那本，其后依次往后。
 ///
 /// - 书 / 卡盒 = 扇形：最多 4 本，绕底边中点转开，悬停时再转开一点并整体抬
@@ -733,11 +762,9 @@ class ShelfCoverPile extends StatelessWidget {
   Widget build(BuildContext context) {
     final bool lifted = FushiHoverLift.liftedOf(context);
     final Duration duration = fushiMotionDuration(context, FushiMotion.long);
-    final bool stack =
-        material == ShelfCoverMaterial.glossyPoster ||
-        material == ShelfCoverMaterial.glossyAlbum;
+    final bool stack = shelfCoverPileStacks(material);
     final List<Widget> back = behind
-        .take(stack ? 2 : 3)
+        .take(shelfCoverPileMaxBehind(material))
         .toList(growable: false);
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints c) {
@@ -746,7 +773,7 @@ class ShelfCoverPile extends StatelessWidget {
         // 扇形的每一本都与单本同大、铺满整格（2026-10-25 用户「单本书和合集
         // 大小不协调」：此前合集整体缩到 88–92%，比旁边的单本小一圈）；后面
         // 几本藏在最前那本身后，只靠转开露出边角。海报叠层仍按错开步长让位。
-        final double step = stack ? 4 : 0;
+        final double step = stack ? kShelfCoverPileStackStep : 0;
         final double itemW = stack ? w - step * back.length : w;
         final double itemH = stack ? h - step * back.length : h;
         Widget surface(Widget child, {double dim = 0, List<Widget>? overlay}) =>
