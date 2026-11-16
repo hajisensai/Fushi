@@ -134,10 +134,24 @@ class BlurayDisc {
     required this.playlists,
     required this.titles,
     this.extras = const <BlurayTitle>[],
+    this.presentClipIds,
   });
 
   /// 含 `BDMV` 的那一层目录。
   final String rootPath;
+
+  /// `BDMV/STREAM` 里实际在的片段号（大写、去扩展名）；STREAM 读不动时为 null
+  /// （无从确证哪些片段在）。
+  final Set<String>? presentClipIds;
+
+  /// [playlist] 引用的片段是否**确证**全都在盘上：STREAM 读不动时为 false。
+  bool hasAllClipsOf(BlurayPlaylist playlist) {
+    final Set<String>? present = presentClipIds;
+    if (present == null) return false;
+    return playlist.clipIds.every(
+      (String id) => present.contains(id.toUpperCase()),
+    );
+  }
 
   /// 盘名：优先取 `BDMV/META` 里的盘内标题，否则用目录名。
   final String name;
@@ -336,6 +350,9 @@ Future<BlurayDisc?> readBlurayDisc(String rootPath) async {
         presentClipIds: presentClips,
       ),
     ),
+    presentClipIds: presentClips == null
+        ? null
+        : Set<String>.unmodifiable(presentClips),
   );
 }
 

@@ -285,6 +285,18 @@ void main() {
       expect(videoMemberExistsSync(path), isTrue);
       expect(await hasLocalMediaFile(path), isTrue);
       expect(await videoPathFileExists(path), isFalse);
+      // 能经 ffmpeg 读到 ≠ 路径本身装着媒体字节：按字节读的消费方（上传、弹幕指纹、
+      // 任务目录身份）问的是后者，分集与整卷 .mpls 都必须答「否」。
+      final String whole = p.join(root, 'BDMV', 'PLAYLIST', '00001.mpls');
+      for (final String member in <String>[path, whole]) {
+        expect(await hasLocalSingleMediaFile(member), isFalse, reason: member);
+        expect(hasLocalSingleMediaFileSync(member), isFalse, reason: member);
+        expect(videoPathLacksSingleMediaFile(member), isTrue, reason: member);
+      }
+      final String clip = p.join(root, 'BDMV', 'STREAM', '00006.m2ts');
+      expect(await hasLocalSingleMediaFile(clip), isTrue);
+      expect(hasLocalSingleMediaFileSync(clip), isTrue);
+      expect(await File(clip).length(), greaterThan(0));
       File(p.join(root, 'BDMV', 'PLAYLIST', '00001.mpls')).deleteSync();
       expect(await videoMemberExists(path), isFalse);
       expect(await resolveBluraySource(path), isNull);

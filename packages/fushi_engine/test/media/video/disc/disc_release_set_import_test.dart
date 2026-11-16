@@ -13,6 +13,7 @@ import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 import '../bluray/bluray_episode_fixture.dart';
+import '../bluray/bluray_fixture.dart';
 
 void main() {
   late FushiDatabase db;
@@ -227,5 +228,89 @@ void main() {
       (VideoBookRow row) => row.videoPath == episodePath(disc1, 1),
     );
     expect(first.lastPositionMs, 600 * 1000);
+  });
+
+  test('盘不完整：缺片段的剧集盘重扫，分集行、进度与合集成员都不变', () async {
+    final int collectionId = (await import(<String>[
+      disc1,
+    ])).discs.single.collectionId;
+    final VideoBookRow third = (await db.allVideoBooks()).singleWhere(
+      (VideoBookRow row) => row.videoPath == episodePath(disc1, 3),
+    );
+    await db.updateVideoBookPosition(
+      third.bookUid,
+      300 * 1000,
+      playedAt: 1794318869583,
+    );
+    // 第 3 集的片段还没拷过来：00001 这一轮选不成标题，只剩 90 秒的 00002。
+    File(p.join(disc1, 'BDMV', 'STREAM', '00005.m2ts')).deleteSync();
+
+    final DiscLibraryImportReport report = await import(<String>[disc1]);
+    expect(report.unreadable, <String>[disc1]);
+    expect(report.discs, isEmpty);
+    expect(await memberPaths(collectionId), <String>[
+      for (int i = 1; i <= 6; i++) episodePath(disc1, i),
+    ]);
+    final VideoBookRow after = (await db.getVideoBookByBookUid(third.bookUid))!;
+    expect(after.videoPath, episodePath(disc1, 3));
+    expect(after.lastPositionMs, 300 * 1000);
+    expect(await db.allVideoBooks(), hasLength(7));
+  });
+
+  test('切集判据改为不切：第 1 集的行保留原 uid 回到整卷路径，进度折回整卷，其余分集行解绑不删', () async {
+    final int collectionId = (await import(<String>[
+      disc1,
+    ])).discs.single.collectionId;
+    final List<VideoBookRow> before = await db.allVideoBooks();
+    String uidAt(String path) =>
+        before.singleWhere((VideoBookRow row) => row.videoPath == path).bookUid;
+    final String firstUid = uidAt(episodePath(disc1, 1));
+    final String thirdUid = uidAt(episodePath(disc1, 3));
+    await db.markVideoCompleted(firstUid, DateTime(2026, 11, 1));
+    await db.markVideoCompleted(
+      uidAt(episodePath(disc1, 2)),
+      DateTime(2026, 11, 2),
+    );
+    await db.updateVideoBookPosition(
+      thirdUid,
+      100 * 1000,
+      playedAt: 1794318869583,
+    );
+    // 同一条 00001，但各集开头不再有章节点（只剩第一段开头那个）：切集判据给出
+    // 「不切」，整条重新被选成标题。
+    File(p.join(disc1, 'BDMV', 'PLAYLIST', '00001.mpls')).writeAsBytesSync(
+      buildMplsFixture(
+        playItems: <FixturePlayItem>[
+          for (int i = 0; i < 6; i++)
+            wholeClipItem(
+              (i + 3).toString().padLeft(5, '0'),
+              i.isEven ? 1442 : 1422,
+            ),
+        ],
+        marks: const <FixtureMark>[
+          FixtureMark(playItemIndex: 0, timestampTicks: kFixtureClipStartTicks),
+        ],
+      ),
+    );
+
+    await import(<String>[disc1]);
+    final String whole = p.join(disc1, 'BDMV', 'PLAYLIST', '00001.mpls');
+    final VideoBookRow reverted = (await db.getVideoBookByBookUid(firstUid))!;
+    expect(reverted.videoPath, whole, reason: '同一行，身份不变');
+    expect(reverted.title, '魔女の旅々　上巻');
+    expect(reverted.completedAt, isNull, reason: '第 1 集看完不等于整卷看完');
+    // 第 1、2 集共 1442 + 1422 = 2864 秒，断点在第 3 集的第 100 秒。
+    expect(reverted.lastPositionMs, (2864 + 100) * 1000);
+    expect(reverted.lastPlayedAt, 1794318869583);
+
+    final VideoBookRow third = (await db.getVideoBookByBookUid(thirdUid))!;
+    expect(third.videoPath, episodePath(disc1, 3));
+    expect(third.lastPositionMs, 100 * 1000);
+    // 6 行分集里 1 行改回整卷、5 行留着，加 1 条特典：一行都没删。
+    expect(await db.allVideoBooks(), hasLength(7));
+    expect(await db.getMediaCollectionById(collectionId), isNull);
+    final MediaCollectionRow collection =
+        (await db.getAllMediaCollections()).single;
+    expect(await memberPaths(collection.id), <String>[whole]);
   });
 }
