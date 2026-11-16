@@ -388,6 +388,11 @@ void main() {
     expect(srsExportFileName('a/b:c*?"<>|'), 'a_b_c______.apkg');
     expect(srsExportFileName(' 日本語 '), '日本語.apkg');
     expect(srsExportFileName('..'), 'fushi-review.apkg');
+    // Windows 保留设备名前缀 `_`，否则 CON.apkg 在 Windows 上存不下。
+    expect(srsExportFileName('CON'), '_CON.apkg');
+    expect(srsExportFileName('nul'), '_nul.apkg');
+    expect(srsExportFileName('LPT1.v2'), '_LPT1.v2.apkg');
+    expect(srsExportFileName('COM1::x'), 'COM1-x.apkg');
   });
 
   test('制卡历史导入：Lapis 字段 + 出处；重复导入不重复建卡', () async {

@@ -26,6 +26,7 @@ import 'package:fushi_engine/srs/apkg/srs_export_options.dart';
 import 'package:fushi_engine/foundation/pref_store.dart';
 import 'package:fushi_engine/srs/apkg/srs_apkg_import.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/utils/misc/safe_file_name.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_crypto.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:material_ui/material_ui.dart';
@@ -367,16 +368,17 @@ Future<void> showSrsImportFailureDialog(BuildContext context, Object failure) =>
     );
 
 /// 导出包的默认文件名：整库 `fushi-review.apkg`；单个牌组用牌组全名（`父::子` 写成 `父-子`），
-/// 文件名里不能出现的字符换成 `_`，清理后为空时退回整库的名字。
+/// 文件名里不能出现的字符换成 `_`（字符集取唯一真相源 [safeWindowsFileName]），清理后为空时
+/// 退回整库的名字；牌组名撞上 Windows 保留设备名（`CON`、`NUL`、`COM1`…）时前缀 `_`，否则
+/// Windows 上存不下或写进设备。
 String srsExportFileName(String? deckFullName) {
   const String whole = 'fushi-review.apkg';
   if (deckFullName == null) return whole;
-  final String base = deckFullName
-      .replaceAll('::', '-')
-      .replaceAll(RegExp(r'[<>:"/\\|?*\x00-\x1F]'), '_')
-      .trim()
-      .replaceAll(RegExp(r'^[.\s]+|[.\s]+$'), '');
-  return base.isEmpty ? whole : '$base.apkg';
+  final String base = safeWindowsFileName(
+    deckFullName.replaceAll('::', '-'),
+  ).trim().replaceAll(RegExp(r'^[.\s]+|[.\s]+$'), '');
+  if (base.isEmpty) return whole;
+  return isWindowsReservedFileName(base) ? '_$base.apkg' : '$base.apkg';
 }
 
 /// 导出 .apkg（Anki 与 Fushi 自己的「导入」都能吃）。[deckId] 为 null 时导出全部牌组（牌组列表
