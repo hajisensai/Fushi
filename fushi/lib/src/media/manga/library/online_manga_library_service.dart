@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:crypto/crypto.dart';
 import 'package:drift/drift.dart';
 import 'package:path/path.dart' as p;
 
@@ -18,12 +17,11 @@ import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_engine/media/cover_file_writer.dart'
     show CoverImageInvalidException;
 import 'package:fushi_engine/media/manga/manga_storage.dart';
-import 'package:fushi_engine/sync/fushi_library_host_service.dart';
-import 'package:fushi_engine/sync/remote_collection_adoption_service.dart';
 import 'package:fushi_engine/updates/update_feed_kind.dart';
 import 'package:fushi/src/updates/update_feed_service.dart';
 import 'package:fushi/src/storage/directory_move.dart';
 import 'package:fushi/src/storage/download_layout.dart';
+import 'package:fushi/src/media/manga/library/online_manga_shelf_row.dart';
 import 'package:fushi/src/media/manga/library/online_manga_shelf_sidecar.dart';
 
 /// 从一个已就绪的 [MihonManager] 直接建服务。
@@ -92,45 +90,21 @@ class OnlineMangaLibraryService {
   Future<DownloadLayout> _layout() =>
       (_downloadLayout ?? DownloadRoot.current)();
 
-  /// 身份串的分隔符：NUL。
-  ///
-  /// 写成 `String.fromCharCode(0)` 而不是源码里的裸字节，有两个理由：裸 NUL 会
-  /// 让 git 把这个 .dart 判成 binary（diff/merge 直接丢改动）；而这个值一旦变
-  /// 化，**全部存量书架条目的 bookKey 都会变** —— 主键失配 + 磁盘目录对不上 =
-  /// 用户的在线漫画整片消失。让它显式、独立、难被顺手"清理"掉。
-  static final String _identitySeparator = String.fromCharCode(0);
-
-  /// 书架身份。
-  ///
-  /// 摘要而不是明文拼接：作品 URL 会进文件路径，长度和字符集都不可控。
-  ///
-  /// **v88 前的推导必须逐字节保持**：`packageName NUL sourceId NUL seriesKey`，
-  /// 前缀 `mihon-`。这串既是 `epub_books` 主键**也是**磁盘目录名，改一个字符就
-  /// 等于把所有已入库的在线漫画变成找不到的孤儿。所以 runtime 刻意**不进**
-  /// 摘要，只做前缀——`OnlineMangaRuntimeKind.mihon.wireValue == 'mihon'`，
-  /// 于是 Mihon 条目的键与 v88 完全一致，而 Aidoku 用 `aidoku-` 前缀天然不与
-  /// 它撞键空间。
+  /// 书架身份（推导与稳定性约束见 [onlineMangaBookKeyFor]）。
   static String bookKeyFor({
     required OnlineMangaRuntimeKind runtime,
     required String extensionPackage,
     required String sourceId,
     required String seriesKey,
-  }) {
-    final String identity = <String>[
-      extensionPackage,
-      sourceId,
-      seriesKey,
-    ].join(_identitySeparator);
-    final String digest = sha256.convert(utf8.encode(identity)).toString();
-    return '${runtime.wireValue}-${digest.substring(0, 32)}';
-  }
-
-  static String bookKeyOf(OnlineMangaLibraryEntry entry) => bookKeyFor(
-    runtime: entry.runtime,
-    extensionPackage: entry.extensionPackage,
-    sourceId: entry.sourceId,
-    seriesKey: entry.series.key,
+  }) => onlineMangaBookKeyFor(
+    runtime: runtime,
+    extensionPackage: extensionPackage,
+    sourceId: sourceId,
+    seriesKey: seriesKey,
   );
+
+  static String bookKeyOf(OnlineMangaLibraryEntry entry) =>
+      onlineMangaBookKeyOf(entry);
 
   Future<EpubBookRow?> find(OnlineMangaLibraryEntry entry) =>
       database.getEpubBook(bookKeyOf(entry));
@@ -147,7 +121,7 @@ class OnlineMangaLibraryService {
         chapters: entry.chapters,
       );
       final EpubBookRow row = (await database.getEpubBook(bookKey))!;
-      await _adoptRemoteCollection(entry, row);
+      await adoptOnlineMangaRemoteCollection(database, entry, row);
       return row;
     }
 
@@ -191,58 +165,17 @@ class OnlineMangaLibraryService {
       }
     }
 
-    await database.insertEpubBook(
-      EpubBooksCompanion.insert(
-        bookKey: bookKey,
-        title: entry.series.title,
-        author: Value<String?>(entry.series.byline),
-        coverPath: Value<String?>(coverPath),
-        epubPath: p.basename(placeholder.path),
-        extractDir: directory.path,
-        chapterCount: entry.chapters.length,
-        chaptersJson: _chaptersJson(entry.chapters),
-        sourceMetadata: Value<String?>(entry.encode()),
-        importedAt: DateTime.now().millisecondsSinceEpoch,
-        format: const Value<String>('manga'),
-      ),
-    );
-    final EpubBookRow row = (await database.getEpubBook(bookKey))!;
-    await writeOnlineMangaShelfSidecar(row);
-    await _clearPeerDeletionTombstone(entry);
-    await _adoptRemoteCollection(entry, row);
-    return row;
-  }
-
-  /// 重新收下经互联来的漫画 = 撤销本机此前对它的「从所有设备删除」。
-  ///
-  /// 那次删除的墓碑写的是**对端键**（`ReaderFushiSource.deleteBook` 经
-  /// `InterconnectMangaCatalog.peerBookKeyOf`，本机 `interconnect-…` 键对端认不出），
-  /// 而 [FushiDatabase.insertEpubBook] 只按本机键清墓碑。不在这里补清，删了又收下
-  /// 时那条还没推出去的墓碑会在下一轮推给 host，把用户刚重新要回来的书从 host 删掉。
-  Future<void> _clearPeerDeletionTombstone(
-    OnlineMangaLibraryEntry entry,
-  ) async {
-    if (entry.runtime != OnlineMangaRuntimeKind.interconnect) return;
-    final String peerKey = entry.series.key;
-    if (peerKey.isEmpty) return;
-    await database.clearSyncDeletionTombstone(
-      SyncTombstoneKind.book.dbValue,
-      peerKey,
-    );
-  }
-
-  Future<void> _adoptRemoteCollection(
-    OnlineMangaLibraryEntry entry,
-    EpubBookRow row,
-  ) async {
-    if (entry.runtime != OnlineMangaRuntimeKind.interconnect) return;
-    await RemoteCollectionAdoptionService(database).adoptMembership(
-      membership: RemoteCollectionMembership.fromJson(
-        entry.series.raw['collection'],
-      ),
-      mediaType: MediaKind.epub,
-      remoteEntryKey: entry.series.key,
-      localEntryKey: row.uid,
+    // 建行与它的全部副作用（侧车、互联对端墓碑、远端合集认领）只走这一个口，
+    // 「重新入库」同用（OnlineMangaReshelf.reshelve）。
+    return insertOnlineMangaShelfRow(
+      database,
+      entry: entry,
+      title: entry.series.title,
+      author: entry.series.byline,
+      coverPath: coverPath,
+      epubPath: p.basename(placeholder.path),
+      extractDir: directory.path,
+      importedAt: DateTime.now().millisecondsSinceEpoch,
     );
   }
 
@@ -525,14 +458,8 @@ class OnlineMangaLibraryService {
     MangaResumeTarget target = MangaResumeTarget.furthestProgress,
   }) => continueMangaChapterIndex(entry, states, target: target);
 
-  /// `epub_books.chapters_json` 的派生（重新入库从侧车描述符重建行时同用）。
-  static String chaptersJsonOf(List<OnlineMangaChapter> chapters) =>
-      _chaptersJson(chapters);
-
   static String _chaptersJson(List<OnlineMangaChapter> chapters) =>
-      jsonEncode(<Map<String, Object?>>[
-        for (final OnlineMangaChapter chapter in chapters) chapter.toJson(),
-      ]);
+      onlineMangaChaptersJson(chapters);
 
   static Future<void> _writeAtomic(File target, String contents) async {
     await target.parent.create(recursive: true);

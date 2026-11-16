@@ -5,6 +5,7 @@ import 'package:archive/archive_io.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
 import 'package:fushi/src/media/manga/library/online_manga_reshelf.dart';
@@ -17,6 +18,7 @@ import 'package:fushi/src/storage/download_root_migrator.dart';
 import 'package:fushi/src/sync/backup_service.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/epub_storage.dart';
+import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:path/path.dart' as p;
 
 /// 统一下载根（BUG-4658）：路径派生、在线漫画跟随下载根、旧位置搬家、改根搬移、
@@ -249,6 +251,42 @@ void main() {
       expect(
         OnlineMangaLibraryEntry.tryParse(back.sourceMetadata)?.series.key,
         '/s/5',
+      );
+    });
+
+    test('重新入库互联漫画与入库同一个建行口：清掉「从所有设备删除」写的对端键墓碑', () async {
+      final String root = p.join(temp.path, 'dl');
+      DownloadRoot.install(() async => DownloadLayout(root: root));
+      final OnlineMangaLibraryEntry remote = InterconnectMangaCatalog.entryFor(
+        const RemoteBookInfo(
+          title: 'Remote manga',
+          bookKey: 'host-manga-key',
+          hasContent: false,
+          hasMangaChapters: true,
+          format: 'manga',
+        ),
+      );
+      final EpubBookRow row = await serviceAt(root).add(remote);
+      // 删书框「从所有设备删除」+ 保留已下载章节：行删掉、对端键墓碑待推。
+      await db.deleteEpubBook(row.bookKey);
+      await db.writeSyncDeletionTombstone(
+        SyncTombstoneKind.book.dbValue,
+        'host-manga-key',
+        100,
+      );
+
+      final OnlineMangaReshelf reshelf = OnlineMangaReshelf(database: db);
+      final EpubBookRow back = await reshelf.reshelve(
+        (await reshelf.scan()).recoverable.single,
+      );
+
+      expect(back.uid, row.uid);
+      expect(
+        await db.getSyncDeletionTombstonesOfType(
+          SyncTombstoneKind.book.dbValue,
+        ),
+        isEmpty,
+        reason: '对端键墓碑留着，下一轮同步就把刚重新入库的书从 host 删掉',
       );
     });
 

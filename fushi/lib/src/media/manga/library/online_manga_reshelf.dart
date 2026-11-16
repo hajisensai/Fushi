@@ -1,14 +1,13 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:drift/drift.dart' show Value;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/epub_storage.dart';
 import 'package:fushi_engine/media/manga/manga_storage.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
-import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
+import 'package:fushi/src/media/manga/library/online_manga_shelf_row.dart';
 import 'package:fushi/src/media/manga/library/online_manga_shelf_sidecar.dart';
 import 'package:fushi/src/storage/download_layout.dart';
 
@@ -51,6 +50,9 @@ class OnlineMangaReshelfScan {
 ///
 /// **bookKey 与 uid 原样还原**（侧车里存着）：卡片背面的来源链接先按 uid、再按
 /// bookKey 找书（`card_source_router.dart`），两者不变，旧卡片就重新连得上。
+///
+/// app 用的实例由 `AppModel.onlineMangaReshelf` 持有。本文件只依赖下层模块（描述符、
+/// 侧车、建行口、下载布局），不进 AppModel 所在的 import 环。
 class OnlineMangaReshelf {
   OnlineMangaReshelf({
     required this.database,
@@ -63,7 +65,7 @@ class OnlineMangaReshelf {
   static final StreamController<void> _changes =
       StreamController<void>.broadcast();
 
-  /// 可重新入库的集合可能变了（删书保留文件 / 重新入库 / 删文件）。
+  /// 可重新入库的集合可能变了（删书保留文件 / 重新入库 / 删文件 / 改下载根）。
   static Stream<void> get changes => _changes.stream;
 
   /// 通知 [changes] 的订阅者重扫。
@@ -118,7 +120,7 @@ class OnlineMangaReshelf {
   static bool _identityMatches(OnlineMangaShelfSidecar sidecar, String dir) {
     if (sidecar.bookKey != dir) return false;
     final OnlineMangaLibraryEntry entry = sidecar.entry;
-    return OnlineMangaLibraryService.bookKeyOf(entry) == sidecar.bookKey;
+    return onlineMangaBookKeyOf(entry) == sidecar.bookKey;
   }
 
   static Future<int> _downloadedChapters(String bookDir) async {
@@ -143,7 +145,6 @@ class OnlineMangaReshelf {
     final EpubBookRow? existing = await database.getEpubBook(item.bookKey);
     if (existing != null) return existing;
     final OnlineMangaShelfSidecar sidecar = item.sidecar;
-    final OnlineMangaLibraryEntry entry = sidecar.entry;
     final File placeholder = File(
       p.join(item.directory, MangaStorage.kMangaJsonFileName),
     );
@@ -151,30 +152,25 @@ class OnlineMangaReshelf {
       await placeholder.writeAsString('{"pages":[]}', flush: true);
     }
     final String? cover = sidecar.coverPath;
-    await database.insertEpubBook(
-      EpubBooksCompanion.insert(
-        bookKey: sidecar.bookKey,
-        uid: sidecar.uid.isEmpty
-            ? const Value<String>.absent()
-            : Value<String>(sidecar.uid),
-        title: sidecar.title,
-        author: Value<String?>(sidecar.author),
-        coverPath: Value<String?>(
+    // 与「入库」同一个建行口：侧车、互联对端墓碑、远端合集认领都在里面。重新入库
+    // 不另拼一份（漏清对端墓碑，下一轮同步就把刚要回来的书从 host 删掉）。
+    final EpubBookRow row = await insertOnlineMangaShelfRow(
+      database,
+      entry: sidecar.entry,
+      uid: sidecar.uid,
+      title: sidecar.title,
+      author: sidecar.author,
+      coverPath:
           cover != null && await File(p.join(item.directory, cover)).exists()
-              ? cover
-              : null,
-        ),
-        epubPath: MangaStorage.kMangaJsonFileName,
-        extractDir: item.directory,
-        chapterCount: entry.chapters.length,
-        chaptersJson: OnlineMangaLibraryService.chaptersJsonOf(entry.chapters),
-        sourceMetadata: Value<String?>(sidecar.sourceMetadata),
-        importedAt: sidecar.importedAt,
-        format: const Value<String>('manga'),
-      ),
+          ? cover
+          : null,
+      epubPath: MangaStorage.kMangaJsonFileName,
+      extractDir: item.directory,
+      importedAt: sidecar.importedAt,
+      sourceMetadata: sidecar.sourceMetadata,
     );
     notifyChanged();
-    return (await database.getEpubBook(sidecar.bookKey))!;
+    return row;
   }
 
   /// 不要了：删掉这部漫画留在下载根里的文件。
