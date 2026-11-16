@@ -1443,7 +1443,7 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
   ///
   /// 候选之间只靠标题区分，而同系列各季的 romaji 前缀相同、差别在末尾
   /// （`… 2nd Season`）。原先画成定宽 chip、单行省略号，几季显示成同一串
-  /// （BUG-4695）；chip 本身也装不下长标题——MD3 `RawChip` 与 Apple 胶囊都把
+  /// （BUG-4743）；chip 本身也装不下长标题——MD3 `RawChip` 与 Apple 胶囊都把
   /// label 钉成单行。所以与下方「字幕版本」同构，用分组列表行承载。
   Widget _buildSeriesMatches(ThemeData theme) {
     final int count = _seriesMatches.length;
