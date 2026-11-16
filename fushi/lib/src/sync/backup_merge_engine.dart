@@ -72,10 +72,12 @@ class BackupMergeEngine {
     Set<String>? enabledCategoryNames,
     bool adoptSourcePreferences = false,
     bool mergePortableSettings = false,
+    bool fillMissingOnly = false,
     SrsStorage? localSrs,
     SrsCore? sourceSrs,
   }) : _srcAlias = srcAlias,
        _mergePortableSettings = mergePortableSettings,
+       _fillMissingOnly = fillMissingOnly,
        _carriedVideoSourcePaths = carriedVideoSourcePaths,
        _enabledCategoryNames = enabledCategoryNames,
        _adoptSourcePreferences = adoptSourcePreferences,
@@ -108,6 +110,11 @@ class BackupMergeEngine {
   /// （`PortableSettingsPolicy`）按修改时刻 LWW 并进来。默认关 = 合并导入一贯的
   /// 「不动本机设置」。
   final bool _mergePortableSettings;
+
+  /// 只补缺（「从覆盖导入前的快照恢复书库」用）：只插入本机缺的行，**不改任何既有
+  /// 行**——跳过全部 LWW / MAX-union 的 UPDATE、源库删除碑与合集身份合并。默认关 =
+  /// 备份合并导入的一贯语义（进度 LWW、统计 MAX-union）。
+  final bool _fillMissingOnly;
 
   /// Per-category merge gate (the `BackupCategory.name`s the user kept ticked in
   /// the import dialog); null = merge every category (legacy full merge). Only
@@ -1003,6 +1010,8 @@ class BackupMergeEngine {
 
   /// 把备份里同名合集行 [src] 的整理身份并进本库合集 [targetId]。
   Future<void> _mergeOrganizeIdentityInto(int targetId, QueryRow src) async {
+    // 只补缺：不改本机既有合集的身份。
+    if (_fillMissingOnly) return;
     final QueryRow? t = await _db
         .customSelect(
           'SELECT origin, organize_key, organize_aliases FROM media_collections '
@@ -1096,6 +1105,7 @@ class BackupMergeEngine {
               'WHERE $_srcBookUidRekey = reader_positions.book_uid)',
         )
         .join(', ');
+    if (_fillMissingOnly) return;
     await _db.customStatement(
       'UPDATE reader_positions SET $setClause '
       'WHERE EXISTS (SELECT 1 FROM $_srcAlias.reader_positions AS s '
@@ -1119,6 +1129,7 @@ class BackupMergeEngine {
       'AND s.title NOT IN (SELECT title FROM statistics_tombstones '
       "WHERE source_type = 'book')",
     );
+    if (_fillMissingOnly) return;
     await _db.customStatement(
       'UPDATE reading_statistics SET '
       'characters_read = MAX(characters_read, ('
@@ -1161,6 +1172,7 @@ class BackupMergeEngine {
       'AND s.title NOT IN (SELECT title FROM statistics_tombstones '
       "WHERE source_type = 'video')",
     );
+    if (_fillMissingOnly) return;
     await _db.customStatement(
       'UPDATE video_watch_statistics AS t SET '
       'subtitle_chars = MAX(t.subtitle_chars, ('
@@ -1202,6 +1214,7 @@ class BackupMergeEngine {
       'WHERE NOT EXISTS (SELECT 1 FROM $table AS t '
       'WHERE $tEqS)',
     );
+    if (_fillMissingOnly) return;
     await _db.customStatement(
       'UPDATE $table SET '
       '$valueColumn = MAX($valueColumn, ('
@@ -1221,6 +1234,7 @@ class BackupMergeEngine {
       'AS s WHERE NOT EXISTS (SELECT 1 FROM mining_statistics AS t '
       'WHERE t.source_type = s.source_type AND t.date_key = s.date_key)',
     );
+    if (_fillMissingOnly) return;
     await _db.customStatement(
       'UPDATE mining_statistics SET "count" = MAX("count", ('
       'SELECT s."count" FROM $_srcAlias.mining_statistics AS s '
@@ -1269,6 +1283,7 @@ class BackupMergeEngine {
       'AND NOT EXISTS (SELECT 1 FROM statistics_tombstones st '
       'WHERE st.title = s.title AND st.source_type = s.source_type)',
     );
+    if (_fillMissingOnly) return;
     await _db.customStatement(
       'UPDATE lookup_mining_counters SET '
       'lookup_count = MAX(lookup_count, ('
@@ -1463,29 +1478,32 @@ class BackupMergeEngine {
     final String hasHost = _hasHost('s', 'm');
     final String profileJoin = _profileMapJoin('s', 'sp', 'tp');
     final String profileId = await _mappedProfileId('s', 'sp', 'tp');
-    // 几个 src 游戏可能映射到同一个本机游戏 → 同 (profile, kind, key) 多条碑，取 MAX。
-    await _db.customStatement(
-      'INSERT OR IGNORE INTO study_segment_tombstones '
-      '(profile_id, media_kind, media_key, deleted_at) '
-      'SELECT $profileId, s.media_kind, $key, MAX(s.deleted_at) '
-      'FROM $_srcAlias.study_segment_tombstones AS s $join$profileJoin'
-      'WHERE $hasHost '
-      'GROUP BY $profileId, s.media_kind, $key',
-    );
-    await _db.customStatement(
-      'UPDATE study_segment_tombstones SET deleted_at = ('
-      'SELECT MAX(s.deleted_at) '
-      'FROM $_srcAlias.study_segment_tombstones AS s $join$profileJoin'
-      'WHERE $profileId = study_segment_tombstones.profile_id '
-      'AND s.media_kind = study_segment_tombstones.media_kind '
-      'AND $key = study_segment_tombstones.media_key) '
-      'WHERE EXISTS (SELECT 1 '
-      'FROM $_srcAlias.study_segment_tombstones AS s $join$profileJoin'
-      'WHERE $profileId = study_segment_tombstones.profile_id '
-      'AND s.media_kind = study_segment_tombstones.media_kind '
-      'AND $key = study_segment_tombstones.media_key '
-      'AND s.deleted_at > study_segment_tombstones.deleted_at)',
-    );
+    // 只补缺：不引入源库的删除碑（会删掉本机既有段）。
+    if (!_fillMissingOnly) {
+      // 几个 src 游戏可能映射到同一个本机游戏 → 同 (profile, kind, key) 多条碑，取 MAX。
+      await _db.customStatement(
+        'INSERT OR IGNORE INTO study_segment_tombstones '
+        '(profile_id, media_kind, media_key, deleted_at) '
+        'SELECT $profileId, s.media_kind, $key, MAX(s.deleted_at) '
+        'FROM $_srcAlias.study_segment_tombstones AS s $join$profileJoin'
+        'WHERE $hasHost '
+        'GROUP BY $profileId, s.media_kind, $key',
+      );
+      await _db.customStatement(
+        'UPDATE study_segment_tombstones SET deleted_at = ('
+        'SELECT MAX(s.deleted_at) '
+        'FROM $_srcAlias.study_segment_tombstones AS s $join$profileJoin'
+        'WHERE $profileId = study_segment_tombstones.profile_id '
+        'AND s.media_kind = study_segment_tombstones.media_kind '
+        'AND $key = study_segment_tombstones.media_key) '
+        'WHERE EXISTS (SELECT 1 '
+        'FROM $_srcAlias.study_segment_tombstones AS s $join$profileJoin'
+        'WHERE $profileId = study_segment_tombstones.profile_id '
+        'AND s.media_kind = study_segment_tombstones.media_kind '
+        'AND $key = study_segment_tombstones.media_key '
+        'AND s.deleted_at > study_segment_tombstones.deleted_at)',
+      );
+    }
     final List<String> cols = <String>[
       'uid',
       'device_id',
@@ -1526,12 +1544,14 @@ class BackupMergeEngine {
               'WHERE s.uid = study_segments.uid)',
         )
         .join(', ');
-    await _db.customStatement(
-      'UPDATE study_segments SET $setClause '
-      'WHERE EXISTS (SELECT 1 FROM $_srcAlias.study_segments AS s $join'
-      'WHERE s.uid = study_segments.uid AND $hasHost '
-      'AND s.updated_at > study_segments.updated_at)',
-    );
+    if (!_fillMissingOnly) {
+      await _db.customStatement(
+        'UPDATE study_segments SET $setClause '
+        'WHERE EXISTS (SELECT 1 FROM $_srcAlias.study_segments AS s $join'
+        'WHERE s.uid = study_segments.uid AND $hasHost '
+        'AND s.updated_at > study_segments.updated_at)',
+      );
+    }
     await _db.customStatement(
       'DELETE FROM study_segments WHERE EXISTS ('
       'SELECT 1 FROM study_segment_tombstones AS t '
@@ -2061,6 +2081,7 @@ class BackupMergeEngine {
       'WHERE t.book_uid = $_srcBookUidRekey '
       'AND t.relative_path = s.relative_path)',
     );
+    if (_fillMissingOnly) return;
     await _db.customStatement(
       'UPDATE book_custom_css SET '
       'content = (SELECT s.content FROM $_srcAlias.book_custom_css AS s '
@@ -2091,6 +2112,7 @@ class BackupMergeEngine {
       'AND NOT EXISTS (SELECT 1 FROM manga_reader_overrides AS t '
       'WHERE t.book_uid = $_srcBookUidRekey)',
     );
+    if (_fillMissingOnly) return;
     await _db.customStatement(
       'UPDATE manga_reader_overrides SET '
       'overrides_json = (SELECT s.overrides_json FROM '
@@ -2119,6 +2141,7 @@ class BackupMergeEngine {
       'AND NOT EXISTS (SELECT 1 FROM revealed_images AS t '
       'WHERE t.book_uid = $_srcBookUidRekey AND t.image_key = s.image_key)',
     );
+    if (_fillMissingOnly) return;
     await _db.customStatement(
       'UPDATE revealed_images SET '
       'revealed_at = (SELECT s.revealed_at '
@@ -2170,6 +2193,7 @@ class BackupMergeEngine {
       "WHERE instr(s.\"key\", '$kOverrideTitleKeyMarker') > 0 "
       'AND NOT EXISTS (SELECT 1 FROM preferences AS t WHERE t."key" = s."key")',
     );
+    if (_fillMissingOnly) return;
     await _db.customStatement(
       'UPDATE preferences SET '
       '"value" = (SELECT s."value" FROM $_srcAlias.preferences AS s '

@@ -479,21 +479,15 @@ class MangaImporter {
 
       final int importedAtMs = DateTime.now().millisecondsSinceEpoch;
       insertedKey = await db.insertEpubBook(
-        EpubBooksCompanion.insert(
+        bookRowFor(
           bookKey: bookKey,
           title: storedTitle,
-          coverPath: Value(coverRel),
-          epubPath: MangaStorage.kMangaJsonFileName,
-          extractDir: bookDir,
-          chapterCount: total,
-          chaptersJson: '[]',
+          coverRel: coverRel,
+          bookDir: bookDir,
+          pageCount: total,
           importedAt: importedAtMs,
-          format: Value(BookFormat.manga.dbValue),
-          // mangaReadingMode 留 absent(null)：跟随阅读器自动判定（P1-L4 契约）。
-          sourceId: sourceId != null ? Value(sourceId) : const Value.absent(),
-          sourceMetadata: sourceMetadata != null
-              ? Value(sourceMetadata)
-              : const Value.absent(),
+          sourceId: sourceId,
+          sourceMetadata: sourceMetadata,
         ),
       );
 
@@ -531,6 +525,69 @@ class MangaImporter {
       }
       rethrow;
     }
+  }
+
+  /// 本地漫画书目录 → `EpubBooks` 行：导入（[_copyAndInsert]）与「孤儿书目录
+  /// 重新登记」（[registerExistingBookDir]，BUG-4701）共用的唯一行构造口径。
+  static EpubBooksCompanion bookRowFor({
+    required String bookKey,
+    required String title,
+    required String coverRel,
+    required String bookDir,
+    required int pageCount,
+    required int importedAt,
+    int? sourceId,
+    String? sourceMetadata,
+  }) {
+    return EpubBooksCompanion.insert(
+      bookKey: bookKey,
+      title: title,
+      coverPath: Value(coverRel),
+      epubPath: MangaStorage.kMangaJsonFileName,
+      extractDir: bookDir,
+      chapterCount: pageCount,
+      chaptersJson: '[]',
+      importedAt: importedAt,
+      format: Value(BookFormat.manga.dbValue),
+      // mangaReadingMode 留 absent(null)：跟随阅读器自动判定（P1-L4 契约）。
+      sourceId: sourceId != null ? Value(sourceId) : const Value.absent(),
+      sourceMetadata: sourceMetadata != null
+          ? Value(sourceMetadata)
+          : const Value.absent(),
+    );
+  }
+
+  /// 把盘上已有、但没有书库行的本地漫画书目录 [bookDir]（`manga.json` + `images/`，
+  /// 即 [copyMangaArtifacts] 的产物）重新登记成书（BUG-4701）。[bookKey] 由调用方
+  /// 给定（= 目录名），不重新派生。页数 = `manga.json` 的页数，封面 = 第一页（与
+  /// [copyMangaArtifacts] 返回的 coverRel 同一规则）。`manga.json` 缺失 / 无页抛
+  /// [MangaImportException]。
+  static Future<String> registerExistingBookDir({
+    required FushiDatabase db,
+    required String bookKey,
+    required String title,
+    required String bookDir,
+  }) async {
+    final File jsonFile = File(
+      p.join(bookDir, MangaStorage.kMangaJsonFileName),
+    );
+    if (!jsonFile.existsSync()) {
+      throw MangaImportException('Manga JSON not found: ${jsonFile.path}');
+    }
+    final MokuroPayload payload = parseMangaJson(await jsonFile.readAsString());
+    if (payload.images.isEmpty) {
+      throw const MangaImportException('Manga JSON has no pages');
+    }
+    return db.insertEpubBook(
+      bookRowFor(
+        bookKey: bookKey,
+        title: title,
+        coverRel: payload.images.first.url,
+        bookDir: bookDir,
+        pageCount: payload.images.length,
+        importedAt: DateTime.now().millisecondsSinceEpoch,
+      ),
+    );
   }
 
   /// mokuro 0.1 旧版产物 [htmlPath]（`<父>/<卷名>.html`）→ 一份 `.mokuro` 形状的
