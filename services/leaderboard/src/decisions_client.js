@@ -184,6 +184,8 @@ export const DECISIONS_CLIENT_JS = String.raw`(function () {
     body.set('v', v);
     body.set('text', text || '');
     body.set('back', stage);
+    // 乐观锁：带上这张卡上看到的决定，别人先改了服务端回 409 + 最新的卡。
+    body.set('base', prev);
     card.classList.add('busy');
     fetch(form.action, {
       method: 'POST',
@@ -192,6 +194,19 @@ export const DECISIONS_CLIENT_JS = String.raw`(function () {
       headers: { Accept: 'application/json' }
     }).then(function (res) {
       return res.json().catch(function () { return {}; }).then(function (data) {
+        if (res.status === 409 && data.error === 'verdict_conflict' && data.item) {
+          // 换上最新的卡（草稿留在框里），告诉是谁刚拍的，不覆盖。
+          var el = swap(card, data.item);
+          if (data.sig) { sig = data.sig; list.setAttribute('data-sig', sig); }
+          el.classList.add('fresh');
+          applyFilter();
+          if (!el.hidden) setCurrent(el, true);
+          var who = el.querySelector('.dverdict');
+          var e = new Error((who ? who.textContent.replace(/ · .*$/, '') : '别人刚改了这条的决定')
+            + '。你的决定没有提交' + (text ? '，留言还在框里' : '') + '，看过后再拍');
+          e.conflict = true;
+          throw e;
+        }
         if (!res.ok) throw new Error(ERRORS[data.error] || ('提交失败（' + (data.error || res.status) + '）'));
         return data;
       });
@@ -232,7 +247,7 @@ export const DECISIONS_CLIENT_JS = String.raw`(function () {
       }
     }).catch(function (err) {
       card.classList.remove('busy');
-      toast(err.message || '网络错误，没有提交成功', { error: true, ms: 6000 });
+      toast(err.message || '网络错误，没有提交成功', { error: true, ms: err.conflict ? 10000 : 6000 });
     });
   }
 
