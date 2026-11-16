@@ -52,8 +52,11 @@ use rusqlite::Connection;
 /// `cards_deck`、`cards_template` 三个索引）；G7-4 起 `40011`（读命令 `cmd/reads.rs` 的查词热路径与待裁决计数：
 /// `notes_term`、`notes_pending` 两个索引，协议 3 缓存表上都有）；G7-4b 起 `40014`（AnkiConnect 数字 id 反查
 /// `cmd/columns.rs` 的 `anki_resolve` / `anki_notes_info`：`notes_anki`、`cards_anki` 两个索引，协议 3 v13 的
-/// `idx_srs_*_cache_anki_id`；号段 40012 / 40013 预分配给同批别的 PR）。整批推送前每个改表的 PR 各自用分到的号。
-pub const SCHEMA: i64 = 40_014;
+/// `idx_srs_*_cache_anki_id`；号段 40012 / 40013 预分配给同批别的 PR）；G7-4d 起 `40016`（浏览读命令 `cmd/browse.rs`：
+/// `anki_dupes` 按查重规范形查的 `notes_dupe` 索引——协议 3 v15 的 `idx_srs_notes_cache_dupe`——与常驻浏览会话按代号
+/// 失效用的缓存层变更记录 `cache_gen` / `cache_log`，`cache.rs` 文件头「变更记录」；40015 预分配给同批别的 PR）。
+/// 整批推送前每个改表的 PR 各自用分到的号。
+pub const SCHEMA: i64 = 40_016;
 
 /// 新代的号段从这里起：`schema` 小于它的都不是新代库（协议 3 的 1～29 与封存值 39999）。
 pub const GEN_FLOOR: i64 = 40_000;
@@ -565,10 +568,11 @@ pub(crate) fn check_ready(conn: &Connection) -> Result<(), String> {
 /// 平均剩下的行数；`WITHOUT ROWID` 表的主键那一行 `idx` = 表名。量级取样本库，数字只表达形状、不随数据更新：计划因此
 /// 是 schema 的函数，不因某台设备数据多少而变（`tests::lookups_with_a_key_never_walk_the_whole_collection` 钉住）。
 /// 对这个文件跑 `ANALYZE` / `PRAGMA optimize` 会把它们换成随数据变的统计——下次打开时 [install] 会写回来。
-const PLANNER_STATS: [(&str, &str, &str); 28] = [
+const PLANNER_STATS: [(&str, &str, &str); 30] = [
     ("alias_ix", "alias_canon", "1000000 1000000 2 1"),
     ("alias_ix", "alias_ix", "1000000 1000000 1"),
     ("alias_ix", "alias_pool", "5000 5000 1"),
+    ("cache_log", "cache_log", "4096 4096 8 1"),
     ("cards", "cards", "100000 100000 1"),
     ("cards", "cards_anki", "100000 100000 1"),
     ("cards", "cards_deck", "100000 100000 5000"),
@@ -584,6 +588,7 @@ const PLANNER_STATS: [(&str, &str, &str); 28] = [
     ("notes", "notes", "50000 50000 1"),
     ("notes", "notes_anki", "50000 50000 1"),
     ("notes", "notes_deck", "50000 50000 5000"),
+    ("notes", "notes_dupe", "50000 50000 2"),
     ("notes", "notes_pending", "100 100"),
     ("notes", "notes_term", "50000 50000 2"),
     ("notes", "notes_type", "50000 50000 1000"),
