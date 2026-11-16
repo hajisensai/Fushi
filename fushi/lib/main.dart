@@ -130,6 +130,8 @@ import 'package:fushi/src/media/tracking/page/tracking_page.dart'
 import 'package:fushi/src/media/tracking/page/tracking_page_data.dart'
     show TrackingPageTab;
 import 'package:fushi/src/media/tracking/tracking_auto_link_notice.dart';
+import 'package:fushi/src/media/listening_reminder_app.dart'
+    show listeningReminderProvider;
 import 'package:fushi/src/storage/data_root_migration_view.dart';
 import 'package:fushi/src/startup/loading_watchdog_view.dart';
 import 'package:fushi/src/sync/backup_import_overlay_view.dart';
@@ -3232,6 +3234,8 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
         PreviousExitLog.markInitialised();
         _listenRemotePush();
         _listenTrackingAutoLinks();
+        // 连续收听提醒：开关关着时只挂一个偏好监听，不起计时器。
+        ref.read(listeningReminderProvider).start();
         unawaited(_checkFeedbackReplies());
         unawaited(
           offerCrashReportAfterStartup(
