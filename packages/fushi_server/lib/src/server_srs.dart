@@ -604,6 +604,7 @@ class ServerSrs {
     ServerSrsMigrationBackend migration =
         const ServerSrsNativeMigrationBackend(),
     this.migrationPollInterval = kServerSrsMigrationPollInterval,
+    this.migrationRetryDelay = kServerSrsMigrationRetryDelay,
   }) : syncRoot = Directory(
          p.join(syncData.path, 'sync-data', kSyncRootFolderName),
        ),
@@ -639,6 +640,9 @@ class ServerSrs {
 
   /// 迁移进度轮询间隔。
   final Duration migrationPollInterval;
+
+  /// 「等一会再来」类结论之后自动重试前至少隔的时间（[kServerSrsMigrationRetryDelay]）。
+  final Duration migrationRetryDelay;
 
   ServerSrsGeneration _generation = ServerSrsGeneration.initial;
 
@@ -962,8 +966,7 @@ class ServerSrs {
         final DateTime? finished = _generation.finishedAt;
         if (_generation.autoRetry &&
             (finished == null ||
-                DateTime.now().difference(finished) >=
-                    kServerSrsMigrationRetryDelay)) {
+                DateTime.now().difference(finished) >= migrationRetryDelay)) {
           _beginMigration();
         }
       case SrsGenState.migratingElsewhere:

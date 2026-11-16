@@ -26,7 +26,8 @@ const String kJa = '01928c3e-0000-7000-8000-00000000a0a0';
 const String kZh = '01928c3e-0000-7000-8000-00000000b0b0';
 const String kOrphan = '01928c3e-0000-7000-8000-00000000cafe';
 
-/// 假的迁移执行端：[state] 是状态命令报的代际状态，每次 [run] 挂一个等测试给结论的 Completer。
+/// 假的迁移执行端：[state] 是状态命令报的代际状态，每次 [run] 挂一个等测试给结论的 Completer。[cancel] 与内核一样：
+/// 在跑的那次以 cancelled 收场；还没开始的（按 runId 先登记）一开始就收场。
 final class _FakeMigration implements ServerSrsMigrationBackend {
   SrsGenState state = SrsGenState.needsMigration;
   SrsGen4MigrationProgress? running;
@@ -55,12 +56,28 @@ final class _FakeMigration implements ServerSrsMigrationBackend {
     final Completer<SrsGen4MigrationOutcome> c =
         Completer<SrsGen4MigrationOutcome>();
     runs.add(c);
+    if (_cancelArmed) {
+      _cancelArmed = false;
+      c.complete(_cancelled);
+    }
     return c.future;
   }
+
+  bool _cancelArmed = false;
+
+  static const SrsGen4MigrationOutcome _cancelled = SrsGen4MigrationOutcome(
+    verdict: SrsGen4MigrationVerdict.cancelled,
+  );
 
   @override
   bool cancel(String dir, {String? runId}) {
     cancels.add(runId);
+    if (runs.isNotEmpty && !runs.last.isCompleted) {
+      running = null;
+      runs.last.complete(_cancelled);
+    } else {
+      _cancelArmed = true;
+    }
     return true;
   }
 
@@ -89,6 +106,8 @@ void main() {
     engine: () => null,
     migration: fake,
     migrationPollInterval: const Duration(milliseconds: 5),
+    // 不等重试间隔：「不自动重跑」靠的是结论本身，不是间隔。
+    migrationRetryDelay: Duration.zero,
   );
 
   setUp(() async {
@@ -368,19 +387,34 @@ void main() {
       await srs.start();
       await runs(1);
       fake.finish(o, after: SrsGenState.needsMigration);
-      await settle();
-      expect(srs.generation.state, want, reason: o.code ?? o.verdict.wire);
-      expect(srs.generation.autoRetry, retry, reason: o.code);
+      final ServerSrsGeneration seen = ServerSrsGeneration(
+        state: want,
+        code: o.code,
+      );
+      expect(seen.autoRetry, retry, reason: o.code ?? o.verdict.wire);
       expect(
-        srs.upgradeRefusal,
+        seen.refusal,
         retry
             ? ServerSrsUpgradeRefusal.upgrading
             : ServerSrsUpgradeRefusal.blocked,
       );
-      // 刚跑完紧接着的判定不重跑（busy 也要等重试间隔、兜底定时器的下一轮）。
+      if (retry) {
+        // 旧库正被写：过了重试间隔（本测试为 0）的下一次判定自动再试，期间请求仍是「升级中」。
+        await runs(2);
+        expect(srs.generation.state, ServerSrsGenState.migrating);
+        expect(srs.generation.verdict, o.verdict.wire);
+        expect(srs.upgradeRefusal, ServerSrsUpgradeRefusal.upgrading);
+        continue;
+      }
+      await settle();
+      expect(srs.generation.state, want, reason: o.code ?? o.verdict.wire);
+      expect(srs.generation.autoRetry, isFalse, reason: o.code);
+      expect(srs.upgradeRefusal, ServerSrsUpgradeRefusal.blocked);
+      expect(srs.generation.advice, isNotEmpty);
+      // 重试间隔为 0 也不重跑：靠的是结论本身。
+      await srs.applyConfig();
       expect(fake.runs, hasLength(1), reason: o.code ?? o.verdict.wire);
     }
-    expect(srs.generation.toJson()['code'], 'busy');
   });
 
   test('叫停：提交点之前叫停、结论 cancelled 后不自动重跑；过了提交点拒绝；停服等迁移停下', () async {
@@ -398,34 +432,46 @@ void main() {
       () => srs.generation.step == SrsGen4MigrationStep.translate,
       'translate polled',
     );
+    await runs(1);
     expect(srs.cancelMigration(), isNull);
     expect(fake.cancels, hasLength(1));
     expect(srs.generation.cancelRequested, isTrue);
-    await runs(1);
-    fake.finish(
-      const SrsGen4MigrationOutcome(verdict: SrsGen4MigrationVerdict.cancelled),
-      after: SrsGenState.needsMigration,
-    );
     await settle();
     expect(srs.generation.state, ServerSrsGenState.needsMigration);
     expect(srs.generation.verdict, 'cancelled');
     expect(fake.runs, hasLength(1));
     expect(srs.cancelMigration(), 'srs_migration_not_running');
 
-    // 停服：在跑的那次先叫停、等到结论再关。
+    // 停服：过了提交点的那次不叫停（改名 / 封存不能被打断），等它跑完再关。
     expect(await srs.startMigration(), isNull);
+    await runs(2);
+    fake.running = (step: SrsGen4MigrationStep.seal, done: 0, total: 1);
+    await until(
+      () => srs.generation.step == SrsGen4MigrationStep.seal,
+      'seal polled',
+    );
     bool stopped = false;
     final Future<void> stopping = srs.stop().then((_) => stopped = true);
-    await until(() => fake.cancels.length == 2, 'stop cancels');
+    await Future<void>.delayed(const Duration(milliseconds: 50));
     expect(stopped, isFalse, reason: '迁移有结论之前不算停好');
-    await runs(2);
+    expect(fake.cancels, hasLength(1), reason: '过了提交点不叫停');
     fake.finish(
-      const SrsGen4MigrationOutcome(verdict: SrsGen4MigrationVerdict.cancelled),
-      after: SrsGenState.needsMigration,
+      const SrsGen4MigrationOutcome(verdict: SrsGen4MigrationVerdict.committed),
+      after: SrsGenState.ready,
     );
     await stopping;
     expect(stopped, isTrue);
+    expect(srs.generation.verdict, 'committed');
     expect(await srs.startMigration(), 'srs_stopped');
+  });
+
+  test('停服时迁移在提交点之前：叫停、等到结论再关', () async {
+    await srs.start();
+    await runs(1);
+    await srs.stop();
+    expect(fake.cancels, hasLength(1));
+    expect(srs.migrationRunning, isFalse);
+    expect(srs.generation.verdict, 'cancelled');
   });
 
   test('迁移命令报错：记成 error、可见原因、不自动重跑', () async {
