@@ -361,6 +361,10 @@ void main() {
   testWidgets('专辑页：跨碟多选（菜单进入、长按勾选）；批量从音乐库移除写墓碑，撤销放回；单首菜单可移除', (
     WidgetTester tester,
   ) async {
+    // 专辑页 hero 高：默认 800×600 下第二碟落在首屏以下（懒构建），放大视口让两碟都在。
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1200, 1600);
+    addTearDown(tester.view.reset);
     MusicTracksCompanion albumTrack(String uid, int disc, int no) =>
         _track(uid).copyWith(
           albumUid: const Value<String?>('al'),
@@ -405,8 +409,6 @@ void main() {
     );
 
     // 第二碟的一首：多选态长按 = 勾选，不起播。
-    await tester.ensureVisible(row('e1'));
-    await tester.pumpAndSettle();
     await tester.longPress(row('e1'));
     await tester.pumpAndSettle();
     expect(find.text(t.music_selection_count(n: 2)), findsOneWidget);
