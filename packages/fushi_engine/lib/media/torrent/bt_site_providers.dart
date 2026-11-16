@@ -7,6 +7,7 @@ library;
 import 'package:http/http.dart' as http;
 
 import 'package:fushi_engine/media/torrent/bt_site_config.dart';
+import 'package:fushi_engine/media/torrent/custom_bt_site.dart';
 import 'package:fushi_engine/media/torrent/nyaa_client.dart';
 import 'package:fushi_engine/media/torrent/nyaa_resource_provider.dart';
 import 'package:fushi_engine/media/torrent/public_video_index_client.dart';
@@ -19,6 +20,7 @@ int _basePriority(BtSiteFormat format) => switch (format) {
   BtSiteFormat.nyaa => 100,
   BtSiteFormat.apibay => 200,
   BtSiteFormat.knaben => 300,
+  BtSiteFormat.custom => 400,
 };
 
 /// 为一个站点造 provider；站点停用或没有生效的视频域时返回 null。[client] 的
@@ -55,6 +57,20 @@ VideoResourceProvider? createBtSiteResourceProvider(
     ),
     BtSiteFormat.knaben => KnabenVideoResourceProvider(
       client: KnabenClient(baseUrl: baseUrl, client: client),
+      siteId: site.id,
+      displayName: site.displayName,
+      categories: categories,
+      priority: priority,
+      closesClient: true,
+    ),
+    BtSiteFormat.custom => CustomBtSiteVideoResourceProvider(
+      client: CustomBtSiteClient(
+        baseUrl: site.baseUrl,
+        rule: site.parser!,
+        cookie: site.cookie,
+        allowInsecureHttp: site.allowInsecureHttp,
+        client: client,
+      ),
       siteId: site.id,
       displayName: site.displayName,
       categories: categories,

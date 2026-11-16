@@ -159,16 +159,32 @@ impl Snapshot {
     /// 在一个只读快照里读原料：可见卡（`hidden = 0`，`added_at` = 笔记缓存的创建时刻，没有笔记缓存行时用卡片行上
     /// 记的）、出处字典、有效复习投影（按时刻升序）。
     pub(crate) fn load(c: &Connection, profile: &str) -> Result<Snapshot, String> {
-        let mut stmt = c
-            .prepare_cached(
-                "SELECT c.id, c.note_id, c.deck_id, c.queue, c.scheduled_days, c.suspended, c.buried_until_day, \
-                 c.scheduler, c.due_day, c.due_at, c.stability, c.difficulty, c.last_reviewed_at, c.lapses, c.reps, \
-                 COALESCE(n.created_at, c.note_created_at), c.last_log_id, n.source_kind, n.source_title \
-                 FROM srs_cards_cache c LEFT JOIN srs_notes_cache n ON n.id = c.note_id \
-                 WHERE c.profile_uid = srs_id(?1) AND c.hidden = 0",
-            )
-            .map_err(sql)?;
-        let mut it = stmt.query([profile]).map_err(sql)?;
+        Snapshot::load_with(
+            c,
+            "SELECT c.id, c.note_id, c.deck_id, c.queue, c.scheduled_days, c.suspended, c.buried_until_day, \
+             c.scheduler, c.due_day, c.due_at, c.stability, c.difficulty, c.last_reviewed_at, c.lapses, c.reps, \
+             COALESCE(n.created_at, c.note_created_at), c.last_log_id, n.source_kind, n.source_title \
+             FROM srs_cards_cache c LEFT JOIN srs_notes_cache n ON n.id = c.note_id \
+             WHERE c.profile_uid = srs_id(?1) AND c.hidden = 0",
+            "SELECT card_id, occurred_at, utc_offset_min, rating, kind, duration_ms, prev_due_day, maturity_delta \
+             FROM srs_stat_reviews WHERE profile_uid = srs_id(?1) ORDER BY occurred_at",
+            &profile,
+            profile,
+        )
+    }
+
+    /// [Snapshot::load] 的读法本身：[cards] 与 [reviews] 两条查询（`?1` = [owner]）的列与上面那两条一一对应，行就按它们
+    /// 交回的顺序进原料（卡片的浮点和按这个顺序累加）。新代的读命令（`store/gen4/cmd/stats.rs`）换成新代的表、用同一份
+    /// 解码与聚合。
+    pub(crate) fn load_with(
+        c: &Connection,
+        cards: &str,
+        reviews: &str,
+        owner: &dyn rusqlite::ToSql,
+        profile: &str,
+    ) -> Result<Snapshot, String> {
+        let mut stmt = c.prepare_cached(cards).map_err(sql)?;
+        let mut it = stmt.query([owner]).map_err(sql)?;
         let mut cards = Vec::new();
         let mut dict: HashMap<(String, String), usize> = HashMap::new();
         let mut sources: Vec<(String, String)> = Vec::new();
@@ -213,13 +229,8 @@ impl Snapshot {
             cards.push(card);
         }
         drop(it);
-        let mut stmt = c
-            .prepare_cached(
-                "SELECT card_id, occurred_at, utc_offset_min, rating, kind, duration_ms, prev_due_day, maturity_delta \
-                 FROM srs_stat_reviews WHERE profile_uid = srs_id(?1) ORDER BY occurred_at",
-            )
-            .map_err(sql)?;
-        let mut it = stmt.query([profile]).map_err(sql)?;
+        let mut stmt = c.prepare_cached(reviews).map_err(sql)?;
+        let mut it = stmt.query([owner]).map_err(sql)?;
         let mut reviews = Vec::new();
         let mut extra: Vec<String> = Vec::new();
         while let Some(r) = it.next().map_err(sql)? {
@@ -330,8 +341,7 @@ impl SrsCore {
             profile,
             req.get("key").and_then(Value::as_str).unwrap_or(""),
         )?;
-        let ctx = Ctx::parse(req)?;
-        Ok(report(&snap, &ctx, req))
+        report_of(&snap, req)
     }
 
     /// `stats_recall`：RWKV-Instant 排队的复习卡（请求里 `recallDecks` / `recallFallback` 认定的牌组里、复习队列的
@@ -342,14 +352,7 @@ impl SrsCore {
             profile,
             req.get("key").and_then(Value::as_str).unwrap_or(""),
         )?;
-        let ctx = Ctx::parse(req)?;
-        let cards: Vec<Value> = snap
-            .cards
-            .iter()
-            .filter(|c| c.queue == "review" && ctx.recall_deck(&c.deck))
-            .map(|c| json!([c.id, c.note, c.deck, c.last_log]))
-            .collect();
-        Ok(json!({ "cards": cards }))
+        recall_of(&snap, req)
     }
 
     /// `stats_rows`：归一化之后逐卡 / 逐条的统计视图（与删除前 Dart `SrsStatCard` / `SrsStatReview` /
@@ -359,6 +362,31 @@ impl SrsCore {
             profile,
             req.get("key").and_then(Value::as_str).unwrap_or(""),
         )?;
+        rows_of(&snap, req)
+    }
+}
+
+/// `stats_report` 的回包：原料 [snap] + 请求（[SrsCore::stats_report] 与新代读命令共用）。
+pub(crate) fn report_of(snap: &Snapshot, req: &Value) -> Result<Value, String> {
+    let ctx = Ctx::parse(req)?;
+    Ok(report(snap, &ctx, req))
+}
+
+/// `stats_recall` 的回包（[SrsCore::stats_recall]）。
+pub(crate) fn recall_of(snap: &Snapshot, req: &Value) -> Result<Value, String> {
+    let ctx = Ctx::parse(req)?;
+    let cards: Vec<Value> = snap
+        .cards
+        .iter()
+        .filter(|c| c.queue == "review" && ctx.recall_deck(&c.deck))
+        .map(|c| json!([c.id, c.note, c.deck, c.last_log]))
+        .collect();
+    Ok(json!({ "cards": cards }))
+}
+
+/// `stats_rows` 的回包（[SrsCore::stats_rows]）。
+pub(crate) fn rows_of(snap: &Snapshot, req: &Value) -> Result<Value, String> {
+    {
         let ctx = Ctx::parse(req)?;
         let v = View::build(&snap, &ctx, None);
         let id_of = |i: usize| -> &str {

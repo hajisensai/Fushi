@@ -10,6 +10,7 @@
 import fs from 'node:fs';
 import http from 'node:http';
 import assert from 'node:assert/strict';
+import vm from 'node:vm';
 import { launchChromeDriver, resolveChrome } from '../../../tool/reader_pitch_headless/cdp_client.mjs';
 
 if (!resolveChrome()) {
@@ -376,6 +377,58 @@ try {
     // 查词吞掉——只断言「有 onLinkClick」时这种回归照样全绿。
     assert.deepEqual(r.lookups, ['word'],
       `only the lookup link fires, so activation was in effect and the dropped external link took no throttle slot (${r.lookups})`);
+    passed++;
+  }
+
+  step('11');
+  // 11. BUG-4753：沙箱里点字取词，起点是「字框真包含点」的那个字。caretRangeFromPoint 给的
+  //     是离点最近的字间缝，点在字的右半边时偏移已指向下一个字——曾经直接拿它当起点，
+  //     点「昼」查成「間」、点「訪」查成「問」。这里在真 Chrome 里把生产的沙箱辅助脚本
+  //     装进一个 srcdoc frame，点每个字的左 / 右半边，看它报给父页面的查词串从哪个字起。
+  {
+    // 辅助脚本是 popup.js 里的模板串常量：取出字面量、按 JS 模板串求值，得到真正塞进
+    // srcdoc 的那段源码；装进一张不带 popup.js 的空白页，只测它自己的取字。
+    const helperLiteral = /const DICT_SANDBOX_HELPER_JS = (`[\s\S]*?`);/.exec(scripts.popup);
+    assert.ok(helperLiteral, 'DICT_SANDBOX_HELPER_JS literal found in popup.js');
+    const helperJs = vm.runInNewContext(helperLiteral[1]);
+    // 测试页由 cdp_client 以 CSP sandbox（不透明源）供出，父页面摸不到 frame 的文档，所以
+    // 量字框、派点击都在 frame 里做：辅助脚本先装（它的 click 监听在前），探针脚本随后逐字
+    // 点左 / 右半边，辅助脚本把查词串 postMessage 给父页面，父页面按序收齐 8 条。
+    const probeJs = `(function () {
+      var node = document.getElementById('p').firstChild;
+      ['昼', '間', '訪', '問'].forEach(function (ch) {
+        var i = node.data.indexOf(ch);
+        var range = document.createRange();
+        range.setStart(node, i);
+        range.setEnd(node, i + 1);
+        var rect = range.getClientRects()[0];
+        [0.2, 0.8].forEach(function (side) {
+          var x = rect.left + rect.width * side;
+          var y = rect.top + rect.height / 2;
+          document.elementFromPoint(x, y).dispatchEvent(new MouseEvent('click',
+            { bubbles: true, cancelable: true, clientX: x, clientY: y }));
+        });
+      });
+    })();`;
+    const r = await driver.evalOnPage('<!doctype html><html><body></body></html>', `(async () => {
+      const selects = [];
+      window.addEventListener('message', (e) => {
+        if (e.data && e.data.__fushiDictSandbox === 1 && e.data.type === 'select') selects.push(e.data.text);
+      });
+      const frame = document.createElement('iframe');
+      frame.style.cssText = 'width:900px;height:200px;border:0';
+      frame.srcdoc = '<!doctype html><meta charset="utf-8"><body style="margin:0;font:40px/60px sans-serif">' +
+        '<p id="p" style="margin:0">昼間、人に会ったり訪問したり</p>' +
+        '<script>' + ${JSON.stringify(helperJs)} + '<' + '/script>' +
+        '<script>' + ${JSON.stringify(probeJs)} + '<' + '/script></body>';
+      document.body.appendChild(frame);
+      for (let t = 0; t < 400 && selects.length < 8; t++) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      return selects.map((text) => text.charAt(0));
+    })()`);
+    assert.deepEqual(r, ['昼', '昼', '間', '間', '訪', '訪', '問', '問'],
+      `sandbox click must start the lookup at the clicked character (${r})`);
     passed++;
   }
   step('done');
