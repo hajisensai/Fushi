@@ -556,7 +556,7 @@ const List<String> _kImportBakSuffixes = <String>[
 
 const String _kPreOverwriteSnapshotSuffix = '.pre-overwrite.bak';
 
-/// 覆盖导入**成功后**保留的「覆盖前」整库快照（BUG-4695）：覆盖导入动手前的
+/// 覆盖导入**成功后**保留的「覆盖前」整库快照（BUG-4698）：覆盖导入动手前的
 /// `pre-restore.bak` 在成功后改名成它，只留最近一份（下一次覆盖导入成功时替换）。
 /// 存储页「数据库备份快照」条目列出它、可删；备份页「从覆盖导入前的快照恢复书库」
 /// 从它只补缺合并书库行。不在 [_kSnapshotOwnerSidecar] 里——没有任何启动恢复流程

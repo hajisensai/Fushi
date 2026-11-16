@@ -163,7 +163,7 @@ class PdfImporter {
   }
 
   /// PDF 书目录 → `EpubBooks` 行：导入（[importFromPath]）与「孤儿书目录重新登记」
-  /// （[registerExistingBookDir]，BUG-4695）共用的唯一行构造口径。
+  /// （[registerExistingBookDir]，BUG-4698）共用的唯一行构造口径。
   static EpubBooksCompanion bookRowFor({
     required String bookKey,
     required String title,
@@ -188,7 +188,7 @@ class PdfImporter {
   }
 
   /// 把盘上已有、但没有书库行的 PDF 书目录 [bookDir]（`document.pdf` [+ `cover.png`]）
-  /// 重新登记成书（BUG-4695）。[bookKey] 由调用方给定（= 目录名），不重新派生。
+  /// 重新登记成书（BUG-4698）。[bookKey] 由调用方给定（= 目录名），不重新派生。
   /// 页数重新从 PDF 读；封面沿用目录里已有的 `cover.png`，没有就不补渲染（书架
   /// 回落占位图，与导入时封面渲染失败同态）。
   static Future<String> registerExistingBookDir({

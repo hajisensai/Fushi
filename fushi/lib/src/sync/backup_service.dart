@@ -139,7 +139,7 @@ enum BackupCategory {
 }
 
 /// 覆盖前快照（`BackupRestoreService.overwriteSnapshotPath`）的预览：快照文件本身
-/// 与其中「当前库没有」的书（BUG-4695）。
+/// 与其中「当前库没有」的书（BUG-4698）。
 class OverwriteSnapshotPreview {
   const OverwriteSnapshotPreview({
     required this.path,
