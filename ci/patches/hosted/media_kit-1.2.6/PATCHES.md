@@ -130,3 +130,31 @@ header and `Media.start` still reach mpv) and the source guard
 `fushi/test/media/video/video_mpv_ui_thread_native_calls_guard_test.dart`.
 Remove when upstream stops reading and writing properties synchronously on the
 caller's thread.
+
+## BUG-4695: libmpv callbacks are detached when the process starts exiting
+
+`lib/src/player/native/core/initializer_native_callable.dart` (otherwise
+upstream 1.2.6 apart from formatting) adds
+`InitializerNativeCallable.quiesceForProcessExit()`, exposed as
+`quiesceNativeCallbacksForProcessExit()` by the new public library
+`lib/native_exit.dart`. It clears the libmpv wakeup callback of every live
+handle and makes later handles skip registering one. Nothing is disposed or
+closed, so commands still work and a later `Player.dispose` stays safe.
+
+The release backend gives libmpv a `NativeCallable.listener` per player and
+only unregisters it in `Player.dispose`. An app exit does not dispose players,
+and the process can end without reaching Dart's `exit`: on macOS a second quit
+request during the exit chain goes through `NSApp terminate`, where the Flutter
+engine's `applicationWillTerminate:` shuts the engine down and frees the
+callbacks while libmpv's core thread still posts property changes (feedback
+H6Vou-6uYX: SIGSEGV at an unmapped address under
+`mp_client_send_property_changes`). Fushi calls the entry point synchronously
+from `AppExitCoordinator.begin`, the first step of every intentional exit.
+`mpv_set_wakeup_callback` takes the lock libmpv holds while invoking the
+callback, so no core thread can be inside or reach a Dart callback afterwards.
+
+Regression test: the `quiesce` mode of
+`fushi/test/third_party/media_kit_hot_restart_test.dart` (real libmpv: owner
+isolate killed without dispose after quiescing; exits `-1073740791` with
+`Callback invoked after it has been deleted` without the fix). Remove when
+upstream unregisters its callbacks before the engine can free them.
