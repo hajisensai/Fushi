@@ -6,6 +6,8 @@
 //   4. 装不进本格式的输入（offset 超 32 位）返回 false 而不是写出坏文件；坏文件（魔数 /
 //      截断 / 多余字节）装载失败。
 //   5. 空索引、只有一个键的索引可用。
+//   6. 一个键的查找路径上 tag 相同的 slot 只有它自己（「核对第一条记录」精确的前提）；
+//      构建遇到歧义会换桶数拆开，拆不开就拒绝。
 
 #include <algorithm>
 #include <cstdint>
@@ -93,18 +95,25 @@ void check_roundtrip(const std::string& dir, size_t count, uint64_t seed) {
 
   size_t in_primary = 0;
   size_t missing = 0;
+  size_t ambiguous = 0;
   for (const auto& e : entries) {
     const auto first = index.primary(e.hash);
     if (has(first, e)) {
       in_primary++;
+      // 查找路径上 tag 相同的只有它自己。
+      if (first.count != 1) ambiguous++;
       continue;
     }
     // 不在主桶的键：主桶必须带溢出位，否则查询端会在这里断定「不在」。
-    if (!first.more || !has(index.alternate(e.hash), e)) {
+    const auto second = index.alternate(e.hash);
+    if (!first.more || !has(second, e)) {
       missing++;
     }
+    // 住在备桶的键：主桶里不得有 tag 相同的别人，备桶里只有它自己。
+    if (first.count != 0 || second.count != 1) ambiguous++;
   }
   expect(missing == 0, label + ": " + std::to_string(missing) + " keys not reachable (false negatives)");
+  expect(ambiguous == 0, label + ": " + std::to_string(ambiguous) + " keys share a tag with another key on their path");
   if (count >= 1000) {
     expect(in_primary * 10 >= count * 7, label + ": most keys should sit in their primary bucket, got " +
                                              std::to_string(in_primary) + "/" + std::to_string(count));
@@ -148,6 +157,57 @@ void check_roundtrip(const std::string& dir, size_t count, uint64_t seed) {
   if (count >= 1000) {
     expect(second_probes * 2 < probes, label + ": too many absent probes need the alternate bucket (" +
                                            std::to_string(second_probes) + "/" + std::to_string(probes) + ")");
+  }
+}
+
+// tag 歧义：两个 tag 相同的键落进同一条查找路径时，构建要换桶数把它们拆开；拆不开
+// （哈希高 32 位也相同，主桶永远是同一个）就拒绝，交还调用方用旧式索引。
+void check_tag_ambiguity(const std::string& dir) {
+  using hash::key_index;
+  const uint64_t tag = 0x1234567;
+
+  // 可拆开：20 个键起步是 3 个桶。两个键 tag 相同、哈希高 32 位分别在 0x40000000 两侧
+  // ——3 个桶时都落在 0 号桶（< 0x55555555），4 个桶时一个在 0 号、一个在 1 号。放在最前
+  // 面，第一遍排布就一起进主桶。
+  {
+    std::vector<key_index::entry> entries = {
+        {.hash = (0x3FFFFFFFULL << 32) | tag, .offset = 111, .single = true},
+        {.hash = (0x40000001ULL << 32) | tag, .offset = 222, .single = false},
+    };
+    for (const auto& e : make_entries(18, 21)) {
+      entries.push_back(e);
+    }
+    expect(key_index::bucket1(entries[0].hash, 3) == key_index::bucket1(entries[1].hash, 3),
+           "fixture: the pair must collide with 3 buckets");
+    const std::string path = dir + "/ambiguous.index";
+    expect(key_index::build_to_file(entries, key_index::blobs_file::original, path),
+           "a separable tag collision must still build");
+    Loaded loaded;
+    if (!open_index(path, loaded)) {
+      fail("ambiguous: load");
+    } else {
+      for (size_t i = 0; i < 2; i++) {
+        const auto first = loaded.index.primary(entries[i].hash);
+        const auto second = loaded.index.alternate(entries[i].hash);
+        const bool in_first = has(first, entries[i]);
+        const std::string label = "ambiguous pair key " + std::to_string(i);
+        expect(in_first || (first.more && has(second, entries[i])), label + ": reachable");
+        // 路径上 tag 相同的 slot 只有它自己——候选唯一，核对第一条记录即精确。
+        expect(in_first ? first.count == 1 : (first.count == 0 && second.count == 1),
+               label + ": must be the only tag match on its path");
+      }
+    }
+  }
+
+  // 拆不开：哈希只在 29～31 位不同，tag 与主桶恒相同。
+  {
+    auto entries = make_entries(50, 22);
+    entries.push_back({.hash = (0x80000000ULL << 32) | tag, .offset = 1, .single = true});
+    entries.push_back({.hash = (0x80000000ULL << 32) | (1ULL << 30) | tag, .offset = 2, .single = true});
+    const std::string path = dir + "/inseparable.index";
+    expect(!key_index::build_to_file(entries, key_index::blobs_file::original, path),
+           "an inseparable tag collision must be refused");
+    expect(!std::filesystem::exists(path), "a refused build must not create the file");
   }
 }
 
@@ -207,6 +267,7 @@ int main() {
   check_roundtrip(dir, 5000, 4);
   check_roundtrip(dir, 300000, 5);
   check_roundtrip(dir, 2000000, 6);
+  check_tag_ambiguity(dir);
   check_rejects(dir);
 
   std::filesystem::remove_all(dir);

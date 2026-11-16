@@ -18,6 +18,10 @@ constexpr uint32_t kVersion = 1;
 // 再往高省不了多少字节，查询却要多读缓存行（住备桶的键、带溢出位的桶上的「不在」）。
 constexpr uint64_t kKeysPerBucketX10 = 68;
 constexpr int kMaxKicks = 512;
+// 排布出现 tag 歧义（见 unambiguous）时换桶数重排的次数上限。歧义本身约每 3 亿个键
+// 一次，换一次桶数几乎必然消掉；消不掉的只有哈希高 32 位也相同的键对（主桶永远相同，
+// 自然数据里是 2^-61 的事），那种输入交还给调用方用旧式索引。
+constexpr int kMaxAmbiguityRetries = 8;
 
 struct file_header {
   char magic[8];
@@ -92,6 +96,45 @@ bool place_all(std::span<const key_index::entry> entries, uint64_t num_buckets, 
   return true;
 }
 
+// 查找路径上不得有第二个同 tag 的键：
+//   * 同一个桶里没有两个 tag 相同的键；
+//   * 住在备桶的键，它的主桶里没有 tag 相同的键（查它要先扫主桶）。
+// 满足之后，查一个存在的键时一路上 tag 相同的 slot 只有它自己，「核对候选的第一条
+// 记录」就是精确的——否则两个 tag 相同的键若共用第一条记录（一个是它的 expression、
+// 一个是它的 reading），查其中一个可能拿到另一个的 offset 表。
+bool unambiguous(std::span<const key_index::entry> entries, uint64_t num_buckets,
+                 const std::vector<uint32_t>& placed) {
+  constexpr size_t kSlots = key_index::kSlotsPerBucket;
+  const auto tag_at = [&](uint64_t bucket, size_t slot) -> uint32_t {
+    return key_index::tag_of(entries[placed[bucket * kSlots + slot] - 1].hash);
+  };
+  for (uint64_t b = 0; b < num_buckets; b++) {
+    for (size_t s = 0; s < kSlots; s++) {
+      const uint32_t index = placed[b * kSlots + s];
+      if (index == 0) {
+        continue;
+      }
+      const uint64_t h = entries[index - 1].hash;
+      const uint32_t tag = key_index::tag_of(h);
+      for (size_t t = s + 1; t < kSlots; t++) {
+        if (placed[b * kSlots + t] != 0 && tag_at(b, t) == tag) {
+          return false;
+        }
+      }
+      const uint64_t home = key_index::bucket1(h, num_buckets);
+      if (home == b) {
+        continue;
+      }
+      for (size_t t = 0; t < kSlots; t++) {
+        if (placed[home * kSlots + t] != 0 && tag_at(home, t) == tag) {
+          return false;
+        }
+      }
+    }
+  }
+  return true;
+}
+
 }
 
 bool key_index::build_to_file(std::span<const entry> entries, blobs_file blobs, const std::string& path) {
@@ -106,15 +149,24 @@ bool key_index::build_to_file(std::span<const entry> entries, blobs_file blobs, 
 
   std::vector<uint32_t> placed;
   uint64_t num_buckets = std::max<uint64_t>(1, (n * 10 + kKeysPerBucketX10 - 1) / kKeysPerBucketX10);
+  int ambiguity_retries = 0;
   while (true) {
     if (num_buckets >= std::numeric_limits<uint32_t>::max()) {
       return false;
     }
     placed.assign(static_cast<size_t>(num_buckets) * kSlotsPerBucket, 0);
-    if (place_all(entries, num_buckets, placed)) {
+    if (!place_all(entries, num_buckets, placed)) {
+      num_buckets += num_buckets / 64 + 1;
+      continue;
+    }
+    if (unambiguous(entries, num_buckets, placed)) {
       break;
     }
-    num_buckets += num_buckets / 64 + 1;
+    if (++ambiguity_retries > kMaxAmbiguityRetries) {
+      return false;
+    }
+    // 桶数加一，所有键的主桶 / 备桶都跟着变。
+    num_buckets += 1;
   }
 
   const size_t file_size = kHeaderBytes + static_cast<size_t>(num_buckets) * kBucketBytes;

@@ -22,8 +22,14 @@ namespace hash {
 // 查一条缓存行就能断定「不在」；有的桶（不到四成）在主桶没找到时再看备桶。
 //
 // tag 只有 29 位，所以这里给出的是**候选**：tag 相同的 slot 未必就是要找的键，调用方
-// 必须去 blobs 里核对记录上的键（query.cpp 的 record_has_key）。核对之后结果是精确的
-// ——比 hash.table 的「64 位哈希相等即命中」还严。也正因为有核对，才用得起截断 tag。
+// 必须去 blobs 里核对记录上的键（hash/dict_index.hpp 的 record_has_key，看候选的第一条
+// 记录）。核对之后结果是精确的——比 hash.table 的「64 位哈希相等即命中」还严。也正因为
+// 有核对，才用得起截断 tag。
+//
+// 构建保证：一个键的查找路径（主桶；它住在备桶时还有备桶）上，tag 相同的 slot 只有它
+// 自己。所以查一个存在的键，候选里 tag 相同的只会是它本人；查一个不存在的键，撞上的
+// 候选的第一条记录上不会有这个键（记录上的键全都进了索引）。「只核对第一条记录」因此
+// 不会把别的键的位置当成本键的返回。
 //
 // 上游 hoshidicts 2f0e5c5 换成了 PHF（4096 字节分区 + pilot 表，约 11 字节 / 键外加
 // 一份 bloom，命中要读 pilot 和 slot 两处，且 30 位 tag 不核对记录）。这里采纳它的两个
@@ -64,7 +70,8 @@ class key_index {
   static uint32_t tag_of(uint64_t h) { return static_cast<uint32_t>(h) & kTagMask; }
 
   // 写出 [path]（调用方负责 tmp + rename）。false = 这套键装不进本格式（某个 offset
-  // 超过 32 位 / 键太多），调用方保留旧式 hash.table。IO 失败抛 memory::map_error。
+  // 超过 32 位 / 键太多 / 排不出无 tag 歧义的布局——后者只有哈希高 32 位与 tag 都相同
+  // 的键对才会），调用方保留旧式 hash.table。IO 失败抛 memory::map_error。
   static bool build_to_file(std::span<const entry> entries, blobs_file blobs, const std::string& path);
 
   // [data, size) 是 key.index 的整份映射。false = 不是合法的 key.index（魔数 / 版本 /

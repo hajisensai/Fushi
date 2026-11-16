@@ -539,61 +539,70 @@ void test_verification(const std::string& root) {
     }
   }
 
-  // (b) 主桶塞满 tag 相同的假候选，真键住在备桶：必须查得到。
+  // (b) 主桶里有 tag 相同的假候选，真键住在备桶：必须查得到。构建器不会排出这种布局
+  // （key_index_test 的 tag 歧义用例），所以这里按磁盘格式手写一份 key.index——读侧对
+  // 「候选核对不上」的兜底不依赖构建器的保证。同时把磁盘格式钉住：
+  //   头 64 字节 = "FDKEYIX1" | u32 version=1 | u32 slots=8 | u64 num_buckets | u64 num_keys |
+  //               u32 blobs | 28 字节保留
+  //   桶 64 字节 = u32 word x 8 | u32 offset x 8，word = tag(29) | bit29 溢出 | bit30 占用 |
+  //               bit31 single
   {
     const uint64_t ha = key_hash("猫");
-    bool built = false;
-    for (uint64_t seed = 1; seed < 64 && !built; seed++) {
-      std::vector<hash::key_index::entry> entries;
-      // 填充项把桶数撑大（备桶与主桶不同的概率高），它们指向 犬 的记录、从不被查。
-      std::vector<hash::key_index::entry> fillers;
-      uint64_t x = seed * 0x9E3779B97F4A7C15ULL;
-      for (int i = 0; i < 300; i++) {
-        x ^= x << 13;
-        x ^= x >> 7;
-        x ^= x << 17;
-        fillers.push_back({.hash = x, .offset = inu.offset, .single = inu.single});
-      }
-      // 与 key_index::build_to_file 同一个桶数公式（装载率 85%）。
-      const uint64_t total = real.size() + fillers.size() + 8;
-      const uint64_t nb_guess = (total * 10 + 67) / 68;
-      // 与 猫 同 tag（低 29 位）、同主桶的假键：高 32 位逐个试。
-      std::vector<hash::key_index::entry> fakes;
-      for (uint64_t hi = 0; fakes.size() < 8 && hi < 100000; hi++) {
-        const uint64_t h = (((ha >> 32) ^ (hi * 0x10001ULL)) << 32) | (ha & 0xFFFFFFFFULL);
-        if (h == ha) continue;
-        // 桶数要等到最终定下来才知道，先按估计值挑，建完再验。
-        if (hash::key_index::bucket1(h, nb_guess) != hash::key_index::bucket1(ha, nb_guess)) continue;
-        fakes.push_back({.hash = h, .offset = inu.offset, .single = inu.single});
-      }
-      entries.insert(entries.end(), fakes.begin(), fakes.end());
-      for (const auto& e : real) {
-        if (e.hash == ha) entries.push_back(e);  // 猫 紧跟在假键之后：主桶已满，去备桶
-      }
-      for (const auto& e : real) {
-        if (e.hash != ha) entries.push_back(e);
-      }
-      entries.insert(entries.end(), fillers.begin(), fillers.end());
+    hash::key_index::entry neko{};
+    for (const auto& e : real) {
+      if (e.hash == ha) neko = e;
+    }
+    uint64_t nb = 2;
+    while (hash::key_index::bucket1(ha, nb) == hash::key_index::bucket2(ha, nb)) nb++;
+    const uint64_t b1 = hash::key_index::bucket1(ha, nb);
+    const uint64_t b2 = hash::key_index::bucket2(ha, nb);
+    const uint32_t tag = hash::key_index::tag_of(ha);
+    constexpr uint32_t kOverflow = 1U << 29;
+    constexpr uint32_t kOccupied = 1U << 30;
+    constexpr uint32_t kSingle = 1U << 31;
 
-      const std::string dir = root + "/verify_alt";
-      copy_dir(fresh.term, dir);
-      fs::remove(dir + "/key.index");
-      if (!hash::key_index::build_to_file(entries, hash::key_index::blobs_file::original, dir + "/key.index")) {
-        continue;
-      }
-      // 布局是否真如所愿：主桶有候选、全部核对不上、带溢出位；备桶里有真位置。
-      hash::dict_index index;
-      if (!index.open(dir) || !index.uses_key_index()) continue;
+    std::vector<uint8_t> file(64 + nb * 64, 0);
+    std::memcpy(file.data(), "FDKEYIX1", 8);
+    const uint32_t version = 1;
+    const uint32_t slots = 8;
+    const uint64_t num_keys = 4;
+    std::memcpy(file.data() + 8, &version, 4);
+    std::memcpy(file.data() + 12, &slots, 4);
+    std::memcpy(file.data() + 16, &nb, 8);
+    std::memcpy(file.data() + 24, &num_keys, 8);
+    const auto put = [&](uint64_t bucket, size_t slot, uint32_t word, uint64_t offset) {
+      const auto offset32 = static_cast<uint32_t>(offset);
+      std::memcpy(file.data() + 64 + bucket * 64 + slot * 4, &word, 4);
+      std::memcpy(file.data() + 64 + bucket * 64 + 32 + slot * 4, &offset32, 4);
+    };
+    // 主桶：三个 tag 相同的假候选，都指向 犬 的位置；0 号 word 带溢出位。
+    for (size_t s = 0; s < 3; s++) {
+      put(b1, s, tag | kOccupied | (inu.single ? kSingle : 0) | (s == 0 ? kOverflow : 0), inu.offset);
+    }
+    // 备桶：猫 的真位置。
+    put(b2, 5, tag | kOccupied | (neko.single ? kSingle : 0), neko.offset);
+
+    const std::string dir = root + "/verify_alt";
+    copy_dir(fresh.term, dir);
+    fs::remove(dir + "/key.index");
+    {
+      std::ofstream out(fs::path(dir) / "key.index", std::ios::binary);
+      out.write(reinterpret_cast<const char*>(file.data()), static_cast<std::streamsize>(file.size()));
+    }
+
+    hash::dict_index index;
+    if (!index.open(dir) || !index.uses_key_index()) {
+      fail("verify: hand-written key.index must load");
+    } else {
       const hash::key_index& k = *index.keys();
       const auto first = k.primary(ha);
-      bool primary_all_fake = first.count > 0 && first.more;
+      expect(first.count == 3 && first.more, "verify: primary bucket holds the three fakes and the overflow bit");
       for (uint32_t i = 0; i < first.count; i++) {
-        if (hash::location_has_key(index.blobs(), first.at[i], "猫")) primary_all_fake = false;
+        expect(!hash::location_has_key(index.blobs(), first.at[i], "猫"), "verify: fakes do not carry the key");
       }
-      if (!primary_all_fake) continue;
-      built = true;
       const auto loc = index.locate(ha, "猫");
-      expect(loc.has_value(), "verify: key behind same-tag fakes in its primary bucket is found in the alternate");
+      expect(loc.has_value() && loc->offset == neko.offset && loc->single == neko.single,
+             "verify: key behind same-tag fakes in its primary bucket is found in the alternate");
       for (const bool filter : {false, true}) {
         DictionaryQuery crafted;
         crafted.add_term_dict(dir);
@@ -608,7 +617,6 @@ void test_verification(const std::string& root) {
         expect(!crafted.query("猫").empty(), "verify: crafted index still finds 猫");
       }
     }
-    expect(built, "verify: could not construct a primary bucket full of same-tag fakes");
   }
 
   // (c) 旧式 hash.table 也核对：64 位哈希「相等」但记录不是这个键 → 查不到。
