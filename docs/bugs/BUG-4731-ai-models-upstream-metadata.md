@@ -1,4 +1,4 @@
-## BUG-4725 · AI 提供方选模型时丢掉上游给的显示名 / 收图能力 / 单价，只能手填
+## BUG-4731 · AI 提供方选模型时丢掉上游给的显示名 / 收图能力 / 单价，只能手填
 - **报告**：2026-11-16（维护者待办，应用内反馈 JNF-WJqLXe：价格、「模型支持图片输入」、模型名称应直接从上游取）
 - **真实性**：✅ 真问题。`packages/fushi_engine/lib/ai/ai_chat_client.dart:763`（`listModels` / `_listModels`）只把每条的 `id ?? name` 收成 `List<String>`，上游 `/models` 应答里的 Anthropic `display_name` + `capabilities.image_input.supported`、OpenRouter 一类聚合商的 `name` + `architecture.input_modalities` + `pricing.{prompt,completion,input_cache_read,input_cache_write}`、Gemini `displayName` 全部丢掉；设置页 `fushi/lib/src/pages/implementations/ai_provider_settings_section.dart` 的 `_pickModel` 于是只能写回模型名，「价格」四个框与「模型支持图片输入」开关只能照厂商网页手填，换了模型也还留着上一个模型的值。另：价格框吃 `initialValue`，即使程序改了单价界面也不跟（BUG-2618 同型）。
 - **[x] ① 已修复** — `listModels` 改返回结构化的 `AiUpstreamModel`（`packages/fushi_engine/lib/ai/ai_upstream_model.dart`：id / 显示名 / 收图能力 / 每百万 token 单价，上游没给的项为 null，「没说」不当「不支持」）；设置页候选显示上游模型名（id 在下），选中时上游给了的收图能力与单价覆盖草稿（单价整组换、币种 USD），没给的保持原值；价格与币种输入框改用按草稿 id 持有的 controller，选中 / 别处改动时当场跟随；`settings.ai.provider.probe`（`models=true`）多回一份 `details`。官方 Anthropic / OpenAI / Gemini 的 `/models` 不回单价，这几家的价格仍需手填（接外部价目目录属范围扩大，未做）。
