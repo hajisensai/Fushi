@@ -1215,7 +1215,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
       context: _themedContext,
       title: t.music_lyrics_search_online,
       icon: FushiIcons.search,
-      message: t.music_lyrics_search_hint,
+      message: t.music_lyrics_online_search_hint,
       confirmLabel: t.search,
       fields: <FushiFormField>[
         FushiFormField(

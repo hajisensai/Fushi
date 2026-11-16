@@ -6413,6 +6413,7 @@
   "music_lyrics_offset_value": "Offset $ms ms",
   "music_lyrics_online_failed": "Online lyrics lookup failed",
   "music_lyrics_online_hint": "When no local lyrics exist, match title, artist, album and duration on LRCLIB",
+  "music_lyrics_online_search_hint": "Change the keywords if the track title doesn't match the song (covers, video titles). Searches LRCLIB and your enabled lyrics plugins.",
   "music_lyrics_online_title": "Online lyrics (LRCLIB)",
   "music_lyrics_providers_builtin_note": "Built in, always first",
   "music_lyrics_providers_empty": "No lyrics plugins installed",
