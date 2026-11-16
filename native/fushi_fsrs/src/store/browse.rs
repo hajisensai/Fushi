@@ -63,6 +63,66 @@ fn dart_lower(s: &str) -> String {
     out
 }
 
+/// 数字字符的值（ASCII 与全角 `０`～`９`；其余 None）。
+fn digit_value(c: char) -> Option<u8> {
+    match c {
+        '0'..='9' => Some(c as u8 - b'0'),
+        '\u{ff10}'..='\u{ff19}' => Some((c as u32 - 0xff10) as u8),
+        _ => None,
+    }
+}
+
+/// 自然序比较（出处的集名：`第2話` < `第10話`、`E9` < `E10`）：不分大小写（[dart_lower]），连续数字（含全角）按数值比，
+/// 其余字符按 UTF-16 码元比；数值相同只差前导零 / 大小写 / 全半角时退回原文的 [cmp16]，保证全序。
+///
+/// 全角数字先折成 ASCII 再比：否则「数字段 vs 非数字字符」时全角（U+FF10～）与半角（0x30～）落在汉字 / 假名的两侧，
+/// `第１話 < 第2話 < 第三話 < 第１話` 成环，`sort_by` 的结果就没有定义。折完所有数字段都在同一码元区间，
+/// 「数字段」整体相对任一非数字字符的位置固定，比较是 token 序列上的字典序，满足全序。
+fn cmp_natural(a: &str, b: &str) -> Ordering {
+    let fold = |c: char| digit_value(c).map_or(c, |d| char::from(b'0' + d));
+    let (la, lb) = (dart_lower(a), dart_lower(b));
+    let (xs, ys): (Vec<char>, Vec<char>) = (
+        la.chars().map(fold).collect(),
+        lb.chars().map(fold).collect(),
+    );
+    let (mut i, mut j) = (0, 0);
+    while i < xs.len() && j < ys.len() {
+        if digit_value(xs[i]).is_some() && digit_value(ys[j]).is_some() {
+            let run = |cs: &[char], mut k: usize| -> (Vec<u8>, usize) {
+                let mut ds = Vec::new();
+                while let Some(d) = cs.get(k).copied().and_then(digit_value) {
+                    if !(ds.is_empty() && d == 0) {
+                        ds.push(d);
+                    }
+                    k += 1;
+                }
+                (ds, k)
+            };
+            let ((da, ni), (db, nj)) = (run(&xs, i), run(&ys, j));
+            let c = da.len().cmp(&db.len()).then_with(|| da.cmp(&db));
+            if c != Ordering::Equal {
+                return c;
+            }
+            (i, j) = (ni, nj);
+            continue;
+        }
+        let mut bx = [0u16; 2];
+        let mut by = [0u16; 2];
+        let c = xs[i]
+            .encode_utf16(&mut bx)
+            .iter()
+            .cmp(ys[j].encode_utf16(&mut by).iter());
+        if c != Ordering::Equal {
+            return c;
+        }
+        i += 1;
+        j += 1;
+    }
+    (xs.len() - i)
+        .cmp(&(ys.len() - j))
+        .then_with(|| cmp16(a, b))
+}
+
 /// Dart `String.trim`。
 fn dart_trim(s: &str) -> &str {
     s.trim_matches(search::is_dart_trim_space)
@@ -251,6 +311,27 @@ pub(crate) fn source_series(v: &Value) -> Option<&str> {
         .and_then(Value::as_str)
         .map(str::trim)
         .filter(|x| !x.is_empty())
+}
+
+/// 出处的标题（`SrsSourceRef.title`：字符串、去两侧空白后非空；否则没有）。
+fn source_title(v: &Value) -> Option<&str> {
+    v.get("title")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|x| !x.is_empty())
+}
+
+/// 系列里两集的先后（拍板台 uoEPa_RC89 方案 A）：先按集的标题自然序（[cmp_natural]，`第2話` < `第10話`），
+/// 有标题的在没标题的前面，标题相同再按作品键（[source_item_key]，内容哈希 / 库 uid）兜底成全序。出处里没有集号字段，
+/// 作品键与集号无关，单按它排看起来是乱的。
+fn cmp_episode(a_title: Option<&str>, a_key: &str, b_title: Option<&str>, b_key: &str) -> Ordering {
+    match (a_title, b_title) {
+        (Some(x), Some(y)) => cmp_natural(x, y),
+        (Some(_), None) => Ordering::Less,
+        (None, Some(_)) => Ordering::Greater,
+        (None, None) => Ordering::Equal,
+    }
+    .then_with(|| cmp16(a_key, b_key))
 }
 
 /// 作品键（集这一级）：`<kind>:<作品身份>`，身份按 kind 取
@@ -1203,6 +1284,13 @@ enum Key {
     None,
     Num(f64),
     Str(String),
+    /// 出处列：出处键（系列键或作品键）→ 系列里的集（[cmp_episode]：标题自然序，作品键兜底）。不是系列的行
+    /// `title` = None、`item` 为空，只按出处键比。
+    Source {
+        group: String,
+        title: Option<String>,
+        item: String,
+    },
 }
 
 fn cmp_keys(a: &Key, b: &Key, asc: bool) -> Ordering {
@@ -1212,9 +1300,23 @@ fn cmp_keys(a: &Key, b: &Key, asc: bool) -> Ordering {
         (_, Key::None) => return Ordering::Less,
         (Key::Num(x), Key::Num(y)) => x.total_cmp(y),
         (Key::Str(x), Key::Str(y)) => cmp16(x, y),
+        (
+            Key::Source {
+                group: ga,
+                title: ta,
+                item: ia,
+            },
+            Key::Source {
+                group: gb,
+                title: tb,
+                item: ib,
+            },
+        ) => cmp16(ga, gb).then_with(|| cmp_episode(ta.as_deref(), ia, tb.as_deref(), ib)),
         // 同一列的值类型一致；万一不一致按 Dart 的报错前的样子随便定个序。
-        (Key::Num(_), Key::Str(_)) => Ordering::Less,
-        (Key::Str(_), Key::Num(_)) => Ordering::Greater,
+        (Key::Num(_), _) => Ordering::Less,
+        (_, Key::Num(_)) => Ordering::Greater,
+        (Key::Str(_), _) => Ordering::Less,
+        (_, Key::Str(_)) => Ordering::Greater,
     };
     if asc { c } else { c.reverse() }
 }
@@ -2254,15 +2356,20 @@ impl Session {
             Column::Lapses => Key::Num(cards().map(|c| c.lapses).sum::<i64>() as f64),
             Column::Deck => Key::Str(dart_lower(&ctx.deck(&p.deck).0)),
             Column::NoteType => Key::Str(dart_lower(&ctx.types[&note.ty].name)),
-            // 带系列的行按「系列键 + 作品键」排：同一系列挨着，系列里同一集挨着。
-            Column::Source => match note.source.as_ref() {
-                Some(s) => match (source_key(s), source_series(s)) {
-                    (Some(k), Some(_)) => {
-                        let item = source_item_key(s).map_or_else(String::new, |i| i.0);
-                        Key::Str(format!("{}\u{1}{item}", k.0))
-                    }
-                    (Some(k), None) => Key::Str(k.0),
-                    (None, _) => Key::None,
+            // 先按出处键（带系列的是系列键）排：同一系列挨着；系列里按集的标题自然序、作品键兜底：同一集挨着，
+            // 集按 第2話 < 第10話 排（拍板台 uoEPa_RC89）。
+            Column::Source => match note.source.as_ref().and_then(|s| Some((s, source_key(s)?))) {
+                Some((s, (group, _))) => match source_series(s) {
+                    Some(_) => Key::Source {
+                        group,
+                        title: source_title(s).map(str::to_owned),
+                        item: source_item_key(s).map_or_else(String::new, |i| i.0),
+                    },
+                    None => Key::Source {
+                        group,
+                        title: None,
+                        item: String::new(),
+                    },
                 },
                 None => Key::None,
             },
@@ -2419,7 +2526,8 @@ impl Session {
     ///
     /// 系列组（键是系列键，[source_series]，反馈 MCJLSBR5Wg）：`series` = 系列名，`children` = 按作品键
     /// （[source_item_key]）分的第二级（「系列 → 集」），每项 `{key, kind, data, count, due, preview, latestAddedAt,
-    /// decks}`，口径与组相同、排序同组。不是系列的组 `series` = null、`children` = []。
+    /// decks}`，口径与组相同；各集按标题自然序（`第2話` < `第10話`，标题取集里最近添加那条的出处，作品键兜底，
+    /// [cmp_episode]）。不是系列的组 `series` = null、`children` = []。
     fn sources(&mut self, src: &dyn Source, req: &Value) -> Result<Value, String> {
         self.result(req)?;
         self.ensure_sources(src)?;
@@ -2479,7 +2587,16 @@ impl Session {
                 let mut v = groups[k].json(k);
                 let (title, children) = match k.as_ref().and_then(|k| series.get_mut(k)) {
                     Some((title, item_order, items)) => {
-                        sort_source_keys(item_order, |c| items[c].latest);
+                        // 集按标题自然序（作品键兜底），不按最近添加：同一系列各集是有先后的（拍板台 uoEPa_RC89）。
+                        // 系列里的集都有作品键（source_item_key 对有 kind 的出处总有值）。
+                        item_order.sort_by(|a, b| {
+                            cmp_episode(
+                                items[a].data.and_then(source_title),
+                                a.as_deref().unwrap_or(""),
+                                items[b].data.and_then(source_title),
+                                b.as_deref().unwrap_or(""),
+                            )
+                        });
                         let children: Vec<Value> =
                             item_order.iter().map(|c| items[c].json(c)).collect();
                         (Some(title.clone()), children)
@@ -2807,8 +2924,8 @@ impl Session {
 
 /// `anki_dupes`：canAddNotes / addNote 的库内查重。`first` = 笔记类型 → 首字段 id（未删除、有字段的笔记类型；只用
 /// 键：不在里面的笔记类型的笔记不参与查重）；`cands` = `[{norm, type, all, decks}]`（`norm` 是候选首字段的查重规范形，
-/// 调用方已判过空；`all` = 跨笔记类型比较；`decks` = 范围牌组 id，null = 整个集合）。回 `{dup: [bool]}`，与 `cands`
-/// 等长：库里有规范形相同、笔记类型相符（`all` 时不看）、在范围内（有一张可见卡在范围牌组里）的未删除笔记。
+/// 调用方已判过空；`all` = 跨笔记类型比较；`decks` = 范围牌组 id，null = 整个集合）。回 `{dup: [bool], ids: [[笔记 id]]}`，
+/// 都与 `cands` 等长（`ids` 是命中的笔记，查询顺序）：库里有规范形相同、笔记类型相符（`all` 时不看）、在范围内（有一张可见卡在范围牌组里）的未删除笔记。
 ///
 /// 库内笔记的规范形是笔记缓存行的 `dupe_norm`（写缓存行时用同一个 [search::dupe_norm] 算好，srs.db v15），按
 /// `idx_srs_notes_cache_dupe` 查候选的规范形：不读修改记录、不建内存索引、不要浏览会话——冷启动与热查同价，开销
@@ -2875,24 +2992,29 @@ fn anki_dupes(src: &dyn Source, req: &Value) -> Result<Value, String> {
             decks_of.entry(note).or_default().insert(deck);
         }
     }
-    let out: Vec<bool> = cands
+    // 每个候选在范围内命中的库内笔记（`ids`：文本导入按它更新已有笔记）；`dup` = 有没有命中。
+    let hits: Vec<Vec<&str>> = cands
         .iter()
         .zip(&matched)
         .map(
             |(cand, hit)| match cand.get("decks").and_then(Value::as_array) {
-                None => !hit.is_empty(),
+                None => hit.clone(),
                 Some(ds) => {
                     let scope: HashSet<&str> = ds.iter().filter_map(Value::as_str).collect();
-                    hit.iter().any(|id| {
-                        decks_of
-                            .get(*id)
-                            .is_some_and(|d| d.iter().any(|x| scope.contains(x.as_str())))
-                    })
+                    hit.iter()
+                        .copied()
+                        .filter(|id| {
+                            decks_of
+                                .get(*id)
+                                .is_some_and(|d| d.iter().any(|x| scope.contains(x.as_str())))
+                        })
+                        .collect()
                 }
             },
         )
         .collect();
-    Ok(json!({"dup": out}))
+    let out: Vec<bool> = hits.iter().map(|h| !h.is_empty()).collect();
+    Ok(json!({"dup": out, "ids": hits}))
 }
 
 /// 只在浏览会话里求得了值的叶子（[Session::rewrite] 换成 id 集合）。
@@ -3108,8 +3230,11 @@ impl SrsCore {
 
 #[cfg(test)]
 mod tests {
+    use std::cmp::Ordering;
+
     use serde_json::{Value, json};
 
+    use super::cmp_natural;
     use crate::store::caches::{CacheConfig, Dirty, refresh};
     use crate::store::sync2::in_savepoint;
     use crate::store::sync2::tests::{Device, P, deck_entity, edit};
@@ -3220,6 +3345,19 @@ mod tests {
             [true, true, false, true, false, true, true, false, false]
         );
         assert!(dupes(&d, json!([])).is_empty());
+        // `ids`：每个候选命中的笔记（文本导入按它更新已有笔记），与 `dup` 一一对应。
+        let r = call(
+            &d,
+            "anki_dupes",
+            json!({"owner": "ankiconnect", "first": {"A": "fa", "B": "x"}, "cands": [
+                cand("cat", "A", false, Value::Null),
+                cand("cat", "A", false, json!(["no-such-deck"])),
+                cand("bird", "A", false, Value::Null),
+            ]}),
+        );
+        assert!(!r["ids"][0].as_array().unwrap().is_empty());
+        assert_eq!(r["ids"][1], json!([]));
+        assert_eq!(r["ids"][2], json!([]));
 
         write(
             &d,
@@ -4091,6 +4229,166 @@ mod tests {
             k(json!({"kind": "video", "mediaKey": "sha", "seriesTitle": 3})),
             Some("video:sha".into())
         );
+    }
+
+    /// 自然序：数字段按数值（含全角）、不分大小写，数值相同只差前导零 / 全半角时仍是确定的全序。
+    #[test]
+    fn cmp_natural_orders_numbers_by_value() {
+        let mut v = vec![
+            "第10話",
+            "第2話",
+            "第１話",
+            "E10",
+            "e9",
+            "E09",
+            "E9",
+            "S1E2",
+            "S1E10",
+            "",
+            "第2話 後編",
+        ];
+        v.sort_by(|a, b| cmp_natural(a, b));
+        assert_eq!(
+            v,
+            vec![
+                "",
+                "E09",
+                "E9",
+                "e9",
+                "E10",
+                "S1E2",
+                "S1E10",
+                "第１話",
+                "第2話",
+                "第2話 後編",
+                "第10話",
+            ]
+        );
+        assert_eq!(cmp_natural("第2話", "第2話"), Ordering::Equal);
+    }
+
+    /// 全角 / 半角 / 汉字数字混用的集名：比较必须是全序（曾经 `第１話 < 第2話 < 第三話 < 第１話` 成环，
+    /// 全角数字 U+FF10～ 与 ASCII 数字分处汉字两侧），排序结果与输入顺序无关。
+    #[test]
+    fn cmp_natural_is_total_order_across_fullwidth_digits() {
+        assert_eq!(cmp_natural("第１話", "第2話"), Ordering::Less);
+        assert_eq!(cmp_natural("第2話", "第三話"), Ordering::Less);
+        assert_eq!(cmp_natural("第１話", "第三話"), Ordering::Less);
+
+        let names = [
+            "第１話",
+            "第2話",
+            "第三話",
+            "第１０話",
+            "第10話",
+            "第01話",
+            "第一話",
+            "第９話",
+            "第a話",
+            "第 話",
+            "第話",
+            "１",
+            "1",
+            "三",
+            "",
+            "Ｅ１",
+            "E2",
+            "ｅ３",
+            "第2話 後編",
+            "第２話",
+        ];
+        for a in &names {
+            assert_eq!(cmp_natural(a, a), Ordering::Equal, "{a}");
+            for b in &names {
+                assert_eq!(cmp_natural(a, b), cmp_natural(b, a).reverse(), "{a} {b}");
+                for c in &names {
+                    if cmp_natural(a, b) != Ordering::Greater
+                        && cmp_natural(b, c) != Ordering::Greater
+                    {
+                        assert_ne!(cmp_natural(a, c), Ordering::Greater, "{a} <= {b} <= {c}");
+                    }
+                }
+            }
+        }
+
+        // 不同起始顺序排出来完全一样（全序 + 只有逐字相同才 Equal）。
+        let mut forward: Vec<&str> = names.to_vec();
+        forward.sort_by(|a, b| cmp_natural(a, b));
+        for rot in 0..names.len() {
+            let mut v: Vec<&str> = names.to_vec();
+            v.rotate_left(rot);
+            if rot % 2 == 1 {
+                v.reverse();
+            }
+            v.sort_by(|a, b| cmp_natural(a, b));
+            assert_eq!(v, forward);
+        }
+        let ep = |s: &str| forward.iter().position(|x| *x == s).unwrap();
+        assert!(ep("第１話") < ep("第2話") && ep("第2話") < ep("第１０話"));
+        assert!(ep("第１０話") < ep("第三話"));
+    }
+
+    /// 系列里各集的顺序（拍板台 uoEPa_RC89 方案 A）：出处视图的 `children` 与按出处列排序都按集标题自然序
+    /// （第1話 < 第2話 < 第10話），不按作品键（内容哈希 / uid）也不按最近添加；没有标题的集排在后面。
+    #[test]
+    fn browse_source_episodes_follow_title_natural_order() {
+        let (d, cfg, deck) = rich_library();
+        let ep = |key: &str, title: Option<&str>| {
+            let mut v = json!({"kind": "video", "mediaKey": key, "startMs": 0, "seriesTitle": "S"});
+            if let Some(t) = title {
+                v["title"] = json!(t);
+            }
+            v
+        };
+        write(
+            &d,
+            &cfg,
+            T0 + 30,
+            vec![
+                edit("note", N3, "source", ep("a", Some("第10話"))),
+                edit("note", N4, "source", ep("z", Some("第2話"))),
+                edit("note", N5, "source", ep("m", Some("第1話"))),
+            ],
+        );
+        let (gen, _) = query_rows(&d, &deck, json!({"sort": {"col": "created", "asc": true}}));
+        let g = call(
+            &d,
+            "browse_sources",
+            json!({"owner": "page:test", "gen": gen}),
+        )["groups"]
+            .clone();
+        let series = g
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|x| x["key"] == json!("video::S"))
+            .unwrap();
+        let child_keys: Vec<&Value> = series["children"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| &c["key"])
+            .collect();
+        assert_eq!(
+            child_keys,
+            vec![&json!("video:m"), &json!("video:z"), &json!("video:a")]
+        );
+
+        let sorted = |asc: bool| -> Vec<Value> {
+            let (_, rows) = query_rows(&d, &deck, json!({"sort": {"col": "source", "asc": asc}}));
+            rows.s.iter().map(|r| r[1].clone()).collect()
+        };
+        assert_eq!(&sorted(true)[2..], &[json!(N5), json!(N4), json!(N3)]);
+        assert_eq!(&sorted(false)[..3], &[json!(N3), json!(N4), json!(N5)]);
+
+        // 没有标题的集排在有标题的后面（作品键兜底）。
+        write(
+            &d,
+            &cfg,
+            T0 + 40,
+            vec![edit("note", N5, "source", ep("m", None))],
+        );
+        assert_eq!(&sorted(true)[2..], &[json!(N4), json!(N3), json!(N5)]);
     }
 
     /// 出处视图的「系列 → 集」：同一系列的几集合成一组（`series` = 系列名），组里 `children` 按集分第二级（行数 / 代表
