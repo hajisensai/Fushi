@@ -7,6 +7,7 @@ import 'plugin_ffi.dart';
 import 'plugin_instance.dart';
 import 'plugin_models.dart';
 import 'plugin_net_guard.dart';
+import 'plugin_package_pack.dart';
 import 'plugin_source.dart';
 
 /// 一个已安装插件：校验摘要 + 启用状态；[error] 非空表示已装文件校验失败（被改过 / 不完整）。
@@ -255,6 +256,13 @@ class MusicPluginManager {
     await _writeEnabled(state);
     if (!enabled) await _dropInstance(id);
     _changes.add(null);
+  }
+
+  /// 已装插件 [id] 打回安装包（互联「来源共享」用）。只含包目录：插件存储与加密凭据在
+  /// 包目录之外，不随包出去。没装返回 null。
+  Future<Uint8List?> exportPackage(String id) async {
+    if (!_idPattern.hasMatch(id)) return null;
+    return packInstalledPluginDirectory(Directory('${rootDir.path}/$id'));
   }
 
   /// 卸载：删包、插件存储与加密凭据。

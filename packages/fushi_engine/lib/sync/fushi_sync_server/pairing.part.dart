@@ -687,6 +687,8 @@ extension _FushiSyncServerPairing on FushiSyncServer {
         'serviceConfig':
             _securityContext != null &&
             _libraryService is InterconnectServiceConfigHost,
+        // 互联「来源共享」（服务器来源 + 插件包）：必须 TLS，端点另查开关与「我的设备」。
+        kInterconnectSourceShareFeature: _sourceShareAvailable,
         // 互联「配置文件」（Profile）双向搬运：与 serviceConfig 同门槛（必须 TLS）。
         // 能力位只说「这台 host 懂这个端点」，不代表此刻允许——端点还会再查一次
         // 用户开关，关着时返回 403，client 如实报错而不是当成不支持。

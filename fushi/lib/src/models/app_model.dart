@@ -424,6 +424,9 @@ import 'package:fushi_engine/sync/host_jobs/host_job_runner.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi/src/sync/fushi_api_access_policy.dart';
 import 'package:fushi/src/sync/fushi_server_controller.dart';
+import 'package:fushi/src/sync/interconnect_source_share_kinds.dart';
+import 'package:fushi/src/sync/interconnect_source_share_sync.dart'
+    show AppInterconnectSourceShareHost;
 import 'package:fushi/src/sync/game_stream_library_host.dart';
 import 'package:fushi/src/sync/game_stream_mining.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
@@ -1180,6 +1183,15 @@ class AppModel
         ).read(leaderboardServiceProvider);
       },
     ),
+    // 互联「来源共享」：服务器来源与插件包只发给本机主人标过「我的设备」的 peer。
+    sourceShareHost: () => AppInterconnectSourceShareHost(
+      db: database,
+      enabled: () =>
+          SyncRepository(database).isInterconnectSourceShareHostEnabled(),
+      isOwnerDevicePeer: (String token) =>
+          SyncRepository(database).isOwnerDevicePeerToken(token),
+      pluginStores: sourceSharePluginStoresOf,
+    ),
     libraryServiceFactory: () => LocalLibraryHostService(
       db: database,
       dictionaryResourceRoot: dictionaryResourceDirectory,
@@ -1539,7 +1551,10 @@ class AppModel
       _mediaTrackingService?.notifyStatusChanged();
     }
 
-    if (report.settingsImported > 0 && report.serviceConfigsImported == 0) {
+    // 来源共享收下的服务器来源同样落在偏好里（OPDS / AList / Kavita / OpenSubsonic 清单），
+    // 读的是偏好缓存；插件管理器自己发变更事件，不需要这里管。
+    if ((report.settingsImported > 0 || report.sourcesShared > 0) &&
+        report.serviceConfigsImported == 0) {
       // 「同步设置」（AWp-0BtDDv）写进了别的设备的设置：偏好缓存、各媒体源设置、
       // 主题、快捷键都要从 DB 重读，否则要等下次冷启动才生效。
       await refreshPrefCache();
@@ -2574,6 +2589,15 @@ class AppModel
   /// 在线音源插件管理器（docs/specs/2026-10-28-music-plugins.md）：插件包与插件存储都在
   /// `<数据库目录>/music_plugins/`，不进 Drift。按首次访问懒建；没过
   /// [isMusicPluginSourcesAvailable] 的平台别来取。
+  /// 本机此刻能装 / 能共享插件包的插件体系（互联「来源共享」用）：音乐插件看合规门与
+  /// 原生库（iOS 没有，经互联中继用对端的插件）；追踪插件看管理器建没建（门同理）。
+  List<SharedPluginStore> sourceSharePluginStoresOf() => <SharedPluginStore>[
+    if (isMusicPluginSourcesAvailable)
+      MusicSharedPluginStore(musicPluginManager),
+    if (_trackingPluginManager case final TrackingPluginManager tracking)
+      TrackingSharedPluginStore(tracking),
+  ];
+
   MusicPluginManager? _musicPluginManager;
   MusicPluginManager get musicPluginManager =>
       _musicPluginManager ??= _createMusicPluginManager();
@@ -5106,6 +5130,8 @@ class AppModel
       _mediaTrackingService?.dispose();
       _mediaTrackingService = _buildMediaTrackingService();
       _startTrackingPlugins();
+      // 互联「来源共享」收插件时用的本机插件体系（同步编排在别处建，经全局装配点取）。
+      sourceSharePluginStores = sourceSharePluginStoresOf;
       // Media tracking module: decided once from existing sign-ins (before
       // the first sync asks the switch).
       await prefsRepo.settleTrackingModuleInstallDefault(

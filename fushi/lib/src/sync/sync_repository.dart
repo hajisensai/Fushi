@@ -397,6 +397,15 @@ class SyncRepository {
   // 开关落设备本地（要不要接收 host 凭据是每台设备自己的信任决策，不跨设备跟随）。
   static const _keyInterconnectServiceConfigSync =
       'interconnect_sync_service_config';
+  // 互联「来源共享」（拍板台 wOMR4_Er7s，interconnect_source_share_sync.dart）：
+  // client 侧「接收 host 共享的服务器来源与插件」、host 侧「把来源共享给我的设备」。
+  // 都默认开（维护者要的是自动共享；凭据只发给 host 主人标过「我的设备」的 peer，
+  // 端点另有 HTTPS + per-peer token 两道门）。都落设备本地：要不要收 / 发凭据是每台
+  // 设备自己的信任决策。
+  static const _keyInterconnectSourceShareSync =
+      'interconnect_sync_source_share';
+  static const _keyInterconnectSourceShareHost =
+      'interconnect_source_share_host';
   static const _keyWebDavUrl = 'sync_webdav_url';
   static const _keyWebDavUsername = 'sync_webdav_username';
   static const _keyWebDavPassword = 'sync_webdav_password';
@@ -1064,6 +1073,18 @@ class SyncRepository {
   /// 互联 service-config 同步（host 的外部服务 API key / 服务配置随互联下发）。
   /// 默认 true = 既有行为不变；关掉后本设备不再向 host 请求 service-config，
   /// 已导入的值保持原样（不回滚——那是用户此刻正在用的配置）。
+  /// client 侧：是否接收 host 共享的服务器来源与插件（默认开）。
+  Future<bool> isInterconnectSourceShareEnabled() =>
+      _db.getPrefTyped<bool>(_keyInterconnectSourceShareSync, true);
+  Future<void> setInterconnectSourceShareEnabled(bool v) =>
+      _db.setPrefTyped<bool>(_keyInterconnectSourceShareSync, v);
+
+  /// host 侧：是否把本机的服务器来源与插件共享给「我的设备」（默认开）。
+  Future<bool> isInterconnectSourceShareHostEnabled() =>
+      _db.getPrefTyped<bool>(_keyInterconnectSourceShareHost, true);
+  Future<void> setInterconnectSourceShareHostEnabled(bool v) =>
+      _db.setPrefTyped<bool>(_keyInterconnectSourceShareHost, v);
+
   Future<bool> isInterconnectServiceConfigSyncEnabled() =>
       _db.getPrefTyped<bool>(_keyInterconnectServiceConfigSync, true);
   Future<void> setInterconnectServiceConfigSyncEnabled(bool v) =>
@@ -2072,6 +2093,11 @@ class SyncRepository {
     // 「要不要接收 host 的 service-config（外部服务 API key）」是每台设备自己的
     // 信任决策，跨设备携带会把 A 机的选择强加给 B 机。
     _keyInterconnectServiceConfigSync,
+    // 来源共享的收 / 发开关与账本（记的是「这台设备从哪台 host 收下了哪条来源」）：
+    // 都只对这台设备成立。
+    _keyInterconnectSourceShareSync,
+    _keyInterconnectSourceShareHost,
+    'interconnect_source_share_ledger',
     // 「当 host 时愿不愿意为对端转码视频」是本机算力的意愿：一台台式机说「可以」，
     // 不代表那台跑着同一份备份的旧笔记本也愿意被烤。
     kInterconnectTranscodeEnabledPref,

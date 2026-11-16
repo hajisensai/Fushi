@@ -1089,6 +1089,23 @@ SettingsDestination buildInterconnectDestination() {
               ).setInterconnectServiceConfigSyncEnabled(value);
             },
           ),
+          // 互联「来源共享」接收开关（拍板台 wOMR4_Er7s）：host 上用户自配的服务器来源
+          // 与已装插件自动出现在本机。只对把本机标为「我的设备」的 host 生效（host 侧另有
+          // 一道门）。默认开；关掉只是不再请求，已收下的不回滚。
+          SettingsSwitchItem(
+            id: 'interconnect.source_share_sync',
+            title: t.sync_interconnect_source_share_toggle,
+            subtitle: t.sync_interconnect_source_share_toggle_desc,
+            icon: FushiIcons.cloud,
+            value: (SettingsContext ctx) =>
+                _syncSettings(ctx).interconnectSourceShareSync,
+            onChanged: (SettingsContext ctx, bool value) async {
+              _syncSettings(ctx).interconnectSourceShareSync = value;
+              await SyncRepository(
+                ctx.appModel.database,
+              ).setInterconnectSourceShareEnabled(value);
+            },
+          ),
           // 跟随已配对设备自动登录 Fushi 账户（所有者 2026-10-16 拍板：默认开、无按钮无
           // 确认）。仅对把本机标记为「我的设备」的已配对 host 生效（host 侧另有一道门）；
           // 只在本机这个 Profile 从没登录过账户时生效，主动退出过就不再自动登回去。本机
@@ -1373,6 +1390,23 @@ SettingsDestination _buildInterconnectHostPage() {
               ).setInterconnectLeaderboardLinkHostEnabled(value);
             },
           ),
+          // 互联「来源共享」host 侧总闸（拍板台 wOMR4_Er7s，默认开）：把本机用户自配的
+          // 服务器来源（含账号密码 / API key）与已装插件包共享给标为「我的设备」的已配对
+          // 设备。端点另有 HTTPS + 已配对 peer token 两道门；本开关关掉 = 403 disabled。
+          SettingsSwitchItem(
+            id: 'interconnect.source_share_host',
+            title: t.sync_interconnect_source_share_host_toggle,
+            subtitle: t.sync_interconnect_source_share_host_toggle_desc,
+            icon: FushiIcons.share,
+            value: (SettingsContext ctx) =>
+                _syncSettings(ctx).interconnectSourceShareHost,
+            onChanged: (SettingsContext ctx, bool value) async {
+              _syncSettings(ctx).interconnectSourceShareHost = value;
+              await SyncRepository(
+                ctx.appModel.database,
+              ).setInterconnectSourceShareHostEnabled(value);
+            },
+          ),
           // 远程更新本机许可（反馈 Pp8XPyve0N）。默认关：让别的设备在本机下载安装
           // 可执行文件必须是主人的显式意愿。端点另有已配对 peer token + 一次性 nonce
           // 几道门（不按来源网络区分）。只在本机能应用内自更新的平台出现（平台门 =
@@ -1566,6 +1600,12 @@ class _SyncSettingsState {
   // 接收开关。默认 true = 既有行为；此前这条通道无 UI 无开关，用户不可见也关不掉。
   bool interconnectServiceConfigSync = true;
 
+  /// client 侧：是否接收 host 共享的服务器来源与插件。默认 true。
+  bool interconnectSourceShareSync = true;
+
+  /// host 侧：是否把本机的服务器来源与插件共享给「我的设备」。默认 true。
+  bool interconnectSourceShareHost = true;
+
   /// host 侧：是否允许已配对设备读写本机「配置文件」（Profile）。默认 false。
   bool interconnectProfileTransfer = false;
 
@@ -1703,6 +1743,10 @@ class _SyncSettingsState {
           .isInterconnectServiceConfigSyncEnabled();
       interconnectProfileTransfer = await _repo
           .isInterconnectProfileTransferEnabled();
+      interconnectSourceShareSync = await _repo
+          .isInterconnectSourceShareEnabled();
+      interconnectSourceShareHost = await _repo
+          .isInterconnectSourceShareHostEnabled();
       interconnectLeaderboardLinkHost = await _repo
           .isInterconnectLeaderboardLinkHostEnabled();
       leaderboardFollowPairedLogin = await _repo
