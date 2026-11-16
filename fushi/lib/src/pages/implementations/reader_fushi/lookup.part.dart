@@ -275,8 +275,8 @@ extension _ReaderLookup on _ReaderFushiPageState {
     }
   }
 
-  Future<void> _handleTextSelected(ReaderSelectionData selected) async {
-    if (selected.text.isEmpty) {
+  Future<void> _handleTextSelected(ReaderSelectionData data) async {
+    if (data.text.isEmpty) {
       return;
     }
     // Dual-screen companion: when it is up the lookup opens on the second
@@ -287,15 +287,17 @@ extension _ReaderLookup on _ReaderFushiPageState {
     // Same path for paginated, continuous and vn modes and the audiobook
     // view. The synchronous check keeps the single-screen path free of an
     // await.
-    if (_companion.isActive && await _routeLookupToCompanion(selected)) return;
-    if (!mounted) return;
+    //
     // ruby 组首吸附只是先试：组首查到的词覆盖不到被点的字（义训「じょうろ鼬」点「鼬」）就改用
-    // 从被点字起扫的选区，下面的查词 / 高亮 / 句子与偏移缓存都跟随最终采用的这一份。
-    final ReaderSelectionData data = await resolveRubySnapSelection(
-      selected,
+    // 从被点字起扫的选区，伴屏路由与下面的查词 / 高亮 / 句子与偏移缓存都跟随最终采用的这一份
+    // （伴屏按 sentenceOffset 扫词，必须在判定之后发，否则伴屏查到的还是「じょうろ」）。
+    data = await resolveRubySnapSelection(
+      data,
       matchedLength: lookupMatchedCharCount,
       adoptTapStart: _adoptRubySnapTap,
     );
+    if (!mounted) return;
+    if (_companion.isActive && await _routeLookupToCompanion(data)) return;
     if (!mounted) return;
     _removeSelectionActionBar();
     // TODO-393 / BUG-缓存串味：每次新查词（换词 / 换句）都从「只制当前句」起步，丢弃

@@ -139,6 +139,44 @@ try {
       check(selection.designatesCurrentSelection({ node: potBase, offset: 2 },
           selection.selectionStartFor(potBase, 2)),
         'a ruby char inside the matched word is the current selection');
+
+      // 候选的句内偏移 / 归一偏移按被点字起算；fireTextSelected 只在外层追加的 fromHover /
+      // selectedSeq / 歌词 cue 同步进候选（宿主采用候选后整份换成它）。
+      document.body.innerHTML =
+        '<p>ここ、<ruby>じょうろ鼬<rt>ポットウィーゼル</rt></ruby>が巣を作ってるの！</p>';
+      const hoverBase = document.querySelector('ruby').firstChild;
+      selection.clearSelection();
+      window.lastPayload = null;
+      window.__lyricsCueContext = { cueId: 'cue-7' };
+      selection.selectFromPosition(hoverBase, 4, 20, 10, 10, true);
+      delete window.__lyricsCueContext;
+      const outer = window.lastPayload;
+      const cand = outer && outer.rubySnap && outer.rubySnap.selection;
+      check(!!cand && cand.sentenceOffset === outer.sentenceOffset + 4 &&
+          outer.sentence.slice(cand.sentenceOffset).indexOf('鼬が') === 0,
+        'the candidate sentence offset points at the tapped char: ' +
+          JSON.stringify(cand && [outer.sentenceOffset, cand.sentenceOffset]));
+      check(!!cand && cand.normalizedOffset === outer.normalizedOffset + 4,
+        'the candidate normalized offset starts at the tapped char: ' +
+          JSON.stringify(cand && [outer.normalizedOffset, cand.normalizedOffset]));
+      check(!!cand && cand.fromHover === true && outer.fromHover === true &&
+          cand.selectedSeq === outer.selectedSeq &&
+          !!cand.lyricsCueContext && cand.lyricsCueContext.cueId === 'cue-7',
+        'the candidate carries the outer hover / sequence / lyrics cue fields: ' +
+          JSON.stringify(cand && [cand.fromHover, cand.selectedSeq, outer.selectedSeq, cand.lyricsCueContext]));
+
+      // tapIndex 与宿主查词命中长度（bestLength，UTF-16）同单位：组内被点字前有扩展区汉字
+      // （𩸽 占 2 个 UTF-16 单元）时，按码点数会少算 1，宿主把「𩸽」的命中误当成覆盖到了「鼬」。
+      document.body.innerHTML = '<p>あ<ruby>𩸽鼬<rt>ほっけいたち</rt></ruby>が</p>';
+      const astralBase = document.querySelector('ruby').firstChild;
+      selection.clearSelection();
+      window.lastPayload = null;
+      selection.selectFromPosition(astralBase, 2, 20, 10, 10, false);
+      const astral = window.lastPayload && window.lastPayload.rubySnap;
+      check(!!astral && astral.tapIndex === 2 &&
+          window.lastPayload.text.slice(astral.tapIndex).indexOf('鼬') === 0,
+        'tapIndex is the UTF-16 index of the tapped char after an astral base: ' +
+          JSON.stringify(astral && astral.tapIndex));
       selection.clearSelection();
       return results;
     })()`);

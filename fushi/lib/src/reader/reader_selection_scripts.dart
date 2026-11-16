@@ -3728,8 +3728,10 @@ window.fushiSelection = {
       mangaSentenceGroup: mangaGroupNumber
     };
     // ssJjbvbAbs：起点吸附到 ruby 组首、被点的字在后面时，同时带上从被点字起扫的整份 payload
-    // （同一套字段，偏移 / 振假名 / 句子都按那个起点算）与被点字在 text 里的码点下标。宿主先查
-    // text，命中词的长度（码点）覆盖不到 tapIndex 就改用 selection 并调 adoptRubySnapTap。
+    // （同一套字段，偏移 / 振假名 / 句子都按那个起点算）与被点字在 text 里的 UTF-16 下标——与宿主
+    // 查词命中长度（DictionarySearchResult.bestLength = matched 的 UTF-16 长度）同单位，扩展区汉字
+    // （𩸽）在前也不会把覆盖判错。宿主先查 text，命中长度覆盖不到 tapIndex 就改用 selection 并调
+    // adoptRubySnapTap。
     var tapSelection = this.rubyTapSelection();
     if (tapSelection) {
       var snapped = this.selection;
@@ -3742,7 +3744,7 @@ window.fushiSelection = {
       }
       if (tapPayload) {
         payload.rubySnap = {
-          tapIndex: Array.from(text.slice(0, snapped.rubyTapIndex)).length,
+          tapIndex: snapped.rubyTapIndex,
           selection: tapPayload
         };
       }
@@ -3773,6 +3775,14 @@ window.fushiSelection = {
     var seq = (this.textSelectedSeq || 0) + 1;
     this.textSelectedSeq = seq;
     payload.selectedSeq = seq;
+    // ssJjbvbAbs：宿主采用 ruby 候选（rubySnap.selection）后整份换成它，上面这几个只在外层追加的
+    // 字段也要同步进去，否则采用后悬停被当成明确点击、歌词覆盖层还得再 eval 一次 cue 上下文。
+    var snapSelection = payload.rubySnap && payload.rubySnap.selection;
+    if (snapSelection) {
+      snapSelection.fromHover = payload.fromHover;
+      if ('lyricsCueContext' in payload) snapSelection.lyricsCueContext = payload.lyricsCueContext;
+      snapSelection.selectedSeq = seq;
+    }
     var ack = window.flutter_inappwebview.callHandler('onTextSelected', JSON.stringify(payload));
     this.lastTextSelectedAck = ack;
     return payload.text;

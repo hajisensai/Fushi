@@ -145,7 +145,8 @@ class ReaderSelectionData {
 }
 
 /// payload 的 `rubySnap`：[tapIndex] 是被点的字在吸附后 [ReaderSelectionData.text] 里的
-/// **码点**下标（与查词命中长度同单位），[selection] 是从被点字起扫的整份选区数据。
+/// **UTF-16** 下标（与查词命中长度 `DictionarySearchResult.bestLength` 同单位），[selection]
+/// 是从被点字起扫的整份选区数据（`fromHover` / `selectedSeq` / `lyricsCueContext` 与外层一致）。
 class RubySnapTap {
   const RubySnapTap({required this.tapIndex, required this.selection});
 

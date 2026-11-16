@@ -1,8 +1,8 @@
 import 'package:fushi/src/reader/reader_selection_data.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart' show FushiRubySpan;
 
-/// 查 [term]（带原文振假名 [rubySpans]）后正文里命中的码点数（`lookupHighlightCharCount`
-/// 口径，0 = 没查到）。
+/// 查 [term]（带原文振假名 [rubySpans]）后正文里命中的长度（`lookupHighlightCharCount`
+/// 口径，即 `bestLength` 的 UTF-16 长度；0 = 没查到）。与 [RubySnapTap.tapIndex] 同单位。
 typedef RubySnapMatchedLength =
     Future<int> Function(String term, List<FushiRubySpan> rubySpans);
 
