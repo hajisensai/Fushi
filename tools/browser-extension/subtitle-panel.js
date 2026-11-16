@@ -25,6 +25,9 @@
     // videoId 初始值是 '' 而非 null：与 videoKey() 的非空字符串契约同型，
     // 首次 tick 仍会因 '' !== <真实 key> 而触发一次 refreshHeadless（语义不变）。
     activeLang: null, videoId: '', cues: [], currentIndex: -1,
+    // 按需取轨失败的占位轨：key → 错误（见 requestLazyIfPending）。key 来自页面世界可伪造的
+    // postMessage，所以用 Map：'__proto__' / 'constructor' 只是普通键，不碰原型链。
+    lazyFailed: new Map(),
     tickTimer: null, enabled: false,
     overlayEnabled: true, dragDropEnabled: true, autoScroll: true,
     overlayEl: null, overlayCue: null, dropHint: null,
@@ -159,16 +162,28 @@
     return fushiListSubtitleTracks(window.fushiEpisodeCues || null, videoKey(),
       window.fushiLazyTracks || null, LIVE_LANG);
   }
-  // 占位轨被选为活动轨 → 请桥真取（同一 key 5 秒内不重复请求；取失败用户重选即可再试）。
+  // 占位轨被选为活动轨 → 请桥真取（同一 key 5 秒内不重复请求）。
+  // 反馈 0RgCNJFQmJ：桥取不到（请求失败 / 空轨）会发 cuesFailed 确定回执，以前扩展这边没有
+  // 接收端（fushiSubtitlePanelOnTrackFailed 只有 app 的 glue 实现）——回执被丢掉，轨永远停在
+  // 「选中加载」，轮询还每 5 秒替用户再打一次注定失败的请求。现在失败记进 lazyFailed：列表
+  // 标「加载失败」、提示一次、不再自动重试；用户再次明确选这条轨（retryLazyTrack）才重取。
   function requestLazyIfPending(track) {
     if (!track || !track.pending || typeof window.fushiRequestLazyTrack !== 'function') return;
+    if (st.lazyFailed.has(track.key)) return;
     // 手机遥控的被动轮询只读状态，不替用户去取占位轨（Netflix 取轨会临时切站点字幕）。
     if (remote && remote.passive) return;
     var now = Date.now();
-    st.lazyRequestedAt = st.lazyRequestedAt || {};
+    st.lazyRequestedAt = st.lazyRequestedAt || Object.create(null);
     if (now - (st.lazyRequestedAt[track.key] || 0) < 5000) return;
     st.lazyRequestedAt[track.key] = now;
     try { window.fushiRequestLazyTrack(track.key); } catch (_) {}
+  }
+  // 用户明确选了这条轨：上次取失败的记录作废，下一次刷新立刻重取（不受 5 秒节流）。
+  function retryLazyTrack(lang) {
+    var key = videoKey() + '|' + lang;
+    if (!st.lazyFailed.has(key)) return;
+    st.lazyFailed.delete(key);
+    if (st.lazyRequestedAt) delete st.lazyRequestedAt[key];
   }
 
   // ── asb 移植：读取侧时轴偏移（任意轨，subtitle-controller.ts offset() 的无破坏版） ──
@@ -1502,9 +1517,24 @@
     return { index: idx, startMs: c.startMs, endMs: c.endMs, text: String(c.text || '') };
   };
 
-  window.fushiSubtitlePanelOnCues = function (_key) {
+  window.fushiSubtitlePanelOnCues = function (key) {
+    if (key) st.lazyFailed.delete(String(key));
     if (!st.enabled) return;
     refreshHeadless();
+  };
+
+  // 桥的 cuesFailed 回执（subtitle-providers.js：YouTube / 通用流媒体桥与 Netflix 同一出口）。
+  // 只认还在等 cue 的占位轨；是当前活动轨就明确提示——不再静默停在「选中加载」。
+  window.fushiSubtitlePanelOnTrackFailed = function (key, err) {
+    key = String(key || '');
+    // 只认自有键：继承属性（key='constructor' 之类）不能冒充已登记的占位轨。
+    var lazy = window.fushiLazyTracks;
+    if (!key || !lazy || !Object.prototype.hasOwnProperty.call(lazy, key) || !lazy[key]) return;
+    st.lazyFailed.set(key, String(err || 'error'));
+    if (st.lazyRequestedAt) delete st.lazyRequestedAt[key]; // 不再自动重试只由 lazyFailed 决定
+    if (key !== activeTrackKey()) return;
+    var label = (window.fushiTrackLabels && window.fushiTrackLabels[key]) || key.slice(key.indexOf('|') + 1);
+    toast(tr('subtitle_track_load_failed', { track: label }));
   };
 
   function trackSignature(track) {
@@ -1536,6 +1566,7 @@
             : ((window.fushiTrackLabels && window.fushiTrackLabels[track.key]) || track.lang),
           length: track.cues.length,
           pending: !!track.pending,
+          failed: !!(track.pending && st.lazyFailed.has(track.key)),
           signature: trackSignature(track),
         };
       }),
@@ -1568,6 +1599,7 @@
     }
     if (!found) return false;
     st.activeLang = wanted;
+    retryLazyTrack(wanted);
     if (!st.enabled) {
       try { var gate = {}; gate[SETTING_KEY] = true; chrome.storage.local.set(gate); } catch (_) {}
       applyEnabled(true);
@@ -1779,6 +1811,7 @@
       }
       if (!found) return { ok: false, error: 'track-missing' };
       st.activeLang = wanted;
+      retryLazyTrack(wanted);
       // 手机明确选了这条：占位轨此刻去真取（与侧栏选轨后的下一次刷新同一条路）。
       refreshHeadless();
     } else {
@@ -1880,7 +1913,7 @@
         for (var i = 0; i < available.length; i++) {
           if (available[i].lang === wanted) { found = true; break; }
         }
-        if (found) st.activeLang = wanted;
+        if (found) { st.activeLang = wanted; retryLazyTrack(wanted); }
         sendResponse(sidePanelState(true));
         return false;
       }
