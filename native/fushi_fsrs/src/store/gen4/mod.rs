@@ -11,6 +11,8 @@
 //! - [derive]：派生层的索引（实体、寄存器、日志、旧闭包）与 `rebuild_all`；冻结的旧判定从操作体读。
 //! - [class]：读侧按别名类判定——寄存器、标签按别名类并起来再过冻结判据，内嵌 ID 归一（只读，没有调用方）。
 //! - [cache]：缓存层——笔记 / 卡片缓存、逐卡重放、有效复习投影（统计列）。
+//! - [media]：各位置媒体「在不在」的本机缓存 `media_at` 的读写、媒体清单（`crate::gen4::manifest`）的收与发、协议 3
+//!   `sync2_media_at` 的播种（G8-3，没有调用方）。
 //! - [weigh]：派生层的语义部分——标签 OR-Set、媒体绑定、彻底清除、被扣住的删除、设备信任。
 
 pub mod alias;
@@ -22,6 +24,7 @@ pub mod files;
 pub mod import;
 pub mod legacy;
 pub mod legacy_export;
+pub mod media;
 pub(crate) mod pack;
 #[cfg(test)]
 pub(crate) mod parity;
