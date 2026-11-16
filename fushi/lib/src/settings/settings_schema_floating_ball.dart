@@ -25,7 +25,6 @@ import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
-import 'package:fushi/src/utils/misc/toast_severity.dart';
 
 SettingsDestination buildFloatingBallDestination() {
   return SettingsDestination(

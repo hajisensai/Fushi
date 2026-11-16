@@ -93,7 +93,7 @@ GalWaveformRange crossAppAudioDefaultRange(GalAudioSlice slice) {
     }
   }
   if (last < 0) return full;
-  final int maxGapFrames = kCrossAppAudioMaxGapMs ~/ kCrossAppAudioFrameMs;
+  const int maxGapFrames = kCrossAppAudioMaxGapMs ~/ kCrossAppAudioFrameMs;
   int first = last;
   int gap = 0;
   for (int i = last - 1; i >= 0; i--) {
