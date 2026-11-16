@@ -27,6 +27,8 @@ import 'package:fushi_asr_core/asr_core.dart' show AsrCueTokenTiming;
 import 'package:fushi_core/fushi_core.dart' show fushiDebugPrint;
 import 'package:fushi_asr_subtitles/asr_subtitles.dart'
     show SubtitleCue, SubtitleFormat, renderSubtitles, subtitleCueCharTimes;
+import 'package:fushi_engine/media/video/disc/disc_format.dart'
+    show isDiscMemberPath;
 import 'package:fushi_engine/media/video/video_member_file.dart';
 import 'package:fushi_engine/ai/web_knowledge.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/ai_text_completer.dart';
@@ -236,14 +238,24 @@ class VideoSubtitleAiConfig {
 Directory videoSubtitleJobsRootUnder(Directory supportRoot) =>
     Directory(p.join(supportRoot.path, 'asr_jobs', 'video_subtitles'));
 
-/// 日语任务目录名：`sha1(视频文件名 + '|' + 字节数)`（文件不存在按 0 字节）。其它
-/// 语言用 [videoSubtitleJobIdFor]。
+/// 日语任务目录名：`sha1(视频文件名 + '|' + 身份)`。其它语言用
+/// [videoSubtitleJobIdFor]。
+///
+/// 身份：路径本身装着全部媒体字节的单文件取字节数；原盘成员（蓝光整卷 / 分集 `.mpls`、
+/// DVD title）路径本身不是媒体文件（分集与 DVD title 是虚拟路径、整卷 `.mpls` 只是
+/// 几百字节的索引，各盘同名同长常见），取 `disc:<规整后的完整路径>`；其余（网络流、
+/// `.strm`、文件不在）按 0。
 String videoSubtitleJobId(String videoPath) {
-  final int bytes = hasLocalMediaFileSync(videoPath)
-      ? File(videoPath).lengthSync()
-      : 0;
+  final String identity;
+  if (hasLocalSingleMediaFileSync(videoPath)) {
+    identity = '${File(videoPath).lengthSync()}';
+  } else if (isDiscMemberPath(videoPath)) {
+    identity = 'disc:${p.normalize(videoPath)}';
+  } else {
+    identity = '0';
+  }
   return sha1
-      .convert(utf8.encode('${p.basename(videoPath)}|$bytes'))
+      .convert(utf8.encode('${p.basename(videoPath)}|$identity'))
       .toString();
 }
 

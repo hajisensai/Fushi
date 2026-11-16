@@ -61,4 +61,7 @@ public final class ChannelNames {
     // 反馈回复后台检查（反馈 yjn-3h8B-7）：主引擎上排 / 撤纯原生的 FeedbackReplyWorker
     // （feedback/FeedbackReplyWorkChannel.kt），Dart 门面 feedback_reply_background.dart。
     public static final String FEEDBACK_REPLY_WORK = PREFIX + "/feedback_reply_work";
+    // Android 文件分享（BUG-4740）：share_plus 在主线程整份拷贝文件会 ANR，Android 的
+    // 文件分享改走这条。实现见 FushiShareChannel.kt，Dart 门面 fushi_share.dart。
+    public static final String SHARE = PREFIX + "/share";
 }

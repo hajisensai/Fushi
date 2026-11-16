@@ -1,9 +1,9 @@
-/// 首页 dashboard 的「可选面板」注册表。
+/// 旧首页 dashboard 的「可选面板」显示档（只读，迁移用）。
 ///
-/// 首页的固定分区（今日 / 继续 / 最近添加 / 同步卡）不在这里：它们恒在，或由
-/// 功能模块开关整体门控。这里登记的是**按用户情况才出现**的面板——每个面板有
-/// 自己的默认判据（[HomeDashboardPanelMode.auto]），用户可以在 设置 › 外观 ›
-/// 首页面板 里把它钉成显示 / 隐藏。
+/// 2026-11-15 首页改成小组件网格（`home_widget_layout.dart`）后，这份偏好不再写、
+/// 不再影响渲染；只在用户从没编辑过首页布局时，由 `migrateHomeWidgetLayout` 读它
+/// 生成首个布局：钉成 hidden 的面板不放、钉成 shown 的放上、auto 的按面板当时的
+/// 默认判据算一次。
 ///
 /// 持久化：偏好 `home_dashboard_panels` 存一个 JSON map `{面板 id: 档位 wire}`，
 /// 缺省 = auto。面板 id（[HomeDashboardPanel.id]）与档位 wire 冻结不追改。
@@ -11,31 +11,25 @@ library;
 
 import 'dart:convert';
 
-/// 一个可选的首页面板。顺序 = 设置页「首页面板」分区的展示顺序。
+/// 一个旧可选首页面板。
 enum HomeDashboardPanel {
   /// Fushi 复习（内置 SRS）入口条：今日待复习计数 + 「开始复习」。
   ///
-  /// 默认判据（见 `home_srs_panel.dart` 的 `resolveHomeSrsPanelVisible`）：复习
-  /// 模块开着，且（挖词目标 = Fushi 复习 或 库里已有复习卡）。制卡仍发 Anki、也
-  /// 没有复习卡的存量用户首页不多这一栏（用户拍板：老用户不提醒）。
+  /// 自动档判据（`home_srs_panel.dart` 的 `homeSrsAutoDefault`）：复习模块开着，
+  /// 且（挖词目标 = Fushi 复习 或 库里已有复习卡）。制卡仍发 Anki、也没有复习卡的
+  /// 存量用户首个布局里不放（用户拍板：老用户不提醒）。
   srsReview('srs_review'),
 
-  /// Tracking strip (Bangumi and tracking plugin sites): one line that
-  /// says whether progress reached the sites. Default rule
-  /// (`resolveHomeTrackingPanelVisible` in `home_tracking_panel.dart`): shown
+  /// Tracking strip (Bangumi and tracking plugin sites). Automatic rule:
   /// only while something needs the user (a title to link, a failed send, a
-  /// site that wants a new sign-in); otherwise the home page stays as it is.
+  /// site that wants a new sign-in), `HomeTrackingSummary.needsAttention`.
   tracking('tracking'),
 
-  /// AI 助手入口条（spec 2026-10-26 D4 ①）：点了打开 AI 浮层。默认判据（见
-  /// `home_ai_agent_panel.dart` 的 `resolveHomeAiAgentPanelVisible`）：AI 模块开着且
-  /// 给「AI 助手」指派了可用的提供商。
+  /// AI 助手入口条（spec 2026-10-26 D4 ①）。自动档判据：AI 模块开着且给「AI 助手」
+  /// 指派了可用的提供商（`resolveHomeAiAgentAutoDefault`）。
   aiAgent('ai_agent'),
 
-  /// 媒体库全景（需求 2026-10-29）：全部作品封面与制卡词组成的可操作 3D 球幕，附分享用
-  /// 16 秒开场动画。默认判据（`home_panorama_panel.dart` 的
-  /// `resolveHomePanoramaPanelVisible`）：默认不显示（2026-10-30），钉成显示才出现；
-  /// 空库时面板里给引导语。
+  /// 媒体库全景（需求 2026-10-29）。自动档 = 不显示（2026-10-30），钉成显示才放。
   panorama('library_panorama');
 
   const HomeDashboardPanel(this.id);
@@ -85,16 +79,4 @@ Map<HomeDashboardPanel, HomeDashboardPanelMode> decodeHomeDashboardPanelModes(
     if (mode != HomeDashboardPanelMode.auto) out[panel] = mode;
   }
   return out;
-}
-
-/// 编码显示档；auto 不落盘（缺省即 auto）。
-String encodeHomeDashboardPanelModes(
-  Map<HomeDashboardPanel, HomeDashboardPanelMode> modes,
-) {
-  final Map<String, String> out = <String, String>{
-    for (final MapEntry<HomeDashboardPanel, HomeDashboardPanelMode> e
-        in modes.entries)
-      if (e.value != HomeDashboardPanelMode.auto) e.key.id: e.value.wire,
-  };
-  return out.isEmpty ? '' : jsonEncode(out);
 }
