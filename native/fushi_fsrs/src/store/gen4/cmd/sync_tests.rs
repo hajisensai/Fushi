@@ -880,7 +880,7 @@ fn removed_and_unwired_sync_commands_name_their_reason() {
         "ingest_yield",
         "ingest_begin",
         "replay_pending",
-        "digest",
+        "digest_buckets",
         "obsolete_ack",
     ] {
         let e = raw(a.h, &g4req(op, T1, json!({})), &[]).unwrap_err();

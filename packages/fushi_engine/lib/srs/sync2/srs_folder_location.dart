@@ -72,31 +72,28 @@ class SrsFolderLocation {
   };
 }
 
-/// [location] 在磁盘上的集合根（`<文件夹>/fushi-srs/<profileUid>/v3/`）。
-Directory srsFolderCollectionRoot(
-  SrsFolderLocation location,
-  String profileUid,
-) => Directory(
-  p.join(
-    location.path,
-    kSrsSync2Namespace,
-    srsLocationDirOf(profileUid),
-    kSrsSync2Folder,
-  ),
-);
+/// [location] 在磁盘上协议 3 的集合根（`<文件夹>/fushi-srs/<dir>/v3/`；新代只读它的 `meta.json` 并改写成围栏，存量
+/// 集合的媒体仍在这里）。[dir] = 集合的位置目录名（内核 `identity` 的 `dir`，[srsFolderLocationDir]）。
+Directory srsFolderCollectionRoot(SrsFolderLocation location, String dir) =>
+    Directory(p.join(location.path, kSrsSync2Namespace, dir, kSrsSync2Folder));
 
-/// [location] 上协议 1 的旧集合根（`<文件夹>/fushi-srs/<profileUid>/v2/`，迁移之后只剩围栏）。
-Directory srsFolderV1CollectionRoot(
-  SrsFolderLocation location,
-  String profileUid,
-) => Directory(
-  p.join(
-    location.path,
-    kSrsSync2Namespace,
-    srsLocationDirOf(profileUid),
-    kSrsSync2V1Folder,
-  ),
-);
+/// [location] 在磁盘上新代的集合根（`<文件夹>/fushi-srs/<dir>/v4/`）。
+Directory srsFolderNewRoot(SrsFolderLocation location, String dir) =>
+    Directory(p.join(location.path, kSrsSync2Namespace, dir, kSrs4Root));
+
+/// [location] 上协议 1 的旧集合根（`<文件夹>/fushi-srs/<dir>/v2/`，迁移之后只剩围栏）。
+Directory srsFolderV1CollectionRoot(SrsFolderLocation location, String dir) =>
+    Directory(
+      p.join(location.path, kSrsSync2Namespace, dir, kSrsSync2V1Folder),
+    );
+
+/// 这个 profile 的集合在位置上的目录名：内核 `identity` 回包的 `dir`（设计 §5.1），不按 profile uid 拼。
+Future<String> srsFolderLocationDir(SrsDbStore store) async =>
+    (await store.sync2Command(<String, Object?>{
+          'op': 'identity',
+          'now': store.now().$1,
+        })).map['dir']!
+        as String;
 
 /// 一个文件夹位置这一轮的结果（[ops] 里带加密握手的结论：kdf / encryptionEnabled / 口令错误）。
 class SrsFolderSyncReport {
@@ -153,10 +150,14 @@ Future<SrsFolderSyncReport> srsSyncFolderLocation({
   if (!Directory(location.path).existsSync()) {
     throw FileSystemException('storage location not available', location.path);
   }
+  final String dir = await srsFolderLocationDir(store);
   final SrsLocationStore root = SrsDirectoryLocationStore(
-    srsFolderCollectionRoot(location, store.profileUid),
+    srsFolderCollectionRoot(location, dir),
   );
-  final Directory v1Dir = srsFolderV1CollectionRoot(location, store.profileUid);
+  final SrsLocationStore root4 = SrsDirectoryLocationStore(
+    srsFolderNewRoot(location, dir),
+  );
+  final Directory v1Dir = srsFolderV1CollectionRoot(location, dir);
   // 先立围栏、迁走 v1 数据（每一轮都做：旧版本绝不能在旧根上重新建一个 v1 集合）。没过的（口令 / 更新的版本 /
   // meta 读不到）整个位置都不碰，结论照握手的样子交回。
   final SrsLocationPrepared prepared = await srsPrepareLocation(
@@ -186,7 +187,8 @@ Future<SrsFolderSyncReport> srsSyncFolderLocation({
   if (location.sync || location.archive) {
     ops = await srsSync2Round(
       host: store,
-      location: root,
+      location: root4,
+      oldRoot: root,
       locationId: location.locationId,
       nowMs: () => store.now().$1,
       key: key,

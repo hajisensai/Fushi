@@ -76,7 +76,8 @@ const NO_PENDING: &str =
 const NO_CHANNEL: &str =
     "gen4 has no ingest channel: received segments land in the truth layer directly";
 const P3_REPR: &str = "a protocol 3 storage detail; the implementation is deleted with G7-6";
-const NO_DIGEST_CMD: &str = "gen4 computes the semantic digest inside `head` (Index::digest); there is no separate digest command";
+const NO_DIGEST_BUCKETS: &str =
+    "gen4 has no digest buckets to bisect: the semantic digest is one hash over the derived layer (Index::digest)";
 const NO_OBSOLETE_ACK: &str = "gen4 `obsolete` keeps no to-delete list: it decides from this round's listing, so failed deletes are simply offered again";
 const NO_REHEARSAL: &str =
     "the pre-migration rehearsal only makes sense before the generation switch; G7-6 deletes it";
@@ -126,10 +127,11 @@ pub fn wiring(op: &str) -> Option<Wiring> {
         | "profile_purge" => Unwired("G9-5"),
         // 同步一轮（G8-7，`cmd/sync.rs`）
         "location_root" | "plan" | "ingest" | "ingest_finish" | "outbox" | "outbox_ack"
-        | "head" | "obsolete" | "retire" | "rotate" | "location_sealed" | "location_seal" => Wired,
+        | "head" | "obsolete" | "retire" | "rotate" | "location_sealed" | "location_seal"
+        | "digest" => Wired,
         "ingest_yield" | "ingest_commit" | "ingest_begin" | "ingest_batch" | "ingest_prepare"
         | "ingest_end" | "replay_pending" => Removed(NO_CHANNEL),
-        "digest" | "digest_buckets" => Removed(NO_DIGEST_CMD),
+        "digest_buckets" => Removed(NO_DIGEST_BUCKETS),
         "obsolete_ack" => Removed(NO_OBSOLETE_ACK),
         // 同步一轮里还没接的部分（交接说明「G8-7 同步一轮」未做项）：转发、旧身份目录清理、媒体。
         "relay_outbox" | "relay_ack" | "obsolete_former" | "media_known" | "media_record"
@@ -472,6 +474,10 @@ fn run(
         "outbox_ack" => c.write_local(|t| cmd::sync::outbox_ack(t, col_of(t, profile)?, req))?,
         "head" => c.write_local(|t| cmd::sync::head(t, col_of(t, profile)?, req, files))?,
         "obsolete" => read_col(c, profile, |t, col| cmd::sync::obsolete(t, col, req))?,
+        // 语义摘要（head 带的那一份，`Index::digest`）：两台设备同一版本向量下应当相同，测试与诊断拿它比收敛。
+        "digest" => read_col(c, profile, |t, col| {
+            Ok(json!({"digest": Index::new(t, col).digest()?}))
+        })?,
         "retire" => c.write(|t| cmd::sync::retire(t, col_of(t, profile)?, profile, req))?,
         "rotate" => {
             let now = int_of(req, "now")?;

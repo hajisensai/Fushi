@@ -30,7 +30,6 @@ import 'package:fushi_engine/srs/srs_reads.dart';
 import 'package:fushi_engine/srs/srs_rwkv_scheduling.dart';
 import 'package:fushi_engine/srs/srs_style_store.dart';
 import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
-import 'package:fushi_engine/srs/sync2/srs_wal_checkpoint_pacer.dart';
 
 export 'package:fushi_engine/srs/srs_edit_undo.dart';
 
@@ -817,11 +816,6 @@ class SrsDbStore implements SrsSync2Host {
     final Completer<void> mine = Completer<void>();
     _writeTail = mine.future;
     try {
-      if (prev != null && _ingestSliceHolding && !_ingestYieldSent) {
-        // 锁正被收段的一片占着：请内核当场收片（只置一个标志，同步调用不等锁），不让这笔写入等完整片。
-        _ingestYieldSent = true;
-        core.sync2(const <String, Object?>{'op': 'ingest_yield'});
-      }
       if (prev != null) await prev;
       // 排队期间前面那位把副本作废了（写失败重读也失败 / [retire]）：排着的也不再写。
       final StateError? retired = _unusable;
@@ -848,7 +842,8 @@ class SrsDbStore implements SrsSync2Host {
     _retireRequested = true;
     return runExclusive(() async {
       try {
-        await _releaseIngestSession();
+        final Completer<void>? session = _ingestSession;
+        if (session != null) _endIngestSession(session);
         return await body();
       } finally {
         _unusable ??= SrsStoreRetiredError(
@@ -1729,224 +1724,61 @@ class SrsDbStore implements SrsSync2Host {
     'open_file',
   };
 
-  /// 开一场收段会话。先登记会话（之后来的 [rwkvReplayBytes] 排到会话结束），再等在途的回放跑完，然后才让内核开始：
-  /// 收段的投递 / 收尾与整 profile 的 RWKV 回放不会同时在内存里。开不成（抛错）时会话随即结束——调用方只在
-  /// 这一步成功后才配对 [sync2IngestEnd]。
+  /// 开一段收段（Dart 侧）：先登记（之后来的 [rwkvReplayBytes] 排到它结束），再等在途的回放跑完——收段的投递与整
+  /// profile 的 RWKV 回放不同时在内存里。新代内核没有收段会话：每批一个写事务，分叉点记在库里（`cmd/sync.rs`）。
   @override
   Future<void> sync2IngestBegin() async {
     final Completer<void> session = Completer<void>();
     await sync2IngestSettled();
     _ingestSession = session;
-    try {
-      final Completer<void>? replays = _rwkvReplaysIdle;
-      if (replays != null) await replays.future;
-      await runExclusive(() async {
-        final Map<String, Object?> begun = await _sync2(const <String, Object?>{
-          'op': 'ingest_begin',
-        });
-        _ingestOpen = true;
-        _debugIngestChannel = begun['channel'] == true;
-      });
-    } catch (_) {
-      _endIngestSession(session);
-      rethrow;
-    }
+    final Completer<void>? replays = _rwkvReplaysIdle;
+    if (replays != null) await replays.future;
   }
 
-  /// 本副本开着内核收段会话（[sync2IngestBegin] 之后、[sync2IngestEnd] / [retire] 放掉之前）。
-  /// [_ingestSession] 是 Dart 侧的会话（让 RWKV 回放排队），比它早开、不晚于它结束。
-  bool _ingestOpen = false;
-
-  /// 测试：[_ingestOpen]。
+  /// 测试：开着 [sync2IngestBegin] 的一段。
   @visibleForTesting
-  bool get debugIngestOpen => _ingestOpen;
+  bool get debugIngestOpen => _ingestSession != null;
 
-  /// 测试：开着的这场收段会话走不走收段通道——`ingest_begin` 回包里内核的判定，只记录、不参与任何逻辑
-  /// （通道状态由内核持有；会话外问内核用 `identity` 回包的 `channel`）。会话放掉后为 false。
+  /// 测试：协议 3 收段会话走不走收段通道。新代没有收段通道，恒为 false。
   @visibleForTesting
-  bool get debugIngestChannel => _ingestOpen && _debugIngestChannel;
-  bool _debugIngestChannel = false;
+  bool get debugIngestChannel => false;
 
-  /// 结束收段会话：等着的 RWKV 回放放行（会话里攒下的分数表刷新由内核在 `ingest_end` 时并成一次）；内核命令失败
-  /// 也照样结束 Dart 侧会话。副本在这一轮途中被作废时，[retire] 已在它最后一段独占区里放掉了内核会话：这里不再进
-  /// 独占区（进了也只会抛作废错误，而 `ingest_end` 已经发到内核）。
+  /// 结束 [sync2IngestBegin] 开的一段：等着的 RWKV 回放放行。
   @override
   Future<void> sync2IngestEnd() async {
-    final Completer<void>? session = _ingestSession;
-    try {
-      if (!_ingestOpen) return;
-      await runExclusive(_releaseIngestSession);
-    } on SrsStoreRetiredError catch (e) {
-      // 排队期间被作废：会话由 [retire] 放掉了（[_ingestOpen] 已清）。别的原因（会话仍开着）照常抛。
-      if (!identical(e.store, this) || _ingestOpen) rethrow;
-    } finally {
-      if (session != null) _endIngestSession(session);
-    }
-  }
-
-  /// 在独占区里放掉本副本的收段会话（没开着就什么也不做）。调用方已在独占区里。内核会话放掉的同时结束 Dart 侧
-  /// 会话：[retire] 走这条路时，攒着的分数表刷新与排队的 RWKV 回放也随之放行，不必等那一轮的 [sync2IngestEnd]。
-  Future<void> _releaseIngestSession() async {
-    if (!_ingestOpen) return;
-    await _sync2(const <String, Object?>{'op': 'ingest_end'});
-    _ingestOpen = false;
     final Completer<void>? session = _ingestSession;
     if (session != null) _endIngestSession(session);
   }
 
-  /// 收一批分两步：`ingest_prepare` 不进写锁（解压、解密、验签、重算链，手机上一批要一两秒，这期间本机作答照常
-  /// 写入；内核也只在读连接上短暂取公钥），`ingest_commit` 在写锁里投递预处理好的那批。预处理只读已提交的数据，
-  /// 之后公钥 / 身份变了内核在投递时按当时的重验，结果与在写锁里一步收完相同。
-  ///
-  /// 投递按片（native/fushi_fsrs/src/store/sync2/transport.rs `CommitBudget`）：内核每次 commit 只投一片，返回
-  /// `more` 就再进一次写锁接着投。每片是独立的独占区 + 事务；没人等锁时一片投到时间上限，有写入来排队
-  /// （[runExclusive]）就请内核当场收片（`ingest_yield`），排队的作答只等这一片已投部分的收尾，而不是整批。
-  ///
-  /// 收这一批期间调高写连接的自动 checkpoint 阈值（[bulkWrites]），按 [SrsWalCheckpointPacer] 定的节奏在写锁外、
-  /// 内核另开的连接上把 WAL 并回（[_walCheckpoint]）：在写连接上并，提交那一刻就把同一批热页拷回主库，作答排在
-  /// 后面；每片都并，同一批热页每片拷一遍（真实数据里占投递三分之一）；整批都不并，WAL 随片数涨到几百 MB。
-  /// 测试用：[sliceOps] 改按条数切（切点确定），[sliceMs] 改一片的时间上限。返回里 `slices` 是这一批投了几片。
+  /// 收一批（内核 `ingest`，一个写事务：核对、按因果投递、派生层收尾；本机状态行的修订号在同一事务里推进）。收这一批
+  /// 期间调高写连接的自动 checkpoint 阈值（[bulkWrites]）。协议 3 的「先预处理、再按片投递、有写入排队就收片」
+  /// （`ingest_prepare` / `ingest_commit` / `ingest_yield`）在新代没有对应物：一批的事务只做这一批，字节预算由
+  /// [srsSync2Round] 的切批（[kSrsSync2IngestBudgetBytes]）限住。
   @override
   Future<Map<String, Object?>> sync2IngestBatch(
     List<Uint8List> segments, {
     String? keyHex,
-    int? sliceOps,
-    int? sliceMs,
   }) async {
-    await _sync2(<String, Object?>{
-      'op': 'ingest_prepare',
-      'key': keyHex,
-    }, blobs: segments);
-    final List<Map<String, Object?>> slices = <Map<String, Object?>>[];
-    final SrsWalCheckpointPacer pacer = SrsWalCheckpointPacer();
+    late Map<String, Object?> r;
     await bulkWrites(() async {
-      do {
-        slices.add(await _sync2IngestSlice(sliceOps, sliceMs));
-        if (slices.last['more'] == true && pacer.afterSlice()) {
-          pacer.checkpointed(await _walCheckpoint());
-        }
-      } while (slices.last['more'] == true);
+      r = await _sync2IngestStep(<String, Object?>{
+        'op': 'ingest',
+        'key': keyHex,
+      }, segments);
     });
-    return _mergeIngestSlices(slices);
+    return r;
   }
 
-  /// 投一片：持锁期间登记成「正在投片」，好让来排队的写入请内核收片（[runExclusive]）。
-  Future<Map<String, Object?>> _sync2IngestSlice(int? sliceOps, int? sliceMs) =>
-      runExclusive(() async {
-        _ingestSliceHolding = true;
-        _ingestYieldSent = false;
-        try {
-          debugOnIngestSlice?.call();
-          return await _sync2IngestStep(<String, Object?>{
-            'op': 'ingest_commit',
-            if (sliceOps != null) 'sliceOps': sliceOps,
-            if (sliceMs != null) 'sliceMs': sliceMs,
-          });
-        } finally {
-          _ingestSliceHolding = false;
-        }
-      });
-
-  /// 写锁正被收段的一片占着（[_sync2IngestSlice]）。
-  bool _ingestSliceHolding = false;
-
-  /// 测试钩子：收段的一片拿到写锁、调内核之前调用。
+  /// 测试钩子：收一批拿到写锁、调内核之前调用。
   @visibleForTesting
   void Function()? debugOnIngestSlice;
 
-  /// 这一片已经请过收片。
-  bool _ingestYieldSent = false;
-
-  /// 在内核另开的连接上把 WAL 并回主库（PASSIVE，不占写连接，期间作答照常写入）。返回并回时 WAL 里的帧数。
-  Future<int> _walCheckpoint() async {
-    debugCoreCommands++;
-    final SrsSync2Result r = await _coreSync2(
-      core.address,
-      core.libraryPath,
-      const <String, Object?>{'op': 'wal_checkpoint'},
-      const <Uint8List>[],
-    );
-    return (r.map['log'] as num?)?.toInt() ?? 0;
-  }
-
-  /// 一批各片的结果拼成一次的形状（[srsSync2Round] 读的那些）：条数、`marks` 的计数相加、清单接起来，报错、
-  /// 重放 / 变更 / 清除的清单按片顺序接起来，缓冲条数与其它字段取最后一片，`slices` 记片数。各片的投影变化已在
-  /// 各自的 [_sync2IngestStep] 里接进缓存，这里只给调用方汇报。
-  static Map<String, Object?> _mergeIngestSlices(
-    List<Map<String, Object?>> slices,
-  ) {
-    if (slices.length == 1) {
-      return <String, Object?>{...slices.single, 'slices': 1};
-    }
-    final Map<String, Object?> out = <String, Object?>{
-      ...slices.last,
-      'slices': slices.length,
-    };
-    final Map<String, Object?> marks = <String, Object?>{};
-    int applied = 0;
-    bool fork = false;
-    final Map<String, List<Object?>> lists = <String, List<Object?>>{
-      for (final String k in const <String>[
-        'errors',
-        'replayed',
-        'changed',
-        'purged',
-      ])
-        k: <Object?>[],
-    };
-    for (final Map<String, Object?> r in slices) {
-      applied += (r['applied'] as int?) ?? 0;
-      fork = fork || r['fork'] == true;
-      for (final MapEntry<String, List<Object?>> l in lists.entries) {
-        l.value.addAll((r[l.key] as List?) ?? const <Object?>[]);
-      }
-      for (final MapEntry<Object?, Object?> m
-          in ((r['marks'] as Map?) ?? const <Object?, Object?>{}).entries) {
-        final String k = m.key! as String;
-        final Object? v = m.value;
-        final Object? had = marks[k];
-        marks[k] = switch (v) {
-          final int n => ((had as int?) ?? 0) + n,
-          final List<Object?> l => <Object?>[...?had as List<Object?>?, ...l],
-          _ => v,
-        };
-      }
-    }
-    return out
-      ..['applied'] = applied
-      ..['fork'] = fork
-      ..['marks'] = marks
-      ..addAll(lists);
-  }
-
-  /// 收尾：换身份，再把各片记下的待重放卡重放完（审查 S-4：每张卡一次会话只重放一遍），再按块刷新各片记下的
-  /// 缓存。重放与刷新都按片：内核返回 `more` 就放开写锁、再用 `replay_pending` 接着做，排队的作答只等一片。
-  /// WAL 与投递时同样处理（[bulkWrites] + [SrsWalCheckpointPacer]）。各片结果拼成一次的形状。
+  /// 收尾（内核 `ingest_finish`）：收段时记下过分叉点就换身份、分叉点之后的本机操作以新身份重签发。
   @override
-  Future<Map<String, Object?>> sync2IngestFinish({int? sliceOps}) async {
-    final List<Map<String, Object?>> parts = <Map<String, Object?>>[];
-    final SrsWalCheckpointPacer pacer = SrsWalCheckpointPacer();
-    await bulkWrites(() async {
-      parts.add(
-        await _sync2IngestStep(<String, Object?>{
-          'op': 'ingest_finish',
-          'sliceOps': ?sliceOps,
-        }),
-      );
-      while (parts.last['more'] == true) {
-        if (pacer.afterSlice()) pacer.checkpointed(await _walCheckpoint());
-        parts.add(
-          await _sync2IngestStep(<String, Object?>{
-            'op': 'replay_pending',
-            'sliceOps': ?sliceOps,
-          }),
-        );
-      }
-    });
-    return <String, Object?>{..._mergeIngestSlices(parts), 'more': false};
-  }
+  Future<Map<String, Object?>> sync2IngestFinish() =>
+      _sync2IngestStep(const <String, Object?>{'op': 'ingest_finish'});
 
-  /// 收段会话的一步（投递一片 / 收尾换身份 / 接着重放）：写锁里跑，投影变化接进本机缓存。
+  /// 收段的一步（收一批 / 收尾换身份）：写锁里跑，投影变化接进本机缓存。
   ///
   /// 这一片由内核自己在一笔事务里提交（提交成功才推进内核的收段会话），本机状态行（这一步只会推进其中的修订号）由
   /// 内核在**同一笔事务**里写下并回报 `localRevision`（[_absorbLocalWrite]）——要么一起落盘、要么一起不落，内存在命令
@@ -1956,6 +1788,7 @@ class SrsDbStore implements SrsSync2Host {
     Map<String, Object?> request, [
     List<Uint8List> segments = const <Uint8List>[],
   ]) => runExclusive(() async {
+    debugOnIngestSlice?.call();
     final Map<String, Object?> r = await _sync2(<String, Object?>{
       ...request,
       'now': now().$1,

@@ -1,21 +1,21 @@
-/// 同步 v2 的一轮（docs/specs/2026-10-25-srs-sync-v2-design.md §6.2）：
+/// 复习同步的一轮（新代，设计 2026-11-11 §4；内核 `native/fushi_fsrs/src/store/gen4/cmd/sync.rs`，G8-7）：
 ///
-/// 1. 读位置上全部设备的 head（每台取代号最大的；同一代号有两份 = 同一身份的两个安装，都交给内核判分叉）；
-/// 2. 内核看 head 定要拉的段 → 只拉缺的段 → 收（校验签名 / 链 / 解密，按设备连续前缀 + 因果满足才应用，投影、
-///    重放受影响的卡；本机身份分叉就在这一步换身份、重签发）；
-/// 3. 发件：本机还没传到这个位置的段 → 上传 → 写新 head（**先读后写**：同一身份的另一个安装刚写的 head 不会
-///    被自己这一轮的 head 挡住视线）；
-/// 4. 收尾：列本机目录交给内核，内核给出位置上该删的文件（本机的旧 head、小段合并换下来的旧小段、旧转发件），
-///    删成功的回执（[srsSweepObsolete]）。留几代旧 head、旧小段什么时候能删只在内核（transport.rs
-///    `HEAD_KEEP_GENS` / `sync2_obsolete`），这里不持有任何保留规则；归档位置都不删。
+/// 0. 位置的根（`location_root`）：新根 `v4/meta.json` 与 loc 标记由内核写定，旧根 `v3/meta.json` 改写成让协议 3 的
+///    版本停下的围栏；新集合预先立围栏与墓碑 head。加密握手（[srsLocationHandshake]）照旧判口令，只看不写。
+/// 1. 读位置上全部设备的 head（每台取代号最大的），连同各设备目录的文件名交给内核（`plan`）：记公钥 / 名字、判本机
+///    身份分叉、定要拉的原生段与承袭段；有设备要求更新的读者就整轮停下。
+/// 2. 只拉缺的段 → 分批收（`ingest`，每批一个写事务）→ 有分叉点就收尾换身份（`ingest_finish`）。
+/// 3. 发件：本机原生日志从「已传到这个位置」的水位起切段、签名、按位置钥匙封装 → 上传 → `outbox_ack` → 写新 head
+///    （**先读后写**：同一身份的另一个安装刚写的 head 不会被自己这一轮的 head 挡住视线）。
+/// 4. 收尾：列本机目录交给内核（`obsolete`），删旧 head 与不再被引用的旧段；归档位置都不删。
 ///
-/// 写入纪律（§6.1）：先写段、再写 head；读者只认「head 引用的段都可读」的前缀，所以 head 先于段可见、上传
-/// 中断、列目录最终一致（Google Drive）都只会让这一轮少收一点，下一轮补齐。传输只经 [SrsLocationStore]。
+/// 写入纪律：先写段、再写 head；读者只认「head 引用的段都可读」的前缀。传输只经 [SrsLocationStore]（[location] 是
+/// 新根 `v4/`，[oldRoot] 是旧根 `v3/`）。转发（别的设备的段经本机转到这个位置）、媒体命令归 G8-7b，这一轮不做。
 ///
-/// 读写文件同时最多 [kSrsSync2Concurrency] 个在途：网盘每个请求的固定延迟远大于传输本身，逐个等是首次同步 /
-/// 新设备追赶慢的主因。段之间没有先后约束（读者按 seq 排、写者在全部段写完后才写 head），只有 head 要等段。
+/// 读写文件同时最多 [kSrsSync2Concurrency] 个在途：网盘每个请求的固定延迟远大于传输本身。
 library;
 
+import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
 
@@ -33,23 +33,21 @@ abstract interface class SrsSync2Host {
     List<Uint8List> blobs = const <Uint8List>[],
   });
 
-  /// 开一个分批收段会话（覆盖上一轮没收尾的）。本机身份的段在会话里跨批累积分叉点，换身份推到
-  /// [sync2IngestFinish]（内核 `sync2_ingest_begin`），所以分叉判定与一次收完完全相同、与怎么分批无关。
+  /// 开一段收段（Dart 侧：整 profile 的 RWKV 回放排到它之后）。新代内核没有收段会话：每批一个写事务，分叉点记在
+  /// 库里，[sync2IngestFinish] 换身份（内核 `cmd/sync.rs`）。
   Future<void> sync2IngestBegin();
 
-  /// 会话里收一批：写锁里 ingest，远端操作投递并提交，投影变化接进本机缓存。返回内核这一批的结果（`fork`
-  /// 恒为 false）。
+  /// 收一批（内核 `ingest`，一个写事务：核对、按因果投递、派生层收尾），本机状态行的修订号随之推进。返回内核这一批
+  /// 的结果（`fork` = 这一批里本机身份的段与本机日志分叉了，记下了分叉点）。
   Future<Map<String, Object?>> sync2IngestBatch(
     List<Uint8List> segments, {
     String? keyHex,
   });
 
-  /// 收尾：累积出分叉点就换身份；返回同形结果（`fork`、重签发带来的投影变化）。
+  /// 收尾（内核 `ingest_finish`）：记下过分叉点就换身份、分叉点之后的本机操作以新身份重签发；返回 `fork` 等。
   Future<Map<String, Object?>> sync2IngestFinish();
 
-  /// 放掉收段会话（内核 `sync2_ingest_end`）：一轮中途收手、抓段或某一步出错时，会话里预处理好的段与内核为会话
-  /// 留着的页缓存一起放掉，不等下一轮碰巧收尾。各片已提交时记下的待重放 / 待刷新仍在库里，下一轮 `finishPending`
-  /// 收。收尾已收完时是空操作。
+  /// 结束 [sync2IngestBegin] 开的那一段（Dart 侧；内核没有要放的东西）。
   Future<void> sync2IngestEnd();
 }
 
@@ -89,8 +87,36 @@ const String kSrsSync2OutboxRecut = 'srs outbox batch was re-cut';
 ///
 /// 3 = 存量重复流收敛（BUG-4005，内核 store/sync2/dedup.rs）：段里出现新种类 `Dedup` 与带副本说明的骨架，协议 2 的
 /// 读者解不开，head 的 `minReader` = 3 让它们停下、报需要升级（[SrsSync2Report.needsUpgrade]）。
-const int kSrsSync2Protocol = 3;
-const int kSrsSync2MinReader = 3;
+///
+/// 4 = 新代（设计 2026-11-11 §4，G8-7）：集合根挪到 `v4/`，`meta.json` 由内核写定（`location_root`），旧根 `v3/meta.json`
+/// 改写成 `minReader` 4 的围栏让协议 3 的版本停下。
+const int kSrsSync2Protocol = 4;
+const int kSrsSync2MinReader = 4;
+
+/// 新代集合根的目录名（内核 `gen4/location.rs` `NEW_ROOT`）。
+const String kSrs4Root = 'v4';
+
+/// `location_root` 的结论（内核 `cmd/sync.rs` `ROOT_*`）：可以同步 / 要更新的版本 / 位置上的根认不得（别的集合、
+/// 坏 meta），什么都不写。
+const String kSrs4RootOk = 'ok';
+const String kSrs4RootNeedsUpgrade = 'needsUpgrade';
+
+/// 位置上的新根 meta 与本机对不上（别的集合 / 认不得的外形）：这一轮不同步，什么都不写。
+const String kSrs4LocationRefused = 'srs location root refused';
+
+/// 不是一个同步位置的读（v1 旧根的一次性迁移）：`plan` 记位置上的 head 时用的位置名。
+const String kSrs4NoLocation = 'oldroot';
+
+/// 新代位置层的错误码清单（规划缺口 G-8）：调度器把这些当「这个位置这一轮没同步成」如实报，不当成本机故障。
+const Set<String> kSrs4LocationErrors = <String>{
+  kSrsSync2NeedsKey,
+  kSrsSync2WrongKey,
+  kSrsSync2EncryptionMissing,
+  kSrsSync2BadKdf,
+  kSrsSync2MetaUnavailable,
+  kSrs4LocationRefused,
+  kSrsSync2OutboxRecut,
+};
 
 /// 一轮里推进重复流收敛作业（[srsSync2Round] 的 `dedup`）最多用多久：作业按一个事务一步分批推进、断点续做，大库的
 /// 一次性收敛（几十万条副本）分到几轮做完，不让某一轮迟迟不发件。
@@ -112,7 +138,7 @@ class SrsSync2Report {
   /// 这一轮上传的段数。
   int uploaded = 0;
 
-  /// 这一轮转发到这个位置的文件数（别的设备的转发件与 head，见 [srsRelayToLocation]）。
+  /// 这一轮转发到这个位置的文件数（新代的转发归 G8-7b，接上之前恒为 0）。
   int relayed = 0;
 
   /// 发现本机身份分叉（已换身份重签发）。
@@ -153,12 +179,12 @@ class SrsSync2Report {
   /// 非致命错误（段损坏 / 签名不符 / 解不开……）：记日志，不打断这一轮。
   final List<String> errors = <String>[];
 
-  /// 清位置上本机旧身份的目录（[srsSweepFormerIdentities]）时没做成的（列目录 / 读 head / 删文件失败），每项
+  /// 清位置上本机旧身份的目录时没做成的（新代还没接旧身份目录的清理，恒为空），每项
   /// `<旧身份>: <原因>`。不算这一轮失败、也不算跳过了段（不进 [errors]）：这一轮自己的收发与 head 都已完成，旧
   /// 目录里多留几份旧 head 不影响任何设备读到的内容，内核过一个周期再让看。只供记日志。
   final List<String> formerSweepErrors = <String>[];
 
-  /// 摘要不一致、自动重建修不好（内核 store/sync2/heal.rs `healFailed`）：每个对端每组集合内核只给一次，照报即可。
+  /// 摘要不一致、自动重建修不好（协议 3 `heal.rs` 的 `healFailed`；新代的摘要核对还没接，恒为空）。
   /// 每项 `{device, groups, rows: {e, f, l}, app, reason}`。
   final List<Map<String, Object?>> healFailed = <Map<String, Object?>>[];
 }
@@ -183,6 +209,7 @@ Future<SrsSync2Report> srsSync2Round({
   required SrsLocationStore location,
   required String locationId,
   required int Function() nowMs,
+  SrsLocationStore? oldRoot,
   int Function()? bootClockMs,
   SrsLocationKey? key,
   bool archive = false,
@@ -197,14 +224,19 @@ Future<SrsSync2Report> srsSync2Round({
 }) async {
   final SrsSync2Report report = SrsSync2Report();
   onStep?.call('identity');
-  // meta.json：协议版本与集合身份，创建后只读（§6.1）；加密握手（§9）以位置上的 kdf 为准。
   final Map<String, Object?> id = (await host.sync2Command(<String, Object?>{
     'op': 'identity',
     'now': nowMs(),
   })).map;
+  // 位置的根（内核 `location_root`，G8-7）：新根 `v4/meta.json` 由内核按集合算出（只读不改，开加密是唯一的改写），
+  // 旧根 `v3/meta.json` 读到了就改写成让旧版本停下的围栏（设计 §4.3）。加密握手（[srsLocationHandshake]）照旧
+  // 判口令 / 校验值 / 见过加密，但只看、不写：它想写的 `kdf` 交给内核写进新根 meta。
   onStep?.call('handshake');
+  final Uint8List? meta4 = await location.get('meta.json');
+  final Uint8List? meta3 = await oldRoot?.get('meta.json');
+  final _SrsMetaView view = _SrsMetaView(location, meta4 ?? meta3);
   final SrsLocationHandshake hs = await srsLocationHandshake(
-    location,
+    view,
     host: host,
     locationId: locationId,
     key: key,
@@ -225,11 +257,46 @@ Future<SrsSync2Report> srsSync2Round({
   }
   final String? keyHex = hs.keyHex;
   report.encrypted = keyHex != null;
-  // 上传进度按「位置 + 密钥指纹」记：开加密之前传过的明文段、或用另一把密钥（并发开加密时输掉的那份 kdf）
-  // 传过的密文段，本机全部按当前密钥重传一遍（同名覆盖）。
+  final SrsSync2Result root = await host.sync2Command(
+    <String, Object?>{
+      'op': 'location_root',
+      'location': locationId,
+      'now': nowMs(),
+      'has4': meta4 != null,
+      'has3': meta3 != null,
+      'locs': <String>[
+        for (final SrsLocationEntry e in await location.list('loc'))
+          if (!e.isFolder) e.name,
+      ],
+      'enableKdf': view.writtenKdf,
+    },
+    blobs: <Uint8List>[?meta4, ?meta3],
+  );
+  final String state = root.map['state']! as String;
+  if (state == kSrs4RootNeedsUpgrade) {
+    report.needsUpgrade = true;
+    return report;
+  }
+  if (state != kSrs4RootOk) {
+    return report..error = '$kSrs4LocationRefused: ${root.map['error']}';
+  }
+  final Set<String> ensure = <String>{
+    for (final Object? p in (root.map['ensure'] as List?) ?? const <Object?>[])
+      p! as String,
+  };
+  // 先新根、后旧根（围栏让旧版本停下之前，新根必须已经立住）：内核给的顺序就是写入顺序。
+  for (final (String path, Uint8List bytes) in root.files) {
+    final bool isNew = path.startsWith('$kSrs4Root/');
+    final SrsLocationStore? target = isNew ? location : oldRoot;
+    if (target == null) continue;
+    final String rel = path.substring(path.indexOf('/') + 1);
+    if (ensure.contains(path) && await target.exists(rel)) continue;
+    await target.put(rel, bytes);
+  }
+  final String loc = root.map['loc']! as String;
   final String progressId = srsLocationProgressId(locationId, keyHex);
 
-  // 1–2. 读全部 head → 拉缺的段 → 收。需要更新的读者（有设备的 head 要求）就停在这里，一个字节也不写（§8）。
+  // 1–2. 读全部 head → 拉缺的段 → 收。需要更新的读者（有设备的 head 要求）就停在这里，一个字节也不写。
   final Map<String, List<String>> listed = <String, List<String>>{};
   if (!await srsSync2Pull(
     host: host,
@@ -237,6 +304,7 @@ Future<SrsSync2Report> srsSync2Round({
     progressId: progressId,
     keyHex: keyHex,
     report: report,
+    loc: loc,
     onFetchProgress: onFetchProgress,
     shouldStop: shouldStop,
     ingestBudgetBytes: ingestBudgetBytes,
@@ -247,8 +315,7 @@ Future<SrsSync2Report> srsSync2Round({
     return report;
   }
   if (keyHex == null) {
-    // 按明文收发的这一轮在拉段时见到了对这个位置密封的段（[srsSync2Pull] 已记下，BUG-4299）：`meta.json` 上没有
-    // `kdf`（被重写 / 读到的是旧的），位置其实是加密的。发件、转发、媒体、head 一个都不写，报错让用户输入口令。
+    // 按明文收发的这一轮见到了对这个位置密封的段 / 本位置写的 head 带 `seal`（BUG-4299）：发件与 head 一个都不写。
     final SrsLocationSeal seal = await srsLocationSealed(host, locationId);
     if (seal.sealed) {
       return report
@@ -256,53 +323,29 @@ Future<SrsSync2Report> srsSync2Round({
         ..error = srsSealedRefusal(seal);
     }
   }
-  // 作者自检（transport.rs `sync2_audit_own`）：这一轮读 head 时列到的本机目录交给内核，水位以下却不在位置上的本机段
-  // 登记重传、随下面第一批发件补上（位置上缺了 head 引用的段，读者只能永远「下一轮再来」）。收段时换了身份的话新身份
-  // 在这个位置上还没有水位，自检什么都不登记。
-  final String selfBefore =
+  // 收段时可能换了身份（分叉）：发件用换完之后的身份。
+  final String self =
       (await host.sync2Command(<String, Object?>{
             'op': 'identity',
             'now': nowMs(),
           })).map['device']!
           as String;
-  final List<String> present = listed['devices/$selfBefore'] ?? <String>[];
+  final List<String> present = listed['devices/$self'] ?? <String>[];
 
-  // 2½. 存量重复流收敛（内核 store/sync2/dedup.rs）：本机流里有别的设备同一事实的副本时，作者核对、发 `Dedup`、把
-  // 副本换成骨架（已经传过的段随下面的发件同名重写）。每次一步一个事务，`done` 明确为假才再发；到预算就留给下一轮。
-  onStep?.call('dedup');
-  final Stopwatch dedupClock = Stopwatch()..start();
-  while (dedupClock.elapsed < kSrsSync2DedupBudget) {
-    final SrsSync2Result d = await host.sync2Command(<String, Object?>{
-      'op': 'dedup',
-      'now': nowMs(),
-    });
-    if (d.map['done'] != false) break;
-    if (shouldStop?.call() ?? false) return report..error = kSrsSync2Stopped;
-  }
-
-  // 3. 发件：先段、后 head。分批（内核 `sync2_outbox` 按字节 / 段数上限产出一批，见 transport.rs
-  // `OUTBOX_BATCH_BYTES`）：一批全部写成后 `outbox_ack` 持久化水位，再取下一批——内存里同一时刻只有一批，
-  // 上传中途断网 / 被杀只丢在途那一批，下一轮从水位接着发（以前一次取全部积压，断一次整份重来，反馈
-  // XDV7Mzc2gw / kB2ltk0u9F / U37Aku3oeL）。head 仍在全部批次写完后才写，读者看到的永远是一致前缀。
-  // 媒体先于引用它的段（设计 §6.1 写入纪律 3，审查 S-10）：本机新绑定的媒体此刻先传上去（绑定本身是操作，随下面
-  // 的段一起发），读到这些段的设备就拿得到它们引用的内容。媒体失败由调用方处理，不打断操作同步。
+  // 3. 发件：先段、后 head，分批（一批全部写成后 `outbox_ack` 持久化水位，再取下一批）。媒体先于引用它的段。
   onStep?.call('beforeUpload');
   if (beforeUpload != null) await beforeUpload(keyHex);
   onUploadStart?.call();
-  int upto = 0;
   bool audited = false;
   while (true) {
     final SrsSync2Result out = await host.sync2Command(<String, Object?>{
       'op': 'outbox',
-      'location': progressId,
+      'progress': progressId,
       'key': keyHex,
-      // 归档位置：副本收敛换下的段不同名重写，归档里留着当初的原文（内核 transport.rs `sync2_outbox_to`）。
-      'archive': archive,
       if (outboxBudgetBytes != null) 'maxBytes': outboxBudgetBytes,
       if (!audited) 'present': present,
     });
     audited = true;
-    upto = (out.map['upto'] as int?) ?? 0;
     if (out.files.isEmpty) break;
     await srsRunPooled(out.files, kSrsSync2Concurrency, (
       (String, Uint8List) f,
@@ -312,101 +355,32 @@ Future<SrsSync2Report> srsSync2Round({
     });
     final Map<String, Object?> ack = (await host.sync2Command(<String, Object?>{
       'op': 'outbox_ack',
-      'location': progressId,
+      'progress': progressId,
       'segments': out.map['segments'],
     })).map;
     if (ack['accepted'] != true) {
-      // 发件与确认之间段被改切（只会是并发的另一轮跑了合并）：没对上的段不算数，这一轮不写 head，
-      // 下一轮按当前切法从水位续发。
+      // 发件与确认之间本机日志变了（清除了这一批里的操作）：这一轮不写 head，下一轮按当前日志重切。
       return report..error = kSrsSync2OutboxRecut;
     }
-    upto = (ack['uploaded'] as int?) ?? upto;
     if (out.map['more'] != true) break;
     if (shouldStop?.call() ?? false) return report..error = kSrsSync2Stopped;
   }
-  // 3½. 转发（反熵，设计 §6.3）：本机持有、而这个位置缺的别的设备的段（作者签名的转发件 `rly-…`）与 head 原文。
-  // 不转发的话只经别的位置连着本机的设备的操作永远到不了这里，本机之后的操作（上下文含它们）在读者那里也因果
-  // 投递不了（审查 S-1）。段先、head 后：内核只在一台设备的段都确认写上之后才给它的 head。
-  await srsRelayToLocation(
-    host: host,
-    location: location,
-    progressId: progressId,
-    keyHex: keyHex,
-    archive: archive,
-    budgetBytes: outboxBudgetBytes,
-    onWritten: () => report.relayed++,
-    shouldStop: shouldStop,
-  );
 
-  // 状态摘要随 head 发布（§4.5：同一版本向量下两台设备摘要不同 = 确定性 bug）。全库扫描，内核只在版本向量
-  // 变了且离上次满 [kSrsSync2DigestInterval] 时才重算，读连接上算、不占写锁。
-  await host.sync2Command(<String, Object?>{
-    'op': 'digest',
-    'now': nowMs(),
-    'minIntervalMs': kSrsSync2DigestInterval.inMilliseconds,
-  });
-  // 同一进度下与别的设备摘要不同：按组指纹定位、重放本机落在不同组里的卡并当场重算摘要（内核 store/sync2/heal.rs，
-  // 每个对端每组集合最多一次）。修不好的交给调用方上报（[SrsSync2Report.healFailed]）。
-  final Map<String, Object?> heal = (await host.sync2Command(<String, Object?>{
-    'op': 'digest_heal',
-    'now': nowMs(),
-  })).map;
-  report.healFailed.addAll(<Map<String, Object?>>[
-    for (final Object? f in (heal['healFailed'] as List?) ?? const <Object?>[])
-      if (f is Map) f.cast<String, Object?>(),
-  ]);
-  if (((heal['replayed'] as List?)?.isNotEmpty ?? false)) report.changed = true;
-  final String self =
-      (await host.sync2Command(<String, Object?>{
-            'op': 'identity',
-            'now': nowMs(),
-          })).map['device']!
-          as String;
-  // head 内容（发布的段、ack、摘要）与上次写到这个位置的相同就不写：每写一次 head 都会唤醒连着这个位置的全部设备
-  // （互联 host 按 head 写入推进长轮询令牌，写的设备自己也在等），空 head 让同步一轮接一轮不停。上次那个 head
-  // 此刻不在位置上（写 head 前断网 / 被清掉）就照写。
-  SrsSync2Result head = await host.sync2Command(<String, Object?>{
+  // 4. head：内容与上次写到这个位置的相同、离上次没满心跳间隔就不写（每写一次 head 都会唤醒连着这个位置的设备）；
+  // 上次那个 head 此刻不在位置上就照写。
+  Map<String, Object?> headRequest({required bool skip}) => <String, Object?>{
     'op': 'head',
-    'location': progressId,
-    'upto': upto,
+    'location': locationId,
+    'progress': progressId,
+    'loc': loc,
+    'seal': keyHex == null ? '' : srsKeyFingerprint(keyHex),
     'now': nowMs(),
-    'skipUnchangedMs': kSrsSync2HeadHeartbeat.inMilliseconds,
-  });
-  if (head.map['unchanged'] == true) {
-    final String last = head.map['path']! as String;
-    final String lastName = last.substring(last.lastIndexOf('/') + 1);
-    final List<SrsLocationEntry> own = await location.list('devices/$self');
-    if (own.any((SrsLocationEntry f) => f.name == lastName)) {
-      // head 没变也收尾：上一轮删到一半失败（或 head 上传失败没走到删除）的旧 head / 旧段 / 旧转发件这一轮再删。
-      await srsSweepFormerIdentities(
-        host: host,
-        location: location,
-        progressId: progressId,
-        former: await srsSweepObsolete(
-          host: host,
-          location: location,
-          progressId: progressId,
-          self: self,
-          own: own,
-          archive: archive,
-          nowMs: nowMs(),
-        ),
-        nowMs: nowMs,
-        report: report,
-      );
-      return report;
-    }
-    head = await host.sync2Command(<String, Object?>{
-      'op': 'head',
-      'location': progressId,
-      'upto': upto,
-      'now': nowMs(),
-    });
-  }
-  if (head.map['recut'] == true) {
-    // 发件确认之后段被合并改切（另一轮的发件），head 要引用的段还没传到这里：不写 head（写了就引用一个位置上没有的
-    // 段），下一轮按当前切法补传后再写。
-    return report..error = kSrsSync2OutboxRecut;
+    if (skip) 'skipUnchangedMs': kSrsSync2HeadHeartbeat.inMilliseconds,
+  };
+  SrsSync2Result head = await host.sync2Command(headRequest(skip: true));
+  if (head.map['unchanged'] == true &&
+      !await location.exists(head.map['path']! as String)) {
+    head = await host.sync2Command(headRequest(skip: false));
   }
   String? written;
   int? writtenAtBootMs;
@@ -418,7 +392,7 @@ Future<SrsSync2Report> srsSync2Round({
     }
     written = path.substring(path.lastIndexOf('/') + 1);
   }
-  // 4. 收尾：head 已经在位置上，列本机目录（顺便取服务端时间）交给内核定该删什么。
+  // 5. 收尾：head 已经在位置上，列本机目录（顺便取服务端时间）交给内核定该删什么（旧 head、不再被引用的段）。
   final List<SrsLocationEntry> own = await location.list('devices/$self');
   for (final SrsLocationEntry f in own) {
     if (f.name == written && f.modifiedAt != null) {
@@ -427,136 +401,65 @@ Future<SrsSync2Report> srsSync2Round({
         ..serverTimeBootMs = writtenAtBootMs;
     }
   }
-  await srsSweepFormerIdentities(
-    host: host,
-    location: location,
-    progressId: progressId,
-    former: await srsSweepObsolete(
-      host: host,
-      location: location,
-      progressId: progressId,
-      self: self,
-      own: own,
-      archive: archive,
-      nowMs: nowMs(),
-    ),
-    nowMs: nowMs,
-    report: report,
+  final Map<String, Object?> obsolete = (await host.sync2Command(
+    <String, Object?>{
+      'op': 'obsolete',
+      'progress': progressId,
+      'archive': archive,
+      'present': <String>[
+        for (final SrsLocationEntry f in own)
+          if (!f.isFolder) f.name,
+      ],
+    },
+  )).map;
+  await srsRunPooled(
+    _pathsOf(obsolete['delete']),
+    kSrsSync2Concurrency,
+    location.delete,
   );
   return report;
 }
 
-/// 一轮的收尾：把这一轮列 `devices/<本机>/` 得到的 [own]（**head 已经在位置上之后**列的）交给内核，内核给出位置上
-/// 此刻该删的文件——本机的旧 head、小段合并（§7.1）换下来的旧小段、没删成的旧转发件——照单删、删成功的回执
-/// （[srsDeleteAndAck]）。
-///
-/// 这里只列目录、删文件、回执：留几代旧 head、旧小段要等到什么时候、归档位置给不给，全在内核（transport.rs
-/// `sync2_obsolete` / `HEAD_KEEP_GENS`）——旧小段能不能删取决于引用它的旧 head 是否已经删掉，两条规则在同一处才对
-/// 得上。归档位置（[archive]）内核不给旧 head，其余清单照 [srsDeleteAndAck] 只回执不删。
-///
-/// 内核回 `again` = 还有旧小段只差这份清单里的旧 head 确认删掉：清单**全部**删成并回执之后（没删成的
-/// [srsDeleteAndAck] 已经抛出，走不到这里），把刚删掉的文件从列表里去掉再问一次，旧小段就在同一轮删掉——排在引用
-/// 它的旧 head 之后。内核保证第二次不再要求再问，这里也至多问两次。[self] = 本机的设备 id（[own] 所在的目录）。
-///
-/// 返回内核点名的本机旧身份（回复里的 `former`：换过身份的设备在这个位置上此刻该去看一眼的旧身份目录，交给
-/// [srsSweepFormerIdentities]；没换过身份 / 没到该看的时候 / 归档位置 = 空）。
-Future<List<String>> srsSweepObsolete({
-  required SrsSync2Host host,
-  required SrsLocationStore location,
-  required String progressId,
-  required String self,
-  required List<SrsLocationEntry> own,
-  required bool archive,
-  required int nowMs,
-}) async {
-  final String dir = 'devices/$self/';
-  final Set<String> present = <String>{
-    for (final SrsLocationEntry f in own)
-      if (!f.isFolder) f.name,
-  };
-  List<String> former = const <String>[];
-  for (int ask = 0; ask < 2; ask++) {
-    final SrsSync2Result sweep = await host.sync2Command(<String, Object?>{
-      'op': 'obsolete',
-      'location': progressId,
-      'present': present.toList(),
-      'archive': archive,
-      'now': nowMs,
-    });
-    if (ask == 0) former = _pathsOf(sweep.map['former']);
-    final List<String> paths = _pathsOf(sweep.map['delete']);
-    await srsDeleteAndAck(
-      host: host,
-      location: location,
-      progressId: progressId,
-      paths: paths,
-      archive: archive,
-    );
-    if (archive || sweep.map['again'] != true) break;
-    present.removeAll(<String>[
-      for (final String p in paths)
-        if (p.startsWith(dir)) p.substring(dir.length),
-    ]);
-  }
-  return former;
-}
+/// [srsLocationHandshake] 看到的位置：`meta.json` 是这一轮读到的那份（新根的，没有就是旧根的），写 `meta.json`
+/// 不落盘、只记下要开的 `kdf`（新根 meta 只由内核 `location_root` 写）；别的路径照原位置读。
+class _SrsMetaView implements SrsLocationStore {
+  _SrsMetaView(this._inner, this._meta);
 
-/// 换过身份（设计 §7.3）的设备，在一轮收尾之后清位置上旧身份目录里证明得了可以删的文件——只会是被盖过的旧 head
-/// （内核 store/sync2/former.rs `sync2_obsolete_former`；旧目录里的段一个不删）。[former] = 内核在 `obsolete` 的回复里
-/// 点名的旧身份（[srsSweepObsolete] 的返回值；绝大多数设备、绝大多数轮次是空，这一步什么都不做）。
-///
-/// 这里只做三件事：**此刻**重新列 `devices/<旧身份>/`（不用一轮开头读 head 时那份：中间隔着整轮的收发）、读其中
-/// 每一份 head 文件、把列表与这些字节交给内核；内核给的清单照删。哪些能删、要等多久、证明不了时怎么办全在内核——
-/// 读不到的 head 不补、不猜，原样少交一份，内核据此判「证明不了」。内核不记待删清单（每次从目录现状重新推导），
-/// 删完不回执。
-///
-/// 这一步出错（列目录 / 读 / 删失败）不让这一轮失败：这一轮自己的收发、head、本机目录的收尾都已经完成。原因记进
-/// [SrsSync2Report.formerSweepErrors]，内核过一个周期再让看。
-Future<void> srsSweepFormerIdentities({
-  required SrsSync2Host host,
-  required SrsLocationStore location,
-  required String progressId,
-  required List<String> former,
-  required int Function() nowMs,
-  required SrsSync2Report report,
-}) async {
-  for (final String device in former) {
-    try {
-      final String dir = 'devices/$device';
-      final List<String> present = <String>[
-        for (final SrsLocationEntry f in await location.list(dir))
-          if (!f.isFolder) f.name,
-      ];
-      final List<Uint8List> heads = <Uint8List>[
-        for (final Uint8List? b in await srsRunPooled(
-          <String>[
-            for (final String name in present)
-              if (name.startsWith('head-')) '$dir/$name',
-          ],
-          kSrsSync2Concurrency,
-          location.get,
-        ))
-          ?b,
-      ];
-      final SrsSync2Result out = await host.sync2Command(<String, Object?>{
-        'op': 'obsolete_former',
-        'location': progressId,
-        'device': device,
-        'present': present,
-        'now': nowMs(),
-      }, blobs: heads);
-      await srsRunPooled(
-        _pathsOf(out.map['delete']),
-        kSrsSync2Concurrency,
-        location.delete,
-      );
-    } on Object catch (e) {
-      report.formerSweepErrors.add('$device: $e');
+  final SrsLocationStore _inner;
+  final Uint8List? _meta;
+
+  /// 握手想写进 `meta.json` 的 `kdf`（开加密 / 新位置带口令）；null = 没有要写的。
+  Map<String, Object?>? writtenKdf;
+
+  @override
+  Future<Uint8List?> get(String path) async =>
+      path == 'meta.json' ? _meta : _inner.get(path);
+
+  @override
+  Future<void> put(String path, Uint8List bytes) async {
+    if (path != 'meta.json') {
+      throw StateError('handshake writes only meta.json, not $path');
     }
+    final Object? kdf = (jsonDecode(utf8.decode(bytes)) as Map)['kdf'];
+    if (kdf is Map) writtenKdf = kdf.cast<String, Object?>();
   }
+
+  @override
+  Future<void> putNew(String path, Uint8List bytes) => put(path, bytes);
+
+  @override
+  Future<bool> exists(String path) async =>
+      path == 'meta.json' ? _meta != null : _inner.exists(path);
+
+  @override
+  Future<List<SrsLocationEntry>> list(String dir) => _inner.list(dir);
+
+  @override
+  Future<void> delete(String path) =>
+      throw StateError('handshake never deletes ($path)');
 }
 
-/// 一轮的读半边（§6.2 第 1–3 步）：读 [location] 上全部设备的 head（每台取代号最大的，同一代号的都要）→ 内核定要拉
+/// 一轮的读半边：读 [location] 上全部设备的 head（每台取代号最大的）→ 内核定要拉
 /// 的段 → 分批拉、分批收。结果累加进 [report]。返回 false = 这一轮到此为止：中途收手（[report] 的 error 是
 /// [kSrsSync2Stopped]）或有设备的 head 要求更新的读者（[SrsSync2Report.needsUpgrade]，什么都没收）。v1 位置的
 /// 一次性迁移也用它先把旧根上的段收进本机（srs_location_migration.dart），再补媒体绑定；迁移传 [progressId] = null：
@@ -574,9 +477,11 @@ Future<bool> srsSync2Pull({
   int fetchConcurrency = kSrsSync2Concurrency,
   SrsSyncStepCallback? onStep,
   Map<String, List<String>>? listed,
+  String? loc,
 }) async {
   // 1. 全部设备的 head：每台设备取代号最大的（同一代号的都要）。
   onStep?.call('heads');
+  listed ??= <String, List<String>>{};
   final List<String> deviceDirs = <String>[
     for (final SrsLocationEntry d in await location.list('devices'))
       if (d.isFolder) 'devices/${d.name}',
@@ -616,10 +521,33 @@ Future<bool> srsSync2Pull({
   // 2. 定要拉的段 → 拉 → 收。
   onStep?.call('plan heads=${heads.length}');
   // `location`：内核记下这个位置上有谁的哪些段（别的位置缺、本机可以转发的，见步骤 3 之后的转发）。
+  // `location`：内核记下这个位置上每台设备的 head（状态页的「已传到」）；`listing`：各设备目录的文件名（承袭段按
+  // 文件名定区间）；`loc`：本位置的 loc 标记（本位置自写的 head 带 `seal` = 位置是加密的）。
   final Map<String, Object?> plan = (await host.sync2Command(<String, Object?>{
     'op': 'plan',
-    if (progressId != null) 'location': progressId,
+    'location': progressId == null
+        ? kSrs4NoLocation
+        : srsLocationOfProgressId(progressId),
+    'now': DateTime.now().millisecondsSinceEpoch,
+    'loc': ?loc,
+    'listing': <String, List<String>>{
+      for (final MapEntry<String, List<String>> e in listed.entries)
+        e.key.substring(e.key.indexOf('/') + 1): e.value,
+    },
   }, blobs: heads)).map;
+  report.errors.addAll(<String>[
+    for (final Object? x in (plan['errors'] as List?) ?? const <Object?>[])
+      '$x',
+  ]);
+  if (keyHex == null && plan['sealed'] == true && progressId != null) {
+    // 本位置自写的 head 带 `seal`：位置是加密的（设计 §4.4）。记下，调用方据此不发件。
+    await srsNoteLocationSealed(
+      host,
+      srsLocationOfProgressId(progressId),
+      nowMs: DateTime.now().millisecondsSinceEpoch,
+      seen: true,
+    );
+  }
   if (plan['needsUpgrade'] == true) {
     // 有设备的 head 声明的最低读者版本比本机新：内核没收它，这一轮整个停下（不收、不发、不写 head）。
     report.needsUpgrade = true;
@@ -643,9 +571,8 @@ Future<bool> srsSync2Pull({
     report.fork = report.fork || r['fork'] == true;
     report.changed =
         report.changed ||
-        (((r['marks'] as Map?)?['landed'] as int?) ?? 0) > 0 ||
-        ((r['replayed'] as List?)?.isNotEmpty ?? false) ||
-        ((r['changed'] as List?)?.isNotEmpty ?? false);
+        ((r['applied'] as int?) ?? 0) > 0 ||
+        ((r['moved'] as int?) ?? 0) > 0;
     report.errors.addAll(<String>[
       for (final Object? x in (r['errors'] as List?) ?? const <Object?>[]) '$x',
     ]);
@@ -715,42 +642,6 @@ List<String> _pathsOf(Object? list) => <String>[
   for (final Object? p in (list as List?) ?? const <Object?>[]) p! as String,
 ];
 
-/// 两段式删除（集成审查【中】）：删掉内核给的待删清单 [paths]（`obsolete` / `relay_ack` 的 `delete`），**只把删成功的**
-/// 发 `obsolete_ack` 让内核移除记录；没删成的留在内核的待删表里，下一轮照样再给（[SrsLocationStore.delete] 对不存在
-/// 的文件视为成功，重删幂等）。以前内核交出清单时就删了记录，head 上传或删除中途抛错，这批旧文件永远没人再删。
-/// 归档位置（[archive]）按策略一个不删，直接确认。删除出错时先确认已删的那些，再原样抛出第一个错误。
-Future<void> srsDeleteAndAck({
-  required SrsSync2Host host,
-  required SrsLocationStore location,
-  required String progressId,
-  required List<String> paths,
-  required bool archive,
-}) async {
-  if (paths.isEmpty) return;
-  final List<String> done = <String>[if (archive) ...paths];
-  Object? error;
-  StackTrace? stack;
-  if (!archive) {
-    try {
-      await srsRunPooled(paths, kSrsSync2Concurrency, (String path) async {
-        await location.delete(path);
-        done.add(path);
-      });
-    } catch (e, s) {
-      error = e;
-      stack = s;
-    }
-  }
-  if (done.isNotEmpty) {
-    await host.sync2Command(<String, Object?>{
-      'op': 'obsolete_ack',
-      'location': progressId,
-      'deleted': done,
-    });
-  }
-  if (error != null) Error.throwWithStackTrace(error, stack!);
-}
-
 /// 段文件对应的转发件路径（`devices/<设备>/seg-…` → `rly-…`，内核 segment.rs `relay_file_name`）；不是段文件原样返回。
 String srsRelayPath(String path) {
   final int slash = path.lastIndexOf('/');
@@ -768,51 +659,6 @@ Future<Uint8List?> srsFetchSegment(
   if (own != null) return own;
   final String relayed = srsRelayPath(path);
   return relayed == path ? null : location.get(relayed);
-}
-
-/// 把本机持有、而 [location] 缺的别的设备的段与 head 转发过去（内核 `relay_outbox` / `relay_ack`，
-/// store/sync2/relay.rs）：一批全部写成再确认，确认后内核才给段都已到位的设备的 head；被新转发的 head 取代的旧
-/// 转发件按内核给的清单删（归档位置一个不删），删成功才确认（[srsDeleteAndAck]）。[onWritten] 每写一个文件调一次。
-Future<void> srsRelayToLocation({
-  required SrsSync2Host host,
-  required SrsLocationStore location,
-  required String progressId,
-  required String? keyHex,
-  required bool archive,
-  int? budgetBytes,
-  void Function()? onWritten,
-  bool Function()? shouldStop,
-}) async {
-  while (true) {
-    final SrsSync2Result out = await host.sync2Command(<String, Object?>{
-      'op': 'relay_outbox',
-      'location': progressId,
-      'key': keyHex,
-      if (budgetBytes != null) 'maxBytes': budgetBytes,
-    });
-    if (out.files.isEmpty) return;
-    await srsRunPooled(out.files, kSrsSync2Concurrency, (
-      (String, Uint8List) f,
-    ) async {
-      await location.put(f.$1, f.$2);
-      onWritten?.call();
-    });
-    final Map<String, Object?> ack = (await host.sync2Command(<String, Object?>{
-      'op': 'relay_ack',
-      'location': progressId,
-      'paths': <String>[for (final (String, Uint8List) f in out.files) f.$1],
-    })).map;
-    // 被取代的旧转发件 / 旧转发 head：两段式删（失败的下一轮由这里或 head 那一步再给）。
-    await srsDeleteAndAck(
-      host: host,
-      location: location,
-      progressId: progressId,
-      paths: _pathsOf(ack['delete']),
-      archive: archive,
-    );
-    if (out.map['more'] != true) return;
-    if (shouldStop?.call() ?? false) return;
-  }
 }
 
 /// [srsFetchInBatches] 的一批。
