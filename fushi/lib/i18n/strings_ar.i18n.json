@@ -2915,6 +2915,7 @@
   "drag_drop_unsupported_on_collection": "أسقط ملفات الفيديو هنا لاستيرادها مباشرة إلى هذه المجموعة.",
   "drag_drop_unsupported_on_dictionary": "أفلت ملفات قواميس .zip أو .dsl أو .mdx هنا. تعمل ملفات CSS فقط مع حزمة قاموس.",
   "drag_drop_unsupported_on_downloads": "أسقط ملفات .torrent هنا لإضافة مهمة تنزيل. الملفات الأخرى مكانها صفحات الكتب أو المانجا أو الفيديو.",
+  "drag_drop_unsupported_on_plugins": "Drop a .fushiplug plugin package here to install it.",
   "drag_drop_unsupported_on_video": "أفلت الفيديوهات أو قوائم التشغيل أو الترجمات هنا. بدّل إلى الكتب أو القواميس لتلك الملفات.",
   "edit_custom_theme": "تعديل السمة المخصصة",
   "eink_mode": "وضع الحبر الإلكتروني",

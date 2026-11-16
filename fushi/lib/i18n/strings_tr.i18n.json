@@ -2915,6 +2915,7 @@
   "drag_drop_unsupported_on_collection": "Video dosyalarını doğrudan bu koleksiyona aktarmak için buraya bırakın.",
   "drag_drop_unsupported_on_dictionary": ".zip, .dsl veya .mdx sözlük dosyalarını buraya bırakın. CSS dosyaları yalnızca bir sözlük paketiyle birlikte çalışır.",
   "drag_drop_unsupported_on_downloads": "Bir indirme görevi eklemek için .torrent dosyalarını buraya bırakın. Diğer dosyalar Kitaplar, Manga veya Video sayfalarına aittir.",
+  "drag_drop_unsupported_on_plugins": "Drop a .fushiplug plugin package here to install it.",
   "drag_drop_unsupported_on_video": "Videoları, oynatma listelerini veya altyazıları buraya bırakın. Bu dosyalar için Kitaplar veya Sözlükler'e geçin.",
   "edit_custom_theme": "Özel temayı düzenle",
   "eink_mode": "E-mürekkep modu",

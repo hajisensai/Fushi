@@ -38,6 +38,12 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-4711](bugs/BUG-4711-popup-bottom-dock-per-module.md) | ✅ | ✅ | 底部停靠删掉「仅在小说中」特例，改为每个模块独立可选 |
+> 共 4069 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4712](bugs/BUG-4712-fushiplug-drag-import.md) | ✅ | ✅ | .fushiplug 插件包拖进插件管理 / 音源 / 歌词来源 / 追踪插件页毫无反应，只能走文件选择器 |
+| [BUG-4711](bugs/BUG-4711-ext-youtube-caption-default-wrong-lang.md) | ✅ | ✅ | 扩展 YouTube 默认挂无关语言的字幕轨；手动选的轨取不到时永远停在「选中加载」 |
 | [BUG-4710](bugs/BUG-4710-srs-browse-has-audio-ignores-inline-audio.md) | ✅ | ✅ | SRS 浏览健康条把视频片段卡都算成「缺单词音频」 |
 | [BUG-4709](bugs/BUG-4709-manga-topbar-full-width.md) | ✅ | ✅ | 漫画阅读器顶栏在桌面宽屏限宽 1080 居中，与小说全宽顶栏不一致 |
 | [BUG-4708](bugs/BUG-4708-download-summary-legacy-rate.md) | ✅ | ✅ | 下载中心合计速度不计入磁力 / 外部来源（legacy 番剧下载计划）行的实时速率 |
