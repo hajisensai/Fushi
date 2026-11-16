@@ -1008,7 +1008,7 @@ mixin _FushiDbTagsSync on _$FushiDatabase, _FushiDbInfra {
     ),
   );
 
-  /// [writeSyncDeletionTombstone] 的批量形态（BUG-4742）：同一 [mediaType]、同一
+  /// [writeSyncDeletionTombstone] 的批量形态（BUG-4743）：同一 [mediaType]、同一
   /// [deletedAt] 的一批键走一个 batch（一个事务），视频库一次删上万条时不再是上万次
   /// 独立提交。逐键语义与单条版一致（无云盘文件夹名）。
   Future<void> writeSyncDeletionTombstones(
