@@ -179,18 +179,12 @@ Future<void> _openCardSource({
   final VideoBookRow? video = link.kind == CardSourceKind.video
       ? await videos.getByBookUid(link.uid)
       : null;
-  RemoteCardSourceVideo? remote;
-  if (link.kind == CardSourceKind.video && video == null) {
-    final CardSourceAwaited<RemoteCardSourceVideo> lookup =
-        await resolveRemoteCardSourceVideo(
-          app,
-          ref,
-          link,
-          navigator: navigator,
-        );
-    if (lookup.cancelled || !navigator.mounted) return;
-    remote = lookup.value;
-  }
+  final CardSourceAwaited<RemoteCardSourceVideo>? lookup =
+      link.kind == CardSourceKind.video && video == null
+      ? await resolveRemoteCardSourceVideo(app, ref, link, navigator: navigator)
+      : null;
+  if (lookup != null && (lookup.cancelled || !navigator.mounted)) return;
+  final RemoteCardSourceVideo? remote = lookup?.value;
   if ((link.kind == CardSourceKind.video && video == null && remote == null) ||
       (link.kind != CardSourceKind.video && book == null)) {
     FushiToast.show(msg: t.card_source_review_media_missing);

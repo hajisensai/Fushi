@@ -115,7 +115,7 @@ void main() {
     expect(router, contains('navigator: navigator,'));
     expect(
       router,
-      contains('if (lookup.cancelled || !navigator.mounted) return;'),
+      contains('(lookup.cancelled || !navigator.mounted)) return;'),
     );
   });
 }
