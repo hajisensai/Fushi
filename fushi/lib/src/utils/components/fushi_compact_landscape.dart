@@ -19,9 +19,13 @@ import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 
-/// 窗口高度低于此（逻辑像素）且宽大于高时视为横屏矮窗口。与浮动弹层的
-/// `kFushiSheetShortWindowHeight` 同值（那边引用这里）。
+/// 窗口高度低于此（逻辑像素）且宽高比不小于 [kFushiCompactLandscapeMinAspect] 时
+/// 视为横屏矮窗口。与浮动弹层的 `kFushiSheetShortWindowHeight` 同值（那边引用这里）。
 const double kFushiCompactLandscapeMaxHeight = 500;
+
+/// 横屏矮窗口的最小宽高比（4:3）。近方形的小窗（如桌面最小窗口 360×320）两侧并没有
+/// 空出来的地方，不算；横屏手机（~2.2）、横放小平板（~1.6）都在其上。
+const double kFushiCompactLandscapeMinAspect = 4 / 3;
 
 /// 横屏矮窗口下浮层与屏幕上下边缘的留白上限。
 const double kFushiCompactLandscapeVerticalInset = 8;
@@ -36,7 +40,8 @@ const double kFushiCompactLandscapeMaxWidth = 720;
 bool isFushiCompactLandscape(Size size) =>
     size.width.isFinite &&
     size.height.isFinite &&
-    size.width > size.height &&
+    size.height > 0 &&
+    size.width >= size.height * kFushiCompactLandscapeMinAspect &&
     size.height < kFushiCompactLandscapeMaxHeight;
 
 /// 浮层外边距：横屏矮窗口下把 [base] 的上下收到

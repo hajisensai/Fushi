@@ -71,6 +71,11 @@ Future<Size> _dialogSize(
   return size;
 }
 
+/// Material [Dialog] 自身铺满屏幕（外边距在它内部），面板是它里面的第一个 [Material]。
+final Finder _dialogSurface = find
+    .descendant(of: find.byType(Dialog), matching: find.byType(Material))
+    .first;
+
 void main() {
   group('policy (pure)', () {
     test('only a wide-and-short window counts as compact landscape', () {
@@ -78,6 +83,8 @@ void main() {
       expect(isFushiCompactLandscape(_phonePortrait), isFalse);
       expect(isFushiCompactLandscape(const Size(1600, 900)), isFalse);
       expect(isFushiCompactLandscape(const Size(400, 400)), isFalse);
+      // 近方形小窗（桌面最小窗口）两侧没有空地，不算横屏。
+      expect(isFushiCompactLandscape(const Size(360, 320)), isFalse);
     });
 
     test('insets only shrink, and only in compact landscape', () {
@@ -106,7 +113,7 @@ void main() {
   });
 
   group('MD3 AlertDialog (FushiAlertDialog)', () {
-    final Finder surface = find.byType(Dialog);
+    final Finder surface = _dialogSurface;
 
     testWidgets('landscape phone: long content widens past 560', (
       WidgetTester tester,
@@ -174,7 +181,7 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      final Size size = tester.getSize(find.byType(Dialog));
+      final Size size = tester.getSize(_dialogSurface);
       Navigator.of(context, rootNavigator: true).pop();
       await tester.pumpAndSettle();
       return size;
