@@ -1274,6 +1274,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 「已经是最新/第一章了」这一章内是否已经提示过。开新章时归零。
   bool _edgeToastShown = false;
 
+  /// 墨水屏「每 N 页全刷」：翻页撞章边界换了章，这一页要等新章窗口就绪（[_windowGate]
+  /// 判 ready）才计——在 `_loadInitialWindow` 之前计会全刷到还没装好图的画面上。
+  bool _einkTurnPendingOnWindowReady = false;
+
   /// 当前选中的在线章还没下载、在线直读也没成（源不可用 / 取不到页）：正文区显示
   /// 「本章未下载」态（入队 / 选章两个出口），
   /// 顶部 chrome 不显示，返回键照常在。下载服务把这一章下完后自动装载。
@@ -3880,10 +3884,20 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     await _controller?.evaluateJavascript(
       source: mangaApplyTranslateInvocation(target),
     );
+    _noteEinkPageTurn();
     _turnStage = 'replaceOcr';
     await _replaceSpreadOcr(target);
     _updateCurrentPageImagePath();
     _recordProgress();
+  }
+
+  /// 墨水屏「每 N 页全刷」的计数入口（`EinkFullRefreshController.notePageTurn`）。
+  /// 只在读者真翻了一页时调：分页落到相邻跨页（[_commitMangaSpread]）、条漫按键
+  /// 一步（[_jumpToPageAnchor]）、条漫滚动顶页换了（[_onMangaScroll]）、翻页撞章
+  /// 边界换章后新窗口就绪。开章 / 切单双页 / 切布局 / 跳页给 `_pageNotifier` 赋值
+  /// 但不是翻页，不计。
+  void _noteEinkPageTurn() {
+    appModel.einkFullRefresh.notePageTurn();
   }
 
   // ── 换章 ───────────────────────────────────────────────────────────
@@ -3999,6 +4013,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       }
       return;
     }
+    // 换章后的这一页等新窗口就绪再计（见 [_einkTurnPendingOnWindowReady]）。
+    _einkTurnPendingOnWindowReady = true;
     await _switchToChapter(target, landOnLastPage: !forward);
   }
 
@@ -4068,6 +4084,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         _recordProgress();
       }
     } on Object catch (error, stack) {
+      _einkTurnPendingOnWindowReady = false;
       ErrorLogService.instance.log(
         'MangaFushiPage.switchChapter',
         error,
@@ -4179,6 +4196,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           'window.__mangaScrollToSpread && '
           'window.__mangaScrollToSpread($target, 0);',
     );
+    _noteEinkPageTurn();
     await _replaceSpreadOcr(target);
     _updateCurrentPageImagePath();
     _recordProgress();
@@ -4633,6 +4651,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     final bool spreadChanged = topSpread != _currentSpread;
     _currentSpread = topSpread;
     if (spreadChanged) {
+      _noteEinkPageTurn();
       await _replaceSpreadOcr(topSpread);
       _updateCurrentPageImagePath();
     }
@@ -8949,6 +8968,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       if (!mounted || !_windowGate.owns(ticket)) return;
     }
     _windowGate.complete(ticket, MangaWindowLoadOutcome.ready);
+    if (_einkTurnPendingOnWindowReady) {
+      _einkTurnPendingOnWindowReady = false;
+      _noteEinkPageTurn();
+    }
     _recordProgress();
     // 正文就绪的确定性落焦：整页 autofocus 会抢在 WebView 内容就绪之前，焦点落在
     // 表面层；换窗（翻到下一个加载窗口）同样会重挂平台视图。这里在每个就绪落点
