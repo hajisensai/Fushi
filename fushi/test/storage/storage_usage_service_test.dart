@@ -43,13 +43,16 @@ void main() {
     f.writeAsBytesSync(List<int>.filled(bytes, 0x61));
   }
 
-  StorageUsageService service({bool documentsRootIsFushiOwned = true}) =>
-      StorageUsageService(
-        documentsRoot: () async => docs,
-        supportRoot: () async => support,
-        cacheRoots: () async => <Directory>[cache],
-        documentsRootIsFushiOwned: () async => documentsRootIsFushiOwned,
-      );
+  StorageUsageService service({
+    bool documentsRootIsFushiOwned = true,
+    List<Directory> sharedDocumentsRoots = const <Directory>[],
+  }) => StorageUsageService(
+    documentsRoot: () async => docs,
+    supportRoot: () async => support,
+    cacheRoots: () async => <Directory>[cache],
+    documentsRootIsFushiOwned: () async => documentsRootIsFushiOwned,
+    sharedDocumentsRoots: () async => sharedDocumentsRoots,
+  );
 
   group('directorySizeSync', () {
     test('递归求和整棵树', () {
@@ -772,9 +775,13 @@ void main() {
     Future<StorageCategoryUsage> categoryOf(
       StorageCategoryId id, {
       bool documentsRootIsFushiOwned = true,
+      List<Directory> sharedDocumentsRoots = const <Directory>[],
     }) async {
       final List<StorageCategoryUsage> all =
-          await service(documentsRootIsFushiOwned: documentsRootIsFushiOwned)
+          await service(
+                documentsRootIsFushiOwned: documentsRootIsFushiOwned,
+                sharedDocumentsRoots: sharedDocumentsRoots,
+              )
               .scanCategories(
                 books: const <StorageBookRef>[],
                 dictionaryNames: const <String>[],
@@ -940,6 +947,43 @@ void main() {
         isFalse,
         reason: '白名单内的目录已归属别的类目，出现在 other 就是重复计数',
       );
+    });
+
+    test('iOS 平台 Documents（收件箱）在 documents 根之外：其子项全进 other，不受白名单过滤', () async {
+      // 拍板台 nLXhu0d7gV：iOS 书库搬到 Library/Fushi/data 后，平台 Documents 里的剪辑导出、
+      // 收件箱原件、搬迁失败留下的旧书库项都不在 documents 根里，漏算就是 BUG-1905 回归。
+      final Directory platformDocs = Directory(
+        p.join(tempRoot.path, 'Documents'),
+      )..createSync();
+      writeFile(p.join(platformDocs.path, 'video_clips', 'clip.mp4'), 4000);
+      writeFile(p.join(platformDocs.path, 'Books', 'novel.epub'), 600);
+      // 与白名单同名也照算：共享根不是 documents 根，那里的 `videos` 不归视频类目。
+      writeFile(p.join(platformDocs.path, 'videos', 'left.mkv'), 50);
+      writeFile(p.join(docs.path, 'video_clips', 'clip2.mp4'), 7);
+
+      final StorageCategoryUsage usage = await categoryOf(
+        StorageCategoryId.other,
+        sharedDocumentsRoots: <Directory>[platformDocs],
+      );
+
+      expect(usage.bytes, 4657);
+      final List<String> labels = usage.entries
+          .map((StorageEntryUsage e) => e.label)
+          .toList();
+      expect(labels, contains('Documents/video_clips'));
+      expect(labels, contains('Documents/Books'));
+      expect(labels, contains('Documents/videos'));
+    });
+
+    test('共享根与 documents 根重合时不重复计数', () async {
+      writeFile(p.join(docs.path, 'video_clips', 'clip.mp4'), 70);
+
+      final StorageCategoryUsage usage = await categoryOf(
+        StorageCategoryId.other,
+        sharedDocumentsRoots: <Directory>[docs],
+      );
+
+      expect(usage.bytes, 70);
     });
 
     test('documents 根不是 Fushi 专属容器时 other 恒为 0（不把用户自己的文件算进来）', () async {
