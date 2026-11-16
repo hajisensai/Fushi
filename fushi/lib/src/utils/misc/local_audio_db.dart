@@ -382,15 +382,20 @@ class LocalAudioDb {
       // 整体出局、回落也不触发（反馈 Dd9HikrfRx：日语词永远出不了 Forvo）。
       // 精确读音行排在无读音行前，同级按库内顺序（rowid）。Android 原生
       // `TtsChannelHandler` 用逐字相同的 SQL（守卫逐字比对）。
-      ResultSet rows = db.select(
-        'SELECT file, source FROM entries '
-        'WHERE expression = ? AND (reading = ? OR reading IS NULL) '
-        'ORDER BY reading IS NULL, rowid$limit',
-        <Object?>[expression, reading],
-      );
+      // 读音为空（如制卡增强取自卡片字段为空）时不按读音过滤，直接走下面「只按
+      // 词形」——与上游 reading 为 None 的分支一致；否则只剩 NULL 读音行会把
+      // nhk16 / jpod 等全部挤掉。
+      ResultSet? rows = reading.isEmpty
+          ? null
+          : db.select(
+              'SELECT file, source FROM entries '
+              'WHERE expression = ? AND (reading = ? OR reading IS NULL) '
+              'ORDER BY reading IS NULL, rowid$limit',
+              <Object?>[expression, reading],
+            );
       // 只有一行都没命中（连无读音行都没有）才回落到「只按词形」——读音不符的行
       // 总比没有强，但不能抢在可用行之前。
-      if (rows.isEmpty) {
+      if (rows == null || rows.isEmpty) {
         rows = db.select(
           'SELECT file, source FROM entries WHERE expression = ?$limit',
           <Object?>[expression],

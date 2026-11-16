@@ -255,6 +255,18 @@ void main() {
           reason: '有可用行（无读音）就不再回落到读音不符的 jpod 行',
         );
       });
+
+      test('an empty reading does not filter by reading at all', () {
+        expect(
+          LocalAudioDb.queryMetaAll(
+            dbPath,
+            '猫',
+            '',
+          ).map((m) => m.file).toList(),
+          <String>['nhk.mp3', 'a/猫.mp3', 'x.mp3'],
+          reason: '读音为空（制卡增强取卡片字段可能为空）时不能只剩 NULL 读音的 forvo 行',
+        );
+      });
     },
   );
 

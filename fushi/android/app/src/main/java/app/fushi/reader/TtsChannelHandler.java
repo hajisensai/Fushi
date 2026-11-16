@@ -545,8 +545,11 @@ public class TtsChannelHandler {
                         // order 为空走快路径（LIMIT 1）；非空要取全部候选行再按序挑。
                         boolean ordered = order != null && !order.isEmpty();
                         String limit = ordered ? "" : " LIMIT 1";
-                        cursor = db.rawQuery(LOCAL_AUDIO_READING_MATCH_SQL + limit,
-                            new String[]{expression, reading != null ? reading : ""});
+                        // 读音为空不按读音过滤，直接只按词形（与 Dart LocalAudioDb 同语义）。
+                        if (reading != null && !reading.isEmpty()) {
+                            cursor = db.rawQuery(LOCAL_AUDIO_READING_MATCH_SQL + limit,
+                                new String[]{expression, reading});
+                        }
                         if (cursor == null || !cursor.moveToFirst()) {
                             if (cursor != null) cursor.close();
                             cursor = db.rawQuery(
@@ -588,8 +591,10 @@ public class TtsChannelHandler {
                         ? localAudioDbOrders.get(dbIndex) : null;
                     Cursor cursor = null;
                     try {
-                        cursor = db.rawQuery(LOCAL_AUDIO_READING_MATCH_SQL,
-                            new String[]{expression, reading != null ? reading : ""});
+                        if (reading != null && !reading.isEmpty()) {
+                            cursor = db.rawQuery(LOCAL_AUDIO_READING_MATCH_SQL,
+                                new String[]{expression, reading});
+                        }
                         if (cursor == null || !cursor.moveToFirst()) {
                             if (cursor != null) cursor.close();
                             cursor = db.rawQuery(
