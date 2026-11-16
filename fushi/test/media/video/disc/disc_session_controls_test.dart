@@ -84,13 +84,48 @@ void main() {
     });
   });
 
-  test('back: hidden bar is summoned, visible bar exits', () {
+  test('back on the menu: hidden bar is summoned, visible bar exits', () {
+    for (final bool allowed in <bool>[true, false]) {
+      expect(
+        resolveDiscSessionBack(
+          onMenu: true,
+          barVisible: false,
+          menuCallAllowed: allowed,
+        ),
+        DiscSessionBackRoute.showBar,
+      );
+      expect(
+        resolveDiscSessionBack(
+          onMenu: true,
+          barVisible: true,
+          menuCallAllowed: allowed,
+        ),
+        DiscSessionBackRoute.exitSession,
+      );
+    }
+  });
+
+  // 拍板台 58EoAZOXVN：正片的上一级是盘菜单，不是详情页——返回不能越级退出会话。
+  test('back on a title returns to the disc menu, bar state aside', () {
+    for (final bool barVisible in <bool>[true, false]) {
+      expect(
+        resolveDiscSessionBack(
+          onMenu: false,
+          barVisible: barVisible,
+          menuCallAllowed: true,
+        ),
+        DiscSessionBackRoute.returnToMenu,
+      );
+    }
+  });
+
+  test('back on a title leaves when the disc forbids its menu call', () {
     expect(
-      resolveDiscSessionBack(barVisible: false),
-      DiscSessionBackRoute.showBar,
-    );
-    expect(
-      resolveDiscSessionBack(barVisible: true),
+      resolveDiscSessionBack(
+        onMenu: false,
+        barVisible: false,
+        menuCallAllowed: false,
+      ),
       DiscSessionBackRoute.exitSession,
     );
   });
