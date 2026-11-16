@@ -175,6 +175,7 @@ import 'package:fushi/src/reader/reader_jump_history.dart';
 import 'package:fushi/src/utils/misc/jump_history.dart';
 import 'package:fushi/src/utils/components/fushi_jump_history_controls.dart';
 import 'package:fushi/src/reader/reader_selection_data.dart';
+import 'package:fushi/src/reader/reader_ruby_snap.dart';
 import 'package:fushi/src/reader/reader_selection_toolbar_layout.dart';
 import 'package:fushi/src/reader/reader_selection_scripts.dart';
 import 'package:fushi/src/reader/reader_chrome_floating.dart';
@@ -1824,7 +1825,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   ModuleVisibility get _moduleVisibility => appModelNoUpdate.moduleVisibility;
 
   @override
-  ModuleId? get popupDockModule => ModuleId.books;
+  ModuleId? get lookupHostModule => ModuleId.books;
 
   EpubBook? _book;
 
@@ -5388,6 +5389,11 @@ $liveConfigJs
       routeIsCurrent: owner == null || owner.isCurrent,
     );
   }
+
+  /// 制卡后「关闭弹窗、不续播」（拍板台 8ldy3d8XFA）：撤掉有声书的查词暂停标记，
+  /// 随后的 [onAllPopupsDismissed] → `_clearLookupState` 就不续播。
+  @override
+  void dropLookupPauseMark() => _releaseLookupPause(resume: false);
 
   @override
   void onAllPopupsDismissed() {

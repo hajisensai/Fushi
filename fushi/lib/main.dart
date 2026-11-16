@@ -164,6 +164,7 @@ import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/platform/source_url_channel.dart';
 import 'package:fushi/src/platform/desktop/desktop_ctl_host.dart';
 import 'package:fushi/src/media/drag_drop/desktop_drop_reinitializer.dart';
+import 'package:fushi/src/media/import/android_open_with.dart';
 import 'package:fushi/src/media/import/external_book.dart';
 import 'package:fushi_engine/epub/book_title_conflict.dart'
     show DuplicateChoice;
@@ -1114,6 +1115,10 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
   bool _isMainIntent = true;
   StreamSubscription? _intentsSubscription;
 
+  /// Android「用其他应用打开」/ 分享进来的书（拍板台 oeJzVRQ9p1）：原生复制好的副本
+  /// 从这里取，走与桌面 open-with 同一条 [_routeExternalBook]。
+  final AndroidOpenWithInbox _openWithInbox = AndroidOpenWithInbox();
+
   /// 守卫：确保外部打开的视频只被打开一次（[build] 可能多次重建）。
   bool _externalVideoHandled = false;
   bool _externalBookHandled = false;
@@ -1403,6 +1408,15 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
         );
         _intentsSubscription = intents.ReceiveIntent.receivedIntentStream
             .listen((intent) => handleIntent(intent: intent, isInitial: false));
+        unawaited(
+          _openWithInbox.start(
+            onBook: _routeExternalBook,
+            onRejected: (String? name) => FushiToast.show(
+              msg: t.external_book_open_failed(name: name ?? '?'),
+              severity: ToastSeverity.error,
+            ),
+          ),
+        );
       });
     }
     if (Platform.isMacOS) {
@@ -1833,6 +1847,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     _sourceUrlSubscription?.cancel();
     _pendingMineArrivals?.cancel();
     _intentsSubscription?.cancel();
+    _openWithInbox.stop();
     _iosUrlSubscription?.cancel();
     _systemColorRefreshDebounce?.cancel();
     _widgetSnapshots.dispose();
@@ -2236,24 +2251,37 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     if (!isVideo && !isBook) return null;
     if (!File(videoPath).existsSync()) return null;
 
+    if (isBook) {
+      await _routeExternalBook(videoPath);
+      return null;
+    }
     if (!appModel.isInitialised || appModel.navigatorKey.currentState == null) {
       // 首实例尚未就绪：交还首启路径，build 完成后接手打开。
-      if (isBook) {
-        _pendingExternalBookPath = videoPath;
-        _externalBookHandled = false;
-      } else {
-        _pendingExternalVideoPath = videoPath;
-        _externalVideoHandled = false;
-      }
+      _pendingExternalVideoPath = videoPath;
+      _externalVideoHandled = false;
       if (mounted) setState(() {});
       return null;
     }
-    if (isBook) {
-      await _openExternalBook(videoPath);
-    } else {
-      await _openExternalVideo(videoPath);
-    }
+    await _openExternalVideo(videoPath);
     return null;
+  }
+
+  /// 外部交来的书 / 漫画路径（桌面单实例转交、Android「用其他应用打开」）的统一入口：
+  /// app 还没就绪就交还首启路径（[build] 完成后一次性接手），否则直接 [_openExternalBook]。
+  Future<void> _routeExternalBook(String bookPath) async {
+    if (!appModel.isInitialised || appModel.navigatorKey.currentState == null) {
+      // 首启只有一个待打开槽位（与桌面 argv 同一约定）：就绪前又来一本，后到的覆盖
+      // 先到的，被覆盖的若是 Android 副本就顺手删掉。
+      final String? replaced = _pendingExternalBookPath;
+      if (replaced != null && replaced != bookPath) {
+        unawaited(_openWithInbox.release(replaced));
+      }
+      _pendingExternalBookPath = bookPath;
+      _externalBookHandled = false;
+      if (mounted) setState(() {});
+      return;
+    }
+    await _openExternalBook(bookPath);
   }
 
   /// 「从 app 外用 Fushi 打开书 / 漫画」：入库（已在库则复用那一本）→ 打开阅读器。
@@ -2271,13 +2299,18 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
   /// 读的是解压后的书目录。同一路径导入进行中再被打开（用户以为没反应又双击一次）
   /// 直接忽略，不并发导入同一个文件。
   Future<void> _openExternalBook(String bookPath) async {
-    if (appModel.navigatorKey.currentState == null) return;
-    final String inFlightKey = p.canonicalize(bookPath);
-    if (!_externalBooksOpening.add(inFlightKey)) return;
     try {
-      await _importAndOpenExternalBook(bookPath);
+      if (appModel.navigatorKey.currentState == null) return;
+      final String inFlightKey = p.canonicalize(bookPath);
+      if (!_externalBooksOpening.add(inFlightKey)) return;
+      try {
+        await _importAndOpenExternalBook(bookPath);
+      } finally {
+        _externalBooksOpening.remove(inFlightKey);
+      }
     } finally {
-      _externalBooksOpening.remove(inFlightKey);
+      // Android 收进来的副本已复制进书库（或导入失败）：删掉缓存副本。别的路径不动。
+      await _openWithInbox.release(bookPath);
     }
   }
 

@@ -585,6 +585,13 @@ class VideoSubtitlePipeline {
         drafts: drafts,
         state: state,
         cancel: cancel,
+        onBurnedInProgress: (int done, int total) => report(
+          VideoSubtitleStage.recognize,
+          (i + 0.95 + 0.05 * done / total) / videoPaths.length,
+          'reading on-screen subtitles $done/$total',
+          videoPath: video,
+          index: i,
+        ),
       );
       final String fingerprint = subtitleEvidenceFingerprint(tracks);
       if ((state.evidenceFingerprint ?? '') != fingerprint) {
@@ -605,10 +612,15 @@ class VideoSubtitlePipeline {
         tracks,
         targetLanguage: _targetLanguage,
       );
-      final List<SubtitleDraftCue> filled = fillSubtitleGapsFromEvidence(
+      final List<SubtitleDraftCue> gapFilled = fillSubtitleGapsFromEvidence(
         drafts,
         index,
       );
+      // 不开 AI：画面上的同语言字幕（OCR 证据）与识别行只差几个字时换成画面写法；
+      // 开着 AI 交给 S3（它同时看得到识别稿、证据与画面）。
+      final List<SubtitleDraftCue> filled = ai == null
+          ? correctSubtitleDraftsFromOcrEvidence(gapFilled, index)
+          : gapFilled;
       report(
         VideoSubtitleStage.recognize,
         (i + 1) / videoPaths.length,
@@ -997,13 +1009,15 @@ class VideoSubtitlePipeline {
   bool get _lyricsEnabled => ai != null && lyricsFinder != null;
 
   /// 本集证据：`evidence.json` 里来源身份与识别器都没变就复用，否则重收并落盘。
-  /// 收集失败（含宿主 OCR 抛错）只记日志、当没有证据——证据只能让字幕更好。
+  /// 收集失败（含宿主 OCR 抛错）只记日志、当没有证据——证据只能让字幕更好；不完整
+  /// （[SubtitleEvidenceIncomplete]）时用收到的部分、不落盘。
   Future<List<SubtitleEvidenceTrack>> _loadEvidence({
     required String video,
     required Directory dir,
     required List<SubtitleDraftCue> drafts,
     required _JobState state,
     required SubtitleCancelToken cancel,
+    void Function(int done, int total)? onBurnedInProgress,
   }) async {
     final SubtitleEvidenceSource? source = evidence;
     if (source == null) return const <SubtitleEvidenceTrack>[];
@@ -1029,15 +1043,26 @@ class VideoSubtitlePipeline {
           // 半截文件：重收。
         }
       }
-      final List<SubtitleEvidenceTrack> tracks = await source.load(
-        SubtitleEvidenceLoadRequest(
-          videoPath: video,
-          drafts: drafts,
-          isOwnOutput: own,
-          targetLanguage: _targetLanguage,
-          cancel: cancel,
-        ),
-      );
+      final List<SubtitleEvidenceTrack> tracks;
+      try {
+        tracks = await source.load(
+          SubtitleEvidenceLoadRequest(
+            videoPath: video,
+            drafts: drafts,
+            isOwnOutput: own,
+            targetLanguage: _targetLanguage,
+            cancel: cancel,
+            onBurnedInProgress: onBurnedInProgress,
+          ),
+        );
+      } on SubtitleEvidenceIncomplete catch (e) {
+        // 某个来源读失败：这次用收到的部分，不落盘，下次重收。
+        fushiDebugPrint(
+          '[VideoSubtitlePipeline] $video: evidence incomplete, not cached: '
+          '${e.reason}',
+        );
+        return e.tracks;
+      }
       await writeSubtitleJobFileAtomic(
         cache,
         jsonEncode(<String, Object?>{

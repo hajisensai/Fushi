@@ -945,3 +945,150 @@ fn a_prev_that_misses_the_imported_log_stops_the_migration() {
         );
     }
 }
+
+/// 协议 3 给每张卡都发了 AnkiConnect 数字 id（缓存行的 `anki_id`），从没复习、没改过的卡也有；带盐的笔记（笔记类型、
+/// 字段、模板、笔记的 ID 都是按 profile uid 加盐的规则值——迁移把 profile uid 记成盐）的这种卡从没在任何操作里出现过，
+/// 新代的别名表里没有它。迁移之后协议 3 缓存表里每张卡、每条笔记的号用 `anki_resolve` 都查得到规范行，且所属笔记、
+/// 模板、cloze 序号与协议 3 那一行对得上（`cache.rs` 文件头「表」的 `anki_members`）。
+#[test]
+fn every_protocol_3_card_number_resolves_after_migration() {
+    use crate::gen4_ids::rules;
+    use crate::store::gen4::cmd::columns::anki_resolve;
+    use crate::store::gen4::derive::{Index, Ref};
+    use crate::store::sync2::tests::edit;
+    use crate::sync2::id::Key;
+
+    const ANKI_NT: i64 = 1_700_000_000_777;
+    let nt = rules::note_type(Some(P), ANKI_NT);
+    let (field, tmpl) = (rules::field(&nt, 0), rules::template(&nt, 0));
+    let note = rules::note(Some(P), "g74g-guid");
+    let d = library("g74g-anki-ids");
+    d.apply(
+        T0 + 2 * 86_400_000,
+        vec![
+            json!({"t": "entity", "x": {"id": nt.text(), "p": P, "k": "notetype",
+                   "d": {"createdAt": 1, "ntKind": "standard", "ankiNum": ANKI_NT}}}),
+            edit(
+                "notetype",
+                &nt.text(),
+                &format!("fieldDef/{}", field.text()),
+                json!({"ankiNum": 0, "name": "E", "ord": 0}),
+            ),
+            edit(
+                "notetype",
+                &nt.text(),
+                &format!("tmplDef/{}", tmpl.text()),
+                json!({"ankiNum": 0, "name": "A", "ord": 0, "front": "{{E}}"}),
+            ),
+            json!({"t": "entity", "x": {"id": note.text(), "p": P, "k": "note",
+                   "d": {"createdAt": 5, "guid": "g74g-guid", "noteTypeId": nt.text()}}}),
+            edit(
+                "note",
+                &note.text(),
+                &format!("f/{}", field.text()),
+                json!("猫"),
+            ),
+        ],
+    );
+    // 协议 3 的缓存表不随本地写入刷新（`library` 也是写完再整份重建）：同一份配置重建一次。
+    let parsed =
+        crate::store::caches::CacheConfig::parse(&serde_json::from_str(&cfg()).unwrap()).unwrap();
+    let w = d.core.writer().unwrap();
+    crate::store::sync2::in_savepoint(&w, |c| crate::store::caches::rebuild(c, P, &parsed))
+        .unwrap();
+    drop(w);
+    let Device { core, _dir: dir } = d;
+    core.close();
+    drop(core);
+    let rows = |q: &str| -> Vec<(String, String, i64, i64)> {
+        let c = raw(&dir.0);
+        let mut stmt = c.prepare(q).unwrap();
+        stmt.query_map([P], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap()
+    };
+    // (卡, 笔记, 模板 + cloze 序号, 号)
+    let cards: Vec<(String, String, String, i64)> = {
+        let c = raw(&dir.0);
+        let mut stmt = c
+            .prepare(
+                "SELECT srs_idt(id), srs_idt(note_id), srs_idt(template_id) || '/' || cloze_ord, anki_id \
+                 FROM srs_cards_cache WHERE profile_uid = srs_id(?1) ORDER BY 1",
+            )
+            .unwrap();
+        stmt.query_map([P], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap()
+    };
+    let notes = rows(
+        "SELECT srs_idt(id), '', 0, anki_id FROM srs_notes_cache WHERE profile_uid = srs_id(?1) ORDER BY 1",
+    );
+    let salted_card = rules::card(&note, &tmpl, 0).text();
+    assert!(
+        cards.iter().any(|c| c.0 == salted_card),
+        "the salted note's card must be in the protocol 3 cache: {cards:?}"
+    );
+    assert!(cards.len() >= 5 && notes.len() >= 3, "{cards:?} {notes:?}");
+
+    let out = migrate(&dir.0);
+    assert_eq!(out.verdict(), "committed", "{out:?}");
+    let opened = open_gen4(&dir.0, OpenMode::Primary).unwrap();
+    let t = Truth::new(&opened.conn);
+    let col = t.binding_of(P).unwrap().unwrap().col;
+    let canon = |s: &str| -> String {
+        Index::new(&t, col)
+            .canonical(&Ref::of(&Key::of(s)))
+            .unwrap()
+            .text()
+    };
+    // 那张带盐的卡从没出现在操作里：别名表里没有它。
+    assert_eq!(canon(&salted_card), salted_card, "no alias row for it");
+    assert!(
+        canon(&note.text()) != note.text(),
+        "the salted note itself is an alias member"
+    );
+    let req = json!({
+        "notes": notes.iter().map(|n| n.3).collect::<Vec<_>>(),
+        "cards": cards.iter().map(|c| c.3).collect::<Vec<_>>(),
+    });
+    let v = anki_resolve(&t, col, &req).unwrap();
+    for (n, got) in notes.iter().zip(v["notes"].as_array().unwrap()) {
+        assert_eq!(got, &json!(canon(&n.0)), "note {}", n.0);
+    }
+    let mut via_members = 0;
+    for (c, got) in cards.iter().zip(v["cards"].as_array().unwrap()) {
+        let got = got
+            .as_str()
+            .unwrap_or_else(|| panic!("card {} ({}) does not resolve: {v}", c.0, c.3));
+        let (note_id, tpl): (Ref, String) = opened
+            .conn
+            .query_row(
+                "SELECT note_id, template_id FROM cards WHERE col = ?1 AND id = ?2",
+                rusqlite::params![col, Ref::of(&Key::of(got))],
+                |r| {
+                    let t: Ref = r.get(1)?;
+                    Ok((r.get(0)?, t.text()))
+                },
+            )
+            .unwrap();
+        let ord: i64 = opened
+            .conn
+            .query_row(
+                "SELECT cloze_ord FROM cards WHERE col = ?1 AND id = ?2",
+                rusqlite::params![col, Ref::of(&Key::of(got))],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(note_id.text(), canon(&c.1), "card {}", c.0);
+        let (p3_tpl, p3_ord) = c.2.rsplit_once('/').unwrap();
+        assert_eq!(tpl, canon(p3_tpl), "card {}", c.0);
+        assert_eq!(ord.to_string(), p3_ord, "card {}", c.0);
+        via_members += usize::from(got != c.0);
+    }
+    assert!(
+        via_members >= 1,
+        "the salted card resolves through its members"
+    );
+}
