@@ -1,4 +1,4 @@
-## BUG-4725 · 书籍指定配置后查不到词：引擎装载集合只看激活配置
+## BUG-4741 · 书籍指定配置后查不到词：引擎装载集合只看激活配置
 - **报告**：2026-11-16（用户：应用内反馈 r9SgiayKxa，录屏：新建配置「英语」只开英语词典、关日语词典，书「指定配置」选它；激活配置 Default 里 OALD 10 / LDOCE5 等英语词典是停用的；进书点 teacher 等词均「没有找到结果」）
 - **真实性**：✅ 真 bug。作品级配置（反馈 kEFPY4cuKZ）是会话覆盖层，本机查词按 `WorkProfileScope.lookupView` 的 `lookupFilters` 过滤，但：
   - 引擎装载集合只按激活配置分桶：`fushi/lib/src/models/app_model.dart` `_rebuildDictPathsCache` / `_scheduleDictPathsAsync` 的 `hidden: d.isHidden(JapaneseLanguage.instance)`（修前 3773 / 4020 行），配合 BUG-3454「隐藏词典不进引擎」——作品配置开着、激活配置关着的词典根本不在引擎里，会话的过滤又把引擎里的日语词典全排除，一个词都查不到。会话装上 / 撤下时（`_reloadForWorkProfileScope`）也从不重排引擎。
