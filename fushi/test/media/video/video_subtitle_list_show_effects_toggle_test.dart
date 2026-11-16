@@ -209,7 +209,10 @@ void main() {
       expect(find.text(t.video_favorite_count(count: 0)), findsOneWidget);
       expect(find.text(t.video_favorite_count(count: 1)), findsNothing);
 
-      // 打开开关后那句收藏回到列表，计数同步变 1。
+      // 打开开关后那句收藏回到列表，计数同步变 1。经典版式的开关在可横向拖动的筛选行里，
+      // 收藏档右侧多了导出钮与计数，窄面板下要先滚到可见。
+      await tester.ensureVisible(find.byKey(_toggleKey));
+      await tester.pump();
       await tester.tap(find.byKey(_toggleKey));
       await tester.pump();
       expect(_row(_effectLyric), findsOneWidget);
