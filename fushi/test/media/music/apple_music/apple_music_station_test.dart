@@ -74,7 +74,9 @@ class _FakeBridge implements AppleMusicBridge {
   @override
   Future<void> unauthorize() async {}
   @override
-  Future<AppleMusicUserCredentials?> userCredentials() async => null;
+  Future<AppleMusicUserCredentials?> userCredentials({
+    bool refresh = false,
+  }) async => null;
   @override
   Future<void> dispose() async {}
 }

@@ -1,36 +1,31 @@
-// 首页「媒体库全景」面板（HomeDashboardPanel.panorama）：显隐判据与持久化 id。
+// 首页「媒体库全景」小组件：旧面板的自动档（不显示）在迁移时的落点与冻结 id。
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/home_dashboard_panel.dart';
-import 'package:fushi/src/pages/implementations/home_panorama_panel.dart';
+import 'package:fushi/src/models/home_widget_layout.dart';
 
 void main() {
-  test('默认（自动）/ 钉了隐藏：不出；钉了显示：出', () {
-    expect(
-      resolveHomePanoramaPanelVisible(mode: HomeDashboardPanelMode.auto),
-      isFalse,
-    );
-    expect(
-      resolveHomePanoramaPanelVisible(mode: HomeDashboardPanelMode.shown),
-      isTrue,
-    );
-    expect(
-      resolveHomePanoramaPanelVisible(mode: HomeDashboardPanelMode.hidden),
-      isFalse,
-    );
+  bool placed(HomeDashboardPanelMode? mode) => migrateHomeWidgetLayout(
+    grid: HomeGridKind.compact,
+    modes: <HomeDashboardPanel, HomeDashboardPanelMode>{
+      if (mode != null) HomeDashboardPanel.panorama: mode,
+    },
+    auto: const HomeWidgetAutoFacts(),
+  ).any((HomeWidgetItem e) => e.kind == HomeWidgetKind.panorama);
+
+  test('旧显示档：自动 / 钉了隐藏 → 首个布局不放；钉了显示 → 放上', () {
+    expect(placed(null), isFalse);
+    expect(placed(HomeDashboardPanelMode.auto), isFalse);
+    expect(placed(HomeDashboardPanelMode.hidden), isFalse);
+    expect(placed(HomeDashboardPanelMode.shown), isTrue);
   });
 
-  test('面板 id 冻结、能往返持久化', () {
+  test('组件 id 与旧面板 id 冻结；旧显示档能读出', () {
+    expect(HomeWidgetKind.panorama.id, 'panorama');
     expect(HomeDashboardPanel.panorama.id, 'library_panorama');
-    final String json = encodeHomeDashboardPanelModes(
-      <HomeDashboardPanel, HomeDashboardPanelMode>{
-        HomeDashboardPanel.panorama: HomeDashboardPanelMode.hidden,
-      },
-    );
-    expect(json, '{"library_panorama":"hidden"}');
     expect(
-      decodeHomeDashboardPanelModes(json),
+      decodeHomeDashboardPanelModes('{"library_panorama":"shown"}'),
       <HomeDashboardPanel, HomeDashboardPanelMode>{
-        HomeDashboardPanel.panorama: HomeDashboardPanelMode.hidden,
+        HomeDashboardPanel.panorama: HomeDashboardPanelMode.shown,
       },
     );
   });
