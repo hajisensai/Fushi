@@ -1213,7 +1213,8 @@ class _ToolPill extends StatelessWidget {
 /// 下载页顶部汇总 hero：总速度（↓ Display 大号等宽数字 / ↑ 次级）、活动 /
 /// 排队 / 完成计数 chip、执行设备 chip（本机 / 互联主机，点按去下载设置）、
 /// 全部暂停 / 全部继续按钮组。M3E 是 primaryContainer 饱和色块，Apple 是强调色
-/// 淡染卡。速度只计报得出实时指标的来源（torrent），其余来源不计入。
+/// 淡染卡。速度只计报得出实时速率的来源（[DownloadTaskEntry.downRateBps] /
+/// [DownloadTaskEntry.upRateBps] 非 null），其余来源不计入。
 class DownloadSummaryHero extends StatelessWidget {
   const DownloadSummaryHero({
     required this.tasks,

@@ -15,88 +15,107 @@ import 'package:fushi/src/ops/op_descriptions_library.dart' show opUndoDisplay;
 /// 两条只读（搜候选、按 id 取详情）+ 一条写回。写回的撤销 = 执行前快照：显示名 /
 /// 作者写回旧值，封面从门面留下的备份拷回（执行前没有 override 封面则清除）。撤销前
 /// 再读一次，这次动过的字段之后被手动改过就报 superseded、不覆盖。
-List<OpDescription> describeBookMetadataOps(OpDescribeKit kit) =>
-    <OpDescription>[
-      OpDescription(
-        id: 'book.scrape.search',
-        method: 'GET',
-        pattern: kBookMetadataCtlSearch,
-        summary:
-            'Search online book metadata candidates (Bangumi books, or DLsite '
-            'voice / manga / novel works) by title, Bangumi URL or DLsite id. '
-            'Returns id, title, author, year and cover URL per candidate.',
-        params: const <OpParam>[
-          OpParam.string(
-            'query',
-            description: 'Title, Bangumi subject URL, or DLsite work id / URL.',
-            required: true,
-          ),
-          OpParam.string(
-            'source',
-            description: 'Metadata source; default bangumi.',
-            enumValues: <String>['bangumi', 'dlsite'],
-          ),
-        ],
-        availability: kit.whenModule(ModuleId.services),
+/// `source` 参数的值域（与 [BookScrapeSource] 的 wire 名一致，守卫测试咬住）。
+const List<String> kBookScrapeSourceNames = <String>[
+  'bangumi',
+  'dlsite',
+  'anilist',
+  'openbd',
+  'ndl',
+  'rakuten',
+];
+
+List<OpDescription> describeBookMetadataOps(
+  OpDescribeKit kit,
+) => <OpDescription>[
+  OpDescription(
+    id: 'book.scrape.search',
+    method: 'GET',
+    pattern: kBookMetadataCtlSearch,
+    summary:
+        'Search online book metadata candidates. Sources: bangumi (books), '
+        'dlsite (voice / manga / novel works), anilist (light novels; also '
+        'returns a banner image), openbd (ISBN lookup only), ndl (National '
+        'Diet Library, title or ISBN), rakuten (Rakuten Books, title or ISBN; '
+        'only when the user entered Rakuten credentials in settings). '
+        'Returns id, title, author, year, publisher, series, ISBN and cover '
+        'URL per candidate.',
+    params: const <OpParam>[
+      OpParam.string(
+        'query',
+        description:
+            'Title, Bangumi subject URL, DLsite work id / URL, AniList URL, '
+            'or ISBN (required for openbd).',
+        required: true,
       ),
-      OpDescription(
-        id: 'book.scrape.get',
-        method: 'GET',
-        pattern: '$kBookMetadataCtlSearch/:source/:id',
-        summary: 'Fetch one book metadata candidate by its source id.',
-        params: const <OpParam>[
-          OpParam.string(
-            'source',
-            description: 'bangumi or dlsite.',
-            required: true,
-            inPath: true,
-            enumValues: <String>['bangumi', 'dlsite'],
-          ),
-          OpParam.string(
-            'id',
-            description: 'Bangumi subject id or DLsite work id (RJ…).',
-            required: true,
-            inPath: true,
-          ),
-        ],
-        availability: kit.whenModule(ModuleId.services),
+      OpParam.string(
+        'source',
+        description: 'Metadata source; default bangumi.',
+        enumValues: kBookScrapeSourceNames,
       ),
-      OpDescription(
-        id: 'book.scrape.apply',
-        method: 'POST',
-        pattern: '$kBookMetadataCtlItems/:key/scrape',
-        summary:
-            'Write a chosen candidate back to a book on the shelf: its cover '
-            '(default), and optionally its title (as a display-name override) '
-            'and author. Same as "match cover online" on the book card.',
-        risk: OpRisk.write,
-        params: const <OpParam>[
-          OpParam.string(
-            'key',
-            description: 'Shelf key from library.list, e.g. book:<bookKey>.',
-            required: true,
-            inPath: true,
-          ),
-          OpParam.string(
-            'id',
-            description: 'Candidate id from book.scrape.search.',
-            required: true,
-          ),
-          OpParam.string(
-            'source',
-            description: 'Candidate source; default bangumi.',
-            enumValues: <String>['bangumi', 'dlsite'],
-          ),
-          OpParam.stringList(
-            'fields',
-            description:
-                'What to write back: cover, title, author. Default [cover].',
-          ),
-        ],
-        availability: kit.whenModule(ModuleId.services),
-        undo: _applyUndo(kit),
+    ],
+    availability: kit.whenModule(ModuleId.services),
+  ),
+  OpDescription(
+    id: 'book.scrape.get',
+    method: 'GET',
+    pattern: '$kBookMetadataCtlSearch/:source/:id',
+    summary: 'Fetch one book metadata candidate by its source id.',
+    params: const <OpParam>[
+      OpParam.string(
+        'source',
+        description: 'Metadata source.',
+        required: true,
+        inPath: true,
+        enumValues: kBookScrapeSourceNames,
       ),
-    ];
+      OpParam.string(
+        'id',
+        description:
+            'Bangumi subject id, DLsite work id (RJ…), AniList media id, or '
+            'ISBN for openbd / ndl / rakuten.',
+        required: true,
+        inPath: true,
+      ),
+    ],
+    availability: kit.whenModule(ModuleId.services),
+  ),
+  OpDescription(
+    id: 'book.scrape.apply',
+    method: 'POST',
+    pattern: '$kBookMetadataCtlItems/:key/scrape',
+    summary:
+        'Write a chosen candidate back to a book on the shelf: its cover '
+        '(default), and optionally its title (as a display-name override) '
+        'and author. Same as "match cover online" on the book card.',
+    risk: OpRisk.write,
+    params: const <OpParam>[
+      OpParam.string(
+        'key',
+        description: 'Shelf key from library.list, e.g. book:<bookKey>.',
+        required: true,
+        inPath: true,
+      ),
+      OpParam.string(
+        'id',
+        description: 'Candidate id from book.scrape.search.',
+        required: true,
+      ),
+      OpParam.string(
+        'source',
+        description: 'Candidate source; default bangumi.',
+        enumValues: kBookScrapeSourceNames,
+      ),
+      OpParam.stringList(
+        'fields',
+        description:
+            'What to write back: cover, title, author. Default [cover].',
+      ),
+    ],
+    availability: kit.whenModule(ModuleId.services),
+    undo: _applyUndo(kit),
+  ),
+];
 
 /// 写回的撤销：载荷 = 条目键 + 真落盘的字段 + 执行前快照（含封面备份路径）+ 执行后
 /// 状态。撤销时当前状态（只看动过的字段）已不等于执行后状态 → superseded。

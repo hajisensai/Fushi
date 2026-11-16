@@ -100,6 +100,7 @@ import 'package:fushi/src/utils/components/content_language_picker.dart';
 import 'package:fushi/src/utils/components/cover_badge.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_destructive_confirm_dialog.dart';
+import 'package:fushi/src/utils/components/fushi_header_menu_anchor.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
@@ -203,7 +204,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
       );
 
   /// 页头「排序」按钮打开的菜单（常驻锚点见 [_buildSortMenuAnchor]）。
-  final MenuController _sortMenu = MenuController();
+  final FushiHeaderMenuController _sortMenu = FushiHeaderMenuController();
 
   /// 单行页头（嵌在游戏 tab 里、非 Cupertino）：搜索 / 刮削 / 排序 / 筛选 /
   /// 管理标签 / 布局切换都进页头动作；Cupertino 与独立 push 保留旧工具行。
@@ -632,8 +633,10 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
     await _reload();
   }
 
-  /// 工具条「全部刮削」：按每个游戏当前显示名搜索，只自动应用唯一精确匹配。
-  /// 批量属于自动路径，已有本地/手动封面不覆盖；近似或跨源同名结果留给单卡确认。
+  /// 工具条「全部刮削」：按每个游戏当前显示名搜索，只自动应用每个源内唯一的
+  /// 精确匹配。批量属于自动路径，已有本地/手动封面不覆盖；近似结果、同一个源里的
+  /// 多条同名结果留给单卡确认。不同源各有一条同名是同一部作品（BUG-4727：跨源同名曾被
+  /// 当成歧义，Bangumi 与 VNDB 都收录的作品一律刮不出封面），按源顺序取第一个源。
   Future<void> _scrapeAllGames() async {
     final List<GalgameEntry> games = List<GalgameEntry>.of(_games);
     if (!mounted) return;
@@ -664,6 +667,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
                       if (candidate.nameCn != null) candidate.nameCn!,
                       if (candidate.name != null) candidate.name!,
                     ],
+                    sourceOf: (SourceCandidate candidate) => candidate.source,
                   );
             if (candidate == null) {
               result = candidates.isEmpty
@@ -1046,10 +1050,11 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
             tooltip: list ? t.game_sort : t.library_sort_view,
             icon: FushiIcons.sort,
             overflowPriority: 40,
-            // 窄窗：「排序与显示」底部抽屉；宽窗：锚定菜单。
+            // 窄窗：「排序与显示」底部抽屉；宽窗：锚定菜单，从本按钮（被收进
+            // ⋯ 时从 ⋯）下沿弹出。
             onTap: libraryViewOptionsUseSheet(context)
                 ? _openViewSheet
-                : () => _sortMenu.isOpen ? _sortMenu.close() : _sortMenu.open(),
+                : _sortMenu.toggle,
           ),
           FushiIconButton(
             key: const ValueKey<String>('games_filter_button'),
@@ -1085,11 +1090,11 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
     );
   }
 
-  /// 「排序」菜单的零尺寸锚点（[FushiPageHeader.menuAnchor]，叠在页头动作组
-  /// 右下角）：页头里的排序按钮可能被收进「⋯」，菜单挂在这里才总能打开。
-  /// 再点当前维度 = 翻转方向。
+  /// 「排序」菜单的常驻锚点（[FushiPageHeader.menuAnchor]，铺满页头动作组）：
+  /// 页头里的排序按钮可能被收进「⋯」，菜单挂在这里才总能打开；弹出位置跟着
+  /// 触发控件（按钮或 ⋯，BUG-4715）。再点当前维度 = 翻转方向。
   Widget _buildSortMenuAnchor() {
-    return FushiMenuAnchor(
+    return FushiHeaderMenuAnchor(
       controller: _sortMenu,
       menuChildren: <Widget>[
         for (final GalgameSortField field in GalgameSortField.values)
@@ -1125,7 +1130,6 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
             ),
         ],
       ],
-      child: const SizedBox.shrink(),
     );
   }
 

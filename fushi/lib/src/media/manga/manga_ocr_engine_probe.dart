@@ -9,6 +9,8 @@ library;
 import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/media/manga/ocr/system_ocr_manga_service.dart';
+import 'package:fushi/src/ocr/system_ocr_channel.dart'
+    show SystemOcrModelStatus;
 import 'package:fushi/src/sync/interconnect_manga_ocr_client.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 
@@ -24,6 +26,7 @@ class MangaOcrEngineAvailability {
     required this.remoteTarget,
     this.systemOcrOffered = false,
     this.systemOcrReady = false,
+    this.systemOcrPlayServicesAbsent = false,
   });
 
   /// 内置 ONNX：平台支持 / 模型齐全。
@@ -42,6 +45,12 @@ class MangaOcrEngineAvailability {
   /// 没有原生实现的平台（Windows / Linux）runner 照样非空。
   final bool systemOcrOffered;
   final bool systemOcrReady;
+
+  /// 原生侧报这台设备**根本没有可用的 Play 服务**（BUG-4705，
+  /// [SystemOcrModelStatus.playServicesAbsent]）。只影响自动选引擎：选项本身照旧
+  /// 可用（[isUsable] 不看它），用户显式选了它时由引导弹窗说明原因，而不是让它
+  /// 从列表里消失、用户不知道为什么。
+  final bool systemOcrPlayServicesAbsent;
 
   /// 已配对主机：入口给了 runner / probe 到的目标（null = 没有可用 host）。
   final bool remoteOffered;
@@ -63,11 +72,12 @@ class MangaOcrEngineAvailability {
     ),
     // 系统 OCR 必须进能力表：`resolveMangaOcrEngine` 的 auto 回退顺序里排着
     // 它，漏在这里 auto 就永远落不到它上——Apple 上没下本地模型时「装完即用」
-    // 的 Vision 引擎只有手动选才用得上。
+    // 的 Vision 引擎只有手动选才用得上。没有 Play 服务的 Android 设备上它每页
+    // 都必然失败，auto 不得落到它上（BUG-4705）。
     MangaOcrEngineCapability(
       id: MangaOcrEngineId.systemOcr,
       supported: systemOcrOffered,
-      ready: systemOcrReady,
+      ready: systemOcrReady && !systemOcrPlayServicesAbsent,
       requiresNetwork: false,
       uploadsImages: false,
       supportsIncremental: true,
@@ -157,6 +167,24 @@ Future<MangaOcrEngineAvailability> probeMangaOcrEngines(
       systemOcr = false;
     }
   }
+  // 平台有系统 OCR 时再问一句 Play 服务（BUG-4705）：Android 的 isAvailable 恒真
+  // （BUG-2906，选项不置灰），没有 Play 服务的设备只有这里答得出来。查不出来
+  // （超时 / 抛异常）按「不确定」处理、不拦自动档——宁可让识别失败后由引导弹窗
+  // 说明，也不因一次探测抖动把能用的引擎藏起来。
+  bool playServicesAbsent = false;
+  if (systemOcrRunner != null && systemOcr) {
+    try {
+      final SystemOcrModelStatus status = await systemOcrRunner
+          .modelStatus(language: engines.initialLensLanguage ?? 'ja')
+          .timeout(
+            kSystemOcrProbeTimeout,
+            onTimeout: () => SystemOcrModelStatus.ready,
+          );
+      playServicesAbsent = status.playServicesAbsent;
+    } on Object {
+      playServicesAbsent = false;
+    }
+  }
   // 漫画 P3：探测已配对 host 的远程 OCR 能力（老 host 无 capabilities 字段 →
   // probe 回 null → 选项隐藏，零破坏）。host 报了「支持但模型未下载」时 probe
   // 仍返回 target，UI 据此置灰 + 说明原因（TODO-2635）。
@@ -178,6 +206,7 @@ Future<MangaOcrEngineAvailability> probeMangaOcrEngines(
     remoteTarget: remote,
     systemOcrOffered: systemOcrRunner != null,
     systemOcrReady: systemOcr,
+    systemOcrPlayServicesAbsent: playServicesAbsent,
   );
 }
 

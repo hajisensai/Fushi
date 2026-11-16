@@ -505,7 +505,6 @@ String _layerTypeName(Layer layer) {
 ///   ticker 是 mixin 私有字段，只能经它们的 `debugFillProperties`（release 也在）取到对象本身。
 ///
 /// [root] 为空返回空结果。
-@visibleForTesting
 UiActivitySnapshot scanUiActivity(
   Element? root, {
   int maxPages = kUiActivityMaxPages,
@@ -548,7 +547,6 @@ UiActivitySnapshot scanUiActivity(
 }
 
 /// `A×3 B +2`：按活跃 ticker 数降序取前 [max] 个持有者，数量为 1 不写倍数。
-@visibleForTesting
 String describeTickerOwners(
   Map<String, int> tickers, {
   int max = kUiActivityMaxTickerOwners,

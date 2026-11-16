@@ -401,6 +401,13 @@ async function runSrsStatusBatch(items) {
     items.forEach((item, index) => item.resolve(statuses[index] ?? null));
 }
 
+// 制卡目标 = Fushi 复习（宿主注入 __fushiSrsMiningTarget）时，「在 Anki 中打开」↗ 经
+// SrsMiningAnkiRepository.openWordInAnki 打开的就是这个词的复习笔记——徽标与 ↗ 是同一个
+// 入口（徽标可见时 CSS 藏掉 ↗，见 popup.css `.open-anki-srs-owned`）。
+function srsBadgeOwnsOpenWord() {
+    return window.__fushiSrsMiningTarget === true;
+}
+
 function createSrsStatusBadge(expression, reading) {
     if (window.__fushiSrsEnabled === false) return null;
     const bridge = window.flutter_inappwebview;
@@ -415,6 +422,15 @@ function createSrsStatusBadge(expression, reading) {
             if (badge.dataset.busy === '1') return;
             badge.dataset.busy = '1';
             try {
+                // BUG-4720：徽标接管 ↗ 时必须与 ↗ 走同一根桥、同一条判据（按词在点击那一刻
+                // 反查这个词最新的笔记）。状态回包里的 noteId 是「最需要复习那张卡」的笔记、
+                // 而且是取状态那一刻的快照，拿它打开会和 ↗ 跳到不同的笔记；哪颗可见又取决于
+                // 状态取回没有，于是制完卡当下与重开弹窗跳到不同地方。
+                if (srsBadgeOwnsOpenWord()) {
+                    await openWordInAnki(badge, expression || '', reading || '');
+                    return;
+                }
+                // 制卡目标 = Anki：↗ 去 Anki，徽标是唯一去复习的入口，按状态那张卡打开。
                 await bridge.callHandler('srsOpenCard', {
                     cardId: status.cardId,
                     noteId: typeof status.noteId === 'string' ? status.noteId : '',
@@ -6037,7 +6053,7 @@ function createEntryHeader(entry, idx) {
     // 时已制卡条目就一个跳转入口都没有。现在两颗都在 DOM 里，徽标可见时由 CSS 兄弟选择器
     // 藏掉 ↗（见 popup.css `.open-anki-srs-owned`），徽标不可见时 ↗ 兜底。
     if (miningEnabled) {
-        if (srsBadge !== null && window.__fushiSrsMiningTarget === true) {
+        if (srsBadge !== null && srsBadgeOwnsOpenWord()) {
             openAnkiButton.classList.add('open-anki-srs-owned');
         }
         buttonsContainer.appendChild(openAnkiButton);

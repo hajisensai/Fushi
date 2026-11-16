@@ -598,6 +598,7 @@ String srsFlagLabel(int flag) => switch (flag) {
 String srsFieldKeyLabel(SrsEntityKind kind, String key) => switch (key) {
   SrsFieldKeys.name => t.srs_key_name,
   SrsFieldKeys.deckLimits => t.srs_key_limits,
+  SrsFieldKeys.deckLimitUnit => t.srs_settings_limit_unit,
   SrsFieldKeys.deckSteps => t.srs_key_steps,
   SrsFieldKeys.deckRetention => t.srs_settings_retention,
   SrsFieldKeys.deckAlgorithm => t.srs_settings_algorithm,

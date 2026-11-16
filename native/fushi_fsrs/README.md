@@ -42,7 +42,6 @@ Fushi SRS（间隔重复）的排程内核：[fsrs-rs](https://github.com/open-s
 | `ffsrs_store_legacy_state` / `_legacy_begin` / `_legacy_page` / `_legacy_commit` / `_legacy_abort` / `_legacy_mark_none` | 主库旧 srs_* 表的一次性搬迁（Dart 读、Rust 写，一个事务）|
 | `ffsrs_store_snapshot(SrsCore*, const u8* path, usize, i32 strip_device_local, char**) -> i32` | 备份快照（`VACUUM INTO`，可清空设备本地表）|
 | `ffsrs_store_debug_query` | 只读调试查询（测试 / 诊断）|
-| `ffsrs_store_read_begin` / `_read_query` / `_read_end` | 只读会话：另开一条只读连接 + 一个读事务（开会话时快照即定），在里面跑只读查询（编码同 debug_query），结束回滚并关闭。备份读快照用（后台 isolate） |
 
 响应恒为 `{"ok": …}` 或 `{"error": "…"}`；panic 一律接住转成 error，不越过 FFI。每个 op 带
 `algorithm`（`"fsrs6"` 21 参 / `"fsrs7"` 34 参），`params` 空或缺省 = 该算法默认参数；elapsed
@@ -104,7 +103,7 @@ native lib 目录、macOS `Contents/Frameworks`、Linux `bundle/lib/`）；iOS �
 - **缺库 = 能力不可用，不是构建失败**：五端都是「prebuilt 有则随包」，没装 Rust 的机器照常出包。
 - 构建脚本只断言文件存在；`verify_abi.sh <二进制> [nm]` 按 Dart 绑定里 lookup 的 `ffsrs_*`
   名逐个核对导出表（ELF `.so` / Mach-O dylib 与可执行文件 / ar 静态库）。
-- `target/`、`prebuilt/` 不入库。访问 crates.io / GitHub（fsrs-rs 是钉 rev 的 git 依赖）不稳时设
+- `target/`、`prebuilt/` 不入库。访问 crates.io（fsrs-rs 是 `=7.0.0` 精确钉版本的 crates.io 依赖）不稳时设
   `CARGO_HTTP_PROXY`。
 - **带 ID 审计的本机库（只给调试构建与测试宿主）**：cargo feature `id_audit`（`src/store/ids.rs` `audit`）让 Dart
   经桥执行的 SQL 里漏写 `srs_id(?)` 的那条语句直接报 `id audit: …`（普通构建里只是静默查不到行）。桌面三端的

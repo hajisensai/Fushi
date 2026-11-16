@@ -40,6 +40,58 @@ void main() {
   });
 
   group('videoScrapeTitleCandidates', () {
+    // BUG-4695：原盘标题的父 / 祖父目录是 PLAYLIST / BDMV，不是作品名。
+    test('原盘标题用盘名（去序号、去卷标）和发布目录名，不用 PLAYLIST / BDMV', () {
+      for (final String path in <String>[
+        r'D:\video\lib\Majo no Tabitabi [BDMV]\Disc 1\BDMV\PLAYLIST\00008.mpls',
+        '/video/lib/Majo no Tabitabi [BDMV]/Disc 1/BDMV/PLAYLIST/00008.mpls',
+      ]) {
+        final List<String> candidates = videoScrapeTitleCandidates(
+          workTitle: '魔女の旅々　上巻 - 02',
+          parsedSeries: '00008',
+          videoPath: path,
+        );
+        expect(candidates.first, '魔女の旅々', reason: path);
+        expect(candidates, contains('Majo no Tabitabi'), reason: path);
+        for (final String junk in <String>[
+          'PLAYLIST',
+          'BDMV',
+          'Disc 1',
+          '00008',
+          'lib',
+        ]) {
+          expect(candidates, isNot(contains(junk)), reason: '$path → $junk');
+        }
+      }
+    });
+
+    test('原盘发布目录外面的书名号去掉，BD 这类介质目录跳过', () {
+      final List<String> candidates = videoScrapeTitleCandidates(
+        workTitle: '特別編 響け！ユーフォニアム〜アンサンブルコンテスト〜 - 01',
+        parsedSeries: '00001',
+        videoPath:
+            r'D:\video\lib\『特別編 響け！ユーフォニアム〜アンサンブルコンテスト〜』'
+            r'\BD\BDMV\PLAYLIST\00001.mpls',
+      );
+      // 解析器会把 `〜…〜` 当副标题切掉给出一条短标题，完整标题紧随其后；都不带
+      // 序号。带书名号的目录原名只作为最后一条兜底保留（原值恒留，供显式 id 用）。
+      expect(candidates, contains('特別編 響け！ユーフォニアム〜アンサンブルコンテスト〜'));
+      expect(candidates.any((String c) => c.endsWith('- 01')), isFalse);
+      expect(candidates.first.contains('『'), isFalse);
+      expect(candidates, isNot(contains('BD')));
+      expect(candidates, isNot(contains('PLAYLIST')));
+    });
+
+    test('卷标只在尾部剥，片名里的「前編」保留；整个名字是卷标时不剥成空', () {
+      expect(stripDiscVolumeMarker('魔女の旅々　下巻'), '魔女の旅々');
+      expect(stripDiscVolumeMarker('Show Vol.2'), 'Show');
+      expect(stripDiscVolumeMarker('Show Disc 1'), 'Show');
+      expect(stripDiscVolumeMarker('最終楽章 前編'), '最終楽章 前編');
+      expect(stripDiscVolumeMarker('DISC1'), 'DISC1');
+      expect(stripDiscTitleOrdinal('Show - 00008'), 'Show');
+      expect(stripDiscTitleOrdinal('Show - Part'), 'Show - Part');
+    });
+
     test('drops file-derived episode labels but keeps directory names', () {
       final List<String> candidates = videoScrapeTitleCandidates(
         workTitle: '01',

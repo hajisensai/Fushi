@@ -27,6 +27,8 @@ import 'package:fushi/src/onboarding/onboarding_system_permissions.dart';
 import 'package:fushi/src/onboarding/online_services_onboarding_view.dart';
 import 'package:fushi/src/onboarding/recommended_pack_tutorial_state.dart';
 import 'package:fushi/src/onboarding/recommended_pack.dart';
+import 'package:fushi/src/onboarding/recommended_pack_import.dart'
+    show importRecommendedPackFile;
 import 'package:fushi/src/onboarding/recommended_pack_download_controller.dart';
 import 'package:fushi/src/settings/settings_actions.dart'
     show buildLanguageSelector, buildBrightnessSelector;
@@ -43,10 +45,7 @@ import 'package:fushi/src/shortcuts/visual/key_cap_widget.dart';
 import 'package:fushi/src/srs/srs_providers.dart' show srsStoreProvider;
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/sync/sync_settings_schema.dart'
-    show
-        buildSyncBackupDestination,
-        buildInterconnectDestination,
-        runBackupImportFlowForFile;
+    show buildSyncBackupDestination, buildInterconnectDestination;
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -174,7 +173,7 @@ const double _kOnboardingTwoColumnMinWidth = 560;
 /// 按勾选出现的配置步骤（含字体）→ 功能操作教程（点击查词 + 平台支持时的全局
 /// 查词 + Anki 真正就绪后的第一张卡片）→ 完成。
 /// 配置步骤只做说明 + 跳转到**既有**配置入口（推荐包走备份导入共享编排
-/// [runBackupImportFlowForFile]；Anki/备份/互联推各自设置详情页），不复制配置
+/// [importRecommendedPackFile]；Anki/备份/互联推各自设置详情页），不复制配置
 /// UI——配置能力的单一真相源仍在各自页面。向导的持久化副作用只有两个：离开功能
 /// 选择步骤时写 `module_*_enabled` 显隐偏好；完成/跳过时把 `onboarding_completed`
 /// 置回 true。
@@ -838,8 +837,9 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
     final RecommendedPackDownloadController controller = _packController;
     final RecommendedPackTutorialState tutorialState =
         RecommendedPackTutorialState(model.appDirectory);
-    await runBackupImportFlowForFile(
-      appModel: model,
+    // 推荐包经 [importRecommendedPackFile] 导入：确认框照弹，但预选合并（不是覆盖）。
+    await importRecommendedPackFile(
+      model,
       filePath: path,
       onImportSucceeded: () async {
         await tutorialState.markImportSucceeded();
@@ -1814,7 +1814,7 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
             : '${t.onboarding_step_pack_download_action}'
                   ' ($kRecommendedPackSizeLabel)',
         description: hasDownloaded
-            ? t.onboarding_pack_action_import_existing_desc
+            ? t.onboarding_pack_action_import_existing_merge_desc
             : isPaused
             ? t.onboarding_pack_paused_desc
             : t.onboarding_pack_action_download_desc,
@@ -2001,6 +2001,8 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
         return FushiIcons.manga;
       case OnboardingFeature.video:
         return FushiIcons.video;
+      case OnboardingFeature.music:
+        return homeNavItemFor(HomeTab.music).icon;
       case OnboardingFeature.games:
         return FushiIcons.games;
       // 有 tab 的两个模块图标取底栏真值，与底栏/侧栏同一份。
@@ -2043,6 +2045,9 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
         return t.onboarding_feature_manga;
       case OnboardingFeature.video:
         return t.onboarding_feature_video;
+      // 标题取底栏标签（同一真值）。
+      case OnboardingFeature.music:
+        return homeNavItemFor(HomeTab.music).label;
       case OnboardingFeature.games:
         return t.onboarding_feature_games;
       // 新增的六个模块**零新增 i18n**：有 tab 的取底栏标签（同一真值），没 tab 的
@@ -2088,6 +2093,8 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
         return t.onboarding_feature_manga_hint;
       case OnboardingFeature.video:
         return t.onboarding_feature_video_hint;
+      case OnboardingFeature.music:
+        return t.onboarding_feature_music_hint;
       case OnboardingFeature.games:
         // 非 Windows 的 games 模块是串流接收端，旧提示「仅 Windows 的文本 hook」
         // 不适用。
