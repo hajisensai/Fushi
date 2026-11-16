@@ -132,7 +132,7 @@
 
 | 命令名 | 读/写 | 协议 3 实现位置 | gen4 实现位置 | 归属 / 备注 | S1 后状态 |
 |---|---|---|---|---|---|
-| `identity` | 写 | `sync2/mod.rs` `sync2_identity` + `legacy_clock.rs` | 部分：`truth.rs:create_self` / `self_identity` | 建议 G9-4（身份命令）；`legacyWriter` / `channel` 两项新代没有对应物 | 未接线（报 `gen4: not wired yet`），归 G9-4 |
+| `identity` | 写 | `sync2/mod.rs` `sync2_identity` + `legacy_clock.rs` | `cmd/identity.rs:identity_read` / `identity_ensure`（`truth.rs:create_self` / `self_identity`） | G9-4；`legacyWriter` / `channel` 新代不回，新增 `dir`（「G9-4」一节） | 已接（G9-4） |
 | `channel_settle` | 写 | `sync2/channel.rs` | 不需要（新代没有收段通道，收段即落真相） | S1 删 | 已删（报 `gen4: removed`） |
 | `migrate` | 写 | `sync2/mod.rs` `sync2_migrate`（v1→v2） | 不需要（`gen4/migrate.rs` 是协议 3→4 的另一件事） | G7-6 删 | 已删（报 `gen4: removed`）；实现 G7-6 删 |
 | `replay_all` | 写 | `sync2/mod.rs` | 不需要（派生层是真相的纯函数） | G7-6 删 | 已删（报 `gen4: removed`）；实现 G7-6 删 |
@@ -152,7 +152,7 @@
 | `undo_check` | 读 | `sync2/undo_check.rs` | `cmd/center.rs:undo_check` | **G7-4e 已补** | 已接 |
 | `plan_restore` | 读 | `sync2/timeline.rs` `sync2_plan_restore` | `cmd/writes_restore.rs:plan_restore` | G7-3b 已有 | 已接 |
 | `binding_get` | 读 | `binding.rs` `binding_get` | `cmd/profile.rs:binding_get` | **G7-4e 已补** | 已接 |
-| `binding_set` | 写 | `binding.rs` `binding_set` | 部分：`truth.rs:settle_binding`（存储层） | G9-4（规划 §1.6：可能改绑定的命令提交后发 `binding_changed`） | 未接线（报 `gen4: not wired yet`），归 G9-4 |
+| `binding_set` | 写 | `binding.rs` `binding_set` | `cmd/identity.rs:binding_set`（`truth.rs:settle_binding`） | G9-4；只写绑定状态三列、不改绑定，不发 `bindingChanged`（「G9-4」一节） | 已接（G9-4），回包与协议 3 逐键相同 |
 | `profile_footprint` | 读 | `profile_data.rs` `profile_footprint` | `cmd/profile.rs:profile_footprint` | **G7-4e 已补**（`rows` 只保证「是否为 0」与协议 3 一致） | 已接 |
 | `profile_purge` | 写 | `profile_data.rs` `profile_purge` | 缺 | 建议 G9-5（删一个集合 = 删 `collections` 行与该集合的设备、派生、本机状态；与并入收薄同一处） | 未接线（报 `gen4: not wired yet`），归 G9-5 |
 | `status` | 读 | `sync2/transport.rs` `sync2_status` + `devices.rs` `status_extras` | `cmd/writes_local.rs:status` | G7-3b 已有；G7-4e 补设备行 `gap` / `blocking`（`op_wait`）与 `state` 的 `missing` / `upgrade`；`retired` 归 G8-7（随 `retire`）；`seenAt` / `warning` / `frozen` / `digestMismatch` 仍是占位值，归 G8-7 | 已接 |
@@ -253,7 +253,7 @@ S1 没有加表或索引，本机状态行与缓存配置都放现有的 `srs_me
 | 大批写入开关 | `Mutex<Bulk>` | `bulk_cache` 保留：嵌套深度；开着时放宽 WAL 自动检查点（`BULK_WAL_AUTOCHECKPOINT_PAGES`），关到 0 时恢复。新代没有「暂缓缓存刷新」——派生层随写入维护 |
 
 - profile → 集合号：每条命令在自己的快照 / 事务里用 `Truth::binding_of(profile)` 换算；没绑定 = 明确报错（绑定由迁移或
-  G9-4 的身份命令建）。本机状态行与 `device_hint` 不要绑定。
+  G9-4 的身份命令 `identity` / `collection_adopt` 建，其余命令不顺手建，见「G9-4」一节）。本机状态行与 `device_hint` 不要绑定。
 - **出卡不常驻**（协议 3 的 `StudyHub` 不搬）：`cmd/study.rs` 每条命令在一个读快照里现排。取舍：省掉「写后失效」整套
   簿记，代价是每次 `study` 重读到期卡（S1 没有实测这部分开销）；量出问题再加常驻队列，失效的键与统计缓存同法。
 - `wal_checkpoint`：Primary 上另开一条连接做 `PASSIVE`，不占写锁。Secondary 上报 `READ_ONLY`、不开连接：辅助进程按设计
@@ -289,7 +289,6 @@ S1 没有加表或索引，本机状态行与缓存配置都放现有的 `srs_me
 `every_protocol_3_command_has_a_gen4_wiring` 按协议 3 分发器源码的匹配臂逐条核对，标成「已接」的必须有臂）：
 
 - 未接线（报 ``gen4: not wired yet: `<op>` belongs to <owner>``，不 panic、不回落协议 3）：
-  - G9-4：`identity`、`binding_set`
   - G9-5：`profile_uids`、`orphan_sweep_done`、`profile_merge_mark` / `_commit`、`meta_set_edit`、`profile_purge`
   - G8-7：收段 / 发件 / head / plan / 中继 / 废弃 / 摘要 / `retire` / `rotate` / `location_seal*` / `media_*`（媒体同步）
   - G11-3：`import`、`export`；G11-4：`ffsrs_store_snapshot`
@@ -324,3 +323,98 @@ S1 没有加表或索引，本机状态行与缓存配置都放现有的 `srs_me
   `device_info` 接成 `device_hint`，各自都红。
 - 统计缓存两个失效条件各一条（去掉键里的写入代数 / 缓存层代号各自变红）；Secondary 上 `wal_checkpoint` 报只读；
   迁移中途 panic 之后登记摘掉、提前取消清掉。查询计划测试用实现执行的同一份语句常量（`CACHE_MARK_SQL` / `STORED_SQL`）。
+
+## G9-4 身份命令（2026-11-17，分支 `pr/srs-gen4-g9-4-identity-commands`）
+
+实现在 `store/gen4/cmd/identity.rs`，接线在 `store/gen4/dispatch.rs`（`identity` / `binding_set` 从「未接线」改「已接」，
+另加 7 条新代才有的命令），测试 `store/gen4/cmd/identity_tests.rs`（一律经 C ABI）。存储层全部复用：`truth.rs` 的
+`bind` / `binding_of` / `settle_binding` / `create_self` / `self_identity`、G9-3 `identity.rs` 的 `Truth::join` /
+`adopt_foreign` / `Index::joins`、`alias.rs` 的 `canonical` / `key_evidence` / `hollowed` / `withheld_salts`。没有新
+语句、没有加表或索引（schema 不升，分到的 40021 没用）；`store/ffi.rs` 没动。
+
+### 命令
+
+| 命令 | 读/写 | 请求 | 回包 |
+|---|---|---|---|
+| `identity` | 写（已有身份时是读） | `{profile, now}` | `{device, collection, dir, nextSeq, migrated, name, public}` + 建了时的 `bindingChanged` |
+| `binding_set` | 写 | `{profile, state, via, now}` | `{binding: {state, via, at}}`，与协议 3 逐键相同 |
+| `collection_info` | 读 | `{profile}` | `{profile, collection, dir, salts, binding, joins: [{op: {device, seq}, from, dir, salts, trusted}]}` |
+| `collection_join` | 写 | `{profile, into, dir, now}` | `{outcome: "joined", op, from, fromDir, rebound, collection, dir, settled}` + `bindingChanged` |
+| `collection_salts_add` | 写 | `{profile, salts, now}` | `{outcome: "same"}` 或 `{outcome: "saltsAdded", op, settled}` + `bindingChanged` |
+| `collection_adopt` | 写 | `{profile, collection, dir, salts?, confirmed?, now}` | `{outcome: same / alreadyJoined / needsConfirm / bound / joined / saltsAdded, …}` + 有变化时的 `bindingChanged` |
+| `canonical_ids` | 读 | `{profile, ids}` | `{ids}`：逐个归一，顺序与条数照请求 |
+| `key_evidence` | 读 | `{profile, items: [{kind, entity}]}` | `{evidence: [n…]}`；成员 ID **原样**问（这是拿另一台 `divergence` 列出的成员来查分叉，归一会把分叉抹平） |
+| `divergence` | 读 | `{profile}` | `{hollowed: [{kind, entity, purges, distrusted, evidence, pending}], withheldSalts: [{salt, ops}]}` |
+
+`collection_salts_add` 走 `adopt_foreign` 的「同一个集合」分支（判据与事件只在 G9-3 那一处）；`collection_adopt` 是
+`adopt_foreign` 的命令外壳（G11-3 / G11-4 / G9-5 调），结论 `bound` 时同一个事务里建本机身份。
+
+### 定案（所有者授权自定，理由一并记下）
+
+1. **身份与绑定只在两处建**：`identity`（Dart 每次打开 profile 都调，协议 3 `sync2_identity` 同样「没有就建」）与
+   `collection_adopt` 的 `bound`。其余按集合的命令遇到没绑定的 profile 照旧报 `has no collection`，**不顺手建**：
+   建身份要可信的时刻（身份建立时刻、`Salts` 的 HLC 起点），读命令与 `cache_config_set` 等的请求里没有 `now`，内核
+   不读系统时钟（Dart 的时刻来自校时时钟，系统时钟错了会把本机 HLC 推到未来）；顺手建还会让「先加入」永远走不到。
+   Secondary 上没有身份时 `identity` 报只读，等主进程建。
+2. **全新 profile 的集合 = `collection_of(uid)`、目录名 = uid**，与协议 3 `Local::create`、迁移（`dryrun.rs` 的 `bind`）
+   同一口径。**有意偏离设计 §5.1「新集合随机 UUIDv7」**：同一个 uid 的两台设备（协议 3 时代采用过同一 uid 的、D32
+   服务端 uid = 目录名的）不用并入就是同一个集合，行为与协议 3 一致；全新库与「迁移一份空的协议 3 库」逐表相同，
+   派生层只有一条路。
+3. **新身份**：随机 UUIDv7 设备 ID（`migrate::random_device`）、随机签名钥匙、时钟从零起；集合的盐集合里没有这个
+   uid 就在本机日志写一条 `Salts{uid}`——与迁移的初始盐同口径：G9-6 之前 Dart 仍按 profile uid 加盐算内置实体 ID
+   （默认牌组等），盐在集合里才归得到规范 ID。
+4. **`bindingChanged` 就放在回包里**：可能改绑定的命令（`identity` 第一次建、`collection_join` / `collection_salts_add`
+   / `collection_adopt`）把存储层的 `BindingChanged` 交给分发器，`write_binding` 在 `G4Core::write` **提交成功之后**
+   写进回包 `bindingChanged: {profile}`；提交失败或命令中途 panic（被回滚）就没有回包，事件随之丢掉（缺口 G-4 的
+   「返回 Some 就发了、回滚就没发」由 `a_join_keeps_cards_and_logs_and_reports_the_change_only_after_commit` 与
+   `salts_add_and_adopt_report_a_change_only_when_the_binding_changed` 的提交前 panic 注入卡住）。内核没有另起一条事件
+   流：Dart 的每条内核命令都经 `SrsDbStore` 同一个入口，回包就是事件流。`binding_set` 只写 `state` / `via` / `at`
+   三列（不属于 `Binding`、不影响任何 ID），不发。改绑定的命令**不推进本机修订号**（不是 `LOCAL_WRITE_OPS`）：
+   Dart 收到 `bindingChanged` 要按「库换了」整份重读，而不是靠修订号。
+5. **`identity` 回包**：`legacyWriter`（协议 1 写入者 ID，`legacy_clock.rs`，迁移不带）与 `channel`（收段通道，新代没有）
+   **不回**——不回占位值：`legacyWriter: null` 会让 Dart `writerId` 的非空断言在用到时才炸，缺键在改调用点时一眼可见。
+   `migrated` 恒为 true（Dart 不再发已删的 `migrate`）；`nextSeq` = 本机原生日志末尾 + 1；`name` = `device_info` 的人读名；
+   新增 `dir`（设计 §5.1：同步目录向内核要，不再按 uid 拼）。请求里的 `legacyDevice` 忽略。
+
+### Dart 侧要跟着改的调用点（本 PR 不改）
+
+- **G7-5**
+  - `packages/fushi_engine/lib/srs/srs_db_store.dart:426-463` `SrsDbStore.open`：现在的顺序是 `local_state` →
+    `cache_config_set`（`_registerCacheConfig`）→ … → `ensureBuiltins` → `_sync2Open`（`identity`）。全新 profile 上
+    `cache_config_set` 会先撞「没绑定」：**`identity` 必须挪到第一条按集合的命令之前**（`local_state` 不要绑定，可以在前）。
+  - 同文件 `_sync2Open`（:479-496）：不再发 `legacyDevice`；`_legacyWriter` 恒为 null，`writerId`（:853，`_legacyWriter!`）
+    与 `isOwnWriter`（:856）的旧写入者部分删掉；`migrated` 恒真，`migrateLegacy` / `_sync2MigrateAll` / `_sync2MigrateBatch`（:509-545，发已删的
+    `migrate`）删掉。
+  - 同文件 `_sync2Raw`（:2243）：每条回包看 `bindingChanged`，有就发 `onBindingChanged()`，缓存的 `kernelIds` /
+    `defaultDeckId` / `lapisNoteTypeId` / `fushiCardNoteTypeId` 失效并整份重读（设计 §5.1）。
+  - 同文件 :2151（`import` 之后再取 `identity`）只读 `device`，不受影响（`import` 本身归 G11-3）。
+  - `setCollectionBinding`（:5526，`binding_set`）形状不变；要求 profile 已绑定（打开时 `identity` 建好）。
+- **G8-7 / G9-5**
+  - 读 `identity` 的 `collection` / `device` 的同步路径形状不变：`sync2/srs_sync2_round.dart:202/264/361`、
+    `sync2/srs_folder_location.dart:238`、`sync2/srs_location_migration.dart:560/604/698`、`sync2/srs_sync2_pull_first.dart:74`。
+    位置目录名改用回包的 `dir`，不再按 uid 拼（`srsLocationDirOf(profileUid)`：`sync2/srs_folder_location.dart:83/96`、
+    `srs_profile_link.dart:359/407`；`sync2/srs_location_runner.dart:39-47`，设计 §5.1）。
+  - 关联流程（`srs_profile_link.dart` / `srs_profile_merge.dart`）的「采用对方 uid」改成 `collection_adopt` /
+    `collection_join`（G9-5）；备份合并的 `adoptedUid`（`srs_backup_merge.dart`）改 `collection_adopt`（G11-3 / G11-4）。
+- **G10**：分叉提示（D30）读 `divergence`、到另一台问 `key_evidence`。
+
+### 没做 / 交给谁
+
+- **「先加入」在 app 里走不到**（归 G9-5，涉及 G9-3 的 `identity.rs` 判据）：`identity` 在打开时就绑了新 profile，之后
+  `adopt_foreign` 只能并入，不会是 `bound`；新设备关联已有集合时，若本机目录名（= 新 uid）较小，按 D27 是对方并入本机，
+  别的设备看到 `Join` 要再确认一次（D25）。建议 G9-5 在 `adopt_foreign` 里加「空集合可换绑」：本机集合的日志只有本机
+  身份写的 `Salts`、没有别的设备、从没发布到任何位置（`loc_heads` / `relay_out` 为空）时，确认后同一个事务里丢掉这个空
+  集合、绑到对方（结论 `bound`），本机身份在对方集合里重建。
+- **`profile_of_dir`（规划 §1.1 G10 行）没做**：`collections.dir` 没有索引，D32 下服务端 uid = 目录名，暂不需要反查；
+  需要时加索引（升 schema）并让 `collection_info` 接 `{dir}`。
+- `bindingChanged` 只随引起它的那条命令的回包回来；别的进程（Secondary 查词弹窗）看不到。弹窗只读、绑定变化极少，
+  G7-5 让 Secondary 在打开 / 重新激活时重取 `identity` 即可。
+
+### 测试（`cmd/identity_tests.rs`，8 条，全部经 C ABI）
+
+新库建身份 → 写 → 读（含建之前按集合命令报错、没有 `now` 报错、第二次 `identity` 不带事件、Secondary 只读）；迁移库上
+`identity` 与协议 3 对拍（`collection` / `public` / `name` / `migrated` 相同，`device_info` 改名后仍相同）与 `binding_set`
+逐条对拍；多 profile 各自一个集合、同一集合不能绑两个 profile、没绑过的 profile 经 `collection_adopt` 先问后绑并建身份；
+改绑不丢笔记 / 卡片 / 复习日志 / 修改历史、默认牌组的规范 ID 不变、方向反了报错；提交前 panic 不发事件、库不变；补盐
+只在真有新盐时发事件；别名类成员经 `canonical_ids` 归一、`key_evidence` / `divergence` 的形状；每条新命令都有臂。
+`dispatch_tests.rs` 的未接线清单去掉了 `identity`，并把几个装置函数开成 `pub(super)` 给这里复用。
