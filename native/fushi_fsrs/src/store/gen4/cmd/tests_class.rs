@@ -876,3 +876,70 @@ fn limited_counts_and_has_user_data_stop_at_the_answer() {
         "an unlimited count walks everything: {fs} vs {fb}"
     );
 }
+
+// ---------------------------------------------------------------------- 出卡
+
+/// 出卡（`cmd/study.rs`）按类：同一次 Anki 复习的两份带盐导入在计数上下文里只算一条（最近 30 天、今天已复习的卡与
+/// 作答数），落在规范卡上；请求里按成员卡给的排除与 RWKV 候选都落到规范卡上，候选同一张规范卡只留一份。
+#[test]
+fn study_counts_a_log_class_once_and_takes_member_ids_in_the_request() {
+    use super::study::{log_state, study};
+    use crate::projection::Day;
+    with(|t, col| {
+        let w = land(t, col);
+        let deck = id(DECK).text();
+        let c = w.c_card.text();
+        let now = ANKI_REVLOG + 60_000;
+        let day = Day {
+            utc_offset_min: 0,
+            rollover_hour: 4,
+        };
+        let mut ix = Index::new(t, col);
+        let s = log_state(t, &mut ix, col, day, day.index(now)).unwrap();
+        assert_eq!(s.last30().iter().sum::<i64>(), 1, "{s:?}");
+        assert_eq!(
+            s.reviewed_cards().cloned().collect::<Vec<_>>(),
+            vec![c.clone()]
+        );
+        assert_eq!(s.review_answers(&c), 1);
+        assert_eq!(s.answers().count(), 1);
+
+        let base = json!({"now": now, "utcOff": 0, "rollover": 4, "deck": deck, "pick": true});
+        let plain = study(t, col, &base).unwrap();
+        assert!(t.conn().is_autocommit());
+        let keys: Vec<&String> = plain["counts"].as_object().unwrap().keys().collect();
+        assert_eq!(keys, vec![&deck], "{plain}");
+        assert_eq!(
+            plain["next"],
+            json!(c),
+            "the due review comes first: {plain}"
+        );
+
+        for member in [&w.card[0], &w.card[1]] {
+            let mut req = base.clone();
+            req["exclude"] = json!([member.text()]);
+            let v = study(t, col, &req).unwrap();
+            assert_ne!(
+                v["next"],
+                json!(c),
+                "excluded by member {}: {v}",
+                member.text()
+            );
+            assert_ne!(
+                v["after"],
+                json!(c),
+                "excluded by member {}: {v}",
+                member.text()
+            );
+        }
+
+        let mut req = base.clone();
+        req["rwkv"] = json!({
+            "decks": {deck.as_str(): [0.9, 0, 0, 0]},
+            "cands": [[w.card[0].text(), deck, null, 0.1], [w.card[1].text(), deck, null, 0.2]],
+        });
+        let v = study(t, col, &req).unwrap();
+        assert_eq!(v["eligible"], json!([c]), "{v}");
+        assert_eq!(v["next"], json!(c), "{v}");
+    });
+}

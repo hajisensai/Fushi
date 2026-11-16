@@ -7,6 +7,7 @@
 //! - [columns]：列式批量读 `card_columns` 与 AnkiConnect 数字 id 的 `anki_resolve` / `anki_notes_info`（协议 3 `store/bulk.rs`）。
 //! - [lineage]：`lineages`——一组卡各自的血统（协议 3 `caches::lineage_ids`，同一个判定函数，按类读前身链接）。
 //! - [stats]：复习统计 `stats_report` / `stats_recall` / `stats_rows`（协议 3 `store/stats.rs`，同一份聚合）。
+//! - [study]：出卡与牌组计数 `study`（协议 3 `store/study.rs`，同一份排队规则；常驻会话与索引的取舍见那里的文件头）。
 //!
 //! # 共同约定
 //!
@@ -31,6 +32,7 @@ use crate::gen4::name::write_edit_key;
 use crate::store::bulk::{self, Col};
 use crate::store::gen4::weigh::S_PURGED;
 use crate::store::sync2::canonical;
+use crate::store::sync2::config::DeckTree;
 use crate::sync2::codec::Writer;
 use crate::sync2::id::Key;
 use crate::sync2::op::EntKind;
@@ -40,6 +42,7 @@ pub mod history;
 pub mod lineage;
 pub mod reads;
 pub mod stats;
+pub mod study;
 pub mod views;
 // 写命令的新代实现（规划 §2.1 G7-3b），同样还没接分发器：见 [writes] 文件头。
 pub mod writes;
@@ -47,6 +50,8 @@ pub mod writes_intent;
 pub mod writes_local;
 pub mod writes_restore;
 
+#[cfg(test)]
+mod study_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
@@ -113,6 +118,60 @@ pub(super) fn canon_ids(ix: &Index<'_, '_>, ids: &Value) -> Result<Vec<Ref>, Str
         }
     }
     Ok(out)
+}
+
+/// 集合 [col] 的默认牌组（规范 ID）：缓存配置给了就用它（归一后，与缓存层同一个），否则是规范规则的内置默认牌组。
+/// 写命令（[writes]）与出卡读命令（[study]）共用。
+pub(super) fn default_deck(t: &Truth<'_>, ix: &Index<'_, '_>, col: i64) -> Result<String, String> {
+    match t.derive_cfg(col, super::cache::CFG_KEY)? {
+        Some(text) => {
+            let v: Value =
+                serde_json::from_str(&text).map_err(|e| format!("gen4: bad cache config: {e}"))?;
+            let cfg = crate::store::caches::CacheConfig::parse(&ix.canonical_config(&v)?)?;
+            Ok(cfg.default_deck().to_owned())
+        }
+        None => Ok(
+            crate::gen4_ids::rules::builtin_default_deck(crate::gen4_ids::rules::CANONICAL).text(),
+        ),
+    }
+}
+
+/// 此刻的牌组树（未删除的牌组，ID 是规范 ID）：每个规范牌组的定义 + 按类判定活着的写入拼视图，再走协议 3 同一份
+/// 拼树规则（`DeckTree::of_views`）。写命令（[writes]）与出卡读命令（[study]）共用。
+pub(super) fn deck_tree(ix: &mut Index<'_, '_>, default: String) -> Result<DeckTree, String> {
+    let ids: Vec<Ref> = {
+        let mut stmt =
+            ix.t.conn()
+                .prepare_cached(
+                    "SELECT DISTINCT id FROM ent_ix WHERE col = ?1 AND kind = ?2 AND win = 1",
+                )
+                .map_err(sql)?;
+        let rows = stmt
+            .query_map(rusqlite::params![ix.col, EntKind::Deck as i64], |r| {
+                r.get::<_, Ref>(0)
+            })
+            .map_err(sql)?;
+        rows.collect::<Result<_, _>>().map_err(sql)?
+    };
+    let mut canon: std::collections::BTreeSet<Ref> = std::collections::BTreeSet::new();
+    for id in &ids {
+        canon.insert(ix.canon(id)?);
+    }
+    let mut views = Vec::with_capacity(canon.len());
+    for c in &canon {
+        let Some((kind, _, payload)) = ix.definition(c)? else {
+            continue;
+        };
+        if kind != EntKind::Deck as i64 {
+            continue;
+        }
+        let (lines, _) = ix.class_lines(EntKind::Deck, c)?;
+        views.push((
+            c.text(),
+            crate::registers::deck_view_of(&payload, &crate::store::sync2::config::stored(&lines))?,
+        ));
+    }
+    Ok(DeckTree::of_views(views, default))
 }
 
 /// SQLite 比较 ID 列的顺序（`ORDER BY id`）：TEXT 在 BLOB 之前，各自按字节。[Ref] 自己的 `Ord` 把 UUID 排在前面，
