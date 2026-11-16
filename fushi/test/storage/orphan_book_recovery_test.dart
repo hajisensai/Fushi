@@ -3,9 +3,11 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/anki/card_source_router.dart';
+import 'package:fushi/src/pages/implementations/library_recovery_page.dart';
 import 'package:fushi/src/storage/orphan_book_recovery.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/epub/pdf_book_layout.dart';
 import 'package:path/path.dart' as p;
 
 import '../sync/temp_dir_cleanup.dart';
@@ -116,6 +118,7 @@ void main() {
     final OrphanBookRecovery recovery = OrphanBookRecovery(
       database: db,
       booksRoot: booksRoot,
+      registrars: libraryRecoveryRegistrars(),
     );
     final OrphanBookScan scan = await recovery.scan();
 
@@ -194,6 +197,7 @@ void main() {
     final OrphanBookScan scan = await OrphanBookRecovery(
       database: db,
       booksRoot: booksRoot,
+      registrars: libraryRecoveryRegistrars(),
     ).scan();
 
     expect(scan.recoverable.single.bookKey, '1984');
@@ -204,12 +208,45 @@ void main() {
     );
   });
 
+  test('a directory holding the PDF book-layout file is recognised as a PDF '
+      'book and restored through the injected PDF registrar', () async {
+    writeFile(p.join('扫描本', PdfBookLayout.pdfFileName), '%PDF-1.4');
+    final List<String> registered = <String>[];
+    final OrphanBookRecovery recovery = OrphanBookRecovery(
+      database: db,
+      booksRoot: booksRoot,
+      registrars: <OrphanBookKind, OrphanBookRegistrar>{
+        OrphanBookKind.pdf:
+            ({
+              required FushiDatabase db,
+              required String bookKey,
+              required String title,
+              required String bookDir,
+            }) async {
+              registered.add(bookKey);
+              return bookKey;
+            },
+      },
+    );
+
+    final OrphanBookScan scan = await recovery.scan();
+    expect(scan.recoverable.single.kind, OrphanBookKind.pdf);
+    expect(scan.unrecoverable, isEmpty);
+
+    final OrphanBookRestoreResult result = await recovery.restore(
+      scan.recoverable,
+    );
+    expect(result.restored, <String>['扫描本']);
+    expect(registered, <String>['扫描本']);
+  });
+
   test('a per-book failure does not abort the batch', () async {
     writeManga('好的');
     writeManga('坏的');
     final OrphanBookRecovery recovery = OrphanBookRecovery(
       database: db,
       booksRoot: booksRoot,
+      registrars: libraryRecoveryRegistrars(),
     );
     final OrphanBookScan scan = await recovery.scan();
     File(p.join(booksRoot, '坏的', 'manga.json')).writeAsStringSync('{');

@@ -7,6 +7,7 @@ import 'package:pdfrx/pdfrx.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:fushi_engine/epub/epub_storage.dart';
+import 'package:fushi_engine/epub/pdf_book_layout.dart';
 import 'package:fushi/src/media/media_cover_service.dart';
 import 'package:fushi/src/pdf/pdf_engine.dart';
 import 'package:fushi_engine/media/cover_file_writer.dart'
@@ -33,7 +34,7 @@ class PdfImporter {
 
   /// 书目录内固定的 PDF 文件名。阅读器按 `extractDir/epubPath` 还原绝对路径，故此名
   /// 与 `epubPath` 列必须一致。
-  static const String kPdfFileName = 'document.pdf';
+  static const String kPdfFileName = PdfBookLayout.pdfFileName;
 
   /// 书目录内固定的封面文件名。
   static const String kCoverFileName = 'cover.png';

@@ -1,11 +1,15 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:fushi_core/fushi_core.dart' show FushiDatabase;
+import 'package:fushi_engine/epub/epub_importer.dart';
+import 'package:fushi_engine/media/manga/manga_importer.dart';
 import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pdf/pdf_importer.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/storage/orphan_book_recovery.dart';
 import 'package:fushi/src/storage/storage_usage_service.dart'
@@ -31,6 +35,26 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
+
+/// 孤儿书目录按类型重新登记的生产装配：各导入器的 `register*`。放在页面层
+/// 而非 storage 层——`PdfImporter` 的依赖闭包连到 AppModel，storage 层不得碰。
+Map<OrphanBookKind, OrphanBookRegistrar> libraryRecoveryRegistrars() =>
+    <OrphanBookKind, OrphanBookRegistrar>{
+      OrphanBookKind.epub:
+          ({
+            required FushiDatabase db,
+            required String bookKey,
+            required String title,
+            required String bookDir,
+          }) => EpubImporter.registerExtractedBook(
+            db: db,
+            bookKey: bookKey,
+            title: title,
+            extractDir: bookDir,
+          ),
+      OrphanBookKind.manga: MangaImporter.registerExistingBookDir,
+      OrphanBookKind.pdf: PdfImporter.registerExistingBookDir,
+    };
 
 /// 设置 › 存储 →「恢复书库」入口（BUG-4695）。
 Future<void> openLibraryRecoveryPage(final SettingsContext c) =>
@@ -81,7 +105,10 @@ class _LibraryRecoveryPageState extends State<LibraryRecoveryPage> {
     });
     try {
       final OrphanBookRecovery recovery = _recovery ??=
-          await OrphanBookRecovery.forApp(_app.database);
+          await OrphanBookRecovery.forApp(
+            _app.database,
+            registrars: libraryRecoveryRegistrars(),
+          );
       final OverwriteSnapshotPreview? snapshot =
           await BackupRestoreService.previewOverwriteSnapshot(
             dbDirectory: _app.databaseDirectory.path,

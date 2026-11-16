@@ -3,12 +3,10 @@ import 'dart:io';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi_engine/epub/epub_storage.dart';
-import 'package:fushi_engine/media/manga/manga_importer.dart';
+import 'package:fushi_engine/epub/pdf_book_layout.dart';
 import 'package:fushi_engine/media/manga/manga_storage.dart';
 import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:path/path.dart' as p;
-
-import 'package:fushi/src/pdf/pdf_importer.dart';
 
 /// 孤儿书目录里能识别出的书类型（BUG-4695）。
 enum OrphanBookKind {
@@ -116,8 +114,9 @@ class OrphanBookRestoreResult {
   final Map<String, String> failures;
 }
 
-/// 按类型把目录登记成书的入口（生产 = 各导入器的 `register*`；测试可注入，例如
-/// 不带 pdfrx 原生库的单测替换 PDF 入口）。
+/// 按类型把目录登记成书的入口。生产装配在页面层（`libraryRecoveryRegistrars`，
+/// 各导入器的 `register*`）：storage 层不得 import 导入器——`PdfImporter` 的依赖
+/// 闭包连到 AppModel（`import_cycle_guard_test`）。测试按需注入。
 typedef OrphanBookRegistrar =
     Future<String> Function({
       required FushiDatabase db,
@@ -143,15 +142,15 @@ typedef OrphanBookRegistrar =
 /// - 在线漫画的来源身份只在书库行里，目录还原不出来，列为不可恢复（下载根里的
 ///   在线漫画由下载任务页的「漫画重新入库」负责，那里有侧车记录来源）。
 ///
-/// 元数据一律复用导入器的解析与行构造（[EpubImporter.registerExtractedBook] /
-/// [MangaImporter.registerExistingBookDir] / [PdfImporter.registerExistingBookDir]），
-/// 不另写一套。
+/// 元数据一律复用导入器的解析与行构造（`EpubImporter.registerExtractedBook` /
+/// `MangaImporter.registerExistingBookDir` / `PdfImporter.registerExistingBookDir`，
+/// 由调用方经 [OrphanBookRegistrar] 注入），不另写一套。
 class OrphanBookRecovery {
   OrphanBookRecovery({
     required this.database,
     required this.booksRoot,
-    Map<OrphanBookKind, OrphanBookRegistrar>? registrars,
-  }) : _registrars = registrars ?? defaultRegistrars;
+    required Map<OrphanBookKind, OrphanBookRegistrar> registrars,
+  }) : _registrars = registrars;
 
   final FushiDatabase database;
 
@@ -160,31 +159,15 @@ class OrphanBookRecovery {
 
   final Map<OrphanBookKind, OrphanBookRegistrar> _registrars;
 
-  /// 生产用的按类型登记入口。
-  static final Map<OrphanBookKind, OrphanBookRegistrar> defaultRegistrars =
-      <OrphanBookKind, OrphanBookRegistrar>{
-        OrphanBookKind.epub:
-            ({
-              required FushiDatabase db,
-              required String bookKey,
-              required String title,
-              required String bookDir,
-            }) => EpubImporter.registerExtractedBook(
-              db: db,
-              bookKey: bookKey,
-              title: title,
-              extractDir: bookDir,
-            ),
-        OrphanBookKind.manga: MangaImporter.registerExistingBookDir,
-        OrphanBookKind.pdf: PdfImporter.registerExistingBookDir,
-      };
-
   /// 以生产书库根构造。
-  static Future<OrphanBookRecovery> forApp(FushiDatabase database) async =>
-      OrphanBookRecovery(
-        database: database,
-        booksRoot: await EpubStorage.baseDirectory(),
-      );
+  static Future<OrphanBookRecovery> forApp(
+    FushiDatabase database, {
+    required Map<OrphanBookKind, OrphanBookRegistrar> registrars,
+  }) async => OrphanBookRecovery(
+    database: database,
+    booksRoot: await EpubStorage.baseDirectory(),
+    registrars: registrars,
+  );
 
   /// 在线漫画书目录名：`<runtime>-<sha256 前 32 位 hex>`
   /// （`OnlineMangaLibraryService.bookKeyFor`，逐字节冻结）。
@@ -317,7 +300,7 @@ class OrphanBookRecovery {
       }
       return OrphanBookKind.manga;
     }
-    if (has(PdfImporter.kPdfFileName)) return OrphanBookKind.pdf;
+    if (has(PdfBookLayout.pdfFileName)) return OrphanBookKind.pdf;
     if (_onlineMangaKey.hasMatch(name)) throw const _OnlineMangaDirectory();
     if (await dir.list(followLinks: false).isEmpty) {
       throw const _EmptyDirectory();
