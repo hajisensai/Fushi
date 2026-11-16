@@ -33,15 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4072 条。点号进各自文件。
+> 共 4111 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4717](bugs/BUG-4717-miui-screenoff-cpu-kill-reported-as-crash.md) | ✅ | ✅ | MIUI 熄屏耗电检查杀进程（ScreenOffCPUCheckKill）被当成闪退 |
-> 共 4110 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4755](bugs/BUG-4755-miui-screenoff-cpu-kill-reported-as-crash.md) | ✅ | ✅ | MIUI 熄屏耗电检查杀进程（ScreenOffCPUCheckKill）被当成闪退 |
 | [BUG-4754](bugs/BUG-4754-manga-series-key-episode-suffix.md) | ✅ | ✅ | 漫画「第N話 前編 [hash]」按话发布的各话没并成系列合集 |
 | [BUG-4753](bugs/BUG-4753-nested-lookup-webkit-zoom-hit-offset.md) | ✅ | ✅ | 嵌套查词：macOS 查词页点释义里的字查到相邻的字（WebKit 旧 zoom 坐标系 + 沙箱取字半字偏移） |
 | [BUG-4752](bugs/BUG-4752-open-with-confused-deputy.md) | ✅ | ✅ | 用其他应用打开 / 分享导入替发起方读它无权读的 content:// URI（confused deputy） |

@@ -830,7 +830,7 @@ void main() {
       expect(v.worthReporting, isTrue);
     });
 
-    // BUG-4717（反馈 Z9FwhY9377）：小米 Android 13 熄屏后，MIUI 耗电检查以 OTHER +
+    // BUG-4755（反馈 Z9FwhY9377）：小米 Android 13 熄屏后，MIUI 耗电检查以 OTHER +
     // 「ScreenOffCPUCheckKill over … used … threshold …」杀进程（importance=125 前台服务）。
     // 旧 androidExitKind 只认 OPlus o-stop → null → 回落标记推断；标记停在 inactive /
     // launching（无界面引擎收不到生命周期）时就判成「停在前台时没了，疑似闪退」。
