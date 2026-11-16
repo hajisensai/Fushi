@@ -220,7 +220,7 @@
   // 依赖同世界的其它 content script 会让面板从自包含变成跨文件依赖，harness 漏装一个
   // 就假红。两份都语义封闭，改其一必须同步另一处。
   // 「单句」口径（快捷键跳句 / 复制 / 收藏 / 学习统计 / 制卡默认取句）：此刻有效的 cue 里起点最晚的
-  // 那条。字幕轨允许时间重叠（BUG-4717），起点最晚的那条结束了、起点更早的长句还在时要回落到长句，
+  // 那条。字幕轨允许时间重叠（BUG-4719），起点最晚的那条结束了、起点更早的长句还在时要回落到长句，
   // 不能返回 -1；cues 只按 startMs 排序、endMs 无序，所以从最后一条已开始的 cue 往前扫。
   function cueIndexAt(cues, t) {
     var lo = 0, hi = cues.length - 1, last = -1;
@@ -620,7 +620,7 @@
     return null;
   }
 
-  // content.js 的 Shift 悬停查词命中自绘覆盖层时用：指针所在那一行的 cue 窗。多行同屏（BUG-4717）
+  // content.js 的 Shift 悬停查词命中自绘覆盖层时用：指针所在那一行的 cue 窗。多行同屏（BUG-4719）
   // 时按播放时刻只能取到一句，不带窗会让悬停上一行配上下一行的例句。不在覆盖层里 / 没指着行 → null。
   window.fushiSubtitleOverlayCueWindowAt = function (node) {
     var el = st.overlayEl;

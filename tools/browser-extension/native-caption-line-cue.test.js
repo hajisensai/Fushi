@@ -224,7 +224,7 @@ test('行文本在整轨最近几条里对不上：保持原行为，按播放�
   assert.strictEqual(ctx.window.startV, 3000);
 });
 
-test('BUG-4717 Shift 悬停扩展自绘覆盖层的某一行：带该行 cue 窗，而不是播放时刻命中的那句', () => {
+test('BUG-4719 Shift 悬停扩展自绘覆盖层的某一行：带该行 cue 窗，而不是播放时刻命中的那句', () => {
   const dom = captionDom();
   const overlayLine = textNode(LINE_A);
   element(['fushi-subtitle-overlay-line'], [overlayLine]);

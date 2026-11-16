@@ -92,7 +92,7 @@ test('opening during a cue centers and highlights the current cue', async () => 
   assert.equal(h.rows()[1].classList.contains('is-current'), true);
 });
 
-test('overlapping cues (BUG-4717) highlight every active row, including a long cue after a short one ends', async () => {
+test('overlapping cues (BUG-4719) highlight every active row, including a long cue after a short one ends', async () => {
   const overlap = [
     { startMs: 1000, endMs: 5000, text: 'long' },
     { startMs: 1000, endMs: 3000, text: 'short' },

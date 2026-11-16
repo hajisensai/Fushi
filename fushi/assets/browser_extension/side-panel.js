@@ -982,7 +982,7 @@
     return h + ':' + (m < 10 ? '0' + m : m) + ':' + ss;
   }
 
-  // 此刻全部有效 cue（startMs <= t < endMs）的下标，升序。轨允许时间重叠（BUG-4717：ASS 两位
+  // 此刻全部有效 cue（startMs <= t < endMs）的下标，升序。轨允许时间重叠（BUG-4719：ASS 两位
   // 说话人同时开口），高亮要覆盖每一条；items 只按 startMs 排序、endMs 无序，从最后一条已开始的
   // cue 往前扫。
   function activeCueIndices(items, timeMs) {

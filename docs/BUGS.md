@@ -33,15 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4074 条。点号进各自文件。
+> 共 4076 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4717](bugs/BUG-4717-ext-overlapping-cues.md) | ✅ | ✅ | 浏览器扩展：ASS 字幕两句时间重叠时覆盖层只显示一句 |
-> 共 4075 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4719](bugs/BUG-4719-ext-overlapping-cues.md) | ✅ | ✅ | 浏览器扩展：ASS 字幕两句时间重叠时覆盖层只显示一句 |
 | [BUG-4718](bugs/BUG-4718-audiobook-pointer-seek-focus-loss.md) | ✅ | ✅ | audiobook-pointer-seek-focus-loss |
 | [BUG-4717](bugs/BUG-4717-manga-context-menu-image-hit-page.md) | ✅ | ✅ | 漫画双页跨页右键「复制 / 保存 / 分享图片」「设为封面」作用于当前跨页主页而不是右键落点那一页 |
 | [BUG-4716](bugs/BUG-4716-onboarding-music-module.md) | ✅ | ✅ | 新手引导的功能模块方格没有音乐，向导既不出方格也不写 module_music_enabled |
