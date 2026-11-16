@@ -508,6 +508,8 @@ import 'package:fushi/src/media/audiobook/floating_lyric_context.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_style.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_routing.dart';
+import 'package:fushi/src/media/listening_reminder.dart'
+    show kListeningReminderNotificationPayload;
 import 'package:fushi/src/migration/migration_readonly.dart';
 import 'package:fushi/src/migration/migration_target_channel.dart';
 import 'package:fushi/src/models/audio_source_config.dart';
@@ -1714,13 +1716,15 @@ class AppModel
       : const NoopUpdateNotifier();
 
   /// 用户点了系统通知。先把窗口唤到前台——Windows 的 toast 激活只是回调进程，
-  /// 不会替我们把主窗拉起来。反馈回复通知 → 那条反馈的详情；其余是更新提醒：
+  /// 不会替我们把主窗拉起来。连续收听提醒 → 到此为止。反馈回复通知 → 那条反馈的详情；其余是更新提醒：
   /// 本体 / 「打开」→ 那条更新的落点（番剧 = 播放该集）；「查看更新」/ 载荷解不出 /
   /// 条目已被清 → 更新中心。
   Future<void> _onSystemNotificationResponse(
     UpdateNotificationResponse response,
   ) async {
     await DesktopLookupService.instance.bringMainWindowToFront();
+    // 连续收听提醒：唤到前台就是全部（提醒本身已经在通知里说完了）。
+    if (response.payload == kListeningReminderNotificationPayload) return;
     final BuildContext? context = navigatorKey.currentContext;
     if (context == null || !context.mounted) return;
     final String? feedbackId = decodeFeedbackNotificationPayload(
@@ -13940,6 +13944,14 @@ class AppModel
   void toggleShowMediaNotification() => prefsRepo.toggleShowMediaNotification();
   Future<void> setShowMediaNotification(bool value) =>
       prefsRepo.setShowMediaNotification(value);
+
+  bool get listeningReminderEnabled => prefsRepo.listeningReminderEnabled;
+  Future<void> setListeningReminderEnabled({required bool value}) =>
+      prefsRepo.setListeningReminderEnabled(value: value);
+
+  int get listeningReminderMinutes => prefsRepo.listeningReminderMinutes;
+  Future<void> setListeningReminderMinutes(int value) =>
+      prefsRepo.setListeningReminderMinutes(value);
 
   bool get showFloatingLyric => prefsRepo.showFloatingLyric;
   Future<void> setShowFloatingLyric(bool value) =>
