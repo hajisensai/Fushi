@@ -28,8 +28,9 @@
 //! 会话记着它对上的代号（`Session::stamp`）。每条命令在**同一个读快照**里：
 //!
 //! 1. 读 `(gen, floor)`。会话的代号 = gen：什么都不重读。
-//! 2. 代号 < floor（中间有过整层重建 / 记录攒满被截）或 > gen（库被换过、或代号不连续）：整份重建（协议 3 的
-//!    `overflow`）。
+//! 2. 代号 < floor（中间有过整层重建 / 记录攒多了从旧的一头被截掉）或 > gen（库被换过、或代号不连续），或会话代号
+//!    之后变了的笔记多于 [REFRESH_CAP]（按这个会话自己落下的量算，跟得上的会话不受别人累计的写入影响）：整份重建
+//!    （协议 3 的 `overflow`）。
 //! 3. 否则读 `cache_log` 里代号 > 会话代号的笔记，连同这些笔记在会话里的卡和库里的卡（`cards_note`），交给
 //!    `Session::apply` 按 id 重读——以库里的行为准，同协议 3。按笔记记账而不按卡：一张卡的行变了它所属笔记必在
 //!    记录里（`cache.rs` 写卡行时记它的笔记），删掉的卡、换了笔记的卡都经「会话里这条笔记的卡」找回来。
@@ -62,13 +63,13 @@
 //! 整份建会话：`notes` / `cards` 各一次顺序扫（同协议 3）。
 
 use std::cell::RefCell;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 
 use rusqlite::OptionalExtension;
-use serde_json::{Map, Value};
+use serde_json::Value;
 
 use super::columns::{Members, Table, resolve};
-use super::{Files, Sel, ref_of, snapshot};
+use super::{Files, Sel, canon_keyed, ref_of, snapshot};
 use crate::registers::StoredEdit;
 use crate::store::browse::{self, Card, Note, Sessions, Source, card_of, note_of};
 use crate::store::gen4::derive::{Index, Ref};
@@ -188,30 +189,12 @@ impl Source for G4<'_, '_> {
             }
         };
         let mut ix = self.ix.borrow_mut();
-        for id in notes {
-            let (lines, _) = ix.class_lines(EntKind::Note, &ref_of(id))?;
-            let lines: Vec<&(String, Option<i64>)> = if keys.is_empty() {
-                lines.iter().collect()
-            } else {
-                lines
-                    .iter()
-                    .filter(|(j, _)| {
-                        serde_json::from_str::<Value>(j).ok().is_some_and(|v| {
-                            v.get("f")
-                                .and_then(Value::as_str)
-                                .is_some_and(|f| keys.iter().any(|k| k == f))
-                        })
-                    })
-                    .collect()
-            };
-            if lines.is_empty() {
-                continue;
-            }
-            let stored: Vec<StoredEdit<'_>> =
-                lines.iter().map(|(j, s)| (j.as_str(), *s, None)).collect();
-            sink(id, &stored)?;
-        }
-        Ok(())
+        // 归回的写入者表在这一条命令里不变（同一个读快照）：按类拼行每条笔记都要它，读一次（同 `cache.rs` 的
+        // `cache_pass`），不让每条笔记各读一遍整张表。
+        ix.pass_writers = Some(ix.writer_aliases()?);
+        let done = edits_with(&mut ix, notes, keys, sink);
+        ix.pass_writers = None;
+        done
     }
 
     fn rated(&self, since: i64, rating: Option<i64>) -> Result<Vec<String>, String> {
@@ -269,6 +252,39 @@ impl Source for G4<'_, '_> {
         })?;
         Ok(out)
     }
+}
+
+/// [Source::edits] 的本体：[notes] 每条按类判定活着的修改行（[keys] 非空 = 只要这些字段的），交给 [sink]。
+fn edits_with(
+    ix: &mut Index<'_, '_>,
+    notes: &[String],
+    keys: &[String],
+    sink: &mut dyn FnMut(&str, &[StoredEdit<'_>]) -> Result<(), String>,
+) -> Result<(), String> {
+    for id in notes {
+        let (lines, _) = ix.class_lines(EntKind::Note, &ref_of(id))?;
+        let lines: Vec<&(String, Option<i64>)> = if keys.is_empty() {
+            lines.iter().collect()
+        } else {
+            lines
+                .iter()
+                .filter(|(j, _)| {
+                    serde_json::from_str::<Value>(j).ok().is_some_and(|v| {
+                        v.get("f")
+                            .and_then(Value::as_str)
+                            .is_some_and(|f| keys.iter().any(|k| k == f))
+                    })
+                })
+                .collect()
+        };
+        if lines.is_empty() {
+            continue;
+        }
+        let stored: Vec<StoredEdit<'_>> =
+            lines.iter().map(|(j, s)| (j.as_str(), *s, None)).collect();
+        sink(id, &stored)?;
+    }
+    Ok(())
 }
 
 /// 新代的浏览会话表：一个打开的库文件一份（命令层持有，接线时放在它自己的锁里）。会话按集合号分。
@@ -333,6 +349,10 @@ impl Browse {
     }
 }
 
+/// 一个会话一次最多按笔记重读这么多条；落下更多就整份重建（模块文件头「常驻会话的失效」第 2 步；协议 3 浏览的
+/// `DIRTY_CAP` 也是按单个会话攒的量算）。
+pub(super) const REFRESH_CAP: usize = 4096;
+
 /// 会话 [s] 怎么对上库此刻（模块文件头「常驻会话的失效」）：(待重读的 id 或整份重建, 对上之后的代号)。
 fn refresh(
     src: &G4<'_, '_>,
@@ -368,10 +388,16 @@ fn refresh(
     if seen < gen {
         let mut q = Sel::of(src.col);
         let seen_p = q.int(seen);
+        // 多读一条就知道超没超上限，不把一大段记录全读出来。
+        let cap = q.int(REFRESH_CAP as i64 + 1);
         q.push(&format!(
-            "SELECT DISTINCT note FROM cache_log WHERE col = ?1 AND gen > {seen_p}"
+            "SELECT DISTINCT note FROM cache_log WHERE col = ?1 AND gen > {seen_p} LIMIT {cap}"
         ));
         notes.extend(src.id_list(&q)?);
+    }
+    if notes.len() > REFRESH_CAP {
+        // 这个会话落下的太多（导入、大同步收段）：逐条重读不如整份重建（协议 3 的 `DIRTY_CAP`，按单个会话算）。
+        return Ok(rebuild(suspect));
     }
     let mut cards: HashSet<String> = s.cards_of_notes(&notes).into_iter().collect();
     let list: Vec<String> = notes.iter().cloned().collect();
@@ -421,7 +447,7 @@ pub(super) fn canon_req(src: &G4<'_, '_>, op: &str, req: &Value) -> Result<Value
     }
     for k in ["decks", "deckModels"] {
         if let Some(Value::Object(m)) = obj.get_mut(k) {
-            *m = canon_map(&ix, m)?;
+            *m = canon_keyed(&ix, m)?;
         }
     }
     for k in ["instant", "find", "ids"] {
@@ -433,11 +459,10 @@ pub(super) fn canon_req(src: &G4<'_, '_>, op: &str, req: &Value) -> Result<Value
     }
     if op == "anki_dupes" {
         if let Some(Value::Object(first)) = obj.get_mut("first") {
-            let mut m = Map::new();
-            for (k, v) in first.iter() {
-                let mut v = v.clone();
-                canon_str(&mut v)?;
-                m.entry(canon(k)?).or_insert(v);
+            // 笔记类型 → 首字段：键按牌组表同一个取舍归一（与键的先后无关），值（字段 ID）再归一。
+            let mut m = canon_keyed(&ix, first)?;
+            for v in m.values_mut() {
+                canon_str(v)?;
             }
             *first = m;
         }
@@ -465,29 +490,6 @@ pub(super) fn canon_req(src: &G4<'_, '_>, op: &str, req: &Value) -> Result<Value
         }
     }
     Ok(out)
-}
-
-/// 以 ID 为键的表归一：同一个类有几个键时取规范 ID 自己的，否则成员里 SQLite 序最小的（同 `stats.rs` `canon_req`）。
-fn canon_map(ix: &Index<'_, '_>, m: &Map<String, Value>) -> Result<Map<String, Value>, String> {
-    let mut by: BTreeMap<String, (bool, (u8, Vec<u8>), Value)> = BTreeMap::new();
-    for (key, v) in m.iter() {
-        let r = ref_of(key);
-        let c = ix.canonical(&r)?;
-        let own = r == c;
-        let (o, b) = super::sql_order(&r);
-        let rank = (o, b.to_vec());
-        let ct = c.text();
-        let better = match by.get(&ct) {
-            None => true,
-            Some((had_own, had_rank, _)) => {
-                (own && !had_own) || (own == *had_own && rank < *had_rank)
-            }
-        };
-        if better {
-            by.insert(ct, (own, rank, v.clone()));
-        }
-    }
-    Ok(by.into_iter().map(|(k, (_, _, v))| (k, v)).collect())
 }
 
 /// 语法树里 `nid:` / `cid:` 的数字 id：认别名类成员的号（换成规范 ID 的号，`columns.rs` 同一个反查）；查不到的原样

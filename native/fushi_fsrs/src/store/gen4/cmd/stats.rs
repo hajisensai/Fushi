@@ -22,9 +22,9 @@
 //! 两条顺序扫：`cards` 沿主键（`col` 打头）走一遍这个集合的卡、每张卡按主键点读一次笔记行；`stats` 沿主键
 //! `(col, at, log)` 顺序走——统计行按发生时刻聚簇，不排序、不解码任何操作体（设计 §2.3）。与协议 3 同阶。
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::HashSet;
 
-use serde_json::{Map, Value};
+use serde_json::Value;
 
 use super::{profile_of, ref_of, snapshot};
 use crate::store::gen4::derive::Index;
@@ -106,29 +106,7 @@ pub(crate) fn canon_req(ix: &Index<'_, '_>, req: &Value) -> Result<Value, String
     }
     for k in ["desired", "deckModels"] {
         if let Some(Value::Object(m)) = obj.get_mut(k) {
-            // 规范 ID → (它自己给了没有, 给了值的成员里 ID 的 SQLite 序最小的, 值)。
-            let mut by: BTreeMap<String, (bool, (u8, Vec<u8>), Value)> = BTreeMap::new();
-            for (key, v) in m.iter() {
-                let r = ref_of(key);
-                let c = ix.canonical(&r)?;
-                let own = r == c;
-                let (o, b) = super::sql_order(&r);
-                let rank = (o, b.to_vec());
-                let ct = c.text();
-                let better = match by.get(&ct) {
-                    None => true,
-                    Some((had_own, had_rank, _)) => {
-                        (own && !had_own) || (own == *had_own && rank < *had_rank)
-                    }
-                };
-                if better {
-                    by.insert(ct, (own, rank, v.clone()));
-                }
-            }
-            *m = by
-                .into_iter()
-                .map(|(k, (_, _, v))| (k, v))
-                .collect::<Map<String, Value>>();
+            *m = super::canon_keyed(ix, m)?;
         }
     }
     if let Some(Value::Object(recall)) = obj.get_mut("recall") {

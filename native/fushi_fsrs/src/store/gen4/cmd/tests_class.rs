@@ -23,8 +23,8 @@ use crate::store::gen4::truth::{TRUST_PENDING, Truth};
 use crate::sync2::id::{Id, Key};
 use crate::sync2::op::{EntKind, Intent};
 
-const U1: &str = "0192f0aa-0000-7000-8000-00000000000a";
-const U2: &str = "0192f0aa-0000-7000-8000-00000000000b";
+pub(super) const U1: &str = "0192f0aa-0000-7000-8000-00000000000a";
+pub(super) const U2: &str = "0192f0aa-0000-7000-8000-00000000000b";
 pub(super) const ANKI_NT: i64 = 1_700_000_000_001;
 const ANKI_REVLOG: i64 = 1_650_000_000_123;
 pub(super) const DECK: u8 = 0x0d;

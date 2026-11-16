@@ -60,7 +60,8 @@
 //! 这里由刷新自己记：每次收尾里行可能变了的笔记（重算 / 删掉的笔记、写了卡行的卡所属的笔记、别名挪走时被删的旧 ID
 //! 与引用它的行的原值笔记 ID）记成一个新的**代号**（`cache_gen.gen` + 1，`cache_log` 每条笔记一行）；整层重建（
 //! [Index::materialize_caches] 的三条路）把代号 + 1 并把**下限** `floor` 抬到它、清空记录——代号低于下限的读者只能
-//! 整份重读。记录自下限起累计超过 [LOG_CAP] 条也同样抬下限。两张表是本机状态（不在 `DERIVED_TABLES`、不参与对拍），
+//! 整份重读。记录超过 [LOG_KEEP] 行时从代号旧的一头删到剩一半、下限抬到删掉的最大代号（只有比它还旧的读者整份
+//! 重读；`logged` = 记录现有行数）。读者一次要重读多少才改成整份重读由读者自己判。两张表是本机状态（不在 `DERIVED_TABLES`、不参与对拍），
 //! 与缓存行在同一个事务里写，回滚一起回滚。
 //!
 //! 没并起来的：扣住的删除、清除、不可信仍按原值实体判（`class.rs` 文件头「没有并起来的」），类与原值口径的取舍随
@@ -202,9 +203,10 @@ CREATE TABLE IF NOT EXISTS cache_log (
 ) WITHOUT ROWID;
 ";
 
-/// 变更记录（[Index::cache_log_flush]）自上次整层重建起最多记这么多条笔记；再多就当整层变了（读者整份重建，同协议 3
-/// 浏览的 `DIRTY_CAP`）。
-pub(crate) const LOG_CAP: i64 = 4096;
+/// 变更记录（[Index::cache_log_flush]）最多留这么多行；再多就从代号旧的一头删到剩一半、把下限抬到删掉的最大代号。
+/// 这只是给记录本身的存储设上限：读者攒了多少要重读由读者自己判（`cmd/browse.rs` 的 `REFRESH_CAP`，同协议 3 浏览的
+/// `DIRTY_CAP` 按单个会话算），跟得上的读者不会因为别人累计的写入被迫整份重读。
+pub(crate) const LOG_KEEP: i64 = 20_000;
 
 /// 缓存层的三张表。
 const TABLES: [&str; 3] = ["notes", "cards", "stats"];
@@ -536,21 +538,43 @@ impl<'t, 'c> Index<'t, 'c> {
             .map_err(sql)?
             .unwrap_or((0, 0, 0));
         let next = gen + 1;
-        let logged = logged + touched.len() as i64;
-        let (floor, logged) = if full || logged > LOG_CAP {
+        let (floor, logged) = if full {
             conn.prepare_cached("DELETE FROM cache_log WHERE col = ?1")
                 .map_err(sql)?
                 .execute([self.col])
                 .map_err(sql)?;
             (next, 0)
         } else {
+            let mut logged = logged;
             let mut stmt = conn
                 .prepare_cached(
                     "INSERT OR IGNORE INTO cache_log (col, gen, note) VALUES (?1, ?2, ?3)",
                 )
                 .map_err(sql)?;
             for n in &touched {
-                stmt.execute(params![self.col, next, n]).map_err(sql)?;
+                logged += stmt.execute(params![self.col, next, n]).map_err(sql)? as i64;
+            }
+            let mut floor = floor;
+            if logged > LOG_KEEP {
+                // 记录攒多了：从旧的一头删到剩一半，下限抬到删掉的最大代号（文件头「变更记录」）。只有对上的代号比它
+                // 还旧的读者要整份重读；跟得上的读者不受影响。
+                let cut: Option<i64> = conn
+                    .prepare_cached(
+                        "SELECT gen FROM cache_log WHERE col = ?1 ORDER BY gen DESC LIMIT 1 OFFSET ?2",
+                    )
+                    .map_err(sql)?
+                    .query_row(params![self.col, LOG_KEEP / 2], |r| r.get(0))
+                    .optional()
+                    .map_err(sql)?;
+                if let Some(cut) = cut {
+                    let gone = conn
+                        .prepare_cached("DELETE FROM cache_log WHERE col = ?1 AND gen <= ?2")
+                        .map_err(sql)?
+                        .execute(params![self.col, cut])
+                        .map_err(sql)?;
+                    logged -= gone as i64;
+                    floor = floor.max(cut);
+                }
             }
             (floor, logged)
         };

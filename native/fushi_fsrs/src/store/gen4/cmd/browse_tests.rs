@@ -4,20 +4,23 @@
 //!   的 [P3] 读法，缓存按新代同一份配置在 SAVEPOINT 里重建），另一侧灌进新代跑 [Browse]；同一串命令（全部排序列 ×
 //!   卡片 / 笔记模式 × 一组查询、取行、行 id、批量目标、计数、出处分组、AnkiConnect 查找 / 标签 / 查重）逐条比回包
 //!   （ID 归一成规范 ID、去掉进程内的结果代号）与列式文件的字节。
-//! - **别名类**（只有新代有）：`tests_class.rs` 的两份带盐笔记场景，请求里给成员 ID / 成员号与给规范 ID 结果相同。
-//! - **失效**：写入（逐条维护的收尾）之后同一个会话按代号增量重读，结果与新建的会话相同、不整份重建；整层重建、写事务里
-//!   读过又回滚都对。
-//! - **代价**：EXPLAIN 与一次增量重读交出的行数。
+//!   库比 `tests.rs` 的多一条只有隐藏卡的笔记（[browse_library]）；查询里有带评分的 `rated:`。
+//! - **别名类**（只有新代有）：`tests_class.rs` 的两份带盐笔记场景，请求里给成员 ID / 成员号与给规范 ID 结果相同；
+//!   以 ID 为键的表（牌组名、牌组模型、查重首字段）按成员键也落到规范键上，几个键时取舍确定。
+//! - **失效**：写入（逐条维护的收尾）之后同一个会话按代号增量重读，结果与新建的会话相同、不整份重建——含隐藏卡出现 /
+//!   消失、迟到的盐把一条已物化的笔记并进别的类（别名挪动）；整层重建、写事务里读过又回滚、记录被截都对。
+//! - **代价**：实际执行的语句（trace 抓的，不是抄的 SQL）逐条 EXPLAIN；一次增量重读的虚拟机步数不随集合变大、没有
+//!   全表扫描步。
 
-use std::cell::Cell;
-use std::collections::HashSet;
+use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
 
 use rusqlite::Connection;
 use serde_json::{Value, json};
 
 use super::Files;
-use super::browse::{Browse, G4, canon_req};
-use super::tests::{N1, N2, N3, Pair, T0, library, on_p3};
+use super::browse::{Browse, G4, REFRESH_CAP, canon_req};
+use super::tests::{N1, N2, N3, Pair, T0, card, library, note, on_p3};
 use super::tests_class::{ANKI_NT, DECK, Twin, base_ops, land, set, twin, u};
 use crate::gen4::op::tests::id;
 use crate::gen4_ids::rules::{self, CANONICAL};
@@ -33,6 +36,9 @@ use crate::sync2::id::Id;
 use crate::sync2::op::EntKind;
 
 const NOW: i64 = T0 + 3 * DAY;
+
+/// `tests_class.rs` 场景之外的第三个盐（别名挪动的测试里迟到）。
+const U3: &str = "0192f0aa-0000-7000-8000-00000000000c";
 
 /// 浏览查询的上下文（Dart `srsBrowseContext` 的形状），合进 [extra]。
 fn ctx(types: Value, deck: &str, extra: Value) -> Value {
@@ -56,7 +62,36 @@ fn ctx(types: Value, deck: &str, extra: Value) -> Value {
 
 fn library_types() -> Value {
     json!([{"id": "NT", "name": "Basic", "fields": [["fa", "Expression"], ["fb", "Meaning"]],
-            "tpls": [["t1", "A", 0], ["t2", "B", 1]]}])
+            "tpls": [["t1", "A", 0], ["t2", "B", 1]]},
+           {"id": "NT2", "name": "Word", "fields": [["fx", "Word"], ["fy", "Extra"]],
+            "tpls": [["u1", "X", 0]]}])
+}
+
+/// 只有一张卡、卡的模板判空（隐藏）的那条笔记：笔记活着，卡不显示。
+const N6: &str = "0193a1b2-0000-7000-8000-0000000000a6";
+
+/// 对拍的库：`tests.rs` 的 [library] 再加一个笔记类型 NT2（唯一的模板只引用第二个字段）与它的一条只填了第一个字段
+/// 的笔记 [N6]——那张卡渲染为空、缓存行 `hidden = 1`，让对拍碰到隐藏卡（会话、按笔记找牌组都不该看见它）。
+fn browse_library() -> crate::store::sync2::tests::Device {
+    use crate::store::sync2::tests::edit;
+    let d = library();
+    d.apply(
+        T0 + 2 * DAY,
+        vec![
+            json!({"t": "entity", "x": {"id": "NT2", "p": P, "k": "notetype", "d": {"createdAt": 2, "ntKind": "standard"}}}),
+            edit("notetype", "NT2", "fieldDef/fx", json!({"name": "Word", "ord": 0})),
+            edit("notetype", "NT2", "fieldDef/fy", json!({"name": "Extra", "ord": 1})),
+            edit(
+                "notetype",
+                "NT2",
+                "tmplDef/u1",
+                json!({"name": "X", "ord": 0, "front": "{{Extra}}"}),
+            ),
+            note(N6, "NT2", 50),
+            edit("note", N6, "f/fx", json!("鯨")),
+        ],
+    );
+    d
 }
 
 type Run<'a> = dyn FnMut(&str, Value) -> (Value, Files) + 'a;
@@ -81,6 +116,9 @@ fn script(run: &mut Run<'_>, deck: &str) -> Vec<(String, Value, Files)> {
         json!({"t": "tag", "v": "a"}),
         json!({"t": "state", "v": "new"}),
         json!({"t": "rated", "d": 3650}),
+        // 带评分：库里有评 3 的、也有评 1 的复习（同一张卡两种都有，别的卡只有 3）。
+        json!({"t": "rated", "d": 3650, "e": 1}),
+        json!({"t": "rated", "d": 3650, "e": 3}),
         json!({"t": "dupe"}),
         json!({"t": "emptyfield"}),
         json!({"t": "src", "v": "none"}),
@@ -183,12 +221,15 @@ fn script(run: &mut Run<'_>, deck: &str) -> Vec<(String, Value, Files)> {
     let norm = crate::search::dupe_norm;
     let (v, f) = run(
         "anki_dupes",
-        json!({"first": {"NT": "fa"}, "cands": [
+        json!({"first": {"NT": "fa", "NT2": "fx"}, "cands": [
             {"norm": norm("猫"), "type": "NT", "all": false, "decks": null},
             {"norm": norm("猫"), "type": "X", "all": false, "decks": null},
             {"norm": norm("猫"), "type": "X", "all": true, "decks": [deck]},
             {"norm": norm("犬"), "type": "NT", "all": false, "decks": ["elsewhere"]},
             {"norm": norm("鳥"), "type": "NT", "all": false, "decks": null},
+            // N6 只有一张隐藏卡：不限牌组时算重复，限在它那张卡的牌组里不算（隐藏卡不给笔记带来牌组）。
+            {"norm": norm("鯨"), "type": "NT2", "all": false, "decks": null},
+            {"norm": norm("鯨"), "type": "NT2", "all": false, "decks": [deck]},
         ]}),
     );
     push("anki_dupes", v, f);
@@ -239,7 +280,7 @@ fn canon_json(p: &Pair<'_>, v: &Value) -> Value {
 /// 全部浏览命令与协议 3 对拍（模块文件头「对拍」）。
 #[test]
 fn browse_commands_match_protocol_3() {
-    let d = library();
+    let d = browse_library();
     let p = Pair::new(&d);
     let deck = default_deck_id(P);
     let w = d.core.writer().unwrap();
@@ -274,9 +315,24 @@ fn browse_commands_match_protocol_3() {
     assert!(rows > 300, "the script reads real rows ({rows})");
     // 有命中的查询、有出处之外的分组、有查重命中：对拍不是在比一堆空结果。
     let dupes = &g4.iter().find(|(op, ..)| op == "anki_dupes").unwrap().1;
-    assert_eq!(dupes["dup"], json!([true, false, true, false, false]));
+    assert_eq!(
+        dupes["dup"],
+        json!([true, false, true, false, false, true, false])
+    );
     let tags = &g4.iter().find(|(op, ..)| op == "anki_tags").unwrap().1;
     assert_eq!(tags["tags"], json!(["a", "b"]));
+    // 评分筛选真的分得开：计数里「评过分的」比「评 1 的」多（评 1 的只有一张卡），对拍才卡得住评分条件。
+    let counts = &g4.iter().find(|(op, ..)| op == "browse_counts").unwrap().1;
+    let n = |i: usize| counts["counts"][i].as_i64().unwrap();
+    assert!(n(6) >= 1 && n(6) < n(5) && n(7) >= 1, "{counts}");
+    // 隐藏卡不在任何一个回包里。
+    let hidden = card(N6, "u1");
+    for (op, v, _) in &g4 {
+        assert!(
+            !v.to_string().contains(&hidden),
+            "{op}: the hidden card shows up: {v}"
+        );
+    }
 }
 
 // ---------------------------------------------------------------------- 别名类（只有新代有）
@@ -424,6 +480,114 @@ fn member_ids_in_requests_resolve_to_the_canonical_rows() {
     });
 }
 
+/// 以 ID 为键的表（`decks` / `deckModels` / 查重的 `first`）：只给成员键也落到规范键上；同一个类给了几个键时规范键
+/// 自己的优先，否则成员里 SQLite 序最小的——与键的先后无关（[canon_keyed](super::canon_keyed)，`stats.rs` 同一份）。
+#[test]
+fn keyed_tables_resolve_member_keys_to_the_canonical_key() {
+    with(|t, col| {
+        let w = land(t, col);
+        let deck = id(DECK).text();
+        // 两份带盐的同名牌组（规范 ID 是不带盐的那个），规范卡挪进去（写在成员卡上）。
+        let lang = |s| rules::deck(s, "Lang");
+        let (d1, d2, dc) = (
+            lang(Some(super::tests_class::U1)),
+            lang(Some(super::tests_class::U2)),
+            lang(CANONICAL),
+        );
+        write(
+            t,
+            col,
+            0xd1,
+            1,
+            1000,
+            &[
+                set(EntKind::Deck, u(d1), "name", json!("Lang")),
+                set(EntKind::Deck, u(d2), "name", json!("Lang")),
+                set(EntKind::Card, u(w.card[0]), "deck", json!(d1.text())),
+            ],
+        );
+        let (lo, hi) = {
+            let (a, b) = (super::ref_of(&d1.text()), super::ref_of(&d2.text()));
+            if super::sql_order(&a) < super::sql_order(&b) {
+                (d1, d2)
+            } else {
+                (d2, d1)
+            }
+        };
+        let hits = |decks: Value| -> u64 {
+            let mut req = ctx(
+                twin_types(&w, None),
+                &deck,
+                json!({"node": {"t": "deck", "v": "Lang"}}),
+            );
+            req["decks"] = decks;
+            let v = run_raw(&mut Browse::new(), t, col, "browse_query", req);
+            v["count"].as_u64().unwrap_or_else(|| panic!("{v}"))
+        };
+        let named = |pairs: &[(&Id, &str)]| -> Value {
+            let mut m = serde_json::Map::new();
+            for (k, name) in pairs {
+                m.insert(k.text(), json!([name, false]));
+            }
+            Value::Object(m)
+        };
+        assert_eq!(
+            hits(named(&[(&dc, "Lang")])),
+            1,
+            "the card sits in the canonical deck"
+        );
+        assert_eq!(hits(named(&[(&d1, "Lang")])), 1, "a member key alone");
+        assert_eq!(
+            hits(named(&[(&d2, "Lang")])),
+            1,
+            "the other member key alone"
+        );
+        assert_eq!(
+            hits(named(&[(&d1, "Lang"), (&dc, "Other")])),
+            0,
+            "own key wins"
+        );
+        assert_eq!(
+            hits(named(&[(&dc, "Lang"), (&d2, "Other")])),
+            1,
+            "own key wins"
+        );
+        assert_eq!(
+            hits(named(&[(&hi, "Other"), (&lo, "Lang")])),
+            1,
+            "lowest member"
+        );
+        assert_eq!(
+            hits(named(&[(&lo, "Other"), (&hi, "Lang")])),
+            0,
+            "lowest member"
+        );
+        // `deckModels` 同一个取舍；查重的 `first`（笔记类型 → 首字段）键按它取、值再归一。
+        let src = G4::new(t, col);
+        let canon = |req: Value| canon_req(&src, "anki_dupes", &req).unwrap();
+        let mut m = serde_json::Map::new();
+        m.insert(hi.text(), json!(1));
+        m.insert(lo.text(), json!(2));
+        assert_eq!(
+            canon(json!({"deckModels": m.clone()}))["deckModels"],
+            json!({dc.text(): 2})
+        );
+        m.insert(dc.text(), json!(3));
+        assert_eq!(
+            canon(json!({"deckModels": m}))["deckModels"],
+            json!({dc.text(): 3})
+        );
+        let c_nt = rules::note_type(CANONICAL, ANKI_NT);
+        let first = canon(json!({"first": {
+            w.nt[0].text(): w.field[0].text(),
+            w.nt[1].text(): w.field[1].text(),
+        }}));
+        assert_eq!(first["first"], json!({c_nt.text(): w.c_field.text()}));
+        let first = canon(json!({"first": {w.nt[1].text(): "x", c_nt.text(): w.field[0].text()}}));
+        assert_eq!(first["first"], json!({c_nt.text(): w.c_field.text()}));
+    });
+}
+
 // ---------------------------------------------------------------------- 失效
 
 /// 一批原生写入（一个事务、逐条维护后收尾）。
@@ -527,6 +691,11 @@ fn writes_refresh_the_live_session_by_generation() {
         snapshot_of(&mut b, t, col, &types, &deck);
         assert_eq!(stats(&mut b, t, col)["sessions"], json!(1));
         let field = format!("f/{}", w.c_field.text());
+        let field0 = format!("f/{}", w.field[0].text());
+        let c_nt = rules::note_type(CANONICAL, ANKI_NT);
+        let blank = Id([0x78u8; 16]);
+        let blank_card = rules::card(&blank, &rules::template(&c_nt, 0), 0);
+        let late = rules::note(Some(U3), "g");
         let steps: Vec<Vec<crate::gen4::op::Body4>> = vec![
             vec![set(EntKind::Note, u(w.c_note), &field, json!("Z changed"))],
             vec![set(EntKind::Note, u(w.note[0]), "tags", json!(["x", "y"]))],
@@ -542,6 +711,30 @@ fn writes_refresh_the_live_session_by_generation() {
                 json!(T0),
             )],
             vec![set(EntKind::Card, u(w.c_card), "suspended", json!(true))],
+            // 字段没填的笔记：唯一的卡渲染为空、隐藏（会话里有笔记、没有卡）；再填上字段，卡出现。
+            vec![super::tests_class::entity(
+                EntKind::Note,
+                u(blank),
+                json!({"createdAt": 7, "guid": "blank", "noteTypeId": c_nt.text()}),
+            )],
+            vec![set(
+                EntKind::Note,
+                u(blank),
+                &format!("f/{}", rules::field(&c_nt, 0).text()),
+                json!("filled"),
+            )],
+            // 别名挪动（只有新代有）：带一个还不是盐的盐 U3 的同一条笔记（guid `g`）先按它自己的 ID 物化成一行；
+            // 之后迟到的盐 U3 把它并进规范笔记 `c_note` 的类——缓存层删掉旧 ID 的行（不整层重建：挪动的 ID 远少于
+            // `MOVES_IN_PLACE`），会话也得丢掉那一行。
+            vec![
+                super::tests_class::entity(
+                    EntKind::Note,
+                    u(late),
+                    json!({"createdAt": 1, "guid": "g", "noteTypeId": w.nt[0].text()}),
+                ),
+                set(EntKind::Note, u(late), &field0, json!("C")),
+            ],
+            vec![crate::gen4::op::Body4::salts([U3]).unwrap()],
         ];
         let mut seq = 1;
         for (i, bodies) in steps.iter().enumerate() {
@@ -551,6 +744,30 @@ fn writes_refresh_the_live_session_by_generation() {
             let fresh = snapshot_of(&mut Browse::new(), t, col, &types, &deck);
             assert_eq!(live, fresh, "step {i}");
             assert_eq!(stats(&mut b, t, col)["sessions"], json!(1), "step {i}");
+            let text = json!(live).to_string();
+            let has = |r: &Id| text.contains(&r.text());
+            match i {
+                5 => {
+                    // 缓存层里真有这张隐藏卡的行，会话不显示它。
+                    let hidden: i64 = t
+                        .conn()
+                        .query_row(
+                            "SELECT hidden FROM cards WHERE col = ?1 AND id = ?2",
+                            rusqlite::params![col, blank_card.0.to_vec()],
+                            |r| r.get(0),
+                        )
+                        .unwrap();
+                    assert_eq!(hidden, 1);
+                    assert!(!has(&blank_card), "a blank note's card is hidden");
+                }
+                6 => assert!(has(&blank_card), "the card shows once the field is filled"),
+                7 => assert!(has(&late), "the late-salted note is its own row first"),
+                8 => assert!(
+                    !has(&late) && has(&w.c_note),
+                    "then it joins c_note's class"
+                ),
+                _ => {}
+            }
         }
         // 缓存层整层重建（配置变了之类）：下限抬过会话的代号，整份重建一次，结果照旧。
         t.tx(|t| Index::new(t, col).rebuild_caches().map(|_| ()))
@@ -558,6 +775,116 @@ fn writes_refresh_the_live_session_by_generation() {
         let live = snapshot_of(&mut b, t, col, &types, &deck);
         assert_eq!(stats(&mut b, t, col)["sessions"], json!(2));
         assert_eq!(live, snapshot_of(&mut Browse::new(), t, col, &types, &deck));
+    });
+}
+
+/// 落下多少由会话自己算：一直跟着的会话经过累计远超 [REFRESH_CAP] 条笔记的几批写入也从不整份重建；一次落下超过
+/// 上限的会话整份重建一次；两者结果都与新建的相同。
+#[test]
+fn only_a_session_that_falls_behind_rebuilds() {
+    with(|t, col| {
+        let w = land(t, col);
+        let deck = id(DECK).text();
+        let types = twin_types(&w, None);
+        let cmd = |b: &mut Browse| -> Value {
+            run(
+                b,
+                t,
+                col,
+                "browse_query",
+                ctx(
+                    types.clone(),
+                    &deck,
+                    json!({"node": {"t": "text", "v": "w"}}),
+                ),
+            )
+            .0
+        };
+        let (mut keep, mut lag) = (Browse::new(), Browse::new());
+        cmd(&mut keep);
+        cmd(&mut lag);
+        let batch = REFRESH_CAP as u64 / 2 + 1;
+        for i in 0..3u64 {
+            let seq = 1 + 2 * batch * i;
+            write(
+                t,
+                col,
+                0xd1,
+                seq,
+                1000 + seq as i64,
+                &many_notes(batch, 1 + batch * i),
+            );
+            cmd(&mut keep);
+        }
+        let fresh = cmd(&mut Browse::new());
+        assert_eq!(cmd(&mut keep), fresh);
+        assert_eq!(stats(&mut keep, t, col)["sessions"], json!(1), "kept up");
+        assert_eq!(cmd(&mut lag), fresh);
+        assert_eq!(stats(&mut lag, t, col)["sessions"], json!(2), "fell behind");
+    });
+}
+
+/// 变更记录攒过 [LOG_KEEP] 行：从代号旧的一头删到剩一半、下限抬到删掉的最大代号。对上的代号在被删的那段里的会话
+/// 整份重建（否则会漏掉被删记录里的改动），代号比它新的会话照常增量；记录行数与 `logged` 一致。
+#[test]
+fn a_truncated_change_log_rebuilds_only_the_sessions_it_left_behind() {
+    use crate::store::gen4::cache::LOG_KEEP;
+    with(|t, col| {
+        let w = land(t, col);
+        let deck = id(DECK).text();
+        let types = twin_types(&w, None);
+        let mut old = Browse::new();
+        snapshot_of(&mut old, t, col, &types, &deck);
+        // 老会话之后的一条真改动，记录会被截掉。
+        let field = format!("f/{}", w.c_field.text());
+        write(
+            t,
+            col,
+            0xd1,
+            1,
+            1000,
+            &[set(EntKind::Note, u(w.c_note), &field, json!("early"))],
+        );
+        // 一大段历史（每个代号一条不存在的笔记，读者按 id 重读时自然没有行），再开一个对上最新代号的会话。
+        let n = LOG_KEEP + 1;
+        t.conn()
+            .execute(
+                "INSERT INTO cache_log (col, gen, note) \
+                 WITH RECURSIVE s(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM s WHERE i < ?2) \
+                 SELECT ?1, (SELECT gen FROM cache_gen WHERE col = ?1) + i, 'x' || i FROM s",
+                rusqlite::params![col, n],
+            )
+            .unwrap();
+        t.conn()
+            .execute(
+                "UPDATE cache_gen SET gen = gen + ?2, logged = logged + ?2 WHERE col = ?1",
+                rusqlite::params![col, n],
+            )
+            .unwrap();
+        let mut new = Browse::new();
+        snapshot_of(&mut new, t, col, &types, &deck);
+        write(t, col, 0xd2, 1, 2000, &many_notes(1, 90));
+        let (rows, logged, floor, gen): (i64, i64, i64, i64) = t
+            .conn()
+            .query_row(
+                "SELECT (SELECT COUNT(*) FROM cache_log WHERE col = ?1), logged, floor, gen \
+                 FROM cache_gen WHERE col = ?1",
+                [col],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            )
+            .unwrap();
+        assert_eq!(rows, logged);
+        assert!(rows <= LOG_KEEP / 2 + 1, "{rows}");
+        assert!(floor > 1 && floor < gen, "floor {floor}, gen {gen}");
+        let fresh = snapshot_of(&mut Browse::new(), t, col, &types, &deck);
+        assert_eq!(snapshot_of(&mut new, t, col, &types, &deck), fresh);
+        assert_eq!(
+            stats(&mut new, t, col)["sessions"],
+            json!(1),
+            "newer than the cut"
+        );
+        assert_eq!(snapshot_of(&mut old, t, col, &types, &deck), fresh);
+        assert_eq!(stats(&mut old, t, col)["sessions"], json!(2), "left behind");
     });
 }
 
@@ -598,49 +925,94 @@ fn a_read_inside_a_rolled_back_write_does_not_stick() {
 
 // ---------------------------------------------------------------------- 代价
 
-thread_local! {
-    static ROWS: Cell<u64> = const { Cell::new(0) };
+/// 一条实际执行过的语句：SQL 原文、绑定参数展开后的 SQL、这一次执行的虚拟机步数与全表扫描步数
+/// （`sqlite3_stmt_status` 的 `VM_STEP` / `FULLSCAN_STEP`，在语句开始与结束之间的差）。
+#[derive(Debug, Clone)]
+struct Ran {
+    sql: String,
+    expanded: String,
+    steps: i64,
+    fullscan: i64,
 }
 
-/// [f] 里各条语句一共交出多少行（`SQLITE_TRACE_ROW`）。
-fn rows_stepped(t: &Truth<'_>, f: impl FnOnce()) -> u64 {
+thread_local! {
+    static RAN: RefCell<Vec<Ran>> = const { RefCell::new(Vec::new()) };
+    /// 正在跑的语句（按 SQL 原文）开始时的两个计数（计数随缓存的语句累计，只看差）。
+    static STARTED: RefCell<HashMap<String, (i64, i64)>> = RefCell::new(HashMap::new());
+}
+
+/// [f] 里连接上实际执行的每条语句（`SQLITE_TRACE_STMT` / `SQLITE_TRACE_PROFILE`）——测的是代码真正 prepare 的
+/// SQL，不是测试里抄的一份。
+fn profile(t: &Truth<'_>, f: impl FnOnce()) -> Vec<Ran> {
+    use rusqlite::StatementStatus::{FullscanStep, VmStep};
     use rusqlite::trace::{TraceEvent, TraceEventCodes};
-    fn count(e: TraceEvent<'_>) {
-        if let TraceEvent::Row(_) = e {
-            ROWS.with(|r| r.set(r.get() + 1));
+    fn on(e: TraceEvent<'_>) {
+        match e {
+            // 以 `--` 开头的是触发器子程序的开始，不是语句开始。
+            TraceEvent::Stmt(s, text) if !text.starts_with("--") => {
+                let at = (
+                    s.get_status(VmStep) as i64,
+                    s.get_status(FullscanStep) as i64,
+                );
+                STARTED.with(|m| m.borrow_mut().insert(s.sql().into_owned(), at));
+            }
+            TraceEvent::Profile(s, _) => {
+                let sql = s.sql().into_owned();
+                let (v0, f0) = STARTED
+                    .with(|m| m.borrow_mut().remove(&sql))
+                    .unwrap_or((0, 0));
+                let ran = Ran {
+                    expanded: s.expanded_sql().unwrap_or_else(|| sql.clone()),
+                    steps: s.get_status(VmStep) as i64 - v0,
+                    fullscan: s.get_status(FullscanStep) as i64 - f0,
+                    sql,
+                };
+                RAN.with(|r| r.borrow_mut().push(ran));
+            }
+            _ => {}
         }
     }
-    ROWS.with(|r| r.set(0));
-    t.conn()
-        .trace_v2(TraceEventCodes::SQLITE_TRACE_ROW, Some(count));
+    RAN.with(|r| r.borrow_mut().clear());
+    STARTED.with(|m| m.borrow_mut().clear());
+    t.conn().trace_v2(
+        TraceEventCodes::SQLITE_TRACE_STMT | TraceEventCodes::SQLITE_TRACE_PROFILE,
+        Some(on),
+    );
     f();
     t.conn().trace_v2(TraceEventCodes::empty(), None);
-    ROWS.with(|r| r.get())
+    RAN.with(|r| std::mem::take(&mut *r.borrow_mut()))
 }
 
-/// 增量重读只碰写过的那条笔记：集合里 300 条笔记，写一条之后下一条命令交出的行数是常数级（代号、变更记录、那条笔记的
-/// 行与卡、它的修改行），不随集合变大；没有写入时只读代号一行。
-#[test]
-fn an_incremental_refresh_reads_only_the_touched_notes() {
+/// 一集合 [n] 条笔记、会话装好全部字段之后：没有写入时一条命令、改了一条笔记之后一条命令各自的 (虚拟机步数, 全表
+/// 扫描步数)。
+fn refresh_cost(n: u64) -> ((i64, i64), (i64, i64)) {
     with(|t, col| {
         let w = land(t, col);
-        write(t, col, 0xd1, 1, 1000, &many_notes(300, 1));
+        write(t, col, 0xd1, 1, 1000, &many_notes(n, 1));
         let deck = id(DECK).text();
         let types = twin_types(&w, None);
         let mut b = Browse::new();
-        // 装好全部字段（全文检索要它们），之后增量重读也要重读写过的笔记的字段。
-        run(
-            &mut b,
-            t,
-            col,
-            "browse_query",
-            ctx(
-                types.clone(),
-                &deck,
-                json!({"node": {"t": "text", "v": "w1"}}),
-            ),
-        );
-        let ids = |b: &mut Browse| {
+        // 装好全部字段（全文检索要它们），之后增量重读也要重读写过的笔记的字段。归回的写入者表整条命令读一次，
+        // 不是每条笔记读一次。
+        let load = profile(t, || {
+            run(
+                &mut b,
+                t,
+                col,
+                "browse_query",
+                ctx(
+                    types.clone(),
+                    &deck,
+                    json!({"node": {"t": "text", "v": "w1"}}),
+                ),
+            );
+        });
+        let writers = load
+            .iter()
+            .filter(|r| r.sql.contains("FROM alias_writer_ix"))
+            .count();
+        assert!(writers <= 2, "{writers} writer-table reads for {n} notes");
+        let cmd = |b: &mut Browse| {
             run(
                 b,
                 t,
@@ -653,9 +1025,13 @@ fn an_incremental_refresh_reads_only_the_touched_notes() {
                 ),
             );
         };
-        // 没有写入：代号一行，加请求归一（笔记类型 / 字段 / 模板 / 牌组各查一次别名表）的常数行。
-        let idle = rows_stepped(t, || ids(&mut b));
-        assert!(idle <= 8, "no write: {idle} rows");
+        let sum = |ran: &[Ran]| {
+            (
+                ran.iter().map(|r| r.steps).sum::<i64>(),
+                ran.iter().map(|r| r.fullscan).sum::<i64>(),
+            )
+        };
+        let idle = sum(&profile(t, || cmd(&mut b)));
         let field = format!("f/{}", w.c_field.text());
         write(
             t,
@@ -665,83 +1041,116 @@ fn an_incremental_refresh_reads_only_the_touched_notes() {
             5000,
             &[set(EntKind::Note, u(w.c_note), &field, json!("q"))],
         );
-        let after = rows_stepped(t, || ids(&mut b));
-        assert!(
-            after <= idle + 30,
-            "one touched note: {after} rows (idle {idle})"
-        );
+        let ran = profile(t, || cmd(&mut b));
+        let fulls: Vec<&Ran> = ran.iter().filter(|r| r.fullscan > 0).collect();
+        assert!(fulls.is_empty(), "no full scans in a refresh: {fulls:#?}");
         assert_eq!(stats(&mut b, t, col)["sessions"], json!(1));
-    });
+        (idle, sum(&ran))
+    })
 }
 
-/// 新代读法的每条按键读的语句都走索引（不扫整个集合）；整份建会话的两条是一次顺序扫。
+/// 增量重读只碰写过的那条笔记：没有写入时、写了一条之后，一条命令实际执行的步数都不随集合变大（300 条与 1200 条
+/// 笔记的集合相同），也没有一步全表扫描。
+#[test]
+fn an_incremental_refresh_reads_only_the_touched_notes() {
+    let (idle_s, touched_s) = refresh_cost(300);
+    let (idle_l, touched_l) = refresh_cost(1200);
+    assert_eq!(idle_s.1 + touched_s.1 + idle_l.1 + touched_l.1, 0);
+    assert_eq!(idle_s.0, idle_l.0, "no write: the same work at any size");
+    assert!(touched_s.0 > idle_s.0, "a touched note is re-read");
+    // 别名查表（B 树深度）可能随集合多一层：给一点余量，远小于多扫 900 条笔记。
+    assert!(
+        touched_l.0 <= touched_s.0 + 100,
+        "one touched note: {} steps at 1200 notes vs {} at 300",
+        touched_l.0,
+        touched_s.0
+    );
+}
+
+/// 浏览命令按键读缓存层的每条语句（实际执行的那几条，按展开后的参数做 EXPLAIN）都走索引：不扫表，也不只按集合号把
+/// 整个集合走一遍。整份建会话的那几条（只有集合号一个参数）除外。覆盖到按 ID 读笔记 / 卡、按笔记找卡、变更记录、
+/// `rated:` 的时刻范围、查重的规范形。
 #[test]
 fn keyed_browse_reads_use_the_indexes() {
     with(|t, col| {
-        land(t, col);
-        let src = G4::new(t, col);
-        let plan = |q: &str, args: &[&dyn rusqlite::ToSql]| -> Vec<String> {
-            t.conn()
-                .prepare(&format!("EXPLAIN QUERY PLAN {q}"))
+        let w = land(t, col);
+        write(t, col, 0xd1, 1, 1000, &many_notes(40, 1));
+        let deck = id(DECK).text();
+        let types = twin_types(&w, None);
+        let mut b = Browse::new();
+        let q = |b: &mut Browse, node: Value| {
+            run(
+                b,
+                t,
+                col,
+                "browse_query",
+                ctx(types.clone(), &deck, json!({"node": node})),
+            );
+        };
+        q(&mut b, json!({"t": "text", "v": "w1"}));
+        let field = format!("f/{}", w.c_field.text());
+        write(
+            t,
+            col,
+            0xd2,
+            1,
+            5000,
+            &[set(EntKind::Note, u(w.c_note), &field, json!("q"))],
+        );
+        let norm = crate::search::dupe_norm;
+        let c_nt = rules::note_type(CANONICAL, ANKI_NT);
+        let ran = profile(t, || {
+            q(&mut b, json!({"t": "rated", "d": 3650, "e": 3}));
+            run(
+                &mut b,
+                t,
+                col,
+                "anki_dupes",
+                json!({"first": {c_nt.text(): w.c_field.text()}, "cands": [
+                    {"norm": norm("A"), "type": c_nt.text(), "all": false, "decks": [deck.clone()]},
+                ]}),
+            );
+        });
+        let cache = ["notes", "cards", "stats", "cache_log"];
+        let mut seen: HashSet<String> = HashSet::new();
+        for r in &ran {
+            let plan: Vec<String> = t
+                .conn()
+                .prepare(&format!("EXPLAIN QUERY PLAN {}", r.expanded))
                 .unwrap()
-                .query_map(args, |r| r.get::<_, String>(3))
+                .query_map([], |x| x.get::<_, String>(3))
                 .unwrap()
                 .collect::<Result<_, _>>()
-                .unwrap()
-        };
-        let ids = "(SELECT CASE value ->> 0 WHEN 1 THEN unhex(value ->> 1) ELSE value ->> 1 END AS v FROM json_each(?2))";
-        let list = r#"[[0, "x"]]"#;
-        for (q, want) in [
-            (
-                format!(
-                    "SELECT id FROM notes WHERE col = ?1 AND id IN {ids} AND deleted_at IS NULL"
-                ),
-                "PRIMARY KEY",
-            ),
-            (
-                format!("SELECT id FROM cards WHERE col = ?1 AND id IN {ids} AND hidden = 0"),
-                "PRIMARY KEY",
-            ),
-            (
-                format!("SELECT id FROM cards WHERE col = ?1 AND note_id IN {ids}"),
-                "cards_note",
-            ),
-            (
-                format!(
-                    "SELECT note_id, deck_id FROM cards WHERE col = ?1 AND note_id IN {ids} AND hidden = 0"
-                ),
-                "cards_note",
-            ),
-            (
-                "SELECT id, note_type_id, dupe_norm FROM notes WHERE col = ?1 \
-                 AND dupe_norm IN (SELECT value FROM json_each(?2)) AND deleted_at IS NULL"
-                    .to_owned(),
-                "notes_dupe",
-            ),
-            (
-                "SELECT DISTINCT note FROM cache_log WHERE col = ?1 AND gen > ?2".to_owned(),
-                "PRIMARY KEY",
-            ),
-        ] {
-            let p = plan(&q, &[&col, &list]);
-            assert!(
-                p.iter().any(|s| s.contains(want))
-                    && !p.iter().any(|s| s.starts_with("SCAN notes")
-                        || s.starts_with("SCAN cards")
-                        || s.starts_with("SCAN cache_log")),
-                "{q}: {p:?}"
-            );
+                .unwrap();
+            for line in &plan {
+                let mut words = line.split_whitespace();
+                let (Some(how), Some(table)) = (words.next(), words.next()) else {
+                    continue;
+                };
+                if !cache.contains(&table) {
+                    continue;
+                }
+                assert_ne!(how, "SCAN", "{}: {plan:?}", r.sql);
+                if how == "SEARCH" {
+                    assert!(
+                        !line.ends_with("(col=?)"),
+                        "a whole-collection read: {}: {plan:?}",
+                        r.sql
+                    );
+                    seen.insert(line.clone());
+                }
+            }
         }
-        let p = plan(
-            "SELECT card FROM stats WHERE col = ?1 AND at >= ?2 AND rating IS NOT NULL",
-            &[&col, &0i64],
-        );
-        assert!(
-            p.iter()
-                .any(|s| s.contains("SEARCH stats") && s.contains("at>?")),
-            "{p:?}"
-        );
-        drop(src);
+        let has = |table: &str, key: &str| {
+            seen.iter()
+                .any(|l| l.contains(&format!("SEARCH {table} ")) && l.contains(key))
+        };
+        assert!(has("cache_log", "gen>?"), "{seen:#?}");
+        assert!(has("notes", "id=?"), "{seen:#?}");
+        assert!(has("cards", "id=?"), "{seen:#?}");
+        assert!(has("cards", "cards_note"), "{seen:#?}");
+        assert!(has("stats", "at>?"), "{seen:#?}");
+        assert!(has("notes", "notes_dupe"), "{seen:#?}");
     });
 }
 
