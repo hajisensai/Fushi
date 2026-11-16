@@ -43,6 +43,11 @@
 | [BUG-4726](bugs/BUG-4726-shelf-activation-swaps-remote-future-double-rebuild.md) | ✅ | ✅ | 每次切到书架，书架与藏着的漫画书架各整页重建两次（切回对账无条件换远端 future） |
 | [BUG-4725](bugs/BUG-4725-games-tab-warm-popup-webview-recreated.md) | ✅ | ✅ | 切进 / 切出游戏 tab 每次销毁并冷建查词弹窗 WebView，卡 80～150 ms |
 | [BUG-4724](bugs/BUG-4724-home-tab-switch-hidden-pages-rebuild.md) | ✅ | ✅ | 切 tab 时所有访问过的隐藏保活页跟着重建重排（外壳顶部让位挂在共同祖先上） |
+> 共 4081 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4724](bugs/BUG-4724-card-source-remote-open-no-feedback.md) | ✅ | ✅ | 点卡片来源跳互联 host 上的视频时等拉清单期间毫无反馈，像点坏了 |
 | [BUG-4723](bugs/BUG-4723-lyrics-source-lrclib-reorder.md) | ✅ | ✅ | 歌词来源列表 LRCLIB 固定排第一，不能和插件一起排序 |
 | [BUG-4722](bugs/BUG-4722-cupertino-doubled-library-headers.md) | ✅ | ✅ | Cupertino 下外壳标题条与库页页头大字重复显示页名 |
 | [BUG-4721](bugs/BUG-4721-local-audio-forvo-null-reading-excluded.md) | ✅ | ✅ | 本地发音库精确读音查询排除 reading 为 NULL 的行，日语 Forvo 发音不显示 |

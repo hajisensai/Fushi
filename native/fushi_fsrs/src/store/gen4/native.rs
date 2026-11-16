@@ -302,7 +302,10 @@ pub(crate) mod tests {
     /// 绑一个集合、建本机身份。
     pub(crate) fn ready(t: &Truth<'_>) -> i64 {
         let col = bound(t);
-        assert_eq!(t.tx(|t| t.create_self(col, &me(), &SK, NOW)), Ok(true));
+        assert_eq!(
+            t.tx(|t| t.create_self(col, &me(), &SK, None, NOW)),
+            Ok(true)
+        );
         col
     }
 
@@ -467,7 +470,7 @@ pub(crate) mod tests {
         let col = bound(&t);
         let e = t.tx(|t| Native::open(t, col).map(|_| ())).unwrap_err();
         assert!(e.contains("no local identity"), "{e}");
-        t.tx(|t| t.create_self(col, &me(), &SK, NOW)).unwrap();
+        t.tx(|t| t.create_self(col, &me(), &SK, None, NOW)).unwrap();
         let e = t
             .tx(|t| {
                 let mut ix = Index::new(t, col);
@@ -634,12 +637,22 @@ pub(crate) mod tests {
         let conn = open_in_memory().unwrap();
         let t = Truth::new(&conn);
         let col = bound(&t);
-        let e = t.tx(|t| t.create_self(99, &me(), &SK, NOW)).unwrap_err();
+        let e = t
+            .tx(|t| t.create_self(99, &me(), &SK, None, NOW))
+            .unwrap_err();
         assert!(e.contains("no collection"), "{e}");
-        assert_eq!(t.tx(|t| t.create_self(col, &me(), &SK, NOW)), Ok(true));
-        assert_eq!(t.tx(|t| t.create_self(col, &me(), &SK, NOW + 1)), Ok(false));
+        assert_eq!(
+            t.tx(|t| t.create_self(col, &me(), &SK, None, NOW)),
+            Ok(true)
+        );
+        assert_eq!(
+            t.tx(|t| t.create_self(col, &me(), &SK, None, NOW + 1)),
+            Ok(false)
+        );
         for (device, sk) in [(id(0xa2), SK), (me(), [8; 32])] {
-            let e = t.tx(|t| t.create_self(col, &device, &sk, NOW)).unwrap_err();
+            let e = t
+                .tx(|t| t.create_self(col, &device, &sk, None, NOW))
+                .unwrap_err();
             assert!(e.contains("already has local identity"), "{e}");
         }
         let got = me_now(&t, col);
@@ -658,9 +671,98 @@ pub(crate) mod tests {
                 .map(|_| ())
         })
         .unwrap();
-        let e = t2.tx(|t| t.create_self(col2, &me(), &SK, NOW)).unwrap_err();
+        let e = t2
+            .tx(|t| t.create_self(col2, &me(), &SK, None, NOW))
+            .unwrap_err();
         assert!(e.contains("already has a log"), "{e}");
         assert_eq!(t2.self_identity(col2), Ok(None));
+    }
+
+    /// 迁移建的身份带上一个身份（设计 §3.3 的 `prev`）：存进 `self_` 三列、读回原样；同一把钥匙的公钥也记到旧设备
+    /// 名下；续做时同一个 prev 幂等、换了 prev 报错；坏形状（seq 0 却不在链起点、指向自己）拒收，旧设备已记过别的
+    /// 公钥也拒收。
+    #[test]
+    fn the_local_identity_carries_its_previous_identity() {
+        use crate::gen4::head::PrevIdentity;
+        let old = id(0xb7);
+        let prev = PrevIdentity {
+            device: old,
+            seq: 42,
+            chain: [9; 32],
+        };
+        let conn = open_in_memory().unwrap();
+        let t = Truth::new(&conn);
+        let col = bound(&t);
+        for bad in [
+            PrevIdentity {
+                device: old,
+                seq: 0,
+                chain: [9; 32],
+            },
+            PrevIdentity {
+                device: me(),
+                seq: 3,
+                chain: [9; 32],
+            },
+        ] {
+            let e = t
+                .tx(|t| t.create_self(col, &me(), &SK, Some(&bad), NOW))
+                .unwrap_err();
+            assert!(e.contains("previous identity"), "{e}");
+        }
+        assert_eq!(t.self_identity(col), Ok(None));
+        assert_eq!(
+            t.tx(|t| t.create_self(col, &me(), &SK, Some(&prev), NOW)),
+            Ok(true)
+        );
+        assert_eq!(
+            t.tx(|t| t.create_self(col, &me(), &SK, Some(&prev), NOW + 1)),
+            Ok(false)
+        );
+        let e = t
+            .tx(|t| t.create_self(col, &me(), &SK, None, NOW))
+            .unwrap_err();
+        assert!(e.contains("already has local identity"), "{e}");
+        assert_eq!(me_now(&t, col).prev, Some(prev.clone()));
+        let public = crate::sync2::keys::DeviceKey::from_seed(&SK).public();
+        assert_eq!(t.device_key(col, &old), Ok(Some(public)));
+        // 链起点（上一个身份一条操作都没留下）是合法的 prev。
+        let conn = open_in_memory().unwrap();
+        let t = Truth::new(&conn);
+        let col = bound(&t);
+        let start = PrevIdentity {
+            device: old,
+            seq: 0,
+            chain: crate::sync2::segment::CHAIN_ZERO,
+        };
+        assert_eq!(
+            t.tx(|t| t.create_self(col, &me(), &SK, Some(&start), NOW)),
+            Ok(true)
+        );
+        assert_eq!(me_now(&t, col).prev, Some(start));
+        // 旧设备已经以另一个公钥记在 peers 里：不建身份。
+        let conn = open_in_memory().unwrap();
+        let t = Truth::new(&conn);
+        let col = bound(&t);
+        t.tx(|t| {
+            t.set_peer(
+                col,
+                &crate::store::gen4::truth::Peer {
+                    device: old,
+                    public: [1; 32],
+                    name: None,
+                    ext: None,
+                    head_gen: None,
+                    first_seen: None,
+                },
+            )
+        })
+        .unwrap();
+        let e = t
+            .tx(|t| t.create_self(col, &me(), &SK, Some(&prev), NOW))
+            .unwrap_err();
+        assert!(e.contains("another public key"), "{e}");
+        assert_eq!(t.self_identity(col), Ok(None));
     }
 
     #[test]

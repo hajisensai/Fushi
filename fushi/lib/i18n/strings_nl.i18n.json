@@ -1906,6 +1906,8 @@
   "card_source_open": "Go to source",
   "card_source_origin_episode": "Ep. $n",
   "card_source_origin_page": "p. $n",
+  "card_source_remote_loading_hint": "Fetching the video list from your Interconnect host…",
+  "card_source_remote_loading_title": "Opening source",
   "card_source_review_after": "Bijgewerkt",
   "card_source_review_before": "Origineel",
   "card_source_review_changes": "Kies velden om bij te werken",
