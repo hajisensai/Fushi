@@ -239,22 +239,34 @@ const WINDOW: usize = 64 * 1024;
 
 /// 一个 zstd 帧的流式顺序读：边解压边按 [Reader] 解值，手里只有一个读窗口，不随明文总长增长
 /// （64 KiB 起，单个值更大时涨到装得下它）。
-pub struct ZstdWindow<'s> {
-    decoder: ruzstd::decoding::StreamingDecoder<&'s [u8], ruzstd::decoding::FrameDecoder>,
+///
+/// 压缩输入默认是内存里的切片（[ZstdWindow::new]）；[ZstdWindow::from_reader] 收任何 [std::io::Read]（导入大文件时
+/// 直接读文件，压缩字节也不整份进内存，G11-3）。两者的解码完全相同。
+pub struct ZstdWindow<'s, R: std::io::Read = &'s [u8]> {
+    decoder: ruzstd::decoding::StreamingDecoder<R, ruzstd::decoding::FrameDecoder>,
     buf: Vec<u8>,
     pos: usize,
     eof: bool,
+    _src: std::marker::PhantomData<&'s ()>,
 }
 
 impl<'s> ZstdWindow<'s> {
     pub fn new(compressed: &'s [u8]) -> Result<ZstdWindow<'s>, StreamError> {
-        let decoder = ruzstd::decoding::StreamingDecoder::new(compressed)
+        ZstdWindow::from_reader(compressed)
+    }
+}
+
+impl<'s, R: std::io::Read> ZstdWindow<'s, R> {
+    /// 从任意顺序读的来源解一个 zstd 帧（[ZstdWindow::new] 的一般形）。
+    pub fn from_reader(src: R) -> Result<ZstdWindow<'s, R>, StreamError> {
+        let decoder = ruzstd::decoding::StreamingDecoder::new(src)
             .map_err(|e| StreamError::Zstd(e.to_string()))?;
         Ok(ZstdWindow {
             decoder,
             buf: Vec::new(),
             pos: 0,
             eof: false,
+            _src: std::marker::PhantomData,
         })
     }
 
@@ -315,9 +327,20 @@ impl<'s> ZstdWindow<'s> {
     }
 
     /// 明文读完（[Self::at_end]）且帧后面的压缩输入也没有剩余字节（没有垃圾、没有第二个帧）。
-    /// 解码器按块精确读（块头 / 块体 / 校验和都是 `read_exact`），帧解完时底层切片剩下的就是帧后的字节。
+    /// 解码器按块精确读（块头 / 块体 / 校验和都是 `read_exact`），帧解完时底层来源剩下的就是帧后的字节：再读得到
+    /// 一个字节 = 有尾巴（切片上与看它空不空等价）。
     pub fn at_end_of_input(&mut self) -> Result<bool, StreamError> {
-        Ok(self.at_end()? && self.decoder.get_ref().is_empty())
+        if !self.at_end()? {
+            return Ok(false);
+        }
+        let mut one = [0u8; 1];
+        loop {
+            match self.decoder.get_mut().read(&mut one) {
+                Ok(n) => return Ok(n == 0),
+                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+                Err(e) => return Err(StreamError::Zstd(e.to_string())),
+            }
+        }
     }
 
     /// 当前读窗口的容量（测试看内存上界用）。

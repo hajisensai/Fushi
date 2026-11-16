@@ -56,6 +56,7 @@ use crate::sync2::vv::OpId;
 pub mod browse;
 pub mod center;
 pub mod columns;
+pub mod fushisrs;
 pub mod history;
 pub mod identity;
 pub mod lineage;
@@ -79,6 +80,8 @@ mod browse_tests;
 mod center_tests;
 #[cfg(test)]
 mod dispatch_tests;
+#[cfg(test)]
+mod fushisrs_tests;
 #[cfg(test)]
 mod identity_tests;
 #[cfg(test)]

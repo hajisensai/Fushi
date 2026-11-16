@@ -135,8 +135,8 @@ pub fn wiring(op: &str) -> Option<Wiring> {
         | "media_hash" | "media_scan" | "media_landed" | "media_bind_unbound" | "media_doomed" => {
             Unwired("G8-7")
         }
-        // 导入 / 导出
-        "import" | "export" => Unwired("G11-3"),
+        // 导入 / 导出（G11-3，`cmd/fushisrs.rs`）
+        "import" | "export" => Wired,
         // 新代不需要
         "channel_settle" => Removed(NO_CHANNEL),
         "migrate"
@@ -516,6 +516,21 @@ fn run(
             let v = write_binding(c, |t| cmd::identity::collection_adopt(t, profile, req))?;
             c.refresh_invalidate(profile);
             v
+        }
+        // ------------------------------------------------------------ 导入 / 导出（cmd/fushisrs.rs）
+        // 导出：一个读快照（读连接，不排写锁）。
+        "export" => read_col(c, profile, |t, col| {
+            cmd::fushisrs::export(t, col, req, files)
+        })?,
+        // 导入：认领（可能改绑定）+ 落真相 + 本机状态行，一个写事务；绑定变了提交后进回包。
+        "import" => {
+            let anchor = crate::store::local_state::anchor_of(req)?;
+            let src = cmd::fushisrs::Source::of(req, blobs)?;
+            write_binding(c, |t| {
+                cmd::fushisrs::import(t, profile, req, &src, anchor.as_ref(), &|t| {
+                    col_of(t, profile)
+                })
+            })?
         }
         // ------------------------------------------------------------ 其余写
         "device_info" => write_col(c, profile, |t, col| {

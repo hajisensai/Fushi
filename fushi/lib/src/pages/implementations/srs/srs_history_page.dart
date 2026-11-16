@@ -22,7 +22,6 @@ import 'package:fushi_engine/srs/sync2/srs_folder_location.dart';
 import 'package:fushi_engine/srs/sync2/srs_fushisrs.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_crypto.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -40,7 +39,6 @@ import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_sync_progress.dart';
 import 'package:fushi/src/srs/srs_sync_progress_ui.dart';
 import 'package:fushi/src/srs/srs_sync_scheduler.dart';
-import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/sync/sync_progress_banner.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
@@ -844,17 +842,28 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
           store,
           File(path),
           mediaRoot: await _mediaRoot(store),
-          // 旧格式（v2 之前的定时 / 手动备份）没内嵌媒体时，到本机旧备份的共享媒体池里找。
-          legacyMediaPool: Directory(
-            p.join((await AppPaths.srsBackupsDirectory()).path, 'media'),
-          ),
+          // 文件来自另一个复习库：确认之前不合并（内核什么都没写）。
+          confirmForeign: (_) async =>
+              mounted &&
+              await showFushiConfirmDialog(
+                context: context,
+                title: t.srs_timeline_import,
+                message: t.srs_timeline_import_foreign_confirm,
+                confirmLabel: t.srs_timeline_import,
+                cancelLabel: t.cancel,
+                icon: FushiIcons.importFile,
+              ),
         );
+      } on SrsFushiSrsLegacyFormat {
+        failure = t.srs_timeline_import_legacy_format;
+        rethrow;
       } on FormatException catch (e) {
         failure = e.message.contains('another profile')
             ? t.srs_timeline_import_other_profile
             : t.srs_timeline_import_invalid;
         rethrow;
       }
+      if (r.declined) return;
       if (mounted) bumpSrsRevision(ref);
       FushiToast.show(
         msg: t.srs_timeline_import_done(n: r.applied),

@@ -751,11 +751,7 @@ fn a_migration_cancelled_before_it_starts_does_nothing() {
 #[test]
 fn unwired_and_removed_commands_name_their_owner() {
     let m = migrated();
-    for (op, owner) in [
-        ("profile_merge_mark", "G9-5"),
-        ("plan", "G8-7"),
-        ("import", "G11-3"),
-    ] {
+    for (op, owner) in [("profile_merge_mark", "G9-5"), ("plan", "G8-7")] {
         let (rc, e) = call(m.h, &g4req(op, T1, json!({})), None).unwrap_err();
         assert_eq!(rc, STORE_ERROR, "{op}");
         assert!(e.contains(UNWIRED) && e.contains(owner), "{op}: {e}");

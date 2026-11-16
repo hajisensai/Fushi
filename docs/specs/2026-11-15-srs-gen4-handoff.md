@@ -125,7 +125,7 @@
 | `trust` | 写 | `sync2/trust.rs` `trust_on` | `cmd/writes_local.rs:trust` | 同上 | 已接 |
 | `dedup` | 写 | `sync2/dedup.rs` | `cmd/writes_local.rs:dedup`（换代后恒 `{"done": true}`） | 同上 | 已接 |
 | `digest_heal` | 写 | `sync2/heal.rs` | `cmd/writes_local.rs:digest_heal`（整集合派生重建） | 同上 | 已接 |
-| `import` | 写 | `sync2/transport.rs` `import_on` | 部分：`gen4/import.rs:import_ops` / `import_backup`（存储层） | G11-3（`.fushisrs` v2 接线） | 未接线（报 `gen4: not wired yet`），归 G11-3 |
+| `import` | 写 | `sync2/transport.rs` `import_on` | 部分：`gen4/import.rs:import_ops` / `import_backup`（存储层） | G11-3（`.fushisrs` v2 接线） | 已接（G11-3，`store/gen4/cmd/fushisrs.rs`，§15） |
 | `retire` | 写 | `sync2/devices.rs` `retire` | 缺（停用标记不迁移，`carry.rs` 文件头） | G8-7：连同 `status` 设备行的 `retired` 状态一起接 | 未接线（报 `gen4: not wired yet`），归 G8-7 |
 
 ### 7.4 读命令与其余（`sync2_command`）
@@ -160,7 +160,7 @@
 | `outbox` / `outbox_ack` / `head` / `plan` / `relay_outbox` / `relay_ack` / `obsolete` / `obsolete_former` / `obsolete_ack` | 读写 | `sync2/transport.rs`、`relay.rs` | 部分：`gen4/sync_state.rs`（`loc_heads` / `relay_out` / `oldroot_fp`）、`gen4/oldroot.rs`、`gen4/compact.rs`（存储层） | G8-7（同步一轮 `g4_*` + 调度） | 未接线（报 `gen4: not wired yet`），归 G8-7 |
 | `ingest` / `ingest_begin` / `ingest_batch` / `ingest_prepare` / `ingest_end` / `ingest_finish` / `replay_pending` | 写 | `sync2/transport.rs`、`channel.rs` | 部分：`gen4/receive.rs:Receiver`（`native` / `heritage` / `legacy` / `finish`）+ `ingest.rs:ingest_settle` | G8-7 | 未接线（报 `gen4: not wired yet`），归 G8-7 |
 | `rotate` | 写 | `sync2/transport.rs` `sync2_rotate` | 部分：`gen4/fork.rs:rotate_on_fork` | G8-6 / G8-7（规划：`Truth::rotate_identity` 归 G8-6） | 未接线（报 `gen4: not wired yet`），归 G8-7 |
-| `export` | 读 | `sync2/transport.rs` `sync2_export` | 部分：`gen4/export.rs:export_ops` | G11-3 | 未接线（报 `gen4: not wired yet`），归 G11-3 |
+| `export` | 读 | `sync2/transport.rs` `sync2_export` | 部分：`gen4/export.rs:export_ops` | G11-3 | 已接（G11-3，`store/gen4/cmd/fushisrs.rs`，§15） |
 | `digest` / `digest_buckets` | 读 | `sync2/transport.rs` `sync2_digest` / `sync2_digest_buckets` | 部分：`gen4/digest.rs:Index::digest` / `digest_buckets` | G8-7（随 head 发） | 未接线（报 `gen4: not wired yet`），归 G8-7 |
 | `legacy_dots` | 读 | `sync2/mod.rs` | 不需要（旧 v1 dot，承袭日志自带） | G7-6 删 | 已删（报 `gen4: removed`）；实现 G7-6 删 |
 | `local_state` / `local_state_ensure` / `local_anchor` | 读 / 写 | `local_state.rs` | 缺 | 建议 S1（内核持有的本机状态行：修订号、校时锚点；协议 3 存 `srs_meta`，新代沿用 `srs_meta` 键即可） | 已接（`srs_meta` 键 `local_state/<profile>`；迁移不带旧行） |
@@ -976,3 +976,109 @@ app 侧只把偏好仓库接上：`fushi/lib/src/srs/srs_persisted_ids.dart`（`
 - `fushi/test/srs/srs_persisted_ids_test.dart`（真偏好仓库 + 内存主库，6 条）：三条偏好写回规范 ID、键名不变；并入后重归一；
   缺失保留、空串不动；只读视图不写也不问；真内核上 `srsNormalizeStoreIds` 把 `createDeck` 回的派生 ID 写回成牌组树里的
   规范 ID；`SrsWordAudioBackfillFields.ofStore` 的笔记类型 / 三个字段 ID 在内核的笔记类型视图里查得到（派生的对不上）。
+
+## 15. G11-3 `.fushisrs` 第 2 版接线（2026-11-17，分支 `pr/srs-gen4-g11-3-fushisrs-v2`，基于 `pr/srs-gen4-switch`）
+
+规划 §1.9、§2.2「G11-3 ← G9-4」。复用 G11-1（`gen4/export.rs` 编解码、`legacy_export.rs` 冻结 v1 读入器）与 G11-2
+（`store/gen4/export.rs` `export_ops`、`store/gen4/import.rs` `import_ops` / `import_v1`），没有重写。schema 没动（`peers`
+清单走主键前缀，不加表 / 索引），分到的 40023 没用。
+
+### 命令（`store/gen4/cmd/fushisrs.rs`，分发器 `import` / `export` 由 `Unwired("G11-3")` 改为 `Wired`）
+
+- `export {path?}`：读连接一个读快照。给 `path` 就边压缩边写进该文件（先写 `<path>.g4tmp`、刷盘后改名，出错删掉），
+  不给就回包文件 `ops.bin`。回包 `{collection, dir, salts, peers: [{device, public, name?}], counts}`——清单里归内核的几项。
+- `import {path? | 第一个字节块, manifest?: {collection, dir, salts, peers}, confirmed?, now, anchor?}`：一个写事务
+  （`write_binding`，绑定变了提交后回包带 `bindingChanged`）。嗅探魔数：
+  - 第 2 版（`FSRS4EXP`）：清单的集合必须等于流头的集合 → `collection_adopt`（G9-4，判据只在 `adopt_foreign`）：
+    `same` / `alreadyJoined` / `saltsAdded` 照常导入；另一个集合没 `confirmed` 回 `{format: 2, outcome: "needsConfirm",
+    collection, dir}`、什么都不写，带 `confirmed` 重发先并入（`joined`，profile 没绑过是 `bound`）再导入 → 清单 `peers`
+    进 `import_peers` → `own_fork_point` 发现本机身份分叉就 `rotate_identity_report(col, keep, now)`（回包 `rotated`）→
+    `import_ops_from`。不带清单（裸 `ops.bin`）不认领，`outcome: "stream"`。
+  - 第 1 版（协议 3 的 `FSRS2EXP`，即 v1 `.fushisrs` 的 `ops.bin` 与协议 3 `export` 命令的输出）：`import_v1`，
+    `outcome: "legacy"`；另一个集合拒绝（D34）。
+  - 回包 `{format, outcome, applied, unchanged, peers, rotated, counts, settled, localRevision, localEpoch}`；
+    `applied` = 新落原生操作 + 空洞区间 + 新落 / 换掉 / 分叉的承袭槽。
+
+### 定案（所有者授权自定）
+
+1. **缺口 G-12 选清单方案**：`.fushisrs` 第 2 版清单带 `peers`（导出时整张 `peers` 表：设备、公钥、名字），导入时
+   `import.rs` 新的 `import_peers` 与旧备份读入 `backup_peers` 共用 `land_peers`（公钥先到先得、冲突整个拒绝、本机身份
+   必须是本机公钥、名字只补空缺）。不升 `FSRS4EXP` 版本（G11-1 的格式不动）。G11-4 的整包备份 `srs/manifest.json`
+   照同一口径带 `peers`，导入调 `import_peers`。测试钉住：不带清单时协议 3 设备的公钥进不来，带了才有。
+2. **内存遗留根修**：`ZstdWindow` / `Export4Reader` 加 `Read` 来源（`from_reader` / `open_reader`，默认类型参数仍是切片，
+   既有调用点不变；`at_end_of_input` 改成「再读一个字节读不到」，切片上与看空等价）。`import_ops` 拆成
+   `open_ops_reader` + `import_ops_from<R: Read>`，命令层按文件 `BufReader<File>` 读三遍（嗅探、分叉预扫、导入），内存
+   = 一个读窗口 + 一项，不随文件变大。Dart 不再把 `ops.bin` 读进内存：zip 里 `ops.bin` **不压缩存放**（流本身是 zstd），
+   导入时 `ZipFile.rawContent` → `OutputFileStream.writeInputStream` 按 1 MB 分块拷进临时文件交给内核；导出时内核直接
+   写临时文件，`ZipFileEncoder.addFile` 流式拷进 zip。第 1 版仍整份读进内存（冻结读入器只收切片，`legacy_export.rs` 不为
+   新代码改；第 1 版文件只会越来越少），v1 包里 deflate 过的 `ops.bin` 也只能整份解压。
+3. **本机身份分叉先换身份**（协议 3 `import_on` 同口径）：`own_fork_point` 按 4096 项一块把流里本机当前身份的原生日志
+   喂 G8-6 的 `ForkScan`（与位置上的分叉同一判据），两边在某个 seq 不同或流比本机长就 `Some(keep)`。
+4. **本机状态行**：导入是本机写（`local::persist`，带 `anchor`）；派生层整份重建、没有逐实体变更清单，有改动时修订号
+   推进 1（经 `persist` 的计数口径，`local.rs` 没改），回包不带 `changed`，Dart 见 `unchanged != true` 就整份丢缓存日志。
+5. **v2 同步之前的事件备份（清单魔数 `fushi-srs-backup`）明确拒收**：新代 `apply` 拒 stamped 输入，冻结侧的 stamped apply /
+   `open_legacy_scratch` 还没有（G7-6）。Dart 抛 `SrsFushiSrsLegacyFormat`，界面提示「先在 Fushi 3.x 里导入，升级时随库
+   迁移」（`srs_timeline_import_legacy_format`）。**与 D34「只有 v1 事件的旧输入长期支持」不一致**：等 G7-6 把 stamped
+   apply 冻结进 `legacy3/` 后，在临时协议 3 副本里落事件、再走 `import_backup`，由 G11-4 / G7-6 接。
+6. **旧版本互拒**：新清单 `v: 2, gen: 4`、不带 `magic`；已发布版本的 Dart 读者对 `v > 1` 抛「unsupported .fushisrs
+   version」（碰库之前），协议 3 内核对 `FSRS4EXP` 魔数报「not a .fushisrs file」（Rust 测试经冻结在树里的
+   `sync2_import` 钉住，库一字不变）。真旧二进制的实测归 R0 / G11-5。
+7. 导出走读连接的读快照（只含已提交写入），Dart 侧仍经 `sync2Command` 排在写事务之后，导出与随后的媒体清单读同一状态。
+
+### Dart（`packages/fushi_engine`、`fushi`）
+
+- `srs_db_store.dart`：`sync2ExportOps(String path)` → 回包 map；`sync2ImportOps({path, manifest, confirmed})` → 回包 map
+  （`needsConfirm` 不接本机状态）。`srs_backup_merge.dart` 的 `adoptedUid` 属 G11-4，没碰。
+- `sync2/srs_fushisrs.dart` 重写：清单 `{v: 2, gen: 4, profile, collection, dir, salts, peers, exportedAt, media}`；
+  `srsImportFushiSrs(..., confirmForeign:)`，没给 / 答否回 `declined`；删掉旧事件格式的转换（`legacyMediaPool` 参数随之删）。
+- `srs_history_page.dart`：导入时另一个复习库弹确认（`srs_timeline_import_foreign_confirm`），旧事件备份给专门提示。
+- 任务书提到的 `plugin_tracking_provider` 与 `.fushisrs` 导出无关（媒体追踪插件），没改。
+
+### 没做 / 交给谁
+
+- `_sync2Raw` 统一处理回包的 `bindingChanged`（G7-5b）：导入认领改绑后这里只重读了 `status`。
+- v2 同步之前的事件备份导入（见定案 5，G7-6 / G11-4）。
+- 整包备份 / 还原、`ffsrs_store_snapshot`（G11-4）。
+
+### 测试（`cmd/fushisrs_tests.rs`，12 条，全部经 C ABI；Dart `srs_fushisrs_test.dart`）
+
+导出 → 导入空库（需确认 → `bound`，导出流逐项 / 派生表逐行 / 公钥相同，再导一遍什么都不改、修订号不动，字节块与文件
+两种来源）；同集合并入 + G-12 公钥；另一个集合需确认 → `joined` → 再导 `alreadyJoined`；清单与流头不符 / 截断 / 不是
+导出流 / 文件不存在一律拒、库不变；拷过的数据目录各写一条后导入先换身份（`keep = 2`、`moved = 1`，三处写入都在）、
+导回自己更早的导出不换；第 1 版与直接迁移逐行相同、另一个集合拒；协议 3 `sync2_import` 拒收新流；大文件（明文 > 1 MiB）
+读窗口 ≤ 256 KiB；双盐别名类导出后在另一个集合认领，按任何成员点名都是整个类；`PEERS_SQL` 查询计划。
+
+## 16. G11-3 复核修复（2026-11-17，同分支 `pr/srs-gen4-g11-3-fushisrs-v2`）
+
+§15 的复核发现逐条处理如下（每条配测试，变异实测：去掉修复后对应测试变红）。
+
+- **导入预检（孤儿媒体 / 还原点）**：`import` 加 `preflight: true`：只判「要不要确认、会不会被拒」，什么都不写、修订号不动。
+  判据与真导入同一处：第 1 版走 `import.rs` 新抽出的 `check_v1_collection`（`import_v1` 也改调它）；第 2 版先比清单与流头，
+  再在一个**回滚掉的保存点**（`Truth::tx` 返回哨兵错误）里跑 `collection_adopt` 与 `check_stream_collection`（`import_ops_from`
+  也改调它），所以 `same` 时补的盐不留。回包 `{format, outcome: "ready" | "needsConfirm", preflight: true, collection?, dir?}`。
+  Dart `srsImportFushiSrs` 改成：解包（只拷 `ops.bin`，不碰媒体目录）→ `SrsDbStore.sync2ImportPreflight` → 需要时问用户，
+  答否直接返回 `declined`（`mediaFiles: 0`，不打还原点）→ 打还原点 → 后台 isolate 补媒体（回补进来的文件名）→ 真导入；
+  真导入报错（坏在流中间的文件，预检不读全流看不出）就删掉这次补进来的媒体再抛。预检之后真导入仍回 `needsConfirm`（别的
+  调用在这之间改了绑定）抛 `StateError` 让用户重来，不按旧的确认结论并入。测试：Rust `preflight_judges_without_writing`
+  （变异：不回滚保存点 → 红）；Dart `srs_fushisrs_test.dart` 外来包拒绝后媒体目录为空、还原点数不变，源码守卫钉住预检在还原点
+  与补媒体之前、读包函数不碰媒体。
+- **`unchanged` 计入认领写入**：`unchanged = got.unchanged() && peers == 0 && !wrote`（`wrote` = 补盐 / 并入 / 绑定 / 换身份）。
+  测试 `new_salts_or_peers_alone_are_a_change`：操作全已有、只带新盐（`saltsAdded`）或只带新设备公钥的再导入回包 `unchanged:
+  false`、修订号推进；真的什么都没带来才是 `true`。变异：去掉 `!wrote` 或去掉 `peers == 0` 各自让它变红。
+- **命令层读法钉测**：按路径的来源改经 `FileSource`（包一层 `File` 的 `Read`），测试编译下按线程记每次读的请求大小与字节
+  （`fushisrs::meter`）。`a_large_file_is_read_with_a_bounded_window` 断言导入命令对文件读满整份、最大一次请求 ≤ 256 KiB 且小于
+  文件。变异 M4（`fs::read` 整份进内存再包 `Cursor`）：记录为零 → 红。
+- **临时文件名**：`<path>.g4tmp` 改为在整个文件名后追加（`tmp_of`），不再 `with_extension` 替换扩展名。测试
+  `the_export_temp_file_appends_to_the_whole_name`（同目录的 `ops.g4tmp` 不被覆盖挪走；变异回 `with_extension` → 红）。
+- **旧事件备份进合并条件**：规划 §6 加一条：G7-6 / G11-4 给 stamped apply 接上冻结侧转译、旧事件备份能经 `.fushisrs` 入口导入
+  并有测试之前，整批不合入 develop（D34）。
+
+仍留给别人：
+
+- `dispatch_tests.rs` `unwired_and_removed_commands_name_their_owner` 与 `pr/srs-gen4-switch` 尖端 1bbd15c75e 的冲突：合并时取本
+  分支的 `[("profile_merge_mark", "G9-5"), ("plan", "G8-7")]`（integration owner；本分支按规则不 rebase / merge）。
+- §7 对照表 import / export 行（「S1 后状态」列）与 `dispatch.rs` 文件头的未接线清单：改成「已接线（G11-3，`cmd/fushisrs.rs`）」，
+  integration owner 合并时顺手改（多个并行分支都在改这两处，各自改会互相冲突）。
+- Dart 侧 v1 zip 包（`v: 1` 清单 + deflate 的 `ops.bin`）端到端测试：要一份协议 3 `FSRS2EXP` 夹具（Dart 已没有协议 3 导出入口）
+  且依赖 Dart 侧绑定接通（G7-5b：全新库 `SrsDbStore.open` 抛 `SrsProfileUnboundException`，`srs_fushisrs_test.dart` 里碰库的
+  测试在基线上都红）。Rust 侧第 1 版流已有对拍（`a_version_1_file_lands_exactly_like_the_migration`）。
