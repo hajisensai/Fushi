@@ -50,6 +50,7 @@ import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
+import 'package:fushi/src/media/source_library/source_auto_scan.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/media/collections/collection_continue.dart';
@@ -533,6 +534,13 @@ class _HomePageState extends BasePageState<HomePage>
     },
   );
   bool _videoSourceScrapePanelOpen = false;
+
+  /// 来源「自动扫描」调度（启动 + 回前台，见 [SourceAutoScanScheduler]）。挂在首页：
+  /// 视频来源的扫描要走本页持有的刮削任务控制器门，扫完还要串联自动刮削。
+  late final SourceAutoScanScheduler _sourceAutoScan = SourceAutoScanScheduler(
+    loadCandidates: _loadAutoScanSources,
+    scan: _runAutoSourceScan,
+  );
   VideoDiscoveryService? _videoDiscoveryService;
   VideoDiscoveryController? _videoDiscoveryController;
   String? _videoDiscoveryConfigFingerprint;
@@ -663,6 +671,13 @@ class _HomePageState extends BasePageState<HomePage>
     appModelNoUpdate.homeDictionaryTabRequest.addListener(
       _onHomeDictionaryTabRequested,
     );
+
+    // 来源自动扫描：首帧后扫一轮到期来源（与下面的新手引导 / 更新弹窗互不阻塞）。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        unawaited(_sourceAutoScan.trigger(SourceAutoScanTrigger.startup));
+      }
+    });
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
@@ -1034,6 +1049,7 @@ class _HomePageState extends BasePageState<HomePage>
 
   @override
   void dispose() {
+    _sourceAutoScan.dispose();
     if (_backdropShellRoute case final Route<Object?> route) {
       setFushiPageRouteModuleShell(route, false);
     }
@@ -1088,6 +1104,8 @@ class _HomePageState extends BasePageState<HomePage>
       // 首页键事件 Focus，导致切窗回来后页级 / 全局快捷键全死，只能重启 app 才靠
       // autofocus 抢回。对齐视频页 [_reclaimVideoFocusIfOwned] 的 resumed 回收范式。
       _reclaimHomeFocusIfOwned();
+      // 回前台扫一轮到期的自动扫描来源（节流挡掉切窗口引起的高频 resumed）。
+      unawaited(_sourceAutoScan.trigger(SourceAutoScanTrigger.resume));
     } else if (AppLifecycleState.detached == state) {
       _videoScrapeRuntime.currentController?.markInterrupted();
     } else if (AppLifecycleState.paused == state) {
@@ -3947,6 +3965,52 @@ class _HomePageState extends BasePageState<HomePage>
       ),
     );
     return (proceed: confirmed == true, grant: confirmed == true);
+  }
+
+  /// 自动扫描的候选：开着开关、所属模块开着；库处于「已迁移只读」时一个都不扫。
+  Future<List<SourceLibraryRow>> _loadAutoScanSources() async {
+    final AppModel model = appModelNoUpdate;
+    if (model.isMigrationReadonly) return const <SourceLibraryRow>[];
+    final ModuleVisibility visibility = model.moduleVisibility;
+    return <SourceLibraryRow>[
+      for (final SourceLibraryRow row
+          in await model.database.getAutoScanMediaSources())
+        if (sourceLibraryKindModule(row.mediaKind) case final ModuleId module
+            when visibility.isEnabled(module))
+          row,
+    ];
+  }
+
+  /// 自动扫描一个来源，收尾与来源页「重新扫描」一致。视频来源要过刮削任务控制器
+  /// 的门（与联网刮削互斥）：门被手动刮削 / 清理占着就延后到下一次触发。扫完串联
+  /// 「扫描后自动刮削」（来源刮削设置里的同一开关），但只在这轮真的新增了视频时
+  /// 才串——没有新条目的回前台扫描不该每次都把整个来源送去联网刮削。
+  Future<SourceAutoScanOutcome> _runAutoSourceScan(
+    SourceLibraryRow source,
+  ) async {
+    final AppModel model = appModelNoUpdate;
+    final SourceLibraryScanner scanner = SourceLibraryScanner(
+      model.database,
+      transcribeAudiobook: source.mediaKind == SourceLibraryKind.book.dbValue
+          ? model.folderImportTranscribePort
+          : null,
+    );
+    if (source.mediaKind != SourceLibraryKind.video.dbValue) {
+      await scanner.scan(source);
+      return SourceAutoScanOutcome.scanned;
+    }
+    final Future<SourceScanSummary>? started = _videoSourceScrapeController
+        .tryRunSourceScan(source.id, () => scanner.scan(source));
+    if (started == null) return SourceAutoScanOutcome.deferred;
+    final SourceScanSummary summary = await started;
+    if (summary.createdVideoUids.isEmpty) {
+      if (mounted) _notifyVideoLibraryChanged();
+      return SourceAutoScanOutcome.scanned;
+    }
+    final SourceLibraryRow updated =
+        await model.database.getMediaSourceById(source.id) ?? source;
+    await _onVideoSourceScanCompleted(updated, summary);
+    return SourceAutoScanOutcome.scanned;
   }
 
   Future<void> _onVideoSourceScanCompleted(

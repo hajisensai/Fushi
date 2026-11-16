@@ -999,7 +999,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 154;
+  int get schemaVersion => 155;
 
   /// v125–v128 四步的产物（全部幂等）：SRS 写路径索引、
   /// `collection_member_tombstones.published_at`、`bookmarks.char_offset` /
@@ -3121,6 +3121,15 @@ class FushiDatabase extends _$FushiDatabase
             remoteDictionaryMetadata,
             remoteDictionaryMetadata.localDisplayName,
           );
+        }
+      }
+      if (from < 155) {
+        // v155：media_sources.auto_scan——来源的「自动扫描」开关（拍板台
+        // C_8oheua0H / ICOLa6LZLU / enSm2GOuFA）。默认关、存量来源 false；
+        // 设备本地。早期步骤按当前定义建表时已带这一列，按列存在性守卫，幂等。
+        if (await _tableExists('media_sources') &&
+            !await _columnExists('media_sources', 'auto_scan')) {
+          await m.addColumn(mediaSources, mediaSources.autoScan);
         }
       }
     },
