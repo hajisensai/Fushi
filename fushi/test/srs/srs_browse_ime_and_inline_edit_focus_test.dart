@@ -418,6 +418,95 @@ void main() {
     await _unmount(tester);
   });
 
+  testWidgets('BUG：同一字段两次保存重叠时，W1 落库引起的重读赶在 W2 落库前读回来，不把字段换回 W1、后发的值最终落库', (
+    WidgetTester tester,
+  ) async {
+    final SrsDbStore store = await _openStore(tester);
+    final String noteId = await _add(tester, store, '食べる', 'to eat');
+    await _pump(tester, store: store, size: const Size(1300, 900));
+    final SrsBrowseInspector from = tester.widget<SrsBrowseInspector>(
+      find.byType(SrsBrowseInspector),
+    );
+    final AppModel appModel = SrsTestAppModel();
+    // 第 i 次保存先等 gates[i] 放行再写库，写完 persisted[i] 完成。
+    final List<Completer<void>> gates = <Completer<void>>[
+      Completer<void>(),
+      Completer<void>(),
+    ];
+    final List<Completer<void>> persisted = <Completer<void>>[
+      Completer<void>(),
+      Completer<void>(),
+    ];
+    final List<String> saves = <String>[];
+    Future<void> onSaveField(String id, String field, String value) async {
+      final int i = saves.length;
+      saves.add(value);
+      await gates[i].future;
+      await _writeField(store, id, field, value);
+      persisted[i].complete();
+    }
+
+    Future<void> onSaveTags(String id, List<String> b, List<String> a) async {}
+    Future<void> mount(int revision) => _pumpInspector(
+      tester,
+      store: store,
+      appModel: appModel,
+      from: from,
+      revision: revision,
+      onSaveField: onSaveField,
+      onSaveTags: onSaveTags,
+    );
+    await mount(0);
+    await _settle(tester);
+    final Finder field = find.descendant(
+      of: _editField,
+      matching: find.byType(EditableText),
+    );
+    expect(field, findsOneWidget);
+    await tester.showKeyboard(field);
+    await tester.pump();
+    final EditableTextState before = tester.state<EditableTextState>(field);
+
+    // W1：停笔 800 ms 保存 'devour'，还没落库；接着打字再停笔，发起 W2 'devours'。
+    tester.testTextInput.enterText('devour');
+    await tester.pump(const Duration(milliseconds: 900));
+    tester.testTextInput.enterText('devours');
+    await tester.pump(const Duration(milliseconds: 900));
+
+    // W1 落库；W2 还卡着没落库。
+    gates[0].complete();
+    await _settle(tester);
+    expect(persisted[0].isCompleted, isTrue);
+    expect(saves, <String>['devour', 'devours']);
+    expect(persisted[1].isCompleted, isFalse);
+
+    // W1 落库让浏览页 revision +1，检查器重读——读回来的是 W1 的 'devour'（W2 还没提交）：不许落地。
+    await mount(1);
+    await _settle(tester);
+    expect(field, findsOneWidget);
+    final EditableTextState during = tester.state<EditableTextState>(field);
+    expect(identical(during, before), isTrue, reason: '输入框被整体重建了');
+    expect(during.widget.controller.text, 'devours', reason: '刚打的字被换回 W1 的值');
+    expect(during.widget.focusNode.hasFocus, isTrue);
+
+    // W2 落库（浏览页 revision 再 +1）：库里是后发的值，界面不回退、仍是同一个输入框。
+    gates[1].complete();
+    await _settle(tester);
+    await mount(2);
+    await _settle(tester);
+    final SrsNoteView? saved = await tester.runAsync<SrsNoteView?>(
+      () => store.note(noteId),
+    );
+    expect(
+      saved!.field(srsLapisFieldId(kSrsTestProfile, 'MainDefinition')),
+      'devours',
+    );
+    expect(identical(tester.state<EditableTextState>(field), before), isTrue);
+    expect(before.widget.controller.text, 'devours');
+    expect(before.widget.focusNode.hasFocus, isTrue);
+    await _unmount(tester);
+  });
+
   testWidgets('BUG：写入途中才读回来的上一次重读不把刚存的标签换回旧值', (WidgetTester tester) async {
     final SrsDbStore store = await _openStore(tester);
     final String noteId = await _add(tester, store, '食べる', 'to eat');
