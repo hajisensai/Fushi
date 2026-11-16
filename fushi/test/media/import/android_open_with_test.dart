@@ -5,6 +5,7 @@
 /// 纯文字分享抢 SEND text/*；channel 名两端一致；收件箱取副本 → 改名 → 交出 → 导入后删副本。
 library;
 
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
@@ -56,7 +57,7 @@ void main() {
       );
     });
 
-    test('原文件名没有 / 带别的扩展名：按 MIME 补扩展名', () {
+    test('原文件名没有扩展名 / 只带临时后缀：按 MIME 补扩展名', () {
       expect(
         androidOpenWithFileName(
           displayName: '12345',
@@ -69,7 +70,14 @@ void main() {
           displayName: 'novel.tmp',
           mimeType: 'text/plain; charset=utf-8',
         ),
-        'novel.tmp.txt',
+        'novel.txt',
+      );
+      expect(
+        androidOpenWithFileName(
+          displayName: '第1.5巻',
+          mimeType: 'application/pdf',
+        ),
+        '第1.5巻.pdf',
       );
       expect(
         androidOpenWithFileName(displayName: null, mimeType: 'application/pdf'),
@@ -98,6 +106,32 @@ void main() {
       );
     });
 
+    test('原名带非书的真扩展名：即使 MIME 是 text/plain 也拒收（桌面只收 .txt）', () {
+      for (final String name in <String>['notes.json', 'a.srt', 'x.md']) {
+        expect(
+          androidOpenWithFileName(displayName: name, mimeType: 'text/plain'),
+          isNull,
+          reason: name,
+        );
+      }
+    });
+
+    test('cbr / cb7 不收：导入要外部 7-Zip，APK 里没有', () {
+      expect(
+        androidOpenWithFileName(
+          displayName: 'v.cbr',
+          mimeType: 'application/vnd.comicbook-rar',
+        ),
+        isNull,
+      );
+      expect(
+        androidOpenWithFileName(displayName: 'v.cb7', mimeType: null),
+        isNull,
+      );
+      expect(kAndroidOpenWithExtensions, isNot(contains('.cbr')));
+      expect(kAndroidOpenWithExtensions, isNot(contains('.cb7')));
+    });
+
     test('认不出是书：返回 null（.mokuro 只有入口文件，打不开）', () {
       expect(
         androidOpenWithFileName(
@@ -116,13 +150,24 @@ void main() {
       );
     });
 
-    test('超长文件名截断主干、保留扩展名', () {
+    test('超长文件名按 UTF-8 字节截断主干、保留扩展名（NAME_MAX 255 字节）', () {
       final String name = androidOpenWithFileName(
         displayName: '${'あ' * 300}.epub',
         mimeType: null,
       )!;
       expect(name.endsWith('.epub'), isTrue);
-      expect(name.length, lessThanOrEqualTo(130));
+      expect(utf8.encode(name).length, lessThanOrEqualTo(130));
+      expect(name, startsWith('あ' * 40));
+    });
+
+    test('截断不切断代理对（emoji）', () {
+      final String name = androidOpenWithFileName(
+        displayName: '${'a' * 118}😀😀.pdf',
+        mimeType: null,
+      )!;
+      expect(name, '${'a' * 118}.pdf');
+      expect(() => utf8.encode(name), returnsNormally);
+      expect(name.runes.contains(0xFFFD), isFalse);
     });
   });
 
@@ -253,6 +298,34 @@ void main() {
       );
       expect(rejected, <String?>['dict.zip']);
       expect(Directory(p.join(cache.path, 'b')).existsSync(), isFalse);
+      inbox.stop();
+    });
+
+    test('同批某本导入抛异常：删它的副本并提示，其余照常交出', () async {
+      queue
+        ..add(<String, Object?>{
+          'path': stageCopy('d1'),
+          'displayName': 'bad.epub',
+          'mimeType': 'application/epub+zip',
+        })
+        ..add(<String, Object?>{
+          'path': stageCopy('d2'),
+          'displayName': 'good.pdf',
+          'mimeType': 'application/pdf',
+        });
+      final List<String> books = <String>[];
+      final List<String?> rejected = <String?>[];
+      final AndroidOpenWithInbox inbox = AndroidOpenWithInbox(channel: channel);
+      await inbox.start(
+        onBook: (String path) async {
+          if (path.endsWith('bad.epub')) throw StateError('import failed');
+          books.add(path);
+        },
+        onRejected: rejected.add,
+      );
+      expect(rejected, <String?>['bad.epub']);
+      expect(Directory(p.join(cache.path, 'd1')).existsSync(), isFalse);
+      expect(books, <String>[p.join(cache.path, 'd2', 'good.pdf')]);
       inbox.stop();
     });
 

@@ -23,16 +23,16 @@ import 'package:path/path.dart' as p;
 /// - `application/zip` / `application/octet-stream`：会把 Fushi 挂进所有压缩包、未知
 ///   文件的打开列表；
 /// - `.mokuro`：它只是一卷漫画的入口 json，图片在旁边的目录里，`content://` 只给得了
-///   这一个文件，复制过来也打不开。
+///   这一个文件，复制过来也打不开；
+/// - `.cbr` / `.cb7`（`application/vnd.comicbook-rar` / `x-cbr` / `x-cb7`）：导入要靠外部
+///   7-Zip（`MangaSevenZipExtractor`），APK 里没有，登记进打开列表只会换来必然失败的入口。
+///   Android 接上 RAR / 7z 解包之后再加回来。
 const Map<String, String> kAndroidOpenWithBookMimeTypes = <String, String>{
   'application/epub+zip': '.epub',
   'application/pdf': '.pdf',
   'text/plain': '.txt',
   'application/vnd.comicbook+zip': '.cbz',
   'application/x-cbz': '.cbz',
-  'application/vnd.comicbook-rar': '.cbr',
-  'application/x-cbr': '.cbr',
-  'application/x-cb7': '.cb7',
 };
 
 /// 收得进来的扩展名（小写、带点）。
@@ -40,22 +40,47 @@ final Set<String> kAndroidOpenWithExtensions = kAndroidOpenWithBookMimeTypes
     .values
     .toSet();
 
-/// 文件名主干的长度上限：留够余量给书库目录名与 `X (2)` 后缀。
-const int _kMaxStemLength = 120;
+/// 文件名主干的 UTF-8 字节上限：ext4 / f2fs 的 NAME_MAX 是 255 字节，留够余量给扩展名、
+/// 书库目录名与 `X (2)` 后缀。按字节不按 UTF-16 码元算——120 个汉字就有 360 字节。
+const int _kMaxStemBytes = 120;
+
+/// provider 常见的临时 / 无意义后缀：带着它们的名字按 MIME 补扩展名（并去掉这个后缀）。
+const Set<String> _kTempExtensions = <String>{
+  '.tmp',
+  '.temp',
+  '.download',
+  '.crdownload',
+  '.part',
+  '.bin',
+  '.dat',
+};
+
+/// 看起来像真扩展名：ASCII 字母数字、1~5 位、至少一个字母。`.5巻`、`. 3`、`.1` 这类
+/// 文件名里本来就有的点不算扩展名。
+final RegExp _realExtension = RegExp(r'^\.(?=[0-9]*[a-z])[a-z0-9]{1,5}$');
 
 /// 纯函数：给收进来的文件起一个导入层认得的名字；认不出是书 / 漫画时返回 null。
 ///
 /// - 原文件名（[displayName]）带可收的扩展名：原样用（只去掉路径分隔符与控制字符）——
 ///   txt / cbz 的书名来自文件名，不能丢；
-/// - 否则按 [mimeType] 补扩展名（QQ 等 provider 常给不带扩展名或带临时后缀的名字），
+/// - 原名没有扩展名或只带临时后缀（QQ 等 provider 常这样给）：按 [mimeType] 补扩展名，
 ///   原名为空就叫 `document`；
+/// - 原名带着别的真扩展名（`notes.json`、`a.srt`、`x.md`，很多 provider 把它们标成
+///   `text/plain`）：拒收，与桌面白名单只收 `.txt` 一致，不把它们改名当书导入；
 /// - 两样都认不出：返回 null，宿主提示打不开。
 String? androidOpenWithFileName({String? displayName, String? mimeType}) {
-  final String? name = _sanitizeDisplayName(displayName);
-  if (name != null &&
-      kAndroidOpenWithExtensions.contains(p.extension(name).toLowerCase())) {
+  String? name = _sanitizeDisplayName(displayName);
+  if (name != null) {
     final String ext = p.extension(name);
-    return '${_clip(p.basenameWithoutExtension(name))}$ext';
+    final String lower = ext.toLowerCase();
+    if (kAndroidOpenWithExtensions.contains(lower)) {
+      return '${_clip(p.basenameWithoutExtension(name))}$ext';
+    }
+    if (_kTempExtensions.contains(lower)) {
+      name = p.basenameWithoutExtension(name);
+    } else if (_realExtension.hasMatch(lower)) {
+      return null;
+    }
   }
   final String? mime = mimeType?.split(';').first.trim().toLowerCase();
   final String? ext = mime == null ? null : kAndroidOpenWithBookMimeTypes[mime];
@@ -74,9 +99,24 @@ String? _sanitizeDisplayName(String? raw) {
   return cleaned;
 }
 
+/// 按 UTF-8 字节截到 [_kMaxStemBytes]，按码点切，不切断代理对。
 String _clip(String stem) {
-  final String s = stem.isEmpty ? 'document' : stem;
-  return s.length <= _kMaxStemLength ? s : s.substring(0, _kMaxStemLength);
+  final String s = stem.trim().isEmpty ? 'document' : stem;
+  final StringBuffer out = StringBuffer();
+  int bytes = 0;
+  for (final int rune in s.runes) {
+    final int size = rune < 0x80
+        ? 1
+        : rune < 0x800
+        ? 2
+        : rune < 0x10000
+        ? 3
+        : 4;
+    if (bytes + size > _kMaxStemBytes) break;
+    bytes += size;
+    out.writeCharCode(rune);
+  }
+  return out.toString();
 }
 
 /// 原生排进队列的一份副本。
@@ -174,10 +214,17 @@ class AndroidOpenWithInbox {
         debugPrint('[Fushi] open-with take failed: $e');
         return;
       }
+      // 这一批已从原生队列取走并清空：任何一本出错都不能让同批其余几本被静默丢掉。
       for (final Object? entry in raw) {
         final AndroidOpenWithCopy? copy = AndroidOpenWithCopy.fromMap(entry);
         if (copy == null) continue;
-        await _deliver(copy);
+        try {
+          await _deliver(copy);
+        } catch (e, st) {
+          debugPrint('[Fushi] open-with deliver failed: $e\n$st');
+          await _deleteCopyDir(copy.path);
+          _onRejected?.call(copy.displayName);
+        }
       }
     } while (_drainAgain);
   }
@@ -211,7 +258,14 @@ class AndroidOpenWithInbox {
       await release(bookPath);
       return;
     }
-    await onBook(bookPath);
+    try {
+      await onBook(bookPath);
+    } catch (e, st) {
+      // 导入 / 打开失败：宿主可能没走到它的 release，这里兜底删副本并提示。
+      debugPrint('[Fushi] open-with import failed: $e\n$st');
+      await release(bookPath);
+      _onRejected?.call(copy.displayName);
+    }
   }
 
   /// [bookPath] 是本收件箱交出的副本就删掉它所在的副本目录；别的路径（桌面 argv、
