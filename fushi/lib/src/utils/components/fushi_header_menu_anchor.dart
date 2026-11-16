@@ -2,7 +2,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 
-/// 页头动作打开的菜单（库页「排序」菜单）的控制器（BUG-4695）。
+/// 页头动作打开的菜单（库页「排序」菜单）的控制器（BUG-4712）。
 ///
 /// 页头动作可能被收进「⋯」，菜单因此不能挂在某颗按钮上（按钮会被卸载），只能由
 /// 常驻的 [FushiHeaderMenuAnchor] 持有；但菜单的**弹出位置**必须跟着真正点下去

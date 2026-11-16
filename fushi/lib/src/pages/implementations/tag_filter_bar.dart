@@ -729,7 +729,7 @@ enum FushiTagFilterBarPart {
   /// [FushiPageHeader.menuAnchor] 铺满页头动作组（动作被外壳浮动工具栏代放时
   /// 随那枚胶囊走），按钮（或 ⋯ 菜单里的那一项）经
   /// [FushiTagFilterBar.sortMenuController] 打开它，菜单从触发控件下沿弹出
-  /// （BUG-4695）。按钮由
+  /// （BUG-4712）。按钮由
   /// [libraryHeaderTagActions] 生成。
   sortMenuAnchor,
 }

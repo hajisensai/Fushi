@@ -3736,7 +3736,7 @@ class FushiPageHeader extends StatelessWidget {
   /// 随本行、登记进外壳浮动工具栏就随那枚胶囊
   /// （[fushiHeaderActionsWithMenuAnchor]）。动作可能被收进 ⋯，菜单不能挂在
   /// 某颗按钮上；也不能锚在页头这一行——动作交给外壳时这一行只剩页签。弹出
-  /// 位置由 `FushiHeaderMenuController` 按触发控件（按钮或 ⋯）定（BUG-4695）。
+  /// 位置由 `FushiHeaderMenuController` 按触发控件（按钮或 ⋯）定（BUG-4712）。
   final Widget? menuAnchor;
 
   @override
@@ -5029,7 +5029,7 @@ class _FushiShellHeaderActionsState extends State<FushiShellHeaderActions> {
 
 /// 把常驻菜单锚点 [menuAnchor]（`FushiHeaderMenuAnchor`）铺满动作组 [actions]：
 /// 锚点在这个坐标系里把锚框挪到触发控件（按钮或 ⋯）上，菜单从触发控件下沿
-/// 弹出（BUG-4695）。null 时原样返回。
+/// 弹出（BUG-4712）。null 时原样返回。
 Widget fushiHeaderActionsWithMenuAnchor(Widget actions, Widget? menuAnchor) {
   if (menuAnchor == null) return actions;
   return Stack(

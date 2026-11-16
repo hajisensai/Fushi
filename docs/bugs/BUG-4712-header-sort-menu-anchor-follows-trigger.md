@@ -1,4 +1,4 @@
-## BUG-4695 · 库页排序菜单不从排序按钮下方弹出而是弹在页头动作组右下角
+## BUG-4712 · 库页排序菜单不从排序按钮下方弹出而是弹在页头动作组右下角
 - **报告**：2026-11-16（维护者应用内反馈 n-0lIy8dtQ：「排序菜单弹出位置与按钮位置不符，同类处一并根因修」）
 - **真实性**：✅ 真 bug。库页（视频库 / 书架历史 / 游戏库）的「排序」菜单不挂在排序按钮上，而是挂在
   `FushiPageHeader.menuAnchor` 的零尺寸锚点上：`fushi/lib/src/utils/components/fushi_material_components.dart:5037`

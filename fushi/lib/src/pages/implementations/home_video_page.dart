@@ -9043,7 +9043,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
 
   /// 「排序」菜单的常驻锚点（[FushiPageHeader.menuAnchor]，铺满页头动作组）：
   /// 页头里的排序按钮可能被收进「⋯」，菜单挂在这里才总能打开；弹出位置跟着
-  /// 触发控件（按钮或 ⋯，BUG-4695）。
+  /// 触发控件（按钮或 ⋯，BUG-4712）。
   Widget _buildSortMenuAnchor(List<BookTagRow> tags) {
     return FushiTagFilterBar(
       tags: tags,
