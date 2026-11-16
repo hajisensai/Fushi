@@ -428,6 +428,26 @@ class FfiFsrsEngine implements FsrsBatchEngine {
           })!
           as List<Object?>;
 
+  /// 复习卡文本导入（CSV / TSV / TXT）的解析（`text_import_parse`，native/fushi_fsrs/src/text_import.rs）：一次调用读完
+  /// 整个文件。[delimiter] / [html] 为 null 时按文件头或猜；[limit] 只回前几条（预览），`total` 仍是全部条数。阻塞到
+  /// 读完——在后台 isolate 里调。
+  Map<String, Object?> textImportParse(
+    String path, {
+    String? delimiter,
+    bool? html,
+    int? limit,
+  }) {
+    final Object? r = _call(<String, Object?>{
+      'op': 'text_import_parse',
+      'path': path,
+      'delimiter': ?delimiter,
+      'html': ?html,
+      'limit': ?limit,
+    });
+    if (r is! Map) throw SrsFsrsException('bad text_import_parse response: $r');
+    return r.cast<String, Object?>();
+  }
+
   // ---- JSON 往返 ----
 
   Object? _call(Map<String, Object?> request) {
