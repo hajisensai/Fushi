@@ -160,6 +160,8 @@ int main(int argc, char** argv) {
           row("来る", "くる", "vk", "come"),
           row("待つ", "まつ", "v5", "wait"),
           row("分かる", "わかる", "v5", "understand"),
+          // 与通配词典同一词条、但自带的词性是名词：歴史仮名规则要的是 v5，不成立。
+          row("乱右", "らんう", "n", "rare word"),
       },
       out_dir);
   // 无词性词典：整本没有 rules → 读侧当通配 "*"（MDX / StarDict / 不带词性的 Yomitan 词典同理）。
@@ -171,6 +173,10 @@ int main(int argc, char** argv) {
                                                     row("乱右", "らんう", "", "rare word"),
                                                     row("歌う", "うたう", "", "sing"),
                                                     row("走る", "はしる", "", "run"),
+                                                    // 同一词条另一本词典带词性（v5）：两本的
+                                                    // rules 并成 "v5 *"。
+                                                    row("言う", "いう", "", "say"),
+                                                    row("待つ", "まつ", "", "wait"),
                                                 },
                                                 out_dir);
   if (g_fail) return 1;
@@ -227,6 +233,11 @@ int main(int argc, char** argv) {
   // 标记沿链传递：てゐる → て（带标记）→ 走る（现代 -て 规则）仍要求词性。
   expect_absent(lk, "走ってゐる", "走ってゐる", "走る", "W7 marker propagates through the chain");
   expect_present(lk, "走っている", "走っている", "走る", "W8 modern chain on wildcard dict");
+  // 同一词条既在带词性词典（v5）又在通配词典里：rules 是两本并起来的 "v5 *"，自带的
+  // 真词性匹配就成立，不因为另一本给了通配而整条丢掉（H2 / H4 的词条正是这种）。
+  expect_top(lk, "言はない", "言はない", "言う", "negative", "W9 own POS wins over a merged wildcard");
+  expect_top(lk, "待ってゐる", "待ってゐる", "待つ", "-いる", "W10 chained, own POS + merged wildcard");
+  // 反过来：自带词性不匹配（名词）时，并进来的通配不能替它放行（W4 的词条现在两本都有）。
 
   if (g_fail) {
     std::fprintf(stderr, "%d failure(s)\n", g_fail);

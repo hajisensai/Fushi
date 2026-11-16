@@ -14,8 +14,10 @@ namespace fushi {
 // 〔うちう〕）。
 //
 // 不是词性条件：Deinflector 只在载入时把它或进带标记规则的 conditions_out，递归时沿
-// 链传下去（判 conditions_in 时先去掉它）；Lookup::filter_by_pos 见到它就丢掉通配词条，
-// 其余位照常做词性匹配。各语言的条件位从 0 往上分配（最多用到二十几位），最高位留给它。
+// 链传下去（判 conditions_in 时先去掉它）；Lookup::filter_by_pos 见到它就只按词条自带
+// 的真词性做匹配、通配 "*" 不算数（一条词条的 rules 是各词典并起来的，可以同时有真词性
+// 和 "*"：有真词性且匹配就成立）。各语言的条件位从 0 往上分配（最多用到二十几位），
+// 最高位留给它。
 inline constexpr int kRequiresPartOfSpeechBitIndex = 63;
 inline constexpr uint64_t kRequiresPartOfSpeechBit = uint64_t{1} << kRequiresPartOfSpeechBitIndex;
 

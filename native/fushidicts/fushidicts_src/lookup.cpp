@@ -127,17 +127,25 @@ bool rewrite_allowed(const TextVariant& variant, const DeinflectionResult& deinf
   return rewritten <= variant.max_rewrite && (rewritten == 0 || rewritten >= variant.min_rewrite);
 }
 
-// 词条的 rules 里有没有通配 "*"（无词性词典的记录，见 Deinflector::pos_to_conditions）。
+// 词条 rules 里去掉通配 "*" 之后剩下的词性标记。rules 是同一 (expression, reading) 在各
+// 词典里的词性并起来的（query.cpp 的 query_raw 逐本追加）：无词性词典的记录贡献 "*"
+// （见 Deinflector::pos_to_conditions），带词性的词典贡献真词性，所以一条词条可以同时
+// 有两者——「要求词性」的还原只看真词性那部分，不能因为另一本词典给了 "*" 就整条丢掉。
 // 切分口径与 rules_to_conditions 相同：C locale 的六个空白字符。
-bool has_wildcard_rule(std::string_view rules) {
+std::string explicit_rules(std::string_view rules) {
   constexpr std::string_view kSpace = " \t\n\v\f\r";
+  std::string out;
   std::size_t pos = 0;
   while (true) {
     const std::size_t begin = rules.find_first_not_of(kSpace, pos);
-    if (begin == std::string_view::npos) return false;
+    if (begin == std::string_view::npos) return out;
     std::size_t end = rules.find_first_of(kSpace, begin);
     if (end == std::string_view::npos) end = rules.size();
-    if (rules.substr(begin, end - begin) == "*") return true;
+    const std::string_view token = rules.substr(begin, end - begin);
+    if (token != "*") {
+      if (!out.empty()) out += ' ';
+      out += token;
+    }
     pos = end;
   }
 }
@@ -531,12 +539,15 @@ void Lookup::filter_by_pos(std::vector<TermResult>& terms, const DeinflectionRes
     return;
   }
   // 还原链用过要求词性的规则（ja.json 的歴史的仮名遣い规则，见 util/pos_required.hpp）：
-  // 词性通配的词条不接受，其余位照常做词性匹配。
+  // 只认词条自带的真词性，通配 "*" 不算数；其余位照常做词性匹配。
   const bool requires_pos = (d.conditions & fushi::kRequiresPartOfSpeechBit) != 0;
   const uint64_t pos_conditions = d.conditions & ~fushi::kRequiresPartOfSpeechBit;
   std::erase_if(terms, [&](const TermResult& term) {
-    if (requires_pos && has_wildcard_rule(term.rules)) return true;
-    if (pos_conditions == 0) return false;
+    if (requires_pos) {
+      const std::string own = explicit_rules(term.rules);
+      if (own.empty()) return true;
+      return pos_conditions != 0 && (deinflector_.rules_to_conditions(own) & pos_conditions) == 0;
+    }
     auto dict_conditions = deinflector_.rules_to_conditions(term.rules);
     return (dict_conditions & pos_conditions) == 0;
   });
