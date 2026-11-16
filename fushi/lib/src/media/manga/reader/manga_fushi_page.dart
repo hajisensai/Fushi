@@ -1240,7 +1240,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   final WebViewMenuDismissBridge _menuDismiss = WebViewMenuDismissBridge();
 
   @override
-  ModuleId? get popupDockModule => ModuleId.manga;
+  ModuleId? get lookupHostModule => ModuleId.manga;
 
   /// BUG-2553：查词弹窗开着时全屏 dismiss barrier 盖在 WebView 之上，barrier 收到的
   /// 是**全局**指针坐标；要转发给覆盖层选字，必须用 WebView 自己的 RenderBox 逆映成
@@ -7157,8 +7157,13 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                       top: _chromeTopInset,
                       left: 0,
                       right: 0,
-                      child: SafeArea(
-                        top: _chromeTopInset == 0,
+                      // 横幅自己带 SafeArea（状态栏 + 横屏刘海），外面不能再套一层
+                      // SafeArea：外层先把左右 padding 扣掉，刘海那一侧就成了横幅底色
+                      // 以外的空白条（BUG-4733）。固定态顶栏已让出状态栏，这里只摘掉
+                      // 顶部 padding，免得横幅再让一遍。
+                      child: MediaQuery.removePadding(
+                        context: context,
+                        removeTop: _chromeTopInset > 0,
                         child: SourceReviewBanner(
                           runHidden: runWithLookupPopupHidden,
                           session: session,
