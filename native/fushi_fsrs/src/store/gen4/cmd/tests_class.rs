@@ -881,3 +881,148 @@ fn limited_counts_and_has_user_data_stop_at_the_answer() {
         "an unlimited count walks everything: {fs} vs {fb}"
     );
 }
+
+// ---------------------------------------------------------------------- 出卡
+
+/// 出卡（`cmd/study.rs`）按类：同一次 Anki 复习的两份带盐导入在计数上下文里只算一条（最近 30 天、今天已复习的卡与
+/// 作答数），落在规范卡上；请求里按成员卡给的排除与 RWKV 候选都落到规范卡上，候选同一张规范卡只留一份。
+#[test]
+fn study_counts_a_log_class_once_and_takes_member_ids_in_the_request() {
+    use super::study::{log_state, study};
+    use crate::projection::Day;
+    with(|t, col| {
+        let w = land(t, col);
+        let deck = id(DECK).text();
+        let c = w.c_card.text();
+        let now = ANKI_REVLOG + 60_000;
+        let day = Day {
+            utc_offset_min: 0,
+            rollover_hour: 4,
+        };
+        let mut ix = Index::new(t, col);
+        let s = log_state(t, &mut ix, col, day, day.index(now)).unwrap();
+        assert_eq!(s.last30().iter().sum::<i64>(), 1, "{s:?}");
+        assert_eq!(
+            s.reviewed_cards().cloned().collect::<Vec<_>>(),
+            vec![c.clone()]
+        );
+        assert_eq!(s.review_answers(&c), 1);
+        assert_eq!(s.answers().count(), 1);
+
+        let base = json!({"now": now, "utcOff": 0, "rollover": 4, "deck": deck, "pick": true});
+        let plain = study(t, col, &base).unwrap();
+        assert!(t.conn().is_autocommit());
+        let keys: Vec<&String> = plain["counts"].as_object().unwrap().keys().collect();
+        assert_eq!(keys, vec![&deck], "{plain}");
+        assert_eq!(
+            plain["next"],
+            json!(c),
+            "the due review comes first: {plain}"
+        );
+
+        for member in [&w.card[0], &w.card[1]] {
+            let mut req = base.clone();
+            req["exclude"] = json!([member.text()]);
+            let v = study(t, col, &req).unwrap();
+            assert_ne!(
+                v["next"],
+                json!(c),
+                "excluded by member {}: {v}",
+                member.text()
+            );
+            assert_ne!(
+                v["after"],
+                json!(c),
+                "excluded by member {}: {v}",
+                member.text()
+            );
+        }
+
+        let mut req = base.clone();
+        req["rwkv"] = json!({
+            "decks": {deck.as_str(): [0.9, 0, 0, 0]},
+            "cands": [[w.card[0].text(), deck, null, 0.1], [w.card[1].text(), deck, null, 0.2]],
+        });
+        let v = study(t, col, &req).unwrap();
+        assert_eq!(v["eligible"], json!([c]), "{v}");
+        assert_eq!(v["next"], json!(c), "{v}");
+    });
+}
+
+/// 别名类里今天的学习步日志：同一次 Anki 学习的两份带盐导入（各落在一份带盐的卡上），计数上下文里只算一条、
+/// 「今天已引入新卡」落在规范卡上（`res` 取按血统重放写回的那份，按规范日志 ID 对上）。
+#[test]
+fn study_introduces_a_salted_learn_step_once_on_the_canonical_card() {
+    use super::ref_of;
+    use super::study::log_state;
+    use crate::projection::Day;
+    with(|t, col| {
+        let w = land(t, col);
+        let at = ANKI_REVLOG - 60_000;
+        let lid = [
+            rules::imported_revlog(&w.card[0], at),
+            rules::imported_revlog(&w.card[1], at),
+        ];
+        t.tx(|t| {
+            let mut ix = Index::new(t, col);
+            for i in 0..2 {
+                let mut b = anki_log(lid[i], w.card[i], None);
+                if let Body4::Log(l) = &mut b {
+                    l.at = at;
+                    l.anki_id = Some(at);
+                    l.rtype = "learn".into();
+                    l.res = Some(
+                        json!({"queue": "learning", "ivl": 0, "step": 1, "reps": 1, "lapses": 0,
+                               "scheduler": "fushi", "dueAt": at + 600_000})
+                        .to_string(),
+                    );
+                }
+                native(
+                    t,
+                    &mut ix,
+                    col,
+                    &op(0xd1 + i as u8, 1, 500 + i as i64, &[], &b),
+                );
+            }
+            ix.settle()?;
+            Ok(())
+        })
+        .unwrap();
+        let c = w.c_card.text();
+        let day = Day {
+            utc_offset_min: 0,
+            rollover_hour: 4,
+        };
+        let mut ix = Index::new(t, col);
+        // 计数取 `res` 时按规范日志 ID 去重放结果里找：两份成员日志归到的那个规范 ID 必须就在规范卡的重放结果里
+        // （对不上就会退回操作里的原值，重放写回的 `res` 白算）。
+        let canon_log = ix.canon(&ref_of(&lid[1].text())).unwrap();
+        assert_eq!(canon_log, ix.canon(&ref_of(&lid[0].text())).unwrap());
+        let replayed_ids: Vec<String> = ix
+            .replayed_card_logs(&ref_of(&w.card[1].text()))
+            .unwrap()
+            .iter()
+            .map(|x| {
+                serde_json::from_str::<Value>(&x.json).unwrap()["id"]
+                    .as_str()
+                    .unwrap()
+                    .to_owned()
+            })
+            .collect();
+        assert!(
+            replayed_ids.contains(&canon_log.text()),
+            "{} not in {replayed_ids:?}",
+            canon_log.text()
+        );
+        let s = log_state(t, &mut ix, col, day, day.index(ANKI_REVLOG + 60_000)).unwrap();
+        assert_eq!(
+            s.introduced_cards().cloned().collect::<Vec<_>>(),
+            vec![c.clone()],
+            "{s:?}"
+        );
+        // 学习步一条 + 复习一条：两份带盐的各只算一次。
+        assert_eq!(s.answers().count(), 2, "{s:?}");
+        assert_eq!(s.last30().iter().sum::<i64>(), 2, "{s:?}");
+        assert!(s.answers().all(|(x, _)| *x == c), "{s:?}");
+    });
+}
