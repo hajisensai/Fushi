@@ -19,7 +19,8 @@
 //! 接线」错误——C 入口照常解析输入，接线的模块只替换方法体。逐卡重放与训练集的 C 入口已接（S1b，`dispatch.rs` 末尾
 //! 「C 直出入口」一节）。
 //!
-//! 迁移（`gen4_migrate_status` / `gen4_migrate_run` / `gen4_migrate_cancel`）是不针对已打开库的全局命令（[global]）：
+//! 迁移（`gen4_migrate_status` / `gen4_migrate_profiles` / `gen4_migrate_run` / `gen4_migrate_cancel`）是不针对已打开库的
+//! 全局命令（[global]）：
 //! 没迁移的目录根本打不开新代库，迁移入口不能挂在库句柄上。
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -616,9 +617,12 @@ fn dir_of(req: &Value) -> Result<PathBuf, String> {
 
 /// 全局命令（不需要库句柄，`lib.rs` 的 JSON 入口转进来）：
 ///
-/// - `gen4_migrate_status {dir}` → `{state, running, profiles}`：`state` 是 `migrate::GenState` 的线上名；`running` =
-///   本进程里这个目录正在跑的迁移的进度 `{step, done, total}`（没有 = null）；`profiles` = `state` 为 `needsMigration`
-///   时旧库里全部有数据的 profile uid（`legacy::all_profiles`，`gen4_migrate_run` 的 `caches` 要每个都有），其余 null。
+/// - `gen4_migrate_status {dir}` → `{state, running}`：`state` 是 `migrate::GenState` 的线上名；`running` = 本进程里
+///   这个目录正在跑的迁移的进度 `{step, done, total}`（没有 = null）。只看文件与锁、读旧库的一行 schema，Dart 在 UI
+///   isolate 上轮询它。
+/// - `gen4_migrate_profiles {dir}` → `{profiles}`：旧库里全部有数据的 profile uid（`legacy::all_profiles`，含主库
+///   profile 表里没有的孤儿 uid；`gen4_migrate_run` 的 `caches` 要每个都有）。要读旧库的几张大表（按 profile 跳着取），
+///   调用方在后台 isolate 调（G7-2b）。没有旧库 = 报错。
 /// - `gen4_migrate_run {dir, caches: {profile: 缓存配置}, now, batch?, runId?}` → `migrate::Outcome::json`
 ///   （`{verdict, ...}`）。几十秒到几分钟，调用方在后台 isolate 调。同一目录在本进程里已经在跑 = `blocked`。
 /// - `gen4_migrate_cancel {dir, runId?}` → `{cancelled}`：叫停（提交点之前有效）；带 `runId` 时早于开跑到达也不丢。
@@ -630,22 +634,14 @@ pub fn global(op: &str, req: &Value) -> Result<Value, String> {
                 let (step, done, total) = *r.progress.lock().unwrap_or_else(|e| e.into_inner());
                 json!({"step": step.wire(), "done": done, "total": total})
             });
-            let state = migrate::status(&dir)?;
-            let mut out = json!({
-                "state": state.wire(),
+            Ok(json!({
+                "state": migrate::status(&dir)?.wire(),
                 "running": running.unwrap_or(Value::Null),
-                "profiles": Value::Null,
-            });
-            // 要迁移时回旧库里全部有数据的 profile（含主库 profile 表里没有的孤儿 uid）：Dart 给每个一份缓存配置
-            // （G7-2b）。列不出来（文件坏了等）不拦状态：`profiles` 为 null 并带上原因，`gen4_migrate_run` 会给明确的
-            // 结论（`blocked` + `corrupt` 等）。
-            if state == migrate::GenState::NeedsMigration {
-                match migrate::legacy_profiles(&dir) {
-                    Ok(p) => out["profiles"] = json!(p),
-                    Err(e) => out["profilesError"] = json!(e),
-                }
-            }
-            Ok(out)
+            }))
+        }
+        "gen4_migrate_profiles" => {
+            let dir = dir_of(req)?;
+            Ok(json!({"profiles": migrate::legacy_profiles(&dir)?}))
         }
         "gen4_migrate_run" => run_migration(req),
         "gen4_migrate_cancel" => {

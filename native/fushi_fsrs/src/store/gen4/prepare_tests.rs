@@ -1,6 +1,7 @@
 //! 前提补完（`prepare.rs`，G7-2b）的测试：从没同步过、协议 3 迁移做到一半、收段收尾残留（待重放 / 待刷新缓存 / 去重
-//! 作业）、只在投影表里的孤儿 profile 的协议 3 库，`migrate::run` 一次提交、对拍通过、日志条数不少；补完途中叫停 /
-//! panic / 进程被杀之后旧库仍是协议 3 能打开的库，重跑提交。
+//! 作业）、只在投影表里的孤儿 profile、v3.3.0 正式版的 schema 26、没有协议 3 身份的协议 3 库，`migrate::run` 一次提交、
+//! 对拍通过、日志条数不少；补完在副本上做，原件在提交点之前逐字节不变——补完途中叫停 / panic / 进程被杀之后原件仍是
+//! 写它的那个协议 3 版本能打开的库，重跑提交；提交点之后、封存之前被杀，Primary 打开补封原件。
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -12,7 +13,7 @@ use serde_json::{Value, json};
 use super::*;
 use crate::store::gen4::dryrun::Stop;
 use crate::store::gen4::dryrun::tests::{N1, N2, T0, cfg};
-use crate::store::gen4::files::{GEN4_FILE, GEN4_TEMP, LEGACY_FILE};
+use crate::store::gen4::files::{GEN4_FILE, GEN4_TEMP, LEGACY_FILE, OpenMode, open_gen4};
 use crate::store::gen4::kernel::global;
 use crate::store::gen4::migrate::{self, GenState, run, status};
 use crate::store::seal::SEALED_SCHEMA;
@@ -24,6 +25,8 @@ const NOW: i64 = T0 + 30 * 86_400_000;
 const N3: &str = "0193a1b2-0000-7000-8000-0000000000b3";
 /// 主库 profile 表里没有的孤儿 uid（删除没清干净 / 备份并入留下的）。
 const ORPHAN: &str = "0193a1b2-0000-7000-8000-00000000cafe";
+/// v3.3.0（最新的协议 3 正式版，D2 的回退目标）的 schema 号：`git show v3.3.0:native/fushi_fsrs/src/store/schema.rs`。
+const V3_3_0_SCHEMA: i64 = 26;
 
 fn fixed_device(profile: &str, _now: i64) -> Id {
     Id([if profile == P { 0x4e } else { 0x4f }; 16])
@@ -76,6 +79,14 @@ fn legacy_log(c: &Connection, profile: &str, id: &str, card: &str, at: i64) {
     .unwrap();
 }
 
+/// 关掉内核，留下目录。
+fn close(d: Device) -> tempdir::Dir {
+    let Device { core, _dir } = d;
+    core.close();
+    drop(core);
+    _dir
+}
+
 /// 从没同步过的老用户：开过协议 3（有本机身份）、迁移按 BUG-4011 推迟到首次同步之后、一直没同步，所以
 /// `migrated_at` 为空；之后的本机写入都是操作，更早的修改记录与复习日志还只在投影表里。[before_close] 在内核关之前跑。
 fn unsynced_dir(tag: &str, before_close: &dyn Fn(&Device)) -> tempdir::Dir {
@@ -119,10 +130,22 @@ fn unsynced_dir(tag: &str, before_close: &dyn Fn(&Device)) -> tempdir::Dir {
             .unwrap();
     }
     before_close(&d);
-    let Device { core, _dir } = d;
-    core.close();
-    drop(core);
-    _dir
+    close(d)
+}
+
+/// 把这一版协议 3 的库（schema 29）原地改成 v3.3.0 的 schema 26：两版之间的升级阶梯只有 v29 建表（`sync2_trust` /
+/// `sync2_trust_held`），v27 / v28 只改数据（补撤销、按新规则重放副本，本夹具里都没有这类数据）；v26 及以前的步骤在
+/// v3.3.0 与这一版逐字相同（`git diff v3.3.0 HEAD -- native/fushi_fsrs/src/store/schema.rs src/store/sync2/schema.rs`
+/// 只有这三步）。所以去掉这两张表、把号写回 26，就是 v3.3.0 建出来的表形态。
+fn downgrade_to_v3_3_0(dir: &Path) {
+    let c = raw(dir);
+    c.execute_batch(
+        "DROP TABLE sync2_trust; DROP TABLE sync2_trust_held; \
+         UPDATE srs_meta SET value = '26' WHERE key = 'schema'; PRAGMA wal_checkpoint(TRUNCATE);",
+    )
+    .unwrap();
+    c.close().unwrap();
+    assert_eq!(schema_of(dir), V3_3_0_SCHEMA);
 }
 
 /// 不经内核读旧库（注册了 ID 函数）。
@@ -149,6 +172,20 @@ fn schema_of(dir: &Path) -> i64 {
         .unwrap()
 }
 
+/// 原件的字节（主文件；测试夹具都关过内核、检查点做完，WAL 不在或是空的）。
+fn legacy_bytes(dir: &Path) -> Vec<u8> {
+    let wal = dir.join(format!("{LEGACY_FILE}-wal"));
+    assert!(
+        std::fs::metadata(&wal).map_or(true, |m| m.len() == 0),
+        "WAL has content"
+    );
+    std::fs::read(dir.join(LEGACY_FILE)).unwrap()
+}
+
+fn copy_left(dir: &Path) -> bool {
+    dir.join(crate::store::gen4::files::PREPARE_COPY).exists()
+}
+
 fn migrate_with(dir: &Path, caches: &BTreeMap<String, String>, stop: &Stop) -> migrate::Outcome {
     run(
         dir,
@@ -167,15 +204,28 @@ fn migrate_with(dir: &Path, caches: &BTreeMap<String, String>, stop: &Stop) -> m
 /// 只读：[dir] 的补完计划（缓存配置给全）。
 fn plan_of(dir: &Path) -> Plan {
     let src = crate::store::gen4::dryrun::open_legacy(&dir.join(LEGACY_FILE)).unwrap();
-    let p = plan(&src, crate::store::schema::SCHEMA_VERSION, &caches())
-        .unwrap()
-        .unwrap();
+    let p = plan(&src, schema_of(dir), &caches()).unwrap().unwrap();
     let _ = src.execute_batch("ROLLBACK");
     p
 }
 
-/// 提交了、对拍全过；旧库封存；新代库里的复习日志不少于迁移前旧库里的（含补完包进来的那些），旧库里每个 profile 都有
-/// 一个集合。
+/// 经全局命令列旧库的 profile（Dart 在后台 isolate 调的那条）。
+fn listed_profiles(dir: &Path) -> Vec<String> {
+    let v = global(
+        "gen4_migrate_profiles",
+        &json!({"dir": dir.to_str().unwrap()}),
+    )
+    .unwrap();
+    v["profiles"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap().to_owned())
+        .collect()
+}
+
+/// 提交了、对拍全过；原件封存；新代库里的复习日志不少于迁移前旧库里的（含补完包进来的那些），旧库里每个 profile 都有
+/// 一个集合；补完副本删掉了。
 fn assert_committed(dir: &Path, out: &migrate::Outcome, legacy_logs: i64, profiles: usize) {
     let migrate::Outcome::Committed { report } = out else {
         panic!("{out:?}")
@@ -188,6 +238,7 @@ fn assert_committed(dir: &Path, out: &migrate::Outcome, legacy_logs: i64, profil
         .collect();
     assert_eq!(verdicts, vec!["pass"; profiles], "{report:#}");
     assert_eq!(schema_of(dir), SEALED_SCHEMA);
+    assert!(!copy_left(dir));
     let new =
         Connection::open_with_flags(dir.join(GEN4_FILE), OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
     assert_eq!(
@@ -198,8 +249,8 @@ fn assert_committed(dir: &Path, out: &migrate::Outcome, legacy_logs: i64, profil
     assert!(logs >= legacy_logs, "{logs} < {legacy_logs}");
 }
 
-/// 从没同步过（`migrated_at` 为空、旧行还没包成操作）：状态页拿到旧库的 profile 列表，迁移先用协议 3 的 `migrate`
-/// 把旧行包完、再迁，一次提交；旧修改记录与旧日志都在新代库里。补完之后旧库里协议 3 的前提全部满足。
+/// 从没同步过（`migrated_at` 为空、旧行还没包成操作）：列表命令给出旧库的 profile，迁移在副本上用协议 3 的 `migrate`
+/// 把旧行包完、再迁，一次提交；旧修改记录与旧日志都在新代库里。原件除封存外没被写过：`migrated_at` 仍为空。
 #[test]
 fn a_never_synced_library_is_completed_and_migrated() {
     let dir = unsynced_dir("g72b-unsynced", &|_| {});
@@ -215,14 +266,14 @@ fn a_never_synced_library_is_completed_and_migrated() {
         );
     }
     assert_eq!(plan_of(&dir.0).profiles, vec![P.to_owned()]);
-    assert_eq!(
-        global(
-            "gen4_migrate_status",
-            &json!({"dir": dir.0.to_str().unwrap()})
-        )
-        .unwrap()["profiles"],
-        json!([P])
-    );
+    assert_eq!(listed_profiles(&dir.0), vec![P.to_owned()]);
+    // 状态命令只看文件与锁，不再列 profile（它在 UI isolate 上同步调）。
+    let s = global(
+        "gen4_migrate_status",
+        &json!({"dir": dir.0.to_str().unwrap()}),
+    )
+    .unwrap();
+    assert_eq!(s, json!({"state": "needsMigration", "running": null}));
     let mut steps = Vec::new();
     let out = run(
         &dir.0,
@@ -245,19 +296,18 @@ fn a_never_synced_library_is_completed_and_migrated() {
         &steps[..4],
         &[Step::Space, Step::Lock, Step::Prepare, Step::Precondition]
     );
-    // 两条旧修改记录进了操作日志（新代里是承袭的旧修改）：N3 的字段是旧记录里赢的那个值。
     let c = raw(&dir.0);
     assert_eq!(
         count(
             &c,
             "SELECT COUNT(*) FROM sync2_self WHERE migrated_at IS NOT NULL"
         ),
-        1
+        0
     );
-    assert_eq!(count(&c, "SELECT COUNT(*) FROM sync2_migrate_queue"), 0);
 }
 
-/// 协议 3 的迁移做到一半（队列里还有旧行）：补完从队列剩下的接着做，结果与一次做完的相同（对拍通过）。
+/// 协议 3 的迁移做到一半（队列里还有旧行）：补完从队列剩下的接着做，结果与一次做完的相同（对拍通过）。原件里的队列
+/// 原样留着（补完只写副本）。
 #[test]
 fn a_half_done_protocol_3_migration_is_finished() {
     let dir = unsynced_dir("g72b-halfway", &|d| {
@@ -265,19 +315,20 @@ fn a_half_done_protocol_3_migration_is_finished() {
         assert_eq!(r["done"], json!(false), "{r}");
     });
     let c = raw(&dir.0);
-    assert!(count(&c, "SELECT COUNT(*) FROM sync2_migrate_queue") > 0);
+    let queued = count(&c, "SELECT COUNT(*) FROM sync2_migrate_queue");
+    assert!(queued > 0);
     let logs = count(&c, "SELECT COUNT(*) FROM srs_review_logs");
     drop(c);
     let out = migrate_with(&dir.0, &caches(), &Stop::new());
     assert_committed(&dir.0, &out, logs, 1);
     assert_eq!(
         count(&raw(&dir.0), "SELECT COUNT(*) FROM sync2_migrate_queue"),
-        0
+        queued
     );
 }
 
-/// 收段被打断留下的待重放卡、待刷新缓存与一个没做完的去重作业：补完用协议 3 的 `replay_pending` / `dedup` 做完，
-/// 旧库里这几张表清空，迁移提交（对拍不跳过任何卡）。
+/// 收段被打断留下的待重放卡、待刷新缓存与一个没做完的去重作业：补完用协议 3 的 `replay_pending` / `dedup` 在副本上
+/// 做完，迁移提交（对拍不跳过任何卡）；原件里这几张表原样。
 #[test]
 fn interrupted_ingest_leftovers_are_finished() {
     let d = crate::store::gen4::dryrun::tests::library("g72b-leftovers");
@@ -302,20 +353,54 @@ fn interrupted_ingest_leftovers_are_finished() {
         )
         .unwrap();
     }
-    let Device { core, _dir: dir } = d;
-    core.close();
-    drop(core);
+    let dir = close(d);
     let logs = count(&raw(&dir.0), "SELECT COUNT(*) FROM srs_review_logs");
     assert_eq!(plan_of(&dir.0).profiles, vec![P.to_owned()]);
     let out = migrate_with(&dir.0, &caches(), &Stop::new());
     assert_committed(&dir.0, &out, logs, 1);
     let c = raw(&dir.0);
-    for t in ["sync2_replay_pending", "sync2_cache_pending", "sync2_dedup"] {
-        assert_eq!(count(&c, &format!("SELECT COUNT(*) FROM {t}")), 0, "{t}");
+    for (t, n) in [
+        ("sync2_replay_pending", 1),
+        ("sync2_cache_pending", 2),
+        ("sync2_dedup", 1),
+    ] {
+        assert_eq!(count(&c, &format!("SELECT COUNT(*) FROM {t}")), n, "{t}");
     }
 }
 
-/// 旧库里多出一个主库 profile 表里没有的孤儿 uid（只在投影表里，没进过操作日志）：`gen4_migrate_status` 把它列出来，
+/// 只剩收段收尾（待重放 + 待刷新缓存）、其余协议 3 前提都齐（`migrated_at` 已写、没有去重作业、没有收段通道）：只有
+/// `migration_blockers` 判得出要补。补完之后核对通过、提交（这条判断出错 = 前提核对报 `precondition`、重试永远不过）。
+#[test]
+fn only_replay_and_cache_leftovers_are_finished() {
+    let d = crate::store::gen4::dryrun::tests::library("g72b-replay-only");
+    let c1 = crate::registers::card_id(N1, "t1", 0).unwrap();
+    {
+        let w = d.core.writer().unwrap();
+        w.execute(
+            "INSERT INTO sync2_replay_pending (profile_uid, card_id) VALUES (srs_id(?1), srs_id(?2))",
+            [P, &c1],
+        )
+        .unwrap();
+        w.execute(
+            "INSERT INTO sync2_cache_pending (profile_uid, kind, entity_id) VALUES (srs_id(?1), 1, srs_id(?2))",
+            [P, N2],
+        )
+        .unwrap();
+    }
+    let dir = close(d);
+    {
+        let src = crate::store::gen4::dryrun::open_legacy(&dir.0.join(LEGACY_FILE)).unwrap();
+        assert_eq!(legacy::preflight(&src, P).unwrap(), Vec::<String>::new());
+        assert_eq!(legacy::migration_blockers(&src, P).unwrap().len(), 2);
+        let _ = src.execute_batch("ROLLBACK");
+    }
+    assert_eq!(plan_of(&dir.0).profiles, vec![P.to_owned()]);
+    let logs = count(&raw(&dir.0), "SELECT COUNT(*) FROM srs_review_logs");
+    let out = migrate_with(&dir.0, &caches(), &Stop::new());
+    assert_committed(&dir.0, &out, logs, 1);
+}
+
+/// 旧库里多出一个主库 profile 表里没有的孤儿 uid（只在投影表里，没进过操作日志）：`gen4_migrate_profiles` 把它列出来，
 /// 按列表给全缓存配置后迁移提交，它的牌组与复习日志成了新代库里的第二个集合，一条不丢。只给主库那个 profile 的配置 =
 /// 拦下（`missingCacheConfig`，点名缺的 uid），旧库不动。
 #[test]
@@ -339,12 +424,7 @@ fn an_orphan_profile_is_listed_and_migrated() {
     let d = dir.0.to_str().unwrap();
     let s = global("gen4_migrate_status", &json!({"dir": d})).unwrap();
     assert_eq!(s["state"], json!("needsMigration"));
-    let mut listed: Vec<String> = s["profiles"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|v| v.as_str().unwrap().to_owned())
-        .collect();
+    let mut listed = listed_profiles(&dir.0);
     listed.sort();
     let mut want = vec![P.to_owned(), ORPHAN.to_owned()];
     want.sort();
@@ -352,7 +432,7 @@ fn an_orphan_profile_is_listed_and_migrated() {
     let logs = count(&raw(&dir.0), "SELECT COUNT(*) FROM srs_review_logs");
 
     // 只给主库里那个 profile 的配置：拦下、点名孤儿 uid、旧库不动。
-    let before = std::fs::read(dir.0.join(LEGACY_FILE)).unwrap();
+    let before = legacy_bytes(&dir.0);
     let only_p = BTreeMap::from([(P.to_owned(), cfg())]);
     let out = migrate_with(&dir.0, &only_p, &Stop::new());
     let migrate::Outcome::Blocked { code, reason } = &out else {
@@ -360,9 +440,9 @@ fn an_orphan_profile_is_listed_and_migrated() {
     };
     assert_eq!(*code, BlockCode::MissingCacheConfig);
     assert!(reason.contains(ORPHAN), "{reason}");
-    assert_eq!(std::fs::read(dir.0.join(LEGACY_FILE)).unwrap(), before);
+    assert_eq!(legacy_bytes(&dir.0), before);
 
-    // 按状态给的列表交配置（与 Dart 同一条路：全局命令、JSON 配置对象）。
+    // 按列表交配置（与 Dart 同一条路：全局命令、JSON 配置对象）。
     let caches: serde_json::Map<String, Value> = listed
         .iter()
         .map(|p| (p.clone(), serde_json::from_str(&cfg_of(p)).unwrap()))
@@ -378,15 +458,65 @@ fn an_orphan_profile_is_listed_and_migrated() {
     assert_eq!(status(&dir.0), Ok(GenState::Ready));
 }
 
-/// 什么都不用补的库：计划为空，补完不开协议 3 的写连接（旧库在提交点之前一个字节不写，`migrate_tests.rs` 的断点
-/// 测试按字节核对）。
+/// 列 profile 的查询按 profile 跳着取：每张有 `profile_uid` 打头索引的表都是索引查找，不整表 / 整索引扫（测的是
+/// `legacy::all_profiles` 执行的同一条语句常量）。
+#[test]
+fn listing_profiles_seeks_the_profile_index() {
+    let dir = close(crate::store::gen4::dryrun::tests::library("g72b-explain"));
+    let c = crate::store::gen4::dryrun::open_legacy(&dir.0.join(LEGACY_FILE)).unwrap();
+    for table in legacy::LOGGED_TABLES
+        .iter()
+        .chain(&legacy::PROJECTED_TABLES)
+        .filter(|t| **t != "srs_unknown_events")
+    {
+        let sql = legacy::PROFILES_OF_TABLE_SQL.replace("{t}", table);
+        let plan: Vec<String> = c
+            .prepare(&format!("EXPLAIN QUERY PLAN {sql}"))
+            .unwrap()
+            .query_map([], |r| r.get::<_, String>(3))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        let on_table: Vec<&String> = plan
+            .iter()
+            .filter(|d| d.split_whitespace().nth(1) == Some(*table))
+            .collect();
+        assert_eq!(on_table.len(), 2, "{table}: {plan:#?}");
+        for d in on_table {
+            assert!(
+                d.starts_with("SEARCH ") && (d.contains("INDEX") || d.contains("PRIMARY KEY")),
+                "{table}: {plan:#?}"
+            );
+        }
+    }
+    assert_eq!(listed_profiles(&dir.0), vec![P.to_owned()]);
+}
+
+/// 什么都不用补的库：计划为空，不拷副本（`migrate_tests.rs` 的断点测试按字节核对原件）。
 #[test]
 fn a_ready_library_needs_no_completion() {
-    let d = crate::store::gen4::dryrun::tests::library("g72b-ready");
-    let Device { core, _dir: dir } = d;
-    core.close();
-    drop(core);
+    let dir = close(crate::store::gen4::dryrun::tests::library("g72b-ready"));
     assert!(plan_of(&dir.0).is_empty());
+    let logs = count(&raw(&dir.0), "SELECT COUNT(*) FROM srs_review_logs");
+    let mut prepared = 0;
+    let out = run(
+        &dir.0,
+        migrate::Options {
+            caches: &caches(),
+            batch: 2,
+            now_ms: NOW,
+            stop: &Stop::new(),
+            progress: &mut |s, _, _| {
+                if s == Step::Prepare {
+                    prepared += 1;
+                }
+            },
+            new_device: &fixed_device,
+        },
+    )
+    .unwrap();
+    assert_committed(&dir.0, &out, logs, 1);
+    assert_eq!(prepared, 1);
 }
 
 /// 文件坏了：拦下（`corrupt`），什么都不写；不是协议 3 能修的状态。
@@ -405,7 +535,43 @@ fn a_damaged_library_is_refused_as_corrupt() {
     assert!(!dir.0.join(GEN4_TEMP).exists());
 }
 
-/// 旧库是协议 3 能照常打开的库：协议 3 的内核打得开，完整性检查过，库里的复习日志一条不少。
+/// 页头、`srs_meta` 与列 profile 要读的表都完好，只有一个缓存表索引的页坏了：读得出 schema、算得出计划，补完之前的
+/// 完整性检查拦下（`corrupt`），不拷副本、原件逐字节不变。
+#[test]
+fn a_damaged_page_is_caught_before_completion() {
+    let dir = unsynced_dir("g72b-badpage", &|_| {});
+    let (page_size, root): (i64, i64) = {
+        let c = raw(&dir.0);
+        let ps = count(&c, "PRAGMA page_size");
+        let root = count(
+            &c,
+            "SELECT rootpage FROM sqlite_schema WHERE type = 'index' AND tbl_name = 'srs_cards_cache' \
+             AND rootpage > 1 ORDER BY rootpage DESC LIMIT 1",
+        );
+        (ps, root)
+    };
+    let mut bytes = legacy_bytes(&dir.0);
+    let at = ((root - 1) * page_size) as usize;
+    bytes[at..at + page_size as usize].fill(0x5a);
+    std::fs::write(dir.0.join(LEGACY_FILE), &bytes).unwrap();
+    assert_eq!(plan_of(&dir.0).profiles, vec![P.to_owned()]);
+    let out = migrate_with(&dir.0, &caches(), &Stop::new());
+    let migrate::Outcome::Blocked { code, reason } = &out else {
+        panic!("{out:?}")
+    };
+    assert_eq!(*code, BlockCode::Corrupt, "{reason}");
+    assert_eq!(legacy_bytes(&dir.0), bytes);
+    assert!(!copy_left(&dir.0));
+    assert!(!dir.0.join(GEN4_TEMP).exists());
+}
+
+/// 原件是写它的那个协议 3 版本能照常打开的库：逐字节就是迁移前的样子（[before]），没有新代库。
+fn assert_original_untouched(dir: &Path, before: &[u8]) {
+    assert_eq!(legacy_bytes(dir), before, "the original was written");
+    assert!(!dir.join(GEN4_FILE).exists());
+}
+
+/// 这一版的协议 3 打得开原件（完整性检查过，复习日志一条不少）。会写它（建身份）：放在逐字节核对之后。
 fn assert_protocol_3_opens(dir: &Path, logs: i64) {
     let core = crate::store::SrsCore::open(&dir.join(LEGACY_FILE)).unwrap();
     let id = core.sync2_identity(P, NOW).unwrap();
@@ -419,21 +585,16 @@ fn assert_protocol_3_opens(dir: &Path, logs: i64) {
         "ok"
     );
     assert_eq!(count(&c, "SELECT COUNT(*) FROM srs_review_logs"), logs);
-    assert_eq!(
-        schema_of(dir),
-        crate::store::schema::SCHEMA_VERSION,
-        "not sealed"
-    );
-    assert!(!dir.join(GEN4_FILE).exists());
 }
 
-/// 补完途中叫停 / panic：报叫停（panic 照常往外抛），旧库是协议 3 能打开的库、没有新代库；重跑从断点接着补、提交。
+/// 补完途中叫停 / panic：报叫停（panic 照常往外抛），原件逐字节不变、没有新代库；重跑提交。
 #[test]
-fn a_cancelled_or_panicking_completion_leaves_a_protocol_3_library() {
+fn a_cancelled_or_panicking_completion_leaves_the_original_untouched() {
     for panics in [false, true] {
         let tag = if panics { "g72b-panic" } else { "g72b-stop" };
         let dir = unsynced_dir(tag, &|_| {});
         let logs = count(&raw(&dir.0), "SELECT COUNT(*) FROM srs_review_logs");
+        let before = legacy_bytes(&dir.0);
         let stop = Stop::new();
         let caches = caches();
         let mut seen = 0;
@@ -448,7 +609,7 @@ fn a_cancelled_or_panicking_completion_leaves_a_protocol_3_library() {
                     progress: &mut |s, _, _| {
                         if s == Step::Prepare {
                             seen += 1;
-                            // 第一批旧行已经包好提交、还有剩的时候。
+                            // 副本上第一批旧行已经包好提交、还有剩的时候。
                             if seen == 3 {
                                 if panics {
                                     panic!("injected panic in the middle of the completion");
@@ -465,17 +626,153 @@ fn a_cancelled_or_panicking_completion_leaves_a_protocol_3_library() {
             assert!(r.is_err(), "{tag}");
         } else {
             assert_eq!(r.unwrap().unwrap(), migrate::Outcome::Cancelled, "{tag}");
+            assert!(!copy_left(&dir.0), "{tag}");
         }
-        // 补到一半：旧行有的包了、有的还在队列里。
-        assert!(
-            count(&raw(&dir.0), "SELECT COUNT(*) FROM sync2_migrate_queue") > 0,
-            "{tag}"
-        );
-        assert_protocol_3_opens(&dir.0, logs);
+        assert_original_untouched(&dir.0, &before);
         assert_eq!(status(&dir.0), Ok(GenState::NeedsMigration), "{tag}");
         let out = migrate_with(&dir.0, &caches, &Stop::new());
         assert_committed(&dir.0, &out, logs, 1);
     }
+}
+
+// ---------------------------------------------------------------- v3.3.0 的库（schema 26）
+
+/// 从正式版 v3.3.0 升上来的用户（主路径：schema 26，比这一版的协议 3 旧）：计划是「升级 + 全部 profile」，列表命令在
+/// 旧表形态上列得出 profile，升级与补完都在副本上做，一次提交、对拍通过；提交之前原件逐字节是 v3.3.0 写的那份，提交后
+/// 原件只多了封存。
+#[test]
+fn a_v3_3_0_library_is_upgraded_in_the_copy_and_migrated() {
+    let dir = unsynced_dir("g72b-v330", &|_| {});
+    downgrade_to_v3_3_0(&dir.0);
+    let logs = count(&raw(&dir.0), "SELECT COUNT(*) FROM srs_review_logs");
+    assert_eq!(status(&dir.0), Ok(GenState::NeedsMigration));
+    assert_eq!(listed_profiles(&dir.0), vec![P.to_owned()]);
+    let plan = plan_of(&dir.0);
+    assert!(plan.upgrade);
+    assert_eq!(plan.profiles, vec![P.to_owned()]);
+    let before = legacy_bytes(&dir.0);
+    // 提交之前（对拍、提交两步）原件逐字节不变。
+    let mut checked = 0;
+    let out = run(
+        &dir.0,
+        migrate::Options {
+            caches: &caches(),
+            batch: 2,
+            now_ms: NOW,
+            stop: &Stop::new(),
+            progress: &mut |s, _, _| {
+                if matches!(s, Step::Parity | Step::Commit) {
+                    assert_eq!(legacy_bytes(&dir.0), before, "{s:?}");
+                    checked += 1;
+                }
+            },
+            new_device: &fixed_device,
+        },
+    )
+    .unwrap();
+    assert!(checked >= 2);
+    assert_committed(&dir.0, &out, logs, 1);
+    // 封存只改 `srs_meta`：投影与日志表与 v3.3.0 写的一样（`sync2_trust` 仍不在，没被升级）。
+    let c = raw(&dir.0);
+    assert_eq!(
+        count(
+            &c,
+            "SELECT COUNT(*) FROM sqlite_schema WHERE name = 'sync2_trust'"
+        ),
+        0
+    );
+    assert_eq!(count(&c, "SELECT COUNT(*) FROM srs_review_logs"), logs);
+}
+
+/// v3.3.0 的库补到一半（升级做完、包旧行做到一半）叫停 / panic：原件仍是 schema 26、逐字节不变（v3.3.0 打得开）；
+/// 重跑提交。
+#[test]
+fn a_stopped_v3_3_0_completion_leaves_a_v3_3_0_library() {
+    for panics in [false, true] {
+        let tag = if panics {
+            "g72b-v330-panic"
+        } else {
+            "g72b-v330-stop"
+        };
+        let dir = unsynced_dir(tag, &|_| {});
+        downgrade_to_v3_3_0(&dir.0);
+        let logs = count(&raw(&dir.0), "SELECT COUNT(*) FROM srs_review_logs");
+        let before = legacy_bytes(&dir.0);
+        let stop = Stop::new();
+        let caches = caches();
+        let mut seen = 0;
+        let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            run(
+                &dir.0,
+                migrate::Options {
+                    caches: &caches,
+                    batch: 1,
+                    now_ms: NOW,
+                    stop: &stop,
+                    progress: &mut |s, _, _| {
+                        if s == Step::Prepare {
+                            seen += 1;
+                            if seen == 3 {
+                                if panics {
+                                    panic!("injected panic after the upgrade");
+                                }
+                                stop.stop();
+                            }
+                        }
+                    },
+                    new_device: &fixed_device,
+                },
+            )
+        }));
+        assert_eq!(r.is_err(), panics, "{tag}");
+        assert_original_untouched(&dir.0, &before);
+        assert_eq!(schema_of(&dir.0), V3_3_0_SCHEMA, "{tag}");
+        let out = migrate_with(&dir.0, &caches, &Stop::new());
+        assert_committed(&dir.0, &out, logs, 1);
+    }
+}
+
+/// 原件没有协议 3 身份（从没启用过协议 3，数据只在投影表里）：补完在副本里建身份、包旧行；新代库记的迁移来源是原件
+/// 的内容摘要（`files::NO_IDENTITY`），提交、封存。
+#[test]
+fn a_library_without_identity_is_migrated() {
+    let dir = no_identity_dir("g72b-noid");
+    assert_eq!(crate::store::seal::legacy_identity(&raw(&dir.0)), Ok(None));
+    let logs = count(&raw(&dir.0), "SELECT COUNT(*) FROM srs_review_logs");
+    assert_eq!(listed_profiles(&dir.0), vec![P.to_owned()]);
+    let out = migrate_with(&dir.0, &caches(), &Stop::new());
+    assert_committed(&dir.0, &out, logs, 1);
+    let new = Connection::open_with_flags(dir.0.join(GEN4_FILE), OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .unwrap();
+    let from: String = new
+        .query_row(
+            "SELECT value FROM srs_meta WHERE key = ?1",
+            [crate::store::gen4::files::MIGRATED_FROM_KEY],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(from, crate::store::gen4::files::NO_IDENTITY);
+}
+
+/// 没开过协议 3 的库：只有投影表里的牌组与一条复习日志（[P] 下），没有 `sync2_self` 行。
+fn no_identity_dir(tag: &str) -> tempdir::Dir {
+    let d = Device::new(tag);
+    {
+        let w = d.core.writer().unwrap();
+        w.execute(
+            "INSERT INTO srs_entities (id, profile_uid, kind, payload_json, created_at) VALUES (srs_id(?1), srs_id(?2), 'deck', '{\"createdAt\":1}', 1)",
+            params![default_deck_id(P), P],
+        )
+        .unwrap();
+        legacy_log(
+            &w,
+            P,
+            "0193a1b2-0000-7000-8000-0000000000ea",
+            "0193a1b2-0000-7000-8000-0000000000ca",
+            T0 - 600,
+        );
+    }
+    close(d)
 }
 
 // ---------------------------------------------------------------- 断点（子进程）
@@ -484,13 +781,15 @@ const CHILD_DIR: &str = "FUSHI_G72B_CHILD_DIR";
 const CHILD_AT: &str = "FUSHI_G72B_CRASH_AT";
 const CRASHED: i32 = 87;
 
-/// 子进程那一半：环境变量给了目录才动作。补完报到第 n 次进度时立刻 `exit`（等同被杀：不跑析构、不关连接）。
+/// 子进程那一半：环境变量给了目录才动作。`prepare:n` = 补完报到第 n 次进度时、`seal` = 提交点（改名）之后封存之前，
+/// 立刻 `exit`（等同被杀：不跑析构、不关连接）。
 #[test]
 fn prepare_child_process_half() {
     let Ok(dir) = std::env::var(CHILD_DIR) else {
         return;
     };
-    let nth: u64 = std::env::var(CHILD_AT).unwrap().parse().unwrap();
+    let at = std::env::var(CHILD_AT).unwrap();
+    let nth: Option<u64> = at.strip_prefix("prepare:").map(|n| n.parse().unwrap());
     let mut seen = 0u64;
     let caches = caches();
     let stop = Stop::new();
@@ -501,50 +800,102 @@ fn prepare_child_process_half() {
             batch: 1,
             now_ms: NOW,
             stop: &stop,
-            progress: &mut |s, _, _| {
-                if s == Step::Prepare {
+            progress: &mut |s, _, _| match nth {
+                Some(nth) if s == Step::Prepare => {
                     seen += 1;
                     if seen == nth {
                         std::process::exit(CRASHED);
                     }
                 }
+                None if s == Step::Seal => std::process::exit(CRASHED),
+                _ => {}
             },
             new_device: &fixed_device,
         },
     );
-    panic!("the crash point prepare:{nth} was never reached: {r:?}");
+    panic!("the crash point {at} was never reached: {r:?}");
 }
 
-/// 补完途中进程被杀（每一条协议 3 命令之后各试一次）：旧库是协议 3 能打开的库，重跑提交，结果都对拍通过。
+/// 子进程里迁移 [dir]，在 [at] 被杀。
+fn crash_child(dir: &Path, at: &str) {
+    let out = Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "store::gen4::prepare::tests::prepare_child_process_half",
+            "--nocapture",
+            "--test-threads=1",
+        ])
+        .env(CHILD_DIR, dir)
+        .env(CHILD_AT, at)
+        .output()
+        .unwrap();
+    assert_eq!(
+        out.status.code(),
+        Some(CRASHED),
+        "{at}: {}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+/// 补完途中进程被杀（每一条协议 3 命令之后各试一次；这一版的库与 v3.3.0 的库各一遍）：原件逐字节不变（写它的那个
+/// 协议 3 版本打得开），重跑提交，结果都对拍通过。
 #[test]
 fn a_killed_completion_resumes() {
-    let base = unsynced_dir("g72b-kill", &|_| {});
-    let logs = count(&raw(&base.0), "SELECT COUNT(*) FROM srs_review_logs");
-    for nth in [2u64, 4, 6] {
-        let d = tempdir::new(&format!("g72b-kill-{nth}"));
-        std::fs::copy(base.0.join(LEGACY_FILE), d.0.join(LEGACY_FILE)).unwrap();
-        let out = Command::new(std::env::current_exe().unwrap())
-            .args([
-                "--exact",
-                "store::gen4::prepare::tests::prepare_child_process_half",
-                "--nocapture",
-                "--test-threads=1",
-            ])
-            .env(CHILD_DIR, &d.0)
-            .env(CHILD_AT, nth.to_string())
-            .output()
-            .unwrap();
-        assert_eq!(
-            out.status.code(),
-            Some(CRASHED),
-            "{nth}: {}{}",
-            String::from_utf8_lossy(&out.stdout),
-            String::from_utf8_lossy(&out.stderr)
-        );
-        assert_protocol_3_opens(&d.0, logs);
-        let out = migrate_with(&d.0, &caches(), &Stop::new());
-        assert_committed(&d.0, &out, logs, 1);
+    for v330 in [false, true] {
+        let base = unsynced_dir("g72b-kill", &|_| {});
+        if v330 {
+            downgrade_to_v3_3_0(&base.0);
+        }
+        let logs = count(&raw(&base.0), "SELECT COUNT(*) FROM srs_review_logs");
+        let before = legacy_bytes(&base.0);
+        for nth in [2u64, 4, 6] {
+            let d = tempdir::new(&format!("g72b-kill-{nth}"));
+            std::fs::copy(base.0.join(LEGACY_FILE), d.0.join(LEGACY_FILE)).unwrap();
+            crash_child(&d.0, &format!("prepare:{nth}"));
+            assert_original_untouched(&d.0, &before);
+            if !v330 {
+                assert_protocol_3_opens(&d.0, logs);
+            }
+            let out = migrate_with(&d.0, &caches(), &Stop::new());
+            assert_committed(&d.0, &out, logs, 1);
+        }
     }
+}
+
+/// 提交点（改名）之后、封存之前进程被杀：v3.3.0 的原件（schema 26，没被升级）与没有身份的原件都由下一次 Primary 打开
+/// 按记下的指纹认出是迁移来源、补封，补完副本删掉；原件在那之后又被写过的，不封。
+#[test]
+fn a_kill_after_the_commit_point_seals_the_original_on_open() {
+    for (tag, dir) in [
+        ("v330", {
+            let d = unsynced_dir("g72b-seal-v330", &|_| {});
+            downgrade_to_v3_3_0(&d.0);
+            d
+        }),
+        ("noid", no_identity_dir("g72b-seal-noid")),
+    ] {
+        crash_child(&dir.0, "seal");
+        assert!(dir.0.join(GEN4_FILE).exists(), "{tag}");
+        assert_ne!(schema_of(&dir.0), SEALED_SCHEMA, "{tag}");
+        assert!(copy_left(&dir.0), "{tag}");
+        drop(open_gen4(&dir.0, OpenMode::Primary).unwrap());
+        assert_eq!(schema_of(&dir.0), SEALED_SCHEMA, "{tag}");
+        assert!(!copy_left(&dir.0), "{tag}");
+    }
+    // 中断之后原件又被（旧版本）写过：指纹对不上，不封、不动它。
+    let dir = no_identity_dir("g72b-seal-written");
+    crash_child(&dir.0, "seal");
+    raw(&dir.0)
+        .execute(
+            "UPDATE srs_entities SET created_at = created_at + 1 WHERE kind = 'deck'",
+            [],
+        )
+        .unwrap();
+    let before = legacy_bytes(&dir.0);
+    drop(open_gen4(&dir.0, OpenMode::Primary));
+    assert_ne!(schema_of(&dir.0), SEALED_SCHEMA);
+    assert_eq!(legacy_bytes(&dir.0), before);
 }
 
 /// 补完之后的前提核对仍然拦得住补完管不到的：补完只跑协议 3 自己的命令，并入标记它不碰（[plan] 先拦下）。
@@ -558,11 +909,11 @@ fn a_half_done_merge_is_not_completed() {
         )
         .unwrap();
     });
-    let before = std::fs::read(dir.0.join(LEGACY_FILE)).unwrap();
+    let before = legacy_bytes(&dir.0);
     let out = migrate_with(&dir.0, &caches(), &Stop::new());
     let migrate::Outcome::Blocked { code, .. } = &out else {
         panic!("{out:?}")
     };
     assert_eq!(*code, BlockCode::MergeHalfDone);
-    assert_eq!(std::fs::read(dir.0.join(LEGACY_FILE)).unwrap(), before);
+    assert_eq!(legacy_bytes(&dir.0), before);
 }

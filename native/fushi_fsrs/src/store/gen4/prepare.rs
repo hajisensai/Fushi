@@ -1,5 +1,6 @@
-//! 迁移前提补完（G7-2b；设计 §6.1「前提」，交接说明 §9.5 第 1、2 条）：`gen4_migrate_run` 拿到换代锁之后、核对前提
-//! 之前，用**冻结的协议 3 代码**把旧库还没做完的协议 3 收尾做完。
+//! 迁移前提补完（G7-2b；设计 §6.1「前提」，交接说明 §9.5 第 1、2 条、§11）：`gen4_migrate_run` 拿到换代锁与原件的写锁
+//! 之后、核对前提之前，用**冻结的协议 3 代码**把旧库还没做完的协议 3 收尾做完——**在原件的副本上做**
+//! （[PREPARE_COPY]），原件在提交点之前一个字节不写。
 //!
 //! # 为什么在这里补
 //!
@@ -9,45 +10,68 @@
 //! 缓存 `sync2_cache_pending`）。S1 删了 `ffsrs_store_open`、G7-5 删了 Dart 的这些调用之后，没有任何路径再做它们，
 //! 而迁移的前提核对（`legacy::preflight` / `migration_blockers` / `library_blockers`）把它们当硬阻断：这些用户永远迁不了。
 //!
-//! # 做什么（[plan] 只读判断，[complete] 才写）
+//! # 为什么在副本上做
 //!
-//! - 旧库 schema 比这一版的协议 3 旧：`SrsCore::open` 的升级阶梯把它升上来（协议 3 打开时本来就做；空间不够照协议 3
-//!   的空间守卫报 [Outcome::NoSpace]，库不动）。
+//! 最新的协议 3 正式版（v3.3.0，D2 的回退目标）的库是 schema 26，这一版的协议 3 是 29：从正式版升上来的用户，补完的
+//! 第一步就是协议 3 的升级阶梯。v3.3.0 打不开 schema 更新的库（「newer than this build」），在原件上补完的话，之后只要
+//! 对拍中止、取消、出错或进程被杀，用户就再也回不到 v3.3.0，而这一版又没有协议 3 的开库入口。所以：
+//!
+//! - 迁移拿着原件的写锁（`migrate::hold_legacy`，`BEGIN IMMEDIATE`，不写）从补完之前一直持到封存：补完、对拍、提交期间
+//!   谁也写不进原件；
+//! - 用 SQLite 的在线备份把原件逐页拷成 [PREPARE_COPY]（一个读快照，含 WAL 里已提交的部分；原件不动）；
+//! - 升级与补完都只写副本；之后的读快照、对拍、提交都从副本来；提交点（改名）之后封存的是**原件**——新代库记的迁移
+//!   来源也是原件的指纹（`files::record_migrated_from` / `files::source_mark`），补封时拿原件核对；
+//! - 迁移结束（不论结论）删掉副本；崩溃留下的由下一次迁移或 Primary 打开删掉。
+//!
+//! 提交点之前任何一种结局（叫停、panic、进程被杀、对拍中止、补完报错），原件都逐字节是迁移前的样子：哪个版本的协议 3
+//! 写的，就还能被哪个版本打开。代价是补完期间多占一份旧库的空间（空间核对算进去了）。
+//!
+//! # 做什么（[plan] 只读判断，[complete] 才写副本）
+//!
+//! - 旧库 schema 比这一版的协议 3 旧：`SrsCore::open` 的升级阶梯在副本上把它升上来（空间不够照协议 3 的空间守卫报
+//!   [Outcome::NoSpace]）。
 //! - 每个要补的 profile（[Plan::profiles]，升序），经协议 3 的分发器（`store/ffi.rs` `sync2_dispatch`，与旧 app 发的
 //!   是同一串命令，通道没做完时分发器自己先按片做完）依次：
-//!   1. `migrate`（每批 [Options::batch] 条、各自一个提交）到 `done`：建本机身份（没有的话）、把还没有任何操作代表的
-//!      旧行包成操作、写 `migrated_at`。只在投影表里的孤儿 uid 也这样进操作日志，迁移时与别的 profile 一样迁过去；
+//!   1. `migrate`（每批 [Options::batch] 条）到 `done`：建本机身份（没有的话）、把还没有任何操作代表的旧行包成操作、
+//!      写 `migrated_at`。只在投影表里的孤儿 uid 也这样进操作日志，迁移时与别的 profile 一样迁过去；
 //!   2. `dedup` 到 `done` 不为假（重复流收敛，本机就能做完：发 `Dedup` 只是追加本机操作）；
 //!   3. `replay_pending` 到 `more` 不为真（收段通道、待重放的卡、待刷新的缓存）。
 //!
 //! 每一步都是协议 3 自己本来会做的事，不改变数据的含义（迁移只包「还没被代表」的旧行，重放是全部日志的纯函数，缓存
-//! 随时可重建）；每批 / 每片各自提交，进程在任何一点被杀、取消，旧库都是协议 3 能照常打开的状态，重跑从断点接着做
-//! （`migrate` 的队列、`dedup` 的游标、`replay_pending` 的集合都在库里）。什么都不用补的库不开写连接，一个字节不写。
+//! 随时可重建）。什么都不用补的库不拷副本，读快照直接开在原件上。
+//!
+//! 与协议 3 的 app 不同，这里不等首次同步确认、不先从同步位置收一轮（BUG-4011 的推迟迁移）：多台设备、协议 3 同步
+//! 从没确认过、却共享同一份旧行的用户，每台设备各自把旧行包一遍，迁到新代后存储里是两份操作流；新代的派生层按 dot /
+//! 日志 ID 取操作号最小的一份（`derive.rs`），用户看到的结果不变，只是体积与同步量多一份（交接说明 §11，交 G8 / G9
+//! 判断要不要在新代收敛副本）。
 //!
 //! # 补不了的（拦下，[BlockCode]）
 //!
 //! - 并入做到一半（`profile_merge/<uid>`，D23：由冻结的旧并入代码做完，它由 Dart 驱动、带着主库那一侧的状态）。
 //! - 旧库里有 profile 没给缓存配置（`dedup` / `replay_pending` 要刷新协议 3 的缓存行，迁移也要）：Dart 按
-//!   `gen4_migrate_status` 的 `profiles`（[crate::store::gen4::legacy::all_profiles]）逐个给。
-//! - 要写之前 `PRAGMA quick_check` 不过（文件坏了）：不往坏文件里写。
+//!   `gen4_migrate_profiles`（[crate::store::gen4::legacy::all_profiles]）逐个给。
+//! - 拷副本之前 `PRAGMA quick_check` 不过（文件坏了）：不在坏文件上补。
 //!
 //! 协议 1 的主库（`srs_entities` 在 app 主库里，D21）不在这里：那是另一个文件，G7-6 处理。
 
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use rusqlite::{Connection, OpenFlags};
 use serde_json::{Value, json};
 
+use super::dryrun::Stop;
+use super::files::{LEGACY_FILE, PREPARE_COPY};
 use super::legacy;
-use super::migrate::{BlockCode, Options, Outcome, Step, blocked, hold_legacy, is_corrupt};
+use super::migrate::{BlockCode, Options, Outcome, Step, blocked, is_corrupt};
 use crate::store::SrsCore;
 use crate::store::schema::{SCHEMA_VERSION, UPGRADE_NO_SPACE};
+use crate::store::seal;
 
 /// 要补的事（[plan] 的结果）。
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct Plan {
-    /// 旧库 schema 比这一版的协议 3 旧：打开时先升级。
+    /// 旧库 schema 比这一版的协议 3 旧：副本打开时先升级。
     pub upgrade: bool,
     /// 要补的 profile（uid 文本，升序）。
     pub profiles: Vec<String>,
@@ -107,7 +131,7 @@ pub(crate) fn plan(
     Ok(Ok(Plan { upgrade, profiles }))
 }
 
-/// 写之前的完整性检查（`PRAGMA quick_check`）：不过 = 原因。
+/// 拷副本之前的完整性检查（`PRAGMA quick_check`）：不过 = 原因。
 fn damage(path: &Path) -> Result<Option<String>, String> {
     // 表达式索引 / 生成列引用协议 3 的 SQL 函数：检查要算它们，连接上得注册（`dryrun::open_legacy` 同一套）。
     let c = Connection::open_with_flags(
@@ -128,49 +152,80 @@ fn damage(path: &Path) -> Result<Option<String>, String> {
     }
 }
 
-/// 照 [plan] 补完（拿着换代锁调；[legacy_path] 是 `srs.db`）。`Ok(None)` = 补完了，接着核对前提；`Ok(Some(..))` =
-/// 结论（拦下 / 空间不够 / 叫停）。出错（IO、协议 3 的命令报错）是 `Err`：已提交的批次留着（协议 3 的状态），重跑接着做。
+/// 在线备份一次拷的页数（两次之间看一次叫停）。
+const COPY_PAGES: i32 = 4096;
+
+/// 把原件 [from] 逐页拷成 [to]（SQLite 在线备份：一个读快照，含 WAL 里已提交的部分；不写原件）。叫停 = `Ok(false)`。
+fn copy_legacy(from: &Path, to: &Path, stop: &Stop) -> Result<bool, String> {
+    let err = |e: rusqlite::Error| format!("gen4 prepare: copy the protocol 3 library: {e}");
+    let src = Connection::open_with_flags(
+        from,
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .map_err(err)?;
+    let mut dst = Connection::open(to).map_err(err)?;
+    {
+        let b = rusqlite::backup::Backup::new(&src, &mut dst).map_err(err)?;
+        loop {
+            if stop.stopped() {
+                return Ok(false);
+            }
+            match b.step(COPY_PAGES).map_err(err)? {
+                rusqlite::backup::StepResult::Done => break,
+                rusqlite::backup::StepResult::More => {}
+                // 拿着原件的写锁、副本只有这一条连接：不该忙。
+                other => {
+                    return Err(format!(
+                        "gen4 prepare: copy the protocol 3 library: {other:?}"
+                    ));
+                }
+            }
+        }
+    }
+    dst.close().map_err(|(_, e)| err(e))?;
+    Ok(true)
+}
+
+/// 照 [plan] 在副本上补完（调用方拿着换代锁与原件 `dir/srs.db` 的写锁）。`Ok(Ok(副本路径))` = 补完了，之后的读快照与
+/// 阶段都开在副本上；`Ok(Err(..))` = 结论（拦下 / 空间不够 / 叫停）。出错（IO、协议 3 的命令报错）是 `Err`。副本由
+/// 调用方在迁移结束时删（不论结论）；原件不论哪种结局都不动。
 pub(crate) fn complete(
-    legacy_path: &Path,
+    dir: &Path,
     plan: &Plan,
     opts: &mut Options<'_>,
-) -> Result<Option<Outcome>, String> {
-    if plan.is_empty() {
-        return Ok(None);
-    }
+) -> Result<Result<PathBuf, Outcome>, String> {
+    let legacy = dir.join(LEGACY_FILE);
+    let copy = dir.join(PREPARE_COPY);
     if opts.stop.stopped() {
-        return Ok(Some(Outcome::Cancelled));
+        return Ok(Err(Outcome::Cancelled));
     }
-    // 旧库正被别的连接写：先不碰（与核对前提时同一个判断）。试完马上放开：补完要协议 3 自己的写连接。
-    match hold_legacy(legacy_path)? {
-        None => {
-            return Ok(Some(blocked(BlockCode::Busy, super::migrate::BLOCKED_BUSY)));
-        }
-        Some(held) => {
-            let _ = held.execute_batch("ROLLBACK");
-            drop(held);
-        }
+    if let Some(why) = damage(&legacy)? {
+        return Ok(Err(blocked(BlockCode::Corrupt, why)));
     }
-    if let Some(why) = damage(legacy_path)? {
-        return Ok(Some(blocked(BlockCode::Corrupt, why)));
+    seal::remove_sqlite_files(&copy)?;
+    if !copy_legacy(&legacy, &copy, opts.stop)? {
+        return Ok(Err(Outcome::Cancelled));
     }
-    let core = match SrsCore::open(legacy_path) {
+    let core = match SrsCore::open(&copy) {
         Ok(core) => core,
         Err(e) => {
             if let Some(rest) = e.strip_prefix(UPGRADE_NO_SPACE) {
                 let v: Value = serde_json::from_str(rest).unwrap_or(Value::Null);
                 if let (Some(needed), Some(free)) = (v["need"].as_u64(), v["free"].as_u64()) {
-                    return Ok(Some(Outcome::NoSpace { needed, free }));
+                    return Ok(Err(Outcome::NoSpace { needed, free }));
                 }
             }
             return Err(format!("gen4 prepare: open the protocol 3 library: {e}"));
         }
     };
     let out = finish_profiles(&core, plan, opts);
-    // 关库：WAL 并回主文件（最后一条连接负责），随后核对前提的只读快照与写锁看到的就是补完的全部。
+    // 关库：WAL 并回副本主文件（最后一条连接负责），随后的读快照看到的就是补完的全部。
     core.close();
     drop(core);
-    out
+    Ok(match out? {
+        Some(o) => Err(o),
+        None => Ok(copy),
+    })
 }
 
 /// 经协议 3 的分发器发一条命令（与旧 app 发的同形）。

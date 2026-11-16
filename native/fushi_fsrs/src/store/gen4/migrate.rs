@@ -13,10 +13,11 @@
 //!    [Outcome::Blocked]（`migrating`）；旧库正被写 = [Outcome::Blocked]（等一会再来）。
 //! 3. **前提补完**（[Step::Prepare]，G7-2b，`prepare.rs`）：旧库没满足的前提——从没同步过（`migrated_at` 为空、
 //!    旧行还在 `sync2_migrate_queue`）、只在投影表里的 profile（孤儿 uid）、去重作业、收段通道 / 待重放 / 待刷新缓存、
-//!    schema 比这一版的协议 3 旧——先用**冻结的协议 3 代码**（`SrsCore::open` 的升级阶梯与 `store/ffi.rs`
-//!    `sync2_dispatch` 的 `migrate` / `dedup` / `replay_pending`）做完。这些都是协议 3 自己本来会做的事、各自分批提交、
-//!    可中断重入，不改变用户数据的含义；中途取消 / 崩溃，旧库仍是协议 3 能打开的库，重跑从断点接着做。什么都不用补的库
-//!    一个字节不写。补不了的（并入做到一半、缺缓存配置、库比这一版新、文件坏了）拦下，[BlockCode] 给机器可读的原因。
+//!    schema 比这一版的协议 3 旧（v3.3.0 正式版是 26）——先用**冻结的协议 3 代码**（`SrsCore::open` 的升级阶梯与
+//!    `store/ffi.rs` `sync2_dispatch` 的 `migrate` / `dedup` / `replay_pending`）做完。**在原件的副本上做**
+//!    （`files::PREPARE_COPY`）：原件的写锁从这一步之前持到封存，原件在提交点之前一个字节不写，不论结局都还能被写它的
+//!    那个协议 3 版本打开；之后的读快照与阶段都开在副本上。什么都不用补的库不拷副本。补不了的（并入做到一半、缺缓存
+//!    配置、库比这一版新、文件坏了）拦下，[BlockCode] 给机器可读的原因。
 //! 4. **前提核对**（[Step::Precondition]）：补完之后再核对一遍：整库的（`legacy::library_blockers`）与每个 profile 的
 //!    （`dryrun::profile_blockers`）一项不齐就 [Outcome::Blocked]（[BlockCode::Precondition]），原因逐条列出。
 //! 4. **临时文件里走一遍阶段**：在 `srs4.db-migrating` 里逐 profile 跑 `dryrun::profile_stages`（与预演**同一个函数**）：
@@ -34,7 +35,8 @@
 //!
 //! # 中断与续做（每一步之后被杀 / 断电，重跑结果相同）
 //!
-//! - **提交点之前**：旧库一个字节没写（前提核对、灌入、对拍都只读它；写锁不改文件），临时文件只是旧库的派生物。重跑
+//! - **提交点之前**：旧库一个字节没写（前提补完写的是副本；前提核对、灌入、对拍都只读；写锁不改文件），临时文件与
+//!   补完副本只是旧库的派生物（副本每次迁移结束都删、下次开跑前也删）。重跑
 //!   **整个删掉临时文件从头来**，不在半份上续做：设计 §6.1 原写「第 3 步整份重扫、已有槽幂等」，可中断之后旧库可能又被
 //!   协议 3 的版本写过（回退再升级），半份临时文件里的槽与旧库对不上时（例如旧库里那条后来被清成了空洞：秩不同本机一律
 //!   不动），对拍会把它报成差异、把用户永远挡在迁移外。重扫本来就要整份读一遍旧库，省下的只是写入。
@@ -67,7 +69,7 @@ use super::dryrun::{
     self, CANCELLED, DEFAULT_EXAMPLES, Mode, SPACE_MARGIN, Stop, file_len, mb, now_ms, overall,
     peak_mem_mb, profile_blockers, profile_stages, secs, write_json_atomically,
 };
-use super::files::{self, GEN4_FILE, GEN4_TEMP, GenLock, LEGACY_FILE, OpenError};
+use super::files::{self, GEN4_FILE, GEN4_TEMP, GenLock, LEGACY_FILE, OpenError, PREPARE_COPY};
 use super::legacy;
 use super::prepare;
 use super::schema;
@@ -127,8 +129,8 @@ pub enum Outcome {
     Committed { report: Value },
     /// 对拍不过：没提交、没封存。报告在 [report_path]，临时文件留作诊断。
     Aborted { report_path: PathBuf, report: Value },
-    /// 前提补不了 / 迁移在别处进行 / 旧库正忙 / 状态不对：没有迁移（前提补完已经提交的那几批是协议 3 自己的写入，
-    /// 留着）。[code] 是机器可读的分类（线上 `code`），[reason] 是给人看的原文。
+    /// 前提补不了 / 迁移在别处进行 / 旧库正忙 / 状态不对：没有迁移，旧库没动（前提补完只写副本）。[code] 是机器可读的
+    /// 分类（线上 `code`），[reason] 是给人看的原文。
     Blocked { code: BlockCode, reason: String },
     /// 空间不够：什么都没做。
     NoSpace { needed: u64, free: u64 },
@@ -194,7 +196,7 @@ pub enum BlockCode {
     Migrating,
     /// 旧库正被别的连接写（[BLOCKED_BUSY]）。等一会再来。
     Busy,
-    /// 旧库里有 profile 没给缓存配置（`legacy::all_profiles` 里每个都要有；Dart 按 `gen4_migrate_status` 的 `profiles`
+    /// 旧库里有 profile 没给缓存配置（`legacy::all_profiles` 里每个都要有；Dart 按 `gen4_migrate_profiles` 的 `profiles`
     /// 给）。调用方的 bug，补上再跑。
     MissingCacheConfig,
     /// 并入做到一半（`profile_merge/<uid>` 标记）：要冻结的旧并入代码做完，迁移补不了（D23）。
@@ -339,7 +341,8 @@ fn probe_schema(path: &Path) -> Result<Option<i64>, Result<String, String>> {
 }
 
 /// 本次迁移要给缓存配置的 profile：旧库里全部有数据的 profile（`legacy::all_profiles`，含只在投影表里的孤儿 uid）。
-/// `gen4_migrate_status` 在 [GenState::NeedsMigration] 时回给 Dart（只读，开读快照、读完即关）。
+/// 全局命令 `gen4_migrate_profiles` 回给 Dart（只读，开读快照、读完即关；每张表按 profile 跳着取，profile 数 × 一次索引
+/// 查找，但仍是毫秒级以上的磁盘读，Dart 在后台 isolate 调）。
 pub fn legacy_profiles(dir: &Path) -> Result<Vec<String>, String> {
     let src = dryrun::open_legacy(&dir.join(LEGACY_FILE))?;
     let out = legacy::all_profiles(&src);
@@ -425,12 +428,13 @@ fn temp_bytes(tmp: &Path) -> u64 {
         .sum()
 }
 
-/// 第 1 步的空间核对：不够 = [Outcome::NoSpace]。上一次留下的临时文件算可用空间（开跑前会删掉）。前提补完写过旧库
-/// （旧库变大）之后再核一次。
-fn check_space(dir: &Path) -> Result<Option<Outcome>, String> {
-    let needed = space_needed(&dir.join(LEGACY_FILE))?;
+/// 第 1 步的空间核对：[source]（之后读的那份旧库）要的空间再加 [extra]，不够 = [Outcome::NoSpace]。上一次留下的临时
+/// 文件与补完副本算可用空间（开跑前会删掉）。前提补完要拷副本（[extra] = 原件连同 WAL 的大小），补完之后按副本（变大
+/// 了）再核一次。
+fn check_space(dir: &Path, source: &Path, extra: u64) -> Result<Option<Outcome>, String> {
+    let needed = space_needed(source)? + extra;
     if let Some(free) = crate::store::compact::free_bytes(dir) {
-        let free = free + temp_bytes(&dir.join(GEN4_TEMP));
+        let free = free + temp_bytes(&dir.join(GEN4_TEMP)) + temp_bytes(&dir.join(PREPARE_COPY));
         if free < needed {
             return Ok(Some(Outcome::NoSpace { needed, free }));
         }
@@ -485,7 +489,7 @@ pub fn run(dir: &Path, opts: Options<'_>) -> Result<Outcome, String> {
             Err(Ok(damaged)) => return Ok(blocked(BlockCode::Corrupt, damaged)),
             Err(Err(e)) => return Err(e),
         }
-        if let Some(out) = check_space(dir)? {
+        if let Some(out) = check_space(dir, &legacy, 0)? {
             return Ok(out);
         }
     }
@@ -493,6 +497,11 @@ pub fn run(dir: &Path, opts: Options<'_>) -> Result<Outcome, String> {
     let Some(lock) = GenLock::try_acquire(dir)? else {
         return Ok(blocked(BlockCode::Migrating, BLOCKED_MIGRATING));
     };
+    // 上一次崩溃留下的前提补完副本：不论接下来走哪条路都用不上了（补完每次从原件重拷）。
+    if let Err(e) = seal::remove_sqlite_files(&dir.join(PREPARE_COPY)) {
+        drop(lock);
+        return Err(e);
+    }
     let out = if gen4.exists() {
         resume_after_commit(dir)
     } else {
@@ -644,38 +653,19 @@ fn migrate_locked(dir: &Path, mut opts: Options<'_>) -> Result<Outcome, String> 
         }
     }
     let version = version.unwrap_or(0);
-    // 3. 前提补完（只读核对要补什么；要补才开协议 3 的内核写旧库）。
-    (opts.progress)(Step::Prepare, 0, 1);
-    let plan = {
-        let src = dryrun::open_legacy(&legacy)?;
-        let plan = prepare::plan(&src, version, opts.caches);
-        let _ = src.execute_batch("ROLLBACK");
-        plan?
-    };
-    let plan = match plan {
-        Ok(plan) => plan,
-        Err(out) => return Ok(out),
-    };
-    if !plan.is_empty() {
-        if let Some(out) = prepare::complete(&legacy, &plan, &mut opts)? {
-            return Ok(out);
-        }
-        // 补完写过旧库（变大了）：空间再核一次。
-        if let Some(out) = check_space(dir)? {
-            return Ok(out);
-        }
-    }
+    // 原件的写锁：从这里持到封存（不写任何东西）。前提补完只写副本，之后谁也写不进原件，对拍核对过的就是封存的全部。
     let Some(held) = hold_legacy(&legacy)? else {
         return Ok(blocked(BlockCode::Busy, BLOCKED_BUSY));
     };
-    // 拿到写锁之后才开读快照：此后谁也提交不进旧库，快照就是封存时的全部内容。
-    let src = dryrun::open_legacy(&legacy)?;
-    let out = with_snapshot(dir, &held, src, &mut opts);
+    let copy = dir.join(PREPARE_COPY);
+    let out = prepare_and_stage(dir, &held, version, &mut opts);
     if !held.is_autocommit() {
         // 没走到封存（中止、拦下、出错、叫停）：放开写锁，什么都没写。
         let _ = held.execute_batch("ROLLBACK");
     }
     drop(held);
+    // 补完副本不论结论都删（提交了的已经封存原件、记的是原件的指纹；没提交的下次从原件重拷）。
+    let _ = seal::remove_sqlite_files(&copy);
     match &out {
         Ok(Outcome::Aborted { .. }) => {}
         Ok(Outcome::Committed { .. }) => {}
@@ -687,11 +677,68 @@ fn migrate_locked(dir: &Path, mut opts: Options<'_>) -> Result<Outcome, String> 
     out
 }
 
-/// 拿着旧库写锁与读快照 [src]：前提 → 临时文件里的阶段 → 中止或提交 → 封存。
+/// 拿着换代锁与原件的写锁 [held]：3. 前提补完（只读核对要补什么；要补才拷副本、在副本上用协议 3 的内核补）→ 读快照
+/// （副本或原件）→ [with_snapshot]。
+fn prepare_and_stage(
+    dir: &Path,
+    held: &Connection,
+    version: i64,
+    opts: &mut Options<'_>,
+) -> Result<Outcome, String> {
+    let legacy = dir.join(LEGACY_FILE);
+    (opts.progress)(Step::Prepare, 0, 1);
+    let plan = {
+        let src = dryrun::open_legacy(&legacy)?;
+        let plan = prepare::plan(&src, version, opts.caches);
+        let _ = src.execute_batch("ROLLBACK");
+        plan?
+    };
+    let plan = match plan {
+        Ok(plan) => plan,
+        Err(out) => return Ok(out),
+    };
+    let source = if plan.is_empty() {
+        legacy.clone()
+    } else {
+        // 副本要一份原件（连同 WAL）的空间。
+        let whole = file_len(&legacy) + file_len(&seal::with_suffix(&legacy, "-wal"));
+        if let Some(out) = check_space(dir, &legacy, whole)? {
+            return Ok(out);
+        }
+        let copy = match prepare::complete(dir, &plan, opts)? {
+            Ok(copy) => copy,
+            Err(out) => return Ok(out),
+        };
+        // 补完的副本（升级、包进旧行之后变大了）：之后的阶段按它再核一次空间。
+        if let Some(out) = check_space(dir, &copy, 0)? {
+            return Ok(out);
+        }
+        copy
+    };
+    // 拿到写锁之后才开读快照：此后谁也提交不进原件；副本只有这里读。
+    let src = dryrun::open_legacy(&source)?;
+    // 原件的读快照：迁移来源的身份与指纹按它记（没补完时与 `src` 是同一份文件的两个快照，内容相同）。
+    let origin = match dryrun::open_legacy(&legacy) {
+        Ok(c) => c,
+        Err(e) => {
+            let _ = src.execute_batch("ROLLBACK");
+            return Err(e);
+        }
+    };
+    // `src` 交给 with_snapshot（它负责回滚、关闭）。
+    let out = with_snapshot(dir, held, src, &origin, opts);
+    let _ = origin.execute_batch("ROLLBACK");
+    out
+}
+
+/// 拿着原件的写锁 [held] 与读快照 [src]（补完过 = 副本上的，否则原件上的）：前提 → 临时文件里的阶段 → 中止或提交 →
+/// 封存。[origin] 是原件的读快照：迁移来源的身份与指纹（报告、`files::record_migrated_from`）都按原件记——封存与补封
+/// 针对的是原件。
 fn with_snapshot(
     dir: &Path,
     held: &Connection,
     src: Connection,
+    origin: &Connection,
     opts: &mut Options<'_>,
 ) -> Result<Outcome, String> {
     let started = Instant::now();
@@ -713,7 +760,7 @@ fn with_snapshot(
             let (hard, later) = profile_blockers(&src, p, opts.caches)?;
             blockers.extend(hard.into_iter().chain(later).map(|b| format!("{p}: {b}")));
         }
-        Ok((profiles, blockers, seal::legacy_identity(&src)?))
+        Ok((profiles, blockers, seal::legacy_identity(origin)?))
     })();
     let (profiles, blockers, identity) = match checked {
         Ok(v) => v,
@@ -789,10 +836,8 @@ fn with_snapshot(
     }
     let committed = (|| -> Result<(), String> {
         let dst = staged.dst;
-        // 一个协议 3 profile 都没有的空库没有身份可记（[resume_after_commit] 另认它）。
-        if identity.is_some() {
-            files::record_migrated_from(&dst, &src)?;
-        }
+        // 记原件的指纹（没有身份的原件记内容摘要，`files::source_mark`）：补封核对的是原件。
+        files::record_migrated_from(&dst, origin)?;
         dst.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)")
             .map_err(schema::sql)?;
         dst.close().map_err(|(_, e)| schema::sql(e))?;

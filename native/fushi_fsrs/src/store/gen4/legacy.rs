@@ -155,46 +155,66 @@ pub fn merge_marks(conn: &Connection) -> Result<Vec<String>, String> {
         .map_err(sql)
 }
 
+/// 一张表里出现过的 profile（uid 文本）的查询，`{t}` 换成表名：按 profile 跳着取（松散索引扫描）——从最小的
+/// `profile_uid` 起，每一步是一次「`profile_uid` 大于上一个」的最小值，走 `profile_uid` 打头的索引就是一次索引查找，
+/// 代价是 profile 数 × log(行数)，不随行数线性涨（`SELECT DISTINCT srs_idt(profile_uid)` 对函数结果去重用不上索引的
+/// 有序去重，要整索引扫一遍：BUG-4011 现场光修改记录就有 64.5 万行）。外层才套 `srs_idt`。EXPLAIN 测试测的就是它
+/// （`prepare_tests.rs` `listing_profiles_seeks_the_profile_index`）。`srs_unknown_events` 没有这样的索引（新版本客户端发来、这一版解析不了的事件，通常没几行）：
+/// 每一步是一次全表扫描。
+pub(crate) const PROFILES_OF_TABLE_SQL: &str = "WITH RECURSIVE u(p) AS (\
+     SELECT (SELECT MIN(profile_uid) FROM {t}) \
+     UNION ALL SELECT (SELECT MIN(profile_uid) FROM {t} WHERE profile_uid > u.p) FROM u WHERE u.p IS NOT NULL\
+     ) SELECT srs_idt(p) FROM u WHERE p IS NOT NULL";
+
+/// 协议 3 一侧记 profile 的三张表（[profiles] 的来源）。
+pub(crate) const LOGGED_TABLES: [&str; 3] = ["sync2_self", "sync2_ops", "sync2_pending"];
+
+/// 投影表（有数据就算一个 profile，不论进没进操作日志）。
+pub(crate) const PROJECTED_TABLES: [&str; 4] = [
+    "srs_entities",
+    "srs_field_edits",
+    "srs_review_logs",
+    "srs_unknown_events",
+];
+
+/// [table] 里出现过的 profile（[PROFILES_OF_TABLE_SQL]）。
+fn profiles_of_table(conn: &Connection, table: &str) -> Result<Vec<String>, String> {
+    conn.prepare(&PROFILES_OF_TABLE_SQL.replace("{t}", table))
+        .map_err(sql)?
+        .query_map([], |r| r.get(0))
+        .map_err(sql)?
+        .collect::<Result<_, _>>()
+        .map_err(sql)
+}
+
 /// 投影表里有数据的 profile（uid 文本）：不论有没有进协议 3 的操作日志。缺表的跳过（schema 较老的库）。
 fn projected_profiles(conn: &Connection) -> Result<std::collections::BTreeSet<String>, String> {
     let mut projected = std::collections::BTreeSet::new();
-    for table in [
-        "srs_entities",
-        "srs_field_edits",
-        "srs_review_logs",
-        "srs_unknown_events",
-    ] {
-        if !table_exists(conn, table)? {
-            continue;
+    for table in PROJECTED_TABLES {
+        if table_exists(conn, table)? {
+            projected.extend(profiles_of_table(conn, table)?);
         }
-        let rows: Vec<String> = conn
-            .prepare(&format!(
-                "SELECT DISTINCT srs_idt(profile_uid) FROM {table}"
-            ))
-            .map_err(sql)?
-            .query_map([], |r| r.get(0))
-            .map_err(sql)?
-            .collect::<Result<_, _>>()
-            .map_err(sql)?;
-        projected.extend(rows);
     }
     Ok(projected)
 }
 
 /// 协议 3 一侧的 profile（[profiles]；三张表缺一张 = 这个库还没升到有协议 3 的 schema，空）。
 fn logged_profiles(conn: &Connection) -> Result<std::collections::BTreeSet<String>, String> {
-    if table_exists(conn, "sync2_self")?
-        && table_exists(conn, "sync2_ops")?
-        && table_exists(conn, "sync2_pending")?
-    {
-        Ok(profiles(conn)?.into_iter().collect())
-    } else {
-        Ok(Default::default())
+    let mut out = std::collections::BTreeSet::new();
+    for table in LOGGED_TABLES {
+        if !table_exists(conn, table)? {
+            return Ok(Default::default());
+        }
     }
+    // 与 [profiles] 同一个集合（三张表的并），按表跳着取（`sync2_ops` 是整个操作日志，不整表扫）。
+    for table in LOGGED_TABLES {
+        out.extend(profiles_of_table(conn, table)?);
+    }
+    Ok(out)
 }
 
 /// 旧库里**全部**有数据的 profile（uid 文本，升序）：协议 3 一侧的（[profiles]）并上只在投影表里的（没启用过协议 3、
-/// 删除时没清干净 / 备份并入留下的孤儿 uid）。迁移要给其中每一个缓存配置（`gen4_migrate_status` 的 `profiles`，
+/// 删除时没清干净 / 备份并入留下的孤儿 uid）。迁移要给其中每一个缓存配置（`gen4_migrate_profiles`，
 /// G7-2b）；前提补完（`prepare.rs`）把只在投影表里的那些先用冻结的协议 3 代码包进操作日志，迁移后它们的卡片与日志
 /// 一条不丢。缺表的跳过：schema 较老、还没升级的库也列得出来。
 pub fn all_profiles(conn: &Connection) -> Result<Vec<String>, String> {
