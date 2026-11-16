@@ -1,10 +1,13 @@
-// 服务端通知（notice_feed.dart）的展示层，包在主界面外壳外面：
-//   - banner：外壳顶部的常驻横幅，不可关闭，有链接时整条可点；
+// 服务端通知（notice_feed.dart）的展示层，挂在 MaterialApp.builder 里、包住整个 navigator
+// （main.dart），所以压栈出去的页面（阅读器、播放器……）同样被覆盖：
+//   - banner：顶部的常驻横幅，不可关闭，有链接时整条可点；
 //   - dialog：同一 id 只弹一次（已弹过的 id 记在设备本地偏好）；
-//   - block：盖住整个外壳的全屏层，不可关闭。
-// 所有文字都来自服务端，客户端只提供按钮标签。
+//   - block：盖住全部路由的全屏层，不可关闭。
+// 服务端通知的文字都来自服务端，客户端只提供按钮标签。另可接一条本地对话框
+// （[NoticeLayer.localDialog]，见 build_listing.dart），与服务端对话框同一套展示、同一个队列。
 //
-// 结构恒定：无论有没有通知都是同一棵 Stack / Column，外壳子树（满是 GlobalKey）
+// 本层在 navigator 之上，没有 Navigator 祖先：对话框经 [NoticeLayer.navigatorKey] 弹到
+// navigator 里。结构恒定：无论有没有通知都是同一棵 Stack / Column，navigator 子树
 // 不会因为通知出现 / 消失而重挂。
 
 import 'dart:async';
@@ -32,12 +35,24 @@ Future<void> openNoticeUrl(Uri url) async {
   }
 }
 
-/// 把 [feed] 的通知画在 [child]（主界面外壳）上。
+/// 把 [feed] 的通知画在 [child]（整个 navigator）上。
 class NoticeLayer extends StatefulWidget {
-  const NoticeLayer({required this.feed, required this.child, super.key});
+  const NoticeLayer({
+    required this.feed,
+    required this.child,
+    this.navigatorKey,
+    this.localDialog,
+    super.key,
+  });
 
   final NoticeFeed feed;
   final Widget child;
+
+  /// 对话框弹到这个 navigator 里；为 null 时用本层自己的 context（本层在 navigator 之内时）。
+  final GlobalKey<NavigatorState>? navigatorKey;
+
+  /// 首帧后取一次的本地对话框（null 表示没有）；排在服务端对话框之前弹，不记「已弹过」。
+  final Future<RemoteNotice?> Function()? localDialog;
 
   @override
   State<NoticeLayer> createState() => _NoticeLayerState();
@@ -46,11 +61,27 @@ class NoticeLayer extends StatefulWidget {
 class _NoticeLayerState extends State<NoticeLayer> {
   bool _dialogOpen = false;
 
+  /// 已取到、还没弹的本地对话框。
+  RemoteNotice? _localPending;
+
   @override
   void initState() {
     super.initState();
     widget.feed.notices.addListener(_onNoticesChanged);
     _onNoticesChanged();
+    final Future<RemoteNotice?> Function()? local = widget.localDialog;
+    if (local != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        unawaited(_loadLocalDialog(local));
+      });
+    }
+  }
+
+  Future<void> _loadLocalDialog(Future<RemoteNotice?> Function() load) async {
+    final RemoteNotice? notice = await load();
+    if (notice == null || !mounted) return;
+    _localPending = notice;
+    unawaited(_showPendingDialogs());
   }
 
   @override
@@ -70,25 +101,44 @@ class _NoticeLayerState extends State<NoticeLayer> {
   }
 
   void _onNoticesChanged() {
-    if (_dialogOpen || widget.feed.pendingDialogs.isEmpty) return;
+    if (_dialogOpen ||
+        (_localPending == null && widget.feed.pendingDialogs.isEmpty)) {
+      return;
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) unawaited(_showPendingDialogs());
     });
   }
 
-  /// 逐条弹还没弹过的对话框级通知；弹出即记为已弹过。
+  /// 弹对话框用的 context：navigator 里的，拿不到时退回本层（本层在 navigator 之内）。
+  BuildContext? get _dialogContext {
+    final GlobalKey<NavigatorState>? key = widget.navigatorKey;
+    return key == null ? context : key.currentContext;
+  }
+
+  /// 逐条弹对话框：先本地对话框，再还没弹过的服务端对话框（弹出即记为已弹过）。
   Future<void> _showPendingDialogs() async {
     if (_dialogOpen) return;
     _dialogOpen = true;
     try {
       while (mounted) {
-        final List<RemoteNotice> pending = widget.feed.pendingDialogs;
-        if (pending.isEmpty) break;
-        final RemoteNotice notice = pending.first;
-        await widget.feed.markDialogSeen(notice.id);
-        if (!mounted) break;
+        // 先确认弹得出来再出队，免得服务端对话框被记成已弹过却没弹。
+        final BuildContext? dialogContext = _dialogContext;
+        if (dialogContext == null || !dialogContext.mounted) break;
+        final RemoteNotice notice;
+        final RemoteNotice? local = _localPending;
+        if (local != null) {
+          notice = local;
+          _localPending = null;
+        } else {
+          final List<RemoteNotice> pending = widget.feed.pendingDialogs;
+          if (pending.isEmpty) break;
+          notice = pending.first;
+          await widget.feed.markDialogSeen(notice.id);
+        }
+        if (!mounted || !dialogContext.mounted) break;
         await showAppDialog<void>(
-          context: context,
+          context: dialogContext,
           builder: (BuildContext dialogContext) =>
               _NoticeDialog(notice: notice),
         );
