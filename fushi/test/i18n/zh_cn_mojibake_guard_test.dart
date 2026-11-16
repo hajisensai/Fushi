@@ -104,7 +104,7 @@ void main() {
         'backup_category_books',
         'backup_category_audiobooks',
         'backup_category_fonts',
-        // `popup_bottom_docked` 已随 BUG-4709 删除（改成按模块的开关）。
+        // `popup_bottom_docked` 已随 BUG-4710 删除（改成按模块的开关）。
         'popup_bottom_docked_hint',
       ];
       for (final key in repairedKeys) {

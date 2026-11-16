@@ -929,7 +929,7 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/dictionary/popup_instant_scroll_step_guard_test.dart',
   'lookup/Instant scroll touch step':
       'test/dictionary/popup_instant_scroll_step_guard_test.dart',
-  // TODO-108 / BUG-4709: 底部停靠开关——每个媒体模块一条独立开关 + 非模块宿主一条。
+  // TODO-108 / BUG-4710: 底部停靠开关——每个媒体模块一条独立开关 + 非模块宿主一条。
   // 生效点在纯函数 dockedPopupRect 与 base_source_page/dictionary_page_mixin 的路由分流
   // （非 reader CSS / 主题树），无 reader/appearance 探针；由专项纯函数 + widget 测试覆盖。
   'lookup/Dock in novels':

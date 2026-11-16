@@ -133,7 +133,7 @@ void main() {
         'lookup.popup_bottom_docked.books',
         'lookup.dictionary_font_size',
       ]);
-      // BUG-4709：「仅在小说中底部停靠」特例开关已删，书内只投影小说自己那条。
+      // BUG-4710：「仅在小说中底部停靠」特例开关已删，书内只投影小说自己那条。
       expect(ids, isNot(contains('lookup.popup_bottom_docked_books_only')));
       for (final String id in <String>[
         'lookup.scan_non_japanese',
