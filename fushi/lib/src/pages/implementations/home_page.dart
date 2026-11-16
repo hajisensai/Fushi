@@ -3972,44 +3972,36 @@ class _HomePageState extends BasePageState<HomePage>
   Future<List<SourceLibraryRow>> _loadAutoScanSources() async {
     if (appModelNoUpdate.isMigrationReadonly) return const <SourceLibraryRow>[];
     final ModuleVisibility visibility = appModelNoUpdate.moduleVisibility;
-    return <SourceLibraryRow>[
-      for (final SourceLibraryRow row
-          in await appModelNoUpdate.database.getAutoScanMediaSources())
-        if (sourceLibraryKindModule(row.mediaKind) case final ModuleId module
-            when visibility.isEnabled(module))
-          row,
-    ];
+    return autoScanEligibleSources(
+      await appModelNoUpdate.database.getAutoScanMediaSources(),
+      readonly: appModelNoUpdate.isMigrationReadonly,
+      isModuleEnabled: visibility.isEnabled,
+    );
   }
 
-  /// 自动扫描一个来源，收尾与来源页「重新扫描」一致。视频来源要过刮削任务控制器
-  /// 的门（与联网刮削互斥）：门被手动刮削 / 清理占着就延后到下一次触发。扫完串联
-  /// 「扫描后自动刮削」（来源刮削设置里的同一开关），但只在这轮真的新增了视频时
-  /// 才串——没有新条目的回前台扫描不该每次都把整个来源送去联网刮削。
-  Future<SourceAutoScanOutcome> _runAutoSourceScan(
-    SourceLibraryRow source,
-  ) async {
+  /// 自动扫描一个来源，收尾与来源页「重新扫描」一致；分支（视频门被占延后、只在新增
+  /// 了视频时串联「扫描后自动刮削」）见 [runAutoSourceScan]。
+  Future<SourceAutoScanOutcome> _runAutoSourceScan(SourceLibraryRow source) {
     final SourceLibraryScanner scanner = SourceLibraryScanner(
       appModelNoUpdate.database,
       transcribeAudiobook: source.mediaKind == SourceLibraryKind.book.dbValue
           ? appModelNoUpdate.folderImportTranscribePort
           : null,
     );
-    if (source.mediaKind != SourceLibraryKind.video.dbValue) {
-      await scanner.scan(source);
-      return SourceAutoScanOutcome.scanned;
-    }
-    final Future<SourceScanSummary>? started = _videoSourceScrapeController
-        .tryRunSourceScan(source.id, () => scanner.scan(source));
-    if (started == null) return SourceAutoScanOutcome.deferred;
-    final SourceScanSummary summary = await started;
-    if (summary.createdVideoUids.isEmpty) {
-      if (mounted) _notifyVideoLibraryChanged();
-      return SourceAutoScanOutcome.scanned;
-    }
-    final SourceLibraryRow updated =
-        await appModelNoUpdate.database.getMediaSourceById(source.id) ?? source;
-    await _onVideoSourceScanCompleted(updated, summary);
-    return SourceAutoScanOutcome.scanned;
+    return runAutoSourceScan(
+      source,
+      scan: () => scanner.scan(source),
+      tryRunVideoScan: _videoSourceScrapeController.tryRunSourceScan,
+      onVideoScanCreated: (SourceScanSummary summary) async {
+        final SourceLibraryRow updated =
+            await appModelNoUpdate.database.getMediaSourceById(source.id) ??
+            source;
+        await _onVideoSourceScanCompleted(updated, summary);
+      },
+      onVideoScanNoNew: () {
+        if (mounted) _notifyVideoLibraryChanged();
+      },
+    );
   }
 
   Future<void> _onVideoSourceScanCompleted(

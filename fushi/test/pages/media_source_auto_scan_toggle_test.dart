@@ -120,6 +120,10 @@ void main() {
       find.byKey(ValueKey<String>('media_source_remove_$source')),
     );
     expect(remove.enabled, isFalse, reason: '扫描期间不许移除来源');
+    final PopupMenuItem<Object?> toggle = tester.widget(
+      find.byKey(ValueKey<String>('media_source_auto_scan_$source')),
+    );
+    expect(toggle.enabled, isTrue, reason: '自动扫描开关不随全局忙置灰，扫描途中也能关');
     await tester.tapAt(Offset.zero);
     await tester.pump();
     await tester.pump(const Duration(seconds: 1));

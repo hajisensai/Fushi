@@ -595,7 +595,8 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
             ? t.media_source_auto_scan_disable
             : t.media_source_auto_scan_enable,
         icon: FushiIcons.schedule,
-        onTap: busy ? null : () => _toggleAutoScan(row),
+        // 只写一列、不碰扫描状态：不随全局忙置灰——慢速网络来源扫描途中也要能关掉。
+        onTap: () => _toggleAutoScan(row),
       ),
       _SourceRowMenuAction(
         label: t.media_source_open_folder,
@@ -1477,14 +1478,12 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     SourceScanSummary? summary;
     setState(() => _scanning.add(row.id));
     try {
-      // 登记进全局扫描占用表：首页的自动扫描看到它在扫就排队，不并发扫。
-      Future<SourceScanSummary> scan() => sourceScanActivity.run(
-        row.id,
-        () => SourceLibraryScanner(
-          _db,
-          transcribeAudiobook: _bookTranscribePort,
-        ).scan(row, restoreDissolvedGroups: restoreDissolvedGroups),
-      );
+      // 扫描器自己登记进全局扫描占用表（[sourceScanActivity]，每来源锁）：首页的自动
+      // 扫描看到它在扫就排队，不并发扫。
+      Future<SourceScanSummary> scan() => SourceLibraryScanner(
+        _db,
+        transcribeAudiobook: _bookTranscribePort,
+      ).scan(row, restoreDissolvedGroups: restoreDissolvedGroups);
       final VideoSourceScrapeTaskController? controller =
           widget.mediaKind == 'video' ? widget.scrapeTaskController : null;
       summary = controller == null

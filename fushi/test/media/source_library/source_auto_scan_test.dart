@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/source_library/source_auto_scan.dart';
+import 'package:fushi/src/media/source_library/source_library_scanner.dart'
+    show SourceScanSummary;
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
@@ -165,6 +167,57 @@ void main() {
     expect(scanned, <int>[1, 2]);
   });
 
+  test('a trigger landing while a dequeued source is being re-fetched does '
+      'not enqueue it again', () async {
+    // 出队后、开扫前那一下 await 重取候选的窗口：它既不在队列也还没进占用表。
+    candidates = <SourceLibraryRow>[_row(1)];
+    int loads = 0;
+    final Completer<void> refetch = Completer<void>();
+    final SourceAutoScanScheduler s = SourceAutoScanScheduler(
+      loadCandidates: () async {
+        loads++;
+        if (loads == 2) await refetch.future; // drain 里出队后的那次重取
+        return List<SourceLibraryRow>.of(candidates);
+      },
+      scan: (SourceLibraryRow row) async {
+        scanned.add(row.id);
+        return SourceAutoScanOutcome.scanned;
+      },
+      activity: activity,
+      now: () => now,
+    );
+    final Future<void> first = s.trigger(SourceAutoScanTrigger.startup);
+    await pumpEventQueue();
+    expect(loads, 2, reason: '已出队，卡在重取');
+    final Future<void> second = s.trigger(SourceAutoScanTrigger.resume);
+    await pumpEventQueue();
+    expect(s.queuedSourceIds, isEmpty, reason: '在途来源不再入队');
+    refetch.complete();
+    await Future.wait(<Future<void>>[first, second]);
+    expect(scanned, <int>[1], reason: '不连扫两遍');
+  });
+
+  test(
+    'a source manually scanned while queued is re-checked and skipped',
+    () async {
+      candidates = <SourceLibraryRow>[_row(1)];
+      final Completer<void> manual = Completer<void>();
+      // 别的来源（3）的手动扫描占着道，来源 1 排在后面。
+      final Future<void> manualScan = activity.run(3, () => manual.future);
+      final Future<void> auto = scheduler().trigger(
+        SourceAutoScanTrigger.resume,
+      );
+      await pumpEventQueue();
+      expect(scanned, isEmpty);
+      // 排队期间用户把来源 1 也手动扫了一遍：lastScannedAt 刚更新。
+      candidates = <SourceLibraryRow>[_row(1, lastScannedAt: now)];
+      manual.complete();
+      await manualScan;
+      await auto;
+      expect(scanned, isEmpty, reason: '开扫前按最新 lastScannedAt 重判到期');
+    },
+  );
+
   test('a deferred scan does not consume the throttle', () async {
     candidates = <SourceLibraryRow>[_row(1, kind: 'video')];
     SourceAutoScanOutcome next = SourceAutoScanOutcome.deferred;
@@ -234,6 +287,159 @@ void main() {
       expect(sourceLibraryKindModule('nope'), isNull);
     },
   );
+
+  group('SourceScanActivity per-source lock', () {
+    test(
+      'two entry points scanning the same source run one after another',
+      () async {
+        final List<String> log = <String>[];
+        final Completer<void> firstHold = Completer<void>();
+        final Future<void> first = activity.run(1, () async {
+          log.add('first start');
+          await firstHold.future;
+          log.add('first end');
+        });
+        final Future<void> second = activity.run(1, () async {
+          log.add('second start');
+        });
+        await pumpEventQueue();
+        expect(log, <String>['first start'], reason: '后到的等前一个扫完');
+        firstHold.complete();
+        await Future.wait(<Future<void>>[first, second]);
+        expect(log, <String>['first start', 'first end', 'second start']);
+        expect(activity.isIdle, isTrue);
+      },
+    );
+
+    test('different sources do not block each other', () async {
+      final Completer<void> hold = Completer<void>();
+      final Future<void> first = activity.run(1, () => hold.future);
+      bool ran = false;
+      await activity.run(2, () async => ran = true);
+      expect(ran, isTrue);
+      expect(activity.activeSourceIds, <int>{1});
+      hold.complete();
+      await first;
+    });
+
+    test('a nested run on the held source is re-entrant', () async {
+      final int result = await activity.run(
+        1,
+        () => activity.run(1, () async {
+          expect(activity.activeSourceIds, <int>{1});
+          return 7;
+        }),
+      );
+      expect(result, 7);
+      expect(activity.isIdle, isTrue);
+    });
+  });
+
+  test('autoScanEligibleSources drops sources whose module is off, and '
+      'everything when read-only', () {
+    final List<SourceLibraryRow> rows = <SourceLibraryRow>[
+      _row(1),
+      _row(2, kind: 'video'),
+      _row(3, kind: 'nope'),
+    ];
+    expect(
+      autoScanEligibleSources(
+        rows,
+        readonly: false,
+        isModuleEnabled: (ModuleId m) => m != ModuleId.video,
+      ).map((SourceLibraryRow r) => r.id),
+      <int>[1],
+    );
+    expect(
+      autoScanEligibleSources(
+        rows,
+        readonly: true,
+        isModuleEnabled: (ModuleId m) => true,
+      ),
+      isEmpty,
+    );
+  });
+
+  group('runAutoSourceScan', () {
+    SourceScanSummary summary(
+      int id, {
+      List<String> created = const <String>[],
+    }) => SourceScanSummary(
+      sourceId: id,
+      mediaKind: 'video',
+      discoveredPaths: const <String>[],
+      importedMediaCount: created.length,
+      createdVideoUids: created,
+    );
+
+    test(
+      'non-video sources scan directly, never through the video gate',
+      () async {
+        final List<String> calls = <String>[];
+        final SourceAutoScanOutcome outcome = await runAutoSourceScan(
+          _row(1),
+          scan: () async {
+            calls.add('scan');
+            return summary(1);
+          },
+          tryRunVideoScan: (int id, Future<SourceScanSummary> Function() s) {
+            calls.add('gate');
+            return s();
+          },
+          onVideoScanCreated: (SourceScanSummary s) async =>
+              calls.add('scrape'),
+          onVideoScanNoNew: () => calls.add('refresh'),
+        );
+        expect(outcome, SourceAutoScanOutcome.scanned);
+        expect(calls, <String>['scan']);
+      },
+    );
+
+    test('video source is deferred while the scrape gate is held', () async {
+      final List<String> calls = <String>[];
+      final SourceAutoScanOutcome outcome = await runAutoSourceScan(
+        _row(1, kind: 'video'),
+        scan: () async {
+          calls.add('scan');
+          return summary(1);
+        },
+        tryRunVideoScan: (int id, Future<SourceScanSummary> Function() s) =>
+            null,
+        onVideoScanCreated: (SourceScanSummary s) async => calls.add('scrape'),
+        onVideoScanNoNew: () => calls.add('refresh'),
+      );
+      expect(outcome, SourceAutoScanOutcome.deferred);
+      expect(calls, isEmpty, reason: '门被占时不扫、不串刮削、不刷新');
+    });
+
+    test(
+      'video scan chains auto scrape only when new videos were created',
+      () async {
+        final List<String> calls = <String>[];
+        Future<SourceAutoScanOutcome> run(List<String> created) =>
+            runAutoSourceScan(
+              _row(1, kind: 'video'),
+              scan: () async => summary(1, created: created),
+              tryRunVideoScan:
+                  (int id, Future<SourceScanSummary> Function() s) {
+                    calls.add('gate $id');
+                    return s();
+                  },
+              onVideoScanCreated: (SourceScanSummary s) async =>
+                  calls.add('scrape ${s.createdVideoUids.length}'),
+              onVideoScanNoNew: () => calls.add('refresh'),
+            );
+        expect(await run(const <String>[]), SourceAutoScanOutcome.scanned);
+        expect(calls, <String>['gate 1', 'refresh']);
+        calls.clear();
+        expect(
+          await run(const <String>['v1', 'v2']),
+          SourceAutoScanOutcome.scanned,
+        );
+        expect(calls, <String>['gate 1', 'scrape 2']);
+      },
+    );
+  });
 
   group('VideoSourceScrapeTaskController.tryRunSourceScan', () {
     test('returns null instead of throwing while the gate is held', () async {
