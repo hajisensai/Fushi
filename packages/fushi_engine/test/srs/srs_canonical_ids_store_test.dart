@@ -169,11 +169,23 @@ void main() {
   test('读时归一：resolveSrsMiningDestination 拿成员 ID 不误判已删除；真删了照旧回落默认', () async {
     final (_, SrsDbStore s) = await _open();
     final String member = await s.createDeck('Mining');
+    final String typeMember = SrsKernelIds(
+      _uid,
+    ).builtinNoteType(kSrsBuiltinLapisKey);
     final SrsResolvedMiningDestination r = await resolveSrsMiningDestination(
       s,
-      SrsMiningDestination(deckId: member),
+      SrsMiningDestination(
+        deckId: member,
+        fieldMappingsByType: <String, Map<String, String>>{
+          typeMember: <String, String>{'f': '{reading}'},
+        },
+      ),
     );
     expect(r.deckFellBack, isFalse);
+    // 设置页按 `resolved.destination` 查字段映射：键已是规范 ID。
+    expect(r.destination!.fieldMappingsByType, <String, Map<String, String>>{
+      s.lapisNoteTypeId: <String, String>{'f': '{reading}'},
+    });
     expect(r.deckName, 'Mining');
     expect((await s.deckTree())[r.deckId], isNotNull);
 

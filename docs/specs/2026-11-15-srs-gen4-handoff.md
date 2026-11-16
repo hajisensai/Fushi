@@ -630,13 +630,19 @@ app 侧只把偏好仓库接上：`fushi/lib/src/srs/srs_persisted_ids.dart`（`
 | 主库协议 1 的 `srs_*` 表 | 冻结的旧数据，只给 G7-6 / D21 导入读 | 不动（存量列名冻结） |
 | 主库其余表 | 没有引用 SRS 实体的列（grep `tables.dart`：`entity_uid` 一类只在音乐锁定字段表） | 不涉及 |
 | `srsCacheConfigFor(uid)`（发给内核的缓存配置里的默认牌组 / 内置笔记类型） | 派生 ID | 内核收到后自己归一（`cmd/mod.rs` `default_deck`），不改 |
+| AI 撤销载荷（ctl 写操作的 `undo` 凭据，`srs_ctl_ops.dart` `_editUndo` → `SrsDbStore.revertEdits`；设计 §5.3 点名） | 实体 ID + 字段键 + dot | 不需要改写：字段项走内核 `undo_check`，`cmd/center.rs` 先 `ix.canonical(&ref_of(entity))` / `ix.canonical_key(key)` 再找行（约 :204-234），成员 ID 照样落到同一个类；标签项经 `notes()` 物化，`_materializeNotes`（`srs_db_store.dart` 约 :2548-2568）按请求 ID 作键回包。旧载荷（无 `undo` 键）走 `legacy` 换凭据，同一条路 |
+| 读点：设置页字段映射（`anki_settings_page.dart` `_buildSrsMiningRows`）、字段说明页（`srs_field_info_page.dart` `_sourceCard`）、笔记编辑页（`srs_note_editor_page.dart` `_miningSlotsOf`） | 按 `type.id`（规范）查偏好里的字段映射 | 读时归一：设置页用 `resolveSrsMiningDestination` 回的 `resolved.destination`（已归一）；两个 SRS 页载入时 `srsCanonicalizeMiningDestination` 问一次存进状态。设置页改映射时按规范键写一份，与旧成员键并存：下次归一按「规范键优先、成员键补缺」合并，只有用户这次改的那个字段以新值为准 |
+| 读点：引导页「选了 Fushi 复习就把旧默认 Lapis 换成没选过」（`onboarding_wizard_page.dart` `_adoptFushiCard`） | 拿偏好里的笔记类型 ID 和 `store.lapisNoteTypeId`（规范）比 | 比之前先 `srsCanonicalIdMap` 归一（开库归一在后台，可能还没跑完） |
+| 读点：`SrsMiner` 的覆写 / 取字段 / 「按类型列映射」（`overwrite`、`prepareFieldsFor`、`miningFieldMappingLookup`，后者给 `srs_mining.dart` `listNewCards`） | 按 `type.id` 查落点里的字段映射 | 每个入口现问一次 `canonical_ids`（`_canonicalDestination()`），不靠实例缓存；制卡（`mine`）用解析落点时归一好的 `target.destination` |
 
 ### 定案（所有者授权自定）
 
 1. **读时归一 + 落盘归一两条路，同一份纯函数。** 落盘只写激活 profile 的偏好本体（绕过作品级覆盖层），开库 / 重新激活
    时在 `srsStoreProvider` 后台跑一次（`srsRunLogged`，失败留痕不挡开库）；制卡解析落点（`resolveSrsMiningDestination`）
    每次都先把落点换成规范 ID（一条 `canonical_ids`，ID 至多几十个），覆盖作品级覆盖层、别的配置的视图、`bindingChanged`
-   之后还没重归一的窗口。`SrsMiner` 记下最近一次换好的落点，字段映射按笔记类型的规范 ID 查。
+   之后还没重归一的窗口。`SrsMiner` 凡要查字段映射的入口（制卡、覆写、取字段、按类型列映射）都各自现问一次（复核修正：
+   第一版只在解析落点时记在实例上，而 `_readSrsMiner` 每次制卡新建 `SrsMiner`，覆写 / 取字段那条路永远拿原样偏好查，
+   作品级覆盖层里成员 ID 键的映射查不到、退回按字段名猜，覆写「没映射到的写空」会把现存笔记写错）。UI 读点同理（上表）。
 2. **缺失保留。** 内核对不认识的 ID 原样返回；原值不动、不写，交给已有的「缺失」处理（`deckFellBack` / `noteTypeFellBack`，
    设置页照旧显示「已删除，回落默认」）。不清空用户设置。
 3. **只在真变了时写**，改写时现读当前值（问内核期间用户改了设置，不拿旧值覆盖）；问完内核时副本已换（切 profile）就不写。
@@ -651,14 +657,29 @@ app 侧只把偏好仓库接上：`fushi/lib/src/srs/srs_persisted_ids.dart`（`
 
 - **`bindingChanged` 的订阅点（等 G7-5b）。** 现在 `SrsDbStore` 没有绑定变化的通知（`_sync2Raw` 归 G7-5b）。接上之后在通知里
   调 `srsNormalizeStoreIds(store: store, prefs: app.prefsRepo, shouldStop: …)`（内置重问 + 偏好重归一）；若 G7-5b 的做法是
-  作废 `srsStoreProvider` 整份重开，开库那一次已经覆盖，不用另接。Secondary 只读打开不跑 `ensureBuiltins`：同一个入口里的
-  `resolveBuiltinIds()` 管它（`srsStoreProvider` 每次构建都跑）。
+  作废 `srsStoreProvider` 整份重开，开库那一次已经覆盖，不用另接。Secondary 只读打开不跑 `ensureBuiltins`：复核后改在
+  `SrsDbStore.open` 尾部（`_sync2Open` 之后、只在非 primary 时）调 `resolveBuiltinIds()`（只读命令），作品会话 / 扩展的副本
+  （`srsProfileStores._openForeign`）、服务端、备份合并开的副本都覆盖，不靠调用方记得去调。这是 `open` 里唯一一行改动，
+  不碰 G7-5b 的 `_sync2Raw` / 绑定变化通知。
+- **与 G7-5b 合流（复核时核过 `origin/pr/srs-gen4-g7-5b-dart-open-identity` 头 `19f40b16`）。** G7-5b 加了
+  `SrsDbStore.bindingChanges`，`srsStoreProvider` 订阅后 `ref.invalidateSelf()` 整份重建：本模块放在 provider 体里的
+  `srsNormalizeStoreIds` 随重建再跑一次，**订阅点因此不用另接**。G7-5b 还把内置 ID 改成开库时 `_loadRootIds` 读规范形
+  （`defaultDeckId` 等改读 `_roots`，主从模式都读）：与本模块的 `_canonicalBuiltins` / `resolveBuiltinIds` / `open` 尾部
+  那一行是同一件事，合流时**保留 G7-5b 的 `_loadRootIds`**，删掉本模块这三处，`srsNormalizeStoreIds` 里的
+  `store.resolveBuiltinIds()` 一并去掉（重建会重开 / 重读）；`ensureBuiltins` 按规范 ID 判在不在的改动两边都要留一份。
 - **派生 ID 的返回值（G7-5b / 上游）。** `createDeck` / `deckIdForNew` / `createNote` 等返回 `SrsKernelIds` 派生的成员 ID，调用方
   拿它与读命令回的规范 ID 比（以及 store 测试里 `expect(..., noteId)` 一类）会对不上。不在本模块范围（不是持久化），建议：
   写命令回包带上规范 ID、Dart 返回规范 ID；或 `SrsKernelIds` 按文件头说的「G7 起连到 store」直接答规范 ID。
+- **按成员 ID 读实体视图会崩（G7-5b / 读路径负责模块）。** `store.noteType(<createStockNoteType 回的派生 ID>)` 报
+  `Null check operator`：`_prefetchEdits`（`srs_db_store.dart` 约 :2734）按**请求** ID 预建 `pre.edits` 的槽，内核
+  `_editItemsById` 回包按**规范** ID 作键，`pre.edits['…/$规范ID']!` 取空。成员 ID 来自上一条「派生 ID 的返回值」，
+  两条一起修（回包换回请求 ID，或写命令直接回规范 ID）。G9-6 的测试只拿规范 ID 读视图。
 - **测试辅助没绑定。** `fushi/test` 的 `openSrsTestStore` 不先跑 `identity`，`srs_word_audio_backfill_test.dart` 的 store 用例在
   集成分支上本来就报 `SrsProfileUnboundException`（G7-5 记过的那批红），本模块没修（只把它的 `forProfile` 改成 `ofStore`）；
   `ofStore` 的真库验证放在 `srs_persisted_ids_test.dart`（先 `identity` 再开库）。
+- **设置页 / 字段说明页 / 笔记编辑页 / 引导页没有页面级测试。** 它们调的归一函数（`srsCanonicalizeMiningDestination`、
+  `resolveSrsMiningDestination` 回的 `destination`、`srsCanonicalIdMap`）在引擎测试里对真内核验过；页面本身要真内核的
+  widget 测试，受上面「测试辅助没绑定」那条拖着，等测试辅助补 `identity` 后再补。
 
 ### 测试
 
@@ -669,6 +690,11 @@ app 侧只把偏好仓库接上：`fushi/lib/src/srs/srs_persisted_ids.dart`（`
   再跑 `ensureBuiltins` 修订号不变；偏好三位置成员 → 规范、不存在的牌组保留、建出来后重归一、补盐（`bindingChanged`）后稳定；
   `resolveSrsMiningDestination` 拿成员 ID 不误判已删除、真没有的照旧回落默认；内核 4097 条报错、统一入口分 4096 + 2。
   变异实测：`ensureBuiltins` 退回按派生 ID 判 → 修订号 3 → 6 变红；落点不归一 → `deckFellBack` 变红。
+  复核后加 2 条、扩 1 条（共 6 条）：新建的 `SrsMiner`（没走过解析落点）在偏好是成员 ID 键时 `miningFieldMappingLookup` /
+  `prepareFieldsFor` / `overwrite` 都按存下的映射写（故意与按名猜的相反）；Secondary 只读打开后 `defaultDeckId` 等与主副本
+  相同、牌组树查得到；`resolveSrsMiningDestination` 回的 `destination` 字段映射键已是规范 ID。变异实测：`_mappingFor`
+  退回按原样 `destination` 查 → 映射用例红；只把 `overwrite` 的归一换成原样落点 → `note.field(front)` 红（:285）；
+  删掉 `open` 尾部的 `resolveBuiltinIds` → Secondary 用例红（拿到派生值 `7a6e…`）。
 - `fushi/test/srs/srs_persisted_ids_test.dart`（真偏好仓库 + 内存主库，6 条）：三条偏好写回规范 ID、键名不变；并入后重归一；
   缺失保留、空串不动；只读视图不写也不问；真内核上 `srsNormalizeStoreIds` 把 `createDeck` 回的派生 ID 写回成牌组树里的
   规范 ID；`SrsWordAudioBackfillFields.ofStore` 的笔记类型 / 三个字段 ID 在内核的笔记类型视图里查得到（派生的对不上）。
