@@ -33,11 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4082 条。点号进各自文件。
+> 共 4083 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4725](bugs/BUG-4725-epub-english-default-vertical.md) | ✅ | ✅ | 英文 EPUB 未声明排版方向时被套成全局竖排，拉丁字母整行侧躺 |
+| [BUG-4726](bugs/BUG-4726-epub-english-default-vertical.md) | ✅ | ✅ | 英文 EPUB 未声明排版方向时被套成全局竖排，拉丁字母整行侧躺 |
 | [BUG-4725](bugs/BUG-4725-windows-taskbar-activation-starved-by-deferred-task.md) | ✅ | ✅ | 任何真实常驻动画 + idle 任务让调度器零延迟空转，任务栏点 Fushi 唤不到前台（BUG-4387 复发） |
 | [BUG-4724](bugs/BUG-4724-card-source-remote-open-no-feedback.md) | ✅ | ✅ | 点卡片来源跳互联 host 上的视频时等拉清单期间毫无反馈，像点坏了 |
 | [BUG-4723](bugs/BUG-4723-lyrics-source-lrclib-reorder.md) | ✅ | ✅ | 歌词来源列表 LRCLIB 固定排第一，不能和插件一起排序 |
