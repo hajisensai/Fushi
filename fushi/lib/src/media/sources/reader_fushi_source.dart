@@ -33,6 +33,10 @@ import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source.dar
 import 'package:fushi/src/media/manga/library/manga_resume_point.dart'
     show onlineMangaShelfProgress;
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
+import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
+import 'package:fushi/src/media/manga/library/online_manga_reshelf.dart';
+import 'package:fushi/src/media/manga/library/online_manga_shelf_sidecar.dart';
+import 'package:fushi/src/storage/download_layout.dart';
 import 'package:fushi/src/reader/continuous_chapter_turn_resistance.dart';
 import 'package:fushi/src/reader/page_turn_animation.dart';
 import 'package:fushi/src/reader/reader_page_spread.dart';
@@ -1122,6 +1126,10 @@ class ReaderFushiSource extends ReaderMediaSource {
   /// [deleteStatistics]（默认 false，对应删除弹窗「同时删除统计数据」）：true 时在删
   /// 行**之前**把这本书攒下的统计一并删掉（[deleteBookStatistics]）——标题与 srt uid
   /// 都住在即将被删的行上，行一删就无从定位。
+  /// [keepDownloadedFiles]（默认 false，对应删除弹窗「保留已下载章节」）：只对在线
+  /// 漫画（`source_metadata` 是在线描述符的行）生效——书目录先归位到下载根
+  /// `<下载根>/manga/<bookKey>`、写好书架侧车，再只删库行、不删目录；之后可在下载
+  /// 页「重新入库」原样（bookKey / uid 不变）建回书架。其它书忽略此参数。
   Future<DeleteBookResult> deleteBook({
     required FushiDatabase db,
     required String bookKey,
@@ -1129,6 +1137,7 @@ class ReaderFushiSource extends ReaderMediaSource {
     DeleteScope scope = DeleteScope.keepLocalOnly,
     bool deleteLocalFiles = false,
     bool deleteStatistics = false,
+    bool keepDownloadedFiles = false,
   }) async {
     try {
       // 原件位置在 audiobooks / srt_books 行上，deleteEpubBook 的事务会把它们
@@ -1166,6 +1175,31 @@ class ReaderFushiSource extends ReaderMediaSource {
         );
         debugPrint('[ReaderFushiSource] deleteBook: $reason');
         return DeleteBookResult.failure(reason);
+      }
+
+      // 保留已下载章节：删行之前把书目录归位到下载根并写侧车。任何一步失败都不删
+      // 行——用户要的是「能找回」，找不回的保留等于静默丢书。
+      final bool keepFiles =
+          keepDownloadedFiles &&
+          bookRow != null &&
+          OnlineMangaLibraryEntry.tryParse(bookRow.sourceMetadata) != null;
+      if (keepFiles) {
+        try {
+          final EpubBookRow relocated =
+              await OnlineMangaLibraryService.relocateBookDirectory(
+                db,
+                bookRow,
+                layout: await DownloadRoot.current(),
+              );
+          await writeOnlineMangaShelfSidecar(relocated);
+        } on Object catch (e, stack) {
+          ErrorLogService.instance.log(
+            'ReaderFushiSource.deleteBook.keepDownloads',
+            e,
+            stack,
+          );
+          return DeleteBookResult.failure(e.toString());
+        }
       }
 
       if (deleteStatistics) {
@@ -1228,7 +1262,7 @@ class ReaderFushiSource extends ReaderMediaSource {
         }
         // Locate the extracted dir by the stored extract_dir column (the on-disk
         // folder name may still be the legacy int id; the column is the truth).
-        if (bookRow != null) {
+        if (bookRow != null && !keepFiles) {
           await EpubStorage.deleteBookDir(bookRow.extractDir);
         }
         // 用户明确勾选后才删原始音频；两条记录可能指向同一批文件，第二次删到的
@@ -1303,6 +1337,8 @@ class ReaderFushiSource extends ReaderMediaSource {
       // 真删了 EPUB 行，或清理了按 bookKey 关联的 SRT 行/磁盘副本，才算删除成功。
       // 过了上面的早退守卫后两者至少有一个为真，这里如实回报删除结果。
       if (deletedRows > 0 || srt != null) {
+        // 下载页的「可重新入库」列表据此重扫。
+        if (keepFiles) OnlineMangaReshelf.notifyChanged();
         return DeleteBookResult.success(localFiles: localFileReport);
       }
       final String reason = 'DB 删除未移除任何行（bookKey="$bookKey"，deletedRows=0）';
