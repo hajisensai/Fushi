@@ -40,9 +40,24 @@ enum AfterMiningPopupAction {
   }
 }
 
+/// 一张卡被收下后按 [action] 处理弹窗：要关就先（不续播时）[dropPauseMark] 撤掉「因
+/// 查词暂停」的标记，再 [closeAll] 关栈——续播与否交给关栈汇聚点按标记决定，与手动关
+/// 弹窗同一条路径。宿主自己的弹窗栈（`closePopupAfterAcceptedMine`）与 app 外顶层查词
+/// 窗口（网页视频窗口宿主档）都走这一个判据。
+void applyAfterMiningPopupAction(
+  AfterMiningPopupAction action, {
+  required void Function() dropPauseMark,
+  required void Function() closeAll,
+}) {
+  if (!action.closesPopup) return;
+  if (!action.resumesPlayback) dropPauseMark();
+  closeAll();
+}
+
 /// 有自己一行「制卡后行为」的模块，顺序 = 设置里的展示顺序。不属于其中任何一个的
-/// 查词宿主（查词页 / 外部弹窗 / 悬浮歌词 / 复习卡 / 手机遥控页等，宿主模块为
-/// `null`）一律归 [ModuleId.lookup] 那一行。
+/// 查词宿主（查词页 / 外部弹窗 / 悬浮球与截屏识字 / 复习卡等，宿主模块为 `null`）一律
+/// 归 [ModuleId.lookup] 那一行。悬浮歌词查词宿主按请求来源归行（音乐桌面歌词 = 音乐、
+/// 有声书悬浮字幕 = 小说），网页视频窗口宿主档的顶层查词窗口归视频。
 const List<ModuleId> kAfterMiningPopupModules = <ModuleId>[
   ModuleId.books,
   ModuleId.manga,

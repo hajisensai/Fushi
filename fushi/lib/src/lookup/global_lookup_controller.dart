@@ -207,6 +207,22 @@ class GlobalLookupController {
       _hiddenListeners.add(listener);
   void removeHiddenListener(VoidCallback listener) =>
       _hiddenListeners.remove(listener);
+
+  /// 宿主主动关掉桌面查词卡（拍板台 8ldy3d8XFA：网页视频窗口宿主档制卡后按「制卡后
+  /// 行为」关卡）。与卡内 `dismiss` 同一条路径：原生侧关窗后回报 overlayHidden，
+  /// [onHidden] / hidden 监听照常触发（续不续播由宿主在调用前处理暂停标记决定）。
+  /// 当前不是桌面路由（游戏内查词卡）或没有在场的查词时什么都不做。
+  void dismissDesktopLookup() {
+    final GlobalLookupRoute? route = _activeRoute;
+    if (route == null || route.source != 'desktop') return;
+    _nestedLookupGeneration++;
+    // 在这次查词的 route zone 里发：hide 带上它的 epoch，原生侧回报的 overlayHidden
+    // 才对得上这张卡（与卡内消息在 route zone 里派发同口径）。
+    unawaited(
+      GlobalLookupChannel.runWithRoute(route, () => GlobalLookupChannel.hide()),
+    );
+  }
+
   void Function(GlobalLookupRoute route)? onRoutedHidden;
   // KiriKiri 游戏内查词 — 卡片「内容已渲染、尺寸已定」的**唯一可靠**信号。
   //

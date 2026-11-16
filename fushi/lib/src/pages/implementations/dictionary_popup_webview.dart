@@ -283,22 +283,27 @@ enum QueuedOverwriteSettled {
 
 /// 「制卡后行为」（拍板台 8ldy3d8XFA，按模块存，见 [AfterMiningPopupAction]）。
 ///
-/// 包住宿主的制卡回调：制卡**落地之后**（[MinePopupResult.accepted]）且 [action] 要关
-/// 弹窗时调 [closeAll]，`resume` = 关栈后是否按「因查词暂停」的标记续播。必须等结果
-/// 回来再关，不能提前：阅读器车道经制卡串行队列入队，草稿 / 句子上下文要等排到才被
-/// 读走，提前关栈会把它们清掉（BUG-2627 第二轮）。包装是 async 函数，首个 await 之前
+/// 包住宿主的制卡回调：制卡**落地之后**（[MinePopupResult.accepted]）按 [action] 经
+/// [applyAfterMiningPopupAction] 处理——要关弹窗就（不续播时先 [dropPauseMark] 撤掉
+/// 「因查词暂停」的标记）调 [closeAll] 关栈，续不续播由关栈汇聚点按标记决定。必须等
+/// 结果回来再关，不能提前：阅读器车道经制卡串行队列入队，草稿 / 句子上下文要等排到才
+/// 被读走，提前关栈会把它们清掉（BUG-2627 第二轮）。包装是 async 函数，首个 await 之前
 /// 会同步跑完 [mine] 的同步前缀，BUG-2634 依赖的「宿主在首个 await 前读完 payload」
 /// 时序不变。[action] 每次现读，设置改了立即生效。
 Future<MinePopupResult> Function(Map<String, String> fields)
 closePopupAfterAcceptedMine(
   Future<MinePopupResult> Function(Map<String, String> fields) mine, {
   required AfterMiningPopupAction Function() action,
-  required void Function({required bool resume}) closeAll,
+  required VoidCallback dropPauseMark,
+  required VoidCallback closeAll,
 }) => (Map<String, String> fields) async {
   final MinePopupResult result = await mine(fields);
   if (!result.accepted) return result;
-  final AfterMiningPopupAction current = action();
-  if (current.closesPopup) closeAll(resume: current.resumesPlayback);
+  applyAfterMiningPopupAction(
+    action(),
+    dropPauseMark: dropPauseMark,
+    closeAll: closeAll,
+  );
   return result;
 };
 

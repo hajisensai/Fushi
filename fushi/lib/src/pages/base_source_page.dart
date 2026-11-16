@@ -1320,10 +1320,11 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
             ? closePopupAfterAcceptedMine(
                 onMineFromPopup,
                 action: () => afterMiningPopupAction,
-                closeAll: ({required bool resume}) {
-                  if (!mounted) return;
-                  if (!resume) dropLookupPauseMark();
-                  clearDictionaryResult();
+                dropPauseMark: () {
+                  if (mounted) dropLookupPauseMark();
+                },
+                closeAll: () {
+                  if (mounted) clearDictionaryResult();
                 },
               )
             : _mineBlockedByModuleGate,

@@ -12,21 +12,22 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 /// DictionaryPageMixin）唯一的关窗判据。
 void main() {
   group('closePopupAfterAcceptedMine', () {
-    /// 返回每次 closeAll 收到的 resume 值（没关 = 空表）。
-    Future<List<bool>> run(
+    /// 返回宿主收到的调用序列（'drop' = 撤查词暂停标记，'close' = 关栈；没动 = 空表）。
+    Future<List<String>> run(
       MinePopupResult result,
       AfterMiningPopupAction action,
     ) async {
-      final List<bool> closes = <bool>[];
+      final List<String> calls = <String>[];
       final Future<MinePopupResult> Function(Map<String, String>) wrapped =
           closePopupAfterAcceptedMine(
             (Map<String, String> f) async => result,
             action: () => action,
-            closeAll: ({required bool resume}) => closes.add(resume),
+            dropPauseMark: () => calls.add('drop'),
+            closeAll: () => calls.add('close'),
           );
       final MinePopupResult got = await wrapped(<String, String>{});
       expect(identical(got, result), isTrue, reason: '结果必须原样回传给 popup.js');
-      return closes;
+      return calls;
     }
 
     const MinePopupResult landed = MinePopupResult(ankiConnect: true);
@@ -35,13 +36,16 @@ void main() {
       expect(await run(landed, AfterMiningPopupAction.keepOpen), isEmpty);
     });
 
-    test('关弹窗：关栈一次且不续播', () async {
-      expect(await run(landed, AfterMiningPopupAction.close), <bool>[false]);
+    test('关弹窗：先撤暂停标记再关栈（不续播）', () async {
+      expect(await run(landed, AfterMiningPopupAction.close), <String>[
+        'drop',
+        'close',
+      ]);
     });
 
-    test('关弹窗并续播：关栈一次且续播', () async {
-      expect(await run(landed, AfterMiningPopupAction.closeAndResume), <bool>[
-        true,
+    test('关弹窗并续播：只关栈，暂停标记留给关栈汇聚点续播', () async {
+      expect(await run(landed, AfterMiningPopupAction.closeAndResume), <String>[
+        'close',
       ]);
     });
 
@@ -51,7 +55,7 @@ void main() {
           const MinePopupResult.queued(),
           AfterMiningPopupAction.closeAndResume,
         ),
-        <bool>[true],
+        <String>['close'],
       );
     });
 
@@ -76,7 +80,8 @@ void main() {
           return landing.future;
         },
         action: () => AfterMiningPopupAction.close,
-        closeAll: ({required bool resume}) => closed++,
+        dropPauseMark: () {},
+        closeAll: () => closed++,
       )(<String, String>{});
       // BUG-2634：宿主的同步前缀在包装返回前已经跑完。
       expect(hostEntered, isTrue);
@@ -229,9 +234,11 @@ void main() {
           reason: '$path 的 onMineEntry 必须包 closePopupAfterAcceptedMine 并读宿主行为',
         );
         expect(
-          src.contains('if (!resume) dropLookupPauseMark();'),
+          RegExp(
+            r'dropPauseMark:\s*\(\)\s*\{\s*if \(mounted\) dropLookupPauseMark\(\);',
+          ).hasMatch(src),
           isTrue,
-          reason: '$path：「关弹窗不续播」要先撤查词暂停标记再关栈',
+          reason: '$path：「关弹窗不续播」要经宿主的 dropLookupPauseMark 撤查词暂停标记',
         );
         expect(
           src.contains('afterMiningPopupModuleFor(lookupHostModule)'),
@@ -241,21 +248,98 @@ void main() {
       }
     });
 
-    test('会因查词暂停播放的宿主都覆写 dropLookupPauseMark', () {
-      for (final String path in <String>[
+    test('会因查词暂停播放的查词宿主都覆写 dropLookupPauseMark（目录枚举）', () {
+      // 宿主 = 混入 DictionaryPageMixin / 继承 BaseSourcePageState 的文件（连同它的
+      // part 文件）；「会因查词暂停播放」= 持有查词暂停标记（pausedForLookup）或发出
+      // 悬浮歌词查词的关卡续播信号（notifyLookupClosed）。漏覆写 = 「关闭、不续播」
+      // 照样续播（审查发现的悬浮歌词漏洞即此类）。
+      final RegExp hostDecl = RegExp(
+        r'with DictionaryPageMixin|extends BaseSourcePageState<',
+      );
+      final RegExp pauses = RegExp(r'pausedForLookup|notifyLookupClosed\(\)');
+      final RegExp override = RegExp(
+        r'@override\s+void dropLookupPauseMark\(\)',
+      );
+      final List<String> checked = <String>[];
+      for (final FileSystemEntity entity in Directory(
+        'lib',
+      ).listSync(recursive: true)) {
+        if (entity is! File || !entity.path.endsWith('.dart')) continue;
+        final String src = entity.readAsStringSync();
+        if (!hostDecl.hasMatch(src)) continue;
+        final StringBuffer all = StringBuffer(src);
+        for (final RegExpMatch m in RegExp(
+          r"^part '([^']+)';",
+          multiLine: true,
+        ).allMatches(src)) {
+          final File part = File('${entity.parent.path}/${m.group(1)}');
+          if (part.existsSync()) all.write(part.readAsStringSync());
+        }
+        final String text = all.toString();
+        if (!pauses.hasMatch(text)) continue;
+        checked.add(entity.path.replaceAll(r'\', '/'));
+        expect(override.hasMatch(text), isTrue, reason: entity.path);
+      }
+      // 枚举本身别空转：已知会暂停的宿主必须都被扫到。
+      for (final String known in <String>[
         'lib/src/pages/implementations/video_fushi_page.dart',
         'lib/src/pages/implementations/web_video_fushi_page.dart',
         'lib/src/pages/implementations/reader_fushi_page.dart',
         'lib/src/pages/implementations/music/music_lyrics_page.dart',
+        'lib/src/media/audiobook/floating_lyric_lookup_host.dart',
       ]) {
-        expect(
-          RegExp(
-            r'@override\s+void dropLookupPauseMark\(\)',
-          ).hasMatch(File(path).readAsStringSync()),
-          isTrue,
-          reason: path,
-        );
+        expect(checked, contains(known));
       }
+    });
+
+    test('悬浮歌词查词请求带来源模块：音乐桌面歌词归音乐、有声书悬浮字幕归小说', () {
+      final String model = File(
+        'lib/src/models/app_model.dart',
+      ).readAsStringSync();
+      expect(
+        RegExp(
+          r'lookupPause\.lookupStarted\(\);\s*'
+          r'FloatingLyricLookupNotifier\.instance\.requestLookup\([\s\S]{0,300}?'
+          r'hostModule: ModuleId\.music,',
+        ).hasMatch(model),
+        isTrue,
+      );
+      expect(
+        RegExp(
+          r'onFloatingLyricLookup:[\s\S]{0,1200}?'
+          r'hostModule: ModuleId\.books,',
+        ).hasMatch(model),
+        isTrue,
+      );
+      expect(
+        RegExp(
+          r'lookupPauseDropped\.addListener\(\s*lookupPause\.dropPauseMark,',
+        ).hasMatch(model),
+        isTrue,
+        reason: '音乐查词暂停方要订阅「撤暂停标记」信号',
+      );
+    });
+
+    test('网页视频窗口宿主档：顶层查词窗口里制卡也按视频那行处理', () {
+      final String src = File(
+        'lib/src/pages/implementations/web_video_fushi_page.dart',
+      ).readAsStringSync();
+      final int start = src.indexOf('_mineFromGlobalLookup({');
+      expect(start, greaterThan(0));
+      final String body = src.substring(start, start + 900);
+      expect(
+        RegExp(r'_afterGlobalLookupMineAccepted\(\)').allMatches(body).length,
+        2,
+        reason: '回退纯字段制卡与入队两条路都要处理',
+      );
+      expect(
+        RegExp(
+          r'applyAfterMiningPopupAction\(\s*afterMiningPopupAction,\s*'
+          r'dropPauseMark: dropLookupPauseMark,\s*'
+          r'closeAll: GlobalLookupController\.instance\.dismissDesktopLookup,',
+        ).hasMatch(src),
+        isTrue,
+      );
     });
 
     test('视频页不再写死「制卡后恒关弹窗」', () {

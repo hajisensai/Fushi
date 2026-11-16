@@ -113,7 +113,7 @@ mixin DictionaryPageMixin {
   /// 本页所属的功能模块：「底部停靠」按模块细分开关听哪一个
   /// （[AppModel.popupBottomDockedFor]）、「制卡后行为」听哪一行
   /// （[afterMiningPopupAction]）。默认 `null` = 只听停靠总开关、制卡后行为归查词
-  /// 那行（查词页 / 外部弹窗 / 悬浮歌词）；视频页、texthooker 覆写。与
+  /// 那行（查词页 / 外部弹窗）；视频页、texthooker、悬浮歌词宿主（按请求来源）覆写。与
   /// `BaseSourcePageState` 的同名钩子对称。
   ModuleId? get lookupHostModule => null;
 
@@ -253,7 +253,7 @@ mixin DictionaryPageMixin {
 
   /// 制卡后按「关闭弹窗、不续播」关栈之前调用：撤掉「因查词暂停」的标记、保持暂停，
   /// 随后的关栈汇聚点（`onPop(0)`）就不会续播。默认无事可做；会因查词暂停播放的
-  /// 宿主（视频页 / 网页视频页）覆写。
+  /// 宿主（视频页 / 网页视频页 / 悬浮歌词查词宿主）覆写。
   @protected
   void dropLookupPauseMark() {}
 
@@ -1419,10 +1419,11 @@ mixin DictionaryPageMixin {
             (Map<String, String> fields) =>
                 onMineEntry(miningFieldsForLayer(index, controller, fields)),
             action: () => afterMiningPopupAction,
-            closeAll: ({required bool resume}) {
-              if (!mounted) return;
-              if (!resume) dropLookupPauseMark();
-              onPop(0);
+            dropPauseMark: () {
+              if (mounted) dropLookupPauseMark();
+            },
+            closeAll: () {
+              if (mounted) onPop(0);
             },
           ),
           onUpdateEntry: (int noteId, Map<String, String> fields) =>
