@@ -1,0 +1,73 @@
+# 设置项目录自动同步到官网（fushi.moe/settings.md、/settings.json，读者是 AI）。
+#
+# 链路：
+#   1. 发布 workflow（release.yml）的 tests job（checks 那一份）在每次 push 上跑导出器
+#      fushi/test/settings/settings_catalog_export_test.dart，把 settings-catalog.{json,md}
+#      作为 run artifact `settings-catalog` 传上来。导出器遍历的就是 `fushi_cli config ls`
+#      用的那份设置索引，所以 app 加减设置项不需要任何人维护清单。
+#   2. 本 workflow 在那条 run 结束后被 workflow_run 唤起，取 artifact，由
+#      tool/publish_settings_catalog.sh 推到 update-manifest 分支：
+#      develop → settings-catalog-debug.*，main → settings-catalog-stable.*。
+#      目录内容是确定的，设置没变就不产生提交。
+#   3. 官网边缘 Worker（hajisensai/fushi.moe 的 edge/src/settings-catalog.ts）按通道代理这两个文件。
+#
+# 为什么拆成两段而不是在 tests job 里直接推：tests job 只有 contents: read，给一个跑全量
+# 单测的 job 写权限不值当；推送只在这里发生，本 workflow 不 checkout 也不执行 artifact 里的任何东西
+# （只把两个数据文件原样提交）。release.yml 没有 pull_request 触发，artifact 只可能来自
+# develop / main 的 push；下面再按 event 与分支卡一遍。
+#
+# workflow_run 只认默认分支上的这份定义；被取消 / tests 没跑到导出那一步的 run 没有 artifact，
+# 这里记一条 notice 后正常结束，不判红。
+name: Settings catalog
+
+on:
+  workflow_run:
+    workflows: ['Build Release APK']
+    types: [completed]
+
+permissions:
+  contents: write
+  actions: read
+
+# 同一时刻只推一份；排队中的旧 run 被后来者顶掉无妨（后来者的目录更新）。
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: ${{ github.event.workflow_run.event == 'push' && (github.event.workflow_run.head_branch == 'develop' || github.event.workflow_run.head_branch == 'main') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # 取默认分支上的发布脚本（不取触发那条 run 的树：脚本拿着写权限 token）。
+      - uses: actions/checkout@v6
+        with:
+          sparse-checkout: tool/publish_settings_catalog.sh
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - name: Download the catalog artifact of the release run
+        id: fetch
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          set -euo pipefail
+          dir="$RUNNER_TEMP/settings-catalog"
+          if gh run download "$RUN_ID" --repo "$GITHUB_REPOSITORY" --name settings-catalog --dir "$dir"; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+            echo "dir=$dir" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Settings catalog::run $RUN_ID 没有 settings-catalog artifact（tests 被跳过 / 取消，或导出失败），本次不更新。"
+          fi
+      - name: Publish to update-manifest
+        if: steps.fetch.outputs.found == 'true'
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          CATALOG_DIR: ${{ steps.fetch.outputs.dir }}
+          CHANNEL: ${{ github.event.workflow_run.head_branch == 'main' && 'stable' || 'debug' }}
+        run: bash tool/publish_settings_catalog.sh

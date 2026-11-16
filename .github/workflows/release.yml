@@ -2060,6 +2060,30 @@ jobs:
         name: fushi-test-native-linux-x64
         path: native
 
+    # 设置项目录（给官网 fushi.moe/settings.md 用，读者是 AI）：导出器就是一条普通单测，设了
+    # FUSHI_SETTINGS_CATALOG_DIR 才落盘。这里只生成并传 artifact；推到 update-manifest 分支由
+    # .github/workflows/settings-catalog.yml 在本 run 结束后做（本 job 没有写权限）。
+    # continue-on-error：同一条测试在单测分片里照常当守卫跑，红在那里；这里失败只是这次不更新目录。
+    - name: Export settings catalog
+      id: settings_catalog
+      if: matrix.part == 'checks' && github.event_name == 'push'
+      continue-on-error: true
+      timeout-minutes: 10
+      working-directory: fushi
+      env:
+        FUSHI_SETTINGS_CATALOG_DIR: ${{ runner.temp }}/settings-catalog
+      # 经失败过滤包装器跑（零执行不算绿）；单独的输出目录，不与分片的事件日志混。
+      run: dart run tool/flutter_test_failures.dart --output-dir=../.codex-test/settings-catalog test/settings/settings_catalog_export_test.dart
+    - name: Upload settings catalog
+      if: matrix.part == 'checks' && github.event_name == 'push' && steps.settings_catalog.outcome == 'success'
+      continue-on-error: true
+      uses: actions/upload-artifact@v7
+      with:
+        name: settings-catalog
+        path: ${{ runner.temp }}/settings-catalog/settings-catalog.*
+        if-no-files-found: error
+        retention-days: 7
+
     - name: Run unit tests (main app, file shard ${{ matrix.part }}/4)
       if: matrix.part != 'checks'
       working-directory: fushi
