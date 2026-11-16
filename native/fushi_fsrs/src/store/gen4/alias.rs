@@ -904,18 +904,11 @@ impl Index<'_, '_> {
             self.alias_dirty = true;
         }
         if self.alias_dirty {
-            // 缓存层按规范 ID 建（`cache.rs`）：表变了的那几行牵动的规范 ID 要重看。只有物化了缓存的集合才记。
-            let track = self
-                .t
-                .derive_cfg(self.col, super::cache::CFG_KEY)?
-                .is_some();
-            if track {
-                self.alias_snapshot()?;
-            }
+            // 表变了的那几行牵动的 ID 要重看：缓存层按规范 ID 建（`cache.rs`），扣住按别名类判（`weigh.rs`
+            // [Index::weigh_rest]）。后者不论物化没物化缓存都要，所以总是记。
+            self.alias_snapshot()?;
             let n = self.rebuild_aliases()?;
-            if track {
-                self.alias_diff()?;
-            }
+            self.alias_diff()?;
             return Ok((n, false));
         }
         Ok((0, false))

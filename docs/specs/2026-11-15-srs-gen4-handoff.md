@@ -180,20 +180,21 @@
 | `ffsrs_set_temp_dir` | — | `ffi.rs` | 不需要（与库代无关） | S1 原样保留 |
 | `ffsrs_store_sync2` | — | `ffi.rs` 分发器入口 | — | S1：本表全部命令的入口 |
 
-### 7.6 已知缺口：带盐成员上被扣住的删除，`resolve` 之后扣不掉（归 S1 / G7 接线）
+### 7.6 带盐成员上被扣住的删除，`resolve` 之后扣不掉（**已修**，G7-4g，按方案 1）
 
-G7-4e 复核补测试时发现（`cmd/center_tests.rs` `conflicts_name_a_salted_member_by_its_class`）：删除落在别名类的某个
-带盐成员上、被并发修改扣住时，`conflicts` 按规范号列出它，`resolve` 用列出的 ID 也找得到；但 `resolve` 写下的恢复 /
-再删经 `Session::land` → `canon_body` 换成了**规范号**，而扣住是 `weigh.rs` `weigh_holds` 按**原值成员**的 `deleted`
-寄存器判的（「见过这条删除的同寄存器写入」与「并发操作」都只看这个成员）。规范号上的写入不在那个寄存器里，于是
-`hold_ix` 那一行一直在，冲突中心反复列出同一条冲突（单成员的类不受影响：规范号就是原值号）。连带：`others`
-只数同一成员上的并发修改，类里别的成员上的并发修改不算。
+原缺口（G7-4e 复核补测试时发现）：删除落在别名类的某个带盐成员上、被并发修改扣住时，`resolve` 写下的恢复 / 再删
+经 `Session::land` → `canon_body` 换成了**规范号**，而 `weigh.rs` `weigh_holds` 只按**原值成员**的 `deleted` 寄存器
+判「已被见过它的写入盖掉」，于是 `hold_ix` 那一行一直在、冲突中心反复列出同一条冲突；`others` 也只数同一成员上的
+并发修改。
 
-这正是 `class.rs` 文件头「没有并起来的」一节留给「G7 接线时定」的事（扣住的删除要不要看全类的并发操作，设计 §10
-第 19 条同源）。接线前不影响用户（新代命令还没有调用方）。S1 接线前要二选一并补测试：
+修法（方案 1，扣住按类判）：`weigh_holds` 一次看一个别名类（`alias.rs` `Index::members`），「被见过它的写入盖掉」取
+全类成员的 `deleted`，`others_of` 取全类成员上的并发操作；状态与 `hold_ix` 的行仍按删除落的原值成员存。为此收尾
+顺序改成「清除 → 盐 / 别名表 → 扣住 / 标签 / 媒体 → 寄存器判定 → …」（`derive.rs` `settle` / `rebuild_all`；别名表只看
+清除状态，不看扣住与判定），别名表整表重算时总是记下变了的行（`alias_moves`，原先只有物化了缓存的集合才记），
+它们牵动的类在同一次收尾里重看——别名迟到（先扣住、后来才并类，或清除让证据变少、类拆开，设计 §10 第 19 条）
+时逐条维护与重建相同。测试：`cmd/center_tests.rs` `conflicts_name_a_salted_member_by_its_class`（裁决后消失、
+类内别的成员上的并发修改计入 `others`、重建相同）、`a_late_alias_holds_the_delete_by_its_class_and_rebuilds_the_same`
+（盐后到 / 先到两种到达顺序结果相同、每步重建相同）。
 
-1. 扣住按类判：`weigh_holds` 的「已被见过它的写入盖掉」与 `others_of` 都在全类成员的寄存器上取（写到规范号上的
-   写入要触发重看各成员的 `deleted`），`hold_ix` 仍按原值行存；或
-2. `resolve` 对被扣住的删除按 `Hold.entity` 的原值成员写（绕开 `canon_body`），与扣住的口径一致。
-
-倾向 1（与寄存器、标签按类读同一个口径；2 会让「新写一律规范号」多一个例外）。
+清除（Purge）与作者不可信仍按原值实体判；一条 Purge 要不要清掉整个类仍归 S1 / G7 接线定（`class.rs` 文件头
+「没有并起来的」）。

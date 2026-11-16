@@ -17,7 +17,7 @@ use super::{tests_class, writes};
 use crate::gen4::op::tests::id;
 use crate::gen4::op::{Body4, Edit4};
 use crate::store::gen4::derive::Index;
-use crate::store::gen4::derive::tests::{native, op, with};
+use crate::store::gen4::derive::tests::{assert_rebuild_is_identity, native, op, with};
 use crate::store::gen4::schema::{opk, sql};
 use crate::store::gen4::truth::{BindStage, Peer, Truth};
 use crate::store::sync2::tests::{DAY, P, edit};
@@ -325,8 +325,10 @@ fn undo_check_by_any_member_finds_a_lone_write() {
     });
 }
 
-/// 被扣住的删除落在带盐成员上（0xd1 没见过 0xb2 写在第二份成员上的修改就删了它）：`conflicts` 的 `entity` 是规范号，
-/// 用列出来的 ID 交给 `resolve` 找得到这条冲突，裁决后它从列表里消失（另一条待裁决的笔记还在）。
+/// 被扣住的删除落在带盐成员上（0xd1 只见过定义就删了第二份成员；0xb1 / 0xb2 各在一份成员上改过字段，都与它并发）：
+/// `conflicts` 的 `entity` 是规范号、`others` 数全类成员上的并发修改（两条，不只是删除落的那份成员上的一条）；用列出来的
+/// ID 交给 `resolve` 找得到这条冲突，裁决（按规范号写）之后它从列表里消失、另一条待裁决的笔记还在。每一步逐条维护与
+/// 重建相同。
 #[test]
 fn conflicts_name_a_salted_member_by_its_class() {
     with(|t, col| {
@@ -345,6 +347,7 @@ fn conflicts_name_a_salted_member_by_its_class() {
             ix.settle().map(|_| ())
         })
         .unwrap();
+        assert_rebuild_is_identity(t, col);
         let v = conflicts(t, col).unwrap();
         let ours = |v: &Value| -> Option<Value> {
             v.as_array()
@@ -358,9 +361,8 @@ fn conflicts_name_a_salted_member_by_its_class() {
         assert_eq!(row["entityKind"], json!("note"));
         assert_eq!(row["kind"], json!("delete_edit"));
         assert_eq!(row["at"], json!(600));
-        // 列出的 ID 交给 `resolve` 找得到（找不到时报 `no such conflict`）。裁决之后这条扣住**不会**消失：`resolve`
-        // 的恢复按规范号写（`canon_body`），扣住却按原值成员判（`weigh.rs` `weigh_holds`；`class.rs` 文件头「没有并
-        // 起来的」——扣住要不要看全类是 G7 接线时定的事）。已记进交接说明 §7.6「已知缺口」，归 S1，这里不钉这一步。
+        assert_eq!(row["others"], json!(2), "{v}");
+        assert_eq!(v.as_array().unwrap().len(), 2, "{v}");
         t.tx(|t| t.create_self(col, &Id(ME), &[9; 32], None, T0))
             .unwrap();
         writes::resolve(
@@ -369,7 +371,85 @@ fn conflicts_name_a_salted_member_by_its_class() {
             &json!({"now": T1, "conflict": row["id"], "delete": false}),
         )
         .unwrap();
+        let v = conflicts(t, col).unwrap();
+        assert_eq!(ours(&v), None, "{v}");
+        let rows = v.as_array().unwrap();
+        assert_eq!(rows.len(), 1, "{v}");
+        assert_eq!(rows[0]["by"], json!(id(0xc1).text()));
+        assert_rebuild_is_identity(t, col);
+        // 同一条冲突不能再裁一次（它已经不在扣住的删除里）。
+        let again = writes::resolve(
+            t,
+            col,
+            &json!({"now": T1 + 1, "conflict": row["id"], "delete": false}),
+        );
+        assert!(again.unwrap_err().contains("no such conflict"));
     });
+}
+
+/// 别名迟到：两份带盐成员的盐（Salts 操作）在删除与并发修改之后才到。盐到之前两份成员各是一个类，删除落的那份上没有
+/// 并发的操作、不扣住；盐到之后并成一个类，另一份上的并发修改把它扣住。逐条维护与重建相同，与「盐先到」的那条到达
+/// 顺序结果相同。
+#[test]
+fn a_late_alias_holds_the_delete_by_its_class_and_rebuilds_the_same() {
+    let run = |salts_first: bool| -> Value {
+        with(|t, col| {
+            let w = tests_class::twin();
+            let base = tests_class::base_ops(&w);
+            assert!(matches!(base[0], Body4::Salts { .. }));
+            let last = base.len() as u64 - 1;
+            let seen = [(0xa1, last)];
+            let field = format!("f/{}", w.field[1].text());
+            let del = tests_class::set(
+                EntKind::Note,
+                tests_class::u(w.note[0]),
+                "deleted",
+                json!(500),
+            );
+            let edit =
+                tests_class::set(EntKind::Note, tests_class::u(w.note[1]), &field, json!("B"));
+            let salts = |t: &Truth<'_>| {
+                t.tx(|t| {
+                    let mut ix = Index::new(t, col);
+                    native(t, &mut ix, col, &op(0xe1, 1, 50, &[], &base[0]));
+                    ix.settle().map(|_| ())
+                })
+                .unwrap();
+            };
+            if salts_first {
+                salts(t);
+            }
+            t.tx(|t| {
+                let mut ix = Index::new(t, col);
+                for (i, b) in base[1..].iter().enumerate() {
+                    native(
+                        t,
+                        &mut ix,
+                        col,
+                        &op(0xa1, i as u64 + 1, 100 + i as i64, &[], b),
+                    );
+                }
+                native(t, &mut ix, col, &op(0xd1, 1, 500, &seen, &del));
+                native(t, &mut ix, col, &op(0xb2, 1, 501, &seen, &edit));
+                ix.settle().map(|_| ())
+            })
+            .unwrap();
+            assert_rebuild_is_identity(t, col);
+            if !salts_first {
+                assert_eq!(conflicts(t, col).unwrap(), json!([]));
+                salts(t);
+                assert_rebuild_is_identity(t, col);
+            }
+            let v = conflicts(t, col).unwrap();
+            let rows = v.as_array().unwrap();
+            assert_eq!(rows.len(), 1, "{v}");
+            assert_eq!(rows[0]["by"], json!(id(0xd1).text()));
+            assert_eq!(rows[0]["entity"], json!(w.c_note.text()));
+            assert_eq!(rows[0]["others"], json!(1));
+            v
+        })
+    };
+    assert_eq!(run(false), run(true));
 }
 
 /// 双盐场景里的冲突中心：被并发改动扣住的删除列出来，`by` / `at` 是那条删除的作者与墙钟；`profile_footprint` 把同一次

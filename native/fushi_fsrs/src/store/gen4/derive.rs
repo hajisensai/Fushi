@@ -1124,7 +1124,16 @@ impl<'t, 'c> Index<'t, 'c> {
                 out.closures += 1;
             }
         }
-        self.weigh(false, &mut out)?;
+        let trust = self.weigh_purged(false, &mut out)?;
+        // 别名表在扣住之前定：扣住按别名类判（`weigh.rs` 文件头「扣住的删除」），别名表只看清除状态、不看扣住与
+        // 寄存器的判定（`alias.rs` 文件头「证据」）。
+        if std::mem::take(&mut self.salts_dirty) {
+            self.settle_salts()?;
+        }
+        let (rows, proven) = self.settle_aliases()?;
+        out.aliases = rows;
+        out.aliases_proven = u64::from(proven);
+        self.weigh_rest(false, trust, &mut out)?;
         let mut regs = std::mem::take(&mut self.regs);
         self.dirt.registers(&regs);
         self.dirt.ids.extend(self.ents.iter().cloned());
@@ -1149,12 +1158,6 @@ impl<'t, 'c> Index<'t, 'c> {
         }
         self.heads.clear();
         out.digests = self.digest_flush()?;
-        if std::mem::take(&mut self.salts_dirty) {
-            self.settle_salts()?;
-        }
-        let (rows, proven) = self.settle_aliases()?;
-        out.aliases = rows;
-        out.aliases_proven = u64::from(proven);
         self.refresh_caches(&mut out)?;
         Ok(out)
     }
@@ -1189,7 +1192,13 @@ impl<'t, 'c> Index<'t, 'c> {
                 out.closures += 1;
             }
         }
-        self.weigh(true, &mut out)?;
+        let trust = self.weigh_purged(true, &mut out)?;
+        // 扫描时带盐的操作把「盐集合要重看」置上了；这里就地重算，别让它留着、把别名表误报成没重算（缓存层按类读
+        // 要求别名表是新的，`class.rs` [Index::aliases_stale]）。别名表在扣住之前定（同 [Index::settle]）。
+        self.salts_dirty = false;
+        self.settle_salts()?;
+        out.aliases = self.rebuild_aliases()?;
+        self.weigh_rest(true, trust, &mut out)?;
         let mut regs = std::mem::take(&mut self.regs);
         regs.extend(self.multi_regs()?);
         for r in &regs {
@@ -1209,11 +1218,6 @@ impl<'t, 'c> Index<'t, 'c> {
         self.heads.clear();
         super::digest::set_triggers(conn, true)?;
         out.digests = self.digest_rebuild()?;
-        // 扫描时带盐的操作把「盐集合要重看」置上了；这里就地重算，别让它留着、把别名表误报成没重算（缓存层按类读
-        // 要求别名表是新的，`class.rs` [Index::aliases_stale]）。
-        self.salts_dirty = false;
-        self.settle_salts()?;
-        out.aliases = self.rebuild_aliases()?;
         self.materialize_caches(&mut out)?;
         Ok(out)
     }
