@@ -141,14 +141,7 @@ SettingsSegmentedItem<AfterMiningPopupAction> _afterMiningPopupItem(
           notifyReaderSettingsChanged(settingsContext);
         },
     defaultValueBuilder: (SettingsContext settingsContext) =>
-        afterMiningPopupDefault(
-          module,
-          legacyCloseAfterMining:
-              settingsContext.readerSource.readStoredPreference<bool>(
-                'close_popup_after_mining',
-              ) ??
-              false,
-        ),
+        settingsContext.readerSource.afterMiningPopupDefaultFor(module),
   );
 }
 
