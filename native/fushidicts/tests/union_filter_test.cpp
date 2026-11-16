@@ -20,7 +20,6 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
-#include <random>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -70,7 +69,20 @@ struct FakeTable {
   }
 };
 
-FakeTable make_table(uint64_t identity, size_t count, std::mt19937_64& rng) {
+// 假键哈希的来源：确定性的 splitmix64 序列。真键是词条的 XXH3，同样是均匀的 64 位值；
+// 这里只要「均匀、可复现」，与随机性的安全强度无关。
+struct KeySequence {
+  uint64_t state;
+
+  uint64_t operator()() {
+    uint64_t z = (state += 0x9E3779B97F4A7C15ULL);
+    z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
+    z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
+    return z ^ (z >> 31);
+  }
+};
+
+FakeTable make_table(uint64_t identity, size_t count, KeySequence& rng) {
   FakeTable t;
   t.identity = identity;
   const uint32_t capacity = static_cast<uint32_t>(std::max<size_t>(count * 10 / 7, 16));
@@ -131,7 +143,7 @@ std::vector<std::string> cache_files(const std::string& dir) {
 }
 
 void test_filter_properties() {
-  std::mt19937_64 rng(20261116);
+  KeySequence rng{20261116};
   const FakeTable a = make_table(0xA11CE0000000001ULL, 40000, rng);
   const FakeTable b = make_table(0xB0B00000000002ULL, 25000, rng);
   const FakeTable c = make_table(0xC0FFEE0000000003ULL, 9, rng);  // 小到只有最小 capacity
@@ -190,7 +202,7 @@ void test_filter_properties() {
 }
 
 void test_cache_file(const std::string& root) {
-  std::mt19937_64 rng(42);
+  KeySequence rng{42};
   const FakeTable a = make_table(0x1111000000000001ULL, 30000, rng);
   const FakeTable b = make_table(0x2222000000000002ULL, 30000, rng);
   const FakeTable c = make_table(0x3333000000000003ULL, 2000, rng);
