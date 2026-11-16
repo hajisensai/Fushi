@@ -18,6 +18,21 @@ import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
 
+/// 页图来源目录归谁——决定页图是**拷**进书目录还是**移**进去。
+enum MangaPageSource {
+  /// 用户自己的目录（选中的页图文件夹、`.mokuro` 同级页图、来源库）：只读，逐页拷贝，
+  /// 绝不动原文件。所有入口的默认值。
+  borrowed,
+
+  /// 调用方自己建的临时目录、导入完即整个删掉（压缩包解出的 staging、PDF 栅格化 /
+  /// EPUB 铺页的暂存目录）：页图直接**移动**进书目录。同卷是一次 rename、不占额外
+  /// 空间；跨卷（临时目录与书目录不在同一文件系统）才回退成「拷贝 + 删源」。
+  ///
+  /// 此前这些暂存目录也走拷贝：导入一个 4 GiB 的包，磁盘峰值是「原包 + 暂存 4 GiB +
+  /// 书目录 4 GiB」，空间紧的平板会在拷贝中途写满。
+  disposable,
+}
+
 /// 已知漫画页图扩展名（mokuro 惯例）＝漫画页图共享表（基集 + `.avif`）。
 ///
 /// 与整卷 OCR 的白名单 `kMangaOcrImageExtensions`（manga_ocr_folder_job.dart）
@@ -109,6 +124,7 @@ class MangaImporter {
     void Function(int done, int total)? onProgress,
     int? sourceId,
     String? sourceMetadata,
+    MangaPageSource pageSource = MangaPageSource.borrowed,
   }) async {
     final Directory root = Directory(imageDirPath);
     final MokuroPayload payload = await payloadFromImageFolder(root);
@@ -124,6 +140,7 @@ class MangaImporter {
       onProgress: onProgress,
       sourceId: sourceId,
       sourceMetadata: sourceMetadata,
+      pageSource: pageSource,
     );
   }
 
@@ -212,17 +229,33 @@ class MangaImporter {
     required List<String> destRels,
     required String bookDir,
     void Function(int done, int total)? onProgress,
+    MangaPageSource pageSource = MangaPageSource.borrowed,
   }) async {
     // 逐页 await 让主 isolate 有机会喂进度不卡 UI。
     final int total = payload.images.length;
     final List<MokuroImage> rewritten = <MokuroImage>[];
+    // disposable 模式下已经移走的源 → 它在书目录里的新位置：多页引用同一张源图时，
+    // 第二次起从书目录里那份拷（源已经不在原处）。
+    final Map<String, File> moved = <String, File>{};
     for (int i = 0; i < total; i++) {
       final MokuroImage page = payload.images[i];
       final String destRel = destRels[i];
       final File src = mokuroPageFile(srcDir.path, page.url);
       final File dest = MangaStorage.destFile(bookDir, destRel);
       dest.parent.createSync(recursive: true);
-      await src.copy(dest.path);
+      switch (pageSource) {
+        case MangaPageSource.borrowed:
+          await src.copy(dest.path);
+        case MangaPageSource.disposable:
+          final String key = p.canonicalize(src.path);
+          final File? earlier = moved[key];
+          if (earlier != null) {
+            await earlier.copy(dest.path);
+          } else {
+            await movePageFile(src, dest);
+            moved[key] = dest;
+          }
+      }
       rewritten.add(
         MokuroImage(url: destRel, size: page.size, blocks: page.blocks),
       );
@@ -240,6 +273,26 @@ class MangaImporter {
     return (pageCount: total, coverRel: destRels.first);
   }
 
+  /// 把 [src] 移到 [dest]（覆盖已存在的 [dest]）：同一文件系统内是一次 rename；
+  /// 跨文件系统（EXDEV / Windows ERROR_NOT_SAME_DEVICE）回退成拷贝后删源。其它失败
+  /// 照常抛出。
+  static Future<void> movePageFile(File src, File dest) async {
+    try {
+      await src.rename(dest.path);
+    } on FileSystemException catch (e) {
+      if (!_isCrossDevice(e)) rethrow;
+      await src.copy(dest.path);
+      await src.delete();
+    }
+  }
+
+  /// rename 失败是不是「源与目标不在同一文件系统」：POSIX `EXDEV`（18）、Windows
+  /// `ERROR_NOT_SAME_DEVICE`（17）。
+  static bool _isCrossDevice(FileSystemException e) {
+    final int? code = e.osError?.errorCode;
+    return Platform.isWindows ? code == 17 : code == 18;
+  }
+
   /// 从 [mokuroPath] 指向的 `.mokuro` 文件导入一本漫画，返回新建的 `bookKey`。
   ///
   /// [title]：由导入对话框传入的用户可编辑标题（优先）；缺省则从 mokuro 顶层 `title`/
@@ -254,6 +307,7 @@ class MangaImporter {
     DuplicatePolicy policy = const DuplicatePolicy.suffix(),
     void Function(int done, int total)? onProgress,
     int? sourceId,
+    MangaPageSource pageSource = MangaPageSource.borrowed,
   }) async {
     final File mokuroFile = File(mokuroPath);
     if (!mokuroFile.existsSync()) {
@@ -317,6 +371,7 @@ class MangaImporter {
       policy: policy,
       onProgress: onProgress,
       sourceId: sourceId,
+      pageSource: pageSource,
     );
   }
 
@@ -388,6 +443,7 @@ class MangaImporter {
     void Function(int done, int total)? onProgress,
     int? sourceId,
     String? sourceMetadata,
+    MangaPageSource pageSource = MangaPageSource.borrowed,
   }) async {
     // 第一遍：规划每页 destRel（sanitize + 保留子目录 + 去重）并校验源图存在 + 防路径穿越。
     // 全部在任何落盘/落库之前完成——校验失败零副作用，无需回滚。
@@ -416,27 +472,22 @@ class MangaImporter {
             destRels: destRels,
             bookDir: bookDir,
             onProgress: onProgress,
+            pageSource: pageSource,
           );
       final int total = artifacts.pageCount;
       final String coverRel = artifacts.coverRel;
 
       final int importedAtMs = DateTime.now().millisecondsSinceEpoch;
       insertedKey = await db.insertEpubBook(
-        EpubBooksCompanion.insert(
+        bookRowFor(
           bookKey: bookKey,
           title: storedTitle,
-          coverPath: Value(coverRel),
-          epubPath: MangaStorage.kMangaJsonFileName,
-          extractDir: bookDir,
-          chapterCount: total,
-          chaptersJson: '[]',
+          coverRel: coverRel,
+          bookDir: bookDir,
+          pageCount: total,
           importedAt: importedAtMs,
-          format: Value(BookFormat.manga.dbValue),
-          // mangaReadingMode 留 absent(null)：跟随阅读器自动判定（P1-L4 契约）。
-          sourceId: sourceId != null ? Value(sourceId) : const Value.absent(),
-          sourceMetadata: sourceMetadata != null
-              ? Value(sourceMetadata)
-              : const Value.absent(),
+          sourceId: sourceId,
+          sourceMetadata: sourceMetadata,
         ),
       );
 
@@ -474,6 +525,69 @@ class MangaImporter {
       }
       rethrow;
     }
+  }
+
+  /// 本地漫画书目录 → `EpubBooks` 行：导入（[_copyAndInsert]）与「孤儿书目录
+  /// 重新登记」（[registerExistingBookDir]，BUG-4701）共用的唯一行构造口径。
+  static EpubBooksCompanion bookRowFor({
+    required String bookKey,
+    required String title,
+    required String coverRel,
+    required String bookDir,
+    required int pageCount,
+    required int importedAt,
+    int? sourceId,
+    String? sourceMetadata,
+  }) {
+    return EpubBooksCompanion.insert(
+      bookKey: bookKey,
+      title: title,
+      coverPath: Value(coverRel),
+      epubPath: MangaStorage.kMangaJsonFileName,
+      extractDir: bookDir,
+      chapterCount: pageCount,
+      chaptersJson: '[]',
+      importedAt: importedAt,
+      format: Value(BookFormat.manga.dbValue),
+      // mangaReadingMode 留 absent(null)：跟随阅读器自动判定（P1-L4 契约）。
+      sourceId: sourceId != null ? Value(sourceId) : const Value.absent(),
+      sourceMetadata: sourceMetadata != null
+          ? Value(sourceMetadata)
+          : const Value.absent(),
+    );
+  }
+
+  /// 把盘上已有、但没有书库行的本地漫画书目录 [bookDir]（`manga.json` + `images/`，
+  /// 即 [copyMangaArtifacts] 的产物）重新登记成书（BUG-4701）。[bookKey] 由调用方
+  /// 给定（= 目录名），不重新派生。页数 = `manga.json` 的页数，封面 = 第一页（与
+  /// [copyMangaArtifacts] 返回的 coverRel 同一规则）。`manga.json` 缺失 / 无页抛
+  /// [MangaImportException]。
+  static Future<String> registerExistingBookDir({
+    required FushiDatabase db,
+    required String bookKey,
+    required String title,
+    required String bookDir,
+  }) async {
+    final File jsonFile = File(
+      p.join(bookDir, MangaStorage.kMangaJsonFileName),
+    );
+    if (!jsonFile.existsSync()) {
+      throw MangaImportException('Manga JSON not found: ${jsonFile.path}');
+    }
+    final MokuroPayload payload = parseMangaJson(await jsonFile.readAsString());
+    if (payload.images.isEmpty) {
+      throw const MangaImportException('Manga JSON has no pages');
+    }
+    return db.insertEpubBook(
+      bookRowFor(
+        bookKey: bookKey,
+        title: title,
+        coverRel: payload.images.first.url,
+        bookDir: bookDir,
+        pageCount: payload.images.length,
+        importedAt: DateTime.now().millisecondsSinceEpoch,
+      ),
+    );
   }
 
   /// mokuro 0.1 旧版产物 [htmlPath]（`<父>/<卷名>.html`）→ 一份 `.mokuro` 形状的

@@ -27,6 +27,8 @@ import 'package:fushi/src/onboarding/onboarding_system_permissions.dart';
 import 'package:fushi/src/onboarding/online_services_onboarding_view.dart';
 import 'package:fushi/src/onboarding/recommended_pack_tutorial_state.dart';
 import 'package:fushi/src/onboarding/recommended_pack.dart';
+import 'package:fushi/src/onboarding/recommended_pack_import.dart'
+    show importRecommendedPackFile;
 import 'package:fushi/src/onboarding/recommended_pack_download_controller.dart';
 import 'package:fushi/src/settings/settings_actions.dart'
     show buildLanguageSelector, buildBrightnessSelector;
@@ -43,10 +45,7 @@ import 'package:fushi/src/shortcuts/visual/key_cap_widget.dart';
 import 'package:fushi/src/srs/srs_providers.dart' show srsStoreProvider;
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/sync/sync_settings_schema.dart'
-    show
-        buildSyncBackupDestination,
-        buildInterconnectDestination,
-        runBackupImportFlowForFile;
+    show buildSyncBackupDestination, buildInterconnectDestination;
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -174,7 +173,7 @@ const double _kOnboardingTwoColumnMinWidth = 560;
 /// 按勾选出现的配置步骤（含字体）→ 功能操作教程（点击查词 + 平台支持时的全局
 /// 查词 + Anki 真正就绪后的第一张卡片）→ 完成。
 /// 配置步骤只做说明 + 跳转到**既有**配置入口（推荐包走备份导入共享编排
-/// [runBackupImportFlowForFile]；Anki/备份/互联推各自设置详情页），不复制配置
+/// [importRecommendedPackFile]；Anki/备份/互联推各自设置详情页），不复制配置
 /// UI——配置能力的单一真相源仍在各自页面。向导的持久化副作用只有两个：离开功能
 /// 选择步骤时写 `module_*_enabled` 显隐偏好；完成/跳过时把 `onboarding_completed`
 /// 置回 true。
@@ -838,8 +837,9 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
     final RecommendedPackDownloadController controller = _packController;
     final RecommendedPackTutorialState tutorialState =
         RecommendedPackTutorialState(model.appDirectory);
-    await runBackupImportFlowForFile(
-      appModel: model,
+    // 推荐包恒合并导入（[importRecommendedPackFile]），不弹默认覆盖的通用确认框。
+    await importRecommendedPackFile(
+      model,
       filePath: path,
       onImportSucceeded: () async {
         await tutorialState.markImportSucceeded();
@@ -1814,7 +1814,7 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
             : '${t.onboarding_step_pack_download_action}'
                   ' ($kRecommendedPackSizeLabel)',
         description: hasDownloaded
-            ? t.onboarding_pack_action_import_existing_desc
+            ? t.onboarding_pack_action_import_existing_merge_desc
             : isPaused
             ? t.onboarding_pack_paused_desc
             : t.onboarding_pack_action_download_desc,

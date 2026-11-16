@@ -200,7 +200,6 @@ void main() {
     );
     final SrsStorage st = await openTestSrsStorage();
     Future<SrsDbStore> open(SrsTrustedClock c) => SrsDbStore.open(
-      db: st.db,
       core: st.core,
       profileUid: kProfile,
       deviceId: 'A',
@@ -244,7 +243,6 @@ void main() {
     );
     final SrsStorage st = await openTestSrsStorage();
     final SrsDbStore s = await SrsDbStore.open(
-      db: st.db,
       core: st.core,
       profileUid: kProfile,
       deviceId: 'A',
@@ -288,7 +286,6 @@ void main() {
     );
     final SrsStorage st = await openTestSrsStorage();
     final SrsDbStore s = await SrsDbStore.open(
-      db: st.db,
       core: st.core,
       profileUid: kProfile,
       deviceId: 'A',
