@@ -1,4 +1,4 @@
-## BUG-4743 · 浏览器扩展制卡入队提示成功但队列没真正落盘，攒到十几条后丢卡
+## BUG-4746 · 浏览器扩展制卡入队提示成功但队列没真正落盘，攒到十几条后丢卡
 - **报告**：2026-11-16（用户：应用内反馈 heMh1hn8n4——网页制卡一直提示加入成功，统一生成时少了很多，十几条以后全部丢失）
 - **真实性**：✅ 真 bug。入队「报成功」与「真正持久化」脱钩，`tools/browser-extension/content.js`（修复前）：
   - `:758-760` `fushiQueueSave()` 对 `chrome.storage.local.set` fire-and-forget：不 await，`try/catch` 只接得住同步抛，配额满等异步拒绝成了未处理的 rejection；
