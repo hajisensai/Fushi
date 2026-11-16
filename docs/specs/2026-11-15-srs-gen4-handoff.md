@@ -226,7 +226,9 @@ S1 没有加表或索引，本机状态行与缓存配置都放现有的 `srs_me
   - `gen4_migrate_status {dir}` → `{state, running}`（`running` = 本进程里正在跑的那次的 `{step, done, total}`，没有 = null）；
   - `gen4_migrate_run {dir, caches: {profile: 缓存配置}, now, batch?, runId?}` → `migrate::Outcome::json`
     （`{verdict: committed | aborted | blocked | noSpace | cancelled, ...}`）。阻塞调用，放后台 isolate；同一目录同时只跑
-    一次（第二次回 `blocked`）。新身份的设备 ID 用 `migrate::random_device`；
+    一次（第二次回 `blocked`）。新身份的设备 ID 用 `migrate::random_device`。本进程里「这个目录正在跑」的登记由析构守卫
+    摘掉（正常返回、报错、`migrate::run` 中途 panic 被 `ffsrs_call` 接住都一样，不会把这个目录永远卡成 `blocked`），同时清掉
+    这个目录下给了 `runId` 却始终没有对应运行的提前取消；
   - `gen4_migrate_cancel {dir, runId?}`：叫停正在跑的那次（提交点之前有效）；还没开始的按 `runId` 先登记，开始时即停。
 - Dart 侧（G7-5）的顺序：开库 → -4 且 `needsMigration` → 关掉所有协议 3 句柄 → `gen4_migrate_run` → 再开。
   `sealedOldOnly` / `migrationFailed` 给恢复页，不自动重跑。
@@ -240,7 +242,7 @@ S1 没有加表或索引，本机状态行与缓存配置都放现有的 `srs_me
 | 写连接 | `Mutex<Option<Connection>>` | 只有 Primary 有。写命令 `G4Core::write` = `BEGIN IMMEDIATE` 一个事务；命令 panic 后下一个拿锁的先回滚残留事务（不毒化）。Secondary 上一律报 `READ_ONLY` |
 | 读连接池 | `Mutex<Pool>` + `Condvar` | 上限 `read_pool::read_concurrency()`；还回来时还在事务里的连接直接丢掉；`close` 等借出的都还回来 |
 | 浏览会话 | `Mutex<Browse>`（每库一把） | `cmd/browse.rs` 的会话原样常驻；集合号在锁外先换算（浏览自己开快照，要分清是不是在写事务里读） |
-| 统计原料缓存 | `Mutex<Option<StatsEntry>>` | 一份：键 = (集合, 请求的 `key`, 写入代数, 缓存层代号 `cache_gen (gen, floor)`)，未命中调 `cmd/stats.rs:snapshot_of`；`stats_release` 丢掉 |
+| 统计原料缓存 | `Mutex<Option<StatsEntry>>` | 一份：键 = (集合, 请求的 `key`, 写入代数, 缓存层代号 `cache_gen (gen, floor)`)，未命中调 `cmd/stats.rs:snapshot_of`；`stats_release` 丢掉。写入代数管本进程的写（含不碰缓存层的写，如 `local_anchor`），缓存层代号管别的进程（Primary 写、Secondary 读）的写：两个条件各有一条测试卡住 |
 | 写入代数 | `AtomicU64` | 本进程每次写命令**提交成功**后 +1 |
 | 大批写入开关 | `Mutex<Bulk>` | `bulk_cache` 保留：嵌套深度；开着时放宽 WAL 自动检查点（`BULK_WAL_AUTOCHECKPOINT_PAGES`），关到 0 时恢复。新代没有「暂缓缓存刷新」——派生层随写入维护 |
 
@@ -248,10 +250,16 @@ S1 没有加表或索引，本机状态行与缓存配置都放现有的 `srs_me
   G9-4 的身份命令建）。本机状态行与 `device_hint` 不要绑定。
 - **出卡不常驻**（协议 3 的 `StudyHub` 不搬）：`cmd/study.rs` 每条命令在一个读快照里现排。取舍：省掉「写后失效」整套
   簿记，代价是每次 `study` 重读到期卡（S1 没有实测这部分开销）；量出问题再加常驻队列，失效的键与统计缓存同法。
-- `wal_checkpoint`：另开一条连接做 `PASSIVE`，不占写锁。
+- `wal_checkpoint`：Primary 上另开一条连接做 `PASSIVE`，不占写锁。Secondary 上报 `READ_ONLY`、不开连接：辅助进程按设计
+  只读（可能在没有写权限的沙箱里），并回 WAL 是写库的主进程的事（协议 3 没有 Secondary，句柄一律读写）。
 - 本机状态行（`local_state` / `local_state_ensure` / `local_anchor`，`gen4/local.rs`）：`srs_meta` 键
-  `local_state/<profile>`，值同协议 3 的 JSON 形态（修订号、纪元、校时锚点、样式游标）。**迁移不带协议 3 的那一行**：
-  换代后纪元换新、修订号从 0 起；Dart 按纪元变了整份重读（与「库换了」同一条路径）。
+  `local_state/<profile>`，存修订号、纪元、校时锚点（协议 3 行里的 `styleCursor` / `cacheRev` / `mediaGc` 新代没有：
+  `local_state` 的回包形态照协议 3 的 `view`，其中 `styleCursor` 恒为默认值）。**迁移不带协议 3 的那一行**：
+  换代后纪元换新、修订号从 0 起；Dart 按纪元变了整份重读（与「库换了」同一条路径）。键里的 profile 串**原样、不归一**
+  （协议 3 经 `srs_id(?1)` 打包成 16 字节，大小写不同的同一个 UUID 落同一行）：与新代 `collections.profile_uid`
+  （`Truth::binding_of`）一致，一个 profile 只认一种写法；Dart 一直传 `Profile.uid` 同一种写法，不受影响。
+- 返回码 `STORE_NO_SPACE`（-3）S1 后没有返回点（它属于已删的 `ffsrs_store_open` 的升级前空间检查；迁移的空间不够走
+  `gen4_migrate_run` 的 `noSpace`）。值保留、不复用；Dart 删对应分支归 G7-5，删常量归 G7-6。
 - 纯加解密命令（`seal` / `open` / `open_v1` / `seal_file` / `open_file` / `derive_key`）抽成 `ffi.rs` `crypto_command`，
   两代分发器共用。
 
@@ -298,3 +306,15 @@ S1 没有加表或索引，本机状态行与缓存配置都放现有的 `srs_me
 墓碑、只剩封存旧库、旁边另有协议 3 库、Secondary 只读、没有绑定）；迁移的全局命令（含提前取消）；未接线 / 已删的报错；
 别名类成员经分发器按类回答；命令层新语句的查询计划。ID 按迁移出来的那份库归一（迁移给集合换了标识，默认牌组等内置
 实体的 ID 随之换盐）。
+
+复核补的（2026-11-16）：
+
+- **逐条接线对拍**：第一组之外的每条已接线命令都经分发器与协议 3 的同一条比一次——读（`anki_resolve` /
+  `anki_notes_info` / `binding_get` / `profile_footprint` / `status` 形状 / `read_lib` / `stats_recall` / 浏览其余子命令与
+  `anki_find` / `anki_dupes` / `anki_tags`）比回包；写（`resolve` / `note_fields_if` / `change` / `sched` / `deck_delete` /
+  `merge_notes` / `purge` / `checkpoint` / `plan_restore` / `restore` / `trust` / `device_info` / `device_hint`）比各命令的
+  关键键并在每条之后比两侧身份记录表；`dedup` / `digest_heal` 断言新代语义的回包。变异实测：把 `binding_get` 接成
+  `profile_footprint`、`anki_resolve` 接成 `anki_notes_info`、`dedup` 接成 `digest_heal`、`purge` 接成 `checkpoint`、
+  `device_info` 接成 `device_hint`，各自都红。
+- 统计缓存两个失效条件各一条（去掉键里的写入代数 / 缓存层代号各自变红）；Secondary 上 `wal_checkpoint` 报只读；
+  迁移中途 panic 之后登记摘掉、提前取消清掉。查询计划测试用实现执行的同一份语句常量（`CACHE_MARK_SQL` / `STORED_SQL`）。

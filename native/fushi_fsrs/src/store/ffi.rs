@@ -31,6 +31,10 @@ pub const STORE_ERROR: i32 = -1;
 pub const STORE_BAD_ARGUMENT: i32 = -2;
 /// 打开时库要升级而所在卷空间不够（[super::schema::UPGRADE_NO_SPACE]，错误文本后面是 `{"need","free","from","to"}`）：
 /// 库没动，腾出空间后再打开。
+///
+/// **S1 之后没有返回点**：这是协议 3 `ffsrs_store_open`（已删）升级前空间检查的返回码；新代打开（[ffsrs_store_open_mode]）
+/// 不做协议 3 的库升级，迁移的空间不够走全局命令 `gen4_migrate_run` 的 `{verdict: "noSpace"}`。值 -3 保留、不复用给别的
+/// 状态（还认它的 Dart 不会把新状态误读成「空间不够」）；Dart 那边删掉对应分支归 G7-5，删这个常量归 G7-6。
 pub const STORE_NO_SPACE: i32 = -3;
 /// [ffsrs_store_open_mode]：目录里还没有新代库（有协议 3 的库要迁移 / 只剩封存的旧库 / 上次迁移失败 / 辅助进程比主进程
 /// 先到）。错误文本后面是 `{"state": <migrate::GenState 的线上名>}`。库没动，迁移走全局命令 `gen4_migrate_run`。
