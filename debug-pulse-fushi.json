@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-15T09:52:09Z",
+ "generatedAt": "2026-11-16T03:03:53Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "dd31e1dd0bbd96045a95ea66342c71e88d5b1f78",
-  "seq": 27421
+  "sha": "be81d1c0910d4f984ae28d6628745ee2ef4962f0",
+  "seq": 27426
  },
  "builds": [
   {
@@ -186,25 +186,30 @@
   }
  ],
  "pending": {
-  "headSha": "dd31e1dd0bbd96045a95ea66342c71e88d5b1f78",
-  "headSeq": 27421,
+  "headSha": "be81d1c0910d4f984ae28d6628745ee2ef4962f0",
+  "headSeq": 27426,
   "prs": [
+   3451,
    3148
   ],
   "direct": [],
   "truncated": false,
   "platforms": {
    "android": {
-    "state": "none"
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43795719157"
    },
    "windows": {
-    "state": "none"
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43795719078"
    },
    "macos": {
-    "state": "none"
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43795719078"
    },
    "ios": {
-    "state": "none"
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43795719078"
    }
   }
  },
@@ -674,6 +679,15 @@
    "mergedAt": "2026-11-15T07:51:27Z",
    "additions": 650,
    "deletions": 298,
+   "labels": []
+  },
+  "3451": {
+   "number": 3451,
+   "title": "fix(licenses): 原生许可生成器解析 git 符号链接许可文件 (BUG-4694)",
+   "author": "W1ght",
+   "mergedAt": "2026-11-16T03:02:25Z",
+   "additions": 331,
+   "deletions": 18,
    "labels": []
   }
  }
