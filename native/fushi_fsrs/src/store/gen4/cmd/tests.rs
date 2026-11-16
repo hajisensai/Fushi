@@ -197,7 +197,7 @@ pub(super) fn library_pair() -> (Device, Device, Bucket) {
 }
 
 /// 协议 3 一侧：在 SAVEPOINT 里先做完欠着的收尾、按新代同一份配置重建缓存，跑 [f]，整个回滚。
-fn on_p3<T>(src: &Connection, cfg: &str, f: impl FnOnce(&Connection) -> T) -> T {
+pub(super) fn on_p3<T>(src: &Connection, cfg: &str, f: impl FnOnce(&Connection) -> T) -> T {
     let cfg =
         crate::store::caches::CacheConfig::parse(&serde_json::from_str(cfg).unwrap()).unwrap();
     src.execute_batch("SAVEPOINT g4reads").unwrap();
