@@ -33,10 +33,18 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4102 条。点号进各自文件。
+> 共 4110 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4754](bugs/BUG-4754-manga-series-key-episode-suffix.md) | ✅ | ✅ | 漫画「第N話 前編 [hash]」按话发布的各话没并成系列合集 |
+| [BUG-4753](bugs/BUG-4753-nested-lookup-webkit-zoom-hit-offset.md) | ✅ | ✅ | 嵌套查词：macOS 查词页点释义里的字查到相邻的字（WebKit 旧 zoom 坐标系 + 沙箱取字半字偏移） |
+| [BUG-4752](bugs/BUG-4752-open-with-confused-deputy.md) | ✅ | ✅ | 用其他应用打开 / 分享导入替发起方读它无权读的 content:// URI（confused deputy） |
+| [BUG-4751](bugs/BUG-4751-ja-i18n-english-fallback.md) | ✅ | ✅ | 日语界面外观设置与导航速览卡大量文案仍是英文回退 |
+| [BUG-4749](bugs/BUG-4749-srs-swipe-follow-jitter.md) | ✅ | ✅ | 复习页横向滑动评分时卡面来回抖动（WebView 卡面页内坐标随跟手平移反馈进位移） |
+| [BUG-4748](bugs/BUG-4748-video-batch-delete-n-plus-one.md) | ✅ | ✅ | 视频库批量删一万多条「像没删」——删除链逐条 N+1 + 无进度反馈 |
+| [BUG-4747](bugs/BUG-4747-ext-mining-queue-persist.md) | ✅ | ✅ | 浏览器扩展制卡入队提示成功但队列没真正落盘，攒到十几条后丢卡 |
+| [BUG-4746](bugs/BUG-4746-reader-ruby-snap-covered-char.md) | ✅ | ✅ | 小说查词：义训 ruby 段内靠后的字（じょうろ鼬 的鼬）点不到 |
 | [BUG-4745](bugs/BUG-4745-lyrics-margin-left-right-swapped.md) | ✅ | ✅ | 歌词模式横排左右边距写反 |
 | [BUG-4744](bugs/BUG-4744-android-exit-fgs-trim-background.md) | ✅ | ✅ | android-exit-fgs-trim-background |
 | [BUG-4743](bugs/BUG-4743-anime-match-title-truncation.md) | ✅ | ✅ | anime-match-title-truncation |

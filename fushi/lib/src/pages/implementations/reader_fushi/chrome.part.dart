@@ -154,6 +154,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
     );
     if (!mounted || _controller == null) return;
     if (_didConsumePageTurn(result)) {
+      // 墨水屏全刷：真换了屏才计（VN 只把当前屏打字渐显完的 revealed 不算）。
+      if (_didScroll(result)) _noteEinkPageTurn();
       await _refreshProgress();
       if (!mounted || _controller == null) return;
       if (_didScroll(result)) await _caretReanchor(direction);

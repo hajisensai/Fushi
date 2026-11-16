@@ -1089,6 +1089,34 @@ mixin _FushiDbTagsSync on _$FushiDatabase, _FushiDbInfra {
     ),
   );
 
+  /// [writeSyncDeletionTombstone] 的批量形态（BUG-4748）：同一 [mediaType]、同一
+  /// [deletedAt] 的一批键走一个 batch（一个事务），视频库一次删上万条时不再是上万次
+  /// 独立提交。逐键语义与单条版一致（无云盘文件夹名）。
+  Future<void> writeSyncDeletionTombstones(
+    String mediaType,
+    Iterable<String> itemKeys,
+    int deletedAt,
+  ) {
+    final List<String> keys = itemKeys.toSet().toList(growable: false);
+    if (keys.isEmpty) return Future<void>.value();
+    return batch((Batch b) {
+      b.insertAllOnConflictUpdate(
+        syncDeletionTombstones,
+        <SyncDeletionTombstoneRow>[
+          for (final String key in keys)
+            SyncDeletionTombstoneRow(
+              mediaType: mediaType,
+              itemKey: key,
+              deletedAt: deletedAt,
+              remotePublishedAt: 0,
+              cloudFolderName: null,
+              cloudFolderState: TombstoneCloudFolderState.pending.dbValue,
+            ),
+        ],
+      );
+    });
+  }
+
   /// 清除某资产的删除墓碑（重新导入 / 新增同 (mediaType, itemKey) 时调，防误删复活）。
   Future<void> clearSyncDeletionTombstone(String mediaType, String itemKey) =>
       (delete(syncDeletionTombstones)..where(
