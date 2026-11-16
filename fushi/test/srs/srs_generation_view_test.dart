@@ -411,6 +411,56 @@ void main() {
       expect(b.runs, isEmpty);
       expect(c.phase, SrsGen4MigrationPhase.idle);
     });
+
+    testWidgets(
+      'start-up greys out without the closing text; reopening restores ($design)',
+      (WidgetTester tester) async {
+        final FakeGen4Backend b = FakeGen4Backend();
+        final ChangeNotifier closing = ChangeNotifier();
+        final ChangeNotifier changed = ChangeNotifier();
+        addTearDown(closing.dispose);
+        addTearDown(changed.dispose);
+        bool open = false;
+        final SrsGen4MigrationController c = SrsGen4MigrationController(
+          directory: 'dir',
+          profileUids: () async => <String>['p1'],
+          onCommitted: () async {},
+          backend: b,
+          databaseOpen: () => open,
+          databaseClosing: closing,
+          databaseChanged: changed,
+          nowMs: () => 1,
+        );
+        addTearDown(c.dispose);
+        await pumpView(
+          tester,
+          apple: apple,
+          controller: c,
+          child: const SrsLoadErrorView(error: needs, onRetry: null),
+        );
+        // 启动还没初始化完：点不了，但不说「正在关闭」。
+        expect(find.text(t.srs_gen4_closing), findsNothing);
+        await tester.tap(find.byKey(SrsGenerationView.startKey));
+        await tester.pump();
+        expect(b.runs, isEmpty);
+        // 关库 → 说明；重新开库 → 说明消失、按钮恢复可点。
+        open = true;
+        changed.notifyListeners();
+        open = false;
+        closing.notifyListeners();
+        await tester.pump();
+        expect(find.text(t.srs_gen4_closing), findsOneWidget);
+        open = true;
+        changed.notifyListeners();
+        await tester.pump();
+        expect(find.text(t.srs_gen4_closing), findsNothing);
+        await tester.tap(find.byKey(SrsGenerationView.startKey));
+        await tester.pump();
+        expect(b.runs, hasLength(1));
+        b.finish(<String, Object?>{'verdict': 'cancelled'});
+        await tester.pumpAndSettle();
+      },
+    );
   }
 
   testWidgets('unbound profile and unwired features read as unavailable', (

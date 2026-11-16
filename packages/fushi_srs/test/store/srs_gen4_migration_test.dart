@@ -98,7 +98,7 @@ void main() {
   });
 
   group('status', () {
-    test('needsMigration carries the legacy profile list', () {
+    test('status carries state and progress only', () {
       final SrsGen4MigrationStatus s = SrsGen4MigrationStatus.fromJson(
         <String, Object?>{
           'state': 'needsMigration',
@@ -107,19 +107,36 @@ void main() {
             'done': 1,
             'total': 2,
           },
-          'profiles': <Object?>['a', 'b'],
         },
       );
-      expect(s.profiles, <String>['a', 'b']);
+      expect(s.state, SrsGenState.needsMigration);
       expect(s.running?.step, SrsGen4MigrationStep.prepare);
       expect(SrsGen4MigrationStep.prepare.cancellable, isTrue);
       expect(
         SrsGen4MigrationStatus.fromJson(<String, Object?>{
           'state': 'ready',
-          'profiles': null,
-        }).profiles,
+        }).running,
         isNull,
       );
+    });
+
+    test('the profile list is its own kernel command, off the UI isolate', () {
+      // 状态命令在 UI isolate 上同步轮询，不能读大表：列 profile 是另一条全局命令（kernel.rs `global`），
+      // 内核也路由了它（lib.rs）。
+      final String kernel = File(
+        '${_migrateRs.parent.path}/kernel.rs',
+      ).readAsStringSync();
+      expect(kernel, contains('"gen4_migrate_profiles" =>'));
+      final String lib = File(
+        '${_migrateRs.parent.parent.parent.path}/lib.rs',
+      ).readAsStringSync();
+      expect(lib, contains('"gen4_migrate_profiles"'));
+      final String dart = File(
+        'lib/src/store/srs_gen4_migration.dart',
+      ).readAsStringSync();
+      final int at = dart.indexOf("'gen4_migrate_profiles'");
+      expect(at, greaterThan(0));
+      expect(dart.indexOf('Isolate.run', at), greaterThan(at));
     });
 
     test('the Dart steps are migrate.rs Step::wire in order', () {

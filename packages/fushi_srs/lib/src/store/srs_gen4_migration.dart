@@ -1,8 +1,9 @@
 /// 协议 3 → 新代（gen4）的迁移命令（native/fushi_fsrs/src/store/gen4/kernel.rs `global`：`gen4_migrate_status` /
-/// `gen4_migrate_run` / `gen4_migrate_cancel`，经 `ffsrs_call`，不要库句柄）。
+/// `gen4_migrate_profiles` / `gen4_migrate_run` / `gen4_migrate_cancel`，经 `ffsrs_call`，不要库句柄）。
 ///
 /// 迁移是无损的：协议 3 的 `srs.db` 提交后原位封存（不删），新代库 `srs4.db` 在临时名上建好、对拍通过才改名到位
-/// （提交点）。提交点之前任何一步失败或取消，目录回到迁移前的样子。
+/// （提交点）。旧库没做完的协议 3 收尾（前提补完，G7-2b）在旧库的副本上做：提交点之前任何一步失败或取消，旧库逐字节
+/// 是迁移前的样子（写它的那个版本照样能打开），目录回到迁移前的样子。
 ///
 /// Dart 侧的顺序（交接说明 §8.1）：开库 → [SrsStoreNotMigrated] 且 [SrsGenState.needsMigration] → 关掉所有协议 3
 /// 句柄（S1 之后进程里不会再有：`ffsrs_store_open` 已删）→ [SrsGen4Migration.run] → 再开。
@@ -19,7 +20,7 @@ enum SrsGen4MigrationStep {
   lock('lock'),
 
   /// 前提补完（G7-2b）：旧库里协议 3 自己还没做完的收尾（从没同步过的旧行、去重、收段收尾、schema 升级）先用冻结的
-  /// 协议 3 代码做完。
+  /// 协议 3 代码在旧库的副本上做完（旧库本身不写）。
   prepare('prepare'),
   precondition('precondition'),
   translate('translate'),
@@ -53,20 +54,12 @@ typedef SrsGen4MigrationProgress = ({
 
 /// `gen4_migrate_status` 的结果。
 final class SrsGen4MigrationStatus {
-  const SrsGen4MigrationStatus({
-    required this.state,
-    this.running,
-    this.profiles,
-  });
+  const SrsGen4MigrationStatus({required this.state, this.running});
 
   final SrsGenState state;
 
   /// 本进程里这个目录正在跑的迁移；没有 = null（别的进程在迁移看 [state] == [SrsGenState.migratingElsewhere]）。
   final SrsGen4MigrationProgress? running;
-
-  /// [state] 为 [SrsGenState.needsMigration] 时旧库里全部有数据的 profile uid（内核 `legacy::all_profiles`，含主库
-  /// profile 表里没有的孤儿 uid）：[SrsGen4Migration.run] 的 `caches` 要每个都有。其余状态 / 列不出来 = null。
-  final List<String>? profiles;
 
   static SrsGen4MigrationStatus fromJson(Map<String, Object?> j) {
     final SrsGenState? state = SrsGenState.tryParse(j['state']);
@@ -87,12 +80,7 @@ final class SrsGen4MigrationStatus {
         );
       }
     }
-    final Object? p = j['profiles'];
-    return SrsGen4MigrationStatus(
-      state: state,
-      running: running,
-      profiles: p is List ? <String>[for (final Object? u in p) '$u'] : null,
-    );
+    return SrsGen4MigrationStatus(state: state, running: running);
   }
 }
 
@@ -236,7 +224,7 @@ final class SrsGen4MigrationOutcome {
 
 /// 迁移的三条全局命令。全部按库目录 [dir]（`<数据库目录>`，与 [SrsCore.open] 同一个）。
 abstract final class SrsGen4Migration {
-  /// 目录的代际状态与本进程里正在跑的进度（只读，快）。
+  /// 目录的代际状态与本进程里正在跑的进度（只读，快：只看文件与锁、读旧库的一行 schema，可在 UI isolate 上轮询）。
   static SrsGen4MigrationStatus status(String dir, {String? libraryPath}) {
     final Object? r = SrsCoreBindings.load(
       libraryPath: libraryPath,
@@ -244,10 +232,32 @@ abstract final class SrsGen4Migration {
     return SrsGen4MigrationStatus.fromJson((r! as Map).cast<String, Object?>());
   }
 
+  /// 旧库里全部有数据的 profile uid（内核 `legacy::all_profiles`，含主库 profile 表里没有的孤儿 uid）：[run] 的
+  /// `caches` 要每个都有。要读旧库的几张大表（每张按 profile 跳着取），在后台 isolate 里调。没有旧库 / 读不了 =
+  /// [SrsCoreException]。
+  static Future<List<String>> legacyProfiles(
+    String dir, {
+    String? libraryPath,
+  }) async {
+    final String? lib = SrsCoreBindings.load(
+      libraryPath: libraryPath,
+    ).libraryPath;
+    final Map<String, Object?> request = <String, Object?>{
+      'op': 'gen4_migrate_profiles',
+      'dir': dir,
+    };
+    final Object? r = await Isolate.run(
+      () =>
+          (SrsCoreBindings.load(libraryPath: lib).callGlobal(request)!
+              as Map)['profiles'],
+      debugName: 'srs-gen4-profiles',
+    );
+    return <String>[for (final Object? u in (r as List?) ?? const []) '$u'];
+  }
+
   /// 跑一次迁移（阻塞几十秒到几分钟，放后台 isolate）。[caches]：每个 profile uid → 它的缓存配置（只有 Dart 知道
-  /// 的内置笔记类型默认值与默认牌组；[SrsGen4MigrationStatus.profiles] 里每个都要有，缺了迁移拦下、`code` 为
-  /// `missingCacheConfig`）。[runId] 让早于开跑
-  /// 到达的 [cancel] 不丢。进度用 [status] 轮询。
+  /// 的内置笔记类型默认值与默认牌组；[legacyProfiles] 里每个都要有，缺了迁移拦下、`code` 为 `missingCacheConfig`）。
+  /// [runId] 让早于开跑到达的 [cancel] 不丢。进度用 [status] 轮询。
   static Future<SrsGen4MigrationOutcome> run(
     String dir, {
     required Map<String, Map<String, Object?>> caches,

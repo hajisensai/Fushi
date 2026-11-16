@@ -3,6 +3,7 @@
 // 提交后才调 onCommitted、跑着时重复 start 无操作、关库前的 quiesce（提交点前叫停并等、之后只等）。
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show ChangeNotifier;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/srs/srs_gen4_migration_controller.dart';
 import 'package:fushi_srs/fushi_srs.dart';
@@ -17,8 +18,10 @@ class FakeGen4Backend implements SrsGen4MigrationBackend {
   String? lastRunId;
   Error? statusError;
 
-  /// `gen4_migrate_status` 的 `profiles`（旧库里的 profile，内核列）。
-  List<String>? legacyProfiles;
+  /// `gen4_migrate_profiles`（旧库里的 profile，内核列；后台 isolate）。
+  List<String> legacyUids = const <String>[];
+  Error? legacyError;
+  int legacyCalls = 0;
 
   @override
   SrsGen4MigrationStatus status(String dir) {
@@ -33,8 +36,15 @@ class FakeGen4Backend implements SrsGen4MigrationBackend {
               'done': running!.done,
               'total': running!.total,
             },
-      'profiles': legacyProfiles,
     });
+  }
+
+  @override
+  Future<List<String>> legacyProfiles(String dir) async {
+    legacyCalls++;
+    final Error? e = legacyError;
+    if (e != null) throw e;
+    return legacyUids;
   }
 
   @override
@@ -105,7 +115,7 @@ void main() {
     'orphan profiles listed by the kernel get a cache config too (union)',
     () async {
       final FakeGen4Backend b = FakeGen4Backend()
-        ..legacyProfiles = <String>['p2', 'orphan'];
+        ..legacyUids = <String>['p2', 'orphan'];
       final SrsGen4MigrationController c = controllerFor(b);
       addTearDown(c.dispose);
       final Future<void> done = c.start();
@@ -282,6 +292,74 @@ void main() {
       await done;
       expect(committed, 1);
     });
+  });
+
+  test(
+    'an unreadable legacy profile list falls back to the main profiles',
+    () async {
+      final FakeGen4Backend b = FakeGen4Backend()
+        ..legacyError = StateError('list failed');
+      final SrsGen4MigrationController c = controllerFor(b);
+      addTearDown(c.dispose);
+      final Future<void> done = c.start();
+      await settle();
+      expect(b.legacyCalls, 1);
+      // 列不出来只记日志：按主库的给，真缺了内核拦下并点名（missingCacheConfig）。
+      expect(b.runs.single.keys, <String>['p1', 'p2']);
+      b.finish(<String, Object?>{'verdict': 'cancelled'});
+      await done;
+    },
+  );
+
+  test('starting up is not closing; reopening re-enables start', () async {
+    final FakeGen4Backend b = FakeGen4Backend();
+    final ChangeNotifier closing = ChangeNotifier();
+    final ChangeNotifier changed = ChangeNotifier();
+    addTearDown(closing.dispose);
+    addTearDown(changed.dispose);
+    // 启动中：主库还没初始化完。
+    bool open = false;
+    final SrsGen4MigrationController c = SrsGen4MigrationController(
+      directory: 'dir',
+      profileUids: () async => <String>['p1'],
+      onCommitted: () async {},
+      backend: b,
+      databaseOpen: () => open,
+      databaseClosing: closing,
+      databaseChanged: changed,
+      pollInterval: const Duration(milliseconds: 5),
+      nowMs: () => 1000,
+    );
+    addTearDown(c.dispose);
+    int notified = 0;
+    c.addListener(() => notified++);
+    expect(c.canStart, isFalse);
+    expect(c.databaseClosing, isFalse, reason: '还没开好不等于正在关');
+    // 初始化完成（AppModel 通知）：能开始了，页面收到通知。
+    open = true;
+    changed.notifyListeners();
+    expect(c.canStart, isTrue);
+    expect(notified, 1);
+    // AppModel 的别的通知（canStart 没变）不打扰页面。
+    changed.notifyListeners();
+    expect(notified, 1);
+    // 关库：置灰、说明「正在关」。
+    open = false;
+    closing.notifyListeners();
+    expect(c.canStart, isFalse);
+    expect(c.databaseClosing, isTrue);
+    expect(notified, 2);
+    // 重新开库（覆盖恢复 / 换数据根之后）：按钮恢复，不再算「正在关」。
+    open = true;
+    changed.notifyListeners();
+    expect(c.canStart, isTrue);
+    expect(c.databaseClosing, isFalse);
+    expect(notified, 3);
+    final Future<void> done = c.start();
+    await settle();
+    expect(b.runs, hasLength(1));
+    b.finish(<String, Object?>{'verdict': 'cancelled'});
+    await done;
   });
 
   test('a kernel error lands in error, not swallowed as success', () async {

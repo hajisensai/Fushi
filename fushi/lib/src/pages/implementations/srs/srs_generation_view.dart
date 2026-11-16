@@ -5,7 +5,8 @@
 ///   别的窗口在迁移 / 被占用 / 旧库没整理好 / 更新版本写的 / 文件坏了 / 并入没做完 / 空间不够 / 对拍不过）就地说明。
 ///   旧库里协议 3 没做完的收尾由迁移自己补完（G7-2b，步骤「整理旧库」）；`blocked` 按内核的 `code` 分类
 ///   （[SrsGen4BlockedReason]），重试会变的（[SrsGen4BlockedReason.retryable]）给「重新升级」，其余三类不给。主库已关 /
-///   正在关（覆盖恢复、换数据根、退出）时「开始升级」置灰并说明（[SrsGen4MigrationController.canStart]）。提交后存储
+///   正在关（覆盖恢复、换数据根、退出）时「开始升级」置灰并说明（[SrsGen4MigrationController.canStart] /
+///   [SrsGen4MigrationController.databaseClosing]；启动还没初始化完只置灰、不说「正在关」，重新开库后恢复）。提交后存储
 ///   重开，页面随之换成正常内容。
 /// - [SrsGenState.migrationFailed]（主进程）：上次没完成，可重新升级。
 /// - [SrsGenState.sealedOldOnly]：只剩封存旧库，不自动重建，给恢复说明。
@@ -268,12 +269,13 @@ class _MigrationPanel extends StatelessWidget {
         blocked != SrsGen4BlockedReason.migrating &&
         blocked != SrsGen4BlockedReason.busy &&
         reason.isNotEmpty;
-    final bool closing = !running && !controller.canStart;
+    // 不能开始（主库正在关，或启动还没初始化完）：按钮置灰；只有真的在关才说「正在关闭数据库」。
+    final bool blockedStart = !running && !controller.canStart;
     final List<String> details = <String>[
       if (!running && outcome != null) srsGen4OutcomeText(outcome),
       if (!running && showReason) reason,
       if (!running && error != null) ...<String>[t.srs_gen4_failed, '$error'],
-      if (closing) t.srs_gen4_closing,
+      if (blockedStart && controller.databaseClosing) t.srs_gen4_closing,
     ];
     final Widget head = FushiPlaceholderMessage(
       icon: running
@@ -297,11 +299,11 @@ class _MigrationPanel extends StatelessWidget {
       if (!running && retryable)
         Center(
           child: FushiPressScale(
-            enabled: !closing,
+            enabled: !blockedStart,
             child: FushiFilledButton.icon(
               key: SrsGenerationView.startKey,
               // 主库已关 / 正在关：置灰（关库前的静默已经等过这个控制器，之后开始的迁移没人等）。
-              onPressed: closing ? null : controller.start,
+              onPressed: blockedStart ? null : controller.start,
               icon: const FushiIcon(FushiIcons.refresh),
               label: Text(
                 failedBefore || outcome != null || error != null
