@@ -275,6 +275,10 @@ pub(super) struct LogIn {
     pub(super) json: String,
     pub(super) server_time: Option<i64>,
     intent: Intent,
+    /// 代表这条日志的操作主键（`log_ix.k`；本机落库序另在 `log_seq`，`cmd/training.rs` 文件头「rowid」）。
+    pub(super) k: i64,
+    /// 日志上记的笔记（原值，未归一；协议 3 `sync2_log_meta.note_id`）。用到的地方自己归一，缓存层的重放不付这份代价。
+    pub(super) note: Option<Ref>,
 }
 
 /// 统计去重要跨批看的东西（全量重建时一批一个或几个连通分量）。
@@ -802,6 +806,7 @@ impl<'t, 'c> Index<'t, 'c> {
             return Err(format!("gen4 cache: log row {k} is not a log"));
         };
         let (server_time, intent) = (l.server_time, l.intent.clone());
+        let note = l.note.as_ref().map(Ref::of);
         let device = e.id.device;
         // 投影行里的 profile 只是协议 3 的分区列，读侧不用；集合内取常量。
         let row = log_json("", &log_body(l), || {
@@ -813,6 +818,8 @@ impl<'t, 'c> Index<'t, 'c> {
             json: canonical(&row),
             server_time,
             intent,
+            k,
+            note,
         })
     }
 
@@ -1388,13 +1395,22 @@ impl<'t, 'c> Index<'t, 'c> {
     /// 整个重放一遍再取它那一段。读命令 `logs` / `entity_views` 用（G7-4）。
     pub(super) fn replayed_card_logs(&mut self, card: &Ref) -> Result<Vec<LogIn>, String> {
         let card = self.canon(card)?;
+        Ok(self
+            .replayed_logs(&BTreeSet::from([card.clone()]))?
+            .remove(&card.text())
+            .unwrap_or_default())
+    }
+
+    /// [replayed_card_logs] 的批量版：[cards]（规范 ID）所在的全部 historyFrom 连通分量一起重放一遍，返回分量里**每张**卡
+    /// （规范 ID 文本）的日志（`res` 是重放写回的）。训练集 / 逐卡重放的读命令（`cmd/training.rs`，G7-4f）按批调，
+    /// 不逐卡各重放一次整个分量。
+    pub(super) fn replayed_logs(
+        &mut self,
+        cards: &BTreeSet<Ref>,
+    ) -> Result<HashMap<String, Vec<LogIn>>, String> {
         let mut links = Links::default();
-        let comp: Vec<Ref> = self
-            .link_family(&mut links, &BTreeSet::from([card.clone()]))?
-            .into_iter()
-            .collect();
-        let mut l = self.lineage(&comp)?;
-        Ok(l.logs.remove(&card.text()).unwrap_or_default())
+        let comp: Vec<Ref> = self.link_family(&mut links, cards)?.into_iter().collect();
+        Ok(self.lineage(&comp)?.logs)
     }
 
     /// 卡 [tail] 当链尾的归属组（链尾 + 广度优先的全部前身，`group_lineage`）的日志，按组里卡的顺序、各卡按
@@ -1404,6 +1420,16 @@ impl<'t, 'c> Index<'t, 'c> {
         &mut self,
         tail: &Ref,
     ) -> Result<Vec<(String, Option<i64>, Intent)>, String> {
+        Ok(self.group(tail)?.0)
+    }
+
+    /// [group_rows] 连同归属组的笔记（规范 ID）：取链尾自己日志上记的（链尾的日志里最后一条记了笔记的），链尾没有就取
+    /// 前身里第一条记了笔记的——协议 3 `group_of` 的同一条规则（换笔记类型不换笔记）。评分预览（`cmd/preview.rs`）用。
+    #[allow(clippy::type_complexity)]
+    pub(super) fn group(
+        &mut self,
+        tail: &Ref,
+    ) -> Result<(Vec<(String, Option<i64>, Intent)>, Option<String>), String> {
         let tail = self.canon(tail)?;
         let lineage = {
             let mut preds = |c: &str| -> Result<Vec<String>, String> {
@@ -1412,13 +1438,19 @@ impl<'t, 'c> Index<'t, 'c> {
             };
             group_lineage(&tail.text(), &mut preds)?
         };
+        let tail_text = tail.text();
         let mut out = Vec::new();
+        let mut note: Option<Ref> = None;
         for c in &lineage {
             for l in self.card_logs(&ref_of(c))? {
+                if l.note.is_some() && (note.is_none() || *c == tail_text) {
+                    note = l.note.clone();
+                }
                 out.push((l.json, l.server_time, l.intent));
             }
         }
-        Ok(out)
+        let note = note.map(|n| self.canon(&n).map(|c| c.text())).transpose()?;
+        Ok((out, note))
     }
 
     /// 一批卡（若干个完整的 historyFrom 连通分量）：活着的修改行、生效的前身 / 后继、按链尾重放写回的日志。
