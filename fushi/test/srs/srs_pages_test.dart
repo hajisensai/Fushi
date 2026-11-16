@@ -322,6 +322,123 @@ void main() {
   for (final bool apple in <bool>[false, true]) {
     final String ds = apple ? 'Apple' : 'MD3';
 
+    testWidgets(
+      '[$ds] 牌组设置页：有没保存的改动时按返回问「保存 / 放弃 / 取消」，没改动直接退（拍板 -G0yIwvUrD）',
+      (WidgetTester tester) async {
+        final SrsDbStore store = await _openStore(tester);
+        final String deckId = store.defaultDeckId;
+        Future<String> savedName() async =>
+            (await tester.runAsync(store.deckTree))![deckId]!.name;
+        final String original = await savedName();
+        await _pumpPage(
+          tester,
+          store: store,
+          apple: apple,
+          page: const SizedBox.shrink(),
+        );
+        final Finder page = find.byType(SrsDeckSettingsPage);
+        final Finder dialog = find.byKey(
+          const ValueKey<String>('srs-settings-unsaved-dialog'),
+        );
+        Future<void> open() async {
+          unawaited(
+            tester
+                .state<NavigatorState>(find.byType(Navigator).first)
+                .push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => SrsDeckSettingsPage(deckId: deckId),
+                  ),
+                ),
+          );
+          await _settle(tester);
+          expect(page, findsOneWidget);
+        }
+
+        // 系统返回键（Android 返回 / 手势）：走 PopScope。
+        Future<void> back() async {
+          await tester.binding.handlePopRoute();
+          await _settle(tester);
+        }
+
+        Future<void> rename(String value) async {
+          final Finder field = find.byKey(
+            const ValueKey<String>('srs-settings-name'),
+          );
+          await tester.ensureVisible(field);
+          await tester.enterText(
+            find.descendant(of: field, matching: find.byType(EditableText)),
+            value,
+          );
+          await tester.pump();
+        }
+
+        Future<void> choose(String key) async {
+          await tester.tap(find.byKey(ValueKey<String>(key)));
+          await _settle(tester);
+        }
+
+        // 没改动：直接退，不问。
+        await open();
+        await back();
+        expect(dialog, findsNothing);
+        expect(page, findsNothing);
+
+        // 改了又改回：和载入时一样，也不问。名称框原先不触发重建，漏了它 canPop 就是旧值。
+        await open();
+        await rename('Renamed');
+        await rename(original);
+        await back();
+        expect(dialog, findsNothing);
+        expect(page, findsNothing);
+
+        // 取消：留在页面，改动还在。
+        await open();
+        await rename('Renamed');
+        await back();
+        expect(dialog, findsOneWidget);
+        await choose('srs-settings-unsaved-cancel');
+        expect(dialog, findsNothing);
+        expect(page, findsOneWidget);
+        expect(find.text('Renamed'), findsWidgets);
+
+        // 放弃：退出，不落库。
+        await back();
+        expect(dialog, findsOneWidget);
+        await choose('srs-settings-unsaved-discard');
+        expect(page, findsNothing);
+        expect(await savedName(), original);
+
+        // 保存：落库后退出（不再被自己的 maybePop 拦一次）。
+        await open();
+        await rename('Renamed');
+        await back();
+        expect(dialog, findsOneWidget);
+        await srsUntilWritten(
+          tester,
+          () => tester.tap(
+            find.byKey(const ValueKey<String>('srs-settings-unsaved-save')),
+          ),
+        );
+        expect(dialog, findsNothing);
+        expect(page, findsNothing);
+        expect(await savedName(), 'Renamed');
+
+        // 工具栏保存：存完直接退，不弹对话框。
+        await open();
+        await rename('Renamed again');
+        await srsUntilWritten(
+          tester,
+          () => tester.tap(
+            find.byKey(const ValueKey<String>('srs_settings_save')).first,
+          ),
+        );
+        expect(dialog, findsNothing);
+        expect(page, findsNothing);
+        expect(await savedName(), 'Renamed again');
+        await _unmount(tester);
+      },
+    );
+
     testWidgets('[$ds] 牌组列表：空库给出「添加第一张卡」，加卡后显示新卡计数', (
       WidgetTester tester,
     ) async {
