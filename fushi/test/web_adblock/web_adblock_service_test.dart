@@ -145,7 +145,7 @@ void main() {
   );
 
   test(
-    'BUG-4711: cached engine blocks while stale lists are re-fetched',
+    'BUG-4725: cached engine blocks while stale lists are re-fetched',
     () async {
       _selectOnly(tmp, 'easylist');
       final WebAdblockService first = service(
@@ -194,6 +194,89 @@ void main() {
       expect(second.snapshot.status, AdblockEngineStatus.ready);
     },
   );
+
+  for (final String entry in <String>['updateNow', 'setListEnabled']) {
+    test('BUG-4725: $entry from a cold service does not queue warm-up behind '
+        'its network sync', () async {
+      _selectOnly(tmp, 'easylist');
+      final WebAdblockService first = service(
+        <Uri>[],
+        disposeOnTearDown: false,
+      );
+      await first.ensureLoaded();
+      first.dispose();
+      _makeListsStale(tmp);
+
+      final Completer<void> fetchStarted = Completer<void>();
+      final Completer<void> releaseFetch = Completer<void>();
+      final WebAdblockService second = WebAdblockService(
+        dataDir: () => tmp,
+        mode: WebAdblockNetworkMode.perRequest,
+        contentRuleLists: _RecordingRuleLists(),
+        fetcher: (Uri url, {String? etag, String? lastModified}) async {
+          if (!fetchStarted.isCompleted) fetchStarted.complete();
+          await releaseFetch.future;
+          return AdblockFetchResponse(
+            statusCode: 200,
+            body: Uint8List.fromList(utf8.encode(_list)),
+          );
+        },
+      );
+      addTearDown(second.dispose);
+
+      // 设置页先点「立即更新」/ 切列表（服务还没暖过），再打开浏览器标签页。
+      final Future<void> syncing = entry == 'updateNow'
+          ? second.updateNow()
+          : second.setListEnabled('easylist', true);
+      await fetchStarted.future;
+      bool warm = false;
+      unawaited(second.ensureEngineWarm().then((_) => warm = true));
+      await pumpEventQueue();
+      expect(
+        warm,
+        isTrue,
+        reason: 'tab warm-up must not wait for the network sync',
+      );
+      expect(
+        second
+            .check(
+              'https://ads.example.com/a.js',
+              pageUrl: Uri.parse('https://example.com/'),
+            )
+            .shouldBlock,
+        isTrue,
+      );
+
+      releaseFetch.complete();
+      await syncing;
+    });
+  }
+
+  test('BUG-4725: content-blocker warm-up installs the cached rule list '
+      'without network', () async {
+    final _RecordingRuleLists native = _RecordingRuleLists();
+    _selectOnly(tmp, 'easylist');
+    final WebAdblockService first = service(
+      <Uri>[],
+      mode: WebAdblockNetworkMode.contentBlockers,
+      contentRuleLists: native,
+      disposeOnTearDown: false,
+    );
+    await first.ensureLoaded();
+    first.dispose();
+    _makeListsStale(tmp);
+
+    final List<Uri> fetched = <Uri>[];
+    final WebAdblockService second = service(
+      fetched,
+      mode: WebAdblockNetworkMode.contentBlockers,
+      contentRuleLists: native,
+    );
+    await second.ensureEngineWarm();
+    expect(fetched, isEmpty);
+    // 标签页据此判断不必等联网就能建 WebView。
+    expect(second.contentRuleListIdentifier, isNotNull);
+  });
 
   test(
     'ensureEngineWarm completes without network when nothing is cached',

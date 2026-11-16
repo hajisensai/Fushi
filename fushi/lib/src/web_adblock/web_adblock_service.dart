@@ -111,6 +111,9 @@ class WebAdblockService extends ChangeNotifier implements WebAdblockPolicy {
   /// 订阅 / 取消订阅一份列表，然后同步让引擎跟上。
   Future<void> setListEnabled(String id, bool enabled) async {
     _publish(_live.setListEnabled(id, enabled));
+    // 先暖机：联网同步不能排在暖机前面，否则此时打开的标签页要等这次联网。
+    await ensureEngineWarm();
+    if (_disposed) return;
     await _serialized(() => _sync(force: false));
   }
 
@@ -136,7 +139,9 @@ class WebAdblockService extends ChangeNotifier implements WebAdblockPolicy {
   /// 创建前 await 这里（本地反序列化，不等网络）。
   ///
   /// 本服务生命周期内只暖一次（[setEnabled] 打开时重来）：暖过之后再调立即完成，**不排在**
-  /// 正在跑的联网同步后面；暖机进行中再调共用同一个 future。
+  /// 正在跑的联网同步后面；暖机进行中再调共用同一个 future。所有联网同步入口
+  /// （[ensureLoaded] / [setListEnabled] / [updateNow]）都先 await 这里，所以暖机本身也
+  /// 不会排到某次联网同步后面。
   Future<void> ensureEngineWarm() {
     if (_tryOpen() == null) return Future<void>.value();
     final Future<void>? pending = _warming;
@@ -165,6 +170,9 @@ class WebAdblockService extends ChangeNotifier implements WebAdblockPolicy {
 
   /// 「立即更新」：强制联网核对全部订阅列表。返回是否至少有一份新取到或确认未变。
   Future<bool> updateNow() async {
+    // 同 [setListEnabled]：先暖机，再联网。
+    await ensureEngineWarm();
+    if (_disposed) return false;
     await _serialized(() => _sync(force: true));
     return snapshot.lastSyncOk ?? false;
   }
