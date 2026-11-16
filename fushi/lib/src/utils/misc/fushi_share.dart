@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/widgets.dart';
+import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/reveal_in_file_manager.dart';
 import 'package:path/path.dart' as p;
@@ -81,6 +82,99 @@ class FushiShare {
   @visibleForTesting
   static Future<bool> Function(String path)? fileHandoffWithoutShareSheet =
       Platform.isLinux ? revealInFileManager : null;
+
+  /// Android 文件分享的**快照根目录**来源；null = 不走 Android 自有通道（其余平台
+  /// 仍交给 share_plus）。
+  ///
+  /// **为什么 Android 不走 share_plus（BUG-4740，反馈 P1pyoS0dQb）**：share_plus
+  /// 7.2.2 的 Android 端在 MethodChannel 回调里（Android 主线程）对每个文件无条件
+  /// `File.copyTo(cache/share_plus/…)` 整份同步拷贝；分享几百 MB 的片段 / m4b /
+  /// 备份时主线程卡在 `FileOutputStream.write`，系统判 ANR。拷贝本身不能省——调用方
+  /// 分享后会删临时产物（如反馈录屏的临时目录），接收方读的必须是独立快照——所以
+  /// 把它挪到这里用异步 I/O 做（[stageFilesForShare]），原生侧
+  /// `FushiShareChannel.kt` 只拼 Intent、不碰文件内容。
+  ///
+  /// 平台判据只在这里读一次；测试据此显式固定走哪条通道并给出临时目录。
+  @visibleForTesting
+  static Future<Directory> Function()? androidShareStagingRoot =
+      Platform.isAndroid ? _defaultAndroidShareStagingRoot : null;
+
+  /// `getTemporaryDirectory()` 在 Android 上是 cacheDir，被 `provider_paths.xml`
+  /// 的 `cache-path` 覆盖，`FushiFileProvider` 能直接给出 `content://` URI。
+  static Future<Directory> _defaultAndroidShareStagingRoot() async =>
+      Directory(p.join((await getTemporaryDirectory()).path, 'fushi_share'));
+
+  /// 把 [files] 落成一份分享快照，返回快照路径（与 [files] 同序）。
+  ///
+  /// - 全部用异步文件 I/O（Dart IO 线程），不占 Android 主线程，也不阻塞 UI isolate。
+  /// - [root] 下只保留**本次**分享：先清掉上一次的快照（与 share_plus 每次分享先清
+  ///   `cache/share_plus` 同一语义，避免缓存无限增长）。
+  /// - 每个文件独占一个序号子目录，保留原文件名（接收方看到的文件名不变），同名
+  ///   文件互不覆盖。
+  /// - 内存型 `XFile`（`path` 为空）直接写进快照目录，不再先落一次临时文件。
+  /// - 源文件位于 [root] 里时抛 [ArgumentError]：清旧快照会把它删掉。
+  @visibleForTesting
+  static Future<List<String>> stageFilesForShare(
+    List<XFile> files,
+    Directory root,
+  ) async {
+    final String rootPath = p.normalize(p.absolute(root.path));
+    for (final XFile file in files) {
+      if (file.path.isNotEmpty &&
+          p.isWithin(rootPath, p.normalize(p.absolute(file.path)))) {
+        throw ArgumentError.value(
+          file.path,
+          'files',
+          'must not live inside the share staging directory $rootPath',
+        );
+      }
+    }
+    final Directory rootDir = Directory(rootPath);
+    if (await rootDir.exists()) await rootDir.delete(recursive: true);
+    final Directory shareDir = await Directory(
+      p.join(rootPath, '${DateTime.now().microsecondsSinceEpoch}'),
+    ).create(recursive: true);
+    final List<String> staged = <String>[];
+    for (int i = 0; i < files.length; i++) {
+      final XFile file = files[i];
+      // 有路径的文件用 `p.basename` 取名：XFile.name 只按宿主分隔符切，混用 `/`
+      // 与 `\` 的路径会把目录段带进文件名，落到不存在的子目录里。
+      final String base = file.path.isNotEmpty
+          ? p.basename(file.path)
+          : file.name;
+      final String name = base.isNotEmpty ? base : 'fushi_share_$i';
+      final Directory slot = await Directory(
+        p.join(shareDir.path, '$i'),
+      ).create();
+      final String dest = p.join(slot.path, name);
+      await file.saveTo(dest);
+      staged.add(dest);
+    }
+    return staged;
+  }
+
+  /// 多个文件的 MIME 归并成 Intent 的一个 `type`（同 share_plus
+  /// `Share.reduceMimeTypes`）：全相同取原值，同主类型取 `主类型/*`，否则 `*/*`。
+  @visibleForTesting
+  static String reduceShareMimeTypes(List<String> mimeTypes) {
+    if (mimeTypes.isEmpty) return '*/*';
+    String common = mimeTypes.first;
+    for (int i = 1; i < mimeTypes.length; i++) {
+      if (common == mimeTypes[i]) continue;
+      final String base = _mimeTypeBase(mimeTypes[i]);
+      if (_mimeTypeBase(common) == base) {
+        common = '$base/*';
+      } else {
+        return '*/*';
+      }
+    }
+    return common;
+  }
+
+  static String _mimeTypeBase(String mimeType) {
+    final int slash = mimeType.indexOf('/');
+    return slash < 0 ? '*' : mimeType.substring(0, slash);
+  }
 
   /// 由 [viewSize] 推出一个**必定合法**的 iOS popover 锚点：位于 view 正中、
   /// 边长 1 逻辑点的矩形。
@@ -172,6 +266,26 @@ class FushiShare {
     }
     _sharing = true;
     try {
+      final Future<Directory> Function()? stagingRoot = androidShareStagingRoot;
+      if (stagingRoot != null) {
+        // Android：快照用异步 I/O 落好，原生侧只拼 Intent（BUG-4740）。快照耗时
+        // 不计入呈现上限——几百 MB 的拷贝本来就可能超过 30 s，那不是「平台没回包」。
+        final List<String> staged = await stageFilesForShare(
+          files,
+          await stagingRoot(),
+        );
+        await FushiChannels.share
+            .invokeMethod<void>('shareFiles', <String, Object?>{
+              'paths': staged,
+              'mimeType': reduceShareMimeTypes(<String>[
+                for (final XFile file in files) file.mimeType ?? '*/*',
+              ]),
+              'text': text,
+              'subject': subject,
+            })
+            .timeout(_kSharePresentationTimeout);
+        return true;
+      }
       final List<String> paths = <String>[];
       final List<String> mimeTypes = <String>[];
       Directory? tmpDir;
