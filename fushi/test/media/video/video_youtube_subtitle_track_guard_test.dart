@@ -118,6 +118,100 @@ void main() {
     });
   });
 
+  group('源码守卫：YouTube 字幕轨可选为副字幕（反馈 A41_cyNKcc）', () {
+    late String remoteSrc;
+    setUpAll(() {
+      remoteSrc = File(
+        'lib/src/pages/implementations/video_fushi/playback_remote.part.dart',
+      ).readAsStringSync().replaceAll('\r\n', '\n');
+    });
+
+    /// 副字幕行构建方法里 `if (_isRemote) { return ... }` 那一段（远端副字幕列表）。
+    String secondaryRemoteBranch() {
+      final int start = subtitleSrc.indexOf(
+        'List<Widget> _buildSecondarySubtitleRows(',
+      );
+      expect(start, greaterThanOrEqualTo(0));
+      final int remote = subtitleSrc.indexOf('if (_isRemote) {', start);
+      final int local = subtitleSrc.indexOf(
+        'if (_subtitleMenuLoading)',
+        remote,
+      );
+      expect(remote, greaterThan(start));
+      expect(local, greaterThan(remote));
+      return subtitleSrc.substring(remote, local);
+    }
+
+    test('面板远端副字幕区按同一份 YouTube 轨表逐轨渲染、按副字幕源高亮、点选挂副层', () {
+      final String branch = secondaryRemoteBranch();
+      expect(
+        branch.contains(
+          'for (final YoutubeCaptionTrack track in _youtubeCaptionTracks)',
+        ),
+        isTrue,
+        reason: '远端副字幕区必须和主字幕区列同一份 YouTube 字幕轨',
+      );
+      expect(
+        branch.contains('_currentSecondarySubtitleSource == track.trackKey'),
+        isTrue,
+        reason: '副字幕 YouTube 行高亮判据 = 当前副字幕源等于该轨 trackKey',
+      );
+      expect(
+        branch.contains(
+          '_applyYoutubeSecondaryCaptionTrack(controller, track)',
+        ),
+        isTrue,
+        reason: '点副字幕 YouTube 行必须走副字幕落点',
+      );
+    });
+
+    test('副字幕 YouTube 轨与主字幕共用取 cue（缓存 + 懒下载），落点是副层', () {
+      final int start = subtitleSrc.indexOf(
+        'Future<void> _applyYoutubeSecondaryCaptionTrack(\n',
+      );
+      expect(start, greaterThanOrEqualTo(0), reason: '副字幕 YouTube 落点必须存在');
+      final int end = subtitleSrc.indexOf('\n  }\n', start);
+      final String body = subtitleSrc.substring(start, end);
+      expect(body.contains('_resolveYoutubeTrackCues('), isTrue);
+      expect(body.contains('controller.setSecondaryCues(cues)'), isTrue);
+      expect(
+        body.contains('_currentSecondarySubtitleSource = track.trackKey'),
+        isTrue,
+      );
+      expect(
+        body.contains('controller.setCues('),
+        isFalse,
+        reason: '选副字幕不得覆盖主字幕 cue',
+      );
+      // 主字幕也走同一取 cue 函数（不各自维护一份缓存 / 加载态逻辑）。
+      final int primary = subtitleSrc.indexOf(
+        'Future<void> _applyYoutubeCaptionTrack(\n',
+      );
+      final String primaryBody = subtitleSrc.substring(
+        primary,
+        subtitleSrc.indexOf('\n  }\n', primary),
+      );
+      expect(primaryBody.contains('_resolveYoutubeTrackCues('), isTrue);
+    });
+
+    test('手机遥控字幕列表：YouTube 行可选为副字幕且按副字幕源标注', () {
+      final int start = remoteSrc.indexOf(
+        'for (final YoutubeCaptionTrack track in _state._youtubeCaptionTracks)',
+      );
+      expect(start, greaterThanOrEqualTo(0));
+      final int end = remoteSrc.indexOf('Xt3RCTPKhX', start);
+      final String row = remoteSrc.substring(start, end);
+      expect(row.contains('secondarySelectable: false'), isFalse);
+      expect(row.contains('secondary: secondary == track.trackKey'), isTrue);
+      expect(
+        row.contains(
+          '_state._applyYoutubeSecondaryCaptionTrack(controller, track)',
+        ),
+        isTrue,
+      );
+    });
+  });
+
   group('A3 选轨逻辑单测（人工>ASR·精确语言·autoTranslate）', () {
     YoutubeCaptionTrack t(String lang, {bool asr = false, String? tl}) =>
         YoutubeCaptionTrack(

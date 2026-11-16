@@ -197,16 +197,60 @@ extension _VideoDiscMenu on _VideoFushiPageState {
       !isMobilePlatform &&
       appModel.videoDiscAutoFullscreen;
 
-  /// 「返回」在原盘会话里的第一步（页面浮层已由调用方先关）：控制栏收着就只把它呼出来
-  /// 并返回 true；开着返回 false，调用方照常退出。
-  bool _discSessionShowBarOnBack() {
-    if (!_discSessionSurfaceActive || _discSessionExitRequested) return false;
-    if (resolveDiscSessionBack(barVisible: _discMenuChromeVisible.value) !=
-        DiscSessionBackRoute.showBar) {
-      return false;
+  /// 原盘会话里「返回」此刻落在哪一级（页面浮层、全屏已由调用方先处理）；不是原盘会话
+  /// 或已在退出时为 null。层级：正片全屏 → 正片窗口 → 盘自己的菜单 → 详情页。
+  DiscSessionBackRoute? _discSessionBackRoute() {
+    final VideoPlayerController? controller = _controller;
+    if (controller == null ||
+        !controller.isBlurayNavigationSession ||
+        _discSessionExitRequested) {
+      return null;
     }
+    final VideoDiscNavigationState? state = controller.discNavigationState;
+    return resolveDiscSessionBack(
+      onMenu: _discSessionSurfaceActive,
+      barVisible: _discMenuChromeVisible.value,
+      menuCallAllowed:
+          controller.discNavigationSupported &&
+          !controller.discMenuEntryPending &&
+          state != null &&
+          videoDiscMenuKeyAllowed(state, VideoDiscMenuKey.topMenu),
+    );
+  }
+
+  /// 「返回」在原盘菜单阶段的第一步：控制栏收着就只把它呼出来并返回 true；开着返回
+  /// false，调用方照常退出。正片阶段不在这里处理——全屏路由里的返回先退全屏
+  /// （[_exitVideoFullscreenOnBack]），窗口里才由 [_discSessionReturnToMenuOnBack] 回菜单。
+  bool _discSessionShowBarOnBack() {
+    if (_discSessionBackRoute() != DiscSessionBackRoute.showBar) return false;
     _pokeDiscMenuChrome();
     return true;
+  }
+
+  /// 「返回」在正片阶段（窗口里）的一级：回到盘自己的菜单，而不是退出整个原盘会话
+  /// ——正片是从盘菜单进来的，它的上一级就是盘菜单（拍板台 58EoAZOXVN）。盘不允许
+  /// 调菜单（UO 屏蔽 / 没有顶层菜单）时没有这一级，返回 false 由调用方退出会话。
+  bool _discSessionReturnToMenuOnBack() {
+    if (_discSessionBackRoute() != DiscSessionBackRoute.returnToMenu) {
+      return false;
+    }
+    unawaited(_returnToDiscMenu());
+    return true;
+  }
+
+  Future<void> _returnToDiscMenu() async {
+    final VideoPlayerController? controller = _controller;
+    if (controller == null) return;
+    try {
+      await controller.discMenuKey(VideoDiscMenuKey.topMenu);
+    } catch (error, stack) {
+      // 快照说允许、盘却拒了这次菜单调用：这张盘此刻没有菜单这一级可回，按层级
+      // 表的下一级退出会话（与 [resolveDiscSessionBack] 的 menuCallAllowed=false 同义）。
+      ErrorLogService.instance.log('VideoDiscMenu.backToMenu', error, stack);
+      if (mounted && identical(_controller, controller)) {
+        await _exitDiscSession();
+      }
+    }
   }
 
   /// Esc / 手柄 B 短按：先关页面浮层，再按控制栏状态呼出或退出。

@@ -1,6 +1,7 @@
 // WebAdblockService 端到端（真原生库：Rust 胖核心持有订阅 / 缓存 / 开关 / 白名单；假下载器
 // 给字节）。原生库是硬依赖：找不到库（FUSHI_WEB_CORE_LIB 或本仓 native/fushi_web_core 的编译产物，
 // 由 test/flutter_test_config.dart 定位）测试直接失败，不 skip。
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -26,6 +27,18 @@ void _selectOnly(Directory dir, String id) {
     core.setListEnabled(e.id, e.id == id);
   }
   core.close();
+}
+
+/// 把 Rust 落盘的 `state.json` 里各列表的取回时间改成 0（= 远超过期阈值），模拟隔了几天再启动。
+void _makeListsStale(Directory dir) {
+  final File state = File('${dir.path}${Platform.pathSeparator}state.json');
+  final Map<String, Object?> json =
+      jsonDecode(state.readAsStringSync()) as Map<String, Object?>;
+  final Map<String, Object?> lists = json['lists']! as Map<String, Object?>;
+  for (final Object? meta in lists.values) {
+    (meta! as Map<String, Object?>)['fetchedAt'] = 0;
+  }
+  state.writeAsStringSync(jsonEncode(json));
 }
 
 void main() {
@@ -128,6 +141,154 @@ void main() {
       expect(fetched, isEmpty, reason: 'fresh cache from the first instance');
       expect(second.snapshot.status, AdblockEngineStatus.ready);
       expect(second.snapshot.fromCache, isTrue);
+    },
+  );
+
+  test(
+    'BUG-4737: cached engine blocks while stale lists are re-fetched',
+    () async {
+      _selectOnly(tmp, 'easylist');
+      final WebAdblockService first = service(
+        <Uri>[],
+        disposeOnTearDown: false,
+      );
+      await first.ensureLoaded();
+      first.dispose();
+      _makeListsStale(tmp);
+
+      // 下一次启动：列表过期要重新联网，下载卡住期间引擎也必须已就绪（用磁盘缓存）。
+      final Completer<void> fetchStarted = Completer<void>();
+      final Completer<void> releaseFetch = Completer<void>();
+      final WebAdblockService second = WebAdblockService(
+        dataDir: () => tmp,
+        mode: WebAdblockNetworkMode.perRequest,
+        contentRuleLists: _RecordingRuleLists(),
+        fetcher: (Uri url, {String? etag, String? lastModified}) async {
+          if (!fetchStarted.isCompleted) fetchStarted.complete();
+          await releaseFetch.future;
+          return AdblockFetchResponse(
+            statusCode: 200,
+            body: Uint8List.fromList(utf8.encode(_list)),
+          );
+        },
+      );
+      addTearDown(second.dispose);
+
+      final Future<void> loading = second.ensureLoaded();
+      await fetchStarted.future;
+      final Uri page = Uri.parse('https://example.com/');
+      expect(
+        second.check('https://ads.example.com/a.js', pageUrl: page).shouldBlock,
+        isTrue,
+        reason: 'network refresh must not leave the page without an engine',
+      );
+      // 注意：此刻 snapshot.status 是 loading（isActive 是给设置页 / contentBlockers 用的状态
+      // 位），但热路径只看内存里有没有引擎。
+      expect(
+        second.cosmeticPayload('https://example.com/', pageUrl: page),
+        contains('.ad-banner'),
+      );
+
+      releaseFetch.complete();
+      await loading;
+      expect(second.snapshot.status, AdblockEngineStatus.ready);
+    },
+  );
+
+  for (final String entry in <String>['updateNow', 'setListEnabled']) {
+    test('BUG-4737: $entry from a cold service does not queue warm-up behind '
+        'its network sync', () async {
+      _selectOnly(tmp, 'easylist');
+      final WebAdblockService first = service(
+        <Uri>[],
+        disposeOnTearDown: false,
+      );
+      await first.ensureLoaded();
+      first.dispose();
+      _makeListsStale(tmp);
+
+      final Completer<void> fetchStarted = Completer<void>();
+      final Completer<void> releaseFetch = Completer<void>();
+      final WebAdblockService second = WebAdblockService(
+        dataDir: () => tmp,
+        mode: WebAdblockNetworkMode.perRequest,
+        contentRuleLists: _RecordingRuleLists(),
+        fetcher: (Uri url, {String? etag, String? lastModified}) async {
+          if (!fetchStarted.isCompleted) fetchStarted.complete();
+          await releaseFetch.future;
+          return AdblockFetchResponse(
+            statusCode: 200,
+            body: Uint8List.fromList(utf8.encode(_list)),
+          );
+        },
+      );
+      addTearDown(second.dispose);
+
+      // 设置页先点「立即更新」/ 切列表（服务还没暖过），再打开浏览器标签页。
+      final Future<void> syncing = entry == 'updateNow'
+          ? second.updateNow()
+          : second.setListEnabled('easylist', true);
+      await fetchStarted.future;
+      bool warm = false;
+      unawaited(second.ensureEngineWarm().then((_) => warm = true));
+      await pumpEventQueue();
+      expect(
+        warm,
+        isTrue,
+        reason: 'tab warm-up must not wait for the network sync',
+      );
+      expect(
+        second
+            .check(
+              'https://ads.example.com/a.js',
+              pageUrl: Uri.parse('https://example.com/'),
+            )
+            .shouldBlock,
+        isTrue,
+      );
+
+      releaseFetch.complete();
+      await syncing;
+    });
+  }
+
+  test('BUG-4737: content-blocker warm-up installs the cached rule list '
+      'without network', () async {
+    final _RecordingRuleLists native = _RecordingRuleLists();
+    _selectOnly(tmp, 'easylist');
+    final WebAdblockService first = service(
+      <Uri>[],
+      mode: WebAdblockNetworkMode.contentBlockers,
+      contentRuleLists: native,
+      disposeOnTearDown: false,
+    );
+    await first.ensureLoaded();
+    first.dispose();
+    _makeListsStale(tmp);
+
+    final List<Uri> fetched = <Uri>[];
+    final WebAdblockService second = service(
+      fetched,
+      mode: WebAdblockNetworkMode.contentBlockers,
+      contentRuleLists: native,
+    );
+    await second.ensureEngineWarm();
+    expect(fetched, isEmpty);
+    // 标签页据此判断不必等联网就能建 WebView。
+    expect(second.contentRuleListIdentifier, isNotNull);
+  });
+
+  test(
+    'ensureEngineWarm completes without network when nothing is cached',
+    () async {
+      _selectOnly(tmp, 'easylist');
+      final List<Uri> fetched = <Uri>[];
+      final WebAdblockService s = service(fetched);
+      await s.ensureEngineWarm();
+      expect(fetched, isEmpty);
+      expect(s.isActive, isFalse);
+      await s.ensureLoaded();
+      expect(s.isActive, isTrue);
     },
   );
 

@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:fushi/src/media/display_title.dart';
 import 'package:fushi/src/media/favorites/favorite_batch_mining_plan.dart';
 import 'package:fushi/src/media/favorites/favorite_mining_item.dart';
+import 'package:fushi/src/media/nsfw/nsfw_card_image.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/mining/immersion_mining_engine.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -322,6 +323,14 @@ class FavoriteBatchMiningRunner {
         coverPath = ReaderFushiSource.resolveCoverFilePath(
           extractDir: book.extractDir,
           coverPath: book.coverPath,
+        );
+        // NSFW 书 +「制卡图片也模糊」：与阅读器制卡同一出口（失败则不带图）。
+        coverPath = await resolveNsfwCardImagePath(
+          db: appModel.database,
+          path: coverPath,
+          blurCardImages: appModel.prefsRepo.blurNsfwCardImages,
+          kind: TagHostKind.epub,
+          entryKey: bookKey,
         );
       }
     }

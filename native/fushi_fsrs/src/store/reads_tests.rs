@@ -146,7 +146,7 @@ fn seed(core: &SrsCore, profile: &str) {
     for n in 0..2 {
         let note = note_id(profile, n);
         events.push((
-            json!({"t": "entity", "x": {"id": note, "p": profile, "k": "note", "d": {"createdAt": 1, "guid": note, "noteType": "NT"}}}),
+            json!({"t": "entity", "x": {"id": note, "p": profile, "k": "note", "d": {"createdAt": 1, "guid": note, "noteTypeId": "NT"}}}),
             note.clone(),
         ));
         events.push((

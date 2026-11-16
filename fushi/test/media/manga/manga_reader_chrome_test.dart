@@ -453,6 +453,32 @@ void main() {
       );
     });
 
+    testWidgets('桌面宽屏：顶栏与小说一样铺满全宽，只留左右边距（反馈 se4AshgQ7s）', (
+      WidgetTester tester,
+    ) async {
+      const double width = 1707;
+      setSize(tester, width);
+      await tester.pumpWidget(chromeHost(width: width));
+      final Rect bar = tester.getRect(
+        find.descendant(
+          of: find.byKey(const ValueKey<String>('top')),
+          matching: find.byType(FushiFloatingTopBar),
+        ),
+      );
+      expect(bar.left, kMangaChromeEdgeInset, reason: '不限宽居中');
+      expect(bar.right, width - kMangaChromeEdgeInset);
+      final Rect back = tester.getRect(
+        find.byKey(const ValueKey<String>('manga_reader_back_button')),
+      );
+      final Rect action = tester.getRect(topActionPill());
+      expect(back.left, lessThan(kMangaChromeEdgeInset + 8), reason: '返回贴左');
+      expect(
+        action.right,
+        greaterThan(width - kMangaChromeEdgeInset - 8),
+        reason: '动作胶囊贴右',
+      );
+    });
+
     testWidgets('返回 / 标题 / 动作三块独立胶囊；栏高与让位量同源；点标题 = 导航', (
       WidgetTester tester,
     ) async {

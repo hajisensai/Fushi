@@ -106,6 +106,111 @@ pub fn preflight(conn: &Connection, profile: &str) -> Result<Vec<String>, String
     Ok(out)
 }
 
+/// 真迁移（G7-2，设计 §6.1「前提」、§5.5）在 [preflight] 之外还要拦的、这个 profile 没做完的旧代收尾（空 = 不拦）：
+/// 收段会话被打断留下的待重放卡（`sync2_replay_pending`）与待刷新的缓存（`sync2_cache_pending`）。读入器读得出这些库
+/// （操作都在日志里），所以干跑只报不拦（干跑对拍时跳过待重放的卡）；真迁移要求先用冻结代码做完——对拍跳过的卡
+/// 不能当成「核对过」提交。
+pub fn migration_blockers(conn: &Connection, profile: &str) -> Result<Vec<String>, String> {
+    let mut out = Vec::new();
+    for (table, what) in [
+        (
+            "sync2_replay_pending",
+            "cards are still waiting to be replayed after an interrupted ingest",
+        ),
+        (
+            "sync2_cache_pending",
+            "caches are still waiting to be refreshed after an interrupted ingest",
+        ),
+    ] {
+        if !table_exists(conn, table)? {
+            continue;
+        }
+        let busy = conn
+            .prepare_cached(&format!(
+                "SELECT 1 FROM {table} WHERE profile_uid = srs_id(?1)"
+            ))
+            .map_err(sql)?
+            .exists([profile])
+            .map_err(sql)?;
+        if busy {
+            out.push(what.to_owned());
+        }
+    }
+    Ok(out)
+}
+
+/// 整个库的、不属于某一个 profile 的旧代收尾（空 = 不拦）。真迁移拦，干跑只报：
+///
+/// - 并入做到一半：`srs_meta` 里有 `profile_merge/<旧 uid>` 标记（D23 选 ②：迁移前用冻结的旧并入代码做完，§5.5）。
+/// - 有投影数据、却不在操作日志里的 profile（没启用过协议 3：[profiles] 只认 `sync2_*`）：读入器看不见它的数据，迁过去
+///   就丢了。
+pub fn library_blockers(conn: &Connection) -> Result<Vec<String>, String> {
+    let mut out = Vec::new();
+    if table_exists(conn, "srs_meta")? {
+        let marks: Vec<String> = conn
+            .prepare("SELECT key FROM srs_meta WHERE substr(key, 1, length(?1)) = ?1 ORDER BY key")
+            .map_err(sql)?
+            .query_map([crate::store::profile_data::MERGE_MARKER_PREFIX], |r| {
+                r.get(0)
+            })
+            .map_err(sql)?
+            .collect::<Result<_, _>>()
+            .map_err(sql)?;
+        for key in marks {
+            out.push(format!("a profile merge is half done ({key})"));
+        }
+    }
+    let logged: std::collections::BTreeSet<String> = if table_exists(conn, "sync2_self")? {
+        profiles(conn)?.into_iter().collect()
+    } else {
+        Default::default()
+    };
+    let mut projected = std::collections::BTreeSet::new();
+    for table in [
+        "srs_entities",
+        "srs_field_edits",
+        "srs_review_logs",
+        "srs_unknown_events",
+    ] {
+        if !table_exists(conn, table)? {
+            continue;
+        }
+        let rows: Vec<String> = conn
+            .prepare(&format!(
+                "SELECT DISTINCT srs_idt(profile_uid) FROM {table}"
+            ))
+            .map_err(sql)?
+            .query_map([], |r| r.get(0))
+            .map_err(sql)?
+            .collect::<Result<_, _>>()
+            .map_err(sql)?;
+        projected.extend(rows);
+    }
+    for p in projected.difference(&logged) {
+        out.push(format!(
+            "profile {p} has data that is not in the protocol 3 op log yet"
+        ));
+    }
+    Ok(out)
+}
+
+/// 迁移时写进新身份原生日志的那条 `Salts` 的盐（设计 §5.1、§6.1 第 7 步）：这个 profile 的 uid，并上本机已退役的
+/// profile uid（`srs_meta.srs_retired_profile_uids`，旧并入留下的）。升序、无重复。退役列表解不开当没有。
+pub fn salts(conn: &Connection, profile: &str) -> Result<Vec<String>, String> {
+    let mut out: std::collections::BTreeSet<String> =
+        std::collections::BTreeSet::from([profile.to_owned()]);
+    let retired: Option<String> = conn
+        .prepare_cached("SELECT value FROM srs_meta WHERE key = 'srs_retired_profile_uids'")
+        .map_err(sql)?
+        .query_row([], |r| r.get(0))
+        .optional()
+        .map_err(sql)?;
+    if let Some(list) = retired.and_then(|s| serde_json::from_str::<Vec<String>>(&s).ok()) {
+        out.extend(list);
+    }
+    Ok(out.into_iter().collect())
+}
+
 /// 一台旧设备在这个库里的日志范围。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct LegacyDevice {
@@ -798,64 +903,7 @@ pub(crate) mod tests {
 
     // ------------------------------------------------------------ 真实样本（不进默认测试）
 
-    #[cfg(windows)]
-    pub(crate) fn peak_mem_mb() -> (f64, f64) {
-        #[repr(C)]
-        #[derive(Default)]
-        struct Counters {
-            cb: u32,
-            page_fault_count: u32,
-            peak_working_set: usize,
-            working_set: usize,
-            quota_peak_paged_pool: usize,
-            quota_paged_pool: usize,
-            quota_peak_non_paged_pool: usize,
-            quota_non_paged_pool: usize,
-            pagefile: usize,
-            peak_pagefile: usize,
-            private_usage: usize,
-        }
-        #[link(name = "kernel32")]
-        extern "system" {
-            fn GetCurrentProcess() -> isize;
-            fn K32GetProcessMemoryInfo(p: isize, c: *mut Counters, cb: u32) -> i32;
-        }
-        let mut c = Counters {
-            cb: std::mem::size_of::<Counters>() as u32,
-            ..Default::default()
-        };
-        // SAFETY: 输出结构体是本函数的局部变量，大小如实给出。
-        let ok = unsafe { K32GetProcessMemoryInfo(GetCurrentProcess(), &mut c, c.cb) };
-        if ok == 0 {
-            return (0.0, 0.0);
-        }
-        (
-            c.peak_working_set as f64 / 1048576.0,
-            c.peak_pagefile as f64 / 1048576.0,
-        )
-    }
-
-    /// Unix 上只有常驻内存的峰值（`ru_maxrss`：macOS 给字节、其余给 KiB）；没有提交量，第二个数是 0。
-    #[cfg(unix)]
-    pub(crate) fn peak_mem_mb() -> (f64, f64) {
-        // SAFETY: 输出结构体是本函数的局部变量；全零是 rusage 的合法值。
-        let mut u: libc::rusage = unsafe { std::mem::zeroed() };
-        // SAFETY: 指针指向上面那个局部变量。
-        if unsafe { libc::getrusage(libc::RUSAGE_SELF, &mut u) } != 0 {
-            return (0.0, 0.0);
-        }
-        let unit = if cfg!(target_os = "macos") {
-            1.0
-        } else {
-            1024.0
-        };
-        (u.ru_maxrss as f64 * unit / 1048576.0, 0.0)
-    }
-
-    #[cfg(not(any(windows, unix)))]
-    pub(crate) fn peak_mem_mb() -> (f64, f64) {
-        (0.0, 0.0)
-    }
+    pub(crate) use crate::store::gen4::dryrun::peak_mem_mb;
 
     pub(crate) fn sample() -> Option<Connection> {
         let path = std::env::var("FUSHI_GEN4_SAMPLE_DB").ok()?;
