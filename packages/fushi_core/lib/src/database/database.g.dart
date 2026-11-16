@@ -61945,6 +61945,331 @@ class MediaPrivacyFlagsCompanion extends UpdateCompanion<MediaPrivacyFlagRow> {
   }
 }
 
+class $MediaNsfwFlagsTable extends MediaNsfwFlags
+    with TableInfo<$MediaNsfwFlagsTable, MediaNsfwFlagRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $MediaNsfwFlagsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _mediaKindMeta = const VerificationMeta(
+    'mediaKind',
+  );
+  @override
+  late final GeneratedColumn<String> mediaKind = GeneratedColumn<String>(
+    'media_kind',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _entryKeyMeta = const VerificationMeta(
+    'entryKey',
+  );
+  @override
+  late final GeneratedColumn<String> entryKey = GeneratedColumn<String>(
+    'entry_key',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _nsfwAtMeta = const VerificationMeta('nsfwAt');
+  @override
+  late final GeneratedColumn<int> nsfwAt = GeneratedColumn<int>(
+    'nsfw_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _clearedAtMeta = const VerificationMeta(
+    'clearedAt',
+  );
+  @override
+  late final GeneratedColumn<int> clearedAt = GeneratedColumn<int>(
+    'cleared_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    mediaKind,
+    entryKey,
+    nsfwAt,
+    clearedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'media_nsfw_flags';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<MediaNsfwFlagRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('media_kind')) {
+      context.handle(
+        _mediaKindMeta,
+        mediaKind.isAcceptableOrUnknown(data['media_kind']!, _mediaKindMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_mediaKindMeta);
+    }
+    if (data.containsKey('entry_key')) {
+      context.handle(
+        _entryKeyMeta,
+        entryKey.isAcceptableOrUnknown(data['entry_key']!, _entryKeyMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_entryKeyMeta);
+    }
+    if (data.containsKey('nsfw_at')) {
+      context.handle(
+        _nsfwAtMeta,
+        nsfwAt.isAcceptableOrUnknown(data['nsfw_at']!, _nsfwAtMeta),
+      );
+    }
+    if (data.containsKey('cleared_at')) {
+      context.handle(
+        _clearedAtMeta,
+        clearedAt.isAcceptableOrUnknown(data['cleared_at']!, _clearedAtMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {mediaKind, entryKey};
+  @override
+  MediaNsfwFlagRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return MediaNsfwFlagRow(
+      mediaKind: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}media_kind'],
+      )!,
+      entryKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}entry_key'],
+      )!,
+      nsfwAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}nsfw_at'],
+      ),
+      clearedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}cleared_at'],
+      ),
+    );
+  }
+
+  @override
+  $MediaNsfwFlagsTable createAlias(String alias) {
+    return $MediaNsfwFlagsTable(attachedDatabase, alias);
+  }
+}
+
+class MediaNsfwFlagRow extends DataClass
+    implements Insertable<MediaNsfwFlagRow> {
+  final String mediaKind;
+  final String entryKey;
+
+  /// 最近一次标 NSFW 的毫秒戳；NULL = 从没标过。
+  final int? nsfwAt;
+
+  /// 最近一次取消 NSFW 的毫秒戳；NULL = 从没取消过。
+  final int? clearedAt;
+  const MediaNsfwFlagRow({
+    required this.mediaKind,
+    required this.entryKey,
+    this.nsfwAt,
+    this.clearedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['media_kind'] = Variable<String>(mediaKind);
+    map['entry_key'] = Variable<String>(entryKey);
+    if (!nullToAbsent || nsfwAt != null) {
+      map['nsfw_at'] = Variable<int>(nsfwAt);
+    }
+    if (!nullToAbsent || clearedAt != null) {
+      map['cleared_at'] = Variable<int>(clearedAt);
+    }
+    return map;
+  }
+
+  MediaNsfwFlagsCompanion toCompanion(bool nullToAbsent) {
+    return MediaNsfwFlagsCompanion(
+      mediaKind: Value(mediaKind),
+      entryKey: Value(entryKey),
+      nsfwAt: nsfwAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(nsfwAt),
+      clearedAt: clearedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(clearedAt),
+    );
+  }
+
+  factory MediaNsfwFlagRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return MediaNsfwFlagRow(
+      mediaKind: serializer.fromJson<String>(json['mediaKind']),
+      entryKey: serializer.fromJson<String>(json['entryKey']),
+      nsfwAt: serializer.fromJson<int?>(json['nsfwAt']),
+      clearedAt: serializer.fromJson<int?>(json['clearedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'mediaKind': serializer.toJson<String>(mediaKind),
+      'entryKey': serializer.toJson<String>(entryKey),
+      'nsfwAt': serializer.toJson<int?>(nsfwAt),
+      'clearedAt': serializer.toJson<int?>(clearedAt),
+    };
+  }
+
+  MediaNsfwFlagRow copyWith({
+    String? mediaKind,
+    String? entryKey,
+    Value<int?> nsfwAt = const Value.absent(),
+    Value<int?> clearedAt = const Value.absent(),
+  }) => MediaNsfwFlagRow(
+    mediaKind: mediaKind ?? this.mediaKind,
+    entryKey: entryKey ?? this.entryKey,
+    nsfwAt: nsfwAt.present ? nsfwAt.value : this.nsfwAt,
+    clearedAt: clearedAt.present ? clearedAt.value : this.clearedAt,
+  );
+  MediaNsfwFlagRow copyWithCompanion(MediaNsfwFlagsCompanion data) {
+    return MediaNsfwFlagRow(
+      mediaKind: data.mediaKind.present ? data.mediaKind.value : this.mediaKind,
+      entryKey: data.entryKey.present ? data.entryKey.value : this.entryKey,
+      nsfwAt: data.nsfwAt.present ? data.nsfwAt.value : this.nsfwAt,
+      clearedAt: data.clearedAt.present ? data.clearedAt.value : this.clearedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MediaNsfwFlagRow(')
+          ..write('mediaKind: $mediaKind, ')
+          ..write('entryKey: $entryKey, ')
+          ..write('nsfwAt: $nsfwAt, ')
+          ..write('clearedAt: $clearedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(mediaKind, entryKey, nsfwAt, clearedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MediaNsfwFlagRow &&
+          other.mediaKind == this.mediaKind &&
+          other.entryKey == this.entryKey &&
+          other.nsfwAt == this.nsfwAt &&
+          other.clearedAt == this.clearedAt);
+}
+
+class MediaNsfwFlagsCompanion extends UpdateCompanion<MediaNsfwFlagRow> {
+  final Value<String> mediaKind;
+  final Value<String> entryKey;
+  final Value<int?> nsfwAt;
+  final Value<int?> clearedAt;
+  final Value<int> rowid;
+  const MediaNsfwFlagsCompanion({
+    this.mediaKind = const Value.absent(),
+    this.entryKey = const Value.absent(),
+    this.nsfwAt = const Value.absent(),
+    this.clearedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  MediaNsfwFlagsCompanion.insert({
+    required String mediaKind,
+    required String entryKey,
+    this.nsfwAt = const Value.absent(),
+    this.clearedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : mediaKind = Value(mediaKind),
+       entryKey = Value(entryKey);
+  static Insertable<MediaNsfwFlagRow> custom({
+    Expression<String>? mediaKind,
+    Expression<String>? entryKey,
+    Expression<int>? nsfwAt,
+    Expression<int>? clearedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (mediaKind != null) 'media_kind': mediaKind,
+      if (entryKey != null) 'entry_key': entryKey,
+      if (nsfwAt != null) 'nsfw_at': nsfwAt,
+      if (clearedAt != null) 'cleared_at': clearedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  MediaNsfwFlagsCompanion copyWith({
+    Value<String>? mediaKind,
+    Value<String>? entryKey,
+    Value<int?>? nsfwAt,
+    Value<int?>? clearedAt,
+    Value<int>? rowid,
+  }) {
+    return MediaNsfwFlagsCompanion(
+      mediaKind: mediaKind ?? this.mediaKind,
+      entryKey: entryKey ?? this.entryKey,
+      nsfwAt: nsfwAt ?? this.nsfwAt,
+      clearedAt: clearedAt ?? this.clearedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (mediaKind.present) {
+      map['media_kind'] = Variable<String>(mediaKind.value);
+    }
+    if (entryKey.present) {
+      map['entry_key'] = Variable<String>(entryKey.value);
+    }
+    if (nsfwAt.present) {
+      map['nsfw_at'] = Variable<int>(nsfwAt.value);
+    }
+    if (clearedAt.present) {
+      map['cleared_at'] = Variable<int>(clearedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MediaNsfwFlagsCompanion(')
+          ..write('mediaKind: $mediaKind, ')
+          ..write('entryKey: $entryKey, ')
+          ..write('nsfwAt: $nsfwAt, ')
+          ..write('clearedAt: $clearedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class $LibraryOrganizeRunsTable extends LibraryOrganizeRuns
     with TableInfo<$LibraryOrganizeRunsTable, LibraryOrganizeRunRow> {
   @override
@@ -81453,6 +81778,7 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
       $VideoSubtitleTextOverridesTable(this);
   late final $MediaPrivacyFlagsTable mediaPrivacyFlags =
       $MediaPrivacyFlagsTable(this);
+  late final $MediaNsfwFlagsTable mediaNsfwFlags = $MediaNsfwFlagsTable(this);
   late final $LibraryOrganizeRunsTable libraryOrganizeRuns =
       $LibraryOrganizeRunsTable(this);
   late final $LibraryOrganizeChangesTable libraryOrganizeChanges =
@@ -81614,6 +81940,7 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
     videoSubtitleGlossaries,
     videoSubtitleTextOverrides,
     mediaPrivacyFlags,
+    mediaNsfwFlags,
     libraryOrganizeRuns,
     libraryOrganizeChanges,
     webBrowserHistory,
@@ -125414,6 +125741,193 @@ typedef $$MediaPrivacyFlagsTableProcessedTableManager =
       MediaPrivacyFlagRow,
       PrefetchHooks Function()
     >;
+typedef $$MediaNsfwFlagsTableCreateCompanionBuilder =
+    MediaNsfwFlagsCompanion Function({
+      required String mediaKind,
+      required String entryKey,
+      Value<int?> nsfwAt,
+      Value<int?> clearedAt,
+      Value<int> rowid,
+    });
+typedef $$MediaNsfwFlagsTableUpdateCompanionBuilder =
+    MediaNsfwFlagsCompanion Function({
+      Value<String> mediaKind,
+      Value<String> entryKey,
+      Value<int?> nsfwAt,
+      Value<int?> clearedAt,
+      Value<int> rowid,
+    });
+
+class $$MediaNsfwFlagsTableFilterComposer
+    extends Composer<_$FushiDatabase, $MediaNsfwFlagsTable> {
+  $$MediaNsfwFlagsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get mediaKind => $composableBuilder(
+    column: $table.mediaKind,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get entryKey => $composableBuilder(
+    column: $table.entryKey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get nsfwAt => $composableBuilder(
+    column: $table.nsfwAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get clearedAt => $composableBuilder(
+    column: $table.clearedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$MediaNsfwFlagsTableOrderingComposer
+    extends Composer<_$FushiDatabase, $MediaNsfwFlagsTable> {
+  $$MediaNsfwFlagsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get mediaKind => $composableBuilder(
+    column: $table.mediaKind,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get entryKey => $composableBuilder(
+    column: $table.entryKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get nsfwAt => $composableBuilder(
+    column: $table.nsfwAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get clearedAt => $composableBuilder(
+    column: $table.clearedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$MediaNsfwFlagsTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $MediaNsfwFlagsTable> {
+  $$MediaNsfwFlagsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get mediaKind =>
+      $composableBuilder(column: $table.mediaKind, builder: (column) => column);
+
+  GeneratedColumn<String> get entryKey =>
+      $composableBuilder(column: $table.entryKey, builder: (column) => column);
+
+  GeneratedColumn<int> get nsfwAt =>
+      $composableBuilder(column: $table.nsfwAt, builder: (column) => column);
+
+  GeneratedColumn<int> get clearedAt =>
+      $composableBuilder(column: $table.clearedAt, builder: (column) => column);
+}
+
+class $$MediaNsfwFlagsTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $MediaNsfwFlagsTable,
+          MediaNsfwFlagRow,
+          $$MediaNsfwFlagsTableFilterComposer,
+          $$MediaNsfwFlagsTableOrderingComposer,
+          $$MediaNsfwFlagsTableAnnotationComposer,
+          $$MediaNsfwFlagsTableCreateCompanionBuilder,
+          $$MediaNsfwFlagsTableUpdateCompanionBuilder,
+          (
+            MediaNsfwFlagRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $MediaNsfwFlagsTable,
+              MediaNsfwFlagRow
+            >,
+          ),
+          MediaNsfwFlagRow,
+          PrefetchHooks Function()
+        > {
+  $$MediaNsfwFlagsTableTableManager(
+    _$FushiDatabase db,
+    $MediaNsfwFlagsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$MediaNsfwFlagsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$MediaNsfwFlagsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$MediaNsfwFlagsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> mediaKind = const Value.absent(),
+                Value<String> entryKey = const Value.absent(),
+                Value<int?> nsfwAt = const Value.absent(),
+                Value<int?> clearedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => MediaNsfwFlagsCompanion(
+                mediaKind: mediaKind,
+                entryKey: entryKey,
+                nsfwAt: nsfwAt,
+                clearedAt: clearedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String mediaKind,
+                required String entryKey,
+                Value<int?> nsfwAt = const Value.absent(),
+                Value<int?> clearedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => MediaNsfwFlagsCompanion.insert(
+                mediaKind: mediaKind,
+                entryKey: entryKey,
+                nsfwAt: nsfwAt,
+                clearedAt: clearedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$MediaNsfwFlagsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $MediaNsfwFlagsTable,
+      MediaNsfwFlagRow,
+      $$MediaNsfwFlagsTableFilterComposer,
+      $$MediaNsfwFlagsTableOrderingComposer,
+      $$MediaNsfwFlagsTableAnnotationComposer,
+      $$MediaNsfwFlagsTableCreateCompanionBuilder,
+      $$MediaNsfwFlagsTableUpdateCompanionBuilder,
+      (
+        MediaNsfwFlagRow,
+        BaseReferences<_$FushiDatabase, $MediaNsfwFlagsTable, MediaNsfwFlagRow>,
+      ),
+      MediaNsfwFlagRow,
+      PrefetchHooks Function()
+    >;
 typedef $$LibraryOrganizeRunsTableCreateCompanionBuilder =
     LibraryOrganizeRunsCompanion Function({
       Value<int> id,
@@ -135705,6 +136219,8 @@ class $FushiDatabaseManager {
       );
   $$MediaPrivacyFlagsTableTableManager get mediaPrivacyFlags =>
       $$MediaPrivacyFlagsTableTableManager(_db, _db.mediaPrivacyFlags);
+  $$MediaNsfwFlagsTableTableManager get mediaNsfwFlags =>
+      $$MediaNsfwFlagsTableTableManager(_db, _db.mediaNsfwFlags);
   $$LibraryOrganizeRunsTableTableManager get libraryOrganizeRuns =>
       $$LibraryOrganizeRunsTableTableManager(_db, _db.libraryOrganizeRuns);
   $$LibraryOrganizeChangesTableTableManager get libraryOrganizeChanges =>

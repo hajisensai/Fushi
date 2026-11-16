@@ -29,6 +29,7 @@ import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/profile/work_profile_scope.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/media/manga/manga_module.dart';
+import 'package:fushi/src/media/nsfw/nsfw_card_image.dart';
 import 'package:fushi/src/models/fushi_reader_palette.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
@@ -5660,6 +5661,14 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         }
       }
 
+      // NSFW 漫画 +「制卡图片也模糊」：页图 / 裁切图换成模糊副本（失败则不带图）。
+      coverPath = await resolveNsfwCardImagePath(
+        db: appModel.database,
+        path: coverPath,
+        blurCardImages: appModel.prefsRepo.blurNsfwCardImages,
+        kind: TagHostKind.epub,
+        entryKey: widget.bookKey,
+      );
       final AnkiMiningContext miningContext = AnkiMiningContext(
         sentence: sentence,
         documentTitle: title,
