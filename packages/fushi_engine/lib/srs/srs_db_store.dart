@@ -474,6 +474,8 @@ class SrsDbStore implements SrsSync2Host {
       await s.ensureBuiltins();
     }
     // 只读打开（查词弹窗等辅助进程）：注册类写入都是主进程的事，这里只读。
+    // 根上 ID 的规范形最后读（内置实体建好之后；辅助进程上由主进程建过）。
+    await s._loadRootIds();
     return s;
   }
 
@@ -506,6 +508,7 @@ class SrsDbStore implements SrsSync2Host {
     await _sync2Open();
     if (before.$1 != null && before != (_sync2Collection, _sync2Dir)) {
       onBindingChanged();
+      await _loadRootIds();
     }
   }
 
@@ -538,14 +541,12 @@ class SrsDbStore implements SrsSync2Host {
   final StreamController<void> _bindingChanges =
       StreamController<void>.broadcast();
 
-  /// 绑定变了：本对象按库内容记的缓存（根上 ID、派生层缓存日志、笔记类型、牌组树、RWKV 候选）全部作废、下次整份
-  /// 重读，再通知 [bindingChanges]。由 [_sync2Raw]（回包带 `bindingChanged`）与 [refreshIdentity] 调。
+  /// 绑定变了：本对象按库内容记的缓存（根上 ID 的请求形、派生层缓存日志、笔记类型、牌组树、RWKV 候选）全部作废、
+  /// 下次整份重读，再通知 [bindingChanges]。根上 ID 的规范形由调用方随后重读（[_loadRootIds]：要发命令，这里是同步的）。
+  /// 由 [_sync2Raw]（回包带 `bindingChanged`）与 [refreshIdentity] 调。
   @visibleForTesting
   void onBindingChanged() {
     _kernelIds = null;
-    _defaultDeckId = null;
-    _lapisNoteTypeId = null;
-    _fushiCardNoteTypeId = null;
     _invalidateDerivedCaches();
     _noteTypeCache = null;
     _rwkvCandidateCache = null;
@@ -2287,7 +2288,11 @@ class SrsDbStore implements SrsSync2Host {
     // 可能改绑定的命令（`identity` 第一次建、并入 / 补盐 / 认领）在提交成功之后把 `bindingChanged` 放进回包
     // （native/fushi_fsrs/src/store/gen4/dispatch.rs `write_binding`）：每条回包都看，内核没有另一条事件流。
     final Object? json = r.json;
-    if (json is Map && json['bindingChanged'] != null) onBindingChanged();
+    if (json is Map && json['bindingChanged'] != null) {
+      onBindingChanged();
+      // 打开途中（还没读过根上 ID）由 [open] 最后统一读；之后的绑定变化在这条命令返回之前重读完。
+      if (_rootIds != null) await _loadRootIds();
+    }
     return r;
   }
 
@@ -2426,35 +2431,72 @@ class SrsDbStore implements SrsSync2Host {
   // ------------------------------------------------------------------ 内置
 
   /// 内置默认牌组与内置笔记类型（Lapis、Fushi 卡片；确定性 ID，每台设备都生成同一份；没改过的内置定义不写修改记录）。
+  ///
+  /// 「在不在」按规范 ID 比：内置实体的 ID 由 Dart 按 profile uid 加盐算（[srsBuiltinEntities]），库里存的、读命令回的
+  /// 是集合里的规范 ID（盐不同，迁移 / 全新集合都是这样），所以先经 `canonical_ids` 归一，再和 `entities` 读回的比——
+  /// 直接拿加盐 ID 比，每次开库都会把三个内置实体当成缺的再写一遍。
   Future<void> ensureBuiltins() => runExclusive(() async {
     final List<SrsEntityRecord> builtins = srsBuiltinEntities(profileUid);
+    final List<String> canonical = await _canonicalIds(<String>[
+      for (final SrsEntityRecord r in builtins) r.id,
+    ]);
     final Set<String> present = (await _entityIdsWhere(
       ids: <String>[for (final SrsEntityRecord r in builtins) r.id],
     )).toSet();
     final List<SrsEventDraft> missing = <SrsEventDraft>[
-      for (final SrsEntityRecord r in builtins)
-        if (!present.contains(r.id)) SrsReadyDraft(SrsEntityEvent(r)),
+      for (int i = 0; i < builtins.length; i++)
+        if (!present.contains(canonical[i]))
+          SrsReadyDraft(SrsEntityEvent(builtins[i])),
     ];
     if (missing.isNotEmpty) await _emit(missing);
   });
 
-  /// 本 profile 的根上 ID（向内核要，见 [SrsKernelIds]）。绑定变了（[onBindingChanged]）作废重取。
+  /// [ids] 逐个归一成这个 profile 集合里的规范 ID（内核 `canonical_ids`，顺序与条数照请求）。
+  Future<List<String>> _canonicalIds(List<String> ids) async =>
+      ((await _sync2(<String, Object?>{
+                'op': 'canonical_ids',
+                'ids': ids,
+              }))['ids']!
+              as List<Object?>)
+          .cast<String>();
+
+  /// 读根上的内置实体 ID（默认牌组、两个内置笔记类型）的规范 ID：开库最后一步（内置实体建好之后）与绑定变化之后
+  /// （[_sync2Raw]）各读一次。Dart 按 uid 加盐算的 ID 与集合里的规范 ID 不同（盐不同）；调用方拿这几个 ID 和读命令
+  /// 回的 ID 比（牌组树里找默认牌组、笔记类型列表里找 Lapis……），所以必须是规范的那一份。
+  Future<void> _loadRootIds() async {
+    final SrsKernelIds ids = kernelIds;
+    final List<String> canonical = await _canonicalIds(<String>[
+      ids.defaultDeck,
+      ids.builtinNoteType(kSrsBuiltinLapisKey),
+      ids.builtinNoteType(kSrsBuiltinFushiCardKey),
+    ]);
+    _rootIds = (
+      defaultDeck: canonical[0],
+      lapis: canonical[1],
+      fushiCard: canonical[2],
+    );
+  }
+
+  /// 根上 ID 的规范形（[_loadRootIds]）；打开完成之后恒非空。
+  ({String defaultDeck, String lapis, String fushiCard})? _rootIds;
+
+  ({String defaultDeck, String lapis, String fushiCard}) get _roots =>
+      _rootIds ??
+      (throw StateError('SrsDbStore: root ids are read when the store opens'));
+
+  /// 本 profile 的根上 ID 的请求形（向内核要，见 [SrsKernelIds]；按 uid 加盐，内核收到时归一）。绑定变了
+  /// （[onBindingChanged]）作废重取。
   SrsKernelIds get kernelIds => _kernelIds ??= SrsKernelIds(profileUid);
   SrsKernelIds? _kernelIds;
 
-  /// 内置默认牌组 ID。同 [kernelIds]，绑定变了重取。
-  String get defaultDeckId => _defaultDeckId ??= kernelIds.defaultDeck;
-  String? _defaultDeckId;
+  /// 内置默认牌组的规范 ID（[_loadRootIds]），与读命令回的 ID 同一种写法。绑定变了重读。
+  String get defaultDeckId => _roots.defaultDeck;
 
-  /// 内置 Lapis 笔记类型 ID。同 [defaultDeckId]。
-  String get lapisNoteTypeId =>
-      _lapisNoteTypeId ??= kernelIds.builtinNoteType(kSrsBuiltinLapisKey);
-  String? _lapisNoteTypeId;
+  /// 内置 Lapis 笔记类型的规范 ID。同 [defaultDeckId]。
+  String get lapisNoteTypeId => _roots.lapis;
 
-  /// 内置 Fushi 卡片笔记类型 ID。同 [defaultDeckId]。
-  String get fushiCardNoteTypeId => _fushiCardNoteTypeId ??= kernelIds
-      .builtinNoteType(kSrsBuiltinFushiCardKey);
-  String? _fushiCardNoteTypeId;
+  /// 内置 Fushi 卡片笔记类型的规范 ID。同 [defaultDeckId]。
+  String get fushiCardNoteTypeId => _roots.fushiCard;
 
   // ------------------------------------------------------------------ 物化
 
