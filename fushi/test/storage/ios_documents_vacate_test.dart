@@ -189,6 +189,105 @@ void main() {
     });
   });
 
+  group('vacateIosDocumentsWithLedger（只全扫一次，之后只重试失败项）', () {
+    late File ledger;
+
+    setUp(() {
+      ledger = AppPaths.iosDocumentsVacateLedgerUnder(
+        Directory(p.join(sandbox.path, 'C', 'Library')),
+      );
+    });
+
+    Future<List<String>> run() => AppPaths.vacateIosDocumentsWithLedger(
+      platformDocuments: documents,
+      target: target,
+      ledger: ledger,
+      legacyFlat: () async => true,
+      containerName: 'Fushi',
+    );
+
+    test('台账在 Library/Fushi 下：不在书库根里，也不在「文件」App 可见的 Documents 里', () {
+      expect(p.isWithin(documents.path, ledger.path), isFalse);
+      expect(p.isWithin(target.path, ledger.path), isFalse);
+      expect(p.dirname(ledger.path), p.dirname(target.path));
+    });
+
+    test('第一次全量搬并写空台账；之后用户在「文件」App 里建的同名文件夹不再被收走', () async {
+      touch(p.join(documents.path, 'videos', 'old.mkv'));
+
+      expect(await run(), isEmpty);
+      expect(ledger.existsSync(), isTrue);
+      expect(ledger.readAsStringSync().trim(), isEmpty);
+      expect(
+        File(p.join(target.path, 'videos', 'old.mkv')).existsSync(),
+        isTrue,
+      );
+
+      touch(p.join(documents.path, 'videos', 'mine.mkv'));
+      touch(p.join(documents.path, 'browser', 'mine.txt'));
+      expect(await run(), isEmpty);
+      expect(
+        File(p.join(documents.path, 'videos', 'mine.mkv')).existsSync(),
+        isTrue,
+        reason: '搬完之后 Documents 是用户的收件箱，同名文件夹是用户自己的',
+      );
+      expect(
+        File(p.join(documents.path, 'browser', 'mine.txt')).existsSync(),
+        isTrue,
+      );
+    });
+
+    test('台账里记着上次失败的项：只重试它，白名单里的其它同名文件夹不碰', () async {
+      ledger
+        ..createSync(recursive: true)
+        ..writeAsStringSync('fushi_books\n');
+      touch(p.join(documents.path, 'fushi_books', 'b1', 'x.html'));
+      touch(p.join(documents.path, 'videos', 'mine.mkv'));
+
+      expect(await run(), isEmpty);
+      expect(
+        File(p.join(target.path, 'fushi_books', 'b1', 'x.html')).existsSync(),
+        isTrue,
+      );
+      expect(
+        File(p.join(documents.path, 'videos', 'mine.mkv')).existsSync(),
+        isTrue,
+      );
+      expect(ledger.readAsStringSync().trim(), isEmpty);
+    });
+
+    test('nested 布局的失败项名是 <容器>/data，重试时按它找回', () async {
+      final List<String> failed = <String>[];
+      touch(p.join(documents.path, 'Fushi', 'data', 'fushi_books', 'b', 'x'));
+      await AppPaths.vacateLegacyIosDocuments(
+        platformDocuments: documents,
+        target: target,
+        legacyFlat: false,
+        containerName: 'Fushi',
+        onlyEntries: <String>{'videos'},
+        failedEntries: failed,
+      );
+      expect(
+        Directory(p.join(documents.path, 'Fushi', 'data')).existsSync(),
+        isTrue,
+        reason: 'onlyEntries 不含 Fushi/data 时 nested 书库不动',
+      );
+      await AppPaths.vacateLegacyIosDocuments(
+        platformDocuments: documents,
+        target: target,
+        legacyFlat: false,
+        containerName: 'Fushi',
+        onlyEntries: <String>{'Fushi/data'},
+        failedEntries: failed,
+      );
+      expect(failed, isEmpty);
+      expect(
+        File(p.join(target.path, 'fushi_books', 'b', 'x')).existsSync(),
+        isTrue,
+      );
+    });
+  });
+
   test('旧 Documents/metrickit 合并进诊断目录', () async {
     final Directory logs = Directory(
       p.join(sandbox.path, 'C', 'Support', 'logs'),

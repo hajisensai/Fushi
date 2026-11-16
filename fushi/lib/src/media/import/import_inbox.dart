@@ -4,24 +4,29 @@
 ///
 /// iOS 只能整份共享 Documents（`UIFileSharingEnabled` / `LSSupportsOpeningDocumentsInPlace`），
 /// 所以书库先搬出了 Documents（`AppPaths.iosDocumentsRoot`），Documents 只剩收件箱一个
-/// 用途。用户在「文件」App 里把文件拖进 `我的 iPhone › Fushi › Video`（Books / Manga 同理），
-/// 回到 Fushi 点「从『文件』App 导入」：
+/// 用途。用户在「文件」App 里把文件拖进 `Fushi › Video`（Books / Manga 同理），回到 Fushi
+/// 点「从『文件』App 导入」，走「导入文件夹（仅此一次）」同一条扫描-导入管线
+/// （`importLocalFolderOnceAt`）。两类域的取法不同（[ImportInbox.movesIntoDataRoot]）：
 ///
-///  1. 收件箱里该分类子目录下本域认的文件 / 子目录被**移**（同卷 rename，零额外空间）进
-///     数据根内的 `inbox_imports/<域>/<批次>/`；
-///  2. 对这个批次目录走「导入文件夹（仅此一次）」同一条扫描-导入管线
-///     （`importLocalFolderOnceAt`，与音频 CD 抓轨导入同一模式）。
+///  - **视频**：库条目**原地引用**文件，所以收件箱里本域认的文件 / 子目录先被**移**（同卷
+///    rename，零额外空间）进数据根内的 `inbox_imports/video/<批次>/`，再对批次目录扫描。
+///    移进数据根而不是原地引用收件箱，有两个结构性原因：
+///     - **容器漂移**：iOS 每次更新换容器 UUID，库里的绝对路径靠 `SandboxRelocation` 按
+///       数据根白名单重基；Documents 不在数据根里，原地引用的视频每次更新都会悬空（正是本
+///       反馈前半段「过半天就要重新导入」的同类问题）。`inbox_imports` 在白名单里。
+///     - **库条目不被「文件」App 删改**：库里的文件只在 app 私有区，用户整理收件箱不会让
+///       库条目指向丢失的文件。删视频库条目时一并回收（`pickerImportCopyDirectories`）。
 ///
-/// 移进数据根而不是原地引用，有两个结构性原因：
-///  - **容器漂移**：iOS 每次更新换容器 UUID，库里的绝对路径靠 `SandboxRelocation` 按数据根
-///    白名单重基；Documents 不在数据根里，原地引用的视频每次更新都会悬空（正是本反馈前半段
-///    「过半天就要重新导入」的同类问题）。`inbox_imports` 在白名单里，自动跟着重基。
-///  - **库条目不被「文件」App 删改**：导入后收件箱清空，库里的文件只在 app 私有区，用户在
-///    「文件」App 里整理收件箱不会让库条目指向丢失的文件——这是当初不开文件共享的理由，
-///    收件箱方案把它保住了。
+///    批次扫描成功后写 [ImportInbox.importedMarkerName] 标记；没有标记的批次（扫描失败、
+///    扫描途中 app 被杀）在下次点导入时先续导（[ImportInbox.unfinishedBatches]），文件不会
+///    卡在用户看不见的地方。
+///  - **书 / 漫画**：导入器把内容**复制 / 解压**进 app 自己的书库，库条目不引用原件。直接
+///    对收件箱子目录原地扫描，原件留在「文件」App 里由用户自己处置——移进数据根只会让原件
+///    在用户看不见、存储页删不掉的地方与书库各占一份。重复点导入时已在库的书 / 卷按导入
+///    器的重复判据跳过。
 ///
 /// 分类子目录由页面决定（与 `addLocalFolderAsSource` 「媒体种类由当前页面决定，不从文件
-/// 内容猜」同一纪律）：书页导 `Books`、视频页导 `Video`、漫画页导 `Manga`。本域不认的
+/// 内容猜」同一纪律）：书页导 `Books`、视频页导 `Video`、漫画页导 `Manga`。视频页不认的
 /// 文件原样留在收件箱，用户看得见没被收走。
 library;
 
@@ -82,6 +87,57 @@ class ImportInbox {
     'video': 'Video',
     'manga': 'Manga',
   };
+
+  /// [mediaKind] 是否要先把文件移进数据根（`inbox_imports/<域>/<批次>/`）再扫描。
+  ///
+  /// 只有视频：库条目原地引用文件。书 / 漫画的导入器把内容复制进书库，原件不再被引用，
+  /// 移进数据根只会制造一份用户看不见、也删不掉的重复（见文件头）。
+  static bool movesIntoDataRoot(String mediaKind) => mediaKind == 'video';
+
+  /// 收件箱里 [mediaKind] 的分类子目录（不保证存在）；不支持的种类返回 null。
+  static Directory? kindFolder(Directory inbox, String mediaKind) {
+    final String? folder = folderNameFor(mediaKind);
+    return folder == null ? null : Directory(p.join(inbox.path, folder));
+  }
+
+  /// 批次扫描完成标记（批次目录下的隐藏文件）。没有它的批次是「收走了但还没导入成功」。
+  static const String importedMarkerName = '.fushi_inbox_imported';
+
+  /// 标记 [batch] 已导入成功：之后不再续导。
+  static Future<void> markBatchImported(Directory batch) async {
+    if (!await batch.exists()) return;
+    await File(p.join(batch.path, importedMarkerName)).writeAsString('');
+  }
+
+  /// `<stagingRoot>/<域>/` 下还没导入成功的批次（无 [importedMarkerName]），按名字排序。
+  ///
+  /// 空批次目录（只剩隐藏项）顺手删掉，不当成待续导。
+  static Future<List<Directory>> unfinishedBatches({
+    required Directory stagingRoot,
+    required String mediaKind,
+  }) async {
+    final Directory kindStaging = Directory(
+      p.join(stagingRoot.path, mediaKind),
+    );
+    if (!await kindStaging.exists()) return const <Directory>[];
+    final List<Directory> out = <Directory>[];
+    await for (final FileSystemEntity e in kindStaging.list(
+      followLinks: false,
+    )) {
+      if (e is! Directory) continue;
+      if (await File(p.join(e.path, importedMarkerName)).exists()) continue;
+      final bool hasContent = await e
+          .list(followLinks: false)
+          .any((FileSystemEntity c) => !p.basename(c.path).startsWith('.'));
+      if (!hasContent) {
+        await e.delete(recursive: true);
+        continue;
+      }
+      out.add(e);
+    }
+    out.sort((Directory a, Directory b) => a.path.compareTo(b.path));
+    return out;
+  }
 
   /// [mediaKind] 的收件箱子目录名；不支持的种类返回 null。
   static String? folderNameFor(String mediaKind) => kindFolderNames[mediaKind];

@@ -470,8 +470,9 @@ const Map<StorageCategoryId, List<String>> kStorageCategoryDocumentsChildren =
         // 在线音源插件曲目下载（`music_downloads/<插件>/<专辑>/`）：与音频 CD 抓轨同属
         // 「下载进来的媒体文件」，归同一类目，不为音乐另立类目。
         'music_downloads',
-        // iOS「文件」App 收件箱收进来的批次（拍板台 nLXhu0d7gV，`inbox_imports/<域>/<批次>/`）：
-        // 与音频 CD 抓轨同为「仅此一次」导入后原地引用的媒体文件，归同一类目。
+        // iOS「文件」App 收件箱收进来的视频批次（拍板台 nLXhu0d7gV，`inbox_imports/video/<批次>/`）：
+        // 与音频 CD 抓轨同为「仅此一次」导入后原地引用的媒体文件，归同一类目。书 / 漫画
+        // 原地扫收件箱、不进这里（导入器已复制进书库，见 `import_inbox.dart`）。
         'inbox_imports',
       ],
       StorageCategoryId.covers: <String>[
@@ -602,12 +603,15 @@ class StorageUsageService {
     Future<Directory> Function()? supportRoot,
     Future<List<Directory>> Function()? cacheRoots,
     Future<bool> Function()? documentsRootIsFushiOwned,
+    Future<List<Directory>> Function()? sharedDocumentsRoots,
     StorageIsolateRunner? isolateRunner,
   }) : _documentsRoot = documentsRoot ?? AppPaths.documentsRootDirectory,
        _supportRoot = supportRoot ?? AppPaths.supportRootDirectory,
        _cacheRoots = cacheRoots ?? _defaultCacheRoots,
        _documentsRootIsFushiOwned =
            documentsRootIsFushiOwned ?? AppPaths.documentsRootIsFushiOwned,
+       _sharedDocumentsRoots =
+           sharedDocumentsRoots ?? _defaultSharedDocumentsRoots,
        _run = isolateRunner ?? Isolate.run;
 
   final Future<Directory> Function() _documentsRoot;
@@ -618,6 +622,16 @@ class StorageUsageService {
 
   /// BUG-1905：见 [AppPaths.documentsRootIsFushiOwned]——决定「其他未归类」敢不敢算。
   final Future<bool> Function() _documentsRootIsFushiOwned;
+
+  /// documents 根**之外**、但整个归 app 的根（拍板台 nLXhu0d7gV）：iOS 书库搬出平台
+  /// Documents 后，Documents 本身（导入收件箱、剪辑导出 `video_clips`、Hibiki 导出）
+  /// 不再落在任何类目里。它的直接子项全部进「其他未归类」（BUG-1905 的兜底口径）。
+  final Future<List<Directory>> Function() _sharedDocumentsRoots;
+
+  static Future<List<Directory>> _defaultSharedDocumentsRoots() async =>
+      Platform.isIOS
+      ? <Directory>[await AppPaths.importInboxDirectory()]
+      : const <Directory>[];
 
   final StorageIsolateRunner _run;
 
@@ -1111,17 +1125,36 @@ class StorageUsageService {
   /// 桌面老扁平安装下 documents 根就是用户自己的文档文件夹，那里的东西不是 app 的
   /// 占用，本类目直接返回 0（见 [AppPaths.documentsRootIsFushiOwned]）。
   Future<StorageCategoryUsage> _scanOther(final Directory docs) async {
-    if (!await _documentsRootIsFushiOwned()) {
+    final bool docsOwned = await _documentsRootIsFushiOwned();
+    // 与 documents 根重合 / 嵌套的共享根不另算（否则同一份字节记两遍）。
+    final List<String> shared = <String>[
+      for (final Directory d in await _sharedDocumentsRoots())
+        if (!p.equals(d.path, docs.path) &&
+            !p.isWithin(d.path, docs.path) &&
+            !p.isWithin(docs.path, d.path))
+          d.path,
+    ];
+    if (!docsOwned && shared.isEmpty) {
       return const StorageCategoryUsage(id: StorageCategoryId.other, bytes: 0);
     }
-    final List<Map<String, Object>> raw = await _run(
-      () => _childEntriesSync(<String>[docs.path]),
+    final String docsPath = docs.path;
+    final ({List<Map<String, Object>> docs, List<Map<String, Object>> shared})
+    raw = await _run(
+      () => (
+        docs: docsOwned
+            ? _childEntriesSync(<String>[docsPath])
+            : const <Map<String, Object>>[],
+        shared: _childEntriesSync(shared),
+      ),
     );
     const Set<String> known = AppPaths.fushiOwnedDocumentsEntries;
     final List<StorageEntryUsage> entries =
         <StorageEntryUsage>[
-          for (final StorageEntryUsage e in _childEntries(raw))
+          for (final StorageEntryUsage e in _childEntries(raw.docs))
             if (!known.contains(p.basename(e.paths.single))) e,
+          // 共享根不是 documents 根，白名单对它不成立：里面的东西（收件箱里的原件、
+          // 剪辑导出、搬迁失败留下的旧书库项）全算。
+          ..._childEntries(raw.shared),
         ]..sort(
           (StorageEntryUsage a, StorageEntryUsage b) =>
               b.bytes.compareTo(a.bytes),

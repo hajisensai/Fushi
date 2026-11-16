@@ -200,6 +200,7 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
 
   /// 页面页头与所有行级 mutation 共用的忙状态。
   bool get isBusy =>
+      _inboxImporting ||
       _scanning.isNotEmpty ||
       _scraping.isNotEmpty ||
       (widget.mediaKind == 'video' &&
@@ -1183,7 +1184,9 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
 
   /// 「仅此一次」导入 [path] 并报结果：[importLocalFolderOnce] 与 iOS 收件箱导入
   /// （[importFromInbox]）共用，两处的忙态、成功 / 失败提示与有声书摘要逐字一致。
-  Future<void> _runOneShotFolderImport({
+  ///
+  /// 返回扫描摘要；扫描抛出时异常照常上抛（不会返回 null 以外的「成功」）。
+  Future<SourceScanSummary?> _runOneShotFolderImport({
     required String path,
     required String? bookmark,
     required String groupingMode,
@@ -1235,15 +1238,44 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
       }
       onLibraryChanged?.call();
     }
+    return summary;
   }
 
-  /// iOS「文件」App 收件箱导入（拍板台 nLXhu0d7gV，见 `import_inbox.dart`）：把
-  /// `我的 iPhone › Fushi › <本域子目录>` 里本域认的文件移进数据根内的批次目录，再走与
-  /// 「导入文件夹（仅此一次）」同一条管线。收件箱是空的时告诉用户往哪放。
+  /// iOS 收件箱导入进行中（从列目录到最后一批扫完）。计入 [isBusy]：连点两次时第二次
+  /// 直接返回，不会两次列出同一批条目、互相抢 rename、起两次扫描。
+  bool _inboxImporting = false;
+
+  /// iOS「文件」App 收件箱导入（拍板台 nLXhu0d7gV，见 `import_inbox.dart`），走与「导入
+  /// 文件夹（仅此一次）」同一条管线。收件箱是空的（且没有待续导的批次）时告诉用户往哪放。
   Future<void> importFromInbox() async {
+    // 同步检查并置忙（中间没有 await），重入被挡在这里。
     if (isBusy) return;
     final String? folder = ImportInbox.folderNameFor(widget.mediaKind);
     if (folder == null) return;
+    setState(() => _inboxImporting = true);
+    try {
+      if (ImportInbox.movesIntoDataRoot(widget.mediaKind)) {
+        await _importInboxIntoDataRoot(folder);
+      } else {
+        await _importInboxInPlace(folder);
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _inboxImporting = false);
+      } else {
+        _inboxImporting = false;
+      }
+    }
+  }
+
+  void _showInboxEmpty(String folder) => FushiToast.show(
+    msg: t.media_import_inbox_empty(folder: folder),
+    severity: ToastSeverity.info,
+  );
+
+  /// 书 / 漫画：导入器把内容复制进书库，直接对收件箱子目录原地扫描，原件留给用户在
+  /// 「文件」App 里处置（见 [ImportInbox.movesIntoDataRoot]）。
+  Future<void> _importInboxInPlace(String folder) async {
     final Directory inbox = await AppPaths.importInboxDirectory();
     await ImportInbox.ensureKindFolders(inbox);
     final List<FileSystemEntity> pending = await ImportInbox.pendingEntries(
@@ -1252,36 +1284,74 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     );
     if (!mounted) return;
     if (pending.isEmpty) {
-      FushiToast.show(
-        msg: t.media_import_inbox_empty(folder: folder),
-        severity: ToastSeverity.info,
-      );
+      _showInboxEmpty(folder);
+      return;
+    }
+    final String? groupingMode = await _pickVideoGroupingMode();
+    if (!mounted || groupingMode == null) return;
+    await _runOneShotFolderImport(
+      path: ImportInbox.kindFolder(inbox, widget.mediaKind)!.path,
+      bookmark: null,
+      groupingMode: groupingMode,
+    );
+  }
+
+  /// 视频：库条目原地引用文件，先把文件移进数据根内的批次目录再扫。上次没导入成功的
+  /// 批次（扫描报错 / 抛出、扫描途中 app 被杀）先续导，文件不会卡在「文件」App 看不见、
+  /// 库里也没有的地方。批次一旦移走就扫到底，不因页面卸载半途返回。
+  Future<void> _importInboxIntoDataRoot(String folder) async {
+    final Directory inbox = await AppPaths.importInboxDirectory();
+    await ImportInbox.ensureKindFolders(inbox);
+    final Directory stagingRoot = await AppPaths.inboxImportsDirectory();
+    final List<Directory> batches = <Directory>[
+      ...await ImportInbox.unfinishedBatches(
+        stagingRoot: stagingRoot,
+        mediaKind: widget.mediaKind,
+      ),
+    ];
+    final List<FileSystemEntity> pending = await ImportInbox.pendingEntries(
+      inbox: inbox,
+      mediaKind: widget.mediaKind,
+    );
+    if (!mounted) return;
+    if (pending.isEmpty && batches.isEmpty) {
+      _showInboxEmpty(folder);
       return;
     }
     // 先问分组再移文件：用户在对话框里取消时收件箱原封不动。
     final String? groupingMode = await _pickVideoGroupingMode();
     if (!mounted || groupingMode == null) return;
-    final ImportInboxBatch? batch = await ImportInbox.takeBatch(
-      inbox: inbox,
-      stagingRoot: await AppPaths.inboxImportsDirectory(),
-      mediaKind: widget.mediaKind,
-    );
-    if (!mounted || batch == null) return;
-    if (batch.failures.isNotEmpty) {
-      for (final String failure in batch.failures) {
-        ErrorLogService.instance.log('ImportInbox.takeBatch', failure);
-      }
-      FushiToast.show(
-        msg: t.media_import_inbox_move_failed(n: batch.failures.length),
-        severity: ToastSeverity.warning,
+    if (pending.isNotEmpty) {
+      final ImportInboxBatch? batch = await ImportInbox.takeBatch(
+        inbox: inbox,
+        stagingRoot: stagingRoot,
+        mediaKind: widget.mediaKind,
       );
+      if (batch != null) {
+        if (batch.failures.isNotEmpty) {
+          for (final String failure in batch.failures) {
+            ErrorLogService.instance.log('ImportInbox.takeBatch', failure);
+          }
+          FushiToast.show(
+            msg: t.media_import_inbox_move_failed(n: batch.failures.length),
+            severity: ToastSeverity.warning,
+          );
+        }
+        if (batch.movedEntries.isNotEmpty) batches.add(batch.directory);
+      }
     }
-    if (batch.movedEntries.isEmpty) return;
-    await _runOneShotFolderImport(
-      path: batch.directory.path,
-      bookmark: null,
-      groupingMode: groupingMode,
-    );
+    for (final Directory batch in batches) {
+      final SourceScanSummary? summary = await _runOneShotFolderImport(
+        path: batch.path,
+        bookmark: null,
+        groupingMode: groupingMode,
+      );
+      // 有错（含逐文件失败）就不打标记：下次点导入时整批再扫一遍，已入库的视频按
+      // 路径复用，不会重复。
+      if (summary != null && summary.error == null) {
+        await ImportInbox.markBatchImported(batch);
+      }
+    }
   }
 
   /// 书籍来源扫描的转录端口（反馈 z398R0ndAw）：书配上了有声书音频却没有字幕时排

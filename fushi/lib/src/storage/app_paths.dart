@@ -354,12 +354,24 @@ class AppPaths {
   static Directory iosDocumentsRootUnder(Directory library) =>
       Directory(p.joinAll(<String>[library.path, ...iosDocumentsRootSegments]));
 
-  /// iOS 存量书库已从 Documents 搬走的锚点（SharedPreferences，DB 打开前可读）。
+  /// iOS 书库搬出 Documents 的台账文件名，放在 `<Library>/Fushi/`（书库根的父目录，不在
+  /// documents 根里、也不在「文件」App 可见的 Documents 里）。
   ///
-  /// 只搬一次：搬完之后 Documents 是用户的收件箱，用户在「文件」App 里新建一个叫
-  /// `videos` / `browser` 的文件夹是完全正常的事，绝不能再按白名单把它当书库收走。
-  static const String iosSharedDocumentsVacatedPrefKey =
-      'ios_shared_documents_vacated';
+  /// 只按白名单全扫一次：台账一旦存在，Documents 就是用户的收件箱，用户在「文件」App 里
+  /// 新建一个叫 `videos` / `browser` 的文件夹是完全正常的事，绝不能再按白名单把它当书库
+  /// 收走。台账内容是上次**没搬动**的条目（相对 Documents 的路径，一行一个），之后的启动
+  /// 只重试这几项；空台账 = 搬完了。用文件而不是 SharedPreferences：偏好拿不到时锚点永远
+  /// 写不进去，每次启动都会重新全扫一遍白名单。
+  static const String iosDocumentsVacateLedgerName = 'documents_vacated.txt';
+
+  /// [iosDocumentsVacateLedgerName] 在 [library] 下的位置（纯派生，测试注入）。
+  static File iosDocumentsVacateLedgerUnder(Directory library) => File(
+    p.join(
+      library.path,
+      iosDocumentsRootSegments.first,
+      iosDocumentsVacateLedgerName,
+    ),
+  );
 
   /// iOS 导入收件箱目录 = 平台 `Documents`（Info.plist 开了 `UIFileSharingEnabled` /
   /// `LSSupportsOpeningDocumentsInPlace`，「文件」App 的「我的 iPhone › Fushi」就是它）。
@@ -372,31 +384,70 @@ class AppPaths {
 
   /// 启动期把 iOS 存量书库搬出 Documents（只在 [resolve] 里调，见那里的顺序说明）。
   ///
-  /// 测试分支（[fushiTestDirectory]）与非 iOS 直接跳过。搬迁失败不写锚点、下次启动重试
-  /// ——已搬的条目本次就从新根读，没搬动的留在原处，库里的路径由 `SandboxRelocation`
+  /// 测试分支（[fushiTestDirectory]）与非 iOS 直接跳过。没搬动的条目记进台账
+  /// （[vacateIosDocumentsWithLedger]），下次启动只重试它们——已搬的条目本次就从新根读，
+  /// 没搬动的留在原处，库里的路径由 `SandboxRelocation`
   /// 统一重基到新根，重试搬完后两边自然对上（同一个白名单作用域）。失败条目记进
   /// [iosDocumentsVacateFailures]，由错误日志服务就绪后写入，不吞。
   static Future<void> _ensureIosSharedDocumentsVacated() async {
     if (!Platform.isIOS) return;
     if (fushiTestDirectory('app-documents') != null) return;
-    final SharedPreferences? prefs = await _prefsOrNull();
-    if (prefs?.getBool(iosSharedDocumentsVacatedPrefKey) ?? false) return;
-    final List<String> failures = await vacateLegacyIosDocuments(
+    final Directory library = await getLibraryDirectory();
+    final List<String> failures = await vacateIosDocumentsWithLedger(
       platformDocuments: await getApplicationDocumentsDirectory(),
-      target: await iosDocumentsRoot(),
-      legacyFlat: await _useLegacyFlatDocumentsRoot(),
+      target: iosDocumentsRootUnder(library),
+      ledger: iosDocumentsVacateLedgerUnder(library),
+      legacyFlat: () => _useLegacyFlatDocumentsRoot(),
       containerName: defaultDocumentsChildSegments.first,
     );
     _iosDocumentsVacateFailures
       ..clear()
       ..addAll(failures);
-    if (failures.isNotEmpty) return;
-    try {
-      await prefs?.setBool(iosSharedDocumentsVacatedPrefKey, true);
-    } catch (e) {
-      // 写不进锚点只意味着下次启动再看一眼旧位置；旧位置已空，什么也不会搬。
-      debugPrint('AppPaths: 固化 iOS 书库搬迁锚点失败: $e');
+  }
+
+  /// 按台账 [ledger] 搬 iOS 存量书库（见 [iosDocumentsVacateLedgerName]）。返回失败条目。
+  ///
+  /// - 台账不存在：第一次，按 [vacateLegacyIosDocuments] 全量搬，把没搬动的条目写进台账；
+  /// - 台账存在且为空：早已搬完，什么都不碰（Documents 已经是用户的收件箱）；
+  /// - 台账存在且非空：只重试台账里那几项，再把仍失败的写回。
+  ///
+  /// 台账写不进去时记为失败（下次启动会重新全量搬一遍，这是唯一会退化成全扫的情况，
+  /// 并且会进错误日志）。
+  @visibleForTesting
+  static Future<List<String>> vacateIosDocumentsWithLedger({
+    required Directory platformDocuments,
+    required Directory target,
+    required File ledger,
+    required Future<bool> Function() legacyFlat,
+    required String containerName,
+  }) async {
+    Set<String>? only;
+    if (await ledger.exists()) {
+      only = <String>{
+        for (final String line in await ledger.readAsLines())
+          if (line.trim().isNotEmpty) line.trim(),
+      };
+      if (only.isEmpty) return const <String>[];
     }
+    final List<String> failedEntries = <String>[];
+    final List<String> failures = await vacateLegacyIosDocuments(
+      platformDocuments: platformDocuments,
+      target: target,
+      legacyFlat: await legacyFlat(),
+      containerName: containerName,
+      onlyEntries: only,
+      failedEntries: failedEntries,
+    );
+    try {
+      await ledger.parent.create(recursive: true);
+      await ledger.writeAsString(
+        failedEntries.isEmpty ? '' : '${failedEntries.join('\n')}\n',
+        flush: true,
+      );
+    } on FileSystemException catch (e) {
+      return <String>[...failures, '${ledger.path}: $e'];
+    }
+    return failures;
   }
 
   /// 启动期 iOS 书库搬迁失败的条目（`路径: 原因`）。由 `ErrorLogService.init` 写进错误日志。
@@ -413,12 +464,18 @@ class AppPaths {
   ///
   /// 同一容器内是同卷 `rename`，GB 级书库也是 O(1)；目标里已有同名项（上次搬到一半）
   /// 时走 [moveDirectoryMerging] 的合并语义。
+  ///
+  /// [onlyEntries] 非 null 时只处理其中的条目（相对 Documents 的路径：nested 为
+  /// `<容器>/data`，flat 为白名单顶层名），用于按台账重试；没搬动的条目名追加进
+  /// [failedEntries]。
   @visibleForTesting
   static Future<List<String>> vacateLegacyIosDocuments({
     required Directory platformDocuments,
     required Directory target,
     required bool legacyFlat,
     required String containerName,
+    Set<String>? onlyEntries,
+    List<String>? failedEntries,
   }) async {
     final List<String> failures = <String>[];
     if (p.equals(platformDocuments.path, target.path) ||
@@ -426,7 +483,10 @@ class AppPaths {
       failures.add('${target.path}: target inside shared Documents');
       return failures;
     }
+    bool wanted(String entry) => onlyEntries?.contains(entry) ?? true;
     if (!legacyFlat) {
+      final String entry = '$containerName/data';
+      if (!wanted(entry)) return failures;
       final Directory container = Directory(
         p.join(platformDocuments.path, containerName),
       );
@@ -440,10 +500,12 @@ class AppPaths {
         }
       } on FileSystemException catch (e) {
         failures.add('${legacy.path}: $e');
+        failedEntries?.add(entry);
       }
       return failures;
     }
     for (final String name in fushiOwnedDocumentsEntries) {
+      if (!wanted(name)) continue;
       final String source = p.join(platformDocuments.path, name);
       final String destination = p.join(target.path, name);
       try {
@@ -461,6 +523,7 @@ class AppPaths {
         }
       } on FileSystemException catch (e) {
         failures.add('$source: $e');
+        failedEntries?.add(name);
       }
     }
     return failures;

@@ -133,6 +133,110 @@ void main() {
     expect(staging.existsSync(), isFalse);
   });
 
+  test('只有视频移进数据根；书 / 漫画原地扫收件箱（导入器已复制进书库，移走只会多占一份）', () {
+    expect(ImportInbox.movesIntoDataRoot('video'), isTrue);
+    expect(ImportInbox.movesIntoDataRoot('book'), isFalse);
+    expect(ImportInbox.movesIntoDataRoot('manga'), isFalse);
+    expect(
+      ImportInbox.kindFolder(inbox, 'book')!.path,
+      p.join(inbox.path, 'Books'),
+    );
+    expect(ImportInbox.kindFolder(inbox, 'music'), isNull);
+  });
+
+  test('没打完成标记的批次是待续导；打了标记的不再续导；空批次顺手删掉', () async {
+    touch(p.join(inbox.path, 'Video', 'EP01.mkv'));
+    final ImportInboxBatch? done = await ImportInbox.takeBatch(
+      inbox: inbox,
+      stagingRoot: staging,
+      mediaKind: 'video',
+      now: DateTime(2026, 11, 16, 9),
+    );
+    touch(p.join(inbox.path, 'Video', 'EP02.mkv'));
+    final ImportInboxBatch? failed = await ImportInbox.takeBatch(
+      inbox: inbox,
+      stagingRoot: staging,
+      mediaKind: 'video',
+      now: DateTime(2026, 11, 16, 10),
+    );
+    final Directory empty = Directory(
+      p.join(staging.path, 'video', '20261116-110000'),
+    )..createSync(recursive: true);
+    File(p.join(empty.path, '.DS_Store')).writeAsStringSync('');
+
+    await ImportInbox.markBatchImported(done!.directory);
+    expect(
+      File(
+        p.join(done.directory.path, ImportInbox.importedMarkerName),
+      ).existsSync(),
+      isTrue,
+    );
+
+    final List<Directory> unfinished = await ImportInbox.unfinishedBatches(
+      stagingRoot: staging,
+      mediaKind: 'video',
+    );
+    expect(unfinished.map((Directory d) => d.path), <String>[
+      failed!.directory.path,
+    ]);
+    expect(empty.existsSync(), isFalse);
+    expect(
+      await ImportInbox.unfinishedBatches(
+        stagingRoot: staging,
+        mediaKind: 'manga',
+      ),
+      isEmpty,
+    );
+  });
+
+  group('收件箱导入的页面流程（源码守卫）', () {
+    final String view = File(
+      'lib/src/pages/implementations/media_sources_view.dart',
+    ).readAsStringSync();
+
+    String bodyOf(String signature) {
+      final int start = view.indexOf(signature);
+      expect(start, isNot(-1), reason: '找不到 $signature');
+      // 方法体到第一个两格缩进的右花括号为止。
+      final int end = view.indexOf('\n  }\n', start);
+      return view.substring(start, end == -1 ? view.length : end);
+    }
+
+    test('视频：批次移走后不因页面卸载半途返回，成功才打标记，先续导遗留批次', () {
+      final String body = bodyOf('Future<void> _importInboxIntoDataRoot(');
+      final int take = body.indexOf('ImportInbox.takeBatch(');
+      expect(take, isNot(-1));
+      expect(
+        body.substring(take).contains('mounted'),
+        isFalse,
+        reason: '文件已经移出收件箱，此时返回就会让批次卡在用户看不见的地方',
+      );
+      expect(body, contains('ImportInbox.unfinishedBatches('));
+      expect(body, contains('summary.error == null'));
+      expect(body, contains('ImportInbox.markBatchImported('));
+    });
+
+    test('书 / 漫画原地扫收件箱子目录，不移文件', () {
+      final String body = bodyOf('Future<void> _importInboxInPlace(');
+      expect(body, isNot(contains('takeBatch')));
+      expect(body, contains('ImportInbox.kindFolder('));
+    });
+
+    test('重入保护：入口同步置忙，且计入 isBusy', () {
+      final String entry = bodyOf('Future<void> importFromInbox()');
+      final int check = entry.indexOf('if (isBusy) return;');
+      final int set = entry.indexOf('_inboxImporting = true');
+      expect(check, isNot(-1));
+      expect(set, greaterThan(check));
+      expect(
+        entry.substring(check, set).contains('await'),
+        isFalse,
+        reason: '检查与置忙之间有 await 就挡不住连点',
+      );
+      expect(view, contains('_inboxImporting ||'));
+    });
+  });
+
   test('同一秒内收两批：批次目录不合并（否则一次性扫描会把上一批再扫一遍）', () async {
     final DateTime now = DateTime(2026, 11, 16, 9, 5, 7);
     touch(p.join(inbox.path, 'Manga', 'vol1.cbz'));

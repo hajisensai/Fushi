@@ -121,6 +121,8 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
                 description: t.media_import_inbox_hint(
                   folder: ImportInbox.folderNameFor('manga') ?? '',
                 ),
+                // 与书 / 视频页同一忙态；真正的重入保护在 importFromInbox 入口。
+                enabled: _localSourcesKey.currentState?.isBusy != true,
                 onTap: () async =>
                     _localSourcesKey.currentState?.importFromInbox(),
               ),
