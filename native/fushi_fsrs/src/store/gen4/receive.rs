@@ -64,7 +64,7 @@ use rusqlite::params;
 use super::derive::{Index, Settled};
 use super::ingest::{Settle, ingest_settle};
 use super::schema::{k_dev, k_seq, sql};
-use super::sync_state::{chain32, op_of_bytes};
+use super::sync_state::{WaitRow, chain32, op_of_bytes};
 use super::truth::{DEV_HERITAGE, DEV_NATIVE, Put, Truth};
 use crate::gen4::heritage::{
     HeritageHeader, HeritageSlot, SlotBody, fingerprint, open_heritage_verified,
@@ -604,7 +604,7 @@ impl<'t, 'c> Receiver<'t, 'c> {
 
     /// 投一遍原生等待缓冲。返回投出的项数与「同一个 seq 两支都接在末尾」的设备。
     fn drain_native(&mut self) -> Result<(u64, Vec<Id>), String> {
-        type Row = (i64, Vec<u8>, Vec<u8>, i64, Option<Vec<u8>>);
+        type Row = WaitRow;
         let rows: Vec<Row> = {
             let mut stmt = self
                 .t
@@ -885,12 +885,11 @@ mod tests {
         .unwrap()
     }
 
+    /// (派生表, 各原生日志的末尾与链值, 原生等待项数, 承袭待投递数)。
+    type Snapshot = (Vec<String>, Vec<(Id, u64, Chain)>, usize, usize);
+
     /// 真相 + 派生 + 缓冲的一份快照（比结果用）。
-    fn state(
-        conn: &Connection,
-        t: &Truth<'_>,
-        col: i64,
-    ) -> (Vec<String>, Vec<(Id, u64, Chain)>, usize, usize) {
+    fn state(conn: &Connection, t: &Truth<'_>, col: i64) -> Snapshot {
         let tails = t
             .devices(col)
             .unwrap()

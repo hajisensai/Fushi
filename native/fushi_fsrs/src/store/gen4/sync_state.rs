@@ -130,6 +130,9 @@ pub struct Waiting {
     pub op: Option<Op4>,
 }
 
+/// `op_wait` 的一行：(k, prev, chain, span, op)。
+pub(super) type WaitRow = (i64, Vec<u8>, Vec<u8>, i64, Option<Vec<u8>>);
+
 fn u64_of(v: i64, what: &str) -> Result<u64, String> {
     u64::try_from(v).map_err(|_| format!("gen4 store: negative {what}"))
 }
@@ -449,7 +452,7 @@ impl<'c> Truth<'c> {
 
     /// 集合 [col] 的原生等待缓冲，按操作主键升序。
     pub fn waiting(&self, col: i64) -> Result<Vec<Waiting>, String> {
-        let rows: Vec<(i64, Vec<u8>, Vec<u8>, i64, Option<Vec<u8>>)> = {
+        let rows: Vec<WaitRow> = {
             let mut stmt = self
                 .conn()
                 .prepare_cached(
