@@ -110,6 +110,13 @@ export function insertDecisionArgs(d, now) {
 export const SET_VERDICT_SQL = `UPDATE decisions SET verdict = ?2, choice = ?3, verdict_by = ?4, verdict_at = ?5, updated_at = ?6
   WHERE id = ?1 AND state = 'open'`;
 
+/**
+ * 网页拍板用的乐观锁版：只有当前决定仍是提交方看到的那个（?7，表单 v 的形式：'' / 'do' / 'choice:a' …）才写。
+ * 两个开发者同时拍同一条时，后到的那次 changes = 0 → 409 verdict_conflict，不会悄悄覆盖先拍的人。
+ */
+export const SET_VERDICT_IF_SQL = `${SET_VERDICT_SQL}
+  AND COALESCE(CASE WHEN verdict = 'choice' THEN 'choice:' || choice ELSE verdict END, '') = ?7`;
+
 export const ADD_NOTE_SQL = `INSERT INTO decision_notes (decision_id, author, account_id, body, created_at)
   VALUES (?1, ?2, ?3, ?4, ?5)`;
 
@@ -169,11 +176,21 @@ export async function listDecisions(env) {
   return (items.results || []).map((r) => ({ ...r, notes: byId.get(r.id) || [] }));
 }
 
+/** 行的当前决定，写成表单 v 的形式（'' 表示未拍）。乐观锁拿它和提交方的 base 比。 */
+export function verdictValue(row) {
+  if (!row.verdict) return '';
+  return row.verdict === 'choice' ? `choice:${row.choice}` : row.verdict;
+}
+
 /**
  * 网页表单：拍板（v）并 / 或留言（text）。v = 'note' 只留言；'clear' 撤销决定。
  * 「没看懂」不带留言也收（代理会按标题和原文补背景），但页面提示写清哪里没看懂。
+ *
+ * 并发：base = 提交方页面上看到的决定（verdictValue 形式）。给了 base 就走乐观锁——别人在这期间改过决定
+ * （且改成的不是同一个决定）→ 409 verdict_conflict，决定和留言都不写，页面换成最新的卡让人重看。
+ * 只留言不改决定时不需要锁（留言只增不改）。不带 base（旧页面）退回原来的直接覆盖。
  */
-export async function submitDecision(env, dev, id, { v, text }, now) {
+export async function submitDecision(env, dev, id, { v, text, base = null }, now) {
   if (!DECISION_ID_RE.test(id)) throw new HttpError(404, 'not_found');
   const row = await env.DB.prepare('SELECT * FROM decisions WHERE id = ?1').bind(id).first();
   if (!row) throw new HttpError(404, 'not_found');
@@ -185,6 +202,7 @@ export async function submitDecision(env, dev, id, { v, text }, now) {
     throw new HttpError(400, 'note_too_long');
   }
   const stmts = [];
+  let locked = false;
   if (v && v !== 'note') {
     let verdict = v;
     let choice = null;
@@ -199,12 +217,27 @@ export async function submitDecision(env, dev, id, { v, text }, now) {
     } else if (v === 'do' && parseChoices(row.choices).length) {
       throw new HttpError(400, 'bad_choice');
     }
-    stmts.push(env.DB.prepare(SET_VERDICT_SQL).bind(id, verdict, choice, verdict ? dev.id : null, verdict ? now : null, now));
+    const target = verdict === 'choice' ? `choice:${choice}` : (verdict || '');
+    if (base !== null && base !== verdictValue(row)) {
+      // 页面看到的已经过时：别人改成的正好是同一个决定就当成功（不重复写），否则冲突。
+      if (target !== verdictValue(row)) throw new HttpError(409, 'verdict_conflict');
+    } else if (base !== null) {
+      locked = true;
+      stmts.push(env.DB.prepare(SET_VERDICT_IF_SQL)
+        .bind(id, verdict, choice, verdict ? dev.id : null, verdict ? now : null, now, base));
+    } else {
+      stmts.push(env.DB.prepare(SET_VERDICT_SQL).bind(id, verdict, choice, verdict ? dev.id : null, verdict ? now : null, now));
+    }
   } else if (!body) {
     return;
   }
+  if (locked) {
+    // 读到行之后、写之前别人又改了：条件 UPDATE 不命中。先单独写决定，命中了才写留言，免得留言跟着一个没生效的决定。
+    const r = await stmts.shift().run();
+    if (!r.meta || r.meta.changes !== 1) throw new HttpError(409, 'verdict_conflict');
+  }
   if (body) stmts.push(env.DB.prepare(ADD_NOTE_SQL).bind(id, 'dev', dev.id, body, now));
-  await env.DB.batch(stmts);
+  if (stmts.length) await env.DB.batch(stmts);
 }
 
 // ---- 页面（devconsole 套 layout） ----
@@ -244,12 +277,6 @@ function verdictText(row) {
   return `「${DECISION_VERDICTS[row.verdict]}」`;
 }
 
-/** 表单里 v 的取值形式（撤销时客户端拿它恢复上一个决定）。 */
-function verdictValue(row) {
-  if (!row.verdict) return '';
-  return row.verdict === 'choice' ? `choice:${row.choice}` : row.verdict;
-}
-
 /**
  * 卡片的内容版本：updated_at 随决定 / 结单变化，留言只增不删，条数变了就是有新留言。
  * @param {{updated_at: number, notes: unknown[]}} row
@@ -278,6 +305,7 @@ function card(row, back, { hidden = false } = {}) {
   const closed = stage === 'closed';
   const form = closed ? '' : `<form method="post" action="/dev/d/${esc(row.id)}" class="dform">
 <input type="hidden" name="back" value="${esc(back)}">
+<input type="hidden" name="base" value="${esc(current)}">
 <textarea name="text" rows="2" maxlength="${DECISION_LIMITS.noteMax}" aria-label="留言" placeholder="${
   row.verdict === 'explain' ? '哪里没看懂？写下来 Claude 针对着解释' : '可选：补充说明，随下面的决定一起提交（Ctrl+Enter 只发留言）'}"></textarea>
 <div class="vrow">${verdictButtons}<span class="vsp"></span>${
@@ -406,7 +434,7 @@ kbd{display:inline-block;min-width:1.4em;padding:0 4px;margin-left:6px;border:1p
  * @param {string} stage 当前栏
  * @param {{sig?: string, script?: string}} [opts] sig = decisionsSig；script = 客户端脚本 URL（带版本）
  */
-export function renderDecisions(rows, stage, { sig = '', script = '' } = {}) {
+export function renderDecisions(rows, stage, { sig = '', script = '', conflict = false } = {}) {
   const counts = Object.fromEntries(DECISION_STAGES.map(([k]) => [k, rows.filter((r) => inDecisionStage(r, k)).length]));
   const tabs = DECISION_STAGES.map(([k, label]) => `<a href="/dev/decisions?stage=${k}" data-stage="${k}"${
     k === stage ? ' class="on"' : ''}>${esc(label)} <span class="n">${counts[k]}</span></a>`).join('');
@@ -418,6 +446,7 @@ export function renderDecisions(rows, stage, { sig = '', script = '' } = {}) {
 <div><span><b>做 / 方案</b> 照建议做</span><span><b>不做</b> 这次不做、关单</span><span><b>以后</b> 先挂着</span><span><b>永远不做</b> 拉黑，以后不再提</span><span><b>没看懂</b> 让 Claude 再解释</span><span><b>你定</b> 按 Claude 的判断做</span></div>
 <div><span><kbd>J</kbd><kbd>K</kbd>下一条 / 上一条</span><span><kbd>1</kbd>…<kbd>6</kbd>做 / 选方案</span><span><kbd>X</kbd>不做</span><span><kbd>L</kbd>以后</span><span><kbd>N</kbd>永远不做</span><span><kbd>E</kbd>没看懂</span><span><kbd>Y</kbd>你定</span><span><kbd>C</kbd>写留言</span><span><kbd>U</kbd>撤销决定</span><span><kbd>Ctrl</kbd>+<kbd>Enter</kbd>只发留言</span><span><kbd>Esc</kbd>离开输入框</span></div>
 </details>
+${conflict ? '<p class="note">刚才那条在你提交前已被别人改了决定，你的决定没有提交。下面是最新状态，看过后再拍。</p>' : ''}
 <nav class="tabs" id="dtabs">${tabs}</nav>
 <div id="dlist" data-sig="${esc(sig)}" data-stage="${esc(stage)}">
 ${rows.map((r) => card(r, stage, { hidden: !inDecisionStage(r, stage) })).join('\n')}
