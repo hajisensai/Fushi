@@ -823,10 +823,13 @@ mod tests {
     #[test]
     fn lookups_with_a_key_never_walk_the_whole_collection() {
         // 本来就是对整个集合做的（多出来的相等条件是 `state` / `kind` / 键名这类过滤，不是定位）。
-        const WHOLE: [&str; 8] = [
+        const WHOLE: [&str; 10] = [
             "SELECT DISTINCT ekind, ent FROM reg_ix WHERE col = ?1 AND key = ?2",
             "SELECT k FROM reg_ix WHERE col = ?1 AND state = ?2 UNION SELECT k FROM tag_ix WHERE col = ?1 AND state = ?2",
             "SELECT k FROM reg_ix WHERE col = ?1 AND state = ?2 UNION SELECT k FROM purge_ix WHERE col = ?1 AND state = ?2",
+            // 同上一条分开数（`weigh.rs` `distrusted_split`，同步页的扣着条数）。
+            "SELECT DISTINCT k FROM reg_ix WHERE col = ?1 AND state = ?2",
+            "SELECT DISTINCT k FROM purge_ix WHERE col = ?1 AND state = ?2",
             "SELECT name, k FROM media_ix WHERE col = ?1 AND state = ?2 ORDER BY name",
             "SELECT id, kind, k FROM ent_ix WHERE col = ?1 AND typeof(id) = 'blob' ORDER BY id, k",
             "SELECT ekind, ent, key, k FROM reg_ix WHERE col = ?1 AND state != ?2 AND typeof(ent) = 'blob' ORDER BY ekind, ent, key, k",

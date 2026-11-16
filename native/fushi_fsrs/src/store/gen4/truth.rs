@@ -1930,6 +1930,16 @@ impl<'c> Truth<'c> {
             .map_err(sql)
     }
 
+    /// 一台设备的信任记录：(状态, 第一次记下的时刻 `since`)；可信 = None。同步页设备行的 `trust` / `trustSince` 用。
+    pub fn trust_entry(&self, col: i64, device: &Id) -> Result<Option<(i64, i64)>, String> {
+        self.conn
+            .prepare_cached("SELECT state, since FROM trust WHERE col = ?1 AND device = ?2")
+            .map_err(sql)?
+            .query_row(params![col, &device.0[..]], |r| Ok((r.get(0)?, r.get(1)?)))
+            .optional()
+            .map_err(sql)
+    }
+
     /// 还没信任的设备：(设备, 状态)，按设备 ID 升序。
     pub fn untrusted(&self, col: i64) -> Result<Vec<(Id, i64)>, String> {
         let mut stmt = self

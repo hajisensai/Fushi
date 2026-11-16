@@ -29,17 +29,17 @@ use crate::store::sync2::tests::{Bucket, DAY, Device, P, deck_entity, edit, revi
 use crate::sync2::id::Key;
 use crate::sync2::op::EntKind;
 
-const T0: i64 = 1_700_000_000_000;
-const N1: &str = "0193a1b2-0000-7000-8000-0000000000a1";
-const N2: &str = "0193a1b2-0000-7000-8000-0000000000a2";
-const N3: &str = "0193a1b2-0000-7000-8000-0000000000a3";
-const N4: &str = "0193a1b2-0000-7000-8000-0000000000a4";
+pub(super) const T0: i64 = 1_700_000_000_000;
+pub(super) const N1: &str = "0193a1b2-0000-7000-8000-0000000000a1";
+pub(super) const N2: &str = "0193a1b2-0000-7000-8000-0000000000a2";
+pub(super) const N3: &str = "0193a1b2-0000-7000-8000-0000000000a3";
+pub(super) const N4: &str = "0193a1b2-0000-7000-8000-0000000000a4";
 const ANKI_AT: i64 = T0 - 1000;
 
 // ---------------------------------------------------------------------- 列式表
 
 /// 结果里的一格（`FCL1` 解码后统一成文本，空 = `∅`）。
-fn decode(b: &[u8]) -> (Vec<String>, Vec<Vec<String>>) {
+pub(super) fn decode(b: &[u8]) -> (Vec<String>, Vec<Vec<String>>) {
     assert_eq!(&b[0..4], b"FCL1");
     let u32_at = |at: usize| u32::from_le_bytes(b[at..at + 4].try_into().unwrap()) as usize;
     let pad = |x: usize| (x + 7) & !7;
@@ -98,14 +98,14 @@ fn decode(b: &[u8]) -> (Vec<String>, Vec<Vec<String>>) {
 
 // ---------------------------------------------------------------------- 场景
 
-fn fresh(name: &str) -> Device {
+pub(super) fn fresh(name: &str) -> Device {
     let d = Device::new(name);
     d.core.sync2_identity(P, T0).unwrap();
     d.core.sync2_migrate(P, T0, None).unwrap();
     d
 }
 
-fn note(id: &str, nt: &str, created: i64) -> Value {
+pub(super) fn note(id: &str, nt: &str, created: i64) -> Value {
     json!({"t": "entity", "x": {"id": id, "p": P, "k": "note", "d": {"createdAt": created, "guid": id, "noteTypeId": nt}}})
 }
 
@@ -118,13 +118,18 @@ fn anki_review(id: &str, card: &str, at: i64) -> Value {
     }})
 }
 
-fn card(note: &str, template: &str) -> String {
+pub(super) fn card(note: &str, template: &str) -> String {
     crate::registers::card_id(note, template, 0).unwrap()
 }
 
 /// 一个够全的协议 3 库：两台设备、牌组 / 笔记类型（字段、模板、词条字段）、四条笔记（字段带样式块与链接、标签、
 /// 删除）、并发改同一个字段（冲突）、评分与撤销、Anki 导入的复习、继承历史的后继卡。返回 a（两边同步完）。
-fn library() -> Device {
+pub(super) fn library() -> Device {
+    library_pair().0
+}
+
+/// [library] 的两台设备与它们同步用的桶（两边都同步完）。
+pub(super) fn library_pair() -> (Device, Device, Bucket) {
     let deck = default_deck_id(P);
     let (a, b) = (fresh("g4ra"), fresh("g4rb"));
     let mut bucket = Bucket::default();
@@ -188,7 +193,7 @@ fn library() -> Device {
         a.sync(&mut bucket, "loc", T0 + DAY + 60);
         b.sync(&mut bucket, "loc", T0 + DAY + 60);
     }
-    a
+    (a, b, bucket)
 }
 
 /// 协议 3 一侧：在 SAVEPOINT 里先做完欠着的收尾、按新代同一份配置重建缓存，跑 [f]，整个回滚。
@@ -211,7 +216,7 @@ fn on_p3<T>(src: &Connection, cfg: &str, f: impl FnOnce(&Connection) -> T) -> T 
 
 /// 一列怎么归一。
 #[derive(Clone, Copy)]
-enum Norm {
+pub(super) enum Norm {
     Plain,
     Id,
     /// 身份记录的数据（规范 JSON）。
@@ -224,15 +229,15 @@ enum Norm {
     Skip,
 }
 
-struct Pair<'d> {
-    d: &'d Device,
-    g4: Connection,
-    col: i64,
-    cfg: String,
+pub(super) struct Pair<'d> {
+    pub(super) d: &'d Device,
+    pub(super) g4: Connection,
+    pub(super) col: i64,
+    pub(super) cfg: String,
 }
 
 impl<'d> Pair<'d> {
-    fn new(d: &'d Device) -> Pair<'d> {
+    pub(super) fn new(d: &'d Device) -> Pair<'d> {
         let (g4, diff) = imported(d);
         assert!(diff.is_empty(), "{diff:?}");
         let t = Truth::new(&g4);
@@ -241,20 +246,20 @@ impl<'d> Pair<'d> {
         Pair { d, g4, col, cfg }
     }
 
-    fn ix<T>(&self, f: impl FnOnce(&mut Index<'_, '_>) -> T) -> T {
+    pub(super) fn ix<T>(&self, f: impl FnOnce(&mut Index<'_, '_>) -> T) -> T {
         let t = Truth::new(&self.g4);
         let mut ix = Index::new(&t, self.col);
         f(&mut ix)
     }
 
-    fn canon(&self, s: &str) -> String {
+    pub(super) fn canon(&self, s: &str) -> String {
         if s == "∅" {
             return s.to_owned();
         }
         self.ix(|ix| ix.canonical(&Ref::of(&Key::of(s))).unwrap().text())
     }
 
-    fn norm(&self, n: Norm, s: &str) -> String {
+    pub(super) fn norm(&self, n: Norm, s: &str) -> String {
         match n {
             Norm::Plain => s.to_owned(),
             Norm::Skip => String::new(),
@@ -292,7 +297,7 @@ impl<'d> Pair<'d> {
         }
     }
 
-    fn p3(&self, req: Value) -> (Value, Files) {
+    pub(super) fn p3(&self, req: Value) -> (Value, Files) {
         let w = self.d.core.writer().unwrap();
         on_p3(&w, &self.cfg, |c| {
             let mut files = Files::new();
@@ -310,7 +315,7 @@ impl<'d> Pair<'d> {
         })
     }
 
-    fn g4(&self, req: Value) -> (Value, Files) {
+    pub(super) fn g4(&self, req: Value) -> (Value, Files) {
         let t = Truth::new(&self.g4);
         let mut files = Files::new();
         let v = reads::run(&t, self.col, &req, &mut files).unwrap();
@@ -326,7 +331,7 @@ impl<'d> Pair<'d> {
     }
 
     /// 一张表归一成行的多重集（列按 [norms]，列名两侧必须相同）。
-    fn rows(&self, files: &Files, name: &str, norms: &[Norm]) -> Vec<Vec<String>> {
+    pub(super) fn rows(&self, files: &Files, name: &str, norms: &[Norm]) -> Vec<Vec<String>> {
         let (_, bytes) = files.iter().find(|(n, _)| n == name).unwrap();
         let (cols, data) = decode(bytes);
         assert_eq!(cols.len(), norms.len(), "{cols:?}");
@@ -338,13 +343,13 @@ impl<'d> Pair<'d> {
         out
     }
 
-    fn names(files: &Files, name: &str) -> Vec<String> {
+    pub(super) fn names(files: &Files, name: &str) -> Vec<String> {
         let (_, bytes) = files.iter().find(|(n, _)| n == name).unwrap();
         decode(bytes).0
     }
 
     /// 一条 `read` 两侧对拍：JSON 回包相同，每张表的列名相同、归一后的行相同。返回新代一侧的行（未归一）。
-    fn same(&self, req: Value, tables: &[(&str, &[Norm])]) -> Vec<Vec<String>> {
+    pub(super) fn same(&self, req: Value, tables: &[(&str, &[Norm])]) -> Vec<Vec<String>> {
         let (pv, pf) = self.p3(req.clone());
         let (gv, gf) = self.g4(req.clone());
         assert_eq!(pv, gv, "{req}");
