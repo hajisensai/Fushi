@@ -503,6 +503,9 @@ size_t katakana_word_length(const std::u32string& text) {
 // 等长或更短的变体两者等价（改写量不会超过变体长度）；但 fork 有比原文**更长**的变体——
 // 韩语拆字（부드러운 4 个音节 → 10 个兼容字母），上游的写法会把它的改写量限在音节数，
 // ko.json 的长后缀规则就全被误杀。
+//
+// 前提：除删掉 っ / 中点、折叠 っっ 外，预处理不改变原文与变体尾部的码点对应。将来加入
+// 会改长度的处理（上游的单个っ删除、强调序列折叠等）时，尾部逐码点对齐失效，要重写本函数。
 size_t max_rewrite(const std::u32string& source, const std::u32string& variant) {
   size_t length = 0;
   for (size_t s = source.size(); s > 0 && length < variant.size(); s--, length++) {

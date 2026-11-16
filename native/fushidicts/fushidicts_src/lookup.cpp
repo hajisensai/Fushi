@@ -151,7 +151,9 @@ std::string explicit_rules(std::string_view rules) {
 }
 
 // 扫描窗口内紧跟在候选 [candidate_bytes] 之后的码点；候选到窗口末尾时为 0。只看窗口内
-// 的文本，理由同 protected_structure_follows。
+// 的文本，理由同 protected_structure_follows。已知限制：候选恰好到窗口末尾（窗口在片假名
+// 词中间截断）时取不到下一个字，片假名词边界保护对这个候选不生效；通常还有更短的候选
+// 兜底，且改成看窗口外会破坏「结果只依赖前 scan_length 个码点」的缓存前提。
 char32_t next_char_in_window(std::string_view window, std::size_t candidate_bytes) {
   if (candidate_bytes >= window.size()) return 0;
   auto it = window.begin() + static_cast<std::ptrdiff_t>(candidate_bytes);

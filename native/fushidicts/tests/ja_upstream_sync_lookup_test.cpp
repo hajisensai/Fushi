@@ -226,6 +226,7 @@ int main(int argc, char** argv) {
   expect_top(lk, "うちへ帰る", "うち", "うち", "", "W1 うちへ is not historical うちう");
   expect_absent(lk, "うちへ帰る", "うちへ", "宇宙", "W2 宇宙 must not match うちへ");
   expect_top(lk, "ランへ行ってみた", "ラン", "ラン", "", "W3 ランへ is not historical らんう");
+  // W4 也覆盖「自带词性不匹配（名词）时，并进来的通配不能替它放行」：乱右两本都有，rules 是 "n *"。
   expect_absent(lk, "ランへ行ってみた", "ランへ", "乱右", "W4 乱右 must not match ランへ");
   // 通配词典上歴史仮名不还原，现代活用照常（通配让步本身不变）。
   expect_absent(lk, "歌はう", "歌はう", "歌う", "W5 historical rule rejected on wildcard dict");
@@ -237,7 +238,6 @@ int main(int argc, char** argv) {
   // 真词性匹配就成立，不因为另一本给了通配而整条丢掉（H2 / H4 的词条正是这种）。
   expect_top(lk, "言はない", "言はない", "言う", "negative", "W9 own POS wins over a merged wildcard");
   expect_top(lk, "待ってゐる", "待ってゐる", "待つ", "-いる", "W10 chained, own POS + merged wildcard");
-  // 反过来：自带词性不匹配（名词）时，并进来的通配不能替它放行（W4 的词条现在两本都有）。
 
   if (g_fail) {
     std::fprintf(stderr, "%d failure(s)\n", g_fail);
