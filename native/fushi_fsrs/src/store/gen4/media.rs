@@ -12,8 +12,10 @@
 //!   [build] 把它们打成本机的下一份清单；上传成功后 [mark_published] 只清**仍是那一条**的行（期间又被改写的照旧待发）；
 //!   收到任何一份清单（含本机自己的）里同一条事实也清（[ingest]）——所以「传上去了但没来得及记」的崩溃下一轮自愈，
 //!   最坏是重发一遍（合并幂等）。
-//! - 收什么：[ingest] 只收代号大于 `media_seen` 水位的文件，验文件名标签、作者、集合、loc 标记、作者信任与签名，
-//!   全部过了才在一个事务里合并并推进水位；任何一项不过都不写、不推进。
+//! - 收什么：[ingest] 只收 `media_seen` 里还没记过的代号（按代号记的集合，不是水位），验文件名标签、作者、集合、
+//!   loc 标记、作者信任与签名，全部过了才在一个事务里合并并记下这个代号；任何一项不过都不写、不记。
+//!   不用标量水位：代号允许有空洞（[reserve_gen] 烧掉的号永不出现），列目录又可能滞后，读者分不清「空洞」与「还没
+//!   列出来」——水位一旦越过滞后的那份，它就永远收不到了。
 //! - 「有人完整列举过」（协议 3 的 SEEDED）记在 `media_listed`：本机列的待随清单发出，收到别人的就不必再发。
 //!
 //! # 调用方契约（G8-4 / G8-7 接线时照办）
@@ -27,10 +29,12 @@
 //! - **一个代号只对应一个文件**：代号由 [reserve_gen] 在本机 `media_gen` 里持久预留，只升不降、崩溃后也不重用，不依赖
 //!   列目录的结果（网盘列举滞后时也不会发出同代号、不同内容的两份——读者按代号去重，会静默丢掉其中一份）。[build]
 //!   内部预留；[compact] 的新代号也由调用方用 [reserve_gen] 取。
-//! - 一台设备的清单按代号升序收（[pending_gens]），某一份下载失败就停在那里、这一轮不收它之后的：水位只升不降，跳过的
-//!   文件不会再收。合并出的新文件代号比被合并者都大，所以先合并后删旧的写法不会让读者漏掉内容。
-//! - [ingest] 返回 [IngestError::UnknownDevice] / [IngestError::Untrusted] 时不推进水位：等 head 带来公钥、或用户信任了
-//!   这台设备，下一轮自然收进来。
+//! - 每轮对每个作者目录调一次 [pending_gens]，传**本轮完整列出的**该作者代号：它给出列出了但还没收过的代号，并把
+//!   `media_seen` 裁到本轮列出的那些（被压缩回收删掉的旧文件自然出集合；列举滞后裁错了，下轮重收一份也幂等）。
+//!   收的次序无所谓（合并按 [Fact::beats] 取 HLC 最大，可交换、幂等）；某一份下载失败就留到下一轮，不挡别的代号。
+//!   合并出的新文件代号比被合并者都大，所以先合并后删旧的写法不会让读者漏掉内容。
+//! - [ingest] 返回 [IngestError::UnknownDevice] / [IngestError::Untrusted] 时不记这个代号：等 head 带来公钥、或用户
+//!   信任了这台设备，下一轮自然收进来。
 //! - 改绑定 / 换根时调 [forget] 从头对账（设计 §5.1：位置进度换了根就从头来）。
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -223,37 +227,70 @@ fn set_listed(c: &Connection, col: i64, key: &str, pend: bool) -> Result<(), Str
     Ok(())
 }
 
-fn raise_seen(
+fn gen_sql(gen: u64) -> Result<i64, String> {
+    i64::try_from(gen).map_err(|_| "media: gen overflow".to_owned())
+}
+
+/// 记下：这个作者的这一代清单已收到（本机自己 = 已发出）。
+fn mark_seen(
     c: &Connection,
     col: i64,
     location: &str,
     device: &Id,
     gen: u64,
 ) -> Result<(), String> {
-    let gen = i64::try_from(gen).map_err(|_| "media: gen overflow".to_owned())?;
     c.prepare_cached(
-        "INSERT INTO media_seen (col, loc, device, gen) VALUES (?1, ?2, ?3, ?4) \
-         ON CONFLICT(col, loc, device) DO UPDATE SET gen = MAX(gen, excluded.gen)",
+        "INSERT OR IGNORE INTO media_seen (col, loc, device, gen) VALUES (?1, ?2, ?3, ?4)",
     )
     .map_err(sql)?
-    .execute(params![col, location, &device.0[..], gen])
+    .execute(params![col, location, &device.0[..], gen_sql(gen)?])
     .map_err(sql)?;
     Ok(())
 }
 
-/// 某位置上某作者的清单已收到（本机自己 = 已发出）的最大代号；没有 = 0。
-pub fn watermark(t: &Truth<'_>, col: i64, location: &str, device: &Id) -> Result<u64, String> {
-    let g: Option<i64> = t
-        .conn()
-        .prepare_cached("SELECT gen FROM media_seen WHERE col = ?1 AND loc = ?2 AND device = ?3")
-        .map_err(sql)?
-        .query_row(params![col, location, &device.0[..]], |r| r.get(0))
-        .optional()
-        .map_err(sql)?;
-    Ok(g.map_or(0, |g| g.max(0) as u64))
+fn is_seen(
+    c: &Connection,
+    col: i64,
+    location: &str,
+    device: &Id,
+    gen: u64,
+) -> Result<bool, String> {
+    Ok(c.prepare_cached(
+        "SELECT 1 FROM media_seen WHERE col = ?1 AND loc = ?2 AND device = ?3 AND gen = ?4",
+    )
+    .map_err(sql)?
+    .query_row(params![col, location, &device.0[..], gen_sql(gen)?], |_| {
+        Ok(())
+    })
+    .optional()
+    .map_err(sql)?
+    .is_some())
 }
 
-/// 位置上列出的某作者的清单代号里，还要收的那些（大于水位，升序去重）。
+fn seen_in(c: &Connection, col: i64, location: &str, device: &Id) -> Result<Vec<u64>, String> {
+    c.prepare_cached(
+        "SELECT gen FROM media_seen WHERE col = ?1 AND loc = ?2 AND device = ?3 ORDER BY gen",
+    )
+    .map_err(sql)?
+    .query_map(params![col, location, &device.0[..]], |r| {
+        r.get::<_, i64>(0)
+    })
+    .map_err(sql)?
+    .map(|g| {
+        let g = g.map_err(sql)?;
+        u64::try_from(g).map_err(|_| format!("media: bad seen gen {g}"))
+    })
+    .collect()
+}
+
+/// 某位置上某作者已收到（本机自己 = 已发出）的清单代号，升序。
+pub fn seen_gens(t: &Truth<'_>, col: i64, location: &str, device: &Id) -> Result<Vec<u64>, String> {
+    seen_in(t.conn(), col, location, device)
+}
+
+/// [listed] = 本轮在位置上该作者目录里**完整列出的**清单代号。返回其中还没收过的（升序去重），并在同一个事务里把
+/// `media_seen` 裁到 [listed]：不在本轮列举里的代号出集合（压缩回收删掉的旧文件；列举滞后裁错的下轮重收一份，合并
+/// 幂等）。不用「连续前缀」压缩：代号空洞是永久的，前缀永远推进不动。
 pub fn pending_gens(
     t: &Truth<'_>,
     col: i64,
@@ -261,14 +298,27 @@ pub fn pending_gens(
     device: &Id,
     listed: &[u64],
 ) -> Result<Vec<u64>, String> {
-    let w = watermark(t, col, location, device)?;
-    Ok(listed
-        .iter()
-        .copied()
-        .filter(|g| *g > w)
-        .collect::<BTreeSet<u64>>()
-        .into_iter()
-        .collect())
+    let listed: BTreeSet<u64> = listed.iter().copied().collect();
+    t.tx(|t| {
+        let c = t.conn();
+        let mut out = Vec::new();
+        for g in seen_in(c, col, location, device)? {
+            if !listed.contains(&g) {
+                c.prepare_cached(
+                    "DELETE FROM media_seen WHERE col = ?1 AND loc = ?2 AND device = ?3 AND gen = ?4",
+                )
+                .map_err(sql)?
+                .execute(params![col, location, &device.0[..], gen_sql(g)?])
+                .map_err(sql)?;
+            }
+        }
+        for &g in &listed {
+            if !is_seen(c, col, location, device, g)? {
+                out.push(g);
+            }
+        }
+        Ok(out)
+    })
 }
 
 // ------------------------------------------------------------------------------------------------ 读
@@ -405,9 +455,10 @@ pub struct Built {
     pub name: String,
 }
 
-/// 在这个位置上为本机 [device] 预留下一个清单代号并持久化（`media_gen`）：比已预留的、本机水位、[own_gens]（位置上
-/// 本机设备目录里现有的代号）都大。预留随调用方的事务提交后就算用掉——上传失败、崩溃都不回收，同一个代号绝不会
-/// 对应两份内容（读者按代号去重）。代号之间有空洞无妨：读者只要求升序。[forget] 不清它。
+/// 在这个位置上为本机 [device] 预留下一个清单代号并持久化（`media_gen`）：比已预留的、本机已发出的（`media_seen` 里
+/// 本机那几代）、[own_gens]（位置上本机设备目录里现有的代号）都大。预留随调用方的事务提交后就算用掉——上传失败、
+/// 崩溃都不回收，同一个代号绝不会对应两份内容（读者按代号去重）。代号之间有空洞无妨：读者按代号集合收，不看次序。
+/// [forget] 不清它。
 pub fn reserve_gen(
     t: &Truth<'_>,
     col: i64,
@@ -426,12 +477,15 @@ pub fn reserve_gen(
             .query_row(params![col, location, &device.0[..]], |r| r.get(0))
             .optional()
             .map_err(sql)?;
-        let gen = watermark(t, col, location, device)?
+        let gen = seen_in(c, col, location, device)?
+            .last()
+            .copied()
+            .unwrap_or(0)
             .max(reserved.map_or(0, |g| g.max(0) as u64))
             .max(own_gens.iter().copied().max().unwrap_or(0))
             .checked_add(1)
             .ok_or_else(|| "media: gen overflow".to_owned())?;
-        let g = i64::try_from(gen).map_err(|_| "media: gen overflow".to_owned())?;
+        let g = gen_sql(gen)?;
         c.prepare_cached(
             "INSERT INTO media_gen (col, loc, device, gen) VALUES (?1, ?2, ?3, ?4) \
              ON CONFLICT(col, loc, device) DO UPDATE SET gen = MAX(gen, excluded.gen)",
@@ -540,7 +594,8 @@ pub fn build(
     })
 }
 
-/// [build] 的那份清单已经写到位置上：清掉**仍是那一条事实**的待发标记（打包之后又被改写的照旧待发），推进本机水位。
+/// [build] 的那份清单已经写到位置上：清掉**仍是那一条事实**的待发标记（打包之后又被改写的照旧待发），记下本机已发出
+/// 这一代。
 /// 返回清掉的条数。可重放。
 pub fn mark_published(
     t: &Truth<'_>,
@@ -567,14 +622,14 @@ pub fn mark_published(
                 set_listed(c, col, &key, false)?;
             }
         }
-        raise_seen(c, col, location, &m.device, m.gen)?;
+        mark_seen(c, col, location, &m.device, m.gen)?;
         Ok(n)
     })
 }
 
 // ------------------------------------------------------------------------------------------------ 收
 
-/// [ingest] 不收一份清单的原因。除 [IngestError::Store] 外都没写任何东西、没推进水位。
+/// [ingest] 不收一份清单的原因。除 [IngestError::Store] 外都没写任何东西、没记下这个代号。
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum IngestError {
     /// 集合没绑定。
@@ -614,7 +669,7 @@ impl From<String> for IngestError {
 /// [ingest] 的结果。
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Ingested {
-    /// 代号不大于水位：整份跳过（什么都没读进来）。
+    /// 这一代已收过：整份跳过（什么都没读进来）。
     pub already: bool,
     /// 胜过本机当前那条、写进来的。
     pub applied: usize,
@@ -685,7 +740,7 @@ pub fn ingest(
     let out = t.tx(|t| {
         let c = t.conn();
         let mut out = Ingested::default();
-        if gen <= watermark(t, col, location, device)? {
+        if is_seen(c, col, location, device, gen)? {
             out.already = true;
             return Ok(out);
         }
@@ -712,7 +767,7 @@ pub fn ingest(
                 out.listed += 1;
             }
         }
-        raise_seen(c, col, location, device, gen)?;
+        mark_seen(c, col, location, device, gen)?;
         Ok(out)
     })?;
     Ok(out)
