@@ -64,7 +64,7 @@ pub fn card_columns(t: &Truth<'_>, col: i64, req: &Value) -> Result<Vec<u8>, Str
 
 /// 两张有数字 id 的缓存表。
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum Table {
+pub(super) enum Table {
     Notes,
     Cards,
 }
@@ -87,7 +87,7 @@ impl Table {
 
 /// 别名类成员的号 → 规范 ID（一个号撞上几个成员时取规范 ID 的 SQLite 序最小的）。按需建、一条命令建一次。
 #[derive(Default)]
-struct Members(Option<HashMap<i64, Ref>>);
+pub(super) struct Members(Option<HashMap<i64, Ref>>);
 
 impl Members {
     fn get(&mut self, t: &Truth<'_>, col: i64, num: i64) -> Result<Option<Ref>, String> {
@@ -116,7 +116,7 @@ impl Members {
 }
 
 /// 数字 id [num] 在 [table] 里的行（规范 ID）：先按规范 ID 的号点查，查不到再认成员的号（文件头「数字 id」）。
-fn resolve(
+pub(super) fn resolve(
     t: &Truth<'_>,
     col: i64,
     table: Table,

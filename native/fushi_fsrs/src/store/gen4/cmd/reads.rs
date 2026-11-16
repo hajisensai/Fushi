@@ -52,7 +52,8 @@ use rusqlite::params;
 use serde_json::{Value, json};
 
 use super::{
-    Cell, Files, Sel, Table, canon_ids, profile_of, ref_of, snapshot, sql_order, with_profile,
+    Cell, Files, Sel, Table, canon_ids, logs_between, profile_of, ref_of, snapshot, sql_order,
+    with_profile,
 };
 use crate::gen4::name::{read_edit_key, write_edit_key};
 use crate::gen4::op::{Body4, KIND_EDIT, KIND_LEGACY_UNKNOWN};
@@ -934,41 +935,6 @@ impl<'t, 'c> Reads<'t, 'c> {
         Ok(out.encode())
     }
 
-    /// 发生时刻落在 [lo, hi] 的日志：每个规范日志 ID 取操作号最小的一份（`log_ix.win` 的规则搬到类上），交回
-    /// (规范日志 ID, 操作主键, 日志)。
-    fn logs_between(
-        &self,
-        lo: i64,
-        hi: i64,
-        reps: &mut BTreeMap<Ref, (OpId, i64, crate::gen4::op::Log4)>,
-    ) -> Result<(), String> {
-        let rows: Vec<(i64, Ref)> = self
-            .t
-            .conn()
-            .prepare_cached(
-                "SELECT k, id FROM log_ix WHERE col = ?1 AND at BETWEEN ?2 AND ?3 AND win = 1",
-            )
-            .map_err(sql)?
-            .query_map(params![self.col, lo, hi], |r| Ok((r.get(0)?, r.get(1)?)))
-            .map_err(sql)?
-            .collect::<Result<_, _>>()
-            .map_err(sql)?;
-        for (k, id) in rows {
-            let c = self.canon(&id)?;
-            let op = self.t.id_of_key(k)?;
-            if reps.get(&c).is_some_and(|(o, _, _)| *o <= op) {
-                continue;
-            }
-            let Some(e) = self.t.entry_by_key(k)? else {
-                continue;
-            };
-            if let Some(Body4::Log(l)) = body_of(&e) {
-                reps.insert(c, (op, k, l));
-            }
-        }
-        Ok(())
-    }
-
     /// `anki_logs_at {at}`：Anki 导入的评分类日志里发生时刻（= Anki revlog id）落在 `at` 的那些，连同日志所在卡（规范）
     /// 此刻的笔记与可见性（卡没有缓存行时两列为空）。走 `log_at (col, at)` 索引。按 (时刻, 卡, 日志 ID) 排。
     fn anki_logs_at(&mut self, req: &Value) -> Result<Vec<u8>, String> {
@@ -977,7 +943,7 @@ impl<'t, 'c> Reads<'t, 'c> {
         at.dedup();
         let mut reps = BTreeMap::new();
         for a in at {
-            self.logs_between(a, a, &mut reps)?;
+            logs_between(self.t, &self.ix, self.col, a, Some(a), &mut reps)?;
         }
         let mut rows = Vec::new();
         for (id, (_, _, l)) in reps {
@@ -1032,7 +998,14 @@ impl<'t, 'c> Reads<'t, 'c> {
         let win = need_int(req, "win")?;
         let mut reps = BTreeMap::new();
         for a in at {
-            self.logs_between(a.saturating_sub(win), a.saturating_add(win), &mut reps)?;
+            logs_between(
+                self.t,
+                &self.ix,
+                self.col,
+                a.saturating_sub(win),
+                Some(a.saturating_add(win)),
+                &mut reps,
+            )?;
         }
         let mut rows: Vec<(Ref, String)> = Vec::new();
         // 日志行要的是重放写回 `res` 的那份（协议 3 落库的就是它）：按卡整段重放一次，同一张卡只算一次。
