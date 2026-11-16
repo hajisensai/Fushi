@@ -140,6 +140,9 @@ pub struct Received {
     pub pending: u64,
     /// 收尾时等待缓冲里同一个 seq 有两支接在本机末尾、不自己投的设备（原生）。
     pub forked: Vec<Id>,
+    /// 收尾时等待缓冲里与本机日志分叉的项（设备、seq）：前一环不等于本机该处的链值，或整个已在本机日志里却与本机
+    /// 不同。它们留在缓冲里不投、不删，交 G8-6 的身份分叉处理（设计 §3.2 / §6.3：两支都不丢）。
+    pub diverged_waiting: Vec<(Id, u64)>,
     /// 与本机已有的自相矛盾、没落的承袭槽（[Put::Conflict]）。
     pub conflicts: u64,
     /// 派生层的收尾。
@@ -153,6 +156,14 @@ fn reject_of(e: SegmentError) -> Taken {
         SegmentError::ChainMismatch => Taken::Rejected(Reject::ChainMismatch),
         SegmentError::Undecryptable => Taken::Deferred(Defer::Undecryptable),
     }
+}
+
+/// 投一遍原生等待缓冲的结果。
+#[derive(Default)]
+struct DrainPass {
+    delivered: u64,
+    forked: Vec<Id>,
+    diverged: BTreeSet<(Id, u64)>,
 }
 
 /// 一批收段。
@@ -321,15 +332,28 @@ impl<'t, 'c> Receiver<'t, 'c> {
                     self.tally.landed += landed;
                     return Ok(Taken::Diverged { device, seq: end });
                 }
-            } else if seq > last + 1 || !self.ready(&item) {
-                self.park(&device, seq, &prev, &after, &item)?;
-                parked += 1;
             } else {
-                // 正好接在末尾（seq == last + 1），或空洞越过末尾（seq <= last < end）。
-                if seq == last + 1 && prev != tail {
-                    self.tally.landed += landed;
-                    return Ok(Taken::Diverged { device, seq });
+                // 接得上本机日志的（正好接在末尾，或空洞越过末尾）先比前一环，再看依赖：分叉与依赖齐不齐无关，
+                // 依赖还没到就先进缓冲的话，分叉要等依赖到了才看得出来，一批之内的结果就取决于到达顺序了。
+                if seq <= last + 1 {
+                    let here = if seq == last + 1 {
+                        Some(tail)
+                    } else {
+                        self.t.chain_known(self.col, &device, seq - 1)?
+                    };
+                    if here.is_some_and(|h| h != prev) {
+                        self.tally.landed += landed;
+                        return Ok(Taken::Diverged { device, seq });
+                    }
                 }
+                if seq > last + 1 || !self.ready(&item) {
+                    self.park(&device, seq, &prev, &after, &item)?;
+                    parked += 1;
+                    chain = after;
+                    seq = end + 1;
+                    continue;
+                }
+                // 正好接在末尾（seq == last + 1），或空洞越过末尾（seq <= last < end）。
                 known += last + 1 - seq;
                 self.land(&device, seq, last, &item, &after)?;
                 landed += 1;
@@ -342,7 +366,8 @@ impl<'t, 'c> Receiver<'t, 'c> {
         self.tally.landed += landed;
         // 段整个落在本机日志里面：在段尾比一次链值。
         if header.last < last {
-            if let Ok(here) = self.t.chain_at(self.col, &device, header.last) {
+            // 本机那里在空洞内部（没有链值）才比不了；其余错误是库出错，原样往上报。
+            if let Some(here) = self.t.chain_known(self.col, &device, header.last)? {
                 if here != header.last_chain {
                     return Ok(Taken::Diverged {
                         device,
@@ -587,23 +612,24 @@ impl<'t, 'c> Receiver<'t, 'c> {
 
     /// 把等待缓冲里接得上的投完，再收派生层。消费这一批。
     pub fn finish(mut self) -> Result<Received, String> {
-        let forked = loop {
-            let (native, forked) = self.drain_native()?;
+        let last_pass = loop {
+            let pass = self.drain_native()?;
             let heritage = self.drain_heritage()?;
-            if native + heritage == 0 {
-                break forked;
+            if pass.delivered + heritage == 0 {
+                break pass;
             }
-            self.tally.delivered += native + heritage;
+            self.tally.delivered += pass.delivered + heritage;
         };
-        self.tally.forked = forked;
+        self.tally.forked = last_pass.forked;
+        self.tally.diverged_waiting = last_pass.diverged.into_iter().collect();
         self.tally.waiting = self.t.waiting(self.col)?.len() as u64;
         self.tally.pending = self.t.pending(self.col)?.len() as u64;
         self.tally.settled = ingest_settle(self.t, &mut self.idx, self.col, self.mode)?;
         Ok(self.tally)
     }
 
-    /// 投一遍原生等待缓冲。返回投出的项数与「同一个 seq 两支都接在末尾」的设备。
-    fn drain_native(&mut self) -> Result<(u64, Vec<Id>), String> {
+    /// 投一遍原生等待缓冲：投出的项数、同一个 seq 两支都接在末尾的设备、与本机日志分叉的等待项。
+    fn drain_native(&mut self) -> Result<DrainPass, String> {
         type Row = WaitRow;
         let rows: Vec<Row> = {
             let mut stmt = self
@@ -625,55 +651,66 @@ impl<'t, 'c> Receiver<'t, 'c> {
         for r in rows {
             by_dev.entry(k_dev(r.0)).or_default().push(r);
         }
-        let mut delivered = 0u64;
-        let mut forked = Vec::new();
+        let mut pass = DrainPass::default();
         for rows in by_dev.into_values() {
             let device = self.t.id_of_key(rows[0].0)?.device;
             let mut stale: Vec<(i64, Vec<u8>, Vec<u8>)> = Vec::new();
+            let key = |r: &Row| (r.0, r.1.clone(), r.2.clone());
+            let span_end = |r: &Row| k_seq(r.0) + r.3 as u64 - 1;
             // 等着的时候这台设备被一个承袭段认成了承袭日志：这些原生项永远落不下，丢掉（段还在位置上）。
-            let foreign = matches!(self.kind_of(&device)?, Some((k, _)) if k != DEV_NATIVE);
-            if foreign {
-                stale.extend(rows.iter().map(|r| (r.0, r.1.clone(), r.2.clone())));
+            if matches!(self.kind_of(&device)?, Some((k, _)) if k != DEV_NATIVE) {
+                stale.extend(rows.iter().map(key));
+                self.delete_waiting(&stale)?;
+                continue;
             }
-            let mut last = if foreign {
-                0
-            } else {
-                self.t.last_of(self.col, &device)?
-            };
-            let mut tail = if foreign {
-                CHAIN_ZERO
-            } else {
-                self.tail(&device, last)?
-            };
-            let mut i = if foreign { rows.len() } else { 0 };
+            let mut last = self.t.last_of(self.col, &device)?;
+            let mut tail = self.tail(&device, last)?;
+            // 整个已在本机日志里的：与本机同一支的（重复收到的、另一行投出后剩下的同一项）删；不同支的是身份分叉的
+            // 证据，留在缓冲里报给 G8-6，不静默删。
+            for r in &rows {
+                if span_end(r) > last {
+                    continue;
+                }
+                if self.waiting_diverges(&device, r)? {
+                    pass.diverged.insert((device, k_seq(r.0)));
+                } else {
+                    stale.push(key(r));
+                }
+            }
+            let mut i = 0;
             while i < rows.len() {
                 let seq = k_seq(rows[i].0);
                 let same: Vec<&Row> = rows[i..].iter().take_while(|r| r.0 == rows[i].0).collect();
                 i += same.len();
-                let span_end = |r: &Row| seq + r.3 as u64 - 1;
-                // 整个已在日志里的：删。
-                for r in &same {
-                    if span_end(r) <= last {
-                        stale.push((r.0, r.1.clone(), r.2.clone()));
-                    }
-                }
                 if seq > last + 1 {
                     break;
                 }
-                let live: Vec<&&Row> = same.iter().filter(|r| span_end(r) > last).collect();
+                // 本轮投出后才落进日志的留给下一遍（上面那一段核对）。
+                let live: Vec<&Row> = same.into_iter().filter(|r| span_end(r) > last).collect();
                 if live.is_empty() {
                     continue;
                 }
-                // 起点在末尾之前的只有越过末尾的空洞；正好在末尾之后的要前一环等于本机末尾。
-                let fits: Vec<&&&Row> = live
-                    .iter()
-                    .filter(|r| seq <= last || chain32(&r.1).is_ok_and(|p| p == tail))
-                    .collect();
+                // 接得上本机日志的前一环：正好在末尾之后的是末尾；越过末尾的空洞是它前一格（本机那里在空洞内部时
+                // 比不了）。前一环不等的是另一支，报出来、留着。
+                let here = if seq == last + 1 {
+                    Some(tail)
+                } else {
+                    self.t.chain_known(self.col, &device, seq - 1)?
+                };
+                let mut fits: Vec<&Row> = Vec::new();
+                for r in live {
+                    match here {
+                        Some(h) if chain32(&r.1)? != h => {
+                            pass.diverged.insert((device, seq));
+                        }
+                        _ => fits.push(r),
+                    }
+                }
                 if fits.len() > 1 {
-                    forked.push(device);
+                    pass.forked.push(device);
                     break;
                 }
-                let Some(r) = fits.first() else {
+                let Some(r) = fits.first().copied() else {
                     break;
                 };
                 let after = chain32(&r.2)?;
@@ -695,31 +732,48 @@ impl<'t, 'c> Receiver<'t, 'c> {
                     }
                     if chain_next4(&tail, op) != after {
                         // 前一环等于末尾、链值却对不上：缓冲里的这一行坏了，丢掉。
-                        stale.push((r.0, r.1.clone(), r.2.clone()));
+                        stale.push(key(r));
                         break;
                     }
                 }
                 self.land(&device, seq, last, &item, &after)?;
-                stale.extend(same.iter().map(|r| (r.0, r.1.clone(), r.2.clone())));
-                delivered += 1;
+                stale.push(key(r));
+                pass.delivered += 1;
                 last = span_end(r);
                 tail = after;
             }
-            self.t.write(|| {
-                for (k, prev, chain) in &stale {
-                    self.t
-                        .conn()
-                        .prepare_cached(
-                            "DELETE FROM op_wait WHERE k = ?1 AND prev = ?2 AND chain = ?3",
-                        )
-                        .map_err(sql)?
-                        .execute(params![k, prev, chain])
-                        .map_err(sql)?;
-                }
-                Ok(())
-            })?;
+            self.delete_waiting(&stale)?;
         }
-        Ok((delivered, forked))
+        Ok(pass)
+    }
+
+    /// 一个整个落在本机日志里的等待项与本机不是同一支：它的前一环、或它末尾的链值，与本机在同一处的不等（本机那里
+    /// 在空洞内部、没有链值的那一头不比）。
+    fn waiting_diverges(&self, device: &Id, r: &WaitRow) -> Result<bool, String> {
+        let seq = k_seq(r.0);
+        let end = seq + r.3 as u64 - 1;
+        let prev = chain32(&r.1)?;
+        let after = chain32(&r.2)?;
+        let before = self.t.chain_known(self.col, device, seq - 1)?;
+        let here = self.t.chain_known(self.col, device, end)?;
+        Ok(before.is_some_and(|c| c != prev) || here.is_some_and(|c| c != after))
+    }
+
+    fn delete_waiting(&self, rows: &[(i64, Vec<u8>, Vec<u8>)]) -> Result<(), String> {
+        if rows.is_empty() {
+            return Ok(());
+        }
+        self.t.write(|| {
+            for (k, prev, chain) in rows {
+                self.t
+                    .conn()
+                    .prepare_cached("DELETE FROM op_wait WHERE k = ?1 AND prev = ?2 AND chain = ?3")
+                    .map_err(sql)?
+                    .execute(params![k, prev, chain])
+                    .map_err(sql)?;
+            }
+            Ok(())
+        })
     }
 
     /// 投一遍承袭待投递。
@@ -1487,6 +1541,268 @@ mod tests {
         assert!(e.contains("no collection"), "{e}");
     }
 
+    // ------------------------------------------------------------ 分叉的等待项
+
+    /// 本机 A 1..=3；另一支的 A3 与本机不同。返回 (本机的 A 1..=4, 另一支的 A 1..=4)。
+    fn local_a123(t: &Truth<'_>, col: i64) -> (Vec<Op4>, Vec<Op4>) {
+        let a: Vec<Op4> = (1..=4).map(|s| nop(A, s, &[])).collect();
+        take(
+            t,
+            col,
+            Settle::Incremental,
+            &[&seg_of(A, CHAIN_ZERO, &ops_items(&a[..3]), None)],
+            None,
+        );
+        let mut other = a.clone();
+        other[2] = op(A, 3, 999, &[], &edit("fork"));
+        (a, other)
+    }
+
+    /// 正好接在本机末尾、前一环却不是本机末尾的项，依赖还没到也当场报分叉：一批之内先收依赖还是先收它，结果相同。
+    #[test]
+    fn a_fork_still_waiting_on_its_deps_is_reported_whatever_the_order() {
+        let mut first = None;
+        for fork_first in [false, true] {
+            let conn = open_in_memory().unwrap();
+            let t = Truth::new(&conn);
+            let col = setup(&t);
+            let (_, other) = local_a123(&t, col);
+            let a4 = op(A, 4, 77, &[(B, 1)], &edit("a4"));
+            let fork = seg_of(
+                A,
+                chain_of(CHAIN_ZERO, &other[..3]),
+                &ops_items(&[a4]),
+                None,
+            );
+            let b1 = seg_of(B, CHAIN_ZERO, &ops_items(&[nop(B, 1, &[])]), None);
+            let segs: Vec<&[u8]> = if fork_first {
+                vec![&fork, &b1]
+            } else {
+                vec![&b1, &fork]
+            };
+            let (got, rec) = take(&t, col, Settle::Incremental, &segs, None);
+            let fork_taken = &got[usize::from(!fork_first)];
+            assert_eq!(
+                fork_taken,
+                &Taken::Diverged {
+                    device: id(A),
+                    seq: 4
+                },
+                "fork_first={fork_first}"
+            );
+            assert_eq!(
+                (rec.diverged, rec.waiting),
+                (1, 0),
+                "fork_first={fork_first}"
+            );
+            assert_eq!(t.last_of(col, &id(A)).unwrap(), 3);
+            let s = state(&conn, &t, col);
+            match &first {
+                None => first = Some(s),
+                Some(f) => assert_eq!(&s, f, "fork_first={fork_first}"),
+            }
+        }
+    }
+
+    /// 等待缓冲里前一环不对的项：前面的空洞补上之后不落库、报出来、留在缓冲里；与它同号的正确一支照投；正确一支
+    /// 后来落进日志、它整个落在日志里面了也不被当成重复删掉。
+    #[test]
+    fn a_waiting_item_on_another_branch_is_reported_and_kept_not_landed() {
+        let conn = open_in_memory().unwrap();
+        let t = Truth::new(&conn);
+        let col = setup(&t);
+        let a: Vec<Op4> = (1..=4).map(|s| nop(A, s, &[])).collect();
+        let mut other = a.clone();
+        other[2] = op(A, 3, 999, &[], &edit("fork"));
+        take(
+            &t,
+            col,
+            Settle::Incremental,
+            &[&seg_of(A, CHAIN_ZERO, &ops_items(&a[..2]), None)],
+            None,
+        );
+        // 前面缺着第 3 条：另一支的第 4 条与本机这一支的第 4 条都进缓冲。
+        let fork = seg_of(
+            A,
+            chain_of(CHAIN_ZERO, &other[..3]),
+            &ops_items(&other[3..]),
+            None,
+        );
+        let good4 = seg_of(A, chain_of(CHAIN_ZERO, &a[..3]), &ops_items(&a[3..]), None);
+        let (got, rec) = take(&t, col, Settle::Incremental, &[&fork, &good4], None);
+        assert_eq!(got, vec![landed(0, 0, 1), landed(0, 0, 1)]);
+        assert_eq!((rec.waiting, rec.diverged_waiting.len()), (2, 0));
+        // 第 3 条到了：正确一支投出，另一支报出来、留着。
+        let a3 = seg_of(A, chain_of(CHAIN_ZERO, &a[..2]), &ops_items(&a[2..3]), None);
+        let (got, rec) = take(&t, col, Settle::Incremental, &[&a3], None);
+        assert_eq!(got, vec![landed(1, 0, 0)]);
+        assert_eq!(rec.delivered, 1);
+        assert_eq!(rec.diverged_waiting, vec![(id(A), 4)]);
+        assert_eq!(rec.waiting, 1);
+        assert_eq!(t.last_of(col, &id(A)).unwrap(), 4);
+        assert_eq!(
+            t.chain_at(col, &id(A), 4).unwrap(),
+            chain_of(CHAIN_ZERO, &a)
+        );
+        // 下一批什么都不收：它整个在日志里面了，仍然报、仍然留着。
+        let (_, rec) = take(&t, col, Settle::Incremental, &[], None);
+        assert_eq!((rec.diverged_waiting, rec.waiting), (vec![(id(A), 4)], 1));
+        assert_eq!(t.tx(|t| t.audit(col)), Ok(4));
+        assert_rebuild_is_identity(&t, col);
+
+        // 另一种到达：另一支先进缓冲，正确的第 3、4 条随后整段直接落库。那一行整个落在日志里面，同样报出来、不删。
+        let conn = open_in_memory().unwrap();
+        let t = Truth::new(&conn);
+        let col = setup(&t);
+        take(
+            &t,
+            col,
+            Settle::Incremental,
+            &[&seg_of(A, CHAIN_ZERO, &ops_items(&a[..2]), None)],
+            None,
+        );
+        take(&t, col, Settle::Incremental, &[&fork], None);
+        let a34 = seg_of(A, chain_of(CHAIN_ZERO, &a[..2]), &ops_items(&a[2..]), None);
+        let (got, rec) = take(&t, col, Settle::Incremental, &[&a34], None);
+        assert_eq!(got, vec![landed(2, 0, 0)]);
+        assert_eq!((rec.diverged_waiting, rec.waiting), (vec![(id(A), 4)], 1));
+        // 同一支重复收到的照样删（不是分叉证据）。
+        let dup = seg_of(A, chain_of(CHAIN_ZERO, &a[..2]), &ops_items(&a[2..]), None);
+        let conn = open_in_memory().unwrap();
+        let t = Truth::new(&conn);
+        let col = setup(&t);
+        let (_, rec) = take(&t, col, Settle::Incremental, &[&dup], None);
+        assert_eq!(rec.waiting, 2);
+        let (_, rec) = take(
+            &t,
+            col,
+            Settle::Incremental,
+            &[&seg_of(A, CHAIN_ZERO, &ops_items(&a), None)],
+            None,
+        );
+        assert_eq!((rec.diverged_waiting, rec.waiting), (vec![], 0));
+    }
+
+    /// 越过本机末尾的空洞：本机在它前一格有链值时比前一环，不等是分叉、一格都不落；前一格在本机空洞内部时比不了，照收。
+    #[test]
+    fn a_void_overrunning_the_tail_is_checked_against_the_seq_before_it() {
+        let conn = open_in_memory().unwrap();
+        let t = Truth::new(&conn);
+        let col = setup(&t);
+        let (a, _) = local_a123(&t, col);
+        let before = state(&conn, &t, col);
+        // 本机这一支、盖住 3..=4 的空洞：前一环（第 2 条）与本机相同。
+        let c_other = |n: usize| chain_of(CHAIN_ZERO, &a[..n]);
+        let fine_prev = seg_at(
+            A,
+            3,
+            c_other(2),
+            &[NativeItem::Void {
+                count: 2,
+                chain_after: c_other(4),
+            }],
+            None,
+        );
+        // 前一环（第 2 条）就不是本机的：一个从第 2 条起的空洞。
+        let mut other2 = a.clone();
+        other2[0] = op(A, 1, 555, &[], &edit("x"));
+        let bad_prev = seg_at(
+            A,
+            2,
+            chain_of(CHAIN_ZERO, &other2[..1]),
+            &[NativeItem::Void {
+                count: 3,
+                chain_after: chain_of(CHAIN_ZERO, &other2[..4]),
+            }],
+            None,
+        );
+        let (got, rec) = take(&t, col, Settle::Incremental, &[&bad_prev], None);
+        assert_eq!(
+            got,
+            vec![Taken::Diverged {
+                device: id(A),
+                seq: 2
+            }]
+        );
+        assert_eq!((rec.diverged, rec.landed, rec.waiting), (1, 0, 0));
+        assert_eq!(state(&conn, &t, col), before);
+        // 前一环与本机相同的空洞（作者签名担保的陈述）照收，越过末尾的那一截落下。
+        let (got, _) = take(&t, col, Settle::Incremental, &[&fine_prev], None);
+        assert_eq!(got, vec![landed(1, 1, 0)]);
+        assert_eq!(t.last_of(col, &id(A)).unwrap(), 4);
+
+        // 前一格在本机空洞内部：比不了，照收。
+        let ops: Vec<Op4> = (1..=6).map(|s| nop(A, s, &[])).collect();
+        let c = |n: usize| chain_of(CHAIN_ZERO, &ops[..n]);
+        let conn = open_in_memory().unwrap();
+        let t = Truth::new(&conn);
+        let col = setup(&t);
+        let local = seg_of(
+            A,
+            CHAIN_ZERO,
+            &[
+                NativeItem::Op(ops[0].clone()),
+                NativeItem::Void {
+                    count: 3,
+                    chain_after: c(4),
+                },
+            ],
+            None,
+        );
+        take(&t, col, Settle::Incremental, &[&local], None);
+        assert_eq!(t.chain_known(col, &id(A), 2), Ok(None));
+        let over = seg_at(
+            A,
+            3,
+            c(2),
+            &[NativeItem::Void {
+                count: 4,
+                chain_after: c(6),
+            }],
+            None,
+        );
+        let (got, _) = take(&t, col, Settle::Incremental, &[&over], None);
+        assert_eq!(got, vec![landed(1, 2, 0)]);
+        assert_eq!(t.chain_at(col, &id(A), 6).unwrap(), c(6));
+    }
+
+    /// [Truth::chain_known] 只在空洞内部答 None；区间末、完整操作处有值；不在日志里、不是原生日志的照样报错（收段
+    /// 不把这些当成「比不了」吞掉）。
+    #[test]
+    fn chain_known_is_none_only_inside_a_void_run() {
+        let ops: Vec<Op4> = (1..=5).map(|s| nop(A, s, &[])).collect();
+        let c = |n: usize| chain_of(CHAIN_ZERO, &ops[..n]);
+        let conn = open_in_memory().unwrap();
+        let t = Truth::new(&conn);
+        let col = setup(&t);
+        let items = vec![
+            NativeItem::Op(ops[0].clone()),
+            NativeItem::Void {
+                count: 3,
+                chain_after: c(4),
+            },
+            NativeItem::Op(ops[4].clone()),
+        ];
+        take(
+            &t,
+            col,
+            Settle::Incremental,
+            &[&seg_of(A, CHAIN_ZERO, &items, None)],
+            None,
+        );
+        let known = |seq| t.chain_known(col, &id(A), seq);
+        assert_eq!(known(0), Ok(Some(CHAIN_ZERO)));
+        assert_eq!(known(1), Ok(Some(c(1))));
+        assert_eq!(known(2), Ok(None));
+        assert_eq!(known(3), Ok(None));
+        assert_eq!(known(4), Ok(Some(c(4))));
+        assert_eq!(known(5), Ok(Some(c(5))));
+        assert!(known(6).is_err());
+        assert!(t.chain_known(col, &id(0x77), 1).is_err());
+        // OLD 点过名、没有原生日志。
+        assert!(t.chain_known(col, &id(OLD), 1).is_err());
+    }
+
     // ------------------------------------------------------------ 崩溃
 
     /// 子进程那一半：开事务收全部段、收尾，不提交就退出（等于收到一半被杀）。
@@ -1553,9 +1869,10 @@ mod tests {
         assert_rebuild_is_identity(&t, col);
     }
 
-    /// 两个连接先后收同一批：第二个看到的全是已有（每个最外层事务开头 reset，读的是别人提交过的）。
+    /// 两个连接**先后**收同一批：第二个看到的全是已有（每个最外层事务开头 reset，读的是别人提交过的）。交错的并发见
+    /// `a_batch_overtaken_by_another_connection_fails_whole_and_the_retry_is_right`。
     #[test]
-    fn two_connections_receiving_the_same_segments_land_them_once() {
+    fn two_connections_receiving_one_after_another_land_them_once() {
         let dir = crate::store::sync2::tests::tempdir::new("gen4-receive-two");
         let path = dir.0.join("srs4.db");
         let c1 = crate::store::gen4::schema::open(&path).unwrap();
@@ -1572,6 +1889,73 @@ mod tests {
         assert_eq!(r1.landed + r1.delivered, 6);
         assert_eq!(got, vec![landed(0, 2, 0), landed(0, 2, 0), landed(0, 2, 0)]);
         assert_eq!(r2.landed + r2.delivered, 0);
+        assert_eq!(t2.tx(|t| t.audit(col)), Ok(6));
+        assert_rebuild_is_identity(&t2, col);
+    }
+
+    /// 两个连接交错：c2 开了一批（读快照里 A 还是空的），c1 在 c2 的批中途收完同一批并提交；c2 的第一笔写升级不了
+    /// 写锁（快照已过期，BUSY_SNAPSHOT），整笔报错回滚、一条都不落。重收看到的是 c1 提交的，全部是已有。
+    /// 另一种交错：c1 拿着写锁没提交时 c2 收，c2 报错（忙等为零），c1 提交后 c2 重收同样正确。
+    #[test]
+    fn a_batch_overtaken_by_another_connection_fails_whole_and_the_retry_is_right() {
+        let dir = crate::store::sync2::tests::tempdir::new("gen4-receive-race");
+        let path = dir.0.join("srs4.db");
+        let c1 = crate::store::gen4::schema::open(&path).unwrap();
+        let t1 = Truth::new(&c1);
+        let col = setup(&t1);
+        let c2 = crate::store::gen4::schema::open(&path).unwrap();
+        let t2 = Truth::new(&c2);
+        let w = world();
+        let segs: Vec<&[u8]> = w.iter().map(Vec::as_slice).collect();
+        let r2 = t2.tx(|t| {
+            let mut r = Receiver::open(t, col, Settle::Incremental)?;
+            // c2 的读快照已开出；c1 整批收完、提交。
+            let (_, r1) = take(&t1, col, Settle::Incremental, &segs, None);
+            assert_eq!(r1.landed + r1.delivered, 6);
+            for s in &segs {
+                r.native(s, None)?;
+            }
+            r.finish()
+        });
+        let e = r2.unwrap_err();
+        assert!(e.contains("locked") || e.contains("busy"), "{e}");
+        assert!(c2.is_autocommit());
+        let (got, r2) = take(&t2, col, Settle::Incremental, &segs, None);
+        assert_eq!(got, vec![landed(0, 2, 0), landed(0, 2, 0), landed(0, 2, 0)]);
+        assert_eq!((r2.landed, r2.delivered, r2.waiting), (0, 0, 0));
+        assert_eq!(t2.tx(|t| t.audit(col)), Ok(6));
+        assert_rebuild_is_identity(&t2, col);
+
+        // c1 拿着写锁（收了一半没提交）时 c2 收：c2 拿不到锁、报错，什么都不落；c1 提交后重收正确。
+        let dir = crate::store::sync2::tests::tempdir::new("gen4-receive-race2");
+        let path = dir.0.join("srs4.db");
+        let c1 = crate::store::gen4::schema::open(&path).unwrap();
+        let t1 = Truth::new(&c1);
+        let col = setup(&t1);
+        let c2 = crate::store::gen4::schema::open(&path).unwrap();
+        c2.busy_timeout(std::time::Duration::ZERO).unwrap();
+        let t2 = Truth::new(&c2);
+        c1.execute_batch("BEGIN IMMEDIATE").unwrap();
+        t1.reset();
+        let mut r1 = Receiver::open(&t1, col, Settle::Incremental).unwrap();
+        for s in &segs {
+            r1.native(s, None).unwrap();
+        }
+        let r1 = r1.finish().unwrap();
+        let e = t2
+            .tx(|t| {
+                let mut r = Receiver::open(t, col, Settle::Incremental)?;
+                for s in &segs {
+                    r.native(s, None)?;
+                }
+                r.finish()
+            })
+            .unwrap_err();
+        assert!(e.contains("locked") || e.contains("busy"), "{e}");
+        c1.execute_batch("COMMIT").unwrap();
+        assert_eq!(r1.landed + r1.delivered, 6);
+        let (got, _) = take(&t2, col, Settle::Incremental, &segs, None);
+        assert_eq!(got, vec![landed(0, 2, 0), landed(0, 2, 0), landed(0, 2, 0)]);
         assert_eq!(t2.tx(|t| t.audit(col)), Ok(6));
         assert_rebuild_is_identity(&t2, col);
     }

@@ -2857,6 +2857,25 @@ impl<'c> Truth<'c> {
         self.chain_at_dev(dev, seq)
     }
 
+    /// 原生日志在 [seq] 处可比的链值：[seq] 落在本机空洞区间内部（不是区间末）= None，那里没有链值；其余同
+    /// [Truth::chain_at]（不在日志里、不是原生日志等照样报错，不当成「比不了」）。
+    pub fn chain_known(&self, col: i64, device: &Id, seq: u64) -> Result<Option<Chain>, String> {
+        if seq == 0 {
+            return Ok(Some(CHAIN_ZERO));
+        }
+        let dev = self
+            .dev_find(col, device)?
+            .ok_or_else(|| format!("gen4 store: no device {device}"))?;
+        if self.dev_row(dev)?.kind == Some(DEV_NATIVE) && seq <= self.last(dev)? {
+            if let Some(run) = self.run_at_or_before(dev, seq)? {
+                if run.end() > seq {
+                    return Ok(None);
+                }
+            }
+        }
+        self.chain_at_dev(dev, seq).map(Some)
+    }
+
     fn chain_at_dev(&self, dev: i64, seq: u64) -> Result<Chain, String> {
         let row = self.dev_row(dev)?;
         if row.kind != Some(DEV_NATIVE) {
