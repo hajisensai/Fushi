@@ -24,6 +24,9 @@ class _FakePlugins {
   /// pluginId -> 取词结果。
   final Map<String, MusicPluginLyrics?> lyrics = <String, MusicPluginLyrics?>{};
   final List<String> searched = <String>[];
+
+  /// 每次搜索收到的 `标题|艺人|时长`（手动搜索要按用户输入的关键词搜）。
+  final List<String> searchedKeywords = <String>[];
   final List<String> fetched = <String>[];
 
   Future<List<MusicPluginLyricsCandidate>> search(
@@ -35,6 +38,7 @@ class _FakePlugins {
     String? query,
   }) async {
     searched.add(id);
+    searchedKeywords.add('$title|$artist|$durationMs');
     final List<MusicPluginLyricsCandidate>? c = candidates[id];
     if (c == null) throw MusicPluginException('boom $id');
     return c;
@@ -436,5 +440,80 @@ void main() {
     ];
     expect(await service().resolve(track), isNull);
     expect(plugins.fetched, isEmpty);
+  });
+
+  // 拍板台 D48CgzHUok：YouTube 来源（翻唱多）标题与歌名对不上，自动匹配找不到，用户要能
+  // 手动输入关键词搜歌词——LRCLIB 与歌词插件都按输入搜。
+  group('手动关键词搜索（searchOnline）', () {
+    const MusicLyricsTrackRef youtube = MusicLyricsTrackRef(
+      trackUid: 'uid-yt',
+      path: 'https://www.youtube.com/watch?v=abc',
+      title: '【歌ってみた】ぜんぜん違う動画タイトル',
+      artist: 'SomeChannel',
+      durationMs: 320000,
+    );
+
+    test('LRCLIB 与已启用的歌词插件都按输入的标题 / 艺人搜，插件结果并入候选，不落库', () async {
+      plugins.candidates['a'] = <MusicPluginLyricsCandidate>[
+        _cand('a'),
+        const MusicPluginLyricsCandidate(
+          title: 'Unrelated Track',
+          artist: 'Artist',
+          ref: <String, Object?>{'id': 'nope'},
+        ),
+      ];
+      plugins.lyrics['a'] = _lyr('[00:01.00]hi');
+      // 'b' 报错只跳过它；'c' 没结果。
+      plugins.candidates['c'] = <MusicPluginLyricsCandidate>[];
+      final List<MusicLyricsCandidate> found = await service().searchOnline(
+        youtube,
+        title: ' Song ',
+        artist: 'Artist',
+      );
+      final Uri lrclib = lrclibCalls.single;
+      expect(lrclib.path, '/api/search');
+      expect(lrclib.queryParameters['track_name'], 'Song');
+      expect(lrclib.queryParameters['artist_name'], 'Artist');
+      expect(plugins.searched.toSet(), <String>{'a', 'b', 'c'});
+      // 不带曲目时长：视频版 / 翻唱的时长与原曲不同，不该被时长剔除。
+      expect(plugins.searchedKeywords.toSet(), <String>{'Song|Artist|null'});
+      expect(found, hasLength(1));
+      expect(found.single.source, MusicLyricsSource.lyricsPlugin('a'));
+      expect(found.single.label, 'Song — Artist');
+      expect(found.single.timeline.lines.single.text, 'hi');
+      expect(await db.select(db.musicLyrics).get(), isEmpty);
+    });
+
+    test('插件候选时长与曲目差很多（视频版）仍列出', () async {
+      enabled = <String>['a'];
+      plugins.candidates['a'] = <MusicPluginLyricsCandidate>[_cand('a')];
+      plugins.lyrics['a'] = _lyr('[00:01.00]hi');
+      final List<MusicLyricsCandidate> found = await service().searchOnline(
+        youtube,
+        title: 'Song',
+        artist: 'Artist',
+      );
+      expect(found, hasLength(1));
+    });
+
+    test('艺人留空 = 不限艺人；不传关键词 = 用曲目元数据', () async {
+      enabled = <String>[];
+      lrclibStatus = 200;
+      lrclibBody = '[]';
+      await service().searchOnline(youtube, title: 'Song', artist: '  ');
+      expect(lrclibCalls.last.queryParameters['artist_name'], '');
+      await service().searchOnline(youtube);
+      expect(lrclibCalls.last.queryParameters['track_name'], youtube.title);
+      expect(lrclibCalls.last.queryParameters['artist_name'], youtube.artist);
+    });
+
+    test('所有来源都出错且没有结果时抛出（界面显示错误而不是「没有候选」）', () async {
+      enabled = <String>['b'];
+      await expectLater(
+        service().searchOnline(youtube, title: 'Song', artist: 'Artist'),
+        throwsA(isA<HttpException>()),
+      );
+      expect(plugins.searched, <String>['b']);
+    });
   });
 }

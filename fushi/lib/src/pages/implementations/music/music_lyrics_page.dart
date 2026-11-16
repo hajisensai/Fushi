@@ -111,6 +111,7 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
+import 'package:fushi/src/utils/components/fushi_form_dialog.dart';
 import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
@@ -1204,12 +1205,38 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     await _afterSourceChanged(item);
   }
 
+  /// 「搜索在线歌词」：先让用户改关键词（默认填曲目元数据；YouTube 翻唱、视频标题与歌名
+  /// 对不上时手动改），再按这组关键词搜 LRCLIB 与已启用的歌词插件。
   Future<void> _searchOnline() async {
     final MusicPlayItem? item = _engine.current;
     if (item == null) return;
+    final MusicLyricsTrackRef ref = musicLyricsTrackRefOf(item);
+    final List<String>? keywords = await showFushiFormDialog(
+      context: _themedContext,
+      title: t.music_lyrics_search_online,
+      icon: FushiIcons.search,
+      message: t.music_lyrics_search_hint,
+      confirmLabel: t.search,
+      fields: <FushiFormField>[
+        FushiFormField(
+          label: t.music_lyrics_search_title_label,
+          initialValue: ref.title,
+        ),
+        FushiFormField(
+          label: t.music_lyrics_search_artist_label,
+          initialValue: ref.artist ?? '',
+          optional: true,
+        ),
+      ],
+    );
+    if (keywords == null || !mounted) return;
     final List<MusicLyricsCandidate> found;
     try {
-      found = await _service.searchOnline(musicLyricsTrackRefOf(item));
+      found = await _service.searchOnline(
+        ref,
+        title: keywords[0],
+        artist: keywords[1],
+      );
     } on Object catch (e) {
       if (mounted) setState(() => _error = e);
       return;
@@ -1225,7 +1252,10 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
           FushiChoiceOption<MusicLyricsCandidate>(
             value: c,
             label: c.label,
-            subtitle: musicLyricsCandidateSubtitle(c),
+            subtitle: <String>[
+              musicLyricsOnlineSourceName(c.source),
+              musicLyricsCandidateSubtitle(c),
+            ].join(' · '),
           ),
       ],
     );
