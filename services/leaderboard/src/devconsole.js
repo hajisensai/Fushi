@@ -13,9 +13,11 @@
 //   GET  /dev/stats.json          同一份数据的 JSON（安装统计快照 + computedAt），给维护者自己的看板（Fushi Pulse）取数；没有会话 → 401 JSON
 //   POST /dev/stats/refresh       立即重算安装统计快照（距上次不足 15 分钟则不重算）
 //   GET  /dev/decisions           拍板台：AI 代理写入的待拍事项（decisions.js）
-//   POST /dev/d/:id  {v,text,back} 拍板并 / 或留言
+//   GET  /dev/decisions.json      拍板台同步（?sig= 没变回 {same:true}）
+//   GET  /dev/decisions.js        拍板台客户端脚本（decisions_client.js）
+//   POST /dev/d/:id  {v,text,back} 拍板并 / 或留言（Accept: application/json → 回新卡片 JSON，不跳转）
 //
-// 安全：页面无脚本（CSP script-src 为 none）；会话 Cookie HttpOnly + Secure + SameSite=Strict，
+// 安全：页面默认无脚本（CSP script-src 为 none），只有拍板台放行本站脚本 /dev/decisions.js；会话 Cookie HttpOnly + Secure + SameSite=Strict，
 // 只发往 /dev；所有 POST 另验 Origin 与本站一致（双保险防 CSRF）。会话 7 天，库里只存 token 哈希。
 // 业务一律复用 feedback.js 的函数，与 App 端开发者接口同一份逻辑。
 
@@ -36,8 +38,10 @@ import {
 import { PING_PLATFORMS, loadInstallStats, refreshInstallStatsSnapshot, versionIncludes } from './installs.js';
 import { RELEASE_PLATFORMS, projectStats, refreshProjectStats } from './project_stats.js';
 import {
-  DECISIONS_STYLE, DECISION_LIMITS, decisionStageParam, listDecisions, renderDecisions, submitDecision,
+  DECISIONS_STYLE, DECISION_LIMITS, decisionItem, decisionStageParam, decisionsPayload, decisionsSig, getDecision,
+  listDecisions, renderDecisions, submitDecision,
 } from './decisions.js';
+import { DECISIONS_CLIENT_JS } from './decisions_client.js';
 
 export const SESSION_COOKIE = 'fushi_dev';
 export const SESSION_TTL_MS = 7 * 24 * 3600 * 1000;
@@ -79,6 +83,17 @@ const CSP = [
   "form-action 'self'",
   "frame-ancestors 'none'",
 ].join('; ');
+
+/** 拍板台页面放行本站脚本与 fetch，其余照旧。 */
+const DECISIONS_CSP = CSP.replace("default-src 'none'", "default-src 'none'; script-src 'self'; connect-src 'self'");
+
+/** 脚本内容的短哈希，拼进 URL 防缓存旧版。 */
+function shortHash(text) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i += 1) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193);
+  return (h >>> 0).toString(36);
+}
+const DECISIONS_SCRIPT_URL = `/dev/decisions.js?v=${shortHash(DECISIONS_CLIENT_JS)}`;
 
 export function isDevConsolePath(path) {
   return path === '/dev' || path.startsWith('/dev/');
@@ -897,11 +912,44 @@ export async function routeDevConsole(request, env, url, now, ctx, ip) {
   }
   if (method === 'GET' && path === '/dev/decisions') {
     const stage = decisionStageParam(url.searchParams.get('stage'));
-    return html(layout('拍板台', renderDecisions(await listDecisions(env), stage), { signedIn: true }));
+    const [rows, sig] = await Promise.all([listDecisions(env), decisionsSig(env)]);
+    return html(layout('拍板台', renderDecisions(rows, stage, {
+      sig, script: DECISIONS_SCRIPT_URL, conflict: url.searchParams.get('conflict') === '1',
+    }), { signedIn: true }),
+      200, { 'Content-Security-Policy': DECISIONS_CSP });
+  }
+  if (method === 'GET' && path === '/dev/decisions.json') {
+    return json(await decisionsPayload(env, url.searchParams.get('sig') || ''), 200, { 'Cache-Control': 'private, no-store' });
+  }
+  if (method === 'GET' && path === '/dev/decisions.js') {
+    return new Response(DECISIONS_CLIENT_JS, {
+      headers: {
+        'Content-Type': 'text/javascript; charset=utf-8',
+        // URL 带内容哈希，可以放心长缓存。
+        'Cache-Control': 'private, max-age=31536000, immutable',
+        'X-Content-Type-Options': 'nosniff',
+      },
+    });
   }
   if (method === 'POST' && (m = /^\/dev\/d\/([A-Za-z0-9_-]{1,40})$/.exec(path))) {
     const form = await readForm(request, formLimit(DECISION_LIMITS.noteMax));
-    await submitDecision(env, dev, m[1], { v: form.get('v') || 'note', text: form.get('text') || '' }, now);
+    const wantsJson = (request.headers.get('Accept') || '').includes('application/json');
+    let conflict = false;
+    try {
+      await submitDecision(env, dev, m[1], {
+        v: form.get('v') || 'note', text: form.get('text') || '', base: form.has('base') ? form.get('base') : null,
+      }, now);
+    } catch (e) {
+      if (!(e instanceof HttpError) || e.code !== 'verdict_conflict') throw e;
+      conflict = true;
+    }
+    if (wantsJson) {
+      // 冲突时也回最新的卡：页面换上别人刚拍的结果，留言草稿留在框里。
+      const [row, sig] = await Promise.all([getDecision(env, m[1]), decisionsSig(env)]);
+      return json({ ...(conflict ? { error: 'verdict_conflict' } : {}), item: decisionItem(row), sig },
+        conflict ? 409 : 200, { 'Cache-Control': 'no-store' });
+    }
+    if (conflict) return redirect(`/dev/decisions?stage=all&conflict=1#d-${m[1]}`);
     // 回到原来那一栏、定位到这条（拍完它可能已离开当前栏，锚点找不到就停在栏顶）。
     return redirect(`/dev/decisions?stage=${decisionStageParam(form.get('back'))}#d-${m[1]}`);
   }
