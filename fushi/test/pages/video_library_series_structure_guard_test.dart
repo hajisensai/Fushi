@@ -70,10 +70,22 @@ void main() {
       page.indexOf('Widget _buildVideoWallSliver('),
       page.indexOf('Widget _buildAllVideoGridSliver('),
     );
+    // PR #3397 起格子按色块尺寸档构造（`build(orientation, block)`）：封面网格
+    // 布局传 null，色块布局（拼贴 / 规整）经 [_buildVideoBlockSliver] 传入朝向。
+    // 两条路径都必须钉死竖版。
+    final String flatWall = wallSliver.replaceAll(RegExp(r'\s+'), ' ');
     expect(
-      wallSliver,
-      contains('.build(VideoCardOrientation.portrait)'),
-      reason: '系列墙必须使用竖版刮削封面，不能再被分集截图探测成横卡',
+      flatWall,
+      contains('.build(VideoCardOrientation.portrait, null)'),
+      reason: '系列墙（封面网格）必须使用竖版刮削封面，不能再被分集截图探测成横卡',
+    );
+    expect(
+      flatWall,
+      contains(
+        '_buildVideoBlockSliver( cells, padding, layout, '
+        'VideoCardOrientation.portrait,',
+      ),
+      reason: '系列墙（色块布局）同样必须以竖版建格',
     );
     expect(
       page,

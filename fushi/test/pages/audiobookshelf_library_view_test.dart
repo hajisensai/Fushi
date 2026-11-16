@@ -381,6 +381,9 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Narrated by Reader R'), findsOneWidget);
     expect(find.text('Stream'), findsOneWidget);
+    // 海报详情按封面取色（[CoverColorSchemeCache]，取色带 10 s 超时计时器）：
+    // 推过超时再收尾，免得计时器挂到 widget 树卸载之后。
+    await tester.pump(const Duration(seconds: 11));
   });
 
   testWidgets('播客详情：单集按发布时间从新到旧，每集可点', (WidgetTester tester) async {
@@ -397,5 +400,8 @@ void main() {
     final double older = tester.getTopLeft(find.text('Older Episode')).dy;
     expect(newer, lessThan(older));
     expect(find.text('Stream'), findsNothing, reason: '播客是逐集流式，没有整本的按钮');
+    // 海报详情按封面取色（[CoverColorSchemeCache]，取色带 10 s 超时计时器）：
+    // 推过超时再收尾，免得计时器挂到 widget 树卸载之后。
+    await tester.pump(const Duration(seconds: 11));
   });
 }

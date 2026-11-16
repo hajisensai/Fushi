@@ -85,6 +85,16 @@ class PrefsSectionTabOrderStore implements SectionTabOrderStore {
       _prefs.setPref('$kSectionTabOrderPrefKeyPrefix$orderKey', ids.join(','));
 }
 
+/// 没有显式 [SectionTabOrderScope] 时的应用级回落：由持有偏好仓库的上层
+/// （`AppModel.initialise` 建好偏好仓库时）注册，返回 null = 当前上下文没有可用
+/// 存储（启动早期 / 偏好未装载 / 裸组件），页签按宿主顺序显示、不提供排序入口。
+///
+/// 经回调注入而不是让页签组件直接读 AppModel：页签是库页 / 更新中心等多处共用
+/// 的 UI 件，直接 import `app_model.dart` 会把每个用到它的页面都拖进 import 大环
+/// （`test/build/import_cycle_guard_test.dart`）。
+SectionTabOrderStore? Function(BuildContext context)?
+sectionTabOrderAppFallback;
+
 /// 给子树指定页签顺序存储（组件测试 / 无 ProviderScope 的宿主）。
 class SectionTabOrderScope extends InheritedWidget {
   const SectionTabOrderScope({

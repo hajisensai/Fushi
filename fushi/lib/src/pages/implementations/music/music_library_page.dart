@@ -26,6 +26,8 @@ import 'package:fushi/src/mining/mined_origin_navigation.dart'
 import 'package:fushi/src/media/music/music_output_backend.dart'
     show MusicPlayItem;
 import 'package:fushi/src/utils/components/fushi_continue_hero.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart';
+import 'package:fushi/src/utils/components/fushi_cover_block.dart';
 import 'package:fushi/src/media/music/music_format_badge.dart';
 import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/media/music/music_library_data.dart';
@@ -47,6 +49,7 @@ import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart
 import 'package:fushi_engine/media/music/server/music_server.dart'
     show MusicServerBrowser;
 import 'package:fushi/src/pages/implementations/music/music_server_pages.dart';
+import 'package:fushi/src/pages/implementations/music/music_collection_view.dart';
 import 'package:fushi/src/pages/implementations/music/music_shortcuts.dart';
 import 'package:fushi/src/pages/implementations/music/music_sources_page.dart';
 import 'package:fushi/src/pages/implementations/music/music_sources_recommend.dart';
@@ -63,8 +66,14 @@ import 'package:fushi/src/pages/implementations/media_library_shell.dart'
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
     show
         FushiFloatingChromeBar,
+        FushiFloatingChromeController,
         FushiFloatingChromeInset,
-        FushiFloatingChromeInsetSpacer;
+        FushiFloatingChromeInsetSpacer,
+        FushiFloatingChromeOverlay,
+        FushiFloatingChromeScope,
+        FushiFloatingChromeScrollInset;
+import 'package:fushi/src/utils/components/glass/fushi_apple_scroll_chrome.dart'
+    show fushiNotificationFromVisibleSubtree;
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_search.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -265,6 +274,43 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
   /// 顶栏动作槽：本页把动作登记进来，由 [FushiFloatingChromeBar] 的动作组画出。
   final FushiShellActionsSlot _actionsSlot = FushiShellActionsSlot();
 
+  /// 重设计外壳下页头大字的显隐 / 收缩（滚动驱动，与书架 / 视频 / 游戏库同一个
+  /// [FushiFloatingChromeController]）。只有内容会滚到大字底下的分区（推荐页，
+  /// [_chromeFloats]）把滚动喂给它；其余分区的列表自己不让位页头，照旧
+  /// 排在大字下面、大字不收。
+  final FushiFloatingChromeController _chrome = FushiFloatingChromeController();
+
+  /// 本帧的当前分区是否浮在页头大字底下（[_chromeFloats] 的快照，滚动回调里用）。
+  bool _floatingNow = false;
+
+  /// 推荐页选中的来源 key（null = 全部）。重设计外壳下来源页签画在页头大字行里，
+  /// 选中值由本页持有（[musicRecommendSourceTabs]）。
+  String? _recommendSource;
+
+  /// 当前分区的内容是否滚到页头大字底下（大字随滚动收缩、底板模糊渐入）：重设计
+  /// 外壳下的推荐页。只看外壳、不看库页布局——拼贴与封面网格共用同一套页头 / 页签
+  /// （来源页签都在大字行里），布局只换卡片（2026-11-12 用户：「这两套布局顶部栏
+  /// 和侧边栏和底部栏都应该是公用的」）。推荐页两种卡片版式的滚动视图都按
+  /// `MediaQuery` 顶部内边距让位（[musicBrowsePagePadding]），能接住页头的让位；曲库
+  /// 各分区的列表顶部只留固定间距（`music_track_list.dart` 等），接不住，保持排在
+  /// 大字下面。
+  bool _chromeFloats(BuildContext context) =>
+      shellRedesignActive(context) && _section == MusicLibrarySection.recommend;
+
+  bool _onChromeScroll(ScrollNotification notification) {
+    if (!_floatingNow) return false;
+    // 隐藏的保活分区 / 横滚卡片行发来的通知不算（后者 controller 内按轴过滤）。
+    if (!fushiNotificationFromVisibleSubtree(notification)) return false;
+    return _chrome.handleScrollNotification(notification);
+  }
+
+  void _selectRecommendSource(String? key) {
+    if (key == _recommendSource) return;
+    // 换了来源面板，新面板从顶部开始：页头回来、大字展开。
+    _chrome.resetToTop();
+    setState(() => _recommendSource = key);
+  }
+
   /// 已启用、校验通过的插件音源（合规门没过的平台恒为空）。
   List<MusicPluginManifest> _pluginSources = const <MusicPluginManifest>[];
 
@@ -352,9 +398,15 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
     _companion.attach(context, focusChanges: FocusManager.instance);
   }
 
+  /// 「色块 / 列表」样式切了：重画分区与页头切换键。
+  void _onViewStyleChanged() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void initState() {
     super.initState();
+    MusicViewStyleStore.instance.addListener(_onViewStyleChanged);
     unawaited(_reload());
     unawaited(_reloadServerAlbums());
     unawaited(_reloadOnlineSources());
@@ -381,10 +433,12 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
 
   @override
   void dispose() {
+    MusicViewStyleStore.instance.removeListener(_onViewStyleChanged);
     _companion.dispose();
     unawaited(_dbSub?.cancel());
     _searchInputs.dispose();
     _actionsSlot.dispose();
+    _chrome.dispose();
     super.dispose();
   }
 
@@ -458,14 +512,34 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
     String? artistOf(MusicTrackRow track) =>
         track.artistCredit ?? albumOf(track)?.albumArtistCredit;
 
+    // 封面色块版式（[FushiContinueSpotlight] 在重设计外壳 + 拼贴 / 规整色块下）：
+    // 与专辑墙色块同一张直角封面、同一个取色图源（目录 / 缓存封面文件；只有内嵌
+    // 封面的专辑取不到，退回中性底色）。
+    Widget blockCoverOf(MusicTrackRow track) {
+      final MusicAlbumRow? album = albumOf(track);
+      return MusicCover(
+        coverPath: album?.coverPath,
+        embeddedFromPath: album == null
+            ? track.path
+            : snap.embeddedCoverPathOf(album),
+        borderRadius: BorderRadius.zero,
+      );
+    }
+
+    ImageProvider? tintOf(MusicTrackRow track) =>
+        musicCoverImageProvider(albumOf(track)?.coverPath, size: 128);
+
     final MusicTrackRow track = _recentTracks.first;
     final MusicAlbumRow? album = albumOf(track);
     return FushiContinueSpotlight(
       sideRowKey: const ValueKey<String>('music-continue-side-row'),
+      blockLabel: t.music_continue_listening,
       main: FushiContinueEntry(
         key: const ValueKey<String>('music-continue-hero'),
         focusId: const FushiFocusId('music-continue-hero'),
         cover: coverOf(track),
+        blockCover: blockCoverOf(track),
+        colorSource: tintOf(track),
         coverAspectRatio: 1,
         eyebrow: t.music_continue_listening,
         title: album?.title ?? track.title,
@@ -485,6 +559,8 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
               key: ValueKey<String>('music-continue-side/${t.trackUid}'),
               material: ShelfCoverMaterial.glossyAlbum,
               cover: coverOf(t),
+              blockCover: blockCoverOf(t),
+              colorSource: tintOf(t),
               coverAspectRatio: 1,
               title: a?.title ?? t.title,
               subtitle: artistOf(t),
@@ -548,6 +624,9 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
   /// 顶栏动作：搜索最常用、最后才收进「⋯」（[FushiShellHeaderActions] 从尾部往前收）。
   void _claimHeaderActions() {
     final bool idle = !_scanning;
+    // 当前分区的「色块 / 列表」切换键（推荐 / 作品 / 墨水屏没有）。
+    final (MusicViewKind, MusicViewStyle)? view =
+        musicViewStyleSwitchable(context) ? _libraryViewKind(_section) : null;
     _actionsSlot.claim(
       this,
       visible: true,
@@ -559,6 +638,11 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
             tooltip: t.music_library_search_hint,
             onTap: () => unawaited(_openSearchPage()),
           ),
+          if (view != null)
+            musicViewStyleToggleButton(
+              view.$1,
+              _libraryStyle(context, _section),
+            ),
           FushiIconButton(
             key: const ValueKey<String>('music_sources'),
             icon: FushiIcons.hub,
@@ -632,12 +716,27 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
   }
 
   void _selectSection(MusicLibrarySection v) => setState(() {
+    // 换了分区，新页面从顶部开始：页头回来、大字展开。
+    if (v != _section) _chrome.resetToTop();
     _sectionTouched = true;
     _section = v;
     if (musicLibrarySectionGroupOf(v) == LibrarySectionGroup.library) {
       _lastLibrarySection = v;
     }
   });
+
+  /// 顶栏行（页签 + 动作组 + 导入钮）；[secondary] 只在页头大字顶栏里给。
+  Widget _buildChromeBar({Widget? secondary}) => FushiFloatingChromeBar(
+    tabs: _buildTopTabs(),
+    slot: _actionsSlot,
+    secondary: secondary,
+    trailing: libraryImportChromeButton(
+      selected: false,
+      onTap: () => unawaited(_openImportMenu()),
+      focusIdPrefix: 'music-library-view',
+      anchorKey: _importAnchor,
+    ),
+  );
 
   /// 一级「我的 / 推荐」两组；没有推荐（未装 / 合规门）时只剩一组，不画胶囊。
   Widget _buildTopTabs() {
@@ -666,34 +765,39 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
 
   /// 曲库组的二级胶囊（歌曲 / 专辑 / 艺人 / 歌单 / 作品）；在推荐页时为空。
   Widget _buildSubTabs(FushiDesignTokens tokens) {
-    if (musicLibrarySectionGroupOf(_section) != LibrarySectionGroup.library) {
-      return const SizedBox.shrink();
-    }
+    final Widget? tabs = _buildSubTabsBody();
+    if (tabs == null) return const SizedBox.shrink();
     return Padding(
       // 与顶栏胶囊、页面内容同一条页边；二级下划线页签贴着顶栏（与书架 / 视频 /
       // 游戏库同一间距）。
       padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
-      child: Align(
-        alignment: AlignmentDirectional.centerStart,
-        child: LibrarySectionTabs<MusicLibrarySection>(
-          tabs: <LibrarySectionTab<MusicLibrarySection>>[
-            for (final MusicLibrarySection s in MusicLibrarySection.values)
-              if (musicLibrarySectionGroupOf(s) == LibrarySectionGroup.library)
-                LibrarySectionTab<MusicLibrarySection>(
-                  value: s,
-                  label: musicLibrarySectionLabel(s),
-                ),
-          ],
-          selected: _section,
-          onChanged: _selectSection,
-          focusIdPrefix: 'music-library-subview',
-          secondary: true,
-          // 二级用 M3 secondary tabs（文字 + 横贯下划线），不再是第二枚浮动胶囊：
-          // 与一级按钮组胶囊拉开层级（2026-10-30 用户拍板方案 B）。
-          // 反馈 ndQ5eXLcqp：长按 / 右键页签栏自定义曲库分区顺序。
-          orderKey: 'music-library',
-        ),
-      ),
+      child: Align(alignment: AlignmentDirectional.centerStart, child: tabs),
+    );
+  }
+
+  /// 曲库组的二级页签本体（不带页边 / 对齐）；在推荐页时为 null。页头大字顶栏
+  /// 里交给大字行（[FushiFloatingChromeBar.secondary]）。
+  Widget? _buildSubTabsBody() {
+    if (musicLibrarySectionGroupOf(_section) != LibrarySectionGroup.library) {
+      return null;
+    }
+    return LibrarySectionTabs<MusicLibrarySection>(
+      tabs: <LibrarySectionTab<MusicLibrarySection>>[
+        for (final MusicLibrarySection s in MusicLibrarySection.values)
+          if (musicLibrarySectionGroupOf(s) == LibrarySectionGroup.library)
+            LibrarySectionTab<MusicLibrarySection>(
+              value: s,
+              label: musicLibrarySectionLabel(s),
+            ),
+      ],
+      selected: _section,
+      onChanged: _selectSection,
+      focusIdPrefix: 'music-library-subview',
+      secondary: true,
+      // 二级用 M3 secondary tabs（文字 + 横贯下划线），不再是第二枚浮动胶囊：
+      // 与一级按钮组胶囊拉开层级（2026-10-30 用户拍板方案 B）。
+      // 反馈 ndQ5eXLcqp：长按 / 右键页签栏自定义曲库分区顺序。
+      orderKey: 'music-library',
     );
   }
 
@@ -794,6 +898,22 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
     final MusicLibrarySnapshot? snap = _snapshot;
     // 首页的悬浮条宿主不给各 tab 加底部留白（会截短别的 tab 的列表），音乐页自己让位。
     _claimHeaderActions();
+    final bool redesign = shellRedesignActive(context);
+    final bool floats = _chromeFloats(context);
+    _floatingNow = floats;
+    final Widget? hero = snap == null ? null : _buildContinueHero(snap);
+    final Widget sections = _buildSectionsNavigator(
+      context,
+      snap,
+      // 内容浮在页头大字底下时「继续收听」跟着推荐列表一起滚（交给推荐页当首块），
+      // 不再钉在列表上方。
+      recommendLeading: floats && hero != null
+          ? Padding(
+              padding: EdgeInsets.only(bottom: tokens.spacing.gap * 1.5),
+              child: hero,
+            )
+          : null,
+    );
     return MusicBarReserve(
       child: Focus(
         canRequestFocus: false,
@@ -808,95 +928,194 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
           actionsSlot: _actionsSlot,
           child: SafeArea(
             bottom: false,
-            // 外壳给库页留的顶部呼吸（[FushiFloatingChromeInset]）由页头上方的
-            // 定高空白吃掉：本页工具栏是固定页头、不随滚动收起，下面各分区自己滚。
-            // 子树 inset 归零，分区的滚动视图不再重复让位。
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                const FushiFloatingChromeInsetSpacer(),
-                Expanded(
-                  child: FushiFloatingChromeInset(
-                    top: 0,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: <Widget>[
-                        // 一级只放「曲库 / 推荐」两组（2026-10-30 用户拍板方案 D，
-                        // 与书 / 漫画 / 视频 / 游戏库同一分法）；入库动作收在右端的
-                        // 导入钮菜单里。
-                        FushiFloatingChromeBar(
-                          tabs: _buildTopTabs(),
-                          slot: _actionsSlot,
-                          trailing: libraryImportChromeButton(
-                            selected: false,
-                            onTap: () => unawaited(_openImportMenu()),
-                            focusIdPrefix: 'music-library-view',
-                            anchorKey: _importAnchor,
-                          ),
-                        ),
-                        _buildSubTabs(tokens),
-                        SizedBox(height: tokens.spacing.gap),
-                        if (snap == null ? null : _buildContinueHero(snap)
-                            case final Widget hero)
+            child: redesign
+                ? _buildMastheadPage(
+                    tokens: tokens,
+                    hero: floats ? null : hero,
+                    sections: sections,
+                    floats: floats,
+                  )
+                : _buildClassicPage(
+                    tokens: tokens,
+                    hero: hero,
+                    sections: sections,
+                  ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 重设计外壳：页头大字叠在内容上（[FushiFloatingChromeOverlay]，与书架 / 视频 /
+  /// 游戏库同一套），滚动驱动大字收缩与 90% 底色模糊底板。二级页签交给大字行：曲库
+  /// 组是歌曲 / 专辑 / 艺人 / 歌单 / 作品，推荐页是来源页签
+  /// （[musicRecommendSourceTabs]）。
+  ///
+  /// 只有 [floats] 的分区（[_chromeFloats]）把内容铺到大字底下、把滚动喂给
+  /// [_chrome]；其余分区整体排在大字下面（顶部让出 `MediaQuery` 里的让位 + 一档
+  /// 间距，与改前的固定页头同一版面），滚动与版面通知都不往上报，大字不收。
+  Widget _buildMastheadPage({
+    required FushiDesignTokens tokens,
+    required Widget? hero,
+    required Widget sections,
+    required bool floats,
+  }) {
+    final Widget? secondary =
+        musicLibrarySectionGroupOf(_section) == LibrarySectionGroup.library
+        ? _buildSubTabsBody()
+        : floats
+        ? musicRecommendSourceTabs(
+            sources: _recommendSources,
+            selected: _recommendSource,
+            onSelect: _selectRecommendSource,
+          )
+        : null;
+    return FushiFloatingChromeScope(
+      controller: _chrome,
+      child: FushiFloatingChromeOverlay(
+        masthead: true,
+        chrome: _buildChromeBar(secondary: secondary),
+        child: NotificationListener<ScrollMetricsNotification>(
+          // 不浮的分区：它的列表不是页头的主滚动区，版面通知（列表长度变了）不能
+          // 拿去改大字的收缩进度。
+          onNotification: (ScrollMetricsNotification _) => !_floatingNow,
+          child: NotificationListener<ScrollNotification>(
+            onNotification: _onChromeScroll,
+            // 页头让位并进 `MediaQuery` 顶部内边距：推荐页的滚动视图
+            // （[musicBrowsePagePadding]）据此从大字下方起排、往下滚时滚到大字
+            // 底下。树形恒定（只换内边距），切分区不重挂分区导航。
+            child: FushiFloatingChromeScrollInset(
+              child: Builder(
+                builder: (BuildContext context) {
+                  final double top = MediaQuery.paddingOf(context).top;
+                  return Stack(
+                    children: <Widget>[
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: <Widget>[
                           Padding(
-                            padding: EdgeInsets.fromLTRB(
-                              tokens.spacing.page,
-                              0,
-                              tokens.spacing.page,
-                              tokens.spacing.gap * 1.5,
+                            padding: EdgeInsets.only(
+                              top: floats ? 0 : top + tokens.spacing.gap,
                             ),
-                            child: hero,
-                          ),
-                        if (_scanning) const FushiLinearProgressIndicator(),
-                        Expanded(
-                          // 触屏横滑切相邻分区，序即两级页签的视觉序（曲库各分区 →
-                          // 推荐），跨组照样接着滑；首 / 末再往外交给首页外壳切模块
-                          // （与书架 / 视频 / 游戏库同一层 [SectionSwipeNavigator]）。
-                          child: SectionSwipeNavigator<MusicLibrarySection>(
-                            sections: <MusicLibrarySection>[
-                              for (final MusicLibrarySection s
-                                  in MusicLibrarySection.values)
-                                if (musicLibrarySectionGroupOf(s) ==
-                                    LibrarySectionGroup.library)
-                                  s,
-                              if (_hasRecommend) MusicLibrarySection.recommend,
-                            ],
-                            selected: _section,
-                            onSelect: _selectSection,
-                            child: snap == null
-                                ? const FushiLoadingView()
-                                : AnimatedSwitcher(
-                                    duration: fushiMotionDuration(
-                                      context,
-                                      FushiMotion.medium,
+                            child: hero == null
+                                ? const SizedBox(width: double.infinity)
+                                : Padding(
+                                    padding: EdgeInsets.fromLTRB(
+                                      tokens.spacing.page,
+                                      0,
+                                      tokens.spacing.page,
+                                      tokens.spacing.gap * 1.5,
                                     ),
-                                    // 每个分区一份自己的主滚动控制器：切区淡出期间新旧
-                                    // 两个主滚动视图同时在树上（tab 被藏起时 ticker 静音、
-                                    // 旧子树一直不移除），共用外壳那一个会让 Scrollbar 断言
-                                    // 「attached to more than one ScrollPosition」。与视频
-                                    // 库外壳的保活分区同一套做法。
-                                    child: KeyedSubtree(
-                                      key: ValueKey<MusicLibrarySection>(
-                                        _section,
-                                      ),
-                                      child: SectionPrimaryScrollScope(
-                                        child: _buildSection(context, snap),
-                                      ),
-                                    ),
+                                    child: hero,
                                   ),
                           ),
+                          Expanded(
+                            child: MediaQuery.removePadding(
+                              context: context,
+                              removeTop: !floats,
+                              child: sections,
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (_scanning)
+                        Positioned(
+                          top: top,
+                          left: 0,
+                          right: 0,
+                          child: const FushiLinearProgressIndicator(),
                         ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
+                    ],
+                  );
+                },
+              ),
             ),
           ),
         ),
       ),
     );
   }
+
+  /// 原外壳（墨水屏）：固定页头 + 曲库二级页签，下面是分区内容。
+  Widget _buildClassicPage({
+    required FushiDesignTokens tokens,
+    required Widget? hero,
+    required Widget sections,
+  }) {
+    // 外壳给库页留的顶部呼吸（[FushiFloatingChromeInset]）由页头上方的
+    // 定高空白吃掉：本页工具栏是固定页头、不随滚动收起，下面各分区自己滚。
+    // 子树 inset 归零，分区的滚动视图不再重复让位。
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        const FushiFloatingChromeInsetSpacer(),
+        Expanded(
+          child: FushiFloatingChromeInset(
+            top: 0,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                // 一级只放「曲库 / 推荐」两组（2026-10-30 用户拍板方案 D，
+                // 与书 / 漫画 / 视频 / 游戏库同一分法）；入库动作收在右端的
+                // 导入钮菜单里。
+                _buildChromeBar(),
+                _buildSubTabs(tokens),
+                SizedBox(height: tokens.spacing.gap),
+                if (hero != null)
+                  Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      tokens.spacing.page,
+                      0,
+                      tokens.spacing.page,
+                      tokens.spacing.gap * 1.5,
+                    ),
+                    child: hero,
+                  ),
+                if (_scanning) const FushiLinearProgressIndicator(),
+                Expanded(child: sections),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 分区内容：触屏横滑切相邻分区，序即两级页签的视觉序（曲库各分区 → 推荐），
+  /// 跨组照样接着滑；首 / 末再往外交给首页外壳切模块（与书架 / 视频 / 游戏库同一层
+  /// [SectionSwipeNavigator]）。
+  Widget _buildSectionsNavigator(
+    BuildContext context,
+    MusicLibrarySnapshot? snap, {
+    Widget? recommendLeading,
+  }) => SectionSwipeNavigator<MusicLibrarySection>(
+    sections: <MusicLibrarySection>[
+      for (final MusicLibrarySection s in MusicLibrarySection.values)
+        if (musicLibrarySectionGroupOf(s) == LibrarySectionGroup.library) s,
+      if (_hasRecommend) MusicLibrarySection.recommend,
+    ],
+    selected: _section,
+    onSelect: _selectSection,
+    child: snap == null
+        ? const FushiLoadingView()
+        : AnimatedSwitcher(
+            duration: fushiMotionDuration(context, FushiMotion.medium),
+            // 每个分区一份自己的主滚动控制器：切区淡出期间新旧两个主滚动视图同时在
+            // 树上（tab 被藏起时 ticker 静音、旧子树一直不移除），共用外壳那一个会让
+            // Scrollbar 断言「attached to more than one ScrollPosition」。与视频库
+            // 外壳的保活分区同一套做法。
+            child: KeyedSubtree(
+              key: ValueKey<MusicLibrarySection>(_section),
+              child: SectionPrimaryScrollScope(
+                child: _buildSection(
+                  context,
+                  snap,
+                  recommendLeading: recommendLeading,
+                ),
+              ),
+            ),
+          ),
+  );
 
   Future<void> _reloadOnlineSources() async {
     if (widget.snapshotLoader != null || !_app.isPreferencesReady) return;
@@ -934,11 +1153,21 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
         openArtist: (MusicArtistRow a) => unawaited(_openArtist(a)),
       );
 
-  Widget _buildSection(BuildContext context, MusicLibrarySnapshot snap) {
+  /// [recommendLeading]：推荐页内容浮在页头大字底下时（[_chromeFloats]）交给推荐
+  /// 列表当首块的「继续收听」；此时来源选中值也由本页持有、页签画在大字行里。
+  Widget _buildSection(
+    BuildContext context,
+    MusicLibrarySnapshot snap, {
+    Widget? recommendLeading,
+  }) {
     if (_section == MusicLibrarySection.recommend) {
+      final bool hosted = _chromeFloats(context);
       return MusicSourcesRecommendView(
         sources: _recommendSources,
         onSourcesChanged: () => unawaited(_reloadOnlineSources()),
+        selectedSource: hosted ? _recommendSource : null,
+        onSelectSource: hosted ? _selectRecommendSource : null,
+        leading: recommendLeading,
       );
     }
     final List<MusicPluginManifest> accountLists = _pluginsWith(
@@ -987,10 +1216,13 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
         albums: snap.albums,
         serverAlbums: _serverAlbums,
         onOpen: _openAlbum,
+        style: _libraryStyle(context, MusicLibrarySection.albums),
       ),
       MusicLibrarySection.artists => _ArtistList(
+        snapshot: snap,
         artists: snap.artists,
         onOpen: (MusicArtistRow a) => unawaited(_openArtist(a)),
+        style: _libraryStyle(context, MusicLibrarySection.artists),
       ),
       // 本地曲目在前，加入音乐库的远程曲目（YouTube / 在线插件，v148）随后，同一条队列。
       MusicLibrarySection.songs ||
@@ -998,6 +1230,7 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
         entries: snap.songEntries,
         albums: snap.albumByUid,
         context: MusicQueueContext.mixed,
+        style: _libraryStyle(context, MusicLibrarySection.songs),
       ),
       MusicLibrarySection.works => Center(
         child: FushiPlaceholderMessage(
@@ -1018,6 +1251,7 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
             : _PlaylistList(
                 playlists: snap.playlists,
                 counts: snap.playlistTrackCounts,
+                style: _libraryStyle(context, MusicLibrarySection.playlists),
               ),
     };
   }
@@ -1054,7 +1288,12 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
           child: _LocalPlaylistActions(),
         ),
       ] else
-        _PlaylistList(playlists: local, counts: localCounts, shrinkWrap: true),
+        _PlaylistList(
+          playlists: local,
+          counts: localCounts,
+          shrinkWrap: true,
+          style: _libraryStyle(context, MusicLibrarySection.playlists),
+        ),
     ];
     return FushiEntranceScope(
       child: ListView.builder(
@@ -1069,11 +1308,34 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
   }
 }
 
+/// 曲库各分区记样式的视图种类与原有画法（[MusicViewStyleStore]）；推荐 / 作品没有。
+(MusicViewKind, MusicViewStyle)? _libraryViewKind(
+  MusicLibrarySection s,
+) => switch (s) {
+  MusicLibrarySection.albums => (MusicViewKind.albums, MusicViewStyle.blocks),
+  MusicLibrarySection.artists => (MusicViewKind.artists, MusicViewStyle.list),
+  MusicLibrarySection.songs => (MusicViewKind.tracks, MusicViewStyle.list),
+  MusicLibrarySection.playlists => (
+    MusicViewKind.playlists,
+    MusicViewStyle.list,
+  ),
+  MusicLibrarySection.recommend || MusicLibrarySection.works => null,
+};
+
+/// [s] 分区在本页生效的样式（推荐 / 作品不用，给列表）。
+MusicViewStyle _libraryStyle(BuildContext context, MusicLibrarySection s) {
+  final (MusicViewKind, MusicViewStyle)? view = _libraryViewKind(s);
+  return view == null
+      ? MusicViewStyle.list
+      : musicViewStyleOf(context, view.$1, view.$2);
+}
+
 class _AlbumGrid extends StatelessWidget {
   const _AlbumGrid({
     required this.snapshot,
     required this.albums,
     required this.onOpen,
+    required this.style,
     this.serverAlbums = const <MusicServerAlbumRef>[],
   });
 
@@ -1083,62 +1345,79 @@ class _AlbumGrid extends StatelessWidget {
   final List<MusicAlbumRow> albums;
   final ValueChanged<MusicAlbumRow> onOpen;
 
+  /// 色块（封面网格布局下是原有的唱片网格卡）/ 单列行。
+  final MusicViewStyle style;
+
   /// 混排进来的服务器专辑：排在本地专辑之后，卡片带云朵、点开走服务器专辑页。
   final List<MusicServerAlbumRef> serverAlbums;
+
+  /// 第 [i] 格：本地专辑在前、服务器专辑在后；[block] 非 null = 封面色块卡，
+  /// [row] = 单列行，都没给 = 原有的唱片网格卡。
+  Widget _cell(int i, {FushiCoverBlockSize? block, bool row = false}) {
+    if (i >= albums.length) {
+      final MusicServerAlbumRef ref = serverAlbums[i - albums.length];
+      final Key key = ValueKey<String>(
+        'music-server-album-${ref.browser.serverId}-${ref.album.id}',
+      );
+      if (row) {
+        return MusicServerAlbumListRow(
+          key: key,
+          browser: ref.browser,
+          album: ref.album,
+        );
+      }
+      if (block != null) {
+        return MusicServerAlbumBlockCard(
+          key: key,
+          browser: ref.browser,
+          album: ref.album,
+          size: block,
+        );
+      }
+      return MusicServerAlbumCard(
+        key: key,
+        browser: ref.browser,
+        album: ref.album,
+      );
+    }
+    final MusicAlbumRow album = albums[i];
+    return _AlbumCard(
+      key: ValueKey<String>('music-album-${album.albumUid}'),
+      album: album,
+      tracks: snapshot.tracksOfAlbum(album.albumUid),
+      embeddedCoverPath: snapshot.embeddedCoverPathOf(album),
+      disc: snapshot.discOf(album),
+      onTap: () => onOpen(album),
+      block: block,
+      row: row,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    // 专辑一律是方形「唱片」材质（用户 2026-10-26 拍板）；行高按新卡算
-    // （[musicAlbumGridDelegate]：方形封面 + ShelfCardMeta 文字块）。
-    return ShelfCoverMaterialScope(
-      material: ShelfCoverMaterial.glossyAlbum,
-      child: FushiEntranceScope(
-        child: LayoutBuilder(
-          builder: (BuildContext context, BoxConstraints constraints) =>
-              GridView.builder(
-                padding: withBottomSafeInset(
-                  context,
-                  EdgeInsets.fromLTRB(
-                    tokens.spacing.page,
-                    tokens.spacing.gap,
-                    tokens.spacing.page,
-                    tokens.spacing.section,
-                  ),
-                ),
-                gridDelegate: musicAlbumGridDelegate(
-                  context,
-                  constraints.maxWidth,
-                ),
-                itemCount: albums.length + serverAlbums.length,
-                itemBuilder: fushiStaggeredItemBuilder((
-                  BuildContext context,
-                  int i,
-                ) {
-                  if (i >= albums.length) {
-                    final MusicServerAlbumRef ref =
-                        serverAlbums[i - albums.length];
-                    return MusicServerAlbumCard(
-                      key: ValueKey<String>(
-                        'music-server-album-${ref.browser.serverId}-${ref.album.id}',
-                      ),
-                      browser: ref.browser,
-                      album: ref.album,
-                    );
-                  }
-                  final MusicAlbumRow album = albums[i];
-                  return _AlbumCard(
-                    key: ValueKey<String>('music-album-${album.albumUid}'),
-                    album: album,
-                    tracks: snapshot.tracksOfAlbum(album.albumUid),
-                    embeddedCoverPath: snapshot.embeddedCoverPathOf(album),
-                    disc: snapshot.discOf(album),
-                    onTap: () => onOpen(album),
-                  );
-                }),
-              ),
-        ),
+    final EdgeInsets padding = withBottomSafeInset(
+      context,
+      EdgeInsets.fromLTRB(
+        tokens.spacing.page,
+        tokens.spacing.gap,
+        tokens.spacing.page,
+        tokens.spacing.section,
       ),
+    );
+    // 专辑一律是方形「唱片」材质（用户 2026-10-26 拍板）；封面网格布局下行高按
+    // 新卡算（[musicAlbumGridDelegate]：方形封面 + ShelfCardMeta 文字块），色块布局
+    // （拼贴 / 规整色块）按目标块宽自动定列。
+    return MusicStyledCollection(
+      style: style,
+      itemCount: albums.length + serverAlbums.length,
+      padding: padding,
+      gridMaterial: ShelfCoverMaterial.glossyAlbum,
+      gridDelegate: musicAlbumGridDelegate,
+      gridCardBuilder: (BuildContext context, int i) => _cell(i),
+      blockBuilder: (BuildContext context, int i, FushiCoverBlockSize size) =>
+          _cell(i, block: size),
+      rowBuilder: (BuildContext context, int i) => _cell(i, row: true),
     );
   }
 }
@@ -1151,7 +1430,15 @@ class _AlbumCard extends ConsumerWidget {
     required this.embeddedCoverPath,
     required this.onTap,
     this.disc,
+    this.block,
+    this.row = false,
   });
+
+  /// 非 null = 封面色块卡（库页布局为拼贴 / 规整色块）。
+  final FushiCoverBlockSize? block;
+
+  /// 单列行（列表样式）：封面、专辑名、艺人 · 年份 · 曲目数。
+  final bool row;
 
   final MusicAlbumRow album;
   final List<MusicTrackRow> tracks;
@@ -1190,6 +1477,48 @@ class _AlbumCard extends ConsumerWidget {
             bitDepth: first.bitDepth,
             bitrateKbps: first.bitrate,
           );
+    final String subtitle = <String>[
+      album.albumArtistCredit ?? t.music_artist_unknown,
+      if (badge.isNotEmpty) badge,
+      if (disc != null && tracks.isEmpty) t.music_disc_not_imported,
+    ].join(' · ');
+    final Widget? discBadge = disc == null
+        ? null
+        : IgnorePointer(child: MusicDiscBadge(disc: disc));
+    if (row) {
+      final Widget line = Builder(
+        builder: (BuildContext context) => MusicCollectionRow(
+          title: album.title,
+          subtitle: <String>[
+            album.albumArtistCredit ?? t.music_artist_unknown,
+            ?_releaseYear(album.releaseDate),
+            t.music_tracks_count(count: tracks.length),
+            if (badge.isNotEmpty) badge,
+            if (disc != null && tracks.isEmpty) t.music_disc_not_imported,
+          ].join(' · '),
+          coverPath: album.coverPath,
+          embeddedFromPath: embeddedCoverPath,
+          badges: <Widget>[?discBadge],
+          onTap: onTap,
+          onLongPress: disc == null
+              ? null
+              : () {
+                  final RenderObject? box = context.findRenderObject();
+                  if (box is! RenderBox) return;
+                  _showDiscMenu(
+                    context,
+                    ref,
+                    box.localToGlobal(box.size.center(Offset.zero)),
+                  );
+                },
+        ),
+      );
+      if (disc == null) return line;
+      return ContextMenuTrigger(
+        onInvoke: (Offset position) => _showDiscMenu(context, ref, position),
+        child: line,
+      );
+    }
     // 方形「唱片」材质卡（材质由网格外的 Scope 给）：封面上不压角标（用户
     // 2026-10-25），光盘规格徽标（CD / DVD / BD）进副行尾部，与视频库原盘卡同位。
     final Widget card = FushiHoverLift(
@@ -1207,33 +1536,59 @@ class _AlbumCard extends ConsumerWidget {
                   box.localToGlobal(box.size.center(Offset.zero)),
                 );
               },
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            AspectRatio(
-              aspectRatio: kShelfAlbumAspectRatio,
-              child: ShelfCoverFrame(
-                child: MusicCover(
-                  coverPath: album.coverPath,
-                  embeddedFromPath: embeddedCoverPath,
-                ),
+        child: block != null
+            ? MusicCoverTintSource(
+                coverPath: album.coverPath,
+                embeddedFromPath: embeddedCoverPath,
+                builder: (BuildContext context, ImageProvider? tint) =>
+                    FushiCoverBlock(
+                      size: block!,
+                      art: FushiCoverBlockArt.square,
+                      metaKey: ValueKey<String>(
+                        'music-album-meta-${album.albumUid}',
+                      ),
+                      title: album.title,
+                      covers: <Widget>[
+                        MusicCover(
+                          coverPath: album.coverPath,
+                          embeddedFromPath: embeddedCoverPath,
+                          borderRadius: BorderRadius.zero,
+                        ),
+                      ],
+                      tintImage: tint,
+                      // 色块卡（设计稿 `.ab`）：副行「歌手 · 年份」，音频规格进
+                      // chip，光盘规格徽标照旧排在文字区底部。
+                      subtitle: <String>[
+                        album.albumArtistCredit ?? t.music_artist_unknown,
+                        ?_releaseYear(album.releaseDate),
+                        if (disc != null && tracks.isEmpty)
+                          t.music_disc_not_imported,
+                      ].join(' · '),
+                      chip: badge.isEmpty ? null : badge,
+                      trailing: discBadge,
+                    ),
+              )
+            : Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  AspectRatio(
+                    aspectRatio: kShelfAlbumAspectRatio,
+                    child: ShelfCoverFrame(
+                      child: MusicCover(
+                        coverPath: album.coverPath,
+                        embeddedFromPath: embeddedCoverPath,
+                      ),
+                    ),
+                  ),
+                  ShelfCardMeta(
+                    key: ValueKey<String>('music-album-meta-${album.albumUid}'),
+                    title: album.title,
+                    subtitle: subtitle,
+                    trailing: discBadge,
+                  ),
+                ],
               ),
-            ),
-            ShelfCardMeta(
-              key: ValueKey<String>('music-album-meta-${album.albumUid}'),
-              title: album.title,
-              subtitle: <String>[
-                album.albumArtistCredit ?? t.music_artist_unknown,
-                if (badge.isNotEmpty) badge,
-                if (disc != null && tracks.isEmpty) t.music_disc_not_imported,
-              ].join(' · '),
-              trailing: disc == null
-                  ? null
-                  : IgnorePointer(child: MusicDiscBadge(disc: disc)),
-            ),
-          ],
-        ),
       ),
     );
     if (disc == null) return card;
@@ -1245,32 +1600,104 @@ class _AlbumCard extends ConsumerWidget {
   }
 }
 
-class _ArtistList extends StatelessWidget {
-  const _ArtistList({required this.artists, required this.onOpen});
+/// 发行日期（`YYYY` / `YYYY-MM` / `YYYY-MM-DD`）里的年份；没有或不是年份开头为
+/// null。
+String? _releaseYear(String? releaseDate) =>
+    releaseDate == null ? null : RegExp(r'^\d{4}').stringMatch(releaseDate);
 
+class _ArtistList extends StatelessWidget {
+  const _ArtistList({
+    required this.snapshot,
+    required this.artists,
+    required this.onOpen,
+    required this.style,
+  });
+
+  /// 取各艺人的专辑（专辑艺人署名与艺人名相同的专辑）：数专辑、拿首张封面当头像。
+  final MusicLibrarySnapshot snapshot;
   final List<MusicArtistRow> artists;
   final ValueChanged<MusicArtistRow> onOpen;
+
+  /// 色块 / 单列行（墨水屏恒为原有的分组列表）。
+  final MusicViewStyle style;
 
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final EdgeInsets padding = withBottomSafeInset(
+      context,
+      EdgeInsets.fromLTRB(
+        tokens.spacing.page,
+        tokens.spacing.gap,
+        tokens.spacing.page,
+        tokens.spacing.section,
+      ),
+    );
+    ValueKey<String> keyOf(MusicArtistRow a) =>
+        ValueKey<String>('music-artist-${a.artistUid}');
+    if (musicViewStyleSwitchable(context)) {
+      final Map<String, List<MusicAlbumRow>> albumsByArtist =
+          <String, List<MusicAlbumRow>>{};
+      for (final MusicAlbumRow album in snapshot.albums) {
+        final String? credit = album.albumArtistCredit;
+        if (credit == null) continue;
+        (albumsByArtist[credit] ??= <MusicAlbumRow>[]).add(album);
+      }
+      String? countOf(MusicArtistRow a) {
+        final int n = albumsByArtist[a.name]?.length ?? 0;
+        return n == 0 ? null : t.music_server_album_count(count: n);
+      }
+
+      // 艺人没有自己的图：头像取 TA 第一张专辑的封面（没有则人像占位）。
+      MusicAlbumRow? coverAlbumOf(MusicArtistRow a) =>
+          albumsByArtist[a.name]?.first;
+      return MusicStyledCollection(
+        style: style,
+        itemCount: artists.length,
+        padding: padding,
+        blockBuilder: (BuildContext context, int i, FushiCoverBlockSize size) {
+          final MusicArtistRow a = artists[i];
+          final MusicAlbumRow? cover = coverAlbumOf(a);
+          return MusicCollectionBlock(
+            key: keyOf(a),
+            size: size,
+            title: a.name,
+            subtitle: countOf(a),
+            coverPath: cover?.coverPath,
+            embeddedFromPath: cover == null
+                ? null
+                : snapshot.embeddedCoverPathOf(cover),
+            circular: true,
+            onTap: () => onOpen(a),
+          );
+        },
+        rowBuilder: (BuildContext context, int i) {
+          final MusicArtistRow a = artists[i];
+          final MusicAlbumRow? cover = coverAlbumOf(a);
+          return MusicCollectionRow(
+            key: keyOf(a),
+            title: a.name,
+            subtitle: countOf(a),
+            coverPath: cover?.coverPath,
+            embeddedFromPath: cover == null
+                ? null
+                : snapshot.embeddedCoverPathOf(cover),
+            circular: true,
+            onTap: () => onOpen(a),
+          );
+        },
+      );
+    }
+    // 墨水屏：原有的分组列表。
     return FushiEntranceScope(
       child: ListView.builder(
-        padding: withBottomSafeInset(
-          context,
-          EdgeInsets.fromLTRB(
-            tokens.spacing.page,
-            tokens.spacing.gap,
-            tokens.spacing.page,
-            tokens.spacing.section,
-          ),
-        ),
+        padding: padding,
         itemCount: artists.length,
         itemBuilder: fushiStaggeredItemBuilder((BuildContext context, int i) {
           final MusicArtistRow artist = artists[i];
           return FushiPressScale(
             child: FushiGroupedListItem(
-              key: ValueKey<String>('music-artist-${artist.artistUid}'),
+              key: keyOf(artist),
               index: i,
               count: artists.length,
               onTap: () => onOpen(artist),
@@ -1348,6 +1775,7 @@ class _PlaylistList extends StatelessWidget {
   const _PlaylistList({
     required this.playlists,
     required this.counts,
+    required this.style,
     this.shrinkWrap = false,
   });
 
@@ -1355,52 +1783,90 @@ class _PlaylistList extends StatelessWidget {
 
   /// 各歌单条目数（歌单 uid → 条数）。
   final Map<String, int> counts;
+
+  /// 色块 / 单列行（墨水屏恒为原有的分组列表）。
+  final MusicViewStyle style;
   final bool shrinkWrap;
 
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final EdgeInsets padding = shrinkWrap
+        ? EdgeInsets.zero
+        : withBottomSafeInset(
+            context,
+            EdgeInsets.fromLTRB(
+              tokens.spacing.page,
+              tokens.spacing.gap,
+              tokens.spacing.page,
+              tokens.spacing.section,
+            ),
+          );
+    ValueKey<String> keyOf(MusicPlaylistRow p) =>
+        ValueKey<String>('music-playlist-${p.playlistUid}');
+    String countOf(MusicPlaylistRow p) =>
+        t.music_tracks_count(count: counts[p.playlistUid] ?? 0);
+    // 最前是「新建歌单 / 导入歌单文件」，其后每项一个本地歌单（点开 = 本地歌单页）。
+    const Widget actions = Align(
+      alignment: AlignmentDirectional.centerStart,
+      child: _LocalPlaylistActions(),
+    );
+    if (musicViewStyleSwitchable(context)) {
+      return MusicStyledCollection(
+        style: style,
+        itemCount: playlists.length,
+        padding: padding,
+        shrinkWrap: shrinkWrap,
+        header: actions,
+        headerGap: tokens.spacing.gap,
+        blockBuilder: (BuildContext context, int i, FushiCoverBlockSize size) {
+          final MusicPlaylistRow p = playlists[i];
+          return MusicCollectionBlock(
+            key: keyOf(p),
+            size: size,
+            title: p.name,
+            subtitle: countOf(p),
+            leadingIcon: FushiIcons.playlist,
+            onTap: () => openMusicLocalPlaylist(context, p),
+          );
+        },
+        rowBuilder: (BuildContext context, int i) {
+          final MusicPlaylistRow p = playlists[i];
+          return MusicCollectionRow(
+            key: keyOf(p),
+            title: p.name,
+            subtitle: countOf(p),
+            onTap: () => openMusicLocalPlaylist(context, p),
+          );
+        },
+      );
+    }
+    // 墨水屏：原有的分组列表。
     return FushiEntranceScope(
       child: ListView.builder(
         shrinkWrap: shrinkWrap,
         primary: shrinkWrap ? false : null,
         physics: shrinkWrap ? const NeverScrollableScrollPhysics() : null,
-        padding: shrinkWrap
-            ? EdgeInsets.zero
-            : withBottomSafeInset(
-                context,
-                EdgeInsets.fromLTRB(
-                  tokens.spacing.page,
-                  tokens.spacing.gap,
-                  tokens.spacing.page,
-                  tokens.spacing.section,
-                ),
-              ),
-        // 首行是「新建歌单 / 导入歌单文件」，其后每行一个本地歌单（点开 = 本地歌单页）。
+        padding: padding,
         itemCount: playlists.length + 1,
         itemBuilder: fushiStaggeredItemBuilder((BuildContext context, int i) {
           if (i == 0) {
             return Padding(
               padding: EdgeInsets.only(bottom: tokens.spacing.gap),
-              child: const Align(
-                alignment: AlignmentDirectional.centerStart,
-                child: _LocalPlaylistActions(),
-              ),
+              child: actions,
             );
           }
           final MusicPlaylistRow p = playlists[i - 1];
           return FushiPressScale(
             child: FushiGroupedListItem(
-              key: ValueKey<String>('music-playlist-${p.playlistUid}'),
+              key: keyOf(p),
               index: i - 1,
               count: playlists.length,
               onTap: () => openMusicLocalPlaylist(context, p),
               child: FushiListItem(
                 leading: const FushiListLeadingIcon(FushiIcons.playlist),
                 title: Text(p.name),
-                subtitle: Text(
-                  t.music_tracks_count(count: counts[p.playlistUid] ?? 0),
-                ),
+                subtitle: Text(countOf(p)),
                 trailing: const FushiIcon(FushiIcons.chevronRight),
               ),
             ),
@@ -1548,20 +2014,25 @@ class _MusicLibrarySearchPageState extends State<_MusicLibrarySearchPage> {
     );
   }
 
+  /// 搜索行 + 来源过滤。[masthead]：页头大字形态下作页名下一行（返回键在页头，
+  /// 不再带页边与返回键）；否则是整条悬浮页头。
   Widget _header(
     BuildContext context,
     List<MusicPluginManifest> plugins,
-    List<MusicServerBrowser> servers,
-  ) {
+    List<MusicServerBrowser> servers, {
+    required bool masthead,
+  }) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final bool searching = _query.trim().isNotEmpty;
     return Padding(
-      padding: EdgeInsets.fromLTRB(
-        tokens.spacing.page,
-        tokens.spacing.gap,
-        tokens.spacing.page,
-        tokens.spacing.gap,
-      ),
+      padding: masthead
+          ? EdgeInsets.zero
+          : EdgeInsets.fromLTRB(
+              tokens.spacing.page,
+              tokens.spacing.gap,
+              tokens.spacing.page,
+              tokens.spacing.gap,
+            ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
@@ -1574,7 +2045,9 @@ class _MusicLibrarySearchPageState extends State<_MusicLibrarySearchPage> {
             focusNode: _focusNode,
             hintText: t.music_library_search_hint,
             autofocus: true,
-            onBack: () => unawaited(Navigator.of(context).maybePop()),
+            onBack: masthead
+                ? null
+                : () => unawaited(Navigator.of(context).maybePop()),
             onQueryChanged: (String q) => setState(() => _query = q),
             onSubmitted: (String q) => setState(() => _query = q),
             onClear: () => setState(() => _query = ''),
@@ -1665,11 +2138,21 @@ class _MusicLibrarySearchPageState extends State<_MusicLibrarySearchPage> {
       builder: (BuildContext context, _MusicSearchInputs inputs, Widget? _) {
         return MusicFloatingBarHost(
           child: FushiPageScaffold(
+            masthead: true,
             title: t.music_library_search_hint,
+            // 重设计外壳：页头大字（页名 + 返回键），搜索行在页名下一行；墨水屏
+            // 照旧整条搜索页头。
+            mastheadBottom: _header(
+              context,
+              inputs.searchPlugins,
+              inputs.searchServers,
+              masthead: true,
+            ),
             header: _header(
               context,
               inputs.searchPlugins,
               inputs.searchServers,
+              masthead: false,
             ),
             body: AnimatedSwitcher(
               duration: fushiMotionDuration(context, FushiMotion.medium),

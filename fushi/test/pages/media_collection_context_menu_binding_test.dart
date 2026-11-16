@@ -10,6 +10,7 @@ import 'package:fushi/src/shortcuts/mouse_binding_dispatch.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 import 'package:fushi_core/fushi_core.dart';
+import '../helpers/shell_layout.dart';
 
 /// 成员区三种承载：列表行、无筛选时的拖排网格（任何排序下都可拖）、有筛选时
 /// 退回的普通网格（[SliverGrid] + 成员格）。三条路径各自接了一份菜单触发，都要
@@ -52,6 +53,7 @@ void main() {
       await tester.pumpWidget(
         TranslationProvider(
           child: MaterialApp(
+            theme: gridShellTheme(),
             home: ShortcutBindingScope(
               registry: registry,
               child: MediaCollectionGridDetailPage(

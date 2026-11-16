@@ -40,15 +40,11 @@ Directory _tmp() {
 }
 
 /// 一份空库（与 [BulkFixture] 同 profile、同固定时钟）。
-Future<(SrsDbStore, CountingInterceptor)> _emptyStore(String deviceId) async {
-  final CountingInterceptor counter = CountingInterceptor();
+Future<(SrsDbStore, SrsReadCounter)> _emptyStore(String deviceId) async {
+  final SrsReadCounter counter = SrsReadCounter();
   final Directory dir = _tmp();
-  final TestSrs srs = await openTestSrsAt(
-    '${dir.path}/srs.db',
-    interceptor: counter,
-  );
+  final TestSrs srs = await openTestSrsAt('${dir.path}/srs.db');
   final SrsDbStore store = await SrsDbStore.open(
-    db: srs.db,
     core: srs.core,
     profileUid: kBulkUid,
     deviceId: deviceId,
@@ -66,7 +62,7 @@ Future<Map<String, Object?>> _materialized(SrsDbStore s) async {
   final List<String> noteIds = (await s.entityIds(SrsEntityKind.note)).toList()
     ..sort();
   final Map<String, SrsNoteView?> notes = await s.notes(noteIds);
-  final Map<String, List<String>> dump = await dumpSrsState(s.db);
+  final Map<String, List<String>> dump = await dumpSrsState(s.core);
   String deckName(String? id) => id == null
       ? '-'
       : tree[id] == null
@@ -94,12 +90,9 @@ Future<Map<String, Object?>> _materialized(SrsDbStore s) async {
     ],
     // 缓存行里的牌组 ID 换成全名（两份库的默认牌组 ID 各自派生）。
     'cards': <String>[
-      for (final SrsCardCacheRow c
-          in await (s.db.select(s.db.srsCardsCache)
-                ..orderBy(<OrderClauseGenerator<$SrsCardsCacheTable>>[
-                  ($SrsCardsCacheTable t) => OrderingTerm(expression: t.id),
-                ]))
-              .get())
+      for (final SrsCardCacheRow c in await s.cardRowsWhere(
+        const <String, Object?>{'ordered': true},
+      ))
         <Object?>[
           c.id,
           c.noteId,
@@ -159,15 +152,13 @@ void main() {
       );
     }
     final List<String> cards = <String>[
-      for (final SrsCardCacheRow c
-          in await a.db.select(a.db.srsCardsCache).get())
-        c.id,
+      for (final SrsCardCacheRow c in await a.allCardRows()) c.id,
     ]..sort();
     await a.setSuspended(cards[3], true);
     // 挪第二张卡（Lang → Lang::JP）。笔记的首选牌组 apkg 里没有对应字段，导入取首张卡的牌组：
     // 挪首张卡会让回导的笔记首选牌组跟着变（格式本身的限制，不是导出 / 导入的错）。
     final String second = basic.templates[1].id;
-    final String moved = (await a.db.select(a.db.srsCardsCache).get())
+    final String moved = (await a.allCardRows())
         .where((SrsCardCacheRow c) => c.templateId == second)
         .map((SrsCardCacheRow c) => c.id)
         .reduce((String x, String y) => x.compareTo(y) < 0 ? x : y);
@@ -299,15 +290,17 @@ void main() {
     for (final SrsNoteView? n in after.values) {
       expect(n!.field(basic.fields.first.id), startsWith('new-'));
     }
-    final List<SrsCardCacheRow> cards = await a.db
-        .select(a.db.srsCardsCache)
-        .get();
+    final List<SrsCardCacheRow> cards = await a.allCardRows();
     expect(cards, hasLength(notes * 2));
     expect(cards.every((SrsCardCacheRow c) => c.suspended), isTrue);
 
     // 同一个包再导一遍：全部 no-op，不写任何修改记录。
-    final int editsBefore =
-        (await a.db.select(a.db.srsFieldEdits).get()).length;
+    int edits() =>
+        a.core
+                .debugSelectRaw('SELECT COUNT(*) AS n FROM srs_field_edits')
+                .single['n']!
+            as int;
+    final int editsBefore = edits();
     final SrsImportReport again = await importAnkiPackageFile(
       store: a,
       file: edited,
@@ -316,7 +309,7 @@ void main() {
     );
     expect(again.notesUpdated, 0);
     expect(again.notesSkipped, notes);
-    expect((await a.db.select(a.db.srsFieldEdits).get()).length, editsBefore);
+    expect(edits(), editsBefore);
   });
 
   group('新格式 collection.anki21b（按文件导入）', () {

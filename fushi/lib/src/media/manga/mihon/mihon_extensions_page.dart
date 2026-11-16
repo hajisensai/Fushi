@@ -1,6 +1,10 @@
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show shellRedesignActive;
+import 'package:fushi/src/utils/components/fushi_masthead_scaffold.dart'
+    show FushiMastheadScaffold;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -607,45 +611,58 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
         ),
       );
     }
+    final String title = switch (manager.kind) {
+      MihonMediaKind.manga => t.mihon_extensions_title,
+      MihonMediaKind.anime => t.video_extensions_title,
+    };
+    Widget content(double top) => Stack(
+      children: <Widget>[
+        CustomScrollView(
+          slivers: <Widget>[
+            SliverPadding(
+              padding: EdgeInsets.fromLTRB(16, top + 16, 16, 16),
+              sliver: FushiEntranceScope(
+                replayKey: (_language, _store, _minDownloads),
+                child: SliverMainAxisGroup(
+                  slivers: _buildContentSlivers(manager),
+                ),
+              ),
+            ),
+          ],
+        ),
+        if (manager.loading)
+          const Positioned.fill(
+            child: ColoredBox(
+              color: Color(0x22000000),
+              child: FushiLoadingView(),
+            ),
+          ),
+      ],
+    );
+    // 重设计外壳（墨水屏除外）：独立路由进来时是二级页的页头大字（页名 + 平铺
+    // 动作，导航条在页名下一行），正文铺到页头底下、按顶部让位加内边距。
+    if (shellRedesignActive(context)) {
+      return FushiMastheadScaffold(
+        title: title,
+        actions: _actions(manager),
+        bottom: widget.navigation,
+        body: Builder(
+          builder: (BuildContext context) =>
+              content(MediaQuery.paddingOf(context).top),
+        ),
+      );
+    }
     return DesktopContentLayout(
       kind: DesktopContentKind.readerShelf,
       child: Column(
         children: <Widget>[
           if (!isCupertinoPlatform(context))
             FushiPageHeader(
-              title: switch (manager.kind) {
-                MihonMediaKind.manga => t.mihon_extensions_title,
-                MihonMediaKind.anime => t.video_extensions_title,
-              },
+              title: title,
               bottom: widget.navigation,
               actions: _actions(manager),
             ),
-          Expanded(
-            child: Stack(
-              children: <Widget>[
-                CustomScrollView(
-                  slivers: <Widget>[
-                    SliverPadding(
-                      padding: const EdgeInsets.all(16),
-                      sliver: FushiEntranceScope(
-                        replayKey: (_language, _store, _minDownloads),
-                        child: SliverMainAxisGroup(
-                          slivers: _buildContentSlivers(manager),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                if (manager.loading)
-                  const Positioned.fill(
-                    child: ColoredBox(
-                      color: Color(0x22000000),
-                      child: FushiLoadingView(),
-                    ),
-                  ),
-              ],
-            ),
-          ),
+          Expanded(child: content(0)),
         ],
       ),
     );

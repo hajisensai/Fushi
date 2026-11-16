@@ -6,12 +6,14 @@
 /// `<dictionaryResources>/<词典名>/` + `dictionary_metadata` 一行。
 ///
 /// 正在跑的 `serve` 不会自动看到离线改动：导入 / 删除后重启 serve 才进引擎
-/// （经互联推送的词典则即时生效）。
+/// （经互联推送、或在 WebUI「词典」页导入的词典则即时生效——后者在 serve 进程内跑
+/// 同一个 [importDictionaryArchive]，带上 `installGuard`，见 admin/admin_dictionaries.dart）。
 library;
 
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:archive/archive_io.dart';
 import 'package:args/args.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:fushi_core/fushi_core.dart';
@@ -30,6 +32,7 @@ typedef DictImportOutcome = ({
   int termCount,
   int kanjiCount,
   bool replaced,
+  String? language,
 });
 
 /// 词典导入失败（导入器报错 / 包里没有标题）。
@@ -56,18 +59,28 @@ typedef DictInstallGuard =
 /// 同名词典视为更新：替换资源目录，保留原有的排序与用户设置（隐藏 / 折叠 / 语言覆盖 /
 /// 显示名），与 app 重导同名词典的继承口径一致；新词典排在最后。
 ///
-/// 原生导入（慢，后台 isolate）先在临时目录里做完，只有装进库的那一小步走
-/// [installGuard]：大词典导入期间引擎照常查词，库锁也不被长时间占着。
+/// 原生导入（慢，后台 isolate）先在暂存目录里做完，只有装进库的那一小步（删旧目录 →
+/// 搬入 → 写 DB）走 [installGuard]：大词典导入期间引擎照常查词，库锁也不被长时间占着。
+/// 运行中的 serve 用它拿库互斥锁、释放引擎映射并在收尾重载引擎（同名覆盖时旧目录正被
+/// 引擎映射，BUG-1756）；离线 CLI（`dict add`）不传，直接执行。
+///
+/// [stagingParent]：原生导入的输出暂存目录建在哪（默认系统临时目录）。serve 传数据目录
+/// 的 `tmp/`，与资源目录同盘，搬入是一次改名而不是逐文件复制。
 Future<DictImportOutcome> importDictionaryArchive({
   required FushiDatabase db,
   required Directory resourceRoot,
   required File archive,
   DictArchiveImporter? importer,
+  Directory? stagingParent,
   DictInstallGuard? installGuard,
 }) async {
-  final Directory staging = await Directory.systemTemp.createTemp(
-    'fushi_dict_import_',
-  );
+  final Directory staging;
+  if (stagingParent != null) {
+    await stagingParent.create(recursive: true);
+    staging = await stagingParent.createTemp('fushi_dict_import_');
+  } else {
+    staging = await Directory.systemTemp.createTemp('fushi_dict_import_');
+  }
   try {
     final FushiImportResult result =
         await (importer ?? FushiDicts.importDictionary)(
@@ -85,6 +98,7 @@ Future<DictImportOutcome> importDictionaryArchive({
       _ => 'term',
     };
     bool replaced = false;
+    String? language;
     Future<void> install() async {
       final List<DictionaryMetaRow> rows = await db.getAllDictionaryMetadata();
       DictionaryMetaRow? previous;
@@ -98,39 +112,15 @@ Future<DictImportOutcome> importDictionaryArchive({
       await resourceRoot.create(recursive: true);
       await deleteDictionaryDirectory(target, reloadEngine: () {});
       await _moveDirectory(source, target);
-      final int order =
-          previous?.order ??
-          (rows.isEmpty
-              ? 0
-              : rows
-                        .map((DictionaryMetaRow r) => r.order)
-                        .reduce((int a, int b) => a > b ? a : b) +
-                    1);
-      await db.upsertDictionaryMeta(
-        DictionaryMetadataCompanion.insert(
-          name: name,
-          formatKey: 'yomichan',
-          order: order,
-          type: Value<String>(type),
-          metadataJson: Value<String>(
-            jsonEncode(<String, String>{
-              if (result.kanjiCount > 0) 'hasKanji': 'true',
-              // 导入时原生侧已数过 term / kanji 记录，等于类型探测刚做完（与 app 同一标记）。
-              'typeProbe': '1',
-            }),
-          ),
-          hiddenLanguagesJson: Value<String>(
-            previous?.hiddenLanguagesJson ?? '[]',
-          ),
-          collapsedLanguagesJson: Value<String>(
-            previous?.collapsedLanguagesJson ?? '[]',
-          ),
-          expandedLanguagesJson: Value<String>(
-            previous?.expandedLanguagesJson ?? '[]',
-          ),
-          languageOverride: Value<String?>(previous?.languageOverride),
-          displayName: Value<String?>(previous?.displayName),
-        ),
+      language = await _writeImportedMetadata(
+        db: db,
+        rows: rows,
+        previous: previous,
+        name: name,
+        type: type,
+        result: result,
+        target: target,
+        archive: archive,
       );
     }
 
@@ -145,9 +135,160 @@ Future<DictImportOutcome> importDictionaryArchive({
       termCount: result.termCount,
       kanjiCount: result.kanjiCount,
       replaced: replaced,
+      language: language,
     );
   } finally {
     if (staging.existsSync()) await staging.delete(recursive: true);
+  }
+}
+
+/// 写（或按同名更新）导入词典的 `dictionary_metadata` 行，返回生效的词头语言（手动
+/// 指定优先，其次包内声明）。
+Future<String?> _writeImportedMetadata({
+  required FushiDatabase db,
+  required List<DictionaryMetaRow> rows,
+  required DictionaryMetaRow? previous,
+  required String name,
+  required String type,
+  required FushiImportResult result,
+  required Directory target,
+  required File archive,
+}) async {
+  final int order =
+      previous?.order ??
+      (rows.isEmpty
+          ? 0
+          : rows
+                    .map((DictionaryMetaRow r) => r.order)
+                    .reduce((int a, int b) => a > b ? a : b) +
+                1);
+  final Map<String, String> source = await readImportedSourceMetadata(
+    importedDir: target,
+    archive: archive,
+  );
+  await db.upsertDictionaryMeta(
+    DictionaryMetadataCompanion.insert(
+      name: name,
+      formatKey: 'yomichan',
+      order: order,
+      type: Value<String>(type),
+      metadataJson: Value<String>(
+        jsonEncode(<String, String>{
+          // 来源与内容语言（revision / sourceLanguage / …），见该函数注释。
+          ...source,
+          if (result.kanjiCount > 0) kDictHasKanjiKey: 'true',
+          // 混合词典汉字部分的开关 / 位置是用户设置，同名重导继承（与 app 同口径）。
+          if (result.kanjiCount > 0 && previous != null)
+            ...kanjiPartSettingsIn(_decodeMetadata(previous.metadataJson)),
+          // 导入时原生侧已数过 term / kanji 记录，等于类型探测刚做完（与 app 同一标记）。
+          'typeProbe': '1',
+        }),
+      ),
+      hiddenLanguagesJson: Value<String>(previous?.hiddenLanguagesJson ?? '[]'),
+      collapsedLanguagesJson: Value<String>(
+        previous?.collapsedLanguagesJson ?? '[]',
+      ),
+      expandedLanguagesJson: Value<String>(
+        previous?.expandedLanguagesJson ?? '[]',
+      ),
+      languageOverride: Value<String?>(previous?.languageOverride),
+      displayName: Value<String?>(previous?.displayName),
+    ),
+  );
+  final String? override = previous?.languageOverride?.trim();
+  return (override != null && override.isNotEmpty)
+      ? override
+      : source['sourceLanguage'];
+}
+
+/// 这本词典来自 `index.json` 的来源与内容语言 metadata，键与取值规范和 app 导入一致
+/// （`fushi_dictionary` 的 `parseSourceMetadataFromIndexJson`：字符串字段 trim 后
+/// 非空才落；`isUpdatable` 是 bool 才落成 `'true'` / `'false'`）。
+///
+/// 两个来源，资源目录那份优先：
+/// - [importedDir] 下原生导入器写回的 `index.json`（MDX / DSL 等也写一份）——与 app
+///   读的是同一个文件，`revision` / `isUpdatable` / `indexUrl` / `downloadUrl` 取这里；
+/// - [archive] 里的原始 `index.json`（只认 zip 根目录）——原生写回时用的结构体
+///   （`native/fushidicts/fushidicts_src/json/yomitan_parser.hpp` 的 `Index`）不带
+///   `sourceLanguage` / `targetLanguage`，写回的文件里这两个字段丢了，只能从原包补。
+///
+/// 解析函数在带 dio 的 `fushi_dictionary.dart` 库里，服务端只许 import 零 Flutter 的
+/// `fushi_dictionary_core.dart`，所以这里按同一规范读，键集合见
+/// [kImportedSourceMetadataKeys]。缺文件 / 坏 JSON / 不是 zip → 那一侧为空。
+Future<Map<String, String>> readImportedSourceMetadata({
+  required Directory importedDir,
+  required File archive,
+}) async {
+  final File written = File(p.join(importedDir.path, 'index.json'));
+  final Map<String, String> fromWritten = await written.exists()
+      ? parseIndexSourceMetadata(await written.readAsString())
+      : <String, String>{};
+  return <String, String>{..._archiveIndexMetadata(archive), ...fromWritten};
+}
+
+Map<String, String> _archiveIndexMetadata(File archive) {
+  if (!archive.existsSync()) return <String, String>{};
+  InputFileStream? input;
+  try {
+    input = InputFileStream(archive.path);
+    final ArchiveFile? entry = ZipDecoder()
+        .decodeBuffer(input)
+        .findFile('index.json');
+    if (entry == null || !entry.isFile) return <String, String>{};
+    return parseIndexSourceMetadata(
+      utf8.decode(entry.content as List<int>, allowMalformed: true),
+    );
+  } on Object {
+    // 不是 zip（裸 MDX / DSL 文件）或包损坏：原生导入已成功，元数据缺省即可。
+    return <String, String>{};
+  } finally {
+    input?.closeSync();
+  }
+}
+
+/// `index.json` 文本 → 来源 metadata（[kImportedSourceMetadataKeys]）。坏 JSON /
+/// 顶层非对象 → 空 Map。
+Map<String, String> parseIndexSourceMetadata(String text) {
+  final Object? decoded;
+  try {
+    decoded = jsonDecode(text);
+  } on FormatException {
+    return <String, String>{};
+  }
+  if (decoded is! Map) return <String, String>{};
+  final Map<String, String> out = <String, String>{};
+  for (final String key in kImportedSourceMetadataKeys) {
+    final Object? v = decoded[key];
+    if (key == 'isUpdatable') {
+      if (v is bool) out[key] = v ? 'true' : 'false';
+    } else if (v is String && v.trim().isNotEmpty) {
+      out[key] = v.trim();
+    }
+  }
+  return out;
+}
+
+/// app 导入时从 `index.json` 落进 metadata 的键（与 `parseSourceMetadataFromIndexJson` 同集）。
+const List<String> kImportedSourceMetadataKeys = <String>[
+  'revision',
+  'indexUrl',
+  'downloadUrl',
+  'sourceLanguage',
+  'targetLanguage',
+  'isUpdatable',
+];
+
+Map<String, String> _decodeMetadata(String json) {
+  try {
+    final Object? decoded = jsonDecode(json);
+    if (decoded is! Map) return <String, String>{};
+    return <String, String>{
+      for (final MapEntry<Object?, Object?> e in decoded.entries)
+        if (e.key is String && e.value is String)
+          e.key! as String: e.value! as String,
+    };
+  } on FormatException {
+    return <String, String>{};
   }
 }
 
@@ -192,6 +333,8 @@ Map<String, Object?> dictionaryRowJson(
   'name': r.name,
   'type': r.type,
   'order': r.order,
+  'language':
+      r.languageOverride ?? _decodeMetadata(r.metadataJson)['sourceLanguage'],
   'hidden': r.hiddenLanguagesJson.contains('"ja"'),
   'present': Directory(p.join(resourceRoot.path, r.name)).existsSync(),
 };
@@ -291,7 +434,8 @@ Dictionaries (offline; changes reach the engine after serve restarts):
         rt.paths.dictionaryResources,
       );
       stdout.writeln(
-        '${r.order.toString().padLeft(3)}  ${r.type.padRight(9)} ${r.name}'
+        '${r.order.toString().padLeft(3)}  ${r.type.padRight(9)} '
+        '${((row['language'] as String?) ?? '-').padRight(5)} ${r.name}'
         '${row['hidden'] == true ? '  [hidden]' : ''}${row['present'] == true ? '' : '  [missing files]'}',
       );
     }
@@ -335,6 +479,7 @@ Dictionaries (offline; changes reach the engine after serve restarts):
           'termCount': r.termCount,
           'kanjiCount': r.kanjiCount,
           'replaced': r.replaced,
+          'language': r.language,
         }),
       );
     } else {

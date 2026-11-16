@@ -52,6 +52,8 @@ import 'package:fushi_server/src/admin/subtitle_provider_settings.dart';
 import 'package:fushi_server/src/anki_landing.dart';
 import 'package:fushi_server/src/admin/upload_store.dart';
 import 'package:fushi_server/src/config/server_ai_config.dart';
+import 'package:fushi_server/src/commands/dict_commands.dart'
+    show DictArchiveImporter;
 import 'package:fushi_server/src/config/server_config.dart';
 import 'package:fushi_server/src/download_host.dart';
 import 'package:fushi_server/src/headless_host.dart';
@@ -85,12 +87,16 @@ Future<Map<String, dynamic>> _body(shelf.Request request) async {
 }
 
 class AdminApi {
-  AdminApi(this.ctx, {http.Client Function()? btSiteProbeClient})
-    : uploads = UploadStore(
-        ledgerFile: File(p.join(ctx.paths.support.path, 'upload_ledger.json')),
-        quotaBytes: ctx.config.uploadQuotaBytes,
-      ),
-      _btSiteProbeClient = btSiteProbeClient ?? createAppHttpIoClient;
+  AdminApi(
+    this.ctx, {
+    http.Client Function()? btSiteProbeClient,
+    DictArchiveImporter? dictionaryImporter,
+  }) : uploads = UploadStore(
+         ledgerFile: File(p.join(ctx.paths.support.path, 'upload_ledger.json')),
+         quotaBytes: ctx.config.uploadQuotaBytes,
+       ),
+       _btSiteProbeClient = btSiteProbeClient ?? createAppHttpIoClient,
+       _dictionaryImporter = dictionaryImporter;
 
   final AdminContext ctx;
   final UploadStore uploads;
@@ -98,6 +104,9 @@ class AdminApi {
   /// 添加 / 重新检测 BT 站时探测用的 HTTP client 工厂（每次探测建一个、用完关）。
   /// 生产走全应用代理装配；测试注入假站点。
   final http.Client Function() _btSiteProbeClient;
+
+  /// 词典导入的原生导入器（null = 真原生库）；测试注入假的。
+  final DictArchiveImporter? _dictionaryImporter;
 
   Future<shelf.Response> handle(shelf.Request request) async {
     final String method = request.method.toUpperCase();
@@ -135,7 +144,11 @@ class AdminApi {
   late final AdminSrsCtl srsCtl = AdminSrsCtl(() => ctx.host.srs);
 
   /// 词典端点（`/api/admin/dictionaries*`，见 admin_dictionaries.dart）。
-  late final AdminDictionaries dictionaries = AdminDictionaries(ctx);
+  late final AdminDictionaries dictionaries = AdminDictionaries(
+    ctx,
+    importer: _dictionaryImporter,
+    uploads: uploads,
+  );
 
   Future<shelf.Response> _route(
     String method,

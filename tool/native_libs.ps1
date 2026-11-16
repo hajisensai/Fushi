@@ -42,6 +42,13 @@ $NativeTestCrates = @('fushi_compute', 'fushi_fsrs', 'fushi_web_core', 'fushi_rw
 $NativeIdAuditCrates = @('fushi_fsrs')
 $NativeIdAuditDir = 'id_audit'
 
+# 测试用的库要带的 cargo feature（经 FUSHI_FSRS_FEATURES 交给 build_* 脚本）：fushi_fsrs 的 `raw_sql` 是测试专用的原始
+# SQL 通道（native/fushi_fsrs/Cargo.toml），fushi_engine / fushi 的测试靠它直接改库造场景。feature 记进戳记（树哈希后接
+# `+<features>`）：不带它编出的旧产物不会被当成这棵树的、也不会被兄弟 worktree 拷走。
+# 注意：这里备的库同时是本机 `flutter run` / 本机 `flutter build` 随包的那一份，所以本机自己编的 app 带原始通道；
+# CI 出的发布包不带（verify_abi.sh / build_windows_dll.ps1 核对）。
+$NativeTestFeatures = @{ 'fushi_fsrs' = 'raw_sql' }
+
 function Get-NativeHostLayout {
     [OutputType([hashtable])]
     param()
@@ -171,7 +178,11 @@ function Invoke-NativeCrateBuild {
             Write-Host "  未装 sccache：依赖每个 worktree 都要从零编。装上（winget install Mozilla.sccache）后自动跨 worktree 共用缓存。" -ForegroundColor DarkYellow
         }
     }
-    Write-Host "Building native/$Crate (cargo: $($cargo.Source))..." -ForegroundColor Cyan
+    # 两份库（普通 / id_audit）都带 $NativeTestFeatures 的 feature：构建脚本把 FUSHI_FSRS_FEATURES 并进审计那份。
+    $features = $NativeTestFeatures[$Crate]
+    $previousFeatures = $env:FUSHI_FSRS_FEATURES
+    if ($features) { $env:FUSHI_FSRS_FEATURES = $features }
+    Write-Host "Building native/$Crate (cargo: $($cargo.Source))$(if ($features) { " features $features" })..." -ForegroundColor Cyan
     $previousVariant = $env:FUSHI_FSRS_ID_AUDIT_VARIANT
     try {
         if ($Layout.Script.EndsWith('.ps1')) {
@@ -184,6 +195,7 @@ function Invoke-NativeCrateBuild {
     }
     finally {
         $env:RUSTC_WRAPPER = $previousWrapper
+        $env:FUSHI_FSRS_FEATURES = $previousFeatures
         $env:FUSHI_FSRS_ID_AUDIT_VARIANT = $previousVariant
     }
 }
@@ -199,6 +211,7 @@ function Install-NativeTestCrate {
     $relLibs = @("native/$Crate/prebuilt/$($layout.Dir)/$name")
     if ($idAudit) { $relLibs += "native/$Crate/prebuilt/$($layout.Dir)/$NativeIdAuditDir/$name" }
     $tree = Get-NativeSourceTree -RepoRoot $RepoRoot -Crate $Crate
+    if ($tree -and $NativeTestFeatures[$Crate]) { $tree = "$tree+$($NativeTestFeatures[$Crate])" }
 
     $missing = @($relLibs | Where-Object { -not (Test-NativeStamp -Lib (Join-Path $RepoRoot $_) -Tree $tree) })
     if ($missing.Count -eq 0) {

@@ -49,6 +49,23 @@ String buildFfiLookupCacheKey({
   return '${window.length}:$window/$maxResults${chineseSimpToTrad ? '/zh' : ''}';
 }
 
+/// [excludedDictionaries]（交给引擎排除的词典）的缓存键后缀。引擎在截断前排除这些
+/// 词典，结果集随集合变化，必须单独成键；空集返回空串，旧键逐字不变。名字按码元排序
+/// 去掉集合迭代顺序的影响，每个名字带长度前缀，避免名字里的分隔符造成键碰撞。
+String excludedDictionariesCacheSuffix(Set<String> excludedDictionaries) {
+  if (excludedDictionaries.isEmpty) return '';
+  final List<String> names = excludedDictionaries.toList()..sort();
+  final StringBuffer out = StringBuffer('/ex');
+  for (final String name in names) {
+    out
+      ..write(':')
+      ..write(name.length)
+      ..write('.')
+      ..write(name);
+  }
+  return out.toString();
+}
+
 /// 粗估一次 FFI lookup 结果列表的常驻字节数（UTF-16 每字符 2 字节 + 每对象固定
 /// 开销，宁可高估），只服务缓存的字节封顶。
 int estimateFushiLookupResultsBytes(List<FushiLookupResult> results) {
@@ -91,6 +108,22 @@ int estimateFushiLookupResultsBytes(List<FushiLookupResult> results) {
   return chars * 2 + overhead;
 }
 
+/// 去掉 [excluded] 点名的词典给出的汉字条目（[FushiKanjiResult.dictName] 按真名比）。
+///
+/// [excluded] 只能放**纯汉字型**词典：混合词典的汉字部分有自己的开关，按术语名单
+/// 剔除会误删。App 当 host（[FushiLookupRequest.hiddenKanjiDictionaries]）与无头
+/// 服务端（`ServerDictionaryHost`）共用这一份。[excluded] 为空时原样返回。
+List<FushiKanjiResult> withoutExcludedKanjiDictionaries(
+  List<FushiKanjiResult> results,
+  Set<String> excluded,
+) {
+  if (excluded.isEmpty) return results;
+  return <FushiKanjiResult>[
+    for (final FushiKanjiResult k in results)
+      if (!excluded.contains(k.dictName)) k,
+  ];
+}
+
 /// 一次后台查词的输入。全部字段都能跨 isolate 发送。
 class FushiLookupRequest {
   const FushiLookupRequest({
@@ -99,6 +132,7 @@ class FushiLookupRequest {
     this.includeKanji = false,
     this.popupOnly = false,
     this.hiddenDictionaries = const <String>{},
+    this.hiddenKanjiDictionaries = const <String>{},
     this.dictionaryOrder = const <String>[],
     this.ffiCacheMaxBytes = kDefaultLookupFfiCacheMaxBytes,
     this.supersedeLane,
@@ -119,8 +153,18 @@ class FushiLookupRequest {
   /// DictionaryEntry（BUG-1525）。
   final bool popupOnly;
 
-  /// 被用户关掉的词典名（结果构建期的源头过滤）。
+  /// 被用户关掉的词典名。同时交给引擎当排除集（截断前生效：不占 [maxResults] 名额、
+  /// 不影响排序），结果构建期的源头过滤保留为第二道网；原始结果缓存键带它的后缀。
   final Set<String> hiddenDictionaries;
+
+  /// 汉字结果按名剔除的**纯汉字型**词典（[withoutExcludedKanjiDictionaries]）。
+  ///
+  /// 与 [hiddenDictionaries] 分开：本机关掉的纯汉字词典根本没装进汉字桶，混合词典的
+  /// 汉字部分按自己的 `kanjiHidden` 装载、与术语开关无关（BUG-3573）——按
+  /// [hiddenDictionaries] 过滤汉字结果会把「术语关、汉字开」的混合词典的汉字条目误删。
+  /// 替对端查词时请求方的排除名单只按名字，其中的纯汉字词典由调用方挑出来放这里
+  /// （与服务端 host 的 `ServerDictionaryHost` 同一判据）。
+  final Set<String> hiddenKanjiDictionaries;
 
   /// 词典管理页的 term 词典顺序。
   final List<String> dictionaryOrder;
@@ -172,8 +216,8 @@ class FushiLookupOutcome {
   /// popupOnly 模式：引擎有结果时的 popupJson；引擎无结果为 null。
   final String? popupJson;
 
-  /// popupOnly 模式：全部引擎结果里最长的 matched（UTF-16），与旧同步路径同口径
-  /// （不排除隐藏词典）。
+  /// popupOnly 模式：全部引擎结果里最长的 matched（UTF-16）。隐藏词典已在引擎里
+  /// 排除，只命中隐藏词典的词不贡献长度（与完整模式的 bestLength 同口径）。
   final int bestLength;
 
   final bool superseded;
@@ -194,14 +238,15 @@ FushiLookupOutcome _computeLookupOutcome({
   required FushiLookupFfiCache? cache,
 }) {
   final Stopwatch watch = Stopwatch()..start();
-  // ruby 改变引擎的排序与截断结果：带 ruby 的查询单独成键（无 ruby 时键逐字不变）。
+  // ruby 与排除词典都改变引擎的排序与截断结果：各自单独成键（都为空时键逐字不变）。
   final String cacheKey =
       buildFfiLookupCacheKey(
         term: request.text,
         maxResults: request.maxResults,
         chineseSimpToTrad: request.chineseSimpToTrad,
       ) +
-      rubySpansCacheSuffix(request.rubySpans);
+      rubySpansCacheSuffix(request.rubySpans) +
+      excludedDictionariesCacheSuffix(request.hiddenDictionaries);
   List<FushiLookupResult>? ffiResults = cache?.get(cacheKey);
   final int ffiCacheMicros = watch.elapsedMicroseconds;
   final bool ffiCacheHit = ffiResults != null;
@@ -226,6 +271,7 @@ FushiLookupOutcome _computeLookupOutcome({
       maxResults: request.maxResults,
       chineseSimpToTrad: request.chineseSimpToTrad,
       rubySpans: request.rubySpans,
+      excludedDictionaries: request.hiddenDictionaries,
     );
     ffiLookupMicros = watch.elapsedMicroseconds - lookupStart;
     if (ffiResults.isNotEmpty) {
@@ -267,7 +313,10 @@ FushiLookupOutcome _computeLookupOutcome({
   // 汉字桶与 term 索引正交：单个汉字既可能是词头也可能是汉字条目，两边各查各的，
   // 汉字结果挂到词条结果上；没有词条命中时单独成一个纯汉字结果（TODO-094 S4）。
   final List<FushiKanjiResult> kanjiResults = request.includeKanji
-      ? FushiDicts._queryKanjiWith(bindings, handle, request.text)
+      ? withoutExcludedKanjiDictionaries(
+          FushiDicts._queryKanjiWith(bindings, handle, request.text),
+          request.hiddenKanjiDictionaries,
+        )
       : const <FushiKanjiResult>[];
 
   DictionarySearchResult? result;
@@ -312,7 +361,7 @@ FushiLookupOutcome _computeLookupOutcome({
 ///
 /// 按引擎实例代次（[FushiDicts] 的 `_serial`）整体失效：词典集合的任何变化（增删、
 /// 重排、开关、覆盖导入、释放映射）都会换一个新实例，旧实例的结果一条都不能再用。
-/// 隐藏 / 顺序 / 译文只作用在结果构建期，不进这份缓存。
+/// 顺序 / 译文只作用在结果构建期，不进这份缓存；隐藏词典进引擎（排除集），由缓存键后缀区分。
 ///
 /// 只在后台查词 isolate 里实例化；公开只为了单测它的淘汰与失效规则。
 @visibleForTesting

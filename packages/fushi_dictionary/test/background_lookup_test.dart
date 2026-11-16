@@ -268,6 +268,73 @@ void main() {
     });
   });
 
+  group('withoutExcludedKanjiDictionaries', () {
+    FushiKanjiResult kanji(String dict) => FushiKanjiResult(
+      character: '日',
+      onyomi: 'ニチ',
+      kunyomi: 'ひ',
+      radical: '日',
+      strokes: 4,
+      meanings: const <String>['sun'],
+      dictName: dict,
+    );
+
+    test('按真名剔除被排除的纯汉字词典，其余原序保留', () {
+      final List<FushiKanjiResult> out = withoutExcludedKanjiDictionaries(
+        <FushiKanjiResult>[kanji('KANJIDIC'), kanji('Mixed'), kanji('KD2')],
+        const <String>{'KANJIDIC', 'NotLoaded'},
+      );
+      expect(out.map((FushiKanjiResult k) => k.dictName), <String>[
+        'Mixed',
+        'KD2',
+      ]);
+    });
+
+    test('空排除集原样返回（同一实例）', () {
+      final List<FushiKanjiResult> all = <FushiKanjiResult>[kanji('KANJIDIC')];
+      expect(
+        identical(withoutExcludedKanjiDictionaries(all, const <String>{}), all),
+        isTrue,
+      );
+    });
+
+    test(
+      'FushiLookupRequest.hiddenKanjiDictionaries 默认空，与 hiddenDictionaries 分开',
+      () {
+        const FushiLookupRequest request = FushiLookupRequest(
+          text: '日',
+          maxResults: 8,
+          hiddenDictionaries: <String>{'Mixed'},
+        );
+        expect(request.hiddenKanjiDictionaries, isEmpty);
+      },
+    );
+  });
+
+  group('excludedDictionariesCacheSuffix', () {
+    test('空集返回空串（旧键逐字不变）', () {
+      expect(excludedDictionariesCacheSuffix(const <String>{}), '');
+    });
+
+    test('与集合迭代顺序无关，名字带长度前缀', () {
+      expect(
+        excludedDictionariesCacheSuffix(<String>{'B', 'A'}),
+        excludedDictionariesCacheSuffix(<String>{'A', 'B'}),
+      );
+      expect(
+        excludedDictionariesCacheSuffix(<String>{'A', 'B'}),
+        '/ex:1.A:1.B',
+      );
+    });
+
+    test('名字里的分隔符不会让不同集合撞键', () {
+      expect(
+        excludedDictionariesCacheSuffix(<String>{'a:1.b'}),
+        isNot(excludedDictionariesCacheSuffix(<String>{'a', 'b'})),
+      );
+    });
+  });
+
   group('buildLookupEntryExtra（每个词头只编码一次共用段）', () {
     test('与旧实现逐字节一致', () {
       final List<FushiLookupResult> samples = <FushiLookupResult>[

@@ -4,13 +4,14 @@ part of '../local_library_host_service.dart';
 /// 方法逐字搬自 LocalLibraryHostService；字段经 _LocalLibraryHostBase 的抽象私有 getter 取用。
 mixin _LocalLibraryHostDictionaries
     on _LocalLibraryHostBase, _LocalLibraryHostShared {
-  /// host 当前实时词典清单（从 DictionaryMeta 表读）。
+  /// host 当前实时词典清单（从 DictionaryMeta 表读，目录字段见
+  /// [RemoteDictionaryInfo.fromMetadataRow]）。
   @override
   Future<List<RemoteDictionaryInfo>> listDictionaries() async {
     final List<DictionaryMetaRow> rows = await _db.getAllDictionaryMetadata();
     return <RemoteDictionaryInfo>[
       for (final DictionaryMetaRow r in rows)
-        RemoteDictionaryInfo(name: r.name, type: r.type),
+        RemoteDictionaryInfo.fromMetadataRow(r),
     ];
   }
 

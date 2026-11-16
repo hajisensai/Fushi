@@ -182,6 +182,9 @@ class _PersonDetailPageState extends ConsumerState<PersonDetailPage> {
             widget.initialName ??
             t.person_page_title;
         return FushiPageScaffold(
+          // 重设计外壳：页头大字（人物页不是作品，没有海报 / 主操作，不走海报
+          // 面板）；墨水屏照旧下面的浮动顶栏。
+          masthead: true,
           title: title,
           header: apple
               ? null

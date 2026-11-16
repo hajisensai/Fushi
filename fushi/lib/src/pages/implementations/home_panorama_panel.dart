@@ -23,6 +23,11 @@ import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
+import 'package:fushi/src/utils/components/fushi_cover_block.dart'
+    show FushiCoverBlockColors, FushiCoverBlockSize, fushiCoverBlockShape;
+import 'package:fushi/src/utils/components/fushi_poster_block.dart';
+import 'package:fushi/src/utils/components/shelf_card_widgets.dart'
+    show shelfCoverCard;
 
 /// 全景面板该不该出现（纯函数）：钉了显示 / 隐藏照办；自动 = 显示（空库时面板里给引导语）。
 /// 默认（auto）不显示（2026-10-30 用户「默认关闭媒体库全景」）：只有在
@@ -41,9 +46,18 @@ final Provider<bool> homePanoramaPanelVisibleProvider = Provider<bool>((
 });
 
 class HomePanoramaPanel extends ConsumerWidget {
-  const HomePanoramaPanel({super.key, required this.onOpen});
+  const HomePanoramaPanel({
+    super.key,
+    required this.onOpen,
+    this.poster = false,
+  });
 
   final PanoramaOpenWork onOpen;
+
+  /// true = 重设计外壳的海报色块形态（标题 chip + 分享 / 全屏两个图标钮 + 状态
+  /// 大字 + 作品统计，点色块进全屏）；false = 原标题行 + 深色横幅。由首页按外壳
+  /// 门控传入。
+  final bool poster;
 
   /// 入口横幅高度（原先是 280 的实时预览）。
   static const double bannerHeight = 112;
@@ -100,6 +114,115 @@ class HomePanoramaPanel extends ConsumerWidget {
       onTap: onPressed,
     );
 
+    final String status = library.hasError
+        ? t.panorama_load_failed
+        : library.isLoading
+        ? t.panorama_loading
+        : hasWorks
+        ? t.home_panel_panorama_hint
+        : t.panorama_empty;
+
+    if (poster) {
+      final FushiCoverBlockColors colors = fushiPosterColors(
+        context,
+        fushiPosterHue('home-panorama'),
+      );
+      final TextStyle base =
+          Theme.of(context).textTheme.bodyMedium ?? const TextStyle();
+      Widget posterAction({
+        required String id,
+        required IconData icon,
+        required String label,
+        required VoidCallback? onPressed,
+      }) => FushiIconButton(
+        key: ValueKey<String>(id),
+        icon: icon,
+        tooltip: label,
+        size: 20,
+        enabled: onPressed != null,
+        enabledColor: colors.onContainer,
+        onTap: onPressed,
+      );
+      return KeyedSubtree(
+        key: const ValueKey<String>('home-panorama-panel'),
+        child: shelfCoverCard(
+          key: const ValueKey<String>('home-panorama-banner'),
+          shape: fushiCoverBlockShape(context, FushiCoverBlockSize.regular),
+          onTap: hasWorks ? () => _openFullscreen(context) : null,
+          child: FushiPosterBlock(
+            watermark: t.home_panel_panorama_title,
+            colors: colors,
+            watermarkFontSize: 110,
+            watermarkEdge: FushiPosterWatermarkEdge.bottom,
+            hoverEnabled: hasWorks,
+            padding: const EdgeInsetsDirectional.fromSTEB(22, 14, 10, 22),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              spacing: 10,
+              children: <Widget>[
+                Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: Align(
+                        alignment: AlignmentDirectional.centerStart,
+                        child: FushiPosterChip(
+                          colors: colors,
+                          icon: FushiIcons.blur,
+                          label: t.home_panel_panorama_title,
+                        ),
+                      ),
+                    ),
+                    posterAction(
+                      id: 'home-panorama-share',
+                      icon: FushiIcons.play,
+                      label: t.panorama_share_animation,
+                      onPressed: hasWorks
+                          ? () => unawaited(
+                              playPanoramaCinematic(context, ready, onOpen),
+                            )
+                          : null,
+                    ),
+                    posterAction(
+                      id: 'home-panorama-fullscreen',
+                      icon: FushiIcons.fullscreen,
+                      label: t.panorama_open_fullscreen,
+                      onPressed: hasWorks
+                          ? () => _openFullscreen(context)
+                          : null,
+                    ),
+                  ],
+                ),
+                Padding(
+                  padding: const EdgeInsetsDirectional.only(end: 12),
+                  child: Text(
+                    status,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: FushiPosterText.statement
+                        .on(base)
+                        .copyWith(color: colors.accent),
+                  ),
+                ),
+                if (ready != null)
+                  Text(
+                    panoramaSummary(ready),
+                    key: const ValueKey<String>('home-panorama-summary'),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: FushiPosterText.caption
+                        .on(base)
+                        .copyWith(
+                          color: colors.onContainer.withValues(alpha: 0.85),
+                        ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     final Widget banner = FushiPressScale(
       enabled: hasWorks,
       child: GestureDetector(
@@ -117,13 +240,7 @@ class HomePanoramaPanel extends ConsumerWidget {
             child: Padding(
               padding: EdgeInsets.all(tokens.spacing.card),
               child: Text(
-                library.hasError
-                    ? t.panorama_load_failed
-                    : library.isLoading
-                    ? t.panorama_loading
-                    : hasWorks
-                    ? t.home_panel_panorama_hint
-                    : t.panorama_empty,
+                status,
                 textAlign: TextAlign.center,
                 style: tokens.type.metadata.copyWith(color: Colors.white70),
               ),
