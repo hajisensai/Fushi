@@ -1845,6 +1845,11 @@ Map<String, dynamic>? buildReleaseFromManifest(
       if (assetSeq is int) {
         asset['releaseSequence'] = assetSeq;
       }
+      // 包带的用户库 schema：选包时拒绝比本机低的（装上会因「库比程序新」打不开）。
+      final Object? assetDbSchema = entry['dbSchemaVersion'];
+      if (assetDbSchema is int) {
+        asset['dbSchemaVersion'] = assetDbSchema;
+      }
       assets.add(asset);
     }
   }
@@ -1876,6 +1881,10 @@ Future<UpdateReleaseSelection?> selectUpdateReleaseForCurrentPlatform(
   int? currentReleaseSeq,
   required UpdateChannel channel,
   required PlatformUpdater updater,
+  // 本机用户库 schema。远端 asset 带的 `dbSchemaVersion` 比它低就不是可装的更新：装上后
+  // 用户库比程序新，app 拒绝打开（FushiDatabaseDowngradeException）。默认取本构建常量——
+  // 程序能跑到检查更新这一步，库就已经是这个版本。
+  int localDbSchemaVersion = kFushiDbSchemaVersion,
 }) async {
   // BUG-846：合集是多轨并集（beta/debug 用户会同时拿到 stable/beta/debug 的 latest），
   // 必须先按「最新优先」排序再取第一个可用于本平台的更新，否则按拉取顺序会误选更旧的
@@ -1958,6 +1967,14 @@ Future<UpdateReleaseSelection?> selectUpdateReleaseForCurrentPlatform(
           localSeq: currentReleaseSeq,
         )) {
       // 顶层更新但本平台 asset 已是本机版本（或更旧）→ 对本机不是更新，跳过。
+      continue;
+    }
+
+    // 不论发布序号 / 基版本怎么判，带的用户库 schema 比本机低的包一律不推：装上后库比
+    // 程序新、打不开。典型：调试版用户已迁到新 schema，正式版从更早的提交构建
+    // （或序号 / 清单缺失时退回基版本比较）。
+    final int? assetDbSchema = asset?.dbSchemaVersion;
+    if (assetDbSchema != null && assetDbSchema < localDbSchemaVersion) {
       continue;
     }
 

@@ -439,9 +439,45 @@ def test_integrity_fields_malformed_dropped():
     check("size" not in a and "sha256" not in a, "malformed size/sha256 are dropped, not persisted")
 
 
+def test_db_schema_version_survives_and_garbage_dropped():
+    tag, version, assets, exe = _desktop(10400)
+    assets[0]["dbSchemaVersion"] = 154
+    m = merge_manifest(
+        {},
+        tag=tag,
+        channel="debug",
+        version=version,
+        prerelease=True,
+        notes="",
+        release_sequence=10400,
+        new_assets=assets,
+    )
+    m = json.loads(json.dumps(m))
+    check(_by_name(m, exe).get("dbSchemaVersion") == 154, "incoming dbSchemaVersion persisted")
+    # Retained across another platform's publish.
+    m2, apk = _publish(m, _android, 10410, live=None)
+    check(_by_name(m2, exe).get("dbSchemaVersion") == 154, "retained asset keeps dbSchemaVersion")
+    check("dbSchemaVersion" not in _by_name(m2, apk), "asset published without dbSchemaVersion carries none")
+    for bad in ("154", 0, -1, True):
+        tag, version, assets, name = _android(10500)
+        assets[0]["dbSchemaVersion"] = bad
+        out = merge_manifest(
+            {},
+            tag=tag,
+            channel="debug",
+            version=version,
+            prerelease=True,
+            notes="",
+            release_sequence=10500,
+            new_assets=assets,
+        )
+        check("dbSchemaVersion" not in _by_name(out, name), "malformed dbSchemaVersion %r dropped" % (bad,))
+
+
 def main():
     for fn in [
         test_first_publish,
+        test_db_schema_version_survives_and_garbage_dropped,
         test_integrity_fields_survive_incoming,
         test_integrity_fields_survive_retained_asset,
         test_integrity_fields_malformed_dropped,

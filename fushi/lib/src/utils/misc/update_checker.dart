@@ -17,6 +17,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:fushi_compute/fushi_compute.dart';
+import 'package:fushi_core/fushi_core.dart' show kFushiDbSchemaVersion;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
