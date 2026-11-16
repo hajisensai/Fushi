@@ -266,7 +266,8 @@ class SrsEditSpec {
 }
 
 /// 内核缓存刷新的配置（内核命令的 `caches`；[SrsDbStore] 打开时注册一次，`cache_config_set`）：[profileUid] 的默认
-/// 牌组与各内置笔记类型（代码默认值 + 读音字段，readingKey 的来源）。只由 profile 的 uid 决定。
+/// 牌组与各内置笔记类型（代码默认值 + 读音字段，readingKey 的来源）。只由 profile 的 uid 决定；换代预演
+/// （sync2/srs_gen4_rehearsal.dart）给库里每个 profile 各算一份。
 Map<String, Object?> srsCacheConfigFor(String profileUid) => <String, Object?>{
   'defaultDeck': SrsKernelIds(profileUid).defaultDeck,
   'builtins': <String, Object?>{
