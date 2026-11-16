@@ -63,6 +63,18 @@ pub fn import_legacy(
     col: i64,
     batch: u64,
 ) -> Result<Imported, String> {
+    import_legacy_checked(src, profile, truth, col, batch, &mut || Ok(()))
+}
+
+/// [import_legacy]，每批提交之前先问一次 [check]：它报错就把这一批回滚、整个灌入报那个错（干跑的中断，`dryrun.rs`）。
+pub fn import_legacy_checked(
+    src: &Connection,
+    profile: &str,
+    truth: &Truth<'_>,
+    col: i64,
+    batch: u64,
+    check: &mut dyn FnMut() -> Result<(), String>,
+) -> Result<Imported, String> {
     let dst = truth.conn();
     if !dst.is_autocommit() {
         return Err("gen4 import: must not run inside a transaction".to_owned());
@@ -100,7 +112,7 @@ pub fn import_legacy(
                     Placement::Applied => {
                         out.applied += 1;
                         let put = truth.put_heritage(col, &source, &slot, T_VERSION)?;
-                        if !matches!(put, Put::Fork | Put::Yielded) {
+                        if !matches!(put, Put::Fork | Put::Yielded | Put::Conflict) {
                             if op.id.seq % HERITAGE_MARK_EVERY == 0 {
                                 truth.set_mark(col, &d.device, op.id.seq, chain)?;
                             }
@@ -126,9 +138,17 @@ pub fn import_legacy(
                     Put::Replaced => out.replaced += 1,
                     Put::Fork | Put::Yielded => out.forks += 1,
                     Put::Pending => out.parked += 1,
+                    // 一份旧库自己转出两份互相矛盾的槽：转译或旧库有问题，整批停下（回滚这一批）。
+                    Put::Conflict => {
+                        return Err(format!(
+                            "gen4 import: {}:{} contradicts what is already stored",
+                            op.id.device, op.id.seq
+                        ));
+                    }
                 }
                 in_batch += 1;
                 if in_batch >= batch.max(1) {
+                    check()?;
                     dst.execute_batch("COMMIT; BEGIN IMMEDIATE").map_err(sql)?;
                     in_batch = 0;
                 }
