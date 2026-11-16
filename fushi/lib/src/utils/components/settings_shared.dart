@@ -3094,12 +3094,18 @@ class FushiAdjustableSegmented<T extends Object> extends StatelessWidget {
     super.key,
     this.focusIdPrefix = 'segmented',
     this.focusId,
+    this.selectedIsCurrent = true,
   });
 
   /// The segment values in display order; [selected] must be one of them.
   final List<T> values;
   final T selected;
   final ValueChanged<T> onChanged;
+
+  /// false = [selected] 只是视觉锚点（宿主停在不属于任何一段的视图上，如库页的
+  /// 导入页高亮「我的」组）：方向键落到它本身也要回调 [onChanged]，否则从首段
+  /// 往回按会被夹在原地、回不去（BUG-4695）。默认 true：落到当前段不回调。
+  final bool selectedIsCurrent;
   final Widget child;
   final String focusIdPrefix;
   final FushiFocusId? focusId;
@@ -3111,7 +3117,7 @@ class FushiAdjustableSegmented<T extends Object> extends StatelessWidget {
       if (values.isEmpty) return;
       final int clamped = index.clamp(0, values.length - 1);
       final T value = values[clamped];
-      if (value != selected) onChanged(value);
+      if (!selectedIsCurrent || value != selected) onChanged(value);
     }
 
     return _GamepadAdjustableValue(

@@ -142,6 +142,7 @@ class LibrarySectionTabs<T extends Object> extends StatelessWidget {
     this.overflowMenu = true,
     this.floating = false,
     this.orderKey,
+    this.selectedIsCurrent = true,
     super.key,
   }) : controller = null;
 
@@ -164,7 +165,8 @@ class LibrarySectionTabs<T extends Object> extends StatelessWidget {
     super.key,
   }) : selected = null,
        onChanged = null,
-       orderKey = null;
+       orderKey = null,
+       selectedIsCurrent = true;
 
   final List<LibrarySectionTab<T>> tabs;
 
@@ -198,6 +200,17 @@ class LibrarySectionTabs<T extends Object> extends StatelessWidget {
   /// 仅 [LibrarySectionTabs.controlled] 形态；自持形态下为 null。
   final TabController? controller;
 
+  /// false = [selected] 只是视觉锚点，不是宿主此刻所在的视图：宿主停在一个不属于
+  /// 任何页签的视图上（库页壳停在导入页时高亮「我的」组），于是点中 / 方向键落到
+  /// 这个高亮页签也必须照常回调 [onChanged]——否则它看着是选中的、却点不回去
+  /// （BUG-4695）。默认 true：高亮项就是当前视图，重复点击不回调。
+  ///
+  /// 页头大字（一级 / 二级）与焦点外壳按它放行；MD3 [FushiSectionTabBar] 的
+  /// TabBar 点击本就逐次回调，不需要它。Apple 非页头大字形态的原生分段控件点
+  /// 已选段不回调、不认它——库页壳在 Apple 设计下恒走页头大字，没有宿主在该
+  /// 形态传 false。
+  final bool selectedIsCurrent;
+
   /// focusId 前缀（如 `game-library-tab`），焦点停靠点 id 为 `<prefix>-sections`。
   final String focusIdPrefix;
 
@@ -219,6 +232,7 @@ class LibrarySectionTabs<T extends Object> extends StatelessWidget {
       onChanged: onSelect,
       focusIdPrefix: focusIdPrefix,
       focusId: FushiFocusId('$focusIdPrefix-sections'),
+      selectedIsCurrent: selectedIsCurrent,
       child: child,
     );
   }
@@ -275,11 +289,13 @@ class LibrarySectionTabs<T extends Object> extends StatelessWidget {
         tabs: shownTabs,
         selected: selectedValue,
         onChanged: onSelect,
+        selectedIsCurrent: selectedIsCurrent,
       ),
       FushiMastheadRole.secondary => FushiMastheadSegmentedTabs<T>(
         tabs: shownTabs,
         selected: selectedValue,
         onChanged: onSelect,
+        selectedIsCurrent: selectedIsCurrent,
       ),
       null => null,
     };
