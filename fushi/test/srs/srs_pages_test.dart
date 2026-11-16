@@ -7,6 +7,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show driftRuntimeOptions;
+import 'package:drift/native.dart' show NativeDatabase;
 import 'package:flutter/gestures.dart' show PointerDeviceKind, kSecondaryButton;
 import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter/services.dart';
@@ -14,6 +15,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/onboarding_wizard_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_browse_page.dart';
@@ -318,6 +321,123 @@ void main() {
 
   for (final bool apple in <bool>[false, true]) {
     final String ds = apple ? 'Apple' : 'MD3';
+
+    testWidgets(
+      '[$ds] 牌组设置页：有没保存的改动时按返回问「保存 / 放弃 / 取消」，没改动直接退（拍板 -G0yIwvUrD）',
+      (WidgetTester tester) async {
+        final SrsDbStore store = await _openStore(tester);
+        final String deckId = store.defaultDeckId;
+        Future<String> savedName() async =>
+            (await tester.runAsync(store.deckTree))![deckId]!.name;
+        final String original = await savedName();
+        await _pumpPage(
+          tester,
+          store: store,
+          apple: apple,
+          page: const SizedBox.shrink(),
+        );
+        final Finder page = find.byType(SrsDeckSettingsPage);
+        final Finder dialog = find.byKey(
+          const ValueKey<String>('srs-settings-unsaved-dialog'),
+        );
+        Future<void> open() async {
+          unawaited(
+            tester
+                .state<NavigatorState>(find.byType(Navigator).first)
+                .push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => SrsDeckSettingsPage(deckId: deckId),
+                  ),
+                ),
+          );
+          await _settle(tester);
+          expect(page, findsOneWidget);
+        }
+
+        // 系统返回键（Android 返回 / 手势）：走 PopScope。
+        Future<void> back() async {
+          await tester.binding.handlePopRoute();
+          await _settle(tester);
+        }
+
+        Future<void> rename(String value) async {
+          final Finder field = find.byKey(
+            const ValueKey<String>('srs-settings-name'),
+          );
+          await tester.ensureVisible(field);
+          await tester.enterText(
+            find.descendant(of: field, matching: find.byType(EditableText)),
+            value,
+          );
+          await tester.pump();
+        }
+
+        Future<void> choose(String key) async {
+          await tester.tap(find.byKey(ValueKey<String>(key)));
+          await _settle(tester);
+        }
+
+        // 没改动：直接退，不问。
+        await open();
+        await back();
+        expect(dialog, findsNothing);
+        expect(page, findsNothing);
+
+        // 改了又改回：和载入时一样，也不问。名称框原先不触发重建，漏了它 canPop 就是旧值。
+        await open();
+        await rename('Renamed');
+        await rename(original);
+        await back();
+        expect(dialog, findsNothing);
+        expect(page, findsNothing);
+
+        // 取消：留在页面，改动还在。
+        await open();
+        await rename('Renamed');
+        await back();
+        expect(dialog, findsOneWidget);
+        await choose('srs-settings-unsaved-cancel');
+        expect(dialog, findsNothing);
+        expect(page, findsOneWidget);
+        expect(find.text('Renamed'), findsWidgets);
+
+        // 放弃：退出，不落库。
+        await back();
+        expect(dialog, findsOneWidget);
+        await choose('srs-settings-unsaved-discard');
+        expect(page, findsNothing);
+        expect(await savedName(), original);
+
+        // 保存：落库后退出（不再被自己的 maybePop 拦一次）。
+        await open();
+        await rename('Renamed');
+        await back();
+        expect(dialog, findsOneWidget);
+        await srsUntilWritten(
+          tester,
+          () => tester.tap(
+            find.byKey(const ValueKey<String>('srs-settings-unsaved-save')),
+          ),
+        );
+        expect(dialog, findsNothing);
+        expect(page, findsNothing);
+        expect(await savedName(), 'Renamed');
+
+        // 工具栏保存：存完直接退，不弹对话框。
+        await open();
+        await rename('Renamed again');
+        await srsUntilWritten(
+          tester,
+          () => tester.tap(
+            find.byKey(const ValueKey<String>('srs_settings_save')).first,
+          ),
+        );
+        expect(dialog, findsNothing);
+        expect(page, findsNothing);
+        expect(await savedName(), 'Renamed again');
+        await _unmount(tester);
+      },
+    );
 
     testWidgets('[$ds] 牌组列表：空库给出「添加第一张卡」，加卡后显示新卡计数', (
       WidgetTester tester,
@@ -627,6 +747,60 @@ void main() {
       await tester.tap(find.text('Vocabulary'), buttons: kSecondaryButton);
       await _settle(tester);
       expect(find.text(t.srs_deck_rename), findsOneWidget, reason: '右键行出牌组菜单');
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await _settle(tester);
+      await _unmount(tester);
+    });
+
+    testWidgets('[$ds] 牌组菜单「导出此牌组」：导出选项对话框标题写明只导出这个牌组（全名）', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      await tester.runAsync(
+        () => store.ensureDeckPath('Spark::JP::Vocabulary'),
+      );
+      // 导出流程读写「上次的导出选项」偏好：给 app 接一份内存库上的偏好仓库。
+      final FushiDatabase prefsDb = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
+      addTearDown(prefsDb.close);
+      final PreferencesRepository prefs = PreferencesRepository(prefsDb);
+      await tester.runAsync(prefs.loadFromDb);
+      final SrsTestAppModel app = SrsTestAppModel()
+        ..wirePreferencesForTesting(prefs);
+      final int errorsBefore = ErrorLogService.instance.entries.length;
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: apple,
+        app: app,
+        page: const SrsDeckListPage(),
+        size: const Size(1100, 1600),
+        overrides: <Override>[
+          srsMediaStoreProvider.overrideWith(
+            (Ref ref) async => SrsMediaStore(Directory.systemTemp),
+          ),
+        ],
+      );
+      await tester.tap(find.text('Vocabulary'), buttons: kSecondaryButton);
+      await _settle(tester);
+      expect(find.text(t.srs_deck_export), findsOneWidget);
+      await tester.tap(find.text(t.srs_deck_export));
+      final Finder title = find.text(
+        t.srs_export_deck_title(deck: 'Spark::JP::Vocabulary'),
+      );
+      // 弹框前要读牌组树、算子树里有没有 FSRS-7（真 DB 读），等它出来。
+      await srsPumpUntil(tester, () {
+        final List<ErrorLogEntry> errors = ErrorLogService.instance.entries
+            .skip(errorsBefore)
+            .where((ErrorLogEntry e) => e.source == 'SrsDeckList.exportDeck')
+            .toList();
+        if (errors.isNotEmpty) fail('导出流程抛错：${errors.first.error}');
+        return title.evaluate().isNotEmpty;
+      }, what: '「导出此牌组」的选项对话框');
+      await _settle(tester);
+      expect(title, findsOneWidget);
+      expect(find.text(t.srs_export_options_title), findsNothing);
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await _settle(tester);
       await _unmount(tester);
