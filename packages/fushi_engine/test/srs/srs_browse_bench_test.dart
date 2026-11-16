@@ -28,8 +28,8 @@ import 'apkg/srs_apkg_import_test.dart'
         legacyDecks,
         legacyModels,
         ms;
-import 'support/srs_query_counter.dart';
 import 'support/srs_test_storage.dart';
+import 'support/srs_raw_sql.dart';
 
 Uint8List _apkg(int notes) {
   final int base = ms(2025, 1, 1);
@@ -92,16 +92,15 @@ void main() {
       final SrsDbStore store;
       final List<String> searches;
       if (dbPath != null) {
-        final TestSrs srs = await openTestSrsAt(dbPath, inline: false);
+        final TestSrs srs = await openTestSrsAt(dbPath);
         final String profileUid =
-            (await srs.db
+            (await srs.core
                     .customSelect(
                       'SELECT profile_uid FROM srs_cards_cache LIMIT 1',
                     )
                     .getSingle())
                 .read<String>('profile_uid');
         store = await SrsDbStore.open(
-          db: srs.db,
           core: srs.core,
           profileUid: profileUid,
           deviceId: 'bench',
@@ -120,13 +119,8 @@ void main() {
             // 句柄晚释放。
           }
         });
-        final TestSrs srs = await openTestSrsAt(
-          '${tmp.path}/b.db',
-          interceptor: CountingInterceptor(),
-          inline: false,
-        );
+        final TestSrs srs = await openTestSrsAt('${tmp.path}/b.db');
         store = await SrsDbStore.open(
-          db: srs.db,
           core: srs.core,
           profileUid: '01928c3e-0000-7000-8000-0000000be4c7',
           deviceId: 'bench',

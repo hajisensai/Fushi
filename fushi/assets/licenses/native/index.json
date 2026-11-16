@@ -714,6 +714,7 @@
         "parking_lot",
         "parking_lot_core",
         "percent-encoding",
+        "percent-encoding-iri",
         "png",
         "postcard",
         "primal-check",
@@ -1467,12 +1468,6 @@
       ]
     },
     {
-      "file": "4201a739d99186cf.txt",
-      "packages": [
-        "percent-encoding-iri"
-      ]
-    },
-    {
       "file": "423e1c4900b3fbb4.txt",
       "packages": [
         "embedded-io"
@@ -2171,12 +2166,6 @@
       ]
     },
     {
-      "file": "71430174df61bd45.txt",
-      "packages": [
-        "percent-encoding-iri"
-      ]
-    },
-    {
       "file": "7365cc8878a1d7ce.txt",
       "packages": [
         "equivalent"
@@ -2245,6 +2234,12 @@
         "rand_core",
         "rand_distr",
         "rand_pcg"
+      ]
+    },
+    {
+      "file": "76e972ac0f4ddb11.txt",
+      "packages": [
+        "percent-encoding-iri"
       ]
     },
     {
@@ -11651,8 +11646,8 @@
       ],
       "textSource": "package",
       "texts": [
-        "4201a739d99186cf.txt",
-        "71430174df61bd45.txt"
+        "143368af9701a24e.txt",
+        "76e972ac0f4ddb11.txt"
       ]
     },
     {
