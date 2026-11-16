@@ -66982,6 +66982,17 @@ class $MusicTracksTable extends MusicTracks
     type: DriftSqlType.int,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _hiddenAtMeta = const VerificationMeta(
+    'hiddenAt',
+  );
+  @override
+  late final GeneratedColumn<int> hiddenAt = GeneratedColumn<int>(
+    'hidden_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     trackUid,
@@ -67018,6 +67029,7 @@ class $MusicTracksTable extends MusicTracks
     hasEmbeddedCover,
     addedAt,
     deletedAt,
+    hiddenAt,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -67277,6 +67289,12 @@ class $MusicTracksTable extends MusicTracks
         deletedAt.isAcceptableOrUnknown(data['deleted_at']!, _deletedAtMeta),
       );
     }
+    if (data.containsKey('hidden_at')) {
+      context.handle(
+        _hiddenAtMeta,
+        hiddenAt.isAcceptableOrUnknown(data['hidden_at']!, _hiddenAtMeta),
+      );
+    }
     return context;
   }
 
@@ -67422,6 +67440,10 @@ class $MusicTracksTable extends MusicTracks
         DriftSqlType.int,
         data['${effectivePrefix}deleted_at'],
       ),
+      hiddenAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}hidden_at'],
+      ),
     );
   }
 
@@ -67496,6 +67518,17 @@ class MusicTrackRow extends DataClass implements Insertable<MusicTrackRow> {
 
   /// 软删时刻（毫秒）：重扫发现文件消失时置位，歌单 / 播放记录仍能解析到行。
   final int? deletedAt;
+
+  /// 用户「从音乐库移除」的时刻（schema v158，拍板台 IDeN5PYaI7）：只从曲库隐藏、
+  /// 不碰磁盘文件。非 NULL 时 [deletedAt] 也非 NULL（隐藏的行和软删一样不进任何
+  /// 曲库查询）；它是墓碑——重扫见到同一个文件不清软删标记（`writeMusicScanBatch`
+  /// 跳过这一行），曲目不会复活，只有「恢复」（`unhideMusicTracks`）或用户显式重新
+  /// 导入光盘才清掉；移除它所属的音乐来源时，没有别的来源覆盖就清墓碑（保持软删，
+  /// `releaseMusicTracksOfSource`）。边界：墓碑按曲目身份（uid / 路径键）认，同一路径
+  /// 的文件被重新编码、音频指纹（时长 / 采样率 / 声道）变了会派生新 uid、认不回墓碑
+  /// 行，重扫会作为一首新曲目入库——这符合「指纹不同 = 换了文件」的身份语义。
+  /// 设备本地（同整张表）。
+  final int? hiddenAt;
   const MusicTrackRow({
     required this.trackUid,
     this.sourceId,
@@ -67531,6 +67564,7 @@ class MusicTrackRow extends DataClass implements Insertable<MusicTrackRow> {
     required this.hasEmbeddedCover,
     required this.addedAt,
     this.deletedAt,
+    this.hiddenAt,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -67621,6 +67655,9 @@ class MusicTrackRow extends DataClass implements Insertable<MusicTrackRow> {
     if (!nullToAbsent || deletedAt != null) {
       map['deleted_at'] = Variable<int>(deletedAt);
     }
+    if (!nullToAbsent || hiddenAt != null) {
+      map['hidden_at'] = Variable<int>(hiddenAt);
+    }
     return map;
   }
 
@@ -67710,6 +67747,9 @@ class MusicTrackRow extends DataClass implements Insertable<MusicTrackRow> {
       deletedAt: deletedAt == null && nullToAbsent
           ? const Value.absent()
           : Value(deletedAt),
+      hiddenAt: hiddenAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(hiddenAt),
     );
   }
 
@@ -67753,6 +67793,7 @@ class MusicTrackRow extends DataClass implements Insertable<MusicTrackRow> {
       hasEmbeddedCover: serializer.fromJson<bool>(json['hasEmbeddedCover']),
       addedAt: serializer.fromJson<int>(json['addedAt']),
       deletedAt: serializer.fromJson<int?>(json['deletedAt']),
+      hiddenAt: serializer.fromJson<int?>(json['hiddenAt']),
     );
   }
   @override
@@ -67793,6 +67834,7 @@ class MusicTrackRow extends DataClass implements Insertable<MusicTrackRow> {
       'hasEmbeddedCover': serializer.toJson<bool>(hasEmbeddedCover),
       'addedAt': serializer.toJson<int>(addedAt),
       'deletedAt': serializer.toJson<int?>(deletedAt),
+      'hiddenAt': serializer.toJson<int?>(hiddenAt),
     };
   }
 
@@ -67831,6 +67873,7 @@ class MusicTrackRow extends DataClass implements Insertable<MusicTrackRow> {
     bool? hasEmbeddedCover,
     int? addedAt,
     Value<int?> deletedAt = const Value.absent(),
+    Value<int?> hiddenAt = const Value.absent(),
   }) => MusicTrackRow(
     trackUid: trackUid ?? this.trackUid,
     sourceId: sourceId.present ? sourceId.value : this.sourceId,
@@ -67870,6 +67913,7 @@ class MusicTrackRow extends DataClass implements Insertable<MusicTrackRow> {
     hasEmbeddedCover: hasEmbeddedCover ?? this.hasEmbeddedCover,
     addedAt: addedAt ?? this.addedAt,
     deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
+    hiddenAt: hiddenAt.present ? hiddenAt.value : this.hiddenAt,
   );
   MusicTrackRow copyWithCompanion(MusicTracksCompanion data) {
     return MusicTrackRow(
@@ -67933,6 +67977,7 @@ class MusicTrackRow extends DataClass implements Insertable<MusicTrackRow> {
           : this.hasEmbeddedCover,
       addedAt: data.addedAt.present ? data.addedAt.value : this.addedAt,
       deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
+      hiddenAt: data.hiddenAt.present ? data.hiddenAt.value : this.hiddenAt,
     );
   }
 
@@ -67972,7 +68017,8 @@ class MusicTrackRow extends DataClass implements Insertable<MusicTrackRow> {
           ..write('fileSize: $fileSize, ')
           ..write('hasEmbeddedCover: $hasEmbeddedCover, ')
           ..write('addedAt: $addedAt, ')
-          ..write('deletedAt: $deletedAt')
+          ..write('deletedAt: $deletedAt, ')
+          ..write('hiddenAt: $hiddenAt')
           ..write(')'))
         .toString();
   }
@@ -68013,6 +68059,7 @@ class MusicTrackRow extends DataClass implements Insertable<MusicTrackRow> {
     hasEmbeddedCover,
     addedAt,
     deletedAt,
+    hiddenAt,
   ]);
   @override
   bool operator ==(Object other) =>
@@ -68051,7 +68098,8 @@ class MusicTrackRow extends DataClass implements Insertable<MusicTrackRow> {
           other.fileSize == this.fileSize &&
           other.hasEmbeddedCover == this.hasEmbeddedCover &&
           other.addedAt == this.addedAt &&
-          other.deletedAt == this.deletedAt);
+          other.deletedAt == this.deletedAt &&
+          other.hiddenAt == this.hiddenAt);
 }
 
 class MusicTracksCompanion extends UpdateCompanion<MusicTrackRow> {
@@ -68089,6 +68137,7 @@ class MusicTracksCompanion extends UpdateCompanion<MusicTrackRow> {
   final Value<bool> hasEmbeddedCover;
   final Value<int> addedAt;
   final Value<int?> deletedAt;
+  final Value<int?> hiddenAt;
   final Value<int> rowid;
   const MusicTracksCompanion({
     this.trackUid = const Value.absent(),
@@ -68125,6 +68174,7 @@ class MusicTracksCompanion extends UpdateCompanion<MusicTrackRow> {
     this.hasEmbeddedCover = const Value.absent(),
     this.addedAt = const Value.absent(),
     this.deletedAt = const Value.absent(),
+    this.hiddenAt = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   MusicTracksCompanion.insert({
@@ -68162,6 +68212,7 @@ class MusicTracksCompanion extends UpdateCompanion<MusicTrackRow> {
     this.hasEmbeddedCover = const Value.absent(),
     required int addedAt,
     this.deletedAt = const Value.absent(),
+    this.hiddenAt = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : trackUid = Value(trackUid),
        path = Value(path),
@@ -68204,6 +68255,7 @@ class MusicTracksCompanion extends UpdateCompanion<MusicTrackRow> {
     Expression<bool>? hasEmbeddedCover,
     Expression<int>? addedAt,
     Expression<int>? deletedAt,
+    Expression<int>? hiddenAt,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -68241,6 +68293,7 @@ class MusicTracksCompanion extends UpdateCompanion<MusicTrackRow> {
       if (hasEmbeddedCover != null) 'has_embedded_cover': hasEmbeddedCover,
       if (addedAt != null) 'added_at': addedAt,
       if (deletedAt != null) 'deleted_at': deletedAt,
+      if (hiddenAt != null) 'hidden_at': hiddenAt,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -68280,6 +68333,7 @@ class MusicTracksCompanion extends UpdateCompanion<MusicTrackRow> {
     Value<bool>? hasEmbeddedCover,
     Value<int>? addedAt,
     Value<int?>? deletedAt,
+    Value<int?>? hiddenAt,
     Value<int>? rowid,
   }) {
     return MusicTracksCompanion(
@@ -68317,6 +68371,7 @@ class MusicTracksCompanion extends UpdateCompanion<MusicTrackRow> {
       hasEmbeddedCover: hasEmbeddedCover ?? this.hasEmbeddedCover,
       addedAt: addedAt ?? this.addedAt,
       deletedAt: deletedAt ?? this.deletedAt,
+      hiddenAt: hiddenAt ?? this.hiddenAt,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -68426,6 +68481,9 @@ class MusicTracksCompanion extends UpdateCompanion<MusicTrackRow> {
     if (deletedAt.present) {
       map['deleted_at'] = Variable<int>(deletedAt.value);
     }
+    if (hiddenAt.present) {
+      map['hidden_at'] = Variable<int>(hiddenAt.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -68469,6 +68527,7 @@ class MusicTracksCompanion extends UpdateCompanion<MusicTrackRow> {
           ..write('hasEmbeddedCover: $hasEmbeddedCover, ')
           ..write('addedAt: $addedAt, ')
           ..write('deletedAt: $deletedAt, ')
+          ..write('hiddenAt: $hiddenAt, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -128515,6 +128574,7 @@ typedef $$MusicTracksTableCreateCompanionBuilder =
       Value<bool> hasEmbeddedCover,
       required int addedAt,
       Value<int?> deletedAt,
+      Value<int?> hiddenAt,
       Value<int> rowid,
     });
 typedef $$MusicTracksTableUpdateCompanionBuilder =
@@ -128553,6 +128613,7 @@ typedef $$MusicTracksTableUpdateCompanionBuilder =
       Value<bool> hasEmbeddedCover,
       Value<int> addedAt,
       Value<int?> deletedAt,
+      Value<int?> hiddenAt,
       Value<int> rowid,
     });
 
@@ -128732,6 +128793,11 @@ class $$MusicTracksTableFilterComposer
 
   ColumnFilters<int> get deletedAt => $composableBuilder(
     column: $table.deletedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get hiddenAt => $composableBuilder(
+    column: $table.hiddenAt,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -128914,6 +128980,11 @@ class $$MusicTracksTableOrderingComposer
     column: $table.deletedAt,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<int> get hiddenAt => $composableBuilder(
+    column: $table.hiddenAt,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$MusicTracksTableAnnotationComposer
@@ -129052,6 +129123,9 @@ class $$MusicTracksTableAnnotationComposer
 
   GeneratedColumn<int> get deletedAt =>
       $composableBuilder(column: $table.deletedAt, builder: (column) => column);
+
+  GeneratedColumn<int> get hiddenAt =>
+      $composableBuilder(column: $table.hiddenAt, builder: (column) => column);
 }
 
 class $$MusicTracksTableTableManager
@@ -129119,6 +129193,7 @@ class $$MusicTracksTableTableManager
                 Value<bool> hasEmbeddedCover = const Value.absent(),
                 Value<int> addedAt = const Value.absent(),
                 Value<int?> deletedAt = const Value.absent(),
+                Value<int?> hiddenAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => MusicTracksCompanion(
                 trackUid: trackUid,
@@ -129155,6 +129230,7 @@ class $$MusicTracksTableTableManager
                 hasEmbeddedCover: hasEmbeddedCover,
                 addedAt: addedAt,
                 deletedAt: deletedAt,
+                hiddenAt: hiddenAt,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -129193,6 +129269,7 @@ class $$MusicTracksTableTableManager
                 Value<bool> hasEmbeddedCover = const Value.absent(),
                 required int addedAt,
                 Value<int?> deletedAt = const Value.absent(),
+                Value<int?> hiddenAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => MusicTracksCompanion.insert(
                 trackUid: trackUid,
@@ -129229,6 +129306,7 @@ class $$MusicTracksTableTableManager
                 hasEmbeddedCover: hasEmbeddedCover,
                 addedAt: addedAt,
                 deletedAt: deletedAt,
+                hiddenAt: hiddenAt,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
