@@ -76,8 +76,7 @@ const NO_PENDING: &str =
 const NO_CHANNEL: &str =
     "gen4 has no ingest channel: received segments land in the truth layer directly";
 const P3_REPR: &str = "a protocol 3 storage detail; the implementation is deleted with G7-6";
-const NO_DIGEST_BUCKETS: &str =
-    "gen4 has no digest buckets to bisect: the semantic digest is one hash over the derived layer (Index::digest)";
+const NO_DIGEST_BUCKETS: &str = "gen4 has no digest buckets to bisect: the semantic digest is one hash over the derived layer (Index::digest)";
 const NO_OBSOLETE_ACK: &str = "gen4 `obsolete` keeps no to-delete list: it decides from this round's listing, so failed deletes are simply offered again";
 const NO_REHEARSAL: &str =
     "the pre-migration rehearsal only makes sense before the generation switch; G7-6 deletes it";
