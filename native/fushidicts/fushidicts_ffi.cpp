@@ -724,6 +724,24 @@ FfiQueryResult fushidicts_query(void* handle, const char* expression) {
   });
 }
 
+// 只要词频的 fushidicts_query（DictionaryQuery::query_frequencies）：词条的 glossary /
+// pitch 计数恒为 0。结果同样用 fushidicts_free_query_result 释放。
+FUSHI_EXPORT
+FfiQueryResult fushidicts_query_frequencies(void* handle, const char* expression) {
+  return ffi_guard("fushidicts_query_frequencies", [&]() -> FfiQueryResult {
+    FfiQueryResult r{};
+    auto* h = static_cast<FushidictsHandle*>(handle);
+    std::shared_lock lock(h->rw);
+    auto terms = h->query.query_frequencies(expression);
+    r.count = static_cast<int32_t>(terms.size());
+    r.terms = alloc_array<FfiTermResult>(r.count);
+    for (int i = 0; i < r.count; i++) {
+      r.terms[i] = convert_term(terms[i]);
+    }
+    return r;
+  });
+}
+
 FUSHI_EXPORT
 void fushidicts_free_query_result(FfiQueryResult* r) {
   ffi_guard_void("fushidicts_free_query_result", [&]() {

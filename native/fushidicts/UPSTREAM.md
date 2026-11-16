@@ -274,6 +274,7 @@ lookup、query、query_kanji 逐字段相同，有无联合过滤器都比；A �
 - **安全上限**：导入/查询期的资源/尺寸上限加固。
 - **FFI 桥**：`fushidicts_ffi.cpp`（Dart FFI，五端共用）。**不用上游 `c-bindings` 分支**。原 Android JNI 桥 `fushidicts_jni.cpp`（只服务已删除的原生弹窗 `PopupDictActivity`）已删除，Android `:popup` 进程走同一条 Dart FFI。
   - 注意：`score` / `get_freq_value(s)_for_dict` / `Dictionary` 均为引擎内部符号，FFI 桥与 Dart binding 均未暴露——本批三处改动**不影响 FFI 签名**。
+- **只查词频的查询入口**（2026-11，上游没有）：`DictionaryQuery::query_frequencies` / FFI `fushidicts_query_frequencies` / Dart `FushiDicts.queryFrequencies`——与 `query()` 同一批词条、同样的 rules 与 frequencies，但不富化音调、不解压释义（glossaries / pitches 恒为空）。给 Anki 卡组按词频重排用（每张卡查一次、只读 reading 与 frequencies）。实测（64 本词典、677 个词，`lookup_bench --query-compare`）：`query()` 平均每个词解压 376 KB 释义，0.33 ms → 0.03 ms，两者词条 / 词频逐项相同。守卫 `tests/freq_pitch_merge_query_test.cpp`（每个查询点都比 `query()`）。
 - **额外吸收的 sibling commit**：`feb48f5`（`ImportResult.detected_type`，自动词典类型检测），非 origin/main 主线。
 
 ## 依赖差异

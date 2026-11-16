@@ -271,6 +271,36 @@ void main() {
         expect(lookupAll(), before);
       });
 
+      test('queryFrequencies：词条 / rules / 词频与 query 逐项相同，但不带释义与音调', () {
+        loadLegacySet();
+        String freqOf(FushiTermResult t) =>
+            '${t.expression}|${t.reading}|${t.rules}|'
+            '${t.frequencies.map((f) => '${f.dictName}:${f.frequencies.map((x) => '${x.value}/${x.displayValue}').join('+')}').join(',')}';
+        int withFrequency = 0;
+        for (final String word in <String>['猫', '犬', '食べる', 'いぬ', '無い']) {
+          final List<FushiTermResult> full = FushiDicts.instance.query(word);
+          final List<FushiTermResult> freq = FushiDicts.instance
+              .queryFrequencies(word);
+          expect(
+            freq.map(freqOf).toList(),
+            full.map(freqOf).toList(),
+            reason: word,
+          );
+          for (final FushiTermResult t in freq) {
+            expect(t.glossaries, isEmpty, reason: '$word：不该带释义');
+            expect(t.pitches, isEmpty, reason: '$word：不该带音调');
+            if (t.frequencies.isNotEmpty) withFrequency++;
+          }
+        }
+        // 素材要真的查得出词条、释义与词频，否则上面的比较没有判别力。
+        final List<FushiTermResult> neko = FushiDicts.instance.query('猫');
+        expect(neko, isNotEmpty);
+        expect(neko.first.glossaries, isNotEmpty);
+        expect(neko.first.pitches, isNotEmpty);
+        expect(withFrequency, greaterThanOrEqualTo(2));
+        expect(FushiDicts.instance.queryFrequencies('存在しない語'), isEmpty);
+      });
+
       test('与删 / 覆盖词典串行：作用域等在跑的那一本结束；作用域内全部 deferred', () async {
         bool done = false;
         final Future<FushiDictUpgradeReport> running =
