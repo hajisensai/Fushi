@@ -7,7 +7,7 @@ import 'package:fushi/src/utils/misc/fushi_share.dart';
 import 'package:path/path.dart' as p;
 import 'package:share_plus/share_plus.dart';
 
-/// BUG-4695（反馈 P1pyoS0dQb）：Android 文件分享不得再交给 share_plus。
+/// BUG-4731（反馈 P1pyoS0dQb）：Android 文件分享不得再交给 share_plus。
 ///
 /// share_plus 7.2.2 的 Android 端在 MethodChannel 回调（Android 主线程）里对每个
 /// 文件整份 `File.copyTo`，大文件直接 ANR。修复后 Android 的文件分享由

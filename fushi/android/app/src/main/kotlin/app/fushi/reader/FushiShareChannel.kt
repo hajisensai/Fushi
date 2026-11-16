@@ -14,7 +14,7 @@ import java.io.File
 /**
  * Android 文件分享：`app.fushi.reader/share` 的原生侧（Dart 门面 `FushiShare.shareFiles`）。
  *
- * **为什么不用 share_plus（BUG-4695，反馈 P1pyoS0dQb）**：share_plus 7.2.2 的
+ * **为什么不用 share_plus（BUG-4731，反馈 P1pyoS0dQb）**：share_plus 7.2.2 的
  * `Share.getUrisForPaths` 在 MethodChannel 回调里——也就是 Android 主线程上——对每个
  * 待分享文件无条件 `File.copyTo(cache/share_plus/…)`，整份同步拷贝。分享片段视频 /
  * m4b / 备份 zip 这种几百 MB 的产物时，主线程阻塞在 `FileOutputStream.write` 上，

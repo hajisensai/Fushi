@@ -86,7 +86,7 @@ class FushiShare {
   /// Android 文件分享的**快照根目录**来源；null = 不走 Android 自有通道（其余平台
   /// 仍交给 share_plus）。
   ///
-  /// **为什么 Android 不走 share_plus（BUG-4695，反馈 P1pyoS0dQb）**：share_plus
+  /// **为什么 Android 不走 share_plus（BUG-4731，反馈 P1pyoS0dQb）**：share_plus
   /// 7.2.2 的 Android 端在 MethodChannel 回调里（Android 主线程）对每个文件无条件
   /// `File.copyTo(cache/share_plus/…)` 整份同步拷贝；分享几百 MB 的片段 / m4b /
   /// 备份时主线程卡在 `FileOutputStream.write`，系统判 ANR。拷贝本身不能省——调用方
@@ -263,7 +263,7 @@ class FushiShare {
     try {
       final Future<Directory> Function()? stagingRoot = androidShareStagingRoot;
       if (stagingRoot != null) {
-        // Android：快照用异步 I/O 落好，原生侧只拼 Intent（BUG-4695）。快照耗时
+        // Android：快照用异步 I/O 落好，原生侧只拼 Intent（BUG-4731）。快照耗时
         // 不计入呈现上限——几百 MB 的拷贝本来就可能超过 30 s，那不是「平台没回包」。
         final List<String> staged = await stageFilesForShare(
           files,

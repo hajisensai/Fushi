@@ -633,7 +633,7 @@ public class MainActivity extends AudioServiceActivity {
         app.fushi.reader.feedback.FeedbackReplyWorkChannel.registerWith(
                 flutterEngine, getApplicationContext());
         SelectionActionChannel.registerWith(flutterEngine, this);
-        // 文件分享：Dart 侧先异步落好快照，这里只拼 Intent，主线程不做文件 I/O（BUG-4695）。
+        // 文件分享：Dart 侧先异步落好快照，这里只拼 Intent，主线程不做文件 I/O（BUG-4731）。
         FushiShareChannel.registerWith(flutterEngine, this);
         SystemOcrChannel.registerWith(flutterEngine, this);
         ClipboardImageChannel.registerWith(flutterEngine, getApplicationContext());
