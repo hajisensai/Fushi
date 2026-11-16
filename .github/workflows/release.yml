@@ -1809,6 +1809,11 @@ jobs:
         RELEASE_TAG: ${{ steps.channel.outputs.tag }}
       run: |
         set -euo pipefail
+        # 热修正式版从旧 tag 拉出的分支发，此时的 develop 不是这次发的内容，不同步进 main。
+        if [ "$GITHUB_REF" != refs/heads/develop ]; then
+          echo "formal release built from $GITHUB_REF, not develop; skipping main sync."
+          exit 0
+        fi
         WORK="$(mktemp -d)"
         REMOTE="https://x-access-token:${GITHUB_TOKEN}@github.com/${REPO}.git"
         git clone -q --no-tags --reference "$GITHUB_WORKSPACE" --branch main "$REMOTE" "$WORK"
