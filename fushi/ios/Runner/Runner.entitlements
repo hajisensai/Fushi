@@ -23,7 +23,7 @@
 		App ID 勾上后要重新生成 App Store 描述文件并更新 IOS_PROVISIONING_PROFILE_BASE64；
 		描述文件没有这项时 CI 打 warning 并不签它。未签名侧载 ipa 同样不带。
 
-		com.apple.developer.kernel.increased-memory-limit（BUG-4755）：抬高本进程的 jetsam
+		com.apple.developer.kernel.increased-memory-limit（BUG-4758）：抬高本进程的 jetsam
 		内存额度（iOS 15+）。设备端 ASR 装载 Parakeet 等大模型时 footprint 冲上 1.8~2 GB，
 		默认额度下被 jetsam 杀；额度抬高后 os_proc_available_memory() 跟着变大，
 		lib/src/asr_host/asr_memory_gate.dart 的门槛就放行原模型全速跑，不用退到小模型。

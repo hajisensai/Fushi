@@ -1,5 +1,5 @@
 // BUG-4372 / 反馈 jbTZ4GIEyU：Android 低内存机跑设备端 ASR 被系统按低内存杀掉。
-// BUG-4755 / 反馈 EnDAyv9ouF、_4fe2p5UsT：iPhone 15 视频页生成字幕被 jetsam 杀掉
+// BUG-4758 / 反馈 EnDAyv9ouF、_4fe2p5UsT：iPhone 15 视频页生成字幕被 jetsam 杀掉
 // （门槛原先只在 Android 生效）。
 // 守的是「开跑前按设备可用内存判门槛，跑不动就抛带原因与更小模型建议的异常，
 // 且在碰模型目录 / 起 isolate 之前就拦下」，以及开跑时留下带模型名的活动面包屑。
@@ -342,7 +342,7 @@ void main() {
     });
   });
 
-  group('iOS jetsam 额度（BUG-4755）', () {
+  group('iOS jetsam 额度（BUG-4758）', () {
     test('余量就是 os_proc_available_memory，不再套物理内存比例', () {
       const IosJetsamMemorySnapshot memory = IosJetsamMemorySnapshot(
         availableBytes: 1600 * _mb,
@@ -520,7 +520,7 @@ void main() {
     );
   });
 
-  group('设备内存探针分派（BUG-4755 根因：默认探针原先只认 Android）', () {
+  group('设备内存探针分派（BUG-4758 根因：默认探针原先只认 Android）', () {
     const AndroidMemorySnapshot android = AndroidMemorySnapshot(
       totalBytes: 4 * _gb,
       availableBytes: _gb,
