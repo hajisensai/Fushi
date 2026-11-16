@@ -573,7 +573,7 @@ void main() {
       required int at,
     }) => <String, Object?>{'visible': visible, 'timestamp': at, 'pid': pid};
 
-    // BUG-4743（反馈 gTrf6djABo）：pid 19272 前台服务（125）时被 LOW_MEMORY 杀，会话标记
+    // BUG-4744（反馈 gTrf6djABo）：pid 19272 前台服务（125）时被 LOW_MEMORY 杀，会话标记
     // 是别的进程的（已 clean），对不上；同一 pid 死前 28 分钟已收到 TRIM_MEMORY_BACKGROUND。
     // 旧判定只看标记 → 对不上按前台 → 弹「低内存闪退」报告。
     test(
