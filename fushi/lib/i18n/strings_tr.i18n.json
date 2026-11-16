@@ -6869,6 +6869,8 @@
   "no_sentences_found": "Cümle bulunamadı",
   "no_text": "Metin yok.",
   "no_text_to_search": "Aranacak metin yok.",
+  "notice_close": "Close",
+  "notice_open_link": "Open link",
   "novel_detail_chapter_download": "Bu bölümden itibaren indir",
   "novel_detail_chapters_empty": "Bölüm bulunamadı.",
   "novel_detail_chapters_title": "Bölümler ($count)",

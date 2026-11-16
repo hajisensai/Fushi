@@ -26,6 +26,10 @@ import 'package:fushi/src/onboarding/recommended_pack_download_mini_bar.dart';
 import 'package:fushi/src/onboarding/recommended_pack_tutorial_prompt.dart';
 import 'package:fushi/src/onboarding/recommended_pack_tutorial_state.dart';
 import 'package:fushi/src/updates/update_probes.dart';
+import 'package:fushi/src/updates/app_update_check.dart'
+    show appUpdateChannelOf;
+import 'package:fushi/src/updates/notice_feed.dart';
+import 'package:fushi/src/updates/notice_layer.dart';
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
     show
@@ -488,6 +492,13 @@ class _HomePageState extends BasePageState<HomePage>
   String get appVersion =>
       resolveCurrentAppVersion(appModel.packageInfo.version);
 
+  /// 服务端按构建信息下发的通知（[NoticeLayer] 画在外壳上）；首帧后 [NoticeFeed.start]。
+  late final NoticeFeed _noticeFeed = NoticeFeed.forFushi(
+    prefs: appModelNoUpdate.prefsRepo,
+    executableVersion: appModelNoUpdate.packageInfo.version,
+    channel: () => appUpdateChannelOf(appModelNoUpdate).name,
+  );
+
   HomeTab _currentTab = HomeTab.home;
 
   /// BUG-2719：tab 正文（[_bodyWithMiniBar]）的唯一身份。三套布局把正文挂在不同的父链下
@@ -763,6 +774,8 @@ class _HomePageState extends BasePageState<HomePage>
       // 启动期：用户最想知道「我不在的时候更新了什么」的时刻就是刚打开应用。
       // 各域自己的到期判据挡住频繁重启造成的重复请求。
       appModel.startUpdateChecks();
+      // 服务端通知：先展示缓存，再后台拉一次（不支持的平台内部直接跳过）。
+      _noticeFeed.start();
       // 在线漫画章节下载 worker（设计稿 2026-09-12 §4）：复位上次进程死亡留下的
       // running 行并续跑队列。放在这里而不是 initialise()：完成钩子的自动 OCR 要
       // 从 navigator 的 context 装配引擎，HomePage 就绪之前拿不到。
@@ -1052,6 +1065,7 @@ class _HomePageState extends BasePageState<HomePage>
       return true;
     }());
     _periodicSyncTimer?.cancel();
+    _noticeFeed.dispose();
     _videoScrapeRuntime.shutdown();
     _videoDiscoveryService?.close();
     _videoDiscoveryService = null;
@@ -1652,7 +1666,9 @@ class _HomePageState extends BasePageState<HomePage>
     // BackdropFilter.grouped 共用一次背景采样，不再各自抓一遍屏。
     return ValueListenableBuilder<bool>(
       valueListenable: WindowCaptionChannel.systemBackdropActive,
-      child: BackdropGroup(child: home),
+      child: BackdropGroup(
+        child: NoticeLayer(feed: _noticeFeed, child: home),
+      ),
       // 结构恒定：恒套一层 Theme、只换 data。按 mica 增删这层会让整棵首页
       // （满是 GlobalKey）在 LayoutBuilder 重建里重挂，触发 framework
       // `_elements.contains(element)` 断言（Mac 调试版红屏）。

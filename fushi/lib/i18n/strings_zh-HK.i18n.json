@@ -6869,6 +6869,8 @@
   "no_sentences_found": "未找到句子",
   "no_text": "無文字。",
   "no_text_to_search": "沒有可搜尋的文字。",
+  "notice_close": "Close",
+  "notice_open_link": "Open link",
   "novel_detail_chapter_download": "從這一章開始下載",
   "novel_detail_chapters_empty": "沒有找到章節。",
   "novel_detail_chapters_title": "章節（$count）",

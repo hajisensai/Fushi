@@ -6869,6 +6869,8 @@
   "no_sentences_found": "例文が見つかりません",
   "no_text": "テキストがありません。",
   "no_text_to_search": "検索するテキストがありません。",
+  "notice_close": "Close",
+  "notice_open_link": "Open link",
   "novel_detail_chapter_download": "この章からダウンロード",
   "novel_detail_chapters_empty": "章が見つかりません。",
   "novel_detail_chapters_title": "章（$count）",

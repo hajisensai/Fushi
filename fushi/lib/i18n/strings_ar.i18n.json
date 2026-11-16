@@ -6869,6 +6869,8 @@
   "no_sentences_found": "لم يتم العثور على جمل",
   "no_text": "لا يوجد نص.",
   "no_text_to_search": "لا يوجد نص للبحث.",
+  "notice_close": "Close",
+  "notice_open_link": "Open link",
   "novel_detail_chapter_download": "التنزيل من هذا الفصل",
   "novel_detail_chapters_empty": "لم يُعثر على فصول.",
   "novel_detail_chapters_title": "الفصول ($count)",

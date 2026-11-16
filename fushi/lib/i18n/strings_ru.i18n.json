@@ -6869,6 +6869,8 @@
   "no_sentences_found": "Предложения не найдены",
   "no_text": "Нет текста.",
   "no_text_to_search": "Нет текста для поиска.",
+  "notice_close": "Close",
+  "notice_open_link": "Open link",
   "novel_detail_chapter_download": "Скачать начиная с этой главы",
   "novel_detail_chapters_empty": "Главы не найдены.",
   "novel_detail_chapters_title": "Главы ($count)",

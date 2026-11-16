@@ -6869,6 +6869,8 @@
   "no_sentences_found": "ไม่พบประโยค",
   "no_text": "ไม่มีข้อความ",
   "no_text_to_search": "ไม่มีข้อความสำหรับค้นหา",
+  "notice_close": "Close",
+  "notice_open_link": "Open link",
   "novel_detail_chapter_download": "ดาวน์โหลดจากตอนนี้",
   "novel_detail_chapters_empty": "ไม่พบตอน",
   "novel_detail_chapters_title": "ตอน ($count)",
