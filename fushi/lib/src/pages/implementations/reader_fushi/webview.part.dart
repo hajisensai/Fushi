@@ -2474,6 +2474,17 @@ updateLive: function(patch) {
           callback: (_) => _handleReaderScroll(),
         );
 
+        // 墨水屏「每 N 页全刷」：连续模式每滚过一屏回传一次（JS `_noteEinkScroll`）。
+        // 恢复 / 换章在飞时的程序化滚动不是用户翻页，丢弃——翻页跨章由
+        // _onRestoreComplete 自己计。
+        controller.addJavaScriptHandler(
+          handlerName: 'onEinkScrollPage',
+          callback: (_) {
+            if (!_readerContentReady || _restoreInFlight || _lyricsMode) return;
+            _noteEinkPageTurn();
+          },
+        );
+
         // BUG-117: primary internal-link path. The JS click interceptor (in the
         // reader setup script) preventDefaults <a> clicks and forwards the
         // browser-resolved absolute href here, so link navigation works on every
@@ -2899,9 +2910,9 @@ updateLive: function(patch) {
             // 同时成立，两条退出通道一起死——所以本轮先修这一条。
             //
             // 口径更正：onImageTap **不是**「全阅读器唯一没 reclaim 的手势入口」。
-            // 同族至今仍有 6 处 JS 桥零 reclaim：onSelectionMenu、onImageRevealed、
-            // onImageContextMenu、onImageLongPress、onPointerSeek、
-            // onLyricsPointerSeek。其中 onImageRevealed / onImageContextMenu /
+            // 同族至今仍有 4 处 JS 桥零 reclaim：onSelectionMenu、onImageRevealed、
+            // onImageContextMenu、onImageLongPress（onPointerSeek 已由 BUG-4718、
+            // onLyricsPointerSeek 已由 NmpRV-amTY 补上）。其中 onImageRevealed / onImageContextMenu /
             // onImageLongPress 连兄弟桥兜底都没有。本轮只修 spread 退出
             // 路径必经的这一条，其余未覆盖——别把这里当作「此族已清干净」的证据。
             _focusOwnership.reclaim(FocusReclaimCause.gesture);
@@ -2998,6 +3009,11 @@ updateLive: function(patch) {
             if (args.length < 3) return;
             final int button = (args[0] as num?)?.toInt() ?? -1;
             if (button < 0) return;
+            // BUG-4718（反馈 mNogI-kBAh）：这次非左键按下已把 OS 键盘焦点交给原生
+            // WebView（BUG-136 同族），与它绑的是哪个动作无关——下面 ①②③ 各自早退，
+            // 原先全程不收回，右键「跳转到点击句」后快捷键只到 DOM、全部失效。故在任何
+            // 按动作分流之前收回一次（歌词文档的 onLyricsPointerSeek 同款）。
+            _focusOwnership.reclaim(FocusReclaimCause.gesture);
             final registry = appModel.shortcutRegistry;
             // ① **位置型动作**先行：「seek 到点击句」需要知道点在哪一句上，只有页内
             // JS 拿得到坐标，故它恒由本条路承担（Flutter 侧那个入口会跳过它，判据

@@ -191,6 +191,16 @@ Android / Windows / macOS / iOS debug/beta workflow 必须使用跨 workflow 统
 
 应用内反馈的状态挂在**修复 commit** 上：`.github/workflows/feedback-link.yml` 只挂 push develop/main，由 `tool/feedback_link.mjs` 逐个 commit 解析 message，并用 `GITHUB_TOKEN` 查 `GET /repos/{repo}/commits/{sha}/pulls` 取关联 PR（只认已合并、base 是本分支的）解析其描述，把 `Feedback: <id>[, <id>…]` / `Feedback-NoApp: <id>…` 行（行首、不区分大小写）登记到反馈服务 `POST /v1/ci/feedback/fixed`（幂等：sha 与 scope 不变的重登记不重置发布记录）。commit message 里的 id 归该 commit，PR 描述里的 id 归该 PR 在这次 push 里最后一个 commit，同一 id 多次出现取 push 顺序最后的那个；main 上只处理 distinct 的 commit（正式版后 develop 同步进 main 不重登记）。不用 `pull_request_target`：它取默认分支 main 上的定义，main 落后 develop 一个发布周期，且要在有 secret 的上下文里处理外部 PR。两条发布 workflow 在「Publish mirror update manifest」之后各有回填步骤（`release.yml` = android；`release-desktop.yml` 的 publish job 按本次真实存在的产物分别回填 windows / macos / ios），跑 `tool/feedback_mark_released.sh`：GET `pending?channel&platform` → 本地 `git cat-file -e` + `git merge-base --is-ancestor <fix> <github.sha>` → POST `released`，把「这个通道 / 平台的这个版本已包含修复」记下（`manifest_channel` 的 `formal` 映射成 `stable`）。回填与登记**都不会让 workflow 变红**：步骤 `continue-on-error: true`，脚本任何失败只打 `::warning`。需要仓库 **secret `FEEDBACK_CI_TOKEN`**（与反馈 Worker 的同名 secret 一致；未配置时两个脚本 `::notice` 后直接跳过）与可选的仓库 **variable `FEEDBACK_API_BASE`**（接口根，缺省 `https://rank.fushi.moe`）。守卫 `fushi/test/build/feedback_workflow_guard_test.dart`，脚本离线测试 `fushi/test/tools/feedback_{mark_released,link}_script_test.dart`。
 
+### 设置项目录自动同步到官网（2026-11-16）
+
+官网 `fushi.moe/settings.md`、`/settings.json` 是给 AI 读的全量设置项目录（键、中英标题、位置、类型、可选值、范围、默认值），**不手工维护**：
+
+- 导出器 `fushi/test/settings/settings_catalog_export_test.dart` 遍历 `fushi_cli config ls` 用的同一份设置索引（`buildSettingsIndex`，整棵 schema + 逃生口页面）。平时是普通单测（守「能走完整棵 schema、机密项不出值」）；设了 `FUSHI_SETTINGS_CATALOG_DIR` 才把 `settings-catalog.{json,md}` 写进那个目录。内容必须确定（不带时间戳 / commit）。
+- `release.yml` 的 `tests (checks)` 在每次 push 上跑它并传 artifact `settings-catalog`；同一 workflow 的 `publish-settings-catalog` job（`needs: tests` + `always()`，单测分片红不挡它，只有 run 被取消才不跑；job 级 `contents: write`，tests 仍只读）取本 run 的 artifact，由 `tool/publish_settings_catalog.sh` 推到 `update-manifest` 分支：develop → `settings-catalog-debug.*`，main → `settings-catalog-stable.*`。设置没变就不产生提交；与 `publish-android` 并发推同一分支时，脚本被拒后重取远端 tip、只在最新提交上重放这两个文件。没有 artifact 记 notice 后正常结束。
+- **不用 `workflow_run`**：它只认默认分支 main 上的 workflow 定义，main 落后 develop 一个发布周期，独立 workflow 要等下一个正式版进 main 后才第一次触发（同上一节放弃 `pull_request_target` 的原因）。
+- 官网仓（`hajisensai/fushi.moe`）的边缘 Worker `edge/src/settings-catalog.ts` 同域代理这两个文件（不带参数给 stable，没有就退回 debug；`?channel=debug` 指定），llms.txt 的「App reference」指向它。
+- 加减设置项不需要做任何事；改了目录 JSON 的字段含义才要把导出器的 `kSettingsCatalogSchema` 与 Worker 的 `CATALOG_SCHEMA` 一起加一。接线（环境变量名 / artifact 名 / 发布 job 的触发条件与权限）由 `fushi/test/tools/settings_catalog_publish_script_test.dart` 守。
+
 ### Windows 安装器：原地升级与「数据存储位置」页
 
 （历史备注：2.0 改名那一轮，formal 通道曾有「先发 Android 迁移桥包 `bridge-<version>-<abi>.apk`

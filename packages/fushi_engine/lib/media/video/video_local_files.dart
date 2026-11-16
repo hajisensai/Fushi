@@ -143,13 +143,28 @@ bool isPickerImportCopyPath(String path, Iterable<String> copyDirs) {
 ///
 /// 只删 `File`（含符号链接），目录一律跳过——`videoPath` 不该是目录，真遇到也绝不
 /// 递归删。单个失败（Windows 句柄占用等）不翻转其它文件的结果。
+///
+/// [onCandidateDone] 每处理完一个候选回调一次（入参是已处理的候选数，含被护栏挡下
+/// 的），给删除进度用。
 Future<LocalFileDeleteReport> deleteLocalVideoFiles({
   required Iterable<String> candidates,
   required Set<String> stillReferenced,
-}) => deleteLocalFiles(<String>[
-  for (final String path in candidates)
-    if (!stillReferenced.contains(platformPathKey(path))) path,
-]);
+  void Function(int done)? onCandidateDone,
+}) async {
+  final List<String> all = candidates.toList(growable: false);
+  final List<String> deletable = <String>[
+    for (final String path in all)
+      if (!stillReferenced.contains(platformPathKey(path))) path,
+  ];
+  final int skipped = all.length - deletable.length;
+  if (skipped > 0) onCandidateDone?.call(skipped);
+  return deleteLocalFiles(
+    deletable,
+    onPathDone: onCandidateDone == null
+        ? null
+        : (int done) => onCandidateDone(skipped + done),
+  );
+}
 
 /// 纯函数：从同目录文件名清单 [dirFileNames] 里挑出**跟着 [videoFileName] 一起走**
 /// 的 sidecar 外挂字幕文件名（原样返回，便于调用方拼回目录）。
@@ -202,24 +217,30 @@ List<String> sidecarSubtitlesForDeletedVideo({
 ///
 /// app 自有目录里的字幕副本不归这里管：它们在删行后由
 /// `VideoStorage.deleteBookAssets` 无条件回收，与本勾选框无关。
+///
+/// [onVideoDone] 每看完一个视频回调一次（入参是已看完的视频数），给删除进度用。
 Future<List<String>> localVideoSidecarSubtitleCandidates(
-  Iterable<String> videoPaths,
-) async {
+  Iterable<String> videoPaths, {
+  void Function(int done)? onVideoDone,
+}) async {
   final Map<String, List<String>> dirFilesByKey = <String, List<String>>{};
   final Set<String> seen = <String>{};
   final List<String> out = <String>[];
+  int done = 0;
   for (final String videoPath in videoPaths) {
     final String dir = p.dirname(videoPath);
     final List<String> dirFileNames = dirFilesByKey[platformPathKey(dir)] ??=
         await _listFileNames(dir);
-    if (dirFileNames.isEmpty) continue;
-    for (final String name in sidecarSubtitlesForDeletedVideo(
-      videoFileName: p.basename(videoPath),
-      dirFileNames: dirFileNames,
-    )) {
-      final String full = p.normalize(p.join(dir, name));
-      if (seen.add(platformPathKey(full))) out.add(full);
+    if (dirFileNames.isNotEmpty) {
+      for (final String name in sidecarSubtitlesForDeletedVideo(
+        videoFileName: p.basename(videoPath),
+        dirFileNames: dirFileNames,
+      )) {
+        final String full = p.normalize(p.join(dir, name));
+        if (seen.add(platformPathKey(full))) out.add(full);
+      }
     }
+    onVideoDone?.call(++done);
   }
   return out;
 }

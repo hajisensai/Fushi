@@ -9,7 +9,7 @@ import 'package:fushi_engine/srs/srs_mining_target.dart';
 
 /// 功能选择步骤里可勾选的项，分两类：
 ///
-/// - **功能模块**（[ModuleId] 中除首页外的 11 个）：勾选状态在离开功能选择步骤时写进
+/// - **功能模块**（[onboardingFeatureOfModule] 映射到方格的那些 [ModuleId]）：勾选状态在离开功能选择步骤时写进
 ///   `module_*_enabled` 偏好，未勾选的模块整套入口都不再露出（底栏/侧栏 tab、
 ///   设置一级分类、快捷键分区、首页聚合；设置 → 外观 → 功能模块 可随时改回）。
 ///   模块本身**不产生**引导步骤，但它是本模块名下配置步骤的总闸：模块都不要了，
@@ -29,6 +29,9 @@ enum OnboardingFeature {
 
   /// 视频库页（模块）。
   video,
+
+  /// 音乐库页（模块）：曲库 / 专辑 / 播放 / 歌词。
+  music,
 
   /// galgame 游戏库页（模块，仅 Windows 提供勾选）。
   games,
@@ -99,8 +102,7 @@ OnboardingFeature? onboardingFeatureOfModule(ModuleId module) =>
       ModuleId.books => OnboardingFeature.books,
       ModuleId.manga => OnboardingFeature.manga,
       ModuleId.video => OnboardingFeature.video,
-      // 音乐（2026-10 新模块）向导暂不出方格：默认开，关在 设置 → 外观 → 功能模块。
-      ModuleId.music => null,
+      ModuleId.music => OnboardingFeature.music,
       ModuleId.games => OnboardingFeature.games,
       ModuleId.browse => OnboardingFeature.browse,
       ModuleId.lookup => OnboardingFeature.lookup,

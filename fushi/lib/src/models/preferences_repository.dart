@@ -48,6 +48,8 @@ import 'package:fushi/src/dictionary/dict_style_rules.dart';
 import 'package:fushi/src/floating_ball/floating_ball_config.dart';
 import 'package:fushi/src/media/music/music_resume.dart';
 import 'package:fushi/src/media/audiobook/audiobook_jump_threshold.dart';
+import 'package:fushi/src/media/listening_reminder.dart'
+    show kListeningReminderMinutesDefault, normalizeListeningReminderMinutes;
 import 'package:fushi/src/media/discovery/alist_site_config.dart';
 import 'package:fushi/src/media/discovery/audiobookshelf_server_config.dart';
 import 'package:fushi/src/media/discovery/opds_server_config.dart';
@@ -104,6 +106,7 @@ import 'package:fushi/src/media/video/video_danmaku_model.dart';
 import 'package:fushi/src/media/video/video_hdr_output.dart'
     show VideoHdrOutputMode, kVideoHdrOutputPref;
 import 'package:fushi/src/media/video/video_control_customization.dart';
+import 'package:fushi/src/reader/eink_full_refresh.dart';
 import 'package:fushi/src/reader/reader_control_layout.dart';
 import 'package:fushi/src/media/manga/reader/manga_control_layout.dart';
 import 'package:fushi/src/media/video/video_remote_control_layout.dart';
@@ -2644,6 +2647,14 @@ class PreferencesRepository extends ChangeNotifier
     }
   }
 
+  /// 互联「来源共享」把 host 的服务器来源合并进本机清单（OPDS / AList / Kavita /
+  /// OpenSubsonic 各一个键）后整份写回：缓存与库同一步更新并通知监听者。只写库的话，
+  /// 整轮同步结束前设置页 setter 会拿旧缓存把刚收下的条目抹掉。
+  Future<void> replaceSharedSourceListPref(String key, String json) async {
+    await setPref(key, json);
+    notifyListeners();
+  }
+
   Future<void> setDiscoveryOpdsServers(
     Iterable<OpdsServerConfig> servers,
   ) async {
@@ -2722,6 +2733,27 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setAudiobookshelfShowInHome(bool value) async {
     await setPref('audiobookshelf_show_in_home', value);
+    notifyListeners();
+  }
+
+  /// 「模糊 NSFW 封面」：标成 NSFW 的作品（`media_nsfw_flags`、NSFW 合集成员、
+  /// 成人向游戏）封面在库页 / 继续卡等处打模糊。默认开——用户标 NSFW 就是为了
+  /// 不露封面；想临时看清再到设置里关。
+  bool get blurNsfwCovers =>
+      getPref('blur_nsfw_covers', defaultValue: true) as bool;
+
+  Future<void> setBlurNsfwCovers(bool value) async {
+    await setPref('blur_nsfw_covers', value);
+    notifyListeners();
+  }
+
+  /// 「制卡图片也模糊」：从 NSFW 作品制卡时，卡上的封面 / 页图用模糊后的副本。
+  /// 默认关：卡里存的是模糊图，以后取消也恢复不了已制的卡（拍板台 w04vrhUAaX 建议）。
+  bool get blurNsfwCardImages =>
+      getPref('blur_nsfw_card_images', defaultValue: false) as bool;
+
+  Future<void> setBlurNsfwCardImages(bool value) async {
+    await setPref('blur_nsfw_card_images', value);
     notifyListeners();
   }
 
@@ -3748,6 +3780,24 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 楽天ブックス书籍检索 applicationId（设备本地凭据）。
+  String get bookScrapeRakutenApplicationId =>
+      getPref('book_scrape_rakuten_application_id', defaultValue: '') as String;
+
+  Future<void> setBookScrapeRakutenApplicationId(String value) async {
+    await setPref('book_scrape_rakuten_application_id', value.trim());
+    notifyListeners();
+  }
+
+  /// 楽天ブックス书籍检索 accessKey（2026 年新端点必填，设备本地凭据）。
+  String get bookScrapeRakutenAccessKey =>
+      getPref('book_scrape_rakuten_access_key', defaultValue: '') as String;
+
+  Future<void> setBookScrapeRakutenAccessKey(String value) async {
+    await setPref('book_scrape_rakuten_access_key', value.trim());
+    notifyListeners();
+  }
+
   /// SubDL（subdl.com）API key：搜索必须带 key（站点 panel 免费生成）。
   String get videoSubtitleSubdlApiKey =>
       getPref('video_subtitle_subdl_api_key', defaultValue: '') as String;
@@ -4431,6 +4481,15 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setHomeDashboardPanels(String json) async {
     await setPref('home_dashboard_panels', json);
+    notifyListeners();
+  }
+
+  // 首页小组件网格布局（JSON，见 models/home_widget_layout.dart）。空串 = 没编辑过。
+  String get homeWidgetLayout =>
+      getPref('home_widget_layout', defaultValue: '') as String;
+
+  Future<void> setHomeWidgetLayout(String json) async {
+    await setPref('home_widget_layout', json);
     notifyListeners();
   }
 
@@ -5156,6 +5215,31 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setShowMediaNotification(bool value) async {
     await setPref('show_media_notification', value);
+    notifyListeners();
+  }
+
+  /// 连续收听提醒（反馈 5_mzP54WVx）：音乐 / 有声书 / 视频连续在播满 N 分钟提醒一次。
+  /// 默认关。
+  bool get listeningReminderEnabled =>
+      getPref('listening_reminder_enabled', defaultValue: false) == true;
+
+  Future<void> setListeningReminderEnabled({required bool value}) async {
+    await setPref('listening_reminder_enabled', value);
+    notifyListeners();
+  }
+
+  /// 连续收听提醒的间隔（分钟）：存值归到最近的档位，没写过取出厂 60 分钟。
+  int get listeningReminderMinutes {
+    final Object? stored = getPref('listening_reminder_minutes');
+    if (stored is num) return normalizeListeningReminderMinutes(stored);
+    return kListeningReminderMinutesDefault;
+  }
+
+  Future<void> setListeningReminderMinutes(int value) async {
+    await setPref(
+      'listening_reminder_minutes',
+      normalizeListeningReminderMinutes(value),
+    );
     notifyListeners();
   }
 
@@ -7412,6 +7496,43 @@ class PreferencesRepository extends ChangeNotifier
       kStudyIdleTimeoutPrefKey,
       value.clamp(readingIdleTimeoutMinutesMin, readingIdleTimeoutMinutesMax),
     );
+    notifyListeners();
+  }
+
+  /// 墨水屏「每 N 页全刷」的间隔（翻页次数，0 = 关）。与 `eink_mode` 同族：描述的是
+  /// 这台设备的屏幕，不随 Profile 快照（见 ProfileKeys 排除表）。
+  static const String einkFullRefreshIntervalKey = 'eink_full_refresh_interval';
+
+  /// 墨水屏全刷方式（[EinkFullRefreshMethod.storageKey]），设备本地。
+  static const String einkFullRefreshMethodKey = 'eink_full_refresh_method';
+
+  int get einkFullRefreshInterval => normalizeEinkFullRefreshInterval(
+    getPref(
+          einkFullRefreshIntervalKey,
+          defaultValue: kEinkFullRefreshIntervalDefault,
+        )
+        as int,
+  );
+
+  Future<void> setEinkFullRefreshInterval(int value) async {
+    await setPref(
+      einkFullRefreshIntervalKey,
+      normalizeEinkFullRefreshInterval(value),
+    );
+    notifyListeners();
+  }
+
+  EinkFullRefreshMethod get einkFullRefreshMethod =>
+      EinkFullRefreshMethod.fromStorageKey(
+        getPref(
+              einkFullRefreshMethodKey,
+              defaultValue: EinkFullRefreshMethod.auto.storageKey,
+            )
+            as String,
+      );
+
+  Future<void> setEinkFullRefreshMethod(EinkFullRefreshMethod method) async {
+    await setPref(einkFullRefreshMethodKey, method.storageKey);
     notifyListeners();
   }
 

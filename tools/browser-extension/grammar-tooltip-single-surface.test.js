@@ -116,6 +116,15 @@ function loadTooltip({ zoom = 1, viewportWidth = 800, viewportHeight = 600, canH
   assert.ok(visEnd > visStart, '切片锚失效：__fushiVisibleViewportHeight 没有收尾');
   slice += '\n' + src.slice(visStart, visEnd + 3);
 
+  // 第四段：BUG-4753 的元素框取法（旧 WebKit 字框换回客户区，判据在 selection.js）。
+  // 这里没装 selection.js，走它的标准引擎分支 = 原始 getBoundingClientRect。
+  const CLIENT_START = 'function __fushiClientRect(element){';
+  const clientStart = src.indexOf(CLIENT_START);
+  assert.ok(clientStart >= 0, '切片锚失效：找不到 __fushiClientRect');
+  const clientEnd = src.indexOf('\n}\n', clientStart);
+  assert.ok(clientEnd > clientStart, '切片锚失效：__fushiClientRect 没有收尾');
+  slice += '\n' + src.slice(clientStart, clientEnd + 3);
+
   const root = makeEl('div');
   const docListeners = {};
   const ctx = {
@@ -398,6 +407,29 @@ test('BUG-2042：left/top 按内容 zoom 折回 layout px，不再双重缩放',
   env.ctx.showGrammarTooltip(tag, false);
 
   // 期望：视觉坐标 left=100 / top=bottom+6=66，写进 style 前各 / zoom。
+  assert.strictEqual(tip().style.left, (100 / zoom) + 'px');
+  assert.strictEqual(tip().style.top, ((60 + 6) / zoom) + 'px');
+});
+
+test('BUG-4753：旧 WebKit 的元素框除过 zoom，经 selection.js clientRectOf 换回视觉 px 再定位', () => {
+  const zoom = 2;
+  const env = loadTooltip({ zoom, viewportWidth: 800, viewportHeight: 600 });
+  // macOS / iOS 26.3 及更早：getBoundingClientRect 报的是视觉 px / zoom（滚动为 0）。
+  const tag = makeTag(env, 'causative', '说明',
+    { left: 50, top: 20, right: 80, bottom: 30, width: 30, height: 10 });
+  const tip = makeElRectPatch(env, { width: 100, height: 25 });
+  // selection.js 判出旧单位后 clientRectOf 乘回 zoom；popup.js 只能经它取框。
+  env.ctx.fushiSelection = {
+    clientRectOf(el) {
+      const r = el.getBoundingClientRect();
+      return { left: r.left * zoom, top: r.top * zoom, right: r.right * zoom, bottom: r.bottom * zoom,
+        x: r.left * zoom, y: r.top * zoom, width: r.width * zoom, height: r.height * zoom };
+    },
+  };
+
+  env.ctx.showGrammarTooltip(tag, false);
+
+  // 与标准引擎（上一条）同一个落点：视觉 left=100 / top=66，再 / zoom。
   assert.strictEqual(tip().style.left, (100 / zoom) + 'px');
   assert.strictEqual(tip().style.top, ((60 + 6) / zoom) + 'px');
 });

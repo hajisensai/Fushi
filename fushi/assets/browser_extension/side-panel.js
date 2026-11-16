@@ -111,7 +111,7 @@
   var favoriteKeys = Object.create(null);
   var favoriteVideo = false;
   var favoriteRev = -1;
-  var currentIndex = -1;
+  var currentIndices = [];
   var scrollIndex = -1;
   var stateSignature = '';
   var autoScroll = true;
@@ -924,6 +924,11 @@
             toast('✓ ' + tr(response.duplicate ? 'mine_already_queued' : 'mine_queued'));
             return true;
           }
+          // 页面收到了但写盘失败：如实说「入队失败」，别冒充页面不可用。
+          if (response && response.reason === 'persist-failed') {
+            toast('✗ ' + tr('mine_enqueue_failed'));
+            return false;
+          }
           toast('✗ ' + tr('mine_failed_page_unavailable'));
           return false;
         });
@@ -982,13 +987,25 @@
     return h + ':' + (m < 10 ? '0' + m : m) + ':' + ss;
   }
 
-  function cueIndexAt(items, timeMs) {
-    var lo = 0, hi = items.length - 1, answer = -1;
+  // 此刻全部有效 cue（startMs <= t < endMs）的下标，升序。轨允许时间重叠（BUG-4719：ASS 两位
+  // 说话人同时开口），高亮要覆盖每一条；items 只按 startMs 排序、endMs 无序，从最后一条已开始的
+  // cue 往前扫。
+  function activeCueIndices(items, timeMs) {
+    var lo = 0, hi = items.length - 1, last = -1;
     while (lo <= hi) {
       var mid = (lo + hi) >> 1;
-      if (items[mid].startMs <= timeMs) { answer = mid; lo = mid + 1; } else { hi = mid - 1; }
+      if (items[mid].startMs <= timeMs) { last = mid; lo = mid + 1; } else { hi = mid - 1; }
     }
-    return answer >= 0 && timeMs < items[answer].endMs ? answer : -1;
+    var out = [];
+    for (var i = last; i >= 0; i--) {
+      if (timeMs < items[i].endMs) out.push(i);
+    }
+    return out.reverse();
+  }
+  // 单句口径：有效 cue 里起点最晚的那条，没有返回 -1。
+  function cueIndexAt(items, timeMs) {
+    var active = activeCueIndices(items, timeMs);
+    return active.length ? active[active.length - 1] : -1;
   }
 
   function metadataSignature(state) {
@@ -1050,7 +1067,7 @@
   function renderCues() {
     listEl.textContent = '';
     rows = [];
-    currentIndex = -1;
+    currentIndices = [];
     scrollIndex = -1;
     if (!cues.length) {
       var empty = document.createElement('div');
@@ -1216,11 +1233,13 @@
   function updateCurrent(timeMs) {
     // 初始取轨可能先于播放状态到达，不能把尚未知的时间当作 0 消耗首次定位。
     if (!cues.length || typeof timeMs !== 'number' || !Number.isFinite(timeMs)) return;
-    var next = cueIndexAt(cues, timeMs);
-    if (next !== currentIndex) {
-      if (rows[currentIndex]) rows[currentIndex].classList.remove('is-current');
-      currentIndex = next;
-      if (rows[currentIndex]) rows[currentIndex].classList.add('is-current');
+    var next = activeCueIndices(cues, timeMs);
+    if (next.join(',') !== currentIndices.join(',')) {
+      currentIndices.forEach(function (i) {
+        if (rows[i] && next.indexOf(i) < 0) rows[i].classList.remove('is-current');
+      });
+      next.forEach(function (i) { if (rows[i]) rows[i].classList.add('is-current'); });
+      currentIndices = next;
     }
     var nearest = nearestCueIndex(cues, timeMs);
     if (autoScroll && nearest !== scrollIndex && rows[nearest]) {

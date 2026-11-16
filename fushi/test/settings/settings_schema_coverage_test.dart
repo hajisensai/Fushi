@@ -218,6 +218,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // theme_app_icon_link_test（发布到全局开关）与 mascot_glow_test（光晕层）咬住。
   'appearance/Mascot glow':
       'test/models/theme_app_icon_link_test.dart + test/utils/components/mascot_glow_test.dart',
+  // NSFW 两个开关（拍板台 w04vrhUAaX）：生效点是库页 / 继续卡的封面框（模糊）与
+  // 制卡时的卡图（模糊副本）——harness 设置页里既没有库页封面也不制卡。封面框读
+  // ShelfCoverNsfw 打模糊、制卡图片开关关 / 开的行为由 media_nsfw_test 咬住。
+  'appearance/Blur NSFW covers': 'test/media/nsfw/media_nsfw_test.dart',
+  'appearance/Blur card images too': 'test/media/nsfw/media_nsfw_test.dart',
   // 词典统一 M3E 配色：生效点在查词弹窗 WebView 里的 popup.js / popup.css，
   // harness 没有 WebView。注入接线、默认值与 CSS 层由
   // popup_dict_unified_style_test 咬住。
@@ -397,6 +402,9 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 默认受「加来源分类标签」门控 disabled，harness 驱动不动属预期。
   'cardCreation/Nest title tags under the category tag':
       '../packages/fushi_anki/test/note_tags_nested_title_test.dart',
+  // 连续收听提醒的间隔档位：默认受「连续收听提醒」开关门控 disabled，harness 驱动不动属
+  // 预期；生效点（档位改了对正在进行的这一轮立即生效、档位外存值归档）由单测守。
+  'general/Remind after': 'test/media/listening_reminder_test.dart',
   // 句子音频来源：生效点在制卡 ffmpeg 抽音参数（中置声道 pan 滤镜 / 音轨选择）。
   'cardCreation/Sentence audio source':
       'test/mining/sentence_audio_source_test.dart',
@@ -1087,10 +1095,21 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'lookup/Close popup when scrolling':
       'test/pages/lookup_dismiss_barrier_test.dart + '
       'test/reader/reader_popup_scroll_dismiss_wiring_test.dart',
-  // 用户建议 q16Apecgbg：「制卡后关闭查词弹窗」（默认关）。与上面两项同一条
-  // MediaSource 偏好通道，harness 里观测不到写穿；生效点是制卡回调落地后的关栈
-  // （closePopupAfterAcceptedMine），由专项行为测试 + 两条车道接线守卫覆盖。
-  'lookup/Close lookup popup after creating a card':
+  // 拍板台 8ldy3d8XFA：「制卡后行为」按模块单选（取代 q16Apecgbg 的全局开关）。与上面
+  // 两项同一条 MediaSource 偏好通道，harness 里观测不到写穿；生效点是制卡回调落地后的
+  // 关栈 + 是否续播（closePopupAfterAcceptedMine），由专项行为测试、按模块解析的纯
+  // 函数测试与两条车道接线守卫覆盖。模块行随模块开关可见，harness 里不一定都出现。
+  'lookup/After creating a card in novels':
+      'test/pages/close_popup_after_mining_test.dart',
+  'lookup/After creating a card in manga':
+      'test/pages/close_popup_after_mining_test.dart',
+  'lookup/After creating a card in videos':
+      'test/pages/close_popup_after_mining_test.dart',
+  'lookup/After creating a card in music':
+      'test/pages/close_popup_after_mining_test.dart',
+  'lookup/After creating a card in games':
+      'test/pages/close_popup_after_mining_test.dart',
+  'lookup/After creating a card in lookup and elsewhere':
       'test/pages/close_popup_after_mining_test.dart',
   // TODO-861②：「扫描非日文文字」查词开关（PreferencesRepository.scanNonJapaneseText，
   // 默认 true）。焦点遍历能切到并写穿 DB（changed=true），但生效点在注入 JS 的
@@ -1747,6 +1766,16 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // service-config 同步：开关是请求前的进场门（关 = 连请求都不发），且是设备本地键。
   'interconnect/Sync service configuration from host':
       'test/sync/interconnect_service_config_test.dart',
+  // 互联「来源共享」（拍板台 wOMR4_Er7s）：client 开关关 = 一个请求都不发；host 开关在
+  // HTTP 端点 /api/interconnect/source-share 里按请求现读（关着 403 disabled）。harness
+  // 里没有起 TLS server 与已配对 peer，探不到；由专项测试咬住。
+  'interconnect/Receive shared sources':
+      'test/sync/interconnect_source_share_test.dart',
+  'interconnect/Share sources with my devices':
+      'test/sync/interconnect_source_share_test.dart',
+  // client「也接收插件」（默认关）：关着时插件整类跳过（专项测试咬住）。
+  'interconnect/Also receive plugins':
+      'test/sync/interconnect_source_share_test.dart',
   // 开服开关：持久化的是「想开服」的意图（绑定失败也保留），启动失败映射成
   // FushiServerStartError 而不是把开关卡在「已开启」。
   'interconnect/Enable sync server':

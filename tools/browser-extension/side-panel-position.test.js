@@ -92,6 +92,26 @@ test('opening during a cue centers and highlights the current cue', async () => 
   assert.equal(h.rows()[1].classList.contains('is-current'), true);
 });
 
+test('overlapping cues (BUG-4719) highlight every active row, including a long cue after a short one ends', async () => {
+  const overlap = [
+    { startMs: 1000, endMs: 5000, text: 'long' },
+    { startMs: 1000, endMs: 3000, text: 'short' },
+    { startMs: 4000, endMs: 6000, text: 'third' },
+  ];
+  const current = (h) => h.rows().map((row, i) => (row.classList.contains('is-current') ? i : -1)).filter((i) => i >= 0);
+  const h = loadPanel(state(2000, overlap));
+  await flush();
+  assert.deepEqual(current(h), [0, 1]);
+  await h.update(state(3500, overlap));
+  assert.deepEqual(current(h), [0]);
+  await h.update(state(4500, overlap));
+  assert.deepEqual(current(h), [0, 2]);
+  await h.update(state(5500, overlap));
+  assert.deepEqual(current(h), [2]);
+  await h.update(state(7000, overlap));
+  assert.deepEqual(current(h), []);
+});
+
 test('opening before/after subtitles uses first/last cue', async () => {
   for (const [time, index] of [[0, 0], [50000, 2], [14000, 0]]) {
     const h = loadPanel(state(time));

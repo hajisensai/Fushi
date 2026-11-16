@@ -206,6 +206,12 @@ describe('scripts/feedback.mjs', () => {
     expect(attachmentFileName('abcdefgh', atts[3])).toBe('fbabcdefgh-v0.mov');
     expect(attachmentFileName('ab/../cd', { slot: '../s0', type: 'image/x-odd; q=1' })).toBe('fbabcd-s0.xodd');
     expect(attachmentFileName('abcdefgh', { slot: 's2' })).toBe('fbabcdefgh-s2.bin');
+    // 样本文件：--files 才下；落盘名用服务端核过的扩展名，不用用户给的原文件名。
+    const file = { slot: 'f0', kind: 'file', key: 'f/x-f0', bytes: 40, type: 'application/octet-stream', name: '../../evil.md', ext: 'md' };
+    expect(downloadableAttachments([...atts, file], true).map((a) => a.slot)).toEqual(['s0', 'v0']);
+    expect(downloadableAttachments([...atts, file], false, true).map((a) => a.slot)).toEqual(['s0', 'f0']);
+    expect(attachmentFileName('abcdefgh', file)).toBe('fbabcdefgh-f0.md');
+    expect(attachmentFileName('abcdefgh', { ...file, ext: '../x' })).toBe('fbabcdefgh-f0.octetstream');
     expect(parseArgs(['show', 'abcdefgh', '--attachments', 'out', '--video']).flags)
       .toEqual({ attachments: 'out', video: true });
   });
