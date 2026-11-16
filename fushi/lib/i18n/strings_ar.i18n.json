@@ -7010,7 +7010,7 @@
   "onboarding_pack_action_audio_desc": "أضف مصادر نطق عبر الإنترنت للغات التي لا تغطّيها الحزمة.",
   "onboarding_pack_action_dictionary_desc": "تتعلّم لغة أخرى؟ استورد قواميسها من هنا بدلاً من ذلك.",
   "onboarding_pack_action_download_desc": "ينزّل من عدة مصادر في آن واحد في الخلفية ثم يستورد. يمكنك الإلغاء في أي وقت، وسيُستأنف من حيث توقّف.",
-  "onboarding_pack_action_import_existing_desc": "الحزمة موجودة على القرص بالفعل. اختر «دمج» في نافذة التأكيد للحفاظ على بياناتك الحالية.",
+  "onboarding_pack_action_import_existing_merge_desc": "الحزمة موجودة بالفعل على القرص. يتم دمجها مع بياناتك: تبقى كتبك وتقدّمك وإعداداتك كما هي دون تغيير.",
   "onboarding_pack_action_pick_desc": "لديك ملف zip للحزمة بالفعل؟ استورده من القرص وتخطَّ التنزيل.",
   "onboarding_pack_action_website": "فتح صفحة التنزيل",
   "onboarding_pack_action_website_desc": "روابط أجزاء لمديري التنزيل. عد بعدها واستخدم «اختيار ملف حزمة».",
