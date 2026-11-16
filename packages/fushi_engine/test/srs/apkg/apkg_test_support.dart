@@ -19,6 +19,8 @@ class FakeFsrsEngine implements FsrsEngine {
   @override
   String get fsrsRev => 'fake';
   @override
+  bool isKnownFsrsRev(String rev) => rev == fsrsRev;
+  @override
   List<double> defaultParams(SrsAlgorithm a) =>
       List<double>.filled(a.paramCount, 1);
   @override
@@ -58,7 +60,6 @@ Future<SrsDbStore> openTestStore({
 }) async {
   final SrsStorage srsStorage = await openTestSrsStorage();
   return SrsDbStore.open(
-    db: srsStorage.db,
     core: srsStorage.core,
     profileUid: profileUid,
     deviceId: deviceId,

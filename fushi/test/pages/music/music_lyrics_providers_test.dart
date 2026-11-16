@@ -56,6 +56,7 @@ void main() {
     WidgetTester tester,
     List<InstalledMusicPlugin> plugins, {
     String? stored,
+    bool canInstall = true,
   }) async {
     LocaleSettings.setLocale(AppLocale.en);
     tester.view.devicePixelRatio = 1;
@@ -86,7 +87,10 @@ void main() {
           ),
           home: Scaffold(
             body: SingleChildScrollView(
-              child: MusicLyricsProvidersBody(appModel: app),
+              child: MusicLyricsProvidersBody(
+                appModel: app,
+                canInstall: canInstall,
+              ),
             ),
           ),
         ),
@@ -96,7 +100,16 @@ void main() {
     return app;
   }
 
-  testWidgets('LRCLIB 固定在最前，无开关；插件按存储顺序列出', (WidgetTester tester) async {
+  const ValueKey<String> lrclibKey = ValueKey<String>(
+    'music-lyrics-provider-${MusicLyricsSource.lrclib}',
+  );
+
+  List<LyricsProviderEntry> stored(AppModel app) =>
+      parseLyricsProviders(app.prefsRepo.musicLyricsProvidersRaw);
+
+  testWidgets('LRCLIB 与插件同一列表：旧偏好（无 LRCLIB 项）补在最前，带开关', (
+    WidgetTester tester,
+  ) async {
     await build(
       tester,
       <InstalledMusicPlugin>[_plugin('a.one', 'One'), _plugin('b.two', 'Two')],
@@ -105,14 +118,13 @@ void main() {
         LyricsProviderEntry(id: 'a.one', enabled: false),
       ]),
     );
-    final Finder lrclib = find.byKey(
-      const ValueKey<String>('music-lyrics-provider-lrclib'),
-    );
+    final Finder lrclib = find.byKey(lrclibKey);
     expect(lrclib, findsOneWidget);
     expect(
       find.descendant(of: lrclib, matching: find.byType(Switch)),
-      findsNothing,
+      findsOneWidget,
     );
+    expect(find.text('LRCLIB'), findsOneWidget);
     expect(find.text(t.music_lyrics_providers_builtin_note), findsOneWidget);
     expect(
       tester.getTopLeft(lrclib).dy,
@@ -122,7 +134,40 @@ void main() {
       tester.getTopLeft(find.text('Two')).dy,
       lessThan(tester.getTopLeft(find.text('One')).dy),
     );
-    expect(find.byType(Switch), findsNWidgets(2));
+    expect(find.byType(Switch), findsNWidgets(3));
+  });
+
+  testWidgets('LRCLIB 能和插件一起排序：下移后排在插件之后并写入偏好', (WidgetTester tester) async {
+    // 反馈 h7d6Pa_g-7。
+    final AppModel app = await build(tester, <InstalledMusicPlugin>[
+      _plugin('a.one', 'One'),
+    ]);
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>(
+          'music-lyrics-provider-down-${MusicLyricsSource.lrclib}',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(stored(app).map((LyricsProviderEntry e) => e.id), <String>[
+      'a.one',
+      MusicLyricsSource.lrclib,
+    ]);
+    expect(
+      tester.getTopLeft(find.text('One')).dy,
+      lessThan(tester.getTopLeft(find.byKey(lrclibKey)).dy),
+    );
+
+    // LRCLIB 也能停用。
+    await tester.tap(
+      find.descendant(of: find.byKey(lrclibKey), matching: find.byType(Switch)),
+    );
+    await tester.pumpAndSettle();
+    expect(stored(app), const <LyricsProviderEntry>[
+      LyricsProviderEntry(id: 'a.one', enabled: true),
+      LyricsProviderEntry(id: MusicLyricsSource.lrclib, enabled: false),
+    ]);
   });
 
   testWidgets('开关与上移 / 下移写入偏好', (WidgetTester tester) async {
@@ -130,10 +175,16 @@ void main() {
       _plugin('a.one', 'One'),
       _plugin('b.two', 'Two'),
     ]);
-    // 新装插件默认启用，按已装顺序排列。
-    await tester.tap(find.byType(Switch).first);
+    // 新装插件默认启用，按已装顺序排在 LRCLIB 之后。
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('music-lyrics-provider-a.one')),
+        matching: find.byType(Switch),
+      ),
+    );
     await tester.pumpAndSettle();
-    expect(parseLyricsProviders(app.prefsRepo.musicLyricsProvidersRaw), const [
+    expect(stored(app), const <LyricsProviderEntry>[
+      LyricsProviderEntry(id: MusicLyricsSource.lrclib, enabled: true),
       LyricsProviderEntry(id: 'a.one', enabled: false),
       LyricsProviderEntry(id: 'b.two', enabled: true),
     ]);
@@ -142,7 +193,8 @@ void main() {
       find.byKey(const ValueKey<String>('music-lyrics-provider-down-a.one')),
     );
     await tester.pumpAndSettle();
-    expect(parseLyricsProviders(app.prefsRepo.musicLyricsProvidersRaw), const [
+    expect(stored(app), const <LyricsProviderEntry>[
+      LyricsProviderEntry(id: MusicLyricsSource.lrclib, enabled: true),
       LyricsProviderEntry(id: 'b.two', enabled: true),
       LyricsProviderEntry(id: 'a.one', enabled: false),
     ]);
@@ -155,23 +207,19 @@ void main() {
       find.byKey(const ValueKey<String>('music-lyrics-provider-up-a.one')),
     );
     await tester.pumpAndSettle();
-    expect(
-      parseLyricsProviders(
-        app.prefsRepo.musicLyricsProvidersRaw,
-      ).map((LyricsProviderEntry e) => e.id),
-      <String>['a.one', 'b.two'],
-    );
+    expect(stored(app).map((LyricsProviderEntry e) => e.id), <String>[
+      MusicLyricsSource.lrclib,
+      'a.one',
+      'b.two',
+    ]);
   });
 
   testWidgets('没有歌词插件：空态 + 安装按钮，LRCLIB 仍在', (WidgetTester tester) async {
     await build(tester, const <InstalledMusicPlugin>[]);
     expect(find.text(t.music_lyrics_providers_empty), findsOneWidget);
     expect(find.text(t.music_lyrics_providers_install_action), findsOneWidget);
-    expect(
-      find.byKey(const ValueKey<String>('music-lyrics-provider-lrclib')),
-      findsOneWidget,
-    );
-    expect(find.byType(Switch), findsNothing);
+    expect(find.byKey(lrclibKey), findsOneWidget);
+    expect(find.byType(Switch), findsOneWidget);
     expect(
       find.byKey(const ValueKey<String>('music_lyrics_provider_install_more')),
       findsNothing,
@@ -180,7 +228,7 @@ void main() {
 
   testWidgets('已有歌词插件时仍保留安装入口', (WidgetTester tester) async {
     await build(tester, <InstalledMusicPlugin>[_plugin('a.one', 'One')]);
-    expect(find.byType(Switch), findsOneWidget);
+    expect(find.byType(Switch), findsNWidgets(2));
     final Finder more = find.byKey(
       const ValueKey<String>('music_lyrics_provider_install_more'),
     );
@@ -196,6 +244,20 @@ void main() {
       tester.getTopLeft(find.text('One')).dy,
       lessThan(tester.getTopLeft(more).dy),
     );
+  });
+
+  testWidgets('经互联中继用 host 插件（本机装不了）：能启停，不出安装入口', (WidgetTester tester) async {
+    await build(tester, <InstalledMusicPlugin>[
+      _plugin('a.one', 'One'),
+    ], canInstall: false);
+    expect(find.byType(Switch), findsNWidgets(2));
+    expect(find.text(t.music_lyrics_providers_install_action), findsNothing);
+  });
+
+  testWidgets('中继端没有歌词插件：空态不带安装按钮', (WidgetTester tester) async {
+    await build(tester, const <InstalledMusicPlugin>[], canInstall: false);
+    expect(find.text(t.music_lyrics_providers_empty), findsOneWidget);
+    expect(find.text(t.music_lyrics_providers_install_action), findsNothing);
   });
 
   group('安装确认框的隐私告知', () {

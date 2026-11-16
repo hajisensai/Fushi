@@ -354,6 +354,7 @@ void main() {
       recursive: true,
       videoGroupingMode: 'series',
       isPrivate: false,
+      autoScan: false,
       configJson: null,
       mediaCount: 0,
       lastScannedAt: null,

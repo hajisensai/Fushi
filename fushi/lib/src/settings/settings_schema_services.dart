@@ -455,6 +455,55 @@ SettingsDestination buildServicesDestination() {
               ],
             ),
           ),
+          // 楽天ブックス书籍检索凭据（书籍「在线匹配封面」的可选源）。两项都填了楽天
+          // 才出现在源下拉里。凭据设备本地：不进备份 / 同步 / Profile（键登记见
+          // preference_keys.dart）。
+          SettingsNavigationItem(
+            id: 'services.metadata.rakuten_books',
+            title: '楽天ブックス',
+            subtitleBuilder: (SettingsContext c) =>
+                c.appModel.bookScrapeRakutenCredentials.isComplete
+                ? t.settings_service_configured
+                : t.settings_service_not_configured,
+            child: () => SettingsDestination(
+              id: SettingsDestinationId.services,
+              title: '楽天ブックス',
+              icon: FushiIcons.key,
+              sections: <SettingsSection>[
+                SettingsSection(
+                  id: 'services.rakuten_books.credentials',
+                  items: <SettingsItem>[
+                    SettingsTextItem(
+                      id: 'services.metadata.rakuten_application_id',
+                      title: t.book_scrape_rakuten_application_id,
+                      subtitle: t.book_scrape_rakuten_settings_hint,
+                      icon: FushiIcons.key,
+                      secret: true,
+                      value: (SettingsContext c) =>
+                          c.appModel.prefsRepo.bookScrapeRakutenApplicationId,
+                      onChanged: (SettingsContext c, String value) => c
+                          .appModel
+                          .prefsRepo
+                          .setBookScrapeRakutenApplicationId(value),
+                    ),
+                    SettingsTextItem(
+                      id: 'services.metadata.rakuten_access_key',
+                      title: t.book_scrape_rakuten_access_key,
+                      subtitle: t.book_scrape_rakuten_settings_hint,
+                      icon: FushiIcons.lock,
+                      secret: true,
+                      value: (SettingsContext c) =>
+                          c.appModel.prefsRepo.bookScrapeRakutenAccessKey,
+                      onChanged: (SettingsContext c, String value) => c
+                          .appModel
+                          .prefsRepo
+                          .setBookScrapeRakutenAccessKey(value),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
         ],
       ),
       // 媒体服务器保持常显不折叠：Jellyfin / Plex 两行的「已配置」要异步读数据库

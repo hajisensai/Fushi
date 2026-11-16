@@ -8,8 +8,7 @@
 // （摘要相同、投影三张表逐行相同）。通道与逐条投递逐表相同由 Rust 侧 `tests_channel.rs` 对拍。
 import 'dart:typed_data';
 
-import 'package:drift/drift.dart' show QueryRow, Variable, driftRuntimeOptions;
-import 'package:fushi_core/fushi_core.dart' show srsIdType;
+import 'package:drift/drift.dart' show Variable, driftRuntimeOptions;
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
@@ -19,13 +18,14 @@ import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
 
 import '../support/srs_test_storage.dart';
+import '../support/srs_raw_sql.dart';
 
 const String kProfile = '01928c3e-0000-7000-8000-0000000000b7';
 
 typedef _Device = ({SrsDbStore store, SrsStorage storage});
 
 Future<int> _count(SrsStorage st, String table) async {
-  final QueryRow r = await st.db
+  final SrsRawRow r = await st.core
       .customSelect(
         'SELECT COUNT(*) AS c FROM $table WHERE profile_uid = ?',
         variables: <Variable<Object>>[Variable<String>(kProfile, srsIdType)],
@@ -50,14 +50,14 @@ Future<List<String>> _projection(SrsStorage st) async {
     ('srs_field_edits', 'json'),
     ('srs_review_logs', 'json'),
   ]) {
-    final List<QueryRow> rows = await st.db
+    final List<SrsRawRow> rows = await st.core
         .customSelect(
           'SELECT srs_idt(id) AS id, $body AS body FROM $table '
           'WHERE profile_uid = ? ORDER BY id',
           variables: <Variable<Object>>[Variable<String>(kProfile, srsIdType)],
         )
         .get();
-    for (final QueryRow r in rows) {
+    for (final SrsRawRow r in rows) {
       out.add('$table ${r.read<String>('id')} ${r.read<String>('body')}');
     }
   }
@@ -122,7 +122,6 @@ void main() {
   Future<_Device> device(String id) async {
     final SrsStorage st = await openTestSrsStorage();
     final SrsDbStore s = await SrsDbStore.open(
-      db: st.db,
       core: st.core,
       profileUid: kProfile,
       deviceId: id,

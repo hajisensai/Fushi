@@ -66,7 +66,9 @@ void main() {
     () {
       final String body = bodyOf('void _rebuildDictPathsCache(');
       expect(
-        body.contains('isHidden'),
+        body.contains('isHidden') ||
+            body.contains('hidden: states[i].hidden') &&
+                body.contains('_engineLoadStates('),
         isTrue,
         reason:
             'the sync path-cache rebuild must consult isHidden(...) so a '
@@ -78,13 +80,39 @@ void main() {
 
   test('_scheduleDictPathsAsync (async rebuild) skips hidden dictionaries when '
       'collecting freq/pitch paths', () {
-    final String body = bodyOf('Future<void> _scheduleDictPathsAsync(');
+    final String body = bodyOf('Future<bool> _scheduleDictPathsAsync(');
     expect(
-      body.contains('isHidden'),
+      body.contains('isHidden') ||
+          body.contains('hidden: states[i].hidden') &&
+              body.contains('_engineLoadStates('),
       isTrue,
       reason:
           'the async path-cache schedule must also consult isHidden(...) '
           'for the same reason (BUG-178).',
+    );
+  });
+
+  // 反馈 r9SgiayKxa 起「隐藏」= 激活配置与当前作品会话视图都关着：两条路径经
+  // `_engineLoadStates` → `DictionaryRepository.engineLoadStatesOf` 判，
+  // isHidden 落在后者里（下面单独钉）。
+  test('engineLoadStatesOf derives hidden from isHidden of every view', () {
+    final String repo = File(
+      'lib/src/models/dictionary_repository.dart',
+    ).readAsStringSync();
+    final int start = repo.indexOf('_engineLoadStateOf(\n    Dictionary live,');
+    expect(
+      start,
+      greaterThanOrEqualTo(0),
+      reason: '_engineLoadStateOf not found',
+    );
+    final int end = repo.indexOf('\n  }\n', start);
+    final String body = repo.substring(start, end);
+    expect(body, contains('live.isHidden(JapaneseLanguage.instance)'));
+    expect(body, contains('overlay.isHidden(JapaneseLanguage.instance)'));
+    expect(
+      src,
+      contains('DictionaryRepository.engineLoadStatesOf('),
+      reason: 'AppModel 的装载状态必须来自 engineLoadStatesOf',
     );
   });
 
