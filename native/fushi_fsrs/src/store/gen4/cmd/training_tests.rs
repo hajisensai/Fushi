@@ -475,9 +475,6 @@ fn protocol_3_checkpoints_and_fingerprints_never_fit_the_new_library() {
         old.iter().map(|(r, _)| *r).collect::<Vec<_>>(),
         (1..=n).collect::<Vec<_>>()
     );
-    // 主快照：新库的指纹行数一样，最大序号恒大于协议 3 的最大 rowid。
-    let fp = rwkv_log_tail(&t, p.col, 0, false, false).unwrap();
-    assert_eq!((word(&fp, 0), word(&fp, 1)), (n, SEQ_BASE + n));
     // 检查点：协议 3 每个前缀的检查点 print (count = i, maxRowId = rowid_i)，照状态机的调法局部重放。
     for (i, (r, _)) in old.iter().enumerate() {
         let count = i as i64 + 1;
@@ -495,6 +492,11 @@ fn protocol_3_checkpoints_and_fingerprints_never_fit_the_new_library() {
         );
         assert_eq!(c - tail_rows, 0, "every arrival number is after any rowid");
     }
+    // 主快照：新库的指纹行数一样，最大序号恒大于协议 3 的最大 rowid（指纹必不相等）。
+    let fp = rwkv_log_tail(&t, p.col, 0, false, false).unwrap();
+    let old_max = old.last().unwrap().0;
+    assert_eq!(word(&fp, 0), n);
+    assert!(word(&fp, 1) > old_max, "{} vs {old_max}", word(&fp, 1));
     assert!(p.g4.is_autocommit());
 }
 
