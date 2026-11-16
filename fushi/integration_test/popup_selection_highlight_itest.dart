@@ -27,7 +27,7 @@ import 'package:integration_test/integration_test.dart';
 ///      必须原样保留，用户的选中不能凭空消失。
 ///   4. 高亮落地 → payload 如实上报 `glossarySelectionHighlighted: true`，而
 ///      `popupSelectionText` **照样原样带着**。Dart 层总是把它填进
-///      `{popup-selection-text}`（BUG-4718，见
+///      `{popup-selection-text}`（BUG-4755，见
 ///      `packages/fushi_anki/test/selection_text_fill_test.dart`）。
 ///
 /// 跑法（仓库 fushi/ 下，离屏、不抢焦点、隔离 WebView2 profile）：
@@ -362,7 +362,7 @@ void main() {
       isTrue,
       reason:
           'popup.js 不许清空选中文本：高亮进了释义，SelectionText 照样要有选中内容'
-          '（BUG-4718）',
+          '（BUG-4755）',
     );
     final Object? flagged = await controller.evaluateJavascript(
       source:

@@ -2840,7 +2840,7 @@ async function buildMinePayload(expression, reading, frequencies, pitches, rules
     currentDictionaryMedia = null;
     currentExportImageSizes = null;
     // 只如实上报「选中段是否真的作为 <mark> 落进了导出的释义树」。popupSelectionText
-    // 无论如何原样上报，Dart 侧总是把它填进 {popup-selection-text}（BUG-4718）。
+    // 无论如何原样上报，Dart 侧总是把它填进 {popup-selection-text}（BUG-4755）。
     // 高亮**没**落地时（选中落在例句 / 词头 / 标签这些释义之外，或导出树文本流
     // 校验没过）这个标志是 false。
     const glossarySelectionHighlighted = currentSelectionHighlights > 0;

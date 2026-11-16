@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 
 /// `{popup-selection-text}` / `{popup-selection-html}` 永远如实填入用户的选中内容
-/// （BUG-4718，GitHub issue #3407，拍板台 dYWFMfCEF2）。
+/// （BUG-4755，GitHub issue #3407，拍板台 dYWFMfCEF2）。
 ///
 /// 旧实现（commit 0548868a04）在「Lapis + 高亮落进导出释义 + 映了 glossary 类占位符」
 /// 三条同时成立时让 `{popup-selection-text}` 渲染成空，理由是 Lapis 卡背会用非空的

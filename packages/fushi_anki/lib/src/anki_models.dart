@@ -949,7 +949,7 @@ class AnkiMiningPayload {
   /// （popup.js 的 applyGlossarySelectionHighlight 确实插入了标记）。
   ///
   /// 只是「上报事实」，不影响 `{popup-selection-text}` / `{popup-selection-html}`
-  /// 的渲染——选中内容总是照填（BUG-4718）。保留这个线上键是为了 payload 契约
+  /// 的渲染——选中内容总是照填（BUG-4755）。保留这个线上键是为了 payload 契约
   /// （互联 host 白名单、草稿持久化、BUG-2089 的类型容错）。旧 payload 没有这个键 →
   /// `false`。
   final bool glossarySelectionHighlighted;
@@ -1270,7 +1270,7 @@ class AnkiHandlebarRenderer {
         );
       case '{popup-selection-text}':
         // 选中内容总是如实填入，即使同一段已作为 <mark> 高亮进了释义字段
-        // （BUG-4718：此前在 Lapis 下让位成空，SelectionText 字段就丢了选中文字）。
+        // （BUG-4755：此前在 Lapis 下让位成空，SelectionText 字段就丢了选中文字）。
         return payload.popupSelectionText;
       case '{popup-selection-html}':
         return payload.popupSelectionHtml;

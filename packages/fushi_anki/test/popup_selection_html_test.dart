@@ -8,7 +8,7 @@ import 'package:fushi_anki/fushi_anki.dart';
 ///
 /// HTML 的产出与净化在 popup.js（`fushi/test/anki/popup_selection_html_test.js`）；
 /// 这里守 Dart 侧：wire 键解析、占位符渲染、媒体二次渲染不丢字段、与纯文本版一样
-/// 不让位（BUG-4718）、picker 里能选到。
+/// 不让位（BUG-4755）、picker 里能选到。
 void main() {
   const String kText = '物事の大事な点';
   const String kHtml =
@@ -71,7 +71,7 @@ void main() {
     expect(fields['Plain'], kText);
   });
 
-  test('与纯文本版一样不让位：Lapis + 高亮落地 + 映了 glossary → 照填（BUG-4718）', () {
+  test('与纯文本版一样不让位：Lapis + 高亮落地 + 映了 glossary → 照填（BUG-4755）', () {
     const Map<String, String> mappings = <String, String>{
       'SelectionText': '{popup-selection-html}',
       'Glossary': '{glossary}',
