@@ -5,6 +5,7 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_cli/fushi_cli.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/metadata/books/rakuten_books.dart';
 
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/media_source.dart';
@@ -36,14 +37,15 @@ void main() {
     thumbs = await Directory.systemTemp.createTemp('fushi_book_undo_');
     model = BookMetaTestModel(db, prefs, thumbs);
     MediaSource.setDatabase(db);
-    bookMetadataFacadeFactory = () => BookMetadataScrapeFacade(
-      scraper: offlineScraper(
-        subjects: <String, Map<String, Object?>>{
-          '21': bangumiSubject('21', 'Candidate', cn: '候选标题'),
-        },
-      ),
-      downloadImage: fakeDownloader(thumbs),
-    );
+    bookMetadataFacadeFactory = ({RakutenBooksCredentials? rakuten}) =>
+        BookMetadataScrapeFacade(
+          scraper: offlineScraper(
+            subjects: <String, Map<String, Object?>>{
+              '21': bangumiSubject('21', 'Candidate', cn: '候选标题'),
+            },
+          ),
+          downloadImage: fakeDownloader(thumbs),
+        );
     final OpContext context = OpContext(ref: BookMetaRef(model));
     catalog = buildAppOpCatalog(context, buildDomainOpRoutes(context));
     invoker = OpInvoker(catalog);
