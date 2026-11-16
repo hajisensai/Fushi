@@ -25,6 +25,11 @@
 //! 第一次建）一律整份作废（[G4Core::refresh_invalidate]）；`local_state {reload: true}`（Dart 命令失败后的重读）同样整份
 //! 作废（协议 3 同口径）。只动本机状态行 / 设备信息 / 媒体回收待回收集合的写不推进。
 //!
+//! 落真相但不经 `Session` 的命令（`import`，`cmd/fushisrs.rs`；同步一轮的 `ingest` / `ingest_finish` / `retire` / `rotate`，
+//! `cmd/sync.rs`）：派生层按整层重建或增量收尾、没有逐操作的种类，真有改动（与推进本机修订号同一个判据）时在回包里放
+//! [Tally::all]，分发器提交之后同样经 [Tally::take] 取走、整份作废；`import` 的预检、要确认、`unchanged` 与没收到东西的
+//! 收段不放、不推进。
+//!
 //! # 读：`refresh_keys {profile}` → `{content, structure, rwkv, stats, landed}`（不透明串，只比相等）
 //!
 //! - **Primary**：只读内存（一把互斥锁里几个整数），不读库、不排写锁；Dart 在调用方 isolate 上同步调。键形 `<开库标识>:<计数>`
@@ -114,7 +119,7 @@ impl Tally {
         self.rwkv = true;
     }
 
-    fn all() -> Tally {
+    pub fn all() -> Tally {
         let mut t = Tally::default();
         t.invalidate();
         t

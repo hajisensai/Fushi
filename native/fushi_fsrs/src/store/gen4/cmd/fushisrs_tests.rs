@@ -371,7 +371,16 @@ fn importing_into_the_same_collection_merges_and_carries_heritage_keys() {
 
     let (dir, h) = fresh("g113same2", P);
     apply_edit(h, P, N1, "f/fa", json!("導入前"));
-    let got = import_path(h, P, &path, json!({"manifest": manifest(&exp)})).unwrap();
+    // 承袭日志设备的公钥本机还没有：先问（`reason: identity`），确认后照常并入。
+    let ask = import_path(h, P, &path, json!({"manifest": manifest(&exp)})).unwrap();
+    assert_eq!(ask["reason"], json!("identity"), "{ask}");
+    let got = import_path(
+        h,
+        P,
+        &path,
+        json!({"manifest": manifest(&exp), "confirmed": true}),
+    )
+    .unwrap();
     assert_eq!(got["outcome"], json!("same"), "{got}");
     assert!(got.get("bindingChanged").is_none(), "{got}");
     assert!(
@@ -613,7 +622,13 @@ fn a_large_file_is_read_with_a_bounded_window() {
     // 命令层的读法（复核：之前只量了读者，命令改成整份读进内存也测不出）：导入命令对这个文件的每一次读都是有界的一块，
     // 合起来至少读完整份（嗅探、读头、分叉检查、落库各开一遍）。整份读进内存（`fs::read`）不经 FileSource，记录为零。
     super::fushisrs::meter::take();
-    let got = import_path(dst, P, &path, json!({"manifest": manifest(&exp)})).unwrap();
+    let got = import_path(
+        dst,
+        P,
+        &path,
+        json!({"manifest": manifest(&exp), "confirmed": true}),
+    )
+    .unwrap();
     let reads = super::fushisrs::meter::take();
     assert!(reads.bytes >= file_len as u64, "{reads:?} file {file_len}");
     assert!(reads.calls > 4, "{reads:?}");
@@ -729,12 +744,12 @@ fn new_salts_or_peers_alone_are_a_change() {
     let (exp, path) = export_to(m.h, P, &work.0);
     let (_dir, h) = fresh("g113saltd", P);
     let man = manifest(&exp);
-    let first = import_path(h, P, &path, json!({"manifest": man})).unwrap();
+    let first = import_path(h, P, &path, json!({"manifest": man, "confirmed": true})).unwrap();
     assert_eq!(first["unchanged"], json!(false), "{first}");
 
     let mut salted = man.clone();
     salted["salts"].as_array_mut().unwrap().push(json!(Q));
-    let got = import_path(h, P, &path, json!({"manifest": salted})).unwrap();
+    let got = import_path(h, P, &path, json!({"manifest": salted, "confirmed": true})).unwrap();
     assert_eq!(got["outcome"], json!("saltsAdded"), "{got}");
     assert_eq!(got["applied"], json!(0), "{got}");
     assert_eq!(got["unchanged"], json!(false), "{got}");
@@ -748,7 +763,7 @@ fn new_salts_or_peers_alone_are_a_change() {
         .as_array_mut()
         .unwrap()
         .push(json!({"device": id(0x77).text(), "public": "ab".repeat(32)}));
-    let got2 = import_path(h, P, &path, json!({"manifest": peered})).unwrap();
+    let got2 = import_path(h, P, &path, json!({"manifest": peered, "confirmed": true})).unwrap();
     assert_eq!(got2["outcome"], json!("same"), "{got2}");
     assert_eq!(got2["applied"], json!(0), "{got2}");
     assert!(got2["peers"].as_u64().unwrap() >= 1, "{got2}");
@@ -796,6 +811,14 @@ fn preflight_judges_without_writing() {
     let mut salted = man.clone();
     salted["salts"].as_array_mut().unwrap().push(json!(Q));
     let got = pre(h, P, &path, json!({"manifest": salted})).unwrap();
+    assert_eq!(got["outcome"], json!("needsConfirm"), "{got}");
+    assert_eq!(got["reason"], json!("identity"), "{got}");
+    assert_eq!(got["preflight"], json!(true), "{got}");
+    assert!(
+        got["newSalts"].as_array().unwrap().contains(&json!(Q)),
+        "{got}"
+    );
+    let got = pre(h, P, &path, json!({"manifest": salted, "confirmed": true})).unwrap();
     assert_eq!(
         got,
         json!({"format": 2, "outcome": "ready", "preflight": true})
@@ -813,7 +836,7 @@ fn preflight_judges_without_writing() {
     assert!(e.contains("not a Fushi SRS export"), "{e}");
     assert_eq!(export_bytes(h, P), before, "the preflight wrote something");
 
-    let got = import_path(h, P, &path, json!({"manifest": salted})).unwrap();
+    let got = import_path(h, P, &path, json!({"manifest": salted, "confirmed": true})).unwrap();
     assert_eq!(got["outcome"], json!("saltsAdded"), "{got}");
     assert!(got["applied"].as_u64().unwrap() > 0, "{got}");
     ffsrs_store_close(h);
@@ -831,5 +854,103 @@ fn the_export_temp_file_appends_to_the_whole_name() {
     assert_eq!(std::fs::read(&neighbour).unwrap(), b"keep");
     assert!(target.exists());
     assert!(!work.0.join("ops.bin.g4tmp").exists());
+    ffsrs_store_close(h);
+}
+
+// ---------------------------------------------------------------------- 合流（W2）：刷新键与身份确认
+
+const REFRESH_KEYS: [&str; 5] = ["content", "structure", "rwkv", "stats", "landed"];
+
+fn refresh_keys(h: *mut SrsCoreHandle, profile: &str) -> Value {
+    try_g4(h, profile, "refresh_keys", json!({})).unwrap()
+}
+
+/// 导入真改了东西之后进程内刷新键（S1c `refresh.rs`）整份作废；预检、要确认、什么都没改（`unchanged`）的导入不动。
+/// 回包里不留分发器取走的内部键。
+#[test]
+fn an_import_that_changes_something_moves_the_refresh_keys() {
+    let m = migrated();
+    let work = tempdir::new("g113rk");
+    let (exp, path) = export_to(m.h, P, &work.0);
+    let man = manifest(&exp);
+    let (_dir, h) = fresh("g113rkd", P);
+    let k0 = refresh_keys(h, P);
+    let pre = import_path(h, P, &path, json!({"manifest": man, "preflight": true})).unwrap();
+    assert_eq!(refresh_keys(h, P), k0, "{pre}");
+    let ask = import_path(h, P, &path, json!({"manifest": man})).unwrap();
+    assert_eq!(ask["outcome"], json!("needsConfirm"), "{ask}");
+    assert_eq!(refresh_keys(h, P), k0, "{ask}");
+    let got = import_path(h, P, &path, json!({"manifest": man, "confirmed": true})).unwrap();
+    assert_eq!(got["unchanged"], json!(false), "{got}");
+    assert!(got.get("refreshTally").is_none(), "{got}");
+    let k1 = refresh_keys(h, P);
+    for k in REFRESH_KEYS {
+        assert_ne!(k1[k], k0[k], "{k}: {k0} {k1}");
+    }
+    let again = import_path(h, P, &path, json!({"manifest": man})).unwrap();
+    assert_eq!(again["unchanged"], json!(true), "{again}");
+    assert_eq!(refresh_keys(h, P), k1, "{again}");
+    // 裸流（不认领）再导一遍同样什么都不改：不动。
+    let bare = import_path(h, P, &path, json!({})).unwrap();
+    assert_eq!(bare["unchanged"], json!(true), "{bare}");
+    assert_eq!(refresh_keys(h, P), k1, "{bare}");
+    ffsrs_store_close(h);
+}
+
+/// 同一个集合的文件带来本机还不算数的盐或还不认识的设备公钥：没确认回 `needsConfirm`（`reason: identity`，列出
+/// `newSalts` / `newPeers`）、库一字不变、修订号不动；预检同形；确认后才落（`saltsAdded`）。确认过的再导一遍不再问。
+#[test]
+fn new_salts_and_peers_from_a_same_collection_file_need_confirmation() {
+    let m = migrated();
+    let work = tempdir::new("g113idc");
+    let (exp, path) = export_to(m.h, P, &work.0);
+    let man = manifest(&exp);
+    let (_dir, h) = fresh("g113idcd", P);
+    import_path(h, P, &path, json!({"manifest": man, "confirmed": true})).unwrap();
+    let base = import_path(h, P, &path, json!({"manifest": man})).unwrap();
+    assert_eq!(base["unchanged"], json!(true), "{base}");
+
+    let mut salted = man.clone();
+    salted["salts"].as_array_mut().unwrap().push(json!(Q));
+    let before = export_bytes(h, P);
+    for preflight in [true, false] {
+        let mut x = json!({"manifest": salted});
+        if preflight {
+            x["preflight"] = json!(true);
+        }
+        let ask = import_path(h, P, &path, x).unwrap();
+        assert_eq!(ask["outcome"], json!("needsConfirm"), "{ask}");
+        assert_eq!(ask["reason"], json!("identity"), "{ask}");
+        assert_eq!(ask["newSalts"], json!([Q]), "{ask}");
+        assert_eq!(ask["newPeers"], json!([]), "{ask}");
+        assert_eq!(ask["dir"], json!(P), "{ask}");
+    }
+    assert_eq!(export_bytes(h, P), before, "an unconfirmed salt landed");
+    let info = try_g4(h, P, "collection_info", json!({})).unwrap();
+    assert!(
+        !info["salts"].as_array().unwrap().contains(&json!(Q)),
+        "{info}"
+    );
+
+    let mut peered = man.clone();
+    let stranger = id(0x77).text();
+    peered["peers"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"device": stranger, "public": "ab".repeat(32)}));
+    let ask = import_path(h, P, &path, json!({"manifest": peered})).unwrap();
+    assert_eq!(ask["reason"], json!("identity"), "{ask}");
+    assert_eq!(ask["newSalts"], json!([]), "{ask}");
+    assert_eq!(ask["newPeers"], json!([stranger]), "{ask}");
+    assert!(
+        !peer_lines(&_dir.0, P)
+            .iter()
+            .any(|l| l.contains(&hex_upper(&id(0x77))))
+    );
+
+    let got = import_path(h, P, &path, json!({"manifest": salted, "confirmed": true})).unwrap();
+    assert_eq!(got["outcome"], json!("saltsAdded"), "{got}");
+    let again = import_path(h, P, &path, json!({"manifest": salted})).unwrap();
+    assert_eq!(again["unchanged"], json!(true), "{again}");
     ffsrs_store_close(h);
 }

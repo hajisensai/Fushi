@@ -55,6 +55,7 @@ use crate::store::gen4::fork::{self, ForkScan, OwnHead};
 use crate::store::gen4::ingest::Settle;
 use crate::store::gen4::local;
 use crate::store::gen4::receive::{Received, Receiver, Taken};
+use crate::store::gen4::refresh::{TALLY_KEY, Tally};
 use crate::store::gen4::schema::{k_range, k_seq, sql};
 use crate::store::gen4::sync_state::LocHead;
 use crate::store::gen4::truth::{NativeStep, Peer, PeerPut, SelfId, Truth};
@@ -165,6 +166,11 @@ fn bump_revision(t: &Truth<'_>, profile: &str, n: u64, out: &mut Value) -> Resul
     local::persist(t, profile, None, &mut tmp)?;
     out["localRevision"] = tmp["localRevision"].clone();
     out["localEpoch"] = tmp["localEpoch"].clone();
+    // 真落了东西：进程内刷新计数整份作废（分发器提交之后取走，`refresh.rs` 文件头「谁推进」）。与修订号同一个判据，
+    // Primary 的键与 Secondary 按修订号拼的键一起变。
+    if n > 0 {
+        out[TALLY_KEY] = Tally::all().json();
+    }
     Ok(())
 }
 

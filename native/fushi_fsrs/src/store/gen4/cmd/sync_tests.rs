@@ -1142,3 +1142,43 @@ fn sync_lookups_use_their_keys() {
         );
     }
 }
+
+/// 收段（`ingest`）真落了东西、换身份（`rotate`）之后进程内刷新键（S1c `refresh.rs`）整份作废；什么都没收到的一轮不动。
+/// 回包里不留分发器取走的内部键。
+#[test]
+fn landing_sync_commands_move_the_refresh_keys() {
+    const KEYS: [&str; 5] = ["content", "structure", "rwkv", "stats", "landed"];
+    let keys = |d: &Dev| g4(d.h, "refresh_keys", T1, json!({}));
+    let a = Dev::new("g87rk");
+    let b = Dev::new("g87rkb");
+    let mut loc = Loc::new();
+    sync_all(&[&a, &b], &mut loc, T1, Opts::default());
+    let k0 = keys(&a);
+    round(&a, &mut loc, "loc", T1 + 1, Opts::default());
+    assert_eq!(keys(&a), k0, "a round that received nothing");
+
+    b.write(T1 + 2, N1, "鯨");
+    round(&b, &mut loc, "loc", T1 + 3, Opts::default());
+    let r = round(&a, &mut loc, "loc", T1 + 4, Opts::default());
+    assert!(
+        r.ingest
+            .iter()
+            .any(|v| v["applied"].as_u64().unwrap_or(0) > 0),
+        "{r:?}"
+    );
+    for v in r.ingest.iter().chain(r.finish.iter()) {
+        assert!(v.get("refreshTally").is_none(), "{v}");
+    }
+    assert_eq!(a.field(N1), Some(json!("鯨")));
+    let k1 = keys(&a);
+    for k in KEYS {
+        assert_ne!(k1[k], k0[k], "{k}: {k0} {k1}");
+    }
+
+    let (v, _) = cmd(a.h, "rotate", T1 + 5, json!({}), &[]);
+    assert!(v.get("refreshTally").is_none(), "{v}");
+    let k2 = keys(&a);
+    for k in KEYS {
+        assert_ne!(k2[k], k1[k], "{k}: {k1} {k2}");
+    }
+}

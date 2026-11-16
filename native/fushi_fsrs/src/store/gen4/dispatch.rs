@@ -266,6 +266,14 @@ fn local_write(
     Ok(v)
 }
 
+/// 不经 `Session` 落真相的写（`import`、同步一轮的 `ingest` / `ingest_finish` / `retire` / `rotate`）提交之后：回包里
+/// 命令放的 [Tally]（真有改动时是整份作废）取走、推进进程内刷新计数（`refresh.rs` 文件头「谁推进」）。
+fn noted(c: &G4Core, profile: &str, mut v: Value) -> Value {
+    let tally = Tally::take(&mut v);
+    c.refresh_note(profile, tally, false);
+    v
+}
+
 /// [local_write] 的事务部分。
 fn local_write_tx(
     c: &G4Core,
@@ -532,11 +540,12 @@ fn run(
         "import" => {
             let anchor = crate::store::local_state::anchor_of(req)?;
             let src = cmd::fushisrs::Source::of(req, blobs)?;
-            write_binding(c, |t| {
+            let v = write_binding(c, |t| {
                 cmd::fushisrs::import(t, profile, req, &src, anchor.as_ref(), &|t| {
                     col_of(t, profile)
                 })
-            })?
+            })?;
+            noted(c, profile, v)
         }
         // ------------------------------------------------------------ 同步一轮（cmd/sync.rs）
         "location_root" => {
@@ -545,11 +554,15 @@ fn run(
         "plan" => c.write_local(|t| cmd::sync::plan(t, col_of(t, profile)?, req, blobs))?,
         "ingest" => {
             let key = cmd::sync::key_of(req)?;
-            c.write(|t| cmd::sync::ingest(t, col_of(t, profile)?, profile, blobs, key.as_ref()))?
+            let v = c.write(|t| {
+                cmd::sync::ingest(t, col_of(t, profile)?, profile, blobs, key.as_ref())
+            })?;
+            noted(c, profile, v)
         }
         "ingest_finish" => {
             let now = int_of(req, "now")?;
-            c.write(|t| cmd::sync::ingest_finish(t, col_of(t, profile)?, profile, now))?
+            let v = c.write(|t| cmd::sync::ingest_finish(t, col_of(t, profile)?, profile, now))?;
+            noted(c, profile, v)
         }
         "outbox" => {
             let key = cmd::sync::key_of(req)?;
@@ -562,10 +575,14 @@ fn run(
         "digest" => read_col(c, profile, |t, col| {
             Ok(json!({"digest": Index::new(t, col).digest()?}))
         })?,
-        "retire" => c.write(|t| cmd::sync::retire(t, col_of(t, profile)?, profile, req))?,
+        "retire" => {
+            let v = c.write(|t| cmd::sync::retire(t, col_of(t, profile)?, profile, req))?;
+            noted(c, profile, v)
+        }
         "rotate" => {
             let now = int_of(req, "now")?;
-            c.write(|t| cmd::sync::rotate(t, col_of(t, profile)?, profile, now))?
+            let v = c.write(|t| cmd::sync::rotate(t, col_of(t, profile)?, profile, now))?;
+            noted(c, profile, v)
         }
         "location_sealed" => {
             read_col(c, profile, |t, col| cmd::sync::location_sealed(t, col, req))?

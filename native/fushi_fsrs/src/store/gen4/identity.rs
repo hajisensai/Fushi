@@ -221,7 +221,7 @@ impl Index<'_, '_> {
 
     /// 本机现在算数的盐（受信作者的带盐操作之并）。与 `alias.rs` 的 `settle_salts` 同一个并，只读、不改缓存——
     /// [adopt_foreign] 答「什么都没写」的那几种结论时不能顺手写库。
-    fn trusted_salts(&mut self) -> Result<BTreeSet<String>, String> {
+    pub(crate) fn trusted_salts(&mut self) -> Result<BTreeSet<String>, String> {
         let rows: Vec<(String, i64)> = {
             let mut stmt = self
                 .t
@@ -244,7 +244,7 @@ impl Index<'_, '_> {
     }
 
     /// 本机信任的作者写过 from = [collection] 的 `Join`。
-    fn joined(&mut self, collection: &Id) -> Result<bool, String> {
+    pub(crate) fn joined(&mut self, collection: &Id) -> Result<bool, String> {
         Ok(self
             .joins()?
             .iter()

@@ -26,9 +26,15 @@
 //!
 //! - **第 2 版（`FSRS4EXP`）**：一个写事务（分发器 `write_binding`）里依次：
 //!   1. 与本机的关系：清单的 `{collection, dir, salts}` 交给 G9-4 的 `collection_adopt`（判据只在 `identity::adopt_foreign`
-//!      一处）——同一个集合 / 早已并入的照常导入（对方多出来的盐写一条 `Salts`）；**另一个集合**在没有 `confirmed` 时
-//!      回 `{outcome: "needsConfirm", collection, dir}`、什么都不写（BUG-4011 / D25：确认之前不并入），带 `confirmed`
-//!      重发就先并入（写 `Join`）再导入。清单里的集合必须就是流头里的集合；没带清单（裸 `ops.bin`）不做认领，流头的集合
+//!      一处）——同一个集合 / 早已并入的照常导入；**另一个集合**在没有 `confirmed` 时回
+//!      `{outcome: "needsConfirm", reason: "join", collection, dir, newSalts, newPeers}`、什么都不写（BUG-4011 / D25：
+//!      确认之前不并入），带 `confirmed` 重发就先并入（写 `Join`）再导入。
+//!      同一个集合 / 早已并入的文件若带来本机还不算数的盐（会写一条本机签名的 `Salts`）或本机还不认识的设备公钥（清单的
+//!      `peers`），同样要确认（W2 合流定案，见交接说明 §15「导入补盐与设备公钥要确认」）：没有 `confirmed` 时回
+//!      `{outcome: "needsConfirm", reason: "identity", collection, dir, newSalts, newPeers}`、什么都不写。盐不受证据约束：
+//!      别名层对每个盐直接把「ID 等于这个盐」的已出现实体归到 profile 级设置实体（`gen4_ids/alias.rs` `profile_entities`），
+//!      一个自称同一集合的文件带一个等于本机某实体 ID 的「盐」就能把它并错；设备公钥先到先得，错的公钥让那台设备真正的段
+//!      以后一直被拒。清单里的集合必须就是流头里的集合；没带清单（裸 `ops.bin`）不做认领，流头的集合
 //!      不是本集合（或被它并入过的）就由存储层拒绝。
 //!   2. 清单的 `peers` → [import_peers]（公钥先到先得、冲突整个拒绝、名字只补空缺）。
 //!   3. 本机身份的分叉（[own_fork_point]，协议 3 `import_on` 的「包里有本机身份的操作时先换身份」）：分了就
@@ -42,7 +48,7 @@
 //! 还原点、不往媒体目录写文件（复核：用户拒绝后不留孤儿媒体）。判据与真导入同一处：嗅探魔数；第 1 版走存储层的
 //! `check_v1_collection`；第 2 版先比清单与流头，再在一个**回滚掉的保存点**里跑 `collection_adopt`（`same` 时可能补盐，
 //! 回滚不留）与存储层的 `check_stream_collection`。回包 `{format, outcome: "ready" | "needsConfirm", preflight: true,
-//! collection?, dir?}`。坏在流中间的文件预检看不出（不读全流），由 Dart 在真导入报错时删掉这次补进来的媒体。
+//! reason?, collection?, dir?, newSalts?, newPeers?}`（要确认时同真导入的形状）。坏在流中间的文件预检看不出（不读全流），由 Dart 在真导入报错时删掉这次补进来的媒体。
 //!
 //! 坏流、另一个集合、与本机矛盾一律报错、整笔回滚、一条不落；同一份再导一遍什么都不改（槽幂等），所以中断后重来不产生
 //! 重复卡片或复习记录。v2 之前那种「事件 + 魔数清单」的旧备份不归内核：Dart 那一侧明确拒绝并提示（`apply` 的 stamped 输入
@@ -76,6 +82,7 @@ use serde_json::{Value, json};
 use super::identity::{Emitting, collection_adopt};
 use super::{hex, snapshot};
 use crate::gen4::export::{ExportKind, sniff_reader};
+use crate::store::gen4::derive::Index;
 use crate::store::gen4::export::{Exported, export_ops};
 use crate::store::gen4::identity::BindingChanged;
 use crate::store::gen4::import::{
@@ -83,6 +90,7 @@ use crate::store::gen4::import::{
     import_v1, open_ops_reader, own_fork_point,
 };
 use crate::store::gen4::local;
+use crate::store::gen4::refresh::{TALLY_KEY, Tally};
 use crate::store::gen4::schema::sql;
 use crate::store::gen4::truth::{Peer, Truth};
 use crate::sync2::id::Id;
@@ -307,6 +315,33 @@ struct Manifest {
     peers: Vec<Peer>,
 }
 
+/// 同一个集合 / 早已并入的文件带来、要用户确认才落的身份变化（模块文件头第 1 步）：本机还不算数的盐、本机还不认识的设备
+/// （清单 `peers` 里不是本机、也没记过公钥的）。另一个集合（`collection_adopt` 本来就问）或还没绑定时 = None；没有新东西
+/// 也是 None。只读。
+fn unconfirmed_identity(
+    t: &Truth<'_>,
+    profile: &str,
+    m: &Manifest,
+) -> Result<Option<(Vec<String>, Vec<String>)>, String> {
+    let Some(b) = t.binding_of(profile)? else {
+        return Ok(None);
+    };
+    let mut ix = Index::new(t, b.col);
+    if b.collection != m.collection && !ix.joined(&m.collection)? {
+        return Ok(None);
+    }
+    let have = ix.trusted_salts()?;
+    let salts: Vec<String> = m.salts.difference(&have).cloned().collect();
+    let me = t.self_identity(b.col)?.map(|s| s.device);
+    let mut peers = Vec::new();
+    for p in &m.peers {
+        if Some(p.device) != me && t.peer(b.col, &p.device)?.is_none() {
+            peers.push(p.device.text());
+        }
+    }
+    Ok((!salts.is_empty() || !peers.is_empty()).then_some((salts, peers)))
+}
+
 fn manifest_of(req: &Value) -> Result<Option<Manifest>, String> {
     let Some(m) = req.get("manifest").filter(|m| !m.is_null()) else {
         return Ok(None);
@@ -416,19 +451,32 @@ pub fn import(
                         m.collection, header.collection
                     ));
                 }
+                let confirmed = req.get("confirmed").and_then(Value::as_bool) == Some(true);
                 let sub = json!({
                     "collection": m.collection.text(),
                     "dir": m.dir,
                     "salts": m.salts.iter().collect::<Vec<_>>(),
-                    "confirmed": req.get("confirmed").and_then(Value::as_bool) == Some(true),
+                    "confirmed": confirmed,
                     "now": now,
                 });
-                let needs_confirm = json!({
-                    "format": 2,
-                    "outcome": "needsConfirm",
-                    "collection": m.collection.text(),
-                    "dir": m.dir,
-                });
+                // 同一个集合 / 早已并入时要确认的新盐与新设备（模块文件头第 1 步）；确认过了就不再问。
+                let identity = if confirmed {
+                    None
+                } else {
+                    unconfirmed_identity(t, profile, m)?
+                };
+                let (new_salts, new_peers) = identity.clone().unwrap_or_default();
+                let needs_confirm = |reason: &str| {
+                    json!({
+                        "format": 2,
+                        "outcome": "needsConfirm",
+                        "reason": reason,
+                        "collection": m.collection.text(),
+                        "dir": m.dir,
+                        "newSalts": new_salts,
+                        "newPeers": new_peers,
+                    })
+                };
                 if preflight {
                     // 认领与流头的判据都在一个回滚掉的保存点里跑（与真导入同一处 adopt_foreign / 存储层判据），补的盐不留。
                     let mut asks = false;
@@ -445,13 +493,23 @@ pub fn import(
                         Err(e) => return Err(e),
                         Ok(()) => unreachable!("the preflight savepoint always rolls back"),
                     }
-                    let mut v = if asks { needs_confirm } else { ready(2) };
+                    let mut v = if asks {
+                        needs_confirm("join")
+                    } else if identity.is_some() {
+                        needs_confirm("identity")
+                    } else {
+                        ready(2)
+                    };
                     v["preflight"] = json!(true);
                     return Ok((v, None));
                 }
+                // 没确认的新盐 / 新设备：什么都不写就回（认领还没跑，库一字不动）。
+                if identity.is_some() {
+                    return Ok((needs_confirm("identity"), None));
+                }
                 let (v, ch) = collection_adopt(t, profile, &sub)?;
                 if v["outcome"] == json!("needsConfirm") {
-                    return Ok((needs_confirm, None));
+                    return Ok((needs_confirm("join"), None));
                 }
                 wrote = !matches!(v["outcome"].as_str(), Some("same" | "alreadyJoined"));
                 changed = ch;
@@ -507,6 +565,10 @@ pub fn import(
     });
     for k in ["localRevision", "localEpoch"] {
         v[k] = probe[k].clone();
+    }
+    // 有改动（派生层按整层重建收、可能换了绑定）：进程内刷新计数整份作废，分发器提交之后取走（`refresh.rs` 文件头）。
+    if !unchanged {
+        v[TALLY_KEY] = Tally::all().json();
     }
     Ok((v, changed))
 }
