@@ -34,6 +34,7 @@ import 'package:window_manager/window_manager.dart';
 import 'package:hotkey_manager/hotkey_manager.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/mining/cross_app_audio/cross_app_audio_capture.dart';
 import 'package:fushi/src/media/nsfw/media_nsfw_cover.dart';
 import 'package:fushi/src/models/theme_notifier.dart'
     show buildFushiFallbackTheme;
@@ -435,6 +436,9 @@ void main([List<String> args = const <String>[]]) {
       // 原生 TtsChannelHandler 只挂在主 Activity 引擎上（popupMain 等副引擎没有）；
       // 单词音频据此改走不申请音频焦点的原生播放器（BUG-3311）。
       TtsChannel.markHostPlaybackRegistered();
+      // 跨应用语音缓存（拍板 oqk37s3QFL）：只有主引擎接原生的录音状态推送（设置页
+      // 开关的值）；引擎重建而前台服务还在录时这里读回「在录」。非 Android 无操作。
+      unawaited(CrossAppAudioCapture.instance.init());
       // 系统「降低透明度」信号（Windows / macOS / iOS），玻璃设计系统据此回退实心。
       StartupTimeline.mark('win-installs');
       unawaited(SystemTransparency.initialize());

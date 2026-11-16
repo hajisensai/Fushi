@@ -42,6 +42,13 @@ final class FloatingDictPluginRegistrant {
         } catch (Exception e) {
             Log.e(TAG, "Error registering system proxy channel", e);
         }
+        // 跨应用语音缓存（拍板 oqk37s3QFL）：查词那一刻取主进程环里最近一段声音、制卡时
+        // 编码成 m4a。采集状态在主进程，走 CrossAppAudioProvider 跨进程。
+        try {
+            CrossAppAudioChannel.registerWith(flutterEngine, context, false);
+        } catch (Exception e) {
+            Log.e(TAG, "Error registering cross-app audio channel", e);
+        }
         try {
             flutterEngine.getPlugins().add(
                 new dev.fluttercommunity.plus.device_info.DeviceInfoPlusPlugin());
