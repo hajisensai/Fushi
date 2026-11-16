@@ -262,15 +262,16 @@ class _MigrationPanel extends StatelessWidget {
     // 重试不会变的三类（更新版本写的 / 文件坏了 / 并入没做完）：不给「重新升级」，免得引用户反复点。
     final bool retryable = blocked?.retryable ?? true;
     // 等一会再来的两类说清楚就够；其余给内核原因原文（诊断用）。
+    final String reason = outcome?.reason ?? '';
     final bool showReason =
         blocked != null &&
         blocked != SrsGen4BlockedReason.migrating &&
         blocked != SrsGen4BlockedReason.busy &&
-        (outcome!.reason ?? '').isNotEmpty;
+        reason.isNotEmpty;
     final bool closing = !running && !controller.canStart;
     final List<String> details = <String>[
       if (!running && outcome != null) srsGen4OutcomeText(outcome),
-      if (!running && showReason) outcome!.reason!,
+      if (!running && showReason) reason,
       if (!running && error != null) ...<String>[t.srs_gen4_failed, '$error'],
       if (closing) t.srs_gen4_closing,
     ];
