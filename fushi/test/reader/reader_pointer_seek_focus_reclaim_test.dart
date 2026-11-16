@@ -3,7 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import '../helpers/source_guard.dart';
 import '../pages/reader_fushi_page_source_corpus.dart';
 
-/// BUG-4695（反馈 mNogI-kBAh）：把「跳转到点击句」绑到鼠标右键后，右键跳句一次，
+/// BUG-4717（反馈 mNogI-kBAh）：把「跳转到点击句」绑到鼠标右键后，右键跳句一次，
 /// P 等快捷键全部失效，要点一下空白 / 查一次词 / 按一下空格才恢复。
 ///
 /// 根因：正文 JS 的非左键 `mousedown` 经 `onPointerSeek` 回 Dart。这次按下已把 OS
