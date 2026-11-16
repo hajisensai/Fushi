@@ -9,6 +9,8 @@
 //
 // 走真实路径：内存库 + 确定性假排程内核 → SrsReviewPage。数据库读写放 tester.runAsync。
 
+import 'dart:io';
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -680,6 +682,75 @@ void main() {
       expect(scrollable.position.pixels, greaterThan(0), reason: '滚了');
       expect(await _rated(tester, store, note), isFalse, reason: '滚动不是滑动');
       await _unmount(tester);
+    });
+  });
+
+  group('SrsHostPointerTrack（宿主侧全局几何）', () {
+    // VelocityTracker 读测试绑定的采样时钟，须在 testWidgets 里跑。
+    testWidgets('生产时序：页内回报晚于宿主 up 到达，松手仍取宿主全局位移与速度', (
+      WidgetTester tester,
+    ) async {
+      final SrsHostPointerTrack track = SrsHostPointerTrack();
+      const int p = 7;
+      track.down(
+        const PointerDownEvent(
+          pointer: p,
+          kind: PointerDeviceKind.touch,
+          position: Offset(100, 300),
+        ),
+      );
+      for (int i = 1; i <= 10; i++) {
+        track.move(
+          PointerMoveEvent(
+            pointer: p,
+            kind: PointerDeviceKind.touch,
+            timeStamp: Duration(milliseconds: i * 10),
+            position: Offset(100 + i * 20.0, 300),
+          ),
+        );
+      }
+      track.up(
+        const PointerUpEvent(
+          pointer: p,
+          kind: PointerDeviceKind.touch,
+          timeStamp: Duration(milliseconds: 110),
+          position: Offset(320, 300),
+        ),
+      );
+      // 页内量到的位移被卡面跟手平移吃掉一截、速度为零；宿主已收过 up（_active=false）。
+      final SrsCardGestureEvent out = track.rebase(
+        const SrsCardGestureEvent(
+          SrsCardGestureKind.release,
+          delta: Offset(40, 0),
+        ),
+      );
+      expect(out.delta, const Offset(220, 0));
+      expect(out.position, const Offset(320, 300));
+      expect(out.velocity.dx, greaterThan(1000), reason: '取宿主 up 时记下的速度');
+    });
+
+    test('宿主从没见过指针时原样放行页内几何', () {
+      const SrsCardGestureEvent page = SrsCardGestureEvent(
+        SrsCardGestureKind.drag,
+        delta: Offset(12, 0),
+      );
+      expect(SrsHostPointerTrack().rebase(page), same(page));
+    });
+
+    test('守卫：WebView 卡面外层 Listener 接了 track，页内回报经 rebase', () {
+      // WebView 起不来，widget 测试只覆盖 track 本身；这里钉住生产接线。
+      final String src = File(
+        'lib/src/pages/implementations/srs/srs_card_face.dart',
+      ).readAsStringSync();
+      for (final String wire in <String>[
+        'onPointerDown: _pointerTrack.down',
+        'onPointerMove: _pointerTrack.move',
+        'onPointerUp: _pointerTrack.up',
+        'onPointerCancel: _pointerTrack.cancel',
+        'onGesture(_pointerTrack.rebase(event))',
+      ]) {
+        expect(src, contains(wire), reason: wire);
+      }
     });
   });
 }
