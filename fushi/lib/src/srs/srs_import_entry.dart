@@ -5,6 +5,9 @@
 ///   （srs_import_task.dart；牌组列表顶上的任务条显示进度）→ 任务条「查看报告」看
 ///   导入报告（[srsImportReportLines] 把 `SrsImportReport` 的各项翻成人话）。媒体经
 ///   [SrsMediaStore] 按内容哈希落盘。新格式包而排程内核不可用时报「需要排程内核」。
+///   选的是 .csv / .tsv / .txt 时走文本导入（对齐 Anki「导入 → 文本文件」）：原生内核解析出预览 →
+///   srs_text_import_dialog.dart 选分隔符 / 笔记类型 / 牌组 / 列映射 / 已存在笔记的处理 → 同一个后台队列
+///   （[runSrsTextImportFile]）。
 /// - 导出：选项（学习进度 / 牌组预设 / 兼容 Anki，见 srs_export_options_dialog.dart；
 ///   记住上次的选择；范围里有 FSRS-7 牌组时对话框内提示「Anki 里会改用 FSRS-6」）→
 ///   `exportAnkiPackageFile`（流式写暂存文件）→ 桌面「另存为」/ 移动端系统分享。
@@ -26,6 +29,7 @@ import 'package:fushi_engine/srs/apkg/srs_export_options.dart';
 import 'package:fushi_engine/foundation/pref_store.dart';
 import 'package:fushi_engine/srs/apkg/srs_apkg_import.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/text/srs_text_import.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_crypto.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:material_ui/material_ui.dart';
@@ -38,6 +42,7 @@ import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/srs/srs_export_options_dialog.dart';
 import 'package:fushi/src/srs/srs_import_options_dialog.dart';
 import 'package:fushi/src/srs/srs_import_task.dart';
+import 'package:fushi/src/srs/srs_text_import_dialog.dart';
 import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_mined_history_import.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
@@ -235,9 +240,17 @@ Future<void> openSrsImport(BuildContext context, WidgetRef ref) async {
   if (!context.mounted) return;
   final String? path = await pickSystemFilePath(
     context: context,
-    allowedExtensions: const <String>{'apkg', 'colpkg'},
+    allowedExtensions: const <String>{
+      'apkg',
+      'colpkg',
+      ...kSrsTextImportExtensions,
+    },
   );
   if (path == null || !context.mounted) return;
+  if (srsIsTextImportPath(path)) {
+    await _openSrsTextImport(context, ref, store, path);
+    return;
+  }
   final PrefStore prefs = ref.read(appProvider).prefsRepo;
   final SrsAnkiImportOptions? options = await showSrsImportOptionsDialog(
     context: context,
@@ -261,6 +274,82 @@ Future<void> openSrsImport(BuildContext context, WidgetRef ref) async {
     return;
   }
   FushiToast.show(msg: t.srs_import_background_started);
+}
+
+/// 文本导入（CSV / TSV / TXT）：原生内核解析出预览 → 选项对话框（列映射等）→ 排进后台导入队列。
+Future<void> _openSrsTextImport(
+  BuildContext context,
+  WidgetRef ref,
+  SrsDbStore store,
+  String path,
+) async {
+  final SrsTextFile preview;
+  final List<SrsNoteTypeView> noteTypes;
+  final SrsDeckTree decks;
+  try {
+    preview = await parseSrsTextFile(path, limit: kSrsTextImportPreviewRows);
+    noteTypes = await store.noteTypes();
+    decks = await store.deckTree();
+  } catch (e, stack) {
+    ErrorLogService.instance.log('srsTextImport.parse', e, stack);
+    FushiToast.show(
+      msg: srsImportFailureMessage(e),
+      severity: ToastSeverity.error,
+    );
+    return;
+  }
+  if (!context.mounted) return;
+  final SrsTextImportChoice? choice = await showSrsTextImportDialog(
+    context: context,
+    fileName: File(path).uri.pathSegments.last,
+    preview: preview,
+    noteTypes: noteTypes,
+    decks: decks,
+    defaultDeckId: store.defaultDeckId,
+    reparse: (String delimiter, bool html) => parseSrsTextFile(
+      path,
+      delimiter: delimiter,
+      html: html,
+      limit: kSrsTextImportPreviewRows,
+    ),
+  );
+  if (choice == null || !context.mounted) return;
+  ref
+      .read(srsImportControllerProvider)
+      .enqueueJob(
+        displayName: File(path).uri.pathSegments.last,
+        job: (void Function(double) onProgress, bool Function() shouldStop) =>
+            runSrsTextImportFile(
+              store: store,
+              path: path,
+              choice: choice,
+              onProgress: onProgress,
+              shouldStop: shouldStop,
+            ),
+      );
+  FushiToast.show(msg: t.srs_import_background_started);
+}
+
+/// 后台任务体：按选定的分隔符 / HTML 读全文（原生内核，后台 isolate），再按选项写库。
+Future<SrsImportReport> runSrsTextImportFile({
+  required SrsDbStore store,
+  required String path,
+  required SrsTextImportChoice choice,
+  void Function(double progress)? onProgress,
+  bool Function()? shouldStop,
+}) async {
+  final SrsTextFile file = await parseSrsTextFile(
+    path,
+    delimiter: choice.delimiter,
+    html: choice.html,
+  );
+  return runSrsTextImport(
+    store: store,
+    file: file,
+    options: choice.options,
+    onProgress: onProgress,
+    shouldStop: shouldStop,
+  );
 }
 
 /// 导入失败原因 → 给人看的一句话。
