@@ -45,7 +45,7 @@ void main() {
       ]);
       final GalWaveformRange range = crossAppAudioDefaultRange(
         GalAudioSlice(pcm: pcm, format: _format),
-      );
+      )!;
       expect(range.startMs, 5000 - kCrossAppAudioPadMs);
       expect(range.endMs, 6500 + kCrossAppAudioPadMs);
     });
@@ -57,18 +57,17 @@ void main() {
       ]);
       final GalWaveformRange range = crossAppAudioDefaultRange(
         GalAudioSlice(pcm: pcm, format: _format),
-      );
+      )!;
       expect(range.startMs, 3000 - kCrossAppAudioPadMs);
       expect(range.endMs, 4000 + kCrossAppAudioPadMs);
     });
 
-    test('silence (game blocked capture) falls back to the whole snapshot', () {
+    test('silence (game blocked capture) yields no range', () {
       final Uint8List pcm = Uint8List(_format.byteRate * 3);
-      final GalWaveformRange range = crossAppAudioDefaultRange(
-        GalAudioSlice(pcm: pcm, format: _format),
+      expect(
+        crossAppAudioDefaultRange(GalAudioSlice(pcm: pcm, format: _format)),
+        isNull,
       );
-      expect(range.startMs, 0);
-      expect(range.endMs, 3000);
     });
 
     test('padding is clamped to the snapshot bounds', () {
@@ -77,7 +76,7 @@ void main() {
       ]);
       final GalWaveformRange range = crossAppAudioDefaultRange(
         GalAudioSlice(pcm: pcm, format: _format),
-      );
+      )!;
       expect(range.startMs, 0);
       expect(range.endMs, 2000);
     });
@@ -200,6 +199,19 @@ void main() {
       expect(out, isNull);
       expect(attempted, isNotNull);
       expect(await File(attempted!).parent.exists(), isFalse);
+    });
+
+    test('a silent snapshot (capture blocked) is not encoded', () async {
+      final CrossAppAudioSnapshot snapshot = await writeSnapshot(
+        Uint8List(_format.byteRate * 5),
+      );
+      final ({String path, Directory dir})? out =
+          await prepareCrossAppSentenceAudio(
+            snapshot,
+            encode: (GalAudioSlice clip, String outputPath) async =>
+                fail('a silent snapshot must not become sentence audio'),
+          );
+      expect(out, isNull);
     });
 
     test(

@@ -70,11 +70,12 @@ typedef CrossAppAudioEncoder =
 /// 混音里分不出人声，但分得出「响」：逐帧 RMS 转 dBFS，阈值取
 /// max(峰值 − [kCrossAppAudioRelDropDb], [kCrossAppAudioAbsFloorDb])；从最后一个过阈帧往前
 /// 走，停顿短于 [kCrossAppAudioMaxGapMs] 的并进同一句，直到遇到更长的安静段。
-/// 判不出来（位深不认识、整段静音）时返回整段——多截一点由用户在卡片里听，不丢字。
-GalWaveformRange crossAppAudioDefaultRange(GalAudioSlice slice) {
+/// 位深不认识时返回整段（多截一点由用户在卡片里听，不丢字）；整段没有一帧过阈值
+/// （游戏拒绝被录 = 录到静音、或查词前根本没声音）返回 null——这张卡不该挂一段静音。
+GalWaveformRange? crossAppAudioDefaultRange(GalAudioSlice slice) {
   final int totalMs = pcmDurationMs(slice.pcm.length, slice.format.byteRate);
   final GalWaveformRange full = GalWaveformRange(startMs: 0, endMs: totalMs);
-  if (totalMs <= 0) return full;
+  if (totalMs <= 0) return null;
   final List<double>? rms = pcmFrameRms(slice, frameMs: kCrossAppAudioFrameMs);
   if (rms == null || rms.isEmpty) return full;
   final List<double> db = <double>[
@@ -92,7 +93,7 @@ GalWaveformRange crossAppAudioDefaultRange(GalAudioSlice slice) {
       break;
     }
   }
-  if (last < 0) return full;
+  if (last < 0) return null;
   const int maxGapFrames = kCrossAppAudioMaxGapMs ~/ kCrossAppAudioFrameMs;
   int first = last;
   int gap = 0;
@@ -120,7 +121,7 @@ GalWaveformRange crossAppAudioDefaultRange(GalAudioSlice slice) {
 double _log10(double x) => math.log(x) / math.ln10;
 
 /// 读 [snapshot] 的 PCM，截出 [range]（缺省 = [crossAppAudioDefaultRange]）并经 [encode]
-/// 编码成 `<新临时目录>/sentence.<extension>`。快照文件已被清掉 / 没有声音 / 编码失败返回
+/// 编码成 `<新临时目录>/sentence.<extension>`。快照文件已被清掉 / 整段静音 / 编码失败返回
 /// null（这张卡不带句子音频，照常制）。调用方制卡后删 `dir`（[deleteCrossAppAudioDir]）。
 Future<({String path, Directory dir})?> prepareCrossAppSentenceAudio(
   CrossAppAudioSnapshot snapshot, {
@@ -138,7 +139,8 @@ Future<({String path, Directory dir})?> prepareCrossAppSentenceAudio(
   }
   if (pcm.isEmpty) return null;
   final GalAudioSlice slice = GalAudioSlice(pcm: pcm, format: snapshot.format);
-  final GalWaveformRange chosen = range ?? crossAppAudioDefaultRange(slice);
+  final GalWaveformRange? chosen = range ?? crossAppAudioDefaultRange(slice);
+  if (chosen == null) return null;
   final Uint8List clip = slicePcmByMs(
     pcm,
     snapshot.format,
