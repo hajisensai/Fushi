@@ -6,7 +6,7 @@
 import 'package:fushi_engine/srs/srs_op_ledger.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
-/// `srs=开/存活 sess=… rd=… sqlite=当前/高水位MB`；原生库不可用返回 null。
+/// `srs=开/存活 rd=… sqlite=当前/高水位MB`；原生库不可用返回 null。
 String? srsMemoryProbe() => SrsCore.diagCounts()?.describe();
 
 /// SRS 重活账本的窗口汇总（[SrsOpLedger.takeSummary]）：上次采样以来哪些内核命令 / srs.db 语句 / 整库装载跑了

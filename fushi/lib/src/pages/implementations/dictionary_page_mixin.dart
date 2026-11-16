@@ -110,12 +110,12 @@ mixin DictionaryPageMixin {
   String get lookupDiagHost => dictionarySourceType;
 
   /// 本页所属的媒体模块，决定「底部停靠」按模块细分开关听哪一个
-  /// （[AppModel.popupBottomDockedFor]）。默认 `null` = 只听总开关（查词页 /
+  /// （[AppModel.popupBottomDockedFor]）。默认 `null` = 听非模块宿主的开关（查词页 /
   /// 外部弹窗 / 悬浮歌词）；视频页、texthooker 覆写。与 `BaseSourcePageState`
   /// 的同名钩子对称。
   ModuleId? get popupDockModule => null;
 
-  /// 本页查词弹窗实际是否底部停靠（总开关 ∧ [popupDockModule] 的细分开关）。
+  /// 本页查词弹窗实际是否底部停靠（[popupDockModule] 自己的开关）。
   bool get _popupBottomDocked =>
       mixinAppModel.popupBottomDockedFor(popupDockModule);
 

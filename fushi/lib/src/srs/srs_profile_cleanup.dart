@@ -23,11 +23,12 @@ library;
 
 import 'dart:io';
 
-import 'package:drift/drift.dart' show QueryRow, Variable;
+import 'package:fushi_srs/fushi_srs.dart' show SrsColumns, SrsStringColumn;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_core/fushi_core.dart' show ProfileRow;
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_profile_data.dart';
+import 'package:fushi_engine/srs/srs_reads.dart' show srsReadLib;
 import 'package:fushi_engine/srs/srs_profile_merge.dart'
     show
         SrsPendingProfileMerge,
@@ -142,21 +143,17 @@ class SrsProfileCleanup implements ProfileDeletionCascade {
   static Future<Set<String>> _mergingUids(SrsStorage storage) async {
     final Set<String> out = <String>{
       for (final SrsPendingProfileMerge m in await srsPendingProfileMerges(
-        storage.db,
+        storage.core,
       )) ...<String>[m.oldUid, m.newUid],
     };
-    for (final QueryRow r
-        in await storage.db
-            .customSelect(
-              'SELECT key FROM srs_meta WHERE key LIKE ?',
-              variables: <Variable<Object>>[
-                Variable<String>('$kSrsProfileMergeMarkerPrefix%'),
-              ],
-            )
-            .get()) {
-      out.add(
-        r.read<String>('key').substring(kSrsProfileMergeMarkerPrefix.length),
-      );
+    // 标记值读不懂的（[srsPendingProfileMerges] 跳过它）：旧 uid 照样算上。
+    final SrsColumns marks = (await srsReadLib(
+      storage.core,
+      'profile_merges',
+    )).table;
+    final SrsStringColumn keys = marks.strings('key');
+    for (int i = 0; i < marks.rows; i++) {
+      out.add(keys[i].substring(kSrsProfileMergeMarkerPrefix.length));
     }
     return out;
   }
@@ -216,7 +213,6 @@ class SrsProfileCleanup implements ProfileDeletionCascade {
       store = isActive
           ? active
           : await SrsDbStore.open(
-              db: storage.db,
               core: storage.core,
               profileUid: uid,
               deviceId: await _deps.deviceId(),

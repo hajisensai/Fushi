@@ -146,12 +146,53 @@ class DictionaryRepository {
   /// 本进程词典引擎此刻（最近一次排期装载）术语桶里的词典真名，由 `AppModel` 在
   /// 分桶（`bucketDictPaths`）之后登记（[noteEngineTermDictionaries]）。
   ///
-  /// 「本机装着且开着」不等于「本机引擎里有」：引擎只装**激活配置**开着、且目录存在
-  /// 并已物化的词典。按非激活配置查词（工作配置的查词视图）、目录缺失 / 未物化时，
-  /// 元数据上开着的词典本机根本查不出来——本机与服务器结果合并去重必须以这份为准，
+  /// 「本机装着且开着」不等于「本机引擎里有」：引擎只装激活配置或当前作品会话视图开着
+  /// （[engineLoadStatesOf]）、且目录存在并已物化的词典。按别的非激活配置查词（浏览器
+  /// 扩展所选配置）、目录缺失 / 未物化时，元数据上开着的词典本机根本查不出来——本机与服务器结果合并去重必须以这份为准，
   /// 否则服务器那份被当成「本机已有」丢掉，词典整本从弹窗里消失。
   Set<String> get engineTermDictionaryNames => _engineTermDictionaryNames;
   Set<String> _engineTermDictionaryNames = const <String>{};
+
+  /// 引擎装载集合里每本 live 词典的开关状态，与 [live] 逐一对应（`AppModel` 分桶前用）。
+  ///
+  /// 本进程里同时生效的查词视图不止激活配置一份：打开的作品带着作品级配置时，本机查词按
+  /// 那份配置的视图（[overlay]，`WorkProfileScope.lookupView` 的 `dictionaries`）过滤，
+  /// 替对端 / 浏览器扩展查词仍按激活配置。引擎只装一份，所以装载集合是**并集**——任一
+  /// 视图开着就装；哪些结果可见仍由每次查词的 `lookupFilters` 在引擎里排除（排除发生在
+  /// 截断之前，并集不会让关掉的词典挤掉可见结果，见 BUG-3454）。只按激活配置装，作品
+  /// 配置开着、激活配置关着的词典根本不在引擎里，作品会话查不出任何词（反馈 r9SgiayKxa）。
+  ///
+  /// * `hidden`：两份视图都关着术语部分（没有覆盖层 = 只看激活配置）；
+  /// * `metadata`：分桶读混合词典汉字部分开关的那份——激活配置关着汉字部分、覆盖层开着
+  ///   时取覆盖层那行，其余取 live 行。
+  static List<({bool hidden, Map<String, String> metadata})> engineLoadStatesOf(
+    List<Dictionary> live,
+    List<Dictionary>? overlay,
+  ) {
+    final Map<String, Dictionary> overlayByName = <String, Dictionary>{
+      for (final Dictionary d in overlay ?? const <Dictionary>[]) d.name: d,
+    };
+    return <({bool hidden, Map<String, String> metadata})>[
+      for (final Dictionary d in live)
+        _engineLoadStateOf(d, overlayByName[d.name]),
+    ];
+  }
+
+  static ({bool hidden, Map<String, String> metadata}) _engineLoadStateOf(
+    Dictionary live,
+    Dictionary? overlay,
+  ) {
+    final bool liveHidden = live.isHidden(JapaneseLanguage.instance);
+    if (overlay == null) return (hidden: liveHidden, metadata: live.metadata);
+    return (
+      hidden: liveHidden && overlay.isHidden(JapaneseLanguage.instance),
+      metadata:
+          isKanjiPartHiddenIn(live.metadata) &&
+              !isKanjiPartHiddenIn(overlay.metadata)
+          ? overlay.metadata
+          : live.metadata,
+    );
+  }
 
   /// 登记引擎术语桶的成员（见 [engineTermDictionaryNames]）。
   void noteEngineTermDictionaries(Iterable<String> names) {

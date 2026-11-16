@@ -9,7 +9,7 @@
 // - 正常路径：同样的入口对本 profile 自己的 ID 照常生效。
 import 'dart:convert';
 
-import 'package:drift/drift.dart' show QueryRow, Variable, driftRuntimeOptions;
+import 'package:drift/drift.dart' show Variable, driftRuntimeOptions;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
@@ -25,6 +25,7 @@ import 'package:test/test.dart';
 
 import 'support/srs_fake_engine.dart';
 import 'support/srs_test_storage.dart';
+import 'support/srs_raw_sql.dart';
 
 const String kA = '01928c3e-0000-7000-8000-0000000000a1';
 const String kB = '01928c3e-0000-7000-8000-0000000000b2';
@@ -80,7 +81,7 @@ class _Side {
 class _Env {
   _Env(this.db, this.a, this.b);
 
-  final SrsDatabase db;
+  final SrsCore db;
   final _Side a;
   final _Side b;
 
@@ -90,7 +91,6 @@ class _Env {
     Future<_Side> side(String uid, String word) async {
       final _Side s = _Side(
         await SrsDbStore.open(
-          db: st.db,
           core: st.core,
           profileUid: uid,
           deviceId: 'dev',
@@ -108,13 +108,13 @@ class _Env {
       return s;
     }
 
-    return _Env(st.db, await side(kA, '魚'), await side(kB, '鳥'));
+    return _Env(st.core, await side(kA, '魚'), await side(kB, '鳥'));
   }
 
   /// srs.db 里带 `profile_uid` 列的表 → 它的列（现查，不手抄）。
   Future<Map<String, List<String>>> _tables() async {
     final Map<String, List<String>> out = <String, List<String>>{};
-    for (final QueryRow r
+    for (final SrsRawRow r
         in await db
             .customSelect(
               'SELECT m.name AS t, p.name AS c FROM sqlite_master m, '
@@ -142,7 +142,7 @@ class _Env {
         for (final String c in t.value) 'quote("$c") AS "$c"',
       ].join(', ');
       final List<String> rows = <String>[
-        for (final QueryRow r
+        for (final SrsRawRow r
             in await db
                 .customSelect(
                   'SELECT $columns FROM "${t.key}" WHERE profile_uid = ?',

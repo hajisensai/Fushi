@@ -38,6 +38,7 @@ import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi/src/startup/exit_flush_registry.dart';
+import 'package:fushi/src/ocr/system_ocr_channel.dart';
 import 'package:path/path.dart' as p;
 
 import '../helpers/test_platform_services.dart';
@@ -174,7 +175,31 @@ class _FakeVolumeRunner
   Future<bool> isAvailable() async => true;
 
   @override
+  Future<SystemOcrModelStatus> modelStatus({required String language}) async =>
+      SystemOcrModelStatus.ready;
+
+  @override
   Future<void> clearCache(String imageDirPath) async {}
+}
+
+/// 系统 OCR 引导弹窗的平台口：Play 服务没装（BUG-4705）。
+class _NoPlayServicesSetup implements SystemOcrModelSetup {
+  int statusCalls = 0;
+
+  @override
+  Future<SystemOcrModelReport> modelStatus(String language) async {
+    statusCalls++;
+    return const SystemOcrModelReport(SystemOcrModelStatus.playServicesMissing);
+  }
+
+  @override
+  Future<void> installModel(String language) async {}
+
+  @override
+  Future<bool> resolvePlayServices() async => false;
+
+  @override
+  Future<void> openPlayServicesSettings() async {}
 }
 
 /// 悬浮顶栏偏好开的 fake。
@@ -229,6 +254,7 @@ Widget _harness(
   CardSourceLink? sourceReview,
   MangaOcrWizardEngines? ocrEngines,
   GoogleLensDisclosureGate? lensGate,
+  SystemOcrModelSetup? systemOcrSetup,
 }) {
   return ProviderScope(
     overrides: <Override>[
@@ -248,6 +274,7 @@ Widget _harness(
           sourceReview: sourceReview,
           ocrEnginesOverride: ocrEngines,
           lensDisclosureOverride: lensGate,
+          systemOcrSetupOverride: systemOcrSetup,
         ),
       ),
     ),
@@ -879,6 +906,95 @@ void main() {
       await runner.events.close();
       await cancelling;
     });
+  });
+
+  testWidgets('BUG-4705：系统 OCR 报 model_unavailable → 弹本地化引导弹窗（指向本机模型），不甩原始异常', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(600, 1000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final _AutoOcrAppModel appModel = _AutoOcrAppModel(
+      db,
+      engine: 'system_ocr',
+    );
+    final _FakeVolumeRunner runner = _FakeVolumeRunner();
+    addTearDown(runner.events.close);
+    final MangaOcrJobRegistry registry = MangaOcrJobRegistry();
+    final _NoPlayServicesSetup setup = _NoPlayServicesSetup();
+
+    final Directory bookDir = Directory.systemTemp.createTempSync(
+      'manga_system_ocr_unavailable_',
+    );
+    addTearDown(() {
+      if (bookDir.existsSync()) bookDir.deleteSync(recursive: true);
+    });
+    File(p.join(bookDir.path, 'manga.json')).writeAsStringSync(_mangaJson());
+    Directory(p.join(bookDir.path, 'images')).createSync();
+    File(p.join(bookDir.path, 'images', 'p001.jpg')).writeAsBytesSync(<int>[1]);
+    const String bookKey = 'system ocr unavailable book';
+
+    await tester.runAsync(() async {
+      await db.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: bookKey,
+          title: bookKey,
+          epubPath: 'manga.json',
+          extractDir: bookDir.path,
+          chapterCount: 1,
+          chaptersJson: '[]',
+          importedAt: DateTime.now().millisecondsSinceEpoch,
+          format: const Value<String>('manga'),
+        ),
+      );
+      await tester.pumpWidget(
+        _harness(
+          appModel,
+          _item(bookKey),
+          bookKey,
+          extraOverrides: <Override>[
+            mangaOcrJobRegistryProvider.overrideWithValue(registry),
+            mangaOcrServiceProvider.overrideWithValue(
+              _FakeMangaOcrService(ready: false),
+            ),
+          ],
+          ocrEngines: MangaOcrWizardEngines(
+            service: _FakeMangaOcrService(ready: false),
+            systemOcrRunner: runner,
+          ),
+          systemOcrSetup: setup,
+        ),
+      );
+      for (int i = 0; i < 60 && runner.requests.isEmpty; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        await tester.pump();
+      }
+      runner.events.addError(
+        const SystemOcrUnavailableException(kSystemOcrModelUnavailableReason),
+      );
+      for (int i = 0; i < 20; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        await tester.pump();
+      }
+    });
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(runner.requests, hasLength(1));
+    expect(find.text(t.ocr_system_model_title), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('system_ocr_setup_local_alternative')),
+      findsOneWidget,
+    );
+    expect(setup.statusCalls, greaterThanOrEqualTo(1));
+    expect(
+      find.textContaining('SystemOcrUnavailableException'),
+      findsNothing,
+      reason: '原始异常不能糊到界面上',
+    );
+    expect(registry.running(bookKey), isNull);
   });
 
   testWidgets('自动模式 + Google Lens：先过上传同意闸门，拒绝则不排任务、本次不再追问', (

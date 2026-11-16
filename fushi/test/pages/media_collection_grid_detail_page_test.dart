@@ -11,6 +11,8 @@ import 'package:fushi/src/pages/implementations/media_collection_grid_detail_pag
 import 'package:fushi/src/media/detail/media_poster_detail.dart'
     show MediaPosterDetailChrome;
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show ShellContentLayout;
 import 'package:fushi/src/utils/components/fushi_cover_block.dart'
     show FushiCoverBlockScope;
 import 'package:fushi/src/utils/components/fushi_cover_block_layout.dart'
@@ -851,6 +853,8 @@ void main() {
     await tester.pumpWidget(
       TranslationProvider(
         child: MaterialApp(
+          // 默认库页布局 2026-11-15 起是封面网格：本例守拼贴，显式钉住。
+          theme: shellLayoutTheme(ShellContentLayout.collage),
           home: MediaCollectionGridDetailPage(
             database: s.db,
             collection: s.col,
@@ -877,7 +881,7 @@ void main() {
       find.byKey(const ValueKey<String>('collection_detail_edit_tags')),
       findsOneWidget,
     );
-    // 默认库页布局是拼贴：成员格在色块布局里，卡片收到色块尺寸档。
+    // 拼贴布局：成员格在色块布局里，卡片收到色块尺寸档。
     expect(find.byType(SliverFushiCoverBlocks), findsOneWidget);
     expect(
       find.ancestor(

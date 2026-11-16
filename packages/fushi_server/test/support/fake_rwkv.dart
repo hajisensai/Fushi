@@ -10,14 +10,15 @@ import 'package:fushi_engine/srs/srs_rwkv_service.dart';
 HttpClient noNetworkHttpClient() =>
     throw const SocketException('network disabled in tests');
 
-/// 让 [support] 下的 RWKV 权重看起来「已下载并校验过」（替身后端不读它，只要长度与校验标记对得上）。
-void markRwkvWeightsReady(Directory support) {
+/// 让 [support] 下 [size] 档的 RWKV 权重看起来「已下载并校验过」（替身后端不读它，只要长度与校验标记对得上）。
+void markRwkvWeightsReady(
+  Directory support, {
+  SrsRwkvModelSize size = SrsRwkvModelSize.small,
+}) {
   final Directory dir = srsRwkvModelsDir(support)..createSync(recursive: true);
-  final File weights = SrsRwkvModels(dir: dir).weightsFile
-    ..writeAsBytesSync(Uint8List(kSrsRwkvSmallWeightsBytes));
-  File(
-    '${weights.path}.verified',
-  ).writeAsStringSync(kSrsRwkvSmallWeightsSha256);
+  final File weights = SrsRwkvModels(dir: dir, size: size).weightsFile
+    ..writeAsBytesSync(Uint8List(size.weights.expectedBytes));
+  File('${weights.path}.verified').writeAsStringSync(size.weights.sha256);
 }
 
 /// 假后端：查询按卡的数字 id 给 [r]（没设的给 [defaultR]）。撤销日志与分数表照原生契约模拟到编排用得着的程度。

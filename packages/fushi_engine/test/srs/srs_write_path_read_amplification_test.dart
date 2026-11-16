@@ -15,6 +15,7 @@ import 'package:test/test.dart';
 
 import 'apkg/apkg_test_support.dart';
 import 'support/srs_sync2_peers.dart';
+import 'support/srs_raw_sql.dart';
 
 const String kProfile = '01928c3e-0000-7000-8000-0000000000a1';
 
@@ -51,7 +52,7 @@ void main() {
 
   Future<Set<String>> tampered(SrsDbStore s) async => <String>{
     for (final r
-        in await s.db
+        in await s.core
             .customSelect(
               "SELECT id FROM srs_notes_cache WHERE sort_field = 'TAMPERED'",
             )
@@ -371,7 +372,7 @@ void main() {
       expect((await a.noteCountsByType())[a.lapisNoteTypeId], 2);
       final List<String> visible = <String>[
         for (final r
-            in await a.db
+            in await a.core
                 .customSelect(
                   'SELECT id FROM srs_cards_cache WHERE deck_id = ? AND hidden = 0',
                   variables: <Variable<Object>>[

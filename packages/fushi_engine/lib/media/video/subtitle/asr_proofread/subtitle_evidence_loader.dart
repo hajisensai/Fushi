@@ -206,7 +206,10 @@ class SubtitleEvidenceCollector implements SubtitleEvidenceSource {
       out.add(await _stamp(path));
     }
     if (!isNetworkMediaPath(videoPath) && await hasLocalMediaFile(videoPath)) {
-      out.add(await _stamp(videoPath));
+      // 蓝光分集是虚拟路径：戳记取它背后真实存在的那条 `.mpls`（key 仍是库路径）。
+      out.add(
+        await _stamp(videoPath, statPath: videoMemberPresencePath(videoPath)),
+      );
     }
     // 宿主有没有 OCR 也影响产物（同一视频装上 OCR 后应重收）。
     if (graphicRecognizer != null) {
@@ -215,9 +218,12 @@ class SubtitleEvidenceCollector implements SubtitleEvidenceSource {
     return out;
   }
 
-  Future<SubtitleEvidenceSourceStamp> _stamp(String path) async {
+  Future<SubtitleEvidenceSourceStamp> _stamp(
+    String path, {
+    String? statPath,
+  }) async {
     try {
-      final FileStat stat = await File(path).stat();
+      final FileStat stat = await File(statPath ?? path).stat();
       return SubtitleEvidenceSourceStamp(
         path,
         stat.size,

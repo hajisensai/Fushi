@@ -17,6 +17,7 @@ import 'package:fushi_server/src/server_prefs.dart';
 import 'package:path/path.dart' as p;
 import 'package:shelf/shelf.dart' as shelf;
 import 'package:test/test.dart';
+import 'support/fake_rwkv.dart';
 
 /// BUG-4067 B：服务端管理页「AI 助手」——列出已配对设备经互联让服务端跑的会话（标
 /// 发起设备名）、看一场的条目；只读。
@@ -49,6 +50,7 @@ void main() {
     final ServerPaths paths = ServerPaths(config.dataDir);
     await paths.ensureLayout();
     final HeadlessHost host = HeadlessHost(
+      srsRwkvHttpClient: noNetworkHttpClient,
       config: config,
       paths: paths,
       db: db,

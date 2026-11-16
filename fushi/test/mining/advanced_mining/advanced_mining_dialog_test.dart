@@ -150,6 +150,31 @@ void main() {
       expect(find.text(t.popup_advanced_mining_reset), findsOneWidget);
     });
 
+    testWidgets('句子音频区间条：拖起点，途中不问宿主、松手 describe 一次', (
+      WidgetTester tester,
+    ) async {
+      await open(tester, host.videoPage());
+      final Finder handle = find.byKey(
+        const ValueKey<String>('advancedMiningRangeStart'),
+      );
+      expect(handle, findsOneWidget);
+      // 句子音频可能排在对话框可视区以下：先滚进视口，指针才落得到把手上。
+      await tester.ensureVisible(handle);
+      await tester.pumpAndSettle();
+      final int before = host.describeCalls.length;
+      final TestGesture g = await tester.startGesture(tester.getCenter(handle));
+      for (int i = 0; i < 6; i++) {
+        await g.moveBy(const Offset(8, 0));
+        await tester.pump();
+      }
+      expect(host.describeCalls.length, before, reason: '拖动途中只做乐观更新');
+      await g.up();
+      await tester.pumpAndSettle();
+      expect(host.describeCalls.length, before + 1);
+      expect(host.describeCalls.last[0], greaterThan(0));
+      expect(host.describeCalls.last[1], 0);
+    });
+
     testWidgets('漫画：左栏是裁切工作区，右栏有卡片预览', (WidgetTester tester) async {
       await open(tester, host.mangaPage());
       expect(find.byType(MangaCropSelector), findsOneWidget);

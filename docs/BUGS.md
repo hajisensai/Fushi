@@ -38,11 +38,66 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-4695](bugs/BUG-4695-ext-mining-queue-persist.md) | ✅ | ✅ | 浏览器扩展制卡入队提示成功但队列没真正落盘，攒到十几条后丢卡 |
+> 共 4099 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4742](bugs/BUG-4742-youtube-secondary-caption-tracks.md) | ✅ | ✅ | youtube-secondary-caption-tracks |
+| [BUG-4741](bugs/BUG-4741-work-profile-dict-engine-load.md) | ✅ | ✅ | 书籍指定配置后查不到词：引擎装载集合只看激活配置 |
+| [BUG-4740](bugs/BUG-4740-android-share-copy-main-thread-anr.md) | ✅ | ✅ | Android 分享在主线程同步拷贝整份文件导致 ANR |
+| [BUG-4739](bugs/BUG-4739-manga-spread-seam.md) | ✅ | ✅ | 漫画双页模式两页之间有一条细缝 |
+| [BUG-4738](bugs/BUG-4738-mihon-android-host-appinfo.md) | ✅ | ✅ | Android Mihon 宿主缺 eu.kanade.tachiyomi.AppInfo，MangaDex 等调用它的扩展 NoClassDefFoundError |
+| [BUG-4737](bugs/BUG-4737-browser-adblock-cold-engine.md) | ✅ | ✅ | 内置浏览器广告拦截在联网刷新过期列表期间整页失效 |
+| [BUG-4736](bugs/BUG-4736-fsrs7-crate-release.md) | ✅ | ✅ | fsrs 依赖从钉 git rev 切到 crates.io 7.0.0；升级 rev 后旧参数组被当成不认识的版本、自动优化永久停掉 |
+| [BUG-4735](bugs/BUG-4735-fab-extended-label-overflow.md) | ✅ | ✅ | 详情页「继续观看」扩展 FAB 长标题画出按钮外、不省略（MD3） |
+| [BUG-4734](bugs/BUG-4734-srs-fushi-defs-image-tap.md) | ✅ | ✅ | 复习页 Fushi 卡片释义里的词典插图点按不能放大 |
+| [BUG-4733](bugs/BUG-4733-source-review-banner-compact-height.md) | ✅ | ✅ | Android 横屏手机上卡片来源回看横幅固定两行，占顶部约 1/5 画面高度 |
+| [BUG-4732](bugs/BUG-4732-apple-music-stale-user-token.md) | ✅ | ✅ | macOS Apple Music 重新授权后一直用作废的 Music-User-Token，资料库 403 |
+| [BUG-4731](bugs/BUG-4731-ai-models-upstream-metadata.md) | ✅ | ✅ | AI 提供方选模型时丢掉上游给的显示名 / 收图能力 / 单价，只能手填 |
+| [BUG-4730](bugs/BUG-4730-macos-exit-mpv-callback-after-engine-shutdown.md) | ✅ | ✅ | 桌面退出时引擎先于 libmpv 回调收尾，mpv 核心线程回调进已释放跳板崩溃 |
+| [BUG-4729](bugs/BUG-4729-miui-swipeupclean-exit-misreport.md) | ✅ | ✅ | 小米 MIUI / HyperOS 在最近任务里划掉（SwipeUpClean）被误报为闪退 |
+| [BUG-4728](bugs/BUG-4728-epub-english-default-vertical.md) | ✅ | ✅ | 英文 EPUB 未声明排版方向时被套成全局竖排，拉丁字母整行侧躺 |
+| [BUG-4727](bugs/BUG-4727-game-scrape-cross-source-same-title.md) | ✅ | ✅ | 游戏批量刮削把跨源同名当成歧义，Bangumi 与 VNDB 都收录的作品刮不出封面 |
+| [BUG-4726](bugs/BUG-4726-srs-main-dict-toggle-fill.md) | ✅ | ✅ | 复习卡背面主词典收起按钮带底色并顶出词典卡圆角 |
+| [BUG-4725](bugs/BUG-4725-windows-taskbar-activation-starved-by-deferred-task.md) | ✅ | ✅ | 任何真实常驻动画 + idle 任务让调度器零延迟空转，任务栏点 Fushi 唤不到前台（BUG-4387 复发） |
+| [BUG-4724](bugs/BUG-4724-card-source-remote-open-no-feedback.md) | ✅ | ✅ | 点卡片来源跳互联 host 上的视频时等拉清单期间毫无反馈，像点坏了 |
+| [BUG-4723](bugs/BUG-4723-lyrics-source-lrclib-reorder.md) | ✅ | ✅ | 歌词来源列表 LRCLIB 固定排第一，不能和插件一起排序 |
+| [BUG-4722](bugs/BUG-4722-cupertino-doubled-library-headers.md) | ✅ | ✅ | Cupertino 下外壳标题条与库页页头大字重复显示页名 |
+| [BUG-4721](bugs/BUG-4721-local-audio-forvo-null-reading-excluded.md) | ✅ | ✅ | 本地发音库精确读音查询排除 reading 为 NULL 的行，日语 Forvo 发音不显示 |
+| [BUG-4720](bugs/BUG-4720-popup-srs-badge-open-card-rule.md) | ✅ | ✅ | 制完卡当下与重开弹窗后「打开卡片」跳到不同笔记 |
+| [BUG-4719](bugs/BUG-4719-ext-overlapping-cues.md) | ✅ | ✅ | 浏览器扩展：ASS 字幕两句时间重叠时覆盖层只显示一句 |
+| [BUG-4718](bugs/BUG-4718-audiobook-pointer-seek-focus-loss.md) | ✅ | ✅ | audiobook-pointer-seek-focus-loss |
+| [BUG-4717](bugs/BUG-4717-manga-context-menu-image-hit-page.md) | ✅ | ✅ | 漫画双页跨页右键「复制 / 保存 / 分享图片」「设为封面」作用于当前跨页主页而不是右键落点那一页 |
+| [BUG-4716](bugs/BUG-4716-onboarding-music-module.md) | ✅ | ✅ | 新手引导的功能模块方格没有音乐，向导既不出方格也不写 module_music_enabled |
+| [BUG-4715](bugs/BUG-4715-header-sort-menu-anchor-follows-trigger.md) | ✅ | ✅ | 库页排序菜单不从排序按钮下方弹出而是弹在页头动作组右下角 |
+| [BUG-4714](bugs/BUG-4714-web-video-dom-lookup-mine-no-media.md) | ✅ | ✅ | 网页播放器窗口宿主档 DOM 字幕点词制卡丢失锚点 cue，静默出无画面无音频的纯字段卡 |
+| [BUG-4713](bugs/BUG-4713-popup-bottom-dock-per-module.md) | ✅ | ✅ | 底部停靠删掉「仅在小说中」特例，改为每个模块独立可选 |
+| [BUG-4712](bugs/BUG-4712-fushiplug-drag-import.md) | ✅ | ✅ | .fushiplug 插件包拖进插件管理 / 音源 / 歌词来源 / 追踪插件页毫无反应，只能走文件选择器 |
+| [BUG-4711](bugs/BUG-4711-ext-youtube-caption-default-wrong-lang.md) | ✅ | ✅ | 扩展 YouTube 默认挂无关语言的字幕轨；手动选的轨取不到时永远停在「选中加载」 |
+| [BUG-4710](bugs/BUG-4710-srs-browse-has-audio-ignores-inline-audio.md) | ✅ | ✅ | SRS 浏览健康条把视频片段卡都算成「缺单词音频」 |
+| [BUG-4709](bugs/BUG-4709-manga-topbar-full-width.md) | ✅ | ✅ | 漫画阅读器顶栏在桌面宽屏限宽 1080 居中，与小说全宽顶栏不一致 |
+| [BUG-4708](bugs/BUG-4708-download-summary-legacy-rate.md) | ✅ | ✅ | 下载中心合计速度不计入磁力 / 外部来源（legacy 番剧下载计划）行的实时速率 |
+| [BUG-4707](bugs/BUG-4707-screen-ocr-lookup-line-wrap.md) | ✅ | ✅ | 截屏识字点字查词只扫被点那一行，折行处把词截断 |
+| [BUG-4706](bugs/BUG-4706-library-import-shelf-tab-dead.md) | ✅ | ✅ | 书库导入页点左上角「书架」回不去，仍停在导入页 |
+| [BUG-4705](bugs/BUG-4705-android-system-ocr-full-res-decode.md) | ✅ | ✅ | Android 系统 OCR 全分辨率解码在主线程、无上限，大图闪退；无 GMS 被报成识别失败 |
+| [BUG-4704](bugs/BUG-4704-manga-4k-page-image-memory.md) | ✅ | ✅ | 漫画阅读器打开 4K 页图卷内存暴涨闪退 |
+| [BUG-4703](bugs/BUG-4703-library-arrangement-default-dirty.md) | ✅ | ✅ | 外观页「色块摆放」恢复默认对照旧默认：全新安装（封面网格）就标已改过，恢复默认反把网格下色块分区写成散落 |
+| [BUG-4702](bugs/BUG-4702-online-manga-ignores-download-root.md) | ✅ | ✅ | 在线漫画不跟随下载目录设置，删书后已下载章节无法重新入库 |
+| [BUG-4701](bugs/BUG-4701-overwrite-import-unrecoverable-library.md) | ✅ | ✅ | 覆盖导入把书库换掉后无法找回：覆盖前快照成功即删、书文件成孤儿目录无法重新登记 |
+| [BUG-4700](bugs/BUG-4700-manga-import-staging-copy-doubles-disk.md) | ✅ | ✅ | 漫画导入从暂存目录拷贝进书目录，大包磁盘峰值是包体积的三倍 |
+| [BUG-4699](bugs/BUG-4699-epub-parse-whole-file-in-memory.md) | ✅ | ✅ | EPUB（含纯图漫画）导入整本读进内存并缓存全部解压内容，2 GiB 以上必然内存耗尽 |
+| [BUG-4698](bugs/BUG-4698-recommended-pack-import-overwrites-library.md) | ✅ | ✅ | 导入推荐包后漫画和小说全没了（推荐包走通用导入框、默认覆盖） |
+| [BUG-4697](bugs/BUG-4697-bluray-menu-loop-picked-as-main-feature.md) | ✅ | ✅ | 蓝光盘的菜单背景循环被选成正片，真正的正片反成特典 |
+| [BUG-4696](bugs/BUG-4696-mixed-works-playlist-collection-scraped-as-one.md) | ✅ | ✅ | 装着不同作品的清单合集被当成一部作品去识别 |
+| [BUG-4695](bugs/BUG-4695-disc-scrape-title-candidates-use-bdmv-dirs.md) | ✅ | ✅ | 原盘作品拿 `PLAYLIST` / `BDMV` 和带卷标的盘名去搜，换回一屏无关候选 |
 | [BUG-4694](bugs/BUG-4694-native-licenses-git-symlink-placeholder.md) | ✅ | ✅ | 原生许可生成器在 core.symlinks=false 的 git 检出里把符号链接许可文件读成目标路径文本，产物随机器而变 |
 | [BUG-4693](bugs/BUG-4693-remote-dict-profile-seed-on-insert.md) | ✅ | ✅ | 先应用配置、后拉到服务器词典目录时，配置里的服务器词典顺序 / 开关不生效（要切走再切回才生效） |
 | [BUG-4692](bugs/BUG-4692-remote-dictionary-two-reachability-trackers.md) | ✅ | ✅ | 离线时查词等远端 4.5 秒、服务器恢复后查词仍只出本机结果（查词与目录服务各记一份可达性） |
 | [BUG-4691](bugs/BUG-4691-interconnect-peer-rows-look-duplicated.md) | ✅ | ✅ | 配对与设备：同一台服务器的两条地址显示成两个同名「TestServer」，像重复配对 |
 | [BUG-4690](bugs/BUG-4690-focus-repair-steals-dialog-autofocus.md) | ✅ | ✅ | 键盘回车打开改名对话框，焦点落在输入框的屏幕键盘按钮而非输入框 |
+| [BUG-4660](bugs/BUG-4660-manga-zip64-data-descriptor-size.md) | ✅ | ✅ | ZIP64 数据描述符被按 4 字节读，条目大小读成 0，导入报损坏 |
+| [BUG-4659](bugs/BUG-4659-manga-zip-2gib-cap.md) | ✅ | ✅ | 解出超过 2 GiB 的 .zip 漫画一律报 too large 无法导入 |
+| [BUG-4658](bugs/BUG-4658-manga-zip-non-utf8-names.md) | ✅ | ✅ | 非 UTF-8 文件名（Shift_JIS）的 .zip 漫画打不开，导入框报不支持的格式 |
 | [BUG-4657](bugs/BUG-4657-apkg-deleted-card-revlog-dropped.md) | ✅ | ✅ | apkg 导入丢掉 Anki 端已删卡的复习记录（统计 / 日历少算） |
 | [BUG-4656](bugs/BUG-4656-ios-unsigned-ipa-unstripped.md) | ✅ | ✅ | 未签名 IPA 的 Mach-O 没 strip 本地符号 |
 | [BUG-4655](bugs/BUG-4655-ios-dart-split-debug-info.md) | ✅ | ✅ | iOS 出包没拆 Dart 调试信息 |

@@ -23,7 +23,6 @@ void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
 
   Future<SrsDbStore> openOn(SrsStorage st, String deviceId) => SrsDbStore.open(
-    db: st.db,
     core: st.core,
     profileUid: kProfile,
     deviceId: deviceId,
