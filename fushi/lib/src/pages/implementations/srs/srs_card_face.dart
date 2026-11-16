@@ -206,6 +206,57 @@ class SrsCardFace {
   SrsCardFace withBody(String body) =>
       _rebuilt(layout: layout, pageZoom: pageZoom, bodyHtml: body);
 
+  /// 从这面卡派生出的另一面（Fushi 卡片的释义 WebView）：页面自身的内容 / 版式 / 度量 /
+  /// 宿主样式 / 自动播放 / 选区 / 发音上报这些按参数逐个给（全部 required，可为 null，
+  /// 不给就编不过）；宿主交互回调（键盘桥、页面缩放与 Ctrl+滚轮缩放、来源链接、发音、
+  /// 卡面手势、点图放大）一律沿用本面，不在调用方逐字段手抄——以前手抄漏了
+  /// [onImageTap]，释义里的词典插图点了不能放大（BUG-4711）。
+  SrsCardFace derived({
+    required String cardId,
+    required bool showingAnswer,
+    required String bodyHtml,
+    required SrsCardLayout layout,
+    required bool fushiCard,
+    required void Function(double height)? onContentHeight,
+    required SrsPageWindowLink? pageWindow,
+    required String hostCss,
+    required String hostScript,
+    required void Function(double deltaY)? onWheel,
+    required bool autoplayMedia,
+    required void Function(SrsCardSelection selection)? onEditSelection,
+    required void Function(
+      String cardId,
+      bool showingAnswer,
+      List<String> names,
+    )?
+    onVisibleSounds,
+  }) => SrsCardFace(
+    cardId: cardId,
+    showingAnswer: showingAnswer,
+    bodyHtml: bodyHtml,
+    css: css,
+    languageCode: languageCode,
+    onBridgeKey: onBridgeKey,
+    bridgeKeys: bridgeKeys,
+    layout: layout,
+    pageZoom: pageZoom,
+    fushiCard: fushiCard,
+    onContentHeight: onContentHeight,
+    onWheel: onWheel,
+    onZoomWheel: onZoomWheel,
+    hostCss: hostCss,
+    hostScript: hostScript,
+    onSourceLink: onSourceLink,
+    autoplayMedia: autoplayMedia,
+    onPlayAudio: onPlayAudio,
+    onCardGesture: onCardGesture,
+    gestureArming: gestureArming,
+    onImageTap: onImageTap,
+    onEditSelection: onEditSelection,
+    onVisibleSounds: onVisibleSounds,
+    pageWindow: pageWindow,
+  );
+
   SrsCardFace _rebuilt({
     required SrsCardLayout layout,
     required double? pageZoom,
@@ -564,6 +615,11 @@ const String kSrsCardLinkHandler = 'onSrsCardLink';
 ///   文本（剥掉 `rt` / `rp` / `.ruby-rt` / `.ruby-reserve` 振假名，见 popup.js
 ///   `linkVisibleBaseText`，BUG-2456）。
 ///
+/// - `a.gloss-image-link`：词典插图（结构化内容图片；BUG-2825 起照上游 `_setImageData`
+///   导出成 `<a class="gloss-image-link" href="<媒体文件名>"><img></a>`，见 popup.js）。
+///   href 是图片自己的文件名，既不是导航也不是查词目标：只拦默认导航，点按放大交给
+///   [kSrsCardImageTapScript]（BUG-4711）。
+///
 /// 不 stopPropagation：卡片模板自己挂在链接上的点击脚本照常执行。
 const String kSrsCardLinkScript = r'''
 (function(){
@@ -602,6 +658,7 @@ const String kSrsCardLinkScript = r'''
     var href = (a.getAttribute('href') || '').trim();
     if (href.charAt(0) === '#' || /^javascript:/i.test(href)) return;
     e.preventDefault();
+    if (a.classList && a.classList.contains('gloss-image-link')) return;
     if (/^fushi:\/\/source/i.test(href)) {
       call('onSrsSourceLink', href);
       return;
@@ -715,16 +772,30 @@ const String kSrsImageTapHandler = 'onSrsImageTap';
 /// 卡面图片点按放大：冒泡阶段收 `.card` 里 `<img>` 的点击，把 `currentSrc` 交给宿主。
 /// 卡片模板自己处理了的点击（链接里的图、带 `onclick` 的图或祖先、已
 /// `preventDefault`）不抢，模板的点图翻转 / 显示提示照常。
+///
+/// 例外是词典插图链接 `a.gloss-image-link[href]`（BUG-4711）：它的 href 是图片自己的媒体
+/// 文件名，[kSrsCardLinkScript] 在捕获阶段已拦下它的默认导航（所以这里 `defaultPrevented`
+/// 恒真）且不查词；点在这个图片盒里任何位置（img 本身、盒内的底色 / 占位层）都认作点这张图。
 const String kSrsCardImageTapScript = r'''
 (function(){
   if (window.__fushiSrsImageTap) return;
   window.__fushiSrsImageTap = true;
   document.addEventListener('click', function(e){
-    if (e.defaultPrevented || e.button !== 0) return;
+    if (e.button !== 0) return;
     var t = e.target;
-    if (!t || t.tagName !== 'IMG' || !t.closest('.card')) return;
-    if (t.closest('a[href],button,[onclick]')) return;
-    var src = t.currentSrc || t.src || '';
+    if (!t || !t.closest || !t.closest('.card')) return;
+    var img = null;
+    var gloss = t.closest('a.gloss-image-link[href]');
+    if (gloss) {
+      if (t.closest('button,[onclick]')) return;
+      img = t.tagName === 'IMG' ? t : gloss.querySelector('img');
+    } else {
+      if (e.defaultPrevented || t.tagName !== 'IMG') return;
+      if (t.closest('a[href],button,[onclick]')) return;
+      img = t;
+    }
+    if (!img) return;
+    var src = img.currentSrc || img.src || '';
     if (!src) return;
     try { window.flutter_inappwebview.callHandler('onSrsImageTap', src); } catch (err) {}
   });
