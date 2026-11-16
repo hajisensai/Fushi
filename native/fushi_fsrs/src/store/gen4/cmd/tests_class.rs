@@ -23,17 +23,17 @@ use crate::store::gen4::truth::{TRUST_PENDING, Truth};
 use crate::sync2::id::{Id, Key};
 use crate::sync2::op::{EntKind, Intent};
 
-const U1: &str = "0192f0aa-0000-7000-8000-00000000000a";
-const U2: &str = "0192f0aa-0000-7000-8000-00000000000b";
-const ANKI_NT: i64 = 1_700_000_000_001;
+pub(super) const U1: &str = "0192f0aa-0000-7000-8000-00000000000a";
+pub(super) const U2: &str = "0192f0aa-0000-7000-8000-00000000000b";
+pub(super) const ANKI_NT: i64 = 1_700_000_000_001;
 const ANKI_REVLOG: i64 = 1_650_000_000_123;
-const DECK: u8 = 0x0d;
+pub(super) const DECK: u8 = 0x0d;
 /// 待裁决的那条笔记。
 const HELD: u8 = 0x4e;
 const P2: &str = "0193a1b2-0000-7000-8000-0000000000f2";
 const ST: i64 = 1_650_000_009_000;
 
-fn entity(kind: EntKind, key: Key, data: Value) -> Body4 {
+pub(super) fn entity(kind: EntKind, key: Key, data: Value) -> Body4 {
     Body4::Entity {
         kind,
         id: key,
@@ -41,7 +41,7 @@ fn entity(kind: EntKind, key: Key, data: Value) -> Body4 {
     }
 }
 
-fn set(kind: EntKind, entity: Key, key: &str, value: Value) -> Body4 {
+pub(super) fn set(kind: EntKind, entity: Key, key: &str, value: Value) -> Body4 {
     Body4::Edit(Edit4 {
         kind,
         entity,
@@ -51,25 +51,25 @@ fn set(kind: EntKind, entity: Key, key: &str, value: Value) -> Body4 {
     })
 }
 
-fn u(i: Id) -> Key {
+pub(super) fn u(i: Id) -> Key {
     Key::Uuid(i)
 }
 
 /// 两份带盐的笔记，连同它们规范的那一套。
 pub(super) struct Twin {
-    nt: [Id; 2],
+    pub(super) nt: [Id; 2],
     pub(super) field: [Id; 2],
-    tmpl: [Id; 2],
+    pub(super) tmpl: [Id; 2],
     pub(super) note: [Id; 2],
-    card: [Id; 2],
-    log: [Id; 2],
+    pub(super) card: [Id; 2],
+    pub(super) log: [Id; 2],
     pub(super) c_field: Id,
     pub(super) c_note: Id,
-    c_card: Id,
-    c_log: Id,
+    pub(super) c_card: Id,
+    pub(super) c_log: Id,
 }
 
-fn twin() -> Twin {
+pub(super) fn twin() -> Twin {
     let nt = [
         rules::note_type(Some(U1), ANKI_NT),
         rules::note_type(Some(U2), ANKI_NT),
@@ -134,7 +134,7 @@ fn anki_log(lid: Id, card: Id, st: Option<i64>) -> Body4 {
 }
 
 /// 设备 0xa1 写的身份与定义。
-fn base_ops(w: &Twin) -> Vec<Body4> {
+pub(super) fn base_ops(w: &Twin) -> Vec<Body4> {
     let mut out = vec![
         Body4::salts([U1, U2]).unwrap(),
         entity(
