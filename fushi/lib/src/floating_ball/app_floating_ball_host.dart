@@ -521,6 +521,15 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
               await _current?._systemBallSwitchProfileTo(id) ??
               t.floating_ball_profile_switch_failed,
           onOpenSystemOcrSetup: () => pendingSystemOcrSetup.value = true,
+          // 没有宿主时回 null：原生退回设备自带（ML Kit）。
+          onScreenOcrEngine: () async => _current?._androidScreenOcrEngine(),
+          onRecognizeScreenOcrFrame:
+              (Uint8List png, String engine, {required bool fallback}) async =>
+                  _current?._androidRecognizeScreenOcrFrame(
+                    png,
+                    engine,
+                    fallback: fallback,
+                  ),
           onSystemBallClosedByUser: () => _current?._onSystemBallClosedByUser(),
           onSystemBallAction: (String id, Rect? anchor) =>
               _current?._onDesktopSystemBallAction(id, anchor),
@@ -1156,6 +1165,72 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
       systemOcrSupported: systemOcrSupported,
       localModelReady: localModelReady,
     );
+  }
+
+  /// Android 截屏 OCR 截到帧后来问这次用哪个引擎（决定 4BBSaB12zj：Android 截屏识字
+  /// 也跟随截屏识字引擎设置，默认跟随全局 OCR 引擎）。设备自带（ML Kit）回
+  /// `{engine: 'systemOcr'}`，由原生自己识别；本机模型 / Lens 回对应名字，原生再把
+  /// 定格帧交回来（[_androidRecognizeScreenOcrFrame]）。Lens 还没同意上传时这次不截：
+  /// 回提示文案、让原生把 Fushi 拉到前台，同意框在那里等着，同意后再点一次。
+  Future<Map<String, Object?>> _androidScreenOcrEngine() async {
+    final DesktopSystemBallActionTarget target = desktopSystemBallActionTarget;
+    final ScreenOcrEngine engine = await _resolveScreenOcrEngine(target);
+    if (engine == ScreenOcrEngine.googleLens &&
+        !await target.hasLensConsent()) {
+      if (mounted) unawaited(target.askLensConsent(context));
+      return <String, Object?>{
+        'message': t.floating_ball_ocr_lens_consent_needed,
+        'openApp': true,
+      };
+    }
+    return <String, Object?>{'engine': engine.name};
+  }
+
+  /// Android 截屏 OCR 的定格帧交给 Dart 侧识别器（本机模型 / Lens）。
+  ///
+  /// [fallback]：设备自带 OCR（ML Kit）报模型不可用时原生退到本机模型再试一次
+  /// （BUG-4508：有的机型 Play 服务报模块就绪、动态模块却加载失败）；本机模型也没
+  /// 就绪时回 `{unavailable: true}`，原生照旧弹系统 OCR 模型配置。
+  Future<Map<String, Object?>> _androidRecognizeScreenOcrFrame(
+    Uint8List png,
+    String engineName, {
+    required bool fallback,
+  }) async {
+    final DesktopSystemBallActionTarget target = desktopSystemBallActionTarget;
+    final ScreenOcrEngine? engine = ScreenOcrEngine.values
+        .asNameMap()[engineName];
+    if (engine == null) {
+      return <String, Object?>{'message': t.floating_ball_ocr_failed};
+    }
+    if (fallback && !await target.localModelReady(_localScreenOcr)) {
+      return const <String, Object?>{'unavailable': true};
+    }
+    final Stopwatch clock = Stopwatch()..start();
+    try {
+      final SystemOcrPageResult result = await target.recognize(
+        png,
+        language: _ocrLanguage,
+        engine: _screenOcrRecognizer(engine),
+      );
+      ErrorLogService.instance.logDiagnostic(
+        'floating_ball.screen_ocr_timing',
+        'engine=${engine.name} fallback=$fallback '
+            'recognize=${clock.elapsedMilliseconds}ms '
+            'image=${result.imageWidth}x${result.imageHeight} '
+            'png=${png.length}B lines=${result.lines.length}',
+      );
+      return <String, Object?>{'lines': screenOcrLinesToNative(result.lines)};
+    } on SystemOcrUnavailableException catch (error) {
+      if (fallback) return const <String, Object?>{'unavailable': true};
+      return <String, Object?>{
+        'message': error.reason == kSystemOcrModelUnavailableReason
+            ? t.floating_ball_ocr_model_missing
+            : t.floating_ball_ocr_failed,
+      };
+    } catch (error, stack) {
+      ErrorLogService.instance.log('floating_ball.screen_ocr', error, stack);
+      return <String, Object?>{'message': t.floating_ball_ocr_failed};
+    }
   }
 
   /// 解析出的引擎 → 识别器。

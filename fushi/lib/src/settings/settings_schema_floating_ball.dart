@@ -185,7 +185,9 @@ SettingsDestination buildFloatingBallDestination() {
             subtitle: t.screen_ocr_engine_hint,
             icon: FushiIcons.ocr,
             dropdown: true,
-            visible: (SettingsContext c) => isDesktopSystemBallPlatform,
+            // 决定 4BBSaB12zj：Android 悬浮球截屏识字同样跟随（以前固定 ML Kit）。
+            visible: (SettingsContext c) =>
+                isDesktopSystemBallPlatform || Platform.isAndroid,
             options: _screenOcrEngineOptions(null),
             optionsBuilder: _screenOcrEngineOptions,
             selected: (SettingsContext c) => _prefs(c).screenOcrEngine,
