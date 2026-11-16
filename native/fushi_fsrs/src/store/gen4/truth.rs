@@ -217,6 +217,40 @@ pub struct Peer {
     pub first_seen: Option<i64>,
 }
 
+/// 本机在一个集合里的身份（`self_` 表；设计 §3.3）。原生写入者（`native.rs`）从这里取设备 ID 与时钟。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SelfId {
+    pub device: Id,
+    /// 签名钥匙种子（Ed25519）。
+    pub sk: [u8; 32],
+    /// 本机时钟发出过的最大 HLC（`device` 恒为本机）。存成文本 `<wall>:<logical>`（[hlc_text]），只收规范形。
+    pub hlc: Hlc,
+    /// 换身份之前的上一个身份在它日志末尾的位置（没换过 = None）。由换身份（G8-6）写。
+    pub prev: Option<(OpId, Chain)>,
+    pub created: i64,
+}
+
+/// [SelfId::hlc] 的存储文本：`<wall>:<logical>`。
+pub fn hlc_text(hlc: &Hlc) -> String {
+    format!("{}:{}", hlc.wall, hlc.logical)
+}
+
+/// [hlc_text] 的逆。只收它写得出的形（再写一遍逐字节相同），别的一律报错——时钟读错会让本机发出比已发过的更小的
+/// HLC，不能「尽量解析」。
+pub fn hlc_parse(text: &str, device: Id) -> Result<Hlc, String> {
+    let bad = || format!("gen4 store: bad hlc text {text:?}");
+    let (w, l) = text.split_once(':').ok_or_else(bad)?;
+    let hlc = Hlc {
+        wall: w.parse().map_err(|_| bad())?,
+        logical: l.parse().map_err(|_| bad())?,
+        device,
+    };
+    if hlc_text(&hlc) != text {
+        return Err(bad());
+    }
+    Ok(hlc)
+}
+
 /// [Truth::set_peer] 的结果。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PeerPut {
@@ -1419,6 +1453,149 @@ impl<'c> Truth<'c> {
                 ])
                 .map_err(sql)?;
             Ok(PeerPut::Updated)
+        })
+    }
+
+    // ------------------------------------------------------------ 本机状态：本机身份
+
+    /// 本机在集合 [col] 里的身份（还没建 = None）。
+    pub fn self_identity(&self, col: i64) -> Result<Option<SelfId>, String> {
+        let row = self
+            .conn
+            .prepare_cached(
+                "SELECT device, sk, hlc, prev_device, prev_seq, prev_chain, created FROM self_ WHERE col = ?1",
+            )
+            .map_err(sql)?
+            .query_row([col], |r| {
+                Ok((
+                    r.get::<_, Vec<u8>>(0)?,
+                    r.get::<_, Vec<u8>>(1)?,
+                    r.get::<_, String>(2)?,
+                    r.get::<_, Option<Vec<u8>>>(3)?,
+                    r.get::<_, Option<i64>>(4)?,
+                    r.get::<_, Option<Vec<u8>>>(5)?,
+                    r.get::<_, i64>(6)?,
+                ))
+            })
+            .optional()
+            .map_err(sql)?;
+        let Some((device, sk, hlc, pd, ps, pc, created)) = row else {
+            return Ok(None);
+        };
+        let device = id_of(&device)?;
+        let prev = match (pd, ps, pc) {
+            (None, None, None) => None,
+            (Some(d), Some(s), Some(c)) if s > 0 => Some((
+                OpId {
+                    device: id_of(&d)?,
+                    seq: s as u64,
+                },
+                chain_of(&c)?,
+            )),
+            _ => {
+                return Err(format!(
+                    "gen4 store: collection {col} has a torn prev identity"
+                ));
+            }
+        };
+        Ok(Some(SelfId {
+            device,
+            sk: sk
+                .try_into()
+                .map_err(|_| format!("gen4 store: bad signing key seed for collection {col}"))?,
+            hlc: hlc_parse(&hlc, device)?,
+            prev,
+            created,
+        }))
+    }
+
+    /// 给集合 [col] 建本机身份：设备 [device]、签名钥匙种子 [sk]，时钟从零起；同时把本机公钥记进 `peers`（验自己的段、
+    /// 导出都按公钥表查，与别的设备同一条路）。返回建没建：已有逐项相同的身份 = `false`（迁移续做幂等）；已有另一个
+    /// 身份 = 报错（换身份是 G8-6 的 `rotate_identity`，不走这里）。
+    ///
+    /// 新身份必须是这个集合里没出现过日志的设备：同一个设备 ID 已有日志（承袭日志、或别人的原生日志）时接着写会让两条
+    /// 日志撞号，报错。
+    pub fn create_self(
+        &self,
+        col: i64,
+        device: &Id,
+        sk: &[u8; 32],
+        now: i64,
+    ) -> Result<bool, String> {
+        self.write(|| {
+            if self.binding(col)?.is_none() {
+                return Err(format!("gen4 store: no collection {col}"));
+            }
+            if let Some(cur) = self.self_identity(col)? {
+                if cur.device == *device && cur.sk == *sk {
+                    return Ok(false);
+                }
+                return Err(format!(
+                    "gen4 store: collection {col} already has local identity {}",
+                    cur.device
+                ));
+            }
+            if self.last_of(col, device)? > 0 {
+                return Err(format!(
+                    "gen4 store: device {device} already has a log in collection {col}"
+                ));
+            }
+            let public = crate::sync2::keys::DeviceKey::from_seed(sk).public();
+            let peer = Peer {
+                device: *device,
+                public,
+                name: None,
+                ext: None,
+                head_gen: None,
+                first_seen: Some(now),
+            };
+            if self.set_peer(col, &peer)? == PeerPut::KeyMismatch {
+                return Err(format!(
+                    "gen4 store: device {device} is already known with another public key"
+                ));
+            }
+            let zero = Hlc {
+                wall: 0,
+                logical: 0,
+                device: *device,
+            };
+            self.conn
+                .prepare_cached(
+                    "INSERT INTO self_ (col, device, sk, hlc, created) VALUES (?1, ?2, ?3, ?4, ?5)",
+                )
+                .map_err(sql)?
+                .execute(params![col, &device.0[..], &sk[..], hlc_text(&zero), now])
+                .map_err(sql)?;
+            Ok(true)
+        })
+    }
+
+    /// 记下本机时钟发出过的最大 HLC（原生写入者每写一条调一次，与那条操作同一个事务）。只升不降：比已记的小或相等
+    /// 是调用方的 bug（会发出重复 / 倒退的 HLC），报错。
+    pub(crate) fn set_self_hlc(&self, col: i64, hlc: &Hlc) -> Result<(), String> {
+        self.write(|| {
+            let cur = self
+                .self_identity(col)?
+                .ok_or_else(|| format!("gen4 store: collection {col} has no local identity"))?;
+            if hlc.device != cur.device {
+                return Err(format!(
+                    "gen4 store: hlc of {} is not the local identity {}",
+                    hlc.device, cur.device
+                ));
+            }
+            if *hlc <= cur.hlc {
+                return Err(format!(
+                    "gen4 store: local clock would go back ({} after {})",
+                    hlc_text(hlc),
+                    hlc_text(&cur.hlc)
+                ));
+            }
+            self.conn
+                .prepare_cached("UPDATE self_ SET hlc = ?2 WHERE col = ?1")
+                .map_err(sql)?
+                .execute(params![col, hlc_text(hlc)])
+                .map_err(sql)?;
+            Ok(())
         })
     }
 
