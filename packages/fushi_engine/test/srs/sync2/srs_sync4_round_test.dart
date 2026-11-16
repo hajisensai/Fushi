@@ -380,4 +380,104 @@ void main() {
     await run(host2);
     expect(host2.ops().where((String o) => o == 'head').length, 1);
   });
+
+  test('轮次时钟：plan 与见到密封时记的时刻都取注入的 nowMs，不取墙钟', () async {
+    final Map<String, List<SrsSync2Result>> replies = happy();
+    replies['plan'] = <SrsSync2Result>[
+      _r(<String, Object?>{
+        'fetch': <Object?>[
+          <String, Object?>{
+            'device': 'dev-b',
+            'own': false,
+            'files': <String>[
+              'devices/dev-b/seg-000000000001-000000000002-aaaaaaaa.bin',
+            ],
+          },
+        ],
+        'needsUpgrade': false,
+        'sealed': true,
+      }),
+    ];
+    v4.files['devices/dev-b/seg-000000000001-000000000002-aaaaaaaa.bin'] = _b(
+      'x1',
+    );
+    final _FakeHost host = _FakeHost(replies);
+    await run(host);
+    expect(host.last('plan')['now'], 1000);
+    final List<Map<String, Object?>> seals = host.requests
+        .where((Map<String, Object?> q) => q['op'] == 'location_seal')
+        .toList();
+    // 一次是 plan 报了 `sealed`，一次是按明文读到段时看段头。
+    expect(seals.length, 2);
+    for (final Map<String, Object?> s in seals) {
+      expect(s['now'], 1000);
+    }
+  });
+
+  test(
+    '新集合：旧根没有 meta.json 时 location_root 收到 has3 = false，围栏与墓碑由它写；媒体根照内核记',
+    () async {
+      final Map<String, List<SrsSync2Result>> replies = happy();
+      replies['location_root'] = <SrsSync2Result>[
+        _r(
+          <String, Object?>{
+            'state': kSrs4RootOk,
+            'loc': 'LOC1',
+            'media': kSrs4Root,
+            'ensure': <String>['v3/devices/tomb/head-1.json'],
+          },
+          <(String, Uint8List)>[
+            ('v4/meta.json', _b('{"fmt":"m4","media":"v4"}')),
+            ('v4/loc/LOC1', Uint8List(0)),
+            ('v3/meta.json', _b('{"moved":"v4"}')),
+            ('v3/devices/tomb/head-1.json', _b('tomb')),
+          ],
+        ),
+      ];
+      final _FakeHost host = _FakeHost(replies);
+      SrsLocationRoot? seen;
+      final SrsSync2Report r = await srsSync2Round(
+        host: host,
+        location: v4,
+        oldRoot: v3,
+        locationId: 'L',
+        nowMs: () => 1000,
+        archive: true,
+        onLocationRoot: (SrsLocationRoot root) => seen = root,
+      );
+      final Map<String, Object?> root = host.last('location_root');
+      expect(root['has3'], isFalse);
+      expect(root['has4'], isFalse);
+      expect(utf8.decode(v3.files['meta.json']!), '{"moved":"v4"}');
+      expect(utf8.decode(v3.files['devices/tomb/head-1.json']!), 'tomb');
+      expect(r.mediaRoot, kSrs4Root);
+      expect(seen?.media, kSrs4Root);
+      expect(seen?.loc, 'LOC1');
+      // 归档：标记交给内核（删什么只由内核定）。
+      expect(host.last('obsolete')['archive'], isTrue);
+    },
+  );
+
+  test('只走根这一步（只做媒体的位置）：没过就返回 null、什么都不写', () async {
+    final _FakeHost host = _FakeHost(<String, List<SrsSync2Result>>{
+      'location_root': <SrsSync2Result>[
+        _r(<String, Object?>{'state': kSrs4RootNeedsUpgrade, 'error': 'x'}),
+      ],
+    });
+    final SrsSync2Report report = SrsSync2Report();
+    final SrsLocationRoot? r = await srsSync4LocationRoot(
+      host: host,
+      location: v4,
+      oldRoot: v3,
+      locationId: 'L',
+      nowMs: () => 1000,
+      collection: 'c',
+      report: report,
+    );
+    expect(r, isNull);
+    expect(report.needsUpgrade, isTrue);
+    expect(report.mediaRoot, isNull);
+    expect(v4.files, isEmpty);
+    expect(v3.files, isEmpty);
+  });
 }

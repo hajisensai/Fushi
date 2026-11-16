@@ -159,9 +159,11 @@ class SrsAssetV1Writers implements SrsV1Writers {
     );
     _writerIds.clear();
     for (final AssetEntry w in await store.listChildren(profile)) {
+      // 集合根（协议 1 `v2/`、协议 3 `v3/`、新代 `v4/`）不是 v1 写入者目录。
       if (!w.isFolder ||
           w.name == kSrsSync2Folder ||
-          w.name == kSrsSync2V1Folder) {
+          w.name == kSrsSync2V1Folder ||
+          w.name == kSrs4Root) {
         continue;
       }
       _writerIds[w.name] = w.id;

@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:fushi_engine/srs/srs_profile_link.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
+import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart' show kSrs4Root;
 import 'package:fushi_engine/sync/local_directory_asset_store.dart';
 import 'package:test/test.dart';
 
@@ -456,6 +457,22 @@ void main() {
         ).existsSync(),
         isTrue,
       );
+    });
+
+    test('新代集合根 v4/ 不是写入者目录（G8-7 起云端会有 fushi-srs/<dir>/v4/）', () async {
+      await srsPublishProfileInfo(
+        store,
+        profileUid: kOther,
+        writerId: 'host#1',
+        name: 'Main',
+        hasNotes: true,
+      );
+      final String ns = await store.ensureNamespace(kSrsSync2Namespace);
+      final String profile = await store.ensureFolder(ns, kOther);
+      final String v4 = await store.ensureFolder(profile, kSrs4Root);
+      await store.ensureFolder(await store.ensureFolder(v4, 'devices'), 'd1');
+      final List<SrsRemoteProfile> list = await srsListRemoteProfiles(store);
+      expect(list.single.writers, <String>[srsV2WriterName('host#1')]);
     });
 
     test('旧格式写入者目录的说明文件照样列得出（升级前写的）', () async {

@@ -43,6 +43,7 @@ class SrsLocationBackend {
   }) => SrsAssetLocationStore(
     store: store,
     profileUid: dir,
+    locationDir: dir,
     folder: folder,
     maxConcurrentWrites: maxConcurrentWrites,
     backendIdentity: identity,

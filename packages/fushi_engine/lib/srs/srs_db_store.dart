@@ -1643,8 +1643,8 @@ class SrsDbStore implements SrsSync2Host {
   /// 不碰库的纯计算，以及只读已提交快照的命令——排队等于让复习作答等它们跑完（状态摘要是全库扫描，手机上
   /// 一两秒，每轮同步都可能轮到）。
   ///
-  /// `plan` 先不进写锁、只在读连接上算（审查 S-8：空轮 head 都没变，什么都不用记）；内核说要记东西（新设备 / 更新的
-  /// head）才进写锁再算一次。
+  /// 新代的 `plan`（内核 `gen4/cmd/sync.rs`）一律在写事务里记对端 / 位置上的 head / 取消停用，没有协议 3 的只读预演
+  /// （`readOnly` → `needsWrite`，内核现在明确拒绝），和别的同步写命令一样进写锁。
   @override
   Future<SrsSync2Result> sync2Command(
     Map<String, Object?> request, {
@@ -1658,13 +1658,7 @@ class SrsDbStore implements SrsSync2Host {
         const <(String, Uint8List)>[],
       );
     }
-    if (request['op'] == 'plan') {
-      final SrsSync2Result r = await _sync2Raw(<String, Object?>{
-        ...request,
-        'readOnly': true,
-      }, blobs: blobs);
-      if (r.map['needsWrite'] != true) return r;
-    } else if (kSrsSync2LockFreeOps.contains(request['op'])) {
+    if (kSrsSync2LockFreeOps.contains(request['op'])) {
       return _sync2Raw(request, blobs: blobs);
     }
     return runExclusive(() => _sync2Raw(request, blobs: blobs));

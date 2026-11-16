@@ -41,6 +41,7 @@ import 'package:fushi_engine/srs/sync2/srs_location_store.dart'
         kSrsSync2Namespace,
         kSrsSync2V1Folder,
         srsLocationDirOf;
+import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart' show kSrs4Root;
 import 'package:fushi_engine/sync/sync_asset_store.dart';
 
 /// srs.db `srs_meta`：本设备改用别的 uid 之前用过的同步 v2 设备身份（JSON 数组）。换 uid 后本机在新集合里是新的
@@ -272,7 +273,8 @@ Future<List<SrsRemoteProfile>> srsListRemoteProfiles(
     }
 
     for (final AssetEntry w in await store.listChildren(p.id)) {
-      if (!w.isFolder) continue;
+      // 新代集合根 `v4/`（G8-7）不是写入者目录；它下面的设备只有 head、没有 `profile.json`。
+      if (!w.isFolder || w.name == kSrs4Root) continue;
       if (w.name == kSrsSync2Folder || w.name == kSrsSync2V1Folder) {
         // 同步 v2：`v3/devices/<设备>/profile.json`（协议 2）；还没迁移的位置在 `v2/devices/` 下（协议 1，同一台
         // 设备两边都有时只算一次）。

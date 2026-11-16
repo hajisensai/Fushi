@@ -239,6 +239,7 @@ class SrsAssetLocationStore implements SrsLocationStore, SrsLocationFileStore {
     required this.profileUid,
     this.folder = kSrsSync2Folder,
     this.maxConcurrentWrites,
+    this.locationDir,
     Object? backendIdentity,
     Directory? tempDir,
   }) : backendIdentity = backendIdentity ?? store,
@@ -250,6 +251,10 @@ class SrsAssetLocationStore implements SrsLocationStore, SrsLocationFileStore {
   /// （防扫盘混淆每次新建一层、`ensureFolder` 原样透传给里层的单例后端）时传里层那个。
   final Object backendIdentity;
   final String profileUid;
+
+  /// 集合在位置上的目录名（`fushi-srs/<它>/`），调用方已经从内核 `identity` 的 `dir` 拿到时直接给（新代一轮同步，
+  /// srs_location_runner.dart）；null = 按 [profileUid] 向内核要（[srsLocationDirOf]）。给了就原样用，不再映射一次。
+  final String? locationDir;
 
   /// 集合根目录名（`fushi-srs/<profileUid>/<folder>/`）：[kSrsSync2Folder]，迁移时也开一个 [kSrsSync2V1Folder] 的。
   final String folder;
@@ -307,7 +312,7 @@ class SrsAssetLocationStore implements SrsLocationStore, SrsLocationFileStore {
     );
     final List<String> profiles = await _childFoldersOrCreate(<String>[
       ns,
-    ], srsLocationDirOf(profileUid));
+    ], locationDir ?? srsLocationDirOf(profileUid));
     return _childFoldersOrCreate(profiles, folder);
   }
 

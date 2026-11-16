@@ -107,21 +107,6 @@ const String kSrs4LocationRefused = 'srs location root refused';
 /// 不是一个同步位置的读（v1 旧根的一次性迁移）：`plan` 记位置上的 head 时用的位置名。
 const String kSrs4NoLocation = 'oldroot';
 
-/// 新代位置层的错误码清单（规划缺口 G-8）：调度器把这些当「这个位置这一轮没同步成」如实报，不当成本机故障。
-const Set<String> kSrs4LocationErrors = <String>{
-  kSrsSync2NeedsKey,
-  kSrsSync2WrongKey,
-  kSrsSync2EncryptionMissing,
-  kSrsSync2BadKdf,
-  kSrsSync2MetaUnavailable,
-  kSrs4LocationRefused,
-  kSrsSync2OutboxRecut,
-};
-
-/// 一轮里推进重复流收敛作业（[srsSync2Round] 的 `dedup`）最多用多久：作业按一个事务一步分批推进、断点续做，大库的
-/// 一次性收敛（几十万条副本）分到几轮做完，不让某一轮迟迟不发件。
-const Duration kSrsSync2DedupBudget = Duration(seconds: 20);
-
 /// 一轮的结果。
 class SrsSync2Report {
   SrsSync2Report();
@@ -172,6 +157,10 @@ class SrsSync2Report {
   /// 这一轮实际用密钥收发（位置是加密的且本机口令对）。
   bool encrypted = false;
 
+  /// 这个位置的媒体在哪个根（内核 `location_root` 的 `media`：存量集合 [kSrsSync2Folder]、新集合 [kSrs4Root]）；
+  /// 没走到根那一步为 null。
+  String? mediaRoot;
+
   /// 位置那头自己也跑复习同步的设备（互联 host）报告它还没加入复习同步（BUG-4320）：本机这一轮发出去了，但对端既
   /// 不并入、也没发布它自己的数据。调度器在一轮成功后填（引擎的一轮不碰它）；不算这一轮失败。
   bool peerNotJoined = false;
@@ -221,6 +210,7 @@ Future<SrsSync2Report> srsSync2Round({
   int fetchConcurrency = kSrsSync2Concurrency,
   int? outboxBudgetBytes,
   SrsSyncStepCallback? onStep,
+  void Function(SrsLocationRoot root)? onLocationRoot,
 }) async {
   final SrsSync2Report report = SrsSync2Report();
   onStep?.call('identity');
@@ -228,72 +218,21 @@ Future<SrsSync2Report> srsSync2Round({
     'op': 'identity',
     'now': nowMs(),
   })).map;
-  // 位置的根（内核 `location_root`，G8-7）：新根 `v4/meta.json` 由内核按集合算出（只读不改，开加密是唯一的改写），
-  // 旧根 `v3/meta.json` 读到了就改写成让旧版本停下的围栏（设计 §4.3）。加密握手（[srsLocationHandshake]）照旧
-  // 判口令 / 校验值 / 见过加密，但只看、不写：它想写的 `kdf` 交给内核写进新根 meta。
   onStep?.call('handshake');
-  final Uint8List? meta4 = await location.get('meta.json');
-  final Uint8List? meta3 = await oldRoot?.get('meta.json');
-  final _SrsMetaView view = _SrsMetaView(location, meta4 ?? meta3);
-  final SrsLocationHandshake hs = await srsLocationHandshake(
-    view,
+  final SrsLocationRoot? rooted = await srsSync4LocationRoot(
     host: host,
+    location: location,
+    oldRoot: oldRoot,
     locationId: locationId,
+    nowMs: nowMs,
     key: key,
     collection: id['collection'],
-    nowMs: nowMs(),
-    protocol: kSrsSync2Protocol,
-    minReader: kSrsSync2MinReader,
+    report: report,
   );
-  report.kdf = hs.kdf;
-  report.encryptionEnabled = hs.encryptionEnabled;
-  if (hs.needsUpgrade) {
-    report.needsUpgrade = true;
-    return report;
-  }
-  if (hs.error != null) {
-    report.error = hs.error;
-    return report;
-  }
-  final String? keyHex = hs.keyHex;
-  report.encrypted = keyHex != null;
-  final SrsSync2Result root = await host.sync2Command(
-    <String, Object?>{
-      'op': 'location_root',
-      'location': locationId,
-      'now': nowMs(),
-      'has4': meta4 != null,
-      'has3': meta3 != null,
-      'locs': <String>[
-        for (final SrsLocationEntry e in await location.list('loc'))
-          if (!e.isFolder) e.name,
-      ],
-      'enableKdf': view.writtenKdf,
-    },
-    blobs: <Uint8List>[?meta4, ?meta3],
-  );
-  final String state = root.map['state']! as String;
-  if (state == kSrs4RootNeedsUpgrade) {
-    report.needsUpgrade = true;
-    return report;
-  }
-  if (state != kSrs4RootOk) {
-    return report..error = '$kSrs4LocationRefused: ${root.map['error']}';
-  }
-  final Set<String> ensure = <String>{
-    for (final Object? p in (root.map['ensure'] as List?) ?? const <Object?>[])
-      p! as String,
-  };
-  // 先新根、后旧根（围栏让旧版本停下之前，新根必须已经立住）：内核给的顺序就是写入顺序。
-  for (final (String path, Uint8List bytes) in root.files) {
-    final bool isNew = path.startsWith('$kSrs4Root/');
-    final SrsLocationStore? target = isNew ? location : oldRoot;
-    if (target == null) continue;
-    final String rel = path.substring(path.indexOf('/') + 1);
-    if (ensure.contains(path) && await target.exists(rel)) continue;
-    await target.put(rel, bytes);
-  }
-  final String loc = root.map['loc']! as String;
+  if (rooted == null) return report;
+  onLocationRoot?.call(rooted);
+  final String? keyHex = rooted.keyHex;
+  final String loc = rooted.loc;
   final String progressId = srsLocationProgressId(locationId, keyHex);
 
   // 1–2. 读全部 head → 拉缺的段 → 收。需要更新的读者（有设备的 head 要求）就停在这里，一个字节也不写。
@@ -304,6 +243,7 @@ Future<SrsSync2Report> srsSync2Round({
     progressId: progressId,
     keyHex: keyHex,
     report: report,
+    nowMs: nowMs,
     loc: loc,
     onFetchProgress: onFetchProgress,
     shouldStop: shouldStop,
@@ -420,6 +360,112 @@ Future<SrsSync2Report> srsSync2Round({
   return report;
 }
 
+/// 位置的根这一步（[srsSync4LocationRoot]）定下来的东西。
+class SrsLocationRoot {
+  const SrsLocationRoot({
+    required this.keyHex,
+    required this.loc,
+    required this.media,
+  });
+
+  /// 这个位置这一轮用的密钥（明文位置为 null）。
+  final String? keyHex;
+
+  /// 本位置的 loc 标记（`plan` / `head` 带上）。
+  final String loc;
+
+  /// 媒体所在的根（[kSrsSync2Folder] 或 [kSrs4Root]，新根 meta 的 `media`）。
+  final String media;
+}
+
+/// 位置的根（内核 `location_root`，G8-7）：新根 `v4/meta.json` 由内核按集合算出（只读不改，开加密是唯一的改写），
+/// 旧根 `v3/meta.json` 读到了就改写成让旧版本停下的围栏（设计 §4.3）；没有 `v3/meta.json` = 新集合，预先立围栏与
+/// 墓碑 head（规划 §4 补记：判据只看它在不在，所以这一步之前谁都不能往旧根写 `meta.json`）。加密握手
+/// （[srsLocationHandshake]）照旧判口令 / 校验值 / 见过加密，但只看、不写：它想写的 `kdf` 交给内核写进新根 meta。
+///
+/// 结论写进 [report]（`kdf` / `encryptionEnabled` / `encrypted` / `mediaRoot`；没过时 `needsUpgrade` 或 `error`）；
+/// 没过返回 null，什么都没写。一轮同步（[srsSync2Round]）与只做媒体的位置（srs_folder_location.dart）共用。
+Future<SrsLocationRoot?> srsSync4LocationRoot({
+  required SrsSync2Host host,
+  required SrsLocationStore location,
+  required SrsLocationStore? oldRoot,
+  required String locationId,
+  required int Function() nowMs,
+  required Object? collection,
+  required SrsSync2Report report,
+  SrsLocationKey? key,
+}) async {
+  final Uint8List? meta4 = await location.get('meta.json');
+  final Uint8List? meta3 = await oldRoot?.get('meta.json');
+  final _SrsMetaView view = _SrsMetaView(location, meta4 ?? meta3);
+  final SrsLocationHandshake hs = await srsLocationHandshake(
+    view,
+    host: host,
+    locationId: locationId,
+    key: key,
+    collection: collection,
+    nowMs: nowMs(),
+    protocol: kSrsSync2Protocol,
+    minReader: kSrsSync2MinReader,
+  );
+  report.kdf = hs.kdf;
+  report.encryptionEnabled = hs.encryptionEnabled;
+  if (hs.needsUpgrade) {
+    report.needsUpgrade = true;
+    return null;
+  }
+  if (hs.error != null) {
+    report.error = hs.error;
+    return null;
+  }
+  final String? keyHex = hs.keyHex;
+  report.encrypted = keyHex != null;
+  final SrsSync2Result root = await host.sync2Command(
+    <String, Object?>{
+      'op': 'location_root',
+      'location': locationId,
+      'now': nowMs(),
+      'has4': meta4 != null,
+      'has3': meta3 != null,
+      'locs': <String>[
+        for (final SrsLocationEntry e in await location.list('loc'))
+          if (!e.isFolder) e.name,
+      ],
+      'enableKdf': view.writtenKdf,
+    },
+    blobs: <Uint8List>[?meta4, ?meta3],
+  );
+  final String state = root.map['state']! as String;
+  if (state == kSrs4RootNeedsUpgrade) {
+    report.needsUpgrade = true;
+    return null;
+  }
+  if (state != kSrs4RootOk) {
+    report.error = '$kSrs4LocationRefused: ${root.map['error']}';
+    return null;
+  }
+  final Set<String> ensure = <String>{
+    for (final Object? p in (root.map['ensure'] as List?) ?? const <Object?>[])
+      p! as String,
+  };
+  // 先新根、后旧根（围栏让旧版本停下之前，新根必须已经立住）：内核给的顺序就是写入顺序。
+  for (final (String path, Uint8List bytes) in root.files) {
+    final bool isNew = path.startsWith('$kSrs4Root/');
+    final SrsLocationStore? target = isNew ? location : oldRoot;
+    if (target == null) continue;
+    final String rel = path.substring(path.indexOf('/') + 1);
+    if (ensure.contains(path) && await target.exists(rel)) continue;
+    await target.put(rel, bytes);
+  }
+  final String media = (root.map['media'] as String?) ?? kSrs4Root;
+  report.mediaRoot = media;
+  return SrsLocationRoot(
+    keyHex: keyHex,
+    loc: root.map['loc']! as String,
+    media: media,
+  );
+}
+
 /// [srsLocationHandshake] 看到的位置：`meta.json` 是这一轮读到的那份（新根的，没有就是旧根的），写 `meta.json`
 /// 不落盘、只记下要开的 `kdf`（新根 meta 只由内核 `location_root` 写）；别的路径照原位置读。
 class _SrsMetaView implements SrsLocationStore {
@@ -471,6 +517,7 @@ Future<bool> srsSync2Pull({
   required String? progressId,
   required String? keyHex,
   required SrsSync2Report report,
+  required int Function() nowMs,
   void Function(int done, int total)? onFetchProgress,
   bool Function()? shouldStop,
   int ingestBudgetBytes = kSrsSync2IngestBudgetBytes,
@@ -528,7 +575,7 @@ Future<bool> srsSync2Pull({
     'location': progressId == null
         ? kSrs4NoLocation
         : srsLocationOfProgressId(progressId),
-    'now': DateTime.now().millisecondsSinceEpoch,
+    'now': nowMs(),
     'loc': ?loc,
     'listing': <String, List<String>>{
       for (final MapEntry<String, List<String>> e in listed.entries)
@@ -544,7 +591,7 @@ Future<bool> srsSync2Pull({
     await srsNoteLocationSealed(
       host,
       srsLocationOfProgressId(progressId),
-      nowMs: DateTime.now().millisecondsSinceEpoch,
+      nowMs: nowMs(),
       seen: true,
     );
   }
@@ -605,7 +652,7 @@ Future<bool> srsSync2Pull({
           sealSeen = (await srsNoteLocationSealed(
             host,
             sealProbe,
-            nowMs: DateTime.now().millisecondsSinceEpoch,
+            nowMs: nowMs(),
             segmentPrefixes: batch.segments,
           )).sealed;
         }

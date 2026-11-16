@@ -119,6 +119,7 @@ Future<SrsSync2Report> srsSync2PullOnly({
     progressId: srsLocationProgressId(locationId, keyHex),
     keyHex: keyHex,
     report: report,
+    nowMs: nowMs,
     shouldStop: shouldStop,
     fetchConcurrency: fetchConcurrency,
     onFetchProgress: onFetchProgress,
