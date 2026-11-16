@@ -161,5 +161,16 @@ void main() {
       everyElement(isFalse),
       reason: '老快照里总开关关着，小说的细分 ON 在旧语义下不生效',
     );
+
+    // 恢复后第一次只开视频：旧语义的有效值（全关）原样物化，小说那条遗留的细分 ON
+    // 不能借机「复活」；视频单独生效，不需要总开关（修复前总开关关着时视频开不了）。
+    await afterRestore.setPopupBottomDockedIn(ModuleId.video, true);
+    expect(_effective(afterRestore), <ModuleId, bool>{
+      ModuleId.books: false,
+      ModuleId.manga: false,
+      ModuleId.video: true,
+      ModuleId.games: false,
+    });
+    expect(afterRestore.popupBottomDockedFor(null), isFalse);
   });
 }

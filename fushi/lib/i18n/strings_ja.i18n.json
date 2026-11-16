@@ -7368,7 +7368,7 @@
   "popup_bottom_docked_games": "ゲームで下部に固定",
   "popup_bottom_docked_hint": "辞書ポップアップを、引いた単語に追従させる代わりに、画面下部の全幅パネルとして固定します。",
   "popup_bottom_docked_manga": "マンガで下部に固定",
-  "popup_bottom_docked_other": "Dock elsewhere (dictionary search, floating popups)",
+  "popup_bottom_docked_other": "その他の場面で下部に固定（辞書検索、フローティングポップアップなど）",
   "popup_bottom_docked_video": "動画で下部に固定",
   "popup_clear_sentence_draft_tooltip": "追加した文をクリア",
   "popup_compact_glossaries": "コンパクト釈義",

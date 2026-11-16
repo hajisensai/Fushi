@@ -1848,6 +1848,13 @@ class PreferencesRepository extends ChangeNotifier
   /// 只跑一次的启动迁移，也就没有「迁移标记被清后重跑把新数据再转一遍」的窗口。
   /// 第一次写任一相关键时（[_popupBottomDockedPerModuleUpgrade]）把旧语义的有效值
   /// 物化成新语义的各模块值，与标记、新写入同一次 [setPrefs] 落盘。
+  ///
+  /// 兼容层范围与清理条件：旧语义读路径只为「BUG-4709 之前保存的偏好 / Profile
+  /// 快照 / 备份」服务。同步合并（`BackupMergeEngine`）不跨设备合并普通设置，只有
+  /// 同机换包名迁移的 `adoptSourcePreferences` 会逐键取较新者——那条路径上标记与
+  /// 模块键可能来自两份数据，结果按标记那一份的语义解释，属已知边界。等不再支持
+  /// 恢复 BUG-4709 之前的快照 / 备份时，删掉旧语义分支与
+  /// [_popupBottomDockedPerModuleUpgrade]，读侧只留新语义（标记键随之可废弃）。
   static const String popupBottomDockedPerModuleKey =
       'popup_bottom_docked_per_module';
 
