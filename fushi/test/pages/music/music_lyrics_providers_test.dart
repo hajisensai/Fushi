@@ -252,7 +252,9 @@ void main() {
     ], canInstall: false);
     expect(find.byType(Switch), findsNWidgets(2));
     expect(find.text(t.music_lyrics_providers_install_action), findsNothing);
+  });
 
+  testWidgets('中继端没有歌词插件：空态不带安装按钮', (WidgetTester tester) async {
     await build(tester, const <InstalledMusicPlugin>[], canInstall: false);
     expect(find.text(t.music_lyrics_providers_empty), findsOneWidget);
     expect(find.text(t.music_lyrics_providers_install_action), findsNothing);
