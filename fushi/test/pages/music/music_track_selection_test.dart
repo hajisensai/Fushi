@@ -15,6 +15,7 @@ import 'package:fushi/src/media/music/music_session.dart';
 import 'package:fushi/src/media/music/music_signal_path.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/pages/implementations/music/music_album_page.dart';
 import 'package:fushi/src/pages/implementations/music/music_track_list.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:material_ui/material_ui.dart';
@@ -354,6 +355,97 @@ void main() {
       )).map((MusicPlaylistEntryRow r) => r.id),
       rows.map((MusicPlaylistEntryRow r) => r.id),
     );
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('专辑页：跨碟多选（菜单进入、长按勾选）；批量从音乐库移除写墓碑，撤销放回；单首菜单可移除', (
+    WidgetTester tester,
+  ) async {
+    MusicTracksCompanion albumTrack(String uid, int disc, int no) =>
+        _track(uid).copyWith(
+          albumUid: const Value<String?>('al'),
+          discNo: Value<int?>(disc),
+          trackNo: Value<int?>(no),
+        );
+    await db.writeMusicScanBatch(
+      MusicScanBatchWrite(
+        tracks: <MusicTracksCompanion>[
+          albumTrack('d1', 1, 1),
+          albumTrack('d2', 1, 2),
+          albumTrack('e1', 2, 1),
+        ],
+        albums: <MusicAlbumsCompanion>[
+          MusicAlbumsCompanion.insert(
+            albumUid: 'al',
+            title: 'Night Album',
+            addedAt: 1,
+            updatedAt: 1,
+          ),
+        ],
+        artists: const <MusicArtistsCompanion>[],
+        credits: const <MusicTrackCreditsCompanion>[],
+      ),
+    );
+    final MusicAlbumRow album = (await db.getMusicAlbum('al'))!;
+    final List<MusicTrackRow> albumTracks = sortAlbumTracks(
+      await db.listMusicTracks(albumUid: 'al'),
+    );
+    await pumpList(tester, MusicAlbumPage(album: album, tracks: albumTracks));
+    Finder row(String uid) =>
+        find.byKey(ValueKey<String>('music-album-track-$uid'));
+    expect(bar(), findsNothing);
+
+    await selectViaMenu(tester, row('d1'));
+    expect(bar(), findsOneWidget);
+    expect(find.text(t.music_selection_count(n: 1)), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('music-album-track-check-d2')),
+      findsOneWidget,
+      reason: '多选态每行行尾出勾选圈',
+    );
+
+    // 第二碟的一首：多选态长按 = 勾选，不起播。
+    await tester.ensureVisible(row('e1'));
+    await tester.pumpAndSettle();
+    await tester.longPress(row('e1'));
+    await tester.pumpAndSettle();
+    expect(find.text(t.music_selection_count(n: 2)), findsOneWidget);
+    expect(app.musicSession.engine.current, isNull, reason: '多选态点行不起播');
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('music-selection-remove-from-library')),
+    );
+    await tester.pumpAndSettle();
+    expect(liveUids(await db.listMusicTracks(albumUid: 'al')), <String>{'d2'});
+    expect((await db.getMusicTrack('d1'))!.hiddenAt, isNotNull);
+    expect((await db.getMusicTrack('e1'))!.hiddenAt, isNotNull);
+    expect(bar(), findsNothing, reason: '批量动作跑完退出多选');
+    expect(row('d1'), findsNothing, reason: '专辑页跟着落库重读');
+
+    await tester.tap(find.byKey(const ValueKey<String>('music-undo-action')));
+    await tester.pumpAndSettle();
+    expect(liveUids(await db.listMusicTracks(albumUid: 'al')), <String>{
+      'd1',
+      'd2',
+      'e1',
+    });
+
+    // 单首菜单「从音乐库移除」。
+    await tester.tap(
+      row('d2'),
+      buttons: kSecondaryMouseButton,
+      kind: PointerDeviceKind.mouse,
+    );
+    await tester.pumpAndSettle();
+    final Finder remove = menuAction('removeFromLibrary');
+    await tester.ensureVisible(remove);
+    await tester.pumpAndSettle();
+    await tester.tap(remove);
+    await tester.pumpAndSettle();
+    expect(liveUids(await db.listMusicTracks(albumUid: 'al')), <String>{
+      'd1',
+      'e1',
+    });
     await tester.pumpWidget(const SizedBox.shrink());
   });
 }
