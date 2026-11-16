@@ -202,7 +202,7 @@ class DictionaryDownloadController {
   /// 等锁释放的 [runWhenIdle] 调用。
   final List<Completer<void>> _unlockWaiters = <Completer<void>>[];
 
-  /// 是否有任务在跑（含静默自动更新、静默的词典格式升级）。
+  /// 是否有任务在跑（含静默自动更新、词典格式升级）。
   bool get isBusy => _locked;
 
   /// 本次任务是否已被请求取消。
@@ -263,13 +263,15 @@ class DictionaryDownloadController {
     return true;
   }
 
-  /// 等写锁空闲后占锁跑 [body]，**不亮状态行**：phase 保持 idle，直到 [body] 自己调
-  /// [DictionaryDownloadJob.markUpgradePhase]（或别的 mark*）才出现。
+  /// 等写锁空闲后占锁跑 [body]。phase 由 [body] 自己切：它调
+  /// [DictionaryDownloadJob.markUpgradePhase]（或别的 mark*）状态行才出现。占着锁就会
+  /// 让 [run] 的调用方（用户点的下载、启动自动更新）被拒，所以 [body] 应当一进来就
+  /// 切阶段，让用户看得到是什么占着；确认「有没有事要做」的那部分放在占锁之前。
   ///
   /// 与 [run] 的区别：[run] 忙时直接返回 false（用户发起的下载要立刻告诉用户「已有
   /// 下载在跑」；自动更新是 check-due，跳过一轮零损失）；这里忙时**排队等**它结束，
-  /// 给「必须做、但不急、通常什么都不用做」的后台维护任务用（启动期的词典格式升级）——
-  /// 不能因为撞上一次下载就永久跳过，也不能和写词典的任务并发。
+  /// 给「必须做、但不急」的后台维护任务用（启动期的词典格式升级）——不能因为撞上
+  /// 一次下载就永久跳过，也不能和写词典的任务并发。
   ///
   /// 没有结果提示（维护任务不打扰用户）。[body] 抛出原样传给调用方。
   Future<T> runWhenIdle<T>(

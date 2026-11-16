@@ -3937,9 +3937,10 @@ class AppModel
   }
 
   /// 存量词典原地升级到当前磁盘格式（[FushiDicts.upgradeDictionaryFormats]），编排见
-  /// [DictionaryFormatUpgradeCoordinator]：在词典写锁里跑、确有词典要升级才亮状态行、
-  /// 升级过就异步重载引擎让新格式生效、重载后静默补跑一遍清旧文件。失败 / 不适用只
-  /// 记日志（词典仍按旧格式可用），下次启动再试。本进程只跑一次。
+  /// [DictionaryFormatUpgradeCoordinator]：先不占词典写锁逐本静默检查（常态启动到此
+  /// 为止，不挡下载 / 自动更新）；确有词典要升级才占写锁、亮状态行做完剩下的，升级过
+  /// 就异步重载引擎让新格式生效、重载后静默补跑一遍清旧文件。失败 / 不适用只记日志
+  /// （词典仍按旧格式可用），下次启动再试。本进程只跑一次。
   Future<void> _upgradeDictionaryFormats() async {
     if (_dictFormatUpgradeStarted) return;
     _dictFormatUpgradeStarted = true;
