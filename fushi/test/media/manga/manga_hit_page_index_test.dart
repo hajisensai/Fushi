@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/manga_fushi_page.dart';
 
-/// BUG-4710（反馈 NfaXdQeLyD）：漫画右键 / 长按 payload 的落点页号解析。右键菜单的
+/// BUG-4713（反馈 NfaXdQeLyD）：漫画右键 / 长按 payload 的落点页号解析。右键菜单的
 /// 图片动作与「设为封面」按这个页号取图；没落在页上返回 null（菜单不列图片项），
 /// 不回落到当前跨页的主页——双页跨页里那会拿到另一页的图。
 void main() {

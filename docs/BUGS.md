@@ -33,15 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4067 条。点号进各自文件。
+> 共 4070 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4710](bugs/BUG-4710-manga-context-menu-image-hit-page.md) | ✅ | ✅ | 漫画双页跨页右键「复制 / 保存 / 分享图片」「设为封面」作用于当前跨页主页而不是右键落点那一页 |
-> 共 4069 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4713](bugs/BUG-4713-manga-context-menu-image-hit-page.md) | ✅ | ✅ | 漫画双页跨页右键「复制 / 保存 / 分享图片」「设为封面」作用于当前跨页主页而不是右键落点那一页 |
 | [BUG-4712](bugs/BUG-4712-fushiplug-drag-import.md) | ✅ | ✅ | .fushiplug 插件包拖进插件管理 / 音源 / 歌词来源 / 追踪插件页毫无反应，只能走文件选择器 |
 | [BUG-4711](bugs/BUG-4711-ext-youtube-caption-default-wrong-lang.md) | ✅ | ✅ | 扩展 YouTube 默认挂无关语言的字幕轨；手动选的轨取不到时永远停在「选中加载」 |
 | [BUG-4710](bugs/BUG-4710-srs-browse-has-audio-ignores-inline-audio.md) | ✅ | ✅ | SRS 浏览健康条把视频片段卡都算成「缺单词音频」 |
