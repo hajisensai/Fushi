@@ -129,6 +129,18 @@ const KNOWN: &[Known] = &[
               disagrees with its own log; the field, the note row and its cards differ on purpose",
     },
     Known {
+        test: "store::gen4::dryrun::tests::an_unrelated_column_on_a_masked_row_still_fails",
+        what: "edits",
+        old: None,
+        why: "the test deletes one live srs_field_edits row (the note's deck) by hand to prove a column the known               difference does not feed is still compared on a masked row; the edit and the note row differ on purpose",
+    },
+    Known {
+        test: "store::gen4::dryrun::tests::an_unrelated_column_on_a_masked_row_still_fails",
+        what: "notes",
+        old: None,
+        why: "the test deletes one live srs_field_edits row (the note's deck) by hand to prove a column the known               difference does not feed is still compared on a masked row; the edit and the note row differ on purpose",
+    },
+    Known {
         test: "store::gen4::legacy::tests::a_duplicate_skeleton_in_the_log_becomes_an_alias",
         what: "edits",
         old: None,

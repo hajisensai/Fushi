@@ -12,9 +12,9 @@
 //! 两侧口径相同，比的是「同一个规范实体的行」。从没并入过、没有盐的库，规范 ID 就是原值，改写是恒等。
 //!
 //! 寄存器按别名类判定与协议 3 的原值判定有一类已定案的差异（写入者归回让原值冲突变成支配，设计 §5.3、§10 第 24 条）：
-//! [against_protocol_3] 先跑 `class.rs` 的 [Index::class_differences]，佐证得了的列为已知差异（[Known]）；其中胜者变了的，
-//! 缓存行里这个寄存器喂得到的那几列不比（[cache_effect]），行的其余列与行的有无照比；胜者没变的不豁免。佐证不了的记成
-//! `classRegisters` 差异（按 bug 处理，结论判失败）。
+//! [against_protocol_3] 先跑 `class.rs` 的 [Index::class_differences]，佐证得了的列为已知差异（[Known]）；缓存行里只盖
+//! 它们真喂得到的列（[known_effect]：胜者变了的盖这个寄存器喂得到的列，只是冲突标志变了的只盖笔记的
+//! `pending_decision`），行的其余列与行的有无照比。佐证不了的记成 `classRegisters` 差异（按 bug 处理，结论判失败）。
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
@@ -178,9 +178,13 @@ impl CanonMap {
 
 /// 按类判定的已知差异（模块文件头「按规范 ID 比」）与它们在缓存层对拍里的豁免。
 ///
-/// 豁免只给**胜者变了**且佐证得了的差异（[Known::masking]）：胜者没变（样本库 144 处的绝大多数，「有冲突变没冲突」）时
-/// 缓存列里没有冲突标志，两侧的行本来就该逐列相同，照常比。胜者变了的也只盖住这个寄存器喂得到的那几列（[cache_effect]），
-/// 行的其余列照常比、行的有无照常比——这些行里别的列上的真差异照样计入差异、影响结论。
+/// 豁免只给佐证得了的差异，而且只盖它真喂得到的列（[known_effect]），行的其余列与行的有无照常比——这些行里别的列上的
+/// 真差异照样计入差异、影响结论：
+///
+/// - 胜者变了：这个寄存器喂得到的那几列（[cache_effect]）；
+/// - 胜者没变、只是冲突标志变了（样本库 144 处的绝大多数，「有冲突变没冲突」）：缓存列里唯一看冲突标志的是笔记行的
+///   `pending_decision`（`registers.rs` 的 `pending_decision`：任一寄存器有冲突即待裁决），所以笔记寄存器上的这种差异
+///   只盖这条笔记的 `pending_decision`；笔记类型（`css` 等）、卡（`newPos` 等）上的什么都不盖、逐列照比。
 #[derive(Debug, Default)]
 pub(crate) struct Known {
     pub diffs: ClassDiffs,
@@ -195,13 +199,19 @@ pub(crate) struct Known {
     pub rows_differ: u64,
 }
 
-impl Known {
-    /// 在缓存对拍里有豁免的已知差异：佐证得了、且胜者（生效值）变了的。
-    pub(crate) fn masking(&self) -> impl Iterator<Item = &ClassDiff> {
-        self.diffs
-            .diffs
-            .iter()
-            .filter(|d| d.proven && d.winner_changed)
+/// 一条已知差异在缓存对拍里盖哪些列（[Known]）：佐证不了的不盖（它已经让结论判失败）。
+pub(crate) fn known_effect(d: &ClassDiff) -> Effect {
+    if !d.proven {
+        NO_EFFECT
+    } else if d.winner_changed {
+        cache_effect(d.kind, &d.key)
+    } else if d.raw_conflict != d.class_conflict && d.kind == EntKind::Note {
+        Effect {
+            note: &["pending_decision"],
+            ..NO_EFFECT
+        }
+    } else {
+        NO_EFFECT
     }
 }
 
@@ -744,8 +754,8 @@ pub(crate) fn cache_pairs(
     };
     let held_note = |id: &str| held.contains(&format!("note:{id}"));
     let skip_note = |id: &str| collided.contains(&format!("note:{id}")) || skip.notes.contains(id);
-    // 胜者变了的已知差异喂得到的列（[Known]、[cache_effect]）：笔记类型上的落到这个类型的全部笔记，笔记上的落到它的
-    // 卡（卡列另记），卡上的落到它的统计行。
+    // 已知差异喂得到的列（[Known]、[known_effect]）：笔记类型上的落到这个类型的全部笔记，笔记上的落到它的卡（卡列
+    // 另记），卡上的落到它的统计行。
     let mut new_notes = new("notes", NOTE_COLS)?;
     let mut note_card: BTreeMap<String, BTreeSet<&'static str>> = BTreeMap::new();
     {
@@ -759,8 +769,11 @@ pub(crate) fn cache_pairs(
             }
         };
         let masking: Vec<(EntKind, String, Effect)> = known
-            .masking()
-            .map(|d| (d.kind, d.entity.text(), cache_effect(d.kind, &d.key)))
+            .diffs
+            .diffs
+            .iter()
+            .map(|d| (d.kind, d.entity.text(), known_effect(d)))
+            .filter(|(_, _, e)| *e != NO_EFFECT)
             .collect();
         for (kind, id, e) in masking {
             match kind {
@@ -1209,4 +1222,139 @@ pub(crate) fn differences(pairs: impl IntoIterator<Item = Pair>) -> Diff {
             )
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::store::gen4::class::ClassDiff;
+
+    fn diff(
+        kind: EntKind,
+        key: &str,
+        proven: bool,
+        conflicts: (bool, bool),
+        winner: bool,
+    ) -> ClassDiff {
+        ClassDiff {
+            kind,
+            entity: Ref::of(&Key::of("0193a1b2-0000-7000-8000-0000000000c1")),
+            key: key.to_owned(),
+            raw_conflict: conflicts.0,
+            class_conflict: conflicts.1,
+            winner_changed: winner,
+            hlc_tie: false,
+            dominated: Vec::new(),
+            revived: Vec::new(),
+            proven,
+        }
+    }
+
+    /// [cache_effect] 里写的列名都真在对应的列表里（写错一个字 = 那一列静悄悄地没盖、或者该盖的没盖）。
+    #[test]
+    fn every_masked_column_exists() {
+        let has = |cols: &[(&str, &str)], c: &str| cols.iter().any(|x| x.0 == c);
+        let keys = [
+            "name",
+            "css",
+            "fieldDesc/x",
+            "fieldDef/x",
+            "tmplDef/x",
+            "termField",
+            "freqField",
+            "deleted",
+            "f/x",
+            "deck",
+            "tags",
+            "source",
+            "noteType",
+            "suspended",
+            "buried",
+            "flag",
+            "newPos",
+            "historyFrom/x",
+            "other",
+        ];
+        for kind in EntKind::ALL {
+            for key in keys {
+                let e = cache_effect(kind, key);
+                for c in e.note {
+                    assert!(has(NOTE_COLS, c), "{kind:?} {key}: note column {c}");
+                }
+                for c in e.cards {
+                    assert!(has(CARD_COLS, c), "{kind:?} {key}: card column {c}");
+                }
+                for c in e.stats {
+                    assert!(has(STAT_COLS, c), "{kind:?} {key}: stat column {c}");
+                }
+            }
+        }
+    }
+
+    /// 盖什么只看差异真喂得到什么：佐证不了的不盖；胜者没变时只有笔记寄存器的冲突标志变化盖 `pending_decision`，
+    /// 笔记类型 `css`、卡 `newPos` 上的冲突变化什么都不盖；胜者变了时笔记类型的 `css` / `name` 不盖、字段定义盖取字段
+    /// 的列，笔记字段不盖 `deck_id` 等无关列。
+    #[test]
+    fn known_differences_mask_only_what_they_feed() {
+        let no_conflict = (true, false);
+        assert_eq!(
+            known_effect(&diff(EntKind::Note, "f/x", false, no_conflict, true)),
+            NO_EFFECT
+        );
+        assert_eq!(
+            known_effect(&diff(EntKind::NoteType, "css", true, no_conflict, false)),
+            NO_EFFECT
+        );
+        assert_eq!(
+            known_effect(&diff(EntKind::Card, "newPos", true, no_conflict, false)),
+            NO_EFFECT
+        );
+        let e = known_effect(&diff(EntKind::Note, "f/x", true, no_conflict, false));
+        assert_eq!(
+            (e.note, e.cards, e.stats),
+            (&["pending_decision"][..], &[][..], &[][..])
+        );
+        assert_eq!(
+            known_effect(&diff(EntKind::Note, "f/x", true, (true, true), false)),
+            NO_EFFECT
+        );
+        for key in ["css", "name", "fieldDesc/x"] {
+            assert_eq!(
+                known_effect(&diff(EntKind::NoteType, key, true, (true, true), true)),
+                NO_EFFECT,
+                "{key}"
+            );
+        }
+        let e = known_effect(&diff(
+            EntKind::NoteType,
+            "fieldDef/x",
+            true,
+            (true, true),
+            true,
+        ));
+        assert!(e.note.contains(&"sort_field") && e.cards.contains(&"hidden"));
+        let e = known_effect(&diff(EntKind::Note, "f/x", true, (true, true), true));
+        assert!(e.note.contains(&"sort_field") && !e.note.contains(&"deck_id"));
+        assert!(!e.note.contains(&"note_type_id") && !e.note.contains(&"tags_json"));
+        let e = known_effect(&diff(EntKind::Card, "newPos", true, (true, true), true));
+        assert_eq!(e.cards, &["new_position"][..]);
+    }
+
+    /// [mask_row] 只换列在表里的格，别的格原样。
+    #[test]
+    fn masking_a_row_leaves_other_cells_alone() {
+        let mut row: Vec<String> = NOTE_COLS.iter().map(|c| format!("v-{}", c.0)).collect();
+        mask_row(
+            &mut row,
+            NOTE_COLS,
+            &BTreeSet::from(["sort_field", "term_key"]),
+        );
+        for (i, c) in NOTE_COLS.iter().enumerate() {
+            if c.0 == "sort_field" || c.0 == "term_key" {
+                assert_eq!(row[i], MASKED);
+            } else {
+                assert_eq!(row[i], format!("v-{}", c.0));
+            }
+        }
+    }
 }

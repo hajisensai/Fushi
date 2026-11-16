@@ -15,8 +15,8 @@
 //!    里的历史血统卡）名下的规范日志与有效复习。缓存层本身按规范 ID 物化，第 4 步的缓存三类也是按规范 ID 比的
 //!    （协议 3 一侧的行先改写成规范 ID，`compare.rs` 文件头「按规范 ID 比」）。
 //! 6. 按类判定的已知差异（§5.3「按类判定的已知差异」、§10 第 24 条，G9-2）：寄存器按别名类判与原值判不同的，逐条列出
-//!    并逐条佐证（`knownDifferences`）。佐证得了的不计入判定；其中胜者变了的，缓存行里这个寄存器喂得到的那几列不比
-//!    （`compare::cache_effect`），行的其余列照比、照计入判定；胜者没变的缓存行照常逐列比。佐证不了的计入对拍差异
+//!    并逐条佐证（`knownDifferences`）。佐证得了的不计入判定，缓存行里只盖它们真喂得到的列（`compare::known_effect`），
+//!    行的其余列照比、照计入判定。佐证不了的计入对拍差异
 //!    （`classRegisters`），结论是 `fail`。只有 ID、写入者名与 seq，不含内容；任何一份库都能重跑（命令行
 //!    `examples/gen4_dryrun.rs`）。
 //!
@@ -1886,9 +1886,15 @@ mod tests {
 
     /// 协议 3 上的一个小库：一个笔记类型两条模板、两条笔记、几次复习，缓存表按同一份配置建好。
     fn library(tag: &str) -> Device {
+        library_with(tag, &|_| {})
+    }
+
+    /// 同 [library]，迁移进协议 3 之前先跑 [legacy]（往旧表里插迁移前的旧修改记录，迁移把它们收成旧戳）。
+    fn library_with(tag: &str, legacy: &dyn Fn(&Device)) -> Device {
         let d = Device::new(tag);
         d.core.sync2_identity(P, T0).unwrap();
-        d.core.sync2_migrate(P, T0, None).unwrap();
+        legacy(&d);
+        while d.core.sync2_migrate(P, T0, None).unwrap()["done"] != json!(true) {}
         let fdef = json!({"name": "Expression", "ord": 0});
         let tdef =
             |name: &str, ord: i64| json!({"name": name, "ord": ord, "front": "{{Expression}}"});
@@ -2589,5 +2595,213 @@ mod tests {
             drop(n);
             let _ = std::fs::remove_file(&kept);
         }
+    }
+
+    // ------------------------------------------------------------ 按类判定的已知差异（端到端）
+
+    const N3: &str = "0193a1b2-0000-7000-8000-0000000000b3";
+
+    /// 本 profile 下旧并入改名的写入者 `w1` 的新名字（盐 = profile uid）。
+    fn merged_w1() -> String {
+        format!(
+            "merged-{}~w1",
+            crate::gen4_ids::rules::merged_writer_hash(P, "w1").text()
+        )
+    }
+
+    /// 旧库里笔记 [N3] 上一条带旧戳的修改记录（与 `tests_dedup.rs` 的 `legacy_edit` 同一个形状）：物理时刻
+    /// `T0 + physical`。
+    fn legacy_edit(d: &Device, writer: &str, s: i64, key: &str, v: &str, vv: Value, physical: i64) {
+        let id = crate::registers::edit_id(writer, s);
+        let j = json!({"ctx": {"vv": vv}, "e": N3, "f": key, "hlc": format!("{}:0:{writer}", T0 + physical),
+                       "id": id, "k": "note", "p": P, "s": s, "ts": "wall", "v": v, "w": writer})
+        .to_string();
+        d.core
+            .writer()
+            .unwrap()
+            .execute(
+                "INSERT INTO srs_field_edits (id, profile_uid, entity_kind, entity_id, field_key, writer_id, seq, jslim) \
+                 VALUES (srs_id(?1), srs_id(?2), 'note', srs_id(?3), ?4, ?5, ?6, ?7)",
+                rusqlite::params![id, P, N3, key, writer, s, j],
+            )
+            .unwrap();
+    }
+
+    /// [library] 再加一条笔记 [N3]（同一个笔记类型，字段内容只来自 [edits] 在迁移前写的旧修改记录），缓存表照同一份
+    /// 配置重建。
+    fn library_with_legacy(tag: &str, edits: &dyn Fn(&Device)) -> Device {
+        let d = library_with(tag, edits);
+        d.apply(T0 + 2 * DAY, vec![note(N3, "NT")]);
+        let parsed =
+            crate::store::caches::CacheConfig::parse(&serde_json::from_str(&cfg()).unwrap())
+                .unwrap();
+        let w = d.core.writer().unwrap();
+        crate::store::sync2::in_savepoint(&w, |c| crate::store::caches::rebuild(c, P, &parsed))
+            .unwrap();
+        drop(w);
+        d
+    }
+
+    /// `knownDifferences.entries` 里 `f/fa` 上的那几条。
+    fn known_on_field(p: &Value) -> Vec<Value> {
+        p["knownDifferences"]["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|e| e["key"] == "f/fa")
+            .cloned()
+            .collect()
+    }
+
+    /// 佐证得了、胜者没变（「有冲突变没冲突」，样本库的绝大多数）：`(w1, 1)` 原值判与 `(w1, 2)`（上下文只写了改名后的
+    /// `merged:1`）并发，按类判被盖掉；`(merged, 1)` 是同一条记录（同 seq 同 HLC）。列进 `knownDifferences`、佐证是副本，
+    /// 结论不是 `fail`。胜者没变，缓存行只盖 N3 笔记行的 `pending_decision`（协议 3 任一寄存器有冲突即待裁决，两侧
+    /// 确实不同），其余列照比、两侧相同；卡行一列不盖。
+    #[test]
+    fn a_proven_difference_with_the_same_winner_is_listed_and_its_rows_still_compared() {
+        let merged = merged_w1();
+        let d = library_with_legacy("g4dryknown", &|d| {
+            legacy_edit(d, "w1", 1, "f/fa", "x", json!({}), 100);
+            legacy_edit(d, &merged, 1, "f/fa", "x", json!({}), 100);
+            legacy_edit(d, "w1", 2, "f/fa", "y", json!({&merged: 1}), 200);
+        });
+        let r = dry(&d, &Stop::new(), &mut |_, _| {});
+        let p = &r["profiles"][0];
+        assert_eq!(p["verdict"], "pass", "{p:#}");
+        assert_eq!(p["parity"], json!([]), "{p:#}");
+        assert_eq!(p["canonical"], json!([]), "{p:#}");
+        let k = &p["knownDifferences"];
+        assert_eq!(k["unproven"], 0, "{k:#}");
+        let got = known_on_field(p);
+        assert_eq!(got.len(), 1, "{k:#}");
+        let e = &got[0];
+        assert_eq!(e["kind"], "note");
+        assert_eq!(e["entity"], N3);
+        assert_eq!(
+            (&e["rawConflict"], &e["classConflict"], &e["winnerChanged"]),
+            (&json!(true), &json!(false), &json!(false)),
+            "{e:#}"
+        );
+        assert_eq!(e["proven"], true);
+        assert_eq!(e["dominated"].as_array().unwrap().len(), 1, "{e:#}");
+        let dom = &e["dominated"][0];
+        assert_eq!((&dom["writer"], &dom["seq"]), (&json!("w1"), &json!(1)));
+        assert_eq!(dom["canonicalWriter"], "w1");
+        assert_eq!(dom["evidence"], json!({"copy": merged}));
+        assert_eq!(e["revived"], json!([]));
+        assert_eq!(k["byCategory"]["note f"]["proven"], 1, "{k:#}");
+        // 胜者没变：只盖这条笔记的 `pending_decision`，卡行不盖。
+        assert_eq!(
+            (&k["cacheNotesMasked"], &k["cacheCardsMasked"]),
+            (&json!(1), &json!(0)),
+            "{k:#}"
+        );
+        assert_eq!(
+            (&k["cacheRowsMasked"], &k["cacheRowsMaskedDiffer"]),
+            (&json!(2), &json!(2)),
+            "{k:#}"
+        );
+    }
+
+    /// 佐证不了的（被盖掉的 `(merged, 5)` 在另一个名字下没有副本，5 也不在已证明的重叠区间 `[1, 1]` 里）：记成
+    /// `parity` 的 `classRegisters`，结论 `fail`（所有者定案「对不上的按 bug 处理」）。
+    #[test]
+    fn an_unproven_difference_fails_the_run() {
+        let merged = merged_w1();
+        let d = library_with_legacy("g4dryunproven", &|d| {
+            legacy_edit(d, "w1", 1, "f/pp", "p", json!({}), 50);
+            legacy_edit(d, &merged, 1, "f/pp", "p", json!({}), 50);
+            legacy_edit(d, &merged, 5, "f/fa", "x", json!({}), 100);
+            legacy_edit(d, "v", 1, "f/fa", "y", json!({"w1": 5}), 200);
+        });
+        let r = dry(&d, &Stop::new(), &mut |_, _| {});
+        let p = &r["profiles"][0];
+        assert_eq!(r["verdict"], "fail", "{r:#}");
+        assert_eq!(p["verdict"], "fail");
+        let class = p["parity"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|d| d["what"] == "classRegisters")
+            .cloned()
+            .unwrap_or_else(|| panic!("{p:#}"));
+        assert_eq!(class["onlyOld"], 1, "{class:#}");
+        let k = &p["knownDifferences"];
+        assert_eq!(k["unproven"], 1, "{k:#}");
+        let got = known_on_field(p);
+        assert_eq!(got.len(), 1, "{k:#}");
+        assert_eq!(got[0]["proven"], false);
+        assert_eq!(got[0]["dominated"][0]["evidence"], "none", "{:#}", got[0]);
+    }
+
+    /// 佐证得了、胜者变了（HLC 平手：原名 `merged-…` < `v`，`v` 那条胜；归回成 `w1` > `v`，`merged` 那条胜）：N3 的
+    /// 笔记行只盖 `f/…` 喂得到的列（`sort_field` 等，两侧确实不同），行本身照比；结论不是 `fail`。
+    #[test]
+    fn a_proven_winner_change_masks_only_the_columns_it_feeds() {
+        let merged = merged_w1();
+        let d = library_with_legacy("g4drymasked", &|d| {
+            legacy_edit(d, "w1", 1, "f/pp", "p", json!({}), 50);
+            legacy_edit(d, &merged, 1, "f/pp", "p", json!({}), 50);
+            legacy_edit(d, &merged, 2, "f/fa", "a", json!({}), 100);
+            legacy_edit(d, "v", 1, "f/fa", "b", json!({}), 100);
+        });
+        let r = dry(&d, &Stop::new(), &mut |_, _| {});
+        let p = &r["profiles"][0];
+        assert_eq!(p["verdict"], "pass", "{p:#}");
+        assert_eq!(p["parity"], json!([]), "{p:#}");
+        assert_eq!(p["canonical"], json!([]), "{p:#}");
+        let k = &p["knownDifferences"];
+        let got = known_on_field(p);
+        assert_eq!(got.len(), 1, "{k:#}");
+        let e = &got[0];
+        assert_eq!(
+            (&e["winnerChanged"], &e["hlcTie"], &e["proven"]),
+            (&json!(true), &json!(true), &json!(true)),
+            "{e:#}"
+        );
+        assert_eq!(k["cacheNotesMasked"], 1, "{k:#}");
+        // N3 的两张卡（两条模板）盖 `hidden` / `freq_rank`。
+        assert_eq!(k["cacheCardsMasked"], 2, "{k:#}");
+        assert!(k["cacheRowsMaskedDiffer"].as_u64().unwrap() >= 2, "{k:#}");
+    }
+
+    /// 盖了列的行里，没被盖住的列上的真差异照样计入：胜者变了的那条笔记（同上）另有一条协议 3 投影里丢了的 `deck`
+    /// 修改（旧代码按投影重建出 `deck_id = ∅`，新代按日志是默认牌组）。`f/…` 喂不到 `deck_id`，`notes` 报差异、
+    /// 结论 `fail`——整行豁免时这一条会被藏起来。
+    #[test]
+    fn an_unrelated_column_on_a_masked_row_still_fails() {
+        let merged = merged_w1();
+        let d = library_with_legacy("g4drymaskedbug", &|d| {
+            legacy_edit(d, "w1", 1, "f/pp", "p", json!({}), 50);
+            legacy_edit(d, &merged, 1, "f/pp", "p", json!({}), 50);
+            legacy_edit(d, &merged, 2, "f/fa", "a", json!({}), 100);
+            legacy_edit(d, "v", 1, "f/fa", "b", json!({}), 100);
+        });
+        d.apply(
+            T0 + 3 * DAY,
+            vec![edit("note", N3, "deck", json!(default_deck_id(P)))],
+        );
+        d.core
+            .writer()
+            .unwrap()
+            .execute(
+                "DELETE FROM srs_field_edits WHERE entity_kind = 'note' AND entity_id = srs_id(?1) AND field_key = 'deck'",
+                [N3],
+            )
+            .unwrap();
+        let r = dry(&d, &Stop::new(), &mut |_, _| {});
+        let p = &r["profiles"][0];
+        assert_eq!(p["verdict"], "fail", "{p:#}");
+        let notes = p["parity"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|d| d["what"] == "notes")
+            .cloned()
+            .unwrap_or_else(|| panic!("{p:#}"));
+        assert_eq!(notes["examplesOld"], json!([N3]), "{notes:#}");
+        assert_eq!(notes["examplesNew"], json!([N3]), "{notes:#}");
+        assert_eq!(p["knownDifferences"]["unproven"], 0);
+        assert_eq!(known_on_field(p)[0]["winnerChanged"], true);
     }
 }
