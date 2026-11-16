@@ -573,6 +573,8 @@ abstract final class MangaArchiveImporter {
             policy: policy,
             onProgress: onProgress,
             sourceId: sourceId,
+            // staging 是本函数自己建、finally 里整个删掉的目录。
+            pageSource: MangaPageSource.disposable,
           );
         }
 
@@ -610,6 +612,7 @@ abstract final class MangaArchiveImporter {
         onProgress: onProgress,
         sourceId: sourceId,
         sourceMetadata: epubSeriesMetadata,
+        pageSource: MangaPageSource.disposable,
       );
     } finally {
       // 先关源包句柄（中途抛出时正在写的页文件句柄已在

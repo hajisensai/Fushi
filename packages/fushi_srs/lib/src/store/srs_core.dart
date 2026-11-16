@@ -188,19 +188,6 @@ typedef _QueryDart =
       ffi.Pointer<ffi.Pointer<ffi.Char>>,
     );
 
-typedef _ReadBeginC =
-    ffi.Int32 Function(
-      ffi.Pointer<ffi.Void>,
-      ffi.Pointer<ffi.Pointer<ffi.Void>>,
-      ffi.Pointer<ffi.Pointer<ffi.Char>>,
-    );
-typedef _ReadBeginDart =
-    int Function(
-      ffi.Pointer<ffi.Void>,
-      ffi.Pointer<ffi.Pointer<ffi.Void>>,
-      ffi.Pointer<ffi.Pointer<ffi.Char>>,
-    );
-
 typedef _ExecC =
     ffi.Int32 Function(
       ffi.Pointer<ffi.Void>,
@@ -301,13 +288,6 @@ final class SrsCoreBindings {
       snapshot = lib.lookupFunction<_SnapshotC, _SnapshotDart>(
         'ffsrs_store_snapshot',
       ),
-      readBegin = lib.lookupFunction<_ReadBeginC, _ReadBeginDart>(
-        'ffsrs_store_read_begin',
-      ),
-      readQuery = lib.lookupFunction<_QueryC, _QueryDart>(
-        'ffsrs_store_read_query',
-      ),
-      readEnd = lib.lookupFunction<_CloseC, _CloseDart>('ffsrs_store_read_end'),
       debugQuery = lib.lookupFunction<_QueryC, _QueryDart>(
         'ffsrs_store_debug_query',
       ),
@@ -355,9 +335,6 @@ final class SrsCoreBindings {
   final _SimpleDart legacyMarkNone;
   final _SnapshotDart snapshot;
   final _QueryDart debugQuery;
-  final _ReadBeginDart readBegin;
-  final _QueryDart readQuery;
-  final _CloseDart readEnd;
   final _ExecDart exec;
   final _PageDart execBatch;
   final _StateDart inTransaction;
@@ -418,7 +395,6 @@ final class SrsCoreDiagCounts {
   const SrsCoreDiagCounts({
     required this.openHandles,
     required this.liveCores,
-    required this.readSessions,
     required this.pooledReaders,
     required this.sqliteBytes,
     required this.sqliteHighwaterBytes,
@@ -427,16 +403,13 @@ final class SrsCoreDiagCounts {
   });
 
   /// 原生一次写出的项数（Rust `DIAG_COUNT_LEN`）。
-  static const int length = 8;
+  static const int length = 7;
 
   /// 句柄表里打开着的库。
   final int openHandles;
 
   /// 还没释放的库结构体（含已关闭、在途调用还握着的）：大于 [openHandles] = 有退役的库还驻留。
   final int liveCores;
-
-  /// 没结束的只读会话。
-  final int readSessions;
 
   /// 各库只读连接池开着的连接总数。
   final int pooledReaders;
@@ -449,22 +422,21 @@ final class SrsCoreDiagCounts {
   final int dbBytes;
   final int walBytes;
 
-  /// 面包屑里的紧凑写法：`srs=开/存活 sess=… rd=… sqlite=当前/高水位MB db=…MB wal=…MB`。
+  /// 面包屑里的紧凑写法：`srs=开/存活 rd=… sqlite=当前/高水位MB db=…MB wal=…MB`。
   String describe() =>
-      'srs=$openHandles/$liveCores sess=$readSessions rd=$pooledReaders '
+      'srs=$openHandles/$liveCores rd=$pooledReaders '
       'sqlite=${sqliteBytes >> 20}/${sqliteHighwaterBytes >> 20}MB '
       'db=${dbBytes >> 20}MB wal=${walBytes >> 20}MB';
 }
 
+/// 这个原生库没编进测试专用的原始 SQL 通道（cargo feature `raw_sql`，native/fushi_fsrs/Cargo.toml）时
+/// [SrsCore.debugExecRaw] / [SrsCore.debugSelectRaw] / [SrsCore.debugExecBatchRaw] 的报错（与 Rust
+/// `store::RAW_SQL_ABSENT` 相同）。发布 / 随包构建都不带；测试用的库（CI 包测试 / 单测分片、dist worker、本机备库
+/// 脚本）带。
+const String kSrsRawSqlAbsent =
+    'srs: the raw SQL channel is not built into this library (cargo feature raw_sql)';
+
 /// 一个打开的 srs.db。
-/// [SrsCore.snapshotQuery] 拒绝非只读查询时的错误消息（与 Rust `store::NOT_SNAPSHOT` 相同）。
-const String kSrsNotSnapshotQuery = 'srs: not a snapshot query';
-
-/// srs.db 经 Drift 执行器只读：写语句、事务控制语句、PRAGMA 的报错都以它开头（与 Rust `store::READ_ONLY` 相同）。
-/// 生产代码的每一笔写入都是内核命令（`SrsCore.sync2` 等）。
-const String kSrsReadOnlyExecutor =
-    'srs: srs.db is read-only through the Drift executor';
-
 final class SrsCore {
   SrsCore._(this._b, this._handle, {required this.owned});
 
@@ -553,12 +525,11 @@ final class SrsCore {
       return SrsCoreDiagCounts(
         openHandles: out[0],
         liveCores: out[1],
-        readSessions: out[2],
-        pooledReaders: out[3],
-        sqliteBytes: out[4],
-        sqliteHighwaterBytes: out[5],
-        dbBytes: out[6],
-        walBytes: out[7],
+        pooledReaders: out[2],
+        sqliteBytes: out[3],
+        sqliteHighwaterBytes: out[4],
+        dbBytes: out[5],
+        walBytes: out[6],
       );
     });
   }
@@ -629,16 +600,6 @@ final class SrsCore {
     List<Object?> params = const <Object?>[],
   ]) => _rowsQuery(_b, _b.debugQuery, _h, sql, params);
 
-  /// 另开一条独立只读连接并开读事务：返回时快照已定下，之后的写入都不在里面（备份读快照用）。
-  /// 用完 [SrsReadSession.close]。可以在拿到句柄后交给后台 isolate（[SrsReadSession.fromAddress]）。
-  SrsReadSession beginRead() => using((Arena arena) {
-    final ffi.Pointer<ffi.Pointer<ffi.Void>> out = arena();
-    final ffi.Pointer<ffi.Pointer<ffi.Char>> err = arena();
-    err.value = ffi.nullptr;
-    _check(_b, _b.readBegin(_h, out, err), err);
-    return SrsReadSession._(_b, out.value, owned: true);
-  });
-
   static List<Map<String, Object?>> _rowsQuery(
     SrsCoreBindings b,
     _QueryDart f,
@@ -673,7 +634,9 @@ final class SrsCore {
 
   /// **测试专用**的原始通道：在写连接上执行一条任意语句（测试里直接改库造场景——改缓存行、删本机状态行、装触发器、
   /// 读写 PRAGMA）。生产代码不得调用（守卫 `srs_read_only_executor_guard_test.dart`）：srs.db 的每一笔写入都是内核命令，
-  /// Drift 执行器只读（[kSrsReadOnlyExecutor]）。
+  /// 每一次读都是内核读命令（`read` / `read_lib`，native/fushi_fsrs/src/store/reads.rs）。
+  /// 只有带 cargo feature `raw_sql` 的库里有：发布构建里能写库的这段原生代码不在，调用抛 [SrsCoreException]
+  /// （消息 [kSrsRawSqlAbsent]），所以生产代码里的调用在测试里是绿的、到发布包里才失败。
   ///
   /// [select] 时返回「列名行 + 结果行」（PRAGMA、`… RETURNING` 之类有结果行的语句），否则返回一行
   /// `[变更行数, last_insert_rowid]`；都是 [srsDecodeRows] 的页。语句跑完写连接必须回到 autocommit：BEGIN / SAVEPOINT
@@ -701,22 +664,8 @@ final class SrsCore {
     ];
   }
 
-  /// Drift 内联执行器的查询（`runSelect`，fushi_engine `srs_database_executor.dart` 的 `SrsInlineExecutor`）：在内核
-  /// 专用的一条只读连接上跑，只看已提交的数据、不排写锁（native/fushi_fsrs/src/store/mod.rs `SrsCore::select`）。
-  /// 不是只读查询（写语句、PRAGMA、事务控制语句）不执行、抛 [SrsCoreException]，消息以 [kSrsReadOnlyExecutor] 开头。
-  /// 返回页：列名行 + 结果行。
-  Uint8List execQuery(String sql, List<Object?> params) =>
-      _exec(sql, params, 2);
-
-  /// Drift 查询道的查询（fushi_engine `srs_database_executor.dart` 的读查询那一路）：一律在内核的只读连接池
-  /// 里执行，并发的查询各占一条连接、互不排队，只看已提交的数据（native/fushi_fsrs/src/store/mod.rs
-  /// `SrsCore::snapshot_select`）。不是只读查询（PRAGMA、`… RETURNING` 等）不执行、抛 [SrsCoreException]，
-  /// 消息为 [kSrsNotSnapshotQuery]。返回页同 [execQuery]。
-  Uint8List snapshotQuery(String sql, List<Object?> params) =>
-      _exec(sql, params, 3);
-
-  /// [mode]：2 = 内联执行器的只读查询，3 = 查询道的只读查询，4 / 5 = 测试专用的原始通道（写连接；5 返回结果行）
-  /// （ffi.rs `ffsrs_store_exec`；0 / 1 是以前 Drift 写语句的入口，内核一律拒绝）。
+  /// [mode]：4 / 5 = 测试专用的原始通道（写连接；5 返回结果行）（ffi.rs `ffsrs_store_exec`；别的取值内核不认——
+  /// srs.db 的读只有内核读命令 `read` / `read_lib`，写只有内核命令）。
   Uint8List _exec(String sql, List<Object?> params, int mode) =>
       using((Arena arena) {
         final (ffi.Pointer<ffi.Uint8> s, int sn) = _utf8(arena, sql);
@@ -742,7 +691,7 @@ final class SrsCore {
       });
 
   /// [debugExecRaw] 的批量版（**测试专用**）：[applications] 每项是（语句下标, 参数），整批在写连接的一个 SAVEPOINT
-  /// 里执行，一条出错整批不落。
+  /// 里执行，一条出错整批不落。同 [debugExecRaw] 只有带 `raw_sql` 的库里有。
   void debugExecBatchRaw(
     List<String> statements,
     List<(int, List<Object?>)> applications,
@@ -1043,7 +992,7 @@ final class SrsCore {
     return result;
   });
 
-  /// Drift 查询道（[snapshotQuery]）的并发上限：内核只读连接池的连接数上限，按本机核数算
+  /// 查询道（内核读命令 `read` / `read_lib`）的并发上限：内核只读连接池的连接数上限，按本机核数算
   /// （native/fushi_fsrs/src/store/read_pool.rs `read_concurrency`）。查询道的 worker 数取它，不另写常量。
   int get readConcurrency => using((Arena arena) {
     final ffi.Pointer<ffi.Int32> out = arena();
@@ -1094,46 +1043,6 @@ final class SrsCore {
     }
     throw SrsUpgradeNoSpaceException.tryParse(rc, message) ??
         SrsCoreException(rc, message);
-  }
-}
-
-/// srs.db 上一条独立只读连接的读事务（[SrsCore.beginRead]）：所有查询看到开会话那一刻的同一个快照，
-/// 不占 [SrsCore] 的读 / 写连接。同一时刻只许一个调用；[close] 回滚并关连接。
-final class SrsReadSession {
-  SrsReadSession._(this._b, this._handle, {required this.owned});
-
-  /// 包装别的 isolate 开的同一个会话（不拥有，[close] 不关）。
-  static SrsReadSession fromAddress(int address, {String? libraryPath}) =>
-      SrsReadSession._(
-        SrsCoreBindings.load(libraryPath: libraryPath),
-        ffi.Pointer<ffi.Void>.fromAddress(address),
-        owned: false,
-      );
-
-  final SrsCoreBindings _b;
-  ffi.Pointer<ffi.Void> _handle;
-
-  /// 本对象负责结束会话。
-  final bool owned;
-
-  /// 句柄地址（跨 isolate 传递用）。
-  int get address => _handle.address;
-
-  bool get isClosed => _handle == ffi.nullptr;
-
-  /// 在会话的读事务里跑一条只读语句（写语句报错）。返回每行一个「列名 → 值」。
-  List<Map<String, Object?>> query(
-    String sql, [
-    List<Object?> params = const <Object?>[],
-  ]) {
-    if (isClosed) throw StateError('srs read session is closed');
-    return SrsCore._rowsQuery(_b, _b.readQuery, _handle, sql, params);
-  }
-
-  void close() {
-    if (isClosed) return;
-    if (owned) _b.readEnd(_handle);
-    _handle = ffi.nullptr;
   }
 }
 

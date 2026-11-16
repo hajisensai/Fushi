@@ -9,6 +9,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/collections_page.dart';
+import 'package:fushi/src/pages/shared/library_section_tabs.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -185,12 +186,18 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('一期一会の邂逅だった。'), findsOneWidget);
 
-    await tester.tap(find.widgetWithText(ChoiceChip, t.collection_word));
+    // 重设计外壳下类型筛选是页头下方的连体页签组（LibrarySectionTabs），
+    // 不再是 ChoiceChip 行。
+    Finder typeTab(String label) => find.descendant(
+      of: find.byWidgetPredicate((Widget w) => w is LibrarySectionTabs),
+      matching: find.text(label),
+    );
+    await tester.tap(typeTab(t.collection_word));
     await tester.pumpAndSettle();
     expect(find.text('邂逅'), findsOneWidget);
     expect(find.text('一期一会の邂逅だった。'), findsNothing);
 
-    await tester.tap(find.widgetWithText(ChoiceChip, t.collection_filter_all));
+    await tester.tap(typeTab(t.collection_filter_all));
     await tester.pumpAndSettle();
     expect(find.text('一期一会の邂逅だった。'), findsOneWidget);
   });

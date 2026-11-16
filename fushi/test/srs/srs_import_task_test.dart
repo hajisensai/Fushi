@@ -67,12 +67,7 @@ class _Pending {
 SrsImportReport _report(int added) => SrsImportReport()..notesAdded = added;
 
 Future<void> _settle(WidgetTester tester, {int rounds = 12}) async {
-  for (int i = 0; i < rounds; i++) {
-    await tester.runAsync(
-      () => Future<void>.delayed(const Duration(milliseconds: 5)),
-    );
-    await tester.pump(const Duration(milliseconds: 60));
-  }
+  await srsSettle(tester, minRounds: rounds);
 }
 
 Widget _app({
@@ -491,7 +486,6 @@ void main() {
           return (
             db,
             await SrsDbStore.open(
-              db: srs.db,
               core: srs.core,
               profileUid: kSrsTestProfile,
               deviceId: 'dev',
@@ -539,10 +533,15 @@ void main() {
       expect(row, findsOneWidget);
 
       // 右键行：两套设计系统都弹同一份牌组菜单（宽屏右栏详情也有同名，按行取）。
-      await tester.tap(
-        find.descendant(of: row, matching: find.text('Old')),
-        buttons: kSecondaryButton,
+      // 复习主页的色块头部（PR #3397）比旧头部高，行可能排在首屏底边外：先滚进
+      // 视口再右键。
+      final Finder oldLabel = find.descendant(
+        of: row,
+        matching: find.text('Old', skipOffstage: false),
       );
+      await tester.ensureVisible(oldLabel);
+      await tester.pumpAndSettle();
+      await tester.tap(oldLabel, buttons: kSecondaryButton);
       await tester.pumpAndSettle();
       await tester.tap(find.text(t.srs_deck_delete).last);
       await tester.pumpAndSettle();
@@ -784,7 +783,6 @@ void main() {
           return (
             db,
             await SrsDbStore.open(
-              db: srs.db,
               core: srs.core,
               profileUid: kSrsTestProfile,
               deviceId: 'dev',

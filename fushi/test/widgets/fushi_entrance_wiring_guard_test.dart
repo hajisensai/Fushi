@@ -31,11 +31,27 @@ void main() {
         contains(
           'FushiStaggeredEntrance( index: index, '
           'child: _videoDragReorderCell( dragReorderKeys, index, '
-          'cells[index].build(VideoCardOrientation.$orientation), ), ),',
+          'cells[index].build(VideoCardOrientation.$orientation, null), ), ),',
         ),
         reason: '$orientation 网格格子应包在 FushiStaggeredEntrance 里',
       );
     }
+    // PR #3397：库页布局为拼贴 / 规整色块时墙改走 [SliverFushiCoverBlocks]，
+    // 逐格错峰进场由该组件统一包（同一个 FushiEntranceScope 窗口）。
+    expect(
+      flat,
+      contains(
+        'SliverFushiCoverBlocks( layout: layout, itemCount: cells.length,',
+      ),
+      reason: '色块布局的墙必须走 SliverFushiCoverBlocks（自带逐格进场）',
+    );
+    expect(
+      read(
+        'lib/src/utils/components/fushi_cover_block_layout.dart',
+      ).replaceAll(RegExp(r'\s+'), ' '),
+      contains('FushiStaggeredEntrance(index: index, child: child)'),
+      reason: 'SliverFushiCoverBlocks 的每格必须包 FushiStaggeredEntrance',
+    );
     // 横滚行版式本体 [_buildHorizontalRowFrame]（真实行与首屏骨架行共用）。
     expect(src, contains('child: itemBuilder(i)'));
     expect(

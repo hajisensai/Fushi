@@ -682,6 +682,7 @@ class AiAgentPage extends StatelessWidget {
         library != null &&
         MediaQuery.sizeOf(context).width >= kAiAgentSidePanelBreakpoint;
     return FushiPageScaffold(
+      masthead: true,
       title: t.ai_agent_title,
       actions: <Widget>[
         if (switchExecutorTooltip != null)

@@ -20,6 +20,11 @@ import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
+import 'package:fushi/src/utils/components/fushi_cover_block.dart'
+    show FushiCoverBlockColors, FushiCoverBlockSize, fushiCoverBlockShape;
+import 'package:fushi/src/utils/components/fushi_poster_block.dart';
+import 'package:fushi/src/utils/components/shelf_card_widgets.dart'
+    show shelfCoverCard;
 
 /// AI 助手条该不该出现在首页（纯函数，判据的唯一实现）。
 ///
@@ -54,12 +59,69 @@ final Provider<bool> homeAiAgentPanelVisibleProvider = Provider<bool>((
 
 /// 首页 AI 助手条。显隐由 dashboard 按 [homeAiAgentPanelVisibleProvider] 决定。
 class HomeAiAgentPanel extends StatelessWidget {
-  const HomeAiAgentPanel({super.key});
+  const HomeAiAgentPanel({super.key, this.poster = false});
 
   static const double rowHeight = 44;
 
+  /// true = 重设计外壳的海报色块形态（「AI 助手」chip + 大字标题 + 输入提示，
+  /// 点色块打开 AI 浮层）；false = 原一行条。由首页按外壳门控传入。
+  final bool poster;
+
+  Widget _buildPoster(BuildContext context) {
+    final FushiCoverBlockColors colors = fushiPosterColors(
+      context,
+      fushiPosterHue('home-ai-agent'),
+    );
+    final TextStyle base =
+        Theme.of(context).textTheme.bodyMedium ?? const TextStyle();
+    return KeyedSubtree(
+      key: const ValueKey<String>('home-ai-agent-panel'),
+      child: shelfCoverCard(
+        key: const ValueKey<String>('home-ai-agent-panel-open'),
+        shape: fushiCoverBlockShape(context, FushiCoverBlockSize.regular),
+        onTap: () => openAiAgent(context),
+        child: FushiPosterBlock(
+          watermark: t.ai_agent_title,
+          colors: colors,
+          watermarkFontSize: 110,
+          watermarkEdge: FushiPosterWatermarkEdge.bottom,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            spacing: 14,
+            children: <Widget>[
+              FushiPosterChip(
+                colors: colors,
+                icon: FushiIcons.aiAssistant,
+                label: t.ai_agent_title,
+              ),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                spacing: 8,
+                children: <Widget>[
+                  Expanded(
+                    child: Text(
+                      t.ai_agent_input_hint,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: FushiPosterText.statement
+                          .on(base)
+                          .copyWith(color: colors.accent),
+                    ),
+                  ),
+                  FushiIcon(FushiIcons.forward, size: 24, color: colors.accent),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (poster) return _buildPoster(context);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final bool apple = isGlassDesign(context);
     final bool eink = isEinkTheme(context);

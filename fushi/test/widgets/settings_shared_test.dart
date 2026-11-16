@@ -840,6 +840,10 @@ void main() {
     expect(find.byType(CupertinoActionSheet), findsNothing);
     expect(find.byType(MenuAnchor), findsOneWidget);
 
+    // 页头大字外壳（PR #3397）的设置页头高度在首帧布局后才报给正文让位：
+    // 等版面落定再点，否则首帧正文还压在页头底下。
+    await tester.pumpAndSettle();
+
     // Open the dropdown (the trigger shows the selected label).
     await tester.tap(find.widgetWithText(OutlinedButton, 'News'));
     await tester.pumpAndSettle();

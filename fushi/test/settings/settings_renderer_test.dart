@@ -1248,7 +1248,7 @@ void main() {
       );
       // 退化态完全没有出口；修复后必须有返回箭头（由统一嵌入页头提供）。
       expect(
-        find.byIcon(Icons.arrow_back),
+        find.byTooltip(const DefaultMaterialLocalizations().backButtonTooltip),
         findsOneWidget,
         reason: 'cupertino 桌面全屏设置必须提供返回箭头出口（BUG-009 R2）',
       );

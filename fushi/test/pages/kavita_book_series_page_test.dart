@@ -239,7 +239,11 @@ void main() {
     );
     fake.pagesRead[2] = 8;
     final int before = fake.detailCalls;
-    await tester.fling(find.byType(ListView), const Offset(0, 400), 1000);
+    await tester.fling(
+      find.byKey(const ValueKey<String>('media-poster-detail-scroll')),
+      const Offset(0, 400),
+      1000,
+    );
     await settleUntil(tester, () => fake.detailCalls > before);
 
     expect(fake.detailCalls, greaterThan(before));
@@ -254,7 +258,11 @@ void main() {
     fake.detailFails = true;
     fake.pagesRead[2] = 8;
     final int before = fake.detailCalls;
-    await tester.fling(find.byType(ListView), const Offset(0, 400), 1000);
+    await tester.fling(
+      find.byKey(const ValueKey<String>('media-poster-detail-scroll')),
+      const Offset(0, 400),
+      1000,
+    );
     await settleUntil(tester, () => fake.detailCalls > before);
 
     expect(row(1), findsOneWidget);

@@ -36,6 +36,20 @@ import 'package:fushi/src/utils/components/settings_section_anchor.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart'
     show kSettingsRowLabelMinWidth, settingsRowHasLeadingIcon;
 import 'package:fushi/src/utils/adaptive/fushi_page_backdrop.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show shellRedesignActive;
+import 'package:fushi/src/utils/components/fushi_masthead_scaffold.dart'
+    show FushiMastheadHeader;
+import 'package:fushi/src/utils/components/fushi_page_masthead.dart'
+    show
+        FushiMastheadActionGroup,
+        FushiMastheadPanel,
+        FushiMastheadTitle,
+        fushiMastheadBadgeExtent,
+        fushiMastheadCompact,
+        fushiMastheadPaletteOf,
+        fushiMastheadProgressOf,
+        kFushiMastheadTrackedOffset;
 
 export 'package:fushi/src/utils/components/settings_section_anchor.dart'
     show SettingsSectionAnchor, SettingsSectionSpy, SettingsSectionSpyScope;
@@ -741,6 +755,14 @@ class SettingsFloatingHeader extends StatefulWidget {
 class _SettingsFloatingHeaderState extends State<SettingsFloatingHeader> {
   bool _collapsed = false;
 
+  /// 页头大字形态（重设计外壳，墨水屏除外）下的滚动偏移（封顶
+  /// [kFushiMastheadTrackedOffset]，再往下进度已满、不必逐帧重建）。
+  double _mastheadOffset = 0;
+
+  /// 上一次 build 是否走了页头大字形态：只有它需要逐帧跟踪偏移，胶囊形态仍只
+  /// 认 [_collapsed] 两态。
+  bool _masthead = false;
+
   @override
   void initState() {
     super.initState();
@@ -771,12 +793,84 @@ class _SettingsFloatingHeaderState extends State<SettingsFloatingHeader> {
     final double offset = controller.positions.first.pixels;
     final bool collapsed = offset > 12;
     if (collapsed != _collapsed) setState(() => _collapsed = collapsed);
+    if (_masthead) {
+      final double tracked = offset.clamp(0.0, kFushiMastheadTrackedOffset);
+      if (tracked != _mastheadOffset) {
+        setState(() => _mastheadOffset = tracked);
+      }
+    }
   }
 
   // 与其它顶部浮动胶囊同一个整体缩放（[kFushiFloatingCapsuleScale]）。
   @override
-  Widget build(BuildContext context) =>
-      FushiCapsuleScale(child: _buildHeader(context));
+  Widget build(BuildContext context) {
+    // 重设计外壳（墨水屏除外，两套设计系统同一形态）：与库页同一套页头大字。
+    _masthead = shellRedesignActive(context);
+    if (_masthead) return _buildMasthead(context);
+    return FushiCapsuleScale(child: _buildHeader(context));
+  }
+
+  /// 页头大字形态（与库页页头大字同一套语言）：返回键与动作组是
+  /// [FushiMastheadActionGroup] 的圆角分段钮（与库页右侧动作同形），页名是
+  /// [FushiMastheadTitle] 大字，分类形状图标坐在页名后面的徽标位，当前分组名
+  /// 是页名下一行小字。随正文滚动，页名在绘制层按库页的进度曲线缩小、版面同步
+  /// 收短；滚到页头下面的正文由壳铺的 [FushiMastheadPanel] 底板遮住。
+  Widget _buildMasthead(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final double p = fushiMastheadProgressOf(
+      compact: fushiMastheadCompact(context),
+      motionEnabled: fushiExpressiveMotionEnabled(context),
+      offset: _mastheadOffset,
+    );
+    final String? subtitle = widget.subtitle;
+    final Widget subtitleLine = AnimatedSwitcher(
+      duration: fushiMotionDuration(context, FushiMotion.short),
+      switchInCurve: FushiMotion.enter,
+      switchOutCurve: FushiMotion.exit,
+      transitionBuilder: (Widget child, Animation<double> animation) =>
+          FadeTransition(
+            opacity: animation,
+            child: SizeTransition(
+              sizeFactor: animation,
+              axisAlignment: -1,
+              child: child,
+            ),
+          ),
+      child: subtitle == null || subtitle.isEmpty
+          ? const SizedBox.shrink(key: ValueKey<String>(''))
+          : Padding(
+              key: ValueKey<String>(subtitle),
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                subtitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: (theme.textTheme.labelLarge ?? const TextStyle())
+                    .copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: fushiMastheadPaletteOf(context).strong,
+                    ),
+              ),
+            ),
+    );
+    final IconData? icon = widget.leadingIcon;
+    // 与音乐 / 媒体服务器二级页同一行（[FushiMastheadHeader]）：返回键 + 页名大字
+    // + 分类形状徽标 + 当前分组小字 + 平铺动作（放不下才收「⋯」）。
+    return FushiMastheadHeader(
+      title: widget.title,
+      progress: p,
+      onBack: widget.onBack,
+      actions: widget.actions,
+      subtitle: subtitleLine,
+      badge: icon == null
+          ? null
+          : (BuildContext context, bool compact, double p) => SettingsShapeIcon(
+              icon: icon,
+              tone: widget.leadingTone,
+              size: fushiMastheadBadgeExtent(compact: compact, p: p),
+            ),
+    );
+  }
 
   Widget _buildHeader(BuildContext context) {
     final SettingsKitStyle style = SettingsKitStyle.of(context);
@@ -1471,6 +1565,11 @@ class _SettingsKitScaffoldState extends State<SettingsKitScaffold> {
   final ValueNotifier<double> _headerHeight = ValueNotifier<double>(0);
   final ValueNotifier<double> _jumpBarHeight = ValueNotifier<double>(0);
 
+  /// 页头的实时高度（含收缩中）：页头大字形态的底板 [FushiMastheadPanel] 跟着
+  /// 它收短；正文让位仍只认展开态的 [_headerHeight]。`late`：热重载时已存在的
+  /// State 也能建出来。
+  late final ValueNotifier<double> _liveHeaderHeight = ValueNotifier<double>(0);
+
   /// 正文已滚离顶部（内容在页头底下）：驱动共享顶部渐隐。
   final ValueNotifier<bool> _scrolledUnder = ValueNotifier<bool>(false);
 
@@ -1486,6 +1585,7 @@ class _SettingsKitScaffoldState extends State<SettingsKitScaffold> {
       !_controller.hasClients || _controller.positions.first.pixels <= 12;
 
   void _onHeaderHeight(double height) {
+    if (mounted) _liveHeaderHeight.value = height;
     if (!mounted || height == _headerHeight.value) return;
     if (_headerHeight.value > 0 && !_headerAtRest) return;
     _headerHeight.value = height;
@@ -1526,6 +1626,7 @@ class _SettingsKitScaffoldState extends State<SettingsKitScaffold> {
     _controller.dispose();
     _headerHeight.dispose();
     _jumpBarHeight.dispose();
+    _liveHeaderHeight.dispose();
     _scrolledUnder.dispose();
     super.dispose();
   }
@@ -1686,37 +1787,72 @@ class _SettingsKitScaffoldState extends State<SettingsKitScaffold> {
               ),
             ),
           ),
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: ListenableBuilder(
-              listenable: Listenable.merge(<Listenable>[
-                _scrolledUnder,
-                insetChanged,
-              ]),
-              builder: (BuildContext context, Widget? _) => AnimatedOpacity(
-                opacity: _scrolledUnder.value && widget.bodyConsumesTopPadding
-                    ? 1
-                    : 0,
-                duration: fushiMotionDuration(context, FushiMotion.short),
-                // 2026-10-09 Android 用户截图：页头 + 跳转条背后透出正文
-                // （「结果中的词头数量上限 99」压在状态栏与胶囊之间）。遮罩
-                // 实色盖满整段让位（状态栏 + 页头 + 跳转条），再往下柔和渐隐；
-                // 与库页外壳顶部遮罩同一口径（BUG-3132 的修法）。
-                //
-                // shoulderOpacity 必须同为 1：FushiTopFadeScrim 的「肩段」缺省从
-                // topOpacity 缓降到 0.82 倍，跳转条正好落在肩段下半，背后的正文
-                // 以 ~15% 透出（截图巡检：胶囊之间透出「覆写范围」）。让位区要的
-                // 是真实色，渐隐只发生在让位区以下。
-                child: FushiTopFadeScrim(
-                  solidHeight: inset(),
-                  topOpacity: 1,
-                  shoulderOpacity: 1,
+          if (shellRedesignActive(context))
+            // 页头大字形态：与库页同一块底板——正文滚到页头下面时页面底色按
+            // 进度铺到 90% + 背后高斯模糊（sigma 到 18），未滚动时不画；底板
+            // 盖住状态栏 + 页头（实时高度，随页名收缩）+ 跳转条。
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: ListenableBuilder(
+                listenable: Listenable.merge(<Listenable>[
+                  _controller,
+                  _liveHeaderHeight,
+                  _jumpBarHeight,
+                ]),
+                builder: (BuildContext context, Widget? _) =>
+                    FushiMastheadPanel(
+                      height:
+                          statusTop +
+                          _liveHeaderHeight.value +
+                          _jumpBarHeight.value,
+                      progress:
+                          !widget.bodyConsumesTopPadding ||
+                              !_controller.hasClients
+                          ? 0
+                          : fushiMastheadProgressOf(
+                              compact: fushiMastheadCompact(context),
+                              motionEnabled: fushiExpressiveMotionEnabled(
+                                context,
+                              ),
+                              offset: _controller.positions.first.pixels,
+                            ),
+                    ),
+              ),
+            )
+          else
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: ListenableBuilder(
+                listenable: Listenable.merge(<Listenable>[
+                  _scrolledUnder,
+                  insetChanged,
+                ]),
+                builder: (BuildContext context, Widget? _) => AnimatedOpacity(
+                  opacity: _scrolledUnder.value && widget.bodyConsumesTopPadding
+                      ? 1
+                      : 0,
+                  duration: fushiMotionDuration(context, FushiMotion.short),
+                  // 2026-10-09 Android 用户截图：页头 + 跳转条背后透出正文
+                  // （「结果中的词头数量上限 99」压在状态栏与胶囊之间）。遮罩
+                  // 实色盖满整段让位（状态栏 + 页头 + 跳转条），再往下柔和渐隐；
+                  // 与库页外壳顶部遮罩同一口径（BUG-3132 的修法）。
+                  //
+                  // shoulderOpacity 必须同为 1：FushiTopFadeScrim 的「肩段」缺省从
+                  // topOpacity 缓降到 0.82 倍，跳转条正好落在肩段下半，背后的正文
+                  // 以 ~15% 透出（截图巡检：胶囊之间透出「覆写范围」）。让位区要的
+                  // 是真实色，渐隐只发生在让位区以下。
+                  child: FushiTopFadeScrim(
+                    solidHeight: inset(),
+                    topOpacity: 1,
+                    shoulderOpacity: 1,
+                  ),
                 ),
               ),
             ),
-          ),
           Positioned(
             top: statusTop,
             left: 0,

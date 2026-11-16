@@ -28,9 +28,6 @@ import 'package:fushi_music/fushi_music.dart' show MusicPluginManager;
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/fushi_search.dart'
     show FushiSearchBar;
-
-import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
-    show FushiFloatingTopBar;
 import 'package:fushi/src/pages/implementations/music/music_cover.dart'
     show MusicCover;
 
@@ -423,6 +420,10 @@ void main() {
   testWidgets('专辑页逐碟曲目：有会被续播的断点的轨显示剩余时间 + 进度条，跟着断点改动与设置切档', (
     WidgetTester tester,
   ) async {
+    // 专辑页 hero（海报块）比旧头部高：800×600 下第二碟落在首屏以下（懒构建）。
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1200, 1600);
+    addTearDown(tester.view.reset);
     final FushiDatabase db = await _seed();
     addTearDown(db.close);
     await db.upsertMusicResumePoint('t2', positionMs: 60000, updatedAt: 1);
@@ -516,7 +517,11 @@ void main() {
       app,
       MusicAlbumPage(album: album, tracks: snap.tracksOfAlbum(album.albumUid)),
     );
-    final Rect bar = tester.getRect(find.byType(FushiFloatingTopBar));
+    // 页头大字外壳（PR #3397）：页头动作（曲目视图切换）浮在页面顶部一行，
+    // hero 封面必须排在这行之下、不被它盖住。
+    final Rect bar = tester.getRect(
+      find.byKey(const ValueKey<String>('music-view-style-toggle-tracks')),
+    );
     final Rect cover = tester.getRect(find.byType(MusicCover).first);
     expect(bar.height, greaterThan(0));
     expect(

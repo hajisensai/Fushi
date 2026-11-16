@@ -259,10 +259,15 @@ jobs:
     # 包测试的库带 ID 审计（src/store/ids.rs `audit`）：schema v17 起 ID 列存 16 字节 BLOB，Dart 原生 SQL
     # 漏了 srs_id() 会查不到 / 写错形状，审计让这类语句直接报错；fushi_srs 的金丝雀测试凭
     # FUSHI_FSRS_ID_AUDIT=1 断言审计真的开着（库换成不带审计的构建就红）。
-    - name: Build fushi_fsrs (Linux x64, id_audit) for package tests
+    # 还带测试专用的原始 SQL 通道（cargo feature raw_sql，Cargo.toml）：fushi_engine 的 test/srs 里几十个文件靠它
+    # 直接改库造场景；发布 / 随包构建不带（verify_abi.sh 核对）。
+    - name: Build fushi_fsrs (Linux x64, id_audit + raw_sql) for package tests
       env:
-        FUSHI_FSRS_FEATURES: id_audit
-      run: bash native/fushi_fsrs/build_linux_so.sh
+        FUSHI_FSRS_FEATURES: id_audit,raw_sql
+      run: |
+        set -euo pipefail
+        bash native/fushi_fsrs/build_linux_so.sh
+        bash native/fushi_fsrs/verify_raw_sql.sh native/fushi_fsrs/prebuilt/linux-x64/libfushi_fsrs.so present
     # 计算内核 fushi_compute 是硬依赖：包测试（fushi_compute / fushi_engine）要 Linux .so
     # （导出 FUSHI_COMPUTE_LIB），下面的 Android release 验证构建（android-arm64）要 arm64-v8a .so，
     # 否则 build.gradle 的 checkFushiComputeNative 让构建失败。
@@ -286,13 +291,13 @@ jobs:
       with:
         android-abis: arm64-v8a
     # packages/fushi_rwkv 的端到端测试要真权重（缺了判红、不 skip）。只读 native-rwkv-gate 写的
-    # 同一个缓存条目（key 是三个钉死的 SHA-256，与 fetch_model.sh 一致），不另占配额；未命中时
+    # 同一个缓存条目（key 是五个钉死的 SHA-256，与 fetch_model.sh 一致），不另占配额；未命中时
     # fetch_model.sh 按钉死 URL 下载并校验（~13 MB）。
     - name: Restore RWKV weights cache
       uses: actions/cache/restore@v4
       with:
         path: native/fushi_rwkv/model
-        key: fushi-rwkv-model-749ad1ad18d5b6ef8c4185802fa0c1e4a14e67cd7874f3efeaae355fffb1b9ec-ff626af2e974346ed282615d190500148b22cfe05cbfd081b1e70d5a1dfa3cd9-db54656bc41a22a175d2b905304d45e6ae6b0bb4efd1af8dfce9185f40ee1a01
+        key: fushi-rwkv-model-749ad1ad18d5b6ef8c4185802fa0c1e4a14e67cd7874f3efeaae355fffb1b9ec-b2f335bd712b9d602150201de41ab5a0f0a4c291644705e2aa1ed2a1bf1592c3-c7d8df407966fccd8f98227241816e114ce9ed1dfea799587e481c1d5926a453-77703dd2f2a21a1bcadaedfed1cec93ee0fd6fd6d3c840be221e72b5e1c05066-18de8ae77a1a40986dc432531116dfb009beae2385001ef425389a3ad7919a9e
     - name: Fetch RWKV weights (pinned URL, SHA-256 checked)
       run: bash native/fushi_rwkv/fetch_model.sh
 

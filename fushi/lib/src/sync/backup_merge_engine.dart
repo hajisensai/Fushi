@@ -1,5 +1,8 @@
 import 'dart:convert';
 
+import 'package:fushi/src/models/audio_source_config.dart' show AudioSourceKind;
+import 'package:fushi/src/sync/backup_path_rebase.dart'
+    show joinPrefTag, splitPrefTag;
 import 'package:fushi/src/sync/settings_sync.dart';
 import 'package:drift/drift.dart' show QueryRow, Variable;
 import 'package:fushi_engine/media/override_title_key.dart';
@@ -19,6 +22,7 @@ import 'package:fushi_engine/media/video/anime_source_video_path.dart';
 import 'package:fushi_engine/srs/srs_backup_merge.dart'
     show SrsBackupSource, mergeSrsFromBackup;
 import 'package:fushi_engine/srs/srs_storage.dart';
+import 'package:fushi_srs/fushi_srs.dart' show SrsCore;
 
 /// ATTACH-then-upsert merge engine for backup "merge" import (TODO-888).
 ///
@@ -69,7 +73,7 @@ class BackupMergeEngine {
     bool adoptSourcePreferences = false,
     bool mergePortableSettings = false,
     SrsStorage? localSrs,
-    SrsDatabase? sourceSrs,
+    SrsCore? sourceSrs,
   }) : _srcAlias = srcAlias,
        _mergePortableSettings = mergePortableSettings,
        _carriedVideoSourcePaths = carriedVideoSourcePaths,
@@ -84,9 +88,9 @@ class BackupMergeEngine {
   /// 本机 SRS 存储（srs.db）。null = 不合并 SRS（调用方没打开它，例如只做预览）。
   final SrsStorage? _localSrs;
 
-  /// 新形态备份里 `srs.db` 解出的副本（Rust 打开，Drift 视图跑在它的连接上）。null = 备份是老
+  /// 新形态备份里 `srs.db` 解出的副本的内核句柄（Rust 打开，事件经读命令读）。null = 备份是老
   /// 形态（SRS 表在 ATTACH 的备份主库里）或没有 SRS 数据。
-  final SrsDatabase? _sourceSrs;
+  final SrsCore? _sourceSrs;
 
   /// 是否把源库的 `preferences` 整体接管过来（**只有同机换包名的迁移**该开）。
   ///
@@ -1840,7 +1844,7 @@ class BackupMergeEngine {
   Future<void> _mergeSrs() async {
     final SrsStorage? local = _localSrs;
     if (local == null) return;
-    final SrsDatabase? sourceSrs = _sourceSrs;
+    final SrsCore? sourceSrs = _sourceSrs;
     final SrsBackupSource source;
     if (sourceSrs != null) {
       source = SrsBackupSource.split(
@@ -2184,22 +2188,98 @@ class BackupMergeEngine {
   /// under `localAudio/` and copied by [BackupRestoreService.mergeRestoreBackup]),
   /// so their config must travel too — otherwise the restored files are orphaned
   /// and "音频来源" is silently lost on a merge (the pref-non-merge default
-  /// dropped them). Adopt the backup's value when the device has none/an empty
-  /// list (a fresh app writes an empty `[]` placeholder, so a bare NOT-EXISTS on
-  /// the key is not enough); keep the device's own list otherwise (merge never
-  /// clobbers local). The raw value is copied verbatim so its typed prefix is
-  /// preserved; [BackupService] re-homes the embedded paths onto this device's
-  /// support dir afterwards.
+  /// dropped them).
+  ///
+  /// * Device has none / an empty list (a fresh app writes an empty `[]`
+  ///   placeholder, so a bare NOT-EXISTS on the key is not enough): adopt the
+  ///   backup's raw value verbatim (typed prefix preserved).
+  /// * Device has its own list: keep every local entry as-is (order = priority,
+  ///   never clobbered) and APPEND only the backup's FILE-BACKED local-audio
+  ///   entries this device does not have yet (see [_unionLocalAudioEntries]).
+  ///   Before this union the whole backup list was skipped as soon as the device
+  ///   had any entry (e.g. the always-present `fushiRemote` row once the user
+  ///   touched audio settings), so merging the recommended pack copied its
+  ///   `local_audio_*.db` files yet never registered them — the pack's
+  ///   pronunciation audio silently never worked.
+  ///
+  /// [BackupService] re-homes the embedded paths onto this device's support dir
+  /// afterwards (by filename), for adopted and appended entries alike.
   Future<void> _mergeAudioSourcePrefs() async {
     for (final String key in _audioSourcePrefKeys) {
       final String? src = await _readPrefValue(key, isSrc: true);
       if (_isEmptyListPref(src)) continue; // backup carries no audio sources
       final String? local = await _readPrefValue(key, isSrc: false);
-      if (!_isEmptyListPref(local)) continue; // keep the device's own list
+      final String? next = _isEmptyListPref(local)
+          ? src
+          : _unionLocalAudioEntries(
+              local: local!,
+              src: src!,
+              onlyLocalAudioKind: key == 'audio_source_configs',
+            );
+      if (next == null || next == local) continue;
       await _db.customStatement(
         'INSERT OR REPLACE INTO preferences ("key", "value") VALUES (?, ?)',
-        <Object?>[key, src],
+        <Object?>[key, next],
       );
+    }
+  }
+
+  /// Internal local-audio copies are named `local_audio_<digits>.db` and land
+  /// flat in the support dir with the SAME name on every device, so the
+  /// filename is their identity across machines (timestamp + pid naming makes
+  /// two different files with one name practically impossible).
+  static final RegExp _internalLocalAudioName = RegExp(
+    r'^local_audio_\d+\.db$',
+  );
+
+  /// Identity of a local-audio registry entry's [path]: the filename for an
+  /// internal copy (paths differ per device, the name does not), the full path
+  /// for an external reference. Null when there is no usable path.
+  static String? _localAudioIdentity(Object? path) {
+    if (path is! String || path.isEmpty) return null;
+    final String name = path.replaceAll(r'\', '/').split('/').last;
+    return _internalLocalAudioName.hasMatch(name) ? name : path;
+  }
+
+  /// Appends to the device's [local] list (a PrefCodec-tagged JSON list) every
+  /// entry of the backup's [src] list that points at a local-audio DB the
+  /// device does not already register. [onlyLocalAudioKind] restricts the
+  /// typed `audio_source_configs` union to `kind: localAudio` rows — remote /
+  /// built-in sources are this device's own settings and are never imported by
+  /// a merge. Entries without a path are skipped (nothing to point at). Returns
+  /// [local] unchanged when nothing is added or either value is unparsable
+  /// (never clobber local with a guess).
+  static String _unionLocalAudioEntries({
+    required String local,
+    required String src,
+    required bool onlyLocalAudioKind,
+  }) {
+    final ({String tag, String body}) localSplit = splitPrefTag(local);
+    try {
+      final Object? localDecoded = jsonDecode(localSplit.body);
+      final Object? srcDecoded = jsonDecode(splitPrefTag(src).body);
+      if (localDecoded is! List || srcDecoded is! List) return local;
+      bool isLocalAudio(Object? e) =>
+          !onlyLocalAudioKind ||
+          (e is Map && e['kind'] == AudioSourceKind.localAudio.wireName);
+      final Set<String> have = <String>{
+        for (final Object? e in localDecoded)
+          if (e is Map && isLocalAudio(e)) ?_localAudioIdentity(e['path']),
+      };
+      final List<Object?> added = <Object?>[];
+      for (final Object? e in srcDecoded) {
+        if (e is! Map || !isLocalAudio(e)) continue;
+        final String? id = _localAudioIdentity(e['path']);
+        if (id == null || !have.add(id)) continue;
+        added.add(e);
+      }
+      if (added.isEmpty) return local;
+      return joinPrefTag(
+        localSplit.tag,
+        jsonEncode(<Object?>[...localDecoded, ...added]),
+      );
+    } on FormatException {
+      return local;
     }
   }
 
@@ -2309,6 +2389,9 @@ List<String> mergeSkippedDeviceLocalTableNames() =>
       // v137：字幕书与远端音频的绑定。服务器配置 id 只在本机设置里有意义，合并进来
       // 只会造出指向不存在服务器的绑定。
       'remote_audio_bindings',
+      // v153：服务器托管词典的本机目录。键含本机配对的 hostId（老配对是本机记的服务器
+      // 地址），目录列由本机刷新建立；顺序 / 开关随配置快照走，不靠备份合并。
+      'remote_dictionary_metadata',
     ]);
 
 /// 把备份 [source] 里的 SRS 数据按 `profiles.uid` 归位并入本机（铁律 E，规则见
