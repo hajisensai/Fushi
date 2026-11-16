@@ -224,7 +224,7 @@ Future<List<BlurayExtraDeletionTombstone>> planBlurayExtraDeletionTombstones(
   FushiDatabase db,
   Iterable<String> bookUids,
 ) async {
-  // 一次批量取行（BUG-4746：原来逐条查，删上万条就是上万次查询）。
+  // 一次批量取行（BUG-4748：原来逐条查，删上万条就是上万次查询）。
   final List<VideoBookRow> targets = <VideoBookRow>[
     for (final VideoBookRow row in await db.getVideoBooksByBookUids(bookUids))
       // 蓝光与 DVD 的特典同一套墓碑（盘合集自然键 + 成员基身份）。

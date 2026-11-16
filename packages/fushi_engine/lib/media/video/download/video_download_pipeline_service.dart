@@ -706,7 +706,7 @@ Future<void> prepareVideoDownloadJobsForLocalDelete({
     for (final String path in candidatePaths) platformPathKey(path),
   };
   if (keys.isEmpty) return;
-  // 文件表一次读完按任务分组，不逐任务查（BUG-4746）。
+  // 文件表一次读完按任务分组，不逐任务查（BUG-4748）。
   final Map<String, List<VideoDownloadJobFileRow>> filesByJob = await database
       .getAllVideoDownloadJobFilesByJob();
   for (final VideoDownloadJobRow job in await database.getVideoDownloadJobs()) {
@@ -749,7 +749,7 @@ Future<void> reconcileVideoDownloadJobsAfterLocalDelete({
   final Set<String> deletedKeys = <String>{
     for (final String path in deletedPaths) platformPathKey(path),
   };
-  // 文件表一次读完按任务分组，不逐任务查（BUG-4746）。快照在循环前取足够：
+  // 文件表一次读完按任务分组，不逐任务查（BUG-4748）。快照在循环前取足够：
   // 每个任务的整删 / 标 skipped 只动它自己的文件行，不影响别的任务的判定。
   final Map<String, List<VideoDownloadJobFileRow>> filesByJob = await database
       .getAllVideoDownloadJobFilesByJob();

@@ -2313,7 +2313,7 @@ mixin _FushiDbVideoDomain
 
   /// 全部下载任务的文件行，一次读完按 `jobId` 分组；组内顺序与
   /// [getVideoDownloadJobFiles] 相同。给「对每个任务看一眼它的文件」的批量路径用
-  /// ——逐任务调 [getVideoDownloadJobFiles] 是「任务数」次查询（BUG-4746）。
+  /// ——逐任务调 [getVideoDownloadJobFiles] 是「任务数」次查询（BUG-4748）。
   Future<Map<String, List<VideoDownloadJobFileRow>>>
   getAllVideoDownloadJobFilesByJob() async {
     final List<VideoDownloadJobFileRow> rows =

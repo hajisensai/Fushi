@@ -1,4 +1,4 @@
-## BUG-4746 · 视频库批量删一万多条「像没删」——删除链逐条 N+1 + 无进度反馈
+## BUG-4748 · 视频库批量删一万多条「像没删」——删除链逐条 N+1 + 无进度反馈
 - **报告**：2026-11-11（应用内反馈 35YfcYO-zR：IPTV 播放列表导入 1.1 万多条后批量删除「什么都没删」，后补充是删得很慢、等一阵才删掉，希望有加载提示；拍板台同 id 定「根本性做完」）
 - **真实性**：✅ 真 bug（删除功能正确，但耗时随条数线性放大 × 每条十几条查询 / 独立提交，界面全程无反馈）。根因：
   - `fushi/lib/src/media/video/video_library_delete.dart` `_deleteStatisticsForVideos`：逐条 `getByBookUid` + 逐条 `deleteVideoStatisticsForIdentity`（每条一个事务、十来条查询）；
