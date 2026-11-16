@@ -1,4 +1,4 @@
-## BUG-4725 · 游戏批量刮削把跨源同名当成歧义，Bangumi 与 VNDB 都收录的作品刮不出封面
+## BUG-4726 · 游戏批量刮削把跨源同名当成歧义，Bangumi 与 VNDB 都收录的作品刮不出封面
 - **报告**：2026-11-16（用户：维护者，应用内反馈 tTYcSLWRv_；游戏库 STEINS;GATE RE:BOOT、ATRI 等「全部刮削」后仍无封面）
 - **真实性**：✅ 真 bug。`fushi/lib/src/mining/galgame_scrape_controller.dart:110` 把 Bangumi / VNDB / DLsite 三源候选拼成一条列表，`fushi/lib/src/pages/implementations/games_library_page.dart:663` 把整条列表交给 `fushi/lib/src/media/metadata/scrape_title_matcher.dart:20`（`uniqueExactScrapeTitleMatch`），只要出现第二条精确同名就返回 null。两个源都收录的作品各回一条同名 → 判「需确认」，批量永远不自动采用、封面不补。
 - **[x] ① 已修复** — 唯一性改为按源判：`uniqueExactScrapeTitleMatch` 新增必填 `sourceOf`，同一源内多条精确同名才是歧义（返回 null）；不同源各一条视为同一作品，取候选顺序里第一个源（Bangumi → VNDB → DLsite）的命中。游戏库 `_scrapeAllGames` 传 `candidate.source`。
