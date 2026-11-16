@@ -17,7 +17,7 @@ use std::ptr::{null, null_mut};
 use rusqlite::{Connection, OpenFlags};
 use serde_json::{Value, json};
 
-use super::tests::{N1, N2, N3, Pair, T0, card, close, library, library_pair};
+use super::tests::{N1, N2, N3, N4, Pair, T0, card, close, library, library_pair};
 use super::tests_class;
 use crate::gen4::op::tests::id;
 use crate::store::ffi::{
@@ -830,8 +830,8 @@ fn command_layer_lookups_use_their_keys() {
     )
     .unwrap();
     for q in [
-        "SELECT gen, floor FROM cache_gen WHERE col = ?1",
-        "SELECT value FROM srs_meta WHERE key = ?1",
+        crate::store::gen4::dispatch::CACHE_MARK_SQL,
+        crate::store::gen4::local::STORED_SQL,
     ] {
         let plan: Vec<String> = c
             .prepare(&format!("EXPLAIN QUERY PLAN {q}"))
@@ -845,4 +845,538 @@ fn command_layer_lookups_use_their_keys() {
             "{q}: {plan:?}"
         );
     }
+}
+
+// ---------------------------------------------------------------------- 统计原料缓存的两个失效条件（复核 minor-1）
+
+/// 新代库里 `cache_gen` 的全部行（缓存层代号）。
+fn cache_gen_rows(dir: &Path) -> Vec<(i64, i64, i64)> {
+    let c = Connection::open_with_flags(
+        dir.join(GEN4_FILE),
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .unwrap();
+    let mut s = c
+        .prepare("SELECT col, gen, floor FROM cache_gen ORDER BY col")
+        .unwrap();
+    s.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap()
+}
+
+/// 同一个进程里一条不碰缓存层的写（`local_anchor` 只写本机状态行）：缓存层代号不动，统计原料仍然重读——失效靠的是
+/// 写入代数（去掉缓存键里的写入代数这条就红）。
+#[test]
+fn a_write_outside_the_cache_layer_still_invalidates_the_stats_cache() {
+    use crate::store::gen4::dispatch::stats_cached;
+    let m = migrated();
+    let core = crate::store::ffi::core_of(m.h).unwrap();
+    let mut sreq = stats_req();
+    sreq["now"] = json!(T1);
+    let before = g4(m.h, "stats_rows", T1, sreq.clone());
+    let w0 = stats_cached(&core).expect("stats cached");
+    let mark = cache_gen_rows(&m.dir.0);
+    assert!(!mark.is_empty());
+    g4(
+        m.h,
+        "local_anchor",
+        T1,
+        json!({"anchor": {"o": 3, "b": "boot"}}),
+    );
+    assert_eq!(
+        cache_gen_rows(&m.dir.0),
+        mark,
+        "local_anchor left the cache layer alone"
+    );
+    assert_eq!(g4(m.h, "stats_rows", T1, sreq.clone()), before);
+    let w1 = stats_cached(&core).unwrap();
+    assert!(
+        w1 > w0,
+        "the raw stats were re-read after the write: {w0} -> {w1}"
+    );
+}
+
+/// 同一个目录开 Primary 与 Secondary：Secondary 先把统计原料读进它自己的缓存，Primary 作答一次；Secondary 的写入代数
+/// 没动，再读时靠缓存层代号认出别的进程的写入，拿到新的复习（去掉缓存键里的缓存层代号这条就红）。
+#[test]
+fn a_secondary_stats_cache_sees_the_primarys_writes() {
+    use crate::store::gen4::dispatch::stats_cached;
+    let m = migrated();
+    let s = open(&m.dir.0, 1).unwrap();
+    let sc = crate::store::ffi::core_of(s).unwrap();
+    let mut sreq = stats_req();
+    sreq["now"] = json!(T1);
+    let before = g4(s, "stats_rows", T1, sreq.clone());
+    let ws = stats_cached(&sc).expect("secondary stats cached");
+    let c = card(N2, "t1");
+    let items =
+        vec![json!({"e": review("s1sec", &c, T1, 3, "review"), "note": N2, "intent": "answer"})];
+    let (v, _) = g4_files(m.h, "apply", T1, json!({}), Some(&items));
+    assert_eq!(v["landed"], json!([true]), "{v}");
+    let after = g4(s, "stats_rows", T1, sreq.clone());
+    assert_eq!(stats_cached(&sc), Some(ws), "the secondary never writes");
+    assert_eq!(
+        after["reviews"].as_array().unwrap().len(),
+        before["reviews"].as_array().unwrap().len() + 1,
+        "{after}"
+    );
+    assert_eq!(after, g4(m.h, "stats_rows", T1, sreq));
+    ffsrs_store_close(s);
+}
+
+// ---------------------------------------------------------------------- Secondary 上的 wal_checkpoint（复核 minor-4）
+
+/// Secondary 只读：`wal_checkpoint` 报 `READ_ONLY`、不另开读写连接；Primary 照常并回 WAL。
+#[test]
+fn wal_checkpoint_is_refused_on_a_secondary() {
+    let m = migrated();
+    let s = open(&m.dir.0, 1).unwrap();
+    let (rc, e) = call(s, &json!({"op": "wal_checkpoint"}), None).unwrap_err();
+    assert_eq!(rc, STORE_ERROR, "{e}");
+    assert!(e.contains(READ_ONLY), "{e}");
+    let v = call(m.h, &json!({"op": "wal_checkpoint"}), None).unwrap().0;
+    assert!(v["busy"].is_boolean() && v["checkpointed"].is_i64(), "{v}");
+    ffsrs_store_close(s);
+}
+
+// ---------------------------------------------------------------------- 迁移登记（复核 minor-3）
+
+/// 迁移中途 panic（`ffsrs_call` 接住）：本进程里这个目录的登记照样摘掉，之后的迁移不回 `blocked`、状态里没有挂着的
+/// 进度；给了 runId、却始终没有对应运行的提前取消在下一次运行结束时清掉。
+#[test]
+fn a_panicking_migration_does_not_leave_the_directory_blocked() {
+    use crate::store::gen4::kernel::{run_registry_of, with_registered_run};
+    let d = library();
+    let dir = legacy_copy(&d, "s1panic");
+    let p = dir.0.to_str().unwrap().to_owned();
+    let r = std::panic::catch_unwind(|| {
+        with_registered_run(&dir.0, || {
+            // 登记期间：同一目录的迁移回 blocked、状态里有进度。
+            let v = global(
+                "gen4_migrate_run",
+                &json!({"dir": p, "caches": {P: cfg()}, "now": T1}),
+            )
+            .unwrap();
+            assert_eq!(v["verdict"], json!("blocked"), "{v}");
+            assert!(gen_status(&dir.0)["running"].is_object());
+            panic!("migration panicked midway");
+        })
+    });
+    assert!(r.is_err());
+    assert_eq!(run_registry_of(&dir.0), (false, 0));
+    assert_eq!(gen_status(&dir.0)["running"], Value::Null);
+    let v = global("gen4_migrate_cancel", &json!({"dir": p, "runId": "never"})).unwrap();
+    assert_eq!(v, json!({"cancelled": false}));
+    assert_eq!(run_registry_of(&dir.0), (false, 1));
+    migrate(&dir.0);
+    assert_eq!(run_registry_of(&dir.0), (false, 0));
+}
+
+// ---------------------------------------------------------------------- 逐条接线的对拍（复核 minor-2）
+
+/// 协议 3 一侧的修改记录草稿（同 `writes_tests.rs`）。
+fn draft(kind: &str, entity: &str, key: &str, v: Value) -> Value {
+    json!({
+        "e": {"t": "edit", "x": {"p": P, "k": kind, "e": entity, "f": key, "v": v, "ts": "anchored"}},
+        "note": null, "clk": "t",
+    })
+}
+
+fn keys_of(v: &Value) -> Vec<String> {
+    let mut k: Vec<String> = v
+        .as_object()
+        .unwrap_or_else(|| panic!("not an object: {v}"))
+        .keys()
+        .cloned()
+        .collect();
+    k.sort();
+    k
+}
+
+/// 两侧的身份记录表相同（每条写之后都比：接错臂的写会让两侧分叉）。
+fn same_entities(m: &Migrated, pair: &Pair<'_>, at: &str) {
+    use super::tests::Norm::{Id, Payload, Plain};
+    let ent: &[super::tests::Norm] = &[Id, Plain, Payload];
+    let q = json!({"q": "entities"});
+    let (_, pf) = p3(&m.d, "read", T1, q.clone(), None);
+    let (_, gf) = g4_files(m.h, "read", T1, q, None);
+    assert_eq!(rows(pair, &pf, "t", ent), rows(pair, &gf, "t", ent), "{at}");
+}
+
+/// 浏览一串命令（同 `browse_tests.rs` 的脚本，缩短）：每一侧用自己的 `gen`。回包按 (命令, JSON) 收集。
+fn browse_script(run: &mut dyn FnMut(&str, Value) -> Value) -> Vec<(String, Value)> {
+    let deck = default_deck_id(P);
+    let mut out = Vec::new();
+    let q = browse_req(json!({"now": T1}));
+    let v = run("browse_query", q.clone());
+    let gen = v["gen"].clone();
+    out.push(("browse_query".to_owned(), v));
+    for (op, req) in [
+        ("browse_rows", json!({"owner": "page:s1", "gen": gen})),
+        ("browse_sources", json!({"owner": "page:s1", "gen": gen})),
+    ] {
+        out.push((op.to_owned(), run(op, req)));
+    }
+    let ids = run(
+        "browse_ids",
+        json!({"owner": "page:s1", "gen": gen, "from": 0}),
+    );
+    let two: Vec<Value> = ids["ids"].as_array().unwrap()[..2].to_vec();
+    out.push((
+        "browse_targets".to_owned(),
+        run(
+            "browse_targets",
+            json!({"owner": "page:s1", "gen": gen, "ids": two}),
+        ),
+    ));
+    let mut counts = q.clone();
+    counts["nodes"] = json!([{"t": "text", "v": "猫"}, false]);
+    out.push(("browse_counts".to_owned(), run("browse_counts", counts)));
+    let mut find = browse_req(json!({"now": T1}));
+    find["owner"] = json!("ankiconnect");
+    find["mode"] = json!("notes");
+    find["uuids"] = json!(false);
+    find["node"] = json!({"t": "text", "v": "猫"});
+    out.push(("anki_find".to_owned(), run("anki_find", find)));
+    out.push((
+        "anki_tags".to_owned(),
+        run("anki_tags", json!({"owner": "ankiconnect"})),
+    ));
+    let norm = crate::search::dupe_norm;
+    out.push((
+        "anki_dupes".to_owned(),
+        run(
+            "anki_dupes",
+            json!({"first": {"NT": "fa"}, "cands": [
+                {"norm": norm("猫"), "type": "NT", "all": false, "decks": null},
+                {"norm": norm("犬"), "type": "NT", "all": false, "decks": [deck]},
+                {"norm": norm("鳥"), "type": "NT", "all": false, "decks": null},
+            ]}),
+        ),
+    ));
+    out.push(("browse_stats".to_owned(), run("browse_stats", json!({}))));
+    out.push((
+        "browse_close".to_owned(),
+        run("browse_close", json!({"owner": "page:s1"})),
+    ));
+    out.push(("browse_stats".to_owned(), run("browse_stats", json!({}))));
+    out
+}
+
+/// 第一组对拍（`reads_through_…`）之外的每一条读命令经分发器与协议 3 的同一条比：数字 id、笔记详情、绑定、规模、
+/// 同步状态的形状、库级读、回忆率、浏览的其余子命令与 AnkiConnect 查询。接到相邻实现上的臂回包形状或值必然不同。
+#[test]
+fn every_other_wired_read_matches_protocol_3_through_the_dispatcher() {
+    let m = migrated_with(true);
+    let pair = pair_of(&m);
+    let deck = default_deck_id(P);
+    let num = crate::store::schema::anki_numeric_id;
+    let (c1, c2) = (card(N1, "t1"), card(N1, "t2"));
+    // 数字 id → ID。
+    let req = json!({
+        "notes": [num(N1), num(N4), 5, num(N2), "x", num(N1)],
+        "cards": [num(&c1), num(&c2), num(N1)],
+    });
+    let new = g4(m.h, "anki_resolve", T1, req.clone());
+    close(
+        &pair,
+        &p3(&m.d, "anki_resolve", T1, req, None).0,
+        &new,
+        "anki_resolve",
+    );
+    assert_eq!(new["cards"][1], json!(c2), "{new}");
+    // 笔记详情（可见卡、字段按 ID 排过再比，同 `tests.rs`）。
+    let sort_cards = |mut v: Value| -> Value {
+        for n in v["notes"].as_array_mut().unwrap() {
+            if let Some(cs) = n.get_mut("c").and_then(Value::as_array_mut) {
+                cs.sort_by_key(|c| pair.canon(c[1].as_str().unwrap()));
+            }
+            if let Some(fs) = n.get_mut("f").and_then(Value::as_array_mut) {
+                fs.sort_by_key(|f| pair.canon(f[0].as_str().unwrap()));
+            }
+        }
+        v
+    };
+    let req = json!({"notes": [num(N2), num(N3), num(N4), 7]});
+    let new = g4(m.h, "anki_notes_info", T1, req.clone());
+    assert!(new["notes"][0]["c"].is_array(), "{new}");
+    close(
+        &pair,
+        &sort_cards(p3(&m.d, "anki_notes_info", T1, req, None).0),
+        &sort_cards(new),
+        "anki_notes_info",
+    );
+    // 绑定（迁移前没写过：两侧都是 null）、规模。
+    close(
+        &pair,
+        &p3(&m.d, "binding_get", T1, json!({}), None).0,
+        &g4(m.h, "binding_get", T1, json!({})),
+        "binding_get",
+    );
+    let (old, new) = (
+        p3(&m.d, "profile_footprint", T1, json!({}), None).0,
+        g4(m.h, "profile_footprint", T1, json!({})),
+    );
+    assert_eq!(keys_of(&old), keys_of(&new));
+    for k in ["notes", "cards", "reviews"] {
+        assert_eq!(old[k], new[k], "profile_footprint.{k}: {old} vs {new}");
+    }
+    assert!(new["notes"].as_i64().unwrap() > 0, "{new}");
+    // 同步状态：形状相同（设备行的内容随迁移换了本机身份，`writes_tests.rs` 已逐键比过）。
+    let (old, new) = (
+        p3(&m.d, "status", T1, json!({}), None).0,
+        g4(m.h, "status", T1, json!({})),
+    );
+    assert_eq!(keys_of(&old), keys_of(&new), "{old}\n{new}");
+    assert_eq!(new["enabled"], json!(true), "{new}");
+    // 库级读。
+    for q in [
+        json!({"q": "user_note_count"}),
+        json!({"q": "profile_merges"}),
+    ] {
+        let (pv, pf) = p3(&m.d, "read_lib", T1, q.clone(), None);
+        let (gv, gf) = g4_files(m.h, "read_lib", T1, q.clone(), None);
+        close(&pair, &pv, &gv, &q.to_string());
+        assert_eq!(
+            pf.iter().map(|f| &f.0).collect::<Vec<_>>(),
+            gf.iter().map(|f| &f.0).collect::<Vec<_>>(),
+            "{q}"
+        );
+    }
+    // 回忆率（候选按卡排过再比，同 `tests.rs`）。
+    let mut req = stats_req();
+    req["now"] = json!(T1);
+    req["recallDecks"] = json!([deck]);
+    req["recall"] = json!({"ids": [c1], "r": [0.42]});
+    let sorted = |v: &Value| -> Value {
+        let mut xs = v["cards"].as_array().unwrap().clone();
+        xs.sort_by_key(|x| pair.canon(x[0].as_str().unwrap_or("")));
+        Value::Array(xs)
+    };
+    let old = p3(&m.d, "stats_recall", T1, req.clone(), None).0;
+    let new = g4(m.h, "stats_recall", T1, req);
+    assert_eq!(keys_of(&old), keys_of(&new));
+    close(&pair, &sorted(&old), &sorted(&new), "stats_recall");
+    assert!(!sorted(&new).as_array().unwrap().is_empty(), "{new}");
+    // 浏览的其余子命令、AnkiConnect 查询。
+    let old = browse_script(&mut |op, r| p3(&m.d, op, T1, r, None).0);
+    let new = browse_script(&mut |op, r| g4(m.h, op, T1, r));
+    assert_eq!(old.len(), new.len());
+    for ((op, pv), (gop, gv)) in old.iter().zip(&new) {
+        assert_eq!(op, gop);
+        assert!(gv.get("error").is_none(), "{op}: {gv}");
+        if op == "browse_query" {
+            // 代号各侧自己的。
+            assert_eq!(keys_of(pv), keys_of(gv), "{op}");
+            continue;
+        }
+        close(&pair, pv, gv, op);
+    }
+    let rows = &new.iter().find(|(op, _)| op == "browse_rows").unwrap().1;
+    assert!(!rows["s"].as_array().unwrap().is_empty(), "{rows}");
+    let dupes = &new.iter().find(|(op, _)| op == "anki_dupes").unwrap().1;
+    assert!(
+        dupes["dup"].as_array().unwrap().contains(&json!(true)),
+        "{dupes}"
+    );
+}
+
+/// 第一组对拍（`apply`）之外的每一条写命令经分发器与协议 3 的同一条比：回包里各命令自己的关键键两侧相同，写完两侧的
+/// 身份记录表仍然相同；每条本机写命令推进 `localRevision`（不改投影的除外）。接到相邻实现上的臂回包键或状态必然不同。
+#[test]
+fn every_other_wired_write_matches_protocol_3_through_the_dispatcher() {
+    let m = migrated_with(true);
+    let pair = pair_of(&m);
+    let both = |op: &str, now: i64, extra: Value, items: Option<&[Value]>| -> (Value, Value) {
+        let old = p3(&m.d, op, now, extra.clone(), items).0;
+        let new = g4_files(m.h, op, now, extra, items).0;
+        (old, new)
+    };
+    let revision = || {
+        g4(m.h, "local_state", T1, json!({}))["revision"]
+            .as_i64()
+            .unwrap_or(0)
+    };
+    // 裁决：两侧各按自己的冲突 ID（同一条删除 / 修改冲突），之后两侧都没有待裁决项。
+    let id_of = |v: &Value| v[0]["id"].as_str().unwrap().to_owned();
+    let pid = id_of(&p3(&m.d, "conflicts", T1, json!({}), None).0);
+    let gid = id_of(&g4(m.h, "conflicts", T1, json!({})));
+    p3(
+        &m.d,
+        "resolve",
+        T1,
+        json!({"conflict": pid, "delete": false}),
+        None,
+    );
+    let v = g4(
+        m.h,
+        "resolve",
+        T1,
+        json!({"conflict": gid, "delete": false}),
+    );
+    assert!(v["localRevision"].is_i64(), "{v}");
+    assert_eq!(g4(m.h, "conflicts", T1, json!({})), json!([]));
+    assert_eq!(p3(&m.d, "conflicts", T1, json!({}), None).0, json!([]));
+    same_entities(&m, &pair, "resolve");
+    // 按条件改字段：被拒的笔记两侧相同。
+    let it = |n: &str, f: &str, x: &str, v: &str| json!({"n": n, "f": f, "x": x, "v": v});
+    let items = vec![it(N3, "fa", "犬", "いぬ"), it(N2, "fa", "wrong", "x")];
+    let (old, new) = both(
+        "note_fields_if",
+        T1,
+        json!({"mode": "field", "ts": "anchored"}),
+        Some(&items),
+    );
+    close(&pair, &old["rejected"], &new["rejected"], "note_fields_if");
+    assert!(
+        new["rejected"].as_array().is_some_and(|r| !r.is_empty()),
+        "{new}"
+    );
+    same_entities(&m, &pair, "note_fields_if");
+    // 改动（还原点 + 修改）。
+    let r0 = revision();
+    let items = vec![draft("note", N3, "f/fb", json!("dog C"))];
+    let (old, new) = both(
+        "change",
+        T1 + 1,
+        json!({"checkpoint": {"name": "change", "reason": "change_notetype"}, "ts": "anchored"}),
+        Some(&items),
+    );
+    assert_eq!(old["landed"], new["landed"], "{old}\n{new}");
+    assert!(revision() > r0);
+    same_entities(&m, &pair, "change");
+    // 排程：改期一张卡。
+    let sched = json!({"at": T1, "utcOff": 0, "rollover": 4, "ts": "anchored",
+                       "items": [{"a": "setDue", "card": card(N3, "t1"), "due": 19_800}]});
+    let (old, new) = both("sched", T1 + 2, sched, None);
+    assert_eq!(old["blocked"], new["blocked"], "{old}\n{new}");
+    assert_eq!(new["logs"].as_array().map(Vec::len), Some(1), "{new}");
+    assert_eq!(
+        old["logs"].as_array().map(Vec::len),
+        new["logs"].as_array().map(Vec::len)
+    );
+    // 删牌组：先两侧各建一个牌组、把 N3 移进去；计划两侧相同，一步走到 done。
+    const LANG: &str = "0193a1b2-0000-7000-8000-0000000000d1";
+    let ev = vec![
+        json!({"e": {"t": "entity", "x": {"id": LANG, "p": P, "k": "deck", "d": {"createdAt": 1}}}, "note": null}),
+        draft("deck", LANG, "name", json!("Lang")),
+        draft("note", N3, "deck", json!(LANG)),
+    ];
+    let (old, new) = both("apply", T1 + 3, json!({}), Some(&ev));
+    assert_eq!(old["landed"], new["landed"], "{old}\n{new}");
+    let plan = json!({"deck": LANG, "deleteCards": false, "plan": true});
+    let (old, new) = both("deck_delete", T1 + 4, plan, None);
+    assert_eq!(
+        (&old["total"], &old["done"]),
+        (&new["total"], &new["done"]),
+        "{old}\n{new}"
+    );
+    assert!(new["total"].as_i64().unwrap() > 0, "{new}");
+    let step = json!({"deck": LANG, "deleteCards": false, "limit": 100, "deletedAt": T1 + 4, "ts": "anchored"});
+    let (old, new) = both("deck_delete", T1 + 4, step, None);
+    assert_eq!(
+        (&old["done"], &new["done"]),
+        (&json!(true), &json!(true)),
+        "{old}\n{new}"
+    );
+    same_entities(&m, &pair, "deck_delete");
+    // 并笔记：N2 并进 N3。
+    let merge = json!({"keep": N3, "absorb": [N2], "deletedAt": T1 + 5, "ts": "anchored"});
+    let (old, new) = both("merge_notes", T1 + 5, merge, None);
+    close(&pair, &old["linked"], &new["linked"], "merge_notes.linked");
+    close(
+        &pair,
+        &old["unmatched"],
+        &new["unmatched"],
+        "merge_notes.unmatched",
+    );
+    assert!(new["linked"].as_i64().is_some_and(|l| l > 0), "{new}");
+    same_entities(&m, &pair, "merge_notes");
+    // 彻底清除：N4。
+    let (_, new) = both(
+        "purge",
+        T1 + 6,
+        json!({"kind": "note", "entities": [N4]}),
+        None,
+    );
+    assert_eq!(new["purged"].as_array().map(Vec::len), Some(1), "{new}");
+    same_entities(&m, &pair, "purge");
+    // 还原点、恢复的预览、恢复（到 `library` 历史中间的一个时刻）。
+    both(
+        "checkpoint",
+        T1 + 7,
+        json!({"name": "s1", "reason": "manual"}),
+        None,
+    );
+    assert_eq!(
+        p3(&m.d, "checkpoints", T1, json!({}), None)
+            .0
+            .as_array()
+            .map(Vec::len),
+        g4(m.h, "checkpoints", T1, json!({}))
+            .as_array()
+            .map(Vec::len),
+    );
+    let at = json!({"at": T0 + DAY + 15, "retract": true});
+    let (old, new) = both("plan_restore", T1 + 8, at.clone(), None);
+    assert_eq!(old, new, "plan_restore");
+    assert!(keys_of(&new).contains(&"revived".to_owned()), "{new}");
+    let (_, new) = both("restore", T1 + 8, at, None);
+    assert!(new["changed"].is_array(), "{new}");
+    same_entities(&m, &pair, "restore");
+    // 信任：未知设备两侧都拒绝，什么都不写。
+    let r1 = revision();
+    let unknown = json!({"device": "0193a1b2-0000-7000-8000-0000000000ee", "trust": false});
+    assert!(
+        crate::store::ffi::sync2_dispatch(
+            &m.d.core,
+            &{
+                let mut r = unknown.clone();
+                r["op"] = json!("trust");
+                r["profile"] = json!(P);
+                r["now"] = json!(T1 + 9);
+                r
+            },
+            &mut Vec::new(),
+            &mut Vec::new(),
+        )
+        .is_err()
+    );
+    let (rc, e) = call(m.h, &g4req("trust", T1 + 9, unknown), None).unwrap_err();
+    assert_eq!(rc, STORE_ERROR, "{e}");
+    assert!(e.contains("trust"), "{e}");
+    assert_eq!(revision(), r1);
+    // 存量去重、摘要自愈：新代的回包（`writes_local.rs` 文件头的换代语义）。
+    assert_eq!(g4(m.h, "dedup", T1 + 9, json!({}))["done"], json!(true));
+    let v = g4(m.h, "digest_heal", T1 + 9, json!({}));
+    assert_eq!(v["healed"], json!(1), "{v}");
+    assert!(v["rebuilt"]["cacheNotes"].is_i64(), "{v}");
+    same_entities(&m, &pair, "digest_heal");
+    // 本机设备信息、别的设备的补充名：形状与协议 3 相同。
+    let info = json!({"model": "Pixel", "app": "3.4"});
+    let (old, new) = both("device_info", T1 + 9, info, None);
+    assert_eq!(keys_of(&old), keys_of(&new), "{old}\n{new}");
+    assert_eq!(new["name"], json!("Pixel"), "{new}");
+    let other = g4(m.h, "status", T1, json!({}))["devices"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["self"] == json!(false))
+        .map(|r| r["device"].as_str().unwrap().to_owned())
+        .expect("a carried device");
+    let hint = json!({"device": other, "hint": "客厅的电脑"});
+    let (old, new) = both("device_hint", T1 + 9, hint, None);
+    assert_eq!(
+        (&old, &new),
+        (&json!({"changed": true}), &json!({"changed": true}))
+    );
+    let row = g4(m.h, "status", T1, json!({}))["devices"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["device"] == json!(other))
+        .cloned()
+        .unwrap();
+    assert_eq!(row["hint"], json!("客厅的电脑"), "{row}");
 }

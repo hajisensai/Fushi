@@ -13,6 +13,10 @@
 //!   协议 3 存储表示的事；媒体回收的待回收集合随 `media_gc_*` 接线另定（交接说明「S1 接线设计」）。
 //!
 //! 不需要 profile 已经绑定集合（与协议 3 相同：这一行只按 profile uid 记）。
+//!
+//! **profile 串原样进键、不归一**：协议 3 的 `srs_local_state.profile_uid` 是 ID 列，经 `srs_id(?1)` 把 UUID 文本打包成
+//! 16 字节，大小写不同的同一个 UUID 落到同一行；新代的 `collections.profile_uid`（`Truth::binding_of`）同样按原样的串比，
+//! 这里跟它一致——一个 profile 在新代里只认一种写法。Dart 一直传同一种写法（`Profile.uid`），不受影响；换写法 = 另一行。
 
 use serde_json::{Map, Value};
 
@@ -29,11 +33,14 @@ fn key(profile: &str) -> String {
     format!("local_state/{profile}")
 }
 
+/// [stored] 执行的语句（查询计划测试用同一份）。
+pub(crate) const STORED_SQL: &str = "SELECT value FROM srs_meta WHERE key = ?1";
+
 /// [profile] 的行：没有 → None；损坏（不是 JSON 对象）→ 空对象（同协议 3）。
 fn stored(t: &Truth<'_>, profile: &str) -> Result<Option<Map<String, Value>>, String> {
     let raw: Option<String> = t
         .conn()
-        .prepare_cached("SELECT value FROM srs_meta WHERE key = ?1")
+        .prepare_cached(STORED_SQL)
         .map_err(sql)?
         .query_row([key(profile)], |r| r.get(0))
         .optional()

@@ -425,7 +425,13 @@ impl G4Core {
 
     /// 把 WAL 并回主库（PASSIVE），在一条另开的连接上做：不占写连接（协议 3 `SrsCore::wal_checkpoint` 同口径）。库已
     /// 关就报 `CLOSED`，不按路径把库重新打开。回包 `{busy, log, checkpointed}`。
+    ///
+    /// Secondary 报 [READ_ONLY]、不开连接：辅助进程按设计只读（可能在没有写权限的沙箱里），并回 WAL 是写库的主进程的事
+    /// （协议 3 没有 Secondary，它的句柄一律是读写的）。
     pub fn wal_checkpoint(&self) -> Result<Value, String> {
+        if matches!(self.mode, OpenMode::Secondary) {
+            return Err(READ_ONLY.to_owned());
+        }
         // 借着一条读连接开旁路连接：与 [G4Core::close]（先关读连接池、等借出的放回）互斥。
         let _hold = self.reader()?;
         let conn = Connection::open_with_flags(
@@ -595,6 +601,58 @@ fn runs() -> MutexGuard<'static, BTreeMap<PathBuf, Arc<Run>>> {
     RUNS.lock().unwrap_or_else(|e| e.into_inner())
 }
 
+fn cancelled_early() -> MutexGuard<'static, BTreeSet<(PathBuf, String)>> {
+    CANCELLED_EARLY.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// [RUNS] 里一个目录的登记：析构时摘掉（迁移正常返回、报错、panic 都一样——`ffsrs_call` 接住 panic 之后，留在表里的项会让
+/// 本进程对这个目录的迁移一直回 `blocked`），连同这个目录在 [CANCELLED_EARLY] 里剩下的项（给了 runId、却始终没有对应的
+/// 那一次开跑的取消）。
+struct Registration {
+    dir: PathBuf,
+}
+
+impl Registration {
+    /// 登记 [dir] 的这一次运行；本进程里这个目录已经在跑 = None。
+    fn new(dir: &Path, run: &Arc<Run>) -> Option<Registration> {
+        let mut all = runs();
+        if all.contains_key(dir) {
+            return None;
+        }
+        all.insert(dir.to_owned(), Arc::clone(run));
+        Some(Registration {
+            dir: dir.to_owned(),
+        })
+    }
+}
+
+impl Drop for Registration {
+    fn drop(&mut self) {
+        runs().remove(&self.dir);
+        cancelled_early().retain(|(d, _)| d != &self.dir);
+    }
+}
+
+/// 测试用：本进程里 [dir] 有没有登记中的运行、提前到达的取消还剩几条。
+#[cfg(test)]
+pub(crate) fn run_registry_of(dir: &Path) -> (bool, usize) {
+    (
+        runs().contains_key(dir),
+        cancelled_early().iter().filter(|(d, _)| d == dir).count(),
+    )
+}
+
+/// 测试用：登记 [dir] 的一次运行，在登记期间跑 [f]（[f] panic 时登记照样摘掉）。已经在跑 = None。
+#[cfg(test)]
+pub(crate) fn with_registered_run<T>(dir: &Path, f: impl FnOnce() -> T) -> Option<T> {
+    let run = Arc::new(Run {
+        stop: Stop::new(),
+        progress: Mutex::new((migrate::Step::Space, 0, 1)),
+    });
+    let _reg = Registration::new(dir, &run)?;
+    Some(f())
+}
+
 fn dir_of(req: &Value) -> Result<PathBuf, String> {
     req.get("dir")
         .and_then(Value::as_str)
@@ -633,10 +691,7 @@ pub fn global(op: &str, req: &Value) -> Result<Value, String> {
                 }
                 None => {
                     if let Some(id) = req.get("runId").and_then(Value::as_str) {
-                        CANCELLED_EARLY
-                            .lock()
-                            .unwrap_or_else(|e| e.into_inner())
-                            .insert((dir, id.to_owned()));
+                        cancelled_early().insert((dir, id.to_owned()));
                     }
                     Ok(json!({"cancelled": false}))
                 }
@@ -676,19 +731,12 @@ fn run_migration(req: &Value) -> Result<Value, String> {
         stop: Stop::new(),
         progress: Mutex::new((migrate::Step::Space, 0, 1)),
     });
-    {
-        let mut all = runs();
-        if all.contains_key(&dir) {
-            return Ok(json!({"verdict": "blocked", "reason": migrate::BLOCKED_MIGRATING}));
-        }
-        all.insert(dir.clone(), Arc::clone(&run));
-    }
+    // 登记随 `_reg` 析构摘掉（返回、报错、panic 都一样）。
+    let Some(_reg) = Registration::new(&dir, &run) else {
+        return Ok(json!({"verdict": "blocked", "reason": migrate::BLOCKED_MIGRATING}));
+    };
     if let Some(id) = req.get("runId").and_then(Value::as_str) {
-        if CANCELLED_EARLY
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .remove(&(dir.clone(), id.to_owned()))
-        {
+        if cancelled_early().remove(&(dir.clone(), id.to_owned())) {
             run.stop.stop();
         }
     }
@@ -705,6 +753,5 @@ fn run_migration(req: &Value) -> Result<Value, String> {
             new_device: &migrate::random_device,
         },
     );
-    runs().remove(&dir);
     Ok(out?.json())
 }

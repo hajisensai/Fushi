@@ -406,10 +406,13 @@ fn cache_config_set(t: &Truth<'_>, col: i64, caches: &Value) -> Result<Value, St
     Ok(json!({"changed": true, "settled": settled_json(&st)}))
 }
 
+/// [cache_mark] 执行的语句（查询计划测试用同一份）。
+pub(crate) const CACHE_MARK_SQL: &str = "SELECT gen, floor FROM cache_gen WHERE col = ?1";
+
 /// 缓存层代号（`cache_gen` 的 `(gen, floor)`，没有行 = (0, 0)）。
 fn cache_mark(t: &Truth<'_>, col: i64) -> Result<(i64, i64), String> {
     Ok(t.conn()
-        .prepare_cached("SELECT gen, floor FROM cache_gen WHERE col = ?1")
+        .prepare_cached(CACHE_MARK_SQL)
         .map_err(sql)?
         .query_row([col], |r| Ok((r.get(0)?, r.get(1)?)))
         .optional()
