@@ -85,6 +85,8 @@ mod dispatch_tests;
 #[cfg(test)]
 mod fushisrs_tests;
 #[cfg(test)]
+mod id_reply_tests;
+#[cfg(test)]
 mod identity_tests;
 #[cfg(test)]
 mod refresh_tests;
@@ -149,17 +151,32 @@ pub(super) fn ref_of(text: &str) -> Ref {
 
 /// 请求里的一组 ID（JSON 字符串数组）归一成规范 ID：去重，保持第一次出现的顺序。不是字符串的元素是调用方的 bug。
 pub(super) fn canon_ids(ix: &Index<'_, '_>, ids: &Value) -> Result<Vec<Ref>, String> {
+    Ok(canon_ids_echo(ix, ids)?.0)
+}
+
+/// [canon_ids]，外加请求 ID 与它的规范 ID 不同的那几项 `{请求 ID: 规范 ID}`（G9-7）：按实体出行的读（`entities` /
+/// `edits`）行里写规范 ID，调用方按自己给的 ID 预建了槽（Dart `_prefetchEdits` / `_prefetchEntities`），拿这张表在
+/// 同一次回包里对回去，不另发 `canonical_ids`。请求都是规范 ID 时表是空的。
+pub(super) fn canon_ids_echo(
+    ix: &Index<'_, '_>,
+    ids: &Value,
+) -> Result<(Vec<Ref>, serde_json::Map<String, Value>), String> {
     let xs = ids.as_array().ok_or("gen4 read: ids must be an array")?;
     let mut seen = std::collections::HashSet::new();
     let mut out = Vec::with_capacity(xs.len());
+    let mut echo = serde_json::Map::new();
     for x in xs {
         let s = x.as_str().ok_or("gen4 read: ids must be strings")?;
         let c = ix.canonical(&ref_of(s))?;
+        let text = c.text();
+        if text != s {
+            echo.insert(s.to_owned(), Value::String(text));
+        }
         if seen.insert(c.clone()) {
             out.push(c);
         }
     }
-    Ok(out)
+    Ok((out, echo))
 }
 
 /// 集合 [col] 的默认牌组（规范 ID）：缓存配置给了就用它（归一后，与缓存层同一个），否则是规范规则的内置默认牌组。
