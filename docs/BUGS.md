@@ -38,6 +38,7 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-4717](bugs/BUG-4717-audiobook-pointer-seek-focus-loss.md) | ✅ | ✅ | audiobook-pointer-seek-focus-loss |
+| [BUG-4717](bugs/BUG-4717-manga-context-menu-image-hit-page.md) | ✅ | ✅ | 漫画双页跨页右键「复制 / 保存 / 分享图片」「设为封面」作用于当前跨页主页而不是右键落点那一页 |
 | [BUG-4716](bugs/BUG-4716-onboarding-music-module.md) | ✅ | ✅ | 新手引导的功能模块方格没有音乐，向导既不出方格也不写 module_music_enabled |
 | [BUG-4715](bugs/BUG-4715-header-sort-menu-anchor-follows-trigger.md) | ✅ | ✅ | 库页排序菜单不从排序按钮下方弹出而是弹在页头动作组右下角 |
 | [BUG-4714](bugs/BUG-4714-web-video-dom-lookup-mine-no-media.md) | ✅ | ✅ | 网页播放器窗口宿主档 DOM 字幕点词制卡丢失锚点 cue，静默出无画面无音频的纯字段卡 |
