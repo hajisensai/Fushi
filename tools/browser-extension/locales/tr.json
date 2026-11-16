@@ -293,6 +293,7 @@
   "mine_queued_generate_later": "Hepsini oluşturmak için uzantıdaki kart çıkarma düğmesine tıklayın",
   "mine_no_cue": "Geçerli altyazı satırı bulunamadı, birazdan yeniden deneyin",
   "mine_enqueue_failed": "Kuyruğa eklenemedi",
+  "mine_enqueue_context_invalidated": "Kuyruğa eklenemedi: uzantı güncellendi, sayfayı yenileyip (F5) tekrar deneyin",
   "mine_failed": "Kart çıkarma başarısız",
   "mine_done": "Kart oluşturuldu",
   "mine_duplicate_exists": "Bu sözcük için zaten bir kart var",
