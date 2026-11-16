@@ -25,8 +25,9 @@
     // videoId 初始值是 '' 而非 null：与 videoKey() 的非空字符串契约同型，
     // 首次 tick 仍会因 '' !== <真实 key> 而触发一次 refreshHeadless（语义不变）。
     activeLang: null, videoId: '', cues: [], currentIndex: -1,
-    // 按需取轨失败的占位轨：key → 错误（见 requestLazyIfPending）。
-    lazyFailed: {},
+    // 按需取轨失败的占位轨：key → 错误（见 requestLazyIfPending）。key 来自页面世界可伪造的
+    // postMessage，所以用 Map：'__proto__' / 'constructor' 只是普通键，不碰原型链。
+    lazyFailed: new Map(),
     tickTimer: null, enabled: false,
     overlayEnabled: true, dragDropEnabled: true, autoScroll: true,
     overlayEl: null, overlayCue: null, dropHint: null,
@@ -168,11 +169,11 @@
   // 标「加载失败」、提示一次、不再自动重试；用户再次明确选这条轨（retryLazyTrack）才重取。
   function requestLazyIfPending(track) {
     if (!track || !track.pending || typeof window.fushiRequestLazyTrack !== 'function') return;
-    if (st.lazyFailed[track.key]) return;
+    if (st.lazyFailed.has(track.key)) return;
     // 手机遥控的被动轮询只读状态，不替用户去取占位轨（Netflix 取轨会临时切站点字幕）。
     if (remote && remote.passive) return;
     var now = Date.now();
-    st.lazyRequestedAt = st.lazyRequestedAt || {};
+    st.lazyRequestedAt = st.lazyRequestedAt || Object.create(null);
     if (now - (st.lazyRequestedAt[track.key] || 0) < 5000) return;
     st.lazyRequestedAt[track.key] = now;
     try { window.fushiRequestLazyTrack(track.key); } catch (_) {}
@@ -180,8 +181,8 @@
   // 用户明确选了这条轨：上次取失败的记录作废，下一次刷新立刻重取（不受 5 秒节流）。
   function retryLazyTrack(lang) {
     var key = videoKey() + '|' + lang;
-    if (!st.lazyFailed[key]) return;
-    delete st.lazyFailed[key];
+    if (!st.lazyFailed.has(key)) return;
+    st.lazyFailed.delete(key);
     if (st.lazyRequestedAt) delete st.lazyRequestedAt[key];
   }
 
@@ -1517,7 +1518,7 @@
   };
 
   window.fushiSubtitlePanelOnCues = function (key) {
-    if (key) delete st.lazyFailed[String(key)];
+    if (key) st.lazyFailed.delete(String(key));
     if (!st.enabled) return;
     refreshHeadless();
   };
@@ -1526,8 +1527,10 @@
   // 只认还在等 cue 的占位轨；是当前活动轨就明确提示——不再静默停在「选中加载」。
   window.fushiSubtitlePanelOnTrackFailed = function (key, err) {
     key = String(key || '');
-    if (!key || !(window.fushiLazyTracks && window.fushiLazyTracks[key])) return;
-    st.lazyFailed[key] = String(err || 'error');
+    // 只认自有键：继承属性（key='constructor' 之类）不能冒充已登记的占位轨。
+    var lazy = window.fushiLazyTracks;
+    if (!key || !lazy || !Object.prototype.hasOwnProperty.call(lazy, key) || !lazy[key]) return;
+    st.lazyFailed.set(key, String(err || 'error'));
     if (st.lazyRequestedAt) delete st.lazyRequestedAt[key]; // 不再自动重试只由 lazyFailed 决定
     if (key !== activeTrackKey()) return;
     var label = (window.fushiTrackLabels && window.fushiTrackLabels[key]) || key.slice(key.indexOf('|') + 1);
@@ -1563,7 +1566,7 @@
             : ((window.fushiTrackLabels && window.fushiTrackLabels[track.key]) || track.lang),
           length: track.cues.length,
           pending: !!track.pending,
-          failed: !!(track.pending && st.lazyFailed[track.key]),
+          failed: !!(track.pending && st.lazyFailed.has(track.key)),
           signature: trackSignature(track),
         };
       }),

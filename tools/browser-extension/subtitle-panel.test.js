@@ -272,6 +272,42 @@ test('#3401：按需取轨失败 → 标 failed 并提示，不再自动重试�
   assert.strictEqual(state.tracks.find((t) => t.lang === 'ar').failed, false);
 });
 
+// 审查 #3487：另外两个重试入口（播放器菜单 fushiSubtitleSelectTrack、手机遥控 selectTrack）
+// 同样清掉失败记录并立刻重取；失败回执的门只认 fushiLazyTracks 的自有键。
+test('#3401：播放器菜单重选失败轨 → 立刻重取；继承属性冒充不了已登记占位轨', () => {
+  const key = 'example.com/video/1|ja';
+  const store = {
+    'example.com/video/1|ar': [{ startMs: 1000, endMs: 2000, text: 'مرحبا' }],
+    [key]: [],
+  };
+  const harness = loadController({ store });
+  harness.windowObject.fushiLazyTracks = { [key]: true };
+  const requested = [];
+  harness.windowObject.fushiRequestLazyTrack = (k) => { requested.push(k); return true; };
+  const toasts = [];
+  harness.windowObject.fushiToast = (msg) => toasts.push(msg);
+
+  harness.message({ type: 'fushiSubtitleSidePanelSelectTrack', lang: 'ja' });
+  assert.strictEqual(requested.length, 1);
+  harness.windowObject.fushiSubtitlePanelOnTrackFailed(key, 'no cues');
+  let state = harness.message({ type: 'fushiSubtitleSidePanelState' });
+  assert.strictEqual(state.tracks.find((t) => t.lang === 'ja').failed, true);
+
+  assert.strictEqual(harness.windowObject.fushiSubtitleSelectTrack('ja'), true);
+  state = harness.message({ type: 'fushiSubtitleSidePanelState' });
+  assert.strictEqual(state.tracks.find((t) => t.lang === 'ja').failed, false, '播放器菜单重选清掉失败');
+  assert.strictEqual(requested.length, 2, '播放器菜单重选 → 立刻重取');
+
+  // 只登记在原型上的 key（页面可伪造 'constructor' 这类继承属性）不算占位轨。
+  const toastsBefore = toasts.length;
+  harness.windowObject.fushiLazyTracks = Object.create({ [key]: true });
+  harness.windowObject.fushiSubtitlePanelOnTrackFailed(key, 'forged');
+  harness.windowObject.fushiSubtitlePanelOnTrackFailed('constructor', 'forged');
+  harness.windowObject.fushiSubtitlePanelOnTrackFailed('__proto__', 'forged');
+  assert.strictEqual(toasts.length, toastsBefore, '继承属性不触发失败提示');
+  assert.strictEqual(({}).polluted, undefined);
+});
+
 
 // 拖放导入的范围：用户报「在任何网页拖文件都弹『松开以加载字幕』并糊住半个屏幕」。
 // 判据收窄成「这一页确实有 <video>」，没有视频的普通网页连 preventDefault 都不做。

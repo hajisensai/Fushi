@@ -262,3 +262,30 @@ test('#3401：SPA 换视频后残留的 ytInitialPlayerResponse（别的视频�
   const order = h.posted.find((m) => m.__fushiStream === 'tracks').tracks.map((t) => t.lang);
   assert.strictEqual(order[0], 'Japanese', '上一个视频的默认轨（ar）不得带到这个视频');
 });
+
+// 审查 #3487：第三路兜底（页面里的播放器响应）以前直接用 ytInitialPlayerResponse，不核对
+// videoId——SPA 换片后会把上一个视频的整份轨清单当成当前视频发布。
+test('#3401：运行时 / Android 都取不到时，兜底只用 videoId 对得上的播放器响应', async () => {
+  const renderer = (tracks) => ({ playerCaptionsTracklistRenderer: {
+    captionTracks: tracks,
+    audioTracks: [{ captionTrackIndices: tracks.map((_, i) => i), defaultCaptionTrackIndex: 0, hasDefaultTrack: true }],
+    defaultAudioTrackIndex: 0,
+  } });
+  const staleTrack = track('ar', '', 'Arabic');
+  staleTrack.baseUrl = 'https://www.youtube.com/api/timedtext?v=other&lang=ar&kind=manual';
+  const stale = loadBridge([], null, {
+    initialResponse: { videoDetails: { videoId: 'other' }, captions: renderer([staleTrack]) },
+  });
+  await stale.flush();
+  assert.strictEqual(stale.posted.filter((m) => m.__fushiStream === 'tracks').length, 0,
+    '上一个视频的轨清单不得当成当前视频发布');
+  assert.ok(!stale.fetches.some((u) => /v=other/.test(u)), stale.fetches.join('\n'));
+
+  const fresh = loadBridge([], null, {
+    initialResponse: { videoDetails: { videoId: 'vid1' }, captions: renderer([track('ja', '', 'Japanese')]) },
+  });
+  await fresh.flush();
+  const published = fresh.posted.find((m) => m.__fushiStream === 'tracks');
+  assert.ok(published, '当前视频自己的响应照常作为兜底');
+  assert.strictEqual(published.tracks[0].lang, 'Japanese');
+});

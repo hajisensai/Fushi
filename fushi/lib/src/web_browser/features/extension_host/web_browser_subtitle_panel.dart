@@ -644,7 +644,13 @@ class WebBrowserSubtitlePanelState$ extends State<WebBrowserSubtitlePanel> {
           ),
       ],
     );
-    if (picked == null || picked == s.activeLang) return;
+    if (picked == null) return;
+    // 反馈 0RgCNJFQmJ：取失败的活动轨重选一次 = 重试（页面据此清掉失败记录并重取），
+    // 不能按「没换轨」吞掉；正常轨重选当前轨才是无操作。
+    final bool retryFailed = s.tracks.any(
+      (WebBrowserSubtitleTrack t) => t.lang == picked && t.failed,
+    );
+    if (picked == s.activeLang && !retryFailed) return;
     await _send(<String, Object?>{
       'type': 'fushiSubtitleSidePanelSelectTrack',
       'lang': picked,

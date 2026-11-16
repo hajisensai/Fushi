@@ -1014,15 +1014,33 @@
     if (sig !== trackSig) {
       trackSig = sig;
       trackEl.textContent = '';
+      function trackText(track) {
+        return track.label + (track.failed ? tr('sp_track_failed_suffix')
+          : track.pending ? tr('sp_track_pending_suffix') : '（' + track.length + '）');
+      }
+      // 反馈 0RgCNJFQmJ：活动轨取失败时它本来就是选中值，下拉里再点同一项浏览器不发 change，
+      // 「重新选择可重试」就落空。失败的活动轨改由一个隐藏、禁用的占位项承担显示（文字照旧是
+      // 「xx（加载失败）」），select 的值不再等于这条轨——用户在下拉里选它就是一次真正的 change。
+      var failedActive = null;
+      tracks.forEach(function (track) {
+        if (track.failed && track.lang === state.activeLang) failedActive = track;
+      });
+      if (failedActive) {
+        var placeholder = document.createElement('option');
+        placeholder.value = '';
+        placeholder.disabled = true;
+        placeholder.hidden = true;
+        placeholder.textContent = trackText(failedActive);
+        trackEl.appendChild(placeholder);
+      }
       tracks.forEach(function (track) {
         var option = document.createElement('option');
         option.value = track.lang;
-        option.textContent = track.label + (track.failed ? tr('sp_track_failed_suffix')
-          : track.pending ? tr('sp_track_pending_suffix') : '（' + track.length + '）');
+        option.textContent = trackText(track);
         trackEl.appendChild(option);
       });
       trackEl.hidden = tracks.length === 0;
-      trackEl.value = state.activeLang || '';
+      trackEl.value = failedActive ? '' : (state.activeLang || '');
       offsetEl.hidden = tracks.length === 0;
     }
     // 正在手填时不打断（state 每秒刷新一次）。
@@ -1272,6 +1290,7 @@
   }
 
   trackEl.addEventListener('change', async function () {
+    if (!trackEl.value) return; // 失败轨的占位项（禁用）不是可选的轨
     var state = await sendToTab({ type: 'fushiSubtitleSidePanelSelectTrack', lang: trackEl.value });
     if (state && state.ok) {
       stateSignature = metadataSignature(state);

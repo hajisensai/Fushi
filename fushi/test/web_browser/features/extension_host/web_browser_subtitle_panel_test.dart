@@ -211,6 +211,51 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
+    // 反馈 0RgCNJFQmJ / 审查 #3487：失败的活动轨重选一次就是重试，不能按「没换轨」吞掉。
+    testWidgets('失败的活动轨在选轨对话框里重选 → 发 SelectTrack；正常活动轨重选不发', (
+      WidgetTester tester,
+    ) async {
+      page.tracks
+        ..clear()
+        ..add(<String, Object?>{
+          'lang': 'ja',
+          'label': 'Japanese',
+          'length': 0,
+          'signature': '0',
+          'pending': true,
+          'failed': true,
+        });
+      await pump(tester);
+      final String failedLabel = 'Japanese${en['sp_track_failed_suffix']}';
+      expect(find.text(failedLabel), findsOneWidget);
+
+      Iterable<Map<String, Object?>> selects() => page.received.where(
+        (Map<String, Object?> m) =>
+            m['type'] == 'fushiSubtitleSidePanelSelectTrack',
+      );
+
+      await tester.tap(key('web-browser-subtitle-panel-track'));
+      await tester.pumpAndSettle();
+      // 页面收到重选后清掉失败、重取到 cue：SelectTrack 的回包即新状态。
+      page.tracks.single
+        ..['failed'] = false
+        ..['pending'] = false
+        ..['length'] = 2;
+      await tester.tap(find.text(failedLabel).last);
+      await tester.pumpAndSettle();
+      expect(selects().map((Map<String, Object?> m) => m['lang']), <Object?>[
+        'ja',
+      ]);
+      expect(find.text('Japanese（2）'), findsOneWidget);
+
+      await tester.tap(key('web-browser-subtitle-panel-track'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Japanese（2）').last);
+      await tester.pumpAndSettle();
+      expect(selects(), hasLength(1), reason: '正常活动轨重选是无操作');
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('字号 A- / A+ 与跟随开关写进扩展存储；设置钮打开设置', (WidgetTester tester) async {
       await pump(tester);
       expect(stateOf(tester).fontScale, 1);
@@ -437,6 +482,8 @@ class _FakePage {
         return _state(true);
       case 'fushiSubtitleSidePanelSeek':
         return <String, Object?>{'ok': true};
+      case 'fushiSubtitleSidePanelSelectTrack':
+        return _state(true);
     }
     return null;
   }

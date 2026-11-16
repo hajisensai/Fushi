@@ -83,8 +83,12 @@
   }
 
   // 排序要的两项信号：
-  //   defaultTrack —— 当前音轨的默认字幕轨（{languageCode, asr, vssId}），没有 = null；
-  //   audioLang    —— 当前音轨的语言（基础语言码，`en` / `ja`），推不出 = ''。
+  //   defaultTrack —— 音轨的默认字幕轨（{languageCode, asr, vssId}），没有 = null；
+  //   audioLang    —— 音轨的语言（基础语言码，`en` / `ja`），推不出 = ''。
+  // 注意 b) 取的是服务端的**默认音轨**（defaultAudioTrackIndex），不是用户在播放器里切到的
+  // 当前音轨：当前音轨的索引只在被混淆的运行时对象上，读不到。所以 a) 的运行时字段读得到时
+  // 优先（defaultIndex 先于 defaultTrack 命中）；自动配音视频里切了音轨又读不到运行时字段时，
+  // b) 给的是原声音轨的默认轨。
   // 来源按可靠度依次：
   //   a) 运行时音轨对象的明文字段（未被混淆的播放器版本上仍有效）；
   //   b) 播放器响应 captions.playerCaptionsTracklistRenderer（服务端 JSON，字段名是协议的
@@ -198,12 +202,16 @@
     } catch (_) { return NO_SOURCE; }
   }
 
-  function responseTracks() {
+  // 第三路兜底：页面里的播放器响应。与排序信号同一条「残留响应不用」规则——SPA 换片后
+  // ytInitialPlayerResponse / ytplayer.config 仍是首屏那个视频的，整份轨清单（baseUrl 里 v= 是
+  // 旧视频）不能当成当前视频发布，所以同样按 videoDetails.videoId 核对。
+  function responseTracks(id) {
     try {
-      var response = window.ytInitialPlayerResponse;
+      var response = currentPlayerResponse(id);
       if (!response && window.ytplayer && window.ytplayer.config && window.ytplayer.config.args) {
-        response = window.ytplayer.config.args.player_response;
-        if (typeof response === 'string') response = JSON.parse(response);
+        var legacy = window.ytplayer.config.args.player_response;
+        if (typeof legacy === 'string') legacy = JSON.parse(legacy);
+        if (legacy && legacy.videoDetails && legacy.videoDetails.videoId === id) response = legacy;
       }
       var renderer = captionRenderer(response);
       if (!renderer || !Array.isArray(renderer.captionTracks)) return NO_SOURCE;
@@ -421,7 +429,7 @@
         applied = source.tracks.length ? await fetchAndPublish(id, source) : 0;
       }
       if (!applied) {
-        source = responseTracks();
+        source = responseTracks(id);
         applied = source.tracks.length ? await fetchAndPublish(id, source) : 0;
       }
       if (applied) { if (backoff.id === id) resetBackoff(); }
