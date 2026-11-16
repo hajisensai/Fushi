@@ -1084,7 +1084,8 @@ abstract final class MangaArchiveImporter {
   /// 上白白解压两三次。
   ///
   /// [decodeLegacyNames]：把没带 UTF-8 标志的条目名按真实本地编码重解（见
-  /// [_decodeLegacyNames]）。只有要写盘的导入路径需要；探测只看扩展名，不开。
+  /// [_decodeLegacyNames]）。只有要写盘的导入路径打开：探测（[looksLikeImageArchive] /
+  /// [_looksLikeImageEpub]）也会打开 zip 遍历条目名，但只看扩展名，用逐字节名字即可。
   static _OpenedArchive _open(
     String archivePath, {
     bool decodeLegacyNames = false,
@@ -1164,9 +1165,14 @@ abstract final class MangaArchiveImporter {
       if ((header.generalPurposeBitFlag & _kZipUtf8NameFlag) != 0) continue;
       final Uint8List raw = rawNames[i];
       if (!raw.any((int b) => b >= 0x80)) continue;
-      // 与 archive 读出的名字逐条核对（UTF-8 解得开就是 UTF-8，否则逐字节）：中央目录
-      // 位置算错（如带前缀数据的自解压包）时宁可不改。
-      if (_archiveNameOf(raw) != header.filename) return;
+      // 与 archive 读出的名字逐条核对：中央目录位置算错（如带前缀数据的自解压包）时
+      // 宁可不改。
+      final String? asUtf8 = _strictUtf8(raw);
+      if ((asUtf8 ?? String.fromCharCodes(raw)) != header.filename) return;
+      // 不带标志但本身是合法 UTF-8 的名字（macOS「压缩」、部分 Linux 工具就这么写）
+      // archive 已经按 UTF-8 解对了，不进 legacy 批：本地编码判据没有排除 UTF-8 的
+      // 维度，送进去会被判成 Shift_JIS 解成乱码，Mokuro 清单的 img_path 也就对不上。
+      if (asUtf8 != null) continue;
       legacy.add(i);
     }
     if (legacy.isEmpty) return;
@@ -1209,12 +1215,13 @@ abstract final class MangaArchiveImporter {
     );
   }
 
-  /// archive 3.6.1 读名字的口径：严格 UTF-8 解得开就用，否则逐字节转字符。
-  static String _archiveNameOf(Uint8List raw) {
+  /// 严格 UTF-8 解码，解不开返回 null。archive 3.6.1 读名字也是这个口径：解得开就用，
+  /// 否则逐字节转字符。
+  static String? _strictUtf8(Uint8List raw) {
     try {
       return utf8.decode(raw);
     } on FormatException {
-      return String.fromCharCodes(raw);
+      return null;
     }
   }
 

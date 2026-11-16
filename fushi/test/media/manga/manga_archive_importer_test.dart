@@ -420,6 +420,43 @@ void main() {
     );
 
     test(
+      'UTF-8 names without the UTF-8 flag (macOS Archive Utility) keep their '
+      'names and Mokuro OCR',
+      () async {
+        // macOS「压缩」按 UTF-8 写名字、却不置通用位 11。archive 本来就按 UTF-8 解对了；
+        // 本地编码判据没有排除 UTF-8 的维度，这些名字若送去重解会被判成 Shift_JIS
+        // 解成「隨ｬ1蟾ｻ/001.png」这类乱码，清单 img_path 对不上，整本导入失败。
+        Uint8List page(int width) => Uint8List.fromList(
+          img.encodePng(img.Image(width: width, height: 80)),
+        );
+        final String path = p.join(root.path, 'mac.cbz');
+        File(path).writeAsBytesSync(
+          _buildZip(<_ZipSpec>[
+            _ZipSpec(
+              utf8.encode('ポスター.mokuro'),
+              Uint8List.fromList(
+                utf8.encode(_mokuroJson('第1巻/001.png', 'マック', width: 40)),
+              ),
+              utf8Flag: false,
+            ),
+            _ZipSpec(utf8.encode('第1巻/001.png'), page(40), utf8Flag: false),
+          ]),
+        );
+
+        expect(MangaArchiveImporter.looksLikeImageArchive(path), isTrue);
+        final String key = await MangaArchiveImporter.importArchive(
+          db: db,
+          archivePath: path,
+        );
+        final MokuroPayload payload = await _readImportedPayload(db, key);
+        expect(payload.images, hasLength(1));
+        expect(payload.images.single.url, '第1巻/001.png');
+        expect(payload.images.single.size.width, 40);
+        expect(payload.images.single.blocks.single.lines, <String>['マック']);
+      },
+    );
+
+    test(
       'ZIP64 records with 8-byte data descriptors import byte-for-byte',
       () async {
         // 超过 4 GiB 的包（或流式写出的包）用 ZIP64：中央目录大小 / 偏移是 0xFFFFFFFF，
@@ -1183,13 +1220,15 @@ String _writeImageEpub(
 }
 
 /// [_buildZip] 的一个条目：[name] 是**原始字节**（可以不是 UTF-8，此时不置通用位
-/// 11），[data] 是解压后的内容。
+/// 11），[data] 是解压后的内容。[utf8Flag] 给了就按它置 / 不置通用位 11（macOS「压缩」
+/// 写 UTF-8 名字却不置标志），否则名字是合法 UTF-8 才置。
 class _ZipSpec {
-  _ZipSpec(this.name, this.data, {this.deflate = false});
+  _ZipSpec(this.name, this.data, {this.deflate = false, this.utf8Flag});
 
   final List<int> name;
   final Uint8List data;
   final bool deflate;
+  final bool? utf8Flag;
 }
 
 /// 按真实压缩工具的记录形状拼 zip。
@@ -1220,7 +1259,9 @@ Uint8List _buildZip(List<_ZipSpec> entries, {bool zip64 = false}) {
   for (final _ZipSpec entry in entries) {
     final Uint8List stored = entry.deflate ? _deflate(entry.data) : entry.data;
     final int crc = getCrc32(entry.data);
-    final int flags = (isUtf8(entry.name) ? 0x0800 : 0) | (zip64 ? 0x08 : 0);
+    final int flags =
+        ((entry.utf8Flag ?? isUtf8(entry.name)) ? 0x0800 : 0) |
+        (zip64 ? 0x08 : 0);
     written.add((offset: out.length, crc: crc, flags: flags, stored: stored));
     out
       ..add(u32(0x04034b50))
