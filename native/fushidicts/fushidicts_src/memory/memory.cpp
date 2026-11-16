@@ -685,4 +685,16 @@ void unmap(mapped_file mapping) {
   munmap(mapping.data, mapping.size);
 #endif
 }
+
+void unmap_unflushed(mapped_file mapping) {
+  if (!mapping.data) {
+    return;
+  }
+
+#ifdef _WIN32
+  UnmapViewOfFile(mapping.data);
+#else
+  munmap(mapping.data, mapping.size);
+#endif
+}
 }

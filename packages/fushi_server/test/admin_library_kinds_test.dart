@@ -19,6 +19,7 @@ import 'package:fushi_server/src/server_prefs.dart';
 import 'package:path/path.dart' as p;
 import 'package:shelf/shelf.dart' as shelf;
 import 'package:test/test.dart';
+import 'support/fake_rwkv.dart';
 
 /// 扫描根 kind 的一致性：admin API 新增库根、yaml 加载与扫描器分派认同一份
 /// `kServerLibraryRootKinds`；`music` 明确拒绝并指向缺口文档；有声书根可「移除并清理」。
@@ -62,6 +63,7 @@ void main() {
     final ServerPrefs prefs = ServerPrefs(db);
     final ServerIdentity identity = await ServerIdentity.loadOrCreate(prefs);
     final HeadlessHost host = HeadlessHost(
+      srsRwkvHttpClient: noNetworkHttpClient,
       config: config,
       paths: paths,
       db: db,

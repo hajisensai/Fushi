@@ -905,6 +905,10 @@ fn deck_view(ent: &Entity<'_, '_>, payload: &Value) -> Result<Value, String> {
         "own": parent.is_none() || *ent.value("paramsMode") == Value::String("own".to_owned()),
         "np": limit("new", 20)?,
         "rp": limit("review", 200)?,
+        // 每日上限的单位（store/study.rs `LimitUnit`：reviews / cards / minutes；没写过 = null = reviews）。
+        // 单独一个寄存器而不放进 `limits`：旧版只认识 `limits` 的两项，改上限时整份重写会把单位冲掉。
+        // 不是字符串的值按没写过（不让一个坏值把整个牌组的物化弄失败）。
+        "lu": ent.value("limitUnit").as_str(),
         "ls": learn,
         "rs": relearn,
         "ret": as_num(ent.value("retention"), "retention")?.unwrap_or(0.8),

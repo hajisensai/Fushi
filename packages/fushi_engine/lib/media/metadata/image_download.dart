@@ -108,12 +108,14 @@ Future<http.Response> fetchCoverImageResponse(
   http.Client client,
   Uri url, {
   required CoverDownloadDeadline deadline,
+  Map<String, String>? headers,
 }) {
   final http.AbortableRequest request = http.AbortableRequest(
     'GET',
     url,
     abortTrigger: deadline.abortTrigger,
   );
+  if (headers != null) request.headers.addAll(headers);
   final Future<http.Response> response = client
       .send(request)
       .then(http.Response.fromStream);
@@ -131,8 +133,10 @@ Future<http.Response> fetchCoverImageResponse(
 ///   JPEG/PNG/WebP/GIF）。非图片 → 抛 [ImageDownloadException]。
 /// - 文件名按 URL 派生（同 URL 复下覆盖同一临时文件，不堆垃圾）。
 /// - [timeout]：整轮下载的总预算（本函数不重试，因此就是这一次尝试的截止）。
+/// - [headers]：源站要求的额外请求头（NDL 缩略图要 Referer）。
 Future<File> downloadImageToTempFile(
   String url, {
+  Map<String, String>? headers,
   http.Client? client,
   Directory? tempDir,
   Duration timeout = kCoverImageDownloadTimeout,
@@ -146,6 +150,7 @@ Future<File> downloadImageToTempFile(
         httpClient,
         Uri.parse(url),
         deadline: deadline,
+        headers: headers,
       );
     } on TimeoutException {
       throw const ImageDownloadException('image download timed out');

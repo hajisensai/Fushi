@@ -5,11 +5,14 @@ Fushi 的 **RWKV 排程**原生推理库，两个网络：
 - **大模型**（2,762,884 参数）：Anki 社区 RWKV 调度（[kuma3-anki-core](https://github.com/Pedrubik2000/kuma3-anki-core)
   的 `rslib/src/rwkv`，AGPL-3.0-or-later）的推理核心原样搬过来；来源、搬了什么 / 删了什么见
   [UPSTREAM.md](UPSTREAM.md)。
-- **小模型 sm72e25**（331,511 参数，d_model 64；2026-11-07 起，之前是 SM56）：无泄漏 SM72、第 25 轮起
-  降温，来自 JSchoreels/anki @ `986963d2` 的 `qt/aqt/rwkv_inference/sm72e25/`（作者桌面端的默认小模型）。
+- **小模型 sm98**（331,511 参数，d_model 64；2026-11-15 起，之前依次是 SM40、SM56、sm72e25）：**Instant-Only**
+  （只训即时头，曲线头没训练过）、按**出示时刻**的间隔训练，来自 JSchoreels/anki @ `001440b0` 的
+  `qt/aqt/rwkv_inference/sm98/`（上游 release `rwkv-family-2026-11-13` 的 Small Instant-Only，作者 Anki fork 里
+  RWKV-Instant 用的模型）。
   Fushi 按 SM40（`small-model-sm40-2026-10-19`，包 sm40v2）的 INTEGRATION.md 与 NumPy 参考实现**新写**
-  （`src/rwkv/small/`）；SM56 与 SM72 各版都是同一架构重训（`architecture.json` 逐字节相同，只换权重），
-  与上游黄金向量对拍；特征构造器与大模型共用，外加**无泄漏输入规则**（见「sm72e25」）。
+  （`src/rwkv/small/`，网络结构按权重文件的张量目录搭）；SM56、SM72、SM92、SM98 都是同一架构重训
+  （`architecture.json` 逐字节相同，只换权重），与上游黄金向量对拍；特征构造器与大模型共用，外加**无泄漏输入
+  规则**（见「sm72e25」）与回放预测的 **show-time 查询行**（见「sm98」）。
 
 外面包一层输入校验 + 作答时排程 + C ABI。权重都不入库（`fetch_model.*` 下载，见「测试」）。
 
@@ -20,7 +23,8 @@ Fushi 的 **RWKV 排程**原生推理库，两个网络：
 `packages/fushi_rwkv`（FFI + 常驻 worker isolate）；排程接入 `SrsAlgorithm.rwkv`，**RWKV-Instant、
 新建牌组的默认算法**（排队时用 `frwkv_runtime_query` 查此刻的 R，见[排队](#排队rwkv-instantfushi-用的)；
 记忆状态与存下的到期日仍由 FSRS-7 维护；`packages/fushi_engine/lib/srs/srs_rwkv_*.dart`、
-`SrsDbStore._instantReviews`）。权重由服务自动下载（`srs_rwkv_models.dart`，钉 URL + SHA-256）。
+`SrsDbStore._instantReviews`）。权重由服务自动下载（`srs_rwkv_models.dart`：首选 Fushi 自己的镜像 release，
+上游钉死提交的 raw URL 备用，只认字节数 + SHA-256；见 UPSTREAM.md「权重镜像」）。
 
 ## 它算什么
 
@@ -30,7 +34,8 @@ Fushi 的 **RWKV 排程**原生推理库，两个网络：
    权重，不按用户训练），维护 card / note / deck / preset / global 五层循环状态，以及特征构造器的
    簿记（每卡累计间隔、当天计数、ID 随机编码）。
 2. 排队时对候选卡做一次只算 R 的批量查询（`frwkv_runtime_query`）。
-3. 作答时用**曲线头**排出四个评分的间隔（见「作答时排程」），卡片按间隔到期。上游 kuma3 的
+3. 作答时用**曲线头**排出四个评分的间隔（见「作答时排程」；只有大模型，Instant-Only 小模型的曲线头没训练过，
+   库拒绝），卡片按间隔到期。上游 kuma3 的
    RWKV-Instant 是另一种判据——每天对候选卡查即时 R，**R ≤ 目标保留率**即排入
    （`rslib/src/scheduler/rwkv.rs:944`）；Fushi 不用它，原因同「作答时排程」里即时头不能外推。
 
@@ -62,7 +67,7 @@ Fushi 的 **RWKV 排程**原生推理库，两个网络：
 分数表：append / unappend / replay 作废同卡、同笔记的项（它们的卡 / 笔记状态变了），牌组 / 预设 / 全局
 状态被别的卡带动的变化由调用方定时 `scores_requery` 收敛；reset / restore 清空日志与表。契约测试
 `tests/journal.rs`（含「rewind_from + 按时间顺序 append == 全量回放」的逐字节对拍）。
-| `int32_t frwkv_runtime_next_intervals(FrwkvRuntime*, const FrwkvReview* answer, float target_retention, uint32_t max_interval_days, uint32_t* out_days, float* out_r)` | 作答时排程（见下）：写 4 个天数（Again / Hard / Good / Easy），`out_r` 可空；什么都不保存 |
+| `int32_t frwkv_runtime_next_intervals(FrwkvRuntime*, const FrwkvReview* answer, float target_retention, uint32_t max_interval_days, uint32_t* out_days, float* out_r)` | 作答时排程（见下）：写 4 个天数（Again / Hard / Good / Easy），`out_r` 可空；什么都不保存。曲线头没训练过的模型（Instant-Only 小模型）`-6` |
 | `int32_t frwkv_runtime_snapshot(const FrwkvRuntime*, uint8_t** out_bytes, size_t* out_len)` | 导出无损快照（用 `frwkv_free_bytes` 释放） |
 | `int32_t frwkv_runtime_restore(FrwkvRuntime*, const uint8_t* bytes, size_t len)` | 用快照替换状态；precision 必须一致；失败时状态不变 |
 | `int32_t frwkv_runtime_snapshot_to_file(const FrwkvRuntime*, const uint8_t* path, size_t path_len)` | 将无损快照直接写文件并 flush / sync_all；路径为无 NUL 结尾的 UTF-8 字节；调用者负责临时文件成功后提升 |
@@ -89,7 +94,7 @@ Fushi 的 RWKV 排程**编排**（什么时候下载权重、恢复快照 / 检�
 
 返回码：`0` 成功；`-1` 调用错误（空指针、未知 precision）；`-2` 输入行不合法；`-3` 权重 /
 快照字节损坏或不匹配；`-4` 内部 panic（已接住，不越过 FFI）；`-5` runtime 在之前的 panic 后
-不可信（只接受 reset / restore / free）。`-6` 该模型不支持（撤销日志只有小模型）。一个 runtime 不是线程安全的，调用方串行化；model 可共享。
+不可信（只接受 reset / restore / free）。`-6` 该模型不支持（撤销日志只有小模型；RWKV-Curve 只有曲线头训练过的大模型）。一个 runtime 不是线程安全的，调用方串行化；model 可共享。
 线程数不影响数值（大模型：上游的并行全是逐行 map，没有跨线程浮点归约，测试核对 0/1/3 线程逐位
 相同；小模型：每个实体 × 头是一条顺序任务，块边界与线程数都不改结果，测试核对块大小 1 / 7 / 333 /
 整批逐位相同）。
@@ -107,8 +112,9 @@ RWKV 牌组的复习卡**不看到期日**，每次排队以当前状态查每�
 RWKV 状态由同步来的复习日志在每台设备上回放出来（同一权重、确定性）。统计页的未来到期 / 逾期 /
 负担不计按 R 排队的卡，可提取度用 RWKV 的；浏览器的 `is:due` 与出卡同口径；日志的 `alg` 记 `rwkv`。
 
-**为什么用即时头而不是曲线头**（`examples/curve_calibration.rs`，小模型 int4，20 个封存用户约 136 万对
-相邻复习，按真实间隔分桶的预测均值 vs 实际通过率）：
+**为什么用即时头而不是曲线头**（2026-10-20 用当时的两头小模型 SM40 测，int4，20 个封存用户约 136 万对
+相邻复习，按真实间隔分桶的预测均值 vs 实际通过率；测量工具 `examples/curve_calibration.rs` 随换 Instant-Only
+模型删除——现在的小模型没有可用的曲线头）：
 
 | 分组 / 真实间隔 | 曲线头 | 即时头 | 实际 |
 |---|---|---|---|
@@ -122,6 +128,12 @@ RWKV 状态由同步来的复习日志在每台设备上回放出来（同一权
 上游 Instant 的「每次排队重查」。
 
 ### 作答时排程（RWKV-Curve，库里保留，app 不用）
+
+**只对曲线头训练过的模型（大模型）可用**：Fushi 的小模型是 Instant-Only（sm98，训练时 `curve_loss_weight 0.0`，
+manifest 写明 curve head "was never trained and must not schedule"），`frwkv_runtime_next_intervals` /
+`RwkvRuntime::next_intervals` / `answer_curves` 对它返回 `-6` / `RwkvError::Unsupported`（`ModelKind::has_trained_curve_head`），
+不给垃圾间隔。app 与 `fushi_server` 没有任何调用方（Dart 绑定 `RwkvNativeRuntime.nextIntervals` /
+`RwkvWorker.nextIntervals` 只在 `packages/fushi_rwkv` 自己的测试里用）。
 
 `frwkv_runtime_next_intervals` 读**曲线头**：对每个评分假设这张卡**现在**以该评分作答（一行不提交的
 更新行，什么都不保存），得到这次作答之后的遗忘曲线 R(t)（小模型：3 条幂曲线的混合
@@ -217,7 +229,8 @@ elapsed / preset）→ `scheduler/rwkv/history.rs:67` `historical_review`（card
   PyTorch ID 编码随机流（`TorchIdRng`）里取一段 12 / 8 维编码并记住。所以同样的历史，
   查询的先后顺序会影响之后的特征（与上游行为一致；快照会保存这条随机流的位置）。
 - 回放时可以要「作答前预测」（`out_predictions`）：对每条已答行先按查询算 R 再作答，
-  与逐条「先查再答」一致（上游测试的黄金值就是这么来的）。上游 kuma3 平时回放不要预测
+  与逐条「先查再答」一致（上游测试的黄金值就是这么来的）。**小模型的这条查询行用出示时刻的间隔**
+  （`elapsed_seconds − duration / 1000`，见「sm98」）；大模型照上游用作答间隔。上游 kuma3 平时回放不要预测
   （`offline.rs:337`，块大小 65,536）。
 - kuma3 在 Android 端默认 int8 状态（`offline.rs:100-104`）。
 
@@ -229,7 +242,7 @@ elapsed / preset）→ `scheduler/rwkv/history.rs:67` `historical_review`（card
 
 ## 两个模型与状态精度
 
-| | 大模型 | 小模型（sm72e25） |
+| | 大模型 | 小模型（sm98） |
 |---|---|---|
 | 参数 | 2,762,884 | 331,511 |
 | 权重 | `RWKV_trained_on_5000_10000.bin`（11 MB，AGPL） | `weights.int8.bin`（436 KB，加载时反量化）或 `weights.f32.bin`；随上游 Anki fork 以 AGPL 发布 |
@@ -320,6 +333,62 @@ anki-revlogs-10k 的 295 个封存 final_test 用户（tiers.json；与 SM56 / S
 
 sm72e25 自带的作答时间头（`time_head.*`）没有接入。
 
+（注：上表 sm92 那一行是在**修正前**的部署路径上测的——那时回放预测的查询行用作答间隔，sm92 按出示时刻训练，
+等于喂了它没见过的输入；2026-11-15 起小模型的回放预测改用出示时刻，见「sm98」。）
+
+## sm98（2026-11-15 换上）
+
+**为什么换。** Fushi 只用 RWKV-Instant（排队时查即时头），曲线头从不排程。作者 2026-11-13 发的模型家族
+（release `JSchoreels/anki-rwkv` tag `rwkv-family-2026-11-13`：Big / Small / Tiny × 两头 / Instant-Only）里
+**Small Instant-Only = sm98**：同一 "w64" 架构（`architecture.json` 与 sm72e25 / sm92 逐字节相同，331,511 参数），
+训练时 `curve_loss_weight 0.0`、全程用出示时刻的间隔。作者打分器（722 个留出用户，int8 权重 + int8 状态，
+show-time 输入，按条加权 LogLoss，配对用户 bootstrap 95% 区间）上即时头：
+
+| 对比 | sm98 | 对方 | 差 [95%] | sm98 更好的用户 |
+|---|---|---|---|---|
+| sm72e25（之前 Fushi 用的） | 0.276191 | 0.277718 | −0.001527 [−0.001836, −0.001286] | 672 / 722 |
+| sm92（两头、show-time 重训） | 0.276191 | 0.276876 | −0.000685 [−0.000739, −0.000626] | 658 / 722 |
+
+**曲线头不可用。** manifest：「its curve head was never trained and must not schedule」。库里保留的 RWKV-Curve
+对它一律拒绝（见「作答时排程」），即时头路径（R 查询、回放预测、分数表）不受影响。
+
+**show-time 查询行（INTEGRATION.md §6.10，sm92 起的模型都要求）。** 训练时作答前的查询行用「本卡上次作答 →
+这张卡**出示**那一刻」的间隔 `floor(max(elapsed_seconds − duration / 1000, 0))`（首次 -1 不变），累计间隔 =
+已提交的作答间隔之和 + 这次查询的间隔；作答（更新）行仍是作答到作答；`elapsed_days` 不变。Fushi 三条路径核对：
+
+- 排队 / 分数表 / 统计页的实时查询（`ffsrs_rwkv_now_rows`、`scores_requery`）：间隔 = 查询时刻 − 上次作答时刻，
+  累计 = 簿记里已提交的和 + 这次间隔——**本来就符合**。
+- 回放的更新行（`ffsrs_store_rwkv_rows`：`at − 上一条 at`，时长 = 日志 `dur`）——符合。
+- 回放时的「作答前预测」（`frwkv_runtime_replay` 带 `out_predictions`；复习统计页校准图
+  `srsRwkvReplayPredictions` 就是用它重放全部历史）：查询行是作答行的拷贝，间隔里含这条复习自己的作答用时——
+  **不符合**。修在 Rust 内核唯一构造回放行的地方（`small/mod.rs` `push_replay_rows` → `show_time_query`），
+  只改小模型（大模型按上游的作答间隔训练）；没有时长的行无从知道出示时刻，保持作答间隔。
+- 钉住它的测试：`tests/small_model.rs` 从 sm98 黄金向量还原回放输入，本库构造的查询行 / 更新行与训练输入逐列一致。
+
+**换权重的影响**：快照带权重指纹（FNV-1a），旧快照与检查点被拒，首次启动全量重放一次（`sched/machine.rs`
+`restore_snapshot` 失败即 `rebuild_all`）；状态布局（槽长）与 sm72e25 相同。旧权重文件 `sm72e25_weights.int8.bin`
+进 Dart 的退役清单。
+
+**没验证的**：Fushi 自己的部署路径（本库特征构造 + int4 card / note 状态 + 295 个封存用户，
+`examples/model_compare.rs`）上没有重跑 sm98——本机没有那份数据集；作者的数字是 int8 状态、打分器自己的特征
+编码。
+
+## sm101（Tiny，设置里可选的「省内存」档）
+
+同一家族的 **Tiny Instant-Only = sm101**（"w64-c1"，同一提交 `qt/aqt/rwkv_inference/sm101/`，int8 权重 409,483
+字节，哈希见 `src/lib.rs` 的 `TINY_MODEL_*_SHA256`）：card / note 流各 1 层、deck 流 4 层（deck 的第 2、3 层去掉
+channel mixer），`layer_steps` 12 步。架构由权重张量目录推出（层数、交错调度、被去掉的 channel mixer），**与 sm98
+同一套代码加载，不需要改代码**；`tests/small_model.rs` 的每个用例两套都跑。
+
+| | sm98（Small，默认） | sm101（Tiny） |
+|---|---|---|
+| 即时头 LogLoss（作者打分器，722 留出用户） | 0.276191 | 0.27672 |
+| Fushi 的每卡状态（card / note 都 int4，实测槽长） | card 1,920 B + note 1,024 B = 2,944 B | card 1,024 B + note 1,024 B = 2,048 B（**约 −30%**） |
+
+（manifest 里「约 −26%」是 card int4 + note int8 的配置：3,530 → 2,622 B；Fushi 的 note 也是 int4，所以是 −30%。）
+切换 = 不同的权重指纹，旧快照被拒、全量重放一次（`tests/small_model.rs`
+`tiny_model_has_its_own_architecture_and_smaller_card_state` 钉住两边互拒、同模型照常恢复）。
+
 ## 快照
 
 大模型：`FRWKVSNAP1\0` + precision 字节（0 / 8 / 4）+ 上游 `append_warm_up_snapshot_binary` 的布局：
@@ -389,18 +458,22 @@ cargo test --profile quick --manifest-path native/fushi_rwkv/Cargo.toml
 ```
 
 权重缺失 / SHA-256 不符时测试**失败**并提示跑 fetch_model（不跳过）；`FUSHI_RWKV_MODEL`
-可指向别处的大模型权重，`FUSHI_RWKV_SMALL_DIR` 指向放着小模型四个文件（`sm72e25_weights.int8.bin`、
-`sm72e25_weights.f32.bin`、`sm72e25_architecture.json`、`sm72e25-vectors.json.gz`）的目录。
+可指向别处的大模型权重，`FUSHI_RWKV_SMALL_DIR` 指向放着两个小模型各四个文件（`sm98_weights.int8.bin`、
+`sm98_weights.f32.bin`、`sm98_architecture.json`、`sm98-vectors.json.gz`，sm101 同名）的目录。
 
 - `tests/parity.rs`：与上游对拍（夹具由 `tools/oracle` 把上游 `rslib/src/rwkv` 原样编译后产出，
   f32 / int8 各一份），上游自己测试里写死的两个数，批量回放 vs 逐条回放的状态逐位相同，
   快照中断续跑，损坏快照拒收，线程数无关，reset。
 - `tests/c_abi.rs`：只走 `extern "C"` 的往返与错误路径。
-- `tests/small_model.rs`：小模型与上游 NumPy 参考实现的黄金向量（`sm72e25-vectors.json.gz`，两位用户
-  各 500 行，无泄漏输入，f32 / int8 权重）逐行对拍 p_imm、p_rating、标签时刻与 6 个扫描时刻的 p_curve，
-  容差 1e-5（实测最大 8.3e-7）；缺失 ID 标志（输入 13–15）置 1 时 f32 / int4 下每个输出逐位不变（去掉
-  清零即红，已做变异实测）；块边界不改结果（三种精度逐位相同）；`layer_steps` 与 `architecture.json` 一致。
-- `tests/forecast.rs`：假设作答不改状态、与真的作答一致；排程读的遗忘曲线随时间不增、次日 Again
+- `tests/small_model.rs`：两个小模型（sm98 / sm101）各自与上游 NumPy 参考实现的黄金向量（`<模型>-vectors.json.gz`，两位用户
+  各 500 行，无泄漏输入、show-time 查询行，f32 / int8 权重）逐行对拍 p_imm、p_rating、标签时刻与 6 个扫描时刻的
+  p_curve（曲线头没训练过，只当网络数值对拍），容差 1e-5（实测最大 7.5e-7）；**本库回放的特征构造与向量逐列一致**：
+  从向量还原回放输入，回放时每条作答构造的查询行（406 行，全部带 show-time 间隔）与更新行（593 行）的输入
+  0–21、23 与训练输入相差 ≤ 1e-4（查询行改回作答间隔即红，已做变异实测）；`show_time_query` 的取整与边界；
+  缺失 ID 标志（输入 13–15）置 1 时 f32 / int4 下每个输出逐位不变（去掉清零即红，已做变异实测）；块边界不改结果
+  （三种精度逐位相同）；`layer_steps` 与 `architecture.json` 一致；RWKV-Curve 对它返回 Unsupported；sm101 与 sm98
+  架构不同、每卡状态更小、快照按权重指纹互拒。
+- `tests/forecast.rs`：假设作答不改状态、与真的作答一致；排程读的遗忘曲线（只测大模型）随时间不增、次日 Again
   低于 Easy，天数是曲线上「当天 R ≤ 目标、前一天 > 目标」的那天；`src/curve.rs` 的单元测试用已知
   形状的曲线钉住求解器（越线点向上取整、评分顺序、上限 / 下限）。
 - `examples/interval_dist.rs`：真实历史上排出的间隔分布（各保留率下 Good / Hard / Again 的分位数）。

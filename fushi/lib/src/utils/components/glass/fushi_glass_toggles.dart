@@ -3681,6 +3681,7 @@ class FushiSegmentedButton<T> extends StatefulWidget {
     this.showSelectedIcon = true,
     this.selectedIcon,
     this.direction = Axis.horizontal,
+    this.notifyReselect = false,
   });
 
   final List<ButtonSegment<T>> segments;
@@ -3688,6 +3689,12 @@ class FushiSegmentedButton<T> extends StatefulWidget {
   final void Function(Set<T>)? onSelectionChanged;
   final bool multiSelectionEnabled;
   final bool emptySelectionAllowed;
+
+  /// true = 单选下点已选中的那一段也照常回调 [onSelectionChanged]（集合不变，
+  /// 仍是那一段）：宿主的选中值只是视觉锚点、不是当前所在视图时用（库页壳停在
+  /// 导入页时高亮「我的」组，BUG-4706）。默认 false，与 [SegmentedButton] 同语义：
+  /// 点已选段不回调。多选 / 允许空选下不生效（点已选段有自己的切换语义）。
+  final bool notifyReselect;
   final EdgeInsets? expandedInsets;
   final ButtonStyle? style;
   final bool showSelectedIcon;
@@ -3782,6 +3789,13 @@ class _FushiSegmentedButtonState<T> extends State<FushiSegmentedButton<T>> {
     final Set<T> current = _pendingSelection ?? widget.selected;
     final bool onlySelectedSegment =
         current.length == 1 && current.contains(segmentValue);
+    if (widget.notifyReselect &&
+        onlySelectedSegment &&
+        !widget.multiSelectionEnabled &&
+        !widget.emptySelectionAllowed) {
+      notify(<T>{segmentValue});
+      return;
+    }
     final bool validChange =
         widget.emptySelectionAllowed || !onlySelectedSegment;
     if (!validChange) return;
@@ -3839,6 +3853,7 @@ class _FushiSegmentedButtonState<T> extends State<FushiSegmentedButton<T>> {
         showSelectedIcon: widget.showSelectedIcon,
         selectedIcon: widget.selectedIcon,
         direction: widget.direction,
+        notifyReselect: widget.notifyReselect,
       );
     }
     final Widget glass = _fitsSegmentedControl
@@ -3915,6 +3930,7 @@ class _FushiSegmentedButtonState<T> extends State<FushiSegmentedButton<T>> {
       onSelected: _enabled
           ? (int index) => _handlePressed(segments[index].value)
           : null,
+      notifyReselect: widget.notifyReselect,
       height: height,
       iconSize: compact ? 15 : 17,
       selectedStyle: selectedStyle,
@@ -4112,11 +4128,15 @@ class FushiAppleSegmentedControl extends StatefulWidget {
     required this.unselectedStyle,
     this.iconSize = 17,
     this.solid = false,
+    this.notifyReselect = false,
   });
 
   final List<FushiAppleSegmentData> segments;
   final int selectedIndex;
   final ValueChanged<int>? onSelected;
+
+  /// true = 点已选段也回调 [onSelected]（见 [FushiSegmentedButton.notifyReselect]）。
+  final bool notifyReselect;
   final double height;
   final TextStyle selectedStyle;
   final TextStyle unselectedStyle;
@@ -4171,7 +4191,9 @@ class _FushiAppleSegmentedControlState
   void _select(int index) {
     if (!_enabled || index < 0 || index >= widget.segments.length) return;
     if (!widget.segments[index].enabled) return;
-    if (index != widget.selectedIndex) widget.onSelected!(index);
+    if (widget.notifyReselect || index != widget.selectedIndex) {
+      widget.onSelected!(index);
+    }
   }
 
   Widget _segmentContent(FushiAppleSegmentData data, TextStyle style) {

@@ -92,15 +92,11 @@ class RemoteLibraryCache {
     );
 
     if (!forceRefresh) {
-      final Future<Object?>? inFlight = slot.inFlight;
-      // BUG-1567：只复用「还在信任期内」的在途请求；超过 [inFlightTtl] 的视为挂死，
-      // 落到下面重新取数（自愈），死 future 的迟到写回被 generation 比对丢弃。
-      if (inFlight != null &&
-          _nowMs() - slot.inFlightStartedAtMs < inFlightTtl.inMilliseconds) {
+      final Future<Object?>? inFlight = _trustedInFlight(slot);
+      if (inFlight != null) {
         return inFlight.then((Object? value) => value as T);
       }
-      if (slot.hasValue &&
-          _nowMs() - slot.fetchedAtMs < (ttl ?? defaultTtl).inMilliseconds) {
+      if (_hasFreshValue(slot, ttl)) {
         return Future<T>.value(slot.value as T);
       }
     }
@@ -134,6 +130,36 @@ class RemoteLibraryCache {
         Error.throwWithStackTrace(error, stack);
       },
     );
+  }
+
+  /// BUG-1567：只复用「还在信任期内」的在途请求；超过 [inFlightTtl] 的视为挂死，
+  /// 返回 null 让 [read] 重新取数（自愈），死 future 的迟到写回被 generation 比对丢弃。
+  Future<Object?>? _trustedInFlight(_CacheSlot slot) {
+    final Future<Object?>? inFlight = slot.inFlight;
+    if (inFlight == null) return null;
+    return _nowMs() - slot.inFlightStartedAtMs < inFlightTtl.inMilliseconds
+        ? inFlight
+        : null;
+  }
+
+  bool _hasFreshValue(_CacheSlot slot, Duration? ttl) =>
+      slot.hasValue &&
+      _nowMs() - slot.fetchedAtMs < (ttl ?? defaultTtl).inMilliseconds;
+
+  /// 同参数（不带 forceRefresh）的 [read] 此刻是否**直接交出新鲜缓存值、不等任何网络**。
+  ///
+  /// 与 [read] 共用同一套判据：信任期内有在途请求时 [read] 会去等它，这里就是 false
+  /// ——哪怕槽里同时还有新鲜值（[peek] 只看值，口径不同，不能拿来模拟 [read]）。
+  /// 调用方据此决定等待期间要不要挂进度反馈（BUG-4724）。
+  bool wouldReadImmediately({
+    required String sourceId,
+    required String key,
+    Duration? ttl,
+  }) {
+    final _CacheSlot? slot = _slots[_slotKey(sourceId, key)];
+    if (slot == null) return false;
+    if (_trustedInFlight(slot) != null) return false;
+    return _hasFreshValue(slot, ttl);
   }
 
   /// 槽的联合定位符。竖线做分隔符：来源身份（[kInterconnectRemoteLibrarySourceId] /

@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart' show RenderParagraph;
+import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
@@ -365,6 +366,67 @@ void main() {
       reason: '再点一次回到进导入页之前的「扩展」',
     );
     expect(initCount[3], 1, reason: '导入页保活，切走不销毁');
+  });
+
+  // BUG-4706（反馈 3cmGrH7EoA）：导入页高亮「我的」组只是视觉锚点，不是当前视图；
+  // 以前它被当成「点当前项」直接丢掉，导入页点左上角「书架」回不去。这里走真实
+  // 指针点击（不是直接调 onChanged），才过得了页签组件里的「重复点击」判断。
+  List<MediaLibraryViewSpec> importViews() => <MediaLibraryViewSpec>[
+    spec(0, MediaLibraryViewKind.library, '书架'),
+    spec(1, MediaLibraryViewKind.onlineSources, '来源'),
+    spec(2, MediaLibraryViewKind.extensions, '扩展'),
+    spec(3, MediaLibraryViewKind.sources, '导入'),
+  ];
+
+  /// 视图 [label] 是否是壳此刻显示的那一个（保活视图都在树上，只看 Offstage）。
+  bool onstage(WidgetTester tester, String label) => tester
+      .widgetList<Offstage>(
+        find.ancestor(
+          of: find.byWidgetPredicate(
+            (Widget w) => w is _StatefulLeaf && w.label == label,
+            skipOffstage: false,
+          ),
+          matching: find.byType(Offstage, skipOffstage: false),
+        ),
+      )
+      .every((Offstage o) => !o.offstage);
+
+  testWidgets('导入页点一级页签「书架」（高亮锚点）回到书架', (WidgetTester tester) async {
+    await tester.pumpWidget(harness(importViews()));
+    await tester.pumpAndSettle();
+    await tapImport(tester);
+    expect(onstage(tester, '导入'), isTrue);
+    expect(read(tester, topStrip()).selected, MediaLibraryViewKind.library);
+
+    await tester.tap(
+      find.descendant(of: topStrip(), matching: find.text('书架')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(importButton(tester).selected, isFalse, reason: '已离开导入页');
+    expect(onstage(tester, '书架'), isTrue);
+    expect(onstage(tester, '导入'), isFalse);
+  });
+
+  testWidgets('导入页按键盘左方向键回到书架（首段往回不被夹在原地）', (WidgetTester tester) async {
+    await tester.pumpWidget(harness(importViews()));
+    await tester.pumpAndSettle();
+    await tapImport(tester);
+    expect(onstage(tester, '导入'), isTrue);
+
+    final Finder shell = find.byType(
+      FushiAdjustableSegmented<MediaLibraryViewKind>,
+    );
+    final Element inner = tester.element(
+      find.descendant(of: shell, matching: find.byType(ExcludeFocus)).first,
+    );
+    Focus.of(inner).requestFocus();
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+    await tester.pumpAndSettle();
+
+    expect(importButton(tester).selected, isFalse, reason: '已离开导入页');
+    expect(onstage(tester, '书架'), isTrue);
   });
 
   testWidgets('横滑顺序 = 两级页签视觉序：书架 → 媒体服务器 → 发现 → 来源 → 扩展，跨组接着滑', (

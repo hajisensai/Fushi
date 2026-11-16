@@ -682,6 +682,44 @@ void main() {
       expect(v.worthReporting, isTrue);
     });
 
+    // 反馈 lN8b_hBgKD（小米 HyperOS，SDK 36）：用户在最近任务里划掉 app，MIUI / HyperOS
+    // 框架以 OTHER +「SwipeUpClean」结束进程；死时在跑前台服务（importance=125）。旧实现
+    // OTHER 不认这段描述 → null → 回落标记推断，界面还在前台时报「停在前台时没了，疑似闪退」。
+    for (final String lifecycle in <String>['resumed', 'inactive', 'paused']) {
+      for (final String description in <String>[
+        'SwipeUpClean',
+        '[UNKNOWN] SwipeUpClean',
+      ]) {
+        test(
+          'OTHER +「$description」+ importance=125 + 标记停在 $lifecycle → 厂商停止，不弹闪退报告',
+          () async {
+            final PreviousExitVerdict? v = await verdictFor(
+              lifecycle: lifecycle,
+              reasons: <Map<String, Object?>>[
+                record(pid: 19104, importance: 125, description: description),
+              ],
+            );
+            expect(v, isNotNull);
+            expect(v!.kind, PreviousExitKind.vendorStopped);
+            expect(v.worthReporting, isFalse);
+            expect(v.summary, contains('SwipeUpClean'));
+          },
+        );
+      }
+    }
+
+    test('SwipeUpClean 不压过真崩溃：同一启动另有 CRASH 记录时照样上报', () async {
+      final PreviousExitVerdict? v = await verdictFor(
+        lifecycle: 'resumed',
+        reasons: <Map<String, Object?>>[
+          record(pid: 19104, importance: 125, description: 'SwipeUpClean'),
+          record(pid: 18800, importance: 100, reason: 'CRASH', timestamp: 4500),
+        ],
+      );
+      expect(v!.kind, PreviousExitKind.crash);
+      expect(v.worthReporting, isTrue);
+    });
+
     // BUG-4491（反馈 w_dTs9eQ45）：华为 EMUI / HarmonyOS 改「所有文件访问权限」后被 killUid，
     // ApplicationExitInfo 记成 OTHER +「MANAGE_EXTERNAL_STORAGE changed.」，没有 AOSP 的
     // `[KILL UID]` 子原因前缀。旧正则要求前缀 → null → 回落标记推断「停在前台时没了」。
@@ -847,6 +885,37 @@ void main() {
         );
       },
     );
+
+    test('androidExitKind：OTHER 只认锚定的 MIUI / HyperOS「SwipeUpClean」形态', () {
+      expect(
+        androidExitKind('OTHER', description: 'SwipeUpClean'),
+        PreviousExitKind.vendorStopped,
+      );
+      expect(
+        androidExitKind('OTHER', description: ' [UNKNOWN] SwipeUpClean '),
+        PreviousExitKind.vendorStopped,
+      );
+      // 前后缀不锚定 / 大小写不同 / 别的清理名不认。
+      for (final String description in <String>[
+        'SwipeUpCleanX',
+        'crash after SwipeUpClean',
+        'swipeupclean',
+        '[unknown] SwipeUpClean',
+        'OneKeyClean',
+      ]) {
+        expect(
+          androidExitKind('OTHER', description: description),
+          isNull,
+          reason: description,
+        );
+      }
+      // 只有 OTHER 看描述：真崩溃 / 不说明问题的原因码带这段文字也不改判。
+      expect(
+        androidExitKind('CRASH', description: 'SwipeUpClean'),
+        PreviousExitKind.crash,
+      );
+      expect(androidExitKind('SIGNALED', description: 'SwipeUpClean'), isNull);
+    });
 
     test('androidExitKind：OTHER 只认锚定的 AOSP「[KILL UID] <OP> changed」形态', () {
       expect(

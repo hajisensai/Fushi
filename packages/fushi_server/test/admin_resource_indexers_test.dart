@@ -24,6 +24,7 @@ import 'package:http/testing.dart';
 import 'package:path/path.dart' as p;
 import 'package:shelf/shelf.dart' as shelf;
 import 'package:test/test.dart';
+import 'support/fake_rwkv.dart';
 
 /// 分类下拉式 HTML 搜索页（只有动画与真人两个大类）。
 const String _categoryPageHtml = '''<!doctype html><html><body>
@@ -112,6 +113,7 @@ void main() {
     final ServerIdentity identity = await ServerIdentity.loadOrCreate(prefs);
     final ServerPaths paths = ServerPaths(config.dataDir);
     final HeadlessHost host = HeadlessHost(
+      srsRwkvHttpClient: noNetworkHttpClient,
       config: config,
       paths: paths,
       db: db,

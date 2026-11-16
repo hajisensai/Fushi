@@ -26,6 +26,8 @@ import 'package:fushi/src/updates/local_update_notifier.dart';
 import 'package:fushi/src/updates/update_check_scheduler.dart';
 import 'package:fushi/src/updates/app_update_check.dart';
 import 'package:fushi/src/updates/usage_heartbeat.dart';
+import 'package:fushi_engine/media/metadata/books/rakuten_books.dart'
+    show RakutenBooksCredentials;
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi/src/models/preference_keys.dart';
 import 'package:fushi_engine/srs/srs_miner.dart';
@@ -170,8 +172,11 @@ import 'package:fushi/src/srs/srs_storage_host.dart';
 import 'package:fushi/src/srs/srs_review_gestures.dart';
 import 'package:fushi/src/srs/srs_review_layout.dart';
 import 'package:fushi/src/models/home_dashboard_panel.dart';
+import 'package:fushi/src/models/home_widget_layout.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/storage/books_directory.dart';
+import 'package:fushi/src/storage/download_layout.dart';
+import 'package:fushi/src/storage/download_root_migrator.dart';
 import 'package:fushi/src/storage/export_directory.dart';
 import 'package:fushi/src/storage/installer_data_root_bootstrap.dart';
 import 'package:fushi/src/storage/sandbox_relocation.dart';
@@ -248,6 +253,7 @@ import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source.dar
 import 'package:fushi/src/media/manga/interconnect/interconnect_online_manga_host_reader.dart';
 import 'package:fushi/src/media/manga/kavita/kavita_library_adapter.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
+import 'package:fushi/src/media/manga/library/online_manga_reshelf.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
 import 'package:fushi/src/media/manga/web/web_comic_runtime_adapter.dart';
 import 'package:fushi/src/media/manga/download/manga_download_auto_ocr.dart';
@@ -2553,7 +2559,7 @@ class AppModel
         : null,
     providers: isMusicPluginSourcesAvailable
         ? () async => enabledLyricsProviderIds(
-            mergeLyricsProviders(
+            mergeLyricsSourceList(
               parseLyricsProviders(prefsRepo.musicLyricsProvidersRaw),
               <String>[
                 for (final InstalledMusicPlugin p
@@ -3960,12 +3966,33 @@ class AppModel
     await FushiDicts.loadPendingAsync();
   }
 
+  /// 词典引擎的联合过滤器（派生索引，见 [FushiDicts.unionFilterCacheDirectory]）落
+  /// 平台缓存目录：不进数据根，不随「更改数据位置」搬、不在备份范围里，被清掉只是
+  /// 下次装载后重建。主进程与查词弹窗进程共用同一份文件。
+  ///
+  /// 缓存目录拿不到（平台通道不可用）不是装载词典的前提：留空，引擎改在内存里建
+  /// 同一份过滤器，查词结果不变，只是每次装载后多花一次构建。
+  Future<void> _ensureDictIndexCacheDirectory() async {
+    if (FushiDicts.unionFilterCacheDirectory != null) return;
+    try {
+      FushiDicts.unionFilterCacheDirectory = path.join(
+        (await AppPaths.appCacheRootDirectory()).path,
+        'fushidicts',
+      );
+    } on Exception catch (e) {
+      debugPrint(
+        '[Fushi] dict index cache dir unavailable, in-memory only: $e',
+      );
+    }
+  }
+
   /// [_rebuildDictPathsCacheAsync] 的前半段：目录 exists + 物化探测 + 类型自愈 +
   /// 排期，**不装载**。启动期只有这一段是「数据根 IO、可能因盘掉线永不返回」，
   /// 套 12s 看门狗；装载本身（[FushiDicts.loadPendingAsync]）每本之间让出、耗时随
   /// 词典数线性增长，不是挂死，套看门狗只会把「词典多、盘慢」误判成启动失败
   /// （BUG-4510：121 本词典、8s 物化预算之后只剩 4s 给装载，启动直接进错误屏）。
   Future<void> _scheduleDictPathsAsync() async {
+    await _ensureDictIndexCacheDirectory();
     final dictList = dictRepo.dictionaries;
     final List<String> paths = <String>[
       for (final d in dictList)
@@ -4961,6 +4988,9 @@ class AppModel
       /// Prepare all repositories (objects created first, then loaded in
       /// parallel to avoid serial await chains).
       _prefsRepo = PreferencesRepository(_database);
+      // 下载根的唯一取值口：在线漫画书架、音乐插件下载等不经 AppModel 的消费方
+      // 都从 [DownloadRoot.current] 拿当前下载布局（「下载」设置里那一个目录）。
+      DownloadRoot.install(currentDownloadLayout);
       // 导入 / 归组后的合集 AI 排序（自动路径）按偏好里的 AI 指派决定发不发请求；
       // 每次现取，设置页改了立即生效。弹窗进程不装，自动路径在那边是 no-op。
       installCollectionAiOrderSettings(_prefsRepo);
@@ -5884,6 +5914,8 @@ class AppModel
       themeNotifier.shellBlockArrangement;
   Future<void> setShellBlockArrangement(ShellBlockArrangement value) =>
       themeNotifier.setShellBlockArrangement(value);
+  Future<void> resetShellBlockArrangement() =>
+      themeNotifier.resetShellBlockArrangement();
   bool get shellSmoothCorners => themeNotifier.shellSmoothCorners;
   Future<void> setShellSmoothCorners(bool value) =>
       themeNotifier.setShellSmoothCorners(value);
@@ -6906,6 +6938,13 @@ class AppModel
     await reloadVideoDownloadPipelineRuntime();
   }
 
+  /// 楽天ブックス书籍检索凭据（书籍刮削弹窗 / 控制通道据此决定楽天源是否可用）。
+  RakutenBooksCredentials get bookScrapeRakutenCredentials =>
+      RakutenBooksCredentials(
+        applicationId: prefsRepo.bookScrapeRakutenApplicationId,
+        accessKey: prefsRepo.bookScrapeRakutenAccessKey,
+      );
+
   /// SubDL API key，见 [PreferencesRepository.videoSubtitleSubdlApiKey]。
   String get videoSubtitleSubdlApiKey =>
       _prefsRepo?.videoSubtitleSubdlApiKey ?? '';
@@ -7040,6 +7079,13 @@ class AppModel
           client: MokuroMoeClient(baseUrl: mangaOnlineCatalogBaseUrl),
         ),
       );
+
+  /// 「重新入库」扫描器（懒建；与 [mangaDownloadService] 同生命周期，关库 / 切
+  /// Profile 时在 [quiesceBackgroundDatabaseWriters] 一并丢弃）。下载页任务 tab
+  /// 从这里取，不自己按数据库 new。
+  OnlineMangaReshelf? _onlineMangaReshelf;
+  OnlineMangaReshelf get onlineMangaReshelf =>
+      _onlineMangaReshelf ??= OnlineMangaReshelf(database: database);
 
   /// 启动章节下载 worker：复位上次进程死亡留下的 `running` 行并开始消费。幂等。
   Future<void> startMangaDownloads() => mangaDownloadService.start();
@@ -7837,10 +7883,52 @@ class AppModel
   Future<String> _resolveDownloadDefaultSaveRoot() async {
     final String? known = _downloadDefaultSaveRoot;
     if (known != null) return known;
-    final Directory baseDir = await AppPaths.documentsSubdirectory(
-      'anime_downloads',
+    return _downloadDefaultSaveRoot = await DownloadRoot.defaultRoot();
+  }
+
+  /// 本会话已经探测过可用性的配置下载根（[_effectiveDownloadSaveRoot] 只探一次）。
+  String? _downloadSaveRootProbed;
+
+  /// 当前生效的下载根：用户配置的目录（可用时）→ 默认根。
+  ///
+  /// 配置目录不可用（拔掉的 SD 卡 / 外置盘）时回退默认根并记下原因，设置页显示
+  /// 警告——与下载中心启动时的判据同一个（[checkDownloadSaveRoot]），但不依赖下载
+  /// 中心起没起：在线漫画、音乐插件、发现页下载在 iOS / 「浏览」关闭时也要落盘。
+  Future<String> _effectiveDownloadSaveRoot() async {
+    final String? active = _embeddedTorrentSaveRoots?.active;
+    if (active != null && active.isNotEmpty) return active;
+    final String configured = _configuredDownloadSaveRoot;
+    if (configured.isEmpty) return _resolveDownloadDefaultSaveRoot();
+    if (_downloadSaveRootProbed != configured) {
+      final DownloadSaveRootIssue? issue = await checkDownloadSaveRoot(
+        configured,
+      );
+      _downloadSaveRootProbed = configured;
+      if (issue != null) {
+        _downloadSaveRootIssue = issue;
+        _downloadSaveRootRejectedPath = configured;
+        notifyListeners();
+      }
+    }
+    if (_downloadSaveRootRejectedPath == configured) {
+      return _resolveDownloadDefaultSaveRoot();
+    }
+    return configured;
+  }
+
+  /// 当前下载布局：生效根 + 历史根（默认根与改目录前用过的根）。
+  ///
+  /// 所有下载域的落点都从这里派生（[DownloadRoot.install] 装的就是它）。
+  Future<DownloadLayout> currentDownloadLayout() async {
+    final String root = await _effectiveDownloadSaveRoot();
+    final String defaultRoot = await _resolveDownloadDefaultSaveRoot();
+    final List<String> history = _prefsRepo == null
+        ? const <String>[]
+        : decodeSaveRootHistory(prefsRepo.downloadSaveRootHistory);
+    return DownloadLayout(
+      root: root,
+      legacyRoots: <String>[defaultRoot, ...history],
     );
-    return _downloadDefaultSaveRoot = path.join(baseDir.path, 'content');
   }
 
   /// 已保存的下载根配置（空串 = 用默认根）。
@@ -7883,6 +7971,49 @@ class AppModel
   /// 恢复默认下载根（清空配置 key）。旧根同样降级为历史根，不丢任务。
   Future<void> resetDownloadSaveRoot() => _applyDownloadSaveRoot('');
 
+  /// 旧下载根里有没有可以搬的已下载内容（在线漫画 / 音乐插件曲目）。设置页据此
+  /// 决定改目录时要不要问「把已下载的内容一起搬过去吗」。
+  Future<bool> downloadRootHasMovableContent() async => _downloadRootMigrator()
+      .hasMovableContent(await _effectiveDownloadSaveRoot());
+
+  DownloadRootMigrator _downloadRootMigrator() =>
+      DownloadRootMigrator(database: database);
+
+  /// 设置页的改下载根入口：[newRoot] 空串 = 恢复默认根。
+  ///
+  /// [moveContent]=true 时先把旧根里可搬的域（[kMigratableDownloadDomains]）搬到新根
+  /// 并改写书库路径，**搬成功才切根**；搬失败旧根原样生效、返回原因（不静默）。
+  /// torrent 与发现页下载从不搬（见 [kMigratableDownloadDomains]）。[busyReason] 由
+  /// 调用方给出（还有在写这些目录的下载任务时非空），非空则拒绝搬移。
+  Future<({DownloadSaveRootIssue? issue, DownloadRootMoveReport? move})>
+  changeDownloadSaveRoot(
+    String newRoot, {
+    required bool moveContent,
+    String? busyReason,
+  }) async {
+    final String trimmed = newRoot.trim();
+    if (trimmed.isNotEmpty) {
+      final DownloadSaveRootIssue? issue = await checkDownloadSaveRoot(trimmed);
+      if (issue != null) return (issue: issue, move: null);
+    }
+    DownloadRootMoveReport? report;
+    if (moveContent) {
+      final String oldRoot = await _effectiveDownloadSaveRoot();
+      final String newActive = trimmed.isEmpty
+          ? await _resolveDownloadDefaultSaveRoot()
+          : trimmed;
+      report = await _downloadRootMigrator().move(
+        oldRoot: oldRoot,
+        newRoot: newActive,
+        busyReason: busyReason,
+      );
+      if (!report.succeeded) return (issue: null, move: report);
+    }
+    await _applyDownloadSaveRoot(trimmed);
+    OnlineMangaReshelf.notifyChanged();
+    return (issue: null, move: report);
+  }
+
   /// 落盘 + 就地换活动根。[newRoot] 空串 = 恢复默认根。
   Future<void> _applyDownloadSaveRoot(String newRoot) async {
     final String previousActive =
@@ -7917,6 +8048,7 @@ class AppModel
       host.post('setActiveSaveRoot', host.setActiveSaveRoot(active));
     }
     // 用户显式改过目录，之前的启动回退警告作废。
+    _downloadSaveRootProbed = null;
     _downloadSaveRootIssue = null;
     _downloadSaveRootRejectedPath = null;
     notifyListeners();
@@ -9193,11 +9325,8 @@ class AppModel
   /// 依赖下载中心已启动：iOS 没有下载中心却可以从用户自配服务器下载，「浏览」模块
   /// 关掉的桌面 / Android 同理；以前读的是只在下载中心启动时才赋值的字段，这些情况下
   /// 根是空串，落点退化成相对路径 `discovery/<kind>`，任务永远失败。
-  Future<String> discoveryDownloadDirFor(DiscoveryMediaKind kind) async {
-    String root = prefsRepo.downloadSaveRoot.trim();
-    if (root.isEmpty) root = await _resolveDownloadDefaultSaveRoot();
-    return path.join(root, 'discovery', kind.name);
-  }
+  Future<String> discoveryDownloadDirFor(DiscoveryMediaKind kind) async =>
+      (await currentDownloadLayout()).discoveryPath(kind.name);
 
   /// The pipeline persists `stage=download` only after this checkpoint. This
   /// closes the one-minute periodic-save gap where an unclean app exit could
@@ -11333,18 +11462,18 @@ class AppModel
   Future<void> setPopupBottomDocked(bool value) =>
       prefsRepo.setPopupBottomDocked(value);
 
-  /// 底部停靠在 [module] 的媒体页里是否启用（总开关之下的按模块细分，默认开）。
-  /// 偏好仓库未装配时 fail-open（同 [moduleEnabled]）：总开关才是真正的门。
+  /// 底部停靠在 [module] 的媒体页里是否启用：每个模块一个独立开关，不受
+  /// [popupBottomDocked] 门控（BUG-4713）。偏好仓库未装配时按默认值 OFF（跟随选区）。
   bool popupBottomDockedIn(ModuleId module) =>
-      isPreferencesReady ? prefsRepo.popupBottomDockedIn(module) : true;
+      isPreferencesReady && prefsRepo.popupBottomDockedIn(module);
   Future<void> setPopupBottomDockedIn(ModuleId module, bool value) =>
       prefsRepo.setPopupBottomDockedIn(module, value);
 
-  /// 查词弹窗宿主实际是否走底部停靠：总开关 ∧ 宿主所属模块的细分开关。
-  /// [module] 为 `null`（查词页 / 外部弹窗 / 悬浮歌词等不属于四个媒体模块的
-  /// 宿主）时只听总开关。弹窗宿主一律经它判定，不再直读 [popupBottomDocked]。
+  /// 查词弹窗宿主实际是否走底部停靠：宿主所属模块自己的开关。[module] 为 `null`
+  /// （查词页 / 外部弹窗 / 悬浮歌词等不属于四个媒体模块的宿主）时听
+  /// [popupBottomDocked]。弹窗宿主一律经它判定，不再直读 [popupBottomDocked]。
   bool popupBottomDockedFor(ModuleId? module) =>
-      popupBottomDocked && (module == null || popupBottomDockedIn(module));
+      module == null ? popupBottomDocked : popupBottomDockedIn(module);
 
   bool get isFirstTimeSetup => prefsRepo.isFirstTimeSetup;
   void setFirstTimeSetupFlag() => prefsRepo.setFirstTimeSetupFlag();
@@ -11539,6 +11668,7 @@ class AppModel
     _animeDownloadSubscriptionService?.stop();
     _mangaDownloadService?.dispose();
     _mangaDownloadService = null;
+    _onlineMangaReshelf = null;
     // 服务持有 FushiDatabase 引用，db 关闭/重开时必须一并销毁，否则新库开出来后
     // 旧实例还拿着已关闭的连接，探测队列一落库就抛。
     _videoSpecsService?.dispose();
@@ -11690,6 +11820,7 @@ class AppModel
     _disposeOnDemandSubtitleRegistry();
     _mangaDownloadService?.dispose();
     _mangaDownloadService = null;
+    _onlineMangaReshelf = null;
     // 服务持有 FushiDatabase 引用，db 关闭/重开时必须一并销毁，否则新库开出来后
     // 旧实例还拿着已关闭的连接，探测队列一落库就抛。
     _videoSpecsService?.dispose();
@@ -11859,21 +11990,16 @@ class AppModel
   Future<void> setSrsMiningBackground(bool value) =>
       prefsRepo.setSrsMiningBackground(value: value);
 
-  // 首页 dashboard 面板显示档（透传 prefsRepo）。可空读：prefs 未装配 = 全部 auto。
-  HomeDashboardPanelMode homeDashboardPanelMode(HomeDashboardPanel panel) =>
-      decodeHomeDashboardPanelModes(
-        _prefsRepo?.homeDashboardPanels ?? '',
-      )[panel] ??
-      HomeDashboardPanelMode.auto;
-  Future<void> setHomeDashboardPanelMode(
-    HomeDashboardPanel panel,
-    HomeDashboardPanelMode mode,
-  ) => prefsRepo.setHomeDashboardPanels(
-    encodeHomeDashboardPanelModes(<HomeDashboardPanel, HomeDashboardPanelMode>{
-      ...decodeHomeDashboardPanelModes(prefsRepo.homeDashboardPanels),
-      panel: mode,
-    }),
-  );
+  // 旧首页可选面板显示档（只读，透传 prefsRepo）：首页小组件网格迁移首个布局时读
+  // （[migrateHomeWidgetLayout]），不再写。可空读：prefs 未装配 = 全部 auto。
+  Map<HomeDashboardPanel, HomeDashboardPanelMode> get homeDashboardPanelModes =>
+      decodeHomeDashboardPanelModes(_prefsRepo?.homeDashboardPanels ?? '');
+
+  // 首页小组件网格的两份布局（透传 prefsRepo）。可空读：prefs 未装配 = 都没编辑过。
+  HomeWidgetLayout get homeWidgetLayout =>
+      decodeHomeWidgetLayout(_prefsRepo?.homeWidgetLayout ?? '');
+  Future<void> setHomeWidgetLayout(HomeWidgetLayout layout) =>
+      prefsRepo.setHomeWidgetLayout(encodeHomeWidgetLayout(layout));
 
   // 复习卡片浏览器的保存视图（JSON，透传 prefsRepo）。可空读：prefs 未装配 = 没有。
   String get srsBrowseSavedViews => _prefsRepo?.srsBrowseSavedViews ?? '';
