@@ -176,7 +176,11 @@ Type: files; Name: "{app}\*_windows_*_test.exe"
 
 [Files]
 ; 包含 fushi_update_launcher.exe：应用内更新用它等待当前 fushi.exe 退出后再启动 Inno。
-Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#SourceDir}\*"; DestDir: "{app}"; Excludes: "\fushi_shell_thumbs.dll"; Flags: ignoreversion recursesubdirs createallsubdirs
+; 资源管理器缩略图处理器卸载时多半正被 explorer.exe 加载着、删不掉：uninsrestartdelete 让它
+; 在下次重启时删除，不在 {app} 留垃圾。（升级时的占用由 [Code] FushiSetAsideThumbnailHandler 处理。）
+; 本地构建的 Release 目录可能没有它（只有 release-desktop.yml 构建并核对它在场），故 skipifsourcedoesntexist。
+Source: "{#SourceDir}\fushi_shell_thumbs.dll"; DestDir: "{app}"; Flags: ignoreversion uninsrestartdelete skipifsourcedoesntexist
 
 [Icons]
 Name: "{group}\Fushi"; Filename: "{app}\fushi.exe"
