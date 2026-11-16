@@ -229,6 +229,7 @@ SrsZstdFileDecoder _fileViaBytes(SrsZstdDecoder zstd) =>
 /// 攒成草稿，不会让它过时（恢复路径例外，它立即落库后自己刷新 [cards]）。
 class _ExistingPrefetch {
   _ExistingPrefetch({
+    required this.noteIdOfGuid,
     required this.notes,
     required this.cards,
     required this.cardEdits,
@@ -237,14 +238,17 @@ class _ExistingPrefetch {
     required this.oldCardHeirs,
   });
 
-  static final _ExistingPrefetch empty = _ExistingPrefetch(
-    notes: const <String, SrsNoteView?>{},
-    cards: const <String, SrsCardCacheRow>{},
-    cardEdits: const <String, SrsEntityEdits>{},
-    histories: const <String, SrsCardHistory>{},
-    ankiLogsAt: const <int, List<SrsAnkiLogAt>>{},
-    oldCardHeirs: const <String, String>{},
-  );
+  /// 这一块里没有本机已有的笔记：只带笔记 ID，其余预读为空。
+  _ExistingPrefetch.onlyNoteIds(this.noteIdOfGuid)
+    : notes = const <String, SrsNoteView?>{},
+      cards = const <String, SrsCardCacheRow>{},
+      cardEdits = const <String, SrsEntityEdits>{},
+      histories = const <String, SrsCardHistory>{},
+      ankiLogsAt = const <int, List<SrsAnkiLogAt>>{},
+      oldCardHeirs = const <String, String>{};
+
+  /// 这一块全部来源笔记的本机笔记 ID，按 guid（整块一次向内核要；逐条处理直接取，不再逐条跨 FFI）。
+  final Map<String, String> noteIdOfGuid;
 
   final Map<String, SrsNoteView?> notes;
   final Map<String, SrsCardCacheRow> cards;
@@ -840,16 +844,23 @@ class _Importer {
   /// 「不合并笔记类型」时另建的那一份的 ankiNum：由来源身份 + 字段 / 模板组成确定性派生，
   /// 两台设备导入同一个包得到同一个 ID（铁律 C）；同一种结构再导入回到同一份副本
   /// （对应 Anki 的 get_previously_duplicated_notetype）。
-  static int _duplicateAnkiNum(SrsAnkiNoteType src) => hash53(
-    'notetype-dup/${src.ankiNum}/${srsCanonicalJson(<String, Object?>{
-      'cloze': src.isCloze,
-      'fields': <Object?>[for (final SrsAnkiField f in src.fields) f.configId ?? 'name:${f.name}'],
-      'tmpls': <Object?>[for (final SrsAnkiTemplate t in src.templates) t.configId ?? 'name:${t.name}'],
-    })}',
-  );
+  /// 规则在内核（gen4_ids/rules.rs `duplicate_note_type_anki_num`）。
+  static int _duplicateAnkiNum(SrsAnkiNoteType src) =>
+      SrsKernelIds.duplicateNoteTypeAnkiNum(
+        sourceAnkiNum: src.ankiNum,
+        cloze: src.isCloze,
+        fields: <SrsDupPart>[
+          for (final SrsAnkiField f in src.fields)
+            (configId: f.configId, name: f.name),
+        ],
+        templates: <SrsDupPart>[
+          for (final SrsAnkiTemplate t in src.templates)
+            (configId: t.configId, name: t.name),
+        ],
+      );
 
   Future<_NtMap> _mapNoteType(SrsAnkiNoteType src) async {
-    final String baseId = SrsIds.noteType(profileUid, src.ankiNum);
+    final String baseId = store.kernelIds.noteType(src.ankiNum);
     final String kind = src.isCloze
         ? SrsNoteTypeKind.cloze
         : SrsNoteTypeKind.standard;
@@ -871,7 +882,7 @@ class _Importer {
         !_equalSchema(base, src)) {
       // 不合并：本机那一个不动，来源笔记类型另建一份。
       final int dupNum = _duplicateAnkiNum(src);
-      final String dupId = SrsIds.noteType(profileUid, dupNum);
+      final String dupId = store.kernelIds.noteType(dupNum);
       final SrsNoteTypeView? dup = await store.noteType(dupId);
       if (dup == null) report.noteTypesDuplicated.add(src.name);
       return _mapInto(src, dupId, dupNum, dup);
@@ -1278,10 +1289,11 @@ class _Importer {
 
   /// 身份记录已存在、却不在牌组树里 = 先前导入过、后来被删。
   Future<bool> _deckDeleted(String id) async {
-    final SrsEntityRow? row = await (store.db.select(
-      store.db.srsEntities,
-    )..where(($SrsEntitiesTable t) => t.id.equals(id))).getSingleOrNull();
-    if (row == null) return false;
+    final SrsColumns row = await store.readTable('entities', <String, Object?>{
+      'ids': <String>[id],
+      'bare': true,
+    });
+    if (row.rows == 0) return false;
     return (await store.deckTree())[id] == null;
   }
 
@@ -1702,10 +1714,20 @@ class _Importer {
     final List<String> noteIds = <String>[];
     final List<String> cardIds = <String>[];
     final List<int> revlogIds = <int>[];
+    // 整块的笔记 ID 一次向内核要。
+    final List<String> guids = <String>[
+      for (final (Row n, _) in chunk) n['guid'] as String,
+    ];
+    final List<String> chunkNoteIds = store.kernelIds.notes(guids);
+    final Map<String, String> noteIdOfGuid = <String, String>{
+      for (int i = 0; i < guids.length; i++) guids[i]: chunkNoteIds[i],
+    };
+    int at = -1;
     for (final (Row n, List<_SrcCard> cards) in chunk) {
+      at++;
       final _NtMap? nt = _nts[n['mid'] as int];
       if (nt == null || nt.conflict != null) continue;
-      final String noteId = SrsIds.note(profileUid, n['guid'] as String);
+      final String noteId = chunkNoteIds[at];
       if (!_existingNotes.contains(noteId)) continue;
       noteIds.add(noteId);
       for (final (_SrcCard c, String cardId) in _cardIdsOf(nt, noteId, cards)) {
@@ -1715,7 +1737,7 @@ class _Importer {
         }
       }
     }
-    if (noteIds.isEmpty) return _ExistingPrefetch.empty;
+    if (noteIds.isEmpty) return _ExistingPrefetch.onlyNoteIds(noteIdOfGuid);
     // 只有本机已有的笔记才可能已经有这条复习（新笔记的卡 ID 都是新的）：按 revlog id 一块一次查。
     final Map<int, List<SrsAnkiLogAt>> ankiLogsAt = <int, List<SrsAnkiLogAt>>{};
     if (options.withScheduling && revlogIds.isNotEmpty) {
@@ -1729,6 +1751,7 @@ class _Importer {
           if (!l.visible) l.cardId,
     };
     return _ExistingPrefetch(
+      noteIdOfGuid: noteIdOfGuid,
       notes: await store.notes(noteIds),
       cards: <String, SrsCardCacheRow>{
         for (final SrsCardCacheRow r in await store.cardRows(cardIds)) r.id: r,
@@ -1809,7 +1832,7 @@ class _Importer {
               !_schedulingTags.contains(t.toLowerCase()),
         )
         .toList();
-    final String noteId = SrsIds.note(profileUid, guid);
+    final String noteId = pre.noteIdOfGuid[guid]!;
     final SrsNoteView? existing = !_existingNotes.contains(noteId)
         ? null
         : pre.notes.containsKey(noteId)
@@ -1848,6 +1871,7 @@ class _Importer {
           tags: tags,
           source: SrsSourceRef.fromJson(_extNotes[guid]),
           guid: guid,
+          noteId: noteId,
           createdAt: _extNoteCreatedAt[guid] ?? n['id'] as int,
         ),
       );

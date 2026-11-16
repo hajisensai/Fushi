@@ -101,4 +101,83 @@ void main() {
       expect(got!.deleteLocalFiles, isFalse, reason: '与删本地文件正交');
     });
   });
+
+  group('「保留已下载章节」（在线漫画删除，BUG-4702）', () {
+    Widget dialog(
+      void Function(DeleteDecision) onConfirm, {
+      bool keep = true,
+    }) => buildApp(
+      ReaderHistoryDeleteDialog(
+        title: t.epub_delete_title,
+        message: 'm',
+        showSyncScope: false,
+        keepDownloadsSubtitle: keep ? t.delete_keep_downloads_desc : null,
+        disclosure: buildDeletionDisclosure(
+          target: DeletionDisclosureTarget.shelfBook,
+        ),
+        onConfirm: onConfirm,
+      ),
+    );
+
+    DeletionDisclosure shown(WidgetTester tester) => tester
+        .widget<DeletionDisclosureView>(find.byType(DeletionDisclosureView))
+        .disclosure;
+
+    testWidgets('默认勾上：确认 keepDownloadedFiles=true，披露把章节挪到「保留」', (
+      WidgetTester tester,
+    ) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(800, 1400);
+      addTearDown(tester.view.reset);
+      DeleteDecision? got;
+      await tester.pumpWidget(dialog((DeleteDecision d) => got = d));
+      expect(find.text(t.delete_keep_downloads_title), findsOneWidget);
+      expect(
+        shown(tester).willKeep,
+        contains(t.delete_disclosure_manga_downloads_kept),
+      );
+      expect(
+        shown(tester).willDelete,
+        isNot(contains(t.delete_disclosure_book_extracted)),
+      );
+      await tester.tap(find.text(t.dialog_delete));
+      await tester.pumpAndSettle();
+      expect(got!.keepDownloadedFiles, isTrue);
+    });
+
+    testWidgets('取消勾选：keepDownloadedFiles=false，披露回到「会删除」', (
+      WidgetTester tester,
+    ) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(800, 1400);
+      addTearDown(tester.view.reset);
+      DeleteDecision? got;
+      await tester.pumpWidget(dialog((DeleteDecision d) => got = d));
+      await tester.tap(
+        find.byKey(const ValueKey<String>('delete-keep-downloads')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        shown(tester).willKeep,
+        isNot(contains(t.delete_disclosure_manga_downloads_kept)),
+      );
+      await tester.tap(find.text(t.dialog_delete));
+      await tester.pumpAndSettle();
+      expect(got!.keepDownloadedFiles, isFalse);
+    });
+
+    testWidgets('非在线漫画（没给副标题）不摆该行，恒 false', (WidgetTester tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(800, 1400);
+      addTearDown(tester.view.reset);
+      DeleteDecision? got;
+      await tester.pumpWidget(
+        dialog((DeleteDecision d) => got = d, keep: false),
+      );
+      expect(find.text(t.delete_keep_downloads_title), findsNothing);
+      await tester.tap(find.text(t.dialog_delete));
+      await tester.pumpAndSettle();
+      expect(got!.keepDownloadedFiles, isFalse);
+    });
+  });
 }

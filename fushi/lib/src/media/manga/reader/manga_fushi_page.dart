@@ -118,6 +118,7 @@ import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart'
         fushiTitleBarColorsOn;
 import 'package:fushi/src/media/manga/reader/manga_reader_settings_sheet.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_page_grid.dart';
+import 'package:fushi/src/media/manga/reader/manga_page_fit.dart';
 import 'package:fushi/src/media/manga/reader/manga_page_thumbnail_prefetcher.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_quick_settings_sheet.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_study_stats.dart';
@@ -192,6 +193,12 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/media/manga/ocr/system_ocr_manga_service.dart'
+    show isSystemOcrModelUnavailableFailure;
+import 'package:fushi/src/ocr/system_ocr_channel.dart'
+    show MethodChannelSystemOcr, SystemOcrModelSetup;
+import 'package:fushi/src/ocr/system_ocr_setup_dialog.dart'
+    show showSystemOcrSetupDialog;
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
@@ -628,6 +635,7 @@ class MangaFushiPage extends BaseSourcePage {
     this.sourceReview,
     this.ocrEnginesOverride,
     this.lensDisclosureOverride,
+    this.systemOcrSetupOverride,
   });
 
   /// 在线漫画：调用方点名要开的章（下标，见 [mangaReaderOpenChapterIndex]）。null =
@@ -650,6 +658,10 @@ class MangaFushiPage extends BaseSourcePage {
 
   /// Google Lens 上传同意闸门（测试缝；生产是 [ensureGoogleLensDisclosure]）。
   final GoogleLensDisclosureGate? lensDisclosureOverride;
+
+  /// 系统 OCR 引导弹窗查状态 / 下载用的平台口（测试缝；生产是
+  /// [MethodChannelSystemOcr]）。
+  final SystemOcrModelSetup? systemOcrSetupOverride;
 
   /// `EpubBooks` 主键（净化后的标题），由 `hoshi://book/<bookKey>` 解析而来。
   ///
@@ -1545,6 +1557,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 不能解开新窗口的锁（BUG-1170），页面销毁时在飞加载被显式放弃（BUG-1171）。
   final MangaWindowLoadGate _windowGate = MangaWindowLoadGate();
 
+  /// 本地页图按显示尺寸降采样（BUG-4704，见 [MangaPageFitter]）：页面 JS 在页图 URL
+  /// 上挂 `fit=<像素宽>`，拦截器经它交出同宽高比的显示尺寸 JPEG。
+  final MangaPageFitter _pageFitter = MangaPageFitter();
+
   /// renderer 死亡处置（救命动作 = 下面 [InAppWebView.onRenderProcessGone] 传了
   /// 非 null 回调，否则 Android 会连坐杀掉整个 app）。
   ///
@@ -1704,6 +1720,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
 
   /// 直读识别失败只提示一次（离线 / 源坏了时逐页失败会刷屏）。
   bool _streamOcrFailureNotified = false;
+
+  /// 本次打开阅读器已弹过系统 OCR 引导（BUG-4705）：直读逐页 / 整卷两条路径都
+  /// 可能报同一个设备级原因，弹一次就够。
+  bool _systemOcrSetupShown = false;
 
   /// 本次整卷 OCR 实际生效的推理加速状态（BUG-1163：降级必须看得见）。
   MangaOcrAcceleration? _wholeVolumeOcrAcceleration;
@@ -1996,6 +2016,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
 
   @override
   void dispose() {
+    _pageFitter.dispose();
     _menuDismiss.detach();
     _readAloud.dispose();
     // 反馈 kEFPY4cuKZ：离开这部作品 = 撤掉它的作品级配置覆盖层。
@@ -2707,8 +2728,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       if (chapterIndex < 0) {
         throw StateError('The manga has no chapters');
       }
-      // 一次性目录迁移：旧条目从 `<runtimeRoot>/library` 搬进 `fushi_books`，
-      // 章目录才有地方落（设计稿 2026-09-12 §2.1）。
+      // 一次性目录迁移：旧条目从 `<runtimeRoot>/library` / `fushi_books` 搬进
+      // 下载根 `<下载根>/manga/<bookKey>`，章目录才有地方落。
       row = await service.ensureBookDirectory(row);
       if (_sourceReviewActive) {
         entry = entry.copyWith(currentChapterIndex: chapterIndex);
@@ -3256,16 +3277,26 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     final int? pageIndex = _localPageIndices[_localPageKey(decodedRelative)];
     if (pageSession != null && pageIndex != null) {
       try {
-        final MangaPageBytes page = await pageSession.page(pageIndex);
+        final int? fitWidth = mangaFitWidthOf(url);
+        MangaPageBytes? page;
+        Future<Uint8List> loadSource() async =>
+            (page ??= await pageSession.page(pageIndex)).bytes;
+        final Uint8List? fitted = await _fitPageBytes(
+          '$_pageSessionGeneration|$pageIndex',
+          fitWidth,
+          loadSource,
+        );
         return WebResourceResponse(
-          contentType: page.contentType,
+          contentType: fitted != null
+              ? 'image/jpeg'
+              : (page ??= await pageSession.page(pageIndex)).contentType,
           statusCode: 200,
           reasonPhrase: 'OK',
           headers: <String, String>{
             'Access-Control-Allow-Origin': '*',
             'Cache-Control': 'private, max-age=3600',
           },
-          data: page.bytes,
+          data: fitted ?? await loadSource(),
         );
       } on Object catch (error, stackTrace) {
         ErrorLogService.instance.log('MangaFushiPage.page', error, stackTrace);
@@ -3296,16 +3327,38 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       }
       return _notFound('resource not found: $decodedRelative');
     }
+    final Uint8List? fitted = await _fitPageBytes(
+      p.join(imagesDir, decodedRelative),
+      mangaFitWidthOf(url),
+      () => File(filePath).readAsBytes(),
+    );
     return WebResourceResponse(
-      contentType: _mangaMimeForPath(filePath),
+      contentType: fitted != null ? 'image/jpeg' : _mangaMimeForPath(filePath),
       statusCode: 200,
       reasonPhrase: 'OK',
       headers: <String, String>{
         'Access-Control-Allow-Origin': '*',
         'Cache-Control': 'max-age=3600',
       },
-      data: await File(filePath).readAsBytes(),
+      data: fitted ?? await File(filePath).readAsBytes(),
     );
+  }
+
+  /// 页图在 [fitWidth] 档的降采样 JPEG（BUG-4704）；URL 没要、不值得缩、或转码
+  /// 失败都返回 null，由调用方交出原图——降采样只是省内存，任何失败都不能让页白掉。
+  /// [key] 是页在本页面内的稳定身份（LRU 键），[loadSource] 只在未命中时读原图。
+  Future<Uint8List?> _fitPageBytes(
+    String key,
+    int? fitWidth,
+    Future<Uint8List> Function() loadSource,
+  ) async {
+    if (fitWidth == null) return null;
+    try {
+      return await _pageFitter.fit(key, fitWidth, loadSource);
+    } on Object catch (error, stackTrace) {
+      ErrorLogService.instance.log('MangaFushiPage.fitPage', error, stackTrace);
+      return null;
+    }
   }
 
   Future<CustomSchemeResponse?> _loadMangaCustomScheme(
@@ -3452,6 +3505,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       // 注释也是这么写的。
       doubleTapAnimationMs: 300,
       zoomStartPosition: _zoomStartPosition,
+      // 在线直读章的 payload 尺寸是占位值（真尺寸要等页图到了才知道），只有本地卷 /
+      // 已下载章的 manga.json 尺寸可信，降采样只对它们开（BUG-4704）。
+      fitImagesToDisplay: _pageSession is! OnlineMangaReaderSession,
     );
   }
 
@@ -3894,7 +3950,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       // 锁定章入队必败（要登录购买），预下载不替用户去撞。
       if (next.locked) return;
       if (await isChapterDownloaded(
-        await MangaStorage.bookPath(row.bookKey),
+        await onlineMangaBookDirectory(appModel.database, row.bookKey),
         next.key,
       )) {
         return;
@@ -3982,8 +4038,11 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     try {
       // 目标章下没下载都能换：已下载从章目录读，未下载在线直读（2026-09-26 用户
       // 撤回设计稿 §1.1），分流在 [_openShelfChapter] 里只做一次。
-      // 注意 [_bookRow] 在读章时指向**章目录**副本，书根要从 bookKey 重新解析。
-      final String bookDir = await MangaStorage.bookPath(row.bookKey);
+      // 注意 [_bookRow] 在读章时指向**章目录**副本，书根要按 bookKey 从库里的行取。
+      final String bookDir = await onlineMangaBookDirectory(
+        appModel.database,
+        row.bookKey,
+      );
       // 换章前把当前章的进度落库，否则「翻到下一章再翻回来」会丢掉刚读的位置。
       await _saveCurrentChapterState();
       final OnlineMangaLibraryEntry selected = _sourceReviewActive
@@ -4895,6 +4954,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       }
       switch (setup) {
         case MangaStreamOcrReady(
+          :final MangaOcrEngineId engine,
           :final MangaStreamPageRecognizer recognizer,
           :final MangaStreamAiRefinement? ai,
         ):
@@ -4914,7 +4974,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                 setState(() => _streamOcrBusy = busy);
               }
             },
-            onError: _onStreamOcrError,
+            onError: (Object error, StackTrace stack) =>
+                _onStreamOcrError(engine, error, stack),
           );
           _streamOcr = ocr;
           ocr.focus(_currentPage);
@@ -4985,14 +5046,37 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     _companion.publishNow();
   }
 
-  void _onStreamOcrError(Object error, StackTrace stack) {
+  void _onStreamOcrError(
+    MangaOcrEngineId engine,
+    Object error,
+    StackTrace stack,
+  ) {
     ErrorLogService.instance.log('MangaFushiPage.streamOcrPage', error, stack);
     if (!mounted || _streamOcrFailureNotified) return;
     _streamOcrFailureNotified = true;
+    if (_showSystemOcrSetupFor(engine, error)) return;
     FushiToast.show(
       msg: '${t.manga_ocr_wizard_failed}: $error',
       severity: ToastSeverity.error,
     );
+  }
+
+  /// 系统 OCR 因「没有可用模型 / Play 服务」失败（BUG-4705）：弹本地化的引导弹窗
+  /// （说明缺什么、能修的给修复入口、修不了的指向本机模型），不把原始异常
+  /// `SystemOcrUnavailableException(model_unavailable)` 糊进 toast。返回 true = 已
+  /// 由弹窗接管提示，调用方不必再弹 toast。
+  bool _showSystemOcrSetupFor(MangaOcrEngineId engine, Object error) {
+    if (!isSystemOcrModelUnavailableFailure(engine, error)) return false;
+    if (_systemOcrSetupShown) return true;
+    _systemOcrSetupShown = true;
+    unawaited(
+      showSystemOcrSetupDialog(
+        context,
+        language: appModel.mangaOcrLensLanguage,
+        setup: widget.systemOcrSetupOverride ?? const MethodChannelSystemOcr(),
+      ),
+    );
+    return true;
   }
 
   void _closeStreamOcr() {
@@ -5032,6 +5116,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
             _readAloud._failWaiters(MangaPageTextUnavailableReason.failed);
             if (!mounted) return;
             setState(() => _wholeVolumeOcrRunning = false);
+            if (_showSystemOcrSetupFor(running.job.engine, error)) return;
             FushiToast.show(
               msg: '${t.manga_ocr_wizard_failed}: $error',
               severity: ToastSeverity.error,
@@ -6149,7 +6234,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         ? const <String, MangaChapterStateRow>{}
         : await appModel.database.getMangaChapterStates(row.uid);
     final Set<String> downloaded = await downloadedChapterKeys(
-      await MangaStorage.bookPath(row.bookKey),
+      await onlineMangaBookDirectory(appModel.database, row.bookKey),
       entry.chapters.map((OnlineMangaChapter chapter) => chapter.key),
     );
     if (!mounted) return;

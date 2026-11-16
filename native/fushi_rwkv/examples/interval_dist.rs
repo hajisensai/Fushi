@@ -27,6 +27,11 @@ fn pct(sorted: &[u32], q: f64) -> u32 {
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let model = Model::from_bytes(&std::fs::read(&args[1]).unwrap()).unwrap();
+    assert!(
+        model.kind().has_trained_curve_head(),
+        "next_intervals reads the curve head; {:?} weights are Instant-Only (use the big model)",
+        model.kind()
+    );
     let precision = match args[2].as_str() {
         "f32" => StatePrecision::F32,
         "int8" => StatePrecision::Int8,
