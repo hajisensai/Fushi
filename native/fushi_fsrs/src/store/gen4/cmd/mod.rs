@@ -25,10 +25,11 @@
 use rusqlite::types::Value as Sv;
 use serde_json::Value;
 
-use super::derive::{Index, Ref};
+use super::derive::{Index, Ref, body_of};
 use super::schema::sql;
 use super::truth::Truth;
 use crate::gen4::name::write_edit_key;
+use crate::gen4::op::{Body4, Log4};
 use crate::store::bulk::{self, Col};
 use crate::store::gen4::weigh::S_PURGED;
 use crate::store::sync2::canonical;
@@ -36,6 +37,7 @@ use crate::store::sync2::config::DeckTree;
 use crate::sync2::codec::Writer;
 use crate::sync2::id::Key;
 use crate::sync2::op::EntKind;
+use crate::sync2::vv::OpId;
 
 pub mod columns;
 pub mod history;
@@ -181,6 +183,58 @@ pub(super) fn sql_order(r: &Ref) -> (u8, &[u8]) {
         Ref::Text(s) => (0, s.as_bytes()),
         Ref::Uuid(b) => (1, b.as_slice()),
     }
+}
+
+/// 按规范日志 ID 取的日志代表：规范日志 ID → (操作号, 操作主键, 日志)。
+pub(super) type LogReps = std::collections::BTreeMap<Ref, (OpId, i64, Log4)>;
+
+/// 发生时刻落在 [lo, hi]（[hi] = None：不设上界）的日志并进 [reps]：每个规范日志 ID 取操作号最小的一份（`log_ix.win`
+/// 的规则搬到别名类上；多次调用跨区间累积，仍取最小的一份）。走 `log_at (col, at)`。按时刻读日志的读命令
+/// （[reads] 的 `anki_logs_at` / `native_logs_near`、[study] 的计数上下文与自定义学习）共用这一份代表规则。
+pub(super) fn logs_between(
+    t: &Truth<'_>,
+    ix: &Index<'_, '_>,
+    col: i64,
+    lo: i64,
+    hi: Option<i64>,
+    reps: &mut LogReps,
+) -> Result<(), String> {
+    let rows: Vec<(i64, Ref)> = match hi {
+        Some(hi) => t
+            .conn()
+            .prepare_cached(
+                "SELECT k, id FROM log_ix WHERE col = ?1 AND at BETWEEN ?2 AND ?3 AND win = 1",
+            )
+            .map_err(sql)?
+            .query_map(rusqlite::params![col, lo, hi], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
+            .map_err(sql)?
+            .collect::<Result<_, _>>()
+            .map_err(sql)?,
+        None => t
+            .conn()
+            .prepare_cached("SELECT k, id FROM log_ix WHERE col = ?1 AND at >= ?2 AND win = 1")
+            .map_err(sql)?
+            .query_map(rusqlite::params![col, lo], |r| Ok((r.get(0)?, r.get(1)?)))
+            .map_err(sql)?
+            .collect::<Result<_, _>>()
+            .map_err(sql)?,
+    };
+    for (k, id) in rows {
+        let c = ix.canonical(&id)?;
+        let op = t.id_of_key(k)?;
+        if reps.get(&c).is_some_and(|(o, _, _)| *o <= op) {
+            continue;
+        }
+        let Some(e) = t.entry_by_key(k)? else {
+            continue;
+        };
+        if let Some(Body4::Log(l)) = body_of(&e) {
+            reps.insert(c, (op, k, l));
+        }
+    }
+    Ok(())
 }
 
 /// 行 JSON（规范 JSON 文本，`p` 是空串或别的值）的分区键换成 [profile]，再按规范形写回。解不开的原样（不是本层能修的数据，

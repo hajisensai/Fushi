@@ -407,33 +407,24 @@ impl LogState {
         day: Day,
         today: i64,
     ) -> Result<LogState, String> {
-        let mut s = LogState {
-            last30: vec![0; 30],
-            ..LogState::default()
-        };
-        let (from, today_start) = (day_start(&day, today - 29), day_start(&day, today));
+        let mut s = LogState::empty();
+        let (from, today_start) = LogState::window(day, today);
         let mut stmt = c.prepare_cached(LOGS_SQL).map_err(sql)?;
         let mut q = stmt
             .query(rusqlite::params![profile, from, today_start])
             .map_err(sql)?;
         while let Some(r) = q.next().map_err(sql)? {
-            s.fold_row(r, day, today, today_start)?;
+            s.fold_row(r, day, today)?;
         }
         Ok(s)
     }
 
-    fn fold_row(
-        &mut self,
-        r: &rusqlite::Row<'_>,
-        day: Day,
-        today: i64,
-        today_start: i64,
-    ) -> Result<(), String> {
+    fn fold_row(&mut self, r: &rusqlite::Row<'_>, day: Day, today: i64) -> Result<(), String> {
         let at: i64 = r.get(1).map_err(sql)?;
         let card: String = r.get(0).map_err(sql)?;
         let id: String = r.get(4).map_err(sql)?;
         let duration_ms: Option<i64> = r.get(5).map_err(sql)?;
-        let today_log = at >= today_start;
+        let today_log = at >= LogState::window(day, today).1;
         let (review_type, learn_json) = if today_log {
             (
                 r.get::<_, String>(2).map_err(sql)?,
@@ -571,7 +562,7 @@ impl LogState {
         today: i64,
         ids: &HashSet<String>,
     ) -> Result<(), String> {
-        let (from, today_start) = (day_start(&day, today - 29), day_start(&day, today));
+        let (from, today_start) = LogState::window(day, today);
         let all: Vec<&String> = ids.iter().collect();
         for chunk in all.chunks(CHUNK) {
             for id in chunk {
@@ -587,7 +578,7 @@ impl LogState {
             args.extend(chunk.iter().map(|s| Sql::Text((*s).clone())));
             let mut q = stmt.query(params_from_iter(args)).map_err(sql)?;
             while let Some(r) = q.next().map_err(sql)? {
-                self.fold_row(r, day, today, today_start)?;
+                self.fold_row(r, day, today)?;
             }
         }
         Ok(())

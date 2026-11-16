@@ -22,8 +22,8 @@
 //!   `kind = 'review'` 过滤，拼成协议 3 `LOGS_SQL` 的同几列交给 `LogState::fold`（计数规则同一份）。今天的学习步日志看
 //!   `res.reps`，取按血统重放写回的那份（`Index::replayed_card_logs`，与协议 3 落库的、`read` 的 `logs` 相同），一张卡
 //!   重放一次。
-//! - **自定义学习**：「会话里答过」= 会话开始之后有 `kind = 'review'` 日志的卡（同一套日志代表，归一到规范卡，交给 SQL
-//!   当 ID 列表）；「最近评过重来」读缓存层 `stats`（有效复习投影，主键 `(col, at, log)` 区间）；标签 / 出处读 `notes`。
+//! - **自定义学习**：「会话里答过」= 会话开始之后有 `kind = 'review'` 日志的卡（同一套日志代表，归一到规范卡，整组编成
+//!   一个 JSON 参数由 `json_each` 展开，[card_set]：不随卡数增加绑定变量）；「最近评过重来」读缓存层 `stats`（有效复习投影，主键 `(col, at, log)` 区间）；标签 / 出处读 `notes`。
 //!
 //! # 常驻会话与索引（取舍）
 //!
@@ -54,6 +54,10 @@
 //! `log_ix` 的路径都要改，换来的只是接线前这条无状态路径的常数；接线后常驻会话只在建会话时扫一次、之后按 id 增量重读，
 //! 与协议 3 同口径。
 //!
+//! 自定义学习的「会话里答过」同样逐条解操作体：会话开始（`since`）之后的全部日志，每个规范日志 ID 点读一次——协议 3 是
+//! 一条覆盖索引上的子查询。会话开得越早越贵（N 条日志 = N 次点读 + 解码），没有上界；接线时由常驻会话的「今天的作答」
+//! 承接（会话按 id 增量维护作答过的卡，不再按区间重扫），在那之前这条无状态路径只适合会话窗口不大的场景。
+//!
 //! # 与协议 3 的差别（D24「按规范 ID」）
 //!
 //! - 结果里的牌组、卡（`counts` 的键、`next` / `after` / `eligible`）是规范 ID。请求里的 ID（`deck`、`exclude`、
@@ -65,19 +69,16 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-use rusqlite::params;
 use rusqlite::types::Value as Sql;
 use serde_json::Value;
 
-use super::{deck_tree, default_deck, ref_of, snapshot, sql_order};
-use crate::gen4::op::{Body4, Log4};
+use super::{LogReps, deck_tree, default_deck, logs_between, ref_of, snapshot};
+use crate::gen4::op::Log4;
 use crate::projection::Day;
-use crate::store::gen4::derive::{Index, Ref, body_of};
-use crate::store::gen4::schema::sql;
+use crate::store::gen4::derive::{Index, Ref};
 use crate::store::gen4::truth::Truth;
 use crate::store::queue::LogState;
 use crate::store::study::{self, CardIx, SqlSource, Tables};
-use crate::sync2::vv::OpId;
 
 /// `study`：集合 [col] 的一次排队（请求与结果同协议 3 `store/study.rs`，ID 是规范 ID）。在一个读快照里（[snapshot]）。
 pub fn study(t: &Truth<'_>, col: i64, req: &Value) -> Result<Value, String> {
@@ -146,43 +147,21 @@ pub(crate) fn canon_req(ix: &Index<'_, '_>, req: &Value) -> Result<Value, String
     Ok(out)
 }
 
-/// 发生时刻 ≥ [lo] 的 `kind = 'review'` 日志：规范日志 ID → (操作主键, 日志)。每个规范日志 ID 一条代表：窗口里这个类的
-/// 各份中操作号最小的那份（`cmd/reads.rs` 按时刻读日志的同一规则）。走 `log_at (col, at)`。
+/// 发生时刻 ≥ [lo] 的 `kind = 'review'` 日志：规范日志 ID → (操作主键, 日志)。每个规范日志 ID 一条代表（[logs_between]，
+/// 按时刻读日志的读命令同一份规则），再按种类过滤（协议 3 `LOGS_SQL` 的 `kind = 'review'`）。
 fn review_logs(
     t: &Truth<'_>,
     ix: &Index<'_, '_>,
     col: i64,
     lo: i64,
 ) -> Result<BTreeMap<Ref, (i64, Log4)>, String> {
-    let rows: Vec<(i64, Ref)> = t
-        .conn()
-        .prepare_cached("SELECT k, id FROM log_ix WHERE col = ?1 AND at >= ?2 AND win = 1")
-        .map_err(sql)?
-        .query_map(params![col, lo], |r| Ok((r.get(0)?, r.get(1)?)))
-        .map_err(sql)?
-        .collect::<Result<_, _>>()
-        .map_err(sql)?;
-    let mut reps: BTreeMap<Ref, (OpId, i64)> = BTreeMap::new();
-    for (k, id) in rows {
-        let c = ix.canon(&id)?;
-        let op = t.id_of_key(k)?;
-        if reps.get(&c).is_some_and(|(o, _)| *o <= op) {
-            continue;
-        }
-        reps.insert(c, (op, k));
-    }
-    let mut out = BTreeMap::new();
-    for (c, (_, k)) in reps {
-        let Some(e) = t.entry_by_key(k)? else {
-            continue;
-        };
-        if let Some(Body4::Log(l)) = body_of(&e) {
-            if l.kind == "review" {
-                out.insert(c, (k, l));
-            }
-        }
-    }
-    Ok(out)
+    let mut reps = LogReps::new();
+    logs_between(t, ix, col, lo, None, &mut reps)?;
+    Ok(reps
+        .into_iter()
+        .filter(|(_, (_, _, l))| l.kind == "review")
+        .map(|(c, (_, k, l))| (c, (k, l)))
+        .collect())
 }
 
 /// 排队的计数上下文里来自日志的部分（协议 3 `LogState::scan` 的新代版，计数规则同一份 `LogState::fold`）。
@@ -248,6 +227,27 @@ struct G4Tables<'a, 't, 'c> {
     col: i64,
 }
 
+/// 「`id` 在这组卡里」：对 `id` 列的条件与它的参数。整组卡编成**一个** JSON 数组参数（`u<十六进制>` = UUID 的 16
+/// 字节、`t<文本>` = 文本 ID），由 `json_each` 展开——作答过的卡再多也只占一个绑定变量，不会撞 SQLite 的变量上限
+/// （32766；逐卡绑 `?` 时一次自定义学习会话答过的卡超过它整条语句就报错）。
+pub(super) fn card_set(cards: &BTreeSet<Ref>) -> (String, Vec<Sql>) {
+    let list: Vec<Value> = cards
+        .iter()
+        .map(|r| {
+            Value::String(match r {
+                Ref::Uuid(b) => format!("u{}", super::hex(b)),
+                Ref::Text(s) => format!("t{s}"),
+            })
+        })
+        .collect();
+    (
+        "id IN (SELECT CASE substr(value, 1, 1) WHEN 'u' THEN unhex(substr(value, 2)) \
+         ELSE substr(value, 2) END FROM json_each(?))"
+            .to_owned(),
+        vec![Sql::Text(Value::Array(list).to_string())],
+    )
+}
+
 fn ref_sql(r: Ref) -> Sql {
     match r {
         Ref::Uuid(b) => Sql::Blob(b.to_vec()),
@@ -301,7 +301,7 @@ impl Tables for G4Tables<'_, '_, '_> {
         Ok(r.get::<_, Ref>(i)?.text())
     }
 
-    /// 会话开始之后有 `kind = 'review'` 日志的卡（规范卡，[review_logs] 同一套代表）当 ID 列表；没有 = 恒假。
+    /// 会话开始之后有 `kind = 'review'` 日志的卡（规范卡，[review_logs] 同一套代表），见 [card_set]；没有 = 恒假。
     fn answered(&self, since: i64) -> Result<(String, Vec<Sql>), String> {
         let mut cards: BTreeSet<Ref> = BTreeSet::new();
         for (_, (_, l)) in review_logs(self.t, self.ix, self.col, since)? {
@@ -310,13 +310,7 @@ impl Tables for G4Tables<'_, '_, '_> {
         if cards.is_empty() {
             return Ok(("0".to_owned(), Vec::new()));
         }
-        let mut cards: Vec<Ref> = cards.into_iter().collect();
-        cards.sort_by(|a, b| sql_order(a).cmp(&sql_order(b)));
-        let marks = vec!["?"; cards.len()].join(", ");
-        Ok((
-            format!("id IN ({marks})"),
-            cards.into_iter().map(ref_sql).collect(),
-        ))
+        Ok(card_set(&cards))
     }
 
     fn forgotten(&self, from: i64) -> (String, Vec<Sql>) {

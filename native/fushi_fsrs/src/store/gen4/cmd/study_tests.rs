@@ -6,7 +6,10 @@ use std::collections::BTreeSet;
 use serde_json::{Value, json};
 
 use super::study::study;
-use super::tests::{N1, N2, N3, Pair, T0, card, library, on_p3};
+use super::study::{card_set, log_state};
+use super::tests::{N1, N2, N3, Pair, T0, card, library, note, on_p3};
+use crate::projection::Day;
+use crate::store::gen4::derive::{Index, Ref};
 use crate::store::gen4::parity::imported;
 use crate::store::gen4::truth::Truth;
 use crate::store::queue::StudyHub;
@@ -15,6 +18,8 @@ use crate::store::sync2::tests::{DAY, Device, P, edit, review};
 
 const CHILD: &str = "DCHILD";
 const MIX: &str = "DMIX";
+const NEW1: &str = "DNEW";
+const N5: &str = "0193a1b2-0000-7000-8000-0000000000a5";
 
 /// [library] 再加两个子牌组：`DCHILD`（自己的参数、每日上限 1 / 1、按到期日复习、按位置出新卡，N3 的卡在这里）与
 /// `DMIX`（新卡与复习均匀穿插、按难度复习、按位置出新卡，N2 的卡在这里），外加几条今天的复习，让计数、上限截断、学习卡、到期卡、
@@ -46,14 +51,46 @@ fn study_library() -> Device {
             edit("note", N2, "deck", json!(MIX)),
         ],
     );
+    // `DNEW`：新卡上限 1，N5 的两张新卡在这里；今天学了其中一张（学习步日志，重放后 `res.reps` = 1）→ 今天的新卡配额
+    // 用完，另一张今天不出、明天才出（[study_counts_todays_new_cards_against_the_new_limit]）。
+    d.apply(
+        T0 + DAY + 72,
+        vec![
+            child(NEW1),
+            edit("deck", NEW1, "name", json!("New1")),
+            edit("deck", NEW1, "parent", json!(deck)),
+            edit("deck", NEW1, "paramsMode", json!("own")),
+            edit("deck", NEW1, "limits", json!({"new": 1, "review": 50})),
+            note(N5, "NT", 50),
+            edit("note", N5, "f/fa", json!("魚")),
+            edit("note", N5, "f/fb", json!("fish")),
+            edit("note", N5, "deck", json!(NEW1)),
+        ],
+    );
     d.apply(
         T0 + DAY + 80,
         vec![
             review("s1", &card(N1, "t2"), T0 + DAY + 80, 3, "learn"),
             review("s2", &card(N3, "t2"), T0 + DAY + 81, 1, "learn"),
+            review("s3", &card(N5, "t1"), T0 + DAY + 82, 3, "learn"),
         ],
     );
+    // 窗口里一条不是 `kind = 'review'` 的日志（手动改到期，`rtype` 照写 review）：计数上下文不收它（协议 3 `LOGS_SQL`
+    // 的种类过滤）——收了就会把 N3 t1 记成「今天复习过」、多一次作答。
+    d.apply(
+        T0 + DAY + 83,
+        vec![manual("m1", &card(N3, "t1"), T0 + DAY + 83)],
+    );
     d
+}
+
+/// 一条手动改到期的日志（`kind = 'manual'`）。
+fn manual(id: &str, card: &str, at: i64) -> Value {
+    let mut m = review(id, card, at, 0, "review");
+    m["x"]["kind"] = json!("manual");
+    m["x"].as_object_mut().unwrap().remove("rating");
+    m["x"]["res"] = json!({"queue": "review", "dueDay": 19_690, "ivl": 3, "step": 0, "reps": 3, "lapses": 0, "scheduler": "fushi"});
+    m
 }
 
 /// 协议 3 一侧：同一份缓存配置重建缓存表之后，用一个新的会话排一次（`store/study.rs` 的生产路径）。
@@ -88,7 +125,7 @@ fn requests() -> Vec<Value> {
         T0 + 40 * DAY,
     ] {
         out.push(base(now));
-        for root in [deck.as_str(), CHILD, MIX] {
+        for root in [deck.as_str(), CHILD, MIX, NEW1] {
             out.push(with(now, json!({"deck": root, "pick": true})));
             out.push(with(now, json!({"deck": root, "pick": false})));
         }
@@ -149,6 +186,78 @@ fn study_matches_protocol_3() {
     // 缺了日界是调用方的 bug：报错，不留事务。
     assert!(study(&t, p.col, &json!({"now": T0})).is_err());
     assert!(p.g4.is_autocommit());
+}
+
+/// 今天已学的新卡占新卡配额：`DNEW`（新卡上限 1）今天学了 N5 t1（学习步日志，计数看按血统重放写回的 `res.reps`），
+/// 同牌组的 N5 t2 今天不出、明天才出。与协议 3 对拍，并验场景本身真的受「今天已引入」影响（今天新卡数 0、明天 1），
+/// 免得对拍退化成两边都恒假 / 恒真也能过。另验种类过滤：窗口里那条手动改到期的日志（`rtype` 写成 review）不进计数
+/// 上下文。
+#[test]
+fn study_counts_todays_new_cards_against_the_new_limit() {
+    let d = study_library();
+    let p = Pair::new(&d);
+    let t = Truth::new(&p.g4);
+    let (t1, t2) = (card(N5, "t1"), card(N5, "t2"));
+    let today = with(T0 + DAY + 100, json!({"deck": NEW1, "pick": true}));
+    let tomorrow = with(T0 + 2 * DAY + 5, json!({"deck": NEW1, "pick": true}));
+    let now = study(&t, p.col, &today).unwrap();
+    assert_eq!(p3_study(&p, &today), now, "{today}");
+    let next = study(&t, p.col, &tomorrow).unwrap();
+    assert_eq!(p3_study(&p, &tomorrow), next, "{tomorrow}");
+    assert_eq!(now["counts"][NEW1][0], json!(0), "quota used up: {now}");
+    assert_ne!(now["next"], json!(t2), "{now}");
+    assert_ne!(now["after"], json!(t2), "{now}");
+    assert_eq!(next["counts"][NEW1][0], json!(1), "a new day: {next}");
+
+    let day = Day {
+        utc_offset_min: 0,
+        rollover_hour: 4,
+    };
+    let mut ix = Index::new(&t, p.col);
+    let s = log_state(&t, &mut ix, p.col, day, day.index(T0 + DAY + 100)).unwrap();
+    assert!(s.introduced(&t1), "{s:?}");
+    assert!(!s.introduced(&t2), "{s:?}");
+    // 手动改到期的那条：不算今天复习过、不算作答。
+    let m = card(N3, "t1");
+    assert!(!s.reviewed(&m), "{s:?}");
+    assert!(s.answers().all(|(c, _)| *c != m), "{s:?}");
+}
+
+/// 自定义学习「会话里答过」的卡集合只占一个绑定变量：四万张（远超 SQLite 的 32766 个变量上限）照样能查，结果只认
+/// 集合里真有的卡（UUID 与文本 ID 都对得上）。
+#[test]
+fn custom_study_card_set_is_one_parameter() {
+    let d = study_library();
+    let p = Pair::new(&d);
+    let real: Vec<Ref> =
+        p.g4.prepare("SELECT id FROM cards WHERE col = ?1 ORDER BY id")
+            .unwrap()
+            .query_map([p.col], |r| r.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+    assert!(real.len() >= 6, "{}", real.len());
+    let mut set: BTreeSet<Ref> = (0..40_000u32)
+        .map(|i| {
+            let mut b = [0xeeu8; 16];
+            b[..4].copy_from_slice(&i.to_be_bytes());
+            Ref::Uuid(b)
+        })
+        .collect();
+    set.insert(Ref::Text("no-such-card".into()));
+    set.extend(real.iter().take(3).cloned());
+    let (cond, args) = card_set(&set);
+    assert_eq!(args.len(), 1);
+    let mut all = vec![rusqlite::types::Value::Integer(p.col)];
+    all.extend(args);
+    let n: i64 =
+        p.g4.query_row(
+            &format!("SELECT COUNT(*) FROM cards WHERE col = ? AND {cond}"),
+            rusqlite::params_from_iter(all),
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(n, 3);
 }
 
 /// 一条命令一个读快照：命令开始时调用方没开事务就自己开、跑完关掉；调用方已在事务里就沿用。
