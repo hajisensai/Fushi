@@ -38,6 +38,7 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-4755](bugs/BUG-4755-lapis-selection-text-yield-empty.md) | ✅ | ✅ | Lapis 下选中弹窗释义后制卡，SelectionText 是空的 |
+| [BUG-4755](bugs/BUG-4755-disc-title-back-exits-session.md) | ✅ | ✅ | 原盘正片阶段按返回越级退出整个原盘会话，应先回盘菜单 |
 | [BUG-4754](bugs/BUG-4754-manga-series-key-episode-suffix.md) | ✅ | ✅ | 漫画「第N話 前編 [hash]」按话发布的各话没并成系列合集 |
 | [BUG-4753](bugs/BUG-4753-nested-lookup-webkit-zoom-hit-offset.md) | ✅ | ✅ | 嵌套查词：macOS 查词页点释义里的字查到相邻的字（WebKit 旧 zoom 坐标系 + 沙箱取字半字偏移） |
 | [BUG-4752](bugs/BUG-4752-open-with-confused-deputy.md) | ✅ | ✅ | 用其他应用打开 / 分享导入替发起方读它无权读的 content:// URI（confused deputy） |
