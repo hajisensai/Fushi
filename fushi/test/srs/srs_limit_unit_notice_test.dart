@@ -175,10 +175,16 @@ void main() {
       expect(notice, findsOneWidget);
       expect(find.text(t.srs_limit_unit_notice_body(n: 1)), findsOneWidget);
 
-      await tester.tap(
-        find.byKey(const ValueKey<String>('srs-limit-unit-keep-cards')),
+      await srsUntilWritten(
+        tester,
+        () => tester.tap(
+          find.byKey(const ValueKey<String>('srs-limit-unit-keep-cards')),
+        ),
+        reloads: <ProviderListenable<AsyncValue<Object?>>>[
+          srsLimitUnitLegacyCountProvider,
+        ],
+        until: () => notice.evaluate().isEmpty,
       );
-      await _settle(tester);
       expect(notice, findsNothing);
       final SrsDeckTree tree = await _db(tester, store.deckTree);
       expect(tree[store.defaultDeckId]!.limitUnit, SrsLimitUnit.cards);
@@ -192,14 +198,21 @@ void main() {
       final SrsDbStore store = await _openStore(tester);
       await _seedDefaultDeck(tester, store, answer: true);
       await _pumpDeckList(tester, store: store, apple: apple);
-      await tester.tap(
-        find.byKey(const ValueKey<String>('srs-limit-unit-accept')),
+      final Finder notice = find.byKey(
+        const ValueKey<String>('srs-limit-unit-notice'),
       );
-      await _settle(tester);
-      expect(
-        find.byKey(const ValueKey<String>('srs-limit-unit-notice')),
-        findsNothing,
+      expect(notice, findsOneWidget);
+      await srsUntilWritten(
+        tester,
+        () => tester.tap(
+          find.byKey(const ValueKey<String>('srs-limit-unit-accept')),
+        ),
+        reloads: <ProviderListenable<AsyncValue<Object?>>>[
+          srsLimitUnitLegacyCountProvider,
+        ],
+        until: () => notice.evaluate().isEmpty,
       );
+      expect(notice, findsNothing);
       final SrsDeckTree tree = await _db(tester, store.deckTree);
       expect(tree[store.defaultDeckId]!.limitUnit, SrsLimitUnit.reviews);
       expect(tree[store.defaultDeckId]!.limitUnitSet, isTrue);
