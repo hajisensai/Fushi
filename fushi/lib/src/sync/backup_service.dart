@@ -11,7 +11,7 @@ import 'package:fushi_engine/media/video/video_member_file.dart';
 import 'package:fushi_engine/media/override_title_key.dart';
 import 'package:fushi_engine/utils/archive/native_zip.dart';
 import 'package:fushi_engine/media/video/strm_file.dart'
-    show isNetworkOnlyVideoPath;
+    show isNetworkOnlyVideoPath, kSourceLibrarySftpScheme;
 import 'package:fushi/src/models/local_audio_manager.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/sync/backup_merge_engine.dart';
@@ -137,6 +137,51 @@ enum BackupCategory {
   /// SRS 是默认关闭的模块：本机没有 SRS 数据（无用户笔记、媒体目录为空）时，导出 /
   /// 导入界面都不显示这一项（见 [BackupContentSummary.present]）。
   srs,
+}
+
+/// 覆盖前快照（`BackupRestoreService.overwriteSnapshotPath`）的预览：快照文件本身
+/// 与其中「当前库没有」的书（BUG-4701）。
+class OverwriteSnapshotPreview {
+  const OverwriteSnapshotPreview({
+    required this.path,
+    required this.sizeBytes,
+    required this.modifiedAt,
+    required this.missingBooks,
+    required this.missingVideoCount,
+  });
+
+  final String path;
+  final int sizeBytes;
+
+  /// 快照文件的修改时刻（= 被覆盖前主库最后一次写入，约等于覆盖导入的时刻）。
+  final DateTime modifiedAt;
+
+  /// 快照里有、当前库没有（也没被删除墓碑挡住）的书。
+  final List<OverwriteSnapshotBook> missingBooks;
+
+  /// 快照里有、当前库没有、且本机还能播放的视频条数。
+  final int missingVideoCount;
+
+  /// 书文件已不在盘上的书（恢复后书库行回来了，但打不开，需要重新导入）。
+  List<OverwriteSnapshotBook> get booksWithoutFiles => <OverwriteSnapshotBook>[
+    for (final OverwriteSnapshotBook b in missingBooks)
+      if (!b.filesPresent) b,
+  ];
+}
+
+/// 覆盖前快照里的一本书。
+class OverwriteSnapshotBook {
+  const OverwriteSnapshotBook({
+    required this.bookKey,
+    required this.title,
+    required this.filesPresent,
+  });
+
+  final String bookKey;
+  final String title;
+
+  /// 书目录（`extract_dir`）还在盘上。
+  final bool filesPresent;
 }
 
 class BackupMeta {

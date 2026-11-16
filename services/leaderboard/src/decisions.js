@@ -1,7 +1,10 @@
 // 拍板台（迁移 0020）：AI 代理写入待拍事项，开发者在处理台 /dev/decisions 拍板，代理按结果执行后结单。
 //
 //   GET  /dev/decisions?stage=todo|explain|exec|later|never|closed|all   列表（默认 todo = 待拍）
+//   GET  /dev/decisions.json?sig=…   客户端同步：签名没变回 {same:true}，变了回全部卡片 HTML
+//   GET  /dev/decisions.js           客户端脚本（decisions_client.js）
 //   POST /dev/d/:id   {v, text, back}   拍板并 / 或留言：v ∈ VERDICTS | choice:<key> | clear | note
+//                                     Accept: application/json → 回这一条的新卡片（不跳转）；否则 303 回原栏
 //
 // 写入事项、补解释、结单走本机 CLI scripts/decisions.mjs（wrangler 直连 D1，与 feedback.mjs 同一套凭据），
 // 网页只给开发者拍板和留言。SQL 与校验都在这里，CLI 与 Worker 共用一份。
@@ -204,7 +207,11 @@ export async function submitDecision(env, dev, id, { v, text }, now) {
   await env.DB.batch(stmts);
 }
 
-// ---- 页面（devconsole 套 layout；无脚本，全部是表单） ----
+// ---- 页面（devconsole 套 layout） ----
+//
+// 渐进增强：服务端一次渲染全部事项（最多 listMax 条），按栏用 hidden 过滤；没有脚本时表单照常 303 回原栏。
+// 有脚本时（decisions_client.js）：切栏在本地做、拍板 / 留言走 fetch 只换那一张卡、带撤销提示和键盘快捷键，
+// 并定时用签名比对同步 Claude 新写的事项与留言——全程不刷新页面。
 
 function fmtTime(ms) {
   return ms ? new Date(ms).toISOString().replace('T', ' ').slice(0, 16) + ' UTC' : '';
@@ -222,6 +229,12 @@ function sourceHtml(src) {
 
 const STAGE_LABEL = { todo: '待拍', explain: '等 Claude 解释', exec: '等 Claude 执行', later: '挂着', closed: '已结' };
 
+/** 决定按钮：值、文案、样式、快捷键。「做」/ 方案的快捷键是数字 1…6。 */
+const VERDICT_BUTTONS = [
+  ['skip', '不做', 'v-skip', 'x'], ['later', '以后', 'v-later', 'l'], ['never', '永远不做', 'v-never', 'n'],
+  ['explain', '没看懂', 'v-explain', 'e'], ['delegate', '你定', 'v-delegate', 'y'],
+];
+
 function verdictText(row) {
   if (!row.verdict) return '';
   if (row.verdict === 'choice') {
@@ -231,20 +244,33 @@ function verdictText(row) {
   return `「${DECISION_VERDICTS[row.verdict]}」`;
 }
 
-function card(row, back) {
+/** 表单里 v 的取值形式（撤销时客户端拿它恢复上一个决定）。 */
+function verdictValue(row) {
+  if (!row.verdict) return '';
+  return row.verdict === 'choice' ? `choice:${row.choice}` : row.verdict;
+}
+
+/**
+ * 卡片的内容版本：updated_at 随决定 / 结单变化，留言只增不删，条数变了就是有新留言。
+ * @param {{updated_at: number, notes: unknown[]}} row
+ * @returns {string}
+ */
+export function decisionVersion(row) {
+  return `${row.updated_at || 0}.${row.notes.length}`;
+}
+
+function card(row, back, { hidden = false } = {}) {
   const stage = decisionStage(row);
   const reexplained = row.verdict === 'explain' && stage === 'todo';
   const choices = parseChoices(row.choices);
-  const btn = (v, label, cls) => {
-    const on = v === 'do' ? row.verdict === 'do'
-      : v.startsWith('choice:') ? row.verdict === 'choice' && row.choice === v.slice(7)
-        : row.verdict === v;
-    return `<button name="v" value="${esc(v)}" class="vb ${cls}${on ? ' on' : ''}">${esc(label)}</button>`;
-  };
+  const current = verdictValue(row);
+  const btn = (v, label, cls, key) => `<button name="v" value="${esc(v)}" class="vb ${cls}${current === v ? ' on' : ''}" data-key="${
+    esc(key)}" title="${esc(label)}（快捷键 ${esc(key.toUpperCase())}）">${esc(label)}<kbd>${esc(key.toUpperCase())}</kbd></button>`;
   const verdictButtons = [
-    ...(choices.length ? choices.map((c) => btn(`choice:${c.key}`, c.label, 'v-do')) : [btn('do', '做', 'v-do')]),
-    btn('skip', '不做', 'v-skip'), btn('later', '以后', 'v-later'), btn('never', '永远不做', 'v-never'),
-    btn('explain', '没看懂', 'v-explain'), btn('delegate', '你定', 'v-delegate'),
+    ...(choices.length
+      ? choices.map((c, i) => btn(`choice:${c.key}`, c.label, 'v-do', String(i + 1)))
+      : [btn('do', '做', 'v-do', '1')]),
+    ...VERDICT_BUTTONS.map(([v, label, cls, key]) => btn(v, label, cls, key)),
   ].join('');
   const notes = row.notes.map((n) => `<div class="msg${n.author === 'claude' ? ' claude' : ' dev'}"><b>${
     esc(n.author === 'claude' ? 'Claude' : (n.nick || '开发者'))}</b> <span class="muted">${esc(fmtTime(n.created_at))}</span>
@@ -252,30 +278,84 @@ function card(row, back) {
   const closed = stage === 'closed';
   const form = closed ? '' : `<form method="post" action="/dev/d/${esc(row.id)}" class="dform">
 <input type="hidden" name="back" value="${esc(back)}">
-<textarea name="text" maxlength="${DECISION_LIMITS.noteMax}" aria-label="留言" placeholder="${
-  row.verdict === 'explain' ? '哪里没看懂？写下来 Claude 针对着解释' : '可选：补充说明，随决定一起提交'}"></textarea>
-<div class="vrow">${verdictButtons}<button name="v" value="note" class="vb v-note">只留言</button>${
-  row.verdict ? '<button name="v" value="clear" class="link">撤销决定</button>' : ''}</div>
+<textarea name="text" rows="2" maxlength="${DECISION_LIMITS.noteMax}" aria-label="留言" placeholder="${
+  row.verdict === 'explain' ? '哪里没看懂？写下来 Claude 针对着解释' : '可选：补充说明，随下面的决定一起提交（Ctrl+Enter 只发留言）'}"></textarea>
+<div class="vrow">${verdictButtons}<span class="vsp"></span>${
+  row.verdict ? '<button name="v" value="clear" class="vb v-clear" data-key="u" title="撤销决定（快捷键 U）">撤销决定</button>' : ''
+}<button name="v" value="note" class="vb v-note" title="只发留言，不改决定（Ctrl+Enter）">只留言</button></div>
 </form>`;
-  return `<article class="card dcard st-${esc(row.verdict || 'none')}${closed ? ' closed' : ''}" id="d-${esc(row.id)}">
+  return `<article class="card dcard st-${esc(row.verdict || 'none')}${closed ? ' closed' : ''}" id="d-${esc(row.id)}" data-id="${
+    esc(row.id)}" data-stage="${esc(stage)}" data-never="${row.verdict === 'never' ? 1 : 0}" data-verdict="${esc(current)}" data-v="${
+    esc(decisionVersion(row))}" tabindex="-1"${hidden ? ' hidden' : ''}>
 <div class="dhead"><span class="badge">${esc(DECISION_KINDS[row.kind] || row.kind)}</span>
 <span class="badge rec-${esc(row.rec)}">${esc(DECISION_RECS[row.rec] || row.rec)}</span>
-<span class="badge stage-${esc(stage)}">${esc(reexplained ? '已补充解释，请重拍' : STAGE_LABEL[stage])}</span>
+<span class="badge stage-${esc(stage)}${reexplained ? ' re' : ''}">${esc(reexplained ? '已补充解释，请重拍' : STAGE_LABEL[stage])}</span>
 <span class="muted">${sourceHtml(row.source)}</span> <span class="muted">#${esc(row.id)}</span></div>
 <h3>${esc(row.title)}</h3>
 <div class="body">${esc(row.ask)}</div>
 ${row.pros || row.cons ? `<div class="pc">${row.pros ? `<div><b class="up">好处</b> ${esc(row.pros)}</div>` : ''}${
     row.cons ? `<div><b class="err">代价</b> ${esc(row.cons)}</div>` : ''}</div>` : ''}
 ${row.resolution ? `<div class="card ai"><b>处理结果（${esc(row.state === 'dropped' ? '撤回' : '已结')}）</b><div class="body">${esc(row.resolution)}</div></div>` : ''}
-${row.verdict ? `<p class="muted">${esc(row.verdict_nick || '开发者')} 定为${esc(verdictText(row))} · ${esc(fmtTime(row.verdict_at))}</p>` : ''}
+${row.verdict ? `<p class="muted dverdict">${esc(row.verdict_nick || '开发者')} 定为${esc(verdictText(row))} · ${esc(fmtTime(row.verdict_at))}</p>` : ''}
 ${notes}
 ${form}
 </article>`;
 }
 
+/**
+ * 给客户端的一条：卡片 HTML（不带 hidden，由客户端按当前栏过滤）+ 过滤所需的字段。
+ * @returns {{id: string, v: string, stage: string, never: boolean, html: string}}
+ */
+export function decisionItem(row) {
+  return { id: row.id, v: decisionVersion(row), stage: decisionStage(row), never: row.verdict === 'never', html: card(row, 'todo') };
+}
+
+/** 单条（含拍板人昵称、claude_at 与留言），拍板后回给客户端换卡用。 */
+export async function getDecision(env, id) {
+  const [r, notes] = await Promise.all([
+    env.DB.prepare(`SELECT d.*, a.nickname AS verdict_nick,
+        (SELECT MAX(n.created_at) FROM decision_notes n WHERE n.decision_id = d.id AND n.author = 'claude') AS claude_at
+      FROM decisions d LEFT JOIN accounts a ON a.id = d.verdict_by WHERE d.id = ?1`).bind(id).first(),
+    env.DB.prepare(`SELECT n.*, a.nickname AS nick FROM decision_notes n LEFT JOIN accounts a ON a.id = n.account_id
+      WHERE n.decision_id = ?1 ORDER BY n.created_at, n.id`).bind(id).all(),
+  ]);
+  if (!r) throw new HttpError(404, 'not_found');
+  return { ...r, notes: notes.results || [] };
+}
+
+/**
+ * 整个拍板台的变化签名：事项条数 + 最晚 updated_at + 最大留言 id。任何写入（新事项、拍板、留言、结单）都会改变它。
+ * 客户端轮询时带上次的签名，没变就不回列表。
+ * @returns {Promise<string>}
+ */
+export async function decisionsSig(env) {
+  const r = await env.DB.prepare(`SELECT (SELECT COUNT(*) FROM decisions) AS n,
+      (SELECT COALESCE(MAX(updated_at), 0) FROM decisions) AS u,
+      (SELECT COALESCE(MAX(id), 0) FROM decision_notes) AS m`).first();
+  return `${r.n}.${r.u}.${r.m}`;
+}
+
+/** GET /dev/decisions.json?sig=… 的响应体。 */
+export async function decisionsPayload(env, sig) {
+  const now = await decisionsSig(env);
+  if (sig && sig === now) return { sig: now, same: true };
+  return { sig: now, items: (await listDecisions(env)).map(decisionItem) };
+}
+
 export const DECISIONS_STYLE = `
-.legend{display:flex;flex-wrap:wrap;gap:2px 14px;font-size:13px}
-.dcard{border-left:4px solid var(--line)}
+.dtop{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+.dtop #dsync{font-size:12px}
+.legend{font-size:13px;margin:4px 0}
+.legend summary{cursor:pointer}
+.legend div{display:flex;flex-wrap:wrap;gap:2px 14px;margin-top:4px}
+kbd{display:inline-block;min-width:1.4em;padding:0 4px;margin-left:6px;border:1px solid currentColor;border-radius:4px;
+  font:11px/1.4 ui-monospace,Consolas,monospace;text-align:center;opacity:.55}
+.legend kbd{margin:0 4px 0 0}
+@media (hover:none){.vb kbd{display:none}}
+#dtabs{position:sticky;top:0;z-index:5;background:var(--bg);padding:8px 0;margin:8px 0 0}
+.dcard{border-left:4px solid var(--line);scroll-margin-top:64px;transition:opacity .18s,transform .18s,box-shadow .15s}
+.dcard:focus{outline:none}
+.dcard.cur{box-shadow:0 0 0 2px var(--accent)}
 .dcard.st-do,.dcard.st-choice{border-left-color:var(--ok)}
 .dcard.st-skip{border-left-color:var(--muted)}
 .dcard.st-never{border-left-color:#c0392b}
@@ -283,18 +363,26 @@ export const DECISIONS_STYLE = `
 .dcard.st-explain{border-left-color:var(--c2)}
 .dcard.st-delegate{border-left-color:#7a57c2}
 .dcard.closed{opacity:.75}
+.dcard.busy{opacity:.6;pointer-events:none}
+.dcard.leaving{opacity:0;transform:translateX(24px)}
+.dcard.fresh{animation:dflash 1.2s ease-out}
+@keyframes dflash{from{box-shadow:0 0 0 3px var(--c2)}to{box-shadow:0 0 0 0 transparent}}
+@media (prefers-reduced-motion:reduce){.dcard{transition:none}.dcard.fresh{animation:none}}
 .dcard h3{margin:6px 0;font-size:16px}
 .dhead{display:flex;flex-wrap:wrap;gap:6px;align-items:baseline;font-size:13px}
 .dhead a{color:var(--c2)}
 .badge.stage-todo{border-color:var(--accent);color:var(--accent)}
+.badge.stage-todo.re{background:var(--accent);color:#fff}
 .badge.stage-explain{border-color:var(--c2);color:var(--c2)}
 .badge.stage-exec{border-color:var(--ok);color:var(--ok)}
 .pc{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:4px 12px;margin-top:8px;font-size:14px}
 .msg.claude{border-color:var(--c2)}
-.dform textarea{min-height:56px;margin-top:10px}
+.dform textarea{min-height:0;margin-top:10px;resize:vertical}
 .vrow{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px}
 .vrow button{margin:0}
+.vsp{flex:1}
 .vb{padding:6px 12px;font-size:14px;background:transparent;color:var(--fg);border:1px solid var(--line)}
+.vb:hover{border-color:var(--fg)}
 .vb.on{color:#fff}
 .vb.v-do.on{background:var(--ok);border-color:var(--ok)}
 .vb.v-skip.on{background:var(--muted);border-color:var(--muted)}
@@ -303,21 +391,40 @@ export const DECISIONS_STYLE = `
 .vb.v-later.on{background:#c98a00;border-color:#c98a00}
 .vb.v-explain.on{background:var(--c2);border-color:var(--c2)}
 .vb.v-delegate.on{background:#7a57c2;border-color:#7a57c2}
-.vb.v-note{margin-left:auto}
+.vb.v-clear,.vb.v-note{color:var(--muted)}
+#dtoast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);z-index:10;display:flex;flex-direction:column;gap:8px;
+  align-items:center;width:max-content;max-width:calc(100vw - 32px)}
+.toast{display:flex;gap:14px;align-items:center;padding:10px 16px;border-radius:10px;background:var(--fg);color:var(--bg);
+  box-shadow:0 4px 18px rgba(0,0,0,.25);font-size:14px}
+.toast.err{background:#c0392b;color:#fff}
+.toast button{margin:0;padding:2px 10px;background:transparent;color:inherit;border:1px solid currentColor;font-size:13px}
 `;
 
-/** /dev/decisions 的正文。 */
-export function renderDecisions(rows, stage) {
+/**
+ * /dev/decisions 的正文。
+ * @param {Array<object>} rows listDecisions 的结果
+ * @param {string} stage 当前栏
+ * @param {{sig?: string, script?: string}} [opts] sig = decisionsSig；script = 客户端脚本 URL（带版本）
+ */
+export function renderDecisions(rows, stage, { sig = '', script = '' } = {}) {
   const counts = Object.fromEntries(DECISION_STAGES.map(([k]) => [k, rows.filter((r) => inDecisionStage(r, k)).length]));
-  const tabs = DECISION_STAGES.map(([k, label]) => `<a href="/dev/decisions?stage=${k}"${k === stage ? ' class="on"' : ''}>${
-    esc(label)} ${counts[k]}</a>`).join('');
-  const list = rows.filter((r) => inDecisionStage(r, stage));
+  const tabs = DECISION_STAGES.map(([k, label]) => `<a href="/dev/decisions?stage=${k}" data-stage="${k}"${
+    k === stage ? ' class="on"' : ''}>${esc(label)} <span class="n">${counts[k]}</span></a>`).join('');
+  const shown = rows.filter((r) => inDecisionStage(r, stage)).length;
   const empty = stage === 'todo' ? '没有待拍的了。' : '这一栏是空的。';
-  return `<h1>拍板台</h1>
-<p class="muted">Claude 把要你拍板的 PR 取舍、反馈建议、issue、审查发现写在这里。每条点一个决定，想补充就先在框里写再点；点「没看懂」后 Claude 会在下面回一条解释，这条回到待拍。</p>
-<div class="legend muted"><span><b>做</b> 照建议做</span><span><b>不做</b> 这次不做、关单</span><span><b>以后</b> 先挂着</span><span><b>永远不做</b> 拉黑，以后不再提</span><span><b>没看懂</b> 让 Claude 再解释</span><span><b>你定</b> 按 Claude 的判断做</span></div>
-<nav class="tabs">${tabs}</nav>
-${list.length ? list.map((r) => card(r, stage)).join('\n') : `<p class="muted">${esc(empty)}</p>`}`;
+  return `<div class="dtop"><h1>拍板台</h1><span id="dsync" class="muted"></span></div>
+<p class="muted">Claude 把要你拍板的 PR 取舍、反馈建议、issue、审查发现写在这里。点一个决定即可，想补充就先在框里写再点；点「没看懂」后 Claude 会回一条解释，这条回到待拍。点完不刷新页面，可以撤销。</p>
+<details class="legend muted"><summary>决定含义与快捷键</summary>
+<div><span><b>做 / 方案</b> 照建议做</span><span><b>不做</b> 这次不做、关单</span><span><b>以后</b> 先挂着</span><span><b>永远不做</b> 拉黑，以后不再提</span><span><b>没看懂</b> 让 Claude 再解释</span><span><b>你定</b> 按 Claude 的判断做</span></div>
+<div><span><kbd>J</kbd><kbd>K</kbd>下一条 / 上一条</span><span><kbd>1</kbd>…<kbd>6</kbd>做 / 选方案</span><span><kbd>X</kbd>不做</span><span><kbd>L</kbd>以后</span><span><kbd>N</kbd>永远不做</span><span><kbd>E</kbd>没看懂</span><span><kbd>Y</kbd>你定</span><span><kbd>C</kbd>写留言</span><span><kbd>U</kbd>撤销决定</span><span><kbd>Ctrl</kbd>+<kbd>Enter</kbd>只发留言</span><span><kbd>Esc</kbd>离开输入框</span></div>
+</details>
+<nav class="tabs" id="dtabs">${tabs}</nav>
+<div id="dlist" data-sig="${esc(sig)}" data-stage="${esc(stage)}">
+${rows.map((r) => card(r, stage, { hidden: !inDecisionStage(r, stage) })).join('\n')}
+</div>
+<p id="dempty" class="muted"${shown ? ' hidden' : ''}>${esc(empty)}</p>
+<div id="dtoast" role="status" aria-live="polite"></div>
+${script ? `<script src="${esc(script)}" defer></script>` : ''}`;
 }
 
 export function decisionStageParam(v) {
