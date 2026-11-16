@@ -3871,8 +3871,7 @@ class AppModel
   /// 变了就走异步排期（物化探测同启动路径），返回 true，由调用方分批让出地装载
   /// （[FushiDicts.loadPendingAsync]）——不能用同步排期把整套重装推给下一次查词，
   /// 那会在 UI isolate 上一口气装完全部词典（反馈 r9SgiayKxa 修复的审查意见）。
-  Future<bool> _rescheduleDictsForLookupView() =>
-      _scheduleDictPathsAsync(onlyIfChanged: true);
+  Future<bool> _rescheduleDictsForLookupView() => _scheduleDictPathsAsync(true);
 
   /// 测试观察点：[_rescheduleDictsForLookupView]（只排期，不装载）。
   @visibleForTesting
@@ -4079,7 +4078,7 @@ class AppModel
   ///
   /// 返回是否真的排了期：[onlyIfChanged] 为真且分桶结果与上次排期相同
   /// （[_sameAsLastScheduledDictBuckets]）时不排期，返回 false。
-  Future<bool> _scheduleDictPathsAsync({bool onlyIfChanged = false}) async {
+  Future<bool> _scheduleDictPathsAsync([bool onlyIfChanged = false]) async {
     await _ensureDictIndexCacheDirectory();
     final dictList = dictRepo.dictionaries;
     final List<String> paths = <String>[

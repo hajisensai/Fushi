@@ -314,7 +314,7 @@ void main() {
     final String body = maskCommentsAndStrings(
       methodBody(
         src,
-        'Future<bool> _scheduleDictPathsAsync({bool onlyIfChanged = false}) async {',
+        'Future<bool> _scheduleDictPathsAsync([bool onlyIfChanged = false]) async {',
       ),
     );
     final int resolve = body.indexOf('await _dictResources.resolve(');
