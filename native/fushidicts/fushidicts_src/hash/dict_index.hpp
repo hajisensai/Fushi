@@ -117,6 +117,9 @@ class dict_index {
   union_filter::source filter_source() const;
 
  private:
+  bool open_key_index(const std::string& dir);
+  bool open_legacy(const std::string& dir);
+
   memory::shared_mapping index_;  // key.index 或 hash.table
   memory::shared_mapping bloom_;  // 旧式才有
   key_index keys_;

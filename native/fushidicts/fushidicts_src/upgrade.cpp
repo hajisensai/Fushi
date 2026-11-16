@@ -31,30 +31,26 @@ using hash::key_index;
 // 另一个进程（主进程 / 查词弹窗进程）正在写的那份。与联合过滤器缓存同一口径。
 constexpr std::chrono::minutes kStaleTmpAge{10};
 
-bool exists(const std::string& path) {
-  std::error_code ec;
-  return std::filesystem::exists(fushi::fs_path(path), ec);
-}
-
 // 尽力删除：删不掉（Windows 上仍被映射 / 已不存在）不是错误，由之后的调用再清。
 void remove_if_possible(const std::string& path) {
   std::error_code ec;
   std::filesystem::remove(fushi::fs_path(path), ec);
 }
 
-// 导入完成的标记（query.cpp dict_format_version 同一组名字）。
-bool has_marker(const std::string& dir) {
+// 导入完成的标记（query.cpp dict_format_version 同一组名字）的路径；没有 = 不是完整
+// 导入的词典目录。
+std::optional<std::string> marker_path(const std::string& dir) {
   for (const char* name : {"/.fushidicts_2", "/.fushidicts_1", "/.hoshidicts_1"}) {
     std::error_code ec;
     if (std::filesystem::is_regular_file(fushi::fs_path(dir + name), ec)) {
-      return true;
+      return dir + name;
     }
   }
-  return false;
+  return std::nullopt;
 }
 
-// [final_path] 的临时文件名：同目录、唯一（时间戳 + 线程），两个进程同时升级同一本
-// 词典时各写各的，不会一个截断另一个正映射着的文件。
+// [final_path] 的临时文件名：同目录、唯一（时间戳 + 线程）。升级本身由目录锁串行化，
+// 唯一命名只为不去截断上一次被杀留下的那份。
 std::string tmp_path_for(const std::string& final_path) {
   const auto stamp = static_cast<unsigned long long>(std::chrono::steady_clock::now().time_since_epoch().count());
   const auto tid = static_cast<unsigned long long>(std::hash<std::thread::id>{}(std::this_thread::get_id()));
@@ -91,8 +87,25 @@ std::optional<key_index::blobs_file> current_key_index(const std::string& dir) {
   return keys.blobs();
 }
 
-// 提交之后（或发现已是最新时）清掉不再需要的文件。
+// 新文件（key.index，重写过的还有 blobs3.bin）与它们的目录项是否都已落盘。删旧文件
+// 之前必须为真：否则断电后可能只剩一份没写全的 key.index，而能兜底的旧文件已经没了。
+bool durable(const std::string& dir, key_index::blobs_file blobs) {
+  if (!memory::sync_file(hash::dict_file(dir, hash::kKeyIndexFile))) {
+    return false;
+  }
+  if (blobs == key_index::blobs_file::rewritten &&
+      !memory::sync_file(hash::dict_file(dir, hash::kRewrittenBlobsFile))) {
+    return false;
+  }
+  return memory::sync_directory(dir);
+}
+
+// 提交之后（或发现已是最新时）清掉不再需要的文件。没能确认新文件落盘就不删，留给
+// 下一次调用。
 void remove_superseded(const std::string& dir, key_index::blobs_file blobs) {
+  if (!durable(dir, blobs)) {
+    return;
+  }
   remove_if_possible(hash::dict_file(dir, hash::kHashTableFile));
   remove_if_possible(hash::dict_file(dir, hash::kBloomFilterFile));
   remove_if_possible(hash::dict_file(dir, blobs == key_index::blobs_file::rewritten ? hash::kBlobsFile
@@ -116,14 +129,15 @@ void remove_superseded(const std::string& dir, key_index::blobs_file blobs) {
   }
 }
 
-// 写完 [bytes] 再返回（unmap 刷盘）：调用方紧接着把它改名成正式文件。
-void write_file(const std::string& path, const std::vector<char>& bytes) {
+// 写完 [bytes] 并落盘再返回：调用方紧接着把它改名成正式文件。false = 没能落盘。
+bool write_file(const std::string& path, const std::vector<char>& bytes) {
   memory::mapped_file out = memory::map_rw(path, bytes.size());
   if (!out) {
     throw memory::map_error("failed to create " + path);
   }
   std::memcpy(out.data, bytes.data(), bytes.size());
   memory::unmap(out);
+  return memory::sync_file(path);
 }
 
 bool rename_onto(const std::string& from, const std::string& to) {
@@ -198,6 +212,9 @@ struct Rewritten {
 
 std::optional<Rewritten> rewrite_meta(const memory::blob_file& blobs, const Legacy& legacy) {
   Rewritten out;
+  // 重写后的大小与原文件相近（预解析的记录多数更小，单记录键的 offset 表不再写）；
+  // 一次留够，免得几百 MB 的缓冲区在翻倍扩容时新旧两份同时在世。
+  out.blobs.reserve(static_cast<size_t>(blobs.size()));
   ankerl::unordered_dense::map<uint64_t, uint64_t> moved;  // 原记录偏移 → 新偏移
   // 与 legacy.records 逐项对应的新偏移。记录按「键的次序、键内原顺序」写出，产物只由
   // 输入决定（两个进程同时升级同一本词典写出的 blobs3.bin 逐字节相同）。
@@ -234,7 +251,8 @@ std::optional<Rewritten> rewrite_meta(const memory::blob_file& blobs, const Lega
   return out;
 }
 
-// 写 [entries] 的 key.index 并改名成正式文件（提交点）。
+// 写 [entries] 的 key.index、落盘、改名成正式文件（提交点）。目录里若有一份不合法的
+// key.index（截断 / 坏头——没有引擎会映射它），改名直接把它换掉。
 UpgradeResult commit_key_index(const std::string& dir, const std::vector<key_index::entry>& entries,
                                key_index::blobs_file blobs) {
   const std::string final_path = hash::dict_file(dir, hash::kKeyIndexFile);
@@ -242,9 +260,10 @@ UpgradeResult commit_key_index(const std::string& dir, const std::vector<key_ind
   if (!key_index::build_to_file(entries, blobs, tmp.path)) {
     return UpgradeResult::NotApplicable;
   }
-  if (!rename_onto(tmp.path, final_path)) {
-    // 换不上：另一个进程刚好先提交了（Windows 上它的 key.index 已被映射）。
-    return current_key_index(dir) ? UpgradeResult::UpToDate : UpgradeResult::Failed;
+  // 内容先落盘、名字后出现：key.index 没有校验和，一份大小对、内容没写全的文件会被
+  // 引擎当真。
+  if (!memory::sync_file(tmp.path) || !rename_onto(tmp.path, final_path)) {
+    return UpgradeResult::Failed;
   }
   tmp.committed = true;
   return UpgradeResult::Upgraded;
@@ -253,39 +272,40 @@ UpgradeResult commit_key_index(const std::string& dir, const std::vector<key_ind
 }  // namespace
 
 UpgradeResult upgrade_dictionary(const std::string& dir, bool allow_meta_rewrite) {
-  if (!has_marker(dir)) {
+  const std::optional<std::string> marker = marker_path(dir);
+  if (!marker) {
+    return UpgradeResult::Failed;
+  }
+  // 同一本词典的升级跨进程、跨线程串行化（锁加在导入标记文件上，不新建文件）。「看
+  // 目录现状 → 写新文件 → 删旧文件」不是原子的：两个调用交错时，后到的会按它开头看到
+  // 的旧状态行事，而先到的已经提交并删掉了旧索引。拿到锁之后再看现状，后到的那个只会
+  // 看到「已是最新」。引擎装载不拿这把锁，它那一侧的次序见 dict_index::open。
+  const memory::file_lock lock(*marker);
+  if (!lock.held()) {
     return UpgradeResult::Failed;
   }
   if (const std::optional<key_index::blobs_file> kind = current_key_index(dir)) {
     remove_superseded(dir, *kind);
     return UpgradeResult::UpToDate;
   }
-  // 有 key.index 但不合法（截断 / 坏头）：没有引擎会用它（装载时验过就不映射），删掉
-  // 再写新的；删不掉就不能提交。
-  const std::string key_index_path = hash::dict_file(dir, hash::kKeyIndexFile);
-  if (exists(key_index_path)) {
-    remove_if_possible(key_index_path);
-    if (exists(key_index_path)) {
-      return UpgradeResult::Failed;
-    }
-  }
 
   UpgradeResult result = UpgradeResult::Failed;
   {
-    // 读旧式索引。映射经 map_rd_shared 与正装着这本词典的引擎共享，只读。
+    // 读旧式索引。映射经 map_rd_shared 与正装着这本词典的引擎共享，只读。目录里没有
+    // 合法的 key.index（上面刚看过，且持有锁），所以打开的一定是旧式。
     hash::dict_index index;
-    if (!index.open(dir)) {
+    if (!index.open(dir) || index.uses_key_index()) {
       return UpgradeResult::Failed;
-    }
-    if (index.uses_key_index()) {
-      // 另一个进程刚好先提交了。
-      return UpgradeResult::UpToDate;
     }
     const memory::blob_file& blobs = index.blobs();
     const memory::shared_mapping& table = index.index_mapping();
 
     Legacy legacy;
     std::vector<LegacyKey>& keys = legacy.keys;
+    // 槽位数是键数的上界（旧表装载率 70%），记录数不少于键数。
+    const size_t capacity = hash::slot_capacity(table->data, table->size);
+    keys.reserve(capacity * 3 / 4 + 1);
+    legacy.records.reserve(capacity * 3 / 4 + 1);
     bool all_raw_meta = true;
     hash::for_each_slot(table->data, table->size, [&](uint64_t h, uint64_t at) -> bool {
       LegacyKey key{.hash = h, .table = at, .first = legacy.records.size(), .count = 0};
@@ -320,9 +340,8 @@ UpgradeResult upgrade_dictionary(const std::string& dir, bool allow_meta_rewrite
       // 先放好 blobs3.bin（还没有 key.index 认领它，引擎不会读），再提交 key.index。
       const std::string blobs3 = hash::dict_file(dir, hash::kRewrittenBlobsFile);
       TmpFile tmp{tmp_path_for(blobs3)};
-      write_file(tmp.path, rewritten->blobs);
-      if (!rename_onto(tmp.path, blobs3)) {
-        return current_key_index(dir) ? UpgradeResult::UpToDate : UpgradeResult::Failed;
+      if (!write_file(tmp.path, rewritten->blobs) || !rename_onto(tmp.path, blobs3)) {
+        return UpgradeResult::Failed;
       }
       tmp.committed = true;
       result = commit_key_index(dir, rewritten->entries, key_index::blobs_file::rewritten);
@@ -349,7 +368,7 @@ UpgradeResult upgrade_dictionary(const std::string& dir, bool allow_meta_rewrite
     }
   }  // 放掉本函数自己的映射，下面才删得掉（别的引擎还映射着就删不掉，留给下一次）。
 
-  if (result == UpgradeResult::Upgraded || result == UpgradeResult::UpToDate) {
+  if (result == UpgradeResult::Upgraded) {
     if (const std::optional<key_index::blobs_file> kind = current_key_index(dir)) {
       remove_superseded(dir, *kind);
     }

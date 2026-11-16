@@ -80,26 +80,36 @@ bool location_has_key(const memory::blob_file& blobs, location loc, std::string_
 }
 
 bool dict_index::open(const std::string& dir) {
-  // key.index：合法、且它指的记录文件打得开才用。不合法（截断 / 坏头 / 将来的版本）
-  // 时退回旧式文件——它们若还在（升级后删不掉的 / 损坏前的）词典照常可查。
-  {
-    const std::string path = dict_file(dir, kKeyIndexFile);
-    memory::shared_mapping mapping = memory::map_rd_shared(path);
-    key_index keys;
-    if (mapping && keys.load(mapping->data, mapping->size)) {
-      const std::string_view blobs_name =
-          keys.blobs() == key_index::blobs_file::rewritten ? kRewrittenBlobsFile : kBlobsFile;
-      memory::shared_blob_file blobs = memory::open_blob_file(dict_file(dir, blobs_name));
-      if (blobs) {
-        identity_ = file_identity(path, *mapping, blobs->size());
-        index_ = std::move(mapping);
-        keys_ = keys;
-        blobs_ = std::move(blobs);
-        return true;
-      }
-    }
-  }
+  // 次序：key.index → 旧式 → 再看一次 key.index。存量升级（upgrade.cpp）可能正在别的
+  // 线程 / 进程里对这个目录动手，而装载不拿它的锁：它先提交 key.index、后删旧式文件，
+  // 所以「刚才还没有 key.index，转头旧式文件已经不在了」只可能是它在这两步之间提交了
+  // ——这时 key.index 一定已经在，再看一次就能打开。
+  return open_key_index(dir) || open_legacy(dir) || open_key_index(dir);
+}
 
+bool dict_index::open_key_index(const std::string& dir) {
+  // 合法、且它指的记录文件打得开才用。不合法（截断 / 坏头 / 将来的版本）时由调用方
+  // 退回旧式文件——它们若还在（升级后删不掉的 / 损坏前的）词典照常可查。
+  const std::string path = dict_file(dir, kKeyIndexFile);
+  memory::shared_mapping mapping = memory::map_rd_shared(path);
+  key_index keys;
+  if (!mapping || !keys.load(mapping->data, mapping->size)) {
+    return false;
+  }
+  const std::string_view blobs_name =
+      keys.blobs() == key_index::blobs_file::rewritten ? kRewrittenBlobsFile : kBlobsFile;
+  memory::shared_blob_file blobs = memory::open_blob_file(dict_file(dir, blobs_name));
+  if (!blobs) {
+    return false;
+  }
+  identity_ = file_identity(path, *mapping, blobs->size());
+  index_ = std::move(mapping);
+  keys_ = keys;
+  blobs_ = std::move(blobs);
+  return true;
+}
+
+bool dict_index::open_legacy(const std::string& dir) {
   const std::string table_path = dict_file(dir, kHashTableFile);
   memory::shared_mapping table = memory::map_rd_shared(table_path);
   if (!table) {

@@ -240,7 +240,9 @@ bool key_index::load(const uint8_t* data, size_t size) {
       header.slots_per_bucket != kSlotsPerBucket || header.num_buckets == 0 ||
       header.num_buckets >= std::numeric_limits<uint32_t>::max() ||
       header.blobs > static_cast<uint32_t>(blobs_file::rewritten) ||
-      size != kHeaderBytes + header.num_buckets * kBucketBytes) {
+      size != kHeaderBytes + header.num_buckets * kBucketBytes ||
+      // num_keys 不可能多过 slot 数；联合过滤器按它分配内存，坏头不能让它任意大。
+      header.num_keys > header.num_buckets * kSlotsPerBucket) {
     return false;
   }
   buckets_ = data + kHeaderBytes;

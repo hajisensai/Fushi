@@ -16,6 +16,7 @@
 #include <windows.h>
 #else
 #include <fcntl.h>
+#include <sys/file.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -695,6 +696,97 @@ void unmap_unflushed(mapped_file mapping) {
   UnmapViewOfFile(mapping.data);
 #else
   munmap(mapping.data, mapping.size);
+#endif
+}
+
+bool sync_file(const std::string& path) {
+#ifdef _WIN32
+  const std::wstring wpath = to_wide(path);
+  HANDLE file = CreateFileW(wpath.c_str(), GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                            nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (file == INVALID_HANDLE_VALUE) {
+    return false;
+  }
+  const bool ok = FlushFileBuffers(file) != 0;
+  CloseHandle(file);
+  return ok;
+#else
+  const int fd = open(path.c_str(), O_RDONLY | O_CLOEXEC);
+  if (fd < 0) {
+    return false;
+  }
+#if defined(__APPLE__)
+  // F_FULLFSYNC 在不支持它的文件系统上失败，退回 fsync。
+  const bool ok = fcntl(fd, F_FULLFSYNC) == 0 || fsync(fd) == 0;
+#else
+  const bool ok = fsync(fd) == 0;
+#endif
+  close(fd);
+  return ok;
+#endif
+}
+
+bool sync_directory(const std::string& dir) {
+#ifdef _WIN32
+  (void)dir;
+  return true;
+#else
+  const int fd = open(dir.c_str(), O_RDONLY | O_CLOEXEC);
+  if (fd < 0) {
+    return false;
+  }
+  const bool ok = fsync(fd) == 0;
+  close(fd);
+  return ok;
+#endif
+}
+
+file_lock::file_lock(const std::string& path) {
+#ifdef _WIN32
+  const std::wstring wpath = to_wide(path);
+  HANDLE file = CreateFileW(wpath.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                            nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (file == INVALID_HANDLE_VALUE) {
+    return;
+  }
+  // 没有 LOCKFILE_FAIL_IMMEDIATELY：同步句柄上阻塞到拿到为止。
+  OVERLAPPED range{};
+  range.Offset = 0;
+  range.OffsetHigh = 0x7FFFFFFF;
+  if (!LockFileEx(file, LOCKFILE_EXCLUSIVE_LOCK, 0, 1, 0, &range)) {
+    CloseHandle(file);
+    return;
+  }
+  handle_ = reinterpret_cast<intptr_t>(file);
+  held_ = true;
+#else
+  const int fd = open(path.c_str(), O_RDONLY | O_CLOEXEC);
+  if (fd < 0) {
+    return;
+  }
+  int rc;
+  do {
+    rc = flock(fd, LOCK_EX);
+  } while (rc != 0 && errno == EINTR);
+  if (rc != 0) {
+    close(fd);
+    return;
+  }
+  handle_ = fd;
+  held_ = true;
+#endif
+}
+
+file_lock::~file_lock() {
+  if (!held_) {
+    return;
+  }
+#ifdef _WIN32
+  // 关句柄即放锁。
+  CloseHandle(reinterpret_cast<HANDLE>(handle_));
+#else
+  flock(static_cast<int>(handle_), LOCK_UN);
+  close(static_cast<int>(handle_));
 #endif
 }
 }

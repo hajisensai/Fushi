@@ -21,6 +21,7 @@
 #include <xxh3.h>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
@@ -31,6 +32,7 @@
 #include <optional>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "fushidicts/deinflector.hpp"
@@ -817,6 +819,205 @@ void test_robustness(const std::string& root, Deinflector& deinflector) {
 
 }  // namespace
 
+// ── 4. 手写索引：读侧对坏 / 罕见布局的行为 ─────────────────────────────────────
+
+// 按磁盘格式手写一份 key.index（布局见 test_verification (b) 的注释）。
+struct RawSlot {
+  uint64_t bucket;
+  size_t slot;
+  uint32_t word;
+  uint64_t offset;
+};
+
+void write_raw_key_index(const std::string& dir, uint64_t num_buckets, uint64_t num_keys,
+                         const std::vector<RawSlot>& slots) {
+  std::vector<uint8_t> file(64 + num_buckets * 64, 0);
+  std::memcpy(file.data(), "FDKEYIX1", 8);
+  const uint32_t version = 1;
+  const uint32_t slots_per_bucket = 8;
+  std::memcpy(file.data() + 8, &version, 4);
+  std::memcpy(file.data() + 12, &slots_per_bucket, 4);
+  std::memcpy(file.data() + 16, &num_buckets, 8);
+  std::memcpy(file.data() + 24, &num_keys, 8);
+  for (const RawSlot& s : slots) {
+    const auto offset32 = static_cast<uint32_t>(s.offset);
+    std::memcpy(file.data() + 64 + s.bucket * 64 + s.slot * 4, &s.word, 4);
+    std::memcpy(file.data() + 64 + s.bucket * 64 + 32 + s.slot * 4, &offset32, 4);
+  }
+  fs::remove(dir + "/key.index");
+  std::ofstream out(fs::path(dir) / "key.index", std::ios::binary);
+  out.write(reinterpret_cast<const char*>(file.data()), static_cast<std::streamsize>(file.size()));
+}
+
+void test_raw_index(const std::string& root) {
+  constexpr uint32_t kOverflow = 1U << 29;
+  constexpr uint32_t kOccupied = 1U << 30;
+  constexpr uint32_t kSingle = 1U << 31;
+
+  const DictSet fresh = import_set(root + "/raw_src", false);
+  if (!fresh.ok()) return;
+  const uint64_t ha = key_hash("猫");
+  hash::location neko{};
+  {
+    hash::dict_index index;
+    const auto loc = index.open(fresh.term) ? index.locate(ha, "猫") : std::nullopt;
+    if (!loc) {
+      fail("raw: fixture key not found");
+      return;
+    }
+    neko = *loc;
+  }
+  uint64_t nb = 2;
+  while (hash::key_index::bucket1(ha, nb) == hash::key_index::bucket2(ha, nb)) nb++;
+  const uint64_t b1 = hash::key_index::bucket1(ha, nb);
+  const uint64_t b2 = hash::key_index::bucket2(ha, nb);
+  const uint32_t tag = hash::key_index::tag_of(ha);
+  const uint32_t neko_word = tag | kOccupied | (neko.single ? kSingle : 0);
+
+  const auto query_both = [&](const std::string& dir, bool want_found, const std::string& what) {
+    {
+      hash::dict_index index;
+      if (!index.open(dir) || !index.uses_key_index()) {
+        fail(what + ": hand-written key.index must load");
+        return;
+      }
+      expect(index.locate(ha, "猫").has_value() == want_found, what + ": locate");
+    }
+    for (const bool filter : {false, true}) {
+      DictionaryQuery q;
+      q.add_term_dict(dir);
+      if (filter) q.prepare_union_filter("", true);
+      expect(!q.query("猫").empty() == want_found, what + (filter ? ": query (filter)" : ": query"));
+    }
+  };
+
+  // (a) 主桶里没有 tag 相同的 slot、只有溢出位（住着别的键），真键在备桶：分遍预取的
+  //     「读备桶」那一遍（locate_all 的 2b）必须走到。
+  {
+    const std::string dir = root + "/raw_overflow";
+    copy_dir(fresh.term, dir);
+    write_raw_key_index(dir, nb, 2,
+                        {
+                            {b1, 0, ((tag ^ 1U) & hash::key_index::kTagMask) | kOccupied | kOverflow, neko.offset},
+                            {b2, 3, neko_word, neko.offset},
+                        });
+    query_both(dir, true, "raw overflow-only primary");
+  }
+
+  // (b) 同样的主桶、但没有溢出位：一条缓存行就判「不在」，备桶里即使有也不看——这是
+  //     构建端「键住备桶则主桶必带溢出位」那条保证的另一面。
+  {
+    const std::string dir = root + "/raw_no_overflow";
+    copy_dir(fresh.term, dir);
+    write_raw_key_index(dir, nb, 2,
+                        {
+                            {b1, 0, ((tag ^ 1U) & hash::key_index::kTagMask) | kOccupied, neko.offset},
+                            {b2, 3, neko_word, neko.offset},
+                        });
+    query_both(dir, false, "raw primary without overflow bit");
+  }
+
+  // (c) tag 对得上、offset 指到文件外（single 与 offset 表两种）：核对读不到记录，判
+  //     「不在」，不越界、不崩。
+  for (const bool single : {true, false}) {
+    const std::string dir = root + (single ? "/raw_oob_single" : "/raw_oob_list");
+    copy_dir(fresh.term, dir);
+    write_raw_key_index(dir, nb, 1, {{b1, 2, tag | kOccupied | (single ? kSingle : 0), 0xFFFFFFF0ULL}});
+    query_both(dir, false, single ? "raw out-of-range record offset" : "raw out-of-range list offset");
+  }
+
+  // (d) 头里的 num_keys 多过 slot 数（坏头）：不装载，退回——这里没有旧式文件，打不开。
+  {
+    const std::string dir = root + "/raw_bad_num_keys";
+    copy_dir(fresh.term, dir);
+    write_raw_key_index(dir, nb, nb * 8 + 1, {{b1, 0, neko_word, neko.offset}});
+    hash::dict_index index;
+    expect(!index.open(dir), "raw: num_keys beyond the slot count must not load");
+  }
+}
+
+// ── 5. 并发升级 ───────────────────────────────────────────────────────────────
+
+std::string marker_of(const std::string& dir) {
+  for (const char* name : {"/.fushidicts_2", "/.fushidicts_1", "/.hoshidicts_1"}) {
+    if (fs::exists(dir + name)) return dir + name;
+  }
+  return {};
+}
+
+void test_concurrency(const std::string& root, Deinflector& deinflector) {
+  // (a) 串行化：别人持有这本词典的升级锁时，升级调用等着，放锁之后才进行。
+  {
+    const DictSet set = import_set(root + "/conc_lock", true);
+    if (!set.ok()) return;
+    const std::string marker = marker_of(set.freq);
+    expect(!marker.empty(), "concurrency: fixture has an import marker");
+    std::atomic<bool> finished{false};
+    UpgradeResult result = UpgradeResult::Failed;
+    std::thread waiter;
+    {
+      const memory::file_lock held(marker);
+      expect(held.held(), "concurrency: test takes the lock");
+      waiter = std::thread([&] {
+        result = fushidicts::upgrade_dictionary(set.freq, true);
+        finished.store(true);
+      });
+      std::this_thread::sleep_for(std::chrono::milliseconds(300));
+      expect(!finished.load(), "concurrency: upgrade must wait while the dictionary lock is held");
+      expect(!exists(set.freq + "/key.index"), "concurrency: nothing is committed while waiting");
+    }
+    waiter.join();
+    expect_result(result, UpgradeResult::Upgraded, "concurrency: proceeds once the lock is released");
+  }
+
+  // (b) 多线程同时升级同一批词典，参数混用（有的允许重写记录、有的只换索引）。审查复现
+  //     过的坏法：后到的调用按开头看到的旧状态行事，把先到者刚提交的 key.index 删掉 /
+  //     改回指向已被删除的 blobs.bin，词典从此打不开。每一轮结束后：每本词典都打得开、
+  //     用的是 key.index、结果与旧式逐字段相同，且恰好一个调用报「已升级」。
+  const DictSet baseline_set = import_set(root + "/conc_baseline", true);
+  if (!baseline_set.ok()) return;
+  const std::string baseline = snapshot_of(baseline_set, deinflector, false);
+  for (int round = 0; round < 6; round++) {
+    const DictSet set = import_set(root + "/conc_round", true);
+    if (!set.ok()) return;
+    const std::vector<std::string> dirs = set.all();
+    constexpr int kThreads = 4;
+    std::vector<std::vector<UpgradeResult>> results(kThreads, std::vector<UpgradeResult>(dirs.size()));
+    std::atomic<bool> go{false};
+    std::vector<std::thread> threads;
+    for (int t = 0; t < kThreads; t++) {
+      threads.emplace_back([&, t] {
+        while (!go.load()) std::this_thread::yield();
+        for (size_t d = 0; d < dirs.size(); d++) {
+          // 线程各自从不同的词典起步，参数按线程与轮次错开。
+          const size_t at = (d + static_cast<size_t>(t)) % dirs.size();
+          results[static_cast<size_t>(t)][at] = fushidicts::upgrade_dictionary(dirs[at], ((t + round) & 1) == 0);
+        }
+      });
+    }
+    go.store(true);
+    for (std::thread& th : threads) th.join();
+
+    const std::string label = "concurrency round " + std::to_string(round);
+    for (size_t d = 0; d < dirs.size(); d++) {
+      int upgraded = 0;
+      int other = 0;
+      for (int t = 0; t < kThreads; t++) {
+        const UpgradeResult r = results[static_cast<size_t>(t)][d];
+        if (r == UpgradeResult::Upgraded) {
+          upgraded++;
+        } else if (r != UpgradeResult::UpToDate) {
+          other++;
+        }
+      }
+      expect(upgraded == 1 && other == 0, label + ": exactly one caller upgrades " + dirs[d] + " (upgraded=" +
+                                              std::to_string(upgraded) + ", failed=" + std::to_string(other) + ")");
+      expect(uses_key_index(dirs[d]), label + ": " + dirs[d] + " opens with key.index");
+    }
+    expect_same(baseline, snapshot_of(set, deinflector, false), label + ": results after concurrent upgrade");
+  }
+}
+
 int main(int argc, char** argv) {
   if (argc < 2) {
     std::fprintf(stderr, "usage: %s <ja.json>\n", argv[0]);
@@ -837,6 +1038,8 @@ int main(int argc, char** argv) {
   test_equivalence(root, deinflector);
   test_verification(root);
   test_robustness(root, deinflector);
+  test_raw_index(root);
+  test_concurrency(root, deinflector);
 
   if (g_fail == 0) std::printf("PASS dict_upgrade_test\n");
   return g_fail == 0 ? 0 : 1;
