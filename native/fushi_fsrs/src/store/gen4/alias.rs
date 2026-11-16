@@ -905,7 +905,10 @@ impl Index<'_, '_> {
         }
         if self.alias_dirty {
             // 缓存层按规范 ID 建（`cache.rs`）：表变了的那几行牵动的规范 ID 要重看。只有物化了缓存的集合才记。
-            let track = self.t.derive_cfg(self.col, super::cache::CFG_KEY)?.is_some();
+            let track = self
+                .t
+                .derive_cfg(self.col, super::cache::CFG_KEY)?
+                .is_some();
             if track {
                 self.alias_snapshot()?;
             }

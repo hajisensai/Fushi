@@ -3,12 +3,24 @@
 //!
 //! 协议 3 一侧的缓存行由调用方给（[against_protocol_3] 的 `old_caches`）：测试装置在可写连接的 SAVEPOINT 里先做完
 //! 协议 3 自己欠着的收尾再重建、整个回滚；干跑在只读连接上用影子临时表重建（`dryrun.rs`），不写旧库一个字节。
+//!
+//! # 按规范 ID 比（设计 §6.1 第 6 步、§5.3，G9-2）
+//!
+//! 新代的缓存层按规范 ID 物化（`cache.rs`），协议 3 的缓存行是原值 ID。缓存三类比之前，协议 3 一侧的行先过 [CanonMap]
+//! 改写成规范 ID：ID 列查别名表（加内置实体的规则）；卡 ID 若正是由它的笔记 × 模板 × 序号派生的，按规范的父 ID 重算
+//! （新代的应有的卡也是这么来的，从没出现在操作里的卡别名表里没有行）；`anki_id` 列若是由原值 ID 算的，按规范 ID 重算。
+//! 两侧口径相同，比的是「同一个规范实体的行」。从没并入过、没有盐的库，规范 ID 就是原值，改写是恒等。
+//!
+//! 寄存器按别名类判定与协议 3 的原值判定有一类已定案的差异（写入者归回让原值冲突变成支配，设计 §5.3、§10 第 24 条）：
+//! [against_protocol_3] 先跑 `class.rs` 的 [Index::class_differences]，佐证得了的列为已知差异（[Known]），这些实体的缓存行
+//! 单独比、只报数，不计入差异；佐证不了的记成 `classRegisters` 差异（按 bug 处理）。
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use rusqlite::{Connection, ToSql, params};
 
 use super::cache::CFG_KEY;
+use super::class::{ClassDiffs, builtin_rule_canon};
 use super::derive::{Index, R_LIVE, Ref, body_of};
 use super::schema::sql;
 use super::truth::Truth;
@@ -19,6 +31,160 @@ use crate::sync2::vv::OpId;
 
 /// 有差异的类别：(类别, 只在旧库, 只在新库)。空 = 完全一致。
 pub(crate) type Diff = Vec<(&'static str, Vec<String>, Vec<String>)>;
+
+/// 协议 3 一侧的 ID 改写成规范 ID 用的表（模块文件头「按规范 ID 比」）：别名表的非恒等部分（出现过的 ID → 规范 ID）
+/// 与内置实体在每个盐下的规则（`class.rs` [builtin_rule_canon]）。
+pub(crate) struct CanonMap {
+    map: HashMap<[u8; 16], [u8; 16]>,
+    rules: HashMap<[u8; 16], [u8; 16]>,
+}
+
+impl CanonMap {
+    pub(crate) fn load(t: &Truth<'_>, col: i64) -> Result<CanonMap, String> {
+        let mut map = HashMap::new();
+        let mut stmt = t
+            .conn()
+            .prepare("SELECT id, canon FROM alias_ix WHERE col = ?1 AND canon != id")
+            .map_err(sql)?;
+        let rows = stmt
+            .query_map([col], |r| {
+                Ok((r.get::<_, [u8; 16]>(0)?, r.get::<_, [u8; 16]>(1)?))
+            })
+            .map_err(sql)?;
+        for row in rows {
+            let (id, canon) = row.map_err(sql)?;
+            map.insert(id, canon);
+        }
+        let salts: Vec<String> = t
+            .binding(col)?
+            .map(|b| b.salts.into_iter().collect())
+            .unwrap_or_default();
+        Ok(CanonMap {
+            map,
+            rules: builtin_rule_canon(&salts),
+        })
+    }
+
+    /// 规范 ID：别名表，表里没有再看内置实体的规则，都没有是它自己。
+    pub(crate) fn of(&self, r: &Ref) -> Ref {
+        match r {
+            Ref::Uuid(b) => Ref::Uuid(*self.map.get(b).or_else(|| self.rules.get(b)).unwrap_or(b)),
+            Ref::Text(_) => r.clone(),
+        }
+    }
+
+    /// 一格文本（[cell] 的形）的规范形：UUID 文本换成规范 ID，别的（`∅`、非 UUID 文本）原样。
+    pub(crate) fn text(&self, s: &str) -> String {
+        self.of(&Ref::of(&Key::of(s))).text()
+    }
+
+    /// 一张卡的规范 ID：[id] 正是 [note] × [template] × [ord] 派生出来的（`registers::card_id`）就按规范的父 ID 重算，
+    /// 否则查表。
+    pub(crate) fn card(&self, id: &str, note: &str, template: &str, ord: &str) -> String {
+        let Ok(ord) = ord.parse::<i64>() else {
+            return self.text(id);
+        };
+        match crate::registers::card_id(note, template, ord) {
+            Ok(derived) if derived == id => {
+                crate::registers::card_id(&self.text(note), &self.text(template), ord)
+                    .unwrap_or_else(|_| self.text(id))
+            }
+            _ => self.text(id),
+        }
+    }
+
+    /// 协议 3 的三张缓存表的行（[NOTE_COLS] / [CARD_COLS] / [STAT_COLS] 的协议 3 列序）改写成规范 ID。
+    pub(crate) fn rows(&self, old: &CacheRows) -> CacheRows {
+        let at = |cols: &[(&str, &str)], name: &str| -> usize {
+            cols.iter()
+                .position(|c| c.0 == name)
+                .expect("column listed in the constant")
+        };
+        // `anki_id` 是由行的 ID 算的（`schema::anki_numeric_id`）就按规范 ID 重算；别的值原样。
+        let anki = |raw_id: &str, canon_id: &str, cell: &str| -> String {
+            if cell == crate::store::schema::anki_numeric_id(raw_id).to_string() {
+                crate::store::schema::anki_numeric_id(canon_id).to_string()
+            } else {
+                cell.to_owned()
+            }
+        };
+        let notes = old
+            .0
+            .iter()
+            .map(|r| {
+                let mut r = r.clone();
+                let raw = r[0].clone();
+                for c in ["id", "note_type_id", "deck_id"] {
+                    let i = at(NOTE_COLS, c);
+                    r[i] = self.text(&r[i]);
+                }
+                let i = at(NOTE_COLS, "anki_id");
+                r[i] = anki(&raw, &r[0], &r[i]);
+                r
+            })
+            .collect();
+        let mut card_of: HashMap<String, String> = HashMap::new();
+        let cards = old
+            .1
+            .iter()
+            .map(|r| {
+                let mut r = r.clone();
+                let raw = r[0].clone();
+                r[0] = self.card(
+                    &raw,
+                    &r[at(CARD_COLS, "note_id")],
+                    &r[at(CARD_COLS, "template_id")],
+                    &r[at(CARD_COLS, "cloze_ord")],
+                );
+                for c in ["note_id", "template_id", "deck_id", "last_log_id"] {
+                    let i = at(CARD_COLS, c);
+                    r[i] = self.text(&r[i]);
+                }
+                let i = at(CARD_COLS, "anki_id");
+                r[i] = anki(&raw, &r[0], &r[i]);
+                card_of.insert(raw, r[0].clone());
+                r
+            })
+            .collect();
+        let stats = old
+            .2
+            .iter()
+            .map(|r| {
+                let mut r = r.clone();
+                let (l, c) = (at(STAT_COLS, "log"), at(STAT_COLS, "card"));
+                r[l] = self.text(&r[l]);
+                r[c] = card_of
+                    .get(&r[c])
+                    .cloned()
+                    .unwrap_or_else(|| self.text(&r[c]));
+                r
+            })
+            .collect();
+        (notes, cards, stats)
+    }
+
+    /// 一组 `种类:ID` 改写成规范 ID。
+    pub(crate) fn kinded(&self, xs: &BTreeSet<String>) -> BTreeSet<String> {
+        xs.iter()
+            .map(|x| match x.split_once(':') {
+                Some((k, id)) => format!("{k}:{}", self.text(id)),
+                None => x.clone(),
+            })
+            .collect()
+    }
+}
+
+/// 按类判定的已知差异（模块文件头「按规范 ID 比」）与它们在缓存层对拍里的豁免。
+#[derive(Debug, Default)]
+pub(crate) struct Known {
+    pub diffs: ClassDiffs,
+    /// 已知差异牵动的规范笔记与卡（ID 文本）：缓存三类里它们的行不计入差异，单独比。
+    pub notes: BTreeSet<String>,
+    pub cards: BTreeSet<String>,
+    /// 单独比的行（两侧合计，去重）与其中两侧不同的。
+    pub rows: u64,
+    pub rows_differ: u64,
+}
 
 pub(crate) fn op_text(id: &OpId) -> String {
     format!("{}:{}", id.device.text(), id.seq)
@@ -334,6 +500,7 @@ pub(crate) fn collisions(t: &Truth<'_>, col: i64) -> Result<Collisions, String> 
 /// - [collided_notes]：这些笔记的行与它们的卡行两边都不比（统计行的归属随卡的可见性变，归属卡是这些卡的也不比）。
 ///
 /// [skip] 是调用方另外不比的笔记与卡（干跑：协议 3 自己还欠着收尾、只读连接上做不了的，见 `dryrun.rs`）。
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn cache_pairs(
     src: &Connection,
     profile: &str,
@@ -343,6 +510,7 @@ pub(crate) fn cache_pairs(
     collided: &BTreeSet<String>,
     old_caches: &mut OldCaches<'_>,
     skip: &Skip,
+    known: &mut Known,
     diff: &mut Diff,
 ) -> Result<CacheBaseline, String> {
     let Some(cfg) = t.derive_cfg(col, CFG_KEY)? else {
@@ -363,7 +531,16 @@ pub(crate) fn cache_pairs(
             return Ok(CacheBaseline::Unavailable(text));
         }
     };
-    let (old_notes, old_cards, old_stats) = (&old.0, &old.1, &old.2);
+    // 协议 3 一侧改写成规范 ID（模块文件头「按规范 ID 比」）；跳过 / 扣住的集合同样改写。
+    let canon = CanonMap::load(t, col)?;
+    let canonical = canon.rows(&old);
+    let (old_notes, old_cards, old_stats) = (&canonical.0, &canonical.1, &canonical.2);
+    let held = &canon.kinded(held);
+    let collided = &canon.kinded(collided);
+    let skip = &Skip {
+        notes: skip.notes.iter().map(|n| canon.text(n)).collect(),
+        cards: skip.cards.iter().map(|c| canon.text(c)).collect(),
+    };
     let news = |cols: &[(&'static str, &'static str)]| -> Vec<&'static str> {
         cols.iter().map(|c| c.0).collect()
     };
@@ -378,10 +555,49 @@ pub(crate) fn cache_pairs(
     };
     let held_note = |id: &str| held.contains(&format!("note:{id}"));
     let skip_note = |id: &str| collided.contains(&format!("note:{id}")) || skip.notes.contains(id);
+    // 已知差异牵动的笔记与卡（[Known]）：笔记类型上的差异牵动这个类型的全部笔记，笔记的差异牵动它的卡。
+    let mut new_notes = new("notes", NOTE_COLS)?;
+    {
+        let types: BTreeSet<String> = known
+            .diffs
+            .diffs
+            .iter()
+            .filter(|d| d.proven && d.kind == crate::sync2::op::EntKind::NoteType)
+            .map(|d| d.entity.text())
+            .collect();
+        for d in known.diffs.diffs.iter().filter(|d| d.proven) {
+            match d.kind {
+                crate::sync2::op::EntKind::Note => {
+                    known.notes.insert(d.entity.text());
+                }
+                crate::sync2::op::EntKind::Card => {
+                    known.cards.insert(d.entity.text());
+                }
+                _ => {}
+            }
+        }
+        let ty = at(NOTE_COLS, "note_type_id");
+        for r in old_notes.iter().chain(&new_notes) {
+            if types.contains(&r[ty]) {
+                known.notes.insert(r[0].clone());
+            }
+        }
+    }
+    let known_notes = known.notes.clone();
+    let is_known_note = |id: &str| known_notes.contains(id);
+    // 单独比的已知差异行：(旧一侧, 新一侧)。
+    let mut aside: (BTreeSet<String>, BTreeSet<String>) = Default::default();
     // 三张表一张一张比：同时在内存里的只有一张表两侧的行。
-    let notes = |rows: &[Vec<String>]| -> BTreeSet<String> {
+    let notes = |rows: &[Vec<String>], aside: &mut BTreeSet<String>| -> BTreeSet<String> {
         rows.iter()
             .filter(|r| !skip_note(&r[0]))
+            .filter(|r| {
+                let known = is_known_note(&r[0]);
+                if known {
+                    aside.insert(r.join(" | "));
+                }
+                !known
+            })
             .map(|r| {
                 if held_note(&r[0]) {
                     let mut r = r.clone();
@@ -394,9 +610,9 @@ pub(crate) fn cache_pairs(
             })
             .collect()
     };
-    let new_notes = new("notes", NOTE_COLS)?;
-    push_pair(diff, ("notes", notes(old_notes), notes(&new_notes)));
-    drop(new_notes);
+    let old_side = notes(old_notes, &mut aside.0);
+    let new_side = notes(&new_notes, &mut aside.1);
+    push_pair(diff, ("notes", old_side, new_side));
     let new_cards = new("cards", CARD_COLS)?;
     // 笔记类型的删除被扣住时同理：卡的 `hidden` 跟着笔记类型删没删（`caches.rs` 笔记行的 `gone`），协议 3 的
     // `deleted` 寄存器里留着哪几条同样取决于到达顺序，这些笔记的卡不比 `hidden`。
@@ -409,11 +625,12 @@ pub(crate) fn cache_pairs(
     } else {
         old_notes
             .iter()
-            .chain(&new("notes", NOTE_COLS)?)
+            .chain(&new_notes)
             .filter(|r| held_types.contains(r[at(NOTE_COLS, "note_type_id")].as_str()))
             .map(|r| r[0].clone())
             .collect()
     };
+    new_notes.clear();
     let held_card = |note: &str| held_note(note) || type_held.contains(note);
     let skipped_cards: BTreeSet<String> = old_cards
         .iter()
@@ -422,9 +639,22 @@ pub(crate) fn cache_pairs(
         .map(|r| r[0].clone())
         .chain(skip.cards.iter().cloned())
         .collect();
-    let cards = |rows: &[Vec<String>]| -> BTreeSet<String> {
+    for r in old_cards.iter().chain(&new_cards) {
+        if is_known_note(&r[at(CARD_COLS, "note_id")]) {
+            known.cards.insert(r[0].clone());
+        }
+    }
+    let known_cards = known.cards.clone();
+    let cards = |rows: &[Vec<String>], aside: &mut BTreeSet<String>| -> BTreeSet<String> {
         rows.iter()
             .filter(|r| !skipped_cards.contains(&r[0]))
+            .filter(|r| {
+                let known = known_cards.contains(&r[0]);
+                if known {
+                    aside.insert(r.join(" | "));
+                }
+                !known
+            })
             .map(|r| {
                 if held_card(&r[at(CARD_COLS, "note_id")]) {
                     let mut r = r.clone();
@@ -436,16 +666,29 @@ pub(crate) fn cache_pairs(
             })
             .collect()
     };
-    push_pair(diff, ("cards", cards(old_cards), cards(&new_cards)));
+    let old_side = cards(old_cards, &mut aside.0);
+    let new_side = cards(&new_cards, &mut aside.1);
+    push_pair(diff, ("cards", old_side, new_side));
     drop(new_cards);
-    let stats = |rows: &[Vec<String>]| -> BTreeSet<String> {
+    let stats = |rows: &[Vec<String>], aside: &mut BTreeSet<String>| -> BTreeSet<String> {
         rows.iter()
             .filter(|r| !skipped_cards.contains(&r[at(STAT_COLS, "card")]))
+            .filter(|r| {
+                let known = known_cards.contains(&r[at(STAT_COLS, "card")]);
+                if known {
+                    aside.insert(r.join(" | "));
+                }
+                !known
+            })
             .map(|r| r.join(" | "))
             .collect()
     };
     let new_stats = new("stats", STAT_COLS)?;
-    push_pair(diff, ("stats", stats(old_stats), stats(&new_stats)));
+    let old_side = stats(old_stats, &mut aside.0);
+    let new_side = stats(&new_stats, &mut aside.1);
+    push_pair(diff, ("stats", old_side, new_side));
+    known.rows = aside.0.union(&aside.1).count() as u64;
+    known.rows_differ = aside.0.symmetric_difference(&aside.1).count() as u64;
     Ok(CacheBaseline::Rows(old))
 }
 
@@ -466,7 +709,8 @@ pub(crate) struct Skip {
 /// 协议 3 的投影，与同一份库灌进新存储、重建之后的派生层比。类别：活着的修改记录 ID（`edits`，不算合成的标签行）、
 /// 日志 ID（`logs`）、实体 ID（`entities`）、每条笔记现在的标签与顺序（`tags`）、媒体名绑定的内容（`media`）、
 /// 被并发改动扣住的删除（`held`）、因设备不可信没执行的删除与清除（`distrusted`）、清除过的实体（`purged`）；新代设了
-/// 缓存配置时再加缓存层的笔记行（`notes`）、卡行（`cards`）、有效复习投影（`stats`），逐列比（[cache_pairs]）。
+/// 缓存配置时再加缓存层的笔记行（`notes`）、卡行（`cards`）、有效复习投影（`stats`），按规范 ID 逐列比（[cache_pairs]）。
+/// 按类判定相对原值判定的差异先算（[Known]）：佐证不了的记成 `classRegisters`。
 pub(crate) fn against_protocol_3(
     src: &Connection,
     profile: &str,
@@ -474,9 +718,19 @@ pub(crate) fn against_protocol_3(
     col: i64,
     old_caches: &mut OldCaches<'_>,
     skip: &Skip,
-) -> Result<(Diff, CacheBaseline, Collisions), String> {
+) -> Result<(Diff, CacheBaseline, Collisions, Known), String> {
     // 每一类算出来马上化成差异、放掉两侧的集合：同时在内存里的只有一类（大库的修改记录 ID 一类就有上百万条）。
     let mut diff = Diff::new();
+    let mut known = Known {
+        diffs: Index::new(t, col).class_differences()?,
+        ..Known::default()
+    };
+    let unproven: BTreeSet<String> = known
+        .diffs
+        .unproven()
+        .map(|d| format!("{}:{}:{}", d.kind.wire(), d.entity.text(), d.key))
+        .collect();
+    push_pair(&mut diff, ("classRegisters", unproven, BTreeSet::new()));
     let ix = Index::new(t, col);
     // ID 类（修改记录、日志、实体）两侧都按 [Ref] 收：UUID 只占 16 字节，大库这几类各有几十万到上百万条。
     let refs = |q: &str| -> Result<BTreeSet<Ref>, String> {
@@ -626,9 +880,10 @@ pub(crate) fn against_protocol_3(
         &collided.notes,
         old_caches,
         skip,
+        &mut known,
         &mut diff,
     )?;
-    Ok((diff, rows, collided))
+    Ok((diff, rows, collided, known))
 }
 
 /// 协议 3 投影里活着的修改记录 ID（不算合成写入者的标签行）：按协议 3 自己的寄存器判据（`registers::judge_register`）

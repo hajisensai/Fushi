@@ -12,7 +12,12 @@
 //!    缓存表（它允许过期）；现成的与重建的另比一次，单列（§10 第 7 条，不计入判定）。协议 3 自己还欠着收尾的卡与笔记
 //!    （待重放集合、没刷新的合成标签行）只读连接上做不了，跳过并计数。
 //! 5. 在对拍之外再按规范 ID 比（§6.1 第 5 步、§5.3）：每个寄存器的胜者、每张规范卡的调度状态、每张规范卡（含不在缓存
-//!    里的历史血统卡）名下的规范日志与有效复习。
+//!    里的历史血统卡）名下的规范日志与有效复习。缓存层本身按规范 ID 物化，第 4 步的缓存三类也是按规范 ID 比的
+//!    （协议 3 一侧的行先改写成规范 ID，`compare.rs` 文件头「按规范 ID 比」）。
+//! 6. 按类判定的已知差异（§5.3「按类判定的已知差异」、§10 第 24 条，G9-2）：寄存器按别名类判与原值判不同的，逐条列出
+//!    并逐条佐证（`knownDifferences`）。佐证得了的不计入判定，它们牵动的缓存行单独比、只报数；佐证不了的计入对拍差异
+//!    （`classRegisters`），结论是 `fail`。只有 ID、写入者名与 seq，不含内容；任何一份库都能重跑（命令行
+//!    `examples/gen4_dryrun.rs`）。
 //!
 //! 另外几项只报数、不计入判定：旧戳闭包对 `sync2_legacy`（§10 第 14 条）、归回去的改名写入者的旧戳逐条对照（G3 没验的
 //! 第一项）、验不上的日志重建后是否仍挂在同一张规范卡上（G3 没验的第二项）、别名表各类的数（与 G3 探针同口径）。
@@ -21,7 +26,7 @@
 //! 临时新库（[Options::keep] 时留下）。报告只有计数与 ID，不含笔记内容（[Options::full_examples] 时例子给整行，只供本地
 //! 排查用）。
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -32,9 +37,10 @@ use serde_json::{Map, Value, json};
 
 use super::alias::{A_UNVERIFIED, AliasCounts};
 use super::cache::CFG_KEY;
+use super::class::DiffEvidence;
 use super::compare::{
-    self, CARD_COLS, CacheBaseline, CacheRows, Diff, NOTE_COLS, OldCachesError, Pair, STAT_COLS,
-    Skip, rows_of, texts,
+    self, CARD_COLS, CacheBaseline, CacheRows, CanonMap, Diff, Known, NOTE_COLS, OldCachesError,
+    Pair, STAT_COLS, Skip, rows_of, texts,
 };
 use super::derive::{Index, R_CONFLICT, R_WINNER, Ref, Settled, body_of};
 use super::import::{Imported, import_legacy_checked};
@@ -54,7 +60,12 @@ use crate::sync2::vv::OpId;
 /// 报告格式的版本（[run] 的返回值里的 `version`）。
 ///
 /// - 2：profile 报告加 `cacheBaseline`（`"rebuilt"` / `"notConfigured"` / `{"unavailable": 错误}`），新结论 `incomplete`。
-pub const REPORT_VERSION: i64 = 2;
+/// - 3：缓存层按规范 ID 物化、按规范 ID 对拍（G9-2）；profile 报告加 `knownDifferences`（[known_json]），`parity` 里可能
+///   出现 `classRegisters` 类。
+pub const REPORT_VERSION: i64 = 3;
+
+/// `knownDifferences.entries` 最多列几条（只有 ID；超出的只计数，`truncated` 为真）。
+pub const KNOWN_ENTRIES: usize = 5_000;
 
 /// 被中断时的错误文本（[run] 返回 `Ok`、`verdict = "cancelled"`；只有内部各步之间用它传）。
 pub const CANCELLED: &str = "gen4 dry run: cancelled";
@@ -457,7 +468,7 @@ fn profile_run(
     let mut mark = |what: &str| {
         peaks.insert(what.into(), json!(mb(peak_mem_mb().0)));
     };
-    let (diff, baseline, collided) = compare::against_protocol_3(
+    let (diff, baseline, collided, known) = compare::against_protocol_3(
         src,
         profile,
         t,
@@ -468,6 +479,7 @@ fn profile_run(
     mark("parity");
     let failing = !diff.is_empty();
     out.insert("parity".into(), diff_json(&diff, opts));
+    out.insert("knownDifferences".into(), known_json(&known));
     // 协议 3 一侧的缓存基准拿不到：缓存层三类没比成，这个 profile 最多是 `incomplete`，不能报 `pass`。
     let incomplete = matches!(baseline, CacheBaseline::Unavailable(_));
     out.insert(
@@ -489,26 +501,32 @@ fn profile_run(
     opts.note("checks", Some(profile));
     opts.stop.check()?;
     let started = Instant::now();
-    let canon = Canon::load(t, col)?;
-    // 撞车的旧修改记录 ID 落在的笔记与它们的卡，按规范 ID 比的几类也不比（同 `compare::cache_pairs` 的口径）。
-    let mut skip = skip;
-    if !collided.notes.is_empty() {
-        skip.notes.extend(
-            collided
-                .notes
-                .iter()
-                .filter_map(|n| n.strip_prefix("note:"))
-                .map(str::to_owned),
-        );
+    let canon = CanonMap::load(t, col)?;
+    // 按规范 ID 比的几类，跳过的集合也按规范 ID：协议 3 自己欠着收尾的、撞车的旧修改记录 ID 落在的笔记（同
+    // `compare::cache_pairs` 的口径）、已知差异牵动的笔记与卡（单独报在 `knownDifferences`），连同这些笔记的卡。
+    let old_rows: Option<CacheRows> = baseline.rows().map(|r| canon.rows(r));
+    let mut skip = Skip {
+        notes: skip.notes.iter().map(|n| canon.text(n)).collect(),
+        cards: skip.cards.iter().map(|c| canon.text(c)).collect(),
+    };
+    skip.notes.extend(
+        collided
+            .notes
+            .iter()
+            .filter_map(|n| n.strip_prefix("note:"))
+            .map(|n| canon.text(n)),
+    );
+    skip.notes.extend(known.notes.iter().cloned());
+    skip.cards.extend(known.cards.iter().cloned());
+    if !skip.notes.is_empty() {
         let note_at = CARD_COLS
             .iter()
             .position(|c| c.0 == "note_id")
             .expect("listed column");
         let news: Vec<&str> = CARD_COLS.iter().map(|c| c.0).collect();
         let new_cards = rows_of(t.conn(), "cards", &news, "col = ?1", &col)?;
-        let cards: Vec<String> = baseline
-            .rows()
-            .into_iter()
+        let cards: Vec<String> = old_rows
+            .iter()
             .flat_map(|old| old.1.iter())
             .chain(&new_cards)
             .filter(|r| skip.notes.contains(&r[note_at]))
@@ -521,7 +539,7 @@ fn profile_run(
     let regs = registers(src, profile, t, col, &collided)?;
     mark("registerWinners");
     let mut canonical_diff = differences_of(regs);
-    match baseline.rows() {
+    match &old_rows {
         Some(old) => canonical_pairs(
             src,
             profile,
@@ -544,6 +562,7 @@ fn profile_run(
             &mut canonical_diff,
         )?,
     }
+    drop(old_rows);
     drop(baseline);
     mark("canonicalPairs");
     canonical_diff.sort_by_key(|d| d.0);
@@ -551,7 +570,7 @@ fn profile_run(
     out.insert("canonical".into(), diff_json(&canonical_diff, opts));
     out.insert(
         "canonicalCounts".into(),
-        canon.counts_json(src, profile, t, col)?,
+        canon_counts(&canon, src, profile, t, col)?,
     );
     mark("canonicalCounts");
     opts.stop.check()?;
@@ -635,6 +654,78 @@ fn diff_json(diff: &Diff, opts: &Options<'_>) -> Value {
             })
             .collect(),
     )
+}
+
+/// 按类判定的已知差异的报告形（模块文件头第 6 步）：总数、佐证得了 / 不了、按类别（实体种类 + 键名的头一段，如
+/// `notetype css`、`note f`、`card newPos`）分的数、牵动的缓存行，与逐条的佐证（只有 ID、写入者名与 seq）。
+fn known_json(k: &Known) -> Value {
+    let mut by: BTreeMap<String, [u64; 3]> = BTreeMap::new();
+    let mut entries = Vec::new();
+    for d in &k.diffs.diffs {
+        let head = d.key.split('/').next().unwrap_or(&d.key);
+        let c = by.entry(format!("{} {head}", d.kind.wire())).or_default();
+        c[0] += 1;
+        if d.proven {
+            c[1] += 1;
+        }
+        if d.winner_changed {
+            c[2] += 1;
+        }
+        if entries.len() >= KNOWN_ENTRIES {
+            continue;
+        }
+        let dominated: Vec<Value> = d
+            .dominated
+            .iter()
+            .map(|x| {
+                let evidence = match &x.evidence {
+                    DiffEvidence::Copy { name } => json!({"copy": name}),
+                    DiffEvidence::Overlap { name, lo, hi } => {
+                        json!({"overlap": {"name": name, "lo": lo, "hi": hi}})
+                    }
+                    DiffEvidence::None => json!("none"),
+                };
+                json!({
+                    "op": compare::op_text(&x.op),
+                    "writer": x.writer,
+                    "seq": x.seq,
+                    "canonicalWriter": x.canonical_writer,
+                    "evidence": evidence,
+                })
+            })
+            .collect();
+        entries.push(json!({
+            "kind": d.kind.wire(),
+            "entity": d.entity.text(),
+            "key": d.key,
+            "rawConflict": d.raw_conflict,
+            "classConflict": d.class_conflict,
+            "winnerChanged": d.winner_changed,
+            "proven": d.proven,
+            "dominated": dominated,
+            "revived": d.revived.iter().map(compare::op_text).collect::<Vec<_>>(),
+        }));
+    }
+    let total = k.diffs.diffs.len();
+    let unproven = k.diffs.unproven().count();
+    json!({
+        "examined": k.diffs.examined,
+        "mergedRegisters": k.diffs.merged,
+        "mergedRegistersInConflict": k.diffs.merged_conflicts,
+        "total": total,
+        "proven": total - unproven,
+        "unproven": unproven,
+        "byCategory": by
+            .into_iter()
+            .map(|(c, [n, p, w])| (c, json!({"total": n, "proven": p, "winnerChanged": w})))
+            .collect::<Map<String, Value>>(),
+        "cacheNotesAside": k.notes.len(),
+        "cacheCardsAside": k.cards.len(),
+        "cacheRowsAside": k.rows,
+        "cacheRowsAsideDiffer": k.rows_differ,
+        "entries": entries,
+        "truncated": total > KNOWN_ENTRIES,
+    })
 }
 
 fn ident(what: &str, s: &str) -> String {
@@ -1003,95 +1094,59 @@ fn registers(
 
 // ---------------------------------------------------------------- 规范 ID
 
-/// 别名表的非恒等部分（出现过的 ID → 规范 ID）。
-struct Canon {
-    map: HashMap<[u8; 16], [u8; 16]>,
+/// 各种规范类的大小：规范卡 / 规范日志各有多少、其中吃进不止一个出现过的 ID 的有多少（§5.3 的基线：2,856 / 47,228）。
+fn canon_counts(
+    canon: &CanonMap,
+    src: &Connection,
+    profile: &str,
+    t: &Truth<'_>,
+    col: i64,
+) -> Result<Value, String> {
+    let classes = |ids: &[Ref]| -> (usize, usize, usize) {
+        let mut by: BTreeMap<Ref, usize> = BTreeMap::new();
+        for id in ids {
+            *by.entry(canon.of(id)).or_default() += 1;
+        }
+        (ids.len(), by.len(), by.values().filter(|n| **n > 1).count())
+    };
+    let refs = |c: &Connection, q: &str, p: &dyn rusqlite::ToSql| -> Result<Vec<Ref>, String> {
+        c.prepare(q)
+            .map_err(sql)?
+            .query_map([p], |r| r.get::<_, Ref>(0))
+            .map_err(sql)?
+            .collect::<Result<_, _>>()
+            .map_err(sql)
+    };
+    let new_cards = refs(
+        t.conn(),
+        "SELECT DISTINCT card FROM log_ix WHERE col = ?1",
+        &col,
+    )?;
+    let new_logs = refs(
+        t.conn(),
+        "SELECT DISTINCT id FROM log_ix WHERE col = ?1",
+        &col,
+    )?;
+    let old_cards = refs(
+        src,
+        "SELECT DISTINCT card_id FROM srs_review_logs WHERE profile_uid = srs_id(?1)",
+        &profile,
+    )?;
+    let old_logs = refs(
+        src,
+        "SELECT id FROM srs_review_logs WHERE profile_uid = srs_id(?1)",
+        &profile,
+    )?;
+    let row = |(n, classes, merged): (usize, usize, usize)| json!({"ids": n, "classes": classes, "merged": merged});
+    Ok(json!({
+        "cardsWithLogsNew": row(classes(&new_cards)),
+        "cardsWithLogsOld": row(classes(&old_cards)),
+        "logsNew": row(classes(&new_logs)),
+        "logsOld": row(classes(&old_logs)),
+    }))
 }
 
-impl Canon {
-    fn load(t: &Truth<'_>, col: i64) -> Result<Canon, String> {
-        let mut map = HashMap::new();
-        let mut stmt = t
-            .conn()
-            .prepare("SELECT id, canon FROM alias_ix WHERE col = ?1 AND canon != id")
-            .map_err(sql)?;
-        let rows = stmt
-            .query_map([col], |r| {
-                Ok((r.get::<_, [u8; 16]>(0)?, r.get::<_, [u8; 16]>(1)?))
-            })
-            .map_err(sql)?;
-        for row in rows {
-            let (id, canon) = row.map_err(sql)?;
-            map.insert(id, canon);
-        }
-        Ok(Canon { map })
-    }
-
-    fn of(&self, r: &Ref) -> Ref {
-        match r {
-            Ref::Uuid(b) => Ref::Uuid(*self.map.get(b).unwrap_or(b)),
-            Ref::Text(_) => r.clone(),
-        }
-    }
-
-    fn text(&self, s: &str) -> String {
-        self.of(&Ref::of(&Key::of(s))).text()
-    }
-
-    /// 各种规范类的大小：规范卡 / 规范日志各有多少、其中吃进不止一个出现过的 ID 的有多少（§5.3 的基线：2,856 / 47,228）。
-    fn counts_json(
-        &self,
-        src: &Connection,
-        profile: &str,
-        t: &Truth<'_>,
-        col: i64,
-    ) -> Result<Value, String> {
-        let classes = |ids: &[Ref]| -> (usize, usize, usize) {
-            let mut by: BTreeMap<Ref, usize> = BTreeMap::new();
-            for id in ids {
-                *by.entry(self.of(id)).or_default() += 1;
-            }
-            (ids.len(), by.len(), by.values().filter(|n| **n > 1).count())
-        };
-        let refs = |c: &Connection, q: &str, p: &dyn rusqlite::ToSql| -> Result<Vec<Ref>, String> {
-            c.prepare(q)
-                .map_err(sql)?
-                .query_map([p], |r| r.get::<_, Ref>(0))
-                .map_err(sql)?
-                .collect::<Result<_, _>>()
-                .map_err(sql)
-        };
-        let new_cards = refs(
-            t.conn(),
-            "SELECT DISTINCT card FROM log_ix WHERE col = ?1",
-            &col,
-        )?;
-        let new_logs = refs(
-            t.conn(),
-            "SELECT DISTINCT id FROM log_ix WHERE col = ?1",
-            &col,
-        )?;
-        let old_cards = refs(
-            src,
-            "SELECT DISTINCT card_id FROM srs_review_logs WHERE profile_uid = srs_id(?1)",
-            &profile,
-        )?;
-        let old_logs = refs(
-            src,
-            "SELECT id FROM srs_review_logs WHERE profile_uid = srs_id(?1)",
-            &profile,
-        )?;
-        let row = |(n, classes, merged): (usize, usize, usize)| json!({"ids": n, "classes": classes, "merged": merged});
-        Ok(json!({
-            "cardsWithLogsNew": row(classes(&new_cards)),
-            "cardsWithLogsOld": row(classes(&old_cards)),
-            "logsNew": row(classes(&new_logs)),
-            "logsOld": row(classes(&old_logs)),
-        }))
-    }
-}
-
-/// 按规范 ID 的三类（§6.1 第 5 步）：
+/// 按规范 ID 的三类（§6.1 第 5 步；[old] 是协议 3 一侧已改写成规范 ID 的缓存行，[skip] 也是规范 ID）：
 /// - `canonicalCards`：每张规范卡的调度状态（队列、到期、稳定度、难度、复习 / 遗忘次数）——同一张规范卡在一侧有几行
 ///   就有几条，两侧的多重集合要相同；
 /// - `canonicalLogs`：每张规范卡（含不在缓存里的历史血统卡）名下的规范日志 ID 集合（日志表全集，未去重前的口径）；
@@ -1101,7 +1156,7 @@ fn canonical_pairs(
     profile: &str,
     t: &Truth<'_>,
     col: i64,
-    canon: &Canon,
+    canon: &CanonMap,
     skip: &Skip,
     old: &CacheRows,
     diff: &mut Diff,
@@ -1128,7 +1183,8 @@ fn canonical_pairs(
                 continue;
             }
             let state: Vec<&str> = state_cols.iter().map(|c| r[card_at(c)].as_str()).collect();
-            *n.entry(format!("{} | {}", canon.text(&r[0]), state.join(" | ")))
+            // 两侧的行都已是规范 ID（新代按规范 ID 物化，协议 3 一侧由调用方改写过）。
+            *n.entry(format!("{} | {}", r[0], state.join(" | ")))
                 .or_default() += 1;
         }
         n.into_iter().map(|(k, c)| format!("{k} | x{c}")).collect()
@@ -1468,7 +1524,7 @@ fn unverified_logs(
     src: &Connection,
     t: &Truth<'_>,
     col: i64,
-    canon: &Canon,
+    canon: &CanonMap,
 ) -> Result<Value, String> {
     let ids: Vec<Ref> = t
         .conn()
@@ -2467,7 +2523,7 @@ mod tests {
         if kept.exists() {
             let probe = crate::gen4_ids::probe::alias_table_sources(&c);
             let n = Connection::open_with_flags(&kept, OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
-            let mut ours: HashMap<[u8; 16], i64> = HashMap::new();
+            let mut ours: std::collections::HashMap<[u8; 16], i64> = std::collections::HashMap::new();
             let mut stmt = n.prepare("SELECT id, how FROM alias_ix").unwrap();
             for row in stmt
                 .query_map([], |r| Ok((r.get::<_, Vec<u8>>(0)?, r.get::<_, i64>(1)?)))

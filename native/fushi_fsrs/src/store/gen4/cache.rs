@@ -603,10 +603,14 @@ impl<'t, 'c> Index<'t, 'c> {
             let mut stmt = self
                 .t
                 .conn()
-                .prepare_cached("SELECT k, at, card FROM log_ix WHERE col = ?1 AND id = ?2 AND win = 1")
+                .prepare_cached(
+                    "SELECT k, at, card FROM log_ix WHERE col = ?1 AND id = ?2 AND win = 1",
+                )
                 .map_err(sql)?;
             let rows: Vec<(i64, i64, Ref)> = stmt
-                .query_map(params![self.col, id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+                .query_map(params![self.col, id], |r| {
+                    Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+                })
                 .map_err(sql)?
                 .collect::<Result<_, _>>()
                 .map_err(sql)?;
@@ -874,7 +878,9 @@ impl<'t, 'c> Index<'t, 'c> {
                     let mut stmt = self
                         .t
                         .conn()
-                        .prepare_cached("SELECT DISTINCT card FROM log_ix WHERE col = ?1 AND id = ?2")
+                        .prepare_cached(
+                            "SELECT DISTINCT card FROM log_ix WHERE col = ?1 AND id = ?2",
+                        )
                         .map_err(sql)?;
                     let rows = stmt
                         .query_map(params![self.col, id], |r| r.get::<_, Ref>(0))
@@ -890,7 +896,9 @@ impl<'t, 'c> Index<'t, 'c> {
                     let mut stmt = self
                         .t
                         .conn()
-                        .prepare_cached("SELECT DISTINCT id, at FROM log_ix WHERE col = ?1 AND card = ?2")
+                        .prepare_cached(
+                            "SELECT DISTINCT id, at FROM log_ix WHERE col = ?1 AND card = ?2",
+                        )
                         .map_err(sql)?;
                     let rows = stmt
                         .query_map(params![self.col, m], |r| Ok((r.get(0)?, r.get(1)?)))

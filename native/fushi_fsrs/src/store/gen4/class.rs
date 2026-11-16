@@ -610,7 +610,9 @@ impl<'t, 'c> Index<'t, 'c> {
         let mut stmt = self
             .t
             .conn()
-            .prepare_cached("SELECT key, k, state FROM reg_ix WHERE col = ?1 AND ekind = ?2 AND ent = ?3")
+            .prepare_cached(
+                "SELECT key, k, state FROM reg_ix WHERE col = ?1 AND ekind = ?2 AND ent = ?3",
+            )
             .map_err(sql)?;
         let rows = stmt
             .query_map(params![self.col, kind as i64, member], |r| {
@@ -646,7 +648,9 @@ impl<'t, 'c> Index<'t, 'c> {
             let mut stmt = self
                 .t
                 .conn()
-                .prepare_cached("SELECT DISTINCT canon FROM alias_ix WHERE col = ?1 AND canon != id")
+                .prepare_cached(
+                    "SELECT DISTINCT canon FROM alias_ix WHERE col = ?1 AND canon != id",
+                )
                 .map_err(sql)?;
             let rows = stmt.query_map([self.col], |r| r.get(0)).map_err(sql)?;
             rows.collect::<Result<_, _>>().map_err(sql)?
@@ -696,10 +700,12 @@ impl<'t, 'c> Index<'t, 'c> {
                 for (key, k, state) in self.member_registers(ek, &m)? {
                     let text = read_edit_key(&mut Reader::new(&key))
                         .map_err(|e| format!("gen4 index: bad register key: {e}"))?;
-                    groups
-                        .entry(self.canonical_key(&text)?)
-                        .or_default()
-                        .push((m.clone(), key, k, state));
+                    groups.entry(self.canonical_key(&text)?).or_default().push((
+                        m.clone(),
+                        key,
+                        k,
+                        state,
+                    ));
                 }
             }
             for (key, items) in groups {
@@ -753,7 +759,9 @@ impl<'t, 'c> Index<'t, 'c> {
                     .find(|(_, w)| **w >= R_WINNER)
                     .map(|(r, _)| r.0);
                 let winner_changed = match (raw_winner, class_winner) {
-                    (Some(a), Some(b)) => self.winner_value(a, &key)? != self.winner_value(b, &key)?,
+                    (Some(a), Some(b)) => {
+                        self.winner_value(a, &key)? != self.winner_value(b, &key)?
+                    }
                     (a, b) => a.is_some() != b.is_some(),
                 };
                 let proven = revived.is_empty()
@@ -784,7 +792,6 @@ impl<'t, 'c> Index<'t, 'c> {
         let parsed: Value = serde_json::from_str(&raw).unwrap_or(Value::Null);
         self.canonical_value(key, &parsed)
     }
-
 
     /// 一条按类判被支配的写入与它的佐证（[Index::class_differences]）。
     fn dominated(
@@ -859,7 +866,11 @@ impl<'t, 'c> Index<'t, 'c> {
         for d in self.t.devices(self.col)? {
             self.t.for_each(self.col, &d.id, 1, |e| {
                 if let Some(Body4::Edit(ed)) = body_of(&e) {
-                    if let Some(s) = ed.stamp.as_ref().filter(|s| names.contains(s.writer.as_str())) {
+                    if let Some(s) = ed
+                        .stamp
+                        .as_ref()
+                        .filter(|s| names.contains(s.writer.as_str()))
+                    {
                         let at = out
                             .entry(s.writer.clone())
                             .or_default()
