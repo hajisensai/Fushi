@@ -74,9 +74,17 @@ fn digit_value(c: char) -> Option<u8> {
 
 /// 自然序比较（出处的集名：`第2話` < `第10話`、`E9` < `E10`）：不分大小写（[dart_lower]），连续数字（含全角）按数值比，
 /// 其余字符按 UTF-16 码元比；数值相同只差前导零 / 大小写 / 全半角时退回原文的 [cmp16]，保证全序。
+///
+/// 全角数字先折成 ASCII 再比：否则「数字段 vs 非数字字符」时全角（U+FF10～）与半角（0x30～）落在汉字 / 假名的两侧，
+/// `第１話 < 第2話 < 第三話 < 第１話` 成环，`sort_by` 的结果就没有定义。折完所有数字段都在同一码元区间，
+/// 「数字段」整体相对任一非数字字符的位置固定，比较是 token 序列上的字典序，满足全序。
 fn cmp_natural(a: &str, b: &str) -> Ordering {
+    let fold = |c: char| digit_value(c).map_or(c, |d| char::from(b'0' + d));
     let (la, lb) = (dart_lower(a), dart_lower(b));
-    let (xs, ys): (Vec<char>, Vec<char>) = (la.chars().collect(), lb.chars().collect());
+    let (xs, ys): (Vec<char>, Vec<char>) = (
+        la.chars().map(fold).collect(),
+        lb.chars().map(fold).collect(),
+    );
     let (mut i, mut j) = (0, 0);
     while i < xs.len() && j < ys.len() {
         if digit_value(xs[i]).is_some() && digit_value(ys[j]).is_some() {
@@ -4071,6 +4079,67 @@ mod tests {
             ]
         );
         assert_eq!(cmp_natural("第2話", "第2話"), Ordering::Equal);
+    }
+
+    /// 全角 / 半角 / 汉字数字混用的集名：比较必须是全序（曾经 `第１話 < 第2話 < 第三話 < 第１話` 成环，
+    /// 全角数字 U+FF10～ 与 ASCII 数字分处汉字两侧），排序结果与输入顺序无关。
+    #[test]
+    fn cmp_natural_is_total_order_across_fullwidth_digits() {
+        assert_eq!(cmp_natural("第１話", "第2話"), Ordering::Less);
+        assert_eq!(cmp_natural("第2話", "第三話"), Ordering::Less);
+        assert_eq!(cmp_natural("第１話", "第三話"), Ordering::Less);
+
+        let names = [
+            "第１話",
+            "第2話",
+            "第三話",
+            "第１０話",
+            "第10話",
+            "第01話",
+            "第一話",
+            "第９話",
+            "第a話",
+            "第 話",
+            "第話",
+            "１",
+            "1",
+            "三",
+            "",
+            "Ｅ１",
+            "E2",
+            "ｅ３",
+            "第2話 後編",
+            "第２話",
+        ];
+        for a in &names {
+            assert_eq!(cmp_natural(a, a), Ordering::Equal, "{a}");
+            for b in &names {
+                assert_eq!(cmp_natural(a, b), cmp_natural(b, a).reverse(), "{a} {b}");
+                for c in &names {
+                    if cmp_natural(a, b) != Ordering::Greater
+                        && cmp_natural(b, c) != Ordering::Greater
+                    {
+                        assert_ne!(cmp_natural(a, c), Ordering::Greater, "{a} <= {b} <= {c}");
+                    }
+                }
+            }
+        }
+
+        // 不同起始顺序排出来完全一样（全序 + 只有逐字相同才 Equal）。
+        let mut forward: Vec<&str> = names.to_vec();
+        forward.sort_by(|a, b| cmp_natural(a, b));
+        for rot in 0..names.len() {
+            let mut v: Vec<&str> = names.to_vec();
+            v.rotate_left(rot);
+            if rot % 2 == 1 {
+                v.reverse();
+            }
+            v.sort_by(|a, b| cmp_natural(a, b));
+            assert_eq!(v, forward);
+        }
+        let ep = |s: &str| forward.iter().position(|x| *x == s).unwrap();
+        assert!(ep("第１話") < ep("第2話") && ep("第2話") < ep("第１０話"));
+        assert!(ep("第１０話") < ep("第三話"));
     }
 
     /// 系列里各集的顺序（拍板台 uoEPa_RC89 方案 A）：出处视图的 `children` 与按出处列排序都按集标题自然序
