@@ -29,7 +29,7 @@ import 'package:fushi/src/pages/implementations/music/music_plugin_settings.dart
 import 'package:fushi/src/pages/implementations/music/music_plugin_pages.dart'
     show openMusicPluginManagement;
 import 'package:fushi/src/pages/implementations/music/music_server_pages.dart';
-import 'package:fushi/src/pages/implementations/music/music_track_selection.dart'
+import 'package:fushi/src/pages/implementations/music/music_track_list.dart'
     show MusicHiddenTracksPage;
 import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_schema_services.dart'

@@ -1,53 +1,14 @@
-/// 曲目列表的多选与「从音乐库移除」（拍板台 IDeN5PYaI7，反馈 IDeN5PYaI7）。
-///
-/// - 批量动作（[MusicTrackSelectionBar]）：接着播 / 加入队列 / 加入本地歌单 / 从这个歌单
-///   移除（歌单页）/ 从音乐库移除；
-/// - 从音乐库移除：本地曲目写墓碑（`music_tracks.hidden_at`，schema v158）只从曲库隐藏、
-///   **不碰磁盘文件**，重扫不复活；在库的远程曲目清入库时刻（原有语义）。移除与从歌单
-///   批量移除都带「撤销」；本地曲目事后还能在「已移除的曲目」页恢复
-///   （[MusicHiddenTracksPage]）。
-library;
+// 曲目列表的多选与「从音乐库移除」（拍板台 IDeN5PYaI7，反馈 IDeN5PYaI7）。
+//
+// - 批量动作（[MusicTrackSelectionBar]）：接着播 / 加入队列 / 加入本地歌单 / 从这个歌单
+//   移除（歌单页）/ 从音乐库移除；
+// - 从音乐库移除：本地曲目写墓碑（`music_tracks.hidden_at`，schema v158）只从曲库隐藏、
+//   **不碰磁盘文件**，重扫不复活；在库的远程曲目清入库时刻（原有语义）。移除与从歌单
+//   批量移除都带「撤销」；本地曲目事后还能在「已移除的曲目」页恢复
+//   （[MusicHiddenTracksPage]）。
+part of 'music_track_list.dart';
 
-import 'dart:async';
-
-import 'package:drift/drift.dart' show Value;
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:fushi_core/fushi_core.dart';
-import 'package:material_ui/material_ui.dart';
-
-import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/media/music/music_library_data.dart';
-import 'package:fushi/src/media/music/music_output_backend.dart';
-import 'package:fushi/src/media/music/music_player_engine.dart';
-import 'package:fushi/src/media/music/music_remote_tracks.dart';
-import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/pages/implementations/music/music_local_playlist_actions.dart';
-import 'package:fushi/src/pages/implementations/music/music_server_pages.dart'
-    show musicBrowsePagePadding, musicBrowseScaffold;
-import 'package:fushi/src/pages/implementations/music/music_track_actions.dart';
-import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
-import 'package:fushi/src/utils/components/fushi_bottom_action_bar.dart';
-import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
-import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
-    show FushiChromeReveal, FushiToolbarItem;
-import 'package:fushi/src/utils/components/fushi_material_components.dart';
-import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
-import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
-import 'package:fushi/src/utils/components/fushi_press_scale.dart';
-import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
-import 'package:fushi/src/utils/components/fushi_typography.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart'
-    show FushiSnackBar;
-import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
-import 'package:fushi/src/utils/components/shelf_card_widgets.dart'
-    show ShelfSelectionCheck;
-import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/src/utils/misc/fushi_toast.dart';
-
-int _now() => DateTime.now().millisecondsSinceEpoch;
+int _selectionNow() => DateTime.now().millisecondsSinceEpoch;
 
 /// 完成提示 + 「撤销」：有 [messenger] 时走 SnackBar（带撤销钮），没有（独立弹窗等）退回
 /// 普通 toast（撤销不可达，本地曲目仍可在「已移除的曲目」页恢复）。
@@ -109,7 +70,7 @@ Future<int> musicRemoveEntriesFromLibrary(
       musicLibraryRemovable(entries);
   final int count = targets.local.length + targets.remote.length;
   if (count == 0) return 0;
-  final int at = _now();
+  final int at = _selectionNow();
   await db.hideMusicTracks(targets.local, at: at);
   for (final MusicRemoteTrackRow r in targets.remote) {
     await db.removeMusicRemoteTrackFromLibrary(r.trackUid, at: at);
@@ -126,7 +87,7 @@ Future<int> musicRemoveEntriesFromLibrary(
           musicRemoteTrackCompanionOfRow(
             r,
           ).copyWith(libraryAddedAt: Value<int?>(r.libraryAddedAt)),
-          at: _now(),
+          at: _selectionNow(),
         );
       }
     },
@@ -143,7 +104,11 @@ Future<int> musicRemoveEntriesFromPlaylist(
 ) async {
   final ScaffoldMessengerState? messenger = ScaffoldMessenger.maybeOf(context);
   final List<MusicPlaylistEntryRow> removed = await db
-      .removeMusicPlaylistEntries(playlist.playlistUid, entryIds, at: _now());
+      .removeMusicPlaylistEntries(
+        playlist.playlistUid,
+        entryIds,
+        at: _selectionNow(),
+      );
   if (removed.isEmpty) return 0;
   musicShowUndoableNotice(
     messenger,
@@ -156,7 +121,7 @@ Future<int> musicRemoveEntriesFromPlaylist(
     () => db.restoreMusicPlaylistEntries(
       playlist.playlistUid,
       removed,
-      at: _now(),
+      at: _selectionNow(),
     ),
   );
   return removed.length;

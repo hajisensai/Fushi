@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:drift/drift.dart' show Value;
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
@@ -20,16 +21,23 @@ import 'package:fushi/src/pages/implementations/music/music_detail_chrome.dart'
     show MusicDetailHero, musicDetailHeroGap;
 import 'package:fushi/src/pages/implementations/music/music_local_playlist_actions.dart';
 import 'package:fushi/src/pages/implementations/music/music_server_pages.dart'
-    show musicBrowseScaffold;
+    show musicBrowsePagePadding, musicBrowseScaffold;
 import 'package:fushi/src/pages/implementations/music/music_track_actions.dart';
 import 'package:fushi/src/pages/implementations/music/music_track_detail_page.dart';
 import 'package:fushi/src/pages/implementations/music/music_track_row_surface.dart';
-import 'package:fushi/src/pages/implementations/music/music_track_selection.dart';
 import 'package:fushi/src/pages/implementations/music/music_collection_view.dart';
 import 'package:fushi/src/utils/components/fushi_cover_block.dart'
     show FushiCoverBlockSize;
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
-    show FushiToolbarItem;
+    show FushiChromeReveal, FushiToolbarItem;
+import 'package:fushi/src/utils/components/fushi_bottom_action_bar.dart';
+import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart'
+    show FushiSnackBar;
+import 'package:fushi/src/utils/components/shelf_card_widgets.dart'
+    show ShelfSelectionCheck;
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_reorderable_column.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -47,6 +55,8 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
+
+part 'music_track_selection.part.dart';
 
 /// `mm:ss`。
 String formatMusicDuration(int? ms) {

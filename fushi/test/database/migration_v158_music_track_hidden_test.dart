@@ -94,24 +94,22 @@ void main() {
       expect((await db.getMusicTrack('t2'))!.title, 'retagged');
     });
 
-    test('路径换了拼法（新 uid、同一个文件）重扫：沿用墓碑行，仍不复活', () async {
+    test('同一个文件换了 uid（旧版本扫出的拼法）重扫：沿用墓碑行，仍不复活', () async {
       await db.writeMusicScanBatch(_batch(<String>['t1']));
       await db.hideMusicTracks(<String>['t1'], at: 7);
       final Map<String, String> remap = await db.writeMusicScanBatch(
         MusicScanBatchWrite(
           tracks: <MusicTracksCompanion>[
-            _track('t1-new', path: '/music/T1.flac'),
+            _track('t1-new', path: '/music/t1.flac'),
           ],
           albums: const <MusicAlbumsCompanion>[],
           artists: const <MusicArtistsCompanion>[],
           credits: const <MusicTrackCreditsCompanion>[],
         ),
       );
-      if (Platform.isWindows) {
-        // Windows 路径键不分大小写：认成库里已有的同一个文件。
-        expect(remap['t1-new'], 't1');
-        expect(await live(), isEmpty);
-      }
+      expect(remap['t1-new'], 't1', reason: '按路径键认出库里已有的同一个文件');
+      expect(await live(), isEmpty);
+      expect(await db.getMusicTrack('t1-new'), isNull);
       expect((await db.getMusicTrack('t1'))!.hiddenAt, 7);
     });
 
