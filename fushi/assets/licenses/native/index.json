@@ -19,6 +19,8 @@
     "native/fushi_p2p/Cargo.toml": "4c1cd272cf7d1ebbaa774a8cf9f17ae771bd6f36d2607fb3a4590447178d68a2",
     "native/fushi_rwkv/Cargo.lock": "ce1a9dad3dbd707abb5adaeb9ca69dbc0cc6825cc4af7e881ca95f973fd2eccf",
     "native/fushi_rwkv/Cargo.toml": "2f4eb7dc01e229ed72a89b78c754135a524da33726e04e6ef6d1767df5d1f46d",
+    "native/fushi_shell_thumbs/Cargo.lock": "8ad693ab716b9423318e8770e1cf757eb734e67b52f8f81681d77520142df231",
+    "native/fushi_shell_thumbs/Cargo.toml": "bc9c57624bad33923c307e9f8f77c637bea60109c1ef258711f0fee6f6b042f6",
     "native/fushi_web_core/Cargo.lock": "e30d43026fc6eb9659c25154abe52a012c4123a61a03263c1ba43c66d0d46064",
     "native/fushi_web_core/Cargo.toml": "11bf7cda189fe407215e05eb37e4b45fc0170af900ee58cfd5d433680c980447",
     "native/fushidicts/fushidicts_external/glaze/LICENSE": "5d49e66411a0807a7c8d6b911b9a26b59e940c71aebe561a3ad8b0b80ac4b7b6",
@@ -4305,6 +4307,7 @@
         "fushi_compute",
         "fushi_ios_umbrella",
         "fushi_music",
+        "fushi_shell_thumbs",
         "fushi_web_core"
       ],
       "textSource": "package",
@@ -4876,6 +4879,7 @@
         "fushi_fsrs",
         "fushi_ios_umbrella",
         "fushi_p2p",
+        "fushi_shell_thumbs",
         "fushi_web_core"
       ],
       "textSource": "package",
@@ -5062,6 +5066,19 @@
       ]
     },
     {
+      "name": "bumpalo",
+      "version": "3.20.4",
+      "license": "MIT OR Apache-2.0",
+      "origin": [
+        "fushi_shell_thumbs"
+      ],
+      "textSource": "package",
+      "texts": [
+        "143368af9701a24e.txt",
+        "65f94e99ddaf4f5d.txt"
+      ]
+    },
+    {
       "name": "byte-slice-cast",
       "version": "1.2.3",
       "license": "MIT",
@@ -5082,6 +5099,7 @@
         "fushi_compute",
         "fushi_fsrs",
         "fushi_ios_umbrella",
+        "fushi_shell_thumbs",
         "fushi_web_core"
       ],
       "textSource": "package",
@@ -5114,6 +5132,7 @@
       "origin": [
         "fushi_compute",
         "fushi_ios_umbrella",
+        "fushi_shell_thumbs",
         "fushi_web_core"
       ],
       "textSource": "package",
@@ -5206,6 +5225,7 @@
         "fushi_music",
         "fushi_p2p",
         "fushi_rwkv",
+        "fushi_shell_thumbs",
         "fushi_web_core"
       ],
       "textSource": "package",
@@ -5347,6 +5367,7 @@
       "origin": [
         "fushi_compute",
         "fushi_ios_umbrella",
+        "fushi_shell_thumbs",
         "fushi_web_core"
       ],
       "textSource": "package",
@@ -5620,6 +5641,19 @@
       ]
     },
     {
+      "name": "crc32fast",
+      "version": "1.5.5",
+      "license": "MIT OR Apache-2.0",
+      "origin": [
+        "fushi_shell_thumbs"
+      ],
+      "textSource": "package",
+      "texts": [
+        "a8ad31b1c3f40dca.txt",
+        "61d383b05b87d78f.txt"
+      ]
+    },
+    {
       "name": "crossbeam-channel",
       "version": "0.5.17",
       "license": "MIT OR Apache-2.0",
@@ -5674,7 +5708,8 @@
         "fushi_fsrs",
         "fushi_ios_umbrella",
         "fushi_music",
-        "fushi_rwkv"
+        "fushi_rwkv",
+        "fushi_shell_thumbs"
       ],
       "textSource": "package",
       "texts": [
@@ -6453,7 +6488,8 @@
       "license": "Apache-2.0 OR MIT",
       "origin": [
         "fushi_fsrs",
-        "fushi_music"
+        "fushi_music",
+        "fushi_shell_thumbs"
       ],
       "textSource": "package",
       "texts": [
@@ -6583,7 +6619,8 @@
       "license": "MIT",
       "origin": [
         "fushi_compute",
-        "fushi_ios_umbrella"
+        "fushi_ios_umbrella",
+        "fushi_shell_thumbs"
       ],
       "textSource": "package",
       "texts": [
@@ -6597,6 +6634,7 @@
       "origin": [
         "fushi_compute",
         "fushi_ios_umbrella",
+        "fushi_shell_thumbs",
         "fushi_web_core"
       ],
       "textSource": "package",
@@ -6731,6 +6769,19 @@
         "fushi_ios_umbrella",
         "fushi_music",
         "fushi_web_core"
+      ],
+      "textSource": "package",
+      "texts": [
+        "143368af9701a24e.txt",
+        "025436edff4cfcdd.txt"
+      ]
+    },
+    {
+      "name": "flate2",
+      "version": "1.1.11",
+      "license": "MIT OR Apache-2.0",
+      "origin": [
+        "fushi_shell_thumbs"
       ],
       "textSource": "package",
       "texts": [
@@ -7291,6 +7342,7 @@
       "origin": [
         "fushi_compute",
         "fushi_ios_umbrella",
+        "fushi_shell_thumbs",
         "fushi_web_core"
       ],
       "textSource": "package",
@@ -7504,7 +7556,8 @@
       "origin": [
         "fushi_compute",
         "fushi_ios_umbrella",
-        "fushi_rwkv"
+        "fushi_rwkv",
+        "fushi_shell_thumbs"
       ],
       "textSource": "package",
       "texts": [
@@ -7588,7 +7641,8 @@
         "fushi_fsrs",
         "fushi_ios_umbrella",
         "fushi_music",
-        "fushi_p2p"
+        "fushi_p2p",
+        "fushi_shell_thumbs"
       ],
       "textSource": "package",
       "texts": [
@@ -8174,6 +8228,7 @@
       "origin": [
         "fushi_compute",
         "fushi_ios_umbrella",
+        "fushi_shell_thumbs",
         "fushi_web_core"
       ],
       "textSource": "package",
@@ -8189,6 +8244,7 @@
       "origin": [
         "fushi_compute",
         "fushi_ios_umbrella",
+        "fushi_shell_thumbs",
         "fushi_web_core"
       ],
       "textSource": "package",
@@ -8206,7 +8262,8 @@
         "fushi_fsrs",
         "fushi_ios_umbrella",
         "fushi_music",
-        "fushi_p2p"
+        "fushi_p2p",
+        "fushi_shell_thumbs"
       ],
       "textSource": "package",
       "texts": [
@@ -9931,6 +9988,19 @@
       ]
     },
     {
+      "name": "log",
+      "version": "0.4.35",
+      "license": "MIT OR Apache-2.0",
+      "origin": [
+        "fushi_shell_thumbs"
+      ],
+      "textSource": "package",
+      "texts": [
+        "143368af9701a24e.txt",
+        "6485b8ed310d3f03.txt"
+      ]
+    },
+    {
       "name": "lru",
       "version": "0.18.5",
       "license": "MIT",
@@ -10169,6 +10239,7 @@
         "fushi_ios_umbrella",
         "fushi_music",
         "fushi_p2p",
+        "fushi_shell_thumbs",
         "fushi_web_core"
       ],
       "textSource": "package",
@@ -10242,6 +10313,7 @@
       "origin": [
         "fushi_compute",
         "fushi_ios_umbrella",
+        "fushi_shell_thumbs",
         "fushi_web_core"
       ],
       "textSource": "package",
@@ -10261,6 +10333,7 @@
         "fushi_compute",
         "fushi_ios_umbrella",
         "fushi_music",
+        "fushi_shell_thumbs",
         "fushi_web_core"
       ],
       "textSource": "package",
@@ -10292,6 +10365,7 @@
       "origin": [
         "fushi_compute",
         "fushi_ios_umbrella",
+        "fushi_shell_thumbs",
         "fushi_web_core"
       ],
       "textSource": "package",
@@ -10864,6 +10938,7 @@
         "fushi_ios_umbrella",
         "fushi_music",
         "fushi_p2p",
+        "fushi_shell_thumbs",
         "fushi_web_core"
       ],
       "textSource": "package",
@@ -11854,6 +11929,7 @@
       "origin": [
         "fushi_compute",
         "fushi_ios_umbrella",
+        "fushi_shell_thumbs",
         "fushi_web_core"
       ],
       "textSource": "package",
@@ -12108,6 +12184,7 @@
       "origin": [
         "fushi_compute",
         "fushi_ios_umbrella",
+        "fushi_shell_thumbs",
         "fushi_web_core"
       ],
       "textSource": "package",
@@ -12123,6 +12200,7 @@
       "origin": [
         "fushi_compute",
         "fushi_ios_umbrella",
+        "fushi_shell_thumbs",
         "fushi_web_core"
       ],
       "textSource": "package",
@@ -12138,7 +12216,8 @@
       "origin": [
         "fushi_ios_umbrella",
         "fushi_music",
-        "fushi_p2p"
+        "fushi_p2p",
+        "fushi_shell_thumbs"
       ],
       "textSource": "package",
       "texts": [
@@ -13384,6 +13463,7 @@
         "fushi_compute",
         "fushi_ios_umbrella",
         "fushi_music",
+        "fushi_shell_thumbs",
         "fushi_web_core"
       ],
       "textSource": "package",
@@ -14061,7 +14141,8 @@
       "license": "MIT",
       "origin": [
         "fushi_compute",
-        "fushi_ios_umbrella"
+        "fushi_ios_umbrella",
+        "fushi_shell_thumbs"
       ],
       "textSource": "package",
       "texts": [
@@ -14894,6 +14975,7 @@
       "origin": [
         "fushi_compute",
         "fushi_ios_umbrella",
+        "fushi_shell_thumbs",
         "fushi_web_core"
       ],
       "textSource": "package",
@@ -14973,7 +15055,8 @@
       "version": "0.62.2",
       "license": "MIT OR Apache-2.0",
       "origin": [
-        "fushi_p2p"
+        "fushi_p2p",
+        "fushi_shell_thumbs"
       ],
       "textSource": "package",
       "texts": [
@@ -15016,7 +15099,8 @@
       "version": "0.3.2",
       "license": "MIT OR Apache-2.0",
       "origin": [
-        "fushi_p2p"
+        "fushi_p2p",
+        "fushi_shell_thumbs"
       ],
       "textSource": "package",
       "texts": [
@@ -15043,7 +15127,8 @@
       "license": "MIT OR Apache-2.0",
       "origin": [
         "fushi_anki_sync",
-        "fushi_p2p"
+        "fushi_p2p",
+        "fushi_shell_thumbs"
       ],
       "textSource": "package",
       "texts": [
@@ -15069,7 +15154,8 @@
       "version": "0.3.2",
       "license": "MIT OR Apache-2.0",
       "origin": [
-        "fushi_p2p"
+        "fushi_p2p",
+        "fushi_shell_thumbs"
       ],
       "textSource": "package",
       "texts": [
@@ -15099,6 +15185,7 @@
         "fushi_compute",
         "fushi_music",
         "fushi_p2p",
+        "fushi_shell_thumbs",
         "fushi_web_core"
       ],
       "textSource": "package",
@@ -15125,7 +15212,8 @@
       "version": "0.3.1",
       "license": "MIT OR Apache-2.0",
       "origin": [
-        "fushi_p2p"
+        "fushi_p2p",
+        "fushi_shell_thumbs"
       ],
       "textSource": "package",
       "texts": [
@@ -15165,7 +15253,8 @@
       "license": "MIT OR Apache-2.0",
       "origin": [
         "fushi_anki_sync",
-        "fushi_p2p"
+        "fushi_p2p",
+        "fushi_shell_thumbs"
       ],
       "textSource": "package",
       "texts": [
@@ -15192,7 +15281,8 @@
       "license": "MIT OR Apache-2.0",
       "origin": [
         "fushi_anki_sync",
-        "fushi_p2p"
+        "fushi_p2p",
+        "fushi_shell_thumbs"
       ],
       "textSource": "package",
       "texts": [
@@ -15259,7 +15349,8 @@
       "version": "0.2.1",
       "license": "MIT OR Apache-2.0",
       "origin": [
-        "fushi_p2p"
+        "fushi_p2p",
+        "fushi_shell_thumbs"
       ],
       "textSource": "package",
       "texts": [
@@ -15511,7 +15602,8 @@
       "origin": [
         "fushi_compute",
         "fushi_fsrs",
-        "fushi_rwkv"
+        "fushi_rwkv",
+        "fushi_shell_thumbs"
       ],
       "textSource": "package",
       "texts": [
@@ -15631,7 +15723,8 @@
       "version": "2.6.1",
       "license": "MIT",
       "origin": [
-        "fushi_music"
+        "fushi_music",
+        "fushi_shell_thumbs"
       ],
       "textSource": "package",
       "texts": [
@@ -15710,6 +15803,7 @@
         "fushi_compute",
         "fushi_ios_umbrella",
         "fushi_music",
+        "fushi_shell_thumbs",
         "fushi_web_core"
       ],
       "textSource": "package",
@@ -15751,7 +15845,8 @@
       "version": "0.8.4",
       "license": "Apache-2.0",
       "origin": [
-        "fushi_music"
+        "fushi_music",
+        "fushi_shell_thumbs"
       ],
       "textSource": "package",
       "texts": [
@@ -15904,6 +15999,7 @@
       "origin": [
         "fushi_compute",
         "fushi_ios_umbrella",
+        "fushi_shell_thumbs",
         "fushi_web_core"
       ],
       "textSource": "package",
@@ -15920,6 +16016,7 @@
       "origin": [
         "fushi_compute",
         "fushi_ios_umbrella",
+        "fushi_shell_thumbs",
         "fushi_web_core"
       ],
       "textSource": "package",
