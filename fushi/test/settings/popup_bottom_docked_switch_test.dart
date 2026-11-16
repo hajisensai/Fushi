@@ -24,8 +24,8 @@ import 'package:fushi_core/fushi_core.dart';
 import '../helpers/fake_platform_services.dart';
 import '../helpers/test_platform_services.dart';
 
-/// TODO-108：底部固定弹窗开关的专项 widget 测试——验证 lookup 设置页确实渲染该开关、
-/// 默认 OFF，且切换后真写穿偏好（[AppModel.popupBottomDocked] → prefsRepo → DB）。
+/// TODO-108 / BUG-4713：底部停靠开关的专项 widget 测试——验证 lookup 设置页渲染
+/// 每个模块各一条独立开关 + 非模块宿主一条，默认 OFF，切换后真写穿偏好且互不牵连。
 /// 与 dictionary_popup_layer_test.dart 的纯函数测试互补（一个证开关、一个证位置算法）。
 FushiDatabase _testDb() {
   return FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
@@ -102,8 +102,14 @@ Widget _harness(FushiDatabase db, AppModel appModel) {
 }
 
 void main() {
+  Finder otherRow() => find.byWidgetPredicate(
+    (Widget w) =>
+        w is AdaptiveSettingsSwitchRow &&
+        w.title == t.popup_bottom_docked_other,
+  );
+
   testWidgets(
-    'lookup settings exposes a Bottom-docked popup switch (default OFF)',
+    'lookup settings exposes the non-module Bottom-docked switch (default OFF)',
     (WidgetTester tester) async {
       final FushiDatabase db = _testDb();
       addTearDown(db.close);
@@ -113,22 +119,16 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
 
       expect(appModel.popupBottomDocked, isFalse, reason: '默认跟随被查词位置（OFF）');
-
-      Finder rowFinder() => find.byWidgetPredicate(
-        (Widget w) =>
-            w is AdaptiveSettingsSwitchRow && w.title == t.popup_bottom_docked,
-      );
-
-      expect(rowFinder(), findsOneWidget, reason: 'lookup 设置页须渲染底部固定弹窗开关');
+      expect(otherRow(), findsOneWidget, reason: '查词页等非模块宿主的停靠开关须渲染');
       final AdaptiveSettingsSwitchRow row = tester
-          .widget<AdaptiveSettingsSwitchRow>(rowFinder());
+          .widget<AdaptiveSettingsSwitchRow>(otherRow());
       expect(row.value, isFalse, reason: '开关初始为 OFF');
       expect(row.icon, Icons.vertical_align_bottom_outlined);
     },
   );
 
   testWidgets(
-    'toggling the switch writes popup_bottom_docked through to prefs',
+    'toggling the non-module switch writes popup_bottom_docked through to prefs',
     (WidgetTester tester) async {
       final FushiDatabase db = _testDb();
       addTearDown(db.close);
@@ -137,27 +137,31 @@ void main() {
       await tester.pumpWidget(_harness(db, appModel));
       await tester.pump(const Duration(milliseconds: 100));
 
-      Finder rowFinder() => find.byWidgetPredicate(
-        (Widget w) =>
-            w is AdaptiveSettingsSwitchRow && w.title == t.popup_bottom_docked,
-      );
-
       // 切到 ON：onChanged 走 appModel.setPopupBottomDocked → prefsRepo → DB。
-      tester.widget<AdaptiveSettingsSwitchRow>(rowFinder()).onChanged!(true);
+      tester.widget<AdaptiveSettingsSwitchRow>(otherRow()).onChanged!(true);
       await tester.pump(const Duration(milliseconds: 50));
 
       expect(appModel.popupBottomDocked, isTrue, reason: '切 ON 后内存值翻转');
+      expect(appModel.popupBottomDockedFor(null), isTrue);
       final dynamic stored = await db.getPref('popup_bottom_docked');
       expect(stored, isNotNull, reason: 'ON 写穿到偏好 DB');
+      for (final ModuleId module
+          in PreferencesRepository.kPopupBottomDockedModules) {
+        expect(
+          appModel.popupBottomDockedFor(module),
+          isFalse,
+          reason: 'BUG-4713：它不再是各模块的总开关，$module 不被连带停靠',
+        );
+      }
 
       // 再切回 OFF：可逆，且写穿。
-      tester.widget<AdaptiveSettingsSwitchRow>(rowFinder()).onChanged!(false);
+      tester.widget<AdaptiveSettingsSwitchRow>(otherRow()).onChanged!(false);
       await tester.pump(const Duration(milliseconds: 50));
       expect(appModel.popupBottomDocked, isFalse, reason: '可切回 OFF');
     },
   );
 
-  // ---- 底部停靠按模块细分（小说 / 漫画 / 视频 / 游戏）----
+  // ---- 底部停靠按模块独立可选（小说 / 漫画 / 视频 / 游戏）----
 
   PlatformServices platformOf({required bool windows, required bool ios}) =>
       fakePlatformServices(
@@ -181,7 +185,8 @@ void main() {
   }
 
   testWidgets(
-    'module dock switches stay hidden while the master switch is OFF',
+    'module dock switches are always shown (default OFF) without any master '
+    'switch',
     (WidgetTester tester) async {
       final FushiDatabase db = _testDb();
       addTearDown(db.close);
@@ -193,77 +198,14 @@ void main() {
       await tester.pumpWidget(_harness(db, appModel));
       await tester.pump(const Duration(milliseconds: 100));
 
+      expect(appModel.popupBottomDocked, isFalse);
       for (final ModuleId module
           in PreferencesRepository.kPopupBottomDockedModules) {
-        expect(
-          moduleRow(module),
-          findsNothing,
-          reason: '总开关关着时不出 $module 的细分开关',
-        );
-      }
-    },
-  );
-
-  testWidgets(
-    'master ON shows novels/manga/video/games switches (default ON) and '
-    'toggling one only turns docking off in that module',
-    (WidgetTester tester) async {
-      final FushiDatabase db = _testDb();
-      addTearDown(db.close);
-      final AppModel appModel = await _prefsBackedAppModel(
-        db,
-        platform: platformOf(windows: true, ios: false),
-      );
-      await appModel.setPopupBottomDocked(true);
-
-      await tester.pumpWidget(_harness(db, appModel));
-      await tester.pump(const Duration(milliseconds: 100));
-
-      for (final ModuleId module
-          in PreferencesRepository.kPopupBottomDockedModules) {
-        expect(moduleRow(module), findsOneWidget, reason: '$module 细分开关须渲染');
+        expect(moduleRow(module), findsOneWidget, reason: '$module 开关始终可见');
         expect(
           tester.widget<AdaptiveSettingsSwitchRow>(moduleRow(module)).value,
-          isTrue,
-          reason: '默认开：升级用户打开总开关时行为不变',
-        );
-        expect(appModel.popupBottomDockedFor(module), isTrue);
-      }
-
-      tester
-          .widget<AdaptiveSettingsSwitchRow>(moduleRow(ModuleId.video))
-          .onChanged!(false);
-      await tester.pump(const Duration(milliseconds: 50));
-
-      expect(appModel.popupBottomDockedIn(ModuleId.video), isFalse);
-      expect(
-        await db.getPref('popup_bottom_docked_video'),
-        isNotNull,
-        reason: '细分开关写穿到偏好 DB',
-      );
-      expect(
-        appModel.popupBottomDockedFor(ModuleId.video),
-        isFalse,
-        reason: '视频页不再停靠',
-      );
-      expect(
-        appModel.popupBottomDockedFor(ModuleId.books),
-        isTrue,
-        reason: '其余模块不受影响',
-      );
-      expect(
-        appModel.popupBottomDockedFor(null),
-        isTrue,
-        reason: '不属于四个模块的宿主（查词页等）只听总开关',
-      );
-
-      await appModel.setPopupBottomDocked(false);
-      for (final ModuleId module
-          in PreferencesRepository.kPopupBottomDockedModules) {
-        expect(
-          appModel.popupBottomDockedFor(module),
           isFalse,
-          reason: '总开关关掉后任何模块都不停靠',
+          reason: '默认不停靠',
         );
       }
     },
@@ -272,7 +214,7 @@ void main() {
   for (final ModuleId selected
       in PreferencesRepository.kPopupBottomDockedModules) {
     testWidgets(
-      'module dock switch ${selected.name} OFF→ON preserves other modules',
+      'module dock switch ${selected.name} OFF→ON→OFF changes only itself',
       (WidgetTester tester) async {
         final FushiDatabase db = _testDb();
         addTearDown(db.close);
@@ -280,11 +222,10 @@ void main() {
           db,
           platform: platformOf(windows: true, ios: false),
         );
-        await appModel.setPopupBottomDocked(true);
         await tester.pumpWidget(_harness(db, appModel));
         await tester.pump(const Duration(milliseconds: 100));
 
-        for (final bool enabled in <bool>[false, true]) {
+        for (final bool enabled in <bool>[true, false]) {
           // Exercise the rendered schema callback, not an AppModel setter.
           tester
               .widget<AdaptiveSettingsSwitchRow>(moduleRow(selected))
@@ -297,11 +238,11 @@ void main() {
           );
           for (final ModuleId module
               in PreferencesRepository.kPopupBottomDockedModules) {
-            final bool expected = module == selected ? enabled : true;
+            final bool expected = module == selected && enabled;
             expect(
               appModel.popupBottomDockedIn(module),
               expected,
-              reason: '$selected must change only its own stored preference',
+              reason: '$selected must change only its own preference',
             );
             expect(
               appModel.popupBottomDockedFor(module),
@@ -309,11 +250,11 @@ void main() {
               reason: 'the popup consumer must use the effective $module value',
             );
           }
-          expect(appModel.popupBottomDocked, isTrue);
+          expect(appModel.popupBottomDocked, isFalse);
           expect(
             appModel.popupBottomDockedFor(null),
-            isTrue,
-            reason: 'non-module hosts continue to follow the master switch',
+            isFalse,
+            reason: 'non-module hosts follow their own switch',
           );
         }
       },
@@ -329,7 +270,6 @@ void main() {
       db,
       platform: platformOf(windows: false, ios: true),
     );
-    await appModel.setPopupBottomDocked(true);
 
     await tester.pumpWidget(_harness(db, appModel));
     await tester.pump(const Duration(milliseconds: 100));
@@ -349,7 +289,6 @@ void main() {
       db,
       platform: platformOf(windows: true, ios: false),
     );
-    await appModel.setPopupBottomDocked(true);
     await appModel.setModuleEnabled(ModuleId.manga, false);
 
     await tester.pumpWidget(_harness(db, appModel));
