@@ -567,7 +567,7 @@ class VideoSubtitleJumpPanel extends StatefulWidget {
     this.onAutoScrollChanged,
     this.initialTapLookup = true,
     this.onTapLookupChanged,
-    this.initialShowEffects = true,
+    this.initialShowEffects = false,
     this.onShowEffectsChanged,
     this.initialFilter = VideoSubtitleListFilter.all,
     this.onFilterChanged,
@@ -661,7 +661,8 @@ class VideoSubtitleJumpPanel extends StatefulWidget {
 
   /// 「显示特效字幕」初值（拍板台 H7r4mf_z2n）：false = 列表不列出特效字幕（歌词特效 /
   /// 屏幕字，判据是解析层标出的 [AudioCue.isEffect]），只剩普通台词。全部 / 收藏两档
-  /// 与搜索都在此之上过滤；只影响列表，画面上的字幕照常渲染。默认 true（加开关前的行为）。
+  /// 与搜索都在此之上过滤；只影响列表，画面上的字幕照常渲染。默认 false（拍板选项 B
+  /// 原文「默认隐藏特效事件」）。
   final bool initialShowEffects;
 
   /// 用户切换「显示特效字幕」时回调，页面层落 Drift preferences（null 时纯本地切换）。
@@ -1501,10 +1502,12 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
 
   /// BUG-1907：导出用的收藏句集合。
   ///
-  /// 口径**刻意**是「收藏档在去重后实际渲染的那批行」（与「收藏 N 句」计数同源），
-  /// 而不是当前可见行——搜索着导出只导搜索结果会是个陷阱。
+  /// 口径**刻意**是「收藏档不带搜索时实际渲染的那批行」（与「收藏 N 句」计数同源，
+  /// 都取 [_listBaseRawIndexes]：去重 + 「显示特效字幕」过滤），而不是当前可见行——
+  /// 搜索着导出只导搜索结果会是个陷阱。特效字幕被隐藏时，导出与计数一起不含特效收藏，
+  /// 保证「收藏 N 句」= 导出 N 句。
   List<AudioCue> _favoriteCuesForExport(List<AudioCue> cues) => <AudioCue>[
-    for (final int i in _dedupedRawIndexes(cues))
+    for (final int i in _listBaseRawIndexes(cues))
       if (widget.isCueFavorited(_rowCue(cues, i))) _rowCue(cues, i),
   ];
 
@@ -1566,12 +1569,34 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
   }
 
   int _favoriteCueCount(List<AudioCue> cues) {
-    // BUG-841：只数去重后的代表行，与 favorites 档实际渲染的行一一对应。
+    // BUG-841：只数列表基集合里的代表行（去重 + 「显示特效字幕」过滤，见
+    // [_listBaseRawIndexes]），与 favorites 档实际渲染的行一一对应。
     int count = 0;
-    for (final int i in _dedupedRawIndexes(cues)) {
+    for (final int i in _listBaseRawIndexes(cues)) {
       if (widget.isCueFavorited(_rowCue(cues, i))) count++;
     }
     return count;
+  }
+
+  /// 全部 / 收藏两档共用的列表基集合：去重后的代表行（BUG-841），关掉「显示特效字幕」
+  /// （H7r4mf_z2n）时再剔掉**整组都是特效**的代表行。[_visibleCueIndexes] 与
+  /// [_favoriteCueCount] 都只从这里取，保证收藏计数 / 导出可用状态与列表条目一致。
+  ///
+  /// 判定看组内**原始 cue**（`cues[raw]` 的 [AudioCue.isEffect]）而不是 [_rowCue]：
+  /// 逐字卡拉 OK 合成的整句 cue 不带 markup。组内只要有一个成员不是特效（例如代表行是
+  /// 带特效的阴影层、同组还有一份普通拷贝）就保留整句——宁可多列一句，也不把真台词
+  /// 从列表里藏掉。
+  List<int> _listBaseRawIndexes(List<AudioCue> cues) {
+    final List<int> deduped = _dedupedRawIndexes(cues);
+    if (_showEffects) return deduped;
+    final Set<int> repsWithPlainMember = <int>{
+      for (int raw = 0; raw < cues.length; raw++)
+        if (!cues[raw].isEffect) _cachedRepresentativeByRaw[raw] ?? raw,
+    };
+    return <int>[
+      for (final int i in deduped)
+        if (repsWithPlainMember.contains(i)) i,
+    ];
   }
 
   /// BUG-841：按 `(startMs, 文本)` 折叠重复 cue，返回代表行 raw 下标（升序）并同步
@@ -1633,18 +1658,9 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
       return _cachedVisibleIndexes;
     }
     // BUG-841：两档都以**去重后**的代表行为基（特效叠加同句拷贝只出一行）；收藏
-    // 再在代表行上过滤，计数 chip 走同一去重集合（[_favoriteCueCount]）
-    // 故数量与列表一致。
-    final List<int> deduped = _dedupedRawIndexes(cues);
-    // H7r4mf_z2n：关掉「显示特效字幕」时先剔掉特效代表行。看的是**原始代表 cue**
-    // （`cues[i]`）而不是 [_rowCue]：逐字卡拉 OK 合成的整句 cue 不带 markup，判定在
-    // 组首原事件上；被折叠的同句拷贝跟随代表行。
-    final List<int> base = _showEffects
-        ? deduped
-        : <int>[
-            for (final int i in deduped)
-              if (!cues[i].isEffect) i,
-          ];
+    // 再在代表行上过滤，计数 chip 走同一基集合（[_listBaseRawIndexes]，
+    // [_favoriteCueCount] 同源）故数量与列表一致。
+    final List<int> base = _listBaseRawIndexes(cues);
     late List<int> indexes;
     switch (_filter) {
       case VideoSubtitleListFilter.all:
@@ -2029,6 +2045,8 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                           color: _showEffects
                               ? cs.primary
                               : cs.onSurfaceVariant,
+                          // 开 / 关不只靠颜色：选中态同时进 Semantics（toggled）。
+                          isSelected: _showEffects,
                           onPressed: _toggleShowEffects,
                           visualDensity: VisualDensity.compact,
                           style: _kHeaderIconButtonStyle,
