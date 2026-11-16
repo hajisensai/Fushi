@@ -1,0 +1,6 @@
+{
+  "errors": {
+    "errorCode": 400,
+    "errorMessage": "accessKey must be present as a query parameter or in the header"
+  }
+}

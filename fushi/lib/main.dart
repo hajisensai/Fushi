@@ -112,6 +112,8 @@ import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:fushi/src/startup/desktop_window_placement.dart';
 import 'package:fushi/src/diagnostics/native_heap_probe.dart';
 import 'package:fushi/src/diagnostics/windows_memory_probe.dart';
+import 'package:fushi/src/diagnostics/status_monitor.dart';
+import 'package:fushi/src/pages/implementations/status_monitor_overlay.dart';
 import 'package:fushi/src/diagnostics/native_attribution_probe.dart';
 import 'package:fushi/src/diagnostics/fushi_binding.dart';
 import 'package:fushi/src/diagnostics/ui_activity_probe.dart';
@@ -735,6 +737,8 @@ void main([List<String> args = const <String>[]]) {
         // AppModel.initialise()。
         FushiDicts.preloadTransforms(),
         DebugLogService.instance.init(),
+        // 状态监测（设置 › 诊断）：只读悬浮小窗偏好；小窗关着时不采样、零开销。
+        StatusMonitor.instance.init(),
         // 用户 2026-09-22：视频卡顿 / 查词卡的分析日志。默认关闭（开关在设置 › 诊断），
         // init 只读一次偏好 + 解析日志文件位置，关着时后续全链路零开销。
         VideoDiagLog.instance.init(),
@@ -3459,6 +3463,8 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                                   const FloatingLyricLookupHost(),
                                   // galgame Hook 浮窗（native 窗口）跟随 app 主题。
                                   const GalHookOverlayThemeSync(),
+                                  // 状态监测悬浮小窗（默认关）：最上层、整层不吃点击。
+                                  const StatusMonitorOverlayHost(),
                                 ],
                               ),
                             ),

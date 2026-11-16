@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/local_audio_display_name.dart';
 import 'package:fushi/src/pages/implementations/custom_fonts_page.dart';
 import 'package:fushi/src/pages/implementations/dictionary_dialog_page.dart';
 import 'package:fushi/src/pages/implementations/dictionary_settings_dialog_page.dart';
@@ -47,7 +48,6 @@ import 'package:fushi/src/utils/components/content_language_picker.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
-import 'package:path/path.dart' as p;
 import 'package:fushi/src/lookup/hover_lookup_modifier.dart';
 
 void _showSettingsSnackBar(SettingsContext settingsContext, String message) {
@@ -1377,7 +1377,7 @@ Future<void> showAudioSourcesManagerDialog({
     }
     final LocalAudioDbEntry entry = await appModel.importLocalAudioDbFile(
       picked.path,
-      displayName: p.basename(picked.path),
+      displayName: await suggestLocalAudioDisplayName(picked.path),
       reference: reference && canReference,
     );
     return AudioSourceConfig.localAudio(
