@@ -2777,7 +2777,7 @@ mod tests {
             }
         }
         assert!(
-            wired > 40 && unwired > 30 && gone > 8,
+            wired > 40 && unwired > 10 && gone > 8,
             "{wired} / {unwired} / {gone}"
         );
         ffsrs_store_close(h);

@@ -192,6 +192,8 @@ pub struct Receiver<'t, 'c> {
     tally: Received,
     /// 这一批段给出的完整原链值 (设备, seq, 链值)，收尾时记成记号（[Receiver::mark_due]）。
     marks_due: Vec<(Id, u64, Chain)>,
+    /// 本机停用了的设备（[Truth::retired]，G8-7）：它们上面的依赖当成已满足（协议 3 `deps_ready` 同一口径）。
+    retired: BTreeSet<Id>,
     /// 这一批 [Receiver::legacy] 逐段的结论（按调用顺序）。旧根核对的收尾（`oldroot.rs` 的
     /// [Receiver::finish_oldroot]）拿它判断本轮清单是否全部有了结论，不让调用方另报一份。
     legacy_taken: Vec<Taken>,
@@ -222,6 +224,7 @@ impl<'t, 'c> Receiver<'t, 'c> {
             dirs,
             me,
             applied: t.applied(col)?,
+            retired: t.retired(col)?.into_keys().collect(),
             tally: Received::default(),
             marks_due: Vec::new(),
             legacy_taken: Vec::new(),
@@ -414,8 +417,9 @@ impl<'t, 'c> Receiver<'t, 'c> {
 
     /// 依赖齐了（空洞没有依赖）。
     fn ready(&self, item: &NativeItem) -> bool {
+        // 依赖都已在本机日志里，或落在本机停用了的设备上（[Receiver::retired]）。
         match item {
-            NativeItem::Op(op) => op.deps.le(&self.applied),
+            NativeItem::Op(op) => self.deps_ready(&op.deps),
             NativeItem::Void { .. } => true,
         }
     }
@@ -723,10 +727,17 @@ impl<'t, 'c> Receiver<'t, 'c> {
         Ok(taken)
     }
 
+    /// 依赖都已在本机日志里，或落在本机停用了的设备上（[Receiver::retired]）。
+    fn deps_ready(&self, deps: &Vv) -> bool {
+        deps.0
+            .iter()
+            .all(|(d, &s)| s <= self.applied.get(d) || self.retired.contains(d))
+    }
+
     fn slot_ready(&self, s: &HeritageSlot) -> bool {
         match &s.body {
-            SlotBody::Op(op) => op.deps.le(&self.applied),
-            SlotBody::Raw3(raw) => raw.deps().le(&self.applied),
+            SlotBody::Op(op) => self.deps_ready(&op.deps),
+            SlotBody::Raw3(raw) => self.deps_ready(raw.deps()),
             SlotBody::Alias(_) | SlotBody::Void => true,
         }
     }

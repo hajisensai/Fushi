@@ -36,13 +36,14 @@ class SrsLocationBackend {
   /// 进程内建文件夹单飞按它认（包装后端传里层）；默认就是 [store] 本身。
   Object get identity => _identity ?? store;
 
-  /// [store] 上 `fushi-srs/<profileUid>/<folder>/` 的位置实例。
+  /// [store] 上 `fushi-srs/<dir>/<folder>/` 的位置实例（[dir] = 集合的位置目录名，[srsLocationDir]）。
   SrsAssetLocationStore location(
-    String profileUid, {
+    String dir, {
     String folder = kSrsSync2Folder,
   }) => SrsAssetLocationStore(
     store: store,
-    profileUid: profileUid,
+    profileUid: dir,
+    locationDir: dir,
     folder: folder,
     maxConcurrentWrites: maxConcurrentWrites,
     backendIdentity: identity,
@@ -53,12 +54,22 @@ class SrsLocationBackend {
 final SrsLocationMigrationMemo srsLocationMigrationMemo =
     SrsLocationMigrationMemo();
 
-/// 现有同步后端上的集合根（`fushi-srs/<profileUid>/v3/`）跑一轮同步 v2。先 [srsPrepareLocation]：立住旧根 `v2/`
-/// 上让旧版本停下的围栏，旧根上的设备段迁过来。[directoryKey] 就是这个位置的稳定身份（本机按它记每个位置传到了哪）。
+/// 这个 profile 的集合在同步位置上的目录名（`fushi-srs/<dir>/`）：内核 `identity` 回包的 `dir`（设计 §5.1），不再按
+/// profile uid 拼——并入别的集合 / 采用对方集合之后两者不同。
+Future<String> srsLocationDir(SrsDbStore store) async =>
+    (await store.sync2Command(<String, Object?>{
+          'op': 'identity',
+          'now': store.now().$1,
+        })).map['dir']!
+        as String;
+
+/// 现有同步后端上的集合目录（`fushi-srs/<dir>/`）跑一轮复习同步：新根 `v4/` 收发，旧根 `v3/` 只读它的 `meta.json`
+/// 并改写成让协议 3 的版本停下的围栏（内核 `location_root`，G8-7）。[directoryKey] 就是这个位置的稳定身份（本机按它
+/// 记每个位置传到了哪）。[publishDeviceInfo] = 本机型号 / 版本 / 平台随这一轮的 head 发布。
 ///
-/// 一轮成功之后旧根还有媒体残留：交给 [v1MediaMigrations] 在后台搬（[srsMigrateV1Media]，不挡这一轮；
-/// [onV1Bound] = 补了绑定、请一轮同步把它发出去）；没给就在这一轮里搬。[publishDeviceInfo] = 本机型号 / 版本 /
-/// 平台随这一轮的 head 发布（别的设备据此认出这台设备）。
+/// 协议 1 旧根 `v2/` 的一次性迁移（[srsPrepareLocation]）与 v1 媒体搬家不再在这里跑：它们按协议 3 的命令写新根，
+/// 新代的旧根接手（`oldroot.rs`）还没接线（交接说明「G8-7 同步一轮」未做项）。[v1MediaMigrations] / [onV1Bound]
+/// 保留参数形状，暂不使用。
 Future<SrsSync2Report> srsRunLocationRound(
   SrsLocationBackend backend,
   SrsDbStore store,
@@ -73,33 +84,12 @@ Future<SrsSync2Report> srsRunLocationRound(
   SrsV1MediaMigrations? v1MediaMigrations,
   Future<void> Function()? onV1Bound,
 }) async {
-  SrsLocationStore currentRoot() => backend.location(store.profileUid);
-  SrsLocationStore v1Root() =>
-      backend.location(store.profileUid, folder: kSrsSync2V1Folder);
-  final SrsLocationStore location = currentRoot();
-  final SrsLocationPrepared prepared = await srsPrepareLocation(
-    host: store,
-    v1: v1Root(),
-    current: location,
-    locationId: directoryKey,
-    key: locationKey,
-    nowMs: () => store.now().$1,
-    writers: SrsAssetV1Writers(backend.store, store.profileUid),
-    memo: srsLocationMigrationMemo,
-    onStep: onStep,
-  );
-  if (prepared.needsUpgrade || prepared.error != null) {
-    final SrsSync2Report r = SrsSync2Report()
-      ..needsUpgrade = prepared.needsUpgrade
-      ..error = prepared.needsUpgrade ? kSrsSyncNeedsUpgrade : prepared.error
-      ..kdf = prepared.kdf;
-    return r;
-  }
-  srsLogMigrationLeftover(prepared, directoryKey);
+  final String dir = await srsLocationDir(store);
   if (publishDeviceInfo != null) await publishDeviceInfo(store);
   final SrsSync2Report r = await srsSync2Round(
     host: store,
-    location: location,
+    location: backend.location(dir, folder: kSrs4Root),
+    oldRoot: backend.location(dir),
     locationId: directoryKey,
     nowMs: () => store.now().$1,
     bootClockMs: store.trustedClock.bootNowMs,
@@ -111,39 +101,6 @@ Future<SrsSync2Report> srsRunLocationRound(
     onStep: onStep,
   );
   if (r.needsUpgrade) r.error = kSrsSyncNeedsUpgrade;
-  if (r.error == null && prepared.mediaLeftover) {
-    // 本机这一轮在新根上读全了（没有缺段 / 坏段）才看得到已有的全部绑定；按名字存的旧文件等本位置的上传水位到了才删。
-    final bool canBind =
-        prepared.devicesSettled && r.missing == 0 && r.errors.isEmpty;
-    final String progressId = srsLocationProgressId(
-      directoryKey,
-      r.encrypted ? locationKey?.keyHex : null,
-    );
-    Future<SrsV1MediaReport> job(void Function(int, int)? onProgress) =>
-        srsMigrateV1Media(
-          host: store,
-          // 自己的实例（一轮的列表缓存不跟后台迁移共用）；建文件夹按后端身份进程内单飞，读按全部同名文件夹，
-          // 与并发的一轮 / 媒体对账不会建出两个同名前缀目录、也不会有对象落进读不到的那个。
-          v1: v1Root(),
-          current: currentRoot(),
-          locationId: directoryKey,
-          key: locationKey,
-          nowMs: () => store.now().$1,
-          canBind: canBind,
-          progressId: progressId,
-          recordPresence: true,
-          writers: SrsAssetV1Writers(backend.store, store.profileUid),
-          memo: srsLocationMigrationMemo,
-          onProgress: onProgress,
-          shouldStop: shouldStop,
-          onBound: onV1Bound,
-        );
-    if (v1MediaMigrations == null) {
-      srsLogV1MediaReport(await job(null), directoryKey);
-    } else {
-      v1MediaMigrations.start(directoryKey, job);
-    }
-  }
   return r;
 }
 
@@ -170,7 +127,8 @@ void srsLogV1MediaReport(SrsV1MediaReport report, String locationId) {
   report.cleanupErrors.clear();
 }
 
-/// 一轮媒体同步：见 srs_media_sync.dart。[uploadOnly] = 发段之前只传本机的媒体（[srsSyncMedia]）。
+/// 一轮媒体同步：见 srs_media_sync.dart。[uploadOnly] = 发段之前只传本机的媒体（[srsSyncMedia]）。媒体仍在旧根
+/// `v3/` 下（存量集合的新根 meta 记 `media: v3`）；新代的媒体命令归 G8-7b，接上之前这一步报未接线。
 Future<SrsMediaSyncReport> srsRunLocationMedia(
   SrsLocationBackend backend,
   SrsDbStore store,
@@ -178,11 +136,11 @@ Future<SrsMediaSyncReport> srsRunLocationMedia(
   SrsMediaCipher? cipher,
   required String locationId,
   bool uploadOnly = false,
-}) => srsSyncMedia(
+}) async => srsSyncMedia(
   cipher: cipher,
   locationId: locationId,
   uploadOnly: uploadOnly,
-  location: backend.location(store.profileUid),
+  location: backend.location(await srsLocationDir(store)),
   store: store,
   mediaRoot: mediaRoot,
 );
