@@ -1,5 +1,20 @@
 part of '../backup_service.dart';
 
+/// 备份带着复习数据、而这一版还还原不了复习时，还原在动任何文件之前拒绝（复习换代第二段，G11-4 接上新代还原之前）。
+///
+/// 协议 3 的还原逻辑（删 / 换本机 `srs.db`、按旧库合并）在新代上是错的：迁移之后 `srs.db` 是原位封存的无损回退
+/// 副本，删它等于丢掉唯一的回退；换进来的协议 3 库让下次开库停在「旁边有没迁移的旧库」（-6），还原等于没生效；
+/// 合并要打开协议 3 库，新代开不了。所以整次还原拒绝、什么都不改；用户取消勾选「复习」类别就能还原其余内容。
+class SrsRestoreUnavailableException implements Exception {
+  const SrsRestoreUnavailableException();
+
+  @override
+  String toString() =>
+      'SrsRestoreUnavailableException: this backup carries review (SRS) data '
+      'and restoring review data is not available in this version yet; '
+      'nothing was changed (untick the review category to restore the rest)';
+}
+
 /// Row counts peeked from a backup's DB blob for the import "what's inside"
 /// manifest when the meta predates the corresponding count field.
 typedef _ContentRowCounts = ({
@@ -60,6 +75,37 @@ class BackupRestoreService {
   /// BEFORE the destructive DB overwrite so a crash mid-import is recoverable
   /// (a startup sweep re-applies it). Deleted once the import completes.
   static const String _preserveSidecar = '$_dbName.sync-preserve.json';
+
+  /// 备份带不带复习数据：新形态看 `srs.db` 条目与 `srs_media/` 文件；meta 记着复习笔记数（新形态必带）时按它；
+  /// 导出时排除了复习类别 = 不带。老形态（SRS 在主库条目里、meta 没记数）不解压就判断不了，按带算（宁可让用户
+  /// 取消勾选，也不能误删本机的封存旧库）。
+  @visibleForTesting
+  static bool backupCarriesSrs(Archive archive, BackupMeta? meta) {
+    if (meta?.excludedCategories.contains(BackupCategory.srs.name) ?? false) {
+      return false;
+    }
+    if (archive.findFile(_srsDbName) != null) return true;
+    final bool media = archive.files.any(
+      (ArchiveFile f) =>
+          f.isFile &&
+          f.name.replaceAll(r'\', '/').startsWith('$_srsMediaPrefix/'),
+    );
+    if (media) return true;
+    final int? notes = meta?.srsNoteCount;
+    return notes == null || notes > 0;
+  }
+
+  /// 还原选了复习、备份又带着复习数据时拒绝（[SrsRestoreUnavailableException]）。调用方在任何破坏性动作（快照、
+  /// 解压、删 / 换文件、写 sidecar）之前调。
+  static void _refuseSrsRestore({
+    required bool wantsSrs,
+    required Archive archive,
+    required BackupMeta? meta,
+  }) {
+    if (wantsSrs && backupCarriesSrs(archive, meta)) {
+      throw const SrsRestoreUnavailableException();
+    }
+  }
 
   /// Item counts per file-tree category present in a backup's [archiveFileNames]
   /// (posix or windows separators). Pure over the name list + [meta] so it is
@@ -1160,6 +1206,8 @@ class BackupRestoreService {
       // [dbDirectory]）下，与 [SrsMediaStore.directoryFor] 同一规则，恢复后复习页直接
       // 读得到。
       final bool wantsSrs = wants(BackupCategory.srs);
+      // 复习换代之后协议 3 的 SRS 还原是错的（会删掉封存的旧库）：带复习数据就在这里、动任何文件之前拒绝。
+      _refuseSrsRestore(wantsSrs: wantsSrs, archive: archive, meta: meta);
       // 新形态备份的 SRS 事件在 zip 的 `srs.db` 条目里；老形态在主库条目里。
       final ArchiveFile? srsFile = archive.findFile(_srsDbName);
       final String? effSrsMediaRoot = wantsSrs
@@ -1810,6 +1858,12 @@ class BackupRestoreService {
       );
 
       final BackupMeta? meta = _readBackupMeta(archive);
+      // 复习换代之后协议 3 的 SRS 合并打不开协议 3 库：带复习数据就在这里、动任何文件之前拒绝。
+      _refuseSrsRestore(
+        wantsSrs: wants(BackupCategory.srs),
+        archive: archive,
+        meta: meta,
+      );
 
       // 1) Extract the backup DB to a sibling temp file (NEVER overwrite the
       //    live DB). Drop any stale merge-src/-wal/-shm from a prior crash.

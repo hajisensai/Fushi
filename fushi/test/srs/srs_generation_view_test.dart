@@ -263,6 +263,66 @@ void main() {
       expect(find.text(t.srs_gen4_migration_failed_state), findsOneWidget);
       expect(find.text(t.srs_gen4_restart), findsOneWidget);
     });
+
+    testWidgets('blocked outcomes say why, by reason ($design)', (
+      WidgetTester tester,
+    ) async {
+      const String unmet =
+          'p1: legacy rows are not migrated into the op log yet; '
+          'p2: no cache configuration was given for this profile';
+      // (内核原因原文, 该出的说明, 还给不给「重新升级」)
+      for (final (String reason, String text, bool restart)
+          in <(String, String, bool)>[
+            (
+              SrsGen4BlockedReason.migratingWire,
+              t.srs_gen4_migrating_elsewhere,
+              true,
+            ),
+            (SrsGen4BlockedReason.busyWire, t.srs_gen4_blocked, true),
+            (unmet, t.srs_gen4_blocked_precondition, false),
+          ]) {
+        final FakeGen4Backend b = FakeGen4Backend();
+        final SrsGen4MigrationController c = SrsGen4MigrationController(
+          directory: 'dir',
+          profileUids: () async => <String>['p1'],
+          onCommitted: () async {},
+          backend: b,
+          nowMs: () => 1,
+        );
+        await pumpView(
+          tester,
+          apple: apple,
+          controller: c,
+          child: const SrsLoadErrorView(error: needs, onRetry: null),
+        );
+        await tester.tap(find.byKey(SrsGenerationView.startKey));
+        await tester.pump();
+        b.finish(<String, Object?>{'verdict': 'blocked', 'reason': reason});
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(find.text(text), findsOneWidget, reason: reason);
+        if (text != t.srs_gen4_blocked) {
+          expect(
+            find.text(t.srs_gen4_blocked),
+            findsNothing,
+            reason: '不能把 $reason 说成「被占用」',
+          );
+        }
+        // 前提没满足：原因原文给出来、不引用户反复重试。
+        expect(
+          find.text(unmet),
+          reason == unmet ? findsOneWidget : findsNothing,
+          reason: reason,
+        );
+        expect(
+          find.byKey(SrsGenerationView.startKey),
+          restart ? findsOneWidget : findsNothing,
+          reason: reason,
+        );
+        await tester.pumpWidget(const SizedBox());
+        c.dispose();
+      }
+    });
   }
 
   testWidgets('unbound profile and unwired features read as unavailable', (

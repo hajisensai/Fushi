@@ -1,6 +1,6 @@
 // G7-5：换代迁移控制器（srs_gen4_migration_controller.dart）——假执行端，不碰原生库。
 // 覆盖：每个 profile 交一份缓存配置、轮询进度、提交点前后能否取消、各种结论 / 报错落到 outcome / error、
-// 提交后才调 onCommitted、跑着时重复 start 无操作。
+// 提交后才调 onCommitted、跑着时重复 start 无操作、关库前的 quiesce（提交点前叫停并等、之后只等）。
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -184,6 +184,60 @@ void main() {
       }
       c.dispose();
     }
+  });
+
+  group('quiesce (before the database closes)', () {
+    test('idle: returns at once, no cancel sent', () async {
+      final FakeGen4Backend b = FakeGen4Backend();
+      final SrsGen4MigrationController c = controllerFor(b);
+      addTearDown(c.dispose);
+      await c.quiesce();
+      expect(b.cancels, isEmpty);
+    });
+
+    test(
+      'before the commit point: cancels, then waits for the verdict',
+      () async {
+        final FakeGen4Backend b = FakeGen4Backend();
+        final SrsGen4MigrationController c = controllerFor(b);
+        addTearDown(c.dispose);
+        final Future<void> done = c.start();
+        b.running = (step: SrsGen4MigrationStep.translate, done: 1, total: 9);
+        await settle();
+        bool quiesced = false;
+        final Future<void> q = c.quiesce().then((_) => quiesced = true);
+        await settle();
+        expect(b.cancels, <String?>[b.lastRunId], reason: '提交点之前叫停');
+        expect(quiesced, isFalse, reason: '结论出来之前不放行关库');
+        b.finish(<String, Object?>{'verdict': 'cancelled'});
+        await q;
+        await done;
+        expect(quiesced, isTrue);
+        expect(c.phase, SrsGen4MigrationPhase.idle);
+      },
+    );
+
+    test('past the commit point: no cancel, waits for it to finish', () async {
+      final FakeGen4Backend b = FakeGen4Backend();
+      int committed = 0;
+      final SrsGen4MigrationController c = controllerFor(
+        b,
+        onCommitted: () async => committed++,
+      );
+      addTearDown(c.dispose);
+      final Future<void> done = c.start();
+      b.running = (step: SrsGen4MigrationStep.seal, done: 0, total: 1);
+      await settle();
+      bool quiesced = false;
+      final Future<void> q = c.quiesce().then((_) => quiesced = true);
+      await settle();
+      expect(b.cancels, isEmpty);
+      expect(quiesced, isFalse, reason: '改名 / 封存进行中不放行关库');
+      b.finish(<String, Object?>{'verdict': 'committed'});
+      await q;
+      await done;
+      expect(committed, 1);
+    });
   });
 
   test('a kernel error lands in error, not swallowed as success', () async {

@@ -66,11 +66,26 @@ class SrsStorageHost {
   /// 库目录（迁移命令与 [SrsStorage.open] 用的同一个）。
   String get directory => _directory;
 
-  /// 新代库的路径（备份判断「本机有没有用过复习」）。
+  /// 新代库的路径。
   String get path => SrsStorage.gen4PathIn(_directory);
 
   /// 协议 3 库的路径（迁移来源 / 迁移后封存的旧库）。
   String get legacyPath => SrsStorage.legacyPathIn(_directory);
+
+  /// 本机有没有复习库文件：新代库，或协议 3 的库（还没迁移的活库 / 迁移后封存的旧库）。备份导出 / 资料删除清理据此
+  /// 判断「本机用过复习、数据得随备份走」——只看新代库会让没迁移、复习模块又关着的用户做出不带卡片的备份。
+  bool get hasStoredLibrary =>
+      File(path).existsSync() || File(legacyPath).existsSync();
+
+  /// 备份导出 / 资料删除清理要读的存储：复习模块开着（[moduleEnabled]）时照常打开；关着时只在本机有复习库文件
+  /// （[hasStoredLibrary]）时打开，否则 null（没用过复习的设备不凭空建库）。只有协议 3 库、还没迁移时打开抛
+  /// [SrsStoreNotMigrated]：备份明确失败（先升级），不会静默漏掉卡片。
+  Future<SrsStorage?> acquireIfStored({required bool moduleEnabled}) {
+    if (!moduleEnabled && !hasStoredLibrary) {
+      return Future<SrsStorage?>.value();
+    }
+    return acquire();
+  }
 
   /// 本进程是不是主进程（只有主进程迁移、写库）。
   bool get isMainProcess => _isMainProcess;

@@ -80,7 +80,8 @@ class SrsGen4MigrationController extends ChangeNotifier {
   final String directory;
 
   /// 本机全部 profile 的 uid（主库的 profile 表）：每个都按 [srsCacheConfigFor] 交一份缓存配置。协议 3 库里另有
-  /// 主库里没有的 profile 时迁移按前提不满足放弃（[SrsGen4MigrationVerdict.aborted]，旧库没动）。
+  /// 主库里没有的 profile（删除时没清干净、备份并入留下的孤儿 uid）时迁移报前提不满足（[SrsGen4MigrationVerdict.blocked]
+  /// + [SrsGen4BlockedReason.precondition]，旧库没动）：旧库的 profile 列表要内核给（上游缺口，交接说明 §9.5）。
   final Future<List<String>> Function() profileUids;
 
   /// 提交之后：让存储重开、作废缓存着错误的 provider。
@@ -97,6 +98,7 @@ class SrsGen4MigrationController extends ChangeNotifier {
   String? _runId;
   bool _cancelRequested = false;
   Timer? _poll;
+  Completer<void>? _finished;
   bool _disposed = false;
 
   SrsGen4MigrationPhase get phase => _phase;
@@ -123,6 +125,7 @@ class SrsGen4MigrationController extends ChangeNotifier {
   Future<void> start() async {
     if (_phase == SrsGen4MigrationPhase.running) return;
     final String runId = 'gen4-${_nowMs()}';
+    final Completer<void> finished = _finished = Completer<void>();
     _runId = runId;
     _phase = SrsGen4MigrationPhase.running;
     _progress = null;
@@ -159,8 +162,19 @@ class SrsGen4MigrationController extends ChangeNotifier {
     } finally {
       _runId = null;
       _cancelRequested = false;
+      _finished = null;
+      finished.complete();
       _notify();
     }
+  }
+
+  /// 关库前（覆盖恢复、换数据根、退出；登记在 [AppModel.addDatabaseCloseQuiescer]）：没在跑直接返回；提交点之前
+  /// 叫停并等结论（目录回到迁移前的样子）；已过提交点就等它跑完（改名 / 封存不能被删文件、换目录打断）。
+  Future<void> quiesce() async {
+    final Completer<void>? finished = _finished;
+    if (finished == null) return;
+    cancel();
+    await finished.future;
   }
 
   /// 叫停正在跑的迁移（提交点之前有效；之后的结论是 [SrsGen4MigrationVerdict.cancelled]）。
@@ -223,6 +237,11 @@ final Provider<SrsGen4MigrationController> srsGen4MigrationProvider =
           ref.invalidate(srsStoreProvider);
         },
       );
-      ref.onDispose(c.dispose);
+      // 迁移在后台 isolate 里跑几十秒到几分钟：关库（恢复 / 换数据根 / 退出）要先等它停在一个完整的状态。
+      app.addDatabaseCloseQuiescer(c.quiesce);
+      ref.onDispose(() {
+        app.removeDatabaseCloseQuiescer(c.quiesce);
+        c.dispose();
+      });
       return c;
     });

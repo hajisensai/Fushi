@@ -2,7 +2,9 @@
 /// 时，[SrsLoadErrorView] 换成这一页（交接说明 §8.1 与「G7-5 Dart 接线」）。
 ///
 /// - [SrsGenState.needsMigration]（主进程）：说明 +「开始升级」→ 步骤与进度，提交点之前可取消；结论（取消 /
-///   被占用 / 空间不够 / 对拍不过）就地说明，旧库都没动。提交后存储重开，页面随之换成正常内容。
+///   别的窗口在迁移 / 被占用 / 前提没满足 / 空间不够 / 对拍不过）就地说明，旧库都没动。前提没满足
+///   （[SrsGen4BlockedReason.precondition]）重试不会变：给原因原文、不给「重新升级」。提交后存储重开，页面随之换成
+///   正常内容。
 /// - [SrsGenState.migrationFailed]（主进程）：上次没完成，可重新升级。
 /// - [SrsGenState.sealedOldOnly]：只剩封存旧库，不自动重建，给恢复说明。
 /// - [SrsStoreMigrating]（-5）/ [SrsGenState.migratingElsewhere]：别的窗口在迁移，稍后重试。
@@ -98,10 +100,15 @@ String srsGen4StepLabel(SrsGen4MigrationStep step) => switch (step) {
   SrsGen4MigrationStep.seal => t.srs_gen4_step_seal,
 };
 
-/// 没提交的结论的说明（提交了页面就换掉了，不出这里）。
+/// 没提交的结论的说明（提交了页面就换掉了，不出这里）。`blocked` 按原因分三类（[SrsGen4BlockedReason]）：别的窗口在
+/// 迁移、旧库正被写（等一会再来）、前提没满足（重试不会变，不能说成「被占用」）。
 String srsGen4OutcomeText(SrsGen4MigrationOutcome o) => switch (o.verdict) {
   SrsGen4MigrationVerdict.cancelled => t.srs_gen4_cancelled,
-  SrsGen4MigrationVerdict.blocked => t.srs_gen4_blocked,
+  SrsGen4MigrationVerdict.blocked => switch (o.blockedReason!) {
+    SrsGen4BlockedReason.migrating => t.srs_gen4_migrating_elsewhere,
+    SrsGen4BlockedReason.busy => t.srs_gen4_blocked,
+    SrsGen4BlockedReason.precondition => t.srs_gen4_blocked_precondition,
+  },
   SrsGen4MigrationVerdict.noSpace => t.srs_gen4_no_space(
     size: FushiByteFormat.bytes(_shortBytes(o)),
   ),
@@ -245,8 +252,13 @@ class _MigrationPanel extends StatelessWidget {
     final bool running = controller.phase != SrsGen4MigrationPhase.idle;
     final SrsGen4MigrationOutcome? outcome = controller.outcome;
     final Object? error = controller.error;
+    // 前提没满足：这一版重试不会变（交接说明 §9.5），给原因原文、不给「重新升级」。
+    final bool preconditionUnmet =
+        outcome?.blockedReason == SrsGen4BlockedReason.precondition;
     final List<String> details = <String>[
       if (!running && outcome != null) srsGen4OutcomeText(outcome),
+      if (!running && preconditionUnmet && (outcome!.reason ?? '').isNotEmpty)
+        outcome.reason!,
       if (!running && error != null) ...<String>[t.srs_gen4_failed, '$error'],
     ];
     final Widget head = FushiPlaceholderMessage(
@@ -268,7 +280,7 @@ class _MigrationPanel extends StatelessWidget {
     final List<Widget> blocks = <Widget>[
       head,
       if (running) _ProgressBlock(controller: controller),
-      if (!running)
+      if (!running && !preconditionUnmet)
         Center(
           child: FushiPressScale(
             child: FushiFilledButton.icon(
