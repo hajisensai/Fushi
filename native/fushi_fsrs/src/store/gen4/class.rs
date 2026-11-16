@@ -227,7 +227,7 @@ impl<'t, 'c> Index<'t, 'c> {
         kind: EntKind,
         canon: &Ref,
     ) -> Result<Vec<ClassWinner>, String> {
-        self.class_registers(kind, canon, None)
+        self.class_registers(kind, canon, None, None)
     }
 
     /// 一个别名类里一个寄存器（[canon_key] 是规范键）的生效值；没有写入 = None。
@@ -238,10 +238,48 @@ impl<'t, 'c> Index<'t, 'c> {
         canon_key: &str,
     ) -> Result<Option<String>, String> {
         Ok(self
-            .class_registers(kind, canon, Some(canon_key))?
+            .class_registers(kind, canon, Some(canon_key), None)?
             .into_iter()
             .next()
             .map(|w| w.value))
+    }
+
+    /// [Index::class_value]，但只看 [keep] 留下的写入（按操作主键）：这些写入单独重判一遍取胜者——「只有这些操作时
+    /// 这个寄存器的值」。时间线恢复（`cmd/writes_restore.rs`）求「那一刻的值」用；判定规则与 [Index::class_value]
+    /// 同一份（[Index::judged] 按类）。[keep] 一条都不留 = None。
+    pub(super) fn class_value_in(
+        &mut self,
+        kind: EntKind,
+        canon: &Ref,
+        canon_key: &str,
+        keep: &dyn Fn(i64) -> bool,
+    ) -> Result<Option<String>, String> {
+        Ok(self
+            .class_registers(kind, canon, Some(canon_key), Some(keep))?
+            .into_iter()
+            .next()
+            .map(|w| w.value))
+    }
+
+    /// [Index::class_tags]，但只看 [keep] 留下的标签操作（按操作主键），OR-Set 与顺序提示在这些操作上重判。用途同
+    /// [Index::class_value_in]。
+    pub(super) fn class_tags_in(
+        &mut self,
+        canon: &Ref,
+        keep: &dyn Fn(i64) -> bool,
+    ) -> Result<Vec<String>, String> {
+        self.aliases_settled()?;
+        let mut rows = Vec::new();
+        for m in &self.members(canon)? {
+            rows.extend(self.tags_rows(m)?.into_iter().filter(|r| keep(r.0)));
+        }
+        rows.sort();
+        rows.dedup();
+        let want = self.tag_states(&rows)?;
+        for (row, want) in rows.iter_mut().zip(want) {
+            row.3 = want;
+        }
+        self.current_tags(&rows)
     }
 
     /// 一个别名类（笔记）现在的标签：类内成员的标签操作并起来重判（文件头「标签」），顺序规则同 [Index::tags_of]。
@@ -444,12 +482,13 @@ impl<'t, 'c> Index<'t, 'c> {
         rows.collect::<Result<_, _>>().map_err(sql)
     }
 
-    /// 类内全部成员的寄存器行按规范键成组再判；[only] = 只要这一个规范键。
+    /// 类内全部成员的寄存器行按规范键成组再判；[only] = 只要这一个规范键；[keep] = 只要这些写入（按操作主键）。
     fn class_registers(
         &mut self,
         kind: EntKind,
         canon: &Ref,
         only: Option<&str>,
+        keep: Option<&dyn Fn(i64) -> bool>,
     ) -> Result<Vec<ClassWinner>, String> {
         self.aliases_settled()?;
         let entity = self.canonical(canon)?.text();
@@ -478,7 +517,7 @@ impl<'t, 'c> Index<'t, 'c> {
                 let text = read_edit_key(&mut Reader::new(&key))
                     .map_err(|e| format!("gen4 index: bad register key: {e}"))?;
                 let ck = self.canonical_key(&text)?;
-                if only.is_some_and(|o| o != ck) {
+                if only.is_some_and(|o| o != ck) || keep.is_some_and(|f| !f(k)) {
                     continue;
                 }
                 groups.entry(ck).or_default().push((k, state));

@@ -456,7 +456,8 @@ fn another_connection_sees_the_new_identity_and_a_stale_session_cannot_write() {
     let b = open(&path).unwrap();
     let ta = Truth::new(&a);
     let col = crate::store::gen4::truth::tests::bound(&ta);
-    ta.tx(|t| t.create_self(col, &OWN, &SEED, T0)).unwrap();
+    ta.tx(|t| t.create_self(col, &OWN, &SEED, None, T0))
+        .unwrap();
     write_own(&ta, col, 6);
     let old = me(&ta, col);
     // B 的会话先把缓存填上（日志末尾 6）。

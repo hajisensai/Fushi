@@ -30,7 +30,7 @@ import 'package:fushi_engine/sync/sync_manifest_codec.dart';
 /// 设备，别处标的私密必须到得了它。加字段不升 [TagManifest.currentVersion]：旧版对端
 /// 只读已知字段、把它当没有；缺这个字段 = 没有私密知识，不是「取消私密」。
 ///
-/// 条目上可选的 `nsfw`（`{"set": 毫秒, "cleared": 毫秒}`，v155 起）同理搭载作品级
+/// 条目上可选的 `nsfw`（`{"set": 毫秒, "cleared": 毫秒}`，v156 起）同理搭载作品级
 /// NSFW 标记的两只时钟（`media_nsfw_flags`）：在一台设备上标的 NSFW，别的设备上
 /// 的封面也要跟着模糊。缺字段 = 没有 NSFW 知识。
 class TagManifest implements CanonicalJsonManifest {

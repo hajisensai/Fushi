@@ -10,7 +10,6 @@
 // 「有高度没宽度」已有兜底（只是不显示像素对）。
 
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:path/path.dart' as p;
 
@@ -23,18 +22,9 @@ import 'package:fushi_engine/media/video/bluray/bluray_source.dart';
 /// 读不到/解不开返回 [VideoProbeFacts.unavailable]——这是「没得出结论」，与「探完了，
 /// 这文件没有规格」不同，调用方据此会在冷却后重试而不是永久记账。
 Future<VideoProbeFacts> probeBlurayPlaylistFacts(String playlistPath) async {
-  final File file = File(playlistPath);
-  final Uint8List bytes;
-  try {
-    if (!await file.exists()) return VideoProbeFacts.unavailable;
-    bytes = await file.readAsBytes();
-  } on FileSystemException {
-    return VideoProbeFacts.unavailable;
-  }
-  final BlurayPlaylist? playlist = parseBlurayPlaylist(
-    bytes,
-    id: p.basenameWithoutExtension(playlistPath),
-  );
+  // 分集路径（`00001.p03.mpls`）经同一入口得到的是这一集的派生播放列表，时长与
+  // 字节数都只算这一集。
+  final BlurayPlaylist? playlist = await readBlurayMemberPlaylist(playlistPath);
   if (playlist == null) return VideoProbeFacts.unavailable;
 
   return blurayPlaylistFacts(

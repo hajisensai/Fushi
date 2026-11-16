@@ -402,6 +402,9 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 默认受「加来源分类标签」门控 disabled，harness 驱动不动属预期。
   'cardCreation/Nest title tags under the category tag':
       '../packages/fushi_anki/test/note_tags_nested_title_test.dart',
+  // 连续收听提醒的间隔档位：默认受「连续收听提醒」开关门控 disabled，harness 驱动不动属
+  // 预期；生效点（档位改了对正在进行的这一轮立即生效、档位外存值归档）由单测守。
+  'general/Remind after': 'test/media/listening_reminder_test.dart',
   // 句子音频来源：生效点在制卡 ffmpeg 抽音参数（中置声道 pan 滤镜 / 音轨选择）。
   'cardCreation/Sentence audio source':
       'test/mining/sentence_audio_source_test.dart',
@@ -1092,10 +1095,21 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'lookup/Close popup when scrolling':
       'test/pages/lookup_dismiss_barrier_test.dart + '
       'test/reader/reader_popup_scroll_dismiss_wiring_test.dart',
-  // 用户建议 q16Apecgbg：「制卡后关闭查词弹窗」（默认关）。与上面两项同一条
-  // MediaSource 偏好通道，harness 里观测不到写穿；生效点是制卡回调落地后的关栈
-  // （closePopupAfterAcceptedMine），由专项行为测试 + 两条车道接线守卫覆盖。
-  'lookup/Close lookup popup after creating a card':
+  // 拍板台 8ldy3d8XFA：「制卡后行为」按模块单选（取代 q16Apecgbg 的全局开关）。与上面
+  // 两项同一条 MediaSource 偏好通道，harness 里观测不到写穿；生效点是制卡回调落地后的
+  // 关栈 + 是否续播（closePopupAfterAcceptedMine），由专项行为测试、按模块解析的纯
+  // 函数测试与两条车道接线守卫覆盖。模块行随模块开关可见，harness 里不一定都出现。
+  'lookup/After creating a card in novels':
+      'test/pages/close_popup_after_mining_test.dart',
+  'lookup/After creating a card in manga':
+      'test/pages/close_popup_after_mining_test.dart',
+  'lookup/After creating a card in videos':
+      'test/pages/close_popup_after_mining_test.dart',
+  'lookup/After creating a card in music':
+      'test/pages/close_popup_after_mining_test.dart',
+  'lookup/After creating a card in games':
+      'test/pages/close_popup_after_mining_test.dart',
+  'lookup/After creating a card in lookup and elsewhere':
       'test/pages/close_popup_after_mining_test.dart',
   // TODO-861②：「扫描非日文文字」查词开关（PreferencesRepository.scanNonJapaneseText，
   // 默认 true）。焦点遍历能切到并写穿 DB（changed=true），但生效点在注入 JS 的

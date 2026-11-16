@@ -3658,9 +3658,14 @@ abstract final class MangaDownloadJobStatus {
   static const String done = 'done';
   static const String failed = 'failed';
   static const String cancelled = 'cancelled';
+
+  /// 用户暂停：已落地的页 / `.part` 原样保留，worker 不领取；恢复回 `queued`
+  /// 后从磁盘现状续跑（与 `cancelled` 不同，取消会删半成品）。跨进程重启保持。
+  static const String paused = 'paused';
 }
 
-/// 漫画章节 / mokuro 卷的下载任务队列（schema v103，device-local）。
+/// 漫画章节 / mokuro 卷的下载任务队列（schema v103，device-local；v155 状态值域加
+/// `paused`）。
 ///
 /// 设计稿 `docs/specs/2026-09-12-manga-download-first-design.md` §2.2。
 /// 在线漫画改成「先下载再读」后，每个待下载的章（或 mokuro.moe 卷）在这里占
@@ -3724,7 +3729,7 @@ class MangaDownloadJobs extends Table {
         "AND runtime != '')",
     "CHECK (kind IN ('chapter', 'mokuro_volume'))",
     "CHECK (status IN ('queued', 'running', 'done', 'failed', "
-        "'cancelled'))",
+        "'cancelled', 'paused'))",
     'CHECK (pages_done >= 0 AND pages_total >= 0 '
         'AND pages_done <= pages_total)',
     'CHECK (attempt_count >= 0)',
@@ -3914,7 +3919,7 @@ class MediaPrivacyFlags extends Table {
   Set<Column> get primaryKey => <Column>{mediaKind, entryKey};
 }
 
-// ── media_nsfw_flags（v155：作品级「NSFW」标记）────────────────────────
+// ── media_nsfw_flags（v156：作品级「NSFW」标记）────────────────────────
 /// 用户手动把一部作品标成 NSFW（拍板台 w04vrhUAaX：所有媒体都能标是否 NSFW）：
 /// 「模糊 NSFW 封面」开着时库页 / 继续卡等封面消费端把它的封面打模糊，「制卡图片
 /// 也模糊」开着时从它制的卡用模糊后的封面 / 页图。

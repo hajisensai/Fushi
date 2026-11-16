@@ -431,6 +431,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'library_organize_auto_since',
   // bool（默认 false）：用户点过 AI 整理的「会发送什么」说明并同意（设备本地）。
   'library_organize_consented',
+  // bool（默认 false）：连续收听提醒开关（反馈 5_mzP54WVx）；int 分钟（15..120，默认
+  // 60）：提醒间隔。普通偏好，随 Profile / 备份走。见 media/listening_reminder.dart。
+  'listening_reminder_enabled',
+  'listening_reminder_minutes',
   'local_audio_db_display_name',
   'local_audio_db_path',
   'local_audio_dbs',

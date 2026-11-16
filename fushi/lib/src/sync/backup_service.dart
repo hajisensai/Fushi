@@ -2025,7 +2025,7 @@ class BackupService {
         "OR (media_kind = 'game' AND entry_key NOT IN "
         '(SELECT id FROM galgames))',
       );
-      // v155 NSFW 标记：同一套宿主逻辑外键，同口径收敛。
+      // v156 NSFW 标记：同一套宿主逻辑外键，同口径收敛。
       await db.customStatement(
         'DELETE FROM media_nsfw_flags WHERE '
         "(media_kind = 'epub' AND entry_key NOT IN "

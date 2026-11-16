@@ -766,7 +766,7 @@ mixin _FushiDbTagsSync on _$FushiDatabase, _FushiDbInfra {
     return true;
   });
 
-  // ── media_nsfw_flags（v155 作品级 NSFW 标记）─────────────────────────
+  // ── media_nsfw_flags（v156 作品级 NSFW 标记）─────────────────────────
 
   /// 把宿主标为 / 取消 NSFW：只推进对应那只时钟（[at] 缺省取当前时刻），另一只
   /// 原样保留，互联合并才能按 LWW 裁决并发的设 / 取消。

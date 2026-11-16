@@ -48,6 +48,8 @@ import 'package:fushi/src/dictionary/dict_style_rules.dart';
 import 'package:fushi/src/floating_ball/floating_ball_config.dart';
 import 'package:fushi/src/media/music/music_resume.dart';
 import 'package:fushi/src/media/audiobook/audiobook_jump_threshold.dart';
+import 'package:fushi/src/media/listening_reminder.dart'
+    show kListeningReminderMinutesDefault, normalizeListeningReminderMinutes;
 import 'package:fushi/src/media/discovery/alist_site_config.dart';
 import 'package:fushi/src/media/discovery/audiobookshelf_server_config.dart';
 import 'package:fushi/src/media/discovery/opds_server_config.dart';
@@ -5204,6 +5206,31 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setShowMediaNotification(bool value) async {
     await setPref('show_media_notification', value);
+    notifyListeners();
+  }
+
+  /// 连续收听提醒（反馈 5_mzP54WVx）：音乐 / 有声书 / 视频连续在播满 N 分钟提醒一次。
+  /// 默认关。
+  bool get listeningReminderEnabled =>
+      getPref('listening_reminder_enabled', defaultValue: false) == true;
+
+  Future<void> setListeningReminderEnabled({required bool value}) async {
+    await setPref('listening_reminder_enabled', value);
+    notifyListeners();
+  }
+
+  /// 连续收听提醒的间隔（分钟）：存值归到最近的档位，没写过取出厂 60 分钟。
+  int get listeningReminderMinutes {
+    final Object? stored = getPref('listening_reminder_minutes');
+    if (stored is num) return normalizeListeningReminderMinutes(stored);
+    return kListeningReminderMinutesDefault;
+  }
+
+  Future<void> setListeningReminderMinutes(int value) async {
+    await setPref(
+      'listening_reminder_minutes',
+      normalizeListeningReminderMinutes(value),
+    );
     notifyListeners();
   }
 

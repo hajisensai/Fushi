@@ -1,4 +1,4 @@
-// 作品级「NSFW」标记的读取口径（`media_nsfw_flags`，v155；拍板台 w04vrhUAaX）。
+// 作品级「NSFW」标记的读取口径（`media_nsfw_flags`，v156；拍板台 w04vrhUAaX）。
 //
 // NSFW 只管**显示**：「模糊 NSFW 封面」开着时封面消费端打模糊，「制卡图片也模糊」
 // 开着时从它制的卡用模糊图。与私密（`media_privacy.dart`，管出站）互不蕴含。

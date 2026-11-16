@@ -634,8 +634,10 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
     await _reload();
   }
 
-  /// 工具条「全部刮削」：按每个游戏当前显示名搜索，只自动应用唯一精确匹配。
-  /// 批量属于自动路径，已有本地/手动封面不覆盖；近似或跨源同名结果留给单卡确认。
+  /// 工具条「全部刮削」：按每个游戏当前显示名搜索，只自动应用每个源内唯一的
+  /// 精确匹配。批量属于自动路径，已有本地/手动封面不覆盖；近似结果、同一个源里的
+  /// 多条同名结果留给单卡确认。不同源各有一条同名是同一部作品（BUG-4727：跨源同名曾被
+  /// 当成歧义，Bangumi 与 VNDB 都收录的作品一律刮不出封面），按源顺序取第一个源。
   Future<void> _scrapeAllGames() async {
     final List<GalgameEntry> games = List<GalgameEntry>.of(_games);
     if (!mounted) return;
@@ -666,6 +668,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
                       if (candidate.nameCn != null) candidate.nameCn!,
                       if (candidate.name != null) candidate.name!,
                     ],
+                    sourceOf: (SourceCandidate candidate) => candidate.source,
                   );
             if (candidate == null) {
               result = candidates.isEmpty
