@@ -2078,29 +2078,42 @@ class SrsDbStore implements SrsSync2Host {
     'retract': retractReviews,
   });
 
-  /// `.fushisrs` 的操作部分（全部操作 + 各设备公钥；见 sync2/srs_fushisrs.dart）。与写事务互斥（同 [sync2Command]：
-  /// 不能把一笔还没提交、之后可能回滚的操作导出去）。
-  Future<Uint8List> sync2ExportOps() async =>
-      (await sync2Command(<String, Object?>{'op': 'export'})).files.single.$2;
+  /// `.fushisrs` 的操作部分（见 sync2/srs_fushisrs.dart）：内核把本集合的真相层写成 `FSRS4EXP` 流、直接写进 [path]
+  /// （native/fushi_fsrs/src/store/gen4/cmd/fushisrs.rs，G11-3），回包是清单里归内核的几项（`collection` / `dir` /
+  /// `salts` / `peers`）与计数。内核在一个读快照里导出（只含已提交的写入）；这里仍与写事务互斥，导出与紧随其后的
+  /// 媒体清单读同一个状态。
+  Future<Map<String, Object?>> sync2ExportOps(String path) async =>
+      (await sync2Command(<String, Object?>{'op': 'export', 'path': path})).map;
 
-  /// 并入 `.fushisrs` 的操作部分（不覆盖；包里有本机身份的操作时先换身份）。返回并入条数。
-  Future<int> sync2ImportOps(Uint8List bytes) => runExclusive(() async {
+  /// 并入 `.fushisrs` 的操作部分（不覆盖）：内核按文件 [path] 流式读（G11-3）。[manifest] 是第 2 版清单里归内核的
+  /// 几项（`collection` / `dir` / `salts` / `peers`；第 1 版不给）。文件来自另一个集合且没有 [confirmed] 时内核回
+  /// `{outcome: needsConfirm, collection, dir}`、什么都不写；确认后先并入再导入。包里本机身份的日志与本机分叉了时内核
+  /// 先换身份（回包 `rotated`）。回包原样返回（`applied` = 并入条数）。
+  Future<Map<String, Object?>> sync2ImportOps({
+    required String path,
+    Map<String, Object?>? manifest,
+    bool confirmed = false,
+  }) => runExclusive(() async {
     late Map<String, Object?> r;
     await _commandOrReload(() async {
-      r = await _sync2(
-        <String, Object?>{
-          'op': 'import',
-          'now': now().$1,
-          'anchor': ?_anchorArg(),
-        },
-        blobs: <Uint8List>[bytes],
-      );
+      r = await _sync2(<String, Object?>{
+        'op': 'import',
+        'now': now().$1,
+        'anchor': ?_anchorArg(),
+        'path': path,
+        'manifest': ?manifest,
+        'confirmed': confirmed,
+      });
+      if (r['outcome'] == 'needsConfirm') return;
       _absorbLocalWrite(r);
+      // 内核整份重建派生层、回包没有逐实体的变更清单：有改动就丢掉全部缓存日志。
+      if (r['unchanged'] != true) _resetCacheJournal();
     });
-    // 包里有本机身份的操作时内核先换身份：重读本机设备 ID（`status`；`identity` 命令归 G9-4）。
+    if (r['outcome'] == 'needsConfirm') return r;
+    // 换身份（`rotated`）/ 认领改绑后重读本机设备 ID。
     await _sync2Open();
     await _notifyPurged();
-    return (r['applied'] as int?) ?? 0;
+    return r;
   });
 
   /// 同步状态（设计 §10.6）。

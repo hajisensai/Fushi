@@ -10,6 +10,8 @@
 // 第 3 步：`bulkWrites` 的深度、原值与 WAL 自动 checkpoint 阈值归内核（`bulk_cache`，store/mod.rs `bulk_begin` /
 // `bulk_end`）。改动前一次（空的）批量写入经执行器 3 条 PRAGMA（读原值、调高、恢复）+ 内核 3 条（`bulk_cache` 开 /
 // `wal_checkpoint` / `bulk_cache` 关），改动后 0 + 2（并回 WAL 在 `bulk_cache` 关里做）。
+import 'dart:io';
+
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
@@ -75,8 +77,11 @@ void main() {
       'purge',
       () => s.sync2PurgeMany(SrsEntityKind.note, <String>[notes[purged++]]),
     );
-    final Uint8List exported = await s.sync2ExportOps();
-    await measure('import', () => s.sync2ImportOps(exported));
+    // 导出 / 导入按文件（内核直接读写，G11-3）。
+    final Directory tmp = Directory.systemTemp.createTempSync('srs_cost_');
+    final String exported = '${tmp.path}${Platform.pathSeparator}ops.bin';
+    await s.sync2ExportOps(exported);
+    await measure('import', () => s.sync2ImportOps(path: exported));
     await measure('sched', () => s.resetCard(cards.last));
     await measure('bulkWrites', () => s.bulkWrites(() async {}));
     costs['applyRemote'] = await _cost(
