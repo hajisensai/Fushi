@@ -2556,7 +2556,7 @@ class AppModel
         : null,
     providers: isMusicPluginSourcesAvailable
         ? () async => enabledLyricsProviderIds(
-            mergeLyricsProviders(
+            mergeLyricsSourceList(
               parseLyricsProviders(prefsRepo.musicLyricsProvidersRaw),
               <String>[
                 for (final InstalledMusicPlugin p
