@@ -67,7 +67,10 @@ use serde_json::{Value, json};
 /// 6：复习统计页的校准图 / UM+（`ffsrs_predict_tss` / `ffsrs_calibration_report` / `ffsrs_store_calibration_items`）。
 /// 7：删掉 srs.db 只读会话 `ffsrs_store_read_begin` / `_read_query` / `_read_end`（G5：Dart 读 srs.db 只发内核读命令），
 /// `ffsrs_store_diag_counts` 去掉「没结束的只读会话」一项（8 → 7 项）。
-pub const ABI_VERSION: i32 = 7;
+/// 8：SRS 换代（S1）：删掉 `ffsrs_store_open`（按 `srs.db` 路径打开协议 3 的库），换成 `ffsrs_store_open_mode`（按 profile
+/// 目录打开新代库 `srs4.db`，Primary / Secondary，新返回码 `STORE_NOT_MIGRATED` / `STORE_MIGRATING` /
+/// `STORE_LEGACY_UNMIGRATED`）；`ffsrs_store_sync2` 的命令经新代分发器；迁移的全局命令 `gen4_migrate_*` 走 [dispatch]。
+pub const ABI_VERSION: i32 = 8;
 
 /// 钉定的 fsrs-rs 源码版本，写进参数组的 algorithmRev：crates.io `fsrs = "=7.0.0"` 包内 `.cargo_vcs_info.json`
 /// 记的发布提交（与 GitHub tag v7.0.0 的 `47b8a16f…` 是同父的两个 bump 提交，只差 Cargo.toml / Cargo.lock）。
@@ -279,6 +282,10 @@ fn dispatch(req: &Value) -> Result<Value, String> {
         })),
         // 根上的 ID 与同步目录名（gen4_ids/derive.rs）。
         "ids" => gen4_ids::derive::derive(req),
+        // SRS 换代的迁移（store/gen4/kernel.rs `global`）：不针对已打开的库（没迁移的目录根本打不开新代库）。
+        "gen4_migrate_status" | "gen4_migrate_run" | "gen4_migrate_cancel" => {
+            store::gen4::kernel::global(op, req)
+        }
         "defaults" => {
             let algorithm = Algorithm::parse(str_field(req, "algorithm")?)?;
             Ok(json!({ "params": algorithm.defaults(), "count": algorithm.param_len() }))

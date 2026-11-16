@@ -42,8 +42,9 @@ pub(crate) const ORPHAN_SWEEP_KEY: &str = "profile_orphan_sweep_v3";
 /// transport.rs `fork_key` / 状态摘要，sync2/mod.rs `MIGRATING_KEY`，sealed.rs `key`；sync2/heal.rs 的本机组指纹
 /// （`sync2_digest_dg/<uid>`）、对端组指纹与自动重建去重记录（`sync2_dg_peer/<设备>/<uid>`、
 /// `sync2_heal/<设备>/<uid>`，中间是设备 ID），sync2/min_reader.rs 按内容声明的 minReader，binding.rs 的集合绑定状态
-/// （`BINDING_PREFIX`）。
-const META_PROFILE_LAST: [&str; 11] = [
+/// （`BINDING_PREFIX`），新代库（`srs4.db`）的本机状态行 `local_state/<uid>`（gen4/local.rs；协议 3 的库里没有这种键，
+/// 登记在这里是为了守卫与新代 profile 清除（G9-5）按同一张表认它）。
+const META_PROFILE_LAST: [&str; 12] = [
     "sync2_self_info/",
     "sync2_fork_at/",
     "sync2_digest/",
@@ -55,6 +56,7 @@ const META_PROFILE_LAST: [&str; 11] = [
     "sync2_heal/",
     "sync2_min_reader/",
     "srs_collection_bound/",
+    "local_state/",
 ];
 
 /// 同上，profile uid 是前缀之后**第一段**的（`<前缀><uid>/<设备或位置>`；devices.rs `ext_prefix` /
@@ -1234,6 +1236,8 @@ mod tests {
         assert!(mod_rs.contains("const MIGRATING_KEY: &str = \"sync2_migrating/\";"));
         assert!(META_PROFILE_LAST.contains(&"sync2_migrating/"));
         assert!(META_PROFILE_LAST.contains(&crate::store::binding::BINDING_PREFIX));
+        assert!(META_PROFILE_LAST.contains(&crate::store::gen4::local::KEY_PREFIX));
+        assert!(seen.contains(crate::store::gen4::local::KEY_PREFIX));
     }
 
     /// 收尾清两类残留：只剩 meta 键的无主 uid 的键、没有任何操作引用的 `sync2_deps`。活 profile 名下带设备 ID 的键、

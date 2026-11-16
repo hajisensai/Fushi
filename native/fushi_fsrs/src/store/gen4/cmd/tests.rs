@@ -1072,7 +1072,7 @@ fn purged_writes_show_as_purged_until_they_become_holes() {
 
 /// 两份 JSON 相同：字符串按 ID 归一后相等，数按 1e-9 的相对误差（卡片上的浮点和按行序累加，新代按卡 ID 排，协议 3
 /// 的行序随查询计划：同一组数换个顺序相加只差末位，模块 `stats` 文件头）。
-fn close(p: &Pair<'_>, a: &Value, b: &Value, at: &str) {
+pub(super) fn close(p: &Pair<'_>, a: &Value, b: &Value, at: &str) {
     match (a, b) {
         (Value::String(x), Value::String(y)) => {
             assert_eq!(p.canon(x), p.canon(y), "{at}");

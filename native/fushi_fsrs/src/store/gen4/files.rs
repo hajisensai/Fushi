@@ -334,7 +334,8 @@ pub(crate) fn open_ready(path: &Path) -> Result<Connection, String> {
     Ok(conn)
 }
 
-fn open_secondary(path: &Path) -> Result<Connection, String> {
+/// 只读连接：[open_ready] + 核对 WAL + `query_only`。Secondary 的打开与命令层（`core.rs`）的读连接共用。
+pub(crate) fn open_secondary(path: &Path) -> Result<Connection, String> {
     let conn = open_ready(path)?;
     let mode: String = conn
         .query_row("PRAGMA journal_mode", [], |r| r.get(0))

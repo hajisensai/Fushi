@@ -9,7 +9,7 @@ use rusqlite::types::Value;
 use serde_json::json;
 
 use super::ffi::{
-    SrsCoreHandle, ffsrs_store_close, ffsrs_store_exec, ffsrs_store_open, ffsrs_store_sync2,
+    SrsCoreHandle, ffsrs_store_close, ffsrs_store_exec, ffsrs_store_open_mode, ffsrs_store_sync2,
 };
 use super::kernel_reads_tests::open;
 use super::sync2::{in_savepoint, test_panic};
@@ -71,45 +71,65 @@ fn ffi_exec(h: *const SrsCoreHandle, sql: &str, mode: i32) -> (i32, String) {
     (rc, ffi_err(err))
 }
 
-/// 经 C ABI：一条写命令（`backfill_tag_sources`，在写连接的 SAVEPOINT 里跑）在提交前 panic → -100；之后的写命令照常
-/// 成功，不是永久报「srs writer poisoned」。
+/// 经 C ABI（换代后的新代库句柄，`ffsrs_store_open_mode`）：一条写命令（`local_anchor`，新代命令层的写事务）在提交前
+/// panic → -100；半截写入不落（锚点没写下），之后的写命令照常成功，不是永久报「writer poisoned」。
 #[test]
 fn after_a_panicking_command_through_the_c_abi_writes_still_work() {
-    let dir = std::env::temp_dir().join(format!("ffsrs_panic_ffi_{}", std::process::id()));
-    std::fs::create_dir_all(&dir).unwrap();
-    let path = dir.join("srs.db");
-    let _ = std::fs::remove_file(&path);
-    let _ = std::fs::remove_file(dir.join("srs.db-wal"));
-    let p = path.to_str().unwrap();
+    let dir = super::sync2::tests::tempdir::new("ffsrs_panic_ffi");
+    let p = dir.0.to_str().unwrap();
     let (mut h, mut err) = (null_mut(), null_mut());
     assert_eq!(
-        ffsrs_store_open(p.as_ptr(), p.len(), &mut h, &mut err),
+        ffsrs_store_open_mode(p.as_ptr(), p.len(), 0, &mut h, &mut err),
         0,
         "{}",
         ffi_err(err)
     );
 
+    let sync2 = |req: serde_json::Value| -> (i32, String, Vec<u8>) {
+        let req = req.to_string();
+        let (mut out, mut out_len, mut err) = (null_mut(), 0usize, null_mut());
+        let rc = ffsrs_store_sync2(
+            h,
+            req.as_ptr(),
+            req.len(),
+            null(),
+            0,
+            &mut out,
+            &mut out_len,
+            &mut err,
+        );
+        let bytes = if out.is_null() {
+            Vec::new()
+        } else {
+            let b = unsafe { std::slice::from_raw_parts(out, out_len) }.to_vec();
+            crate::ffsrs_free_bytes(out, out_len);
+            b
+        };
+        (rc, ffi_err(err), bytes)
+    };
     test_panic::arm(test_panic::BEFORE_RELEASE);
-    let req = json!({"profile": "p", "op": "backfill_tag_sources"}).to_string();
-    let (mut out, mut out_len, mut err) = (null_mut(), 0usize, null_mut());
-    let rc = ffsrs_store_sync2(
-        h,
-        req.as_ptr(),
-        req.len(),
-        null(),
-        0,
-        &mut out,
-        &mut out_len,
-        &mut err,
-    );
-    assert_eq!(rc, super::ffi::STORE_PANIC, "{}", ffi_err(err));
-    let _ = ffi_err(err);
+    let (rc, e, _) =
+        sync2(json!({"profile": "p", "op": "local_anchor", "anchor": {"o": 5, "b": "boot"}}));
+    assert_eq!(rc, super::ffi::STORE_PANIC, "{e}");
     assert!(!test_panic::armed(), "the injected panic fired");
+    // 半截写入回滚了：本机状态行没建出来。
+    let (rc, e, bytes) = sync2(json!({"profile": "p", "op": "local_state"}));
+    assert_eq!(rc, 0, "{e}");
+    let n = u32::from_le_bytes(bytes[..4].try_into().unwrap()) as usize;
+    let v: serde_json::Value = serde_json::from_slice(&bytes[4..4 + n]).unwrap();
+    assert_eq!(v["exists"], json!(false), "{v}");
 
-    for id in ["after1", "after2"] {
-        let (rc, e) = ffi_exec(h, &insert(id), 4);
+    for key in ["after1", "after2"] {
+        let (rc, e) = ffi_exec(
+            h,
+            &format!("INSERT INTO srs_meta (key, value) VALUES ('{key}', '1')"),
+            4,
+        );
         assert_eq!(rc, 0, "write after the panic failed: {e}");
     }
+    let (rc, e, _) =
+        sync2(json!({"profile": "p", "op": "local_anchor", "anchor": {"o": 6, "b": "boot"}}));
+    assert_eq!(rc, 0, "a command after the panic failed: {e}");
     // 以前 Drift 执行器的语句入口（mode 0–3）已经没有了：panic 之后也不会多出一个能写的入口。
     for sql in [insert("drift").as_str(), "BEGIN TRANSACTION"] {
         for mode in 0..4 {

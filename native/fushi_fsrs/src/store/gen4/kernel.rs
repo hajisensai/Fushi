@@ -1,0 +1,757 @@
+//! 新代命令层的库句柄（规划 §2.2 S1，交接说明「S1 接线设计」）：C ABI 的库句柄（`store/ffi.rs` 的句柄表）里放的就是它。
+//! 一个 [G4Core] = 一个 profile 目录里打开的新代库 `srs4.db`（`files.rs` 的打开模式），外加命令层持有的状态：
+//!
+//! - **连接**：Primary 一条写连接（[G4Core::writer]，互斥锁 = 写锁，唯一的写者，D10）+ 只读连接池（[G4Core::reader]）。
+//!   Secondary（查词弹窗等辅助进程）没有写连接，写命令报 [READ_ONLY]。读命令不排在写锁后面（协议 3 BUG-4298 的同一个
+//!   口径）；WAL 下读连接只看已提交的数据。
+//! - **常驻会话**：浏览会话表 [Browse]（一个打开的库文件一份，在它自己的锁里；会话按缓存层代号自己失效，`cmd/browse.rs`
+//!   文件头）、统计原料缓存（[StatsEntry]，按集合 + 统计指纹 + 写入代数 + 缓存层代号命中，未命中调
+//!   `cmd/stats.rs` `snapshot_of`）。
+//! - **写入代数** [G4Core::writes]：每条写命令提交之后 +1。统计原料缓存按它判「本进程的写连接上改没改过原料」；别的进程
+//!   （只有 Primary 写）的写入由缓存层代号 `cache_gen` 兜住。
+//! - **批量写入深度**（`bulk_cache`）：最外层调高写连接的 `wal_autocheckpoint`、结束时另开连接并回 WAL（协议 3
+//!   `SrsCore::bulk_begin` 同一个口径）。
+//!
+//! 关库（[G4Core::close]）：先关读连接池（等借出的放回），再关写连接（最后关的连接把 WAL 并回主文件）。之后经它的命令
+//! 一律报 `CLOSED`（与协议 3 同文，Dart 按它认「已关闭」）。
+//!
+//! 还没有新代实现的 C 直出入口（`ffsrs_store_history_states` 等）在这里有同名方法，报 [unwired] 的「尚未接线」错误——C 入口
+//! 照常解析输入，接线的模块（G7-4f 等）只替换方法体。
+//!
+//! 迁移（`gen4_migrate_status` / `gen4_migrate_run` / `gen4_migrate_cancel`）是不针对已打开库的全局命令（[global]）：
+//! 没迁移的目录根本打不开新代库，迁移入口不能挂在库句柄上。
+
+use std::collections::{BTreeMap, BTreeSet};
+use std::ops::Deref;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard};
+
+use rusqlite::types::Value as Sv;
+use rusqlite::{Connection, OpenFlags};
+use serde_json::{Value, json};
+
+use super::cmd::browse::Browse;
+use super::dryrun::Stop;
+use super::files::{self, OpenError, OpenMode};
+use super::migrate;
+use super::schema::{self, sql};
+use super::truth::Truth;
+use crate::store::CLOSED;
+use crate::store::stats::Snapshot;
+
+/// Secondary 打开的库上发写命令。
+pub const READ_ONLY: &str =
+    "gen4 store: opened read-only (secondary); write commands go to the primary process";
+
+/// 「尚未接线」错误的前缀（交接说明「S1 接线设计」的未接线臂清单）。
+pub const UNWIRED: &str = "gen4: not wired yet";
+
+/// 「新代不需要、入口已删」错误的前缀。
+pub const REMOVED: &str = "gen4: removed";
+
+/// 一条命令 / C 入口还没有新代实现：明确报错（不 panic、不回落到协议 3）。[owner] = 归哪个模块接。
+pub fn unwired(what: &str, owner: &str) -> String {
+    format!("{UNWIRED}: `{what}` belongs to {owner}")
+}
+
+/// 一条命令在新代里不需要、入口已删：明确报错，调用方不该再发（[why] 写原因）。
+pub fn removed(what: &str, why: &str) -> String {
+    format!("{REMOVED}: `{what}` ({why})")
+}
+
+/// 进程里还没释放的 [G4Core] 个数（含已从句柄表摘掉、在途调用还握着 `Arc` 的）：内存诊断用。
+static LIVE: AtomicUsize = AtomicUsize::new(0);
+
+pub fn live_cores() -> usize {
+    LIVE.load(Ordering::Relaxed)
+}
+
+struct Live;
+
+impl Live {
+    fn new() -> Live {
+        LIVE.fetch_add(1, Ordering::Relaxed);
+        Live
+    }
+}
+
+impl Drop for Live {
+    fn drop(&mut self) {
+        LIVE.fetch_sub(1, Ordering::Relaxed);
+    }
+}
+
+// ---------------------------------------------------------------------- 只读连接池
+
+/// 读连接池：借出时没有空闲的就新开一条（不设上限：读命令不排队），放回时空闲的超过 [Readers::cap] 就关掉多的。
+struct Readers {
+    path: PathBuf,
+    cap: usize,
+    st: Mutex<Pool>,
+    returned: Condvar,
+}
+
+#[derive(Default)]
+struct Pool {
+    idle: Vec<Connection>,
+    out: usize,
+    closed: bool,
+}
+
+impl Readers {
+    fn lock(&self) -> MutexGuard<'_, Pool> {
+        // 锁里只有 Vec 的进出与计数，不跑用户代码：毒化了表也完好。
+        self.st.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    fn open_one(&self) -> Result<Connection, String> {
+        let c = files::open_secondary(&self.path)?;
+        c.busy_timeout(schema::BUSY_TIMEOUT).map_err(sql)?;
+        Ok(c)
+    }
+
+    fn borrow(&self) -> Result<Reader<'_>, String> {
+        let idle = {
+            let mut st = self.lock();
+            if st.closed {
+                return Err(CLOSED.to_owned());
+            }
+            st.out += 1;
+            st.idle.pop()
+        };
+        let conn = match idle {
+            Some(c) => c,
+            None => match self.open_one() {
+                Ok(c) => c,
+                Err(e) => {
+                    self.put_back(None);
+                    return Err(e);
+                }
+            },
+        };
+        Ok(Reader {
+            pool: self,
+            conn: Some(conn),
+        })
+    }
+
+    /// 放回（[conn] = None：借出失败）。库已关、空闲的够多、或连接停在事务里（命令 panic 跳过了提交 / 回滚）就关掉它。
+    fn put_back(&self, conn: Option<Connection>) {
+        let mut st = self.lock();
+        st.out = st.out.saturating_sub(1);
+        if let Some(c) = conn {
+            if !st.closed && st.idle.len() < self.cap && c.is_autocommit() {
+                st.idle.push(c);
+            }
+        }
+        if st.closed && st.out == 0 {
+            self.returned.notify_all();
+        }
+    }
+
+    /// 关池：之后借不出；等借出的全部放回，空闲的关掉。
+    fn close(&self) {
+        let mut st = self.lock();
+        st.closed = true;
+        st.idle.clear();
+        while st.out > 0 {
+            st = self.returned.wait(st).unwrap_or_else(|e| e.into_inner());
+        }
+    }
+
+    /// 眼下开着的连接数（空闲 + 借出）。
+    fn live(&self) -> usize {
+        let st = self.lock();
+        st.idle.len() + st.out
+    }
+}
+
+/// 借出的读连接（析构时放回）。
+pub struct Reader<'a> {
+    pool: &'a Readers,
+    conn: Option<Connection>,
+}
+
+impl Deref for Reader<'_> {
+    type Target = Connection;
+    fn deref(&self) -> &Connection {
+        self.conn.as_ref().expect("reader is held until drop")
+    }
+}
+
+impl Drop for Reader<'_> {
+    fn drop(&mut self) {
+        self.pool.put_back(self.conn.take());
+    }
+}
+
+/// 拿着写锁的写连接。
+pub struct Writer<'a> {
+    guard: MutexGuard<'a, Option<Connection>>,
+}
+
+impl Deref for Writer<'_> {
+    type Target = Connection;
+    fn deref(&self) -> &Connection {
+        self.guard.as_ref().expect("checked when taken")
+    }
+}
+
+// ---------------------------------------------------------------------- 统计原料缓存 / 批量写入
+
+/// 统计原料缓存的一份：哪个集合、统计指纹（请求的 `key`，Dart `statsFingerprint`）、读它时的写入代数与缓存层代号。
+pub(super) struct StatsEntry {
+    pub(super) col: i64,
+    pub(super) key: String,
+    pub(super) writes: u64,
+    pub(super) mark: (i64, i64),
+    pub(super) snap: Arc<Snapshot>,
+}
+
+#[derive(Default)]
+struct Bulk {
+    depth: u32,
+    restore: i64,
+}
+
+// ---------------------------------------------------------------------- 库句柄
+
+pub struct G4Core {
+    dir: PathBuf,
+    path: PathBuf,
+    mode: OpenMode,
+    // 字段按声明顺序析构：读连接池先关，写连接最后关（最后关的连接把 WAL 并回主文件）。
+    readers: Readers,
+    writer: Mutex<Option<Connection>>,
+    /// 浏览会话表（`cmd/browse.rs`）：一个打开的库文件一份。
+    pub(super) browse: Mutex<Browse>,
+    /// 统计原料缓存（最近一份）。
+    pub(super) stats: Mutex<Option<StatsEntry>>,
+    /// 写入代数：每条写命令提交之后 +1（模块文件头）。
+    pub(super) writes: AtomicU64,
+    bulk: Mutex<Bulk>,
+    /// 保留副本 `srs.db` 在、但不是 SQLite 文件（`files::Opened::retained_copy_unreadable`）。
+    pub retained_copy_unreadable: bool,
+    _live: Live,
+}
+
+impl G4Core {
+    /// 打开 [dir] 里的新代库（`files::open_gen4` 的打开模式；没迁移 / 迁移中 / 旁边有没迁移的旧库照它报）。
+    pub fn open(dir: &Path, mode: OpenMode) -> Result<G4Core, OpenError> {
+        let opened = files::open_gen4(dir, mode)?;
+        let path = dir.join(files::GEN4_FILE);
+        let readers = Readers {
+            path: path.clone(),
+            cap: crate::store::read_pool::read_concurrency().max(1),
+            st: Mutex::new(Pool::default()),
+            returned: Condvar::new(),
+        };
+        let writer = match mode {
+            OpenMode::Primary => {
+                opened
+                    .conn
+                    .busy_timeout(schema::BUSY_TIMEOUT)
+                    .map_err(sql)?;
+                // 开一条读连接放进池里：读得了才算打开成功（也让诊断计数里有连接）。
+                let first = readers.open_one()?;
+                readers.lock().idle.push(first);
+                Some(opened.conn)
+            }
+            OpenMode::Secondary => {
+                opened
+                    .conn
+                    .busy_timeout(schema::BUSY_TIMEOUT)
+                    .map_err(sql)?;
+                readers.lock().idle.push(opened.conn);
+                None
+            }
+        };
+        Ok(G4Core {
+            dir: dir.to_owned(),
+            path,
+            mode,
+            readers,
+            writer: Mutex::new(writer),
+            browse: Mutex::new(Browse::new()),
+            stats: Mutex::new(None),
+            writes: AtomicU64::new(0),
+            bulk: Mutex::new(Bulk::default()),
+            retained_copy_unreadable: opened.retained_copy_unreadable,
+            _live: Live::new(),
+        })
+    }
+
+    pub fn dir(&self) -> &Path {
+        &self.dir
+    }
+
+    pub fn mode(&self) -> OpenMode {
+        self.mode
+    }
+
+    /// 写连接（拿写锁）。一次命令持着写锁 panic 之后（锁被毒化），连接上可能还挂着它开的事务：整笔回滚再交出（协议 3
+    /// `SrsCore::writer` 的恢复口径，BUG-4297）——下一条命令的写入不能落进那笔半截事务。
+    pub fn writer(&self) -> Result<Writer<'_>, String> {
+        let guard = crate::store::lock_recovering(&self.writer, |w| {
+            if let Some(c) = w.as_ref() {
+                if !c.is_autocommit() {
+                    c.execute_batch("ROLLBACK").map_err(|e| {
+                        format!("gen4 store: roll back a transaction left open by a panic: {e}")
+                    })?;
+                }
+            }
+            Ok(())
+        })?;
+        if guard.is_none() {
+            return Err(match self.mode {
+                OpenMode::Secondary => READ_ONLY.to_owned(),
+                OpenMode::Primary => CLOSED.to_owned(),
+            });
+        }
+        Ok(Writer { guard })
+    }
+
+    /// 借一条读连接。
+    pub fn reader(&self) -> Result<Reader<'_>, String> {
+        self.readers.borrow()
+    }
+
+    /// 在读连接上跑 [f]（一条读命令；`cmd` 的读命令自己开读快照）。
+    pub(super) fn read<T>(
+        &self,
+        f: impl FnOnce(&Truth<'_>) -> Result<T, String>,
+    ) -> Result<T, String> {
+        let r = self.reader()?;
+        let t = Truth::new(&r);
+        f(&t)
+    }
+
+    /// 一条写命令：写锁里、一个一开始就拿写锁的事务（`Truth::tx_immediate`）里跑 [f]，提交之后写入代数 +1。[f] 报错
+    /// 整笔回滚。
+    pub(super) fn write<T>(
+        &self,
+        f: impl FnOnce(&Truth<'_>) -> Result<T, String>,
+    ) -> Result<T, String> {
+        let w = self.writer()?;
+        let t = Truth::new(&w);
+        let out = t.tx_immediate(|t| {
+            let v = f(t)?;
+            // 测试注入：提交之前 panic（panic_recovery_tests.rs，同协议 3 `in_savepoint` 的注入点）。
+            #[cfg(test)]
+            crate::store::sync2::test_panic::hit(crate::store::sync2::test_panic::BEFORE_RELEASE);
+            Ok(v)
+        });
+        if out.is_ok() {
+            self.writes.fetch_add(1, Ordering::SeqCst);
+        }
+        out
+    }
+
+    /// 关闭（幂等）：读连接池（等借出的放回）→ 写连接。之后的命令报 `CLOSED`。
+    pub fn close(&self) {
+        self.readers.close();
+        let w = self.writer.lock().unwrap_or_else(|e| e.into_inner()).take();
+        drop(w);
+    }
+
+    /// 查询道的并发上限（Dart 查询道的 worker 数取它）。
+    pub fn read_concurrency(&self) -> usize {
+        self.readers.cap
+    }
+
+    /// 读连接池眼下开着的连接数（内存诊断）。
+    pub fn pooled_readers(&self) -> usize {
+        self.readers.live()
+    }
+
+    /// 库文件与 `-wal` 的字节数（拿不到记 0）。
+    pub fn file_sizes(&self) -> (u64, u64) {
+        let len = |p: &Path| std::fs::metadata(p).map_or(0, |m| m.len());
+        (
+            len(&self.path),
+            len(&crate::store::seal::with_suffix(&self.path, "-wal")),
+        )
+    }
+
+    /// 写连接是否在事务里（测试用）。
+    pub fn in_transaction(&self) -> Result<bool, String> {
+        Ok(!self.writer()?.is_autocommit())
+    }
+
+    /// 只读调试查询（测试 / 诊断）：结果按 `rows.rs` 编码，第一行是列名。只认只读语句。
+    pub fn debug_query(&self, sql_text: &str, params: &[Sv]) -> Result<Vec<u8>, String> {
+        crate::store::query_rows(&*self.reader()?, sql_text, params)
+    }
+
+    /// 测试专用的原始通道（协议 3 `SrsCore::exec_raw` 同一个契约：写连接、跑完必须回到自动提交）。
+    #[cfg(any(test, feature = "raw_sql"))]
+    pub fn exec_raw(&self, sql_text: &str, params: &[Sv], select: bool) -> Result<Vec<u8>, String> {
+        let w = self.writer()?;
+        let out = crate::store::SrsCore::exec_on(&w, sql_text, params, select);
+        if !w.is_autocommit() {
+            w.execute_batch("ROLLBACK")
+                .map_err(|e| format!("srs: raw exec: roll back a transaction left open: {e}"))?;
+            return Err(format!(
+                "srs: raw exec must not leave a transaction open on the write connection: {sql_text}"
+            ));
+        }
+        self.writes.fetch_add(1, Ordering::SeqCst);
+        out
+    }
+
+    /// [G4Core::exec_raw] 的批量版：整批在一个 SAVEPOINT 里，任何一条出错整批回滚。
+    #[cfg(any(test, feature = "raw_sql"))]
+    pub fn exec_batch_raw(
+        &self,
+        statements: &[&str],
+        applications: &[(usize, Vec<Sv>)],
+    ) -> Result<(), String> {
+        let w = self.writer()?;
+        schema::in_tx(&w, |c| {
+            for (index, args) in applications {
+                let s = statements
+                    .get(*index)
+                    .ok_or_else(|| format!("batch statement index {index} out of range"))?;
+                let mut stmt = c.prepare_cached(s).map_err(|e| format!("{e} in {s}"))?;
+                stmt.execute(rusqlite::params_from_iter(args.iter()))
+                    .map_err(|e| format!("{e} in {s}"))?;
+            }
+            Ok(())
+        })?;
+        self.writes.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+
+    /// 把 WAL 并回主库（PASSIVE），在一条另开的连接上做：不占写连接（协议 3 `SrsCore::wal_checkpoint` 同口径）。库已
+    /// 关就报 `CLOSED`，不按路径把库重新打开。回包 `{busy, log, checkpointed}`。
+    ///
+    /// Secondary 报 [READ_ONLY]、不开连接：辅助进程按设计只读（可能在没有写权限的沙箱里），并回 WAL 是写库的主进程的事
+    /// （协议 3 没有 Secondary，它的句柄一律是读写的）。
+    pub fn wal_checkpoint(&self) -> Result<Value, String> {
+        if matches!(self.mode, OpenMode::Secondary) {
+            return Err(READ_ONLY.to_owned());
+        }
+        // 借着一条读连接开旁路连接：与 [G4Core::close]（先关读连接池、等借出的放回）互斥。
+        let _hold = self.reader()?;
+        let conn = Connection::open_with_flags(
+            &self.path,
+            OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )
+        .map_err(|e| format!("gen4 store: open checkpoint connection: {e}"))?;
+        conn.busy_timeout(schema::BUSY_TIMEOUT).map_err(sql)?;
+        let (busy, log, checkpointed): (i64, i64, i64) = conn
+            .query_row("PRAGMA wal_checkpoint(PASSIVE)", [], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+            })
+            .map_err(sql)?;
+        drop(conn);
+        Ok(json!({"busy": busy != 0, "log": log, "checkpointed": checkpointed}))
+    }
+
+    /// 批量写入开始 / 结束（`bulk_cache {on}`）：按库计嵌套深度；最外层调高 / 恢复写连接的 `wal_autocheckpoint`，结束时
+    /// 先另开连接并回 WAL 再恢复（协议 3 `bulk_begin` / `bulk_end` 同口径）。没有配对的开始就结束报错、深度不动。
+    pub fn bulk(&self, on: bool) -> Result<u32, String> {
+        let mut b = self.bulk.lock().unwrap_or_else(|e| e.into_inner());
+        if on {
+            if b.depth == 0 {
+                let w = self.writer()?;
+                let restore: i64 = w
+                    .query_row("PRAGMA wal_autocheckpoint", [], |r| r.get(0))
+                    .map_err(sql)?;
+                w.execute_batch(&format!(
+                    "PRAGMA wal_autocheckpoint = {}",
+                    crate::store::BULK_WAL_AUTOCHECKPOINT_PAGES
+                ))
+                .map_err(sql)?;
+                b.restore = restore;
+            }
+            b.depth += 1;
+            return Ok(b.depth);
+        }
+        if b.depth == 0 {
+            return Err("bulk_cache: off without a matching on".into());
+        }
+        b.depth -= 1;
+        if b.depth > 0 {
+            return Ok(b.depth);
+        }
+        let merged = self.wal_checkpoint();
+        let restored = self.writer().and_then(|w| {
+            w.execute_batch(&format!("PRAGMA wal_autocheckpoint = {}", b.restore))
+                .map_err(sql)
+        });
+        merged?;
+        restored?;
+        Ok(0)
+    }
+
+    // ------------------------------------------------------------ 还没有新代实现的 C 直出入口（[unwired]）
+
+    pub fn legacy_imported(&self) -> Result<bool, String> {
+        Err(unwired("ffsrs_store_legacy_state", LEGACY_OWNER))
+    }
+
+    pub fn legacy_begin(&self) -> Result<(), String> {
+        Err(unwired("ffsrs_store_legacy_begin", LEGACY_OWNER))
+    }
+
+    pub fn legacy_page(&self, _table: &str, _page: &[u8]) -> Result<usize, String> {
+        Err(unwired("ffsrs_store_legacy_page", LEGACY_OWNER))
+    }
+
+    pub fn legacy_commit(&self) -> Result<(), String> {
+        Err(unwired("ffsrs_store_legacy_commit", LEGACY_OWNER))
+    }
+
+    pub fn legacy_abort(&self) -> Result<(), String> {
+        Err(unwired("ffsrs_store_legacy_abort", LEGACY_OWNER))
+    }
+
+    pub fn legacy_mark_none(&self) -> Result<(), String> {
+        Err(unwired("ffsrs_store_legacy_mark_none", LEGACY_OWNER))
+    }
+
+    /// 备份快照：剥掉哪些本机表是新代备份格式的事（G11-4 备份 / 还原）。
+    pub fn snapshot_into(&self, _target: &Path, _strip_device_local: bool) -> Result<(), String> {
+        Err(unwired("ffsrs_store_snapshot", "G11-4"))
+    }
+
+    pub fn history_states(&self, _groups: &[Vec<String>]) -> Result<Vec<u8>, String> {
+        Err(unwired("ffsrs_store_history_states", REPLAY_OWNER))
+    }
+
+    pub fn stat_projection(&self, _groups: &[Vec<String>]) -> Result<Vec<u8>, String> {
+        Err(unwired("ffsrs_store_stat_projection", REPLAY_OWNER))
+    }
+
+    pub fn optimizer_items(
+        &self,
+        _lineages: &[Vec<String>],
+        _ids: &[i64],
+        _alg: crate::projection::Alg,
+        _day: &crate::projection::Day,
+    ) -> Result<Vec<u8>, String> {
+        Err(unwired("ffsrs_store_optimizer_items", REPLAY_OWNER))
+    }
+
+    pub fn calibration_items(
+        &self,
+        _lineages: &[Vec<String>],
+        _ids: &[i64],
+        _alg: crate::projection::Alg,
+        _day: &crate::projection::Day,
+    ) -> Result<Vec<u8>, String> {
+        Err(unwired("ffsrs_store_calibration_items", REPLAY_OWNER))
+    }
+
+    pub fn rwkv_cards(
+        &self,
+        _lineages: &[Vec<String>],
+        _ids: &[i64],
+        _day: &crate::projection::Day,
+    ) -> Result<Vec<u8>, String> {
+        Err(unwired("ffsrs_store_rwkv_rows", REPLAY_OWNER))
+    }
+
+    pub fn rwkv_replay(
+        &self,
+        _profile: &str,
+        _lineages: &[Vec<String>],
+        _ids: &[i64],
+        _day: &crate::projection::Day,
+        _since: i64,
+        _range: crate::store::projections::RwkvRange,
+    ) -> Result<Vec<u8>, String> {
+        Err(unwired("ffsrs_store_rwkv_rows", REPLAY_OWNER))
+    }
+
+    pub fn rwkv_log_tail(
+        &self,
+        _profile: &str,
+        _since: i64,
+        _with_rows: bool,
+        _incremental: bool,
+    ) -> Result<Vec<u8>, String> {
+        Err(unwired("ffsrs_store_rwkv_log_tail", REPLAY_OWNER))
+    }
+}
+
+/// 协议 1 旧主库搬迁（`ffsrs_store_legacy_*`）：协议 1 旧库按 D21 走只读转译（`gen4/import.rs`），入口由 G7-6 删 / 改。
+const LEGACY_OWNER: &str = "G7-6 (D21: protocol 1 libraries go through gen4/import.rs)";
+
+/// 逐卡重放与训练集的 C 直出入口：G7-4f 正在实现、尚未合入。
+const REPLAY_OWNER: &str = "G7-4f (pending merge)";
+
+// ---------------------------------------------------------------------- 全局命令：迁移
+
+/// 一次进行中的迁移：叫停开关与进度。
+struct Run {
+    stop: Stop,
+    progress: Mutex<(migrate::Step, u64, u64)>,
+}
+
+/// 本进程里进行中的迁移（目录 → 那一次）。
+static RUNS: Mutex<BTreeMap<PathBuf, Arc<Run>>> = Mutex::new(BTreeMap::new());
+
+/// 取消早于开跑到达的 (目录, runId)（Dart 两条命令并发发出时取消可能先到）：开跑时看到就直接叫停。
+static CANCELLED_EARLY: Mutex<BTreeSet<(PathBuf, String)>> = Mutex::new(BTreeSet::new());
+
+fn runs() -> MutexGuard<'static, BTreeMap<PathBuf, Arc<Run>>> {
+    RUNS.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+fn cancelled_early() -> MutexGuard<'static, BTreeSet<(PathBuf, String)>> {
+    CANCELLED_EARLY.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// [RUNS] 里一个目录的登记：析构时摘掉（迁移正常返回、报错、panic 都一样——`ffsrs_call` 接住 panic 之后，留在表里的项会让
+/// 本进程对这个目录的迁移一直回 `blocked`），连同这个目录在 [CANCELLED_EARLY] 里剩下的项（给了 runId、却始终没有对应的
+/// 那一次开跑的取消）。
+struct Registration {
+    dir: PathBuf,
+}
+
+impl Registration {
+    /// 登记 [dir] 的这一次运行；本进程里这个目录已经在跑 = None。
+    fn new(dir: &Path, run: &Arc<Run>) -> Option<Registration> {
+        let mut all = runs();
+        if all.contains_key(dir) {
+            return None;
+        }
+        all.insert(dir.to_owned(), Arc::clone(run));
+        Some(Registration {
+            dir: dir.to_owned(),
+        })
+    }
+}
+
+impl Drop for Registration {
+    fn drop(&mut self) {
+        runs().remove(&self.dir);
+        cancelled_early().retain(|(d, _)| d != &self.dir);
+    }
+}
+
+/// 测试用：本进程里 [dir] 有没有登记中的运行、提前到达的取消还剩几条。
+#[cfg(test)]
+pub(crate) fn run_registry_of(dir: &Path) -> (bool, usize) {
+    (
+        runs().contains_key(dir),
+        cancelled_early().iter().filter(|(d, _)| d == dir).count(),
+    )
+}
+
+/// 测试用：登记 [dir] 的一次运行，在登记期间跑 [f]（[f] panic 时登记照样摘掉）。已经在跑 = None。
+#[cfg(test)]
+pub(crate) fn with_registered_run<T>(dir: &Path, f: impl FnOnce() -> T) -> Option<T> {
+    let run = Arc::new(Run {
+        stop: Stop::new(),
+        progress: Mutex::new((migrate::Step::Space, 0, 1)),
+    });
+    let _reg = Registration::new(dir, &run)?;
+    Some(f())
+}
+
+fn dir_of(req: &Value) -> Result<PathBuf, String> {
+    req.get("dir")
+        .and_then(Value::as_str)
+        .map(PathBuf::from)
+        .ok_or_else(|| "gen4 migrate: missing dir".to_owned())
+}
+
+/// 全局命令（不需要库句柄，`lib.rs` 的 JSON 入口转进来）：
+///
+/// - `gen4_migrate_status {dir}` → `{state, running}`：`state` 是 `migrate::GenState` 的线上名；`running` = 本进程里
+///   这个目录正在跑的迁移的进度 `{step, done, total}`（没有 = null）。
+/// - `gen4_migrate_run {dir, caches: {profile: 缓存配置}, now, batch?, runId?}` → `migrate::Outcome::json`
+///   （`{verdict, ...}`）。几十秒到几分钟，调用方在后台 isolate 调。同一目录在本进程里已经在跑 = `blocked`。
+/// - `gen4_migrate_cancel {dir, runId?}` → `{cancelled}`：叫停（提交点之前有效）；带 `runId` 时早于开跑到达也不丢。
+pub fn global(op: &str, req: &Value) -> Result<Value, String> {
+    match op {
+        "gen4_migrate_status" => {
+            let dir = dir_of(req)?;
+            let running = runs().get(&dir).map(|r| {
+                let (step, done, total) = *r.progress.lock().unwrap_or_else(|e| e.into_inner());
+                json!({"step": step.wire(), "done": done, "total": total})
+            });
+            Ok(json!({
+                "state": migrate::status(&dir)?.wire(),
+                "running": running.unwrap_or(Value::Null),
+            }))
+        }
+        "gen4_migrate_run" => run_migration(req),
+        "gen4_migrate_cancel" => {
+            let dir = dir_of(req)?;
+            let run = runs().get(&dir).cloned();
+            match run {
+                Some(r) => {
+                    r.stop.stop();
+                    Ok(json!({"cancelled": true}))
+                }
+                None => {
+                    if let Some(id) = req.get("runId").and_then(Value::as_str) {
+                        cancelled_early().insert((dir, id.to_owned()));
+                    }
+                    Ok(json!({"cancelled": false}))
+                }
+            }
+        }
+        other => Err(format!("gen4: unknown global op {other}")),
+    }
+}
+
+fn run_migration(req: &Value) -> Result<Value, String> {
+    let dir = dir_of(req)?;
+    let now = req
+        .get("now")
+        .and_then(Value::as_i64)
+        .ok_or("gen4 migrate: missing now")?;
+    let batch = req
+        .get("batch")
+        .and_then(Value::as_u64)
+        .unwrap_or(migrate::DEFAULT_BATCH)
+        .max(1);
+    // 每个 profile 的缓存配置：对象（或已经是 JSON 文本）。先按旧内核同一份解析核对，坏了在这里报，不进迁移。
+    let mut caches: BTreeMap<String, String> = BTreeMap::new();
+    for (profile, v) in req
+        .get("caches")
+        .and_then(Value::as_object)
+        .ok_or("gen4 migrate: missing caches")?
+    {
+        let v = match v {
+            Value::String(text) => serde_json::from_str::<Value>(text)
+                .map_err(|e| format!("gen4 migrate: bad caches for {profile}: {e}"))?,
+            other => other.clone(),
+        };
+        crate::store::caches::CacheConfig::parse(&v)?;
+        caches.insert(profile.clone(), crate::store::sync2::canonical(&v));
+    }
+    let run = Arc::new(Run {
+        stop: Stop::new(),
+        progress: Mutex::new((migrate::Step::Space, 0, 1)),
+    });
+    // 登记随 `_reg` 析构摘掉（返回、报错、panic 都一样）。
+    let Some(_reg) = Registration::new(&dir, &run) else {
+        return Ok(json!({"verdict": "blocked", "reason": migrate::BLOCKED_MIGRATING}));
+    };
+    if let Some(id) = req.get("runId").and_then(Value::as_str) {
+        if cancelled_early().remove(&(dir.clone(), id.to_owned())) {
+            run.stop.stop();
+        }
+    }
+    let out = migrate::run(
+        &dir,
+        migrate::Options {
+            caches: &caches,
+            batch,
+            now_ms: now,
+            stop: &run.stop,
+            progress: &mut |step, done, total| {
+                *run.progress.lock().unwrap_or_else(|e| e.into_inner()) = (step, done, total);
+            },
+            new_device: &migrate::random_device,
+        },
+    );
+    Ok(out?.json())
+}

@@ -72,6 +72,8 @@ mod browse_tests;
 #[cfg(test)]
 mod center_tests;
 #[cfg(test)]
+mod dispatch_tests;
+#[cfg(test)]
 mod study_tests;
 #[cfg(test)]
 mod tests;
