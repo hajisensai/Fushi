@@ -590,7 +590,7 @@ void main() {
     });
   }
 
-  // BUG-4725（反馈 w4RAto8R0x）：释义 WebView 是 Fushi 卡片另建的一面，以前逐字段手抄整面卡的
+  // BUG-4734（反馈 w4RAto8R0x）：释义 WebView 是 Fushi 卡片另建的一面，以前逐字段手抄整面卡的
   // 宿主回调，漏了点图放大（页内不装点图脚本，词典插图点了不能放大）和 Ctrl+滚轮缩放。
   // 页内点图判据本身见 srs_card_image_size_test.dart。
   for (final bool wide in <bool>[false, true]) {

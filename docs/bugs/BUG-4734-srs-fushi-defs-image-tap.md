@@ -1,4 +1,4 @@
-## BUG-4725 · 复习页 Fushi 卡片释义里的词典插图点按不能放大
+## BUG-4734 · 复习页 Fushi 卡片释义里的词典插图点按不能放大
 - **报告**：2026-11-16（用户：维护者，应用内反馈 w4RAto8R0x「复习页释义里的图片过小且点击不能放大」）
 - **真实性**：✅ 真 bug，两层根因叠在一起：
   1. **释义面没装点图脚本**：复习页给整面卡传了 `onImageTap: _viewCardImage`（`fushi/lib/src/pages/implementations/srs/srs_review_page.dart`），但 Fushi 卡片的释义区在 `fushi/lib/src/pages/implementations/srs/srs_fushi_card_view.dart` 的 `_defsFace` 另建一面 `SrsCardFace`，逐字段手抄宿主回调时漏了 `onImageTap`（还漏了 `onZoomWheel`：Ctrl+滚轮落在释义 WebView 上不缩放卡面）；`srs_card_face.dart` 只在 `onImageTap != null` 时注入 `kSrsCardImageTapScript`。
