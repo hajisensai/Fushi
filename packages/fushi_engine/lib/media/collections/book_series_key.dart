@@ -38,23 +38,42 @@ typedef BookEpisodeNumber = ({num number, int part});
 
 /// 同系列两卷在合集里的先后：卷号（无卷号当第 0 卷）→ 话号（无话号当第 0 话）
 /// → 同话分段。相等返回 0，调用方再按书名等兜底。
-int compareBookSeriesPosition(BookSeriesKey a, BookSeriesKey b) {
-  final int v = (a.volume ?? 0).compareTo(b.volume ?? 0);
+int compareBookSeriesPosition(BookSeriesKey a, BookSeriesKey b) =>
+    compareBookSeriesPositionParts(
+      volumeA: a.volume,
+      episodeA: a.episode,
+      volumeB: b.volume,
+      episodeB: b.episode,
+    );
+
+/// [compareBookSeriesPosition] 的拆开版：调用方只存了卷号与话号（AI 合集排序的
+/// 成员）时用，判据只有这一份。
+int compareBookSeriesPositionParts({
+  required num? volumeA,
+  required BookEpisodeNumber? episodeA,
+  required num? volumeB,
+  required BookEpisodeNumber? episodeB,
+}) {
+  final int v = (volumeA ?? 0).compareTo(volumeB ?? 0);
   if (v != 0) return v;
-  final int e = (a.episode?.number ?? 0).compareTo(b.episode?.number ?? 0);
+  final int e = (episodeA?.number ?? 0).compareTo(episodeB?.number ?? 0);
   if (e != 0) return e;
-  return (a.episode?.part ?? 0).compareTo(b.episode?.part ?? 0);
+  return (episodeA?.part ?? 0).compareTo(episodeB?.part ?? 0);
 }
 
 /// [key] 在系列里的位置（卷号、话号、分段），供「同系列各卷位置互不重复」判定；
 /// 书名里既无卷号也无话号时 null。
-({num? volume, num? episode, int part})? bookSeriesPosition(BookSeriesKey key) {
-  if (key.volume == null && key.episode == null) return null;
-  return (
-    volume: key.volume,
-    episode: key.episode?.number,
-    part: key.episode?.part ?? 0,
-  );
+({num? volume, num? episode, int part})? bookSeriesPosition(
+  BookSeriesKey key,
+) => bookSeriesPositionOf(volume: key.volume, episode: key.episode);
+
+/// [bookSeriesPosition] 的拆开版（同 [compareBookSeriesPositionParts]）。
+({num? volume, num? episode, int part})? bookSeriesPositionOf({
+  required num? volume,
+  required BookEpisodeNumber? episode,
+}) {
+  if (volume == null && episode == null) return null;
+  return (volume: volume, episode: episode?.number, part: episode?.part ?? 0);
 }
 
 /// 发布文件名里的 8 位十六进制 CRC 标签（`志乃と恋 [3574f94a].cbz`，导入时
@@ -166,8 +185,14 @@ BookSeriesKey? parseBookSeriesKey(String title) {
 /// 按话发布的漫画（「十歳の最強魔導師 第1話 前編 [c36675f0]」）以前整串去掉
 /// CRC 后就当系列名，每话的系列键各不相同，一组都凑不成（rT5chqFYOK）。
 BookSeriesKey? _seriesFromEpisodeSuffix(String title, String folded) {
-  final int end = _hashSuffix.firstMatch(folded)?.start ?? folded.length;
-  final RegExpMatch? m = _episodeSuffix.firstMatch(folded.substring(0, end));
+  int end = _hashSuffix.firstMatch(folded)?.start ?? folded.length;
+  RegExpMatch? m = _episodeSuffix.firstMatch(folded.substring(0, end));
+  if (m == null) {
+    // 同卷号（[_splitVolumeSuffix]）：话号后跟出版标签时先剥一层再试
+    // （`十歳の最強魔導師 第1話 前編 (少年マガジン)`）。
+    end = _trailingLabel.firstMatch(folded.substring(0, end))?.start ?? end;
+    m = _episodeSuffix.firstMatch(folded.substring(0, end));
+  }
   if (m == null) return null;
   final ({int end, num? volume}) split = _splitVolumeSuffix(
     folded.substring(0, m.start),

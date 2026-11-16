@@ -42,6 +42,9 @@ void main() {
             '十歳の最強魔導師 第3話・中編': (number: 3, part: 2),
             '十歳の最強魔導師第4話': (number: 4, part: 0),
             '十歳の最強魔導師 第5话 后篇': (number: 5, part: 3),
+            // 话号后跟出版标签：同卷号判据先剥一层结尾标签再认。
+            '十歳の最強魔導師 第6話 前編 (少年マガジン)': (number: 6, part: 1),
+            '十歳の最強魔導師 第7話 (少年マガジン) [c36675f0]': (number: 7, part: 0),
           };
       episodes.forEach((String title, BookEpisodeNumber episode) {
         final BookSeriesKey key = parseBookSeriesKey(title)!;
