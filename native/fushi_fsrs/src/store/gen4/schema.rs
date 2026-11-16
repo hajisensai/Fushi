@@ -9,7 +9,8 @@
 //!   索引）/ `closure_ix`；语义层（`weigh.rs`）：`tag_ix`（标签 OR-Set 与顺序提示）、`media_ix`（媒体名 → 内容）、
 //!   `purge_ix`（彻底清除）、`ent_ops`（实体 → 碰过它、别的索引里查不到的操作）、`hold_ix`（被并发改动扣住的删除）。
 //!   盐与别名（`alias.rs`）：`salt_ix`（带盐的操作）、`alias_ix`（出现过的 ID → 规范 ID）、`alias_writer_ix`（改了名的
-//!   旧写入者 → 最初的写入者）；语义摘要（`digest.rs`）：`dg_ix`（每个实体一行）、`dg_dirty`（等重算的实体，静止时为空；
+//!   旧写入者 → 最初的写入者）；身份（`identity.rs`）：`join_ix`（本集合日志里的并入操作 `Join`：被并入的集合与它的
+//!   位置目录名；盐另在 `salt_ix`）；语义摘要（`digest.rs`）：`dg_ix`（每个实体一行）、`dg_dirty`（等重算的实体，静止时为空；
 //!   由 `reg_ix` / `tag_ix` / `log_ix` / `ent_ix` / `media_ix` 上的触发器记）。
 //!   缓存层（`cache.rs`）：`notes` / `cards`（出卡、浏览读的缓存，列同协议 3 的两张缓存表）、`stats`（有效复习投影）。
 //! - **本机状态**：`collections`（profile ↔ 集合的绑定，设计 §5.1；`state` / `via` / `at` 是绑定状态，协议 3
@@ -40,8 +41,9 @@ use rusqlite::Connection;
 
 /// 新代库的 schema 号。只要求远大于协议 3 的任何一个 schema 号（最后一个是 29）；万位是代，低位是这一代里的存储版本。
 ///
-/// G7-1 起 `40006`（本机状态表、`collections` 的绑定状态列、`application_id`）。整批推送前每个改表的 PR 各自 +1。
-pub const SCHEMA: i64 = 40_006;
+/// G7-1 起 `40006`（本机状态表、`collections` 的绑定状态列、`application_id`）；G9-3 起 `40007`（派生表 `join_ix`）。
+/// 整批推送前每个改表的 PR 各自 +1。
+pub const SCHEMA: i64 = 40_007;
 
 /// 新代的号段从这里起：`schema` 小于它的都不是新代库（协议 3 的 1～29 与封存值 39999）。
 pub const GEN_FLOOR: i64 = 40_000;
@@ -345,6 +347,13 @@ CREATE TABLE IF NOT EXISTS alias_writer_ix (
   origin TEXT NOT NULL,
   PRIMARY KEY (col, name)
 ) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS join_ix (
+  col INTEGER NOT NULL,
+  k INTEGER NOT NULL,
+  src BLOB NOT NULL,
+  dir TEXT NOT NULL,
+  PRIMARY KEY (col, k)
+) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS dg_ix (
   col INTEGER NOT NULL,
   ekind INTEGER NOT NULL,
@@ -362,7 +371,7 @@ CREATE TABLE IF NOT EXISTS dg_dirty (
 ";
 
 /// 派生表的名字（每张都有 `col` 列）。
-pub(crate) const DERIVED_TABLES: [&str; 17] = [
+pub(crate) const DERIVED_TABLES: [&str; 18] = [
     "ent_ix",
     "reg_ix",
     "log_ix",
@@ -375,6 +384,7 @@ pub(crate) const DERIVED_TABLES: [&str; 17] = [
     "salt_ix",
     "alias_ix",
     "alias_writer_ix",
+    "join_ix",
     "dg_ix",
     "dg_dirty",
     "notes",
