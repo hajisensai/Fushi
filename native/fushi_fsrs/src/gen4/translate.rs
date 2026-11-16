@@ -532,7 +532,7 @@ pub(crate) mod tests {
         }
     }
 
-    fn log3() -> LogBody {
+    pub(crate) fn log3() -> LogBody {
         LogBody {
             id: Key::Uuid(id(0x21)),
             card: Key::Uuid(id(0x22)),

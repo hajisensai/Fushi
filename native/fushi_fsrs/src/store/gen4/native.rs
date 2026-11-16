@@ -9,9 +9,11 @@
 //! - **依赖**（`deps`）= 本机已应用的版本向量去掉作者自己（[Truth::applied]，每台设备日志的末尾）。同一事务里先收进来
 //!   的操作，紧接着的写入就依赖它们。
 //! - **HLC** = 本机时钟 tick（[Clock::tick]）。时钟的起点取三者之大：`self_.hlc`（本机发过的最大值）、每台设备日志
-//!   末尾那条操作的 HLC（于是新写入的 HLC 大于它依赖的每一条——收段的一侧不必记得「吸收远端时钟」，这一条在写的一侧
-//!   就成立），超前本机墙钟 [crate::sync2::hlc::MAX_AHEAD_MS] 以上的不追（协议 3 的 `Clock::absorb` 口径）。末尾是空洞 / 副本记录的设备
-//!   没有可读的 HLC，跳过（它前面的操作都已被同一设备更晚的 HLC 盖过，只少了一次可选的抬升）。写完把新 HLC 记回
+//!   末尾那条操作的 HLC，超前本机墙钟 [crate::sync2::hlc::MAX_AHEAD_MS] 以上的不追（协议 3 的 `Clock::absorb` 口径）。
+//!   末尾是空洞 / 副本记录的设备没有可读的 HLC，跳过。所以只在依赖都没超前过多、末尾都可读时，新 HLC 才大于它依赖的
+//!   每一条；超前过多的依赖、空洞 / 副本末尾的设备都可能让新 HLC 小于所依赖的操作（测试
+//!   `the_clock_tops_every_dependency_but_not_a_runaway_one`）。**判定不依赖这一条**：设计稿以因果优先、HLC 只比并发
+//!   的写入，收段一侧（G8-4）要不要吸收远端时钟按它自己的需要定，不能拿这里当前提。写完把新 HLC 记回
 //!   `self_`（[Truth::set_self_hlc]，只升不降）。
 //! - **索引**：落库后立刻 [Index::add]，派生层的收尾由 [Native::finish]（= [Index::settle]）或 `ingest.rs` 的
 //!   [super::ingest::ingest_settle] 做。
@@ -277,7 +279,7 @@ pub(crate) mod tests {
 
     use super::*;
     use crate::gen4::op::Edit4;
-    use crate::gen4::op::tests::{id, native_edit};
+    use crate::gen4::op::tests::{id, imported_log, native_edit};
     use crate::gen4::stamp::{HeritageStamp, StampCtx, StampHlc};
     use crate::gen4::translate::native_body4;
     use crate::store::gen4::derive::tests::{assert_rebuild_is_identity, heritage, native, op};
@@ -506,6 +508,12 @@ pub(crate) mod tests {
             (other, edit("a"), "not collection"),
             (col, Body4::salts(["u"]).unwrap(), "write_salts"),
             (col, Body4::Unknown, "unknown body"),
+            // 承袭来的复习日志（带旧 HLC / 旧服务器时刻）不是本机新写的形（设计稿 §536）。
+            (
+                col,
+                Body4::Log(imported_log()),
+                "heritage hlc / server time",
+            ),
         ];
         for (ix_col, body, want) in cases {
             let e = t
@@ -892,6 +900,29 @@ pub(crate) mod tests {
         };
         let e = native_body4(e3(Some(stamp))).unwrap_err();
         assert!(e.contains("legacy stamp"), "{e}");
+        // 带旧 HLC 或旧服务器时刻（各自单独带也算）的日志是承袭数据；都不带的照转。
+        let log = crate::gen4::translate::tests::log3();
+        for (hlc, server_time) in [
+            (Some("1741061848001:0:anki".to_owned()), None),
+            (None, Some(1_741_061_900_000)),
+        ] {
+            let l = v3::LogBody {
+                legacy_hlc: hlc,
+                legacy_server_time: server_time,
+                ..log.clone()
+            };
+            let e = native_body4(v3::Body::Log(l)).unwrap_err();
+            assert!(e.contains("legacy hlc / server time"), "{e}");
+        }
+        let plain = v3::LogBody {
+            legacy_hlc: None,
+            legacy_server_time: None,
+            ..log
+        };
+        assert!(matches!(
+            native_body4(v3::Body::Log(plain)),
+            Ok(Body4::Log(_))
+        ));
         let e = native_body4(v3::Body::Dedup { pairs: vec![] }).unwrap_err();
         assert!(e.contains("dedup"), "{e}");
         let e = native_body4(v3::Body::MediaAt {
