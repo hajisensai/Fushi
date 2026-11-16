@@ -1,4 +1,4 @@
-## BUG-4714 · 歌词模式横排左右边距写反
+## BUG-4741 · 歌词模式横排左右边距写反
 - **报告**：2026-11-15（用户：开发者 shishamo，应用内反馈 a6XkWp0Ot4，Windows）
 - **真实性**：✅ 真 bug。CSS `padding` 四值简写顺序是「上 右 下 左」，横排分支两条路径都把左边距填进第 2 位（右）、右边距填进第 4 位（左）：
   首屏生成 `fushi/lib/src/media/audiobook/lyrics_mode_html.dart:340-341`（`${marginLeft…}vw` 在第 2 位、`${marginRight…}vw` 在第 4 位，旁边 :330-335 算好的 `padLeft` / `padRight` 横排没用上）；
