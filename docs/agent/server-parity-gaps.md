@@ -23,6 +23,7 @@ checking parity. Hooks the server leaves null today:
 | `videoRemoteService`, `gameStreamService` | Remote playback and game streaming are off | Not applicable: both need a display or a running game. |
 | `LocalLibraryHostService.onlineMangaReader` | Online-manga chapters that weren't downloaded aren't served | Not applicable: the server has no online-source runtime. |
 | `sourceShareHost` | `/api/interconnect/source-share*` answers 404: paired devices don't receive the server's user-configured servers or plugins | Not wired: the server has no OPDS / AList / Kavita / Subsonic / media-server lists or plugin hosts to share (spec `docs/specs/2026-11-16-interconnect-source-share.md`). |
+| `pluginRelayHost` | `/api/interconnect/plugin-relay*` answers 404 and `pluginRelay` is not declared: devices without a plugin runtime (iOS) can't use plugins through the server | Not wired: the server has no music plugin manager (spec `docs/specs/2026-11-16-interconnect-source-share.md` §5). |
 
 The other hooks are wired on both sides: pairing, peer tokens, `hostId`, public URLs, P2P,
 graphic-subtitle export, `videoSubtitleBackfill`, `leaderboardLinkHost` (owner devices

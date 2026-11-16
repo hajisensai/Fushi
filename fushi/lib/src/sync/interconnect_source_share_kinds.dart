@@ -279,7 +279,8 @@ final class MusicSharedPluginStore implements SharedPluginStore {
 
   @override
   Future<List<SharedPluginPackage>> installed() async => <SharedPluginPackage>[
-    for (final InstalledMusicPlugin p in await _manager.list())
+    // 只共享本机真装着的包：经互联中继用的插件不在本机，没有包可给。
+    for (final InstalledMusicPlugin p in await _manager.listInstalled())
       if (p.info case final MusicPluginPackageInfo info)
         SharedPluginPackage(
           id: p.id,

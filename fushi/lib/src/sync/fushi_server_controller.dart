@@ -36,6 +36,7 @@ import 'package:fushi_engine/sync/host_update/host_update_protocol.dart';
 import 'package:fushi_engine/sync/interconnect_device_name.dart';
 import 'package:fushi_engine/sync/interconnect_host_addresses.dart';
 import 'package:fushi_engine/sync/interconnect_leaderboard_link.dart';
+import 'package:fushi_engine/sync/interconnect_plugin_relay.dart';
 import 'package:fushi_engine/sync/interconnect_source_share.dart';
 import 'package:fushi_engine/sync/subscriptions/host_subscription_host.dart';
 import 'package:fushi/src/sync/lan_discovery_service.dart';
@@ -118,6 +119,7 @@ class FushiSyncServerController extends ChangeNotifier {
     HostSelfUpdater Function()? hostSelfUpdater,
     InterconnectLeaderboardLinkHost Function()? leaderboardLinkHost,
     InterconnectSourceShareHost Function()? sourceShareHost,
+    InterconnectPluginRelayHost? Function()? pluginRelayHost,
     SrsRemoteStoreService? Function()? srsRemoteStore,
     bool Function()? srsSync2Joined,
     PrefStore Function()? prefsStore,
@@ -148,6 +150,7 @@ class FushiSyncServerController extends ChangeNotifier {
        _hostSelfUpdater = hostSelfUpdater,
        _leaderboardLinkHost = leaderboardLinkHost,
        _sourceShareHost = sourceShareHost,
+       _pluginRelayHost = pluginRelayHost,
        _srsRemoteStore = srsRemoteStore,
        _srsSync2Joined = srsSync2Joined,
        _prefsStore = prefsStore,
@@ -210,6 +213,10 @@ class FushiSyncServerController extends ChangeNotifier {
   /// 互联「来源共享」的 host 侧（服务器来源 + 插件包发给「我的设备」）。null（headless/
   /// 单测）= 不接线，端点 404、能力位不声明。
   final InterconnectSourceShareHost Function()? _sourceShareHost;
+
+  /// 互联「插件中继」的 host 侧（替没有插件运行时的「我的设备」代跑本机插件）。null / 返回
+  /// null（headless / 单测 / 本机没有插件运行时）= 不接线，端点 404、能力位不声明。
+  final InterconnectPluginRelayHost? Function()? _pluginRelayHost;
 
   /// 远程复习库：按请求现取（复习模块关着时 null → 端点 404、不声明能力）。
   final SrsRemoteStoreService? Function()? _srsRemoteStore;
@@ -894,6 +901,8 @@ class FushiSyncServerController extends ChangeNotifier {
           ..leaderboardLinkHost = _leaderboardLinkHost?.call()
           // 来源共享（开关与「我的设备」判据在实现里按请求实时读）。
           ..sourceShareHost = _sourceShareHost?.call()
+          // 插件中继（开关与「我的设备」判据同来源共享，在实现里按请求实时读）。
+          ..pluginRelayHost = _pluginRelayHost?.call()
           // 远程复习库（docs/specs/2026-11-01-srs-remote-review-design.md）。
           ..srsRemoteStoreProvider = _srsRemoteStore
           // 复习同步 v2 的参与状态（BUG-4320）：没确认首次同步前本机不跑本机目录那一轮。
