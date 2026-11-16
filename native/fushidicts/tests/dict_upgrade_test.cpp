@@ -687,6 +687,22 @@ void test_robustness(const std::string& root, Deinflector& deinflector) {
                   "not a dictionary directory");
     expect_result(fushidicts::upgrade_dictionary(root + "/rob_missing", true), UpgradeResult::Failed,
                   "missing directory");
+    // 一个键都没有的旧式索引（槽位全空——导入端不产出空词典，只会是坏表）：没有可搬的
+    // 东西，留在旧式，不写也不删任何文件。
+    {
+      const std::string dir = root + "/rob_empty";
+      fs::create_directories(dir);
+      std::ofstream(fs::path(dir) / ".fushidicts_2") << "2";
+      std::ofstream(fs::path(dir) / "blobs.bin", std::ios::binary) << "x";
+      std::vector<char> table(4 + 4 * 16, 0);
+      const uint32_t capacity = 4;
+      std::memcpy(table.data(), &capacity, sizeof(capacity));
+      std::ofstream(fs::path(dir) / "hash.table", std::ios::binary)
+          .write(table.data(), static_cast<std::streamsize>(table.size()));
+      expect_result(fushidicts::upgrade_dictionary(dir, true), UpgradeResult::NotApplicable, "empty legacy index");
+      expect(!fs::exists(dir + "/key.index") && fs::exists(dir + "/hash.table") && fs::exists(dir + "/blobs.bin"),
+             "empty legacy index: nothing written, nothing removed");
+    }
   }
 
   // 遗留临时文件 + 孤儿 blobs3.bin（上一次升级中途被杀）：不影响这一次，且被清掉。

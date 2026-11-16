@@ -132,10 +132,19 @@ bool rename_onto(const std::string& from, const std::string& to) {
   return !ec;
 }
 
-// 旧式索引读出来的一个键：哈希 + 它列出的记录（按原顺序）。
+// 旧式索引读出来的一个键：哈希 + 它列出的记录——Legacy::records 里的
+// [first, first + count) 一段，按原顺序。
 struct LegacyKey {
   uint64_t hash;
   uint64_t table;  // 原 offset 表的地址
+  uint64_t first;
+  uint32_t count;
+};
+
+// 整张旧式索引。所有键的记录偏移首尾相接放在一个数组里：大词典有几百万个键，各配一个
+// vector 的话光堆分配的头就是上百 MB，而升级是在用户设备（含手机）的后台跑的。
+struct Legacy {
+  std::vector<LegacyKey> keys;
   std::vector<uint64_t> records;
 };
 
@@ -187,12 +196,15 @@ struct Rewritten {
   std::vector<key_index::entry> entries;
 };
 
-std::optional<Rewritten> rewrite_meta(const memory::blob_file& blobs, const std::vector<LegacyKey>& keys) {
+std::optional<Rewritten> rewrite_meta(const memory::blob_file& blobs, const Legacy& legacy) {
   Rewritten out;
   ankerl::unordered_dense::map<uint64_t, uint64_t> moved;  // 原记录偏移 → 新偏移
-  std::vector<std::vector<uint64_t>> lists(keys.size());
-  for (size_t i = 0; i < keys.size(); i++) {
-    for (const uint64_t record : keys[i].records) {
+  // 与 legacy.records 逐项对应的新偏移。记录按「键的次序、键内原顺序」写出，产物只由
+  // 输入决定（两个进程同时升级同一本词典写出的 blobs3.bin 逐字节相同）。
+  std::vector<uint64_t> relocated(legacy.records.size(), 0);
+  for (const LegacyKey& key : legacy.keys) {
+    for (uint64_t i = key.first; i < key.first + key.count; i++) {
+      const uint64_t record = legacy.records[i];
       auto [it, inserted] = moved.try_emplace(record, out.blobs.size());
       if (inserted) {
         const std::optional<RawMeta> meta = read_raw_meta(blobs, record);
@@ -201,21 +213,23 @@ std::optional<Rewritten> rewrite_meta(const memory::blob_file& blobs, const std:
         }
         meta_record::append(out.blobs, meta->expr, meta->mode, meta->data, /*allow_parsed=*/true);
       }
-      lists[i].push_back(it->second);
+      relocated[i] = it->second;
     }
   }
-  out.entries.reserve(keys.size());
-  for (size_t i = 0; i < keys.size(); i++) {
-    if (lists[i].size() == 1) {
-      out.entries.push_back({.hash = keys[i].hash, .offset = lists[i].front(), .single = true});
+  out.entries.reserve(legacy.keys.size());
+  for (const LegacyKey& key : legacy.keys) {
+    if (key.count == 1) {
+      out.entries.push_back({.hash = key.hash, .offset = relocated[key.first], .single = true});
       continue;
     }
-    out.entries.push_back({.hash = keys[i].hash, .offset = out.blobs.size(), .single = false});
-    const auto count = static_cast<uint32_t>(lists[i].size());
+    out.entries.push_back({.hash = key.hash, .offset = out.blobs.size(), .single = false});
     const size_t at = out.blobs.size();
-    out.blobs.resize(at + sizeof(uint32_t) + lists[i].size() * sizeof(uint64_t));
-    std::memcpy(out.blobs.data() + at, &count, sizeof(count));
-    std::memcpy(out.blobs.data() + at + sizeof(uint32_t), lists[i].data(), lists[i].size() * sizeof(uint64_t));
+    out.blobs.resize(at + sizeof(uint32_t) + static_cast<size_t>(key.count) * sizeof(uint64_t));
+    std::memcpy(out.blobs.data() + at, &key.count, sizeof(key.count));
+    if (key.count != 0) {
+      std::memcpy(out.blobs.data() + at + sizeof(uint32_t), relocated.data() + key.first,
+                  static_cast<size_t>(key.count) * sizeof(uint64_t));
+    }
   }
   return out;
 }
@@ -270,23 +284,26 @@ UpgradeResult upgrade_dictionary(const std::string& dir, bool allow_meta_rewrite
     const memory::blob_file& blobs = index.blobs();
     const memory::shared_mapping& table = index.index_mapping();
 
-    std::vector<LegacyKey> keys;
+    Legacy legacy;
+    std::vector<LegacyKey>& keys = legacy.keys;
     bool all_raw_meta = true;
     hash::for_each_slot(table->data, table->size, [&](uint64_t h, uint64_t at) -> bool {
-      LegacyKey key{.hash = h, .table = at, .records = {}};
+      LegacyKey key{.hash = h, .table = at, .first = legacy.records.size(), .count = 0};
       hash::for_each_record_offset(blobs, hash::location{.offset = at, .single = false}, [&](uint64_t record) -> bool {
-        key.records.push_back(record);
+        legacy.records.push_back(record);
+        key.count++;
         if (all_raw_meta) {
           const memory::blob_span type = blobs.view(record, 1);
           all_raw_meta = type && type.data[0] == meta_record::kRawType;
         }
         return true;
       });
-      keys.push_back(std::move(key));
+      keys.push_back(key);
       return true;
     });
     if (keys.empty()) {
-      return UpgradeResult::Failed;
+      // 一个键都没有（空词典，或索引坏到读不出槽位）：没有可搬的东西，留在旧式。
+      return UpgradeResult::NotApplicable;
     }
     // 按哈希排序（与导入端的 key_index::entry 次序一致，产物与 hash.table 的槽位排布
     // 无关），重复的哈希（坏表）只留第一个。
@@ -296,7 +313,7 @@ UpgradeResult upgrade_dictionary(const std::string& dir, bool allow_meta_rewrite
 
     std::optional<Rewritten> rewritten;
     if (allow_meta_rewrite && all_raw_meta) {
-      rewritten = rewrite_meta(blobs, keys);
+      rewritten = rewrite_meta(blobs, legacy);
     }
 
     if (rewritten) {
@@ -320,9 +337,9 @@ UpgradeResult upgrade_dictionary(const std::string& dir, bool allow_meta_rewrite
       std::vector<key_index::entry> entries;
       entries.reserve(keys.size());
       for (const LegacyKey& key : keys) {
-        if (key.records.size() == 1) {
+        if (key.count == 1) {
           // 单记录：直指记录，原 offset 表留在 blobs.bin 里成为死字节。
-          entries.push_back({.hash = key.hash, .offset = key.records.front(), .single = true});
+          entries.push_back({.hash = key.hash, .offset = legacy.records[key.first], .single = true});
         } else {
           // 多条（或读不出来的坏表）：照旧指向原 offset 表，读侧与原来同口径收住。
           entries.push_back({.hash = key.hash, .offset = key.table, .single = false});

@@ -23,7 +23,7 @@ enum class UpgradeResult : int32_t {
   Failed = -1,        // 读不了 / 写不了（目录不是完整导入的词典、IO 失败）；词典原样可用
   UpToDate = 0,       // 已有合法 key.index（顺带清理了遗留的旧文件）
   Upgraded = 1,       // 本次写出了 key.index
-  NotApplicable = 2,  // key.index 装不下这本词典（offset 超 32 位），保持旧式、照常可用
+  NotApplicable = 2,  // key.index 装不下这本词典（offset 超 32 位）或它一个键都没有，保持旧式、照常可用
 };
 
 // [allow_meta_rewrite]：全部记录都是 type 1（纯 freq / pitch / ipa 词典）时把记录重写成
