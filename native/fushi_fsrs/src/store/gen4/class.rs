@@ -832,10 +832,14 @@ impl<'t, 'c> Index<'t, 'c> {
                     }
                     _ => false,
                 };
-                let proven = revived.is_empty()
-                    && !(class_conflict && !raw_conflict)
-                    && dominated.iter().all(|d| d.evidence.is_proof())
-                    && (!winner_changed || !dominated.is_empty() || hlc_tie);
+                let proven = proven_of(
+                    &revived,
+                    raw_conflict,
+                    class_conflict,
+                    &dominated,
+                    winner_changed,
+                    hlc_tie,
+                );
                 out.diffs.push(ClassDiff {
                     kind: ek,
                     entity: canon.clone(),
@@ -987,6 +991,23 @@ impl<'t, 'c> Index<'t, 'c> {
         }
         Ok(out)
     }
+}
+
+/// 一个按类判与原值判不同的寄存器佐证不佐证得了（[ClassDiff::proven]）：没有复活的写入、没有多出来的冲突、每条被
+/// 支配的写入都有佐证；胜者变了而没有被支配的写入时（死活一条没变、只有胜者翻了），只认 HLC 平手落到改名的 HLC 写入者
+/// 上（[hlc_tie]）——冻结判据下别的情形翻不过来，翻了就是 bug。
+fn proven_of(
+    revived: &[OpId],
+    raw_conflict: bool,
+    class_conflict: bool,
+    dominated: &[Dominated],
+    winner_changed: bool,
+    hlc_tie: bool,
+) -> bool {
+    revived.is_empty()
+        && !(class_conflict && !raw_conflict)
+        && dominated.iter().all(|d| d.evidence.is_proof())
+        && (!winner_changed || !dominated.is_empty() || hlc_tie)
 }
 
 /// 一条修改的 dot（带旧戳的取旧戳，不带的取 (设备, seq)）与旧 HLC（物理时刻, 计数, 写入者；带旧戳且解得开时才有）。
@@ -1652,6 +1673,51 @@ mod tests {
             })
             .unwrap();
         });
+    }
+
+    /// 佐证门槛逐条：复活的写入、多出来的冲突、没佐证的被支配写入都判佐证不了；胜者变了、死活一条没变时只认 HLC 平手。
+    #[test]
+    fn the_proof_gate_needs_every_piece() {
+        let dom = |evidence: DiffEvidence| Dominated {
+            op: OpId {
+                device: id(1),
+                seq: 1,
+            },
+            writer: "w1".to_owned(),
+            seq: 1,
+            canonical_writer: "w1".to_owned(),
+            evidence,
+        };
+        let copy = dom(DiffEvidence::Copy {
+            name: "m".to_owned(),
+        });
+        let none = dom(DiffEvidence::None);
+        let revived = [OpId {
+            device: id(2),
+            seq: 1,
+        }];
+        // (复活, 原值冲突, 按类冲突, 被支配, 胜者变, 平手) → 佐证得了。
+        assert!(proven_of(&[], true, false, &[copy.clone()], false, false));
+        assert!(proven_of(&[], true, false, &[copy.clone()], true, false));
+        assert!(!proven_of(
+            &revived,
+            true,
+            false,
+            &[copy.clone()],
+            false,
+            false
+        ));
+        assert!(!proven_of(&[], false, true, &[copy.clone()], false, false));
+        assert!(!proven_of(
+            &[],
+            true,
+            false,
+            &[copy.clone(), none],
+            false,
+            false
+        ));
+        assert!(proven_of(&[], true, true, &[], true, true));
+        assert!(!proven_of(&[], true, true, &[], true, false));
     }
 
     /// 按类拼行的捷径看的是**这个寄存器**里有没有改名相关名字的写入，不是整个集合有没有归回写入者：集合里有归回的
