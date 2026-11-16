@@ -26,10 +26,15 @@
 //! - [compact]：本机原生段的小段合并（分层合并的计划与重新切段、签名；不改表）。
 //! - `compare`：协议 3 的投影与新代派生层逐类对拍（干跑与测试装置共用）。
 //! - [cmd]：读命令的新代实现（`read` / `read_lib` 的各个查询、`entity_views`、修改历史）。还没接分发器。
+//! - [carry]：迁移时带过去的本机状态（公钥与名字、暂扣、检查点、本机媒体、`media_at`、加密位置记忆、绑定状态、切点），
+//!   预演与迁移共用。
+//! - [migrate]：迁移编排（设计 §6.1、规划 §1.4 第 1–11 步，G7-2）：取锁 → 前提 → 临时文件里走 [dryrun] 的同一套阶段 →
+//!   对拍全过才提交（改名）→ 原位封存旧库。还没有调用方。
 //! - [dryrun]：真实库干跑（设计 §8 G4）：旧库只读 → 临时新库 → 重建 → 对拍报告；也是换代前版本里的预演自检（G4b）。
 
 pub mod alias;
 pub mod cache;
+pub mod carry;
 pub mod class;
 pub mod cmd;
 pub mod compact;
@@ -46,6 +51,7 @@ pub mod inherit;
 pub mod legacy;
 pub mod legacy_export;
 pub mod media;
+pub mod migrate;
 pub mod native;
 pub mod oldroot;
 pub(crate) mod pack;
