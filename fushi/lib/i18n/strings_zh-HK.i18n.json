@@ -2891,6 +2891,7 @@
   "drag_drop_unsupported_on_collection": "只能拖入影片檔案：拖進來的影片會匯入並直接加入本合集。",
   "drag_drop_unsupported_on_dictionary": "請把 .zip、.dsl 或 .mdx 詞典檔案拖到這裡。CSS 檔案只能連同詞典包一起匯入。",
   "drag_drop_unsupported_on_downloads": "請把 .torrent 種子檔案拖到這裡以新增下載任務。其它檔案請拖到書架、漫畫庫或影片頁。",
+  "drag_drop_unsupported_on_plugins": "Drop a .fushiplug plugin package here to install it.",
   "drag_drop_unsupported_on_video": "請把影片、播放清單或字幕拖到這裡。書籍或詞典檔案請切換到對應頁面。",
   "edit_custom_theme": "編輯自定義主題",
   "eink_mode": "墨水屏模式",

@@ -2891,6 +2891,7 @@
   "drag_drop_unsupported_on_collection": "Drop video files here to import them straight into this collection.",
   "drag_drop_unsupported_on_dictionary": "Drop .zip, .dsl, or .mdx dictionary files here. CSS files only work together with a dictionary package.",
   "drag_drop_unsupported_on_downloads": "Drop .torrent files here to add a download task. Other files belong to the Books, Manga, or Video pages.",
+  "drag_drop_unsupported_on_plugins": "Drop a .fushiplug plugin package here to install it.",
   "drag_drop_unsupported_on_video": "Drop videos, playlists, or subtitles here. Switch to Books or Dictionaries for those files.",
   "edit_custom_theme": "Edit custom theme",
   "eink_mode": "E-ink mode",

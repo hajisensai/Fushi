@@ -2891,6 +2891,7 @@
   "drag_drop_unsupported_on_collection": "Thả tệp video vào đây để nhập thẳng vào bộ sưu tập này.",
   "drag_drop_unsupported_on_dictionary": "Hãy thả tệp từ điển .zip, .dsl hoặc .mdx vào đây. Tệp CSS chỉ dùng được cùng với một gói từ điển.",
   "drag_drop_unsupported_on_downloads": "Thả tệp .torrent vào đây để thêm tác vụ tải xuống. Các tệp khác thuộc các trang Sách, Manga hoặc Video.",
+  "drag_drop_unsupported_on_plugins": "Drop a .fushiplug plugin package here to install it.",
   "drag_drop_unsupported_on_video": "Hãy thả video, danh sách phát hoặc phụ đề vào đây. Chuyển sang Sách hoặc Từ điển cho các tệp đó.",
   "edit_custom_theme": "Chỉnh sửa giao diện tùy chỉnh",
   "eink_mode": "Chế độ e-ink",

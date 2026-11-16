@@ -2891,6 +2891,7 @@
   "drag_drop_unsupported_on_collection": "Перетащите сюда видеофайлы, чтобы импортировать их прямо в эту коллекцию.",
   "drag_drop_unsupported_on_dictionary": "Перетащите сюда файлы словарей .zip, .dsl или .mdx. Файлы CSS работают только вместе с пакетом словаря.",
   "drag_drop_unsupported_on_downloads": "Перетащите сюда файлы .torrent, чтобы добавить задачу загрузки. Остальные файлы относятся к страницам «Книги», «Манга» или «Видео».",
+  "drag_drop_unsupported_on_plugins": "Drop a .fushiplug plugin package here to install it.",
   "drag_drop_unsupported_on_video": "Перетащите сюда видео, плейлисты или субтитры. Для книг или словарей перейдите на соответствующую вкладку.",
   "edit_custom_theme": "Редактировать пользовательскую тему",
   "eink_mode": "Режим e-ink",

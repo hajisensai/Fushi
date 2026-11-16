@@ -2891,6 +2891,7 @@
   "drag_drop_unsupported_on_collection": "Letakkan file video di sini untuk mengimpornya langsung ke koleksi ini.",
   "drag_drop_unsupported_on_dictionary": "Jatuhkan file kamus .zip, .dsl, atau .mdx di sini. File CSS hanya berfungsi bersama paket kamus.",
   "drag_drop_unsupported_on_downloads": "Letakkan file .torrent di sini untuk menambah tugas unduhan. File lain ada di halaman Buku, Manga, atau Video.",
+  "drag_drop_unsupported_on_plugins": "Drop a .fushiplug plugin package here to install it.",
   "drag_drop_unsupported_on_video": "Jatuhkan video, playlist, atau subtitle di sini. Beralih ke Buku atau Kamus untuk file tersebut.",
   "edit_custom_theme": "Edit tema kustom",
   "eink_mode": "Mode E-ink",

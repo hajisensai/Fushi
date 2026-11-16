@@ -134,10 +134,14 @@ class _MusicPluginManagementPage extends StatelessWidget {
     context,
     title: t.music_plugins_title,
     // 留白要在脚手架之下量：页头让位（MediaQuery 顶部 padding）只在那里才有。
-    body: Builder(
-      builder: (BuildContext context) => SingleChildScrollView(
-        padding: musicBrowsePagePadding(context),
-        child: MusicPluginSettingsBody(appModel: appModel),
+    // 整个页面体是 .fushiplug 的拖放落点（BUG-4695），与「安装」按钮同一条流程。
+    body: MusicPluginDropTarget(
+      manager: appModel.musicPluginManager,
+      child: Builder(
+        builder: (BuildContext context) => SingleChildScrollView(
+          padding: musicBrowsePagePadding(context),
+          child: MusicPluginSettingsBody(appModel: appModel),
+        ),
       ),
     ),
   );

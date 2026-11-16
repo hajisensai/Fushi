@@ -2891,6 +2891,7 @@
   "drag_drop_unsupported_on_collection": "Suelta aquí archivos de vídeo para importarlos directamente en esta colección.",
   "drag_drop_unsupported_on_dictionary": "Suelta aquí archivos de diccionario .zip, .dsl o .mdx. Los archivos CSS solo funcionan junto con un paquete de diccionario.",
   "drag_drop_unsupported_on_downloads": "Suelta aquí archivos .torrent para añadir una tarea de descarga. Los demás archivos corresponden a las páginas de Libros, Manga o Vídeo.",
+  "drag_drop_unsupported_on_plugins": "Drop a .fushiplug plugin package here to install it.",
   "drag_drop_unsupported_on_video": "Suelta vídeos, listas de reproducción o subtítulos aquí. Cambia a Libros o Diccionarios para esos archivos.",
   "edit_custom_theme": "Editar tema personalizado",
   "eink_mode": "Modo e-ink",

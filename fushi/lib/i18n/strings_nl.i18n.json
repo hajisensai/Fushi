@@ -2891,6 +2891,7 @@
   "drag_drop_unsupported_on_collection": "Sleep videobestanden hierheen om ze rechtstreeks in deze collectie te importeren.",
   "drag_drop_unsupported_on_dictionary": "Sleep .zip-, .dsl- of .mdx-woordenboekbestanden hierheen. CSS-bestanden werken alleen samen met een woordenboekpakket.",
   "drag_drop_unsupported_on_downloads": "Sleep .torrent-bestanden hierheen om een downloadtaak toe te voegen. Andere bestanden horen op de pagina's Boeken, Manga of Video.",
+  "drag_drop_unsupported_on_plugins": "Drop a .fushiplug plugin package here to install it.",
   "drag_drop_unsupported_on_video": "Sleep video's, afspeellijsten of ondertitels hierheen. Schakel over naar Boeken of Woordenboeken voor die bestanden.",
   "edit_custom_theme": "Aangepast thema bewerken",
   "eink_mode": "E-inkmodus",

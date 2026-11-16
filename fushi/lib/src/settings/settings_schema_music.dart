@@ -17,6 +17,8 @@ import 'package:fushi/src/pages/implementations/music/music_quality_sheet.dart'
 import 'package:fushi_music/fushi_music.dart' show MusicPluginQuality;
 import 'package:fushi/src/pages/implementations/music/music_lyrics_backdrop.dart';
 import 'package:fushi/src/pages/implementations/music/music_lyrics_providers.dart';
+import 'package:fushi/src/pages/implementations/music/music_plugin_settings.dart'
+    show MusicPluginDropTarget;
 import 'package:fushi/src/pages/implementations/home_page.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
@@ -368,8 +370,11 @@ SettingsDestination buildMusicDestination() {
               title: t.music_lyrics_providers_title,
               icon: FushiIcons.lyrics,
               sections: const <SettingsSection>[],
-              body: (SettingsContext c) =>
-                  MusicLyricsProvidersBody(appModel: c.appModel),
+              // 设置里的歌词来源页同样收 .fushiplug 拖放（BUG-4695）。
+              body: (SettingsContext c) => MusicPluginDropTarget(
+                manager: c.appModel.musicPluginManager,
+                child: MusicLyricsProvidersBody(appModel: c.appModel),
+              ),
             ),
           ),
           SettingsSwitchItem(
