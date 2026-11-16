@@ -2695,8 +2695,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       if (chapterIndex < 0) {
         throw StateError('The manga has no chapters');
       }
-      // 一次性目录迁移：旧条目从 `<runtimeRoot>/library` 搬进 `fushi_books`，
-      // 章目录才有地方落（设计稿 2026-09-12 §2.1）。
+      // 一次性目录迁移：旧条目从 `<runtimeRoot>/library` / `fushi_books` 搬进
+      // 下载根 `<下载根>/manga/<bookKey>`，章目录才有地方落。
       row = await service.ensureBookDirectory(row);
       if (_sourceReviewActive) {
         entry = entry.copyWith(currentChapterIndex: chapterIndex);
@@ -3882,7 +3882,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       // 锁定章入队必败（要登录购买），预下载不替用户去撞。
       if (next.locked) return;
       if (await isChapterDownloaded(
-        await MangaStorage.bookPath(row.bookKey),
+        await onlineMangaBookDirectory(appModel.database, row.bookKey),
         next.key,
       )) {
         return;
@@ -3970,8 +3970,11 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     try {
       // 目标章下没下载都能换：已下载从章目录读，未下载在线直读（2026-09-26 用户
       // 撤回设计稿 §1.1），分流在 [_openShelfChapter] 里只做一次。
-      // 注意 [_bookRow] 在读章时指向**章目录**副本，书根要从 bookKey 重新解析。
-      final String bookDir = await MangaStorage.bookPath(row.bookKey);
+      // 注意 [_bookRow] 在读章时指向**章目录**副本，书根要按 bookKey 从库里的行取。
+      final String bookDir = await onlineMangaBookDirectory(
+        appModel.database,
+        row.bookKey,
+      );
       // 换章前把当前章的进度落库，否则「翻到下一章再翻回来」会丢掉刚读的位置。
       await _saveCurrentChapterState();
       final OnlineMangaLibraryEntry selected = _sourceReviewActive
@@ -6137,7 +6140,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         ? const <String, MangaChapterStateRow>{}
         : await appModel.database.getMangaChapterStates(row.uid);
     final Set<String> downloaded = await downloadedChapterKeys(
-      await MangaStorage.bookPath(row.bookKey),
+      await onlineMangaBookDirectory(appModel.database, row.bookKey),
       entry.chapters.map((OnlineMangaChapter chapter) => chapter.key),
     );
     if (!mounted) return;

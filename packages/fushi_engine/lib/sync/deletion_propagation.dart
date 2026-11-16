@@ -32,27 +32,39 @@ class DeleteDecision {
     required this.scope,
     this.deleteLocalFiles = false,
     this.deleteStatistics = false,
+    this.keepDownloadedFiles = false,
   });
 
   final DeleteScope scope;
   final bool deleteLocalFiles;
   final bool deleteStatistics;
 
+  /// 在线漫画删书时「保留已下载章节」：只删书架行，章节文件留在下载根，可重新
+  /// 入库。与前三维正交；默认 false（其它入口语义不变）。
+  final bool keepDownloadedFiles;
+
   @override
   bool operator ==(Object other) =>
       other is DeleteDecision &&
       other.scope == scope &&
       other.deleteLocalFiles == deleteLocalFiles &&
-      other.deleteStatistics == deleteStatistics;
+      other.deleteStatistics == deleteStatistics &&
+      other.keepDownloadedFiles == keepDownloadedFiles;
 
   @override
-  int get hashCode => Object.hash(scope, deleteLocalFiles, deleteStatistics);
+  int get hashCode => Object.hash(
+    scope,
+    deleteLocalFiles,
+    deleteStatistics,
+    keepDownloadedFiles,
+  );
 
   @override
   String toString() =>
       'DeleteDecision(${scope.name}, '
       'deleteLocalFiles: $deleteLocalFiles, '
-      'deleteStatistics: $deleteStatistics)';
+      'deleteStatistics: $deleteStatistics, '
+      'keepDownloadedFiles: $keepDownloadedFiles)';
 }
 
 /// 删除传播的方向：远端也删 / 本地也删。
