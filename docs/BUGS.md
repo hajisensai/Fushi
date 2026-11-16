@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4058 条。点号进各自文件。
+> 共 4059 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4702](bugs/BUG-4702-windows-taskbar-activation-starved-by-deferred-task.md) | ✅ | ✅ | 任何真实常驻动画 + idle 任务让调度器零延迟空转，任务栏点 Fushi 唤不到前台（BUG-4387 复发） |
 | [BUG-4701](bugs/BUG-4701-overwrite-import-unrecoverable-library.md) | ✅ | ✅ | 覆盖导入把书库换掉后无法找回：覆盖前快照成功即删、书文件成孤儿目录无法重新登记 |
 | [BUG-4700](bugs/BUG-4700-manga-import-staging-copy-doubles-disk.md) | ✅ | ✅ | 漫画导入从暂存目录拷贝进书目录，大包磁盘峰值是包体积的三倍 |
 | [BUG-4699](bugs/BUG-4699-epub-parse-whole-file-in-memory.md) | ✅ | ✅ | EPUB（含纯图漫画）导入整本读进内存并缓存全部解压内容，2 GiB 以上必然内存耗尽 |
@@ -44,11 +45,6 @@
 | [BUG-4697](bugs/BUG-4697-bluray-menu-loop-picked-as-main-feature.md) | ✅ | ✅ | 蓝光盘的菜单背景循环被选成正片，真正的正片反成特典 |
 | [BUG-4696](bugs/BUG-4696-mixed-works-playlist-collection-scraped-as-one.md) | ✅ | ✅ | 装着不同作品的清单合集被当成一部作品去识别 |
 | [BUG-4695](bugs/BUG-4695-disc-scrape-title-candidates-use-bdmv-dirs.md) | ✅ | ✅ | 原盘作品拿 `PLAYLIST` / `BDMV` 和带卷标的盘名去搜，换回一屏无关候选 |
-> 共 4049 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-4695](bugs/BUG-4695-windows-taskbar-activation-starved-by-deferred-task.md) | ✅ | ✅ | 任何真实常驻动画 + idle 任务让调度器零延迟空转，任务栏点 Fushi 唤不到前台（BUG-4387 复发） |
 | [BUG-4694](bugs/BUG-4694-native-licenses-git-symlink-placeholder.md) | ✅ | ✅ | 原生许可生成器在 core.symlinks=false 的 git 检出里把符号链接许可文件读成目标路径文本，产物随机器而变 |
 | [BUG-4693](bugs/BUG-4693-remote-dict-profile-seed-on-insert.md) | ✅ | ✅ | 先应用配置、后拉到服务器词典目录时，配置里的服务器词典顺序 / 开关不生效（要切走再切回才生效） |
 | [BUG-4692](bugs/BUG-4692-remote-dictionary-two-reachability-trackers.md) | ✅ | ✅ | 离线时查词等远端 4.5 秒、服务器恢复后查词仍只出本机结果（查词与目录服务各记一份可达性） |
