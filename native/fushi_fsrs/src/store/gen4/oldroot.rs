@@ -31,6 +31,9 @@
 //! 旧入口 `srs_location_migration.dart` 写 `minReader 3` 的 v3 meta，在协议 4 下等于拆掉围栏，所以那条路整个不走），
 //! 本机的卡片与复习记录也一条不动（它们在本机库里，跟这个位置有没有同步上无关）；用户升级位置之后下一轮照常同步。
 
+use std::collections::BTreeMap;
+use std::collections::btree_map::Entry;
+
 use super::receive::Taken;
 use super::sync_state::{OldRootEntry, oldroot_fingerprint};
 use super::truth::{DEV_HERITAGE, Truth};
@@ -152,8 +155,7 @@ impl Truth<'_> {
         let tomb = tombstone_device(dir);
         let devices = self.devices(col)?;
         let mut found: Vec<(Id, u64, String)> = Vec::new();
-        let mut marks: std::collections::BTreeMap<Id, std::collections::BTreeMap<u64, String>> =
-            std::collections::BTreeMap::new();
+        let mut marks: BTreeMap<Id, BTreeMap<u64, String>> = BTreeMap::new();
         for e in listing {
             let Some((author, first, last, tag)) = old_segment(&e.path) else {
                 continue;
@@ -165,13 +167,13 @@ impl Truth<'_> {
                 Some(d)
                     if d.kind == Some(DEV_HERITAGE) && d.src == Some(source) && d.last >= last =>
                 {
-                    if !marks.contains_key(&author) {
-                        let m = self
-                            .marks(col, &author)?
-                            .into_iter()
-                            .map(|(s, c)| (s, chain_tag(&c)))
-                            .collect();
-                        marks.insert(author, m);
+                    if let Entry::Vacant(v) = marks.entry(author) {
+                        v.insert(
+                            self.marks(col, &author)?
+                                .into_iter()
+                                .map(|(s, c)| (s, chain_tag(&c)))
+                                .collect(),
+                        );
                     }
                     marks[&author].get(&last) == Some(&tag)
                 }
