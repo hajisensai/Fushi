@@ -1,4 +1,4 @@
-## BUG-4695 · EPUB（含纯图漫画）导入整本读进内存并缓存全部解压内容，2 GiB 以上必然内存耗尽
+## BUG-4699 · EPUB（含纯图漫画）导入整本读进内存并缓存全部解压内容，2 GiB 以上必然内存耗尽
 - **报告**：2026-11-15（漫画 zip 导入排查衍生；用户拍板「修成流式 / 按条目读取」）
 - **真实性**：✅ 真 bug（沿代码路径确认 + 测试量化）。`packages/fushi_engine/lib/epub/epub_parser.dart:85`（旧行号）
   `parseSyncFromPath` 先 `readAsBytesSync` 整本读入，`_decodeVerified`（旧 :46）为做 CRC 把**每个**条目解压缓存在
