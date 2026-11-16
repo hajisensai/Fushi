@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
 
@@ -108,21 +109,36 @@ void main() {
 
     test('快照随标记 / 合集成员变化重载', () async {
       await video('v1');
-      final List<MediaNsfwSnapshot> seen = <MediaNsfwSnapshot>[];
-      final sub = watchMediaNsfwSnapshot(db).listen(seen.add);
-      addTearDown(sub.cancel);
-      await pumpEventQueue();
-      expect(seen.last.isVideoNsfw('v1'), isFalse);
+      final StreamController<MediaNsfwSnapshot> seen =
+          StreamController<MediaNsfwSnapshot>.broadcast();
+      Future<MediaNsfwSnapshot> next(bool Function(MediaNsfwSnapshot) p) =>
+          seen.stream.firstWhere(p).timeout(const Duration(seconds: 5));
+      final Future<MediaNsfwSnapshot> first = next((_) => true);
+      final StreamSubscription<MediaNsfwSnapshot> sub = watchMediaNsfwSnapshot(
+        db,
+      ).listen(seen.add);
+      expect((await first).isVideoNsfw('v1'), isFalse);
 
+      final Future<MediaNsfwSnapshot> marked = next(
+        (MediaNsfwSnapshot s) => s.isVideoNsfw('v1'),
+      );
       await db.setMediaNsfw(TagHostKind.video, 'v1', true);
-      await pumpEventQueue(times: 50);
-      expect(seen.last.isVideoNsfw('v1'), isTrue);
+      await marked;
 
+      final Future<MediaNsfwSnapshot> cleared = next(
+        (MediaNsfwSnapshot s) => !s.isVideoNsfw('v1'),
+      );
       await db.setMediaNsfw(TagHostKind.video, 'v1', false);
+      await cleared;
+
+      final Future<MediaNsfwSnapshot> inherited = next(
+        (MediaNsfwSnapshot s) => s.isVideoNsfw('v1'),
+      );
       final int c = await nsfwCollection('剧');
       await db.addToCollection(c, MediaKind.video, 'v1');
-      await pumpEventQueue(times: 50);
-      expect(seen.last.isVideoNsfw('v1'), isTrue, reason: '加入 NSFW 合集也要触发');
+      await inherited; // 加入 NSFW 合集也要触发
+      await sub.cancel();
+      await seen.close();
     });
   });
 
@@ -133,7 +149,7 @@ void main() {
           : ShelfCoverMaterialScope(material: material, child: child);
       return MaterialApp(
         theme: ThemeData(
-          extensions: <ThemeExtension<dynamic>>[FushiEinkTheme(false)],
+          extensions: const <ThemeExtension<dynamic>>[FushiEinkTheme(false)],
         ),
         home: Scaffold(
           body: Center(child: SizedBox(width: 120, height: 170, child: scoped)),

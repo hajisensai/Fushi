@@ -11,6 +11,8 @@
 /// - [MediaNsfwCover]：不经封面框的封面（继续卡大图、详情页 hero 等）直接包它。
 library;
 
+import 'package:drift/drift.dart'
+    show ResultSetImplementation, TableUpdate, TableUpdateQuery;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/utils/components/nsfw_cover_blur.dart';
