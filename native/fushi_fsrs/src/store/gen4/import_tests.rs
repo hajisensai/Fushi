@@ -868,9 +868,21 @@ fn backup_trust_only_reaches_devices_this_library_has_never_seen() {
 fn backup_device_keys_refuse_contradictions_and_keep_local_names() {
     let (a_dev, _, _) = pair();
     let w = a_dev.core.writer().unwrap();
+    // 备份里每台设备都有自报的名字（旧的）。
+    w.execute(
+        "UPDATE sync2_devices SET name = 'old name ' || hex(device) WHERE profile_uid = srs_id(?1)",
+        [P],
+    )
+    .unwrap();
     let (legacy, _) = crate::store::gen4::carry::legacy_peers(&w, P).unwrap();
     assert!(legacy.len() >= 2, "{legacy:?}");
     let (first, second) = (&legacy[0], &legacy[1]);
+    assert!(
+        first
+            .name
+            .as_deref()
+            .is_some_and(|n| n.starts_with("old name"))
+    );
     let with_key = |device: Id, public: [u8; 32], name: Option<&str>| Peer {
         device,
         public,
