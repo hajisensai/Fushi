@@ -1,15 +1,8 @@
-//! 测试用的协议 3 读命令基准：develop 3911eb3293 的 `store/reads.rs` 原文（只删了尾部指向 `reads_tests.rs` 的测试模块、把
-//! `super::` 换成 `crate::store::`）。本分支的基底（G9-2 栈）还没有 G5a 的 `store/reads.rs`，对拍（`tests.rs`）要拿协议 3
-//! 真正的读命令当基准，所以原样拷一份只在测试构建里编。
-//!
-//! **清理条件**：本栈合进含 `store/reads.rs` 的 develop 之后删掉这个文件，`tests.rs` 的 `p3` 改调 `crate::store::reads::run`。
-//! 不得在这里改任何查询：改了就不再是协议 3 的基准（只按本仓 rustfmt 排了版，过 `rust-format` 门）。
-//!
 //! 只读查询命令：`read`（一个 profile 的数据）与 `read_lib`（不针对单个 profile）。
 //!
 //! 以前这些读经 Drift 执行器：Dart 拼 SQL 文本交给内核执行（`ffsrs_store_exec` mode 2 / 3），srs.db 的表结构、索引
 //! 选择与 ID 列的编码因此有两处在写。现在 SQL 只在这里：Dart 发 `{op: "read", q: <查询名>, …参数}`，内核在查询道的
-//! 只读连接上（`SrsCore::read_query`：一条命令一个读事务，不排写锁）跑完，按列编码（store/bulk.rs 的 `FCL1`）
+//! 只读连接上（[super::SrsCore::read_query]：一条命令一个读事务，不排写锁）跑完，按列编码（store/bulk.rs 的 `FCL1`）
 //! 放进结果的 `files` 交回；只有一两个数的结果直接放回包 JSON。
 //!
 //! 约定：
@@ -26,8 +19,8 @@ use rusqlite::Connection;
 use rusqlite::types::Value as Sv;
 use serde_json::{Value, json};
 
-use crate::store::bulk::{self, KIND_I64, KIND_OPT_I64, KIND_OPT_STR, KIND_STR};
-use crate::store::sync2::sql;
+use super::bulk::{self, KIND_I64, KIND_OPT_I64, KIND_OPT_STR, KIND_STR};
+use super::sync2::sql;
 
 type Files = Vec<(String, Vec<u8>)>;
 
@@ -329,7 +322,7 @@ fn successors(c: &Connection, profile: &str) -> Result<Vec<u8>, String> {
     q.push(&format!(
         "SELECT entity_id, field_key FROM srs_field_edits WHERE {} \
          AND +entity_kind = 'card' AND +profile_uid = srs_id(?1)",
-        crate::store::schema::HISTORY_FROM_CONDITION
+        super::schema::HISTORY_FROM_CONDITION
     ));
     q.table(c, &[("entity_id", KIND_STR), ("field_key", KIND_STR)])
 }
@@ -924,10 +917,7 @@ fn events_present(c: &Connection, profile: &str, req: &Value) -> Result<Vec<u8>,
 /// store/profile_data.rs `MERGE_MARKER_PREFIX`）。
 fn profile_merges(c: &Connection) -> Result<Vec<u8>, String> {
     let mut q = Sel::lib();
-    let like = q.text(&format!(
-        "{}%",
-        crate::store::profile_data::MERGE_MARKER_PREFIX
-    ));
+    let like = q.text(&format!("{}%", super::profile_data::MERGE_MARKER_PREFIX));
     q.push(&format!(
         "SELECT key, value FROM srs_meta WHERE key LIKE {like}"
     ));
@@ -947,3 +937,7 @@ fn entity_owners(c: &Connection) -> Result<Vec<u8>, String> {
     q.push("SELECT DISTINCT profile_uid FROM srs_entities");
     q.table(c, &[("uid", KIND_STR)])
 }
+
+#[cfg(test)]
+#[path = "reads_tests.rs"]
+mod tests;

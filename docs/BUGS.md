@@ -33,15 +33,33 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4048 条。点号进各自文件。
+> 共 4066 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4709](bugs/BUG-4709-manga-topbar-full-width.md) | ✅ | ✅ | 漫画阅读器顶栏在桌面宽屏限宽 1080 居中，与小说全宽顶栏不一致 |
+| [BUG-4708](bugs/BUG-4708-download-summary-legacy-rate.md) | ✅ | ✅ | 下载中心合计速度不计入磁力 / 外部来源（legacy 番剧下载计划）行的实时速率 |
+| [BUG-4707](bugs/BUG-4707-screen-ocr-lookup-line-wrap.md) | ✅ | ✅ | 截屏识字点字查词只扫被点那一行，折行处把词截断 |
+| [BUG-4706](bugs/BUG-4706-library-import-shelf-tab-dead.md) | ✅ | ✅ | 书库导入页点左上角「书架」回不去，仍停在导入页 |
+| [BUG-4705](bugs/BUG-4705-android-system-ocr-full-res-decode.md) | ✅ | ✅ | Android 系统 OCR 全分辨率解码在主线程、无上限，大图闪退；无 GMS 被报成识别失败 |
+| [BUG-4704](bugs/BUG-4704-manga-4k-page-image-memory.md) | ✅ | ✅ | 漫画阅读器打开 4K 页图卷内存暴涨闪退 |
+| [BUG-4703](bugs/BUG-4703-library-arrangement-default-dirty.md) | ✅ | ✅ | 外观页「色块摆放」恢复默认对照旧默认：全新安装（封面网格）就标已改过，恢复默认反把网格下色块分区写成散落 |
+| [BUG-4702](bugs/BUG-4702-online-manga-ignores-download-root.md) | ✅ | ✅ | 在线漫画不跟随下载目录设置，删书后已下载章节无法重新入库 |
+| [BUG-4701](bugs/BUG-4701-overwrite-import-unrecoverable-library.md) | ✅ | ✅ | 覆盖导入把书库换掉后无法找回：覆盖前快照成功即删、书文件成孤儿目录无法重新登记 |
+| [BUG-4700](bugs/BUG-4700-manga-import-staging-copy-doubles-disk.md) | ✅ | ✅ | 漫画导入从暂存目录拷贝进书目录，大包磁盘峰值是包体积的三倍 |
+| [BUG-4699](bugs/BUG-4699-epub-parse-whole-file-in-memory.md) | ✅ | ✅ | EPUB（含纯图漫画）导入整本读进内存并缓存全部解压内容，2 GiB 以上必然内存耗尽 |
+| [BUG-4698](bugs/BUG-4698-recommended-pack-import-overwrites-library.md) | ✅ | ✅ | 导入推荐包后漫画和小说全没了（推荐包走通用导入框、默认覆盖） |
+| [BUG-4697](bugs/BUG-4697-bluray-menu-loop-picked-as-main-feature.md) | ✅ | ✅ | 蓝光盘的菜单背景循环被选成正片，真正的正片反成特典 |
+| [BUG-4696](bugs/BUG-4696-mixed-works-playlist-collection-scraped-as-one.md) | ✅ | ✅ | 装着不同作品的清单合集被当成一部作品去识别 |
+| [BUG-4695](bugs/BUG-4695-disc-scrape-title-candidates-use-bdmv-dirs.md) | ✅ | ✅ | 原盘作品拿 `PLAYLIST` / `BDMV` 和带卷标的盘名去搜，换回一屏无关候选 |
 | [BUG-4694](bugs/BUG-4694-native-licenses-git-symlink-placeholder.md) | ✅ | ✅ | 原生许可生成器在 core.symlinks=false 的 git 检出里把符号链接许可文件读成目标路径文本，产物随机器而变 |
 | [BUG-4693](bugs/BUG-4693-remote-dict-profile-seed-on-insert.md) | ✅ | ✅ | 先应用配置、后拉到服务器词典目录时，配置里的服务器词典顺序 / 开关不生效（要切走再切回才生效） |
 | [BUG-4692](bugs/BUG-4692-remote-dictionary-two-reachability-trackers.md) | ✅ | ✅ | 离线时查词等远端 4.5 秒、服务器恢复后查词仍只出本机结果（查词与目录服务各记一份可达性） |
 | [BUG-4691](bugs/BUG-4691-interconnect-peer-rows-look-duplicated.md) | ✅ | ✅ | 配对与设备：同一台服务器的两条地址显示成两个同名「TestServer」，像重复配对 |
 | [BUG-4690](bugs/BUG-4690-focus-repair-steals-dialog-autofocus.md) | ✅ | ✅ | 键盘回车打开改名对话框，焦点落在输入框的屏幕键盘按钮而非输入框 |
+| [BUG-4660](bugs/BUG-4660-manga-zip64-data-descriptor-size.md) | ✅ | ✅ | ZIP64 数据描述符被按 4 字节读，条目大小读成 0，导入报损坏 |
+| [BUG-4659](bugs/BUG-4659-manga-zip-2gib-cap.md) | ✅ | ✅ | 解出超过 2 GiB 的 .zip 漫画一律报 too large 无法导入 |
+| [BUG-4658](bugs/BUG-4658-manga-zip-non-utf8-names.md) | ✅ | ✅ | 非 UTF-8 文件名（Shift_JIS）的 .zip 漫画打不开，导入框报不支持的格式 |
 | [BUG-4657](bugs/BUG-4657-apkg-deleted-card-revlog-dropped.md) | ✅ | ✅ | apkg 导入丢掉 Anki 端已删卡的复习记录（统计 / 日历少算） |
 | [BUG-4656](bugs/BUG-4656-ios-unsigned-ipa-unstripped.md) | ✅ | ✅ | 未签名 IPA 的 Mach-O 没 strip 本地符号 |
 | [BUG-4655](bugs/BUG-4655-ios-dart-split-debug-info.md) | ✅ | ✅ | iOS 出包没拆 Dart 调试信息 |

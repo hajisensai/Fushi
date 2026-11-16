@@ -15,6 +15,7 @@ import 'package:fushi_server/src/server_prefs.dart';
 import 'package:path/path.dart' as p;
 import 'package:shelf/shelf.dart' as shelf;
 import 'package:test/test.dart';
+import 'support/fake_rwkv.dart';
 
 /// BUG-4391：无头端没有人工审批，「开会话 → 猜一次」换来源也挡得住——公网类别累计
 /// PIN 失败到阈值即暂停；admin API 报出暂停到何时，管理员可一键解除。
@@ -47,6 +48,7 @@ void main() {
     final ServerPaths paths = ServerPaths(config.dataDir);
     await paths.ensureLayout();
     host = HeadlessHost(
+      srsRwkvHttpClient: noNetworkHttpClient,
       config: config,
       paths: paths,
       db: db,

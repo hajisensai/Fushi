@@ -37,8 +37,6 @@ pub mod reads;
 pub mod views;
 
 #[cfg(test)]
-mod p3_reads;
-#[cfg(test)]
 mod tests;
 
 /// 结果里的列式表（`store/bulk.rs` 的 `FCL1`）：(名字, 字节)。

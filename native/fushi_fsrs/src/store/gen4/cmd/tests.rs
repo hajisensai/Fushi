@@ -1,5 +1,5 @@
 //! 读命令的新代实现与协议 3 逐命令对拍（规划 §2.1 G7-4）：同一个协议 3 的库，协议 3 一侧跑 `store/reads.rs` 的原查询
-//! （[super::p3_reads]，develop 原文），新代一侧把库灌进新代（`parity.rs` 的 `imported`：重建两遍相同、换到达方式逐条维护
+//! （[crate::store::reads]），新代一侧把库灌进新代（`parity.rs` 的 `imported`：重建两遍相同、换到达方式逐条维护
 //! 相同、与协议 3 投影对拍无差异）再跑 `cmd`。两侧结果按同一份规则归一（ID → 规范 ID，修改 / 日志行里的 ID 同样归一）后
 //! 按多重集比——协议 3 大多数查询没有 `ORDER BY`；新代的顺序契约另测。
 //!
@@ -17,11 +17,12 @@ use serde_json::{Value, json};
 
 use super::history::history;
 use super::views::entity_views;
-use super::{Files, p3_reads, reads, snapshot};
+use super::{Files, reads, snapshot};
 use crate::store::gen4::cache::CFG_KEY;
 use crate::store::gen4::derive::{Index, Ref};
 use crate::store::gen4::parity::imported;
 use crate::store::gen4::truth::Truth;
+use crate::store::reads as p3_reads;
 use crate::store::sync2::canonical;
 use crate::store::sync2::config::default_deck_id;
 use crate::store::sync2::tests::{Bucket, DAY, Device, P, deck_entity, edit, review};
