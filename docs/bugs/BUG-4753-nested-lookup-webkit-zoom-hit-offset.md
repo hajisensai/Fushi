@@ -42,6 +42,8 @@
     `legacy zoom=1.25` 第一次点击就红；只去掉 `getSelectionRect` 或 `highlightSelection` 的换算也各自变红。
     注意 fake DOM 的旧 WebKit 字框公式是按 WebKit 源码写进模型的，它证明换算与该公式一致；WebKit 真实行为的证据是上面的
     Safari 26.4 发布说明。
+  - `tools/browser-extension/grammar-tooltip-single-surface.test.js`「BUG-4753」条：切真 `popup.js` 的语法浮层，元素框按旧
+    WebKit 报成视觉 px / zoom，断言经 `clientRectOf` 后与标准引擎同一落点；把浮层改回直接 `getBoundingClientRect` 即红。
   - `fushi/test/pages/popup_dict_sandbox_harness.mjs` 场景 11：真 Chrome 里装生产沙箱辅助脚本，点「昼間訪問」各字左 / 右半边，
     查词串必须从被点的字起。修复前红（`昼,間,間,昼,訪,問,問,し`）。
 - **备注**：
