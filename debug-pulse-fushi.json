@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-16T18:52:21Z",
+ "generatedAt": "2026-11-16T19:46:01Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "49819dcec7234c4043aacfa4aeb9a5d489806f48",
-  "seq": 28294
+  "sha": "665e12a4775b6556de56bc8929b5aa055462e7dc",
+  "seq": 28362
  },
  "builds": [
   {
@@ -235,9 +235,21 @@
   }
  ],
  "pending": {
-  "headSha": "49819dcec7234c4043aacfa4aeb9a5d489806f48",
-  "headSeq": 28294,
+  "headSha": "665e12a4775b6556de56bc8929b5aa055462e7dc",
+  "headSeq": 28362,
   "prs": [
+   3577,
+   3567,
+   3608,
+   3568,
+   3579,
+   3533,
+   3563,
+   3530,
+   3551,
+   3595,
+   3531,
+   3510,
    3524,
    3538,
    3607,
@@ -312,19 +324,19 @@
   "platforms": {
    "android": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43931907788"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43942523339"
    },
    "windows": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43931907648"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43942523294"
    },
    "macos": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43931907648"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43942523294"
    },
    "ios": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43931907648"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43942523294"
    }
   }
  },
@@ -880,6 +892,15 @@
    "deletions": 6,
    "labels": []
   },
+  "3510": {
+   "number": 3510,
+   "title": "feat(music): 解密 QQ 音乐加密 QRC，QRC 假名注音轨渲染成 ruby",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T19:00:02Z",
+   "additions": 778,
+   "deletions": 18,
+   "labels": []
+  },
   "3511": {
    "number": 3511,
    "title": "fix(video): 原盘正片阶段返回先回盘菜单，不越级退出整个会话（拍板台 58EoAZOXVN）",
@@ -1015,6 +1036,24 @@
    "deletions": 45,
    "labels": []
   },
+  "3530": {
+   "number": 3530,
+   "title": "feat(srs): 牌组菜单「导出此牌组」只导出该牌组子树",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T19:15:53Z",
+   "additions": 372,
+   "deletions": 9,
+   "labels": []
+  },
+  "3531": {
+   "number": 3531,
+   "title": "feat(fushidicts): 同步上游查词行为（片假名中点 / 片假名词边界 / くって / 歴史的仮名遣い / -やしない）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-16T19:11:55Z",
+   "additions": 604,
+   "deletions": 24,
+   "labels": []
+  },
   "3532": {
    "number": 3532,
    "title": "卡片来源回看横幅在横屏手机等矮窗口并成单行",
@@ -1022,6 +1061,15 @@
    "mergedAt": "2026-11-16T14:31:35Z",
    "additions": 309,
    "deletions": 80,
+   "labels": []
+  },
+  "3533": {
+   "number": 3533,
+   "title": "feat(srs): 牌组设置有未保存改动时按返回问「保存 / 放弃 / 取消」",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T19:18:43Z",
+   "additions": 324,
+   "deletions": 25,
    "labels": []
   },
   "3535": {
@@ -1150,6 +1198,15 @@
    "deletions": 313,
    "labels": []
   },
+  "3551": {
+   "number": 3551,
+   "title": "feat(srs): 存量牌组提醒每日上限改按作答次数（可保持按卡片数）；分钟单位显示剩余分钟",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T19:13:57Z",
+   "additions": 916,
+   "deletions": 45,
+   "labels": []
+  },
   "3552": {
    "number": 3552,
    "title": "feat(sources): 来源自动扫描——每源开关，启动 / 回前台串行限流扫描并串联自动刮削",
@@ -1222,6 +1279,15 @@
    "deletions": 192,
    "labels": []
   },
+  "3563": {
+   "number": 3563,
+   "title": "fix(anidb): 启用已登记的 HTTP 客户端",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T19:17:13Z",
+   "additions": 123,
+   "deletions": 80,
+   "labels": []
+  },
   "3564": {
    "number": 3564,
    "title": "feat(video-subtitle): 生成字幕读画面硬字幕 OCR，纠正识别同音字（d-fO4eGxKx）",
@@ -1238,6 +1304,24 @@
    "mergedAt": "2026-11-16T18:32:39Z",
    "additions": 1620,
    "deletions": 89,
+   "labels": []
+  },
+  "3567": {
+   "number": 3567,
+   "title": "feat(windows): 资源管理器显示书 / 漫画 / PDF 封面缩略图（fushi_shell_thumbs）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T19:44:03Z",
+   "additions": 4613,
+   "deletions": 98,
+   "labels": []
+  },
+  "3568": {
+   "number": 3568,
+   "title": "feat(music): 音乐库收本地 MV（视频容器），标 MV 并复用视频播放页观看",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T19:42:54Z",
+   "additions": 747,
+   "deletions": 124,
    "labels": []
   },
   "3570": {
@@ -1294,6 +1378,15 @@
    "deletions": 16,
    "labels": []
   },
+  "3577": {
+   "number": 3577,
+   "title": "feat(music): 歌词「模糊非当前行」可在设置里关闭",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T19:44:45Z",
+   "additions": 146,
+   "deletions": 1,
+   "labels": []
+  },
   "3578": {
    "number": 3578,
    "title": "fix(manga): 双页跨页对齐物理像素并重叠一像素，消除中间细缝",
@@ -1301,6 +1394,15 @@
    "mergedAt": "2026-11-16T14:47:25Z",
    "additions": 124,
    "deletions": 2,
+   "labels": []
+  },
+  "3579": {
+   "number": 3579,
+   "title": "feat(srs): import CSV / TSV / TXT text files (Anki text import parity)",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T19:23:08Z",
+   "additions": 2745,
+   "deletions": 42,
    "labels": []
   },
   "3580": {
@@ -1420,6 +1522,15 @@
    "deletions": 247,
    "labels": []
   },
+  "3595": {
+   "number": 3595,
+   "title": "chore: 去掉已停用本机代理 127.0.0.1:34151 的默认值与文档指令",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T19:12:48Z",
+   "additions": 20,
+   "deletions": 34,
+   "labels": []
+  },
   "3596": {
    "number": 3596,
    "title": "feat(interconnect): 插件中继——没有插件运行时的设备（iOS）经「我的设备」用主机上的插件（拍板台 wOMR4_Er7s 方案 b）",
@@ -1481,6 +1592,15 @@
    "mergedAt": "2026-11-16T18:34:49Z",
    "additions": 1,
    "deletions": 0,
+   "labels": []
+  },
+  "3608": {
+   "number": 3608,
+   "title": "fix(icon): 取消应用图标随深色模式变色（决定 zd158djAtD）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T19:43:31Z",
+   "additions": 90,
+   "deletions": 45,
    "labels": []
   }
  }
