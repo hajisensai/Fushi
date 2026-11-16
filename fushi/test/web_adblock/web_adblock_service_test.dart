@@ -145,7 +145,7 @@ void main() {
   );
 
   test(
-    'BUG-4725: cached engine blocks while stale lists are re-fetched',
+    'BUG-4736: cached engine blocks while stale lists are re-fetched',
     () async {
       _selectOnly(tmp, 'easylist');
       final WebAdblockService first = service(
@@ -196,7 +196,7 @@ void main() {
   );
 
   for (final String entry in <String>['updateNow', 'setListEnabled']) {
-    test('BUG-4725: $entry from a cold service does not queue warm-up behind '
+    test('BUG-4736: $entry from a cold service does not queue warm-up behind '
         'its network sync', () async {
       _selectOnly(tmp, 'easylist');
       final WebAdblockService first = service(
@@ -252,7 +252,7 @@ void main() {
     });
   }
 
-  test('BUG-4725: content-blocker warm-up installs the cached rule list '
+  test('BUG-4736: content-blocker warm-up installs the cached rule list '
       'without network', () async {
     final _RecordingRuleLists native = _RecordingRuleLists();
     _selectOnly(tmp, 'easylist');

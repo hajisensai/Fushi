@@ -33,15 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4082 条。点号进各自文件。
+> 共 4093 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4725](bugs/BUG-4725-browser-adblock-cold-engine.md) | ✅ | ✅ | 内置浏览器广告拦截在联网刷新过期列表期间整页失效 |
-> 共 4092 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4736](bugs/BUG-4736-browser-adblock-cold-engine.md) | ✅ | ✅ | 内置浏览器广告拦截在联网刷新过期列表期间整页失效 |
 | [BUG-4735](bugs/BUG-4735-fab-extended-label-overflow.md) | ✅ | ✅ | 详情页「继续观看」扩展 FAB 长标题画出按钮外、不省略（MD3） |
 | [BUG-4734](bugs/BUG-4734-srs-fushi-defs-image-tap.md) | ✅ | ✅ | 复习页 Fushi 卡片释义里的词典插图点按不能放大 |
 | [BUG-4733](bugs/BUG-4733-source-review-banner-compact-height.md) | ✅ | ✅ | Android 横屏手机上卡片来源回看横幅固定两行，占顶部约 1/5 画面高度 |
