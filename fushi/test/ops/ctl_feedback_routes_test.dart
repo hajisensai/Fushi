@@ -29,7 +29,7 @@ Matcher _failure(int status, [String? code]) => throwsA(
 /// 拍板台 tjJVY6ep5G（维护者选 B）：AI 助手能代用户提交应用内反馈。
 void main() {
   late List<FeedbackDraft> submitted;
-  late Object? failWith;
+  late Exception? failWith;
   late List<CtlRoute> routes;
 
   setUp(() {
@@ -39,7 +39,7 @@ void main() {
     routes = buildFeedbackCtlRoutesFor(
       submit: (FeedbackDraft draft) async {
         submitted.add(draft);
-        final Object? failure = failWith;
+        final Exception? failure = failWith;
         if (failure != null) throw failure;
         return FeedbackSubmitResult(
           FeedbackTicket(
