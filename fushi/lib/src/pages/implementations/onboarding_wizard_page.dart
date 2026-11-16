@@ -837,7 +837,7 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
     final RecommendedPackDownloadController controller = _packController;
     final RecommendedPackTutorialState tutorialState =
         RecommendedPackTutorialState(model.appDirectory);
-    // 推荐包恒合并导入（[importRecommendedPackFile]），不弹默认覆盖的通用确认框。
+    // 推荐包经 [importRecommendedPackFile] 导入：确认框照弹，但预选合并（不是覆盖）。
     await importRecommendedPackFile(
       model,
       filePath: path,
