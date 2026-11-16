@@ -5,7 +5,8 @@
 //   POST /dev/login  {email,code} 验码 → 账户 role 必须是 dev → 写会话 Cookie
 //   POST /dev/logout
 //   GET  /dev/f/:id               详情：正文、设备信息、截图、日志、时间线、修复 commit 与各通道发布版本（只读）、处理表单
-//   GET  /dev/f/:id/a/:slot       附件（日志 ?view=text 解压成文本；视频 v0 支持 Range，?download=1 下载）
+//   GET  /dev/f/:id/a/:slot       附件（日志 ?view=text 解压成文本；视频 v0 支持 Range，?download=1 下载；
+//                                 样本文件 f0..f2 一律作附件下载，文本类 ?view=text 以纯文本查看）
 //   POST /dev/f/:id  {status,reply}
 //   GET  /dev/project             项目数据：GitHub star / fork / Release 下载与官网访问量的每日快照（project_stats.js）
 //   POST /dev/project/refresh     立即重新取一遍外部数据（不等定时任务的节流间隔）
@@ -24,6 +25,7 @@
 import { HttpError, hex, json, sha256 } from './util.js';
 import { consumeCode, requestCode, resolveEmailAccount } from './email.js';
 import { esc } from './pages.js';
+import { FILE_EXTENSIONS } from './feedback_files.js';
 import {
   STATUSES,
   attachmentResponse,
@@ -779,6 +781,16 @@ async function detailPage(env, id, dev) {
     ? `<h2>视频</h2><div class="card"><video controls preload="metadata" src="/dev/f/${esc(f.id)}/a/${esc(video.slot)}"></video>
 <p><a href="/dev/f/${esc(f.id)}/a/${esc(video.slot)}?download=1">下载视频（${esc(fmtBytes(video.bytes))}）</a></p></div>`
     : '';
+  // 样本文件（f0..f2）：不可信文件，只给下载链接（服务端一律作附件下发、不渲染）；文本类可纯文本查看。
+  const files = f.attachments.filter((a) => a.kind === 'file').map((a) => {
+    const href = `/dev/f/${esc(f.id)}/a/${esc(a.slot)}`;
+    const ext = String(a.name || '').split('.').pop().toLowerCase();
+    const text = FILE_EXTENSIONS[ext] === 'text' ? ` · <a href="${href}?view=text">查看文本</a>` : '';
+    return `<li>${esc(a.name || a.slot)} <span class="muted">(${esc(fmtBytes(a.bytes))})</span> · <a href="${href}">下载</a>${text}</li>`;
+  }).join('');
+  const filesBlock = files
+    ? `<h2>样本文件 <span class="muted">（用户上传的不可信文件：下载后隔离处理，不要直接运行或用会执行脚本的程序打开）</span></h2><div class="card"><ul>${files}</ul></div>`
+    : '';
   const log = f.attachments.find((a) => a.kind === 'log');
   const logLinks = log
     ? `<p><a href="/dev/f/${esc(f.id)}/a/log?view=text">查看日志</a> · <a href="/dev/f/${esc(f.id)}/a/log">下载 .gz</a> <span class="muted">(${esc(fmtBytes(log.bytes))})</span></p>`
@@ -821,6 +833,7 @@ ${f.devNoteAt ? `<p class="muted">上次保存 ${esc(fmtTime(f.devNoteAt))}</p>`
 <div class="card"><div class="body">${esc(f.body)}</div></div>
 ${shots ? `<h2>截图</h2><div class="shots">${shots}</div>` : ''}
 ${videoBlock}
+${filesBlock}
 <h2>日志</h2>${logLinks}
 <h2>服务端记录</h2><div class="card"><table>${origin}</table></div>
 ${meta ? `<h2>设备信息（客户端自报）</h2><div class="card"><table>${meta}</table></div>` : ''}
@@ -913,7 +926,9 @@ export async function routeDevConsole(request, env, url, now, ctx, ip) {
   if (method === 'GET' && path === '/dev/decisions') {
     const stage = decisionStageParam(url.searchParams.get('stage'));
     const [rows, sig] = await Promise.all([listDecisions(env), decisionsSig(env)]);
-    return html(layout('拍板台', renderDecisions(rows, stage, { sig, script: DECISIONS_SCRIPT_URL }), { signedIn: true }),
+    return html(layout('拍板台', renderDecisions(rows, stage, {
+      sig, script: DECISIONS_SCRIPT_URL, conflict: url.searchParams.get('conflict') === '1',
+    }), { signedIn: true }),
       200, { 'Content-Security-Policy': DECISIONS_CSP });
   }
   if (method === 'GET' && path === '/dev/decisions.json') {
@@ -931,11 +946,23 @@ export async function routeDevConsole(request, env, url, now, ctx, ip) {
   }
   if (method === 'POST' && (m = /^\/dev\/d\/([A-Za-z0-9_-]{1,40})$/.exec(path))) {
     const form = await readForm(request, formLimit(DECISION_LIMITS.noteMax));
-    await submitDecision(env, dev, m[1], { v: form.get('v') || 'note', text: form.get('text') || '' }, now);
-    if ((request.headers.get('Accept') || '').includes('application/json')) {
-      const [row, sig] = await Promise.all([getDecision(env, m[1]), decisionsSig(env)]);
-      return json({ item: decisionItem(row), sig }, 200, { 'Cache-Control': 'no-store' });
+    const wantsJson = (request.headers.get('Accept') || '').includes('application/json');
+    let conflict = false;
+    try {
+      await submitDecision(env, dev, m[1], {
+        v: form.get('v') || 'note', text: form.get('text') || '', base: form.has('base') ? form.get('base') : null,
+      }, now);
+    } catch (e) {
+      if (!(e instanceof HttpError) || e.code !== 'verdict_conflict') throw e;
+      conflict = true;
     }
+    if (wantsJson) {
+      // 冲突时也回最新的卡：页面换上别人刚拍的结果，留言草稿留在框里。
+      const [row, sig] = await Promise.all([getDecision(env, m[1]), decisionsSig(env)]);
+      return json({ ...(conflict ? { error: 'verdict_conflict' } : {}), item: decisionItem(row), sig },
+        conflict ? 409 : 200, { 'Cache-Control': 'no-store' });
+    }
+    if (conflict) return redirect(`/dev/decisions?stage=all&conflict=1#d-${m[1]}`);
     // 回到原来那一栏、定位到这条（拍完它可能已离开当前栏，锚点找不到就停在栏顶）。
     return redirect(`/dev/decisions?stage=${decisionStageParam(form.get('back'))}#d-${m[1]}`);
   }

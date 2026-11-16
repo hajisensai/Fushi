@@ -275,6 +275,23 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
         MediaSourcesCompanion(isPrivate: Value(isPrivate)),
       );
 
+  /// 设置来源的自动扫描开关（v157，`media_sources.auto_scan`）。只写这一列。
+  Future<void> updateMediaSourceAutoScan(int id, bool autoScan) =>
+      (update(mediaSources)..where((t) => t.id.equals(id))).write(
+        MediaSourcesCompanion(autoScan: Value(autoScan)),
+      );
+
+  /// 开着自动扫描的来源（启动 / 回前台的自动扫描调度读它），按来源页同一顺序
+  /// （sortOrder, id）。
+  Future<List<MediaSourceRow>> getAutoScanMediaSources() =>
+      (select(mediaSources)
+            ..where((t) => t.autoScan.equals(true))
+            ..orderBy([
+              (t) => OrderingTerm(expression: t.sortOrder),
+              (t) => OrderingTerm(expression: t.id),
+            ]))
+          .get();
+
   /// 开着隐私开关的来源 id（排行榜 / Bangumi 等出站路径的私密判定读它）。
   Future<Set<int>> privateMediaSourceIds() async => <int>{
     for (final TypedResult r

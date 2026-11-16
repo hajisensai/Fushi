@@ -9,6 +9,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/media/detail/media_detail_kit.dart';
+import 'package:fushi/src/media/downloads/download_task_entry.dart';
+import 'package:fushi/src/media/downloads/manga_download_tasks_section.dart';
+import 'package:fushi/src/pages/implementations/browse_page.dart'
+    show BrowseNavigationRequest, BrowseTab, externalBrowseRequest;
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
+    show FushiDialogAction;
 import 'package:fushi/src/media/manga/library/manga_chapter_storage.dart';
 import 'package:fushi/src/media/manga/library/manga_series_page.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
@@ -865,6 +871,173 @@ void main() {
     );
     expect(
       find.byKey(const ValueKey<String>('manga_chapter_selection_bar')),
+      findsNothing,
+    );
+  });
+
+  // 拍板台 7LwxAtJ6r0 ②：多选「下载所选」，与「下载全部」同一套跳过规则。
+  testWidgets('章节多选：下载所选只排未下载的章（旧→新），全已下载时提示且留在多选态', (
+    WidgetTester tester,
+  ) async {
+    sizeView(tester);
+    final _TestAppModel appModel = _TestAppModel(db, library, root);
+    final _RecordingRegistry registry = _RecordingRegistry();
+
+    await tester.runAsync(() async {
+      final EpubBookRow row = await library.add(_entry());
+      await _writeDownloadedChapter(row.extractDir, '/chapter/1');
+      await tester.pumpWidget(
+        _harness(appModel, row.bookKey, registry: registry),
+      );
+      await _pumpUntil(
+        tester,
+        find.byKey(const ValueKey<String>('manga_chapter_download_downloaded')),
+      );
+      await _settle(tester);
+    });
+
+    // 只选已下载的第 1 话：没有可下的，不排、留在多选态。
+    await tester.longPress(find.text('Chapter 1'));
+    await tester.pump();
+    await tester.runAsync(() async {
+      await _settle(tester);
+      await tester.tap(
+        find.byKey(const ValueKey<String>('manga_chapter_selection_download')),
+      );
+      await _settle(tester);
+    });
+    expect(await db.listMangaDownloadJobs(), isEmpty);
+    expect(
+      find.byKey(const ValueKey<String>('manga_chapter_selection_bar')),
+      findsOneWidget,
+    );
+
+    await tester.runAsync(() async {
+      await tester.tap(
+        find.byKey(const ValueKey<String>('manga_chapter_selection_all')),
+      );
+      await _settle(tester);
+      await tester.tap(
+        find.byKey(const ValueKey<String>('manga_chapter_selection_download')),
+      );
+      await _settle(tester);
+    });
+    final List<MangaDownloadJobRow> jobs = await db.listMangaDownloadJobs();
+    expect(jobs.map((MangaDownloadJobRow j) => j.chapterKey).toList(), <String>[
+      '/chapter/2',
+      '/chapter/3',
+    ], reason: '已下载的第 1 话跳过，其余按旧→新入队');
+    expect(
+      find.byKey(const ValueKey<String>('manga_chapter_selection_bar')),
+      findsNothing,
+    );
+  });
+
+  // 拍板台 7LwxAtJ6r0 ①③：作品页就地显示本作下载队列，可整批暂停 / 继续 / 取消，
+  // 并能跳到下载中心只看本作。
+  testWidgets('本作下载队列横幅：暂停全部 → 继续全部 → 取消全部（确认后），跳转带本作筛选', (
+    WidgetTester tester,
+  ) async {
+    sizeView(tester);
+    final _TestAppModel appModel = _TestAppModel(db, library, root);
+    final _RecordingRegistry registry = _RecordingRegistry();
+    addTearDown(() => externalBrowseRequest.value = null);
+
+    late String bookKey;
+    await tester.runAsync(() async {
+      final EpubBookRow row = await library.add(_entry());
+      bookKey = row.bookKey;
+      await tester.pumpWidget(_harness(appModel, bookKey, registry: registry));
+      await _pumpUntil(tester, find.text('Chapter 1'));
+      await _settle(tester);
+    });
+    expect(
+      find.byKey(const ValueKey<String>('manga_series_download_banner')),
+      findsNothing,
+      reason: '没有任务时不占位',
+    );
+
+    await tester.runAsync(() async {
+      await tester.tap(
+        find.byKey(const ValueKey<String>('manga_series_download_all')),
+      );
+      await _pumpUntil(
+        tester,
+        find.byKey(const ValueKey<String>('manga_series_download_banner')),
+      );
+      await _settle(tester);
+    });
+    expect(
+      find.text(t.manga_series_download_queued_count(count: 3)),
+      findsOneWidget,
+    );
+
+    await tester.runAsync(() async {
+      await tester.tap(
+        find.byKey(const ValueKey<String>('manga_series_download_pause_all')),
+      );
+      await _settle(tester);
+    });
+    for (final MangaDownloadJobRow job in await db.listMangaDownloadJobs()) {
+      expect(job.status, MangaDownloadJobStatus.paused);
+    }
+    expect(
+      find.byKey(const ValueKey<String>('manga_series_download_pause_all')),
+      findsNothing,
+    );
+    expect(
+      find.text(t.manga_series_download_paused_count(count: 3)),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('media-detail-item-download-paused')),
+      findsNWidgets(3),
+      reason: '章节行显示暂停状态位',
+    );
+
+    await tester.runAsync(() async {
+      await tester.tap(
+        find.byKey(const ValueKey<String>('manga_series_download_resume_all')),
+      );
+      await _settle(tester);
+    });
+    for (final MangaDownloadJobRow job in await db.listMangaDownloadJobs()) {
+      expect(job.status, MangaDownloadJobStatus.queued);
+    }
+
+    await tester.runAsync(() async {
+      await tester.tap(
+        find.byKey(const ValueKey<String>('manga_series_download_open_tasks')),
+      );
+      await _settle(tester);
+    });
+    final BrowseNavigationRequest? request = externalBrowseRequest.value;
+    expect(request?.tab, BrowseTab.downloads);
+    final DownloadTaskWorkFocus focus = request!.downloadsWorkFocus!;
+    final List<MangaDownloadJobRow> current = await db.listMangaDownloadJobs();
+    expect(
+      focus.matches(
+        mangaDownloadTaskEntry(current.first, appModel.mangaDownloadService),
+      ),
+      isTrue,
+    );
+
+    await tester.runAsync(() async {
+      await tester.tap(
+        find.byKey(const ValueKey<String>('manga_series_download_cancel_all')),
+      );
+      await _settle(tester);
+      await tester.tap(find.byType(FushiDialogAction).last);
+      await _settle(tester);
+    });
+    for (final MangaDownloadJobRow job in await db.listMangaDownloadJobs()) {
+      expect(job.status, MangaDownloadJobStatus.cancelled);
+    }
+    await tester.runAsync(() async {
+      await _settle(tester);
+    });
+    expect(
+      find.byKey(const ValueKey<String>('manga_series_download_banner')),
       findsNothing,
     );
   });
