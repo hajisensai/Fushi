@@ -136,6 +136,38 @@ const Set<BackupCategory> importSelectableCategories = <BackupCategory>{
   BackupCategory.music,
 };
 
+/// 导出框的初始勾选：默认类别（[defaultBackupExportCategories]）去掉要先升级才能导出的（本机复习库还没迁移成新代，
+/// [BackupContentSummary.needsUpgrade]）——它们默认就不选，确认后返回的类别里也不会有。
+@visibleForTesting
+Set<BackupCategory> initialBackupExportSelection(
+  BackupContentSummary summary,
+) => defaultBackupExportCategories()..removeAll(summary.needsUpgrade);
+
+/// 导出框里一个类别的开关行。要先升级才能导出的类别（[BackupContentSummary.needsUpgrade]）：副标题是「需先升级」、
+/// 开关不可点（[onToggle] 不接）；其余类别副标题是说明加计数。
+@visibleForTesting
+Widget backupExportCategoryRow({
+  required BackupCategory category,
+  required BackupContentSummary summary,
+  required bool selected,
+  required ValueChanged<bool> onToggle,
+}) {
+  final bool needsUpgrade = summary.needsUpgrade.contains(category);
+  return AdaptiveSettingsSwitchRow(
+    title: backupCategoryLabel(category),
+    subtitle: needsUpgrade
+        ? t.backup_export_srs_needs_upgrade
+        : summary.counts.containsKey(category)
+        ? '${backupCategoryDescription(category)} '
+              '(${summary.countFor(category)})'
+        : backupCategoryDescription(category),
+    icon: backupCategoryIcon(category),
+    showIcon: true,
+    value: selected,
+    onChanged: needsUpgrade ? null : onToggle,
+  );
+}
+
 /// 导出分类勾选框里要不要列出 [category]。复习（SRS）是默认关闭的模块：本机没有
 /// SRS 数据（无用户笔记、媒体目录为空）时整行不出现，普通用户的备份界面不会多出一项。
 /// 其余分类恒列出（没有内容时只是不带计数）。
@@ -264,9 +296,7 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
   Future<Set<BackupCategory>?> _pickExportCategories(
     BackupContentSummary summary,
   ) async {
-    // 要先升级才能导出的类别（本机复习库还没迁移成新代）不能勾：默认就不选，行上显示「需先升级」。
-    final Set<BackupCategory> selected = defaultBackupExportCategories()
-      ..removeAll(summary.needsUpgrade);
+    final Set<BackupCategory> selected = initialBackupExportSelection(summary);
     assert(!selected.contains(BackupCategory.videos));
     assert(!selected.contains(BackupCategory.localAudio));
     // Per-book selection (TODO-1195 part A). Mutated by the nested book picker;
@@ -323,26 +353,17 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
                       if (backupCategoryShownInExport(c, summary)) ...<Widget>[
                         FushiStaggeredEntrance(
                           index: c.index,
-                          child: AdaptiveSettingsSwitchRow(
-                            title: backupCategoryLabel(c),
-                            subtitle: summary.needsUpgrade.contains(c)
-                                ? t.backup_export_srs_needs_upgrade
-                                : summary.counts.containsKey(c)
-                                ? '${backupCategoryDescription(c)} '
-                                      '(${summary.countFor(c)})'
-                                : backupCategoryDescription(c),
-                            icon: backupCategoryIcon(c),
-                            showIcon: true,
-                            value: selected.contains(c),
-                            onChanged: summary.needsUpgrade.contains(c)
-                                ? null
-                                : (bool v) => setLocal(() {
-                                    if (v) {
-                                      selected.add(c);
-                                    } else {
-                                      selected.remove(c);
-                                    }
-                                  }),
+                          child: backupExportCategoryRow(
+                            category: c,
+                            summary: summary,
+                            selected: selected.contains(c),
+                            onToggle: (bool v) => setLocal(() {
+                              if (v) {
+                                selected.add(c);
+                              } else {
+                                selected.remove(c);
+                              }
+                            }),
                           ),
                         ),
                         // Per-book selection row (TODO-1195 part A): only meaningful
