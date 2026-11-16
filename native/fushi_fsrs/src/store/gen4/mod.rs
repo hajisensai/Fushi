@@ -11,6 +11,8 @@
 //! - [identity]：身份——绑定状态、并入（`Join`，改绑）、外来数据该怎么认（[identity::adopt_foreign]）、`join_ix`，G9-3。
 //! - [native]：本机原生写入者（seq / 依赖 / HLC / 链，`Salts` 去重），G7-3a。
 //! - [ingest]：一批落库之后收派生层（逐条维护 / 整个重建），本机写入、收段、导入共用。
+//! - [receive]：收段——原生段 / 中继件 / 承袭段验过之后按因果落进真相层（原生的等待缓冲 `op_wait`），收尾用 [ingest]，G8-4。
+//! - [sync_state]：同步运行时的本机状态——各位置的 head、转发记账（两段式删除）、旧根清单指纹，G8-4。
 //! - [derive]：派生层的索引（实体、寄存器、日志、旧闭包）与 `rebuild_all`；冻结的旧判定从操作体读。
 //! - [class]：读侧按别名类判定——寄存器、标签按别名类并起来再过冻结判据，内嵌 ID 归一（只读，没有调用方）。
 //! - [cache]：缓存层——笔记 / 卡片缓存、逐卡重放、有效复习投影（统计列）。
@@ -31,6 +33,8 @@ pub mod native;
 pub(crate) mod pack;
 #[cfg(test)]
 pub(crate) mod parity;
+pub mod receive;
 pub mod schema;
+pub mod sync_state;
 pub mod truth;
 pub mod weigh;

@@ -23,6 +23,9 @@
 //!   [super::truth::Truth::device_key] / [super::truth::Truth::set_peer]）、`held` / `checkpoints` / `media_local`（照搬对应的
 //!   `sync2_*` 表，`profile_uid` 换成 `col`）、`media_at`（各位置媒体在 / 不在，按内容哈希）、`loc_state`（各位置的加密
 //!   记忆：BUG-4299 的 `location_seal`）。除 `peers` 外这一版只建表，读写 API 由各自的 PR 加（G7-2 / G8-3 / G8-4 / G8-6）。
+//!   同步运行时的本机状态（[SYNC]，G8-4，不迁移、从头对账）：`loc_heads`（各位置上各设备最新的 head）、`op_wait`（原生
+//!   操作的因果等待缓冲）、`relay_out`（本机转发到各位置的文件与两段式删除）、`oldroot_fp`（各位置旧根的清单指纹）；
+//!   读写 API 在 `sync_state.rs`，收段在 `receive.rs`。
 //!
 //! 各列的取值见 `truth.rs`（落库规则）与 `pack.rs`（操作体的存储编码）。`writers.name` 存的是名字的紧凑字节形
 //! （`gen4::name`：一个文本只有一种字节形，所以按字节唯一就是按名字唯一）。
@@ -41,9 +44,9 @@ use rusqlite::Connection;
 
 /// 新代库的 schema 号。只要求远大于协议 3 的任何一个 schema 号（最后一个是 29）；万位是代，低位是这一代里的存储版本。
 ///
-/// G7-1 起 `40006`（本机状态表、`collections` 的绑定状态列、`application_id`）；G9-3 起 `40007`（派生表 `join_ix`）。
-/// 整批推送前每个改表的 PR 各自 +1。
-pub const SCHEMA: i64 = 40_007;
+/// G7-1 起 `40006`（本机状态表、`collections` 的绑定状态列、`application_id`）；G9-3 起 `40007`（派生表 `join_ix`）；
+/// G8-4 起 `40008`（同步运行时的本机状态 [SYNC]）。整批推送前每个改表的 PR 各自 +1。
+pub const SCHEMA: i64 = 40_008;
 
 /// 新代的号段从这里起：`schema` 小于它的都不是新代库（协议 3 的 1～29 与封存值 39999）。
 pub const GEN_FLOOR: i64 = 40_000;
@@ -242,6 +245,54 @@ CREATE TABLE IF NOT EXISTS loc_state (
   kdf TEXT,
   check_ TEXT,
   last_ok INTEGER,
+  PRIMARY KEY (col, loc_key)
+) WITHOUT ROWID;
+";
+
+/// 同步运行时的本机状态（G8-4，规划 §1.3：不迁移，换代后从头对账）。读写 API 在 `sync_state.rs`，`op_wait` 由
+/// `receive.rs` 写。不同步、不进导出与备份（导出不含待投递，D34）。
+///
+/// - `loc_heads`：每个位置上每台设备最新的 head（上一轮在这个位置上读到的）：代号、seq、段清单（JSON 文本数组）。
+///   本机自己那一行就是「这个位置上已经发布到哪里」（协议 3 `sync2_locations.uploaded` / `head_gen` 的落点）。
+///   协议 3 `sync2_location_heads` 的对应物。
+/// - `op_wait`：原生操作的因果等待缓冲（设计 §4.2：新库真相层只有承袭用的 `op_pending`）。每行是原生段里的一项：
+///   `k` = 它第一个 seq 的操作主键（`devs` 的下标自带集合，同 `op_pending`），`prev` / `chain` = 这一项前后的链值
+///   （作者签名担保的段里重算出来的），`span` = 占几个 seq，`op` = 操作的规范字节（空 = 空洞）。
+/// - `relay_out`：本机转发到各位置的文件（`rly-` 中继件 / `rhd-` 转发 head）与当时转发的 head 代号；`gone` = 1 是被更新的
+///   转发取代、等调用方删掉位置上的文件（两段式删除，协议 3 `sync2_relay_out` + `sync2_relay_gone`）。
+/// - `oldroot_fp`：每个位置旧根（`v3/`）上一次核对时的清单指纹与时刻（设计 §6.2 第 4 步「每轮核对旧根」）。
+pub(crate) const SYNC: &str = "
+CREATE TABLE IF NOT EXISTS loc_heads (
+  col INTEGER NOT NULL,
+  loc_key TEXT NOT NULL,
+  device BLOB NOT NULL,
+  gen INTEGER NOT NULL,
+  seq INTEGER NOT NULL,
+  segs TEXT NOT NULL,
+  PRIMARY KEY (col, loc_key, device)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS op_wait (
+  k INTEGER NOT NULL,
+  prev BLOB NOT NULL,
+  chain BLOB NOT NULL,
+  span INTEGER NOT NULL,
+  op BLOB,
+  PRIMARY KEY (k, prev, chain)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS relay_out (
+  col INTEGER NOT NULL,
+  loc_key TEXT NOT NULL,
+  device BLOB NOT NULL,
+  name TEXT NOT NULL,
+  gen INTEGER NOT NULL,
+  gone INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (col, loc_key, device, name)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS oldroot_fp (
+  col INTEGER NOT NULL,
+  loc_key TEXT NOT NULL,
+  fp BLOB NOT NULL,
+  at INTEGER NOT NULL,
   PRIMARY KEY (col, loc_key)
 ) WITHOUT ROWID;
 ";
@@ -562,6 +613,7 @@ pub fn install(conn: &Connection) -> Result<(), String> {
     }
     conn.execute_batch(TRUTH).map_err(sql)?;
     conn.execute_batch(LOCAL).map_err(sql)?;
+    conn.execute_batch(SYNC).map_err(sql)?;
     conn.execute_batch(DERIVED).map_err(sql)?;
     super::digest::set_triggers(conn, true)?;
     conn.execute_batch(super::cache::DDL).map_err(sql)?;
@@ -891,7 +943,7 @@ mod tests {
                 .collect::<Result<_, _>>()
                 .unwrap()
         };
-        let want: [(&str, &[&str]); 8] = [
+        let want: [(&str, &[&str]); 12] = [
             (
                 "collections",
                 &[
@@ -984,6 +1036,47 @@ mod tests {
                     "last_ok INTEGER",
                 ],
             ),
+            (
+                "loc_heads",
+                &[
+                    "col INTEGER NN PK1",
+                    "loc_key TEXT NN PK2",
+                    "device BLOB NN PK3",
+                    "gen INTEGER NN",
+                    "seq INTEGER NN",
+                    "segs TEXT NN",
+                ],
+            ),
+            (
+                "op_wait",
+                &[
+                    "k INTEGER NN PK1",
+                    "prev BLOB NN PK2",
+                    "chain BLOB NN PK3",
+                    "span INTEGER NN",
+                    "op BLOB",
+                ],
+            ),
+            (
+                "relay_out",
+                &[
+                    "col INTEGER NN PK1",
+                    "loc_key TEXT NN PK2",
+                    "device BLOB NN PK3",
+                    "name TEXT NN PK4",
+                    "gen INTEGER NN",
+                    "gone INTEGER NN",
+                ],
+            ),
+            (
+                "oldroot_fp",
+                &[
+                    "col INTEGER NN PK1",
+                    "loc_key TEXT NN PK2",
+                    "fp BLOB NN",
+                    "at INTEGER NN",
+                ],
+            ),
         ];
         for (table, columns) in want {
             assert_eq!(cols(table), columns, "{table}");
@@ -996,6 +1089,10 @@ mod tests {
             "media_local",
             "media_at",
             "loc_state",
+            "loc_heads",
+            "op_wait",
+            "relay_out",
+            "oldroot_fp",
         ] {
             let sql: String = conn
                 .query_row(

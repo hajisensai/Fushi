@@ -20,7 +20,12 @@
 //! | 有，链指纹相同，一边完整、一边是空洞 / 副本记录（或空洞对副本记录） | **本机的不动**（[Put::Kept]）。本机的槽只由本机自己应用 Purge / Dedup 推进（[Truth::advance_purge] / [Truth::advance_dedup]） |
 //! | 有，链指纹相同，同秩而内容不同，来的 T 版本更高 | 换成来的（[Put::Replaced]） |
 //! | 同上，来的 T 版本更低 | 本机的不动（[Put::Kept]） |
-//! | 同上，T 版本相同 | 异常：报错、不落库 |
+//! | 同上，T 版本相同 | 异常：不落库，[Put::Conflict] |
+//!
+//! 「异常」是来的数据与本机已有的自相矛盾（上传者的转译与本机的不是同一套、或段被改过），不是本机库坏了，所以是一个
+//! 结果而不是错误：什么都没写、会话不毒化，调用方决定怎么办——迁移灌入（`import.rs`）当错误整批停下，收段（`receive.rs`）
+//! 记一笔、跳过这个槽、接着收别的段。待投递与分叉的另一支上同样的矛盾（同号同链指纹、同 T 版本、内容不同；待投递的
+//! 槽说了两个不同的前一环）也是 [Put::Conflict]。
 //!
 //! 分叉时谁在日志里只看链指纹，不看谁先到：同一批槽不管按什么顺序收，日志与 `op_forks` 都一样（派生层只读日志，
 //! 所以派生结果也一样）。选择是逐个操作号做的——转译之后没有办法重算协议 3 的链，槽与槽之间「同一支」的关系只剩
@@ -112,6 +117,8 @@ pub enum Put {
     Fork,
     /// 前面还缺：进了待投递。
     Pending,
+    /// 来的与本机已有的自相矛盾（文件头落库规则表最后一行），什么都没写。
+    Conflict,
 }
 
 /// 设备信任状态：待本机确认。
@@ -493,27 +500,38 @@ impl VoidRun {
 }
 
 /// 没应用的槽（待投递 / 分叉的另一支）同一个 `(操作号, 链指纹)` 来了第二份：该把存着的换成什么（不用换 = None）。
-fn merge_parked(
-    have: Option<(HeritageSlot, u32)>,
-    slot: &HeritageSlot,
-    tv: u32,
-) -> Result<Option<(HeritageSlot, u32)>, String> {
+/// [merge_parked] 的结论。
+enum Merged {
+    /// 已有的不用改。
+    Keep,
+    /// 存这一份。
+    Store(HeritageSlot, u32),
+    /// 同一个 T 版本转出了两份不同的：矛盾（[Put::Conflict]）。
+    Conflict,
+}
+
+fn merge_parked(have: Option<(HeritageSlot, u32)>, slot: &HeritageSlot, tv: u32) -> Merged {
     let Some((have, have_tv)) = have else {
-        return Ok(Some((slot.clone(), tv)));
+        return Merged::Store(slot.clone(), tv);
     };
     if have == *slot {
-        return Ok((tv > have_tv).then_some((have, tv)));
+        return if tv > have_tv {
+            Merged::Store(have, tv)
+        } else {
+            Merged::Keep
+        };
     }
     if tv != have_tv {
-        return Ok((tv > have_tv).then(|| (slot.clone(), tv)));
+        return if tv > have_tv {
+            Merged::Store(slot.clone(), tv)
+        } else {
+            Merged::Keep
+        };
     }
     match join_slots(&have, slot) {
-        Joined::One(s) if s == have => Ok(None),
-        Joined::One(s) => Ok(Some((s, tv))),
-        Joined::Fork | Joined::Conflict => Err(format!(
-            "gen4 store: two different slots for {}:{} from the same translator version",
-            slot.id.device, slot.id.seq
-        )),
+        Joined::One(s) if s == have => Merged::Keep,
+        Joined::One(s) => Merged::Store(s, tv),
+        Joined::Fork | Joined::Conflict => Merged::Conflict,
     }
 }
 
@@ -576,7 +594,9 @@ impl<'c> Truth<'c> {
         r
     }
 
-    fn write<T>(&self, f: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
+    /// 一次写入的守卫：会话没被毒化、在事务里、缓存与库同一个版本；[f] 报错就毒化会话。新代的其余本机状态表
+    /// （`sync_state.rs`）、收段（`receive.rs`）写库也经这里，口径与真相层相同。
+    pub(super) fn write<T>(&self, f: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
         if self.st.borrow().poisoned {
             return Err(
                 "gen4 store: an earlier write failed; roll back and reset first".to_owned(),
@@ -1379,6 +1399,12 @@ impl<'c> Truth<'c> {
             Some(dev) => opk(dev, id.seq).map(Some),
             None => Ok(None),
         }
+    }
+
+    /// 操作号 → 主键；本机没见过这台设备就先给它一个下标（`devs.kind` 空：只被点过名，还没见过它的日志）。收段把
+    /// 还接不上的原生操作放进等待缓冲（`op_wait`）时用。
+    pub(super) fn key_for(&self, col: i64, id: &OpId) -> Result<i64, String> {
+        self.write(|| opk(self.dev(col, &id.device)?, id.seq))
     }
 
     /// 主键 → 操作号。
@@ -2230,7 +2256,8 @@ impl<'c> Truth<'c> {
         self.with_dev(dev, |d| d.parked = None)
     }
 
-    fn put_fork(&self, dev: i64, slot: &HeritageSlot, tv: u32) -> Result<(), String> {
+    /// 记成分叉的另一支。与已存的同号同链指纹的那份矛盾 = false，什么都没写。
+    fn put_fork(&self, dev: i64, slot: &HeritageSlot, tv: u32) -> Result<bool, String> {
         let k = opk(dev, slot.id.seq)?;
         let have = self
             .conn
@@ -2245,16 +2272,20 @@ impl<'c> Truth<'c> {
             Some((t, bytes)) => Some((slot_of(&bytes)?, t as u32)),
             None => None,
         };
-        if let Some((s, t)) = merge_parked(have, slot, tv)? {
-            self.conn
-                .prepare_cached(
-                    "INSERT OR REPLACE INTO op_forks (k, fp, tv, slot) VALUES (?1, ?2, ?3, ?4)",
-                )
-                .map_err(sql)?
-                .execute(params![k, s.fp.to_vec(), t, s.encode()])
-                .map_err(sql)?;
+        match merge_parked(have, slot, tv) {
+            Merged::Keep => Ok(true),
+            Merged::Conflict => Ok(false),
+            Merged::Store(s, t) => {
+                self.conn
+                    .prepare_cached(
+                        "INSERT OR REPLACE INTO op_forks (k, fp, tv, slot) VALUES (?1, ?2, ?3, ?4)",
+                    )
+                    .map_err(sql)?
+                    .execute(params![k, s.fp.to_vec(), t, s.encode()])
+                    .map_err(sql)?;
+                Ok(true)
+            }
         }
-        Ok(())
     }
 
     /// 一个操作号上见过的所有链指纹里，字节序最小的那个槽在日志里（文件头）：`op_forks` 里有比日志里那条更小的，
@@ -2393,7 +2424,9 @@ impl<'c> Truth<'c> {
             .ok_or("gen4 store: heritage log holds a native entry")?;
         match join_slots(&have_slot, slot) {
             Joined::Fork => {
-                self.put_fork(dev, slot, tv)?;
+                if !self.put_fork(dev, slot, tv)? {
+                    return Ok(Put::Conflict);
+                }
                 Ok(if self.rebalance(col, dev, seq)? {
                     Put::Replaced
                 } else {
@@ -2414,10 +2447,7 @@ impl<'c> Truth<'c> {
                 Ok(Put::Replaced)
             }
             Joined::Conflict if tv < have.tv => Ok(Put::Kept),
-            Joined::Conflict => Err(format!(
-                "gen4 store: two different slots for {}:{seq} from translator version {tv}",
-                slot.id.device
-            )),
+            Joined::Conflict => Ok(Put::Conflict),
         }
     }
 
@@ -2488,14 +2518,16 @@ impl<'c> Truth<'c> {
             let have_prev = have_prev.as_deref().map(fp_of).transpose()?;
             if let (Some(a), Some(b)) = (have_prev, prev_fp) {
                 if a != b {
-                    return Err(format!(
-                        "gen4 store: pending {}:{} names two different predecessors",
-                        slot.id.device, slot.id.seq
-                    ));
+                    // 说它接在两个不同的槽后面：矛盾，不落。
+                    return Ok(Put::Conflict);
                 }
             }
             let prev = prev_fp.or(have_prev);
-            let merged = merge_parked(have, slot, tv)?;
+            let merged = match merge_parked(have, slot, tv) {
+                Merged::Conflict => return Ok(Put::Conflict),
+                Merged::Keep => None,
+                Merged::Store(s, t) => Some((s, t)),
+            };
             if merged.is_some() || prev != have_prev {
                 let (s, t) = match merged {
                     Some(m) => m,
@@ -3071,9 +3103,8 @@ pub(crate) mod tests {
             put(&t, col, x, 2).unwrap();
         }
         let other = other_edit(&s[0], "\"other\"");
-        // 同一个 T 版本：异常，不落库。
-        let e = put(&t, col, &other, 2).unwrap_err();
-        assert!(e.contains("two different slots"), "{e}");
+        // 同一个 T 版本：异常，不落库（结果不是错误，会话照常能写）。
+        assert_eq!(put(&t, col, &other, 2), Ok(Put::Conflict));
         assert_eq!(
             t.entry(col, &s[0].id).unwrap().unwrap().slot().unwrap(),
             s[0]
@@ -3368,9 +3399,8 @@ pub(crate) mod tests {
             (ready.slot.clone(), ready.prev_fp),
             (s[2].clone(), Some(s[1].fp))
         );
-        // 说它接在另一个槽后面：矛盾，报错。
-        let e = pend(&s[2], Some([9; 8])).unwrap_err();
-        assert!(e.contains("two different predecessors"), "{e}");
+        // 说它接在另一个槽后面：矛盾，不落。
+        assert_eq!(pend(&s[2], Some([9; 8])), Ok(Put::Conflict));
         assert_eq!(put(&t, col, &ready.slot, ready.tv), Ok(Put::Inserted));
         // 3 落库的同时它的待投递行确认掉了；4 接着可以投。
         assert_eq!(t.pending(col).unwrap().len(), 2);

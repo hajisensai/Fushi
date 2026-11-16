@@ -100,7 +100,7 @@ pub fn import_legacy(
                     Placement::Applied => {
                         out.applied += 1;
                         let put = truth.put_heritage(col, &source, &slot, T_VERSION)?;
-                        if !matches!(put, Put::Fork | Put::Yielded) {
+                        if !matches!(put, Put::Fork | Put::Yielded | Put::Conflict) {
                             if op.id.seq % HERITAGE_MARK_EVERY == 0 {
                                 truth.set_mark(col, &d.device, op.id.seq, chain)?;
                             }
@@ -126,6 +126,13 @@ pub fn import_legacy(
                     Put::Replaced => out.replaced += 1,
                     Put::Fork | Put::Yielded => out.forks += 1,
                     Put::Pending => out.parked += 1,
+                    // 一份旧库自己转出两份互相矛盾的槽：转译或旧库有问题，整批停下（回滚这一批）。
+                    Put::Conflict => {
+                        return Err(format!(
+                            "gen4 import: {}:{} contradicts what is already stored",
+                            op.id.device, op.id.seq
+                        ));
+                    }
                 }
                 in_batch += 1;
                 if in_batch >= batch.max(1) {
