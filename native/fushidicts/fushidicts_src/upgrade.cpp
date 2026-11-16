@@ -87,29 +87,33 @@ std::optional<key_index::blobs_file> current_key_index(const std::string& dir) {
   return keys.blobs();
 }
 
-// 新文件（key.index，重写过的还有 blobs3.bin）与它们的目录项是否都已落盘。删旧文件
-// 之前必须为真：否则断电后可能只剩一份没写全的 key.index，而能兜底的旧文件已经没了。
-bool durable(const std::string& dir, key_index::blobs_file blobs) {
-  if (!memory::sync_file(hash::dict_file(dir, hash::kKeyIndexFile))) {
-    return false;
-  }
-  if (blobs == key_index::blobs_file::rewritten &&
-      !memory::sync_file(hash::dict_file(dir, hash::kRewrittenBlobsFile))) {
-    return false;
-  }
-  return memory::sync_directory(dir);
+bool exists(const std::string& path) {
+  std::error_code ec;
+  return std::filesystem::exists(fushi::fs_path(path), ec);
 }
 
-// 提交之后（或发现已是最新时）清掉不再需要的文件。没能确认新文件落盘就不删，留给
-// 下一次调用。
+// 提交之后（或发现已是最新时）清掉不再需要的文件。
+//
+// 落盘次序：新文件的内容在改名之前已经 sync_file（write_file / commit_key_index），这里
+// 删旧文件之前再把目录项落盘——否则断电后可能「改名没生效、删除却生效了」，能兜底的
+// 旧文件没了而新文件的名字还不在。目录项没能落盘就不删，留给下一次调用。不按正式
+// 文件名再刷一次内容：Windows 上引擎以只读共享打开着它们，写方式打不开。
 void remove_superseded(const std::string& dir, key_index::blobs_file blobs) {
-  if (!durable(dir, blobs)) {
-    return;
+  const std::string superseded[] = {
+      hash::dict_file(dir, hash::kHashTableFile),
+      hash::dict_file(dir, hash::kBloomFilterFile),
+      hash::dict_file(dir, blobs == key_index::blobs_file::rewritten ? hash::kBlobsFile : hash::kRewrittenBlobsFile),
+  };
+  bool any = false;
+  for (const std::string& path : superseded) {
+    any = any || exists(path);
   }
-  remove_if_possible(hash::dict_file(dir, hash::kHashTableFile));
-  remove_if_possible(hash::dict_file(dir, hash::kBloomFilterFile));
-  remove_if_possible(hash::dict_file(dir, blobs == key_index::blobs_file::rewritten ? hash::kBlobsFile
-                                                                                    : hash::kRewrittenBlobsFile));
+  // 常态（早就清干净了）不碰磁盘：每次启动每本词典都会走到这里。
+  if (any && memory::sync_directory(dir)) {
+    for (const std::string& path : superseded) {
+      remove_if_possible(path);
+    }
+  }
   const auto now = std::filesystem::file_time_type::clock::now();
   std::error_code ec;
   for (std::filesystem::directory_iterator it(fushi::fs_path(dir), ec), end; !ec && it != end; it.increment(ec)) {

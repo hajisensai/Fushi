@@ -699,6 +699,26 @@ void unmap_unflushed(mapped_file mapping) {
 #endif
 }
 
+#ifndef _WIN32
+namespace {
+// 文件或目录：打开、刷到介质、关闭。
+bool sync_fd_of(const std::string& path) {
+  const int fd = open(path.c_str(), O_RDONLY | O_CLOEXEC);
+  if (fd < 0) {
+    return false;
+  }
+#if defined(__APPLE__)
+  // fsync 在 Apple 平台只到驱动器缓存；F_FULLFSYNC 在不支持它的文件系统上失败，退回 fsync。
+  const bool ok = fcntl(fd, F_FULLFSYNC) == 0 || fsync(fd) == 0;
+#else
+  const bool ok = fsync(fd) == 0;
+#endif
+  close(fd);
+  return ok;
+}
+}  // namespace
+#endif
+
 bool sync_file(const std::string& path) {
 #ifdef _WIN32
   const std::wstring wpath = to_wide(path);
@@ -711,18 +731,7 @@ bool sync_file(const std::string& path) {
   CloseHandle(file);
   return ok;
 #else
-  const int fd = open(path.c_str(), O_RDONLY | O_CLOEXEC);
-  if (fd < 0) {
-    return false;
-  }
-#if defined(__APPLE__)
-  // F_FULLFSYNC 在不支持它的文件系统上失败，退回 fsync。
-  const bool ok = fcntl(fd, F_FULLFSYNC) == 0 || fsync(fd) == 0;
-#else
-  const bool ok = fsync(fd) == 0;
-#endif
-  close(fd);
-  return ok;
+  return sync_fd_of(path);
 #endif
 }
 
@@ -731,13 +740,7 @@ bool sync_directory(const std::string& dir) {
   (void)dir;
   return true;
 #else
-  const int fd = open(dir.c_str(), O_RDONLY | O_CLOEXEC);
-  if (fd < 0) {
-    return false;
-  }
-  const bool ok = fsync(fd) == 0;
-  close(fd);
-  return ok;
+  return sync_fd_of(dir);
 #endif
 }
 

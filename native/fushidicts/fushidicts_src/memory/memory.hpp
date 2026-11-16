@@ -210,8 +210,8 @@ struct map_error : std::system_error {
 // 系统缓存（Windows 的 FlushViewOfFile 不等磁盘、Apple 的 msync 同理），「改名即提交、
 // 提交后删旧文件」的写入方在改名前要调它。false = 没能落盘。
 bool sync_file(const std::string& path);
-// 把 [dir] 的目录项（刚做的改名 / 新建）落盘。POSIX 上 fsync 目录；Windows 没有对应
-// 操作（NTFS 的元数据日志保证改名的次序），恒真。
+// 把 [dir] 的目录项（刚做的改名 / 新建）落盘。POSIX 上刷目录（口径同 sync_file）；
+// Windows 没有对应操作（NTFS 的元数据日志保证改名先于其后的删除），恒真。
 bool sync_directory(const std::string& dir);
 
 // 对一个**已存在**的文件加独占锁，持有到析构。跨进程生效，同进程里各自构造的两把也

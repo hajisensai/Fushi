@@ -804,6 +804,12 @@ void test_robustness(const std::string& root, Deinflector& deinflector) {
            "live (POSIX): superseded index files are unlinked at once");
     expect(!exists(set.freq + "/blobs.bin"), "live (POSIX): superseded blobs.bin is unlinked at once");
 #endif
+    // app 的次序：影子引擎先装上升级后的词典，旧引擎再放手，然后补跑一遍清理。清理时
+    // 新引擎正开着 key.index / blobs3.bin（Windows 上是只读共享的句柄 / 映射）——旧文件
+    // 照样要清得掉。
+    auto reloaded = std::make_unique<DictionaryQuery>();
+    load(*reloaded, set);
+    reloaded->prepare_union_filter("", true);
     engine.reset();
     for (const std::string& dir : set.all()) {
       expect_result(fushidicts::upgrade_dictionary(dir, true), UpgradeResult::UpToDate, "live: after release " + dir);
@@ -813,6 +819,8 @@ void test_robustness(const std::string& root, Deinflector& deinflector) {
     for (const std::string& dir : {set.freq, set.pitch, set.ipa}) {
       expect(!exists(dir + "/blobs.bin"), "live: superseded blobs.bin is gone once released: " + dir);
     }
+    expect_same(want, snapshot(*reloaded, deinflector), "live: the reloaded engine is unaffected by the cleanup");
+    reloaded.reset();
     expect_same(want, snapshot_of(set, deinflector, false), "live: results after cleanup");
   }
 }
