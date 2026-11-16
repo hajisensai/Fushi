@@ -755,7 +755,6 @@ fn unwired_and_removed_commands_name_their_owner() {
         ("profile_merge_mark", "G9-5"),
         ("plan", "G8-7"),
         ("import", "G11-3"),
-        ("binding_set", "G9-4"),
     ] {
         let (rc, e) = call(m.h, &g4req(op, T1, json!({})), None).unwrap_err();
         assert_eq!(rc, STORE_ERROR, "{op}");
