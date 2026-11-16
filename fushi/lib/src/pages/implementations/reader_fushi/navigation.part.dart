@@ -1232,8 +1232,8 @@ extension _ReaderNavigation on _ReaderFushiPageState {
 
   /// 墨水屏「每 N 页全刷」的计数入口（`EinkFullRefreshController.notePageTurn`）。
   /// 分页 / 视觉小说：每次章内实际翻页（[_paginateStep]）与翻页跨章落定
-  /// （[_onRestoreComplete]）各计一次；连续滚动：JS 每滚过一屏回传一次
-  /// `onEinkScrollPage`。
+  /// （[_onRestoreComplete]）各计一次；连续滚动：JS `paginate` 每一步（点击区 / 音量键 /
+  /// 键盘 / 手柄 / 翻页按钮）与拖动每滚过一屏各回传一次 `onEinkScrollPage`。
   void _noteEinkPageTurn() {
     appModel.einkFullRefresh.notePageTurn();
   }

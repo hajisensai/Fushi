@@ -288,15 +288,47 @@ void main() {
       expect(js, contains("callHandler('onEinkScrollPage')"));
     });
 
-    test('漫画：当前页变化即计一页', () {
+    test('漫画：只在真翻页处计，开章 / 切布局写 _pageNotifier 不计', () {
       final String manga = read(
         'lib/src/media/manga/reader/manga_fushi_page.dart',
       );
-      final int i = manga.indexOf('void _onReaderPageChanged() {');
-      expect(i, greaterThan(0));
+      String body(String signature) {
+        final int i = manga.indexOf(signature);
+        expect(i, greaterThan(0), reason: signature);
+        return manga.substring(i, manga.indexOf('\n  }\n', i));
+      }
+
+      // _pageNotifier 的监听不计数：开章 / 切单双页 / 切布局都会给它赋值。
       expect(
-        manga.substring(i, i + 300),
-        contains('appModel.einkFullRefresh.notePageTurn();'),
+        body('void _onReaderPageChanged() {'),
+        isNot(contains('notePageTurn')),
+      );
+      expect(
+        RegExp(
+          r'appModel\.einkFullRefresh\.notePageTurn\(\)',
+        ).allMatches(manga).length,
+        1,
+        reason: '唯一计数入口是 _noteEinkPageTurn',
+      );
+      for (final String turn in <String>[
+        'Future<void> _commitMangaSpread(int target) async {',
+        'Future<void> _jumpToPageAnchor(String dir) async {',
+        'Future<void> _onMangaScroll(String payloadJson) async {',
+      ]) {
+        expect(body(turn), contains('_noteEinkPageTurn();'), reason: turn);
+      }
+      // 换章：翻页撞边界置挂起，新窗口 ready 之后才计。
+      expect(
+        body('Future<void> _onReachedChapterEdge(int delta) async {'),
+        contains('_einkTurnPendingOnWindowReady = true;'),
+      );
+      final int ready = manga.indexOf(
+        '_windowGate.complete(ticket, MangaWindowLoadOutcome.ready);',
+      );
+      expect(ready, greaterThan(0));
+      expect(
+        manga.substring(ready, ready + 300),
+        contains('_noteEinkPageTurn();'),
       );
     });
 
