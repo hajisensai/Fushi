@@ -1694,23 +1694,10 @@ class _HomePageState extends BasePageState<HomePage>
     _appleChrome.syncScope(_visibleTab);
     _largeTitle.syncScope(_visibleTab);
     final bool apple = isGlassDesign(context);
-    final bool overlayTitle = !apple && _tabHasFloatingChrome(_visibleTab);
-    final bool narrow =
-        windowSizeClassReal(
-          MediaQuery.sizeOf(context).width,
-          FushiAppUiScale.of(context),
-        ) ==
-        WindowSizeClass.compact;
+    final bool overlayTitle = _shellTitleOverlaid(_visibleTab);
+    final bool narrow = _shellWindowCompact();
     // 页面名并进库页工具栏行（[_shellTitleInline]）的 tab 不再叠标题行。
     final bool inlineTitle = _shellTitleInline(_visibleTab);
-    // 叠放标题让出的高度：宽窗 = 标题条展开高度 + 6（收起成 48 的标题胶囊后，
-    // 胶囊下沿到页签胶囊恰好 12，M3E 组间距）；窄窗不显示标题、标题并进工具栏
-    // 行的宽窗也不另占一行，只留 8 的呼吸。
-    final double titleInset = !overlayTitle
-        ? 0
-        : narrow || inlineTitle
-        ? kFushiFloatingChromeGap
-        : _overlayTitleHeight + 6;
     return NotificationListener<Notification>(
       onNotification: (Notification notification) {
         // 隐藏的保活 tab / 分区后台加载发来的尺寸通知不算数。
@@ -1740,7 +1727,9 @@ class _HomePageState extends BasePageState<HomePage>
           ),
           Expanded(
             child: _withAppleTopEdge(
-              FushiFloatingChromeInset(top: titleInset, child: content),
+              // 叠放标题让出的顶部高度不在这里下发：它按 tab 不同，而这里是全部
+              // 保活 tab 的共同祖先（见 [_shellTitleInsetFor]）。
+              content,
               apple: apple,
               overlay: overlayTitle && !narrow && !inlineTitle
                   ? _floatingTitleOverlay()
@@ -1750,6 +1739,34 @@ class _HomePageState extends BasePageState<HomePage>
         ],
       ),
     );
+  }
+
+  bool _shellWindowCompact() =>
+      windowSizeClassReal(
+        MediaQuery.sizeOf(context).width,
+        FushiAppUiScale.of(context),
+      ) ==
+      WindowSizeClass.compact;
+
+  /// [tab] 的外壳大标题是否叠在内容之上（MD3 库页，见 [_floatingTitleOverlay]）。
+  bool _shellTitleOverlaid(HomeTab tab) =>
+      !isGlassDesign(context) && _tabHasFloatingChrome(tab);
+
+  /// [tab] 的内容为叠放的外壳大标题让出的顶部高度：宽窗 = 标题条展开高度 + 6
+  /// （收起成 48 的标题胶囊后，胶囊下沿到页签胶囊恰好 12，M3E 组间距）；窄窗
+  /// 不显示标题、标题并进工具栏行的宽窗也不另占一行，只留 8 的呼吸；标题不
+  /// 叠放的 tab（首页 / 查词 / 复习 / 设置，Apple 设计系统）为 0。
+  ///
+  /// 按 **tab 自己**算、由 [_buildTabContent] 在各 tab 的子树里下发
+  /// [FushiFloatingChromeInset]，不能按当前可见 tab 算了挂在全部 tab 的共同祖先
+  /// 上（BUG-4707）：那样每次在库页（8）与首页 / 查词 / 复习 / 设置（0）之间切，
+  /// 这个值就翻一次，所有访问过的隐藏保活页里读它的浮动工具区、滚动视图、网格
+  /// 都跟着在切 tab 的那一帧重建 + 重排。
+  double _shellTitleInsetFor(HomeTab tab) {
+    if (!_shellTitleOverlaid(tab)) return 0;
+    return _shellWindowCompact() || _shellTitleInline(tab)
+        ? kFushiFloatingChromeGap
+        : _overlayTitleHeight + 6;
   }
 
   /// 外壳大标题条（两种摆法共用同一份配置）。
@@ -1851,11 +1868,7 @@ class _HomePageState extends BasePageState<HomePage>
         appModelNoUpdate.gamesModuleForm == GamesModuleForm.streamClient) {
       return false;
     }
-    return windowSizeClassReal(
-          MediaQuery.sizeOf(context).width,
-          FushiAppUiScale.of(context),
-        ) !=
-        WindowSizeClass.compact;
+    return !_shellWindowCompact();
   }
 
   /// 叠放大标题条的实测高度（取见过的最大值 = 展开高度；收起变矮不改它，
@@ -4243,21 +4256,24 @@ class _HomePageState extends BasePageState<HomePage>
       HomeTab.manga => const MangaLibraryPage(),
       HomeTab.music => const MusicLibraryPage(),
     };
-    return FushiShellTitleScope(
-      title: _shellTitleFor(tab),
-      actionsSlot: _shellActions,
-      // 页头大字旁的徽标与侧栏当前项用同一枚模块多边形。
-      child: FushiMastheadBadgeScope(
-        shape: homeNavRailShapeFor(tab),
-        child: FushiShellInlineTitle(
-          enabled: _shellTitleInline(tab),
-          child: PrimaryScrollController(
-            controller: _tabScrollControllers.putIfAbsent(
-              tab,
-              ScrollController.new,
+    return FushiFloatingChromeInset(
+      top: _shellTitleInsetFor(tab),
+      child: FushiShellTitleScope(
+        title: _shellTitleFor(tab),
+        actionsSlot: _shellActions,
+        // 页头大字旁的徽标与侧栏当前项用同一枚模块多边形。
+        child: FushiMastheadBadgeScope(
+          shape: homeNavRailShapeFor(tab),
+          child: FushiShellInlineTitle(
+            enabled: _shellTitleInline(tab),
+            child: PrimaryScrollController(
+              controller: _tabScrollControllers.putIfAbsent(
+                tab,
+                ScrollController.new,
+              ),
+              automaticallyInheritForPlatforms: TargetPlatform.values.toSet(),
+              child: content,
             ),
-            automaticallyInheritForPlatforms: TargetPlatform.values.toSet(),
-            child: content,
           ),
         ),
       ),
