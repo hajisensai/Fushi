@@ -334,19 +334,34 @@ impl G4Core {
         &self,
         f: impl FnOnce(&Truth<'_>) -> Result<T, String>,
     ) -> Result<T, String> {
+        let out = self.write_tx(f);
+        if out.is_ok() {
+            self.writes.fetch_add(1, Ordering::SeqCst);
+        }
+        out
+    }
+
+    /// 只改本机状态行的写命令（媒体回收的待回收集合）：与 [G4Core::write] 同一把写锁、同一种事务，但**不推进写入代数**。
+    /// 写入代数是统计原料缓存判「原料改没改」的键（模块文件头），本机状态行不是原料，推进它只会让下一次统计白白重算一遍
+    /// （后台回收按游标分批循环，每批都会推进）。[f] 不得动真相与派生层：动了，统计会命中旧原料。
+    pub(super) fn write_local<T>(
+        &self,
+        f: impl FnOnce(&Truth<'_>) -> Result<T, String>,
+    ) -> Result<T, String> {
+        self.write_tx(f)
+    }
+
+    /// [G4Core::write] / [G4Core::write_local] 共用：写锁里、一开始就拿写锁的事务里跑 [f]，报错整笔回滚。
+    fn write_tx<T>(&self, f: impl FnOnce(&Truth<'_>) -> Result<T, String>) -> Result<T, String> {
         let w = self.writer()?;
         let t = Truth::new(&w);
-        let out = t.tx_immediate(|t| {
+        t.tx_immediate(|t| {
             let v = f(t)?;
             // 测试注入：提交之前 panic（panic_recovery_tests.rs，同协议 3 `in_savepoint` 的注入点）。
             #[cfg(test)]
             crate::store::sync2::test_panic::hit(crate::store::sync2::test_panic::BEFORE_RELEASE);
             Ok(v)
-        });
-        if out.is_ok() {
-            self.writes.fetch_add(1, Ordering::SeqCst);
-        }
-        out
+        })
     }
 
     /// 关闭（幂等）：读连接池（等借出的放回）→ 写连接。之后的命令报 `CLOSED`。

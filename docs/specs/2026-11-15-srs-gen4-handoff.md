@@ -333,7 +333,9 @@ S1b 把 G7-4f（评分预览、逐卡重放 / 训练集）与媒体回收接上�
   `history_states` / `stat_projection` / `optimizer_items` / `calibration_items` / `rwkv_rows` 模式 0 的页里没有 profile
   行（这一段 Dart 不动）。取舍：页里带 `[-1, profile]` 行就按它的绑定（没绑定明确报错）；没有就看文件里有几个集合——
   一个（一个 profile 目录一个 profile 的通常情形）就是它，一个都没有用空集合号 0（结果 = 卡不存在的形状），几个时按
-  请求里的卡认（卡的别名类里任何成员在哪个集合里有日志或修改，`HOLDS_CARD_SQL`）；对不上任何集合 = 卡不存在的形状，
+  请求里的卡认（卡的别名类里任何成员在哪个集合里有日志或修改，`HOLDS_ANY_CARD_SQL`：一个集合一条语句，全部卡经
+  `json_each` 一次传进去、在 SQL 里归一并展开别名类，语句数 = 1 + 集合数、与卡数无关；最初逐卡在 Rust 里点查，几万张卡
+  的多 profile 库每个无关集合几十万次查询，复核后改掉；`direct_col_runs_one_statement_per_collection` 钉住语句数）；对不上任何集合 = 卡不存在的形状，
   对上不止一个明确报错（不拼两份历史）。迁移来的多 profile 库里协议 3 的实体本来就只属于一个 profile，按卡认不会撞。
   **G7-5 建议**：Dart 改调用时在这五个入口的页里补 profile 行，按卡认集合就只剩兜底。
 - **媒体回收**（`cmd/media_gc.rs`）：
@@ -351,6 +353,9 @@ S1b 把 G7-4f（评分预览、逐卡重放 / 训练集）与媒体回收接上�
   - 查询：并候选的笔记按 `notes` 主键点查；「过期的已删笔记」「存活笔记」两条按 `col` 圈出这个集合（规划器在主键与
     `notes_dupe` 之间二选一，都是这个集合的一段；回收本来就要读这个集合的全部存活笔记，不为前者另建索引）；笔记类型走
     `ent_kind` 部分索引。`dispatch_tests.rs` `s1b_statements_use_their_keys` 钉住。
+  - `queue` / `collect` 走 `G4Core::write_local`（同一把写锁、同一种事务，**不推进写入代数**）：它们只改本机状态行，
+    不是统计原料；走 `write` 的话后台按游标分批回收每批都让统计原料缓存失效、下一次统计整份重算。`write_local` 的 `f`
+    不得动真相与派生层。`media_gc_writes_keep_the_write_generation` 钉住（改回 `write` 就红）。
 - **按类取日志代表只有一份**：`cache.rs` `Index::log_class_rep`（类里每个成员 `win = 1` 那份里操作号最小的），缓存层
   `card_logs` 与 `cmd/training.rs` 的 RWKV 尾巴（`is_rep`）都调它；原来两处各写一遍。复核要的变异测试：
   `tests_class.rs` `the_log_tail_names_a_class_only_through_its_smallest_op`（`since` 卡在同一条日志的两份带盐导入之间，

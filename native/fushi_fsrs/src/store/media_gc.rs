@@ -35,7 +35,7 @@ fn sql(e: rusqlite::Error) -> String {
 }
 
 /// Dart `srsIsBareMediaName`：只认裸文件名（不含路径分隔、不是 `.` / `..`）。
-pub(crate) fn is_bare_ref(n: &str) -> bool {
+fn is_bare_ref(n: &str) -> bool {
     !n.is_empty() && !n.contains('/') && !n.contains('\\') && n != "." && n != ".."
 }
 

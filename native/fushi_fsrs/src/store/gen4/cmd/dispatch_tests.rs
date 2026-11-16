@@ -1707,6 +1707,45 @@ fn direct_entries_find_the_collection_by_their_cards() {
     ffsrs_store_close(h);
 }
 
+/// 按卡认集合的语句数与请求的卡数无关：一条集合列表 + 每个集合一条（`HOLDS_ANY_CARD_SQL`）。两个集合、卡只在一个里有
+/// 历史、请求带上一大批哪儿都没有历史的卡（Dart 的训练集请求是整个 profile 的卡）：以前逐卡点查，无关集合要把每张卡归一、
+/// 取成员、逐个成员查一遍（N+1）。别名类：请求里的是类里的成员 ID（不是规范 ID），照样认到它的集合。
+#[test]
+fn direct_col_runs_one_statement_per_collection() {
+    use super::browse_tests::profile;
+    use crate::store::gen4::dispatch::{HOLDS_ANY_CARD_SQL, direct_col};
+    const OTHER: &str = "0193a1b2-0000-7000-8000-0000000000f7";
+    let dir = tempdir::new("s1bdirectn");
+    let c = G4Core::open(&dir.0, OpenMode::Primary).unwrap();
+    let a = c.write(|t| t.bind(P, &id(0xc0), "dir")).unwrap();
+    let b = c.write(|t| t.bind(OTHER, &id(0xc1), "dir2")).unwrap();
+    let w = c.write(|t| Ok(tests_class::land(t, a))).unwrap();
+    assert_ne!(w.card[1], w.card[0], "a member, not the canonical id");
+    let mut groups: Vec<Vec<String>> = (0..60u32)
+        .map(|i| vec![format!("0193a1b2-0000-7000-8000-0000{i:08x}")])
+        .collect();
+    groups.push(vec![w.card[1].text()]);
+    let mut found = None;
+    let ran = c
+        .read(|t| {
+            Ok(profile(t, || {
+                found = Some(direct_col(t, None, &groups));
+            }))
+        })
+        .unwrap();
+    assert_eq!(found.unwrap().unwrap(), a);
+    let holds = ran.iter().filter(|r| r.sql == HOLDS_ANY_CARD_SQL).count();
+    assert_eq!(holds, 2, "one per collection");
+    assert_eq!(ran.len(), 3, "collections + one per collection: {ran:#?}");
+    // 只有一批没历史的卡：两个集合都对不上 = 空集合号；同一个类在 b 里也有历史就分不清，报错。
+    let none: Vec<Vec<String>> = groups[..60].to_vec();
+    assert_eq!(c.read(|t| direct_col(t, None, &none)).unwrap(), 0);
+    c.write(|t| Ok(tests_class::land(t, b))).unwrap();
+    let e = c.read(|t| direct_col(t, None, &groups)).unwrap_err();
+    assert!(e.contains("2 collections"), "{e}");
+    c.close();
+}
+
 // ---------------------------------------------------------------------- 媒体回收（S1b）
 
 const MGC_NT: &str = "0193a1b2-0000-7000-8000-00000000f0a1";
@@ -1771,6 +1810,41 @@ fn with_media(d: &Device) {
     events.push(edit("note", MGC_RECENT, "deleted", json!(MT - DAY)));
     events.push(edit("note", MGC_OLD, "deleted", json!(MT - 100 * DAY)));
     d.apply(MT, events);
+}
+
+/// 媒体回收的两条写只改本机状态行（待回收集合），不推进写入代数（`G4Core::write_local`）：统计原料缓存照样命中，后台
+/// 分批回收不会让下一次统计整份重算。状态确实写下了（下一次 queue 读得到上一次并进去的）。
+#[test]
+fn media_gc_writes_keep_the_write_generation() {
+    use crate::store::gen4::dispatch::stats_cached;
+    use std::sync::atomic::Ordering;
+    let m = migrated_prepared(false, &with_media);
+    let core = crate::store::ffi::core_of(m.h).unwrap();
+    let sreq = stats_req();
+    let before = g4(m.h, "stats_rows", MT, sreq.clone());
+    let w0 = stats_cached(&core).expect("stats cached");
+    assert_eq!(core.writes.load(Ordering::SeqCst), w0);
+    let q = g4(
+        m.h,
+        "media_gc_queue",
+        MT,
+        json!({"expiredBefore": MT - 90 * DAY, "names": ["x.png"]}),
+    );
+    assert_eq!(names_of(&q["pending"]), ["old.png", "shared.png", "x.png"]);
+    let q = g4(m.h, "media_gc_queue", MT, json!({}));
+    assert_eq!(names_of(&q["pending"]), ["old.png", "shared.png", "x.png"]);
+    let d = tempdir::new("s1bmgc-gen");
+    std::fs::write(d.0.join("x.png"), b"x").unwrap();
+    let r = g4(
+        m.h,
+        "media_gc_collect",
+        MT,
+        json!({"root": d.0.to_str().unwrap(), "aliveAfter": MT - 90 * DAY, "freshAfter": i64::MAX}),
+    );
+    assert!(!d.0.join("x.png").exists(), "{r}");
+    assert_eq!(core.writes.load(Ordering::SeqCst), w0, "local-only writes");
+    assert_eq!(g4(m.h, "stats_rows", MT, sreq), before);
+    assert_eq!(stats_cached(&core), Some(w0));
 }
 
 fn names_of(v: &Value) -> Vec<String> {
@@ -2006,7 +2080,7 @@ fn media_gc_defers_while_live_references_cannot_be_read() {
 #[test]
 fn s1b_statements_use_their_keys() {
     use crate::store::gen4::cmd::media_gc::{EXPIRED_SQL, LIVE_SQL, NOTE_REFS_SQL, TYPES_SQL};
-    use crate::store::gen4::dispatch::{COLLECTIONS_SQL, HOLDS_CARD_SQL};
+    use crate::store::gen4::dispatch::{COLLECTIONS_SQL, HOLDS_ANY_CARD_SQL};
     let m = migrated();
     let c = Connection::open_with_flags(
         m.dir.0.join(GEN4_FILE),
@@ -2031,9 +2105,20 @@ fn s1b_statements_use_their_keys() {
             "{q}: {steps:?}"
         );
     };
-    let steps = plan(HOLDS_CARD_SQL);
-    no_scan(HOLDS_CARD_SQL, &steps);
+    let steps = plan(HOLDS_ANY_CARD_SQL);
+    // 能扫的只有请求的卡列表本身（`json_each` 与按它展开的别名类协程 `cls`）；真表一律按键，不建临时 B 树（别名类用
+    // `UNION ALL`：规范 ID 与 `canon != id` 的成员不相交，不必去重）。
+    assert!(
+        !steps.iter().any(|s| (s.starts_with("SCAN")
+            && s != "SCAN CONSTANT ROW"
+            && s != "SCAN cls"
+            && !s.starts_with("SCAN json_each VIRTUAL TABLE"))
+            || s.contains("TEMP B-TREE")),
+        "{HOLDS_ANY_CARD_SQL}: {steps:?}"
+    );
     for want in [
+        "SEARCH a USING PRIMARY KEY (col=? AND id=?)",
+        "SEARCH a USING COVERING INDEX alias_canon (col=? AND canon=?)",
         "SEARCH log_ix USING PRIMARY KEY (col=? AND card=?)",
         "SEARCH reg_ix USING PRIMARY KEY (col=? AND ekind=? AND ent=?)",
     ] {

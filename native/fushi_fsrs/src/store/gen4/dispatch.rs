@@ -45,7 +45,7 @@ use serde_json::{Value, json};
 
 use super::cache::CFG_KEY;
 use super::cmd::{self, snapshot};
-use super::derive::{Index, Settled};
+use super::derive::{Index, Ref, Settled};
 use super::ingest::{Settle, ingest_settle};
 use super::kernel::{G4Core, StatsEntry, removed, unwired};
 use super::local;
@@ -318,8 +318,9 @@ fn run(
             })?
         }
         // ------------------------------------------------------------ 媒体回收（本机状态 + 读缓存层，不推进修订号）
-        "media_gc_queue" => c.write(|t| cmd::media_gc::queue(t, profile, req))?,
-        "media_gc_collect" => c.write(|t| cmd::media_gc::collect(t, profile, req))?,
+        // 只写本机状态行，不推进写入代数（`G4Core::write_local`）：后台按游标分批回收，每批都推进会让统计原料缓存白白失效。
+        "media_gc_queue" => c.write_local(|t| cmd::media_gc::queue(t, profile, req))?,
+        "media_gc_collect" => c.write_local(|t| cmd::media_gc::collect(t, profile, req))?,
         "media_live_refs" => {
             let after = int_of(req, "aliveAfter")?;
             c.read(|t| snapshot(t, |t| cmd::media_gc::live_refs_json(t, profile, after)))?
@@ -504,10 +505,34 @@ const NO_COLLECTION: i64 = 0;
 /// [direct_col] 列出这个文件里的全部集合（`collections` 只有绑定数那么几行）。
 pub(crate) const COLLECTIONS_SQL: &str = "SELECT col FROM collections ORDER BY col";
 
-/// [direct_col] 判「集合 ?1 里有没有卡 ?2 的历史」：卡上的日志（`log_ix` 主键前缀 `(col, card)`）或卡自己的修改
-/// （前身链接等，`reg_ix` 主键前缀 `(col, ekind, ent)`）。查询计划测试用同一份。
-pub(crate) const HOLDS_CARD_SQL: &str = "SELECT EXISTS(SELECT 1 FROM log_ix WHERE col = ?1 AND card = ?2) \
-     OR EXISTS(SELECT 1 FROM reg_ix WHERE col = ?1 AND ekind = ?3 AND ent = ?2)";
+/// [direct_col] 判「集合 ?1 里请求的卡（?2：`cmd::Sel::ids` 同一种 JSON 列表，原值 ID）有没有哪张有历史」，一个集合
+/// 一条语句：每个 ID 先按这个集合的别名表归一（`alias_ix` 主键，同 `Index::canonical`），再展开成别名类（规范 ID 与
+/// `alias_canon` 一段，同 `Index::class_of`），类里任何成员有卡上的日志（`log_ix` 主键前缀 `(col, card)`）或卡自己的
+/// 修改（前身链接等，`reg_ix` 主键前缀 `(col, ekind = ?3, ent)`）就算。以前逐卡在 Rust 里点查（每张卡归一、取成员、
+/// 每个成员一次存在性查询），多集合文件里每个无关集合都要把全部卡走一遍：N+1。查询计划测试用同一份。
+pub(crate) const HOLDS_ANY_CARD_SQL: &str = "WITH req(id) AS (\
+       SELECT CASE value ->> 0 WHEN 1 THEN unhex(value ->> 1) ELSE value ->> 1 END FROM json_each(?2)), \
+     canon(c) AS (\
+       SELECT coalesce((SELECT a.canon FROM alias_ix a WHERE a.col = ?1 AND a.id = req.id), req.id) FROM req), \
+     cls(m) AS (\
+       SELECT c FROM canon \
+       UNION ALL SELECT a.id FROM canon CROSS JOIN alias_ix a WHERE a.col = ?1 AND a.canon = canon.c AND a.canon != a.id) \
+     SELECT EXISTS(SELECT 1 FROM cls WHERE \
+       EXISTS(SELECT 1 FROM log_ix WHERE col = ?1 AND card = cls.m) \
+       OR EXISTS(SELECT 1 FROM reg_ix WHERE col = ?1 AND ekind = ?3 AND ent = cls.m))";
+
+/// [HOLDS_ANY_CARD_SQL] 的 ?2：请求里全部卡的原值 ID（`Sel::ids` 的编码，SQL 里还原成存储形）。
+fn card_list(groups: &[Vec<String>]) -> String {
+    let list: Vec<Value> = groups
+        .iter()
+        .flatten()
+        .map(|card| match cmd::ref_of(card) {
+            Ref::Uuid(b) => json!([1, cmd::hex(&b)]),
+            Ref::Text(s) => json!([0, s]),
+        })
+        .collect();
+    Value::Array(list).to_string()
+}
 
 /// C 直出入口按哪个集合读（在调用方的读快照里）。协议 3 的这些入口按全局唯一的卡 ID 读、不分 profile，输入页里
 /// `history_states` / `stat_projection` / `optimizer_items` / `calibration_items` / `rwkv_rows` 模式 0 没有 profile 行
@@ -518,7 +543,11 @@ pub(crate) const HOLDS_CARD_SQL: &str = "SELECT EXISTS(SELECT 1 FROM log_ix WHER
 ///   时按请求里的卡认——卡（归一后的类里任何成员）在哪个集合里有日志或修改就是哪个。全都对不上 = [NO_COLLECTION]
 ///   （这些卡在哪儿都没有历史，结果与「卡不存在」相同）；对上不止一个 = 明确报错（分不清该读谁的历史，不拼两份）。
 ///   迁移来的多 profile 库里协议 3 的实体本来就只属于一个 profile，按卡认不会撞。
-fn direct_col(t: &Truth<'_>, profile: Option<&str>, groups: &[Vec<String>]) -> Result<i64, String> {
+pub(super) fn direct_col(
+    t: &Truth<'_>,
+    profile: Option<&str>,
+    groups: &[Vec<String>],
+) -> Result<i64, String> {
     if let Some(p) = profile {
         return col_of(t, p);
     }
@@ -535,27 +564,16 @@ fn direct_col(t: &Truth<'_>, profile: Option<&str>, groups: &[Vec<String>]) -> R
         [one] => return Ok(*one),
         _ => {}
     }
+    let list = card_list(groups);
+    let mut holds = t.conn().prepare_cached(HOLDS_ANY_CARD_SQL).map_err(sql)?;
     let mut hits: Vec<i64> = Vec::new();
     for &col in &cols {
-        let ix = Index::new(t, col);
-        let mut holds = false;
-        'cards: for card in groups.iter().flatten() {
-            for m in ix.class_of(&cmd::ref_of(card))? {
-                let found: bool = t
-                    .conn()
-                    .prepare_cached(HOLDS_CARD_SQL)
-                    .map_err(sql)?
-                    .query_row(rusqlite::params![col, m, EntKind::Card as i64], |r| {
-                        r.get(0)
-                    })
-                    .map_err(sql)?;
-                if found {
-                    holds = true;
-                    break 'cards;
-                }
-            }
-        }
-        if holds {
+        let found: bool = holds
+            .query_row(rusqlite::params![col, list, EntKind::Card as i64], |r| {
+                r.get(0)
+            })
+            .map_err(sql)?;
+        if found {
             hits.push(col);
         }
     }

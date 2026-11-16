@@ -928,8 +928,8 @@ fn a_read_inside_a_rolled_back_write_does_not_stick() {
 /// 一条实际执行过的语句：SQL 原文、绑定参数展开后的 SQL、这一次执行的虚拟机步数与全表扫描步数
 /// （`sqlite3_stmt_status` 的 `VM_STEP` / `FULLSCAN_STEP`，在语句开始与结束之间的差）。
 #[derive(Debug, Clone)]
-struct Ran {
-    sql: String,
+pub(super) struct Ran {
+    pub(super) sql: String,
     expanded: String,
     steps: i64,
     fullscan: i64,
@@ -942,8 +942,8 @@ thread_local! {
 }
 
 /// [f] 里连接上实际执行的每条语句（`SQLITE_TRACE_STMT` / `SQLITE_TRACE_PROFILE`）——测的是代码真正 prepare 的
-/// SQL，不是测试里抄的一份。
-fn profile(t: &Truth<'_>, f: impl FnOnce()) -> Vec<Ran> {
+/// SQL，不是测试里抄的一份。`dispatch_tests.rs` 也用（按卡认集合的语句数）。
+pub(super) fn profile(t: &Truth<'_>, f: impl FnOnce()) -> Vec<Ran> {
     use rusqlite::StatementStatus::{FullscanStep, VmStep};
     use rusqlite::trace::{TraceEvent, TraceEventCodes};
     fn on(e: TraceEvent<'_>) {
