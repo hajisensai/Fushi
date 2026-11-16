@@ -675,9 +675,48 @@ void main() {
     );
     expect(menuAction('play'), findsOneWidget);
     expect(menuAction('detail'), findsOneWidget);
+    // 纯音频没有「在视频播放器中观看」。
+    expect(menuAction('watchVideo'), findsNothing);
     await tester.tap(menuAction('play'));
     await tester.pumpAndSettle();
     expect(app.musicSession.engine.current?.title, 'Local One');
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('本地 MV（曲库里的 mkv）：行上标 MV，菜单给「在视频播放器中观看」', (
+    WidgetTester tester,
+  ) async {
+    // 拍板台 jeNKF9u0WJ：音乐来源里的视频容器进曲库，标 MV，看画面交给视频播放页。
+    const MusicTrackRow track = MusicTrackRow(
+      trackUid: 'mv1',
+      path: '/m/Song MV.mkv',
+      title: 'Song MV',
+      artistCredit: 'Artist',
+      codec: 'unknown',
+      isLossless: false,
+      fileMtimeAt: 1,
+      fileSize: 1,
+      hasEmbeddedCover: false,
+      addedAt: 1,
+    );
+    await pumpHome(
+      tester,
+      const Scaffold(
+        body: MusicTrackList(
+          tracks: <MusicTrackRow>[track],
+          albums: <String, MusicAlbumRow>{},
+          context: MusicQueueContext.mixed,
+        ),
+      ),
+    );
+    expect(find.textContaining('Artist · MV'), findsOneWidget);
+    await rightClick(
+      tester,
+      find.byKey(const ValueKey<String>('music-track-mv1')),
+    );
+    expect(menuAction('play'), findsOneWidget);
+    expect(menuAction('watchVideo'), findsOneWidget);
+    expect(find.text('Watch in video player'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
   });
 

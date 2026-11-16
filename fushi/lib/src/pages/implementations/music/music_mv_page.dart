@@ -38,6 +38,7 @@ import 'package:fushi/src/media/music/lyrics/karaoke/karaoke_lyrics_view.dart';
 import 'package:fushi/src/media/music/lyrics/karaoke/karaoke_stage_plan.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_service.dart';
 import 'package:fushi/src/media/music/metadata/music_video_service.dart';
+import 'package:fushi/src/media/music/music_local_video.dart';
 import 'package:fushi/src/media/music/mpv_music_output_backend.dart'
     show musicEdlUri;
 import 'package:fushi/src/media/music/plugin/music_online_mv_video_client.dart';
@@ -47,6 +48,7 @@ import 'package:fushi/src/media/playback_route_marks.dart';
 import 'package:fushi/src/media/video/video_mpv_config.dart'
     show resolvePlatformHwdec;
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_player.dart'
@@ -220,6 +222,48 @@ Future<void> openMusicOnlineMvPage({
         ),
         repo: VideoBookRepository(app.database),
         client: client,
+      ),
+    ),
+  );
+}
+
+/// 本地 MV 曲目（[isMusicLocalVideoTrack]，曲库里的视频容器）在视频播放页里看：ASS 特效
+/// 字幕、同名外挂字幕、暂停识别画面文字、查词制卡与视频库视频一致（拍板台 jeNKF9u0WJ）。
+/// 首次观看按 app 外打开视频同一入口登记进视频库并标「MV」
+/// （[ensureMusicVideoInVideoLibrary]）。进入时暂停音乐播放引擎（同一首歌不该两路同时
+/// 出声）。视频模块关掉时不登记、只提示——否则 MV 会进一个用户看不见的库。
+Future<void> openMusicTrackVideo({
+  required BuildContext context,
+  required MusicTrackRow track,
+}) async {
+  final AppModel app = ProviderScope.containerOf(
+    context,
+    listen: false,
+  ).read(appProvider);
+  if (!app.moduleVisibility.isEnabled(ModuleId.video)) {
+    FushiToast.show(msg: t.module_disabled_hint, severity: ToastSeverity.info);
+    return;
+  }
+  if (!await File(track.path).exists()) {
+    FushiToast.show(msg: t.video_file_not_found, severity: ToastSeverity.error);
+    return;
+  }
+  final String bookUid;
+  try {
+    bookUid = await ensureMusicVideoInVideoLibrary(app.database, track.path);
+  } on Object catch (e, st) {
+    ErrorLogService.instance.log('openMusicTrackVideo', e, st);
+    FushiToast.show(msg: t.music_mv_open_failed, severity: ToastSeverity.error);
+    return;
+  }
+  unawaited(app.musicSession.engine.pause());
+  if (!context.mounted) return;
+  await Navigator.of(context).push<void>(
+    adaptivePageRoute<void>(
+      context: context,
+      builder: (_) => VideoFushiPage.neutralized(
+        bookUid: bookUid,
+        repo: VideoBookRepository(app.database),
       ),
     ),
   );
