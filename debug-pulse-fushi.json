@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-16T03:45:20Z",
+ "generatedAt": "2026-11-16T04:12:21Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "be81d1c0910d4f984ae28d6628745ee2ef4962f0",
-  "seq": 27426
+  "sha": "644073eb7f84fadab7a107210b37fd760035e1ad",
+  "seq": 27443
  },
  "builds": [
   {
@@ -12,8 +12,8 @@
    "version": "3.3.0",
    "sha": "be81d1c0910d4f984ae28d6628745ee2ef4962f0",
    "unknown": false,
-   "publishedAt": "2026-11-16T03:43:39Z",
-   "testflight": false,
+   "publishedAt": "2026-11-16T04:12:09Z",
+   "testflight": true,
    "baseSeq": 27417,
    "prs": [
     3451,
@@ -26,16 +26,13 @@
      "state": "ok"
     },
     "windows": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43795719078"
+     "state": "ok"
     },
     "macos": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43795719078"
+     "state": "ok"
     },
     "ios": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43795719078"
+     "state": "ok"
     }
    }
   },
@@ -80,52 +77,23 @@
    "unknown": false,
    "publishedAt": "2026-11-15T08:53:05Z",
    "testflight": true,
-   "baseSeq": 27339,
-   "prs": [
-    3443,
-    3392
-   ],
-   "direct": [],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "ok"
-    },
-    "windows": {
-     "state": "ok"
-    },
-    "macos": {
-     "state": "ok"
-    },
-    "ios": {
-     "state": "ok"
-    }
-   }
-  },
-  {
-   "seq": 27339,
-   "version": "3.3.0",
-   "sha": "3823eaa74c9b3dff02b3feb04c9eb68cc2d111be",
-   "unknown": false,
-   "publishedAt": "2026-11-15T07:49:20Z",
-   "testflight": true,
    "baseSeq": 27328,
    "prs": [
+    3443,
+    3392,
     3434
    ],
    "direct": [],
    "truncated": false,
    "platforms": {
     "android": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43686952727"
+     "state": "ok"
     },
     "windows": {
      "state": "ok"
     },
     "macos": {
-     "state": "failed",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43686952715"
+     "state": "ok"
     },
     "ios": {
      "state": "ok"
@@ -133,7 +101,35 @@
    }
   }
  ],
- "pending": null,
+ "pending": {
+  "headSha": "644073eb7f84fadab7a107210b37fd760035e1ad",
+  "headSeq": 27443,
+  "prs": [
+   3456,
+   3453,
+   3452
+  ],
+  "direct": [],
+  "truncated": false,
+  "platforms": {
+   "android": {
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43802039262"
+   },
+   "windows": {
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43802039271"
+   },
+   "macos": {
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43802039271"
+   },
+   "ios": {
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43802039271"
+   }
+  }
+ },
  "prs": {
   "3147": {
    "number": 3147,
@@ -200,6 +196,33 @@
    "mergedAt": "2026-11-16T03:02:25Z",
    "additions": 331,
    "deletions": 18,
+   "labels": []
+  },
+  "3452": {
+   "number": 3452,
+   "title": "feat(srs): gen4 本机状态表、换代锁、打开模式、封存与墓碑库（G7-1）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-16T04:06:15Z",
+   "additions": 2248,
+   "deletions": 26,
+   "labels": []
+  },
+  "3453": {
+   "number": 3453,
+   "title": "feat(srs): 协议 4 读侧按别名类判定（G9-1，不接线）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-16T04:06:24Z",
+   "additions": 1582,
+   "deletions": 52,
+   "labels": []
+  },
+  "3456": {
+   "number": 3456,
+   "title": "docs(srs): 协议 4 换代交接说明（交接给 hajisensai）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-16T04:06:56Z",
+   "additions": 449,
+   "deletions": 0,
    "labels": []
   }
  }
