@@ -156,8 +156,9 @@ void main() {
         service,
         shelf.Request(
           'POST',
-          Uri.parse('http://host/api/srs/remote/call'),
+          Uri.parse('http://host/api/srs/remote2/call'),
           body: jsonEncode(<String, Object?>{
+            'g': 4,
             'profile': kBulkUid,
             'op': 'answerAndStudy',
             'request': 'wp10-cost',
@@ -171,7 +172,7 @@ void main() {
           }),
         ),
         'POST',
-        '/api/srs/remote/call',
+        '/api/srs/remote2/call',
       );
       status = res.statusCode;
     });

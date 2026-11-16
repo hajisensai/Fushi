@@ -420,8 +420,9 @@ Future<(int, Map<String, Object?>)> _remote(
     service,
     shelf.Request(
       'POST',
-      Uri.parse('http://host/api/srs/remote/call'),
+      Uri.parse('http://host/api/srs/remote2/call'),
       body: jsonEncode(<String, Object?>{
+        'g': 4,
         'profile': profile,
         'op': op,
         'args': args,
@@ -429,7 +430,7 @@ Future<(int, Map<String, Object?>)> _remote(
       }),
     ),
     'POST',
-    '/api/srs/remote/call',
+    '/api/srs/remote2/call',
   );
   return (
     res.statusCode,
@@ -461,7 +462,7 @@ void main() {
         env.a.note: isNotNull,
       });
       expect(
-        await a.entitySources(SrsEntityKind.note, ids: <String>[b.note]),
+        await a.entityViews(SrsEntityKind.note, ids: <String>[b.note]),
         isEmpty,
       );
       expect(
@@ -477,7 +478,7 @@ void main() {
         b.type: isNull,
       });
       expect(
-        await a.entitySources(SrsEntityKind.noteType, ids: <String>[b.type]),
+        await a.entityViews(SrsEntityKind.noteType, ids: <String>[b.type]),
         isEmpty,
       );
       expect(await a.noteIdsOfType(b.type), isEmpty);
@@ -486,7 +487,7 @@ void main() {
 
     test('牌组', () async {
       expect(
-        await a.entitySources(SrsEntityKind.deck, ids: <String>[b.deck]),
+        await a.entityViews(SrsEntityKind.deck, ids: <String>[b.deck]),
         isEmpty,
       );
       expect(await a.deckSummary(b.deck), isNull);
@@ -741,7 +742,7 @@ void main() {
         isNull,
       );
       expect(
-        await read('noteTypeSources', <String, Object?>{
+        await read('noteTypeViews', <String, Object?>{
           'ids': <String>[b.type],
         }),
         isEmpty,

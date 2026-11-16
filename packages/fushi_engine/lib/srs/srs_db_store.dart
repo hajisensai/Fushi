@@ -24,6 +24,7 @@ import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_collection_binding.dart';
 import 'package:fushi_engine/srs/srs_core_workers.dart';
 import 'package:fushi_engine/srs/srs_edit_undo.dart';
+import 'package:fushi_engine/srs/srs_entity_views.dart';
 import 'package:fushi_engine/srs/srs_fushi_card_native_media.dart';
 import 'package:fushi_engine/srs/srs_op_ledger.dart';
 import 'package:fushi_engine/srs/srs_projections.dart';
@@ -33,6 +34,7 @@ import 'package:fushi_engine/srs/srs_style_store.dart';
 import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
 
 export 'package:fushi_engine/srs/srs_edit_undo.dart';
+export 'package:fushi_engine/srs/srs_entity_views.dart' show SrsEntityView;
 
 /// 旧库迁移成同步 v2 操作时每批包多少条旧行（[SrsDbStore] 打开时）。每批是内核里一个独立提交的 savepoint：
 /// 被杀 / 关库只丢这一批。桌面实测见 docs/specs/2026-10-25-srs-sync-v2-plan.md「规模基准」。
@@ -2561,28 +2563,39 @@ class SrsDbStore implements SrsSync2Host {
     return out;
   }
 
-  /// 一组实体的物化输入（身份记录 + 全部修改记录），按输入顺序、跳过不存在的 ID；[ids] 为 null = 本 profile 该类的
-  /// 全部实体。远程复习库把它交给客户端，客户端用同一个物化内核得出与这里逐字相同的视图（srs_remote_store.dart）。
-  Future<List<SrsEntitySource>> entitySources(
+  /// 一组实体的视图（内核 `entity_views`，native/fushi_fsrs/src/store/gen4/cmd/views.rs 文件头「线上形状」）：每块
+  /// （至多 [kSrsEntityViewsBatchMax] 个 ID）一条命令、一个读快照。按请求顺序；同一个别名类只出一份（规范 ID）；不存在的
+  /// 跳过。[ids] 为 null = 本 profile 该类的全部实体。远程复习 V2 的主机原样搬它（srs_remote_store.dart），解码只有
+  /// srs_entity_views.dart 一份。
+  Future<List<SrsEntityView>> entityViews(
     SrsEntityKind kind, {
     Iterable<String>? ids,
   }) async {
     final List<String> wanted =
         ids?.toSet().toList() ?? await _entityIdsWhere(kind: kind);
-    final List<SrsEntitySource> out = <SrsEntitySource>[];
-    for (final List<String> chunk in _chunks(wanted)) {
-      final _RefreshPrefetch pre = _RefreshPrefetch();
-      await _prefetchEntities(pre, chunk);
-      await _prefetchEdits(pre, kind, chunk);
-      await _readWith(pre, () async {
-        for (final String id in chunk) {
-          final _EntityRow? row = await _entityRow(id);
-          if (row == null) continue;
-          out.add(
-            SrsEntitySource(id, row.payloadJson, await _editItems(kind, id)),
-          );
-        }
+    final List<SrsEntityView> out = <SrsEntityView>[];
+    final Set<String> seen = <String>{};
+    for (int at = 0; at < wanted.length; at += kSrsEntityViewsBatchMax) {
+      final Map<String, Object?> r = await _sync2(<String, Object?>{
+        'op': 'entity_views',
+        'kind': kind.wire,
+        'ids': wanted.sublist(
+          at,
+          min(at + kSrsEntityViewsBatchMax, wanted.length),
+        ),
       });
+      for (final Object? v in r['views']! as List<Object?>) {
+        if (v case {
+          'id': final String id,
+          'tag': final String tag,
+          'v': final String json,
+        }) {
+          // 分块之间同一个类的另一份成员：只留第一次。
+          if (seen.add(id)) out.add(SrsEntityView(id, tag, json));
+        } else {
+          throw StateError('entity_views: malformed view $v');
+        }
+      }
     }
     return out;
   }

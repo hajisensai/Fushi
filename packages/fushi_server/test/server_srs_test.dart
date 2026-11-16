@@ -272,11 +272,15 @@ void main() {
       remote,
       shelf.Request(
         'POST',
-        Uri.parse('http://host/api/srs/remote/call'),
-        body: jsonEncode(<String, Object?>{'op': 'hello', 'profile': kJa}),
+        Uri.parse('http://host/api/srs/remote2/call'),
+        body: jsonEncode(<String, Object?>{
+          'g': 4,
+          'op': 'hello',
+          'profile': kJa,
+        }),
       ),
       'POST',
-      '/api/srs/remote/call',
+      '/api/srs/remote2/call',
     );
     expect(gone.statusCode, 409);
     expect(
@@ -294,11 +298,11 @@ Future<Map<String, Object?>> _call(
     service,
     shelf.Request(
       'POST',
-      Uri.parse('http://host/api/srs/remote/call'),
-      body: jsonEncode(body),
+      Uri.parse('http://host/api/srs/remote2/call'),
+      body: jsonEncode(<String, Object?>{'g': 4, ...body}),
     ),
     'POST',
-    '/api/srs/remote/call',
+    '/api/srs/remote2/call',
   );
   expect(res.statusCode, 200);
   return (jsonDecode(await res.readAsString()) as Map).cast<String, Object?>();
