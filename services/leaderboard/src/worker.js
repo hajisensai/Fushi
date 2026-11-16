@@ -35,6 +35,7 @@
 //   /v1/feedback/**、/v1/dev/feedback/**                反馈与开发者处理（feedback.js 文件头）
 //   /v1/ci/feedback/**                    [Bearer FEEDBACK_CI_TOKEN]  CI 回填修复 commit / 发布版本（同上）
 //   POST /v1/ci/usage                     [Bearer USAGE_UPLOAD_TOKEN] 上传 AI 额度消耗日汇总（ai_usage.js；没配 token 则 404）
+//   POST /v1/notices                       {v, p, c, l, id, h, k} 按构建信息取服务端下发的公告（notices.js）
 //   GET  /v1/musickit/token                                Apple Music API developer token（musickit.js；没配 MUSICKIT_* 则 503）
 //   GET  /musickit/  /musickit/bridge.js                   MusicKit JS 托管页 + 桥接脚本（musickit_page.js；Windows/Android 网页桥）
 //
@@ -74,6 +75,7 @@ import { isDevConsolePath, purgeDevSessions, routeDevConsole } from './devconsol
 import { purgeInstallStats, recordPing, refreshInstallStatsSnapshot } from './installs.js';
 import { refreshProjectStats } from './project_stats.js';
 import { USAGE_LIMITS, recordAiUsage } from './ai_usage.js';
+import { NOTICE_LIMITS, handleNotices, purgeNoticeSeen } from './notices.js';
 
 const HOUR = 3600 * 1000;
 const JSON_BODY_MAX = 16 * 1024;
@@ -194,6 +196,13 @@ async function route(request, env, now, ctx) {
     const bytes = await readBodyBytes(request, PING_BODY_MAX);
     await recordPing(env, request, bytes, parseJsonBytes(bytes), now);
     return new Response(null, { status: 204, headers: { 'Cache-Control': 'no-store' } });
+  }
+
+  // ---- 服务端公告（notices.js）：无账户；与心跳一样按 IP 过 AUTH_LIMITER，计数写入另有 'notices' 日预算 ----
+  if (method === 'POST' && path === '/v1/notices') {
+    await bindingLimit(env.AUTH_LIMITER, request);
+    const bytes = await readBodyBytes(request, NOTICE_LIMITS.maxBodyBytes);
+    return handleNotices(env, request, parseJsonBytes(bytes), now);
   }
 
   // ---- AI 额度消耗上传（ai_usage.js）：Bearer USAGE_UPLOAD_TOKEN；没配 token 时 404 ----
@@ -372,6 +381,7 @@ export default {
     await purgeFeedbackAttachments(env, now);
     await purgeFeedbackVideos(env, now);
     await purgeInstallStats(env, now);
+    await purgeNoticeSeen(env, now);
     // 安装统计快照：按 INSTALL_LIMITS.snapshotEveryMs 节流，不到期只读一行就返回（迁移 0021）。
     await refreshInstallStatsSnapshot(env, now);
     // 冷却期到期、没有新票的封面挑战者（cover_votes.js 文件头「替换门槛」）。

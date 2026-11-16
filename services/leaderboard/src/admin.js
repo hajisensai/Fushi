@@ -9,6 +9,7 @@
 //   POST /admin/api/works/merge   {from, into}  把 from 并入 into
 //   POST /admin/api/accounts/:id/role {role: 'dev'|'user'}  设 / 撤开发者（反馈处理台）
 //   POST /admin/api/works/split   {ref}         把一个误挂的别名拆成新作品，上报过它的书架随之迁走
+//   /admin/api/notices/**                       服务端公告的规则 / 已登记摘要 / 计数（notices.js 文件头）
 
 import { HttpError, json, randomId, timingSafeEqual } from './util.js';
 import {
@@ -23,6 +24,7 @@ import { accountPeriodsStatements, exactWorkPeriodsStatements, periodContributio
 import { deleteMedia } from './budget.js';
 import { recountStatement, settleStatements, workCoverCandidates } from './cover_votes.js';
 import { refreshSnapshots } from './snapshots.js';
+import { handleNoticesAdmin } from './notices.js';
 
 /**
  * 管理操作改了作品归属后的精确重算语句（放进同一个事务）：作品读者数与周期读者数现场 COUNT，
@@ -228,6 +230,7 @@ export async function setAccountHidden(env, accountId, hidden, now) {
 
 export async function handleAdmin(env, request, path, body, now) {
   checkBasicAuth(request, env);
+  if (path.startsWith('/admin/api/notices/')) return handleNoticesAdmin(env, request, path, body, now);
   const m = (re) => re.exec(path);
   let r;
   if (request.method === 'GET' && path === '/admin/api/reports') {
