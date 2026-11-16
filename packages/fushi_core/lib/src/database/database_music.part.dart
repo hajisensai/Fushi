@@ -47,7 +47,8 @@ mixin _FushiDbMusic on _$FushiDatabase {
     'ON music_tracks (path_key)',
   );
 
-  /// 一个扫描批次整批 upsert（一个事务）。曲目重新出现时清掉软删标记；
+  /// 一个扫描批次整批 upsert（一个事务）。曲目重新出现时清掉软删标记——用户「从音乐库
+  /// 移除」的行（[MusicTracks.hiddenAt]）除外：那是墓碑，这一行整行不动、不复活；
   /// [MusicTracks.addedAt] 只在首次插入时写（冲突更新不覆盖入库时刻）。
   /// 一首曲目的署名整组替换：先删该曲目全部旧署名再插新的（标签里删掉的艺人要消失）。
   ///
@@ -105,6 +106,8 @@ mixin _FushiDbMusic on _$FushiDatabase {
             addedAt: const Value<int>.absent(),
             deletedAt: const Value<int?>(null),
           ),
+          // 用户移除过的曲目（墓碑）：重扫见到文件也不复活。
+          where: ($MusicTracksTable old) => old.hiddenAt.isNull(),
         ),
       );
     }
@@ -165,13 +168,15 @@ mixin _FushiDbMusic on _$FushiDatabase {
 
   /// 来源 [sourceId] 下在库曲目的（路径, 修改时刻, 大小, uid）。扫描器据此告诉 Rust
   /// 哪些文件没变（跳过标签解析），以及「没变的文件」对应哪些曲目 uid（一个 CUE 整轨
-  /// 对应多首）。
+  /// 对应多首）。用户移除（[MusicTracks.hiddenAt]）的曲目也算：文件还在、没动过就不必
+  /// 每次重扫都重新解析一遍。
   Future<List<({String path, int mtimeAt, int size, String trackUid})>>
   musicTrackFilesOfSource(int sourceId) async {
     final List<MusicTrackRow> rows =
         await (select(musicTracks)..where(
               ($MusicTracksTable t) =>
-                  t.sourceId.equals(sourceId) & t.deletedAt.isNull(),
+                  t.sourceId.equals(sourceId) &
+                  (t.deletedAt.isNull() | t.hiddenAt.isNotNull()),
             ))
             .get();
     return <({String path, int mtimeAt, int size, String trackUid})>[
@@ -251,6 +256,76 @@ mixin _FushiDbMusic on _$FushiDatabase {
                 t.trackUid.equals(trackUid) & t.deletedAt.isNull(),
           ))
           .write(MusicTracksCompanion(deletedAt: Value<int?>(deletedAt)));
+
+  /// 用户「从音乐库移除」本地曲目（拍板台 IDeN5PYaI7）：写墓碑 [MusicTracks.hiddenAt]
+  /// 并软删，不碰磁盘文件；之后重扫见到同一个文件也不复活（`writeMusicScanBatch`）。
+  /// 已经移除过的不重写时刻。返回这次新移除的曲目数。
+  Future<int> hideMusicTracks(Iterable<String> trackUids, {required int at}) {
+    final List<String> uids = trackUids.toSet().toList();
+    if (uids.isEmpty) return Future<int>.value(0);
+    return transaction(() async {
+      int total = 0;
+      for (int i = 0; i < uids.length; i += 500) {
+        final List<String> chunk = uids.sublist(
+          i,
+          (i + 500).clamp(0, uids.length),
+        );
+        total +=
+            await (update(musicTracks)..where(
+                  ($MusicTracksTable t) =>
+                      t.trackUid.isIn(chunk) & t.hiddenAt.isNull(),
+                ))
+                .write(
+                  MusicTracksCompanion(
+                    hiddenAt: Value<int?>(at),
+                    deletedAt: Value<int?>(at),
+                  ),
+                );
+      }
+      return total;
+    });
+  }
+
+  /// 恢复用户移除过的曲目（[hideMusicTracks] 的逆操作）：清墓碑与软删标记。文件已经
+  /// 不在的，下一次重扫照常软删。只动确实被移除过的行，返回恢复的曲目数。
+  Future<int> unhideMusicTracks(Iterable<String> trackUids) {
+    final List<String> uids = trackUids.toSet().toList();
+    if (uids.isEmpty) return Future<int>.value(0);
+    return transaction(() async {
+      int total = 0;
+      for (int i = 0; i < uids.length; i += 500) {
+        final List<String> chunk = uids.sublist(
+          i,
+          (i + 500).clamp(0, uids.length),
+        );
+        total +=
+            await (update(musicTracks)..where(
+                  ($MusicTracksTable t) =>
+                      t.trackUid.isIn(chunk) & t.hiddenAt.isNotNull(),
+                ))
+                .write(
+                  const MusicTracksCompanion(
+                    hiddenAt: Value<int?>(null),
+                    deletedAt: Value<int?>(null),
+                  ),
+                );
+      }
+      return total;
+    });
+  }
+
+  /// 用户移除过的曲目（[hideMusicTracks]），最近移除的在前。
+  Stream<List<MusicTrackRow>> watchHiddenMusicTracks() =>
+      (select(musicTracks)
+            ..where(($MusicTracksTable t) => t.hiddenAt.isNotNull())
+            ..orderBy(<OrderingTerm Function($MusicTracksTable)>[
+              ($MusicTracksTable t) => OrderingTerm(
+                expression: t.hiddenAt,
+                mode: OrderingMode.desc,
+              ),
+              ($MusicTracksTable t) => OrderingTerm(expression: t.title),
+            ]))
+          .watch();
 
   /// 曲库里的全部在库曲目（软删除外），按专辑 / 碟号 / 轨号 / 标题排序。
   Future<List<MusicTrackRow>> listMusicTracks({String? albumUid}) {
@@ -424,6 +499,8 @@ mixin _FushiDbMusic on _$FushiDatabase {
             artistCredit: const Value<String?>.absent(),
             mbRecordingId: const Value<String?>.absent(),
             deletedAt: const Value<int?>(null),
+            // 用户显式选了这些章节导入：移除过的也恢复。
+            hiddenAt: const Value<int?>(null),
           ),
         ),
       );
@@ -466,6 +543,8 @@ mixin _FushiDbMusic on _$FushiDatabase {
           (_) => track.copyWith(
             addedAt: const Value<int>.absent(),
             deletedAt: const Value<int?>(null),
+            // 用户显式重新读盘：移除过的曲目也恢复。
+            hiddenAt: const Value<int?>(null),
           ),
         ),
       );

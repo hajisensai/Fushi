@@ -1000,7 +1000,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 157;
+  int get schemaVersion => 158;
 
   /// v125–v128 四步的产物（全部幂等）：SRS 写路径索引、
   /// `collection_member_tombstones.published_at`、`bookmarks.char_offset` /
@@ -3161,6 +3161,15 @@ class FushiDatabase extends _$FushiDatabase
         if (await _tableExists('media_sources') &&
             !await _columnExists('media_sources', 'auto_scan')) {
           await m.addColumn(mediaSources, mediaSources.autoScan);
+        }
+      }
+      if (from < 158) {
+        // v158：music_tracks.hidden_at——用户「从音乐库移除」本地曲目的墓碑（拍板台
+        // IDeN5PYaI7）：重扫不复活。纯加列、存量 NULL（都没隐藏）；早期步骤（v130
+        // createTable）按当前定义建的表已带这一列，按列存在性守卫，幂等。
+        if (await _tableExists('music_tracks') &&
+            !await _columnExists('music_tracks', 'hidden_at')) {
+          await m.addColumn(musicTracks, musicTracks.hiddenAt);
         }
       }
     },
