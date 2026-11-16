@@ -575,6 +575,9 @@ impl<'t, 'c> Index<'t, 'c> {
             }
             self.salts_dirty = true;
         }
+        if let Body4::Join(j) = &body {
+            self.join_row(k, j, add)?;
+        }
         Ok(())
     }
 
@@ -1193,6 +1196,8 @@ impl<'t, 'c> Index<'t, 'c> {
         self.heads.clear();
         super::digest::set_triggers(conn, true)?;
         out.digests = self.digest_rebuild()?;
+        // 扫日志时碰到带盐的操作会置 `salts_dirty`；这里已整个重算，清掉，否则 [Index::aliases_stale] 在重建刚完时仍报「没算」。
+        self.salts_dirty = false;
         self.settle_salts()?;
         out.aliases = self.rebuild_aliases()?;
         self.materialize_caches(&mut out)?;
@@ -2017,6 +2022,7 @@ pub(crate) mod tests {
             }
         }
         let (conn, diff) = imported(&old);
+        // 连缓存层（`legacy_library` 的笔记身份记录合法：UUID 笔记 ID、带 `noteTypeId`）在内各类都没有差异。
         assert!(diff.is_empty(), "{diff:?}");
         let stamped: i64 = conn
             .query_row("SELECT COUNT(*) FROM closure_ix", [], |r| r.get(0))

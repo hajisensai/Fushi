@@ -38,6 +38,18 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-4702](bugs/BUG-4702-windows-taskbar-activation-starved-by-deferred-task.md) | ✅ | ✅ | 任何真实常驻动画 + idle 任务让调度器零延迟空转，任务栏点 Fushi 唤不到前台（BUG-4387 复发） |
+> 共 4066 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4709](bugs/BUG-4709-manga-topbar-full-width.md) | ✅ | ✅ | 漫画阅读器顶栏在桌面宽屏限宽 1080 居中，与小说全宽顶栏不一致 |
+| [BUG-4708](bugs/BUG-4708-download-summary-legacy-rate.md) | ✅ | ✅ | 下载中心合计速度不计入磁力 / 外部来源（legacy 番剧下载计划）行的实时速率 |
+| [BUG-4707](bugs/BUG-4707-screen-ocr-lookup-line-wrap.md) | ✅ | ✅ | 截屏识字点字查词只扫被点那一行，折行处把词截断 |
+| [BUG-4706](bugs/BUG-4706-library-import-shelf-tab-dead.md) | ✅ | ✅ | 书库导入页点左上角「书架」回不去，仍停在导入页 |
+| [BUG-4705](bugs/BUG-4705-android-system-ocr-full-res-decode.md) | ✅ | ✅ | Android 系统 OCR 全分辨率解码在主线程、无上限，大图闪退；无 GMS 被报成识别失败 |
+| [BUG-4704](bugs/BUG-4704-manga-4k-page-image-memory.md) | ✅ | ✅ | 漫画阅读器打开 4K 页图卷内存暴涨闪退 |
+| [BUG-4703](bugs/BUG-4703-library-arrangement-default-dirty.md) | ✅ | ✅ | 外观页「色块摆放」恢复默认对照旧默认：全新安装（封面网格）就标已改过，恢复默认反把网格下色块分区写成散落 |
+| [BUG-4702](bugs/BUG-4702-online-manga-ignores-download-root.md) | ✅ | ✅ | 在线漫画不跟随下载目录设置，删书后已下载章节无法重新入库 |
 | [BUG-4701](bugs/BUG-4701-overwrite-import-unrecoverable-library.md) | ✅ | ✅ | 覆盖导入把书库换掉后无法找回：覆盖前快照成功即删、书文件成孤儿目录无法重新登记 |
 | [BUG-4700](bugs/BUG-4700-manga-import-staging-copy-doubles-disk.md) | ✅ | ✅ | 漫画导入从暂存目录拷贝进书目录，大包磁盘峰值是包体积的三倍 |
 | [BUG-4699](bugs/BUG-4699-epub-parse-whole-file-in-memory.md) | ✅ | ✅ | EPUB（含纯图漫画）导入整本读进内存并缓存全部解压内容，2 GiB 以上必然内存耗尽 |
