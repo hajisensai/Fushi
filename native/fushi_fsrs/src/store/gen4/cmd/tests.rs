@@ -829,6 +829,8 @@ fn keyed_reads_never_walk_the_whole_collection() {
         json!({"q": "native_logs_near", "at": [T0], "win": 10}),
         json!({"q": "successors"}),
         json!({"q": "today_reviews", "from": T0, "to": T0 + DAY}),
+        // 按种类数到 `limit` 就停：走 `ent_kind (col, kind, id)`，不沿主键把别的种类的身份记录也走一遍。
+        json!({"q": "entity_count", "kind": "note", "limit": 1}),
     ] {
         TRACED.with(|t| t.borrow_mut().clear());
         {
@@ -1149,6 +1151,10 @@ fn stats_match_protocol_3() {
         with(json!({"range": "year", "decks": ["no-such-deck"]})),
         with(json!({"windows": {"w": [null, 0], "v": [7, 0]}, "future": 40})),
         with(json!({"recallDecks": [deck.clone()], "recall": {"ids": [c1.clone()], "r": [0.42]}})),
+        // 同一个 ID 出现两次：协议 3 `stats::Ctx` 后者盖前者，新代 `canon_req` 照同一个读法。
+        with(
+            json!({"recallDecks": [deck.clone()], "recall": {"ids": [c1.clone(), c1.clone()], "r": [0.42, 0.17]}}),
+        ),
         json!({"now": T0 + DAY, "utcOff": 540, "rollover": 0}),
     ];
     let sorted = |v: &Value, k: &str| -> Value {

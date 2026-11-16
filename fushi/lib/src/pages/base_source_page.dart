@@ -419,6 +419,26 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   /// [activeLookupGeneration] 代次校验），避免旧 eval 回调错位到新查词的弹窗。
   DictionaryPopupEntry? _lastDeferredShown;
 
+  /// 查 [term] 在正文里会命中的码点数（与 [searchDictionaryResult] 同一查询：同上限、
+  /// 同振假名分叉，结果走查词缓存），不建弹窗、不记查词历史。ruby 吸附判定
+  /// （`resolveRubySnapSelection`，ssJjbvbAbs）用它看组首查到的词覆盖到哪。
+  Future<int> lookupMatchedCharCount(
+    String term,
+    List<FushiRubySpan> rubySpans,
+  ) async {
+    final DictionarySearchResult result = await appModel
+        .searchDictionaryWithRuby(
+          searchTerm: term,
+          rubySpans: rubySpans,
+          overrideMaximumTerms: appModel.maximumTerms,
+        );
+    return lookupHighlightCharCount(
+      result: result,
+      searchTerm: term,
+      language: JapaneseLanguage.instance,
+    );
+  }
+
   Future<int> searchDictionaryResult({
     required String searchTerm,
     required Rect selectionRect,
