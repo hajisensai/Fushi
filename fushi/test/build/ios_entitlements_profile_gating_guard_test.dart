@@ -15,6 +15,8 @@ import '../helpers/source_guard.dart';
 void main() {
   const String extendedVa =
       'com.apple.developer.kernel.extended-virtual-addressing';
+  const String increasedMemory =
+      'com.apple.developer.kernel.increased-memory-limit';
 
   final String entitlements = File(
     'ios/Runner/Runner.entitlements',
@@ -55,8 +57,21 @@ void main() {
     );
     expect(
       entitlementKeys(),
-      containsAll(<String>['aps-environment', extendedVa]),
+      containsAll(<String>['aps-environment', extendedVa, increasedMemory]),
     );
+  });
+
+  test('Runner.entitlements requests increased memory limit (BUG-4758)', () {
+    expect(
+      RegExp(
+        '<key>${RegExp.escape(increasedMemory)}</key>\\s*<true/>',
+      ).hasMatch(entitlements),
+      isTrue,
+      reason: 'BUG-4758：设备端 ASR 大模型要抬高 jetsam 额度才不被杀、不降模型',
+    );
+    final String step = signingStep();
+    expect(step, contains(r'if [ "$INCREASED_MEM" = "true" ]; then'));
+    expect(step, contains('::warning title=Increased memory limit missing::'));
   });
 
   test(
