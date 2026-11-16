@@ -13,6 +13,7 @@ import 'package:test/test.dart';
 
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi_engine/media/torrent/bt_site_config.dart';
+import 'package:fushi_engine/media/torrent/bt_site_legacy_migration.dart';
 import 'package:fushi_engine/media/torrent/bt_site_parser_rule.dart';
 import 'package:fushi_engine/media/torrent/bt_site_probe.dart';
 import 'package:fushi_engine/media/torrent/bt_site_providers.dart';
@@ -470,6 +471,12 @@ void main() {
         ], () async => _forumSite(_Recorded())),
       );
       expect(isBtSiteProviderId('custom:forum'), isTrue);
+      expect(
+        legacyBuiltinBtProviderFormat('custom:forum'),
+        isNull,
+        reason: 'custom 从来不是旧内置源（旧实现在这里空断言崩溃）',
+      );
+      expect(legacyBuiltinBtProviderFormat('custom'), isNull);
       expect(
         registry
             .resolveProvider(
