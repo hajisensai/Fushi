@@ -251,7 +251,10 @@ void main() {
           }, '/bt-sites');
       expect(r.status, 422, reason: r.raw);
       expect(r.json['reason'], 'unrecognized');
-      expect(r.json['error'], 'Unable to recognize this site');
+      expect(
+        r.json['error'],
+        'Unable to recognize this site; add a parser rule for it',
+      );
       for (final String word in <String>[
         'nyaa',
         'apibay',
