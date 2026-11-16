@@ -6398,6 +6398,8 @@
   "music_lyrics_backdrop_style_pixi": "Pixi renderer",
   "music_lyrics_backdrop_style_title": "Fluid style",
   "music_lyrics_backdrop_title": "Lyrics page background",
+  "music_lyrics_blur_inactive_hint": "Difumina ligeramente las líneas de la letra que no son la actual. Desactívalo para mantener nítidas la línea anterior y la siguiente",
+  "music_lyrics_blur_inactive_title": "Difuminar las líneas cercanas",
   "music_lyrics_choose_source": "Choose lyrics source",
   "music_lyrics_empty": "No lyrics for this track",
   "music_lyrics_export_ttml": "Export TTML next to the audio file",

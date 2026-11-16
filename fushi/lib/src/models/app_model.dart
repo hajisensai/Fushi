@@ -2630,6 +2630,10 @@ class AppModel
   Future<void> setMusicLyricsLookupPause(bool value) =>
       prefsRepo.setMusicLyricsLookupPause(value);
 
+  bool get musicLyricsBlurInactive => prefsRepo.musicLyricsBlurInactive;
+  Future<void> setMusicLyricsBlurInactive(bool value) =>
+      prefsRepo.setMusicLyricsBlurInactive(value);
+
   /// 后台响度扫描（缺 ReplayGain 标签的曲目，设计 §7.3）。
   late final MusicLoudnessScanner musicLoudness = MusicLoudnessScanner(
     database: () => isDatabaseReady ? database : null,

@@ -6398,6 +6398,8 @@
   "music_lyrics_backdrop_style_pixi": "Pixi renderer",
   "music_lyrics_backdrop_style_title": "Fluid style",
   "music_lyrics_backdrop_title": "Lyrics page background",
+  "music_lyrics_blur_inactive_hint": "เบลอบรรทัดเนื้อเพลงอื่นที่ไม่ใช่บรรทัดปัจจุบันเล็กน้อย ปิดเพื่อให้บรรทัดก่อนหน้าและถัดไปคมชัด",
+  "music_lyrics_blur_inactive_title": "เบลอบรรทัดรอบข้าง",
   "music_lyrics_choose_source": "Choose lyrics source",
   "music_lyrics_empty": "No lyrics for this track",
   "music_lyrics_export_ttml": "Export TTML next to the audio file",
