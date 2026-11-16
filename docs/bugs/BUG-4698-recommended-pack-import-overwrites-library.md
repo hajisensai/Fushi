@@ -6,7 +6,7 @@
 - **[x] ① 已修复** — `recommended_pack_import.dart` 新增 `kRecommendedPackImportPreset`（合并）与 `importRecommendedPackFile`，`importDownloadedRecommendedPack` 的预设参数改成非空、缺省合并；向导 `_importPackFile` 改走 `importRecommendedPackFile`。所有 app 内入口不再弹通用框（合并不删不改，无需二次确认），控制通道 `dict pack-import --merge|--replace` 仍按 CLI 显式给的模式（带 `confirm=true` 的知情选择）。通用备份导入框默认值不变。`BackupMergeEngine._mergeAudioSourcePrefs` 改成：本机列表为空仍整份采用；非空时保留本机全部条目与顺序，只把包里**有路径的本地发音库**条目（`audio_source_configs` 只收 `kind: localAudio`）按身份（内部副本认文件名、外部引用认全路径）去重追加，再由既有 rebase 重挂到本机支持目录。向导文案 `onboarding_pack_action_import_existing_desc` 换成新 key `onboarding_pack_action_import_existing_merge_desc`（旧文案让用户在确认框里选合并，已不成立）。提交：7fe9c9b5360
 - **[x] ② 已加自动化测试** — `fushi/test/sync/recommended_pack_merge_import_test.dart`（推荐包形状的真备份 zip，按 `kRecommendedPackImportPreset` 折算的分类跑真实 `mergeRestoreBackup`：书库行 bookKey / uid 不变、阅读进度不变；词典行与资源文件装上；发音库文件拷入并追加登记到两份注册项、本机原有条目与文件不变、路径重挂、重复合并幂等）、`fushi/test/onboarding/recommended_pack_import_merge_guard_test.dart`（三个发起点不得直接调 `runBackupImportFlowForFile`，共享函数恒带预设、缺省合并）。
 - **备注**：
-  - 已中招用户的恢复：覆盖导入前的 `fushi.db.pre-restore.bak` 在**成功**的覆盖导入末尾就被删掉（`fushi/lib/src/sync/backup_service/restore.part.dart:1536`，仅当本机表回灌失败时保留到下次启动恢复，`recoverPendingRestore` 成功后同样删除，`:2058`），存储页「删除数据库快照」也会清它。所以正常走完覆盖导入的用户机器上没有这份快照，「从 bak 恢复书库」对他们不可用；书文件本身仍在 `fushi_books/` 等目录里。恢复方案待拍板，未在本 PR 实现。
+  - （已过时：BUG-4701 起成功覆盖后快照改名保留，见下文「后续」）已中招用户的恢复：覆盖导入前的 `fushi.db.pre-restore.bak` 在**成功**的覆盖导入末尾就被删掉（`fushi/lib/src/sync/backup_service/restore.part.dart:1536`，仅当本机表回灌失败时保留到下次启动恢复，`recoverPendingRestore` 成功后同样删除，`:2058`），存储页「删除数据库快照」也会清它。所以正常走完覆盖导入的用户机器上没有这份快照，「从 bak 恢复书库」对他们不可用；书文件本身仍在 `fushi_books/` 等目录里。恢复方案待拍板，未在本 PR 实现。
   - 未在 Android 真机复测。
 
 ## 后续（拍板台 pr3449）

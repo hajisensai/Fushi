@@ -55,6 +55,25 @@ void main() {
     expect(src, isNot(contains('BackupImportPreset preset =')));
   });
 
+  test('runBackupImportFlowForFile forwards confirmInitialMode to the '
+      'confirm dialog', () {
+    // 编排函数把 confirmInitialMode 转给确认框；这一行被删，确认框会退回缺省「覆盖」，
+    // BUG-4698 原样复发，而直接调确认框的 widget 测试仍全绿。
+    final String src = read('sync/sync_settings_schema/backup.part.dart');
+    final int start = src.indexOf('Future<void> runBackupImportFlowForFile({');
+    expect(start, isNonNegative);
+    final int dialogCall = src.indexOf(
+      'await _showBackupImportConfirmDialog(',
+      start,
+    );
+    expect(dialogCall, isNonNegative);
+    final int callEnd = src.indexOf(');', dialogCall);
+    expect(
+      src.substring(dialogCall, callEnd),
+      contains('initialMode: confirmInitialMode,'),
+    );
+  });
+
   for (final String rel in entryFiles) {
     test('$rel does not preset the pack import (dialog must show)', () {
       expect(read(rel), isNot(contains('preset:')));
