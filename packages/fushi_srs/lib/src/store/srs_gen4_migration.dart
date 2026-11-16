@@ -87,7 +87,8 @@ enum SrsGen4MigrationVerdict {
   /// 对拍或前提没过，整次放弃（旧库没动），诊断报告写在 [SrsGen4MigrationOutcome.reportPath]。
   aborted('aborted'),
 
-  /// 没开始：换代锁在别人手里 / 旧库正被写 / 本进程里同一目录已经在跑。
+  /// 没开始：换代锁在别人手里 / 旧库正被写 / 本进程里同一目录已经在跑 / 旧库没满足迁移前提
+  /// （[SrsGen4MigrationOutcome.blockedReason]）。
   blocked('blocked'),
 
   /// 没开始：卷上空间不够（[SrsGen4MigrationOutcome.neededBytes] / [SrsGen4MigrationOutcome.freeBytes]）。
@@ -106,6 +107,35 @@ enum SrsGen4MigrationVerdict {
     }
     return null;
   }
+}
+
+/// [SrsGen4MigrationVerdict.blocked] 的原因分类。三类给用户的处置不同：前两类等一会再来就行；第三类重试不会变，
+/// 页面要说清楚原因、不能说成「被占用」引用户反复重试。
+enum SrsGen4BlockedReason {
+  /// 换代锁在别的进程手里（migrate.rs `BLOCKED_MIGRATING`；本进程里同一目录已经在跑也回这一条，kernel.rs `global`）。
+  migrating,
+
+  /// 协议 3 的旧库正被别的连接写（migrate.rs `BLOCKED_BUSY`）：等一会再来。
+  busy,
+
+  /// 其余：旧库没满足迁移前提（协议 3 的收尾没做完——旧行还没迁成操作、待重放 / 待刷新缓存、并入做了一半；缺某个
+  /// profile 的缓存配置）、旧库 schema 不对、目录状态对不上……原因原文在 [SrsGen4MigrationOutcome.reason]。
+  precondition;
+
+  /// migrate.rs `BLOCKED_MIGRATING` 的原文（两边一字不差，`srs_gen4_migration_test.dart` 读 Rust 源码核对）。
+  static const String migratingWire =
+      'migrating: another process holds the generation lock';
+
+  /// migrate.rs `BLOCKED_BUSY` 的原文。
+  static const String busyWire =
+      'busy: the protocol 3 library is being written';
+
+  /// 内核给的原因原文 → 分类（只比两个常量的全文，其余一律 [precondition]）。
+  static SrsGen4BlockedReason of(String? reason) => switch (reason) {
+    migratingWire => migrating,
+    busyWire => busy,
+    _ => precondition,
+  };
 }
 
 /// `gen4_migrate_run` 的结果（migrate.rs `Outcome::json`）。
@@ -132,6 +162,12 @@ final class SrsGen4MigrationOutcome {
 
   final int? neededBytes;
   final int? freeBytes;
+
+  /// [SrsGen4MigrationVerdict.blocked] 时的原因分类；其余结论 = null。
+  SrsGen4BlockedReason? get blockedReason =>
+      verdict == SrsGen4MigrationVerdict.blocked
+      ? SrsGen4BlockedReason.of(reason)
+      : null;
 
   static SrsGen4MigrationOutcome fromJson(Map<String, Object?> j) {
     final SrsGen4MigrationVerdict? v = SrsGen4MigrationVerdict.tryParse(

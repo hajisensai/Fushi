@@ -24,7 +24,7 @@ final class SrsCoreUnavailableError extends StateError {
       );
 }
 
-//// Rust 侧命令失败（SQL 错误、坏数据、状态不对）。
+/// Rust 侧命令失败（SQL 错误、坏数据、状态不对）。
 final class SrsCoreException implements Exception {
   const SrsCoreException(this.code, this.message);
 
@@ -1009,7 +1009,7 @@ final class SrsCore {
       if (e.message == kSrsCoreClosed) return null;
       rethrow;
     }
-    final String key = '${k['epoch']! as String}:${k['revision']! as int}';
+    final String key = srsRefreshKeyOf(k);
     return (content: key, structure: key, rwkv: key, stats: key, landed: key);
   }
 
@@ -1281,6 +1281,17 @@ final class SrsCore {
 
 /// 已关闭的句柄上调用时内核报的错误文本（native/fushi_fsrs/src/store/mod.rs `CLOSED`）。
 const String kSrsCoreClosed = 'srs store is closed';
+
+/// `local_state` 回包 [state]（native/fushi_fsrs/src/store/local_state.rs `view`）→ 刷新键。
+///
+/// 纪元已落盘（`epochStored`）时是 `纪元:修订号`。没落盘时（这个 profile 还没有本机状态行：迁移不带协议 3 的那一行，
+/// 主进程开过这个 profile 才补上；Secondary 只读、不补）内核每次现生成一个新纪元，拿它当键会让按键缓存的东西每读一次
+/// 都不命中，所以换成固定的 `unstored:修订号`：行建起来之后纪元落盘，键随之变一次（整份重读一次），之后稳定。
+String srsRefreshKeyOf(Map<String, Object?> state) {
+  final int revision = (state['revision']! as num).toInt();
+  if (state['epochStored'] != true) return 'unstored:$revision';
+  return '${state['epoch']! as String}:$revision';
+}
 
 /// [SrsCore.refreshKeys] 的结果（键的含义见 native/fushi_fsrs/src/store/refresh.rs）：
 /// - [content]：复习日志与界面状态以外的事件落库、可见性变化、重读本机状态；

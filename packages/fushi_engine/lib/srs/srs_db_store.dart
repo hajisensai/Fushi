@@ -705,10 +705,15 @@ class SrsDbStore implements SrsSync2Host {
   /// 落库都变」的判据读 [landedFingerprint]。
   int get revision => _revision;
 
-  /// 内核持有的进程内刷新键（[SrsCore.refreshKeys]，native/fushi_fsrs/src/store/refresh.rs）。每次现读：计数按 profile
-  /// 归内核，在每次提交之后推进（本机写命令、收段的每一步、收段通道自己做完的每一片、导入、重读本机状态、删 / 并入
-  /// profile），同一个 profile 的所有副本对象读到同一组值；键里的前缀每次打开库随机生成，进程重启、关库重开之后不会
-  /// 回到以前出现过的值。
+  /// 刷新键（[SrsCore.refreshKeys]）。每次现读（一次同步 FFI 点查，在调用方 isolate 上）。
+  ///
+  /// **新代（S1 之后）五个键是同一个值**：本机状态行（`local_state`，native/fushi_fsrs/src/store/gen4/local.rs）的
+  /// `纪元:修订号`。每条改投影的写命令（含作答）在自己的事务里推进修订号；库换了 / 迁移之后纪元换新；行没落盘时是
+  /// 固定的 `unstored:修订号`（[srsRefreshKeyOf]）。协议 3 内核按类别分开的进程内计数（`store/refresh.rs`：内容 / 结构 /
+  /// RWKV / 统计 / 落库各一条）新代还没有对应物，所以下面各键原本「什么不让它变」的语义**眼下都不成立**：任何写入
+  /// （每一次作答）都让五个键一起变——只会多重读、不会读到旧值，但代价落在作答热路径上（RWKV 分数表每题整表重查、
+  /// 牌组树 / 笔记类型 / 修改记录这些按键缓存的东西每题重建）。上游要在 `G4Core` 里补回按类别的计数
+  /// （交接说明「G7-5 Dart 接线」§9.5）；补上之前别在这里加 Dart 侧的计数镜像。
   ///
   /// 库关了之后不会再有任何变化：读到的是关之前最后读到的那一组（[_keysAtClose]），按键记的缓存照旧命中——关库后
   /// 收尾的读者（RWKV 服务关闭时存快照要 [dayContext]）不必再去读已关的库。一次都没读到过时是 [_closedKey]。
@@ -721,27 +726,26 @@ class SrsDbStore implements SrsSync2Host {
   /// 最后一次从内核读到的刷新键；只在库关了之后用（见 [_refreshKeys]），不是计数的镜像。
   SrsRefreshKeys? _keysAtClose;
 
-  /// 库关了、且之前一次都没读到过键时的指纹（与任何开着时的值都不等：开着时的键形如 `<16 位十六进制>:<计数>`）。
+  /// 库关了、且之前一次都没读到过键时的指纹（与任何开着时的值都不等：开着时的键形如 `<纪元>:<修订号>` 或
+  /// `unstored:<修订号>`）。
   static const String _closedKey = 'closed';
 
-  /// 统计指纹：落库事件里会改变统计结果的那部分（复习日志、卡片 / 笔记 / 牌组 / 笔记类型的内容事件、冲突扣住与
-  /// 解除）。界面状态类修改记录（牌组收起 / 展开，[SrsFieldClass.viewState]）不计入；没有事件落库的写入（同步簿记、
-  /// 媒体、空轮）不改变它。统计页据此判断 [srsRevisionProvider] 的一跳要不要重读（见 `loadSrsStats`）。
+  /// 统计指纹：统计页据此判断 [srsRevisionProvider] 的一跳要不要重读（见 `loadSrsStats`）。目标语义是「只随会改变
+  /// 统计结果的落库变」（界面状态类修改记录、同步簿记不算）；新代眼下随任何写入变（见 [_refreshKeys]）。
   String get statsFingerprint => _refreshKeys?.stats ?? _closedKey;
 
-  /// 内容指纹：相等 = 两次读之间没有落过复习日志 / 界面状态以外的事件、没有冲突扣住 / 解除、没有重读过本机状态——
-  /// 同步冲突 / 待裁决 / 迁移提醒这类「整库扫一遍」的角标不可能变。评分一次只落日志，牌组列表 / 首页面板跟着重读
-  /// 计数时不必把这些角标再扫一遍。
+  /// 内容指纹：同步冲突 / 待裁决 / 迁移提醒这类「整库扫一遍」的角标据此判断要不要重扫。目标语义是「评分只落日志时
+  /// 不变」；新代眼下每次作答都变（见 [_refreshKeys]）。
   String get contentFingerprint => _refreshKeys?.content ?? _closedKey;
 
-  /// RWKV-Instant 分数表的全量刷新信号：牌组 / 配置类事件落库（预设归属、排队设置可能变了）、应用一批对端事件（同步
-  /// 合并、导入）、重读本机状态时变。复习日志、卡片自己的修改（暂停 / 埋 / 旗标 / 换牌组——换牌组由分数表项的版本
-  /// 覆盖）不动它。收段会话（内核 `ingest_begin` … `ingest_end`）期间的推进攒着、会话结束时并成一次：以前每片一次，
-  /// 整表重查跟着每片来、与下一片抢内存（35 万条日志的 iPhone 收尾 OOM）。见 `SrsRwkvService` 文件头。
+  /// RWKV-Instant 分数表的全量刷新信号。目标语义：只在牌组 / 配置类事件落库（预设归属、排队设置可能变了）、应用
+  /// 一批对端事件、重读本机状态时变，复习日志与卡片自己的修改不动它——整表重查跟着每题走会与作答抢内存（以前
+  /// 35 万条日志的 iPhone 收尾 OOM），排队设置里的「每答几题刷新」也靠它不随作答变。**新代眼下每次作答都变**
+  /// （见 [_refreshKeys]）：「每答几题刷新」形同每题刷新。见 `SrsRwkvService` 文件头。
   String get rwkvScoresKey => _refreshKeys?.rwkv ?? _closedKey;
 
-  /// 任何事件落库（含收段通道自己做完的片）或可见性变化都变：与落盘修订号同口径，但不必等下一条回包。RWKV 服务据此
-  /// 判断「有没有新日志」（不变就不扫日志表）。
+  /// 任何事件落库或可见性变化都变：与落盘修订号同口径，但不必等下一条回包。RWKV 服务据此判断「有没有新日志」
+  /// （不变就不扫日志表）。
   String get landedFingerprint => _refreshKeys?.landed ?? _closedKey;
 
   /// 正在进行的收段会话；完成 = 会话结束。RWKV 回放（[rwkvReplayBytes]，整 profile 扫一遍日志）等它结束才跑，
@@ -969,8 +973,8 @@ class SrsDbStore implements SrsSync2Host {
   (int, SrsTimeSource) now() => _trusted.now();
 
   /// [deckTree] 与 profile 修改记录的缓存（作答一次以前要物化牌组树 / 日界 8–10 次）。键是
-  /// [_structureKey]：内核的内容计数覆盖了除复习日志与界面状态外的一切落库、重读本机状态与清除，再加上界面状态
-  /// （牌组收起 / 展开）的计数（[SrsRefreshKeys.structure]）。
+  /// [_structureKey]（[SrsRefreshKeys.structure]）：目标语义是「复习日志不让它变」，新代眼下随任何写入变
+  /// （见 [_refreshKeys]），所以作答之后的第一次读会重建一次，同一题之内的多次读仍然命中。
   ({String key, SrsDeckTree tree})? _deckTreeCache;
   ({String key, SrsEntityEdits edits})? _profileEditsCache;
   String get _structureKey => _refreshKeys?.structure ?? _closedKey;
@@ -1329,21 +1333,38 @@ class SrsDbStore implements SrsSync2Host {
   ///
   /// 协议 3 由内核在 `apply` 里交回逐项的落库投影行（`stamps`，旧版时钟的产物）；新代没有旧版时钟、明确拒绝
   /// `stamps`（native/fushi_fsrs/src/store/gen4/cmd/writes.rs 文件头），回包只有 `edits`（`[种类, 规范实体, 字段键,
-  /// 设备, 序号, 值]`）。这里按 `edits` 读回那些实体的修改记录（`read` 的 `edits`，与别的读同一份落库行），按 (设备,
-  /// 序号) 认出这批写下的。返回值里带调用方给的原值（落库形态里内联样式已换成共享引用）。
+  /// 设备, 序号, 值]`，值没变的草稿已被内核丢掉）。草稿与 `edits` 按 (种类, 规范实体, 字段键) 配对
+  /// （[srsMatchWrittenEdits]）：草稿里的实体 ID 可能是别名类的非规范成员，先归一（[_canonicalDraftIds]）。再按
+  /// `edits` 读回那些实体的修改记录（`read` 的 `edits`，与别的读同一份落库行），按 (设备, 序号) 认出这批写下的。
+  /// 返回值里带调用方给的原值（落库形态里内联样式已换成共享引用）。
+  ///
+  /// 已知缺口（上游）：整列表标签草稿在新代展开成标签增删操作，不进 `edits`，这里没有它的那一项（协议 3 的 `stamps`
+  /// 有）。交接说明「G7-5 Dart 接线」§9.5。
   Future<List<SrsFieldEdit>> _readBackEdits(
     List<SrsEventDraft> drafts,
     List<Object?> written,
   ) async {
-    // 回包里每条修改：(种类, 字段键) → 按落库顺序排队，草稿按顺序逐条认领。
-    final Map<(String, String), List<List<Object?>>> queue =
-        <(String, String), List<List<Object?>>>{};
+    final List<SrsEditDraft> edits = <SrsEditDraft>[
+      for (final SrsEventDraft d in drafts)
+        if (d is SrsEditDraft) d,
+    ];
+    final Map<(String, String), String> canonical = await _canonicalDraftIds(
+      edits,
+      written,
+    );
+    final List<List<Object?>?> matched =
+        srsMatchWrittenEdits(<(String, String, String)>[
+          for (final SrsEditDraft d in edits)
+            (
+              d.kind.wire,
+              canonical[(d.kind.wire, d.entityId)] ?? d.entityId,
+              d.key,
+            ),
+        ], written);
     final Map<String, Set<String>> idsByKind = <String, Set<String>>{};
-    for (final Object? w in written) {
-      final List<Object?> e = (w! as List).cast<Object?>();
-      final String kind = e[0]! as String;
-      (queue[(kind, e[2]! as String)] ??= <List<Object?>>[]).add(e);
-      (idsByKind[kind] ??= <String>{}).add(e[1]! as String);
+    for (final List<Object?>? e in matched) {
+      if (e == null) continue;
+      (idsByKind[e[0]! as String] ??= <String>{}).add(e[1]! as String);
     }
     final Map<(String, int), SrsFieldEdit> byDot =
         <(String, int), SrsFieldEdit>{};
@@ -1361,11 +1382,9 @@ class SrsDbStore implements SrsSync2Host {
       }
     }
     final List<SrsFieldEdit> out = <SrsFieldEdit>[];
-    for (final SrsEventDraft d in drafts) {
-      if (d is! SrsEditDraft) continue;
-      final List<List<Object?>>? q = queue[(d.kind.wire, d.key)];
-      if (q == null || q.isEmpty) continue;
-      final List<Object?> e = q.removeAt(0);
+    for (int i = 0; i < edits.length; i++) {
+      final List<Object?>? e = matched[i];
+      if (e == null) continue;
       final SrsFieldEdit? edit =
           byDot[(e[3]! as String, (e[4]! as num).toInt())];
       if (edit == null) {
@@ -1374,7 +1393,35 @@ class SrsDbStore implements SrsSync2Host {
           'back (the native core and Dart do not match)',
         );
       }
-      out.add(_withValue(edit, d.value));
+      out.add(_withValue(edit, edits[i].value));
+    }
+    return out;
+  }
+
+  /// 修改记录草稿里的 (种类, 实体 ID) → 规范实体 ID。`edits` 里出现过的 ID 本身就是规范的（内核写出的实体已归一），
+  /// 原样；其余（别名类的非规范成员，或值没变、没写出操作的草稿）按 `read` 的 `edits`（请求里的 ID 内核先归一、
+  /// 回包的 `e` 列是规范 ID）逐个点查——只限这批草稿的那个字段键。读不到行 = 这个键没有任何写入，原样（它不可能
+  /// 出现在 `edits` 里）。
+  Future<Map<(String, String), String>> _canonicalDraftIds(
+    List<SrsEditDraft> edits,
+    List<Object?> written,
+  ) async {
+    final Set<(String, String)> known = <(String, String)>{
+      for (final Object? w in written)
+        ((w! as List)[0]! as String, (w as List)[1]! as String),
+    };
+    final Map<(String, String), String> out = <(String, String), String>{};
+    for (final SrsEditDraft d in edits) {
+      final (String, String) k = (d.kind.wire, d.entityId);
+      if (known.contains(k) || out.containsKey(k)) continue;
+      final Map<String, List<SrsEditItem>> rows = await _editItemsById(
+        <String, Object?>{
+          'kind': d.kind.wire,
+          'ids': <String>[d.entityId],
+          'key': d.key,
+        },
+      );
+      out[k] = rows.keys.isEmpty ? d.entityId : rows.keys.single;
     }
     return out;
   }
@@ -5475,8 +5522,8 @@ class SrsDbStore implements SrsSync2Host {
       });
     }
     await _commandOrReload(() async {
-      // `remote`：这批是别的设备的事件（同步合并），落了就带动牌组 / 全局状态，内核让 RWKV 分数表整表重查一次
-      // （[rwkvScoresKey]，store/refresh.rs）。
+      // `remote`：这批是别的设备的事件（同步合并），落了就带动牌组 / 全局状态，RWKV 分数表要整表重查一次
+      // （[rwkvScoresKey]；新代随任何写入变，见 [_refreshKeys]）。
       await _applyLocal(input, recvNow: nowMs, remote: true);
     });
   });
@@ -6225,4 +6272,31 @@ class _SrsUndoRecorder {
   }
 
   SrsEditUndo result() => SrsEditUndo(_items.values.toList());
+}
+
+/// 修改记录草稿（按顺序，每项 `(种类, 规范实体, 字段键)`）与 `apply` 回包 `edits`（每项 `[种类, 规范实体, 字段键,
+/// 设备, 序号, 值]`，按落库顺序）配对：返回与 [drafts] 等长的列表，第 i 项是第 i 条草稿写出的那条，没写出（内核按
+/// 「值没变」丢掉）= null。同一 (种类, 实体, 字段键) 的多条草稿按顺序认领。
+///
+/// 只按 (种类, 字段键) 配会张冠李戴：同一批改笔记 A、B 的同一个键、A 没变时，A 的草稿会领走 B 的那条。
+@visibleForTesting
+List<List<Object?>?> srsMatchWrittenEdits(
+  List<(String, String, String)> drafts,
+  List<Object?> written,
+) {
+  final Map<(String, String, String), List<List<Object?>>> queue =
+      <(String, String, String), List<List<Object?>>>{};
+  for (final Object? w in written) {
+    final List<Object?> e = (w! as List).cast<Object?>();
+    (queue[(e[0]! as String, e[1]! as String, e[2]! as String)] ??=
+            <List<Object?>>[])
+        .add(e);
+  }
+  return <List<Object?>?>[
+    for (final (String, String, String) d in drafts)
+      switch (queue[d]) {
+        final List<List<Object?>> q when q.isNotEmpty => q.removeAt(0),
+        _ => null,
+      },
+  ];
 }
