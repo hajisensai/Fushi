@@ -3335,7 +3335,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   String get dictionarySourceType => kStatSourceVideo;
 
   @override
-  ModuleId? get popupDockModule => ModuleId.video;
+  ModuleId? get lookupHostModule => ModuleId.video;
 
   /// TODO-1204：查词 / 制卡计数归属本视频——[title] 用 [_title]（剧集标题，与
   /// 视频统计 tile 的身份分组键对齐），[bookKey] 存
@@ -8554,12 +8554,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   Future<MinePopupResult> onMineEntry(Map<String, String> fields) =>
       _onMineEntryImpl(fields);
 
-  /// 反馈 OeS0m8tLHc：查词弹窗点「制卡」→ 弹窗立刻关、视频立刻续播（关栈走
-  /// [_popNestedPopupAt]，按 [_pausedForLookup] 恢复），卡在后台落地（本地视频也是，
-  /// 见 [resolveVideoMineDispatch]），结局由 OSD 报告、失败的结果卡带「重试」。
-  /// 视频车道因此不再看「制卡后关闭查词弹窗」偏好，也不再等卡落地才关。
+  /// 制卡后「关闭弹窗、不续播」（拍板台 8ldy3d8XFA）：撤掉查词暂停标记，随后
+  /// [_popNestedPopupAt] 关栈时就不续播。卡照旧在后台落地（反馈 OeS0m8tLHc，见
+  /// [resolveVideoMineDispatch]），弹窗关不关、续不续播由视频模块的「制卡后行为」定，
+  /// 默认「关闭并续播」。
   @override
-  bool get closePopupAfterMining => true;
+  void dropLookupPauseMark() {
+    _pausedForLookup = false;
+  }
 
   /// mixin 的纯字段制卡 / 覆盖（不带视频媒体）。网页档没有锚点 cue 时的退路：extension
   /// 里调不到 `super`，经这两个转发器。

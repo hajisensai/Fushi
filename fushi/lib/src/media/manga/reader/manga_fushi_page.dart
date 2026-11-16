@@ -1228,7 +1228,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   final WebViewMenuDismissBridge _menuDismiss = WebViewMenuDismissBridge();
 
   @override
-  ModuleId? get popupDockModule => ModuleId.manga;
+  ModuleId? get lookupHostModule => ModuleId.manga;
 
   /// BUG-2553：查词弹窗开着时全屏 dismiss barrier 盖在 WebView 之上，barrier 收到的
   /// 是**全局**指针坐标；要转发给覆盖层选字，必须用 WebView 自己的 RenderBox 逆映成

@@ -1082,10 +1082,21 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'lookup/Close popup when scrolling':
       'test/pages/lookup_dismiss_barrier_test.dart + '
       'test/reader/reader_popup_scroll_dismiss_wiring_test.dart',
-  // 用户建议 q16Apecgbg：「制卡后关闭查词弹窗」（默认关）。与上面两项同一条
-  // MediaSource 偏好通道，harness 里观测不到写穿；生效点是制卡回调落地后的关栈
-  // （closePopupAfterAcceptedMine），由专项行为测试 + 两条车道接线守卫覆盖。
-  'lookup/Close lookup popup after creating a card':
+  // 拍板台 8ldy3d8XFA：「制卡后行为」按模块单选（取代 q16Apecgbg 的全局开关）。与上面
+  // 两项同一条 MediaSource 偏好通道，harness 里观测不到写穿；生效点是制卡回调落地后的
+  // 关栈 + 是否续播（closePopupAfterAcceptedMine），由专项行为测试、按模块解析的纯
+  // 函数测试与两条车道接线守卫覆盖。模块行随模块开关可见，harness 里不一定都出现。
+  'lookup/After creating a card in novels':
+      'test/pages/close_popup_after_mining_test.dart',
+  'lookup/After creating a card in manga':
+      'test/pages/close_popup_after_mining_test.dart',
+  'lookup/After creating a card in videos':
+      'test/pages/close_popup_after_mining_test.dart',
+  'lookup/After creating a card in music':
+      'test/pages/close_popup_after_mining_test.dart',
+  'lookup/After creating a card in games':
+      'test/pages/close_popup_after_mining_test.dart',
+  'lookup/After creating a card in lookup and elsewhere':
       'test/pages/close_popup_after_mining_test.dart',
   // TODO-861②：「扫描非日文文字」查词开关（PreferencesRepository.scanNonJapaneseText，
   // 默认 true）。焦点遍历能切到并写穿 DB（changed=true），但生效点在注入 JS 的

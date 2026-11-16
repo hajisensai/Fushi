@@ -593,6 +593,13 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
   @override
   String get dictionarySourceType => kStatSourceVideo;
 
+  /// 制卡后「关闭弹窗、不续播」（拍板台 8ldy3d8XFA）：撤掉查词暂停标记，随后
+  /// [_popNestedPopupAt] 关栈时就不续播。
+  @override
+  void dropLookupPauseMark() {
+    _pausedForLookup = false;
+  }
+
   /// 查词 / 制卡计数归属 = 观看时长同一身份（时钟 `mediaKey` = [WebVideoFushiPage.bookUid]），
   /// 与本地视频页 `_studyStatsIdentity` 同律；此前未覆写，网页档的查词 / 制卡只进汇总。
   @override
@@ -600,7 +607,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       (bookKey: widget.bookUid, title: _row?.title ?? '');
 
   @override
-  ModuleId? get popupDockModule => ModuleId.video;
+  ModuleId? get lookupHostModule => ModuleId.video;
 
   @override
   ShortcutScope? get dictionaryPopupInputScope => ShortcutScope.video;

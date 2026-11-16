@@ -9,6 +9,7 @@ import 'package:fushi_core/fushi_core.dart'
     show kStatSourceBook, kStatSourceMusic, kStatSourceVideo;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/mining/after_mining_popup_action.dart';
 import 'package:fushi/src/media/types/dictionary_media_type.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi_anki/fushi_anki.dart';
@@ -109,15 +110,16 @@ mixin DictionaryPageMixin {
   /// 细分（首页词典 tab、悬浮歌词）可覆写；纯标签，不参与任何判决。
   String get lookupDiagHost => dictionarySourceType;
 
-  /// 本页所属的媒体模块，决定「底部停靠」按模块细分开关听哪一个
-  /// （[AppModel.popupBottomDockedFor]）。默认 `null` = 只听总开关（查词页 /
-  /// 外部弹窗 / 悬浮歌词）；视频页、texthooker 覆写。与 `BaseSourcePageState`
-  /// 的同名钩子对称。
-  ModuleId? get popupDockModule => null;
+  /// 本页所属的功能模块：「底部停靠」按模块细分开关听哪一个
+  /// （[AppModel.popupBottomDockedFor]）、「制卡后行为」听哪一行
+  /// （[afterMiningPopupAction]）。默认 `null` = 只听停靠总开关、制卡后行为归查词
+  /// 那行（查词页 / 外部弹窗 / 悬浮歌词）；视频页、texthooker 覆写。与
+  /// `BaseSourcePageState` 的同名钩子对称。
+  ModuleId? get lookupHostModule => null;
 
-  /// 本页查词弹窗实际是否底部停靠（总开关 ∧ [popupDockModule] 的细分开关）。
+  /// 本页查词弹窗实际是否底部停靠（总开关 ∧ [lookupHostModule] 的细分开关）。
   bool get _popupBottomDocked =>
-      mixinAppModel.popupBottomDockedFor(popupDockModule);
+      mixinAppModel.popupBottomDockedFor(lookupHostModule);
 
   /// BUG-1269：本页的快捷键作用域。非空即启用「弹窗内输入交回宿主」的桥。
   ///
@@ -241,12 +243,19 @@ mixin DictionaryPageMixin {
   @protected
   bool get advancedMiningDeckChoiceAvailable => true;
 
-  /// 制卡被收下（成功 / 进后台 / 进待发队列）后关不关整个查词弹窗栈。默认读阅读器
-  /// 偏好 `close_popup_after_mining`（用户建议 q16Apecgbg，默认关）。视频页覆写为恒
-  /// true（反馈 OeS0m8tLHc：点「制卡」弹窗立刻关、视频立刻续播，制卡在后台跑）。
+  /// 制卡被收下（成功 / 进后台 / 进待发队列）后查词弹窗怎么处理（拍板台
+  /// 8ldy3d8XFA）：按 [lookupHostModule] 那一行取用户的「制卡后行为」，不属于任何
+  /// 一行的归查词那行。视频模块默认「关闭并续播」，但和别的模块一样听用户的。
   @protected
-  bool get closePopupAfterMining =>
-      ReaderFushiSource.instance.closePopupAfterMining;
+  AfterMiningPopupAction get afterMiningPopupAction => ReaderFushiSource
+      .instance
+      .afterMiningPopupAction(afterMiningPopupModuleFor(lookupHostModule));
+
+  /// 制卡后按「关闭弹窗、不续播」关栈之前调用：撤掉「因查词暂停」的标记、保持暂停，
+  /// 随后的关栈汇聚点（`onPop(0)`）就不会续播。默认无事可做；会因查词暂停播放的
+  /// 宿主（视频页 / 网页视频页）覆写。
+  @protected
+  void dropLookupPauseMark() {}
 
   /// 「制卡前调整·选择句子上下文」里**手改某一句文本**（视频/首页查词车道）：把 [slot]
   /// （上文/当前/下文）第 index 句的文本改成给定文本，写回本表面会话级制卡草稿。
@@ -1409,9 +1418,11 @@ mixin DictionaryPageMixin {
           onMineEntry: closePopupAfterAcceptedMine(
             (Map<String, String> fields) =>
                 onMineEntry(miningFieldsForLayer(index, controller, fields)),
-            enabled: () => closePopupAfterMining,
-            closeAll: () {
-              if (mounted) onPop(0);
+            action: () => afterMiningPopupAction,
+            closeAll: ({required bool resume}) {
+              if (!mounted) return;
+              if (!resume) dropLookupPauseMark();
+              onPop(0);
             },
           ),
           onUpdateEntry: (int noteId, Map<String, String> fields) =>
