@@ -38,6 +38,17 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-4706](bugs/BUG-4706-local-audio-forvo-null-reading-excluded.md) | ✅ | ✅ | 本地发音库精确读音查询排除 reading 为 NULL 的行，日语 Forvo 发音不显示 |
+> 共 4069 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4712](bugs/BUG-4712-fushiplug-drag-import.md) | ✅ | ✅ | .fushiplug 插件包拖进插件管理 / 音源 / 歌词来源 / 追踪插件页毫无反应，只能走文件选择器 |
+| [BUG-4711](bugs/BUG-4711-ext-youtube-caption-default-wrong-lang.md) | ✅ | ✅ | 扩展 YouTube 默认挂无关语言的字幕轨；手动选的轨取不到时永远停在「选中加载」 |
+| [BUG-4710](bugs/BUG-4710-srs-browse-has-audio-ignores-inline-audio.md) | ✅ | ✅ | SRS 浏览健康条把视频片段卡都算成「缺单词音频」 |
+| [BUG-4709](bugs/BUG-4709-manga-topbar-full-width.md) | ✅ | ✅ | 漫画阅读器顶栏在桌面宽屏限宽 1080 居中，与小说全宽顶栏不一致 |
+| [BUG-4708](bugs/BUG-4708-download-summary-legacy-rate.md) | ✅ | ✅ | 下载中心合计速度不计入磁力 / 外部来源（legacy 番剧下载计划）行的实时速率 |
+| [BUG-4707](bugs/BUG-4707-screen-ocr-lookup-line-wrap.md) | ✅ | ✅ | 截屏识字点字查词只扫被点那一行，折行处把词截断 |
+| [BUG-4706](bugs/BUG-4706-library-import-shelf-tab-dead.md) | ✅ | ✅ | 书库导入页点左上角「书架」回不去，仍停在导入页 |
 | [BUG-4705](bugs/BUG-4705-android-system-ocr-full-res-decode.md) | ✅ | ✅ | Android 系统 OCR 全分辨率解码在主线程、无上限，大图闪退；无 GMS 被报成识别失败 |
 | [BUG-4704](bugs/BUG-4704-manga-4k-page-image-memory.md) | ✅ | ✅ | 漫画阅读器打开 4K 页图卷内存暴涨闪退 |
 | [BUG-4703](bugs/BUG-4703-library-arrangement-default-dirty.md) | ✅ | ✅ | 外观页「色块摆放」恢复默认对照旧默认：全新安装（封面网格）就标已改过，恢复默认反把网格下色块分区写成散落 |
