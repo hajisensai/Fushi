@@ -495,6 +495,8 @@ import 'package:fushi/src/media/music/mpv_music_output_backend.dart';
 import 'package:fushi_music/fushi_music.dart'
     show InstalledMusicPlugin, MusicPluginManager, MusicPluginQuality;
 import 'package:fushi/src/media/music/plugin/music_plugin_gate.dart';
+import 'package:fushi/src/media/music/plugin/music_plugin_relay_client.dart';
+import 'package:fushi/src/media/music/plugin/music_plugin_relay_host.dart';
 import 'package:fushi/src/media/favorites/web_video_favorite.dart'
     show ExtensionVideoFavoriteRequest, handleExtensionVideoFavorite;
 import 'package:fushi/src/media/music/plugin/music_plugin_favorites.dart';
@@ -1192,6 +1194,18 @@ class AppModel
           SyncRepository(database).isOwnerDevicePeerToken(token),
       pluginStores: sourceSharePluginStoresOf,
     ),
+    // 互联「插件中继」：替没有插件运行时的「我的设备」代跑本机插件。本机自己跑不了插件
+    // （合规门 / 原生库）时不接线；开关与「我的设备」判据同来源共享，按请求现读。
+    pluginRelayHost: () => isMusicPluginSourcesAvailable
+        ? AppMusicPluginRelayHost(
+            manager: () => musicPluginManager,
+            enabled: () =>
+                SyncRepository(database).isInterconnectSourceShareHostEnabled(),
+            isOwnerDevicePeer: (String token) =>
+                SyncRepository(database).isOwnerDevicePeerToken(token),
+            httpClientFactory: createAppHttpClient,
+          )
+        : null,
     libraryServiceFactory: () => LocalLibraryHostService(
       db: database,
       dictionaryResourceRoot: dictionaryResourceDirectory,
@@ -2316,7 +2330,7 @@ class AppModel
   /// 学习统计写入面）。三者共用同一个引擎，所以在一处一起建。
   MusicSession _createMusicSession() {
     // 插件曲目在 mpv 后端打开时才取流：装配点先于任何播放装好（管理器仍按需懒建）。
-    if (isMusicPluginSourcesAvailable) {
+    if (isMusicPluginSourcesUsable) {
       musicPluginPlaybackHost = MusicPluginPlaybackHost(
         manager: () => musicPluginManager,
         quality: (String path) => isPreferencesReady
@@ -2363,7 +2377,7 @@ class AppModel
           ? prefsRepo.musicResumeMode
           : MusicResumeMode.longTracks,
       // 歌曲收藏 = 平台账号的「喜欢」（插件 `like`）：首次被问到才拉喜欢集合。
-      favorites: _musicFavorites = isMusicPluginSourcesAvailable
+      favorites: _musicFavorites = isMusicPluginSourcesUsable
           ? MusicPluginFavorites(
               MusicPluginManagerLikeHost(() => musicPluginManager),
               onError: (Object e, StackTrace st) =>
@@ -2546,11 +2560,11 @@ class AppModel
           path: path,
         ),
     onlineEnabled: () => isDatabaseReady && prefsRepo.musicLyricsOnline,
-    pluginLyrics: isMusicPluginSourcesAvailable
+    pluginLyrics: isMusicPluginSourcesUsable
         ? (String pluginId, String trackId) =>
               musicPluginManager.source(pluginId).lyrics(trackId)
         : null,
-    pluginSearch: isMusicPluginSourcesAvailable
+    pluginSearch: isMusicPluginSourcesUsable
         ? (
             String pluginId,
             String title, {
@@ -2568,11 +2582,11 @@ class AppModel
                 query: query,
               )
         : null,
-    pluginFetch: isMusicPluginSourcesAvailable
+    pluginFetch: isMusicPluginSourcesUsable
         ? (String pluginId, Object ref) =>
               musicPluginManager.source(pluginId).lyricsFetch(ref)
         : null,
-    providers: isMusicPluginSourcesAvailable
+    providers: isMusicPluginSourcesUsable
         ? () async => enabledLyricsProviderIds(
             mergeLyricsSourceList(
               parseLyricsProviders(prefsRepo.musicLyricsProvidersRaw),
@@ -2602,6 +2616,10 @@ class AppModel
   MusicPluginManager get musicPluginManager =>
       _musicPluginManager ??= _createMusicPluginManager();
 
+  /// 本机没有插件运行时时经互联用「我的设备」host 上的插件（[isMusicPluginRelayClient]）；
+  /// 随管理器懒建，其余平台为 null。
+  InterconnectMusicPluginRelay? _musicPluginRelay;
+
   /// 插件账号登录 / 退出后调：收藏（平台「喜欢」）缓存按新账号重拉。
   void onMusicPluginAccountChanged(String pluginId) {
     final MusicPluginFavorites? f = _musicFavorites;
@@ -2623,6 +2641,21 @@ class AppModel
       // 插件日志是不可信文本：只进诊断日志，不进界面。
       log: (String id, String level, String message) =>
           debugPrint('[music-plugin] $id $level: $message'),
+      // 插件中继（拍板台 wOMR4_Er7s 方案 b）：互联开着、「接收共享来源」开着时，问已配对
+      // host 要它们愿意代跑的插件。
+      relay: _musicPluginRelay = isMusicPluginRelayClient
+          ? InterconnectMusicPluginRelay(
+              transport: InterconnectMusicPluginRelayTransport(
+                () => SyncRepository(database),
+              ),
+              enabled: () async {
+                if (!isDatabaseReady) return false;
+                final SyncRepository repo = SyncRepository(database);
+                return await repo.isInterconnectEnabled() &&
+                    await repo.isInterconnectSourceShareEnabled();
+              },
+            )
+          : null,
     );
     // 装卸 / 启停插件：收藏缓存跟着重拉（还没被问到过的不拉，首次读时自己会拉）。
     manager.changes.listen((_) {
@@ -11867,6 +11900,8 @@ class AppModel
     _lnReaderManager = null;
     unawaited(_musicPluginManager?.dispose());
     _musicPluginManager = null;
+    _musicPluginRelay?.dispose();
+    _musicPluginRelay = null;
     _trackingPluginManager?.changes.removeListener(_applyTrackingProviders);
     unawaited(_trackingPluginManager?.dispose());
     _trackingPluginManager = null;

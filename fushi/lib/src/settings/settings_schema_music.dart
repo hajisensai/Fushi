@@ -143,11 +143,12 @@ SettingsDestination buildMusicDestination() {
             onChanged: (SettingsContext c, bool value) =>
                 c.appModel.setMusicCrossfadeContinuous(value),
           ),
-          // 在线插件取流音质：与插件音源同一道合规门（iOS 商店合规门没过时不出现）。
-          // 媒体服务器的转码码率是另一回事，在设置 › 在线服务 › 媒体服务器。
+          // 在线插件取流音质：本机能用插件音源时出现（自己跑或经互联中继，中继时同样
+          // 按这一档向 host 上的插件要流）。媒体服务器的转码码率是另一回事，在设置 ›
+          // 在线服务 › 媒体服务器。
           SettingsSegmentedItem<String>(
             id: 'music.plugin_quality',
-            visible: (SettingsContext c) => isMusicPluginSourcesAvailable,
+            visible: (SettingsContext c) => isMusicPluginSourcesUsable,
             title: t.music_quality_plugin_default_title,
             subtitle: t.music_quality_plugin_default_hint,
             icon: FushiIcons.highQuality,
