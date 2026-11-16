@@ -1,4 +1,4 @@
-## BUG-4714 · fsrs 依赖从钉 git rev 切到 crates.io 7.0.0；升级 rev 后旧参数组被当成不认识的版本、自动优化永久停掉
+## BUG-4725 · fsrs 依赖从钉 git rev 切到 crates.io 7.0.0；升级 rev 后旧参数组被当成不认识的版本、自动优化永久停掉
 - **报告**：2026-11-16（维护者应用内反馈 oMN0BHvPdm：「fsrs7 切换到最新版」）
 - **真实性**：✅ 真问题。
   - 依赖：`native/fushi_fsrs/Cargo.toml:31` 写着「FSRS-7 还没发版」，钉 fsrs-rs 主干 git rev `0a5737406a0c`（Cargo.lock 版本号仍是 6.6.2），
