@@ -2,7 +2,8 @@
 ///
 /// - `GET  /api/admin/srs`           状态（各份 profile、调度器、AnkiConnect 监听）+ 当前配置；
 /// - `PUT  /api/admin/srs`           改配置（只改给了的字段）：`profiles`（整份）/ `addProfiles` / `removeProfiles`、
-///                                   `defaultProfile`、`rolloverHour`、
+///                                   `defaultProfile`、`rolloverHour`、`rwkvModel`（`small` / `tiny`：RWKV 模型
+///                                   档位，写的是整台设备的 `<support>/srs_rwkv/model_size`，当场生效）、
 ///                                   `miningTarget`、`miningDecks`（整份替换）/ `miningDecksPatch`（只改给了的
 ///                                   那几份，空串 = 删掉那一项）、`ankiConnect: {enabled, bind, port, apiKey,
 ///                                   profileKeys, corsOrigins}`；
@@ -23,6 +24,7 @@ import 'dart:convert';
 
 import 'package:fushi_engine/srs/srs_devices.dart';
 import 'package:fushi_engine/srs/srs_profile_link.dart';
+import 'package:fushi_engine/srs/srs_rwkv_models.dart';
 import 'package:fushi_server/src/admin/admin_context.dart';
 import 'package:fushi_server/src/config/server_config.dart';
 import 'package:fushi_server/src/config/server_srs_config.dart';
@@ -169,6 +171,9 @@ class AdminSrs {
         'rolloverHour': cfg.rolloverHour,
         'miningTarget': cfg.miningTarget.wire,
         'miningDecks': cfg.miningDecks,
+        // RWKV 模型档位：不在 config.yaml 里，是整台设备的设置文件（`<support>/srs_rwkv/model_size`，与 app
+        // 同一个），这里读写的就是它。
+        'rwkvModel': ctx.host.srs?.rwkvModelSize.persistedName,
       },
       'ankiConnect': <String, Object?>{
         'enabled': ac.enabled,
@@ -236,6 +241,20 @@ class AdminSrs {
     if (hour != null && (hour is! int || hour < 0 || hour > 23)) {
       throw const FormatException('rolloverHour must be an integer 0-23');
     }
+    final Object? rwkvModel = body['rwkvModel'];
+    final SrsRwkvModelSize? rwkvSize = switch (rwkvModel) {
+      null => null,
+      final String name =>
+        SrsRwkvModelSize.values
+            .where((SrsRwkvModelSize s) => s.persistedName == name)
+            .firstOrNull,
+      _ => null,
+    };
+    if (rwkvModel != null && rwkvSize == null) {
+      throw FormatException(
+        'rwkvModel must be one of ${SrsRwkvModelSize.values.map((SrsRwkvModelSize s) => s.persistedName).join(' / ')}',
+      );
+    }
     final Object? target = body['miningTarget'];
     if (target != null &&
         !ServerMiningTarget.values.any(
@@ -291,7 +310,16 @@ class AdminSrs {
       srs: nextSrs,
       ankiConnect: nextAc,
     );
+    final ServerSrs? srs = ctx.host.srs;
+    if (rwkvSize != null && srs == null) {
+      return _json(<String, Object?>{
+        'error': 'review is not running',
+        'reason': 'srs_unavailable',
+      }, status: 409);
+    }
     await ctx.updateConfig(next);
+    // 写设备的设置文件，已打开的库的 RWKV 服务当场换成新档位的（不重启）。
+    if (rwkvSize != null) await srs!.setRwkvModelSize(rwkvSize);
     return _json(status());
   }
 
