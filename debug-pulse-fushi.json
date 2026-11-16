@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-16T13:38:37Z",
+ "generatedAt": "2026-11-16T15:11:48Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "7ec8665e60eee9338d04b500c40d599eeb7fd628",
-  "seq": 27850
+  "sha": "ea7467d87882e5f1fa33bd565f3cf576f481443b",
+  "seq": 28014
  },
  "builds": [
   {
@@ -224,9 +224,32 @@
   }
  ],
  "pending": {
-  "headSha": "7ec8665e60eee9338d04b500c40d599eeb7fd628",
-  "headSeq": 27850,
+  "headSha": "ea7467d87882e5f1fa33bd565f3cf576f481443b",
+  "headSeq": 28014,
   "prs": [
+   3479,
+   3540,
+   3535,
+   3578,
+   3489,
+   3559,
+   3550,
+   3575,
+   3555,
+   3508,
+   3532,
+   3529,
+   3548,
+   3473,
+   3474,
+   3547,
+   3516,
+   3560,
+   3572,
+   3571,
+   3570,
+   3573,
+   3502,
    3519,
    3522,
    3549,
@@ -255,19 +278,19 @@
   "platforms": {
    "android": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43865220338"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43893622307"
    },
    "windows": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43865220344"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43893622381"
    },
    "macos": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43865220344"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43893622381"
    },
    "ios": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43865220344"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43893622381"
    }
   }
  },
@@ -519,6 +542,24 @@
    "deletions": 4,
    "labels": []
   },
+  "3473": {
+   "number": 3473,
+   "title": "fix(exit): 开始退出即同步摘掉 libmpv 回调，避免进程终止时回调进已释放跳板",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T14:18:43Z",
+   "additions": 318,
+   "deletions": 20,
+   "labels": []
+  },
+  "3474": {
+   "number": 3474,
+   "title": "fix(diagnostics): 小米 SwipeUpClean（最近任务划掉）判厂商停止，不再误报闪退",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T14:17:05Z",
+   "additions": 104,
+   "deletions": 8,
+   "labels": []
+  },
   "3475": {
    "number": 3475,
    "title": "fix(audio): 本地发音库读音查询把无读音行（forvo）算作命中 (BUG-4695)",
@@ -553,6 +594,15 @@
    "mergedAt": "2026-11-16T08:19:52Z",
    "additions": 2986,
    "deletions": 5,
+   "labels": []
+  },
+  "3479": {
+   "number": 3479,
+   "title": "fix(share): Android 文件分享异步落快照后走自有通道，修主线程整份拷贝导致的 ANR",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T15:10:56Z",
+   "additions": 437,
+   "deletions": 1,
    "labels": []
   },
   "3480": {
@@ -625,6 +675,15 @@
    "mergedAt": "2026-11-16T09:42:00Z",
    "additions": 861,
    "deletions": 106,
+   "labels": []
+  },
+  "3489": {
+   "number": 3489,
+   "title": "fix(mihon): Android 宿主补 extension-lib 的 eu.kanade.tachiyomi.AppInfo 并 R8 keep",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T14:42:10Z",
+   "additions": 162,
+   "deletions": 1,
    "labels": []
   },
   "3490": {
@@ -708,6 +767,15 @@
    "deletions": 47,
    "labels": []
   },
+  "3502": {
+   "number": 3502,
+   "title": "fix(scheduler): 推迟任务按帧节拍重查，修任务栏点 Fushi 唤不到前台（BUG-4710）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T13:56:59Z",
+   "additions": 247,
+   "deletions": 3,
+   "labels": []
+  },
   "3503": {
    "number": 3503,
    "title": "feat(diagnostics): 状态监测页与悬浮小窗（CPU / 内存 / 帧耗时 / UI 线程延迟）",
@@ -753,6 +821,15 @@
    "deletions": 17,
    "labels": []
   },
+  "3508": {
+   "number": 3508,
+   "title": "docs(bugs): BUG-4658 的 CP932 文件名解码补登拍板台（pr3444 第 2 问）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T14:32:43Z",
+   "additions": 4,
+   "deletions": 1,
+   "labels": []
+  },
   "3509": {
    "number": 3509,
    "title": "feat(feedback-cli): show --attachments 下载截图，分诊能直接看图",
@@ -778,6 +855,15 @@
    "mergedAt": "2026-11-16T11:36:20Z",
    "additions": 105,
    "deletions": 4,
+   "labels": []
+  },
+  "3516": {
+   "number": 3516,
+   "title": "游戏全部刮削：精确同名按源判唯一，跨源同名不再当歧义",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T14:12:52Z",
+   "additions": 205,
+   "deletions": 9,
    "labels": []
   },
   "3519": {
@@ -825,6 +911,33 @@
    "deletions": 7,
    "labels": []
   },
+  "3529": {
+   "number": 3529,
+   "title": "fix(apple-music): 401/403 时绕过 MusicKit 缓存重取 Music-User-Token",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T14:24:10Z",
+   "additions": 322,
+   "deletions": 45,
+   "labels": []
+  },
+  "3532": {
+   "number": 3532,
+   "title": "卡片来源回看横幅在横屏手机等矮窗口并成单行",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T14:31:35Z",
+   "additions": 309,
+   "deletions": 80,
+   "labels": []
+  },
+  "3535": {
+   "number": 3535,
+   "title": "feat(mining): 高级制卡区间条端点可拖，Shift/Ctrl 调步长",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T14:51:05Z",
+   "additions": 1045,
+   "deletions": 54,
+   "labels": []
+  },
   "3537": {
    "number": 3537,
    "title": "歌词来源：LRCLIB 与歌词插件同一份有序列表，可一起排序",
@@ -834,6 +947,33 @@
    "deletions": 237,
    "labels": []
   },
+  "3540": {
+   "number": 3540,
+   "title": "feat(manga): 漫画下载可暂停/恢复，作品页就地管理本作队列，多选下载所选（拍板台 7LwxAtJ6r0）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T14:51:14Z",
+   "additions": 1780,
+   "deletions": 205,
+   "labels": []
+  },
+  "3547": {
+   "number": 3547,
+   "title": "fix(reader): 未声明排版方向的英文等横排语言 EPUB 跟随原书时按 dc:language 推横排",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T14:14:31Z",
+   "additions": 184,
+   "deletions": 10,
+   "labels": []
+  },
+  "3548": {
+   "number": 3548,
+   "title": "fix(ai): 拉模型列表时保留上游的显示名 / 收图能力 / 单价，选中即带入",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T14:20:30Z",
+   "additions": 598,
+   "deletions": 45,
+   "labels": []
+  },
   "3549": {
    "number": 3549,
    "title": "feat(srs): 协议 4 存储侧导出、导入与旧备份转译（G11-2，不接线）",
@@ -841,6 +981,96 @@
    "mergedAt": "2026-11-16T12:17:15Z",
    "additions": 2043,
    "deletions": 87,
+   "labels": []
+  },
+  "3550": {
+   "number": 3550,
+   "title": "fushi_fsrs: fsrs 换成 crates.io 7.0.0，升级后旧参数组仍照常自动优化",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T14:37:29Z",
+   "additions": 206,
+   "deletions": 313,
+   "labels": []
+  },
+  "3555": {
+   "number": 3555,
+   "title": "fix(srs): Fushi 卡片释义区的词典插图点按放大",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T14:34:02Z",
+   "additions": 268,
+   "deletions": 17,
+   "labels": []
+  },
+  "3559": {
+   "number": 3559,
+   "title": "fix(adblock): 先暖机磁盘缓存引擎，联网刷新过期列表期间浏览器不再整页不拦",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T14:39:04Z",
+   "additions": 447,
+   "deletions": 33,
+   "labels": []
+  },
+  "3560": {
+   "number": 3560,
+   "title": "fix(srs): 复习卡主词典收起按钮改为纯箭头，不再带底色顶出卡片圆角",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T14:11:51Z",
+   "additions": 23,
+   "deletions": 6,
+   "labels": []
+  },
+  "3570": {
+   "number": 3570,
+   "title": "G7-4e 分发器命令对照表 + 补小命令（不接线）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T14:10:14Z",
+   "additions": 1258,
+   "deletions": 20,
+   "labels": []
+  },
+  "3571": {
+   "number": 3571,
+   "title": "G7-4c 出卡读命令 study 的新代实现（不接线）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T14:10:25Z",
+   "additions": 2880,
+   "deletions": 458,
+   "labels": []
+  },
+  "3572": {
+   "number": 3572,
+   "title": "G7-4d：浏览类读命令的新代实现（不接线）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T14:11:00Z",
+   "additions": 5195,
+   "deletions": 767,
+   "labels": []
+  },
+  "3573": {
+   "number": 3573,
+   "title": "test: 修 develop 合并错位的两处测试红（SrsDbStore.open 签名、漫画 JS harness 缺取图段）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T14:00:27Z",
+   "additions": 17,
+   "deletions": 1,
+   "labels": []
+  },
+  "3575": {
+   "number": 3575,
+   "title": "fix(ui): MD3 扩展 FAB 长文字按父级宽度省略，不再画出按钮外",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T14:36:19Z",
+   "additions": 148,
+   "deletions": 15,
+   "labels": []
+  },
+  "3578": {
+   "number": 3578,
+   "title": "fix(manga): 双页跨页对齐物理像素并重叠一像素，消除中间细缝",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T14:47:25Z",
+   "additions": 124,
+   "deletions": 2,
    "labels": []
   }
  }
