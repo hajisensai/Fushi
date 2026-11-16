@@ -817,6 +817,10 @@ fn keyed_reads_never_walk_the_whole_collection() {
         json!({"q": "notes", "ids": [N1]}),
         json!({"q": "cards", "notes": [N1]}),
         json!({"q": "cards", "ids": [c1]}),
+        json!({"q": "cards", "decks": [default_deck_id(P)]}),
+        json!({"q": "cards", "templates": ["t1"]}),
+        json!({"q": "cards", "decks": [default_deck_id(P)], "templates": ["t1"], "visibleOnly": true}),
+        json!({"q": "cards", "notes": [N1], "decks": [default_deck_id(P)]}),
         json!({"q": "pending_notes"}),
         json!({"q": "edits", "kind": "note", "ids": [N1]}),
         json!({"q": "logs", "cards": [c1]}),
@@ -1060,4 +1064,244 @@ fn purged_writes_show_as_purged_until_they_become_holes() {
     );
     // 协议 3 的骨架在灌入时不过界（空洞）：新代报的已清除项不多于协议 3。
     assert!(purged.len() <= old_purged, "{purged:?} vs {old_purged}");
+}
+
+// ---------------------------------------------------------------------- 统计
+
+/// 两份 JSON 相同：字符串按 ID 归一后相等，数按 1e-9 的相对误差（卡片上的浮点和按行序累加，新代按卡 ID 排，协议 3
+/// 的行序随查询计划：同一组数换个顺序相加只差末位，模块 `stats` 文件头）。
+fn close(p: &Pair<'_>, a: &Value, b: &Value, at: &str) {
+    match (a, b) {
+        (Value::String(x), Value::String(y)) => {
+            assert_eq!(p.canon(x), p.canon(y), "{at}");
+        }
+        (Value::Number(x), Value::Number(y)) => {
+            if let (Some(x), Some(y)) = (x.as_i64(), y.as_i64()) {
+                assert_eq!(x, y, "{at}");
+            } else {
+                let (x, y) = (x.as_f64().unwrap(), y.as_f64().unwrap());
+                assert!(
+                    (x - y).abs() <= 1e-9 * x.abs().max(y.abs()).max(1.0),
+                    "{at}: {x} vs {y}"
+                );
+            }
+        }
+        (Value::Array(x), Value::Array(y)) => {
+            assert_eq!(x.len(), y.len(), "{at}: {a} vs {b}");
+            for (i, (x, y)) in x.iter().zip(y).enumerate() {
+                close(p, x, y, &format!("{at}[{i}]"));
+            }
+        }
+        (Value::Object(x), Value::Object(y)) => {
+            let kx: BTreeSet<String> = x.keys().map(|k| p.canon(k)).collect();
+            let ky: BTreeSet<String> = y.keys().map(|k| p.canon(k)).collect();
+            assert_eq!(kx, ky, "{at}");
+            for (k, v) in x {
+                let w = y
+                    .iter()
+                    .find(|(k2, _)| p.canon(k2) == p.canon(k))
+                    .map(|(_, w)| w)
+                    .unwrap();
+                close(p, v, w, &format!("{at}.{k}"));
+            }
+        }
+        _ => assert_eq!(a, b, "{at}"),
+    }
+}
+
+type StatsFn = fn(&crate::store::stats::Snapshot, &Value) -> Result<Value, String>;
+
+/// 协议 3 一侧的统计：同一份缓存配置重建缓存表之后读原料，再走同一份聚合。
+fn p3_stats(p: &Pair<'_>, f: StatsFn, req: &Value) -> Value {
+    let w = p.d.core.writer().unwrap();
+    on_p3(&w, &p.cfg, |c| {
+        let snap = crate::store::stats::Snapshot::load(c, P).unwrap();
+        f(&snap, req).unwrap()
+    })
+}
+
+/// 统计三条命令与协议 3 对拍：不同范围、牌组子集、可提取度模型、RWKV 回忆率；另验回包不空（场景真有卡与复习）。
+#[test]
+fn stats_match_protocol_3() {
+    use super::stats::{stats_recall, stats_report, stats_rows};
+    use crate::store::stats::{recall_of, report_of, rows_of};
+    let d = library();
+    let p = Pair::new(&d);
+    let t = Truth::new(&p.g4);
+    let deck = default_deck_id(P);
+    let c1 = card(N1, "t1");
+    let mut base = json!({
+        "key": "k", "now": T0 + 3 * DAY, "utcOff": 0, "rollover": 4,
+        "models": [["fsrs6"]], "fallbackModel": 0, "fallbackDesired": 0.85,
+    });
+    base["deckModels"] = json!({ deck.as_str(): 0 });
+    base["desired"] = json!({ deck.as_str(): 0.9 });
+    let with = |extra: Value| -> Value {
+        let mut r = base.clone();
+        for (k, v) in extra.as_object().unwrap() {
+            r[k] = v.clone();
+        }
+        r
+    };
+    let reqs = [
+        with(json!({"range": "all"})),
+        with(json!({"range": "month", "decks": [deck.clone()]})),
+        with(json!({"range": "year", "decks": ["no-such-deck"]})),
+        with(json!({"windows": {"w": [null, 0], "v": [7, 0]}, "future": 40})),
+        with(json!({"recallDecks": [deck.clone()], "recall": {"ids": [c1.clone()], "r": [0.42]}})),
+        json!({"now": T0 + DAY, "utcOff": 540, "rollover": 0}),
+    ];
+    let sorted = |v: &Value, k: &str| -> Value {
+        let mut xs = v[k].as_array().unwrap().clone();
+        xs.sort_by_key(|x| {
+            (
+                p.canon(x[0].as_str().unwrap_or("")),
+                x.get(1).cloned().unwrap_or(Value::Null).to_string(),
+            )
+        });
+        Value::Array(xs)
+    };
+    for req in &reqs {
+        let old = p3_stats(&p, report_of, req);
+        close(
+            &p,
+            &old,
+            &stats_report(&t, p.col, req).unwrap(),
+            &format!("report {req}"),
+        );
+        // 回忆率候选按卡片行序（调用方按卡 ID 对回去，顺序没有语义）：排过再比。
+        let old = p3_stats(&p, recall_of, req);
+        let new = stats_recall(&t, p.col, req).unwrap();
+        close(
+            &p,
+            &sorted(&old, "cards"),
+            &sorted(&new, "cards"),
+            &format!("recall {req}"),
+        );
+        let (old, new) = (
+            p3_stats(&p, rows_of, req),
+            stats_rows(&t, p.col, req).unwrap(),
+        );
+        // 逐卡 / 逐条的行：按 ID 排过再比（协议 3 的行序随查询计划）。
+        for k in ["cards", "reviews", "maturity"] {
+            close(
+                &p,
+                &sorted(&old, k),
+                &sorted(&new, k),
+                &format!("rows.{k} {req}"),
+            );
+        }
+        for k in ["today", "sources", "retrievabilityAvailable"] {
+            close(&p, &old[k], &new[k], &format!("rows.{k} {req}"));
+        }
+        assert!(p.g4.is_autocommit());
+    }
+    let rows = stats_rows(&t, p.col, &reqs[0]).unwrap();
+    assert!(rows["cards"].as_array().unwrap().len() >= 4, "{rows}");
+    assert!(rows["reviews"].as_array().unwrap().len() >= 3, "{rows}");
+    let recall = stats_recall(&t, p.col, &reqs[4]).unwrap();
+    assert!(!recall["cards"].as_array().unwrap().is_empty(), "{recall}");
+    // 缺了日界是调用方的 bug：报错，不留事务。
+    assert!(stats_report(&t, p.col, &json!({"now": T0})).is_err());
+    assert!(p.g4.is_autocommit());
+}
+
+// ---------------------------------------------------------------------- 列式批量读与数字 id
+
+/// `card_columns` / `anki_resolve` / `anki_notes_info` 与协议 3 `store/bulk.rs` 对拍（这个库没有带盐的 ID，两侧的数字
+/// id 相同）。`card_columns` 按行的多重集比；`anki_notes_info` 每条笔记的可见卡按卡 ID 排过再比（协议 3 依计划）。
+#[test]
+fn columns_and_numeric_ids_match_protocol_3() {
+    use super::columns::{anki_notes_info, anki_resolve, card_columns};
+    use crate::store::bulk;
+    let d = library();
+    let p = Pair::new(&d);
+    let t = Truth::new(&p.g4);
+    let w = d.core.writer().unwrap();
+    let all = || (0..23).map(|_| Id).collect::<Vec<Norm>>();
+    for req in [
+        json!({}),
+        json!({"visibleOnly": true}),
+        json!({"fields": ["id", "note_id", "queue", "reps", "stability", "last_log_id"]}),
+    ] {
+        let old = on_p3(&w, &p.cfg, |c| bulk::card_columns(c, P, &req).unwrap());
+        let new = card_columns(&t, p.col, &req).unwrap();
+        let n = decode(&new).0.len();
+        let norms: Vec<Norm> = all().into_iter().take(n).collect();
+        let (of, nf) = (
+            vec![("t".to_owned(), old)],
+            vec![("t".to_owned(), new.clone())],
+        );
+        assert_eq!(Pair::names(&of, "t"), Pair::names(&nf, "t"), "{req}");
+        assert_eq!(p.rows(&of, "t", &norms), p.rows(&nf, "t", &norms), "{req}");
+        assert!(!decode(&new).1.is_empty());
+        // 按卡 ID 排（顺序契约）。
+        let ids: Vec<(u8, Vec<u8>)> = decode(&new).1.iter().map(|r| sql_key(&r[0])).collect();
+        assert!(ids.windows(2).all(|x| x[0] < x[1]), "{req}");
+    }
+    assert!(card_columns(&t, p.col, &json!({"fields": ["nope"]})).is_err());
+    let num = crate::store::schema::anki_numeric_id;
+    let (c1, c2) = (card(N1, "t1"), card(N1, "t2"));
+    let req = json!({
+        "notes": [num(N1), num(N4), 5, num(N2), "x", num(N1)],
+        "cards": [num(&c1), num(&c2), num(N1)],
+    });
+    let old = on_p3(&w, &p.cfg, |c| bulk::anki_resolve(c, P, &req).unwrap());
+    let new = anki_resolve(&t, p.col, &req).unwrap();
+    close(&p, &old, &new, "anki_resolve");
+    assert_eq!(new["notes"][0], json!(N1));
+    assert_eq!(new["cards"][1], json!(c2));
+    assert_eq!(new["notes"][2], Value::Null);
+    let req = json!({"notes": [num(N1), num(N2), num(N3), num(N4), 7, num(N1)]});
+    let sort_cards = |mut v: Value| -> Value {
+        for n in v["notes"].as_array_mut().unwrap() {
+            if let Some(cs) = n.get_mut("c").and_then(Value::as_array_mut) {
+                cs.sort_by_key(|c| p.canon(c[1].as_str().unwrap()));
+            }
+            // 字段：协议 3 按修改记录的落库序，新代按规范键序（调用方按字段 ID 建表，顺序没有语义）。
+            if let Some(fs) = n.get_mut("f").and_then(Value::as_array_mut) {
+                fs.sort_by_key(|f| p.canon(f[0].as_str().unwrap()));
+            }
+        }
+        v
+    };
+    let old = on_p3(&w, &p.cfg, |c| bulk::anki_notes_info(c, P, &req).unwrap());
+    let new = anki_notes_info(&t, p.col, &req).unwrap();
+    close(
+        &p,
+        &sort_cards(old),
+        &sort_cards(new.clone()),
+        "anki_notes_info",
+    );
+    // N1 有内容、有两张可见卡；N4 已删除 = null。
+    assert_eq!(new["notes"][0]["c"].as_array().unwrap().len(), 2, "{new}");
+    assert!(!new["notes"][0]["f"].as_array().unwrap().is_empty());
+    assert_eq!(new["notes"][3], Value::Null);
+    assert!(p.g4.is_autocommit());
+}
+
+/// `lineages` 与协议 3 `caches::lineage_ids` 对拍：后继卡带出前身、没有前身的卡只有自己、不存在的卡只有自己、空输入。
+#[test]
+fn lineages_match_protocol_3() {
+    use super::lineage::lineages;
+    let d = library();
+    let p = Pair::new(&d);
+    let t = Truth::new(&p.g4);
+    let w = d.core.writer().unwrap();
+    let (c1, c2) = (card(N1, "t1"), card(N1, "t2"));
+    let cards = vec![c2.clone(), c1.clone(), "missing".to_owned(), c2.clone()];
+    let old = on_p3(&w, &p.cfg, |c| {
+        crate::store::caches::lineage_ids(c, &cards).unwrap()
+    });
+    let new = lineages(&t, p.col, &cards).unwrap();
+    let canon = |v: &Vec<Vec<String>>| -> Vec<Vec<String>> {
+        v.iter()
+            .map(|l| l.iter().map(|x| p.canon(x)).collect())
+            .collect()
+    };
+    assert_eq!(canon(&old), canon(&new));
+    assert_eq!(new[0], [c2.clone(), c1.clone()]);
+    assert_eq!(new[1], [c1]);
+    assert!(lineages(&t, p.col, &[]).unwrap().is_empty());
+    assert!(p.g4.is_autocommit());
 }
