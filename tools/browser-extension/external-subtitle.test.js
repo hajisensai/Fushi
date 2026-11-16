@@ -309,6 +309,44 @@ test('⑤b 时间重叠的 cue 同时叠字：同起点两句都画，先开始�
   assert.deepStrictEqual(overlayLines(findByIdDeep(h.html, 'fushi-subtitle-overlay')), ['交错的第三句']);
 });
 
+test('⑤c 时间重叠的 cue：单句口径（快捷键 / 学习统计 / 制卡取句）在长句后半段回落到长句，Shift 悬停按行取窗', () => {
+  const h = loadPanel({
+    hostname: 'example.com', pathname: '/video/1',
+    stored: { netflixSubtitlePanel: true, subtitleOverlayEnabled: true },
+    response: OK([
+      { text: 'さすがヒルデ。策士ね。', startMs: 1000, endMs: 5000 },
+      { text: 'ニア！言い方！', startMs: 1000, endMs: 3000 },
+    ], 'ass'),
+  });
+  h.loadFile('overlap.ass', 'dummy');
+  h.video.currentTime = 2;
+  h.tick();
+  // 两句都在：单句口径取起点最晚（同起点取轨内靠后）的那条。
+  assert.strictEqual(h.windowObj.fushiSubtitleStudyCue(2000).text, 'ニア！言い方！');
+  // Shift 悬停：按指针所在行给 cue 窗；不在覆盖层里的节点 → null。
+  const overlay = findByIdDeep(h.html, 'fushi-subtitle-overlay');
+  const textLayer = overlay.children.find((c) => c.className === 'fushi-subtitle-overlay-text');
+  assert.deepStrictEqual(
+    JSON.parse(JSON.stringify(h.windowObj.fushiSubtitleOverlayCueWindowAt(textLayer.children[0]))),
+    { text: 'さすがヒルデ。策士ね。', startMs: 1000, endMs: 5000 });
+  assert.deepStrictEqual(
+    JSON.parse(JSON.stringify(h.windowObj.fushiSubtitleOverlayCueWindowAt(textLayer.children[1]))),
+    { text: 'ニア！言い方！', startMs: 1000, endMs: 3000 });
+  assert.strictEqual(h.windowObj.fushiSubtitleOverlayCueWindowAt(h.body), null);
+
+  // 短句已结束、长句还在：旧判据只看起点最晚那条 → -1 / null。
+  h.video.currentTime = 3.5;
+  h.tick();
+  const study = h.windowObj.fushiSubtitleStudyCue(3500);
+  assert.ok(study, '长句仍在有效期内，学习统计不能当成句间空隙');
+  assert.strictEqual(study.text, 'さすがヒルデ。策士ね。');
+  assert.strictEqual(study.index, 0);
+  const cur = h.windowObj.fushiSubtitleCurrentCue();
+  assert.ok(cur, '复制 / 收藏的当前句不能为空');
+  assert.strictEqual(cur.text, 'さすがヒルデ。策士ね。');
+  assert.strictEqual(h.windowObj.fushiSubtitleStudyCue(5500), null, '全部结束后才是空隙');
+});
+
 // BUG-3145：Chrome 自己的侧边栏入口 / 「查字幕」装轨不经拖放，字幕能力总门（netflixSubtitlePanel，
 // 缺省关）没人去开——tick() 直接返回，覆盖层一个字都不画；用户要把「Fushi 字幕」拨关再拨开
 // （那一下顺带写开总门）字幕才「导进去」。装外挂轨本身就是开门的用户意图。

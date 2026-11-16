@@ -2624,8 +2624,11 @@ function fushiShiftScanAt(x, y) {
   // 反馈 #RvwGCEtAsd：命中站点原生字幕时带上**被悬停那一行**的整轨精确窗。YouTube 滚动自动字幕
   // 屏上同时有上下两行，按播放时刻只能取到下面那行；不带窗，悬停上一行的词就会配上下一行的
   // 例句与片段。不在原生字幕里 / 整轨对不上该行 → null，制卡照旧按播放时刻取整轨。
-  const cueWindow = typeof fushiCaptionLineCueWindowAt === 'function'
-    ? fushiCaptionLineCueWindowAt(hit.node) : null;
+  // BUG-4717：命中扩展自绘覆盖层时同理——时间重叠的 cue 会多行同屏，带被悬停那一行的 cue 窗。
+  const overlayWindow = typeof window.fushiSubtitleOverlayCueWindowAt === 'function'
+    ? window.fushiSubtitleOverlayCueWindowAt(hit.node) : null;
+  const cueWindow = overlayWindow || (typeof fushiCaptionLineCueWindowAt === 'function'
+    ? fushiCaptionLineCueWindowAt(hit.node) : null);
   fushiSendLookup(term, fushiAnchorRect, cueWindow, false, hit, true, termRuby);
 }
 // ── canvas 阅读器抓图取词（canvas-ocr.js）────────────────────────────────────────────
