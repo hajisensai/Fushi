@@ -1653,7 +1653,7 @@ class BackupRestoreService {
       isNetworkOnlyVideoPath(videoPath) ||
       videoPath.startsWith('$kAnimeSourceVideoPathScheme://') ||
       videoPath.startsWith('$kSourceLibrarySftpScheme://') ||
-      File(videoPath).existsSync();
+      videoMemberExistsSync(videoPath);
 
   /// 把覆盖前快照里的书库行、阅读进度、统计**只补缺**合并进当前库（BUG-4695）：
   /// 当前库缺的行插入，已有的行一律不动（[BackupMergeEngine] 的 `fillMissingOnly`），

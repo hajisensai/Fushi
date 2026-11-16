@@ -4,6 +4,7 @@ import 'package:drift/drift.dart' show Value, Variable;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/sync/backup_service.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/video/dvd/dvd_title_path.dart';
 import 'package:path/path.dart' as p;
 
 import 'temp_dir_cleanup.dart';
@@ -178,6 +179,68 @@ void main() {
     expect(
       File(p.join(curDir.path, 'fushi.db.merge-preserve.json')).existsSync(),
       isFalse,
+    );
+  });
+
+  test('a DVD title (virtual library path) whose disc is still on disk counts '
+      'as reachable and is restored from the snapshot', () async {
+    // DVD title 是虚拟路径 `<盘根>/VIDEO_TS/TITLE_nn.dvdtitle`，盘上没有这个文件；
+    // 盘本身（VIDEO_TS.IFO）还在，这一条就还能放。
+    final String discRoot = p.join(curDir.path, 'discs', 'MOVIE');
+    final File ifo = File(p.join(discRoot, 'VIDEO_TS', 'VIDEO_TS.IFO'))
+      ..createSync(recursive: true);
+    ifo.writeAsStringSync('DVDVIDEO-VMG');
+    final String dvdTitle = dvdTitlePath(discRoot, 1);
+    expect(File(dvdTitle).existsSync(), isFalse);
+    final String goneVideo = p.join(curDir.path, 'videos', 'gone.mp4');
+
+    final FushiDatabase cur = FushiDatabase(curDir.path);
+    await cur.upsertVideoBook(
+      VideoBooksCompanion.insert(
+        bookUid: 'video/dvd',
+        title: 'DVD',
+        videoPath: dvdTitle,
+      ),
+    );
+    await cur.upsertVideoBook(
+      VideoBooksCompanion.insert(
+        bookUid: 'video/gone',
+        title: 'Gone',
+        videoPath: goneVideo,
+      ),
+    );
+    await cur.close();
+
+    final FushiDatabase src = FushiDatabase(srcDir.path);
+    final String zipPath = p.join(zipDir.path, 'empty.zip');
+    await BackupService(
+      db: src,
+      dbDirectory: srcDir.path,
+      appVersion: '1.0.0',
+    ).createBackup(zipPath);
+    await src.close();
+    await BackupRestoreService.restoreBackup(
+      dbDirectory: curDir.path,
+      zipPath: zipPath,
+    );
+
+    final FushiDatabase live = FushiDatabase(curDir.path);
+    final OverwriteSnapshotPreview preview =
+        (await BackupRestoreService.previewOverwriteSnapshot(
+          dbDirectory: curDir.path,
+          liveDb: live,
+        ))!;
+    expect(preview.missingVideoCount, 1);
+    await live.close();
+
+    await BackupRestoreService.mergeFromOverwriteSnapshot(
+      dbDirectory: curDir.path,
+    );
+    final FushiDatabase after = FushiDatabase(curDir.path);
+    addTearDown(after.close);
+    expect(
+      (await after.allVideoBooks()).map((VideoBookRow v) => v.videoPath),
+      <String>[dvdTitle],
     );
   });
 
