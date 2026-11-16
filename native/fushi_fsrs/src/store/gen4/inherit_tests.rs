@@ -278,10 +278,10 @@ fn old_root_segments_are_translated_into_the_heritage_log() {
         .map(|e| e.slot().unwrap())
         .collect();
     assert_eq!(have, want);
-    // 段 2 先到时还在待投递，它的两端没记；段 1 的末尾记了。
+    // 段的两端在收尾、投完待投递之后记：段 2 先到也记得上。
     assert_eq!(
         t.tx(|t| t.marks(col, &id(OLD))).unwrap(),
-        vec![(6, chains[5])]
+        vec![(6, chains[5]), (10, chains[9])]
     );
     let relayed = seg3::relay_pack(&s2, None, None).unwrap();
     let (got, _) = scavenge(&t, col, "dir", &[&relayed, &s1], None);
@@ -393,6 +393,11 @@ fn upload_fills_the_location_and_others_receive_it_identically() {
         .unwrap();
     assert_eq!(got, vec![landed(0, 0, 4), landed(6, 0, 0)]);
     assert_eq!(log(&t2, col2, &id(OLD)), log(&t, col, &id(OLD)));
+    // 收下的承袭段两端成了对方的切点：它也能再往别的位置传。
+    assert_eq!(
+        t2.tx(|t| t.marks(col2, &id(OLD))).unwrap(),
+        t.tx(|t| t.marks(col, &id(OLD))).unwrap()
+    );
     // 本机看到自己传的段：都满足了。
     let (p1, p2) = (plan.put[0].path.clone(), plan.put[1].path.clone());
     let (seen, plan, _) = plan_after(&t, col, 4, &[(&p1, &packed4[0]), (&p2, &packed4[1])], None);
@@ -592,4 +597,23 @@ fn the_uploader_needs_a_transaction_and_sees_each_file_once() {
         Ok(())
     });
     assert!(twice.unwrap_err().contains("seen twice"));
+}
+
+/// 长的旧段每 4096 条记一个完整链值（与迁移灌入同口径），切承袭段才有中间的切点。
+#[test]
+fn long_old_segments_leave_a_cut_point_every_4096_slots() {
+    let conn = open_in_memory().unwrap();
+    let t = Truth::new(&conn);
+    let col = ready(&t);
+    peer(&t, col, id(OLD), key_of(OLD).public());
+    let (ops, chains) = old_log(4097);
+    let (_, s) = old_seg(&ops, &chains, (1, 4097), None);
+    let (got, _) = scavenge(&t, col, "dir", &[&s], None);
+    assert_eq!(got, vec![landed(4097, 0, 0)]);
+    assert_eq!(
+        t.tx(|t| t.marks(col, &id(OLD))).unwrap(),
+        vec![(4096, chains[4095]), (4097, chains[4096])]
+    );
+    let (_, plan, _) = plan_after(&t, col, 4000, &[], None);
+    assert_eq!(ranges(&plan), vec![(1, 4096, false), (4097, 4097, false)]);
 }

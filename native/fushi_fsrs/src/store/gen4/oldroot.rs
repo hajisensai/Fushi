@@ -261,3 +261,7 @@ pub fn fence_writes(
     }
     Ok(out)
 }
+
+#[cfg(test)]
+#[path = "oldroot_tests.rs"]
+mod tests;

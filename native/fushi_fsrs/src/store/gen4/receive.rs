@@ -190,6 +190,8 @@ pub struct Receiver<'t, 'c> {
     /// 各设备日志的末尾（本批内随落库更新）。
     applied: Vv,
     tally: Received,
+    /// 这一批段给出的完整原链值 (设备, seq, 链值)，收尾时记成记号（[Receiver::mark_due]）。
+    marks_due: Vec<(Id, u64, Chain)>,
 }
 
 impl<'t, 'c> Receiver<'t, 'c> {
@@ -220,6 +222,7 @@ impl<'t, 'c> Receiver<'t, 'c> {
             me,
             applied: t.applied(col)?,
             tally: Received::default(),
+            marks_due: Vec::new(),
         })
     }
 
@@ -561,14 +564,11 @@ impl<'t, 'c> Receiver<'t, 'c> {
             header.t_version,
             slots,
         )?;
-        // 段头的两端是上传者签过的完整原链值（末端另有末槽的链指纹核对），记下来给承袭上传切段用（inherit.rs）。
-        self.mark_ends(
-            &header.device,
-            &[
-                (header.first - 1, header.prev_chain),
-                (header.last, header.last_chain),
-            ],
-        )?;
+        // 段头的两端是上传者签过的完整原链值（末端另有末槽的链指纹核对），收尾时记下来给承袭上传切段用（inherit.rs）。
+        self.marks_due
+            .push((header.device, header.first - 1, header.prev_chain));
+        self.marks_due
+            .push((header.device, header.last, header.last_chain));
         Ok(taken)
     }
 
@@ -609,19 +609,16 @@ impl<'t, 'c> Receiver<'t, 'c> {
         })
     }
 
-    /// 把段里给出的完整原链值记成承袭日志的链值记号：只记本机日志里已有、链指纹相符的 seq（待投递的、分叉另一支的
-    /// 不记；seq 0 是链的起点，不用记）。
-    fn mark_ends(&mut self, device: &Id, chains: &[(u64, Chain)]) -> Result<(), String> {
-        for (seq, chain) in chains {
-            if *seq == 0 {
+    /// 把这一批段里给出的完整原链值记成承袭日志的链值记号（[Receiver::finish] 在投完待投递之后调，所以乱序到达的段
+    /// 一样记得上）：只记本机日志里已有、链指纹相符的 seq（还在待投递的、分叉另一支的不记；seq 0 是链的起点，不用记）。
+    fn mark_due(&mut self) -> Result<(), String> {
+        for (device, seq, chain) in std::mem::take(&mut self.marks_due) {
+            if seq == 0 {
                 continue;
             }
-            let id = OpId {
-                device: *device,
-                seq: *seq,
-            };
-            if self.t.entry(self.col, &id)?.and_then(|e| e.fp) == Some(fingerprint(chain)) {
-                self.t.set_mark(self.col, device, *seq, chain)?;
+            let id = OpId { device, seq };
+            if self.t.entry(self.col, &id)?.and_then(|e| e.fp) == Some(fingerprint(&chain)) {
+                self.t.set_mark(self.col, &device, seq, &chain)?;
             }
         }
         Ok(())
@@ -718,7 +715,8 @@ impl<'t, 'c> Receiver<'t, 'c> {
             T_VERSION,
             slots.into_iter().map(Ok),
         )?;
-        self.mark_ends(&header.device, &marks)?;
+        self.marks_due
+            .extend(marks.into_iter().map(|(seq, c)| (header.device, seq, c)));
         Ok(taken)
     }
 
@@ -776,6 +774,7 @@ impl<'t, 'c> Receiver<'t, 'c> {
         self.tally.diverged_waiting = last_pass.diverged.into_iter().collect();
         self.tally.waiting = self.t.waiting(self.col)?.len() as u64;
         self.tally.pending = self.t.pending(self.col)?.len() as u64;
+        self.mark_due()?;
         self.tally.settled = ingest_settle(self.t, &mut self.idx, self.col, self.mode)?;
         Ok(self.tally)
     }
