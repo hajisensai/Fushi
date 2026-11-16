@@ -6507,6 +6507,8 @@
   "music_lyrics_backdrop_style_pixi": "Pixi renderer",
   "music_lyrics_backdrop_style_title": "Fluid style",
   "music_lyrics_backdrop_title": "Lyrics page background",
+  "music_lyrics_blur_inactive_hint": "Làm mờ nhẹ các dòng lời bài hát khác dòng hiện tại. Tắt để giữ dòng trước và dòng sau rõ nét",
+  "music_lyrics_blur_inactive_title": "Làm mờ các dòng xung quanh",
   "music_lyrics_choose_source": "Choose lyrics source",
   "music_lyrics_empty": "No lyrics for this track",
   "music_lyrics_export_ttml": "Export TTML next to the audio file",

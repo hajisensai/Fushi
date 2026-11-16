@@ -6507,6 +6507,8 @@
   "music_lyrics_backdrop_style_pixi": "Pixi 渲染器",
   "music_lyrics_backdrop_style_title": "流体样式",
   "music_lyrics_backdrop_title": "歌词页背景",
+  "music_lyrics_blur_inactive_hint": "歌词（含 MV 页）中当前行以外的歌词轻微模糊；关闭后上一句和下一句保持清晰",
+  "music_lyrics_blur_inactive_title": "模糊非当前行",
   "music_lyrics_choose_source": "选择歌词来源",
   "music_lyrics_empty": "这首歌没有歌词",
   "music_lyrics_export_ttml": "导出 TTML 到音频文件旁",

@@ -621,6 +621,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // String（默认 'mesh'）：歌词页流体背景算法 pixi / mesh / classic
   // （MusicLyricsBackdropStyle.prefValue）。
   'music_lyrics_backdrop_style',
+  // bool（默认 true）：歌词页 / MV 结构化歌词里非当前行轻模糊；关掉后上下句保持清晰
+  // （学习时要看前后句，GitHub #3354）。设备本地观感偏好（KaraokeLyricsAppearance.blurInactive）。
+  'music_lyrics_blur_inactive',
   // String（默认 'split'）：歌词页布局 split（左封面右歌词）/ stage（歌词居中 +
   // 底部停靠条）/ disc（唱片 + 一行歌词）。设备本地观感偏好。
   'music_lyrics_layout',

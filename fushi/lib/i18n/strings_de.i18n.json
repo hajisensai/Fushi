@@ -6507,6 +6507,8 @@
   "music_lyrics_backdrop_style_pixi": "Pixi renderer",
   "music_lyrics_backdrop_style_title": "Fluid style",
   "music_lyrics_backdrop_title": "Lyrics page background",
+  "music_lyrics_blur_inactive_hint": "Liedtextzeilen außer der aktuellen leicht weichzeichnen. Ausschalten, damit vorherige und nächste Zeile scharf bleiben",
+  "music_lyrics_blur_inactive_title": "Umgebende Zeilen weichzeichnen",
   "music_lyrics_choose_source": "Choose lyrics source",
   "music_lyrics_empty": "No lyrics for this track",
   "music_lyrics_export_ttml": "Export TTML next to the audio file",

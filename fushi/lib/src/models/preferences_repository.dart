@@ -5949,6 +5949,16 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 逐字歌词非当前行轻模糊（[KaraokeLyricsAppearance.blurInactive]）。默认开；关掉后
+  /// 上一句 / 下一句保持清晰（GitHub #3354）。
+  bool get musicLyricsBlurInactive =>
+      getPref('music_lyrics_blur_inactive', defaultValue: true) == true;
+
+  Future<void> setMusicLyricsBlurInactive(bool value) async {
+    await setPref('music_lyrics_blur_inactive', value);
+    notifyListeners();
+  }
+
   /// 桌面歌词（设计 §6.2：Android 悬浮窗 / Windows 置顶穿透窗）。默认关。
   bool get musicDesktopLyrics =>
       getPref('music_desktop_lyrics', defaultValue: false) == true;

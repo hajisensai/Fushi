@@ -889,6 +889,9 @@ class _MusicKaraokeStagePageState extends ConsumerState<MusicKaraokeStagePage> {
           offsetMs: _lyricsOffsetMs,
           onSeek: (int ms) =>
               unawaited(_player.seek(Duration(milliseconds: ms + _mvOffsetMs))),
+          appearance: KaraokeLyricsAppearance(
+            blurInactive: _app.musicLyricsBlurInactive,
+          ),
         ),
       ),
     );

@@ -6507,6 +6507,8 @@
   "music_lyrics_backdrop_style_pixi": "Pixi renderer",
   "music_lyrics_backdrop_style_title": "Fluid style",
   "music_lyrics_backdrop_title": "Lyrics page background",
+  "music_lyrics_blur_inactive_hint": "현재 줄 이외의 가사를 살짝 흐리게 표시합니다. 끄면 이전 줄과 다음 줄도 선명하게 보입니다",
+  "music_lyrics_blur_inactive_title": "현재 줄 외 흐리게",
   "music_lyrics_choose_source": "Choose lyrics source",
   "music_lyrics_empty": "No lyrics for this track",
   "music_lyrics_export_ttml": "Export TTML next to the audio file",
