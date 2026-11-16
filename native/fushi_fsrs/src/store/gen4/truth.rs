@@ -70,6 +70,7 @@ use rusqlite::{Connection, OptionalExtension, Row, params};
 
 use super::pack::{self, F_RAW3, F_STAMP, Names, tv_bits, tv_of};
 use super::schema::{in_tx, k_dev, k_range, k_seq, opk, sql};
+use crate::gen4::head::PrevIdentity;
 use crate::gen4::heritage::{Alias, Fp, HeritageSlot, Raw3, SlotBody, fingerprint};
 use crate::gen4::name::{read_name, write_name};
 use crate::gen4::op::{
@@ -78,11 +79,17 @@ use crate::gen4::op::{
 use crate::gen4::stamp::HeritageStamp;
 use crate::gen4::translate::{Joined, applied_body, dedup_slot, join_slots};
 use crate::sync2::codec::{Reader, Writer};
-use crate::sync2::hlc::Hlc;
+use crate::sync2::hlc::{Clock, Hlc};
 use crate::sync2::id::Id;
+use crate::sync2::keys::DeviceKey;
 use crate::sync2::op as v3;
 use crate::sync2::segment::{CHAIN_ZERO, Chain};
 use crate::sync2::vv::{OpId, Vv};
+
+/// 本机身份（`self_`）与换身份（G8-6）。
+mod own;
+pub use own::Rotated;
+pub(crate) use own::{NativeStep, fork_key};
 
 /// `devs.kind`：原生日志。
 pub const DEV_NATIVE: i64 = 0;
@@ -224,17 +231,99 @@ pub struct Peer {
     pub first_seen: Option<i64>,
 }
 
-/// 本机在一个集合里的身份（`self_` 表；设计 §3.3）。原生写入者（`native.rs`）从这里取设备 ID 与时钟。
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// 本机在一个集合里的身份（`self_` 表；设计 §3.3）。原生写入者（`native.rs`）从这里取设备 ID 与时钟；换身份
+/// （G8-6，`truth/own.rs` 的 [Truth::rotate_identity]）整行换掉。本机身份只有这一个类型、这一组读写
+/// （[Truth::self_identity] / [Truth::create_self] / [Truth::set_self_hlc] / 换身份）。
+///
+/// `Debug` 不打印签名钥匙种子（日志、断言失败信息里不能出现私钥）。
+#[derive(Clone, PartialEq, Eq)]
 pub struct SelfId {
     pub device: Id,
-    /// 签名钥匙种子（Ed25519）。
+    /// 签名钥匙种子（Ed25519）。换身份沿用同一把（§3.3）。
     pub sk: [u8; 32],
-    /// 本机时钟发出过的最大 HLC（`device` 恒为本机）。存成文本 `<wall>:<logical>`（[hlc_text]），只收规范形。
+    /// 本机时钟发出过 / 吸收过的最大 HLC（`device` 恒为本机）。存成文本 `<wall>:<logical>`（[hlc_text]），只收规范形。
     pub hlc: Hlc,
-    /// 换身份之前的上一个身份在它日志末尾的位置（没换过 = None）。由换身份（G8-6）写。
-    pub prev: Option<(OpId, Chain)>,
+    /// 换身份之前的上一个身份冻结在哪（没换过 = None）。由换身份（G8-6）写，形状与 head 的 `prev` 相同；见
+    /// [prev_cols] 的存储口径（`seq` 可以是 0：上一个身份一条操作都没留下）。
+    pub prev: Option<PrevIdentity>,
+    /// 这一行（这个身份）建立的时刻（毫秒）。
     pub created: i64,
+}
+
+impl std::fmt::Debug for SelfId {
+    /// 不打印钥匙种子。
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SelfId")
+            .field("device", &self.device)
+            .field("hlc", &self.hlc)
+            .field("prev", &self.prev)
+            .field("created", &self.created)
+            .finish_non_exhaustive()
+    }
+}
+
+impl SelfId {
+    /// 签名钥匙。
+    pub fn key(&self) -> DeviceKey {
+        DeviceKey::from_seed(&self.sk)
+    }
+
+    /// 本机公钥。
+    pub fn public(&self) -> [u8; 32] {
+        self.key().public()
+    }
+
+    /// 本机时钟（下一次 `tick` 发出的时刻严格大于 [SelfId::hlc]）。
+    pub fn clock(&self) -> Clock {
+        Clock {
+            device: self.device,
+            last: Hlc {
+                device: self.device,
+                ..self.hlc
+            },
+        }
+    }
+}
+
+/// `self_.prev_device` / `prev_seq` / `prev_chain` 的存储形（[SelfId::prev]）：没换过 = 三列全空；换过 = 三列全有，
+/// `prev_seq` ≥ 0（0 = 上一个身份冻结在链的起点、一条操作都没留下，这时 `prev_chain` 必须是 [CHAIN_ZERO]，与 head 的
+/// `prev` 同一口径：head 收 `seq = 0`）。写（换身份）与读（[Truth::self_identity]）都经这一对函数。
+pub(crate) fn prev_cols(
+    prev: Option<&PrevIdentity>,
+) -> (Option<Vec<u8>>, Option<i64>, Option<Vec<u8>>) {
+    match prev {
+        None => (None, None, None),
+        Some(p) => (
+            Some(p.device.0.to_vec()),
+            Some(p.seq as i64),
+            Some(p.chain.to_vec()),
+        ),
+    }
+}
+
+/// [prev_cols] 的逆；只收它写得出的形状（只存了一部分、负的 seq、seq 0 却不是链起点）。
+fn prev_from_cols(
+    col: i64,
+    device: Option<Vec<u8>>,
+    seq: Option<i64>,
+    chain: Option<Vec<u8>>,
+) -> Result<Option<PrevIdentity>, String> {
+    let torn = || format!("gen4 store: collection {col} has a torn prev identity");
+    match (device, seq, chain) {
+        (None, None, None) => Ok(None),
+        (Some(d), Some(s), Some(c)) if s >= 0 => {
+            let chain = chain_of(&c)?;
+            if s == 0 && chain != CHAIN_ZERO {
+                return Err(torn());
+            }
+            Ok(Some(PrevIdentity {
+                device: id_of(&d)?,
+                seq: s as u64,
+                chain,
+            }))
+        }
+        _ => Err(torn()),
+    }
 }
 
 /// [SelfId::hlc] 的存储文本：`<wall>:<logical>`。
@@ -1659,21 +1748,7 @@ impl<'c> Truth<'c> {
             return Ok(None);
         };
         let device = id_of(&device)?;
-        let prev = match (pd, ps, pc) {
-            (None, None, None) => None,
-            (Some(d), Some(s), Some(c)) if s > 0 => Some((
-                OpId {
-                    device: id_of(&d)?,
-                    seq: s as u64,
-                },
-                chain_of(&c)?,
-            )),
-            _ => {
-                return Err(format!(
-                    "gen4 store: collection {col} has a torn prev identity"
-                ));
-            }
-        };
+        let prev = prev_from_cols(col, pd, ps, pc)?;
         Ok(Some(SelfId {
             device,
             sk: sk
@@ -1716,20 +1791,7 @@ impl<'c> Truth<'c> {
                     "gen4 store: device {device} already has a log in collection {col}"
                 ));
             }
-            let public = crate::sync2::keys::DeviceKey::from_seed(sk).public();
-            let peer = Peer {
-                device: *device,
-                public,
-                name: None,
-                ext: None,
-                head_gen: None,
-                first_seen: Some(now),
-            };
-            if self.set_peer(col, &peer)? == PeerPut::KeyMismatch {
-                return Err(format!(
-                    "gen4 store: device {device} is already known with another public key"
-                ));
-            }
+            self.own_peer(col, device, DeviceKey::from_seed(sk).public(), now)?;
             let zero = Hlc {
                 wall: 0,
                 logical: 0,
@@ -1744,6 +1806,25 @@ impl<'c> Truth<'c> {
                 .map_err(sql)?;
             Ok(true)
         })
+    }
+
+    /// 把本机的公钥记到 [device] 名下（新建的身份；换身份时的新身份与冻结的旧身份）。验自己的段、导出都按公钥表查，
+    /// 与别的设备同一条路。已经记过另一个公钥 = 报错。
+    fn own_peer(&self, col: i64, device: &Id, public: [u8; 32], now: i64) -> Result<(), String> {
+        let peer = Peer {
+            device: *device,
+            public,
+            name: None,
+            ext: None,
+            head_gen: None,
+            first_seen: Some(now),
+        };
+        if self.set_peer(col, &peer)? == PeerPut::KeyMismatch {
+            return Err(format!(
+                "gen4 store: device {device} is already known with another public key"
+            ));
+        }
+        Ok(())
     }
 
     /// 记下本机时钟发出过的最大 HLC（原生写入者每写一条调一次，与那条操作同一个事务）。只升不降：比已记的小或相等
