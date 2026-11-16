@@ -108,6 +108,7 @@ void main() {
               MediaSourceRow(
                 videoGroupingMode: 'series',
                 isPrivate: false,
+                autoScan: false,
                 id: 1,
                 label: 'videos',
                 mediaKind: 'video',

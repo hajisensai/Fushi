@@ -82,9 +82,6 @@ const double kMangaChromeBottomBarHeight =
     kMangaChromeToolbarHeight +
     kMangaChromeBottomGap;
 
-/// 桌面宽屏下顶部一排胶囊的最大宽度：再宽就居中，动作不必横跨整块屏幕。
-const double kMangaChromeTopMaxWidth = 1080;
-
 /// 底部滑块胶囊 / 工具栏的最大宽度。
 const double kMangaChromeBottomMaxWidth = 720;
 
@@ -617,8 +614,9 @@ MangaChromePlan planMangaChrome({
 ///  * 状态件（分镜状态胶囊 / debug 命中信息）挂进标题胶囊尾部；
 ///  * 跳转记录的返回 / 前进恒平铺（[FushiFloatingTopBar.pinnedActions]）；
 ///  * 外框：系统状态栏 + [kMangaChromeBarHeight] 的固定占位（固定态正文让位的
-///    高度与画出的高度同一个常量）、左右 [kMangaChromeEdgeInset]、桌面宽屏限宽
-///    [kMangaChromeTopMaxWidth] 居中；Apple 走深色层级（页图上的 chrome）。
+///    高度与画出的高度同一个常量）、左右 [kMangaChromeEdgeInset]，与小说顶栏一样
+///    铺满全宽、桌面宽屏也不限宽居中（反馈 se4AshgQ7s）；Apple 走深色层级（页图上
+///    的 chrome）。
 ///
 /// 标题胶囊可点（[onTitleTap]：书架在线条目 = 章节目录，本地卷 = 页面一览——与
 /// 小说「点标题 = 打开导航」同一口径）。
@@ -687,43 +685,38 @@ class MangaReaderTopBar extends StatelessWidget {
             ),
             child: Align(
               alignment: Alignment.topCenter,
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(
-                  maxWidth: kMangaChromeTopMaxWidth,
-                ),
-                // 栏高固定（固定态正文按同一常量让位）：两行标题在极大字号
-                // （2.0）下会竖向撑破，所以顶栏字号封顶 1.3 倍（工具栏标签同款
-                // 口径），更大的字号只放大正文。
-                child: MediaQuery.withClampedTextScaling(
-                  maxScaleFactor: 1.3,
-                  child: FushiFloatingTopBar(
-                    leading: <FushiToolbarItem>[
-                      FushiToolbarItem(
-                        key: const ValueKey<String>('manga_reader_back_button'),
-                        icon: FushiIcons.back,
-                        label: backTooltip,
-                        onPressed: onBack,
-                      ),
-                    ],
-                    title: title,
-                    subtitle: subtitle ?? '',
-                    titleTrailing: status,
-                    onTitleTap: onTitleTap,
-                    titleTooltip: titleTooltip,
-                    titleBacking: true,
-                    pinnedActions: jumpItems,
-                    actions: <List<FushiToolbarItem>>[
-                      <FushiToolbarItem>[
-                        for (final MangaChromeAction a in actions)
-                          a.toToolbarItem(),
-                      ],
-                    ],
-                    menu: <FushiToolbarItem>[
-                      for (final MangaChromeAction a in overflowActions)
+              // 栏高固定（固定态正文按同一常量让位）：两行标题在极大字号
+              // （2.0）下会竖向撑破，所以顶栏字号封顶 1.3 倍（工具栏标签同款
+              // 口径），更大的字号只放大正文。
+              child: MediaQuery.withClampedTextScaling(
+                maxScaleFactor: 1.3,
+                child: FushiFloatingTopBar(
+                  leading: <FushiToolbarItem>[
+                    FushiToolbarItem(
+                      key: const ValueKey<String>('manga_reader_back_button'),
+                      icon: FushiIcons.back,
+                      label: backTooltip,
+                      onPressed: onBack,
+                    ),
+                  ],
+                  title: title,
+                  subtitle: subtitle ?? '',
+                  titleTrailing: status,
+                  onTitleTap: onTitleTap,
+                  titleTooltip: titleTooltip,
+                  titleBacking: true,
+                  pinnedActions: jumpItems,
+                  actions: <List<FushiToolbarItem>>[
+                    <FushiToolbarItem>[
+                      for (final MangaChromeAction a in actions)
                         a.toToolbarItem(),
                     ],
-                    overflowKey: kMangaChromeOverflowKey,
-                  ),
+                  ],
+                  menu: <FushiToolbarItem>[
+                    for (final MangaChromeAction a in overflowActions)
+                      a.toToolbarItem(),
+                  ],
+                  overflowKey: kMangaChromeOverflowKey,
                 ),
               ),
             ),

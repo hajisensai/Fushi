@@ -68,6 +68,8 @@ class _FakeEngine implements FsrsEngine {
   @override
   String get fsrsRev => 'fake';
   @override
+  bool isKnownFsrsRev(String rev) => rev == fsrsRev;
+  @override
   List<double> defaultParams(SrsAlgorithm a) =>
       List<double>.filled(a.paramCount, 1);
   @override

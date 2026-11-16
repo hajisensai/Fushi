@@ -362,3 +362,42 @@ test('入队失败不会冒充 Anki 成功或队列成功', async () => {
   assert.strictEqual(result.queued, false);
   assert.strictEqual(result.ankiConnect, false);
 });
+
+// 反馈 heMh1hn8n4：fushiEnqueue 现在只在队列真写进 storage 后才兑现（返回 Promise）。
+// 提示与按钮状态必须按兑现后的结果走：落盘成功才弹「已加入 N」，写不进去如实报失败。
+const QUEUE_CTX = {
+  window: { text: 'ネトフリの字幕', startV: 1000, endV: 3000 },
+  site: 'netflix', clip: { kind: 'netflix', id: '81', mode: 'queue' },
+  netflixId: '81', youtubeId: null, mineAtV: 2000, documentTitle: 'Show',
+};
+
+test('入队落盘成功（异步兑现）→ 弹「已加入 N」，按钮算已入队', async () => {
+  const { call, toasts } = load({
+    mineContext: QUEUE_CTX,
+    enqueueResult: Promise.resolve({ ok: true, count: 3 }),
+  });
+  const result = await call('mineEntry', FIELDS);
+  assert.strictEqual(result.queued, true);
+  assert.ok(toasts.some((t) => t.startsWith('✓ ') && t.includes(FUSHI_T('mine_queued_n', { n: 3 }))),
+    '提示必须用落盘后的真实条数：' + JSON.stringify(toasts));
+});
+
+test('入队写盘失败 → 不弹成功，报「入队失败」', async () => {
+  const { call, toasts } = load({
+    mineContext: QUEUE_CTX,
+    enqueueResult: Promise.resolve({ ok: false, reason: 'persist-failed' }),
+  });
+  const result = await call('mineEntry', FIELDS);
+  assert.strictEqual(result.queued, false);
+  assert.deepStrictEqual(toasts, ['✗ ' + FUSHI_T('mine_enqueue_failed')]);
+});
+
+test('扩展已更新导致入队失败 → 提示刷新页面', async () => {
+  const { call, toasts } = load({
+    mineContext: QUEUE_CTX,
+    enqueueResult: Promise.resolve({ ok: false, reason: 'context-invalidated' }),
+  });
+  const result = await call('mineEntry', FIELDS);
+  assert.strictEqual(result.queued, false);
+  assert.deepStrictEqual(toasts, ['✗ ' + FUSHI_T('mine_enqueue_context_invalidated')]);
+});

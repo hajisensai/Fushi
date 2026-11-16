@@ -8,6 +8,8 @@
 //   内置档重放（P3）。
 import 'dart:ui' show Offset, Rect;
 
+import 'package:fushi_audio/fushi_audio.dart' show AudioCue;
+
 enum WebVideoHosting { builtin, windowed }
 
 /// 偏好键（值为 [WebVideoHosting.name]；缺省 / 未知值 = builtin，Never break userspace）。
@@ -123,6 +125,42 @@ WebVideoLookupRequest? parseWebVideoLookupPayload(Object? raw) {
     screenX: _asDouble(raw['screenX']) ?? 0,
     screenY: _asDouble(raw['screenY']) ?? 0,
   );
+}
+
+/// DOM 字幕层点词的制卡锚点 cue（BUG-4714）：就是被点的那一句。
+///
+/// DOM 层直接读页面 store 里的活对象，载荷里的 (cueStart, cueEnd, sentence) 是用户此刻看到、
+/// 点下去的那句的权威描述；Dart 侧 [cues] 只是 glue 节流投过来的轨快照（live 轨边看边改：文本
+/// 逐字变长、起点往前并、终点往后延；Dart 解析时还会 trim），未必对得上，甚至还没到。
+/// - Dart 副本里有时间窗与文本都相同的那条 → 返回它本身（`cueStreamOwning` 按 identical 认流，
+///   同时显示的整句 / 收藏归属照旧）；
+/// - 否则按载荷建一条（[trackKey] 记进 `chapterHref`，与 [parseWebVideoTrackPayload] 同形）。
+///
+/// 永不为 null：点词那一刻就有确定的一句，制卡必须走入队重放（截帧 + 录音），不能因为快照
+/// 滞后退回到「当前播放位置」那句（常常是 null → 纯字段卡，无画面无音频）。
+AudioCue webVideoDomLookupAnchorCue({
+  required WebVideoLookupRequest request,
+  required List<AudioCue> cues,
+  required String bookUid,
+  required String trackKey,
+}) {
+  final int start = request.cueStartMs;
+  final int end = request.cueEndMs < start ? start : request.cueEndMs;
+  final String text = request.sentence.trim();
+  for (final AudioCue c in cues) {
+    if (c.startMs == start && c.endMs == end && c.text.trim() == text) {
+      return c;
+    }
+  }
+  return AudioCue()
+    ..bookKey = bookUid
+    ..chapterHref = trackKey
+    ..sentenceIndex = -1
+    ..textFragmentId = ''
+    ..text = text
+    ..startMs = start
+    ..endMs = end
+    ..audioFileIndex = 0;
 }
 
 /// 被点字形的**屏幕逻辑 px** 矩形（GlobalLookupController.lookupText 的 anchorScreenRect 单位）：

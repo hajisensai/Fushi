@@ -46,6 +46,7 @@ import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_ass_sty
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_evidence.dart'
     show SubtitleEvidenceTrack;
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_evidence_loader.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_burned_in_evidence.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_frame_reference.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_song_lyrics.dart'
     show SubtitleLyricsFinder, buildSubtitleLyricsFinder;
@@ -70,6 +71,7 @@ import 'package:path/path.dart' as p;
 import 'package:fushi/i18n/strings.g.dart' show t;
 import 'package:fushi/src/asr_host/asr_host.dart'
     show resolveAppVideoSubtitleRecognizer;
+import 'package:fushi/src/media/video/subtitle/burned_in_subtitle_ocr.dart';
 import 'package:fushi/src/media/video/subtitle/video_subtitle_model_ports.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
@@ -139,6 +141,9 @@ AppVideoSubtitleService appVideoSubtitleService(AppModel appModel) =>
     AppVideoSubtitleService.shared(
       database: appModel.database,
       settings: PrefsVideoSubtitleSettings(appModel.prefsRepo),
+      burnedInOcr: AppBurnedInSubtitleOcr(
+        modelKey: () => appModel.prefsRepo.mangaOcrLocalModel,
+      ),
     );
 
 /// 视频库落点：产物写在视频旁，登记进 `video_books.subtitleSource`。
@@ -553,8 +558,13 @@ class AppVideoSubtitleService {
     evidenceSource,
     SubtitleLyricsFinder Function({WebSearchClient? webSearch})? lyricsFinder,
     SubtitleFrameSource? frameSource,
+    SubtitleFrameSource? burnedInFrameSource,
+    SubtitleFrameTextReader? burnedInOcr,
     int Function()? nowMs,
   }) : _evidenceSource = evidenceSource,
+       _burnedInOcr = burnedInOcr,
+       _burnedInFrameSource =
+           burnedInFrameSource ?? ffmpegSubtitleFullFrameSource,
        _frameSource = frameSource ?? ffmpegSubtitleFrameSource,
        _lyricsFinder = lyricsFinder ?? buildSubtitleLyricsFinder,
        _resolveRecognizer = recognizerResolver ?? _defaultResolver,
@@ -576,6 +586,7 @@ class AppVideoSubtitleService {
   static AppVideoSubtitleService shared({
     required FushiDatabase database,
     required AppVideoSubtitleSettings settings,
+    SubtitleFrameTextReader? burnedInOcr,
   }) {
     final AppVideoSubtitleService? existing = _shared;
     if (existing != null && identical(existing.database, database)) {
@@ -584,6 +595,7 @@ class AppVideoSubtitleService {
     return _shared = AppVideoSubtitleService(
       database: database,
       settings: settings,
+      burnedInOcr: burnedInOcr,
     );
   }
 
@@ -613,6 +625,12 @@ class AppVideoSubtitleService {
   /// 画面参考的取帧（生产 [ffmpegSubtitleFrameSource]；测试注入假件）。
   final SubtitleFrameSource _frameSource;
 
+  /// 读画面硬字幕的 OCR（生产 [AppBurnedInSubtitleOcr]；null = 不读）。
+  final SubtitleFrameTextReader? _burnedInOcr;
+
+  /// 读硬字幕的取帧（生产 [ffmpegSubtitleFullFrameSource]：原分辨率，小字不缩）。
+  final SubtitleFrameSource _burnedInFrameSource;
+
   /// 这次运行会不会真的给 AI 发画面：开了画面参考，且指派的提供商开了图片输入。
   /// 面板据此显示「提供商没开图片输入」。
   bool get proofreadAcceptsImages =>
@@ -623,6 +641,13 @@ class AppVideoSubtitleService {
   SubtitleEvidenceSource _defaultEvidenceSource(
     AppVideoSubtitleTarget target,
   ) => SubtitleEvidenceCollector(
+    burnedIn: switch (_burnedInOcr) {
+      null => null,
+      final SubtitleFrameTextReader reader => SubtitleBurnedInReader(
+        frames: _burnedInFrameSource,
+        reader: reader,
+      ),
+    },
     extraSubtitleFiles: (String videoPath) async {
       final AppVideoSubtitleEpisode? episode = target.episodes
           .where((AppVideoSubtitleEpisode e) => e.videoPath == videoPath)
