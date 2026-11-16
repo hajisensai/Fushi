@@ -2950,7 +2950,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     );
   }
 
-  /// 把一次删除进度写进对话框：删行阶段不定态，回收阶段按已处理 / 总数。
+  /// 把一次删除进度写进对话框：删行、压缩数据库阶段不定态，回收阶段按已处理 /
+  /// 总数。
   void _showBatchDeleteProgress(
     FushiProgressDialogHandle handle,
     VideoLibraryDeleteProgress p,
@@ -2962,6 +2963,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       case VideoLibraryDeleteStage.cleaningUp:
         handle.message.value = t.video_library_delete_progress_cleanup;
         handle.progress.value = p.total <= 0 ? null : p.done / p.total;
+      case VideoLibraryDeleteStage.compacting:
+        // VACUUM 按整库大小走，给不出比例；停在 100% 会像卡住了。
+        handle.message.value = t.video_library_delete_progress_cleanup;
+        handle.progress.value = null;
     }
   }
 

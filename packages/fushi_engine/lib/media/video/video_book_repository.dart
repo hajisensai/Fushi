@@ -91,9 +91,23 @@ class VideoBooksDeleteException implements Exception {
 }
 
 /// 被删行删前的快照：行一删，封面/字幕/附加图路径就再也推导不出来。
-/// 删除后逐本回收的进度：已完成步数 / 总步数（见
-/// [VideoBookRepository.deleteVideoBooksAndReclaimAssets] 的 `onReclaimProgress`）。
-typedef VideoReclaimProgressCallback = void Function(int done, int total);
+/// 删行之后尾活的阶段（见 [VideoReclaimProgressCallback]，35YfcYO-zR）。
+enum VideoReclaimPhase {
+  /// 逐本回收：app 副本、内嵌字幕缓存，勾了「同时删除本地文件」（或有选择器
+  /// 导入副本）时再加 sidecar 字幕扫描与原件删除。`done` / `total` 有意义。
+  reclaiming,
+
+  /// 整库压缩（`wal_checkpoint`，空闲页够多时整库 `VACUUM`）：耗时按整库大小
+  /// 走，与删了几条无关，不可细分，进度条应切回不定态。
+  compacting,
+}
+
+/// 删除后尾活的进度：[VideoReclaimPhase.reclaiming] 时是已完成步数 / 总步数
+/// （单调不减，最后一步做完才到 `total`），[VideoReclaimPhase.compacting] 时两数
+/// 无意义（见 [VideoBookRepository.deleteVideoBooksAndReclaimAssets] 的
+/// `onReclaimProgress`）。
+typedef VideoReclaimProgressCallback =
+    void Function(VideoReclaimPhase phase, int done, int total);
 
 typedef _DeletedVideoSnapshot = ({
   String bookUid,
@@ -1328,8 +1342,11 @@ class VideoBookRepository {
   /// 文件标 skip），删之后才做记录对账。本仓库层不认识下载管线（管线依赖仓库，
   /// 反过来会成环），所以这两步都由 `video_library_delete.dart` 在上层接线。
   ///
-  /// [onReclaimProgress]：行删掉之后的逐本回收（app 副本 + 内嵌字幕缓存，每本两步）
-  /// 每推进一步回调一次 `(done, total)`，给大批量删除的进度条用（BUG-4709）。
+  /// [onReclaimProgress]：行删掉之后的尾活进度，给大批量删除的进度条用（BUG-4709 /
+  /// 35YfcYO-zR）。逐本回收每本两步（app 副本、内嵌字幕缓存）；要删原件 / 选择器
+  /// 副本时再加每本两步（sidecar 字幕扫描、原件删除，按实际条数折算）——所以
+  /// `total` 是删除条数的 2 或 4 倍，最后一个文件删完才报满。之后若要压缩数据库，
+  /// 再报一次 [VideoReclaimPhase.compacting]。
   ///
   /// [keepLocalFiles]：调用方确认已转交给别的库的原始文件，与幸存行引用的文件同等
   /// 进删除护栏（含 iOS 选择器副本的强制回收）。
@@ -1451,21 +1468,32 @@ class VideoBookRepository {
       final List<VideoBookRow> survivors = deleted.isEmpty
           ? const <VideoBookRow>[]
           : await listAll();
+      // 选择器导入副本（iOS 容器 `tmp/` 里 app 拷出来的整份视频，BUG-2863）是 app
+      // 自有资产：没勾「同时删除本地文件」也要回收，只是候选限定在副本目录之内，
+      // 用户自己的原件仍然只听勾选框的。只是几个目录路径，提到回收之前取，好让
+      // 进度总数一开始就把原件删除算进去。
+      final List<String> importCopyDirs = deleteLocalFiles || deleted.isEmpty
+          ? const <String>[]
+          : await _pickerImportCopyDirsBestEffort();
+      final bool deletesLocalFiles =
+          deleted.isNotEmpty && (deleteLocalFiles || importCopyDirs.isNotEmpty);
+      // 进度单位：每本两步回收；要删原件时再加每本两步（sidecar 扫描、原件删除），
+      // 这两段的实际条数（视频数 / 候选数）按比例折算进各自 deleted.length 步，
+      // 保证进度单调、最后一个文件删完才到 100%（35YfcYO-zR）。
+      final int n = deleted.length;
+      final int reclaimSteps = n * 2;
+      final int total = reclaimSteps + (deletesLocalFiles ? n * 2 : 0);
+      void report(int done) =>
+          onReclaimProgress?.call(VideoReclaimPhase.reclaiming, done, total);
+      int scaled(int done, int count) => count <= 0 ? n : (n * done) ~/ count;
       if (deleted.isNotEmpty) {
         await _reclaimDeletedVideoBooksAssetsUnlocked(
           deleted,
           survivors,
-          onProgress: onReclaimProgress,
+          onProgress: onReclaimProgress == null ? null : report,
         );
       }
-      // 选择器导入副本（iOS 容器 `tmp/` 里 app 拷出来的整份视频，BUG-2863）是 app
-      // 自有资产：没勾「同时删除本地文件」也要回收，只是候选限定在副本目录之内，
-      // 用户自己的原件仍然只听勾选框的。
-      final List<String> importCopyDirs = deleteLocalFiles || deleted.isEmpty
-          ? const <String>[]
-          : await _pickerImportCopyDirsBestEffort();
-      if (deleted.isNotEmpty &&
-          (deleteLocalFiles || importCopyDirs.isNotEmpty)) {
+      if (deletesLocalFiles) {
         bool selected(String path) =>
             deleteLocalFiles || isPickerImportCopyPath(path, importCopyDirs);
         // 原件删除排在 app 副本回收之后、compact 之前：行早已消失，这里是尾活；
@@ -1497,11 +1525,17 @@ class VideoBookRepository {
           ...videoCandidates,
           for (final String path in await localVideoSidecarSubtitleCandidates(
             videoCandidates,
+            onVideoDone: onReclaimProgress == null
+                ? null
+                : (int done) => report(
+                    reclaimSteps + scaled(done, videoCandidates.length),
+                  ),
           ))
             if (selected(path) &&
                 !stillReferenced.contains(platformPathKey(path)))
               path,
         ];
+        report(reclaimSteps + n);
         if (candidates.isNotEmpty) {
           // 先让引用方放手，再销毁实体：还在做种的文件必须先在下载后端标 skip，
           // 否则文件一消失，libtorrent / qB 下一次校验就把整个种子停掉。
@@ -1509,20 +1543,28 @@ class VideoBookRepository {
             'beforeDelete',
             () => localFileHooks?.beforeDelete?.call(candidates),
           );
-          final LocalFileDeleteReport report = await deleteLocalVideoFiles(
-            candidates: candidates,
-            stillReferenced: stillReferenced,
-          );
-          for (final LocalFileDeleteFailure failure in report.failures) {
+          final LocalFileDeleteReport deleteReport =
+              await deleteLocalVideoFiles(
+                candidates: candidates,
+                stillReferenced: stillReferenced,
+                onCandidateDone: onReclaimProgress == null
+                    ? null
+                    : (int done) => report(
+                        reclaimSteps + n + scaled(done, candidates.length),
+                      ),
+              );
+          for (final LocalFileDeleteFailure failure in deleteReport.failures) {
             engineLog.log('VideoLocalFileDelete', failure);
           }
           await _runLocalFileHook(
             'afterDelete',
-            () => localFileHooks?.afterDelete?.call(report),
+            () => localFileHooks?.afterDelete?.call(deleteReport),
           );
         }
+        report(total);
       }
       if (compactDatabase && deleted.isNotEmpty) {
+        onReclaimProgress?.call(VideoReclaimPhase.compacting, total, total);
         await compactAfterVideoDeleteBestEffort();
       }
     }
@@ -1630,10 +1672,13 @@ class VideoBookRepository {
   ///
   /// 语义不变：仍被幸存行引用的封面/字幕/附加图/内嵌字幕缓存一律保留。每一步
   /// 单独 best-effort，一步失败不拦后续步骤、不翻转「行已删」。
+  ///
+  /// [onProgress] 入参是已完成步数，共 `2 * deleted.length` 步（app 副本、内嵌
+  /// 字幕缓存各一本一步），每步做完才报。
   Future<void> _reclaimDeletedVideoBooksAssetsUnlocked(
     List<_DeletedVideoSnapshot> deleted,
     List<VideoBookRow> survivors, {
-    VideoReclaimProgressCallback? onProgress,
+    void Function(int done)? onProgress,
   }) async {
     if (deleted.isEmpty) return;
     final Set<String> deletedUids = <String>{
@@ -1645,8 +1690,6 @@ class VideoBookRepository {
     ];
     final ({Set<String> covers, Set<String> subtitles}) refs =
         referencedAssetPathsOf(others);
-    // 两步（app 副本、内嵌字幕缓存）各算 deleted.length 步。
-    final int total = deleted.length * 2;
     try {
       // 护栏集合只规范化一次（BUG-4709：原来每本各算一遍 = O(删除数 × 幸存数)）。
       await VideoStorage.deleteBooksAssets(
@@ -1660,14 +1703,14 @@ class VideoBookRepository {
         ],
         stillReferencedCoverPaths: refs.covers,
         stillReferencedSubtitlePaths: refs.subtitles,
-        onBookDone: (int done) => onProgress?.call(done, total),
+        onBookDone: onProgress,
       );
     } catch (e, stack) {
       fushiDebugPrint(
         'VideoBookRepository: video asset cleanup failed: $e\n$stack',
       );
     }
-    onProgress?.call(deleted.length, total);
+    onProgress?.call(deleted.length);
     // v68：附加图文件（video_covers/images/，行已 cascade 删除）。护栏：仍被
     // 幸存行引用的路径保留（同名共享理论上不存在——文件名按 bookUid 派生——
     // 但护栏与封面/字幕同纪律，宁可漏删）。
@@ -1706,20 +1749,22 @@ class VideoBookRepository {
     };
     int cacheDone = 0;
     for (final _DeletedVideoSnapshot snapshot in deleted) {
-      onProgress?.call(deleted.length + ++cacheDone, total);
       final String videoPath = snapshot.videoPath;
-      if (videoPath.isNotEmpty &&
-          survivingVideoPaths.contains(normalizeVideoPath(videoPath))) {
-        continue;
+      final bool stillUsed =
+          videoPath.isNotEmpty &&
+          survivingVideoPaths.contains(normalizeVideoPath(videoPath));
+      if (!stillUsed) {
+        try {
+          await VideoStorage.deleteEmbeddedSubtitleCacheForVideoPath(videoPath);
+        } catch (e, stack) {
+          fushiDebugPrint(
+            'VideoBookRepository: embedded subtitle cache cleanup failed: '
+            '$e\n$stack',
+          );
+        }
       }
-      try {
-        await VideoStorage.deleteEmbeddedSubtitleCacheForVideoPath(videoPath);
-      } catch (e, stack) {
-        fushiDebugPrint(
-          'VideoBookRepository: embedded subtitle cache cleanup failed: '
-          '$e\n$stack',
-        );
-      }
+      // 这一本做完才报，最后一本处理完进度才到满（35YfcYO-zR）。
+      onProgress?.call(deleted.length + ++cacheDone);
     }
   }
 

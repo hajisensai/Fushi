@@ -7,8 +7,9 @@
 //
 // 钉子：
 // - 整条删除链的 SQL 语句数与删除条数无关（N+1 回归即红）；
-// - 批量统计删除与逐条删除结果一致，且歧义复核 / 按集偏好 / 墓碑判据不变；
-// - 删除进度按阶段回报，回收阶段走到 total；
+// - 批量统计删除的结果逐项钉死（歧义复核 / 按集偏好 / 墓碑判据不变）；
+// - 删除进度按阶段回报，回收阶段走到 total；勾了删本地文件时原件删除也计入，
+//   最后一个文件删完才报满，之后压缩数据库报不定态的 compacting；
 // - 批量回收 app 副本的护栏语义不变，逐本回报进度。
 import 'dart:io';
 
@@ -102,12 +103,13 @@ Future<void> _seedVideo(
   required String bookUid,
   required String title,
   List<String> watchTitles = const <String>[],
+  String? videoPath,
 }) async {
   await db.upsertVideoBook(
     VideoBooksCompanion.insert(
       bookUid: bookUid,
       title: title,
-      videoPath: 'D:/Videos/$bookUid.mkv',
+      videoPath: videoPath ?? 'D:/Videos/$bookUid.mkv',
     ),
   );
   await db.upsertStudySegment(
@@ -294,7 +296,11 @@ void main() {
   });
 
   for (final bool includeUnattributed in <bool>[false, true]) {
-    test('批量统计删除 == 逐条删除（includeUnattributed: $includeUnattributed）', () async {
+    // 注意：单条入口 deleteVideoStatisticsForIdentity 现在委托给批量版，两条
+    // 路径互相一致只说明入口接线对；语义锁在下方逐项钉死的结果上（按原逐条算法
+    // 在这份 fixture 上推演得出）。
+    test('批量统计删除：单条入口与批量入口一致，结果逐项钉死'
+        '（includeUnattributed: $includeUnattributed）', () async {
       final FushiDatabase sequential = await _ambiguityFixture();
       for (final VideoStatisticsIdentity target in _targets) {
         await sequential.deleteVideoStatisticsForIdentity(
@@ -372,6 +378,87 @@ void main() {
     for (int i = 1; i < cleanup.length; i++) {
       expect(cleanup[i].done, greaterThanOrEqualTo(cleanup[i - 1].done));
     }
+  });
+
+  test('删除进度：勾了删本地文件时原件删除计入总数，删完才满，压缩阶段不定态', () async {
+    final Directory root = await Directory.systemTemp.createTemp('bug4709_lf_');
+    addTearDown(() => root.delete(recursive: true));
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final VideoBookRepository repo = VideoBookRepository(db);
+    final List<String> uids = <String>[for (int i = 0; i < 4; i++) 'lf$i'];
+    final List<String> files = <String>[];
+    for (final String uid in uids) {
+      final String video = p.join(root.path, '$uid.mkv');
+      await File(video).writeAsString('v');
+      await File(p.join(root.path, '$uid.ja.srt')).writeAsString('s');
+      files
+        ..add(video)
+        ..add(p.join(root.path, '$uid.ja.srt'));
+      await _seedVideo(db, bookUid: uid, title: uid, videoPath: video);
+    }
+    final List<VideoLibraryDeleteProgress> events =
+        <VideoLibraryDeleteProgress>[];
+    // 每个回收事件发出时磁盘上还剩几个文件：报满的那一刻必须已经删完。
+    final List<int> remainingAtEvent = <int>[];
+    final VideoLibraryDeleteResult result = await deleteVideoBooksWithDecision(
+      repo: repo,
+      database: db,
+      pipeline: null,
+      bookUids: uids,
+      decision: const DeleteDecision(
+        scope: DeleteScope.keepLocalOnly,
+        deleteLocalFiles: true,
+      ),
+      onProgress: (VideoLibraryDeleteProgress e) {
+        events.add(e);
+        remainingAtEvent.add(
+          files.where((String f) => File(f).existsSync()).length,
+        );
+      },
+    );
+    expect(result.deleted, uids.length);
+    for (final String f in files) {
+      expect(File(f).existsSync(), isFalse, reason: f);
+    }
+    expect(events.first.stage, VideoLibraryDeleteStage.removingEntries);
+    expect(
+      events.last.stage,
+      VideoLibraryDeleteStage.compacting,
+      reason: '压缩数据库排在最后，切回不定态',
+    );
+    final List<int> cleanupIdx = <int>[
+      for (int i = 0; i < events.length; i++)
+        if (events[i].stage == VideoLibraryDeleteStage.cleaningUp) i,
+    ];
+    expect(cleanupIdx, isNotEmpty);
+    final int total = events[cleanupIdx.first].total;
+    expect(total, uids.length * 4, reason: '回收两步 + sidecar 扫描与原件删除两步');
+    for (int k = 1; k < cleanupIdx.length; k++) {
+      expect(
+        events[cleanupIdx[k]].done,
+        greaterThanOrEqualTo(events[cleanupIdx[k - 1]].done),
+      );
+      expect(events[cleanupIdx[k]].total, total);
+    }
+    expect(events[cleanupIdx.last].done, total);
+    final int firstFull = cleanupIdx.firstWhere(
+      (int i) => events[i].done >= total,
+    );
+    expect(
+      remainingAtEvent[firstFull],
+      0,
+      reason: '原件还没删完进度就到 100% = 对话框停在满格干等',
+    );
+    for (final int i in cleanupIdx) {
+      if (events[i].done < total) continue;
+      expect(remainingAtEvent[i], 0);
+    }
+    expect(
+      remainingAtEvent[cleanupIdx.first],
+      files.length,
+      reason: '回收阶段开始时原件都还在',
+    );
   });
 
   test('批量回收 app 副本：护栏语义与逐本一致，逐本回报进度', () async {

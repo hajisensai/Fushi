@@ -61,9 +61,13 @@ enum VideoLibraryDeleteStage {
   /// 删统计、删行（几个批量事务，不可细分，显示不定态）。
   removingEntries,
 
-  /// 行已删，逐本回收 app 副本 / 缓存（[VideoLibraryDeleteProgress.done] /
-  /// [VideoLibraryDeleteProgress.total] 有意义）。
+  /// 行已删，逐本回收 app 副本 / 缓存，勾了删本地文件时还有原件删除
+  /// （[VideoLibraryDeleteProgress.done] / [VideoLibraryDeleteProgress.total]
+  /// 有意义，最后一个文件删完才到满）。
   cleaningUp,
+
+  /// 整库压缩（可能整库 VACUUM）：与删除条数无关、不可细分，显示不定态。
+  compacting,
 }
 
 /// [deleteVideoBooksWithDecision] 的进度快照。
@@ -167,8 +171,13 @@ Future<VideoLibraryDeleteResult> deleteVideoBooksWithDecision({
       afterDeleteBeforeReclaim: afterDeleteBeforeReclaim,
       onReclaimProgress: onProgress == null
           ? null
-          : (int done, int total) => onProgress((
-              stage: VideoLibraryDeleteStage.cleaningUp,
+          : (VideoReclaimPhase phase, int done, int total) => onProgress((
+              stage: switch (phase) {
+                VideoReclaimPhase.reclaiming =>
+                  VideoLibraryDeleteStage.cleaningUp,
+                VideoReclaimPhase.compacting =>
+                  VideoLibraryDeleteStage.compacting,
+              },
               done: done,
               total: total,
             )),

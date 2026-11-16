@@ -93,12 +93,8 @@ Future<List<String>> videoWorkCompanionBookUids(
   }
   if (deletingPathKeys.isNotEmpty) {
     // 任务文件表一次读完按任务分组：逐任务查文件是「任务数」次查询（BUG-4709）。
-    final Map<String, List<VideoDownloadJobFileRow>> filesByJob =
-        <String, List<VideoDownloadJobFileRow>>{};
-    for (final VideoDownloadJobFileRow file
-        in await database.select(database.videoDownloadJobFiles).get()) {
-      (filesByJob[file.jobId] ??= <VideoDownloadJobFileRow>[]).add(file);
-    }
+    final Map<String, List<VideoDownloadJobFileRow>> filesByJob = await database
+        .getAllVideoDownloadJobFilesByJob();
     for (final List<VideoDownloadJobFileRow> files in filesByJob.values) {
       String? keyOf(VideoDownloadJobFileRow file) {
         final String path = file.finalAbsolutePath?.trim() ?? '';
