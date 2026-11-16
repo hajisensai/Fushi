@@ -1492,7 +1492,16 @@ class MediaDetailSectionHeader extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 /// 条目（章节 / 分集）的下载状态。
-enum MediaDetailDownloadState { none, queued, downloading, downloaded, failed }
+enum MediaDetailDownloadState {
+  none,
+  queued,
+  downloading,
+
+  /// 用户暂停：半成品留着，恢复后续跑（漫画章节任务）。
+  paused,
+  downloaded,
+  failed,
+}
 
 /// 行尾状态位里的一枚额外状态图标（例如漫画章「已识别文字」）。
 ///
@@ -1748,6 +1757,17 @@ class MediaDetailItemRow extends StatelessWidget {
           _labelled(
             t.media_detail_status_download_queued,
             FushiIcon(FushiIcons.pending, size: 20, color: cs.onSurfaceVariant),
+          ),
+        ],
+        MediaDetailDownloadState.paused => <Widget>[
+          _labelled(
+            t.media_detail_status_download_paused,
+            FushiIcon(
+              FushiIcons.pause,
+              key: const ValueKey<String>('media-detail-item-download-paused'),
+              size: 20,
+              color: cs.onSurfaceVariant,
+            ),
           ),
         ],
         MediaDetailDownloadState.downloading => <Widget>[
