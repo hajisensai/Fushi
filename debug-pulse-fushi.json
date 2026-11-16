@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-16T04:17:32Z",
+ "generatedAt": "2026-11-16T05:16:16Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "644073eb7f84fadab7a107210b37fd760035e1ad",
-  "seq": 27443
+  "sha": "3a19a70d9ed49fc42836e6f2986dcac4c70651b5",
+  "seq": 27480
  },
  "builds": [
   {
@@ -102,9 +102,11 @@
   }
  ],
  "pending": {
-  "headSha": "644073eb7f84fadab7a107210b37fd760035e1ad",
-  "headSeq": 27443,
+  "headSha": "3a19a70d9ed49fc42836e6f2986dcac4c70651b5",
+  "headSeq": 27480,
   "prs": [
+   3396,
+   3395,
    3456,
    3453,
    3452
@@ -114,19 +116,19 @@
   "platforms": {
    "android": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43802039262"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43803569224"
    },
    "windows": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43802039271"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43803569259"
    },
    "macos": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43802039271"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43803569259"
    },
    "ios": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43802039271"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43803569259"
    }
   }
  },
@@ -160,6 +162,24 @@
    "mergedAt": "2026-11-15T07:30:37Z",
    "additions": 344,
    "deletions": 43,
+   "labels": []
+  },
+  "3395": {
+   "number": 3395,
+   "title": "SRS 换代 G5a：srs.db 的 Dart 读站点改走内核读命令，删 Drift 执行器",
+   "author": "W1ght",
+   "mergedAt": "2026-11-16T04:20:33Z",
+   "additions": 4453,
+   "deletions": 12996,
+   "labels": []
+  },
+  "3396": {
+   "number": 3396,
+   "title": "SRS 换代 G5b：根上的 ID 与同步目录名改向内核要（含 G3 #3374 的单提交）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-16T04:20:57Z",
+   "additions": 1266,
+   "deletions": 248,
    "labels": []
   },
   "3397": {
