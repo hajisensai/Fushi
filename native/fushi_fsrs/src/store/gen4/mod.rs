@@ -8,26 +8,45 @@
 //! - `pack`：操作体的本机存储编码（旧戳内部化、配置快照剪出、压缩），逐字节可逆。
 //! - [truth]：真相层——每台设备一条日志（承袭槽 / 原生操作 / 空洞），槽的落库规则，待投递与分叉，原生日志的链。
 //! - [import]：把一份协议 3 的库灌进真相层。
+//! - [identity]：身份——绑定状态、并入（`Join`，改绑）、外来数据该怎么认（[identity::adopt_foreign]）、`join_ix`，G9-3。
+//! - [native]：本机原生写入者（seq / 依赖 / HLC / 链，`Salts` 去重），G7-3a。
+//! - [ingest]：一批落库之后收派生层（逐条维护 / 整个重建），本机写入、收段、导入共用。
+//! - [receive]：收段——原生段 / 中继件 / 承袭段验过之后按因果落进真相层（原生的等待缓冲 `op_wait`），收尾用 [ingest]，G8-4。
+//! - [sync_state]：同步运行时的本机状态——各位置的 head、转发记账（两段式删除）、旧根清单指纹，G8-4。
+//! - [inherit]：承袭上传——位置上缺的承袭区间切段补传，本机已传的段同号槽只降不升地原区间重写（D19 / D20），G8-5。
+//! - [oldroot]：旧根捡漏与围栏——认位置的代（只有协议 1 旧根的明确拒绝，D21）、旧根清单变了列出要转译并入的旧段、
+//!   重立围栏，G8-5（旧段的落库在 [receive] 的 `Receiver::legacy`）。
 //! - [derive]：派生层的索引（实体、寄存器、日志、旧闭包）与 `rebuild_all`；冻结的旧判定从操作体读。
 //! - [class]：读侧按别名类判定——寄存器、标签按别名类并起来再过冻结判据，内嵌 ID 归一（只读，没有调用方）。
 //! - [cache]：缓存层——笔记 / 卡片缓存、逐卡重放、有效复习投影（统计列）。
 //! - [media]：各位置媒体「在不在」的本机缓存 `media_at` 的读写、媒体清单（`crate::gen4::manifest`）的收与发、协议 3
 //!   `sync2_media_at` 的播种（G8-3，没有调用方）。
 //! - [weigh]：派生层的语义部分——标签 OR-Set、媒体绑定、彻底清除、被扣住的删除、设备信任。
+//! - `compare`：协议 3 的投影与新代派生层逐类对拍（干跑与测试装置共用）。
+//! - [dryrun]：真实库干跑（设计 §8 G4）：旧库只读 → 临时新库 → 重建 → 对拍报告；也是换代前版本里的预演自检（G4b）。
 
 pub mod alias;
 pub mod cache;
 pub mod class;
+pub(crate) mod compare;
 pub mod derive;
 pub mod digest;
+pub mod dryrun;
 pub mod files;
+pub mod identity;
 pub mod import;
+pub mod ingest;
+pub mod inherit;
 pub mod legacy;
 pub mod legacy_export;
 pub mod media;
+pub mod native;
+pub mod oldroot;
 pub(crate) mod pack;
 #[cfg(test)]
 pub(crate) mod parity;
+pub mod receive;
 pub mod schema;
+pub mod sync_state;
 pub mod truth;
 pub mod weigh;

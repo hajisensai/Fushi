@@ -1,11 +1,12 @@
-/// 牌组设置里 RWKV 的说明与下载 / 准备状态。下载由 [SrsRwkvService] 自己发起（RWKV 是默认算法，
-/// 不能要求用户先来这里点下载）；这里只显示进度，失败时给「重试」。
+/// 牌组设置里 RWKV 的说明、模型档位（Small / Tiny，整台设备一个设置）与下载 / 准备状态。下载由
+/// [SrsRwkvService] 自己发起（RWKV 是默认算法，不能要求用户先来这里点下载）；这里只显示进度，失败时给「重试」。
 library;
 
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi_engine/srs/srs_rwkv_models.dart';
 import 'package:fushi_engine/srs/srs_rwkv_service.dart';
 
 import 'package:fushi/src/srs/srs_providers.dart';
@@ -14,9 +15,11 @@ import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
 
-/// 下载大小（显示用，小模型发布包）。
-const String _downloadSize = '5.6 MB';
+/// 下载大小（显示用）：当前档位那份 int8 权重的字节数。
+String _downloadSize(SrsRwkvModelSize size) =>
+    '${(size.weights.expectedBytes / 1000000).toStringAsFixed(1)} MB';
 
 class SrsRwkvPanel extends ConsumerStatefulWidget {
   const SrsRwkvPanel({super.key});
@@ -54,10 +57,41 @@ class _SrsRwkvPanelState extends ConsumerState<SrsRwkvPanel> {
     _watch(service);
     final TextStyle hintStyle = context.fushiType.bodySmall;
     final SrsRwkvStatus? status = _status;
+    final SrsRwkvModelSize? size = ref
+        .watch(srsRwkvModelSizeProvider)
+        .valueOrNull;
 
     final List<Widget> children = <Widget>[
       Text(t.srs_settings_rwkv_hint, style: hintStyle),
       Text(t.srs_settings_rwkv_retention_note, style: hintStyle),
+      if (size != null)
+        AdaptiveSettingsSegmentedRow<SrsRwkvModelSize>(
+          key: const ValueKey<String>('srs-settings-rwkv-model-size'),
+          title: t.srs_settings_rwkv_model_size,
+          subtitle: switch (size) {
+            SrsRwkvModelSize.small => t.srs_settings_rwkv_model_size_small_hint,
+            SrsRwkvModelSize.tiny => t.srs_settings_rwkv_model_size_tiny_hint,
+          },
+          segments: <ButtonSegment<SrsRwkvModelSize>>[
+            ButtonSegment<SrsRwkvModelSize>(
+              value: SrsRwkvModelSize.small,
+              label: Text(t.srs_settings_rwkv_model_size_small),
+            ),
+            ButtonSegment<SrsRwkvModelSize>(
+              value: SrsRwkvModelSize.tiny,
+              label: Text(t.srs_settings_rwkv_model_size_tiny),
+            ),
+          ],
+          selected: size,
+          // 整台设备的设置，选了立即生效（不等牌组设置的「保存」）：RWKV 服务换成新档位的，下载权重并重放。
+          onChanged: (SrsRwkvModelSize v) {
+            if (v == size) return;
+            srsRunLogged(
+              'srsSetRwkvModelSize',
+              () => srsSetRwkvModelSize(ref, v),
+            );
+          },
+        ),
     ];
     if (status != null) {
       final TextStyle errorStyle = hintStyle.copyWith(
@@ -102,7 +136,9 @@ class _SrsRwkvPanelState extends ConsumerState<SrsRwkvPanel> {
                           () => service.start(force: true),
                         ),
                   child: Text(
-                    t.srs_settings_rwkv_download(size: _downloadSize),
+                    t.srs_settings_rwkv_download(
+                      size: _downloadSize(size ?? SrsRwkvModelSize.small),
+                    ),
                   ),
                 ),
               ),

@@ -85,13 +85,14 @@
   | 动词 | 作用 |
   |---|---|
   | `hello` | 平台、Flutter 版本、核数、空闲内存 / 磁盘、槽位上限、是否暂停（`--status` 用它） |
-  | `lock <slot> <runId>` | 抢该槽位 checkout 的整轮锁（同第一期的 `mkdir` 锁 + 心跳 + 15 分钟接管），借种子仓 / 首槽位的对象库 |
+  | `lock <slot> <runId> [wait]` | 拿该槽位 checkout 的锁（同第一期的 `mkdir` 锁 + 心跳 + 15 分钟接管），借种子仓 / 首槽位的对象库。2026-11-15 起装了 `slot.sh`（`worker_slot.sh`）的机器按入队先后给锁，可在 worker 上等 `[wait]` 秒；没装的照旧先到先得、整轮占用 |
+  | `yield <slot> <runId>` | （2026-11-15）一个批次跑完后问：有别的运行在等就交出锁（回 `yielded`，本轮 ref 保留，之后再 `lock` 排队），否则 `kept` |
   | `git-receive-pack '<work\|work-N>'` | 收快照推送；只认这两种名字，映射到 shim 自己的目录，且必须先 `lock` |
   | `prepare <slot> <sha>` | checkout + clean + `worker_prepare.sh`（只带主人的 `prepare.env`） |
   | `run <slot> <concurrency> [flutter 参数]` | 跑一批，测试文件从 stdin 读（`worker_run.sh` 逐行校验） |
   | `analyze <slot> [--[no-]fatal-*]` | `flutter analyze`，路径从 stdin 读（`worker_analyze.sh` 校验） |
   | `build <slot> flutter\|gradle ...` | 编译检查（`worker_build.sh`），只回日志与退出码 |
-  | `kill <slot>` / `finish <slot> <runId>` | 停批次 / 删本轮 ref 并释放自己的锁 |
+  | `kill <slot>` / `finish <slot> <runId>` | 停批次 / 删本轮 ref、排队票并释放自己的锁 |
 
   请求先过字符集 `[A-Za-z0-9_ ,.:=+-]`（不认引号 / `$` / `;` / 反引号 / 斜杠），再逐参数按模式校验；flutter 参数只认 `--name`、`--name=朴素值` 或紧随其后的朴素值（不能以 `-` 开头），协调者在本机先用同一套规则拒绝（`shimRequest`），不把会被拒的请求发出去。
 - 主人侧设置全在 `~/.fushi-worker/`，请求方一个都改不了：`limits`（`MAX_SLOTS` 默认 1、`MAX_CONCURRENCY` 默认核数/2、`MIN_FREE_MEM_MB` 默认 4096、`MIN_FREE_DISK_GB` 默认 20；只按 `KEY=数字` 解析、不执行）、`path`（Flutter / cargo 的 bin，sshd 的非交互 shell 不读 profile）、`prepare.env`（只给准备步骤，如代理）、`seed`（公开仓的裸 clone）、`pause`。因此 `ssh-shim` 配置里出现 `workdir` / `seedRepo` / `path` / `prepareEnv` 直接报配置错误。
@@ -262,6 +263,8 @@ worker 必须跑**和本机完全一致**的代码，包括没提交的改动。
 |---|---|---|
 | `flutter pub get --enforce-lockfile` + `ci/apply-patches.sh` | 全部 `pubspec.lock` + `ci/patches/` 哈希 | 1–2 分钟 |
 | 原生测试库 | 各 `native/fushi_*/` 源码树哈希（同 `tool/native_libs.ps1` 的判据） | 首次 5–10 分钟，之后增量 |
+
+2026-11-16 起 checkout 按批次在运行之间换手（`worker_slot.sh` 的 `yield`），两个快照不同的运行会在同一 checkout 上来回切。为此原生库与 hook 预热不再是「当前一份」的单值戳记，而由 `fushi/tool/dist_test/worker_cache.sh` 按内容键存多份：`.git/fushi-dist/native/<crate>/<key>/` 存每个键编出的整套 `prebuilt/<平台>`，切回见过的键只拷回来；`pub-warm/<key>` 记哪些依赖键预热过（hook 输出本身在 `.dart_tool/hooks_runner` 按输入哈希分目录，本就多版本共存）。各缓存只留最近用过的 3 个键。`pub get` 仍在依赖键变了时照跑（共享 pub cache 下只需数秒），以它为准写解析结果。
 
 准备失败的 worker 本轮直接退出队列，批次由其它机器接走；报告里写明哪台、为什么。
 

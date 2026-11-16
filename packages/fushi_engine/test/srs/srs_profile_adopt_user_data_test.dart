@@ -21,6 +21,7 @@ import 'package:fushi_srs/fushi_srs.dart' show SrsEntityKind, SrsFieldKeys;
 import 'package:test/test.dart';
 
 import 'support/srs_test_storage.dart';
+import 'support/srs_raw_sql.dart';
 
 class _Device {
   _Device._(this.db, this.srs, this.deviceId, this.profileId);
@@ -52,7 +53,6 @@ class _Device {
   }
 
   Future<SrsDbStore> _openStore() async => SrsDbStore.open(
-    db: srs.db,
     core: srs.core,
     profileUid: await db.profileUidOf(profileId),
     deviceId: deviceId,
@@ -101,7 +101,7 @@ class _Device {
   ))[SrsFieldKeys.deckRetention]?.winner?.value;
 
   Future<int> rows(String table, String uid) async =>
-      (await srs.db
+      (await srs.core
               .customSelect(
                 'SELECT COUNT(*) AS c FROM "$table" WHERE profile_uid = ?',
                 variables: <Variable<Object>>[Variable<String>(uid, srsIdType)],
