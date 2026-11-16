@@ -1,4 +1,9 @@
-//! srs.db 的 C ABI（Dart 绑定：packages/fushi_srs/lib/src/ffi/fushi_fsrs_bindings.dart）。
+//! SRS 库的 C ABI（Dart 绑定：packages/fushi_srs/lib/src/ffi/fushi_fsrs_bindings.dart）。
+//!
+//! 换代（规划 §2.2 S1）之后句柄里放的是新代库（`store/gen4/kernel.rs` [G4Core]，profile 目录里的 `srs4.db`），用
+//! [ffsrs_store_open_mode] 打开；`ffsrs_store_sync2` 的命令经新代分发器（`store/gen4/dispatch.rs`）。旧的
+//! `ffsrs_store_open`（按 `srs.db` 路径打开协议 3 的库）已删。协议 3 的分发器 [sync2_dispatch] 原地留着，只给协议 3 的
+//! 测试与对拍装置用（G7-6 删）。
 //!
 //! 约定与 lib.rs 其余部分相同：返回 i32 状态（0 成功，负数失败），失败时 `*error_out` 是新分配的
 //! C 字符串（用 `ffsrs_free_string` 释放）；Rust 分配的字节用 `ffsrs_free_bytes` 释放；panic 一律
@@ -17,6 +22,8 @@ use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
+use super::gen4::files::{OpenError, OpenMode};
+use super::gen4::kernel::G4Core;
 use super::{CLOSED, SrsCore};
 
 pub const STORE_OK: i32 = 0;
@@ -25,6 +32,14 @@ pub const STORE_BAD_ARGUMENT: i32 = -2;
 /// 打开时库要升级而所在卷空间不够（[super::schema::UPGRADE_NO_SPACE]，错误文本后面是 `{"need","free","from","to"}`）：
 /// 库没动，腾出空间后再打开。
 pub const STORE_NO_SPACE: i32 = -3;
+/// [ffsrs_store_open_mode]：目录里还没有新代库（有协议 3 的库要迁移 / 只剩封存的旧库 / 上次迁移失败 / 辅助进程比主进程
+/// 先到）。错误文本后面是 `{"state": <migrate::GenState 的线上名>}`。库没动，迁移走全局命令 `gen4_migrate_run`。
+pub const STORE_NOT_MIGRATED: i32 = -4;
+/// [ffsrs_store_open_mode]：另一个进程正拿着换代锁（迁移进行中）。
+pub const STORE_MIGRATING: i32 = -5;
+/// [ffsrs_store_open_mode]：新代库在，旁边还有一份没封存、也不是它迁移来源的协议 3 库（`files.rs` 文件头）。那份库没动，
+/// 并入还是提示由调用方定。
+pub const STORE_LEGACY_UNMIGRATED: i32 = -6;
 pub const STORE_PANIC: i32 = -100;
 
 fn set_error(error_out: *mut *mut c_char, message: &str) {
@@ -53,24 +68,24 @@ fn utf8<'a>(ptr: *const u8, len: usize) -> Result<&'a str, String> {
 pub enum SrsCoreHandle {}
 
 /// 打开着的库：编号 → 共享引用。只在取 / 放引用的一瞬间持锁，命令本身不在锁里跑。
-static HANDLES: Mutex<BTreeMap<usize, Arc<SrsCore>>> = Mutex::new(BTreeMap::new());
+static HANDLES: Mutex<BTreeMap<usize, Arc<G4Core>>> = Mutex::new(BTreeMap::new());
 
 /// 下一个句柄编号（0 留给 NULL；单调递增，不复用）。
 static NEXT_HANDLE: AtomicUsize = AtomicUsize::new(1);
 
-fn handles() -> std::sync::MutexGuard<'static, BTreeMap<usize, Arc<SrsCore>>> {
+fn handles() -> std::sync::MutexGuard<'static, BTreeMap<usize, Arc<G4Core>>> {
     // 锁里只有 BTreeMap 的增删查，不跑用户代码；就算哪次 panic 毒化了锁，表本身也完好。
     HANDLES.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-fn register(core: SrsCore) -> *mut SrsCoreHandle {
+fn register(core: G4Core) -> *mut SrsCoreHandle {
     let id = NEXT_HANDLE.fetch_add(1, Ordering::Relaxed);
     handles().insert(id, Arc::new(core));
     id as *mut SrsCoreHandle
 }
 
 /// 取出句柄对应的库（已关闭 / 从没打开过 = None）。
-fn resolve(core: *const SrsCoreHandle) -> Option<Arc<SrsCore>> {
+fn resolve(core: *const SrsCoreHandle) -> Option<Arc<G4Core>> {
     handles().get(&(core as usize)).cloned()
 }
 
@@ -78,7 +93,7 @@ fn resolve(core: *const SrsCoreHandle) -> Option<Arc<SrsCore>> {
 fn run_core(
     core: *const SrsCoreHandle,
     error_out: *mut *mut c_char,
-    body: impl FnOnce(&SrsCore) -> Result<(), String>,
+    body: impl FnOnce(&G4Core) -> Result<(), String>,
 ) -> i32 {
     if core.is_null() {
         set_error(error_out, "null srs handle");
@@ -91,7 +106,7 @@ fn run_core(
     run(Arc::as_ptr(&c), error_out, body)
 }
 
-/// 跑一段带句柄（[SrsCore]）的操作，统一处理空指针、错误与 panic。
+/// 跑一段带句柄（[G4Core]）的操作，统一处理空指针、错误与 panic。
 fn run<T>(
     core: *const T,
     error_out: *mut *mut c_char,
@@ -148,11 +163,15 @@ pub extern "C" fn ffsrs_set_temp_dir(
     }
 }
 
-/// 打开 / 新建 srs.db。成功写 `*core_out`；用 [ffsrs_store_close] 关闭。
+/// 打开 profile 目录 [dir] 里的新代库（`store/gen4/files.rs` 的打开模式）：[mode] 0 = Primary（主进程，唯一的写者；
+/// 全新安装时建空库），1 = Secondary（查词弹窗等辅助进程，只读，写命令报只读）。成功写 `*core_out`；用
+/// [ffsrs_store_close] 关闭。打不开时的代际状态各有返回码：[STORE_NOT_MIGRATED]（错误文本后面带 `{"state"}`）/
+/// [STORE_MIGRATING] / [STORE_LEGACY_UNMIGRATED]；别的错误 [STORE_ERROR]。不会静默打开协议 3 的 `srs.db`。
 #[no_mangle]
-pub extern "C" fn ffsrs_store_open(
-    path: *const u8,
-    path_len: usize,
+pub extern "C" fn ffsrs_store_open_mode(
+    dir: *const u8,
+    dir_len: usize,
+    mode: i32,
     core_out: *mut *mut SrsCoreHandle,
     error_out: *mut *mut c_char,
 ) -> i32 {
@@ -160,26 +179,50 @@ pub extern "C" fn ffsrs_store_open(
         set_error(error_out, "null core_out");
         return STORE_BAD_ARGUMENT;
     }
-    let outcome = catch_unwind(AssertUnwindSafe(|| -> Result<SrsCore, String> {
-        SrsCore::open(Path::new(utf8(path, path_len)?))
+    let mode = match mode {
+        0 => OpenMode::Primary,
+        1 => OpenMode::Secondary,
+        m => {
+            set_error(error_out, &format!("unknown open mode {m}"));
+            return STORE_BAD_ARGUMENT;
+        }
+    };
+    let outcome = catch_unwind(AssertUnwindSafe(|| -> Result<G4Core, (i32, String)> {
+        let dir = Path::new(utf8(dir, dir_len).map_err(|e| (STORE_ERROR, e))?);
+        G4Core::open(dir, mode).map_err(|e| open_error(dir, e))
     }));
     match outcome {
         Ok(Ok(core)) => {
             unsafe { *core_out = register(core) };
             STORE_OK
         }
-        Ok(Err(e)) => {
+        Ok(Err((code, e))) => {
             set_error(error_out, &e);
-            if e.starts_with(super::schema::UPGRADE_NO_SPACE) {
-                STORE_NO_SPACE
-            } else {
-                STORE_ERROR
-            }
+            code
         }
         Err(_) => {
             set_error(error_out, "panic in srs store open");
             STORE_PANIC
         }
+    }
+}
+
+/// [ffsrs_store_open_mode] 打不开时的返回码与错误文本。没迁移的再按 `migrate::status` 区分「要迁移 / 只剩封存的旧库 /
+/// 上次迁移失败 / 还什么都没有（辅助进程先到）」：调用方据此选页面。
+fn open_error(dir: &Path, e: OpenError) -> (i32, String) {
+    match e {
+        OpenError::NotMigrated => {
+            let state = super::gen4::migrate::status(dir)
+                .map(|s| s.wire().to_owned())
+                .unwrap_or_else(|err| format!("unknown: {err}"));
+            (
+                STORE_NOT_MIGRATED,
+                format!("{e} {}", serde_json::json!({ "state": state })),
+            )
+        }
+        OpenError::Migrating => (STORE_MIGRATING, e.to_string()),
+        OpenError::LegacyNotMigrated => (STORE_LEGACY_UNMIGRATED, e.to_string()),
+        OpenError::Failed(m) => (STORE_ERROR, m),
     }
 }
 
@@ -438,7 +481,7 @@ fn exec_batch_raw_entry(
 pub const DIAG_COUNT_LEN: usize = 7;
 
 /// 进程级内存诊断计数（不需要句柄，任意线程可调）：按序写 `out[0..min(n, DIAG_COUNT_LEN)]`，返回写了几项。
-/// `[句柄表里打开着的库, 还没释放的 SrsCore（含已关、在途调用还握着的）,
+/// `[句柄表里打开着的库, 还没释放的库句柄结构（G4Core，含已关、在途调用还握着的）,
 ///   各库只读连接池开着的连接总数, 本库内置 SQLite 的堆用量字节, 其高水位字节,
 ///   打开着的库文件总字节, 它们的 `-wal` 总字节]`。
 /// 用途：移动端内存耗尽闪退（BUG-4075）的取证面包屑看「退役的库还驻留没有 / 连接与 SQLite 页缓存占多少」。
@@ -451,7 +494,7 @@ pub extern "C" fn ffsrs_store_diag_counts(out: *mut i64, n: usize) -> usize {
         let (open, readers, cores) = {
             let table = handles();
             let readers: usize = table.values().map(|c| c.pooled_readers()).sum();
-            let cores: Vec<Arc<SrsCore>> = table.values().cloned().collect();
+            let cores: Vec<Arc<G4Core>> = table.values().cloned().collect();
             (table.len(), readers, cores)
         };
         // stat 在句柄表锁外做：慢盘上也不挡别的线程取句柄。
@@ -462,7 +505,7 @@ pub extern "C" fn ffsrs_store_diag_counts(out: *mut i64, n: usize) -> usize {
         drop(cores);
         let values: [i64; DIAG_COUNT_LEN] = [
             open as i64,
-            super::live_cores() as i64,
+            super::gen4::kernel::live_cores() as i64,
             readers as i64,
             unsafe { rusqlite::ffi::sqlite3_memory_used() },
             unsafe { rusqlite::ffi::sqlite3_memory_highwater(0) },
@@ -477,7 +520,7 @@ pub extern "C" fn ffsrs_store_diag_counts(out: *mut i64, n: usize) -> usize {
     .unwrap_or(0)
 }
 
-/// `*out` = 查询道的并发上限（查询道只读连接池的连接数上限，`SrsCore::read_concurrency`）：Dart 侧查询道的
+/// `*out` = 查询道的并发上限（只读连接池的空闲连接上限，`G4Core::read_concurrency`）：Dart 侧查询道的
 /// worker 数取它。
 #[no_mangle]
 pub extern "C" fn ffsrs_store_read_concurrency(
@@ -639,7 +682,7 @@ fn command(
     out: *mut *mut u8,
     out_len: *mut usize,
     error_out: *mut *mut c_char,
-    body: impl FnOnce(&SrsCore, &[u8], &[i64]) -> Result<Vec<u8>, String>,
+    body: impl FnOnce(&G4Core, &[u8], &[i64]) -> Result<Vec<u8>, String>,
 ) -> i32 {
     if out.is_null() || out_len.is_null() {
         set_error(error_out, "null out");
@@ -684,7 +727,7 @@ fn lineage_command(
     out_len: *mut usize,
     error_out: *mut *mut c_char,
     body: impl FnOnce(
-        &SrsCore,
+        &G4Core,
         Vec<Vec<String>>,
         &[i64],
         crate::projection::Alg,
@@ -894,9 +937,13 @@ fn key32(v: &serde_json::Value) -> Result<Option<[u8; 32]>, String> {
     }
 }
 
-/// 一条 JSON 命令（[sync2_dispatch_op]）。返回之后（命令自己的写入已提交或已回滚）按请求与结果推进这个 profile 的
-/// 进程内刷新键（store/refresh.rs [SrsCore::refresh_after]）；收段通道在命令之前自己做完的片在每片提交时已经记过。
-pub(crate) fn sync2_dispatch(
+/// **协议 3** 的一条 JSON 命令（[sync2_dispatch_op]）。返回之后（命令自己的写入已提交或已回滚）按请求与结果推进这个
+/// profile 的进程内刷新键（store/refresh.rs [SrsCore::refresh_after]）；收段通道在命令之前自己做完的片在每片提交时已经记过。
+///
+/// 换代（S1）之后生产入口 [ffsrs_store_sync2] 不再调它（走 `store/gen4/dispatch.rs`）：它与它调到的协议 3 实现原地留着，
+/// 给协议 3 的测试、对拍装置（`gen4/parity.rs` / `cmd/*_tests.rs` 的「同一串命令打到两侧」）与 S1 的分发器对拍用，
+/// 由 G7-6 连同协议 3 的实现一起删。`pub` 是为了让它（与它调到的整片协议 3 代码）在非测试构建里不成死代码告警。
+pub fn sync2_dispatch(
     c: &SrsCore,
     req: &serde_json::Value,
     blobs: &mut Vec<Vec<u8>>,
@@ -2016,70 +2063,9 @@ fn sync2_command(
             files.push(("export.fushisrs".to_owned(), c.sync2_export(profile)?));
             json!({})
         }
-        // 加密位置上的媒体（设计 §9：网盘只见密文和文件大小）：XChaCha20-Poly1305，AAD 绑定文件名，
-        // 换名 / 换内容即解密失败。段的加解密在 outbox / ingest 里，这里只给媒体用。
-        "seal" | "open" => {
-            let key = crate::sync2::keys::CollectionKey(
-                key32(&req["key"])?.ok_or("seal/open: missing key")?,
-            );
-            let aad = format!("fushi-srs-media:{}", s("name")?);
-            let input = blobs.first().ok_or("seal/open: missing input")?;
-            // 分块流式格式（sync2/media_seal.rs，审查 S-9）。
-            if op == "seal" {
-                files.push((
-                    "sealed".to_owned(),
-                    crate::sync2::media_seal::seal_bytes(&key, input, aad.as_bytes())?,
-                ));
-            } else {
-                files.push((
-                    "plain".to_owned(),
-                    crate::sync2::media_seal::open_bytes(&key, input, aad.as_bytes())?,
-                ));
-            }
-            json!({})
-        }
-        // v1 位置上按名字存的整份封装（S-9 之前的格式）：只有一次性迁移（srs_location_migration.dart）读它。
-        "open_v1" => {
-            let key = crate::sync2::keys::CollectionKey(
-                key32(&req["key"])?.ok_or("open_v1: missing key")?,
-            );
-            let aad = format!("fushi-srs-media:{}", s("name")?);
-            let input = blobs.first().ok_or("open_v1: missing input")?;
-            match crate::sync2::media_seal::open_v1(&key, input, aad.as_bytes()) {
-                Some(plain) => {
-                    files.push(("plain".to_owned(), plain));
-                    json!({})
-                }
-                None => json!({"failure": "unauthenticated"}),
-            }
-        }
-        // 文件到文件的流式封 / 解（大媒体不整份进内存；审查 S-9）：返回明文的字节数与 sha256（内容寻址核对用，
-        // 不必再读一遍文件）。目标先写同目录临时文件再改名；解不开不留目标。解不开（不是本机读写出错）不算命令失败：
-        // 回 `{"failure": "unauthenticated" | "corrupt"}`（media_seal.rs [OpenError]），媒体对账据此决定记不记可疑。
-        "seal_file" | "open_file" => {
-            use crate::sync2::media_seal::OpenError;
-            let key = crate::sync2::keys::CollectionKey(
-                key32(&req["key"])?.ok_or("seal/open: missing key")?,
-            );
-            let aad = format!("fushi-srs-media:{}", s("name")?);
-            let (src, dst) = (
-                std::path::Path::new(s("src")?),
-                std::path::Path::new(s("dst")?),
-            );
-            let done = if op == "seal_file" {
-                crate::sync2::media_seal::seal_file(&key, src, dst, aad.as_bytes())?
-            } else {
-                match crate::sync2::media_seal::open_file(&key, src, dst, aad.as_bytes()) {
-                    Ok(done) => done,
-                    Err(OpenError::Unauthenticated) => {
-                        return Ok(json!({"failure": "unauthenticated"}));
-                    }
-                    Err(OpenError::Corrupt) => return Ok(json!({"failure": "corrupt"})),
-                    Err(e @ OpenError::Io(_)) => return Err(e.into()),
-                }
-            };
-            let sha: String = done.sha256.iter().map(|b| format!("{b:02x}")).collect();
-            json!({"sha256": sha, "bytes": done.plain_len})
+        // 纯加解密（不碰库）：与新代分发器共用 [crypto_command]。
+        "seal" | "open" | "open_v1" | "seal_file" | "open_file" | "derive_key" => {
+            crypto_command(op, req, blobs, files)?
         }
         "digest" => match req.get("minIntervalMs").and_then(Value::as_i64) {
             Some(ms) => c.sync2_digest_due(profile, i("now")?, Some(ms))?,
@@ -2249,6 +2235,95 @@ fn sync2_command(
             req["retract"] == Value::Bool(true),
             i("now")?,
         )?,
+        other => return Err(format!("unknown sync2 op {other}")),
+    })
+}
+
+/// 纯加解密命令（`seal` / `open` / `open_v1` / `seal_file` / `open_file` / `derive_key`）：不碰库、与库代无关，协议 3 与
+/// 新代的分发器共用这一份（交接说明对照表 7.4「S1 原样接」）。
+pub(crate) fn crypto_command(
+    op: &str,
+    req: &serde_json::Value,
+    blobs: &[Vec<u8>],
+    files: &mut Vec<(String, Vec<u8>)>,
+) -> Result<serde_json::Value, String> {
+    use serde_json::{Value, json};
+    let s = |k: &str| {
+        req.get(k)
+            .and_then(Value::as_str)
+            .ok_or_else(|| format!("sync2: missing {k}"))
+    };
+    let i = |k: &str| {
+        req.get(k)
+            .and_then(Value::as_i64)
+            .ok_or_else(|| format!("sync2: missing {k}"))
+    };
+    Ok(match op {
+        // 加密位置上的媒体（设计 §9：网盘只见密文和文件大小）：XChaCha20-Poly1305，AAD 绑定文件名，
+        // 换名 / 换内容即解密失败。段的加解密在 outbox / ingest 里，这里只给媒体用。
+        "seal" | "open" => {
+            let key = crate::sync2::keys::CollectionKey(
+                key32(&req["key"])?.ok_or("seal/open: missing key")?,
+            );
+            let aad = format!("fushi-srs-media:{}", s("name")?);
+            let input = blobs.first().ok_or("seal/open: missing input")?;
+            // 分块流式格式（sync2/media_seal.rs，审查 S-9）。
+            if op == "seal" {
+                files.push((
+                    "sealed".to_owned(),
+                    crate::sync2::media_seal::seal_bytes(&key, input, aad.as_bytes())?,
+                ));
+            } else {
+                files.push((
+                    "plain".to_owned(),
+                    crate::sync2::media_seal::open_bytes(&key, input, aad.as_bytes())?,
+                ));
+            }
+            json!({})
+        }
+        // v1 位置上按名字存的整份封装（S-9 之前的格式）：只有一次性迁移（srs_location_migration.dart）读它。
+        "open_v1" => {
+            let key = crate::sync2::keys::CollectionKey(
+                key32(&req["key"])?.ok_or("open_v1: missing key")?,
+            );
+            let aad = format!("fushi-srs-media:{}", s("name")?);
+            let input = blobs.first().ok_or("open_v1: missing input")?;
+            match crate::sync2::media_seal::open_v1(&key, input, aad.as_bytes()) {
+                Some(plain) => {
+                    files.push(("plain".to_owned(), plain));
+                    json!({})
+                }
+                None => json!({"failure": "unauthenticated"}),
+            }
+        }
+        // 文件到文件的流式封 / 解（大媒体不整份进内存；审查 S-9）：返回明文的字节数与 sha256（内容寻址核对用，
+        // 不必再读一遍文件）。目标先写同目录临时文件再改名；解不开不留目标。解不开（不是本机读写出错）不算命令失败：
+        // 回 `{"failure": "unauthenticated" | "corrupt"}`（media_seal.rs [OpenError]），媒体对账据此决定记不记可疑。
+        "seal_file" | "open_file" => {
+            use crate::sync2::media_seal::OpenError;
+            let key = crate::sync2::keys::CollectionKey(
+                key32(&req["key"])?.ok_or("seal/open: missing key")?,
+            );
+            let aad = format!("fushi-srs-media:{}", s("name")?);
+            let (src, dst) = (
+                std::path::Path::new(s("src")?),
+                std::path::Path::new(s("dst")?),
+            );
+            let done = if op == "seal_file" {
+                crate::sync2::media_seal::seal_file(&key, src, dst, aad.as_bytes())?
+            } else {
+                match crate::sync2::media_seal::open_file(&key, src, dst, aad.as_bytes()) {
+                    Ok(done) => done,
+                    Err(OpenError::Unauthenticated) => {
+                        return Ok(json!({"failure": "unauthenticated"}));
+                    }
+                    Err(OpenError::Corrupt) => return Ok(json!({"failure": "corrupt"})),
+                    Err(e @ OpenError::Io(_)) => return Err(e.into()),
+                }
+            };
+            let sha: String = done.sha256.iter().map(|b| format!("{b:02x}")).collect();
+            json!({"sha256": sha, "bytes": done.plain_len})
+        }
         "derive_key" => {
             let salt_hex = s("salt")?;
             let salt: Vec<u8> = (0..salt_hex.len() / 2)
@@ -2263,11 +2338,11 @@ fn sync2_command(
             )?;
             json!({"key": k.0.iter().map(|b| format!("{b:02x}")).collect::<String>()})
         }
-        other => return Err(format!("unknown sync2 op {other}")),
+        other => return Err(format!("not a crypto op {other}")),
     })
 }
 
-/// 同步 v2 的唯一入口（粗粒度命令，设计 §11；命令表见 `sync2_dispatch`）。请求是 JSON
+/// 同步 v2 的唯一入口（粗粒度命令，设计 §11；命令表见新代分发器 `store/gen4/dispatch.rs`）。请求是 JSON
 /// `{"op": ..., "profile": ..., ...}`；[blobs] 是分帧字节块（段 / head 文件，或 `apply` 的事件数组 JSON）。
 /// 输出 = `u32 json_len + JSON`，再接 `u32 n` 与 n 组分帧的 `(相对路径, 字节)`（发件 / 写 head 才有）。
 #[no_mangle]
@@ -2290,7 +2365,7 @@ pub extern "C" fn ffsrs_store_sync2(
             .map_err(|e| format!("bad sync2 request: {e}"))?;
         let mut blobs = frames(bytes(blobs, blobs_len).ok_or("null blobs")?)?;
         let mut files = Vec::new();
-        let result = sync2_dispatch(c, &req, &mut blobs, &mut files)?;
+        let result = super::gen4::dispatch::dispatch(c, &req, &mut blobs, &mut files)?;
         let text = serde_json::to_vec(&result).map_err(|e| e.to_string())?;
         let mut buf = Vec::with_capacity(text.len() + 8);
         buf.extend_from_slice(&(text.len() as u32).to_le_bytes());
@@ -2324,7 +2399,7 @@ mod tests {
                 .as_nanos()
         ));
         std::fs::create_dir_all(&dir).unwrap();
-        dir.join("srs.db")
+        dir
     }
 
     fn open(p: &Path) -> *mut SrsCoreHandle {
@@ -2332,7 +2407,7 @@ mod tests {
         let mut core: *mut SrsCoreHandle = null_mut();
         let mut err: *mut c_char = null_mut();
         assert_eq!(
-            ffsrs_store_open(path.as_ptr(), path.len(), &mut core, &mut err),
+            ffsrs_store_open_mode(path.as_ptr(), path.len(), 0, &mut core, &mut err),
             STORE_OK
         );
         assert!(!core.is_null());
@@ -2346,7 +2421,7 @@ mod tests {
     }
 
     /// 结构体还活着（只看引用计数，不碰内容）。
-    fn alive(weak: &Weak<SrsCore>) -> bool {
+    fn alive(weak: &Weak<G4Core>) -> bool {
         weak.strong_count() > 0
     }
 
@@ -2386,9 +2461,9 @@ mod tests {
         // 关掉之后在途调用还握着的那份照样算存活：退役的库驻留就是要看的东西。
         let held = resolve(h).unwrap();
         ffsrs_store_close(h);
-        assert!(super::super::live_cores() >= 1);
+        assert!(crate::store::gen4::kernel::live_cores() >= 1);
         drop(held);
-        std::fs::remove_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::remove_dir_all(&p).unwrap();
     }
 
     /// 关库后经旧句柄的每个入口都报「已关闭」（不 UAF、不按路径把库重新打开）；重复关闭无操作；
@@ -2405,7 +2480,7 @@ mod tests {
         );
         ffsrs_store_close(h);
         // 关库后 srs.db 可删（覆盖恢复）；之后任何入口都不许把它重新建出来。
-        std::fs::remove_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::remove_dir_all(&p).unwrap();
 
         let h = h as *const SrsCoreHandle;
         let mut out: *mut u8 = null_mut();
@@ -2543,7 +2618,7 @@ mod tests {
             !alive(&weak),
             "the core must be freed once the last in-flight call returns"
         );
-        std::fs::remove_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::remove_dir_all(&p).unwrap();
     }
 
     /// 压力：多线程不停跑命令时关库，每个调用不是成功就是「已关闭」，最后结构体释放。
@@ -2594,7 +2669,7 @@ mod tests {
         let done: usize = workers.into_iter().map(|w| w.join().unwrap()).sum();
         assert!(done > 0);
         assert!(!alive(&weak));
-        std::fs::remove_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::remove_dir_all(&p).unwrap();
     }
 
     /// 新设备收段通道：每条 v2 命令都显式声明「通道没做完时要不要先做完」（[CHANNEL_TRANSPARENT] / [CHANNEL_SETTLES]
@@ -2640,6 +2715,74 @@ mod tests {
                 "`{listed}` is listed but no longer a command"
             );
         }
+    }
+
+    /// 换代（S1）：协议 3 分发器里的每一条命令在新代分发器里都有去向（接线 / 归某模块接线 / 已删，
+    /// `gen4/dispatch.rs` `wiring`），不会落进「unknown op」；标成接线的在新代分发器里真有臂（经 C ABI 发出去，错误
+    /// 不是 `NO_ARM`）；未接线 / 已删的报各自的明确错误。新增协议 3 命令或改了去向而没登记就红。
+    #[test]
+    fn every_protocol_3_command_has_a_gen4_wiring() {
+        use crate::store::gen4::dispatch::{NO_ARM, Wiring, wiring};
+        use crate::store::gen4::kernel::{REMOVED, UNWIRED};
+        let ops = dispatched_ops();
+        assert!(ops.len() > 60, "parsed too few commands: {ops:?}");
+        let p = temp("wiring");
+        let h = open(&p);
+        let (mut wired, mut unwired, mut gone) = (0, 0, 0);
+        for op in &ops {
+            let w = wiring(op)
+                .unwrap_or_else(|| panic!("protocol 3 command `{op}` has no gen4 wiring"));
+            let req =
+                serde_json::json!({"op": op, "profile": "0193a1b2-0000-7000-8000-00000000beef"})
+                    .to_string();
+            let (mut out, mut out_len, mut err) = (null_mut(), 0usize, null_mut());
+            let rc = ffsrs_store_sync2(
+                h,
+                req.as_ptr(),
+                req.len(),
+                null(),
+                0,
+                &mut out,
+                &mut out_len,
+                &mut err,
+            );
+            let msg = if rc == STORE_OK {
+                crate::ffsrs_free_bytes(out, out_len);
+                String::new()
+            } else {
+                take(err)
+            };
+            assert_ne!(rc, STORE_PANIC, "{op}: {msg}");
+            match w {
+                Wiring::Wired => {
+                    wired += 1;
+                    assert!(!msg.starts_with(NO_ARM), "{op}: {msg}");
+                    assert!(
+                        !msg.starts_with(UNWIRED) && !msg.starts_with(REMOVED),
+                        "{op}: {msg}"
+                    );
+                }
+                Wiring::Unwired(owner) => {
+                    unwired += 1;
+                    assert_eq!(rc, STORE_ERROR, "{op}");
+                    assert!(
+                        msg.starts_with(UNWIRED) && msg.contains(owner),
+                        "{op}: {msg}"
+                    );
+                }
+                Wiring::Removed(_) => {
+                    gone += 1;
+                    assert_eq!(rc, STORE_ERROR, "{op}");
+                    assert!(msg.starts_with(REMOVED), "{op}: {msg}");
+                }
+            }
+        }
+        assert!(
+            wired > 40 && unwired > 30 && gone > 8,
+            "{wired} / {unwired} / {gone}"
+        );
+        ffsrs_store_close(h);
+        std::fs::remove_dir_all(&p).unwrap();
     }
 
     /// 按源码里 [sync2_dispatch_op] 与 [sync2_command] 顶层匹配臂（及分发器里的命令名比较）列出全部命令名。

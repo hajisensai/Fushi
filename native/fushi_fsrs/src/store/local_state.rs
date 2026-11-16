@@ -23,15 +23,15 @@ use serde_json::{Map, Value, json};
 
 use super::sync2::sql;
 
-const REVISION_KEY: &str = "revision";
-const EPOCH_KEY: &str = "epoch";
-const ANCHOR_KEY: &str = "anchor";
+pub(crate) const REVISION_KEY: &str = "revision";
+pub(crate) const EPOCH_KEY: &str = "epoch";
+pub(crate) const ANCHOR_KEY: &str = "anchor";
 /// 存量样式去重的进度：`srs_field_edits` 里已检查到的 rowid（store/repr_rewrite.rs）。
 pub(crate) const STYLE_CURSOR_KEY: &str = "styleCursor";
 
 /// 一个新纪元：本机状态行被清空重建（覆盖恢复、删 profile 后重来）后换一个，修订号从 0 重数也不会撞上旧指纹。只当
 /// 不透明串用（Dart 把它拼进 `纪元:修订号` 这样的指纹）：十六进制，不含分隔符。
-fn new_epoch() -> String {
+pub(crate) fn new_epoch() -> String {
     let mut b = [0u8; 10];
     getrandom::fill(&mut b).expect("system random source");
     b.iter().map(|x| format!("{x:02x}")).collect()
@@ -63,7 +63,7 @@ fn stored(c: &Connection, profile: &str) -> Result<Option<Map<String, Value>>, S
     }))
 }
 
-fn has_epoch(row: &Map<String, Value>) -> bool {
+pub(crate) fn has_epoch(row: &Map<String, Value>) -> bool {
     row.get(EPOCH_KEY).is_some_and(Value::is_string)
 }
 
@@ -207,7 +207,8 @@ pub(crate) fn persist_projected(
     persist_projected_with(c, profile, anchor, result, |_| {})
 }
 
-fn view(row: Option<&Map<String, Value>>) -> Value {
+/// `local_state` / `local_state_ensure` 的回包形态（新代命令层 `store/gen4/local.rs` 同一份）。
+pub(crate) fn view(row: Option<&Map<String, Value>>) -> Value {
     let int = |k: &str| {
         row.and_then(|r| r.get(k))
             .and_then(Value::as_i64)
