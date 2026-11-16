@@ -264,7 +264,10 @@ public class CrossAppAudioService extends Service {
     }
 
     private void releaseCapture() {
-        if (capturing) CrossAppAudioProvider.setCapturingMarker(this, false);
+        if (capturing) {
+            CrossAppAudioProvider.setCapturingMarker(this, false);
+            CrossAppAudioProvider.deleteSnapshots(this);
+        }
         capturing = false;
         if (instance == this) instance = null;
         Thread thread = captureThread;

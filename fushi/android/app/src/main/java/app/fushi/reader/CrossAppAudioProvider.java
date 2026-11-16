@@ -135,6 +135,17 @@ public class CrossAppAudioProvider extends ContentProvider {
         return result;
     }
 
+    /** 停止采集时调：其他 app 的录音不在用户关掉开关后继续留在缓存里。 */
+    static void deleteSnapshots(@NonNull Context context) {
+        File[] files = new File(context.getCacheDir(), DIR)
+                .listFiles((File f) -> f.getName().endsWith(".pcm"));
+        if (files == null) return;
+        for (File f : files) {
+            //noinspection ResultOfMethodCallIgnored
+            f.delete();
+        }
+    }
+
     /** 只留最新的 KEEP_SNAPSHOTS - 1 份，给这次腾位置。 */
     private static void prune(@NonNull File dir) {
         File[] files = dir.listFiles((File f) -> f.getName().endsWith(".pcm"));

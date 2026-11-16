@@ -21,6 +21,8 @@ final class AacClipEncoder {
     private static final String TAG = "AacClipEncoder";
     private static final String MIME = MediaFormat.MIMETYPE_AUDIO_AAC;
     private static final long TIMEOUT_US = 10_000;
+    /** 整段编码的硬上限：编码器出错又不发 EOS 时不让调用线程（和制卡）永远挂住。 */
+    private static final long MAX_ENCODE_NS = 30_000_000_000L;
 
     private AacClipEncoder() {}
 
@@ -48,7 +50,11 @@ final class AacClipEncoder {
             int inputOffset = 0;
             boolean inputDone = false;
             MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
+            long deadline = System.nanoTime() + MAX_ENCODE_NS;
             while (true) {
+                if (System.nanoTime() > deadline) {
+                    throw new IllegalStateException("AAC encoder produced no EOS in time");
+                }
                 if (!inputDone) {
                     int inIndex = codec.dequeueInputBuffer(TIMEOUT_US);
                     if (inIndex >= 0) {
