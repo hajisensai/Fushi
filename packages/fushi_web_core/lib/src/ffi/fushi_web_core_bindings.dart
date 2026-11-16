@@ -328,6 +328,9 @@ class FushiWebCoreBindings {
       fwc_adblock_finish_sync = lib.lookupFunction<_CoreOutC, _CoreOutC>(
         'fwc_adblock_finish_sync',
       ),
+      fwc_adblock_load_cached = lib.lookupFunction<_CoreOutC, _CoreOutC>(
+        'fwc_adblock_load_cached',
+      ),
       fwc_adblock_check = lib.lookupFunction<_CheckC, _CheckDart>(
         'fwc_adblock_check',
         isLeaf: true,
@@ -445,6 +448,13 @@ class FushiWebCoreBindings {
     ffi.Pointer<ffi.Size>,
   )
   fwc_adblock_finish_sync;
+
+  /// 暖机：不联网，按磁盘缓存装引擎（慢，后台 isolate 调）。
+  final ffi.Pointer<ffi.Uint8> Function(
+    ffi.Pointer<FwcAdblockCore>,
+    ffi.Pointer<ffi.Size>,
+  )
+  fwc_adblock_load_cached;
 
   /// leaf 调用（微秒级、不回调 Dart）。
   final int Function(
