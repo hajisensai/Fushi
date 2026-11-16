@@ -58,8 +58,10 @@ use rusqlite::Connection;
 /// 规范形查的 `notes_dupe` 索引——协议 3 v15 的 `idx_srs_notes_cache_dupe`——与常驻浏览会话按代号失效用的缓存层
 /// 变更记录 `cache_gen` / `cache_log`，`cache.rs` 文件头「变更记录」）；G7-4e 起 `40017`（还原点列表 `cmd/center.rs`
 /// `checkpoints`：真相表 `ops` 上只收种类 6（`Checkpoint`）的部分索引 `ops_checkpoint`，按设备主键区间读还原点、
-/// 不扫日志）。整批推送前每个改表的 PR 各自用分到的号。
-pub const SCHEMA: i64 = 40_017;
+/// 不扫日志）；G7-4f 起 `40018`（RWKV 对齐的日志指纹与尾巴 `cmd/training.rs`：派生表 `log_ix` 上按落库序的部分索引
+/// `log_k (col, k) WHERE win = 1`——协议 3 按日志表 rowid 数行、取 rowid 之后的新行，新代的对应物是操作主键；没有它
+/// 每次作答对齐都要沿主键把整个集合的日志走一遍）。整批推送前每个改表的 PR 各自用分到的号。
+pub const SCHEMA: i64 = 40_018;
 
 /// 新代的号段从这里起：`schema` 小于它的都不是新代库（协议 3 的 1～29 与封存值 39999）。
 pub const GEN_FLOOR: i64 = 40_000;
@@ -365,6 +367,7 @@ CREATE TABLE IF NOT EXISTS log_ix (
   PRIMARY KEY (col, card, at, k)
 ) WITHOUT ROWID;
 CREATE INDEX IF NOT EXISTS log_id ON log_ix (col, id, k);
+CREATE INDEX IF NOT EXISTS log_k ON log_ix (col, k) WHERE win = 1;
 CREATE INDEX IF NOT EXISTS reg_set_aside ON reg_ix (col, state, k) WHERE state < 0;
 CREATE TABLE IF NOT EXISTS closure_ix (
   col INTEGER NOT NULL,
@@ -572,7 +575,7 @@ pub(crate) fn check_ready(conn: &Connection) -> Result<(), String> {
 /// 平均剩下的行数；`WITHOUT ROWID` 表的主键那一行 `idx` = 表名。量级取样本库，数字只表达形状、不随数据更新：计划因此
 /// 是 schema 的函数，不因某台设备数据多少而变（`tests::lookups_with_a_key_never_walk_the_whole_collection` 钉住）。
 /// 对这个文件跑 `ANALYZE` / `PRAGMA optimize` 会把它们换成随数据变的统计——下次打开时 [install] 会写回来。
-const PLANNER_STATS: [(&str, &str, &str); 37] = [
+const PLANNER_STATS: [(&str, &str, &str); 38] = [
     ("alias_ix", "alias_canon", "1000000 1000000 2 1"),
     ("alias_ix", "alias_ix", "1000000 1000000 1"),
     ("alias_ix", "alias_pool", "5000 5000 1"),
@@ -593,6 +596,7 @@ const PLANNER_STATS: [(&str, &str, &str); 37] = [
     ("log_ix", "log_at", "1000000 1000000 2"),
     ("log_ix", "log_id", "1000000 1000000 1 1"),
     ("log_ix", "log_ix", "1000000 1000000 20 1 1"),
+    ("log_ix", "log_k", "1000000 1000000 1"),
     ("media_ix", "media_ix", "100000 100000 1 1"),
     ("notes", "notes", "50000 50000 1"),
     ("notes", "notes_anki", "50000 50000 1"),
