@@ -413,7 +413,7 @@ void main() {
     expect(config.algorithm.memoryAlgorithm, SrsAlgorithm.fsrs7);
   });
 
-  test('deleteRetired 删掉退役权重（大模型、SM40）与标记，留下当前权重', () async {
+  test('deleteRetired 删掉退役权重（大模型、SM40、旧 SM56 发布包及其 .part）与标记，留下当前权重', () async {
     final Directory dir = Directory.systemTemp.createTempSync('rwkv_models');
     addTearDown(() => dir.deleteSync(recursive: true));
     final SrsRwkvModels models = SrsRwkvModels(dir: dir);
@@ -424,6 +424,10 @@ void main() {
       ],
     ];
     expect(kSrsRwkvRetiredWeightsNames, contains('sm40_weights.int8.bin'));
+    expect(
+      kSrsRwkvRetiredWeightsNames,
+      containsAll(<String>['sm56-package.zip', 'sm56-package.zip.part']),
+    );
     expect(
       kSrsRwkvRetiredWeightsNames,
       isNot(contains(kSrsRwkvSmallWeightsName)),

@@ -2,7 +2,7 @@
 // License: GNU AGPL, version 3 or later; http://www.gnu.org/licenses/agpl.html
 //
 //! 小模型（SM56）对拍：发布包 `sm56-package.zip` 里的 NumPy 参考实现黄金值
-//! （`testvectors/user_{4676,1745}.npz`，两位 benchmark 用户、14,403 行，f32 / int8 两种权重），
+//! （`testvectors/user_{900001,900002}.npz`，两位合成用户、3,363 + 2,946 行，f32 / int8 两种权重），
 //! 逐行比对 p_imm、p_rating、标签时刻与 6 个扫描时刻的 p_curve，容差 1e-5（包自己的验收标准）。
 //! 另测：块边界不影响结果、快照续跑逐位相同、int8 / int4 状态在超长历史上有界。
 
@@ -15,6 +15,8 @@ use common::small_package;
 use fushi_rwkv::{Model, ModelKind, SmallHeads, SmallInference, SmallModel, StatePrecision};
 
 const TOLERANCE: f32 = 1e-5;
+/// 发布包 `testvectors/` 里的两位合成用户（作者 2026-11-13 替换包时从真实数据集用户换成合成用户）。
+const SYNTHETIC_USERS: [u32; 2] = [900001, 900002];
 
 /// 一个 .npy：dtype 描述、形状、原始小端字节。
 struct Npy {
@@ -216,7 +218,7 @@ fn weight_files_load_as_the_small_model_with_the_published_schedule() {
 
 #[test]
 fn matches_reference_f32_weights() {
-    for user in [4676, 1745] {
+    for user in SYNTHETIC_USERS {
         let worst = check(user, "weights.f32.bin", "fp32", 1 << 20);
         eprintln!("user {user} fp32 weights: worst diff {worst:e}");
     }
@@ -224,7 +226,7 @@ fn matches_reference_f32_weights() {
 
 #[test]
 fn matches_reference_int8_weights() {
-    for user in [4676, 1745] {
+    for user in SYNTHETIC_USERS {
         let worst = check(user, "weights.int8.bin", "int8", 1 << 20);
         eprintln!("user {user} int8 weights: worst diff {worst:e}");
     }
@@ -233,7 +235,7 @@ fn matches_reference_int8_weights() {
 /// 块边界（每次引擎调用的行数）只影响批处理方式，不影响结果。
 #[test]
 fn chunking_does_not_change_results() {
-    let v = vectors(4676);
+    let v = vectors(SYNTHETIC_USERS[0]);
     let model = small_model("weights.int8.bin");
     for precision in [
         StatePrecision::F32,

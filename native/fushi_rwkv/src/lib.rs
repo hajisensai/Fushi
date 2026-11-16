@@ -89,10 +89,15 @@ pub const UPSTREAM_SHA: &str = "c639bcec696f2317f9bb9a736d433b9d6c0d9c56";
 /// 通用预训练权重（`RWKV_trained_on_5000_10000.bin`，11,082,637 字节）的 SHA-256。
 pub const MODEL_SHA256: &str = "749ad1ad18d5b6ef8c4185802fa0c1e4a14e67cd7874f3efeaae355fffb1b9ec";
 /// 小模型 SM56 发布包 `sm56-package.zip`（JSchoreels/anki-rwkv release
-/// `small-model-sm56-2026-10-24`，5,581,795 字节）的 SHA-256。权重是包里的
+/// `small-model-sm56-2026-10-24`，4,136,639 字节）的 SHA-256。权重是包里的
 /// `sm56/weights.int8.bin`（推荐，436,391 字节）或 `sm56/weights.f32.bin`。
+///
+/// 作者 2026-11-13 原地替换了这个 release 的 zip：测试向量从两位真实数据集用户
+/// （`user_4676` / `user_1745`）换成合成用户 `user_900001` / `user_900002`，权重与
+/// `architecture.json` 逐字节未变。旧包（5,581,795 字节，`7b1790f4…`）已无处可下，现钉新包；
+/// 本仓库 release `rwkv-models` 上有同一字节的内容寻址镜像（见 fetch_model.*）。
 pub const SMALL_MODEL_PACKAGE_SHA256: &str =
-    "7b1790f49fdabf1279510247cc9bc3bf3ac461b67cf0135ab8e51589b5efe71a";
+    "22a4df807806615c0d58e382127eeb8cf764ae3233ac577115f112130f268361";
 
 // ---------------------------------------------------------------------------
 // Rust API
