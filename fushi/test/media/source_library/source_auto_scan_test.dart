@@ -1,11 +1,14 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/source_library/source_auto_scan.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
+import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart'
+    show VideoSourceScrapeWork;
 
 /// 来源「自动扫描」调度（拍板台 C_8oheua0H / ICOLa6LZLU / enSm2GOuFA）：每源开关、
 /// 启动 / 回前台触发、串行限流 + 节流 + 去重，与手动「重新扫描」共用一条道。

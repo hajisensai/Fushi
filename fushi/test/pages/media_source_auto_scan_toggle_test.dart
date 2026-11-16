@@ -56,14 +56,6 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  Future<void> tapMenuItem(WidgetTester tester, String key) async {
-    await tester.tap(find.byKey(ValueKey<String>('media_source_menu_$source')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(ValueKey<String>(key)));
-    await tester.runAsync(() => Future<void>.delayed(Duration.zero));
-    await tester.pumpAndSettle();
-  }
-
   final TargetPlatformVariant platforms = TargetPlatformVariant(
     <TargetPlatform>{TargetPlatform.android, TargetPlatform.iOS},
   );

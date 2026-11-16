@@ -203,6 +203,7 @@ import 'package:fushi_core/fushi_core.dart'
         MediaCollectionRow,
         MediaKind,
         MediaSourceRow,
+        SourceLibraryKind,
         VideoBookRow,
         VideoDownloadJobLifecycle,
         VideoDownloadJobRow,
@@ -3969,12 +3970,11 @@ class _HomePageState extends BasePageState<HomePage>
 
   /// 自动扫描的候选：开着开关、所属模块开着；库处于「已迁移只读」时一个都不扫。
   Future<List<SourceLibraryRow>> _loadAutoScanSources() async {
-    final AppModel model = appModelNoUpdate;
-    if (model.isMigrationReadonly) return const <SourceLibraryRow>[];
-    final ModuleVisibility visibility = model.moduleVisibility;
+    if (appModelNoUpdate.isMigrationReadonly) return const <SourceLibraryRow>[];
+    final ModuleVisibility visibility = appModelNoUpdate.moduleVisibility;
     return <SourceLibraryRow>[
       for (final SourceLibraryRow row
-          in await model.database.getAutoScanMediaSources())
+          in await appModelNoUpdate.database.getAutoScanMediaSources())
         if (sourceLibraryKindModule(row.mediaKind) case final ModuleId module
             when visibility.isEnabled(module))
           row,
@@ -3988,11 +3988,10 @@ class _HomePageState extends BasePageState<HomePage>
   Future<SourceAutoScanOutcome> _runAutoSourceScan(
     SourceLibraryRow source,
   ) async {
-    final AppModel model = appModelNoUpdate;
     final SourceLibraryScanner scanner = SourceLibraryScanner(
-      model.database,
+      appModelNoUpdate.database,
       transcribeAudiobook: source.mediaKind == SourceLibraryKind.book.dbValue
-          ? model.folderImportTranscribePort
+          ? appModelNoUpdate.folderImportTranscribePort
           : null,
     );
     if (source.mediaKind != SourceLibraryKind.video.dbValue) {
@@ -4008,7 +4007,7 @@ class _HomePageState extends BasePageState<HomePage>
       return SourceAutoScanOutcome.scanned;
     }
     final SourceLibraryRow updated =
-        await model.database.getMediaSourceById(source.id) ?? source;
+        await appModelNoUpdate.database.getMediaSourceById(source.id) ?? source;
     await _onVideoSourceScanCompleted(updated, summary);
     return SourceAutoScanOutcome.scanned;
   }
