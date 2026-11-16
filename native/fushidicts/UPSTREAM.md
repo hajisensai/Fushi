@@ -157,7 +157,9 @@
 
 **打开词典只有一处**：`fushidicts_src/hash/dict_index.{hpp,cpp}`。`key.index` 合法且它指的记录
 文件（`blobs.bin`，或 `rewritten` 时的 `blobs3.bin`）打得开 → 用它；否则退回 `hash.table` +
-`bloom.filter`（损坏的 `key.index` 旁边旧文件还在时词典照常可查）。查库、整本扫描
+`bloom.filter`（损坏的 `key.index` 旁边旧文件还在时词典照常可查）；旧式也打不开时再看一次
+`key.index`——装载不拿升级的锁，而升级是先提交 `key.index` 后删旧文件，「刚才没有 key.index、
+转头旧文件也没了」只可能是它在这两步之间提交了。头里 `num_keys` 多过槽位数的不装载。查库、整本扫描
 （`probe_dict_content`、`ensure_redirect_glossary_flag`、`redirect_glossary` 扫描）、联合过滤器
 来源都经它，不再各自拼文件名。
 
@@ -171,6 +173,10 @@
   - **核对**：tag 只有 29 位，候选可能是别的键。`locate` / `locate_all` 对每个候选读第一条
     记录的键（term 的 expression 或 reading，其他类型的首串）核对，主桶都不中且有溢出位才看
     备桶，所以无假阴性；旧式 `hash.table` 也一样核对（此前 64 位哈希相等就当命中）。
+  - **构建端保证查找路径上没有第二个同 tag 的键**（同一桶里不放两个同 tag 的键；住在备桶
+    的键，它的主桶里也没有同 tag 的键）。撞上了就把桶数加一重排，最多 8 次，仍不行则
+    `build_to_file` 返回 false（导入退回旧式 / 升级报不适用）。有了它，「只核对第一条记录」
+    是精确的：两个同 tag 的键共用首记录（一条 term 的 expression 与 reading）也不会查错。
   - **联合过滤器**改建在 tag 上：tag 选块，块内位由（tag, 词典身份）决定；`kVersion = 2`、
     `kLayout` 带 tag 位数，旧缓存一律被拒并重建。key.index 来源直接枚举 tag、有确切键数。
 - **type 3 meta 记录**（`json/meta_record.{hpp,cpp}`）：布局同上游 `eb4e5dd`（freq：reading +
@@ -181,44 +187,63 @@
   C ABI `fushidicts_upgrade_dictionary(dir, allow_meta_rewrite)` 经 `ffi_guard`，返回
   -1 失败 / 0 已是最新 / 1 已升级 / 2 不适用）：从 `hash.table` 读出全部键，写新 `key.index`；
   `allow_meta_rewrite` 且全部记录都是 type 1 时把记录重写成 `blobs3.bin`（能解析的转 type 3）并
-  写 `rewritten` 的 key.index。**不修改、不截断、不覆盖任何现存文件**：新文件写到唯一命名的
-  临时文件再改名，改名成 `key.index` 是提交点；之后尽力删旧文件（Windows 上引擎还映射着就删
-  不掉，留到下一次调用再删）。遗留的临时文件超过 10 分钟才清，孤儿 `blobs3.bin` 被清掉。
-  `add_dict` 从不升级（升级是宿主显式调的一次性动作）。offset 超 32 位的词典返回不适用。
+  写 `rewritten` 的 key.index。**不修改、不截断、不覆盖任何在用的文件**：新文件写到唯一命名的
+  临时文件、落盘（`memory::sync_file`：`FlushFileBuffers` / `F_FULLFSYNC` / `fsync`）再改名，
+  改名成 `key.index` 是提交点；之后把目录项落盘（`memory::sync_directory`）再删旧文件
+  （Windows 上引擎还映射着就删不掉，留到下一次调用再删；常态没有旧文件时不碰磁盘）。遗留的
+  临时文件超过 10 分钟才清，孤儿 `blobs3.bin` 被清掉。
+  - **同一本词典的升级跨进程、跨线程串行化**：整个调用持有导入标记文件上的独占锁
+    （`memory::file_lock`：POSIX `flock`、Windows `LockFileEx` 锁文件末尾之外的一个字节，
+    阻塞等待），拿到锁后再看目录现状。没有这把锁时两个调用交错会互相删掉对方刚提交的
+    `key.index`（或把它改回指向已删除的 `blobs.bin`），词典从此打不开——审查时在 Mac 与
+    Windows 上都复现过。
+  - `add_dict` 从不升级（升级是宿主显式调的一次性动作）。offset 超 32 位、或一个键都没有的
+    词典返回不适用。
+- **宿主接线**：`FushiDicts.upgradeDictionaryFormats`（逐本在后台 isolate 跑，借用账本与删 /
+  覆盖词典串行，同 `ensureRedirectFlags`）。app 启动首帧后由
+  `DictionaryFormatUpgradeCoordinator` 编排：先不占词典写锁逐本静默检查（常态启动到此为止）；
+  确有词典升级且后面还有，才占写锁、在词典页状态行显示「正在升级词典格式（n/总数）」；升级过
+  就影子引擎重载、等旧引擎放手后静默补跑一遍清旧文件。`fushi_server` 在首次装载前同步升级。
 - 新导入默认写 key.index + type 3；`FUSHIDICTS_LEGACY_INDEX=1` 只给测试用，强制旧式。
 
 **风险 / 已知限制：**
 
 - **降级即坏**：升级过 / 新导入的词典没有 `hash.table`，旧版 app 打不开；`rewritten` 的词典连
   `blobs.bin` 也没有。
-- tag 29 位 + 只核对第一条记录：键 A、B 共用同一条首记录（term 的 expression / reading）且 B 的
-  槽位 tag 恰好等于 A 的 tag 时，查 A 会拿到 B 的 offset 表。概率约每本词典 1e-11 量级。
 - 联合过滤器因 tag 截断多出约 n/2^29 的假阳性（n 为全部键数），只多一次精确探测。
-- Dart 侧按文件名认词典的地方（`blobs.bin` 头字节探测、资源物化清单、备份恢复）尚未跟进，
-  见格式批的回报清单。
+- `key.index` / `blobs3.bin` 没有校验和：防的是「没写全」（改名前落盘），不防介质上的位翻转
+  ——与 `hash.table` / `blobs.bin` 一向的口径相同。
+- Windows 上查词弹窗是独立进程、也映射着词典文件：它没重载之前，补跑那一遍删不掉旧文件，
+  留到下次启动清（只是多占一阵磁盘，不影响查词）。
 
 **实测**（同上节的 64 本词典与语料；副本在 `D:/hibiki-tmp/dictfmt3/`，原目录只读；三种状态
 ——基线 exe 读原目录、新 exe 读未升级副本、新 exe 读升级后副本——三种模式的结果指纹全部
 等于基线 `5966df6ff1a00285` / `017aac1a38ae2360` / `e56884189c8a2956`）：
 
-- 升级 64 本：0 失败，合计 11.9 秒（最慢 BCCWJ 频率 1.86 秒、Jiten 1.18 秒、JPDB 1.04 秒）；
-  索引 303.0 MB → 115.1 MB（-62%），记录文件 1839.0 MB → 1694.0 MB（meta 重写，-8%）。
-- 查词（同机交替 5 轮、每轮 3 次取 warm 最好的平均值，再取 5 轮最好）：
+- 升级 64 本（全新副本，含改名前落盘）：0 失败，合计 5.3 秒（最慢 BCCWJ 频率 0.94 秒，其次
+  两本各约 0.47 秒）；再调一遍 64 本全部「已是最新」合计 64 ms。索引 303.0 MB → 115.1 MB
+  （-62%），记录文件 1839.0 MB → 1694.0 MB（meta 重写，-8%），词典目录合计 2148 MB → 1815 MB。
+- 查词（同机交替 3 轮、每轮每个配置 10 遍取 warm 最好的平均值，再取 3 轮最好；测时机器上
+  还开着别的程序，绝对值比上节略高，三个配置交替跑、相对差可比）：
 
   | 模式 | 基线（原目录） | 新代码 + 未升级 | 新代码 + 升级后 |
   |---|---|---|---|
-  | 弹窗查词 | 1.728 ms | 1.756 ms（+1.7%） | 1.662 ms（-3.8%） |
-  | `materialize = false` | 0.986 ms | 1.014 ms（+2.9%） | 0.938 ms（-4.8%） |
-  | `materialize = false`、`max 1` | 0.977 ms | 1.010 ms（+3.4%） | 0.936 ms（-4.2%） |
+  | 弹窗查词 | 1.755 ms | 1.794 ms（+2.2%） | 1.714 ms（-2.3%） |
+  | `materialize = false` | 1.014 ms | 1.035 ms（+2.1%） | 0.959 ms（-5.4%） |
+  | `materialize = false`、`max 1` | 0.999 ms | 1.028 ms（+2.9%） | 0.953 ms（-4.6%） |
 
   未升级词典多出的 2～3% 是旧式路径新增的记录键核对（每个命中多读一次记录头）。
-- 联合过滤器首次构建（文件缓存已热）：基线 450 ms、未升级 432 ms、升级后 448 ms；之后每次装载
-  5～8 ms；缓存文件三者都是 24,471,488 字节（块数由键数估计取整决定，键数相同）。
+- 联合过滤器首次构建（文件缓存已热）：未升级 545 ms、升级后 430 ms；之后每次装载 5～6 ms；
+  缓存文件都是 24,471,488 字节（块数由键数估计取整决定，键数相同）。
 
 守卫：`tests/dict_upgrade_test.cpp`（旧式 / 旧式+升级 / 只换索引 / 新式与混装四种状态下
 lookup、query、query_kanji 逐字段相同，有无联合过滤器都比；A 的哈希指向 B 的记录必须查不到、
 主桶塞满同 tag 假候选时真键在备桶必须查得到、旧式表同样核对；升级幂等、遗留临时文件 / 孤儿
-`blobs3.bin`、key.index 损坏回退、引擎装着词典时升级、释放后清理），`union_filter_test`
+`blobs3.bin`、key.index 损坏回退、引擎装着词典时升级、新引擎装着升级后的词典时补跑清理；
+手写索引：主桶只有溢出位而真键在备桶、主桶无溢出位则不看备桶、tag 相符但 offset 越界、
+`num_keys` 超槽位数；并发：别人持锁时升级必须等、4 线程混合参数同时升级同一批词典后每本
+恰好一个调用报已升级且结果与旧式相同），`tests/key_index_test.cpp`（同 tag 的键可分开时
+分开、分不开时拒绝构建），`union_filter_test`
 （新增 key.index 来源与混装来源；引擎层新式 / 旧式各跑一遍），`hash_truncated_table_guard_test`
 （key.index 截断 / 桶数被改 / 全 0xFF 被拒）。以上与受影响的既有测试在
 `FUSHIDICTS_BLOB_WINDOWED=1` 下同样通过。
