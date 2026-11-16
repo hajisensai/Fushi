@@ -450,6 +450,29 @@ pub fn import_ops(t: &Truth<'_>, col: i64, bytes: &[u8]) -> Result<ImportedOps, 
     import_ops_from(t, col, open_ops_stream(bytes)?)
 }
 
+/// 第 2 版流头的集合 [collection] 是不是集合 [col] 自己的（本集合或被它并入过的）：[import_ops_from] 的判据；导入命令的
+/// 预检（`cmd/fushisrs.rs`）也经这里，两处不各写一份。
+pub fn check_stream_collection(t: &Truth<'_>, col: i64, collection: &Id) -> Result<(), String> {
+    if !native_sources(t, col)?.contains(collection) {
+        return Err(format!(
+            "gen4 import: this file belongs to another collection ({collection})"
+        ));
+    }
+    Ok(())
+}
+
+/// 第 1 版流 [bytes] 的集合是不是集合 [col] 认作自己历史的（[legacy_sources]）：[import_v1] 的判据，预检同上。
+pub fn check_v1_collection(t: &Truth<'_>, col: i64, bytes: &[u8]) -> Result<(), String> {
+    let collection =
+        v1_collection(bytes).map_err(|e| format!("gen4 import: unreadable export ({e})"))?;
+    if !legacy_sources(t, col)?.contains(&collection) {
+        return Err(format!(
+            "gen4 import: this file belongs to another collection ({collection})"
+        ));
+    }
+    Ok(())
+}
+
 /// 打开一条来自任意 [Read] 的 `FSRS4EXP` 流（[import_ops_from] / [own_fork_point] 的输入）。不认魔数（含协议 3 的
 /// `FSRS2EXP`）、版本、标志位都拒；分辨第 1 版与第 2 版用 `crate::gen4::export::sniff_reader`。
 pub fn open_ops_reader<'s, R: Read>(
@@ -466,12 +489,7 @@ pub fn import_ops_from<R: Read>(
 ) -> Result<ImportedOps, String> {
     let (mut reader, header) = opened;
     t.tx_immediate(|t| {
-        if !native_sources(t, col)?.contains(&header.collection) {
-            return Err(format!(
-                "gen4 import: this file belongs to another collection ({})",
-                header.collection
-            ));
-        }
+        check_stream_collection(t, col, &header.collection)?;
         let me = t.self_identity(col)?.map(|s| (s.device, s.public()));
         let kinds: BTreeMap<Id, (Option<i64>, Option<Id>)> = t
             .devices(col)?
@@ -788,14 +806,8 @@ pub fn import_v1(t: &Truth<'_>, col: i64, bytes: &[u8]) -> Result<ImportedOps, S
         }
         Err(e) => return Err(format!("gen4 import: not a Fushi SRS export ({e})")),
     }
-    let collection =
-        v1_collection(bytes).map_err(|e| format!("gen4 import: unreadable export ({e})"))?;
     t.tx_immediate(|t| {
-        if !legacy_sources(t, col)?.contains(&collection) {
-            return Err(format!(
-                "gen4 import: this file belongs to another collection ({collection})"
-            ));
-        }
+        check_v1_collection(t, col, bytes)?;
         let kinds: BTreeMap<Id, (Option<i64>, Option<Id>)> = t
             .devices(col)?
             .into_iter()

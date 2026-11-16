@@ -38,6 +38,12 @@
 //!   冻结读入器只收切片：第 1 版文件整份读进内存（压缩后的字节；解码仍是流式窗口）——第 1 版只会越来越少，不为它改冻结
 //!   代码（`legacy_export.rs` 文件头）。
 //!
+//! **预检**（`preflight: true`）：只判「会不会要确认、会不会被拒」，什么都不写、修订号不动——Dart 据此在用户确认之前不打
+//! 还原点、不往媒体目录写文件（复核：用户拒绝后不留孤儿媒体）。判据与真导入同一处：嗅探魔数；第 1 版走存储层的
+//! `check_v1_collection`；第 2 版先比清单与流头，再在一个**回滚掉的保存点**里跑 `collection_adopt`（`same` 时可能补盐，
+//! 回滚不留）与存储层的 `check_stream_collection`。回包 `{format, outcome: "ready" | "needsConfirm", preflight: true,
+//! collection?, dir?}`。坏在流中间的文件预检看不出（不读全流），由 Dart 在真导入报错时删掉这次补进来的媒体。
+//!
 //! 坏流、另一个集合、与本机矛盾一律报错、整笔回滚、一条不落；同一份再导一遍什么都不改（槽幂等），所以中断后重来不产生
 //! 重复卡片或复习记录。v2 之前那种「事件 + 魔数清单」的旧备份不归内核：Dart 那一侧明确拒绝并提示（`apply` 的 stamped 输入
 //! 在新代已拒，冻结侧的 stamped apply 还没有，见交接说明 G11-3 一节）。
@@ -50,7 +56,8 @@
 //! ```
 //!
 //! `outcome`：第 2 版是认领结论（`same` / `alreadyJoined` / `saltsAdded` / `joined` / `bound`；没带清单是 `stream`），
-//! 第 1 版是 `legacy`。`applied` = 新落的原生操作与空洞区间 + 新落 / 换掉 / 分叉的承袭槽（Dart「并入了几条」）。
+//! 第 1 版是 `legacy`。`unchanged` = 这次一点没改：新落的操作、新记的设备公钥、认领写下的盐 / 并入 / 绑定、换身份都算改动
+//! （Dart 据它决定丢不丢缓存日志）。`applied` = 新落的原生操作与空洞区间 + 新落 / 换掉 / 分叉的承袭槽（Dart「并入了几条」）。
 //!
 //! 本机状态行（`local.rs` `persist`）：协议 3 的 `import` 是本机写命令（推进修订号、带 `anchor`），这里同口径；导入按
 //! `Settle::Rebuild` 收派生层、没有逐实体的变更清单，有改动时修订号推进 1（Dart 的刷新键只看变没变），回包不带
@@ -72,7 +79,8 @@ use crate::gen4::export::{ExportKind, sniff_reader};
 use crate::store::gen4::export::{Exported, export_ops};
 use crate::store::gen4::identity::BindingChanged;
 use crate::store::gen4::import::{
-    ImportedOps, import_ops_from, import_peers, import_v1, open_ops_reader, own_fork_point,
+    ImportedOps, check_stream_collection, check_v1_collection, import_ops_from, import_peers,
+    import_v1, open_ops_reader, own_fork_point,
 };
 use crate::store::gen4::local;
 use crate::store::gen4::schema::sql;
@@ -100,13 +108,13 @@ impl<'a> Source<'a> {
         }
     }
 
-    /// 从头读一遍（每次都是新的读游标）。
+    /// 从头读一遍（每次都是新的读游标）。按路径时经 [FileSource] 一块块读，不整份进内存。
     fn open(&self) -> Result<Box<dyn Read + '_>, String> {
         Ok(match self {
             Source::Path(p) => {
-                Box::new(BufReader::new(File::open(p).map_err(|e| {
+                Box::new(BufReader::new(FileSource(File::open(p).map_err(|e| {
                     format!("import: cannot open {}: {e}", p.display())
-                })?))
+                })?)))
             }
             Source::Bytes(b) => Box::new(*b),
         })
@@ -121,6 +129,55 @@ impl<'a> Source<'a> {
             ),
             Source::Bytes(b) => Cow::Borrowed(b),
         })
+    }
+}
+
+/// 按路径导入时对文件的读（[Source::open]）：每次读的都是调用方给的有界缓冲（[BufReader] 的一块或解码器的输入窗口），
+/// 第 2 版不整份读进内存（G11-2 复核遗留的根修）。测试里经 [meter] 记下每次读的请求大小与读到的字节，钉住命令层的
+/// 读法（`fushisrs_tests.rs` 的大文件测试）。
+struct FileSource(File);
+
+impl Read for FileSource {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let n = self.0.read(buf)?;
+        #[cfg(test)]
+        meter::record(buf.len(), n);
+        Ok(n)
+    }
+}
+
+/// [FileSource] 的读记录（只在测试里编译；命令经 C ABI 在调用线程上同步跑，所以按线程记）。
+#[cfg(test)]
+pub(super) mod meter {
+    use std::cell::Cell;
+
+    /// 一段时间里对导入文件的读：次数、最大的一次请求、读到的总字节。
+    #[derive(Clone, Copy, Debug, Default)]
+    pub struct Reads {
+        pub calls: u64,
+        pub widest: usize,
+        pub bytes: u64,
+    }
+
+    thread_local! {
+        static READS: Cell<Reads> = const {
+            Cell::new(Reads { calls: 0, widest: 0, bytes: 0 })
+        };
+    }
+
+    pub(super) fn record(asked: usize, got: usize) {
+        READS.with(|m| {
+            let mut r = m.get();
+            r.calls += 1;
+            r.widest = r.widest.max(asked);
+            r.bytes += got as u64;
+            m.set(r);
+        });
+    }
+
+    /// 取走本线程的记录并清零。
+    pub fn take() -> Reads {
+        READS.with(|m| m.replace(Reads::default()))
     }
 }
 
@@ -183,9 +240,16 @@ fn peers_json(t: &Truth<'_>, col: i64) -> Result<Vec<Value>, String> {
     Ok(out)
 }
 
-/// 写进 [path]：先写同目录的临时文件、刷盘后改名；出错删掉临时文件，不留半截。
+/// [path] 的临时文件 `<path>.g4tmp`：在整个文件名后面追加（不是替换扩展名，否则只差扩展名的两个目标会撞到同一个临时文件）。
+fn tmp_of(path: &Path) -> PathBuf {
+    let mut s = path.as_os_str().to_owned();
+    s.push(".g4tmp");
+    PathBuf::from(s)
+}
+
+/// 写进 [path]：先写同目录的临时文件（[tmp_of]）、刷盘后改名；出错删掉临时文件，不留半截。
 fn export_to_file(t: &Truth<'_>, col: i64, path: &Path) -> Result<Exported, String> {
-    let tmp = path.with_extension("g4tmp");
+    let tmp = tmp_of(path);
     let run = || -> Result<Exported, String> {
         let f = File::create(&tmp)
             .map_err(|e| format!("export: cannot create {}: {e}", tmp.display()))?;
@@ -290,6 +354,14 @@ fn manifest_of(req: &Value) -> Result<Option<Manifest>, String> {
     }))
 }
 
+/// 预检里回滚保存点用的错误（不会出现在回包里）。
+const PREFLIGHT_ROLLBACK: &str = "gen4 import: preflight rollback";
+
+/// 预检通过的回包（模块文件头「预检」）。
+fn ready(format: u8) -> Value {
+    json!({"format": format, "outcome": "ready", "preflight": true})
+}
+
 /// Dart「并入了几条」（模块文件头）。
 fn applied_of(o: &ImportedOps) -> u64 {
     o.native_landed + o.voids_landed + o.slots_inserted + o.slots_replaced + o.slots_forked
@@ -317,6 +389,7 @@ pub fn import(
         .get("now")
         .and_then(Value::as_i64)
         .ok_or("import: missing now")?;
+    let preflight = req.get("preflight").and_then(Value::as_bool) == Some(true);
     let kind = sniff_reader(src.open()?)
         .map_err(|e| format!("gen4 import: not a Fushi SRS export ({e})"))?;
     let mut changed: Option<BindingChanged> = None;
@@ -324,7 +397,12 @@ pub fn import(
     let (format, outcome, got, rotated, peers) = match kind {
         ExportKind::V1 => {
             let col = col_of(t)?;
-            let got = import_v1(t, col, &src.bytes()?)?;
+            let bytes = src.bytes()?;
+            if preflight {
+                check_v1_collection(t, col, &bytes)?;
+                return Ok((ready(1), None));
+            }
+            let got = import_v1(t, col, &bytes)?;
             (1, json!("legacy"), got, Value::Null, 0)
         }
         ExportKind::V4 => {
@@ -345,21 +423,42 @@ pub fn import(
                     "confirmed": req.get("confirmed").and_then(Value::as_bool) == Some(true),
                     "now": now,
                 });
+                let needs_confirm = json!({
+                    "format": 2,
+                    "outcome": "needsConfirm",
+                    "collection": m.collection.text(),
+                    "dir": m.dir,
+                });
+                if preflight {
+                    // 认领与流头的判据都在一个回滚掉的保存点里跑（与真导入同一处 adopt_foreign / 存储层判据），补的盐不留。
+                    let mut asks = false;
+                    let probe: Result<(), String> = t.tx(|t| {
+                        let (v, _) = collection_adopt(t, profile, &sub)?;
+                        asks = v["outcome"] == json!("needsConfirm");
+                        if !asks {
+                            check_stream_collection(t, col_of(t)?, &header.collection)?;
+                        }
+                        Err(PREFLIGHT_ROLLBACK.to_owned())
+                    });
+                    match probe {
+                        Err(e) if e == PREFLIGHT_ROLLBACK => {}
+                        Err(e) => return Err(e),
+                        Ok(()) => unreachable!("the preflight savepoint always rolls back"),
+                    }
+                    let mut v = if asks { needs_confirm } else { ready(2) };
+                    v["preflight"] = json!(true);
+                    return Ok((v, None));
+                }
                 let (v, ch) = collection_adopt(t, profile, &sub)?;
                 if v["outcome"] == json!("needsConfirm") {
-                    return Ok((
-                        json!({
-                            "format": 2,
-                            "outcome": "needsConfirm",
-                            "collection": m.collection.text(),
-                            "dir": m.dir,
-                        }),
-                        None,
-                    ));
+                    return Ok((needs_confirm, None));
                 }
                 wrote = !matches!(v["outcome"].as_str(), Some("same" | "alreadyJoined"));
                 changed = ch;
                 outcome = v["outcome"].clone();
+            } else if preflight {
+                check_stream_collection(t, col_of(t)?, &header.collection)?;
+                return Ok((ready(2), None));
             }
             let col = col_of(t)?;
             let peers = match manifest {
@@ -383,9 +482,10 @@ pub fn import(
             (2, outcome, got, rotated, peers)
         }
     };
-    let unchanged = got.unchanged() && peers == 0;
+    // 认领 / 补盐 / 绑定 / 换身份（`wrote`）也是改动：补盐会收派生层（别名类变了），Dart 据 `unchanged` 决定丢不丢缓存日志。
+    let unchanged = got.unchanged() && peers == 0 && !wrote;
     // 有改动时修订号推进 1（模块文件头「本机状态行」）。
-    let mut probe = if unchanged && !wrote {
+    let mut probe = if unchanged {
         json!({})
     } else {
         json!({"changed": [Value::Null]})

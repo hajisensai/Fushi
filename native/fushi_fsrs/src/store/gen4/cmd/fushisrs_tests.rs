@@ -610,7 +610,15 @@ fn a_large_file_is_read_with_a_bounded_window() {
     assert!(widest < file_len, "window {widest} file {file_len}");
 
     let (dst_dir, dst) = fresh("g113bigd", P);
+    // 命令层的读法（复核：之前只量了读者，命令改成整份读进内存也测不出）：导入命令对这个文件的每一次读都是有界的一块，
+    // 合起来至少读完整份（嗅探、读头、分叉检查、落库各开一遍）。整份读进内存（`fs::read`）不经 FileSource，记录为零。
+    super::fushisrs::meter::take();
     let got = import_path(dst, P, &path, json!({"manifest": manifest(&exp)})).unwrap();
+    let reads = super::fushisrs::meter::take();
+    assert!(reads.bytes >= file_len as u64, "{reads:?} file {file_len}");
+    assert!(reads.calls > 4, "{reads:?}");
+    assert!(reads.widest <= 256 << 10, "{reads:?}");
+    assert!(reads.widest < file_len, "{reads:?} file {file_len}");
     assert!(got["applied"].as_u64().unwrap() >= 1500, "{got}");
     let me = self_device(dst, P);
     let src_me = self_device(src, P);
@@ -708,4 +716,120 @@ fn the_peers_statement_uses_the_primary_key() {
         .collect::<Result<_, _>>()
         .unwrap();
     assert!(plan.iter().all(|p| p.starts_with("SEARCH")), "{plan:?}");
+}
+
+// ---------------------------------------------------------------------- 复核补的几条
+
+/// 操作本机全都已有、只带来新盐或新设备公钥的再导入也是改动：回包 `unchanged` 为 false、修订号推进（Dart 据 `unchanged`
+/// 决定丢不丢缓存日志，补盐会收派生层）；真的什么都没带来时才是 `unchanged`。
+#[test]
+fn new_salts_or_peers_alone_are_a_change() {
+    let m = migrated();
+    let work = tempdir::new("g113salt");
+    let (exp, path) = export_to(m.h, P, &work.0);
+    let (_dir, h) = fresh("g113saltd", P);
+    let man = manifest(&exp);
+    let first = import_path(h, P, &path, json!({"manifest": man})).unwrap();
+    assert_eq!(first["unchanged"], json!(false), "{first}");
+
+    let mut salted = man.clone();
+    salted["salts"].as_array_mut().unwrap().push(json!(Q));
+    let got = import_path(h, P, &path, json!({"manifest": salted})).unwrap();
+    assert_eq!(got["outcome"], json!("saltsAdded"), "{got}");
+    assert_eq!(got["applied"], json!(0), "{got}");
+    assert_eq!(got["unchanged"], json!(false), "{got}");
+    assert!(
+        got["localRevision"].as_i64().unwrap() > first["localRevision"].as_i64().unwrap(),
+        "{got} {first}"
+    );
+
+    let mut peered = salted.clone();
+    peered["peers"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"device": id(0x77).text(), "public": "ab".repeat(32)}));
+    let got2 = import_path(h, P, &path, json!({"manifest": peered})).unwrap();
+    assert_eq!(got2["outcome"], json!("same"), "{got2}");
+    assert_eq!(got2["applied"], json!(0), "{got2}");
+    assert!(got2["peers"].as_u64().unwrap() >= 1, "{got2}");
+    assert_eq!(got2["unchanged"], json!(false), "{got2}");
+
+    let again = import_path(h, P, &path, json!({"manifest": peered})).unwrap();
+    assert_eq!(again["unchanged"], json!(true), "{again}");
+    assert_eq!(again["localRevision"], got2["localRevision"], "{again}");
+    ffsrs_store_close(h);
+}
+
+/// 预检（`preflight: true`）只判、不写：另一个集合回 `needsConfirm`；同一个集合带新盐回 `ready`、盐不留（保存点回滚）；
+/// 另一个集合的第 1 版与裸流、坏文件照真导入的口径报错。每一步库都一字不变、修订号不动；预检之后真导入照常落。
+#[test]
+fn preflight_judges_without_writing() {
+    let m = migrated();
+    let work = tempdir::new("g113pre");
+    let (exp, path) = export_to(m.h, P, &work.0);
+    let man = manifest(&exp);
+    let v1 = work.0.join("v1.bin");
+    std::fs::write(&v1, m.d.core.sync2_export(P).unwrap()).unwrap();
+    let pre = |h: *mut SrsCoreHandle, profile: &str, file: &Path, extra: Value| {
+        let mut x = json!({"preflight": true});
+        for (k, v) in extra.as_object().cloned().unwrap_or_default() {
+            x[k.as_str()] = v;
+        }
+        import_path(h, profile, file, x)
+    };
+
+    let (_qd, q) = fresh("g113preq", Q);
+    let q_before = export_bytes(q, Q);
+    let got = pre(q, Q, &path, json!({"manifest": man})).unwrap();
+    assert_eq!(got["outcome"], json!("needsConfirm"), "{got}");
+    assert_eq!(got["preflight"], json!(true), "{got}");
+    assert_eq!(got["dir"], json!(P), "{got}");
+    let e = pre(q, Q, &path, json!({})).unwrap_err();
+    assert!(e.contains("another collection"), "{e}");
+    let e = pre(q, Q, &v1, json!({})).unwrap_err();
+    assert!(e.contains("another collection"), "{e}");
+    assert_eq!(export_bytes(q, Q), q_before);
+    ffsrs_store_close(q);
+
+    let (_pd, h) = fresh("g113prep", P);
+    let before = export_bytes(h, P);
+    let mut salted = man.clone();
+    salted["salts"].as_array_mut().unwrap().push(json!(Q));
+    let got = pre(h, P, &path, json!({"manifest": salted})).unwrap();
+    assert_eq!(
+        got,
+        json!({"format": 2, "outcome": "ready", "preflight": true})
+    );
+    let got = pre(h, P, &path, json!({})).unwrap();
+    assert_eq!(got["outcome"], json!("ready"), "{got}");
+    let got = pre(h, P, &v1, json!({})).unwrap();
+    assert_eq!(
+        got,
+        json!({"format": 1, "outcome": "ready", "preflight": true})
+    );
+    let junk = work.0.join("junk.bin");
+    std::fs::write(&junk, b"PK\x03\x04 not an ops stream").unwrap();
+    let e = pre(h, P, &junk, json!({})).unwrap_err();
+    assert!(e.contains("not a Fushi SRS export"), "{e}");
+    assert_eq!(export_bytes(h, P), before, "the preflight wrote something");
+
+    let got = import_path(h, P, &path, json!({"manifest": salted})).unwrap();
+    assert_eq!(got["outcome"], json!("saltsAdded"), "{got}");
+    assert!(got["applied"].as_u64().unwrap() > 0, "{got}");
+    ffsrs_store_close(h);
+}
+
+/// 导出的临时文件是在整个目标文件名后追加 `.g4tmp`，不是替换扩展名：同目录里只差扩展名的文件不会被当成临时文件覆盖、挪走。
+#[test]
+fn the_export_temp_file_appends_to_the_whole_name() {
+    let (_d, h) = fresh("g113tmp", P);
+    let work = tempdir::new("g113tmpx");
+    let neighbour = work.0.join("ops.g4tmp");
+    std::fs::write(&neighbour, b"keep").unwrap();
+    let target = work.0.join("ops.bin");
+    try_g4(h, P, "export", json!({"path": target.to_str().unwrap()})).unwrap();
+    assert_eq!(std::fs::read(&neighbour).unwrap(), b"keep");
+    assert!(target.exists());
+    assert!(!work.0.join("ops.bin.g4tmp").exists());
+    ffsrs_store_close(h);
 }
