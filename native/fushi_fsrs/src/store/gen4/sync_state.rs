@@ -479,6 +479,84 @@ impl<'c> Truth<'c> {
             })
             .collect()
     }
+
+    // ------------------------------------------------------------ 停用的设备（G8-7）
+
+    /// 集合 [col] 里本机停用了的设备（「这台设备不用了」）：设备 → 停用记录 `{"at", "applied", "headSeq"}`。
+    ///
+    /// 记在 `srs_meta`（键 [retired_key]，协议 3 `sync2_retired/<profile>/<设备>` 的新代版；不迁移：停用是纯本机的
+    /// 收段让步，换代后用户再停用一次即可）。收段（`receive.rs`）把停用设备上的依赖当成已满足——因等它的数据而卡在
+    /// 等待缓冲里的操作照常投递（协议 3 `devices.rs` 的 `deps_ready` 同一口径）。主键区间扫（[RETIRED_SQL]）。
+    pub fn retired(
+        &self,
+        col: i64,
+    ) -> Result<std::collections::BTreeMap<Id, serde_json::Value>, String> {
+        let (lo, hi) = retired_range(col);
+        let mut stmt = self.conn().prepare_cached(RETIRED_SQL).map_err(sql)?;
+        let rows = stmt
+            .query_map(params![lo, hi], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+            })
+            .map_err(sql)?;
+        let mut out = std::collections::BTreeMap::new();
+        for row in rows {
+            let (k, v) = row.map_err(sql)?;
+            let Some(device) = k.get(lo.len()..).and_then(Id::parse) else {
+                continue;
+            };
+            // 记录坏了也按停用算（只影响本机的收段让步，宁可放行也不让操作永远卡住）。
+            let v = serde_json::from_str(&v).unwrap_or_else(|_| serde_json::json!({}));
+            out.insert(device, v);
+        }
+        Ok(out)
+    }
+
+    /// 停用（[record] = Some）/ 取消停用（None）一台设备。必须在事务里。
+    pub fn set_retired(
+        &self,
+        col: i64,
+        device: &Id,
+        record: Option<&serde_json::Value>,
+    ) -> Result<(), String> {
+        self.write(|| {
+            let key = retired_key(col, device);
+            match record {
+                Some(v) => self
+                    .conn()
+                    .prepare_cached(
+                        "INSERT INTO srs_meta (key, value) VALUES (?1, ?2) \
+                         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                    )
+                    .map_err(sql)?
+                    .execute(params![key, v.to_string()])
+                    .map_err(sql)?,
+                None => self
+                    .conn()
+                    .prepare_cached("DELETE FROM srs_meta WHERE key = ?1")
+                    .map_err(sql)?
+                    .execute([key])
+                    .map_err(sql)?,
+            };
+            Ok(())
+        })
+    }
+}
+
+/// [Truth::retired] 执行的语句：`srs_meta` 主键上的一段区间（查询计划测试用同一份）。
+pub(crate) const RETIRED_SQL: &str =
+    "SELECT key, value FROM srs_meta WHERE key >= ?1 AND key < ?2 ORDER BY key";
+
+/// 停用记录的键：`gen4_retired/<col>/<设备>`。
+pub(crate) fn retired_key(col: i64, device: &Id) -> String {
+    format!("gen4_retired/{col}/{}", device.text())
+}
+
+/// 集合 [col] 的停用记录所在的键区间 `[lo, hi)`（`/` 的下一个字符是 `0`）。
+pub(crate) fn retired_range(col: i64) -> (String, String) {
+    (
+        format!("gen4_retired/{col}/"),
+        format!("gen4_retired/{col}0"),
+    )
 }
 
 #[cfg(test)]

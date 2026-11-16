@@ -237,8 +237,8 @@ fn self_view(m: &Map<String, Value>, changed: bool) -> Value {
 ///   = 原生等待缓冲 `op_wait` 里卡住的操作按「卡在谁身上」归账（[stuck]，协议 3 `devices.rs` `stuck` 同一个判据）；
 ///   `state` = 同步状态，判定顺序同协议 3 `status_extras`：本机 ok；对端自报的协议（`peers.ext` 的 `v`）低于本版本
 ///   head 声明的最低读者 [crate::gen4::MIN_READER] = upgrade；有 `gap` / `blocking` = missing；落后 = behind；其余 ok。
-///   `retired`（停用）新代还没有存处——协议 3 的 `sync2_retired/` 标记不迁移（`carry.rs` 文件头），停用命令 `retire`
-///   与它的标记随 G8-7 重建，接上之前不出现。没信任的设备带 `trust`（`pending` / `rejected`）/ `trustSince` / `heldDeletes` / `heldPurges`
+///   本机停用了的设备（G8-7 `retire`，`Truth::retired`）= `retired`，另带 `retiredAt`；协议 3 的 `sync2_retired/` 标记
+///   不迁移（`carry.rs` 文件头）。没信任的设备带 `trust`（`pending` / `rejected`）/ `trustSince` / `heldDeletes` / `heldPurges`
 ///   （`weigh.rs` `distrusted_split` 按作者计）；有补充名的带 `hint`；扩展键与 `protocol` 本机取 `device_info`、对端取
 ///   `peers.ext`。
 /// - `locations`：位置的加密记忆（`loc_state`）与位置上的 head（`loc_heads`）里出现过的位置；`uploaded` /
@@ -323,7 +323,8 @@ pub fn status(t: &Truth<'_>, col: i64) -> Result<Value, String> {
             let ix = super::super::derive::Index::new(t, col);
             ix.distrusted_split()?
         };
-        let (gap, blocking) = stuck(t, &devs)?;
+        let retired = t.retired(col)?;
+        let (gap, blocking) = stuck(t, &devs, &retired)?;
         let count_of = |ops: &[crate::sync2::vv::OpId], d: &Id| -> i64 {
             ops.iter().filter(|o| o.device == *d).count() as i64
         };
@@ -381,9 +382,15 @@ pub fn status(t: &Truth<'_>, col: i64) -> Result<Value, String> {
             let b = blocking.get(&d.id).copied().unwrap_or(0);
             m.insert("gap".into(), json!(g));
             m.insert("blocking".into(), json!(b));
-            // `state` 只是同步状态（协议 3 `status_extras` 同一个判定顺序，函数注释）。`retired` 随 G8-7 接。
+            // `state` 只是同步状态（协议 3 `status_extras` 同一个判定顺序，函数注释）：停用（G8-7 `retire`）排在本机之后。
             let state = if is_self {
                 "ok"
+            } else if let Some(r) = retired.get(&d.id) {
+                m.insert(
+                    "retiredAt".into(),
+                    r.get("at").cloned().unwrap_or(Value::Null),
+                );
+                "retired"
             } else if protocol.is_some_and(|p| p < i64::from(crate::gen4::MIN_READER)) {
                 "upgrade"
             } else if g > 0 || b > 0 {
@@ -438,11 +445,12 @@ pub fn status(t: &Truth<'_>, col: i64) -> Result<Value, String> {
 /// - `blocking[D]`：别的设备排在队首的那一项在等 D 还没到的操作（依赖里 D 的分量大于本机 D 日志的末尾），记到 D 头上，
 ///   条数是那台设备在缓冲里的项数。空洞（作者签出的已清除区间）没有依赖。
 ///
-/// 新代没有停用设备（协议 3 不再等停用设备的分量，`retired` 随 G8-7 接），所以不做那一层过滤。每台设备一次主键区间
+/// 停用了的设备上的分量不算卡住（协议 3 同口径，收段也不再等它们，`receive.rs` `deps_ready`）。每台设备一次主键区间
 /// 计数、只解码队首一项（设备数次读），不扫整张缓冲表的操作体。
 fn stuck(
     t: &Truth<'_>,
     devs: &[super::super::truth::DevInfo],
+    retired: &std::collections::BTreeMap<Id, Value>,
 ) -> Result<(HashMap<Id, i64>, HashMap<Id, i64>), String> {
     let conn = t.conn();
     let applied: HashMap<Id, u64> = devs.iter().map(|d| (d.id, d.last)).collect();
@@ -473,7 +481,10 @@ fn stuck(
         };
         let op = super::super::sync_state::op_of_bytes(&raw)?;
         for (dep, &s) in &op.deps.0 {
-            if *dep != d.id && s > applied.get(dep).copied().unwrap_or(0) {
+            if *dep != d.id
+                && !retired.contains_key(dep)
+                && s > applied.get(dep).copied().unwrap_or(0)
+            {
                 *blocking.entry(*dep).or_default() += n;
             }
         }

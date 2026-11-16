@@ -65,6 +65,8 @@ pub mod profile;
 pub mod reads;
 pub mod stats;
 pub mod study;
+// 同步一轮（G8-7）：见 [sync] 文件头。
+pub mod sync;
 pub mod training;
 pub mod views;
 // 写命令的新代实现（规划 §2.1 G7-3b），同样还没接分发器：见 [writes] 文件头。
@@ -83,6 +85,8 @@ mod dispatch_tests;
 mod identity_tests;
 #[cfg(test)]
 mod study_tests;
+#[cfg(test)]
+mod sync_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

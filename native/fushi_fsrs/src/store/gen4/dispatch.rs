@@ -76,6 +76,8 @@ const NO_PENDING: &str =
 const NO_CHANNEL: &str =
     "gen4 has no ingest channel: received segments land in the truth layer directly";
 const P3_REPR: &str = "a protocol 3 storage detail; the implementation is deleted with G7-6";
+const NO_DIGEST_CMD: &str = "gen4 computes the semantic digest inside `head` (Index::digest); there is no separate digest command";
+const NO_OBSOLETE_ACK: &str = "gen4 `obsolete` keeps no to-delete list: it decides from this round's listing, so failed deletes are simply offered again";
 const NO_REHEARSAL: &str =
     "the pre-migration rehearsal only makes sense before the generation switch; G7-6 deletes it";
 
@@ -122,14 +124,17 @@ pub fn wiring(op: &str) -> Option<Wiring> {
         | "profile_merge_commit"
         | "meta_set_edit"
         | "profile_purge" => Unwired("G9-5"),
-        // 同步一轮与调度
-        "ingest_yield" | "ingest_commit" | "ingest" | "ingest_begin" | "ingest_batch"
-        | "ingest_prepare" | "ingest_end" | "ingest_finish" | "replay_pending" | "outbox"
-        | "outbox_ack" | "head" | "plan" | "relay_outbox" | "relay_ack" | "obsolete"
-        | "obsolete_former" | "obsolete_ack" | "digest" | "digest_buckets" | "retire"
-        | "rotate" | "location_sealed" | "location_seal" | "media_known" | "media_record"
+        // 同步一轮（G8-7，`cmd/sync.rs`）
+        "location_root" | "plan" | "ingest" | "ingest_finish" | "outbox" | "outbox_ack"
+        | "head" | "obsolete" | "retire" | "rotate" | "location_sealed" | "location_seal" => Wired,
+        "ingest_yield" | "ingest_commit" | "ingest_begin" | "ingest_batch" | "ingest_prepare"
+        | "ingest_end" | "replay_pending" => Removed(NO_CHANNEL),
+        "digest" | "digest_buckets" => Removed(NO_DIGEST_CMD),
+        "obsolete_ack" => Removed(NO_OBSOLETE_ACK),
+        // 同步一轮里还没接的部分（交接说明「G8-7 同步一轮」未做项）：转发、旧身份目录清理、媒体。
+        "relay_outbox" | "relay_ack" | "obsolete_former" | "media_known" | "media_record"
         | "media_hash" | "media_scan" | "media_landed" | "media_bind_unbound" | "media_doomed" => {
-            Unwired("G8-7")
+            Unwired("G8-7b")
         }
         // 导入 / 导出
         "import" | "export" => Unwired("G11-3"),
@@ -446,6 +451,37 @@ fn run(
         // 不要已有绑定：profile 还没绑过时确认后直接绑（「先加入」）。
         "collection_adopt" => {
             write_binding(c, |t| cmd::identity::collection_adopt(t, profile, req))?
+        }
+        // ------------------------------------------------------------ 同步一轮（cmd/sync.rs）
+        "location_root" => {
+            c.write_local(|t| cmd::sync::location_root(t, col_of(t, profile)?, req, blobs, files))?
+        }
+        "plan" => c.write_local(|t| cmd::sync::plan(t, col_of(t, profile)?, req, blobs))?,
+        "ingest" => {
+            let key = cmd::sync::key_of(req)?;
+            c.write(|t| cmd::sync::ingest(t, col_of(t, profile)?, profile, blobs, key.as_ref()))?
+        }
+        "ingest_finish" => {
+            let now = int_of(req, "now")?;
+            c.write(|t| cmd::sync::ingest_finish(t, col_of(t, profile)?, profile, now))?
+        }
+        "outbox" => {
+            let key = cmd::sync::key_of(req)?;
+            c.write_local(|t| cmd::sync::outbox(t, col_of(t, profile)?, req, key.as_ref(), files))?
+        }
+        "outbox_ack" => c.write_local(|t| cmd::sync::outbox_ack(t, col_of(t, profile)?, req))?,
+        "head" => c.write_local(|t| cmd::sync::head(t, col_of(t, profile)?, req, files))?,
+        "obsolete" => read_col(c, profile, |t, col| cmd::sync::obsolete(t, col, req))?,
+        "retire" => c.write(|t| cmd::sync::retire(t, col_of(t, profile)?, profile, req))?,
+        "rotate" => {
+            let now = int_of(req, "now")?;
+            c.write(|t| cmd::sync::rotate(t, col_of(t, profile)?, profile, now))?
+        }
+        "location_sealed" => {
+            read_col(c, profile, |t, col| cmd::sync::location_sealed(t, col, req))?
+        }
+        "location_seal" => {
+            c.write_local(|t| cmd::sync::location_seal(t, col_of(t, profile)?, req, blobs))?
         }
         // ------------------------------------------------------------ 其余写
         "device_info" => write_col(c, profile, |t, col| {
