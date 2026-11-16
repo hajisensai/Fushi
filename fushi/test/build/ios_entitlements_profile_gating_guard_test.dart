@@ -64,7 +64,7 @@ void main() {
   test('Runner.entitlements requests increased memory limit (BUG-4755)', () {
     expect(
       RegExp(
-        '<key>${RegExp.escape(increasedMemory)}</key>\s*<true/>',
+        '<key>${RegExp.escape(increasedMemory)}</key>\\s*<true/>',
       ).hasMatch(entitlements),
       isTrue,
       reason: 'BUG-4755：设备端 ASR 大模型要抬高 jetsam 额度才不被杀、不降模型',
