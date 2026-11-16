@@ -76,6 +76,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     );
     return _bookCardShell(
       slotAspectRatio: kShelfBookCardAspectRatio,
+      nsfw: MediaNsfwTarget.srtBook(book.uid),
       cardKey: ValueKey<String>('srt_entry_${book.uid}'),
       focusId: FushiFocusId('${focusIdPrefix}reader-shelf-srt-${book.uid}'),
       selectionKey: selectable ? selKey : null,
@@ -387,6 +388,18 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
         icon: Icons.sell_outlined,
         onPressed: () => _openMediaTagPicker(
           MediaRef(kind: MediaKind.srt, entryKey: book.uid),
+        ),
+      ),
+      // NSFW：「模糊 NSFW 封面」开着时书架封面打模糊（身份 = SrtBooks.uid）。
+      DialogListAction(
+        label: t.media_nsfw_action,
+        icon: FushiIcons.visibilityOff,
+        onPressed: () => showMediaNsfwDialog(
+          context,
+          db: appModel.database,
+          kind: TagHostKind.srt,
+          entryKey: book.uid,
+          title: item.title,
         ),
       ),
       // 「重新导入」：音频 + 字幕两半一起换。旧入口叫「导入音频」且只能换音频，

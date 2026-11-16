@@ -1,6 +1,7 @@
 import 'dart:async' show Completer, Timer, unawaited;
 import 'dart:io';
 import 'package:flutter/foundation.dart' show setEquals;
+import 'package:fushi/src/media/nsfw/media_nsfw_cover.dart';
 import 'package:fushi/src/media/video/disc/disc_session_entry.dart';
 import 'package:fushi/src/media/video/disc/disc_session_launcher.dart';
 import 'package:fushi/src/media/video/disc/remote_disc_actions.dart';
@@ -4071,10 +4072,14 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     // 整页（含空合集占位）都是拖放落点：把视频文件拖进来即导入并归入本合集。
     // 本页是独立路由，被播放页 / 对话框盖住时由 FushiFileDropTarget 的
     // ModalRoute 门挡掉；移动端透传 child。
+    // NSFW 合集：页内的封面框（hero 海报、成员卡）都按「模糊 NSFW 封面」打模糊。
     return FushiFileDropTarget(
       debugLabel: 'collection-detail',
       onDrop: _handleCollectionFileDrop,
-      child: page,
+      child: MediaNsfwCoverScope(
+        target: MediaNsfwTarget.collection(widget.collection.id),
+        child: page,
+      ),
     );
   }
 }

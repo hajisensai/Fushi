@@ -57,11 +57,9 @@ class MediaNsfwSnapshot {
               when uid.isNotEmpty)
             uid: r.read(db.epubBooks.bookKey)!,
       };
-      for (final MediaCollectionItemRow item
-          in await (db.select(db.mediaCollectionItems)..where(
-                (t) => t.collectionId.isIn(collections),
-              ))
-              .get()) {
+      for (final MediaCollectionItemRow item in await (db.select(
+        db.mediaCollectionItems,
+      )..where((t) => t.collectionId.isIn(collections))).get()) {
         final String entryKey = item.mediaType == MediaKind.epub.dbValue
             ? (bookKeyByUid[item.entryKey] ?? item.entryKey)
             : item.entryKey;
@@ -170,4 +168,16 @@ Future<List<MediaCollectionRow>> nsfwCollectionsContaining(
     (MediaCollectionRow a, MediaCollectionRow b) => a.name.compareTo(b.name),
   );
   return result;
+}
+
+/// 单个宿主的**有效** NSFW（自己被标，或所在任一 NSFW 合集），与
+/// [MediaNsfwSnapshot.isNsfw] 同一口径、只查这一个宿主（制卡这类一次性判定用，
+/// 不必读整张快照）。游戏自己的成人向标记不在这里，由调用方并入。
+Future<bool> isMediaNsfwEffective(
+  FushiDatabase db,
+  TagHostKind kind,
+  String entryKey,
+) async {
+  if (await db.isMediaNsfw(kind, entryKey)) return true;
+  return (await nsfwCollectionsContaining(db, kind, entryKey)).isNotEmpty;
 }

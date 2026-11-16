@@ -39,6 +39,8 @@ import 'package:fushi_engine/sync/collection_book_identity_index.dart';
 import 'package:fushi_engine/sync/epub_repackage.dart';
 import 'package:fushi/src/media/kavita/kavita_api_registry.dart';
 import 'package:fushi/src/media/kavita/kavita_progress_refresher.dart';
+import 'package:fushi/src/media/nsfw/media_nsfw_cover.dart';
+import 'package:fushi/src/media/nsfw/media_nsfw_dialog.dart';
 import 'package:fushi/src/media/privacy/media_privacy_dialog.dart';
 import 'package:fushi/src/media/audiobook/audiobook_import_dialog.dart';
 import 'package:fushi/src/media/audiobook/srt_book_missing_audio.dart';
@@ -2010,16 +2012,24 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     double fractionOf(MediaItem item) => item.duration > 0
         ? (item.position / item.duration).clamp(0.0, 1.0)
         : 0.0;
-    Widget coverOf(MediaItem item) => FadeInImage(
-      imageErrorBuilder: (_, __, ___) =>
-          _coverPlaceholderIcon(Icons.menu_book_outlined),
-      placeholder: MemoryImage(kTransparentImage),
-      image: mediaSource.getDisplayThumbnailFromMediaItem(
-        appModel: appModel,
-        item: item,
-      ),
-      fit: BoxFit.cover,
-    );
+    Widget coverOf(MediaItem item) {
+      final String? bookKey = _parseBookKey(item.mediaIdentifier);
+      // NSFW 书的「继续」封面同书架卡一样按「模糊 NSFW 封面」打模糊。
+      return MediaNsfwCover(
+        target: bookKey == null ? null : MediaNsfwTarget.book(bookKey),
+        child: FadeInImage(
+          imageErrorBuilder: (_, __, ___) =>
+              _coverPlaceholderIcon(Icons.menu_book_outlined),
+          placeholder: MemoryImage(kTransparentImage),
+          image: mediaSource.getDisplayThumbnailFromMediaItem(
+            appModel: appModel,
+            item: item,
+          ),
+          fit: BoxFit.cover,
+        ),
+      );
+    }
+
     VoidCallback openerOf(MediaItem item) => () async {
       final MediaSource source = item.getMediaSource(appModel: appModel);
       await appModel.openMedia(ref: ref, mediaSource: source, item: item);
@@ -2967,9 +2977,12 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       builder: (BuildContext _, bool __) => ShelfCoverSelection(
         selectionMode: _selectionMode,
         selected: selected,
-        child: GamepadLongPressActions(
-          onLongPress: _selectionMode ? null : openMenu,
-          child: card,
+        child: MediaNsfwCoverScope(
+          target: MediaNsfwTarget.collection(collection.id),
+          child: GamepadLongPressActions(
+            onLongPress: _selectionMode ? null : openMenu,
+            child: card,
+          ),
         ),
       ),
     );
@@ -3768,6 +3781,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     final String? bookKey = _parseBookKey(item.mediaIdentifier);
     final Widget card = _bookCardShell(
       slotAspectRatio: kShelfBookCardAspectRatio,
+      nsfw: bookKey == null ? null : MediaNsfwTarget.book(bookKey),
       cardKey: ValueKey<String>('book_entry_${item.mediaIdentifier}'),
       focusId: FushiFocusId(
         '${focusIdPrefix}reader-shelf-book-${item.mediaIdentifier}',
@@ -4134,6 +4148,18 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         label: t.media_privacy_action,
         icon: FushiIcons.lock,
         onPressed: () => showMediaPrivacyDialog(
+          context,
+          db: appModel.database,
+          kind: TagHostKind.epub,
+          entryKey: bookKey,
+          title: item.title,
+        ),
+      ),
+      // NSFW：「模糊 NSFW 封面」开着时书架 / 继续卡的封面打模糊。
+      DialogListAction(
+        label: t.media_nsfw_action,
+        icon: FushiIcons.visibilityOff,
+        onPressed: () => showMediaNsfwDialog(
           context,
           db: appModel.database,
           kind: TagHostKind.epub,

@@ -6,6 +6,7 @@ import 'package:fushi/src/utils/components/fushi_cover_block.dart';
 import 'package:fushi/src/utils/components/fushi_cover_block_layout.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
 import 'package:fushi/src/media/collections/library_organize_runner.dart';
+import 'package:fushi/src/media/nsfw/media_nsfw_cover.dart';
 import 'package:fushi/src/media/privacy/media_privacy_dialog.dart';
 import 'package:fushi/src/media/downloads/download_source_method.dart';
 import 'package:fushi/src/media/tags/tag_picker_sheet.dart';
@@ -2127,6 +2128,15 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
     CollectionGroup<GalgameEntry> group,
     MediaCollectionRow collection, {
     FushiCoverBlockSize? block,
+  }) => MediaNsfwCoverScope(
+    target: MediaNsfwTarget.collection(collection.id),
+    child: _buildCollectionCardInner(group, collection, block: block),
+  );
+
+  Widget _buildCollectionCardInner(
+    CollectionGroup<GalgameEntry> group,
+    MediaCollectionRow collection, {
+    FushiCoverBlockSize? block,
   }) {
     final List<GalgameEntry> members = <GalgameEntry>[
       for (final CollectionOrderingItem<GalgameEntry> it in group.items)
@@ -2959,7 +2969,9 @@ class _GameCard extends StatelessWidget {
     // 在某张卡上，等于该 tab 里 Y=搜索永久失效。home 组的手柄默认只占 LT/RT/Y，
     // X 是空的；X 的其它绑定都在 reader / video / dictionaryPopup 组，不同组不同
     // 时激活，无遮蔽。
-    return Actions(
+    // NSFW：游戏自己的成人向标记（编辑页开关 / 刮削）或所在 NSFW 合集 → 封面
+    // 按「模糊 NSFW 封面」打模糊（卡内封面框读这一层）。
+    final Widget body = Actions(
       actions: <Type, Action<Intent>>{
         GamepadButtonIntent: GamepadButtonForwardingAction(
           ancestorContext: context,
@@ -3019,6 +3031,10 @@ class _GameCard extends StatelessWidget {
               onSecondaryTap: () => unawaited(_showContextMenu(context)),
               semanticLabel: game.displayName,
             ),
+    );
+    return MediaNsfwCoverScope(
+      target: MediaNsfwTarget.game(game.id, adult: game.isNsfw),
+      child: body,
     );
   }
 

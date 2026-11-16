@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:fushi/src/media/privacy/media_privacy_dialog.dart';
+import 'package:fushi/src/media/nsfw/media_nsfw_dialog.dart';
 import 'package:fushi/src/media/tags/tag_picker_sheet.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:material_ui/material_ui.dart';
@@ -160,6 +161,22 @@ Future<void> showCollectionContextDialog({
               onPressed: () => closeThen(
                 () => unawaited(
                   showMediaPrivacyDialog(
+                    context,
+                    db: db,
+                    kind: TagHostKind.collection,
+                    entryKey: collectionTagEntryKey(collection.id),
+                    title: collection.name,
+                  ),
+                ),
+              ),
+            ),
+            // NSFW：整个合集（全部成员）的封面按「模糊 NSFW 封面」打模糊。
+            DialogListAction(
+              label: t.media_nsfw_action,
+              icon: FushiIcons.visibilityOff,
+              onPressed: () => closeThen(
+                () => unawaited(
+                  showMediaNsfwDialog(
                     context,
                     db: db,
                     kind: TagHostKind.collection,
