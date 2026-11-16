@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'package:test/test.dart';
 
-/// BUG-4747 守卫：设置 › 外观（含页面背景）与导航速览卡（复习页「辞書」卡的
+/// BUG-4751 守卫：设置 › 外观（含页面背景）与导航速览卡（复习页「辞書」卡的
 /// Open / Lookup history）用到的每个 i18n key，日文值里必须有假名或汉字。
 ///
 /// 根因：`i18n_sync --add` 只收 en / zh 两份文本，日文先填英文占位，之后没人补译；
@@ -23,7 +23,7 @@ const List<String> _sources = <String>[
 ];
 
 void main() {
-  test('BUG-4747：外观设置与导航速览卡的日文文案不是英文占位', () {
+  test('BUG-4751：外观设置与导航速览卡的日文文案不是英文占位', () {
     final Set<String> keys = <String>{};
     final RegExp use = RegExp(r'\bt\.([a-z][a-z0-9_]*)');
     for (final String path in _sources) {

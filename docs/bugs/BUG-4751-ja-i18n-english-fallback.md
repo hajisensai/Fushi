@@ -1,4 +1,4 @@
-## BUG-4747 · 日语界面外观设置与导航速览卡大量文案仍是英文回退
+## BUG-4751 · 日语界面外观设置与导航速览卡大量文案仍是英文回退
 - **报告**：2026-11-17（应用内反馈 R-GL8y9O_j / GitHub issue #3378，版本 3.3.0+24434，Windows）
 - **真实性**：✅ 真 bug。截图里「中文串进日语」那一半已由 BUG-4505（cce4b39558）修好；剩下的英文是日文译文缺失：
   `fushi/lib/i18n/strings_ja.i18n.json` 里 `page_backdrop_title`、`theme_pure_black`、`media_jump_history_title`、`nav_peek_open`、`lookup_history_title` 等值就是英文原文
