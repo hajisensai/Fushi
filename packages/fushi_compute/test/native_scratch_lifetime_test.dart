@@ -158,6 +158,12 @@ void main() {
       'probe': () => FushiComputeImage.instance.probe(Uint8List(0)),
       'toJpeg': () =>
           FushiComputeImage.instance.toJpeg(Uint8List(0), quality: 80),
+      'fitJpeg': () => FushiComputeImage.instance.fitJpeg(
+        Uint8List(0),
+        width: 8,
+        height: 8,
+        quality: 80,
+      ),
       'coverSignature': () =>
           FushiComputeImage.instance.coverSignature(Uint8List(0)),
       'decodePng': () => FushiComputeImage.instance.decodePng(Uint8List(0)),

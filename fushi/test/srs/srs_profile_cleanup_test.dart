@@ -5,7 +5,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:archive/archive.dart';
-import 'package:drift/drift.dart' show QueryRow, Variable;
+import 'package:drift/drift.dart' show Variable;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/profile/profile_deletion_cascade.dart';
@@ -23,6 +23,7 @@ import 'package:path/path.dart' as p;
 
 import '../helpers/fake_anki_repository.dart';
 import 'srs_test_support.dart';
+import '../../../packages/fushi_engine/test/srs/support/srs_raw_sql.dart';
 
 void main() {
   late FushiDatabase db;
@@ -39,7 +40,6 @@ void main() {
   Future<SrsDbStore> activeStore() async {
     final String uid = await uidOf(await repo.getActiveProfileId());
     return stores[uid] ??= await SrsDbStore.open(
-      db: storage.db,
       core: storage.core,
       profileUid: uid,
       deviceId: 'dev',
@@ -81,7 +81,6 @@ void main() {
     required int reviews,
   }) async {
     final SrsDbStore s = stores[uid] ??= await SrsDbStore.open(
-      db: storage.db,
       core: storage.core,
       profileUid: uid,
       deviceId: 'dev',
@@ -114,7 +113,7 @@ void main() {
   }
 
   Future<int> sqlCount(String sql, String uid) async {
-    final QueryRow r = await storage.db
+    final SrsRawRow r = await storage.core
         .customSelect(
           sql,
           variables: <Variable<Object>>[Variable<String>(uid, srsIdType)],
@@ -125,7 +124,7 @@ void main() {
 
   /// [uid] 名下按 profile 记的 `srs_meta` 键数（`…/<uid>` 或 `…/<uid>/…`）。
   Future<int> metaOf(String uid) async =>
-      (await storage.db
+      (await storage.core
               .customSelect(
                 "SELECT COUNT(*) AS c FROM srs_meta WHERE key LIKE '%/' || ?1 "
                 "OR key LIKE '%/' || ?1 || '/%'",
@@ -136,7 +135,7 @@ void main() {
 
   /// 库里每张带 `profile_uid` 的表里 [uid] 各有几行（逐表；断言「一行没少 / 没变」用）。
   Future<Map<String, int>> tableRows(String uid) async {
-    final List<QueryRow> tables = await storage.db
+    final List<SrsRawRow> tables = await storage.core
         .customSelect(
           "SELECT m.name AS n FROM sqlite_master m WHERE m.type = 'table' "
           'AND EXISTS (SELECT 1 FROM pragma_table_info(m.name) '
@@ -144,7 +143,7 @@ void main() {
         )
         .get();
     final Map<String, int> out = <String, int>{};
-    for (final QueryRow t in tables) {
+    for (final SrsRawRow t in tables) {
       final String name = t.read<String>('n');
       out[name] = await sqlCount(
         'SELECT COUNT(*) AS c FROM "$name" WHERE profile_uid = ?',
@@ -259,7 +258,6 @@ void main() {
       // 撤销途径：同 uid 的 profile 导回这份备份，笔记与复习记录都回来。
       final SrsStorage fresh = await openSrsTestStorage();
       final SrsDbStore restored = await SrsDbStore.open(
-        db: fresh.db,
         core: fresh.core,
         profileUid: goneUid,
         deviceId: 'dev2',
@@ -401,7 +399,6 @@ void main() {
       // 设备 / 摘要桶、按 profile 的 srs_meta 键都留下（BUG-4292 实测）。
       const String residue = '0193a1b2-0000-7000-8000-00000000ad09';
       await SrsDbStore.open(
-        db: storage.db,
         core: storage.core,
         profileUid: residue,
         deviceId: 'dev',
@@ -421,7 +418,7 @@ void main() {
         'srs_sent_batches',
       ]) {
         final int exists =
-            (await storage.db
+            (await storage.core
                     .customSelect(
                       "SELECT COUNT(*) AS c FROM sqlite_master WHERE type = 'table' "
                       'AND name = ?',
@@ -499,7 +496,7 @@ void main() {
 
   /// 不带参数的计数查询。
   Future<int> countAll(String sql) async =>
-      (await storage.db.customSelect(sql).getSingle()).read<int>('c');
+      (await storage.core.customSelect(sql).getSingle()).read<int>('c');
 
   Future<void> putMeta(String key) async {
     storage.core.debugExecRaw(

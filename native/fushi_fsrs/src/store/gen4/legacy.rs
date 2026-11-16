@@ -106,6 +106,23 @@ pub fn preflight(conn: &Connection, profile: &str) -> Result<Vec<String>, String
     Ok(out)
 }
 
+/// 迁移时写进新身份原生日志的那条 `Salts` 的盐（设计 §5.1、§6.1 第 7 步）：这个 profile 的 uid，并上本机已退役的
+/// profile uid（`srs_meta.srs_retired_profile_uids`，旧并入留下的）。升序、无重复。退役列表解不开当没有。
+pub fn salts(conn: &Connection, profile: &str) -> Result<Vec<String>, String> {
+    let mut out: std::collections::BTreeSet<String> =
+        std::collections::BTreeSet::from([profile.to_owned()]);
+    let retired: Option<String> = conn
+        .prepare_cached("SELECT value FROM srs_meta WHERE key = 'srs_retired_profile_uids'")
+        .map_err(sql)?
+        .query_row([], |r| r.get(0))
+        .optional()
+        .map_err(sql)?;
+    if let Some(list) = retired.and_then(|s| serde_json::from_str::<Vec<String>>(&s).ok()) {
+        out.extend(list);
+    }
+    Ok(out.into_iter().collect())
+}
+
 /// 一台旧设备在这个库里的日志范围。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct LegacyDevice {
@@ -798,64 +815,7 @@ pub(crate) mod tests {
 
     // ------------------------------------------------------------ 真实样本（不进默认测试）
 
-    #[cfg(windows)]
-    pub(crate) fn peak_mem_mb() -> (f64, f64) {
-        #[repr(C)]
-        #[derive(Default)]
-        struct Counters {
-            cb: u32,
-            page_fault_count: u32,
-            peak_working_set: usize,
-            working_set: usize,
-            quota_peak_paged_pool: usize,
-            quota_paged_pool: usize,
-            quota_peak_non_paged_pool: usize,
-            quota_non_paged_pool: usize,
-            pagefile: usize,
-            peak_pagefile: usize,
-            private_usage: usize,
-        }
-        #[link(name = "kernel32")]
-        extern "system" {
-            fn GetCurrentProcess() -> isize;
-            fn K32GetProcessMemoryInfo(p: isize, c: *mut Counters, cb: u32) -> i32;
-        }
-        let mut c = Counters {
-            cb: std::mem::size_of::<Counters>() as u32,
-            ..Default::default()
-        };
-        // SAFETY: 输出结构体是本函数的局部变量，大小如实给出。
-        let ok = unsafe { K32GetProcessMemoryInfo(GetCurrentProcess(), &mut c, c.cb) };
-        if ok == 0 {
-            return (0.0, 0.0);
-        }
-        (
-            c.peak_working_set as f64 / 1048576.0,
-            c.peak_pagefile as f64 / 1048576.0,
-        )
-    }
-
-    /// Unix 上只有常驻内存的峰值（`ru_maxrss`：macOS 给字节、其余给 KiB）；没有提交量，第二个数是 0。
-    #[cfg(unix)]
-    pub(crate) fn peak_mem_mb() -> (f64, f64) {
-        // SAFETY: 输出结构体是本函数的局部变量；全零是 rusage 的合法值。
-        let mut u: libc::rusage = unsafe { std::mem::zeroed() };
-        // SAFETY: 指针指向上面那个局部变量。
-        if unsafe { libc::getrusage(libc::RUSAGE_SELF, &mut u) } != 0 {
-            return (0.0, 0.0);
-        }
-        let unit = if cfg!(target_os = "macos") {
-            1.0
-        } else {
-            1024.0
-        };
-        (u.ru_maxrss as f64 * unit / 1048576.0, 0.0)
-    }
-
-    #[cfg(not(any(windows, unix)))]
-    pub(crate) fn peak_mem_mb() -> (f64, f64) {
-        (0.0, 0.0)
-    }
+    pub(crate) use crate::store::gen4::dryrun::peak_mem_mb;
 
     pub(crate) fn sample() -> Option<Connection> {
         let path = std::env::var("FUSHI_GEN4_SAMPLE_DB").ok()?;

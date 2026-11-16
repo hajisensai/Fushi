@@ -1662,6 +1662,101 @@ pub unsafe extern "C" fn ffc_image_to_jpeg(
     })
 }
 
+/// 漫画页图按显示尺寸降采样：解码（转正 EXIF 方向 / HEIF 显示变换）→ 面积平均
+/// （[INTERP_AVERAGE]）缩到 `dst_w × dst_h` → JPEG（`quality` 1..=100，4:4:4）。灰度源编单通道
+/// JPEG（漫画扫描多是灰度，体积与解码成本都只有 RGB 的约 1/3）。
+///
+/// 只做缩小：`dst_w` / `dst_h` 任一超过源尺寸返回 [status::INVALID_ARGUMENT]。带 alpha 的源
+/// 返回 [status::BAD_INPUT]（JPEG 没有透明，合成到哪种底色取决于阅读器背景，不在这里猜），
+/// 解不开同样是 [status::BAD_INPUT]——调用方收到任何非 OK 都应原样交出源字节。
+///
+/// # Safety
+/// 指针按给定长度可读 / 可写。
+#[no_mangle]
+pub unsafe extern "C" fn ffc_image_fit_jpeg(
+    data: *const u8,
+    len: usize,
+    dst_w: u32,
+    dst_h: u32,
+    quality: u32,
+    out_ptr: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    guard(|| {
+        if data.is_null() || out_ptr.is_null() || out_len.is_null() {
+            return status::NULL_ARGUMENT;
+        }
+        if !(1..=100).contains(&quality)
+            || dst_w == 0
+            || dst_h == 0
+            || dst_w > u16::MAX as u32
+            || dst_h > u16::MAX as u32
+        {
+            return status::INVALID_ARGUMENT;
+        }
+        match fit_jpeg(slice(data, len), dst_w, dst_h, quality as u8) {
+            Ok(jpeg) => {
+                crate::hand_over_bytes(jpeg, out_ptr, out_len);
+                status::OK
+            }
+            Err(code) => code,
+        }
+    })
+}
+
+/// [ffc_image_fit_jpeg] 的本体。
+fn fit_jpeg(data: &[u8], dst_w: u32, dst_h: u32, quality: u8) -> Result<Vec<u8>, i32> {
+    let (pixels, width, height, channels) = decode_opaque(data)?;
+    if dst_w > width || dst_h > height {
+        return Err(status::INVALID_ARGUMENT);
+    }
+    let ch = channels as usize;
+    let src = View::new(&pixels, width as usize * ch, channels, 0, 0, width, height)?;
+    let (dw, dh) = (dst_w as usize, dst_h as usize);
+    let mut resized = vec![0u8; dw * dh * ch];
+    resize_into(&src, &mut resized, dw, dh, INTERP_AVERAGE);
+    drop(pixels);
+    let color = if ch == 1 {
+        jpeg_encoder::ColorType::Luma
+    } else {
+        jpeg_encoder::ColorType::Rgb
+    };
+    let mut jpeg = Vec::new();
+    let mut enc = jpeg_encoder::Encoder::new(&mut jpeg, quality);
+    enc.set_sampling_factor(jpeg_encoder::SamplingFactor::F_1_1);
+    enc.encode(&resized, dst_w as u16, dst_h as u16, color)
+        .map_err(|_| status::BAD_INPUT)?;
+    Ok(jpeg)
+}
+
+/// 解码成不透明的 1 通道（灰度）或 3 通道（RGB）uint8 像素，返回 `(像素, 宽, 高, 通道数)`；
+/// 带 alpha 的源返回 [status::BAD_INPUT]。
+fn decode_opaque(data: &[u8]) -> Result<(Vec<u8>, u32, u32, u32), i32> {
+    use image::ImageDecoder;
+    if avif::is_avif(data) {
+        let (pixels, width, height, channels) = avif::decode(data)?;
+        if channels != 3 {
+            return Err(status::BAD_INPUT);
+        }
+        return Ok((pixels, width, height, 3));
+    }
+    let (mut decoder, _) = open_decoder(data)?;
+    let orientation = decoder
+        .orientation()
+        .unwrap_or(image::metadata::Orientation::NoTransforms);
+    let mut img = image::DynamicImage::from_decoder(decoder).map_err(|_| status::BAD_INPUT)?;
+    img.apply_orientation(orientation);
+    let (width, height) = (img.width(), img.height());
+    if width == 0 || height == 0 || img.color().has_alpha() {
+        return Err(status::BAD_INPUT);
+    }
+    if img.color().has_color() {
+        Ok((img.into_rgb8().into_raw(), width, height, 3))
+    } else {
+        Ok((img.into_luma8().into_raw(), width, height, 1))
+    }
+}
+
 /// `EpubEdgeMatcher.compareEdges`：两张图各自解码（转正）、最近邻缩到高 [sample_height]
 /// （宽按比例四舍五入，同 `copyResize(height:)`），比较左图右缘与右图左缘各 [strip_width]
 /// 列的 RGB 差，写 `out = 1 - 平均差`（0..1；没有可比像素时写 0）。任一张解不开返回
@@ -2342,6 +2437,46 @@ mod tests {
         mosaic_rgba(&mut px, 4, 1, 2, &[[1, 0, 2, 1]]);
         assert_eq!(&px[0..8], &[0, 0, 0, 255, 5, 5, 5, 255]);
         assert_eq!(&px[8..16], &[100, 0, 0, 255, 0, 0, 0, 255]);
+    }
+
+    fn encode(img: image::DynamicImage, format: image::ImageFormat) -> Vec<u8> {
+        let mut out = std::io::Cursor::new(Vec::new());
+        img.write_to(&mut out, format).unwrap();
+        out.into_inner()
+    }
+
+    #[test]
+    fn fit_jpeg_downscales_grayscale_to_single_channel_jpeg() {
+        let src = image::GrayImage::from_fn(400, 600, |x, y| image::Luma([((x + y) % 256) as u8]));
+        let png = encode(image::DynamicImage::ImageLuma8(src), image::ImageFormat::Png);
+        let jpeg = fit_jpeg(&png, 200, 300, 90).unwrap();
+        let out = image::load_from_memory_with_format(&jpeg, image::ImageFormat::Jpeg).unwrap();
+        assert_eq!((out.width(), out.height()), (200, 300));
+        assert_eq!(out.color(), image::ColorType::L8);
+    }
+
+    #[test]
+    fn fit_jpeg_keeps_colour_sources_rgb() {
+        let src = image::RgbImage::from_fn(64, 32, |x, _| image::Rgb([x as u8 * 4, 0, 200]));
+        let png = encode(image::DynamicImage::ImageRgb8(src), image::ImageFormat::Png);
+        let jpeg = fit_jpeg(&png, 32, 16, 90).unwrap();
+        let out = image::load_from_memory_with_format(&jpeg, image::ImageFormat::Jpeg).unwrap();
+        assert_eq!((out.width(), out.height()), (32, 16));
+        assert_eq!(out.color(), image::ColorType::Rgb8);
+        // 面积平均：纯色通道保持（JPEG 有损，允许小误差）。
+        let px = out.to_rgb8().get_pixel(16, 8).0;
+        assert!((px[2] as i32 - 200).abs() <= 6, "{px:?}");
+    }
+
+    #[test]
+    fn fit_jpeg_refuses_upscale_alpha_and_garbage() {
+        let src = image::GrayImage::new(40, 40);
+        let png = encode(image::DynamicImage::ImageLuma8(src), image::ImageFormat::Png);
+        assert_eq!(fit_jpeg(&png, 41, 40, 90), Err(status::INVALID_ARGUMENT));
+        let rgba = image::RgbaImage::new(40, 40);
+        let png = encode(image::DynamicImage::ImageRgba8(rgba), image::ImageFormat::Png);
+        assert_eq!(fit_jpeg(&png, 20, 20, 90), Err(status::BAD_INPUT));
+        assert_eq!(fit_jpeg(b"not an image", 20, 20, 90), Err(status::BAD_INPUT));
     }
 
     #[test]

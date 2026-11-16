@@ -2117,6 +2117,13 @@ class ThemeNotifier extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 恢复默认：清掉落库的摆放（写空串，[_shellBlockArrangementPref] 读回 null），
+  /// 回到「跟着布局走」，而不是把此刻布局下的默认值钉死。
+  Future<void> resetShellBlockArrangement() async {
+    await _set('shell_block_arrangement', '');
+    notifyListeners();
+  }
+
   bool get shellSmoothCorners =>
       _get('shell_smooth_corners', defaultValue: true) as bool;
 
