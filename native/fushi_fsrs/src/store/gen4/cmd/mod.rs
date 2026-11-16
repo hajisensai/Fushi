@@ -4,6 +4,9 @@
 //! - [reads]：`read`（一个集合的只读查询，查询名与列契约同协议 3）与 `read_lib`（不针对单个集合）。
 //! - [views]：`entity_views`——每实体一份视图 JSON（规划 §1.1 缺口 G-7；远程复习 V2 与本机共用同一个解码器）。
 //! - [history]：一个实体的修改历史（协议 3 `sync2_history` 的新代版）。
+//! - [columns]：列式批量读 `card_columns` 与 AnkiConnect 数字 id 的 `anki_resolve` / `anki_notes_info`（协议 3 `store/bulk.rs`）。
+//! - [lineage]：`lineages`——一组卡各自的血统（协议 3 `caches::lineage_ids`，同一个判定函数，按类读前身链接）。
+//! - [stats]：复习统计 `stats_report` / `stats_recall` / `stats_rows`（协议 3 `store/stats.rs`，同一份聚合）。
 //!
 //! # 共同约定
 //!
@@ -32,12 +35,24 @@ use crate::sync2::codec::Writer;
 use crate::sync2::id::Key;
 use crate::sync2::op::EntKind;
 
+pub mod columns;
 pub mod history;
+pub mod lineage;
 pub mod reads;
+pub mod stats;
 pub mod views;
+// 写命令的新代实现（规划 §2.1 G7-3b），同样还没接分发器：见 [writes] 文件头。
+pub mod writes;
+pub mod writes_intent;
+pub mod writes_local;
+pub mod writes_restore;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_class;
+#[cfg(test)]
+mod writes_tests;
 
 /// 结果里的列式表（`store/bulk.rs` 的 `FCL1`）：(名字, 字节)。
 pub type Files = Vec<(String, Vec<u8>)>;
@@ -324,7 +339,7 @@ impl Sel {
             .collect();
         let p = self.text(&Value::Array(list).to_string());
         format!(
-            "(SELECT CASE value ->> 0 WHEN 1 THEN unhex(value ->> 1) ELSE value ->> 1 END FROM json_each({p}))"
+            "(SELECT CASE value ->> 0 WHEN 1 THEN unhex(value ->> 1) ELSE value ->> 1 END AS v FROM json_each({p}))"
         )
     }
 
@@ -332,7 +347,7 @@ impl Sel {
         self.sql.push_str(s);
     }
 
-    fn params(&self) -> Vec<&dyn rusqlite::ToSql> {
+    pub(super) fn params(&self) -> Vec<&dyn rusqlite::ToSql> {
         self.args
             .iter()
             .map(|a| a as &dyn rusqlite::ToSql)

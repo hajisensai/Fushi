@@ -262,6 +262,20 @@ add_test(NAME ja_mixed_orthography_lookup_test
          COMMAND ja_mixed_orthography_lookup_test
                  "${FUSHI_ROOT}/../../fushi/assets/transforms/ja.json")
 
+# 联合过滤器（hash/union_filter.hpp）：一条缓存行判「键可能在哪几本词典里」。纯加速
+# 结构，验的是不改结果：无假阴性、坏缓存文件被拒并重建、有 / 无过滤器时真词典上的
+# lookup / query 逐字段相同、add_dict 后作废、后台构建最终就绪。
+add_executable(union_filter_test
+    "${CMAKE_CURRENT_SOURCE_DIR}/union_filter_test.cpp")
+target_link_libraries(union_filter_test PRIVATE fushidicts Threads::Threads)
+target_include_directories(union_filter_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}" "${FUSHI_SRC}")
+if(MSVC)
+  target_compile_options(union_filter_test PRIVATE /utf-8 /Zc:__cplusplus /permissive-)
+endif()
+add_test(NAME union_filter_test
+         COMMAND union_filter_test
+                 "${FUSHI_ROOT}/../../fushi/assets/transforms/ja.json")
+
 # BUG-2853：Yomitan 词典自带变形（`[formOf, [rule...]]` 重定向记录）在 lookup 里被跟随。
 add_executable(yomitan_redirect_lookup_test
     "${CMAKE_CURRENT_SOURCE_DIR}/yomitan_redirect_lookup_test.cpp")
