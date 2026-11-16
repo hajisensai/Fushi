@@ -37,7 +37,6 @@ class AcHarness {
     final SrsStorage srsStorage = await openTestSrsStorage();
     int t = DateTime.utc(2026, 10, 14, 12).millisecondsSinceEpoch;
     final SrsDbStore store = await SrsDbStore.open(
-      db: srsStorage.db,
       core: srsStorage.core,
       profileUid: kAcProfile,
       deviceId: 'dev',

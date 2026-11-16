@@ -1,5 +1,6 @@
 import 'package:fushi/src/utils/fushi_icons.dart';
 
+import 'package:fushi/src/pages/implementations/library_recovery_page.dart';
 import 'package:fushi/src/pages/implementations/storage_usage_view.dart';
 import 'package:fushi/src/settings/database_check_action.dart';
 import 'package:fushi/src/settings/settings_context.dart';
@@ -49,6 +50,18 @@ SettingsDestination buildStorageDestination() {
                   checkDatabaseForCli(c),
             ),
             onTap: checkDatabaseFromSettings,
+          ),
+          // BUG-4701：覆盖导入换掉书库后的找回入口（覆盖前快照只补缺恢复 +
+          // 孤儿书目录重新登记）。
+          SettingsActionItem(
+            id: 'storage.library_recovery',
+            title: t.storage_recovery_title,
+            subtitle: t.storage_recovery_summary,
+            icon: FushiIcons.restoreBackup,
+            cli: const SettingsCliAction.unsupported(
+              '恢复书库要逐条确认，只在界面里做：设置 › 存储 › 恢复书库',
+            ),
+            onTap: openLibraryRecoveryPage,
           ),
         ],
       ),

@@ -1046,10 +1046,16 @@ class DataRootMigrator {
   /// **两条路径必须共用这一份调用清单**——覆盖面的真相源是
   /// `path_rebase_coverage.dart`，各自抄一份表就等于给「新增路径列」留了两个
   /// 会漂开的登记处。
+  ///
+  /// [includePreferences]=false 只改写表、不碰 `preferences` / `profile_settings`：
+  /// 第三个调用者——改下载根时搬已下载内容（`download_root_migrator.dart`）——发生在
+  /// app 运行中，偏好仓库握着内存副本，直接改库会被下一次写偏好覆盖回去；那条路径
+  /// 搬的是下载域子目录，偏好里也没有指向它们的路径。
   static Future<void> rebaseOpenDatabasePaths({
     required FushiDatabase db,
     required DocumentsPathRebaser docs,
     required String newSupportRoot,
+    bool includePreferences = true,
   }) async {
     await db.transaction(() async {
       await _rebaseEpubBooks(db, docs);
@@ -1074,8 +1080,10 @@ class DataRootMigrator {
       await _rebaseVideoDownloadJobFiles(db, docs);
       await _rebaseVideoDownloadJobSubtitles(db, docs);
       await _rebaseMediaOpenHistory(db, docs);
-      await _rebasePreferences(db, docs, newSupportRoot);
-      await _rebaseProfileSettings(db, docs, newSupportRoot);
+      if (includePreferences) {
+        await _rebasePreferences(db, docs, newSupportRoot);
+        await _rebaseProfileSettings(db, docs, newSupportRoot);
+      }
     });
     // checkpoint 必须在事务**外**：SQLite 不允许在活动事务里 wal_checkpoint。
     await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');

@@ -4066,6 +4066,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     DeletionDisclosure? disclosure,
     String? localFilesSubtitle,
     String? statisticsSubtitle,
+    String? keepDownloadsSubtitle,
   }) async {
     // TODO-2470 死角②：本机没有任何删除传播通道时不摆那个兑现不了的勾选框。
     // 纯本地零网络判据，在弹窗弹出前解析完（弹窗自身不做 IO）。
@@ -4086,6 +4087,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         showSyncScope: canSyncEverywhere,
         localFilesSubtitle: localFilesSubtitle,
         statisticsSubtitle: statisticsSubtitle,
+        keepDownloadsSubtitle: keepDownloadsSubtitle,
         rememberedChoices: rememberedChoices,
         onPersistChoices: preferenceStore.write,
         onConfirm: (DeleteDecision d) => Navigator.pop(ctx, d),

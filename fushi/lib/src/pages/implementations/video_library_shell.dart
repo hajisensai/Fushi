@@ -411,6 +411,9 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
         : LibrarySectionTabs<VideoLibrarySection>(
             tabs: groupTabs,
             selected: currentGroup == null ? groupTabs.first.value : _section,
+            // 停在导入页时「媒体库」高亮只是视觉锚点、不是当前视图：点它 / 方向键
+            // 落到它照常切回（BUG-4706）。
+            selectedIsCurrent: currentGroup != null,
             onChanged: _select,
             focusIdPrefix: 'video-library-view',
             floating: true,

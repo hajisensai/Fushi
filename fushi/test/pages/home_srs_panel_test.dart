@@ -205,7 +205,6 @@ void main() {
       ..wireLocalAudioForTesting(prefsRepo: prefs, databaseDirectory: storeDir);
     final SrsStorage srs = await openSrsTestStorage();
     store = await SrsDbStore.open(
-      db: srs.db,
       core: srs.core,
       profileUid: _kProfile,
       deviceId: 'test-device',

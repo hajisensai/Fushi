@@ -10,7 +10,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:drift/drift.dart';
 import 'package:fushi_anki/fushi_anki_core.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
@@ -427,15 +426,10 @@ class SrsMiner with AnkiNoteComposer {
     );
     final String key = q.termKey;
     if (key.isEmpty) return const <SrsNoteCacheRow>[];
-    final SrsDatabase db = store.db;
-    final List<SrsNoteCacheRow> rows =
-        await (db.select(db.srsNotesCache)..where(
-              (n) =>
-                  n.profileUid.equals(store.profileUid) &
-                  n.termKey.equals(key) &
-                  n.deletedAt.isNull(),
-            ))
-            .get();
+    final List<SrsNoteCacheRow> rows = await store.noteRows(<String, Object?>{
+      'termKey': key,
+      'alive': true,
+    });
     final String rk = q.readingKey;
     return rows
         .where(
@@ -498,18 +492,8 @@ class SrsMiner with AnkiNoteComposer {
 
   /// 字段里出现 [sourceId] 的现存笔记（只是候选：调用方再解析 href 确认身份）。
   Future<List<String>> sourceNoteCandidates(String sourceId) async {
-    final SrsDatabase db = store.db;
-    final query = db.selectOnly(db.srsFieldEdits, distinct: true)
-      ..addColumns(<Expression<Object>>[db.srsFieldEdits.entityId])
-      ..where(
-        db.srsFieldEdits.profileUid.equals(store.profileUid) &
-            db.srsFieldEdits.entityKind.equals(SrsEntityKind.note.wire) &
-            db.srsFieldEdits.fieldKey.like('${SrsFieldKeys.noteField('')}%') &
-            db.srsFieldEdits.json.like('%$sourceId%'),
-      );
     final List<String> out = <String>[];
-    for (final TypedResult r in await query.get()) {
-      final String id = r.read(db.srsFieldEdits.entityId)!;
+    for (final String id in await store.sourceNoteCandidates(sourceId)) {
       if (await _live(id) != null) out.add(id);
     }
     return out;

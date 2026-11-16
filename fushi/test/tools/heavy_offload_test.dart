@@ -400,4 +400,37 @@ void main() {
     );
     expect(heavyOffloadDisabled(const <String, String>{}), isFalse);
   });
+
+  test('an attempt made while the run queues here waits in the queues '
+      'of the workers', () {
+    final HeavyOffload test = planIn('fushi', <String>[
+      _flutter,
+      'test',
+      'test/b_test.dart',
+    ])!;
+    expect(test.distArgs, contains('--busy-retries=$kHeavyOffloadBusyRetries'));
+    final List<String> queued = heavyOffloadQueuedArgs(test.distArgs);
+    expect(queued, contains('--busy-retries=$kHeavyOffloadQueuedBusyRetries'));
+    expect(queued.length, test.distArgs.length);
+    expect(queued.last, 'test/b_test.dart');
+    expect(kHeavyOffloadQueuedBusyRetries, greaterThan(0));
+
+    // Nothing after `--` is dist_test's: a build's own words stay.
+    expect(
+      heavyOffloadQueuedArgs(<String>[
+        '--build',
+        '--busy-retries=0',
+        '--',
+        'gradlew',
+        '--busy-retries=0',
+      ]),
+      <String>[
+        '--build',
+        '--busy-retries=$kHeavyOffloadQueuedBusyRetries',
+        '--',
+        'gradlew',
+        '--busy-retries=0',
+      ],
+    );
+  });
 }

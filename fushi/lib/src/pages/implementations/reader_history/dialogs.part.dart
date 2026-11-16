@@ -23,6 +23,7 @@ class ReaderHistoryDeleteDialog extends StatefulWidget {
     this.showSyncScope = true,
     this.localFilesSubtitle,
     this.statisticsSubtitle,
+    this.keepDownloadsSubtitle,
     this.disclosure,
     this.rememberedChoices,
     this.onPersistChoices,
@@ -41,6 +42,13 @@ class ReaderHistoryDeleteDialog extends StatefulWidget {
   /// 非 null = 渲染勾选行，副标题如实说清删掉的是哪些统计口径。
   final String? statisticsSubtitle;
 
+  /// null = 不是在线漫画（没有下载根里的章节可留）→ 恒 keepDownloadedFiles=false。
+  /// 非 null = 渲染「保留已下载章节」勾选行，**默认勾上**且不沿用上次状态：保留是
+  /// 可逆的（下载页「重新入库」原样找回，旧卡片的来源随之重新连上），删掉不可逆
+  /// ——在线源随时可能下架，「之前下载的漫画没了，做的卡片也没用了」正是这个
+  /// 选项要防的事。要腾空间的用户取消勾选即可。
+  final String? keepDownloadsSubtitle;
+
   /// 逐项披露真实删除范围；null 表示该入口暂未接入结构化披露。
   final DeletionDisclosure? disclosure;
   final DeletePromptRememberedChoices? rememberedChoices;
@@ -56,6 +64,8 @@ class _ReaderHistoryDeleteDialogState extends State<ReaderHistoryDeleteDialog> {
   late bool _deleteLocalFiles;
   // 统计删除恒从未勾开始、不被记忆（见 [DeleteStatisticsRow]）。
   bool _deleteStatistics = false;
+  // 保留已下载章节恒从勾上开始（见 [ReaderHistoryDeleteDialog.keepDownloadsSubtitle]）。
+  bool _keepDownloads = true;
   bool _saving = false;
 
   @override
@@ -89,6 +99,8 @@ class _ReaderHistoryDeleteDialogState extends State<ReaderHistoryDeleteDialog> {
             widget.localFilesSubtitle != null && _deleteLocalFiles,
         deleteStatistics:
             widget.statisticsSubtitle != null && _deleteStatistics,
+        keepDownloadedFiles:
+            widget.keepDownloadsSubtitle != null && _keepDownloads,
       ),
     );
   }
@@ -96,6 +108,12 @@ class _ReaderHistoryDeleteDialogState extends State<ReaderHistoryDeleteDialog> {
   /// 披露跟着两个二级勾选翻面：勾了哪个，对应条目就从「会被保留」挪进「会被删除」。
   DeletionDisclosure _shownDisclosure(DeletionDisclosure base) {
     DeletionDisclosure shown = base;
+    if (widget.keepDownloadsSubtitle != null && _keepDownloads) {
+      shown = shown.withDownloadedFilesKept(
+        deletedEntry: t.delete_disclosure_book_extracted,
+        keptEntry: t.delete_disclosure_manga_downloads_kept,
+      );
+    }
     if (_deleteLocalFiles) shown = shown.withLocalFilesDeleted();
     if (_deleteStatistics) shown = shown.withStatisticsDeleted();
     return shown;
@@ -153,6 +171,14 @@ class _ReaderHistoryDeleteDialogState extends State<ReaderHistoryDeleteDialog> {
                 value: _deleteLocalFiles,
                 subtitle: widget.localFilesSubtitle!,
                 onChanged: (bool v) => setState(() => _deleteLocalFiles = v),
+              ),
+            if (widget.keepDownloadsSubtitle != null)
+              DeleteConfirmCheckboxRow(
+                key: const ValueKey<String>('delete-keep-downloads'),
+                title: t.delete_keep_downloads_title,
+                subtitle: widget.keepDownloadsSubtitle,
+                value: _keepDownloads,
+                onChanged: (bool v) => setState(() => _keepDownloads = v),
               ),
             if (widget.statisticsSubtitle != null)
               DeleteStatisticsRow(
