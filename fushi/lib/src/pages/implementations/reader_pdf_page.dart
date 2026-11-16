@@ -81,7 +81,7 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
   final PdfViewerController _pdfController = PdfViewerController();
 
   @override
-  ModuleId? get popupDockModule => ModuleId.books;
+  ModuleId? get lookupHostModule => ModuleId.books;
 
   /// 每页结构化文本缓存（`loadStructuredText` 有解析成本，点一次查一次会卡）。
   /// key = 0-based 页索引。

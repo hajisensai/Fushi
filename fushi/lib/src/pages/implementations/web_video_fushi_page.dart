@@ -44,6 +44,7 @@ import 'package:fushi/src/media/video/underlay_composition.dart'
 import 'package:fushi/src/media/video/web_video_shaders.dart';
 import 'package:fushi/src/media/video/video_shader_tier.dart';
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
+import 'package:fushi/src/mining/after_mining_popup_action.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/mining/galgame_audio_encode.dart';
@@ -593,6 +594,26 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
   @override
   String get dictionarySourceType => kStatSourceVideo;
 
+  /// 制卡后「关闭弹窗、不续播」（拍板台 8ldy3d8XFA）：撤掉查词暂停标记，随后
+  /// [_popNestedPopupAt] 关栈时就不续播。
+  @override
+  void dropLookupPauseMark() {
+    _pausedForLookup = false;
+  }
+
+  /// 窗口宿主档：顶层查词窗口里一张新卡被收下（入队 / 落地）后，与应用内弹窗车道
+  /// （`closePopupAfterAcceptedMine`）同一判据处理「制卡后行为」（视频那一行，拍板台
+  /// 8ldy3d8XFA）。关卡走 [GlobalLookupController.dismissDesktopLookup]，原生回报关窗后
+  /// [_onGlobalLookupHidden] 按 [_pausedForLookup] 续播；「关闭、不续播」先撤标记。
+  void _afterGlobalLookupMineAccepted() {
+    if (!mounted) return;
+    applyAfterMiningPopupAction(
+      afterMiningPopupAction,
+      dropPauseMark: dropLookupPauseMark,
+      closeAll: GlobalLookupController.instance.dismissDesktopLookup,
+    );
+  }
+
   /// 查词 / 制卡计数归属 = 观看时长同一身份（时钟 `mediaKey` = [WebVideoFushiPage.bookUid]），
   /// 与本地视频页 `_studyStatsIdentity` 同律；此前未覆写，网页档的查词 / 制卡只进汇总。
   @override
@@ -600,7 +621,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       (bookKey: widget.bookUid, title: _row?.title ?? '');
 
   @override
-  ModuleId? get popupDockModule => ModuleId.video;
+  ModuleId? get lookupHostModule => ModuleId.video;
 
   @override
   ShortcutScope? get dictionaryPopupInputScope => ShortcutScope.video;
@@ -2037,9 +2058,11 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     final VideoBookRow? row = _row;
     if (cue == null || row == null) {
       final MinePopupResult r = await super.onMineEntry(fields);
+      if (updateNoteId == null && r.accepted) _afterGlobalLookupMineAccepted();
       return r.toJson();
     }
     await _enqueueMine(fields, cue, row);
+    if (updateNoteId == null) _afterGlobalLookupMineAccepted();
     return <String, Object?>{
       'ankiConnect': false,
       'message': t.web_video_mine_queued(count: _minePending),
