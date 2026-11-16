@@ -36,12 +36,37 @@ Future<bool> pickAndApplyVideoFrameCover({
   VideoFrameDurationProbe probeDurationMs = probeVideoDurationMs,
   VideoFrameFileGrabber grabFrame = grabVideoFrameToFile,
 }) async {
+  final int? atMs = await showVideoFrameCoverPicker(
+    context: context,
+    videoPath: videoPath,
+    probeDurationMs: probeDurationMs,
+    grabFrame: grabFrame,
+  );
+  if (atMs == null) return false;
+  return applyVideoFrameCoverAt(
+    videoPath: videoPath,
+    atMs: atMs,
+    apply: apply,
+    grabFrame: grabFrame,
+  );
+}
+
+/// 打开挑帧弹窗，返回用户确认的时刻（毫秒）；null = 取消。
+///
+/// 预览帧写进本次弹窗专属的临时目录，读成字节后立刻删文件，弹窗关闭时整个
+/// 目录一起删。
+Future<int?> showVideoFrameCoverPicker({
+  required BuildContext context,
+  required String videoPath,
+  VideoFrameDurationProbe probeDurationMs = probeVideoDurationMs,
+  VideoFrameFileGrabber grabFrame = grabVideoFrameToFile,
+}) async {
   final Directory tempDir = await Directory.systemTemp.createTemp(
-    'fushi_frame_cover_',
+    'fushi_frame_preview_',
   );
   try {
-    if (!context.mounted) return false;
-    final int? atMs = await showAppDialog<int>(
+    if (!context.mounted) return null;
+    return await showAppDialog<int>(
       context: context,
       builder: (_) => VideoFrameCoverPickerDialog(
         loadDurationMs: () => probeDurationMs(videoPath),
@@ -61,7 +86,23 @@ Future<bool> pickAndApplyVideoFrameCover({
         },
       ),
     );
-    if (atMs == null) return false;
+  } finally {
+    await _deleteQuietly(tempDir);
+  }
+}
+
+/// 按 [atMs] 截**原尺寸**帧到临时文件，交给 [apply] 落盘，返回后删临时目录。
+///
+/// 返回 true = 已应用；false = 截不到帧或 [apply] 抛错（已 toast + 记错误日志）。
+Future<bool> applyVideoFrameCoverAt({
+  required String videoPath,
+  required int atMs,
+  required Future<void> Function(String framePath) apply,
+  VideoFrameFileGrabber grabFrame = grabVideoFrameToFile,
+}) async {
+  Directory? tempDir;
+  try {
+    tempDir = await Directory.systemTemp.createTemp('fushi_frame_cover_');
     final String? framePath = await grabFrame(
       videoPath: videoPath,
       atMs: atMs,
@@ -85,10 +126,14 @@ Future<bool> pickAndApplyVideoFrameCover({
     );
     return false;
   } finally {
-    try {
-      await tempDir.delete(recursive: true);
-    } on FileSystemException catch (_) {}
+    if (tempDir != null) await _deleteQuietly(tempDir);
   }
+}
+
+Future<void> _deleteQuietly(Directory dir) async {
+  try {
+    await dir.delete(recursive: true);
+  } on FileSystemException catch (_) {}
 }
 
 /// 预览帧宽度（px）：够在弹窗里看清，又让 ffmpeg 少编码几倍像素。

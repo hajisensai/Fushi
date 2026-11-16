@@ -9,7 +9,6 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/video/cover_ui/video_frame_cover_picker.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
-import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 /// 拍板 wb8RZZbn90「从视频画面选取封面」守卫：
@@ -17,7 +16,7 @@ import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 /// 2. 拖动松手 / ±10 秒微调才取新预览，晚到的旧预览被丢弃；
 /// 3. 「用这一帧」只在预览对上当前位置时可点，返回所选毫秒；
 /// 4. 读不到片长 / 取不到帧给失败态，确认键不可点；
-/// 5. 整条流程：确认后按所选时刻截**原尺寸**帧交给 apply，结束删临时目录；
+/// 5. 确认后按所选时刻截**原尺寸**帧交给 apply，结束删临时目录（IO 段纯 test 验）；
 /// 6. 单集菜单接上了这条入口，并经手选封面同一落盘口。
 
 /// 1x1 PNG：真能解码，避免 Image.memory 报解码错误。
@@ -83,7 +82,9 @@ void main() {
       ),
     );
     await tester.tap(find.text('open'));
-    await tester.pumpAndSettle();
+    // 预览可能故意挂着（转圈不停），不能 pumpAndSettle：推过弹窗进场动画即可。
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
     return () => result ?? Future<int?>.value();
   }
 
@@ -191,94 +192,72 @@ void main() {
     expect(confirmEnabled(tester), isFalse);
   });
 
-  testWidgets(
-    'flow: confirmed position is grabbed at full size and handed to apply',
-    (WidgetTester tester) async {
-      final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
-      FushiToast.navigatorKey = navKey;
+  group('applyVideoFrameCoverAt', () {
+    test('grabs the confirmed time at full size, applies, cleans up', () async {
       final List<({int atMs, int? scaleWidth, String outputPath})> grabs =
           <({int atMs, int? scaleWidth, String outputPath})>[];
       String? applied;
-      bool appliedFileExisted = false;
-      Future<bool>? done;
-      await tester.pumpWidget(
-        TranslationProvider(
-          child: MaterialApp(
-            navigatorKey: navKey,
-            home: Scaffold(
-              body: Builder(
-                builder: (BuildContext ctx) => TextButton(
-                  onPressed: () {
-                    done = pickAndApplyVideoFrameCover(
-                      context: ctx,
-                      videoPath: '/videos/ep01.mkv',
-                      probeDurationMs: (String path) async {
-                        expect(path, '/videos/ep01.mkv');
-                        return 300000;
-                      },
-                      grabFrame:
-                          ({
-                            required String videoPath,
-                            required int atMs,
-                            required String outputPath,
-                            required int? scaleWidth,
-                          }) async {
-                            grabs.add((
-                              atMs: atMs,
-                              scaleWidth: scaleWidth,
-                              outputPath: outputPath,
-                            ));
-                            await File(outputPath).writeAsBytes(_png);
-                            return outputPath;
-                          },
-                      apply: (String framePath) async {
-                        applied = framePath;
-                        appliedFileExisted = File(framePath).existsSync();
-                      },
-                    );
-                  },
-                  child: const Text('open'),
-                ),
-              ),
-            ),
-          ),
-        ),
+      bool existedDuringApply = false;
+      final bool ok = await applyVideoFrameCoverAt(
+        videoPath: '/videos/ep01.mkv',
+        atMs: 30000,
+        grabFrame:
+            ({
+              required String videoPath,
+              required int atMs,
+              required String outputPath,
+              required int? scaleWidth,
+            }) async {
+              expect(videoPath, '/videos/ep01.mkv');
+              grabs.add((
+                atMs: atMs,
+                scaleWidth: scaleWidth,
+                outputPath: outputPath,
+              ));
+              await File(outputPath).writeAsBytes(_png);
+              return outputPath;
+            },
+        apply: (String framePath) async {
+          applied = framePath;
+          existedDuringApply = File(framePath).existsSync();
+        },
       );
-      await tester.tap(find.text('open'));
-      // 临时目录与预览文件是真 IO：在真异步里放行，再推帧。
-      for (int i = 0; i < 20 && grabs.isEmpty; i++) {
-        await tester.runAsync(
-          () => Future<void>.delayed(const Duration(milliseconds: 20)),
-        );
-        await tester.pump();
-      }
-      await tester.runAsync(
-        () => Future<void>.delayed(const Duration(milliseconds: 50)),
-      );
-      await tester.pumpAndSettle();
-      expect(grabs.single.atMs, 30000);
-      expect(grabs.single.scaleWidth, kVideoFrameCoverPreviewWidth);
-      final Directory tempDir = File(grabs.single.outputPath).parent;
-
-      await tester.tap(
-        find.byKey(const ValueKey<String>('video-frame-cover-confirm')),
-      );
-      await tester.pump();
-      bool? ok;
-      await tester.runAsync(() async {
-        ok = await done;
-      });
-      await tester.pumpAndSettle();
-
       expect(ok, isTrue);
-      expect(grabs.length, 2);
-      expect(grabs.last.atMs, 30000);
-      expect(grabs.last.scaleWidth, isNull, reason: '最终封面取原尺寸');
-      expect(applied, grabs.last.outputPath);
-      expect(appliedFileExisted, isTrue, reason: 'apply 时帧文件必须还在');
-      expect(tempDir.existsSync(), isFalse, reason: '结束后删临时目录');
-    },
-  );
+      expect(grabs.single.atMs, 30000);
+      expect(grabs.single.scaleWidth, isNull, reason: '最终封面取原尺寸');
+      expect(applied, grabs.single.outputPath);
+      expect(existedDuringApply, isTrue, reason: 'apply 时帧文件必须还在');
+      expect(
+        File(grabs.single.outputPath).parent.existsSync(),
+        isFalse,
+        reason: '结束后删临时目录',
+      );
+    });
+
+    test('no frame: false, apply never called, temp dir removed', () async {
+      String? requested;
+      bool applyCalled = false;
+      final bool ok = await applyVideoFrameCoverAt(
+        videoPath: '/videos/ep01.mkv',
+        atMs: 1000,
+        grabFrame:
+            ({
+              required String videoPath,
+              required int atMs,
+              required String outputPath,
+              required int? scaleWidth,
+            }) async {
+              requested = outputPath;
+              return null;
+            },
+        apply: (String framePath) async => applyCalled = true,
+      );
+      expect(ok, isFalse);
+      expect(applyCalled, isFalse);
+      expect(requested, isNotNull);
+      expect(File(requested!).parent.existsSync(), isFalse);
+    });
+  });
 
   test(
     'single-video menu wires the frame picker into the manual cover path',
