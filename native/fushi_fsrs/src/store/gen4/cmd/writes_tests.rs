@@ -76,7 +76,7 @@ impl<'d> W<'d> {
         let p = Pair::new(d);
         let t = Truth::new(&p.g4);
         assert_eq!(
-            t.tx(|t| t.create_self(p.col, &Id(ME), &[9; 32], T0)),
+            t.tx(|t| t.create_self(p.col, &Id(ME), &[9; 32], None, T0)),
             Ok(true)
         );
         // 协议 3 的命令读的是它自己的缓存表（卡、笔记）：按新代同一份配置先把欠着的收尾做完、缓存整份重建（提交）。

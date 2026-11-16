@@ -50,8 +50,9 @@ pub mod writes_restore;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
-mod writes_tests;
 mod tests_class;
+#[cfg(test)]
+mod writes_tests;
 
 /// 结果里的列式表（`store/bulk.rs` 的 `FCL1`）：(名字, 字节)。
 pub type Files = Vec<(String, Vec<u8>)>;
