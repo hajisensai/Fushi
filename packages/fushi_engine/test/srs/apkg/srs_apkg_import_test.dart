@@ -2626,6 +2626,48 @@ void main() {
         }
       },
     );
+
+    test('每日上限单位：重新导入恢复被删的牌组时保留它原来明写的单位，不改回缺省', () async {
+      final SrsDbStore s = await openTestStore(
+        profileUid: kProfile,
+        deviceId: 'a',
+        now: () => t,
+      );
+      const SrsAnkiImportOptions noPresets = SrsAnkiImportOptions(
+        mergeNoteTypes: true,
+        updateNotes: SrsImportUpdateCondition.never,
+        updateNoteTypes: SrsImportUpdateCondition.never,
+        withScheduling: true,
+        withDeckConfigs: false,
+      );
+      await importInto(s, legacyApkg(t), options: noPresets);
+      final SrsDeckTree first = await s.deckTree();
+      final List<String> imported = <String>[
+        for (final SrsDeckView d in first.decks)
+          if (d.id != s.defaultDeckId) d.id,
+      ];
+      expect(imported, isNotEmpty);
+      for (final String id in imported) {
+        expect(first[id]!.limitUnitSet, isTrue, reason: id);
+        await s.editFields(SrsEntityKind.deck, id, <String, Object?>{
+          SrsFieldKeys.deckLimitUnit: SrsLimitUnit.cards.wire,
+        });
+      }
+      for (final String id in imported) {
+        if (first.parentOf(id) == null) await s.deleteDeck(id);
+      }
+      final SrsDeckTree gone = await s.deckTree();
+      for (final String id in imported) {
+        expect(gone[id], isNull, reason: id);
+      }
+
+      await importInto(s, legacyApkg(t), options: noPresets);
+      final SrsDeckTree back = await s.deckTree();
+      for (final String id in imported) {
+        expect(back[id], isNotNull, reason: id);
+        expect(back[id]!.limitUnit, SrsLimitUnit.cards, reason: id);
+      }
+    });
   });
 
   group('从 Anki 迁移的复习数据与新卡顺序（Lapis 用户反馈）', () {

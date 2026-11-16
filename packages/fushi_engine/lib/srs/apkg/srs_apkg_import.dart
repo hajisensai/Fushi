@@ -1115,7 +1115,13 @@ class _Importer {
       };
       // 新建的牌组明写每日上限单位（fushi-ext 带了就用它的，否则缺省的作答次数，与 [SrsDbStore.createDeck]
       // 同理）：没写过单位的只剩加这项设置之前的存量牌组，牌组页只提醒它们（[SrsDeckView.limitUnitSet]）。
-      if (!renamedImport) {
+      // 同样只在这个 ID 从没写过单位时补：恢复被删的旧牌组保留它原来明写的单位（如按卡片数）。
+      if (!renamedImport &&
+          (await store.entityEdits(
+                SrsEntityKind.deck,
+                id,
+              ))[SrsFieldKeys.deckLimitUnit] ==
+              null) {
         values.putIfAbsent(
           SrsFieldKeys.deckLimitUnit,
           () => SrsLimitUnit.reviews.wire,
