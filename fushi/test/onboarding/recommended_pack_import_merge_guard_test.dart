@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-4694 守卫：app 内的推荐包入口一律经 `importRecommendedPackFile` /
 /// `importDownloadedRecommendedPack`（恒合并预设），不得直接调
