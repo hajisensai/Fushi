@@ -1253,6 +1253,10 @@ fn columns_and_numeric_ids_match_protocol_3() {
             if let Some(cs) = n.get_mut("c").and_then(Value::as_array_mut) {
                 cs.sort_by_key(|c| p.canon(c[1].as_str().unwrap()));
             }
+            // 字段：协议 3 按修改记录的落库序，新代按规范键序（调用方按字段 ID 建表，顺序没有语义）。
+            if let Some(fs) = n.get_mut("f").and_then(Value::as_array_mut) {
+                fs.sort_by_key(|f| p.canon(f[0].as_str().unwrap()));
+            }
         }
         v
     };
@@ -1268,5 +1272,31 @@ fn columns_and_numeric_ids_match_protocol_3() {
     assert_eq!(new["notes"][0]["c"].as_array().unwrap().len(), 2, "{new}");
     assert!(!new["notes"][0]["f"].as_array().unwrap().is_empty());
     assert_eq!(new["notes"][3], Value::Null);
+    assert!(p.g4.is_autocommit());
+}
+
+/// `lineages` 与协议 3 `caches::lineage_ids` 对拍：后继卡带出前身、没有前身的卡只有自己、不存在的卡只有自己、空输入。
+#[test]
+fn lineages_match_protocol_3() {
+    use super::lineage::lineages;
+    let d = library();
+    let p = Pair::new(&d);
+    let t = Truth::new(&p.g4);
+    let w = d.core.writer().unwrap();
+    let (c1, c2) = (card(N1, "t1"), card(N1, "t2"));
+    let cards = vec![c2.clone(), c1.clone(), "missing".to_owned(), c2.clone()];
+    let old = on_p3(&w, &p.cfg, |c| {
+        crate::store::caches::lineage_ids(c, &cards).unwrap()
+    });
+    let new = lineages(&t, p.col, &cards).unwrap();
+    let canon = |v: &Vec<Vec<String>>| -> Vec<Vec<String>> {
+        v.iter()
+            .map(|l| l.iter().map(|x| p.canon(x)).collect())
+            .collect()
+    };
+    assert_eq!(canon(&old), canon(&new));
+    assert_eq!(new[0], [c2.clone(), c1.clone()]);
+    assert_eq!(new[1], [c1]);
+    assert!(lineages(&t, p.col, &[]).unwrap().is_empty());
     assert!(p.g4.is_autocommit());
 }

@@ -5,6 +5,7 @@
 //! - [views]：`entity_views`——每实体一份视图 JSON（规划 §1.1 缺口 G-7；远程复习 V2 与本机共用同一个解码器）。
 //! - [history]：一个实体的修改历史（协议 3 `sync2_history` 的新代版）。
 //! - [columns]：列式批量读 `card_columns` 与 AnkiConnect 数字 id 的 `anki_resolve` / `anki_notes_info`（协议 3 `store/bulk.rs`）。
+//! - [lineage]：`lineages`——一组卡各自的血统（协议 3 `caches::lineage_ids`，同一个判定函数，按类读前身链接）。
 //! - [stats]：复习统计 `stats_report` / `stats_recall` / `stats_rows`（协议 3 `store/stats.rs`，同一份聚合）。
 //!
 //! # 共同约定
@@ -36,6 +37,7 @@ use crate::sync2::op::EntKind;
 
 pub mod columns;
 pub mod history;
+pub mod lineage;
 pub mod reads;
 pub mod stats;
 pub mod views;

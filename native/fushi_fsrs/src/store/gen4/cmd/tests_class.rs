@@ -477,6 +477,49 @@ fn edit_keys_and_prefixes_are_canonicalized_before_matching() {
     });
 }
 
+/// 血统按类读前身链接：X 的链接写的是成员卡 card0、card1（同一个类）上写着前身 Y——X 的血统是 X、规范卡、Y；问成员
+/// 卡与问规范卡相同。
+#[test]
+fn lineages_follow_links_written_on_any_member() {
+    use super::lineage::lineages;
+    with(|t, col| {
+        let w = land(t, col);
+        let (x, y) = (Id::new_v7(1_700_000_000_001), Id::new_v7(1_700_000_000_002));
+        t.tx(|t| {
+            let mut ix = Index::new(t, col);
+            let to_member = set(
+                EntKind::Card,
+                u(x),
+                &format!("historyFrom/{}", w.card[0].text()),
+                json!(true),
+            );
+            let from_member = set(
+                EntKind::Card,
+                u(w.card[1]),
+                &format!("historyFrom/{}", y.text()),
+                json!(true),
+            );
+            native(t, &mut ix, col, &op(0xe1, 1, 600, &[], &to_member));
+            native(t, &mut ix, col, &op(0xe1, 2, 601, &[], &from_member));
+            ix.settle()?;
+            Ok(())
+        })
+        .unwrap();
+        let (cx, cc, cy) = (x.text(), w.c_card.text(), y.text());
+        let got = lineages(
+            t,
+            col,
+            &[cx.clone(), w.card[0].text(), cc.clone(), w.card[1].text()],
+        )
+        .unwrap();
+        assert_eq!(got[0], [cx, cc.clone(), cy.clone()]);
+        for l in &got[1..] {
+            assert_eq!(l, &[cc.clone(), cy.clone()]);
+        }
+        assert!(t.conn().is_autocommit());
+    });
+}
+
 // ---------------------------------------------------------------------- 统计
 
 /// 统计请求里按 ID 给的东西先归一：数组去重成规范 ID；表的键归一，同一个类的几个成员都给了值时规范 ID 自己的优先，
