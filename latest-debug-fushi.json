@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "version": "3.3.0-debug.27753",
-  "tag": "v3.3.0-debug.27753+43d3bd4",
+  "version": "3.3.0-debug.27850",
+  "tag": "v3.3.0-debug.27850+7ec8665",
   "channel": "debug",
   "prerelease": true,
-  "releaseSequence": 27753,
-  "notes": "Automated release-signed debug-channel build from develop @ 43d3bd4. Push releases are always prerelease and never Latest.",
+  "releaseSequence": 27850,
+  "notes": "Automated desktop debug-channel build from develop @ 7ec8665. Push releases are always prerelease and never Latest.",
   "assets": [
     {
       "name": "fushi-3.3.0-debug.27714-ios.ipa",
@@ -35,15 +35,6 @@
       "sha256": "5bd1b1c8fcab271400391459c1286a2fa91beb4aad1999914014ea45cde913b1"
     },
     {
-      "name": "fushi-3.3.0-debug.27714-windows-setup.exe",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.3.0-debug.27714-windows-setup.exe",
-      "releaseSequence": 27714,
-      "tag": "v3.3.0-debug.27714+58daf73",
-      "version": "3.3.0-debug.27714",
-      "size": 297990096,
-      "sha256": "302436ec88f172a49ceb54d2386750fbefc07877e074820e10739bb395c32339"
-    },
-    {
       "name": "fushi-3.3.0-debug.27753-43d3bd4-debug.apk",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.3.0-debug.27753-43d3bd4-debug.apk",
       "releaseSequence": 27753,
@@ -51,6 +42,15 @@
       "version": "3.3.0-debug.27753",
       "size": 263141021,
       "sha256": "f344214a77a5f92a0b3a0c7a11586d99f002a77d0adf24f72b0f24078729b476"
+    },
+    {
+      "name": "fushi-3.3.0-debug.27850-windows-setup.exe",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.3.0-debug.27850-windows-setup.exe",
+      "releaseSequence": 27850,
+      "tag": "v3.3.0-debug.27850+7ec8665",
+      "version": "3.3.0-debug.27850",
+      "size": 298145896,
+      "sha256": "8a160666a3d50f4b92176bae986070b5a5d8569c92c62527eb6d5d3bb99162c6"
     }
   ]
 }
