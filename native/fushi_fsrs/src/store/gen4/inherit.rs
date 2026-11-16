@@ -287,7 +287,7 @@ impl<'t, 'c> Uploader<'t, 'c> {
             collection: binding.collection,
             collections,
             me: me.device,
-            signer: DeviceKey::from_seed(&me.sk),
+            signer: me.key(),
             max: UPLOAD_MAX_SLOTS,
             logs,
             sat: BTreeMap::new(),
