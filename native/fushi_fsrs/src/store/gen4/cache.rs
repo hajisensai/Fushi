@@ -14,6 +14,9 @@
 //! - `notes(col, id, …)`：列与协议 3 的 `srs_notes_cache` 相同（去掉 `profile_uid`）。ID 列存 [Ref]（规范 UUID 16 字节，
 //!   其余文本）。
 //! - `cards(col, id, …)`：列与 `srs_cards_cache` 相同。行只给「存在的笔记应有的卡」（笔记 × 模板 / cloze 序号）。
+//!   出卡（`cmd/study.rs`）的五个部分索引 `cards_new_position` / `cards_new_freq` / `cards_learning` /
+//!   `cards_review_due` / `cards_tally` 与协议 3 v9 的 `idx_srs_cards_cache_*` 逐列相同（`profile_uid` 换成 `col`）；
+//!   自定义学习「只复习这一作」走 `notes_source`（协议 3 v25 `idx_srs_notes_cache_source`）。
 //! - `stats(col, at, log, card, …)`：有效复习投影（协议 3 的 `srs_stat_reviews`，列 = `history::StatRow`）。`card` 是
 //!   **归属卡**（`caches::stat_groups`：日志所属的卡可见就是它，否则是继承它历史的可见卡，归属随血统与可见性变），
 //!   按发生时刻聚簇——统计读侧（#3287）那条「全部投影行按时刻
@@ -162,6 +165,25 @@ CREATE INDEX IF NOT EXISTS cards_note ON cards (col, note_id);
 CREATE INDEX IF NOT EXISTS cards_deck ON cards (col, deck_id);
 CREATE INDEX IF NOT EXISTS cards_template ON cards (col, template_id);
 CREATE INDEX IF NOT EXISTS cards_anki ON cards (col, anki_id);
+CREATE INDEX IF NOT EXISTS cards_new_position ON cards
+  (col, new_position IS NULL, new_position, note_created_at, id, deck_id, buried_until_day,
+   queue, hidden, suspended, scheduler)
+  WHERE queue = 'new' AND hidden = 0 AND suspended = 0 AND scheduler = 'fushi';
+CREATE INDEX IF NOT EXISTS cards_new_freq ON cards
+  (col, freq_rank IS NULL, freq_rank, new_position IS NULL, new_position, note_created_at, id, deck_id,
+   buried_until_day, queue, hidden, suspended, scheduler)
+  WHERE queue = 'new' AND hidden = 0 AND suspended = 0 AND scheduler = 'fushi';
+CREATE INDEX IF NOT EXISTS cards_learning ON cards
+  (col, COALESCE(due_at, 0), id, deck_id, buried_until_day, due_at, queue, hidden, suspended, scheduler)
+  WHERE queue IN ('learning', 'relearning') AND hidden = 0 AND suspended = 0 AND scheduler = 'fushi';
+CREATE INDEX IF NOT EXISTS cards_review_due ON cards
+  (col, deck_id, COALESCE(due_day, 0), buried_until_day, last_reviewed_at, stability, id, due_at, due_day,
+   queue, hidden, suspended, scheduler)
+  WHERE queue = 'review' AND hidden = 0 AND suspended = 0 AND scheduler = 'fushi';
+CREATE INDEX IF NOT EXISTS cards_tally ON cards
+  (col, deck_id, queue, due_day, due_at, suspended, scheduler, buried_until_day)
+  WHERE hidden = 0;
+CREATE INDEX IF NOT EXISTS notes_source ON notes (col, source_key) WHERE deleted_at IS NULL;
 CREATE TABLE IF NOT EXISTS stats (
   col INTEGER NOT NULL,
   at INTEGER NOT NULL,
