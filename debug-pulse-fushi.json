@@ -1,12 +1,46 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-16T07:00:13Z",
+ "generatedAt": "2026-11-16T07:43:41Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "bde6fc69a07e7e08d9e08fdfeb285ae635ff114f",
-  "seq": 27568
+  "sha": "1846972959eb376db3f6836a6338afca32c48c47",
+  "seq": 27582
  },
  "builds": [
+  {
+   "seq": 27498,
+   "version": "3.3.0",
+   "sha": "a76f9dabda27195f29ab8144a16d35c22bd20d19",
+   "unknown": false,
+   "publishedAt": "2026-11-16T07:43:28Z",
+   "testflight": false,
+   "baseSeq": 27441,
+   "prs": [
+    3459,
+    3454,
+    3460,
+    3396,
+    3395,
+    3456
+   ],
+   "direct": [],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43810269400"
+    },
+    "windows": {
+     "state": "ok"
+    },
+    "macos": {
+     "state": "ok"
+    },
+    "ios": {
+     "state": "ok"
+    }
+   }
+  },
   {
    "seq": 27441,
    "version": "3.3.0",
@@ -101,8 +135,8 @@
    "version": "3.3.0",
    "sha": "c6e6e3664cb73137a68b797e6f6a9f5a8aa4ead0",
    "unknown": false,
-   "publishedAt": "2026-11-15T09:51:52Z",
-   "testflight": true,
+   "publishedAt": "2026-11-15T09:35:34Z",
+   "testflight": false,
    "baseSeq": 27350,
    "prs": [
     3397,
@@ -120,21 +154,26 @@
      "state": "ok"
     },
     "windows": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43695802934"
     },
     "macos": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43695802934"
     },
     "ios": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43695802934"
     }
    }
   }
  ],
  "pending": {
-  "headSha": "bde6fc69a07e7e08d9e08fdfeb285ae635ff114f",
-  "headSeq": 27568,
+  "headSha": "1846972959eb376db3f6836a6338afca32c48c47",
+  "headSeq": 27582,
   "prs": [
+   3446,
+   3447,
    3499,
    3445,
    3455,
@@ -143,32 +182,26 @@
    3450,
    3463,
    3449,
-   3458,
-   3459,
-   3454,
-   3460,
-   3396,
-   3395,
-   3456
+   3458
   ],
   "direct": [],
   "truncated": false,
   "platforms": {
    "android": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43820139706"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43824276701"
    },
    "windows": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43820139645"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43824276685"
    },
    "macos": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43820139645"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43824276685"
    },
    "ios": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43820139645"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43824276685"
    }
   }
  },
@@ -238,6 +271,24 @@
    "mergedAt": "2026-11-16T06:53:43Z",
    "additions": 3346,
    "deletions": 388,
+   "labels": []
+  },
+  "3446": {
+   "number": 3446,
+   "title": "fix(ocr): Android 系统 OCR 后台串行降采样解码，无 GMS 报模型不可用（BUG-4658）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-16T07:29:51Z",
+   "additions": 1097,
+   "deletions": 66,
+   "labels": []
+  },
+  "3447": {
+   "number": 3447,
+   "title": "fix(manga): 页图按显示尺寸降采样，修 4K 图集内存暴涨闪退（BUG-4658）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-16T07:00:22Z",
+   "additions": 1056,
+   "deletions": 11,
    "labels": []
   },
   "3449": {
