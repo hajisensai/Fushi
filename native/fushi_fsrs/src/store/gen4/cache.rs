@@ -57,6 +57,16 @@
 //!    重算；写入者归回变了或变动的 ID 多于 [MOVES_IN_PLACE] 时整层重建。别名表还没重算（[Index::hold_aliases]）时缓存
 //!    不动，攒到重算之后的那次收尾。
 //!
+//! # 变更记录（`cache_gen` / `cache_log`，G7-4d）
+//!
+//! 常驻的读者（浏览会话 `cmd/browse.rs`）要知道「上次读过之后缓存行变了哪些」。协议 3 靠写连接上的临时触发器记 id；
+//! 这里由刷新自己记：每次收尾里行可能变了的笔记（重算 / 删掉的笔记、写了卡行的卡所属的笔记、别名挪走时被删的旧 ID
+//! 与引用它的行的原值笔记 ID）记成一个新的**代号**（`cache_gen.gen` + 1，`cache_log` 每条笔记一行）；整层重建（
+//! [Index::materialize_caches] 的三条路）把代号 + 1 并把**下限** `floor` 抬到它、清空记录——代号低于下限的读者只能
+//! 整份重读。记录超过 [LOG_KEEP] 行时从代号旧的一头删到剩一半、下限抬到删掉的最大代号（只有比它还旧的读者整份
+//! 重读；`logged` = 记录现有行数）。读者一次要重读多少才改成整份重读由读者自己判。两张表是本机状态（不在 `DERIVED_TABLES`、不参与对拍），
+//! 与缓存行在同一个事务里写，回滚一起回滚。
+//!
 //! 没并起来的：扣住的删除、清除、不可信仍按原值实体判（`class.rs` 文件头「没有并起来的」），类与原值口径的取舍随
 //! G7 接线定。
 
@@ -83,8 +93,8 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-use rusqlite::params;
 use rusqlite::types::ValueRef;
+use rusqlite::{OptionalExtension, params};
 use serde_json::{Value, json};
 
 use super::derive::{Index, R_LIVE, Ref, Reg, Settled, body_of};
@@ -133,6 +143,7 @@ CREATE INDEX IF NOT EXISTS notes_deck ON notes (col, deck_id);
 CREATE INDEX IF NOT EXISTS notes_term ON notes (col, term_key);
 CREATE INDEX IF NOT EXISTS notes_pending ON notes (col) WHERE pending_decision = 1;
 CREATE INDEX IF NOT EXISTS notes_anki ON notes (col, anki_id);
+CREATE INDEX IF NOT EXISTS notes_dupe ON notes (col, dupe_norm);
 CREATE TABLE IF NOT EXISTS cards (
   col INTEGER NOT NULL,
   id NOT NULL,
@@ -200,7 +211,24 @@ CREATE TABLE IF NOT EXISTS stats (
 CREATE INDEX IF NOT EXISTS stats_card ON stats (col, card);
 CREATE INDEX IF NOT EXISTS reg_card_key ON reg_ix (col, key) WHERE ekind = 4;
 CREATE INDEX IF NOT EXISTS log_at ON log_ix (col, at);
+CREATE TABLE IF NOT EXISTS cache_gen (
+  col INTEGER PRIMARY KEY,
+  gen INTEGER NOT NULL,
+  floor INTEGER NOT NULL,
+  logged INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS cache_log (
+  col INTEGER NOT NULL,
+  gen INTEGER NOT NULL,
+  note NOT NULL,
+  PRIMARY KEY (col, gen, note)
+) WITHOUT ROWID;
 ";
+
+/// 变更记录（[Index::cache_log_flush]）最多留这么多行；再多就从代号旧的一头删到剩一半、把下限抬到删掉的最大代号。
+/// 这只是给记录本身的存储设上限：读者攒了多少要重读由读者自己判（`cmd/browse.rs` 的 `REFRESH_CAP`，同协议 3 浏览的
+/// `DIRTY_CAP` 按单个会话算），跟得上的读者不会因为别人累计的写入被迫整份重读。
+pub(crate) const LOG_KEEP: i64 = 20_000;
 
 /// 缓存层的三张表。
 const TABLES: [&str; 3] = ["notes", "cards", "stats"];
@@ -380,6 +408,8 @@ impl<'t, 'c> Index<'t, 'c> {
         self.dirt = Dirt::default();
         self.alias_moves.clear();
         self.writers_moved = false;
+        self.cache_touched.clear();
+        self.cache_log_flush(true)?;
         let Some(cfg) = self.cache_config()? else {
             return Ok(());
         };
@@ -467,8 +497,9 @@ impl<'t, 'c> Index<'t, 'c> {
         }
         // 别名表变了（`alias.rs` 记的：变了规范 ID 的 ID 与它前后的规范 ID）：按新表的规范 ID 重看，引用过这些 ID 的
         // 行也重看；不再是规范 ID 的那些 ID 名下的行删掉（行只按规范 ID 存）。
+        let mut raw: BTreeSet<Ref> = BTreeSet::new();
         for r in &moves {
-            self.moved_rows(r, &mut notes, &mut cards)?;
+            self.moved_rows(r, &mut notes, &mut cards, &mut raw)?;
             let c = self.canon(r)?;
             notes.insert(c.clone());
             types.insert(c.clone());
@@ -506,10 +537,76 @@ impl<'t, 'c> Index<'t, 'c> {
             }
         }
         // 只当笔记类型看的 ID：不是笔记就从笔记集合里拿掉（没有定义、也没有缓存行的会在笔记那一步自然跳过）。
-        if notes.is_empty() && cards.is_empty() {
+        if !(notes.is_empty() && cards.is_empty()) {
+            self.cache_pass(&cfg, notes, cards, false, out)?;
+        }
+        self.cache_touched.extend(raw);
+        self.cache_log_flush(false)
+    }
+
+    /// 把这一趟记下的笔记（[Index::cache_touched]）写成一个新代号的变更记录（文件头「变更记录」）；[full] = 整层重建：
+    /// 代号 + 1、下限抬到它、清空记录。没有要记的、也不是整层重建 = 什么都不写。在调用方的写事务里。
+    pub(super) fn cache_log_flush(&mut self, full: bool) -> Result<(), String> {
+        let touched = std::mem::take(&mut self.cache_touched);
+        if !full && touched.is_empty() {
             return Ok(());
         }
-        self.cache_pass(&cfg, notes, cards, false, out)
+        let conn = self.t.conn();
+        let (gen, floor, logged): (i64, i64, i64) = conn
+            .prepare_cached("SELECT gen, floor, logged FROM cache_gen WHERE col = ?1")
+            .map_err(sql)?
+            .query_row([self.col], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .optional()
+            .map_err(sql)?
+            .unwrap_or((0, 0, 0));
+        let next = gen + 1;
+        let (floor, logged) = if full {
+            conn.prepare_cached("DELETE FROM cache_log WHERE col = ?1")
+                .map_err(sql)?
+                .execute([self.col])
+                .map_err(sql)?;
+            (next, 0)
+        } else {
+            let mut logged = logged;
+            let mut stmt = conn
+                .prepare_cached(
+                    "INSERT OR IGNORE INTO cache_log (col, gen, note) VALUES (?1, ?2, ?3)",
+                )
+                .map_err(sql)?;
+            for n in &touched {
+                logged += stmt.execute(params![self.col, next, n]).map_err(sql)? as i64;
+            }
+            let mut floor = floor;
+            if logged > LOG_KEEP {
+                // 记录攒多了：从旧的一头删到剩一半，下限抬到删掉的最大代号（文件头「变更记录」）。只有对上的代号比它
+                // 还旧的读者要整份重读；跟得上的读者不受影响。
+                let cut: Option<i64> = conn
+                    .prepare_cached(
+                        "SELECT gen FROM cache_log WHERE col = ?1 ORDER BY gen DESC LIMIT 1 OFFSET ?2",
+                    )
+                    .map_err(sql)?
+                    .query_row(params![self.col, LOG_KEEP / 2], |r| r.get(0))
+                    .optional()
+                    .map_err(sql)?;
+                if let Some(cut) = cut {
+                    let gone = conn
+                        .prepare_cached("DELETE FROM cache_log WHERE col = ?1 AND gen <= ?2")
+                        .map_err(sql)?
+                        .execute(params![self.col, cut])
+                        .map_err(sql)?;
+                    logged -= gone as i64;
+                    floor = floor.max(cut);
+                }
+            }
+            (floor, logged)
+        };
+        conn.prepare_cached(
+            "INSERT OR REPLACE INTO cache_gen (col, gen, floor, logged) VALUES (?1, ?2, ?3, ?4)",
+        )
+        .map_err(sql)?
+        .execute(params![self.col, next, floor, logged])
+        .map_err(sql)?;
+        Ok(())
     }
 
     // ------------------------------------------------------------ 读索引
@@ -1000,6 +1097,7 @@ impl<'t, 'c> Index<'t, 'c> {
         r: &Ref,
         notes: &mut BTreeSet<Ref>,
         cards: &mut BTreeSet<Ref>,
+        raw: &mut BTreeSet<Ref>,
     ) -> Result<(), String> {
         let conn = self.t.conn();
         let refs = |q: &str| -> Result<Vec<Ref>, String> {
@@ -1020,6 +1118,7 @@ impl<'t, 'c> Index<'t, 'c> {
         ] {
             for n in refs(q)? {
                 notes.insert(self.canon(&n)?);
+                raw.insert(n);
             }
         }
         for c in refs("SELECT DISTINCT card FROM stats WHERE col = ?1 AND card = ?2")? {
@@ -1048,6 +1147,7 @@ impl<'t, 'c> Index<'t, 'c> {
             }
         }
         if gone {
+            raw.insert(r.clone());
             self.delete_note_rows(r)?;
             for q in [
                 "DELETE FROM cards WHERE col = ?1 AND id = ?2",
@@ -1141,6 +1241,9 @@ impl<'t, 'c> Index<'t, 'c> {
     ) -> Result<(), String> {
         let mut plans: HashMap<Ref, Plan> = HashMap::new();
         let mut types: HashMap<Ref, Option<TypeInfo>> = HashMap::new();
+        if !all {
+            self.cache_touched.extend(notes.iter().cloned());
+        }
         for n in &notes {
             let existing: Vec<Ref> = if all {
                 Vec::new()
@@ -1563,6 +1666,9 @@ impl<'t, 'c> Index<'t, 'c> {
                 ])
                 .map_err(sql)?;
             out.cache_cards += 1;
+            if !all {
+                self.cache_touched.insert(t.note.clone());
+            }
             if !t.hidden {
                 visible.insert(card.clone());
             }
