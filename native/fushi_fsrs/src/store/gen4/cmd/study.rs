@@ -63,7 +63,7 @@
 //!
 //! - 结果里的牌组、卡（`counts` 的键、`next` / `after` / `eligible`）是规范 ID。请求里的 ID（`deck`、`exclude`、
 //!   `rwkv.decks` 的键、`rwkv.cands` 里的卡与牌组）先归一：`rwkv.decks` 同一个类的几个成员各给了设置时按
-//!   `stats::canon_keys` 的规则取一份；`rwkv.cands` 同一张规范卡给了几次只留第一次。
+//!   `cmd::canon_keyed` 的规则取一份；`rwkv.cands` 同一张规范卡给了几次只留第一次。
 //! - 一条日志在别名类里有几份（换代前同一次 Anki 复习的两份带盐导入）只算一次：计数上下文按规范日志 ID。
 //! - 顺序契约（`cmd/mod.rs` 文件头）：出卡顺序全部由显式的排序键决定（`ORDER BY …, id`，`id` 的 SQLite 序与协议 3 的
 //!   编码相同），计数结果是映射；没有依赖落库顺序的地方。
@@ -120,7 +120,7 @@ pub(crate) fn canon_req(ix: &Index<'_, '_>, req: &Value) -> Result<Value, String
     }
     if let Some(Value::Object(rw)) = obj.get_mut("rwkv") {
         if let Some(Value::Object(m)) = rw.get_mut("decks") {
-            super::stats::canon_keys(ix, m)?;
+            *m = super::canon_keyed(ix, m)?;
         }
         if let Some(Value::Array(cands)) = rw.get_mut("cands") {
             let mut seen: HashSet<String> = HashSet::new();
