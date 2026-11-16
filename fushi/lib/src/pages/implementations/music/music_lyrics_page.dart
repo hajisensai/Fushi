@@ -93,7 +93,10 @@ import 'package:fushi/src/pages/implementations/music/music_subtitle_actions.dar
 import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart'
     show MusicEngineClock, MusicVolumeButton, musicPlayModeButton;
 import 'package:fushi/src/pages/implementations/music/music_plugin_settings.dart'
-    show musicLyricsCandidateTitle, musicPluginErrorText;
+    show
+        musicLyricsCandidateTitle,
+        musicLyricsOnlineSourceName,
+        musicPluginErrorText;
 import 'package:fushi/src/pages/implementations/music/music_mv_page.dart'
     show MusicKaraokeTrack, openMusicKaraokePage;
 import 'package:fushi/src/utils/adaptive/fushi_page_transitions.dart';
