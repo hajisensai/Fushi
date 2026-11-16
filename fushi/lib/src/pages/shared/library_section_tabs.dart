@@ -203,12 +203,11 @@ class LibrarySectionTabs<T extends Object> extends StatelessWidget {
   /// false = [selected] 只是视觉锚点，不是宿主此刻所在的视图：宿主停在一个不属于
   /// 任何页签的视图上（库页壳停在导入页时高亮「我的」组），于是点中 / 方向键落到
   /// 这个高亮页签也必须照常回调 [onChanged]——否则它看着是选中的、却点不回去
-  /// （BUG-4695）。默认 true：高亮项就是当前视图，重复点击不回调。
+  /// （BUG-4706）。默认 true：高亮项就是当前视图，重复点击不回调。
   ///
-  /// 页头大字（一级 / 二级）与焦点外壳按它放行；MD3 [FushiSectionTabBar] 的
-  /// TabBar 点击本就逐次回调，不需要它。Apple 非页头大字形态的原生分段控件点
-  /// 已选段不回调、不认它——库页壳在 Apple 设计下恒走页头大字，没有宿主在该
-  /// 形态传 false。
+  /// 各画法都认它：页头大字（一级 / 二级）、焦点外壳与 Apple 非页头大字形态的
+  /// 分段控件（[FushiSegmentedButton.notifyReselect]）按它放行；MD3
+  /// [FushiSectionTabBar] 的 TabBar 点击本就逐次回调。
   final bool selectedIsCurrent;
 
   /// focusId 前缀（如 `game-library-tab`），焦点停靠点 id 为 `<prefix>-sections`。
@@ -262,6 +261,7 @@ class LibrarySectionTabs<T extends Object> extends StatelessWidget {
                   selected: selectedValue,
                   onChanged: onSelect,
                   fill: fill && !floating,
+                  selectedIsCurrent: selectedIsCurrent,
                 )
               : FushiSectionTabBar<T>(
                   tabs: shownTabs,
@@ -338,6 +338,7 @@ class LibrarySectionTabs<T extends Object> extends StatelessWidget {
                       selected: tabs[index].value,
                       onChanged: select,
                       fill: fill && !floating,
+                      selectedIsCurrent: selectedIsCurrent,
                     )
                   : FushiSectionTabBar<T>.controlled(
                       tabs: tabs,
@@ -479,12 +480,16 @@ class _AppleSectionSegments<T extends Object> extends StatelessWidget {
     required this.selected,
     required this.onChanged,
     required this.fill,
+    required this.selectedIsCurrent,
   });
 
   final List<LibrarySectionTab<T>> tabs;
   final T selected;
   final ValueChanged<T> onChanged;
   final bool fill;
+
+  /// 见 [LibrarySectionTabs.selectedIsCurrent]。
+  final bool selectedIsCurrent;
 
   /// 等宽段的格宽：最宽文案 + 两侧 14（同 [FushiSegmentedButton] 的口径）。
   double _cellWidth(BuildContext context) {
@@ -555,6 +560,7 @@ class _AppleSectionSegments<T extends Object> extends StatelessWidget {
       onSelectionChanged: (Set<T> values) {
         if (values.isNotEmpty) onChanged(values.first);
       },
+      notifyReselect: !selectedIsCurrent,
       expandedInsets: expand ? EdgeInsets.zero : null,
     );
   }

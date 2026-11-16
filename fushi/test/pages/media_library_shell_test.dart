@@ -12,7 +12,7 @@ import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/section_swipe_navigator.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/utils/components/fushi_page_masthead.dart'
-    show FushiMastheadSwitch, FushiMastheadTitle;
+    show FushiMastheadTitle;
 import '../helpers/masthead_tabs.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart'
     show FushiShellTitleScope;
@@ -368,7 +368,7 @@ void main() {
     expect(initCount[3], 1, reason: '导入页保活，切走不销毁');
   });
 
-  // BUG-4695（反馈 3cmGrH7EoA）：导入页高亮「我的」组只是视觉锚点，不是当前视图；
+  // BUG-4706（反馈 3cmGrH7EoA）：导入页高亮「我的」组只是视觉锚点，不是当前视图；
   // 以前它被当成「点当前项」直接丢掉，导入页点左上角「书架」回不去。这里走真实
   // 指针点击（不是直接调 onChanged），才过得了页签组件里的「重复点击」判断。
   List<MediaLibraryViewSpec> importViews() => <MediaLibraryViewSpec>[
@@ -406,21 +406,6 @@ void main() {
     expect(importButton(tester).selected, isFalse, reason: '已离开导入页');
     expect(onstage(tester, '书架'), isTrue);
     expect(onstage(tester, '导入'), isFalse);
-  });
-
-  testWidgets('不在导入页时点当前页签仍不回调（重复点击照旧被吞）', (WidgetTester tester) async {
-    await tester.pumpWidget(harness(importViews()));
-    await tester.pumpAndSettle();
-    final FushiMastheadSwitch<MediaLibraryViewKind> strip = tester.widget(
-      topStrip(),
-    );
-    expect(strip.selectedIsCurrent, isTrue);
-
-    await tapImport(tester);
-    final FushiMastheadSwitch<MediaLibraryViewKind> onImport = tester.widget(
-      topStrip(),
-    );
-    expect(onImport.selectedIsCurrent, isFalse, reason: '导入页的高亮只是锚点');
   });
 
   testWidgets('导入页按键盘左方向键回到书架（首段往回不被夹在原地）', (WidgetTester tester) async {

@@ -571,7 +571,7 @@ class _MediaLibraryShellState extends State<MediaLibraryShell> {
     }
     // 停在导入页时高亮「我的」组：导入管理的就是本地库。此时高亮只是视觉锚点、
     // 不是当前视图（[LibrarySectionTabs.selectedIsCurrent]），点它照常切回书架
-    // （BUG-4695：曾被当成重复点击丢掉，导入页点「书架」回不去）。
+    // （BUG-4706：曾被当成重复点击丢掉，导入页点「书架」回不去）。
     final bool onTab = librarySectionGroupOf(selected) != null;
     final MediaLibraryViewKind shown = onTab ? selected : tabs.first.value;
     // 分段条走库页共享的 [LibrarySectionTabs]（内含 [FushiAdjustableSegmented]：
