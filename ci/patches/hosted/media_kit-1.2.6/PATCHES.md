@@ -131,7 +131,7 @@ header and `Media.start` still reach mpv) and the source guard
 Remove when upstream stops reading and writing properties synchronously on the
 caller's thread.
 
-## BUG-4718: libmpv callbacks are detached when the process starts exiting
+## BUG-4725: libmpv callbacks are detached when the process starts exiting
 
 `lib/src/player/native/core/initializer_native_callable.dart` (otherwise
 upstream 1.2.6 apart from formatting) adds
