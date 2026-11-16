@@ -55,8 +55,8 @@ List<SubtitleDraftCue> _drafts(List<String> texts) => <SubtitleDraftCue>[
 int _second(int index) => index * 4 + 2;
 
 final AsrCueTokenTiming _timing = AsrCueTokenTiming(
-  tokens: <String>['島', 'に', '行こう'],
-  offsetsMs: <int>[0, 400, 800],
+  tokens: const <String>['島', 'に', '行こう'],
+  offsetsMs: const <int>[0, 400, 800],
 );
 
 /// 按取帧时刻（毫秒）查表的识别器：帧字节 = 时刻的两个字节。[failing] 为真时每帧都抛。
