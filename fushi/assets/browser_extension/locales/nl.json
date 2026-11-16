@@ -293,6 +293,7 @@
   "mine_queued_generate_later": "Klik op de knop “kaart maken” in de extensie om ze allemaal te genereren",
   "mine_no_cue": "Geen huidige ondertitelregel gevonden, probeer het zo opnieuw",
   "mine_enqueue_failed": "Kan niet aan de wachtrij toevoegen",
+  "mine_enqueue_context_invalidated": "Kon niet aan de wachtrij toevoegen: de extensie is bijgewerkt, vernieuw de pagina (F5) en probeer het opnieuw",
   "mine_failed": "Kaart maken mislukt",
   "mine_done": "Kaart gemaakt",
   "mine_duplicate_exists": "Er bestaat al een kaart voor dit woord",

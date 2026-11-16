@@ -649,6 +649,8 @@ public class MainActivity extends AudioServiceActivity {
         FushiShareChannel.registerWith(flutterEngine, this);
         SystemOcrChannel.registerWith(flutterEngine, this);
         ClipboardImageChannel.registerWith(flutterEngine, getApplicationContext());
+        // 墨水屏全刷的厂商 EPD 通道（反射探测，需要 Activity 的 decorView）。
+        EinkRefreshChannel.registerWith(flutterEngine, this);
         SystemProxyChannel.registerWith(flutterEngine, getApplicationContext());
         NetworkChangeChannel.registerWith(flutterEngine, getApplicationContext());
         // 上次进程退出原因 + onTrimMemory 记录（Dart previous_exit_log.dart 启动时读一次）。

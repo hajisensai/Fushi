@@ -31,7 +31,8 @@ void main() {
       // 视频页两个入口经 deleteVideoBooksWithDecision（同时删本地文件 + 联动
       // 下载任务）落到仓库层；helper 自身再由下一条守住「必须走 reclaim 操作」。
       'home batch delete': (
-        body: methodBody(home, 'Future<void> _batchDeleteConfirm() async'),
+        // 确认框之后的真删除拆进 _runBatchDelete（进度对话框包在外层，35YfcYO-zR）。
+        body: methodBody(home, 'Future<void> _runBatchDelete('),
         operation: 'deleteVideoBooksWithDecision',
       ),
       'home single delete': (
