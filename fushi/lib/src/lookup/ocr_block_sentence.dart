@@ -140,6 +140,37 @@ String? ocrBlockSentenceAt(
   return sentence;
 }
 
+/// BUG-4707：块全文 [block] 里被点那一行止于 UTF-16 下标 [lineEnd]（不含）时，接在
+/// 这行后面、按同一套折行拼接规则拼好的块内后续文字（去掉 OCR 折行；行尾与下一行
+/// 开头都是拉丁字母 / 数字时以一个空格开头）。
+///
+/// 查词串 = 被点行从被点字起的后缀 + 这段续文：OCR 的行是排版折行，词会被折到下一行，
+/// 只扫到行尾就把词截断了。续文最多 [maxLength] 个 UTF-16 码元（一个词跨行用不了
+/// 这么长，免得整块菜单 / 列表都塞进查询串）。没有后续行或下标越界时返回空串。
+String ocrBlockContinuationAfterLine(
+  String block, {
+  required int lineEnd,
+  int maxLength = kOcrBlockSentenceMaxLength,
+}) {
+  if (lineEnd <= 0 || lineEnd >= block.length) return '';
+  String rest = _joinLines(block.substring(lineEnd));
+  if (rest.isEmpty) return '';
+  if (rest.length > maxLength) {
+    int cut = maxLength;
+    // 不把代理对劈成两半。
+    final int last = rest.codeUnitAt(cut - 1);
+    if (last >= 0xD800 && last <= 0xDBFF) cut--;
+    rest = rest.substring(0, cut);
+  }
+  final String lineLast = block[lineEnd - 1];
+  if (!_isSpace(lineLast) &&
+      _isLatinWordChar(lineLast) &&
+      _isLatinWordChar(rest[0])) {
+    return ' $rest';
+  }
+  return rest;
+}
+
 /// 没有所属块、只有被点那一行 [line] 时（拍照查词 / iOS 截屏识字的系统 OCR 只给行）
 /// 的制卡句子：行里包含 UTF-16 下标 [index] 那个字的那一句，截不出时回落为整行
 /// （BUG-2900 口径）。

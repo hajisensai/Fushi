@@ -254,7 +254,6 @@ void main() {
     );
     final TestSrs srs = await openTestSrsAt(path);
     final SrsDbStore s = await SrsDbStore.open(
-      db: srs.db,
       core: srs.core,
       profileUid: _profile,
       deviceId: 'v',

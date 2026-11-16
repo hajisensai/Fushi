@@ -289,7 +289,7 @@ impl<'t, 'c> Index<'t, 'c> {
         rows.collect::<Result<_, _>>().map_err(sql)
     }
 
-    fn tags_rows(&self, note: &Ref) -> Result<Vec<(i64, i64, String, i64)>, String> {
+    pub(super) fn tags_rows(&self, note: &Ref) -> Result<Vec<(i64, i64, String, i64)>, String> {
         let mut stmt = self
             .t
             .conn()
@@ -835,10 +835,53 @@ impl<'t, 'c> Index<'t, 'c> {
         Ok(out)
     }
 
+    /// [Index::distrusted] 分开给：(扣着的删除修改, 扣着的清除)，各按操作号升序、各自去重。同步页的设备行
+    /// （`cmd/writes_local.rs` `status` 的 `heldDeletes` / `heldPurges`，协议 3 `trust.rs` `untrusted` 同口径）用。
+    pub fn distrusted_split(&self) -> Result<(Vec<OpId>, Vec<OpId>), String> {
+        let mut out = (Vec::new(), Vec::new());
+        for (q, slot) in [
+            (
+                "SELECT DISTINCT k FROM reg_ix WHERE col = ?1 AND state = ?2",
+                &mut out.0,
+            ),
+            (
+                "SELECT DISTINCT k FROM purge_ix WHERE col = ?1 AND state = ?2",
+                &mut out.1,
+            ),
+        ] {
+            let mut stmt = self.t.conn().prepare_cached(q).map_err(sql)?;
+            let ks: Vec<i64> = stmt
+                .query_map(params![self.col, S_DISTRUSTED], |r| r.get(0))
+                .map_err(sql)?
+                .collect::<Result<_, _>>()
+                .map_err(sql)?;
+            for k in ks {
+                slot.push(self.t.id_of_key(k)?);
+            }
+            slot.sort();
+        }
+        Ok(out)
+    }
+
     // ------------------------------------------------------------ 标签
 
     fn weigh_tags(&mut self, note: &Ref) -> Result<(), String> {
         let rows = self.tags_rows(note)?;
+        let want = self.tag_states(&rows)?;
+        for ((k, what, tag, state), want) in rows.iter().zip(want) {
+            if want != *state {
+                self.set_tag_state(note, *k, *what, tag, want)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// 一组标签操作（一条笔记的，或一个别名类全部成员的，`class.rs`）按 OR-Set 与顺序提示判出的状态，与 [rows]
+    /// （`(k, what, tag, state)`）对齐；已清除的原样。
+    pub(super) fn tag_states(
+        &mut self,
+        rows: &[(i64, i64, String, i64)],
+    ) -> Result<Vec<i64>, String> {
         let mut removes: Vec<(&str, Head)> = Vec::new();
         let mut orders: Vec<(usize, Head)> = Vec::new();
         for (i, (k, what, tag, state)) in rows.iter().enumerate() {
@@ -853,8 +896,10 @@ impl<'t, 'c> Index<'t, 'c> {
         }
         let heads: Vec<Head> = orders.iter().map(|(_, h)| h.clone()).collect();
         let ranks = mvr(&heads);
+        let mut out = Vec::with_capacity(rows.len());
         for (i, (k, what, tag, state)) in rows.iter().enumerate() {
             if *state == S_PURGED {
+                out.push(S_PURGED);
                 continue;
             }
             let want = match *what {
@@ -874,11 +919,9 @@ impl<'t, 'c> Index<'t, 'c> {
                 }
                 _ => R_LIVE,
             };
-            if want != *state {
-                self.set_tag_state(note, *k, *what, tag, want)?;
-            }
+            out.push(want);
         }
-        Ok(())
+        Ok(out)
     }
 
     /// 顺序提示带的标签：`TagOrder` 的列表，或 `tags` 整列表写入的那个数组。
@@ -905,9 +948,17 @@ impl<'t, 'c> Index<'t, 'c> {
     /// 按最早添加的 (wall, logical, 设备)、再按标签。
     pub fn tags_of(&self, note: &Key) -> Result<Vec<String>, String> {
         let rows = self.tags_rows(&Ref::of(note))?;
+        self.current_tags(&rows)
+    }
+
+    /// [Index::tags_of] 的规则：[rows]（`(k, what, tag, state)`，状态已判好）里活着的标签与顺序。
+    pub(super) fn current_tags(
+        &self,
+        rows: &[(i64, i64, String, i64)],
+    ) -> Result<Vec<String>, String> {
         let mut first: BTreeMap<&str, (i64, i64, [u8; 16])> = BTreeMap::new();
         let mut hint: Vec<String> = Vec::new();
-        for (k, what, tag, state) in &rows {
+        for (k, what, tag, state) in rows {
             if *what == T_ADD && *state == R_LIVE {
                 let h = self
                     .t

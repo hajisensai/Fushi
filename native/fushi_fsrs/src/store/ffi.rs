@@ -8,9 +8,7 @@
 //! （`SrsCore.fromAddress`），拥有者关库时那边可能还在调用、甚至之后才调用。每次调用先在句柄表里
 //! 取出一份 `Arc<SrsCore>` 再干活，关库把它从表里摘掉：在途调用手上那份让结构体活到它跑完，之后
 //! 再来的调用查不到编号、报「已关闭」，最后一份引用放掉时结构体真正释放。编号单调递增不复用，
-//! 旧句柄不会误指到后来打开的库。只读会话句柄（[ReadSessionHandle]）同理，另一张表；会话随所属的库
-//! 关闭而失效（连接关掉、之后报「已关闭」），表项留到 [ffsrs_store_read_end]。线程安全，可在任意
-//! isolate 上用。
+//! 旧句柄不会误指到后来打开的库。线程安全，可在任意 isolate 上用。
 
 use std::collections::BTreeMap;
 use std::ffi::{CString, c_char};
@@ -19,7 +17,7 @@ use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
-use super::{CLOSED, ReadSession, SrsCore};
+use super::{CLOSED, SrsCore};
 
 pub const STORE_OK: i32 = 0;
 pub const STORE_ERROR: i32 = -1;
@@ -57,36 +55,8 @@ pub enum SrsCoreHandle {}
 /// 打开着的库：编号 → 共享引用。只在取 / 放引用的一瞬间持锁，命令本身不在锁里跑。
 static HANDLES: Mutex<BTreeMap<usize, Arc<SrsCore>>> = Mutex::new(BTreeMap::new());
 
-/// 只读会话句柄的不透明类型：值是 [SESSIONS] 里的编号，从不解引用。
-pub enum ReadSessionHandle {}
-
-/// 没结束的只读会话：编号 → 共享引用（同 [HANDLES]，只在取 / 放引用时持锁）。
-static SESSIONS: Mutex<BTreeMap<usize, Arc<ReadSession>>> = Mutex::new(BTreeMap::new());
-
-/// 下一个句柄编号（0 留给 NULL；库与会话共用，单调递增，不复用）。
+/// 下一个句柄编号（0 留给 NULL；单调递增，不复用）。
 static NEXT_HANDLE: AtomicUsize = AtomicUsize::new(1);
-
-fn sessions() -> std::sync::MutexGuard<'static, BTreeMap<usize, Arc<ReadSession>>> {
-    SESSIONS.lock().unwrap_or_else(|e| e.into_inner())
-}
-
-/// 跑一段带会话句柄的操作（已结束 / 从没开过 = 「已关闭」）。
-fn run_session(
-    session: *const ReadSessionHandle,
-    error_out: *mut *mut c_char,
-    body: impl FnOnce(&ReadSession) -> Result<(), String>,
-) -> i32 {
-    if session.is_null() {
-        set_error(error_out, "null srs handle");
-        return STORE_BAD_ARGUMENT;
-    }
-    let found = sessions().get(&(session as usize)).cloned();
-    let Some(s) = found else {
-        set_error(error_out, CLOSED);
-        return STORE_ERROR;
-    };
-    run(Arc::as_ptr(&s), error_out, body)
-}
 
 fn handles() -> std::sync::MutexGuard<'static, BTreeMap<usize, Arc<SrsCore>>> {
     // 锁里只有 BTreeMap 的增删查，不跑用户代码；就算哪次 panic 毒化了锁，表本身也完好。
@@ -121,7 +91,7 @@ fn run_core(
     run(Arc::as_ptr(&c), error_out, body)
 }
 
-/// 跑一段带句柄（[SrsCore] / [ReadSession]）的操作，统一处理空指针、错误与 panic。
+/// 跑一段带句柄（[SrsCore]）的操作，统一处理空指针、错误与 panic。
 fn run<T>(
     core: *const T,
     error_out: *mut *mut c_char,
@@ -343,66 +313,6 @@ pub extern "C" fn ffsrs_store_debug_query(
     })
 }
 
-/// 只读会话（`SrsCore::read_session`）：另开一条只读连接、开读事务并定下快照。成功写 `*session_out`；
-/// 用 [ffsrs_store_read_end] 结束（回滚并关闭）。会话可以在别的线程 / isolate 上用，但同一时刻只许一个调用。
-#[no_mangle]
-pub extern "C" fn ffsrs_store_read_begin(
-    core: *const SrsCoreHandle,
-    session_out: *mut *mut ReadSessionHandle,
-    error_out: *mut *mut c_char,
-) -> i32 {
-    if session_out.is_null() {
-        set_error(error_out, "null session_out");
-        return STORE_BAD_ARGUMENT;
-    }
-    run_core(core, error_out, |c| {
-        let s = c.read_session()?;
-        let id = NEXT_HANDLE.fetch_add(1, Ordering::Relaxed);
-        sessions().insert(id, s);
-        unsafe { *session_out = id as *mut ReadSessionHandle };
-        Ok(())
-    })
-}
-
-/// 在只读会话的读事务里跑一条只读语句。参数页 / 结果编码同 [ffsrs_store_debug_query]。
-#[no_mangle]
-pub extern "C" fn ffsrs_store_read_query(
-    session: *const ReadSessionHandle,
-    sql: *const u8,
-    sql_len: usize,
-    params: *const u8,
-    params_len: usize,
-    out: *mut *mut u8,
-    out_len: *mut usize,
-    error_out: *mut *mut c_char,
-) -> i32 {
-    if out.is_null() || out_len.is_null() {
-        set_error(error_out, "null out");
-        return STORE_BAD_ARGUMENT;
-    }
-    run_session(session, error_out, |r| {
-        let s = utf8(sql, sql_len)?;
-        let values = one_row(bytes(params, params_len).ok_or("null params")?)?;
-        hand_out(r.query(s, &values)?, out, out_len);
-        Ok(())
-    })
-}
-
-/// 结束只读会话（NULL 无操作，重复结束无操作）：从表里摘掉、等在途查询跑完后回滚并关连接；之后经这个
-/// 句柄的查询报「已关闭」。
-#[no_mangle]
-pub extern "C" fn ffsrs_store_read_end(session: *mut ReadSessionHandle) {
-    if session.is_null() {
-        return;
-    }
-    let _ = catch_unwind(AssertUnwindSafe(|| {
-        let removed = sessions().remove(&(session as usize));
-        if let Some(s) = removed {
-            s.close();
-        }
-    }));
-}
-
 fn one_row(page: &[u8]) -> Result<Vec<rusqlite::types::Value>, String> {
     if page.is_empty() {
         return Ok(Vec::new());
@@ -414,12 +324,10 @@ fn one_row(page: &[u8]) -> Result<Vec<rusqlite::types::Value>, String> {
     Ok(rows.pop().unwrap_or_default())
 }
 
-/// Drift 执行器的语句入口，**只读**。`select`：2 = 内联执行器的查询（[SrsCore::select]：专用只读连接）；3 = 查询道
-/// 的查询（[SrsCore::snapshot_select]：只读连接池，可并发；不是只读查询报 `NOT_SNAPSHOT`）。0 / 1 是以前 Drift 的
-/// 写语句 / `runCustom`（事务控制、PRAGMA）：一律报 [crate::store::READ_ONLY]、不执行——srs.db 的写入只有内核命令
-/// （`ffsrs_store_sync2`）。4 / 5 = 测试专用的原始通道（[SrsCore::exec_raw]，写连接；4 返回一行
-/// `[变更行数, last_insert_rowid]`，5 返回「列名行 + 结果行」），只有带 cargo feature `raw_sql` 的库里有，别的构建报
-/// [crate::store::RAW_SQL_ABSENT]、不执行。2 / 3 / 5 返回「列名行 + 结果行」；缓冲区用 `ffsrs_free_bytes` 释放。
+/// 测试专用的原始通道（[SrsCore::exec_raw]，写连接）：`select` 4 返回一行 `[变更行数, last_insert_rowid]`，5 返回
+/// 「列名行 + 结果行」；缓冲区用 `ffsrs_free_bytes` 释放。别的取值不认：0–3 是以前 Drift 执行器的语句入口，
+/// 已经没有了——srs.db 的写入只有内核命令，读只有内核的读命令（`ffsrs_store_sync2`；`read` 见 store/reads.rs）。
+/// 4 / 5 只有带 cargo feature `raw_sql` 的库里有，别的构建报 [crate::store::RAW_SQL_ABSENT]、不执行。
 #[no_mangle]
 pub extern "C" fn ffsrs_store_exec(
     core: *const SrsCoreHandle,
@@ -440,9 +348,6 @@ pub extern "C" fn ffsrs_store_exec(
         let s = utf8(sql, sql_len)?;
         let values = one_row(bytes(params, params_len).ok_or("null params")?)?;
         let page = match select {
-            0 | 1 => return Err(format!("{}: {s}", crate::store::READ_ONLY)),
-            2 => c.select(s, &values)?,
-            3 => c.snapshot_select(s, &values)?,
             #[cfg(any(test, feature = "raw_sql"))]
             4 => c.exec_raw(s, &values, false)?,
             #[cfg(any(test, feature = "raw_sql"))]
@@ -456,8 +361,7 @@ pub extern "C" fn ffsrs_store_exec(
     })
 }
 
-/// 测试专用的原始通道的批量版（[SrsCore::exec_batch_raw]：整批在写连接的一个 SAVEPOINT 里）；Drift 执行器不用它
-/// （Drift 的批量语句在 Dart 侧就报只读）。`statements` 是单列文本页（每行一条 SQL）；`applications` 是两列页：
+/// 测试专用的原始通道的批量版（[SrsCore::exec_batch_raw]：整批在写连接的一个 SAVEPOINT 里）。`statements` 是单列文本页（每行一条 SQL）；`applications` 是两列页：
 /// `[语句下标 i64, 参数页 blob]`（参数页是一行的 rows.rs 页，可为空字节）。
 ///
 /// 只有带 cargo feature `raw_sql` 的库里有；别的构建报 [crate::store::RAW_SQL_ABSENT]、什么都不解析、不取写锁。符号
@@ -531,10 +435,10 @@ fn exec_batch_raw_entry(
 }
 
 /// [ffsrs_store_diag_counts] 写出的项数。
-pub const DIAG_COUNT_LEN: usize = 8;
+pub const DIAG_COUNT_LEN: usize = 7;
 
 /// 进程级内存诊断计数（不需要句柄，任意线程可调）：按序写 `out[0..min(n, DIAG_COUNT_LEN)]`，返回写了几项。
-/// `[句柄表里打开着的库, 还没释放的 SrsCore（含已关、在途调用还握着的）, 没结束的只读会话,
+/// `[句柄表里打开着的库, 还没释放的 SrsCore（含已关、在途调用还握着的）,
 ///   各库只读连接池开着的连接总数, 本库内置 SQLite 的堆用量字节, 其高水位字节,
 ///   打开着的库文件总字节, 它们的 `-wal` 总字节]`。
 /// 用途：移动端内存耗尽闪退（BUG-4075）的取证面包屑看「退役的库还驻留没有 / 连接与 SQLite 页缓存占多少」。
@@ -559,7 +463,6 @@ pub extern "C" fn ffsrs_store_diag_counts(out: *mut i64, n: usize) -> usize {
         let values: [i64; DIAG_COUNT_LEN] = [
             open as i64,
             super::live_cores() as i64,
-            sessions().len() as i64,
             readers as i64,
             unsafe { rusqlite::ffi::sqlite3_memory_used() },
             unsafe { rusqlite::ffi::sqlite3_memory_highwater(0) },
@@ -574,7 +477,7 @@ pub extern "C" fn ffsrs_store_diag_counts(out: *mut i64, n: usize) -> usize {
     .unwrap_or(0)
 }
 
-/// `*out` = Drift 执行器查询的并发上限（只读连接池的连接数上限，`SrsCore::read_concurrency`）：Dart 侧查询道的
+/// `*out` = 查询道的并发上限（查询道只读连接池的连接数上限，`SrsCore::read_concurrency`）：Dart 侧查询道的
 /// worker 数取它。
 #[no_mangle]
 pub extern "C" fn ffsrs_store_read_concurrency(
@@ -1028,6 +931,10 @@ fn sync2_dispatch_op(
     // 不针对单个 profile 的命令（store/profile_data.rs 找无主数据；WAL 并回）。
     match s("op")? {
         "profile_uids" => return c.profile_uids(),
+        // 不针对单个 profile 的只读查询（store/reads.rs）：查询道的只读连接。
+        "read_lib" => {
+            return c.read_query(|conn| crate::store::reads::run_lib(conn, req, files));
+        }
         "orphan_sweep_done" => {
             let keep: Vec<String> = req
                 .get("keep")
@@ -1061,6 +968,18 @@ fn sync2_dispatch_op(
         }
         // 不占写连接的 WAL 并回（store/mod.rs）：大批写入收尾用。
         "wal_checkpoint" => return c.wal_checkpoint(),
+        // 换代前的预演（store/gen4/dryrun.rs `rehearse`，设计 §8 G4b）：自己另开只读连接读这个库，不占内核的读写连接，
+        // 跑几十秒到几分钟，Dart 在后台 isolate 调。取消直接同步调（只置开关、打断语句）；两条都带同一个 runId 时，取消早于
+        // 内核登记到达也不丢（dryrun.rs `cancel_rehearsal`）。
+        "gen4_rehearse" => return crate::store::gen4::dryrun::rehearse(&c.path, req),
+        "gen4_rehearsal_report" => {
+            return Ok(json!({"report": crate::store::gen4::dryrun::rehearsal_report(&c.path)}));
+        }
+        "gen4_rehearse_cancel" => {
+            let run_id = req.get("runId").and_then(Value::as_str);
+            crate::store::gen4::dryrun::cancel_rehearsal(&c.path, run_id);
+            return Ok(json!({}));
+        }
         // 批量写入开始 / 结束（Dart `bulkWrites`）：内核按库计嵌套深度，最外层调高 / 恢复写连接的 WAL 自动 checkpoint 阈值
         // （保存原值）、结束时另开连接并回 WAL，期间写连接放回时留着页缓存（store/mod.rs `bulk_begin`，store/mem_budget.rs）。
         // 回包 `{depth}`：这条命令之后的深度。
@@ -1304,7 +1223,7 @@ fn cache_config_of(
 /// 依次做完命令本体（[local_write_body]）、缓存刷新（store/caches.rs）、请求带 `study` 时的排队（store/study.rs，看得见
 /// 这笔还没提交的写入），以及本机状态行（store/local_state.rs `persist_projected`：修订号按投影
 /// 结果从库里的值推进，回包带 `localRevision` / `localEpoch`；请求带了校时状态 `anchor` 就一并写下）。任何一步出错整个 SAVEPOINT 回滚：命令、缓存行、本机状态行一起不落。写连接上
-/// 没有别人开着的事务（Drift 执行器只读，store/mod.rs `READ_ONLY`），这个 SAVEPOINT 就是一笔独立提交的事务。
+/// 没有别人开着的事务（Dart 没有别的入口能在写连接上开事务），这个 SAVEPOINT 就是一笔独立提交的事务。
 const LOCAL_WRITE_OPS: &[&str] = &[
     "apply",
     "import_drafts",
@@ -1661,6 +1580,7 @@ const CHANNEL_TRANSPARENT: &[&str] = &[
     "checkpoints",
     "history",
     "study",
+    "read",
     "card_columns",
     "stats_report",
     "stats_recall",
@@ -1822,6 +1742,8 @@ fn sync2_command(
         "replay_all" => json!(c.sync2_replay_all(profile)?),
         // 排队：牌组计数 + 出卡（store/study.rs），只读快照。
         "study" => c.study(profile, req)?,
+        // 只读查询（store/reads.rs）：查询道的只读连接，一条命令一个读事务。
+        "read" => c.read_query(|conn| crate::store::reads::run(conn, profile, req, files))?,
         // 列式批量读（store/bulk.rs），只读快照：卡片缓存行、统计页三张表、AnkiConnect 数字 id 反查。
         "card_columns" => {
             files.push((
@@ -2451,11 +2373,11 @@ mod tests {
         );
         assert!(out[0] >= 1, "open handles {out:?}");
         assert!(out[1] >= 1, "live cores {out:?}");
-        assert!(out[3] >= 1, "pooled readers {out:?}");
-        assert!(out[4] > 0, "sqlite memory used {out:?}");
-        assert!(out[5] >= out[4], "highwater below current use {out:?}");
-        assert!(out[6] > 0, "open db bytes {out:?}");
-        assert!(out[7] >= 0, "wal bytes {out:?}");
+        assert!(out[2] >= 1, "pooled readers {out:?}");
+        assert!(out[3] > 0, "sqlite memory used {out:?}");
+        assert!(out[4] >= out[3], "highwater below current use {out:?}");
+        assert!(out[5] > 0, "open db bytes {out:?}");
+        assert!(out[6] >= 0, "wal bytes {out:?}");
 
         let mut two = [-7i64; 3];
         assert_eq!(ffsrs_store_diag_counts(two.as_mut_ptr(), 2), 2);
@@ -2489,12 +2411,10 @@ mod tests {
         let mut out: *mut u8 = null_mut();
         let mut out_len: usize = 0;
         let mut flag: i32 = 0;
-        let mut session: *mut ReadSessionHandle = null_mut();
-        let (o, ol, f, s) = (
+        let (o, ol, f) = (
             &mut out as *mut *mut u8,
             &mut out_len as *mut usize,
             &mut flag as *mut i32,
-            &mut session as *mut *mut ReadSessionHandle,
         );
         let sql: &[u8] = b"SELECT 1";
         let snap: &[u8] = b"snap.db";
@@ -2531,7 +2451,6 @@ mod tests {
                     ffsrs_store_debug_query(h, sql.as_ptr(), sql.len(), null(), 0, o, ol, e)
                 }),
             ),
-            ("read_begin", Box::new(|e| ffsrs_store_read_begin(h, s, e))),
             (
                 "exec",
                 Box::new(|e| ffsrs_store_exec(h, sql.as_ptr(), sql.len(), null(), 0, 1, o, ol, e)),
@@ -2569,14 +2488,14 @@ mod tests {
                 Box::new(|e| ffsrs_store_sync2(h, req.as_ptr(), req.len(), null(), 0, o, ol, e)),
             ),
         ];
-        assert_eq!(calls.len(), 18);
+        assert_eq!(calls.len(), 17);
         for (name, call) in &calls {
             let mut err: *mut c_char = null_mut();
             assert_eq!(call(&mut err), STORE_ERROR, "{name}");
             assert_eq!(take(err), CLOSED, "{name}");
         }
         drop(calls);
-        assert!(out.is_null() && session.is_null());
+        assert!(out.is_null());
         assert!(
             !p.exists(),
             "a call on a closed store reopened srs.db by path"
@@ -2678,97 +2597,6 @@ mod tests {
         std::fs::remove_dir_all(p.parent().unwrap()).unwrap();
     }
 
-    /// 经 C ABI：开会话 → 关库 → 会话查询报已关闭，库文件可改名 / 删除；read_end 之后同样报已关闭，
-    /// 重复 read_end 无操作。
-    #[test]
-    fn closing_the_store_invalidates_its_read_sessions() {
-        let p = temp("sessions");
-        let h = open(&p);
-        let mut session: *mut ReadSessionHandle = null_mut();
-        let mut err: *mut c_char = null_mut();
-        assert_eq!(ffsrs_store_read_begin(h, &mut session, &mut err), STORE_OK);
-        assert!(!session.is_null());
-        let sql: &[u8] = b"SELECT COUNT(*) FROM sqlite_master";
-        let query = |s: *const ReadSessionHandle| -> (i32, Option<String>) {
-            let mut out: *mut u8 = null_mut();
-            let mut out_len = 0usize;
-            let mut err: *mut c_char = null_mut();
-            let rc = ffsrs_store_read_query(
-                s,
-                sql.as_ptr(),
-                sql.len(),
-                null(),
-                0,
-                &mut out,
-                &mut out_len,
-                &mut err,
-            );
-            if rc == STORE_OK {
-                crate::ffsrs_free_bytes(out, out_len);
-                (rc, None)
-            } else {
-                (rc, Some(take(err)))
-            }
-        };
-        assert_eq!(query(session), (STORE_OK, None));
-
-        ffsrs_store_close(h);
-        assert_eq!(query(session), (STORE_ERROR, Some(CLOSED.to_string())));
-        // 会话还没 read_end，但它的连接已经关了：库文件能改名、能删（Windows 下有打开的句柄就不行）。
-        let moved = p.with_file_name("srs.moved.db");
-        std::fs::rename(&p, &moved).unwrap();
-        std::fs::remove_file(&moved).unwrap();
-
-        ffsrs_store_read_end(session);
-        assert_eq!(query(session), (STORE_ERROR, Some(CLOSED.to_string())));
-        ffsrs_store_read_end(session);
-        assert!(sessions().get(&(session as usize)).is_none());
-        std::fs::remove_dir_all(p.parent().unwrap()).unwrap();
-    }
-
-    /// 会话查询在途时关库：close 等那次查询跑完（不 UAF、不在查询中途关连接），之后的查询报已关闭。
-    #[test]
-    fn close_waits_for_an_in_flight_read_session_query() {
-        let p = temp("session_inflight");
-        let h = open(&p);
-        let mut session: *mut ReadSessionHandle = null_mut();
-        let mut err: *mut c_char = null_mut();
-        assert_eq!(ffsrs_store_read_begin(h, &mut session, &mut err), STORE_OK);
-        let entered = Arc::new(Barrier::new(2));
-        let worker = {
-            let entered = Arc::clone(&entered);
-            let id = session as usize;
-            std::thread::spawn(move || {
-                let mut err: *mut c_char = null_mut();
-                let rc = run_session(id as *const ReadSessionHandle, &mut err, |s| {
-                    let guard = s.conn.lock().unwrap();
-                    entered.wait();
-                    std::thread::sleep(std::time::Duration::from_millis(300));
-                    guard
-                        .as_ref()
-                        .ok_or_else(|| "closed under the query".to_string())?
-                        .query_row("SELECT COUNT(*) FROM sqlite_master", [], |r| {
-                            r.get::<_, i64>(0)
-                        })
-                        .map(|_| ())
-                        .map_err(|e| e.to_string())
-                });
-                (rc, if err.is_null() { None } else { Some(take(err)) })
-            })
-        };
-        entered.wait();
-        let t0 = std::time::Instant::now();
-        ffsrs_store_close(h);
-        assert!(
-            t0.elapsed() >= std::time::Duration::from_millis(200),
-            "close did not wait for the session query"
-        );
-        assert_eq!(worker.join().unwrap(), (STORE_OK, None));
-        std::fs::remove_file(&p).unwrap();
-        ffsrs_store_read_end(session);
-        std::fs::remove_dir_all(p.parent().unwrap()).unwrap();
-    }
-
     /// 新设备收段通道：每条 v2 命令都显式声明「通道没做完时要不要先做完」（[CHANNEL_TRANSPARENT] / [CHANNEL_SETTLES]
     /// 恰好一张）。按源码里 [sync2_dispatch] 与 [sync2_command] 顶层匹配臂的命令名逐条核对：新增命令没登记就红。
     #[test]
@@ -2777,6 +2605,7 @@ mod tests {
         // 不针对单个 profile 的命令在分发器开头就返回，不碰通道。
         for global in [
             "profile_uids",
+            "read_lib",
             "orphan_sweep_done",
             "profile_merge_mark",
             "profile_merge_commit",
@@ -2785,6 +2614,9 @@ mod tests {
             "bulk_cache",
             "ingest_yield",
             "refresh_keys",
+            "gen4_rehearse",
+            "gen4_rehearsal_report",
+            "gen4_rehearse_cancel",
         ] {
             assert!(
                 ops.remove(global),
