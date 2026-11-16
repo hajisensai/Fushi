@@ -31,6 +31,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use rusqlite::Connection;
 
+use super::carry::{legacy_peers, legacy_self};
 use super::derive::{Index, Settled};
 use super::ingest::{Settle, ingest_settle};
 use super::legacy::{self, Placement};
@@ -73,6 +74,8 @@ pub struct Imported {
     pub parked: u64,
     /// 带过来的「还没信任的设备」。
     pub untrusted: u64,
+    /// 新记下的设备公钥（只有旧备份读入 [import_backup] 搬 `sync2_devices`；迁移灌入由 `carry.rs` 搬，这里是 0）。
+    pub peers: u64,
 }
 
 /// 把 [profile] 在旧库 [src] 里的全部操作灌进 [truth] 的集合 [col]。[batch] 条提交一次（不能在事务里调）。
@@ -429,10 +432,17 @@ struct NativeRun {
 /// - 流里没有本机状态：信任不动（没见过的设备按「信任」，与迁移灌入的口径相同；用户亲手选的文件）。
 ///
 /// 收尾 [ingest_settle]（[Settle::Rebuild]：流按设备排、不按因果排，不能逐条告诉索引）。
+///
+/// 事务：在事务外调时自己开 `BEGIN IMMEDIATE`（[Truth::tx_immediate]）——导入先读本机状态、再写一大片，延迟事务碰上
+/// 别的连接并发提交会 `SQLITE_BUSY_SNAPSHOT` 整笔失败；嵌进调用方的事务时，拿锁的口径归调用方（命令层要么在事务外调，
+/// 要么自己用 `BEGIN IMMEDIATE` 开最外层）。
+///
+/// 内存口径（交给 G11-3 / G11-4 接线）：[bytes] 是整条已读进内存的 `ops.bin`（G11-1 的 [Export4Reader] 借用切片，
+/// 不收 `Read`），解码只走**一遍**（边读边落，坏在中途也是整笔回滚）；峰值 ≈ 文件字节数 + 一帧解压缓冲 + 本机设备 /
+/// 分叉清单。移动端（D4）按文件大小预算，要真流式得先给 `Export4Reader` 加 `Read` 版（G11-1 的格式代码）。
 pub fn import_ops(t: &Truth<'_>, col: i64, bytes: &[u8]) -> Result<ImportedOps, String> {
-    // 先把整条流按语法读一遍：坏的、截断的、不认识的在动库之前就拒（错误信息说清是哪一种）。
-    let header = check_ops_stream(bytes)?;
-    t.tx(|t| {
+    let header = open_ops_stream(bytes)?.1;
+    t.tx_immediate(|t| {
         if !native_sources(t, col)?.contains(&header.collection) {
             return Err(format!(
                 "gen4 import: this file belongs to another collection ({})",
@@ -446,7 +456,7 @@ pub fn import_ops(t: &Truth<'_>, col: i64, bytes: &[u8]) -> Result<ImportedOps, 
             .map(|d| (d.id, (d.kind, d.src)))
             .collect();
         let forks = known_forks(t, col)?;
-        let (mut reader, _) = Export4Reader::open(bytes)?;
+        let (mut reader, _) = open_ops_stream(bytes)?;
         let mut out = ImportedOps::default();
         let mut native: Option<NativeRun> = None;
         // 当前承袭日志：(设备, 来源集合, 这条日志的记号)。
@@ -463,7 +473,10 @@ pub fn import_ops(t: &Truth<'_>, col: i64, bytes: &[u8]) -> Result<ImportedOps, 
             }
             Ok(())
         };
-        while let Some(item) = reader.next_item()? {
+        while let Some(item) = reader
+            .next_item()
+            .map_err(|e| format!("gen4 import: corrupt export ({e})"))?
+        {
             match item {
                 ExportItem::NativeLog {
                     device,
@@ -593,7 +606,19 @@ fn compare_native(
 }
 
 /// 只按语法读完整条 `FSRS4EXP` 流（不碰库），返回头。协议 3 的流（`FSRS2EXP`）与不认识的东西给出可读的拒绝理由。
+/// 给想在动手之前先验文件的调用方用（[import_ops] 自己不再先读一遍：坏流在事务里同样整笔拒绝）。
 pub fn check_ops_stream(bytes: &[u8]) -> Result<ExportHeader, String> {
+    let (mut reader, header) = open_ops_stream(bytes)?;
+    while reader
+        .next_item()
+        .map_err(|e| format!("gen4 import: corrupt export ({e})"))?
+        .is_some()
+    {}
+    Ok(header)
+}
+
+/// 认出 `FSRS4EXP` 流、读头：协议 3 的流（`FSRS2EXP`）与不认识的东西给出可读的拒绝理由。
+fn open_ops_stream(bytes: &[u8]) -> Result<(Export4Reader<'_>, ExportHeader), String> {
     match sniff(bytes) {
         Ok(ExportKind::V4) => {}
         Ok(ExportKind::V1) => {
@@ -604,14 +629,7 @@ pub fn check_ops_stream(bytes: &[u8]) -> Result<ExportHeader, String> {
         }
         Err(e) => return Err(format!("gen4 import: not a Fushi SRS export ({e})")),
     }
-    let (mut reader, header) =
-        Export4Reader::open(bytes).map_err(|e| format!("gen4 import: unreadable export ({e})"))?;
-    while reader
-        .next_item()
-        .map_err(|e| format!("gen4 import: corrupt export ({e})"))?
-        .is_some()
-    {}
-    Ok(header)
+    Export4Reader::open(bytes).map_err(|e| format!("gen4 import: unreadable export ({e})"))
 }
 
 /// 读入 `.fushisrs` 第 1 版的内核流（协议 3 的 `FSRS2EXP`，冻结读入器 `legacy_export.rs`），逐条转译（T）成承袭槽，
@@ -634,7 +652,7 @@ pub fn import_v1(t: &Truth<'_>, col: i64, bytes: &[u8]) -> Result<ImportedOps, S
     }
     let collection =
         v1_collection(bytes).map_err(|e| format!("gen4 import: unreadable export ({e})"))?;
-    t.tx(|t| {
+    t.tx_immediate(|t| {
         if !legacy_sources(t, col)?.contains(&collection) {
             return Err(format!(
                 "gen4 import: this file belongs to another collection ({collection})"
@@ -719,6 +737,8 @@ pub fn import_v1(t: &Truth<'_>, col: i64, bytes: &[u8]) -> Result<ImportedOps, S
 /// - 待投递的旧操作照迁移的口径进 `op_pending`（备份快照本来就剥掉了它们，通常没有）。
 /// - 信任：只为本机**从没见过**的设备带上备份里的「待确认 / 已拒绝」（保守：不执行它的删除，用户之后可以放行）；
 ///   本机已有日志或已有信任状态的设备不动——本机的信任是本机的决定，旧备份不能改它。
+/// - 设备公钥与名字：`sync2_devices` → `peers`（[backup_peers]，与迁移同一份整理），同一个事务。
+/// - 事务外调时自己开 `BEGIN IMMEDIATE`（同 [import_ops]）。
 pub fn import_backup(
     src: &Connection,
     profile: &str,
@@ -732,7 +752,7 @@ pub fn import_backup(
             blockers.join("; ")
         ));
     }
-    t.tx(|t| {
+    t.tx_immediate(|t| {
         if !legacy_sources(t, col)?.contains(&collection_of(profile)) {
             return Err(format!(
                 "gen4 import: profile {profile} in the backup belongs to another collection"
@@ -754,9 +774,65 @@ pub fn import_backup(
             t.set_trust(col, &device, Some(state), since)?;
             out.untrusted += 1;
         }
+        out.peers = backup_peers(src, profile, t, col)?;
         ingest_settle(t, &mut Index::new(t, col), col, Settle::Rebuild)?;
         Ok(out)
     })
+}
+
+/// 旧备份里的设备公钥与名字（`sync2_devices` → `peers`，与迁移的 `carry.rs` 同一份整理 [legacy_peers]）。协议 3 段的
+/// 收段（`receive.rs`）与承袭段的上传者核对（`inherit.rs`）都要它：漏了，覆盖还原（空库 + 并入，D34）之后位置上的
+/// 协议 3 段会因为不认识签名者一直暂缓——协议 3 整文件替换时 `sync2_devices` 是保留的。
+///
+/// - 公钥先到先得：本机已记过另一个公钥 = 冒名 / 坏数据，整个读入拒绝（与 [learn_key] 同口径）；文件里的设备就是本机
+///   当前身份时，公钥必须就是本机的（相同则不进 `peers`，本机的公钥在 `self_`）。
+/// - 名字 / 扩展信息只补空缺：本机已有的是本机后来从 head 学到的，比备份新，不拿旧值盖它。
+/// - 备份副本自己的 `sync2_self`：快照剥掉了它（`store/mod.rs` 的 `snapshot_into`），副本里的是备副本时现补的临时
+///   身份。它一条都没写过时（通常如此）不带——没签过任何段，公钥用不上，带了只会在设备清单里多一台不存在的设备；
+///   写过（备副本时把旧事件包成了它的操作）就和别的设备一样带，它在承袭日志里确有其名。
+///
+/// 返回新记下的设备数。
+fn backup_peers(src: &Connection, profile: &str, t: &Truth<'_>, col: i64) -> Result<u64, String> {
+    let me = t.self_identity(col)?.map(|s| (s.device, s.public()));
+    let scratch = legacy_self(src, profile)?
+        .filter(|s| s.last == 0)
+        .map(|s| s.device);
+    let (peers, _) = legacy_peers(src, profile)?;
+    let mut learned = 0u64;
+    for mut peer in peers {
+        if Some(peer.device) == scratch {
+            continue;
+        }
+        if let Some((mine, key)) = me {
+            if mine == peer.device {
+                if key != peer.public {
+                    return Err(format!(
+                        "gen4 import: the backup carries another public key for this device ({mine})"
+                    ));
+                }
+                continue;
+            }
+        }
+        if let Some(cur) = t.peer(col, &peer.device)? {
+            if cur.name.is_some() {
+                peer.name = None;
+            }
+            if cur.ext.is_some() {
+                peer.ext = None;
+            }
+        }
+        match t.set_peer(col, &peer)? {
+            PeerPut::KeyMismatch => {
+                return Err(format!(
+                    "gen4 import: device {} is already known with another public key",
+                    peer.device
+                ));
+            }
+            PeerPut::Inserted => learned += 1,
+            PeerPut::Updated | PeerPut::Same => {}
+        }
+    }
+    Ok(learned)
 }
 
 #[cfg(test)]

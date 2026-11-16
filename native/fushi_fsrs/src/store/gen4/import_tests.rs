@@ -659,7 +659,7 @@ fn a_device_key_that_contradicts_the_library_refuses_the_whole_import() {
 
 // ------------------------------------------------------------ 协议 3 的输入
 
-/// 迁移灌入同一台协议 3 设备的库、再收好派生层（对照组）。
+/// 迁移灌入同一台协议 3 设备的库、带上设备公钥与名字（迁移 `carry.rs` 的那一步）、再收好派生层（对照组）。
 fn migrated(d: &Device, me: u8) -> (Connection, i64) {
     let conn = open_in_memory().unwrap();
     let col = {
@@ -667,11 +667,36 @@ fn migrated(d: &Device, me: u8) -> (Connection, i64) {
         let col = fresh(&t, me);
         let w = d.core.writer().unwrap();
         import_legacy(&w, P, &t, col, 1000).unwrap();
-        t.tx(|t| ingest_settle(t, &mut Index::new(t, col), col, Settle::Rebuild).map(|_| ()))
-            .unwrap();
+        t.tx(|t| {
+            let mut carried = crate::store::gen4::carry::Carried::default();
+            crate::store::gen4::carry::peers(&w, t, col, P, &mut carried)?;
+            assert!(carried.peers >= 2, "{carried:?}");
+            ingest_settle(t, &mut Index::new(t, col), col, Settle::Rebuild).map(|_| ())
+        })
+        .unwrap();
         col
     };
     (conn, col)
+}
+
+/// `peers` 逐行（设备、公钥、名字、扩展信息），按设备排。
+fn peer_lines(conn: &Connection, col: i64) -> Vec<String> {
+    conn.prepare(
+        "SELECT hex(device), hex(public), name, ext FROM peers WHERE col = ?1 ORDER BY device",
+    )
+    .unwrap()
+    .query_map([col], |r| {
+        Ok(format!(
+            "{} {} {:?} {:?}",
+            r.get::<_, String>(0)?,
+            r.get::<_, String>(1)?,
+            r.get::<_, Option<String>>(2)?,
+            r.get::<_, Option<String>>(3)?
+        ))
+    })
+    .unwrap()
+    .collect::<Result<_, _>>()
+    .unwrap()
 }
 
 /// `.fushisrs` 第 1 版：读入后与直接迁移同一台设备的库逐字节相同（导出流相同、派生表逐行相同）；再导一遍什么都不改。
@@ -699,14 +724,19 @@ fn a_protocol_3_export_lands_exactly_like_the_migration() {
     let again = import_v1(&ty, col_y, &v1).unwrap();
     assert!(again.unchanged(), "{again:?}");
     assert_eq!(rows(&ty, col_y), rows(&tx, col_x));
-    // 进迁移出来的库（已经有这些槽）：全是已有。
-    // 对照组没带本机状态（公钥是迁移的 carry 一步），所以只多了公钥。
+    // 第 1 版包带的公钥与迁移带的相同（名字第 1 版包里没有）。
+    let keys = |c: &Connection, col: i64| -> Vec<String> {
+        peer_lines(c, col)
+            .into_iter()
+            .map(|l| l.split(' ').take(2).collect::<Vec<_>>().join(" "))
+            .collect()
+    };
+    assert_eq!(keys(&cy, col_y), keys(&cx, col_x));
+    // 进迁移出来的库（已经有这些槽、这些公钥）：全是已有，什么都不改。
+    let peers_x = peer_lines(&cx, col_x);
     let into_x = import_v1(&tx, col_x, &v1).unwrap();
-    assert!(
-        into_x.slots_inserted + into_x.slots_replaced + into_x.slots_forked == 0
-            && into_x.slots_same > 0,
-        "{into_x:?}"
-    );
+    assert!(into_x.unchanged() && into_x.slots_same > 0, "{into_x:?}");
+    assert_eq!(peer_lines(&cx, col_x), peers_x);
     assert_eq!(rows(&tx, col_x), rows(&ty, col_y));
 
     // 同一个集合在另一个旧 uid 下：先把那个 uid 写成盐（adopt_foreign 的 SaltsAdded 一路），才收。
@@ -734,7 +764,8 @@ fn an_old_backup_lands_exactly_like_the_migration_once_prepared() {
 
     let cy = open_in_memory().unwrap();
     let ty = Truth::new(&cy);
-    let col_y = fresh(&ty, ME_B);
+    // 与对照组同一个本机身份（本机身份自己也在 `peers` 里），`peers` 才能逐行比。
+    let col_y = fresh(&ty, ME_A);
     let empty = ops_rows(&cy);
     {
         let raw = crate::store::gen4::dryrun::open_legacy(&snap).unwrap();
@@ -752,9 +783,16 @@ fn an_old_backup_lands_exactly_like_the_migration_once_prepared() {
     // 备好的副本只多了一个没有操作的新身份：读入的就是原库的全部操作。
     assert_eq!(truth_lines(&ty, col_y), truth_lines(&tx, col_x));
     assert_eq!(rows(&ty, col_y), rows(&tx, col_x));
+    // 设备公钥与名字：与迁移带过去的逐行相同（协议 3 段收段要用公钥）；备副本时现补的临时身份不带。
+    let peers = peer_lines(&cy, col_y);
+    assert_eq!(peers, peer_lines(&cx, col_x));
+    // 本机身份那一行是建身份时记的，其余都是这次读入记下的。
+    assert_eq!(got.peers, peers.len() as u64 - 1);
     let again = import_backup(&w, P, &ty, col_y).unwrap();
     assert_eq!((again.inserted, again.same), (0, got.inserted));
+    assert_eq!(again.peers, 0);
     assert_eq!(rows(&ty, col_y), rows(&tx, col_x));
+    assert_eq!(peer_lines(&cy, col_y), peers);
     // 另一个集合的备份：拒。
     let cz = open_in_memory().unwrap();
     let tz = Truth::new(&cz);
@@ -822,4 +860,180 @@ fn backup_trust_only_reaches_devices_this_library_has_never_seen() {
     let got = import_backup(&w, P, &ty, col_y).unwrap();
     assert_eq!(got.untrusted, 0);
     assert_eq!(ty.trust_of(col_y, &unseen).unwrap(), None);
+}
+
+/// 旧备份里的设备公钥：本机已记过另一个公钥、或文件说本机当前身份是另一个公钥——整个读入拒绝、一条不落；本机已有的
+/// 名字不拿备份里的旧名字盖，空缺的才补。
+#[test]
+fn backup_device_keys_refuse_contradictions_and_keep_local_names() {
+    let (a_dev, _, _) = pair();
+    let w = a_dev.core.writer().unwrap();
+    let (legacy, _) = crate::store::gen4::carry::legacy_peers(&w, P).unwrap();
+    assert!(legacy.len() >= 2, "{legacy:?}");
+    let (first, second) = (&legacy[0], &legacy[1]);
+    let with_key = |device: Id, public: [u8; 32], name: Option<&str>| Peer {
+        device,
+        public,
+        name: name.map(str::to_owned),
+        ext: None,
+        head_gen: None,
+        first_seen: None,
+    };
+
+    // 本机已记过 [first] 的另一个公钥。
+    let cz = open_in_memory().unwrap();
+    let tz = Truth::new(&cz);
+    let col_z = fresh(&tz, ME_B);
+    tz.tx(|t| t.set_peer(col_z, &with_key(first.device, [0x55; 32], None)))
+        .unwrap();
+    let before = (ops_rows(&cz), peer_lines(&cz, col_z));
+    let e = import_backup(&w, P, &tz, col_z).unwrap_err();
+    assert!(e.contains("another public key"), "{e}");
+    assert_eq!((ops_rows(&cz), peer_lines(&cz, col_z)), before);
+
+    // 本机当前身份就是 [first] 的设备 ID、另一把钥匙。
+    let cs = open_in_memory().unwrap();
+    let ts = Truth::new(&cs);
+    let col_s = ts.tx(|t| t.bind(P, &collection_of(P), P)).unwrap();
+    ts.tx(|t| t.create_self(col_s, &first.device, &[0x42; 32], None, NOW))
+        .unwrap();
+    let before = ops_rows(&cs);
+    let e = import_backup(&w, P, &ts, col_s).unwrap_err();
+    assert!(e.contains("another public key for this device"), "{e}");
+    assert_eq!(ops_rows(&cs), before);
+
+    // 本机已知 [first]（同一个公钥、本机后来学到的名字）：名字留本机的；[second] 照备份补上。
+    let cn = open_in_memory().unwrap();
+    let tn = Truth::new(&cn);
+    let col_n = fresh(&tn, ME_B);
+    tn.tx(|t| {
+        t.set_peer(
+            col_n,
+            &with_key(first.device, first.public, Some("renamed here")),
+        )
+    })
+    .unwrap();
+    let got = import_backup(&w, P, &tn, col_n).unwrap();
+    assert_eq!(got.peers, legacy.len() as u64 - 1);
+    let kept = tn.peer(col_n, &first.device).unwrap().unwrap();
+    assert_eq!(kept.name.as_deref(), Some("renamed here"));
+    assert_eq!(
+        tn.peer(col_n, &second.device).unwrap().as_ref(),
+        Some(second)
+    );
+}
+
+/// PEER 的完整原生日志 1..=7，其中第 [diverge_at] 条（有的话）换成另一份内容，落进 [col]。
+fn full_peer_log(t: &Truth<'_>, col: i64, diverge_at: Option<u64>) {
+    t.tx(|t| {
+        for (i, o) in peer_ops().iter().enumerate() {
+            let seq = i as u64 + 1;
+            if Some(seq) == diverge_at {
+                t.append_native(
+                    col,
+                    &op(PEER, seq, NOW + seq as i64, &[], &edit("another branch")),
+                )?;
+            } else {
+                t.append_native(col, o)?;
+            }
+        }
+        Ok(())
+    })
+    .unwrap();
+}
+
+/// 文件里的原生日志不比本机长、在中间分叉了（本机收全了 1..=7，第 3 条与文件的不同）：逐格比链值拦下，一条不落。
+#[test]
+fn a_native_log_diverging_in_the_middle_of_what_is_already_here_is_refused() {
+    let cs = open_in_memory().unwrap();
+    let ts = Truth::new(&cs);
+    let col_s = fresh(&ts, ME_A);
+    full_peer_log(&ts, col_s, None);
+    let bytes = export(&ts, col_s);
+    let cb = open_in_memory().unwrap();
+    let tb = Truth::new(&cb);
+    let col_b = fresh(&tb, ME_B);
+    full_peer_log(&tb, col_b, Some(3));
+    let before = (ops_rows(&cb), dump(&cb, col_b));
+    let e = import_ops(&tb, col_b, &bytes).unwrap_err();
+    assert!(e.contains("diverges") && e.contains("seq 3"), "{e}");
+    assert_eq!((ops_rows(&cb), dump(&cb, col_b)), before);
+    // 同一条日志没分叉时：全是已有，什么都不改。
+    let cc = open_in_memory().unwrap();
+    let tc = Truth::new(&cc);
+    let col_c = fresh(&tc, ME_B);
+    full_peer_log(&tc, col_c, None);
+    let got = import_ops(&tc, col_c, &bytes).unwrap();
+    assert_eq!(got.native_known, 7);
+    assert_eq!(got.native_landed, 0);
+}
+
+/// 文件里的空洞（PEER 的 2..=3）末尾落在本机日志之内、区间末的链值与本机的不等（本机第 3 条不同）：在空洞那一格就拦下
+/// （报 seq 3，不是等到下一条操作才发现），一条不落。
+#[test]
+fn a_void_whose_end_disagrees_with_the_local_log_is_refused_at_that_seq() {
+    let (a_dev, _, _) = pair();
+    let ca = open_in_memory().unwrap();
+    let ta = Truth::new(&ca);
+    let col_a = library(&ta, ME_A, &a_dev);
+    let bytes = export(&ta, col_a);
+    let cb = open_in_memory().unwrap();
+    let tb = Truth::new(&cb);
+    let col_b = fresh(&tb, ME_B);
+    full_peer_log(&tb, col_b, Some(3));
+    let before = (ops_rows(&cb), dump(&cb, col_b));
+    let e = import_ops(&tb, col_b, &bytes).unwrap_err();
+    assert!(e.contains("diverges") && e.contains("seq 3"), "{e}");
+    assert_eq!((ops_rows(&cb), dump(&cb, col_b)), before);
+}
+
+/// 别的连接正拿着写锁、写完之后才提交：在事务外调的导入一开始就排队拿写锁，等它提交完再读、再写，成功；不会读完本机
+/// 状态再升级成写时撞上 `SQLITE_BUSY_SNAPSHOT` 整笔失败。两边写的都在。
+#[test]
+fn an_import_waits_for_a_concurrent_writer_instead_of_failing_busy() {
+    let (a_dev, _, _) = pair();
+    let ca = open_in_memory().unwrap();
+    let ta = Truth::new(&ca);
+    let col_a = library(&ta, ME_A, &a_dev);
+    let bytes = export(&ta, col_a);
+    let dir = tempdir::new("gen4-import-busy");
+    let db = dir.0.join("srs4.db");
+    let col_b = {
+        let conn = open(&db).unwrap();
+        fresh(&Truth::new(&conn), ME_B)
+    };
+    // 先开好（打开本身也要拿写锁）。
+    let conn = open(&db).unwrap();
+    let t = Truth::new(&conn);
+    let stranger = id(0x99);
+    let (locked_tx, locked_rx) = std::sync::mpsc::channel::<()>();
+    let holder = {
+        let db = db.clone();
+        std::thread::spawn(move || {
+            let conn = open(&db).unwrap();
+            conn.execute_batch("BEGIN IMMEDIATE").unwrap();
+            let t = Truth::new(&conn);
+            t.reset();
+            t.set_trust(
+                col_b,
+                &stranger,
+                Some(crate::store::gen4::truth::TRUST_PENDING),
+                7,
+            )
+            .unwrap();
+            locked_tx.send(()).unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(400));
+            conn.execute_batch("COMMIT").unwrap();
+        })
+    };
+    locked_rx.recv().unwrap();
+    let got = import_ops(&t, col_b, &bytes);
+    holder.join().unwrap();
+    let got = got.unwrap();
+    assert_eq!(got.native_landed, 5);
+    assert_eq!(
+        t.trust_of(col_b, &stranger).unwrap(),
+        Some(crate::store::gen4::truth::TRUST_PENDING)
+    );
+    assert_eq!(rows(&t, col_b), rows(&ta, col_a));
 }

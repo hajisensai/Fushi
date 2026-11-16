@@ -69,7 +69,7 @@ use std::sync::Arc;
 use rusqlite::{Connection, OptionalExtension, Row, params};
 
 use super::pack::{self, F_RAW3, F_STAMP, Names, tv_bits, tv_of};
-use super::schema::{in_tx, k_dev, k_range, k_seq, opk, sql};
+use super::schema::{in_tx, in_write_tx, k_dev, k_range, k_seq, opk, sql};
 use crate::gen4::head::PrevIdentity;
 use crate::gen4::heritage::{Alias, Fp, HeritageSlot, Raw3, SlotBody, fingerprint};
 use crate::gen4::name::{read_name, write_name};
@@ -675,6 +675,28 @@ impl<'c> Truth<'c> {
                 // 快照，f 的第一笔写就得从读升级成写（别人刚提交过会 BUSY_SNAPSHOT）。f 填过缓存或写过的话已经记了。
                 self.ensure_snapshot()?;
             }
+            Ok(v)
+        });
+        if r.is_err() {
+            self.reset();
+        }
+        r
+    }
+
+    /// [Truth::tx]，但最外层时一开始就拿写锁（`BEGIN IMMEDIATE`，经忙等排队）：给「先读一大片、再写」又可能与别的
+    /// 连接并发的一次性大事务用（导入）。延迟事务读完再升级成写时，别的连接在这之间提交过就是 `SQLITE_BUSY_SNAPSHOT`，
+    /// 忙等救不了，整笔失败。已在事务里时就是 [Truth::tx]（嵌套的保存点；拿锁的口径由最外层的调用方定）。
+    pub fn tx_immediate<T>(
+        &self,
+        f: impl FnOnce(&Truth<'c>) -> Result<T, String>,
+    ) -> Result<T, String> {
+        if !self.conn.is_autocommit() {
+            return self.tx(f);
+        }
+        self.reset();
+        let r = in_write_tx(self.conn, |_| {
+            let v = f(self)?;
+            self.ensure_snapshot()?;
             Ok(v)
         });
         if r.is_err() {

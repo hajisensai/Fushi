@@ -214,13 +214,32 @@ pub fn carry_local(
     })
 }
 
-fn peers(
+/// `sync2_devices` → `peers`（迁移：新代库是空的临时文件，只写不比）。
+pub(super) fn peers(
     src: &Connection,
     t: &Truth<'_>,
     col: i64,
     profile: &str,
     out: &mut Carried,
 ) -> Result<(), String> {
+    let (peers, without_key) = legacy_peers(src, profile)?;
+    out.peers_without_key += without_key;
+    for peer in peers {
+        if t.set_peer(col, &peer)? == PeerPut::KeyMismatch {
+            return Err(format!(
+                "gen4 carry: device {} is already known with another public key",
+                peer.device
+            ));
+        }
+        out.peers += 1;
+    }
+    Ok(())
+}
+
+/// 协议 3 库 [src] 里 [profile] 的设备行（`sync2_devices` + 扩展信息 + 补充名），按新代 `peers` 的口径整理好：没有
+/// 公钥的行不带（第二项是它们的个数），名字取设备自报的、没有就取补充名，`head_gen` / `first_seen` 不带。
+/// 迁移（[carry_local]）与旧备份读入（`import.rs` 的 `import_backup`）共用这一份，两边带过去的公钥与名字逐行相同。
+pub(super) fn legacy_peers(src: &Connection, profile: &str) -> Result<(Vec<Peer>, u64), String> {
     let rows: Vec<(Vec<u8>, Option<Vec<u8>>, String)> = src
         .prepare(
             "SELECT device, public, name FROM sync2_devices WHERE profile_uid = srs_id(?1) ORDER BY device",
@@ -231,10 +250,12 @@ fn peers(
         .collect::<Result<_, _>>()
         .map_err(sql)?;
     let ext_at = ext_prefix(profile);
+    let mut peers = Vec::with_capacity(rows.len());
+    let mut without_key = 0u64;
     for (device, public, name) in rows {
         let device = Id(blob(device, "device id")?);
         let Some(public) = public else {
-            out.peers_without_key += 1;
+            without_key += 1;
             continue;
         };
         let public: [u8; 32] = blob(public, "public key")?;
@@ -243,22 +264,16 @@ fn peers(
             _ => Some(name),
         };
         let ext = meta(src, &format!("{ext_at}{}", device.text()))?;
-        let peer = Peer {
+        peers.push(Peer {
             device,
             public,
             name,
             ext,
             head_gen: None,
             first_seen: None,
-        };
-        if t.set_peer(col, &peer)? == PeerPut::KeyMismatch {
-            return Err(format!(
-                "gen4 carry: device {device} is already known with another public key"
-            ));
-        }
-        out.peers += 1;
+        });
     }
-    Ok(())
+    Ok((peers, without_key))
 }
 
 /// `sync2_held` / `sync2_checkpoints` / `sync2_media_local` 照搬（列同名，`profile_uid` 换成 `col`）。
