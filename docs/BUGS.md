@@ -38,6 +38,7 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-4734](bugs/BUG-4734-fsrs7-crate-release.md) | ✅ | ✅ | fsrs 依赖从钉 git rev 切到 crates.io 7.0.0；升级 rev 后旧参数组被当成不认识的版本、自动优化永久停掉 |
+| [BUG-4734](bugs/BUG-4734-srs-fushi-defs-image-tap.md) | ✅ | ✅ | 复习页 Fushi 卡片释义里的词典插图点按不能放大 |
 | [BUG-4733](bugs/BUG-4733-source-review-banner-compact-height.md) | ✅ | ✅ | Android 横屏手机上卡片来源回看横幅固定两行，占顶部约 1/5 画面高度 |
 | [BUG-4732](bugs/BUG-4732-apple-music-stale-user-token.md) | ✅ | ✅ | macOS Apple Music 重新授权后一直用作废的 Music-User-Token，资料库 403 |
 | [BUG-4731](bugs/BUG-4731-ai-models-upstream-metadata.md) | ✅ | ✅ | AI 提供方选模型时丢掉上游给的显示名 / 收图能力 / 单价，只能手填 |
