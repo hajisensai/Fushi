@@ -21,4 +21,7 @@
   `design-zip-cp932-names`（2026-11-16，按 `pr3444` 第 2 问的拍板补登）。同一缺口在 Windows 上更重：
   第二字节 0x7C 的字（`ポ` 等）逐字节后变成 `|`，Windows 不许它出现在文件名里，写盘失败、整本导入不了，
   一并写进了该条。
-  删除条件同 `FUSHI_PATCH.md`：升 archive 4.x 后删补丁。
+  **后续**：`design-zip-cp932-names` 已实现——导入时从中央目录读回原始名字字节，整包交给
+  `ffc_text_legacy_decode`（`native/fushi_compute/src/legacy_text.rs`，与曲库 ID3 乱码修复同一份判据）
+  判编码重解，0x5C / 0x7C 尾字节不再切目录 / 变 `|`；判不出编码时维持上面的逐字节行为。
+  补丁删除条件同 `FUSHI_PATCH.md`：升 archive 4.x 后删补丁。
