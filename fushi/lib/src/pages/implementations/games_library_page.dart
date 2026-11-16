@@ -787,6 +787,13 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
                 mediaType: mediaType,
                 entryKey: entryKey,
               ),
+          // 头部成员封面的 NSFW 并入游戏自己的成人向标记。
+          memberNsfwOf: (String mediaType, String entryKey) =>
+              gameCollectionMemberNsfw(
+                games: _games,
+                mediaType: mediaType,
+                entryKey: entryKey,
+              ),
           onOpenMember: _openCollectionMember,
           onChanged: () {
             unawaited(_reload());
@@ -2131,15 +2138,6 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
     CollectionGroup<GalgameEntry> group,
     MediaCollectionRow collection, {
     FushiCoverBlockSize? block,
-  }) => MediaNsfwCoverScope(
-    target: MediaNsfwTarget.collection(collection.id),
-    child: _buildCollectionCardInner(group, collection, block: block),
-  );
-
-  Widget _buildCollectionCardInner(
-    CollectionGroup<GalgameEntry> group,
-    MediaCollectionRow collection, {
-    FushiCoverBlockSize? block,
   }) {
     final List<GalgameEntry> members = <GalgameEntry>[
       for (final CollectionOrderingItem<GalgameEntry> it in group.items)
@@ -2148,17 +2146,28 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
     final String? own = collection.coverPath;
     final bool hasOwnCover =
         own != null && own.isNotEmpty && File(own).existsSync();
+    // NSFW 逐张判定（拍板台 w04vrhUAaX）：合集自设封面按合集，成员封面按成员
+    // （成人向标记或所在 NSFW 合集）。不在卡壳挂合集一层——没标的合集会把其中
+    // 成人向游戏的封面原样露出来。只有最前那张压「已隐藏」图标。
     final List<Widget> covers = <Widget>[
       if (hasOwnCover)
-        ShelfFileCover(
-          path: own,
-          placeholder: const ShelfCoverPlaceholder(
-            icon: FushiIcons.collection,
-            iconSize: 40,
+        MediaNsfwCover(
+          target: MediaNsfwTarget.collection(collection.id),
+          child: ShelfFileCover(
+            path: own,
+            placeholder: const ShelfCoverPlaceholder(
+              icon: FushiIcons.collection,
+              iconSize: 40,
+            ),
           ),
         ),
-      for (final GalgameEntry game in members.take(hasOwnCover ? 3 : 4))
-        GameCoverThumb(game: game),
+      for (final (int i, GalgameEntry game)
+          in members.take(hasOwnCover ? 3 : 4).indexed)
+        MediaNsfwCover(
+          target: MediaNsfwTarget.game(game.id, adult: game.isNsfw),
+          showIcon: !hasOwnCover && i == 0,
+          child: GameCoverThumb(game: game),
+        ),
     ];
     final ({String subtitle, double? progress, bool completed, int seconds})
     meta = galgameCollectionMeta(members);
@@ -2509,6 +2518,24 @@ Widget? gameCollectionMemberCover({
   return null;
 }
 
+/// 游戏合集成员的 NSFW 宿主：成人向标记（编辑页开关 / 刮削）并入合集继承判定。
+/// 游戏不在当前列表里（已删 / 未加载）时只按成员行判定。
+MediaNsfwTarget? gameCollectionMemberNsfw({
+  required List<GalgameEntry> games,
+  required String mediaType,
+  required String entryKey,
+}) {
+  if (MediaKind.tryParse(mediaType) != MediaKind.game) {
+    return MediaNsfwTarget.collectionMember(mediaType, entryKey);
+  }
+  for (final GalgameEntry game in games) {
+    if (game.id == entryKey) {
+      return MediaNsfwTarget.game(game.id, adult: game.isNsfw);
+    }
+  }
+  return MediaNsfwTarget.game(entryKey, adult: false);
+}
+
 /// 游玩状态的用户可读标签（枚举 `.name` 直接上屏是 17 语言用户的灾难）。
 String galgamePlayStatusLabel(GalgamePlayStatus status) => switch (status) {
   GalgamePlayStatus.unset => t.game_status_unset,
@@ -2722,6 +2749,7 @@ class _GameCard extends StatelessWidget {
         cover: _dialogCover(dialogContext),
         coverBackdrop: _dialogCoverBackdrop(),
         coverMaterial: ShelfCoverMaterial.gameCase,
+        nsfw: MediaNsfwTarget.game(game.id, adult: game.isNsfw),
         title: game.displayName,
         showLaunchAction: false,
         quickActions: <DialogQuickAction>[

@@ -528,6 +528,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       builder: (ctx) => MediaItemDialogPage(
         item: _srtBookMediaItem(book),
         isHistory: true,
+        nsfw: MediaNsfwTarget.srtBook(book.uid),
         showLaunchAction: false,
         // TODO-1094：SRT 无自选封面且未关联 EPUB 封面时，长按对话框显示与网格
         // `_buildSrtCover` 同判据的占位图标（耳机/字幕），而非整块隐藏封面区。

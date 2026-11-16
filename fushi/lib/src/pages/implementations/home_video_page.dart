@@ -286,11 +286,13 @@ typedef _CardDownloadMeta = ({
 });
 
 /// 合集封面卡取到的图源（见 `_collectionCoverSource`）：[errorIcon] 是解码失败时的
-/// 占位图标；[remoteMember] 非 null = 图源是这个远端成员自己的封面，按远端卡槽位画。
+/// 占位图标；[remoteMember] 非 null = 图源是这个远端成员自己的封面，按远端卡槽位画；
+/// [localMemberUid] 非 null = 图源借的是这一集本地成员的封面（NSFW 按这一集判定）。
 typedef _CollectionCoverSource = ({
   ImageProvider image,
   IconData errorIcon,
   RemoteVideoInfo? remoteMember,
+  String? localMemberUid,
 });
 
 /// 首页「视频」tab 的内容：已导入视频的库（独立于书架的 EPUB/有声书分区）。
@@ -4454,6 +4456,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       cover: _menuCoverFor(cover),
       coverBackdrop: cover,
       coverMaterial: ShelfCoverMaterial.glossyPoster,
+      nsfw: MediaNsfwTarget.video(book.bookUid),
       title: title,
       showLaunchAction: false,
       // 统一三库页卡菜单次序：重命名 → 封面/刮削 → 媒体特有 → 加入合集 →
@@ -8454,12 +8457,17 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     // 朝向自适应槽位：不合槽封面由 [PortraitCoverImage] 用「模糊同图垫底 +
     // contain 前景」填充；本地封面解码上限与旧 cacheWidth 同源（resizedFileImage
     // 默认 720）。
-    return PortraitCoverImage(
+    final Widget cover = PortraitCoverImage(
       image: source.image,
       landscapeSlot: landscapeSlot,
       errorBuilder: (BuildContext _) =>
           ShelfCoverPlaceholder(icon: source.errorIcon),
     );
+    // 借的是某一集的封面：合集卡壳只按合集判定，没标的合集会把被标的那一集原样
+    // 露出来（拍板台 w04vrhUAaX），这里按那一集自己再判一次。
+    final String? memberUid = source.localMemberUid;
+    if (memberUid == null) return cover;
+    return MediaNsfwCover(target: MediaNsfwTarget.video(memberUid), child: cover);
   }
 
   /// 合集封面卡的取图链（[_buildCollectionCover] 画它、合集菜单头部也取它，两处
@@ -8471,7 +8479,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   ) {
     final ImageProvider? own = _collectionOwnCover(group.collection);
     if (own != null) {
-      return (image: own, errorIcon: FushiIcons.video, remoteMember: null);
+      return (image: own, errorIcon: FushiIcons.video, remoteMember: null, localMemberUid: null);
     }
     final int? collectionId = group.collection?.id;
     if (collectionId != null) {
@@ -8483,6 +8491,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           image: canonical,
           errorIcon: FushiIcons.video,
           remoteMember: null,
+          localMemberUid: null,
         );
       }
     }
@@ -8495,6 +8504,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           image: poster,
           errorIcon: Icons.movie_outlined,
           remoteMember: null,
+          localMemberUid: null,
         );
       }
     }
@@ -8503,7 +8513,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       if (local == null) continue;
       final ImageProvider? cover = _localFileCover(local.coverPath);
       if (cover != null) {
-        return (image: cover, errorIcon: FushiIcons.video, remoteMember: null);
+        return (
+          image: cover,
+          errorIcon: FushiIcons.video,
+          remoteMember: null,
+          localMemberUid: local.bookUid,
+        );
       }
     }
     for (final CollectionOrderingItem<_VideoSlot> it in group.items) {
@@ -8517,6 +8532,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           image: cover,
           errorIcon: FushiIcons.video,
           remoteMember: remote,
+          localMemberUid: null,
         );
       }
     }

@@ -2868,7 +2868,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     // ChangeNotifier，用 ListenableBuilder 订阅而不是把本页改成 Consumer（既有
     // 测试不挂 ProviderScope）。
     final InterconnectDownloadManager? downloads = widget.remote?.downloads;
-    final Widget card = downloads == null || !episode.isRemote
+    final Widget plainCard = downloads == null || !episode.isRemote
         ? buildCard(null)
         : ListenableBuilder(
             listenable: downloads,
@@ -2876,6 +2876,16 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
               _episodeDownloadBadge(downloads.taskFor(episode.entryKey)),
             ),
           );
+    // NSFW 按这一集判定（拍板台 w04vrhUAaX）：整页那层只看合集，没标的合集会把
+    // 被标的那一集原样露出来。本地集按 bookUid（自己被标或所在 NSFW 合集——本合集
+    // 被标时同样模糊）；远端集在本机不可标，沿用合集判定。
+    final VideoBookRow? local = episode.local;
+    final Widget card = MediaNsfwCoverScope(
+      target: local != null
+          ? MediaNsfwTarget.video(local.bookUid)
+          : MediaNsfwTarget.collection(widget.collection.id),
+      child: plainCard,
+    );
     if (FushiFocusRoot.maybeControllerOf(context) == null) return card;
     return Actions(
       actions: <Type, Action<Intent>>{
@@ -3850,15 +3860,22 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
         if (upNext) ...<Widget>[
-          MediaPosterUpNextCard(
-            key: const ValueKey<String>('collection-hero-up-next'),
-            label: t.collection_continue_progress(n: _continueIndex + 1),
-            title: _episodeDisplayTitle(episode),
-            image: _episodeCover(episode) ?? _heroBackdrop ?? _heroCover,
-            meta: _episodeMeta(episode),
-            progress: _episodeProgress(episode),
-            completed: episode.completed,
-            onPlay: () => _onPrimaryPlay(episode),
+          // 「接着看」那一集的缩略图按这一集判定 NSFW（同集卡）。
+          MediaNsfwCoverScope(
+            target: switch (episode.local) {
+              final VideoBookRow local => MediaNsfwTarget.video(local.bookUid),
+              null => MediaNsfwTarget.collection(widget.collection.id),
+            },
+            child: MediaPosterUpNextCard(
+              key: const ValueKey<String>('collection-hero-up-next'),
+              label: t.collection_continue_progress(n: _continueIndex + 1),
+              title: _episodeDisplayTitle(episode),
+              image: _episodeCover(episode) ?? _heroBackdrop ?? _heroCover,
+              meta: _episodeMeta(episode),
+              progress: _episodeProgress(episode),
+              completed: episode.completed,
+              onPlay: () => _onPrimaryPlay(episode),
+            ),
           ),
           SizedBox(height: tokens.spacing.section),
         ],

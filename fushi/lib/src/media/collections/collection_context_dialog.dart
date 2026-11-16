@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:fushi/src/media/privacy/media_privacy_dialog.dart';
+import 'package:fushi/src/media/nsfw/media_nsfw_cover.dart';
 import 'package:fushi/src/media/nsfw/media_nsfw_dialog.dart';
 import 'package:fushi/src/media/tags/tag_picker_sheet.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -119,6 +120,8 @@ Future<void> showCollectionContextDialog({
           cover: effectiveCover,
           coverBackdrop: coverSource,
           coverMaterial: coverMaterial,
+          // 头部封面是合集自设封面或某个成员的封面：按合集判定 NSFW。
+          nsfw: MediaNsfwTarget.collection(collection.id),
           title: title ?? collection.name,
           // 顶部主按钮 = 打开详情（与行头/卡片单击同路径，键盘/手柄用户可达）。
           launchLabel: t.collection_view_all,

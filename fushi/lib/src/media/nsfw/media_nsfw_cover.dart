@@ -69,6 +69,18 @@ class MediaNsfwTarget {
   const MediaNsfwTarget.game(String gameId, {required bool adult})
     : this(TagHostKind.game, gameId, alsoNsfw: adult);
 
+  /// 合集成员行（`media_collection_items` 的 mediaType / entryKey；EPUB 成员键是
+  /// uid，快照两种键都认）。认不出的 mediaType 为 null（不模糊）。游戏的成人向标记
+  /// 不在成员行里，需要的调用方自己用 [MediaNsfwTarget.game]。
+  static MediaNsfwTarget? collectionMember(String mediaType, String entryKey) =>
+      switch (MediaKind.tryParse(mediaType)) {
+        final MediaKind kind => MediaNsfwTarget(
+          tagHostKindOfMediaKind(kind),
+          entryKey,
+        ),
+        null => null,
+      };
+
   final TagHostKind kind;
   final String entryKey;
   final bool alsoNsfw;
@@ -115,8 +127,11 @@ class MediaNsfwCoverScope extends ConsumerWidget {
   }
 }
 
-/// 不经卡壳作用域的封面（继续卡、详情页 hero 等）：按 [target] 自己判定后包
-/// [NsfwCoverBlur]。[target] 为 null 时原样返回 [child]。
+/// 不经卡壳作用域的封面（继续卡、详情页 hero、合集卡里逐张判定的成员封面等）：
+/// 按 [target] 自己判定后包 [NsfwCoverBlur]。[target] 为 null 时不模糊。
+///
+/// 祖先 [MediaNsfwCoverScope] 已判定要模糊（卡内封面框会整张打模糊）时这里不再
+/// 叠一层，免得模糊两遍、压两枚图标。
 class MediaNsfwCover extends ConsumerWidget {
   const MediaNsfwCover({
     required this.target,
@@ -134,6 +149,7 @@ class MediaNsfwCover extends ConsumerWidget {
     final MediaNsfwTarget? t = target;
     final bool blur =
         t != null &&
+        !ShelfCoverNsfw.blurOf(context) &&
         ref.watch(blurNsfwCoversProvider) &&
         watchIsMediaNsfw(ref, t);
     return NsfwCoverBlur(blur: blur, showIcon: showIcon, child: child);

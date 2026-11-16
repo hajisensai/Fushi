@@ -43,14 +43,24 @@ Future<String?> resolveNsfwCardImagePath({
   }
 }
 
+/// 模糊副本文件名里的参数段：模糊参数（采样长边 / 输出长边）一变，旧副本的名字
+/// 就对不上，不会被当成新参数的结果复用。
+String get nsfwCardImageParamsTag =>
+    's${kNsfwBlurSampleEdge}o$kNsfwBlurOutputEdge';
+
+/// [sourceBytes] 的模糊副本在 [dir] 下的文件名：源字节 SHA-1 + [nsfwCardImageParamsTag]。
+String nsfwCardImageFileName(Uint8List sourceBytes) =>
+    '${sha1.convert(sourceBytes)}_$nsfwCardImageParamsTag.jpg';
+
 /// 把 [sourcePath] 的图写成模糊副本（JPEG），返回副本路径；图解不开返回 null。
-/// 同一份源字节只算一次（按 SHA-1 命名，已存在直接复用）。
+/// 同一份源字节、同一套模糊参数只算一次（[nsfwCardImageFileName]，已存在直接复用）。
+/// 副本落在系统临时目录，由系统临时目录清理回收。
 Future<String?> writeNsfwBlurredCardImage(String sourcePath) async {
   final Uint8List bytes = await File(sourcePath).readAsBytes();
   final Directory dir = Directory(
     p.join(Directory.systemTemp.path, 'fushi_nsfw_card_images'),
   );
-  final File out = File(p.join(dir.path, '${sha1.convert(bytes)}.jpg'));
+  final File out = File(p.join(dir.path, nsfwCardImageFileName(bytes)));
   if (out.existsSync()) return out.path;
   final Uint8List? blurred = await blurImageForNsfwAsync(bytes);
   if (blurred == null) {

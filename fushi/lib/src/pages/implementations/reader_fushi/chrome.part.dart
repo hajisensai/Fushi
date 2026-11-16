@@ -2816,6 +2816,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
     return ReaderQuickSettingsSheet(
       controller: _audiobookController,
       toc: toc,
+      nsfw: MediaNsfwTarget.book(widget.bookKey),
       coverPath: extractDir == null
           ? null
           : ReaderFushiSource.resolveCoverFilePath(

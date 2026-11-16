@@ -44,6 +44,7 @@ class MediaNsfwSnapshot {
         ?collectionIdOfTagEntryKey(k),
     };
     final Map<String, Set<int>> collectionsOfEntry = <String, Set<int>>{};
+    final Set<String> books = await db.nsfwEntryKeys(TagHostKind.epub);
     if (collections.isNotEmpty) {
       // v83 起 EPUB 合集成员键是 `epub_books.uid`（旧行仍可能是 bookKey），判定按
       // bookKey 问：成员键先归一到 bookKey（同 MediaPrivacySnapshot）。
@@ -63,12 +64,30 @@ class MediaNsfwSnapshot {
         final String entryKey = item.mediaType == MediaKind.epub.dbValue
             ? (bookKeyByUid[item.entryKey] ?? item.entryKey)
             : item.entryKey;
-        (collectionsOfEntry[_memberKey(item.mediaType, entryKey)] ??= <int>{})
-            .add(item.collectionId);
+        // 归一后的 bookKey 与原始成员键（uid）都登记：书架按 bookKey 问，合集详情
+        // 页按成员行的 entryKey（uid）问，两种都认。
+        for (final String key in <String>{entryKey, item.entryKey}) {
+          (collectionsOfEntry[_memberKey(item.mediaType, key)] ??= <int>{}).add(
+            item.collectionId,
+          );
+        }
       }
     }
+    // 被标的书也按 uid 登记（同上：合集成员行的 entryKey 是 uid）。
+    final Set<String> bookUids = books.isEmpty
+        ? const <String>{}
+        : <String>{
+            for (final TypedResult r
+                in await (db.selectOnly(db.epubBooks)
+                      ..addColumns(<Expression<Object>>[db.epubBooks.uid])
+                      ..where(db.epubBooks.bookKey.isIn(books)))
+                    .get())
+              if (r.read(db.epubBooks.uid) case final String uid
+                  when uid.isNotEmpty)
+                uid,
+          };
     return MediaNsfwSnapshot._(
-      books: await db.nsfwEntryKeys(TagHostKind.epub),
+      books: <String>{...books, ...bookUids},
       srtBooks: await db.nsfwEntryKeys(TagHostKind.srt),
       videos: await db.nsfwEntryKeys(TagHostKind.video),
       collections: collections,
@@ -99,6 +118,7 @@ class MediaNsfwSnapshot {
   bool isCollectionNsfw(int collectionId) =>
       _collections.contains(collectionId);
 
+  /// [bookKey] 也可以是 `epub_books.uid`（合集成员行的键），两种都认。
   bool isBookNsfw(String bookKey) =>
       _books.contains(bookKey) ||
       _inNsfwCollection(MediaKind.epub.dbValue, bookKey);

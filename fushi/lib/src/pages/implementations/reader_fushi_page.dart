@@ -35,6 +35,7 @@ import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:fushi/src/media/kavita/kavita_api_registry.dart';
 import 'package:fushi/src/media/nsfw/nsfw_card_image.dart';
+import 'package:fushi/src/media/nsfw/media_nsfw_cover.dart';
 import 'package:fushi/src/media/kavita/kavita_book_binding.dart';
 import 'package:fushi/src/media/kavita/kavita_epub_sync.dart';
 import 'package:fushi/src/media/kavita/kavita_open_books.dart';

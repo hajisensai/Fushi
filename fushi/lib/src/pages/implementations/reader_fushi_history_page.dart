@@ -2977,12 +2977,9 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       builder: (BuildContext _, bool __) => ShelfCoverSelection(
         selectionMode: _selectionMode,
         selected: selected,
-        child: MediaNsfwCoverScope(
-          target: MediaNsfwTarget.collection(collection.id),
-          child: GamepadLongPressActions(
-            onLongPress: _selectionMode ? null : openMenu,
-            child: card,
-          ),
+        child: GamepadLongPressActions(
+          onLongPress: _selectionMode ? null : openMenu,
+          child: card,
         ),
       ),
     );
@@ -2994,28 +2991,57 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   /// 显示「继续」会打开的那本（与合集详情页同一判据 [pickContinueIndex]）——看到
   /// 第五本，系列卡最前就是第五本。后面依次是组内序里其余成员的封面（跳过已当最前
   /// 的那本），凑满 4 本为止。
+  ///
+  /// NSFW（拍板台 w04vrhUAaX）**逐张判定**：成员封面按成员自己（自己被标或所在任一
+  /// NSFW 合集），合集自设封面按合集。不在卡壳上挂合集一层——那样没标 NSFW 的合集
+  /// 会把其中被标的那一卷原样露出来；合集被标时成员经合集继承同样全部模糊。只有
+  /// 最前那张压「已隐藏」图标，叠在后面的几张只模糊。
   List<Widget> _collectionCardCovers(
     CollectionGroup<_ShelfBookSlot> group,
     Map<String, String> epubCoverUrisByBookKey,
   ) {
     final List<CollectionOrderingItem<_ShelfBookSlot>> items = group.items;
     if (items.isEmpty) return const <Widget>[];
+    Widget memberCover(_ShelfBookSlot slot, {required bool front}) =>
+        MediaNsfwCover(
+          target: _slotNsfwTarget(slot),
+          showIcon: front,
+          child: _slotCover(slot, epubCoverUrisByBookKey),
+        );
     final int? frontIndex;
     final Widget front;
-    final String? own = group.collection?.coverPath;
+    final MediaCollectionRow? collection = group.collection;
+    final String? own = collection?.coverPath;
     if (own != null && own.isNotEmpty && File(own).existsSync()) {
       frontIndex = null;
-      front = _buildFileCover(own, Icons.collections_bookmark_outlined);
+      front = MediaNsfwCover(
+        target: collection == null
+            ? null
+            : MediaNsfwTarget.collection(collection.id),
+        child: _buildFileCover(own, Icons.collections_bookmark_outlined),
+      );
     } else {
       frontIndex = _collectionContinueIndex(group) ?? 0;
-      front = _slotCover(items[frontIndex].payload, epubCoverUrisByBookKey);
+      front = memberCover(items[frontIndex].payload, front: true);
     }
     return <Widget>[
       front,
       for (int i = 0; i < items.length; i++)
-        if (i != frontIndex)
-          _slotCover(items[i].payload, epubCoverUrisByBookKey),
+        if (i != frontIndex) memberCover(items[i].payload, front: false),
     ].take(4).toList(growable: false);
+  }
+
+  /// 书架槽位的 NSFW 宿主：本地 EPUB 按 bookKey、本地字幕书按 uid；远端占位条目
+  /// 在本机不可标（null，不模糊）。
+  MediaNsfwTarget? _slotNsfwTarget(_ShelfBookSlot slot) {
+    if (slot.remote != null || slot.remoteSrt != null) return null;
+    final SrtBook? srt = slot.srt;
+    if (srt != null) return MediaNsfwTarget.srtBook(srt.uid);
+    final MediaItem? epub = slot.epub;
+    final String? bookKey = epub == null
+        ? null
+        : _parseBookKey(epub.mediaIdentifier);
+    return bookKey == null ? null : MediaNsfwTarget.book(bookKey);
   }
 
   /// 合集里「继续」会打开的那本的下标（[pickContinueIndex]）；空合集 null。
@@ -3857,6 +3883,10 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       builder: (BuildContext dialogCtx) => MediaItemDialogPage(
         item: item,
         isHistory: isHistory,
+        nsfw: switch (_parseBookKey(item.mediaIdentifier)) {
+          final String bookKey => MediaNsfwTarget.book(bookKey),
+          null => null,
+        },
         showLaunchAction: false,
         extraActions: removeFromCollection == null
             ? (MediaItem it) =>
