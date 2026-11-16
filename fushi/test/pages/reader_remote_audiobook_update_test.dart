@@ -207,6 +207,10 @@ void main() {
       interconnectDownloadManagerProvider,
     );
     final String taskId = InterconnectDownloadManager.srtAudiobookTaskId(_uid);
+    // 菜单动作多于一屏时（整理组多了「NSFW」一项后，内容组的「从对端更新字幕」
+    // 落到 800×600 测试视口之外）先滚到可见再点，否则 tap 打空、什么都不触发。
+    await tester.ensureVisible(find.text(label));
+    await tester.pumpAndSettle();
     await tester.runAsync(() async {
       await tester.tap(find.text(label));
       for (int i = 0; i < 200; i++) {
