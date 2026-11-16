@@ -1917,6 +1917,7 @@ class VideoSourceScrapeCoordinator
             localWorkTitle: localWork.title,
             candidates: options,
             aiSuggestion: ai.suggestion,
+            strictMatches: resolution.strictMatches,
           ),
         );
       }

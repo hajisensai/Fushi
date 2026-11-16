@@ -12193,6 +12193,7 @@
   "video_source_scrape_clear_all_records_body": "這會清除全部影片刮削資料和來源綁定，並清空“系列”結果。影片檔案、媒體庫條目、底層分組、觀看進度、字幕、標簽和手動選擇的封面都會保留。此操作無法撤銷。",
   "video_source_scrape_clear_all_summary": "清除全部影片刮削資料，可選擇是否一併刪除 Fushi 生成的 NFO 與圖片檔案。",
   "video_source_scrape_confirmation_hint": "找到多個嚴格匹配結果。請選擇正確作品，Fushi 會保存其來源綁定。",
+  "video_source_scrape_confirmation_review_hint": "Fushi found possible matches but could not confirm any of them. Pick the right title and Fushi will save its source binding.",
   "video_source_scrape_confirmation_skip": "跳過此作品",
   "video_source_scrape_confirmation_title": "確認資料匹配",
   "video_source_scrape_enabled_toggle": "啟用此來源的刮削",

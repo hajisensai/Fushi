@@ -102,6 +102,8 @@ void main() {
       };
       expect(ids, containsAll(<String>['6257', '7307']));
       expect(ids.intersection(<String>{'14553', '9376', '18559'}), isEmpty);
+      // 目录摘要标题对不上的候选只是「可能」，不能让确认框说成严格匹配。
+      expect(result.strictMatches, isFalse);
     },
   );
 }

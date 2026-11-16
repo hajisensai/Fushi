@@ -12193,6 +12193,7 @@
   "video_source_scrape_clear_all_records_body": "すべての動画スクレイピング情報とソースの紐付けを削除し、「シリーズ」の結果を空にします。動画ファイル、ライブラリの項目、グループ、視聴位置、字幕、タグ、手動で選んだカバーは残ります。この操作は元に戻せません。",
   "video_source_scrape_clear_all_summary": "すべての動画スクレイピング情報を削除します。Fushi が生成した NFO と画像ファイルも一緒に削除するか選べます。",
   "video_source_scrape_confirmation_hint": "複数の完全一致が見つかりました。正しい作品を選んでプロバイダーの紐付けを保存してください。",
+  "video_source_scrape_confirmation_review_hint": "Fushi found possible matches but could not confirm any of them. Pick the right title and Fushi will save its source binding.",
   "video_source_scrape_confirmation_skip": "この作品をスキップ",
   "video_source_scrape_confirmation_title": "メタデータの一致を確認",
   "video_source_scrape_enabled_toggle": "このソースのスクレイプを有効化",

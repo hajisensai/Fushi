@@ -84,7 +84,14 @@ class VideoMetadataResolution {
     this.reason,
     this.transient = false,
     this.searchedWithoutResult = false,
+    this.strictMatches = false,
   }) : candidates = List<VideoMetadataWork>.unmodifiable(candidates);
+
+  /// 歧义的来由：true = 候选**都**通过了标题 / 类型 / 年份 / 季号严格门，只是不止
+  /// 一条；false = 候选只是「可能」（标题对不上、只有目录摘要、离线索引同名、AI
+  /// 给的搜索词……），需要人工判断。确认框据此说「多个严格匹配」还是「无法确认」，
+  /// 不能把后者也说成严格匹配（BUG-4717）。
+  final bool strictMatches;
 
   /// 标题搜索链跑完、一条结果都没有，而且没有任何一家失败：真正搜过的源
   /// 全部查无，其余源只是没配置（没发请求）。鉴权失败 / 坏响应 / 临时故障都让
@@ -313,6 +320,10 @@ class VideoMetadataResolver {
       method: VideoMetadataResolutionMethod.exactSearch,
       candidates: merged.values.toList(growable: false),
       providerKind: results.first.providerKind,
+      // 合并后只要混进一家「可能」候选，整体就不再是严格匹配。
+      strictMatches: results.every(
+        (VideoMetadataResolution result) => result.strictMatches,
+      ),
       reason: results
           .map(
             (VideoMetadataResolution result) =>
@@ -471,6 +482,7 @@ class VideoMetadataResolver {
           candidates: exact.values.toList(),
           providerKind: provider.providerKind,
           reason: 'More than one candidate passed the strict match gate',
+          strictMatches: true,
         );
       }
     }

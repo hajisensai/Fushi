@@ -12193,6 +12193,7 @@
   "video_source_scrape_clear_all_records_body": "This removes all scraped metadata and source bindings and clears the Series results. Video files, library entries, groups, watch progress, subtitles, tags, and manually selected covers are kept. This cannot be undone.",
   "video_source_scrape_clear_all_summary": "Remove all video scrape metadata, optionally together with the NFO and image files Fushi generated.",
   "video_source_scrape_confirmation_hint": "Tìm thấy nhiều kết quả khớp chính xác. Chọn tác phẩm đúng để lưu liên kết nhà cung cấp.",
+  "video_source_scrape_confirmation_review_hint": "Fushi found possible matches but could not confirm any of them. Pick the right title and Fushi will save its source binding.",
   "video_source_scrape_confirmation_skip": "Bỏ qua tác phẩm này",
   "video_source_scrape_confirmation_title": "Xác nhận kết quả khớp metadata",
   "video_source_scrape_enabled_toggle": "Bật quét cho nguồn này",

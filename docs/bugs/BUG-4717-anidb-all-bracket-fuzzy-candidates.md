@@ -5,4 +5,4 @@
   2. `packages/fushi_engine/lib/media/video/metadata/video_metadata_resolver.dart` AniDB 分支：目录摘要标题不符时无条件 `reviewCandidates.putIfAbsent`，而目录搜索在精确 / 前缀落空时退到 3-gram 模糊召回、下限只有 0.2（`catalog.rs` `search`），噪声原样进了待确认。AniDB HTTP 详情不可用（随包 `fushiplayer` 只登记了 UDP，BUG-2623）时没有类型 / 年份门再挡一道。
 - **[x] ① 已修复** — 解析器：第一趟无标题、首块被当发布组且没认出集号时，把首块当标题再分一趟，**仅当这一趟认出集号**才采用（单独 `[VCB-Studio]` 目录名不受影响）。resolver：AniDB 目录模糊命中相似度 < `kAniDbReviewMinFuzzySimilarity`（0.65，真实目录实测同作品 ≥ 0.67、噪声 ≤ 0.62）不进待确认；手动搜索面不变。
 - **[x] ② 已加自动化测试** — `native/fushi_compute/src/parse/media_name.rs` `all_bracket_title_then_episode`；`fushi/test/media/video/metadata/anidb_all_bracket_fuzzy_candidates_test.dart`（真解析器 → 标题候选 → resolver，断言 6257 / 7307 在、14553 / 9376 / 18559 不在）。
-- **备注**：确认框文案 `video_source_scrape_confirmation_hint` 对「多个严格命中」与「标题待人工确认」两种原因都写「找到多个严格匹配结果」，后者是误导；本条未改文案。平板真机未复测（修复在纯解析 / 匹配层，已用真实目录数据复现与验证）。
+- **备注**：确认框文案已按歧义来由区分：`VideoMetadataResolution.strictMatches`（只有候选都过严格门才为真）随确认请求带到 UI，真严格歧义仍说「找到多个严格匹配结果」，其余说「找到了一些可能的作品，但无法确认是哪一部」（新 key `video_source_scrape_confirmation_review_hint`，测试见 `video_source_scrape_ui_test.dart`）。平板真机未复测（修复在纯解析 / 匹配层，已用真实目录数据复现与验证）。
