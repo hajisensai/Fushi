@@ -1,7 +1,8 @@
 import 'dart:typed_data';
 
 import 'package:material_ui/material_ui.dart';
-import 'package:flutter/rendering.dart' show SemanticsHandle, SemanticsNode;
+import 'package:flutter/rendering.dart'
+    show RenderParagraph, SemanticsHandle, SemanticsNode;
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
@@ -598,6 +599,61 @@ void main() {
       );
       expect(find.text('New'), findsOneWidget);
       expect(tester.getSize(find.byType(FloatingActionButton)).height, 56);
+    });
+
+    testWidgets('扩展 FAB 长文字在父级宽度上限内省略，不画出按钮外', (WidgetTester tester) async {
+      // 详情页「继续观看 · <长集名>」：调用方给 maxWidth 280，文字必须在
+      // 按钮内省略（反馈 ERvD_oEfQp：文字越过药丸右缘、没有省略号）。
+      const String long = '继续观看 · ここまで二回も全裸になっているのにまだ終わらない長い長いエピソードタイトル';
+      await pumpHost(
+        tester,
+        (_) => const SizedBox(),
+        fab: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 280),
+          child: FushiFab(
+            icon: const Icon(Icons.play_arrow),
+            label: const Text(
+              long,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            onPressed: () {},
+          ),
+        ),
+      );
+      expect(tester.takeException(), isNull);
+      final Rect fab = tester.getRect(find.byType(FloatingActionButton));
+      final Rect text = tester.getRect(find.text(long));
+      final Rect icon = tester.getRect(find.byIcon(Icons.play_arrow));
+      expect(fab.width, lessThanOrEqualTo(280));
+      expect(text.left, greaterThanOrEqualTo(fab.left));
+      expect(text.right, lessThanOrEqualTo(fab.right));
+      expect(icon.left, greaterThanOrEqualTo(fab.left));
+      expect(
+        tester.renderObject<RenderParagraph>(find.text(long)).didExceedMaxLines,
+        isTrue,
+      );
+    });
+
+    testWidgets('扩展 FAB 短文字仍按内容收窄', (WidgetTester tester) async {
+      await pumpHost(
+        tester,
+        (_) => const SizedBox(),
+        fab: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 280),
+          child: FushiFab(
+            icon: const Icon(Icons.add),
+            label: const Text('New'),
+            onPressed: () {},
+          ),
+        ),
+      );
+      final Rect fab = tester.getRect(find.byType(FloatingActionButton));
+      expect(fab.width, lessThan(200));
+      final Rect text = tester.getRect(find.text('New'));
+      final Rect icon = tester.getRect(find.byIcon(Icons.add));
+      expect(text.left, greaterThan(icon.right));
+      expect(fab.height, 56);
     });
 
     testWidgets('Apple：强调色玻璃圆钮 50，无 FloatingActionButton / 尺寸档', (
