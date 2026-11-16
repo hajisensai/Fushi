@@ -183,6 +183,49 @@ void main() {
       expect(find.text(t.popup_advanced_mining_crop_no_model), findsNothing);
     });
 
+    testWidgets('截屏识字截图（反馈 mOe5HjBtuG）：不提分镜，「整页」叫「整张截图」', (
+      WidgetTester tester,
+    ) async {
+      await open(
+        tester,
+        host.capabilities(
+          deck: host.deck(),
+          manga: AdvancedMiningMangaImageSection(
+            loadPage: () async => null,
+            loadSuggestions: () async => const MangaCropSuggestions(
+              pageIndex: 0,
+              pageSize: Size(1200, 800),
+              textRect: Rect.fromLTRB(0.08, 0.12, 0.58, 0.38),
+              textAreaRect: Rect.fromLTRB(0.03, 0.05, 0.63, 0.45),
+            ),
+            panelModelAvailable: false,
+            source: AdvancedMiningCropSource.screenshot,
+          ),
+        ),
+      );
+      expect(find.byType(MangaCropSelector), findsOneWidget);
+      expect(find.text(t.popup_advanced_mining_crop_no_model), findsNothing);
+      expect(find.text(t.popup_advanced_mining_crop_panel), findsNothing);
+      expect(
+        find.text(t.popup_advanced_mining_crop_legend_panels),
+        findsNothing,
+      );
+      expect(find.text(t.popup_advanced_mining_crop_hint), findsNothing);
+      expect(
+        find.text(t.popup_advanced_mining_crop_hint_no_panels),
+        findsOneWidget,
+      );
+      expect(
+        find.text(t.popup_advanced_mining_crop_whole_screenshot),
+        findsOneWidget,
+      );
+      expect(find.text(t.popup_advanced_mining_crop_whole_page), findsNothing);
+      await confirm(tester);
+      final MiningImageCrop crop = host.confirms.single.crop!;
+      expect(crop.pageIndex, 0);
+      expect(crop.left, closeTo(0.03, 1e-9));
+    });
+
     testWidgets('漫画无模型：显示提示与下载入口，默认文字周围', (WidgetTester tester) async {
       await open(tester, host.mangaPage(modelAvailable: false));
       expect(find.text(t.popup_advanced_mining_crop_no_model), findsOneWidget);

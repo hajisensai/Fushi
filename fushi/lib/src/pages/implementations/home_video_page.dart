@@ -53,6 +53,7 @@ import 'package:fushi/src/pages/implementations/manual_download_task_dialog.dart
 import 'package:fushi/src/media/video/cover_ui/cover_orientation_builder.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:fushi/src/media/video/cover_ui/landscape_cover_image.dart';
+import 'package:fushi/src/media/video/cover_ui/video_frame_cover_picker.dart';
 import 'package:fushi/src/media/video/cover_ui/video_online_cover_picker.dart';
 import 'package:fushi/src/media/video/cover_ui/video_scrape_actions.dart';
 import 'package:fushi/src/media/video/cover_ui/video_specs_badges.dart';
@@ -4559,6 +4560,19 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
             _pickCover(book);
           },
         ),
+        // 从视频画面选封面（拍板 wb8RZZbn90）：紧跟「选择封面图片」，同一条手选落盘。
+        // 只对本地可抽帧的源出现（网络流 / .strm / 播放列表清单 / 蓝光分集虚拟路径
+        // 抽不了帧）。
+        if (isVideoFrameCoverPickableSource(book.videoPath))
+          DialogQuickAction(
+            label: t.video_cover_from_frame,
+            icon: Icons.photo_camera_back_outlined,
+            group: DialogActionGroup.organize,
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              unawaited(_pickFrameCover(book));
+            },
+          ),
         // 在线搜索封面（BUG-2999）：2026-08-23 把旧 Bangumi/TMDB 刮削链整条换成
         // canonical 资料源时，单集菜单的「在线匹配海报」随旧弹窗一起删了、没有
         // 接到新资料源上，设置封面从此只剩本地文件。这里接回到 AniDB / MAL /
@@ -5221,6 +5235,21 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       pickedPath: picked.path,
     );
     if (mounted) _refresh();
+  }
+
+  /// 从视频画面选封面：挑帧弹窗 → ffmpeg 截原尺寸帧 → 走与 [_pickCover] 同一条
+  /// [MediaCoverService.applyVideoCoverManual]（手选保护标记照记，批量刮削不覆盖）。
+  Future<void> _pickFrameCover(VideoBookRow book) async {
+    final bool applied = await pickAndApplyVideoFrameCover(
+      context: context,
+      videoPath: book.videoPath,
+      apply: (String framePath) => MediaCoverService.applyVideoCoverManual(
+        repo: widget.repo,
+        bookUid: book.bookUid,
+        pickedPath: framePath,
+      ),
+    );
+    if (applied && mounted) _refresh();
   }
 
   /// 「在线搜索封面」用的候选搜索：与「手动指定作品」同一条
