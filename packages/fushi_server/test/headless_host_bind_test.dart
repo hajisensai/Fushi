@@ -9,6 +9,7 @@ import 'package:fushi_server/src/server_paths.dart';
 import 'package:fushi_server/src/server_prefs.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
+import 'support/fake_rwkv.dart';
 
 /// 无头 `bind` 按配置精确监听（BUG：bind 配成具体地址或 ::1 仍监听全部网卡）。
 Future<bool> _hostHasIPv6Loopback() async {
@@ -50,6 +51,7 @@ Future<void> main() async {
     final ServerPaths paths = ServerPaths(config.dataDir);
     await paths.ensureLayout();
     final HeadlessHost h = HeadlessHost(
+      srsRwkvHttpClient: noNetworkHttpClient,
       config: config,
       paths: paths,
       db: db,

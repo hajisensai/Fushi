@@ -11,6 +11,8 @@ use std::sync::OnceLock;
 use fushi_rwkv::{
     MODEL_SHA256, ReviewInput, RwkvModel, SMALL_MODEL_ARCHITECTURE_SHA256, SMALL_MODEL_F32_SHA256,
     SMALL_MODEL_INT8_SHA256, SMALL_MODEL_VECTORS_SHA256, StatePrecision,
+    TINY_MODEL_ARCHITECTURE_SHA256, TINY_MODEL_F32_SHA256, TINY_MODEL_INT8_SHA256,
+    TINY_MODEL_VECTORS_SHA256,
 };
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
@@ -69,8 +71,26 @@ pub fn model_bytes() -> &'static [u8] {
     })
 }
 
-/// 小模型（sm72e25）的一个文件：`fetch_model.sh` / `fetch_model.ps1` 下载到 `model/` 的
-/// 文件名与钉死的 SHA-256。
+/// 哪个小模型：默认的 Small Instant-Only（sm98，"w64"）或省内存的 Tiny Instant-Only（sm101，"w64-c1"）。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum SmallModelId {
+    Sm98,
+    Sm101,
+}
+
+impl SmallModelId {
+    pub const ALL: [SmallModelId; 2] = [Self::Sm98, Self::Sm101];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Sm98 => "sm98",
+            Self::Sm101 => "sm101",
+        }
+    }
+}
+
+/// 小模型的一个文件：`fetch_model.sh` / `fetch_model.ps1` 下载到 `model/` 的文件名（`<模型>_…`）与钉死的
+/// SHA-256。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum SmallFile {
     Int8Weights,
@@ -80,40 +100,50 @@ pub enum SmallFile {
 }
 
 impl SmallFile {
-    pub fn file_name(self) -> &'static str {
+    pub fn file_name(self, model: SmallModelId) -> String {
+        let name = model.name();
         match self {
-            Self::Int8Weights => "sm72e25_weights.int8.bin",
-            Self::F32Weights => "sm72e25_weights.f32.bin",
-            Self::Architecture => "sm72e25_architecture.json",
-            Self::Vectors => "sm72e25-vectors.json.gz",
+            Self::Int8Weights => format!("{name}_weights.int8.bin"),
+            Self::F32Weights => format!("{name}_weights.f32.bin"),
+            Self::Architecture => format!("{name}_architecture.json"),
+            Self::Vectors => format!("{name}-vectors.json.gz"),
         }
     }
 
-    fn sha256(self) -> &'static str {
-        match self {
-            Self::Int8Weights => SMALL_MODEL_INT8_SHA256,
-            Self::F32Weights => SMALL_MODEL_F32_SHA256,
-            Self::Architecture => SMALL_MODEL_ARCHITECTURE_SHA256,
-            Self::Vectors => SMALL_MODEL_VECTORS_SHA256,
+    fn sha256(self, model: SmallModelId) -> &'static str {
+        match (model, self) {
+            (SmallModelId::Sm98, Self::Int8Weights) => SMALL_MODEL_INT8_SHA256,
+            (SmallModelId::Sm98, Self::F32Weights) => SMALL_MODEL_F32_SHA256,
+            (SmallModelId::Sm98, Self::Architecture) => SMALL_MODEL_ARCHITECTURE_SHA256,
+            (SmallModelId::Sm98, Self::Vectors) => SMALL_MODEL_VECTORS_SHA256,
+            (SmallModelId::Sm101, Self::Int8Weights) => TINY_MODEL_INT8_SHA256,
+            (SmallModelId::Sm101, Self::F32Weights) => TINY_MODEL_F32_SHA256,
+            (SmallModelId::Sm101, Self::Architecture) => TINY_MODEL_ARCHITECTURE_SHA256,
+            (SmallModelId::Sm101, Self::Vectors) => TINY_MODEL_VECTORS_SHA256,
         }
     }
 }
 
-/// 读小模型文件；缺失或 SHA-256 不符时失败（不跳过）。`FUSHI_RWKV_SMALL_DIR` 可指向别处的目录。
+/// 读默认小模型（sm98）的文件，见 [small_file_of]。
 pub fn small_file(file: SmallFile) -> &'static [u8] {
-    static FILES: OnceLock<std::sync::Mutex<HashMap<SmallFile, &[u8]>>> = OnceLock::new();
+    small_file_of(SmallModelId::Sm98, file)
+}
+
+/// 读小模型文件；缺失或 SHA-256 不符时失败（不跳过）。`FUSHI_RWKV_SMALL_DIR` 可指向别处的目录。
+pub fn small_file_of(model: SmallModelId, file: SmallFile) -> &'static [u8] {
+    type Files = HashMap<(SmallModelId, SmallFile), &'static [u8]>;
+    static FILES: OnceLock<std::sync::Mutex<Files>> = OnceLock::new();
     let mut files = FILES.get_or_init(Default::default).lock().unwrap();
-    files.entry(file).or_insert_with(|| {
+    files.entry((model, file)).or_insert_with(|| {
         let dir = match std::env::var_os("FUSHI_RWKV_SMALL_DIR") {
             Some(dir) => PathBuf::from(dir),
             None => PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("model"),
         };
-        let path = dir.join(file.file_name());
+        let path = dir.join(file.file_name(model));
         let bytes = std::fs::read(&path).unwrap_or_else(|error| {
             panic!(
-                "small RWKV model file not found at {} ({error}).\n\
-                 Run native/fushi_rwkv/fetch_model.sh (or fetch_model.ps1 on Windows) first, \
-                 or point FUSHI_RWKV_SMALL_DIR at a directory holding it.",
+                "small RWKV model file not found at {} ({error}).
+                 Run native/fushi_rwkv/fetch_model.sh (or fetch_model.ps1 on Windows) first,                  or point FUSHI_RWKV_SMALL_DIR at a directory holding it.",
                 path.display()
             )
         });
@@ -123,7 +153,7 @@ pub fn small_file(file: SmallFile) -> &'static [u8] {
             .collect();
         assert_eq!(
             hex,
-            file.sha256(),
+            file.sha256(model),
             "small RWKV model file {} has the wrong SHA-256; re-run fetch_model.sh / fetch_model.ps1",
             path.display()
         );

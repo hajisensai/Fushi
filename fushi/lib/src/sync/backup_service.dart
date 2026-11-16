@@ -11,7 +11,7 @@ import 'package:fushi_engine/media/video/video_member_file.dart';
 import 'package:fushi_engine/media/override_title_key.dart';
 import 'package:fushi_engine/utils/archive/native_zip.dart';
 import 'package:fushi_engine/media/video/strm_file.dart'
-    show isNetworkOnlyVideoPath;
+    show isNetworkOnlyVideoPath, kSourceLibrarySftpScheme;
 import 'package:fushi/src/models/local_audio_manager.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/sync/backup_merge_engine.dart';
@@ -29,6 +29,7 @@ import 'package:path/path.dart' as p;
 import 'package:sqlite3/sqlite3.dart' as sqlite;
 import 'package:fushi_engine/media/video/anime_source_video_path.dart';
 import 'package:fushi/src/sync/backup_path_rebase.dart';
+import 'package:fushi/src/storage/download_layout.dart';
 
 part 'backup_service/fs_retry.part.dart';
 part 'backup_service/path_rebase.part.dart';
@@ -136,6 +137,51 @@ enum BackupCategory {
   /// SRS 是默认关闭的模块：本机没有 SRS 数据（无用户笔记、媒体目录为空）时，导出 /
   /// 导入界面都不显示这一项（见 [BackupContentSummary.present]）。
   srs,
+}
+
+/// 覆盖前快照（`BackupRestoreService.overwriteSnapshotPath`）的预览：快照文件本身
+/// 与其中「当前库没有」的书（BUG-4701）。
+class OverwriteSnapshotPreview {
+  const OverwriteSnapshotPreview({
+    required this.path,
+    required this.sizeBytes,
+    required this.modifiedAt,
+    required this.missingBooks,
+    required this.missingVideoCount,
+  });
+
+  final String path;
+  final int sizeBytes;
+
+  /// 快照文件的修改时刻（= 被覆盖前主库最后一次写入，约等于覆盖导入的时刻）。
+  final DateTime modifiedAt;
+
+  /// 快照里有、当前库没有（也没被删除墓碑挡住）的书。
+  final List<OverwriteSnapshotBook> missingBooks;
+
+  /// 快照里有、当前库没有、且本机还能播放的视频条数。
+  final int missingVideoCount;
+
+  /// 书文件已不在盘上的书（恢复后书库行回来了，但打不开，需要重新导入）。
+  List<OverwriteSnapshotBook> get booksWithoutFiles => <OverwriteSnapshotBook>[
+    for (final OverwriteSnapshotBook b in missingBooks)
+      if (!b.filesPresent) b,
+  ];
+}
+
+/// 覆盖前快照里的一本书。
+class OverwriteSnapshotBook {
+  const OverwriteSnapshotBook({
+    required this.bookKey,
+    required this.title,
+    required this.filesPresent,
+  });
+
+  final String bookKey;
+  final String title;
+
+  /// 书目录（`extract_dir`）还在盘上。
+  final bool filesPresent;
 }
 
 class BackupMeta {
@@ -345,6 +391,14 @@ const String _dictionaryResourcesPrefix = 'dictionaryResources';
 /// Hibiki 归档（前缀 `hoshi_books`）做 legacy 回退（Never break userspace，
 /// 同 [_dbName] 的 `_findDbEntry` 先例）。
 const String _booksPrefix = 'fushi_books';
+
+/// 在线漫画书目录的归档前缀：`download_manga/<bookKey>/<书目录内相对路径>`。
+///
+/// 在线漫画住在下载根 `<下载根>/manga/<bookKey>`（不在书库根下，下载根还可能是
+/// 用户自选的外置目录），书库树打包碰不到它们。单独一个前缀、按 bookKey 分目录，
+/// 恢复时落进**本机**当前下载根的 manga 域（[DownloadRoot]），与源设备的下载根在哪
+/// 无关。归档前缀是持久化名，冻结。
+const String _downloadMangaPrefix = 'download_manga';
 
 /// 旧 Hibiki 时代备份/迁移归档的书树前缀（W2-7 读侧回退输入；旧字面量只
 /// 允许活在读旧归档的回退里）。
@@ -1578,6 +1632,14 @@ class BackupService {
           );
         }
       }
+      if (includeBooks) {
+        await _collectDownloadMangaFiles(
+          bookKeys,
+          books,
+          _booksRootDirectory,
+          files,
+        );
+      }
       if (_audiobooksRootDirectory != null &&
           wants(BackupCategory.audiobooks)) {
         await _collectTreeFiles(
@@ -2127,6 +2189,36 @@ class BackupService {
           rootNorm,
           into,
         );
+      }
+    }
+  }
+
+  /// 打包下载根里的在线漫画书目录（[_downloadMangaPrefix]）。只收书目录形如
+  /// `<某个下载根>/manga/<bookKey>`（[DownloadLayout.isMangaBookDirectory]）且不在
+  /// 书库根下的行——还在 `fushi_books` 里的旧条目已随书库树打包。[bookKeys] 非空时
+  /// 只收选中的书（按书导出）。
+  static Future<void> _collectDownloadMangaFiles(
+    Set<String>? bookKeys,
+    List<EpubBookRow> allBooks,
+    String? booksRootDirectory,
+    Map<String, String> into,
+  ) async {
+    final String? rootNorm = booksRootDirectory?.replaceAll(r'\', '/');
+    for (final EpubBookRow b in allBooks) {
+      if (bookKeys != null && !bookKeys.contains(b.bookKey)) continue;
+      if (!DownloadLayout.isMangaBookDirectory(b.extractDir, b.bookKey)) {
+        continue;
+      }
+      if (rootNorm != null && _isUnderRoot(b.extractDir, rootNorm)) continue;
+      final Directory dir = Directory(b.extractDir);
+      if (!await dir.exists()) continue;
+      await for (final FileSystemEntity entity in dir.list(recursive: true)) {
+        if (entity is! File) continue;
+        final String relative = p
+            .relative(entity.path, from: b.extractDir)
+            .replaceAll(r'\', '/');
+        into[p.posix.join(_downloadMangaPrefix, b.bookKey, relative)] =
+            entity.path;
       }
     }
   }
