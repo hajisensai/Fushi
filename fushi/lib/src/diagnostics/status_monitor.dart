@@ -18,7 +18,6 @@
 import 'dart:async';
 import 'dart:collection';
 import 'dart:io';
-import 'dart:ui' show FrameTiming;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart' show ImageCache, PaintingBinding;

@@ -1,6 +1,5 @@
 import 'dart:io';
 
-import 'package:flutter/painting.dart' show ImageCache;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/diagnostics/process_cpu_time.dart';
