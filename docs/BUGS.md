@@ -33,15 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4049 条。点号进各自文件。
+> 共 4071 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4695](bugs/BUG-4695-onboarding-music-module.md) | ✅ | ✅ | 新手引导的功能模块方格没有音乐，向导既不出方格也不写 module_music_enabled |
-> 共 4070 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4714](bugs/BUG-4714-onboarding-music-module.md) | ✅ | ✅ | 新手引导的功能模块方格没有音乐，向导既不出方格也不写 module_music_enabled |
 | [BUG-4713](bugs/BUG-4713-popup-bottom-dock-per-module.md) | ✅ | ✅ | 底部停靠删掉「仅在小说中」特例，改为每个模块独立可选 |
 | [BUG-4712](bugs/BUG-4712-fushiplug-drag-import.md) | ✅ | ✅ | .fushiplug 插件包拖进插件管理 / 音源 / 歌词来源 / 追踪插件页毫无反应，只能走文件选择器 |
 | [BUG-4711](bugs/BUG-4711-ext-youtube-caption-default-wrong-lang.md) | ✅ | ✅ | 扩展 YouTube 默认挂无关语言的字幕轨；手动选的轨取不到时永远停在「选中加载」 |
