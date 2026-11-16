@@ -116,6 +116,11 @@ extension _ReaderNavigation on _ReaderFushiPageState {
       _restoreCompleter!.complete(true);
     }
     _restoreCompleter = null;
+    // 墨水屏全刷：翻页跨章到这里新章才真正落定，这一刻才计这一页。
+    if (_einkTurnPendingOnContentReady) {
+      _einkTurnPendingOnContentReady = false;
+      _noteEinkPageTurn();
+    }
     // 文字领读：恢复期间的换屏上报被丢弃（见 _onTextLeadsScreenCues），落定后补报
     // 最终停住的那一屏。
     if (_audiobookController?.textLeads ?? false) {
@@ -531,6 +536,7 @@ extension _ReaderNavigation on _ReaderFushiPageState {
           viewMode: _settings?.viewMode,
           effect: _effectivePageTurnAnimation,
         );
+    _einkTurnPendingOnContentReady = _navigationFromPageTurn;
     _navigationFromPageTurn = false;
     // TODO-718 重设计：删除 _continuousSettleGuardArmed 武装——非自愿 reflow 归零判据已改无状态
     // （直接看 fromUserScroll），不再需要「导航武装/用户滚动解武装」状态机。
@@ -1222,6 +1228,14 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     if (snapshot == null) return;
     _rebuild(() => _chapterTransitionSnapshot = null);
     unawaited(snapshot.evict());
+  }
+
+  /// 墨水屏「每 N 页全刷」的计数入口（`EinkFullRefreshController.notePageTurn`）。
+  /// 分页 / 视觉小说：每次章内实际翻页（[_paginateStep]）与翻页跨章落定
+  /// （[_onRestoreComplete]）各计一次；连续滚动：JS 每滚过一屏回传一次
+  /// `onEinkScrollPage`。
+  void _noteEinkPageTurn() {
+    appModel.einkFullRefresh.notePageTurn();
   }
 
   void _handlePageTurnLimit(String direction) {

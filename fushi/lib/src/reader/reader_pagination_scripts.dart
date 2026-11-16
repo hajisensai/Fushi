@@ -4031,6 +4031,21 @@ $kSentenceAudioRubyGapJs
     this.__selectionViewportScroll = position;
     if (typeof previous === 'number' && position !== previous) {
       this._clearSelectionOnViewportChange();
+      this._noteEinkScroll(previous, position);
+    }
+  },
+  // 墨水屏「每 N 页全刷」：连续模式没有「翻页」这个动作，按内容轴累计滚过的距离，
+  // 每满一屏回传一次 onEinkScrollPage（Dart 计一页）。一次事件最多算一页：恢复 / 跳转
+  // 这类大跳只是一次换屏，不是翻了几十页。恢复在飞期间的回传由 Dart 侧丢弃。
+  _noteEinkScroll: function(previous, position) {
+    var extent = this.isVertical() ? window.innerWidth : window.innerHeight;
+    if (!(extent > 0)) return;
+    this.__einkScrollAccum =
+      (this.__einkScrollAccum || 0) + Math.abs(position - previous);
+    if (this.__einkScrollAccum < extent) return;
+    this.__einkScrollAccum = 0;
+    if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
+      try { window.flutter_inappwebview.callHandler('onEinkScrollPage'); } catch (e) {}
     }
   },
   _writeContinuousScroll: function(pos) {

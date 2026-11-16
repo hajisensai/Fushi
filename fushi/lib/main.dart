@@ -182,6 +182,7 @@ import 'package:fushi/src/platform/engine_deep_link_route_guard.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
 import 'package:fushi/src/floating_ball/app_floating_ball_host.dart';
+import 'package:fushi/src/reader/eink_full_refresh.dart';
 import 'package:fushi/src/feedback/crash_report.dart';
 import 'package:fushi/src/feedback/feedback_service.dart'
     show feedbackServiceProvider;
@@ -3464,6 +3465,11 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                                   const FloatingLyricLookupHost(),
                                   // galgame Hook 浮窗（native 窗口）跟随 app 主题。
                                   const GalHookOverlayThemeSync(),
+                                  // 墨水屏「每 N 页全刷」的黑屏闪刷：最顶层，盖住
+                                  // 悬浮球等一切浮层（整屏都要刷），平时为空且不吃指针。
+                                  EinkFullRefreshHost(
+                                    controller: appModel.einkFullRefresh,
+                                  ),
                                 ],
                               ),
                             ),

@@ -213,6 +213,7 @@ import 'package:fushi/src/dictionary/dict_resource_materializer.dart';
 import 'package:fushi/src/dictionary/dict_style_rules.dart';
 import 'package:fushi/src/dictionary/transform_description_locale.dart';
 import 'package:fushi/src/reader/dictionary_style_css.dart';
+import 'package:fushi/src/reader/eink_full_refresh.dart';
 import 'package:fushi/src/reader/reader_control_layout.dart';
 import 'package:fushi/src/media/manga/reader/manga_control_layout.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
@@ -5934,6 +5935,28 @@ class AppModel
   /// 墨水屏模式（E-ink）：全局纯黑白主题 + 关动画 + 阅读器/弹窗高对比。
   bool get einkMode => themeNotifier.einkMode;
   Future<void> setEinkMode(bool value) => themeNotifier.setEinkMode(value);
+
+  /// 墨水屏「每 N 页全刷」间隔（0 = 关）。偏好层未就绪（精简初始化 / 测试
+  /// harness）时回落「关」——阅读器翻页计数绝不能因为偏好没加载而崩。
+  int get einkFullRefreshInterval =>
+      _prefsRepo?.einkFullRefreshInterval ?? kEinkFullRefreshIntervalDefault;
+  Future<void> setEinkFullRefreshInterval(int value) =>
+      prefsRepo.setEinkFullRefreshInterval(value);
+
+  /// 墨水屏全刷方式（自动 = 设备厂商全刷优先，否则黑屏闪刷）。
+  EinkFullRefreshMethod get einkFullRefreshMethod =>
+      _prefsRepo?.einkFullRefreshMethod ?? EinkFullRefreshMethod.auto;
+  Future<void> setEinkFullRefreshMethod(EinkFullRefreshMethod method) =>
+      prefsRepo.setEinkFullRefreshMethod(method);
+
+  /// 全 app 唯一的全刷计数器：小说 / 漫画阅读器翻页时调 `notePageTurn`，根
+  /// Stack 顶层的 [EinkFullRefreshHost] 画黑屏闪刷。设置每次翻页现读。
+  late final EinkFullRefreshController einkFullRefresh =
+      EinkFullRefreshController(
+        settings: () =>
+            (interval: einkFullRefreshInterval, method: einkFullRefreshMethod),
+        device: AndroidEinkRefresh.instance,
+      );
 
   /// 功能层表面材质（导航 / 底部弹层 / 对话框的毛玻璃），与颜色主题正交。
   FushiGlassMaterial get glassMaterial => themeNotifier.glassMaterial;

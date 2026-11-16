@@ -4893,6 +4893,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 模型一页几十秒、读者翻得比识别快，不改道的话翻到的页永远还没轮到，体感就是
   /// 「要等整卷识别完才能查词」。
   void _onReaderPageChanged() {
+    // 墨水屏「每 N 页全刷」：当前页每变一次计一页（单页 / 双页 / 条漫滚过一页同一口径）。
+    appModel.einkFullRefresh.notePageTurn();
     _observedOcrJob?.focusPage(_pageNotifier.value);
     _streamOcr?.focus(_pageNotifier.value);
     _companion.publishNow();
