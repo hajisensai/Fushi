@@ -293,6 +293,7 @@
   "mine_queued_generate_later": "Clique no botão de mineração da extensão para gerar todos",
   "mine_no_cue": "Nenhuma linha de legenda atual encontrada, tente de novo em instantes",
   "mine_enqueue_failed": "Não foi possível adicionar à fila",
+  "mine_enqueue_context_invalidated": "Não foi possível adicionar à fila: a extensão foi atualizada, recarregue a página (F5) e tente novamente",
   "mine_failed": "Falha na mineração",
   "mine_done": "Cartão criado",
   "mine_duplicate_exists": "Já existe um cartão para esta palavra",

@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4103 条。点号进各自文件。
+> 共 4104 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4747](bugs/BUG-4747-ext-mining-queue-persist.md) | ✅ | ✅ | 浏览器扩展制卡入队提示成功但队列没真正落盘，攒到十几条后丢卡 |
 | [BUG-4746](bugs/BUG-4746-reader-ruby-snap-covered-char.md) | ✅ | ✅ | 小说查词：义训 ruby 段内靠后的字（じょうろ鼬 的鼬）点不到 |
 | [BUG-4745](bugs/BUG-4745-lyrics-margin-left-right-swapped.md) | ✅ | ✅ | 歌词模式横排左右边距写反 |
 | [BUG-4744](bugs/BUG-4744-android-exit-fgs-trim-background.md) | ✅ | ✅ | android-exit-fgs-trim-background |
