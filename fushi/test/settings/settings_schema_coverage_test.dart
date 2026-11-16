@@ -397,6 +397,9 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 默认受「加来源分类标签」门控 disabled，harness 驱动不动属预期。
   'cardCreation/Nest title tags under the category tag':
       '../packages/fushi_anki/test/note_tags_nested_title_test.dart',
+  // 连续收听提醒的间隔档位：默认受「连续收听提醒」开关门控 disabled，harness 驱动不动属
+  // 预期；生效点（档位改了对正在进行的这一轮立即生效、档位外存值归档）由单测守。
+  'general/Remind after': 'test/media/listening_reminder_test.dart',
   // 句子音频来源：生效点在制卡 ffmpeg 抽音参数（中置声道 pan 滤镜 / 音轨选择）。
   'cardCreation/Sentence audio source':
       'test/mining/sentence_audio_source_test.dart',

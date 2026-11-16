@@ -156,13 +156,29 @@ class ListeningReminderService {
     }
   }
 
+  /// 单次采样间隔里能按「采样那一刻在不在播」计入的上限。正常节拍下间隔约等于 [tick]；
+  /// 应用被挂起 / 冷冻 / 机器休眠后补发的那次 tick 间隔可能是几小时，那段时间里到底
+  /// 播没播无从得知，只有最近这一小段能认采样值。
+  Duration get _maxCreditedGap => tick * 2;
+
   void _sample() {
     final DateTime now = _clock();
     final DateTime last = _lastSample ?? now;
     _lastSample = now;
+    final Duration gap = now.difference(last);
+    final Duration cap = _maxCreditedGap;
+    if (gap > cap) {
+      // 超出上限的部分当成「歇过了」（挂起期间进程没在跑，不能凭唤醒那一刻在播
+      // 就把几小时算成连续收听），满 breakDuration 即清零；剩下的 cap 按采样值计。
+      _tracker.record(
+        playing: false,
+        elapsed: gap - cap,
+        threshold: threshold(),
+      );
+    }
     final bool fire = _tracker.record(
       playing: isPlaying(),
-      elapsed: now.difference(last),
+      elapsed: gap > cap ? cap : gap,
       threshold: threshold(),
     );
     if (fire) unawaited(onReminder());

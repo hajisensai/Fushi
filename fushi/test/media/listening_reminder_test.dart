@@ -201,6 +201,63 @@ void main() {
       });
     });
 
+    test('a huge gap after suspension is not credited as listening', () {
+      fakeAsync((FakeAsync fake) {
+        settings
+          ..enabled = true
+          ..minutes = 60;
+        // 时钟可额外前跳：模拟应用被挂起几小时、计时器没触发，唤醒后补发一次 tick。
+        Duration jump = Duration.zero;
+        final ListeningReminderService service = ListeningReminderService(
+          enabled: () => settings.enabled,
+          threshold: () => Duration(minutes: settings.minutes),
+          isPlaying: () => playing,
+          onReminder: () async => reminders++,
+          settings: settings,
+          clock: () => fake.getClock(DateTime(2026, 11, 16)).now().add(jump),
+        )..start();
+        fake.elapse(const Duration(minutes: 10));
+        expect(service.listened, const Duration(minutes: 10));
+        jump = const Duration(hours: 5);
+        fake.elapse(kListeningReminderTick);
+        // 几小时不计入：挂起部分按休息清零，只认最近 2×tick。
+        expect(reminders, 0);
+        expect(service.listened, kListeningReminderTick * 2);
+        // 之后正常节拍照常累计，满 60 分钟才提醒。
+        fake.elapse(const Duration(minutes: 58));
+        expect(reminders, 0);
+        fake.elapse(const Duration(minutes: 1));
+        expect(reminders, 1);
+        service.dispose();
+      });
+    });
+
+    test('a gap shorter than the break keeps the earlier count', () {
+      fakeAsync((FakeAsync fake) {
+        settings
+          ..enabled = true
+          ..minutes = 60;
+        Duration jump = Duration.zero;
+        final ListeningReminderService service = ListeningReminderService(
+          enabled: () => settings.enabled,
+          threshold: () => Duration(minutes: settings.minutes),
+          isPlaying: () => playing,
+          onReminder: () async => reminders++,
+          settings: settings,
+          clock: () => fake.getClock(DateTime(2026, 11, 16)).now().add(jump),
+        )..start();
+        fake.elapse(const Duration(minutes: 10));
+        // 多出 2 分钟（< 5 分钟休息）：超出部分不算收听，也不清零。
+        jump = const Duration(minutes: 2);
+        fake.elapse(kListeningReminderTick);
+        expect(
+          service.listened,
+          const Duration(minutes: 10) + kListeningReminderTick * 2,
+        );
+        service.dispose();
+      });
+    });
+
     test('dispose stops the timer', () {
       fakeAsync((FakeAsync fake) {
         settings
