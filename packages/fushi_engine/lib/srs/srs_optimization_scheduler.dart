@@ -211,7 +211,7 @@ class SrsOptimizationScheduler {
       final String? setRev = owner
           .paramSetFor(owner.localAlgorithm)
           ?.algorithmRev;
-      final bool knownRev = setRev == null || setRev == rev;
+      final bool knownRev = setRev == null || engine.isKnownFsrsRev(setRev);
       final (int nowMs, _) = store.now();
       final bool due = force
           ? input.reviewCount > 0 && knownRev

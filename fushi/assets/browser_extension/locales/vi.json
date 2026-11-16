@@ -293,6 +293,7 @@
   "mine_queued_generate_later": "Nhấn nút khai thác thẻ trong tiện ích mở rộng để tạo tất cả",
   "mine_no_cue": "Không tìm thấy dòng phụ đề hiện tại, thử lại sau giây lát",
   "mine_enqueue_failed": "Không thể thêm vào hàng đợi",
+  "mine_enqueue_context_invalidated": "Không thể thêm vào hàng đợi: tiện ích đã được cập nhật, hãy tải lại trang (F5) rồi thử lại",
   "mine_failed": "Khai thác thẻ thất bại",
   "mine_done": "Đã tạo thẻ",
   "mine_duplicate_exists": "Đã có thẻ cho từ này",

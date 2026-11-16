@@ -391,9 +391,11 @@ void main() {
       mining,
       contains('CardSourceLink.isContentAddressedVideoUid(sourceUid)'),
     );
+    // 本地字节核验只在链接带指纹时做（拍板台 IFCPPprIpT 把它挪到远端回退之前）；
+    // 无指纹的在线内容链接跳过本地字节核验。
     expect(
       router,
-      contains('if (video != null && link.fingerprint != null) {'),
+      contains('if (localVideo != null && link.fingerprint != null) {'),
     );
     expect(
       video,

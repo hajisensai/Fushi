@@ -384,15 +384,23 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
     }
     final WebAdblockService adblock = ref.read(webAdblockServiceProvider);
     final WebAdblockNetworkMode mode = currentWebAdblockNetworkMode;
-    final Future<void> loading = adblock.ensureLoaded().catchError((
-      Object e,
-      StackTrace s,
-    ) {
-      ErrorLogService.instance.log('WebBrowserTabView.adblockLoad', e, s);
-    });
-    // contentBlockers 平台（iOS / macOS）的规则在 WebView 创建时固化：等引擎就绪
-    // 再建，否则这一页整页不拦。逐请求平台后台加载即可。
-    if (mode == WebAdblockNetworkMode.contentBlockers) await loading;
+    void logLoadError(Object e, StackTrace s) =>
+        ErrorLogService.instance.log('WebBrowserTabView.adblockLoad', e, s);
+    // ensureLoaded 内部先暖机（磁盘缓存 → 内存引擎，不联网），再按需联网刷新过期列表。
+    final Future<void> loading = adblock.ensureLoaded().catchError(
+      logLoadError,
+    );
+    // 所有平台都先等缓存引擎进内存（本地反序列化，不等网络）：逐请求 / 仅 cosmetic 平台
+    // 首页的子资源请求与 documentStart 取的 cosmetic 都发生在建 WebView 之后，引擎空着
+    // 整页就不拦；contentBlockers 平台（iOS / macOS）暖机时已按缓存装好规则列表。
+    await adblock.ensureEngineWarm().catchError(logLoadError);
+    if (mode == WebAdblockNetworkMode.contentBlockers &&
+        adblock.contentRuleListIdentifier == null) {
+      // contentBlockers 平台的规则在 WebView 创建时固化：没有缓存可暖（首装 / 暖机失败）
+      // 时只能等联网同步装好规则再建，否则这一页整页不拦。
+      await loading;
+    }
+    // 其余情况联网刷新留在后台，不等。
     _sharedEnvironment = environment;
     _sharedDefaultUserAgent = _defaultUserAgent;
     _sharedReady = true;
