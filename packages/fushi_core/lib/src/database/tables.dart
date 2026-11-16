@@ -3664,7 +3664,8 @@ abstract final class MangaDownloadJobStatus {
   static const String paused = 'paused';
 }
 
-/// 漫画章节 / mokuro 卷的下载任务队列（schema v103，device-local）。
+/// 漫画章节 / mokuro 卷的下载任务队列（schema v103，device-local；v155 状态值域加
+/// `paused`）。
 ///
 /// 设计稿 `docs/specs/2026-09-12-manga-download-first-design.md` §2.2。
 /// 在线漫画改成「先下载再读」后，每个待下载的章（或 mokuro.moe 卷）在这里占
@@ -3728,7 +3729,7 @@ class MangaDownloadJobs extends Table {
         "AND runtime != '')",
     "CHECK (kind IN ('chapter', 'mokuro_volume'))",
     "CHECK (status IN ('queued', 'running', 'done', 'failed', "
-        "'cancelled'))",
+        "'cancelled', 'paused'))",
     'CHECK (pages_done >= 0 AND pages_total >= 0 '
         'AND pages_done <= pages_total)',
     'CHECK (attempt_count >= 0)',
