@@ -3687,6 +3687,25 @@ const DICT_SANDBOX_HELPER_JS = `(function () {
     var target = event.target && event.target.nodeType === 3 ? event.target.parentElement : event.target;
     return target && target.closest ? target.closest('a[href]') : null;
   }
+  // caretRangeFromPoint 给的是离点最近的字间缝：点在字的右半边，偏移已经指向下一个字
+  // （BUG-4747，点「訪」查成「問」）。与 selection.js getCharacterAtPoint 同一判据：在
+  // caret、caret-1、caret+1 里取字框真包含这一点的那个字；都不包含就不算点中字。
+  function hitOffset(node, caret, x, y) {
+    var probe = document.createRange();
+    var order = [caret, caret - 1, caret + 1];
+    for (var i = 0; i < order.length; i++) {
+      var offset = order[i];
+      if (offset < 0 || offset >= node.data.length) continue;
+      probe.setStart(node, offset);
+      probe.setEnd(node, offset + 1);
+      var rects = probe.getClientRects();
+      for (var j = 0; j < rects.length; j++) {
+        var r = rects[j];
+        if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return offset;
+      }
+    }
+    return -1;
+  }
   function isSoundLink(anchor) {
     return /^sound:/i.test((anchor.getAttribute('href') || '').trim());
   }
@@ -3716,8 +3735,8 @@ const DICT_SANDBOX_HELPER_JS = `(function () {
     var range = document.caretRangeFromPoint(event.clientX, event.clientY);
     if (!range || range.startContainer.nodeType !== 3) return;
     var data = range.startContainer.data;
-    var start = range.startOffset;
-    if (start >= data.length) return;
+    var start = hitOffset(range.startContainer, range.startOffset, event.clientX, event.clientY);
+    if (start < 0) return;
     if (!isJapanese(data.charCodeAt(start))) {
       while (start > 0 && !stop.test(data[start - 1])) start--;
     }

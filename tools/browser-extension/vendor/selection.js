@@ -288,6 +288,69 @@ window.fushiSelection = {
         });
     },
 
+    // ---- 逐字几何命中的坐标系（BUG-4747）----
+    // 事件 clientX/Y、caret API、elementFromPoint 用的都是客户区坐标。Range / Element 的
+    // getClientRects 在实现了标准化 CSS zoom 的引擎里（Blink、Firefox、2025-10 起开启
+    // GetBoundingClientRectZoomedEnabled 的 WebKit）也是这一套；更早的 WebKit（macOS / iOS
+    // 上旧系统的 WKWebView）却按节点自身的有效 CSS zoom 再除一遍：
+    //     rect = (client + scroll) / zoom − scroll
+    // 弹窗把「界面大小 × 词典字号」写成 documentElement.style.zoom，zoom ≠ 1 时拿客户区
+    // 的点去比缩过的字框，点「昼」命中「間」、点「訪」命中「問」，或者干脆落空。
+    // 命中前先把点换进字框所在的坐标系；引擎属于哪一种只探测一次。
+    clientRectsZoomed() {
+        if (typeof this.rectsZoomed === 'boolean') return this.rectsZoomed;
+        const parent = document.body || document.documentElement;
+        if (!parent || typeof document.createElement !== 'function') return true;
+        // 同一父节点下两个 100px 宽的探针，一个 zoom:1、一个 zoom:2：字框随 zoom 缩放的引擎
+        // 量出 2 倍宽，旧 WebKit 量出一样宽。比的是两者之比，祖先 zoom 两边抵消。
+        const make = (zoom) => {
+            const probe = document.createElement('div');
+            probe.setAttribute('aria-hidden', 'true');
+            probe.style.cssText = 'position:absolute;left:0;top:0;width:100px;height:1px;' +
+                `visibility:hidden;pointer-events:none;zoom:${zoom};`;
+            return probe;
+        };
+        const plain = make(1);
+        const zoomed = make(2);
+        let ratio = NaN;
+        parent.appendChild(plain);
+        parent.appendChild(zoomed);
+        try {
+            ratio = zoomed.getBoundingClientRect().width / plain.getBoundingClientRect().width;
+        } finally {
+            parent.removeChild(plain);
+            parent.removeChild(zoomed);
+        }
+        // 量不出（父节点不渲染）就按标准坐标处理、下次再探，不把猜测写进缓存。
+        if (!Number.isFinite(ratio) || ratio <= 0) return true;
+        this.rectsZoomed = Math.abs(ratio - 1) > 0.25;
+        return this.rectsZoomed;
+    },
+
+    // [node] 的字框相对客户区坐标被除掉的倍数：标准引擎恒为 1；旧 WebKit 是节点到根
+    // （跨 shadow 宿主）一路 CSS zoom 的乘积（zoom 不继承，computed 值就是各自写的那个）。
+    rectSpaceZoom(node) {
+        if (this.clientRectsZoomed()) return 1;
+        let zoom = 1;
+        let el = node?.nodeType === Node.ELEMENT_NODE ? node : node?.parentElement;
+        for (let guard = 0; el && guard < 512; guard++) {
+            const value = parseFloat(window.getComputedStyle?.(el)?.zoom);
+            if (Number.isFinite(value) && value > 0) zoom *= value;
+            el = el.parentElement || el.getRootNode?.()?.host || null;
+        }
+        return zoom;
+    },
+
+    // 客户区坐标的点 (x, y) 换到 [node] 字框所在的坐标系，交给 inCharRange 比较。
+    pointInRectSpace(node, x, y) {
+        const zoom = this.rectSpaceZoom(node);
+        if (zoom === 1) return { x, y };
+        const scrollX = window.scrollX || 0;
+        const scrollY = window.scrollY || 0;
+        return { x: (x + scrollX) / zoom - scrollX, y: (y + scrollY) / zoom - scrollY };
+    },
+
+    // (x, y) 必须已在字框坐标系里（pointInRectSpace）。
     inCharRange(charRange, x, y) {
         const rects = charRange.getClientRects();
         if (rects.length) {
@@ -325,10 +388,11 @@ window.fushiSelection = {
         let node;
         while (node = walker.nextNode()) {
             const len = node.textContent.length;
+            const point = this.pointInRectSpace(node, x, y);
             for (let i = 0; i < len; i++) {
                 range.setStart(node, i);
                 range.setEnd(node, i + 1);
-                if (this.inCharRange(range, x, y)) {
+                if (this.inCharRange(range, point.x, point.y)) {
                     range.collapse(true);
                     return range;
                 }
@@ -537,13 +601,14 @@ window.fushiSelection = {
 
         const text = node.textContent;
         const caret = range.startOffset;
+        const point = this.pointInRectSpace(node, x, y);
 
         for (const offset of [caret, caret - 1, caret + 1]) {
             if (offset < 0 || offset >= text.length) continue;
             const charRange = document.createRange();
             charRange.setStart(node, offset);
             charRange.setEnd(node, offset + 1);
-            if (this.inCharRange(charRange, x, y)) {
+            if (this.inCharRange(charRange, point.x, point.y)) {
                 if (this.isScanBoundary(text[offset])) return null;
                 return { node, offset };
             }
@@ -763,7 +828,9 @@ window.fushiSelection = {
         range.setStart(first.node, first.start);
         range.setEnd(first.node, first.start + 1);
         const rects = Array.from(range.getClientRects());
-        const rect = rects.find(r => x >= r.left && x <= r.right && y >= r.top && y <= r.bottom)
+        const point = this.pointInRectSpace(first.node, x, y);
+        const rect = rects.find(r => point.x >= r.left && point.x <= r.right &&
+                point.y >= r.top && point.y <= r.bottom)
             ?? range.getBoundingClientRect();
         return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
     },
