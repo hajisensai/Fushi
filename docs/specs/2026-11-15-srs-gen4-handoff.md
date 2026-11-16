@@ -103,8 +103,8 @@
 | `refresh_caches` / `rebuild_caches` | 写 | `caches.rs` `refresh` / `rebuild` | 部分：`ingest.rs:ingest_settle` / `derive.rs:Index::rebuild_all` | S1 | 已接（`Settle::Incremental` / `Rebuild`），回包 `{settled}` |
 | `backfill_dupe_norms` / `backfill_tag_sources` / `backfill_source_keys` | 写 | `caches.rs` | 不需要（新代缓存层建行时就算全列） | G7-6 删 | 已删（报 `gen4: removed`）；实现 G7-6 删 |
 | `edits_rewrite_repr` | 写 | `repr_rewrite.rs` | 不需要（存量样式去重是协议 3 存储表示的事） | G7-6 删 | 已删（报 `gen4: removed`）；实现 G7-6 删 |
-| `media_gc_queue` / `media_gc_collect` | 写 | `media_gc.rs` | 缺 | 建议 S1：待回收集合是本机状态键、核对存活引用读缓存层，形状不变；新代存哪（`srs_meta` 键）要定 | 未接线（报 `gen4: not wired yet`），归 S1 后续（媒体回收） |
-| `media_live_refs` | 读 | `media_gc.rs` `live_refs` | 缺 | 同上 | 未接线（报 `gen4: not wired yet`），归 S1 后续（媒体回收） |
+| `media_gc_queue` / `media_gc_collect` | 写 | `media_gc.rs`（逐名规则抽成 `sweep` / `CollectArgs` / `add_names`，两代共用） | `cmd/media_gc.rs:queue` / `collect` | S1b：待回收集合存在新代本机状态行（`srs_meta` 键 `local_state/<profile>`）的 `mediaGc` 键，键名与形态同协议 3；存活引用读缓存层 `notes.media_refs` + 按类判定的笔记类型视图；没绑定 / 没设缓存配置时 `collect` 回 `deferred` 不删（§8.6） | 已接（S1b；经分发器对拍） |
+| `media_live_refs` | 读 | `media_gc.rs` `live_refs`（后一半抽成 `finish_live_refs`，笔记类型文本抽成 `caches::note_type_view_texts`） | `cmd/media_gc.rs:live_refs_json` | 同上；读不全（没绑定 / 没缓存配置）明确报错，不回空集合 | 已接（S1b；经分发器对拍） |
 | `ingest_commit` | 写 | `sync2/transport.rs` | 缺（新代收段 `receive.rs` 是存储层） | G8-7 | 未接线（报 `gen4: not wired yet`），归 G8-7 |
 
 ### 7.3 写命令（`local_write_body`，`LOCAL_WRITE_OPS`）
@@ -137,10 +137,10 @@
 | `migrate` | 写 | `sync2/mod.rs` `sync2_migrate`（v1→v2） | 不需要（`gen4/migrate.rs` 是协议 3→4 的另一件事） | G7-6 删 | 已删（报 `gen4: removed`）；实现 G7-6 删 |
 | `replay_all` | 写 | `sync2/mod.rs` | 不需要（派生层是真相的纯函数） | G7-6 删 | 已删（报 `gen4: removed`）；实现 G7-6 删 |
 | `study` | 读 | `study.rs` `SrsCore::study` | 缺 | **G7-4c**（学习 / 出卡） | 已接（每条命令一个读快照现排，不常驻） |
-| `preview` | 读 | `sync2/mod.rs` `sync2_preview` | 缺 | **G7-4c**（评分预览在作答路径上）。要先把 `cmd/writes.rs` 里 `Session` 的 `deck_tree` / `default_deck` / `card_deck` 抽成只读可用的函数（`study` 的牌组计数同样要），与 `study` 一个 PR 做，避免两处各改一遍 `writes.rs`。**待协调方确认 G7-4c 接收**（任务书原把它列在 G7-4e；G7-4c 不收就另派） | 未接线（报 `gen4: not wired yet`），归 G7-4f |
+| `preview` | 读 | `sync2/mod.rs` `sync2_preview`（计算与回包抽成 `preview_of`，连接级 `preview_on`） | `cmd/preview.rs:preview` | **G7-4f 已补**。牌组树 / 默认牌组 / 卡的有效牌组都是 `cmd/mod.rs` 的只读函数（`deck_tree` / `default_deck` / `card_deck`；`Session::card_deck` 改为先收尾再调它）；归属组日志与笔记取 `cache.rs:Index::group`（写命令 `sched` 同一份）。卡与笔记先归一，回包 ID 是规范 ID。已知差别：协议 3 `group_of` 读链尾日志不带 `ORDER BY`（`idx_srs_review_logs_card` 上的 rowid 序 = 落库序），「链尾最后一条记了笔记的」在新代按 (发生时刻, 操作主键) 取；只在链尾晚到的旧日志记了另一个笔记时两边可能不同，新代的序与时间一致，不改 | 已接（S1b：`dispatch.rs` 的 `preview` 臂，请求形状同协议 3；经分发器对拍） |
 | `read` | 读 | `reads.rs` `run`（27 个查询名） | `cmd/reads.rs:run`（同 27 个，逐名核过） | G7-4 已有；S1 接线 | 已接 |
 | `card_columns` | 读 | `bulk.rs` `card_columns` | `cmd/columns.rs:card_columns` | G7-4b 已有 | 已接 |
-| `anki_resolve` / `anki_notes_info` | 读 | `bulk.rs` | `cmd/columns.rs:anki_resolve` / `anki_notes_info` | G7-4b 已有 | 已接 |
+| `anki_resolve` / `anki_notes_info` | 读 | `bulk.rs` | `cmd/columns.rs:anki_resolve` / `anki_notes_info` | G7-4b 已有；G7-4g 成员号改按缓存层反查表 `anki_members` 点查，从没出现在操作里的带盐卡的号也查得到（schema 40019） | 已接 |
 | `stats_report` / `stats_recall` / `stats_rows` | 读 | `stats.rs` | `cmd/stats.rs:stats_report` / `stats_recall` / `stats_rows` | G7-4b 已有；原料缓存（协议 3 `StatsCache`）归 S1 命令层，未命中时调 `cmd/stats.rs:snapshot_of` | 已接 |
 | `stats_release` | 无 | `stats.rs` `stats_release` | 缺（随缓存） | S1 | 已接（丢命令层原料缓存） |
 | `browse_query` / `browse_rows` / `browse_ids` / `browse_targets` / `browse_close` / `browse_stats` / `browse_counts` / `browse_sources` / `anki_find` / `anki_dupes` / `anki_tags` | 读（常驻会话） | `browse.rs` `SrsCore::browse` | 缺 | **G7-4d** | 已接（会话在命令层，每库一把锁） |
@@ -175,8 +175,8 @@
 | `ffsrs_store_open` / `ffsrs_store_close` | — | `store/mod.rs` `SrsCore` | `gen4/files.rs:open_gen4`（G7-1 的 C 入口另有） | S1（规划：删 `ffsrs_store_open`） | `open` 已删，改 `ffsrs_store_open_mode(dir, mode)`（打开模式 + 代际状态返回码）；`close` 已接（句柄里是 `G4Core`） |
 | `ffsrs_store_snapshot` / `ffsrs_store_debug_query` / `ffsrs_store_exec` / `ffsrs_store_exec_batch` / `ffsrs_store_in_transaction` / `ffsrs_store_read_concurrency` / `ffsrs_store_diag_counts` | 读写 | `ffi.rs` 原始通道 / 诊断 | 缺 | S1（原始通道 cargo feature，#3392；新代只留诊断需要的） | `snapshot` 未接线，归 G11-4（备份格式）；`exec` / `exec_batch` 已接、仍只在测试 / `raw_sql` feature 下；其余已接 |
 | `ffsrs_store_legacy_state` / `_begin` / `_page` / `_commit` / `_abort` / `_mark_none` | 写 | `store/mod.rs` 旧库搬迁 | 不需要（协议 1 旧库走 D21 只读转译） | G7-6 删（或 D21 定后改走 `gen4/import.rs:import_v1`） | 未接线，归 G7-6 / D21 |
-| `ffsrs_store_history_states` / `ffsrs_store_stat_projection` | 读 | `history.rs` / `projection.rs` 按血统重放 | 缺 | 建议 G7-4c（学习 / 统计侧的逐卡重放；规划未点名，G7-4c 不收则归 S1） | 未接线，归 G7-4f（待合） |
-| `ffsrs_store_optimizer_items` / `ffsrs_store_calibration_items` / `ffsrs_store_rwkv_rows` / `ffsrs_store_rwkv_log_tail` | 读 | `calibration.rs` / 优化器 / RWKV 训练集 | 缺 | 同上：训练集读血统日志，新代按 `cache.rs:replayed_card_logs` 取日志即可 | 未接线，归 G7-4f（待合） |
+| `ffsrs_store_history_states` / `ffsrs_store_stat_projection` | 读 | `store/mod.rs` `SrsCore::history_states` / `stat_projection`（计算抽成 `history_states_of` / `stat_projection_of`） | `cmd/training.rs:history_states` / `stat_projection` | **G7-4f 已补**。日志取 `cache.rs:Index::replayed_logs`（`replayed_card_logs` 的批量版，按连通分量重放），一份历史里同一张规范卡只算一次。S1：C 入口照旧解码两列页，按集合号调这里 | 已接（S1b：C 入口照旧解码两列页，经 `dispatch.rs` `direct_col` 换出集合号——页里带 `[-1, profile]` 行按它，否则按卡认集合（§8.6）——在一个读快照里调 `cmd/training.rs`；经 C ABI 与协议 3 逐字节对拍） |
+| `ffsrs_store_optimizer_items` / `ffsrs_store_calibration_items` / `ffsrs_store_rwkv_rows` / `ffsrs_store_rwkv_log_tail` | 读 | `store/projections.rs` `SrsCore::optimizer_items` / `calibration_items` / `rwkv_cards` / `rwkv_replay` / `rwkv_log_tail`（计算抽成 `*_of` / `ReplayScan` / `rwkv_log_tail_of`，取数抽成连接级 `training_groups_on` / `rwkv_scan_on` / `rwkv_log_tail_on`） | `cmd/training.rs:optimizer_items` / `calibration_items` / `rwkv_cards`（`rwkv_rows` 模式 0）/ `rwkv_replay`（模式 1，profile 换成集合号）/ `rwkv_log_tail` | **G7-4f 已补**，输出逐字节同协议 3。**游标换了**：协议 3 的 rowid（本机落库序）在新代是本机状态表 `log_seq`（schema 40018，`derive.rs` 随 `log_ix` 逐条维护、整层重建保留序号）——操作主键 `k` = 设备下标 × 2^40 + seq，不随落库单调，不能当游标。指纹按日志操作数；尾巴每个规范日志 ID 只出代表。**落库序从 `derive.rs:SEQ_BASE`（2^40）+ 1 起**：RWKV 状态机（`fushi_rwkv` `sched/machine.rs`）判主快照 / 检查点只看 (行数, 最大 rowid)、没有库代标记，若两代都从 1 起编号，协议 3 留下的检查点会因条数相同通过 `count - tailRows` 核对（两边同一前缀圈进的日志并不相同），RWKV 状态静默缺评分；起点错开后两代游标空间不相交，旧主快照指纹必不相等、旧检查点必被拒，第一次对齐必然全量重放（`training_tests.rs:protocol_3_checkpoints_and_fingerprints_never_fit_the_new_library`），S1 换代**不必**删 RWKV 快照目录。`rwkv_log_tail` 带行时每行尾巴 5～8 次点查，只适合增量尾巴（调用方传上次的最大序号）| 已接（S1b：同上；`rwkv_rows` 模式 1 与 `rwkv_log_tail` 页里本来就有 profile 行。进程内换库时 RWKV 内存态的处理见 §8.6） |
 | `ffsrs_set_temp_dir` | — | `ffi.rs` | 不需要（与库代无关） | S1 原样保留 | 原样保留 |
 | `ffsrs_store_sync2` | — | `ffi.rs` 分发器入口 | — | S1：本表全部命令的入口 | 已接新代分发器 `gen4/dispatch.rs` |
 
@@ -293,16 +293,12 @@ S1 没有加表或索引，本机状态行与缓存配置都放现有的 `srs_me
   - G9-5：`profile_uids`、`orphan_sweep_done`、`profile_merge_mark` / `_commit`、`meta_set_edit`、`profile_purge`
   - G8-7：收段 / 发件 / head / plan / 中继 / 废弃 / 摘要 / `retire` / `rotate` / `location_seal*` / `media_*`（媒体同步）
   - G11-3：`import`、`export`；G11-4：`ffsrs_store_snapshot`
-  - G7-4f（待合）：`preview`、`ffsrs_store_history_states` / `stat_projection` / `optimizer_items` /
-    `calibration_items` / `rwkv_rows` / `rwkv_log_tail`
   - G7-6 / D21：`ffsrs_store_legacy_*`
-  - S1 后续：`media_gc_queue` / `media_gc_collect` / `media_live_refs`（待回收集合的新代存处与存活引用的新代读法没定）
 - 已删（报 ``gen4: removed: `<op>` (<原因>)``）：`refresh_keys`（派生层随写入维护，没有「待刷新」）、`channel_settle`（没有收段通道）、
   `migrate` / `replay_all` / `legacy_dots` / `backfill_*` / `edits_rewrite_repr`（协议 3 存储细节）、`gen4_rehearse*`
   （换代前才有意义）。
 - `entity_views` 没有协议 3 对应命令，线上形状归 G10-2，S1 不接。
-- §7.6（带盐成员上被扣住的删除 `resolve` 不掉）归 G7-4g，S1 没动 `weigh.rs`。分发器接上之后它对用户可见：只影响
-  别名类里带盐成员上的删除冲突，G7-4g 合入前冲突中心会反复列出同一条。
+- §7.6（带盐成员上被扣住的删除 `resolve` 不掉）**已修**（G7-4g，方案 1：扣住按类判，`weigh.rs` `weigh_holds`），已在集成分支里。
 
 ### 8.5 测试
 
@@ -324,3 +320,64 @@ S1 没有加表或索引，本机状态行与缓存配置都放现有的 `srs_me
   `device_info` 接成 `device_hint`，各自都红。
 - 统计缓存两个失效条件各一条（去掉键里的写入代数 / 缓存层代号各自变红）；Secondary 上 `wal_checkpoint` 报只读；
   迁移中途 panic 之后登记摘掉、提前取消清掉。查询计划测试用实现执行的同一份语句常量（`CACHE_MARK_SQL` / `STORED_SQL`）。
+
+### 8.6 S1b 收尾接线（2026-11-17，分支 `pr/srs-gen4-s1b-wire-tail`）
+
+S1b 把 G7-4f（评分预览、逐卡重放 / 训练集）与媒体回收接上，§8.4 的 G7-4f 与「S1 后续」两项清空。**schema 不变**
+（仍是 40019；分给 S1b 的 40020 没用上：待回收集合放现有的本机状态行，媒体回收的读走现有键）。`ABI_VERSION` 不变
+（C 入口签名与输入 / 输出布局都没变）。
+
+- **`preview`**：`dispatch.rs` 的读臂，请求形状同协议 3（`card` / `note?` / `now` / `utcOff` / `rollover`），集合号与
+  `cmd/preview.rs` 同一个读快照。
+- **C 直出入口按哪个集合读**（`dispatch.rs` `direct_col`）：协议 3 这些入口按全局唯一的卡 ID 读、不分 profile，Dart 给
+  `history_states` / `stat_projection` / `optimizer_items` / `calibration_items` / `rwkv_rows` 模式 0 的页里没有 profile
+  行（这一段 Dart 不动）。取舍：页里带 `[-1, profile]` 行就按它的绑定（没绑定明确报错）；没有就看文件里有几个集合——
+  一个（一个 profile 目录一个 profile 的通常情形）就是它，一个都没有用空集合号 0（结果 = 卡不存在的形状），几个时按
+  请求里的卡认（卡的别名类里任何成员在哪个集合里有日志或修改，`HOLDS_CARD_SQL`）；对不上任何集合 = 卡不存在的形状，
+  对上不止一个明确报错（不拼两份历史）。迁移来的多 profile 库里协议 3 的实体本来就只属于一个 profile，按卡认不会撞。
+  **G7-5 建议**：Dart 改调用时在这五个入口的页里补 profile 行，按卡认集合就只剩兜底。
+- **媒体回收**（`cmd/media_gc.rs`）：
+  - 待回收集合是本机状态（不进真相、不同步、不参与对拍），存在新代本机状态行的 `mediaGc` 键（`local.rs`
+    `media_gc_pending` / `set_media_gc_pending`），键名与形态同协议 3（排序的字符串数组，空集合没有这个键），整行读改写
+    时原样留着、`local_state` 回包不带它。**迁移不带**（本机状态行整行不迁移，§8.2）：换代时还没回收的名字留在旧库里，
+    这些文件这一轮不删——宁可多留；以后引用它们的笔记删除满保留期时会重新成为候选。
+  - 存活引用 = 缓存层 `notes.media_refs`（按规范 ID 物化：一个别名类一行，类里每个成员上写的字段都在那一行里）∪ 全部
+    笔记类型（含已删除的）现行模板与 CSS 的引用（每个规范笔记类型：类的定义 + 按类判定的修改拼视图，同缓存层）。
+    并候选的 `notes` 先归一再读缓存行（派生层随写入维护，同一个事务里缓存行就是字段现值算的）。逐名回收规则、参数、
+    「只留裸文件名」都是协议 3 同一个函数。
+  - **读不全就不删**：协议 3 在缓存行没刷完时回 `deferred`；新代提交后不欠刷新，但缓存层只在设了缓存配置之后才物化，
+    没设（或 profile 没绑定集合）时 `notes` 没有行、存活引用是空的。此时 `collect` 回 `deferred` 什么都不删，
+    `media_live_refs` 明确报错（调用方的位置清理拿空集合会把位置上的媒体全当无引用），`queue` 只收直接给的名字。
+  - 查询：并候选的笔记按 `notes` 主键点查；「过期的已删笔记」「存活笔记」两条按 `col` 圈出这个集合（规划器在主键与
+    `notes_dupe` 之间二选一，都是这个集合的一段；回收本来就要读这个集合的全部存活笔记，不为前者另建索引）；笔记类型走
+    `ent_kind` 部分索引。`dispatch_tests.rs` `s1b_statements_use_their_keys` 钉住。
+- **按类取日志代表只有一份**：`cache.rs` `Index::log_class_rep`（类里每个成员 `win = 1` 那份里操作号最小的），缓存层
+  `card_logs` 与 `cmd/training.rs` 的 RWKV 尾巴（`is_rep`）都调它；原来两处各写一遍。复核要的变异测试：
+  `tests_class.rs` `the_log_tail_names_a_class_only_through_its_smallest_op`（`since` 卡在同一条日志的两份带盐导入之间，
+  尾巴里只有后落库、操作号大的那份，不出行）——把代表规则改成取操作号最大的就红（实测；原有的
+  `training_reads_see_a_log_class_once_through_any_member` 在这个变异下仍绿）。
+- **进程内换库时 RWKV 内存态**（复核 nit）：RWKV 状态机（`fushi_rwkv` `sched/machine.rs`）的内存态是 `replayed`（已回放到
+  的指纹 (行数, 最大 rowid)）、`checked_revision`（宿主落库键 `SrsDbStore.landedFingerprint`）与快照 / 检查点文件。
+  核过的结论：
+  1. 契约路径：RWKV 服务挂在一个 `SrsDbStore` 上（`srsAttachRwkv`），宿主关库前 `await service.close()`（存快照、关 runtime），
+     关了的服务永远不就绪。Dart 的换代顺序（§8.1：关掉所有协议 3 句柄 → `gen4_migrate_run` → 再开）因此是「旧服务关、新
+     服务开」，新服务没有内存态，只有磁盘上的快照与检查点：协议 3 留下的指纹最大 rowid < `SEQ_BASE`（2^40），新库的最大
+     序号恒 > `SEQ_BASE`，主快照指纹必不相等；检查点的 `count - tailRows` 必为 0（G7-4f 已钉的
+     `protocol_3_checkpoints_and_fingerprints_never_fit_the_new_library`），对不上就走第 4 级全量重建。协议 3 库是空库
+     （行数 0）时 0 = 0 能对上，但那时「从空状态追加全部行」就是全量回放，结果相同。
+  2. 违约路径（同一个服务对象跨了换库，G7-5 不该这样接）也不会给出错误状态：`checked_revision` 的捷径只在宿主给的
+     落库键与上次相同时才走（协议 3 的落库键来自 `refresh_keys`，前缀每次开库随机生成；新代删了 `refresh_keys`，G7-5
+     换的落库键要同样保证换库后不与旧值相同，例如带上迁移后新生成的本机纪元）——即使撞上，内存里的状态也是同一批复习
+     （迁移不改日志内容）的回放，只是游标是旧的，下一次对齐照样走下面这条路；`tail_after(协议 3 的最大 rowid)` 把新库的每一行都算成新增，
+     追加（第 1 级）只接受严格晚于已回放最后一条的评分，旧评分必然不满足 → 退回重放（第 2 级）的
+     「`count - tailRows` = 已回放行数」核对 0 ≠ 旧行数 → 全量重建。代价是那一次 `append_new` 带行取尾巴：
+     `rwkv_log_tail` 带行每行 5～8 次点查（§7.5），大库上是一次可感的慢查询——所以 G7-5 要按契约换库时换服务。
+  结论：S1 / S1b 换代**不必**删 RWKV 快照目录，也不必在内核里加库代标记；G7-5 照 `srsAttachRwkv` 的契约在换库时关旧服务、
+  挂新服务即可。
+- 测试（`dispatch_tests.rs`，一律经 C ABI）：`preview_and_training_entries_through_the_c_abi_match_protocol_3`（迁移前后，
+  页里带 / 不带 profile 行，六个入口逐字节对拍，RWKV 指纹的最大序号两代各是各的游标、比之前置零；没绑定的 profile 报错；
+  preview 五种卡经 `sync2` 对拍）、`direct_entries_find_the_collection_by_their_cards`（两个集合：按卡认、对不上、两边都有报错、
+  带 profile 各读各的）、`media_gc_through_the_dispatcher_matches_protocol_3`（三条命令逐条对拍，回收两侧各一个媒体目录，
+  分批游标、删掉 / 留下的文件、剩下的集合都相同）、`media_gc_reads_references_through_the_alias_class`（带盐成员字段上的引用
+  算存活，按另一份成员 ID 并候选取整个类那一行）、`media_gc_defers_while_live_references_cannot_be_read`、
+  `s1b_statements_use_their_keys`。
