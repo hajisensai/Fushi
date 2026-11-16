@@ -38,6 +38,7 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-4744](bugs/BUG-4744-lyrics-margin-left-right-swapped.md) | ✅ | ✅ | 歌词模式横排左右边距写反 |
+| [BUG-4744](bugs/BUG-4744-android-exit-fgs-trim-background.md) | ✅ | ✅ | android-exit-fgs-trim-background |
 | [BUG-4743](bugs/BUG-4743-anime-match-title-truncation.md) | ✅ | ✅ | anime-match-title-truncation |
 | [BUG-4742](bugs/BUG-4742-youtube-secondary-caption-tracks.md) | ✅ | ✅ | youtube-secondary-caption-tracks |
 | [BUG-4741](bugs/BUG-4741-work-profile-dict-engine-load.md) | ✅ | ✅ | 书籍指定配置后查不到词：引擎装载集合只看激活配置 |
