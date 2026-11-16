@@ -24,6 +24,8 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/music/music_library_page.dart'
     show showMusicSourcesDialog;
 import 'package:fushi/src/pages/implementations/music/music_lyrics_providers.dart';
+import 'package:fushi/src/pages/implementations/music/music_plugin_settings.dart'
+    show MusicPluginDropTarget;
 import 'package:fushi/src/pages/implementations/music/music_plugin_pages.dart'
     show openMusicPluginManagement;
 import 'package:fushi/src/pages/implementations/music/music_server_pages.dart';
@@ -128,10 +130,22 @@ class _MusicSourcesPageState extends ConsumerState<MusicSourcesPage> {
   /// initState 里取一次：await 之后页面可能已 dispose，不再经过 ref。
   late final AppModel _app = ref.read(appProvider);
 
+  /// 插件装 / 卸 / 启停都会改变「来源」列表：本页的拖放落点装上的插件要立刻出现。
+  StreamSubscription<void>? _pluginChanges;
+
   @override
   void initState() {
     super.initState();
+    _pluginChanges = _app.musicPluginManager.changes.listen(
+      (_) => unawaited(_load()),
+    );
     unawaited(_load());
+  }
+
+  @override
+  void dispose() {
+    unawaited(_pluginChanges?.cancel());
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -445,45 +459,50 @@ class _MusicSourcesPageState extends ConsumerState<MusicSourcesPage> {
     return musicBrowseScaffold(
       context,
       title: t.music_sources_title,
-      body: Builder(
-        builder: (BuildContext context) => SingleChildScrollView(
-          padding: musicBrowsePagePadding(context),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            spacing: tokens.spacing.gap,
-            children: <Widget>[
-              Align(
-                alignment: AlignmentDirectional.centerStart,
-                child: adaptiveSegmentedButton<_SourcesTab>(
-                  context: context,
-                  segments: <ButtonSegment<_SourcesTab>>[
-                    ButtonSegment<_SourcesTab>(
-                      value: _SourcesTab.music,
-                      label: Text(t.music_sources_tab_music),
-                    ),
-                    ButtonSegment<_SourcesTab>(
-                      value: _SourcesTab.lyrics,
-                      label: Text(t.music_sources_tab_lyrics),
-                    ),
-                  ],
-                  selected: <_SourcesTab>{_tab},
-                  onSelectionChanged: (Set<_SourcesTab> v) =>
-                      setState(() => _tab = v.first),
+      // 两个分页（音源 / 歌词）都收 .fushiplug 拖放（BUG-4712）；歌词分页的
+      // [MusicLyricsProvidersBody] 自己不挂落点，免得同一次拖放装两遍。
+      body: MusicPluginDropTarget(
+        manager: _app.musicPluginManager,
+        child: Builder(
+          builder: (BuildContext context) => SingleChildScrollView(
+            padding: musicBrowsePagePadding(context),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              spacing: tokens.spacing.gap,
+              children: <Widget>[
+                Align(
+                  alignment: AlignmentDirectional.centerStart,
+                  child: adaptiveSegmentedButton<_SourcesTab>(
+                    context: context,
+                    segments: <ButtonSegment<_SourcesTab>>[
+                      ButtonSegment<_SourcesTab>(
+                        value: _SourcesTab.music,
+                        label: Text(t.music_sources_tab_music),
+                      ),
+                      ButtonSegment<_SourcesTab>(
+                        value: _SourcesTab.lyrics,
+                        label: Text(t.music_sources_tab_lyrics),
+                      ),
+                    ],
+                    selected: <_SourcesTab>{_tab},
+                    onSelectionChanged: (Set<_SourcesTab> v) =>
+                        setState(() => _tab = v.first),
+                  ),
                 ),
-              ),
-              AnimatedSwitcher(
-                duration: fushiMotionDuration(context, FushiMotion.medium),
-                child: KeyedSubtree(
-                  key: ValueKey<_SourcesTab>(_tab),
-                  child: switch (_tab) {
-                    _SourcesTab.music => _musicTab(context),
-                    _SourcesTab.lyrics => MusicLyricsProvidersBody(
-                      appModel: _app,
-                    ),
-                  },
+                AnimatedSwitcher(
+                  duration: fushiMotionDuration(context, FushiMotion.medium),
+                  child: KeyedSubtree(
+                    key: ValueKey<_SourcesTab>(_tab),
+                    child: switch (_tab) {
+                      _SourcesTab.music => _musicTab(context),
+                      _SourcesTab.lyrics => MusicLyricsProvidersBody(
+                        appModel: _app,
+                      ),
+                    },
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
