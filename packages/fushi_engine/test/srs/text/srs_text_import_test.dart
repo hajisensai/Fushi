@@ -200,16 +200,41 @@ void main() {
     expect(notes, hasLength(4));
   });
 
-  test('同一份文件里重复的首字段：更新模式合成一条', () async {
+  test('同一份文件里重复的首字段：互不匹配，两行导成两条（同 Anki）', () async {
     final SrsImportReport r = await runSrsTextImport(
       store: store,
       file: await parse('d.tsv', 'cat\tv1\ncat\tv2\n'),
       options: opts(),
     );
-    expect(r.notesAdded, 1);
+    expect(r.notesAdded, 2);
+    expect(r.notesUpdated, 0);
+    expect(r.notesSkipped, 0);
     final List<SrsNoteView> notes = await allNotes();
-    expect(notes, hasLength(1));
-    expect(second(notes.single), 'v2');
+    expect(notes.map(second).toList(), <String>['v1', 'v2']);
+  });
+
+  test('同一份文件里首字段相同、GUID 不同的两行：两条都导入', () async {
+    final SrsImportReport r = await runSrsTextImport(
+      store: store,
+      file: await parse('d2.tsv', 'cat\tv1\tguid-a\ncat\tv2\tguid-b\n'),
+      options: opts(guidColumn: 3),
+    );
+    expect(r.notesAdded, 2);
+    final List<SrsNoteView> notes = await allNotes();
+    expect(notes.map((SrsNoteView n) => n.guid).toSet(), <String>{
+      'guid-a',
+      'guid-b',
+    });
+  });
+
+  test('首字段只有图片（查重规范形为空）的行照样导入', () async {
+    final SrsImportReport r = await runSrsTextImport(
+      store: store,
+      file: await parse('img.txt', '#html:true\n<img src="a.png">\tback\n'),
+      options: opts(),
+    );
+    expect(r.notesAdded, 1);
+    expect(r.notesSkipped, 0);
   });
 
   test('牌组列：没有的牌组建出来；按牌组匹配时别的牌组里的同名笔记不算已存在', () async {
@@ -250,5 +275,33 @@ void main() {
     final SrsNoteView after = (await allNotes()).single;
     expect(after.id, before.id);
     expect(first(after), 'kitten');
+  });
+
+  test('GUID 列有值但库里没有：当新笔记，不按首字段覆盖同名的已有笔记', () async {
+    await runSrsTextImport(
+      store: store,
+      file: await parse('i.tsv', 'cat\tv1\tguid-1\n'),
+      options: opts(guidColumn: 3),
+    );
+    final SrsNoteView before = (await allNotes()).single;
+    final SrsImportReport r = await runSrsTextImport(
+      store: store,
+      file: await parse('j.tsv', 'cat\tv2\tguid-2\n'),
+      options: opts(guidColumn: 3),
+    );
+    expect(r.notesAdded, 1);
+    expect(r.notesUpdated, 0);
+    final List<SrsNoteView> notes = await allNotes();
+    expect(notes, hasLength(2));
+    final SrsNoteView old = notes.firstWhere(
+      (SrsNoteView n) => n.id == before.id,
+    );
+    expect(old.guid, 'guid-1');
+    expect(second(old), 'v1');
+    final SrsNoteView added = notes.firstWhere(
+      (SrsNoteView n) => n.id != before.id,
+    );
+    expect(added.guid, 'guid-2');
+    expect(second(added), 'v2');
   });
 }

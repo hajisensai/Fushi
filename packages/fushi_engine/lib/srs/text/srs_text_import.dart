@@ -8,7 +8,9 @@
 ///   [SrsDbStore.importDrafts]；更新已有笔记走 [SrsDbStore.editFieldsBatch]），不另开写入通道。
 /// - 已有笔记的匹配照 Anki：GUID 列命中优先；否则按首字段（查重规范形，与 AnkiConnect 查重同一份
 ///   `anki_dupes`，整份文件一条原生命令）在同一笔记类型（[SrsTextMatchScope.noteTypeAndDeck] 时再限同一牌组）
-///   里找。命中后按 [SrsTextDupeMode]：更新 / 保留（跳过）/ 照样另加一条。文件里前面的行同样参与匹配。
+///   里找；GUID 列有值的行只按 GUID 匹配（库里没有这个 GUID 就是新笔记，不再退回首字段）。命中后按
+///   [SrsTextDupeMode]：更新 / 保留（跳过）/ 照样另加一条。只和导入前库里已有的笔记匹配，同一份文件里的行
+///   互不匹配（Anki 的 `existing_checksums` / `existing_guids` 同样只在开始时建一次），首字段相同的两行导成两条。
 ///
 /// 不支持 Anki 的「笔记类型列」（每行各自的笔记类型）：一次导入一个笔记类型，文件头的 `#notetype:` 只用来预选。
 library;
@@ -292,17 +294,6 @@ class _Row {
 
   /// GUID 列的值（空 = 没有）。
   final String guid;
-
-  /// 文件后面匹配到同一条新笔记的行 [r]：映射到的字段换成它的值，标签合并。
-  _Row overwrittenBy(_Row r, List<String> mappedFieldIds) => _Row(
-    <String, String>{
-      ...fields,
-      for (final String f in mappedFieldIds) f: r.fields[f] ?? '',
-    },
-    <String>{...tags, ...r.tags}.toList(),
-    deckId,
-    guid,
-  );
 }
 
 /// 把 [file] 的全部记录按 [options] 导进 [store]，回导入报告（新增 / 更新 / 跳过的笔记数、新增卡片数）。
@@ -387,7 +378,8 @@ Future<SrsImportReport> runSrsTextImport({
   if (options.dupeMode != SrsTextDupeMode.duplicate) {
     final List<int> at = <int>[
       for (int i = 0; i < rows.length; i++)
-        if (norms[i].isNotEmpty) i,
+        // GUID 列有值的行只按 GUID 匹配（Anki `find_duplicates`），不进首字段查重。
+        if (norms[i].isNotEmpty && rows[i].guid.isEmpty) i,
     ];
     if (at.isNotEmpty) {
       final Object? ids = (await store.browseCommand(<String, Object?>{
@@ -450,10 +442,8 @@ Future<SrsImportReport> runSrsTextImport({
       ? const <String, SrsNoteView?>{}
       : await store.notes(toUpdate);
 
-  // 3. 逐行决定：新增 / 更新 / 跳过。文件里前面新增的同样参与匹配：还没落库的直接改它，已落库的当已有笔记更新。
+  // 3. 逐行决定：新增 / 更新 / 跳过。只和导入前库里的笔记匹配（上面一次查齐），同一份文件里的行互不匹配。
   final bool matching = options.dupeMode != SrsTextDupeMode.duplicate;
-  final Map<(String, String?), _NewNote> added =
-      <(String, String?), _NewNote>{};
   final Set<String> usedGuids = <String>{};
   final List<_NewNote> batch = <_NewNote>[];
   // 要更新的笔记：id → (字段 id → 新值, 更新后的标签)。
@@ -489,39 +479,29 @@ Future<SrsImportReport> runSrsTextImport({
           tags: n.row.tags,
         ),
     ]);
-    for (final _NewNote n in batch) {
-      n.flushed = true;
-    }
     batch.clear();
   }
 
   for (int i = 0; i < rows.length; i++) {
     final _Row r = rows[i];
-    final String norm = norms[i];
-    if (norm.isEmpty || !srsNoteProducesCard(type, r.fields)) {
+    // Anki 只跳过首字段是字面空串的行；只有图片 / 音频的首字段查重规范形为空，但照样导入。
+    if ((r.fields[fieldIds.first] ?? '').isEmpty ||
+        !srsNoteProducesCard(type, r.fields)) {
       report.notesSkipped++;
       continue;
     }
-    final (String, String?) key = (norm, byDeck ? r.deckId : null);
-    final String? guidHit = r.guid.isEmpty ? null : guidNote[r.guid];
-    final List<String> hits = guidHit != null ? <String>[guidHit] : dbHits[i];
-    final _NewNote? earlier = matching && hits.isEmpty ? added[key] : null;
-    if (matching && (hits.isNotEmpty || earlier != null)) {
+    // GUID 列有值：只认 GUID 命中，没命中就是新笔记（不退回首字段，免得覆盖不相干的同名笔记）。
+    final List<String> hits = r.guid.isEmpty
+        ? dbHits[i]
+        : <String>[if (guidNote[r.guid] case final String id) id];
+    if (matching && hits.isNotEmpty) {
       if (options.dupeMode == SrsTextDupeMode.preserve) {
         report.notesSkipped++;
         continue;
       }
-      if (earlier != null) {
-        if (earlier.flushed) {
-          updateExisting(earlier.noteId, earlier.row.tags.toSet(), r);
-        } else {
-          earlier.row = earlier.row.overwrittenBy(r, mappedFieldIds);
-        }
-      } else {
-        for (final String id in hits) {
-          final SrsNoteView? n = existing[id];
-          if (n != null) updateExisting(id, n.tags.toSet(), r);
-        }
+      for (final String id in hits) {
+        final SrsNoteView? n = existing[id];
+        if (n != null) updateExisting(id, n.tags.toSet(), r);
       }
       continue;
     }
@@ -534,7 +514,6 @@ Future<SrsImportReport> runSrsTextImport({
     }
     final _NewNote n = _NewNote(guid, store.kernelIds.note(guid), r);
     batch.add(n);
-    if (matching) added[key] = n;
     report.notesAdded++;
     if (batch.length >= _kBatch) {
       await flush();
@@ -576,12 +555,11 @@ Future<SrsImportReport> runSrsTextImport({
   return report;
 }
 
-/// 本次导入新增的笔记（落库前可被文件后面匹配到的行改写）。
+/// 本次导入新增的笔记。
 class _NewNote {
   _NewNote(this.guid, this.noteId, this.row);
 
   final String guid;
   final String noteId;
-  _Row row;
-  bool flushed = false;
+  final _Row row;
 }
