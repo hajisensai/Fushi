@@ -1200,3 +1200,73 @@ fn stats_match_protocol_3() {
     assert!(stats_report(&t, p.col, &json!({"now": T0})).is_err());
     assert!(p.g4.is_autocommit());
 }
+
+// ---------------------------------------------------------------------- 列式批量读与数字 id
+
+/// `card_columns` / `anki_resolve` / `anki_notes_info` 与协议 3 `store/bulk.rs` 对拍（这个库没有带盐的 ID，两侧的数字
+/// id 相同）。`card_columns` 按行的多重集比；`anki_notes_info` 每条笔记的可见卡按卡 ID 排过再比（协议 3 依计划）。
+#[test]
+fn columns_and_numeric_ids_match_protocol_3() {
+    use super::columns::{anki_notes_info, anki_resolve, card_columns};
+    use crate::store::bulk;
+    let d = library();
+    let p = Pair::new(&d);
+    let t = Truth::new(&p.g4);
+    let w = d.core.writer().unwrap();
+    let all = || (0..23).map(|_| Id).collect::<Vec<Norm>>();
+    for req in [
+        json!({}),
+        json!({"visibleOnly": true}),
+        json!({"fields": ["id", "note_id", "queue", "reps", "stability", "last_log_id"]}),
+    ] {
+        let old = on_p3(&w, &p.cfg, |c| bulk::card_columns(c, P, &req).unwrap());
+        let new = card_columns(&t, p.col, &req).unwrap();
+        let n = decode(&new).0.len();
+        let norms: Vec<Norm> = all().into_iter().take(n).collect();
+        let (of, nf) = (
+            vec![("t".to_owned(), old)],
+            vec![("t".to_owned(), new.clone())],
+        );
+        assert_eq!(Pair::names(&of, "t"), Pair::names(&nf, "t"), "{req}");
+        assert_eq!(p.rows(&of, "t", &norms), p.rows(&nf, "t", &norms), "{req}");
+        assert!(!decode(&new).1.is_empty());
+        // 按卡 ID 排（顺序契约）。
+        let ids: Vec<(u8, Vec<u8>)> = decode(&new).1.iter().map(|r| sql_key(&r[0])).collect();
+        assert!(ids.windows(2).all(|x| x[0] < x[1]), "{req}");
+    }
+    assert!(card_columns(&t, p.col, &json!({"fields": ["nope"]})).is_err());
+    let num = crate::store::schema::anki_numeric_id;
+    let (c1, c2) = (card(N1, "t1"), card(N1, "t2"));
+    let req = json!({
+        "notes": [num(N1), num(N4), 5, num(N2), "x", num(N1)],
+        "cards": [num(&c1), num(&c2), num(N1)],
+    });
+    let old = on_p3(&w, &p.cfg, |c| bulk::anki_resolve(c, P, &req).unwrap());
+    let new = anki_resolve(&t, p.col, &req).unwrap();
+    close(&p, &old, &new, "anki_resolve");
+    assert_eq!(new["notes"][0], json!(N1));
+    assert_eq!(new["cards"][1], json!(c2));
+    assert_eq!(new["notes"][2], Value::Null);
+    let req = json!({"notes": [num(N1), num(N2), num(N3), num(N4), 7, num(N1)]});
+    let sort_cards = |mut v: Value| -> Value {
+        for n in v["notes"].as_array_mut().unwrap() {
+            if let Some(cs) = n.get_mut("c").and_then(Value::as_array_mut) {
+                cs.sort_by_key(|c| p.canon(c[1].as_str().unwrap()));
+            }
+        }
+        v
+    };
+    let old = on_p3(&w, &p.cfg, |c| bulk::anki_notes_info(c, P, &req).unwrap());
+    let new = anki_notes_info(&t, p.col, &req).unwrap();
+    close(
+        &p,
+        &sort_cards(old),
+        &sort_cards(new.clone()),
+        "anki_notes_info",
+    );
+    // N1 有内容、有两张可见卡；N4 已删除 = null。
+    assert_eq!(new["notes"][0]["c"].as_array().unwrap().len(), 2, "{new}");
+    assert!(!new["notes"][0]["f"].as_array().unwrap().is_empty());
+    assert_eq!(new["notes"][3], Value::Null);
+    assert!(p.g4.is_autocommit());
+}

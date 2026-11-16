@@ -554,6 +554,100 @@ fn stats_see_one_canonical_card_and_take_member_ids_in_the_request() {
     });
 }
 
+// ---------------------------------------------------------------------- 数字 id
+
+/// 数字 id：规范 ID 的号、别名类成员（换代前带盐的原值 ID）的号都查得到规范 ID；不在这个集合里的号、成员号对应的规范
+/// ID 不在这张表里（笔记的号拿去查卡）都是 null。`notesInfo` 按成员号也给出按类判定的内容。
+#[test]
+fn numeric_ids_of_alias_members_resolve_to_the_canonical_row() {
+    use super::columns::{anki_notes_info, anki_resolve, card_columns};
+    use crate::store::schema::anki_numeric_id as num;
+    with(|t, col| {
+        let w = land(t, col);
+        let (n0, n1, c) = (w.note[0].text(), w.note[1].text(), w.c_note.text());
+        let (k0, kc) = (w.card[0].text(), w.c_card.text());
+        let req = json!({
+            "notes": [num(&c), num(&n0), num(&n1), num("nope"), num(&kc)],
+            "cards": [num(&kc), num(&k0), num(&n0)],
+        });
+        let v = anki_resolve(t, col, &req).unwrap();
+        assert_eq!(
+            v,
+            json!({"notes": [c, c, c, null, null], "cards": [kc, kc, null]})
+        );
+        let v = anki_notes_info(t, col, &json!({"notes": [num(&n1), num(&c), 3]})).unwrap();
+        let notes = v["notes"].as_array().unwrap();
+        assert_eq!(notes[0], notes[1]);
+        assert_eq!(notes[2], Value::Null);
+        assert_eq!(notes[0]["id"], json!(c));
+        assert_eq!(
+            notes[0]["nt"],
+            json!(rules::note_type(CANONICAL, ANKI_NT).text())
+        );
+        let c_key = w.c_field.text();
+        let fields = notes[0]["f"].as_array().unwrap();
+        assert!(
+            fields.iter().all(|f| f[0] == json!(c_key)),
+            "fields carry the canonical field id: {fields:?}"
+        );
+        assert_eq!(
+            notes[0]["c"],
+            json!([[
+                num(&kc),
+                rules::template(&rules::note_type(CANONICAL, ANKI_NT), 0).text(),
+                0
+            ]])
+        );
+        // 别的集合里同样的号查不到。
+        let col2 = t.tx(|t| t.bind(P2, &id(0xc9), "dir2")).unwrap();
+        let v = anki_resolve(t, col2, &req).unwrap();
+        assert_eq!(
+            v,
+            json!({"notes": [null, null, null, null, null], "cards": [null, null, null]})
+        );
+        let cols = card_columns(t, col, &json!({"fields": ["id", "note_id", "anki_id"]}));
+        assert!(
+            cols.is_err(),
+            "anki_id is not a card_columns column (protocol 3 neither)"
+        );
+        let (_, rows) = (
+            (),
+            decode(&card_columns(t, col, &json!({"fields": ["id", "note_id"]})).unwrap()).1,
+        );
+        assert!(rows.iter().any(|r| r == &vec![kc.clone(), c.clone()]));
+        assert!(t.conn().is_autocommit());
+    });
+}
+
+/// 按号查是索引点查（`notes_anki` / `cards_anki`），不扫整张缓存表；查不到才扫一次别名表的成员。
+#[test]
+fn numeric_id_lookups_use_the_anki_indexes() {
+    with(|t, col| {
+        land(t, col);
+        for q in [
+            "SELECT MIN(id) FROM notes WHERE col = ?1 AND anki_id = ?2",
+            "SELECT MIN(id) FROM cards WHERE col = ?1 AND anki_id = ?2",
+        ] {
+            let plan: Vec<String> = t
+                .conn()
+                .prepare(&format!("EXPLAIN QUERY PLAN {q}"))
+                .unwrap()
+                .query_map([1i64, 2i64], |r| r.get::<_, String>(3))
+                .unwrap()
+                .collect::<Result<_, _>>()
+                .unwrap();
+            assert!(
+                plan.iter()
+                    .any(|s| s.contains("USING COVERING INDEX notes_anki")
+                        || s.contains("USING COVERING INDEX cards_anki")
+                        || s.contains("USING INDEX notes_anki")
+                        || s.contains("USING INDEX cards_anki")),
+                "{q}: {plan:?}"
+            );
+        }
+    });
+}
+
 // ---------------------------------------------------------------------- has_user_data 的口径
 
 /// 只有内置牌组 → 没有；不可信设备删它 → 有（有意比协议 3 保守，`has_user_data` 注释）；清除掉的写入不算。
