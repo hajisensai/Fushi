@@ -1246,3 +1246,62 @@ G8 子规划文档在仓库里不存在（任务点名的「G8 子规划」找�
   `srs_fresh_profile_e2e_test.dart` 3 条（新卡被藏，§13.6 第 1 条）、`srs_fushisrs_test.dart` 3 条与
   `srs_write_statement_cost_test.dart` 2 条（`note` / `noteType` 按成员 ID 读崩在 `_prefetchEdits`，§14）、
   `fushi/test/srs/srs_word_audio_backfill_test.dart` 的 store 用例（成员 / 规范 ID 对不上，§14「派生 ID 的返回值」）。
+
+## G10-2 远程复习 V2（2026-11-17，分支 `pr/srs-gen4-g10-2-remote-review-v2`）
+
+### 线上形状与决定
+
+- 内核 `entity_views`（`native/fushi_fsrs/src/store/gen4/cmd/views.rs` 文件头）：请求 `{kind, ids}`，回 `{views:[{id, tag, v}]}`。
+  `v` 是视图 JSON 原文（`id/k/d/edits/tags/logs/row`），`tag` = blake3(v) 前 16 字节 hex——**标签就是视图本身的摘要**，
+  客户端按标签缓存不再自己拼「身份记录 + 修改记录」再算。同一别名类只出一份（规范 ID）、不存在的跳过；单次上限同
+  `canonical_ids`（`LOOKUP_MAX` = 4096，Dart 侧 `kSrsEntityViewsBatchMax`）。走 `read_col`，集合查找与命令体一个快照。
+- 解码只有一份：`packages/fushi_engine/lib/srs/srs_entity_views.dart`（`SrsEntityView` → 修改记录 / 物化输入）。
+  `SrsDbStore.entitySources` 删掉，换成 `entityViews`（分块发内核命令）。
+- V2 端点 `/api/srs/remote2/`：请求体带 `g: 4` 与（写操作）握手时拿到的 `col`；回包信封多了 `col` 与
+  `ids {deck, lapis, fushi}`——**内置实体 ID 一律取主机的规范 ID**，客户端不再按 uid 派生；要把派生 / 成员 ID 归一走新操作
+  `canonicalIds`（问主机内核，单次上限同上，超了 400）。写操作的 `col` 与主机当前集合不一致 → 409 `profile_changed`。
+- 已配对首页缓存版本 `_kPairedCacheVersion` 升到 2（旧缓存里的卡片 / 牌组 ID 是派生口径，直接作废）。
+
+### 四个方向
+
+| 客户端 | 主机 | 结果 |
+|---|---|---|
+| V2 | V2 | 照常 |
+| V2 | 旧（只认 `/api/srs/remote/`） | 能力位只有 V1 → `hostNeedsUpgrade`，列出不握手；真打到旧端点的 404 无机读码 → 客户端换成 426 `upgrade_required` |
+| 旧（V1） | V2 | 主机能力位声明 V2 + V1（V1 只是拒绝桩）；V1 前缀任何请求 → 426 `upgrade_required`，不进服务、不碰库 |
+| V2，`g` 不对 | V2 | 426 `upgrade_required` |
+
+复习关掉时 V2 路径回 503 `{error: unavailable}`，V1 仍 404。
+
+### 白名单
+
+- 操作表即白名单：表外操作（`identity` / `binding_*` / `collection_*` / `import` / `export` / `purge` 等）→ `unknown_op`。
+- 透传内核的只有 `kSrsRemoteKernelOps`（`entity_views`、`canonical_ids`、`history` 与浏览类读命令），`browseCommand`
+  里点别的命令 → 400。
+- 写操作的实体种类拒 `profile`（`editFields*` / `writeEdits` / `revertEdits` 的撤销项都查）；`writeEdits` 带非空
+  `records`（身份记录）→ 400。
+- 库在换代途中（`SrsStoreOpenBlocked`）：`Migrating` / 未迁完 → 503 `migrating`；迁移失败 / 只剩封存旧库 /
+  旧库没迁 → 503 `migration_failed`。app 侧 `SrsAppRuntime` 给远程复习服务单独的 `readRemoteStore`，不把这个异常吞成「没有库」。
+
+### 测试
+
+- Rust `cmd/views_tests.rs` 4 条：经 C ABI 与本机 `read entities/edits/logs` 对拍、别名类（`tests_class::land`）只出规范 ID、
+  畸形请求拒绝、缓存行点查走主键（EXPLAIN）。
+- Dart：engine `srs_remote_store_test.dart` 新组「V2 协商、规范 ID 与白名单」5 条；fushi `srs_remote_review_test.dart`
+  新组「远程复习 V2（G10-2）」4 条（出卡 → 作答 → 主机日志、新客户端 → 旧主机、旧客户端 → 新主机、白名单）。
+
+### 本波定向测试的红（都不归 G10-2）
+
+- 「ID 口径」族（§14 / §18）：`srs_remote_review_test.dart` 里凡要主机出卡 / 按 `createDeck` 回值找牌组的 16 条
+  （含新组的「出卡 → 作答」——它在规范根 ID、`canonicalIds`、`g` 都断言过之后，停在主机 `studyState(...).next` 为 null；
+  主机自己 `host.store.studyState` 也一样）；engine `srs_profile_ownership_test.dart` 全组与
+  `srs_exclusive_sites_cost_test.dart` 第 10 步崩在 `_prefetchEdits` 的 `Null check`（seed 阶段，未经远程通道）。
+- `fushi_server/test/server_srs_test.dart` 5 条：`readyProfiles` 一直为空（服务端 profile 起不来），远程复习两条因此拿不到
+  `remoteStore`——归 G10-3（服务端迁移状态机）。
+
+### 没做 / 交给谁
+
+- 本机 `SrsDbStore` 的物化仍走 `read entities` + `edits`，没改成读视图（与 `entity_views` 已经 C ABI 对拍等价）。
+- `fushi_server` 的 `migrating` 映射：服务端 profile 打开 / 迁移状态归 G10-3；本模块只在共用的 `SrsRemoteStoreService` 里接了。
+- `profile_of_dir` 没做；客户端 `noteTypesFrom` 里内置笔记类型的字段 ID 仍按 uid 派生（ID 口径模块）。
+- 主机目录与信任（G10-4）没碰。schema 号 40023 未使用（没加表 / 索引）。
