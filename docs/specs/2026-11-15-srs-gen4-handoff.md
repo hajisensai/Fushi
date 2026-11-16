@@ -137,7 +137,7 @@
 | `migrate` | 写 | `sync2/mod.rs` `sync2_migrate`（v1→v2） | 不需要（`gen4/migrate.rs` 是协议 3→4 的另一件事） | G7-6 删 |
 | `replay_all` | 写 | `sync2/mod.rs` | 不需要（派生层是真相的纯函数） | G7-6 删 |
 | `study` | 读 | `study.rs` `SrsCore::study` | 缺 | **G7-4c**（学习 / 出卡） |
-| `preview` | 读 | `sync2/mod.rs` `sync2_preview` | 缺 | **G7-4c**（评分预览在作答路径上）。要先把 `cmd/writes.rs` 里 `Session` 的 `deck_tree` / `default_deck` / `card_deck` 抽成只读可用的函数（`study` 的牌组计数同样要），与 `study` 一个 PR 做，避免两处各改一遍 `writes.rs`。**待协调方确认 G7-4c 接收**（任务书原把它列在 G7-4e；G7-4c 不收就另派） |
+| `preview` | 读 | `sync2/mod.rs` `sync2_preview`（计算与回包抽成 `preview_of`，连接级 `preview_on`） | `cmd/preview.rs:preview` | **G7-4f 已补**。牌组树 / 默认牌组 / 卡的有效牌组都是 `cmd/mod.rs` 的只读函数（`deck_tree` / `default_deck` / `card_deck`；`Session::card_deck` 改为先收尾再调它）；归属组日志与笔记取 `cache.rs:Index::group`（写命令 `sched` 同一份）。卡与笔记先归一，回包 ID 是规范 ID |
 | `read` | 读 | `reads.rs` `run`（27 个查询名） | `cmd/reads.rs:run`（同 27 个，逐名核过） | G7-4 已有；S1 接线 |
 | `card_columns` | 读 | `bulk.rs` `card_columns` | `cmd/columns.rs:card_columns` | G7-4b 已有 |
 | `anki_resolve` / `anki_notes_info` | 读 | `bulk.rs` | `cmd/columns.rs:anki_resolve` / `anki_notes_info` | G7-4b 已有 |
@@ -175,8 +175,8 @@
 | `ffsrs_store_open` / `ffsrs_store_close` | — | `store/mod.rs` `SrsCore` | `gen4/files.rs:open_gen4`（G7-1 的 C 入口另有） | S1（规划：删 `ffsrs_store_open`） |
 | `ffsrs_store_snapshot` / `ffsrs_store_debug_query` / `ffsrs_store_exec` / `ffsrs_store_exec_batch` / `ffsrs_store_in_transaction` / `ffsrs_store_read_concurrency` / `ffsrs_store_diag_counts` | 读写 | `ffi.rs` 原始通道 / 诊断 | 缺 | S1（原始通道 cargo feature，#3392；新代只留诊断需要的） |
 | `ffsrs_store_legacy_state` / `_begin` / `_page` / `_commit` / `_abort` / `_mark_none` | 写 | `store/mod.rs` 旧库搬迁 | 不需要（协议 1 旧库走 D21 只读转译） | G7-6 删（或 D21 定后改走 `gen4/import.rs:import_v1`） |
-| `ffsrs_store_history_states` / `ffsrs_store_stat_projection` | 读 | `history.rs` / `projection.rs` 按血统重放 | 缺 | 建议 G7-4c（学习 / 统计侧的逐卡重放；规划未点名，G7-4c 不收则归 S1） |
-| `ffsrs_store_optimizer_items` / `ffsrs_store_calibration_items` / `ffsrs_store_rwkv_rows` / `ffsrs_store_rwkv_log_tail` | 读 | `calibration.rs` / 优化器 / RWKV 训练集 | 缺 | 同上：训练集读血统日志，新代按 `cache.rs:replayed_card_logs` 取日志即可 |
+| `ffsrs_store_history_states` / `ffsrs_store_stat_projection` | 读 | `store/mod.rs` `SrsCore::history_states` / `stat_projection`（计算抽成 `history_states_of` / `stat_projection_of`） | `cmd/training.rs:history_states` / `stat_projection` | **G7-4f 已补**。日志取 `cache.rs:Index::replayed_logs`（`replayed_card_logs` 的批量版，按连通分量重放），一份历史里同一张规范卡只算一次。S1：C 入口照旧解码两列页，按集合号调这里 |
+| `ffsrs_store_optimizer_items` / `ffsrs_store_calibration_items` / `ffsrs_store_rwkv_rows` / `ffsrs_store_rwkv_log_tail` | 读 | `store/projections.rs` `SrsCore::optimizer_items` / `calibration_items` / `rwkv_cards` / `rwkv_replay` / `rwkv_log_tail`（计算抽成 `*_of` / `ReplayScan` / `rwkv_log_tail_of`，取数抽成连接级 `training_groups_on` / `rwkv_scan_on` / `rwkv_log_tail_on`） | `cmd/training.rs:optimizer_items` / `calibration_items` / `rwkv_cards`（`rwkv_rows` 模式 0）/ `rwkv_replay`（模式 1，profile 换成集合号）/ `rwkv_log_tail` | **G7-4f 已补**，输出逐字节同协议 3。**游标换了**：协议 3 的 rowid（本机落库序）在新代是本机状态表 `log_seq`（schema 40018，`derive.rs` 随 `log_ix` 逐条维护、整层重建保留序号）——操作主键 `k` = 设备下标 × 2^40 + seq，不随落库单调，不能当游标。指纹按日志操作数；尾巴每个规范日志 ID 只出代表。换代后 RWKV 检查点对不上新库指纹，第一次对齐全量重放 |
 | `ffsrs_set_temp_dir` | — | `ffi.rs` | 不需要（与库代无关） | S1 原样保留 |
 | `ffsrs_store_sync2` | — | `ffi.rs` 分发器入口 | — | S1：本表全部命令的入口 |
 
