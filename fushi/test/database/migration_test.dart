@@ -157,7 +157,7 @@ void main() {
       expect(version.read<int>('user_version'), db.schemaVersion);
       expect(
         db.schemaVersion,
-        155,
+        156,
         reason:
             'TODO-1288 v37 audiobook srt_books self-heal; v38 unified media_collections (series→collection + playlist split)',
       );
@@ -200,7 +200,7 @@ void main() {
       expect(version.read<int>('user_version'), db.schemaVersion);
       expect(
         db.schemaVersion,
-        155,
+        156,
         reason:
             'TODO-1288 v37 audiobook srt_books self-heal; v38 unified media_collections (series→collection + playlist split)',
       );
