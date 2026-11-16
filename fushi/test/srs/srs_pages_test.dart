@@ -643,16 +643,27 @@ void main() {
         apple: apple,
         page: const SrsDeckListPage(),
         size: const Size(1100, 1600),
+        overrides: <Override>[
+          srsMediaStoreProvider.overrideWith(
+            (Ref ref) async => SrsMediaStore(Directory.systemTemp),
+          ),
+        ],
       );
       await tester.tap(find.text('Vocabulary'), buttons: kSecondaryButton);
       await _settle(tester);
       expect(find.text(t.srs_deck_export), findsOneWidget);
       await tester.tap(find.text(t.srs_deck_export));
-      await _settle(tester);
-      expect(
-        find.text(t.srs_export_deck_title(deck: 'Spark::JP::Vocabulary')),
-        findsOneWidget,
+      final Finder title = find.text(
+        t.srs_export_deck_title(deck: 'Spark::JP::Vocabulary'),
       );
+      // 弹框前要读牌组树、算子树里有没有 FSRS-7（真 DB 读），等它出来。
+      await srsPumpUntil(
+        tester,
+        () => title.evaluate().isNotEmpty,
+        what: '「导出此牌组」的选项对话框',
+      );
+      await _settle(tester);
+      expect(title, findsOneWidget);
       expect(find.text(t.srs_export_options_title), findsNothing);
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await _settle(tester);
