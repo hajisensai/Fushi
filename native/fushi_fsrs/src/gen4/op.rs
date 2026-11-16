@@ -683,6 +683,14 @@ pub fn edit_has_stamp(payload: &[u8]) -> DResult<bool> {
     Ok(r.u8()? & EDIT_STAMP != 0)
 }
 
+/// 日志载荷带不带承袭来的旧 HLC / 旧服务器时刻（[native_allowed] 用：原生日志不收 v1 形状的数据）。只读到掩码为止。
+pub fn log_has_legacy(payload: &[u8]) -> DResult<bool> {
+    let mut r = Reader::new(payload);
+    read_key(&mut r)?;
+    read_key(&mut r)?;
+    Ok(uv_min(&mut r)? & (L_HLC | L_SERVER_TIME) != 0)
+}
+
 /// 日志种类 / 复习类型 / 来源的紧凑码（持久化名冻结，与协议 3 `crate::sync2::op` 的三张表逐项相同）；表外的写 255 + 文本。
 const LOG_KINDS: [&str; 6] = [
     "review",
@@ -961,7 +969,8 @@ fn read_log(r: &mut Reader<'_>, exact: bool) -> DResult<Log4> {
 }
 
 /// 能不能出现在原生日志里（[super::segment::pack_native] 的写侧检查，读侧同样用它）：
-/// 协议 3 的操作体、退役的 12、只属于承袭日志的 13 与带旧戳的修改不能。带盐的 14 / 15 只能出现在这里（heritage.rs 拒）。
+/// 协议 3 的操作体、退役的 12、只属于承袭日志的 13、带旧戳的修改与带旧 HLC / 旧服务器时刻的日志不能（设计稿 §536：
+/// 换代后的新写入不携带 v1 形状的数据；写入 [crate::store::gen4::truth::Truth::append_native] 与收段两侧同用这一处）。带盐的 14 / 15 只能出现在这里（heritage.rs 拒）。
 pub fn native_allowed(op: &Op4) -> Result<(), &'static str> {
     if op.fmt < BODY_FMT {
         return Err("native op body is not protocol 4");
@@ -973,6 +982,11 @@ pub fn native_allowed(op: &Op4) -> Result<(), &'static str> {
             Ok(false) => Ok(()),
             Ok(true) => Err("native edit carries a heritage stamp"),
             Err(_) => Err("native edit does not decode"),
+        },
+        KIND_LOG => match log_has_legacy(&op.payload) {
+            Ok(false) => Ok(()),
+            Ok(true) => Err("native log carries a heritage hlc / server time"),
+            Err(_) => Err("native log does not decode"),
         },
         _ => Ok(()),
     }
@@ -1628,6 +1642,24 @@ pub(crate) mod tests {
         assert!(!edit_has_stamp(&Body4::Edit(native_edit()).encode()).unwrap());
         assert!(native_allowed(&op_of(id(1), 1, &stamped)).is_err());
         assert!(native_allowed(&op_of(id(1), 1, &Body4::Dedup { pairs: vec![] })).is_err());
+        // 承袭来的复习日志（旧 HLC、旧服务器时刻各自单独带也算）不能进原生日志。
+        assert!(!log_has_legacy(&Body4::Log(sample_log()).encode()).unwrap());
+        let only_hlc = Log4 {
+            server_time: None,
+            ..imported_log()
+        };
+        let only_server_time = Log4 {
+            hlc: None,
+            ..imported_log()
+        };
+        for l in [imported_log(), only_hlc, only_server_time] {
+            let body = Body4::Log(l);
+            assert!(log_has_legacy(&body.encode()).unwrap());
+            assert_eq!(
+                native_allowed(&op_of(id(1), 1, &body)),
+                Err("native log carries a heritage hlc / server time")
+            );
+        }
         let retired = Op4 {
             kind: KIND_RETIRED_MEDIA_AT,
             ..op_of(id(1), 1, &Body4::Unknown)

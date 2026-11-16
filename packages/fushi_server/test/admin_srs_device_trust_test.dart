@@ -25,6 +25,8 @@ import 'package:path/path.dart' as p;
 import 'package:shelf/shelf.dart' as shelf;
 import 'package:test/test.dart';
 
+import 'support/fake_rwkv.dart';
+
 const String kJa = '01928c3e-0000-7000-8000-00000000a0a0';
 
 void main() {
@@ -59,6 +61,8 @@ void main() {
       prefs: prefs,
       identity: identity,
       p2pAvailable: () => false,
+      // 单元测试不碰外网：RWKV 权重下载一律当场失败（服务转「出错」）。
+      srsRwkvHttpClient: noNetworkHttpClient,
     );
     await host.start();
     ctx = AdminContext(

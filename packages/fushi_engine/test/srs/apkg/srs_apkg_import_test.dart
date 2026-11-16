@@ -2551,6 +2551,75 @@ void main() {
       expect(back.newCardMix, SrsNewCardMix.beforeReviews);
       expect(back.reviewCardOrder, SrsReviewCardOrder.random);
     });
+
+    test(
+      '每日上限单位：Anki 预设的复习上限按次数 / 卡片数照写，分钟写成不限；只走 Anki 预设回导落成缺省单位（次数），带 fushi-ext 还原单位',
+      () async {
+        final SrsDbStore s = await openTestStore(
+          profileUid: kProfile,
+          deviceId: 'a',
+          now: () => t,
+        );
+        final Map<String, SrsLimitUnit?> units = <String, SrsLimitUnit?>{
+          'Plain': null,
+          'Cards': SrsLimitUnit.cards,
+          'Minutes': SrsLimitUnit.minutes,
+        };
+        for (final MapEntry<String, SrsLimitUnit?> e in units.entries) {
+          final String d = await s.createDeck(e.key);
+          await s.editFields(SrsEntityKind.deck, d, <String, Object?>{
+            SrsFieldKeys.deckLimits: <String, Object?>{'new': 20, 'review': 30},
+            if (e.value != null) SrsFieldKeys.deckLimitUnit: e.value!.wire,
+          });
+          await s.createNote(
+            noteTypeId: s.lapisNoteTypeId,
+            deckId: d,
+            fieldsById: <String, String>{
+              srsLapisFieldId(kProfile, 'Expression'): '聞く${e.key}',
+            },
+          );
+        }
+        final Uint8List anki = await exportAnkiPackage(
+          store: s,
+          options: const SrsAnkiExportOptions(ankiCompatible: true),
+        );
+        expect((await exportedPreset(anki, 'Plain')).reviewsPerDay, 30);
+        expect((await exportedPreset(anki, 'Cards')).reviewsPerDay, 30);
+        expect(
+          (await exportedPreset(anki, 'Minutes')).reviewsPerDay,
+          srsAnkiMaxReviewsPerDay,
+          reason: '30 分钟不能在 Anki 里变成 30 张',
+        );
+        final SrsDbStore viaAnki = await openTestStore(
+          profileUid: kProfile2,
+          deviceId: 'b',
+          now: () => t,
+        );
+        await importInto(viaAnki, anki);
+        final SrsDeckTree fromAnki = await viaAnki.deckTree();
+        for (final String name in units.keys) {
+          expect(
+            fromAnki[srsImportedDeckId(kProfile2, name)]!.limitUnit,
+            SrsLimitUnit.reviews,
+            reason: name,
+          );
+        }
+
+        final Uint8List ext = await exportAnkiPackage(store: s);
+        final SrsDbStore viaExt = await openTestStore(
+          profileUid: kProfile2,
+          deviceId: 'c',
+          now: () => t,
+        );
+        await importInto(viaExt, ext);
+        final SrsDeckTree back = await viaExt.deckTree();
+        for (final MapEntry<String, SrsLimitUnit?> e in units.entries) {
+          final SrsDeckView d = back[srsImportedDeckId(kProfile2, e.key)]!;
+          expect(d.limitUnit, e.value ?? SrsLimitUnit.reviews, reason: e.key);
+          expect(d.reviewsPerDay, 30, reason: e.key);
+        }
+      },
+    );
   });
 
   group('从 Anki 迁移的复习数据与新卡顺序（Lapis 用户反馈）', () {

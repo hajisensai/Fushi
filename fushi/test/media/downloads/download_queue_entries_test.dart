@@ -191,7 +191,7 @@ void main() {
       await _pump(
         tester,
         MangaDownloadTasksSection(
-          downloadsOverride: service,
+          sourcesOverride: MangaDownloadTaskSources(downloads: service),
           tasksBuilder: (BuildContext context, List<DownloadTaskEntry> tasks) {
             entries = tasks;
             return const SizedBox();
@@ -268,7 +268,7 @@ void main() {
       await _pump(
         tester,
         MangaDownloadTasksSection(
-          downloadsOverride: service,
+          sourcesOverride: MangaDownloadTaskSources(downloads: service),
           tasksBuilder: (BuildContext context, List<DownloadTaskEntry> tasks) =>
               Column(
                 children: <Widget>[
@@ -311,4 +311,54 @@ void main() {
       );
     },
   );
+
+  test('漫画任务条目（拍板台 7LwxAtJ6r0）：排队可暂停，暂停后可恢复、主操作换成恢复、按书精确定位', () async {
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
+    final MangaDownloadService service = _service(db);
+    addTearDown(() async {
+      service.dispose();
+      await db.close();
+    });
+    final MangaDownloadJobRow queued = (await service.enqueueMokuroVolume(
+      seriesName: 'Series',
+      volumeName: '01',
+    )).row;
+    DownloadTaskEntry entry = mangaDownloadTaskEntry(queued, service);
+    expect(entry.status, DownloadTaskStatus.queued);
+    expect(entry.actions.pause, isNotNull);
+    expect(entry.actions.resume, isNull);
+    expect(entry.actions.cancel, isNotNull);
+
+    await entry.actions.pause!();
+    final MangaDownloadJobRow paused = (await db.getMangaDownloadJob(
+      queued.jobId,
+    ))!;
+    expect(paused.status, MangaDownloadJobStatus.paused);
+    entry = mangaDownloadTaskEntry(paused, service);
+    expect(entry.status, DownloadTaskStatus.paused);
+    expect(entry.actions.pause, isNull);
+    expect(entry.actions.resume, isNotNull);
+    expect(entry.actions.cancel, isNotNull, reason: '暂停的任务仍可取消');
+    expect(entry.actions.clear, isNull, reason: '暂停不算结束，不能清除');
+
+    final DownloadTaskWorkFocus focus = mangaDownloadTaskFocus(
+      bookKey: queued.bookKey,
+      title: 'Series',
+    );
+    expect(focus.matches(entry), isTrue);
+    expect(
+      mangaDownloadTaskFocus(
+        bookKey: mokuroMoeBookKey('Other'),
+        title: 'Series',
+      ).matches(entry),
+      isFalse,
+      reason: '按 bookKey 精确匹配，同名标题不误吸',
+    );
+
+    await entry.actions.resume!();
+    expect(
+      (await db.getMangaDownloadJob(queued.jobId))!.status,
+      MangaDownloadJobStatus.queued,
+    );
+  });
 }

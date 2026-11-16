@@ -1,5 +1,8 @@
 import 'dart:convert';
 
+import 'package:fushi/src/models/audio_source_config.dart' show AudioSourceKind;
+import 'package:fushi/src/sync/backup_path_rebase.dart'
+    show joinPrefTag, splitPrefTag;
 import 'package:fushi/src/sync/settings_sync.dart';
 import 'package:drift/drift.dart' show QueryRow, Variable;
 import 'package:fushi_engine/media/override_title_key.dart';
@@ -69,10 +72,12 @@ class BackupMergeEngine {
     Set<String>? enabledCategoryNames,
     bool adoptSourcePreferences = false,
     bool mergePortableSettings = false,
+    bool fillMissingOnly = false,
     SrsStorage? localSrs,
     SrsCore? sourceSrs,
   }) : _srcAlias = srcAlias,
        _mergePortableSettings = mergePortableSettings,
+       _fillMissingOnly = fillMissingOnly,
        _carriedVideoSourcePaths = carriedVideoSourcePaths,
        _enabledCategoryNames = enabledCategoryNames,
        _adoptSourcePreferences = adoptSourcePreferences,
@@ -105,6 +110,11 @@ class BackupMergeEngine {
   /// （`PortableSettingsPolicy`）按修改时刻 LWW 并进来。默认关 = 合并导入一贯的
   /// 「不动本机设置」。
   final bool _mergePortableSettings;
+
+  /// 只补缺（「从覆盖导入前的快照恢复书库」用）：只插入本机缺的行，**不改任何既有
+  /// 行**——跳过全部 LWW / MAX-union 的 UPDATE、源库删除碑与合集身份合并。默认关 =
+  /// 备份合并导入的一贯语义（进度 LWW、统计 MAX-union）。
+  final bool _fillMissingOnly;
 
   /// Per-category merge gate (the `BackupCategory.name`s the user kept ticked in
   /// the import dialog); null = merge every category (legacy full merge). Only
@@ -1000,6 +1010,8 @@ class BackupMergeEngine {
 
   /// 把备份里同名合集行 [src] 的整理身份并进本库合集 [targetId]。
   Future<void> _mergeOrganizeIdentityInto(int targetId, QueryRow src) async {
+    // 只补缺：不改本机既有合集的身份。
+    if (_fillMissingOnly) return;
     final QueryRow? t = await _db
         .customSelect(
           'SELECT origin, organize_key, organize_aliases FROM media_collections '
@@ -1093,6 +1105,7 @@ class BackupMergeEngine {
               'WHERE $_srcBookUidRekey = reader_positions.book_uid)',
         )
         .join(', ');
+    if (_fillMissingOnly) return;
     await _db.customStatement(
       'UPDATE reader_positions SET $setClause '
       'WHERE EXISTS (SELECT 1 FROM $_srcAlias.reader_positions AS s '
@@ -1116,6 +1129,7 @@ class BackupMergeEngine {
       'AND s.title NOT IN (SELECT title FROM statistics_tombstones '
       "WHERE source_type = 'book')",
     );
+    if (_fillMissingOnly) return;
     await _db.customStatement(
       'UPDATE reading_statistics SET '
       'characters_read = MAX(characters_read, ('
@@ -1158,6 +1172,7 @@ class BackupMergeEngine {
       'AND s.title NOT IN (SELECT title FROM statistics_tombstones '
       "WHERE source_type = 'video')",
     );
+    if (_fillMissingOnly) return;
     await _db.customStatement(
       'UPDATE video_watch_statistics AS t SET '
       'subtitle_chars = MAX(t.subtitle_chars, ('
@@ -1199,6 +1214,7 @@ class BackupMergeEngine {
       'WHERE NOT EXISTS (SELECT 1 FROM $table AS t '
       'WHERE $tEqS)',
     );
+    if (_fillMissingOnly) return;
     await _db.customStatement(
       'UPDATE $table SET '
       '$valueColumn = MAX($valueColumn, ('
@@ -1218,6 +1234,7 @@ class BackupMergeEngine {
       'AS s WHERE NOT EXISTS (SELECT 1 FROM mining_statistics AS t '
       'WHERE t.source_type = s.source_type AND t.date_key = s.date_key)',
     );
+    if (_fillMissingOnly) return;
     await _db.customStatement(
       'UPDATE mining_statistics SET "count" = MAX("count", ('
       'SELECT s."count" FROM $_srcAlias.mining_statistics AS s '
@@ -1266,6 +1283,7 @@ class BackupMergeEngine {
       'AND NOT EXISTS (SELECT 1 FROM statistics_tombstones st '
       'WHERE st.title = s.title AND st.source_type = s.source_type)',
     );
+    if (_fillMissingOnly) return;
     await _db.customStatement(
       'UPDATE lookup_mining_counters SET '
       'lookup_count = MAX(lookup_count, ('
@@ -1460,29 +1478,32 @@ class BackupMergeEngine {
     final String hasHost = _hasHost('s', 'm');
     final String profileJoin = _profileMapJoin('s', 'sp', 'tp');
     final String profileId = await _mappedProfileId('s', 'sp', 'tp');
-    // 几个 src 游戏可能映射到同一个本机游戏 → 同 (profile, kind, key) 多条碑，取 MAX。
-    await _db.customStatement(
-      'INSERT OR IGNORE INTO study_segment_tombstones '
-      '(profile_id, media_kind, media_key, deleted_at) '
-      'SELECT $profileId, s.media_kind, $key, MAX(s.deleted_at) '
-      'FROM $_srcAlias.study_segment_tombstones AS s $join$profileJoin'
-      'WHERE $hasHost '
-      'GROUP BY $profileId, s.media_kind, $key',
-    );
-    await _db.customStatement(
-      'UPDATE study_segment_tombstones SET deleted_at = ('
-      'SELECT MAX(s.deleted_at) '
-      'FROM $_srcAlias.study_segment_tombstones AS s $join$profileJoin'
-      'WHERE $profileId = study_segment_tombstones.profile_id '
-      'AND s.media_kind = study_segment_tombstones.media_kind '
-      'AND $key = study_segment_tombstones.media_key) '
-      'WHERE EXISTS (SELECT 1 '
-      'FROM $_srcAlias.study_segment_tombstones AS s $join$profileJoin'
-      'WHERE $profileId = study_segment_tombstones.profile_id '
-      'AND s.media_kind = study_segment_tombstones.media_kind '
-      'AND $key = study_segment_tombstones.media_key '
-      'AND s.deleted_at > study_segment_tombstones.deleted_at)',
-    );
+    // 只补缺：不引入源库的删除碑（会删掉本机既有段）。
+    if (!_fillMissingOnly) {
+      // 几个 src 游戏可能映射到同一个本机游戏 → 同 (profile, kind, key) 多条碑，取 MAX。
+      await _db.customStatement(
+        'INSERT OR IGNORE INTO study_segment_tombstones '
+        '(profile_id, media_kind, media_key, deleted_at) '
+        'SELECT $profileId, s.media_kind, $key, MAX(s.deleted_at) '
+        'FROM $_srcAlias.study_segment_tombstones AS s $join$profileJoin'
+        'WHERE $hasHost '
+        'GROUP BY $profileId, s.media_kind, $key',
+      );
+      await _db.customStatement(
+        'UPDATE study_segment_tombstones SET deleted_at = ('
+        'SELECT MAX(s.deleted_at) '
+        'FROM $_srcAlias.study_segment_tombstones AS s $join$profileJoin'
+        'WHERE $profileId = study_segment_tombstones.profile_id '
+        'AND s.media_kind = study_segment_tombstones.media_kind '
+        'AND $key = study_segment_tombstones.media_key) '
+        'WHERE EXISTS (SELECT 1 '
+        'FROM $_srcAlias.study_segment_tombstones AS s $join$profileJoin'
+        'WHERE $profileId = study_segment_tombstones.profile_id '
+        'AND s.media_kind = study_segment_tombstones.media_kind '
+        'AND $key = study_segment_tombstones.media_key '
+        'AND s.deleted_at > study_segment_tombstones.deleted_at)',
+      );
+    }
     final List<String> cols = <String>[
       'uid',
       'device_id',
@@ -1523,12 +1544,14 @@ class BackupMergeEngine {
               'WHERE s.uid = study_segments.uid)',
         )
         .join(', ');
-    await _db.customStatement(
-      'UPDATE study_segments SET $setClause '
-      'WHERE EXISTS (SELECT 1 FROM $_srcAlias.study_segments AS s $join'
-      'WHERE s.uid = study_segments.uid AND $hasHost '
-      'AND s.updated_at > study_segments.updated_at)',
-    );
+    if (!_fillMissingOnly) {
+      await _db.customStatement(
+        'UPDATE study_segments SET $setClause '
+        'WHERE EXISTS (SELECT 1 FROM $_srcAlias.study_segments AS s $join'
+        'WHERE s.uid = study_segments.uid AND $hasHost '
+        'AND s.updated_at > study_segments.updated_at)',
+      );
+    }
     await _db.customStatement(
       'DELETE FROM study_segments WHERE EXISTS ('
       'SELECT 1 FROM study_segment_tombstones AS t '
@@ -2058,6 +2081,7 @@ class BackupMergeEngine {
       'WHERE t.book_uid = $_srcBookUidRekey '
       'AND t.relative_path = s.relative_path)',
     );
+    if (_fillMissingOnly) return;
     await _db.customStatement(
       'UPDATE book_custom_css SET '
       'content = (SELECT s.content FROM $_srcAlias.book_custom_css AS s '
@@ -2088,6 +2112,7 @@ class BackupMergeEngine {
       'AND NOT EXISTS (SELECT 1 FROM manga_reader_overrides AS t '
       'WHERE t.book_uid = $_srcBookUidRekey)',
     );
+    if (_fillMissingOnly) return;
     await _db.customStatement(
       'UPDATE manga_reader_overrides SET '
       'overrides_json = (SELECT s.overrides_json FROM '
@@ -2116,6 +2141,7 @@ class BackupMergeEngine {
       'AND NOT EXISTS (SELECT 1 FROM revealed_images AS t '
       'WHERE t.book_uid = $_srcBookUidRekey AND t.image_key = s.image_key)',
     );
+    if (_fillMissingOnly) return;
     await _db.customStatement(
       'UPDATE revealed_images SET '
       'revealed_at = (SELECT s.revealed_at '
@@ -2167,6 +2193,7 @@ class BackupMergeEngine {
       "WHERE instr(s.\"key\", '$kOverrideTitleKeyMarker') > 0 "
       'AND NOT EXISTS (SELECT 1 FROM preferences AS t WHERE t."key" = s."key")',
     );
+    if (_fillMissingOnly) return;
     await _db.customStatement(
       'UPDATE preferences SET '
       '"value" = (SELECT s."value" FROM $_srcAlias.preferences AS s '
@@ -2185,22 +2212,98 @@ class BackupMergeEngine {
   /// under `localAudio/` and copied by [BackupRestoreService.mergeRestoreBackup]),
   /// so their config must travel too — otherwise the restored files are orphaned
   /// and "音频来源" is silently lost on a merge (the pref-non-merge default
-  /// dropped them). Adopt the backup's value when the device has none/an empty
-  /// list (a fresh app writes an empty `[]` placeholder, so a bare NOT-EXISTS on
-  /// the key is not enough); keep the device's own list otherwise (merge never
-  /// clobbers local). The raw value is copied verbatim so its typed prefix is
-  /// preserved; [BackupService] re-homes the embedded paths onto this device's
-  /// support dir afterwards.
+  /// dropped them).
+  ///
+  /// * Device has none / an empty list (a fresh app writes an empty `[]`
+  ///   placeholder, so a bare NOT-EXISTS on the key is not enough): adopt the
+  ///   backup's raw value verbatim (typed prefix preserved).
+  /// * Device has its own list: keep every local entry as-is (order = priority,
+  ///   never clobbered) and APPEND only the backup's FILE-BACKED local-audio
+  ///   entries this device does not have yet (see [_unionLocalAudioEntries]).
+  ///   Before this union the whole backup list was skipped as soon as the device
+  ///   had any entry (e.g. the always-present `fushiRemote` row once the user
+  ///   touched audio settings), so merging the recommended pack copied its
+  ///   `local_audio_*.db` files yet never registered them — the pack's
+  ///   pronunciation audio silently never worked.
+  ///
+  /// [BackupService] re-homes the embedded paths onto this device's support dir
+  /// afterwards (by filename), for adopted and appended entries alike.
   Future<void> _mergeAudioSourcePrefs() async {
     for (final String key in _audioSourcePrefKeys) {
       final String? src = await _readPrefValue(key, isSrc: true);
       if (_isEmptyListPref(src)) continue; // backup carries no audio sources
       final String? local = await _readPrefValue(key, isSrc: false);
-      if (!_isEmptyListPref(local)) continue; // keep the device's own list
+      final String? next = _isEmptyListPref(local)
+          ? src
+          : _unionLocalAudioEntries(
+              local: local!,
+              src: src!,
+              onlyLocalAudioKind: key == 'audio_source_configs',
+            );
+      if (next == null || next == local) continue;
       await _db.customStatement(
         'INSERT OR REPLACE INTO preferences ("key", "value") VALUES (?, ?)',
-        <Object?>[key, src],
+        <Object?>[key, next],
       );
+    }
+  }
+
+  /// Internal local-audio copies are named `local_audio_<digits>.db` and land
+  /// flat in the support dir with the SAME name on every device, so the
+  /// filename is their identity across machines (timestamp + pid naming makes
+  /// two different files with one name practically impossible).
+  static final RegExp _internalLocalAudioName = RegExp(
+    r'^local_audio_\d+\.db$',
+  );
+
+  /// Identity of a local-audio registry entry's [path]: the filename for an
+  /// internal copy (paths differ per device, the name does not), the full path
+  /// for an external reference. Null when there is no usable path.
+  static String? _localAudioIdentity(Object? path) {
+    if (path is! String || path.isEmpty) return null;
+    final String name = path.replaceAll(r'\', '/').split('/').last;
+    return _internalLocalAudioName.hasMatch(name) ? name : path;
+  }
+
+  /// Appends to the device's [local] list (a PrefCodec-tagged JSON list) every
+  /// entry of the backup's [src] list that points at a local-audio DB the
+  /// device does not already register. [onlyLocalAudioKind] restricts the
+  /// typed `audio_source_configs` union to `kind: localAudio` rows — remote /
+  /// built-in sources are this device's own settings and are never imported by
+  /// a merge. Entries without a path are skipped (nothing to point at). Returns
+  /// [local] unchanged when nothing is added or either value is unparsable
+  /// (never clobber local with a guess).
+  static String _unionLocalAudioEntries({
+    required String local,
+    required String src,
+    required bool onlyLocalAudioKind,
+  }) {
+    final ({String tag, String body}) localSplit = splitPrefTag(local);
+    try {
+      final Object? localDecoded = jsonDecode(localSplit.body);
+      final Object? srcDecoded = jsonDecode(splitPrefTag(src).body);
+      if (localDecoded is! List || srcDecoded is! List) return local;
+      bool isLocalAudio(Object? e) =>
+          !onlyLocalAudioKind ||
+          (e is Map && e['kind'] == AudioSourceKind.localAudio.wireName);
+      final Set<String> have = <String>{
+        for (final Object? e in localDecoded)
+          if (e is Map && isLocalAudio(e)) ?_localAudioIdentity(e['path']),
+      };
+      final List<Object?> added = <Object?>[];
+      for (final Object? e in srcDecoded) {
+        if (e is! Map || !isLocalAudio(e)) continue;
+        final String? id = _localAudioIdentity(e['path']);
+        if (id == null || !have.add(id)) continue;
+        added.add(e);
+      }
+      if (added.isEmpty) return local;
+      return joinPrefTag(
+        localSplit.tag,
+        jsonEncode(<Object?>[...localDecoded, ...added]),
+      );
+    } on FormatException {
+      return local;
     }
   }
 

@@ -174,11 +174,13 @@ void main() {
   MangaDownloadService build({
     MangaDownloadOcrHook? onChapterDownloaded,
     DownloadKeepAlive? keepAlive,
+    int pageConcurrency = 4,
   }) => MangaDownloadService(
     database: db,
     serviceFor: (OnlineMangaRuntimeKind runtime) => library,
     onChapterDownloaded: onChapterDownloaded,
     keepAlive: keepAlive,
+    pageConcurrency: pageConcurrency,
     wait: (Duration duration) async {
       waits.add(duration);
     },
@@ -666,6 +668,175 @@ void main() {
       adapter.gate!.complete();
       await downloads.whenIdle;
       expect(keepAlive.events.where((String e) => e == 'stop'), hasLength(1));
+    });
+  });
+
+  // 拍板台 7LwxAtJ6r0：漫画下载队列可暂停 / 恢复（半成品留着续跑），整批按书操作。
+  group('暂停 / 恢复', () {
+    test('下载中暂停 → paused，已落地的页保留、不再取新页；恢复后只补剩下的页', () async {
+      adapter.gate = Completer<void>();
+      final MangaDownloadService downloads = build(pageConcurrency: 1);
+      final MangaDownloadJobRow job = await downloads.enqueueChapter(
+        entry: _entry(),
+        chapter: _chapters.last,
+        autoOcr: false,
+      );
+      await downloads.start();
+      while ((adapter.fetchCounts[0] ?? 0) == 0) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+      final Future<void> pausing = downloads.pause(job.jobId);
+      adapter.gate!.complete();
+      adapter.gate = null;
+      await pausing;
+      await downloads.whenIdle;
+
+      final MangaDownloadJobRow paused = await jobOf('/chapter/1');
+      expect(paused.status, MangaDownloadJobStatus.paused);
+      expect(paused.pagesDone, 1);
+      expect(adapter.fetchCounts, <int, int>{0: 1}, reason: '暂停后不再发起新的取页');
+      final Directory chapterDir = mangaChapterDirectory(bookDir, '/chapter/1');
+      expect(chapterDir.existsSync(), isTrue, reason: '暂停不删半成品');
+      expect(await isChapterDownloaded(bookDir, '/chapter/1'), isFalse);
+
+      await downloads.resume(job.jobId);
+      await downloads.whenIdle;
+      expect((await jobOf('/chapter/1')).status, MangaDownloadJobStatus.done);
+      expect(adapter.fetchCounts, <int, int>{
+        0: 1,
+        1: 1,
+        2: 1,
+      }, reason: '已落地的第 1 页不重取');
+      downloads.dispose();
+    });
+
+    test('排队中暂停 → worker 跳过它；暂停跨重启保持；恢复后排回去跑完', () async {
+      final MangaDownloadService first = build();
+      final MangaDownloadJobRow held = await first.enqueueChapter(
+        entry: _entry(),
+        chapter: _chapters.last,
+        autoOcr: false,
+      );
+      await first.enqueueChapter(
+        entry: _entry(),
+        chapter: _chapters.first,
+        autoOcr: false,
+      );
+      await first.pause(held.jobId);
+      await first.start();
+      await first.whenIdle;
+      expect((await jobOf('/chapter/2')).status, MangaDownloadJobStatus.done);
+      expect((await jobOf('/chapter/1')).status, MangaDownloadJobStatus.paused);
+      first.dispose();
+
+      final MangaDownloadService second = build();
+      await second.start();
+      await second.whenIdle;
+      expect(
+        (await jobOf('/chapter/1')).status,
+        MangaDownloadJobStatus.paused,
+        reason: '重启不把暂停的任务复位成排队',
+      );
+      await second.resume(held.jobId);
+      await second.whenIdle;
+      expect((await jobOf('/chapter/1')).status, MangaDownloadJobStatus.done);
+      second.dispose();
+    });
+
+    test('pauseAll / resumeAll / cancelAll 只作用于给定的书', () async {
+      final MangaDownloadService downloads = build();
+      await downloads.enqueueChapters(
+        entry: _entry(),
+        chapters: _chapters,
+        autoOcr: false,
+      );
+      final String otherJob = (await downloads.enqueueMokuroVolume(
+        seriesName: 'Other',
+        volumeName: '01',
+      )).row.jobId;
+
+      await downloads.pauseAll(bookKey: bookKey);
+      expect((await jobOf('/chapter/1')).status, MangaDownloadJobStatus.paused);
+      expect((await jobOf('/chapter/2')).status, MangaDownloadJobStatus.paused);
+      expect(
+        (await db.getMangaDownloadJob(otherJob))!.status,
+        MangaDownloadJobStatus.queued,
+        reason: '别的作品不受影响',
+      );
+
+      await downloads.resumeAll(bookKey: bookKey);
+      expect((await jobOf('/chapter/1')).status, MangaDownloadJobStatus.queued);
+      expect((await jobOf('/chapter/2')).status, MangaDownloadJobStatus.queued);
+
+      await downloads.pause((await jobOf('/chapter/1')).jobId);
+      await downloads.cancelAll(bookKey: bookKey);
+      expect(
+        (await jobOf('/chapter/1')).status,
+        MangaDownloadJobStatus.cancelled,
+        reason: '暂停的任务也能取消',
+      );
+      expect(
+        (await jobOf('/chapter/2')).status,
+        MangaDownloadJobStatus.cancelled,
+      );
+      expect(
+        (await db.getMangaDownloadJob(otherJob))!.status,
+        MangaDownloadJobStatus.queued,
+      );
+      downloads.dispose();
+    });
+
+    test('取消暂停中的任务 → cancelled 并删半成品', () async {
+      adapter.gate = Completer<void>();
+      final MangaDownloadService downloads = build(pageConcurrency: 1);
+      final MangaDownloadJobRow job = await downloads.enqueueChapter(
+        entry: _entry(),
+        chapter: _chapters.last,
+        autoOcr: false,
+      );
+      await downloads.start();
+      while ((adapter.fetchCounts[0] ?? 0) == 0) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+      final Future<void> pausing = downloads.pause(job.jobId);
+      adapter.gate!.complete();
+      adapter.gate = null;
+      await pausing;
+      await downloads.whenIdle;
+      final Directory chapterDir = mangaChapterDirectory(bookDir, '/chapter/1');
+      expect(chapterDir.existsSync(), isTrue);
+
+      await downloads.cancel(job.jobId);
+      expect(
+        (await jobOf('/chapter/1')).status,
+        MangaDownloadJobStatus.cancelled,
+      );
+      expect(chapterDir.existsSync(), isFalse, reason: '取消照样删半成品');
+      downloads.dispose();
+    });
+
+    test('服务还没 start 时暂停上次进程留下的 running 行 → 直接 paused，start 不复活它', () async {
+      final MangaDownloadService first = build();
+      final MangaDownloadJobRow job = await first.enqueueChapter(
+        entry: _entry(),
+        chapter: _chapters.last,
+        autoOcr: false,
+      );
+      first.dispose();
+      await db.updateMangaDownloadJobStatus(
+        job.jobId,
+        status: MangaDownloadJobStatus.running,
+        updatedAt: 1,
+      );
+
+      final MangaDownloadService second = build();
+      await second.pause(job.jobId);
+      expect((await jobOf('/chapter/1')).status, MangaDownloadJobStatus.paused);
+      await second.start();
+      await second.whenIdle;
+      expect((await jobOf('/chapter/1')).status, MangaDownloadJobStatus.paused);
+      expect(adapter.fetchCounts, isEmpty);
+      second.dispose();
     });
   });
 }

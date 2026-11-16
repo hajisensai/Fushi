@@ -65,6 +65,8 @@ class _FakeEngine implements FsrsEngine {
   @override
   String get fsrsRev => 'fake';
   @override
+  bool isKnownFsrsRev(String rev) => rev == fsrsRev;
+  @override
   List<double> defaultParams(SrsAlgorithm a) =>
       List<double>.filled(a.paramCount, 1);
   @override
@@ -2654,6 +2656,106 @@ void main() {
         expect(byKey('srs-settings-review-limit-low'), findsNothing);
         expect(byKey('srs-settings-min-over-limit'), findsNothing);
         expect(field('srs-settings-review').readOnly, isTrue);
+        await _unmount(tester);
+      },
+    );
+
+    testWidgets(
+      '牌组设置页：每日上限单位——缺省次数；切到分钟后两个输入框后缀变「分钟」、按张数换算的「至少新卡 10 倍」不提示、最少复习超过上限换成时长说法；保存写单位键、数值键不变',
+      (WidgetTester tester) async {
+        final SrsDbStore store = await _openStore(tester);
+        await _pumpPage(
+          tester,
+          store: store,
+          apple: false,
+          page: SrsDeckSettingsPage(deckId: store.defaultDeckId),
+        );
+        Finder byKey(String key) =>
+            find.byKey(ValueKey<String>(key), skipOffstage: false);
+        Finder inside(String key, String text) => find.descendant(
+          of: byKey(key),
+          matching: find.text(text, skipOffstage: false),
+        );
+        Future<void> reveal(Finder finder) async {
+          await Scrollable.ensureVisible(
+            tester.element(finder),
+            alignment: 0.5,
+          );
+          await tester.pump();
+        }
+
+        Future<void> enter(String key, String value) async {
+          await reveal(byKey(key));
+          await tester.enterText(
+            find.descendant(
+              of: byKey(key),
+              matching: find.byType(EditableText),
+            ),
+            value,
+          );
+          await _settle(tester);
+        }
+
+        expect(
+          inside('srs-settings-review', t.srs_settings_limit_suffix_reviews),
+          findsOneWidget,
+        );
+        // 选项控件随平台 / 宽度变（分段 / 菜单），说明文字在菜单形态下与当前值拼在一起：这里直接看行的参数、
+        // 走行的回调。
+        AdaptiveSettingsSegmentedRow<SrsLimitUnit> unitRow() =>
+            tester.widget<AdaptiveSettingsSegmentedRow<SrsLimitUnit>>(
+              byKey('srs-settings-limit-unit'),
+            );
+        expect(unitRow().selected, SrsLimitUnit.reviews);
+        expect(unitRow().subtitle, t.srs_settings_limit_unit_reviews_hint);
+        // 次数下：新卡 30、复习 10 → 提示「至少 300」。
+        await enter('srs-settings-new', '30');
+        await enter('srs-settings-review', '10');
+        expect(byKey('srs-settings-review-limit-low'), findsOneWidget);
+
+        unitRow().onChanged(SrsLimitUnit.minutes);
+        await _settle(tester);
+        expect(unitRow().selected, SrsLimitUnit.minutes);
+        expect(unitRow().subtitle, t.srs_settings_limit_unit_minutes_hint);
+        expect(byKey('srs-settings-review-limit-low'), findsNothing);
+        for (final String key in <String>[
+          'srs-settings-review',
+          'srs-settings-rwkv-min-reviews',
+        ]) {
+          expect(
+            inside(key, t.srs_settings_limit_suffix_minutes),
+            findsOneWidget,
+            reason: key,
+          );
+        }
+        expect(
+          inside(
+            'srs-settings-rwkv-min-reviews',
+            t.srs_settings_rwkv_min_minutes,
+          ),
+          findsOneWidget,
+        );
+        // 默认牌组最少复习 40 > 上限 10：换成时长的说法。
+        expect(
+          inside(
+            'srs-settings-min-over-limit',
+            t.srs_settings_rwkv_min_over_limit_minutes(min: 40, limit: 10),
+          ),
+          findsOneWidget,
+        );
+
+        await srsUntilWritten(
+          tester,
+          () => tester.tap(
+            find.byKey(const ValueKey<String>('srs_settings_save')).first,
+          ),
+        );
+        final SrsDeckView saved = (await tester.runAsync(
+          store.deckTree,
+        ))![store.defaultDeckId]!;
+        expect(saved.limitUnit, SrsLimitUnit.minutes);
+        expect(saved.reviewsPerDay, 10);
+        expect(saved.rwkvQueue.minReviewsPerDay, 40);
         await _unmount(tester);
       },
     );

@@ -63,7 +63,7 @@ class RecommendedPackDownloadMiniBarView extends StatelessWidget {
 
   final RecommendedPackDownloadController controller;
 
-  /// 导入已下好的整包。导入要用户确认覆盖/合并并重启进程，controller 不自己发起。
+  /// 导入已下好的整包。导入（恒合并）会重启进程，controller 不自己发起。
   final VoidCallback onImport;
 
   /// 放弃已暂停的下载（确认后删半截包）。与 [onImport] 同一条纪律：删几 GB 要用户

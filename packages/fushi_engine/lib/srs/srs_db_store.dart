@@ -266,7 +266,8 @@ class SrsEditSpec {
 }
 
 /// 内核缓存刷新的配置（内核命令的 `caches`；[SrsDbStore] 打开时注册一次，`cache_config_set`）：[profileUid] 的默认
-/// 牌组与各内置笔记类型（代码默认值 + 读音字段，readingKey 的来源）。只由 profile 的 uid 决定。
+/// 牌组与各内置笔记类型（代码默认值 + 读音字段，readingKey 的来源）。只由 profile 的 uid 决定；换代预演
+/// （sync2/srs_gen4_rehearsal.dart）给库里每个 profile 各算一份。
 Map<String, Object?> srsCacheConfigFor(String profileUid) => <String, Object?>{
   'defaultDeck': SrsKernelIds(profileUid).defaultDeck,
   'builtins': <String, Object?>{
@@ -5010,7 +5011,8 @@ class SrsDbStore implements SrsSync2Host {
 
   /// 「每天最少复习数」补足时内核可能用到的、今天还没答过且 R 高于目标的卡（[rows] / [scores] 的下标）：每个参数
   /// 归属牌组（配额按它记，store/study.rs `instant_eligible`）只留 R 最低（同 R 按 id）的前 `minReviewsPerDay`
-  /// 张——内核补足时按同一顺序取、最多取这么多，其余的交过去也只会被丢掉。以前开了这一项就把 RWKV 牌组的全部
+  /// 张——内核补足时按同一顺序取、最多取这么多，其余的交过去也只会被丢掉（归属牌组按分钟记配额时例外，全交）。
+  /// 这里只决定交哪些卡，不判定补不补：补足规则只在内核。以前开了这一项就把 RWKV 牌组的全部
   /// 复习卡都交给内核，新建牌组默认开（[SrsRwkvQueueSettings.forNewDeck]）后每次排队都要搬整表。
   Set<int> _minimumTopUp(
     SrsDeckTree tree,
@@ -5040,6 +5042,12 @@ class SrsDbStore implements SrsSync2Host {
     }
     final Set<int> out = <int>{};
     for (final MapEntry<String, List<int>> e in above.entries) {
+      // 归属牌组按分钟记配额（[SrsLimitUnit.minutes]）：内核在今天复习时长没到之前把高于目标的卡全部补上，
+      // 补多少张由时长决定、事先不知道，所以全交。按次数 / 卡片数记时内核每补一张至少扣 1，最多补这么多张。
+      if (tree[e.key]?.limitUnit == SrsLimitUnit.minutes) {
+        out.addAll(e.value);
+        continue;
+      }
       e.value.sort((int a, int b) {
         final int byR = scores[a].compareTo(scores[b]);
         return byR != 0 ? byR : rows[a].card.id.compareTo(rows[b].card.id);

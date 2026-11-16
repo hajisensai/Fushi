@@ -929,6 +929,58 @@ class _FushiFabDefaultHeroTag {
   String toString() => '<FushiFab default hero tag>';
 }
 
+/// MD3 扩展 FAB 的「图标 + 间距 + 文字」整行。
+///
+/// [FloatingActionButton.extended] 把内容放进 `_ChildOverflowBox`，以无约束的
+/// `BoxConstraints()` 布局内部 Row，父级给的宽度上限传不进来，文字的
+/// `maxLines` / `ellipsis` 永远不触发，长文字直接画出按钮外。所以图标与文字
+/// 由这里自己排：外层按 [maxWidth]（父级上限减掉左右 extendedPadding）收口，
+/// 文字放 [Flexible] 里单行省略；短文字仍按内容收窄。
+///
+/// 限制：带文字的 [FushiFab] 外层因此套了一层 [LayoutBuilder]，它不支持
+/// intrinsic / dry layout。不要把带文字的 FushiFab 放进 [IntrinsicWidth] /
+/// [IntrinsicHeight] 或会对子节点调 `getDryLayout` 的容器，否则 debug 下断言。
+class _FushiFabExtendedContent extends StatelessWidget {
+  const _FushiFabExtendedContent({
+    required this.icon,
+    required this.label,
+    required this.iconSize,
+    required this.spacing,
+    required this.maxWidth,
+  });
+
+  final Widget icon;
+  final Widget label;
+  final double iconSize;
+  final double spacing;
+  final double maxWidth;
+
+  @override
+  Widget build(BuildContext context) {
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: maxWidth),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          IconTheme.merge(
+            data: IconThemeData(size: iconSize),
+            child: icon,
+          ),
+          SizedBox(width: spacing),
+          Flexible(
+            child: DefaultTextStyle.merge(
+              maxLines: 1,
+              softWrap: false,
+              overflow: TextOverflow.ellipsis,
+              child: label,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _FushiFabState extends State<FushiFab> with TickerProviderStateMixin {
   late final FushiSpring _press = FushiSpring(vsync: this);
 
@@ -1028,6 +1080,12 @@ class _FushiFabState extends State<FushiFab> with TickerProviderStateMixin {
       width: m.extent,
       height: m.extent,
     );
+    final double iconLabelSpacing = widget.size == FushiFabSize.regular
+        ? 12
+        : 16;
+    final EdgeInsets extendedPadding = EdgeInsets.symmetric(
+      horizontal: widget.size == FushiFabSize.regular ? 16 : 26,
+    );
     final FloatingActionButtonThemeData sized = base.copyWith(
       sizeConstraints: box,
       largeSizeConstraints: box,
@@ -1038,10 +1096,8 @@ class _FushiFabState extends State<FushiFab> with TickerProviderStateMixin {
         minWidth: m.extent + 24,
       ),
       iconSize: m.iconSize,
-      extendedIconLabelSpacing: widget.size == FushiFabSize.regular ? 12 : 16,
-      extendedPadding: EdgeInsets.symmetric(
-        horizontal: widget.size == FushiFabSize.regular ? 16 : 26,
-      ),
+      extendedIconLabelSpacing: iconLabelSpacing,
+      extendedPadding: extendedPadding,
       extendedTextStyle: switch (widget.size) {
         FushiFabSize.regular => theme.textTheme.titleMedium,
         FushiFabSize.medium => theme.textTheme.titleLarge,
@@ -1078,15 +1134,29 @@ class _FushiFabState extends State<FushiFab> with TickerProviderStateMixin {
                 shape: shape,
                 child: widget.icon,
               )
-            : FloatingActionButton.extended(
-                onPressed: widget.onPressed,
-                tooltip: widget.tooltip,
-                heroTag: widget.heroTag,
-                focusNode: widget.focusNode,
-                autofocus: widget.autofocus,
-                shape: shape,
-                icon: widget.icon,
-                label: label,
+            : LayoutBuilder(
+                builder: (BuildContext context, BoxConstraints constraints) =>
+                    FloatingActionButton.extended(
+                      onPressed: widget.onPressed,
+                      tooltip: widget.tooltip,
+                      heroTag: widget.heroTag,
+                      focusNode: widget.focusNode,
+                      autofocus: widget.autofocus,
+                      shape: shape,
+                      label: _FushiFabExtendedContent(
+                        icon: widget.icon,
+                        label: label,
+                        iconSize: m.iconSize,
+                        spacing: iconLabelSpacing,
+                        maxWidth: constraints.hasBoundedWidth
+                            ? math.max(
+                                0,
+                                constraints.maxWidth -
+                                    extendedPadding.horizontal,
+                              )
+                            : double.infinity,
+                      ),
+                    ),
               );
       },
     );

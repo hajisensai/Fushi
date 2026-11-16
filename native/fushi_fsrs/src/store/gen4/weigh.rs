@@ -77,6 +77,8 @@ pub struct Hold {
     pub kind: EntKind,
     pub entity: Ref,
     pub op: OpId,
+    /// 这条删除在 `ops` 里的键（[op] 的打包形，读它的操作头 / 正文不必再按 ID 换一次）。
+    pub k: i64,
     /// 与它并发的操作：修改（含标签、清除）、复习、挪进来的卡。
     pub edits: u64,
     pub reviews: u64,
@@ -804,6 +806,7 @@ impl<'t, 'c> Index<'t, 'c> {
                 kind: ent_kind(kind)?,
                 entity,
                 op: self.t.id_of_key(k)?,
+                k,
                 edits: edits as u64,
                 reviews: reviews as u64,
                 moves: moves as u64,
@@ -832,6 +835,34 @@ impl<'t, 'c> Index<'t, 'c> {
             out.push(self.t.id_of_key(k)?);
         }
         out.sort();
+        Ok(out)
+    }
+
+    /// [Index::distrusted] 分开给：(扣着的删除修改, 扣着的清除)，各按操作号升序、各自去重。同步页的设备行
+    /// （`cmd/writes_local.rs` `status` 的 `heldDeletes` / `heldPurges`，协议 3 `trust.rs` `untrusted` 同口径）用。
+    pub fn distrusted_split(&self) -> Result<(Vec<OpId>, Vec<OpId>), String> {
+        let mut out = (Vec::new(), Vec::new());
+        for (q, slot) in [
+            (
+                "SELECT DISTINCT k FROM reg_ix WHERE col = ?1 AND state = ?2",
+                &mut out.0,
+            ),
+            (
+                "SELECT DISTINCT k FROM purge_ix WHERE col = ?1 AND state = ?2",
+                &mut out.1,
+            ),
+        ] {
+            let mut stmt = self.t.conn().prepare_cached(q).map_err(sql)?;
+            let ks: Vec<i64> = stmt
+                .query_map(params![self.col, S_DISTRUSTED], |r| r.get(0))
+                .map_err(sql)?
+                .collect::<Result<_, _>>()
+                .map_err(sql)?;
+            for k in ks {
+                slot.push(self.t.id_of_key(k)?);
+            }
+            slot.sort();
+        }
         Ok(out)
     }
 

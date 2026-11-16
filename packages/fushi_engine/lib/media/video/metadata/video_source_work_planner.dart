@@ -164,6 +164,25 @@ class VideoSourceWorkPlanner {
         );
         continue;
       }
+      if (!discWork &&
+          _membersAreDifferentWorks(entry.value) &&
+          !await _collectionHasIdentity(collection.id)) {
+        // 清单合集装的是几部不同的作品（「剧场版合集」「观看顺序」这类 m3u8：
+        // 成员各在自己的作品目录、集位撞车）。把整个合集当一部作品去认，只能
+        // 得到「候选都不像」的待确认；各成员各自识别才对得上（BUG-4696）。合集
+        // 本身不动，它仍是用户的播放清单。合集上已记着作品身份（用户确认 / 已
+        // 刮过）时那份身份优先，不按推断拆开绕过它。
+        for (final VideoBookRow book in entry.value) {
+          result.add(
+            VideoSourceScrapeWork(
+              source: source,
+              title: book.title,
+              members: <VideoBookRow>[book],
+            ),
+          );
+        }
+        continue;
+      }
       entry.value.sort((VideoBookRow a, VideoBookRow b) {
         if (discWork) {
           final int byIndex = (sortIndex[(entry.key, a.bookUid)] ?? 0)
@@ -190,5 +209,42 @@ class VideoSourceWorkPlanner {
       return a.stableKey.compareTo(b.stableKey);
     });
     return List<VideoSourceScrapeWork>.unmodifiable(result);
+  }
+
+  /// 合集是不是一份装着不同作品的清单（而不是一部作品的各集），只看结构证据，
+  /// 两条同时成立才算：
+  ///
+  /// - **集位冲突**：有两个成员解出同一个（季, 集）（[parseVideoPath]，季号回落
+  ///   父目录的季目录）。一部作品的集位不会重复；混装的剧场版个个都是 `S00E01`。
+  /// - **作品根目录两两不同**（[videoWorkRootDirectory]，剥掉纯季目录那层）：每个
+  ///   成员各在自己的作品目录里。有两个成员同根就不算——那种部分混装靠文件哈希
+  ///   按作品拆（`_splitByAnidbWork`），这里不猜归属。
+  ///
+  /// 不拿文件名解出的作品名文本当判据：`01.mkv`、`第01集.mp4`、`S01E01 - Pilot`、
+  /// `第01話 旅立ち` 这类「作品名只在目录上」的集文件，解出的「作品名」是集号或
+  /// 集标题，整部剧会两两不同。
+  static bool _membersAreDifferentWorks(List<VideoBookRow> members) {
+    if (members.length < 2) return false;
+    final Set<String> roots = <String>{};
+    final Set<(int, int)> slots = <(int, int)>{};
+    bool slotConflict = false;
+    for (final VideoBookRow member in members) {
+      if (!roots.add(videoWorkRootDirectory(member.videoPath))) return false;
+      final VideoNameInfo info = parseVideoPath(member.videoPath);
+      final int? episode = info.episode;
+      if (episode == null) continue;
+      if (!slots.add((info.season ?? 1, episode))) slotConflict = true;
+    }
+    return slotConflict;
+  }
+
+  /// 合集上是否已记着作品身份（用户确认过、或刮削写下的资料源 id）。
+  Future<bool> _collectionHasIdentity(int collectionId) async {
+    final VideoMetadataWorkRow? work = await _database
+        .getVideoMetadataWorkByCollection(collectionId);
+    if (work == null) return false;
+    return (await _database.getVideoMetadataProviderIdentities(
+      workId: work.id,
+    )).isNotEmpty;
   }
 }
