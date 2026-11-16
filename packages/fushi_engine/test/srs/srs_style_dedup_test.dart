@@ -24,7 +24,6 @@ import 'support/srs_sync2_peers.dart';
 import 'support/srs_test_storage.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
 import 'support/srs_raw_sql.dart';
-import 'package:fushi_engine/srs/srs_reads.dart';
 
 const String kProfile = '01928c3e-0000-7000-8000-0000000000d5';
 
@@ -212,13 +211,9 @@ void main() {
         isFalse,
       );
     }
-    // 同步 v2：操作不可变，C 发来的内联原文按原样落进 B 的投影（本机写的才在落库前换成引用行）；
-    // B 的存量去重随后就地把它换成引用表示，不追加操作。
+    // 同步 v2：操作不可变，C 发来的内联原文按原样落进 B 的投影（本机写的才在落库前换成引用行）。
+    // 存量去重（compactStoredStyles）随协议 3 一起删了（G7-5）。
     expect(await rawStyleRows(dbB), 1);
-    final Object? opsB = (await b.sync2Status())['ops'];
-    expect(await b.compactStoredStyles(), 1);
-    expect(await rawStyleRows(dbB), 0);
-    expect((await b.sync2Status())['ops'], opsB);
     expect(await render(b, id), await render(a, id));
     await dbA.close();
     await dbB.close();
@@ -326,57 +321,6 @@ void main() {
     expect(await rawStyleRows(db2), 0);
     await db.close();
     await db2.close();
-  });
-
-  test('存量迁移：就地改表示、不产生事件；分批可中断可续、幂等；渲染不变', () async {
-    final SrsStorage db = await memDb();
-    final SrsDbStore legacy = await open(db, 'dev');
-    final List<String> ids = <String>[
-      for (int i = 0; i < 7; i++) await addNote(legacy, '語$i', dicts),
-    ];
-    final Map<String, (String, String)> rendered = <String, (String, String)>{
-      for (final String id in ids) id: await render(legacy, id),
-    };
-    final Map<String, Map<String, String>> fields =
-        <String, Map<String, String>>{
-          for (final String id in ids) id: (await legacy.note(id))!.fields,
-        };
-    final Object? ops = (await legacy.sync2Status())['ops'];
-    final int bytesBefore = await editBytes(db);
-    expect(await rawStyleRows(db), 14);
-
-    final SrsDbStore s = await open(db, 'dev', styleDir: 'media');
-    int batches = 0;
-    srsDebugReadCommands = 0;
-    final int core0 = s.debugCoreCommands;
-    final int first = await s.compactStoredStyles(
-      batchSize: 4,
-      shouldStop: () => batches++ >= 1,
-    );
-    expect(first, 4);
-    // 一批的往返（收掉 Dart 写路径第 5 步）：改动前 BEGIN + 选行 + 每行一条 UPDATE + 本机状态 upsert + COMMIT（4 行
-    // 共 8 条语句）+ 内核 `refresh_caches` 1 条；改动后只剩选行 1 条语句 + 内核 `edits_rewrite_repr` 1 条。
-    expect(
-      (statements: srsDebugReadCommands, core: s.debugCoreCommands - core0),
-      (statements: 1, core: 1),
-    );
-    expect(await rawStyleRows(db), 10);
-    // 断点记在本机状态里：换一个实例（相当于重启）接着跑。
-    final SrsDbStore resumed = await open(db, 'dev', styleDir: 'media');
-    expect(await resumed.compactStoredStyles(batchSize: 4), 10);
-    expect(await rawStyleRows(db), 0);
-    expect(await resumed.compactStoredStyles(), 0);
-
-    expect((await resumed.sync2Status())['ops'], ops, reason: '就地改表示，不追加操作');
-    expect(await editBytes(db), lessThan(bytesBefore ~/ 3));
-    for (final String id in ids) {
-      expect(await render(resumed, id), rendered[id]);
-      final SrsNoteView n = (await resumed.note(id))!;
-      for (final MapEntry<String, String> f in fields[id]!.entries) {
-        expect(await resumed.expandStyles(n.field(f.key)), f.value);
-      }
-    }
-    await db.close();
   });
 
   test('AnkiConnect：加卡 / 改卡落库去重，notesInfo 原样读回；同内容改卡不产生记录', () async {

@@ -67,9 +67,7 @@ void main() {
   Future<SrsDbStore> phone(String uid, String deviceId) async {
     final Directory dir = Directory(p.join(tmp.path, 'phone_$deviceId'))
       ..createSync();
-    final SrsStorage storage = await SrsStorage.open(
-      path: SrsStorage.pathIn(dir.path),
-    );
+    final SrsStorage storage = await SrsStorage.open(directory: dir.path);
     addTearDown(storage.close);
     return SrsDbStore.open(
       core: storage.core,
@@ -105,7 +103,7 @@ void main() {
     await srs.start();
     expect(srs.remoteStore, isNull);
     expect(srs.profiles, isEmpty);
-    expect(File(SrsStorage.pathIn(support.path)).existsSync(), isFalse);
+    expect(File(SrsStorage.gen4PathIn(support.path)).existsSync(), isFalse);
   });
 
   test('srs.db 打不开（原生库缺 / 路径坏）：start 不抛，那份标成出错，服务照常起', () async {

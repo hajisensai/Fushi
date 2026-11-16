@@ -10,7 +10,6 @@ import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_media_sync.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_engine/srs/srs_style_store.dart';
-import 'package:fushi_srs/fushi_srs.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
@@ -18,16 +17,6 @@ import 'support/srs_test_storage.dart';
 import 'support/srs_raw_sql.dart';
 
 const String kProfile = '01928c3e-0000-7000-8000-0000000000de';
-
-/// 与 srs_style_dedup_test 同形的 Yomitan 释义（每本词典一段内联样式，够大才会被换成共享样式文件）。
-String _glossary(String word, List<String> dicts) => <String>[
-  '<div style="text-align: left;" class="yomitan-glossary"><ol>',
-  for (final String d in dicts)
-    '<li data-dictionary="$d"><i>($d)</i> <span>$word の意味</span><style>'
-        '${List<String>.generate(60, (int i) => '.yomitan-glossary [data-dictionary="$d"] .gloss-sc-$i{margin:${i}px;}').join('\n')}'
-        '</style></li>',
-  '</ol></div>',
-].join();
 
 void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
@@ -98,54 +87,37 @@ void main() {
     expect((await s.note(keep))!.deletedAt, isNull);
   });
 
-  test('存量样式去重改写字段后，共享样式文件名进引用集', () async {
-    const List<String> dicts = <String>['JMdict', '大辞林'];
-    final SrsDbStore plain = await open();
-    final String fid = srsFushiCardFieldId(kProfile, 'Glossary');
-    final String n = await plain.createNote(
-      noteTypeId: plain.fushiCardNoteTypeId,
-      fieldsById: <String, String>{
-        srsFushiCardFieldId(kProfile, 'Expression'): '雪',
-        fid: _glossary('雪', dicts),
-      },
-    );
-    expect((await plain.note(n))!.field(fid), contains('<style>'));
+  test(
+    '老库（缓存修订号 2、media_refs 为空）打开时补齐',
+    () async {
+      final SrsDbStore s = await open();
+      await s.createNote(
+        noteTypeId: s.lapisNoteTypeId,
+        fieldsById: <String, String>{
+          lapis('Expression'): '猫',
+          lapis('Picture'): '<img src="a.png">',
+          lapis('ExpressionAudio'): '[sound:b.mp3]',
+        },
+      );
+      final Set<String> want = await srsReferencedMedia(s);
+      expect(want, containsAll(<String>['a.png', 'b.mp3']));
 
-    final SrsDbStore s = await open(styleDir: 'media');
-    expect(await s.compactStoredStyles(), greaterThan(0));
-    final String stored = (await s.note(n))!.field(fid);
-    expect(stored, isNot(contains('<style>')));
-    final Set<String> styleFiles = srsStyleRefsIn(stored);
-    expect(styleFiles, hasLength(dicts.length));
-    expect(await srsReferencedMedia(s), containsAll(styleFiles));
-  });
+      st.core.debugExecRaw("UPDATE srs_notes_cache SET media_refs = ''");
+      st.core.debugExecRaw(
+        "UPDATE srs_local_state SET json = json_set(json, '\$.cacheRev', 2)",
+      );
+      expect(await srsReferencedMedia(s), isNot(contains('a.png')));
 
-  test('老库（缓存修订号 2、media_refs 为空）打开时补齐', () async {
-    final SrsDbStore s = await open();
-    await s.createNote(
-      noteTypeId: s.lapisNoteTypeId,
-      fieldsById: <String, String>{
-        lapis('Expression'): '猫',
-        lapis('Picture'): '<img src="a.png">',
-        lapis('ExpressionAudio'): '[sound:b.mp3]',
-      },
-    );
-    final Set<String> want = await srsReferencedMedia(s);
-    expect(want, containsAll(<String>['a.png', 'b.mp3']));
-
-    st.core.debugExecRaw("UPDATE srs_notes_cache SET media_refs = ''");
-    st.core.debugExecRaw(
-      "UPDATE srs_local_state SET json = json_set(json, '\$.cacheRev', 2)",
-    );
-    expect(await srsReferencedMedia(s), isNot(contains('a.png')));
-
-    final SrsDbStore reopened = await open();
-    expect(await srsReferencedMedia(reopened), want);
-    final String json =
-        (await st.core
-                .customSelect('SELECT json FROM srs_local_state')
-                .getSingle())
-            .read<String>('json');
-    expect((jsonDecode(json) as Map)['cacheRev'], reopened.debugCacheRevision);
-  });
+      final SrsDbStore reopened = await open();
+      expect(await srsReferencedMedia(reopened), want);
+      final String json =
+          (await st.core
+                  .customSelect('SELECT json FROM srs_local_state')
+                  .getSingle())
+              .read<String>('json');
+      expect((jsonDecode(json) as Map)['cacheRev'], isNotNull);
+    },
+    skip:
+        'G7-5: protocol 3 cache revision (srs_local_state.cacheRev) does not exist in gen4; derived-cache config lives in the kernel (cache_config_set / derive_cfg)',
+  );
 }

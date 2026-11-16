@@ -129,7 +129,7 @@ void main() {
 
   /// 按 app 的方式（主进程：带一次性搬迁）打开 [dbDir] 下的 srs.db。调用方负责关。
   Future<SrsStorage> openSrsLikeApp(String dbDir, FushiDatabase db) =>
-      SrsStorage.open(path: SrsStorage.pathIn(dbDir), legacy: db);
+      SrsStorage.open(directory: dbDir, legacy: db);
 
   /// 源设备：profile「日语」一条笔记 + 两个媒体文件（另有一个写入中途的 .tmp）。
   /// [legacy] 为真时模拟还没搬迁的设备：SRS 只在主库老表里，本机没有 srs.db。
@@ -150,9 +150,11 @@ void main() {
     final int pid = await insertProfile(db, '日语');
     final String uid = await db.profileUidOf(pid);
     final SrsStorage srs = await SrsStorage.open(
-      path: legacy
-          ? p.join(src.path, 'scratch_srs.db')
-          : SrsStorage.pathIn(dbDir),
+      directory: p.dirname(
+        legacy
+            ? p.join(src.path, 'scratch_srs.db')
+            : SrsStorage.legacyPathIn(dbDir),
+      ),
     );
     final SrsDbStore store = await storeOn(srs, uid, 'dev-src');
     if (!withSrs) {
@@ -308,7 +310,7 @@ void main() {
         await blob.close();
       }
       final SrsStorage snap = await SrsStorage.open(
-        path: extract(archive, 'srs.db', ex),
+        directory: p.dirname(extract(archive, 'srs.db', ex)),
       );
       try {
         expect(await noteCount(snap), 1);
@@ -468,7 +470,7 @@ void main() {
       );
       expect(Directory(mediaDir.path).listSync(), hasLength(2));
       expect(
-        File('${SrsStorage.pathIn(dstDb)}.restore-new').existsSync(),
+        File('${SrsStorage.legacyPathIn(dstDb)}.restore-new').existsSync(),
         isFalse,
         reason: '暂存文件已换进去',
       );
@@ -616,7 +618,7 @@ void main() {
         zipPath: zip,
         categories: BackupCategory.values.toSet()..remove(BackupCategory.srs),
       );
-      expect(File(SrsStorage.pathIn(dstDb)).existsSync(), isFalse);
+      expect(File(SrsStorage.legacyPathIn(dstDb)).existsSync(), isFalse);
       expect(
         SrsMediaStore.mediaRootFor(Directory(dstDb)).existsSync(),
         isFalse,
@@ -628,9 +630,9 @@ void main() {
     final String dstDb = await seedTarget(withLocalNote: true);
     // 暂存一份「备份的」srs.db（与真实流程一样是 Rust 的 VACUUM INTO 快照）：另一个 profile
     // 的一条笔记。
-    final String staged = '${SrsStorage.pathIn(dstDb)}.restore-new';
+    final String staged = '${SrsStorage.legacyPathIn(dstDb)}.restore-new';
     final SrsStorage other = await SrsStorage.open(
-      path: p.join(dst.path, 'other_srs.db'),
+      directory: p.dirname(p.join(dst.path, 'other_srs.db')),
     );
     const String otherUid = '01928c3e-0000-7000-8000-00000000beef';
     final String otherNote = await addNote(
@@ -639,7 +641,9 @@ void main() {
     );
     other.core.snapshotInto(staged, stripDeviceLocal: true);
     await other.close();
-    File('${SrsStorage.pathIn(dstDb)}-wal').writeAsStringSync('stale frames');
+    File(
+      '${SrsStorage.legacyPathIn(dstDb)}-wal',
+    ).writeAsStringSync('stale frames');
     File(p.join(dstDb, 'fushi.db.sync-preserve.json')).writeAsStringSync(
       jsonEncode(<String, Object?>{
         'mode': 'prefs',
@@ -651,14 +655,14 @@ void main() {
     await BackupRestoreService.recoverPendingRestore(dstDb);
 
     expect(File(staged).existsSync(), isFalse);
-    expect(File('${SrsStorage.pathIn(dstDb)}-wal').existsSync(), isFalse);
+    expect(File('${SrsStorage.legacyPathIn(dstDb)}-wal').existsSync(), isFalse);
     await onTarget(dstDb, (FushiDatabase db, SrsStorage srs) async {
       expect(await ownerOf(srs, otherNote), otherUid);
       expect(await noteCount(srs), 1, reason: '本机原来的「花」随换文件消失');
     });
     // 重放幂等：再跑一次（sidecar 已删）什么都不动。
     await BackupRestoreService.recoverPendingRestore(dstDb);
-    expect(File(SrsStorage.pathIn(dstDb)).existsSync(), isTrue);
+    expect(File(SrsStorage.legacyPathIn(dstDb)).existsSync(), isTrue);
   });
 }
 
@@ -687,7 +691,7 @@ Future<String> _noteIn(Directory src, bool legacy) async {
       await db.close();
     }
   }
-  final SrsStorage srs = await SrsStorage.open(path: SrsStorage.pathIn(dbDir));
+  final SrsStorage srs = await SrsStorage.open(directory: dbDir);
   try {
     return (await srs.core.customSelect(sql).getSingle()).read<String>('id');
   } finally {

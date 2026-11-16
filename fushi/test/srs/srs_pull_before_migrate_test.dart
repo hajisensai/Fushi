@@ -95,16 +95,11 @@ Future<({int ops, int devices})> _logOps(SrsStorage st) async {
   return (ops: r.read<int>('c'), devices: r.read<int>('d'));
 }
 
-Future<SrsDbStore> _open(
-  SrsStorage st,
-  String device, {
-  bool deferMigration = false,
-}) => SrsDbStore.open(
+Future<SrsDbStore> _open(SrsStorage st, String device) => SrsDbStore.open(
   core: st.core,
   profileUid: kProfile,
   deviceId: device,
   engine: const SrsTestEngine(),
-  deferMigration: deferMigration,
 );
 
 List<String> _files(Directory root) => <String>[
@@ -451,245 +446,285 @@ void main() {
     rounds.clear();
   });
 
-  test('确认弹框没回答前：打开不迁移、同步不拉也不迁移；确认后那一轮先收再迁移、只包本机独有的', () async {
-    await seedA();
-    final List<String> before = _files(root);
-    final SrsStorage stB = await _legacyStorage(<String>[...kShared, kOnlyB]);
-    final SrsDbStore b = await _open(stB, 'B', deferMigration: true);
-    expect(b.sync2Migrated, isFalse);
-    expect((await _logOps(stB)).ops, 0, reason: 'open does not migrate');
+  test(
+    '确认弹框没回答前：打开不迁移、同步不拉也不迁移；确认后那一轮先收再迁移、只包本机独有的',
+    () async {
+      await seedA();
+      final List<String> before = _files(root);
+      final SrsStorage stB = await _legacyStorage(<String>[...kShared, kOnlyB]);
+      final SrsDbStore b = await _open(stB, 'B');
+      expect(b.sync2Migrated, isFalse);
+      expect((await _logOps(stB)).ops, 0, reason: 'open does not migrate');
 
-    bool confirmed = false;
-    final SrsSyncScheduler s = scheduler(
-      store: b,
-      confirmed: () => confirmed,
-      runner: recordingRunner(stB),
-    );
-    await s.syncNow();
-    expect(b.sync2Migrated, isFalse, reason: 'unanswered: no migration');
-    expect((await _logOps(stB)).ops, 0, reason: 'unanswered: nothing pulled');
-    expect(rounds, isEmpty);
-    expect(_files(root), before);
+      bool confirmed = false;
+      final SrsSyncScheduler s = scheduler(
+        store: b,
+        confirmed: () => confirmed,
+        runner: recordingRunner(stB),
+      );
+      await s.syncNow();
+      expect(b.sync2Migrated, isFalse, reason: 'unanswered: no migration');
+      expect((await _logOps(stB)).ops, 0, reason: 'unanswered: nothing pulled');
+      expect(rounds, isEmpty);
+      expect(_files(root), before);
 
-    confirmed = true;
-    await s.syncNow();
-    expect(b.sync2Migrated, isTrue);
-    expect(rounds, isNotEmpty);
-    expect(
-      rounds.first,
-      (migrated: true, ops: 3, devices: 2),
-      reason:
-          "A's two ops pulled first, only B's own log wrapped, before "
-          'any round uploads',
-    );
-    expect(_files(root), before, reason: 'pull-first writes nothing');
-  });
+      confirmed = true;
+      await s.syncNow();
+      expect(b.sync2Migrated, isTrue);
+      expect(rounds, isNotEmpty);
+      expect(
+        rounds.first,
+        (migrated: true, ops: 3, devices: 2),
+        reason:
+            "A's two ops pulled first, only B's own log wrapped, before "
+            'any round uploads',
+      );
+      expect(_files(root), before, reason: 'pull-first writes nothing');
+    },
+    skip:
+        'G7-5: in-store deferred migration was removed (gen4 migrates once via SrsGen4Migration); sync scheduling is G8-7',
+  );
 
-  test('一轮里（拿着通道锁）遇到没迁移的库：只从这条通道收，不重入通道锁', () async {
-    await seedA();
-    final SrsStorage stB = await _legacyStorage(<String>[...kShared, kOnlyB]);
-    final SrsDbStore b = await _open(stB, 'B', deferMigration: true);
-    final SrsSyncScheduler s = scheduler(
-      store: b,
-      runner: recordingRunner(stB),
-    );
-    // 自动同步的一轮：通道锁里跑这条通道（app 的 runOnAuthenticatedSyncChannels → autoSyncWithBackend）。
-    await channelsOf((SyncAssetStore x) async {
-      final SrsSync2Report r = await s.syncWithBackend(x);
-      expect(r.error, isNull);
-    });
-    expect(rounds.single, (migrated: true, ops: 3, devices: 2));
-  });
+  test(
+    '一轮里（拿着通道锁）遇到没迁移的库：只从这条通道收，不重入通道锁',
+    () async {
+      await seedA();
+      final SrsStorage stB = await _legacyStorage(<String>[...kShared, kOnlyB]);
+      final SrsDbStore b = await _open(stB, 'B');
+      final SrsSyncScheduler s = scheduler(
+        store: b,
+        runner: recordingRunner(stB),
+      );
+      // 自动同步的一轮：通道锁里跑这条通道（app 的 runOnAuthenticatedSyncChannels → autoSyncWithBackend）。
+      await channelsOf((SyncAssetStore x) async {
+        final SrsSync2Report r = await s.syncWithBackend(x);
+        expect(r.error, isNull);
+      });
+      expect(rounds.single, (migrated: true, ops: 3, devices: 2));
+    },
+    skip:
+        'G7-5: in-store deferred migration was removed (gen4 migrates once via SrsGen4Migration); sync scheduling is G8-7',
+  );
 
-  test('持锁的一轮与收全部通道的迁移并发：不互等、远在预算内做完，迁移前拉到了这条通道', () async {
-    await seedA();
-    final SrsStorage stB = await _legacyStorage(<String>[...kShared, kOnlyB]);
-    final SrsDbStore b = await _open(stB, 'B', deferMigration: true);
-    // 与 app 的通道锁一样：排队等、FIFO。第二个进来排队的（[syncNow] 开头那份迁移的拉取）到了就放开持锁的一轮。
-    Future<void> lockTail = Future<void>.value();
-    int entered = 0;
-    final Completer<void> migrationQueued = Completer<void>();
-    Future<({int ran, List<Object> errors})> lock(
-      Future<void> Function(SyncAssetStore) body,
-    ) async {
-      final Future<void> prev = lockTail;
-      final Completer<void> mine = Completer<void>();
-      lockTail = mine.future;
-      if (++entered == 2) migrationQueued.complete();
-      try {
-        await prev;
-        await body(backend);
-        return (ran: 1, errors: const <Object>[]);
-      } finally {
-        mine.complete();
+  test(
+    '持锁的一轮与收全部通道的迁移并发：不互等、远在预算内做完，迁移前拉到了这条通道',
+    () async {
+      await seedA();
+      final SrsStorage stB = await _legacyStorage(<String>[...kShared, kOnlyB]);
+      final SrsDbStore b = await _open(stB, 'B');
+      // 与 app 的通道锁一样：排队等、FIFO。第二个进来排队的（[syncNow] 开头那份迁移的拉取）到了就放开持锁的一轮。
+      Future<void> lockTail = Future<void>.value();
+      int entered = 0;
+      final Completer<void> migrationQueued = Completer<void>();
+      Future<({int ran, List<Object> errors})> lock(
+        Future<void> Function(SyncAssetStore) body,
+      ) async {
+        final Future<void> prev = lockTail;
+        final Completer<void> mine = Completer<void>();
+        lockTail = mine.future;
+        if (++entered == 2) migrationQueued.complete();
+        try {
+          await prev;
+          await body(backend);
+          return (ran: 1, errors: const <Object>[]);
+        } finally {
+          mine.complete();
+        }
       }
-    }
 
-    final SrsSyncScheduler s = scheduler(
-      store: b,
-      channels: lock,
-      runner: recordingRunner(stB),
-      // 停滞判定与上限远大于测试超时：靠到点解开的互等在这里就是超时失败。
-      migratePullBound: const SrsPullBound.progress(
-        stall: Duration(hours: 1),
-        cap: Duration(hours: 1),
-      ),
-    );
-    final Completer<void> go = Completer<void>();
-    // 自动同步的后置步骤：拿着通道锁跑这条通道的一轮。
-    final Future<void> held = lock((SyncAssetStore x) async {
-      await go.future;
-      final SrsSync2Report r = await s.syncWithBackend(x);
-      expect(r.error, isNull);
-    });
-    // 「立即同步」：锁外发起收全部通道的迁移，它的拉取排在持锁的一轮后面。
-    final Future<SrsSyncNowResult> all = s.syncNow();
-    await migrationQueued.future;
-    go.complete();
-    await Future.wait(<Future<Object?>>[
-      held,
-      all,
-    ]).timeout(const Duration(seconds: 30));
-    expect(b.sync2Migrated, isTrue);
-    expect(
-      rounds.first,
-      (migrated: true, ops: 3, devices: 2),
-      reason:
-          "the held round pulled A's two ops from its channel before "
-          'migrating, so only B-only legacy log was wrapped',
-    );
-    expect(await _logOps(stB), (ops: 3, devices: 2));
-  });
+      final SrsSyncScheduler s = scheduler(
+        store: b,
+        channels: lock,
+        runner: recordingRunner(stB),
+        // 停滞判定与上限远大于测试超时：靠到点解开的互等在这里就是超时失败。
+        migratePullBound: const SrsPullBound.progress(
+          stall: Duration(hours: 1),
+          cap: Duration(hours: 1),
+        ),
+      );
+      final Completer<void> go = Completer<void>();
+      // 自动同步的后置步骤：拿着通道锁跑这条通道的一轮。
+      final Future<void> held = lock((SyncAssetStore x) async {
+        await go.future;
+        final SrsSync2Report r = await s.syncWithBackend(x);
+        expect(r.error, isNull);
+      });
+      // 「立即同步」：锁外发起收全部通道的迁移，它的拉取排在持锁的一轮后面。
+      final Future<SrsSyncNowResult> all = s.syncNow();
+      await migrationQueued.future;
+      go.complete();
+      await Future.wait(<Future<Object?>>[
+        held,
+        all,
+      ]).timeout(const Duration(seconds: 30));
+      expect(b.sync2Migrated, isTrue);
+      expect(
+        rounds.first,
+        (migrated: true, ops: 3, devices: 2),
+        reason:
+            "the held round pulled A's two ops from its channel before "
+            'migrating, so only B-only legacy log was wrapped',
+      );
+      expect(await _logOps(stB), (ops: 3, devices: 2));
+    },
+    skip:
+        'G7-5: in-store deferred migration was removed (gen4 migrates once via SrsGen4Migration); sync scheduling is G8-7',
+  );
 
-  test('推迟的迁移分批进出独占区：迁移中途发起的评分排在当前这一批之后，不等全部批次', () async {
-    final List<String> ids = <String>[
-      for (int i = 0; i < 6; i++) '0193a1b2-0000-7000-8000-0000000020a$i',
-    ];
-    final SrsStorage st = await _legacyStorage(ids);
-    final SrsDbStore b = await _open(st, 'B', deferMigration: true);
-    final String note = await b.createNote(
-      noteTypeId: b.lapisNoteTypeId,
-      fieldsById: <String, String>{
-        srsLapisFieldId(kProfile, 'Expression'): '雪',
-      },
-    );
-    final String card = (await b.cardsOfNote(note)).first.id;
+  test(
+    '推迟的迁移分批进出独占区：迁移中途发起的评分排在当前这一批之后，不等全部批次',
+    () async {
+      final List<String> ids = <String>[
+        for (int i = 0; i < 6; i++) '0193a1b2-0000-7000-8000-0000000020a$i',
+      ];
+      final SrsStorage st = await _legacyStorage(ids);
+      final SrsDbStore b = await _open(st, 'B');
+      final String note = await b.createNote(
+        noteTypeId: b.lapisNoteTypeId,
+        fieldsById: <String, String>{
+          srsLapisFieldId(kProfile, 'Expression'): '雪',
+        },
+      );
+      final String card = (await b.cardsOfNote(note)).first.id;
 
-    // 先占住独占区，让迁移的第一批、评分、探针按这个顺序排进 FIFO。
-    final Completer<void> gate = Completer<void>();
-    final Future<void> hold = b.runExclusive(() => gate.future);
-    final Future<void> migration = b.migrateLegacy(batch: 1);
-    bool? migratedWhenAnswered;
-    final Future<void> answered = b.answer(card, 3).then((_) {
-      migratedWhenAnswered = b.sync2Migrated;
-    });
-    int? queuedAfterAnswer;
-    final Future<void> probe = b.runExclusive(() async {
-      final SrsRawRow r = await st.core
-          .customSelect('SELECT COUNT(*) AS c FROM sync2_migrate_queue')
-          .getSingle();
-      queuedAfterAnswer = r.read<int>('c');
-    });
-    gate.complete();
-    await Future.wait(<Future<void>>[hold, migration, answered, probe]);
+      // 先占住独占区，让迁移的第一批、评分、探针按这个顺序排进 FIFO。
+      final Completer<void> gate = Completer<void>();
+      final Future<void> hold = b.runExclusive(() => gate.future);
+      final Future<void> migration = b.migrateLegacy(batch: 1);
+      bool? migratedWhenAnswered;
+      final Future<void> answered = b.answer(card, 3).then((_) {
+        migratedWhenAnswered = b.sync2Migrated;
+      });
+      int? queuedAfterAnswer;
+      final Future<void> probe = b.runExclusive(() async {
+        final SrsRawRow r = await st.core
+            .customSelect('SELECT COUNT(*) AS c FROM sync2_migrate_queue')
+            .getSingle();
+        queuedAfterAnswer = r.read<int>('c');
+      });
+      gate.complete();
+      await Future.wait(<Future<void>>[hold, migration, answered, probe]);
 
-    expect(
-      migratedWhenAnswered,
-      isFalse,
-      reason: 'the rating ran between batches, not after the whole migration',
-    );
-    expect(
-      queuedAfterAnswer,
-      ids.length - 1,
-      reason: 'one batch of one row done before the rating',
-    );
-    expect(b.sync2Migrated, isTrue);
-    expect(await _logOps(st), (
-      ops: ids.length + 1,
-      devices: 1,
-    ), reason: 'every legacy log wrapped once, plus the interleaved rating');
-  });
+      expect(
+        migratedWhenAnswered,
+        isFalse,
+        reason: 'the rating ran between batches, not after the whole migration',
+      );
+      expect(
+        queuedAfterAnswer,
+        ids.length - 1,
+        reason: 'one batch of one row done before the rating',
+      );
+      expect(b.sync2Migrated, isTrue);
+      expect(await _logOps(st), (
+        ops: ids.length + 1,
+        devices: 1,
+      ), reason: 'every legacy log wrapped once, plus the interleaved rating');
+    },
+    skip:
+        'G7-5: in-store deferred migration was removed (gen4 migrates once via SrsGen4Migration); sync scheduling is G8-7',
+  );
 
-  test('一直有进展、总时长远超旧的 2 分钟预算：等到收齐再迁移，只包本机独有的', () async {
-    await seedA();
-    final _FakeTime time = _FakeTime();
-    // 每次后端调用 20 秒（假时钟）：位置上的一次读取是好几次后端调用（逐级找目录 / 找文件 / 下载），远小于停滞判定。
-    final _SlowStore slow = _SlowStore(
-      backend,
-      time,
-      const Duration(seconds: 20),
-    );
-    final SrsStorage stB = await _legacyStorage(<String>[...kShared, kOnlyB]);
-    final SrsDbStore b = await _open(stB, 'B', deferMigration: true);
-    final SrsSyncScheduler s = scheduler(
-      store: b,
-      channels: (Future<void> Function(SyncAssetStore) body) async {
-        await body(slow);
-        return (ran: 1, errors: const <Object>[]);
-      },
-      pullTimer: time.create,
-    );
-    await _drive(time, s.ensureMigrated(b));
-    expect(
-      time.now,
-      greaterThan(const Duration(minutes: 2)),
-      reason:
-          'the pull took longer than the old fixed budget '
-          '(${slow.reads} reads)',
-    );
-    expect(b.sync2Migrated, isTrue);
-    expect(await _logOps(stB), (
-      ops: 3,
-      devices: 2,
-    ), reason: "A's two ops pulled before migrating; only B's own log wrapped");
-  });
+  test(
+    '一直有进展、总时长远超旧的 2 分钟预算：等到收齐再迁移，只包本机独有的',
+    () async {
+      await seedA();
+      final _FakeTime time = _FakeTime();
+      // 每次后端调用 20 秒（假时钟）：位置上的一次读取是好几次后端调用（逐级找目录 / 找文件 / 下载），远小于停滞判定。
+      final _SlowStore slow = _SlowStore(
+        backend,
+        time,
+        const Duration(seconds: 20),
+      );
+      final SrsStorage stB = await _legacyStorage(<String>[...kShared, kOnlyB]);
+      final SrsDbStore b = await _open(stB, 'B');
+      final SrsSyncScheduler s = scheduler(
+        store: b,
+        channels: (Future<void> Function(SyncAssetStore) body) async {
+          await body(slow);
+          return (ran: 1, errors: const <Object>[]);
+        },
+        pullTimer: time.create,
+      );
+      await _drive(time, s.ensureMigrated(b));
+      expect(
+        time.now,
+        greaterThan(const Duration(minutes: 2)),
+        reason:
+            'the pull took longer than the old fixed budget '
+            '(${slow.reads} reads)',
+      );
+      expect(b.sync2Migrated, isTrue);
+      expect(
+        await _logOps(stB),
+        (ops: 3, devices: 2),
+        reason: "A's two ops pulled before migrating; only B's own log wrapped",
+      );
+    },
+    skip:
+        'G7-5: in-store deferred migration was removed (gen4 migrates once via SrsGen4Migration); sync scheduling is G8-7',
+  );
 
-  test('位置卡住（停滞）：最后一次进展之后整整 stall 才放弃，照常迁移；迟到的结果碰不到本机库', () async {
-    final _FakeTime time = _FakeTime();
-    final Completer<void> never = Completer<void>();
-    final SrsStorage stB = await _legacyStorage(<String>[...kShared, kOnlyB]);
-    final SrsDbStore b = await _open(stB, 'B', deferMigration: true);
-    bool entered = false;
-    final SrsSyncScheduler s = scheduler(
-      store: b,
-      channels: (Future<void> Function(SyncAssetStore) body) async {
-        entered = true;
-        await never.future;
-        return (ran: 0, errors: const <Object>[]);
-      },
-      pullTimer: time.create,
-    );
-    bool done = false;
-    final Future<void> migrating = s.ensureMigrated(b).whenComplete(() {
-      done = true;
-    });
-    while (!entered) {
-      await Future<void>.delayed(const Duration(milliseconds: 1));
-    }
-    // 开跑那一刻算一次进展（内核 identity 之前就卡住：一次进展都没有）。
-    time.jump(kSrsPullBeforeMigrateStall - const Duration(seconds: 1));
-    await pumpEventQueue();
-    expect(done, isFalse, reason: 'one second before the stall: still waiting');
-    expect(b.sync2Migrated, isFalse);
-    time.jump(kSrsPullBeforeMigrateStall);
-    await migrating;
-    expect(b.sync2Migrated, isTrue);
-    expect(await _logOps(stB), (
-      ops: 3,
-      devices: 1,
-    ), reason: 'nothing pulled: migrate everything');
-  });
+  test(
+    '位置卡住（停滞）：最后一次进展之后整整 stall 才放弃，照常迁移；迟到的结果碰不到本机库',
+    () async {
+      final _FakeTime time = _FakeTime();
+      final Completer<void> never = Completer<void>();
+      final SrsStorage stB = await _legacyStorage(<String>[...kShared, kOnlyB]);
+      final SrsDbStore b = await _open(stB, 'B');
+      bool entered = false;
+      final SrsSyncScheduler s = scheduler(
+        store: b,
+        channels: (Future<void> Function(SyncAssetStore) body) async {
+          entered = true;
+          await never.future;
+          return (ran: 0, errors: const <Object>[]);
+        },
+        pullTimer: time.create,
+      );
+      bool done = false;
+      final Future<void> migrating = s.ensureMigrated(b).whenComplete(() {
+        done = true;
+      });
+      while (!entered) {
+        await Future<void>.delayed(const Duration(milliseconds: 1));
+      }
+      // 开跑那一刻算一次进展（内核 identity 之前就卡住：一次进展都没有）。
+      time.jump(kSrsPullBeforeMigrateStall - const Duration(seconds: 1));
+      await pumpEventQueue();
+      expect(
+        done,
+        isFalse,
+        reason: 'one second before the stall: still waiting',
+      );
+      expect(b.sync2Migrated, isFalse);
+      time.jump(kSrsPullBeforeMigrateStall);
+      await migrating;
+      expect(b.sync2Migrated, isTrue);
+      expect(await _logOps(stB), (
+        ops: 3,
+        devices: 1,
+      ), reason: 'nothing pulled: migrate everything');
+    },
+    skip:
+        'G7-5: in-store deferred migration was removed (gen4 migrates once via SrsGen4Migration); sync scheduling is G8-7',
+  );
 
-  test('位置上没有集合：不等任何计时器，立即迁移', () async {
-    final _FakeTime time = _FakeTime();
-    final SrsStorage stB = await _legacyStorage(<String>[...kShared, kOnlyB]);
-    final SrsDbStore b = await _open(stB, 'B', deferMigration: true);
-    final SrsSyncScheduler s = scheduler(store: b, pullTimer: time.create);
-    await s.ensureMigrated(b);
-    expect(time.now, Duration.zero, reason: 'no fake time had to pass');
-    expect(b.sync2Migrated, isTrue);
-    expect(await _logOps(stB), (ops: 3, devices: 1));
-  });
+  test(
+    '位置上没有集合：不等任何计时器，立即迁移',
+    () async {
+      final _FakeTime time = _FakeTime();
+      final SrsStorage stB = await _legacyStorage(<String>[...kShared, kOnlyB]);
+      final SrsDbStore b = await _open(stB, 'B');
+      final SrsSyncScheduler s = scheduler(store: b, pullTimer: time.create);
+      await s.ensureMigrated(b);
+      expect(time.now, Duration.zero, reason: 'no fake time had to pass');
+      expect(b.sync2Migrated, isTrue);
+      expect(await _logOps(stB), (ops: 3, devices: 1));
+    },
+    skip:
+        'G7-5: in-store deferred migration was removed (gen4 migrates once via SrsGen4Migration); sync scheduling is G8-7',
+  );
 
   test('冲突弹窗选定候选：在候选所在那条通道的锁里并入，并入拿得到那条通道', () async {
     final SrsStorage st = await _legacyStorage(kShared);
@@ -718,82 +753,87 @@ void main() {
 
   // BUG-4478：`SrsDbStore.open` 在任何同步之前就写下内置身份记录，以前的判据（操作日志与投影全空）让新设备收段通道
   // 在生产里一次都不开。app 的顺序是「只拉不发 → 迁移 → 正式一轮」：第一次收段发生在只拉不发那一步。
-  test('新装的设备确认后的第一轮：只拉不发那一步走收段通道，迁移与正式一轮照常，收敛', () async {
-    Future<SrsSync2Report> roundOf(SrsDbStore s) => srsSync2Round(
-      host: s,
-      location: srsAssetLocation(backend, kProfile),
-      locationId: 'local:${root.path}',
-      nowMs: () => s.now().$1,
-    );
-    final SrsStorage stA = await openSrsTestStorage();
-    final SrsDbStore a = await _open(stA, 'A');
-    final List<String> notes = <String>[];
-    for (int i = 0; i < 12; i++) {
-      final String n = await a.createNote(
-        noteTypeId: a.lapisNoteTypeId,
-        fieldsById: <String, String>{
-          srsLapisFieldId(kProfile, 'Expression'): '語$i',
-        },
+  test(
+    '新装的设备确认后的第一轮：只拉不发那一步走收段通道，迁移与正式一轮照常，收敛',
+    () async {
+      Future<SrsSync2Report> roundOf(SrsDbStore s) => srsSync2Round(
+        host: s,
+        location: srsAssetLocation(backend, kProfile),
+        locationId: 'local:${root.path}',
+        nowMs: () => s.now().$1,
       );
-      notes.add(n);
-      await a.answer((await a.cardsOfNote(n)).first.id, 3);
-    }
-    expect((await roundOf(a)).error, isNull);
-
-    final SrsStorage stB = await openSrsTestStorage();
-    final SrsDbStore b = await _open(stB, 'B', deferMigration: true);
-    expect(b.sync2Migrated, isFalse);
-    // 收段的每一片开投之前：这个会话走不走通道（`ingest_begin` 的回报）。
-    final List<bool> slices = <bool>[];
-    b.debugOnIngestSlice = () => slices.add(b.debugIngestChannel);
-    // 正式一轮开跑时：迁移做了没有、A 的复习收到了没有、之前投过几片。
-    final List<({bool migrated, int ops, int slices})> formal =
-        <({bool migrated, int ops, int slices})>[];
-    final SrsSyncScheduler s = scheduler(
-      store: b,
-      runner:
-          (
-            SyncAssetStore x,
-            SrsDbStore store,
-            String key, {
-            SrsLocationKey? locationKey,
-          }) async {
-            formal.add((
-              migrated: store.sync2Migrated,
-              ops: (await _logOps(stB)).ops,
-              slices: slices.length,
-            ));
-            return roundOf(store);
+      final SrsStorage stA = await openSrsTestStorage();
+      final SrsDbStore a = await _open(stA, 'A');
+      final List<String> notes = <String>[];
+      for (int i = 0; i < 12; i++) {
+        final String n = await a.createNote(
+          noteTypeId: a.lapisNoteTypeId,
+          fieldsById: <String, String>{
+            srsLapisFieldId(kProfile, 'Expression'): '語$i',
           },
-    );
-    await s.syncNow();
+        );
+        notes.add(n);
+        await a.answer((await a.cardsOfNote(n)).first.id, 3);
+      }
+      expect((await roundOf(a)).error, isNull);
 
-    expect(formal, isNotEmpty);
-    expect(formal.first.migrated, isTrue);
-    expect(
-      formal.first.ops,
-      12,
-      reason: "A's reviews were pulled before the formal round",
-    );
-    expect(formal.first.slices, greaterThan(0));
-    expect(
-      slices.take(formal.first.slices),
-      everyElement(isTrue),
-      reason: 'the pull-first ingest of a new device takes the channel',
-    );
-    final SrsRawRow boot = await stB.core
-        .customSelect('SELECT COUNT(*) AS c FROM sync2_boot')
-        .getSingle();
-    expect(boot.read<int>('c'), 0, reason: 'the channel is done');
-    expect(await b.note(notes.first), isNotNull);
+      final SrsStorage stB = await openSrsTestStorage();
+      final SrsDbStore b = await _open(stB, 'B');
+      expect(b.sync2Migrated, isFalse);
+      // 收段的每一片开投之前：这个会话走不走通道（`ingest_begin` 的回报）。
+      final List<bool> slices = <bool>[];
+      b.debugOnIngestSlice = () => slices.add(b.debugIngestChannel);
+      // 正式一轮开跑时：迁移做了没有、A 的复习收到了没有、之前投过几片。
+      final List<({bool migrated, int ops, int slices})> formal =
+          <({bool migrated, int ops, int slices})>[];
+      final SrsSyncScheduler s = scheduler(
+        store: b,
+        runner:
+            (
+              SyncAssetStore x,
+              SrsDbStore store,
+              String key, {
+              SrsLocationKey? locationKey,
+            }) async {
+              formal.add((
+                migrated: store.sync2Migrated,
+                ops: (await _logOps(stB)).ops,
+                slices: slices.length,
+              ));
+              return roundOf(store);
+            },
+      );
+      await s.syncNow();
 
-    expect((await roundOf(a)).error, isNull);
-    expect((await roundOf(b)).error, isNull);
-    expect(
-      (await b.sync2Digest())['digest'],
-      (await a.sync2Digest())['digest'],
-    );
-  });
+      expect(formal, isNotEmpty);
+      expect(formal.first.migrated, isTrue);
+      expect(
+        formal.first.ops,
+        12,
+        reason: "A's reviews were pulled before the formal round",
+      );
+      expect(formal.first.slices, greaterThan(0));
+      expect(
+        slices.take(formal.first.slices),
+        everyElement(isTrue),
+        reason: 'the pull-first ingest of a new device takes the channel',
+      );
+      final SrsRawRow boot = await stB.core
+          .customSelect('SELECT COUNT(*) AS c FROM sync2_boot')
+          .getSingle();
+      expect(boot.read<int>('c'), 0, reason: 'the channel is done');
+      expect(await b.note(notes.first), isNotNull);
+
+      expect((await roundOf(a)).error, isNull);
+      expect((await roundOf(b)).error, isNull);
+      expect(
+        (await b.sync2Digest())['digest'],
+        (await a.sync2Digest())['digest'],
+      );
+    },
+    skip:
+        'G7-5: in-store deferred migration was removed (gen4 migrates once via SrsGen4Migration); sync scheduling is G8-7',
+  );
   // 档案合并之前收目标 uid 的数据（BUG-4011）：真 [SrsDbProfileLinker] + 真并入，拉取经调度器的
   // [SrsSyncScheduler.pullBeforeMerge]（app 的接法，srs_app_runtime.dart）。目标 uid 的三条修改记录只在同步位置上
   // （设备 A 写的），本机 B 自己有同一批修改记录（另一个写入者）和一条笔记：并入前收齐了就沿用目标的写入者，没收到

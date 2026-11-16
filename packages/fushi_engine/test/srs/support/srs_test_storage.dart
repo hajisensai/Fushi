@@ -8,16 +8,13 @@ import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_srs/fushi_srs.dart'
     show SrsCore, SrsEntityKind, SrsNoteView;
-import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 /// 在临时目录里建一份 srs.db（磁盘文件，WAL；Rust 独占连接）。
 /// 注册 [addTearDown]：关闭存储后删目录，删除失败（Windows 句柄滞后）吞掉。
 Future<SrsStorage> openTestSrsStorage() async {
   final Directory dir = Directory.systemTemp.createTempSync('srs_test_db_');
-  final SrsStorage storage = await SrsStorage.open(
-    path: p.join(dir.path, kSrsDatabaseFileName),
-  );
+  final SrsStorage storage = await SrsStorage.open(directory: dir.path);
   addTearDown(() async {
     await storage.close();
     try {
