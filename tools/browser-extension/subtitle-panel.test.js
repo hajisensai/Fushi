@@ -222,6 +222,56 @@ test('BUG-2194：占位轨列在已加载轨之后，选中触发 fushiRequestLa
   assert.strictEqual(state.cues.length, 1);
 });
 
+// 反馈 0RgCNJFQmJ / GitHub #3401：手动选的轨一直停在「选中加载」。桥取不到时发 cuesFailed，
+// 但扩展面板没有 fushiSubtitlePanelOnTrackFailed 接收端，回执被丢，轮询还每 5 秒重打请求。
+test('#3401：按需取轨失败 → 标 failed 并提示，不再自动重试；用户再次选中才重取；cue 到了清掉失败', () => {
+  const key = 'example.com/video/1|ja';
+  const store = {
+    'example.com/video/1|ar': [{ startMs: 1000, endMs: 2000, text: 'مرحبا' }],
+    [key]: [],
+  };
+  const harness = loadController({ store });
+  harness.windowObject.fushiLazyTracks = { [key]: true };
+  harness.windowObject.fushiTrackLabels = { [key]: '日本語' };
+  const requested = [];
+  harness.windowObject.fushiRequestLazyTrack = (k) => { requested.push(k); return true; };
+  const toasts = [];
+  harness.windowObject.fushiToast = (msg) => toasts.push(msg);
+
+  let state = harness.message({ type: 'fushiSubtitleSidePanelSelectTrack', lang: 'ja' });
+  assert.strictEqual(state.activeLang, 'ja');
+  assert.deepStrictEqual(requested, [key]);
+
+  assert.strictEqual(typeof harness.windowObject.fushiSubtitlePanelOnTrackFailed, 'function',
+    '扩展面板必须接住桥的 cuesFailed 回执');
+  harness.windowObject.fushiSubtitlePanelOnTrackFailed(key, 'no cues');
+  assert.strictEqual(toasts.length, 1, '活动轨取失败要明确提示');
+  assert.ok(toasts[0].includes('日本語'), toasts[0]);
+  state = harness.message({ type: 'fushiSubtitleSidePanelState' });
+  const ja = state.tracks.find((t) => t.lang === 'ja');
+  assert.deepStrictEqual([ja.pending, ja.failed], [true, true]);
+  assert.strictEqual(state.activeLang, 'ja', '不回落到别的轨');
+  assert.strictEqual(requested.length, 1, '失败后轮询不自动重打请求');
+
+  state = harness.message({ type: 'fushiSubtitleSidePanelSelectTrack', lang: 'ja' });
+  assert.strictEqual(requested.length, 2, '用户再次选中 → 立刻重取');
+  assert.strictEqual(state.tracks.find((t) => t.lang === 'ja').failed, false);
+
+  harness.windowObject.fushiSubtitlePanelOnTrackFailed(key, 'no cues');
+  store[key] = [{ startMs: 0, endMs: 900, text: 'こんにちは' }];
+  delete harness.windowObject.fushiLazyTracks[key];
+  harness.windowObject.fushiSubtitlePanelOnCues(key);
+  state = harness.message({ type: 'fushiSubtitleSidePanelState', includeCues: true });
+  const loaded = state.tracks.find((t) => t.lang === 'ja');
+  assert.deepStrictEqual([loaded.pending, loaded.failed, loaded.length], [false, false, 1]);
+  assert.strictEqual(state.cues[0].text, 'こんにちは');
+
+  // 非占位轨（已有 cue / 未登记）的失败回执不作数。
+  harness.windowObject.fushiSubtitlePanelOnTrackFailed('example.com/video/1|ar', 'x');
+  state = harness.message({ type: 'fushiSubtitleSidePanelState' });
+  assert.strictEqual(state.tracks.find((t) => t.lang === 'ar').failed, false);
+});
+
 
 // 拖放导入的范围：用户报「在任何网页拖文件都弹『松开以加载字幕』并糊住半个屏幕」。
 // 判据收窄成「这一页确实有 <video>」，没有视频的普通网页连 preventDefault 都不做。

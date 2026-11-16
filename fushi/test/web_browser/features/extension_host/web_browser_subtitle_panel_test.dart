@@ -70,6 +70,24 @@ void main() {
       );
       expect(s!.tracks.single.length, 12);
     });
+
+    // 反馈 0RgCNJFQmJ：懒加载轨取失败由页面标 failed，侧栏据此显示「加载失败」而非永远「选中加载」。
+    test('轨状态带 failed', () {
+      final WebBrowserSubtitlePanelState? s = parseWebBrowserSubtitlePanelState(
+        <String, Object?>{
+          'ok': true,
+          'tracks': <Object?>[
+            <String, Object?>{'lang': 'ja', 'pending': true, 'failed': true},
+            <String, Object?>{'lang': 'en', 'pending': true},
+          ],
+        },
+      );
+      expect(s!.tracks.map((WebBrowserSubtitleTrack t) => t.failed), <bool>[
+        true,
+        false,
+      ]);
+      expect(en['sp_track_failed_suffix'], isNotEmpty);
+    });
   });
 
   group('侧栏', () {

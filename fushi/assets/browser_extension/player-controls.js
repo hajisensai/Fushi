@@ -743,7 +743,8 @@
         var r = row({
           id: 'track-option',
           // 与侧边栏下拉同形：待加载轨带后缀，已加载轨带（条数）。
-          label: (track.label || track.lang) + (track.pending ? tr('sp_track_pending_suffix') : '（' + track.length + '）'),
+          label: (track.label || track.lang) + (track.failed ? tr('sp_track_failed_suffix')
+            : track.pending ? tr('sp_track_pending_suffix') : '（' + track.length + '）'),
           icon: selected ? 'check' : null,
         });
         r.classList.add('is-action', 'is-track');

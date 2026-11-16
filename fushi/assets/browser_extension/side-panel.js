@@ -1009,7 +1009,7 @@
     // 指纹还必须含 pending：懒加载轨从「（选中加载）」变成「（N）」时，
     // 只有它在变（lang/label/signature 都原样）——漏了就永远停在旧标签上。
     var sig = (state.activeLang || '') + '\u0003' + tracks.map(function (t) {
-      return [t.lang, t.label, t.length, t.signature, t.pending ? 1 : 0].join('\u0001');
+      return [t.lang, t.label, t.length, t.signature, t.pending ? 1 : 0, t.failed ? 1 : 0].join('\u0001');
     }).join('\u0002');
     if (sig !== trackSig) {
       trackSig = sig;
@@ -1017,7 +1017,8 @@
       tracks.forEach(function (track) {
         var option = document.createElement('option');
         option.value = track.lang;
-        option.textContent = track.label + (track.pending ? tr('sp_track_pending_suffix') : '（' + track.length + '）');
+        option.textContent = track.label + (track.failed ? tr('sp_track_failed_suffix')
+          : track.pending ? tr('sp_track_pending_suffix') : '（' + track.length + '）');
         trackEl.appendChild(option);
       });
       trackEl.hidden = tracks.length === 0;
