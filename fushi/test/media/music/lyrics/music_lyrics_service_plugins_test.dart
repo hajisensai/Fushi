@@ -501,7 +501,7 @@ void main() {
       lrclibStatus = 200;
       lrclibBody = '[]';
       await service().searchOnline(youtube, title: 'Song', artist: '  ');
-      expect(lrclibCalls.last.queryParameters['artist_name'], '');
+      expect(lrclibCalls.last.queryParameters['artist_name'], isNull);
       await service().searchOnline(youtube);
       expect(lrclibCalls.last.queryParameters['track_name'], youtube.title);
       expect(lrclibCalls.last.queryParameters['artist_name'], youtube.artist);

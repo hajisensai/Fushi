@@ -886,7 +886,7 @@ void main() {
     final Uri search = app.lrclibCalls.single;
     expect(search.path, '/api/search');
     expect(search.queryParameters['track_name'], '夜に駆ける');
-    expect(search.queryParameters['artist_name'], '');
+    expect(search.queryParameters['artist_name'], isNull);
     expect(find.text(t.music_lyrics_no_candidates), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
   });
