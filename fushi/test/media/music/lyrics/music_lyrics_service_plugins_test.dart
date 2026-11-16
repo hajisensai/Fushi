@@ -99,7 +99,7 @@ void main() {
   setUp(() {
     db = FushiDatabase.forTesting(NativeDatabase.memory());
     plugins = _FakePlugins();
-    enabled = <String>['a', 'b', 'c'];
+    enabled = <String>[MusicLyricsSource.lrclib, 'a', 'b', 'c'];
     lrclibCalls = <Uri>[];
     lrclibStatus = 404;
     lrclibBody = '';
@@ -137,6 +137,53 @@ void main() {
     expect(plugins.searched, isEmpty);
   });
 
+  test('用户把插件排到 LRCLIB 前：先问插件，命中就不再问 LRCLIB', () async {
+    // 反馈 h7d6Pa_g-7：LRCLIB 与插件同在一份有序来源列表里，不再固定第一。
+    enabled = <String>['a', MusicLyricsSource.lrclib];
+    lrclibStatus = 200;
+    lrclibBody = File(
+      'test/media/music/lyrics/fixtures/lrclib_get.json',
+    ).readAsStringSync();
+    plugins.candidates['a'] = <MusicPluginLyricsCandidate>[
+      MusicPluginLyricsCandidate(
+        title: '夜に駆ける',
+        artist: 'YOASOBI',
+        durationMs: 261000,
+        ref: const <String, Object?>{'id': 'a'},
+      ),
+    ];
+    plugins.lyrics['a'] = _lyr('[00:01.00]沈むように溶けてゆくように');
+    const MusicLyricsTrackRef t = MusicLyricsTrackRef(
+      trackUid: 'uid-1',
+      path: '/nonexistent/x.flac',
+      title: '夜に駆ける',
+      artist: 'YOASOBI',
+      album: 'THE BOOK',
+      durationMs: 261000,
+    );
+    final MusicLyricsResolution r = (await service().resolve(t))!;
+    expect(r.source, MusicLyricsSource.lyricsPlugin('a'));
+    expect(lrclibCalls, isEmpty);
+    expect(plugins.searched, <String>['a']);
+
+    // 插件没有时按顺序落到后面的 LRCLIB。
+    await db.delete(db.musicLyrics).go();
+    plugins.searched.clear();
+    plugins.candidates['a'] = <MusicPluginLyricsCandidate>[];
+    final MusicLyricsResolution fallback = (await service().resolve(t))!;
+    expect(fallback.source, MusicLyricsSource.lrclib);
+    expect(plugins.searched.toSet(), <String>{'a'});
+    expect(lrclibCalls, isNotEmpty);
+  });
+
+  test('来源列表里停用了 LRCLIB：不问 LRCLIB', () async {
+    enabled = <String>['a'];
+    plugins.candidates['a'] = <MusicPluginLyricsCandidate>[];
+    expect(await service().resolve(track), isNull);
+    expect(plugins.searched.toSet(), <String>{'a'});
+    expect(lrclibCalls, isEmpty);
+  });
+
   test('按列表顺序问，首个命中胜出，后面的不问', () async {
     plugins.candidates['a'] = <MusicPluginLyricsCandidate>[];
     plugins.candidates['b'] = <MusicPluginLyricsCandidate>[_cand('b')];
@@ -155,7 +202,7 @@ void main() {
   });
 
   test('未在启用列表里的插件不会被问', () async {
-    enabled = <String>['c'];
+    enabled = <String>[MusicLyricsSource.lrclib, 'c'];
     plugins.candidates['a'] = <MusicPluginLyricsCandidate>[_cand('a')];
     plugins.lyrics['a'] = _lyr('[00:01.00]a');
     plugins.candidates['c'] = <MusicPluginLyricsCandidate>[_cand('c')];
@@ -182,7 +229,7 @@ void main() {
 
   test('没有结果写 1 天负缓存，期内不再问，过期重问', () async {
     plugins.candidates['a'] = <MusicPluginLyricsCandidate>[];
-    enabled = <String>['a'];
+    enabled = <String>[MusicLyricsSource.lrclib, 'a'];
     expect(await service().resolve(track), isNull);
     final MusicLyricRow neg = (await db.select(db.musicLyrics).get())
         .firstWhere(
@@ -199,7 +246,7 @@ void main() {
   });
 
   test('命中后落库，再解析直接读缓存不再问插件', () async {
-    enabled = <String>['a'];
+    enabled = <String>[MusicLyricsSource.lrclib, 'a'];
     plugins.candidates['a'] = <MusicPluginLyricsCandidate>[_cand('a')];
     plugins.lyrics['a'] = _lyr('[00:01.00]cached');
     await service().resolve(track);
@@ -259,7 +306,7 @@ void main() {
     setUp(() {
       ownReply = null;
       ownFetches = 0;
-      enabled = <String>[pluginId];
+      enabled = <String>[MusicLyricsSource.lrclib, pluginId];
       plugins.candidates[pluginId] = <MusicPluginLyricsCandidate>[
         _cand(pluginId),
       ];
@@ -343,7 +390,7 @@ void main() {
     );
 
     test('有译文时落库原始各轨，不是合并后的派生 TTML', () async {
-      enabled = <String>['a'];
+      enabled = <String>[MusicLyricsSource.lrclib, 'a'];
       plugins.candidates['a'] = <MusicPluginLyricsCandidate>[_cand('a')];
       plugins.lyrics['a'] = withTranslation;
       final MusicLyricsResolution r = (await service().resolve(track))!;
@@ -363,7 +410,7 @@ void main() {
     });
 
     test('解析器版本变了：从原始各轨按当前解析器重新合并，不问插件、离线也行', () async {
-      enabled = <String>['a'];
+      enabled = <String>[MusicLyricsSource.lrclib, 'a'];
       online = false;
       // 旧解析器留下的缓存：时间轴是错的（模拟旧合并规则的产物），版本落后一版。
       final LyricTimeline staleMerge = FushiLyrics.parse(
@@ -429,7 +476,7 @@ void main() {
   });
 
   test('候选与曲目对不上（标题相似度低）不取词也不采用', () async {
-    enabled = <String>['a'];
+    enabled = <String>[MusicLyricsSource.lrclib, 'a'];
     plugins.candidates['a'] = <MusicPluginLyricsCandidate>[
       const MusicPluginLyricsCandidate(
         title: 'Totally Different',

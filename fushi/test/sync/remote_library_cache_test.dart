@@ -491,4 +491,91 @@ void main() {
       expect(after, <String>['fresh'], reason: '死 future 迟到的写回不得污染缓存');
     });
   });
+
+  group('BUG-4724 wouldReadImmediately 与 read 同判据', () {
+    bool immediate() => cache.wouldReadImmediately(sourceId: ic, key: 'videos');
+
+    test('空槽 / 新鲜值 / 过期值', () async {
+      expect(immediate(), isFalse, reason: '空槽 read 必须真去取数');
+      await cache.read(
+        sourceId: ic,
+        key: 'videos',
+        fetch: () async => <String>['a'],
+      );
+      expect(immediate(), isTrue, reason: 'TTL 内的成功值 read 直接交出');
+      now += 61 * 1000;
+      expect(immediate(), isFalse, reason: '过期值 read 要重新取数');
+    });
+
+    test('有新鲜值但同时有 forceRefresh 在途时为 false（read 会等在途请求）', () async {
+      await cache.read(
+        sourceId: ic,
+        key: 'videos',
+        fetch: () async => <String>['old'],
+      );
+      final Completer<List<String>> gate = Completer<List<String>>();
+      final Future<List<String>> refreshing = cache.read(
+        sourceId: ic,
+        key: 'videos',
+        fetch: () => gate.future,
+        forceRefresh: true,
+      );
+      expect(
+        cache.peek<List<String>>(
+          sourceId: ic,
+          key: 'videos',
+          maxAge: cache.defaultTtl,
+        ),
+        isNotNull,
+        reason: '前提：peek 只看值，仍认为命中',
+      );
+      expect(immediate(), isFalse, reason: 'read 此时复用在途请求、要等网络');
+      bool readDone = false;
+      final Future<List<String>> plain = cache
+          .read<List<String>>(
+            sourceId: ic,
+            key: 'videos',
+            fetch: () async => <String>['unused'],
+          )
+          .then((List<String> v) {
+            readDone = true;
+            return v;
+          });
+      await Future<void>.delayed(Duration.zero);
+      expect(readDone, isFalse, reason: '证实 read 确实在等在途请求');
+      gate.complete(<String>['new']);
+      expect(await plain, <String>['new']);
+      expect(await refreshing, <String>['new']);
+      expect(immediate(), isTrue);
+    });
+
+    test('挂死在途请求超过 inFlightTtl 后与 read 一样不再算在等它', () async {
+      await cache.read(
+        sourceId: ic,
+        key: 'videos',
+        fetch: () async => <String>['old'],
+      );
+      unawaited(
+        cache.read(
+          sourceId: ic,
+          key: 'videos',
+          fetch: () => Completer<List<String>>().future,
+          forceRefresh: true,
+        ),
+      );
+      expect(immediate(), isFalse);
+      // 超过 inFlightTtl，但值也过了 defaultTtl（两者都是 60s）→ read 重取，仍 false。
+      now += 61 * 1000;
+      expect(immediate(), isFalse);
+      expect(
+        cache.wouldReadImmediately(
+          sourceId: ic,
+          key: 'videos',
+          ttl: const Duration(hours: 1),
+        ),
+        isTrue,
+        reason: '在途请求已挂死不再复用，长 TTL 下旧值 read 直接交出',
+      );
+    });
+  });
 }

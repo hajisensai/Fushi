@@ -12773,15 +12773,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           // 继续观看后这条栏必须整条消失：此刻已是普通观看，页面要和平时看视频
           // 完全一样，不能再留第二条常驻顶栏把画面挤下去（BUG-102 的单一顶栏原
           // 则）。要回卡片片段就重新点一次 Anki 里的来源链接，走完整回看链路。
+          // 横幅自己带 SafeArea（让出状态栏与横屏刘海）；外面不能再套一层，否则
+          // 横屏时刘海那一侧被外层让成横幅底色以外的空白条。
           if (_sourceReviewSession case final SourceReviewSession session
               when session.isReview)
-            SafeArea(
-              bottom: false,
-              child: SourceReviewBanner(
-                runHidden: runWithLookupPopupHidden,
-                session: session,
-                onReturn: () => unawaited(_handleBackOrExit()),
-              ),
+            SourceReviewBanner(
+              runHidden: runWithLookupPopupHidden,
+              session: session,
+              onReturn: () => unawaited(_handleBackOrExit()),
             ),
           Expanded(child: body),
         ],
