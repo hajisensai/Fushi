@@ -44,7 +44,9 @@
 //!   `{op: {device, seq}, from, dir, salts, trusted}`（[Index::joins]）。
 //! - `collection_join` / `collection_salts_add` / `collection_adopt` → `{outcome, …}`（[outcome_json]）+ 有事件时的
 //!   `bindingChanged`。
-//! - `canonical_ids {ids}` → `{ids}`：逐个换成规范 ID，顺序与条数照请求（不去重：调用方按下标对回）。
+//! - `canonical_ids {ids}` → `{ids}`：逐个换成规范 ID，顺序与条数照请求（不去重：调用方按下标对回）。每个 ID 一次
+//!   带索引的单点查询（`alias.rs`），都在同一个读快照里：一次最多 [LOOKUP_MAX] 条，超了明确报错、调用方分批（整库
+//!   ID 一次塞进来会长时间占着一个读连接）。`key_evidence` 同一个上限。
 //! - `key_evidence {items: [{kind, entity}]}` → `{evidence: [n…]}`。**不归一**：这是拿另一台设备 `divergence` 列出的
 //!   那个成员 ID 来问它的自然键证据（`alias.rs` [Index::key_evidence]），归一到规范 ID 会把要找的分叉抹平。
 //! - `divergence` → `{hollowed: [{kind, entity, purges, distrusted, evidence, pending}], withheldSalts: [{salt, ops}]}`
@@ -314,12 +316,26 @@ pub fn collection_adopt(t: &Truth<'_>, profile: &str, req: &Value) -> Result<Emi
 
 // ---------------------------------------------------------------------- 别名与分叉
 
+/// `canonical_ids` / `key_evidence` 一次请求最多的条数（模块文件头「回包」）：每条一次带索引的单点查询、同一个
+/// 读快照，上限卡住「整库 ID 一次传进来、长时间占着读连接」。调用方按这个数分批。
+pub const LOOKUP_MAX: usize = 4096;
+
+fn lookup_cap(n: usize, op: &str) -> Result<(), String> {
+    if n > LOOKUP_MAX {
+        return Err(format!(
+            "{op}: at most {LOOKUP_MAX} entries per request, got {n}; split into batches"
+        ));
+    }
+    Ok(())
+}
+
 /// `canonical_ids {ids}`：逐个归一（规范 ID；不是 UUID 的、别名表里没有的原样）。一个读快照。
 pub fn canonical_ids(t: &Truth<'_>, col: i64, req: &Value) -> Result<Value, String> {
     let ids = req
         .get("ids")
         .and_then(Value::as_array)
         .ok_or("canonical_ids: ids must be an array")?;
+    lookup_cap(ids.len(), "canonical_ids")?;
     snapshot(t, |t| {
         let ix = Index::new(t, col);
         let mut out = Vec::with_capacity(ids.len());
@@ -341,6 +357,7 @@ pub fn key_evidence(t: &Truth<'_>, col: i64, req: &Value) -> Result<Value, Strin
         .get("items")
         .and_then(Value::as_array)
         .ok_or("key_evidence: items must be an array")?;
+    lookup_cap(items.len(), "key_evidence")?;
     snapshot(t, |t| {
         let ix = Index::new(t, col);
         let mut out = Vec::with_capacity(items.len());

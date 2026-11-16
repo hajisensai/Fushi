@@ -342,8 +342,8 @@ S1 没有加表或索引，本机状态行与缓存配置都放现有的 `srs_me
 | `collection_join` | 写 | `{profile, into, dir, now}` | `{outcome: "joined", op, from, fromDir, rebound, collection, dir, settled}` + `bindingChanged` |
 | `collection_salts_add` | 写 | `{profile, salts, now}` | `{outcome: "same"}` 或 `{outcome: "saltsAdded", op, settled}` + `bindingChanged` |
 | `collection_adopt` | 写 | `{profile, collection, dir, salts?, confirmed?, now}` | `{outcome: same / alreadyJoined / needsConfirm / bound / joined / saltsAdded, …}` + 有变化时的 `bindingChanged` |
-| `canonical_ids` | 读 | `{profile, ids}` | `{ids}`：逐个归一，顺序与条数照请求 |
-| `key_evidence` | 读 | `{profile, items: [{kind, entity}]}` | `{evidence: [n…]}`；成员 ID **原样**问（这是拿另一台 `divergence` 列出的成员来查分叉，归一会把分叉抹平） |
+| `canonical_ids` | 读 | `{profile, ids}` | `{ids}`：逐个归一，顺序与条数照请求；一次最多 `LOOKUP_MAX` = 4096 条，超了报错、调用方分批 |
+| `key_evidence` | 读 | `{profile, items: [{kind, entity}]}` | `{evidence: [n…]}`；成员 ID **原样**问（这是拿另一台 `divergence` 列出的成员来查分叉，归一会把分叉抹平）；上限同 `canonical_ids` |
 | `divergence` | 读 | `{profile}` | `{hollowed: [{kind, entity, purges, distrusted, evidence, pending}], withheldSalts: [{salt, ops}]}` |
 
 `collection_salts_add` 走 `adopt_foreign` 的「同一个集合」分支（判据与事件只在 G9-3 那一处）；`collection_adopt` 是
@@ -359,15 +359,19 @@ S1 没有加表或索引，本机状态行与缓存配置都放现有的 `srs_me
 2. **全新 profile 的集合 = `collection_of(uid)`、目录名 = uid**，与协议 3 `Local::create`、迁移（`dryrun.rs` 的 `bind`）
    同一口径。**有意偏离设计 §5.1「新集合随机 UUIDv7」**：同一个 uid 的两台设备（协议 3 时代采用过同一 uid 的、D32
    服务端 uid = 目录名的）不用并入就是同一个集合，行为与协议 3 一致；全新库与「迁移一份空的协议 3 库」逐表相同，
-   派生层只有一条路。
+   派生层只有一条路。设计稿 §5.1 / §4.3 与规划 §4「实现补记」已同步加注：判「新集合」看有没有 `v3/meta.json`，
+   不看目录名形状（G8-7 围栏、G9-5 关联、G10 host 目录照此实现）；「目录名 = 本机 uid」的读法仍然禁止（并入 / 认领后不成立）。
 3. **新身份**：随机 UUIDv7 设备 ID（`migrate::random_device`）、随机签名钥匙、时钟从零起；集合的盐集合里没有这个
    uid 就在本机日志写一条 `Salts{uid}`——与迁移的初始盐同口径：G9-6 之前 Dart 仍按 profile uid 加盐算内置实体 ID
    （默认牌组等），盐在集合里才归得到规范 ID。
 4. **`bindingChanged` 就放在回包里**：可能改绑定的命令（`identity` 第一次建、`collection_join` / `collection_salts_add`
    / `collection_adopt`）把存储层的 `BindingChanged` 交给分发器，`write_binding` 在 `G4Core::write` **提交成功之后**
    写进回包 `bindingChanged: {profile}`；提交失败或命令中途 panic（被回滚）就没有回包，事件随之丢掉（缺口 G-4 的
-   「返回 Some 就发了、回滚就没发」由 `a_join_keeps_cards_and_logs_and_reports_the_change_only_after_commit` 与
-   `salts_add_and_adopt_report_a_change_only_when_the_binding_changed` 的提交前 panic 注入卡住）。内核没有另起一条事件
+   「返回 Some 就发了、回滚就没发」逐条命令卡住：`collection_join`、`collection_salts_add`、`identity`（全新库）、
+   `collection_adopt` 的 `bound` 与 `joined` 各有一次提交前 panic 注入；「进了写路径但绑定没变就不发」由
+   `identity_that_only_builds_the_local_identity_reports_no_binding_change`（已绑定、只缺本机身份、盐里已有 uid）与
+   `a_second_caller_that_also_saw_no_identity_builds_nothing_and_reports_no_change`（两个调用方都看到「没有」、后进
+   事务的那个只是读，同一个设备 ID）卡住）。内核没有另起一条事件
    流：Dart 的每条内核命令都经 `SrsDbStore` 同一个入口，回包就是事件流。`binding_set` 只写 `state` / `via` / `at`
    三列（不属于 `Binding`、不影响任何 ID），不发。改绑定的命令**不推进本机修订号**（不是 `LOCAL_WRITE_OPS`）：
    Dart 收到 `bindingChanged` 要按「库换了」整份重读，而不是靠修订号。
@@ -400,7 +404,11 @@ S1 没有加表或索引，本机状态行与缓存配置都放现有的 `srs_me
 
 ### 没做 / 交给谁
 
-- **「先加入」在 app 里走不到**（归 G9-5，涉及 G9-3 的 `identity.rs` 判据）：`identity` 在打开时就绑了新 profile，之后
+- **合并条件（已写进规划 §6）**：G7-5 把 `identity` 挪到 `cache_config_set` 之前、删 `legacyWriter` 相关代码，整批合入
+  develop 前用全新 profile（空库、新建 profile 两种）经 app 打开做一次端到端验证；在这之前集成分支上全新 profile
+  打开仍会先报 `has no collection`（S1 之后本来就如此，不是本 PR 的回归）。
+- **「先加入」在 app 里走不到**（**G9-5 必做**，规划 §6 合并条件；涉及 G9-3 的 `identity.rs` 判据；验收：端到端测试
+  「新设备打开 profile 后再关联已有集合，结论 `bound`，不产生 `Join`、不需别的设备再确认」）：`identity` 在打开时就绑了新 profile，之后
   `adopt_foreign` 只能并入，不会是 `bound`；新设备关联已有集合时，若本机目录名（= 新 uid）较小，按 D27 是对方并入本机，
   别的设备看到 `Join` 要再确认一次（D25）。建议 G9-5 在 `adopt_foreign` 里加「空集合可换绑」：本机集合的日志只有本机
   身份写的 `Salts`、没有别的设备、从没发布到任何位置（`loc_heads` / `relay_out` 为空）时，确认后同一个事务里丢掉这个空
@@ -410,11 +418,13 @@ S1 没有加表或索引，本机状态行与缓存配置都放现有的 `srs_me
 - `bindingChanged` 只随引起它的那条命令的回包回来；别的进程（Secondary 查词弹窗）看不到。弹窗只读、绑定变化极少，
   G7-5 让 Secondary 在打开 / 重新激活时重取 `identity` 即可。
 
-### 测试（`cmd/identity_tests.rs`，8 条，全部经 C ABI）
+### 测试（`cmd/identity_tests.rs`，13 条，除「两个调用方」一条直接在 `G4Core` 上跑外全部经 C ABI）
 
 新库建身份 → 写 → 读（含建之前按集合命令报错、没有 `now` 报错、第二次 `identity` 不带事件、Secondary 只读）；迁移库上
 `identity` 与协议 3 对拍（`collection` / `public` / `name` / `migrated` 相同，`device_info` 改名后仍相同）与 `binding_set`
 逐条对拍；多 profile 各自一个集合、同一集合不能绑两个 profile、没绑过的 profile 经 `collection_adopt` 先问后绑并建身份；
 改绑不丢笔记 / 卡片 / 复习日志 / 修改历史、默认牌组的规范 ID 不变、方向反了报错；提交前 panic 不发事件、库不变；补盐
-只在真有新盐时发事件；别名类成员经 `canonical_ids` 归一、`key_evidence` / `divergence` 的形状；每条新命令都有臂。
+只在真有新盐时发事件；别名类成员经 `canonical_ids` 归一、`key_evidence` / `divergence` 的形状；每条新命令都有臂；
+`identity` 进了写路径但绑定没变（只缺本机身份、并发的第二个调用方）不发事件；`identity` / `collection_adopt`（`bound`、
+`joined`）提交前 panic 不发事件、什么都没建；`canonical_ids` / `key_evidence` 的条数上限。
 `dispatch_tests.rs` 的未接线清单去掉了 `identity`，并把几个装置函数开成 `pub(super)` 给这里复用。

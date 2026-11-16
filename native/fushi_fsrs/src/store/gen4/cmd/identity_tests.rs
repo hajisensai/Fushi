@@ -5,12 +5,17 @@
 //! - 迁移来的库：`identity` 与协议 3 的可比字段对拍、`binding_set` 与协议 3 逐条对拍。
 //! - 多个 profile：各自的集合；同一个集合不能绑两个 profile；没绑过的 profile 经 `collection_adopt` 先加入。
 //! - 改绑（`collection_join`）不丢笔记、卡片、复习日志与修改历史，内置实体的规范 ID 不变。
-//! - 绑定变化的事件：返回了变化就在回包里，提交前 panic（回滚）就没有回包、库没变（规划缺口 G-4）。
+//! - 绑定变化的事件：返回了变化就在回包里，提交前 panic（回滚）就没有回包、库没变（规划缺口 G-4），每条可能改绑定的
+//!   命令各一次；进了写路径但绑定没变（只缺本机身份、并发的第二个调用方）不发。
+//! - `canonical_ids` / `key_evidence` 的条数上限。
 //! - 别名类：`canonical_ids` 把成员归到规范 ID；`key_evidence` / `divergence` 的形状。
+
+use std::collections::BTreeSet;
 
 use serde_json::{Value, json};
 
 use super::dispatch_tests::{T1, call, cfg, g4, g4req, migrated, open, p3};
+use super::identity::{LOOKUP_MAX, identity_ensure, identity_read};
 use super::tests::{N1, T0};
 use super::tests_class;
 use crate::gen4::op::tests::id;
@@ -473,4 +478,147 @@ fn every_identity_command_has_an_arm() {
         let v = g4(m.h, op, T0 + 5, extra);
         assert!(v.is_object(), "{op}: {v}");
     }
+}
+
+// ---------------------------------------------------------------------- 绑定变化：没变就不发
+
+/// 进了 `identity` 的写路径、但绑定没变：profile 已绑定、只缺本机身份、盐集合里已有这个 uid（例如另一台同 uid 设备的
+/// `Salts` 已经收进来）。建本机身份，不写 `Salts`、不带 `bindingChanged`（规划 G-4「返回 Some 才发」；恒发会让 Dart
+/// 白做一次「库换了」的整份重读）。
+#[test]
+fn identity_that_only_builds_the_local_identity_reports_no_binding_change() {
+    let dir = tempdir::new("g94nochange");
+    {
+        let c = G4Core::open(&dir.0, OpenMode::Primary).unwrap();
+        c.write(|t| {
+            let col = t.bind(P, &collection_of(P), P)?;
+            t.set_salts(col, &BTreeSet::from([P.to_owned()]))
+        })
+        .unwrap();
+        c.close();
+    }
+    let h = open(&dir.0, 0).unwrap();
+    let me = g4(h, "identity", T1, json!({}));
+    assert!(me.get("bindingChanged").is_none(), "{me}");
+    assert_eq!(me["nextSeq"], json!(1), "盐集合里已有 P，不写 Salts：{me}");
+    assert_eq!(me["public"].as_str().unwrap().len(), 64);
+    let info = g4(h, "collection_info", T1, json!({}));
+    assert_eq!(info["salts"], json!([P]), "{info}");
+    ffsrs_store_close(h);
+}
+
+/// 两个调用方的读路径都看到「没有身份」、先后进写事务（`dispatch.rs` `identity`）：先进的建、带变化；后进的在事务里
+/// 重查到已建好，只是读——同一个设备 ID、不再建第二份、不带变化。
+#[test]
+fn a_second_caller_that_also_saw_no_identity_builds_nothing_and_reports_no_change() {
+    let dir = tempdir::new("g94race");
+    let c = G4Core::open(&dir.0, OpenMode::Primary).unwrap();
+    assert!(c.read(|t| identity_read(t, P)).unwrap().is_none());
+    assert!(c.read(|t| identity_read(t, P)).unwrap().is_none());
+    let (first, ch1) = c.write(|t| identity_ensure(t, P, T1)).unwrap();
+    assert_eq!(ch1.map(|c| c.profile), Some(P.to_owned()));
+    let (second, ch2) = c.write(|t| identity_ensure(t, P, T1 + 1)).unwrap();
+    assert!(ch2.is_none(), "{second}");
+    assert_eq!(second, first, "同一份身份，没有第二条 Salts");
+    assert_eq!(
+        c.read(|t| identity_read(t, P)).unwrap().as_ref(),
+        Some(&first)
+    );
+    c.close();
+}
+
+// ---------------------------------------------------------------------- 绑定变化：回滚就不发
+
+/// 规划 G-4：每条可能改绑定的命令，提交前 panic 就没有回包（也就没有事件）、什么都没建。`identity`（全新库）与
+/// `collection_adopt confirmed=true` 的 `bound`（没绑过的 profile）：回滚后照旧「has no collection」，之后重来成功、
+/// 带事件。
+#[test]
+fn identity_and_adopt_bound_roll_back_without_an_event() {
+    let dir = tempdir::new("g94rollbk");
+    let h = open(&dir.0, 0).unwrap();
+    test_panic::arm(test_panic::BEFORE_RELEASE);
+    let (rc, e) = err_of(h, "identity", json!({}));
+    assert_eq!(rc, STORE_PANIC, "{e}");
+    assert!(!test_panic::armed(), "the injected panic fired");
+    let (_, e) = err_of(h, "binding_get", json!({}));
+    assert!(e.contains("has no collection"), "回滚后什么都没建：{e}");
+
+    let foreign = id(0xe1).text();
+    let mut adopt = g4req(
+        "collection_adopt",
+        T1,
+        json!({"collection": foreign, "dir": "zz-remote", "confirmed": true}),
+    );
+    adopt["profile"] = json!(R);
+    test_panic::arm(test_panic::BEFORE_RELEASE);
+    let (rc, e) = call(h, &adopt, None).unwrap_err();
+    assert_eq!(rc, STORE_PANIC, "{e}");
+    assert!(!test_panic::armed(), "the injected panic fired");
+    let mut get = g4req("binding_get", T1, json!({}));
+    get["profile"] = json!(R);
+    let (_, e) = call(h, &get, None).unwrap_err();
+    assert!(e.contains("has no collection"), "回滚后 R 没绑：{e}");
+
+    let me = g4(h, "identity", T1, json!({}));
+    assert_eq!(me["bindingChanged"], json!({"profile": P}), "{me}");
+    let v = call(h, &adopt, None).unwrap().0;
+    assert_eq!(v["outcome"], json!("bound"), "{v}");
+    assert_eq!(v["bindingChanged"], json!({"profile": R}));
+    ffsrs_store_close(h);
+}
+
+/// `collection_adopt confirmed=true` 的 `joined`（已绑定的 profile 并入对方）：提交前 panic 就没有回包、集合与
+/// `joins` 不变；重来成功、带事件。
+#[test]
+fn adopt_joined_rolls_back_without_an_event() {
+    let m = migrated();
+    let before = g4(m.h, "identity", T1, json!({}));
+    let into = id(0x0b).text();
+    let ask = json!({"collection": into, "dir": "0000-home", "confirmed": true});
+    test_panic::arm(test_panic::BEFORE_RELEASE);
+    let (rc, e) = err_of(m.h, "collection_adopt", ask.clone());
+    assert_eq!(rc, STORE_PANIC, "{e}");
+    assert!(!test_panic::armed(), "the injected panic fired");
+    let same = g4(m.h, "identity", T1, json!({}));
+    assert_eq!(same["collection"], before["collection"]);
+    assert_eq!(same["nextSeq"], before["nextSeq"]);
+    assert_eq!(
+        g4(m.h, "collection_info", T1, json!({}))["joins"],
+        json!([])
+    );
+
+    let v = g4(m.h, "collection_adopt", T1, ask);
+    assert_eq!(v["outcome"], json!("joined"), "{v}");
+    assert_eq!(v["bindingChanged"], json!({"profile": P}));
+    assert_eq!(
+        g4(m.h, "identity", T1, json!({}))["collection"],
+        json!(into)
+    );
+}
+
+// ---------------------------------------------------------------------- 上限
+
+/// `canonical_ids` / `key_evidence` 一次最多 [LOOKUP_MAX] 条：超了明确报错（调用方分批），正好上限照常答。
+#[test]
+fn lookups_are_capped_per_request() {
+    let m = migrated();
+    let ids: Vec<String> = (0..=LOOKUP_MAX).map(|i| format!("x{i}")).collect();
+    let (rc, e) = err_of(m.h, "canonical_ids", json!({"ids": ids}));
+    assert_eq!(rc, STORE_ERROR);
+    assert!(e.contains("at most"), "{e}");
+    let ok = g4(m.h, "canonical_ids", T1, json!({"ids": ids[..LOOKUP_MAX]}));
+    assert_eq!(ok["ids"].as_array().unwrap().len(), LOOKUP_MAX);
+
+    let item = json!({"kind": "note", "entity": N1});
+    let items = vec![item; LOOKUP_MAX + 1];
+    let (rc, e) = err_of(m.h, "key_evidence", json!({"items": items}));
+    assert_eq!(rc, STORE_ERROR);
+    assert!(e.contains("at most"), "{e}");
+    let ok = g4(
+        m.h,
+        "key_evidence",
+        T1,
+        json!({"items": items[..LOOKUP_MAX]}),
+    );
+    assert_eq!(ok["evidence"].as_array().unwrap().len(), LOOKUP_MAX);
 }
