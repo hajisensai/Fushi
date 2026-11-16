@@ -20,6 +20,7 @@ import 'package:fushi_server/src/server_prefs.dart';
 import 'package:path/path.dart' as p;
 import 'package:shelf/shelf.dart' as shelf;
 import 'package:test/test.dart';
+import 'support/fake_rwkv.dart';
 
 /// admin API「移除并清理」（`DELETE /api/admin/libraries/<id>?purge=true`）与
 /// `serve --no-prune` 的作用范围（BUG-2809）。
@@ -71,6 +72,7 @@ void main() {
     final ServerPaths paths = ServerPaths(config.dataDir);
     await paths.ensureLayout();
     final HeadlessHost host = HeadlessHost(
+      srsRwkvHttpClient: noNetworkHttpClient,
       config: config,
       paths: paths,
       db: db,

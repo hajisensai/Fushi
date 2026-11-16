@@ -153,7 +153,7 @@ class SrsRwkvService implements SrsRwkvScheduling, SrsRwkvStatusSource {
   @visibleForTesting
   Future<void> Function()? debugAfterRebuildFingerprint;
 
-  /// 排程用的状态精度（int4 卡状态 + int8 笔记状态，见 native/fushi_rwkv）。校准图的临时回放用同一个。
+  /// 排程用的状态精度（卡 / 笔记状态 int4，牌组 / 预设 / 全局 f32，见 native/fushi_rwkv）。校准图的临时回放用同一个。
   static const RwkvPrecision precision = RwkvPrecision.int4;
 
   /// 有未存的追加 / 撤回时，空闲这么久后存一次快照。
@@ -212,6 +212,9 @@ class SrsRwkvService implements SrsRwkvScheduling, SrsRwkvStatusSource {
   final Map<int, SrsRwkvBackend> _backends = <int, SrsRwkvBackend>{};
   final Map<int, StreamSubscription<ModelDownloadEvent>> _downloads =
       <int, StreamSubscription<ModelDownloadEvent>>{};
+
+  /// 取消了、还没真正停下的下载（[_stopDownload]）：[close] 等它们停干净再返回，宿主之后删目录不会撞上收尾。
+  final Set<Future<void>> _stoppingDownloads = <Future<void>>{};
 
   /// 在跑的原生调用（内核给的编号 → 账本令牌、字节、行数）。
   final Map<int, (int, int, int)> _nativeOps = <int, (int, int, int)>{};
@@ -385,7 +388,7 @@ class SrsRwkvService implements SrsRwkvScheduling, SrsRwkvStatusSource {
           final StreamSubscription<ModelDownloadEvent>? download = _downloads
               .remove(r.u32());
           if (download != null) {
-            unawaited(download.cancel());
+            _stopDownload(download);
             _handlers--;
           }
       }
@@ -432,7 +435,7 @@ class SrsRwkvService implements SrsRwkvScheduling, SrsRwkvStatusSource {
     _timer = null;
     for (final StreamSubscription<ModelDownloadEvent> download
         in _downloads.values) {
-      unawaited(download.cancel());
+      _stopDownload(download);
       _handlers--;
     }
     _downloads.clear();
@@ -544,6 +547,21 @@ class SrsRwkvService implements SrsRwkvScheduling, SrsRwkvStatusSource {
 
   _Call _callOf(int op) =>
       _calls[op] ?? (throw StateError('RWKV kernel asked about command $op'));
+
+  /// 取消一个下载并记账，直到它真正停下（[SrsRwkvModels.download] 的 cancel future 等连接断开、收尾结束）。
+  /// 停的过程中冒出的意外错误进诊断日志（没有人在 await 这一步，不能让它落到 zone）。
+  void _stopDownload(StreamSubscription<ModelDownloadEvent> download) {
+    late final Future<void> stopping;
+    stopping = download
+        .cancel()
+        .then<void>(
+          (_) {},
+          onError: (Object error, StackTrace stack) =>
+              _log('RWKV download stop failed: $error\n$stack'),
+        )
+        .whenComplete(() => _stoppingDownloads.remove(stopping));
+    _stoppingDownloads.add(stopping);
+  }
 
   /// 下载权重：进度一条条递给内核，下完 / 失败回复它；内核不等了（已关闭）就停。
   void _download(int id) {
@@ -974,6 +992,8 @@ class SrsRwkvService implements SrsRwkvScheduling, SrsRwkvStatusSource {
         }
         _finishCalls(null);
         _checkSettled();
+        // 在途下载停干净再返回（连接断开、不再写文件）。
+        await Future.wait(_stoppingDownloads.toList());
       }
     } finally {
       await _status.close();
