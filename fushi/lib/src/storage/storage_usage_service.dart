@@ -470,6 +470,9 @@ const Map<StorageCategoryId, List<String>> kStorageCategoryDocumentsChildren =
         // 在线音源插件曲目下载（`music_downloads/<插件>/<专辑>/`）：与音频 CD 抓轨同属
         // 「下载进来的媒体文件」，归同一类目，不为音乐另立类目。
         'music_downloads',
+        // iOS「文件」App 收件箱收进来的批次（拍板台 nLXhu0d7gV，`inbox_imports/<域>/<批次>/`）：
+        // 与音频 CD 抓轨同为「仅此一次」导入后原地引用的媒体文件，归同一类目。
+        'inbox_imports',
       ],
       StorageCategoryId.covers: <String>[
         'video_covers',
