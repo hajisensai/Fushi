@@ -111,7 +111,9 @@ void main() {
       'lib/src/anki/card_source_router.dart',
     ).readAsStringSync();
     expect(router, contains('awaitWithCardSourceOpeningFeedback<'));
-    expect(router, contains('navigator: navigator,'));
+    // 「立即可得」必须与 read 同一判据（在途请求也要挂反馈），不能用 peek 模拟。
+    expect(router, contains('cache.wouldReadImmediately('));
+    expect(router, isNot(contains('cache.peek<')));
     expect(
       router,
       contains('(lookup.cancelled || !navigator.mounted)) return;'),

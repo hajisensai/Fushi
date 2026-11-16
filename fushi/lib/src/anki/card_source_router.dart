@@ -100,14 +100,12 @@ Future<CardSourceAwaited<RemoteCardSourceVideo>> resolveRemoteCardSourceVideo(
     final RemoteLibraryCache cache = ref.read(remoteLibraryCacheProvider);
     final String sourceId = backend.remoteLibrarySourceId;
     const String key = RemoteLibraryCacheKeys.videos;
-    // 与 [RemoteLibraryCache.read] 的命中判据同一口径（默认 TTL 内的成功值）。
-    final bool cached =
-        cache.peek<List<RemoteVideoInfo>>(
-          sourceId: sourceId,
-          key: key,
-          maxAge: cache.defaultTtl,
-        ) !=
-        null;
+    // 与 [RemoteLibraryCache.read] 同一判据：有在途请求（如视频页正在下拉刷新）
+    // 时 read 会等它，这里也算「不立即可得」、照样挂反馈。
+    final bool cached = cache.wouldReadImmediately(
+      sourceId: sourceId,
+      key: key,
+    );
     final Future<List<RemoteVideoInfo>> listing = cache
         .read<List<RemoteVideoInfo>>(
           sourceId: sourceId,
