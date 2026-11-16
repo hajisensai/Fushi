@@ -2010,14 +2010,14 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       _pausedForLookup = true;
       unawaited(_pause());
     }
-    AudioCue? cue;
-    for (final AudioCue c in _controller.cues) {
-      if (c.startMs == req.cueStartMs && c.text == req.sentence) {
-        cue = c;
-        break;
-      }
-    }
-    _lastLookupCue = cue ?? _controller.currentCue;
+    // 锚点就是被点的那一句（BUG-4695）：DOM 层读的是 store 活对象，Dart 轨快照可能滞后 / 还没到，
+    // 不能按快照找不到就退回当前播放位置那句（常为 null → 纯字段卡，无画面无音频）。
+    _lastLookupCue = webVideoDomLookupAnchorCue(
+      request: req,
+      cues: _controller.cues,
+      bookUid: widget.bookUid,
+      trackKey: _activeTrackKey ?? '',
+    );
     await GlobalLookupController.instance.lookupText(
       term,
       sentence: _lookupMiningSentence(req.sentence),
