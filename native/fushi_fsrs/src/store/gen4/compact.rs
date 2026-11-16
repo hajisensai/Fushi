@@ -251,6 +251,7 @@ pub fn recut(
 }
 
 /// 一组合并的结果：替换掉 [Compacted::replaces] 这些段的新段（头 + 文件字节）。
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Compacted {
     /// 被替换的段 `(first, last)`，按 seq 升序。
     pub replaces: Vec<(u64, u64)>,
@@ -264,6 +265,17 @@ pub fn compact(
     col: i64,
     cuts: &[Cut],
     key: Option<&CollectionKey>,
+) -> Result<Vec<Compacted>, String> {
+    compact_to(t, col, cuts, key, SEGMENT_TARGET_BYTES)
+}
+
+/// [compact]，段的目标体积是 [target]（测试用小值走「切了几段、不比原来少就不合并」那条路）。
+fn compact_to(
+    t: &Truth<'_>,
+    col: i64,
+    cuts: &[Cut],
+    key: Option<&CollectionKey>,
+    target: u64,
 ) -> Result<Vec<Compacted>, String> {
     let me = t
         .self_identity(col)?
@@ -279,15 +291,23 @@ pub fn compact(
         let (a, b) = (group[0].first, group[group.len() - 1].last);
         let (pc, lc) = (group[0].prev_chain, group[group.len() - 1].last_chain);
         let pack = |p: &Piece| {
-            pack_native(collection, me.device, p.first, &p.items, p.prev_chain, &signer, key)
+            pack_native(
+                collection,
+                me.device,
+                p.first,
+                &p.items,
+                p.prev_chain,
+                &signer,
+                key,
+            )
         };
         // 先整组打成一段；放不进目标体积才按估计体积切。
         let whole = recut(t, col, a, b, &pc, &lc, u64::MAX)?;
         let one = pack(&whole[0])?;
-        let segments = if one.1.len() as u64 <= SEGMENT_TARGET_BYTES {
+        let segments = if one.1.len() as u64 <= target {
             vec![one]
         } else {
-            let pieces = recut(t, col, a, b, &pc, &lc, SEGMENT_TARGET_BYTES)?;
+            let pieces = recut(t, col, a, b, &pc, &lc, target)?;
             if pieces.len() >= group.len() {
                 continue;
             }
@@ -300,3 +320,7 @@ pub fn compact(
     }
     Ok(out)
 }
+
+#[cfg(test)]
+#[path = "compact_tests.rs"]
+mod tests;

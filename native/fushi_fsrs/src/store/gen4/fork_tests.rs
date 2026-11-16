@@ -351,8 +351,16 @@ fn chains_inside_a_void_are_skipped_so_the_fork_point_only_moves_earlier() {
         count: 4,
         chain_after: t2.chain_at(col2, &me2.device, 12).unwrap(),
     });
-    let (h, bytes) =
-        pack_native(collection, me2.device, 1, &items, CHAIN_ZERO, &me2.key(), None).unwrap();
+    let (h, bytes) = pack_native(
+        collection,
+        me2.device,
+        1,
+        &items,
+        CHAIN_ZERO,
+        &me2.key(),
+        None,
+    )
+    .unwrap();
     assert_eq!(h.last, 12);
     assert_eq!(scan(&t2, col2, &[bytes], &me2.public()).fork_point(), None);
 }

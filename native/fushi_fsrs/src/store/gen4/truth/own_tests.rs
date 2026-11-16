@@ -3,7 +3,7 @@
 use super::*;
 use crate::gen4::op::Body4;
 use crate::store::gen4::derive::tests::dump;
-use crate::store::gen4::fork::tests::{T0, body, idn, op, rebuild, setup, write_own, SEED};
+use crate::store::gen4::fork::tests::{SEED, T0, body, idn, op, rebuild, setup, write_own};
 use crate::store::gen4::schema::open;
 use crate::sync2::id::Key;
 use crate::sync2::op::EntKind;
@@ -34,7 +34,19 @@ fn the_hlc_text_has_exactly_one_shape() {
         Ok(-5),
         "negative walls are written with a sign"
     );
-    for bad in ["", "1", "1:", ":1", "01:2", "1:02", "+1:2", "1:2:3", "1:-1", " 1:2", "1:4294967296"] {
+    for bad in [
+        "",
+        "1",
+        "1:",
+        ":1",
+        "01:2",
+        "1:02",
+        "+1:2",
+        "1:2:3",
+        "1:-1",
+        " 1:2",
+        "1:4294967296",
+    ] {
         assert!(parse_hlc(bad, h.device).is_err(), "{bad:?}");
     }
 }
@@ -44,8 +56,14 @@ fn a_local_identity_is_created_once_and_reads_back() {
     let (conn, col) = setup();
     let t = Truth::new(&conn);
     let m = me(&t, col);
-    assert_eq!((m.col, m.seed(), m.prev.clone(), m.created), (col, SEED, None, T0));
-    assert_eq!((m.clock.wall, m.clock.logical, m.clock.device), (0, 0, m.device));
+    assert_eq!(
+        (m.col, m.seed(), m.prev.clone(), m.created),
+        (col, SEED, None, T0)
+    );
+    assert_eq!(
+        (m.clock.wall, m.clock.logical, m.clock.device),
+        (0, 0, m.device)
+    );
     assert_eq!(m.public(), DeviceKey::from_seed(&SEED).public());
     // 本机的公钥进了 peers。
     assert_eq!(t.device_key(col, &m.device), Ok(Some(m.public())));
@@ -111,7 +129,10 @@ fn rotating_at_the_end_moves_nothing_and_links_the_new_identity_to_the_old() {
     let chains = write_own(&t, col, 5);
     let old = me(&t, col);
     let r = t.rotate_identity_report(col, 5, T0 + 100).unwrap();
-    assert_eq!((r.previous, r.keep, r.moved.len(), r.dropped_voids), (old.device, 5, 0, 0));
+    assert_eq!(
+        (r.previous, r.keep, r.moved.len(), r.dropped_voids),
+        (old.device, 5, 0, 0)
+    );
     let new = me(&t, col);
     assert_eq!(new.device, r.device);
     assert_ne!(new.device, old.device);
@@ -137,7 +158,10 @@ fn rotating_at_the_end_moves_nothing_and_links_the_new_identity_to_the_old() {
     let id3 = t.rotate_identity(col, 1, T0 + 200).unwrap();
     let third = me(&t, col);
     assert_eq!(third.device, id3);
-    assert_eq!(third.prev.as_ref().map(|p| (p.device, p.seq)), Some((new.device, 1)));
+    assert_eq!(
+        third.prev.as_ref().map(|p| (p.device, p.seq)),
+        Some((new.device, 1))
+    );
     // 本机末尾之后不是本机写过的前缀。
     let e = t.rotate_identity(col, 1, T0 + 300).unwrap_err();
     assert!(e.contains("log ends at 0"), "{e}");
@@ -227,7 +251,10 @@ fn a_fork_reissues_the_later_ops_under_the_new_identity_and_keeps_state_in_step(
         let orig = &originals[from.seq as usize - 1];
         let e = t.entry(col, to).unwrap().unwrap();
         let re = e.op().unwrap();
-        assert_eq!((re.kind, re.fmt, &re.payload), (orig.kind, orig.fmt, &orig.payload));
+        assert_eq!(
+            (re.kind, re.fmt, &re.payload),
+            (orig.kind, orig.fmt, &orig.payload)
+        );
         assert!(re.hlc > prev_hlc && re.hlc.wall >= orig.hlc.wall);
         prev_hlc = re.hlc;
         assert_eq!(re.deps.get(&old.device), (from.seq - 1).min(3));
@@ -235,14 +262,20 @@ fn a_fork_reissues_the_later_ops_under_the_new_identity_and_keeps_state_in_step(
         assert!(re.deps.get(&other) <= 3);
         assert_eq!(re.deps.get(&other), orig.deps.get(&other).min(3));
     }
-    assert_eq!(me(&t, col).clock, prev_hlc, "the clock is saved past the re-issued ops");
+    assert_eq!(
+        me(&t, col).clock,
+        prev_hlc,
+        "the clock is saved past the re-issued ops"
+    );
     // 带盐的操作搬过来了，没有被清成空洞。
     let salts = t.entry(col, &oid(new.device, 2)).unwrap().unwrap();
     assert_eq!(salts.op().unwrap().kind, crate::gen4::op::KIND_SALTS);
     // 本机状态改键：搬走的 5、7 → 新身份的 2、4；2 留在旧身份。
     let keys = |table: &str| -> Vec<(Vec<u8>, i64)> {
         let mut s = conn
-            .prepare(&format!("SELECT device, seq FROM {table} ORDER BY device, seq"))
+            .prepare(&format!(
+                "SELECT device, seq FROM {table} ORDER BY device, seq"
+            ))
             .unwrap();
         s.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
             .unwrap()
@@ -287,7 +320,10 @@ fn a_keep_point_inside_a_void_moves_back_to_where_the_chain_is_known() {
     // 6 在空洞 5..=8 内部：退到 4；5..=8 四条空洞丢掉，9..=12 重签发。
     let r = t.rotate_identity_report(col, 6, T0 + 10).unwrap();
     assert_eq!((r.keep, r.dropped_voids, r.moved.len()), (4, 4, 4));
-    assert_eq!(me(&t, col).prev.map(|p| (p.seq, p.chain)), Some((4, chains[3])));
+    assert_eq!(
+        me(&t, col).prev.map(|p| (p.seq, p.chain)),
+        Some((4, chains[3]))
+    );
     assert_eq!(t.last_of(col, &old.device), Ok(4));
     assert_eq!(count(&conn, "SELECT COUNT(*) FROM op_voids"), 0);
     // 冻结点落在空洞区间末尾（链值已知）就不退。
@@ -295,7 +331,8 @@ fn a_keep_point_inside_a_void_moves_back_to_where_the_chain_is_known() {
     let t2 = Truth::new(&conn2);
     let c2 = write_own(&t2, col2, 6);
     let old2 = me(&t2, col2);
-    t2.tx(|t| t.advance_purge(col2, &oid(old2.device, 3))).unwrap();
+    t2.tx(|t| t.advance_purge(col2, &oid(old2.device, 3)))
+        .unwrap();
     let r2 = t2.rotate_identity_report(col2, 3, T0 + 10).unwrap();
     assert_eq!((r2.keep, r2.moved.len()), (3, 3));
     // 旧身份末尾是那个空洞，之后的同号操作照常接上。

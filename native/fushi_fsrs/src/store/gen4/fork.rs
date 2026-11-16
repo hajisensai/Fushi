@@ -69,8 +69,7 @@ pub fn judge_own_head(t: &Truth<'_>, col: i64, h: &Head4) -> Result<OwnHead, Str
     }
     let same = |i: usize| -> Result<bool, String> {
         let (_, b, tag) = &h.segs[i];
-        Ok(t
-            .chain_known(col, &me.device, *b)?
+        Ok(t.chain_known(col, &me.device, *b)?
             .is_some_and(|ours| chain_tag(&ours) == *tag))
     };
     // 二分：same(i) 为真 ⇒ 第 i 段末尾之前两边相同（哈希链）。不知道链值（空洞内部）当作不同，只会多拉。
@@ -173,7 +172,9 @@ impl ForkScan {
             Ok(())
         })?;
         let at = |seq: u64| -> Option<Chain> {
-            ours.get((seq - (header.first - 1)) as usize).copied().flatten()
+            ours.get((seq - (header.first - 1)) as usize)
+                .copied()
+                .flatten()
         };
         let mut theirs = header.prev_chain;
         let mut seq = header.first - 1;
