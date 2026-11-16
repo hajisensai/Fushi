@@ -1779,7 +1779,7 @@ class _HomePageState extends BasePageState<HomePage>
   Widget _buildShellTitleBar() {
     _shellActions.shellTrailing = _appleBackgroundTasksAction();
     return FushiShellLargeTitleBar(
-      title: _shellTitleFor(_visibleTab),
+      title: _shellBarTitleFor(_visibleTab),
       collapsed:
           _largeTitle.collapsed ||
           (!isGlassDesign(context) && _tabHasFloatingChrome(_visibleTab)),
@@ -1795,7 +1795,7 @@ class _HomePageState extends BasePageState<HomePage>
   Widget? _appleBackgroundTasksAction() {
     // 标题行高度为 0 时不往里塞按钮（塞了也只会被压扁裁掉），入口是右下 FAB。
     if (!isGlassDesign(context) ||
-        _shellTitleFor(_visibleTab) == null ||
+        _shellBarTitleFor(_visibleTab) == null ||
         !_hasBackgroundTasks) {
       return null;
     }
@@ -1836,11 +1836,11 @@ class _HomePageState extends BasePageState<HomePage>
 
   /// 当前布局下「后台任务」入口是否已由外壳的栏承载（body 因此不再画右下
   /// FAB）。判据与可见 tab 实际渲染的页头同源：外壳大标题行是否有高度
-  /// （[_shellTitleFor] 非 null，正是 [FushiShellLargeTitleBar] 判「有标题」
+  /// （[_shellBarTitleFor] 非 null，正是 [FushiShellLargeTitleBar] 判「有标题」
   /// 的那一份）。
   bool _backgroundTasksHostedByChrome() => homeBackgroundTasksHostedByChrome(
     apple: isGlassDesign(context),
-    shellTitleVisible: _shellTitleFor(_visibleTab) != null,
+    shellTitleVisible: _shellBarTitleFor(_visibleTab) != null,
   );
 
   /// 内容顶部是叠放浮动工具栏（[FushiFloatingChromeOverlay]）的 tab：这些库页
@@ -1959,6 +1959,24 @@ class _HomePageState extends BasePageState<HomePage>
         ) ==
         WindowSizeClass.compact,
     redesign: shellRedesignActive(context),
+  );
+
+  /// 外壳大标题条**自己画**的页面名（null = 行高为 0）。与 [_shellTitleFor] 的
+  /// 区别：重设计外壳下库页的页头大字已经用外壳下发的页面名画了这一行，外壳
+  /// 条不再画第二遍（BUG：Cupertino 库页页名画两遍，见 [homeShellBarTitleFor]）。
+  /// 「后台任务」入口是否进栏也按这一份判，条不画就退回右下 FAB。
+  String? _shellBarTitleFor(HomeTab tab) => homeShellBarTitleFor(
+    tab,
+    apple: isGlassDesign(context),
+    compact:
+        windowSizeClassReal(
+          MediaQuery.sizeOf(context).width,
+          FushiAppUiScale.of(context),
+        ) ==
+        WindowSizeClass.compact,
+    redesign: shellRedesignActive(context),
+    gamesStreamClient:
+        appModelNoUpdate.gamesModuleForm == GamesModuleForm.streamClient,
   );
 
   /// 单个 [HomeTab] 的导航项（图标 + 标签）。底栏/侧栏/macOS 根侧栏共用同一顶层
@@ -4666,6 +4684,36 @@ String? homeShellTitleFor(
     // 复习页自己画页头（标题 + 牌组动作）。
     HomeTab.home || HomeTab.srs || HomeTab.settings => null,
   };
+}
+
+/// 外壳大标题条（[FushiShellLargeTitleBar]）**自己画**的页面名；null = 行高为 0。
+///
+/// [homeShellTitleFor] 是外壳给 tab 的页面名，经 `FushiShellTitleScope` 下发：
+/// 重设计外壳（[redesign]）下库页根 overlay 挂着 `masthead: true`，页头大字
+/// 正是拿这个名字画页名行（`FushiFloatingChromeBar._buildMasthead`）。此时外壳
+/// 条再画一遍就是同一个页名两行——MD3 因库页标题本来就不按行摆（窄窗不叠、宽窗
+/// 并进工具栏行）没露出来，Apple 的外壳条恒在内容上方按行画，于是 Cupertino 下
+/// 「Video」小字 + 「Video」大字（反馈 4s8SaBMfyY）。页面名照常下发，只有外壳
+/// 条不画。串流接收形态的游戏库是普通页头（[gamesStreamClient]），仍由外壳画。
+@visibleForTesting
+String? homeShellBarTitleFor(
+  HomeTab tab, {
+  required bool apple,
+  required bool compact,
+  bool redesign = false,
+  bool gamesStreamClient = false,
+}) {
+  final bool mastheadOwnsTitle =
+      redesign &&
+      _HomePageState._tabHasFloatingChrome(tab) &&
+      !(tab == HomeTab.games && gamesStreamClient);
+  if (mastheadOwnsTitle) return null;
+  return homeShellTitleFor(
+    tab,
+    apple: apple,
+    compact: compact,
+    redesign: redesign,
+  );
 }
 
 /// 「后台任务」入口（同步 / 复习同步 / 补刮）是否由外壳的栏承载（承载时首页
