@@ -633,6 +633,8 @@ public class MainActivity extends AudioServiceActivity {
         app.fushi.reader.feedback.FeedbackReplyWorkChannel.registerWith(
                 flutterEngine, getApplicationContext());
         SelectionActionChannel.registerWith(flutterEngine, this);
+        // 文件分享：Dart 侧先异步落好快照，这里只拼 Intent，主线程不做文件 I/O（BUG-4740）。
+        FushiShareChannel.registerWith(flutterEngine, this);
         SystemOcrChannel.registerWith(flutterEngine, this);
         ClipboardImageChannel.registerWith(flutterEngine, getApplicationContext());
         // 墨水屏全刷的厂商 EPD 通道（反射探测，需要 Activity 的 decorView）。

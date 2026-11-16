@@ -83,9 +83,14 @@ final class FushiAppleMusic: NSObject, FlutterStreamHandler {
     case "userCredentials":
       run(result) {
         guard MusicAuthorization.currentStatus == .authorized else { return nil }
+        // 本机授权状态是设备级的：用户在 Apple 账号里撤销后重新授权，状态一直是 authorized，
+        // 缓存里的 Music-User-Token 却已作废（服务器回 401 / 403）。Dart 收到 401 / 403 时带
+        // refresh 再来取，这里用 .ignoreCache 让 MusicKit 丢掉缓存重新生成。
+        let refresh = (args["refresh"] as? Bool) ?? false
         let provider = DefaultMusicTokenProvider()
         let developerToken = try await provider.developerToken(options: [])
-        let userToken = try await provider.userToken(for: developerToken, options: [])
+        let userToken = try await provider.userToken(
+          for: developerToken, options: refresh ? .ignoreCache : [])
         return ["developerToken": developerToken, "userToken": userToken]
       }
     case "play", "playStation", "skipToNext", "pause", "resume", "stop", "seek":

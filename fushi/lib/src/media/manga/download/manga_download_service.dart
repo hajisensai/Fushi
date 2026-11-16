@@ -4,8 +4,9 @@
 /// 单 worker 串行取 `manga_download_jobs`
 /// 里最早的 `queued` 任务，任务内 4 并发取页落到章目录，全部齐后写章 `manga.json`
 /// → `done`。失败按 2s / 8s / 20s 退避重试三次，再失败留 `failed` + `last_error`；
-/// 取消真中止并删半成品目录。进程重启后 `running` 行复位为 `queued` 续跑，已落地的
-/// 页按磁盘现状跳过。
+/// 取消真中止并删半成品目录；暂停（`paused`）同样中止，但半成品原样留着，恢复后
+/// 按磁盘现状续跑，暂停态跨进程重启保持。进程重启后 `running` 行复位为 `queued`
+/// 续跑，已落地的页按磁盘现状跳过。
 ///
 /// 完成钩子 [onChapterDownloaded]：`auto_ocr` 为真时由装配方（AppModel）解析引擎
 /// 并经 `MangaOcrJobRegistry.enqueue` 起整卷 OCR。钩子抛错只记日志，不影响任务
@@ -148,6 +149,22 @@ const List<Duration> kMangaDownloadRetryBackoff = <Duration>[
   Duration(seconds: 20),
 ];
 
+/// 未结束的任务状态：排队 / 下载中 / 暂停。可取消，不能「清除」。
+const Set<String> kMangaDownloadUnfinishedStatuses = <String>{
+  MangaDownloadJobStatus.queued,
+  MangaDownloadJobStatus.running,
+  MangaDownloadJobStatus.paused,
+};
+
+/// [status] 是不是未结束（见 [kMangaDownloadUnfinishedStatuses]）。
+bool isMangaDownloadJobUnfinished(String status) =>
+    kMangaDownloadUnfinishedStatuses.contains(status);
+
+/// [status] 是不是「在飞」：排队或下载中，worker 会自己推进（暂停的不算）。
+bool isMangaDownloadJobInFlight(String status) =>
+    status == MangaDownloadJobStatus.queued ||
+    status == MangaDownloadJobStatus.running;
+
 /// 一个任务最多尝试的次数：失败后 `attempt_count < 3` 才退避重跑，否则 `failed`。
 const int kMangaDownloadMaxAttempts = 3;
 
@@ -168,17 +185,20 @@ String mangaDownloadJobId({
   return sha256.convert(utf8.encode(identity)).toString().substring(0, 32);
 }
 
-/// 中止信号。用户取消（[cancelled]）与服务停止（[stopped]）必须分开：前者把行改成
-/// `cancelled` 并删半成品，后者只是进程要退出，行保持 `running` 留给下次启动续跑。
+/// 中止信号。用户取消（[cancelled]）、用户暂停（[paused]）与服务停止（[stopped]）
+/// 三者必须分开：取消把行改成 `cancelled` 并删半成品；暂停把行改成 `paused`、半成品
+/// 留着续跑；停止只是进程要退出，行保持 `running` 留给下次启动续跑。
 class _CancelToken {
   bool cancelled = false;
+  bool paused = false;
   bool stopped = false;
 }
 
 class _ActiveJob {
-  _ActiveJob(this.jobId);
+  _ActiveJob(this.job);
 
-  final String jobId;
+  final MangaDownloadJobRow job;
+  String get jobId => job.jobId;
   final _CancelToken token = _CancelToken();
   final Completer<void> done = Completer<void>();
 
@@ -242,6 +262,10 @@ class MangaDownloadService {
   bool _draining = false;
   bool _wakeRequested = false;
   _ActiveJob? _active;
+
+  /// 已要求暂停、但 worker 刚领走还没挂上 [_active] 的任务（领取的 DB 提交与
+  /// `_active` 赋值之间隔着一个 await）。worker 挂上时据此立即按暂停收尾。
+  final Set<String> _pauseRequested = <String>{};
   Completer<void>? _idle;
 
   /// 当前任务的瞬态字节进度（只有 mokuro CBZ 下载阶段非空）；键 = jobId。
@@ -504,7 +528,8 @@ class MangaDownloadService {
     }
   }
 
-  /// 取消：`queued` 直接改状态；正在飞的任务中止并删半成品目录。
+  /// 取消：`queued` / `paused` 直接改状态并删半成品；正在飞的任务中止并删半成品
+  /// 目录。
   Future<void> cancel(String jobId) async {
     final MangaDownloadJobRow? row = await _database.getMangaDownloadJob(jobId);
     if (row == null) return;
@@ -514,14 +539,89 @@ class MangaDownloadService {
       active.abort?.call();
       return;
     }
-    if (row.status == MangaDownloadJobStatus.queued ||
-        row.status == MangaDownloadJobStatus.running) {
+    _pauseRequested.remove(jobId);
+    if (isMangaDownloadJobUnfinished(row.status)) {
       await _database.updateMangaDownloadJobStatus(
         jobId,
         status: MangaDownloadJobStatus.cancelled,
         updatedAt: _now,
       );
       await _discardPartialDownload(row);
+    }
+  }
+
+  /// 暂停：`queued` 直接改成 `paused`；正在飞的任务中止（已落地的页 / `.part`
+  /// 留着），等它收尾落库后才返回。已结束 / 已暂停的任务不动。
+  Future<void> pause(String jobId) => _pauseWhere(jobId: jobId);
+
+  /// 暂停一本书（[bookKey] 为 null = 全部）所有未结束的任务。先把排队的整批改成
+  /// `paused`（一条条件 UPDATE），再停正在飞的那条——反过来做，worker 会在两步
+  /// 之间领走下一条排队任务。
+  Future<void> pauseAll({String? bookKey}) => _pauseWhere(bookKey: bookKey);
+
+  Future<void> _pauseWhere({String? jobId, String? bookKey}) async {
+    await _database.transitionMangaDownloadJobs(
+      from: const <String>{MangaDownloadJobStatus.queued},
+      to: MangaDownloadJobStatus.paused,
+      updatedAt: _now,
+      jobId: jobId,
+      bookKey: bookKey,
+    );
+    bool matches(MangaDownloadJobRow row) =>
+        (jobId == null || row.jobId == jobId) &&
+        (bookKey == null || row.bookKey == bookKey);
+    final List<MangaDownloadJobRow> running = await _database
+        .listMangaDownloadJobs(
+          statuses: const <String>{MangaDownloadJobStatus.running},
+        );
+    final List<Future<void>> stopping = <Future<void>>[];
+    for (final MangaDownloadJobRow row in running) {
+      if (!matches(row)) continue;
+      final _ActiveJob? active = _active;
+      if (active != null && active.jobId == row.jobId) {
+        active.token.paused = true;
+        active.abort?.call();
+        stopping.add(active.done.future);
+      } else if (_started) {
+        // 刚被领走、还没挂上 _active：worker 挂上时立即按暂停收尾。
+        _pauseRequested.add(row.jobId);
+      } else {
+        // 服务还没 start()：这是上次进程留下的 running 行，没有执行体，直接落
+        // paused，start() 的复位只动 running，不会再把它排回去。
+        await _markPaused(row);
+      }
+    }
+    await Future.wait<void>(stopping);
+  }
+
+  /// 恢复 `paused` 的任务：改回 `queued`（保留原 `created_at`，排回原来的位置），
+  /// worker 从磁盘现状续跑。
+  Future<void> resume(String jobId) => _resumeWhere(jobId: jobId);
+
+  /// 恢复一本书（[bookKey] 为 null = 全部）所有暂停的任务。
+  Future<void> resumeAll({String? bookKey}) => _resumeWhere(bookKey: bookKey);
+
+  Future<void> _resumeWhere({String? jobId, String? bookKey}) async {
+    if (jobId != null) _pauseRequested.remove(jobId);
+    final int changed = await _database.transitionMangaDownloadJobs(
+      from: const <String>{MangaDownloadJobStatus.paused},
+      to: MangaDownloadJobStatus.queued,
+      updatedAt: _now,
+      jobId: jobId,
+      bookKey: bookKey,
+      resetAttempts: true,
+    );
+    if (changed > 0) _kick();
+  }
+
+  /// 取消一本书（[bookKey] 为 null = 全部）所有未结束（排队 / 下载中 / 暂停）的
+  /// 任务，半成品一并删除（语义同 [cancel]）。
+  Future<void> cancelAll({String? bookKey}) async {
+    final List<MangaDownloadJobRow> rows = await _database
+        .listMangaDownloadJobs(statuses: kMangaDownloadUnfinishedStatuses);
+    for (final MangaDownloadJobRow row in rows) {
+      if (bookKey != null && row.bookKey != bookKey) continue;
+      await cancel(row.jobId);
     }
   }
 
@@ -589,8 +689,9 @@ class MangaDownloadService {
         final MangaDownloadJobRow? next = await _database
             .claimNextQueuedMangaDownloadJob(updatedAt: _now);
         if (next == null) break;
-        final _ActiveJob active = _ActiveJob(next.jobId);
+        final _ActiveJob active = _ActiveJob(next);
         _active = active;
+        if (_pauseRequested.remove(next.jobId)) active.token.paused = true;
         _reportKeepAlive(next);
         try {
           await _run(next, active);
@@ -656,6 +757,7 @@ class MangaDownloadService {
     int attempt = job.attemptCount;
     while (true) {
       try {
+        _throwIfCancelled(token);
         switch (job.kind) {
           case MangaDownloadJobKind.mokuroVolume:
             await _downloadMokuroVolume(job, active);
@@ -664,7 +766,12 @@ class MangaDownloadService {
         }
         return;
       } on _Stopped {
-        // 服务停止：行保持 running，下次 start() 复位成 queued 续跑。
+        // 服务停止：行保持 running，下次 start() 复位成 queued 续跑；用户同时
+        // 要求过暂停的，落成 paused（重启后不该自己又跑起来）。
+        if (token.paused && !token.cancelled) await _markPaused(job);
+        return;
+      } on _Paused {
+        await _markPaused(job);
         return;
       } on _Cancelled {
         await _database.updateMangaDownloadJobStatus(
@@ -705,6 +812,10 @@ class MangaDownloadService {
           )],
         );
         if (token.stopped) return;
+        if (token.paused && !token.cancelled) {
+          await _markPaused(job);
+          return;
+        }
         if (token.cancelled) {
           await _database.updateMangaDownloadJobStatus(
             job.jobId,
@@ -783,7 +894,7 @@ class MangaDownloadService {
     StackTrace? firstStack;
     Future<void> worker() async {
       while (pending.isNotEmpty && firstError == null) {
-        if (token.cancelled || token.stopped) return;
+        if (token.cancelled || token.paused || token.stopped) return;
         final int index = pending.removeAt(0);
         try {
           files[index] = await _fetchPage(
@@ -988,6 +1099,14 @@ class MangaDownloadService {
     }
   }
 
+  /// 暂停收尾：行改 `paused`，半成品（页图 / `.part`）不动，恢复后续跑。
+  Future<void> _markPaused(MangaDownloadJobRow job) =>
+      _database.updateMangaDownloadJobStatus(
+        job.jobId,
+        status: MangaDownloadJobStatus.paused,
+        updatedAt: _now,
+      );
+
   Future<void> _markDone(
     MangaDownloadJobRow job,
     Directory chapterDir,
@@ -1145,14 +1264,20 @@ class MangaDownloadService {
     }
   }
 
+  /// 优先级：停止 > 取消 > 暂停（同时要求取消与暂停时取消赢，半成品要删）。
   static void _throwIfCancelled(_CancelToken token) {
     if (token.stopped) throw const _Stopped();
     if (token.cancelled) throw const _Cancelled();
+    if (token.paused) throw const _Paused();
   }
 }
 
 class _Cancelled implements Exception {
   const _Cancelled();
+}
+
+class _Paused implements Exception {
+  const _Paused();
 }
 
 class _Stopped implements Exception {

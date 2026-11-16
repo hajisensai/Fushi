@@ -48,6 +48,8 @@ import 'package:fushi/src/dictionary/dict_style_rules.dart';
 import 'package:fushi/src/floating_ball/floating_ball_config.dart';
 import 'package:fushi/src/media/music/music_resume.dart';
 import 'package:fushi/src/media/audiobook/audiobook_jump_threshold.dart';
+import 'package:fushi/src/media/listening_reminder.dart'
+    show kListeningReminderMinutesDefault, normalizeListeningReminderMinutes;
 import 'package:fushi/src/media/discovery/alist_site_config.dart';
 import 'package:fushi/src/media/discovery/audiobookshelf_server_config.dart';
 import 'package:fushi/src/media/discovery/opds_server_config.dart';
@@ -3749,6 +3751,24 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 楽天ブックス书籍检索 applicationId（设备本地凭据）。
+  String get bookScrapeRakutenApplicationId =>
+      getPref('book_scrape_rakuten_application_id', defaultValue: '') as String;
+
+  Future<void> setBookScrapeRakutenApplicationId(String value) async {
+    await setPref('book_scrape_rakuten_application_id', value.trim());
+    notifyListeners();
+  }
+
+  /// 楽天ブックス书籍检索 accessKey（2026 年新端点必填，设备本地凭据）。
+  String get bookScrapeRakutenAccessKey =>
+      getPref('book_scrape_rakuten_access_key', defaultValue: '') as String;
+
+  Future<void> setBookScrapeRakutenAccessKey(String value) async {
+    await setPref('book_scrape_rakuten_access_key', value.trim());
+    notifyListeners();
+  }
+
   /// SubDL（subdl.com）API key：搜索必须带 key（站点 panel 免费生成）。
   String get videoSubtitleSubdlApiKey =>
       getPref('video_subtitle_subdl_api_key', defaultValue: '') as String;
@@ -4432,6 +4452,15 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setHomeDashboardPanels(String json) async {
     await setPref('home_dashboard_panels', json);
+    notifyListeners();
+  }
+
+  // 首页小组件网格布局（JSON，见 models/home_widget_layout.dart）。空串 = 没编辑过。
+  String get homeWidgetLayout =>
+      getPref('home_widget_layout', defaultValue: '') as String;
+
+  Future<void> setHomeWidgetLayout(String json) async {
+    await setPref('home_widget_layout', json);
     notifyListeners();
   }
 
@@ -5157,6 +5186,31 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setShowMediaNotification(bool value) async {
     await setPref('show_media_notification', value);
+    notifyListeners();
+  }
+
+  /// 连续收听提醒（反馈 5_mzP54WVx）：音乐 / 有声书 / 视频连续在播满 N 分钟提醒一次。
+  /// 默认关。
+  bool get listeningReminderEnabled =>
+      getPref('listening_reminder_enabled', defaultValue: false) == true;
+
+  Future<void> setListeningReminderEnabled({required bool value}) async {
+    await setPref('listening_reminder_enabled', value);
+    notifyListeners();
+  }
+
+  /// 连续收听提醒的间隔（分钟）：存值归到最近的档位，没写过取出厂 60 分钟。
+  int get listeningReminderMinutes {
+    final Object? stored = getPref('listening_reminder_minutes');
+    if (stored is num) return normalizeListeningReminderMinutes(stored);
+    return kListeningReminderMinutesDefault;
+  }
+
+  Future<void> setListeningReminderMinutes(int value) async {
+    await setPref(
+      'listening_reminder_minutes',
+      normalizeListeningReminderMinutes(value),
+    );
     notifyListeners();
   }
 

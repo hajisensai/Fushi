@@ -8,8 +8,6 @@ import 'package:fushi/src/anki/pending_mining/pending_mine_relay.dart';
 import 'package:fushi/src/epub/book_css_repository.dart';
 import 'package:fushi_engine/media/video/video_member_file.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
-import 'package:fushi_engine/media/video/strm_file.dart'
-    show lacksLocalMediaFile;
 import 'package:fushi_engine/media/video/video_sidecar.dart'
     show listSidecarSubtitles;
 import 'package:fushi/src/models/dictionary_repository.dart'
@@ -2100,9 +2098,10 @@ class SyncOrchestrator {
         );
         try {
           // async 判存在：视频常在网络盘上，同步 stat 冷目录时会冻结主 isolate
-          // （BUG-3756）。没有本机媒体字节的路径（网络流 / `.strm` / DVD title）
-          // 一律按缺失处理（video_member_file.dart 第 2 种问法）。
-          if (!await hasLocalMediaFile(v.videoPath)) {
+          // （BUG-3756）。下面按字节上传，只认路径本身装着全部媒体字节的单文件
+          // （video_member_file.dart 第 3 种问法）：网络流 / `.strm` / 原盘成员一律
+          // 按缺失处理。
+          if (!await hasLocalSingleMediaFile(v.videoPath)) {
             report.errors.add(
               'video "${v.title}": local file missing: ${v.videoPath}',
             );
