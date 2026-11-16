@@ -11,6 +11,7 @@ import 'package:fushi/src/pages/implementations/home_page.dart';
 import 'package:fushi/src/pages/implementations/onboarding_wizard_page.dart';
 import 'package:fushi/src/pages/implementations/shortcut_settings_page.dart';
 import 'package:fushi/src/pages/implementations/statistics_center_page.dart';
+import 'package:fushi/src/pages/implementations/status_monitor_page.dart';
 import 'package:fushi/src/feedback/crash_report.dart';
 import 'package:fushi/src/feedback/feedback_reply_alerts.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -664,6 +665,15 @@ SettingsDestination buildSystemDestination() {
             icon: Icons.bug_report_outlined,
             visible: (_) => Platform.isWindows,
             builder: (_) => const CrashDumpPage(),
+          ),
+          // 用户 2026-11-16：「加一个状态检测，在 app 内看 CPU 占用、内存占用，检测卡顿」。
+          // 页面打开 / 悬浮小窗开着时才采样，见 status_monitor.dart。
+          SettingsNavigationItem(
+            id: 'diagnostics.status_monitor',
+            title: t.settings_status_monitor_title,
+            subtitle: t.settings_status_monitor_hint,
+            icon: FushiIcons.speed,
+            builder: (_) => const StatusMonitorPage(),
           ),
           SettingsNavigationItem(
             id: 'diagnostics.debug_log',

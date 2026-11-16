@@ -189,6 +189,7 @@ import 'package:fushi/src/utils/components/cover_badge.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_destructive_confirm_dialog.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
+import 'package:fushi/src/utils/components/fushi_header_menu_anchor.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
@@ -717,7 +718,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       );
 
   /// 页头「排序」按钮打开的菜单（常驻锚点见 [_buildSortMenuAnchor]）。
-  final MenuController _sortMenu = MenuController();
+  final FushiHeaderMenuController _sortMenu = FushiHeaderMenuController();
 
   /// 层次 C：`'video|<uid>' → 该条目在其主折叠合集里的 sortIndex`（组内序真相源，
   /// 与详情页/播放器 `getCollectionItems` 同源——详情页拖完库页行立即同序）。
@@ -9102,8 +9103,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       ? null
       : _headerSearch;
 
-  /// 「排序」菜单的零尺寸锚点（[FushiPageHeader.menuAnchor]，叠在页头动作组
-  /// 右下角）：页头里的排序按钮可能被收进「⋯」，菜单挂在这里才总能打开。
+  /// 「排序」菜单的常驻锚点（[FushiPageHeader.menuAnchor]，铺满页头动作组）：
+  /// 页头里的排序按钮可能被收进「⋯」，菜单挂在这里才总能打开；弹出位置跟着
+  /// 触发控件（按钮或 ⋯，BUG-4715）。
   Widget _buildSortMenuAnchor(List<BookTagRow> tags) {
     return FushiTagFilterBar(
       tags: tags,
