@@ -33,15 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4067 条。点号进各自文件。
+> 共 4078 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4711](bugs/BUG-4711-lyrics-source-lrclib-reorder.md) | ✅ | ✅ | 歌词来源列表 LRCLIB 固定排第一，不能和插件一起排序 |
-> 共 4077 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4722](bugs/BUG-4722-lyrics-source-lrclib-reorder.md) | ✅ | ✅ | 歌词来源列表 LRCLIB 固定排第一，不能和插件一起排序 |
 | [BUG-4720](bugs/BUG-4720-popup-srs-badge-open-card-rule.md) | ✅ | ✅ | 制完卡当下与重开弹窗后「打开卡片」跳到不同笔记 |
 | [BUG-4719](bugs/BUG-4719-ext-overlapping-cues.md) | ✅ | ✅ | 浏览器扩展：ASS 字幕两句时间重叠时覆盖层只显示一句 |
 | [BUG-4718](bugs/BUG-4718-audiobook-pointer-seek-focus-loss.md) | ✅ | ✅ | audiobook-pointer-seek-focus-loss |

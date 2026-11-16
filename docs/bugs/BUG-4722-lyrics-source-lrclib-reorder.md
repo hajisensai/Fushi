@@ -1,4 +1,4 @@
-## BUG-4711 · 歌词来源列表 LRCLIB 固定排第一，不能和插件一起排序
+## BUG-4722 · 歌词来源列表 LRCLIB 固定排第一，不能和插件一起排序
 - **报告**：2026-11-16（维护者待办，应用内反馈 h7d6Pa_g-7：音乐「来源 › 歌词」里 LRCLIB 带锁图标、副标「内置，始终第一」）
 - **真实性**：✅ 维护者明确要求（原设计 `docs/specs/2026-10-30-lyrics-plugins.md` 定的「LRCLIB 固定第一」，现改判为可排序）。
   固定第一在结构里：偏好 `music_lyrics_providers` 只存插件（`fushi/lib/src/media/music/lyrics/lyrics_provider_list.dart:3`、`:97`），
