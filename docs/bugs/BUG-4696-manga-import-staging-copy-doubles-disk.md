@@ -1,4 +1,4 @@
-## BUG-4694 · 漫画导入从暂存目录拷贝进书目录，大包磁盘峰值是包体积的三倍
+## BUG-4696 · 漫画导入从暂存目录拷贝进书目录，大包磁盘峰值是包体积的三倍
 - **报告**：2026-11-15（用户反馈「不能导入 2G 以上的 .zip」排查衍生；用户拍板「另开一单，改成移动」）
 - **真实性**：✅ 真 bug（沿代码路径确认）。`packages/fushi_engine/lib/media/manga/manga_importer.dart:225`（旧行号）
   `copyMangaArtifacts` 对所有来源一律 `src.copy(dest)`。压缩包导入（`manga_archive_importer.dart` 的 staging）、
