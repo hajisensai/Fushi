@@ -313,6 +313,11 @@ fn a_location_ahead_of_us_on_the_same_chain_keeps_everything_we_have() {
     assert_eq!(segs[0].0, 5);
     let s = scan(&t, col, &files[1..], &me.public());
     assert_eq!(s.fork_point(), Some(9));
+    // 只喂本机末尾之后的段（13-14，它的前一处 12 本机也没有）：照常比，不因本机没有那些 seq 报错。
+    assert_eq!(
+        scan(&t, col, &files[3..], &me.public()).fork_point(),
+        Some(0)
+    );
     let r = t
         .tx(|t| {
             record_fork(t, col, 9)?;
@@ -321,6 +326,41 @@ fn a_location_ahead_of_us_on_the_same_chain_keeps_everything_we_have() {
         .unwrap()
         .unwrap();
     assert_eq!((r.keep, r.moved.len()), (9, 0));
+}
+
+#[test]
+fn a_location_written_before_we_wrote_anything_forks_at_zero() {
+    // 本机这个身份还一条没写（连设备行都没有），位置上同一身份已经写了 6 条：判 Fetch、分叉点 0，换身份后旧身份冻结
+    // 在链的起点，本机身份照常读得回来。
+    let (conn, col) = setup();
+    let t = Truth::new(&conn);
+    let me = t.self_identity(col).unwrap().unwrap();
+    assert_eq!(t.last_of(col, &me.device), Ok(0));
+    let (head, files, _) = clone_location(&t, col, 0, 6, 3);
+    assert_eq!(head.seq, 6);
+    let OwnHead::Fetch { segs } = judge_own_head(&t, col, &head).unwrap() else {
+        panic!("expected fetch");
+    };
+    assert_eq!(segs, head.segs);
+    let s = scan(&t, col, &files, &me.public());
+    assert_eq!(s.fork_point(), Some(0));
+    let r = t
+        .tx(|t| {
+            record_fork(t, col, 0)?;
+            rotate_on_fork(t, col, T0 + 50)
+        })
+        .unwrap()
+        .unwrap();
+    assert_eq!((r.previous, r.keep, r.moved.len()), (me.device, 0, 0));
+    let new = t.self_identity(col).unwrap().unwrap();
+    assert_eq!(
+        new.prev,
+        Some(crate::gen4::head::PrevIdentity {
+            device: me.device,
+            seq: 0,
+            chain: CHAIN_ZERO,
+        })
+    );
 }
 
 #[test]
