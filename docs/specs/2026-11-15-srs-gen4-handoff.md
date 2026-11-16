@@ -669,3 +669,38 @@ blocked 一律归 busy、去掉 `unstored` 分支、配对退回 (种类, 字段
 导出流 / 文件不存在一律拒、库不变；拷过的数据目录各写一条后导入先换身份（`keep = 2`、`moved = 1`，三处写入都在）、
 导回自己更早的导出不换；第 1 版与直接迁移逐行相同、另一个集合拒；协议 3 `sync2_import` 拒收新流；大文件（明文 > 1 MiB）
 读窗口 ≤ 256 KiB；双盐别名类导出后在另一个集合认领，按任何成员点名都是整个类；`PEERS_SQL` 查询计划。
+
+## 12. G11-3 复核修复（2026-11-17，同分支 `pr/srs-gen4-g11-3-fushisrs-v2`）
+
+§11 的复核发现逐条处理如下（每条配测试，变异实测：去掉修复后对应测试变红）。
+
+- **导入预检（孤儿媒体 / 还原点）**：`import` 加 `preflight: true`：只判「要不要确认、会不会被拒」，什么都不写、修订号不动。
+  判据与真导入同一处：第 1 版走 `import.rs` 新抽出的 `check_v1_collection`（`import_v1` 也改调它）；第 2 版先比清单与流头，
+  再在一个**回滚掉的保存点**（`Truth::tx` 返回哨兵错误）里跑 `collection_adopt` 与 `check_stream_collection`（`import_ops_from`
+  也改调它），所以 `same` 时补的盐不留。回包 `{format, outcome: "ready" | "needsConfirm", preflight: true, collection?, dir?}`。
+  Dart `srsImportFushiSrs` 改成：解包（只拷 `ops.bin`，不碰媒体目录）→ `SrsDbStore.sync2ImportPreflight` → 需要时问用户，
+  答否直接返回 `declined`（`mediaFiles: 0`，不打还原点）→ 打还原点 → 后台 isolate 补媒体（回补进来的文件名）→ 真导入；
+  真导入报错（坏在流中间的文件，预检不读全流看不出）就删掉这次补进来的媒体再抛。预检之后真导入仍回 `needsConfirm`（别的
+  调用在这之间改了绑定）抛 `StateError` 让用户重来，不按旧的确认结论并入。测试：Rust `preflight_judges_without_writing`
+  （变异：不回滚保存点 → 红）；Dart `srs_fushisrs_test.dart` 外来包拒绝后媒体目录为空、还原点数不变，源码守卫钉住预检在还原点
+  与补媒体之前、读包函数不碰媒体。
+- **`unchanged` 计入认领写入**：`unchanged = got.unchanged() && peers == 0 && !wrote`（`wrote` = 补盐 / 并入 / 绑定 / 换身份）。
+  测试 `new_salts_or_peers_alone_are_a_change`：操作全已有、只带新盐（`saltsAdded`）或只带新设备公钥的再导入回包 `unchanged:
+  false`、修订号推进；真的什么都没带来才是 `true`。变异：去掉 `!wrote` 或去掉 `peers == 0` 各自让它变红。
+- **命令层读法钉测**：按路径的来源改经 `FileSource`（包一层 `File` 的 `Read`），测试编译下按线程记每次读的请求大小与字节
+  （`fushisrs::meter`）。`a_large_file_is_read_with_a_bounded_window` 断言导入命令对文件读满整份、最大一次请求 ≤ 256 KiB 且小于
+  文件。变异 M4（`fs::read` 整份进内存再包 `Cursor`）：记录为零 → 红。
+- **临时文件名**：`<path>.g4tmp` 改为在整个文件名后追加（`tmp_of`），不再 `with_extension` 替换扩展名。测试
+  `the_export_temp_file_appends_to_the_whole_name`（同目录的 `ops.g4tmp` 不被覆盖挪走；变异回 `with_extension` → 红）。
+- **旧事件备份进合并条件**：规划 §6 加一条：G7-6 / G11-4 给 stamped apply 接上冻结侧转译、旧事件备份能经 `.fushisrs` 入口导入
+  并有测试之前，整批不合入 develop（D34）。
+
+仍留给别人：
+
+- `dispatch_tests.rs` `unwired_and_removed_commands_name_their_owner` 与 `pr/srs-gen4-switch` 尖端 1bbd15c75e 的冲突：合并时取本
+  分支的 `[("profile_merge_mark", "G9-5"), ("plan", "G8-7")]`（integration owner；本分支按规则不 rebase / merge）。
+- §7 对照表 import / export 行（「S1 后状态」列）与 `dispatch.rs` 文件头的未接线清单：改成「已接线（G11-3，`cmd/fushisrs.rs`）」，
+  integration owner 合并时顺手改（多个并行分支都在改这两处，各自改会互相冲突）。
+- Dart 侧 v1 zip 包（`v: 1` 清单 + deflate 的 `ops.bin`）端到端测试：要一份协议 3 `FSRS2EXP` 夹具（Dart 已没有协议 3 导出入口）
+  且依赖 Dart 侧绑定接通（G7-5b：全新库 `SrsDbStore.open` 抛 `SrsProfileUnboundException`，`srs_fushisrs_test.dart` 里碰库的
+  测试在基线上都红）。Rust 侧第 1 版流已有对拍（`a_version_1_file_lands_exactly_like_the_migration`）。

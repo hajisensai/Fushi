@@ -14,6 +14,9 @@
 /// 什么都不写；调用方确认（[srsImportFushiSrs] 的 `confirmForeign`）后两个库并成一个再导入。包里本机身份的日志与本机分叉
 /// 了（拷过数据目录）时内核先换身份。
 ///
+/// 顺序：解包（不碰媒体目录）→ 内核**预检**（什么都不写，判要不要确认、会不会被拒）→ 需要时问用户，答否就此结束、本机一点
+/// 没动 → 打还原点 → 补媒体 → 内核导入；内核这时拒收（坏在流中间的文件）就删掉这次补进来的媒体再抛错。
+///
 /// **旧格式**：
 ///
 /// - 第 1 版（`v: 1`，协议 3 的 `FSRS2EXP` 操作流）：同样交给内核，内核用冻结的读入器转译导入；另一个 profile 的拒收。
@@ -194,35 +197,57 @@ Future<SrsFushiSrsImport> srsImportFushiSrs(
   );
   try {
     final String opsPath = p.join(staging.path, 'ops.bin');
-    final _ParsedFushiSrs parsed = await _runReadFushiSrs(
+    final Map<String, Object?>? manifest = await _runReadFushiSrs(
       path: file.path,
       opsPath: opsPath,
-      mediaRootPath: mediaRoot?.path,
     );
-    await store.sync2Checkpoint(p.basename(file.path), 'import');
-    Map<String, Object?> r = await _kernelImport(
+    // 先预检（内核什么都不写）：要确认就先问，用户答否 = 本机一点没动（不打还原点、不写媒体）。
+    final Map<String, Object?> pre = await _kernelImport(
       store,
       opsPath,
-      parsed.manifest,
+      manifest,
       confirmed: false,
+      preflight: true,
     );
-    if (r['outcome'] == 'needsConfirm') {
+    bool confirmed = false;
+    if (pre['outcome'] == 'needsConfirm') {
       final SrsFushiSrsForeign foreign = SrsFushiSrsForeign(
-        collection: r['collection']! as String,
-        dir: r['dir']! as String,
+        collection: pre['collection']! as String,
+        dir: pre['dir']! as String,
       );
       if (confirmForeign == null || !await confirmForeign(foreign)) {
-        return SrsFushiSrsImport(
+        return const SrsFushiSrsImport(
           applied: 0,
-          mediaFiles: parsed.mediaFiles,
+          mediaFiles: 0,
           declined: true,
         );
       }
-      r = await _kernelImport(store, opsPath, parsed.manifest, confirmed: true);
+      confirmed = true;
+    }
+    await store.sync2Checkpoint(p.basename(file.path), 'import');
+    // 媒体先于引用它的操作落地（与上传纪律一致）；内核随后拒收就删掉这次补进来的，不留孤儿文件。
+    final List<String> added = mediaRoot == null
+        ? const <String>[]
+        : await _runCopyFushiSrsMedia(
+            path: file.path,
+            mediaRootPath: mediaRoot.path,
+          );
+    final Map<String, Object?> r;
+    try {
+      r = await _kernelImport(store, opsPath, manifest, confirmed: confirmed);
+      if (r['outcome'] == 'needsConfirm') {
+        // 预检之后别的调用改了这个 profile 的绑定：不按旧的确认结论并入，交给用户重来。
+        throw StateError(
+          'the profile binding changed while importing; import again',
+        );
+      }
+    } on Object {
+      if (mediaRoot != null) await _dropAddedMedia(mediaRoot, added);
+      rethrow;
     }
     return SrsFushiSrsImport(
       applied: (r['applied'] as int?) ?? 0,
-      mediaFiles: parsed.mediaFiles,
+      mediaFiles: added.length,
     );
   } finally {
     try {
@@ -233,14 +258,30 @@ Future<SrsFushiSrsImport> srsImportFushiSrs(
   }
 }
 
-/// 发内核导入；内核拒收（另一个集合 / 坏流）的错误换成 [FormatException]，界面按它给提示。
+/// 删掉这次导入补进 [mediaRoot] 的媒体 [added]（内核拒收之后；本机原有的文件不在 [added] 里，不会被碰）。
+Future<void> _dropAddedMedia(Directory mediaRoot, List<String> added) async {
+  for (final String name in added) {
+    final File f = File(p.join(mediaRoot.path, name));
+    if (await f.exists()) await f.delete();
+  }
+}
+
+/// 发内核导入（[preflight] = 只预检、什么都不写）；内核拒收（另一个集合 / 坏流）的错误换成 [FormatException]，界面按它
+/// 给提示。
 Future<Map<String, Object?>> _kernelImport(
   SrsDbStore store,
   String opsPath,
   Map<String, Object?>? manifest, {
   required bool confirmed,
+  bool preflight = false,
 }) async {
   try {
+    if (preflight) {
+      return await store.sync2ImportPreflight(
+        path: opsPath,
+        manifest: manifest,
+      );
+    }
     return await store.sync2ImportOps(
       path: opsPath,
       manifest: manifest,
@@ -258,34 +299,30 @@ Future<Map<String, Object?>> _kernelImport(
   }
 }
 
-/// 后台 isolate 读包的结果：交给内核的清单（第 2 版；第 1 版为 null）+ 已补进本机的媒体数。只含可跨 isolate 传递的纯数据。
-final class _ParsedFushiSrs {
-  const _ParsedFushiSrs(this.manifest, this.mediaFiles);
-
-  final Map<String, Object?>? manifest;
-  final int mediaFiles;
-}
-
-/// 同 [_runWriteFushiSrs]：闭包只捕获纯数据参数。
-Future<_ParsedFushiSrs> _runReadFushiSrs({
+/// 同 [_runWriteFushiSrs]：闭包只捕获纯数据参数。回交给内核的清单（第 2 版；第 1 版为 null），纯数据。
+Future<Map<String, Object?>?> _runReadFushiSrs({
   required String path,
   required String opsPath,
-  required String? mediaRootPath,
 }) => Isolate.run(
-  () => _readFushiSrs(path, opsPath, mediaRootPath),
+  () => _readFushiSrs(path, opsPath),
   debugName: 'srs-fushisrs-import',
+);
+
+/// 同上：把包里本机缺的媒体写进 [mediaRootPath]，回补进来的文件名（内核随后拒收时据此删掉）。
+Future<List<String>> _runCopyFushiSrsMedia({
+  required String path,
+  required String mediaRootPath,
+}) => Isolate.run(
+  () => _copyFushiSrsMedia(path, mediaRootPath),
+  debugName: 'srs-fushisrs-import-media',
 );
 
 FormatException _invalid() => const FormatException('not a .fushisrs file');
 
-/// 在后台 isolate 跑：读清单、校验版本，把 `ops.bin` 拷进 [opsPath]（不压缩存放的条目按文件流式拷，不整份进内存），
-/// 再把包里本机缺的媒体写进 [mediaRootPath]（媒体先于引用它的操作落地，与上传纪律一致）。任何校验失败抛
-/// [FormatException]（[Isolate.run] 原样转抛给调用方），此时库没被碰过。
-Future<_ParsedFushiSrs> _readFushiSrs(
-  String path,
-  String opsPath,
-  String? mediaRootPath,
-) async {
+/// 在后台 isolate 跑：读清单、校验版本，把 `ops.bin` 拷进 [opsPath]（不压缩存放的条目按文件流式拷，不整份进内存）。
+/// **不碰媒体目录**：媒体等内核预检通过、用户确认之后才由 [_copyFushiSrsMedia] 写（复核：用户拒绝后不留孤儿文件）。
+/// 任何校验失败抛 [FormatException]（[Isolate.run] 原样转抛给调用方），此时本机什么都没被碰过。
+Future<Map<String, Object?>?> _readFushiSrs(String path, String opsPath) async {
   final InputFileStream input;
   try {
     input = InputFileStream(path);
@@ -334,36 +371,46 @@ Future<_ParsedFushiSrs> _readFushiSrs(
     } finally {
       out.closeSync();
     }
-    int media = 0;
-    if (mediaRootPath != null) {
-      final Directory mediaRoot = Directory(mediaRootPath);
-      for (final ArchiveFile f in zip.files) {
-        if (!f.isFile || !f.name.startsWith('media/')) continue;
-        final String name = f.name.substring('media/'.length);
-        if (!srsIsBareMediaName(name)) continue;
-        final File local = File(p.join(mediaRoot.path, name));
-        if (local.existsSync()) continue;
-        await mediaRoot.create(recursive: true);
-        final File tmp = File('${local.path}.import.tmp');
-        await tmp.writeAsBytes(f.content as List<int>, flush: true);
-        await tmp.rename(local.path);
-        media++;
-      }
-    }
-    return _ParsedFushiSrs(
-      v == kSrsFushiSrsVersion
-          ? <String, Object?>{
-              'collection': m['collection'],
-              'dir': m['dir'],
-              'salts': m['salts'],
-              'peers': m['peers'],
-            }
-          : null,
-      media,
-    );
+    return v == kSrsFushiSrsVersion
+        ? <String, Object?>{
+            'collection': m['collection'],
+            'dir': m['dir'],
+            'salts': m['salts'],
+            'peers': m['peers'],
+          }
+        : null;
   } finally {
     input.closeSync();
   }
+}
+
+/// 在后台 isolate 跑：把包 [path] 里本机缺的媒体写进 [mediaRootPath]（已有的不覆盖），回补进来的文件名。包已经由
+/// [_readFushiSrs] 校验过。
+Future<List<String>> _copyFushiSrsMedia(
+  String path,
+  String mediaRootPath,
+) async {
+  final InputFileStream input = InputFileStream(path);
+  final List<String> added = <String>[];
+  try {
+    final Archive zip = ZipDecoder().decodeBuffer(input);
+    final Directory mediaRoot = Directory(mediaRootPath);
+    for (final ArchiveFile f in zip.files) {
+      if (!f.isFile || !f.name.startsWith('media/')) continue;
+      final String name = f.name.substring('media/'.length);
+      if (!srsIsBareMediaName(name)) continue;
+      final File local = File(p.join(mediaRoot.path, name));
+      if (local.existsSync()) continue;
+      await mediaRoot.create(recursive: true);
+      final File tmp = File('${local.path}.import.tmp');
+      await tmp.writeAsBytes(f.content as List<int>, flush: true);
+      await tmp.rename(local.path);
+      added.add(name);
+    }
+  } finally {
+    input.closeSync();
+  }
+  return added;
 }
 
 /// zip 目录里名为 [name] 的条目（取 [ZipFile] 才拿得到不解压的原始字节流）。

@@ -190,51 +190,78 @@ void main() {
     expect(File(p.join(mediaB.path, 'cat.png')).existsSync(), isFalse);
   });
 
-  test('另一个复习库的包：不确认就不导入、本机什么也不变；确认后两库合并；不是 .fushisrs 的文件拒收', () async {
-    final SrsDbStore other = await device('x', profile: kOtherProfile);
-    final String snow = await addNote(other, '雪');
-    final File pkg = File(p.join(tmp.path, 'x.$kSrsFushiSrsExtension'));
-    await srsExportFushiSrs(other, pkg);
+  test(
+    '另一个复习库的包：不确认就不导入、本机什么也不变（不写媒体、不打还原点）；确认后两库合并；不是 .fushisrs 的文件拒收',
+    () async {
+      final SrsDbStore other = await device('x', profile: kOtherProfile);
+      final Directory mediaX = dir('media_x');
+      File(p.join(mediaX.path, 'snow.png')).writeAsBytesSync(<int>[4, 5, 6]);
+      final String snow = await addNote(
+        other,
+        '雪',
+        picture: '<img src="snow.png">',
+      );
+      final File pkg = File(p.join(tmp.path, 'x.$kSrsFushiSrsExtension'));
+      await srsExportFushiSrs(other, pkg, mediaRoot: mediaX);
 
-    final SrsDbStore b = await device('b');
-    final int notes = await noteCount(b);
-    final Object? ops = (await b.sync2Status())['ops'];
-    final SrsFushiSrsImport no = await srsImportFushiSrs(b, pkg);
-    expect(no.declined, isTrue, reason: '没给确认回调 = 不合并');
-    expect(no.applied, 0);
-    SrsFushiSrsForeign? asked;
-    final SrsFushiSrsImport refused = await srsImportFushiSrs(
-      b,
-      pkg,
-      confirmForeign: (SrsFushiSrsForeign f) async {
-        asked = f;
-        return false;
-      },
-    );
-    expect(refused.declined, isTrue);
-    expect(asked?.dir, kOtherProfile);
-    expect(await noteCount(b), notes);
-    expect((await b.sync2Status())['ops'], ops, reason: '确认之前内核什么都不写');
+      final SrsDbStore b = await device('b');
+      final Directory mediaB = dir('media_b');
+      final int notes = await noteCount(b);
+      final Object? ops = (await b.sync2Status())['ops'];
+      final int checkpoints = (await b.sync2Checkpoints()).length;
+      final SrsFushiSrsImport no = await srsImportFushiSrs(
+        b,
+        pkg,
+        mediaRoot: mediaB,
+      );
+      expect(no.declined, isTrue, reason: '没给确认回调 = 不合并');
+      expect(no.applied, 0);
+      expect(no.mediaFiles, 0);
+      SrsFushiSrsForeign? asked;
+      final SrsFushiSrsImport refused = await srsImportFushiSrs(
+        b,
+        pkg,
+        mediaRoot: mediaB,
+        confirmForeign: (SrsFushiSrsForeign f) async {
+          asked = f;
+          return false;
+        },
+      );
+      expect(refused.declined, isTrue);
+      expect(refused.mediaFiles, 0);
+      expect(asked?.dir, kOtherProfile);
+      expect(await noteCount(b), notes);
+      expect((await b.sync2Status())['ops'], ops, reason: '确认之前内核什么都不写');
+      expect(mediaB.listSync(), isEmpty, reason: '用户拒绝合并：媒体目录不能被写（复核：孤儿媒体）');
+      expect(
+        (await b.sync2Checkpoints()).length,
+        checkpoints,
+        reason: '用户拒绝合并：不打还原点',
+      );
 
-    final SrsFushiSrsImport merged = await srsImportFushiSrs(
-      b,
-      pkg,
-      confirmForeign: (_) async => true,
-    );
-    expect(merged.declined, isFalse);
-    expect(merged.applied, greaterThan(0));
-    expect(await b.note(snow), isNotNull);
+      final SrsFushiSrsImport merged = await srsImportFushiSrs(
+        b,
+        pkg,
+        mediaRoot: mediaB,
+        confirmForeign: (_) async => true,
+      );
+      expect(merged.declined, isFalse);
+      expect(merged.applied, greaterThan(0));
+      expect(merged.mediaFiles, 1);
+      expect(File(p.join(mediaB.path, 'snow.png')).existsSync(), isTrue);
+      expect(await b.note(snow), isNotNull);
 
-    final File junk = File(p.join(tmp.path, 'junk.$kSrsFushiSrsExtension'))
-      ..writeAsBytesSync(<int>[
-        0x50,
-        0x4b,
-        0x05,
-        0x06,
-        ...List<int>.filled(18, 0),
-      ]);
-    await expectLater(srsImportFushiSrs(b, junk), throwsFormatException);
-  });
+      final File junk = File(p.join(tmp.path, 'junk.$kSrsFushiSrsExtension'))
+        ..writeAsBytesSync(<int>[
+          0x50,
+          0x4b,
+          0x05,
+          0x06,
+          ...List<int>.filled(18, 0),
+        ]);
+      await expectLater(srsImportFushiSrs(b, junk), throwsFormatException);
+    },
+  );
 
   test('来自更新版本的包（v 3 / 未知 gen）拒收，本机不变', () async {
     final SrsDbStore a = await device('a');
@@ -356,10 +383,25 @@ void main() {
       expect(export, isNot(contains(token)), reason: 'export: $token');
     }
     expect(import, contains('_runReadFushiSrs('));
+    expect(import, contains('_runCopyFushiSrsMedia('));
     expect(export, contains('_runWriteFushiSrs('));
     expect(
-      topLevelBody('Future<_ParsedFushiSrs> _runReadFushiSrs('),
+      topLevelBody('Future<Map<String, Object?>?> _runReadFushiSrs('),
       contains('Isolate.run('),
+    );
+    expect(
+      topLevelBody('Future<List<String>> _runCopyFushiSrsMedia('),
+      contains('Isolate.run('),
+    );
+
+    // 复核（孤儿媒体）：用户拒绝合并时本机一点不能动。读包那一步不碰媒体目录；内核预检在还原点与补媒体之前。
+    final int pre = import.indexOf('preflight: true');
+    expect(pre, greaterThan(0), reason: '导入先发内核预检');
+    expect(import.indexOf('sync2Checkpoint('), greaterThan(pre));
+    expect(import.indexOf('_runCopyFushiSrsMedia('), greaterThan(pre));
+    expect(
+      topLevelBody('Future<Map<String, Object?>?> _readFushiSrs('),
+      isNot(contains('media')),
     );
     expect(
       topLevelBody('Future<SrsFushiSrsExport> _runWriteFushiSrs('),
