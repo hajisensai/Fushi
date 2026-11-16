@@ -189,6 +189,12 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'auto_search',
   'auto_search_debounce_delay',
   'auto_update_dictionaries',
+  // string（默认空）：楽天ブックス书籍检索的 accessKey / applicationId（楽天ウェブ
+  // サービス注册应用后拿到）。两者都填了书籍刮削才出现「楽天ブックス」源。凭据 →
+  // 同时登记在 kCredentialPreferenceKeys、PrefRedactionPolicy.sensitiveKeys 与
+  // deviceLocalPrefKeys（不进备份 / 同步 / Profile）。
+  'book_scrape_rakuten_access_key',
+  'book_scrape_rakuten_application_id',
   // bool：「下载」改名「浏览」的一次性搬迁提示已处理（弹过，或判定本安装不需要
   // 弹）。描述本安装的状态，与 first_time_setup 同族、不随 Profile 走。
   'browse_moved_notice_handled',
@@ -362,6 +368,11 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // shown / hidden}`，缺省 = auto（按面板自己的默认判据）。见
   // models/home_dashboard_panel.dart 的 [HomeDashboardPanel]。随 Profile 走。
   'home_dashboard_panels',
+  // String（JSON，默认空）：首页小组件网格的两份布局 `{"v":1,"compact":[{"k":kind,
+  // "c":列,"r":行},...],"wide":[...]}`（models/home_widget_layout.dart）。键或某份
+  // 布局缺失 = 没编辑过，渲染时由旧键 `home_dashboard_panels` 迁移现算、不落盘。
+  // kind id 与字段冻结。随 Profile 走、进备份 / 同步（同 home_dashboard_panels）。
+  'home_widget_layout',
   // String（JSON map，默认空）：从互联对端下载的有声书「下载时 host 报的内容版本」
   // `{book:<本机 bookKey> | srt:<uid>: {source, rev}}`（sync/remote_audiobook_revision.dart）。
   // 书架据此提示「对端有更新」。设备本地（SyncRepository 的设备本地清单）。
@@ -414,6 +425,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'library_organize_auto_since',
   // bool（默认 false）：用户点过 AI 整理的「会发送什么」说明并同意（设备本地）。
   'library_organize_consented',
+  // bool（默认 false）：连续收听提醒开关（反馈 5_mzP54WVx）；int 分钟（15..120，默认
+  // 60）：提醒间隔。普通偏好，随 Profile / 备份走。见 media/listening_reminder.dart。
+  'listening_reminder_enabled',
+  'listening_reminder_minutes',
   'local_audio_db_display_name',
   'local_audio_db_path',
   'local_audio_dbs',
@@ -1232,6 +1247,9 @@ const List<String> kKnownPreferenceKeyPrefixes = <String>[
 /// 🔴 凭据键：值为 base64 敏感凭据，不进日志 / 不进明文导出。
 /// （`media_source_secret_<id>` 前缀族见 [kKnownPreferenceKeyPrefixes]。）
 const Set<String> kCredentialPreferenceKeys = <String>{
+  // 楽天ブックス书籍检索凭据。
+  'book_scrape_rakuten_access_key',
+  'book_scrape_rakuten_application_id',
   // 复习同步 v2 各存储位置的集合密钥（hex）。
   'srs_sync2_location_keys',
   // 每条 AI 提供商记录里带 base64 的 apiKeyB64。

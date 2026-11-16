@@ -1949,6 +1949,9 @@ class SyncRepository {
   static const String syncRemoteAccountPrefBase = 'sync_remote_account';
 
   static const List<String> _deviceLocalFixedKeys = <String>[
+    // 楽天ブックス书籍检索凭据：用户自己注册的应用凭据，只留在这台设备。
+    'book_scrape_rakuten_access_key',
+    'book_scrape_rakuten_application_id',
     // 「同步浏览历史」是这台设备的隐私许可：从另一台设备恢复备份不得替这台设备
     // 打开浏览轨迹外流。
     kSyncWebHistoryPrefKey,

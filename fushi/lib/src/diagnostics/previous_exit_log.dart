@@ -97,11 +97,13 @@ enum PreviousExitKind {
   /// 用户主动强停（Android `USER_REQUESTED` / `USER_STOPPED`：设置里强行停止等）。
   userStopped,
 
-  /// 被厂商系统按应用结束（ColorOS / OxygenOS / realme UI 的 `o-stop`：Android 记成
-  /// `OTHER` +「`stop <包名> due to o-stop(<码>)`」）。这是 OPlus 框架主动停应用——划掉最近
-  /// 任务、一键清理、后台 / 耗电管理——平台给了明确原因，不是闪退；真崩溃 / ANR 系统另记
-  /// `CRASH*` / `ANR`。否则用户每在最近任务里划掉一次（死时界面还在最上层、importance=100），
-  /// 下次启动都弹「意外退出」（反馈 HqhXJvwgq3）。
+  /// 被厂商系统按应用结束：ColorOS / OxygenOS / realme UI 的 `o-stop`（Android 记成
+  /// `OTHER` +「`stop <包名> due to o-stop(<码>)`」，OPlus 框架主动停应用——划掉最近任务、
+  /// 一键清理、后台 / 耗电管理），MIUI / HyperOS 的 `SwipeUpClean`（`OTHER` +
+  /// 「`SwipeUpClean`」，在最近任务里上划清掉应用）。平台给了明确原因，不是闪退；真崩溃 /
+  /// ANR 系统另记 `CRASH*` / `ANR`。否则用户每在最近任务里划掉一次（死时界面还在最上层、
+  /// importance=100，或在跑前台服务、importance=125），下次启动都弹「意外退出」（反馈
+  /// HqhXJvwgq3 / lN8b_hBgKD）。
   vendorStopped,
 
   /// 权限变更时被系统按 uid 结束（Android `PERMISSION_CHANGE`：撤销运行时权限；或
@@ -610,6 +612,22 @@ final RegExp _oplusAppStop = RegExp(
   r'^(?:\[[A-Z0-9_ ]+\] )?stop [A-Za-z0-9_.:]+ due to o-stop\(\d+\)$',
 );
 
+/// MIUI / HyperOS 在最近任务里上划清掉应用时写下的 `ApplicationExitInfo` 描述：原因码
+/// `REASON_OTHER`，描述是 `SwipeUpClean`（反馈 lN8b_hBgKD；BUG-4238 备注里的
+/// `#hw7f_pogDW` 也是它）。整串锚定，子原因前缀可有可无。
+final RegExp _miuiSwipeUpClean = RegExp(r'^(?:\[[A-Z0-9_ ]+\] )?SwipeUpClean$');
+
+/// 厂商框架结束应用时写在 `OTHER` 描述里的已知形态，命中任一条即
+/// [PreviousExitKind.vendorStopped]。新厂商形态加在这里，不在 [androidExitKind] 里另开分支。
+final List<RegExp> _vendorStopDescriptions = <RegExp>[
+  _oplusAppStop,
+  _miuiSwipeUpClean,
+];
+
+/// [description]（已 trim）整串匹配某条厂商停应用形态。
+bool _isVendorStopDescription(String description) =>
+    _vendorStopDescriptions.any((RegExp re) => re.hasMatch(description));
+
 /// Android 退出原因 → [PreviousExitKind]；包更新 / 权限变更映射成
 /// [PreviousExitKind.appUpdated] / [PreviousExitKind.permissionChanged]（明确的良性原因，
 /// 要压过会话标记的「疑似闪退」）；不说明问题的原因（自行退出、`SIGNALED`——lmkd 与
@@ -617,7 +635,8 @@ final RegExp _oplusAppStop = RegExp(
 /// 「scheduleCrash for '…' failed」——系统结束了够不着的进程，应用里没崩）返回 null，
 /// 交给会话标记。`OTHER` 只在
 /// [description] 是 AOSP 自己写的 appop 变更杀进程描述时才算权限变更、是 OPlus 的
-/// `o-stop` 停应用描述时算厂商停止（[PreviousExitKind.vendorStopped]），其它照旧 null。
+/// `o-stop` 停应用描述、MIUI / HyperOS 的 `SwipeUpClean` 时算厂商停止
+/// （[PreviousExitKind.vendorStopped]，见 [_vendorStopDescriptions]），其它照旧 null。
 PreviousExitKind? androidExitKind(String reason, {String? description}) =>
     switch (reason) {
       'CRASH_NATIVE' => PreviousExitKind.nativeCrash,
@@ -637,7 +656,7 @@ PreviousExitKind? androidExitKind(String reason, {String? description}) =>
         PreviousExitKind.permissionChanged,
       'OTHER'
           when description != null &&
-              _oplusAppStop.hasMatch(description.trim()) =>
+              _isVendorStopDescription(description.trim()) =>
         PreviousExitKind.vendorStopped,
       _ => null,
     };
