@@ -557,6 +557,10 @@ table.rt,.rt tbody,.rt tr,.rt td{display:block;width:100%}
 <div id="srs-devices"></div></div>
 <h3 class="sh">制卡落点</h3>
 <div class="card" id="srs-mining"></div>
+<h3 class="sh">RWKV 模型</h3>
+<div class="card">
+<p class="sup" style="margin:0">算法是 RWKV 的牌组用哪个模型排程（整台设备一个设置，各份配置文件共用）。换了当场生效：需要时先下载新权重，没有这一档的快照时按全部复习历史重放一次，期间这些牌组不出复习卡。</p>
+<div id="srs-rwkv"></div></div>
 <h3 class="sh">AnkiConnect 兼容接口</h3>
 <div class="card">
 <p class="sup" style="margin:0">默认关闭。只监听本机时可以不设 key；监听局域网地址必须设 key。每份配置文件可以有自己的 key（Yomitan 里一门语言一个 key），共用 key 落到默认那份。</p>
@@ -1104,6 +1108,8 @@ $('#btn-anki-retry').onclick = guard(async()=>{ const r = await post('anki/retry
 
 // ── 复习 ──
 const SRS_STATE = {opening:T('打开中'), ready:T('可用'), encrypted:T('同步位置已加密（暂不支持）'), needs_upgrade:T('数据来自更新版本的 Fushi，请升级服务端'), failed:T('出错')};
+// 各份配置文件的 RWKV 准备状态（ServerSrsProfile.toJson 的 rwkv / rwkvError）：idle = 库里没有 RWKV 牌组 / 还没开始，不显示。
+const SRS_RWKV = {downloading:T('RWKV 下载权重中'), preparing:T('RWKV 准备中'), ready:T('RWKV 就绪'), failed:T('RWKV 出错')};
 let srsFormKey = null;
 // 待确认 / 已拒绝的设备（服务端开库后第一次同步过来的；删除与彻底清除在本机扣着，engine srs_devices.dart）。
 function renderSrsDevices(devs){
@@ -1138,7 +1144,7 @@ async function loadSrs(){
   const list = found.profiles || [];
   const key = JSON.stringify([list.map(p=>[p.uid,p.name,p.served,p.missing]), st.config, ac.enabled, ac.bind, ac.port, ac.apiKeySet, ac.profileKeysSet]);
   // 状态每轮刷新；表单只在内容变了时重画，不冲掉正在编辑的输入。
-  const statusOf = (uid)=>{ const p = served[uid]; if(!p) return ''; return `${SRS_STATE[p.state]||p.state}${p.notes!=null?T(' · {0} 条笔记', p.notes):''}${p.lastSyncAt?T(' · 同步于 {0}', fmtTime(p.lastSyncAt)):''}${p.lastError?' · '+p.lastError:''}`; };
+  const statusOf = (uid)=>{ const p = served[uid]; if(!p) return ''; return `${SRS_STATE[p.state]||p.state}${p.notes!=null?T(' · {0} 条笔记', p.notes):''}${p.lastSyncAt?T(' · 同步于 {0}', fmtTime(p.lastSyncAt)):''}${p.lastError?' · '+p.lastError:''}${SRS_RWKV[p.rwkv]?' · '+SRS_RWKV[p.rwkv]:''}${p.rwkvError?T('：')+p.rwkvError:''}`; };
   if (key === srsFormKey) { document.querySelectorAll('[data-srs-status]').forEach(el=>{ el.textContent = statusOf(el.dataset.srsStatus); }); return; }
   srsFormKey = key;
   const cfg = st.config;
@@ -1175,6 +1181,9 @@ async function loadSrs(){
     await put('srs', {miningTarget: $('#srs-target').value, rolloverHour: parseInt($('#srs-rollover').value,10), miningDecks});
     toast(T('已保存')); srsFormKey=null; loadSrs();
   });
+
+  $('#srs-rwkv').innerHTML = `<div class="grid"><label class="f">${esc(T('使用的模型'))}<select id="srs-rwkv-model">${[['small',T('Small（默认，准确度最好）')],['tiny',T('Tiny（每张卡省约 30% 内存，准确度略差）')]].map(([v,l])=>`<option value="${v}" ${(cfg.rwkvModel||'small')===v?'selected':''}>${esc(l)}</option>`).join('')}</select></label></div>`;
+  $('#srs-rwkv-model').onchange = guard(async()=>{ await put('srs', {rwkvModel: $('#srs-rwkv-model').value}); toast(T('已切换 RWKV 模型')); srsFormKey=null; loadSrs(); });
 
   const setNote = (isSet) => isSet ? ` <span class="muted">${esc(T('(已设置，留空不改)'))}</span>` : '';
   $('#srs-ankiconnect').innerHTML = `<div class="row" style="margin-top:16px">${swLabel('id="ac-enabled"', ac.enabled, T('开关'))}</div>

@@ -128,7 +128,34 @@ class SrsRwkvService implements SrsRwkvScheduling, SrsRwkvStatusSource {
     Future<SrsRwkvBackend> Function(File weights)? openBackend,
     void Function(String message)? log,
   }) : _open = openBackend,
-       _log = log ?? ((String _) {});
+       _log = log ?? ((String _) {}) {
+    // 排到同一份快照的上一个服务后面（见 [_snapshotHandoff]）。
+    _predecessor = _snapshotHandoff[_snapshotKey] ?? Future<void>.value();
+    // 队尾 = 前面的都关完、且本服务也关完：本服务没起内核就先关了时，排在后面的照样要等更前面那个。
+    _handoffTail = Future.wait(<Future<void>>[_predecessor, _released.future]);
+    _snapshotHandoff[_snapshotKey] = _handoffTail;
+  }
+
+  /// 同一份快照（快照目录 + profile）的交接：上一个服务关完（内核存好快照、关掉 runtime）之前，下一个服务不起
+  /// 内核。换模型档位、换 profile 再换回来时宿主是「旧服务开始关、新服务马上建」，旧的还在写快照时新的就可能读到
+  /// 半新不旧的快照目录、或两个内核同时写同一个文件（PR #3463 审查）；排成一队后，同一份快照在同一时刻只有一个
+  /// 内核在碰。值是该快照目前最后一个服务「关完」的信号。
+  static final Map<String, Future<void>> _snapshotHandoff =
+      <String, Future<void>>{};
+
+  /// 本服务在 [_snapshotHandoff] 里的键（小写：Windows / macOS 的路径不分大小写；在区分大小写的系统上
+  /// 最多把两个只差大小写的目录排成一队，不会漏排）。
+  late final String _snapshotKey =
+      '${snapshotDir.absolute.path.toLowerCase()}|${store.profileUid}';
+
+  /// 同一份快照的上一个服务关完。
+  late final Future<void> _predecessor;
+
+  /// 本服务关完（[close] 结束时完成）。
+  final Completer<void> _released = Completer<void>();
+
+  /// 本服务排进 [_snapshotHandoff] 的队尾。
+  late final Future<void> _handoffTail;
 
   final SrsDbStore store;
   final SrsRwkvModels models;
@@ -250,6 +277,9 @@ class SrsRwkvService implements SrsRwkvScheduling, SrsRwkvStatusSource {
   }
 
   Future<RwkvSchedWorker?> _spawn() async {
+    // 同一份快照的上一个服务还在关（存快照）：等它关完再起内核去恢复 / 写这份快照。
+    await _predecessor;
+    if (_closed) return null;
     try {
       final RwkvSchedWorker worker = await RwkvSchedWorker.spawn(
         config: rwkvSchedConfig(
@@ -997,6 +1027,15 @@ class SrsRwkvService implements SrsRwkvScheduling, SrsRwkvStatusSource {
       }
     } finally {
       await _status.close();
+      _released.complete();
+      // 前面的也都关完了、后面没人再排进来：清掉这一项（不留着越积越多）。
+      unawaited(
+        _handoffTail.then((_) {
+          if (identical(_snapshotHandoff[_snapshotKey], _handoffTail)) {
+            _snapshotHandoff.remove(_snapshotKey);
+          }
+        }),
+      );
     }
   }
 }
