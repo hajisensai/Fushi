@@ -67523,7 +67523,11 @@ class MusicTrackRow extends DataClass implements Insertable<MusicTrackRow> {
   /// 不碰磁盘文件。非 NULL 时 [deletedAt] 也非 NULL（隐藏的行和软删一样不进任何
   /// 曲库查询）；它是墓碑——重扫见到同一个文件不清软删标记（`writeMusicScanBatch`
   /// 跳过这一行），曲目不会复活，只有「恢复」（`unhideMusicTracks`）或用户显式重新
-  /// 导入光盘才清掉。设备本地（同整张表）。
+  /// 导入光盘才清掉；移除它所属的音乐来源时，没有别的来源覆盖就清墓碑（保持软删，
+  /// `releaseMusicTracksOfSource`）。边界：墓碑按曲目身份（uid / 路径键）认，同一路径
+  /// 的文件被重新编码、音频指纹（时长 / 采样率 / 声道）变了会派生新 uid、认不回墓碑
+  /// 行，重扫会作为一首新曲目入库——这符合「指纹不同 = 换了文件」的身份语义。
+  /// 设备本地（同整张表）。
   final int? hiddenAt;
   const MusicTrackRow({
     required this.trackUid,

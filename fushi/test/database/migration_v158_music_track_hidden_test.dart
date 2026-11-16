@@ -4,6 +4,7 @@ import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:test/test.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:path/path.dart' as p;
 import 'package:sqlite3/sqlite3.dart' as sqlite;
 
 /// v158：`music_tracks.hidden_at`——用户「从音乐库移除」本地曲目的墓碑（拍板台
@@ -146,6 +147,55 @@ void main() {
         ),
         <String>['t2'],
       );
+    });
+    test('移除音乐来源：墓碑行一并处理——被覆盖的改挂且仍是墓碑，没被覆盖的离开「已移除」、恢复不回曲库', () async {
+      final String root = p.join(p.rootPrefix(p.current), 'm');
+      Future<int> src(String path) => db.insertMediaSource(
+        MediaSourcesCompanion.insert(
+          label: path,
+          mediaKind: 'music',
+          rootPath: normalizeSourceRootPath(path, transport: 'local'),
+          createdAt: 1,
+        ),
+      );
+      final int inner = await src(p.join(root, 'A'));
+      final int other = await src(p.join(root, 'B'));
+      await db.writeMusicScanBatch(
+        MusicScanBatchWrite(
+          tracks: <MusicTracksCompanion>[
+            _track('gone', path: p.join(root, 'A', '1.flac'), sourceId: inner),
+            _track('kept', path: p.join(root, 'B', '1.flac'), sourceId: inner),
+            _track('live', path: p.join(root, 'A', '2.flac'), sourceId: inner),
+          ],
+          albums: const <MusicAlbumsCompanion>[],
+          artists: const <MusicArtistsCompanion>[],
+          credits: const <MusicTrackCreditsCompanion>[],
+        ),
+      );
+      await db.hideMusicTracks(<String>['gone', 'kept'], at: 7);
+
+      final ({int reassigned, int softDeleted}) r = await db
+          .releaseMusicTracksOfSource(inner);
+      expect(r, (reassigned: 0, softDeleted: 1), reason: '墓碑行本就不在曲库，不计数');
+
+      final MusicTrackRow kept = (await db.getMusicTrack('kept'))!;
+      expect(kept.sourceId, other, reason: '仍被另一个来源覆盖：改挂');
+      expect(kept.hiddenAt, 7, reason: '改挂不清墓碑，那个来源重扫仍不复活');
+      expect(kept.deletedAt, 7);
+      final MusicTrackRow gone = (await db.getMusicTrack('gone'))!;
+      expect(gone.hiddenAt, isNull, reason: '来源没了：清墓碑');
+      expect(gone.deletedAt, 7, reason: '保持软删');
+      expect(
+        (await db.watchHiddenMusicTracks().first).map(
+          (MusicTrackRow r) => r.trackUid,
+        ),
+        <String>['kept'],
+      );
+
+      // 用户在「已移除的曲目」页点「全部恢复」：只有仍有来源的那首回来。
+      expect(await db.unhideMusicTracks(<String>['gone', 'kept']), 1);
+      expect(await live(), <String>{'kept'});
+      expect((await db.getMusicTrack('gone'))!.deletedAt, 7);
     });
   });
 
