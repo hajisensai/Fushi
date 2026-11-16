@@ -6871,6 +6871,7 @@
   "ocr_system_model_download": "Download",
   "ocr_system_model_downloading": "Downloading through Google Play services… You can close this dialog; the download continues in the background.",
   "ocr_system_model_failed": "Couldn't download the model: $error",
+  "ocr_system_model_local_alternative": "You can switch the OCR engine to Fushi's local model (Manga CTC) instead: it runs fully offline and doesn't need Google Play services.",
   "ocr_system_model_missing": "Google Play services hasn't downloaded the text recognition model yet. Download it now (a few MB) to use screen OCR.",
   "ocr_system_model_play_services_diagnostics": "Google Play services status code $code · installed version $installed · required version $required",
   "ocr_system_model_play_services_disabled": "Google Play services is disabled on this device. Enable it in its app settings, then check again.",

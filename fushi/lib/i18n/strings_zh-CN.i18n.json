@@ -6871,6 +6871,7 @@
   "ocr_system_model_download": "下载",
   "ocr_system_model_downloading": "正在通过 Google Play 服务下载…可以关掉此窗口，下载会在后台继续。",
   "ocr_system_model_failed": "模型下载失败：$error",
+  "ocr_system_model_local_alternative": "可以把 OCR 引擎改成 Fushi 的本机模型（漫画 CTC）：完全离线运行，不需要 Google Play 服务。",
   "ocr_system_model_missing": "Google Play 服务还没有下载文字识别模型。现在下载（几 MB）即可使用截屏识字。",
   "ocr_system_model_play_services_diagnostics": "Google Play 服务状态码 $code · 本机版本 $installed · 需要版本 $required",
   "ocr_system_model_play_services_disabled": "本机的 Google Play 服务已被停用。请在它的应用设置里启用，然后重新检查。",

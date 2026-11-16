@@ -6871,6 +6871,7 @@
   "ocr_system_model_download": "ダウンロード",
   "ocr_system_model_downloading": "Google Play 開発者サービス経由でダウンロード中…このダイアログを閉じてもバックグラウンドで続行します。",
   "ocr_system_model_failed": "モデルをダウンロードできませんでした：$error",
+  "ocr_system_model_local_alternative": "You can switch the OCR engine to Fushi's local model (Manga CTC) instead: it runs fully offline and doesn't need Google Play services.",
   "ocr_system_model_missing": "Google Play 開発者サービスがまだ文字認識モデルをダウンロードしていません。今すぐダウンロード（数 MB）すると画面 OCR を使えます。",
   "ocr_system_model_play_services_diagnostics": "Google Play services status code $code · installed version $installed · required version $required",
   "ocr_system_model_play_services_disabled": "Google Play services is disabled on this device. Enable it in its app settings, then check again.",
