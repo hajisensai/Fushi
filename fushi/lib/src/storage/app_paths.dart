@@ -10,6 +10,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:fushi/src/diagnostics/previous_exit_log.dart'
     show activityNameFromBreadcrumbFileName;
 import 'package:fushi/src/startup/test_environment.dart';
+import 'package:fushi/src/storage/directory_move.dart'
+    show moveDirectoryMerging;
 import 'package:fushi/src/storage/macos_data_root_access.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 
@@ -94,6 +96,10 @@ class AppPaths {
     // 解析：`testWidgets` 跑在 FakeAsync 上，真实文件 IO 的 future 在那里永不完成、
     // `.timeout()` 还会留下 pending timer，整批页面测试会挂死或报「Timer is still pending」。
     await _ensureDocumentsLayoutDecided();
+    // 拍板台 nLXhu0d7gV：iOS 的 Documents 改作「文件」App 可见的导入收件箱，书库搬出去。
+    // 必须在解析根之前跑完：搬完之后 [_resolveDocumentsRoot] 解析出的新根才有数据，
+    // 紧随其后的 `SandboxRelocation.reconcile` 按台账把库里的绝对路径重基过去。
+    await _ensureIosSharedDocumentsVacated();
     final Directory documents = await _resolveDocumentsRoot();
     final Directory support = await _resolveSupportRoot();
     final Directory temp = await _resolveTempRoot();
@@ -319,10 +325,208 @@ class AppPaths {
   /// 老用户要收进子目录，走设置里的「数据存储位置」（[DataRootMigrator] 会连 DB 里的绝对
   /// 路径一起 rebase）；这里绝不自动迁移——启动期搬整个书库既慢又可能被文件锁半途打断。
   static Future<Directory> _resolveDefaultDocumentsRoot() async {
+    // iOS 不论 flat / nested：书库一律在 `<Library>/Fushi/data`，Documents 只当收件箱。
+    if (Platform.isIOS) return iosDocumentsRoot();
     final Directory platformDocuments =
         await getApplicationDocumentsDirectory();
     if (await _useLegacyFlatDocumentsRoot()) return platformDocuments;
     return defaultLocationDocumentsRoot();
+  }
+
+  // ---- iOS：Documents = 导入收件箱，书库在 Library 下（拍板台 nLXhu0d7gV） ----
+
+  /// iOS 书库根 `<Library>/Fushi/data` 相对 `Library` 的路径段。
+  ///
+  /// 为什么不是 `Library/Application Support/...`：那是 support 根（数据库所在），两根
+  /// 嵌套会让存储统计把书库重复算一遍，也破坏「两根各有独立子树」的不变式。`Library`
+  /// 下的自建目录与 Application Support 同样随 iCloud / 电脑备份、不会被系统清理，
+  /// 而且「文件」App 看不到。
+  static const List<String> iosDocumentsRootSegments = <String>[
+    'Fushi',
+    'data',
+  ];
+
+  /// iOS 书库根（不创建；[resolve] 的 `_ensureResolvedRootsExist` 负责建）。
+  static Future<Directory> iosDocumentsRoot() async =>
+      iosDocumentsRootUnder(await getLibraryDirectory());
+
+  /// [iosDocumentsRoot] 的纯派生（测试注入 `Library` 目录）。
+  static Directory iosDocumentsRootUnder(Directory library) =>
+      Directory(p.joinAll(<String>[library.path, ...iosDocumentsRootSegments]));
+
+  /// iOS 书库搬出 Documents 的台账文件名，放在 `<Library>/Fushi/`（书库根的父目录，不在
+  /// documents 根里、也不在「文件」App 可见的 Documents 里）。
+  ///
+  /// 只按白名单全扫一次：台账一旦存在，Documents 就是用户的收件箱，用户在「文件」App 里
+  /// 新建一个叫 `videos` / `browser` 的文件夹是完全正常的事，绝不能再按白名单把它当书库
+  /// 收走。台账内容是上次**没搬动**的条目（相对 Documents 的路径，一行一个），之后的启动
+  /// 只重试这几项；空台账 = 搬完了。用文件而不是 SharedPreferences：偏好拿不到时锚点永远
+  /// 写不进去，每次启动都会重新全扫一遍白名单。
+  static const String iosDocumentsVacateLedgerName = 'documents_vacated.txt';
+
+  /// [iosDocumentsVacateLedgerName] 在 [library] 下的位置（纯派生，测试注入）。
+  static File iosDocumentsVacateLedgerUnder(Directory library) => File(
+    p.join(
+      library.path,
+      iosDocumentsRootSegments.first,
+      iosDocumentsVacateLedgerName,
+    ),
+  );
+
+  /// iOS 导入收件箱目录 = 平台 `Documents`（Info.plist 开了 `UIFileSharingEnabled` /
+  /// `LSSupportsOpeningDocumentsInPlace`，「文件」App 的「我的 iPhone › Fushi」就是它）。
+  ///
+  /// iOS 没有「只共享 Documents 的某个子目录」的办法，所以收件箱只能是整个 Documents——
+  /// 这正是书库必须先搬出 Documents（[iosDocumentsRoot]）的原因。
+  static Future<Directory> importInboxDirectory() async =>
+      fushiTestDirectory('import-inbox') ??
+      await getApplicationDocumentsDirectory();
+
+  /// 启动期把 iOS 存量书库搬出 Documents（只在 [resolve] 里调，见那里的顺序说明）。
+  ///
+  /// 测试分支（[fushiTestDirectory]）与非 iOS 直接跳过。没搬动的条目记进台账
+  /// （[vacateIosDocumentsWithLedger]），下次启动只重试它们——已搬的条目本次就从新根读，
+  /// 没搬动的留在原处，库里的路径由 `SandboxRelocation`
+  /// 统一重基到新根，重试搬完后两边自然对上（同一个白名单作用域）。失败条目记进
+  /// [iosDocumentsVacateFailures]，由错误日志服务就绪后写入，不吞。
+  static Future<void> _ensureIosSharedDocumentsVacated() async {
+    if (!Platform.isIOS) return;
+    if (fushiTestDirectory('app-documents') != null) return;
+    final Directory library = await getLibraryDirectory();
+    final List<String> failures = await vacateIosDocumentsWithLedger(
+      platformDocuments: await getApplicationDocumentsDirectory(),
+      target: iosDocumentsRootUnder(library),
+      ledger: iosDocumentsVacateLedgerUnder(library),
+      legacyFlat: () => _useLegacyFlatDocumentsRoot(),
+      containerName: defaultDocumentsChildSegments.first,
+    );
+    _iosDocumentsVacateFailures
+      ..clear()
+      ..addAll(failures);
+  }
+
+  /// 按台账 [ledger] 搬 iOS 存量书库（见 [iosDocumentsVacateLedgerName]）。返回失败条目。
+  ///
+  /// - 台账不存在：第一次，按 [vacateLegacyIosDocuments] 全量搬，把没搬动的条目写进台账；
+  /// - 台账存在且为空：早已搬完，什么都不碰（Documents 已经是用户的收件箱）；
+  /// - 台账存在且非空：只重试台账里那几项，再把仍失败的写回。
+  ///
+  /// 台账写不进去时记为失败（下次启动会重新全量搬一遍，这是唯一会退化成全扫的情况，
+  /// 并且会进错误日志）。
+  @visibleForTesting
+  static Future<List<String>> vacateIosDocumentsWithLedger({
+    required Directory platformDocuments,
+    required Directory target,
+    required File ledger,
+    required Future<bool> Function() legacyFlat,
+    required String containerName,
+  }) async {
+    Set<String>? only;
+    if (await ledger.exists()) {
+      only = <String>{
+        for (final String line in await ledger.readAsLines())
+          if (line.trim().isNotEmpty) line.trim(),
+      };
+      if (only.isEmpty) return const <String>[];
+    }
+    final List<String> failedEntries = <String>[];
+    final List<String> failures = await vacateLegacyIosDocuments(
+      platformDocuments: platformDocuments,
+      target: target,
+      legacyFlat: await legacyFlat(),
+      containerName: containerName,
+      onlyEntries: only,
+      failedEntries: failedEntries,
+    );
+    try {
+      await ledger.parent.create(recursive: true);
+      await ledger.writeAsString(
+        failedEntries.isEmpty ? '' : '${failedEntries.join('\n')}\n',
+        flush: true,
+      );
+    } on FileSystemException catch (e) {
+      return <String>[...failures, '${ledger.path}: $e'];
+    }
+    return failures;
+  }
+
+  /// 启动期 iOS 书库搬迁失败的条目（`路径: 原因`）。由 `ErrorLogService.init` 写进错误日志。
+  static List<String> get iosDocumentsVacateFailures =>
+      List<String>.unmodifiable(_iosDocumentsVacateFailures);
+  static final List<String> _iosDocumentsVacateFailures = <String>[];
+
+  /// 把旧版放在 iOS `Documents` 里的书库搬进 [target]。返回失败条目，全部成功为空。
+  ///
+  /// - nested 布局（[legacyFlat] = false）：整个 `<Documents>/<容器>/data` 搬成 [target]，
+  ///   容器伞变空后删掉（不空说明里面有别的东西，原样留着）；
+  /// - flat 布局：Documents 根下**只搬** [fushiOwnedDocumentsEntries] 白名单里的顶层项，
+  ///   其它东西（导出的剪辑、用户文件）一律不碰——与数据根迁移对共享根的纪律一致。
+  ///
+  /// 同一容器内是同卷 `rename`，GB 级书库也是 O(1)；目标里已有同名项（上次搬到一半）
+  /// 时走 [moveDirectoryMerging] 的合并语义。
+  ///
+  /// [onlyEntries] 非 null 时只处理其中的条目（相对 Documents 的路径：nested 为
+  /// `<容器>/data`，flat 为白名单顶层名），用于按台账重试；没搬动的条目名追加进
+  /// [failedEntries]。
+  @visibleForTesting
+  static Future<List<String>> vacateLegacyIosDocuments({
+    required Directory platformDocuments,
+    required Directory target,
+    required bool legacyFlat,
+    required String containerName,
+    Set<String>? onlyEntries,
+    List<String>? failedEntries,
+  }) async {
+    final List<String> failures = <String>[];
+    if (p.equals(platformDocuments.path, target.path) ||
+        p.isWithin(platformDocuments.path, target.path)) {
+      failures.add('${target.path}: target inside shared Documents');
+      return failures;
+    }
+    bool wanted(String entry) => onlyEntries?.contains(entry) ?? true;
+    if (!legacyFlat) {
+      final String entry = '$containerName/data';
+      if (!wanted(entry)) return failures;
+      final Directory container = Directory(
+        p.join(platformDocuments.path, containerName),
+      );
+      final Directory legacy = Directory(p.join(container.path, 'data'));
+      try {
+        if (await legacy.exists()) {
+          await moveDirectoryMerging(legacy, target);
+        }
+        if (await container.exists() && await container.list().isEmpty) {
+          await container.delete();
+        }
+      } on FileSystemException catch (e) {
+        failures.add('${legacy.path}: $e');
+        failedEntries?.add(entry);
+      }
+      return failures;
+    }
+    for (final String name in fushiOwnedDocumentsEntries) {
+      if (!wanted(name)) continue;
+      final String source = p.join(platformDocuments.path, name);
+      final String destination = p.join(target.path, name);
+      try {
+        switch (await FileSystemEntity.type(source, followLinks: false)) {
+          case FileSystemEntityType.directory:
+            await moveDirectoryMerging(
+              Directory(source),
+              Directory(destination),
+            );
+          case FileSystemEntityType.file:
+            await target.create(recursive: true);
+            await File(source).rename(destination);
+          default:
+            break;
+        }
+      } on FileSystemException catch (e) {
+        failures.add('$source: $e');
+        failedEntries?.add(name);
+      }
+    }
+    return failures;
   }
 
   /// BUG-1188：**「默认位置」这个概念本身**的 documents 根 = `<Documents>/<容器>/data`
@@ -337,6 +541,7 @@ class AppPaths {
   static Future<Directory> defaultLocationDocumentsRoot() async {
     final Directory? test = fushiTestDirectory('app-documents');
     if (test != null) return test;
+    if (Platform.isIOS) return iosDocumentsRoot();
     final Directory platformDocuments =
         await getApplicationDocumentsDirectory();
     return Directory(
@@ -597,6 +802,10 @@ class AppPaths {
     // 旧版复习自动备份（`<documents>/srs_backups/`）。同步 v2 已取消定时备份（时间线 + 归档 + 手动
     // 导出取代），旧文件升级后再留 30 天（srs_legacy_backup_cleanup.dart），这期间仍随数据根走。
     'srs_backups',
+    // iOS「文件」App 收件箱收进来的文件（拍板台 nLXhu0d7gV，`<documents>/inbox_imports/<域>/<批次>/`）。
+    // 视频 / 曲目条目原地引用这里，必须随数据根走、随容器漂移重基。派生点：
+    // AppPaths.inboxImportsDirectory（import_inbox.dart / media_sources_view.dart 使用）。
+    'inbox_imports',
   };
 
   /// BUG-1115：[newDataRoot] 落在**共享** documents 根（老安装的扁平布局 = 平台
@@ -644,8 +853,11 @@ class AppPaths {
   /// 数据根可能不可达），但目录选错了：
   /// - 桌面：`<ApplicationSupport>/logs`（macOS `~/Library/Application Support/<bundle>/logs`），
   ///   app 私有、与数据根无关、启动最早期可用；
-  /// - Android / iOS：沿用 app 沙盒内的 documents 目录（用户看不到，iOS 原生 MetricKit
-  ///   落盘 `Documents/metrickit/` 与它同目录约定，见 `AppDelegate.swift`）。
+  /// - iOS：同桌面 `<ApplicationSupport>/logs`。iOS 的 Documents 已是「文件」App 可见的
+  ///   导入收件箱（拍板台 nLXhu0d7gV），未脱敏的错误日志不能摊在那里；原生 MetricKit
+  ///   落盘 `<ApplicationSupport>/logs/metrickit/` 与它同目录约定（`AppDelegate.swift`），
+  ///   旧版留在 `Documents/metrickit/` 的待摘要诊断随诊断文件一起搬过来；
+  /// - Android：沿用 app 沙盒内的 documents 目录（`app_flutter`，用户看不到）。
   ///
   /// 测试分支与旧实现同一个键（`app-documents`），测试注入不变。首次解析时把旧位置
   /// （平台 Documents 根）残留的诊断文件搬过来（[migrateLegacyDiagnostics]），再交给
@@ -672,17 +884,47 @@ class AppPaths {
   }
 
   static Future<Directory> _resolveDiagnosticsDirectory() async {
-    if (!isDesktopPlatform) return getApplicationDocumentsDirectory();
+    if (!isDesktopPlatform && !Platform.isIOS) {
+      return getApplicationDocumentsDirectory();
+    }
     final Directory support = await getApplicationSupportDirectory();
     final Directory dir = Directory(p.join(support.path, 'logs'));
     await dir.create(recursive: true);
+    final Directory legacy = await getApplicationDocumentsDirectory();
+    if (Platform.isIOS) {
+      _diagnosticsMigrationFailures.addAll(
+        await migrateLegacyMetricKitDirectory(from: legacy, to: dir),
+      );
+    }
     _diagnosticsMigrationFailures.addAll(
-      await migrateLegacyDiagnostics(
-        from: await getApplicationDocumentsDirectory(),
-        to: dir,
-      ),
+      await migrateLegacyDiagnostics(from: legacy, to: dir),
     );
     return dir;
+  }
+
+  /// iOS 原生 MetricKit 落盘子目录名（`AppDelegate.swift` 与 `previous_exit_log.dart` 同名）。
+  static const String metricKitDirectoryName = 'metrickit';
+
+  /// 把旧版落在 [from]（iOS Documents）下的 `metrickit/` 合并进 [to] 下的同名目录。
+  /// 返回失败条目。旧目录不存在时什么都不做（每次启动只多一次 stat）。
+  @visibleForTesting
+  static Future<List<String>> migrateLegacyMetricKitDirectory({
+    required Directory from,
+    required Directory to,
+  }) async {
+    final Directory legacy = Directory(
+      p.join(from.path, metricKitDirectoryName),
+    );
+    try {
+      if (!await legacy.exists()) return const <String>[];
+      await moveDirectoryMerging(
+        legacy,
+        Directory(p.join(to.path, metricKitDirectoryName)),
+      );
+      return const <String>[];
+    } on FileSystemException catch (e) {
+      return <String>['$metricKitDirectoryName: $e'];
+    }
   }
 
   /// 旧位置（平台 Documents 根）上属于 Fushi 的诊断文件名。只认这些确切的名字 /
@@ -834,6 +1076,10 @@ class AppPaths {
   /// 旧版复习自动备份根 `<documents>/srs_backups`（只剩升级后 30 天的清理在用）。
   static Future<Directory> srsBackupsDirectory() =>
       documentsSubdirectory('srs_backups');
+
+  /// iOS 收件箱批次落点 `<documents>/inbox_imports`（见 `import_inbox.dart`）。
+  static Future<Directory> inboxImportsDirectory() =>
+      documentsSubdirectory('inbox_imports');
 
   /// 删 Profile 前自动做的复习数据备份 `<documents>/srs_profile_backups`（`.fushisrs`，撤销途径；
   /// 不进旧备份的 30 天清理，见 `srs_profile_cleanup.dart`）。

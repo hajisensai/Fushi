@@ -93,7 +93,10 @@ import 'package:fushi/src/pages/implementations/music/music_subtitle_actions.dar
 import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart'
     show MusicEngineClock, MusicVolumeButton, musicPlayModeButton;
 import 'package:fushi/src/pages/implementations/music/music_plugin_settings.dart'
-    show musicLyricsCandidateTitle, musicPluginErrorText;
+    show
+        musicLyricsCandidateTitle,
+        musicLyricsOnlineSourceName,
+        musicPluginErrorText;
 import 'package:fushi/src/pages/implementations/music/music_mv_page.dart'
     show MusicKaraokeTrack, openMusicKaraokePage;
 import 'package:fushi/src/utils/adaptive/fushi_page_transitions.dart';
@@ -111,6 +114,7 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
+import 'package:fushi/src/utils/components/fushi_form_dialog.dart';
 import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
@@ -325,6 +329,10 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
   /// 音频旁同名 `.cdg`（CD+G 画面，§9.2）；CUE 曲目不认。
   String? _cdgPath;
   bool _loading = false;
+
+  /// 在线搜歌词进行中（LRCLIB + 各歌词插件串行，装了插件可能要几秒）：歌词区显示进度、
+  /// 「选择来源 / 搜索在线歌词」置灰，防止用户以为没反应重复触发叠出多个候选框。
+  bool _searchingOnline = false;
   Object? _error;
   int _offsetMs = 0;
   bool _pausedForLookup = false;
@@ -1170,19 +1178,36 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
 
   // ── 来源 ─────────────────────────────────────────────────────────────
 
+  /// 跑一次在线歌词搜索并维护 [_searchingOnline]。已有一次在跑时直接返回 null（不叠第二次）；
+  /// 失败把错误放进 [_error] 并返回 null。
+  Future<List<MusicLyricsCandidate>?> _runOnlineSearch(
+    Future<List<MusicLyricsCandidate>> Function() search,
+  ) async {
+    if (_searchingOnline) return null;
+    setState(() => _searchingOnline = true);
+    try {
+      return await search();
+    } on Object catch (e) {
+      if (mounted) setState(() => _error = e);
+      return null;
+    } finally {
+      if (mounted) setState(() => _searchingOnline = false);
+    }
+  }
+
   Future<void> _chooseSource() async {
+    if (_searchingOnline) return;
     final MusicPlayItem? item = _engine.current;
     if (item == null) return;
     final MusicLyricsTrackRef ref = musicLyricsTrackRefOf(item);
     List<MusicLyricsCandidate> candidates = await _service.localCandidates(ref);
     if (!mounted) return;
     if (candidates.isEmpty) {
-      try {
-        candidates = await _service.searchOnline(ref);
-      } on Object catch (e) {
-        if (mounted) setState(() => _error = e);
-        return;
-      }
+      final List<MusicLyricsCandidate>? found = await _runOnlineSearch(
+        () => _service.searchOnline(ref),
+      );
+      if (found == null) return;
+      candidates = found;
     }
     if (!mounted) return;
     final MusicLyricsCandidate? picked = await showFushiChoiceDialog(
@@ -1204,17 +1229,36 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     await _afterSourceChanged(item);
   }
 
+  /// 「搜索在线歌词」：先让用户改关键词（默认填曲目元数据；YouTube 翻唱、视频标题与歌名
+  /// 对不上时手动改），再按这组关键词搜 LRCLIB 与已启用的歌词插件。
   Future<void> _searchOnline() async {
+    if (_searchingOnline) return;
     final MusicPlayItem? item = _engine.current;
     if (item == null) return;
-    final List<MusicLyricsCandidate> found;
-    try {
-      found = await _service.searchOnline(musicLyricsTrackRefOf(item));
-    } on Object catch (e) {
-      if (mounted) setState(() => _error = e);
-      return;
-    }
-    if (!mounted) return;
+    final MusicLyricsTrackRef ref = musicLyricsTrackRefOf(item);
+    final List<String>? keywords = await showFushiFormDialog(
+      context: _themedContext,
+      title: t.music_lyrics_search_online,
+      icon: FushiIcons.search,
+      message: t.music_lyrics_online_search_hint,
+      confirmLabel: t.search,
+      fields: <FushiFormField>[
+        FushiFormField(
+          label: t.music_lyrics_search_title_label,
+          initialValue: ref.title,
+        ),
+        FushiFormField(
+          label: t.music_lyrics_search_artist_label,
+          initialValue: ref.artist ?? '',
+          optional: true,
+        ),
+      ],
+    );
+    if (keywords == null || !mounted) return;
+    final List<MusicLyricsCandidate>? found = await _runOnlineSearch(
+      () => _service.searchOnline(ref, title: keywords[0], artist: keywords[1]),
+    );
+    if (found == null || !mounted) return;
     final MusicLyricsCandidate? picked = await showFushiChoiceDialog(
       context: _themedContext,
       title: t.music_lyrics_search_online,
@@ -1225,7 +1269,10 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
           FushiChoiceOption<MusicLyricsCandidate>(
             value: c,
             label: c.label,
-            subtitle: musicLyricsCandidateSubtitle(c),
+            subtitle: <String>[
+              musicLyricsOnlineSourceName(c.source),
+              musicLyricsCandidateSubtitle(c),
+            ].join(' · '),
           ),
       ],
     );
@@ -2190,7 +2237,11 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
 
   /// 没有歌词（或加载失败）：纯音乐提示 + 找歌词。
   Widget _buildNoLyrics(BuildContext context) {
-    if (_loading) return const FushiCircularProgressIndicator();
+    if (_loading || _searchingOnline) {
+      return const FushiCircularProgressIndicator(
+        key: ValueKey<String>('music_lyrics_online_searching'),
+      );
+    }
     return Wrap(
       alignment: WrapAlignment.center,
       crossAxisAlignment: WrapCrossAlignment.center,
@@ -2255,11 +2306,13 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
           value: 0,
           label: t.music_lyrics_choose_source,
           icon: FushiIcons.lyrics,
+          enabled: !_searchingOnline,
         ),
         FushiChoiceOption<int>(
           value: 1,
           label: t.music_lyrics_search_online,
           icon: FushiIcons.search,
+          enabled: !_searchingOnline,
         ),
         if (_lyrics?.timeline.isUserEdited ?? false)
           FushiChoiceOption<int>(
@@ -2349,6 +2402,10 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     // 字幕组特效 ASS：结构化会丢特效，提示去卡拉 OK 字幕页原样渲染（§6.3）。
     return Column(
       children: <Widget>[
+        if (_searchingOnline)
+          const FushiLinearProgressIndicator(
+            key: ValueKey<String>('music_lyrics_online_searching'),
+          ),
         FushiAnimatedSize(
           duration: fushiMotionDuration(context, FushiMotion.short),
           curve: context.fushiMotion.spatialDefault.curve,

@@ -3,6 +3,9 @@
 // 一张盘 = 一个 `playlist` 合集（合集名取盘名，撞上别的盘 / 别的清单的同名合集换
 // [blurayCollectionNameCandidates] 的下一个候选），一条入选标题 = 一行 `VideoBooks`
 // （蓝光 `videoPath` 是真实的 `.mpls`，DVD 是虚拟的 `VIDEO_TS/TITLE_nn.dvdtitle`）；
+// 只有「全部播放」的蓝光剧集盘按 PlayItem 切成各集（成员是虚拟的分集路径
+// `00001.p03.mpls`，`bluray_episode.dart`），同一发布的几张这样的盘并进**一个**合集、
+// 成员按盘序 × 盘内集序排（`disc_release_set.dart`）；
 // 特典入库、带来源、不进盘合集。重扫按合集名找回本盘合集并对齐成员，用户删过的合集
 // （墓碑）不复活。
 //
@@ -11,19 +14,30 @@
 // 再被扫描器重扫时会对出两份合集。盘面图（封面写入走 app 层服务）由调用方经
 // [DiscCollectionReadyHook] 接，引擎不碰。
 
+import 'package:drift/drift.dart' show Value;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
+import 'package:fushi_engine/media/collections/shelf_sort.dart'
+    show naturalCompare;
 import 'package:fushi_engine/media/video/bluray/bluray_disc.dart';
+import 'package:fushi_engine/media/video/bluray/bluray_episode.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_library_title.dart';
+import 'package:fushi_engine/media/video/bluray/bluray_playlist.dart';
+import 'package:fushi_engine/media/video/bluray/bluray_source.dart'
+    show isBlurayPlaylistPath;
 import 'package:fushi_engine/media/video/disc/disc_format.dart'
     show discRootForMemberPath;
+import 'package:fushi_engine/media/video/disc/disc_release_set.dart';
 import 'package:fushi_engine/media/video/dvd/dvd_disc.dart';
 import 'package:fushi_engine/media/video/dvd/dvd_library_title.dart';
 import 'package:fushi_engine/media/video/dvd/dvd_ifo.dart'
     show DvdIfoFormatException;
 import 'package:fushi_engine/media/video/m3u8_playlist.dart' show PlaylistEntry;
+import 'package:fushi_engine/media/video/external_video.dart'
+    show normalizeVideoPath;
 import 'package:fushi_engine/media/video/video_book_repository.dart';
+import 'package:fushi_engine/sync/deletion_propagation.dart' show DeleteScope;
 
 /// 一张盘的合集就绪（新建或重扫对齐）后调用：盘根 + 合集 id。扫描器在这里补盘面图。
 typedef DiscCollectionReadyHook =
@@ -72,8 +86,9 @@ class DiscLibraryImportReport {
   /// IFO 损坏的 DVD（`<盘名> — <原因>`），不中断其它盘。
   final List<String> failed;
 
-  /// 读不出盘 / 一条标题都选不出来的盘根（半张盘、BD 镜像、数据镜像）。不是错误：
-  /// 盘文件原样在盘上，只是不进库。
+  /// 读不出盘 / 一条标题都选不出来的盘根（半张盘、BD 镜像、数据镜像），以及库里
+  /// 已有分集、但它背后的播放列表或片段这一轮缺着的盘（还在拷）。不是错误：盘文件
+  /// 原样在盘上，只是本轮不入库、不对齐、不回收。
   final List<String> unreadable;
 }
 
@@ -109,32 +124,83 @@ class DiscLibraryImporter {
     final Map<String, Set<String>> deletedExtras =
         await deletedBlurayExtraKeysByCollection(_db);
 
-    int count = 0;
-    final List<DiscLibraryImportedDisc> imported = <DiscLibraryImportedDisc>[];
+    // 先把本轮的盘全部读完再分组：同一发布的几张剧集盘要并进一个合集、按盘序排。
+    final List<BlurayDisc> read = <BlurayDisc>[];
     final List<String> unreadable = <String>[];
     for (final String root in discRoots) {
       final BlurayDisc? disc = await readBlurayDisc(root);
       // 半张盘 / 一条标题都选不出来：跳过而不是记错。盘里的文件已经在规划层被摘出
-      // 散装视频，这里再报错只会把整次扫描标红。
-      if (disc == null) {
+      // 散装视频，这里再报错只会把整次扫描标红。库里已有的分集背后的播放列表 / 片段
+      // 缺了（盘不完整、还在拷）同样整盘跳过：本轮切集结果不可信，不能拿它回收或
+      // 对齐合集（[_hasUnsettledEpisodeRows]）。
+      if (disc == null || await _hasUnsettledEpisodeRows(disc)) {
         unreadable.add(root);
-        continue;
+      } else if (restoreDissolvedGroups ||
+          !await _legacyDiscCollectionDeleted(disc)) {
+        read.add(disc);
       }
-      final List<PlaylistEntry> entries = <PlaylistEntry>[
-        for (final BlurayTitle title in disc.titles)
-          PlaylistEntry(title: title.name, path: title.playlistPath),
+    }
+
+    int count = 0;
+    final List<DiscLibraryImportedDisc> imported = <DiscLibraryImportedDisc>[];
+    for (final BlurayReleaseSet set in planBlurayReleaseSets(read)) {
+      // 剧集组先把存量的整卷行就地改成第 1 集，合集对齐时按路径认回这一行。
+      final List<_WholeTitleCarry> carries = <_WholeTitleCarry>[
+        if (set.episodic)
+          for (final BlurayDisc disc in set.discs)
+            ...await _adoptWholeTitleRows(disc),
       ];
-      final _DiscCollection? collection = await _importDiscCollection(
-        discName: disc.name,
-        discRootPath: disc.rootPath,
-        entries: entries,
-        sourceId: sourceId,
-        restoreDissolvedGroups: restoreDissolvedGroups,
-        existingCollectionIds: existingCollectionIds,
-      );
+      // 反向：上一轮切成集、这一轮整条选成标题的播放列表，把第 1 集的行就地改回整卷。
+      final List<_RevertedEpisodes> reverted = <_RevertedEpisodes>[
+        for (final BlurayDisc disc in set.discs)
+          ...await _revertUnsplitEpisodeRows(disc),
+      ];
+      final Map<BlurayDisc, List<PlaylistEntry>> entriesByDisc =
+          <BlurayDisc, List<PlaylistEntry>>{
+            for (final BlurayDisc disc in set.discs)
+              disc: <PlaylistEntry>[
+                for (final BlurayTitle title in disc.titles)
+                  PlaylistEntry(title: title.name, path: title.playlistPath),
+              ],
+          };
+      final _DiscCollection? collection = set.episodic
+          ? await _importReleaseSetCollection(
+              set: set,
+              entries: <PlaylistEntry>[
+                for (final BlurayDisc disc in set.discs)
+                  ...entriesByDisc[disc]!,
+              ],
+              sourceId: sourceId,
+              restoreDissolvedGroups: restoreDissolvedGroups,
+              existingCollectionIds: existingCollectionIds,
+            )
+          : await _importDiscCollection(
+              discName: set.name,
+              discRootPath: set.discs.single.rootPath,
+              entries: entriesByDisc[set.discs.single]!,
+              sourceId: sourceId,
+              restoreDissolvedGroups: restoreDissolvedGroups,
+              existingCollectionIds: existingCollectionIds,
+            );
+      for (final _WholeTitleCarry carry in carries) {
+        await _foldWholeTitleProgress(carry);
+      }
+      await _unbindRevertedEpisodes(reverted, keepCollectionId: collection?.id);
+      for (final BlurayDisc disc in set.discs) {
+        await _reclaimStaleDiscRows(disc);
+      }
       if (collection == null) continue;
+      if (set.episodic) {
+        for (final BlurayDisc disc in set.discs) {
+          await _dissolveSupersededDiscCollections(
+            disc,
+            keepCollectionId: collection.id,
+            existingCollectionIds: existingCollectionIds,
+          );
+        }
+      }
       if (collection.created) count++;
-      await onCollectionReady?.call(collection.id, disc.rootPath);
+      await onCollectionReady?.call(collection.id, set.discs.first.rootPath);
 
       // 特典（菜单里的「特典映像」等）入库、带来源，但不进盘合集：索引器随后把它们
       // 挂到正片作品下，作品资料页的特典区就能看到、点开就播。排在合集墓碑守卫
@@ -142,37 +208,770 @@ class DiscLibraryImporter {
       // 整盘合集后重扫特典照样复活）。盘已读好，整盘一次入库。
       final Set<String> deleted =
           deletedExtras[collection.name] ?? const <String>{};
-      final List<String> extras = <String>[
-        for (final BlurayTitle extra in disc.extras)
-          if (!deleted.contains(blurayExtraTombstoneKey(extra.playlistPath)))
-            extra.playlistPath,
-      ];
-      if (extras.isNotEmpty) {
-        await ensureBlurayDiscTitlesInLibrary(
-          _db,
-          discRoot: disc.rootPath,
-          playlistPaths: extras,
-          disc: disc,
-          sourceId: sourceId,
+      for (final BlurayDisc disc in set.discs) {
+        final List<String> extras = <String>[
+          for (final BlurayTitle extra in disc.extras)
+            if (!deleted.contains(blurayExtraTombstoneKey(extra.playlistPath)))
+              extra.playlistPath,
+        ];
+        if (extras.isNotEmpty) {
+          await ensureBlurayDiscTitlesInLibrary(
+            _db,
+            discRoot: disc.rootPath,
+            playlistPaths: extras,
+            disc: disc,
+            sourceId: sourceId,
+          );
+        }
+        imported.add(
+          DiscLibraryImportedDisc(
+            rootPath: disc.rootPath,
+            name: collection.name,
+            collectionId: collection.id,
+            titlePaths: <String>[
+              for (final PlaylistEntry entry in entriesByDisc[disc]!)
+                entry.path,
+            ],
+            created: collection.created && identical(disc, set.discs.first),
+          ),
         );
       }
-      imported.add(
-        DiscLibraryImportedDisc(
-          rootPath: disc.rootPath,
-          name: collection.name,
-          collectionId: collection.id,
-          titlePaths: <String>[
-            for (final PlaylistEntry entry in entries) entry.path,
-          ],
-          created: collection.created,
-        ),
-      );
     }
     return DiscLibraryImportReport(
       imported: count,
       discs: List<DiscLibraryImportedDisc>.unmodifiable(imported),
       unreadable: List<String>.unmodifiable(unreadable),
     );
+  }
+
+  /// [disc] 是一张要并进发布组的剧集盘，修前它按盘名单独成一个合集，那个合集被用户
+  /// 删过（墓碑挂在旧盘名 / 它的「盘名 (上级目录)」消歧名下），且这张盘还没有任何
+  /// 分集行（从没按新方案入过库）。是的话本轮跳过整张盘，与修前「用户删过盘合集，
+  /// 重扫不复活」同一语义（§7-D5）：发布组合集改用去卷标的作品名之后，旧名下的墓碑
+  /// 不会再被 [_importReleaseSetCollection] 查到。已经有分集行的盘说明删除之后又
+  /// 入过库（下载入库 / 恢复分组），不再拿旧墓碑挡它。
+  Future<bool> _legacyDiscCollectionDeleted(BlurayDisc disc) async {
+    if (!disc.titles.any((BlurayTitle title) => title.isEpisode)) return false;
+    final String stem = blurayReleaseStem(disc);
+    // 只认盘名与「盘名 (上级目录)」两个候选：再往后的 `(2)`、`(3)` 不带这张盘的
+    // 任何特征，可能是别的同名盘的合集。
+    final String second = blurayCollectionNameCandidates(
+      disc.name,
+      disc.rootPath,
+    ).elementAt(1);
+    final List<String> legacyNames = <String>[
+      disc.name,
+      if (second != '${disc.name} (2)') second,
+    ].where((String name) => name != stem).toList();
+    bool deleted = false;
+    for (final String name in legacyNames) {
+      if (await _db.hasCollectionDeletionTombstone(name, 'playlist')) {
+        deleted = true;
+        break;
+      }
+    }
+    if (!deleted) return false;
+    for (final VideoBookRow row in await _rowsOnDisc(disc.rootPath)) {
+      if (isBlurayEpisodePath(row.videoPath)) return false;
+    }
+    return true;
+  }
+
+  /// 库里盘根是 [discRootPath] 的行。
+  Future<List<VideoBookRow>> _rowsOnDisc(String discRootPath) async {
+    final String root = normalizeVideoPath(discRootPath);
+    return <VideoBookRow>[
+      for (final VideoBookRow row in await _videoRepo.listAll())
+        if (discRootForMemberPath(row.videoPath) case final String owner
+            when normalizeVideoPath(owner) == root)
+          row,
+    ];
+  }
+
+  /// [title] 是不是入库时自动起的盘标题名（`<盘名>` / `<盘名> - NN`），用户没改过。
+  static bool _isAutoDiscTitle(String title, String discName) =>
+      title == discName ||
+      (title.startsWith('$discName - ') &&
+          RegExp(r'^\d{2,5}$').hasMatch(title.substring(discName.length + 3)));
+
+  /// 存量迁移第一步：[disc] 上被切成集的整条播放列表若已有库行（修前「一卷一个
+  /// 条目」），把它**就地改成第 1 集**——`videoPath` 换成第 1 集的分集路径，`bookUid`、
+  /// 封面、观看统计、制卡记录全部留在这一行上。第 1 集已另有其行时不改，记成重复、
+  /// 之后回收。返回的快照供 [_foldWholeTitleProgress] 把断点折到对应那一集。
+  Future<List<_WholeTitleCarry>> _adoptWholeTitleRows(BlurayDisc disc) async {
+    final Map<String, List<BlurayTitle>> episodesBySource =
+        <String, List<BlurayTitle>>{};
+    for (final BlurayTitle title in disc.titles) {
+      final String? source = title.sourcePlaylistId;
+      if (source == null) continue;
+      episodesBySource.putIfAbsent(source, () => <BlurayTitle>[]).add(title);
+    }
+    if (episodesBySource.isEmpty) return const <_WholeTitleCarry>[];
+    final Map<String, VideoBookRow> byPath = <String, VideoBookRow>{
+      for (final VideoBookRow row in await _rowsOnDisc(disc.rootPath))
+        normalizeVideoPath(row.videoPath): row,
+    };
+    final List<_WholeTitleCarry> carries = <_WholeTitleCarry>[];
+    for (final MapEntry<String, List<BlurayTitle>> entry
+        in episodesBySource.entries) {
+      final VideoBookRow? whole =
+          byPath[normalizeVideoPath(
+            p.join(disc.rootPath, 'BDMV', 'PLAYLIST', '${entry.key}.mpls'),
+          )];
+      if (whole == null) continue;
+      BlurayPlaylist? playlist;
+      for (final BlurayPlaylist candidate in disc.playlists) {
+        if (candidate.id == entry.key) playlist = candidate;
+      }
+      if (playlist == null) continue;
+      final BlurayTitle first = entry.value.first;
+      final bool adopted = !byPath.containsKey(
+        normalizeVideoPath(first.playlistPath),
+      );
+      if (adopted) {
+        await _videoRepo.updateLocalMediaPaths(
+          whole.bookUid,
+          videoPath: first.playlistPath,
+        );
+        if (_isAutoDiscTitle(whole.title, disc.name)) {
+          await _videoRepo.updateTitle(whole.bookUid, first.name);
+        }
+      }
+      carries.add(
+        _WholeTitleCarry(
+          row: whole,
+          adopted: adopted,
+          playlist: playlist,
+          episodePaths: <String>[
+            for (final BlurayTitle title in entry.value) title.playlistPath,
+          ],
+        ),
+      );
+    }
+    return carries;
+  }
+
+  /// 存量迁移第二步：把整卷行原来的观看状态折到各集上。看完的整卷 → 各集都记看完；
+  /// 断点落在第 k 集 → 第 1～k-1 集记看完、断点减去该集起点写到第 k 集。看完标记只补空；
+  /// 第 k 集已有断点时按最后观看时刻新者胜（§7-D4：菜单绑定新建的整卷行每轮都会被
+  /// 回收，它上面较新的断点不能因为那一集早先看过而丢掉）。
+  Future<void> _foldWholeTitleProgress(_WholeTitleCarry carry) async {
+    final VideoBookRow whole = carry.row;
+    final DateTime? completedAt = whole.completedAt;
+    final int position = whole.lastPositionMs;
+    if (completedAt == null && position <= 0) return;
+    final List<BlurayEpisodeSpan> spans = splitBlurayPlaylistEpisodes(
+      carry.playlist,
+    );
+    if (spans.length != carry.episodePaths.length) return;
+    final Map<String, VideoBookRow> byPath = <String, VideoBookRow>{
+      for (final VideoBookRow row in await _videoRepo.listAll())
+        normalizeVideoPath(row.videoPath): row,
+    };
+    final List<VideoBookRow> episodes = <VideoBookRow>[];
+    for (final String path in carry.episodePaths) {
+      final VideoBookRow? row = byPath[normalizeVideoPath(path)];
+      // 合集被墓碑挡下没建出各集：没有可折的去处。
+      if (row == null) return;
+      episodes.add(row);
+    }
+    if (completedAt != null) {
+      for (final VideoBookRow episode in episodes) {
+        await _db.markVideoCompleted(episode.bookUid, completedAt);
+      }
+      return;
+    }
+    int startMsOf(int index) =>
+        blurayEpisodeStartTicks(carry.playlist, spans[index]) *
+        1000 ~/
+        kBlurayTimeScale;
+    int index = spans.length - 1;
+    for (int i = 0; i + 1 < spans.length; i++) {
+      if (position < startMsOf(i + 1)) {
+        index = i;
+        break;
+      }
+    }
+    final int playedAt = whole.lastPlayedAt ?? 0;
+    // 分集行没有断点，或整卷行上的断点更新（从原盘菜单「本編再生」接着看过）：
+    // 整卷行回收前把断点交给那一集。分集行自己的断点更新时不动。
+    bool wholeSupersedes(VideoBookRow episode) =>
+        episode.lastPositionMs <= 0 || playedAt > (episode.lastPlayedAt ?? 0);
+    if (index == 0) {
+      // 断点就在第 1 集里：就地接管的行原样带着它；重复行的断点交给第 1 集。
+      if (!carry.adopted && wholeSupersedes(episodes.first)) {
+        await _db.updateVideoBookPosition(
+          episodes.first.bookUid,
+          position,
+          playedAt: playedAt,
+        );
+      }
+      return;
+    }
+    final DateTime watchedAt = playedAt > 0
+        ? DateTime.fromMillisecondsSinceEpoch(playedAt)
+        : DateTime.now();
+    for (int i = 0; i < index; i++) {
+      await _db.markVideoCompleted(episodes[i].bookUid, watchedAt);
+    }
+    if (carry.adopted) {
+      // 第 1 集的行还带着整卷时间轴上的断点（已超出这一集的长度），清掉。
+      await (_db.update(_db.videoBooks)
+            ..where((t) => t.bookUid.equals(episodes.first.bookUid)))
+          .write(const VideoBooksCompanion(lastPositionMs: Value<int>(0)));
+    }
+    if (wholeSupersedes(episodes[index])) {
+      await _db.updateVideoBookPosition(
+        episodes[index].bookUid,
+        position - startMsOf(index),
+        playedAt: playedAt,
+      );
+    }
+  }
+
+  /// [disc] 上有没有「对不上本轮任何一集」的分集行，且它背后的播放列表不在、或那条
+  /// 播放列表引用的片段没能确证全在（盘不完整 / 还在拷 / `STREAM` 读不动）。有就说明
+  /// 本轮的切集结果建立在一张残盘上：整盘本轮不回收、不对齐合集，与 [readBlurayDisc]
+  /// 返回 null 同一语义，留到盘完整的那一轮再判。
+  Future<bool> _hasUnsettledEpisodeRows(BlurayDisc disc) async {
+    final Set<String> titlePaths = <String>{
+      for (final BlurayTitle title in disc.titles)
+        normalizeVideoPath(title.playlistPath),
+    };
+    final Map<String, BlurayPlaylist> byId = <String, BlurayPlaylist>{
+      for (final BlurayPlaylist playlist in disc.playlists)
+        playlist.id: playlist,
+    };
+    for (final VideoBookRow row in await _rowsOnDisc(disc.rootPath)) {
+      final BlurayEpisodeRef? ref = parseBlurayEpisodePath(row.videoPath);
+      if (ref == null) continue;
+      if (titlePaths.contains(normalizeVideoPath(row.videoPath))) continue;
+      final BlurayPlaylist? backing =
+          byId[p.basenameWithoutExtension(ref.playlistPath)];
+      if (backing == null || !disc.hasAllClipsOf(backing)) return true;
+    }
+    return false;
+  }
+
+  /// 存量迁移的反向（D1 的对称）：[disc] 上某条播放列表上一轮被切成了集、这一轮整条
+  /// 被选成了标题（切集判据收紧、或盘上新冒出了逐集播放列表），把**第 1 集的行就地
+  /// 改回整卷路径**——`bookUid`、封面、统计、制卡记录留在这一行上；其余各集的进度
+  /// 折回整卷时间轴（[_foldEpisodeProgressBack]）。整卷路径已另有其行时不改路径，只把
+  /// 进度补给那一行（只补空）。其余分集行不删，合集对齐之后再从导入器建的合集里解绑
+  /// （[_unbindRevertedEpisodes]）。
+  ///
+  /// 只处理背后播放列表就在本轮标题里、且 PlayItem 序号都落在它范围内的分集行；
+  /// 对不上的（盘被换过）原样留着。
+  Future<List<_RevertedEpisodes>> _revertUnsplitEpisodeRows(
+    BlurayDisc disc,
+  ) async {
+    final Map<String, BlurayTitle> wholeTitles = <String, BlurayTitle>{
+      for (final BlurayTitle title in disc.titles)
+        if (!title.isEpisode) title.playlist.id: title,
+    };
+    if (wholeTitles.isEmpty) return const <_RevertedEpisodes>[];
+    final List<VideoBookRow> rows = await _rowsOnDisc(disc.rootPath);
+    final Map<String, VideoBookRow> byPath = <String, VideoBookRow>{
+      for (final VideoBookRow row in rows)
+        normalizeVideoPath(row.videoPath): row,
+    };
+    final Map<String, List<({int playItem, VideoBookRow row})>> bySource =
+        <String, List<({int playItem, VideoBookRow row})>>{};
+    for (final VideoBookRow row in rows) {
+      final BlurayEpisodeRef? ref = parseBlurayEpisodePath(row.videoPath);
+      if (ref == null) continue;
+      final String source = p.basenameWithoutExtension(ref.playlistPath);
+      if (!wholeTitles.containsKey(source)) continue;
+      bySource
+          .putIfAbsent(source, () => <({int playItem, VideoBookRow row})>[])
+          .add((playItem: ref.playItemNumber, row: row));
+    }
+    final List<_RevertedEpisodes> reverted = <_RevertedEpisodes>[];
+    for (final MapEntry<String, List<({int playItem, VideoBookRow row})>> entry
+        in bySource.entries) {
+      final BlurayTitle title = wholeTitles[entry.key]!;
+      final List<({int playItem, VideoBookRow row})> episodes = entry.value
+        ..sort((a, b) => a.playItem.compareTo(b.playItem));
+      if (episodes.any((e) => e.playItem > title.playlist.clips.length)) {
+        continue;
+      }
+      final VideoBookRow? whole =
+          byPath[normalizeVideoPath(title.playlistPath)];
+      final VideoBookRow first = episodes.first.row;
+      final bool adopted = whole == null;
+      if (adopted) {
+        await _videoRepo.updateLocalMediaPaths(
+          first.bookUid,
+          videoPath: title.playlistPath,
+        );
+        if (_isAutoDiscTitle(first.title, disc.name)) {
+          await _videoRepo.updateTitle(first.bookUid, title.name);
+        }
+      }
+      await _foldEpisodeProgressBack(
+        title.playlist,
+        episodes,
+        target: whole ?? first,
+        adopted: adopted,
+      );
+      reverted.add(
+        _RevertedEpisodes(
+          discRootPath: disc.rootPath,
+          uids: <String>[
+            for (final ({int playItem, VideoBookRow row}) e in episodes)
+              e.row.bookUid,
+          ],
+        ),
+      );
+    }
+    return reverted;
+  }
+
+  /// 把各集（迁移前快照，按 PlayItem 序）的观看状态折回整卷时间轴，写到 [target]：
+  /// 全部看完 → 整卷看完；否则取进度最远的那一集，断点 = 该集在整卷上的起点 + 集内
+  /// 断点（那一集只有看完标记 → 下一集的起点）。[adopted] = [target] 就是原第 1 集
+  /// 的行（它的断点本来就在整卷时间轴上，看完标记属于第 1 集、要清掉）；否则 [target]
+  /// 是整卷原有的行，只补空。
+  ///
+  /// 各集起点不依赖切集判据（这条播放列表这一轮恰恰不切了）：第一条分集行从 0 起，
+  /// 其余从它的锚点 PlayItem 起——与切集时「锚点之前的短段并进第一集、锚点之后的短段
+  /// 并进前一集」同一口径。
+  Future<void> _foldEpisodeProgressBack(
+    BlurayPlaylist playlist,
+    List<({int playItem, VideoBookRow row})> episodes, {
+    required VideoBookRow target,
+    required bool adopted,
+  }) async {
+    if (!adopted && (target.completedAt != null || target.lastPositionMs > 0)) {
+      return;
+    }
+    int startMsOf(int index) {
+      if (index == 0) return 0;
+      int ticks = 0;
+      for (int i = 0; i < episodes[index].playItem - 1; i++) {
+        ticks += playlist.clips[i].durationTicks;
+      }
+      return ticks * 1000 ~/ kBlurayTimeScale;
+    }
+
+    final List<VideoBookRow> rows = <VideoBookRow>[
+      for (final ({int playItem, VideoBookRow row}) e in episodes) e.row,
+    ];
+    final int playedAt = rows.fold<int>(
+      0,
+      (int latest, VideoBookRow row) =>
+          (row.lastPlayedAt ?? 0) > latest ? row.lastPlayedAt! : latest,
+    );
+    if (rows.every((VideoBookRow row) => row.completedAt != null)) {
+      if (!adopted) {
+        await _db.markVideoCompleted(target.bookUid, rows.last.completedAt!);
+      }
+      return;
+    }
+    int? furthest;
+    for (int i = 0; i < rows.length; i++) {
+      if (rows[i].completedAt != null || rows[i].lastPositionMs > 0) {
+        furthest = i;
+      }
+    }
+    if (adopted && rows.first.completedAt != null) {
+      // 第 1 集看完 ≠ 整卷看完。
+      await (_db.update(
+        _db.videoBooks,
+      )..where((t) => t.bookUid.equals(target.bookUid))).write(
+        const VideoBooksCompanion(completedAt: Value<DateTime?>(null)),
+      );
+    }
+    if (furthest == null) return;
+    final VideoBookRow row = rows[furthest];
+    final int position;
+    if (row.lastPositionMs > 0) {
+      position = startMsOf(furthest) + row.lastPositionMs;
+    } else if (furthest + 1 < rows.length) {
+      position = startMsOf(furthest + 1);
+    } else {
+      position = playlist.durationTicks * 1000 ~/ kBlurayTimeScale;
+    }
+    if (adopted && furthest == 0 && row.lastPositionMs > 0) return;
+    await _db.updateVideoBookPosition(
+      target.bookUid,
+      position,
+      playedAt: playedAt,
+    );
+  }
+
+  /// 反向迁移过的分集行（含改回整卷的那一行）从导入器建的合集（成员全是这个发布
+  /// 目录下的原盘成员，见 [_collectionBelongsToRelease]）里移出，[keepCollectionId]
+  /// （本轮这张盘对齐 / 新建的合集）除外。只解绑，不删行——与
+  /// `VideoBookRepository.reconcileSplitPlaylist` 同一约定；用户自建、混了别的东西的
+  /// 合集不碰。
+  Future<void> _unbindRevertedEpisodes(
+    List<_RevertedEpisodes> reverted, {
+    required int? keepCollectionId,
+  }) async {
+    if (reverted.isEmpty) return;
+    final List<MediaCollectionItemRow> items = await _db
+        .getAllCollectionItems();
+    final Map<String, bool> belongsCache = <String, bool>{};
+    for (final _RevertedEpisodes group in reverted) {
+      final Set<String> uids = group.uids.toSet();
+      final String release = p.dirname(p.normalize(group.discRootPath));
+      for (final MediaCollectionItemRow item in items) {
+        if (item.collectionId == keepCollectionId) continue;
+        if (item.mediaType != MediaKind.video.dbValue) continue;
+        if (!uids.contains(item.entryKey)) continue;
+        final String cacheKey = '${item.collectionId}|$release';
+        final bool belongs = belongsCache[cacheKey] ??=
+            await _isImporterReleaseCollection(item.collectionId, release);
+        if (!belongs) continue;
+        await _db.removeFromCollection(
+          item.collectionId,
+          MediaKind.video,
+          item.entryKey,
+          userIntent: false,
+        );
+      }
+    }
+  }
+
+  Future<bool> _isImporterReleaseCollection(
+    int collectionId,
+    String releasePath,
+  ) async {
+    final MediaCollectionRow? collection = await _db.getMediaCollectionById(
+      collectionId,
+    );
+    if (collection?.collectionType != 'playlist') return false;
+    return _collectionBelongsToRelease(collectionId, releasePath);
+  }
+
+  /// 回收 [disc] 上「不再是标题也不是特典」且**结构上**能确证永远不是内容的成员行：
+  /// - 菜单背景循环（[isBlurayMenuLoop]）：修前它按总时长被选成标题进了库；
+  /// - 本轮确实被切成集、且各集都已有行的那条整卷播放列表（进度已由
+  ///   [_foldWholeTitleProgress] 折过去）。合集被墓碑挡下、各集没建出来时不回收，
+  ///   整卷行和它的进度原样留着。
+  ///
+  /// 分集行一律不物理删除：它对不上本轮切集结果只说明启发式这一轮给了别的答案（或
+  /// 盘被换过），行上的进度、看完标记、封面、统计不能跟着丢。整卷重新被选成标题的
+  /// 由 [_revertUnsplitEpisodeRows] 改回去；盘不完整的整盘在读盘处就跳过了。
+  ///
+  /// 其它非标题非特典的行（厂标、章节子集等用户从原盘菜单点进去过的）不动。走既有
+  /// 回收路径：不删用户文件、不写跨设备删除墓碑。拿不到刮削租约就留到下一轮。
+  Future<void> _reclaimStaleDiscRows(BlurayDisc disc) async {
+    final List<VideoBookRow> rows = await _rowsOnDisc(disc.rootPath);
+    final Set<String> present = <String>{
+      for (final VideoBookRow row in rows) normalizeVideoPath(row.videoPath),
+    };
+    final Set<String> keep = <String>{
+      for (final BlurayTitle title in disc.titles)
+        normalizeVideoPath(title.playlistPath),
+      for (final BlurayTitle extra in disc.extras)
+        normalizeVideoPath(extra.playlistPath),
+    };
+    final Map<String, List<String>> episodesBySource = <String, List<String>>{};
+    for (final BlurayTitle title in disc.titles) {
+      if (title.sourcePlaylistId case final String source) {
+        episodesBySource
+            .putIfAbsent(source, () => <String>[])
+            .add(normalizeVideoPath(title.playlistPath));
+      }
+    }
+    final Set<String> retired = <String>{
+      for (final BlurayPlaylist playlist in disc.playlists)
+        if (isBlurayMenuLoop(playlist)) playlist.id,
+      for (final MapEntry<String, List<String>> entry
+          in episodesBySource.entries)
+        if (entry.value.every(present.contains)) entry.key,
+    };
+    final List<String> stale = <String>[
+      for (final VideoBookRow row in rows)
+        if (isBlurayPlaylistPath(row.videoPath) &&
+            !isBlurayEpisodePath(row.videoPath) &&
+            !keep.contains(normalizeVideoPath(row.videoPath)) &&
+            retired.contains(p.basenameWithoutExtension(row.videoPath)))
+          row.bookUid,
+    ];
+    if (stale.isEmpty) return;
+    try {
+      await _videoRepo.deleteVideoBooksAndReclaimAssets(
+        stale,
+        scope: DeleteScope.keepLocalOnly,
+        compactDatabase: false,
+        deleteLocalFiles: false,
+      );
+    } on StateError {
+      // 刮削资料清理在跑：这些行留在库里，下一轮扫描再回收。
+    } on VideoBooksDeleteException {
+      // 部分成功：没删掉的下一轮再判。
+    }
+  }
+
+  /// 修前 [disc] 自己的那个单盘合集（成员全在本盘、不是 [keepCollectionId]）：成员
+  /// 已经并进发布组的合集，把它们从旧合集移出，旧合集移空自删。
+  Future<void> _dissolveSupersededDiscCollections(
+    BlurayDisc disc, {
+    required int keepCollectionId,
+    required Map<String, int> existingCollectionIds,
+  }) async {
+    final Set<String> discUids = <String>{
+      for (final VideoBookRow row in await _rowsOnDisc(disc.rootPath))
+        row.bookUid,
+    };
+    if (discUids.isEmpty) return;
+    final Map<int, List<MediaCollectionItemRow>> byCollection =
+        <int, List<MediaCollectionItemRow>>{};
+    for (final MediaCollectionItemRow item
+        in await _db.getAllCollectionItems()) {
+      byCollection
+          .putIfAbsent(item.collectionId, () => <MediaCollectionItemRow>[])
+          .add(item);
+    }
+    for (final MapEntry<int, List<MediaCollectionItemRow>> entry
+        in byCollection.entries) {
+      if (entry.key == keepCollectionId) continue;
+      final bool allOnDisc = entry.value.every(
+        (MediaCollectionItemRow item) =>
+            item.mediaType == MediaKind.video.dbValue &&
+            discUids.contains(item.entryKey),
+      );
+      if (!allOnDisc) continue;
+      final MediaCollectionRow? collection = await _db.getMediaCollectionById(
+        entry.key,
+      );
+      if (collection?.collectionType != 'playlist') continue;
+      for (final MediaCollectionItemRow item in entry.value) {
+        await _db.removeFromCollection(
+          entry.key,
+          MediaKind.video,
+          item.entryKey,
+          userIntent: false,
+        );
+      }
+      existingCollectionIds.removeWhere((String _, int id) => id == entry.key);
+    }
+  }
+
+  /// 一个发布组（同一发布的几张剧集盘）的合集：找回并对齐，或新建；用户删过同名
+  /// 合集且不恢复时返回 null。合集名是去卷标的作品名，只有一张盘在库时也用它——
+  /// 之后另一张盘到了直接并进来，不改名。成员每轮按 [entries] 的顺序（盘序 × 盘内
+  /// 集序）重排。
+  Future<_DiscCollection?> _importReleaseSetCollection({
+    required BlurayReleaseSet set,
+    required List<PlaylistEntry> entries,
+    required int? sourceId,
+    required bool restoreDissolvedGroups,
+    required Map<String, int> existingCollectionIds,
+  }) async {
+    String collectionName = set.name;
+    int? existingId;
+    for (final String candidate in blurayCollectionNameCandidates(
+      set.name,
+      set.discs.first.rootPath,
+    )) {
+      collectionName = candidate;
+      existingId = existingCollectionIds[candidate];
+      if (existingId == null) break;
+      if (await _collectionBelongsToRelease(existingId, set.parentPath)) break;
+      existingId = null;
+    }
+    final bool created = existingId == null;
+    final int collectionId;
+    if (existingId != null) {
+      collectionId = existingId;
+      await _reconcileReleaseSetCollection(
+        collectionId: existingId,
+        entries: entries,
+        discRoots: <String>{
+          for (final BlurayDisc disc in set.discs)
+            normalizeVideoPath(disc.rootPath),
+        },
+        sourceId: sourceId,
+      );
+    } else {
+      if (!restoreDissolvedGroups &&
+          await _db.hasCollectionDeletionTombstone(
+            collectionName,
+            'playlist',
+          )) {
+        return null;
+      }
+      final SplitPlaylistImportResult result = await _videoRepo
+          .importSplitPlaylist(
+            collectionName: collectionName,
+            entries: entries,
+            sourceId: sourceId,
+            reuseExistingPaths: true,
+          );
+      collectionId = result.collectionId;
+      existingCollectionIds[collectionName] = collectionId;
+      await _videoRepo.recordVideoImportActivity(
+        bookUid: result.episodeUids.first,
+        title: collectionName,
+      );
+    }
+    await _orderReleaseSetCollection(collectionId, set);
+    return _DiscCollection(
+      id: collectionId,
+      name: collectionName,
+      created: created,
+    );
+  }
+
+  /// 发布组合集的成员按「盘序 × 盘内集序」重排。合集里可能还有本轮没读到的盘
+  /// （移动硬盘没插）的各集，所以不能只排本轮的成员：每个成员按它所在盘的卷号
+  /// （本轮读到的盘看盘内标题，没读到的只看目录名）、盘根路径、成员文件名排——
+  /// 文件名 `00001.p01` < `00001.p02` < `00002` 的自然序就是盘内的标题顺序。
+  Future<void> _orderReleaseSetCollection(
+    int collectionId,
+    BlurayReleaseSet set,
+  ) async {
+    final Map<String, int> volumeByRoot = <String, int>{
+      for (final BlurayDisc disc in set.discs)
+        normalizeVideoPath(disc.rootPath): blurayDiscVolumeOrder(disc),
+    };
+    final Map<String, VideoBookRow> byUid = <String, VideoBookRow>{
+      for (final VideoBookRow row in await _videoRepo.listAll())
+        row.bookUid: row,
+    };
+    final List<({String uid, int volume, String root, String path})> members =
+        <({String uid, int volume, String root, String path})>[];
+    for (final MediaCollectionItemRow item in await _db.getCollectionItems(
+      collectionId,
+    )) {
+      final VideoBookRow? row = item.mediaType == MediaKind.video.dbValue
+          ? byUid[item.entryKey]
+          : null;
+      final String? owner = row == null
+          ? null
+          : discRootForMemberPath(row.videoPath);
+      if (row == null || owner == null) continue;
+      members.add((
+        uid: row.bookUid,
+        volume:
+            volumeByRoot[normalizeVideoPath(owner)] ??
+            discDirectoryVolumeOrder(owner),
+        root: owner,
+        path: row.videoPath,
+      ));
+    }
+    members.sort((a, b) {
+      final int byVolume = a.volume.compareTo(b.volume);
+      if (byVolume != 0) return byVolume;
+      final int byRoot = naturalCompare(a.root, b.root);
+      if (byRoot != 0) return byRoot;
+      return naturalCompare(a.path, b.path);
+    });
+    await _db.reorderCollectionItemsAutomatically(
+      collectionId,
+      <CollectionMemberKey>[
+        for (final ({String uid, int volume, String root, String path}) member
+            in members)
+          (mediaType: MediaKind.video.dbValue, entryKey: member.uid),
+      ],
+    );
+  }
+
+  /// 把发布组合集的成员对齐到 [entries]。与 [VideoBookRepository.reconcileSplitPlaylist]
+  /// 的区别是**按完整路径**对账：同一发布的两张盘各有一条 `00001.p01.mpls`，基身份
+  /// 相同，按基身份对账会把第二张盘的各集判成「已是成员」。只移出盘根在 [discRoots]
+  /// 里（本轮确实读到了）的成员——没插上的那张盘的各集原样留着。
+  Future<void> _reconcileReleaseSetCollection({
+    required int collectionId,
+    required List<PlaylistEntry> entries,
+    required Set<String> discRoots,
+    required int? sourceId,
+  }) async {
+    final List<VideoBookRow> books = await _videoRepo.listAll();
+    final Map<String, VideoBookRow> byPath = <String, VideoBookRow>{};
+    final Map<String, VideoBookRow> byUid = <String, VideoBookRow>{};
+    for (final VideoBookRow row in books) {
+      byUid[row.bookUid] = row;
+      byPath.putIfAbsent(normalizeVideoPath(row.videoPath), () => row);
+    }
+    final Set<String> taken = byUid.keys.toSet();
+    final Set<String> members = <String>{
+      for (final MediaCollectionItemRow item in await _db.getCollectionItems(
+        collectionId,
+      ))
+        if (item.mediaType == MediaKind.video.dbValue) item.entryKey,
+    };
+    final Set<String> wanted = <String>{
+      for (final PlaylistEntry entry in entries) normalizeVideoPath(entry.path),
+    };
+    await _db.transaction(() async {
+      // 先加后删：绝不让合集瞬时空掉被「移空自删」误删。
+      for (final PlaylistEntry entry in entries) {
+        final String key = normalizeVideoPath(entry.path);
+        final VideoBookRow? existing = byPath[key];
+        final String uid;
+        if (existing != null) {
+          uid = existing.bookUid;
+          if (sourceId != null && existing.sourceId == null) {
+            await _videoRepo.assignSourceIfNull(uid, sourceId);
+          }
+        } else {
+          uid = coreUniqueVideoBookUid(
+            coreSingleVideoBookUid(entry.path),
+            taken,
+          );
+          taken.add(uid);
+          await _videoRepo.saveVideoBook(
+            VideoBooksCompanion(
+              bookUid: Value<String>(uid),
+              title: Value<String>(entry.title),
+              videoPath: Value<String>(entry.path),
+              embeddedSubtitleTrack: const Value<int?>(0),
+              importedAt: Value<int>(DateTime.now().millisecondsSinceEpoch),
+            ),
+            sourceId: sourceId,
+          );
+        }
+        if (members.add(uid)) {
+          await _db.addToCollection(
+            collectionId,
+            MediaKind.video,
+            uid,
+            userIntent: false,
+          );
+        }
+      }
+      for (final String uid in members) {
+        final VideoBookRow? row = byUid[uid];
+        if (row == null) continue;
+        final String? owner = discRootForMemberPath(row.videoPath);
+        if (owner == null || !discRoots.contains(normalizeVideoPath(owner))) {
+          continue;
+        }
+        if (wanted.contains(normalizeVideoPath(row.videoPath))) continue;
+        await _db.removeFromCollection(
+          collectionId,
+          MediaKind.video,
+          uid,
+          userIntent: false,
+        );
+      }
+    });
+  }
+
+  /// 既有合集 [collectionId] 是不是 [parentPath] 这个发布目录下的盘的：成员全是原盘
+  /// 标题、且盘根都在这个目录里（本轮没读到的那张盘的成员也算）。
+  Future<bool> _collectionBelongsToRelease(
+    int collectionId,
+    String parentPath,
+  ) async {
+    final String parent = normalizeVideoPath(parentPath);
+    for (final MediaCollectionItemRow item in await _db.getCollectionItems(
+      collectionId,
+    )) {
+      final VideoBookRow? row = await _videoRepo.getByBookUid(item.entryKey);
+      if (row == null) continue;
+      final String? owner = discRootForMemberPath(row.videoPath);
+      if (owner == null ||
+          normalizeVideoPath(p.dirname(p.normalize(owner))) != parent) {
+        return false;
+      }
+    }
+    return true;
   }
 
   /// 把 [discRoots] 里的 DVD（文件夹盘根或 `.iso` 镜像）导入成合集，与
@@ -358,6 +1157,39 @@ class DiscLibraryImporter {
     }
     return true;
   }
+}
+
+/// 被切成集的整条播放列表在库里原有的那一行，以及它迁移前的观看状态。
+class _WholeTitleCarry {
+  const _WholeTitleCarry({
+    required this.row,
+    required this.adopted,
+    required this.playlist,
+    required this.episodePaths,
+  });
+
+  /// 迁移前的行快照（断点、看完标记、最后观看时刻取自这里）。
+  final VideoBookRow row;
+
+  /// 这一行是否已就地改成第 1 集；false = 第 1 集另有其行，这一行是待回收的重复。
+  final bool adopted;
+
+  /// 整条播放列表（未切）。
+  final BlurayPlaylist playlist;
+
+  /// 各集的成员路径，按集序。
+  final List<String> episodePaths;
+}
+
+/// 一组被反向迁移（整卷重新成了标题）的分集行。
+class _RevertedEpisodes {
+  const _RevertedEpisodes({required this.discRootPath, required this.uids});
+
+  final String discRootPath;
+
+  /// 各集行的 `bookUid`，按 PlayItem 序；第一个就是改回整卷路径的那一行（整卷原有
+  /// 其行时它仍是分集）。
+  final List<String> uids;
 }
 
 class _DiscCollection {

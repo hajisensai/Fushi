@@ -161,8 +161,9 @@ Future<List<VideoBookRow>> ensureBlurayDiscTitlesInLibrary(
 }
 
 /// 这张盘的合集：扫描导入建的 `playlist` 合集，以同盘已入库标题的成员身份认出，
-/// 且成员全是本盘标题（与扫描器 `_collectionBelongsToDisc` 同一判据——收了本盘
-/// mpls 的 m3u8 清单合集不算）。盘还没被扫描导入过时没有合集，返回 null。
+/// 且成员全是原盘标题（收了本盘 mpls 与普通视频文件的 m3u8 清单合集不算）。同一
+/// 发布的几张剧集盘并在一个合集里（`disc_release_set.dart`），所以成员可以来自别的
+/// 盘。盘还没被扫描导入过时没有合集，返回 null。
 ///
 /// [booksByUid] 是调用方已列好的全库行，判成员归属不再逐条查库。
 Future<int?> _discCollectionId(
@@ -191,7 +192,7 @@ Future<int?> _discCollectionId(
     if (collection?.collectionType != 'playlist') continue;
     final bool allOnDisc = byCollection[id]!.every((MediaCollectionItemRow i) {
       final VideoBookRow? row = booksByUid[i.entryKey];
-      return row == null || _onDisc(row.videoPath, normalizedRoot);
+      return row == null || isDiscMemberPath(row.videoPath);
     });
     if (allOnDisc) return id;
   }

@@ -830,9 +830,8 @@ extension VideoDiscMenuController on VideoPlayerController {
     final String? root = blurayDiscRootForPlaylistPath(playlistPath);
     if (root == null) return 'extraction-source-unavailable';
     try {
-      final BlurayPlaylist? playlist = parseBlurayPlaylist(
-        await File(playlistPath).readAsBytes(),
-        id: p.basenameWithoutExtension(playlistPath),
+      final BlurayPlaylist? playlist = await readBlurayMemberPlaylist(
+        playlistPath,
       );
       if (playlist == null || playlist.clipIds.isEmpty) {
         return 'extraction-source-unavailable';
