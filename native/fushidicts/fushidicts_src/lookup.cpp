@@ -13,6 +13,7 @@
 #include "scan/ruby_reading.hpp"
 #include "scan/word_scan.hpp"
 #include "text_processor/text_processor.hpp"
+#include "util/pos_required.hpp"
 #include "util/redirect_glossary.hpp"
 
 namespace {
@@ -124,6 +125,21 @@ size_t rewritten_chars(std::string_view variant, std::string_view deinflected) {
 bool rewrite_allowed(const TextVariant& variant, const DeinflectionResult& deinflection) {
   const size_t rewritten = rewritten_chars(variant.text, deinflection.text);
   return rewritten <= variant.max_rewrite && (rewritten == 0 || rewritten >= variant.min_rewrite);
+}
+
+// 词条的 rules 里有没有通配 "*"（无词性词典的记录，见 Deinflector::pos_to_conditions）。
+// 切分口径与 rules_to_conditions 相同：C locale 的六个空白字符。
+bool has_wildcard_rule(std::string_view rules) {
+  constexpr std::string_view kSpace = " \t\n\v\f\r";
+  std::size_t pos = 0;
+  while (true) {
+    const std::size_t begin = rules.find_first_not_of(kSpace, pos);
+    if (begin == std::string_view::npos) return false;
+    std::size_t end = rules.find_first_of(kSpace, begin);
+    if (end == std::string_view::npos) end = rules.size();
+    if (rules.substr(begin, end - begin) == "*") return true;
+    pos = end;
+  }
 }
 
 // 扫描窗口内紧跟在候选 [candidate_bytes] 之后的码点；候选到窗口末尾时为 0。只看窗口内
@@ -514,8 +530,14 @@ void Lookup::filter_by_pos(std::vector<TermResult>& terms, const DeinflectionRes
   if (d.conditions == 0) {
     return;
   }
+  // 还原链用过要求词性的规则（ja.json 的歴史的仮名遣い规则，见 util/pos_required.hpp）：
+  // 词性通配的词条不接受，其余位照常做词性匹配。
+  const bool requires_pos = (d.conditions & fushi::kRequiresPartOfSpeechBit) != 0;
+  const uint64_t pos_conditions = d.conditions & ~fushi::kRequiresPartOfSpeechBit;
   std::erase_if(terms, [&](const TermResult& term) {
+    if (requires_pos && has_wildcard_rule(term.rules)) return true;
+    if (pos_conditions == 0) return false;
     auto dict_conditions = deinflector_.rules_to_conditions(term.rules);
-    return (dict_conditions & d.conditions) == 0;
+    return (dict_conditions & pos_conditions) == 0;
   });
 }

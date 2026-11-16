@@ -9,6 +9,9 @@
 //   T  くって（嬉しくって → 嬉しい）。
 //   H  歴史的仮名遣い（思ふ / 言はない / 来やう / 待ってゐる / 会ひたい）。
 //   Y  -やしない / -やしません。
+//   W  本地差异：歴史的仮名遣い规则（ja.json 里带 requiresPartOfSpeech）只对自带词性的词条
+//      成立。无词性（通配）词典里的 宇宙〔うちう〕/ 乱右〔らんう〕 不得把「うちへ / ランへ」
+//      误配成历史假名活用；现代活用在通配词典上照常还原；标记沿还原链传递。
 //
 // Usage: ja_upstream_sync_lookup_test <ja.json>  -> exit 0 PASS, non-zero FAIL.
 #include <cstdio>
@@ -159,12 +162,24 @@ int main(int argc, char** argv) {
           row("分かる", "わかる", "v5", "understand"),
       },
       out_dir);
+  // 无词性词典：整本没有 rules → 读侧当通配 "*"（MDX / StarDict / 不带词性的 Yomitan 词典同理）。
+  const std::string wildcard_dict = import_dict("ja_upstream_sync_wildcard", "JaUpstreamSyncWildcard",
+                                                {
+                                                    row("うち", "", "", "inside"),
+                                                    row("宇宙", "うちう", "", "universe (historical reading)"),
+                                                    row("ラン", "", "", "run"),
+                                                    row("乱右", "らんう", "", "rare word"),
+                                                    row("歌う", "うたう", "", "sing"),
+                                                    row("走る", "はしる", "", "run"),
+                                                },
+                                                out_dir);
   if (g_fail) return 1;
 
   Deinflector d;
   d.load_transforms_json(ja_json);
   DictionaryQuery q;
   q.add_term_dict(dict);
+  q.add_term_dict(wildcard_dict);
   Lookup lk(q, d);
 
   // ---- D 片假名中点 -----------------------------------------------------------
@@ -200,6 +215,18 @@ int main(int argc, char** argv) {
   expect_top(lk, "分かりやしない", "分かりやしない", "分かる", "-やしない", "Y1 分かりやしない");
   expect_top(lk, "食べやしません", "食べやしません", "食べる", "-やしません", "Y2 食べやしません");
   expect_top(lk, "来やしない", "来やしない", "来る", "-やしない", "Y3 来やしない");
+
+  // ---- W 歴史的仮名遣い规则要求词条自带词性 ------------------------------------
+  expect_top(lk, "うちへ帰る", "うち", "うち", "", "W1 うちへ is not historical うちう");
+  expect_absent(lk, "うちへ帰る", "うちへ", "宇宙", "W2 宇宙 must not match うちへ");
+  expect_top(lk, "ランへ行ってみた", "ラン", "ラン", "", "W3 ランへ is not historical らんう");
+  expect_absent(lk, "ランへ行ってみた", "ランへ", "乱右", "W4 乱右 must not match ランへ");
+  // 通配词典上歴史仮名不还原，现代活用照常（通配让步本身不变）。
+  expect_absent(lk, "歌はう", "歌はう", "歌う", "W5 historical rule rejected on wildcard dict");
+  expect_present(lk, "歌った", "歌った", "歌う", "W6 modern rule still accepted on wildcard dict");
+  // 标记沿链传递：てゐる → て（带标记）→ 走る（现代 -て 规则）仍要求词性。
+  expect_absent(lk, "走ってゐる", "走ってゐる", "走る", "W7 marker propagates through the chain");
+  expect_present(lk, "走っている", "走っている", "走る", "W8 modern chain on wildcard dict");
 
   if (g_fail) {
     std::fprintf(stderr, "%d failure(s)\n", g_fail);

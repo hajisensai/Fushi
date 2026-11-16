@@ -160,15 +160,33 @@
 | `30ad52f` | processor to strip katakana middle dots | **采纳** | `text_processor.cpp strip_middle_dots`，挂在日语链尾（上游链序）。半角 `･` 经链首 NFKC 归一成 `・` 后同样被删。 |
 | `3f0c2d9` | drop middle dots only if they are actually between two characters | **改写移植** | 上游代码只保留串尾的点；fork 按提交说明的意图把串首的点也保留（只删夹在两个字符之间的点），否则从点上开始的查询会把点算进同一词条的匹配长度。 |
 | `ad0be91` | fix: lookup matches misread emphatic っ and katakana boundaries (#37) | **采纳（含一处改写）** | 四件事：① `くって → い`（`-て` 组）进 ja.json；② 变形改写量上限 `max_rewrite`：变形不得跨过原文里的中点 / 被折叠掉的っ（`text_processor.cpp max_rewrite` + `lookup.cpp rewrite_allowed`）；③ 「平假名 + 片假名词」收尾时变形要么整段改写片假名词、要么不动（`min_rewrite`）；④ 结尾落在片假名词中间（下一个码点仍是片假名 / 长音符）时只认原文、不许还原（`process()` 的 `next_char`）。上游这条的主要动机是它自己的 full_collapse（删单个っ）造成的误匹配，fork 自 BUG-1777 起就不挂 full_collapse，那一半问题本来不存在；②在 fork 里只对中点与 `っっ` 折叠生效。改写处：走完都没碰到被删字符时 `max_rewrite` 返回「不限」而非走过的长度——fork 有比原文更长的变体（韩语拆字），照上游写法 ko.json 的长后缀规则会被误杀。`next_char` 只取扫描窗口内的码点（同 BUG-3212 的窗口口径：引擎结果只依赖前 `scan_length` 个码点，与 Dart 侧匹配长度缓存的键一致）。 |
-| `e2a007f` | port 歴史的仮名遣い | **采纳** | 60 条规则：ワ行五段的は / ひ / ふ / へ 各活用形、`-そう` 的 `さう`、volitional 的 `〜やう / 〜はう / ませう / からう`、`-いる` 的 `ゐる`，新组 `-ふ`。**已知副作用**：`へ → う`（imperative）、`はず / はない / はぬ → う` 等规则的 conditionsIn 为空，现代文里的助词「へ / は」紧跟在一个能凑成「〜う」五段词的假名后面时会被当成历史假名活用（`うちへ` → 宇宙〔うちう〕、`レストランへ` 在「ラン」处 → 乱右〔らんう〕、`るはず` → るう）；无词性的词典（MDX / StarDict / 不带 rules 的 Yomitan 词典）不经词性过滤，最容易中。按最长匹配优先，这些会压过更短的正确结果。 |
+| `e2a007f` | port 歴史的仮名遣い | **采纳 + 本地限制** | 60 条规则：ワ行五段的は / ひ / ふ / へ 各活用形、`-そう` 的 `さう`、volitional 的 `〜やう / 〜はう / ませう / からう`、`-いる` 的 `ゐる`，新组 `-ふ`。fork 给这 60 条全部打了 `"requiresPartOfSpeech": true`，经它们得到的还原形只对自带词性且匹配的词条成立，见下「本地差异」。 |
 | `8e89a5d` | port -やしない and -やしません | **采纳** | 新组 `-やしない`（conditionsIn `adj-i`）/ `-やしません`（`-ません`），各 17 条。 |
 
-真实词典集（64 本）前后对比：`benchmark/corpus_ja.txt` 1143 次查词里 16 次结果有变（首条变了 10 次）：
-片假名词边界去掉了 11 处跨词误配（`所でニャ` → 所で、`はバッテ` → は、`きたレ` → きた 等），
-歴史的仮名遣い规则带来 5 处（其中 `ランへ`、`るはず` 两处首条变差）。
+**本地差异：歴史的仮名遣い规则要求词条自带词性（上游无此限制）。** 这批规则的词尾正是现代文最高频的
+助词「へ / は」（`へ → う` imperative、`はず / はない / はぬ → う` 等，conditionsIn 为空）。带词性的
+词典上，conditionsOut（多为五段动词）本来就会被词性过滤挡掉；但 fork 让无词性词典的词条当词性通配
+（MDX / StarDict / DSL 写 `rules = "*"`，整本不带 rules 的 Yomitan 词典读侧把空 rules 当 `*`，
+`Deinflector::pos_to_conditions`），任何还原在它们上都成立，于是 `うちへ` → 宇宙〔うちう〕、`レストランへ`
+在「ラン」处 → 乱右〔らんう〕、`るはず` → るう，按最长匹配优先压过正确的短结果。通配让步对现代活用是
+对的，对罕见正字法的短规则精度代价太大，所以按规则数据收窄：
+- 表示：transforms JSON 的规则级字段 `"requiresPartOfSpeech": true`（ja.json 里恰好是 `e2a007f` 新增的
+  60 条；并入既有组的规则与新组 `-ふ` 一样逐条标，不按组标——`negative` / `volitional` 等组里还有现代规则）。
+- 读取：`deinflector.cpp` 载入时把带标记规则的 conditions_out 或上 `fushi::kRequiresPartOfSpeechBit`
+  （`util/pos_required.hpp`，条件位的最高位，各语言的词性条件从 0 往上分、最多用到二十几位，载入时
+  不再把第 63 位分给词性条件）；递归时这一位沿链传下去（`chain`），判 conditions_in 时先去掉（`admits`）。
+  `lookup.cpp filter_by_pos` 见到这一位就丢掉 rules 含 `*` 的词条，其余位照常做词性匹配。链上任何一步
+  用过带标记的规则即适用（`待ってゐる` → `待って` → 待つ 同样要求词性）。
+- 代价：用户真实装载的 64 本里大部分国语辞典没有词性，歴史仮名的还原只剩带词性的词典（JMdict 类）能
+  命中；`広辞苑` 这类给历史假名词条标了 `v5` 的（`散らふ`〔ちらう〕）仍会在「こちらへ」处被命中，
+  词性过滤挡不住。
+
+真实词典集（64 本）前后对比（加了本地限制之后）：`benchmark/corpus_ja.txt` 1143 次查词里 11 次结果有变
+（首条变了 8 次），全部是片假名词边界去掉的跨词误配（`所でニャ` → 所で、`はバッテ` → は、`きたレ` →
+きた 等）；不加限制时多出的 5 处歴史仮名误配（`ランへ`、`るはず`、`ワフ`、`トフ` 等）全部消失。
 
 守卫：`tests/ja_upstream_sync_lookup_test.cpp`（真 ja.json：中点 / 串首串尾点保留 / 变形不跨点 /
-片假名词边界 / 片假名收尾整段改写 / くって / 歴史的仮名遣い / -やしない）+ `tests/text_processor_test.cpp`
+片假名词边界 / 片假名收尾整段改写 / くって / 歴史的仮名遣い / -やしない / 歴史仮名规则在通配词典上不成立且标记沿链传递）+ `tests/text_processor_test.cpp`
 新增的中点与改写上下限用例 + Dart `fushi/test/dictionary/transform_description_i18n_test.dart`（新组说明的中文译文）。
 
 ## TODO-687 批3 移植的上游 commit（IPA 音标支持）
