@@ -216,6 +216,11 @@ class WebPageContentFeature extends WebBrowserFeature {
 
   /// 每个标签页最近一次探测的序号：慢的旧结果不盖掉新页面的。
   final Map<String, int> _generation = <String, int>{};
+
+  /// 每个标签页最近一次被站点规则判成漫画页的地址（去掉 fragment）。同一页只换 fragment
+  /// （hitomi 阅读页翻页 `#1`→`#2`）或切回标签页时直接沿用，不先掉回通用结果再等判定。
+  /// 只记「是」：「不是」可能只是页面数据还没到，下次探测要重判。
+  final Map<String, String> _siteComicPages = <String, String>{};
   final WebBrowserFeatureNotifier _changed = WebBrowserFeatureNotifier();
 
   @override
@@ -241,8 +246,9 @@ class WebPageContentFeature extends WebBrowserFeature {
     InAppWebViewController controller,
     Uri? url,
   ) {
-    // 换页了：旧页面的类别作废，新页面探到之前三个入口都在「⋯」里。
-    _set(tab, null);
+    // 换页了：旧页面的类别作废，新页面探到之前三个入口都在「⋯」里。同一页只换
+    // fragment 且站点已判定过的不作废（下一次探测会沿用判定）。
+    if (!_knownSiteComic(tab, tab.url)) _set(tab, null);
     unawaited(probe(tab, controller));
   }
 
@@ -256,7 +262,12 @@ class WebPageContentFeature extends WebBrowserFeature {
   void onTabClosed(WebBrowserTab tab) {
     _kinds.remove(tab.id);
     _generation.remove(tab.id);
+    _siteComicPages.remove(tab.id);
   }
+
+  /// 站点规则是否已把 [tab] 的 [url]（忽略 fragment）判成漫画页。
+  bool _knownSiteComic(WebBrowserTab tab, Uri? url) =>
+      url != null && _siteComicPages[tab.id] == url.removeFragment().toString();
 
   /// 测试用：直接记下 [tab] 的类别（不跑探针）。
   @visibleForTesting
@@ -287,12 +298,17 @@ class WebPageContentFeature extends WebBrowserFeature {
     }
     if (_generation[tab.id] != generation || tab.url != url) return;
     final WebPageContentProbe? reading = WebPageContentProbe.tryParse(raw);
+    final WebPageSiteComicDetector? site = _siteComic;
+    // 同一页判定过是漫画：直接用（不重跑页面脚本，也不先掉回通用结果）。
+    if (site != null && _knownSiteComic(tab, url)) {
+      _set(tab, WebPageContentKind.comic);
+      return;
+    }
     final WebPageContentKind? quick = resolveWebPageContentKind(
       siteComic: null,
       reading: reading,
     );
     _set(tab, quick);
-    final WebPageSiteComicDetector? site = _siteComic;
     // 站点判定优先于通用读数（规则说是漫画页，正文 / 图再像别的也是漫画）；但它可能要等
     // 页面数据异步到（最多几秒），所以先把通用读数的结果放上工具栏，判定到了再改。
     // 没有规则覆盖的地址立刻返回 null，不跑页面脚本。
@@ -305,6 +321,11 @@ class WebPageContentFeature extends WebBrowserFeature {
       return;
     }
     if (_generation[tab.id] != generation || tab.url != url) return;
+    if (siteComic == true) {
+      _siteComicPages[tab.id] = url.removeFragment().toString();
+    } else {
+      _siteComicPages.remove(tab.id);
+    }
     _set(
       tab,
       resolveWebPageContentKind(siteComic: siteComic, reading: reading),

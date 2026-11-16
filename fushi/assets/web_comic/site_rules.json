@@ -81,6 +81,7 @@
       ],
       "chapterUrlPattern": "^/(?:reader|doujinshi|manga|artistcg|gamecg|imageset)/(?:[^/?#]*-)?(?<id>\\d+)\\.html$",
       "seriesKeyPattern": "(\\d+)\\.html(?:[?#]|$)",
+      "chapterKeyPattern": "(\\d+)\\.html(?:[?#]|$)",
       "detect": "var g = window.galleryinfo;\nreturn !!(g && Array.isArray(g.files) && g.files.length > 0 && g.type !== 'anime');",
       "images": {
         "mode": "script",
