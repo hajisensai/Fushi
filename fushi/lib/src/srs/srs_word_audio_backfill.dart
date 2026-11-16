@@ -15,9 +15,7 @@
 /// - 逐张串行处理（网络来源不并发）；可取消，取消后不再处理后续，已写入的保留。
 library;
 
-import 'package:drift/drift.dart';
 import 'package:fushi_anki/fushi_anki_core.dart' show FushiCardFields;
-import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
@@ -132,38 +130,32 @@ Future<List<SrsWordAudioBackfillItem>> loadSrsWordAudioBackfillItems(
   final SrsDeckTree tree = await store.deckTree();
   final List<String> decks = tree.subtree(deckId);
   if (decks.isEmpty) return const <SrsWordAudioBackfillItem>[];
-  final SrsDatabase db = store.db;
-
-  final $SrsCardsCacheTable c = db.srsCardsCache;
   final Set<String> noteIds = <String>{};
   for (final List<String> chunk in _chunks(decks)) {
-    final List<TypedResult> rows =
-        await (db.selectOnly(c, distinct: true)
-              ..addColumns(<Expression<Object>>[c.noteId])
-              ..where(
-                c.profileUid.equals(store.profileUid) & c.deckId.isIn(chunk),
-              ))
-            .get();
-    noteIds.addAll(rows.map((TypedResult r) => r.read(c.noteId)!));
+    noteIds.addAll(
+      (await store.cardColumnsWhere(
+        const <String>['note_id'],
+        <String, Object?>{'decks': chunk},
+      )).strings('note_id').toList(),
+    );
   }
   if (noteIds.isEmpty) return const <SrsWordAudioBackfillItem>[];
 
   // 笔记缓存先筛掉别的笔记类型 / 已删的：只物化 Fushi 卡片。
-  final $SrsNotesCacheTable n = db.srsNotesCache;
   final List<(String, int)> fushiNotes = <(String, int)>[];
   for (final List<String> chunk in _chunks(noteIds.toList())) {
-    final List<TypedResult> rows =
-        await (db.selectOnly(n)
-              ..addColumns(<Expression<Object>>[n.id, n.createdAt])
-              ..where(
-                n.profileUid.equals(store.profileUid) &
-                    n.id.isIn(chunk) &
-                    n.noteTypeId.equals(fields.noteTypeId) &
-                    n.deletedAt.isNull(),
-              ))
-            .get();
-    for (final TypedResult r in rows) {
-      fushiNotes.add((r.read(n.id)!, r.read(n.createdAt)!));
+    final SrsColumns rows = await store.noteColumns(
+      const <String>['id', 'created_at'],
+      <String, Object?>{
+        'ids': chunk,
+        'typeId': fields.noteTypeId,
+        'alive': true,
+      },
+    );
+    final SrsStringColumn id = rows.strings('id');
+    final SrsIntColumn created = rows.ints('created_at');
+    for (int i = 0; i < rows.rows; i++) {
+      fushiNotes.add((id[i], created[i]));
     }
   }
   fushiNotes.sort(

@@ -14,6 +14,7 @@ import 'package:fushi_server/src/server_prefs.dart';
 import 'package:path/path.dart' as p;
 import 'package:shelf/shelf.dart' as shelf;
 import 'package:test/test.dart';
+import 'support/fake_rwkv.dart';
 
 /// admin API 的 AI 提供商设置：读写往返、API key 不回显、留空不改、预设置空即关、
 /// 配错整单 400 不落半截、写回 yaml。
@@ -42,6 +43,7 @@ void main() {
     final ServerIdentity identity = await ServerIdentity.loadOrCreate(prefs);
     final ServerPaths paths = ServerPaths(config.dataDir);
     final HeadlessHost host = HeadlessHost(
+      srsRwkvHttpClient: noNetworkHttpClient,
       config: config,
       paths: paths,
       db: db,

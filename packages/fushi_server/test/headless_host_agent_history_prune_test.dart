@@ -10,6 +10,7 @@ import 'package:fushi_server/src/server_paths.dart';
 import 'package:fushi_server/src/server_prefs.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
+import 'support/fake_rwkv.dart';
 
 /// BUG-4067：服务端当互联 host 时存远端 AI 助手会话；[HeadlessHost.start] 要接上
 /// 保留期清理（管理页 / 手机上写的「保留 30 天」），否则 `ai_agent_sessions` 无限长。
@@ -52,6 +53,7 @@ void main() {
     final ServerPaths paths = ServerPaths(config.dataDir);
     await paths.ensureLayout();
     final HeadlessHost host = HeadlessHost(
+      srsRwkvHttpClient: noNetworkHttpClient,
       config: config,
       paths: paths,
       db: db,

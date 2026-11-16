@@ -19,6 +19,8 @@ import 'package:path/path.dart' as p;
 import 'package:shelf/shelf.dart' as shelf;
 import 'package:test/test.dart';
 
+import 'support/fake_rwkv.dart';
+
 /// 无头服务端的互联「配置文件」（Profile）搬运：对端 PUT 寄存、GET 拉走。
 ///
 /// 端点跑在真 TLS 的 [FushiSyncServer] 上，库服务用服务端自己的装配
@@ -76,6 +78,8 @@ void main() {
       prefs: prefs,
       identity: identity,
       p2pAvailable: () => false,
+      // 单元测试不碰外网：RWKV 权重下载一律当场失败（服务转「出错」）。
+      srsRwkvHttpClient: noNetworkHttpClient,
     );
     admin = AdminApi(
       AdminContext(

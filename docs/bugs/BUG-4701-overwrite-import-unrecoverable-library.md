@@ -1,0 +1,11 @@
+## BUG-4701 · 覆盖导入把书库换掉后无法找回：覆盖前快照成功即删、书文件成孤儿目录无法重新登记
+- **报告**：2026-11-15（用户：Android 导入「推荐包」，通用备份导入确认框默认「覆盖整库」，书库被包里的空库替换）
+- **真实性**：✅ 真 bug（导入方式的根因见 BUG-4694 / PR #3449，推荐包改走合并；本条是「覆盖一旦发生就找不回」的另一半）。根因两处：
+  - 覆盖导入成功收尾直接删掉覆盖前的整库副本：`fushi/lib/src/sync/backup_service/restore.part.dart:1536`（行内路径）与 `:2058`（启动补做路径，基线 `dd31e1dd0bb`）`await _safeDelete(bakPath)`。覆盖导入一旦把书库换成别的库，书库行、阅读进度、统计再无任何副本。
+  - 书文件树只有包里带树时才 swap（`_prepareTreeReapply` plan 为空返回 false），所以本机书目录原样留在 `fushi_books/` 成了孤儿；书目录名 = bookKey（`packages/fushi_engine/lib/epub/epub_storage.dart` `bookDirectory`），SRS 卡片来源按 uid → bookKey 回退（`fushi/lib/src/anki/card_source_router.dart` `resolveCardSourceBook`），但没有任何入口能把孤儿目录按原 bookKey 重新登记。
+- **[x] ① 已修复** —
+  - 覆盖导入成功后 `pre-restore.bak` 改名保留为 `fushi.db.pre-overwrite.bak`（`databasePreOverwriteSnapshotFileName`，只留最近一份；进存储页快照白名单，无持有者可删）。`BackupRestoreService.mergeFromOverwriteSnapshot` 复用 `BackupMergeEngine`（新增 `fillMissingOnly`：跳过全部 LWW / MAX-union UPDATE、源库删除碑与合集身份合并）只补缺合并书 / 有声书 / 视频 / 进度 / 统计；`previewOverwriteSnapshot` 列出缺失的书及其文件是否还在盘上。
+  - `OrphanBookRecovery`（`fushi/lib/src/storage/orphan_book_recovery.dart`）扫描 `fushi_books` 直接子目录，按内容识别 EPUB / 本地漫画 / PDF，以目录名为 bookKey 重新登记；元数据复用导入器抽出的行构造口径（`EpubImporter.bookRowFor` / `registerExtractedBook`、`MangaImporter.bookRowFor` / `registerExistingBookDir`、`PdfImporter.bookRowFor` / `registerExistingBookDir`）。旧整数 id / `~n` 后缀 / 非法键 / 在线漫画 / 空目录 / 无法识别 / 损坏列为不可恢复并可删除。
+  - 入口：设置 › 存储 › 数据库维护 ›「恢复书库」（`library_recovery_page.dart`）。
+- **[x] ② 已加自动化测试** — `fushi/test/sync/overwrite_snapshot_recovery_test.dart`（覆盖导入后快照保留 + 存储页可删判据；只补缺恢复：缺的书 / 进度 / 统计回来、已有书的进度与统计不变、文件不在盘上的书被列出；第二次覆盖替换快照）、`fushi/test/storage/orphan_book_recovery_test.dart`（各类目录分类、重新登记 bookKey 不变、卡片来源经 bookKey 回退可解析、单本失败不中止整批）。
+- **备注**：阅读进度 / 书签 / 统计无法从孤儿目录恢复（只在快照里）；重新登记的书 uid 是新生成的。有声书目录名是 bookKey 的单向哈希，不单独登记；书重新登记后有声书需重新导入。在线漫画的来源只在书库行里，目录还原不了（PR #3445 下载根里的在线漫画由其侧车 + 「漫画重新入库」负责）。未在 Android 真机上复测原始失败路径（推荐包覆盖导入 → 恢复）。
