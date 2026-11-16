@@ -17,12 +17,16 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' show Offset, Rect, Size;
 
+import 'package:fushi/src/floating_ball/screen_ocr_text_block.dart';
 import 'package:fushi/src/ocr/system_ocr_channel.dart' show SystemOcrTextLine;
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_engine/media/manga/manga_page_crop.dart';
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart'
     show MiningMediaCompression;
 import 'package:path/path.dart' as p;
+
+export 'package:fushi/src/floating_ball/screen_ocr_text_block.dart'
+    show ScreenOcrLineBox, screenOcrTextBlockRect;
 
 /// 一次点字带出来的卡图来源：识别用的那张图（内存字节或 Android 原生写的文件）+
 /// 所点文字的文本块与行框（都是**那张图**的像素坐标）。
@@ -60,50 +64,6 @@ class ScreenOcrCardImage {
       return null;
     }
   }
-}
-
-/// 一行 OCR 结果在本模块眼里的样子（像素框 + 是否竖排）。
-typedef ScreenOcrLineBox = ({Rect rect, bool vertical});
-
-/// 只有行框的平台（Windows.Media.Ocr / Vision）把被点行 [hitIndex] 和与它同一段文字
-/// 的行并成文本块：同向、粗细相近（0.6~1.6 倍）、在排列方向上相邻（行距不超过一个
-/// 行粗）、在阅读方向上有重叠。逐步扩张，直到没有新行加入。
-Rect screenOcrTextBlockRect({
-  required List<ScreenOcrLineBox> lines,
-  required int hitIndex,
-}) {
-  final ScreenOcrLineBox hit = lines[hitIndex];
-  final bool vertical = hit.vertical;
-  double thickness(Rect r) => vertical ? r.width : r.height;
-  final double base = thickness(hit.rect);
-  final Set<int> members = <int>{hitIndex};
-  Rect block = hit.rect;
-  bool grew = true;
-  while (grew) {
-    grew = false;
-    for (int i = 0; i < lines.length; i++) {
-      if (members.contains(i)) continue;
-      final ScreenOcrLineBox line = lines[i];
-      if (line.vertical != vertical) continue;
-      final double t = thickness(line.rect);
-      if (base <= 0 || t < base * 0.6 || t > base * 1.6) continue;
-      final Rect r = line.rect;
-      // 排列方向上的间隙（横排看上下，竖排看左右）。
-      final double gap = vertical
-          ? math.max(r.left - block.right, block.left - r.right)
-          : math.max(r.top - block.bottom, block.top - r.bottom);
-      if (gap > base) continue;
-      // 阅读方向上要有重叠（横排看左右，竖排看上下）。
-      final double overlap = vertical
-          ? math.min(r.bottom, block.bottom) - math.max(r.top, block.top)
-          : math.min(r.right, block.right) - math.max(r.left, block.left);
-      if (overlap <= 0) continue;
-      members.add(i);
-      block = block.expandToInclude(r);
-      grew = true;
-    }
-  }
-  return block;
 }
 
 /// 只有行框的平台（iOS 截屏、拍照、桌面截屏）点中 [hit] 这一行时的卡图来源：图是识别
