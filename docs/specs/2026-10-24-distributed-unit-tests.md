@@ -264,6 +264,8 @@ worker 必须跑**和本机完全一致**的代码，包括没提交的改动。
 | `flutter pub get --enforce-lockfile` + `ci/apply-patches.sh` | 全部 `pubspec.lock` + `ci/patches/` 哈希 | 1–2 分钟 |
 | 原生测试库 | 各 `native/fushi_*/` 源码树哈希（同 `tool/native_libs.ps1` 的判据） | 首次 5–10 分钟，之后增量 |
 
+2026-11-16 起 checkout 按批次在运行之间换手（`worker_slot.sh` 的 `yield`），两个快照不同的运行会在同一 checkout 上来回切。为此原生库与 hook 预热不再是「当前一份」的单值戳记，而由 `fushi/tool/dist_test/worker_cache.sh` 按内容键存多份：`.git/fushi-dist/native/<crate>/<key>/` 存每个键编出的整套 `prebuilt/<平台>`，切回见过的键只拷回来；`pub-warm/<key>` 记哪些依赖键预热过（hook 输出本身在 `.dart_tool/hooks_runner` 按输入哈希分目录，本就多版本共存）。各缓存只留最近用过的 3 个键。`pub get` 仍在依赖键变了时照跑（共享 pub cache 下只需数秒），以它为准写解析结果。
+
 准备失败的 worker 本轮直接退出队列，批次由其它机器接走；报告里写明哪台、为什么。
 
 ## 3. 调度：动态批次队列

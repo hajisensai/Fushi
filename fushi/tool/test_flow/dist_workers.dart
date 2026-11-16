@@ -1509,7 +1509,11 @@ class SshDistWorker extends DistWorker {
 
   /// Puts [snapshot] (already pushed) on the locked checkout: checkout, then
   /// worker_prepare.sh (dependencies, native libraries; a second or two when
-  /// nothing changed).
+  /// nothing changed). Runs that take turns on a checkout batch by batch
+  /// switch it between their snapshots on every turn: the native library
+  /// sets and the dependency warm-up are kept per content key on the worker
+  /// (worker_cache.sh), so a turn back costs a copy and a `pub get`, not a
+  /// build.
   Future<void> _onto(DistSnapshot snapshot, IOSink log) async {
     if (_shim) {
       await _sshChecked(
