@@ -8,6 +8,7 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/media/import/import_carrier.dart'
     show kMangaCarrierFileExtensions;
+import 'package:fushi/src/media/import/import_inbox.dart';
 import 'package:fushi/src/media/import/quick_import_section.dart';
 import 'package:fushi_engine/media/manga/manga_importer.dart'
     show kMangaImageExtensions;
@@ -112,6 +113,17 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
           ],
           // 网络来源也是一种导入方式：与「常驻来源」区头的添加按钮同一个入口。
           extraActions: <QuickImportAction>[
+            // iOS「文件」App 收件箱（拍板台 nLXhu0d7gV）：其它平台没有收件箱，不放空壳入口。
+            if (ImportInbox.isSupported)
+              QuickImportAction(
+                icon: FushiIcons.folderOpen,
+                label: t.media_import_inbox,
+                description: t.media_import_inbox_hint(
+                  folder: ImportInbox.folderNameFor('manga') ?? '',
+                ),
+                onTap: () async =>
+                    _localSourcesKey.currentState?.importFromInbox(),
+              ),
             QuickImportAction(
               icon: FushiIcons.cloud,
               label: t.media_source_add_network,

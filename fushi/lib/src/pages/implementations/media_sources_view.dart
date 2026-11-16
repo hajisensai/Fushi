@@ -24,7 +24,7 @@
 // host/port（见 NetworkSourceFileSystem）。
 
 import 'dart:async' show unawaited;
-import 'dart:io' show Directory, File, Platform;
+import 'dart:io' show Directory, File, FileSystemEntity, Platform;
 
 import 'package:drift/drift.dart' show Value;
 import 'package:file_picker/file_picker.dart';
@@ -34,6 +34,8 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/media/alist/alist_api_client.dart';
 import 'package:fushi/src/media/audio_cd/audio_cd_import.dart';
 import 'package:fushi/src/media/source_library/add_local_folder_source.dart';
+import 'package:fushi/src/media/import/import_inbox.dart';
+import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/media/source_library/game_source_scanner.dart'
     show countGamesOfSource;
 import 'package:fushi/src/media/alist/alist_source_url.dart';
@@ -83,6 +85,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
@@ -1171,6 +1174,20 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
 
     final String? groupingMode = await _pickVideoGroupingMode();
     if (!mounted || groupingMode == null) return;
+    await _runOneShotFolderImport(
+      path: norm,
+      bookmark: pick.bookmark,
+      groupingMode: groupingMode,
+    );
+  }
+
+  /// 「仅此一次」导入 [path] 并报结果：[importLocalFolderOnce] 与 iOS 收件箱导入
+  /// （[importFromInbox]）共用，两处的忙态、成功 / 失败提示与有声书摘要逐字一致。
+  Future<void> _runOneShotFolderImport({
+    required String path,
+    required String? bookmark,
+    required String groupingMode,
+  }) async {
     final VoidCallback? onLibraryChanged = widget.onLibraryChanged;
     SourceScanSummary? summary;
     try {
@@ -1178,9 +1195,9 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
         (void Function(int sourceId) onScanning) => importLocalFolderOnceAt(
           db: _db,
           mediaKind: widget.mediaKind,
-          path: norm,
+          path: path,
           videoGroupingMode: groupingMode,
-          bookmark: pick.bookmark,
+          bookmark: bookmark,
           transcribeAudiobook: _bookTranscribePort,
           onScanning: onScanning,
         ),
@@ -1218,6 +1235,53 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
       }
       onLibraryChanged?.call();
     }
+  }
+
+  /// iOS「文件」App 收件箱导入（拍板台 nLXhu0d7gV，见 `import_inbox.dart`）：把
+  /// `我的 iPhone › Fushi › <本域子目录>` 里本域认的文件移进数据根内的批次目录，再走与
+  /// 「导入文件夹（仅此一次）」同一条管线。收件箱是空的时告诉用户往哪放。
+  Future<void> importFromInbox() async {
+    if (isBusy) return;
+    final String? folder = ImportInbox.folderNameFor(widget.mediaKind);
+    if (folder == null) return;
+    final Directory inbox = await AppPaths.importInboxDirectory();
+    await ImportInbox.ensureKindFolders(inbox);
+    final List<FileSystemEntity> pending = await ImportInbox.pendingEntries(
+      inbox: inbox,
+      mediaKind: widget.mediaKind,
+    );
+    if (!mounted) return;
+    if (pending.isEmpty) {
+      FushiToast.show(
+        msg: t.media_import_inbox_empty(folder: folder),
+        severity: ToastSeverity.info,
+      );
+      return;
+    }
+    // 先问分组再移文件：用户在对话框里取消时收件箱原封不动。
+    final String? groupingMode = await _pickVideoGroupingMode();
+    if (!mounted || groupingMode == null) return;
+    final ImportInboxBatch? batch = await ImportInbox.takeBatch(
+      inbox: inbox,
+      stagingRoot: await AppPaths.inboxImportsDirectory(),
+      mediaKind: widget.mediaKind,
+    );
+    if (!mounted || batch == null) return;
+    if (batch.failures.isNotEmpty) {
+      for (final String failure in batch.failures) {
+        ErrorLogService.instance.log('ImportInbox.takeBatch', failure);
+      }
+      FushiToast.show(
+        msg: t.media_import_inbox_move_failed(n: batch.failures.length),
+        severity: ToastSeverity.warning,
+      );
+    }
+    if (batch.movedEntries.isEmpty) return;
+    await _runOneShotFolderImport(
+      path: batch.directory.path,
+      bookmark: null,
+      groupingMode: groupingMode,
+    );
   }
 
   /// 书籍来源扫描的转录端口（反馈 z398R0ndAw）：书配上了有声书音频却没有字幕时排

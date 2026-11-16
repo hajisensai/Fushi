@@ -23,7 +23,7 @@
 //   事件日志按 pid 读 Windows 错误报告（Application Error 1000 / Application Hang 1002）。
 // - macOS：`~/Library/Logs/DiagnosticReports/<进程名>-*.ips`（系统崩溃报告）。
 // - iOS：MetricKit `MXCrashDiagnostic`（`AppDelegate.swift` 订阅，JSON 落
-//   `Documents/metrickit/`）。
+//   `<ApplicationSupport>/logs/metrickit/`，即诊断目录下的 `metrickit/`）。
 //
 // 隐私：所有摘要都过 [redactExitReportPaths]，把路径里的用户名换成 `<user>`；不带
 // 完整 dump / 完整 tombstone，只带有限长度的摘要。
