@@ -16,6 +16,7 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_cover_block.dart'
     show FushiCoverBlockColors, FushiCoverBlockSize, fushiCoverBlockShape;
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
 import 'package:fushi/src/utils/components/fushi_poster_block.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
@@ -98,6 +99,16 @@ int homeWidgetLinesFor(double height, double lineHeight, {int max = 8}) {
   return (height / lineHeight).floor().clamp(1, max);
 }
 
+/// [style] 的一行在当前文字缩放下占多高（字号 × 行高倍数），给
+/// [homeWidgetLinesFor] 用：行数和渲染取自同一个排版角色，不另写一份字号。
+double homeWidgetLineHeight(BuildContext context, TextStyle style) {
+  final TextStyle resolved = DefaultTextStyle.of(context).style.merge(style);
+  return MediaQuery.textScalerOf(
+        context,
+      ).scale(resolved.fontSize ?? kDefaultFontSize) *
+      (resolved.height ?? 1.0);
+}
+
 /// 小组件格子的内边距：窄网格一行高的格子收紧，其余统一 14。
 double homeWidgetFramePadding({required bool dense}) => dense ? 12 : 14;
 
@@ -164,9 +175,8 @@ class HomeWidgetFrame extends StatelessWidget {
     final Color headerColor = attention
         ? scheme.error
         : (colors?.onContainer ?? tokens.type.sectionLabel.color ?? muted);
-    final TextStyle headerStyle = tokens.type.sectionLabel.copyWith(
+    final TextStyle headerStyle = context.fushiType.labelMedium.copyWith(
       color: headerColor,
-      fontSize: 12,
       height: 1.2,
       fontWeight: FontWeight.w600,
     );
@@ -307,6 +317,7 @@ class HomeWidgetFigure extends StatelessWidget {
     final Color fg = style?.foreground ?? tokens.surfaces.onSurface;
     final Color muted = style?.muted ?? tokens.surfaces.onVariant;
     final String? u = unit;
+    final FushiTypography type = context.fushiType;
     return FittedBox(
       fit: BoxFit.scaleDown,
       alignment: AlignmentDirectional.centerStart,
@@ -315,8 +326,7 @@ class HomeWidgetFigure extends StatelessWidget {
           children: <InlineSpan>[
             TextSpan(
               text: value,
-              style: TextStyle(
-                fontSize: large ? 34 : 26,
+              style: (large ? type.displaySmall : type.headlineMedium).copyWith(
                 fontWeight: FontWeight.w800,
                 height: 1.05,
                 color: fg,
@@ -325,8 +335,7 @@ class HomeWidgetFigure extends StatelessWidget {
             if (u != null)
               TextSpan(
                 text: ' $u',
-                style: TextStyle(
-                  fontSize: 13,
+                style: type.labelLarge.copyWith(
                   fontWeight: FontWeight.w600,
                   color: muted,
                 ),

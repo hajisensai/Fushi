@@ -647,10 +647,13 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
                               .copyWith(color: fg);
                           final TextStyle metaStyle = tokens.type.metadata
                               .copyWith(color: muted);
-                          final TextStyle browStyle = metaStyle.copyWith(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                          );
+                          final TextStyle browStyle = context
+                              .fushiType
+                              .labelSmall
+                              .copyWith(
+                                color: muted,
+                                fontWeight: FontWeight.w600,
+                              );
                           // 按可用高度挑放哪几行（标题优先），整行放得下才放，
                           // 不出半行字；半栏窄格（文字区 < 120）标题放两行。
                           final _MiniTileLines lines = _miniTileLines(

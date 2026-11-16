@@ -13,6 +13,7 @@ import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/pages/implementations/ai_agent_page.dart';
 import 'package:fushi/src/pages/implementations/home_widget_frame.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
 
@@ -65,7 +66,6 @@ class HomeAiAgentPanel extends StatelessWidget {
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints c) {
         final bool dense = homeWidgetIsDense(c.maxHeight);
-        final double fontSize = dense ? 14 : 16;
         return HomeWidgetFrame(
           key: const ValueKey<String>('home-ai-agent-panel'),
           tapKey: const ValueKey<String>('home-ai-agent-panel-open'),
@@ -78,8 +78,13 @@ class HomeAiAgentPanel extends StatelessWidget {
           child: Builder(
             builder: (BuildContext context) {
               final HomeWidgetStyle style = HomeWidgetStyle.of(context);
-              final TextStyle base =
-                  Theme.of(context).textTheme.bodyMedium ?? const TextStyle();
+              final FushiTypography type = context.fushiType;
+              final TextStyle hintStyle =
+                  (dense ? type.bodyMedium : type.bodyLarge).copyWith(
+                    fontWeight: FontWeight.w700,
+                    height: 1.2,
+                    color: style.accent,
+                  );
               return Row(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 spacing: 6,
@@ -94,19 +99,11 @@ class HomeAiAgentPanel extends StatelessWidget {
                               // 格子越高放越多行；按行高算，不溢出。
                               maxLines: homeWidgetLinesFor(
                                 box.maxHeight,
-                                MediaQuery.textScalerOf(
-                                      context,
-                                    ).scale(fontSize) *
-                                    1.2,
+                                homeWidgetLineHeight(context, hintStyle),
                                 max: 6,
                               ),
                               overflow: TextOverflow.ellipsis,
-                              style: base.copyWith(
-                                fontSize: fontSize,
-                                fontWeight: FontWeight.w700,
-                                height: 1.2,
-                                color: style.accent,
-                              ),
+                              style: hintStyle,
                             ),
                           ),
                     ),

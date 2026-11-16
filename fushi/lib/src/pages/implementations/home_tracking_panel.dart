@@ -17,6 +17,7 @@ import 'package:fushi_core/fushi_core.dart' show MediaTrackingMappingRow;
 import 'package:fushi_engine/media/tracking/media_tracking_repository.dart';
 import 'package:fushi_engine/media/tracking/media_tracking_service.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/home_widget_layout.dart';
 import 'package:fushi/src/pages/implementations/home_widget_frame.dart';
@@ -254,13 +255,15 @@ class HomeTrackingPanel extends StatelessWidget {
           child: LayoutBuilder(
             builder: (BuildContext context, BoxConstraints box) {
               final HomeWidgetStyle style = HomeWidgetStyle.of(context);
-              final TextStyle base =
-                  Theme.of(context).textTheme.bodyMedium ?? const TextStyle();
+              final TextStyle textStyle = context.fushiType.bodyMedium.copyWith(
+                fontWeight: FontWeight.w600,
+                color: attention && !poster ? scheme.error : style.foreground,
+              );
               final int lines = dense
                   ? 1
                   : homeWidgetLinesFor(
                       box.maxHeight,
-                      MediaQuery.textScalerOf(context).scale(13) * 1.45,
+                      homeWidgetLineHeight(context, textStyle),
                       max: 6,
                     );
               return AnimatedSwitcher(
@@ -290,13 +293,7 @@ class HomeTrackingPanel extends StatelessWidget {
                         key: const ValueKey<String>('home-tracking-panel-text'),
                         maxLines: lines,
                         overflow: TextOverflow.ellipsis,
-                        style: base.copyWith(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: attention && !poster
-                              ? scheme.error
-                              : style.foreground,
-                        ),
+                        style: textStyle,
                       ),
                     ),
                     if (action && narrow)
