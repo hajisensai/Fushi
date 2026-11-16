@@ -21,11 +21,12 @@ use super::truth::Truth;
 use crate::store::local_state::{ANCHOR_KEY, EPOCH_KEY, REVISION_KEY, has_epoch, new_epoch, view};
 use rusqlite::OptionalExtension;
 
-/// `srs_meta` 里本机状态行的键前缀。
+/// `srs_meta` 里本机状态行的键前缀（按 profile 记、uid 在最后：登记在 `profile_data.rs` 的 `META_PROFILE_LAST`，
+/// 那边的守卫按 [key] 里的字面量核对）。
 pub const KEY_PREFIX: &str = "local_state/";
 
 fn key(profile: &str) -> String {
-    format!("{KEY_PREFIX}{profile}")
+    format!("local_state/{profile}")
 }
 
 /// [profile] 的行：没有 → None；损坏（不是 JSON 对象）→ 空对象（同协议 3）。
