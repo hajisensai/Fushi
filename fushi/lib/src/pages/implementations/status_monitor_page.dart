@@ -3,6 +3,8 @@ import 'dart:math' as math;
 import 'package:flutter/services.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/diagnostics/status_monitor.dart';
+import 'package:fushi/src/diagnostics/thread_cpu_sampler.dart';
+import 'package:fushi/src/diagnostics/ui_activity_probe.dart';
 import 'package:fushi/src/settings/settings_kit_core.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
@@ -74,6 +76,8 @@ class _StatusMonitorPageState extends State<StatusMonitorPage> {
               builder: (BuildContext context, Widget? _) {
                 final List<Widget> sections = <Widget>[
                   _LiveSection(monitor: _monitor),
+                  _ThreadsSection(sample: _monitor.latest),
+                  _StuttersSection(monitor: _monitor),
                   _DetailsSection(sample: _monitor.latest),
                   _OverlaySection(monitor: _monitor),
                 ];
@@ -400,6 +404,12 @@ class _DetailsSection extends StatelessWidget {
                 raster: s.frames.worstRasterMs.toStringAsFixed(1),
               ),
       ),
+      if (s != null && s.memoryNotes.isNotEmpty)
+        AdaptiveSettingsRow(
+          title: t.status_monitor_memory_notes,
+          subtitle: s.memoryNotes.join('\n'),
+          subtitleMaxLines: 8,
+        ),
     ];
     return AdaptiveSettingsSection(
       title: t.status_monitor_section_details,
@@ -471,6 +481,120 @@ class _OverlaySection extends StatelessWidget {
               ),
             ],
           ),
+      ],
+    );
+  }
+}
+
+/// 线程类别的人话说明；认不出的返回 null。
+String? describeThreadKind(ThreadKind kind) => switch (kind) {
+  ThreadKind.flutterUi => t.status_monitor_thread_flutter_ui,
+  ThreadKind.flutterRaster => t.status_monitor_thread_flutter_raster,
+  ThreadKind.flutterIo => t.status_monitor_thread_flutter_io,
+  ThreadKind.dartWorker => t.status_monitor_thread_dart_worker,
+  ThreadKind.video => t.status_monitor_thread_video,
+  ThreadKind.rust => t.status_monitor_thread_rust,
+  ThreadKind.flutterEngine => t.status_monitor_thread_flutter_engine,
+  ThreadKind.system => t.status_monitor_thread_system,
+  ThreadKind.unnamed => t.status_monitor_thread_unnamed_hint,
+  ThreadKind.other => null,
+};
+
+class _ThreadsSection extends StatelessWidget {
+  const _ThreadsSection({required this.sample});
+
+  final StatusSample? sample;
+
+  @override
+  Widget build(BuildContext context) {
+    final List<ThreadGroupUsage> threads =
+        sample?.threads ?? const <ThreadGroupUsage>[];
+    final TextStyle? valueStyle = Theme.of(context).textTheme.bodyMedium
+        ?.copyWith(
+          fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
+        );
+    return AdaptiveSettingsSection(
+      title: t.status_monitor_section_threads,
+      children: <Widget>[
+        AdaptiveSettingsRow(
+          title: t.status_monitor_threads_hint,
+          titleMaxLines: 3,
+        ),
+        if (threads.isEmpty)
+          AdaptiveSettingsRow(title: t.status_monitor_threads_waiting)
+        else
+          for (final ThreadGroupUsage g in threads)
+            AdaptiveSettingsRow(
+              title: g.group.isEmpty
+                  ? t.status_monitor_thread_unnamed
+                  : g.group,
+              subtitle: <String>[
+                ?describeThreadKind(classifyThread(g.group)),
+                if (g.threads > 1) t.status_monitor_thread_count(n: g.threads),
+              ].join(' · '),
+              subtitleMaxLines: 3,
+              trailing: Text(
+                '${g.percentOfOneCore.toStringAsFixed(0)}%',
+                style: valueStyle,
+              ),
+            ),
+      ],
+    );
+  }
+}
+
+class _StuttersSection extends StatelessWidget {
+  const _StuttersSection({required this.monitor});
+
+  final StatusMonitor monitor;
+
+  @override
+  Widget build(BuildContext context) {
+    final List<StutterEvent> events = monitor.stutters;
+    String two(int v) => v.toString().padLeft(2, '0');
+    return AdaptiveSettingsSection(
+      title: t.status_monitor_section_stutters,
+      children: <Widget>[
+        if (events.isEmpty)
+          AdaptiveSettingsRow(
+            title: t.status_monitor_stutters_empty,
+            titleMaxLines: 5,
+          )
+        else ...<Widget>[
+          for (final StutterEvent e in events)
+            AdaptiveSettingsRow(
+              title: t.status_monitor_stutter_title(
+                time:
+                    '${two(e.sample.time.hour)}:${two(e.sample.time.minute)}:${two(e.sample.time.second)}',
+                lag: e.sample.uiLagMs,
+                jank: e.sample.frames.jankFrames,
+                worst:
+                    (e.sample.frames.worstBuildMs >
+                                e.sample.frames.worstRasterMs
+                            ? e.sample.frames.worstBuildMs
+                            : e.sample.frames.worstRasterMs)
+                        .toStringAsFixed(0),
+              ),
+              titleMaxLines: 3,
+              subtitle: <String>[
+                if (e.pages.isNotEmpty)
+                  t.status_monitor_stutter_page(pages: e.pages.join(' › ')),
+                if (e.tickers.isNotEmpty)
+                  t.status_monitor_stutter_animations(
+                    names: describeTickerOwners(e.tickers, separator: ', '),
+                  ),
+                if (e.sample.threads.isNotEmpty)
+                  t.status_monitor_stutter_threads(
+                    threads: describeThreadGroups(e.sample.threads, max: 3),
+                  ),
+              ].join('\n'),
+              subtitleMaxLines: 8,
+            ),
+          AdaptiveSettingsRow(
+            title: t.status_monitor_stutters_clear,
+            onTap: monitor.clearStutters,
+          ),
+        ],
       ],
     );
   }

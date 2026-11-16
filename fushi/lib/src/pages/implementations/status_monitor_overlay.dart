@@ -92,6 +92,9 @@ class StatusMonitorReadout extends StatelessWidget {
           text: '  ${s.uiLagMs}ms',
           style: lag ? const TextStyle(color: alert) : null,
         ),
+        // 最忙的线程组（单核口径）：一眼看出是 UI 线程、光栅还是后台在占。
+        if (s.threads.isNotEmpty)
+          TextSpan(text: '\nTOP ${describeThreadGroups(s.threads, max: 1)}'),
       ];
     }
     return DecoratedBox(

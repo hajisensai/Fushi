@@ -1,5 +1,5 @@
 // 状态监测（设置 › 诊断 › 状态监测，及可选的全局悬浮小窗）：实时看本进程 CPU、内存、
-// 帧耗时与 UI 线程卡顿，排查「为什么卡」。
+// 帧耗时与 UI 线程卡顿，以及**是谁在占用**，排查「为什么卡」。
 //
 // 只在有人看的时候采样：状态页打开或悬浮小窗开着时 [StatusMonitor.acquire]，都关了就停
 // 计时器、摘掉帧耗时回调——关着时零开销。
@@ -7,24 +7,39 @@
 // 每秒一个采样点，历史保留 [kStatusMonitorHistoryLength] 个：
 // - CPU：两次 [processCpuTimeMicros] 之差 ÷ 墙钟间隔 ÷ 核数（与 Windows 任务管理器同口径，
 //   100% = 所有核跑满）；另给单核口径方便看「某个线程打满一核」。
+// - 各线程 CPU：[readThreadCpuTimes] 两次读数之差按线程组汇总（[summarizeThreadCpu]），
+//   回答「CPU 是谁吃的」——UI 线程、光栅、mpv、Rust 核心、Dart 后台 isolate。读一次要遍历
+//   全部线程，放后台 isolate。
 // - 内存：进程 RSS（各平台）；Windows 另有私有提交与系统可用内存；Android 另有 malloc；
-//   各平台都有 Flutter 解码图缓存。
+//   各平台都有 Flutter 解码图缓存；另附已有子系统探针读数（SRS 原生内核、anon/file/shm）。
 // - 帧：本秒内实际渲染的帧数、超出刷新预算的卡顿帧数、最慢的构建 / 光栅耗时
 //   （[SchedulerBinding.addTimingsCallback]，release 下同样可用）。Flutter 只在需要时出帧，
 //   静止时帧数低是正常的，不是掉帧。
 // - UI 线程延迟：1 s 周期计时器实际触发比预期晚了多少。主 isolate 被同步任务堵住时计时器
 //   排不上队，这一项直接反映「点了没反应」那种卡。
+//
+// 卡顿记录：某一秒判为卡顿（[isStutterSample]）时，额外扫一遍 widget 树记下当时的可见页面与
+// 活跃动画（[scanUiActivity]），连同最忙的线程存进 [StatusMonitor.stutters]。开着悬浮小窗正常
+// 使用，卡了再回状态页就能看到卡在哪一页、谁在占 CPU。
 
 import 'dart:async';
 import 'dart:collection';
 import 'dart:io';
+import 'dart:isolate';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart' show ImageCache, PaintingBinding;
 import 'package:flutter/scheduler.dart';
+import 'package:flutter/widgets.dart' show WidgetsBinding;
 import 'package:fushi/src/diagnostics/native_heap_probe.dart';
+import 'package:fushi/src/diagnostics/previous_exit_log.dart'
+    show processRssBreakdownProbe;
 import 'package:fushi/src/diagnostics/process_cpu_time.dart';
+import 'package:fushi/src/diagnostics/thread_cpu_sampler.dart';
+import 'package:fushi/src/diagnostics/ui_activity_probe.dart';
 import 'package:fushi/src/diagnostics/windows_memory_probe.dart';
+import 'package:fushi/src/srs/srs_memory_probe.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// 采样间隔。
@@ -32,6 +47,12 @@ const Duration kStatusMonitorInterval = Duration(seconds: 1);
 
 /// 保留多少个历史采样点（= 秒数）。
 const int kStatusMonitorHistoryLength = 120;
+
+/// 保留多少条卡顿记录。
+const int kStatusMonitorStutterLimit = 50;
+
+/// 每个采样点保留几个最忙的线程组。
+const int kStatusMonitorTopThreads = 8;
 
 /// 悬浮小窗所在角落。
 enum StatusMonitorOverlayCorner { topLeft, topRight, bottomLeft, bottomRight }
@@ -122,6 +143,8 @@ class StatusSample {
     required this.frames,
     required this.frameBudgetMs,
     required this.uiLagMs,
+    this.threads = const <ThreadGroupUsage>[],
+    this.memoryNotes = const <String>[],
   });
 
   final DateTime time;
@@ -148,9 +171,39 @@ class StatusSample {
   /// 周期计时器比预期晚触发的毫秒数（UI 线程被堵住的时长）。
   final int uiLagMs;
 
+  /// 本秒最忙的线程组（单核口径降序，最多 [kStatusMonitorTopThreads] 个）；平台不支持或
+  /// 还没有上一次读数时为空。
+  final List<ThreadGroupUsage> threads;
+
+  /// 已有子系统探针的原始读数（SRS 原生内核、anon/file/shm……），取不到的不列。
+  final List<String> memoryNotes;
+
   /// 单核口径（100% = 一个核跑满）。
   double? get cpuPercentOfOneCore =>
       cpuPercent == null ? null : cpuPercent! * cores;
+}
+
+/// 这一秒算不算卡顿：UI 线程被堵 ≥100 ms，或有一帧构建 / 光栅 ≥50 ms（肉眼可见的顿），
+/// 或一秒内 ≥5 帧超预算（持续掉帧）。
+bool isStutterSample(StatusSample s) =>
+    s.uiLagMs >= 100 ||
+    math.max(s.frames.worstBuildMs, s.frames.worstRasterMs) >= 50 ||
+    s.frames.jankFrames >= 5;
+
+/// 一条卡顿记录：卡顿那一秒的采样，加上当时的可见页面（外层在前）与活跃动画持有者。
+@immutable
+class StutterEvent {
+  const StutterEvent({
+    required this.sample,
+    required this.pages,
+    required this.tickers,
+  });
+
+  final StatusSample sample;
+  final List<String> pages;
+
+  /// widget 类型名 → 活跃 ticker 数（动画在跑就会逐帧出帧）。
+  final Map<String, int> tickers;
 }
 
 /// 采样所需的平台读数，测试里替换。
@@ -164,6 +217,9 @@ class StatusMonitorSources {
     required this.imageCache,
     required this.cores,
     required this.refreshRate,
+    this.threadTimes,
+    this.uiActivity,
+    this.memoryNotes,
   });
 
   static StatusMonitorSources platform() => StatusMonitorSources(
@@ -174,6 +230,9 @@ class StatusMonitorSources {
     imageCache: () => PaintingBinding.instance.imageCache,
     cores: Platform.numberOfProcessors,
     refreshRate: _currentRefreshRate,
+    threadTimes: _platformThreadTimes(),
+    uiActivity: () => scanUiActivity(WidgetsBinding.instance.rootElement),
+    memoryNotes: _platformMemoryNotes,
   );
 
   final int? Function() cpuMicros;
@@ -183,6 +242,37 @@ class StatusMonitorSources {
   final ImageCache Function() imageCache;
   final int cores;
   final double Function() refreshRate;
+
+  /// 各线程累计 CPU（后台读）；null = 不读。
+  final Future<List<ThreadCpuTime>> Function()? threadTimes;
+
+  /// 当前可见页面与活跃动画（只在卡顿那一秒调用）；null = 不扫。
+  final UiActivitySnapshot Function()? uiActivity;
+
+  /// 子系统内存读数；null = 不读。
+  final List<String> Function()? memoryNotes;
+}
+
+/// 在主 isolate 上取一次自身线程 id（= UI 线程），后台 isolate 读线程时据此标出 UI 线程。
+Future<List<ThreadCpuTime>> Function() _platformThreadTimes() {
+  final int? ui = currentThreadId();
+  return () => Isolate.run(() => readThreadCpuTimes(uiThreadId: ui));
+}
+
+List<String> _platformMemoryNotes() {
+  final List<String> out = <String>[];
+  for (final String? Function() probe in <String? Function()>[
+    processRssBreakdownProbe,
+    srsMemoryProbe,
+  ]) {
+    try {
+      final String? v = probe();
+      if (v != null && v.isNotEmpty) out.add(v);
+    } on Object {
+      // 原生库不可用等：这一项不列。
+    }
+  }
+  return out;
 }
 
 double _currentRefreshRate() {
@@ -217,11 +307,18 @@ class StatusMonitor extends ChangeNotifier {
   late final int Function() _now;
 
   final ListQueue<StatusSample> _history = ListQueue<StatusSample>();
+  final ListQueue<StutterEvent> _stutters = ListQueue<StutterEvent>();
   final List<(int, int)> _pendingFrames = <(int, int)>[];
   Timer? _timer;
   int _holders = 0;
   int? _lastCpuMicros;
   int _lastTickMicros = 0;
+  List<ThreadCpuTime>? _lastThreads;
+  int _lastThreadMicros = 0;
+  bool _sampling = false;
+
+  /// 每次开始采样加一：停掉又重开后，上一轮还在后台读的线程结果作废。
+  int _generation = 0;
 
   bool _overlayEnabled = false;
   StatusMonitorOverlayCorner _corner = StatusMonitorOverlayCorner.topRight;
@@ -237,6 +334,10 @@ class StatusMonitor extends ChangeNotifier {
 
   /// 历史采样点，旧在前。
   List<StatusSample> get history => List<StatusSample>.unmodifiable(_history);
+
+  /// 卡顿记录，新在前。
+  List<StutterEvent> get stutters =>
+      List<StutterEvent>.unmodifiable(_stutters.toList().reversed);
 
   /// 最近一个采样点；还没采过为 null。
   StatusSample? get latest => _history.isEmpty ? null : _history.last;
@@ -279,6 +380,13 @@ class StatusMonitor extends ChangeNotifier {
     await prefs.setInt(_cornerKey, corner.index);
   }
 
+  /// 清空卡顿记录。
+  void clearStutters() {
+    if (_stutters.isEmpty) return;
+    _stutters.clear();
+    notifyListeners();
+  }
+
   /// 有人要看：第一个持有者到来时开始采样。与 [release] 成对调用。
   void acquire() {
     _holders++;
@@ -293,11 +401,14 @@ class StatusMonitor extends ChangeNotifier {
   }
 
   void _start() {
+    _generation++;
     _lastTickMicros = _now();
     _lastCpuMicros = _readCpu();
+    _lastThreads = null;
     _pendingFrames.clear();
     SchedulerBinding.instance.addTimingsCallback(_onTimings);
     _timer = Timer.periodic(kStatusMonitorInterval, (_) => sample());
+    unawaited(_readThreads(_generation));
   }
 
   void _stop() {
@@ -305,6 +416,7 @@ class StatusMonitor extends ChangeNotifier {
     _timer = null;
     SchedulerBinding.instance.removeTimingsCallback(_onTimings);
     _pendingFrames.clear();
+    _lastThreads = null;
   }
 
   void _onTimings(List<FrameTiming> timings) {
@@ -324,10 +436,48 @@ class StatusMonitor extends ChangeNotifier {
     }
   }
 
-  /// 采一个点（周期计时器调用；测试里直接调）。
+  /// 读一次各线程 CPU，与上一次比出各线程组占用；第一次（或读失败）返回空表。
+  Future<List<ThreadGroupUsage>> _readThreads(int generation) async {
+    final Future<List<ThreadCpuTime>> Function()? read = _src.threadTimes;
+    if (read == null) return const <ThreadGroupUsage>[];
+    final List<ThreadCpuTime> now;
+    try {
+      now = await read();
+    } on Object {
+      return const <ThreadGroupUsage>[];
+    }
+    if (generation != _generation) return const <ThreadGroupUsage>[];
+    final int t = _now();
+    final List<ThreadCpuTime>? before = _lastThreads;
+    final int wall = t - _lastThreadMicros;
+    _lastThreads = now;
+    _lastThreadMicros = t;
+    if (before == null) return const <ThreadGroupUsage>[];
+    final List<ThreadGroupUsage> all = summarizeThreadCpu(
+      before,
+      now,
+      wallMicros: wall,
+    );
+    return all.length <= kStatusMonitorTopThreads
+        ? all
+        : all.sublist(0, kStatusMonitorTopThreads);
+  }
+
+  /// 采一个点（周期计时器调用；测试里直接调）。上一次还没采完（后台读线程未返回）时跳过。
   @visibleForTesting
-  void sample() {
+  Future<void> sample() async {
+    if (_sampling) return;
+    _sampling = true;
+    try {
+      await _sample();
+    } finally {
+      _sampling = false;
+    }
+  }
+
+  Future<void> _sample() async {
     final StatusMonitorSources src = _src;
+    final int generation = _generation;
     final int nowMicros = _now();
     final int wall = nowMicros - _lastTickMicros;
     final int lagMs = ((wall - kStatusMonitorInterval.inMicroseconds) / 1000)
@@ -356,6 +506,12 @@ class StatusMonitor extends ChangeNotifier {
     } on Object {
       heap = null;
     }
+    List<String> notes = const <String>[];
+    try {
+      notes = src.memoryNotes?.call() ?? const <String>[];
+    } on Object {
+      notes = const <String>[];
+    }
 
     final double rate = src.refreshRate();
     final int budgetMicros = (1000000 / rate).round();
@@ -364,59 +520,111 @@ class StatusMonitor extends ChangeNotifier {
       budgetMicros: budgetMicros,
     );
     _pendingFrames.clear();
-
     final ImageCache cache = src.imageCache();
-    _history.addLast(
-      StatusSample(
-        time: DateTime.now(),
-        cpuPercent: cpuPercent,
-        cores: src.cores,
-        rssBytes: src.rssBytes(),
-        privateBytes: win?.privateBytes,
-        nativeHeapMb: heap,
-        systemAvailBytes: win?.availPhysBytes,
-        systemTotalBytes: win?.totalPhysBytes,
-        imageCacheBytes: cache.currentSizeBytes,
-        imageCacheLive: cache.liveImageCount,
-        frames: frames,
-        frameBudgetMs: budgetMicros / 1000,
-        uiLagMs: lagMs,
-      ),
+    final int rss = src.rssBytes();
+    final DateTime time = DateTime.now();
+
+    final List<ThreadGroupUsage> threads = await _readThreads(generation);
+    // 后台读线程期间被停掉（关页 / 关小窗）：这一点不要了。
+    if (generation != _generation || !running) return;
+
+    final StatusSample sample = StatusSample(
+      time: time,
+      cpuPercent: cpuPercent,
+      cores: src.cores,
+      rssBytes: rss,
+      privateBytes: win?.privateBytes,
+      nativeHeapMb: heap,
+      systemAvailBytes: win?.availPhysBytes,
+      systemTotalBytes: win?.totalPhysBytes,
+      imageCacheBytes: cache.currentSizeBytes,
+      imageCacheLive: cache.liveImageCount,
+      frames: frames,
+      frameBudgetMs: budgetMicros / 1000,
+      uiLagMs: lagMs,
+      threads: threads,
+      memoryNotes: notes,
     );
+    _history.addLast(sample);
     while (_history.length > kStatusMonitorHistoryLength) {
       _history.removeFirst();
     }
+    if (isStutterSample(sample)) _recordStutter(sample);
     notifyListeners();
   }
 
-  /// 把当前历史写成纯文本（复制给开发者用）。
+  void _recordStutter(StatusSample sample) {
+    UiActivitySnapshot? ui;
+    try {
+      ui = _src.uiActivity?.call();
+    } on Object {
+      ui = null;
+    }
+    _stutters.addLast(
+      StutterEvent(
+        sample: sample,
+        pages: ui?.pages ?? const <String>[],
+        tickers: ui?.tickers ?? const <String, int>{},
+      ),
+    );
+    while (_stutters.length > kStatusMonitorStutterLimit) {
+      _stutters.removeFirst();
+    }
+  }
+
+  /// 把当前历史与卡顿记录写成纯文本（复制给开发者用）。
   String describeHistory() {
     final StringBuffer b = StringBuffer()
       ..writeln(
         'time cpu% rssMB privMB heapMB sysAvailMB imgMB frames jank '
-        'buildMaxMs rasterMaxMs uiLagMs',
+        'buildMaxMs rasterMaxMs uiLagMs threads(1core%)',
       );
-    String two(int v) => v.toString().padLeft(2, '0');
-    String mb(int? bytes) => bytes == null ? '-' : '${bytes >> 20}';
     for (final StatusSample s in _history) {
-      b.writeln(
-        <String>[
-          '${two(s.time.hour)}:${two(s.time.minute)}:${two(s.time.second)}',
-          s.cpuPercent?.toStringAsFixed(1) ?? '-',
-          mb(s.rssBytes),
-          mb(s.privateBytes),
-          s.nativeHeapMb?.toString() ?? '-',
-          mb(s.systemAvailBytes),
-          mb(s.imageCacheBytes),
-          '${s.frames.frames}',
-          '${s.frames.jankFrames}',
-          s.frames.worstBuildMs.toStringAsFixed(1),
-          s.frames.worstRasterMs.toStringAsFixed(1),
-          '${s.uiLagMs}',
-        ].join(' '),
-      );
+      b.writeln(_describeSample(s));
+    }
+    if (_stutters.isNotEmpty) {
+      b.writeln('\nstutters:');
+      for (final StutterEvent e in _stutters) {
+        b.writeln(
+          '${_hms(e.sample.time)} lag=${e.sample.uiLagMs}ms '
+          'jank=${e.sample.frames.jankFrames} '
+          'build=${e.sample.frames.worstBuildMs.toStringAsFixed(1)}ms '
+          'raster=${e.sample.frames.worstRasterMs.toStringAsFixed(1)}ms '
+          'page=[${e.pages.join('>')}] '
+          'tick=[${e.tickers.isEmpty ? '' : describeTickerOwners(e.tickers)}] '
+          'threads=[${describeThreadGroups(e.sample.threads)}]',
+        );
+      }
+    }
+    final StatusSample? last = latest;
+    if (last != null && last.memoryNotes.isNotEmpty) {
+      b.writeln('\nmemory: ${last.memoryNotes.join(' ')}');
     }
     return b.toString();
+  }
+
+  static String _hms(DateTime t) {
+    String two(int v) => v.toString().padLeft(2, '0');
+    return '${two(t.hour)}:${two(t.minute)}:${two(t.second)}';
+  }
+
+  static String _describeSample(StatusSample s) {
+    String mb(int? bytes) => bytes == null ? '-' : '${bytes >> 20}';
+    return <String>[
+      _hms(s.time),
+      s.cpuPercent?.toStringAsFixed(1) ?? '-',
+      mb(s.rssBytes),
+      mb(s.privateBytes),
+      s.nativeHeapMb?.toString() ?? '-',
+      mb(s.systemAvailBytes),
+      mb(s.imageCacheBytes),
+      '${s.frames.frames}',
+      '${s.frames.jankFrames}',
+      s.frames.worstBuildMs.toStringAsFixed(1),
+      s.frames.worstRasterMs.toStringAsFixed(1),
+      '${s.uiLagMs}',
+      '[${describeThreadGroups(s.threads, max: 3)}]',
+    ].join(' ');
   }
 
   /// 测试收尾：停采样、清历史与持有计数。
@@ -425,7 +633,20 @@ class StatusMonitor extends ChangeNotifier {
     if (_timer != null) _stop();
     _holders = 0;
     _history.clear();
+    _stutters.clear();
     _overlayEnabled = false;
     _corner = StatusMonitorOverlayCorner.topRight;
   }
 }
+
+/// `1.ui 85%; 1.raster 30%; DartWorker×4 12%`：线程组单核口径占用。
+String describeThreadGroups(List<ThreadGroupUsage> groups, {int max = 8}) =>
+    groups
+        .take(max)
+        .map(
+          (ThreadGroupUsage g) =>
+              '${g.group.isEmpty ? '?' : g.group}'
+              '${g.threads > 1 ? '×${g.threads}' : ''} '
+              '${g.percentOfOneCore.toStringAsFixed(0)}%',
+        )
+        .join('; ');
