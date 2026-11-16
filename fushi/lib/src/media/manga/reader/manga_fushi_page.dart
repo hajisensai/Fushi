@@ -1534,7 +1534,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 不能解开新窗口的锁（BUG-1170），页面销毁时在飞加载被显式放弃（BUG-1171）。
   final MangaWindowLoadGate _windowGate = MangaWindowLoadGate();
 
-  /// 本地页图按显示尺寸降采样（BUG-4658，见 [MangaPageFitter]）：页面 JS 在页图 URL
+  /// 本地页图按显示尺寸降采样（BUG-4702，见 [MangaPageFitter]）：页面 JS 在页图 URL
   /// 上挂 `fit=<像素宽>`，拦截器经它交出同宽高比的显示尺寸 JPEG。
   final MangaPageFitter _pageFitter = MangaPageFitter();
 
@@ -3317,7 +3317,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     );
   }
 
-  /// 页图在 [fitWidth] 档的降采样 JPEG（BUG-4658）；URL 没要、不值得缩、或转码
+  /// 页图在 [fitWidth] 档的降采样 JPEG（BUG-4702）；URL 没要、不值得缩、或转码
   /// 失败都返回 null，由调用方交出原图——降采样只是省内存，任何失败都不能让页白掉。
   /// [key] 是页在本页面内的稳定身份（LRU 键），[loadSource] 只在未命中时读原图。
   Future<Uint8List?> _fitPageBytes(
@@ -3479,7 +3479,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       doubleTapAnimationMs: 300,
       zoomStartPosition: _zoomStartPosition,
       // 在线直读章的 payload 尺寸是占位值（真尺寸要等页图到了才知道），只有本地卷 /
-      // 已下载章的 manga.json 尺寸可信，降采样只对它们开（BUG-4658）。
+      // 已下载章的 manga.json 尺寸可信，降采样只对它们开（BUG-4702）。
       fitImagesToDisplay: _pageSession is! OnlineMangaReaderSession,
     );
   }

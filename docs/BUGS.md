@@ -33,11 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4049 条。点号进各自文件。
-> 共 4058 条。点号进各自文件。
+> 共 4059 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4702](bugs/BUG-4702-manga-4k-page-image-memory.md) | ✅ | ✅ | 漫画阅读器打开 4K 页图卷内存暴涨闪退 |
 | [BUG-4701](bugs/BUG-4701-overwrite-import-unrecoverable-library.md) | ✅ | ✅ | 覆盖导入把书库换掉后无法找回：覆盖前快照成功即删、书文件成孤儿目录无法重新登记 |
 | [BUG-4700](bugs/BUG-4700-manga-import-staging-copy-doubles-disk.md) | ✅ | ✅ | 漫画导入从暂存目录拷贝进书目录，大包磁盘峰值是包体积的三倍 |
 | [BUG-4699](bugs/BUG-4699-epub-parse-whole-file-in-memory.md) | ✅ | ✅ | EPUB（含纯图漫画）导入整本读进内存并缓存全部解压内容，2 GiB 以上必然内存耗尽 |
@@ -50,7 +50,6 @@
 | [BUG-4692](bugs/BUG-4692-remote-dictionary-two-reachability-trackers.md) | ✅ | ✅ | 离线时查词等远端 4.5 秒、服务器恢复后查词仍只出本机结果（查词与目录服务各记一份可达性） |
 | [BUG-4691](bugs/BUG-4691-interconnect-peer-rows-look-duplicated.md) | ✅ | ✅ | 配对与设备：同一台服务器的两条地址显示成两个同名「TestServer」，像重复配对 |
 | [BUG-4690](bugs/BUG-4690-focus-repair-steals-dialog-autofocus.md) | ✅ | ✅ | 键盘回车打开改名对话框，焦点落在输入框的屏幕键盘按钮而非输入框 |
-| [BUG-4658](bugs/BUG-4658-manga-4k-page-image-memory.md) | ✅ | ✅ | 漫画阅读器打开 4K 页图卷内存暴涨闪退 |
 | [BUG-4660](bugs/BUG-4660-manga-zip64-data-descriptor-size.md) | ✅ | ✅ | ZIP64 数据描述符被按 4 字节读，条目大小读成 0，导入报损坏 |
 | [BUG-4659](bugs/BUG-4659-manga-zip-2gib-cap.md) | ✅ | ✅ | 解出超过 2 GiB 的 .zip 漫画一律报 too large 无法导入 |
 | [BUG-4658](bugs/BUG-4658-manga-zip-non-utf8-names.md) | ✅ | ✅ | 非 UTF-8 文件名（Shift_JIS）的 .zip 漫画打不开，导入框报不支持的格式 |
