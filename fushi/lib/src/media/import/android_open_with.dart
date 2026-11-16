@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
+import 'package:fushi_engine/utils/misc/safe_file_name.dart';
 import 'package:path/path.dart' as p;
 
 // Android「用其他应用打开」/「分享到 Fushi」收进来的书 / 漫画（拍板台 oeJzVRQ9p1）。
@@ -92,8 +93,10 @@ String? _sanitizeDisplayName(String? raw) {
   if (raw == null) return null;
   // provider 可能给出带目录的「名字」：只取最后一段，且不允许它把文件写出副本目录。
   final String last = raw.split(RegExp(r'[/\\]')).last;
+  // 字符集走唯一真相源（BUG-1125：手抄字符集漏过反斜杠）；DEL 不在 Windows 黑名单里，另删。
   final String cleaned = last
-      .replaceAll(RegExp(r'[\x00-\x1f\x7f:*?"<>|]'), '')
+      .replaceAll(windowsUnsafeFileNameChars, '')
+      .replaceAll('\x7f', '')
       .trim();
   if (cleaned.isEmpty || cleaned == '.' || cleaned == '..') return null;
   return cleaned;

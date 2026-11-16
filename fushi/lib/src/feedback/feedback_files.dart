@@ -9,6 +9,8 @@
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/widgets.dart' show BuildContext;
+import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi_engine/feedback/feedback_models.dart';
 import 'package:path/path.dart' as p;
 
@@ -31,17 +33,13 @@ FeedbackFileProblem? feedbackFileProblem(String path, int bytes) {
   return null;
 }
 
-/// 选样本文件（可多选）。桌面对话框按白名单过滤；手机上系统选择器不认识 mdx / ass 这类
-/// 扩展名对应的 MIME（过滤会把它们藏掉），所以不过滤、选完由 [feedbackFileProblem] 把关。
-/// 取消返回空列表。
-Future<List<File>> pickFeedbackFiles() async {
-  final bool desktop =
-      Platform.isWindows || Platform.isMacOS || Platform.isLinux;
-  final FilePickerResult? result = await FilePicker.platform.pickFiles(
-    type: desktop ? FileType.custom : FileType.any,
-    allowedExtensions: desktop
-        ? (FeedbackLimits.fileExtensions.toList()..sort())
-        : null,
+/// 选样本文件（可多选），走统一入口 [pickFilesByExtensions]：桌面对话框按白名单过滤；
+/// 手机上系统选择器不认识 mdx / ass 这类扩展名对应的 MIME（交给平台过滤会把它们藏掉，
+/// BUG-2099），入口改成选完再按扩展名筛并就地提示。取消 / 全部不合格返回空列表。
+Future<List<File>> pickFeedbackFiles(BuildContext context) async {
+  final FilePickerResult? result = await pickFilesByExtensions(
+    context: context,
+    allowedExtensions: FeedbackLimits.fileExtensions,
     allowMultiple: true,
   );
   if (result == null) return const <File>[];

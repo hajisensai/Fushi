@@ -597,7 +597,7 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
     if (_pickingFiles) return;
     _pickingFiles = true;
     try {
-      final List<File> picked = await pickFeedbackFiles();
+      final List<File> picked = await pickFeedbackFiles(context);
       if (picked.isEmpty || !mounted) return;
       final List<({File file, int bytes})> ok = <({File file, int bytes})>[];
       String? problem;

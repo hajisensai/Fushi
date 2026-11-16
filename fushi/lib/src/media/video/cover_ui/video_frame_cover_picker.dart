@@ -7,7 +7,9 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
@@ -395,9 +397,9 @@ class _VideoFrameCoverPickerDialogState
       child = const Center(child: FushiCircularProgressIndicator());
     }
     return ClipRRect(
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: FushiM3eShape.smallRadius,
       child: ColoredBox(
-        color: cs.surfaceContainerHighest,
+        color: FushiDesignTokens.of(context).surfaces.card,
         child: AnimatedSwitcher(
           duration: fushiMotionDuration(context, FushiMotion.short),
           switchInCurve: FushiMotion.enter,
