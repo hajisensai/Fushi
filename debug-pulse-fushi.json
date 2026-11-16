@@ -1,12 +1,47 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-16T15:11:48Z",
+ "generatedAt": "2026-11-16T16:37:27Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "ea7467d87882e5f1fa33bd565f3cf576f481443b",
-  "seq": 28014
+  "sha": "890895f419e0048b6f89e88e1e380ad523604797",
+  "seq": 28119
  },
  "builds": [
+  {
+   "seq": 27753,
+   "version": "3.3.0",
+   "sha": "43d3bd42e05fc05bf317b7a23757821508783755",
+   "unknown": false,
+   "publishedAt": "2026-11-16T16:37:12Z",
+   "testflight": false,
+   "baseSeq": 27714,
+   "prs": [
+    3484,
+    3470,
+    3472,
+    3482,
+    3486
+   ],
+   "direct": [],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "ok"
+    },
+    "windows": {
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43856349600"
+    },
+    "macos": {
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43856349600"
+    },
+    "ios": {
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43856349600"
+    }
+   }
+  },
   {
    "seq": 27714,
    "version": "3.3.0",
@@ -189,44 +224,29 @@
      "url": "https://github.com/hajisensai/Fushi/actions/runs/43802024411"
     }
    }
-  },
-  {
-   "seq": 27426,
-   "version": "3.3.0",
-   "sha": "be81d1c0910d4f984ae28d6628745ee2ef4962f0",
-   "unknown": false,
-   "publishedAt": "2026-11-16T03:43:39Z",
-   "testflight": false,
-   "baseSeq": 27417,
-   "prs": [
-    3451,
-    3148
-   ],
-   "direct": [],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "ok"
-    },
-    "windows": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43795719078"
-    },
-    "macos": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43795719078"
-    },
-    "ios": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43795719078"
-    }
-   }
   }
  ],
  "pending": {
-  "headSha": "ea7467d87882e5f1fa33bd565f3cf576f481443b",
-  "headSeq": 28014,
+  "headSha": "890895f419e0048b6f89e88e1e380ad523604797",
+  "headSeq": 28119,
   "prs": [
+   3536,
+   3588,
+   3586,
+   3501,
+   3564,
+   3583,
+   3580,
+   3582,
+   3558,
+   3488,
+   3581,
+   3539,
+   3544,
+   3546,
+   3517,
+   3543,
+   3461,
    3479,
    3540,
    3535,
@@ -266,46 +286,30 @@
    3527,
    3475,
    3514,
-   3513,
-   3484,
-   3470,
-   3472,
-   3482,
-   3486
+   3513
   ],
   "direct": [],
   "truncated": false,
   "platforms": {
    "android": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43893622307"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43906974520"
    },
    "windows": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43893622381"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43906974419"
    },
    "macos": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43893622381"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43906974419"
    },
    "ios": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43893622381"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43906974419"
    }
   }
  },
  "prs": {
-  "3148": {
-   "number": 3148,
-   "title": "feat(server): WebUI「词典」page for hosted dictionaries（叠在 #3100 #3101 #3147 之上）",
-   "author": "samutw",
-   "mergedAt": "2026-11-15T08:57:25Z",
-   "additions": 344,
-   "deletions": 37,
-   "labels": [
-    "merge-approved"
-   ]
-  },
   "3395": {
    "number": 3395,
    "title": "SRS 换代 G5a：srs.db 的 Dart 读站点改走内核读命令，删 Drift 执行器",
@@ -387,15 +391,6 @@
    "deletions": 33,
    "labels": []
   },
-  "3451": {
-   "number": 3451,
-   "title": "fix(licenses): 原生许可生成器解析 git 符号链接许可文件 (BUG-4694)",
-   "author": "W1ght",
-   "mergedAt": "2026-11-16T03:02:25Z",
-   "additions": 331,
-   "deletions": 18,
-   "labels": []
-  },
   "3452": {
    "number": 3452,
    "title": "feat(srs): gen4 本机状态表、换代锁、打开模式、封存与墓碑库（G7-1）",
@@ -466,6 +461,15 @@
    "mergedAt": "2026-11-16T05:25:36Z",
    "additions": 1482,
    "deletions": 62,
+   "labels": []
+  },
+  "3461": {
+   "number": 3461,
+   "title": "feat(video): 只有全部播放的蓝光剧集盘按集入库，同一发布多盘并成一部作品",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T15:15:28Z",
+   "additions": 2730,
+   "deletions": 179,
    "labels": []
   },
   "3462": {
@@ -677,6 +681,15 @@
    "deletions": 106,
    "labels": []
   },
+  "3488": {
+   "number": 3488,
+   "title": "fix(video): 在线 YouTube 视频的副字幕可选 YouTube 字幕轨",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T15:47:25Z",
+   "additions": 188,
+   "deletions": 29,
+   "labels": []
+  },
   "3489": {
    "number": 3489,
    "title": "fix(mihon): Android 宿主补 extension-lib 的 eu.kanade.tachiyomi.AppInfo 并 R8 keep",
@@ -765,6 +778,15 @@
    "mergedAt": "2026-11-16T08:11:14Z",
    "additions": 2925,
    "deletions": 47,
+   "labels": []
+  },
+  "3501": {
+   "number": 3501,
+   "title": "fix(subtitle): 番剧匹配候选改成单选列表行，标题完整换行不再截断 (BUG-4743)",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T16:20:31Z",
+   "additions": 147,
+   "deletions": 20,
    "labels": []
   },
   "3502": {
@@ -866,6 +888,15 @@
    "deletions": 9,
    "labels": []
   },
+  "3517": {
+   "number": 3517,
+   "title": "feat(media): 连续收听提醒（默认关，可提醒 / 暂停 / 关闭）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T15:26:31Z",
+   "additions": 1143,
+   "deletions": 2,
+   "labels": []
+  },
   "3519": {
    "number": 3519,
    "title": "feat(srs): 统计/列式/数字 id/血统读命令新代实现与第一部分复核修复（G7-4b，不接线）",
@@ -938,6 +969,15 @@
    "deletions": 54,
    "labels": []
   },
+  "3536": {
+   "number": 3536,
+   "title": "制卡后行为按模块单选：留弹窗 / 关弹窗 / 关弹窗并续播，视频默认关并续播（拍板台 8ldy3d8XFA）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T16:23:33Z",
+   "additions": 999,
+   "deletions": 167,
+   "labels": []
+  },
   "3537": {
    "number": 3537,
    "title": "歌词来源：LRCLIB 与歌词插件同一份有序列表，可一起排序",
@@ -947,6 +987,15 @@
    "deletions": 237,
    "labels": []
   },
+  "3539": {
+   "number": 3539,
+   "title": "feat(shortcuts): galgame 台词朗读全局快捷键",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T15:38:12Z",
+   "additions": 143,
+   "deletions": 3,
+   "labels": []
+  },
   "3540": {
    "number": 3540,
    "title": "feat(manga): 漫画下载可暂停/恢复，作品页就地管理本作队列，多选下载所选（拍板台 7LwxAtJ6r0）",
@@ -954,6 +1003,33 @@
    "mergedAt": "2026-11-16T14:51:14Z",
    "additions": 1780,
    "deletions": 205,
+   "labels": []
+  },
+  "3543": {
+   "number": 3543,
+   "title": "fix(dict): 书籍指定配置后查不到词——引擎装载集合按激活配置 ∪ 作品会话视图",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T15:15:47Z",
+   "additions": 451,
+   "deletions": 35,
+   "labels": []
+  },
+  "3544": {
+   "number": 3544,
+   "title": "横屏矮窗口：浮层与 app 外查词卡用满空间（拍板台 MANKlxTTpV）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T15:35:14Z",
+   "additions": 490,
+   "deletions": 48,
+   "labels": []
+  },
+  "3546": {
+   "number": 3546,
+   "title": "音乐歌词：搜索在线歌词可手动改歌名 / 歌手，LRCLIB 与歌词插件都按输入搜",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T15:33:17Z",
+   "additions": 699,
+   "deletions": 243,
    "labels": []
   },
   "3547": {
@@ -1001,6 +1077,15 @@
    "deletions": 17,
    "labels": []
   },
+  "3558": {
+   "number": 3558,
+   "title": "feat(anime-download): 种子结果加「复制下载链接」（拍板台 cxBASRELn9）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T15:51:28Z",
+   "additions": 163,
+   "deletions": 0,
+   "labels": []
+  },
   "3559": {
    "number": 3559,
    "title": "fix(adblock): 先暖机磁盘缓存引擎，联网刷新过期列表期间浏览器不再整页不拦",
@@ -1017,6 +1102,15 @@
    "mergedAt": "2026-11-16T14:11:51Z",
    "additions": 23,
    "deletions": 6,
+   "labels": []
+  },
+  "3564": {
+   "number": 3564,
+   "title": "feat(video-subtitle): 生成字幕读画面硬字幕 OCR，纠正识别同音字（d-fO4eGxKx）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T16:15:50Z",
+   "additions": 1449,
+   "deletions": 16,
    "labels": []
   },
   "3570": {
@@ -1071,6 +1165,60 @@
    "mergedAt": "2026-11-16T14:47:25Z",
    "additions": 124,
    "deletions": 2,
+   "labels": []
+  },
+  "3580": {
+   "number": 3580,
+   "title": "feat(ops): AI 助手可代用户提交应用内反馈（feedback.submit）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T16:08:25Z",
+   "additions": 703,
+   "deletions": 1,
+   "labels": []
+  },
+  "3581": {
+   "number": 3581,
+   "title": "feat(onboarding): 推荐包导入恢复确认框，预选合并（拍板台 pr3449）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T15:42:03Z",
+   "additions": 239,
+   "deletions": 60,
+   "labels": []
+  },
+  "3582": {
+   "number": 3582,
+   "title": "feat(ios): 「文件」App 导入收件箱，书库与诊断搬出 Documents",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T16:02:33Z",
+   "additions": 1718,
+   "deletions": 47,
+   "labels": []
+  },
+  "3583": {
+   "number": 3583,
+   "title": "feat(android): 用其他应用打开 / 分享导入书与漫画",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T16:11:54Z",
+   "additions": 970,
+   "deletions": 17,
+   "labels": []
+  },
+  "3586": {
+   "number": 3586,
+   "title": "fix(diagnostics): 前台服务进程死时按原生界面可见性证据判前后台（BUG-4718）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T16:22:03Z",
+   "additions": 501,
+   "deletions": 39,
+   "labels": []
+  },
+  "3588": {
+   "number": 3588,
+   "title": "fix(lyrics): 歌词模式横排左右边距写反（BUG-4714）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-16T16:23:10Z",
+   "additions": 162,
+   "deletions": 10,
    "labels": []
   }
  }
