@@ -137,7 +137,12 @@ class FushiShare {
     final List<String> staged = <String>[];
     for (int i = 0; i < files.length; i++) {
       final XFile file = files[i];
-      final String name = file.name.isNotEmpty ? file.name : 'fushi_share_$i';
+      // 有路径的文件用 `p.basename` 取名：XFile.name 只按宿主分隔符切，混用 `/`
+      // 与 `\` 的路径会把目录段带进文件名，落到不存在的子目录里。
+      final String base = file.path.isNotEmpty
+          ? p.basename(file.path)
+          : file.name;
+      final String name = base.isNotEmpty ? base : 'fushi_share_$i';
       final Directory slot = await Directory(
         p.join(shareDir.path, '$i'),
       ).create();
