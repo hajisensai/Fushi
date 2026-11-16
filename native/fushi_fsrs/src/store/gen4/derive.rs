@@ -297,6 +297,8 @@ pub struct Index<'t, 'c> {
     pub(super) writers_moved: bool,
     /// 一次缓存层的物化期间缓存的写入者表（`alias_writer_ix`；读的时候索引不变）。
     pub(super) pass_writers: Option<BTreeMap<String, String>>,
+    /// 缓存层按类拼行时没走捷径、按类重判了的寄存器数（`class.rs` [Index::class_lines]；只增不减，测试与量测读）。
+    pub(super) class_judged: u64,
 }
 
 impl<'t, 'c> Index<'t, 'c> {
@@ -327,6 +329,7 @@ impl<'t, 'c> Index<'t, 'c> {
             alias_moves: BTreeSet::new(),
             writers_moved: false,
             pass_writers: None,
+            class_judged: 0,
         }
     }
 

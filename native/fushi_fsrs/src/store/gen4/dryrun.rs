@@ -15,7 +15,8 @@
 //!    里的历史血统卡）名下的规范日志与有效复习。缓存层本身按规范 ID 物化，第 4 步的缓存三类也是按规范 ID 比的
 //!    （协议 3 一侧的行先改写成规范 ID，`compare.rs` 文件头「按规范 ID 比」）。
 //! 6. 按类判定的已知差异（§5.3「按类判定的已知差异」、§10 第 24 条，G9-2）：寄存器按别名类判与原值判不同的，逐条列出
-//!    并逐条佐证（`knownDifferences`）。佐证得了的不计入判定，它们牵动的缓存行单独比、只报数；佐证不了的计入对拍差异
+//!    并逐条佐证（`knownDifferences`）。佐证得了的不计入判定；其中胜者变了的，缓存行里这个寄存器喂得到的那几列不比
+//!    （`compare::cache_effect`），行的其余列照比、照计入判定；胜者没变的缓存行照常逐列比。佐证不了的计入对拍差异
 //!    （`classRegisters`），结论是 `fail`。只有 ID、写入者名与 seq，不含内容；任何一份库都能重跑（命令行
 //!    `examples/gen4_dryrun.rs`）。
 //!
@@ -503,7 +504,8 @@ fn profile_run(
     let started = Instant::now();
     let canon = CanonMap::load(t, col)?;
     // 按规范 ID 比的几类，跳过的集合也按规范 ID：协议 3 自己欠着收尾的、撞车的旧修改记录 ID 落在的笔记（同
-    // `compare::cache_pairs` 的口径）、已知差异牵动的笔记与卡（单独报在 `knownDifferences`），连同这些笔记的卡。
+    // `compare::cache_pairs` 的口径），连同这些笔记的卡。胜者变了的已知差异喂得到的列同 `compare::cache_pairs` 一样
+    // 只盖那几列（[canonical_pairs] 的 `known`），不整卡跳过。
     let old_rows: Option<CacheRows> = baseline.rows().map(|r| canon.rows(r));
     let mut skip = Skip {
         notes: skip.notes.iter().map(|n| canon.text(n)).collect(),
@@ -516,8 +518,6 @@ fn profile_run(
             .filter_map(|n| n.strip_prefix("note:"))
             .map(|n| canon.text(n)),
     );
-    skip.notes.extend(known.notes.iter().cloned());
-    skip.cards.extend(known.cards.iter().cloned());
     if !skip.notes.is_empty() {
         let note_at = CARD_COLS
             .iter()
@@ -547,6 +547,7 @@ fn profile_run(
             col,
             &canon,
             &skip,
+            &known,
             old,
             &mut canonical_diff,
         )?,
@@ -558,6 +559,7 @@ fn profile_run(
             col,
             &canon,
             &skip,
+            &known,
             &Default::default(),
             &mut canonical_diff,
         )?,
@@ -683,6 +685,7 @@ fn known_json(k: &Known) -> Value {
                     DiffEvidence::Overlap { name, lo, hi } => {
                         json!({"overlap": {"name": name, "lo": lo, "hi": hi}})
                     }
+                    DiffEvidence::Mismatch { name } => json!({"mismatch": name}),
                     DiffEvidence::None => json!("none"),
                 };
                 json!({
@@ -701,6 +704,7 @@ fn known_json(k: &Known) -> Value {
             "rawConflict": d.raw_conflict,
             "classConflict": d.class_conflict,
             "winnerChanged": d.winner_changed,
+            "hlcTie": d.hlc_tie,
             "proven": d.proven,
             "dominated": dominated,
             "revived": d.revived.iter().map(compare::op_text).collect::<Vec<_>>(),
@@ -719,10 +723,13 @@ fn known_json(k: &Known) -> Value {
             .into_iter()
             .map(|(c, [n, p, w])| (c, json!({"total": n, "proven": p, "winnerChanged": w})))
             .collect::<Map<String, Value>>(),
-        "cacheNotesAside": k.notes.len(),
-        "cacheCardsAside": k.cards.len(),
-        "cacheRowsAside": k.rows,
-        "cacheRowsAsideDiffer": k.rows_differ,
+        // 胜者变了的已知差异盖了列的笔记 / 卡 / 统计行所属的卡、统计行整行不比的卡、这些行（两侧合计）与其中原文不同的。
+        "cacheNotesMasked": k.note_cols.len(),
+        "cacheCardsMasked": k.card_cols.len(),
+        "cacheStatCardsMasked": k.stat_cols.len(),
+        "cacheStatCardsAside": k.stats_aside.len(),
+        "cacheRowsMasked": k.rows,
+        "cacheRowsMaskedDiffer": k.rows_differ,
         "entries": entries,
         "truncated": total > KNOWN_ENTRIES,
     })
@@ -1158,6 +1165,7 @@ fn canonical_pairs(
     col: i64,
     canon: &CanonMap,
     skip: &Skip,
+    known: &Known,
     old: &CacheRows,
     diff: &mut Diff,
 ) -> Result<(), String> {
@@ -1182,7 +1190,15 @@ fn canonical_pairs(
             if skip.cards.contains(&r[0]) || skip.notes.contains(&r[card_at("note_id")]) {
                 continue;
             }
-            let state: Vec<&str> = state_cols.iter().map(|c| r[card_at(c)].as_str()).collect();
+            // 胜者变了的已知差异喂得到的调度列盖住（[Known]），其余照比。
+            let masked = known.card_cols.get(&r[0]);
+            let state: Vec<&str> = state_cols
+                .iter()
+                .map(|c| match masked {
+                    Some(m) if m.contains(c) => compare::MASKED,
+                    _ => r[card_at(c)].as_str(),
+                })
+                .collect();
             // 两侧的行都已是规范 ID（新代按规范 ID 物化，协议 3 一侧由调用方改写过）。
             *n.entry(format!("{} | {}", r[0], state.join(" | ")))
                 .or_default() += 1;
@@ -1216,6 +1232,8 @@ fn canonical_pairs(
         rows.into_iter()
             .filter(|(card, _)| !skip.cards.contains(&card.text()))
             .map(|(card, log)| (canon.of(&card), canon.of(&log)))
+            // 血统变了的卡（[Known::stats_aside]）名下有哪些日志本身就跟着变。
+            .filter(|(card, _)| !known.stats_aside.contains(&card.text()))
             .collect()
     };
     let pair_text = |(card, log): &(Ref, Ref)| format!("{} | {}", card.text(), log.text());
@@ -1233,7 +1251,9 @@ fn canonical_pairs(
     let counts = |rows: Vec<(Ref, Ref)>| -> BTreeSet<(Ref, usize)> {
         let mut by: BTreeMap<Ref, BTreeSet<Ref>> = BTreeMap::new();
         for (card, log) in rows {
-            if skip.cards.contains(&card.text()) {
+            if skip.cards.contains(&card.text())
+                || known.stats_aside.contains(&canon.of(&card).text())
+            {
                 continue;
             }
             by.entry(canon.of(&card))

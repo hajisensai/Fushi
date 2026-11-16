@@ -526,7 +526,8 @@ impl<'t, 'c> Index<'t, 'c> {
     /// 寄存器内核的落库行（实体、键、值、三处写入者都是规范形，[Index::edit_lines_as]），与其中最大的 HLC 物理时刻
     /// （没有 = 0）。别名表没重算时报错。
     ///
-    /// 捷径只在「按类判与按原值判一定相同」时走：类里只有一个成员、没有归回的改名写入者、这个规范键只来自一个原值键——
+    /// 捷径只在「按类判与按原值判一定相同」时走：类里只有一个成员、这个规范键只来自一个原值键、寄存器里没有归回涉及的
+    /// 名字（改名后的名字或它的规范名）写的写入（dot 与 HLC 的写入者都看；集合里别处有归回写入者不影响这个寄存器）——
     /// 这时支配关系逐条相同（dot 不换名、闭包不换名、不并寄存器），活着的集合直接取 `reg_ix` 的状态，只把行拼成规范形。
     /// 值归一只会让「值不同」变少，不影响谁活着（文件头「只有一个成员」一条说的是冲突标志，缓存层取的是活着的写入，
     /// 由寄存器内核在视图里再判）。
@@ -554,7 +555,13 @@ impl<'t, 'c> Index<'t, 'c> {
                 g.1.insert((m.clone(), key));
             }
         }
-        let plain = members.len() == 1 && writers.is_empty();
+        // 归回涉及的名字（改名后的名字与它的规范名）：寄存器里没有这些名字写的写入时，换名不改变谁见过谁（支配只问
+        // 「上下文里这条写入的写入者那一格 ≥ 它的 seq」，那一格的写入者不在换名表里就不变），按类判与按原值判相同。
+        let renamed_names: BTreeSet<&str> = writers
+            .iter()
+            .flat_map(|(n, o)| [n.as_str(), o.as_str()])
+            .collect();
+        let single = members.len() == 1;
         let renamed = Renamed::default();
         // 每个规范键各自判活着的，行最后一次拼：不带旧戳的写入的上下文回答的是「见没见过别的要的行」，要的行跨键算
         // （笔记的「待裁决」看删除见没见过别的键上的内容修改，原值拼法也是整个实体一次拼）。
@@ -562,7 +569,7 @@ impl<'t, 'c> Index<'t, 'c> {
         let mut keys: HashMap<i64, String> = HashMap::new();
         for (key, (mut rows, raw)) in groups {
             rows.sort_unstable();
-            if plain && raw.len() == 1 {
+            if single && raw.len() == 1 && !self.touches_renamed(&rows, &renamed_names)? {
                 for &(k, s) in rows.iter().filter(|&&(_, s)| s >= R_DOMINATED) {
                     ks.push(k);
                     emit.push(s >= R_LIVE);
@@ -577,6 +584,7 @@ impl<'t, 'c> Index<'t, 'c> {
                 key: key.clone(),
                 keys: None,
             };
+            self.class_judged += 1;
             let (live, want) = self.judged(&rows, Some(&c))?;
             for (&(k, _), &w) in live.iter().zip(&want) {
                 ks.push(k);
@@ -600,6 +608,55 @@ impl<'t, 'c> Index<'t, 'c> {
             out.push((l.json, l.server_time));
         }
         Ok((out, top))
+    }
+
+    /// 这组写入（(操作主键, 状态)）里有没有 [names] 里的名字写的（dot 的写入者：带旧戳的取旧戳的写入者，不带的取设备）。
+    /// [names] 空时不读操作。
+    fn touches_renamed(&self, rows: &[(i64, i64)], names: &BTreeSet<&str>) -> Result<bool, String> {
+        if names.is_empty() {
+            return Ok(false);
+        }
+        for &(k, _) in rows {
+            let d = self.dot_of(k)?;
+            // HLC 的写入者也换（胜负平手时落到它上），一并看。
+            let hlc_writer = d.hlc.as_ref().map(|h| h.2.as_str());
+            if names.contains(d.writer.as_str()) || hlc_writer.is_some_and(|w| names.contains(w)) {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    /// 一条修改的 dot 与旧 HLC 的物理时刻、计数（带旧戳且 HLC 解得开时才有）。
+    fn dot_of(&self, k: i64) -> Result<DotOf, String> {
+        let e = self
+            .t
+            .entry_by_key(k)?
+            .ok_or_else(|| format!("gen4 index: register row {k} has no op"))?;
+        let Some(Body4::Edit(ed)) = body_of(&e) else {
+            return Err(format!("gen4 index: register row {k} is not an edit"));
+        };
+        Ok(match &ed.stamp {
+            Some(s) => DotOf {
+                writer: s.writer.clone(),
+                seq: s.seq,
+                hlc: match &s.hlc {
+                    StampHlc::Parsed {
+                        physical,
+                        counter,
+                        writer,
+                    } => Some((*physical, *counter, writer.clone())),
+                    StampHlc::Raw(_) => None,
+                },
+                op: e.id,
+            },
+            None => DotOf {
+                writer: e.id.device.text(),
+                seq: e.id.seq as i64,
+                hlc: None,
+                op: e.id,
+            },
+        })
     }
 
     /// 一个原值实体在 `reg_ix` 里的全部写入：(修改键的紧凑形, 操作主键, 状态)。
@@ -735,7 +792,22 @@ impl<'t, 'c> Index<'t, 'c> {
                     .iter()
                     .zip(&want)
                     .all(|(&(_, have), &w)| (have >= R_LIVE) == (w >= R_LIVE));
-                if same && raw_conflict == class_conflict {
+                let raw_winner = live.iter().find(|r| r.1 >= R_WINNER).map(|r| r.0);
+                let class_winner = live
+                    .iter()
+                    .zip(&want)
+                    .find(|(_, w)| **w >= R_WINNER)
+                    .map(|(r, _)| r.0);
+                let winner_changed = match (raw_winner, class_winner) {
+                    (Some(a), Some(b)) if a == b => false,
+                    (Some(a), Some(b)) => {
+                        self.winner_value(a, &key)? != self.winner_value(b, &key)?
+                    }
+                    (a, b) => a.is_some() != b.is_some(),
+                };
+                // 活着的集合与冲突标志都相同、胜者也没变：没有差异。活着的集合相同而胜者变了的（HLC 平手落到改名的
+                // HLC 写入者上，「三处一起换」）照样列出来。
+                if same && raw_conflict == class_conflict && !winner_changed {
                     continue;
                 }
                 let mut dominated = Vec::new();
@@ -753,21 +825,17 @@ impl<'t, 'c> Index<'t, 'c> {
                         _ => {}
                     }
                 }
-                let raw_winner = live.iter().find(|r| r.1 >= R_WINNER).map(|r| r.0);
-                let class_winner = live
-                    .iter()
-                    .zip(&want)
-                    .find(|(_, w)| **w >= R_WINNER)
-                    .map(|(r, _)| r.0);
-                let winner_changed = match (raw_winner, class_winner) {
-                    (Some(a), Some(b)) => {
-                        self.winner_value(a, &key)? != self.winner_value(b, &key)?
+                // 胜者变了、却没有哪条写入的死活变了：只可能是 HLC 平手落到了换名的 HLC 写入者上，要佐证这一点。
+                let hlc_tie = match (raw_winner, class_winner) {
+                    (Some(a), Some(b)) if winner_changed && dominated.is_empty() => {
+                        self.hlc_tie_on_renamed(a, b, &writers)?
                     }
-                    (a, b) => a.is_some() != b.is_some(),
+                    _ => false,
                 };
                 let proven = revived.is_empty()
                     && !(class_conflict && !raw_conflict)
-                    && dominated.iter().all(|d| d.evidence != DiffEvidence::None);
+                    && dominated.iter().all(|d| d.evidence.is_proof())
+                    && (!winner_changed || !dominated.is_empty() || hlc_tie);
                 out.diffs.push(ClassDiff {
                     kind: ek,
                     entity: canon.clone(),
@@ -775,6 +843,7 @@ impl<'t, 'c> Index<'t, 'c> {
                     raw_conflict,
                     class_conflict,
                     winner_changed,
+                    hlc_tie,
                     dominated,
                     revived,
                     proven,
@@ -801,17 +870,13 @@ impl<'t, 'c> Index<'t, 'c> {
         writers: &BTreeMap<String, String>,
         dots: &WriterDots,
     ) -> Result<Dominated, String> {
-        let e = self
-            .t
-            .entry_by_key(k)?
-            .ok_or_else(|| format!("gen4 index: register row {k} has no op"))?;
-        let Some(Body4::Edit(ed)) = body_of(&e) else {
-            return Err(format!("gen4 index: register row {k} is not an edit"));
-        };
-        let (writer, seq) = match &ed.stamp {
-            Some(s) => (s.writer.clone(), s.seq),
-            None => (e.id.device.text(), e.id.seq as i64),
-        };
+        let DotOf {
+            writer,
+            seq,
+            hlc,
+            op,
+        } = self.dot_of(k)?;
+        let own = hlc.map(|(p, c, _)| (p, c));
         let canonical = writers
             .get(&writer)
             .cloned()
@@ -826,12 +891,24 @@ impl<'t, 'c> Index<'t, 'c> {
             )
             .filter(|n| *n != writer)
             .collect();
-        let mut evidence = DiffEvidence::None;
-        if let Some(n) = others
+        // 「副本」= 另一个名字下同 seq、同 HLC 物理时刻与计数的**同一条**记录（resolver 归回写入者用的同一个判据）。
+        // 只看 seq 在不在等于直接假定 resolver 的不变量成立：同 seq 不同 HLC 的记录被放行归回正是要抓的 bug，判
+        // [DiffEvidence::Mismatch]，不再拿区间佐证兜（区间内的那一个 seq 已被直接证伪）。这条写入自己的 HLC 解不开时
+        // 不给副本佐证。
+        let same_seq: Vec<(&str, &Vec<(i64, i64)>)> = others
             .iter()
-            .find(|n| dots.get(**n).is_some_and(|m| m.contains_key(&seq)))
+            .filter_map(|n| dots.get(*n).and_then(|m| m.get(&seq)).map(|hs| (*n, hs)))
+            .collect();
+        let mut evidence = DiffEvidence::None;
+        if let Some((n, _)) = same_seq
+            .iter()
+            .find(|(_, hs)| own.is_some_and(|h| hs.contains(&h)))
         {
             evidence = DiffEvidence::Copy {
+                name: (*n).to_owned(),
+            };
+        } else if let Some((n, _)) = same_seq.iter().find(|(_, hs)| !hs.is_empty()) {
+            evidence = DiffEvidence::Mismatch {
                 name: (*n).to_owned(),
             };
         } else {
@@ -849,11 +926,28 @@ impl<'t, 'c> Index<'t, 'c> {
             }
         }
         Ok(Dominated {
-            op: e.id,
+            op,
             writer,
             seq,
             canonical_writer: canonical,
             evidence,
+        })
+    }
+
+    /// 原值判的胜者 [raw] 与按类判的胜者 [class] 是不是「HLC 平手、按类判换了 HLC 写入者才翻过来」：两条都带解得开的旧
+    /// HLC、物理时刻与计数相同，且至少一条的 HLC 写入者是改名后的名字（[writers] 的键）。
+    fn hlc_tie_on_renamed(
+        &self,
+        raw: i64,
+        class: i64,
+        writers: &BTreeMap<String, String>,
+    ) -> Result<bool, String> {
+        let (a, b) = (self.dot_of(raw)?, self.dot_of(class)?);
+        Ok(match (a.hlc, b.hlc) {
+            (Some((pa, ca, wa)), Some((pb, cb, wb))) => {
+                (pa, ca) == (pb, cb) && (writers.contains_key(&wa) || writers.contains_key(&wb))
+            }
+            _ => false,
         })
     }
 
@@ -892,6 +986,14 @@ impl<'t, 'c> Index<'t, 'c> {
     }
 }
 
+/// 一条修改的 dot（带旧戳的取旧戳，不带的取 (设备, seq)）与旧 HLC（物理时刻, 计数, 写入者；带旧戳且解得开时才有）。
+struct DotOf {
+    writer: String,
+    seq: i64,
+    hlc: Option<(i64, i64, String)>,
+    op: OpId,
+}
+
 /// 改名写入者相关名字下的带旧戳记录（[Index::writer_dots]）。
 type WriterDots = BTreeMap<String, BTreeMap<i64, Vec<(i64, i64)>>>;
 
@@ -911,12 +1013,25 @@ fn overlap(dots: &WriterDots, a: &str, b: &str) -> Option<(i64, i64)> {
 /// 一条按类判被支配的写入的佐证（[Index::class_differences]）。
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DiffEvidence {
-    /// 同一个规范写入者的另一个名字下有同 seq 的记录（被支配的 `(w, s)` 另有 `(merged-…, s)` 副本，或反过来）。
+    /// 同一个规范写入者的另一个名字下有同 seq、同 HLC 物理时刻与计数的同一条记录（被支配的 `(w, s)` 另有
+    /// `(merged-…, s)` 副本，或反过来）。
     Copy { name: String },
     /// s 落在这条写入的名字与 [name] 已证明的重叠区间 `[lo, hi]` 里。
     Overlap { name: String, lo: i64, hi: i64 },
+    /// [name] 下有同 seq 的记录、HLC 却不同：不是同一条记录，归回本身可疑（resolver bug），佐证不了。
+    Mismatch { name: String },
     /// 佐证不了：按 bug 处理。
     None,
+}
+
+impl DiffEvidence {
+    /// 佐证得了（[Copy](DiffEvidence::Copy) 或 [Overlap](DiffEvidence::Overlap)）。
+    pub fn is_proof(&self) -> bool {
+        matches!(
+            self,
+            DiffEvidence::Copy { .. } | DiffEvidence::Overlap { .. }
+        )
+    }
 }
 
 /// 一条原值判下活着、按类判被支配的写入。
@@ -942,10 +1057,13 @@ pub struct ClassDiff {
     pub class_conflict: bool,
     /// 生效值（规范形）变了。
     pub winner_changed: bool,
+    /// 胜者变了、没有哪条写入的死活变：两边胜者 HLC 物理时刻与计数相同、至少一边的 HLC 写入者是改名后的名字
+    /// （平手落到换过名的 HLC 写入者上，[Index::hlc_tie_on_renamed]）。这种差异的佐证就是它。
+    pub hlc_tie: bool,
     pub dominated: Vec<Dominated>,
     /// 原值判下被支配、按类判反而活着的写入（没有佐证的形态）。
     pub revived: Vec<OpId>,
-    /// 每条被支配的写入都有佐证、没有复活的写入、没有多出来的冲突。
+    /// 每条被支配的写入都有佐证、没有复活的写入、没有多出来的冲突；胜者变了而没有被支配的写入时还要 [hlc_tie]。
     pub proven: bool,
 }
 

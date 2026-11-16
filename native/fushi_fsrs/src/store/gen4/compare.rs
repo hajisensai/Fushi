@@ -12,21 +12,23 @@
 //! 两侧口径相同，比的是「同一个规范实体的行」。从没并入过、没有盐的库，规范 ID 就是原值，改写是恒等。
 //!
 //! 寄存器按别名类判定与协议 3 的原值判定有一类已定案的差异（写入者归回让原值冲突变成支配，设计 §5.3、§10 第 24 条）：
-//! [against_protocol_3] 先跑 `class.rs` 的 [Index::class_differences]，佐证得了的列为已知差异（[Known]），这些实体的缓存行
-//! 单独比、只报数，不计入差异；佐证不了的记成 `classRegisters` 差异（按 bug 处理）。
+//! [against_protocol_3] 先跑 `class.rs` 的 [Index::class_differences]，佐证得了的列为已知差异（[Known]）；其中胜者变了的，
+//! 缓存行里这个寄存器喂得到的那几列不比（[cache_effect]），行的其余列与行的有无照比；胜者没变的不豁免。佐证不了的记成
+//! `classRegisters` 差异（按 bug 处理，结论判失败）。
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use rusqlite::{Connection, ToSql, params};
 
 use super::cache::CFG_KEY;
-use super::class::{ClassDiffs, builtin_rule_canon};
+use super::class::{ClassDiff, ClassDiffs, builtin_rule_canon};
 use super::derive::{Index, R_LIVE, Ref, body_of};
 use super::schema::sql;
 use super::truth::Truth;
 use crate::gen4::op::Body4;
 use crate::store::sync2::semantics::current_tags;
 use crate::sync2::id::{Id, Key};
+use crate::sync2::op::EntKind;
 use crate::sync2::vv::OpId;
 
 /// 有差异的类别：(类别, 只在旧库, 只在新库)。空 = 完全一致。
@@ -175,15 +177,202 @@ impl CanonMap {
 }
 
 /// 按类判定的已知差异（模块文件头「按规范 ID 比」）与它们在缓存层对拍里的豁免。
+///
+/// 豁免只给**胜者变了**且佐证得了的差异（[Known::masking]）：胜者没变（样本库 144 处的绝大多数，「有冲突变没冲突」）时
+/// 缓存列里没有冲突标志，两侧的行本来就该逐列相同，照常比。胜者变了的也只盖住这个寄存器喂得到的那几列（[cache_effect]），
+/// 行的其余列照常比、行的有无照常比——这些行里别的列上的真差异照样计入差异、影响结论。
 #[derive(Debug, Default)]
 pub(crate) struct Known {
     pub diffs: ClassDiffs,
-    /// 已知差异牵动的规范笔记与卡（ID 文本）：缓存三类里它们的行不计入差异，单独比。
-    pub notes: BTreeSet<String>,
-    pub cards: BTreeSet<String>,
-    /// 单独比的行（两侧合计，去重）与其中两侧不同的。
+    /// 规范笔记 / 卡 → 不比的列（值换成 [MASKED]，其余列照比）；统计行按所属的卡。
+    pub note_cols: BTreeMap<String, BTreeSet<&'static str>>,
+    pub card_cols: BTreeMap<String, BTreeSet<&'static str>>,
+    pub stat_cols: BTreeMap<String, BTreeSet<&'static str>>,
+    /// 统计行整行不比的卡（血统变了：哪些日志归这张卡本身就跟着变，[Effect::stats_aside]）。
+    pub stats_aside: BTreeSet<String>,
+    /// 盖了列 / 整行不比的行（两侧合计，按盖之前的原文去重）与其中两侧原文不同的。
     pub rows: u64,
     pub rows_differ: u64,
+}
+
+impl Known {
+    /// 在缓存对拍里有豁免的已知差异：佐证得了、且胜者（生效值）变了的。
+    pub(crate) fn masking(&self) -> impl Iterator<Item = &ClassDiff> {
+        self.diffs
+            .diffs
+            .iter()
+            .filter(|d| d.proven && d.winner_changed)
+    }
+}
+
+/// 缓存行里盖住的格（[Known]）。
+pub(crate) const MASKED: &str = "(known)";
+
+/// 一个胜者变了的已知差异在缓存三类里喂得到哪些列（[cache_effect]）：笔记行的列、卡行的列（笔记 / 笔记类型上的差异
+/// 是指它们名下的卡）、统计行的列；[stats_aside] = 这张卡的统计行整行不比。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Effect {
+    pub note: &'static [&'static str],
+    pub cards: &'static [&'static str],
+    pub stats: &'static [&'static str],
+    pub stats_aside: bool,
+}
+
+const NO_EFFECT: Effect = Effect {
+    note: &[],
+    cards: &[],
+    stats: &[],
+    stats_aside: false,
+};
+
+/// 笔记行里由寄存器算出来的列（`id` / `guid` / `created_at` / `anki_id` 来自身份记录，不在内）。
+const NOTE_DERIVED: &[&str] = &[
+    "note_type_id",
+    "deck_id",
+    "deleted_at",
+    "term_key",
+    "reading_key",
+    "sort_field",
+    "tags_json",
+    "pending_decision",
+    "media_refs",
+    "source_kind",
+    "source_title",
+    "dupe_norm",
+    "source_key",
+];
+
+/// 卡行里由寄存器 / 重放算出来的列（`id` / `note_id` / `template_id` / `cloze_ord` / `anki_id` 是身份，不在内）。
+const CARD_DERIVED: &[&str] = &[
+    "deck_id",
+    "suspended",
+    "buried_until_day",
+    "flag",
+    "hidden",
+    "queue",
+    "due_day",
+    "due_at",
+    "scheduled_days",
+    "reps",
+    "lapses",
+    "stability",
+    "difficulty",
+    "last_reviewed_at",
+    "last_log_id",
+    "scheduler",
+    "note_created_at",
+    "new_position",
+    "freq_rank",
+];
+
+/// 一个寄存器（实体种类 + 规范键）的胜者变了，缓存行里哪些列可能跟着变（`registers.rs` 的视图 → `caches.rs` 的
+/// `note_row` / `card_row` / `TypeInfo`）。宁窄勿宽：漏了列 = 多报一条差异、结论判失败（看得见，回来补表）；多盖了列
+/// = 把真差异藏起来（看不见）。认不出的键按「这个实体全部派生列」盖，但行的有无照比。
+///
+/// - 笔记类型：`name` / `css` / `fieldDesc/…` 不进 `TypeInfo`，不牵动任何缓存行；其余（字段 / 模板定义、词条 / 词频字段、
+///   删除……）牵动这个类型下全部笔记的取字段列与它们的卡的 `hidden` / `freq_rank` / `queue`。
+/// - 笔记：`f/…` → 取字段算的列与卡的 `hidden`（填空）/ `freq_rank`；`deck` → `deck_id`（卡没设牌组时跟笔记）；
+///   `deleted` → 删除两列与卡的 `hidden`；`tags` / `source` → 标签 / 出处几列。`pending_decision` 看删除与内容修改的
+///   并发，内容键都带上它。
+/// - 卡：`deck` / `suspended` / `buried` / `flag` / `newPos` 各自那一列（停用 / 搁置连带 `queue`）；`historyFrom/…`
+///   改血统 → 整张卡的派生列、统计行整行不比；其余 → 整张卡的派生列与统计行的重放列。
+pub(crate) fn cache_effect(kind: EntKind, key: &str) -> Effect {
+    let head = key.split('/').next().unwrap_or(key);
+    let content: &[&str] = &[
+        "term_key",
+        "reading_key",
+        "sort_field",
+        "media_refs",
+        "dupe_norm",
+        "pending_decision",
+    ];
+    match (kind, head) {
+        (EntKind::NoteType, "name" | "css" | "fieldDesc") => NO_EFFECT,
+        (EntKind::NoteType, _) => Effect {
+            note: &[
+                "term_key",
+                "reading_key",
+                "sort_field",
+                "media_refs",
+                "dupe_norm",
+                "deleted_at",
+                "pending_decision",
+            ],
+            cards: &["hidden", "freq_rank", "queue"],
+            ..NO_EFFECT
+        },
+        (EntKind::Note, "f") => Effect {
+            note: content,
+            cards: &["hidden", "freq_rank"],
+            ..NO_EFFECT
+        },
+        (EntKind::Note, "deck") => Effect {
+            note: &["deck_id", "pending_decision"],
+            cards: &["deck_id"],
+            ..NO_EFFECT
+        },
+        (EntKind::Note, "deleted") => Effect {
+            note: &["deleted_at", "pending_decision"],
+            cards: &["hidden"],
+            ..NO_EFFECT
+        },
+        (EntKind::Note, "tags" | "source") => Effect {
+            note: &[
+                "tags_json",
+                "source_kind",
+                "source_title",
+                "source_key",
+                "pending_decision",
+            ],
+            ..NO_EFFECT
+        },
+        (EntKind::Note, _) => Effect {
+            note: NOTE_DERIVED,
+            cards: &["deck_id", "hidden", "freq_rank", "queue"],
+            ..NO_EFFECT
+        },
+        (EntKind::Card, "deck") => Effect {
+            cards: &["deck_id"],
+            ..NO_EFFECT
+        },
+        (EntKind::Card, "suspended") => Effect {
+            cards: &["suspended", "queue"],
+            ..NO_EFFECT
+        },
+        (EntKind::Card, "buried") => Effect {
+            cards: &["buried_until_day", "queue"],
+            ..NO_EFFECT
+        },
+        (EntKind::Card, "flag") => Effect {
+            cards: &["flag"],
+            ..NO_EFFECT
+        },
+        (EntKind::Card, "newPos") => Effect {
+            cards: &["new_position"],
+            ..NO_EFFECT
+        },
+        (EntKind::Card, "historyFrom") => Effect {
+            cards: CARD_DERIVED,
+            stats_aside: true,
+            ..NO_EFFECT
+        },
+        (EntKind::Card, _) => Effect {
+            cards: CARD_DERIVED,
+            stats: &["prev_due_day", "maturity_delta"],
+            ..NO_EFFECT
+        },
+        // 牌组、profile 的寄存器不进这三张表的行。
+        _ => NO_EFFECT,
+    }
+}
+
+/// 把 [mask] 里的列（[cols] 的列名）换成 [MASKED]。
+pub(crate) fn mask_row(row: &mut [String], cols: &[(&str, &str)], mask: &BTreeSet<&'static str>) {
+    for (i, c) in cols.iter().enumerate() {
+        if mask.contains(c.0) {
+            row[i] = MASKED.to_owned();
+        }
+    }
 }
 
 pub(crate) fn op_text(id: &OpId) -> String {
@@ -555,58 +744,73 @@ pub(crate) fn cache_pairs(
     };
     let held_note = |id: &str| held.contains(&format!("note:{id}"));
     let skip_note = |id: &str| collided.contains(&format!("note:{id}")) || skip.notes.contains(id);
-    // 已知差异牵动的笔记与卡（[Known]）：笔记类型上的差异牵动这个类型的全部笔记，笔记的差异牵动它的卡。
+    // 胜者变了的已知差异喂得到的列（[Known]、[cache_effect]）：笔记类型上的落到这个类型的全部笔记，笔记上的落到它的
+    // 卡（卡列另记），卡上的落到它的统计行。
     let mut new_notes = new("notes", NOTE_COLS)?;
+    let mut note_card: BTreeMap<String, BTreeSet<&'static str>> = BTreeMap::new();
     {
-        let types: BTreeSet<String> = known
-            .diffs
-            .diffs
-            .iter()
-            .filter(|d| d.proven && d.kind == crate::sync2::op::EntKind::NoteType)
-            .map(|d| d.entity.text())
+        let mut types: BTreeMap<String, (BTreeSet<&'static str>, BTreeSet<&'static str>)> =
+            BTreeMap::new();
+        let add = |m: &mut BTreeMap<String, BTreeSet<&'static str>>,
+                   id: String,
+                   cols: &[&'static str]| {
+            if !cols.is_empty() {
+                m.entry(id).or_default().extend(cols.iter().copied());
+            }
+        };
+        let masking: Vec<(EntKind, String, Effect)> = known
+            .masking()
+            .map(|d| (d.kind, d.entity.text(), cache_effect(d.kind, &d.key)))
             .collect();
-        for d in known.diffs.diffs.iter().filter(|d| d.proven) {
-            match d.kind {
-                crate::sync2::op::EntKind::Note => {
-                    known.notes.insert(d.entity.text());
+        for (kind, id, e) in masking {
+            match kind {
+                EntKind::NoteType => {
+                    let t = types.entry(id).or_default();
+                    t.0.extend(e.note.iter().copied());
+                    t.1.extend(e.cards.iter().copied());
                 }
-                crate::sync2::op::EntKind::Card => {
-                    known.cards.insert(d.entity.text());
+                EntKind::Note => {
+                    add(&mut known.note_cols, id.clone(), e.note);
+                    add(&mut note_card, id, e.cards);
+                }
+                EntKind::Card => {
+                    add(&mut known.card_cols, id.clone(), e.cards);
+                    add(&mut known.stat_cols, id.clone(), e.stats);
+                    if e.stats_aside {
+                        known.stats_aside.insert(id);
+                    }
                 }
                 _ => {}
             }
         }
         let ty = at(NOTE_COLS, "note_type_id");
         for r in old_notes.iter().chain(&new_notes) {
-            if types.contains(&r[ty]) {
-                known.notes.insert(r[0].clone());
+            if let Some((n, c)) = types.get(&r[ty]) {
+                let n: Vec<&'static str> = n.iter().copied().collect();
+                let c: Vec<&'static str> = c.iter().copied().collect();
+                add(&mut known.note_cols, r[0].clone(), &n);
+                add(&mut note_card, r[0].clone(), &c);
             }
         }
     }
-    let known_notes = known.notes.clone();
-    let is_known_note = |id: &str| known_notes.contains(id);
-    // 单独比的已知差异行：(旧一侧, 新一侧)。
+    let note_cols = known.note_cols.clone();
+    // 盖了列 / 整行不比的行的原文：(旧一侧, 新一侧)。
     let mut aside: (BTreeSet<String>, BTreeSet<String>) = Default::default();
     // 三张表一张一张比：同时在内存里的只有一张表两侧的行。
     let notes = |rows: &[Vec<String>], aside: &mut BTreeSet<String>| -> BTreeSet<String> {
         rows.iter()
             .filter(|r| !skip_note(&r[0]))
-            .filter(|r| {
-                let known = is_known_note(&r[0]);
-                if known {
-                    aside.insert(r.join(" | "));
-                }
-                !known
-            })
             .map(|r| {
+                let mut r = r.clone();
                 if held_note(&r[0]) {
-                    let mut r = r.clone();
                     r[at(NOTE_COLS, "deleted_at")] = "(held)".to_owned();
                     r[at(NOTE_COLS, "pending_decision")] = "(held)".to_owned();
-                    r.join(" | ")
-                } else {
-                    r.join(" | ")
                 }
+                if let Some(m) = note_cols.get(&r[0]) {
+                    aside.insert(r.join(" | "));
+                    mask_row(&mut r, NOTE_COLS, m);
+                }
+                r.join(" | ")
             })
             .collect()
     };
@@ -640,29 +844,28 @@ pub(crate) fn cache_pairs(
         .chain(skip.cards.iter().cloned())
         .collect();
     for r in old_cards.iter().chain(&new_cards) {
-        if is_known_note(&r[at(CARD_COLS, "note_id")]) {
-            known.cards.insert(r[0].clone());
+        if let Some(c) = note_card.get(&r[at(CARD_COLS, "note_id")]) {
+            known
+                .card_cols
+                .entry(r[0].clone())
+                .or_default()
+                .extend(c.iter().copied());
         }
     }
-    let known_cards = known.cards.clone();
+    let card_cols = known.card_cols.clone();
     let cards = |rows: &[Vec<String>], aside: &mut BTreeSet<String>| -> BTreeSet<String> {
         rows.iter()
             .filter(|r| !skipped_cards.contains(&r[0]))
-            .filter(|r| {
-                let known = known_cards.contains(&r[0]);
-                if known {
-                    aside.insert(r.join(" | "));
-                }
-                !known
-            })
             .map(|r| {
+                let mut r = r.clone();
                 if held_card(&r[at(CARD_COLS, "note_id")]) {
-                    let mut r = r.clone();
                     r[at(CARD_COLS, "hidden")] = "(held)".to_owned();
-                    r.join(" | ")
-                } else {
-                    r.join(" | ")
                 }
+                if let Some(m) = card_cols.get(&r[0]) {
+                    aside.insert(r.join(" | "));
+                    mask_row(&mut r, CARD_COLS, m);
+                }
+                r.join(" | ")
             })
             .collect()
     };
@@ -670,17 +873,23 @@ pub(crate) fn cache_pairs(
     let new_side = cards(&new_cards, &mut aside.1);
     push_pair(diff, ("cards", old_side, new_side));
     drop(new_cards);
+    let (stat_cols, stats_aside) = (&known.stat_cols, &known.stats_aside);
     let stats = |rows: &[Vec<String>], aside: &mut BTreeSet<String>| -> BTreeSet<String> {
+        let card = at(STAT_COLS, "card");
         rows.iter()
-            .filter(|r| !skipped_cards.contains(&r[at(STAT_COLS, "card")]))
-            .filter(|r| {
-                let known = known_cards.contains(&r[at(STAT_COLS, "card")]);
-                if known {
+            .filter(|r| !skipped_cards.contains(&r[card]))
+            .filter_map(|r| {
+                if stats_aside.contains(&r[card]) {
                     aside.insert(r.join(" | "));
+                    return None;
                 }
-                !known
+                let mut r = r.clone();
+                if let Some(m) = stat_cols.get(&r[card]) {
+                    aside.insert(r.join(" | "));
+                    mask_row(&mut r, STAT_COLS, m);
+                }
+                Some(r.join(" | "))
             })
-            .map(|r| r.join(" | "))
             .collect()
     };
     let new_stats = new("stats", STAT_COLS)?;
