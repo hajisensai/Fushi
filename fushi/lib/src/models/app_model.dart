@@ -6810,6 +6810,13 @@ class AppModel
         ),
       );
 
+  /// 「重新入库」扫描器（懒建；与 [mangaDownloadService] 同生命周期，关库 / 切
+  /// Profile 时在 [quiesceBackgroundDatabaseWriters] 一并丢弃）。下载页任务 tab
+  /// 从这里取，不自己按数据库 new。
+  OnlineMangaReshelf? _onlineMangaReshelf;
+  OnlineMangaReshelf get onlineMangaReshelf =>
+      _onlineMangaReshelf ??= OnlineMangaReshelf(database: database);
+
   /// 启动章节下载 worker：复位上次进程死亡留下的 `running` 行并开始消费。幂等。
   Future<void> startMangaDownloads() => mangaDownloadService.start();
 
@@ -11217,6 +11224,7 @@ class AppModel
     _animeDownloadSubscriptionService?.stop();
     _mangaDownloadService?.dispose();
     _mangaDownloadService = null;
+    _onlineMangaReshelf = null;
     // 服务持有 FushiDatabase 引用，db 关闭/重开时必须一并销毁，否则新库开出来后
     // 旧实例还拿着已关闭的连接，探测队列一落库就抛。
     _videoSpecsService?.dispose();
@@ -11368,6 +11376,7 @@ class AppModel
     _disposeOnDemandSubtitleRegistry();
     _mangaDownloadService?.dispose();
     _mangaDownloadService = null;
+    _onlineMangaReshelf = null;
     // 服务持有 FushiDatabase 引用，db 关闭/重开时必须一并销毁，否则新库开出来后
     // 旧实例还拿着已关闭的连接，探测队列一落库就抛。
     _videoSpecsService?.dispose();

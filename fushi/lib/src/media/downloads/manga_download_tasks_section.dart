@@ -34,16 +34,13 @@ import 'package:fushi/src/utils/misc/error_log_service.dart';
 class MangaDownloadTasksSection extends ConsumerStatefulWidget {
   const MangaDownloadTasksSection({
     super.key,
-    this.downloadsOverride,
-    this.reshelfOverride,
+    this.sourcesOverride,
     this.tasksBuilder,
   });
 
-  /// 测试注入服务（null = 取 [AppModel.mangaDownloadService]）。
-  final MangaDownloadService? downloadsOverride;
-
-  /// 测试注入「重新入库」扫描器（null = 按 app 数据库新建）。
-  final OnlineMangaReshelf? reshelfOverride;
+  /// 测试注入的全部数据来源（null = 全部取自 [AppModel]）。注入了就**整体**用它，
+  /// 不再碰 app 数据库——没注入的那一项就是没有。
+  final MangaDownloadTaskSources? sourcesOverride;
 
   /// Parent owns unified filtering, sorting and grouping, including empty lists.
   final DownloadTasksBuilder? tasksBuilder;
@@ -65,8 +62,10 @@ class _MangaDownloadTasksSectionState
   @override
   void initState() {
     super.initState();
-    _downloads = widget.downloadsOverride ?? _appService();
-    _reshelf = widget.reshelfOverride ?? _appReshelf();
+    final MangaDownloadTaskSources sources =
+        widget.sourcesOverride ?? _appSources();
+    _downloads = sources.downloads;
+    _reshelf = sources.reshelf;
     // 删书时保留下来的章节目录（「重新入库」候选）：删书 / 重新入库 / 改下载根
     // 后由 [OnlineMangaReshelf.changes] 通知重扫。
     _reshelfWatch = OnlineMangaReshelf.changes.listen(
@@ -97,11 +96,14 @@ class _MangaDownloadTasksSectionState
     super.dispose();
   }
 
-  OnlineMangaReshelf? _appReshelf() {
+  /// 没注入时的唯一来源：app 持有的服务（库没就绪 = 两项都没有）。
+  MangaDownloadTaskSources _appSources() {
     final AppModel appModel = ref.read(appProvider);
-    return appModel.isDatabaseReady
-        ? OnlineMangaReshelf(database: appModel.database)
-        : null;
+    if (!appModel.isDatabaseReady) return const MangaDownloadTaskSources();
+    return MangaDownloadTaskSources(
+      downloads: appModel.mangaDownloadService,
+      reshelf: appModel.onlineMangaReshelf,
+    );
   }
 
   Future<void> _reloadRecoverable() async {
@@ -118,12 +120,6 @@ class _MangaDownloadTasksSectionState
         stack,
       );
     }
-  }
-
-  /// Do not initialize the database-backed service when one is injected.
-  MangaDownloadService? _appService() {
-    final AppModel appModel = ref.read(appProvider);
-    return appModel.isDatabaseReady ? appModel.mangaDownloadService : null;
   }
 
   Future<void> _reload() async {
@@ -156,6 +152,20 @@ class _MangaDownloadTasksSectionState
       ],
     );
   }
+}
+
+/// [MangaDownloadTasksSection] 的数据来源：任务表服务 + 「重新入库」扫描器。
+///
+/// 两项一起注入或一起取自 app，不按项各自回退（注入了一项、另一项回头去读 app
+/// 数据库，单测没覆盖 appProvider 时就会在 initState 里炸）。
+class MangaDownloadTaskSources {
+  const MangaDownloadTaskSources({this.downloads, this.reshelf});
+
+  /// null = 不显示任务表里的漫画任务。
+  final MangaDownloadService? downloads;
+
+  /// null = 不显示「可重新入库」条目。
+  final OnlineMangaReshelf? reshelf;
 }
 
 /// 下载根里一部「有章节、没书架行」的在线漫画 → 统一下载中心条目。
