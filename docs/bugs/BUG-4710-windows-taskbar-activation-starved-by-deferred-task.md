@@ -1,4 +1,4 @@
-## BUG-4702 · 任何真实常驻动画 + idle 任务让调度器零延迟空转，任务栏点 Fushi 唤不到前台（BUG-4387 复发）
+## BUG-4710 · 任何真实常驻动画 + idle 任务让调度器零延迟空转，任务栏点 Fushi 唤不到前台（BUG-4387 复发）
 - **报告**：2026-11-16（所有者本机，安装版 3.3.0-debug.27417——已含 BUG-4387 修复 `b31e719cb3`：「Fushi 一直在屏幕后面」，点任务栏图标不上前台；界面照常出帧，「发现新版本」弹窗开着）
 - **真实性**：✅ 真 bug，现场实测：
   - 主窗 `FLUTTER_RUNNER_WIN32_WINDOW` 可见、未最小化、在屏内，只是 Z 序被压在下面。任务栏点图标后前台变成 NULL、之后一直 NULL；外部进程对主窗 `SetForegroundWindow` 返回 1，但 `SetWinEventHook` 收不到任何 `EVENT_SYSTEM_FOREGROUND`，`GetGUIThreadInfo` 里 Fushi UI 线程 `hwndActive` 始终为空——系统把前台交给了 Fushi 的输入队列，Fushi 线程却从没处理那条激活事件。同一时刻对 Explorer 窗口做同样操作立即生效（对照）。
