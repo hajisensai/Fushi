@@ -18,7 +18,8 @@ const String _ass =
     'Dialogue: 0,0:00:01.00,0:00:02.00,Default,,{\\fad(150,150)}台词一\n'
     'Dialogue: 0,0:00:01.01,0:00:02.00,Default,,{\\an8\\c&H00FFFF&}台词二\n'
     'Dialogue: 0,0:00:01.02,0:00:02.00,Default,,{\\k20}そ{\\k30}よぐ\n'
-    'Dialogue: 0,0:00:01.03,0:00:02.00,Default,,{\\pos(960,120)}招牌\n'
+    'Dialogue: 0,0:00:01.03,0:00:02.00,Default,,{\\pos(960,120)\\frz6}招牌\n'
+    'Dialogue: 0,0:00:01.031,0:00:02.00,Default,,{\\pos(580,900)}定位台词\n'
     'Dialogue: 0,0:00:01.04,0:00:02.00,Default,,{\\t(0,500,\\alpha&HFF&)}渐隐\n'
     'Dialogue: 0,0:00:01.05,0:00:02.00,Default,Banner;12,横幅\n'
     'Dialogue: 0,0:00:01.06,0:00:02.00,Tilted,,斜字\n';
@@ -36,6 +37,8 @@ void main() {
         '台词二': false,
         'そよぐ': true,
         '招牌': true,
+        // 只带 \pos 的定位对白不是特效（不少字幕组每句都带 \pos）。
+        '定位台词': false,
         '渐隐': true,
         '横幅': true,
         '斜字': true,

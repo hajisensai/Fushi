@@ -633,11 +633,79 @@ pub fn parse_ass(content: &[u16], include_drawings: bool) -> DResult<AssResult> 
             play_res: Some(rc.play_res),
         });
     }
+    mark_per_char_split_effects(&mut cues);
     Ok(AssResult {
         styles: style_objects,
         cues,
         skipped,
     })
+}
+
+/// 逐字拆开歌词的同行判据：`\pos` 的 y（PlayResY 归一化分数）差在此以内算同一行（与 Dart
+/// 列表 `mergePerCharacterCueGroups` 的 `kSameRowEps` 一致）。
+const PER_CHAR_SAME_ROW_EPS: f64 = 0.001;
+
+/// 特效字幕判据（H7r4mf_z2n，见 [Markup::effect]）的事件间补充：OP / ED 卡拉 OK 常把
+/// 一句歌词拆成每字一条 `Dialogue`，各带自己的 `\pos`（常只配 `\fad`），靠坐标在画面上
+/// 拼成一行。单看一条事件只有 `\pos`，与普通定位对白分不开；成组才是特效——**单字**、
+/// 带 `\pos`、同 Layer、同一行（y 分数相等）且与另一条这样的事件**同时在屏**。孤立的
+/// 单字对白（`{\pos(..)}え`）不受影响。`cues` 已按 start 升序。
+fn mark_per_char_split_effects(cues: &mut [Cue]) {
+    // `Markup::pos` 已是 PlayRes 归一化后的分数。
+    let row_y = |c: &Cue| -> Option<f64> { c.markup.pos.map(|(_, y)| y) };
+    let candidates: Vec<usize> = (0..cues.len())
+        .filter(|&i| {
+            let m = &cues[i].markup;
+            !m.effect && m.pos.is_some() && is_single_grapheme(&m.plain_text)
+        })
+        .collect();
+    let mut hit = vec![false; candidates.len()];
+    for a in 0..candidates.len() {
+        let ca = &cues[candidates[a]];
+        let (Some(ya), la) = (row_y(ca), ca.markup.layer) else {
+            continue;
+        };
+        for b in (a + 1)..candidates.len() {
+            let cb = &cues[candidates[b]];
+            // 按 start 升序：cb 起点已过 ca 终点，后面的更不会与 ca 同时在屏。
+            if cb.start_ms >= ca.end_ms {
+                break;
+            }
+            if cb.markup.layer == la
+                && row_y(cb).is_some_and(|yb| (yb - ya).abs() <= PER_CHAR_SAME_ROW_EPS)
+            {
+                hit[a] = true;
+                hit[b] = true;
+            }
+        }
+    }
+    for (k, &i) in candidates.iter().enumerate() {
+        if hit[k] {
+            cues[i].markup.effect = true;
+        }
+    }
+}
+
+/// UTF-16 文本是否只有一个「字」：恰好一个基字符，后随的组合附加符（浊点、变体选择符、
+/// ZWJ 等）不另计。与 Dart 列表合并用的 `characters.length == 1` 对齐到常见日文 / CJK。
+fn is_single_grapheme(text: &[u16]) -> bool {
+    let mut base = 0;
+    for ch in char::decode_utf16(text.iter().copied()) {
+        let Ok(ch) = ch else {
+            return false;
+        };
+        let combining = matches!(
+            ch as u32,
+            0x0300..=0x036F | 0x3099..=0x309A | 0xFE00..=0xFE0F | 0x200D | 0xE0100..=0xE01EF
+        );
+        if !combining {
+            base += 1;
+            if base > 1 {
+                return false;
+            }
+        }
+    }
+    base == 1
 }
 
 #[cfg(test)]
@@ -693,7 +761,9 @@ mod tests {
     }
 
     /// H7r4mf_z2n：特效字幕判据——排版 / 动画类标签、`Effect` 列、样式旋转算特效；
-    /// 普通台词（含 `\fad` 淡入淡出、`\an8` 顶部、颜色 / 粗体、静态 `\fscx`、`\frz0`）不算。
+    /// 普通台词（含 `\fad` 淡入淡出、`\an8` 顶部、颜色 / 粗体、静态 `\fscx`、`\frz0`、
+    /// 只带 `\pos` 的定位对白、孤立的单字 `\pos` 对白）不算；同一行同时在屏的单字 `\pos`
+    /// 事件（逐字拆开的歌词）算，别的行上的单字不被牵连。
     #[test]
     fn ass_effect_flag() {
         let src = concat!(
@@ -706,7 +776,11 @@ mod tests {
             "Dialogue: 0,0:00:01.02,0:00:02.00,Default,,{\\fscx90\\frz0}plain3\n",
             "Dialogue: 0,0:00:01.03,0:00:02.00,Default,,{\\k20}そ{\\k30}よ\n",
             "Dialogue: 0,0:00:01.04,0:00:02.00,Default,,{\\kf20}lyric\n",
-            "Dialogue: 0,0:00:01.05,0:00:02.00,Default,,{\\pos(960,100)}sign\n",
+            "Dialogue: 0,0:00:01.05,0:00:02.00,Default,,{\\pos(960,100)}posline\n",
+            "Dialogue: 0,0:00:01.05,0:00:02.00,Default,,{\\pos(500,900)}え\n",
+            "Dialogue: 0,0:00:01.05,0:00:02.00,Default,,{\\an7\\pos(461,672)\\fad(250,250)}手\n",
+            "Dialogue: 0,0:00:01.05,0:00:02.00,Default,,{\\an7\\pos(491,672)\\fad(250,250)}を\n",
+            "Dialogue: 0,0:00:01.05,0:00:02.00,Default,,{\\an7\\pos(800,300)}上\n",
             "Dialogue: 0,0:00:01.06,0:00:02.00,Default,,{\\move(0,0,100,100)}moving\n",
             "Dialogue: 0,0:00:01.07,0:00:02.00,Default,,{\\t(\\alpha&HFF&)}anim\n",
             "Dialogue: 0,0:00:01.08,0:00:02.00,Default,,{\\clip(0,0,10,10)}clipped\n",
@@ -731,7 +805,11 @@ mod tests {
             ("plain3", false),
             ("そよ", true),
             ("lyric", true),
-            ("sign", true),
+            ("posline", false),
+            ("え", false),
+            ("手", true),
+            ("を", true),
+            ("上", false),
             ("moving", true),
             ("anim", true),
             ("clipped", true),
