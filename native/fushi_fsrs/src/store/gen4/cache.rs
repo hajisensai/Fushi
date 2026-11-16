@@ -36,25 +36,27 @@
 //!   不物化（三张表这个集合没有行）：配置只有宿主知道，接线（G7）在第一次重建前写进去；配置变了调
 //!   [Index::rebuild_caches]（只重建这一层）。
 //!
-//! # 别名：**缓存层现在按原值 ID 建，不过别名表**（设计 §5.3 的「别名层接线」在 G9）
+//! # 别名：**缓存层按规范 ID 物化**（设计 §5.3「别名层接线」，G9-2）
 //!
-//! 三张表的 ID 列是操作里写的原值，与协议 3 的缓存表逐行可比（样本库对拍靠这个）。别名表（`alias.rs`）已经有了，读侧
-//! 按「规范卡 + 规范日志 ID」成组的接口是 [Index::logs_of_class]；把缓存层接上去不是换两个函数的事，留在这里的
-//! [Index::canon] / [Index::class_of] / [Index::canon_text] 只是把「哪里取 ID、哪里按类读」标了出来（现在恒等）。
-//! 接的时候还差的（都没做）：
+//! 三张表的 ID 列（笔记、笔记类型、牌组、卡、模板、最后一条日志、统计行的卡与日志）都是规范 ID（别名表 `alias.rs`
+//! [Index::canonical]）；协议 3 的缓存表是原值 ID，对拍时先把协议 3 一侧改写成规范 ID（`compare.rs` 文件头「按规范
+//! ID 比」）。各处：
 //!
-//! 1. **应有的卡**要按规则算规范 ID，不能查表：`note_row` 现在由笔记 ID 派生卡 ID（`registers::card_id`），规范笔记 ID
-//!    派生出来的不是历史上那张卡；而一张从没出现在操作里的卡别名表里没有行。得由 `gen4_ids::rules` 直接给规范卡 ID，
-//!    否则卡第一次被复习、ID 出现在日志里之后它的缓存行会换 ID。
-//! 2. **一个寄存器的写入按整个别名类归并**（§5.3）：`reg_ix` 按原值实体各判各的，类里两个成员各有一个胜者。按类判定
-//!    在 derive 的读接口里（索引表仍存原值，设计 §5.3 2026-11-15 统一口径）：[Index::class_winners] /
-//!    [Index::class_value]（`class.rs`，G9-1）已有，缓存层还没改用它。
-//! 3. 修改行 / 日志投影行 JSON 里的 ID（实体、卡、笔记、`revokes`、牌组）还是原值，视图与重放按字符串比；归一的读接口
-//!    [Index::canonical_json] / [Index::canonical_value]（`class.rs`）已有，缓存层还没改用它。
-//! 4. 标签：成员的 `tag_ix` 行并起来再判：[Index::class_tags]（`class.rs`）已有，缓存层还在用只取一个 ID 的
-//!    [Index::tags_of]。
-//! 5. 别名表变了要让受影响的规范 ID 进 [Dirt]（或整层重建）。
+//! 1. **应有的卡**按规则算：规范笔记 + 规范模板派生规范卡（`gen4_ids::rules::card`，与 `registers::card_id` 同一个公
+//!    式），从没出现在操作里的卡也给得出，第一次复习之后不换 ID。宿主给的配置里的内置定义 ID 先归一
+//!    （[Index::canonical_config]：查表，表里没有的按内置规则表 `builtin_rule_canon`）。
+//! 2. **一个寄存器的写入按整个别名类归并**：活着的写入取 [Index::class_lines]（`class.rs`），类里多个成员、或有归回
+//!    的写入者时按类重判；只有一个成员、没有归回写入者的走 `reg_ix` 的现成状态。
+//! 3. 修改行 / 日志投影行 JSON 里的 ID 归一（[Index::canonical_json]）；一条规范日志在类里有多份时取最小的那条操作。
+//! 4. 标签：成员的 `tag_ix` 行并起来判（[Index::class_tags]）。
+//! 5. 别名表变了：`alias.rs` 记下变了规范 ID 的 ID（连同前后的规范 ID，`alias_moves`）与归回写入者变没变
+//!    （`writers_moved`）。收尾时逐个 ID 按键找引用它的行（[Index::moved_rows]），已不是规范 ID 的行删掉、按新规范 ID
+//!    重算；写入者归回变了或变动的 ID 多于 [MOVES_IN_PLACE] 时整层重建。别名表还没重算（[Index::hold_aliases]）时缓存
+//!    不动，攒到重算之后的那次收尾。
 //!
+//! 没并起来的：扣住的删除、清除、不可信仍按原值实体判（`class.rs` 文件头「没有并起来的」），类与原值口径的取舍随
+//! G7 接线定。
+
 //! # 与协议 3 的差别（都是「协议 3 依赖到达顺序 / 本机状态」）
 //!
 //! - `updated_at`、`server_time` 见上。
@@ -2154,6 +2156,213 @@ mod tests {
             put_cfg(t, col);
             let did = t.tx(|t| Index::new(t, col).rebuild_caches()).unwrap();
             assert_eq!((did.cache_notes, did.cache_cards), (1, 2));
+            assert_rebuild_is_identity(t, col);
+        });
+    }
+
+    // ---------------------------------------------------------------- 按规范 ID 物化（G9-2）
+
+    const U1: &str = "0192f0aa-0000-7000-8000-00000000000a";
+    const U2: &str = "0192f0aa-0000-7000-8000-00000000000b";
+    const ANKI_NT: i64 = 1_700_000_000_001;
+
+    /// 同一条笔记（guid `g`）在两个盐下各一份：两份的笔记类型、字段、模板、笔记、卡都带盐，规范 ID 是不带盐的同一套。
+    struct Twin {
+        nt: [crate::sync2::id::Id; 2],
+        note: [crate::sync2::id::Id; 2],
+        card: [Key; 2],
+        c_note: String,
+        c_card: String,
+    }
+
+    fn twin() -> Twin {
+        use crate::gen4_ids::rules::{self, CANONICAL};
+        let nt = [
+            rules::note_type(Some(U1), ANKI_NT),
+            rules::note_type(Some(U2), ANKI_NT),
+        ];
+        let note = [rules::note(Some(U1), "g"), rules::note(Some(U2), "g")];
+        let card = |n: &crate::sync2::id::Id, t: &crate::sync2::id::Id| {
+            Key::of(&card_of(&n.text(), &rules::template(t, 0).text(), 0))
+        };
+        let c_nt = rules::note_type(CANONICAL, ANKI_NT);
+        let c_note = rules::note(CANONICAL, "g");
+        Twin {
+            card: [card(&note[0], &nt[0]), card(&note[1], &nt[1])],
+            nt,
+            note,
+            c_card: card(&c_note, &c_nt).text(),
+            c_note: c_note.text(),
+        }
+    }
+
+    /// 评分 [lid] 落在卡 [card] 上。
+    fn log_on(lid: u8, card: &Key, at: i64, reps: i64) -> Body4 {
+        let Body4::Log(mut l) = log(lid, T1, at, 3, "review", reps) else {
+            unreachable!()
+        };
+        l.card = card.clone();
+        Body4::Log(l)
+    }
+
+    /// 两份的定义、内容、标签与评分（不含盐）：第一份标签 `x`、评分 0x91；第二份标签 `y`、见过 0x91 之后评分 0x93。
+    fn twin_steps(w: &Twin) -> Vec<Body4> {
+        use crate::gen4_ids::rules;
+        let mut out = vec![entity(
+            EntKind::Deck,
+            uuid(DECK),
+            json!({"createdAt": 1, "builtin": "default"}),
+        )];
+        for i in 0..2 {
+            let nt = Key::Uuid(w.nt[i]);
+            let f = rules::field(&w.nt[i], 0).text();
+            let t = rules::template(&w.nt[i], 0).text();
+            let n = Key::Uuid(w.note[i]);
+            out.push(entity(
+                EntKind::NoteType,
+                nt.clone(),
+                json!({"createdAt": 1, "ntKind": "standard", "ankiNum": ANKI_NT}),
+            ));
+            out.push(set(
+                EntKind::NoteType,
+                nt.clone(),
+                &format!("fieldDef/{f}"),
+                json!({"ankiNum": 0, "name": "E", "ord": 0}),
+            ));
+            out.push(set(
+                EntKind::NoteType,
+                nt,
+                &format!("tmplDef/{t}"),
+                json!({"ankiNum": 0, "name": "A", "ord": 0, "front": "{{E}}"}),
+            ));
+            out.push(entity(
+                EntKind::Note,
+                n.clone(),
+                json!({"createdAt": 1, "guid": "g", "noteTypeId": w.nt[i].text()}),
+            ));
+            out.push(set(
+                EntKind::Note,
+                n.clone(),
+                &format!("f/{f}"),
+                json!("猫"),
+            ));
+            out.push(Body4::TagAdd {
+                note: n,
+                tag: ["x", "y"][i].to_owned(),
+            });
+        }
+        out.push(log_on(0x91, &w.card[0], T0, 1));
+        out.push(log_on(0x93, &w.card[1], T0 + DAY, 2));
+        out
+    }
+
+    fn feed(t: &Truth<'_>, ix: &mut Index<'_, '_>, col: i64, seq0: u64, bodies: &[Body4]) {
+        for (i, b) in bodies.iter().enumerate() {
+            let seq = seq0 + i as u64;
+            native(t, ix, col, &op(0xa1, seq, 100 + seq as i64, &[], b));
+        }
+    }
+
+    /// 两份合成一个类之后的缓存：一行规范笔记（标签并起来）、一张规范卡（两条评分都算在它名下）、两行统计。
+    fn assert_one_canonical_note(conn: &Connection, w: &Twin) {
+        let tags: Vec<String> = rows(conn, "SELECT id, tags_json FROM notes")
+            .into_iter()
+            .map(|r| {
+                assert_eq!(r[0], w.c_note);
+                r[1].clone()
+            })
+            .collect();
+        assert_eq!(tags.len(), 1, "{tags:?}");
+        let mut got: Vec<String> = serde_json::from_str(&tags[0]).unwrap();
+        got.sort();
+        assert_eq!(got, ["x", "y"]);
+        let last = id(0x93).text();
+        assert_eq!(
+            rows(conn, "SELECT id, note_id, reps, last_log_id FROM cards"),
+            strs(&[[w.c_card.as_str(), w.c_note.as_str(), "2", last.as_str()]])
+        );
+        let (r1, r3) = (id(0x91).text(), id(0x93).text());
+        assert_eq!(
+            rows(conn, "SELECT log, card FROM stats ORDER BY at"),
+            strs(&[
+                [r1.as_str(), w.c_card.as_str()],
+                [r3.as_str(), w.c_card.as_str()]
+            ])
+        );
+    }
+
+    /// 两个盐下各一份的同一条笔记：缓存层只有规范 ID 的一行笔记、一张卡，两份的标签与评分都归到它名下；逐条维护与整份
+    /// 重建相同。
+    #[test]
+    fn salted_copies_materialize_as_one_canonical_note_and_card() {
+        with(|t, col| {
+            put_cfg(t, col);
+            let w = twin();
+            t.tx(|t| {
+                let mut ix = Index::new(t, col);
+                let mut steps = vec![Body4::salts([U1, U2]).unwrap()];
+                steps.extend(twin_steps(&w));
+                feed(t, &mut ix, col, 1, &steps);
+                ix.settle()?;
+                Ok(())
+            })
+            .unwrap();
+            assert_one_canonical_note(t.conn(), &w);
+            assert_rebuild_is_identity(t, col);
+        });
+    }
+
+    /// 缓存已按原 ID 物化之后盐才到（别名表变了）：原 ID 的行删掉，按规范 ID 重算写回，与盐先到的结果相同、与整份重建
+    /// 相同。改别名的批次里写入者没动、变动的 ID 不多，走的是逐个 ID 的就地维护（`refresh_caches`）。
+    #[test]
+    fn salts_arriving_after_the_caches_move_rows_onto_canonical_ids() {
+        with(|t, col| {
+            put_cfg(t, col);
+            let w = twin();
+            let steps = twin_steps(&w);
+            t.tx(|t| {
+                let mut ix = Index::new(t, col);
+                feed(t, &mut ix, col, 1, &steps);
+                ix.settle()?;
+                Ok(())
+            })
+            .unwrap();
+            assert_eq!(rows(t.conn(), "SELECT COUNT(*) FROM notes")[0][0], "2");
+            assert_eq!(rows(t.conn(), "SELECT COUNT(*) FROM cards")[0][0], "2");
+            t.tx(|t| {
+                let mut ix = Index::new(t, col);
+                let salts = [Body4::salts([U1, U2]).unwrap()];
+                feed(t, &mut ix, col, steps.len() as u64 + 1, &salts);
+                ix.settle()?;
+                Ok(())
+            })
+            .unwrap();
+            assert_one_canonical_note(t.conn(), &w);
+            assert_rebuild_is_identity(t, col);
+        });
+    }
+
+    /// 改别名的批次在 `hold_aliases` 下：缓存不跟着半新半旧的别名表刷，放开后补齐，与整份重建相同。
+    #[test]
+    fn held_aliases_defer_the_cache_refresh_and_catch_up() {
+        with(|t, col| {
+            put_cfg(t, col);
+            let w = twin();
+            let steps = twin_steps(&w);
+            t.tx(|t| {
+                let mut ix = Index::new(t, col);
+                feed(t, &mut ix, col, 1, &steps);
+                ix.settle()?;
+                ix.hold_aliases(true);
+                let salts = [Body4::salts([U1, U2]).unwrap()];
+                feed(t, &mut ix, col, steps.len() as u64 + 1, &salts);
+                ix.settle()?;
+                ix.hold_aliases(false);
+                ix.settle()?;
+                Ok(())
+            })
+            .unwrap();
+            assert_one_canonical_note(t.conn(), &w);
             assert_rebuild_is_identity(t, col);
         });
     }

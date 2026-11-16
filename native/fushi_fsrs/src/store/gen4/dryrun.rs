@@ -1945,6 +1945,16 @@ mod tests {
             p["oldSidePending"],
             json!({"replayCards": 0, "staleTagNotes": 0})
         );
+        // 单设备、无改名写入者：没有按类判定的差异，报告里照样有这一节（版本 3）。
+        let k = &p["knownDifferences"];
+        assert_eq!(r["version"], 3);
+        assert_eq!(
+            (&k["total"], &k["unproven"]),
+            (&json!(0), &json!(0)),
+            "{k:#}"
+        );
+        assert_eq!(k["entries"], json!([]));
+        assert_eq!(k["truncated"], false);
         assert_eq!(p["closures"]["different"], 0);
         assert_eq!(p["imported"]["devices"], 1);
         assert!(p["settled"]["cacheCards"].as_u64().unwrap() >= 4);
@@ -2523,7 +2533,8 @@ mod tests {
         if kept.exists() {
             let probe = crate::gen4_ids::probe::alias_table_sources(&c);
             let n = Connection::open_with_flags(&kept, OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
-            let mut ours: std::collections::HashMap<[u8; 16], i64> = std::collections::HashMap::new();
+            let mut ours: std::collections::HashMap<[u8; 16], i64> =
+                std::collections::HashMap::new();
             let mut stmt = n.prepare("SELECT id, how FROM alias_ix").unwrap();
             for row in stmt
                 .query_map([], |r| Ok((r.get::<_, Vec<u8>>(0)?, r.get::<_, i64>(1)?)))

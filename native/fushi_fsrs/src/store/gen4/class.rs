@@ -1,7 +1,8 @@
 //! 读侧按别名类判定（设计 §5.3「一个寄存器的写入按实体的整个别名类归并」，G9-1）。[Index] 的一部分，**只读**：
 //! 索引表（`reg_ix`、`tag_ix`）照旧存操作体里的原值 ID、按原值实体各判各的（`derive.rs` / `weigh.rs`），这里在读的
 //! 时候把一个别名类的全部成员并起来，用**同一个**冻结判据（`crate::registers::judge_register`，拼行在
-//! [Index::edit_lines_as]）再判一次。没有调用方：缓存层（`cache.rs`）接到这里是 G9-2，写命令按规范 ID 写是 G7-3b。
+//! [Index::edit_lines_as]）再判一次。调用方只有缓存层（`cache.rs`，[Index::class_lines]，G9-2）与迁移报告的已知差异（[Index::class_differences]）；
+//! 写命令按规范 ID 写是 G7-3b。
 //!
 //! # 并起来的是什么
 //!
@@ -30,8 +31,8 @@
 //!
 //! 负状态是索引层按原值实体判的，这里原样拿来：已清除（[super::weigh::S_PURGED]：Purge 点名的是原值实体，清的是
 //! 「作者没见过它」的、这个原值实体上的操作）、扣住的删除（[super::weigh::S_HELD]）、作者不可信（
-//! [super::weigh::S_DISTRUSTED]）。一条 Purge 要不要清掉整个类、一条删除的扣住要不要看全类的并发操作，是 G9-2 /
-//! G7 接线时随缓存层一起定的事（设计 §10 第 19 条同源）；在那之前，按类读与按原值读对这三种状态口径相同。
+//! [super::weigh::S_DISTRUSTED]）。一条 Purge 要不要清掉整个类、一条删除的扣住要不要看全类的并发操作，是 G7
+//! 接线时定的事（G9-2 的缓存层沿用原值口径）（设计 §10 第 19 条同源）；在那之前，按类读与按原值读对这三种状态口径相同。
 //!
 //! # 内嵌的 ID（设计 §5.3「内嵌的 ID 同样过别名表」）
 //!
@@ -1266,6 +1267,139 @@ mod tests {
             .unwrap();
             assert_rebuild_is_identity(t, col);
         });
+    }
+
+    /// 改名写入者的另一对同一套 seq 的证据：`(w1, seq)` 与 `(merged, seq)` 同一个 HLC，落在 `proof` 键上。
+    fn proof_pair(
+        t: &Truth<'_>,
+        ix: &mut Index<'_, '_>,
+        col: i64,
+        merged: &str,
+        seq: i64,
+        slot: u64,
+    ) {
+        let proof = |w: &str| {
+            Body4::Edit(Edit4 {
+                key: "proof".to_owned(),
+                value: "\"p\"".to_owned(),
+                stamp: Some(stamp(w, seq, r#"{"vv":{}}"#, 50 + seq)),
+                ..native_edit()
+            })
+        };
+        heritage(t, ix, col, op(0xc1, slot, seq, &[], &proof("w1")));
+        heritage(t, ix, col, op(0xc2, slot, seq, &[], &proof(merged)));
+    }
+
+    /// 被测寄存器上的已知差异（`proof` 键上的证据不算）。
+    fn diffs_on_test_key(ix: &mut Index<'_, '_>) -> Vec<ClassDiff> {
+        let e = native_edit();
+        ix.class_differences()
+            .unwrap()
+            .diffs
+            .into_iter()
+            .filter(|d| d.key == e.key)
+            .collect()
+    }
+
+    /// 已知差异的「同 seq 副本」佐证：`(w1, 1)` 原值判与 `(w1, 2)` 并发（`(w1, 2)` 的上下文只写了改名后的
+    /// `merged:1`），按类判被盖掉；同一个规范写入者另一个名字下有 `(merged, 1)` = 同一条记录，佐证得了。胜者没变。
+    #[test]
+    fn a_dominated_write_with_a_copy_under_the_other_name_is_proven() {
+        with(|t, col| {
+            let merged = merged_w1();
+            let ctx = format!(r#"{{"vv":{{"{merged}":1}}}}"#);
+            t.tx(|t| {
+                let mut ix = Index::new(t, col);
+                let salts = Body4::salts([U1]).unwrap();
+                native(t, &mut ix, col, &op(0xa1, 1, 1, &[], &salts));
+                let x1 = stamped("x", stamp("w1", 1, r#"{"vv":{}}"#, 100));
+                let x2 = stamped("x", stamp(&merged, 1, r#"{"vv":{}}"#, 100));
+                let y = stamped("y", stamp("w1", 2, &ctx, 200));
+                heritage(t, &mut ix, col, op(0xd1, 1, 1, &[], &x1));
+                heritage(t, &mut ix, col, op(0xd2, 1, 2, &[], &x2));
+                heritage(t, &mut ix, col, op(0xd1, 2, 3, &[], &y));
+                ix.settle()?;
+                let got = diffs_on_test_key(&mut ix);
+                assert_eq!(got.len(), 1, "{got:?}");
+                let d = &got[0];
+                assert!(
+                    d.raw_conflict && !d.class_conflict && !d.winner_changed,
+                    "{d:?}"
+                );
+                assert_eq!(d.dominated.len(), 1);
+                assert_eq!(d.dominated[0].op, op(0xd1, 1, 1, &[], &x1).id);
+                assert_eq!(
+                    (d.dominated[0].writer.as_str(), d.dominated[0].seq),
+                    ("w1", 1)
+                );
+                assert_eq!(
+                    d.dominated[0].evidence,
+                    DiffEvidence::Copy {
+                        name: merged.clone()
+                    }
+                );
+                assert!(d.proven && d.revived.is_empty());
+                assert_eq!(ix.class_differences()?.unproven().count(), 0);
+                Ok(())
+            })
+            .unwrap();
+        });
+    }
+
+    /// `(merged, 5)` 原值判与 `(v, 1)` 并发（`(v, 1)` 的上下文写的是原名 `w1:5`），按类判被盖掉。另一个名字下没有
+    /// seq 5 的副本：两个名字已证明重叠的区间是 `[1, 9]` 时佐证得了（区间佐证）；只到 `[1, 1]` 时 5 落在区间外，
+    /// 佐证不了，按 bug 计（`unproven`）。
+    #[test]
+    fn a_dominated_write_is_proven_only_inside_the_shared_seq_range() {
+        for (top, want) in [(9, true), (1, false)] {
+            with(|t, col| {
+                let merged = merged_w1();
+                t.tx(|t| {
+                    let mut ix = Index::new(t, col);
+                    let salts = Body4::salts([U1]).unwrap();
+                    native(t, &mut ix, col, &op(0xa1, 1, 1, &[], &salts));
+                    proof_pair(t, &mut ix, col, &merged, 1, 1);
+                    if top > 1 {
+                        proof_pair(t, &mut ix, col, &merged, top, 2);
+                    }
+                    let x = stamped("x", stamp(&merged, 5, r#"{"vv":{}}"#, 100));
+                    let y = stamped("y", stamp("v", 1, r#"{"vv":{"w1":5}}"#, 200));
+                    heritage(t, &mut ix, col, op(0xd1, 1, 20, &[], &x));
+                    heritage(t, &mut ix, col, op(0xd2, 1, 21, &[], &y));
+                    ix.settle()?;
+                    assert_eq!(ix.canonical_writer(&merged)?, "w1");
+                    let got = diffs_on_test_key(&mut ix);
+                    assert_eq!(got.len(), 1, "{got:?}");
+                    let d = &got[0];
+                    assert!(d.raw_conflict && !d.class_conflict, "{d:?}");
+                    assert_eq!(d.dominated.len(), 1);
+                    assert_eq!(
+                        (d.dominated[0].writer.as_str(), d.dominated[0].seq),
+                        (merged.as_str(), 5)
+                    );
+                    let evidence = &d.dominated[0].evidence;
+                    if want {
+                        assert_eq!(
+                            *evidence,
+                            DiffEvidence::Overlap {
+                                name: "w1".to_owned(),
+                                lo: 1,
+                                hi: top
+                            }
+                        );
+                    } else {
+                        assert_eq!(*evidence, DiffEvidence::None);
+                    }
+                    assert_eq!(d.proven, want);
+                    assert_eq!(
+                        ix.class_differences()?.unproven().count(),
+                        usize::from(!want)
+                    );
+                    Ok(())
+                })
+                .unwrap();
+            });
+        }
     }
 
     /// 改名写入者的名字。
