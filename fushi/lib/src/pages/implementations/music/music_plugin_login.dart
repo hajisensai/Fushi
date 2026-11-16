@@ -44,12 +44,17 @@ String musicPluginHostPlatform() {
   return 'windows';
 }
 
-/// 打开登录页；返回 true = 登录成功。
+/// 打开登录页；返回 true = 登录成功。经互联中继用的插件（清单里没有 login）不在本机登录：
+/// 提示去代跑它的那台设备上登录。
 Future<bool> openMusicPluginLogin(
   BuildContext context, {
   required AppModel appModel,
   required MusicPluginManifest manifest,
 }) async {
+  if (!manifest.can(MusicPluginCapability.login)) {
+    FushiToast.show(msg: t.music_plugin_relay_login_hint(name: manifest.name));
+    return false;
+  }
   final bool? ok = await Navigator.of(context).push<bool>(
     adaptivePageRoute<bool>(
       context: context,

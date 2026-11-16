@@ -123,6 +123,8 @@ std::vector<LookupResult> Lookup::lookup(const std::string& lookup_string, int m
                                                         options.excluded_dictionaries.end());
   const DictionaryQuery::ExcludedDictNames* excluded = excluded_set.empty() ? nullptr : &excluded_set;
   auto is_excluded = [excluded](std::string_view dict_name) { return excluded && excluded->contains(dict_name); };
+  // 查库上下文：排除集 + 进入时取的联合过滤器快照（整次查词共用一份）。
+  const DictionaryQuery::QueryScope scope = query_.make_scope(excluded);
 
   // BUG-3212：扫描窗口（前 scan_length 个码点）的字节视图，供关西方言保护结构判定。
   std::size_t window_bytes = 0;
@@ -140,12 +142,12 @@ std::vector<LookupResult> Lookup::lookup(const std::string& lookup_string, int m
   std::unordered_map<std::string, std::vector<std::string>> run_readings_cache;
   std::unordered_map<std::string, std::vector<std::string>> mixed_candidates_cache;
   std::unordered_map<std::string, std::vector<TermResult>> mixed_reading_hits;
-  auto run_readings = [&](const std::string& run) -> std::vector<std::string> {
+  const mixed_orthography::RunReadings run_readings = [&](const std::string& run) -> const std::vector<std::string>& {
     auto [it, inserted] = run_readings_cache.try_emplace(run);
     if (inserted) {
       // 按「多少本词典把它列为该表记的读音」降序：常用读音排前，组合截断时先保留它们。
       std::map<std::string, int> votes;
-      for (const TermResult& term : query_.query_raw(run, excluded)) {
+      for (const TermResult& term : query_.query_raw(run, scope)) {
         if (term.expression == run && !term.reading.empty()) {
           votes[mixed_orthography::to_hiragana(term.reading)] += static_cast<int>(term.glossaries.size());
         }
@@ -245,7 +247,7 @@ std::vector<LookupResult> Lookup::lookup(const std::string& lookup_string, int m
       // 用一个还原形去查库并并入结果。`query_text` 未必等于 `deinflection.text`
       // ——见下面的谚文重组。
       auto merge_query = [&](const std::string& query_text, const DeinflectionResult& deinflection) {
-        auto terms = query_.query_raw(query_text, excluded);
+        auto terms = query_.query_raw(query_text, scope);
         filter_by_pos(terms, deinflection);
         merge_terms(terms, query_text, deinflection.trace, /*follow=*/true);
       };
@@ -274,7 +276,7 @@ std::vector<LookupResult> Lookup::lookup(const std::string& lookup_string, int m
           if (fresh) cand_it->second = mixed_orthography::reading_candidates(deinflection.text, run_readings);
           for (const std::string& candidate : cand_it->second) {
             auto [hit_it, uncached] = mixed_reading_hits.try_emplace(candidate);
-            if (uncached) hit_it->second = query_.query_raw(candidate, excluded);
+            if (uncached) hit_it->second = query_.query_raw(candidate, scope);
             std::vector<TermResult> terms;
             for (const TermResult& term : hit_it->second) {
               if (mixed_orthography::matches_mixed_orthography(deinflection.text, term.expression, term.reading)) {
@@ -291,7 +293,7 @@ std::vector<LookupResult> Lookup::lookup(const std::string& lookup_string, int m
       // 词典重定向的目标不经词性过滤（Yomitan 给它的 deinflection 不带条件），
       // 也不再跟随第二层。匹配长度仍是本轮 search_str。
       for (auto& [form_of, trace] : redirect_targets) {
-        auto terms = query_.query_raw(form_of, excluded);
+        auto terms = query_.query_raw(form_of, scope);
         merge_terms(terms, form_of, trace, /*follow=*/false);
       }
     }
@@ -347,7 +349,7 @@ std::vector<LookupResult> Lookup::lookup(const std::string& lookup_string, int m
   // Enriching per (expression, reading) is what query_freq did all along, so
   // the surviving results carry byte-identical frequency data.
   for (auto& r : results) {
-    query_.enrich_freq(r.term, excluded);
+    query_.enrich_freq(r.term, scope);
   }
 
   // 原文振假名一致度每条只算一次（比较器里会被反复比较）。
@@ -473,7 +475,7 @@ std::vector<LookupResult> Lookup::lookup(const std::string& lookup_string, int m
   // (BUG-1304).
   if (!options.materialize) return results;
   for (auto& r : results) {
-    query_.enrich_pitch(r.term, excluded);
+    query_.enrich_pitch(r.term, scope);
     query_.materialize(r.term);
   }
 

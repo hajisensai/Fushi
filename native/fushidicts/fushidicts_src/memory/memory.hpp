@@ -8,6 +8,8 @@
 #include <string>
 #include <system_error>
 
+#include "../util/prefetch.hpp"
+
 namespace memory {
 struct mapped_file {
   uint8_t* data = nullptr;
@@ -105,6 +107,14 @@ class blob_file {
     return view(offset, whole_ ? SIZE_MAX : kWindowStepBytes);
   }
 
+  // Hint that the bytes at [offset] are about to be read. Whole-file mode only:
+  // a windowed view may have to map a window first, which is not a hint.
+  void prefetch(uint64_t offset) const {
+    if (whole_ && offset < size_) {
+      FUSHI_PREFETCH(whole_->data + offset);
+    }
+  }
+
  private:
   friend std::shared_ptr<const blob_file> open_blob_file(const std::string& path);
   blob_span view_windowed(uint64_t offset, size_t n) const;
@@ -176,6 +186,11 @@ class file_reader {
 // the result is empty and [last_error] reports why.
 mapped_file map_rw(const std::string& path, size_t file_size);
 void unmap(mapped_file mapping);
+// unmap without flushing dirty pages first. For derived files whose loader
+// verifies a checksum (so a torn write is rejected, not trusted) and for
+// abandoned writes about to be deleted: the synchronous flush in [unmap] is
+// tens of MB of blocking disk IO that buys nothing there.
+void unmap_unflushed(mapped_file mapping);
 
 // errno-style code (ENOSPC, EACCES, ...) of the most recent failed map_rw on
 // this thread; 0 when it succeeded. Windows error codes are folded onto the
