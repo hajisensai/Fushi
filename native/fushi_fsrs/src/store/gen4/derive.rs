@@ -1193,6 +1193,8 @@ impl<'t, 'c> Index<'t, 'c> {
         self.heads.clear();
         super::digest::set_triggers(conn, true)?;
         out.digests = self.digest_rebuild()?;
+        // 扫日志时碰到带盐的操作会置 `salts_dirty`；这里已整个重算，清掉，否则 [Index::aliases_stale] 在重建刚完时仍报「没算」。
+        self.salts_dirty = false;
         self.settle_salts()?;
         out.aliases = self.rebuild_aliases()?;
         self.materialize_caches(&mut out)?;
