@@ -22,8 +22,8 @@ use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
-use super::gen4::files::{OpenError, OpenMode};
 use super::gen4::dispatch as gen4_dispatch;
+use super::gen4::files::{OpenError, OpenMode};
 use super::gen4::kernel::G4Core;
 use super::{CLOSED, SrsCore};
 

@@ -1248,7 +1248,10 @@ fn the_log_tail_names_a_class_only_through_its_smallest_op() {
                 .unwrap()
         };
         let (rep, other) = (seq(w.log[0]), seq(w.log[1]));
-        assert!(rep < other, "the heritage copy lands first: {rep} / {other}");
+        assert!(
+            rep < other,
+            "the heritage copy lands first: {rep} / {other}"
+        );
         let word = |b: &[u8], k: usize| i64::from_le_bytes(b[8 * k..8 * k + 8].try_into().unwrap());
         // [count, maxN, newRows, tailRows]
         let only_other = rwkv_log_tail(t, col, rep, true, true).unwrap();

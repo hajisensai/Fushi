@@ -808,11 +808,7 @@ impl<'t, 'c> Index<'t, 'c> {
     ) -> Result<Option<(i64, i64, Ref)>, String> {
         let mut best: Option<(crate::sync2::vv::OpId, i64, i64, Ref)> = None;
         for id in log_class {
-            let mut stmt = self
-                .t
-                .conn()
-                .prepare_cached(LOG_REP_SQL)
-                .map_err(sql)?;
+            let mut stmt = self.t.conn().prepare_cached(LOG_REP_SQL).map_err(sql)?;
             let rows: Vec<(i64, i64, Ref)> = stmt
                 .query_map(params![self.col, id], |r| {
                     Ok((r.get(0)?, r.get(1)?, r.get(2)?))

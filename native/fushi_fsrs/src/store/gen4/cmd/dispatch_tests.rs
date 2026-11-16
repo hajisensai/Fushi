@@ -196,7 +196,13 @@ fn migrated() -> Migrated {
 /// [migrated]；[conflict] 为真时迁移之前先在两台设备上做出一条待裁决的冲突（一台删 N1、另一台没见过这条删除就改它的
 /// 字段，同 `center_tests.rs`）。
 fn migrated_with(conflict: bool) -> Migrated {
+    migrated_prepared(conflict, &|_| {})
+}
+
+/// [migrated_with]；迁移之前先在协议 3 库上跑 [prep]（补复习、媒体引用之类的场景数据）。
+fn migrated_prepared(conflict: bool, prep: &dyn Fn(&Device)) -> Migrated {
     let (d, b, mut bucket) = library_pair();
+    prep(&d);
     if conflict {
         d.apply(T1 - 3, vec![edit("note", N1, "deleted", json!(T1 - 3))]);
         b.apply(T1 - 2, vec![edit("note", N1, "f/fa", json!("並行"))]);
@@ -744,8 +750,7 @@ fn unwired_and_removed_commands_name_their_owner() {
         ("profile_merge_mark", "G9-5"),
         ("plan", "G8-7"),
         ("import", "G11-3"),
-        ("preview", "G7-4f"),
-        ("media_gc_queue", "media GC"),
+        ("binding_set", "G9-4"),
     ] {
         let (rc, e) = call(m.h, &g4req(op, T1, json!({})), None).unwrap_err();
         assert_eq!(rc, STORE_ERROR, "{op}");
@@ -1379,4 +1384,687 @@ fn every_other_wired_write_matches_protocol_3_through_the_dispatcher() {
         .cloned()
         .unwrap();
     assert_eq!(row["hint"], json!("客厅的电脑"), "{row}");
+}
+
+// ---------------------------------------------------------------------- 评分预览与 C 直出入口（S1b）
+
+/// 两列页 `[下标 i64, 文本]`（C 直出入口的输入；[profile] 给了就加一行 `[-1, profile]`）。
+fn page(groups: &[Vec<String>], profile: Option<&str>) -> Vec<u8> {
+    use rusqlite::types::Value as Sv;
+    let mut rows: Vec<Vec<Sv>> = Vec::new();
+    if let Some(p) = profile {
+        rows.push(vec![Sv::Integer(-1), Sv::Text(p.to_owned())]);
+    }
+    for (g, cards) in groups.iter().enumerate() {
+        for c in cards {
+            rows.push(vec![Sv::Integer(g as i64), Sv::Text(c.clone())]);
+        }
+    }
+    crate::store::rows::encode(2, &rows)
+}
+
+/// 经 C ABI 调一个直出入口：成功拿回字节（并释放），失败拿回 (返回码, 错误)。
+fn direct_call(
+    f: impl FnOnce(*mut *mut u8, *mut usize, *mut *mut std::ffi::c_char) -> i32,
+) -> Result<Vec<u8>, (i32, String)> {
+    let (mut out, mut out_len, mut err) = (null_mut(), 0usize, null_mut());
+    let rc = f(&mut out, &mut out_len, &mut err);
+    if rc != 0 {
+        return Err((rc, take_error(err)));
+    }
+    let b = unsafe { std::slice::from_raw_parts(out, out_len) }.to_vec();
+    crate::ffsrs_free_bytes(out, out_len);
+    Ok(b)
+}
+
+/// `ffsrs_store_history_states` / `ffsrs_store_stat_projection`（[stat] 选后者）。
+fn hist_abi(
+    h: *mut SrsCoreHandle,
+    groups: &[Vec<String>],
+    profile: Option<&str>,
+    stat: bool,
+) -> Result<Vec<u8>, (i32, String)> {
+    let pg = page(groups, profile);
+    direct_call(|o, ol, e| {
+        if stat {
+            crate::store::ffi::ffsrs_store_stat_projection(
+                h,
+                pg.as_ptr(),
+                pg.len(),
+                groups.len(),
+                o,
+                ol,
+                e,
+            )
+        } else {
+            crate::store::ffi::ffsrs_store_history_states(
+                h,
+                pg.as_ptr(),
+                pg.len(),
+                groups.len(),
+                o,
+                ol,
+                e,
+            )
+        }
+    })
+}
+
+/// 一个 `(page, args)` 形的直出入口：0 = optimizer_items，1 = calibration_items，2 = rwkv_rows，3 = rwkv_log_tail。
+fn cmd_abi(
+    h: *mut SrsCoreHandle,
+    which: u8,
+    groups: &[Vec<String>],
+    profile: Option<&str>,
+    args: &[i64],
+) -> Result<Vec<u8>, (i32, String)> {
+    let pg = page(groups, profile);
+    direct_call(|o, ol, e| {
+        type Entry = extern "C" fn(
+            *const SrsCoreHandle,
+            *const u8,
+            usize,
+            *const i64,
+            usize,
+            *mut *mut u8,
+            *mut usize,
+            *mut *mut std::ffi::c_char,
+        ) -> i32;
+        let f: Entry = match which {
+            0 => crate::store::ffi::ffsrs_store_optimizer_items,
+            1 => crate::store::ffi::ffsrs_store_calibration_items,
+            2 => crate::store::ffi::ffsrs_store_rwkv_rows,
+            _ => crate::store::ffi::ffsrs_store_rwkv_log_tail,
+        };
+        f(
+            h,
+            pg.as_ptr(),
+            pg.len(),
+            args.as_ptr(),
+            args.len(),
+            o,
+            ol,
+            e,
+        )
+    })
+}
+
+/// 第 [k] 个 8 字节字置零（指纹里的「最大序号」：两代各是各的游标，`cmd/training.rs` 文件头）。
+fn zero_word(mut b: Vec<u8>, k: usize) -> Vec<u8> {
+    b[8 * k..8 * k + 8].fill(0);
+    b
+}
+
+fn word(b: &[u8], k: usize) -> i64 {
+    i64::from_le_bytes(b[8 * k..8 * k + 8].try_into().unwrap())
+}
+
+/// [library] 再加几次复习（后继卡 c2 继承 c1 的历史、N2 t1 复习两次、N3 t2 一条学习步），训练集与重放有东西可比。
+fn with_reviews(d: &Device) {
+    let (c2, n2, n3b) = (card(N1, "t2"), card(N2, "t1"), card(N3, "t2"));
+    let at = |days: i64| T0 + days * DAY;
+    d.apply(
+        at(1) + 1,
+        vec![review("s1b-q1", &c2, at(1) + 1, 3, "review")],
+    );
+    d.apply(
+        at(1) + 2,
+        vec![
+            review("s1b-q2", &n2, at(1) + 2, 3, "review"),
+            review("s1b-q3", &n3b, at(1) + 2, 1, "learn"),
+        ],
+    );
+    d.apply(
+        at(1) + 3,
+        vec![review("s1b-q4", &n2, at(1) + 3, 4, "review")],
+    );
+}
+
+/// 迁移出来的库经 C ABI 的直出入口（页里不带 profile 行 = Dart 现在的调法；带 = G7-5 可以补的调法）与迁移前的协议 3 库上
+/// 同一份计算（`SrsCore` 的同名方法，换代前 C 入口调的就是它们）逐字节相同；RWKV 指纹里的最大序号两代各是各的游标，
+/// 比之前置零。评分预览经 `ffsrs_store_sync2` 与协议 3 的 `preview` 比。
+#[test]
+fn preview_and_training_entries_through_the_c_abi_match_protocol_3() {
+    use crate::projection::{Alg, Day};
+    let m = migrated_prepared(false, &with_reviews);
+    let pair = pair_of(&m);
+    let groups: Vec<Vec<String>> = vec![
+        vec![card(N1, "t2"), card(N1, "t1")],
+        vec![card(N1, "t1")],
+        vec![card(N2, "t1")],
+        vec![card(N3, "t1")],
+        vec![card(N3, "t2")],
+        vec!["missing".to_owned()],
+        vec![],
+    ];
+    let day = Day {
+        utc_offset_min: 0,
+        rollover_hour: 4,
+    };
+    for profile in [None, Some(P)] {
+        let old = m.d.core.history_states(&groups).unwrap();
+        assert_eq!(
+            hist_abi(m.h, &groups, profile, false).unwrap(),
+            old,
+            "{profile:?}"
+        );
+        let old = m.d.core.stat_projection(&groups).unwrap();
+        let new = hist_abi(m.h, &groups, profile, true).unwrap();
+        assert_eq!(new, old, "{profile:?}");
+        assert!(crate::store::rows::decode(&new).unwrap().1.len() >= 4);
+    }
+    // 训练集与 RWKV 逐卡：调用方只给卡自己。
+    let seeds: Vec<Vec<String>> = groups
+        .iter()
+        .filter(|g| !g.is_empty())
+        .map(|g| vec![g[0].clone()])
+        .collect();
+    let n = seeds.len() as i64;
+    let card_ids: Vec<i64> = (1..=n).collect();
+    let rwkv_ids: Vec<i64> = (1..=4 * n).collect();
+    for (alg, code) in [(Alg::Fsrs6, 0), (Alg::Fsrs7, 1)] {
+        let mut args = vec![n, code, 0, 4];
+        args.extend(&card_ids);
+        let old =
+            m.d.core
+                .optimizer_items(&seeds, &card_ids, alg, &day)
+                .unwrap();
+        let new = cmd_abi(m.h, 0, &seeds, None, &args).unwrap();
+        assert_eq!(new, old, "optimizer {alg:?}");
+        assert!(word(&new, 2) > 0, "has items");
+        let old =
+            m.d.core
+                .calibration_items(&seeds, &card_ids, alg, &day)
+                .unwrap();
+        assert_eq!(
+            cmd_abi(m.h, 1, &seeds, Some(P), &args).unwrap(),
+            old,
+            "calibration {alg:?}"
+        );
+    }
+    let mut args = vec![n, 0, 0, 4, 0];
+    args.extend(&rwkv_ids);
+    let old = m.d.core.rwkv_cards(&seeds, &rwkv_ids, &day).unwrap();
+    assert_eq!(
+        cmd_abi(m.h, 2, &seeds, None, &args).unwrap(),
+        old,
+        "rwkv cards"
+    );
+    // RWKV 回放（全量）与指纹 / 尾巴：页里要有 profile 行（协议 3 同样要）。
+    let none = crate::history::NONE_I64;
+    let mut args = vec![n, 1, 0, 4, 0, none, none];
+    args.extend(&rwkv_ids);
+    let old =
+        m.d.core
+            .rwkv_replay(P, &seeds, &rwkv_ids, &day, 0, Default::default())
+            .unwrap();
+    let new = cmd_abi(m.h, 2, &seeds, Some(P), &args).unwrap();
+    assert_eq!(zero_word(new.clone(), 1), zero_word(old, 1), "rwkv replay");
+    assert!(
+        word(&new, 1) > crate::store::gen4::derive::SEQ_BASE,
+        "the cursor is the arrival number"
+    );
+    let (rc, e) = cmd_abi(m.h, 2, &seeds, None, &args).unwrap_err();
+    assert_eq!((rc, e.as_str()), (STORE_ERROR, "missing profile"));
+    for (with_rows, incremental) in [(1, 0), (0, 0), (1, 1)] {
+        let old =
+            m.d.core
+                .rwkv_log_tail(P, 0, with_rows == 1, incremental == 1)
+                .unwrap();
+        let new = cmd_abi(m.h, 3, &[], Some(P), &[0, with_rows, incremental]).unwrap();
+        assert_eq!(
+            zero_word(new, 1),
+            zero_word(old, 1),
+            "log tail {with_rows} {incremental}"
+        );
+    }
+    // 没绑定的 profile：明确报错（同 sync2 命令）。
+    let (_, e) = hist_abi(
+        m.h,
+        &groups,
+        Some("0193a1b2-0000-7000-8000-00000000dead"),
+        false,
+    )
+    .unwrap_err();
+    assert!(e.contains("has no collection"), "{e}");
+
+    // 评分预览：有日志的卡、继承历史的后继卡、新卡（给笔记 / 不给）、不存在的卡。
+    for req in [
+        json!({"card": card(N1, "t2")}),
+        json!({"card": card(N2, "t1"), "note": N2}),
+        json!({"card": card(N4, "t1")}),
+        json!({"card": card(N4, "t2"), "note": N4}),
+        json!({"card": "missing"}),
+    ] {
+        let mut r = req.clone();
+        r["utcOff"] = json!(0);
+        r["rollover"] = json!(4);
+        let now = T0 + 4 * DAY;
+        let new = g4(m.h, "preview", now, r.clone());
+        close(
+            &pair,
+            &p3(&m.d, "preview", now, r, None).0,
+            &new,
+            &format!("preview {req}"),
+        );
+    }
+}
+
+/// 不带 profile 行的直出入口按卡认集合（`dispatch.rs` `direct_col`）：文件里两个集合时，卡（任何别名成员）只在一个集合里
+/// 有历史就读那个；哪儿都没有 = 「卡不存在」的形状；两个集合里都有 = 明确报错，带 profile 行就各读各的。
+#[test]
+fn direct_entries_find_the_collection_by_their_cards() {
+    use super::training::history_states;
+    const OTHER: &str = "0193a1b2-0000-7000-8000-0000000000f7";
+    let dir = tempdir::new("s1bdirect");
+    let (w, a) = {
+        let c = G4Core::open(&dir.0, OpenMode::Primary).unwrap();
+        let a = c.write(|t| t.bind(P, &id(0xc0), "dir")).unwrap();
+        c.write(|t| t.bind(OTHER, &id(0xc1), "dir2")).unwrap();
+        let w = c.write(|t| Ok(tests_class::land(t, a))).unwrap();
+        c.close();
+        (w, a)
+    };
+    let expect = |col: i64, groups: &[Vec<String>]| -> Vec<u8> {
+        let c = G4Core::open(&dir.0, OpenMode::Secondary).unwrap();
+        let out = c.read(|t| history_states(t, col, groups)).unwrap();
+        c.close();
+        out
+    };
+    let member = vec![vec![w.card[1].text()]];
+    let missing = vec![vec!["missing".to_owned()]];
+    let want = expect(a, &member);
+    assert_ne!(want, expect(a, &missing), "the class has a review");
+    let h = open(&dir.0, 0).unwrap();
+    assert_eq!(hist_abi(h, &member, None, false).unwrap(), want);
+    assert_eq!(
+        hist_abi(h, &missing, None, false).unwrap(),
+        expect(a, &missing)
+    );
+    // 别的 profile 的集合里没有这张卡：按 profile 行读就是不存在的形状。
+    assert_eq!(
+        hist_abi(h, &member, Some(OTHER), false).unwrap(),
+        expect(a, &missing)
+    );
+    ffsrs_store_close(h);
+    // 同一张卡在另一个集合里也有历史：不带 profile 分不清，报错；带 profile 各读各的。
+    let b = {
+        let c = G4Core::open(&dir.0, OpenMode::Primary).unwrap();
+        let b = c.read(|t| Ok(t.binding_of(OTHER)?.unwrap().col)).unwrap();
+        c.write(|t| Ok(tests_class::land(t, b))).unwrap();
+        c.close();
+        b
+    };
+    let h = open(&dir.0, 0).unwrap();
+    let (rc, e) = hist_abi(h, &member, None, false).unwrap_err();
+    assert_eq!(rc, STORE_ERROR);
+    assert!(e.contains("2 collections"), "{e}");
+    assert_eq!(hist_abi(h, &member, Some(P), false).unwrap(), want);
+    assert_eq!(
+        hist_abi(h, &member, Some(OTHER), false).unwrap(),
+        expect(b, &member)
+    );
+    ffsrs_store_close(h);
+}
+
+// ---------------------------------------------------------------------- 媒体回收（S1b）
+
+const MGC_NT: &str = "0193a1b2-0000-7000-8000-00000000f0a1";
+const MGC_NT_DEAD: &str = "0193a1b2-0000-7000-8000-00000000f0a2";
+const MGC_LIVE: &str = "0193a1b2-0000-7000-8000-00000000f0b1";
+const MGC_RECENT: &str = "0193a1b2-0000-7000-8000-00000000f0b2";
+const MGC_OLD: &str = "0193a1b2-0000-7000-8000-00000000f0b3";
+/// 媒体场景的写入时刻。
+const MT: i64 = T0 + DAY;
+
+/// 协议 3 `store/media_gc.rs` 测试的同一个场景：一个存活的笔记类型（模板与 CSS 里有引用，含下划线开头的静态文件）、
+/// 一个已删除的笔记类型，一条存活笔记、一条删除 1 天的、一条删除 100 天的。
+fn with_media(d: &Device) {
+    let nt = |id: &str, front: &str, css: &str| -> Vec<Value> {
+        vec![
+            json!({"t": "entity", "x": {"id": id, "p": P, "k": "notetype", "d": {"createdAt": 1, "ntKind": "standard"}}}),
+            edit("notetype", id, "fieldDef/a", json!({"name": "A", "ord": 0})),
+            edit(
+                "notetype",
+                id,
+                "tmplDef/t1",
+                json!({"name": "t1", "ord": 0, "front": front}),
+            ),
+            edit(
+                "notetype",
+                id,
+                "tmplDef/t2",
+                json!({"name": "t2", "ord": 1, "front": "{{A}}<img src=\"gone-template.png\">", "deleted": true}),
+            ),
+            edit("notetype", id, "css", json!(css)),
+        ]
+    };
+    let note = |id: &str, front: &str| -> Vec<Value> {
+        vec![
+            json!({"t": "entity", "x": {"id": id, "p": P, "k": "note", "d": {"createdAt": 1, "guid": id, "noteTypeId": MGC_NT}}}),
+            edit("note", id, "f/a", json!(front)),
+        ]
+    };
+    let mut events = nt(
+        MGC_NT,
+        "{{A}}<img src=\"tpl.png\">[sound:tpl.mp3]",
+        ".card { font-family: f; } @font-face { src: url(\"_font.woff\"); }",
+    );
+    events.extend(nt(
+        MGC_NT_DEAD,
+        "{{A}}<script src=\"_dead.js\"></script>",
+        "",
+    ));
+    events.push(edit("notetype", MGC_NT_DEAD, "deleted", json!(MT)));
+    events.extend(note(
+        MGC_LIVE,
+        "<img src=\"live.png\"><img src=\"c:colon.png\"><img src=\"sub/dir.png\">",
+    ));
+    events.extend(note(
+        MGC_RECENT,
+        "[sound:recent.mp3]<img src=\"Shared.PNG\">",
+    ));
+    events.extend(note(
+        MGC_OLD,
+        "<img src=\"old.png\"><img src=\"shared.png\">",
+    ));
+    events.push(edit("note", MGC_RECENT, "deleted", json!(MT - DAY)));
+    events.push(edit("note", MGC_OLD, "deleted", json!(MT - 100 * DAY)));
+    d.apply(MT, events);
+}
+
+fn names_of(v: &Value) -> Vec<String> {
+    v.as_array()
+        .unwrap_or_else(|| panic!("{v}"))
+        .iter()
+        .map(|n| n.as_str().unwrap().to_owned())
+        .collect()
+}
+
+/// 媒体回收三条命令经分发器与迁移前的协议 3 库逐条相同：存活引用（两个保留期）、并候选（过期的已删笔记、笔记此刻的
+/// 引用、直接给的名字）、回收（两侧各一个媒体目录放同样的文件：删掉的、留下的、集合里剩下的都相同，分批游标相同）。
+#[test]
+fn media_gc_through_the_dispatcher_matches_protocol_3() {
+    let m = migrated_prepared(false, &with_media);
+    let both = |op: &str, extra: Value| -> (Value, Value) {
+        let old = p3(&m.d, op, MT, extra.clone(), None).0;
+        let new = g4(m.h, op, MT, extra);
+        (old, new)
+    };
+    for after in [MT - 90 * DAY, MT - 200 * DAY] {
+        let (old, new) = both("media_live_refs", json!({"aliveAfter": after}));
+        assert_eq!(new, old, "aliveAfter {after}");
+    }
+    let (_, refs) = both("media_live_refs", json!({"aliveAfter": MT - 90 * DAY}));
+    for n in [
+        "neko.png",
+        "tpl.png",
+        "_font.woff",
+        "_dead.js",
+        "Shared.PNG",
+        "live.png",
+    ] {
+        assert!(
+            names_of(&refs["refs"]).contains(&n.to_owned()),
+            "{n}: {refs}"
+        );
+    }
+    assert_eq!(both("media_gc_queue", json!({})).1, json!({"pending": []}));
+    let (old, new) = both("media_gc_queue", json!({"expiredBefore": MT - 90 * DAY}));
+    assert_eq!(new, old);
+    assert_eq!(names_of(&new["pending"]), ["old.png", "shared.png"]);
+    let (old, new) = both(
+        "media_gc_queue",
+        json!({"notes": [MGC_LIVE, "0193a1b2-0000-7000-8000-00000000f0bf"], "names": ["x.png", "g1.png", "g2.png"]}),
+    );
+    assert_eq!(new, old);
+    // 待回收集合在新代本机状态行里（同协议 3 的键名），读本机状态行的回包不变。
+    let row = g4(m.h, "local_state", MT, json!({}));
+    assert!(row.get("mediaGc").is_none(), "{row}");
+    // 回收：两侧各一个媒体目录。
+    let dirs = [tempdir::new("s1bmgc-p3"), tempdir::new("s1bmgc-g4")];
+    for d in &dirs {
+        for n in [
+            "old.png",
+            "shared.png",
+            "live.png",
+            "x.png",
+            "g1.png",
+            "g2.png",
+            "fresh.png",
+        ] {
+            std::fs::write(d.0.join(n), b"x").unwrap();
+        }
+    }
+    let collect = |i: usize, extra: Value| -> Value {
+        let mut req = json!({
+            "root": dirs[i].0.to_str().unwrap(), "aliveAfter": MT - 90 * DAY, "freshAfter": i64::MAX,
+        });
+        for (k, v) in extra.as_object().unwrap() {
+            req[k] = v.clone();
+        }
+        if i == 0 {
+            p3(&m.d, "media_gc_collect", MT, req, None).0
+        } else {
+            g4(m.h, "media_gc_collect", MT, req)
+        }
+    };
+    let mut after: Option<String> = None;
+    loop {
+        let extra = match &after {
+            Some(a) => json!({"limit": 3, "after": a}),
+            None => json!({"limit": 3}),
+        };
+        let (old, new) = (collect(0, extra.clone()), collect(1, extra));
+        assert_eq!(new, old, "batch after {after:?}");
+        after = new["next"].as_str().map(str::to_owned);
+        if after.is_none() {
+            break;
+        }
+    }
+    let left = |d: &tempdir::Dir| -> Vec<String> {
+        let mut v: Vec<String> = std::fs::read_dir(&d.0)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        v.sort();
+        v
+    };
+    assert_eq!(left(&dirs[1]), left(&dirs[0]));
+    // 只有没人引用的删了：shared.png 被删除未满保留期的笔记引用着（大小写不同算同一个文件），live.png 被存活笔记引用。
+    assert_eq!(left(&dirs[1]), ["fresh.png", "live.png", "shared.png"]);
+    let (old, new) = both("media_gc_queue", json!({}));
+    assert_eq!(new, old);
+    assert_eq!(new, json!({"pending": []}));
+}
+
+/// 媒体回收按类（只有新代才有）：带盐成员上写的字段引用经规范笔记的缓存行算存活；按成员 ID 并候选取的是整个类那一行。
+#[test]
+fn media_gc_reads_references_through_the_alias_class() {
+    use crate::store::gen4::derive::Index;
+    use crate::store::gen4::derive::tests::{native, op};
+    use crate::sync2::op::EntKind;
+    let dir = tempdir::new("s1bmgc-class");
+    let media = tempdir::new("s1bmgc-class-media");
+    let w = {
+        let c = G4Core::open(&dir.0, OpenMode::Primary).unwrap();
+        let col = c.write(|t| t.bind(P, &id(0xc0), "dir")).unwrap();
+        let w = c.write(|t| Ok(tests_class::land(t, col))).unwrap();
+        // 见过两份并发修改之后，在第二份带盐成员上改字段：它压过两份，成为类的现值。
+        let (dev, last) = tests_class::base_seen(&w);
+        let body = tests_class::set(
+            EntKind::Note,
+            tests_class::u(w.note[1]),
+            &format!("f/{}", w.field[1].text()),
+            json!("<img src=\"salted.png\">"),
+        );
+        c.write(|t| {
+            let mut ix = Index::new(t, col);
+            native(
+                t,
+                &mut ix,
+                col,
+                &op(0xd1, 1, 500, &[(dev, last), (0xb1, 1), (0xb2, 1)], &body),
+            );
+            ix.settle()?;
+            Ok(())
+        })
+        .unwrap();
+        c.close();
+        w
+    };
+    let h = open(&dir.0, 0).unwrap();
+    let refs = g4(h, "media_live_refs", T1, json!({"aliveAfter": 0}));
+    assert_eq!(names_of(&refs["refs"]), ["salted.png"], "{refs}");
+    // 按另一份成员（不是写字段的那份）点名笔记：读到的是整个类的那一行。
+    let q = g4(
+        h,
+        "media_gc_queue",
+        T1,
+        json!({"notes": [w.note[0].text()], "names": ["orphan.png"]}),
+    );
+    assert_eq!(names_of(&q["pending"]), ["orphan.png", "salted.png"]);
+    for n in ["orphan.png", "salted.png"] {
+        std::fs::write(media.0.join(n), b"x").unwrap();
+    }
+    let r = g4(
+        h,
+        "media_gc_collect",
+        T1,
+        json!({"root": media.0.to_str().unwrap(), "aliveAfter": 0, "freshAfter": i64::MAX}),
+    );
+    assert_eq!(r, json!({"deleted": 1, "next": null}));
+    assert!(media.0.join("salted.png").exists());
+    assert!(!media.0.join("orphan.png").exists());
+    ffsrs_store_close(h);
+}
+
+/// 存活引用读不全时不删（`cmd/media_gc.rs` 文件头「读不全就不删」）：profile 没绑定集合、或集合没设缓存配置（缓存层没
+/// 物化，`notes` 一行都没有）时回收回 `deferred`、文件与集合原样；`media_live_refs` 明确报错；并候选照常收名字。
+#[test]
+fn media_gc_defers_while_live_references_cannot_be_read() {
+    let dir = tempdir::new("s1bmgc-defer");
+    let media = tempdir::new("s1bmgc-defer-media");
+    std::fs::write(media.0.join("a.png"), b"x").unwrap();
+    {
+        let c = G4Core::open(&dir.0, OpenMode::Primary).unwrap();
+        c.close();
+    }
+    let collect = |h: *mut SrsCoreHandle| -> Value {
+        g4(
+            h,
+            "media_gc_collect",
+            T1,
+            json!({"root": media.0.to_str().unwrap(), "aliveAfter": 0, "freshAfter": i64::MAX}),
+        )
+    };
+    let deferred = json!({"deleted": 0, "next": null, "deferred": true});
+    let h = open(&dir.0, 0).unwrap();
+    // 没绑定：并候选（只有名字）照常；回收不删。
+    let q = g4(
+        h,
+        "media_gc_queue",
+        T1,
+        json!({"names": ["a.png"], "expiredBefore": T1}),
+    );
+    assert_eq!(q, json!({"pending": ["a.png"]}));
+    assert_eq!(collect(h), deferred);
+    let (_, e) = call(
+        h,
+        &g4req("media_live_refs", T1, json!({"aliveAfter": 0})),
+        None,
+    )
+    .unwrap_err();
+    assert!(e.contains("cannot be read"), "{e}");
+    ffsrs_store_close(h);
+    // 绑定了、没设缓存配置：同样不删。
+    {
+        let c = G4Core::open(&dir.0, OpenMode::Primary).unwrap();
+        c.write(|t| t.bind(P, &id(0xc0), "dir")).unwrap();
+        c.close();
+    }
+    let h = open(&dir.0, 0).unwrap();
+    assert_eq!(collect(h), deferred);
+    assert!(media.0.join("a.png").exists());
+    assert_eq!(
+        g4(h, "media_gc_queue", T1, json!({})),
+        json!({"pending": ["a.png"]})
+    );
+    // 设了缓存配置（缓存层物化，这个集合没有笔记）：没人引用，删掉、移出集合。
+    g4(h, "cache_config_set", T1, json!({"caches": cfg()}));
+    assert_eq!(collect(h), json!({"deleted": 1, "next": null}));
+    assert!(!media.0.join("a.png").exists());
+    assert_eq!(
+        g4(h, "media_gc_queue", T1, json!({})),
+        json!({"pending": []})
+    );
+    ffsrs_store_close(h);
+}
+
+/// S1b 的新语句：按卡认集合、媒体回收的读都按键走，不扫表（集合列表除外：`collections` 只有绑定数那么几行，按主键序
+/// 读，不排序）。
+#[test]
+fn s1b_statements_use_their_keys() {
+    use crate::store::gen4::cmd::media_gc::{EXPIRED_SQL, LIVE_SQL, NOTE_REFS_SQL, TYPES_SQL};
+    use crate::store::gen4::dispatch::{COLLECTIONS_SQL, HOLDS_CARD_SQL};
+    let m = migrated();
+    let c = Connection::open_with_flags(
+        m.dir.0.join(GEN4_FILE),
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .unwrap();
+    let plan = |q: &str| -> Vec<String> {
+        c.prepare(&format!("EXPLAIN QUERY PLAN {q}"))
+            .unwrap()
+            .raw_query()
+            .mapped(|r| r.get::<_, String>(3))
+            .collect::<Result<_, _>>()
+            .unwrap()
+    };
+    // `SCAN CONSTANT ROW` 是 `SELECT EXISTS(…) OR EXISTS(…)` 外层那一行常量，不是扫表。
+    let no_scan = |q: &str, steps: &[String]| {
+        assert!(
+            !steps
+                .iter()
+                .any(|s| (s.starts_with("SCAN") && s != "SCAN CONSTANT ROW")
+                    || s.contains("TEMP B-TREE")),
+            "{q}: {steps:?}"
+        );
+    };
+    let steps = plan(HOLDS_CARD_SQL);
+    no_scan(HOLDS_CARD_SQL, &steps);
+    for want in [
+        "SEARCH log_ix USING PRIMARY KEY (col=? AND card=?)",
+        "SEARCH reg_ix USING PRIMARY KEY (col=? AND ekind=? AND ent=?)",
+    ] {
+        assert!(steps.iter().any(|s| s == want), "{want}: {steps:?}");
+    }
+    let steps = plan(NOTE_REFS_SQL);
+    assert_eq!(
+        steps,
+        ["SEARCH notes USING PRIMARY KEY (col=? AND id=?)"],
+        "{NOTE_REFS_SQL}"
+    );
+    // 这两条本来就要读这个集合的全部（已删 / 存活）笔记：只要求按 `col` 圈出这个集合（不扫别的集合、不排序）。
+    for q in [EXPIRED_SQL, LIVE_SQL] {
+        let steps = plan(q);
+        assert_eq!(steps.len(), 1, "{q}: {steps:?}");
+        assert!(
+            steps[0].starts_with("SEARCH notes USING ") && steps[0].ends_with("(col=?)"),
+            "{q}: {steps:?}"
+        );
+    }
+    let steps = plan(TYPES_SQL);
+    no_scan(TYPES_SQL, &steps);
+    assert!(
+        steps
+            .iter()
+            .any(|s| s.contains("INDEX ent_kind (col=? AND kind=?)")),
+        "{TYPES_SQL}: {steps:?}"
+    );
+    let steps = plan(COLLECTIONS_SQL);
+    assert!(
+        !steps.iter().any(|s| s.contains("TEMP B-TREE")),
+        "{steps:?}"
+    );
 }

@@ -269,7 +269,11 @@ pub(crate) struct Swept {
 /// 「核对存活引用 → 删文件」的一批（[collect] 的逐名规则，协议 3 与新代 `gen4/cmd/media_gc.rs` 共用）：[set] 里排在
 /// `after` 之后的至多 `limit` 个名字，对照存活引用 [alive]（比较不区分大小写）逐个判。调用方持着写锁、在同一个事务里
 /// 读 [alive] 并按 [Swept::settled] 改集合。
-pub(crate) fn sweep(set: &BTreeSet<String>, args: &CollectArgs<'_>, alive: &BTreeSet<String>) -> Swept {
+pub(crate) fn sweep(
+    set: &BTreeSet<String>,
+    args: &CollectArgs<'_>,
+    alive: &BTreeSet<String>,
+) -> Swept {
     let alive: HashSet<String> = alive.iter().map(|n| n.to_lowercase()).collect();
     let from = match args.after {
         Some(a) => Bound::Excluded(a),
