@@ -406,10 +406,11 @@ void main() {
           archivePath: path,
         );
         final MokuroPayload payload = await _readImportedPayload(db, key);
+        // 页图拷进书目录的 `images/` 下，保留包内子目录结构。
         expect(payload.images.map((MokuroImage i) => i.url).toList(), <String>[
-          '第1話/ポ2.png',
-          '第1話/ポ10.png',
-          '表紙/ソ1.png',
+          'images/第1話/ポ2.png',
+          'images/第1話/ポ10.png',
+          'images/表紙/ソ1.png',
         ]);
         expect(
           payload.images.map((MokuroImage i) => i.size.width).toList(),
