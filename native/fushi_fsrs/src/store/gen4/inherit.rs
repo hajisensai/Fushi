@@ -626,3 +626,7 @@ impl<'t, 'c> Uploader<'t, 'c> {
         Ok(bytes)
     }
 }
+
+#[cfg(test)]
+#[path = "inherit_tests.rs"]
+pub(crate) mod tests;
