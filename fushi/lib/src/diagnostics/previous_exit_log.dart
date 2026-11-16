@@ -687,7 +687,7 @@ const int kAndroidForegroundServiceImportance = 125;
 ///
 /// 反馈 gTrf6djABo：pid 19272 LOW_MEMORY importance=125，会话标记对不上（中间夹了一个
 /// Flutter 没起来的进程），同一 pid 28 分钟前已收到 TRIM_MEMORY_BACKGROUND，旧判定没看
-/// 原生旁证、按前台算 → 弹了「低内存闪退」报告（BUG-4742）。
+/// 原生旁证、按前台算 → 弹了「低内存闪退」报告（BUG-4743）。
 bool androidDiedInForeground(
   int? importance, {
   required bool? sessionSaysForeground,
