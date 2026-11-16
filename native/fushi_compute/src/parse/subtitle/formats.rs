@@ -651,38 +651,97 @@ const PER_CHAR_SAME_ROW_EPS: f64 = 0.001;
 /// 带 `\pos`、同 Layer、同一行（y 分数相等）且与另一条这样的事件**同时在屏**。孤立的
 /// 单字对白（`{\pos(..)}え`）不受影响。`cues` 已按 start 升序。
 fn mark_per_char_split_effects(cues: &mut [Cue]) {
-    // `Markup::pos` 已是 PlayRes 归一化后的分数。
-    let row_y = |c: &Cue| -> Option<f64> { c.markup.pos.map(|(_, y)| y) };
-    let candidates: Vec<usize> = (0..cues.len())
-        .filter(|&i| {
+    use std::cmp::Reverse;
+    use std::collections::{BTreeMap, BinaryHeap};
+    use std::ops::Bound::Included;
+
+    // `Markup::pos` 已是 PlayRes 归一化后的分数。非有限的 y 与谁都不算同一行。
+    let row_y = |c: &Cue| -> Option<f64> { c.markup.pos.map(|(_, y)| y).filter(|y| y.is_finite()) };
+    let candidates: Vec<(usize, f64)> = (0..cues.len())
+        .filter_map(|i| {
             let m = &cues[i].markup;
-            !m.effect && m.pos.is_some() && is_single_grapheme(&m.plain_text)
+            if m.effect || !is_single_grapheme(&m.plain_text) {
+                return None;
+            }
+            row_y(&cues[i]).map(|y| (i, y))
         })
         .collect();
+
+    // 字幕文件是不可信输入：几万条单字事件长时间同屏时，两两比较是 O(N²)。这里按 start
+    // 升序扫一遍，只维护「此刻还在屏」的候选——`live` 按 (Layer, y) 计数，`pending` 记其中
+    // 还没被标记的；每条候选进出各一次，整体 O(N log N)。同一行 = 另一条的 y 落在
+    // [y - eps, y + eps] 内。
     let mut hit = vec![false; candidates.len()];
-    for a in 0..candidates.len() {
-        let ca = &cues[candidates[a]];
-        let (Some(ya), la) = (row_y(ca), ca.markup.layer) else {
-            continue;
-        };
-        for b in (a + 1)..candidates.len() {
-            let cb = &cues[candidates[b]];
-            // 按 start 升序：cb 起点已过 ca 终点，后面的更不会与 ca 同时在屏。
-            if cb.start_ms >= ca.end_ms {
+    let mut expired = vec![false; candidates.len()];
+    let mut live: BTreeMap<(i64, RowY), u32> = BTreeMap::new();
+    let mut pending: BTreeMap<(i64, RowY), Vec<usize>> = BTreeMap::new();
+    let mut by_end: BinaryHeap<Reverse<(i64, usize)>> = BinaryHeap::new();
+    let mut drained: Vec<(i64, RowY)> = Vec::new();
+    for (k, &(i, y)) in candidates.iter().enumerate() {
+        let (start, end, layer) = (cues[i].start_ms, cues[i].end_ms, cues[i].markup.layer);
+        // 起点已到 / 已过别人的终点：那一条不再与后面任何一条同时在屏。
+        while let Some(&Reverse((e, gone))) = by_end.peek() {
+            if e > start {
                 break;
             }
-            if cb.markup.layer == la
-                && row_y(cb).is_some_and(|yb| (yb - ya).abs() <= PER_CHAR_SAME_ROW_EPS)
-            {
-                hit[a] = true;
-                hit[b] = true;
+            by_end.pop();
+            expired[gone] = true;
+            let (gi, gy) = candidates[gone];
+            let key = (cues[gi].markup.layer, RowY(gy));
+            if let Some(n) = live.get_mut(&key) {
+                *n -= 1;
+                if *n == 0 {
+                    live.remove(&key);
+                }
             }
         }
+        let window = (
+            Included((layer, RowY(y - PER_CHAR_SAME_ROW_EPS))),
+            Included((layer, RowY(y + PER_CHAR_SAME_ROW_EPS))),
+        );
+        if live.range(window).next().is_some() {
+            hit[k] = true;
+            drained.clear();
+            for (key, waiting) in pending.range(window) {
+                for &a in waiting {
+                    if !expired[a] {
+                        hit[a] = true;
+                    }
+                }
+                drained.push(*key);
+            }
+            for key in &drained {
+                pending.remove(key);
+            }
+        }
+        *live.entry((layer, RowY(y))).or_insert(0) += 1;
+        by_end.push(Reverse((end, k)));
+        if !hit[k] {
+            pending.entry((layer, RowY(y))).or_default().push(k);
+        }
     }
-    for (k, &i) in candidates.iter().enumerate() {
+    for (k, &(i, _)) in candidates.iter().enumerate() {
         if hit[k] {
             cues[i].markup.effect = true;
         }
+    }
+}
+
+/// [mark_per_char_split_effects] 的行坐标键：有限 f64 的全序。
+#[derive(Clone, Copy, PartialEq)]
+struct RowY(f64);
+
+impl Eq for RowY {}
+
+impl PartialOrd for RowY {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for RowY {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.0.total_cmp(&other.0)
     }
 }
 
@@ -821,5 +880,97 @@ mod tests {
         .map(|(t, e)| (t.to_string(), *e))
         .collect();
         assert_eq!(got, want);
+    }
+
+    /// 逐字拆开判据的扫描实现与「两两比较」的定义逐条一致（多 Layer、多行、长短不一的
+    /// 在屏区间、同起点），并且几万条长时间同屏的单字事件不退化成 O(N²)。
+    #[test]
+    fn per_char_split_effects_match_pairwise_definition_and_scale() {
+        // 模板取自真实解析出的一条单字 `\\pos` 事件，再改时间 / Layer / 行坐标 / 文本。
+        let template: Cue = parse_ass(
+            &w(concat!(
+                "[Script Info]\nPlayResX: 1920\nPlayResY: 1080\n\n",
+                "[Events]\nFormat: Layer, Start, End, Style, Effect, Text\n",
+                "Dialogue: 0,0:00:01.00,0:00:02.00,Default,,{\\pos(960,540)}字\n",
+            )),
+            false,
+        )
+        .unwrap()
+        .cues
+        .remove(0);
+        assert!(!template.markup.effect && template.markup.pos.is_some());
+        let cue = |start: i64, end: i64, layer: i64, y: f64, text: &str| -> Cue {
+            let mut markup = template.markup.clone();
+            markup.plain_text = w(text);
+            markup.pos = Some((0.5, y));
+            markup.layer = layer;
+            Cue {
+                start_ms: start,
+                end_ms: end,
+                markup,
+                style_id: template.style_id,
+                event_margins: template.event_margins,
+                play_res: template.play_res,
+            }
+        };
+        fn pairwise(cues: &[Cue]) -> Vec<bool> {
+            let mut hit = vec![false; cues.len()];
+            for a in 0..cues.len() {
+                for b in (a + 1)..cues.len() {
+                    let (ca, cb) = (&cues[a], &cues[b]);
+                    let (ya, yb) = (ca.markup.pos.unwrap().1, cb.markup.pos.unwrap().1);
+                    let single = |c: &Cue| is_single_grapheme(&c.markup.plain_text);
+                    if single(ca)
+                        && single(cb)
+                        && cb.start_ms < ca.end_ms
+                        && ca.markup.layer == cb.markup.layer
+                        && ya >= yb - PER_CHAR_SAME_ROW_EPS
+                        && ya <= yb + PER_CHAR_SAME_ROW_EPS
+                    {
+                        hit[a] = true;
+                        hit[b] = true;
+                    }
+                }
+            }
+            hit
+        }
+
+        // 确定性伪随机（LCG），行坐标落在 0.0004 的格点上：相邻格算同一行，隔三格不算。
+        let mut seed: u64 = 0x2545_F491_4F6C_DD1D;
+        let mut next = |m: u64| -> u64 {
+            seed = seed
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            (seed >> 33) % m
+        };
+        let mut cues: Vec<Cue> = Vec::new();
+        let mut start: i64 = 0;
+        for _ in 0..600 {
+            start += next(3) as i64 * 40;
+            let end = start + 1 + next(8) as i64 * 60;
+            let y = 0.3 + next(12) as f64 * 0.0004;
+            let text = if next(5) == 0 { "二字" } else { "字" };
+            cues.push(cue(start, end, next(2) as i64, y, text));
+        }
+        let want = pairwise(&cues);
+        assert!(want.iter().any(|h| *h) && want.iter().any(|h| !*h));
+        mark_per_char_split_effects(&mut cues);
+        let got: Vec<bool> = cues.iter().map(|c| c.markup.effect).collect();
+        assert_eq!(got, want);
+
+        // 6 万条单字事件、两行、全部同屏：两两比较要 18 亿次，扫描应在秒级内结束。
+        let mut dense: Vec<Cue> = (0..60_000)
+            .map(|i| cue(i, 10_000_000, 0, if i % 2 == 0 { 0.25 } else { 0.75 }, "字"))
+            .collect();
+        dense.push(cue(60_000, 10_000_000, 0, 0.5, "孤"));
+        let began = std::time::Instant::now();
+        mark_per_char_split_effects(&mut dense);
+        assert!(
+            began.elapsed() < std::time::Duration::from_secs(5),
+            "{:?}",
+            began.elapsed()
+        );
+        assert!(dense[..60_000].iter().all(|c| c.markup.effect));
+        assert!(!dense[60_000].markup.effect);
     }
 }

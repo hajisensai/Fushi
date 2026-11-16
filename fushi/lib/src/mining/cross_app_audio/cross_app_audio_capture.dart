@@ -60,12 +60,14 @@ class CrossAppAudioCapture {
           final Object? args = call.arguments;
           if (args is Map<Object?, Object?>) {
             running.value = args['running'] == true;
+            if (!running.value) unawaited(sweepStaleCrossAppAudioDirs());
           }
         }
         return null;
       });
     }
     running.value = await status();
+    unawaited(sweepStaleCrossAppAudioDirs());
   }
 
   /// 系统支不支持（Android 10+）。
