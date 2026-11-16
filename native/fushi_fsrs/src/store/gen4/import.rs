@@ -89,6 +89,9 @@ pub fn import_legacy_checked(
     let source = collection_of(profile);
     let mut out = Imported::default();
     dst.execute_batch("BEGIN IMMEDIATE").map_err(sql)?;
+    // 自己开的最外层事务：缓存可能是开事务之前的（truth.rs「会话与事务」）。批与批之间（COMMIT; BEGIN）不 reset：
+    // 迁移的临时文件只有这个连接写，真有别人插进来写，写入时的 data_version 检测会报错。
+    truth.reset();
     let done = (|| -> Result<(), String> {
         let mut in_batch = 0u64;
         for d in legacy::devices(src, profile)? {

@@ -105,6 +105,9 @@ const NOTE_TYPE: i64 = EntKind::NoteType as i64;
 const NOTE: i64 = EntKind::Note as i64;
 const CARD: i64 = EntKind::Card as i64;
 
+/// 字段说明的键前缀（存成文本，不在紧凑键的前缀表里）。
+const FIELD_DESC: &str = "fieldDesc/";
+
 /// 修改键紧凑字节形的 tag（`gen4::name::write_edit_key`）。
 const K_FIELD_DEF: u8 = 2;
 const K_TMPL_DEF: u8 = 3;
@@ -1204,8 +1207,17 @@ impl Index<'_, '_> {
         Ok(out)
     }
 
-    /// 修改键的规范形：键里嵌着 ID 的（`f/<字段>`、`fieldDef/<…>`……）把那个 ID 换成规范 ID。
+    /// 修改键的规范形：键里嵌着 ID 的（`f/<字段>`、`fieldDef/<…>`、`tmplDef/<…>`、`historyFrom/<…>`、
+    /// `fieldDesc/<…>`）把那个 ID 换成规范 ID。`fieldDesc/` 不在紧凑键的前缀表里（`gen4::name`，那张表是存储编码、
+    /// 冻结），按文本认：后面是规范形状的 UUID 才换。
     pub fn canonical_key(&self, key: &str) -> Result<String, String> {
+        if let Some(rest) = key.strip_prefix(FIELD_DESC) {
+            let Some(id) = strict_id(rest) else {
+                return Ok(key.to_owned());
+            };
+            let canon = self.canonical(&Ref::Uuid(id.0))?;
+            return Ok(format!("{FIELD_DESC}{}", canon.text()));
+        }
         let bytes = key_bytes(key);
         let (Some(id), true) = (key_id(&bytes), bytes.first() != Some(&0)) else {
             return Ok(key.to_owned());
