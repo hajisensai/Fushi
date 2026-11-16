@@ -43,7 +43,7 @@ void main() {
     expect(out, 'cpu=19.3s[fushi-rwkv-#×2 19.0s R2; DartWorker 0.3s]');
   });
 
-  // BUG-4755（反馈 Z9FwhY9377）：MIUI 熄屏耗电检查说「25 分钟用了 45 分钟 CPU」，而每 30 s 的
+  // BUG-4757（反馈 Z9FwhY9377）：MIUI 熄屏耗电检查说「25 分钟用了 45 分钟 CPU」，而每 30 s 的
   // cpu= 只覆盖最后几个窗口（那时进程已闲）；累计读数回答整段时间里谁在吃 CPU。
   test('cpuSum：进程总数取 /proc/self/stat，分组取活线程累计、按累计排序取前 3', () {
     final Map<int, ProcThreadStat> threads = <int, ProcThreadStat>{
