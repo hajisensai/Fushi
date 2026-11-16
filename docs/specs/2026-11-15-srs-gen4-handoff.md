@@ -660,8 +660,8 @@ G8 子规划文档在仓库里不存在（任务点名的「G8 子规划」找�
 - **G8-7b**：转发（`relay_outbox` / `relay_ack`，要存收到的作者段原字节）、旧身份目录清理（`obsolete_former`）、媒体命令
   （`media_*`，`srsRunLocationMedia` 接上之前报未接线）。
 - **旧根接手**：协议 1 根 `v2/` 的一次性迁移（`srsPrepareLocation`，按协议 3 命令写）与协议 3 根 `v3/` 上的段的接手
-  （`oldroot.rs` 的 `oldroot_scan` / 承袭上传 `Uploader`）都没接；`srsRunLocationRound` 不再调 `srsPrepareLocation`，
-  文件夹位置那条仍调（只碰 `v2/` 与 `v3/`）。存量集合的协议 3 段因此要等这一步才进新根——**接上之前，迁移过的设备之间
+  （`oldroot.rs` 的 `oldroot_scan` / 承袭上传 `Uploader`）都没接；`srsRunLocationRound` 与文件夹位置都不再调
+  `srsPrepareLocation`（文件夹那条复核后才去掉，见 §11.6）。存量集合的协议 3 段因此要等这一步才进新根——**接上之前，迁移过的设备之间
   只同步迁移之后的新操作**（迁移本身把各自的旧数据带进了本机库，不丢）。
 - **摘要核对**：head 带 `digest`，但对端摘要不一致时的定位 / 自愈（协议 3 `heal.rs`）没接；`healFailed` 恒空。
 - **`status` 的 `seenAt` / `warning` / `frozen` / `digestMismatch`** 仍是占位值。
@@ -678,3 +678,31 @@ G8 子规划文档在仓库里不存在（任务点名的「G8 子规划」找�
 `location_seal(ed)` 形状）；位置的根（存量协议 3 改写围栏、媒体根 v3、新根要更新读者 / 别的集合 / 坏 meta 停下、旧根别的
 集合停下）；要更新读者的 head；停用与自动取消；主动换身份；复制目录分叉 → 换身份 → 三方收敛；已删 / 未接线命令的原因；
 新语句查询计划。
+
+### 11.6 复核修复（2026-11-17，同一分支）
+
+逐条对应 PR #3616 的复核意见；每条都有测试，并做了变异实测（去掉修复，对应测试变红）。
+
+| 复核项 | 修法 | 守住它的测试（变异） |
+|---|---|---|
+| 两份纯 Dart 假宿主测试变红（`srs_sync2_dedup_round_test`、`srs_sync2_head_retention_test`） | 两份都删：新的一轮不调 `dedup` / `digest_heal`，`obsolete_ack` 与「再问」已删。留下来的语义挪走：head 只留两代（`two_devices_converge…`）、归档位置一个不删（新 `an_archive_location_keeps_every_head`，Rust 端到端；Dart 侧 `obsolete` 带 `archive` 见 `srs_sync4_round_test`）。`kSrsSync2DedupBudget` 一并删。 | — |
+| 文件夹位置先跑 `srsPrepareLocation`，往 `v3/` 写协议 3 的 meta，全新位置被判成存量集合 | 文件夹路径和云端 runner 一样不再调 `srsPrepareLocation`（v2 接手、v1 媒体搬家随旧根接手归后续，`prepared` / `v1Media` 恒为 null）。根这一步抽成 `srsSync4LocationRoot`（`srs_sync2_round.dart`），一轮同步与只做媒体的位置共用，只做媒体的位置不再拿 `v3` 根做握手。媒体按新根 meta 的 `media` 选根（`SrsSync2Report.mediaRoot`、`onLocationRoot`），不再写死 `v3`。 | `srs_sync4_folder_test.dart`（真内核）：全新位置 `media = v4`、旧根有围栏与墓碑、`v2/` 不存在、两台设备收敛；存量位置 `media = v3`。变异 D1（一轮前往 `v3/` 写 meta）红。 |
+| 停用核心语义没测试 | — | `retiring_a_device_delivers_what_waited_on_it`：b 的操作同时依赖 c、d 没到 a 的操作；停用 c 后不投递、c 的 `blocking` 归零、d 照记；再停用 d 同一事务投递；c、d 晚到后四台收敛、增量 == 重建、自动取消停用。变异 M1（`deps_ready` 不认停用）、M2（`stuck` 记到停用设备）、M8（`retire` 不补投递）全红。 |
+| `outbox_ack` 链尾标签核对没测试 | — | `outbox_ack_refuses_a_tail_tag_that_is_not_the_local_chain`：标签对不上 → `accepted: false`、水位不动、再发还是同一段。变异 M7 红。（委托说的「推进空洞」做不出拒绝：空洞记着该处链值，链尾标签不变，所以直接篡改标签。） |
+| Dart 对 `plan` 仍走协议 3 的 `readOnly` 两段式，新代 `plan` 在写锁外写库 | `SrsDbStore.sync2Command` 删 `plan` 分支，和别的同步写命令一样进 `runExclusive`；内核 `plan` 遇到 `readOnly` 明确报错。 | Rust `an_archive_location_keeps_every_head` 末尾（变异 M9 红）；Dart 变异 D2（恢复 readOnly 分支）让真内核文件夹测试红。 |
+| `v4/` 被当成 v1 写入者目录 | `srs_profile_link.dart` 列远端 profile、`SrsAssetV1Writers.writers()` 都跳过 `v4`。 | `srs_profile_link_test`「新代集合根 v4/ 不是写入者目录」，变异 D4 红。 |
+| `kSrs4LocationErrors` 没有消费方 | 删掉。调度器本来就把一轮报告里的任何 `error` 当「这个位置这一轮没同步成」报（`syncNow` / `syncLocalDirectories` / `classifySrsFolderReport` 都不分来源），这个集合不改变任何分流；`kSrs4LocationRefused` 还带 `: 原因` 后缀，集合判等本来就对不上。 | — |
+| `plan` / 密封记录用墙钟 | `srsSync2Pull` 加必填 `nowMs`，`plan` 的 `now` 与两处 `location_seal` 都取它。 | `srs_sync4_round_test`「轮次时钟」，变异 D5 红。 |
+| `identity` 的 `dir` 又被 `srsLocationDirOf` 映射一次 | `SrsAssetLocationStore` 加 `locationDir`，给了就原样用；runner 传 `identity` 的 `dir`。 | `srs_sync4_folder_test`「云端位置实例直接用 identity 给的目录名」，变异 D3 红。 |
+| 停用记录解析失败静默当已停用 | 停用与否只看键；记录体读不懂 = `Null`，`status` 在那一行报 `warning: retired record unreadable`，取消停用即清掉。不报错让整条收段失败（那会让用户卡在同步不了的状态）。 | `an_unreadable_retire_record_is_reported`，变异 M10（读不懂当空对象）红。 |
+
+复核外顺带修的（真内核 Dart 测试跑出来的）：
+
+- **`ingest_finish` 没分叉时回包缺 `localRevision` / `localEpoch`**：Dart 把它当改投影命令（`kSrsSync2ProjectingOps`），每一轮收了段都调，于是真内核上每轮报「projecting command reply lacks localRevision」。改成没分叉也带（修订号不推进）。`projecting_sync_replies_carry_the_local_revision`，变异 M11 红。
+
+仍没做 / 移交：
+
+- **旧根接手**（v2 一次性迁移、v3 段承袭上传 `oldroot_scan` / `Uploader`）：两条路径现在都不跑，交接 §11.4 原状。规模大（Dart 要列旧根段、走承袭上传），本轮没做。
+- **G9-5**：`srsRemoveOwnProfileFolder` 遇到 `v4/` 按「别人的东西」处理（不删整个 profile 目录），安全但不清理本机在新根的目录；`srs_profile_link.dart` 列远端时只跳过 `v4/`，新根下设备的说明文件（若以后要放）还没有读法。
+- **上游（不归 G8-7）**：① `SrsDbStore.open` 在还没绑定的 profile 上直接抛 `SrsProfileUnboundException`（open 段；真内核测试得先经 `SrsCore.sync2` 发 `identity` 立绑定）；② 新代库上 `SrsDbStore.note(...)` 在 `_prefetchEdits`（`srs_db_store.dart` 约 2500 行）Null check 崩——`edits` 表读回来的 `e` 与请求的 id 对不上，自己写的笔记也一样，所以 `srs_sync4_folder_test` 改按 `status` 与语义摘要核收敛。
+- 媒体命令（`media_*`）仍归 G8-7b；文件夹位置的媒体对账在接上之前照样报未接线。
