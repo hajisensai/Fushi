@@ -207,6 +207,10 @@ abstract interface class FsrsEngine {
   /// 原生库的 fsrs-rs 源码版本（写进参数组的 algorithmRev）。
   String get fsrsRev;
 
+  /// 参数组的 algorithmRev 本机认不认识：是 [fsrsRev] 或它取代了的旧版本（原生库升级 fsrs-rs 前产出的参数组）。
+  /// 不认识（更新版本产出）的参数组不跑自动优化（设计稿铁律 F）。
+  bool isKnownFsrsRev(String rev);
+
   /// 该算法的默认参数。
   List<double> defaultParams(SrsAlgorithm algorithm);
 
