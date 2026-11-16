@@ -1,12 +1,44 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-16T03:04:31Z",
+ "generatedAt": "2026-11-16T03:45:20Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "be81d1c0910d4f984ae28d6628745ee2ef4962f0",
   "seq": 27426
  },
  "builds": [
+  {
+   "seq": 27426,
+   "version": "3.3.0",
+   "sha": "be81d1c0910d4f984ae28d6628745ee2ef4962f0",
+   "unknown": false,
+   "publishedAt": "2026-11-16T03:43:39Z",
+   "testflight": false,
+   "baseSeq": 27417,
+   "prs": [
+    3451,
+    3148
+   ],
+   "direct": [],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "ok"
+    },
+    "windows": {
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43795719078"
+    },
+    "macos": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43795719078"
+    },
+    "ios": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43795719078"
+    }
+   }
+  },
   {
    "seq": 27417,
    "version": "3.3.0",
@@ -99,120 +131,9 @@
      "state": "ok"
     }
    }
-  },
-  {
-   "seq": 27328,
-   "version": "3.3.0",
-   "sha": "a0f1e32db2224b15ff6d23082a81b44b39acd6c4",
-   "unknown": false,
-   "publishedAt": "2026-11-15T07:46:42Z",
-   "testflight": false,
-   "baseSeq": 26884,
-   "prs": [
-    3442,
-    3440,
-    3437,
-    3436,
-    3441,
-    3391,
-    3431,
-    3439,
-    3432,
-    3438,
-    3435,
-    3433,
-    3429,
-    3428,
-    3372,
-    3430,
-    3424,
-    3427,
-    3381,
-    3277,
-    3318,
-    3321,
-    3365,
-    3357,
-    3368,
-    3343,
-    3402,
-    3426,
-    3419,
-    3417,
-    3421,
-    3416,
-    3410,
-    3423,
-    3422,
-    3414,
-    3334,
-    3415,
-    3412,
-    3332,
-    3299,
-    3284,
-    3418,
-    3420,
-    3301
-   ],
-   "direct": [
-    {
-     "sha": "a31ddeb6ddfd9e1d897b782c0d5ef4e57315c3cf",
-     "subject": "chore(bugs): settle BUG number collisions on cc2408d35"
-    },
-    {
-     "sha": "dc70a7d6ca8ea009326a74a0f47d6a7a57216364",
-     "subject": "chore(bugs): settle BUG number collisions on 03bcc3a1a"
-    }
-   ],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "ok"
-    },
-    "windows": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43685337361"
-    },
-    "macos": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43685337361"
-    },
-    "ios": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43685337361"
-    }
-   }
   }
  ],
- "pending": {
-  "headSha": "be81d1c0910d4f984ae28d6628745ee2ef4962f0",
-  "headSeq": 27426,
-  "prs": [
-   3451,
-   3148
-  ],
-  "direct": [],
-  "truncated": false,
-  "platforms": {
-   "android": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43795719157"
-   },
-   "windows": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43795719078"
-   },
-   "macos": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43795719078"
-   },
-   "ios": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43795719078"
-   }
-  }
- },
+ "pending": null,
  "prs": {
   "3147": {
    "number": 3147,
@@ -236,141 +157,6 @@
     "merge-approved"
    ]
   },
-  "3277": {
-   "number": 3277,
-   "title": "设置页重整：一级分类、分区层级与描述",
-   "author": "W1ght",
-   "mergedAt": "2026-11-15T00:17:39Z",
-   "additions": 10063,
-   "deletions": 6703,
-   "labels": []
-  },
-  "3284": {
-   "number": 3284,
-   "title": "srs: 内核 Drift 事务守卫（只计数、只打日志）— 收 Dart 写路径第 1 步",
-   "author": "W1ght",
-   "mergedAt": "2026-11-14T21:50:57Z",
-   "additions": 25947,
-   "deletions": 8041,
-   "labels": []
-  },
-  "3299": {
-   "number": 3299,
-   "title": "fix(linux): fall back to Wayland when the Flatpak's X11 drawing crashes (BUG-4387, temporary)",
-   "author": "samutw",
-   "mergedAt": "2026-11-14T22:03:28Z",
-   "additions": 368,
-   "deletions": 5,
-   "labels": []
-  },
-  "3301": {
-   "number": 3301,
-   "title": "feat(server): WebUI dropdowns and suggestions instead of free text / WebUI 下拉与建议，减少手填",
-   "author": "samutw",
-   "mergedAt": "2026-11-14T21:10:49Z",
-   "additions": 266,
-   "deletions": 22,
-   "labels": []
-  },
-  "3318": {
-   "number": 3318,
-   "title": "fix(sync): 互联 live 进度的写入契约、基线按远端分槽、三方判定统一（BUG-4429..4436）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-14T23:40:54Z",
-   "additions": 8935,
-   "deletions": 515,
-   "labels": []
-  },
-  "3321": {
-   "number": 3321,
-   "title": "fix(interconnect): host 配对 / 鉴权 / 监听口加固——可吊销派生凭据、PIN 防爆破、来源分类、bind 范围（BUG-4387..4396）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-14T23:30:16Z",
-   "additions": 6355,
-   "deletions": 535,
-   "labels": []
-  },
-  "3332": {
-   "number": 3332,
-   "title": "feat(galhook): Nitroplus N2System adapter (backlog text lane)",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-14T22:16:24Z",
-   "additions": 1378,
-   "deletions": 1,
-   "labels": []
-  },
-  "3334": {
-   "number": 3334,
-   "title": "feat(galhook/entisgls): EntisGLS 消息文本道 adapter（implemented_unverified，仅文本）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-14T22:24:02Z",
-   "additions": 2228,
-   "deletions": 1,
-   "labels": []
-  },
-  "3343": {
-   "number": 3343,
-   "title": "galhook(kirikiri)：KAG 消息流水线的引擎精确文本道 ENGINE:KIRIKIRI:kag_message",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-14T22:45:50Z",
-   "additions": 2889,
-   "deletions": 77,
-   "labels": []
-  },
-  "3357": {
-   "number": 3357,
-   "title": "feat(galhook/unity_il2cpp): IL2CPP 游戏内查词（共用 Mono 画布查词核心，implemented_unverified）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-14T23:17:53Z",
-   "additions": 2071,
-   "deletions": 53,
-   "labels": []
-  },
-  "3365": {
-   "number": 3365,
-   "title": "galhook/unity: 引擎绑定同时支持经典 extern 与 Unity 6 <method>_Injected 形态（implemented_unverified）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-14T23:23:26Z",
-   "additions": 1379,
-   "deletions": 262,
-   "labels": []
-  },
-  "3368": {
-   "number": 3368,
-   "title": "galhook(kirikiri)：查词 / KAG 文本道 bootstrap 分阶段诊断 + addHook 逐名挂接（BUG-4388）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-14T22:58:15Z",
-   "additions": 1010,
-   "deletions": 27,
-   "labels": []
-  },
-  "3372": {
-   "number": 3372,
-   "title": "feat(tracking): media tracking module, Tracking page and tracking site plugins / 媒体追踪模块、追踪页与追踪站点插件",
-   "author": "samutw",
-   "mergedAt": "2026-11-15T01:31:34Z",
-   "additions": 80489,
-   "deletions": 31211,
-   "labels": []
-  },
-  "3381": {
-   "number": 3381,
-   "title": "复习库按实体 ID 的读写核对 profile 归属（BUG-4388）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-15T00:20:58Z",
-   "additions": 1890,
-   "deletions": 102,
-   "labels": []
-  },
-  "3391": {
-   "number": 3391,
-   "title": "SRS 写路径第 15 步：刷新计数归内核（refresh_keys），拿掉 settled 交付与指纹实例号",
-   "author": "W1ght",
-   "mergedAt": "2026-11-15T04:53:06Z",
-   "additions": 806,
-   "deletions": 398,
-   "labels": []
-  },
   "3392": {
    "number": 3392,
    "title": "SRS 写路径第 16 步：原始 SQL 通道改由 cargo feature raw_sql 门控",
@@ -389,206 +175,6 @@
    "deletions": 5420,
    "labels": []
   },
-  "3402": {
-   "number": 3402,
-   "title": "fix(linux): stabilize WPE rendering and input",
-   "author": "gab3-dev",
-   "mergedAt": "2026-11-14T22:36:52Z",
-   "additions": 493,
-   "deletions": 113,
-   "labels": [
-    "merge-approved"
-   ]
-  },
-  "3410": {
-   "number": 3410,
-   "title": "修复查词弹窗放大图跨查词残留（BUG-4499）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-14T22:28:11Z",
-   "additions": 162,
-   "deletions": 1,
-   "labels": []
-  },
-  "3412": {
-   "number": 3412,
-   "title": "fix(diagnostics): Android scheduleCrash 失败与无前缀权限 killUid 不再误报闪退",
-   "author": "W1ght",
-   "mergedAt": "2026-11-14T22:23:09Z",
-   "additions": 162,
-   "deletions": 4,
-   "labels": []
-  },
-  "3414": {
-   "number": 3414,
-   "title": "修复同步摘要漏数设置、反馈账户条目重启后已读丢失（BUG-4501/4502）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-14T22:25:10Z",
-   "additions": 205,
-   "deletions": 21,
-   "labels": []
-  },
-  "3415": {
-   "number": 3415,
-   "title": "修复漫画 CTC OCR 模型下载 404（BUG-4492）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-14T22:23:54Z",
-   "additions": 26,
-   "deletions": 5,
-   "labels": []
-  },
-  "3416": {
-   "number": 3416,
-   "title": "修复主库损坏无限重试与词典物化探测自我喂养致启动无响应（BUG-4509/4510）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-14T22:29:16Z",
-   "additions": 634,
-   "deletions": 129,
-   "labels": []
-  },
-  "3417": {
-   "number": 3417,
-   "title": "fix(video): 整季批量下载字幕后当前集当场登记并应用（BUG-4496）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-14T22:30:48Z",
-   "additions": 447,
-   "deletions": 18,
-   "labels": []
-  },
-  "3418": {
-   "number": 3418,
-   "title": "fushi_fsrs gen4 parity: 跳过的场景逐个列出，未列 / 过时的跳过让测试失败",
-   "author": "W1ght",
-   "mergedAt": "2026-11-14T21:44:12Z",
-   "additions": 170,
-   "deletions": 25,
-   "labels": []
-  },
-  "3419": {
-   "number": 3419,
-   "title": "fix(music): 艺人合写署名拆分、歌曲行封面、歌词英文点词回退词首（BUG-4493/4494/4495）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-14T22:31:32Z",
-   "additions": 723,
-   "deletions": 31,
-   "labels": []
-  },
-  "3420": {
-   "number": 3420,
-   "title": "tool(srs): 冻结的真实旧版本二进制实测装置（G7/G8/G11 合并条件）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-14T21:21:00Z",
-   "additions": 1444,
-   "deletions": 0,
-   "labels": []
-  },
-  "3421": {
-   "number": 3421,
-   "title": "修复迁移卸载按钮无反应与有声书媒体通知元数据洪泛 ANR（BUG-4506/4507）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-14T22:30:04Z",
-   "additions": 215,
-   "deletions": 13,
-   "labels": []
-  },
-  "3422": {
-   "number": 3422,
-   "title": "修复 VOICEVOX 0.26 风格列表为空与歌词扫过时振假名提前点亮",
-   "author": "W1ght",
-   "mergedAt": "2026-11-14T22:25:59Z",
-   "additions": 116,
-   "deletions": 21,
-   "labels": []
-  },
-  "3423": {
-   "number": 3423,
-   "title": "fix(i18n): 非中文语言不再显示简体中文（BUG-4505）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-14T22:27:15Z",
-   "additions": 267,
-   "deletions": 93,
-   "labels": []
-  },
-  "3424": {
-   "number": 3424,
-   "title": "fix(srs): 首次同步归运行时、搜索框不吃组字中间态、检查器自动保存不丢焦点、原生卡面折叠标题不取词（BUG-4511/4512/4513/4500）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-15T00:32:32Z",
-   "additions": 607,
-   "deletions": 49,
-   "labels": []
-  },
-  "3426": {
-   "number": 3426,
-   "title": "fix(stats): 空闲门按时刻裁剪，恢复输入不再把超阈值的暂停算回时长 (BUG-4498)",
-   "author": "W1ght",
-   "mergedAt": "2026-11-14T22:32:31Z",
-   "additions": 178,
-   "deletions": 30,
-   "labels": []
-  },
-  "3427": {
-   "number": 3427,
-   "title": "fix(server): AdminSrs 重复的 GET srs/decks 遮住 ctl 牌组端点（develop 基线红）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-15T00:30:57Z",
-   "additions": 10,
-   "deletions": 29,
-   "labels": []
-  },
-  "3428": {
-   "number": 3428,
-   "title": "iOS 体积：关 slang flat map、iOS --split-debug-info、IPA strip -x",
-   "author": "W1ght",
-   "mergedAt": "2026-11-15T01:49:41Z",
-   "additions": 461,
-   "deletions": 26,
-   "labels": []
-  },
-  "3429": {
-   "number": 3429,
-   "title": "feat(srs-gen4): G8-2 FRL4 中继件 + D16-A FSG4 签名覆盖明文压缩体",
-   "author": "W1ght",
-   "mergedAt": "2026-11-15T01:52:24Z",
-   "additions": 780,
-   "deletions": 19,
-   "labels": []
-  },
-  "3430": {
-   "number": 3430,
-   "title": "docs(srs): 设计稿并入 G7–G11 定案（D1–D34）与 22 条矛盾改正；旧 debug 包存档",
-   "author": "W1ght",
-   "mergedAt": "2026-11-15T00:36:30Z",
-   "additions": 337,
-   "deletions": 118,
-   "labels": []
-  },
-  "3431": {
-   "number": 3431,
-   "title": "feat(srs-gen4): G11-1 FSRS4EXP 内核导出流编解码 + 冻结 v1 读入器",
-   "author": "W1ght",
-   "mergedAt": "2026-11-15T04:32:02Z",
-   "additions": 1603,
-   "deletions": 1,
-   "labels": []
-  },
-  "3432": {
-   "number": 3432,
-   "title": "fix(dist_test): per-batch TMPDIR on workers, removed on exit",
-   "author": "W1ght",
-   "mergedAt": "2026-11-15T03:50:44Z",
-   "additions": 73,
-   "deletions": 1,
-   "labels": []
-  },
-  "3433": {
-   "number": 3433,
-   "title": "feat(srs): 远程复习代际协商骨架与升级提示（G10-1）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-15T03:30:17Z",
-   "additions": 775,
-   "deletions": 39,
-   "labels": []
-  },
   "3434": {
    "number": 3434,
    "title": "fix(srs): apkg 导入保留 Anki 端已删卡的 revlog，只进统计与日历 (BUG-4626)",
@@ -596,80 +182,6 @@
    "mergedAt": "2026-11-15T06:46:20Z",
    "additions": 715,
    "deletions": 3,
-   "labels": []
-  },
-  "3435": {
-   "number": 3435,
-   "title": "SRS G8-1：协议 4 位置布局纯函数（没有调用方）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-15T03:33:16Z",
-   "additions": 1208,
-   "deletions": 0,
-   "labels": []
-  },
-  "3436": {
-   "number": 3436,
-   "title": "fix(srs): 浏览页按键处理不再抢走持焦控件的 Enter（BUG-4628）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-15T04:56:53Z",
-   "additions": 163,
-   "deletions": 10,
-   "labels": []
-  },
-  "3437": {
-   "number": 3437,
-   "title": "feat(ocr): upgrade the manga CTC recogniser to Kellenok v0.3 / 漫画 CTC 识别器升级到 Kellenok v0.3",
-   "author": "samutw",
-   "mergedAt": "2026-11-15T05:19:27Z",
-   "additions": 804,
-   "deletions": 110,
-   "labels": [
-    "merge-approved"
-   ]
-  },
-  "3438": {
-   "number": 3438,
-   "title": "test: 修 develop 尖端 6 条单测 / 守卫红（BUG-4504 断言、纯 Dart import、注释掩码、pt-BR 实验性误报、host 任务换路用例间泄漏）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-15T03:48:25Z",
-   "additions": 54,
-   "deletions": 52,
-   "labels": []
-  },
-  "3439": {
-   "number": 3439,
-   "title": "test/style: 修 develop 尖端剩余守卫红（voice_hook v13 锚点、设置分类图标改 FushiIcons、对话框不手包滚动、#3372/#3416 未格式化文件）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-15T04:14:18Z",
-   "additions": 166,
-   "deletions": 142,
-   "labels": []
-  },
-  "3440": {
-   "number": 3440,
-   "title": "test(srs): 页面写入按修订号信号等落库（修 Apple 变体满载间歇红）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-15T06:13:43Z",
-   "additions": 71,
-   "deletions": 5,
-   "labels": []
-  },
-  "3441": {
-   "number": 3441,
-   "title": "style(rust): fushi_music manifest.rs 过 rustfmt（修 develop Rust format 红）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-15T04:55:43Z",
-   "additions": 12,
-   "deletions": 3,
-   "labels": []
-  },
-  "3442": {
-   "number": 3442,
-   "title": "fix: 修 #3372 媒体追踪带进 develop 的 CI 红",
-   "author": "W1ght",
-   "mergedAt": "2026-11-15T06:25:02Z",
-   "additions": 87,
-   "deletions": 74,
    "labels": []
   },
   "3443": {
