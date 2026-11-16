@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "version": "3.3.0-debug.28147",
-  "tag": "v3.3.0-debug.28147+202ad6d",
+  "version": "3.3.0-debug.28294",
+  "tag": "v3.3.0-debug.28294+49819dc",
   "channel": "debug",
   "prerelease": true,
-  "releaseSequence": 28147,
-  "notes": "Automated release-signed debug-channel build from develop @ 202ad6d. Push releases are always prerelease and never Latest.",
+  "releaseSequence": 28294,
+  "notes": "Automated desktop debug-channel build from develop @ 49819dc. Push releases are always prerelease and never Latest.",
   "assets": [
     {
       "name": "fushi-3.3.0-debug.27850-ios.ipa",
@@ -35,15 +35,6 @@
       "sha256": "3371be0022cf602af9ae79e04e3c7eb28a0673d04bf3dba9b0855c1eb1081c11"
     },
     {
-      "name": "fushi-3.3.0-debug.27850-windows-setup.exe",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.3.0-debug.27850-windows-setup.exe",
-      "releaseSequence": 27850,
-      "tag": "v3.3.0-debug.27850+7ec8665",
-      "version": "3.3.0-debug.27850",
-      "size": 298145896,
-      "sha256": "8a160666a3d50f4b92176bae986070b5a5d8569c92c62527eb6d5d3bb99162c6"
-    },
-    {
       "name": "fushi-3.3.0-debug.28147-202ad6d-debug.apk",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.3.0-debug.28147-202ad6d-debug.apk",
       "releaseSequence": 28147,
@@ -51,6 +42,15 @@
       "version": "3.3.0-debug.28147",
       "size": 264210077,
       "sha256": "f0a3d697454965694f08fa3f0efd63c6a07611a135cd072e205709d4b27dc541"
+    },
+    {
+      "name": "fushi-3.3.0-debug.28294-windows-setup.exe",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.3.0-debug.28294-windows-setup.exe",
+      "releaseSequence": 28294,
+      "tag": "v3.3.0-debug.28294+49819dc",
+      "version": "3.3.0-debug.28294",
+      "size": 298430016,
+      "sha256": "904cc9387455c58265f43310370cc08f0b063d1658ea43e665205466331a9dd6"
     }
   ]
 }
