@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import '../helpers/scan_scale.dart';
 import '../helpers/source_guard.dart';
 
-/// BUG-4387 / BUG-4720：Windows 上「画面在动、鼠标键盘全失灵」的两道结构守卫。
+/// BUG-4387 / BUG-4725：Windows 上「画面在动、鼠标键盘全失灵」的两道结构守卫。
 ///
 /// 1. `lib` 下不得调 `SchedulerBinding.scheduleTask`。它在调度策略不放行时用零延迟
 ///    定时器把自己一圈圈重排，Windows 嵌入层每圈一条 posted 消息，输入永远排不上。
@@ -26,6 +26,7 @@ const Set<String> _ambientRepeatFiles = <String>{
 const Map<String, String> _stateBoundRepeatFiles = <String, String>{
   'lib/src/media/video/video_danmaku_overlay.dart': '弹幕：视频在播且弹幕开着',
   'lib/src/media/video/video_m3e_chrome.dart': '进度条波浪：视频在播',
+  'lib/src/pages/implementations/home_widget_grid.dart': '编辑态抖动：主页小组件在编辑态',
   'lib/src/pages/implementations/music/music_lyrics_page.dart': '唱片旋转：音乐在播',
   'lib/src/pages/implementations/shortcut_settings/shortcut_browser.part.dart':
       '录制脉冲：正在录快捷键',
@@ -79,7 +80,7 @@ final Future<void> c = binding.scheduleTask <void> (() {}, Priority.touch);
       isEmpty,
       reason:
           'scheduleTask 在调度策略不放行时零延迟空转，饿死 Windows 输入（BUG-4387 / '
-          'BUG-4720）。等空闲改用 lib/src/utils/scheduling/ambient_ticker.dart 的 '
+          'BUG-4725）。等空闲改用 lib/src/utils/scheduling/ambient_ticker.dart 的 '
           'waitForUiIdle。',
     );
   });

@@ -107,7 +107,7 @@ void main() {
     expect(binding.schedulingStrategy, same(ambientAwareSchedulingStrategy));
   });
 
-  // BUG-4720：「等空闲」本身不能空转。用假调度器数定时器——真 binding 下空转表现为
+  // BUG-4725：「等空闲」本身不能空转。用假调度器数定时器——真 binding 下空转表现为
   // pump 死循环，只能靠超时发现，数不出「一个都没有」。
   group('waitForUiIdle', () {
     test('忙时只挂一个帧后回调，事件循环里一个定时器都没有', () {

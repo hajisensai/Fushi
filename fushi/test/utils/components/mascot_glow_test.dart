@@ -104,7 +104,7 @@ void main() {
     expect(opacity(), closeTo(kMascotGlowIdle.high, 1e-3));
   });
 
-  // BUG-4720：悬浮球常驻时呼吸从启动一直在跑。它算进「有动画在跑」的话，启动期等空闲的
+  // BUG-4725：悬浮球常驻时呼吸从启动一直在跑。它算进「有动画在跑」的话，启动期等空闲的
   // 工作永远等不到（改前还会让调度器空转、饿死 Windows 输入）。
   testWidgets('呼吸是常驻装饰动画：不算真实动画，等空闲照常完成', (WidgetTester tester) async {
     mascotGlowEnabled.value = true;
