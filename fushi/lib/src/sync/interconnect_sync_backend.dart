@@ -237,6 +237,7 @@ class InterconnectSyncBackend extends SyncBackend
         RemoteVideoPlaybackSync,
         RemoteVideoPlaybackRelease,
         RemoteVideoQualityLimit,
+        RemoteVideoFingerprintSource,
         RemoteVideoDanmakuKeyFetch,
         RemoteVideoWorkMetadataFetch,
         RemoteDiscShareSource,
@@ -3387,6 +3388,43 @@ class InterconnectSyncBackend extends SyncBackend
       urls: RemoteVideoStreamUrls.fromJson(json),
       ticket: ticket is String && ticket.isNotEmpty ? ticket : null,
     );
+  }
+
+  /// host 对整份原文件算 SHA-256：几 GB 的片子要几秒到几十秒（host 侧按文件状态缓存，
+  /// 同一文件只算一次），等响应头不能套普通端点的 [requestTimeout]。
+  static const Duration _videoFingerprintTimeout = Duration(minutes: 5);
+
+  /// GET `/api/library/videos/<id>/fingerprint`（拍板台 IFCPPprIpT）。404（老 host
+  /// 无此端点 / 条目或文件不在）→ null；回的不是 64 位小写 hex 也当取不到，不把
+  /// 不可担保的值写进卡片。
+  @override
+  Future<String?> fetchRemoteVideoFingerprint(
+    String id, {
+    int episodeIndex = 0,
+  }) async {
+    await _ensureResolved();
+    final String query = episodeIndex > 0 ? '?episode=$episodeIndex' : '';
+    final HttpClientRequest req = await _ops!.buildRequest(
+      'GET',
+      '$_apiBase/api/library/videos/${_encodeVideoId(id)}/fingerprint$query',
+    );
+    final HttpClientResponse res = await _sendBounded(
+      req,
+      timeout: _videoFingerprintTimeout,
+    );
+    if (res.statusCode == 404) {
+      await res.drain<void>();
+      return null;
+    }
+    _ops!.checkStatus(
+      res.statusCode,
+      'GET /api/library/videos/$id/fingerprint',
+    );
+    final Object? decoded = jsonDecode(await _readBodyBounded(res));
+    final Object? value = decoded is Map ? decoded['fingerprint'] : null;
+    return value is String && RegExp(r'^[0-9a-f]{64}$').hasMatch(value)
+        ? value
+        : null;
   }
 
   /// media_kit 兼容接口：当前协议走 token URL，因此无需额外 HTTP headers。
