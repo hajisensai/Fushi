@@ -44,10 +44,21 @@ class _MusicLyricsProvidersBodyState extends State<MusicLyricsProvidersBody> {
   Map<String, InstalledMusicPlugin> _byId =
       const <String, InstalledMusicPlugin>{};
 
+  /// 歌词插件可能由本页按钮装上，也可能由外层页面的拖放落点（[MusicPluginDropTarget]）
+  /// 装上：一律经 [MusicPluginManager.changes] 刷新。
+  StreamSubscription<void>? _changes;
+
   @override
   void initState() {
     super.initState();
+    _changes = _manager.changes.listen((_) => unawaited(_load()));
     unawaited(_load());
+  }
+
+  @override
+  void dispose() {
+    unawaited(_changes?.cancel());
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -87,7 +98,7 @@ class _MusicLyricsProvidersBodyState extends State<MusicLyricsProvidersBody> {
   }
 
   Future<void> _install() async {
-    if (await pickAndInstallMusicPlugin(context, _manager)) await _load();
+    await pickAndInstallMusicPlugin(context, _manager);
   }
 
   @override
