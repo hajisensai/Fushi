@@ -19,13 +19,9 @@ void main() {
   test(
     'calibration probe on a real srs.db copy',
     () async {
-      final SrsStorage storage = await SrsStorage.open(
-        path: dbPath!,
-        inline: true,
-      );
+      final SrsStorage storage = await SrsStorage.open(path: dbPath!);
       final FfiFsrsEngine engine = FfiFsrsEngine.tryCreate()!;
       final SrsDbStore store = await SrsDbStore.open(
-        db: storage.db,
         core: storage.core,
         profileUid: env['FUSHI_CAL_PROFILE']!,
         deviceId: 'calibration-probe',

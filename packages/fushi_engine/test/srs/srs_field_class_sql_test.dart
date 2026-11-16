@@ -1,10 +1,34 @@
-// srsFieldClassSqlFilter（SQLite 侧按字段类别筛修改记录）与 srsFieldClassOf（Dart 侧逐条判）必须恒等：
-// [SrsDbStore.syncConflicts] 靠前者在读回之前筛掉笔记字段正文（BUG-3947），两者一旦分叉，冲突记录要么漏项、
-// 要么又把整库正文读回来。这里对全部实体种类 × 全部已知字段键（含带参数的前缀键与没见过的键）× 全部类别
-// 子集，在真 SQLite 里求值比对。
+// srsFieldClassRules（交给内核读命令 `conflict_edits` 在库里按字段类别筛修改记录）与 srsFieldClassOf（Dart 侧
+// 逐条判）必须恒等：[SrsDbStore.syncConflicts] 靠前者在读回之前筛掉笔记字段正文（BUG-3947），两者一旦分叉，冲突
+// 记录要么漏项、要么又把整库正文读回来。这里对全部实体种类 × 全部已知字段键（含带参数的前缀键与没见过的键）×
+// 全部类别子集，把规则拼成内核 `class_filter`（native/fushi_fsrs/src/store/reads.rs）同形的 SQL 条件，在真 SQLite
+// 里求值比对。
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:sqlite3/sqlite3.dart';
 import 'package:test/test.dart';
+
+/// [srsFieldClassRules] 拼成的条件，与内核 `class_filter` 同形（keep = IN，drop = NOT IN，空 drop = 整种实体，
+/// 没有规则 = 恒假）。
+String _filter(List<Map<String, Object?>> rules) {
+  String quote(String s) => "'${s.replaceAll("'", "''")}'";
+  String keys(Object? v) => <String>[
+    for (final Object? k in v! as List<Object?>) quote(k! as String),
+  ].join(', ');
+  final List<String> terms = <String>[
+    for (final Map<String, Object?> r in rules)
+      () {
+        final String isKind = 'entity_kind = ${quote(r['kind']! as String)}';
+        if (r.containsKey('keep')) {
+          return '($isKind AND field_key IN (${keys(r['keep'])}))';
+        }
+        final String drop = keys(r['drop']);
+        return drop.isEmpty
+            ? '($isKind)'
+            : '($isKind AND field_key NOT IN ($drop))';
+      }(),
+  ];
+  return terms.isEmpty ? '(0)' : '(${terms.join(' OR ')})';
+}
 
 /// 已知字段键（[SrsFieldKeys] 的全部常量与带参数键的样例）+ 一个没见过的键 + 带引号的键。
 final List<String> _keys = <String>[
@@ -66,7 +90,7 @@ List<Set<SrsFieldClass>> _subsets() {
 }
 
 void main() {
-  test('SQL 筛选与 srsFieldClassOf 对全部种类 × 字段键 × 类别子集逐项相同', () {
+  test('内核筛选规则与 srsFieldClassOf 对全部种类 × 字段键 × 类别子集逐项相同', () {
     final Database db = sqlite3.openInMemory();
     addTearDown(db.dispose);
     db.execute('CREATE TABLE e (entity_kind TEXT, field_key TEXT)');
@@ -79,11 +103,7 @@ void main() {
     insert.dispose();
     int checked = 0;
     for (final Set<SrsFieldClass> classes in _subsets()) {
-      final String filter = srsFieldClassSqlFilter(
-        classes,
-        kindColumn: 'entity_kind',
-        keyColumn: 'field_key',
-      );
+      final String filter = _filter(srsFieldClassRules(classes));
       final Set<String> got = <String>{
         for (final Row r in db.select(
           'SELECT entity_kind, field_key FROM e WHERE $filter',
@@ -109,9 +129,10 @@ void main() {
     };
     final Database db = sqlite3.openInMemory();
     addTearDown(db.dispose);
+    final String filter = _filter(srsFieldClassRules(conflicts));
     bool tracked(SrsEntityKind kind, String key) =>
         db.select(
-          'SELECT ${srsFieldClassSqlFilter(conflicts, kindColumn: '?1', keyColumn: '?2')} AS x',
+          'SELECT $filter AS x FROM (SELECT ? AS entity_kind, ? AS field_key)',
           <Object?>[kind.wire, key],
         ).single['x'] ==
         1;

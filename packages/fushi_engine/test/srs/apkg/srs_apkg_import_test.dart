@@ -2142,7 +2142,6 @@ void main() {
     final _FailFirstValidate engine = _FailFirstValidate();
     final SrsStorage srsStorage = await openTestSrsStorage();
     final SrsDbStore s = await SrsDbStore.open(
-      db: srsStorage.db,
       core: srsStorage.core,
       profileUid: kProfile,
       deviceId: 'a',

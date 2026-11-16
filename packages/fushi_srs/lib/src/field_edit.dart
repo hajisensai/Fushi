@@ -175,8 +175,8 @@ typedef _SrsFieldClassRule = ({
   Map<String, SrsFieldClass> exceptions,
 });
 
-/// 字段类别的唯一真相：[srsFieldClassOf]（Dart 侧逐条判）与 [srsFieldClassSqlFilter]（让 SQLite 在读回之前
-/// 就筛掉不需要的类别）都只读这张表。
+/// 字段类别的唯一真相：[srsFieldClassOf]（Dart 侧逐条判）与 [srsFieldClassRules]（让内核在读回之前就筛掉
+/// 不需要的类别）都只读这张表。
 const Map<SrsEntityKind, _SrsFieldClassRule> _kSrsFieldClassRules =
     <SrsEntityKind, _SrsFieldClassRule>{
       // 笔记：字段值、标签、来源、删除都是内容。首选牌组是设置；换类型也是设置：最后修改生效，被覆盖的进同步
@@ -220,33 +220,26 @@ const Map<SrsEntityKind, _SrsFieldClassRule> _kSrsFieldClassRules =
       ),
     };
 
-/// SQL 布尔表达式：[kindColumn]（实体种类 wire 值）/ [keyColumn]（字段键）这一行的类别（[srsFieldClassOf]）属于
-/// [classes]。与 [srsFieldClassOf] 读同一张表，二者恒等（回归：fushi_engine
-/// `test/srs/srs_field_class_sql_test.dart`）。
+/// 「类别属于 [classes]」换算成每种实体的字段键清单，交给内核读命令筛修改记录（`read` 的 `conflict_edits`，
+/// native/fushi_fsrs/src/store/reads.rs `class_filter`）：每项 `{kind, keep: [键…]}`（只要这些键）或
+/// `{kind, drop: [键…]}`（除这些键以外都要）；一个键都不要的实体不出现。与 [srsFieldClassOf] 读同一张表，二者
+/// 恒等（回归：fushi_engine `test/srs/srs_field_class_sql_test.dart`）。
 ///
-/// 用途：只要某几类修改记录时让 SQLite 先筛，别把笔记字段正文（内容类，大库上全部加起来是 GB 级）读回来再丢。
-String srsFieldClassSqlFilter(
-  Set<SrsFieldClass> classes, {
-  required String kindColumn,
-  required String keyColumn,
-}) {
-  String quote(String s) => "'${s.replaceAll("'", "''")}'";
-  String inList(Iterable<String> keys) => keys.map(quote).join(', ');
-  final List<String> terms = <String>[];
+/// 用途：只要某几类修改记录时让内核在库里先筛，别把笔记字段正文（内容类，大库上全部加起来是 GB 级）读回来再丢。
+List<Map<String, Object?>> srsFieldClassRules(Set<SrsFieldClass> classes) {
+  final List<Map<String, Object?>> out = <Map<String, Object?>>[];
   for (final SrsEntityKind kind in SrsEntityKind.values) {
     final _SrsFieldClassRule rule = _kSrsFieldClassRules[kind]!;
-    final String isKind = '$kindColumn = ${quote(kind.wire)}';
     if (classes.contains(rule.fallback)) {
       // 缺省类别要：这种实体除了「类别不要的例外键」以外都要。
-      final List<String> drop = <String>[
-        for (final MapEntry<String, SrsFieldClass> e in rule.exceptions.entries)
-          if (!classes.contains(e.value)) e.key,
-      ];
-      terms.add(
-        drop.isEmpty
-            ? '($isKind)'
-            : '($isKind AND $keyColumn NOT IN (${inList(drop)}))',
-      );
+      out.add(<String, Object?>{
+        'kind': kind.wire,
+        'drop': <String>[
+          for (final MapEntry<String, SrsFieldClass> e
+              in rule.exceptions.entries)
+            if (!classes.contains(e.value)) e.key,
+        ],
+      });
     } else {
       // 缺省类别不要：只要类别在 [classes] 里的例外键。
       final List<String> keep = <String>[
@@ -254,11 +247,11 @@ String srsFieldClassSqlFilter(
           if (classes.contains(e.value)) e.key,
       ];
       if (keep.isNotEmpty) {
-        terms.add('($isKind AND $keyColumn IN (${inList(keep)}))');
+        out.add(<String, Object?>{'kind': kind.wire, 'keep': keep});
       }
     }
   }
-  return terms.isEmpty ? '(0)' : '(${terms.join(' OR ')})';
+  return out;
 }
 
 /// 一条修改记录。创建即不可变；ID 由 dot 决定。

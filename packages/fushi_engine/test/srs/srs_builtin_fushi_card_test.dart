@@ -153,9 +153,9 @@ void main() {
         srsFushiCardFieldId(kProfile, 'ExpressionReading'): 'かよう',
       },
     );
-    final SrsNoteCacheRow row = await (a.db.select(
-      a.db.srsNotesCache,
-    )..where((r) => r.id.equals(note))).getSingle();
+    final SrsNoteCacheRow row = (await a.noteRows(<String, Object?>{
+      'ids': <String>[note],
+    })).single;
     expect(row.termKey, isNotEmpty);
     expect(row.readingKey, isNotEmpty);
     expect(await a.cardsOfNote(note), hasLength(1));

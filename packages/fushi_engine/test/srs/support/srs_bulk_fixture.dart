@@ -1,10 +1,9 @@
-/// 批量操作的往返计数 / 逐条等价测试共用：内存库 + 语句计数 + 固定时钟 + 导入一批 Basic (and reversed) 笔记。
+/// 批量操作的往返计数 / 逐条等价测试共用：临时库 + 读命令计数 + 固定时钟 + 导入一批 Basic (and reversed) 笔记。
 library;
 
 import 'dart:io';
+import 'dart:typed_data';
 
-import 'package:drift/drift.dart';
-import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/apkg/srs_apkg_import.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_note_type_store.dart';
@@ -30,22 +29,20 @@ SrsTrustedClock fixedTrustedClock() => SrsTrustedClock(
 );
 
 class BulkFixture {
-  BulkFixture._(this.db, this.store, this.counter);
+  BulkFixture._(this.core, this.store, this.counter);
 
-  final SrsDatabase db;
+  final SrsCore core;
   final SrsDbStore store;
-  final CountingInterceptor counter;
+  final SrsReadCounter counter;
 
   /// 打开临时 srs.db 并导入 [notes] 条笔记（每条两张卡、分在 Lang 与 Lang::JP，每卡 3 条日志）。
   ///
-  /// [background]：库开在临时文件上、走后台 isolate（与 app 同一种连接，语句真的跨 isolate
-  /// 往返、与别的异步任务交错）；默认同 isolate 执行。
+  /// 读命令一律经内核命令 worker 的查询道（与 app 相同）。
   static Future<BulkFixture> open({
     required int notes,
     String deviceId = 'dev',
-    bool background = false,
   }) async {
-    final CountingInterceptor counter = CountingInterceptor();
+    final SrsReadCounter counter = SrsReadCounter();
     final Directory tmp = Directory.systemTemp.createTempSync('srs_bulk_');
     addTearDown(() {
       try {
@@ -54,14 +51,8 @@ class BulkFixture {
         // 句柄晚释放。
       }
     });
-    final TestSrs srs = await openTestSrsAt(
-      '${tmp.path}/srs.db',
-      interceptor: counter,
-      inline: !background,
-    );
-    final SrsDatabase db = srs.db;
+    final TestSrs srs = await openTestSrsAt('${tmp.path}/srs.db');
     final SrsDbStore store = await SrsDbStore.open(
-      db: db,
       core: srs.core,
       profileUid: kBulkUid,
       deviceId: deviceId,
@@ -70,7 +61,7 @@ class BulkFixture {
       fallbackRolloverHour: () => 4,
     );
     if (notes > 0) await importBench(store, notes);
-    return BulkFixture._(db, store, counter);
+    return BulkFixture._(srs.core, store, counter);
   }
 }
 
@@ -151,33 +142,32 @@ Future<ChangeSpec> reversedChange(SrsDbStore s) async {
 /// 本 profile 的全部 SRS 行（事件表、发件箱、本机状态、两张缓存），可逐条比较：
 /// 只抹掉本机「写入时刻」两列（receivedAt / updatedAt，墙钟，与语义无关），
 /// 本机产生的日志 ID（随机 UUIDv7）按 (卡, HLC) 顺序换成序号。
-Future<Map<String, List<String>>> dumpSrsState(SrsDatabase db) async {
+Future<Map<String, List<String>>> dumpSrsState(SrsCore core) async {
   Future<List<String>> rows(String sql) async => <String>[
-    for (final QueryRow r in await db.customSelect(sql).get())
-      r.data.values.join('|'),
+    for (final Map<String, Object?> r in core.debugSelectRaw(sql))
+      r.values.join('|'),
   ];
   final List<String> devices = await rows(
     'SELECT srs_idt(device) AS device FROM sync2_self',
   );
   final String device = devices.isEmpty
       ? '\u0000'
-      : (await db
-                .customSelect(
+      : core
+                .debugSelectRaw(
                   'SELECT srs_idt(device) AS device FROM sync2_self',
                 )
-                .getSingle())
-            .read<String>('device');
+                .single['device']!
+            as String;
 
   // 排序键不能含 ID 本身（随机）：按 (卡, 抹掉 ID 的规范 JSON) 排。
   final List<(String, String)> logs = <(String, String)>[
-    for (final QueryRow r
-        in await db
-            .customSelect('SELECT id, card_id, json FROM srs_review_logs')
-            .get())
+    for (final Map<String, Object?> r in core.debugSelectRaw(
+      'SELECT id, card_id, json FROM srs_review_logs',
+    ))
       (
-        r.read<String>('id'),
-        '${r.read<String>('card_id')}|'
-            '${r.read<String>('json').replaceAll(r.read<String>('id'), '')}',
+        r['id']! as String,
+        '${r['card_id']}|'
+            '${(r['json']! as String).replaceAll(r['id']! as String, '')}',
       ),
   ]..sort(((String, String) a, (String, String) b) => a.$2.compareTo(b.$2));
   final Map<String, String> logIds = <String, String>{
