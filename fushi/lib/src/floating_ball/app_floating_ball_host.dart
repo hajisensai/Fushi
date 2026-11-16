@@ -1238,7 +1238,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
           'anchor=${_rectSummary(anchorScreenRect)} '
           'text="$linePreview"',
     );
-    // BUG-4695：查词串从被点字起、跨过 OCR 折行接上同一文本块的后续行（词被折到
+    // BUG-4706：查词串从被点字起、跨过 OCR 折行接上同一文本块的后续行（词被折到
     // 下一行时不再在行尾截断）；制卡句子取块里含被点字的整句。
     final ScreenOcrBlockLookup lookup = screenOcrBlockLookupForHit(
       lines: lines,

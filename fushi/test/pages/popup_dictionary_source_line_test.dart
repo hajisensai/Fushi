@@ -598,7 +598,7 @@ void main() {
   );
 
   testWidgets(
-    'BUG-4695: a word wrapped onto the next OCR line is looked up across the '
+    'BUG-4706: a word wrapped onto the next OCR line is looked up across the '
     'line break, from the host and from the strip',
     (WidgetTester tester) async {
       final _SourceLineAppModel appModel = _SourceLineAppModel();
@@ -634,6 +634,29 @@ void main() {
       await _settle(tester);
       expect(appModel.searched.last, '良い天気ですね。散歩に行こう。');
       expect(await _mineSentence(tester, repo), '今日は良い天気ですね。');
+    },
+  );
+
+  testWidgets(
+    'BUG-4706: a Latin line with trailing whitespace still joins the next '
+    'line with one space',
+    (WidgetTester tester) async {
+      final _SourceLineAppModel appModel = _SourceLineAppModel();
+      // 行内后缀是 trim 后的行，续文的空格要按去掉行尾空白后的末字判断。
+      const String block = 'I like the \nweather today';
+      const String line = 'I like the ';
+      await tester.pumpWidget(
+        _buildApp(
+          appModel: appModel,
+          repo: _RecordingAnkiRepo(),
+          text: line,
+          charIndex: 7,
+          sourceBlock: block,
+          sourceBlockOffset: 0,
+        ),
+      );
+      await _settle(tester);
+      expect(appModel.searched.first, 'the weather today');
     },
   );
 

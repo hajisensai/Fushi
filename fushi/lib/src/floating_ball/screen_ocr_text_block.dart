@@ -1,6 +1,6 @@
 /// 只有行框的截屏识字结果（Windows.Media.Ocr / Vision / 本机模型 / Google Lens）里，
 /// 被点那一行所在的**文本块**：卡图裁哪块（反馈 Gz7z6Y6Mbr）、查词串与制卡句子跨到
-/// 哪几行（BUG-4695）都按这里的同一套聚合规则，规则只写一处。
+/// 哪几行（BUG-4706）都按这里的同一套聚合规则，规则只写一处。
 ///
 /// Android 截屏识字有 ML Kit 的 text block，块由原生给（`ScreenOcrLayout.blockText`），
 /// 不走这里；块全文的格式（块内各行按 `\n` 拼接）两边一致，后续截句 / 拼续文都交给
@@ -81,7 +81,7 @@ Rect screenOcrTextBlockRect({
   return block ?? lines[hitIndex].rect;
 }
 
-/// 点中 [hit] 这一行第 [charIndex] 个 UTF-16 码元时交给查词的文字（BUG-4695）。
+/// 点中 [hit] 这一行第 [charIndex] 个 UTF-16 码元时交给查词的文字（BUG-4706）。
 class ScreenOcrBlockLookup {
   const ScreenOcrBlockLookup({required this.text, required this.sentence});
 

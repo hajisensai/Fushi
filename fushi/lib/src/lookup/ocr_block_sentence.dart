@@ -140,7 +140,7 @@ String? ocrBlockSentenceAt(
   return sentence;
 }
 
-/// BUG-4695：块全文 [block] 里被点那一行止于 UTF-16 下标 [lineEnd]（不含）时，接在
+/// BUG-4706：块全文 [block] 里被点那一行止于 UTF-16 下标 [lineEnd]（不含）时，接在
 /// 这行后面、按同一套折行拼接规则拼好的块内后续文字（去掉 OCR 折行；行尾与下一行
 /// 开头都是拉丁字母 / 数字时以一个空格开头）。
 ///

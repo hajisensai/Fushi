@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/floating_ball/screen_ocr_text_block.dart';
 import 'package:fushi/src/ocr/system_ocr_channel.dart';
 
-/// BUG-4695：只有行框的截屏识字（桌面冻结层 / iOS 截屏 / 拍照）点字时，查词串要
+/// BUG-4706：只有行框的截屏识字（桌面冻结层 / iOS 截屏 / 拍照）点字时，查词串要
 /// 跨过 OCR 折行接上同一文本块的后续行，制卡句子取块里的整句——此前只用被点那一行，
 /// 词被折到下一行就在行尾截断。
 void main() {
