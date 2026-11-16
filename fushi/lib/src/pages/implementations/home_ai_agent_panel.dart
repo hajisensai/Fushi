@@ -1,6 +1,6 @@
-/// 首页「AI 助手」入口条（[HomeDashboardPanel.aiAgent]，spec 2026-10-26 D4 ①）：
-/// 一行「AI 助手 · 告诉 AI 要做什么…」，点了打开 AI 浮层（与悬浮球「AI」同一个入口
-/// [openAiAgent]）。
+/// 首页「AI 助手」小组件（[HomeWidgetKind.aiAgent]，spec 2026-10-26 D4 ①；首页小组件
+/// 网格 2026-11-15）：「AI 助手 · 告诉 AI 要做什么…」，点了打开 AI 浮层（与悬浮球「AI」
+/// 同一个入口 [openAiAgent]）。
 library;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,188 +8,113 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/ai/agent/ai_agent_controller.dart';
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/models/home_dashboard_panel.dart';
+import 'package:fushi/src/models/home_widget_layout.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/pages/implementations/ai_agent_page.dart';
-import 'package:fushi/src/utils/components/fushi_press_scale.dart';
+import 'package:fushi/src/pages/implementations/home_widget_frame.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
-import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
-import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
-import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
-import 'package:fushi/src/utils/components/fushi_cover_block.dart'
-    show FushiCoverBlockColors, FushiCoverBlockSize, fushiCoverBlockShape;
-import 'package:fushi/src/utils/components/fushi_poster_block.dart';
-import 'package:fushi/src/utils/components/shelf_card_widgets.dart'
-    show shelfCoverCard;
 
-/// AI 助手条该不该出现在首页（纯函数，判据的唯一实现）。
+/// AI 助手组件此刻可不可用（纯函数，判据的唯一实现）：只看 AI 模块门。
 ///
-/// - AI 模块关着：恒不显示。
-/// - 用户钉了显示 / 隐藏：照办（钉了显示但没指派提供商时照样出，点了引导去设置）。
-/// - 自动：给「AI 助手」指派了可用的提供商才出（没配 AI 的人首页不多一栏）。
-bool resolveHomeAiAgentPanelVisible({
-  required bool moduleEnabled,
-  required HomeDashboardPanelMode mode,
-  required bool hasProvider,
-}) {
-  if (!moduleEnabled) return false;
-  return switch (mode) {
-    HomeDashboardPanelMode.shown => true,
-    HomeDashboardPanelMode.hidden => false,
-    HomeDashboardPanelMode.auto => hasProvider,
-  };
-}
+/// 未指派提供商**不算**不可用（fushi/CLAUDE.md §13：入口可见，点击引导去设置）——
+/// 组件照常渲染，点了走 [openAiAgent]，由它提示并引导去「设置 › AI」，不发请求。
+bool resolveHomeAiAgentWidgetAvailable({required bool moduleEnabled}) =>
+    moduleEnabled;
 
-/// [resolveHomeAiAgentPanelVisible] 的 Riverpod 装配。
-final Provider<bool> homeAiAgentPanelVisibleProvider = Provider<bool>((
+/// [resolveHomeAiAgentWidgetAvailable] 的 Riverpod 装配。
+final Provider<bool> homeAiAgentWidgetAvailableProvider = Provider<bool>((
   Ref ref,
 ) {
   final AppModel app = ref.watch(appProvider);
   if (!app.isPreferencesReady) return false;
-  return resolveHomeAiAgentPanelVisible(
+  return resolveHomeAiAgentWidgetAvailable(
     moduleEnabled: app.moduleVisibility.isEnabled(ModuleId.ai),
-    mode: app.homeDashboardPanelMode(HomeDashboardPanel.aiAgent),
+  );
+});
+
+/// 旧可选面板「自动」档的判据（迁移首个布局 / 恢复默认时决定默认模板放不放 AI
+/// 助手）：模块开着且给「AI 助手」指派了可用的提供商。只影响默认放不放，不影响
+/// 已放上的组件显不显示。
+bool resolveHomeAiAgentAutoDefault({
+  required bool moduleEnabled,
+  required bool hasProvider,
+}) => moduleEnabled && hasProvider;
+
+/// [resolveHomeAiAgentAutoDefault] 的 Riverpod 装配。
+final Provider<bool> homeAiAgentAutoDefaultProvider = Provider<bool>((Ref ref) {
+  final AppModel app = ref.watch(appProvider);
+  if (!app.isPreferencesReady) return false;
+  return resolveHomeAiAgentAutoDefault(
+    moduleEnabled: app.moduleVisibility.isEnabled(ModuleId.ai),
     hasProvider: resolveAiAgentProvider(app.prefsRepo) != null,
   );
 });
 
-/// 首页 AI 助手条。显隐由 dashboard 按 [homeAiAgentPanelVisibleProvider] 决定。
+/// 首页 AI 助手小组件（1×1…3×2，提示文字按格子高度放几行）。可不可用由首页按
+/// [homeAiAgentWidgetAvailableProvider] 决定。
 class HomeAiAgentPanel extends StatelessWidget {
   const HomeAiAgentPanel({super.key, this.poster = false});
 
-  static const double rowHeight = 44;
-
-  /// true = 重设计外壳的海报色块形态（「AI 助手」chip + 大字标题 + 输入提示，
-  /// 点色块打开 AI 浮层）；false = 原一行条。由首页按外壳门控传入。
+  /// true = 海报色块外观。
   final bool poster;
-
-  Widget _buildPoster(BuildContext context) {
-    final FushiCoverBlockColors colors = fushiPosterColors(
-      context,
-      fushiPosterHue('home-ai-agent'),
-    );
-    final TextStyle base =
-        Theme.of(context).textTheme.bodyMedium ?? const TextStyle();
-    return KeyedSubtree(
-      key: const ValueKey<String>('home-ai-agent-panel'),
-      child: shelfCoverCard(
-        key: const ValueKey<String>('home-ai-agent-panel-open'),
-        shape: fushiCoverBlockShape(context, FushiCoverBlockSize.regular),
-        onTap: () => openAiAgent(context),
-        child: FushiPosterBlock(
-          watermark: t.ai_agent_title,
-          colors: colors,
-          watermarkFontSize: 110,
-          watermarkEdge: FushiPosterWatermarkEdge.bottom,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            spacing: 14,
-            children: <Widget>[
-              FushiPosterChip(
-                colors: colors,
-                icon: FushiIcons.aiAssistant,
-                label: t.ai_agent_title,
-              ),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                spacing: 8,
-                children: <Widget>[
-                  Expanded(
-                    child: Text(
-                      t.ai_agent_input_hint,
-                      maxLines: 3,
-                      overflow: TextOverflow.ellipsis,
-                      style: FushiPosterText.statement
-                          .on(base)
-                          .copyWith(color: colors.accent),
-                    ),
-                  ),
-                  FushiIcon(FushiIcons.forward, size: 24, color: colors.accent),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
-    if (poster) return _buildPoster(context);
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final bool apple = isGlassDesign(context);
-    final bool eink = isEinkTheme(context);
-    final BorderRadius radius = apple
-        ? FushiAppleMetrics.of(context).groupBorderRadius
-        : FushiBorderRadius.card;
-    final Color fill = apple
-        ? appleColorsOf(context).secondaryGroupedBackground
-        : tokens.surfaces.group;
-    return FushiHoverLift(
-      scale: 1.01,
-      builder: (BuildContext context, bool hovering) => FushiPressScale(
-        child: Material(
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints c) {
+        final bool dense = homeWidgetIsDense(c.maxHeight);
+        return HomeWidgetFrame(
           key: const ValueKey<String>('home-ai-agent-panel'),
-          color: fill,
-          shape: RoundedRectangleBorder(
-            borderRadius: radius,
-            side: eink
-                ? BorderSide(color: tokens.surfaces.outline)
-                : BorderSide.none,
+          tapKey: const ValueKey<String>('home-ai-agent-panel-open'),
+          title: t.ai_agent_title,
+          icon: FushiIcons.aiAssistant,
+          hueKey: HomeWidgetKind.aiAgent.id,
+          poster: poster,
+          dense: dense,
+          onTap: () => openAiAgent(context),
+          child: Builder(
+            builder: (BuildContext context) {
+              final HomeWidgetStyle style = HomeWidgetStyle.of(context);
+              final FushiTypography type = context.fushiType;
+              final TextStyle hintStyle =
+                  (dense ? type.bodyMedium : type.bodyLarge).copyWith(
+                    fontWeight: FontWeight.w700,
+                    height: 1.2,
+                    color: style.accent,
+                  );
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                spacing: 6,
+                children: <Widget>[
+                  Expanded(
+                    child: LayoutBuilder(
+                      builder: (BuildContext context, BoxConstraints box) =>
+                          Align(
+                            alignment: AlignmentDirectional.bottomStart,
+                            child: Text(
+                              t.ai_agent_input_hint,
+                              // 格子越高放越多行；按行高算，不溢出。
+                              maxLines: homeWidgetLinesFor(
+                                box.maxHeight,
+                                homeWidgetLineHeight(context, hintStyle),
+                                max: 6,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                              style: hintStyle,
+                            ),
+                          ),
+                    ),
+                  ),
+                  FushiIcon(FushiIcons.forward, size: 20, color: style.accent),
+                ],
+              );
+            },
           ),
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            key: const ValueKey<String>('home-ai-agent-panel-open'),
-            onTap: () => openAiAgent(context),
-            child: Padding(
-              padding: EdgeInsetsDirectional.fromSTEB(
-                tokens.spacing.gap + 4,
-                tokens.spacing.gap / 2,
-                tokens.spacing.gap + 4,
-                tokens.spacing.gap / 2,
-              ),
-              child: SizedBox(
-                height: rowHeight,
-                child: Row(
-                  children: <Widget>[
-                    FushiIcon(
-                      FushiIcons.aiAssistant,
-                      size: 18,
-                      color: tokens.type.sectionLabel.color,
-                    ),
-                    SizedBox(width: tokens.spacing.gap / 2),
-                    Text(
-                      t.ai_agent_title,
-                      maxLines: 1,
-                      style: tokens.type.sectionLabel,
-                    ),
-                    SizedBox(width: tokens.spacing.gap),
-                    Expanded(
-                      child: Text(
-                        t.ai_agent_input_hint,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: tokens.type.metadata,
-                      ),
-                    ),
-                    FushiIcon(
-                      FushiIcons.forward,
-                      size: 18,
-                      color: tokens.type.metadata.color,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
+        );
+      },
     );
   }
 }

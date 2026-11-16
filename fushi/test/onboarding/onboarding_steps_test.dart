@@ -475,6 +475,25 @@ void main() {
     });
   });
 
+  group('module checkboxes', () {
+    // 反馈 Soq3tInVt1：音乐模块进向导方格，且双向映射一致（写回 module_music_enabled）。
+    test('music has its own checkbox that maps back to the music module', () {
+      expect(
+        moduleOfOnboardingFeature(onboardingFeatureOfModule(ModuleId.music)!),
+        ModuleId.music,
+      );
+      expect(
+        kOnboardingModuleFeatures,
+        contains(onboardingFeatureOfModule(ModuleId.music)),
+      );
+      // 听音乐不属于学外语那条链路：「只看媒体」预设不取消它。
+      expect(
+        kOnboardingLanguageLearningFeatures,
+        isNot(contains(onboardingFeatureOfModule(ModuleId.music))),
+      );
+    });
+  });
+
   group('usage purpose', () {
     const Set<OnboardingFeature> freshInstall = <OnboardingFeature>{
       ...kOnboardingDefaultCapabilities,

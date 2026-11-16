@@ -3743,11 +3743,12 @@ class FushiPageHeader extends StatelessWidget {
   /// 使用时由本页头这一行换。
   final FushiHeaderSearchController? search;
 
-  /// 跟着动作组走的零尺寸菜单锚点（库页「排序」菜单）：叠在动作组右下角，
-  /// 动作画在本行就随本行、登记进外壳浮动工具栏就随那枚胶囊
+  /// 跟着动作组走的常驻菜单锚点（库页「排序」菜单，一律是
+  /// `FushiHeaderMenuAnchor` 或内部画它的组件）：铺满动作组，动作画在本行就
+  /// 随本行、登记进外壳浮动工具栏就随那枚胶囊
   /// （[fushiHeaderActionsWithMenuAnchor]）。动作可能被收进 ⋯，菜单不能挂在
-  /// 某颗按钮上；但也不能锚在页头这一行——动作交给外壳时这一行只剩页签，
-  /// 菜单会弹在按钮下方老远的地方。
+  /// 某颗按钮上；也不能锚在页头这一行——动作交给外壳时这一行只剩页签。弹出
+  /// 位置由 `FushiHeaderMenuController` 按触发控件（按钮或 ⋯）定（BUG-4715）。
   final Widget? menuAnchor;
 
   @override
@@ -4940,8 +4941,8 @@ class FushiShellHeaderActions extends StatefulWidget {
 
   final List<Widget> actions;
 
-  /// 这份动作所属页头的菜单锚点（见 [FushiPageHeader.menuAnchor]）：叠在本
-  /// 动作组右下角，菜单从外壳浮动工具栏的胶囊下方弹出。
+  /// 这份动作所属页头的菜单锚点（见 [FushiPageHeader.menuAnchor]）：铺满本
+  /// 动作组，菜单从外壳浮动工具栏胶囊里的触发按钮下方弹出。
   final Widget? menuAnchor;
 
   /// 这份动作所属页头的可展开搜索（见 [FushiPageHeader.search]）：库页外壳的
@@ -5038,15 +5039,16 @@ class _FushiShellHeaderActionsState extends State<FushiShellHeaderActions> {
   }
 }
 
-/// 把零尺寸菜单锚点 [menuAnchor] 叠在动作组 [actions] 的右下角（RTL 为左下角）：
-/// 菜单从动作组下沿弹出，水平方向由 MenuAnchor 自己夹进屏幕。null 时原样返回。
+/// 把常驻菜单锚点 [menuAnchor]（`FushiHeaderMenuAnchor`）铺满动作组 [actions]：
+/// 锚点在这个坐标系里把锚框挪到触发控件（按钮或 ⋯）上，菜单从触发控件下沿
+/// 弹出（BUG-4715）。null 时原样返回。
 Widget fushiHeaderActionsWithMenuAnchor(Widget actions, Widget? menuAnchor) {
   if (menuAnchor == null) return actions;
   return Stack(
     clipBehavior: Clip.none,
     children: <Widget>[
       actions,
-      PositionedDirectional(end: 0, bottom: 0, child: menuAnchor),
+      Positioned.fill(child: menuAnchor),
     ],
   );
 }
