@@ -269,7 +269,7 @@ for (const p of [r.inner,r.outer]) {
 assert.equal(r.inner.style.marginInlineStart,'');
 assert.equal(r.outer.style.marginInlineStart,(-1/1.25)+'px');
 // 单页跨页没有对面页。
-assert.equal(r.single.style.marginInlineStart,'');
+assert.ok(!r.single.style.marginInlineStart);
 // 折叠屏铰链缝是有意留的，不能被压掉。
 const g=${scenario(layoutOf(gutter: 24), gutterFlag(24))};
 assert.equal(g.outer.style.marginInlineStart,'');
