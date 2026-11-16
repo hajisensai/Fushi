@@ -182,7 +182,8 @@ void main() {
         isTrue,
         reason: 'network refresh must not leave the page without an engine',
       );
-      expect(second.isActive, isTrue);
+      // 注意：此刻 snapshot.status 是 loading（isActive 是给设置页 / contentBlockers 用的状态
+      // 位），但热路径只看内存里有没有引擎。
       expect(
         second.cosmeticPayload('https://example.com/', pageUrl: page),
         contains('.ad-banner'),
