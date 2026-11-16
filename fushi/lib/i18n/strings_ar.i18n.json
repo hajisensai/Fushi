@@ -2428,6 +2428,8 @@
   "dict_update_summary": "$updated محدّث، $current محدّث بالفعل، $failed فشل.",
   "dict_update_tooltip": "تحديث القاموس",
   "dict_update_updating": "جارٍ تحديث $name…",
+  "dict_upgrade_format_progress": "Upgrading dictionary format ($done/$total)",
+  "dict_upgrade_format_uncancellable": "Upgrading the dictionary format can't be interrupted",
   "dictionaries": "القواميس",
   "dictionaries_delete_failed": "فشل حذف القواميس",
   "dictionaries_deleting_data": "جارٍ حذف بيانات القاموس...",

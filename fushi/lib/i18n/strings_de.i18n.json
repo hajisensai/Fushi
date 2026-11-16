@@ -2428,6 +2428,8 @@
   "dict_update_summary": "$updated aktualisiert, $current aktuell, $failed fehlgeschlagen.",
   "dict_update_tooltip": "Wörterbuch aktualisieren",
   "dict_update_updating": "$name wird aktualisiert…",
+  "dict_upgrade_format_progress": "Upgrading dictionary format ($done/$total)",
+  "dict_upgrade_format_uncancellable": "Upgrading the dictionary format can't be interrupted",
   "dictionaries": "Wörterbücher",
   "dictionaries_delete_failed": "Löschen der Wörterbücher fehlgeschlagen",
   "dictionaries_deleting_data": "Wörterbuchdaten werden gelöscht...",

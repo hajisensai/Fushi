@@ -2428,6 +2428,8 @@
   "dict_update_summary": "$updated개 업데이트, $current개 최신, $failed개 실패.",
   "dict_update_tooltip": "사전 업데이트",
   "dict_update_updating": "$name 업데이트 중…",
+  "dict_upgrade_format_progress": "Upgrading dictionary format ($done/$total)",
+  "dict_upgrade_format_uncancellable": "Upgrading the dictionary format can't be interrupted",
   "dictionaries": "사전 관리",
   "dictionaries_delete_failed": "사전 삭제 실패",
   "dictionaries_deleting_data": "사전 데이터 삭제 중...",

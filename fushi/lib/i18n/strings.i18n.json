@@ -2428,6 +2428,8 @@
   "dict_update_summary": "$updated updated, $current up to date, $failed failed.",
   "dict_update_tooltip": "Update dictionary",
   "dict_update_updating": "Updating $name…",
+  "dict_upgrade_format_progress": "Upgrading dictionary format ($done/$total)",
+  "dict_upgrade_format_uncancellable": "Upgrading the dictionary format can't be interrupted",
   "dictionaries": "Dictionaries",
   "dictionaries_delete_failed": "Failed to delete dictionaries",
   "dictionaries_deleting_data": "Deleting dictionary data...",

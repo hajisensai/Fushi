@@ -2428,6 +2428,8 @@
   "dict_update_summary": "อัปเดต $updated, ล่าสุดแล้ว $current, ล้มเหลว $failed",
   "dict_update_tooltip": "อัปเดตพจนานุกรม",
   "dict_update_updating": "กำลังอัปเดต $name…",
+  "dict_upgrade_format_progress": "Upgrading dictionary format ($done/$total)",
+  "dict_upgrade_format_uncancellable": "Upgrading the dictionary format can't be interrupted",
   "dictionaries": "พจนานุกรม",
   "dictionaries_delete_failed": "ลบพจนานุกรมไม่สำเร็จ",
   "dictionaries_deleting_data": "กำลังลบข้อมูลพจนานุกรม...",

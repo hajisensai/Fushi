@@ -2428,6 +2428,8 @@
   "dict_update_summary": "$updated diperbarui, $current terbaru, $failed gagal.",
   "dict_update_tooltip": "Perbarui kamus",
   "dict_update_updating": "Memperbarui $name…",
+  "dict_upgrade_format_progress": "Upgrading dictionary format ($done/$total)",
+  "dict_upgrade_format_uncancellable": "Upgrading the dictionary format can't be interrupted",
   "dictionaries": "Kamus",
   "dictionaries_delete_failed": "Gagal menghapus kamus",
   "dictionaries_deleting_data": "Menghapus data kamus...",
