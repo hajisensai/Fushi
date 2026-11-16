@@ -51,7 +51,7 @@ SettingsDestination buildStorageDestination() {
             ),
             onTap: checkDatabaseFromSettings,
           ),
-          // BUG-4698：覆盖导入换掉书库后的找回入口（覆盖前快照只补缺恢复 +
+          // BUG-4701：覆盖导入换掉书库后的找回入口（覆盖前快照只补缺恢复 +
           // 孤儿书目录重新登记）。
           SettingsActionItem(
             id: 'storage.library_recovery',

@@ -1528,7 +1528,7 @@ class BackupRestoreService {
       }
 
       // 4) Success: drop the sidecar; the pre-restore copy is RETAINED as the
-      // pre-overwrite snapshot (BUG-4698: deleting it made an accidental
+      // pre-overwrite snapshot (BUG-4701: deleting it made an accidental
       // overwrite unrecoverable). A failed device-local replay is recoverable
       // at the next startup, but only while BOTH artifacts survive. The replay
       // transaction starts with a child-first wipe and is therefore safe to
@@ -1548,7 +1548,7 @@ class BackupRestoreService {
     }
   }
 
-  /// 覆盖导入成功后保留的「覆盖前」整库快照路径（BUG-4698）。
+  /// 覆盖导入成功后保留的「覆盖前」整库快照路径（BUG-4701）。
   static String overwriteSnapshotPath(String dbDirectory) =>
       p.join(dbDirectory, databasePreOverwriteSnapshotFileName);
 
@@ -1655,7 +1655,7 @@ class BackupRestoreService {
       videoPath.startsWith('$kSourceLibrarySftpScheme://') ||
       videoMemberExistsSync(videoPath);
 
-  /// 把覆盖前快照里的书库行、阅读进度、统计**只补缺**合并进当前库（BUG-4698）：
+  /// 把覆盖前快照里的书库行、阅读进度、统计**只补缺**合并进当前库（BUG-4701）：
   /// 当前库缺的行插入，已有的行一律不动（[BackupMergeEngine] 的 `fillMissingOnly`），
   /// bookKey 原样。复用合并导入的整套引擎（快照副本先迁到当前 schema 再 ATTACH），
   /// 同一个事务、同一套崩溃清理协议（merge sidecar + `pre-merge.bak`）。
