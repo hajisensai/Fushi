@@ -222,9 +222,24 @@ int? parseProcStatusRssBytes(String content) =>
 
 /// 读本机内存状况：Android 读 `/proc`，iOS 问 jetsam 额度；桌面端返回 null =
 /// 不设门槛（有交换、没有单进程额度，跑大模型只会慢不会被杀）。
-DeviceMemorySnapshot? readDeviceMemorySnapshot() {
-  if (Platform.isAndroid) return readAndroidMemorySnapshot();
-  if (Platform.isIOS) return readIosMemorySnapshot();
+DeviceMemorySnapshot? readDeviceMemorySnapshot() => deviceMemorySnapshotFor(
+  isAndroid: Platform.isAndroid,
+  isIOS: Platform.isIOS,
+  android: readAndroidMemorySnapshot,
+  ios: readIosMemorySnapshot,
+);
+
+/// [readDeviceMemorySnapshot] 的平台分派（平台与各平台读取可注入，host 上能测
+/// 「iOS 走 jetsam 额度、桌面不设门槛」）。
+@visibleForTesting
+DeviceMemorySnapshot? deviceMemorySnapshotFor({
+  required bool isAndroid,
+  required bool isIOS,
+  required DeviceMemorySnapshot? Function() android,
+  required DeviceMemorySnapshot? Function() ios,
+}) {
+  if (isAndroid) return android();
+  if (isIOS) return ios();
   return null;
 }
 
@@ -342,8 +357,10 @@ String asrTranscribeDiagnostic({
   return out.toString();
 }
 
-/// 转录活动面包屑：同一时刻可能有多路转录（有声书自动转录队列 + 视频字幕），
-/// 按引用计数，最后一路结束才清。写 / 清可注入（测试不碰诊断目录）。
+/// 转录活动面包屑：同一时刻可能有多路转录（有声书自动转录队列 + 视频字幕）。
+/// 按路记诊断行，面包屑内容始终是**仍在跑的各路**拼起来的（一路结束就用剩下的
+/// 重写），最后一路结束才清——否则后开先结束的那路会把它的模型名留在面包屑里，
+/// 进程死在另一路时诊断指错模型。写 / 清可注入（测试不碰诊断目录）。
 class AsrTranscribeBreadcrumb {
   AsrTranscribeBreadcrumb({
     void Function(String detail)? mark,
@@ -360,18 +377,31 @@ class AsrTranscribeBreadcrumb {
 
   final void Function(String detail) _mark;
   final void Function() _clear;
-  int _active = 0;
+
+  /// 仍在跑的各路：路号 → 诊断行（按开跑先后）。
+  final Map<int, String> _active = <int, String>{};
+  int _nextRun = 0;
+
+  /// 多路并发时各路诊断行之间的分隔。
+  static const String separator = ' || ';
+
+  void _write() => _mark(_active.values.join(separator));
 
   /// 一路转录开始；返回只生效一次的结束回调。
   void Function() begin(String detail) {
-    _active++;
-    _mark(detail);
+    final int run = _nextRun++;
+    _active[run] = detail;
+    _write();
     bool ended = false;
     return () {
       if (ended) return;
       ended = true;
-      _active--;
-      if (_active == 0) _clear();
+      _active.remove(run);
+      if (_active.isEmpty) {
+        _clear();
+      } else {
+        _write();
+      }
     };
   }
 }
@@ -448,6 +478,10 @@ class MemoryGatedAsrTranscriptionService extends AsrTranscriptionService {
 
   final DeviceMemorySnapshot? Function() _memoryProbe;
   final AsrTranscribeBreadcrumb _breadcrumb;
+
+  /// 当前用的内存探针（生产默认 [readDeviceMemorySnapshot]）。
+  @visibleForTesting
+  DeviceMemorySnapshot? Function() get memoryProbe => _memoryProbe;
 
   /// 按当前注册表判这门语言在本素材上用 [variant] 跑不跑得动；跑不动抛
   /// [AsrInsufficientMemoryException]。放得下时返回开跑诊断行（模型 / 余量），

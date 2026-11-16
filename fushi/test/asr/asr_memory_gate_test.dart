@@ -436,7 +436,27 @@ void main() {
       expect(clears, 0);
       endB();
       expect(clears, 1);
-      expect(marks, <String>['a', 'b']);
+      expect(marks, <String>[
+        'a',
+        'a${AsrTranscribeBreadcrumb.separator}b',
+        'b',
+      ]);
+    });
+
+    test('后开的一路先结束：面包屑改回仍在跑那一路的模型，不残留已结束的', () {
+      String? current;
+      final AsrTranscribeBreadcrumb crumb = AsrTranscribeBreadcrumb(
+        mark: (String detail) => current = detail,
+        clear: () => current = null,
+      );
+      final void Function() endBook = crumb.begin('model=reazon');
+      final void Function() endVideo = crumb.begin('model=parakeet');
+      expect(current, contains('model=reazon'));
+      expect(current, contains('model=parakeet'));
+      endVideo();
+      expect(current, 'model=reazon');
+      endBook();
+      expect(current, isNull);
     });
 
     test('事件流结束即调结束回调，dispose 也会调（回调幂等由 begin 保证）', () async {
@@ -498,6 +518,61 @@ void main() {
       phases,
       isNot(contains(AudiobookTranscribeJobPhase.downloadingModel)),
     );
+  });
+
+  group('设备内存探针分派（BUG-4755 根因：默认探针原先只认 Android）', () {
+    const AndroidMemorySnapshot android = AndroidMemorySnapshot(
+      totalBytes: 4 * _gb,
+      availableBytes: _gb,
+      processRssBytes: 500 * _mb,
+    );
+    const IosJetsamMemorySnapshot ios = IosJetsamMemorySnapshot(
+      availableBytes: 1600 * _mb,
+      processRssBytes: 650 * _mb,
+    );
+
+    test('iOS 走 jetsam 额度，Android 走 /proc，桌面不设门槛', () {
+      expect(
+        deviceMemorySnapshotFor(
+          isAndroid: false,
+          isIOS: true,
+          android: () => android,
+          ios: () => ios,
+        ),
+        same(ios),
+      );
+      expect(
+        deviceMemorySnapshotFor(
+          isAndroid: true,
+          isIOS: false,
+          android: () => android,
+          ios: () => ios,
+        ),
+        same(android),
+      );
+      expect(
+        deviceMemorySnapshotFor(
+          isAndroid: false,
+          isIOS: false,
+          android: () => android,
+          ios: () => ios,
+        ),
+        isNull,
+      );
+    });
+
+    test('生产服务的默认探针是跨平台的 readDeviceMemorySnapshot', () {
+      final AsrTranscriptionService service = createAsrTranscriptionService(
+        audioProfile: AsrAudioProfile.mixedAudio,
+      );
+      expect(
+        identical(
+          (service as MemoryGatedAsrTranscriptionService).memoryProbe,
+          readDeviceMemorySnapshot,
+        ),
+        isTrue,
+      );
+    });
   });
 
   test('生产装配点返回带门槛的服务（所有入口经它，门槛只此一处）', () {
