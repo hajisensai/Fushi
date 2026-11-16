@@ -243,6 +243,7 @@ public class CrossAppAudioService extends Service {
             }
         }, "fushi-cross-app-audio");
         captureThread.start();
+        CrossAppAudioProvider.setCapturingMarker(this, true);
         notifyState(true, null);
         return true;
     }
@@ -263,6 +264,7 @@ public class CrossAppAudioService extends Service {
     }
 
     private void releaseCapture() {
+        if (capturing) CrossAppAudioProvider.setCapturingMarker(this, false);
         capturing = false;
         if (instance == this) instance = null;
         Thread thread = captureThread;

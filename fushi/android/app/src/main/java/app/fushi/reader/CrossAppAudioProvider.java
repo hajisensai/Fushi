@@ -44,6 +44,33 @@ public class CrossAppAudioProvider extends ContentProvider {
         return Uri.parse("content://" + context.getPackageName() + AUTHORITY_SUFFIX);
     }
 
+    /**
+     * 「正在录」标记文件：服务录起来时建、停下时删。查词窗进程先看它再发 RPC——主进程
+     * 没在跑时 provider 调用会把整个主进程拉起来，只为回一句「没在录」。主进程被杀留下的
+     * 陈旧标记由下一次 [#METHOD_SNAPSHOT] 清掉。
+     */
+    static File capturingMarker(@NonNull Context context) {
+        return new File(new File(context.getCacheDir(), DIR), "capturing");
+    }
+
+    static void setCapturingMarker(@NonNull Context context, boolean capturing) {
+        File marker = capturingMarker(context);
+        if (capturing) {
+            File dir = marker.getParentFile();
+            try {
+                if (dir != null && (dir.isDirectory() || dir.mkdirs())) {
+                    //noinspection ResultOfMethodCallIgnored
+                    marker.createNewFile();
+                }
+            } catch (IOException e) {
+                Log.w(TAG, "capturing marker could not be created", e);
+            }
+        } else {
+            //noinspection ResultOfMethodCallIgnored
+            marker.delete();
+        }
+    }
+
     @Override
     public boolean onCreate() {
         return true;
@@ -81,6 +108,11 @@ public class CrossAppAudioProvider extends ContentProvider {
 
     @Nullable
     private static Bundle snapshot(@NonNull Context context, int backMs) {
+        if (!CrossAppAudioService.isRunning()) {
+            // 主进程被杀后重启：服务早没了，标记是陈旧的。
+            setCapturingMarker(context, false);
+            return null;
+        }
         byte[] pcm = CrossAppAudioService.snapshot(backMs);
         if (pcm == null || pcm.length == 0) return null;
         File dir = new File(context.getCacheDir(), DIR);

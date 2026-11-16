@@ -79,6 +79,11 @@ final class CrossAppAudioChannel {
                     result.success(null);
                     return;
                 case "snapshot": {
+                    if (!CrossAppAudioProvider.capturingMarker(app).exists()) {
+                        // 没在录：不发 RPC，免得把没在跑的主进程拉起来。
+                        result.success(null);
+                        return;
+                    }
                     Integer backMs = call.argument("backMs");
                     Bundle out = callProvider(app, CrossAppAudioProvider.METHOD_SNAPSHOT,
                             String.valueOf(backMs == null ? 0 : backMs));
