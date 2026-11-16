@@ -8,7 +8,7 @@ import 'package:fushi/src/media/manga/manga_reading_mode.dart';
 import 'package:fushi/src/media/manga/reader/manga_page_fit.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 
-/// BUG-4702：4K 页图卷打开后内存暴涨闪退。页图按显示尺寸降采样后再交给 WebView：
+/// BUG-4704：4K 页图卷打开后内存暴涨闪退。页图按显示尺寸降采样后再交给 WebView：
 /// 拦截器侧的尺寸规划 / 串行转码 / LRU（[MangaPageFitter]），文档侧按排版宽度挂
 /// `fit=` 的 src（生成文档里**真实的** `_refitPage`，node 跑）。
 void main() {

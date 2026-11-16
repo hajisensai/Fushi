@@ -1,4 +1,4 @@
-## BUG-4702 · 漫画阅读器打开 4K 页图卷内存暴涨闪退
+## BUG-4704 · 漫画阅读器打开 4K 页图卷内存暴涨闪退
 - **报告**：2026-11-15（应用内反馈：HONOR YLP-W00 平板，Android SDK 37，3.3.0 正式版；「打开 4K 图集后闪退」「图片加载太激进」；日志 ApplicationExitInfo reason=CRASH，MangaFushiPage / MangaSeriesPage 时 RSS 955 MB～1.8 GB）
 - **真实性**：✅ 真 bug（根因 `fushi/lib/src/media/manga/manga_overlay_html.dart:718`（develop 3823eaa74c9）页图 `<img src>` 直指原图；`fushi/lib/src/media/manga/reader/manga_fushi_page.dart` `_interceptRequest` 本地分支 / 会话分支把盘上原图原样交给 WebView，与显示尺寸无关）
 - **[x] ① 已修复** — 按显示尺寸降采样：页面 JS 按每页排版宽度 × DPR × 缩放档（1/2/4/8，只对屏上页升档）算出像素宽挂 `fit=<w>`；拦截器经 Rust `ffc_image_fit_jpeg`（解码含 EXIF 方向、面积平均缩放、JPEG q90 4:4:4、灰度源单通道）在后台 isolate 串行转码，48 MB 字节 LRU；省不到 36% 像素 / GIF / 带 alpha / 在线直读章（尺寸是占位）一律给原图（分支 pr/manga-image-memory）
