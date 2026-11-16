@@ -32,6 +32,9 @@
 //!
 //! # 常驻会话的失效
 //!
+//! - 进程内刷新键（`refresh_keys`，`refresh.rs`）：本机写命令提交之后按 `Session` 记的变化类别推进（[local_write]）；
+//!   整层重建、改身份 / 别名 / 绑定的写、`local_state {reload}` 整份作废。
+//!
 //! - 浏览会话：按缓存层代号 `cache_gen` 自己对上（`cmd/browse.rs`），写入经派生层收尾记账，这里不用做什么。
 //! - 统计原料缓存：键是 (集合, 统计指纹, 写入代数, 缓存层代号)；本进程每条写命令提交之后写入代数 +1，别的进程的写入
 //!   由缓存层代号兜住。`stats_release` 丢掉。
@@ -54,6 +57,7 @@ use super::identity::BindingChanged;
 use super::ingest::{Settle, ingest_settle};
 use super::kernel::{G4Core, StatsEntry, removed, unwired};
 use super::local;
+use super::refresh::Tally;
 use super::schema::sql;
 use super::truth::Truth;
 use crate::projection::{Alg, Day};
@@ -71,8 +75,6 @@ pub enum Wiring {
 }
 
 /// 改投影、读完整投影之类的旧机制在新代里不存在的统一原因。
-const NO_PENDING: &str =
-    "gen4 keeps the derived layer current on every write; there is nothing pending to refresh";
 const NO_CHANNEL: &str =
     "gen4 has no ingest channel: received segments land in the truth layer directly";
 const P3_REPR: &str = "a protocol 3 storage detail; the implementation is deleted with G7-6";
@@ -90,6 +92,8 @@ pub fn wiring(op: &str) -> Option<Wiring> {
         | "stats_release" | "anki_resolve" | "anki_notes_info" | "lineages" | "history"
         | "conflicts" | "checkpoints" | "undo_check" | "plan_restore" | "binding_get"
         | "profile_footprint" | "status" | "study" | "local_state" | "preview" => Wired,
+        // 进程内刷新键（S1c，`refresh.rs`）
+        "refresh_keys" => Wired,
         // 浏览会话
         "browse_query" | "browse_rows" | "browse_ids" | "browse_targets" | "browse_close"
         | "browse_stats" | "browse_counts" | "browse_sources" | "anki_find" | "anki_dupes"
@@ -134,7 +138,6 @@ pub fn wiring(op: &str) -> Option<Wiring> {
         // 导入 / 导出
         "import" | "export" => Unwired("G11-3"),
         // 新代不需要
-        "refresh_keys" => Removed(NO_PENDING),
         "channel_settle" => Removed(NO_CHANNEL),
         "migrate"
         | "replay_all"
@@ -240,8 +243,25 @@ fn identity(c: &G4Core, profile: &str, req: &Value) -> Result<Value, String> {
     write_binding(c, |t| cmd::identity::identity_ensure(t, profile, now))
 }
 
-/// 本机写命令：命令本体 → 请求带 `study` 时排队 → 本机状态行，一个事务（模块文件头）。
+/// 本机写命令：命令本体 → 请求带 `study` 时排队 → 本机状态行，一个事务（模块文件头）。提交之后按命令落下的变化
+/// 类别（回包里 `Session` 记的 [Tally]，在这里取走、不交给 Dart）推进进程内刷新计数（`refresh.rs`）；`apply {remote}`
+/// 落了东西算一次合并（RWKV 分数表整表重查）。
 fn local_write(
+    c: &G4Core,
+    profile: &str,
+    req: &Value,
+    f: impl FnOnce(&Truth<'_>, i64) -> Result<Value, String>,
+) -> Result<Value, String> {
+    let mut v = local_write_tx(c, profile, req, f)?;
+    let tally = Tally::take(&mut v);
+    let merged = req.get("op").and_then(Value::as_str) == Some("apply")
+        && req.get("remote") == Some(&Value::Bool(true));
+    c.refresh_note(profile, tally, merged);
+    Ok(v)
+}
+
+/// [local_write] 的事务部分。
+fn local_write_tx(
     c: &G4Core,
     profile: &str,
     req: &Value,
@@ -268,6 +288,27 @@ fn items_of(blobs: &[Vec<u8>]) -> Result<Vec<Value>, String> {
     let input = std::str::from_utf8(blobs.first().ok_or("apply: missing input")?)
         .map_err(|e| e.to_string())?;
     crate::store::sync2::parse_apply_input(input)
+}
+
+/// 一次收尾有没有改动派生层的任何东西（`refresh_caches` 收了东西才作废刷新键）。
+fn settled_anything(s: &Settled) -> bool {
+    [
+        s.registers,
+        s.entities,
+        s.logs,
+        s.closures,
+        s.purged,
+        s.holds,
+        s.notes,
+        s.media,
+        s.aliases,
+        s.digests,
+        s.cache_notes,
+        s.cache_cards,
+        s.cache_stats,
+    ]
+    .iter()
+    .any(|n| *n > 0)
 }
 
 fn settled_json(s: &Settled) -> Value {
@@ -345,7 +386,14 @@ fn run(
         "profile_footprint" => read_col(c, profile, cmd::profile::profile_footprint)?,
         "status" => read_col(c, profile, cmd::writes_local::status)?,
         "study" => read_col(c, profile, |t, col| cmd::study::study(t, col, req))?,
-        "local_state" => c.read(|t| snapshot(t, |t| local::read(t, profile)))?,
+        "local_state" => {
+            // `reload: true`：调用方（Dart 命令失败后的重读）要丢掉它按刷新键记的一切（协议 3 同口径）。
+            if req.get("reload") == Some(&Value::Bool(true)) {
+                c.refresh_invalidate(profile);
+            }
+            c.read(|t| snapshot(t, |t| local::read(t, profile)))?
+        }
+        "refresh_keys" => c.refresh_keys(profile)?,
         "preview" => {
             let card = str_of(req, "card")?;
             let note = req.get("note").and_then(Value::as_str);
@@ -435,17 +483,39 @@ fn run(
             cmd::writes_local::digest_heal(t, col, req)
         })?,
         // ------------------------------------------------------------ 身份（cmd/identity.rs）
-        "identity" => identity(c, profile, req)?,
-        "binding_set" => write_col(c, profile, |t, col| cmd::identity::binding_set(t, col, req))?,
-        "collection_join" => write_binding(c, |t| {
-            cmd::identity::collection_join(t, col_of(t, profile)?, req)
-        })?,
-        "collection_salts_add" => write_binding(c, |t| {
-            cmd::identity::collection_salts_add(t, col_of(t, profile)?, req)
-        })?,
+        // 改身份 / 别名 / 绑定的写：提交之后按刷新键记的缓存整份作废（`refresh.rs` 文件头「谁推进」）。`identity` 只在
+        // 这次真的建了绑定时作废（已在 = 一次读，每轮同步都走）。
+        "identity" => {
+            let v = identity(c, profile, req)?;
+            if v.get("bindingChanged").is_some() {
+                c.refresh_invalidate(profile);
+            }
+            v
+        }
+        "binding_set" => {
+            let v = write_col(c, profile, |t, col| cmd::identity::binding_set(t, col, req))?;
+            c.refresh_invalidate(profile);
+            v
+        }
+        "collection_join" => {
+            let v = write_binding(c, |t| {
+                cmd::identity::collection_join(t, col_of(t, profile)?, req)
+            })?;
+            c.refresh_invalidate(profile);
+            v
+        }
+        "collection_salts_add" => {
+            let v = write_binding(c, |t| {
+                cmd::identity::collection_salts_add(t, col_of(t, profile)?, req)
+            })?;
+            c.refresh_invalidate(profile);
+            v
+        }
         // 不要已有绑定：profile 还没绑过时确认后直接绑（「先加入」）。
         "collection_adopt" => {
-            write_binding(c, |t| cmd::identity::collection_adopt(t, profile, req))?
+            let v = write_binding(c, |t| cmd::identity::collection_adopt(t, profile, req))?;
+            c.refresh_invalidate(profile);
+            v
         }
         // ------------------------------------------------------------ 其余写
         "device_info" => write_col(c, profile, |t, col| {
@@ -464,7 +534,12 @@ fn run(
             let caches = req.get("caches").ok_or("sync2: missing caches")?.clone();
             // 先按缓存层同一份解析核对：坏了不写。
             crate::store::caches::CacheConfig::parse(&caches)?;
-            write_col(c, profile, |t, col| cache_config_set(t, col, &caches))?
+            let v = write_col(c, profile, |t, col| cache_config_set(t, col, &caches))?;
+            // 改了配置 = 派生层整层重建：按刷新键记的缓存整份作废。
+            if v["changed"] == Value::Bool(true) {
+                c.refresh_invalidate(profile);
+            }
+            v
         }
         "refresh_caches" | "rebuild_caches" => {
             let mode = if op == "rebuild_caches" {
@@ -472,10 +547,16 @@ fn run(
             } else {
                 Settle::Incremental
             };
-            write_col(c, profile, |t, col| {
+            let (v, moved) = c.write(|t| {
+                let col = col_of(t, profile)?;
                 let st = ingest_settle(t, &mut Index::new(t, col), col, mode)?;
-                Ok(json!({"settled": settled_json(&st)}))
-            })?
+                let moved = op == "rebuild_caches" || settled_anything(&st);
+                Ok((json!({"settled": settled_json(&st)}), moved))
+            })?;
+            if moved {
+                c.refresh_invalidate(profile);
+            }
+            v
         }
         _ => return Err(format!("{NO_ARM}: {op}")),
     })

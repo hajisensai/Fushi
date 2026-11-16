@@ -66,6 +66,7 @@ pub(crate) mod pack;
 #[cfg(test)]
 pub(crate) mod parity;
 pub mod receive;
+pub mod refresh;
 pub mod schema;
 pub mod sync_state;
 pub mod truth;
