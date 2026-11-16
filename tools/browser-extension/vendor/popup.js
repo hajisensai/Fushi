@@ -422,7 +422,7 @@ function createSrsStatusBadge(expression, reading) {
             if (badge.dataset.busy === '1') return;
             badge.dataset.busy = '1';
             try {
-                // BUG-4717：徽标接管 ↗ 时必须与 ↗ 走同一根桥、同一条判据（按词在点击那一刻
+                // BUG-4720：徽标接管 ↗ 时必须与 ↗ 走同一根桥、同一条判据（按词在点击那一刻
                 // 反查这个词最新的笔记）。状态回包里的 noteId 是「最需要复习那张卡」的笔记、
                 // 而且是取状态那一刻的快照，拿它打开会和 ↗ 跳到不同的笔记；哪颗可见又取决于
                 // 状态取回没有，于是制完卡当下与重开弹窗跳到不同地方。

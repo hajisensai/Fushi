@@ -1,4 +1,4 @@
-## BUG-4717 · 制完卡当下与重开弹窗后「打开卡片」跳到不同笔记
+## BUG-4720 · 制完卡当下与重开弹窗后「打开卡片」跳到不同笔记
 - **报告**：2026-11-16（应用内反馈 CGtu-HjN15，维护者自提）
 - **真实性**：✅ 真 bug（沿代码路径确认，未在真机复现）。制卡目标 = Fushi 复习时，查词弹窗词条头只留一颗 ↗：复习状态徽标可见时 CSS 藏掉「在 Anki 中打开」↗（`fushi/assets/popup/popup.css:639` `.open-anki-srs-owned`），徽标没状态时 ↗ 兜底。两颗按钮选笔记的判据却不同：
   - 徽标（`fushi/assets/popup/popup.js:403` `createSrsStatusBadge` 的 onclick）把状态回包里的 `noteId` 交给 `srsOpenCard` → `SrsAppHost.openCard`（`fushi/lib/src/srs/srs_app_host.dart:70`）。这个 noteId 是「最需要复习那张卡」所在的笔记（`packages/fushi_engine/lib/srs/srs_db_store.dart:5349` 按 `srsTermUrgencyCompare` 排序取 first，并列时按 SQL 行序），还是取状态那一刻的快照；
