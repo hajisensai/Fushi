@@ -551,7 +551,21 @@ fn stats_requests_are_canonicalized_and_members_resolve_deterministically() {
         assert_eq!(got["decks"], json!([c, "x"]));
         assert_eq!(got["recallDecks"], json!([c]));
         assert_eq!(got["recall"]["ids"], json!([w.c_card.text()]));
+        assert_eq!(got["recall"]["r"], json!([0.3]));
         assert_eq!(got["now"], 1);
+        // `recall.ids` / `recall.r` 撞键与上面的表同一条规则（`canon_keyed`）：规范卡自己给了取它的，否则取成员里 ID
+        // 序最小的那张的；与请求里的先后无关，两个数组仍等长。
+        let (k0, k1, kc) = (w.card[0].text(), w.card[1].text(), w.c_card.text());
+        let recall = |ids: Value, r: Value| -> Value {
+            canon_req(&ix, &json!({"recall": {"ids": ids, "r": r}})).unwrap()["recall"].clone()
+        };
+        let own = json!({"ids": [kc], "r": [0.5]});
+        assert_eq!(recall(json!([k1, kc, k0]), json!([0.3, 0.5, 0.1])), own);
+        assert_eq!(recall(json!([k0, kc, k1]), json!([0.1, 0.5, 0.3])), own);
+        let low = if k0 < k1 { 0.1 } else { 0.3 };
+        let members = json!({"ids": [kc], "r": [low]});
+        assert_eq!(recall(json!([k1, k0]), json!([0.3, 0.1])), members);
+        assert_eq!(recall(json!([k0, k1]), json!([0.1, 0.3])), members);
     });
 }
 
@@ -604,8 +618,9 @@ fn stats_see_one_canonical_card_and_take_member_ids_in_the_request() {
 
 // ---------------------------------------------------------------------- 数字 id
 
-/// 数字 id：规范 ID 的号、别名类成员（换代前带盐的原值 ID）的号都查得到规范 ID；不在这个集合里的号、成员号对应的规范
-/// ID 不在这张表里（笔记的号拿去查卡）都是 null。`notesInfo` 按成员号也给出按类判定的内容。
+/// 数字 id：规范 ID 的号、别名类成员（换代前带盐的原值 ID）的号都查得到规范 ID；从没在操作里出现过的卡（待裁决的
+/// 笔记配带盐模板的那张，协议 3 里有号）的号也查得到；不在这个集合里的号、成员号对应的规范 ID 不在这张表里（笔记的号
+/// 拿去查卡）都是 null。`notesInfo` 按成员号也给出按类判定的内容。
 #[test]
 fn numeric_ids_of_alias_members_resolve_to_the_canonical_row() {
     use super::columns::{anki_notes_info, anki_resolve, card_columns};
@@ -614,14 +629,19 @@ fn numeric_ids_of_alias_members_resolve_to_the_canonical_row() {
         let w = land(t, col);
         let (n0, n1, c) = (w.note[0].text(), w.note[1].text(), w.c_note.text());
         let (k0, kc) = (w.card[0].text(), w.c_card.text());
+        // 待裁决的笔记（ID 不带盐、类里只有它自己）配带盐的模板：协议 3 的卡 ID，从没在操作里出现过。
+        let held = id(HELD);
+        let unseen = rules::card(&held, &w.tmpl[0], 0).text();
+        let c_tmpl = rules::template(&rules::note_type(CANONICAL, ANKI_NT), 0);
+        let held_card = rules::card(&held, &c_tmpl, 0).text();
         let req = json!({
             "notes": [num(&c), num(&n0), num(&n1), num("nope"), num(&kc)],
-            "cards": [num(&kc), num(&k0), num(&n0)],
+            "cards": [num(&kc), num(&k0), num(&n0), num(&unseen)],
         });
         let v = anki_resolve(t, col, &req).unwrap();
         assert_eq!(
             v,
-            json!({"notes": [c, c, c, null, null], "cards": [kc, kc, null]})
+            json!({"notes": [c, c, c, null, null], "cards": [kc, kc, null, held_card]})
         );
         let v = anki_notes_info(t, col, &json!({"notes": [num(&n1), num(&c), 3]})).unwrap();
         let notes = v["notes"].as_array().unwrap();
@@ -651,7 +671,7 @@ fn numeric_ids_of_alias_members_resolve_to_the_canonical_row() {
         let v = anki_resolve(t, col2, &req).unwrap();
         assert_eq!(
             v,
-            json!({"notes": [null, null, null, null, null], "cards": [null, null, null]})
+            json!({"notes": [null, null, null, null, null], "cards": [null, null, null, null]})
         );
         let cols = card_columns(t, col, &json!({"fields": ["id", "note_id", "anki_id"]}));
         assert!(
@@ -667,29 +687,92 @@ fn numeric_ids_of_alias_members_resolve_to_the_canonical_row() {
     });
 }
 
-/// 按号查是索引点查（`notes_anki` / `cards_anki`），不扫整张缓存表；查不到才扫一次别名表的成员。
+/// 按号查是索引点查（`notes_anki` / `cards_anki`），不扫整张缓存表；查不到时成员的号是 `anki_members` 的主键点查、
+/// 再点查一次缓存行——不扫别名表、不逐行算号。截下 `anki_resolve` 真正执行的语句（参数已展开）逐条 `EXPLAIN`。
 #[test]
+#[allow(deprecated)]
 fn numeric_id_lookups_use_the_anki_indexes() {
-    with(|t, col| {
-        land(t, col);
-        for q in [
-            "SELECT MIN(id) FROM notes WHERE col = ?1 AND anki_id = ?2",
-            "SELECT MIN(id) FROM cards WHERE col = ?1 AND anki_id = ?2",
+    use super::columns::anki_resolve;
+    use crate::store::schema::anki_numeric_id as num;
+    thread_local! {
+        static TRACED: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
+    }
+    let conn = crate::store::gen4::schema::open_in_memory().unwrap();
+    let t = Truth::new(&conn);
+    let col = crate::store::gen4::truth::tests::bound(&t);
+    let w = land(&t, col);
+    drop(t);
+    let mut conn = conn;
+    conn.trace(Some(|sql: &str| {
+        TRACED.with(|t| t.borrow_mut().push(sql.to_owned()));
+    }));
+    let unseen = rules::card(&id(HELD), &w.tmpl[0], 0).text();
+    let req = json!({
+        "notes": [num(&w.c_note.text()), num(&w.note[0].text()), num("nope")],
+        "cards": [num(&w.c_card.text()), num(&w.card[1].text()), num(&unseen), num("nope")],
+    });
+    {
+        let t = Truth::new(&conn);
+        let v = anki_resolve(&t, col, &req).unwrap();
+        assert!(v["cards"][2].is_string(), "{v}");
+    }
+    conn.trace(None);
+    let stmts: BTreeSet<String> = TRACED.with(|t| t.borrow().iter().cloned().collect());
+    let mut members = 0;
+    let mut bad = Vec::new();
+    for q in &stmts {
+        if !q.trim_start().to_ascii_uppercase().starts_with("SELECT") {
+            continue;
+        }
+        members += usize::from(q.contains("anki_members"));
+        let plan: Vec<String> = conn
+            .prepare(&format!("EXPLAIN QUERY PLAN {q}"))
+            .unwrap()
+            .query_map([], |r| r.get::<_, String>(3))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        for step in plan {
+            if step.starts_with("SCAN ")
+                || step.contains("alias_ix")
+                || step.starts_with("SEARCH ") && step.ends_with("(col=?)")
+            {
+                bad.push(format!("{q}\n    {step}"));
+            }
+        }
+    }
+    assert!(members > 0, "the member lookup never ran: {stmts:?}");
+    assert!(bad.is_empty(), "{}", bad.join("\n"));
+}
+
+/// `entity_count {kind?, limit}` / `has_user_data` 逐行走的那条语句（`reads.rs` `each_class`）：给了种类走 `ent_kind`、
+/// 不给走主键，两种都按 `id` 交出、不排序（能数到 `limit` 就停）。
+#[test]
+fn class_walks_stream_in_id_order_by_kind_or_by_key() {
+    with(|t, _| {
+        for (q, args, index) in [
+            (
+                "SELECT DISTINCT id FROM ent_ix WHERE col = ?1 AND win = 1 AND kind = ?2 ORDER BY id",
+                vec![1i64, 2],
+                "ent_kind",
+            ),
+            (
+                "SELECT DISTINCT id FROM ent_ix WHERE col = ?1 AND win = 1 ORDER BY id",
+                vec![1i64],
+                "PRIMARY KEY",
+            ),
         ] {
             let plan: Vec<String> = t
                 .conn()
                 .prepare(&format!("EXPLAIN QUERY PLAN {q}"))
                 .unwrap()
-                .query_map([1i64, 2i64], |r| r.get::<_, String>(3))
+                .query_map(rusqlite::params_from_iter(args), |r| r.get::<_, String>(3))
                 .unwrap()
                 .collect::<Result<_, _>>()
                 .unwrap();
+            assert!(plan.iter().any(|s| s.contains(index)), "{q}: {plan:?}");
             assert!(
-                plan.iter()
-                    .any(|s| s.contains("USING COVERING INDEX notes_anki")
-                        || s.contains("USING COVERING INDEX cards_anki")
-                        || s.contains("USING INDEX notes_anki")
-                        || s.contains("USING INDEX cards_anki")),
+                !plan.iter().any(|s| s.contains("TEMP B-TREE")),
                 "{q}: {plan:?}"
             );
         }

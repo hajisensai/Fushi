@@ -140,7 +140,7 @@
 | `preview` | 读 | `sync2/mod.rs` `sync2_preview` | 缺 | **G7-4c**（评分预览在作答路径上）。要先把 `cmd/writes.rs` 里 `Session` 的 `deck_tree` / `default_deck` / `card_deck` 抽成只读可用的函数（`study` 的牌组计数同样要），与 `study` 一个 PR 做，避免两处各改一遍 `writes.rs`。**待协调方确认 G7-4c 接收**（任务书原把它列在 G7-4e；G7-4c 不收就另派） |
 | `read` | 读 | `reads.rs` `run`（27 个查询名） | `cmd/reads.rs:run`（同 27 个，逐名核过） | G7-4 已有；S1 接线 |
 | `card_columns` | 读 | `bulk.rs` `card_columns` | `cmd/columns.rs:card_columns` | G7-4b 已有 |
-| `anki_resolve` / `anki_notes_info` | 读 | `bulk.rs` | `cmd/columns.rs:anki_resolve` / `anki_notes_info` | G7-4b 已有 |
+| `anki_resolve` / `anki_notes_info` | 读 | `bulk.rs` | `cmd/columns.rs:anki_resolve` / `anki_notes_info` | G7-4b 已有；G7-4g 成员号改按缓存层反查表 `anki_members` 点查，从没出现在操作里的带盐卡的号也查得到（schema 40019） |
 | `stats_report` / `stats_recall` / `stats_rows` | 读 | `stats.rs` | `cmd/stats.rs:stats_report` / `stats_recall` / `stats_rows` | G7-4b 已有；原料缓存（协议 3 `StatsCache`）归 S1 命令层，未命中时调 `cmd/stats.rs:snapshot_of` |
 | `stats_release` | 无 | `stats.rs` `stats_release` | 缺（随缓存） | S1 |
 | `browse_query` / `browse_rows` / `browse_ids` / `browse_targets` / `browse_close` / `browse_stats` / `browse_counts` / `browse_sources` / `anki_find` / `anki_dupes` / `anki_tags` | 读（常驻会话） | `browse.rs` `SrsCore::browse` | 缺 | **G7-4d** |
