@@ -18,12 +18,13 @@
 //! - **卡**：缓存层 `cards` 表（列与 `srs_cards_cache` 相同），经 `study::SqlSource`（L2 的逐条 SQL 实现：协议 3 里是
 //!   常驻会话的对拍基准）按 [G4Tables] 换表名、分区（`col`）、ID 列编码（[Ref]）。
 //! - **日志**（最近 30 天每天的复习数、今天已学的新卡 / 已复习的卡 / 全部作答）：`log_ix` 按 `log_at (col, at)` 取窗口
-//!   里的日志，每个规范日志 ID 一条代表（操作号最小的那份，`cmd/reads.rs` 按时刻读日志的同一规则），解出操作体按
-//!   `kind = 'review'` 过滤，拼成协议 3 `LOGS_SQL` 的同几列交给 `LogState::fold`（计数规则同一份）。今天的学习步日志看
-//!   `res.reps`，取按血统重放写回的那份（`Index::replayed_card_logs`，与协议 3 落库的、`read` 的 `logs` 相同），一张卡
-//!   重放一次。
+//!   里的日志，每个规范日志 ID 一条代表（操作号最小的那份，`cmd::logs_between`，与 `cmd/reads.rs` 按时刻读日志共用），
+//!   按 `kind = 'review'` 过滤，拼成协议 3 `LOGS_SQL` 的同几列交给 `LogState::fold`（计数规则同一份）。今天的学习步
+//!   日志看 `res.reps`，取按血统重放写回的那份（`Index::replayed_card_logs`，与协议 3 落库的、`read` 的 `logs` 相同；
+//!   按规范日志 ID 对上），一张卡重放一次。
 //! - **自定义学习**：「会话里答过」= 会话开始之后有 `kind = 'review'` 日志的卡（同一套日志代表，归一到规范卡，整组编成
-//!   一个 JSON 参数由 `json_each` 展开，[card_set]：不随卡数增加绑定变量）；「最近评过重来」读缓存层 `stats`（有效复习投影，主键 `(col, at, log)` 区间）；标签 / 出处读 `notes`。
+//!   一个 JSON 参数由 `json_each` 展开，[card_set]：不随卡数增加绑定变量）；「最近评过重来」读缓存层 `stats`（有效
+//!   复习投影，主键 `(col, at, log)` 区间）；标签 / 出处读 `notes`。
 //!
 //! # 常驻会话与索引（取舍）
 //!

@@ -20,6 +20,7 @@ const CHILD: &str = "DCHILD";
 const MIX: &str = "DMIX";
 const NEW1: &str = "DNEW";
 const N5: &str = "0193a1b2-0000-7000-8000-0000000000a5";
+const N6: &str = "0193a1b2-0000-7000-8000-0000000000a6";
 
 /// [library] 再加两个子牌组：`DCHILD`（自己的参数、每日上限 1 / 1、按到期日复习、按位置出新卡，N3 的卡在这里）与
 /// `DMIX`（新卡与复习均匀穿插、按难度复习、按位置出新卡，N2 的卡在这里），外加几条今天的复习，让计数、上限截断、学习卡、到期卡、
@@ -51,8 +52,10 @@ fn study_library() -> Device {
             edit("note", N2, "deck", json!(MIX)),
         ],
     );
-    // `DNEW`：新卡上限 1，N5 的两张新卡在这里；今天学了其中一张（学习步日志，重放后 `res.reps` = 1）→ 今天的新卡配额
-    // 用完，另一张今天不出、明天才出（[study_counts_todays_new_cards_against_the_new_limit]）。
+    // `DNEW`：新卡上限 2，N5、N6 各两张卡在这里。今天学了 N5 t1（新卡的第一条学习步，重放后 `res.reps` = 1：引入）；
+    // N6 t1 前一天学过、今天又走一步学习步（`reps` = 2：不是引入）→ 今天的新卡配额剩 1，N5 t2 / N6 t2 今天只出一张、
+    // 明天出两张（[study_counts_todays_new_cards_against_the_new_limit]）。操作里写的 `res.reps` 都是 0，只有按血统
+    // 重放写回的那份才分得出这两条。
     d.apply(
         T0 + DAY + 72,
         vec![
@@ -60,12 +63,20 @@ fn study_library() -> Device {
             edit("deck", NEW1, "name", json!("New1")),
             edit("deck", NEW1, "parent", json!(deck)),
             edit("deck", NEW1, "paramsMode", json!("own")),
-            edit("deck", NEW1, "limits", json!({"new": 1, "review": 50})),
+            edit("deck", NEW1, "limits", json!({"new": 2, "review": 50})),
             note(N5, "NT", 50),
             edit("note", N5, "f/fa", json!("魚")),
             edit("note", N5, "f/fb", json!("fish")),
             edit("note", N5, "deck", json!(NEW1)),
+            note(N6, "NT", 60),
+            edit("note", N6, "f/fa", json!("鳥")),
+            edit("note", N6, "f/fb", json!("bird")),
+            edit("note", N6, "deck", json!(NEW1)),
         ],
+    );
+    d.apply(
+        T0 + DAY + 73,
+        vec![review("s0", &card(N6, "t1"), T0 + 20, 3, "learn")],
     );
     d.apply(
         T0 + DAY + 80,
@@ -73,6 +84,7 @@ fn study_library() -> Device {
             review("s1", &card(N1, "t2"), T0 + DAY + 80, 3, "learn"),
             review("s2", &card(N3, "t2"), T0 + DAY + 81, 1, "learn"),
             review("s3", &card(N5, "t1"), T0 + DAY + 82, 3, "learn"),
+            review("s4", &card(N6, "t1"), T0 + DAY + 84, 3, "learn"),
         ],
     );
     // 窗口里一条不是 `kind = 'review'` 的日志（手动改到期，`rtype` 照写 review）：计数上下文不收它（协议 3 `LOGS_SQL`
@@ -188,10 +200,10 @@ fn study_matches_protocol_3() {
     assert!(p.g4.is_autocommit());
 }
 
-/// 今天已学的新卡占新卡配额：`DNEW`（新卡上限 1）今天学了 N5 t1（学习步日志，计数看按血统重放写回的 `res.reps`），
-/// 同牌组的 N5 t2 今天不出、明天才出。与协议 3 对拍，并验场景本身真的受「今天已引入」影响（今天新卡数 0、明天 1），
-/// 免得对拍退化成两边都恒假 / 恒真也能过。另验种类过滤：窗口里那条手动改到期的日志（`rtype` 写成 review）不进计数
-/// 上下文。
+/// 今天已学的新卡占新卡配额：`DNEW`（新卡上限 2）今天引入了 N5 t1、N6 t1 只是又走一步学习步（两条都是学习步日志，
+/// 是不是引入只看按血统重放写回的 `res.reps`）。与协议 3 对拍，并验场景本身真的受「今天已引入」影响：今天剩下的两张
+/// 新卡只出 1 张（引入恒假会出 2 张、学习步恒算引入会出 0 张）、明天出 2 张，免得对拍退化成两边同样错也能过。另验种类
+/// 过滤：窗口里那条手动改到期的日志（`rtype` 写成 review）不进计数上下文。
 #[test]
 fn study_counts_todays_new_cards_against_the_new_limit() {
     let d = study_library();
@@ -204,10 +216,12 @@ fn study_counts_todays_new_cards_against_the_new_limit() {
     assert_eq!(p3_study(&p, &today), now, "{today}");
     let next = study(&t, p.col, &tomorrow).unwrap();
     assert_eq!(p3_study(&p, &tomorrow), next, "{tomorrow}");
-    assert_eq!(now["counts"][NEW1][0], json!(0), "quota used up: {now}");
-    assert_ne!(now["next"], json!(t2), "{now}");
-    assert_ne!(now["after"], json!(t2), "{now}");
-    assert_eq!(next["counts"][NEW1][0], json!(1), "a new day: {next}");
+    assert_eq!(
+        now["counts"][NEW1][0],
+        json!(1),
+        "one left in the quota: {now}"
+    );
+    assert_eq!(next["counts"][NEW1][0], json!(2), "a new day: {next}");
 
     let day = Day {
         utc_offset_min: 0,
@@ -217,6 +231,10 @@ fn study_counts_todays_new_cards_against_the_new_limit() {
     let s = log_state(&t, &mut ix, p.col, day, day.index(T0 + DAY + 100)).unwrap();
     assert!(s.introduced(&t1), "{s:?}");
     assert!(!s.introduced(&t2), "{s:?}");
+    assert!(
+        !s.introduced(&card(N6, "t1")),
+        "a second learning step: {s:?}"
+    );
     // 手动改到期的那条：不算今天复习过、不算作答。
     let m = card(N3, "t1");
     assert!(!s.reviewed(&m), "{s:?}");
