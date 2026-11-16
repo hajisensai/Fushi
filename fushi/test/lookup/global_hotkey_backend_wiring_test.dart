@@ -10,6 +10,7 @@ import 'package:fushi/src/media/audiobook/floating_lyric_channel.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/platform/gal_hook_text_overlay_channel.dart';
 import 'package:fushi/src/shortcuts/global_hotkey_backend.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
@@ -55,6 +56,9 @@ void main() {
     // audiobook floating subtitles is left out like screen OCR, while the
     // audiobook playback controls (they only drive the player) stay.
     FloatingLyricChannel.platformOverride = false;
+    // Nor the galgame text overlay (Windows only): reading the galgame line
+    // aloud is left out as well.
+    GalHookTextOverlayChannel.platformOverride = false;
     final _RecordingBackend backend = _RecordingBackend();
     GlobalLookupController.hotKeyBackendOverride = () => backend;
     final List<String> overlayCalls = <String>[];
@@ -75,6 +79,7 @@ void main() {
     addTearDown(() async {
       GlobalLookupController.platformOverride = null;
       FloatingLyricChannel.platformOverride = null;
+      GalHookTextOverlayChannel.platformOverride = null;
       GlobalLookupController.hotKeyBackendOverride = null;
       messenger.setMockMethodCallHandler(FushiChannels.globalLookup, null);
       await db.close();
