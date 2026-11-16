@@ -109,6 +109,30 @@ bool kansai_short_match_wins(std::string_view window, std::size_t short_end,
   return short_trace.empty() && long_end > short_end && has_kansai_rule(long_trace) &&
          protected_structure_follows(window, short_end);
 }
+
+// 上游 hoshidicts ad0be91：还原形相对变体改写了多少个尾部码点——从两串第一个不同的
+// 字节（退回到所在码点的首字节）数到变体末尾。只在尾部追加（食べ → 食べる）算 0。
+// 与 TextVariant::min_rewrite / max_rewrite 比，见 text_processor.hpp。
+size_t rewritten_chars(std::string_view variant, std::string_view deinflected) {
+  auto it = std::ranges::mismatch(variant, deinflected).in1;
+  while (it != variant.begin() && it != variant.end() && (static_cast<unsigned char>(*it) & 0xc0) == 0x80) {
+    --it;
+  }
+  return utf8::distance(it, variant.end());
+}
+
+bool rewrite_allowed(const TextVariant& variant, const DeinflectionResult& deinflection) {
+  const size_t rewritten = rewritten_chars(variant.text, deinflection.text);
+  return rewritten <= variant.max_rewrite && (rewritten == 0 || rewritten >= variant.min_rewrite);
+}
+
+// 扫描窗口内紧跟在候选 [candidate_bytes] 之后的码点；候选到窗口末尾时为 0。只看窗口内
+// 的文本，理由同 protected_structure_follows。
+char32_t next_char_in_window(std::string_view window, std::size_t candidate_bytes) {
+  if (candidate_bytes >= window.size()) return 0;
+  auto it = window.begin() + static_cast<std::ptrdiff_t>(candidate_bytes);
+  return utf8::peek_next(it, window.end());
+}
 }
 
 std::vector<LookupResult> Lookup::lookup(const std::string& lookup_string, int max_results, size_t scan_length,
@@ -163,7 +187,8 @@ std::vector<LookupResult> Lookup::lookup(const std::string& lookup_string, int m
   // 候选前缀由词边界感知的扫描器生成（对齐 Yomitan searchResolution）：
   // 空格分词语言不在单词中间切断，CJK 仍逐码点。详见 scan/word_scan.hpp。
   for (const std::string& search_str : scan_candidates(lookup_string, scan_length)) {
-    auto processor_results = text_processor::process(search_str, options.chinese_simp_to_trad);
+    auto processor_results = text_processor::process(search_str, options.chinese_simp_to_trad,
+                                                     next_char_in_window(scan_window, search_str.size()));
     for (auto& variant : processor_results) {
       auto deinflection_results = deinflector_.deinflect(variant.text);
 
@@ -253,6 +278,9 @@ std::vector<LookupResult> Lookup::lookup(const std::string& lookup_string, int m
       };
 
       for (auto& deinflection : deinflection_results) {
+        // 上游 ad0be91：变形不得跨过预处理删掉的字符、不得只改写片假名词的一截。
+        if (!rewrite_allowed(variant, deinflection)) continue;
+
         // 后处理（Yomitan `textPostprocessors`，本引擎此前完全没有这个阶段）：
         // 韩语的还原是在**兼容字母域**里做的（ko.json 整表这么写，预处理端由
         // text_processor::disassemble_hangul 拆字对齐），而词典索引的键是**预合成
