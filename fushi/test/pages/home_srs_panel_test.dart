@@ -21,6 +21,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/models/home_dashboard_panel.dart';
+import 'package:fushi/src/models/home_widget_layout.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
@@ -61,69 +62,101 @@ void main() {
 
   // ── 纯判据 ──────────────────────────────────────────────────────────────
 
-  group('resolveHomeSrsPanelVisible', () {
-    bool resolve({
-      bool module = true,
-      HomeDashboardPanelMode mode = HomeDashboardPanelMode.auto,
-      bool toReview = false,
-      int? cards = 0,
-    }) => resolveHomeSrsPanelVisible(
-      moduleEnabled: module,
-      mode: mode,
-      miningToReview: toReview,
-      totalCards: cards,
-    );
-
-    test('Anki 制卡、没有复习卡的存量用户：自动档不显示', () {
-      expect(resolve(), isFalse);
-      // 卡数还在加载：同样不显示（不闪出一栏）。
-      expect(resolve(cards: null), isFalse);
-    });
-
-    test('在用复习：挖词目标 = 复习，或已有复习卡', () {
-      expect(resolve(toReview: true), isTrue);
-      expect(resolve(toReview: true, cards: null), isTrue);
-      expect(resolve(cards: 3), isTrue);
-    });
-
-    test('复习模块关着：任何档位都不显示', () {
-      for (final HomeDashboardPanelMode m in HomeDashboardPanelMode.values) {
-        expect(
-          resolve(module: false, mode: m, toReview: true, cards: 9),
-          isFalse,
-        );
-      }
-    });
-
-    test('用户钉的档位优先于自动判据', () {
-      expect(resolve(mode: HomeDashboardPanelMode.shown), isTrue);
+  group('homeSrsAutoDefault（旧自动档判据，只用于迁移）', () {
+    test('Anki 制卡、没有复习卡的存量用户：自动档不放', () {
+      expect(homeSrsAutoDefault(miningToReview: false, totalCards: 0), isFalse);
+      // 卡数还在加载：同样不放。
       expect(
-        resolve(mode: HomeDashboardPanelMode.hidden, toReview: true, cards: 9),
+        homeSrsAutoDefault(miningToReview: false, totalCards: null),
         isFalse,
       );
     });
+
+    test('在用复习：挖词目标 = 复习，或已有复习卡', () {
+      expect(homeSrsAutoDefault(miningToReview: true, totalCards: 0), isTrue);
+      expect(
+        homeSrsAutoDefault(miningToReview: true, totalCards: null),
+        isTrue,
+      );
+      expect(homeSrsAutoDefault(miningToReview: false, totalCards: 3), isTrue);
+    });
   });
 
-  group('HomeDashboardPanel 注册表持久化', () {
-    test('auto 不落盘；未知 / 坏值回落 auto', () {
+  group('migrateHomeWidgetLayout · 复习组件', () {
+    bool placed(
+      HomeGridKind grid, {
+      HomeDashboardPanelMode mode = HomeDashboardPanelMode.auto,
+      bool auto = false,
+    }) => migrateHomeWidgetLayout(
+      grid: grid,
+      modes: <HomeDashboardPanel, HomeDashboardPanelMode>{
+        HomeDashboardPanel.srsReview: mode,
+      },
+      auto: HomeWidgetAutoFacts(srsReview: auto),
+    ).any((HomeWidgetItem e) => e.kind == HomeWidgetKind.srsReview);
+
+    for (final HomeGridKind grid in HomeGridKind.values) {
+      test('${grid.wire} · 自动档跟判据走；钉的档位优先于自动判据', () {
+        expect(placed(grid), isFalse);
+        expect(placed(grid, auto: true), isTrue);
+        expect(placed(grid, mode: HomeDashboardPanelMode.shown), isTrue);
+        expect(
+          placed(grid, mode: HomeDashboardPanelMode.hidden, auto: true),
+          isFalse,
+        );
+      });
+    }
+
+    test('默认模板里复习是 1×1（窄、宽同档）；窄网格半栏个数为奇数时末位放宽成 2×1', () {
+      HomeWidgetSize srsIn(HomeGridKind grid, {required bool tracking}) =>
+          migrateHomeWidgetLayout(
+                grid: grid,
+                modes: const <HomeDashboardPanel, HomeDashboardPanelMode>{},
+                auto: HomeWidgetAutoFacts(srsReview: true, tracking: tracking),
+              )
+              .singleWhere(
+                (HomeWidgetItem e) => e.kind == HomeWidgetKind.srsReview,
+              )
+              .size;
+      for (final HomeGridKind grid in HomeGridKind.values) {
+        expect(srsIn(grid, tracking: true), const HomeWidgetSize(1, 1));
+      }
       expect(
-        encodeHomeDashboardPanelModes(
-          <HomeDashboardPanel, HomeDashboardPanelMode>{
-            HomeDashboardPanel.srsReview: HomeDashboardPanelMode.auto,
-          },
-        ),
-        '',
+        srsIn(HomeGridKind.wide, tracking: false),
+        const HomeWidgetSize(1, 1),
       );
-      final String json = encodeHomeDashboardPanelModes(
-        <HomeDashboardPanel, HomeDashboardPanelMode>{
-          HomeDashboardPanel.srsReview: HomeDashboardPanelMode.hidden,
-        },
-      );
-      expect(json, '{"srs_review":"hidden"}');
+      // 窄：今日 / 近 7 天 / 复习三块半栏，复习落单就占满一行，不留半格空洞。
       expect(
-        decodeHomeDashboardPanelModes(json)[HomeDashboardPanel.srsReview],
+        srsIn(HomeGridKind.compact, tracking: false),
+        const HomeWidgetSize(2, 1),
+      );
+    });
+
+    test('复习模块关着：组件不可用（布局里保留，不渲染）', () {
+      bool available({required bool srs}) => homeWidgetAvailable(
+        HomeWidgetKind.srsReview,
+        reading: true,
+        watching: true,
+        playing: true,
+        srs: srs,
+        tracking: true,
+        ai: true,
+      );
+      expect(available(srs: false), isFalse);
+      expect(available(srs: true), isTrue);
+    });
+  });
+
+  group('HomeDashboardPanel 旧偏好只读解码', () {
+    test('未知 / 坏值回落 auto（不进 map）', () {
+      expect(
+        decodeHomeDashboardPanelModes(
+          '{"srs_review":"hidden"}',
+        )[HomeDashboardPanel.srsReview],
         HomeDashboardPanelMode.hidden,
       );
+      expect(decodeHomeDashboardPanelModes('{"srs_review":"auto"}'), isEmpty);
+      expect(decodeHomeDashboardPanelModes(''), isEmpty);
       expect(decodeHomeDashboardPanelModes('not json'), isEmpty);
       expect(decodeHomeDashboardPanelModes('{"srs_review":"x"}'), isEmpty);
     });
@@ -154,13 +187,14 @@ void main() {
   late AppModel appModel;
   late Directory storeDir;
   late SrsDbStore store;
+  late PreferencesRepository prefs;
 
   setUp(() async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
     LocaleSettings.setLocale(AppLocale.zhCn);
     homeShellTabNotifier.value = HomeTab.home;
     db = FushiDatabase.forTesting(NativeDatabase.memory());
-    final PreferencesRepository prefs = PreferencesRepository(db);
+    prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
     // 空库首页会在最上面挂新手引导卡，窄列下把复习条挤出首屏；本文件只测复习条。
     await prefs.setOnboardingHomeCardDismissed(value: true);
@@ -171,7 +205,6 @@ void main() {
       ..wireLocalAudioForTesting(prefsRepo: prefs, databaseDirectory: storeDir);
     final SrsStorage srs = await openSrsTestStorage();
     store = await SrsDbStore.open(
-      db: srs.db,
       core: srs.core,
       profileUid: _kProfile,
       deviceId: 'test-device',
@@ -201,6 +234,20 @@ void main() {
     await appModel.setModuleEnabled(ModuleId.srs, true);
     await appModel.setSrsMiningTarget(target);
   }
+
+  /// 往偏好 `home_widget_layout` 写一份布局（= 用户编辑过首页）。
+  Future<void> storeLayout({
+    List<HomeWidgetItem>? compact,
+    List<HomeWidgetItem>? wide,
+  }) => appModel.setHomeWidgetLayout(
+    HomeWidgetLayout(compact: compact, wide: wide),
+  );
+
+  /// 只有一块复习组件（[size]）的布局，窄、宽两份都写。
+  Future<void> storeSrsOnly(HomeWidgetSize size) => storeLayout(
+    compact: <HomeWidgetItem>[HomeWidgetItem(HomeWidgetKind.srsReview, size)],
+    wide: <HomeWidgetItem>[HomeWidgetItem(HomeWidgetKind.srsReview, size)],
+  );
 
   void useSize(WidgetTester tester, Size logical, {double dpr = 1}) {
     tester.view.physicalSize = logical * dpr;
@@ -324,19 +371,53 @@ void main() {
       await unmount(tester);
     });
 
-    testWidgets('$ds · 面板设置钉成隐藏：在用复习也不显示', (WidgetTester tester) async {
+    testWidgets('$ds · 旧面板设置钉成隐藏：迁移出的首个布局不放复习，在用复习也不显示', (
+      WidgetTester tester,
+    ) async {
       useSize(tester, const Size(420, 900));
       await tester.runAsync(() async {
         await useSrs(target: SrsMiningTarget.srs);
         await addNote('食べる');
-        await appModel.setHomeDashboardPanelMode(
-          HomeDashboardPanel.srsReview,
-          HomeDashboardPanelMode.hidden,
+        await prefs.setHomeDashboardPanels(
+          '{"${HomeDashboardPanel.srsReview.id}":"${HomeDashboardPanelMode.hidden.wire}"}',
         );
       });
       await tester.pumpWidget(app(dashboard(), apple: apple));
       await settle(tester);
       expect(panel, findsNothing);
+      await unmount(tester);
+    });
+
+    testWidgets('$ds · 复习放上首页后：复习模块关掉整块不渲染，重新打开就回来', (
+      WidgetTester tester,
+    ) async {
+      useSize(tester, const Size(420, 900));
+      await tester.runAsync(() async {
+        await addNote('食べる');
+        await storeSrsOnly(const HomeWidgetSize(1, 1));
+      });
+      await tester.pumpWidget(app(dashboard(), apple: apple));
+      await settle(tester);
+      expect(panel, findsNothing, reason: '复习模块默认关着');
+      expect(
+        find.byKey(const ValueKey<String>('home-widget/srs_review')),
+        findsNothing,
+      );
+
+      await tester.runAsync(() => useSrs(target: SrsMiningTarget.anki));
+      await settle(tester);
+      expect(panel, findsOneWidget, reason: '布局里保留着，模块打开就回来');
+
+      await tester.runAsync(
+        () => appModel.setModuleEnabled(ModuleId.srs, false),
+      );
+      await settle(tester);
+      expect(panel, findsNothing);
+      expect(
+        appModel.homeWidgetLayout.compact!.single.kind,
+        HomeWidgetKind.srsReview,
+        reason: '不可用不改布局',
+      );
       await unmount(tester);
     });
 
@@ -352,6 +433,8 @@ void main() {
           final String parent = await store.createDeck('漫画');
           final String child = await store.createDeck('一巻', parentId: parent);
           await addNote('走る', deckId: child);
+          // 三色计数挂在 2×1 档。
+          await storeSrsOnly(const HomeWidgetSize(2, 1));
         });
         // 首页与牌组列表挂在同一个 ProviderScope 里换页：两个 scope 都覆盖成同一个
         // [appModel] 时，各自卸载都会 dispose 它一次（ChangeNotifierProvider 拥有它）。
@@ -369,30 +452,16 @@ void main() {
           ),
         );
         await settle(tester);
-        // 封面网格：原一行条的 SrsCountTriple；拼贴：海报色块的到期 / 学习中 / 新卡
-        // 三个计数 chip（`home-srs-panel-counts`）。
-        final bool poster = layout != ShellContentLayout.grid;
-        final SrsCountTriple? home = poster
-            ? null
-            : tester.widget<SrsCountTriple>(
-                find.descendant(
-                  of: panel,
-                  matching: find.byType(SrsCountTriple),
-                ),
-              );
-        final List<String> posterCounts = poster
-            ? tester
-                  .widgetList<Text>(
-                    find.descendant(
-                      of: find.byKey(
-                        const ValueKey<String>('home-srs-panel-counts'),
-                      ),
-                      matching: find.byType(Text),
-                    ),
-                  )
-                  .map((Text w) => w.data ?? '')
-                  .toList()
-            : const <String>[];
+        // 封面网格（卡片外观）与拼贴（海报色块）的 2×1 复习块都挂同一个三色计数
+        // `home-srs-panel-counts`（SrsCountTriple）。
+        final SrsCountTriple home = tester.widget<SrsCountTriple>(
+          find.descendant(
+            of: panel,
+            matching: find.byKey(
+              const ValueKey<String>('home-srs-panel-counts'),
+            ),
+          ),
+        );
 
         // 牌组列表：顶层行上的三色计数（顶层已含子牌组）。
         final List<SrsDeckSummary> decks = (await tester.runAsync(
@@ -415,17 +484,9 @@ void main() {
           sumReview += row.reviewCount;
         }
         expect(sumNew, 3, reason: '三张新卡（其中一张在子牌组）');
-        if (home != null) {
-          expect(home.newCount, sumNew);
-          expect(home.learnCount, sumLearn);
-          expect(home.reviewCount, sumReview);
-        } else {
-          expect(posterCounts, <String>[
-            t.srs_home_meta_due(n: sumReview),
-            t.srs_home_meta_learning(n: sumLearn),
-            t.srs_home_meta_new(n: sumNew),
-          ]);
-        }
+        expect(home.newCount, sumNew);
+        expect(home.learnCount, sumLearn);
+        expect(home.reviewCount, sumReview);
         await unmount(tester);
       });
     }
@@ -433,7 +494,8 @@ void main() {
     testWidgets('$ds · 点「开始复习」直接进复习页；点条目进牌组列表 tab', (
       WidgetTester tester,
     ) async {
-      useSize(tester, const Size(420, 900));
+      // 「开始复习」只挂在不矮的格子里（宽网格；窄网格一行高的格子只放大字）。
+      useSize(tester, const Size(1280, 900));
       await tester.runAsync(() async {
         await useSrs(target: SrsMiningTarget.srs);
         await addNote('食べる');
@@ -474,10 +536,12 @@ void main() {
     testWidgets('$ds · 「今日」一行：今天已复习张数 · 用时 · 正确率，与统计口径同一数据源', (
       WidgetTester tester,
     ) async {
-      useSize(tester, const Size(420, 900));
+      // 「今日」一行挂在宽网格的 2×1 档。
+      useSize(tester, const Size(1280, 900));
       final List<String> cards = <String>[];
       await tester.runAsync(() async {
         await useSrs(target: SrsMiningTarget.srs);
+        await storeSrsOnly(const HomeWidgetSize(2, 1));
         for (final String w in <String>['食べる', '飲む', '走る']) {
           final String note = await store.createNote(
             noteTypeId: store.lapisNoteTypeId,
@@ -524,17 +588,17 @@ void main() {
       await unmount(tester);
     });
 
-    // 封面网格（原一行条面板）：骨架与加载完、有卡与没卡同一行高。
-    // 拼贴（海报色块）：骨架与刷新信号照守；海报块的高度随状态变（加载中 / 今日
-    // 已完成 / 有待复习时多出计数 chip 与开始按钮），行高不变量不适用——这一点
-    // 是否算回归交所有者拍板（见 PR #3397 修复报告「拿不准」）。
+    // 网格格子定高：封面网格（卡片外观）与拼贴（海报色块）都是骨架与加载完、
+    // 有卡与没卡同一高度。宽网格 2×1 档（计数 + 开始按钮都挂）。
     for (final ShellContentLayout layout in ShellContentLayout.values) {
       testWidgets('$ds · ${layout.name} · 计数加载中挂骨架，行高与加载完一致；制卡刷新信号后计数更新', (
         WidgetTester tester,
       ) async {
-        final bool poster = layout != ShellContentLayout.grid;
-        useSize(tester, const Size(420, 900));
-        await tester.runAsync(() => useSrs(target: SrsMiningTarget.srs));
+        useSize(tester, const Size(1280, 900));
+        await tester.runAsync(() async {
+          await useSrs(target: SrsMiningTarget.srs);
+          await storeSrsOnly(const HomeWidgetSize(2, 1));
+        });
         await tester.pumpWidget(app(dashboard(), apple: apple, layout: layout));
         // 首帧：数据还没回来，挂骨架。
         await tester.pump();
@@ -544,7 +608,7 @@ void main() {
         );
         final double loadingHeight = tester.getSize(panel).height;
         await settle(tester);
-        if (!poster) expect(tester.getSize(panel).height, loadingHeight);
+        expect(tester.getSize(panel).height, loadingHeight);
         expect(find.text(t.home_srs_panel_done), findsOneWidget);
 
         // 制卡写进复习 → 刷新信号（与 SrsMiningAnkiRepository.onCardsAdded 同一个）。
@@ -555,52 +619,65 @@ void main() {
         container.read(srsRevisionProvider.notifier).state++;
         await settle(tester);
         expect(start, findsOneWidget);
-        if (poster) {
-          expect(
-            find.descendant(
-              of: find.byKey(const ValueKey<String>('home-srs-panel-counts')),
-              matching: find.text(t.srs_home_meta_new(n: 1)),
-            ),
-            findsOneWidget,
-          );
-          expect(find.text(t.home_srs_panel_done), findsNothing);
-        } else {
-          expect(
-            tester
-                .widget<SrsCountTriple>(
-                  find.descendant(
-                    of: panel,
-                    matching: find.byType(SrsCountTriple),
+        expect(
+          tester
+              .widget<SrsCountTriple>(
+                find.descendant(
+                  of: panel,
+                  matching: find.byKey(
+                    const ValueKey<String>('home-srs-panel-counts'),
                   ),
-                )
-                .newCount,
-            1,
-          );
-          expect(tester.getSize(panel).height, loadingHeight);
-        }
+                ),
+              )
+              .newCount,
+          1,
+        );
+        expect(find.text(t.home_srs_panel_done), findsNothing);
+        expect(tester.getSize(panel).height, loadingHeight);
         await unmount(tester);
       });
     }
 
-    testWidgets('$ds · 窄列：骨架与「计数 + 开始」按可用宽度收窄，不溢出', (
-      WidgetTester tester,
-    ) async {
-      // 计数位可用宽度远小于骨架两块的 84 + 88（首页窄列 / 小屏手机）。
-      useSize(tester, const Size(240, 900));
-      await tester.runAsync(() => useSrs(target: SrsMiningTarget.srs));
-      await tester.runAsync(() => addNote('食べる'));
-      await tester.pumpWidget(app(dashboard(), apple: apple));
-      await tester.pump();
-      expect(
-        find.byKey(const ValueKey<String>('home-srs-panel-skeleton')),
-        findsOneWidget,
-      );
-      expect(tester.takeException(), isNull, reason: '骨架溢出');
-      await settle(tester);
-      expect(start, findsOneWidget);
-      expect(tester.takeException(), isNull, reason: '计数 + 开始按钮溢出');
-      await unmount(tester);
-    });
+    // 最矮的格子：宽网格行高夹到下限 104（刚过断点的横屏窗口 / 840 宽窗口）、窄网格
+    // 一行高；1×1 与 2×1 各一遍。骨架与「大字 + 计数 + 开始」按可用尺寸收，不溢出；
+    // 放不下按钮的 1×1 只放大字（spec：格子不矮时才挂「开始复习」）。
+    for (final (Size, HomeWidgetSize) c in const <(Size, HomeWidgetSize)>[
+      (Size(620, 420), HomeWidgetSize(1, 1)),
+      (Size(620, 420), HomeWidgetSize(2, 1)),
+      (Size(840, 1000), HomeWidgetSize(1, 1)),
+      (Size(240, 900), HomeWidgetSize(1, 1)),
+      (Size(240, 900), HomeWidgetSize(2, 1)),
+    ]) {
+      testWidgets('$ds · 最矮格 ${c.$1.width.toInt()}×${c.$1.height.toInt()} '
+          '${c.$2}：骨架与「大字 + 开始」按可用尺寸收窄，不溢出', (WidgetTester tester) async {
+        useSize(tester, c.$1);
+        await tester.runAsync(() async {
+          await useSrs(target: SrsMiningTarget.srs);
+          await addNote('食べる');
+          await storeSrsOnly(c.$2);
+        });
+        await tester.pumpWidget(app(dashboard(), apple: apple));
+        await tester.pump();
+        expect(
+          find.byKey(const ValueKey<String>('home-srs-panel-skeleton')),
+          findsOneWidget,
+        );
+        expect(tester.takeException(), isNull, reason: '骨架溢出');
+        await settle(tester);
+        expect(
+          find.byKey(const ValueKey<String>('home-srs-panel-remaining')),
+          findsOneWidget,
+        );
+        expect(tester.takeException(), isNull, reason: '大字 / 计数 / 开始按钮溢出');
+        if (start.evaluate().isNotEmpty) {
+          final Rect cell = tester.getRect(panel);
+          final Rect button = tester.getRect(start);
+          expect(button.bottom, lessThanOrEqualTo(cell.bottom + 0.5));
+          expect(button.right, lessThanOrEqualTo(cell.right + 0.5));
+        }
+        await unmount(tester);
+      });
+    }
   }
 
   // ── 真实像素预览（FUSHI_PREVIEW_DIR 设了才跑） ──────────────────────────

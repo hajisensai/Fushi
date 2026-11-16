@@ -1056,7 +1056,7 @@
    目标元素写 inline !important（站点后到样式/内联尺寸都压得住），关抽屉精确还原。 */
 
 /* ───────────────────────── 播放器内嵌字幕控制（player-controls.js） ─────────────────────────
-   #fushi-player-btn 插在站点自己的控制栏里（YouTube .ytp-right-controls / Netflix 控件行），
+   #fushi-player-btn 可插在 YouTube 或 Netflix 的控制栏里，
    所以它落在**站点的样式作用域**下：站点给 button 设的 font / padding / border / background /
    transform 都会砸到它身上。因此这里逐项显式归零，而不是指望继承——`all: unset` 不用，
    那会连焦点轮廓这些可访问性默认一起抹掉。
@@ -1108,6 +1108,28 @@
 #fushi-player-btn:focus-visible {
     outline: 2px solid var(--fushi-on-scrim);
     outline-offset: -2px;
+}
+
+.fushi-netflix-inline-controls {
+    flex-wrap: nowrap !important;
+    flex-shrink: 0 !important;
+    min-width: max-content !important;
+}
+
+.fushi-netflix-inline-title {
+    flex-shrink: 1 !important;
+    min-width: 0 !important;
+    overflow: hidden !important;
+}
+
+:is(.fushi-netflix-inline-title, .fushi-netflix-inline-title [data-uia="video-title"]) {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.fushi-netflix-inline-controls > #fushi-player-btn {
+    flex-shrink: 0;
 }
 
 #fushi-player-btn .fushi-pc-btn-icon {

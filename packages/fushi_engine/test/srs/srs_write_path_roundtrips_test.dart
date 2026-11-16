@@ -22,8 +22,8 @@ import 'support/srs_test_storage.dart';
 
 const String kUid = '01928c3e-0000-7000-8000-00000000c0de';
 
-Future<(SrsDbStore, CountingInterceptor)> openCounted() async {
-  final CountingInterceptor counter = CountingInterceptor();
+Future<(SrsDbStore, SrsReadCounter)> openCounted() async {
+  final SrsReadCounter counter = SrsReadCounter();
   final Directory tmp = Directory.systemTemp.createTempSync('srs_wp_');
   addTearDown(() {
     try {
@@ -32,12 +32,8 @@ Future<(SrsDbStore, CountingInterceptor)> openCounted() async {
       // 句柄晚释放。
     }
   });
-  final TestSrs srs = await openTestSrsAt(
-    '${tmp.path}/srs.db',
-    interceptor: counter,
-  );
+  final TestSrs srs = await openTestSrsAt('${tmp.path}/srs.db');
   final SrsDbStore store = await SrsDbStore.open(
-    db: srs.db,
     core: srs.core,
     profileUid: kUid,
     deviceId: 'dev',
@@ -60,7 +56,7 @@ void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
 
   test('导入 300 条笔记（600 张卡、1800 条日志）：SELECT 往返按批摊薄，每条笔记不到 1 次', () async {
-    final (SrsDbStore store, CountingInterceptor counter) = await openCounted();
+    final (SrsDbStore store, SrsReadCounter counter) = await openCounted();
     counter.reset();
     final SrsImportReport r = await importBench(store, 300);
     expect(r.notesAdded, 300);
@@ -84,7 +80,7 @@ void main() {
   });
 
   test('导入的批量落库与逐条落库同结果：再导入一次全部判为未变（幂等），不新增事件', () async {
-    final (SrsDbStore store, CountingInterceptor _) = await openCounted();
+    final (SrsDbStore store, SrsReadCounter _) = await openCounted();
     await importBench(store, 40);
     final List<SrsEvent> before = await store.exportAll();
     final SrsImportReport again = await importBench(store, 40);
@@ -94,7 +90,7 @@ void main() {
   });
 
   test('新建牌组：语句数不随库里的笔记数增长', () async {
-    final (SrsDbStore store, CountingInterceptor counter) = await openCounted();
+    final (SrsDbStore store, SrsReadCounter counter) = await openCounted();
     await importBench(store, 20);
     counter.reset();
     await store.createDeck('B');
@@ -114,7 +110,7 @@ void main() {
   });
 
   test('同步冲突扫描：没有冲突时不把修改记录整表读回', () async {
-    final (SrsDbStore store, CountingInterceptor counter) = await openCounted();
+    final (SrsDbStore store, SrsReadCounter counter) = await openCounted();
     await importBench(store, 200);
     counter.reset();
     expect(await store.syncConflicts(), isEmpty);

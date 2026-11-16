@@ -173,6 +173,26 @@ typedef _ToJpegDart =
       Pointer<Pointer<Uint8>>,
       Pointer<Size>,
     );
+typedef _FitJpegC =
+    Int32 Function(
+      Pointer<Uint8>,
+      Size,
+      Uint32,
+      Uint32,
+      Uint32,
+      Pointer<Pointer<Uint8>>,
+      Pointer<Size>,
+    );
+typedef _FitJpegDart =
+    int Function(
+      Pointer<Uint8>,
+      int,
+      int,
+      int,
+      int,
+      Pointer<Pointer<Uint8>>,
+      Pointer<Size>,
+    );
 typedef _EdgeC =
     Int32 Function(
       Pointer<Uint8>,
@@ -333,6 +353,9 @@ class FushiComputeImage {
       _toJpeg = lib.library.lookupFunction<_ToJpegC, _ToJpegDart>(
         'ffc_image_to_jpeg',
       ),
+      _fitJpeg = lib.library.lookupFunction<_FitJpegC, _FitJpegDart>(
+        'ffc_image_fit_jpeg',
+      ),
       _edge = lib.library.lookupFunction<_EdgeC, _EdgeDart>(
         'ffc_image_edge_similarity',
       ),
@@ -361,6 +384,7 @@ class FushiComputeImage {
   final _DecodeDart _decode;
   final _ProbeDart _probe;
   final _ToJpegDart _toJpeg;
+  final _FitJpegDart _fitJpeg;
   final _EdgeDart _edge;
   final _DbDart _db;
   final _DecodePngDart _decodePng;
@@ -776,6 +800,43 @@ class FushiComputeImage {
       final int status = _toJpeg(src, bytes.length, quality, outPtr, outLen);
       if (status == FfcStatus.badInput) return null;
       _check('ffc_image_to_jpeg', status);
+      return _takeBytes(outPtr, outLen);
+    } finally {
+      malloc.free(outPtr);
+      malloc.free(outLen);
+    }
+  }
+
+  /// 按显示尺寸降采样成 JPEG：解码（转正）→ 面积平均缩到 [width] × [height] → JPEG
+  /// （[quality] 1..100，4:4:4；灰度源编单通道）。只缩不放。解不开、带 alpha、或目标
+  /// 尺寸大于源图时返回 null——调用方原样交出源字节。
+  Uint8List? fitJpeg(
+    Uint8List bytes, {
+    required int width,
+    required int height,
+    required int quality,
+  }) {
+    if (quality < 1 || quality > 100) {
+      throw ArgumentError.value(quality, 'quality', 'must be 1..100');
+    }
+    if (width <= 0 || height <= 0) return null;
+    final Pointer<Uint8> src = _copyIn(bytes);
+    final Pointer<Pointer<Uint8>> outPtr = malloc<Pointer<Uint8>>();
+    final Pointer<Size> outLen = malloc<Size>();
+    try {
+      final int status = _fitJpeg(
+        src,
+        bytes.length,
+        width,
+        height,
+        quality,
+        outPtr,
+        outLen,
+      );
+      if (status == FfcStatus.badInput || status == FfcStatus.invalidArgument) {
+        return null;
+      }
+      _check('ffc_image_fit_jpeg', status);
       return _takeBytes(outPtr, outLen);
     } finally {
       malloc.free(outPtr);

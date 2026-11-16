@@ -440,7 +440,7 @@ void main() {
             throw DistWorkerBusy('lock failed on mac (exit 75): busy: x');
           },
           retries: 3,
-          wait: Duration.zero,
+          pause: (_) async {},
           said: said.add,
         ),
         throwsA(isA<DistWorkerBusy>()),
@@ -457,7 +457,7 @@ void main() {
           return true;
         },
         retries: 5,
-        wait: Duration.zero,
+        pause: (_) async {},
       );
       expect(ok, isTrue);
       expect(calls, 3);
@@ -474,7 +474,7 @@ void main() {
               throw DistWorkerError('prepare failed: compile error');
             },
             retries: 5,
-            wait: Duration.zero,
+            pause: (_) async {},
           ),
           throwsA(isNot(isA<DistWorkerBusy>())),
         );
@@ -487,7 +487,7 @@ void main() {
               throw DistWorkerBusy('busy: locked');
             },
             retries: 0,
-            wait: Duration.zero,
+            pause: (_) async {},
           ),
           throwsA(isA<DistWorkerBusy>()),
         );
@@ -503,11 +503,104 @@ void main() {
           throw DistWorkerBusy('busy: locked');
         },
         retries: 5,
-        wait: Duration.zero,
+        pause: (_) async {},
         stillWanted: () => false,
       );
       expect(ok, isNull);
       expect(calls, 1);
+    });
+
+    // 2026-11-15 (#3459 review): the pause was 3 s for every worker with a
+    // queue wait configured, also when this ask came back at once (paused,
+    // short of disk, a shim without slot.sh, an old shim without the wait
+    // argument) -- an ssh connection every 3 s per waiting run and slot.
+    test('an ask turned down at once is not asked again after 3 s', () async {
+      final List<Duration> pauses = <Duration>[];
+      await expectLater(
+        distRetryWhileBusy<bool>(
+          () async => throw DistWorkerBusy(
+            'lock failed on w (exit 75): busy: paused by the owner',
+            waited: const Duration(seconds: 1),
+          ),
+          retries: 2,
+          pause: (Duration d) async => pauses.add(d),
+        ),
+        throwsA(isA<DistWorkerBusy>()),
+      );
+      expect(pauses, <Duration>[
+        const Duration(seconds: 29),
+        const Duration(seconds: 29),
+      ]);
+      // A busy error that says nothing about its ask did not wait.
+      expect(distBusyPause(Duration.zero), kDistBusyAskAgain);
+    });
+
+    test('an ask that waited in the queue is asked again at once', () async {
+      final List<Duration> pauses = <Duration>[];
+      final List<String> said = <String>[];
+      int calls = 0;
+      final bool? ok = await distRetryWhileBusy<bool>(
+        () async {
+          if (++calls < 3) {
+            throw DistWorkerBusy(
+              'busy: in use by dist_test run 20261115-120000-aaaa',
+              waited: const Duration(seconds: 27),
+            );
+          }
+          return true;
+        },
+        retries: 5,
+        pause: (Duration d) async => pauses.add(d),
+        said: said.add,
+      );
+      expect(ok, isTrue);
+      expect(pauses, <Duration>[kDistQueueAskAgain, kDistQueueAskAgain]);
+      expect(said.first, endsWith('asking again in 3s'));
+      // Never less, however long the ask took.
+      expect(distBusyPause(const Duration(minutes: 2)), kDistQueueAskAgain);
+    });
+
+    test('the pause after a queue wait keeps the place in the queue', () {
+      // worker_slot.sh: a ticket not touched for PRESENT (20 s) is passed
+      // over. The wait there ends up to a second early (whole seconds).
+      final Duration pause = distBusyPause(
+        const Duration(seconds: kDistQueueWaitSeconds - 1),
+      );
+      expect(pause, lessThanOrEqualTo(const Duration(seconds: 6)));
+      expect(pause.inSeconds, lessThan(20 ~/ 2));
+    });
+
+    test('every busy answer is handed on, the last one too', () async {
+      final List<String> answers = <String>[];
+      await expectLater(
+        distRetryWhileBusy<bool>(
+          () async => throw DistWorkerBusy('busy: locked'),
+          retries: 1,
+          pause: (_) async {},
+          answered: (DistWorkerBusy e) => answers.add(e.message),
+        ),
+        throwsA(isA<DistWorkerBusy>()),
+      );
+      expect(answers, hasLength(2));
+    });
+
+    // resume() used to sleep a fixed 3 s after every busy answer: 72 asks of
+    // a machine paused meanwhile were over in minutes, not the half hour
+    // kDistResumeAsks stands for. It goes through distRetryWhileBusy now.
+    test('coming back after a rest asks with the same pauses', () {
+      final String source = File(
+        'tool/test_flow/dist_workers.dart',
+      ).readAsStringSync().replaceAll('\r\n', '\n');
+      final int at = source.indexOf(
+        'Future<bool> resume(',
+        source.indexOf('class SshDistWorker'),
+      );
+      expect(at, greaterThan(0));
+      final String body = source.substring(at, source.indexOf('\n  }\n', at));
+      expect(body, contains('distRetryWhileBusy<bool>('));
+      expect(body, contains('retries: kDistResumeAsks - 1'));
+      expect(body, isNot(contains('Future<void>.delayed')));
+      expect(kDistBusyAskAgain * kDistResumeAsks, const Duration(minutes: 30));
     });
 
     test('analyze / build: another pass only while it was just busy', () {
@@ -545,5 +638,33 @@ void main() {
         kDistShimBusy,
       );
     });
+  });
+
+  test('yield: only a clear answer gives the checkout up', () {
+    expect(distYielded('yielded\n'), isTrue);
+    expect(distYielded('lost\r\n'), isTrue);
+    expect(distYielded('kept\n'), isFalse);
+    // Unreadable: keeping it only makes the others wait; dropping a checkout
+    // the run still has would run a batch on another run's commit.
+    expect(distYielded(''), isFalse);
+    expect(distYielded('yielded to nobody\n'), isFalse);
+    expect(distYielded('some banner\nkept\n'), isFalse);
+    expect(distYielded('some banner\nyielded\n'), isTrue);
+  });
+
+  test('queueing is off until dist_test turns it on; local never rests', () {
+    final DistWorker local = createDistWorkers(
+      const DistWorkerConfig(
+        name: 'self-win',
+        kind: DistWorkerKind.local,
+        platform: DistPlatform.windows,
+      ),
+      repoRoot: '.',
+    ).single;
+    expect(local.queueWaitSeconds, 0);
+    expect(local.resting, isFalse);
+    // The wait there stays under worker_slot.sh's PRESENT window (20 s) plus
+    // the pause before the next ask, or a waiting run would look gone.
+    expect(kDistQueueAskAgain.inSeconds, lessThan(20));
   });
 }
