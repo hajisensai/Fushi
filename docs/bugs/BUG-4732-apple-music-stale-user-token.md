@@ -1,4 +1,4 @@
-## BUG-4725 · macOS Apple Music 重新授权后一直用作废的 Music-User-Token，资料库 403
+## BUG-4732 · macOS Apple Music 重新授权后一直用作废的 Music-User-Token，资料库 403
 - **报告**：2026-11-16（用户：应用内反馈 caI0UrhA6-，macOS）
 - **真实性**：✅ 真 bug。截图里「For you」页的 Apple Music 资料库区块报 `AppleMusicApiException(http 403, /v1/me/library/albums)`，用户此前在 Apple 账号「Apps with Access」里撤销过 Fushi 再重新授权。根因是 token 生命周期没有失效路径：
   - `fushi/apple/FushiAppleMusic.swift:83-89`：`userCredentials` 只看设备级的 `MusicAuthorization.currentStatus`（账号侧撤销 / 重新授权后仍是 `.authorized`），再以 `options: []` 调 `DefaultMusicTokenProvider.userToken`，永远拿缓存里那枚已作废的 Music-User-Token；
