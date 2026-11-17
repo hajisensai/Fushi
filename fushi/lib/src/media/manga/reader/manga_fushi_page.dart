@@ -70,6 +70,8 @@ import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart'
 import 'package:fushi/src/media/online/online_source_error_text.dart';
 import 'package:fushi_engine/media/manga/manga_pdf_text_layer.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
+import 'package:fushi_engine/tts/manga_audio/manga_audio_render.dart'
+    show MangaRenderManifest;
 import 'package:fushi/src/media/manga/pdf_text_layer_backfill.dart';
 import 'package:fushi/src/pdf/pdf_importer.dart';
 import 'package:fushi_engine/media/manga/panel_detection.dart';
@@ -3179,6 +3181,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         ocr: recovery.payload.ocr ?? current.ocr,
       );
       setState(() => _payload = recoveredPayload);
+      // 补回的页改变了本卷 OCR：在播的成品对不上就停（不带错位下标高亮）。
+      _readAloud._recheckAudioAgainstOcr();
 
       final Set<int> visiblePages = <int>{
         for (final int spreadIndex in _loadedSpreads)

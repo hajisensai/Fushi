@@ -128,6 +128,7 @@ class _MangaReadAloudSupport implements MangaReadAloudHost {
   /// 一页的 OCR 落定（热替换 / 整卷逐页）。
   void _pageTextArrived(int pageIndex, MokuroImage page) {
     _ocrSettledPages.add(pageIndex);
+    _recheckAudioAgainstOcr();
     final Completer<MangaPageTextResult>? waiter = _waiters.remove(pageIndex);
     if (waiter != null && !waiter.isCompleted) {
       waiter.complete(MangaPageTextReady(page));
@@ -136,6 +137,7 @@ class _MangaReadAloudSupport implements MangaReadAloudHost {
 
   /// 整卷完成：所有等待者按落盘结果落定。
   void _volumeSettled(MokuroPayload payload) {
+    _recheckAudioAgainstOcr();
     for (final int pageIndex in _waiters.keys.toList()) {
       if (pageIndex >= 0 && pageIndex < payload.images.length) {
         _pageTextArrived(pageIndex, payload.images[pageIndex]);
@@ -235,16 +237,60 @@ class _MangaReadAloudSupport implements MangaReadAloudHost {
   /// 成品音频只配本地卷：在线直读章的页与登记的清单不是一回事。
   bool get _audioEligible => !_s._streamingChapter && _s._payload != null;
 
-  /// 正文装好后：本卷的成品音频正在会话里播（退出阅读器后台听、再回来）就接回。
+  /// 成品与本页眼前这份 OCR 对不对得上：页数不符 / OCR 签名不符（OCR 重跑过，块
+  /// 下标变了）都对不上。判据与导入同一个（[mangaManifestVolumeMismatch]），签名取
+  /// 本页正在显示的 payload——高亮用的就是它的块下标。
+  MangaAudioImportResult? _audioMismatch(MangaRenderManifest manifest) {
+    final MokuroPayload? payload = _s._payload;
+    if (payload == null) return MangaAudioImportResult.pageMismatch;
+    return mangaManifestVolumeMismatch(manifest, payload);
+  }
+
+  void _toastAudioMismatch(MangaAudioImportResult mismatch) {
+    FushiToast.show(
+      msg: mismatch == MangaAudioImportResult.ocrMismatch
+          ? t.manga_audio_playback_ocr_stale
+          : t.manga_audio_import_page_mismatch,
+      severity: ToastSeverity.warning,
+    );
+  }
+
+  /// 对不上的成品不在阅读器里播：不按错位的块下标高亮，也不在读者眼前静默播一份
+  /// 和画面对不上的音频——停掉会话并提示需重新标注 / 生成（与导入时拒收一致）。
+  void _rejectStaleAudio(MangaAudioImportResult mismatch) {
+    _detachAudio();
+    unawaited(_session.stop());
+    if (!_s.mounted) return;
+    unawaited(clearHighlight());
+    _toastAudioMismatch(mismatch);
+    _rebuild();
+  }
+
+  /// 正文装好后：本卷的成品音频正在会话里播（退出阅读器后台听、再回来）就接回；
+  /// 这期间 OCR 重跑过（与成品对不上）则停掉它而不是接回错位的高亮。
   void attachActiveAudio() {
     if (!_audioEligible) return;
     final MangaAudioPlaybackDriver? driver = _activeDriver();
-    if (driver == null || driver.manifest.pageCount != pageCount) return;
+    if (driver == null) return;
+    final MangaAudioImportResult? mismatch = _audioMismatch(driver.manifest);
+    if (mismatch != null) {
+      _rejectStaleAudio(mismatch);
+      return;
+    }
     _attachAudio(driver);
   }
 
-  /// 本卷登记过成品音频就播它并返回 true（含页数对不上时提示后不再落到现场合成）；
-  /// 没登记返回 false。
+  /// 播放中本页的 OCR 变了（热替换 / 整卷重跑逐页落定 / 整卷完成）：成品与新 OCR
+  /// 对不上就停，不带着错位的块下标继续高亮。没在播成品时什么都不做。
+  void _recheckAudioAgainstOcr() {
+    final MangaAudioPlaybackDriver? driver = audio;
+    if (driver == null || driver.isDisposed) return;
+    final MangaAudioImportResult? mismatch = _audioMismatch(driver.manifest);
+    if (mismatch != null) _rejectStaleAudio(mismatch);
+  }
+
+  /// 本卷登记过成品音频就播它并返回 true（含页数 / OCR 签名对不上时提示后不再落到
+  /// 现场合成）；没登记返回 false。
   Future<bool> _startAudioIfRegistered() async {
     if (!_audioEligible || _starting) return false;
     final FushiDatabase db = _s.appModel.database;
@@ -253,11 +299,16 @@ class _MangaReadAloudSupport implements MangaReadAloudHost {
       _s.widget.bookKey,
     );
     if (registration == null || !_s.mounted) return false;
-    if (registration.manifest.pageCount != pageCount) {
-      FushiToast.show(
-        msg: t.manga_audio_import_page_mismatch,
-        severity: ToastSeverity.warning,
-      );
+    final MangaAudioImportResult? mismatch = _audioMismatch(
+      registration.manifest,
+    );
+    if (mismatch != null) {
+      // 会话里可能还在播这份旧成品（后台起的）：一并停掉。
+      if (_activeDriver() != null) {
+        _rejectStaleAudio(mismatch);
+      } else {
+        _toastAudioMismatch(mismatch);
+      }
       return true;
     }
     _starting = true;

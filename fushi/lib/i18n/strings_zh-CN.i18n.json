@@ -5294,6 +5294,7 @@
   "manga_audio_page_not_annotated": "尚未标注",
   "manga_audio_page_review_count": "${n} 句待复核",
   "manga_audio_pick_voice": "指定声音",
+  "manga_audio_playback_ocr_stale": "本卷 OCR 已变化，有声成品的块下标对不上，请重新标注并生成",
   "manga_audio_preview": "试听",
   "manga_audio_progress": "播放进度",
   "manga_audio_progress_pages": "正在标注页面 ${done}/${total}",

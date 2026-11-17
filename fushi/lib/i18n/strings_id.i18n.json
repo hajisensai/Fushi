@@ -5294,6 +5294,7 @@
   "manga_audio_page_not_annotated": "Not annotated yet",
   "manga_audio_page_review_count": "${n} to review",
   "manga_audio_pick_voice": "Choose a voice",
+  "manga_audio_playback_ocr_stale": "This volume's OCR has changed since the audio was made; re-annotate and regenerate it",
   "manga_audio_preview": "Play",
   "manga_audio_progress": "Playback progress",
   "manga_audio_progress_pages": "Annotating pages ${done}/${total}",
