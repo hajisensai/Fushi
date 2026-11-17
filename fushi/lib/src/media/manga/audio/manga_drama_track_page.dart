@@ -2,7 +2,8 @@
 /// 动画视频），本机 ASR 转录后按页对到这一卷上，登记成这卷的有声成品；对不上的段照常
 /// 播放、只是不高亮。
 ///
-/// 流水线在引擎（`manga_drama_track.dart`），宿主装配在 [MangaDramaTrackService]；页面只
+/// 流水线在引擎（`manga_drama_track.dart`），宿主装配在 [MangaDramaTrackService]，运行中的
+/// 任务归进程级任务表 [MangaDramaTrackTasks]（离开页面不停，只有点「取消」才停）；页面只
 /// 管选文件、发起 / 取消、显示进度与匹配统计，不存成品镜像。
 ///
 /// [MangaDramaTrackPanel] 是可嵌入的主体，[MangaDramaTrackPage] 只是页面外壳；入口在
@@ -13,7 +14,7 @@ import 'dart:async';
 
 import 'package:fushi_engine/tts/manga_audio/manga_drama_track.dart';
 import 'package:fushi_engine/tts/render/tts_render_queue.dart'
-    show TtsRenderCancelled, TtsRenderCancelToken;
+    show TtsRenderCancelToken;
 import 'package:material_ui/material_ui.dart';
 import 'package:path/path.dart' as p;
 
@@ -21,6 +22,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart'
     show pickRealFilePaths;
 import 'package:fushi/src/media/manga/audio/manga_drama_track_service.dart';
+import 'package:fushi/src/media/manga/audio/manga_drama_track_tasks.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
@@ -34,7 +36,6 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
 /// 可选的音频 / 视频扩展名（视频只取音轨）。
 const Set<String> kMangaDramaFileExtensions = <String>{
@@ -101,15 +102,6 @@ class AppMangaDramaTrackBackend implements MangaDramaTrackBackend {
   );
 }
 
-/// 失败 → 给用户看的一句话（纯函数）。取消不算失败，返回 null。
-String? mangaDramaErrorMessage(Object error) => switch (error) {
-  TtsRenderCancelled() => null,
-  MangaDramaAsrUnavailable() => t.manga_audio_drama_error_asr,
-  MangaDramaFfmpegMissing() => t.manga_audio_drama_error_ffmpeg,
-  MangaDramaEmptyTranscript() => t.manga_audio_drama_error_empty,
-  _ => t.manga_audio_drama_error_failed(error: '$error'),
-};
-
 /// 进度文案（纯函数）：转录按「第 n 个文件」（1 起），剪段按「done/total」。
 String mangaDramaPhaseLabel(MangaDramaPhase phase, int done, int total) =>
     switch (phase) {
@@ -129,10 +121,12 @@ class MangaDramaTrackPage extends StatelessWidget {
     super.key,
     required this.bookKey,
     required this.backend,
+    required this.tasks,
   });
 
   final String bookKey;
   final MangaDramaTrackBackend backend;
+  final MangaDramaTrackTasks tasks;
 
   static Future<void> push(
     BuildContext context, {
@@ -145,6 +139,7 @@ class MangaDramaTrackPage extends StatelessWidget {
         builder: (BuildContext context) => MangaDramaTrackPage(
           bookKey: bookKey,
           backend: AppMangaDramaTrackBackend(appModel),
+          tasks: mangaDramaTrackTasksFor(appModel),
         ),
       ),
     );
@@ -159,6 +154,7 @@ class MangaDramaTrackPage extends StatelessWidget {
         builder: (BuildContext context) => MangaDramaTrackPanel(
           bookKey: bookKey,
           backend: backend,
+          tasks: tasks,
           padding: EdgeInsets.only(
             top: 8 + MediaQuery.paddingOf(context).top,
             bottom: 24 + bottomSafeInsetOf(context),
@@ -176,11 +172,15 @@ class MangaDramaTrackPanel extends StatefulWidget {
     super.key,
     required this.bookKey,
     required this.backend,
+    required this.tasks,
     this.padding = const EdgeInsets.all(16),
   });
 
   final String bookKey;
   final MangaDramaTrackBackend backend;
+
+  /// 进程级任务表：页面只观察，任务不随页面销毁。
+  final MangaDramaTrackTasks tasks;
   final EdgeInsetsGeometry padding;
 
   @override
@@ -191,24 +191,51 @@ class _MangaDramaTrackPanelState extends State<MangaDramaTrackPanel> {
   bool _loaded = false;
   MangaDramaVolume? _volume;
   List<String> _files = const <String>[];
-  TtsRenderCancelToken? _cancel;
-  String? _progress;
-  MangaDramaStats? _stats;
-  String? _error;
 
-  bool get _running => _cancel != null;
+  /// 挂着的任务（本卷运行中的，或最近一次、结果还要显示的）。
+  MangaDramaTask? _task;
+
+  bool get _running => _task?.isRunning ?? false;
 
   @override
   void initState() {
     super.initState();
+    widget.tasks.addListener(_onTasks);
+    final MangaDramaTask? existing = widget.tasks.taskFor(widget.bookKey);
+    if (existing != null) {
+      _files = existing.audioPaths;
+      _attach(existing);
+    }
     unawaited(_load());
   }
 
   @override
   void dispose() {
-    // 离开页面就停：转录会暂停在识别任务目录里，下次同一文件从断点接着跑。
-    _cancel?.cancel();
+    // 只摘监听：任务属于进程级任务表，离开页面照跑，结束时全局提示。
+    widget.tasks.removeListener(_onTasks);
+    _task?.removeListener(_onTask);
     super.dispose();
+  }
+
+  void _attach(MangaDramaTask? task) {
+    if (identical(task, _task)) return;
+    _task?.removeListener(_onTask);
+    _task = task;
+    task?.addListener(_onTask);
+  }
+
+  /// 别处（AI 操作、另一扇窗）发起了本卷的任务：挂上去。
+  void _onTasks() {
+    final MangaDramaTask? running = widget.tasks.runningFor(widget.bookKey);
+    if (running == null || identical(running, _task) || !mounted) return;
+    setState(() {
+      _files = running.audioPaths;
+      _attach(running);
+    });
+  }
+
+  void _onTask() {
+    if (mounted) setState(() {});
   }
 
   Future<void> _load() async {
@@ -225,9 +252,8 @@ class _MangaDramaTrackPanelState extends State<MangaDramaTrackPanel> {
   void _setFiles(List<String> next) {
     setState(() {
       _files = List<String>.unmodifiable(next);
-      // 文件变了，上次的统计不再对应。
-      _stats = null;
-      _error = null;
+      // 文件变了，上次的结果（统计 / 错误）不再对应。
+      _attach(null);
     });
   }
 
@@ -254,52 +280,46 @@ class _MangaDramaTrackPanelState extends State<MangaDramaTrackPanel> {
     _setFiles(next);
   }
 
-  Future<void> _start() async {
+  void _start() {
     final MangaDramaVolume? volume = _volume;
     if (_running || volume == null || _files.isEmpty) return;
-    final TtsRenderCancelToken cancel = TtsRenderCancelToken();
-    setState(() {
-      _cancel = cancel;
-      _stats = null;
-      _error = null;
-      _progress = mangaDramaPhaseLabel(
-        MangaDramaPhase.transcribing,
-        0,
-        _files.length,
-      );
-    });
+    MangaDramaTask task;
     try {
-      final MangaDramaOutcome outcome = await widget.backend.run(
+      task = widget.tasks.start(
         volume: volume,
         audioPaths: _files,
-        cancel: cancel,
-        onProgress: (MangaDramaPhase phase, int done, int total) {
-          if (!mounted) return;
-          setState(() => _progress = mangaDramaPhaseLabel(phase, done, total));
-        },
+        run: widget.backend.run,
       );
-      if (!mounted) return;
-      setState(() => _stats = outcome.track.stats);
-      FushiToast.show(
-        msg: t.manga_audio_drama_done,
-        severity: ToastSeverity.success,
-      );
-    } on Object catch (error) {
-      final String? message = mangaDramaErrorMessage(error);
-      if (!mounted) return;
-      if (message == null) {
-        FushiToast.show(msg: t.manga_audio_drama_cancelled);
-      } else {
-        setState(() => _error = message);
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _cancel = null;
-          _progress = null;
-        });
-      }
+    } on MangaDramaTaskBusy catch (busy) {
+      task = busy.running;
     }
+    setState(() => _attach(task));
+  }
+
+  /// 运行中的进度文案。
+  String? get _progress {
+    final MangaDramaTask? task = _task;
+    if (task == null || !task.isRunning) return null;
+    return mangaDramaPhaseLabel(
+      task.phase,
+      task.progressDone,
+      task.progressTotal,
+    );
+  }
+
+  /// 失败原因（取消不算）。
+  String? get _error {
+    final MangaDramaTask? task = _task;
+    final Object? error = task?.error;
+    if (task?.status != MangaDramaTaskStatus.failed || error == null) {
+      return null;
+    }
+    return mangaDramaErrorMessage(error);
+  }
+
+  MangaDramaStats? get _stats {
+    final MangaDramaTask? task = _task;
+    return task?.status == MangaDramaTaskStatus.completed ? task!.stats : null;
   }
 
   @override
@@ -448,7 +468,7 @@ class _MangaDramaTrackPanelState extends State<MangaDramaTrackPanel> {
               enabled: canStart,
               child: FushiFilledButton.icon(
                 key: const ValueKey<String>('manga_drama_start'),
-                onPressed: canStart ? () => unawaited(_start()) : null,
+                onPressed: canStart ? _start : null,
                 icon: const FushiIcon(FushiIcons.mic),
                 label: Text(t.manga_audio_drama_start),
               ),
@@ -457,7 +477,7 @@ class _MangaDramaTrackPanelState extends State<MangaDramaTrackPanel> {
               FushiPressScale(
                 child: FushiOutlinedButton.icon(
                   key: const ValueKey<String>('manga_drama_cancel'),
-                  onPressed: () => _cancel?.cancel(),
+                  onPressed: () => widget.tasks.cancel(widget.bookKey),
                   icon: const FushiIcon(FushiIcons.stop),
                   label: Text(t.manga_audio_drama_cancel),
                 ),

@@ -16,6 +16,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_render_backend.dart'
     show buildMangaClipArgs;
 import 'package:fushi/src/media/manga/audio/manga_drama_track_page.dart';
+import 'package:fushi/src/media/manga/audio/manga_drama_track_tasks.dart';
 import 'package:fushi/src/media/manga/audio/manga_drama_track_service.dart';
 
 /// 设计 §9 末段：广播剧 / 动画音轨 → ASR（假转录）→ 按页匹配 → 登记成有声成品。
@@ -110,13 +111,18 @@ class _FakeBackend implements MangaDramaTrackBackend {
   }
 }
 
-Widget _wrap(_FakeBackend backend) => TranslationProvider(
-  child: MaterialApp(
-    home: Scaffold(
-      body: MangaDramaTrackPanel(bookKey: 'manga-1', backend: backend),
-    ),
-  ),
-);
+Widget _wrap(_FakeBackend backend, {MangaDramaTrackTasks? tasks}) =>
+    TranslationProvider(
+      child: MaterialApp(
+        home: Scaffold(
+          body: MangaDramaTrackPanel(
+            bookKey: 'manga-1',
+            backend: backend,
+            tasks: tasks ?? MangaDramaTrackTasks(),
+          ),
+        ),
+      ),
+    );
 
 /// 假 ASR：计划里模型就绪与否可控；转录直接写一份 SRT 交回。
 class _FakeAsr implements AsrTranscriptionService {
@@ -475,6 +481,77 @@ void main() {
         find.byKey(const ValueKey<String>('manga_drama_cancel')),
         findsNothing,
       );
+    });
+
+    testWidgets('离开页面任务照跑；回来挂上进度，结束后显示结果并全局通知', (WidgetTester tester) async {
+      final List<MangaDramaTask> settled = <MangaDramaTask>[];
+      final MangaDramaTrackTasks tasks = MangaDramaTrackTasks(
+        onSettled: settled.add,
+      );
+      final _FakeBackend backend = _FakeBackend(
+        volume: _volume(),
+        picks: <List<String>>[
+          <String>['/a/ep1.mkv'],
+        ],
+      );
+      await tester.pumpWidget(_wrap(backend, tasks: tasks));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey<String>('manga_drama_add')));
+      await tester.pumpAndSettle();
+      backend.gate = Completer<void>();
+      await tester.tap(find.byKey(const ValueKey<String>('manga_drama_start')));
+      await tester.pump();
+
+      // 离开页面：只摘监听，任务不取消。
+      await tester.pumpWidget(const SizedBox.shrink());
+      final MangaDramaTask task = tasks.runningFor('manga-1')!;
+      expect(task.cancelRequested, isFalse);
+
+      // 回到页面：挂上运行中的任务，文件与进度都在。
+      await tester.pumpWidget(_wrap(backend, tasks: tasks));
+      await tester.pump();
+      expect(find.text('ep1.mkv'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey<String>('manga_drama_cancel')),
+        findsOneWidget,
+      );
+
+      backend.gate!.complete();
+      await tester.pumpAndSettle();
+      expect(task.status, MangaDramaTaskStatus.completed);
+      expect(settled, <MangaDramaTask>[task]);
+      expect(
+        find.byKey(const ValueKey<String>('manga_drama_result')),
+        findsOneWidget,
+      );
+    });
+  });
+
+  group('MangaDramaTrackTasks', () {
+    test('同卷重复发起被拒；显式取消生效且结局是 cancelled', () async {
+      final MangaDramaTrackTasks tasks = MangaDramaTrackTasks();
+      final _FakeBackend backend = _FakeBackend(volume: _volume())
+        ..gate = Completer<void>();
+      final MangaDramaTask task = tasks.start(
+        volume: _volume(),
+        audioPaths: const <String>['/a/ep1.mkv'],
+        run: backend.run,
+      );
+      expect(
+        () => tasks.start(
+          volume: _volume(),
+          audioPaths: const <String>['/a/ep2.mkv'],
+          run: backend.run,
+        ),
+        throwsA(isA<MangaDramaTaskBusy>()),
+      );
+      expect(tasks.cancel('manga-1'), isTrue);
+      expect(tasks.cancel('manga-1'), isFalse);
+      backend.gate!.complete();
+      await task.finished;
+      expect(task.status, MangaDramaTaskStatus.cancelled);
+      expect(task.error, isNull);
+      expect(tasks.isRunning('manga-1'), isFalse);
     });
   });
 }
