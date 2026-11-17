@@ -143,7 +143,7 @@ void main() {
     expect(host.calls.last, ('video/series', 2));
   });
 
-  test('BUG-4779：新 host 上没有该条目 / 文件已不在 → 担保不了（不是老 host 的 null）', () async {
+  test('BUG-4782：新 host 上没有该条目 / 文件已不在 → 担保不了（不是老 host 的 null）', () async {
     final InterconnectSyncBackend backend = await _buildBackend(
       base: base,
       token: token,
@@ -171,7 +171,7 @@ void main() {
     );
   });
 
-  test('BUG-4779：host 端担保不了时回 409 + reason，绝不回 404', () async {
+  test('BUG-4782：host 端担保不了时回 409 + reason，绝不回 404', () async {
     final String missing =
         '/api/library/videos/${Uri.encodeFull('video/nope')}/fingerprint';
     final ({int status, String body}) notFound = await _rawRequest(
@@ -215,7 +215,7 @@ void main() {
     expect(await backend.fetchRemoteVideoFingerprint('video/x'), isNull);
   });
 
-  test('BUG-4779：host 回的指纹不是 64 位小写 hex → 担保不了，不当老 host', () async {
+  test('BUG-4782：host 回的指纹不是 64 位小写 hex → 担保不了，不当老 host', () async {
     final HttpServer odd = await HttpServer.bind(
       InternetAddress.loopbackIPv4,
       0,

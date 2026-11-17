@@ -190,7 +190,7 @@ void main() {
       expect(host.calls, isEmpty);
     });
 
-    test('BUG-4779：新 host 担保不了字节时抛出、不当老 host 放行', () async {
+    test('BUG-4782：新 host 担保不了字节时抛出、不当老 host 放行', () async {
       await expectLater(
         run(
           link(CardSourceKind.video, 'uid-a'),

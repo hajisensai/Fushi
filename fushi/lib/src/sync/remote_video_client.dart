@@ -369,14 +369,14 @@ abstract interface class RemoteVideoFingerprintSource {
   /// 视频 [id] 第 [episodeIndex] 集（与 `remoteVideoStreamUrls` 同一下标）的 64 位小写
   /// hex 指纹。只有 host 不支持这一能力（老 host 没有端点）才返回 null——调用方据此
   /// 按 bookUid 身份放行。host 有端点却担保不了这份字节（条目 / 文件不在、读不了、
-  /// 回的值不合法）抛 [RemoteVideoFingerprintUnavailable]（BUG-4779）；网络失败抛错。
+  /// 回的值不合法）抛 [RemoteVideoFingerprintUnavailable]（BUG-4782）；网络失败抛错。
   Future<String?> fetchRemoteVideoFingerprint(
     String id, {
     int episodeIndex = 0,
   });
 }
 
-/// host 支持字节指纹、但这一次担保不了视频字节（BUG-4779）。与「老 host 不支持」
+/// host 支持字节指纹、但这一次担保不了视频字节（BUG-4782）。与「老 host 不支持」
 /// （null）不同：回跳必须当核验失败，不能按 bookUid 放行。
 final class RemoteVideoFingerprintUnavailable implements Exception {
   const RemoteVideoFingerprintUnavailable(this.id, this.reason);

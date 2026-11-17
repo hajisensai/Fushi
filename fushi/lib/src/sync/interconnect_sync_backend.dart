@@ -3397,7 +3397,7 @@ class InterconnectSyncBackend extends SyncBackend
   /// GET `/api/library/videos/<id>/fingerprint`（拍板台 IFCPPprIpT）。404（老 host
   /// 无此端点）→ null；新 host 担保不了字节（[kVideoFingerprintUnavailableStatus]）或
   /// 回的不是 64 位小写 hex → 抛 [RemoteVideoFingerprintUnavailable]，不把不可担保的
-  /// 值写进卡片、也不让回跳当老 host 放行（BUG-4779）。
+  /// 值写进卡片、也不让回跳当老 host 放行（BUG-4782）。
   @override
   Future<String?> fetchRemoteVideoFingerprint(
     String id, {
