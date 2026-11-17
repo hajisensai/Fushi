@@ -22,6 +22,9 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
+import 'package:fushi_engine/media/video/scraper/cover_meta_store.dart';
+import 'package:fushi_engine/media/video/scraper/scraper_types.dart'
+    show CoverMeta, CoverOrigin;
 import 'package:fushi_engine/media/video/video_duration_probe.dart'
     show probeVideoDurationMs;
 import 'package:fushi/src/media/async_file_existence_cache.dart'
@@ -460,7 +463,6 @@ void main() {
     );
   });
 
-  /// 打开某张卡的动作面板。触屏和桌面长按都走同一条管理菜单链路。
   /// 交替 pump 与 runAsync，让 fake-async 下不回话的真实 IO 跑完，直到 [isDone]
   /// 为真；30s 只是等待上界（一真即刻退出），真卡死照样由调用方断言失败。
   Future<void> pumpRealIoUntil(
@@ -478,6 +480,7 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  /// 打开某张卡的动作面板。触屏和桌面长按都走同一条管理菜单链路。
   Future<void> openCardMenu(WidgetTester tester, Finder card) async {
     await tester.longPress(card);
     await tester.pumpAndSettle();
@@ -1037,6 +1040,11 @@ void main() {
       await openCardMenu(tester, videoCard('video/mkv'));
       expect(find.text(t.srt_import_pick_cover), findsOneWidget);
       expect(find.text(t.video_cover_from_frame), findsOneWidget);
+      expect(
+        tester.getTopLeft(find.text(t.video_cover_from_frame)).dy,
+        greaterThan(tester.getTopLeft(find.text(t.srt_import_pick_cover)).dy),
+        reason: '紧跟「选择封面图片」，和设置封面放在一起',
+      );
       Navigator.of(tester.element(find.byType(FushiDialogFrame))).pop();
       await tester.pumpAndSettle();
       expect(find.byType(FushiDialogFrame), findsNothing);
@@ -1121,6 +1129,17 @@ void main() {
         p.isWithin(pathProviderDir.path, cover.path),
         isTrue,
         reason: '落到 app 封面目录，而不是挑帧的临时目录',
+      );
+      // 走手选封面同一落盘口：记 manual 保护标记，批量刮削不覆盖。
+      final CoverMeta? meta = await tester.runAsync<CoverMeta?>(
+        () async => CoverMetaStore(
+          await VideoStorage.coversDir(),
+        ).getFresh('video/mkv'),
+      );
+      expect(
+        meta?.origin,
+        CoverOrigin.manual,
+        reason: '必须经 MediaCoverService.applyVideoCoverManual 记 manual 标记',
       );
     });
   });
