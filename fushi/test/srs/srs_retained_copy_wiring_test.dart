@@ -7,6 +7,7 @@
 import 'dart:async';
 
 import 'package:drift/drift.dart' show driftRuntimeOptions;
+import 'package:flutter/gestures.dart' show kSecondaryButton;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -91,7 +92,7 @@ Future<void> _pump(
   required _Backend backend,
   required Widget home,
 }) async {
-  tester.view.physicalSize = const Size(1100, 1200);
+  tester.view.physicalSize = const Size(1100, 1600);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
   final AppModel app = _OpenAppModel();
@@ -143,9 +144,18 @@ Future<bool> _hasSpark(WidgetTester tester, SrsDbStore store) async {
 
 /// 右键牌组行 →「删除牌组」→ 删除方式对话框。
 Future<void> _openDeleteDialog(WidgetTester tester) async {
-  await tester.tap(find.text('Spark'), buttons: kSecondaryButton);
-  await srsSettle(tester);
-  await tester.tap(find.text(t.srs_deck_delete).last);
+  // 宽屏上牌组名不止出现在树的行里（右栏也写着它）：逐个右键，出牌组菜单的那个才是行。
+  final Finder menuDelete = find.text(t.srs_deck_delete);
+  final int candidates = find.text('Spark').evaluate().length;
+  for (int i = 0; i < candidates && menuDelete.evaluate().isEmpty; i++) {
+    await tester.tap(
+      find.text('Spark').at(i),
+      buttons: kSecondaryButton,
+      warnIfMissed: false,
+    );
+    await srsSettle(tester);
+  }
+  await tester.tap(menuDelete.last);
   await srsSettle(tester);
   expect(find.text(t.srs_deck_delete_purge), findsOneWidget);
 }
@@ -183,11 +193,18 @@ void main() {
       ),
       findsOneWidget,
     );
-    final int before = backend.states;
     await tester.tap(find.text(t.srs_deck_delete_purge_retained_delete));
     await srsSettle(tester);
     expect(backend.deleted, <String>[_kDir]);
-    expect(backend.states, greaterThan(before), reason: '删完重读保留副本状态');
+    // 下一次读到的是删过之后的状态（不是删之前缓存的 sealed）。
+    final ProviderContainer container = ProviderScope.containerOf(
+      tester.element(find.byType(SrsDeckListPage)),
+    );
+    final SrsRetainedCopyInfo? after = (await tester
+        .runAsync<SrsRetainedCopyInfo?>(
+          () => container.read(srsRetainedCopyProvider.future),
+        ));
+    expect(after?.state.kind, SrsRetainedCopyKind.tombstone);
     expect(await _hasSpark(tester, store), isFalse, reason: '彻底清除照常做完');
     expect(tester.takeException(), isNull);
     await _unmount(tester);
@@ -255,7 +272,7 @@ void main() {
     expect(subtitle, srsRetainedCopyStatusText(ctx.context, _sealed));
 
     // onTap 先等状态（已读好），再弹确认框。
-    unawaited(Future<void>.sync(() => item.onTap!(ctx)));
+    unawaited(Future<void>.sync(() => item.onTap(ctx)));
     await srsSettle(tester);
     expect(find.text(t.srs_retained_copy_confirm_action), findsOneWidget);
     await tester.tap(find.text(t.srs_retained_copy_confirm_action));
