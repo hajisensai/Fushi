@@ -33,14 +33,17 @@ void main() {
   final TestWidgetsFlutterBinding binding =
       TestWidgetsFlutterBinding.ensureInitialized();
 
-  // path_provider 根**每条用例一个**：库页进场的自动刮削 sweep 会跑存量成员封面
-  // 清理（runMemberCoverCleanup → CoverMetaStore.all()），CoverMetaStore 按目录
-  // 共享一份进程级静态状态（读缓存 / 在途 loading / future 链式写锁）。上一条用例
-  // 结束时那次读盘还在飞，它的 fakeAsync Zone 不再推进，同目录的 loading future
-  // 永远不完成；下一条用例再进同一目录就整条挂住，连带后面的批量删除排在
-  // VideoCoverMutationGate 后面永不开工。各用例各用各的目录，状态天然隔离。
+  // path_provider 根**全文件共用一个**，刻意不按用例隔离、也不重置 CoverMetaStore：
+  // 库页进场的自动刮削 sweep 会跑存量成员封面清理（runMemberCoverCleanup →
+  // CoverMetaStore.all()），而 CoverMetaStore 按目录共享进程级状态（读缓存 /
+  // 在途加载 / 链式写锁）。上一条用例结束时那次读盘还在飞、它的 fakeAsync Zone
+  // 不再推进；store 的共享 future 曾建在发起者 Zone 里，下一条用例进同一目录就
+  // 整条挂住，连带批量删除排在 VideoCoverMutationGate 后面永不开工。store 现在
+  // 只在根 Zone 里推进共享状态（见 CoverMetaStore._runDetached），这里共用一个
+  // 根即是该修复的回归证据。
   late Directory pathProviderDir;
   setUpAll(() {
+    pathProviderDir = Directory.systemTemp.createTempSync('fushi_batch_ops_pp');
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
       (MethodCall call) async => pathProviderDir.path,
@@ -51,6 +54,9 @@ void main() {
       const MethodChannel('plugins.flutter.io/path_provider'),
       null,
     );
+    if (pathProviderDir.existsSync()) {
+      pathProviderDir.deleteSync(recursive: true);
+    }
   });
 
   late FushiDatabase db;
@@ -65,7 +71,6 @@ void main() {
     // 释放它，不清的话本文件的批量删除会排进永不移交的队列（进度对话框一直挂着）。
     // 契约见 VideoCoverMutationGate.debugResetForTesting。
     VideoCoverMutationGate.debugResetForTesting();
-    pathProviderDir = Directory.systemTemp.createTempSync('fushi_batch_ops_pp');
     SharedPreferences.setMockInitialValues(<String, Object>{});
     LocaleSettings.setLocale(AppLocale.zhCn);
     db = FushiDatabase.forTesting(NativeDatabase.memory());
@@ -83,9 +88,6 @@ void main() {
     await db.close();
     if (storeDir.existsSync()) {
       storeDir.deleteSync(recursive: true);
-    }
-    if (pathProviderDir.existsSync()) {
-      pathProviderDir.deleteSync(recursive: true);
     }
   });
 
