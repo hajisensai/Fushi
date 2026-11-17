@@ -564,7 +564,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
 
   /// 本页此刻的播放头是不是用户自己的观看进度。队列重放期间的 seek / 播放是机器驱动；制卡
   /// 宿主页（[_isMiningHost]）则整页都是：开跑前站点自动播放，跑完到换回原档 / 关页之间停在
-  /// 最后一句重放处。不是用户的播放头就不写续播点、不计观看时长（BUG-4794）。
+  /// 最后一句重放处。不是用户的播放头就不写续播点、不计观看时长（BUG-4801）。
   bool get _playheadIsUsers => !_mineRunning && !_isMiningHost;
 
   /// 自动制卡已触发、但还在起音频 / 读队列（[_mineRunning] 尚未置位）时用户回来了：
@@ -1539,7 +1539,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
 
   /// 队列行属于别的视频（换集后入队的）：先导航过去等画面就绪。没等完就被叫停（用户回来
   /// 让位 / 手动停止 / 页面卸载）回 [WebMineNavigateOutcome.interrupted]，与等满期限的
-  /// 超时分开——前者不是这一行的错，行要留在待办（BUG-4793）。
+  /// 超时分开——前者不是这一行的错，行要留在待办（BUG-4800）。
   Future<WebMineNavigateOutcome> _navigateForMining(WebMineQueueRow row) async {
     final InAppWebViewController? web = _web;
     if (web == null) return WebMineNavigateOutcome.timedOut;
@@ -1576,7 +1576,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       widget.bookUid,
     );
     if (!mounted) return;
-    // 自动跑不再去本次空闲里已经到不了的视频（BUG-4793）；用户自己点的照跑。
+    // 自动跑不再去本次空闲里已经到不了的视频（BUG-4800）；用户自己点的照跑。
     final List<WebMineQueueRow> rows = auto
         ? giveUps.startable(widget.bookUid, queued)
         : queued;
@@ -1611,7 +1611,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     _replayOrigin = widget.mineReturnState ?? _currentReturnState();
     _pendingRestore = null;
     // 采集起好之后的每一步都在 [runWebMineQueueRound] 里：哪一步抛出，后面的还原步骤
-    // （停采集 = 还原会话音量、复位运行态）与整轮收尾 [_finishMining] 都照常执行（BUG-4792）。
+    // （停采集 = 还原会话音量、复位运行态）与整轮收尾 [_finishMining] 都照常执行（BUG-4799）。
     await runWebMineQueueRound(
       onError: onMineError,
       body: () async {

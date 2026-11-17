@@ -166,7 +166,7 @@ void main() {
       expect(onB.log, <String>['mine:2', 'nav:A', 'mine:1', 'mine:3']);
     });
 
-    test('BUG-4792：一行重放抛出只标这一行失败并结束本轮，其余行留在待办', () async {
+    test('BUG-4799：一行重放抛出只标这一行失败并结束本轮，其余行留在待办', () async {
       final _FakePage page = _FakePage(current: 'A')..throwingRows.add(2);
       final WebMineQueueRowsEnd end = await page.run(<WebMineQueueRow>[
         _row(1, 'A'),
@@ -198,7 +198,7 @@ void main() {
       expect(page.tally.failed, 1);
     });
 
-    test('BUG-4792：导航本身抛出同样只算这一行失败并结束本轮', () async {
+    test('BUG-4799：导航本身抛出同样只算这一行失败并结束本轮', () async {
       final _FakePage page = _FakePage(current: 'A');
       final WebMineQueueTally tally = WebMineQueueTally();
       final List<int> mined = <int>[];
@@ -253,7 +253,7 @@ void main() {
       expect(page.errors, isEmpty);
     });
 
-    test('BUG-4793：导航途中让位，这一行与之后的行都留在待办，不标 navigate_timeout', () async {
+    test('BUG-4800：导航途中让位，这一行与之后的行都留在待办，不标 navigate_timeout', () async {
       final _FakePage page = _FakePage(current: 'A')..interruptAt = 'B';
       final WebMineQueueRowsEnd end = await page.run(<WebMineQueueRow>[
         _row(1, 'A'),
@@ -373,7 +373,7 @@ void main() {
       expect(giveUps.isBookGivenUp('empty'), isFalse);
     });
 
-    test('BUG-4793：空闲自动制卡跨轮——到不了的视频整次空闲只等一次、只标一行失败；用户回来后重新给机会', () async {
+    test('BUG-4800：空闲自动制卡跨轮——到不了的视频整次空闲只等一次、只标一行失败；用户回来后重新给机会', () async {
       const String book = 'video/stream/book';
       final _FakeIdle idle = _FakeIdle();
       final WebMineIdleGiveUps giveUps = idle.giveUps();
@@ -441,7 +441,7 @@ void main() {
     });
   });
 
-  group('runWebMineQueueRound（BUG-4792：整轮必收尾）', () {
+  group('runWebMineQueueRound（BUG-4799：整轮必收尾）', () {
     test('正常跑完：收尾步骤按序执行，返回 true', () async {
       final List<String> log = <String>[];
       final bool completed = await runWebMineQueueRound(

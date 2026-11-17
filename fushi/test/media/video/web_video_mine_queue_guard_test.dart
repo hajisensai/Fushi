@@ -21,7 +21,7 @@ void main() {
     session = File(sessionPath).readAsStringSync();
   });
 
-  group('BUG-4791：窗口宿主档会话不把可捕获档的旧 cookie 抄回共享罐', () {
+  group('BUG-4798：窗口宿主档会话不把可捕获档的旧 cookie 抄回共享罐', () {
     test('WebVideoSession 整个类里没有回抄 / 复制 cookie 的调用', () {
       final String code = maskComments(session);
       final int start = code.indexOf('class WebVideoSession {');
@@ -55,7 +55,7 @@ void main() {
     });
   });
 
-  group('BUG-4792 / BUG-4793：一轮重放走 web_mine_queue_run 的规则', () {
+  group('BUG-4799 / BUG-4800：一轮重放走 web_mine_queue_run 的规则', () {
     late String run;
 
     setUpAll(() {
@@ -73,7 +73,7 @@ void main() {
       expect(finish, greaterThan(round));
       expect(run.substring(finish), contains('WebMineAutoFinished('));
       // 「无条件」= 这次调用是方法体顶层的语句，没有被 if (...) { } 之类的块包住
-      // （包进一个只在正常跑完时才进的分支，BUG-4792 就原样回来了）。
+      // （包进一个只在正常跑完时才进的分支，BUG-4799 就原样回来了）。
       final String finishLine = run.substring(
         run.lastIndexOf('\n', finish) + 1,
         finish,
@@ -126,7 +126,7 @@ void main() {
     });
   });
 
-  group('BUG-4794：制卡宿主页不把机器驱动的播放头当用户进度', () {
+  group('BUG-4801：制卡宿主页不把机器驱动的播放头当用户进度', () {
     test('判据包含重放期间与制卡宿主页（交接页 + 后台制卡页）', () {
       final String code = compactCode(maskComments(page));
       expect(
