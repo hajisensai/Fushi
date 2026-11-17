@@ -168,17 +168,39 @@ def sampling_request(SamplingRequest, **values):
     return SamplingRequest(**{k: v for k, v in values.items() if k in known})
 
 
-class Reader(threading.Thread):
-    """Reads stdin so a cancel arrives while a job is running."""
+def detach_stdin():
+    """Moves the request pipe off fd 0 / STD_INPUT_HANDLE and returns it.
 
-    def __init__(self) -> None:
+    On Windows a synchronous ReadFile pending on a pipe blocks every other call
+    on that handle (GetFileType, DuplicateHandle). Each native DLL with its own
+    CRT probes the std handles while loading, and subprocess duplicates
+    STD_INPUT_HANDLE, so a reader thread parked on the real stdin deadlocks
+    `import torch` (numpy's extension module never finishes loading). The
+    reader gets a private, non-inheritable duplicate; fd 0 (and, through dup2,
+    STD_INPUT_HANDLE) points at the null device.
+    """
+    fd = os.dup(0)
+    null = os.open(os.devnull, os.O_RDONLY)
+    try:
+        os.dup2(null, 0)
+    finally:
+        os.close(null)
+    sys.stdin = open(os.devnull, "r", encoding="utf-8")
+    return os.fdopen(fd, "r", encoding="utf-8")
+
+
+class Reader(threading.Thread):
+    """Reads requests so a cancel arrives while a job is running."""
+
+    def __init__(self, source) -> None:
         super().__init__(daemon=True)
+        self.source = source
         self.requests: queue.Queue = queue.Queue()
         self.cancelled: set[str] = set()
         self.lock = threading.Lock()
 
     def run(self) -> None:
-        for raw in sys.stdin:
+        for raw in self.source:
             raw = raw.strip()
             if not raw:
                 continue
@@ -252,7 +274,7 @@ def main() -> int:
     parser.add_argument("--precision", default="fp32")
     args = parser.parse_args()
 
-    reader = Reader()
+    reader = Reader(detach_stdin())
     reader.start()
     try:
         emit("loading", stage="import")
