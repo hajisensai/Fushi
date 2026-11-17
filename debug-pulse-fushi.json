@@ -1,12 +1,45 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-17T04:50:58Z",
+ "generatedAt": "2026-11-17T05:52:34Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "f25fcb3819feb789625dcd8b8b9ffd68ff852b64",
-  "seq": 28462
+  "sha": "0721b32b18f94eb4316bc916311e352be81bed9f",
+  "seq": 28546
  },
  "builds": [
+  {
+   "seq": 28460,
+   "version": "3.3.0",
+   "sha": "cacf3bdbbe1ff4b9de84b3db237a3de7f3d1984d",
+   "unknown": false,
+   "publishedAt": "2026-11-17T05:52:23Z",
+   "testflight": false,
+   "baseSeq": 28450,
+   "prs": [
+    3638,
+    3635,
+    3637
+   ],
+   "direct": [],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "ok"
+    },
+    "windows": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44019530673"
+    },
+    "macos": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44019530673"
+    },
+    "ios": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44019530673"
+    }
+   }
+  },
   {
    "seq": 28450,
    "version": "3.3.0",
@@ -83,7 +116,8 @@
    "truncated": false,
    "platforms": {
     "android": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44003998317"
     },
     "windows": {
      "state": "ok"
@@ -125,32 +159,40 @@
   }
  ],
  "pending": {
-  "headSha": "f25fcb3819feb789625dcd8b8b9ffd68ff852b64",
-  "headSeq": 28462,
+  "headSha": "0721b32b18f94eb4316bc916311e352be81bed9f",
+  "headSeq": 28546,
   "prs": [
-   3639,
-   3638,
-   3635,
-   3637
+   3653,
+   3651,
+   3654,
+   3655,
+   3648,
+   3658,
+   3652,
+   3647,
+   3645,
+   3643,
+   3642,
+   3639
   ],
   "direct": [],
   "truncated": false,
   "platforms": {
    "android": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44019530608"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44027087370"
    },
    "windows": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44019530673"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44027087635"
    },
    "macos": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44019530673"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44027087635"
    },
    "ios": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44019530673"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44027087635"
    }
   }
  },
@@ -234,6 +276,105 @@
    "mergedAt": "2026-11-17T04:48:13Z",
    "additions": 77,
    "deletions": 14,
+   "labels": []
+  },
+  "3642": {
+   "number": 3642,
+   "title": "fix(bt-site): 重定向逐跳手动判 Cookie；copyWith 改格式不沿用规则",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-17T05:15:29Z",
+   "additions": 192,
+   "deletions": 10,
+   "labels": []
+  },
+  "3643": {
+   "number": 3643,
+   "title": "fix: cpuSum 退回值标成下限；服务端 admin PUT 改 RWKV 档位改成原子（BUG-4763）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-17T05:18:43Z",
+   "additions": 84,
+   "deletions": 10,
+   "labels": []
+  },
+  "3645": {
+   "number": 3645,
+   "title": "fix(music): 歌词解压上限、QRC 注音计数口径、补 native-music-gate",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-17T05:24:52Z",
+   "additions": 264,
+   "deletions": 37,
+   "labels": []
+  },
+  "3647": {
+   "number": 3647,
+   "title": "feat(leaderboard): 拍板台原文显示图片 + 事项附设计图",
+   "author": "W1ght",
+   "mergedAt": "2026-11-17T05:33:24Z",
+   "additions": 363,
+   "deletions": 19,
+   "labels": []
+  },
+  "3648": {
+   "number": 3648,
+   "title": "fix(music): 舞台页歌词订阅模糊偏好；本地曲目行补触屏「⋯」菜单（BUG-4763/4764，登记 4765）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-17T05:39:57Z",
+   "additions": 267,
+   "deletions": 17,
+   "labels": []
+  },
+  "3651": {
+   "number": 3651,
+   "title": "fix(backup): 覆盖前快照保留期独立记录、有声书进度墓碑过滤、快照可达性检查移出 UI isolate",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-17T05:49:16Z",
+   "additions": 450,
+   "deletions": 69,
+   "labels": []
+  },
+  "3652": {
+   "number": 3652,
+   "title": "fix(video): 挑帧封面预览取帧单飞 + 菜单接线改行为测试（PR #3612 遗留）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-17T05:36:39Z",
+   "additions": 296,
+   "deletions": 61,
+   "labels": []
+  },
+  "3653": {
+   "number": 3653,
+   "title": "fix(srs): 出处列排序与出处视图集顺序同口径；文本导入按行分批报进度与叫停、新牌组延迟创建",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-17T05:52:09Z",
+   "additions": 371,
+   "deletions": 50,
+   "labels": []
+  },
+  "3654": {
+   "number": 3654,
+   "title": "fix(srs): 牌组设置页重读不盖编辑、存量单位提醒随旧日志同步刷新、远程 limitUnitLegacyDecks 往返测试",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-17T05:46:36Z",
+   "additions": 343,
+   "deletions": 41,
+   "labels": []
+  },
+  "3655": {
+   "number": 3655,
+   "title": "fix: 随包 7-Zip 进原生许可清单；缩略图宿主创建时入 job 并限并发（BUG-4763/4764）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-17T05:44:23Z",
+   "additions": 1387,
+   "deletions": 48,
+   "labels": []
+  },
+  "3658": {
+   "number": 3658,
+   "title": "docs(build): zstd-sys LNK1106 根因是 sccache 里的截断 C 对象（本机环境）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-17T05:37:12Z",
+   "additions": 33,
+   "deletions": 2,
    "labels": []
   }
  }
