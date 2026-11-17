@@ -15,7 +15,8 @@
 //!
 //! # 什么时候存、存多久
 //!
-//! - 只有本机同步着 **≥ 2 个位置**（`loc_state` 的行数）才存：一个位置的设备没有可转发的目标。
+//! - 只有本机同步着 **≥ 2 个活跃位置**才存：一个位置的设备没有可转发的目标。活跃 = 新代里写过 head（`loc_state.last_ok`）
+//!   且离最近一次成功不超过 30 天（[ACTIVE_WINDOW_MS]，协议 3 同口径）；不活跃的位置不算目标，prune 也不再等它。
 //! - 只存作者受信（`trust` 没有行）、不是本机（当前或旧身份）的原生段。
 //! - 每次确认转发（[relay_ack]）与读到 head（`plan` 调 [prune]）之后，删掉**每个**位置都已有的段：那个位置上作者的
 //!   head 已覆盖到段尾、head 引用了它，或本机已转发过去。
@@ -44,12 +45,13 @@ use crate::sync2::segment::{chain_tag, relay_file_name, segment_file_name};
 /// 一批转发的字节预算（与发件同值，`cmd/sync.rs` `OUTBOX_BATCH_BYTES`）。
 pub const RELAY_BATCH_BYTES: u64 = super::sync::OUTBOX_BATCH_BYTES;
 
-/// 本机同步着的位置数（`loc_state` 主键前缀）。
-pub(crate) const LOC_COUNT_SQL: &str = "SELECT COUNT(*) FROM loc_state WHERE col = ?1";
+/// 多久没成功同步过的位置不再算转发目标（协议 3 `relay.rs` 同值同口径：换过密钥 / 被移除的位置留下的旧进度行，
+/// 不让它们永远「缺」）。
+pub(crate) const ACTIVE_WINDOW_MS: i64 = 30 * 24 * 60 * 60 * 1000;
 
-/// 本机同步着的位置（`loc_state` 主键前缀）。
+/// 本机记着的位置与各自上次成功的时刻（`loc_state` 主键前缀）。活跃与否在 [active_locations] 里按 [ACTIVE_WINDOW_MS] 筛。
 pub(crate) const LOC_KEYS_SQL: &str =
-    "SELECT loc_key FROM loc_state WHERE col = ?1 ORDER BY loc_key";
+    "SELECT loc_key, last_ok FROM loc_state WHERE col = ?1 ORDER BY loc_key";
 
 /// 存一份可转发的段（`relay_segs` 的唯一约束：同一作者同一区间同一链尾只存一份）。
 pub(crate) const RELAY_PUT_SQL: &str = "INSERT OR IGNORE INTO relay_segs (col, device, first, last, tag, piece) \
@@ -85,18 +87,33 @@ fn str_req<'a>(req: &'a Value, k: &str) -> Result<&'a str, String> {
         .ok_or_else(|| format!("relay: missing {k}"))
 }
 
-fn location_count(t: &Truth<'_>, col: i64) -> Result<i64, String> {
-    t.conn()
-        .prepare_cached(LOC_COUNT_SQL)
-        .map_err(sql)?
-        .query_row([col], |r| r.get(0))
-        .map_err(sql)
+fn location_count(t: &Truth<'_>, col: i64) -> Result<usize, String> {
+    Ok(locations(t, col)?.len())
 }
 
+/// 转发目标：本机在新代里成功同步过（`last_ok` 由 `head` 记，`cmd/sync.rs`）、且离最近一次成功不超过
+/// [ACTIVE_WINDOW_MS] 的位置。
+///
+/// 与协议 3 的差别：协议 3 把「还没成功过」（`last_ok` 为空）也算活跃；新代的 `loc_state` 有两类空行——迁移
+/// （`carry.rs`）把协议 3 见过的每个加密位置都灌进来、`plan` 第一次读到一个位置也先建行——它们都不能证明那个位置
+/// 还在用，算进来就会让只用过一个位置的设备永远「同步着 ≥ 2 个位置」：收到的每个段都另存一份原文、死位置永远缺、
+/// prune 永远删不掉，还为它把全部历史再拉一遍。新加的位置在第一轮写完 head 之后就进来，晚一轮开始转发。
 fn locations(t: &Truth<'_>, col: i64) -> Result<Vec<String>, String> {
-    let mut stmt = t.conn().prepare_cached(LOC_KEYS_SQL).map_err(sql)?;
-    let rows = stmt.query_map([col], |r| r.get(0)).map_err(sql)?;
-    rows.collect::<rusqlite::Result<_>>().map_err(sql)
+    let rows: Vec<(String, Option<i64>)> = {
+        let mut stmt = t.conn().prepare_cached(LOC_KEYS_SQL).map_err(sql)?;
+        let rows = stmt
+            .query_map([col], |r| Ok((r.get(0)?, r.get(1)?)))
+            .map_err(sql)?;
+        rows.collect::<rusqlite::Result<_>>().map_err(sql)?
+    };
+    let Some(newest) = rows.iter().filter_map(|r| r.1).max() else {
+        return Ok(Vec::new());
+    };
+    Ok(rows
+        .into_iter()
+        .filter(|(_, ok)| ok.is_some_and(|t| t >= newest.saturating_sub(ACTIVE_WINDOW_MS)))
+        .map(|(l, _)| l)
+        .collect())
 }
 
 /// 这台设备的段 / head 可以由本机转发：不是本机（当前或旧身份）、受信。

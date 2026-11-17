@@ -11,13 +11,11 @@ use rusqlite::{Connection, OpenFlags};
 use serde_json::{Value, json};
 
 use super::dispatch_tests::T1;
-use super::sync_relay::{
-    LOC_COUNT_SQL, LOC_KEYS_SQL, RELAY_GET_SQL, RELAY_LIST_SQL, RHEAD_RANGE_SQL,
-};
+use super::sync_relay::{LOC_KEYS_SQL, RELAY_GET_SQL, RELAY_LIST_SQL, RHEAD_RANGE_SQL};
 use super::sync_tests::{Dev, Loc, Opts, cmd, heads, listing, round, sync_all};
-use super::tests::{N1, N2, N3};
+use super::tests::{N1, N2, N3, N4};
 use crate::store::gen4::files::GEN4_FILE;
-use crate::store::sync2::tests::edit;
+use crate::store::sync2::tests::{DAY, edit};
 
 const KEY2: &str = "2222222222222222222222222222222222222222222222222222222222222222";
 
@@ -141,7 +139,20 @@ fn a_device_on_two_locations_relays_between_them() {
     assert_eq!(relay_segs(&mut b), 0);
     assert!(relay(&b, &mut l2, "L2", Some(KEY2), T1 + 9).is_empty());
     assert!(relay(&b, &mut l1, "L1", None, T1 + 9).is_empty());
-    // L1 上的被转发 head 不是 L1 的证据：b 在 L1 的 plan 不把 c 记成 L1 上的设备（c 的 loc_heads 只在 L2）。
+    // L1 上的被转发 head 不是 L1 的证据。先让 c 再写一条、b 在 L2 收下（L1 缺，留原文），再让 b 在 L1 跑一轮——这一轮的
+    // plan 读得到 L1 上 c 的 `rhd-`：b 不把 c 记成 L1 上的设备（c 的 loc_heads 只在 L2），也不因此把还没转发到 L1
+    // 的原文 prune 掉。
+    c.write(T1 + 10, N4, "鳥");
+    round(&c, &mut l2, "L2", T1 + 10, sealed);
+    round(&b, &mut l2, "L2", T1 + 11, sealed);
+    assert_eq!(relay_segs(&mut b), 1);
+    let r = round(&b, &mut l1, "L1", T1 + 12, plain);
+    assert!(
+        l1.keys().any(|k| k.contains(&dc) && k.contains("/rhd-")),
+        "L1 carries c's relayed head: {}",
+        r.plan
+    );
+    assert_eq!(relay_segs(&mut b), 1, "not relayed to L1 yet");
     let rows: Vec<String> = b.direct(|t, col| {
         Ok(t.loc_heads(col, "L1")?
             .into_iter()
@@ -210,6 +221,72 @@ fn a_second_location_added_later_still_gets_the_relay() {
     assert_eq!(relay_segs(&mut b), 0);
 }
 
+/// 转发目标只认活跃位置：迁移灌进来的、从没在新代成功过的位置行（`last_ok` 为空），和 30 天以上没成功过的旧位置，
+/// 都不算目标——b 只在 L1 上同步时不为它们留原文，`plan` 也不为它们把早已收过的段再拉一遍。
+#[test]
+fn stale_or_never_synced_locations_are_not_relay_targets() {
+    let a = Dev::new("g87sa");
+    let mut b = Dev::new("g87sb");
+    let mut l1 = Loc::new();
+    let o = Opts::default();
+    a.write(T1 + 1, N1, "鯨");
+    round(&a, &mut l1, "L1", T1 + 2, o);
+    round(&b, &mut l1, "L1", T1 + 3, o);
+    assert_eq!(b.field(N1), Some(json!("鯨")));
+    // 迁移留下的加密位置行（从没成功过）与一个 40 天前最后成功的位置。
+    b.direct(|t, col| {
+        t.conn()
+            .execute(
+                "INSERT INTO loc_state (col, loc_key, sealed, last_ok) VALUES (?1, 'Lcarried', 1, NULL),                  (?1, 'Lold', 0, ?2)",
+                rusqlite::params![col, T1 - 40 * DAY],
+            )
+            .map_err(|e| e.to_string())
+    });
+    let r = round(&b, &mut l1, "L1", T1 + 4, o);
+    let da = a.device();
+    assert!(
+        !r.plan["fetch"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|f| f["device"] == json!(da)),
+        "nothing is fetched again for a dead location: {}",
+        r.plan
+    );
+    assert_eq!(relay_segs(&mut b), 0);
+    a.write(T1 + 5, N2, "猫");
+    round(&a, &mut l1, "L1", T1 + 6, o);
+    round(&b, &mut l1, "L1", T1 + 7, o);
+    assert_eq!(b.field(N2), Some(json!("猫")));
+    assert_eq!(relay_segs(&mut b), 0, "no relay copy for inactive targets");
+}
+
+/// 一个位置 30 天以上没成功过之后不再是转发目标：先前为它留的原文在下一轮 `plan` 里被 prune 清空，之后收的段也不再留。
+#[test]
+fn a_location_left_idle_past_the_window_stops_holding_relay_copies() {
+    let a = Dev::new("g87wa");
+    let mut b = Dev::new("g87wb");
+    let (mut l1, mut l2) = (Loc::new(), Loc::new());
+    let o = Opts::default();
+    round(&b, &mut l1, "L1", T1, o);
+    round(&b, &mut l2, "L2", T1, o);
+    a.write(T1 + 1, N1, "鯨");
+    round(&a, &mut l1, "L1", T1 + 2, o);
+    round(&b, &mut l1, "L1", T1 + 3, o);
+    assert_eq!(relay_segs(&mut b), 1, "L2 lacks a's segment");
+    let late = T1 + 31 * DAY;
+    // 第一轮写完 head 时 L1 的 last_ok 前进，L2 落出窗口；下一轮的 plan 就把留给 L2 的原文清掉。
+    round(&b, &mut l1, "L1", late, o);
+    round(&b, &mut l1, "L1", late + 1, o);
+    assert_eq!(relay_segs(&mut b), 0);
+    a.write(late + 2, N2, "猫");
+    round(&a, &mut l1, "L1", late + 3, o);
+    round(&b, &mut l1, "L1", late + 4, o);
+    assert_eq!(b.field(N2), Some(json!("猫")));
+    assert_eq!(relay_segs(&mut b), 0);
+    assert!(relay(&b, &mut l2, "L2", None, late + 5).is_empty());
+}
+
 /// 只连一个位置的设备不留原文、不转发。
 #[test]
 fn a_single_location_device_keeps_nothing_to_relay() {
@@ -226,16 +303,27 @@ fn a_single_location_device_keeps_nothing_to_relay() {
     assert!(relay(&b, &mut l1, "L1", None, T1 + 4).is_empty());
 }
 
+/// 本机等待缓冲里的项数（`op_wait`）。
+fn v_pending(d: &Dev) -> i64 {
+    let (v, _) = cmd(d.h, "ingest", T1, json!({}), &[]);
+    v["pending"].as_i64().unwrap()
+}
+
 fn note_id(i: usize) -> String {
     format!("0193a1b2-0000-7000-8000-{:012x}", 0x1000 + i)
 }
 
 /// 一台设备写 [n] 条（一次 `apply`）。
 fn write_many(d: &Dev, now: i64, n: usize) {
+    write_many_as(d, now, n, "v");
+}
+
+/// 一台设备写 [n] 条，第 i 条的值是 `{prefix}{i}`（一次 `apply`）。
+fn write_many_as(d: &Dev, now: i64, n: usize, prefix: &str) {
     let items: Vec<Value> = (0..n)
         .map(|i| {
             let note = note_id(i);
-            json!({"e": edit("note", &note, "f/fa", json!(format!("v{i}"))), "note": note})
+            json!({"e": edit("note", &note, "f/fa", json!(format!("{prefix}{i}"))), "note": note})
         })
         .collect();
     let blob = Value::Array(items).to_string().into_bytes();
@@ -318,6 +406,88 @@ fn ingest_slices_a_large_batch_into_budgeted_transactions() {
     assert_eq!(a.derived(), c.derived());
 }
 
+/// 收段让路的进展判据：依赖方的段排在被依赖方前面时，前几片全停进等待缓冲、一项都不落库（`landed == 0`、`rest == 0`），
+/// 这也是进展。a 写 300 条、b 收下后改这 300 条（b 的操作依赖 a 的），c 收段时把 b 的段排在前面、预算很小；循环照搬
+/// Dart `sync2IngestBatch` 的判据（`rest == 0 && spent == 0` 才算没进展），必须一路收完、不报没进展，最后与 b 收敛。
+#[test]
+fn ingest_slices_count_parked_items_as_progress() {
+    const N: usize = 300;
+    const BUDGET: u64 = 100;
+    let a = Dev::new("g87pa");
+    let mut b = Dev::new("g87pb");
+    let mut c = Dev::new("g87pc");
+    let mut loc = Loc::new();
+    write_many(&a, T1 + 1, N);
+    round(&a, &mut loc, "loc", T1 + 2, Opts::default());
+    round(&b, &mut loc, "loc", T1 + 3, Opts::default());
+    write_many_as(&b, T1 + 4, N, "b");
+    round(&b, &mut loc, "loc", T1 + 5, Opts::default());
+    let root = {
+        let mut blobs = Vec::new();
+        blobs.extend(loc.get("v4/meta.json").cloned());
+        let locs: Vec<String> = loc
+            .keys()
+            .filter_map(|k| k.strip_prefix("v4/loc/").map(str::to_owned))
+            .collect();
+        cmd(
+            c.h,
+            "location_root",
+            T1 + 6,
+            json!({"location": "loc", "has4": true, "has3": false, "locs": locs}),
+            &blobs,
+        )
+        .0
+    };
+    let (plan, _) = cmd(
+        c.h,
+        "plan",
+        T1 + 6,
+        json!({"location": "loc", "loc": root["loc"], "listing": listing(&loc)}),
+        &heads(&loc),
+    );
+    let db = b.device();
+    let mut fetch: Vec<Value> = plan["fetch"].as_array().unwrap().clone();
+    // 依赖方（b）排在前面。
+    fetch.sort_by_key(|f| f["device"].as_str() != Some(db.as_str()));
+    assert_eq!(fetch[0]["device"], json!(db), "{plan}");
+    let mut pending: Vec<Vec<u8>> = fetch
+        .iter()
+        .flat_map(|f| f["files"].as_array().unwrap().clone())
+        .filter_map(|p| loc.get(&format!("v4/{}", p.as_str().unwrap())).cloned())
+        .collect();
+    let mut parked_only = 0;
+    let mut txs = 0;
+    while !pending.is_empty() {
+        let (v, _) = cmd(c.h, "ingest", T1 + 7, json!({"maxItems": BUDGET}), &pending);
+        txs += 1;
+        let done = v["rest"].as_u64().unwrap() as usize;
+        let spent = v["spent"].as_u64().unwrap();
+        assert!(spent <= BUDGET, "{v}");
+        if done >= pending.len() {
+            break;
+        }
+        // Dart 的判据：交完的段数与新工作数都是 0 才算没进展。
+        assert!(!(done == 0 && spent == 0), "no progress: {v}");
+        if done == 0 && v["landed"] == json!(0) {
+            parked_only += 1;
+        }
+        pending.drain(..done);
+        assert!(txs < 100, "{v}");
+    }
+    assert!(
+        parked_only >= 1,
+        "the dependent-first order must produce parked-only slices"
+    );
+    // b 的 300 条全部从等待缓冲投出（测试装置的编辑不带因果上下文，与 a 的同字段编辑按并发取舍，所以比的是与 b 一致）。
+    assert_eq!(v_pending(&c), 0);
+    for i in [0, N / 2, N - 1] {
+        assert!(c.field(&note_id(i)).is_some());
+        assert_eq!(c.field(&note_id(i)), b.field(&note_id(i)));
+    }
+    sync_all(&[&a, &b, &c], &mut loc, T1 + 8, Opts::default());
+    assert_eq!(b.derived(), c.derived());
+}
+
 /// 转发的新语句按键找，不扫表。
 #[test]
 fn relay_lookups_use_their_keys() {
@@ -328,7 +498,6 @@ fn relay_lookups_use_their_keys() {
     )
     .unwrap();
     for (q, n) in [
-        (LOC_COUNT_SQL, 1),
         (LOC_KEYS_SQL, 1),
         (RELAY_GET_SQL, 5),
         (RELAY_LIST_SQL, 2),

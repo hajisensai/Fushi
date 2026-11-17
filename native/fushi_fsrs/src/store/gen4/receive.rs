@@ -261,6 +261,12 @@ impl<'t, 'c> Receiver<'t, 'c> {
         self.cut
     }
 
+    /// 这一批已做的新工作数（落进日志的原生项 / 空洞 + 新进等待缓冲的原生项）。调用方拿它判断一片有没有进展：只停放
+    /// 进等待缓冲、一项都没落库的一片（依赖方的段排在被依赖方前面）也是进展，不能拿落库数当代理。
+    pub fn spent(&self) -> u64 {
+        self.spent
+    }
+
     fn public_of(&self, device: &Id) -> Result<Option<[u8; 32]>, String> {
         if let Some((me, public)) = &self.me {
             if me == device {

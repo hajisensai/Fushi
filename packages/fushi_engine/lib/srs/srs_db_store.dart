@@ -1864,8 +1864,9 @@ class SrsDbStore implements SrsSync2Host {
         _mergeIngestSlice(merged, r);
         final int done = (r['rest'] as int?) ?? rest.length;
         if (done >= rest.length) break;
-        if (done == 0 && ((r['landed'] as int?) ?? 0) == 0) {
-          // 内核每片至少落一项或交完一段；两样都没有 = 契约坏了，不原地打转。
+        if (done == 0 && ((r['spent'] as int?) ?? 0) == 0) {
+          // 进展只认内核报的 `spent`（落库 + 新进等待缓冲的项）：依赖方的段排在前面时一片可能全停进等待缓冲、
+          // `landed` 为 0，那也是进展。交完的段与新工作都是 0 = 契约坏了，不原地打转。
           throw StateError('sync2 ingest slice made no progress: $r');
         }
         rest = rest.sublist(done);
@@ -1896,6 +1897,7 @@ class SrsDbStore implements SrsSync2Host {
       'conflicts',
       'voided',
       'kept',
+      'spent',
     ];
     for (final MapEntry<String, Object?> e in r.entries) {
       if (sums.contains(e.key)) {

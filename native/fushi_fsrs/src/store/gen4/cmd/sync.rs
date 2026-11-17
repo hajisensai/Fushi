@@ -890,7 +890,9 @@ pub fn plan(t: &Truth<'_>, col: i64, req: &Value, heads: &[Vec<u8>]) -> Result<V
 // ---------------------------------------------------------------------- 3. 收段
 
 /// `ingest {profile, key?, maxItems?}`，字节块 = 这一批从位置上读到的段（原生段 `FSG4`、中继件 `FRL4`、承袭段 `FSH4`）。
-/// `maxItems`（收段让路）：这一个事务最多做多少项新工作（[Receiver::with_budget]）；用完就停，回包 `rest` = 交完了的段数，
+/// `maxItems`（收段让路）：这一个事务最多做多少项新工作（[Receiver::with_budget]）；用完就停，回包 `rest` = 交完了的段数、
+/// `spent` = 这一片做的新工作数（落库 + 新进等待缓冲；调用方判「这一片有没有进展」只认它，不拿 `landed` 当代理——
+/// 依赖方的段排在前面时，一片可能全停进等待缓冲、一项都不落），
 /// Dart 把剩下的（含中途停下的那一段）放到下一个事务里交，两个事务之间放开写锁让作答插进来。一批一个
 /// 写事务（[Receiver]：先全部核对再落、按因果投递、终点收派生层）；本机当前身份的段收完再逐条与本机日志比链
 /// （[ForkScan]），找到分叉点就记下（[fork::record_fork]），换身份推到 [ingest_finish]。回包是这一批的计数、逐段没收的
@@ -967,6 +969,7 @@ pub fn ingest(
             }
         }
     }
+    let spent = rx.spent();
     let r: Received = rx.finish()?;
     let fork_at = match scan.as_ref().and_then(ForkScan::fork_point) {
         Some(keep) => Some(fork::record_fork(t, col, keep)?),
@@ -991,6 +994,7 @@ pub fn ingest(
         "settled": settled_json(&r.settled),
         "voided": r.voided,
         "rest": rest,
+        "spent": spent,
         "kept": kept,
     });
     bump_revision(t, profile, applied + r.voided, &mut out)?;
@@ -1203,6 +1207,9 @@ pub fn head(t: &Truth<'_>, col: i64, req: &Value, files: &mut Files) -> Result<V
         });
         hex(&blake3::hash(content.to_string().as_bytes()).as_bytes()[..16])
     };
+    // 走到写 head 就是这一轮在这个位置上成功了（不变跳过也算）：记 `last_ok`，转发只认最近成功过的位置
+    // （`cmd/sync_relay.rs` 的活跃窗口）。
+    touch_location(t, col, location, now)?;
     if let Some(skip) = req.get("skipUnchangedMs").and_then(Value::as_i64) {
         if out.gen > 0 && out.tag == tag && !out.path.is_empty() && now - out.at < skip {
             return Ok(json!({"unchanged": true, "path": out.path, "gen": out.gen}));
@@ -1250,6 +1257,20 @@ pub fn head(t: &Truth<'_>, col: i64, req: &Value, files: &mut Files) -> Result<V
         },
     )?;
     Ok(json!({"unchanged": false, "path": path, "gen": gen}))
+}
+
+/// 记一个位置这一轮成功的时刻（`loc_state.last_ok`，主键点写）。
+pub(crate) const LOC_TOUCH_SQL: &str = "INSERT INTO loc_state (col, loc_key, sealed, last_ok) VALUES (?1, ?2, 0, ?3)      ON CONFLICT (col, loc_key) DO UPDATE SET last_ok = excluded.last_ok";
+
+fn touch_location(t: &Truth<'_>, col: i64, location: &str, now: i64) -> Result<(), String> {
+    t.write(|| {
+        t.conn()
+            .prepare_cached(LOC_TOUCH_SQL)
+            .map_err(sql)?
+            .execute(params![col, location, now])
+            .map_err(sql)?;
+        Ok(())
+    })
 }
 
 /// 对端 head 的写出时刻、版本向量指纹、摘要在 `peers.ext` 里的键（[plan] 写、`status` 读；下划线开头，不与对端自报的
