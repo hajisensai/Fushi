@@ -89,7 +89,10 @@ use crate::sync2::vv::{OpId, Vv};
 /// 本机身份（`self_`）与换身份（G8-6）。
 mod own;
 pub use own::Rotated;
+/// 首见设备的信任判定（BUG-4306）。
+mod trust;
 pub(crate) use own::{NativeStep, fork_key};
+pub use trust::FirstSeen;
 
 /// `devs.kind`：原生日志。
 pub const DEV_NATIVE: i64 = 0;
@@ -1696,32 +1699,6 @@ impl<'c> Truth<'c> {
                 })
             })
             .transpose()
-    }
-
-    /// 集合里公钥是 [public] 的已在册设备（除 [except] 外），按设备 ID 升序。同一把签名钥匙 = 同一台设备换过身份
-    /// （迁移换新 ID、换身份都沿用钥匙），首次信任的身份承接（`cmd/sync.rs` `note_new_peer`）用。
-    pub fn peers_with_key(
-        &self,
-        col: i64,
-        public: &[u8; 32],
-        except: &Id,
-    ) -> Result<Vec<Id>, String> {
-        let mut stmt = self
-            .conn
-            .prepare_cached(
-                "SELECT device FROM peers WHERE col = ?1 AND public = ?2 AND device != ?3 ORDER BY device",
-            )
-            .map_err(sql)?;
-        let rows = stmt
-            .query_map(params![col, &public[..], &except.0[..]], |r| {
-                r.get::<_, Vec<u8>>(0)
-            })
-            .map_err(sql)?;
-        let mut out = Vec::new();
-        for row in rows {
-            out.push(id_of(&row.map_err(sql)?)?);
-        }
-        Ok(out)
     }
 
     /// 记下一台设备（迁移灌入 `sync2_devices`、收到它的 head）。公钥先到先得（协议 3 `trust_head` 的口径）：已经记过

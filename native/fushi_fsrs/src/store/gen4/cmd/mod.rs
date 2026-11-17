@@ -105,9 +105,13 @@ mod study_tests;
 #[cfg(test)]
 mod sync_complete_tests;
 #[cfg(test)]
+mod sync_heritage_trust_tests;
+#[cfg(test)]
 mod sync_relay_tests;
 #[cfg(test)]
 mod sync_tests;
+#[cfg(test)]
+mod sync_trust_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

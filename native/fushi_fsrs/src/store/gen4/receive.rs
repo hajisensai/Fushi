@@ -842,6 +842,12 @@ impl<'t, 'c> Receiver<'t, 'c> {
         &self.legacy_taken
     }
 
+    /// 本机这一批改了某台设备的信任状态（`Truth::note_new_peer` 写了行）：收尾时把扣住的删除与清除重判
+    /// （`weigh.rs` [Index::trust_changed]）。
+    pub fn trust_changed(&mut self) {
+        self.idx.trust_changed();
+    }
+
     /// 把等待缓冲里接得上的投完，再收派生层。消费这一批。
     pub fn finish(mut self) -> Result<Received, String> {
         // 原生等待项的投递同样受预算约束（收段让路）：用完就停，剩下接得上的留给调用方下一个事务（`drain_more`）。
@@ -1301,17 +1307,14 @@ mod tests {
         assert_eq!(state(&conn, &t, col), state(&conn2, &t2, col2));
     }
 
-    /// 「库里有没有用户数据」（首次信任的判据，`cmd/reads.rs` `collection_has_user_data`）把还停在等待缓冲里的操作
-    /// 算作「有」：它们已经收下、只是还没投递（协议 3 BUG-4478 同类缺口）。
+    /// 「库还是空的」（首次信任的判据，`truth/trust.rs` [Truth::library_fresh]）把还停在等待缓冲里的原生操作算作
+    /// 「有」：它们已经收下、只是前面缺着还没投递（协议 3 BUG-4478 同类缺口）。
     #[test]
     fn ops_still_waiting_count_as_user_data() {
         let conn = open_in_memory().unwrap();
         let t = Truth::new(&conn);
         let col = setup(&t);
-        let has = |t: &Truth<'_>| {
-            t.tx(|t| crate::store::gen4::cmd::reads::collection_has_user_data(t, col))
-                .unwrap()
-        };
+        let has = |t: &Truth<'_>| !t.tx(|t| t.library_fresh(col)).unwrap();
         assert!(!has(&t), "a fresh collection");
         let w = world();
         let (_, rec) = take(&t, col, Settle::Incremental, &[&w[2], &w[1]], None);

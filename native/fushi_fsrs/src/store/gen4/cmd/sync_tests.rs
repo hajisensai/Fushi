@@ -19,9 +19,9 @@ use std::ptr::{null, null_mut};
 use rusqlite::{Connection, OpenFlags};
 use serde_json::{Value, json};
 
-use super::dispatch_tests::{T1, cfg, g4, g4req, migrate_legacy, open, p3};
+use super::dispatch_tests::{T1, cfg, g4, g4req, open};
 use super::sync::{LOC_HEAD_SEQ_SQL, LOC_STATE_SQL, VOIDS_SQL, sealed_at_location};
-use super::tests::{N1, N2, N3, library_pair};
+use super::tests::{N1, N2, N3};
 use crate::gen4::head::Head4;
 use crate::gen4::location::{V4File, parse_v4_path};
 use crate::store::ffi::{SrsCoreHandle, ffsrs_store_close, ffsrs_store_sync2};
@@ -30,7 +30,7 @@ use crate::store::gen4::derive::tests::{assert_rebuild_is_identity, dump};
 use crate::store::gen4::files::{GEN4_FILE, OpenMode};
 use crate::store::gen4::kernel::{G4Core, REMOVED, UNWIRED};
 use crate::store::gen4::sync_state::{RETIRED_RECORD_UNREADABLE, RETIRED_SQL};
-use crate::store::gen4::truth::{Peer, TRUST_PENDING, TRUST_REJECTED, Truth};
+use crate::store::gen4::truth::Truth;
 use crate::store::sync2::collection_of;
 use crate::store::sync2::tests::{P, edit, tempdir};
 use crate::sync2::id::Id;
@@ -179,12 +179,6 @@ impl Dev {
         };
         self.h = open(&self.dir.0, 0).unwrap();
         out
-    }
-
-    /// 本机对 [device] 的信任状态（`trust` 表：可信 = None，`TRUST_PENDING` / `TRUST_REJECTED`）。
-    pub(super) fn trust_state(&mut self, device: &str) -> Option<i64> {
-        let dev = Id::parse(device).unwrap();
-        self.direct(|t, col| t.trust_of(col, &dev))
     }
 
     /// 派生层：增量维护的与整个重建的逐行相同（[assert_rebuild_is_identity]），回语义摘要（head 的 `digest`，跨设备
@@ -440,183 +434,6 @@ pub(super) fn sync_all(devs: &[&Dev], loc: &mut Loc, now: i64, o: Opts<'_>) {
 }
 
 // ---------------------------------------------------------------------- 两台设备
-
-/// 首次信任（G10-4，`sync::note_new_peer`）：库里还没有用户数据时第一次见到的设备直接可信；库里已有数据时第一次见到
-/// 的设备记成待确认（它的删除由派生层扣住），本机 `trust` 之后可信，之后的同步轮（对端公钥已在册）不再把它打回待确认。
-#[test]
-fn first_sight_of_a_device_is_pending_only_when_the_library_has_data() {
-    let mut a = Dev::new("g87fsa");
-    let mut b = Dev::new("g87fsb");
-    a.write(T1 + 1, N1, "鯨");
-    let mut loc = Loc::new();
-    let o = Opts::default();
-    // a 先发（还没见过 b），b 全新、第一次见到 a，a 再见到 b。
-    round(&a, &mut loc, "loc", T1 + 10, o);
-    round(&b, &mut loc, "loc", T1 + 11, o);
-    round(&a, &mut loc, "loc", T1 + 12, o);
-    assert_eq!(
-        b.trust_state(&a.device()),
-        None,
-        "a fresh library trusts the first device it meets"
-    );
-    assert_eq!(
-        a.trust_state(&b.device()),
-        Some(TRUST_PENDING),
-        "a library with data holds a device it has never seen"
-    );
-    // 「首次出现」取 b 写 head 的时刻（T1 + 11），不是 a 读到它的时刻（T1 + 12）。
-    let bd = Id::parse(&b.device()).unwrap();
-    assert_eq!(
-        a.direct(|t, col| t.trust_entry(col, &bd)),
-        Some((TRUST_PENDING, T1 + 11))
-    );
-    let (v, _) = cmd(
-        a.h,
-        "trust",
-        T1 + 13,
-        json!({"device": b.device(), "trust": true}),
-        &[],
-    );
-    assert_eq!(v["trusted"], json!(true), "{v}");
-    assert_eq!(a.trust_state(&b.device()), None);
-    // 已在册的对端：再同步不回待确认。
-    b.write(T1 + 14, N2, "猫");
-    sync_all(&[&a, &b], &mut loc, T1 + 20, o);
-    assert_eq!(a.trust_state(&b.device()), None);
-    assert_eq!(a.field(N2), Some(json!("猫")));
-    // 全新的第三台设备见到已有数据的 a：a 仍按「第一次见到」记待确认。
-    let c = Dev::new("g87fsc");
-    round(&c, &mut loc, "loc", T1 + 30, o);
-    round(&a, &mut loc, "loc", T1 + 31, o);
-    assert_eq!(a.trust_state(&c.device()), Some(TRUST_PENDING));
-}
-
-/// 身份承接（G10-4 复核）：同一把签名钥匙换了设备 ID（`rotate`；迁移同理）不当作第一次见到，新 ID 沿用前身（head 的
-/// `prev`）的信任：前身待确认 → 待确认，前身被拒 → 被拒，前身受信 → 受信（同钥匙的旧身份里有不受信的也一样：认自报
-/// 的前身）。只自报 `prev` 指向受信设备、钥匙不同的陌生设备仍待确认（`since` 取 head 的写出时刻）。
-#[test]
-fn a_new_identity_on_the_same_key_inherits_trust() {
-    let mut a = Dev::new("g104ia");
-    let mut b = Dev::new("g104ib");
-    a.write(T1 + 1, N1, "鯨");
-    b.write(T1 + 2, N2, "猫");
-    let mut loc = Loc::new();
-    let o = Opts::default();
-    sync_all(&[&a, &b], &mut loc, T1 + 10, o);
-    let a1 = a.device();
-    assert_eq!(b.trust_state(&a1), Some(TRUST_PENDING));
-    let rotate = |a: &Dev, now: i64| -> String {
-        let (v, _) = cmd(a.h, "rotate", now, json!({}), &[]);
-        v["device"].as_str().unwrap().to_owned()
-    };
-    let a2 = rotate(&a, T1 + 11);
-    sync_all(&[&a, &b], &mut loc, T1 + 12, o);
-    assert_eq!(b.trust_state(&a2), Some(TRUST_PENDING));
-
-    cmd(
-        b.h,
-        "trust",
-        T1 + 13,
-        json!({"device": a2, "trust": false}),
-        &[],
-    );
-    let a3 = rotate(&a, T1 + 14);
-    sync_all(&[&a, &b], &mut loc, T1 + 15, o);
-    assert_eq!(
-        b.trust_state(&a3),
-        Some(TRUST_REJECTED),
-        "the successor of a rejected identity stays rejected"
-    );
-
-    cmd(
-        b.h,
-        "trust",
-        T1 + 16,
-        json!({"device": a3, "trust": true}),
-        &[],
-    );
-    let a4 = rotate(&a, T1 + 17);
-    a.write(T1 + 18, N3, "犬");
-    sync_all(&[&a, &b], &mut loc, T1 + 19, o);
-    assert_eq!(
-        b.trust_state(&a4),
-        None,
-        "the successor of a trusted identity is trusted"
-    );
-    assert_eq!(b.field(N3), Some(json!("犬")));
-
-    // 陌生钥匙自报前身是受信的 a4：不承接。直接在真相层模拟 plan 收到这样一份 head。
-    let stranger = Id([0x5e; 16]);
-    let public = DeviceKey::from_seed(&[0x5e; 32]).public();
-    let prev = Id::parse(&a4).unwrap();
-    let got = b.direct(|t, col| {
-        t.set_peer(
-            col,
-            &Peer {
-                device: stranger,
-                public,
-                name: None,
-                ext: None,
-                head_gen: None,
-                first_seen: Some(T1 + 20),
-            },
-        )?;
-        super::sync::note_new_peer(t, col, &stranger, &public, Some(&prev), T1 + 7)?;
-        t.trust_entry(col, &stranger)
-    });
-    assert_eq!(got, Some((TRUST_PENDING, T1 + 7)));
-}
-
-/// 身份承接（G10-4 复核）：两台互信、库里都有数据的协议 3 设备各自迁移（新设备 ID、钥匙沿用、`prev` 指向旧 ID），
-/// 之后在新根上互相同步：彼此仍然可信，不因为新 ID 是第一次见到就记成待确认；各自的写入互相收到。
-#[test]
-fn two_migrated_devices_keep_trusting_each_other() {
-    let (d, e, _bucket) = library_pair();
-    // library_pair 的存量笔记 N1..N4 字段走笔记类型的键，新写的值落在两条新笔记上比。
-    const NA: &str = "0193a1b2-0000-7000-8000-0000000010a1";
-    const NB: &str = "0193a1b2-0000-7000-8000-0000000010a2";
-    let d_old = p3(&d, "identity", T1, json!({}), None).0["device"].clone();
-    let e_old = p3(&e, "identity", T1, json!({}), None).0["device"].clone();
-    p3(
-        &d,
-        "trust",
-        T1,
-        json!({"device": e_old, "trust": true}),
-        None,
-    );
-    p3(
-        &e,
-        "trust",
-        T1,
-        json!({"device": d_old, "trust": true}),
-        None,
-    );
-    let adopt = |dir: tempdir::Dir| -> Dev {
-        let h = open(&dir.0, 0).unwrap_or_else(|(rc, e)| panic!("{rc} {e}"));
-        Dev { dir, h }
-    };
-    let mut a = adopt(migrate_legacy(&d, "g104ma"));
-    let mut b = adopt(migrate_legacy(&e, "g104mb"));
-    assert_ne!(json!(a.device()), d_old);
-    assert_ne!(json!(b.device()), e_old);
-    a.write(T1 + 1, NA, "鯨");
-    b.write(T1 + 2, NB, "鳥");
-    let mut loc = Loc::new();
-    sync_all(&[&a, &b], &mut loc, T1 + 10, Opts::default());
-    let (an, bn) = (a.device(), b.device());
-    assert_eq!(
-        a.trust_state(&bn),
-        None,
-        "a keeps trusting b's new identity"
-    );
-    assert_eq!(
-        b.trust_state(&an),
-        None,
-        "b keeps trusting a's new identity"
-    );
-    assert_eq!(a.field(NB), Some(json!("鳥")));
-    assert_eq!(b.field(NA), Some(json!("鯨")));
-}
 
 /// 两台全新设备经同一个文件夹位置互相同步：各写各的 → 两轮之后都看得到对方写的；派生层逐行相同、增量 == 重建。第二轮
 /// 什么都没变时（带 `skipUnchangedMs`）不重写 head；位置上只留每台设备最新两代 head。

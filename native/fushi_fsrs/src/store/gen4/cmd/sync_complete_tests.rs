@@ -17,7 +17,6 @@ use super::sync_tests::{Dev, Loc, Opts, cmd, listing, names_of, round, status_ro
 use super::tests::{N1, N2};
 use crate::gen4::op::tests::id;
 use crate::store::gen4::files::GEN4_FILE;
-use crate::store::gen4::truth::TRUST_PENDING;
 use crate::store::sync2::collection_of;
 use crate::store::sync2::tests::{P, tempdir};
 use crate::sync2::id::Id;
@@ -263,19 +262,23 @@ fn binding_unbound_names_never_overrides_a_binding() {
 
 // ---------------------------------------------------------------------- 旧根接手
 
-const OLD: u8 = 0xd7;
+pub(super) const OLD: u8 = 0xd7;
 
-fn old_key() -> DeviceKey {
+pub(super) fn old_key() -> DeviceKey {
     DeviceKey::from_seed(&[OLD; 32])
 }
 
 /// 协议 3 旧根：设备 OLD 的 [n] 条操作按 [cuts] 切段写在 `v3/devices/<OLD>/`，带它的 head 与旧根 meta。
 fn old_root(loc: &mut Loc, n: u64, cuts: &[(u64, u64)]) {
-    old_root_ops(loc, crate::sync2::segment::tests::ops_for(id(OLD), n), cuts);
+    old_root_with(
+        loc,
+        &crate::sync2::segment::tests::ops_for(id(OLD), n),
+        cuts,
+    );
 }
 
-/// [old_root]，操作由调用方给（作者必须是 OLD、seq 从 1 连续）。
-fn old_root_ops(loc: &mut Loc, ops: Vec<crate::sync2::op::Op>, cuts: &[(u64, u64)]) {
+/// [old_root]，操作由调用方给（设备 OLD 的 seq 1..=n，`ops[i].id.seq == i + 1`）。
+pub(super) fn old_root_with(loc: &mut Loc, ops: &[crate::sync2::op::Op], cuts: &[(u64, u64)]) {
     let dev = id(OLD);
     let n = ops.len() as u64;
     let mut chain = CHAIN_ZERO;
@@ -346,7 +349,7 @@ fn old_listing(loc: &Loc) -> Vec<Value> {
 }
 
 /// 捡旧根（Dart：扫 → 读 head 与段 → 带 `settle` 一批收完）。回 (扫的回包, 收的回包)。
-fn take_old_root(d: &Dev, loc: &Loc, now: i64) -> (Value, Option<Value>) {
+pub(super) fn take_old_root(d: &Dev, loc: &Loc, now: i64) -> (Value, Option<Value>) {
     let listing = old_listing(loc);
     let (scan, _) = cmd(
         d.h,
@@ -383,7 +386,7 @@ fn take_old_root(d: &Dev, loc: &Loc, now: i64) -> (Value, Option<Value>) {
 }
 
 /// 承袭上传（Dart：`heritage_plan` → 读 → `heritage_outbox` → 写 → `heritage_ack`）。回写上的文件数。
-fn upload_heritage(d: &Dev, loc: &mut Loc, now: i64) -> usize {
+pub(super) fn upload_heritage(d: &Dev, loc: &mut Loc, now: i64) -> usize {
     let (plan, _) = cmd(
         d.h,
         "heritage_plan",
@@ -433,55 +436,6 @@ fn takeover_round(d: &Dev, loc: &mut Loc, now: i64) -> (Option<Value>, usize) {
     (ing, up)
 }
 
-/// 首次信任（G10-4 复核）：捡旧根时第一次见到的协议 3 设备同样过首次信任。本机库有数据时陌生的 OLD 记成待确认，它的
-/// 清除被扣住（`heldPurges`），本机确认之后放行；库里没数据的全新设备捡同一个旧根，OLD 直接可信。
-#[test]
-fn an_unknown_old_root_device_is_pending_on_a_library_with_data() {
-    use crate::sync2::id::Key;
-    use crate::sync2::op::{Body, EntKind, KIND_PURGE};
-    let mut ops = crate::sync2::segment::tests::ops_for(id(OLD), 4);
-    ops[3].kind = KIND_PURGE;
-    ops[3].payload = Body::Purge {
-        kind: EntKind::Note,
-        entity: Key::of("n"),
-    }
-    .encode()
-    .into();
-    let mut loc = Loc::new();
-    old_root_ops(&mut loc, ops, &[(1, 4)]);
-    let mut fresh_loc = loc.clone();
-    let old = id(OLD).text();
-
-    let mut a = Dev::new("g104ora");
-    a.write(T1 + 1, N1, "鯨");
-    let (ing, _) = takeover_round(&a, &mut loc, T1 + 10);
-    let ing = ing.expect("a scans the old root");
-    assert_eq!(ing["errors"], json!([]), "{ing}");
-    assert_eq!(a.trust_state(&old), Some(TRUST_PENDING));
-    let row = status_row(&a, &old);
-    assert_eq!(row["trust"], json!("pending"), "{row}");
-    assert_eq!(row["heldPurges"], json!(1), "{row}");
-    let (v, _) = cmd(
-        a.h,
-        "trust",
-        T1 + 11,
-        json!({"device": old, "trust": true}),
-        &[],
-    );
-    assert_eq!(v["trusted"], json!(true), "{v}");
-    assert_eq!(a.trust_state(&old), None);
-
-    let mut c = Dev::new("g104orc");
-    round(&c, &mut fresh_loc, "loc", T1 + 20, Opts::default());
-    let (_, ing) = take_old_root(&c, &fresh_loc, T1 + 20);
-    assert_eq!(ing.expect("c scans")["errors"], json!([]));
-    assert_eq!(
-        c.trust_state(&old),
-        None,
-        "a library without data trusts the old device it meets first"
-    );
-}
-
 /// 旧根接手（硬条件）：协议 3 位置上有旧设备 OLD 的历史；两台各自升级的设备 A、B 各自捡旧根、各自承袭上传（B 看见 A
 /// 已传的承袭段就不重传）；从没跑过协议 3 的新设备 C 只连新根，从承袭段拿到 OLD 的全部历史。三台的派生层相同。旧根
 /// 指纹记下之后，清单没变的下一轮不再读；承袭指纹没变的下一轮不再对账。
@@ -500,6 +454,17 @@ fn old_root_takeover_reaches_migrated_and_new_devices_alike() {
     assert_eq!(ing["recorded"], json!(true), "{ing}");
     assert_eq!(ing["errors"], json!([]), "{ing}");
     assert_eq!(ing["landed"], json!(12), "{ing}");
+    // a 库非空，第一次见到的 OLD 是待确认；承袭段只替本机信任的作者传（`inherit.rs`，G10-4），所以确认之后才传。
+    assert_eq!(status_row(&a, &id(OLD).text())["trust"], json!("pending"));
+    assert_eq!(up, 0, "a does not vouch for OLD before confirming it");
+    cmd(
+        a.h,
+        "trust",
+        T1 + 11,
+        json!({"device": id(OLD).text(), "trust": true}),
+        &[],
+    );
+    let up = upload_heritage(&a, &mut loc, T1 + 11);
     assert!(up > 0, "a uploads the heritage it took");
     // 旧根清单没变：不再读；承袭：不再对账。
     let (scan, again) = take_old_root(&a, &loc, T1 + 12);
@@ -507,9 +472,9 @@ fn old_root_takeover_reaches_migrated_and_new_devices_alike() {
     assert!(again.is_none());
     assert_eq!(upload_heritage(&a, &mut loc, T1 + 12), 0);
 
-    // b 库里已有数据，第一次见到 a 时把它记成待确认（首次信任）；a 传的承袭段按上传者的信任收（D20），所以 b 先确认 a。
+    // b 库非空，第一次见到的 a 是待确认（`truth/trust.rs`），a 代传的承袭段要等 b 确认 a 之后才收（D20）。
     round(&b, &mut loc, "loc", T1 + 19, Opts::default());
-    assert_eq!(b.trust_state(&a.device()), Some(TRUST_PENDING));
+    assert_eq!(status_row(&b, &a.device())["trust"], json!("pending"));
     cmd(
         b.h,
         "trust",
@@ -517,8 +482,6 @@ fn old_root_takeover_reaches_migrated_and_new_devices_alike() {
         json!({"device": a.device(), "trust": true}),
         &[],
     );
-    assert_eq!(b.trust_state(&a.device()), None);
-
     let (ing, up) = takeover_round(&b, &mut loc, T1 + 20);
     assert_eq!(ing.expect("b scans")["recorded"], json!(true));
     assert_eq!(up, 0, "b sees a's heritage segments and uploads nothing");
@@ -546,8 +509,16 @@ fn heritage_segments_count_toward_the_ingest_budget() {
     let mut loc = Loc::new();
     old_root(&mut loc, 12, &[(1, 5), (6, 12)]);
     a.write(T1 + 1, N1, "鯨");
-    let (_, up) = takeover_round(&a, &mut loc, T1 + 10);
-    assert!(up > 0);
+    takeover_round(&a, &mut loc, T1 + 10);
+    // a 库非空，OLD 待确认：确认之后才替它承袭上传（`inherit.rs`，G10-4）。
+    cmd(
+        a.h,
+        "trust",
+        T1 + 11,
+        json!({"device": id(OLD).text(), "trust": true}),
+        &[],
+    );
+    assert!(upload_heritage(&a, &mut loc, T1 + 11) > 0);
     // c 只认位置、读 head（认得 a 的公钥），不收。
     let locs: Vec<String> = loc
         .keys()
@@ -610,7 +581,7 @@ fn heritage_segments_count_toward_the_ingest_budget() {
     assert_eq!(d_old_len(&c), 12);
 }
 
-fn d_old_len(d: &Dev) -> u64 {
+pub(super) fn d_old_len(d: &Dev) -> u64 {
     let st = g4(d.h, "status", T1, json!({}));
     st["devices"]
         .as_array()

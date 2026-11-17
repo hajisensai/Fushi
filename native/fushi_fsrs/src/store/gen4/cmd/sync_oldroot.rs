@@ -36,11 +36,11 @@ use super::Files;
 use super::sync::{bump_revision, collections_of, meta_get, meta_set, settled_json};
 use crate::gen4::location::{V4File, parse_v4_path};
 use crate::store::gen4::ingest::Settle;
-use crate::store::gen4::inherit::{Seen, Uploader};
+use crate::store::gen4::inherit::{Seen, Uploader, vouches_for};
 use crate::store::gen4::receive::{Received, Receiver, Taken};
 use crate::store::gen4::schema::{k_range, sql};
 use crate::store::gen4::sync_state::OldRootEntry;
-use crate::store::gen4::truth::{DEV_HERITAGE, Peer, PeerPut, Truth};
+use crate::store::gen4::truth::{Peer, PeerPut, Truth};
 use crate::store::sync2::collection_of;
 use crate::sync2::id::Id;
 use crate::sync2::keys::CollectionKey;
@@ -182,6 +182,7 @@ pub fn oldroot_ingest(
     // 旧根是这个位置目录的协议 3 集合（`Receiver::legacy` 收段同一个判据）。
     let source = collection_of(&dir);
     let mut errors: Vec<String> = Vec::new();
+    let mut trust_moved = false;
     for b in &blobs[..nheads] {
         let h = match Head3::decode(b) {
             Ok(h) => h,
@@ -207,10 +208,12 @@ pub fn oldroot_ingest(
                 "v3 head of {}: signed by another key than the one on record (impostor)",
                 h.device
             )),
-            // 位置谁都能写：第一次见到的协议 3 设备同样过首次信任（陌生设备在有数据的库里待确认，同钥匙的承接前身），
-            // 不因为是旧根就免判——这里是本机直接读它的段，不是新代设备上传的承袭段（D20 管不到）。
+            // 第一次见到这个旧作者：首见信任判定（`truth/trust.rs`；协议 3 head 没有 `prev`）。库非空 = 待确认，这一批
+            // 随后落进来的它的删除与清除扣住。
             PeerPut::Inserted => {
-                super::sync::note_new_peer(t, col, &h.device, &h.public, None, h.at_ms)?
+                trust_moved |= t
+                    .note_new_peer(col, &h.device, &h.public, None, h.at_ms)?
+                    .wrote();
             }
             PeerPut::Updated | PeerPut::Same => {}
         }
@@ -222,6 +225,12 @@ pub fn oldroot_ingest(
         None
     };
     let mut rx = Receiver::open(t, col, Settle::Incremental)?;
+    if trust_moved {
+        // 写了信任行：收尾时把扣住的删除与清除重判（写下待确认的作者在本机还没有日志，`truth/trust.rs` 文件头第 1 条，
+        // 这里是兜底，保证增量 == 重建）。在这个不变量下它不改变结果，所以没有测试能证伪它（复核变异：删掉这一行
+        // 相关测试全绿）；留着是为了不变量哪天被打破时派生层不悄悄偏离重建。
+        rx.trust_changed();
+    }
     for (path, b) in paths.iter().zip(&blobs[nheads..]) {
         match rx.legacy(b, &dir, key)? {
             Taken::Landed { .. } => {}
@@ -258,13 +267,16 @@ pub(crate) fn hrt_key(col: i64, progress: &str) -> String {
     format!("gen4_hrt/{col}/{progress}")
 }
 
-/// 本机的承袭日志：(下标, 设备)。
+/// 本机这一轮要对账的承袭日志：(下标, 设备, 末尾)。只含本机能替作者上传的（`inherit.rs` [vouches_for]：作者在本机
+/// 可信）——作者的信任一变，指纹跟着变，确认之后的下一轮照常补传。
 fn heritage_logs(t: &Truth<'_>, col: i64) -> Result<Vec<(i64, Id, u64)>, String> {
-    Ok(t.devices(col)?
-        .into_iter()
-        .filter(|d| d.kind == Some(DEV_HERITAGE) && d.last > 0)
-        .map(|d| (d.dev, d.id, d.last))
-        .collect())
+    let mut out = Vec::new();
+    for d in t.devices(col)? {
+        if vouches_for(t, col, &d)? {
+            out.push((d.dev, d.id, d.last));
+        }
+    }
+    Ok(out)
 }
 
 /// 位置上的承袭段（`listing: {设备: [文件名…]}` 里 `hrt-` 开头、名字认得的），路径相对 `v4/`，连同它的旧设备。
