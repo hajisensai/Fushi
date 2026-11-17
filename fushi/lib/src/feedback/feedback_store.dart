@@ -334,6 +334,45 @@ class FeedbackPendingStore {
     }
   }
 
+  /// 把 [from]（另一处数据根的待传区）里的一个槽位**整项**并进本待传区：本体连同 `.type` /
+  /// `.name` 旁注一起复制（[from] 那份不动，由调用方整目录删）。[from] 里没有这个槽位返回
+  /// false。
+  ///
+  /// 顺序同 [copyFile]：本体先复制成 `<槽位>.part`，旁注写完再 rename 成正式名，[scan] 看到
+  /// 本体时旁注一定已齐；中途失败 / 崩溃留下的半成品由 [_deleteInterrupted] /
+  /// [discardInterrupted] 清。[from] 没有的旁注在这边也删掉，不让旧旁注张冠李戴。
+  Future<bool> adoptSlot(
+    FeedbackPendingStore from,
+    String id,
+    String slot,
+  ) async {
+    final File source = from._file(id, slot);
+    if (!source.existsSync()) return false;
+    final File f = _file(id, slot);
+    await f.parent.create(recursive: true);
+    if (f.existsSync()) await f.delete();
+    final File part = _partFile(id, slot);
+    try {
+      await source.copy(part.path);
+      await _adoptSidecar(from._typeFile(id, slot), _typeFile(id, slot));
+      await _adoptSidecar(from._nameFile(id, slot), _nameFile(id, slot));
+      await part.rename(f.path);
+      return true;
+    } on Object {
+      await _deleteInterrupted(id, slot);
+      rethrow;
+    }
+  }
+
+  /// [adoptSlot] 的一条旁注：源有就复制过来，源没有就删掉目标上残留的。
+  static Future<void> _adoptSidecar(File source, File target) async {
+    if (source.existsSync()) {
+      await source.copy(target.path);
+    } else if (target.existsSync()) {
+      await target.delete();
+    }
+  }
+
   /// 删掉一次没走完的 [copyFile] 留下的 `<槽位>.part`，以及本体不在时孤立的旁注。
   Future<void> _deleteInterrupted(String id, String slot) async {
     final File part = _partFile(id, slot);
