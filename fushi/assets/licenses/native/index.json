@@ -20,7 +20,7 @@
     "native/fushi_rwkv/Cargo.lock": "ce1a9dad3dbd707abb5adaeb9ca69dbc0cc6825cc4af7e881ca95f973fd2eccf",
     "native/fushi_rwkv/Cargo.toml": "2f4eb7dc01e229ed72a89b78c754135a524da33726e04e6ef6d1767df5d1f46d",
     "native/fushi_shell_thumbs/Cargo.lock": "8ad693ab716b9423318e8770e1cf757eb734e67b52f8f81681d77520142df231",
-    "native/fushi_shell_thumbs/Cargo.toml": "bc9c57624bad33923c307e9f8f77c637bea60109c1ef258711f0fee6f6b042f6",
+    "native/fushi_shell_thumbs/Cargo.toml": "5eacbca565465ebc55c4e186f52f0d23a44ccb6350f3cbe196c307df25189315",
     "native/fushi_web_core/Cargo.lock": "e30d43026fc6eb9659c25154abe52a012c4123a61a03263c1ba43c66d0d46064",
     "native/fushi_web_core/Cargo.toml": "11bf7cda189fe407215e05eb37e4b45fc0170af900ee58cfd5d433680c980447",
     "native/fushidicts/fushidicts_external/glaze/LICENSE": "5d49e66411a0807a7c8d6b911b9a26b59e940c71aebe561a3ad8b0b80ac4b7b6",
@@ -35,7 +35,9 @@
     "native/galgame_hook/third_party/locale_emulator/LICENSE-LGPL.txt": "ea8af5e789cb2d4e9b10bce3874982ade163b749b6bfbdb32e2df21c4d106de1",
     "native/galgame_hook/third_party/lunahook/LICENSE": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
     "native/galgame_hook/third_party/minhook/LICENSE.txt": "2bfff5fa29fc5d1cb2745acfaad9d930e983f5c8dd97e0ec5735d9199cf8f416",
-    "native/third_party_licenses/manifest.json": "0078d3eb0ccf754c74c5113b9b51fa28a2f8a888039f2ac72095b63204379c7c",
+    "native/third_party_licenses/manifest.json": "7b1c90839a3666e5d9def3ee0869aeeb4525147538abffec58a0348a1a47e061",
+    "native/third_party_licenses/texts/7zip-26.02/DOC-copying.txt": "dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551",
+    "native/third_party_licenses/texts/7zip-26.02/License.txt": "32369594a3a9f7c643d124035120eaa6a7707e75e57c4386ef509f801447bc49",
     "native/third_party_licenses/texts/boost-1.91.0-LICENSE_1_0.txt": "c9bff75738922193e67fa726fa225535870d2aa1059f91452c411736284ad566",
     "native/third_party_licenses/texts/cdda/libcdio-2.3.0-COPYING": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903",
     "native/third_party_licenses/texts/cdda/libcdio-paranoia-10.2+2.0.2-COPYING": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903",
@@ -3709,6 +3711,12 @@
       ]
     },
     {
+      "file": "d3fe0a2e919e87da.txt",
+      "packages": [
+        "7-Zip (7z.exe + 7z.dll)"
+      ]
+    },
+    {
       "file": "d4c1ce21c702ac8f.txt",
       "packages": [
         "assert_matches"
@@ -3748,6 +3756,7 @@
     {
       "file": "d86d6c3463d2f475.txt",
       "packages": [
+        "7-Zip (7z.exe + 7z.dll)",
         "GNU libiconv",
         "libudfread"
       ]
@@ -4275,6 +4284,24 @@
     }
   ],
   "components": [
+    {
+      "name": "7-Zip (7z.exe + 7z.dll)",
+      "version": "26.02",
+      "license": "LGPL-2.1-or-later AND LicenseRef-unRAR-restriction AND BSD-3-Clause AND BSD-2-Clause",
+      "origin": [
+        "tools/bundle_7za.ps1 (release-desktop.yml, not a pub package)"
+      ],
+      "textSource": "manifest",
+      "texts": [
+        "d3fe0a2e919e87da.txt",
+        "d86d6c3463d2f475.txt"
+      ],
+      "platforms": [
+        "windows"
+      ],
+      "source": "tools/bundle_7za.ps1 $Version='26.02', https://github.com/ip7z/7zip/releases/download/26.02/7z2602-x64.exe (sha256 6745fa76dc2ea031596d8678f6f6b99c3c1b435b4164a63485adbbc7b8d82ef0, pinned in the script); License.txt is the file inside that installer (the same file the script copies to {app}\\7za\\License.txt); DOC-copying.txt is raw.githubusercontent.com/ip7z/7zip/26.02/DOC/copying.txt (the GNU LGPL 2.1 text that License.txt refers to)",
+      "note": "Bundled into {app}\\7za\\ on Windows only. Used by the discovery / manga import offline extractor (7z.exe) and loaded by fushi_shell_thumbs_host.exe (7z.dll, native/fushi_shell_thumbs/src/win/sevenzip.rs) for rar / 7z cover thumbnails. 7z.dll contains RAR decompression code derived from unRAR (see the unRAR license restriction in License.txt)."
+    },
     {
       "name": "Abseil (in WebRTC)",
       "version": "webrtc m150 third_party@7c927329",
