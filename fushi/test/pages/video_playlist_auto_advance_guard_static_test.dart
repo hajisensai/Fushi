@@ -182,7 +182,7 @@ void main() {
       // 以调用行本身作尾界标。
       '    _ensureWatchTracker(controller, title);',
     );
-    // BUG-4791：调用多了取消信号参数，按调用形状（不看换行）找。
+    // BUG-4798：调用多了取消信号参数，按调用形状（不看换行）找。
     final int currentAt =
         RegExp(
           r'unawaited\(\s*prewarmEmbeddedSubtitleCache\(\s*videoPath,',

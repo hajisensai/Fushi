@@ -160,7 +160,7 @@ String referenceTrackLabel(EmbeddedSubtitleTrack track) {
 ///
 /// 抽取**整体只做一次**（[extractEmbeddedSubtitleTrackFiles]：单趟 demux 全部文本轨进
 /// 缓存），再逐条读缓存。不逐轨触发抽取：抽取失败时那样做会让每条候选轨各读一遍整个
-/// 容器（BUG-4791）。
+/// 容器（BUG-4798）。
 Future<List<SubtitleReferenceTrack>> loadEmbeddedReferenceTracks(
   String videoPath,
 ) async {

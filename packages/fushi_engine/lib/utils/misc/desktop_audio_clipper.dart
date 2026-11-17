@@ -1884,7 +1884,7 @@ Future<String?> extractEmbeddedSubtitleViaFfmpeg({
 /// no longer re-reads the file each time (BUG-104).
 ///
 /// 末尾再挂一个不落盘的 `-f null` 伴随输出（`-c copy`）：抽取按进度判活
-/// （[FfmpegWatchedRunner]，BUG-4791），只映射稀疏的字幕流时 `-progress` 的已处理时间
+/// （[FfmpegWatchedRunner]，BUG-4798），只映射稀疏的字幕流时 `-progress` 的已处理时间
 /// 只在字幕包处跳一下，长段无对白就几分钟不动，会被误判卡死；拷贝视频包让进度跟着
 /// 文件读取位置连续推进。与图形字幕抽轨（`buildGraphicSubtitleExtractArgs`）同一做法，
 /// 额外开销只是内存里搬一次包。映射 = 第一条视频（可选，`?`：纯字幕容器 `.mks` 没有
@@ -1916,7 +1916,7 @@ List<String> buildFfmpegMultiSubtitleArgs({
 }
 
 /// 文本内封字幕整轨抽取的卡死判据：ffmpeg 报告的已处理媒体时间连续这么久不推进
-/// 才算卡死（BUG-4791，沿用 BUG-3102 的观察式运行）。
+/// 才算卡死（BUG-4798，沿用 BUG-3102 的观察式运行）。
 ///
 /// 不是总时长：抽取要把整个容器顺序读一遍，耗时 = 文件大小 ÷ 读盘吞吐；慢盘 / NAS /
 /// 与 libmpv 播放抢 IO 时合法地跑几分钟，只要一直在推进就不该被杀。旧实现的
@@ -2034,7 +2034,7 @@ Future<FfmpegRunResult> _runSubtitleExtractPass(
 /// each still-missing track is re-demuxed on its own so one poison track only
 /// loses itself instead of poisoning every good track in the container.
 ///
-/// 判活按进度而不是总时长（BUG-4791）：后端支持观察式运行（[FfmpegWatchedRunner]）时，
+/// 判活按进度而不是总时长（BUG-4798）：后端支持观察式运行（[FfmpegWatchedRunner]）时，
 /// 已处理媒体时间连续 [stallTimeout] 不推进才判卡死；[cancel] 完成即强杀。卡死 / 取消时
 /// 删掉全部输出（含半截文件），不做逐轨回退（每条回退都要再读一遍整个容器，会把一次
 /// 卡死放大成 N 次），也不写负缓存。[backend] 缺省为 [resolveFfmpegBackend]；不支持

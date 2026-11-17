@@ -63,7 +63,7 @@ void main() {
       src,
       'Future<bool> _selectSubtitleSource(',
     );
-    // BUG-4791：调用多了取消信号参数（dart format 折成多行），按调用形状找。
+    // BUG-4798：调用多了取消信号参数（dart format 折成多行），按调用形状找。
     final int loadAt =
         RegExp(
           r'loadSubtitleCueResult\(\s*source,\s*videoPath',
@@ -105,7 +105,7 @@ void main() {
       'final (String uid, int episodeIndex) = _watchStatsIdentity;',
       start,
     );
-    // BUG-4791：调用多了取消信号参数，按调用形状（不看换行）找。
+    // BUG-4798：调用多了取消信号参数，按调用形状（不看换行）找。
     final int prewarmAt = RegExp(
       r'unawaited\(\s*prewarmEmbeddedSubtitleCache\(\s*videoPath,',
     ).allMatches(src).firstWhere((Match m) => m.start > start).start;

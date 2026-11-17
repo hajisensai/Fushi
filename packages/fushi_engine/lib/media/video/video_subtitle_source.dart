@@ -508,7 +508,7 @@ class DefaultEmbeddedSubtitleLoadResult {
   final SubtitleSource? source;
 
   /// [DefaultEmbeddedSubtitleLoadStatus.emptyCues] 时选中轨加载失败的真实原因
-  /// （抽取卡住 / 抽取失败 / 读不出 / 解析不出…），日志与提示按它分流（BUG-4791）。
+  /// （抽取卡住 / 抽取失败 / 读不出 / 解析不出…），日志与提示按它分流（BUG-4798）。
   final SubtitleCueLoadFailure? cueFailure;
 
   bool get shouldNotifyFailure {
@@ -538,7 +538,7 @@ class DefaultEmbeddedSubtitleLoadResult {
 /// track / no text track / missing file / already loaded) never benefit from a
 /// retry. Mirrors TODO-521's "re-read once the readiness signal arrives".
 ///
-/// BUG-4791：`emptyCues`（枚举已成功、选中轨也已经过一次整轨抽取 / 解析）**不是**
+/// BUG-4798：`emptyCues`（枚举已成功、选中轨也已经过一次整轨抽取 / 解析）**不是**
 /// 瞬态：抽取按进度判活，慢盘上的抽取会一直跑到读完，失败只剩真失败（ffmpeg 卡住 /
 /// 坏轨 / 解析不出），再起一次只是把整个容器再读一遍、把一次失败放大成两次。
 bool isTransientDefaultEmbeddedSubtitleLoad(
@@ -1119,7 +1119,7 @@ enum SubtitleCueLoadFailure {
 
   /// 抽内嵌轨时读视频文件卡住：ffmpeg 的读取进度在卡死判据内没有推进（磁盘忙 /
   /// 网络盘断开 / 设备休眠）。与 [extractionFailed] 分开：轨本身没问题，问题在读盘。
-  /// BUG-4791。
+  /// BUG-4798。
   extractionStalled,
 
   /// 抽取被调用方取消（离开播放页 / 换集）。结果本就作废，UI 侧按世代丢弃。
@@ -1441,7 +1441,7 @@ Future<File?> extractEmbeddedSubtitleTrackFile({
 ///
 /// 任一条缺缓存时**整体只抽一次**（单趟读完整个容器、写出全部文本轨），然后只读缓存：
 /// 不像逐条 [extractEmbeddedSubtitleTrackFile] 那样在抽取失败时对每条轨各读一遍整个
-/// 容器（30 条轨 = 30 次全量读盘，BUG-4791）。
+/// 容器（30 条轨 = 30 次全量读盘，BUG-4798）。
 Future<Map<int, File>> extractEmbeddedSubtitleTrackFiles({
   required String videoPath,
   required List<EmbeddedSubtitleTrack> tracks,
@@ -1480,7 +1480,7 @@ Future<Map<int, File>> extractEmbeddedSubtitleTrackFiles({
   return out;
 }
 
-/// 一次在途的整轨抽取，以及等它的调用方（BUG-4791）。
+/// 一次在途的整轨抽取，以及等它的调用方（BUG-4798）。
 ///
 /// 抽取是按视频共享的（同一缓存目录只跑一个 ffmpeg），等待方各有各的生命周期：播放页
 /// 预热、自动加载、菜单切换带取消信号；互联 host 端点、ASR 取证等不带。只有当可取消的
@@ -1619,7 +1619,7 @@ Future<EmbeddedSubtitleExtractFailure?> _extractAllEmbeddedSubtitles(
     } on FileSystemException {
       return EmbeddedSubtitleExtractFailure.failed;
     }
-    // 按进度判活、可取消（BUG-4791）：不再给「60 s + 8 s/GB」的总预算——那个预算隐含
+    // 按进度判活、可取消（BUG-4798）：不再给「60 s + 8 s/GB」的总预算——那个预算隐含
     // ≥125 MB/s 的读盘吞吐，慢盘上会把一直在推进的抽取杀掉。
     final EmbeddedSubtitleExtractResult result =
         await extractEmbeddedSubtitlesViaFfmpeg(
@@ -1703,7 +1703,7 @@ Directory embeddedSubtitleCacheDirForStat(String videoPath, FileStat? stat) {
 /// Base 60s + 8s/GB, clamped to [60s, 1200s] (BUG-104).
 ///
 /// 现在只给**枚举**（`ffmpeg -i` 读流头，[probeEmbeddedSubtitleTracks]）与音频能量
-/// 探测用。整轨抽取已不吃它（BUG-4791）：抽取要把整个容器读完，耗时 = 体积 ÷ 读盘
+/// 探测用。整轨抽取已不吃它（BUG-4798）：抽取要把整个容器读完，耗时 = 体积 ÷ 读盘
 /// 吞吐，这条预算隐含 ≥125 MB/s，慢盘上会杀掉一直在推进的抽取；抽取改为按进度判活
 /// （[kEmbeddedSubtitleExtractStallTimeout]）。
 @visibleForTesting

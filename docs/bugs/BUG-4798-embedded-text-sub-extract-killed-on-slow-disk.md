@@ -1,4 +1,4 @@
-## BUG-4791 · 视频文本内封字幕抽取按总时长强杀：慢盘上一直在读的 ffmpeg 被杀、再整轨重读一次，最后提示「图形或不支持的轨」
+## BUG-4798 · 视频文本内封字幕抽取按总时长强杀：慢盘上一直在读的 ffmpeg 被杀、再整轨重读一次，最后提示「图形或不支持的轨」
 - **报告**：2026-11-17（应用内反馈 ZTDA2WQJj4，Windows 3.3.0-debug.27498：「视频内封的字幕切换很卡」「切换为内封日语字幕加载不出来」；约 0.9 GiB 本地 mkv、约 30 条 subrip 轨，开播 67 s 后 `extractEmbeddedSubtitlesViaFfmpeg ... ffmpeg timed out`，再过 67 s 第二次超时，随后 `[video-embedded-sub] parsed 0 cues from embedded track`；同样大小的另一集 33 s 抽出 262 条 cue）
 - **真实性**：✅ 真 bug（沿代码路径确认 + 本机 ffmpeg 实测；行号为修前 `4c347287835`）。根因：
   - `packages/fushi_engine/lib/media/video/video_subtitle_source.dart:1423-1428` `_extractAllEmbeddedSubtitles` 一次抽全部文本轨（`desktop_audio_clipper.dart:1884` `buildFfmpegMultiSubtitleArgs`），给的是 `subtitleExtractTimeoutForBytes`（`video_subtitle_source.dart:1501`，60 s + 8 s/GB）的**总时长预算**，到点由 `ffmpeg_backend.dart` 强杀。这条命令必须顺序读完整个文件（实测 1.018 GB 的 mkv 读 1,018,436,731 字节、1 次 seek，输入侧 `-discard` / `-vn -an` 不减读盘量），耗时 = 体积 ÷ 读盘吞吐；预算隐含 ≥125 MB/s，慢盘 / 与 libmpv 播放抢 IO 时把一直在推进的进程杀掉，已读部分作废。图形字幕抽轨早在 BUG-3102 改成按进度判活（`ffmpeg_watched_run.dart`），文本轨路径没跟着改。
@@ -11,8 +11,8 @@
   - 不再重跑：`emptyCues` 不再算瞬态；新增 `extractEmbeddedSubtitleTrackFiles`（整体抽一次再读缓存），`loadEmbeddedReferenceTracks` 改用它。
   - 原因传到 UI：`SubtitleCueLoadFailure` 加 `extractionStalled` / `extractionCancelled`（`subtitleCueFailureForExtract` 映射），`DefaultEmbeddedSubtitleLoadResult.cueFailure` 带出；新文案 `video_subtitle_extract_stalled`；手动切换与自动加载的提示都按原因分流（取消不提示）；`video_player_controller.dart` 的日志改为 `embedded track load failed: <原因>`。
 - **[x] ② 已加自动化测试** —
-  - `fushi/test/utils/desktop_audio_clipper_test.dart`「按进度判活（BUG-4791）」组：假进程 + 真 `watchFfmpegProcess`——持续推进、总耗时数倍于判据不被杀；进度停滞才判卡死且删半截文件、不逐轨回退、不写负缓存；取消强杀进程；真 ffmpeg 用新参数单趟抽两条 srt；真 ffmpeg `-readrate 1` 慢读时取消能停掉进程。参数断言随伴随输出更新。
-  - `fushi/test/media/video/video_subtitle_source_test.dart`「BUG-4791」组：卡死 → `emptyCues` + `extractionStalled`、整轨只抽一次、不等就绪重跑；共享抽取一个等待方取消不杀、全部撤走才杀、有不可取消等待方时不杀；`extractEmbeddedSubtitleTrackFiles` 成功 / 失败都只抽一次；原因映射。TODO-572 组 `emptyCues` 改为非瞬态。
+  - `fushi/test/utils/desktop_audio_clipper_test.dart`「按进度判活（BUG-4798）」组：假进程 + 真 `watchFfmpegProcess`——持续推进、总耗时数倍于判据不被杀；进度停滞才判卡死且删半截文件、不逐轨回退、不写负缓存；取消强杀进程；真 ffmpeg 用新参数单趟抽两条 srt；真 ffmpeg `-readrate 1` 慢读时取消能停掉进程。参数断言随伴随输出更新。
+  - `fushi/test/media/video/video_subtitle_source_test.dart`「BUG-4798」组：卡死 → `emptyCues` + `extractionStalled`、整轨只抽一次、不等就绪重跑；共享抽取一个等待方取消不杀、全部撤走才杀、有不可取消等待方时不杀；`extractEmbeddedSubtitleTrackFiles` 成功 / 失败都只抽一次；原因映射。TODO-572 组 `emptyCues` 改为非瞬态。
   - `fushi/test/media/video/subtitle_cue_load_failure_test.dart`：卡住文案分流、自动加载提示走原因分流、挂载路径穷尽新原因、中英文文案存在。
   - `fushi/test/pages/video_embedded_text_extract_cancel_guard_test.dart`（新）：页面 / 控制器取消信号的接线守卫。
   - `fushi/integration_test/video_embedded_text_subtitle_switch_itest.dart`（新，Windows 离屏真 app）：ffmpeg 生成 60 秒 mkv、内封 jpn / eng / chi 三条 subrip 轨（12 / 10 / 8 句、文本互异、无外挂）；书库打开 → 默认 jpn 轨自动出 cue 且逐句对上 → 经页面选字幕入口（`VideoPlayerRemoteControl.selectSubtitle`，与面板字幕行 onTap 同为 `_selectSubtitleSource`；字幕行在设置面板浮层里，离屏没有稳定的键位能把焦点送进去）切 eng、再切 chi，cue 逐句换成对应轨 → 两次切轨后抽取在途表为空、三个缓存文件 mtime 不变（不再起 ffmpeg）→ Escape 退出，页面卸载、遥控注销、无残留在途抽取。
