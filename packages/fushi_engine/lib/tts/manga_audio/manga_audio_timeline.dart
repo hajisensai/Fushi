@@ -30,6 +30,18 @@ class MangaTimingParams {
     this.pageLeadMs = 700,
   });
 
+  /// 连续音轨（广播剧 / 动画音轨）：停顿已在音频里，什么都不插。
+  static const MangaTimingParams continuous = MangaTimingParams(
+    sameSpeakerMs: 0,
+    speakerChangeMs: 0,
+    registerShiftMs: 0,
+    pageTurnExtraMs: 0,
+    finalGapMs: 0,
+    silentPageHoldMs: 0,
+    spokenPageMinMs: 0,
+    pageLeadMs: 0,
+  );
+
   /// 同一人接着下一个气泡。
   final int sameSpeakerMs;
 

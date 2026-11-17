@@ -86,19 +86,22 @@ List<String> buildMangaLineEncodeArgs({
   ];
 }
 
-/// 从有声书文件剪 `[startMs, endMs)` 的 ffmpeg 参数（`-ss` 放在 `-i` 前：音频按解码
-/// 精确定位）。纯函数，单测覆盖。
+/// 从有声书文件（或广播剧 / 动画音轨）剪 `[startMs, endMs)` 的 ffmpeg 参数（`-ss` 放在
+/// `-i` 前：音频按解码精确定位）。[endMs] 为 null = 剪到文件末尾（音轨最后一段）。
+/// 视频文件只取音轨（`-vn`）。纯函数，单测覆盖。
 List<String> buildMangaClipArgs({
   required String sourcePath,
   required int startMs,
-  required int endMs,
+  required int? endMs,
   required String outputPath,
 }) => <String>[
   '-y',
   '-ss',
   (startMs / 1000).toStringAsFixed(3),
-  '-t',
-  ((endMs - startMs) / 1000).toStringAsFixed(3),
+  if (endMs != null) ...<String>[
+    '-t',
+    ((endMs - startMs) / 1000).toStringAsFixed(3),
+  ],
   '-i',
   sourcePath,
   '-vn',
@@ -476,30 +479,48 @@ class AppMangaRenderBackend implements MangaRenderBackend {
     required String outputPath,
     required TtsRenderCancelToken cancel,
     required String source,
-  }) async {
-    cancel.throwIfCancelled();
-    final Completer<void> cancelled = Completer<void>();
-    cancel.onCancel(() {
-      if (!cancelled.isCompleted) cancelled.complete();
-    });
-    final FfmpegRunResult result = switch (_ffmpeg) {
-      final FfmpegWatchedRunner watched => await watched.runWatched(
-        args,
-        FfmpegWatch(
-          stallTimeout: kMangaEncodeStallTimeout,
-          cancel: cancelled.future,
-        ),
+  }) => runMangaFfmpeg(
+    _ffmpeg,
+    args,
+    outputPath: outputPath,
+    cancel: cancel,
+    source: source,
+    log: _log,
+  );
+}
+
+/// 漫画有声的一次 ffmpeg：卡死（[kMangaEncodeStallTimeout] 没进度）或取消就停；退出
+/// 码非 0 / 没写出文件按 `encode_failed` 失败（摘要进 [log]）。生成端与广播剧剪段共用。
+Future<void> runMangaFfmpeg(
+  FfmpegBackend ffmpeg,
+  List<String> args, {
+  required String outputPath,
+  required TtsRenderCancelToken cancel,
+  required String source,
+  required void Function(String source, String summary) log,
+}) async {
+  cancel.throwIfCancelled();
+  final Completer<void> cancelled = Completer<void>();
+  cancel.onCancel(() {
+    if (!cancelled.isCompleted) cancelled.complete();
+  });
+  final FfmpegRunResult result = switch (ffmpeg) {
+    final FfmpegWatchedRunner watched => await watched.runWatched(
+      args,
+      FfmpegWatch(
+        stallTimeout: kMangaEncodeStallTimeout,
+        cancel: cancelled.future,
       ),
-      final FfmpegBackend plain => await plain.run(
-        args,
-        kMangaEncodeStallTimeout,
-      ),
-    };
-    cancel.throwIfCancelled();
-    final File out = File(outputPath);
-    if (!result.isSuccess || !await out.exists() || await out.length() == 0) {
-      _log(source, result.failureSummary);
-      throw const MangaLineFailure('encode_failed');
-    }
+    ),
+    final FfmpegBackend plain => await plain.run(
+      args,
+      kMangaEncodeStallTimeout,
+    ),
+  };
+  cancel.throwIfCancelled();
+  final File out = File(outputPath);
+  if (!result.isSuccess || !await out.exists() || await out.length() == 0) {
+    log(source, result.failureSummary);
+    throw const MangaLineFailure('encode_failed');
   }
 }

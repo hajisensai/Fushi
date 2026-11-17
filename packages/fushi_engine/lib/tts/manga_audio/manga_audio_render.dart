@@ -186,6 +186,7 @@ class MangaRenderManifest {
     required this.lines,
     Map<int, MangaPageDirective>? pages,
     this.engineSignature,
+    this.continuous = false,
   }) : pages = pages ?? <int, MangaPageDirective>{};
 
   static const int schemaVersion = 1;
@@ -200,6 +201,11 @@ class MangaRenderManifest {
 
   /// 生成时演出稿的 OCR 签名。
   final String? engineSignature;
+
+  /// 连续音轨（广播剧 / 动画音轨，见 `manga_drama_track.dart`）：各段首尾相接就是
+  /// 原音频，停顿与翻页节奏都已经在音频里，时间表不再插入页停留、`lead` 与句间停顿
+  /// （[MangaTimingParams.continuous]）。逐句合成的成品为 false。
+  final bool continuous;
 
   /// `Audiobooks.audioPathsJson` 的内容（相对清单目录，按行顺序）。
   List<String> get audioFiles => <String>[
@@ -224,10 +230,10 @@ class MangaRenderManifest {
       lines: timed,
       pageCount: pageCount,
       startPage: startPage,
-      pages: pages,
+      pages: continuous ? const <int, MangaPageDirective>{} : pages,
       mode: mode,
       pacing: pacing,
-      params: params,
+      params: continuous ? MangaTimingParams.continuous : params,
     );
   }
 
@@ -246,6 +252,7 @@ class MangaRenderManifest {
     'v': schemaVersion,
     'pageCount': pageCount,
     if (engineSignature != null) 'ocr': engineSignature,
+    if (continuous) 'cont': true,
     'lines': <Object?>[for (final MangaRenderedLine l in lines) l.toJson()],
     'pages': <String, Object?>{
       for (final MapEntry<int, MangaPageDirective> e in pages.entries)
@@ -275,6 +282,7 @@ class MangaRenderManifest {
       pageCount: count,
       lines: parsed,
       engineSignature: ocr is String ? ocr : null,
+      continuous: raw['cont'] == true,
       pages: <int, MangaPageDirective>{
         if (pages is Map)
           for (final MapEntry<Object?, Object?> e in pages.entries)
