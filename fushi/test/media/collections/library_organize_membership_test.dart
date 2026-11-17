@@ -5,7 +5,7 @@
 import 'dart:convert';
 
 import 'package:drift/native.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ai/ai_library_organize_assistant.dart';
 import 'package:fushi_engine/media/collections/library_organize/library_organize_apply.dart';

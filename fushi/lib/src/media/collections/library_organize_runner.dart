@@ -26,6 +26,8 @@ import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/library_organize_history_page.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart'
+    show FushiListItem;
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
@@ -487,10 +489,9 @@ Future<void> _showCurateResult(
                 in run.stages.indexed)
               FushiStaggeredEntrance(
                 index: i,
-                child: ListTile(
+                child: FushiListItem(
                   key: ValueKey<String>('library_curate_stage_${s.stage.wire}'),
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
+                  padding: EdgeInsets.zero,
                   title: Text(libraryCurateStageLabel(s.stage)),
                   trailing: Text(
                     s.changes > 0 || s.pending > 0

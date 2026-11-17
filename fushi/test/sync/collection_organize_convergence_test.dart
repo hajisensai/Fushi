@@ -360,7 +360,7 @@ void main() {
               OrganizeEntry(
                 mediaType: 'video',
                 entryKey: 'v2',
-                tombstoneKey: 'video v2',
+                tombstoneKey: 'video\u0000v2',
                 item: AiOrganizeItem(title: 'v2'),
               ),
             ],
