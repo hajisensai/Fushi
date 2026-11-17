@@ -40,27 +40,11 @@ void main() {
         reason: 'behavior harness ${jsTest.path} must exist',
       );
 
-      final String payload = jsonEncode(<String, String>{
-        'paged': ReaderPaginationScripts.paginatedShellSource(),
-        'studyUnits': kStudyUnitJs,
-      });
-      final Directory temp = Directory.systemTemp.createTempSync(
-        'fushi-paged-settle-semantic-anchor-',
-      );
-      final File payloadFile = File('${temp.path}/payload.json')
-        ..writeAsStringSync(payload);
-      late final ProcessResult result;
-      try {
-        result = await Process.run(
-          nodeExe,
-          <String>[jsTest.path, payloadFile.path],
-          workingDirectory: Directory.current.path,
-          stdoutEncoding: utf8,
-          stderrEncoding: utf8,
-        );
-      } finally {
-        temp.deleteSync(recursive: true);
-      }
+      final ({int exitCode, String stdout, String stderr}) result =
+          await _runNodeHarness(nodeExe, jsTest.path, <String, String>{
+            'paged': ReaderPaginationScripts.paginatedShellSource(),
+            'studyUnits': kStudyUnitJs,
+          });
 
       expect(
         result.exitCode,
@@ -70,11 +54,32 @@ void main() {
             'stdout:\n${result.stdout}\nstderr:\n${result.stderr}',
       );
       expect(
-        result.stdout.toString(),
+        result.stdout,
         contains('all assertions passed'),
         reason: 'behavior harness must reach its success marker',
       );
     },
+  );
+}
+
+/// Runs the Node harness with [payload] piped as JSON on stdin (no file path
+/// crosses the process boundary) and returns its exit code, stdout and stderr.
+Future<({int exitCode, String stdout, String stderr})> _runNodeHarness(
+  String nodeExe,
+  String harness,
+  Map<String, String> payload,
+) async {
+  final Process process = await Process.start(nodeExe, <String>[
+    harness,
+  ], workingDirectory: Directory.current.path);
+  final Future<String> stdout = process.stdout.transform(utf8.decoder).join();
+  final Future<String> stderr = process.stderr.transform(utf8.decoder).join();
+  process.stdin.add(utf8.encode(jsonEncode(payload)));
+  await process.stdin.close();
+  return (
+    exitCode: await process.exitCode,
+    stdout: await stdout,
+    stderr: await stderr,
   );
 }
 

@@ -34,23 +34,15 @@
 //      anchor generation): no write on the previewed page; reverting the curl
 //      re-lands the still-registered target, committing it drops the pending work.
 //
-// Run: node fushi/test/reader/paged_settle_semantic_anchor_behavior_test.js <payload.json>
-// (driven from paged_settle_semantic_anchor_behavior_test.dart inside `flutter test`).
+// Driven from paged_settle_semantic_anchor_behavior_test.dart inside `flutter test`;
+// the payload (production script sources as JSON) arrives on stdin.
 
-const assert = require('assert');
-const fs = require('fs');
+const assert = require('node:assert');
+const {
+  readPayload, shellObjectLiteral, compileScript, scrolledRect, scrolledRange,
+} = require('./paged_shell_behavior_support.js');
 
-const data = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
-
-function objectLiteral(source) {
-  const marker = 'window.fushiReader = {';
-  const start = source.indexOf(marker);
-  assert.ok(start >= 0, 'fushiReader object missing');
-  const brace = source.indexOf('{', start);
-  const end = source.indexOf('\n};', brace);
-  assert.ok(end >= 0, 'fushiReader object terminator missing');
-  return source.slice(brace, end + 2);
-}
+const data = readPayload();
 
 const PAGE = 1000;
 
@@ -79,12 +71,13 @@ function instantiate() {
     getElementsByName: () => [],
   };
   const Node = { TEXT_NODE: 3 };
-  new Function('window', data.studyUnits)(window);
+  compileScript(['window'], data.studyUnits, 'reader_study_unit_script.js')(window);
   const C = { perfTraceEnabled: false };
-  const factory = new Function(
-    'window', 'document', 'C', 'global', 'CSS', 'Highlight', 'getComputedStyle', 'Node',
-    'requestAnimationFrame', 'setTimeout',
-    'window.fushiReader = ' + objectLiteral(data.paged) + '; return window.fushiReader;'
+  const factory = compileScript(
+    ['window', 'document', 'C', 'global', 'CSS', 'Highlight', 'getComputedStyle', 'Node',
+      'requestAnimationFrame', 'setTimeout'],
+    'window.fushiReader = ' + shellObjectLiteral(data.paged) + '; return window.fushiReader;',
+    'paged_shell.js'
   );
   const reader = factory(window, document, C, {}, window.CSS, window.Highlight,
     getComputedStyle, Node,
@@ -125,19 +118,6 @@ function instantiate() {
   return { reader, state, calls, timers, frames, elements, context };
 }
 
-function rectAt(state, geom) {
-  const left = geom.doc - state.scroll;
-  return { left, right: left + geom.size, top: 100, bottom: 120, width: geom.size, height: 20 };
-}
-
-function fakeRange(state, geom) {
-  return {
-    getClientRects() { return [rectAt(state, geom)]; },
-    getBoundingClientRect() { return rectAt(state, geom); },
-    cloneRange() { return fakeRange(state, geom); },
-  };
-}
-
 function runTimer(f) {
   assert.strictEqual(f.timers.length, 1, 'settle schedules exactly one timer');
   assert.strictEqual(f.timers[0].ms, 16, 'settle waits one frame (16 ms)');
@@ -152,8 +132,8 @@ function lateImageLoad(f, mutate) {
   f.reader.reapplyImageLateAnchor();
 }
 
-(async () => {
-  // ── A. settle vs. a late image inside the 16 ms window ────────────────────
+// ── A. settle vs. a late image inside the 16 ms window ────────────────────
+async function settleSurvivesLateImage() {
   for (const [label, restore] of [
     ['char anchor', (f) => f.reader.restoreToCharOffset(5700)],
     ['progress anchor', (f) => f.reader.restoreProgress(0.5)],
@@ -175,7 +155,7 @@ function lateImageLoad(f, mutate) {
     const label = 'fragment anchor';
     const f = instantiate();
     const geom = { doc: 5200, size: 40 };
-    f.elements.note = { getClientRects: () => [rectAt(f.state, geom)], getBoundingClientRect: () => rectAt(f.state, geom) };
+    f.elements.note = { getClientRects: () => [scrolledRect(f.state, geom)], getBoundingClientRect: () => scrolledRect(f.state, geom) };
     assert.strictEqual(await f.reader.jumpToFragment('note'), true);
     assert.strictEqual(f.state.scroll, 5000, label + ': jump lands on the target page');
     lateImageLoad(f, () => { geom.doc = 6200; });
@@ -202,7 +182,10 @@ function lateImageLoad(f, mutate) {
     assert.strictEqual(f.state.scroll, 6000, 'the queued load event re-anchors by the semantic anchor');
   }
 
-  // ── B. settle still re-lands after a reflow zeroed the scroll ─────────────
+}
+
+// ── B. settle still re-lands after a reflow zeroed the scroll ─────────────
+async function settleKeepsRelandingAfterReflow() {
   {
     const f = instantiate();
     await f.reader.restoreToCharOffset(5700);
@@ -232,7 +215,10 @@ function lateImageLoad(f, mutate) {
     assert.strictEqual(f.calls.notify, 1);
   }
 
-  // ── C. the position was handed to someone else inside the window ──────────
+}
+
+// ── C. the position was handed to someone else inside the window ──────────
+async function settleYieldsToNewOwner() {
   {
     const f = instantiate();
     await f.reader.restoreToCharOffset(5700);
@@ -249,7 +235,7 @@ function lateImageLoad(f, mutate) {
     // A programmatic reveal (audiobook follow) replaced the anchor.
     const f = instantiate();
     await f.reader.restoreToCharOffset(5700);
-    assert.strictEqual(f.reader.scrollToRange(fakeRange(f.state, { doc: 7200, size: 40 })), true);
+    assert.strictEqual(f.reader.scrollToRange(scrolledRange(f.state, { doc: 7200, size: 40 })), true);
     assert.strictEqual(f.state.scroll, 7000);
     runTimer(f);
     assert.strictEqual(f.state.scroll, 7000, 'settle follows the replacing reveal target, not the restore page');
@@ -264,10 +250,13 @@ function lateImageLoad(f, mutate) {
     assert.strictEqual(f.calls.notify, 1);
   }
 
-  // ── D. the frame after a reveal ───────────────────────────────────────────
+}
+
+// ── D. the frame after a reveal ───────────────────────────────────────────
+function revealFrameFollowsAnchor() {
   {
     const f = instantiate();
-    assert.strictEqual(f.reader.scrollToRange(fakeRange(f.state, { doc: 5200, size: 40 })), true);
+    assert.strictEqual(f.reader.scrollToRange(scrolledRange(f.state, { doc: 5200, size: 40 })), true);
     assert.strictEqual(f.state.scroll, 5000);
     assert.strictEqual(f.frames.length, 1, 'the reveal schedules one follow-up frame');
     f.reader.paginate('forward');
@@ -279,7 +268,7 @@ function lateImageLoad(f, mutate) {
   }
   {
     const f = instantiate();
-    f.reader.scrollToRange(fakeRange(f.state, { doc: 5200, size: 40 }));
+    f.reader.scrollToRange(scrolledRange(f.state, { doc: 5200, size: 40 }));
     f.state.scroll = 0; // reflow reset inside the frame
     f.frames.shift()();
     assert.strictEqual(f.state.scroll, 5000, 'an unchanged reveal target is re-landed after a reflow reset');
@@ -287,7 +276,7 @@ function lateImageLoad(f, mutate) {
   {
     const f = instantiate();
     const cue = { doc: 5200, size: 40 };
-    f.reader.scrollToRange(fakeRange(f.state, cue));
+    f.reader.scrollToRange(scrolledRange(f.state, cue));
     cue.doc = 6200; // a late image moved the revealed cue inside the frame
     f.frames.shift()();
     assert.strictEqual(f.state.scroll, 6000, 'the reveal frame follows the target to its new page');
@@ -296,8 +285,8 @@ function lateImageLoad(f, mutate) {
     // A newer reveal owns the position; the older frame is stale.
     const f = instantiate();
     const first = { doc: 5200, size: 40 };
-    f.reader.scrollToRange(fakeRange(f.state, first));
-    f.reader.scrollToRange(fakeRange(f.state, { doc: 8200, size: 40 }));
+    f.reader.scrollToRange(scrolledRange(f.state, first));
+    f.reader.scrollToRange(scrolledRange(f.state, { doc: 8200, size: 40 }));
     assert.strictEqual(f.state.scroll, 8000);
     assert.strictEqual(f.frames.length, 2);
     f.frames.shift()();
@@ -306,13 +295,16 @@ function lateImageLoad(f, mutate) {
     assert.strictEqual(f.state.scroll, 8000);
   }
 
-  // ── E. audio-follow fade branch ───────────────────────────────────────────
+}
+
+// ── E. audio-follow fade branch ───────────────────────────────────────────
+function audioFollowFadeFrame() {
   for (const scenario of ['intact', 'reset', 'user-turn']) {
     const f = instantiate();
     f.reader.pageTurnEffect = () => 'fade';
     f.reader._audioRevealPageTurn = true;
     f.state.scroll = 4000;
-    assert.strictEqual(f.reader.scrollToRange(fakeRange(f.state, { doc: 5200, size: 40 })), true);
+    assert.strictEqual(f.reader.scrollToRange(scrolledRange(f.state, { doc: 5200, size: 40 })), true);
     assert.strictEqual(f.state.scroll, 5000, 'adjacent audio reveal lands through the animated turn');
     assert.strictEqual(f.frames.length, 1);
     if (scenario === 'reset') f.state.scroll = 0;
@@ -331,7 +323,10 @@ function lateImageLoad(f, mutate) {
     }
   }
 
-  // ── F. the reveal frame fires while a page-curl preview is showing ────────
+}
+
+// ── F. the reveal frame fires while a page-curl preview is showing ────────
+function revealFrameUnderCurlPreview() {
   for (const scenario of ['revert', 'revert-moved', 'commit']) {
     for (const fade of [false, true]) {
       const label = scenario + (fade ? ' (fade)' : '');
@@ -346,7 +341,7 @@ function lateImageLoad(f, mutate) {
       }
       f.state.scroll = 4000;
       const cue = { doc: 5200, size: 40 };
-      assert.strictEqual(f.reader.scrollToRange(fakeRange(f.state, cue)), true);
+      assert.strictEqual(f.reader.scrollToRange(scrolledRange(f.state, cue)), true);
       assert.strictEqual(f.state.scroll, 5000);
       assert.strictEqual(f.frames.length, 1);
       assert.strictEqual(f.reader.curlPreview('forward'), 'ok');
@@ -374,9 +369,19 @@ function lateImageLoad(f, mutate) {
       }
     }
   }
+}
 
+async function main() {
+  await settleSurvivesLateImage();
+  await settleKeepsRelandingAfterReflow();
+  await settleYieldsToNewOwner();
+  revealFrameFollowsAnchor();
+  audioFollowFadeFrame();
+  revealFrameUnderCurlPreview();
   console.log('all assertions passed');
-})().catch((error) => {
-  console.error(error && error.stack ? error.stack : error);
+}
+
+main().catch((error) => {
+  console.error(error?.stack ?? error);
   process.exit(1);
 });

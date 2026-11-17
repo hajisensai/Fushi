@@ -214,7 +214,7 @@ for (const vertical of [true, false]) {
     label + ': element caret must not resolve to the first text node of the element subtree');
   reader.createWalker = flatWalker;
   // The probe is the page-top corner in body-relative coordinates.
-  assert.deepStrictEqual(probes[probes.length - 1],
+  assert.deepStrictEqual(probes.at(-1),
     vertical ? [CLIENT_W - PR - 2, PT + 2] : [PL + 2, PT + 2],
     label + ': page-top caret probe corner');
   // 4b. caret failed outright.
