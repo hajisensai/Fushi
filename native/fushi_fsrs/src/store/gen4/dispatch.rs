@@ -662,7 +662,11 @@ fn run(
             c.write_local(|t| cmd::sync::outbox(t, col_of(t, profile)?, req, key.as_ref(), files))?
         }
         "outbox_ack" => c.write_local(|t| cmd::sync::outbox_ack(t, col_of(t, profile)?, req))?,
-        "head" => c.write_local(|t| cmd::sync::head(t, col_of(t, profile)?, req, files))?,
+        // 先在读快照上判「这一轮什么都不用写」（内容没变、摘要记录没变、`last_ok` 够新），是就不开写事务。
+        "head" => match read_col(c, profile, |t, col| cmd::sync::head_unchanged(t, col, req))? {
+            Some(v) => v,
+            None => c.write_local(|t| cmd::sync::head(t, col_of(t, profile)?, req, files))?,
+        },
         "obsolete" => read_col(c, profile, |t, col| cmd::sync::obsolete(t, col, req))?,
         // 语义摘要（head 带的那一份，`Index::digest`）：两台设备同一版本向量下应当相同，测试与诊断拿它比收敛。
         "digest" => read_col(c, profile, |t, col| {

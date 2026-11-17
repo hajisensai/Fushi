@@ -1165,27 +1165,30 @@ pub fn outbox_ack(t: &Truth<'_>, col: i64, req: &Value) -> Result<Value, String>
 
 // ---------------------------------------------------------------------- 5. head
 
-/// `head {profile, location, progress, loc?, seal?, now, skipUnchangedMs?}`：把已传水位签成本机在这个位置上的 head
-/// （文件在 [files]，路径 `devices/<本机>/head-…json` 相对 `v4/`）。回包 `{path, gen, unchanged}`。
-///
-/// 内容（段清单、版本向量、摘要、名字与扩展信息、`loc` / `seal`、`prev`）与上次写的相同、离上次没满 `skipUnchangedMs`
-/// 时不写，回 `{unchanged: true, path: 上次的路径}`（每写一次 head 都会唤醒连着这个位置的设备）；Dart 发现那个文件不在
-/// 位置上就不带 `skipUnchangedMs` 再要一次。代号 = 位置上本机最新 head 与水位里记的取大 + 1。写下后记进水位与位置
-/// 上的 head 记录（`status` 的 `uploaded` / `headGen` 读它）。
-pub fn head(t: &Truth<'_>, col: i64, req: &Value, files: &mut Files) -> Result<Value, String> {
-    let location = str_req(req, "location")?;
+/// `head` 这一轮要签的内容（[head] 与只读的 [head_unchanged] 共用一份算法）。
+struct HeadDraft {
+    me: SelfId,
+    out: Out,
+    ack: crate::sync2::vv::Vv,
+    digest: String,
+    /// 本机此刻的 (版本向量指纹, 摘要)：`status` 拿对端 head 上同一个版本向量下的摘要与它比（[SEEN_ACK_KEY]）。
+    mine: String,
+    name: String,
+    ext: Map<String, Value>,
+    loc: String,
+    seal: String,
+    segs: Vec<(u64, u64, String)>,
+    /// 内容指纹：与水位里记的相同 = 内容没变。
+    tag: String,
+}
+
+fn head_draft(t: &Truth<'_>, col: i64, req: &Value) -> Result<HeadDraft, String> {
     let progress = str_req(req, "progress")?;
-    let now = now_of(req)?;
     let me = me_of(t, col)?;
-    let (_, collection, _) = collections_of(t, col)?;
-    let mut out = load_out(t, col, progress, &me.device)?;
+    let out = load_out(t, col, progress, &me.device)?;
     let ack = t.applied(col)?;
     let digest = Index::new(t, col).digest()?;
-    // 本机此刻的 (版本向量指纹, 摘要)：`status` 拿对端 head 上同一个版本向量下的摘要与它比（[SEEN_ACK_KEY]）。
     let mine = json!({"ack": ack_fp(&ack), "digest": digest}).to_string();
-    if meta_get(t, &self_digest_key(col))?.as_deref() != Some(mine.as_str()) {
-        meta_set(t, &self_digest_key(col), &mine)?;
-    }
     let name = super::writes_local::self_name(t, col)?;
     let ext = self_ext(t, col)?;
     let loc = req
@@ -1211,13 +1214,108 @@ pub fn head(t: &Truth<'_>, col: i64, req: &Value, files: &mut Files) -> Result<V
         });
         hex(&blake3::hash(content.to_string().as_bytes()).as_bytes()[..16])
     };
+    Ok(HeadDraft {
+        me,
+        out,
+        ack,
+        digest,
+        mine,
+        name,
+        ext,
+        loc,
+        seal,
+        segs,
+        tag,
+    })
+}
+
+/// 内容没变、离上次写没满 `skipUnchangedMs`：不写 head，回上次那份。
+fn skip_unchanged(d: &HeadDraft, req: &Value, now: i64) -> Option<Value> {
+    let skip = req.get("skipUnchangedMs").and_then(Value::as_i64)?;
+    let out = &d.out;
+    (out.gen > 0 && out.tag == d.tag && !out.path.is_empty() && now - out.at < skip)
+        .then(|| json!({"unchanged": true, "path": out.path, "gen": out.gen}))
+}
+
+/// 位置 [location] 记下的 `last_ok`（`loc_state` 主键点查；没有行 / 空 = None）。
+pub(crate) const LOC_LAST_OK_SQL: &str =
+    "SELECT last_ok FROM loc_state WHERE col = ?1 AND loc_key = ?2";
+
+fn last_ok_of(t: &Truth<'_>, col: i64, location: &str) -> Result<Option<i64>, String> {
+    Ok(t.conn()
+        .prepare_cached(LOC_LAST_OK_SQL)
+        .map_err(sql)?
+        .query_row(params![col, location], |r| r.get::<_, Option<i64>>(0))
+        .optional()
+        .map_err(sql)?
+        .flatten())
+}
+
+/// `last_ok` 的粒度：离上次记不到这么久时不为了它开写事务（[head_unchanged]）。转发的活跃窗口是 30 天
+/// （`cmd/sync_relay.rs` `ACTIVE_WINDOW_MS`），滞后最多一天无碍。
+pub(crate) const LAST_OK_REFRESH_MS: i64 = 86_400_000;
+
+/// `head` 的只读前半（读快照，调用方不开写事务）：这一轮什么都不用写——内容没变、离上次写没满 `skipUnchangedMs`（[head]
+/// 的不变跳过）、本机摘要记录（[self_digest_key]）也没变、这个位置的 `last_ok` 不满 [LAST_OK_REFRESH_MS]——就回
+/// [head] 同样的 `{unchanged: true, path, gen}`；否则 None，调用方开写事务跑 [head]（它会重算一遍，读快照与写事务之间
+/// 别的写入改了什么都以写事务里的为准）。每轮同步每个位置都调一次 head，没有变化时不再每轮占一次写锁、写一次 WAL。
+pub fn head_unchanged(t: &Truth<'_>, col: i64, req: &Value) -> Result<Option<Value>, String> {
+    let location = str_req(req, "location")?;
+    let now = now_of(req)?;
+    let d = head_draft(t, col, req)?;
+    let Some(reply) = skip_unchanged(&d, req, now) else {
+        return Ok(None);
+    };
+    if meta_get(t, &self_digest_key(col))?.as_deref() != Some(d.mine.as_str()) {
+        return Ok(None);
+    }
+    match last_ok_of(t, col, location)? {
+        Some(at) if at <= now && now - at < LAST_OK_REFRESH_MS => Ok(Some(reply)),
+        _ => Ok(None),
+    }
+}
+
+/// `head {profile, location, progress, loc?, seal?, now, skipUnchangedMs?}`：把已传水位签成本机在这个位置上的 head
+/// （文件在 [files]，路径 `devices/<本机>/head-…json` 相对 `v4/`）。回包 `{path, gen, unchanged}`。
+///
+/// 内容（段清单、版本向量、摘要、名字与扩展信息、`loc` / `seal`、`prev`）与上次写的相同、离上次没满 `skipUnchangedMs`
+/// 时不写，回 `{unchanged: true, path: 上次的路径}`（每写一次 head 都会唤醒连着这个位置的设备）；Dart 发现那个文件不在
+/// 位置上就不带 `skipUnchangedMs` 再要一次。代号 = 位置上本机最新 head 与水位里记的取大 + 1。写下后记进水位与位置
+/// 上的 head 记录（`status` 的 `uploaded` / `headGen` 读它）。分发器先在读快照上跑 [head_unchanged]，什么都不用写时
+/// 不开写事务。
+pub fn head(t: &Truth<'_>, col: i64, req: &Value, files: &mut Files) -> Result<Value, String> {
+    let location = str_req(req, "location")?;
+    let progress = str_req(req, "progress")?;
+    let now = now_of(req)?;
+    let (_, collection, _) = collections_of(t, col)?;
+    let HeadDraft {
+        me,
+        mut out,
+        ack,
+        digest,
+        mine,
+        name,
+        ext,
+        loc,
+        seal,
+        segs,
+        tag,
+    } = head_draft(t, col, req)?;
+    if meta_get(t, &self_digest_key(col))?.as_deref() != Some(mine.as_str()) {
+        meta_set(t, &self_digest_key(col), &mine)?;
+    }
     // 走到写 head 就是这一轮在这个位置上成功了（不变跳过也算）：记 `last_ok`，转发只认最近成功过的位置
     // （`cmd/sync_relay.rs` 的活跃窗口）。
     touch_location(t, col, location, now)?;
-    if let Some(skip) = req.get("skipUnchangedMs").and_then(Value::as_i64) {
-        if out.gen > 0 && out.tag == tag && !out.path.is_empty() && now - out.at < skip {
-            return Ok(json!({"unchanged": true, "path": out.path, "gen": out.gen}));
-        }
+    if out.gen > 0
+        && out.tag == tag
+        && !out.path.is_empty()
+        && req
+            .get("skipUnchangedMs")
+            .and_then(Value::as_i64)
+            .is_some_and(|skip| now - out.at < skip)
+    {
+        return Ok(json!({"unchanged": true, "path": out.path, "gen": out.gen}));
     }
     let published = t.loc_head(col, location, &me.device)?.map_or(0, |h| h.gen);
     let gen = published.max(out.gen) + 1;

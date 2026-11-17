@@ -206,7 +206,10 @@ CREATE TABLE IF NOT EXISTS op_forks (
 /// - `media_listed`：哪些「位置/媒体目录」有人完整列举过（协议 3 的 SEEDED）；`pend` = 是本机列的、还没随清单发出。
 /// - `media_gen`：本机在每个位置上已预留的最大清单代号（只升不降，换根 / 对账也不清：一个代号只对应一个文件）。
 /// - `loc_state`：每个位置的加密记忆（`location_seal`）：`loc_ids` = 位置 ID 的 JSON，`sealed` 0/1，`kdf` = 派生参数 JSON，
-///   `check_` = 口令校验串，`last_ok` = 上次核对通过的时刻。
+///   `check_` = 口令校验串，`last_ok` = 本机最近一次在这个位置上跑完一轮的时刻（G8-7b 起由 `cmd/sync.rs` `head`
+///   记，写了 head 或判定不变都算；判定不变、离上次记不满一天时不为它开写事务，所以最多滞后一天）。转发的活跃窗口
+///   （`cmd/sync_relay.rs`）只认它；迁移灌入（`carry.rs`）与别的命令（`cmd/sync.rs` 记 loc 标记、`location_seal`）新建的行是空的。不再是协议 3
+///   「上次口令核对通过」的意思（列名冻结）。
 pub(crate) const LOCAL: &str = "
 CREATE TABLE IF NOT EXISTS self_ (
   col INTEGER PRIMARY KEY,

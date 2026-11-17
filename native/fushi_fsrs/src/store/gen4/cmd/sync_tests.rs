@@ -293,6 +293,8 @@ pub(super) struct Round {
     pub(super) finish: Option<Value>,
     pub(super) batches: usize,
     pub(super) head: Value,
+    /// 这一轮发出的 `head` 请求（测试再发一次用）。
+    pub(super) head_req: Value,
     pub(super) deleted: Vec<String>,
 }
 
@@ -404,6 +406,7 @@ pub(super) fn round(d: &Dev, loc: &mut Loc, location: &str, now: i64, o: Opts<'_
     if o.skip_unchanged {
         req["skipUnchangedMs"] = json!(60_000);
     }
+    out.head_req = req.clone();
     let (head, files) = cmd(d.h, "head", now, req, &[]);
     for (p, b) in files {
         loc.insert(format!("v4/{p}"), b);
@@ -488,6 +491,60 @@ fn two_devices_converge_through_a_folder_location() {
     // 状态：位置上的已传水位。
     let st = g4(a.h, "status", T1, json!({}));
     assert_eq!(st["unpublished"], json!(0), "{st}");
+}
+
+/// 别的连接看到的提交次数（`PRAGMA data_version` 只随别的连接的提交变）。
+fn commits_seen(ro: &Connection) -> i64 {
+    ro.query_row("PRAGMA data_version", [], |r| r.get(0))
+        .unwrap()
+}
+
+/// head 没有变化时不开写事务（G8-7c）：内容没变、摘要记录没变、`last_ok` 不满一天，`head` 只在读快照上判定、回上次
+/// 那份，库上一笔提交都没有；`last_ok` 满一天时写一次把它刷新（仍回 `unchanged`、不写新 head），之后又不写。
+#[test]
+fn an_unchanged_head_commits_nothing() {
+    const DAY_MS: i64 = 86_400_000;
+    let a = Dev::new("g87hq");
+    let mut loc = Loc::new();
+    a.write(T1 + 1, N1, "鯨");
+    let o = Opts {
+        skip_unchanged: true,
+        ..Opts::default()
+    };
+    round(&a, &mut loc, "loc", T1 + 10, o);
+    let r = round(&a, &mut loc, "loc", T1 + 11, o);
+    assert_eq!(r.head["unchanged"], json!(true), "{}", r.head);
+    let ro = Connection::open_with_flags(
+        a.dir.0.join(GEN4_FILE),
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .unwrap();
+    let mut req = r.head_req.clone();
+    let before = commits_seen(&ro);
+    let (h, files) = cmd(a.h, "head", T1 + 12, req.clone(), &[]);
+    assert_eq!(h["unchanged"], json!(true), "{h}");
+    assert!(files.is_empty());
+    assert_eq!(
+        commits_seen(&ro),
+        before,
+        "an unchanged head commits nothing"
+    );
+    // `last_ok` 满一天：写一次刷新它（head 本身仍不变），之后又不写。
+    req["skipUnchangedMs"] = json!(10 * DAY_MS);
+    let later = T1 + 12 + DAY_MS;
+    let (h, files) = cmd(a.h, "head", later, req.clone(), &[]);
+    assert_eq!(h["unchanged"], json!(true), "{h}");
+    assert!(files.is_empty());
+    let refreshed = commits_seen(&ro);
+    assert_ne!(refreshed, before, "a day-old last_ok is refreshed");
+    let (h, _) = cmd(a.h, "head", later + 1, req.clone(), &[]);
+    assert_eq!(h["unchanged"], json!(true), "{h}");
+    assert_eq!(commits_seen(&ro), refreshed);
+    // 内容变了照常写新 head。
+    a.write(later + 2, N2, "猫");
+    let (h, files) = cmd(a.h, "head", later + 3, req, &[]);
+    assert_eq!(h["unchanged"], json!(false), "{h}");
+    assert_eq!(files.len(), 1);
 }
 
 /// 小段、小批：一台设备写很多条，分多段多批传；另一台收到同样的东西，派生层相同。
@@ -1163,6 +1220,9 @@ fn sync_lookups_use_their_keys() {
         (VOIDS_SQL, 2),
         (LOC_STATE_SQL, 2),
         (LOC_HEAD_SEQ_SQL, 2),
+        (super::sync::LOC_LAST_OK_SQL, 2),
+        (crate::store::gen4::oldroot::OLDRUN_GET_SQL, 1),
+        (crate::store::gen4::oldroot::OLDRUN_DROP_SQL, 2),
     ] {
         let params: Vec<i64> = (0..n).map(|i| i + 1).collect();
         let plan: Vec<String> = c
