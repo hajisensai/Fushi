@@ -3856,6 +3856,14 @@ const String kVideoClipAudioDiscTitleAngleCapability =
 const String kVideoClipAudioDiscTitleDvdCapability =
     'videoClipAudioDiscTitleDvd';
 
+/// `/api/capabilities` 的 `liveLibrary` 里声明「`clipaudio?discTitle=` 认 DVD 多角度 title
+/// 的角度成员路径（`VIDEO_TS/TITLE_nn.aK.dvdtitle`，见 `dvd_angle.dart`）、按该角度裁」的
+/// 能力位。只声明了 [kVideoClipAudioDiscTitleDvdCapability] 与
+/// [kVideoClipAudioDiscTitleAngleCapability] 的 host 认不出这种形态（只会 404）→ client
+/// 不发。
+const String kVideoClipAudioDiscTitleDvdAngleCapability =
+    'videoClipAudioDiscTitleDvdAngle';
+
 /// host 端「按（盘, title）裁音频」的**可选**能力（远端原盘会话：盘在 host 上，会话里
 /// 正在看的 title 可能是库里没有行的特典 / 菜单 title）。与 [VideoClipExportHost] 同范式：
 /// server 用 `is` 探测，不实现 → `clipaudio?discTitle=` 404、能力位

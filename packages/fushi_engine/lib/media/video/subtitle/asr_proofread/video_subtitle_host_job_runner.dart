@@ -13,7 +13,9 @@
 ///   `acceptsDiscTitle` 声明认这个参数——老 host 不认，会静默跑 `videoId` 那一行；
 ///   `discTitle` 也可以是多角度 title 的角度成员路径（`BDMV/PLAYLIST/00001.a2.mpls`，
 ///   `bluray_angle.dart`），按该角度的片段抽取。capability 的 `acceptsDiscTitleAngle`
-///   声明认它——老 host 读不到这个虚拟路径，会报找不到这条 title；
+///   声明认它——老 host 读不到这个虚拟路径，会报找不到这条 title；DVD title
+///   （`VIDEO_TS/TITLE_nn.dvdtitle`）要 `acceptsDiscTitleDvd`，它的角度成员路径
+///   （`VIDEO_TS/TITLE_nn.aK.dvdtitle`，`dvd_angle.dart`）再要 `acceptsDiscTitleDvdAngle`；
 ///   `audioTrack`（非负整数）：识别 `videoId`（那一集 / 那条 title）的第几条音轨——0 起的
 ///   音轨序号（ffmpeg `0:a:N`），与提交方播放器的当前音轨同口径（远端播放直传的就是
 ///   host 这份文件）；只能和 `videoId` 一起给，可与 `episode` / `discTitle` 组合。不给按
@@ -437,6 +439,12 @@ class VideoSubtitleHostJobRunner implements HostJobRunner {
       // 的行）：DVD title 经 `DvdFfmpegBackend` 按 title 读、`hasLocalMediaFile` 认它。老
       // host 两样都不认（只会报找不到），提交方不发 DVD title。
       'acceptsDiscTitleDvd':
+          resolveVideoPath != null && resolveDiscTitlePath != null,
+      // `discTitle` 认 DVD 多角度 title 的角度成员路径（`VIDEO_TS/TITLE_nn.aK.dvdtitle`，
+      // `dvd_angle.dart`）：定位保留角度、`DvdFfmpegBackend` 按 `-angle` 读。只有
+      // `acceptsDiscTitleDvd` + `acceptsDiscTitleAngle` 的 host 不认这种形态（只会报找
+      // 不到），提交方不发。
+      'acceptsDiscTitleDvdAngle':
           resolveVideoPath != null && resolveDiscTitlePath != null,
       // 认 `audioTrack`（识别提交方播放器当前的音轨）。老 host 没有这个位，收到会静默按
       // 识别语言挑：提交方据此不带它、并告诉用户将按语言选轨。

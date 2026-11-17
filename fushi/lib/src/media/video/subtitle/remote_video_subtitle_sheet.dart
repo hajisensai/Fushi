@@ -199,13 +199,12 @@ class _RemoteVideoSubtitleSheetState extends State<RemoteVideoSubtitleSheet> {
         !hostAcceptsVideoSubtitleEpisode(host);
   }
 
-  /// 目标里有要 host 按（盘, title）定位的原盘 title，而 host 没声明 `acceptsDiscTitle`
-  /// （老 host 会静默跑锚点那一行）。
+  /// 目标里有要 host 按（盘, title）定位的原盘 title，而 host 没声明认它的那种形态
+  /// （`acceptsDiscTitle` / 蓝光角度 / DVD title / DVD 角度，见
+  /// [RemoteVideoSubtitleTarget.discTitlesSupportedBy]）：与服务发任务前同一判据。
   bool get _discTitleBlocked {
     final HostJobTarget? host = _host;
-    return host != null &&
-        widget.target.needsDiscTitleSupport &&
-        !hostAcceptsVideoSubtitleDiscTitle(host);
+    return host != null && !widget.target.discTitlesSupportedBy(host);
   }
 
   /// 目标要 host 识别播放器当前音轨，而 host 没声明 `acceptsAudioTrack`：任务照发（不带

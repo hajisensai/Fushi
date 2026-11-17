@@ -545,6 +545,40 @@ void main() {
       expect(source().hostTitleFor(member(s, '00001.mpls'))!.readsDvd, isFalse);
     });
 
+    test('DVD 多角度 title 的非第 1 个角度：按不带角度的 title 找行，discTitle 带角度', () {
+      final RemoteDiscMenuSource s = source(
+        titles: const <RemoteDiscShareTitle>[
+          RemoteDiscShareTitle(
+            id: 'host/d1',
+            path: 'VIDEO_TS/TITLE_01.dvdtitle',
+          ),
+          RemoteDiscShareTitle(
+            id: 'host/d3',
+            path: 'VIDEO_TS/TITLE_03.dvdtitle',
+          ),
+        ],
+      );
+      String dvd(String name) => p.join(s.identityRoot, 'VIDEO_TS', name);
+      final RemoteDiscHostTitle angle = s.hostTitleFor(
+        dvd('TITLE_03.a2.dvdtitle'),
+      )!;
+      expect(angle.videoId, 'host/d3', reason: '库里这条 title 的行');
+      expect(angle.memberPath, 'VIDEO_TS/TITLE_03.a2.dvdtitle');
+      expect(angle.discTitle, 'VIDEO_TS/TITLE_03.a2.dvdtitle');
+      expect(angle.readsDvd, isTrue);
+      expect(angle.readsDvdAngle, isTrue);
+      expect(angle.readsAngle, isFalse, reason: '蓝光角度位管不到 DVD');
+      expect(angle.key, isNot(s.hostTitleFor(dvd('TITLE_03.dvdtitle'))!.key));
+      final RemoteDiscHostTitle bonus = s.hostTitleFor(
+        dvd('TITLE_07.a3.dvdtitle'),
+      )!;
+      expect(bonus.videoId, 'host/d1');
+      expect(bonus.discTitle, 'VIDEO_TS/TITLE_07.a3.dvdtitle');
+      expect(bonus.readsDvdAngle, isTrue);
+      // 第 1 个角度不带后缀：只要 host 认 DVD title。
+      expect(s.hostTitleFor(dvd('TITLE_03.dvdtitle'))!.readsDvdAngle, isFalse);
+    });
+
     test('不在这张盘的身份根下 / DVD title 没有 DVD 行可当锚点 / 没有蓝光行可当锚点 → null', () {
       final RemoteDiscMenuSource s = source();
       expect(

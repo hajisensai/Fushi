@@ -567,6 +567,7 @@ void main() {
       expect(live[kVideoClipAudioDiscTitleCapability], isFalse);
       expect(live[kVideoClipAudioDiscTitleAngleCapability], isFalse);
       expect(live[kVideoClipAudioDiscTitleDvdCapability], isFalse);
+      expect(live[kVideoClipAudioDiscTitleDvdAngleCapability], isFalse);
       expect(
         await get(
           base,
@@ -594,6 +595,7 @@ void main() {
         expect(live[kVideoClipAudioDiscTitleCapability], isTrue);
         expect(live[kVideoClipAudioDiscTitleAngleCapability], isTrue);
         expect(live[kVideoClipAudioDiscTitleDvdCapability], isTrue);
+        expect(live[kVideoClipAudioDiscTitleDvdAngleCapability], isTrue);
         expect(
           await get(
             at,

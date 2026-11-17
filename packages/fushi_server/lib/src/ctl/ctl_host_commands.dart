@@ -197,10 +197,12 @@ void addCtlHostOptions(ArgParser parser) {
       help: tr(
         'jobs submit video_subtitle：配合 --video-id，同一张原盘上的另一条 title（相对盘根：'
             '蓝光 BDMV/PLAYLIST/00005.mpls，多角度 title 的第 N 个角度写角度成员路径 '
-            'BDMV/PLAYLIST/00001.a2.mpls，DVD 写 VIDEO_TS/TITLE_03.dvdtitle）；不与 --episode 同给',
+            'BDMV/PLAYLIST/00001.a2.mpls，DVD 写 VIDEO_TS/TITLE_03.dvdtitle、它的第 N 个角度写 '
+            'VIDEO_TS/TITLE_03.a2.dvdtitle）；不与 --episode 同给',
         'jobs submit video_subtitle: with --video-id, another title on the same disc (relative to '
             'the disc root: Blu-ray BDMV/PLAYLIST/00005.mpls, angle N of a multi-angle title as the '
-            'angle member path BDMV/PLAYLIST/00001.a2.mpls, DVD VIDEO_TS/TITLE_03.dvdtitle); not with --episode',
+            'angle member path BDMV/PLAYLIST/00001.a2.mpls, DVD VIDEO_TS/TITLE_03.dvdtitle, its angle N '
+            'VIDEO_TS/TITLE_03.a2.dvdtitle); not with --episode',
       ),
     )
     ..addOption(

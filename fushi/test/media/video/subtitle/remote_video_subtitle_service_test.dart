@@ -362,6 +362,76 @@ void main() {
       expect(host.submitted.single['discTitle'], 'VIDEO_TS/TITLE_02.dvdtitle');
     });
 
+    test(
+      'DVD 多角度 title：host 没声明 acceptsDiscTitleDvdAngle 不发，声明了才带角度成员路径',
+      () async {
+        const RemoteVideoSubtitleTarget dvdAngle = RemoteVideoSubtitleTarget(
+          title: 'DVD · TITLE_02',
+          episodes: <RemoteVideoSubtitleEpisode>[
+            RemoteVideoSubtitleEpisode(
+              videoId: 'dvd-main',
+              discTitle: 'VIDEO_TS/TITLE_02.a2.dvdtitle',
+              title: 'DVD · TITLE_02',
+            ),
+          ],
+        );
+        expect(dvdAngle.needsDiscTitleDvdSupport, isTrue);
+        expect(dvdAngle.needsDiscTitleDvdAngleSupport, isTrue);
+        expect(dvdAngle.needsDiscTitleAngleSupport, isFalse);
+        expect(bonus.needsDiscTitleDvdAngleSupport, isFalse);
+        // 上一版 host：DVD title 与蓝光角度都认，但认不出 DVD 角度成员路径。
+        final HostJobTarget oldTarget = hostTarget(
+          <String>['video_subtitle'],
+          capability: const <String, Object?>{
+            'video_subtitle': <String, Object?>{
+              'acceptsDiscTitle': true,
+              'acceptsDiscTitleAngle': true,
+              'acceptsDiscTitleDvd': true,
+            },
+          },
+        );
+        expect(dvdAngle.discTitlesSupportedBy(oldTarget), isFalse);
+        final FakeHostPort old = FakeHostPort(
+          target: oldTarget,
+          script: exportEpisode,
+        );
+        final RemoteVideoSubtitleJob rejected = service(
+          old,
+        ).start(dvdAngle, const RemoteVideoSubtitleOptions());
+        await rejected.done;
+        expect(
+          rejected.status,
+          RemoteVideoSubtitleJobStatus.discTitleUnsupported,
+        );
+        expect(old.submitted, isEmpty, reason: '老 host 认不出 DVD 角度成员路径');
+
+        final HostJobTarget newTarget = hostTarget(
+          <String>['video_subtitle'],
+          capability: const <String, Object?>{
+            'video_subtitle': <String, Object?>{
+              'acceptsDiscTitle': true,
+              'acceptsDiscTitleDvd': true,
+              'acceptsDiscTitleDvdAngle': true,
+            },
+          },
+        );
+        expect(dvdAngle.discTitlesSupportedBy(newTarget), isTrue);
+        final FakeHostPort host = FakeHostPort(
+          target: newTarget,
+          script: exportEpisode,
+        );
+        final RemoteVideoSubtitleJob job = service(
+          host,
+        ).start(dvdAngle, const RemoteVideoSubtitleOptions());
+        await job.done;
+        expect(job.status, RemoteVideoSubtitleJobStatus.succeeded);
+        expect(
+          host.submitted.single['discTitle'],
+          'VIDEO_TS/TITLE_02.a2.dvdtitle',
+        );
+      },
+    );
+
     test('多角度 title：host 没声明 acceptsDiscTitleAngle 不发，声明了才带角度成员路径', () async {
       const RemoteVideoSubtitleTarget angle = RemoteVideoSubtitleTarget(
         title: 'Disc · 00001',

@@ -19,6 +19,8 @@ import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_angle.dart'
     show parseBlurayAnglePath;
+import 'package:fushi_engine/media/video/dvd/dvd_angle.dart'
+    show parseDvdTitleAnglePath;
 import 'package:fushi_engine/media/video/dvd/dvd_title_path.dart'
     show isDvdTitlePath;
 import 'package:fushi_engine/sync/interconnect_dav_tree_listing.dart';
@@ -3572,7 +3574,9 @@ class InterconnectSyncBackend extends SyncBackend
   /// `liveLibrary.videoClipAudioDiscTitle`：老 host 不认 `discTitle`，会照 [id] 那一行裁出
   /// 另一条 title 的音频，所以不支持时抛 [RemoteDiscTitleAudioUnsupported]、不发请求。
   /// [discTitle] 是多角度 title 的角度成员路径（`00001.a2.mpls`）时还要 host 声明
-  /// `liveLibrary.videoClipAudioDiscTitleAngle`，否则同样抛、不发请求。
+  /// `liveLibrary.videoClipAudioDiscTitleAngle`，否则同样抛、不发请求；DVD title
+  /// （`VIDEO_TS/TITLE_nn.dvdtitle`）要 `liveLibrary.videoClipAudioDiscTitleDvd`，它的角度
+  /// 成员路径（`TITLE_nn.aK.dvdtitle`）再要 `liveLibrary.videoClipAudioDiscTitleDvdAngle`。
   Future<void> getRemoteVideoAudioClip(
     String id,
     File dest, {
@@ -3595,7 +3599,9 @@ class InterconnectSyncBackend extends SyncBackend
           (parseBlurayAnglePath(discTitle) != null &&
               !await hostSupportsDiscTitleAngleAudio()) ||
           (isDvdTitlePath(discTitle) &&
-              !await hostSupportsDiscTitleDvdAudio())) {
+              !await hostSupportsDiscTitleDvdAudio()) ||
+          (parseDvdTitleAnglePath(discTitle) != null &&
+              !await hostSupportsDiscTitleDvdAngleAudio())) {
         throw const RemoteDiscTitleAudioUnsupported();
       }
     }
@@ -3625,8 +3631,8 @@ class InterconnectSyncBackend extends SyncBackend
       (await _liveLibraryCapabilities())[kVideoClipAudioDiscTitleCapability] ==
       true;
 
-  /// host 是否声明 `liveLibrary.videoClipAudioDiscTitleAngle`（`clipaudio?discTitle=` 认
-  /// 多角度 title 的角度成员路径，按会话里正在播的角度裁）。
+  /// host 是否声明 `liveLibrary.videoClipAudioDiscTitleDvd`（`clipaudio?discTitle=` 认
+  /// DVD title `VIDEO_TS/TITLE_nn.dvdtitle`，经 `dvdvideo` demuxer 按 title 裁）。
   Future<bool> hostSupportsDiscTitleDvdAudio() async =>
       (await _liveLibraryCapabilities())[kVideoClipAudioDiscTitleDvdCapability] ==
       true;
@@ -3635,6 +3641,12 @@ class InterconnectSyncBackend extends SyncBackend
   /// 多角度 title 的角度成员路径，按会话里正在播的角度裁）。
   Future<bool> hostSupportsDiscTitleAngleAudio() async =>
       (await _liveLibraryCapabilities())[kVideoClipAudioDiscTitleAngleCapability] ==
+      true;
+
+  /// host 是否声明 `liveLibrary.videoClipAudioDiscTitleDvdAngle`（`clipaudio?discTitle=`
+  /// 认 DVD 多角度 title 的角度成员路径 `TITLE_nn.aK.dvdtitle`，按会话里正在播的角度裁）。
+  Future<bool> hostSupportsDiscTitleDvdAngleAudio() async =>
+      (await _liveLibraryCapabilities())[kVideoClipAudioDiscTitleDvdAngleCapability] ==
       true;
 
   String? _clipExportCapabilityScope;

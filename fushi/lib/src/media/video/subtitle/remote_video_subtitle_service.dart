@@ -17,7 +17,9 @@
 ///   [RemoteVideoSubtitleJobStatus.discTitleUnsupported]，不发任务。会话正放多角度 title
 ///   的非第 1 个角度时 `discTitle` 是角度成员路径（`00001.a2.mpls`），还要 host 声明
 ///   `acceptsDiscTitleAngle`（老 host 读不到这个虚拟路径），否则同样
-///   [RemoteVideoSubtitleJobStatus.discTitleUnsupported]。
+///   [RemoteVideoSubtitleJobStatus.discTitleUnsupported]。DVD title
+///   （`VIDEO_TS/TITLE_nn.dvdtitle`）要 `acceptsDiscTitleDvd`，它的角度成员路径
+///   （`TITLE_nn.a2.dvdtitle`）再要 `acceptsDiscTitleDvdAngle`，缺哪个都同样不发。
 /// - 从播放页发起的单集带播放器当前音轨（`audioTrack`，0 起的音轨序号 = ffmpeg
 ///   `0:a:N`；远端直传播放的就是 host 那份文件 / 那条 title，播放器的音轨序号与 host
 ///   ffmpeg 的音频流相对序号同口径），host 识别那条轨。老 host 不认 `audioTrack`（会
@@ -40,6 +42,8 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_angle.dart'
     show parseBlurayAnglePath;
+import 'package:fushi_engine/media/video/dvd/dvd_angle.dart'
+    show parseDvdTitleAnglePath;
 import 'package:fushi_engine/media/video/dvd/dvd_title_path.dart'
     show isDvdTitlePath;
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_host_job_runner.dart'
@@ -198,6 +202,25 @@ class RemoteVideoSubtitleTarget {
     (RemoteVideoSubtitleEpisode e) =>
         e.discTitle != null && isDvdTitlePath(e.discTitle!),
   );
+
+  /// 有没有按 DVD 多角度 title 的角度成员路径（`VIDEO_TS/TITLE_nn.aK.dvdtitle`）定位的
+  /// 原盘 title（要 host 声明 `acceptsDiscTitleDvdAngle`）。
+  bool get needsDiscTitleDvdAngleSupport => episodes.any(
+    (RemoteVideoSubtitleEpisode e) =>
+        e.discTitle != null && parseDvdTitleAnglePath(e.discTitle!) != null,
+  );
+
+  /// host [target] 认不认这个目标里的全部原盘 title 形态（`discTitle` 本身、蓝光角度成员、
+  /// DVD title、DVD 角度成员各要各的能力位）。不认就不发任务
+  /// （[RemoteVideoSubtitleJobStatus.discTitleUnsupported]），面板同一判据。
+  bool discTitlesSupportedBy(HostJobTarget target) =>
+      !(needsDiscTitleSupport && !hostAcceptsVideoSubtitleDiscTitle(target)) &&
+      !(needsDiscTitleAngleSupport &&
+          !hostAcceptsVideoSubtitleDiscTitleAngle(target)) &&
+      !(needsDiscTitleDvdSupport &&
+          !hostAcceptsVideoSubtitleDiscTitleDvd(target)) &&
+      !(needsDiscTitleDvdAngleSupport &&
+          !hostAcceptsVideoSubtitleDiscTitleDvdAngle(target));
 }
 
 /// 远端任务的选项（AI 提供商是 host 自己的，不在这里）。
@@ -360,6 +383,14 @@ bool hostAcceptsVideoSubtitleDiscTitleDvd(HostJobTarget target) {
   return entry is Map && entry['acceptsDiscTitleDvd'] == true;
 }
 
+/// host 的 `video_subtitle` 能力里有没有 `acceptsDiscTitleDvdAngle`（`discTitle` 认 DVD
+/// 多角度 title 的角度成员路径 `VIDEO_TS/TITLE_nn.aK.dvdtitle`，按该角度读）。只有
+/// `acceptsDiscTitleDvd` + `acceptsDiscTitleAngle` 的 host 认不出这种形态（只会报找不到）。
+bool hostAcceptsVideoSubtitleDiscTitleDvdAngle(HostJobTarget target) {
+  final Object? entry = target.capability[kVideoSubtitleJobKind];
+  return entry is Map && entry['acceptsDiscTitleDvdAngle'] == true;
+}
+
 /// host 的 `video_subtitle` 能力里有没有 `acceptsAudioTrack`（认 `audioTrack`，识别指定
 /// 音轨）。老 host 没有这个位：它不校验未知参数，收到 `audioTrack` 会静默按识别语言挑，
 /// 所以提交方不带它、并在面板上说明将按语言选轨。
@@ -457,12 +488,7 @@ class RemoteVideoSubtitleService {
         job._finish(RemoteVideoSubtitleJobStatus.episodeUnsupported);
         return;
       }
-      if ((job.target.needsDiscTitleSupport &&
-              !hostAcceptsVideoSubtitleDiscTitle(target)) ||
-          (job.target.needsDiscTitleAngleSupport &&
-              !hostAcceptsVideoSubtitleDiscTitleAngle(target)) ||
-          (job.target.needsDiscTitleDvdSupport &&
-              !hostAcceptsVideoSubtitleDiscTitleDvd(target))) {
+      if (!job.target.discTitlesSupportedBy(target)) {
         job._finish(RemoteVideoSubtitleJobStatus.discTitleUnsupported);
         return;
       }

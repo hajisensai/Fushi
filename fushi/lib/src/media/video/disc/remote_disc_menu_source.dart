@@ -8,6 +8,8 @@ import 'package:fushi_engine/media/video/bluray/bluray_source.dart'
     show isBlurayPlaylistPath;
 import 'package:fushi_engine/media/video/disc/disc_format.dart';
 import 'package:fushi_engine/media/video/disc/disc_share_manifest.dart';
+import 'package:fushi_engine/media/video/dvd/dvd_angle.dart'
+    show dvdTitleAngleBasePath, parseDvdTitleAnglePath;
 import 'package:fushi_engine/media/video/dvd/dvd_disc.dart'
     show dvdTitlePath, isDvdTitlePath;
 import 'package:path/path.dart' as p;
@@ -60,7 +62,9 @@ class RemoteDiscMenuSource {
   /// DVD 会话的 title（[identityRoot] 下的 `VIDEO_TS/TITLE_nn.dvdtitle`）总带 `discTitle`
   /// （= 成员路径），锚在这条 title 自己的行、没有就锚在盘上任一条 DVD 行：host 经
   /// `dvdvideo` demuxer 按 title 读，要 host 声明认 DVD title 才发（见
-  /// [RemoteDiscHostTitle.readsDvd]）。
+  /// [RemoteDiscHostTitle.readsDvd]）。正放多角度 title 的第 N 个角度时它是角度成员路径
+  /// （`TITLE_03.a2.dvdtitle`，见 `dvd_angle.dart`）：按不带角度的那条找 host 行，
+  /// `discTitle` 带角度，要 host 另声明认 DVD 角度路径（[RemoteDiscHostTitle.readsDvdAngle]）。
   ///
   /// 不在这张盘的身份根下、不是蓝光播放列表 / DVD title、或共享里没有任何同类行可当
   /// 锚点 → null。
@@ -117,7 +121,7 @@ class RemoteDiscMenuSource {
     final List<String> rel = parts.sublist(root.length);
     if (rel[0].toUpperCase() != 'VIDEO_TS') return null;
     final String memberPath = rel.join('/');
-    final String key = memberPath.toUpperCase();
+    final String key = dvdTitleAngleBasePath(memberPath).toUpperCase();
     final RemoteDiscShareTitle? own = share.titles
         .where((RemoteDiscShareTitle t) => t.path.toUpperCase() == key)
         .firstOrNull;
@@ -208,6 +212,12 @@ class RemoteDiscHostTitle {
   /// [discTitle] 是 DVD title（`VIDEO_TS/TITLE_nn.dvdtitle`）：host 要声明认 DVD title
   /// （字幕任务 `acceptsDiscTitleDvd`、`liveLibrary.videoClipAudioDiscTitleDvd`）才发。
   bool get readsDvd => discTitle != null && isDvdTitlePath(discTitle!);
+
+  /// [discTitle] 是 DVD 多角度 title 的角度成员路径（`VIDEO_TS/TITLE_03.a2.dvdtitle`）：
+  /// host 还要声明认它（字幕任务 `acceptsDiscTitleDvdAngle`、
+  /// `liveLibrary.videoClipAudioDiscTitleDvdAngle`）才发。
+  bool get readsDvdAngle =>
+      discTitle != null && parseDvdTitleAnglePath(discTitle!) != null;
 
   /// 同一张盘上各条 title 互不相同的稳定标识（任务键、落盘名用）。
   String get key => discTitle == null ? videoId : '$videoId@$discTitle';

@@ -7,6 +7,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:test/test.dart';
+import 'package:fushi_engine/media/video/dvd/dvd_angle.dart'
+    show dvdTitleAnglePath;
 import 'package:fushi_engine/media/video/dvd/dvd_title_path.dart'
     show dvdTitlePath;
 import 'package:fushi_engine/media/video/video_local_files.dart';
@@ -211,7 +213,17 @@ void main() {
           ),
           dvdTitlePath(discRoot, 7),
         );
+        // 多角度 title 的角度成员路径保留角度（host 按正在播的角度读）。
+        expect(
+          videoBookDiscTitlePath(
+            videoPath: dvdRow,
+            discTitle: 'VIDEO_TS/TITLE_07.a2.dvdtitle',
+          ),
+          dvdTitleAnglePath(dvdTitlePath(discRoot, 7), 1),
+        );
         for (final String bad in <String>[
+          'VIDEO_TS/TITLE_07.a1.dvdtitle',
+          'VIDEO_TS/TITLE_07.a10.dvdtitle',
           'BDMV/PLAYLIST/00005.mpls',
           'VIDEO_TS/TITLE_00.dvdtitle',
           'VIDEO_TS/TITLE_100.dvdtitle',

@@ -695,6 +695,11 @@ extension _FushiSyncServerPairing on FushiSyncServer {
         // 字段 → client 不发 DVD title。
         kVideoClipAudioDiscTitleDvdCapability:
             _libraryService is VideoDiscTitleAudioHost,
+        // `clipaudio?discTitle=` 认 DVD 多角度 title 的角度成员路径
+        // （`TITLE_nn.aK.dvdtitle`），按会话里正在播的角度裁。老 host 无此字段 → client
+        // 不发 DVD 角度路径。
+        kVideoClipAudioDiscTitleDvdAngleCapability:
+            _libraryService is VideoDiscTitleAudioHost,
         'videoSubtitleBackfill': lib && videoSubtitleBackfill != null,
         // 图形字幕整轨回传（`GET .../graphicsubtitle?embeddedStreamIndex=`）。老 host
         // 无此字段 / 没注入抽取实现 → false，client 不请求、时间表只靠边播边记。

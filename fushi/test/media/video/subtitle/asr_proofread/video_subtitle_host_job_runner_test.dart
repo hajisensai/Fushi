@@ -16,6 +16,8 @@ import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_h
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_pipeline.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_recognizer.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_recognizer_factory.dart';
+import 'package:fushi_engine/media/video/dvd/dvd_angle.dart'
+    show dvdTitleAnglePath;
 import 'package:fushi_engine/media/video/dvd/dvd_title_path.dart'
     show dvdTitlePath;
 import 'package:fushi_engine/media/video/video_local_files.dart'
@@ -563,6 +565,34 @@ void main() {
         <String>['VIDEO_TS.IFO'],
         reason: 'DVD title 是虚拟路径，盘结构里不能多出文件',
       );
+
+      // 多角度 title 的第 2 个角度：定位保留角度，产物按角度分开落 disc_out。
+      expect((await r.capability())['acceptsDiscTitleDvdAngle'], isTrue);
+      final (HostJobContext angleCtx, _) = context(const <String, Object?>{
+        'proofread': false,
+        'videoId': 'd1',
+        'discTitle': 'VIDEO_TS/TITLE_02.a2.dvdtitle',
+      });
+      r.validateParams(angleCtx.params);
+      final HostJobOutcome angleOutcome = await r.run(angleCtx);
+      expect(angleOutcome.outputs, contains('TITLE_02.a2.ja.srt'));
+      expect(
+        File(
+          p.join(
+            videoSubtitleDiscExportDir(
+              Directory(p.join(tmp.path, 'pipeline')),
+              dvdTitleAnglePath(dvdTitlePath(disc.path, 2), 1),
+            )!.path,
+            'TITLE_02.a2.ja.srt',
+          ),
+        ).existsSync(),
+        isTrue,
+      );
+      expect(
+        videoTs.listSync().map((FileSystemEntity e) => p.basename(e.path)),
+        <String>['VIDEO_TS.IFO'],
+        reason: '角度成员路径也是虚拟的',
+      );
     },
   );
 
@@ -861,6 +891,7 @@ void main() {
     expect(cap['acceptsDiscTitle'], isFalse);
     expect(cap['acceptsDiscTitleAngle'], isFalse);
     expect(cap['acceptsDiscTitleDvd'], isFalse);
+    expect(cap['acceptsDiscTitleDvdAngle'], isFalse);
     // 没接 resolveVideoPath：不认 videoId，也就不认 audioTrack。
     expect(cap['acceptsAudioTrack'], isFalse);
     expect(
