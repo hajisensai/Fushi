@@ -1,4 +1,4 @@
-## BUG-4797 · 在线小说书取章后内存字数不刷新，统计与进度按占位页算
+## BUG-4798 · 在线小说书取章后内存字数不刷新，统计与进度按占位页算
 - **报告**：2026-11-17（用户：小说 / 漫画 / 视频优化清单复核，novel-1）
 - **真实性**：✅ 真 bug（沿代码路径确认，未在真机复现漏计数值）。在线小说书（LNReader）与网页小说书入库时每章都是占位页，书行 `chaptersJson` 里的 `characters` 是占位文案的字数。根因（行号按修复前的 `upstream/develop` @ 8d58da51da9）：
   - 阅读器只在开书时读一次每章字数：`fushi/lib/src/pages/implementations/reader_fushi_page.dart:3336-3346`（`charCountsFromChaptersJson`）→ `:3389` `_applyCharCounts`；之后只有口径重算（`:3615`）会再调，在线书的口径是当前口径，不走这条路。
