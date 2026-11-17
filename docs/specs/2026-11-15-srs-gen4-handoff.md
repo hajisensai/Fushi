@@ -2221,9 +2221,12 @@ Rust `SCHEMA` 没升（没加表 / 索引，分到的 40024 没用）；ABI 不�
   （内核写连接、迁移 / 预演目标库）；读连接 `query_only`；`kernel.rs` 并 WAL 的旁路连接只做检查点；协议 3 旧库连接不是新代库。
 - 新模块 `store/gen4/scrub.rs`：`advance_purge` 落空洞的同一个事务里记 `srs_meta` `gen4_scrub_due`；`kernel.rs` `write_tx`
   提交后（事务外、仍拿写锁）做收尾：没有 `gen4_secure_delete` 标记的存量库先 `VACUUM` 一次并记标记，再
-  `wal_checkpoint(TRUNCATE)`，成了才删 `gen4_scrub_due`。检查点被读者挡住 / 收尾失败：标记留着，下一条写命令与下一次打开
-  接着做（命令本身已提交，不改它的结果）。`schema::open` 建库那一笔记 `gen4_secure_delete`，所以换代迁移建的库与全新安装都
-  不需要整理。
+  `wal_checkpoint(TRUNCATE)`，成了才删 `gen4_scrub_due`。命令本身已提交，收尾没做成不改它的结果，标记留着。没做成分两种
+  （复核修复，`scrub.rs`「没做成怎么办」）：检查点被读者挡住 → 之后每条写命令提交后再试，但**不等**读者（忙等临时设 0）；
+  出错（整理时空间不够、I/O 错误）→ 原因记进 `srs_meta` `gen4_scrub_error`，由新读命令 `scrub_state`（`{due, error}`，
+  整库一份）报给 UI，**不再逐条写命令重试**，只在下一次打开或下一次又有清除落空洞时再试，做成了删掉错误。没放进 `status`：
+  `status` 的形状按规划 §2.1 与协议 3 逐键相同（`status_keeps_the_protocol_3_shape` 守着）。`schema::open` 建库那一笔记
+  `gen4_secure_delete`，所以换代迁移建的库与全新安装都不需要整理。
 - 存量库的取舍：每次清除都 `VACUUM` 代价太大（约等于库大小的临时空间、期间占写锁），开库时做会让每个存量库启动卡一次；
   只在第一次清除时做一次。生产里需要整理的只有换代开发期间用集成分支建的库（develop 上只有预演，没有在用的 `srs4.db`）。
 - 绕开 `write()`/`finish` 的灌库入口：`.fushisrs` 第 2 版、第 1 版、旧备份读入（`import.rs` 三处）原来只 `ingest_settle(Rebuild)`，
@@ -2237,10 +2240,47 @@ Rust `SCHEMA` 没升（没加表 / 索引，分到的 40024 没用）；ABI 不�
 可提前删），迁移前的原文随之消失。**依赖**：D32 的自动删除与提前删除入口还没实现（§25 末、G7-6），彻底清除确认处的说明也要跟
 那个入口一起加（说明里要指向真实存在的删除入口，现在加只会说空话）。归属 G7-6 / 保留副本 owner。
 
+复核后补充（不改定案）：复核建议的另一条路「先加一句不指向入口的说明（旧版本保留副本里的内容会在保留期结束时一起删除）」
+没采用——自动删除还没实现，这句话现在是假的，用户据此放心反而是误导。**G7-6 的任务清单必须明列两项**：① 彻底清除的
+确认处（`srs_deck_list_page.dart` 的 `_DeckDeleteMode.purge` 选项说明，`srs_deck_delete_purge_hint`）加一句「旧版本保留副本里
+还有迁移前的内容，会在保留期结束时（或你在设置里提前删除时）一起删除」；② 新读命令 `scrub_state` 的 `error` 非空时的提示
+（「清除的内容在磁盘上还没抹干净：<原因>」）。在 G7-6 落地之前，彻底清除迁移前的内容后封存库里原文仍在、界面没有提示，
+这是已知缺口。
+
+### 转发里的副本（复核修复，2026-11-17）
+
+复核指出转发缓存 `relay_segs`（G8-7b）存着作者段原文：同步着 ≥ 2 个位置时，清除之后原文仍留在 `srs4.db` 里、之后还会
+原样转发出去。清除的执行点归本模块，所以在这里修，不外推给转发 owner：
+
+- `Truth::advance_purge` 落空洞的同一个事务里调 `sync_state.rs` `Truth::relay_purged`：`relay_segs` 里覆盖这个 seq 的件
+  整份删掉；`relay_out` 里已转发到各位置、覆盖它的 `rly-` 改成待删（`gone = 1`，下一次 `relay_ack` 交给调用方删掉位置上
+  那份带原文的件，两段式删除照旧）。作者签过的段改不出空洞（`gen4/segment.rs` 文件头），只能整份删。
+- 收段时 `keep` 先查本机在这一段的区间里有没有空洞（`Truth::voids_within`），有就解开中继件逐项看：在本机已清除的 seq
+  上还带着完整内容（作者还没重切）的不留，并在 `srs_meta` 记 `gen4_rrefuse/<col>/<作者>/<段名>` = 当时作者 head 的代号；
+  `wanted_for_relay` 在作者写出更新的 head 之前不再为它拉这一段（不每轮白拉）。作者重切出的同名段带着空洞，照常留下，
+  因为那个位置「缺」这一段（`relay_out` 那行已待删 / 删掉），重新转发过去、覆盖同名件。
+- 代价：作者重切之前，这位作者的转发整台跳过（`relay_outbox` 的 `incomplete`，不发半截），只经本机转发拿数据的位置在这段
+  时间收不到这位作者的新操作。作者长期不回来（清除是别的设备发起的）时一直如此，靠停用（`retire`）或作者回来解开。
+- 测试（`cmd/purge_scrub_tests.rs`）：`a_purge_drops_the_relay_copy_and_only_the_voided_segment_is_relayed_on`（a 只连 L1、
+  b 连 L1 + L2、c 只连 L2；b 收到清除后转发缓存里没有原文，转发到 L2 的件不带被清内容，c 收齐其余的）、
+  `a_purge_takes_back_what_was_already_relayed_to_another_location`（清除前已转发到 L2 的件被删掉、作者重切后重发）、
+  `an_unrecut_segment_carrying_purged_text_is_refused_once_and_not_refetched`。变异：去掉 `relay_segs` 删除 / 去掉拒收 /
+  去掉拒收记录 / 去掉 `relay_out` 待删，各自对应测试变红。
+- 没覆盖：别的设备从 L2 上拉走那份旧件、在它收到清除之前——那台设备收到清除时自己落空洞、做字节层收尾，与作者自己的段
+  同一个口径。
+
+### 已知残余风险（复核记录）
+
+- **承袭设备 ID 的认领**（推测，未实测，与协议 3 一致、不是本分支引入）：`note_new_peer` 的 KnownLog 分支对「本机已有
+  它的日志」的设备按可信、不写信任行。协议 3 时代只经代传、从没登记过公钥的承袭设备 ID，能写同步位置的人可以用自己的
+  钥匙在旧根放一份 v3 head 认领它（`oldroot_ingest` 里 `set_peer` 返回 `Inserted` → KnownLog → 可信），之后它以这个 ID
+  写的承袭段里的删除与清除不被扣。新代原生段对承袭类设备有 `receive.rs` 的类型检查，走不通。前提是明文位置、承袭链可续写。
+  可选收紧：只在有可信上传者背书时才走 KnownLog，其余按首见规则判。留给 C2 后续或同步安全 owner 拍。
+- 旧根路径 `cmd/sync_oldroot.rs` 的 `rx.trust_changed()` 是兜底：KnownLog 不变量下不改变结果，删掉它相关测试全绿（复核变异
+  M9）。注释已写明，接受它没有测试能证伪。
+
 ### 没做 / 归属别的模块
 
-- 转发缓存 `relay_segs`（G8-7b，`cmd/sync_relay.rs`）存的是作者段原文：同步着 ≥ 2 个位置时，被清除的内容会留在
-  `relay_segs` 里直到每个位置都有了那一段，期间还会原样转发到别的位置。清除时应当丢掉 / 重切含被清操作的转发件。没改，
-  归转发 owner（单位置的字节扫描测试覆盖不到这条路径）。
 - 迁移本身（`dryrun.rs` 重建）不执行清除，见上。
+- Dart 侧没接 `scrub_state`（没有 UI 提示），归 G7-6，见上「封存旧库」节的任务清单。
 - Dart：`srs_purge_test`、`srs_devices_test`、`srs_db_store_test` 等的复跑结果见 PR 描述。
