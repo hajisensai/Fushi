@@ -338,22 +338,6 @@ fn note_new_peer_inherits_only_under_the_same_key() {
             Some((TRUST_PENDING, T1 + 9))
         );
         assert_eq!(t.peer(col, &id(0xb1))?.unwrap().name, None);
-        // 本机已有它的日志（承袭日志先于公钥到）：不追溯。
-        let me = t.self_identity(col)?.unwrap().device;
-        let mine = peer(0xc1, None);
-        t.set_peer(
-            col,
-            &Peer {
-                device: me,
-                ..mine.clone()
-            },
-        )
-        .ok();
-        assert_eq!(
-            t.note_new_peer(col, &me, &mine.public, None, T1 + 9)?,
-            FirstSeen::KnownLog
-        );
-        assert_eq!(t.trust_entry(col, &me)?, None);
         Ok(())
     });
 }

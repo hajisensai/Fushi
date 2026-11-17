@@ -110,6 +110,16 @@ impl NativeHeader {
 
 /// 魔数 + 版本 + 标志位（只认 bit0）。
 pub(crate) fn read_magic(r: &mut Reader<'_>, magic: &[u8; 4], version: u8) -> DResult<u8> {
+    read_magic_flags(r, magic, version, F_ENCRYPTED)
+}
+
+/// 同 [read_magic]，[allowed] 是这种文件认得的 flags 位（其余位非 0 = 损坏）。
+pub(crate) fn read_magic_flags(
+    r: &mut Reader<'_>,
+    magic: &[u8; 4],
+    version: u8,
+    allowed: u8,
+) -> DResult<u8> {
     if r.raw(4)? != magic {
         return Err(DecodeError("segment magic"));
     }
@@ -117,7 +127,7 @@ pub(crate) fn read_magic(r: &mut Reader<'_>, magic: &[u8; 4], version: u8) -> DR
         return Err(DecodeError("segment version"));
     }
     let flags = r.u8()?;
-    if flags & !F_ENCRYPTED != 0 {
+    if flags & !allowed != 0 {
         return Err(DecodeError("segment flags"));
     }
     Ok(flags)

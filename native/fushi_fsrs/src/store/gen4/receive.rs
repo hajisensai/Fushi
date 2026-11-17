@@ -71,7 +71,7 @@ use super::import::HERITAGE_MARK_EVERY;
 use super::ingest::{Settle, ingest_settle};
 use super::schema::{k_dev, k_seq, sql};
 use super::sync_state::{WaitRow, chain32, op_of_bytes};
-use super::truth::{DEV_HERITAGE, DEV_NATIVE, Put, Truth};
+use super::truth::{DEV_HERITAGE, DEV_NATIVE, Peer, Put, Truth};
 use crate::gen4::heritage::{
     Fp, HeritageHeader, HeritageSlot, SlotBody, fingerprint, open_heritage_verified,
     peek_heritage_header,
@@ -112,6 +112,8 @@ pub enum Reject {
     PlainOnSealed,
     /// 段头的设备在本机已经是另一种日志（原生 / 承袭），或承袭日志的来源集合对不上。
     WrongLog(Id),
+    /// 承袭段头担保的旧设备公钥（`author_key`）与本机记着的不同：上传者与本机至少有一方认的是冒充者，整段不收。
+    AuthorKeyMismatch(Id),
 }
 
 /// 收一段的结论。
@@ -614,6 +616,9 @@ impl<'t, 'c> Receiver<'t, 'c> {
                 return Ok(reject_of(e));
             }
         }
+        if let Some(rejected) = self.vouched_author_key(&header)? {
+            return Ok(Taken::Rejected(rejected));
+        }
         // 第二遍：落库。
         let slots = open
             .slots()
@@ -631,6 +636,36 @@ impl<'t, 'c> Receiver<'t, 'c> {
         self.marks_due
             .push((header.device, header.last, header.last_chain));
         Ok(taken)
+    }
+
+    /// 承袭段头带的旧设备公钥（`heritage.rs` 的 `author_key`，上传者签名担保；段已验过签、整段合规）。本机还没记过
+    /// 这台旧设备的公钥就登记下来：之后有人拿另一把钥匙冒充它写 head（旧根的 v3 head、新根的 head），在 [Truth::set_peer]
+    /// 就是公钥对不上（先到先得），不再是「第一次见到」——否则冒充者会被当成「本机已有它的日志」的熟设备，它签的段
+    /// 按它自己报的钥匙验签、里面的清除照常执行（G10-4 第四轮复核 major）。不判首次信任：上传者受信，它担保的作者
+    /// 与段里的操作同样可信（D20，`inherit.rs` 只替上传者自己信任的作者上传）。本机记的是另一把 =
+    /// [Reject::AuthorKeyMismatch]。段头不带公钥（上传者也不知道：协议 3 里没有公钥的设备行）什么都不做。
+    fn vouched_author_key(&self, header: &HeritageHeader) -> Result<Option<Reject>, String> {
+        let Some(public) = header.author_key else {
+            return Ok(None);
+        };
+        match self.t.device_key(self.col, &header.device)? {
+            Some(cur) if cur != public => Ok(Some(Reject::AuthorKeyMismatch(header.device))),
+            Some(_) => Ok(None),
+            None => {
+                self.t.set_peer(
+                    self.col,
+                    &Peer {
+                        device: header.device,
+                        public,
+                        name: None,
+                        ext: None,
+                        head_gen: None,
+                        first_seen: None,
+                    },
+                )?;
+                Ok(None)
+            }
+        }
     }
 
     /// 承袭槽按序落库（[Receiver::heritage] 与 [Receiver::legacy] 共用）：已有的按落库规则，正好接在末尾、依赖齐了的
@@ -1070,7 +1105,7 @@ mod tests {
     use crate::store::gen4::derive::tests::{assert_rebuild_is_identity, dump, op};
     use crate::store::gen4::native::tests::{edit, ready};
     use crate::store::gen4::schema::open_in_memory;
-    use crate::store::gen4::truth::{Peer, TRUST_PENDING};
+    use crate::store::gen4::truth::{Peer, PeerPut, TRUST_PENDING};
     use rusqlite::Connection;
 
     const A: u8 = 0x21;
@@ -1632,12 +1667,27 @@ mod tests {
 
     /// 旧设备 OLD 的 [slots]，A 上传。
     fn hseg(slots: &[HeritageSlot], uploader: u8, key: Option<&CollectionKey>) -> Vec<u8> {
+        hseg_with(slots, uploader, key, None)
+    }
+
+    /// [hseg]，段头带作者公钥 [author]（明文位置）。
+    fn hseg_keyed(slots: &[HeritageSlot], uploader: u8, author: Option<[u8; 32]>) -> Vec<u8> {
+        hseg_with(slots, uploader, None, author)
+    }
+
+    fn hseg_with(
+        slots: &[HeritageSlot],
+        uploader: u8,
+        key: Option<&CollectionKey>,
+        author: Option<[u8; 32]>,
+    ) -> Vec<u8> {
         let first = slots[0].id.seq;
         let meta = HeritageMeta {
             collection: coll(),
             source: id(0x5c),
             device: id(OLD),
             uploader: id(uploader),
+            author_key: author,
             t_version: T_VERSION,
             prev_chain: if first == 1 {
                 CHAIN_ZERO
@@ -1684,6 +1734,49 @@ mod tests {
         let col2 = setup(&t2);
         take(&t2, col2, Settle::Rebuild, &[&s12, &s34, &b], None);
         assert_eq!(state(&conn, &t, col), state(&conn2, &t2, col2));
+    }
+
+    /// 承袭段头担保的作者公钥（G10-4 第四轮复核 major）：本机没记过就登记、不写信任行（上传者受信即可信），之后拿另一把
+    /// 钥匙冒充这台旧设备的 head 在 `set_peer` 就是公钥对不上；本机记着另一把时，担保它的段整段不收（不落、不登记）。
+    #[test]
+    fn heritage_author_keys_are_registered_and_must_agree() {
+        let conn = open_in_memory().unwrap();
+        let t = Truth::new(&conn);
+        let col = setup(&t);
+        let real = key_of(OLD).public();
+        let evil = key_of(0xee).public();
+        let s12 = hseg_keyed(&[hslot(1, &[]), hslot(2, &[])], A, Some(real));
+        let (got, _) = take(&t, col, Settle::Incremental, &[&s12], None);
+        assert_eq!(got, vec![landed(2, 0, 0)]);
+        assert_eq!(t.tx(|t| t.device_key(col, &id(OLD))), Ok(Some(real)));
+        assert_eq!(t.tx(|t| t.trust_of(col, &id(OLD))), Ok(None));
+        let impostor = Peer {
+            device: id(OLD),
+            public: evil,
+            name: Some("evil".into()),
+            ext: None,
+            head_gen: None,
+            first_seen: None,
+        };
+        assert_eq!(
+            t.tx(|t| t.set_peer(col, &impostor)),
+            Ok(PeerPut::KeyMismatch)
+        );
+        // 另一个上传者担保另一把钥匙：整段不收。
+        let forged = hseg_keyed(&[hslot(3, &[]), hslot(4, &[])], B, Some(evil));
+        let (got, _) = take(&t, col, Settle::Incremental, &[&forged], None);
+        assert_eq!(
+            got,
+            vec![Taken::Rejected(Reject::AuthorKeyMismatch(id(OLD)))]
+        );
+        assert_eq!(t.tx(|t| t.audit(col)), Ok(2));
+        // 同一把、或不带：照收。
+        let s3 = hseg_keyed(&[hslot(3, &[])], B, Some(real));
+        let s4 = hseg_keyed(&[hslot(4, &[])], B, None);
+        let (got, _) = take(&t, col, Settle::Incremental, &[&s3, &s4], None);
+        assert_eq!(got, vec![landed(1, 0, 0), landed(1, 0, 0)]);
+        assert_eq!(t.tx(|t| t.device_key(col, &id(OLD))), Ok(Some(real)));
+        assert_rebuild_is_identity(&t, col);
     }
 
     #[test]

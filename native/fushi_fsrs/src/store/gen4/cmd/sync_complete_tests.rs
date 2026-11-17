@@ -279,6 +279,17 @@ fn old_root(loc: &mut Loc, n: u64, cuts: &[(u64, u64)]) {
 
 /// [old_root]，操作由调用方给（设备 OLD 的 seq 1..=n，`ops[i].id.seq == i + 1`）。
 pub(super) fn old_root_with(loc: &mut Loc, ops: &[crate::sync2::op::Op], cuts: &[(u64, u64)]) {
+    old_root_signed(loc, ops, cuts, &old_key(), "old phone");
+}
+
+/// [old_root_with]，段与 head 由 [signer] 签、head 自报名字 [name]（冒充 OLD 的测试用）。
+pub(super) fn old_root_signed(
+    loc: &mut Loc,
+    ops: &[crate::sync2::op::Op],
+    cuts: &[(u64, u64)],
+    signer: &DeviceKey,
+    name: &str,
+) {
     let dev = id(OLD);
     let n = ops.len() as u64;
     let mut chain = CHAIN_ZERO;
@@ -300,7 +311,7 @@ pub(super) fn old_root_with(loc: &mut Loc, ops: &[crate::sync2::op::Op], cuts: &
             collection_of(P),
             &ops[a as usize - 1..b as usize],
             prev,
-            &old_key(),
+            signer,
             None,
         )
         .unwrap();
@@ -316,19 +327,19 @@ pub(super) fn old_root_with(loc: &mut Loc, ops: &[crate::sync2::op::Op], cuts: &
         min_reader: 3,
         collection: collection_of(P),
         device: dev,
-        public: old_key().public(),
+        public: signer.public(),
         seq: n,
         chain: chains[n as usize - 1],
         segments,
         ack: Vv::new(),
         digest: String::new(),
         at_ms: T1,
-        name: "old phone".into(),
+        name: name.into(),
         ext: None,
     };
     loc.insert(
         format!("v3/devices/{}/{}", dev.text(), head.file_name()),
-        head.encode(&old_key()),
+        head.encode(signer),
     );
     loc.entry("v3/meta.json".into()).or_insert_with(|| {
         json!({"collection": collection_of(P).text(), "v": 3, "minReader": 3})

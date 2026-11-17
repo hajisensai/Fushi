@@ -197,6 +197,7 @@ fn their_seg(
         source: collection_of("dir"),
         device: id(OLD),
         uploader: up,
+        author_key: None,
         t_version: T_VERSION,
         prev_chain: if a == 1 {
             CHAIN_ZERO

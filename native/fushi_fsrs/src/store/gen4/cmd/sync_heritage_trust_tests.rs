@@ -1,16 +1,21 @@
-//! 承袭段与首次信任（G10-4 第三轮复核）：上传者只担保自己信任的作者（`inherit.rs` 文件头「只替本机信任的作者上传」），
-//! 收方经受信上传者拿到日志的作者在旧根上再见到时不追溯（`truth/trust.rs` 第 1 条）。一律经 C ABI，装置沿用
+//! 承袭段与首次信任（G10-4 第三、四轮复核）：上传者只担保自己信任的作者（`inherit.rs` 文件头「只替本机信任的作者上传」），
+//! 段头带上传者记着的作者公钥，收方据此登记——之后旧根上这位作者的 head 是已认识的设备，换钥匙的冒充者公钥对不上
+//! （`receive.rs` `vouched_author_key`、`truth/trust.rs` 文件头）；段头没带公钥的作者，head 第一次来时照首次信任判。
+//! 一律经 C ABI，装置沿用
 //! `sync_tests.rs` / `sync_complete_tests.rs`。另有两条真相层的身份承接边界（第三轮复核 minor 3）：本机迁移前的
 //! 协议 3 旧身份在旧根上再见到不判待确认；与在册设备同钥匙、却不带（或带错）`prev` 的新身份不承接、更不偏向可信。
 
 use serde_json::{Value, json};
 
 use super::dispatch_tests::T1;
-use super::sync_complete_tests::{OLD, d_old_len, old_root_with, take_old_root, upload_heritage};
-use super::sync_tests::{Dev, Loc, Opts, cmd, round, status_row};
+use super::sync_complete_tests::{
+    OLD, d_old_len, old_root_signed, old_root_with, take_old_root, upload_heritage,
+};
+use super::sync_tests::{Dev, Loc, Opts, cmd, listing, round, status_row};
 use super::sync_trust_tests::{legacy_library, migrate_to};
 use super::tests::{N1, N2};
-use crate::gen4::head::PrevIdentity;
+use crate::gen4::head::{Head4, PrevIdentity};
+use crate::gen4::heritage::{HeritageMeta, open_heritage, pack_heritage};
 use crate::gen4::op::tests::id;
 use crate::store::gen4::truth::{FirstSeen, Peer, PeerPut, TRUST_PENDING, TRUST_REJECTED};
 use crate::sync2::id::{Id, Key};
@@ -70,6 +75,11 @@ fn a_purge_held_on_the_uploader_stays_held_on_other_devices() {
     assert_eq!(row["heldPurges"], json!(1), "{row}");
     assert_eq!(d_old_len(&a), 4, "a holds OLD's log");
     assert_eq!(
+        heritage_plan(&a, &loc, T1 + 10)["unvouched"],
+        json!([old]),
+        "the sync page learns which authors only the old root still has"
+    );
+    assert_eq!(
         upload_heritage(&a, &mut loc, T1 + 10),
         0,
         "a does not vouch for a device it has not confirmed"
@@ -100,13 +110,14 @@ fn a_purge_held_on_the_uploader_stays_held_on_other_devices() {
 
     // a 确认 OLD：信任变了、承袭指纹跟着变，下一轮补传。
     trust(&a, T1 + 30, &old);
+    assert_eq!(heritage_plan(&a, &loc, T1 + 30)["unvouched"], json!([]));
     assert!(upload_heritage(&a, &mut loc, T1 + 30) > 0);
     assert!(heritage_files(&loc) > 0);
 }
 
 /// 混合版本家庭（复核 minor）：用户自己还没升级的 OLD 在 a 上可信（a 捡旧根时库还是空的），a 替它承袭上传。库里有
-/// 数据的 c 信任 a、经承袭段收下 OLD 的日志；OLD 之后又在旧根上写了新段（含一条清除），c 捡旧根时第一次见到它的
-/// head——本机已有它的日志（受信的 a 担保过），按可信接上，不记待确认、清除不扣，与 a 上的结果一致（协议 3 口径）。
+/// 数据的 c 信任 a、经承袭段收下 OLD 的日志，连同段头里 a 担保的 OLD 公钥；OLD 之后又在旧根上写了新段（含一条清除），
+/// c 捡旧根时读到它的 head——公钥已经认识（不是第一次见到），按可信接上，不记待确认、清除不扣，与 a 上的结果一致。
 #[test]
 fn an_old_device_vouched_for_through_heritage_is_not_pending_later() {
     let mut loc = Loc::new();
@@ -136,7 +147,11 @@ fn an_old_device_vouched_for_through_heritage_is_not_pending_later() {
     // OLD（还在协议 3）接着写：前 3 条与之前相同，4..=6 是新段，最后一条是清除。
     old_root_with(&mut loc, &more, &[(1, 3), (4, 6)]);
     let (scan, ing) = take_old_root(&c, &loc, T1 + 22);
-    assert_eq!(scan["heads"].as_array().map(Vec::len), Some(1), "{scan}");
+    assert_eq!(
+        scan["heads"],
+        json!([]),
+        "c already knows OLD's key from the heritage header: {scan}"
+    );
     let ing = ing.expect("c scans the old root");
     assert_eq!(ing["errors"], json!([]), "{ing}");
     assert_eq!(d_old_len(&c), 6);
@@ -229,4 +244,163 @@ fn a_same_key_identity_without_a_matching_prev_is_judged_as_new() {
         }
         Ok(())
     });
+}
+
+fn heritage_plan(d: &Dev, loc: &Loc, now: i64) -> Value {
+    cmd(
+        d.h,
+        "heritage_plan",
+        now,
+        json!({"progress": "loc#plain", "listing": listing(loc)}),
+        &[],
+    )
+    .0
+}
+
+/// 冒充者的钥匙。
+fn evil_key() -> DeviceKey {
+    DeviceKey::from_seed(&[0xee; 32])
+}
+
+/// 攻击者拿 [evil_key] 冒充 OLD：把旧根上 OLD 的 head 换成自己签的，再写 1..=6（4..=6 是新段、最后一条清除）。
+fn impersonate_old(loc: &mut Loc, ops: &[crate::sync2::op::Op]) {
+    let dir = format!("v3/devices/{}/", id(OLD).text());
+    loc.retain(|k, _| !(k.starts_with(&dir) && k.contains("/head-")));
+    old_root_signed(loc, ops, &[(1, 3), (4, 6)], &evil_key(), "evil");
+}
+
+/// 空库的 a 捡 OLD 的旧根（1..=3）、信任它、替它承袭上传；库里有数据的 c 信任 a，经承袭段拿到 OLD 的 3 条。
+fn vouched_through_heritage(tag: &str, loc: &mut Loc, more: &[crate::sync2::op::Op]) -> (Dev, Dev) {
+    old_root_with(loc, &more[..3], &[(1, 3)]);
+    let a = Dev::new(&format!("{tag}a"));
+    round(&a, loc, "loc", T1 + 10, Opts::default());
+    let (_, ing) = take_old_root(&a, loc, T1 + 10);
+    assert_eq!(ing.expect("a scans")["errors"], json!([]));
+    assert!(upload_heritage(&a, loc, T1 + 10) > 0);
+    a.write(T1 + 11, N1, "鯨");
+    round(&a, loc, "loc", T1 + 11, Opts::default());
+    let c = Dev::new(&format!("{tag}c"));
+    c.write(T1 + 2, N2, "猫");
+    round(&c, loc, "loc", T1 + 20, Opts::default());
+    trust(&c, T1 + 20, &a.device());
+    (a, c)
+}
+
+/// 第四轮复核 major（拒绝路径）：c 经承袭段认识 OLD 之后，攻击者拿另一把钥匙冒充 OLD，在旧根上写 4..=6（最后一条
+/// 彻底清除）与 head。段头带了 a 担保的 OLD 公钥，c 已登记它：冒充的 head 公钥对不上（按冒名报错、不登记），冒充者
+/// 签的段按 OLD 的真公钥验签不过，一条都不落，清除不执行，名字也不被改。读旧根的 a 上同样拒绝。
+#[test]
+fn an_impostor_cannot_take_over_an_author_known_through_heritage() {
+    let mut loc = Loc::new();
+    let more = ops_ending_in_a_purge(6);
+    let old = id(OLD).text();
+    let (a, c) = vouched_through_heritage("g104imp", &mut loc, &more);
+    round(&c, &mut loc, "loc", T1 + 21, Opts::default());
+    assert_eq!(d_old_len(&c), 3, "OLD's log arrives through a's heritage");
+
+    impersonate_old(&mut loc, &more);
+    for d in [&c, &a] {
+        // OLD 的公钥已经认识：不再去读它的 head，冒充者签的段按真公钥验签不过。
+        let (scan, ing) = take_old_root(d, &loc, T1 + 22);
+        assert_eq!(scan["heads"], json!([]), "{scan}");
+        let ing = ing.expect("the old root changed");
+        let errors = ing["errors"].to_string();
+        assert!(errors.contains("BadSignature"), "{ing}");
+        assert_eq!(d_old_len(d), 3, "nothing the impostor signed lands: {ing}");
+        let row = status_row(d, &old);
+        assert_ne!(row["name"], json!("evil"), "{row}");
+        assert!(row.get("trust").is_none(), "{row}");
+        assert!(row.get("heldPurges").is_none(), "{row}");
+    }
+}
+
+/// 段头没带作者公钥（上传者自己也不知道：协议 3 里没有公钥的设备行）：c 有 OLD 的日志、却没有任何受信方担保过它的
+/// 公钥。冒充者先拿 OLD 的设备 ID 写一份新根 head——协议 4 的 head 不会用协议 3 的设备 ID，`plan` 按冒名拒、不登记；
+/// 再在旧根上写 head 与清除——第一次登记 OLD 的公钥，**不**因「本机已有它的日志」放行，库非空 = 待确认，清除扣住。
+#[test]
+fn a_heritage_author_without_a_vouched_key_is_judged_when_its_head_first_arrives() {
+    let mut loc = Loc::new();
+    let more = ops_ending_in_a_purge(6);
+    let old = id(OLD).text();
+    let (mut a, c) = vouched_through_heritage("g104nok", &mut loc, &more);
+    // 把 a 的承袭段改成不带作者公钥的（同名、a 重新签）。
+    let signer = a.direct(|t, col| Ok(t.self_identity(col)?.unwrap().key()));
+    let hrt: Vec<String> = loc
+        .keys()
+        .filter(|k| k.contains("/hrt-"))
+        .cloned()
+        .collect();
+    assert!(!hrt.is_empty());
+    for path in hrt {
+        let (h, slots) = open_heritage(&loc[&path], &signer.public(), None).unwrap();
+        assert_eq!(
+            h.author_key,
+            Some(super::sync_complete_tests::old_key().public())
+        );
+        let meta = HeritageMeta {
+            collection: h.collection,
+            source: h.source,
+            device: h.device,
+            uploader: h.uploader,
+            author_key: None,
+            t_version: h.t_version,
+            prev_chain: h.prev_chain,
+            last_chain: h.last_chain,
+        };
+        loc.insert(path, pack_heritage(&meta, &slots, &signer, None).unwrap().1);
+    }
+    let mut c = c;
+    round(&c, &mut loc, "loc", T1 + 21, Opts::default());
+    assert_eq!(d_old_len(&c), 3);
+    assert_eq!(
+        c.direct(|t, col| t.device_key(col, &id(OLD))),
+        None,
+        "no key came with the log"
+    );
+
+    // 新根上冒充 OLD 的 head。
+    let meta: Value = serde_json::from_slice(&loc["v4/meta.json"]).unwrap();
+    let collection = Id::parse(meta["collection"].as_str().unwrap()).unwrap();
+    let fake = Head4 {
+        gen: 1,
+        protocol: 4,
+        min_reader: 4,
+        collection,
+        device: id(OLD),
+        public: evil_key().public(),
+        seq: 0,
+        chain: CHAIN_ZERO,
+        segs: Vec::new(),
+        ack: crate::sync2::vv::Vv::new(),
+        digest: String::new(),
+        at_ms: T1 + 21,
+        name: "evil".into(),
+        loc: String::new(),
+        seal: String::new(),
+        derive: 1,
+        prev: None,
+        ext: None,
+        extra: std::collections::BTreeMap::new(),
+    };
+    loc.insert(
+        format!("v4/devices/{old}/{}", fake.file_name()),
+        fake.encode(&evil_key()).unwrap(),
+    );
+    let r = round(&c, &mut loc, "loc", T1 + 22, Opts::default());
+    assert!(
+        r.plan["errors"].to_string().contains("impostor"),
+        "{}",
+        r.plan
+    );
+    assert_eq!(c.direct(|t, col| t.device_key(col, &id(OLD))), None);
+
+    // 旧根上冒充 OLD 的 head 与清除。
+    impersonate_old(&mut loc, &more);
+    let (_, ing) = take_old_root(&c, &loc, T1 + 23);
+    let ing = ing.expect("the old root changed");
+    assert_eq!(ing["errors"], json!([]), "{ing}");
+    assert_eq!(d_old_len(&c), 6);
+    let row = status_row(&c, &old);
+    assert_eq!(row["trust"], json!("pending"), "{row}");
+    assert_eq!(row["heldPurges"], json!(1), "the purge is held: {row}");
 }
