@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4121 条。点号进各自文件。
+> 共 4122 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4766](bugs/BUG-4766-music-album-track-row-no-touch-menu.md) | 🚧 | 🚧 | 专辑页本地曲目行在触屏上打不开曲目菜单（加入队列 / 加入歌单 / 从音乐库移除只有右键入口） |
 | [BUG-4765](bugs/BUG-4765-music-track-blocks-no-touch-menu.md) | 🚧 | 🚧 | 色块样式曲目格在触屏上打不开曲目菜单（多选 / 从歌单移除 / 加入队列等只有右键入口） |
 | [BUG-4764](bugs/BUG-4764-music-local-track-row-no-touch-menu.md) | ✅ | ✅ | 触屏上本地曲目行打不开菜单：歌曲 / 艺人 / 歌单页进不了多选、点不到「从这个歌单移除」 |
 | [BUG-4763](bugs/BUG-4763-music-stage-lyrics-blur-pref-stale.md) | ✅ | ✅ | MV / 卡拉 OK 舞台页歌词用 ref.read 读「模糊非当前行」，页面开着时改了偏好不刷新 |
