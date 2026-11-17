@@ -36,6 +36,9 @@ class _Device {
   late final SrsDbProfileLinker linker;
   final List<String> unlinked = <String>[];
 
+  /// 关联器经 `onError` 记下的非致命错误（只记位置描述）。
+  final List<String> errors = <String>[];
+
   static Future<_Device> open(String deviceId) async {
     final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
@@ -50,6 +53,8 @@ class _Device {
       db: db,
       activeProfileId: () async => profileId,
       reopenStore: () async => d.store = await d._openStore(),
+      onError: (String where, Object error, StackTrace stack) =>
+          d.errors.add(where),
     );
     return d;
   }
@@ -60,16 +65,19 @@ class _Device {
     deviceId: deviceId,
   );
 
-  /// 与 SrsSyncScheduler 同序：关联 → 同步 v2 的一轮 → 发布说明文件。
-  Future<SrsSync2Report> sync(LocalDirectoryAssetStore dir) async {
+  /// 与 SrsSyncScheduler 同序：关联 → 同步 v2 的一轮 → 发布说明文件。[key] 是位置键（调度器每个位置一个）。
+  Future<SrsSync2Report> sync(
+    LocalDirectoryAssetStore dir, {
+    String key = 'interconnect:host',
+  }) async {
     final SrsProfileLinkOutcome link = await linker.link(dir, store);
     store = link.store;
     final List<SrsRemoteProfile>? choose = link.choose;
     if (choose != null) {
       unlinked.addAll(choose.map((SrsRemoteProfile c) => c.displayName));
     }
-    final SrsSync2Report r = await _round(dir, store);
-    if (r.error == null) await linker.publish(dir, store, 'interconnect:host');
+    final SrsSync2Report r = await _round(dir, store, key: key);
+    if (r.error == null) await linker.publish(dir, store, key);
     return r;
   }
 
@@ -87,8 +95,11 @@ class _Device {
 
 /// 不经关联、直接对 [dir] 上 [store] 现在绑定的集合目录（内核 `identity` 的 `dir`）跑一轮同步，与生产同一个入口
 /// （[srsRunLocationRound]：新根 `v4/`、旧根 `v3/` 的围栏与墓碑 head 都照生产写）。
-Future<SrsSync2Report> _round(LocalDirectoryAssetStore dir, SrsDbStore store) =>
-    srsRunLocationRound(SrsLocationBackend(dir), store, 'interconnect:host');
+Future<SrsSync2Report> _round(
+  LocalDirectoryAssetStore dir,
+  SrsDbStore store, {
+  String key = 'interconnect:host',
+}) => srsRunLocationRound(SrsLocationBackend(dir), store, key);
 
 /// [a] 与 [b] 绑在同一个集合、同一个位置目录上（新代的「关联上了」：profile uid 各是各的）。
 void _sameCollection(_Device a, _Device b) {
@@ -459,14 +470,125 @@ void main() {
       expect(await d.expressionOf(rain), '雨', reason: d.deviceId);
     }
   }, timeout: const Timeout(Duration(minutes: 3)));
+
+  // 复核（第四轮）：发布的进程内缓存原来把「目录此刻不在这个位置上」记成已补齐，之后不再列目录——B 的设备后来才开始
+  // 同步第二个位置，那里的 B 目录就一直没有提示。缓存改成连同「此刻在的旧目录」一起记，旧目录一出现就重新补。
+  test('B 的目录在 A 首次发布之后才出现在第二个位置：A 之后的发布补上那里的提示', () async {
+    final Directory root2 = Directory.systemTemp.createTempSync(
+      'fushi_srs_link_sync_l2_',
+    );
+    addTearDown(() => root2.deleteSync(recursive: true));
+    final LocalDirectoryAssetStore l2 = LocalDirectoryAssetStore(root2);
+    final _Device a = await _Device.open('a');
+    final _Device b = await _Device.open('b');
+    await a.addNote('雪');
+    await b.addNote('雨');
+    expect((await a.sync(dir)).error, isNull);
+    expect((await b.sync(dir)).error, isNull);
+    final String aDir = a.store.sync2Dir!;
+    final String bDir = b.store.sync2Dir!;
+    expect(aDir.compareTo(bDir), lessThan(0));
+    expect((await a.linker.link(dir, a.store)).choose?.single.uid, bDir);
+    await a.linker.adopt(a.store, bDir, within: dir);
+    expect(a.store.sync2Dir, aDir, reason: '吸收方向：A 不改绑');
+
+    // A 先在第二个位置上同步并发布：那里还没有 B 的目录。
+    expect((await a.sync(l2, key: 'l2')).error, isNull);
+    final Directory bOnL2 = Directory(
+      '${root2.path}/$kSrsSync2Namespace/$bDir',
+    );
+    expect(bOnL2.existsSync(), isFalse);
+    // B 的设备随后也开始同步第二个位置（两边都有数据：不自动关联，B 的目录留在那里）。
+    expect((await b.sync(l2, key: 'l2')).error, isNull);
+    expect(b.store.sync2Dir, bDir);
+    expect(bOnL2.existsSync(), isTrue);
+    // 同一个进程里 A 的下一轮发布：B 的目录出现了，补上提示。
+    expect((await a.sync(l2, key: 'l2')).error, isNull);
+    expect(
+      File(
+        '${bOnL2.path}/$kSrsJoinHintPrefix${a.store.sync2Collection}.json',
+      ).existsSync(),
+      isTrue,
+      reason: '第二个位置上 B 的目录里有指向 A 的提示',
+    );
+  }, timeout: const Timeout(Duration(minutes: 3)));
+
+  // 复核（第四轮）：B 的目录在、但 meta.json 一时读不出（云盘瞬时失败），原来同样被记成已补齐、同一进程不再补写。
+  test('B 目录的 meta.json 一时读不出：这一轮不算补齐，下一轮发布补上提示', () async {
+    final _FlakyHintStore flaky = _FlakyHintStore(root, failures: 1);
+    final _Device a = await _Device.open('a');
+    final _Device b = await _Device.open('b');
+    await a.addNote('雪');
+    await b.addNote('雨');
+    expect((await a.sync(dir)).error, isNull);
+    expect((await b.sync(dir)).error, isNull);
+    final String aDir = a.store.sync2Dir!;
+    final String bDir = b.store.sync2Dir!;
+    expect(aDir.compareTo(bDir), lessThan(0));
+    await a.linker.adopt(a.store, bDir, within: flaky);
+    expect(flaky.failed, 1, reason: '认领时写提示失败了');
+    final File hint = File(
+      '${root.path}/$kSrsSync2Namespace/$bDir/'
+      '$kSrsJoinHintPrefix${a.store.sync2Collection}.json',
+    );
+    expect(hint.existsSync(), isFalse);
+
+    flaky.failMetaUnder = bDir;
+    await a.linker.publish(flaky, a.store, 'k');
+    expect(hint.existsSync(), isFalse, reason: '集合标识读不出：不写提示');
+    flaky.failMetaUnder = null;
+    await a.linker.publish(flaky, a.store, 'k');
+    expect(hint.existsSync(), isTrue, reason: '上一轮不确定、没记缓存：这一轮补上');
+  }, timeout: const Timeout(Duration(minutes: 3)));
+
+  // 复核（第四轮）：提示一直写不成的位置（权限、配额）每轮都重试，但同一个失败只记一次日志，发布本身不因此失败。
+  test('提示一直写不成：每轮发布都重试，同一个失败只记一次日志', () async {
+    final _FlakyHintStore flaky = _FlakyHintStore(root, failures: 1000);
+    final _Device a = await _Device.open('a');
+    final _Device b = await _Device.open('b');
+    await a.addNote('雪');
+    await b.addNote('雨');
+    expect((await a.sync(dir)).error, isNull);
+    expect((await b.sync(dir)).error, isNull);
+    final String bDir = b.store.sync2Dir!;
+    expect(a.store.sync2Dir!.compareTo(bDir), lessThan(0));
+    await a.linker.adopt(a.store, bDir, within: flaky);
+    for (int i = 0; i < 3; i++) {
+      await a.linker.publish(flaky, a.store, 'k');
+    }
+    expect(flaky.failed, 4, reason: '认领一次 + 每轮发布各重试一次');
+    expect(
+      a.errors.where((String w) => w.contains('joinHint k ')),
+      hasLength(1),
+      reason: '同一位置、同一目录、同一错误只记一次',
+    );
+  }, timeout: const Timeout(Duration(minutes: 3)));
 }
 
-/// 写并入提示的前 [failures] 次抛 [FileSystemException]（云盘 / 互联写失败），其余照常。
+/// 写并入提示的前 [failures] 次抛 [FileSystemException]（云盘 / 互联写失败），其余照常；[failMetaUnder] 见下。
 class _FlakyHintStore extends LocalDirectoryAssetStore {
   _FlakyHintStore(super.root, {required this.failures});
 
   int failures;
   int failed = 0;
+
+  /// 非 null 时，读这个目录下的 `meta.json`（新根 / 旧根的集合标识）一律失败（云盘瞬时读失败）。
+  String? failMetaUnder;
+
+  @override
+  Future<void> getAsset(
+    String assetId,
+    File destination, {
+    void Function(double progress)? onProgress,
+  }) async {
+    final String? under = failMetaUnder;
+    if (under != null &&
+        assetId.contains(under) &&
+        assetId.endsWith('meta.json')) {
+      throw FileSystemException('injected meta read failure', assetId);
+    }
+    return super.getAsset(assetId, destination, onProgress: onProgress);
+  }
 
   @override
   Future<void> putAsset(

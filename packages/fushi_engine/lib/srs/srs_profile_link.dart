@@ -824,8 +824,12 @@ class SrsDbProfileLinker implements SrsProfileLinker {
   /// 目录 → 上次发布的说明内容（同一进程里不重复写）。
   final Map<String, String> _published = <String, String>{};
 
-  /// 位置 → 已经补齐并入提示的那组 `Join`（[_publishJoinHints]）。
+  /// 位置 → 上次确认补齐并入提示时的观察（那组 `Join` + 位置上当时在的那几个旧目录，[_publishJoinHints]）。
   final Map<String, String> _hinted = <String, String>{};
+
+  /// 已经记过的写提示失败（`位置|目标目录|错误`）：同一个失败每个进程只记一次日志，不每轮刷（每一轮照样重试；
+  /// 错误变了再记）。
+  final Set<String> _hintFailuresLogged = <String>{};
 
   /// 已经记过的续做失败（`profile|旧 uid->新 uid|错误`）：同一个失败每个进程只记一次日志，不每轮刷（标记留着，每一轮
   /// 照样重试；错误变了再记）。
@@ -1048,36 +1052,64 @@ class SrsDbProfileLinker implements SrsProfileLinker {
   /// 的提示，就补写 `joined-into-<本机集合>.json`。两个方向一样：本机吸收了对方（`Join{from: 对方}` 在本机集合里），
   /// 或本机改绑进了别的集合（`Join{from: 本机原来的集合}` 在新集合里）——旧集合 / 被吸收集合里没被问过的设备都靠它
   /// 发现。不是只在认领那一刻写一次：每台设备、每个位置都按日志补，写失败下次再补，集合里别的设备、别的位置上的
-  /// 同一个旧目录都覆盖到。[remote] 是这一轮刚列的目录（null = 现列）。写失败原样抛。
-  Future<void> _ensureJoinHints(
+  /// 同一个旧目录都覆盖到。
+  ///
+  /// 返回这个位置上是否**确认**补齐了：每个旧目录要么此刻不在，要么集合标识对得上、提示已在或刚写成。目录在、但
+  /// `meta.json` 读不出 / 集合标识对不上（云盘瞬时读失败、对方设备刚建目录还没写 meta）是不确定，写提示失败也是
+  /// 没补齐——都返回 false，调用方不记缓存、下一轮再看。写失败不往外抛（认领已提交，提示每轮补），按
+  /// `[where]|目标目录|错误` 只记一次日志（[_hintFailuresLogged]）。列目录失败原样抛（位置整个够不着）。
+  Future<bool> _ensureJoinHints(
     SyncAssetStore backend,
     _SrsOwnCollection own, {
-    List<SrsRemoteProfile>? remote,
+    required String where,
   }) async {
-    if (own.joins.every((j) => j.dir == null)) return;
-    final List<SrsRemoteProfile> listed =
-        remote ?? await srsListRemoteProfiles(backend);
+    if (_hintTargets(own).isEmpty) return true;
+    final List<SrsRemoteProfile> listed = await srsListRemoteProfiles(backend);
+    bool settled = true;
     for (final ({String from, String? dir}) j in own.joins) {
       final String? dir = j.dir;
       if (dir == null || dir == own.dir) continue;
       final SrsRemoteProfile? there = listed
           .where((SrsRemoteProfile r) => r.uid == dir)
           .firstOrNull;
-      // 目录不在这个位置上，或那里已经不是这个集合（读不出 / 对不上）：这里没有要提示的设备。
-      if (there == null || there.collection != j.from) continue;
+      // 目录不在这个位置上：这里此刻没有要提示的设备（之后出现由 [_publishJoinHints] 的观察发现）。
+      if (there == null) continue;
+      // 目录在，但集合标识读不出 / 对不上：不确定，不算补齐。
+      if (there.collection != j.from) {
+        settled = false;
+        continue;
+      }
       if (there.joinHints.any(
         (SrsJoinHint h) => h.collection == own.collection && h.dir == own.dir,
       )) {
         continue;
       }
-      await srsWriteJoinHint(
-        backend,
-        targetDir: dir,
-        collection: own.collection,
-        dir: own.dir,
-      );
+      try {
+        await srsWriteJoinHint(
+          backend,
+          targetDir: dir,
+          collection: own.collection,
+          dir: own.dir,
+        );
+      } catch (e, stack) {
+        settled = false;
+        if (_hintFailuresLogged.add('$where|$dir|${e.runtimeType}: $e')) {
+          onError?.call(
+            'SrsProfileLinker.joinHint $where -> $dir (retried next round)',
+            e,
+            stack,
+          );
+        }
+      }
     }
+    return settled;
   }
+
+  /// 本机集合 [own] 里要在位置上放提示的旧目录（受信、带目录名、不是本机自己的目录），排好序。
+  static List<String> _hintTargets(_SrsOwnCollection own) => <String>{
+    for (final ({String from, String? dir}) j in own.joins)
+      if (j.dir != null && j.dir != own.dir) j.dir!,
+  }.toList()..sort();
 
   /// 集合 [collection] 已绑在本机 [store] 之外的某个 profile 上（内核 `collections.collection` 唯一，`collection_adopt`
   /// 会拒绝把它绑给第二个 profile）。按主库的 profile 逐个问内核（profile 不多，`collection_info` 是一次读）。
@@ -1167,8 +1199,12 @@ class SrsDbProfileLinker implements SrsProfileLinker {
       }
       if (outcome == 'joined') {
         // 两个方向都在被并入 / 离开的那个目录里放提示（[_ensureJoinHints]，按刚写下的 `Join` 派生）。目录在上面可能刚
-        // 收拾过：重新列。
-        await _ensureJoinHints(backend, await _ownCollection(store));
+        // 收拾过：重新列。没补齐的由之后每轮 [publish] 补。
+        await _ensureJoinHints(
+          backend,
+          await _ownCollection(store),
+          where: 'adopt',
+        );
       }
     } on StateError {
       rethrow;
@@ -1296,23 +1332,38 @@ class SrsDbProfileLinker implements SrsProfileLinker {
     await _publishJoinHints(backend, store, directoryKey);
   }
 
-  /// [publish] 里按本机集合的 `Join` 补写并入提示（[_ensureJoinHints]）。同一位置上同一组 `Join` 补齐过一次就不再列目录
-  /// （进程内）；没补齐（写失败抛出去）就不记，下一轮发布再补。
+  /// [publish] 里按本机集合的 `Join` 补写并入提示（[_ensureJoinHints]）。完整列目录（要下载每个写入者的说明文件）
+  /// 只在观察变了时做：观察 = 这组 `Join` + 位置命名空间下此刻在的那几个旧目录（一次列根目录，便宜）。旧目录在
+  /// 本机第一次发布之后才出现在这个位置上（对方设备后来才开始同步这里），观察就变了，会重新补。只有
+  /// [_ensureJoinHints] 确认补齐才记（进程内）；`meta.json` 读不出、写失败等不确定的情况不记，下一轮再补。
   Future<void> _publishJoinHints(
     SyncAssetStore backend,
     SrsDbStore store,
     String directoryKey,
   ) async {
     final _SrsOwnCollection own = await _ownCollection(store);
+    final List<String> targets = _hintTargets(own);
+    if (targets.isEmpty) return;
+    final String ns = await backend.ensureNamespace(kSrsSync2Namespace);
+    final Set<String> present = <String>{
+      for (final AssetEntry e in await backend.listChildren(ns))
+        if (e.isFolder) e.name,
+    };
     final String sig = <String>[
       own.collection,
       own.dir,
       for (final ({String from, String? dir}) j in own.joins)
         '${j.from}@${j.dir ?? ''}',
+      '#',
+      for (final String t in targets)
+        if (present.contains(t)) t,
     ].join('|');
     if (_hinted[directoryKey] == sig) return;
-    await _ensureJoinHints(backend, own);
-    _hinted[directoryKey] = sig;
+    if (await _ensureJoinHints(backend, own, where: directoryKey)) {
+      _hinted[directoryKey] = sig;
+    } else {
+      _hinted.remove(directoryKey);
+    }
   }
 
   /// [store] 所属的当前 profile 有没做完的并入、且它还在旧 uid 上（[srsPendingProfileMerges]）：要并入的 uid；否则 null。
