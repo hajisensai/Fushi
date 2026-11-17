@@ -448,7 +448,9 @@ extension _FushiSyncServerVideo on FushiSyncServer {
             final String placed = await host.importDefaultVideoSubtitle(
               tmp,
               id: subtitleId,
-              format: p.extension(suffix),
+              // 不能用 p.extension：无语言标记的后缀就是 `.srt` 本身，按文件名规则
+              // 那是「点开头、没有扩展名」，会得到空串而被判成「不是字幕格式」。
+              format: suffix.substring(suffix.lastIndexOf('.') + 1),
               episodeIndex: _episodeIndexFromRequest(request),
             );
             // 新旧两个名字都回：改名前的 client 只读旧名，读不到会把这次成功的

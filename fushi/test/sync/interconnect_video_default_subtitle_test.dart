@@ -412,6 +412,27 @@ void main() {
       expect(row.subtitleSource, oldJa.path);
     });
 
+    test('client 没有学习语言标记（后缀只有 .srt）：host 照样认出格式并设为默认', () async {
+      final InterconnectSyncBackend backend = await _clientBackend(
+        base: base,
+        token: token,
+      );
+      final File sub = File(p.join(work.path, 'picked.srt'))
+        ..writeAsStringSync(_srtUploaded);
+      expect(
+        await backend.putRemoteVideoSubtitleAsDefault(
+          'video/movie',
+          sub,
+          suffix: '.srt',
+        ),
+        RemoteSubtitleDefaultUpload.applied,
+      );
+      expect(
+        File(p.join(vidDir.path, 'movie.ja.srt')).readAsStringSync(),
+        _srtUploaded,
+      );
+    });
+
     test('播放列表第 N 集：client 带集下标上传，host 落到那一集旁并成为它的首选字幕', () async {
       final (File _, File ep2) = await _seedPlaylist(hostDb, vidDir);
       final InterconnectSyncBackend backend = await _clientBackend(
