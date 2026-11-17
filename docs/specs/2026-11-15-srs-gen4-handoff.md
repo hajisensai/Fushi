@@ -3303,7 +3303,15 @@ v4 整个删掉 → 新根不见了、不重建，删围栏后重建、媒体根
 `srs_sync_scheduler_test`（改用 `heritagePending`）；`srs_history_page_test` 新增 widget 用例（集合空 → 无行；两台待确认 → 行与
 标题；清空 → 消失），MD3 / Apple 各一遍。变异：内核 `v4_listed` 去掉 `!locs.is_empty()` → `an_unreadable_new_root_meta…` 红
 （`sync_tests.rs:1012`，围栏 + loc 标记的那段变成 `new_root_missing`）；`pending` 不按信任状态筛 → `a_rejected_heritage_author…`
-红（`sync_heritage_trust_tests.rs:147`）；还原后工作区干净。
+红（`sync_heritage_trust_tests.rs:147`）；Dart 闸只剩围栏时也报 `kSrsSync2MetaUnavailable` → 「新根整个被删」用例红；
+`srsSync4UploadHeritage` 不记 `pending` → `srs_sync4_round_test` 红（`Actual: <null>`）；页面不画这一行 → 新 widget 用例 MD3 / Apple
+都红；还原后工作区干净。
+
+既有红（不是本分支引入）：`srs_history_page_test`「存储位置：添加文件夹 / 改用途停用 / 移除，都写进 prefs」MD3 / Apple 两条在
+`297301f89a` 上同样红（把页面 / 调度器 / 运行时 / 测试四个文件换回 `297301f89a` 实测：`timed out waiting: usb removed`）。根因：
+`de04352167`（移除位置先让内核 `location_forget`）之后 `_removeFolder` 要 `srsAppRuntimeProvider` 的调度器，没有就抛
+`StateError('removeFolder: srs runtime unavailable')`，而这个页面测试把运行时覆盖成 null。归 `location_forget` 那一块的所有者：给
+页面一个可注入的「忘掉位置」入口（同 `srsDeferredProfileMergeReaderProvider` 的做法）再改测试，本节不动。
 
 另：全量 `cargo test --profile quick --lib` 一次里 `store::gen4::files::tests::a_fresh_install_appears_under_the_final_name_only_when_complete`
 红过一次（目录里多出 `SRS4.DB-SHM.tmp`），单跑 3/3 绿，本分支没碰 `files.rs`——高负载下的偶发，留给新代库文件层的所有者看。
