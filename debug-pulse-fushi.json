@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-17T09:56:26Z",
+ "generatedAt": "2026-11-17T10:00:39Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "91e704f5fdd9efc8d9838ec4fdd74b960b18616b",
-  "seq": 28618
+  "sha": "76421df71842084f166fb224a08f8deba5648768",
+  "seq": 28629
  },
  "builds": [
   {
@@ -141,9 +141,10 @@
   }
  ],
  "pending": {
-  "headSha": "91e704f5fdd9efc8d9838ec4fdd74b960b18616b",
-  "headSeq": 28618,
+  "headSha": "76421df71842084f166fb224a08f8deba5648768",
+  "headSeq": 28629,
   "prs": [
+   3644,
    3689,
    3686,
    3683,
@@ -154,19 +155,19 @@
   "platforms": {
    "android": {
     "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44059060709"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44060409366"
    },
    "windows": {
-    "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44059060594"
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44060409406"
    },
    "macos": {
-    "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44059060594"
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44060409406"
    },
    "ios": {
-    "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44059060594"
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44060409406"
    }
   }
  },
@@ -196,6 +197,15 @@
    "mergedAt": "2026-11-17T05:18:43Z",
    "additions": 84,
    "deletions": 10,
+   "labels": []
+  },
+  "3644": {
+   "number": 3644,
+   "title": "fix(video): 原盘回盘菜单只在盘拒绝时退会话、连按不重复发 topMenu",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-17T09:58:00Z",
+   "additions": 337,
+   "deletions": 20,
    "labels": []
   },
   "3645": {
