@@ -836,6 +836,12 @@ abstract final class FushiIcons {
     fontFamily: kFushiSymbolsFontFamily,
   );
 
+  /// 闪电 / 闪刷（墨水屏全刷方式）：Symbols `flash_on`（取代 Icons.flash_on_outlined / Icons.flash_on）
+  static const IconData flash = IconData(
+    0xe3e7,
+    fontFamily: kFushiSymbolsFontFamily,
+  );
+
   /// AI / 智能：Symbols `auto_awesome`（取代 Icons.auto_awesome_outlined / Icons.auto_awesome）
   static const IconData ai = IconData(
     0xe65f,
@@ -1898,6 +1904,7 @@ abstract final class FushiIcons {
     'darkMode': darkMode,
     'lightMode': lightMode,
     'brightnessAuto': brightnessAuto,
+    'flash': flash,
     'ai': ai,
     'barChart': barChart,
     'widgets': widgets,
@@ -2185,6 +2192,7 @@ abstract final class FushiIcons {
     0xe3b9: IconData(0xe3b9, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe3be: IconData(0xe3be, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe3d3: IconData(0xe3d3, fontFamily: kFushiSymbolsFilledFontFamily),
+    0xe3e7: IconData(0xe3e7, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe3e9: IconData(0xe3e9, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe3f4: IconData(0xe3f4, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe404: IconData(0xe404, fontFamily: kFushiSymbolsFilledFontFamily),
@@ -2582,6 +2590,7 @@ kFushiSymbolAppleMap = <int, (IconData, IconData)>{
     CupertinoIcons.photo_on_rectangle,
     CupertinoIcons.photo_on_rectangle,
   ),
+  0xe3e7: (CupertinoIcons.bolt, CupertinoIcons.bolt_fill),
   0xe3e9: (
     CupertinoIcons.circle_lefthalf_fill,
     CupertinoIcons.circle_lefthalf_fill,
