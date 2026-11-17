@@ -23,8 +23,8 @@ use super::super::schema::sql;
 use super::super::truth::Truth;
 use super::ref_of;
 use super::writes::{
-    ApplyOpts, Origin, Session, apply_in, draft, fail_after, now_of, row_with_profile, stored,
-    write,
+    ApplyOpts, Born, Origin, Session, apply_in, draft, fail_after, now_of, row_with_profile,
+    stored, write,
 };
 use crate::card_cache::is_js_space;
 use crate::projection::Day;
@@ -896,6 +896,13 @@ pub fn sched(t: &Truth<'_>, col: i64, req: &Value) -> Result<Value, String> {
         let mut written: Vec<(String, String)> = Vec::new();
         let mut blocked = 0u64;
         for (card, action) in actions {
+            // 实体归属闸（`writes_owner.rs`）：别的集合的卡按「没有这张卡」跳过，撤销计入撤不了的条数（同协议 3）。
+            if s.foreign(EntKind::Card, &card, &Born::new())? {
+                if matches!(action, Action::Undo { .. }) {
+                    blocked += 1;
+                }
+                continue;
+            }
             let note = note_of(s, &card)?;
             let rows = s.settled()?.group_rows(&ref_of(&card))?;
             let input: Vec<Row<'_>> = rows

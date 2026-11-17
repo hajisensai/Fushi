@@ -196,6 +196,9 @@ CREATE TABLE IF NOT EXISTS cards (
   PRIMARY KEY (col, id)
 ) WITHOUT ROWID;
 CREATE INDEX IF NOT EXISTS cards_note ON cards (col, note_id);
+-- 实体归属闸（cmd/writes_owner.rs）：按卡 ID 问别的集合有没有这张卡。col > 0 同 schema.rs 的 ent_id（只有归属闸的
+-- 查询用得上）。
+CREATE INDEX IF NOT EXISTS cards_id ON cards (id) WHERE col > 0;
 CREATE INDEX IF NOT EXISTS cards_deck ON cards (col, deck_id);
 CREATE INDEX IF NOT EXISTS cards_template ON cards (col, template_id);
 CREATE INDEX IF NOT EXISTS cards_anki ON cards (col, anki_id);

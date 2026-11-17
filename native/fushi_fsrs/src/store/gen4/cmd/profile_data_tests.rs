@@ -30,6 +30,8 @@ use crate::store::sync2::tests::{P, edit, tempdir};
 
 const Q: &str = "0193a1b2-0000-7000-8000-00000000cafe";
 const R: &str = "0193a1b2-0000-7000-8000-00000000d00d";
+/// 只有 Q 写过的笔记（库里别的集合没有它）。
+const Q_NOTE: &str = "0193a1b2-0000-7000-8000-00000000a0c1";
 
 fn as_profile(h: *mut SrsCoreHandle, profile: &str, op: &str, extra: Value) -> Value {
     try_as(h, profile, op, extra).unwrap_or_else(|e| panic!("{op}: {e}"))
@@ -325,9 +327,10 @@ fn purge_deletes_only_the_confirmed_collection() {
     as_profile(h, Q, "identity", json!({}));
     let qcfg = json!({"defaultDeck": default_deck_id(Q)});
     as_profile(h, Q, "cache_config_set", json!({"caches": qcfg}));
-    write_note(h, Q);
+    // Q 写它自己的笔记（N1 是 P 的：同库别的集合的实体 Q 写不进去，实体归属闸 `writes_owner.rs`）。
+    write_note_id(h, Q, Q_NOTE);
     let q_foot = as_profile(h, Q, "profile_footprint", json!({}));
-    let q_hist = as_profile(h, Q, "history", json!({"kind": "note", "entity": N1}));
+    let q_hist = as_profile(h, Q, "history", json!({"kind": "note", "entity": Q_NOTE}));
     let q_info = as_profile(h, Q, "collection_info", json!({}));
     let q_id = as_profile(h, Q, "identity", json!({}));
     let (q_col, q_rows) = {
@@ -380,7 +383,7 @@ fn purge_deletes_only_the_confirmed_collection() {
     }
     assert_eq!(as_profile(h, Q, "profile_footprint", json!({})), q_foot);
     assert_eq!(
-        as_profile(h, Q, "history", json!({"kind": "note", "entity": N1})),
+        as_profile(h, Q, "history", json!({"kind": "note", "entity": Q_NOTE})),
         q_hist
     );
     assert_eq!(as_profile(h, Q, "collection_info", json!({})), q_info);
