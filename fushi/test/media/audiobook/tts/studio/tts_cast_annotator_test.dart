@@ -1,6 +1,8 @@
 import 'package:test/test.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_cast_prompt.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_book_plan.dart';
+import 'package:fushi_engine/tts/cast/cast_line_direction.dart';
+import 'package:fushi_engine/tts/cast/cast_line_kind.dart';
 import 'package:fushi_engine/tts/render/tts_cast.dart';
 
 TtsPlanSentence _s(int section, int matchStart, String text) => TtsPlanSentence(
@@ -379,15 +381,22 @@ void main() {
       expect(kTtsCastLinesSystemPrompt, contains('"unknown"'));
       expect(kTtsCastLinesSystemPrompt, contains('"ev"'));
       expect(kTtsCastLinesSystemPrompt, contains('「…」とスバルは言った'));
+      // 演出字段：与漫画同一词表，小说台词不给「叙述」「不读」。
+      expect(kTtsCastLinesSystemPrompt, contains('"thought"'));
+      expect(kTtsCastLinesSystemPrompt, contains('"beat"'));
+      expect(kTtsCastLinesSystemPrompt, contains('"tenderness"'));
+      expect(kTtsCastLinesSystemPrompt, isNot(contains('"skip"')));
     });
 
     test('解析：别名 → 规范名、表外名字 → 不明、把握与依据', () {
       final TtsCastParseResult? r = parseTtsCastReply(
-        '[{"i":1,"s":"菜月昴","e":"怒り","c":0.9,"ev":"explicit"},'
-        '{"i":2,"s":"ラム","c":"0.8","ev":"anaphoric"},'
-        '{"i":3,"s":"unknown","c":0.1,"ev":"implicit"},'
-        '{"i":4,"s":"エミリア","c":7,"ev":"guess"},'
-        '{"i":5,"s":"narrator","e":"x","c":0.5,"ev":"explicit"}]',
+        '[{"i":1,"s":"菜月昴","k":"shout","e":"anger","ei":70,"beat":300,'
+        '"c":0.9,"ev":"explicit"},'
+        '{"i":2,"s":"ラム","k":"skip","e":"怒り","c":"0.8","ev":"anaphoric"},'
+        '{"i":3,"s":"unknown","k":"narration","c":0.1,"ev":"implicit"},'
+        '{"i":4,"s":"エミリア","k":"thought","beat":99999,"c":7,"ev":"guess"},'
+        '{"i":5,"s":"narrator","k":"shout","e":"joy","beat":500,"c":0.5,'
+        '"ev":"explicit"}]',
         5,
         speakers: _index,
       );
@@ -396,16 +405,24 @@ void main() {
       expect(
         r.labels.map(
           (TtsCastLabel l) =>
-              (l.index, l.speaker, l.emotion, l.confidence, l.evidence),
+              (l.index, l.speaker, l.kind, l.confidence, l.evidence),
         ),
-        <(int, String, String?, double?, TtsCastEvidence?)>[
-          (1, 'スバル', '怒り', 0.9, TtsCastEvidence.explicit),
+        <(int, String, CastLineKind?, double?, TtsCastEvidence?)>[
+          (1, 'スバル', CastLineKind.shout, 0.9, TtsCastEvidence.explicit),
           (2, kTtsUnknown, null, 0.8, TtsCastEvidence.anaphoric),
           (3, kTtsUnknown, null, 0.1, TtsCastEvidence.implicit),
-          (4, 'エミリア', null, 1.0, null),
+          (4, 'エミリア', CastLineKind.thought, 1.0, null),
           (5, kTtsNarrator, null, null, null),
         ],
       );
+      // 演出字段按共用词表校验、数值夹到范围；词表外的情绪丢掉；旁白不带演出字段。
+      expect(r.labels[0].direction.emotion, CastEmotion.anger);
+      expect(r.labels[0].direction.intensity, 70);
+      expect(r.labels[0].direction.beatMs, 300);
+      expect(r.labels[1].direction.emotion, isNull);
+      expect(r.labels[3].direction.beatMs, CastLineLimits.maxBeatMs);
+      expect(r.labels[4].direction.beatMs, 0);
+      expect(r.labels[4].direction.emotion, isNull);
     });
 
     test('解析：剥围栏与多余文字、字符串里的括号不打乱配对', () {
@@ -416,7 +433,7 @@ void main() {
       );
       expect(r!.labels.single.speaker, 'Rem');
       expect(r.labels.single.index, 2);
-      expect(r.labels.single.emotion, '"笑" [小声]');
+      expect(r.labels.single.direction.emotion, isNull);
     });
 
     test('解析：越界 / 非法 / 重复编号丢弃', () {
@@ -490,7 +507,12 @@ void main() {
             TtsCastLabel(
               index: 1,
               speaker: 'スバル',
-              emotion: '驚き',
+              kind: CastLineKind.mutter,
+              direction: CastLineDirection(
+                beatMs: 250,
+                emotion: CastEmotion.surprise,
+                intensity: 40,
+              ),
               confidence: 0.9,
               evidence: TtsCastEvidence.explicit,
             ),
@@ -498,7 +520,10 @@ void main() {
           ]);
       expect(lines.keys, <String>['3:0', '3:5', '3:9', '3:14']);
       expect(lines['3:0']!.speaker, 'スバル');
-      expect(lines['3:0']!.emotion, '驚き');
+      expect(lines['3:0']!.kind, CastLineKind.mutter);
+      expect(lines['3:0']!.beatMs, 250);
+      expect(lines['3:0']!.emotion, CastEmotion.surprise);
+      expect(lines['3:0']!.intensity, 40);
       expect(lines['3:0']!.confidence, 0.9);
       expect(lines['3:0']!.evidence, TtsCastEvidence.explicit);
       expect(lines['3:0']!.needsReview, isFalse);

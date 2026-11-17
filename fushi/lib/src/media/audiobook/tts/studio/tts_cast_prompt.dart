@@ -9,10 +9,14 @@
 ///    `unknown`。回了别名映射到规范名，角色表外的名字一律 [kTtsUnknown]——第二遍
 ///    不许造名字。没回的行是旁白；但台词行（引号开头或引号未闭合的续行）没回记
 ///    [kTtsUnknown] + 零把握，留给人复核，而不是悄悄算成旁白。
+///    同一遍顺带给台词标演出字段（类型 / 一拍 / 情绪 + 强度，与漫画演出稿同一词表与
+///    取值范围，见 `cast_line_direction.dart`），本地按词表校验、数值夹到范围。
 library;
 
 import 'dart:convert';
 
+import 'package:fushi_engine/tts/cast/cast_line_direction.dart';
+import 'package:fushi_engine/tts/cast/cast_line_kind.dart';
 import 'package:fushi_engine/tts/render/tts_cast.dart';
 
 import 'package:fushi/src/media/audiobook/tts/tts_book_plan.dart';
@@ -34,9 +38,6 @@ const int kTtsCastRecentDialogue = 6;
 
 /// 角色表最多带多少人进提示词（调用方按台词数降序排好）。
 const int kTtsCastMaxRosterInPrompt = 150;
-
-/// 情绪提示的长度上限；超长的多半是模型把整句解释塞进来了，丢弃。
-const int _kMaxEmotionLength = 24;
 
 /// 人设描述的长度上限。
 const int _kMaxDescriptionLength = 120;
@@ -417,14 +418,26 @@ void applyTtsRosterOps(TtsCast cast, List<TtsRosterOp> ops) {
 // 第二遍：逐句归属
 // ---------------------------------------------------------------------------
 
-const String kTtsCastLinesSystemPrompt = '''
-You attribute dialogue in a novel to speakers so an audiobook can give each character a different voice.
+/// 第二遍台词可用的类型（叙述是旁白专用；小说没有「不读」）。
+const List<CastLineKind> kTtsCastDialogueKinds = <CastLineKind>[
+  CastLineKind.spoken,
+  CastLineKind.shout,
+  CastLineKind.mutter,
+  CastLineKind.thought,
+  CastLineKind.monologue,
+];
+
+String get kTtsCastLinesSystemPrompt =>
+    '''
+You attribute dialogue in a novel to speakers so an audiobook can give each character a different voice, and give each line a little direction.
 
 You get the cast list, the last few lines already attributed (for turn-taking), and numbered lines from one chapter (lines marked "context" only help you infer speakers; never label them). Return ONLY a JSON array, no prose, no code fence:
-[{"i":3,"s":"エミリア","e":"怒り","c":0.95,"ev":"explicit"},{"i":5,"s":"スバル","c":0.6,"ev":"implicit"},{"i":8,"s":"unknown","c":0.2,"ev":"implicit"}]
+[{"i":3,"s":"エミリア","k":"shout","e":"anger","ei":70,"c":0.95,"ev":"explicit"},{"i":5,"s":"スバル","k":"thought","beat":400,"c":0.6,"ev":"implicit"},{"i":8,"s":"unknown","c":0.2,"ev":"implicit"}]
 - "i": the line number.
 - "s": who speaks the line: EXACTLY one canonical name from the cast list, or "unknown" when it is dialogue but you cannot tell who says it. Never use a name that is not in the cast list; never use an alias.
-- "e": optional short emotion / tone hint in the book's language (e.g. 怒り, 囁き, 笑い); omit when neutral.
+- "k": optional, one of ${kTtsCastDialogueKinds.map((CastLineKind k) => '"${k.wire}"').join(' | ')}. "spoken" = normal speech (the default); "shout"; "mutter" = quiet talking to oneself; "thought" = inner voice written as a quoted thought, e.g. （…）; "monologue" = a longer first-person inner passage set off like dialogue.
+- "beat": optional extra pause after the line in milliseconds (0..${CastLineLimits.maxBeatMs}), only for dramatic timing.
+- "e": optional emotion, one of ${CastEmotion.values.map((CastEmotion e) => '"${e.wire}"').join(' | ')}; "ei": its intensity 0..100. Omit both when neutral.
 - "c": your confidence from 0 to 1.
 - "ev": "explicit" (an attribution like 「…」とスバルは言った names the speaker), "anaphoric" (a pronoun, title or description refers to them, e.g. と彼女は言った, 少女が呟いた), or "implicit" (no tag; inferred from turn-taking, address terms, speech style).
 
@@ -492,14 +505,20 @@ class TtsCastLabel {
   const TtsCastLabel({
     required this.index,
     required this.speaker,
-    this.emotion,
+    this.kind,
+    this.direction = const CastLineDirection(),
     this.confidence,
     this.evidence,
   });
 
   final int index;
   final String speaker;
-  final String? emotion;
+
+  /// 台词类型（只收 [kTtsCastDialogueKinds]）；null = 没标（按说话人推断）。
+  final CastLineKind? kind;
+
+  /// 一拍 / 情绪 + 强度（已夹到范围；种子与语速等不收 AI 的）。
+  final CastLineDirection direction;
   final double? confidence;
   final TtsCastEvidence? evidence;
 }
@@ -534,7 +553,10 @@ TtsCastParseResult? parseTtsCastReply(
     byIndex[index] = TtsCastLabel(
       index: index,
       speaker: speaker,
-      emotion: narrator ? null : _cleanText(entry['e'], _kMaxEmotionLength),
+      kind: narrator ? null : ttsCastDialogueKind(entry['k']),
+      direction: narrator
+          ? const CastLineDirection()
+          : ttsCastAiDirection(entry),
       confidence: narrator ? null : _asConfidence(entry['c']),
       evidence: narrator
           ? null
@@ -555,6 +577,23 @@ TtsCastParseResult? parseTtsCastReply(
   );
 }
 
+/// 本地校验 AI 给的台词类型：不在词表、或是旁白专用的「叙述」/ 小说没有的「不读」，
+/// 一律当作没标。
+CastLineKind? ttsCastDialogueKind(Object? raw) {
+  final CastLineKind? kind = CastLineKind.parse(raw);
+  return kTtsCastDialogueKinds.contains(kind) ? kind : null;
+}
+
+/// AI 给的演出字段：只收一拍与情绪 + 强度（夹取规则与漫画共用
+/// [CastLineDirection.fromJson]）；种子 / 语速 / 音高 / 音量不归 AI 定。
+CastLineDirection ttsCastAiDirection(Map<Object?, Object?> entry) {
+  return CastLineDirection.fromJson(<Object?, Object?>{
+    'beat': entry['beat'],
+    'e': entry['e'],
+    'ei': entry['ei'],
+  });
+}
+
 /// 一块的整套行标注：模型回了的行按回复；没回的台词行记 [kTtsUnknown] + 零把握
 /// （进复核），其余没回的行记旁白。全部是 llm 来源，重新标注时口径一致。
 Map<String, TtsCastLine> ttsCastLinesForChunk(
@@ -573,7 +612,10 @@ Map<String, TtsCastLine> ttsCastLinesForChunk(
         final TtsCastLabel l => TtsCastLine(
           speaker: l.speaker,
           source: TtsCastSource.llm,
-          emotion: l.emotion,
+          kind: l.kind,
+          beatMs: l.direction.beatMs,
+          emotion: l.direction.emotion,
+          intensity: l.direction.intensity,
           confidence: l.confidence,
           evidence: l.evidence,
         ),

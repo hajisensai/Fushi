@@ -5,10 +5,12 @@
 library;
 
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/epub_book.dart';
+import 'package:fushi_engine/tts/cast/cast_line_direction.dart';
 import 'package:fushi_engine/tts/cast/cast_line_voicing.dart';
 import 'package:fushi_engine/tts/cast/cast_text_substitution.dart';
 import 'package:fushi_engine/tts/cast/series_cast.dart';
@@ -450,6 +452,7 @@ class _TtsStudioPageState extends State<TtsStudioPage> {
 
   Future<void> _regenerate(TtsRenderJob job) async {
     if (_regenSelected.isEmpty) return;
+    await _reseedSelected();
     await _queue.enqueue(
       bookKey: job.bookKey,
       title: job.title,
@@ -460,6 +463,37 @@ class _TtsStudioPageState extends State<TtsStudioPage> {
       pausePreset: job.pausePreset,
       normalizeLoudness: job.normalizeLoudness,
     );
+  }
+
+  /// 单句重生成 = 换种子重录（设计 §6）：给选中的句写下新种子。支持种子的引擎按新
+  /// 种子算缓存键、自然重合成；不支持的照旧靠任务开始时丢掉这些句的缓存。选角表从
+  /// 盘上重读再改（标注 / 补回可能在别处改过它），只动这几句的种子。
+  Future<void> _reseedSelected() async {
+    final TtsBookPlan? plan = _plan;
+    if (plan == null) return;
+    try {
+      final TtsCastStore store = ttsCastStoreFor(widget.appModel);
+      final TtsCast fresh = await store.load(widget.bookKey);
+      final math.Random random = math.Random();
+      for (final int index in _regenSelected) {
+        if (index < 0 || index >= plan.length) continue;
+        final TtsPlanSentence s = plan.sentences[index];
+        fresh.setLineSeed(
+          s.section,
+          s.matchStart,
+          random.nextInt(CastLineLimits.maxSeed),
+        );
+      }
+      await store.save(widget.bookKey, fresh);
+      if (!mounted) return;
+      setState(() {
+        fresh.series = _cast.series;
+        _cast = fresh;
+      });
+    } catch (e, stack) {
+      ErrorLogService.instance.log('TtsStudio.reseed', e, stack);
+      FushiToast.show(msg: t.audiobook_studio_failure_internal);
+    }
   }
 
   /// 读不出的选角表 / 系列档案按空处理（记日志），不挡制作台其它功能。

@@ -118,6 +118,8 @@ void main() {
           const <String>['k1', 'k2'],
           pausePreset: 'standard',
           loudnorm: true,
+          gapsMs: const <int>[800, 600, 2000],
+          legacyGapsMs: const <int>[800, 600, 2000],
         ),
         isFalse,
       );

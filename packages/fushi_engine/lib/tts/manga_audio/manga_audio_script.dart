@@ -19,11 +19,14 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
 
+import 'package:fushi_engine/tts/cast/cast_line_direction.dart';
 import 'package:fushi_engine/tts/cast/cast_line_kind.dart';
 import 'package:fushi_engine/tts/cast/cast_text_substitution.dart';
 import 'package:fushi_engine/tts/cast/cast_voice_assignment.dart';
 import 'package:fushi_engine/tts/render/tts_cast.dart';
 
+export 'package:fushi_engine/tts/cast/cast_line_direction.dart'
+    show CastLineDirection, CastLineLimits;
 export 'package:fushi_engine/tts/cast/cast_line_kind.dart';
 export 'package:fushi_engine/tts/cast/cast_voice_assignment.dart';
 
@@ -50,46 +53,8 @@ enum MangaAudioSourcePolicy {
   }
 }
 
-/// 数值字段的取值范围；超出的值在解析 / 校验时夹到范围内（不丢行）。
-abstract final class MangaScriptLimits {
-  /// 一拍（句后额外停顿）上限，毫秒。
-  static const int maxBeatMs = 10000;
-
-  /// 情绪强度上限（下限 0）。
-  static const int maxIntensity = 100;
-
-  /// 语速偏移（倍率的增量：-0.5 = 慢一半，+1.0 = 快一倍）。
-  static const double minRateOffset = -0.5;
-  static const double maxRateOffset = 1.0;
-
-  /// 音高偏移绝对值上限，半音。
-  static const double maxPitchSemitones = 12;
-
-  /// 音量偏移绝对值上限，dB。
-  static const double maxVolumeDb = 12;
-
-  /// 逐页 `hold` 上限，毫秒。
-  static const int maxHoldMs = 60000;
-
-  /// 逐页 `lead` 上限，毫秒。
-  static const int maxLeadMs = 10000;
-
-  /// 种子上限（32 位无符号，各引擎都能收）。
-  static const int maxSeed = 0xFFFFFFFF;
-}
-
-// 有限数值才算数（NaN / 无穷当作没给）。
-num? _finiteNum(Object? v) => v is num && v.isFinite ? v : null;
-
-int? _intIn(Object? raw, int lo, int hi) {
-  final num? v = _finiteNum(raw);
-  return v?.round().clamp(lo, hi);
-}
-
-double? _doubleIn(Object? raw, double lo, double hi) {
-  final num? v = _finiteNum(raw);
-  return v?.toDouble().clamp(lo, hi);
-}
+/// 数值字段的取值范围（与小说选角表共用一份，见 [CastLineLimits]）。
+typedef MangaScriptLimits = CastLineLimits;
 
 /// 一句的音源：合成，或引用某本有声书里一段现成音频（不复制音频）。
 ///
@@ -292,6 +257,17 @@ class MangaScriptLine {
   /// 这句实际用的种子。
   int effectiveSeed(int defaultSeed) => seed ?? defaultSeed;
 
+  /// 这句的演出字段（与小说 `TtsCastLine.direction` 同一个类型）。
+  CastLineDirection get direction => CastLineDirection(
+    beatMs: beatMs,
+    emotion: emotion,
+    intensity: intensity,
+    rateOffset: rateOffset,
+    pitchOffset: pitchOffset,
+    volumeOffset: volumeOffset,
+    seed: seed,
+  );
+
   MangaScriptLine copyWith({
     List<int>? blocks,
     String? speaker,
@@ -330,13 +306,7 @@ class MangaScriptLine {
     'b': blocks,
     's': speaker,
     'k': kind.wire,
-    if (beatMs != 0) 'beat': beatMs,
-    if (emotion != null) 'e': emotion!.wire,
-    if (intensity != null) 'ei': intensity,
-    if (rateOffset != null) 'rate': rateOffset,
-    if (pitchOffset != null) 'pitch': pitchOffset,
-    if (volumeOffset != null) 'vol': volumeOffset,
-    if (seed != null) 'seed': seed,
+    ...direction.toJson(),
     if (textFixes.isNotEmpty)
       'fix': <String, String>{
         for (final MapEntry<int, String> e in textFixes.entries)
@@ -389,40 +359,31 @@ MangaScriptLine mangaLineFromFields(
   required CastEmotion? emotion,
   TtsCastSource? source,
 }) {
-  final Object? seed = raw['seed'];
+  // 演出字段的夹取规则与小说共用一份（[CastLineDirection.fromJson]）；情绪用调用方
+  // 已解析好的值。
+  final CastLineDirection d = CastLineDirection.fromJson(<Object?, Object?>{
+    ...raw,
+    'e': emotion?.wire,
+  });
   return MangaScriptLine(
     page: page,
     blocks: blocks,
     speaker: speaker,
     kind: kind,
-    beatMs: _intIn(raw['beat'], 0, MangaScriptLimits.maxBeatMs) ?? 0,
-    emotion: emotion,
-    intensity: emotion == null
-        ? null
-        : _intIn(raw['ei'], 0, MangaScriptLimits.maxIntensity),
-    rateOffset: _doubleIn(
-      raw['rate'],
-      MangaScriptLimits.minRateOffset,
-      MangaScriptLimits.maxRateOffset,
-    ),
-    pitchOffset: _doubleIn(
-      raw['pitch'],
-      -MangaScriptLimits.maxPitchSemitones,
-      MangaScriptLimits.maxPitchSemitones,
-    ),
-    volumeOffset: _doubleIn(
-      raw['vol'],
-      -MangaScriptLimits.maxVolumeDb,
-      MangaScriptLimits.maxVolumeDb,
-    ),
-    seed: seed is int ? seed.clamp(0, MangaScriptLimits.maxSeed) : null,
+    beatMs: d.beatMs,
+    emotion: d.emotion,
+    intensity: d.intensity,
+    rateOffset: d.rateOffset,
+    pitchOffset: d.pitchOffset,
+    volumeOffset: d.volumeOffset,
+    seed: d.seed,
     textFixes: _parseFixes(raw['fix'], blocks),
     source:
         source ??
         (raw['src'] == TtsCastSource.user.name
             ? TtsCastSource.user
             : TtsCastSource.llm),
-    confidence: _doubleIn(raw['c'], 0, 1),
+    confidence: castDoubleIn(raw['c'], 0, 1),
     audio: MangaLineAudioSource.fromJson(raw['audio']),
     voice: raw['voice'] is String && (raw['voice'] as String).isNotEmpty
         ? raw['voice'] as String
@@ -472,8 +433,8 @@ class MangaPageDirective {
   static MangaPageDirective fromJson(Object? raw) {
     if (raw is! Map) return const MangaPageDirective();
     return MangaPageDirective(
-      holdMs: _intIn(raw['hold'], 0, MangaScriptLimits.maxHoldMs),
-      leadMs: _intIn(raw['lead'], 0, MangaScriptLimits.maxLeadMs),
+      holdMs: castIntIn(raw['hold'], 0, MangaScriptLimits.maxHoldMs),
+      leadMs: castIntIn(raw['lead'], 0, MangaScriptLimits.maxLeadMs),
       source: raw['src'] == TtsCastSource.user.name
           ? TtsCastSource.user
           : TtsCastSource.llm,

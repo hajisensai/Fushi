@@ -1,6 +1,7 @@
 /// 制作台的纯文案 / 判据（无状态，单测直接覆盖）。
 library;
 
+import 'package:fushi_engine/tts/cast/cast_line_kind.dart';
 import 'package:fushi_engine/tts/render/tts_cast.dart';
 import 'package:fushi_engine/tts/render/tts_pause.dart';
 import 'package:fushi_engine/tts/render/tts_render_queue.dart';
@@ -9,6 +10,8 @@ import 'package:fushi_engine/tts/tts_types.dart';
 import 'package:fushi/src/ai/ai_failure_text.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_cast_annotator.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_book_plan.dart';
+import 'package:fushi/src/media/manga/audio/manga_audio_annotate_flow.dart'
+    show mangaLineKindLabel;
 import 'package:fushi/src/media/audiobook/tts/tts_ui_text.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_engine/utils/misc/safe_file_name.dart';
@@ -208,7 +211,7 @@ String? ttsCastEvidenceText(TtsCastEvidence? evidence) => switch (evidence) {
   null => null,
 };
 
-/// 核对页一句的副标题：说话人，LLM 标的行再带把握 / 依据，有语气提示也带上。
+/// 核对页一句的副标题：说话人，LLM 标的行再带把握 / 依据，有演出字段 / 语气提示也带上。
 String ttsCastLineSubtitle(TtsCastLine? line) {
   if (line == null) return ttsCastSpeakerLabel(kTtsNarrator);
   final double? confidence = line.confidence;
@@ -217,8 +220,15 @@ String ttsCastLineSubtitle(TtsCastLine? line) {
     if (line.source == TtsCastSource.llm && confidence != null)
       t.audiobook_studio_cast_confidence(pct: (confidence * 100).round()),
     if (line.source == TtsCastSource.llm) ?ttsCastEvidenceText(line.evidence),
-    if (line.emotion case final String emotion when emotion.trim().isNotEmpty)
-      emotion.trim(),
+    // 演出字段：标了且不是默认「说出口」的类型、情绪（词表名 + 强度）、旧版语气提示。
+    if (line.kind case final CastLineKind kind when kind != CastLineKind.spoken)
+      mangaLineKindLabel(kind),
+    if (line.emotion case final CastEmotion emotion)
+      line.intensity == null
+          ? emotion.wire
+          : '${emotion.wire} ${line.intensity}',
+    if (line.tone case final String tone when tone.trim().isNotEmpty)
+      tone.trim(),
   ].join(' · ');
 }
 
