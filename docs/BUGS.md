@@ -33,15 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4147 条。点号进各自文件。
+> 共 4153 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4791](bugs/BUG-4791-reader-cue-highlight-future-unhandled.md) | ✅ | ✅ | 阅读器 cue 变更回调里放飞的高亮 Future 不接错误，WebView 销毁中抛出的异常成为未处理的异步错误 |
-> 共 4152 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4797](bugs/BUG-4797-reader-cue-highlight-future-unhandled.md) | ✅ | ✅ | 阅读器 cue 变更回调里放飞的高亮 Future 不接错误，WebView 销毁中抛出的异常成为未处理的异步错误 |
 | [BUG-4796](bugs/BUG-4796-disc-back-double-press-repeat-topmenu.md) | ✅ | ✅ | 原盘正片快速连按两次返回会重复发 topMenu，第二次失败会整盘退出 |
 | [BUG-4795](bugs/BUG-4795-disc-back-to-menu-transient-error-exits.md) | ✅ | ✅ | 原盘正片按返回回盘菜单时，任何暂时性错误都会让整个原盘会话退出 |
 | [BUG-4794](bugs/BUG-4794-subtitle-panel-favorites-filter-width-wasted.md) | 🚧 | 🚧 | 经典版式字幕列表收藏档的筛选分段被截到剩余宽度一半，收藏计数用不满的宽度空着 |
