@@ -5,7 +5,7 @@
 ///   / `#if matches:` / `#match scope:`）、定下来的分隔符与 HTML 判定、全部记录。[parseSrsTextFile] 在后台
 ///   isolate 里调它。
 /// - 写库在这里（[runSrsTextImport]），走与新建笔记相同的事件路径（[SrsDbStore.newNoteDrafts] 攒批
-///   [SrsDbStore.importDrafts]；更新已有笔记走 [SrsDbStore.editFieldsBatch]），不另开写入通道。
+///   [SrsDbStore.importDrafts]；更新已有笔记分批走 [SrsDbStore.editFieldsBatch]），不另开写入通道。
 /// - 已有笔记的匹配照 Anki：GUID 列命中优先；否则按首字段（查重规范形，与 AnkiConnect 查重同一份
 ///   `anki_dupes`，整份文件一条原生命令）在同一笔记类型（[SrsTextMatchScope.noteTypeAndDeck] 时再限同一牌组）
 ///   里找；GUID 列有值的行只按 GUID 匹配（库里没有这个 GUID 就是新笔记，不再退回首字段）。命中后按
@@ -16,6 +16,7 @@
 library;
 
 import 'dart:isolate';
+import 'dart:math' show min;
 
 import 'package:fushi_srs/fushi_srs.dart';
 
@@ -281,16 +282,23 @@ String _plain(String v, bool html) => html
 String _cell(List<String> row, int? column) =>
     column != null && column > 0 && column <= row.length ? row[column - 1] : '';
 
-/// 每批落库的笔记数（一批一个事务；叫停在批间生效）。
+/// 一批的大小：逐行决定阶段每处理这么多行（不论新增、更新还是跳过）落一次库、报一次进度、看一次叫停；更新阶段
+/// 每批这么多条笔记一个事务。叫停在批间生效。
 const int _kBatch = 500;
 
 /// 一行要写成的笔记。
 class _Row {
-  _Row(this.fields, this.tags, this.deckId, this.guid);
+  _Row(this.fields, this.tags, this.deckId, this.deckPath, this.guid);
 
   final Map<String, String> fields;
   final List<String> tags;
-  final String deckId;
+
+  /// 牌组 id；null = 牌组列里的牌组库里还没有，真要写进这一行的新笔记时才按 [deckPath] 建（叫停、跳过、只更新的行
+  /// 不留下空牌组）。
+  final String? deckId;
+
+  /// 牌组列的全名（`父::子`，已去空段）；[deckId] 有值时不用。
+  final String deckPath;
 
   /// GUID 列的值（空 = 没有）。
   final String guid;
@@ -298,8 +306,10 @@ class _Row {
 
 /// 把 [file] 的全部记录按 [options] 导进 [store]，回导入报告（新增 / 更新 / 跳过的笔记数、新增卡片数）。
 ///
-/// 首字段为空、或按笔记类型生成不出任何卡的行跳过（Anki 同样不加）。[shouldStop] 在批间返回 true 时抛
-/// [SrsImportStopped]（已落库的批保留）。[dupeNormBatch] 是首字段查重规范形（测试注入；缺省原生内核）。
+/// 首字段为空、或按笔记类型生成不出任何卡的行跳过（Anki 同样不加）。逐行阶段每 [_kBatch] 行、更新阶段每
+/// [_kBatch] 条笔记报一次 [onProgress]，并看一次 [shouldStop]：返回 true 时抛 [SrsImportStopped]（已落库的批保留）。
+/// 牌组列里库中没有的牌组在它的第一条新笔记落库前才建，叫停时不留下空牌组。[dupeNormBatch] 是首字段查重规范形
+/// （测试注入；缺省原生内核）。
 Future<SrsImportReport> runSrsTextImport({
   required SrsDbStore store,
   required SrsTextFile file,
@@ -322,21 +332,22 @@ Future<SrsImportReport> runSrsTextImport({
     for (final SrsFieldDef f in type.fields) f.id,
   ];
 
-  // 1. 每行 → 字段 / 标签 / 牌组（牌组列的名字一次解析，不存在的建出来）。
+  // 1. 每行 → 字段 / 标签 / 牌组（牌组列的名字一次解析；库里没有的先只记名字，第一条要写进去的新笔记落库前再建）。
   final SrsDeckTree tree = await store.deckTree();
   final Map<String, String> deckByName = <String, String>{
     for (final SrsDeckView d in tree.decks)
       tree.fullName(d.id).toLowerCase(): d.id,
   };
-  Future<String> deckFor(String name) async {
-    final String want = name
-        .split('::')
-        .map((String s) => s.trim())
-        .where((String s) => s.isNotEmpty)
-        .join('::');
-    if (want.isEmpty) return options.deckId;
-    return deckByName[want.toLowerCase()] ??= await store.ensureDeckPath(want);
-  }
+  String deckPathOf(String name) => name
+      .split('::')
+      .map((String s) => s.trim())
+      .where((String s) => s.isNotEmpty)
+      .join('::');
+  Future<String> deckOf(_Row r) async =>
+      r.deckId ??
+      (deckByName[r.deckPath.toLowerCase()] ??= await store.ensureDeckPath(
+        r.deckPath,
+      ));
 
   final List<_Row> rows = <_Row>[];
   for (final List<String> r in file.rows) {
@@ -353,14 +364,18 @@ Future<SrsImportReport> runSrsTextImport({
         file.html,
       ).split(RegExp(r'\s+')).where((String s) => s.isNotEmpty),
     ];
-    final String deckId = options.deckColumn == null
+    final String deckPath = options.deckColumn == null
+        ? ''
+        : deckPathOf(_plain(_cell(r, options.deckColumn), file.html));
+    final String? deckId = deckPath.isEmpty
         ? options.deckId
-        : await deckFor(_plain(_cell(r, options.deckColumn), file.html));
+        : deckByName[deckPath.toLowerCase()];
     rows.add(
       _Row(
         fields,
         tags.toSet().toList(),
         deckId,
+        deckPath,
         _plain(_cell(r, options.guidColumn), file.html).trim(),
       ),
     );
@@ -392,7 +407,10 @@ Future<SrsImportReport> runSrsTextImport({
               'norm': norms[i],
               'type': type.id,
               'all': false,
-              'decks': byDeck ? <String>[rows[i].deckId] : null,
+              // 还没建的牌组里不会有已有笔记：范围是空集。
+              'decks': byDeck
+                  ? <String>[if (rows[i].deckId case final String d) d]
+                  : null,
             },
         ],
       })).map['ids'];
@@ -468,21 +486,35 @@ Future<SrsImportReport> runSrsTextImport({
 
   Future<void> flush() async {
     if (batch.isEmpty) return;
+    final List<String> deckIds = <String>[
+      for (final _NewNote n in batch) await deckOf(n.row),
+    ];
     await store.importDrafts(<SrsEventDraft>[
-      for (final _NewNote n in batch)
+      for (int k = 0; k < batch.length; k++)
         ...store.newNoteDrafts(
           noteTypeId: type.id,
-          fieldsById: n.row.fields,
-          guid: n.guid,
-          noteId: n.noteId,
-          deckId: n.row.deckId,
-          tags: n.row.tags,
+          fieldsById: batch[k].row.fields,
+          guid: batch[k].guid,
+          noteId: batch[k].noteId,
+          deckId: deckIds[k],
+          tags: batch[k].row.tags,
         ),
     ]);
     batch.clear();
   }
 
+  // 进度：逐行阶段每行一份、更新阶段每条要更新的笔记一份（上界 = 要读的已有笔记数），收尾一份。
+  final int progressTotal = rows.length + toUpdate.length + 1;
+  void checkpoint(int done) {
+    onProgress?.call(done / progressTotal);
+    if (shouldStop?.call() ?? false) throw const SrsImportStopped();
+  }
+
   for (int i = 0; i < rows.length; i++) {
+    if (i > 0 && i % _kBatch == 0) {
+      await flush();
+      checkpoint(i);
+    }
     final _Row r = rows[i];
     // Anki 只跳过首字段是字面空串的行；只有图片 / 音频的首字段查重规范形为空，但照样导入。
     if ((r.fields[fieldIds.first] ?? '').isEmpty ||
@@ -515,20 +547,20 @@ Future<SrsImportReport> runSrsTextImport({
     final _NewNote n = _NewNote(guid, store.kernelIds.note(guid), r);
     batch.add(n);
     report.notesAdded++;
-    if (batch.length >= _kBatch) {
-      await flush();
-      onProgress?.call((i + 1) / (rows.length + 1));
-      if (shouldStop?.call() ?? false) throw const SrsImportStopped();
-    }
   }
   await flush();
 
-  // 4. 更新已有笔记：一个事务，值没变的键内核不落；有键真的落了才算「已更新」。
-  if (updates.isNotEmpty) {
+  // 4. 更新已有笔记：每 [_kBatch] 条一个事务（批间报进度、看叫停），值没变的键内核不落；有键真的落了才算「已更新」。
+  final List<MapEntry<String, (Map<String, String>, Set<String>)>> pending =
+      updates.entries.toList();
+  for (int from = 0; from < pending.length; from += _kBatch) {
+    checkpoint(rows.length + from);
+    final List<MapEntry<String, (Map<String, String>, Set<String>)>> chunk =
+        pending.sublist(from, min(from + _kBatch, pending.length));
     final List<SrsFieldEdit> written = await store.editFieldsBatch(
       <SrsFieldChange>[
         for (final MapEntry<String, (Map<String, String>, Set<String>)> e
-            in updates.entries) ...<SrsFieldChange>[
+            in chunk) ...<SrsFieldChange>[
           for (final MapEntry<String, String> f in e.value.$1.entries)
             SrsFieldChange(
               SrsEntityKind.note,
@@ -549,7 +581,7 @@ Future<SrsImportReport> runSrsTextImport({
       for (final SrsFieldEdit e in written) e.entityId,
     };
     report.notesUpdated += touched.length;
-    report.notesSkipped += updates.length - touched.length;
+    report.notesSkipped += chunk.length - touched.length;
   }
   onProgress?.call(1);
   return report;

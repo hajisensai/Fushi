@@ -251,7 +251,8 @@ class FeedbackTicketStore {
 class FeedbackPendingStore {
   FeedbackPendingStore(this.supportRoot);
 
-  static const Set<String> _sidecars = <String>{'.type', '.name'};
+  /// 不算槽位的旁注 / 半成品后缀（`.part` 是 [copyFile] 还没复制完的本体）。
+  static const Set<String> _sidecars = <String>{'.type', '.name', '.part'};
 
   final Directory supportRoot;
 
@@ -267,6 +268,10 @@ class FeedbackPendingStore {
   /// 样本文件的原文件名旁注（`<槽位>.name`）。
   File _nameFile(String id, String slot) =>
       File('${_file(id, slot).path}.name');
+
+  /// [copyFile] 复制中的本体（`<槽位>.part`）。
+  File _partFile(String id, String slot) =>
+      File('${_file(id, slot).path}.part');
 
   Future<void> put(String id, String slot, List<int> bytes) async {
     final File f = _file(id, slot);
@@ -309,13 +314,52 @@ class FeedbackPendingStore {
     final File f = _file(id, slot);
     await f.parent.create(recursive: true);
     if (f.existsSync()) await f.delete();
-    await source.copy(f.path);
-    await _typeFile(
-      id,
-      slot,
-    ).writeAsString('application/octet-stream', flush: true);
-    await _nameFile(id, slot).writeAsString(name, flush: true);
-    return f;
+    // 槽位本体最后一步才以正式名出现（先复制成 `<槽位>.part`，旁注写完再 rename）：[scan]
+    // 只认本体，本体在 = 原文件名旁注一定在。旧顺序（本体先落地、`.name` 最后写）在两步之间
+    // 崩溃 / 断电会留下一个没有原文件名的待传槽位，上传时服务端按扩展名永久拒收、被丢掉。
+    final File part = _partFile(id, slot);
+    try {
+      await source.copy(part.path);
+      await _typeFile(
+        id,
+        slot,
+      ).writeAsString('application/octet-stream', flush: true);
+      await _nameFile(id, slot).writeAsString(name, flush: true);
+      return await part.rename(f.path);
+    } on Object {
+      // 没走完：半成品与已写的旁注都不留（本体此前已删，旁注不属于任何槽位；异常照样抛给
+      // 调用方记日志）。
+      await _deleteInterrupted(id, slot);
+      rethrow;
+    }
+  }
+
+  /// 删掉一次没走完的 [copyFile] 留下的 `<槽位>.part`，以及本体不在时孤立的旁注。
+  Future<void> _deleteInterrupted(String id, String slot) async {
+    final File part = _partFile(id, slot);
+    if (part.existsSync()) await part.delete();
+    if (_file(id, slot).existsSync()) return;
+    final File type = _typeFile(id, slot);
+    if (type.existsSync()) await type.delete();
+    final File name = _nameFile(id, slot);
+    if (name.existsSync()) await name.delete();
+  }
+
+  /// 清掉上次进程在 [copyFile] 中途崩溃 / 断电留下的 `.part`（最多 100 MB 一个，不算槽位，
+  /// 否则只有「从本机移除」整条反馈才会被删）。只能在本进程还没有 [copyFile] 在跑时调：
+  /// [FeedbackService] 在 load 里、任何提交之前调用。
+  Future<void> discardInterrupted() async {
+    if (!_root.existsSync()) return;
+    for (final FileSystemEntity d in _root.listSync()) {
+      if (d is! Directory) continue;
+      for (final FileSystemEntity f in d.listSync()) {
+        if (f is! File || p.extension(f.path) != '.part') continue;
+        await _deleteInterrupted(
+          p.basename(d.path),
+          p.basenameWithoutExtension(f.path),
+        );
+      }
+    }
   }
 
   /// 待传样本文件的原文件名（没有旁注返回 null）。
@@ -352,6 +396,8 @@ class FeedbackPendingStore {
     if (type.existsSync()) await type.delete();
     final File name = _nameFile(id, slot);
     if (name.existsSync()) await name.delete();
+    final File part = _partFile(id, slot);
+    if (part.existsSync()) await part.delete();
     final Directory dir = f.parent;
     if (!dir.existsSync() || dir.listSync().isNotEmpty) return;
     try {

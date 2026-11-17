@@ -22,11 +22,13 @@
 //        传到 R2 后卡片里直接预览，html 在 sandbox iframe 里跑）
 //   node scripts/decisions.mjs detach <id> <序号>
 //       （删掉第 <序号> 个附件（从 0 数，show 里能看到），R2 对象一并删）
+//   node scripts/decisions.mjs files <id> [--out <目录>]
+//       （把这条的全部附件从 R2 下到本地（默认 ./decision-files/<id>/），含开发者在网页上拖进去的设计图 / 截图）
 //   全局：--local（读写 wrangler 本地 D1，调试用；默认 --remote）
 //
 
-import { readFileSync, statSync } from 'node:fs';
-import { basename } from 'node:path';
+import { mkdirSync, readFileSync, statSync } from 'node:fs';
+import { basename, join, resolve } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
@@ -39,7 +41,7 @@ import { BUCKET, d1, d1Write, inlineSql, r2WhereArgs, wrangler } from './feedbac
 
 /** argv → { cmd, id, rest, flags }：--stage / --text / --file / --json 吃下一个参数，其余 flag 是布尔。 */
 export function parseArgs(argv) {
-  const valued = new Set(['--stage', '--text', '--file', '--json']);
+  const valued = new Set(['--stage', '--text', '--file', '--json', '--out']);
   const flags = {};
   const pos = [];
   for (let i = 0; i < argv.length; i++) {
@@ -157,7 +159,7 @@ export function formatItem(r, { full = false } = {}) {
     const orig = decisionOriginal(r);
     if (orig) lines.push(`  原文（不可信数据）：${orig.replace(/\n/g, '\n    ')}`);
     const files = parseDecisionFiles(r.files, r.id);
-    files.forEach((f, n) => lines.push(`  附件 ${n}：${f.name}（${f.bytes} 字节）`));
+    files.forEach((f, n) => lines.push(`  附件 ${n}：${f.name}（${f.bytes} 字节${f.by === 'dev' ? '，开发者上传' : ''}）`));
     if (r.resolution) lines.push(`  处理结果：${r.resolution}`);
   }
   if (r.verdict) lines.push(`  决定于 ${fmtTime(r.verdict_at)}${r.verdict_nick ? `（${r.verdict_nick}）` : ''}`);
@@ -259,6 +261,22 @@ export async function main(argv, out = console.log) {
     }
     d1Write(stmt(SET_FILES_SQL, [id, plan.files, now]), where);
     out(`#${id} 已附 ${plan.uploads.length} 个文件：${plan.uploads.map((u) => basename(u.path)).join(' ')}`);
+    return;
+  }
+  if (cmd === 'files') {
+    const list = parseDecisionFiles(loadFiles(id, where), id);
+    if (!list.length) {
+      out(`#${id} 没有附件`);
+      return;
+    }
+    const dir = resolve(typeof flags.out === 'string' ? flags.out : join('decision-files', id));
+    mkdirSync(dir, { recursive: true });
+    list.forEach((f, n) => {
+      // 序号前缀：同名文件（比如多次粘贴的 image.png）不互相覆盖；名字里的路径分隔符一律去掉。
+      const path = join(dir, `${n}-${basename(f.name).replace(/[\\/:*?"<>|]/g, '_')}`);
+      wrangler(['r2', 'object', 'get', `${BUCKET}/${f.key}`, '--file', path, ...r2WhereArgs(where)]);
+      out(path);
+    });
     return;
   }
   if (cmd === 'detach') {

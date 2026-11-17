@@ -9,9 +9,10 @@
 // 写入事项、补解释、结单走本机 CLI scripts/decisions.mjs（wrangler 直连 D1，与 feedback.mjs 同一套凭据），
 // 网页只给开发者拍板和留言。SQL 与校验都在这里，CLI 与 Worker 共用一份。
 //
-// 六个决定（docs/agent/decision-board.md 写了代理拿到各个决定后怎么做）：
+// 七个决定（docs/agent/decision-board.md 写了代理拿到各个决定后怎么做）：
 //   do 做（有 choices 时换成 choice:<key>） / skip 不做 / later 以后 / never 永远不做（进功能黑名单）
-//   explain 没看懂（代理留 claude 留言解释，之后回到待拍） / delegate 你定（代理按自己的判断做）
+//   explain 没看懂（代理留 claude 留言解释，之后回到待拍） / mockup 要设计图（代理画 html 设计图附上来并留言，之后回到待拍）
+//   / delegate 你定（代理按自己的判断做）
 
 import { HttpError } from './util.js';
 import { esc } from './pages.js';
@@ -19,7 +20,7 @@ import { esc } from './pages.js';
 export const DECISION_KINDS = { pr: 'PR', feedback: '反馈', issue: 'Issue', review: '审查', design: '设计', other: '其他' };
 export const DECISION_RECS = { do: '建议做', skip: '建议不做', never: '建议永远不做', later: '建议以后', weigh: '看取舍' };
 export const DECISION_VERDICTS = {
-  do: '做', choice: '选', skip: '不做', later: '以后', never: '永远不做', explain: '没看懂', delegate: '你定',
+  do: '做', choice: '选', skip: '不做', later: '以后', never: '永远不做', explain: '没看懂', mockup: '要设计图', delegate: '你定',
 };
 export const DECISION_STATES = ['open', 'done', 'dropped'];
 export const DECISION_STAGES = [
@@ -135,6 +136,54 @@ export function parseDecisionFiles(raw, id) {
 
 export const SET_FILES_SQL = `UPDATE decisions SET files = ?2, updated_at = ?3 WHERE id = ?1`;
 
+/** 网页上传：原子追加一个附件（json_insert 到数组末尾），并刷新 updated_at 让别的页面同步到。 */
+const APPEND_FILE_SQL = `UPDATE decisions SET files = json_insert(COALESCE(files, '[]'), '$[#]', json(?2)), updated_at = ?3
+  WHERE id = ?1 AND state = 'open'`;
+
+/** 网页上传一次请求的体积上限（整包进 Worker 内存）：最多约 3 个满额文件；页面脚本一次只传一个文件。 */
+export const DECISION_UPLOAD_BODY_MAX = 3 * DECISION_LIMITS.fileMax + 64 * 1024;
+
+/**
+ * 开发者在拍板台网页上传附件（POST /dev/d/:id/files，multipart 字段 file 可多个）。
+ * 校验扩展名 / 大小 / 总数后写 R2（decisions/<id>/<随机>-<安全名>），逐个原子追加进 files 列，
+ * 再以开发者身份留一条「上传了附件：…」，代理巡检时能看到。
+ * @param {object} env
+ * @param {{id: string}} dev
+ * @param {string} id
+ * @param {File[]} files
+ * @param {number} now
+ * @returns {Promise<string[]>} 收下的文件名
+ */
+export async function uploadDecisionFiles(env, dev, id, files, now) {
+  if (!DECISION_ID_RE.test(id)) throw new HttpError(404, 'not_found');
+  const row = await env.DB.prepare('SELECT state, files FROM decisions WHERE id = ?1').bind(id).first();
+  if (!row) throw new HttpError(404, 'not_found');
+  if (row.state !== 'open') throw new HttpError(409, 'decision_closed');
+  const list = files.filter((f) => f && typeof f === 'object' && typeof f.name === 'string' && f.size > 0);
+  if (!list.length) throw new HttpError(400, 'no_file');
+  if (parseDecisionFiles(row.files, id).length + list.length > DECISION_LIMITS.filesMax) throw new HttpError(400, 'too_many_files');
+  for (const f of list) {
+    if (!decisionFileType(f.name)) throw new HttpError(400, 'bad_file_type');
+    if (f.name.length > DECISION_LIMITS.fileNameMax) throw new HttpError(400, 'bad_file_name');
+    if (f.size > DECISION_LIMITS.fileMax) throw new HttpError(413, 'file_too_large');
+  }
+  const names = [];
+  for (const f of list) {
+    const nonce = [...crypto.getRandomValues(new Uint8Array(4))].map((b) => b.toString(16).padStart(2, '0')).join('');
+    const key = `decisions/${id}/${nonce}-${f.name.replace(/[^A-Za-z0-9._-]+/g, '_')}`;
+    const type = decisionFileType(f.name).type;
+    await env.MEDIA.put(key, await f.arrayBuffer(), { httpMetadata: { contentType: type } });
+    const entry = { name: f.name, type, key, bytes: f.size, by: 'dev' };
+    await env.DB.prepare(APPEND_FILE_SQL).bind(id, JSON.stringify(entry), now).run();
+    names.push(f.name);
+  }
+  await env.DB.prepare(ADD_NOTE_SQL).bind(id, 'dev', dev.id, `上传了附件：${names.join('、')}`, now).run();
+  return names;
+}
+
+/** 文件选择框的 accept：与 DECISION_FILE_TYPES 同一张表。 */
+const UPLOAD_ACCEPT = Object.keys(DECISION_FILE_TYPES).map((e) => `.${e}`).join(',');
+
 /**
  * GET /dev/d/:id/f/:n：从 R2 取附件。回包一律 CSP sandbox（不透明源：页面脚本照跑，但读不到处理台
  * 的 Cookie / 同源接口），只许本站嵌进 iframe 预览；nosniff 防按内容猜类型。
@@ -170,7 +219,8 @@ function filesHtml(row) {
   const items = files.map((f, n) => {
     const href = `/dev/d/${esc(row.id)}/f/${n}`;
     const view = decisionFileType(f.name).view;
-    const open = `<a href="${href}" target="_blank" rel="noopener">${esc(f.name)}</a> <span class="muted">${esc(fmtSize(f.bytes))}</span>`;
+    const open = `<a href="${href}" target="_blank" rel="noopener">${esc(f.name)}</a> <span class="muted">${esc(fmtSize(f.bytes))}${
+      f.by === 'dev' ? ' · 开发者上传' : ''}</span>`;
     if (view === 'image') {
       return `<div class="dfile">${open}<a href="${href}" target="_blank" rel="noopener"><img src="${href}" alt="${
         esc(f.name)}" loading="lazy"></a></div>`;
@@ -242,7 +292,10 @@ export const LIST_NOTES_SQL = `SELECT n.*, a.nickname AS nick FROM decision_note
 export function decisionStage(row) {
   if (row.state !== 'open') return 'closed';
   if (!row.verdict) return 'todo';
-  if (row.verdict === 'explain') return (row.claude_at || 0) > (row.verdict_at || 0) ? 'todo' : 'explain';
+  // 没看懂 / 要设计图：等 Claude 补（解释或附设计图后留言），补完回到待拍。两者同在「等解释」栏。
+  if (row.verdict === 'explain' || row.verdict === 'mockup') {
+    return (row.claude_at || 0) > (row.verdict_at || 0) ? 'todo' : 'explain';
+  }
   if (row.verdict === 'later') return 'later';
   return 'exec';
 }
@@ -448,12 +501,12 @@ function originalHtml(row) {
     shots ? `<div class="dshots">${shots}</div>` : ''}${links}</details>`;
 }
 
-const STAGE_LABEL = { todo: '待拍', explain: '等 Claude 解释', exec: '等 Claude 执行', later: '挂着', closed: '已结' };
+const STAGE_LABEL = { todo: '待拍', explain: '等 Claude 解释', mockup: '等 Claude 画设计图', exec: '等 Claude 执行', later: '挂着', closed: '已结' };
 
 /** 决定按钮：值、文案、样式、快捷键。「做」/ 方案的快捷键是数字 1…6。 */
 const VERDICT_BUTTONS = [
   ['skip', '不做', 'v-skip', 'x'], ['later', '以后', 'v-later', 'l'], ['never', '永远不做', 'v-never', 'n'],
-  ['explain', '没看懂', 'v-explain', 'e'], ['delegate', '你定', 'v-delegate', 'y'],
+  ['explain', '没看懂', 'v-explain', 'e'], ['mockup', '要设计图', 'v-mockup', 'd'], ['delegate', '你定', 'v-delegate', 'y'],
 ];
 
 function verdictText(row) {
@@ -476,7 +529,8 @@ export function decisionVersion(row) {
 
 function card(row, back, { hidden = false } = {}) {
   const stage = decisionStage(row);
-  const reexplained = row.verdict === 'explain' && stage === 'todo';
+  const asked = row.verdict === 'explain' || row.verdict === 'mockup';
+  const reexplained = asked && stage === 'todo';
   const choices = parseChoices(row.choices);
   const current = verdictValue(row);
   const btn = (v, label, cls, key) => `<button name="v" value="${esc(v)}" class="vb ${cls}${current === v ? ' on' : ''}" data-key="${
@@ -495,17 +549,25 @@ function card(row, back, { hidden = false } = {}) {
 <input type="hidden" name="back" value="${esc(back)}">
 <input type="hidden" name="base" value="${esc(current)}">
 <textarea name="text" rows="2" maxlength="${DECISION_LIMITS.noteMax}" aria-label="留言" placeholder="${
-  row.verdict === 'explain' ? '哪里没看懂？写下来 Claude 针对着解释' : '可选：补充说明，随下面的决定一起提交（Ctrl+Enter 只发留言）'}"></textarea>
+  row.verdict === 'explain' ? '哪里没看懂？写下来 Claude 针对着解释'
+    : row.verdict === 'mockup' ? '想看哪部分的设计图？写下来 Claude 照着画（比如两个方案各画一张）' : '可选：补充说明，随下面的决定一起提交（Ctrl+Enter 只发留言）'}"></textarea>
 <div class="vrow">${verdictButtons}<span class="vsp"></span>${
   row.verdict ? '<button name="v" value="clear" class="vb v-clear" data-key="u" title="撤销决定（快捷键 U）">撤销决定</button>' : ''
 }<button name="v" value="note" class="vb v-note" title="只发留言，不改决定（Ctrl+Enter）">只留言</button></div>
+</form>
+<form method="post" action="/dev/d/${esc(row.id)}/files" enctype="multipart/form-data" class="dupload">
+<input type="hidden" name="back" value="${esc(back)}">
+<label class="dpick">上传附件<input type="file" name="file" multiple accept="${esc(UPLOAD_ACCEPT)}"></label>
+<span class="muted">也可以把文件拖到这张卡上，或在留言框里粘贴截图（html / md / txt / 图片，单个 ≤ 10 MB）</span>
+<noscript><button class="vb">上传</button></noscript>
 </form>`;
   return `<article class="card dcard st-${esc(row.verdict || 'none')}${closed ? ' closed' : ''}" id="d-${esc(row.id)}" data-id="${
     esc(row.id)}" data-stage="${esc(stage)}" data-never="${row.verdict === 'never' ? 1 : 0}" data-verdict="${esc(current)}" data-v="${
     esc(decisionVersion(row))}" tabindex="-1"${hidden ? ' hidden' : ''}>
 <div class="dhead"><span class="badge">${esc(DECISION_KINDS[row.kind] || row.kind)}</span>
 <span class="badge rec-${esc(row.rec)}">${esc(DECISION_RECS[row.rec] || row.rec)}</span>
-<span class="badge stage-${esc(stage)}${reexplained ? ' re' : ''}">${esc(reexplained ? '已补充解释，请重拍' : STAGE_LABEL[stage])}</span>
+<span class="badge stage-${esc(stage)}${reexplained ? ' re' : ''}">${esc(reexplained ? (row.verdict === 'mockup' ? '设计图已附上，请重拍' : '已补充解释，请重拍')
+    : STAGE_LABEL[stage === 'explain' && row.verdict === 'mockup' ? 'mockup' : stage])}</span>
 <span class="muted">${sourceHtml(row.source)}</span> <span class="muted">#${esc(row.id)}</span></div>
 <h3>${esc(row.title)}</h3>
 <div class="body">${esc(row.ask)}</div>
@@ -576,7 +638,7 @@ kbd{display:inline-block;min-width:1.4em;padding:0 4px;margin-left:6px;border:1p
 .dcard.st-skip{border-left-color:var(--muted)}
 .dcard.st-never{border-left-color:#c0392b}
 .dcard.st-later{border-left-color:#c98a00}
-.dcard.st-explain{border-left-color:var(--c2)}
+.dcard.st-explain,.dcard.st-mockup{border-left-color:var(--c2)}
 .dcard.st-delegate{border-left-color:#7a57c2}
 .dcard.closed{opacity:.75}
 .dcard.busy{opacity:.6;pointer-events:none}
@@ -604,6 +666,12 @@ kbd{display:inline-block;min-width:1.4em;padding:0 4px;margin-left:6px;border:1p
 .dfile{margin-top:6px}
 .dfile summary{cursor:pointer}
 .dfile img{display:block;margin-top:4px;max-width:min(100%,480px);max-height:360px;border:1px solid var(--line);border-radius:8px}
+.dupload{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:8px;font-size:13px}
+.dpick{display:inline-block;padding:4px 10px;border:1px dashed var(--line);border-radius:8px;cursor:pointer}
+.dpick:hover{border-color:var(--fg)}
+.dpick input{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+.dpick:focus-within{outline:2px solid var(--accent)}
+.dcard.dragover{box-shadow:0 0 0 3px var(--c2);background:color-mix(in srgb,var(--c2) 8%,transparent)}
 .dfile iframe{display:block;width:100%;height:520px;margin-top:4px;border:1px solid var(--line);border-radius:8px;background:#fff;resize:vertical}
 .dform textarea{min-height:0;margin-top:10px;resize:vertical}
 .vrow{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px}
@@ -617,7 +685,7 @@ kbd{display:inline-block;min-width:1.4em;padding:0 4px;margin-left:6px;border:1p
 .vb.v-never{border-style:dashed}
 .vb.v-never.on{background:#c0392b;border-color:#c0392b;border-style:solid}
 .vb.v-later.on{background:#c98a00;border-color:#c98a00}
-.vb.v-explain.on{background:var(--c2);border-color:var(--c2)}
+.vb.v-explain.on,.vb.v-mockup.on{background:var(--c2);border-color:var(--c2)}
 .vb.v-delegate.on{background:#7a57c2;border-color:#7a57c2}
 .vb.v-clear,.vb.v-note{color:var(--muted)}
 #dtoast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);z-index:10;display:flex;flex-direction:column;gap:8px;
@@ -641,10 +709,10 @@ export function renderDecisions(rows, stage, { sig = '', script = '', conflict =
   const shown = rows.filter((r) => inDecisionStage(r, stage)).length;
   const empty = stage === 'todo' ? '没有待拍的了。' : '这一栏是空的。';
   return `<div class="dtop"><h1>拍板台</h1><span id="dsync" class="muted"></span></div>
-<p class="muted">Claude 把要你拍板的 PR 取舍、反馈建议、issue、审查发现写在这里。点一个决定即可，想补充就先在框里写再点；点「没看懂」后 Claude 会回一条解释，这条回到待拍。点完不刷新页面，可以撤销。</p>
+<p class="muted">Claude 把要你拍板的 PR 取舍、反馈建议、issue、审查发现写在这里。点一个决定即可，想补充就先在框里写再点；点「没看懂」后 Claude 会回一条解释、点「要设计图」后 Claude 会画设计图附上来，这条都回到待拍。点完不刷新页面，可以撤销。</p>
 <details class="legend muted"><summary>决定含义与快捷键</summary>
-<div><span><b>做 / 方案</b> 照建议做</span><span><b>不做</b> 这次不做、关单</span><span><b>以后</b> 先挂着</span><span><b>永远不做</b> 拉黑，以后不再提</span><span><b>没看懂</b> 让 Claude 再解释</span><span><b>你定</b> 按 Claude 的判断做</span></div>
-<div><span><kbd>J</kbd><kbd>K</kbd>下一条 / 上一条</span><span><kbd>1</kbd>…<kbd>6</kbd>做 / 选方案</span><span><kbd>X</kbd>不做</span><span><kbd>L</kbd>以后</span><span><kbd>N</kbd>永远不做</span><span><kbd>E</kbd>没看懂</span><span><kbd>Y</kbd>你定</span><span><kbd>C</kbd>写留言</span><span><kbd>U</kbd>撤销决定</span><span><kbd>Ctrl</kbd>+<kbd>Enter</kbd>只发留言</span><span><kbd>Esc</kbd>离开输入框</span></div>
+<div><span><b>做 / 方案</b> 照建议做</span><span><b>不做</b> 这次不做、关单</span><span><b>以后</b> 先挂着</span><span><b>永远不做</b> 拉黑，以后不再提</span><span><b>没看懂</b> 让 Claude 再解释</span><span><b>要设计图</b> 交互想象不出来，让 Claude 画设计图再拍</span><span><b>你定</b> 按 Claude 的判断做</span></div>
+<div><span><kbd>J</kbd><kbd>K</kbd>下一条 / 上一条</span><span><kbd>1</kbd>…<kbd>6</kbd>做 / 选方案</span><span><kbd>X</kbd>不做</span><span><kbd>L</kbd>以后</span><span><kbd>N</kbd>永远不做</span><span><kbd>E</kbd>没看懂</span><span><kbd>D</kbd>要设计图</span><span><kbd>Y</kbd>你定</span><span><kbd>C</kbd>写留言</span><span><kbd>U</kbd>撤销决定</span><span><kbd>Ctrl</kbd>+<kbd>Enter</kbd>只发留言</span><span><kbd>Esc</kbd>离开输入框</span></div>
 </details>
 ${conflict ? '<p class="note">刚才那条在你提交前已被别人改了决定，你的决定没有提交。下面是最新状态，看过后再拍。</p>' : ''}
 <nav class="tabs" id="dtabs">${tabs}</nav>
