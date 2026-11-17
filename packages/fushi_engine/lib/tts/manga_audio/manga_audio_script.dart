@@ -459,6 +459,7 @@ class MangaAudioScript {
     this.defaultSeed = 0,
     CastVoiceAssignment? voices,
     this.sourcePolicy = MangaAudioSourcePolicy.audiobookFirst,
+    this.audiobookKey,
     Map<String, TtsCastCharacter>? roster,
     List<MangaScriptLine>? lines,
     Map<int, MangaPageDirective>? pages,
@@ -480,6 +481,11 @@ class MangaAudioScript {
   final CastVoiceAssignment voices;
 
   MangaAudioSourcePolicy sourcePolicy;
+
+  /// 关联的有声书（书库里另一本书的 `bookKey`，设计 §9）：[MangaAudiobookClip] 的
+  /// `fileIndex` 指的就是这本书 `Audiobooks.audioPathsJson` 里的第几个文件。
+  /// null = 没关联，所有句子都合成。
+  String? audiobookKey;
 
   /// 角色表：规范名 → 角色。逐句说话人只能从这里选，或旁白 / 不明。
   final Map<String, TtsCastCharacter> roster;
@@ -598,6 +604,7 @@ class MangaAudioScript {
     'seed': defaultSeed,
     'voices': voices.toJson(),
     'policy': sourcePolicy.wire,
+    if (audiobookKey != null) 'audiobook': audiobookKey,
     'roster': <Object?>[
       for (final TtsCastCharacter c in roster.values) c.toJson(),
     ],
@@ -617,6 +624,7 @@ class MangaAudioScript {
     final Object? annotated = raw['annotated'];
     final Object? seed = raw['seed'];
     final Object? signature = raw['ocr'];
+    final Object? audiobook = raw['audiobook'];
     final List<MangaScriptLine> parsed = <MangaScriptLine>[
       if (lines is List)
         for (final Object? l in lines)
@@ -636,6 +644,9 @@ class MangaAudioScript {
       defaultSeed: seed is int ? seed.clamp(0, MangaScriptLimits.maxSeed) : 0,
       voices: CastVoiceAssignment.fromJson(raw['voices']),
       sourcePolicy: MangaAudioSourcePolicy.parse(raw['policy']),
+      audiobookKey: audiobook is String && audiobook.isNotEmpty
+          ? audiobook
+          : null,
       roster: <String, TtsCastCharacter>{
         if (roster is List)
           for (final Object? r in roster)
