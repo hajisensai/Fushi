@@ -327,7 +327,6 @@ void main() {
     () async {
       final SrsStorage st = await openTestSrsStorage();
       final SrsDbStore s = await SrsDbStore.open(
-        db: st.db,
         core: st.core,
         profileUid: kProfile,
         deviceId: 'A',
