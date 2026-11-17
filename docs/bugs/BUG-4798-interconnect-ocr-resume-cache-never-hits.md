@@ -1,4 +1,4 @@
-## BUG-4791 · 互联主机代跑 OCR：取消后重传同卷，保留的逐页断点缓存一页也命中不了
+## BUG-4798 · 互联主机代跑 OCR：取消后重传同卷，保留的逐页断点缓存一页也命中不了
 - **报告**：2026-11-17（用户：小说 / 漫画 / 视频优化清单 manga-8「互联主机端同卷断点续传永远不命中」，代码复核确认）
 - **真实性**：✅ 真 bug（代码路径确认 + 测试复现）。设计意图是续传：取消只删页图、保留 `manga_ocr_out/`（`packages/fushi_engine/lib/sync/fushi_manga_ocr_host.dart` `cancelAndCleanup` 的注释「保留逐页断点缓存使同卷重传后续传」），同卷新任务也落回同一个 `vol_<slug>` 目录。但缓存从来对不上：
   - 逐页缓存按「页名 + 大小 + 修改时间」认页：`packages/fushi_engine/lib/ocr/manga_ocr_folder_job.dart:277-279`（读）、`:311-313`（写）记的都是页图当前的 `stat`。

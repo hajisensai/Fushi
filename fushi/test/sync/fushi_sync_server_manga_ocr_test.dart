@@ -7,7 +7,7 @@
 /// - 上传页名穿越拒绝；
 /// - 串行单并发队列（第二个 job 排队等第一个跑完）;
 /// - 取消清理：页图删除、`manga_ocr_out/` 断点缓存保留（同卷重传后续传）。
-/// - 逐页上传带源 mtime：重传同卷时真的命中逐页断点缓存（BUG-4791）。
+/// - 逐页上传带源 mtime：重传同卷时真的命中逐页断点缓存（BUG-4798）。
 library;
 
 import 'dart:async';
@@ -676,7 +676,7 @@ void main() {
     },
   );
 
-  // BUG-4791：逐页断点缓存按「页名 + 大小 + 修改时间」认页。取消删页图、重传是
+  // BUG-4798：逐页断点缓存按「页名 + 大小 + 修改时间」认页。取消删页图、重传是
   // 新写，页图的修改时间若是 host 落盘那一刻，保留下来的缓存永远对不上。
   test(
     'page upload stamps the source mtime so the checkpoint cache hits after re-upload',

@@ -417,7 +417,7 @@ void main() {
     },
   );
 
-  // BUG-4791：host 的逐页断点缓存按「页名 + 大小 + 修改时间」认页；上传不带源
+  // BUG-4798：host 的逐页断点缓存按「页名 + 大小 + 修改时间」认页；上传不带源
   // 文件的修改时间时，重传的页图永远是「新文件」，同卷第二次整卷重新识别。
   test(
     're-running the same volume hits the host per-page cache (source mtime travels)',
