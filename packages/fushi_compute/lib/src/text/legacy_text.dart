@@ -65,11 +65,13 @@ abstract final class LegacyTextDecoder {
 
   static _LegacyDecodeDocumentDart _loadDocument() {
     final FushiCompute compute = FushiCompute.require();
+    // 故意不是 leaf 调用：整份文档的解码与输入等长（1 MB 约 55～95 ms），调用方把大输入放
+    // 后台 isolate，而 leaf 调用期间线程到不了 safepoint，同一 isolate group 的 GC（含 UI
+    // isolate 触发的）要等它返回。输入已拷进原生内存、原生侧不回调 Dart，不需要 leaf。
     try {
       return compute.library
           .lookupFunction<_LegacyDecodeDocumentC, _LegacyDecodeDocumentDart>(
             'ffc_text_legacy_decode_document',
-            isLeaf: true,
           );
     } on ArgumentError catch (e) {
       throw compute.missingSymbols('text', e.message ?? e);
@@ -80,8 +82,9 @@ abstract final class LegacyTextDecoder {
   /// 与计分同 [decodeBatch]，容错口径按整份文件放宽（少量坏字节解成 U+FFFD，判据见
   /// native/fushi_compute/src/legacy_text.rs 的 `decode_document`）。
   ///
-  /// 全 ASCII、基本是 UTF-8（只坏了少数几处）、像真 Latin-1 文本、或没有候选落在容错口径内
-  /// 时返回 null，调用方保持原有处理。
+  /// 全 ASCII、基本是 UTF-8（只坏了少数几处）、像单字节西文编码（Windows-1252 / 1256 等）
+  /// 的文本、或没有候选落在容错口径内时返回 null，调用方保持原有处理。开头的 UTF-8 BOM
+  /// 不算正文（现实里有「UTF-8 BOM + 本地编码正文」的坏文件）。
   ///
   /// 同步调用，耗时与输入等长（实测约 55～95 ms / MB，1 ms ≈ 12～18 KB）：大输入由调用方
   /// 放后台 isolate（`fushi_audio` 的 `decodeLegacyText` 按 `kLegacyDecodeInlineMaxBytes` 分流）。

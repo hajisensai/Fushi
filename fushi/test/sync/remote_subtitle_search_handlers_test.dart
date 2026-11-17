@@ -442,7 +442,7 @@ void main() {
     test('非 UTF-8 档（Shift-JIS）解回日文正文并解析出时间轴', () async {
       // 「1\n00:00:01,000 --> 00:00:02,000\nこんにちは\n」的 Shift-JIS 字节。
       // 测试宿主与桌面三端一样没有字符集检测插件，正文靠 fushi_audio 的
-      // decodeLegacyText（Rust 计算内核）解回来（BUG-4794：从前整段变成 U+FFFD）。
+      // decodeLegacyText（Rust 计算内核）解回来（BUG-4798：从前整段变成 U+FFFD）。
       final Uint8List shiftJis = Uint8List.fromList(<int>[
         ...ascii.encode('1\n00:00:01,000 --> 00:00:02,000\n'),
         0x82,

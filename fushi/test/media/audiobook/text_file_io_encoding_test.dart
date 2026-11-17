@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/audiobook/platform_charset_detector.dart';
 import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi_engine/media/video/subtitle/subtitle_content_language.dart';
 
 /// BUG-1490：桌面端非 UTF-8 字幕全被误报为「不支持」。
 ///
@@ -287,7 +288,7 @@ void main() {
     });
   });
 
-  // BUG-4794：桌面三端读 CP932 / GBK / Big5 / EUC-JP 字幕整份变成 U+FFFD。
+  // BUG-4798：桌面三端读 CP932 / GBK / Big5 / EUC-JP 字幕整份变成 U+FFFD。
   //
   // 与 app 在桌面端的装配同构：`installPlatformCharsetDetector()` 装了插件，但测试
   // 宿主（同桌面三端）没有它的平台实现 → 恒返回 null → 落到 Rust 计算内核的
@@ -320,10 +321,53 @@ void main() {
     test('CP932 的 ASS 解析出日文 cue', () async {
       final List<AudioCue> cues = await AssParser.parse(
         assFile: File('$fixtureDir/ja_cp932.ass'),
-        bookKey: 'bug4794',
+        bookKey: 'bug4798',
       );
       expect(cues.length, 240);
       expect(cues[0].text, 'おはよう、今日はいい天気ですね。');
+    });
+
+    test('Windows-1252 的英文字幕不被解成汉字，正文语言仍判英文', () async {
+      // 弯撇号 `’`（0x92）与后一个字母恰好是 Shift_JIS / GBK 的一个合法双字节字；
+      // 末尾一条 `“Wait…”`（0x85 0x94 相邻）让「像 Latin-1」的短标签判据整份判否。
+      // 解成汉字的话 BUG-3069 的字幕语言守卫会把这份英文字幕当成中文。
+      const Map<int, int> cp1252 = <int, int>{
+        0x2019: 0x92,
+        0x201C: 0x93,
+        0x201D: 0x94,
+        0x2026: 0x85,
+      };
+      final StringBuffer doc = StringBuffer();
+      int n = 0;
+      void cue(String line) {
+        n += 1;
+        final String at =
+            '00:${(n ~/ 60).toString().padLeft(2, '0')}:'
+            '${(n % 60).toString().padLeft(2, '0')}';
+        doc.write('$n\r\n$at,000 --> $at,500\r\n$line\r\n\r\n');
+      }
+
+      for (int k = 0; k < 20; k++) {
+        cue('I don\u2019t know what you\u2019re talking about.');
+        cue('It\u2019s fine, we\u2019ll manage.');
+        cue('She\u2019s gone, isn\u2019t she?');
+        cue('They\u2019ve left already.');
+        cue('I\u2019m sure he\u2019d agree.');
+      }
+      cue('\u201CWait\u2026\u201D');
+      final Uint8List bytes = Uint8List.fromList(<int>[
+        for (final int rune in doc.toString().runes) cp1252[rune] ?? rune,
+      ]);
+
+      final String text = await decodeTextBytes(bytes);
+      expect(
+        text,
+        contains('I don\u{FFFD}t know what you\u{FFFD}re talking about.'),
+      );
+      expect(
+        detectSubtitleContentLanguage(text),
+        SubtitleContentLanguage.english,
+      );
     });
 
     test('短片段（证据不足）不猜编码，照旧降级到宽松 UTF-8', () async {

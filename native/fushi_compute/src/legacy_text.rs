@@ -38,6 +38,14 @@
 //! 0.42%（都是没列进 [score_char] 的符号），其中 17 份按零容错会被淘汰；错误候选里 GBK 解
 //! 日文字节常常零错误，仍靠计分区分。
 //!
+//! 整份文档另有两条**结构证据**（[DocumentAssessment::shaped_like_cjk]），挡的是单字节西文
+//! 编码被候选「零错误」解成 CJK：Windows-1252 的英文 / 德文字幕里高位字节零散出现（`don’t`
+//! 的 0x92、`möchte` 的 0xF6），与后一个 ASCII 字母恰好拼成 Shift_JIS / GBK 的一个合法双字节
+//! 字 —— 解出的每个「汉字」都孤零零夹在 ASCII 里并贴着字母；真 CJK 正文的字成串出现。
+//! Windows-1256 阿拉伯文 / TIS-620 泰文的字节大半落在 Shift_JIS 的单字节半角片假名区 ——
+//! 真日文正文不会半数以上是半角片假名。[latin1_plausible] 是为短标签写的（一处 `…”` 就
+//! 整份判否），整份文档不能只靠它。
+//!
 //! 字节层面固有、无法区分的残余：全汉字、无假名的 EUC-JP 与 GB2312 字节完全同形；全落在
 //! 常用区的 Big5 与 GBK 同形 —— 同分按顺序取 GBK。
 
@@ -239,6 +247,12 @@ struct DocumentAssessment {
     non_ascii: u64,
     /// 解码错误（U+FFFD）与 [score_char] 淘汰的字符数。
     bad: u64,
+    /// 孤立的非 ASCII 字符数：前后都是 ASCII（或文档首尾），且至少一侧是 ASCII 字母。
+    /// 只算「贴着字母」的：卡拉 OK 字幕 / 逐字歌词里每个字都被 `{\k20}`、`<00:12.34>` 隔开，
+    /// 两侧是括号而不是字母，不能算进来。
+    isolated: u64,
+    /// 半角片假名（U+FF61..U+FF9F）字符数。
+    halfwidth_kana: u64,
 }
 
 impl DocumentAssessment {
@@ -247,8 +261,15 @@ impl DocumentAssessment {
             score: 0,
             non_ascii: 0,
             bad: 0,
+            isolated: 0,
+            halfwidth_kana: 0,
         };
-        for c in text.chars() {
+        // 文档开头之前当作 ASCII 非字母。
+        let mut prev: char = '\n';
+        let mut chars = text.chars().peekable();
+        while let Some(c) = chars.next() {
+            let before = prev;
+            prev = c;
             if c.is_ascii() {
                 // 控制符（NUL、ESC…）说明这不是文本；换行 / 制表符不算。
                 if score_char(enc, c).is_none() {
@@ -257,6 +278,16 @@ impl DocumentAssessment {
                 continue;
             }
             a.non_ascii += 1;
+            let after: char = chars.peek().copied().unwrap_or('\n');
+            if before.is_ascii()
+                && after.is_ascii()
+                && (before.is_ascii_alphabetic() || after.is_ascii_alphabetic())
+            {
+                a.isolated += 1;
+            }
+            if ('\u{FF61}'..='\u{FF9F}').contains(&c) {
+                a.halfwidth_kana += 1;
+            }
             match score_char(enc, c) {
                 Some(s) => a.score += u64::from(s),
                 None => a.bad += 1,
@@ -265,8 +296,16 @@ impl DocumentAssessment {
         a
     }
 
+    /// 结构证据（见模块文档）：解出的非 ASCII 字符多数孤立地贴着 ASCII 字母，或半数以上是
+    /// 半角片假名，都说明原文是单字节西文编码而不是这个候选。
+    fn shaped_like_cjk(&self) -> bool {
+        self.isolated * 2 <= self.non_ascii && self.halfwidth_kana * 2 <= self.non_ascii
+    }
+
     fn acceptable(&self) -> bool {
-        self.score >= DOCUMENT_MIN_SCORE && self.bad * DOCUMENT_BAD_DIVISOR <= self.non_ascii
+        self.score >= DOCUMENT_MIN_SCORE
+            && self.bad * DOCUMENT_BAD_DIVISOR <= self.non_ascii
+            && self.shaped_like_cjk()
     }
 
     fn rank(&self) -> u64 {
@@ -299,11 +338,16 @@ pub fn mostly_utf8(bytes: &[u8]) -> bool {
 /// U+FFFD；排名按分值减坏字符罚分，同分仍按 [CANDIDATES] 的顺序。
 ///
 /// 返回 None（调用方保持原有处理）：全 ASCII、[mostly_utf8]、像真 Latin-1 文本、或没有候选
-/// 落在容错口径内并攒够 [DOCUMENT_MIN_SCORE]。
+/// 落在容错口径内、攒够 [DOCUMENT_MIN_SCORE] 并通过结构证据
+/// （[DocumentAssessment::shaped_like_cjk]）。
 ///
-/// 已知判不对的输入（字节层面与候选同形，本模块没有词频模型）：EUC-KR 韩文、
-/// Windows-1251 西里尔文等其它双字节 / 高位字节成串的编码，会被 GBK / Big5 零错误解成汉字。
+/// 开头的 UTF-8 BOM（EF BB BF）先剥掉再判：现实里有「带 UTF-8 BOM、正文却是本地编码」的坏
+/// 文件，BOM 三字节不是正文。
+///
+/// 已知判不对的输入（字节层面与候选同形，本模块没有词频模型）：EUC-KR 韩文等其它双字节
+/// 编码，会被 GBK / Big5 零错误解成汉字。
 pub fn decode_document(bytes: &[u8]) -> Option<(&'static Encoding, String)> {
+    let bytes = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(bytes);
     if bytes.is_ascii() || mostly_utf8(bytes) || latin1_plausible(bytes) {
         return None;
     }
@@ -658,6 +702,169 @@ mod tests {
         let doc = ass_document(&["Déjà vu, ça va très bien.", "Größe für Élise"], 8);
         let latin1: Vec<u8> = doc.chars().map(|c| c as u32 as u8).collect();
         assert!(decode_document(&latin1).is_none());
+    }
+
+    /// 一份 SRT：[lines] 重复 [repeat] 遍。
+    fn srt_document(lines: &[&str], repeat: usize) -> String {
+        let mut doc = String::new();
+        let mut n = 0usize;
+        for _ in 0..repeat {
+            for line in lines {
+                n += 1;
+                doc.push_str(&format!(
+                    "{n}\r\n00:{:02}:{:02},000 --> 00:{:02}:{:02},500\r\n{line}\r\n\r\n",
+                    n / 60 % 60,
+                    n % 60,
+                    n / 60 % 60,
+                    n % 60,
+                ));
+            }
+        }
+        doc
+    }
+
+    fn encode_single_byte(enc: &'static Encoding, doc: &str) -> Vec<u8> {
+        let bytes = encode_document(enc, doc);
+        assert!(bytes.iter().any(|&b| b >= 0x80));
+        assert!(std::str::from_utf8(&bytes).is_err());
+        bytes
+    }
+
+    /// 只看分值与容错口径（不看结构证据）时会接受这份字节的候选 —— 用来证明下面的用例
+    /// 确实是靠结构证据挡住的。
+    fn passes_without_shape(bytes: &[u8]) -> Vec<&'static str> {
+        CANDIDATES
+            .iter()
+            .filter(|&&enc| {
+                let text = enc.decode_without_bom_handling(bytes).0;
+                let a = DocumentAssessment::of(enc, &text);
+                a.score >= DOCUMENT_MIN_SCORE && a.bad * DOCUMENT_BAD_DIVISOR <= a.non_ascii
+            })
+            .map(|enc| enc.name())
+            .collect()
+    }
+
+    /// [lines] 重复 20 遍的 SRT，末尾再接一条只出现一次的 [tail] cue。
+    fn srt_with_tail(lines: &[&str], tail: &str) -> String {
+        let mut doc = srt_document(lines, 20);
+        doc.push_str(&format!(
+            "999\r\n00:59:00,000 --> 00:59:01,500\r\n{tail}\r\n\r\n"
+        ));
+        doc
+    }
+
+    #[test]
+    fn western_single_byte_documents_are_not_decoded_as_cjk() {
+        use encoding_rs::{WINDOWS_874, WINDOWS_1252, WINDOWS_1256};
+        const EN: [&str; 5] = [
+            "I don’t know what you’re talking about.",
+            "It’s fine, we’ll manage.",
+            "She’s gone, isn’t she?",
+            "They’ve left already.",
+            "I’m sure he’d agree.",
+        ];
+        // 1) 弯撇号 + 一行 `“Wait…”`（85 94 相邻 → latin1_plausible 整份判否）。从前判成
+        //    Shift_JIS：`I don稚 know what you池e talking about.`。
+        let en_ellipsis = encode_single_byte(WINDOWS_1252, &srt_with_tail(&EN, "“Wait…”"));
+        assert!(!latin1_plausible(&en_ellipsis));
+        assert_eq!(passes_without_shape(&en_ellipsis), ["Shift_JIS", "GBK"]);
+        assert!(decode_document(&en_ellipsis).is_none());
+
+        // 2) 破折号紧跟左引号（97 93 相邻）。
+        let en_dash = encode_single_byte(WINDOWS_1252, &srt_with_tail(&EN, "He said—“No.”"));
+        assert!(!latin1_plausible(&en_dash));
+        assert!(!passes_without_shape(&en_dash).is_empty());
+        assert!(decode_document(&en_dash).is_none());
+
+        // 3) 没有 ß 的瑞士德语 + 一处 `„Ü`（84 DC 相邻）。从前判成 GBK：
+        //    `Ich m鯿hte f黵 dich k鋗pfen.`。
+        let de = [
+            "Ich möchte für dich kämpfen.",
+            "Das wäre schön, natürlich.",
+            "Wir müssen früher gehen.",
+            "Hörst du die Vögel?",
+            "Grüezi, schönen Abend.",
+        ];
+        let de = encode_single_byte(WINDOWS_1252, &srt_with_tail(&de, "„Überraschung"));
+        assert!(!latin1_plausible(&de));
+        assert!(passes_without_shape(&de).contains(&"GBK"));
+        assert!(decode_document(&de).is_none());
+
+        // 4) 阿拉伯文 Windows-1256：字节成串，大半落在 Shift_JIS 的单字节半角片假名区。
+        let ar = ["مرحبا، كيف حالك؟", "لا أعرف ماذا تقصد."];
+        let ar = encode_single_byte(WINDOWS_1256, &srt_document(&ar, 20));
+        assert!(passes_without_shape(&ar).contains(&"Shift_JIS"));
+        assert!(decode_document(&ar).is_none());
+
+        // 5) 泰文 TIS-620 / Windows-874：同样几乎全在半角片假名区。
+        let th = ["สวัสดีครับ", "ขอบคุณมากครับ", "ผมรักคุณ"];
+        let th = encode_single_byte(WINDOWS_874, &srt_document(&th, 20));
+        assert!(passes_without_shape(&th).contains(&"Shift_JIS"));
+        assert!(decode_document(&th).is_none());
+    }
+
+    #[test]
+    fn halfwidth_kana_majority_is_rejected_but_minority_is_kept() {
+        // 只有半角片假名的字节串（阿拉伯文 / 泰文被 Shift_JIS 解开后的形态）不认。
+        let only_halfwidth = encode_document(SHIFT_JIS, &srt_document(&["ｱﾘｶﾞﾄｳ ｺﾞｻﾞｲﾏｽ"], 10));
+        assert_eq!(passes_without_shape(&only_halfwidth), vec!["Shift_JIS"]);
+        assert!(decode_document(&only_halfwidth).is_none());
+        // 真日文字幕里夹着半角片假名的行照常判。
+        let doc = srt_document(&JA_LINES, 4);
+        let (enc, text) = decode_document(&encode_document(SHIFT_JIS, &doc)).expect("detected");
+        assert_eq!(enc, SHIFT_JIS);
+        assert_eq!(text, doc);
+    }
+
+    #[test]
+    fn cjk_isolated_between_markup_is_still_decoded() {
+        // 卡拉 OK：每个字都被 `{\k..}` 隔开 —— 两侧是括号，不是字母。
+        let karaoke = [
+            "{\\k20}夜{\\k15}に{\\k30}駆{\\k10}け{\\k25}る",
+            "{\\k20}沈{\\k15}む{\\k30}よ{\\k10}う{\\k25}に",
+            "{\\k20}溶{\\k15}け{\\k30}て{\\k10}ゆ{\\k25}く",
+        ];
+        let doc = ass_document(&karaoke, 8);
+        let (enc, text) = decode_document(&encode_document(SHIFT_JIS, &doc)).expect("detected");
+        assert_eq!(enc, SHIFT_JIS);
+        assert_eq!(text, doc);
+        // 逐字歌词（LRC 增强格式）。
+        let lrc = "[00:12.00]<00:12.00>晴<00:12.40>天<00:12.80>的<00:13.20>风\r\n".repeat(6);
+        let (enc, text) = decode_document(&encode_document(GBK, &lrc)).expect("detected");
+        assert_eq!(enc, GBK);
+        assert_eq!(text, lrc);
+        // 中英混排：少数汉字贴着字母（T恤、A型）不影响整体。
+        let mixed = srt_document(
+            &["他穿着T恤走进了KTV。", "我是A型血，你呢？", "明天见。"],
+            6,
+        );
+        let (enc, text) = decode_document(&encode_document(GBK, &mixed)).expect("detected");
+        assert_eq!(enc, GBK);
+        assert_eq!(text, mixed);
+    }
+
+    #[test]
+    fn utf8_bom_before_legacy_body_is_stripped() {
+        const BOM: [u8; 3] = [0xEF, 0xBB, 0xBF];
+        // 长文档：BOM 不再被解成 `\u{FFFD}ｿ` 混进首行。
+        let doc = srt_document(&JA_LINES, 10);
+        let mut bytes = BOM.to_vec();
+        bytes.extend_from_slice(&encode_document(SHIFT_JIS, &doc));
+        let (enc, text) = decode_document(&bytes).expect("detected");
+        assert_eq!(enc, SHIFT_JIS);
+        assert_eq!(text, doc);
+        assert!(text.starts_with("1\r\n"));
+        // 短文档（非 ASCII 字符不足 [DOCUMENT_BAD_DIVISOR] 个）：从前 BOM 解出的那个坏字符
+        // 超出零容错，整份判不出。
+        let doc = srt_document(&JA_LINES[..3], 1);
+        let mut bytes = BOM.to_vec();
+        bytes.extend_from_slice(&encode_document(SHIFT_JIS, &doc));
+        let (enc, text) = decode_document(&bytes).expect("detected");
+        assert_eq!(enc, SHIFT_JIS);
+        assert_eq!(text, doc);
+        // 只有 BOM / BOM + ASCII：不动。
+        assert!(decode_document(&BOM).is_none());
+        assert!(decode_document(b"\xEF\xBB\xBFhello").is_none());
     }
 
     #[test]

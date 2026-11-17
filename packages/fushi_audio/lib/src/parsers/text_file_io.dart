@@ -250,8 +250,10 @@ String? _decodeLegacyTextSync(Uint8List bytes) =>
 /// 无头服务端同一份。原生库是硬依赖：缺库时抛 `FushiComputeUnavailableError`，
 /// 不静默降级。
 ///
-/// 判不出（返回 null）的情形：全 ASCII；基本是 UTF-8、只坏了少数几处；像真
-/// Latin-1 / Windows-1252 文本；没有候选编码能在容错口径内解开。
+/// 判不出（返回 null）的情形：全 ASCII；基本是 UTF-8、只坏了少数几处；像单字节
+/// 西文编码（Windows-1252 / 1256 等）的文本——这些字节按 Shift_JIS / GBK 读常常
+/// 零错误，靠「解出的字是否成串」区分；没有候选编码能在容错口径内解开。开头的
+/// UTF-8 BOM 不算正文。
 Future<String?> decodeLegacyText(Uint8List bytes) {
   if (bytes.length <= kLegacyDecodeInlineMaxBytes) {
     return Future<String?>.value(_decodeLegacyTextSync(bytes));
@@ -266,7 +268,7 @@ Future<String?> decodeLegacyText(Uint8List bytes) {
 ///    （含无 BOM）/ UTF-32 LE·BE。BOM 在此处**统一剥除**。
 /// 2. [tryPlatformCharsetDecode]——只在装了平台插件且它认得出时生效（移动端）。
 /// 3. [decodeLegacyText]——Rust 计算内核识别 Shift_JIS / CP932 / GBK / EUC-JP /
-///    Big5。桌面三端与无头服务端的非 Unicode 文本靠这一级（BUG-4794）。
+///    Big5。桌面三端与无头服务端的非 Unicode 文本靠这一级（BUG-4798）。
 /// 4. `utf8.decode(allowMalformed: true)`——最后兜底。宁可坏字节变 U+FFFD，
 ///    也不能让整个字幕/弹幕/播放列表加载失败（BUG-1490）。
 Future<String> decodeTextBytes(Uint8List bytes) async {

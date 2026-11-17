@@ -1249,7 +1249,7 @@ pub unsafe extern "C" fn ffc_text_legacy_decode(
 /// （[crate::legacy_text::decode_document]：与 [ffc_text_legacy_decode] 同一套候选与计分，
 /// 容错口径按整份文件放宽）。
 ///
-/// 判不出（全 ASCII、基本是 UTF-8、像真 Latin-1、没有候选落在容错口径内）时返回 OK 且
+/// 判不出（全 ASCII、基本是 UTF-8、像单字节西文编码、没有候选落在容错口径内）时返回 OK 且
 /// `*out_ptr` = NULL、`*out_len` = 0。判出时输出（Rust 分配，[crate::ffc_free_bytes] 释放）：
 /// 小端 `u32 编码代号`（同 [ffc_text_legacy_decode]）后接解码结果的 UTF-8 字节。
 ///

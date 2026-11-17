@@ -1,4 +1,4 @@
-// BUG-4794：桌面三端与无头服务端读 CP932 / GBK / Big5 / EUC-JP 文本整份变成 U+FFFD。
+// BUG-4798：桌面三端与无头服务端读 CP932 / GBK / Big5 / EUC-JP 文本整份变成 U+FFFD。
 //
 // 这里是纯 Dart（`package:test`，没有 Flutter binding、没有任何平台插件），与无头服务端
 // 的运行环境同构：`platformCharsetDecoder` 不装配，非 Unicode 字节只能靠
@@ -24,6 +24,42 @@ Uint8List _fixture(String name) => File('$_fixtureDir/$name').readAsBytesSync();
 
 String _expected(String name) =>
     utf8.decode(File('$_fixtureDir/$name.expected.txt').readAsBytesSync());
+
+/// Windows-1252 的英文 SRT：每句都有弯撇号 `’`（0x92），末尾一条 `“Wait…”`（0x85 0x94
+/// 相邻）。0x92 与后一个字母恰好是 Shift_JIS / GBK 的一个合法双字节字，只看「解码零错误」
+/// 会整份判成 Shift_JIS（`I don稚 know what you池e talking about.`）。
+Uint8List _cp1252EnglishSrt() {
+  const List<String> lines = <String>[
+    'I don\u2019t know what you\u2019re talking about.',
+    'It\u2019s fine, we\u2019ll manage.',
+    'She\u2019s gone, isn\u2019t she?',
+    'They\u2019ve left already.',
+    'I\u2019m sure he\u2019d agree.',
+  ];
+  const Map<int, int> cp1252 = <int, int>{
+    0x2019: 0x92,
+    0x201C: 0x93,
+    0x201D: 0x94,
+    0x2026: 0x85,
+  };
+  final StringBuffer doc = StringBuffer();
+  int n = 0;
+  void cue(String line) {
+    n += 1;
+    final String at =
+        '00:${(n ~/ 60).toString().padLeft(2, '0')}:'
+        '${(n % 60).toString().padLeft(2, '0')}';
+    doc.write('$n\r\n$at,000 --> $at,500\r\n$line\r\n\r\n');
+  }
+
+  for (int k = 0; k < 20; k++) {
+    lines.forEach(cue);
+  }
+  cue('\u201CWait\u2026\u201D');
+  return Uint8List.fromList(<int>[
+    for (final int rune in doc.toString().runes) cp1252[rune] ?? rune,
+  ]);
+}
 
 void main() {
   setUp(() {
@@ -102,6 +138,34 @@ void main() {
       expect(text.contains('\u{FFFD}'), isTrue);
     });
 
+    test('Windows-1252 的英文字幕不被解成 Shift_JIS / GBK，弯撇号仍只坏那一处', () async {
+      final Uint8List bytes = _cp1252EnglishSrt();
+      expect(decodeUnicodeText(bytes), isNull);
+      expect(await decodeLegacyText(bytes), isNull);
+      final String text = await decodeTextBytes(bytes);
+      expect(text, utf8.decode(bytes, allowMalformed: true));
+      expect(
+        text,
+        contains('I don\u{FFFD}t know what you\u{FFFD}re talking about.'),
+      );
+      // 一个汉字 / 假名都不该冒出来。
+      expect(
+        RegExp(r'[\u3040-\u30FF\u3400-\u9FFF\uFF61-\uFF9F]').hasMatch(text),
+        isFalse,
+      );
+    });
+
+    test('UTF-8 BOM + CP932 正文：BOM 不混进首行', () async {
+      for (final String name in <String>['ja_cp932.ass', 'ja_eucjp.srt']) {
+        final Uint8List bytes = Uint8List.fromList(<int>[
+          0xEF, 0xBB, 0xBF, //
+          ..._fixture(name),
+        ]);
+        expect(decodeUnicodeText(bytes), isNull);
+        expect(await decodeTextBytes(bytes), _expected(name));
+      }
+    });
+
     test('全 ASCII / 空输入不进本地编码这一级', () async {
       expect(await decodeLegacyText(Uint8List(0)), isNull);
       expect(await decodeLegacyText(ascii.encode('WEBVTT\n\nhi\n')), isNull);
@@ -128,7 +192,7 @@ void main() {
     test('CP932 的 ASS', () async {
       final List<AudioCue> cues = await AssParser.parse(
         assFile: await copyFixture('ja_cp932.ass'),
-        bookKey: 'bug4794',
+        bookKey: 'bug4798',
       );
       expect(cues.length, 240);
       expect(cues[0].startMs, 0);
@@ -141,7 +205,7 @@ void main() {
     test('EUC-JP 的 SRT', () async {
       final List<AudioCue> cues = await SrtParser.parse(
         srtFile: await copyFixture('ja_eucjp.srt'),
-        bookKey: 'bug4794',
+        bookKey: 'bug4798',
       );
       expect(cues.length, 24);
       expect(cues[0].text, 'おはよう、今日はいい天気ですね。');
@@ -152,7 +216,7 @@ void main() {
     test('GBK 的 SRT', () async {
       final List<AudioCue> cues = await SrtParser.parse(
         srtFile: await copyFixture('zh_gbk.srt'),
-        bookKey: 'bug4794',
+        bookKey: 'bug4798',
       );
       expect(cues.length, 24);
       expect(cues[0].text, '早上好，今天天气真不错。');
@@ -162,7 +226,7 @@ void main() {
     test('Big5 的 SRT', () async {
       final List<AudioCue> cues = await SrtParser.parse(
         srtFile: await copyFixture('zh_big5.srt'),
-        bookKey: 'bug4794',
+        bookKey: 'bug4798',
       );
       expect(cues.length, 24);
       expect(cues[0].text, '早安，今天天氣真不錯。');
