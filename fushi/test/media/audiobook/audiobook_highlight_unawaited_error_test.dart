@@ -7,6 +7,8 @@ import 'package:fushi/src/media/audiobook/audiobook_bridge.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 
+import '../../helpers/source_guard.dart';
+
 /// 只实现 `evaluateJavascript` 的假 WebView 控制器：记下每次送进来的脚本；
 /// [failure] 非空时模拟「WebView 正在销毁 / 换文档」——平台调用以异步错误收场。
 class _RecordingWebViewController implements InAppWebViewController {
@@ -98,9 +100,15 @@ void main() {
     // `_onCueChanged` 是播放器监听的同步回调，页面私有、要真 InAppWebView 才能
     // 行为驱动；这里钉调用点：audiobook.part.dart 里每一处 highlight 调用要么被
     // await，要么紧跟 `.catchError(AudiobookBridge.logHighlightError)`。
-    final String source = File(
-      'lib/src/pages/implementations/reader_fushi/audiobook.part.dart',
-    ).readAsStringSync().replaceAll('\r\n', '\n');
+    //
+    // 语料先过 `maskComments`（行注释 + 块注释换成等长空白，下标与原文一致）：
+    // 注释里提到的 `AudiobookBridge.highlight(` 不算调用点，注释里的
+    // `.catchError(...)` 字面量也不能冒充已接错误处理。
+    final String source = maskComments(
+      File(
+        'lib/src/pages/implementations/reader_fushi/audiobook.part.dart',
+      ).readAsStringSync().replaceAll('\r\n', '\n'),
+    );
     const String call = 'AudiobookBridge.highlight(';
     const String handler = '.catchError(AudiobookBridge.logHighlightError)';
 
@@ -115,13 +123,10 @@ void main() {
       return -1;
     }
 
-    final List<int> callSites = <int>[];
-    for (final Match m in RegExp(RegExp.escape(call)).allMatches(source)) {
-      final int lineStart = source.lastIndexOf('\n', m.start) + 1;
-      final String before = source.substring(lineStart, m.start);
-      if (before.trimLeft().startsWith('//')) continue; // 注释里的提及
-      callSites.add(m.start);
-    }
+    final List<int> callSites = <int>[
+      for (final Match m in RegExp(RegExp.escape(call)).allMatches(source))
+        m.start,
+    ];
 
     test('调用点可定位（守卫不因改名而空转）', () {
       expect(callSites.length, 3);
