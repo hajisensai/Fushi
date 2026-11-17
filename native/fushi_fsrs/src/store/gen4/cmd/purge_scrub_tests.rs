@@ -186,6 +186,44 @@ fn a_purge_drops_the_relay_copy_and_only_the_voided_segment_is_relayed_on() {
     assert_eq!(bytes_carrying(&c.dir.0, "secret-c3-relay"), 0);
 }
 
+/// 清除之前 b 已经把 a 的段转发到了 L2：b 收到清除时把 L2 上那份 `rly-` 改成待删，下一次转发确认就删掉；作者重切之后
+/// b 再把带空洞的同名段转发过去。L2 上从此没有被清除的内容，c 照样收齐其余的。
+#[test]
+fn a_purge_takes_back_what_was_already_relayed_to_another_location() {
+    let mut a = Dev::new("c3ta");
+    let b = Dev::new("c3tb");
+    let c = Dev::new("c3tc");
+    let (mut l1, mut l2) = (Loc::new(), Loc::new());
+    let plain = Opts::default();
+    round(&b, &mut l1, "L1", T1, plain);
+    round(&b, &mut l2, "L2", T1, plain);
+    round(&c, &mut l2, "L2", T1, plain);
+    a.write(T1 + 1, N1, "secret-c3-taken");
+    a.write(T1 + 1, N2, "keep-c3");
+    round(&a, &mut l1, "L1", T1 + 2, plain);
+    round(&b, &mut l1, "L1", T1 + 3, plain);
+    relay(&b, &mut l2, "L2", None, T1 + 3);
+    let (da, public) = (a.device(), public_of(&mut a));
+    assert_eq!(relayed_at(&l2, &da, &public, "secret-c3-taken").1, 1);
+
+    purge(&a, T1 + 4, N1);
+    round(&a, &mut l1, "L1", T1 + 5, plain);
+    round(&b, &mut l1, "L1", T1 + 6, plain);
+    relay(&b, &mut l2, "L2", None, T1 + 6);
+    assert_eq!(relayed_at(&l2, &da, &public, "secret-c3-taken").1, 0);
+
+    round(&b, &mut l1, "L1", T1 + 7, plain);
+    relay(&b, &mut l2, "L2", None, T1 + 8);
+    let (files, carrying) = relayed_at(&l2, &da, &public, "secret-c3-taken");
+    assert!(files > 0, "a's re-cut segment is relayed again");
+    assert_eq!(carrying, 0);
+    for _ in 0..2 {
+        round(&c, &mut l2, "L2", T1 + 9, plain);
+    }
+    assert_eq!(c.field(N2), Some(json!("keep-c3")));
+    assert_eq!(bytes_carrying(&c.dir.0, "secret-c3-taken"), 0);
+}
+
 /// 清除由 b 发起、作者 a 一直没回来重切：b 删掉留着的原文；为转发再拉回来的还是原文，不留，记下拒收；a 没写新 head
 /// 之前不再为它拉；这位作者的转发整台跳过（`incomplete`），L2 上没有它的件。
 #[test]
@@ -276,7 +314,7 @@ fn a_library_without_the_mark_is_compacted_on_its_first_purge() {
     assert!(!meta_has(&a, DUE_KEY));
 }
 
-/// 收尾出错（整理时空间不够等）：原因记进库、经 `status` 的 `scrub` 报出来；之后的写命令不再逐条重试（不每条都重做
+/// 收尾出错（整理时空间不够等）：原因记进库、经读命令 `scrub_state` 报出来；之后的写命令不再逐条重试（不每条都重做
 /// 一次注定失败的整库整理）；下一次打开再试，做成了错误清掉、原文没了。
 #[test]
 fn a_failed_byte_level_pass_is_reported_and_not_retried_on_every_write() {
@@ -289,12 +327,10 @@ fn a_failed_byte_level_pass_is_reported_and_not_retried_on_every_write() {
     purge(&a, T1 + 1, N2);
     FAIL.with(|f| f.set(false));
     assert_eq!(ATTEMPTS.with(|c| c.get()), 1);
-    let (st, _) = cmd(a.h, "status", T1 + 1, json!({}), &[]);
-    assert_eq!(st["scrub"]["due"], json!(true), "{st}");
+    let (st, _) = cmd(a.h, "scrub_state", T1 + 1, json!({}), &[]);
+    assert_eq!(st["due"], json!(true), "{st}");
     assert!(
-        st["scrub"]["error"]
-            .as_str()
-            .is_some_and(|e| e.contains("injected")),
+        st["error"].as_str().is_some_and(|e| e.contains("injected")),
         "{st}"
     );
     for i in 0..3 {
@@ -305,8 +341,8 @@ fn a_failed_byte_level_pass_is_reported_and_not_retried_on_every_write() {
     ffsrs_store_close(a.h);
     a.h = open(&a.dir.0, 0).unwrap();
     assert_eq!(ATTEMPTS.with(|c| c.get()), 2, "retried on the next open");
-    let (st, _) = cmd(a.h, "status", T1 + 6, json!({}), &[]);
-    assert_eq!(st["scrub"], json!({"due": false, "error": null}), "{st}");
+    let (st, _) = cmd(a.h, "scrub_state", T1 + 6, json!({}), &[]);
+    assert_eq!(st, json!({"due": false, "error": null}), "{st}");
     assert_eq!(bytes_carrying(&a.dir.0, "secret-c3-err"), 0);
 }
 

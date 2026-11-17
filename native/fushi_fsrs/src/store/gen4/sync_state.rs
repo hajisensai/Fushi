@@ -26,6 +26,7 @@ use rusqlite::{OptionalExtension, params};
 
 use super::schema::sql;
 use super::truth::Truth;
+use crate::gen4::location::{V4File, device_path, parse_v4_path};
 use crate::gen4::op::Op4;
 use crate::sync2::codec::Reader;
 use crate::sync2::id::Id;
@@ -398,6 +399,57 @@ impl<'c> Truth<'c> {
             });
         }
         Ok(out)
+    }
+
+    /// 本机把作者 [device] 的 [seq] 落成了空洞（`Truth::advance_purge` 调，同一个事务）。转发手里这条内容的两种副本：
+    ///
+    /// - 本机缓存的作者段原文（`relay_segs`）里覆盖它的，整份删掉：不留在本机、也不再转发出去。
+    /// - 已经转发到各位置上、覆盖它的 `rly-`（`relay_out` 在用的行）改成待删：下一次 `relay_ack` 交给调用方删掉位置上
+    ///   那份带原文的件（两段式删除，同 [Truth::relay_supersede]）。
+    ///
+    /// 作者签过的段改不出空洞（`gen4/segment.rs` 文件头：含空洞的段只能由作者签出），所以只能整份删；作者重切出带空洞的
+    /// 同名段之后，那个位置又「缺」这一段，`wanted_for_relay` 为转发再拉一次、重新转发过去（与作者自己重切重传覆盖
+    /// `seg-` 同一个口径）。
+    pub(crate) fn relay_purged(&self, col: i64, device: &Id, seq: u64) -> Result<(), String> {
+        self.write(|| {
+            let s = i64::try_from(seq).map_err(|_| "gen4 store: seq out of range")?;
+            self.conn()
+                .prepare_cached(
+                    "DELETE FROM relay_segs WHERE col = ?1 AND device = ?2 AND first <= ?3 AND last >= ?3",
+                )
+                .map_err(sql)?
+                .execute(params![col, &device.0[..], s])
+                .map_err(sql)?;
+            let rows: Vec<(String, String)> = {
+                let mut stmt = self
+                    .conn()
+                    .prepare_cached(
+                        "SELECT loc_key, name FROM relay_out WHERE col = ?1 AND device = ?2 AND gone = 0",
+                    )
+                    .map_err(sql)?;
+                let rows = stmt
+                    .query_map(params![col, &device.0[..]], |r| Ok((r.get(0)?, r.get(1)?)))
+                    .map_err(sql)?;
+                rows.collect::<rusqlite::Result<_>>().map_err(sql)?
+            };
+            for (loc, name) in rows {
+                let covers = matches!(
+                    parse_v4_path(&device_path(device, &name)),
+                    Some(V4File::Relay { first, last, .. }) if first <= seq && seq <= last
+                );
+                if covers {
+                    self.conn()
+                        .prepare_cached(
+                            "UPDATE relay_out SET gone = 1 WHERE col = ?1 AND loc_key = ?2 AND device = ?3 \
+                             AND name = ?4",
+                        )
+                        .map_err(sql)?
+                        .execute(params![col, loc, &device.0[..], name])
+                        .map_err(sql)?;
+                }
+            }
+            Ok(())
+        })
     }
 
     /// 位置 [loc] 上待删的转发件。

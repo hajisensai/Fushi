@@ -2966,20 +2966,9 @@ impl<'c> Truth<'c> {
                     self.insert_void_run(dev, target.seq, 1, None, Some(chain), A_LOCAL)?;
                 }
             }
-            // 转发缓存（`cmd/sync_relay.rs`，G8-7b）里存着的、覆盖这个 seq 的作者段原文也是这条内容的副本：同一个事务里
-            // 删掉，不留在本机、也不再转发出去。作者签过的段改不出空洞（`gen4/segment.rs` 文件头：含空洞的段只能由
-            // 作者签出），所以只能整份删；作者重切出带空洞的同名段之后，`wanted_for_relay` 下一轮为转发再拉一次。
-            self.conn
-                .prepare_cached(
-                    "DELETE FROM relay_segs WHERE col = ?1 AND device = ?2 AND first <= ?3 AND last >= ?3",
-                )
-                .map_err(sql)?
-                .execute(params![
-                    col,
-                    &target.device.0[..],
-                    i64::try_from(target.seq).map_err(|_| "gen4 store: seq out of range")?
-                ])
-                .map_err(sql)?;
+            // 转发（`cmd/sync_relay.rs`，G8-7b）手里这条内容的副本：本机缓存的作者段原文删掉、已转发到各位置的件改成
+            // 待删（`sync_state.rs` [Truth::relay_purged]），同一个事务。
+            self.relay_purged(col, &target.device, target.seq)?;
             // 字节层：原文还在空闲空间与 WAL 旧帧里，提交之后要收尾（`scrub.rs`）。同一个事务里记下欠着的收尾。
             super::scrub::mark_due(self.conn)?;
             self.voided.set(true);

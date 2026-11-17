@@ -274,7 +274,7 @@ impl G4Core {
                 let first = readers.open_one()?;
                 readers.lock().idle.push(first);
                 // 上次清除提交之后没来得及收尾（进程被杀、检查点被挡、出过错）：现在做（`scrub.rs`）。被读者挡住 = 之后
-                // 的写命令不等地再试；出错 = 原因已由 `scrub` 记进库（`ERROR_KEY`，`status` 的 `scrub.error` 报给 UI），
+                // 的写命令不等地再试；出错 = 原因已由 `scrub` 记进库（`ERROR_KEY`，读命令 `scrub_state` 报给 UI），
                 // 不逐条写命令重试，下一次打开或下一次清除再试。打开本身不因收尾没做成而失败。
                 if super::scrub::due(&opened.conn)? {
                     scrub_due = matches!(
@@ -391,7 +391,7 @@ impl G4Core {
         })?;
         // 提交了落空洞的写（或之前被读者挡住）：字节层收尾（`scrub.rs`「没做成怎么办」），在事务外、还拿着写锁。命令
         // 本身已经提交，收尾没做成不改它的结果，「欠一次收尾」记在库里。刚落了空洞的按忙等等读者；之前被挡、这次顺手
-        // 再试的不等。被挡 = 之后的写命令再试；出错 = 原因已由 `scrub` 记进库（`status` 的 `scrub.error`），不逐条写命令
+        // 再试的不等。被挡 = 之后的写命令再试；出错 = 原因已由 `scrub` 记进库（读命令 `scrub_state`），不逐条写命令
         // 重试（每条都重做一次注定失败的整库整理），下一次打开或下一次清除再试。
         let voided = t.take_voided();
         if voided || self.scrub_pending.load(Ordering::SeqCst) {

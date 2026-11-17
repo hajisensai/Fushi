@@ -26,7 +26,7 @@
 //!
 //! - **检查点被读者挡住**（[scrub] 回 `Ok(false)`）：读者放手就能做成。内核在之后每条写命令提交后接着试，但**不等**
 //!   （[Wait::No]：忙等临时设成 0，被挡就立刻回来），不让复习作答因为一个读快照卡上 [super::schema::BUSY_TIMEOUT]。
-//! - **出错**（整理时空间不够、I/O 错误……，[scrub] 回 `Err`）：原因记进 [ERROR_KEY]（`status` 的 `scrub.error`，
+//! - **出错**（整理时空间不够、I/O 错误……，[scrub] 回 `Err`）：原因记进 [ERROR_KEY]（读命令 `scrub_state` 的 `error`，
 //!   UI 据此告诉用户「清除的内容在磁盘上还没抹干净」），内核不再逐条写命令重试——那样每条写命令都要重做一次注定失败的
 //!   整库整理——只在下一次打开、或下一次又有清除落成空洞时再试。做成了删掉 [ERROR_KEY]。
 
@@ -74,7 +74,7 @@ pub(crate) fn due(conn: &Connection) -> Result<bool, String> {
     has(conn, DUE_KEY)
 }
 
-/// 有没有欠着的字节层收尾，与上一次没做成的原因（[ERROR_KEY]）。`status` 用。
+/// 有没有欠着的字节层收尾，与上一次没做成的原因（[ERROR_KEY]）。读命令 `scrub_state` 用。
 pub(crate) fn state(conn: &Connection) -> Result<(bool, Option<String>), String> {
     let error = conn
         .prepare_cached("SELECT value FROM srs_meta WHERE key = ?1")
