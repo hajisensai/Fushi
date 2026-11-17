@@ -81,6 +81,11 @@ use crate::sync2::id::Id;
 /// 迁移报告在 profile 目录里的文件名（中止时用户与诊断导出拿它；提交后留着备查）。只有计数与 ID，不含笔记内容。
 pub const REPORT_FILE: &str = "srs4-migration-report.json";
 
+/// 已删的 app 内换代前预演（G7-6 删）留在 profile 目录里的工作目录（名字冻结，旧 `dryrun::rehearsal_dir`）：里面是
+/// `report.json`（只有计数与 ID），进程在预演中途被杀时还可能有临时新库 `gen4-dryrun.db`（旧库内容的副本）。没有别的
+/// 代码会再碰它，迁移拿到换代锁后与前提补完副本一起删掉（[run]），彻底清除不在库外留内容副本。
+pub(crate) const LEFTOVER_REHEARSAL_DIR: &str = "gen4-rehearsal";
+
 /// 报告格式的版本。每个 profile 的报告与预演（`dryrun::REPORT_VERSION`）同形。
 pub const REPORT_VERSION: i64 = 1;
 
@@ -544,8 +549,11 @@ pub fn run(dir: &Path, opts: Options<'_>) -> Result<Outcome, String> {
     let Some(lock) = GenLock::try_acquire(dir)? else {
         return Ok(blocked(BlockCode::Migrating, BLOCKED_MIGRATING));
     };
-    // 上一次崩溃留下的前提补完副本：不论接下来走哪条路都用不上了（补完每次从原件重拷）。
-    if let Err(e) = seal::remove_sqlite_files(&dir.join(PREPARE_COPY)) {
+    // 上一次崩溃留下的前提补完副本：不论接下来走哪条路都用不上了（补完每次从原件重拷）。已删的换代前预演的工作目录
+    // 同样（[LEFTOVER_REHEARSAL_DIR]）。
+    if let Err(e) = seal::remove_sqlite_files(&dir.join(PREPARE_COPY))
+        .and_then(|()| remove_leftover_rehearsal(dir))
+    {
         drop(lock);
         return Err(e);
     }
@@ -556,6 +564,16 @@ pub fn run(dir: &Path, opts: Options<'_>) -> Result<Outcome, String> {
     };
     drop(lock);
     out
+}
+
+/// 删掉 [LEFTOVER_REHEARSAL_DIR]（不在就算删过）。
+fn remove_leftover_rehearsal(dir: &Path) -> Result<(), String> {
+    let work = dir.join(LEFTOVER_REHEARSAL_DIR);
+    match std::fs::remove_dir_all(&work) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(format!("gen4 migrate: remove {}: {e}", work.display())),
+    }
 }
 
 /// 封存落了盘、改名没落盘：`srs4.db` 不在，`srs.db` 已封存进 `srs4.db`，旁边的 `srs4.db-migrating` 是一份建好的
