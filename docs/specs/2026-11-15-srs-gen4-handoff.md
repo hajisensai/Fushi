@@ -3220,3 +3220,120 @@ profile uid 不变」断言，不分 `bound` / `joined`。
 - **BUG-4626 新代并入场景已正式登记为 BUG-4836**（`docs/bugs/BUG-4836-srs-gen4-dangling-op-joins-into-other-collection.md`）：根因
   `file:line`（`gen4/cmd/writes.rs:31` / `:886` 写入口不设闸，`gen4/identity.rs:430` / `:572` 并入无条件并集）、两种修法与复现用例
   全文都在 bug 文件里，交 G9 身份 / 设计；本分支仍不改内核。
+
+## 36. 第五波 测试与守卫（2026-11-18，分支 `pr/srs-gen4-w5-tests-guards`，基于 `pr/srs-gen4-switch` `3d78fe51d0`）
+
+只补测试、守卫与夹具，没改生产行为；SCHEMA 不变（40021）。生产代码唯一的改动是 `gen4/migrate.rs` 里一个 `#[cfg(test)]`
+钩子（`STAGE_CONN`，暂存库刚打开时交给测试一次，用来注入「写到一半磁盘满」）。
+
+### 1. 规划 §6 源码守卫补齐 4 条（目录枚举型）
+
+| 守卫 | 位置 | 变异实测 |
+|---|---|---|
+| 活代码里没有协议 3 旧表名（Rust：`gen4/**/*.rs` 去掉测试模块与 `#[cfg(test)]` 之后；旧表名 = 协议 3 建表语句里的 `srs_*` / `sync2_*` 减去新代同名表；冻结侧白名单 `carry` / `cmd/backup` / `compare` / `dryrun` / `legacy` / `media`（`seed_legacy`）/ `migrate`（空间估算），白名单过时也红） | `native/fushi_fsrs/src/store/gen4/guards_tests.rs` `live_code_names_no_protocol_3_table` | `cmd/reads.rs` 末尾加一句含 `srs_review_logs` 的常量 → 红 |
+| 同上（Dart：生产代码不写协议 3 `sync2_*` 表名） | `fushi/test/build/srs_gen4_source_guard_test.dart` | 见下 |
+| SCHEMA 冻结：`application_id` + `sqlite_schema` 全部行的 blake3 按号钉死（`40_021` 一条），改表不升号就红 | `guards_tests.rs` `the_gen4_schema_is_frozen_at_its_number` | `schema.rs` 的 `TRUTH` 多建一张表 → 红 |
+| 命令登记：`dispatch.rs` 的 `run()` 每个分支都在 `wiring()` 登记、登记的 `Wired` 都有分支（Rust）；Dart 侧 SRS 面（`fushi_srs` 库、`/srs/` 路径、`srs_*.dart`、import 了 `package:fushi_srs/` 或 `package:fushi_engine/srs/` 的文件）里每个 `'op': 'x'` 必须是 `Wired` 或 `lib.rs` 的全局命令（`dispatch` + `ffsrs_fit`） | `guards_tests.rs` `every_dispatched_command_is_registered_and_every_registered_one_has_an_arm`；Dart 同上文件 | `status` 改登记成 `Removed` → Rust 红；Dart 发一个没登记的 op → 红 |
+| 生产代码不把同步目录名当 profile uid（`profileUid: x.uid` / `x.uid == profileUid` / `xxxUids.contains(x.uid)` 等；禁 `srsHostPathProfile`） | `srs_gen4_source_guard_test.dart` | 追加一个 `profileUid: r.uid.toString()` 的函数 → 红 |
+
+- **与委托描述不符**：委托与审计 C9 写的「在 `ops.rs` 登记」——本分支没有 `ops.rs`（只在没合的 `pr/srs-ffi-op-meta` 上），登记表是
+  `gen4/dispatch.rs` 的 `wiring()`，守卫按它写。`ops.rs` 合进来时要把守卫的解析对象换过去。
+- **目录名当 uid 的已知违例（棘轮，归 G9-5）**：`packages/fushi_engine/lib/srs/srs_profile_link.dart` 四处按远端目录的 `r.uid`
+  比 / 传 `profileUid`（`_kKnownDirAsUid` 逐行登记，只许减不许加）。同文件 `:95` 的 `uuidV5(srsNamespace, 'fushi-srs/tombstone/4/$dir')`
+  另外让既有守卫 `srs_kernel_ids_guard_test` 红（生产代码自己做带盐派生），同归 **G9-5**。
+- Dart 守卫：`dart tool/heavy.dart -- flutter test test/build/srs_gen4_source_guard_test.dart` 4/4；三处变异各红一条。
+
+### 2. 迁移：写到一半出错、双 profile 一个对拍不过（审计 C4）
+
+`native/fushi_fsrs/src/store/gen4/migrate_tests.rs` 新增两条：
+
+- `a_disk_full_midway_through_staging_leaves_the_library_as_it_was`：暂存库刚打开时把 `max_page_count` 压到当前页数，转译写满
+  → 迁移返回含 `full` 的错；走到了 Translate、没走到 Commit；旧库去掉文件头计数字段后逐字节不变；`GEN4_FILE` / `GEN4_TEMP` /
+  `PREPARE_COPY` 都不在；状态仍是 NeedsMigration；去掉钩子重跑提交。
+- `one_failing_profile_of_two_keeps_the_whole_file_uncommitted`：两个 profile 各一个集合，对照先证明能提交；改坏第二个 profile 的
+  缓存后 → `Aborted`，逐 profile 结论 `[(P, pass), (Q, fail)]`，没有 `srs4.db`，旧库逐字节与 schema 不变，状态 MigrationFailed；重复两次同结果。
+- 变异：`dryrun.rs` 的总结论只看第一个 profile → 第二条红；`migrate.rs` 出错不删临时文件 → 第一条红。
+
+### 3. `srs_p6_vectors_test` 改吃冻结的协议 3 库（§32 K1 留下的步骤）
+
+- 夹具 `packages/fushi_engine/test/srs/fixtures/p6_vectors.db.gz`（约 3.2 MB）：在 S1 之前最后一个协议 3 提交 `5ad47c2edb`
+  （S1 合并 `c9d7703dd6` 的第一父）上生成——1200 份历史各一个 profile `p$i`、卡 `v$i`，日志与服务器时刻按向量灌入，每个 profile
+  `sync2 identity` + `migrate`，再 `snapshotInto(stripDeviceLocal: false)` + gzip。schema 29、8548 条日志全部进 `sync2_ops`。
+  生成时协议 3 上 4 条用例全绿。注意：向量 JSON 里日志的 `card` 是占位（`c` / `pred`），与 `card_id` 列不一致时迁移对拍
+  1080/1200 判 fail（这是对拍正确拦下了自相矛盾的库），生成时把 JSON 改写成 `v$i` / `p$i` 后迁移提交。
+- 测试经 `openMigratedTestSrs` 打开；新代按 profile 取数（`gen4: the cards of this request have history in 240 collections`），
+  优化器 / RWKV / 统计 / 历史状态都改成一份历史一条命令带 `profile: 'p$i'`。4/4 绿；变异（每份历史问错一个 profile）→ 3 条红。
+- 性能旁注（未立项）：统计取数不带 `profile` 时按卡解析集合，跨 1200 个集合实测约 6 分钟；带 `profile` 后整份 1 秒内。生产调用
+  都带 profile，记在这里备查。
+
+### 4. `srs_rwkv_service_test` 40 红（委托 ⑤）
+
+根因是**测试过时**，不是内核缺陷：G7-4f 起新代日志序号从 `SEQ_BASE = 2^40` 之后发（`log_seq`），RWKV 编排录制的游标
+（`since` / `rebaseSince` / `maxRowId`、快照 `.snap.json` 的 `maxRowId`）还是协议 3 的 rowid。40 条用例与录制只差这个偏移。
+修法：`test/srs/support/srs_rwkv_transcript.dart` 按新代落库序记游标（`cursor()` 减去 `kSrsGen4LogSeqBase`，0 / null 原样，
+≤ 基数直接判错）；「删过日志」那条改成经原始通道同时删 `log_ix` 与 `log_seq` 里最早一条（只删 `log_seq` 会报
+`log op has no arrival order`）。49/49 绿；变异（不减基数）→ 40 红。录制文件没改。
+
+### 5. 设计稿 §6.3 / §5.5 逐行对照（审计 C5）
+
+§6.3 的逐行表在 §31 第 4 条；本段在本分支逐个核过那张表里的测试名都还在（30 个名字全部能在树里找到），只更新变化的行：
+
+| §6.3 行 | 本段更新 |
+|---|---|
+| 回退到旧版本 | 新增 `store::seal::tests::a_generation_4_library_copied_under_the_old_name_is_refused_by_protocol_3`：新代库拷成 `srs.db` 交协议 3 内核打开 → 拒开，页内容（抹掉文件头计数字段）与 `srs_meta` 不变，新代仍能打开。变异（协议 3 不拒更新的 schema）→ 红。反方向（协议 3 库改名成 `srs4.db`）原有 `gen4/files.rs` `a_protocol_3_library_under_the_new_name_is_refused`；封存库原有 `seal.rs` `a_sealed_library_is_refused_by_protocol_3_and_its_pages_stay`。四个方向（新读旧、旧读新、新读封存、旧读封存）本机层都有了；**位置层**仍只有 `srs_format_break_test`（协议 1 客户端）与围栏内容钉死，没有真跑协议 3 客户端（树里没冻结 v3 客户端），同 §31 |
+| 新装的新版本设备加入全是旧版本的位置 | §31 标「缺单独一条」**不准确**：`cmd/sync_tests.rs` `the_location_root_fences_protocol_3_and_refuses_what_it_cannot_read` 的设备是 `Dev::new`（空目录新装、没有迁移来源），断言它在存量协议 3 位置上建新根、立围栏、`fresh: true`。改记为已覆盖 |
+| 同机多 profile | 新增 `one_failing_profile_of_two_keeps_the_whole_file_uncommitted`（见第 2 条） |
+| 两台同时升级 | 仍缺「两台各自迁移同一份协议 3 历史、比较转译结果逐字节相同」的端到端用例（迁移层只有单设备重跑结果相同：`every_crash_point_resumes_to_the_same_library`）。归 G7 / G8 |
+| 服务端 / 客户端先后升级、服务端一直不升级 | 仍缺，归 G10（同 §31） |
+| 只有协议 1 旧根 | 仍按 D21 偏离定案拒绝，只读转译缺，等所有者确认（同 §31） |
+
+`srs_format_break_test`（`packages/fushi_engine/test/srs/sync2/`）仍在，本段没动它；第 7 条的全量跑里它没有红。
+
+§5.5 逐行：
+
+| §5.5 行 | 覆盖 |
+|---|---|
+| 一个集合、多台设备共用同一个 uid | `gen4/legacy.rs` `a_duplicate_skeleton_in_the_log_becomes_an_alias`、`cmd/identity_tests.rs` `alias_class_members_canonicalize_through_the_identity_commands`、`cmd/identity_tests.rs` `profiles_bind_to_their_own_collections_and_an_unbound_one_joins_first` |
+| 多台设备各自一个 uid、从没关联过 | `cmd/profile_data_tests.rs` `a_new_device_binds_to_an_existing_collection_without_a_join`；关联流程 Dart `srs_profile_link_sync_test`（§35） |
+| 已经用旧办法并入过的库 | 写入者归回 `gen4/alias.rs` `a_renamed_writer_goes_back_to_the_original_when_the_dots_agree`、`gen4/class.rs` `a_renamed_writer_on_a_class_of_one_is_not_the_raw_reading`；§5.3 正向计算 `src/gen4_ids/tests.rs` `a_fallback_root_with_its_own_record_takes_its_children_along`、`a_chained_fallback_definition_takes_its_cards_along`；真实样本库对拍见第 6 条 |
+| 并入做到一半 | `prepare_tests.rs` `a_half_done_merge_is_migrated_and_finished_in_the_new_generation`、`a_half_done_merge_with_remapped_copies_folds_them_back_into_one`、`finishing_a_half_done_merge_*` |
+| 本机去重作业没做完 | `prepare_tests.rs` `interrupted_ingest_leftovers_are_finished`（夹具带 `sync2_dedup` 没做完的作业，补完后迁移提交） |
+| 同机多个 profile | `identity_tests.rs` `profiles_bind_to_their_own_collections_and_an_unbound_one_joins_first`、本段 `one_failing_profile_of_two_keeps_the_whole_file_uncommitted` |
+
+### 6. 设计稿 §10 第 23 条（G6c + 收段通道合起来对拍 5 条红）
+
+**在当前样本库上已不复现，可以关闭**，证据：本分支（含 G6c 与 #3314 收段通道两条链）的 `examples/gen4_dryrun`（`--profile quick`）
+对本机样本库 `srs.db` 的副本（1.1 GB，schema 29，单 profile；缓存配置由 `srsCacheConfigFor` 生成）干跑：`verdict: pass`、
+`parity: []`、`knownDifferences.total = 0`（examined 340527）、日志 59465 / 有日志的卡 3898 新旧逐类相同，用时 208 s。
+限制：样本库自 #23 记录时（1.75 GB）已被用户整理过，原始那份快照不在了，所以是「当前库上不再有差异类别」，不是逐条复现
+原 5 条再判因。设计稿 §10 第 23 条本段没改（规则：只写自己的段），交 integration owner 按此关闭。
+
+### 7. `packages/fushi_engine/test/srs` 全量现状（`dart test test/srs -j 2`，本分支 `8941cb4acd`）
+
+exit 1；成功 949、失败 9、错误 6、跳过 21，实际执行 964。上一轮（本分支动手前）是 906 / 48 / 8 / 21：rwkv 40 条、p6 2 条已清。剩 15 条：
+
+| 文件（条数） | 现象 | 归属 / 判断 |
+|---|---|---|
+| `srs_optimizer_test`（1） | 5 分钟超时 | **ENV**：动手前的全量里同一条 160 s 绿；本轮跑时本机 CPU 96%（别的进程），单跑也超时。库与测试都没变 |
+| `srs_browse_vectors`（1） | 卡 ID 列表不同 | G9-7（夹具卡 ID 是旧口径，§26） |
+| `srs_write_preread_cost`（1） | 彻底清除语句数 973 → 958 | G9-7（§26 记 2 条，现剩 1 条） |
+| `srs_kernel_ids_guard`（1） | `srs_profile_link.dart:95` 自算 `uuidV5(…tombstone/4/$dir)` | G9-5（见第 1 条） |
+| `srs_db_store_test`（1） | 覆盖恢复备份：`no such table: srs_local_state` | G11-4（§26） |
+| `srs_exclusive_sites_cost`（1） | 第 10 步 `remoteAnswer` 计数不同 | G10-2（§23 记过同一步） |
+| `srs_media_presence`（2）、`srs_media_sync`（1）、`srs_style_dedup`（1） | 媒体清单 / 可疑标记 / 补传计数不对 | G8-7b 同步媒体（§26） |
+| `sync2/srs_sync2_bootstrap_channel_entry`（3） | 查协议 3 表 `sync2_ops` / `sync2_boot_order`、`missing location` | 测试过时（断言协议 3 收段通道表），G8-7b 改写或删 |
+| `sync2/srs_sync2_head_gap`（1） | 取 head 引用段 `Null check` | G8-7b |
+| `sync2/srs_sync2_relay`（1） | 经互联转发后 C 没收到 A 的笔记 | G8-7b / G10-4（互联 host 目录，§31 也记缺） |
+
+### 8. 审计 C0：G10-4 段里「旧根命令没有 Dart 调用方」不对
+
+§34（G10-4）两处写「旧根两条命令目前还没有 Dart 调用方（同步轮 2b 步未接线）」。本分支上已接：
+`packages/fushi_engine/lib/srs/sync2/srs_sync2_round.dart:286` 调 `srsSync4TakeOldRoot`，`srs_sync4_steps.dart:92` 发
+`oldroot_scan`、同文件发 `oldroot_ingest`。**真正没接的是** `heritage_plan` 回包的 `unvouched`：Dart 里一处都没读
+（`git grep unvouched -- '*.dart'` 为空），同步页也没提示——归同步轮持有者（G8-7c / G9-5）。
+
+### 没做
+
+- §6.3「两台同时升级」端到端、服务端 / 客户端先后升级三行、协议 1 只读转译、位置层真跑协议 3 客户端（见第 5 条，按归属）。
+- `unvouched` 提示（第 8 条）。
+- 第 7 条表里的 14 条非 ENV 红，按归属各自修。
