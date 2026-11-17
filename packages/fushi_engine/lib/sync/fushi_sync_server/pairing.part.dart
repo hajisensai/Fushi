@@ -662,6 +662,11 @@ extension _FushiSyncServerPairing on FushiSyncServer {
         // 不认那个 header，会走 live push 的旧路径按 client 报的后缀落盘，
         // `rename` 直接覆盖 host 上同名的旧字幕且不留备份（BUG-2728）。
         'videoSubtitleDefault': _libraryService is VideoSubtitleDefaultHost,
+        // 同一端点带 `?episode=N` 时落到播放列表第 N 集旁。老 host 无此字段 → client
+        // 对第 N 集**不上传**：老 host 不认 `episode`，会把字幕落到第 0 集旁、压掉
+        // 第 0 集的默认字幕。
+        'videoSubtitleDefaultEpisode':
+            _libraryService is VideoSubtitleDefaultHost,
         // `DELETE .../subtitle?which=`（清字幕源 + 备份本视频 sidecar）与
         // `POST .../subtitle/backfill`（立即补字幕）。老 host 无此字段 → 404。
         'videoSubtitleClear': _libraryService is VideoSubtitleClearHost,

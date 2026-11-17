@@ -443,10 +443,13 @@ extension _FushiSyncServerVideo on FushiSyncServer {
             }
             final VideoSubtitleDefaultHost host =
                 svc as VideoSubtitleDefaultHost;
+            // `?episode=N`：播放列表第 N 集（client 先看
+            // `liveLibrary.videoSubtitleDefaultEpisode` 才带）。
             final String placed = await host.importDefaultVideoSubtitle(
               tmp,
               id: subtitleId,
               format: p.extension(suffix),
+              episodeIndex: _episodeIndexFromRequest(request),
             );
             // 新旧两个名字都回：改名前的 client 只读旧名，读不到会把这次成功的
             // 上传误报成「host 不支持」（见 kLegacyInterconnectHeaderNames）。

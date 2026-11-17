@@ -4,6 +4,9 @@
 ///
 /// 参数（三选一的输入 + 选项）：
 /// - `videoId`：host 库里的视频（`video_books.book_uid`，经注入的 [resolveVideoPath]）；
+///   `episode`（整数，默认 0）：这一行播放列表的第几集（下标同播放端点的
+///   `?episode=`），只能和 `videoId` 一起给。capability 的 `acceptsEpisode` 声明
+///   认这个参数——老 host 不认，会静默跑第 0 集，提交方必须先看这个位；
 /// - `collectionId`：整季——合集的全部视频成员按成员顺序排队，已有
 ///   `<视频名>.<后缀>.srt` 的集跳过；
 /// - 都不给：用上传的输入（`input` 指名一个，否则全部上传的视频文件；可带 `title`
@@ -102,6 +105,7 @@ String videoSubtitleSpentSuffix(SubtitleAiUsageTally? usage) => usage == null
 class VideoSubtitleJobParams {
   const VideoSubtitleJobParams({
     this.videoId,
+    this.episode = 0,
     this.collectionId,
     this.input,
     this.title,
@@ -158,6 +162,26 @@ class VideoSubtitleJobParams {
         '$kVideoSubtitleJobKind: give videoId or collectionId, not both',
       );
     }
+    final Object? episodeRaw = params['episode'];
+    final int episode;
+    if (episodeRaw == null || '$episodeRaw'.trim().isEmpty) {
+      episode = 0;
+    } else {
+      final int? parsed = episodeRaw is int
+          ? episodeRaw
+          : int.tryParse('$episodeRaw'.trim());
+      if (parsed == null || parsed < 0) {
+        throw const FormatException(
+          '$kVideoSubtitleJobKind: episode must be a non-negative integer',
+        );
+      }
+      episode = parsed;
+    }
+    if (episode > 0 && videoId == null) {
+      throw const FormatException(
+        '$kVideoSubtitleJobKind: episode only applies to videoId',
+      );
+    }
     final String? languageText = text('language');
     final VideoSubtitleLanguage language = languageText == null
         ? VideoSubtitleLanguage.japanese
@@ -172,6 +196,7 @@ class VideoSubtitleJobParams {
     }
     return VideoSubtitleJobParams(
       videoId: videoId,
+      episode: episode,
       collectionId: collectionId,
       input: text('input'),
       title: text('title'),
@@ -194,6 +219,9 @@ class VideoSubtitleJobParams {
   }
 
   final String? videoId;
+
+  /// [videoId] 那一行播放列表的集下标（0 = 主视频 / 单视频）。
+  final int episode;
   final int? collectionId;
   final String? input;
   final String? title;
@@ -262,8 +290,10 @@ class VideoSubtitleHostJobRunner implements HostJobRunner {
   /// 与 collectionId（专名表退回任务目录旁的 JSON 文件）。
   final FushiDatabase Function()? database;
 
-  /// `videoId` → 本机视频文件路径；null = 不支持 videoId。
-  final Future<String?> Function(String videoId)? resolveVideoPath;
+  /// (`videoId`, 集下标) → 本机视频文件路径（那一集不存在 / 没有本地文件 → null）；
+  /// null = 不支持 videoId。
+  final Future<String?> Function(String videoId, {int episodeIndex})?
+  resolveVideoPath;
 
   /// host 的 AI 指派（每次现取）；null = 不支持 AI 校对。
   final AiSettingsSource Function()? aiSettings;
@@ -327,6 +357,9 @@ class VideoSubtitleHostJobRunner implements HostJobRunner {
     return <String, Object?>{
       'supported': true,
       'acceptsVideoId': resolveVideoPath != null,
+      // 认 `episode`（播放列表第 N 集）。老 host 没有这个位，收到 `episode` 会照第
+      // 0 集跑：提交方据此决定第 N 集能不能交给这台 host。
+      'acceptsEpisode': resolveVideoPath != null,
       'acceptsCollectionId': database != null,
       'proofreadAvailable': proofreadProvider() != null,
       // 校对提供商开了图片输入：`frames=true` 才真的会带画面。
@@ -591,18 +624,23 @@ class VideoSubtitleHostJobRunner implements HostJobRunner {
         : SubtitleWorkContextLoader(db);
     final String? videoId = params.videoId;
     if (videoId != null) {
-      final Future<String?> Function(String)? resolve = resolveVideoPath;
+      final Future<String?> Function(String, {int episodeIndex})? resolve =
+          resolveVideoPath;
       if (resolve == null) {
         throw const FormatException(
           '$kVideoSubtitleJobKind: videoId not supported on this host',
         );
       }
-      final String? path = await resolve(videoId);
+      final String? path = await resolve(videoId, episodeIndex: params.episode);
       if (path == null) {
         throw FormatException(
-          '$kVideoSubtitleJobKind: unknown videoId $videoId',
+          params.episode == 0
+              ? '$kVideoSubtitleJobKind: unknown videoId $videoId'
+              : '$kVideoSubtitleJobKind: unknown videoId $videoId '
+                    'episode ${params.episode}',
         );
       }
+      // 播放列表各集共用这一行的作品上下文与专名表（同一部作品）。
       final SubtitleWorkContext work =
           await loader?.forBook(videoId) ??
           _fallbackWork(path, params.title, useFolder: true);

@@ -101,7 +101,7 @@ void main() {
   VideoSubtitleHostJobRunner runner({
     AiSettingsSource? settings,
     AiChatClient Function()? client,
-    Future<String?> Function(String)? resolveVideo,
+    Future<String?> Function(String, {int episodeIndex})? resolveVideo,
   }) => VideoSubtitleHostJobRunner(
     resolveRecognizer:
         (
@@ -171,7 +171,7 @@ void main() {
 
     test('枚举 / 组合 / 后缀不合法 → 400', () {
       final VideoSubtitleHostJobRunner r = runner(
-        resolveVideo: (String _) async => null,
+        resolveVideo: (String _, {int episodeIndex = 0}) async => null,
       );
       for (final Map<String, Object?> bad in <Map<String, Object?>>[
         <String, Object?>{'proofread': false, 'segmenter': 'whisper'},
@@ -186,6 +186,12 @@ void main() {
         <String, Object?>{'proofread': false, 'suffix': '../ja'},
         // 这个 host 没接库：不收 collectionId。
         <String, Object?>{'proofread': false, 'collectionId': 3},
+        // 集下标：非负整数，且只跟 videoId 一起。
+        <String, Object?>{'proofread': false, 'videoId': 'a', 'episode': -1},
+        <String, Object?>{'proofread': false, 'videoId': 'a', 'episode': 'x'},
+        <String, Object?>{'proofread': false, 'videoId': 'a', 'episode': 1.5},
+        <String, Object?>{'proofread': false, 'episode': 2},
+        <String, Object?>{'proofread': false, 'collectionId': 3, 'episode': 1},
       ]) {
         expect(
           () => r.validateParams(bad),
@@ -206,6 +212,21 @@ void main() {
       expect(ok.segmenter, VideoSubtitleSegmenterMode.moss);
       expect(ok.mossBackend, MossBackendPreference.vulkan);
       expect(ok.regenerateGlossary, isTrue);
+      expect(ok.episode, 0, reason: '老客户端不带 episode：按第 0 集，行为不变');
+      expect(
+        VideoSubtitleJobParams.parse(const <String, Object?>{
+          'videoId': 'v1',
+          'episode': 2,
+        }).episode,
+        2,
+      );
+      expect(
+        VideoSubtitleJobParams.parse(const <String, Object?>{
+          'videoId': 'v1',
+          'episode': '3',
+        }).episode,
+        3,
+      );
     });
   });
 
@@ -265,11 +286,63 @@ void main() {
       'videoId': 'v1',
     });
     final HostJobOutcome outcome = await runner(
-      resolveVideo: (String id) async => id == 'v1' ? video.path : null,
+      resolveVideo: (String id, {int episodeIndex = 0}) async =>
+          id == 'v1' && episodeIndex == 0 ? video.path : null,
     ).run(ctx);
     expect(File(p.join(lib.path, 'Show 01.ja.srt')).existsSync(), isTrue);
     expect(outcome.outputs, contains('Show 01.ja.srt'));
     expect(ctx.output('Show 01.ja.srt').existsSync(), isTrue);
+  });
+
+  test('播放列表第 N 集：集下标交给 resolveVideoPath，字幕写在那一集旁', () async {
+    final Directory lib = Directory(p.join(tmp.path, 'lib', 'Show'))
+      ..createSync(recursive: true);
+    final File ep1 = File(p.join(lib.path, 'Show 01.mkv'))
+      ..writeAsBytesSync(<int>[1, 2, 3]);
+    final File ep2 = File(p.join(lib.path, 'Show 02.mkv'))
+      ..writeAsBytesSync(<int>[4, 5, 6]);
+    final List<(String, int)> asked = <(String, int)>[];
+    Future<String?> resolve(String id, {int episodeIndex = 0}) async {
+      asked.add((id, episodeIndex));
+      if (id != 'v1') return null;
+      return switch (episodeIndex) {
+        0 => ep1.path,
+        1 => ep2.path,
+        _ => null,
+      };
+    }
+
+    final (HostJobContext ctx, _) = context(const <String, Object?>{
+      'proofread': false,
+      'videoId': 'v1',
+      'episode': 1,
+    });
+    final HostJobOutcome outcome = await runner(resolveVideo: resolve).run(ctx);
+    expect(asked, <(String, int)>[('v1', 1)]);
+    expect(File(p.join(lib.path, 'Show 02.ja.srt')).existsSync(), isTrue);
+    expect(
+      File(p.join(lib.path, 'Show 01.ja.srt')).existsSync(),
+      isFalse,
+      reason: '不能落到第 1 集旁',
+    );
+    expect(outcome.outputs, contains('Show 02.ja.srt'));
+
+    // 越界的集：明确报出是哪一集认不到（→ 400），不退回第 0 集。
+    final (HostJobContext bad, _) = context(const <String, Object?>{
+      'proofread': false,
+      'videoId': 'v1',
+      'episode': 5,
+    }, jobId: 'j2');
+    await expectLater(
+      runner(resolveVideo: resolve).run(bad),
+      throwsA(
+        isA<FormatException>().having(
+          (FormatException e) => e.message,
+          'message',
+          contains('unknown videoId v1 episode 5'),
+        ),
+      ),
+    );
   });
 
   test('库视频旁有别的语言的 ASS：另出套了它样式的 .ja.ass，作首选产物并记进 summary', () async {
@@ -301,7 +374,8 @@ void main() {
       'videoId': 'v1',
     });
     final HostJobOutcome outcome = await runner(
-      resolveVideo: (String id) async => id == 'v1' ? video.path : null,
+      resolveVideo: (String id, {int episodeIndex = 0}) async =>
+          id == 'v1' && episodeIndex == 0 ? video.path : null,
     ).run(ctx);
     expect(outcome.outputs, contains('Show 01.ja.srt'));
     expect(outcome.outputs, contains('Show 01.ja.ass'));
@@ -462,6 +536,14 @@ void main() {
     final Map<String, Object?> cap = await runner().capability();
     expect(cap['proofreadAvailable'], isFalse);
     expect(cap['acceptsCollectionId'], isFalse);
+    // 没接 resolveVideoPath 的 host 不认 videoId，自然也不认集下标。
+    expect(cap['acceptsEpisode'], isFalse);
+    expect(
+      (await runner(
+        resolveVideo: (String _, {int episodeIndex = 0}) async => null,
+      ).capability())['acceptsEpisode'],
+      isTrue,
+    );
     expect(cap['segmenters'], <String>['auto', 'moss', 'window']);
     expect(
       (await runner(settings: _Settings()).capability())['proofreadAvailable'],

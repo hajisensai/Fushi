@@ -339,10 +339,15 @@ abstract interface class VideoSubtitleDefaultHost {
   /// 把 [subtitleFile]（格式 [format]：srt / ass / ssa / vtt）落成视频 [id] 的默认
   /// sidecar 并重解析 cue，返回实际落盘的后缀。未知视频 / 视频无本地文件抛
   /// [StateError]；[format] 不是字幕格式抛 [ArgumentError]。
+  ///
+  /// [episodeIndex]（播放列表下标，与 `?episode=` 同口径）> 0 时落到那一集文件旁
+  /// （capabilities 的 `liveLibrary.videoSubtitleDefaultEpisode`）；那一集不存在 /
+  /// 没有本地文件同样抛 [StateError]。
   Future<String> importDefaultVideoSubtitle(
     File subtitleFile, {
     required String id,
     required String format,
+    int episodeIndex = 0,
   });
 }
 

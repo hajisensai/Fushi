@@ -81,6 +81,62 @@ void main() {
     });
   });
 
+  group('videoBookEpisodePath（host 按集取文件）', () {
+    final String json = jsonEncode(<Map<String, Object>>[
+      <String, Object>{'title': 'e1', 'path': '/v/e1.mkv'},
+      <String, Object>{'title': 'e2', 'path': '/v/e2.mkv'},
+      <String, Object>{'title': 'e3', 'path': ''},
+    ]);
+
+    test('第 0 集用 videoPath；其余按播放列表下标', () {
+      expect(
+        videoBookEpisodePath(
+          videoPath: '/v/current.mkv',
+          playlistJson: json,
+          episodeIndex: 0,
+        ),
+        '/v/current.mkv',
+      );
+      expect(
+        videoBookEpisodePath(
+          videoPath: '/v/current.mkv',
+          playlistJson: json,
+          episodeIndex: 1,
+        ),
+        '/v/e2.mkv',
+      );
+    });
+
+    test('越界 / 负数 / 空路径 / 没有播放列表 / 坏 JSON 的第 N 集 → null', () {
+      for (final (String? playlist, int index) in <(String?, int)>[
+        (json, 3),
+        (json, -1),
+        (json, 2),
+        (null, 1),
+        ('{not json', 1),
+      ]) {
+        expect(
+          videoBookEpisodePath(
+            videoPath: '/v/current.mkv',
+            playlistJson: playlist,
+            episodeIndex: index,
+          ),
+          isNull,
+          reason: '$playlist #$index',
+        );
+      }
+      expect(
+        videoBookEpisodePath(videoPath: '', episodeIndex: 0),
+        isNull,
+        reason: '空 videoPath',
+      );
+      expect(
+        videoBookEpisodePath(videoPath: '/v/single.mkv', episodeIndex: 0),
+        '/v/single.mkv',
+      );
+    });
+  });
+
   group('localVideoFileCandidates', () {
     test('videoPath + 播放列表各集，去重、剔远端', () {
       // 路径样本按宿主平台构造：候选筛选走 isLocalVideoFilePath，它本就是宿主

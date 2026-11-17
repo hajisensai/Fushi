@@ -37,6 +37,8 @@ import 'package:fushi_engine/media/video/media_server_video_path.dart'
 import 'package:fushi_engine/media/video/media_server/media_server_client_identity.dart'
     show mediaServerClientIdentity, resolveMediaServerClientIdentity;
 import 'package:fushi_engine/media/video/video_member_file.dart';
+import 'package:fushi_engine/media/video/video_local_files.dart'
+    show videoBookEpisodePath;
 import 'package:fushi_engine/media/video/video_storage.dart' show VideoStorage;
 import 'package:fushi_engine/media/video/youtube_source_resolver.dart'
     show YoutubeManifestException;
@@ -8582,14 +8584,24 @@ class AppModel
     return sources.firstOrNull?.id;
   }
 
-  /// `/api/jobs` ASR 任务的 `videoId` → 本机视频文件（host 库）。
-  Future<String?> _resolveHostVideoPath(String videoId) async {
+  /// `/api/jobs` ASR / 字幕任务的 `videoId`（+ 播放列表集下标 [episodeIndex]）→ 本机
+  /// 视频文件（host 库）。按集取文件与播放端点同一判据（[videoBookEpisodePath]）。
+  Future<String?> _resolveHostVideoPath(
+    String videoId, {
+    int episodeIndex = 0,
+  }) async {
     final VideoBookRow? row = await VideoBookRepository(
       database,
     ).getByBookUid(videoId);
     if (row == null) return null;
+    final String? path = videoBookEpisodePath(
+      videoPath: row.videoPath,
+      playlistJson: row.playlistJson,
+      episodeIndex: episodeIndex,
+    );
+    if (path == null) return null;
     // ASR 要读媒体字节：DVD title / 网络流 / .strm 没有本地媒体文件。
-    return await hasLocalMediaFile(row.videoPath) ? row.videoPath : null;
+    return await hasLocalMediaFile(path) ? path : null;
   }
 
   /// 只暴露当前设备可访问的本地受管视频来源，供发现页新任务/订阅选择。

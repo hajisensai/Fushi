@@ -799,7 +799,53 @@ void main() {
         64,
       );
       expect(await ctl(<String>['jobs', 'submit', 'video_subtitle']), 64);
+      // --episode 只跟 --video-id 一起、必须是非负整数：本地就拒。
+      expect(
+        await ctl(<String>[
+          'jobs',
+          'submit',
+          'video_subtitle',
+          '--collection-id',
+          '3',
+          '--episode',
+          '1',
+        ]),
+        64,
+      );
+      expect(
+        await ctl(<String>[
+          'jobs',
+          'submit',
+          'video_subtitle',
+          '--video-id',
+          'v1',
+          '--episode=-1',
+        ]),
+        64,
+      );
       expect(admin.seen, isEmpty);
+    });
+
+    test('video_subtitle：--episode 映射成任务参数 episode（播放列表第 N 集）', () async {
+      admin.nextBody = <String, Object?>{'jobId': 'j9', 'state': 'pending'};
+      expect(
+        await ctl(<String>[
+          'jobs',
+          'submit',
+          'video_subtitle',
+          '--video-id',
+          'v1',
+          '--episode',
+          '2',
+        ]),
+        0,
+        reason: '$err',
+      );
+      final Map<String, Object?> params =
+          (admin.seen.first.body! as Map<String, Object?>)['params']!
+              as Map<String, Object?>;
+      expect(params['videoId'], 'v1');
+      expect(params['episode'], '2');
     });
 
     test('音频不存在 = 66', () async {

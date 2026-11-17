@@ -77,6 +77,26 @@ List<String> playlistEntryPaths(String? playlistJson) {
   }
 }
 
+/// 纯函数：视频行第 [episodeIndex] 集的文件路径（host 按集反查文件的唯一判据：播放
+/// 端点、按集字幕、字幕任务共用）。下标从 0 起，与 `?episode=` 同口径：
+/// - 负数 → null；
+/// - 第 0 集，或这一行没有播放列表 → [videoPath]（空串 → null）；
+/// - 其余取 [playlistEntryPaths] 的第 [episodeIndex] 项，越界 / 空路径 → null。
+///
+/// 路径只来自这一行自己的库数据，不接受外部传入的路径。
+String? videoBookEpisodePath({
+  required String videoPath,
+  String? playlistJson,
+  required int episodeIndex,
+}) {
+  if (episodeIndex < 0) return null;
+  if (episodeIndex == 0) return videoPath.isEmpty ? null : videoPath;
+  final List<String> entries = playlistEntryPaths(playlistJson);
+  if (episodeIndex >= entries.length) return null;
+  final String path = entries[episodeIndex];
+  return path.isEmpty ? null : path;
+}
+
 /// 纯函数：这一行视频在本机拥有的原始文件候选（`videoPath` + 播放列表各集），只
 /// 保留形如本地绝对路径的。空表 = 没有任何本地文件可删（远端流 / 相对 / 空路径）。
 List<String> localVideoFileCandidates({

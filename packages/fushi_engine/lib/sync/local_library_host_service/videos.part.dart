@@ -372,8 +372,8 @@ mixin _LocalLibraryHostVideos
     ];
   }
 
-  /// 纯解析 `playlistJson` 为 [PlaylistEntry] 列表（坏 JSON 返回空）。host 端按集反查
-  /// 文件 path 用（[_resolveEpisodeVideoPath]）。
+  /// 纯解析 `playlistJson` 为 [PlaylistEntry] 列表（坏 JSON 返回空）。下标与
+  /// [videoBookEpisodePath]（按集反查文件）一致。
   List<PlaylistEntry> _parsePlaylistEntries(String? playlistJson) {
     if (playlistJson == null || playlistJson.isEmpty) {
       return const <PlaylistEntry>[];
@@ -394,20 +394,17 @@ mixin _LocalLibraryHostVideos
   ///
   /// **DB-only 安全契约**：path 永远来自 host 自己 `playlistJson` 解析，绝不接受外部
   /// 传入。[episodeIndex]<=0 或非播放列表时回退 `videoPath`（当前选中集 / 单视频）。
-  /// 越界 [episodeIndex] 返回 null（安全拒绝）。
+  /// 越界 [episodeIndex] 返回 null（安全拒绝）。判据是 [videoBookEpisodePath]，与
+  /// host 字幕任务按集取文件同一份。
   Future<String?> _resolveEpisodeVideoPath(String id, int episodeIndex) async {
     if (episodeIndex < 0) return null; // 非法下标安全拒绝。
     final VideoBookRow? row = await _db.getVideoBookByBookUid(id);
     if (row == null) return null;
-    // 当前集 / 单视频（episodeIndex==0）：用 row.videoPath，等价旧行为。
-    if (episodeIndex == 0) {
-      return row.videoPath.isEmpty ? null : row.videoPath;
-    }
-    // 播放列表按集：DB 解析 playlistJson，越界安全拒绝。
-    final List<PlaylistEntry> entries = _parsePlaylistEntries(row.playlistJson);
-    if (episodeIndex >= entries.length) return null;
-    final String path = entries[episodeIndex].path;
-    return path.isEmpty ? null : path;
+    return videoBookEpisodePath(
+      videoPath: row.videoPath,
+      playlistJson: row.playlistJson,
+      episodeIndex: episodeIndex,
+    );
   }
 
   /// 按 [id]（即 `VideoBooks.bookUid`）反查真实视频文件。
@@ -1126,8 +1123,12 @@ mixin _LocalLibraryHostVideos
     File subtitleFile, {
     required String id,
     required String format,
+    int episodeIndex = 0,
   }) async {
     _assertSafeVideoId(id);
+    if (episodeIndex < 0) {
+      throw ArgumentError.value(episodeIndex, 'episodeIndex', 'negative');
+    }
     final String? suffix = defaultSidecarSubtitleSuffix(
       format,
       langCode: _videoSubtitleLangCode,
@@ -1137,8 +1138,38 @@ mixin _LocalLibraryHostVideos
     }
     await _runExclusive(() async {
       final VideoBookRow row = await _videoRowWithLocalFile(id);
-      await _displaceSidecarsFor(row.videoPath, suffix);
-      await _placeVideoSubtitleSidecar(subtitleFile, row: row, suffix: suffix);
+      if (episodeIndex == 0) {
+        await _displaceSidecarsFor(row.videoPath, suffix);
+        await _placeVideoSubtitleSidecar(
+          subtitleFile,
+          row: row,
+          suffix: suffix,
+        );
+        return;
+      }
+      // 播放列表第 N 集：落到那一集文件旁。行上的 `subtitleSource` / cue 属于第 0 集
+      // （[resolveVideoSubtitle] 只对第 0 集读它），这里不碰；第 N 集的默认字幕由
+      // sidecar 优先级决定，让位规则与第 0 集相同。
+      final String? episodePath = videoBookEpisodePath(
+        videoPath: row.videoPath,
+        playlistJson: row.playlistJson,
+        episodeIndex: episodeIndex,
+      );
+      if (episodePath == null ||
+          lacksLocalMediaFile(episodePath) ||
+          await _existingFilePathAsync(episodePath) == null) {
+        throw StateError('video $id has no local episode $episodeIndex');
+      }
+      await _displaceSidecarsFor(episodePath, suffix);
+      await _moveFileInto(
+        subtitleFile,
+        File(
+          p.join(
+            p.dirname(episodePath),
+            '${p.basenameWithoutExtension(episodePath)}$suffix',
+          ),
+        ),
+      );
     });
     return suffix;
   }

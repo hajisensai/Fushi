@@ -186,6 +186,13 @@ void addCtlHostOptions(ArgParser parser) {
       ),
     )
     ..addOption(
+      'episode',
+      help: tr(
+        'jobs submit video_subtitle：配合 --video-id，播放列表第几集（从 0 起）',
+        'jobs submit video_subtitle: with --video-id, the playlist episode index (from 0)',
+      ),
+    )
+    ..addOption(
       'collection-id',
       help: tr(
         'jobs submit video_subtitle：整季（合集 id）',
@@ -252,7 +259,7 @@ String get kCtlHostUsage => tr(
          | pending | sweep（补刮从未识别的作品） | ai-identify <pending id>
   activity | collections | tags | tombstones
   jobs submit asr <音频> [-l ja] [--profile cleanSpeech|mixedAudio] [-o x.srt] [--wait] | get <id> | result <id> [产物名] [-o 文件]
-       submit video_subtitle [<视频>] [--video-id id | --collection-id n] [--no-ai] [--segmenter auto|moss|window]
+       submit video_subtitle [<视频>] [--video-id id [--episode n] | --collection-id n] [--no-ai] [--segmenter auto|moss|window]
               [--moss-backend auto|cuda|vulkan|cpu] [--suffix ja] [--regen-glossary] [--title T] [-o 产物] [--wait]
   assistant start --feature <f> | show <id> [--after n] [--wait] | act <id> '<json>' | stop <id>
   host <GET|POST|PUT|DELETE> <互联路径，如 library/books> ['<json>']   直调任意互联接口''',
@@ -272,7 +279,7 @@ String get kCtlHostUsage => tr(
          | pending | sweep (scrape works that were never identified) | ai-identify <pending id>
   activity | collections | tags | tombstones
   jobs submit asr <audio> [-l ja] [--profile cleanSpeech|mixedAudio] [-o x.srt] [--wait] | get <id> | result <id> [output name] [-o file]
-       submit video_subtitle [<video>] [--video-id id | --collection-id n] [--no-ai] [--segmenter auto|moss|window]
+       submit video_subtitle [<video>] [--video-id id [--episode n] | --collection-id n] [--no-ai] [--segmenter auto|moss|window]
               [--moss-backend auto|cuda|vulkan|cpu] [--suffix ja] [--regen-glossary] [--title T] [-o output] [--wait]
   assistant start --feature <f> | show <id> [--after n] [--wait] | act <id> '<json>' | stop <id>
   host <GET|POST|PUT|DELETE> <interconnect path, e.g. library/books> ['<json>']   Call any interconnect endpoint directly''',
@@ -765,6 +772,7 @@ Future<int> _submitVideoSubtitleJob(
   }
   final Map<String, Object?> params = <String, Object?>{
     if (command['video-id'] != null) 'videoId': command['video-id'],
+    if (command['episode'] != null) 'episode': command['episode'],
     if (command['collection-id'] != null)
       'collectionId': command['collection-id'],
     if (command['title'] != null) 'title': command['title'],
