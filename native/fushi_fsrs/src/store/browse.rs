@@ -383,23 +383,27 @@ fn newer_note(created: i64, id: &str, best: Option<(i64, &str)>) -> bool {
     }
 }
 
-/// 系列里每一集（作品键，[source_item_key]）的代表标题：集里代表笔记（[newer_note]）出处的标题。按出处列排序时
-/// 同一集的行都用这个标题排（[Key::Source]），与出处视图 `children` 的集顺序（[Session::sources]）同一口径；
-/// 若各行用自己的标题，同一作品键下标题不同的笔记（在线视频的作品键是整部番）会被别的作品的同名集拆散。
+/// 系列里每一集（(系列键, 作品键)，[source_key] / [source_item_key]）的代表标题：集里代表笔记（[newer_note]）出处的
+/// 标题。按出处列排序时同一集的行都用这个标题排（[Key::Source]），与出处视图 `children` 的集顺序
+/// （[Session::sources]）同一口径；若各行用自己的标题，同一作品键下标题不同的笔记（在线视频的作品键是整部番）会被
+/// 别的作品的同名集拆散。键带系列键：同一作品键的笔记可以分在不同系列里，`children` 只在各自系列里选代表。
 /// `notes` = 结果里各行的笔记（可重复，同一笔记多次出现不影响）。
-fn episode_titles<'a>(notes: impl Iterator<Item = &'a Note>) -> HashMap<String, Option<&'a str>> {
-    let mut best: HashMap<String, (i64, &'a str, Option<&'a str>)> = HashMap::new();
+fn episode_titles<'a>(
+    notes: impl Iterator<Item = &'a Note>,
+) -> HashMap<(String, String), Option<&'a str>> {
+    let mut best: HashMap<(String, String), (i64, &'a str, Option<&'a str>)> = HashMap::new();
     for n in notes {
         let Some(s) = n.source.as_ref() else { continue };
         if source_series(s).is_none() {
             continue;
         }
-        let Some((item, _)) = source_item_key(s) else {
+        let (Some((group, _)), Some((item, _))) = (source_key(s), source_item_key(s)) else {
             continue;
         };
-        let cur = best.get(&item).map(|&(c, id, _)| (c, id));
+        let at = (group, item);
+        let cur = best.get(&at).map(|&(c, id, _)| (c, id));
         if newer_note(n.created, &n.id, cur) {
-            best.insert(item, (n.created, n.id.as_str(), source_title(s)));
+            best.insert(at, (n.created, n.id.as_str(), source_title(s)));
         }
     }
     best.into_iter().map(|(k, (_, _, t))| (k, t)).collect()
@@ -2091,7 +2095,7 @@ impl Session {
             }
         }
         let retention = (column == Column::Retention).then(|| ctx.retention());
-        let episodes: HashMap<String, Option<&str>> = if column == Column::Source {
+        let episodes: HashMap<(String, String), Option<&str>> = if column == Column::Source {
             episode_titles(
                 rows.iter()
                     .map(|(p, _)| self.note(view.note_slot[view.card_note[*p as usize] as usize])),
@@ -2334,7 +2338,7 @@ impl Session {
         view: &View,
         ctx: &Ctx,
         retention: Option<&Retention<'_>>,
-        episodes: &HashMap<String, Option<&str>>,
+        episodes: &HashMap<(String, String), Option<&str>>,
         column: Column,
         field: Option<&str>,
         primary: u32,
@@ -2417,13 +2421,12 @@ impl Session {
                     Some(_) => {
                         let item = source_item_key(s).map_or_else(String::new, |i| i.0);
                         let own = source_title(s);
+                        let at = (group, item);
+                        let title = episodes.get(&at).copied().unwrap_or(own).map(str::to_owned);
+                        let (group, item) = at;
                         Key::Source {
                             group,
-                            title: episodes
-                                .get(&item)
-                                .copied()
-                                .unwrap_or(own)
-                                .map(str::to_owned),
+                            title,
                             item,
                             own: own.map(str::to_owned),
                         }
@@ -4512,6 +4515,61 @@ mod tests {
         // 作品 b 在前（与 children 同序），作品 a 的两行挨着、组内按各自标题。
         assert_eq!(sorted(true), vec![json!(N5), json!(N4), json!(N3)]);
         assert_eq!(sorted(false), vec![json!(N3), json!(N4), json!(N5)]);
+    }
+
+    /// 同一作品键的笔记分在两个系列里时，集代表标题只在各自系列里选（与出处视图 `children` 一样），别的系列里那条
+    /// 笔记的标题不会被借来排这个系列里的集。
+    #[test]
+    fn browse_source_sort_episode_title_stays_within_its_series() {
+        let (d, cfg, deck) = rich_library();
+        let ep = |anime: &str, title: &str, series: &str| json!({"kind": "onlineVideo", "sourceId": "src", "animeUrl": anime, "title": title, "seriesTitle": series});
+        // 系列 S：作品 a 的 N3「Ep 2」；系列 T：作品 a 的 N4「Ep 1」、作品 b 的 N5「Ep 1.5」。N3 / N4 同刻添加，
+        // 若不分系列，作品 a 的代表会是 id 小的 N3「Ep 2」，T 里 b 就排到 a 前面。
+        write(
+            &d,
+            &cfg,
+            T0 + 30,
+            vec![
+                edit("note", N3, "source", ep("a", "Ep 2", "S")),
+                edit("note", N4, "source", ep("a", "Ep 1", "T")),
+                edit("note", N5, "source", ep("b", "Ep 1.5", "T")),
+            ],
+        );
+        let (gen, _) = query_rows(&d, &deck, json!({"sort": {"col": "created", "asc": true}}));
+        let g = call(
+            &d,
+            "browse_sources",
+            json!({"owner": "page:test", "gen": gen}),
+        )["groups"]
+            .clone();
+        let t = g
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|x| x["key"] == json!("onlineVideo::T"))
+            .unwrap();
+        let child_keys: Vec<Value> = t["children"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| c["key"].clone())
+            .collect();
+        assert_eq!(
+            child_keys,
+            vec![
+                json!("onlineVideo:src\u{1f}a"),
+                json!("onlineVideo:src\u{1f}b")
+            ]
+        );
+        let ours = [json!(N4), json!(N5)];
+        let (_, rows) = query_rows(&d, &deck, json!({"sort": {"col": "source", "asc": true}}));
+        let sorted: Vec<Value> = rows
+            .s
+            .iter()
+            .map(|r| r[1].clone())
+            .filter(|n| ours.contains(n))
+            .collect();
+        assert_eq!(sorted, vec![json!(N4), json!(N5)]);
     }
 
     /// 出处视图的「系列 → 集」：同一系列的几集合成一组（`series` = 系列名），组里 `children` 按集分第二级（行数 / 代表
