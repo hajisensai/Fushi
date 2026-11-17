@@ -5,7 +5,8 @@
 /// * 所有请求（搜索页、详情页、种子文件）都过 [isSafeExternalProviderEndpoint]，
 ///   页面里抓到的链接不能把请求带去明文 HTTP / 非 http(s) 地址；
 /// * 登录 Cookie 只发给站点自己的主机及其子域（`dl.<站点>` 这类下载子域），页面
-///   里指向别的域的链接拿不到用户的登录态；
+///   里指向别的域的链接拿不到用户的登录态；重定向逐跳手动跟，每跳重新过安全闸门
+///   和 Cookie 判定，不依赖底层 HTTP 实现自动跟时剥不剥 Cookie；
 /// * 种子文件走 [inspectTorrentMetainfo] 校验（bencode + info hash），登录失效时站点
 ///   回的 HTML 登录页不会被当成种子交给下载引擎。
 library;
@@ -149,7 +150,39 @@ class CustomBtSiteClient {
     return root(host) == site || host.endsWith('.$site');
   }
 
+  /// 一次抓取最多跟几跳重定向。
+  static const int maxRedirects = 5;
+
+  /// GET [url]，重定向由这里逐跳手动跟：每一跳都重新过安全闸门、重新判 Cookie
+  /// 能不能带。不交给 HTTP 实现自动跟，是因为自动跟时 Cookie 头会不会被带到别的
+  /// 域只取决于底层实现（`dart:io` 跨源时剥掉，别的实现未必），登录态不能押在这上面。
   Future<http.Response> _get(Uri url) async {
+    Uri current = url;
+    for (int hop = 0; ; hop++) {
+      final http.Response res = await _getOnce(current);
+      final String? location = res.headers['location'];
+      if (!_isRedirect(res.statusCode) || location == null) {
+        if (res.statusCode != 200) {
+          throw http.ClientException('HTTP ${res.statusCode}', current);
+        }
+        return res;
+      }
+      if (hop >= maxRedirects) {
+        throw http.ClientException('too many redirects', url);
+      }
+      current = current.resolve(location);
+    }
+  }
+
+  static bool _isRedirect(int status) =>
+      status == 301 ||
+      status == 302 ||
+      status == 303 ||
+      status == 307 ||
+      status == 308;
+
+  /// 单跳请求：不自动跟重定向，3xx 原样返回给 [_get]。
+  Future<http.Response> _getOnce(Uri url) async {
     if ((url.scheme != 'http' && url.scheme != 'https') ||
         !isSafeExternalProviderEndpoint(
           url,
@@ -162,20 +195,15 @@ class CustomBtSiteClient {
         message: 'refusing to fetch an unsafe URL',
       );
     }
-    final http.Request request = http.Request('GET', url);
+    final http.Request request = http.Request('GET', url)
+      ..followRedirects = false;
     if (cookie.trim().isNotEmpty && cookieAllowedFor(url)) {
       request.headers['Cookie'] = cookie.trim();
     }
     final http.StreamedResponse streamed = await _client
         .send(request)
         .timeout(requestTimeout);
-    final http.Response res = await http.Response.fromStream(
-      streamed,
-    ).timeout(requestTimeout);
-    if (res.statusCode != 200) {
-      throw http.ClientException('HTTP ${res.statusCode}', url);
-    }
-    return res;
+    return http.Response.fromStream(streamed).timeout(requestTimeout);
   }
 
   /// 搜索页地址（[domain] 只在模板含 `{category}` 时需要）。
