@@ -1596,7 +1596,6 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
   }
 }
 
-/// 有改动时按返回的三个选择。
 /// 表单里的一项（见 [_SrsDeckSettingsPageState._fields]）：[key] 是比较「改没改」用的值，[raw] / [restore]
 /// 原样取出 / 放回用户的输入。
 typedef _FormField = ({
@@ -1605,6 +1604,7 @@ typedef _FormField = ({
   void Function(Object? value) restore,
 });
 
+/// 有改动时按返回的三个选择。
 enum _UnsavedChoice { save, discard, cancel }
 
 /// 「设置未保存」对话框：保存（主按钮、默认焦点，Enter 即保存）/ 放弃更改 / 取消。点遮罩、Esc、
