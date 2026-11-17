@@ -79,7 +79,7 @@ const String kVideoSidecarSubtitleQueryParam = 'sidecar';
 const String kVideoSidecarSubtitlesCapability = 'videoSidecarSubtitles';
 
 /// `/api/library/videos/<id>/fingerprint`：host 有这个端点、却担保不了这份字节时的
-/// 状态码（BUG-4767）。404 只留给「老 host 没有这个端点」，两者必须可区分。响应体
+/// 状态码（BUG-4779）。404 只留给「老 host 没有这个端点」，两者必须可区分。响应体
 /// `{"reason": <下面两个之一>}`。
 const int kVideoFingerprintUnavailableStatus = 409;
 

@@ -76,7 +76,7 @@ RemoteVideoInfo? findRemoteVideoForCardSource(
 /// （在线内容身份，BUG-3490）或 host 不支持指纹（老 host 无该端点）时按 bookUid 身份
 /// 放行，与此前远端回跳一致。新 host 担保不了字节不会走到这里：
 /// [RemoteVideoFingerprintSource.fetchRemoteVideoFingerprint] 抛
-/// `RemoteVideoFingerprintUnavailable`，按取不到来源处理（BUG-4767）。
+/// `RemoteVideoFingerprintUnavailable`，按取不到来源处理（BUG-4779）。
 bool cardSourceHostFingerprintAccepted({
   required String? linkFingerprint,
   required String? hostFingerprint,

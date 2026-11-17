@@ -765,7 +765,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
         fingerprint = null;
       } else if (hostFingerprints != null) {
         // 老 host（null）/ host 担保不了这份字节（RemoteVideoFingerprintUnavailable，
-        // BUG-4767）/ 这一刻连不上 host：没有可担保的字节身份，卡片
+        // BUG-4779）/ 这一刻连不上 host：没有可担保的字节身份，卡片
         // 照常制、只是不带链接（远程卡以前一直如此）。与本地不同，这里不中止整张卡：
         // 失败的是「来源链接」这一附属信息，不是卡片内容；原因进错误日志。
         try {
