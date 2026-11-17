@@ -16,10 +16,11 @@ class OnlineNovelChapterLoaded {
   final int index;
 
   /// 正文的字数，口径与书行 `chaptersJson` 的 `characters` 相同
-  /// （`EpubBook.chapterCharacterCount`）。算不出来（书行已不在）时为 null。
+  /// （`EpubBook.chapterCharacterCount`）。算不出来（书行已不在）或已不可信
+  /// （预取之后解压树被就地重建过）时为 null：调用方照样丢缓存，但不换字数。
   ///
   /// 阅读器开书时只读一次书行里的每章字数，取章之后必须靠它把内存里那一章的
-  /// 字数从「占位文案长度」换成正文的，否则进度与统计都按占位页算（BUG-4791）。
+  /// 字数从「占位文案长度」换成正文的，否则进度与统计都按占位页算（BUG-4797）。
   final int? characters;
 }
 

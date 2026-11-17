@@ -1532,7 +1532,7 @@ List<int>? charCountsFromChaptersJson(
 /// 正文的 [characters]。不用换（字数未知 / 章号越界 / 数值没变）返回 null，调用方
 /// 据此不重置统计坐标系。
 ///
-/// BUG-4791：开书时读到的是占位页的字数，取章后新字数只写了库；内存里不换的
+/// BUG-4797：开书时读到的是占位页的字数，取章后新字数只写了库；内存里不换的
 /// 话，章内偏移被夹在占位文案长度以内，整章只入账那几个字，进度也按占位页算。
 @visibleForTesting
 List<int>? charCountsWithLoadedOnlineChapter(
@@ -1544,6 +1544,83 @@ List<int>? charCountsWithLoadedOnlineChapter(
   if (index < 0 || index >= counts.length) return null;
   if (counts[index] == characters) return null;
   return List<int>.of(counts, growable: false)..[index] = characters;
+}
+
+/// 在线小说书取章后「什么时候把新字数换进内存」的账（BUG-4797）。
+///
+/// 换表会平移这一章之后所有章的全书绝对偏移，必须伴随阅读账本 reset；而 reset
+/// 只能发生在当前单元已结算（`leave()` 之后）的时刻，否则会话内的并集被清掉，
+/// 往回滚再往前读会重复入账、误滚后滚回的撤回也失效。所以按「取回的是不是这次
+/// 导航的目标章」分两路：
+///  * 是：导航发起时上一页已结算，立刻换（[chapterLoaded] 返回新表）。
+///  * 不是（连续模式章节无缝衔接在阅读中途经 `fetch` 挂前后邻章）：先记着，等
+///    下一次整章导航 / 无缝换章结算完当前单元后由 [takeDeferred] 一并换。
+///
+/// 另记下本会话已经换上的章：后台整本重算读到的可能还是占位页，落定时用
+/// [overlay] 把这些章盖回正文字数，不让整表覆盖把症状带回来。
+@visibleForTesting
+class OnlineChapterCharCountAdoption {
+  final Map<int, int> _adopted = <int, int>{};
+  final Map<int, int> _deferred = <int, int>{};
+
+  /// 有没有记着还没换的章。
+  bool get hasDeferred => _deferred.isNotEmpty;
+
+  /// 一章刚换成正文。返回要立刻换上的新表；不用换（字数未知 / 越界 / 没变）或
+  /// 已记下等 [takeDeferred] 时返回 null。
+  List<int>? chapterLoaded(
+    List<int> counts,
+    OnlineNovelChapterLoaded loaded, {
+    required bool isNavigationTarget,
+  }) {
+    final int? characters = loaded.characters;
+    if (characters == null || characters < 0) return null;
+    if (!isNavigationTarget) {
+      _deferred[loaded.index] = characters;
+      return null;
+    }
+    _deferred.remove(loaded.index);
+    _adopted[loaded.index] = characters;
+    return charCountsWithLoadedOnlineChapter(counts, loaded.index, characters);
+  }
+
+  /// 当前单元已结算：把记着的章一次换上。没有要换的返回 null。
+  List<int>? takeDeferred(List<int> counts) {
+    List<int>? next;
+    for (final MapEntry<int, int> entry in _deferred.entries) {
+      _adopted[entry.key] = entry.value;
+      next =
+          charCountsWithLoadedOnlineChapter(
+            next ?? counts,
+            entry.key,
+            entry.value,
+          ) ??
+          next;
+    }
+    _deferred.clear();
+    return next;
+  }
+
+  /// 整本重算的结果 [recomputed] 里，把已知是正文的章盖回正文字数。
+  /// [includeDeferred] = false 给内存用（记着没换的章留到 [takeDeferred]，那一刻
+  /// 才能 reset）；true 给写回书行用（书行里这些章早已是正文字数，不能被重算读到
+  /// 的占位页字数盖回去）。
+  List<int> overlay(List<int> recomputed, {required bool includeDeferred}) {
+    final List<int> result = List<int>.of(recomputed, growable: false);
+    void put(int index, int characters) {
+      if (index >= 0 && index < result.length) result[index] = characters;
+    }
+
+    _adopted.forEach(put);
+    if (includeDeferred) _deferred.forEach(put);
+    return result;
+  }
+
+  /// 换书：前一本的账作废。
+  void clear() {
+    _adopted.clear();
+    _deferred.clear();
+  }
 }
 
 /// TODO-1192: [EpubBooks.chaptersJson] 里每章 `characters` 计数是否已是当前口径
@@ -1767,7 +1844,7 @@ class ReaderFushiPage extends BaseSourcePage {
   static String Function()? debugCaretSurface;
 
   /// Test hook：阅读器内存里的每章字数（进度 / 统计坐标系用的那一份）。集成测试
-  /// 据此确认在线小说书取章后内存字数跟着换成了正文的（BUG-4791）——书行里的
+  /// 据此确认在线小说书取章后内存字数跟着换成了正文的（BUG-4797）——书行里的
   /// 字数对了不代表内存里的也对。
   @visibleForTesting
   static List<int> Function()? debugChapterCharCounts;
@@ -1912,6 +1989,10 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// 注入 [EpubBook.setChapterCharCountHints]。在线书取章后换单章字数时据此决定
   /// 要不要重注入提示（提示只接受当前口径）。
   bool _charCountsAreCurrentCaliber = false;
+
+  /// 在线书取章后新字数的换表时机（见 [OnlineChapterCharCountAdoption]）。
+  final OnlineChapterCharCountAdoption _onlineCharCountAdoption =
+      OnlineChapterCharCountAdoption();
 
   /// v82：本书子表键（= EpubBooks.uid，开书定位时一次解析存下，写库不再逐次
   /// resolve）。null = 书行缺失或旧行无 uid——reader_positions / revealed_images
@@ -3336,6 +3417,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     _extractDir = extractDir;
     _onlineChapterLoader?.dispose();
     _charCountsAreCurrentCaliber = false;
+    _onlineCharCountAdoption.clear();
     _onlineChapterLoader =
         lnReaderOnlineChapterLoaderFor(
           row: bookRow,
@@ -3629,25 +3711,45 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   }
 
   /// 在线小说书 / 网页小说书：拦截层确认一章刚换成正文（[_ensureOnlineChapter]）
-  /// 的那一刻，把这一章的字数从占位页的换成正文的。与延后重算落定同一套动作：
-  /// [_applyCharCounts] 重建累计前缀与总字数、整表重注入免解析提示、
-  /// `_readLedger.reset()`（这一章之后所有章的全书绝对偏移都平移了，旧并集不再有
-  /// 意义；已入账的沉没、不撤回）。
+  /// 之后，把这一章的字数从占位页的换成正文的（BUG-4797）。
   ///
-  /// 时机只能是这里：此刻是导航中，上一章的单元已结算，`reset()` 丢不掉东西。
-  /// 后台预取落盘时用户还在读上一章，那时改会丢掉当前未结算的单元——所以预取的
-  /// 章由加载器记着，等翻到它、经拦截层确认时才走到这里。
+  /// 换表必须伴随 `_readLedger.reset()`，而 reset 只能发生在当前单元已结算的时刻
+  /// （时机的完整说明见 [OnlineChapterCharCountAdoption]）。拦截层的请求不都是
+  /// 导航：连续模式章节无缝衔接会在阅读中途用 `fetch` 挂前后邻章，同样走拦截层。
+  /// 所以只有「取回的正是本次导航在装的那一章」才立刻换——导航发起时
+  /// [_beginNavigation] 已把上一页结算；其余的先记着，等
+  /// [_applyDeferredOnlineChapterCharCounts]。
   void _adoptOnlineChapterCharCount(
     EpubBook book,
     OnlineNovelChapterLoaded loaded,
   ) {
     if (!identical(_book, book)) return;
-    final List<int>? counts = charCountsWithLoadedOnlineChapter(
+    final List<int>? counts = _onlineCharCountAdoption.chapterLoaded(
       _chapterCharCounts,
-      loaded.index,
-      loaded.characters,
+      loaded,
+      isNavigationTarget: _restoreInFlight && loaded.index == _currentChapter,
     );
     if (counts == null) return;
+    _switchOnlineChapterCharCounts(book, counts);
+  }
+
+  /// 当前单元刚结算（整章导航 / 无缝换章的 `_readLedger.leave()` 之后）：把阅读
+  /// 中途取回、记着没换的章一次换上。
+  void _applyDeferredOnlineChapterCharCounts() {
+    if (!_onlineCharCountAdoption.hasDeferred) return;
+    final EpubBook? book = _book;
+    if (book == null) return;
+    final List<int>? counts = _onlineCharCountAdoption.takeDeferred(
+      _chapterCharCounts,
+    );
+    if (counts == null) return;
+    _switchOnlineChapterCharCounts(book, counts);
+  }
+
+  /// 与延后重算落定同一套动作：[_applyCharCounts] 重建累计前缀与总字数、整表
+  /// 重注入免解析提示、`_readLedger.reset()`（换掉的那一章之后所有章的全书绝对
+  /// 偏移都平移了，旧并集不再有意义；已入账的沉没、不撤回）。
+  void _switchOnlineChapterCharCounts(EpubBook book, List<int> counts) {
     _applyCharCounts(counts);
     // 提示只接受当前口径：整表还在等后台按新口径重算时不注入，重算落定后由
     // [_recomputeCharCountsInBackground] 一并补上。
@@ -3665,13 +3767,19 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     if (book == null || book.chapters.isEmpty) return;
     unawaited(
       compute(countChapterChars, book)
-          .then((List<int> counts) {
+          .then((List<int> recomputed) {
             // 书可能在重算期间被换（重载 / 退出）；仅当仍是同一本、长度一致才采用。
             if (!mounted ||
                 !identical(_book, book) ||
-                counts.length != book.chapters.length) {
+                recomputed.length != book.chapters.length) {
               return;
             }
+            // 在线书：重算读到的可能还是占位页（取章晚于 isolate 读盘）。本会话
+            // 已换上正文字数的章不能被整表覆盖盖回去（BUG-4797）。
+            final List<int> counts = _onlineCharCountAdoption.overlay(
+              recomputed,
+              includeDeferred: false,
+            );
             _applyCharCounts(counts);
             // 新口径计数落定：补注 isImageOnlyChapter 的免解析短路提示（开书时旧口径
             // 未注入的书由此补齐，后续 spread 重建/预取不再逐章解析）。
@@ -3680,7 +3788,16 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
             _readLedger.reset();
             // TODO-1192: 把新口径计数回写 chaptersJson（含 charCaliber 标记），使书架总
             // 字数与下次开书都用新口径，避免每次开书都重算（旧书 / v1 书一次性升级）。
-            unawaited(_persistRecomputedCharCounts(counts));
+            // 写回书行的那份连「取回了、还没换进内存」的章也盖上：书行里它们
+            // 早已是正文字数。
+            unawaited(
+              _persistRecomputedCharCounts(
+                _onlineCharCountAdoption.overlay(
+                  recomputed,
+                  includeDeferred: true,
+                ),
+              ),
+            );
           })
           .catchError((Object e, StackTrace s) {
             ErrorLogService.instance.log(

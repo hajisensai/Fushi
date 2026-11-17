@@ -362,9 +362,9 @@ void main() {
       ((counts[1]! as Map<String, Object?>)['characters']! as num) > 50,
       isTrue,
     );
-    // BUG-4791：阅读器内存里那一章的字数也得换成正文的（进度 / 统计按它算），
-    // 不能停在开书时读到的占位页字数。预取落盘的第 3 章还没翻到、没经拦截层
-    // 确认，内存里仍是占位页的字数（翻到时才换，免得丢掉当前未结算的单元）。
+    // BUG-4797：阅读器内存里那一章的字数也得换成正文的（进度 / 统计按它算），
+    // 不能停在开书时读到的占位页字数。预取落盘的第 3 章还没翻到，内存里仍是
+    // 占位页的字数（翻到它、当前单元结算之后才换，免得清掉阅读中的账本）。
     final List<int>? liveCounts = ReaderFushiPage.debugChapterCharCounts
         ?.call();
     debugPrint('[lnreader-itest] reader in-memory chars=$liveCounts');
@@ -374,9 +374,32 @@ void main() {
       (counts[1]! as Map<String, Object?>)['characters'],
       reason: '取章后内存字数应与书行里的新字数一致',
     );
+    // 预取的那一章：文件落盘早于字数写库，所以等到书行里的字数换成正文的为止
+    // 再比（只读一次会撞上「文件已是正文、书行还没写」的窗口）。
+    num prefetchedChars = -1;
+    final DateTime prefetchDeadline = DateTime.now().add(
+      const Duration(seconds: 30),
+    );
+    while (true) {
+      final List<Object?> latest =
+          jsonDecode(
+                (await settle(
+                  tester,
+                  appModel.database.getEpubBook(onlineKey),
+                ))!.chaptersJson,
+              )
+              as List<Object?>;
+      prefetchedChars =
+          (latest[2]! as Map<String, Object?>)['characters']! as num;
+      if (prefetchedChars > liveCounts[2] ||
+          DateTime.now().isAfter(prefetchDeadline)) {
+        break;
+      }
+      await tester.pump(const Duration(milliseconds: 250));
+    }
     expect(
-      liveCounts[2],
-      lessThan(((counts[2]! as Map<String, Object?>)['characters']! as num)),
+      ReaderFushiPage.debugChapterCharCounts!.call()[2],
+      lessThan(prefetchedChars),
       reason: '预取的章要等翻到它时才换字数',
     );
     await popAll(tester, appModel);

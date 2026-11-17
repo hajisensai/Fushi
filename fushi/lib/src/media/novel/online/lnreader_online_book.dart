@@ -487,8 +487,20 @@ class LnReaderOnlineChapterLoader extends SerialOnlineNovelChapterLoader {
     final int? index = chapterIndexForFile(filePath);
     if (index == null) return null;
     final OnlineNovelChapterLoaded? loaded = await ensureChapter(index);
-    final OnlineNovelChapterLoaded? result =
-        _unacknowledged.remove(index) ?? loaded;
+    final OnlineNovelChapterLoaded? prefetched = _unacknowledged.remove(index);
+    OnlineNovelChapterLoaded? result = loaded;
+    if (result == null && prefetched != null) {
+      // 预取时记下的字数是那一刻这个文件的。作品页之后可能已按新章节列表就地
+      // 重建了解压树（连载更新），第 index 个文件换成了别的章 / 占位页：旧字数
+      // 不能再交给阅读器写进进度与统计的坐标系。缓存照样要丢（文件确实变过），
+      // 字数报「未知」；其余预取记录同样过期，一并作废。
+      if (await _isStillChapter(index)) {
+        result = prefetched;
+      } else {
+        _unacknowledged.clear();
+        result = OnlineNovelChapterLoaded(index: index, characters: null);
+      }
+    }
     // 预取看的是「这一章现在有正文、阅读器正要读它」，不是「这一次亲手取了」：
     // 翻到已被预取的章时本次什么都没取，照样要接着预取再下一章，否则预取隔一章
     // 才生效一次。
@@ -543,14 +555,9 @@ class LnReaderOnlineChapterLoader extends SerialOnlineNovelChapterLoader {
     // 取正文要等网络，这期间作品页可能已按新章节列表就地重建了解压树（连载
     // 更新）：第 index 章已不是这一章，写进去就是正文错位。以书行里的当前
     // 描述符为准再核一次，对不上就放弃这次结果（重进这一章会按新序号再取）。
-    final LnReaderOnlineBookDescriptor? current =
-        LnReaderOnlineBookDescriptor.tryParse(
-          (await database.getEpubBook(bookKey))?.sourceMetadata,
-        );
-    if (current == null ||
-        index >= current.chapters.length ||
-        current.chapters[index].path != chapter.path ||
-        !file.existsSync()) {
+    if (!await _isStillChapter(index) || !file.existsSync()) {
+      // 之前预取时记下的字数也都是旧章节序号下的，一并作废。
+      _unacknowledged.clear();
       return null;
     }
     for (final LnReaderEpubImage image in fetched.images) {
@@ -575,6 +582,17 @@ class LnReaderOnlineChapterLoader extends SerialOnlineNovelChapterLoader {
     );
     _unacknowledged[index] = result;
     return result;
+  }
+
+  /// 书行里的当前描述符第 [index] 章还是不是本加载器开书时认的那一章。
+  Future<bool> _isStillChapter(int index) async {
+    final LnReaderOnlineBookDescriptor? current =
+        LnReaderOnlineBookDescriptor.tryParse(
+          (await database.getEpubBook(bookKey))?.sourceMetadata,
+        );
+    return current != null &&
+        index < current.chapters.length &&
+        current.chapters[index].path == descriptor.chapters[index].path;
   }
 
   /// 书行里这一章的字数从占位页的换成正文的（书架总字数 / 进度百分比用它），

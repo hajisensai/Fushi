@@ -323,14 +323,21 @@ extension _ReaderWebView on _ReaderFushiPageState {
 
   /// 在线小说书 / 网页小说书：WebView 要的章节还是占位页就先取正文写回解压树
   /// （按需取章，见 [OnlineNovelChapterLoader]）。换成正文后丢掉这一章的 sanitize
-  /// 缓存与 [EpubChapter] 的正文缓存，否则会继续下发 / 计数占位页；同一刻把这
-  /// 一章的字数换成正文的（[_adoptOnlineChapterCharCount]，BUG-4791）。取不到
-  /// （断网 / 站点挂了 / 插件被删）时照常下发占位页，并提示原因——重进这一章
-  /// 会再取。
+  /// 缓存与 [EpubChapter] 的正文缓存，否则会继续下发 / 计数占位页；并把这一章
+  /// 的字数换成正文的（[_adoptOnlineChapterCharCount]，BUG-4797）。取不到（断网
+  /// / 站点挂了 / 插件被删）时照常下发占位页，并提示原因——重进这一章会再取。
+  ///
+  /// 走到这里的不都是导航：连续模式章节无缝衔接在阅读中途用 `fetch` 挂前后邻章，
+  /// 请求同样经拦截层。那种取回的字数先记着，等当前单元结算后才换——无缝换章
+  /// 在 [_onSeamlessChapterActivated]，整章导航就在这里：导航在飞且账本当前单元
+  /// 已空（[_beginNavigation] 结算过了）。
   Future<void> _ensureOnlineChapter(
     OnlineNovelChapterLoader loader,
     String filePath,
   ) async {
+    if (_restoreInFlight && _readLedger.current == null) {
+      _applyDeferredOnlineChapterCharCounts();
+    }
     try {
       final OnlineNovelChapterLoaded? loaded = await loader.ensureLoaded(
         filePath,

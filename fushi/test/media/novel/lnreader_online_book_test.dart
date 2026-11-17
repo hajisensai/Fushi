@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -32,6 +33,32 @@ void _unzipInto(Uint8List bytes, String dir) {
 
 /// 🔴 本文件**不能**调 `TestWidgetsFlutterBinding.ensureInitialized()`：绑定会把
 /// HttpClient 换成恒回 400 的模拟实现，插图下载全部「失败」。
+/// 可以把某一章的取章卡在半路的执行面：测排队顺序用。
+class _GatedLnReaderRuntime extends FakeLnReaderRuntime {
+  _GatedLnReaderRuntime({super.chapterHtml});
+
+  /// 章节路径 → 放行闸。取到这一章时先等闸开。
+  final Map<String, Completer<void>> gates = <String, Completer<void>>{};
+
+  /// 章节路径 → 「已经开始取这一章」。
+  final Map<String, Completer<void>> reached = <String, Completer<void>>{};
+
+  void gate(String path) {
+    gates[path] = Completer<void>();
+    reached[path] = Completer<void>();
+  }
+
+  @override
+  Future<String> chapter(String pluginId, String path) async {
+    final Completer<void>? gate = gates[path];
+    if (gate != null) {
+      reached[path]!.complete();
+      await gate.future;
+    }
+    return super.chapter(pluginId, path);
+  }
+}
+
 void main() {
   const LnReaderInstalledPlugin plugin = LnReaderInstalledPlugin(
     id: 'test.plugin',
@@ -106,7 +133,7 @@ void main() {
     late String imageBase;
     late FushiDatabase db;
     late LnReaderManager manager;
-    late FakeLnReaderRuntime runtime;
+    late _GatedLnReaderRuntime runtime;
     late int imports;
     late int rebuilds;
     final List<LnReaderOnlineChapterLoader> loaders =
@@ -152,7 +179,7 @@ void main() {
           ],
         }),
       );
-      runtime = FakeLnReaderRuntime(
+      runtime = _GatedLnReaderRuntime(
         chapterHtml: <String, String>{
           '/2': '<p>本文です<img src="$imageBase/ok.png"/></p>',
           '/3': '<p>第三章の本文</p>',
@@ -371,7 +398,7 @@ void main() {
         greaterThan(0),
       );
       expect((counts[0]! as Map<String, Object?>)['characters'], 0);
-      // 新字数同时交回调用方（阅读器据此换掉内存里那一章的字数，BUG-4791），
+      // 新字数同时交回调用方（阅读器据此换掉内存里那一章的字数，BUG-4797），
       // 与写进书行的是同一个数。
       expect(
         results.first!.characters,
@@ -475,6 +502,109 @@ void main() {
       expect(await loader.ensureLoaded(chapter(2)), isNull);
       await loader.whenIdle();
       expect(fetched().length, 5);
+    });
+
+    test('前台请求排到排队中的后台预取前面（预取在真实加载器上确实按后台入队）', () async {
+      const List<LnReaderChapter> five = <LnReaderChapter>[
+        LnReaderChapter(name: '一', path: '/1'),
+        LnReaderChapter(name: '二', path: '/2'),
+        LnReaderChapter(name: '三', path: '/3'),
+        LnReaderChapter(name: '四', path: '/4'),
+        LnReaderChapter(name: '五', path: '/5'),
+      ];
+      final String key = await library().ensureBook(
+        plugin: plugin,
+        novel: const LnReaderNovel(
+          name: 'テスト小説',
+          path: '/novel',
+          chapters: five,
+          totalPages: 1,
+        ),
+        pendingText: 'PENDING',
+      );
+      final LnReaderOnlineChapterLoader loader = await loaderFor(key);
+      String chapter(int index) =>
+          lnReaderOnlineChapterFile(loader.extractDir, index).path;
+
+      // 第 1 章在取（卡住）时目录跳到第 4 章：前台排队。
+      runtime
+        ..gate('/1')
+        ..gate('/4');
+      final Future<OnlineNovelChapterLoaded?> first = loader.ensureLoaded(
+        chapter(0),
+      );
+      final Future<OnlineNovelChapterLoaded?> fourth = loader.ensureLoaded(
+        chapter(3),
+      );
+      await runtime.reached['/1']!.future;
+      runtime.gates['/1']!.complete();
+      // 第 1 章落定：它的预取（第 2 章）入队；此刻在取的是第 4 章（卡住）。
+      expect(await first, isNotNull);
+      await runtime.reached['/4']!.future;
+      // 第 4 章还在取时又跳到第 3 章：这个前台请求入队晚于第 2 章的预取。
+      final Future<OnlineNovelChapterLoaded?> third = loader.ensureLoaded(
+        chapter(2),
+      );
+      runtime.gates['/4']!.complete();
+      expect(await fourth, isNotNull);
+      expect(await third, isNotNull);
+      await loader.whenIdle();
+
+      final List<String> order = runtime.calls
+          .where((String c) => c.startsWith('chapter:'))
+          .toList();
+      expect(
+        order.indexOf('chapter:/3'),
+        lessThan(order.indexOf('chapter:/2')),
+        reason: '前台要的第 3 章先于更早入队的第 2 章预取；实际顺序 $order',
+      );
+      expect(order.take(3), <String>['chapter:/1', 'chapter:/4', 'chapter:/3']);
+    });
+
+    test('预取之后解压树被就地重建：过期的字数不交给阅读器，缓存照样要丢', () async {
+      final String key = await library().ensureBook(
+        plugin: plugin,
+        novel: novel,
+        pendingText: 'PENDING',
+      );
+      final LnReaderOnlineChapterLoader loader = await loaderFor(key);
+      final String dir = loader.extractDir;
+      expect(
+        await loader.ensureLoaded(lnReaderOnlineChapterFile(dir, 1).path),
+        isNotNull,
+      );
+      // 第 3 章已被后台预取、字数记在加载器里，阅读器还没翻到它。
+      await loader.whenIdle();
+      expect(
+        lnReaderOnlineChapterFile(dir, 2).readAsStringSync(),
+        contains('第三章の本文'),
+      );
+
+      // 作品页刷新：站点在最前面插了一章，书行里的描述符换了（第 3 个文件
+      // 现在是「二」）。阅读器手里的加载器还是旧描述符。
+      await db.updateEpubBookMihonState(
+        key,
+        sourceMetadata: const LnReaderOnlineBookDescriptor(
+          pluginId: 'test.plugin',
+          novelPath: '/novel',
+          chapters: <LnReaderChapter>[
+            LnReaderChapter(name: '零', path: '/0'),
+            ...chapters,
+          ],
+        ).encode(),
+        chapterCount: 4,
+        chaptersJson: chaptersJson(4),
+      );
+
+      final OnlineNovelChapterLoaded? stale = await loader.ensureLoaded(
+        lnReaderOnlineChapterFile(dir, 2).path,
+      );
+      expect(stale?.index, 2, reason: '文件变过，阅读器仍要丢这一章的缓存');
+      expect(stale?.characters, isNull, reason: '预取时记下的字数已不是这一章的');
+      expect(
+        await loader.ensureLoaded(lnReaderOnlineChapterFile(dir, 2).path),
+        isNull,
+      );
     });
 
     test('关书（dispose）之后不再取章', () async {
