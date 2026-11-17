@@ -1,13 +1,13 @@
 // BUG-3545：本机写入的「分配序号 → 落库」不被别的写入插队。
 //
 // 同步 v2：本机操作的序号（seq）与 HLC 在 Rust `apply` 里同一个保存点内分配并落进操作日志
-// （sync2_ops）。若分配与落库之间插进别的写入，日志里就会出现序号与 HLC 顺序不一致、或序号有洞。
+// （新代真相表 `ops`）。若分配与落库之间插进别的写入，日志里就会出现序号与 HLC 顺序不一致、或序号有洞。
 // 这里让长操作（导入攒批、更改笔记类型的多实体写）与零碎的本机写入（改旗标）并发，核对：每台设备的
 // 操作按 seq 排列时 seq 从 1 起连续、HLC（wall, logical）严格递增。第一个用例在修前的代码（旧发件箱）
 // 上实测复现过乱序；第二个用例是独占区的性质守卫。
 import 'dart:async';
 
-import 'package:drift/drift.dart' hide isNull, isNotNull;
+import 'package:drift/drift.dart' show Uint8List, driftRuntimeOptions;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/apkg/srs_apkg_import.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
@@ -18,26 +18,23 @@ import 'package:test/test.dart';
 import 'apkg/srs_apkg_import_bench_test.dart' show benchApkg;
 import 'apkg/srs_apkg_import_test.dart' show kFullOptions;
 import 'support/srs_bulk_fixture.dart';
-import 'support/srs_raw_sql.dart';
 
 /// 操作日志里每台设备的操作，按 seq 排：(seq, wall, logical)。
+///
+/// 没有公开读命令给出原始操作序列（导出是投影后的、被支配的修改记录不在），这里走测试专用的原始通道查新代真相表
+/// `ops`：主键 `k = 设备下标 << 40 | seq`（native/fushi_fsrs/src/store/gen4/schema.rs `opk`）。本机写入都落在
+/// `ops`（`op_alias` / `op_voids` 只收承袭来的别名与作废的序号，这两个用例不产生）。每个用例一个库、一个 profile。
 Future<Map<String, List<(int, int, int)>>> opsByDevice(BulkFixture f) async {
   final Map<String, List<(int, int, int)>> out =
       <String, List<(int, int, int)>>{};
-  for (final SrsRawRow r
-      in await f.core
-          .customSelect(
-            'SELECT hex(device) AS d, seq, wall, logical FROM sync2_ops '
-            'WHERE profile_uid = ? ORDER BY device, seq',
-            variables: <Variable<Object>>[
-              Variable<String>(f.store.profileUid, srsIdType),
-            ],
-          )
-          .get()) {
-    (out[r.read<String>('d')] ??= <(int, int, int)>[]).add((
-      r.read<int>('seq'),
-      r.read<int>('wall'),
-      r.read<int>('logical'),
+  for (final Map<String, Object?> r in f.core.debugSelectRaw(
+    'SELECT k >> 40 AS d, k & 1099511627775 AS seq, wall, logical FROM ops '
+    'ORDER BY k',
+  )) {
+    (out['${r['d']}'] ??= <(int, int, int)>[]).add((
+      r['seq']! as int,
+      r['wall']! as int,
+      r['logical']! as int,
     ));
   }
   return out;

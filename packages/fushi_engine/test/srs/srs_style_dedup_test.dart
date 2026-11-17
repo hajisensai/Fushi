@@ -23,7 +23,6 @@ import 'ankiconnect/ankiconnect_harness.dart';
 import 'support/srs_sync2_peers.dart';
 import 'support/srs_test_storage.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
-import 'support/srs_raw_sql.dart';
 
 const String kProfile = '01928c3e-0000-7000-8000-0000000000d5';
 
@@ -87,21 +86,25 @@ void main() {
     return (r.question, r.answer);
   }
 
+  // 落库形态只有原始通道看得到（对外读一律展开）：新代真相表 `ops` 的操作体（native/fushi_fsrs/src/store/gen4/
+  // schema.rs）。协议 3 查的是修改记录表的 JSON 列；新代的 `ops` 还收身份记录（内置笔记类型带整套模板 / CSS，两个库
+  // 一样大），所以字节数只数修改记录（种类 2 = Edit），与协议 3 同口径。
   Future<int> editBytes(SrsStorage db) async =>
-      (await db.core
-              .customSelect(
-                'SELECT COALESCE(SUM(LENGTH(json)), 0) AS n FROM srs_field_edits',
+      db.core
+              .debugSelectRaw(
+                'SELECT COALESCE(SUM(LENGTH(body)), 0) AS n FROM ops WHERE kind = 2',
               )
-              .getSingle())
-          .read<int>('n');
+              .single['n']!
+          as int;
 
   Future<int> rawStyleRows(SrsStorage db) async =>
-      (await db.core
-              .customSelect(
-                "SELECT COUNT(*) AS n FROM srs_field_edits WHERE instr(json, '<style>') > 0",
+      db.core
+              .debugSelectRaw(
+                'SELECT COUNT(*) AS n FROM ops '
+                "WHERE instr(body, CAST('<style>' AS BLOB)) > 0",
               )
-              .getSingle())
-          .read<int>('n');
+              .single['n']!
+          as int;
 
   const List<String> dicts = <String>['JMdict', '大辞林', '明鏡'];
 

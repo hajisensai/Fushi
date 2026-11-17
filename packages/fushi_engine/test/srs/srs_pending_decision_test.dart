@@ -2,8 +2,7 @@
 // 修改了它」），点「确认删除」也消不掉。根因在寄存器内核：标签 OR-Set 投影出的合成 `tags` 行没有因果 dot，
 // 被当成「与删除并发的修改」（native/fushi_fsrs/src/registers.rs `concurrent_with_delete`）。这里走真实的
 // SrsDbStore → Rust 投影 → 笔记缓存路径，锁住冲突中心读的 `notesPendingDecision` 与编辑页读的
-// `SrsNoteView.hasPendingDecision`，以及老库错标的待裁决在缓存修订号 5 升级时被重算掉。
-import 'dart:convert';
+// `SrsNoteView.hasPendingDecision`，以及整层重建后同样不待裁决。
 
 import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:fushi_engine/srs/srs_builtin.dart';
@@ -13,7 +12,6 @@ import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
 
 import 'support/srs_test_storage.dart';
-import 'support/srs_raw_sql.dart';
 
 const String kProfile = '01928c3e-0000-7000-8000-0000000000e1';
 
@@ -54,32 +52,15 @@ void main() {
     expect(await s.notesPendingDecision(), isEmpty);
   });
 
-  test(
-    '老库（缓存修订号 4）里错标成待裁决的已删笔记，打开时重算掉',
-    () async {
-      final SrsDbStore s = await open();
-      final String id = await taggedNote(s);
-      await s.deleteNote(id);
-      // 还原修复前的缓存状态：这条已删笔记被错标成待裁决、本机缓存是修订号 4 推导的。
-      st.core.debugExecRaw('UPDATE srs_notes_cache SET pending_decision = 1');
-      st.core.debugExecRaw(
-        "UPDATE srs_local_state SET json = json_set(json, '\$.cacheRev', 4)",
-      );
-      expect(
-        <String>[for (final r in await s.notesPendingDecision()) r.id],
-        <String>[id],
-      );
-
-      final SrsDbStore reopened = await open();
-      expect(await reopened.notesPendingDecision(), isEmpty);
-      final String json =
-          (await st.core
-                  .customSelect('SELECT json FROM srs_local_state')
-                  .getSingle())
-              .read<String>('json');
-      expect((jsonDecode(json) as Map)['cacheRev'], isNotNull);
-    },
-    skip:
-        'G7-5: protocol 3 cache revision (srs_local_state.cacheRev) does not exist in gen4; derived-cache config lives in the kernel (cache_config_set / derive_cfg)',
-  );
+  // 协议 3 的「老库（缓存修订号 4）错标的待裁决开库重算掉」改成整层重建：新代没有 `cacheRev`，协议 3 的旧库只经
+  // 换代迁移整份重建派生层，这里锁住重建出来的也不待裁决。
+  test('删掉带标签的笔记后整层重建：仍不待裁决', () async {
+    final SrsDbStore s = await open();
+    final String id = await taggedNote(s);
+    await s.deleteNote(id);
+    await s.rebuildCaches();
+    expect(await s.notesPendingDecision(), isEmpty);
+    expect((await s.note(id))!.deletedAt, isNotNull);
+    expect(await (await open()).notesPendingDecision(), isEmpty);
+  });
 }

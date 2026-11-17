@@ -1,6 +1,5 @@
-// 内核读：统计指纹的订阅粒度、v13 出处列的升级回填（统计「制卡来源」，store/stats.rs）、AnkiConnect 数字 id 反查、
+// 内核读：统计指纹的订阅粒度、出处列（统计「制卡来源」）随写入维护与整层重建同值、AnkiConnect 数字 id 反查、
 // `cardColumns` 与逐行读同值。
-import 'dart:convert';
 
 import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:fushi_core/fushi_core.dart';
@@ -12,7 +11,6 @@ import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
 
 import 'apkg/apkg_test_support.dart';
-import 'support/srs_raw_sql.dart';
 
 const String kProfile = '01928c3e-0000-7000-8000-0000000000c4';
 
@@ -58,47 +56,12 @@ void main() {
     expect(b.fingerprint, s.statsFingerprint);
   });
 
-  test(
-    '缓存修订号 6 的老库：打开时补齐出处列，统计按出处分组',
-    () async {
-      final (SrsDbStore s, _, _) = await seeded();
-      s.core.debugExecRaw(
-        "UPDATE srs_notes_cache SET source_kind = '', source_title = ''",
-      );
-      s.core.debugExecRaw(
-        "UPDATE srs_local_state SET json = json_set(json, '\$.cacheRev', 6)",
-      );
-      final SrsDbStore reopened = await SrsDbStore.open(
-        core: s.core,
-        profileUid: kProfile,
-        deviceId: 'd',
-        engine: const FakeFsrsEngine(),
-        trustedClock: SrsTrustedClock(
-          wallClockMs: () => t,
-          bootClockMs: () => t,
-          bootId: 'boot-d',
-        ),
-        fallbackRolloverHour: () => 4,
-      );
-      final SrsStatsReport d = await (await loadSrsStats(reopened)).report();
-      expect(
-        d.sources.map((SrsSourceShare x) => '${x.kind}/${x.title}'),
-        <String>['${SrsSourceKind.book}/本'],
-      );
-      final String json =
-          (await s.core
-                  .customSelect('SELECT json FROM srs_local_state')
-                  .getSingle())
-              .read<String>('json');
-      expect((jsonDecode(json) as Map)['cacheRev'], isNotNull);
-    },
-    skip:
-        'G7-5: protocol 3 cache revision (srs_local_state.cacheRev) does not exist in gen4; derived-cache config lives in the kernel (cache_config_set / derive_cfg)',
-  );
+  // 协议 3 的「缓存修订号 6 的老库打开时补齐出处列」已删：新代没有本机状态行的 `cacheRev`，派生层是真相的纯函数
+  // （协议 3 的旧库只经换代迁移整份重建）；出处列随写入维护与整层重建同值由下一条的 [SrsDbStore.rebuildCaches] 覆盖。
 
   // 反馈 AhIskigAq3：改名前的 Hibiki / 早期 Fushi 制的卡（经 Anki 迁进来）没有出处记录，只有制卡标签，
   // 统计页「制卡来源」以前全归「无出处」。
-  test('没有出处记录的制卡笔记按制卡标签认出处；修订号 8 的老库打开时补齐', () async {
+  test('没有出处记录的制卡笔记按制卡标签认出处；派生层整层重建后同值', () async {
     final SrsDbStore s = await openTestStore(
       profileUid: kProfile,
       deviceId: 'd',
@@ -126,12 +89,8 @@ void main() {
     ]..sort();
     expect(shares(await (await loadSrsStats(s)).report()), expected);
 
-    s.core.debugExecRaw(
-      "UPDATE srs_notes_cache SET source_kind = '', source_title = ''",
-    );
-    s.core.debugExecRaw(
-      "UPDATE srs_local_state SET json = json_set(json, '\$.cacheRev', 8)",
-    );
+    await s.rebuildCaches();
+    expect(shares(await (await loadSrsStats(s)).report()), expected);
     final SrsDbStore reopened = await SrsDbStore.open(
       core: s.core,
       profileUid: kProfile,

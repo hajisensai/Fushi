@@ -21,7 +21,6 @@ import 'package:test/test.dart';
 
 import 'apkg/apkg_test_support.dart' show FakeFsrsEngine;
 import 'support/srs_bulk_fixture.dart';
-import 'support/srs_raw_sql.dart';
 import 'package:fushi_engine/srs/srs_reads.dart';
 
 typedef _Cost = ({int statements, int core});
@@ -200,63 +199,48 @@ void main() {
     expect(costs['changeNoteType']!.core, 1);
   });
 
-  test(
-    '打开副本与缓存维护的语句数与内核命令数（第 4 步）',
-    () async {
-      final BulkFixture f = await BulkFixture.open(notes: 6);
-      final SrsDbStore s = f.store;
-      Future<_Cost> openCost() async {
-        srsDebugReadCommands = 0;
-        final SrsDbStore r = await SrsDbStore.open(
-          core: s.core,
-          profileUid: kBulkUid,
-          deviceId: 'dev',
-          engine: const FakeFsrsEngine(),
-          trustedClock: fixedTrustedClock(),
-          fallbackRolloverHour: () => 4,
-        );
-        return (statements: srsDebugReadCommands, core: r.debugCoreCommands);
-      }
-
-      await s.rebuildCaches();
-      final Map<String, _Cost> costs = <String, _Cost>{
-        'rebuildCaches': await _cost(s, s.rebuildCaches),
-        'open(current)': await openCost(),
-      };
-      f.store.core.debugExecRaw(
-        r"UPDATE srs_local_state SET json = json_set(json, '$.cacheRev', 1)",
+  test('打开副本与缓存维护的语句数与内核命令数（第 4 步）', () async {
+    final BulkFixture f = await BulkFixture.open(notes: 6);
+    final SrsDbStore s = f.store;
+    Future<_Cost> openCost() async {
+      srsDebugReadCommands = 0;
+      final SrsDbStore r = await SrsDbStore.open(
+        core: s.core,
+        profileUid: kBulkUid,
+        deviceId: 'dev',
+        engine: const FakeFsrsEngine(),
+        trustedClock: fixedTrustedClock(),
+        fallbackRolloverHour: () => 4,
       );
-      costs['open(cacheRev 1)'] = await openCost();
-      // 旧版本号的那次打开确实由内核补跑了升级、记下了当前版本号（同一条命令里，语句数不多一条）。
-      final int rev =
-          (await f.core
-                  .customSelect(
-                    r"SELECT json_extract(json, '$.cacheRev') AS v FROM srs_local_state",
-                  )
-                  .getSingle())
-              .read<int>('v');
-      expect(rev, isNotNull);
-      for (final MapEntry<String, _Cost> e in costs.entries) {
-        // ignore: avoid_print
-        print(
-          'WRITE_COST ${e.key}: statements=${e.value.statements} '
-          'core=${e.value.core}',
-        );
-      }
-      // 第 12 步：开库读本机状态从一条 Drift 读变成一条内核命令（`local_state`），所以语句 4 → 3、命令 2 → 3
-      // （`local_state` + `cache_config_set` + `identity`）。新 profile / 覆盖恢复之后 / 老行没纪元时再多一条
-      // `local_state_ensure`（srs_local_state_kernel_test.dart）。
-      // G5：srs.db 的 Drift 执行器删了，「语句」改数内核读命令。开库剩下的读只有补内置实体前查哪几个已在（以前三个
-      // 内置实体各一条 SELECT，现在一条 `entities {ids}`），所以 3 → 1。
-      expect(costs, <String, _Cost>{
-        'rebuildCaches': (statements: 0, core: 1),
-        'open(current)': (statements: 1, core: 3),
-        'open(cacheRev 1)': (statements: 1, core: 3),
-      });
-    },
-    skip:
-        'G7-5: protocol 3 cache revision (srs_local_state.cacheRev) does not exist in gen4; derived-cache config lives in the kernel (cache_config_set / derive_cfg)',
-  );
+      return (statements: srsDebugReadCommands, core: r.debugCoreCommands);
+    }
+
+    await s.rebuildCaches();
+    final Map<String, _Cost> costs = <String, _Cost>{
+      'rebuildCaches': await _cost(s, s.rebuildCaches),
+      'open(current)': await openCost(),
+    };
+    // 协议 3 这里还量「缓存修订号 1 的老库打开」（内核补跑升级）：新代没有本机状态行的 `cacheRev`（派生层是真相的
+    // 纯函数，协议 3 的旧库只经换代迁移整份重建），那一项删了。
+    for (final MapEntry<String, _Cost> e in costs.entries) {
+      // ignore: avoid_print
+      print(
+        'WRITE_COST ${e.key}: statements=${e.value.statements} '
+        'core=${e.value.core}',
+      );
+    }
+    // 第 12 步：开库读本机状态从一条 Drift 读变成一条内核命令（`local_state`），所以语句 4 → 3、命令 2 → 3
+    // （`local_state` + `cache_config_set` + `identity`）。新 profile / 覆盖恢复之后 / 老行没纪元时再多一条
+    // `local_state_ensure`（srs_local_state_kernel_test.dart）。
+    // G5：srs.db 的 Drift 执行器删了，「语句」改数内核读命令。开库剩下的读只有补内置实体前查哪几个已在（以前三个
+    // 内置实体各一条 SELECT，现在一条 `entities {ids}`），所以 3 → 1。
+    // 新代：开库多一条 `collection_info`（盐集合不在 identity 回包里，绑定代号要带上它，SrsDbStore._sync2Open），
+    // 3 → 4（`identity` + `collection_info` + `cache_config_set` + 本机状态）。
+    expect(costs, <String, _Cost>{
+      'rebuildCaches': (statements: 0, core: 1),
+      'open(current)': (statements: 1, core: 4),
+    });
+  });
 
   test('bulkWrites 可嵌套：内核按深度只在最外层调高并恢复原来的阈值', () async {
     final BulkFixture f = await BulkFixture.open(notes: 1);
