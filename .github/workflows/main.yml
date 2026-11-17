@@ -402,6 +402,21 @@ jobs:
           echo "::notice title=R8 verify skipped::no Android / native / plugin / pubspec change in this PR"
         fi
 
+    # Android JVM 单测（fushi/android/app/src/test：环形缓冲、OCR 版面、AnkiDroid 线程归属……）
+    # 以前没有任何 workflow 执行，flutter build apk 也不跑它们，回归只能等用户撞上。这里跑
+    # :app:testDebugUnitTest，红了整个 job 红（不加 continue-on-error / `|| true`）。
+    # 与 R8 校验同一个路径门：JVM 单测只看 fushi/android/ 与插件集合，Dart-only PR 改不动它们；
+    # workflow_dispatch 上照跑。--config-only 生成 local.properties（gradlew 要 flutter.sdk），
+    # 插件注册由上面的 flutter pub get 生成。守卫：fushi/test/build/android_jvm_unit_tests_ci_guard_test.dart。
+    - name: Android JVM unit tests (:app:testDebugUnitTest)
+      if: github.event_name != 'pull_request' || steps.r8.outputs.needed == 'true'
+      working-directory: fushi
+      run: |
+        set -euo pipefail
+        flutter build apk --debug --config-only
+        cd android
+        ./gradlew :app:testDebugUnitTest --no-daemon
+
     # 网页内容核心是硬依赖：fushi/android/app/build.gradle 的 requireWebCoreSo 在 release 构建里
     # 逐 ABI 核对 prebuilt/android/<abi>/libfushi_web_core.so，缺就拒绝出包。本验证构建只出
     # arm64，先编这一个 ABI（工具链与 native-web-core-gate.yml / release.yml 一致）。

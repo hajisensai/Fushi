@@ -118,6 +118,17 @@ Android / Windows / macOS / iOS debug/beta workflow 必须使用跨 workflow 统
 - **为什么进程内 + 自己的宿主进程**：系统缩略图隔离进程（COM Surrogate）激活不到 HKCU 注册的 CLSID（2026-11-16 实测 `REGDB_E_CLASSNOTREG`），本安装器又是 `PrivilegesRequired=lowest`，所以 `DisableProcessIsolation=1`。explorer 里的 DLL 不解析文件，只把路径交给宿主进程（job 对象限 1 GiB、15 秒超时、普通优先级——低优先级在满载机器上会被饿到超时），宿主用 `{app}\7za\7z.dll`（rar / 7z）和 `{app}\pdfium.dll`（pdf）。升级时被 explorer 占着的旧 DLL 由 `[Code] FushiSetAsideThumbnailHandler` 改名挪开。
 - 本地：`cargo test --profile quick`（端到端测试要 `FUSHI_TEST_7Z_DIR` / `FUSHI_TEST_PDFIUM_DLL`，没给就 SKIP 那几条）；`examples/probe.rs` 对真实文件出 PNG。PR 上 `native-shell-thumbs-gate.yml` 用钉死 SHA-256 的真 7z.dll / pdfium.dll 跑 `cargo test --release --locked`（`FUSHI_THUMBS_REQUIRE_DEPS=1`，缺依赖判红）。
 
+## Android JVM 单测（`fushi/android/app/src/test`）
+
+- CI：`main.yml` 的 `build` job 在 PR 改到 Android / 原生 / 插件 / pubspec（与 R8 校验同一个路径门）时跑
+  `./gradlew :app:testDebugUnitTest`，红就判红；守卫 `fushi/test/build/android_jvm_unit_tests_ci_guard_test.dart`。
+- 本地定向跑（先在 `fushi/` 下 `flutter pub get` + `flutter build apk --debug --config-only` 生成插件注册与
+  `local.properties`），在 `fushi/android/` 下走租约：
+  `dart ../tool/heavy.dart --check-only -- .\gradlew.bat :app:testDebugUnitTest --tests app.fushi.reader.CrossAppAudioPolicyTest`。
+- 测试类路径上的 `android.jar` 全是抛 `Stub!` / "not mocked" 的桩，也没有 Robolectric：要单测的逻辑抽成不碰 Android
+  类的纯 Java（例：`CrossAppAudioPolicy`、`AnkiChannelHandler.runsOnMainThread`），别让被测类的静态初始化里出现
+  `new Handler(Looper.getMainLooper())` 这类调用。
+
 ## Rust 本地开发循环（quick profile）
 
 - **改 Rust 时的「编译—测试」循环一律用 `quick` profile，不用 `--release`**：在 `native/<crate>/` 下
