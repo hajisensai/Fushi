@@ -5841,6 +5841,7 @@
   "media_source_rename_label": "Nom de la source",
   "media_source_rescan": "Rescanner",
   "media_source_root_already_added": "Déjà une source — nouvelle analyse : $path",
+  "media_source_scan_blocked_scrape_cleanup": "Video scrape data is being cleaned up. Scan again when it finishes.",
   "media_source_scan_error": "Échec du scan",
   "media_source_section_title": "Sources de la bibliothèque",
   "media_stats_action": "Voir les statistiques",

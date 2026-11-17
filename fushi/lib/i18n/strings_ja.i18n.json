@@ -5841,6 +5841,7 @@
   "media_source_rename_label": "ソース名",
   "media_source_rescan": "再スキャン",
   "media_source_root_already_added": "すでにソースに追加済みです。再スキャンします：$path",
+  "media_source_scan_blocked_scrape_cleanup": "Video scrape data is being cleaned up. Scan again when it finishes.",
   "media_source_scan_error": "スキャンに失敗しました",
   "media_source_section_title": "メディアソース",
   "media_stats_action": "統計を表示",

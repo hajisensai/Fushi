@@ -422,7 +422,10 @@ List<OpDescription> _describeItemOps(OpDescribeKit kit) => <OpDescription>[
     pattern: '$_root/scan',
     summary:
         'Rescan source libraries (folders) for new / changed media, like the '
-        'source page "Rescan" button. Does not auto-scrape videos.',
+        'source page "Rescan" button. Does not auto-scrape videos. Each result '
+        'has imported = items newly added by this scan; blocked = '
+        '"video_scrape_maintenance" means the scan did not start because video '
+        'scrape data is being cleaned up (retry later).',
     risk: OpRisk.irreversible,
     params: <OpParam>[
       OpParam.integer(
@@ -1269,8 +1272,9 @@ List<OpDescription> _describeSourceOps(OpDescribeKit kit) => <OpDescription>[
     method: 'GET',
     pattern: _sources,
     summary:
-        'List source libraries (scanned folders): id, label, kind, path, media '
-        'count, last scan.',
+        'List source libraries (scanned folders): id, label, kind, path, last '
+        'scan. totalCount = items the source owns now; mediaCount = items the '
+        'last scan newly imported (0 after a rescan that found nothing new).',
     params: <OpParam>[
       OpParam.string(
         'kind',

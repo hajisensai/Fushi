@@ -5841,6 +5841,7 @@
   "media_source_rename_label": "来源名称",
   "media_source_rescan": "重新扫描",
   "media_source_root_already_added": "该位置已是来源，正在重新扫描：$path",
+  "media_source_scan_blocked_scrape_cleanup": "视频刮削资料正在清理，清理完成后再扫描",
   "media_source_scan_error": "扫描失败",
   "media_source_section_title": "常驻来源",
   "media_stats_action": "查看统计",
