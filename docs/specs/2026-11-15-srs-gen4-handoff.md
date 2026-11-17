@@ -2192,3 +2192,69 @@ Rust `SCHEMA` 没升（没加表 / 索引，分到的 40024 没用）；ABI 不�
   `backup_merge_engine.dart` 保留 develop 的 `excludedBookKeys`，不带回 G11-4 已删的 `localSrs` / `sourceSrs`。develop 改过的
   三份协议 3 测试 / 夹具（`srs_legacy_clock_conformance_test`、`legacy_clock_store_vectors.json`、`srs_gen4_rehearsal_test`）
   维持删除。
+
+## 第四波 K3 Anki 来源日志的 HLC 与写回包修改行（2026-11-17，分支 `pr/srs-gen4-k3-anki-log-hlc`，基于 `pr/srs-gen4-switch`）
+
+修 §26 的 C4，顺带根治 §26 记在 G9-7 名下的 `srs_write_preread_cost` 2 条（定因见下）。不改线格式、不改 `native_allowed`、
+不改冻结的 `history.rs` 规则，不升 SCHEMA（仍 40021）。
+
+### C4：换代后新导入的 Anki 日志按操作 HLC 排
+
+- **根因**：新代原生日志不带旧 HLC（设计 §3.4），`cmd/writes.rs` `parse_item` 丢掉输入里的 `hlc`，日志投影
+  （`cache.rs` `log_body` → `log_json`）于是回落到操作自己的 HLC（导入时刻 + 本机设备）。可协议 3 的卡片历史规则
+  （`history.rs` `EventKey` / `AnkiEvent` / `SortKey`）依赖「Anki 来源日志的 HLC 由来源数据派生」（铁律 C，Dart
+  `anki_import_rules.dart`）：同一条 revlog 在血统两张卡上的副本靠它归成一个事件，更早的 Anki 复习靠它排在更晚的原生复习
+  之前，锚点靠 counter = 1 排在同毫秒 revlog 之后。后果：统计 / 重放把副本算两次；比原生复习早的 Anki 复习成了最后一条
+  有效日志，静默改掉卡片排程（实测 ivl 从协议 3 的值回到导入包里的 9）。旧库迁移进来的日志带承袭 HLC，不受影响。
+- **定案**：Anki 来源日志的 HLC 在**日志投影层**派生，不进操作。唯一实现
+  `native/fushi_fsrs/src/anki_import_rules.rs` `anki_source_hlc(origin, kind, anki_id, at)`：origin = `anki` 时，锚点
+  （`importAnchor`）= `{at}:1:anki`，带 revlog id 的 = `{ankiId}:0:anki`，其余 None。与 Dart
+  `srsImportedRevlogHlc` / `srsImportAnchorHlc` 共用向量 `native/fushi_fsrs/src/anki_source_hlc_vectors.json`（Rust 单测与
+  `packages/fushi_srs/test/anki_source_hlc_vectors_test.dart` 两边各读一遍）。`cache.rs` `log_body` 对没有旧 HLC 的日志回落
+  到它；`cmd/writes.rs` 回包 `logHlcs` 同口径（与 `read logs` 的 `hlc` 逐字相同）。派生值只依赖操作体，每台设备算的一样，
+  摘要（只含日志 ID 集合）不受影响，head 的 `derive` 不升。`gen4/op.rs` `Log4` 与 `cmd/writes.rs` 文件头的说明更正（删掉
+  「排序键是 (发生时刻, 操作号)」这句不准确的话：`history::select` 按 HLC 排）。
+- **已有新代开发库的派生层**：新代原来没有「推导口径版本」，这里补一个最小的：`derive_cfg` 新键 `cacheRules`
+  （`cache.rs` `RULES_KEY` / `CACHE_RULES` = 1）。整份物化（`materialize_caches`，`rebuild_all` / `rebuild_caches` 的最后一步）
+  写下当前值；宿主每次打开都发的 `cache_config_set` 发现库里的不是当前值（这次之前建的库没有这一项）就整层重建一次
+  （`Settle::Rebuild`，回包 `changed: true`）。真相不动、没加表，不升 SCHEMA。委托写的是「按现有重建标记机制」，代码里
+  新代并没有这种机制（`dispatch.rs` 原注释写的是「换口径 = 新的 schema / 重建」，而新 schema 会被 `check_kind` 直接拒），
+  所以补了这一个键；以后推导规则再改、同一份真相算出的缓存行变了时 +1。
+- **没选**：让原生日志带 `hlc` 线字段（违反 §3.4 与 `native_allowed`，还让调用方能注入任意 HLC）；改 `history.rs` 让 Anki
+  来源忽略 HLC（动的是与 Dart 共用的冻结规则与向量）。
+- **信任边界**：派生 HLC 取自操作体里的 `ankiId` / `at`，对端写一条伪造 `ankiId` 的 Anki 来源日志就能影响它在选取里的位置；
+  这与协议 3 里作者直接给 `hlc` 的信任面相同（本来就要信任作者写的日志），没有扩大。
+
+### `srs_write_preread_cost` 2 条（`editFields` / `editFieldsBatch` / `writeEdits` / `applyLapisBackfill` 多 1 条读）
+
+- **根因**：不是 G9-7 引入的，也不是「发命令前多读」：是命令**之后**的回读——`_emit(stamps: true)` → `_readBackEdits`
+  再发一条 `read edits` 拼返回值（G7-5 起就有，switch 上同样存在，被 ID 口径的崩溃挡住没量到）。
+- **修法（回包形状）**：`apply` / `import_drafts` / `change` 的请求带 `editRows: true` 时，`Session::finish` 收尾之后给回包
+  `edits` 里有输入下标的每项补 `[行 JSON, 服务器时刻]`、`tagWrites` 每项补 `[行 JSON]`——都由 `read edits` 用的同一个
+  `cmd/mod.rs` `edit_rows` 出（逐字相同；那一行已被同批后面的写入盖掉 = null）。不带这个键的回包形状不变（导入大批不付这笔
+  成本）。Dart `_emit` 带 `stamps` 时发 `editRows`，`_writtenEdits`（原 `_readBackEdits`）直接从回包拼 `SrsFieldEdit`，删掉
+  命令后的 `_editItemsById` 回读；`SrsWrittenItem` 加 `row` / `serverTime`。preread 期望（0 / 8）不动。
+
+### 测试
+
+- Rust（`store/gen4/cmd/writes_tests.rs`，与协议 3 对拍）：`an_anki_revlog_on_two_cards_of_a_lineage_counts_once`（统计
+  (1, 1)、日志 HLC 是派生值、`same_state`）、`an_anki_review_older_than_a_native_one_does_not_reschedule_the_card`
+  （最后一条日志仍是 r3）、`an_import_anchor_sorts_after_the_revlog_of_the_same_millisecond`（输入里锚点在前；`logHlcs` 与
+  `read logs` 相同）、`edit_rows_in_the_reply_are_what_read_edits_gives`；`cmd/sync_tests.rs`
+  `an_anki_revlog_imported_on_two_devices_is_one_event`（两台设备各导入一份、同步后统计 1 行、卡片行逐行相同、摘要相同）、
+  `a_cache_built_under_older_rules_is_rebuilt_once_on_open`；`anki_import_rules` 两条（共用向量、锚点排序）。
+- Dart：`packages/fushi_srs/test/anki_source_hlc_vectors_test.dart`（新）；`srs_written_edits_match_test` 加一条回包带行。
+- 变异（各自还原后 `git status` 干净）：`log_body` 不派生 → Rust 4 条 C4 用例红；Dart（同一变异编出的 DLL）
+  `srs_apkg_anki_revlog_dedupe` 2 条 + `srs_apkg_import`「① 导入」红。`logHlcs` 不派生 → 锚点用例红。`cache_config_set` 不看
+  `cacheRules` → 重建用例红。不补修改行 → `edit_rows…` 红；Dart 不发 `editRows` → `srs_write_preread_cost` 3 条红（报
+  「carries no stored row」）。
+
+### 没做 / 交给谁
+
+- `srs_write_preread_cost`「彻底清除」仍红（ops 计数 Expected 973 / Actual 958），与本节无关：§26 C1C5 定因时就量到
+  971 / 956（同样差 15），疑与 G8-7b 合入有关，归彻底清除 / 同步 owner。
+- Dart `srs_profile_merge.dart:617/631` 用 `l.hlc == srsImportedRevlogHlc(...)` 认导入日志：读侧的 `hlc` 现在就是派生值，
+  按代码路径应已恢复，但本节没有专门的测试覆盖它（G9-5 并入路径的 owner 复核）。
+- 从 Fushi 导出包回导、按新卡重映射的「外来原生日志」（`srs_apkg_import.dart` `_remapExtLog`，origin = fushi）的 `hlc`
+  同样在 `parse_item` 被丢、按操作 HLC 排；它们的 EventKey 比卡，不跨卡成组，所以不会重复计数，但排序从作者 HLC 变成了
+  导入时刻。本节没改（不在 C4 范围，需要的话归导入 owner 判断要不要也在投影层保留作者时刻）。

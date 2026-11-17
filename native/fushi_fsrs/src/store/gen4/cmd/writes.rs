@@ -49,7 +49,7 @@
 //!   - 修改行（只在 `apply` / `import_drafts` / `change` 的请求带 `editRows: true` 时）：`edits` 里有输入下标的每项后面
 //!     补两列 `[…, 行 JSON, 服务器时刻]`，`tagWrites` 每项后面补一列 `[…, 行 JSON]`——都是收尾之后这条修改 / 这条笔记
 //!     合成的 `tags` 行在 `read` 的 `edits` 里的 `j` / `st`（同一个函数 [super::edit_rows] 出的，逐字相同）；那一行已
-//!     不是活着的（同批后面的写入盖掉了）是 null。调用方（Dart `_emit(stamps: true)` 的 `_readBackEdits`）直接用它拼
+//!     不是活着的（同批后面的写入盖掉了）是 null。调用方（Dart `_emit(stamps: true)` 的 `_writtenEdits`）直接用它拼
 //!     落库后的修改记录，不在命令之后再发一条 `read edits` 回读（T1 `srs_write_preread_cost`）。
 //!   - `entityWrites`（G9-7）：每条落下的身份记录 `[输入下标, 种类, 规范实体 ID]`（输入下标规则同 `edits`）。调用方
 //!     按请求 ID 建实体（Dart `createDeck` / `createNote` / 内置实体），返回给上层的是这里的规范 ID，不拿请求 ID 当
