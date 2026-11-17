@@ -12,7 +12,7 @@ use crate::store::gen4::native::tests::{me, ready};
 use crate::store::gen4::receive::{Received, Receiver, Taken};
 use crate::store::gen4::schema::open_in_memory;
 use crate::store::gen4::truth::tests::bound;
-use crate::store::gen4::truth::{Entry, Peer, TRUST_PENDING};
+use crate::store::gen4::truth::{Entry, Peer, TRUST_PENDING, TRUST_REJECTED};
 use crate::store::sync2::collection_of;
 use crate::sync2::op as v3;
 use crate::sync2::segment::tests::ops_for;
@@ -671,4 +671,22 @@ fn long_old_segments_leave_a_cut_point_every_4096_slots() {
     );
     let (_, plan, _) = plan_after(&t, col, 4000, &[], None);
     assert_eq!(ranges(&plan), vec![(1, 4096, false), (4097, 4097, false)]);
+}
+
+/// 只替本机信任的作者上传（G10-4，文件头）：承袭日志的作者在本机待确认 / 已拒绝时，这一轮不替它切段、不传；本机确认
+/// 之后照常整条传。判据只看作者在本机的信任，与有没有别的承袭日志无关（[Uploader::open] 本身就筛，不靠同步轮的指纹）。
+#[test]
+fn an_author_this_device_does_not_trust_is_not_uploaded() {
+    let (conn, col, _) = mine_with(&[6, 10], 10);
+    let t = Truth::new(&conn);
+    for state in [TRUST_PENDING, TRUST_REJECTED] {
+        t.tx(|t| t.set_trust(col, &id(OLD), Some(state), NOW))
+            .unwrap();
+        let (_, plan, packed) = plan_after(&t, col, UPLOAD_MAX_SLOTS, &[], None);
+        assert_eq!(plan, UploadPlan::default(), "state {state}");
+        assert!(packed.is_empty());
+    }
+    t.tx(|t| t.set_trust(col, &id(OLD), None, NOW)).unwrap();
+    let (_, plan, _) = plan_after(&t, col, UPLOAD_MAX_SLOTS, &[], None);
+    assert_eq!(ranges(&plan), vec![(1, 10, false)]);
 }
