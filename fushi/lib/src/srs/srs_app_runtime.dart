@@ -612,6 +612,8 @@ class SrsAppRuntime {
         msg = t.srs_sync_clock_skew;
       case SrsSyncNotice.awaitingConfirm:
         msg = t.srs_sync_awaiting_confirm;
+      case SrsSyncNotice.locationProtocol1:
+        msg = t.srs_sync_location_protocol1_root;
     }
     FushiToast.show(msg: msg, severity: ToastSeverity.warning);
   }

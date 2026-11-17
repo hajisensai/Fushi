@@ -10073,6 +10073,7 @@
   "srs_sync_failed": "Couldn't sync review data: $reason",
   "srs_sync_join_provisional_hint": "This device hasn't joined the review data already on your sync location yet. Keep studying as usual; it will be merged the next time sync connects.",
   "srs_sync_location_meta_unavailable": "The location's settings file can't be read right now; it will be retried next time.",
+  "srs_sync_location_protocol1_root": "This sync location still uses a very old format (v2). Sync it once with a Fushi 3.x version to upgrade it, or choose another location. Your local cards and review history are not affected.",
   "srs_sync_no_backend": "No sync service is set up",
   "srs_sync_now": "Sync now",
   "srs_sync_now_busy": "Already syncing: $progress",

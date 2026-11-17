@@ -804,7 +804,7 @@ void main() {
       nowMs: () => 1000,
     );
     expect(host.last('location_root')['has2'], isTrue);
-    expect(r.error, contains('srs_location_protocol1_root'));
+    expect(r.error, kSrsLocationProtocol1Root);
     expect(host.ops(), isNot(contains('plan')));
     expect(v4.files, isEmpty);
     expect(v3.files, isEmpty);

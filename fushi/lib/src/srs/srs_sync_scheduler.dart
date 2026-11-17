@@ -377,6 +377,9 @@ enum SrsSyncNotice {
 
   /// 升级到同步 v2 后首次同步还没确认（[kSrsSyncAwaitingConfirm]），复习数据暂不同步。
   awaitingConfirm,
+
+  /// 有同步位置只有协议 1 旧根 `v2/`（[kSrsLocationProtocol1Root]）：要先用 3.x 同步一次把它升级，或换一个位置。
+  locationProtocol1,
 }
 
 /// [SrsSyncScheduler.ensureMigrated] 迁移之前那轮只拉不发的范围：[within] 非 null = 只收调用方这一轮的那条位置；
@@ -1223,6 +1226,9 @@ class SrsSyncScheduler {
     if (report.error == kSrsSyncNeedsUpgrade) {
       _noticeOnce(SrsSyncNotice.backendUnsupported);
     }
+    if (report.error == kSrsLocationProtocol1Root) {
+      _noticeOnce(SrsSyncNotice.locationProtocol1);
+    }
     bool mediaChanged = false;
     final Future<Directory?> Function()? readMediaRoot = _readMediaRoot;
     // 媒体对账要逐个过一遍全部引用的媒体、扫三遍笔记引用：只在媒体引用可能变了（本机或别的设备改了笔记 / 笔记类型
@@ -1832,6 +1838,9 @@ class SrsSyncScheduler {
         final String? error = outcome.locationError;
         if (error != null) {
           folderErrors[l.id] = SrsSyncReportError(error);
+          if (error == kSrsLocationProtocol1Root) {
+            _noticeOnce(SrsSyncNotice.locationProtocol1);
+          }
           continue;
         }
         folderErrors.remove(l.id);

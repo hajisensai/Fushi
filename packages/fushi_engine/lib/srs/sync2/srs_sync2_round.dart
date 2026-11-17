@@ -107,6 +107,10 @@ const String kSrs4RootNeedsUpgrade = 'needsUpgrade';
 /// 位置上的新根 meta 与本机对不上（别的集合 / 认不得的外形）：这一轮不同步，什么都不写。
 const String kSrs4LocationRefused = 'srs location root refused';
 
+/// 位置只有协议 1 旧根 `v2/`（内核 `oldroot.rs` `ERR_PROTOCOL1_ROOT`，同一个机读码）：这一轮的 [SrsSync2Report.error]
+/// 正好是它，界面据此给专门的升级提示（先用 3.x 同步一次把位置升级，或换位置；本机卡片不受影响），不当一般错误报。
+const String kSrsLocationProtocol1Root = 'srs_location_protocol1_root';
+
 /// 不是一个同步位置的读（v1 旧根的一次性迁移）：`plan` 记位置上的 head 时用的位置名。
 const String kSrs4NoLocation = 'oldroot';
 
@@ -517,9 +521,12 @@ Future<SrsLocationRoot?> srsSync4LocationRoot({
     return null;
   }
   if (state != kSrs4RootOk) {
-    // 带机读码的拒绝（只有协议 1 旧根：`srs_location_protocol1_root`）把码放在前面，界面按它给升级提示。
+    // 只有协议 1 旧根：错误就是机读码本身（[kSrsLocationProtocol1Root]），界面按它给专门的升级提示；其余带码的拒绝把
+    // 码放在前面。
     final Object? code = root.map['code'];
-    report.error = code == null
+    report.error = code == kSrsLocationProtocol1Root
+        ? kSrsLocationProtocol1Root
+        : code == null
         ? '$kSrs4LocationRefused: ${root.map['error']}'
         : '$kSrs4LocationRefused: $code: ${root.map['error']}';
     return null;

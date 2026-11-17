@@ -10073,6 +10073,7 @@
   "srs_sync_failed": "复习数据同步失败：$reason",
   "srs_sync_join_provisional_hint": "这台设备还没加入同步位置上已有的复习数据。照常使用即可，下次同步连上时会自动合并。",
   "srs_sync_location_meta_unavailable": "暂时读不到这个位置的设置文件，下次同步时再试。",
+  "srs_sync_location_protocol1_root": "这个同步位置还是很旧的格式（v2）。先用 3.x 版本同步一次把它升级，或者换一个同步位置。本机的卡片和复习记录不受影响。",
   "srs_sync_no_backend": "还没有配置同步服务",
   "srs_sync_now": "立即同步",
   "srs_sync_now_busy": "正在同步：$progress",

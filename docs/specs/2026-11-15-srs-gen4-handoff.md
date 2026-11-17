@@ -1278,11 +1278,18 @@ schema `40021`：`relay_segs`（收段时留下的可转发作者段，不封装
    文件夹与云端位置都走到 outbox / head（`srs_folder_location_test`、`sync_complete_tests.rs` 的媒体两设备用例）。
 2. **旧根接手（硬条件）**：`v3/` 每轮按清单指纹判要不要读（没变不读），收进承袭日志后经承袭段发到新根；新设备只连
    新根也拿得全（`old_root_takeover_reaches_migrated_and_new_devices_alike`：两台各自接手 + 一台新设备，派生层相同）。
-   **只有协议 1 `v2/` 的位置不做一次性迁移，明确拒绝**（D21 定为不支持）：机读码 `srs_location_protocol1_root`、位置上
-   一个字节不写、本机卡片与复习记录不动，提示「先用 3.x 同步一次把位置升级，或换一个同步位置」。理由：旧迁移入口
-   `srsPrepareLocation` 按协议 3 写 `minReader 3` 的 v3 meta，在协议 4 下等于拆围栏；在新代里再实现一份协议 1 读者
-   代价与风险都远大于收益（协议 1 已两代之前）。另外每个位置都先在 `v2/` 立协议 1 围栏（`srsEncodeV1Fence`），协议 1
-   客户端读到就停。**与任务书「v2/ 一次性迁移接进一轮同步」不符，按「旧格式兼容可从简（明确拒绝并提示升级）」定案。**
+   **只有协议 1 `v2/` 的位置不做一次性迁移，明确拒绝——这是偏离 D21，不是按 D21**（上一版这里写成「D21 定为不支持」
+   是错引：设计稿 `2026-11-11-srs-generation-break.md` 的 D21 原文与 §G8 行都是「协议 1 旧根继续支持，入口改只读转译
+   （转进承袭日志）、不写 v3 meta」，本文开头的 D21 条也是这么记的）。按所有者授权「旧格式兼容可从简（明确拒绝并提示
+   升级），不能丢用户现有卡片和复习记录」定案：机读码 `srs_location_protocol1_root`、位置上一个字节不写、本机卡片与复习
+   记录不动（拒绝发生在碰位置、碰本机库之前），界面给专门的升级提示（见下「复核修复」第 3 条）。理由：旧迁移入口
+   `srsPrepareLocation` 按协议 3 写 `minReader 3` 的 v3 meta，在协议 4 下等于拆围栏；按 D21 原文做只读转译要在新代
+   重写一份协议 1 读者（Dart 旧入口 `srs_location_migration.dart` 1649 行），代价与风险都远大于收益（协议 1 已两代之前）。
+   另外每个位置都先在 `v2/` 立协议 1 围栏（`srsEncodeV1Fence`），协议 1 客户端读到就停。
+   **后果**：只在协议 1 位置上同步过、从没用 3.x 同步过的用户，升级后这个位置用不了（本机数据完好），要先用 3.x 同步一次
+   或换位置；位置上只存在于协议 1 根里的别的设备的操作，在那台设备升级之前拿不到。**与任务书「v2/ 一次性迁移接进一轮
+   同步」及设计稿 D21 都不符，交 integration owner / 所有者确认；不认可就按 D21 原文补只读转译（可复用 `oldroot` /
+   承袭那套积木）。**
 3. **多台各自迁移的设备不做副本收敛**（§11 第二条交 G8 / G9 的那项）：同一份协议 3 历史经旧根接手走承袭日志，按
    （旧设备, seq）槽对齐（同号槽只降不升，D19），不会多一份；§11 说的「每台各自把旧行包一遍」产生的是各自设备名下的
    原生操作，派生层按 dot / 日志 ID 取操作号最小的那份（`derive.rs`），用户看到的结果正确，只多体积与同步量。要收敛
@@ -1304,7 +1311,7 @@ schema `40021`：`relay_segs`（收段时留下的可转发作者段，不封装
 6. **purge 接成生产路径**：`Session` 收尾与 `Receiver` 收尾里 `Index::execute_purges` 把被清除的操作在同一事务落成空洞，
    发件按「传时空洞条数」退水位重切重传（`the_purge_command_voids_published_ops_everywhere`）。
 7. **转发**（协议 3 `relay.rs` 的新代对应物，设计 §4.4 / D16 A）：收段时把别的受信设备的原生段 / 中继件重新包成不封装
-   的 `FRL4` 存进 `relay_segs`（只在本机同步着 ≥ 2 个位置时存）；`plan` 把读到的别的设备 head 按代号只进不退记进
+   的 `FRL4` 存进 `relay_segs`（只在本机同步着 ≥ 2 个活跃位置时存，活跃见「复核修复」第 2 条）；`plan` 把读到的别的设备 head 按代号只进不退记进
    `srs_meta` `gen4_rhead/<col>/<设备>`；`relay_outbox` 给目标位置缺的段（按目标位置钥匙封装，签名照用作者的），段都
    确认之后才给 `rhd-` head；每个位置都有了就删原文。本机在有第二个位置之前就收过的段：`plan` 再要一次（收段按已有
    跳过、只留原文），下一轮转发。被转发的 head 用 `rhd-` 前缀，不覆盖作者自写的 `head-`、不当位置证据。
@@ -1338,5 +1345,41 @@ Dart：`srs_format_break_test`（保留并转绿）、`srs_sync4_round_test`（�
   改成切小段）、`srs_location_sealed_test`「从没见过加密的明文位置」。没有绕开，等 G9-7。
 - 收尾时投递等待缓冲（`Receiver::finish` 的 drain）不受 `maxItems` 约束：依赖最后才到、之前堆了大量等待项时那一片
   可能偏长。要收紧得让 drain 也分片（跨事务记游标），本轮没做。
-- `srs_location_runner.dart` / 调度器对 `srs_location_protocol1_root` 只当一般错误报，没有专门的「请升级位置」提示文案
-  （要加 i18n key，归 UI）。
+- `oldroot_ingest`（旧根接手的落库）没有 `maxItems`：每批按 Dart 的 8 MB 字节预算切，一批一个写事务。迁移后第一轮捡
+  大的旧根时一个事务可能装几百个协议 3 段，作答要等它。没切是因为收尾批（`settle`）要求「这一批正好是本轮重算的待读
+  清单」才记指纹（指纹与落库同一事务，`oldroot.rs` 文件头）——按项切会让收尾批永远凑不齐整份清单，得先把指纹改成
+  跨事务累计的形状。影响只在迁移后第一次捡旧根（之后清单不变不读）。
+- Dart 侧「双作者、依赖方段排在前面」的真内核用例没加：要本 worktree 重编原生库（内存紧、同批在编），本轮用 Rust 用例
+  `ingest_slices_count_parked_items_as_progress` 逐字照搬 Dart 的进展判据代替。下一个带原生库的 worktree 补一条
+  `srs_sync2_ingest_batching_test` 用例即可。
+- 移除位置没有生产路径删 `loc_state` / 调 `forget_location`（新代没有「移除位置」命令）：转发已按活跃窗口不再等死位置，
+  剩下的只是几行状态。要做就在 G10 的位置管理里加一条命令。
+- `ffi.rs` wiring 分类断言是 `unwired > 0`（只剩 G9-5 的 `profile_merge_mark`）：G9-5 合流后要改成允许为空或删掉。
+
+### 复核修复（2026-11-17 第二轮）
+
+1. **收段切片误判没进展（major）**：`ingest` 回包新增 `spent`（这一片做的新工作：落库 + 新进等待缓冲，`Receiver::spent`）。
+   Dart `sync2IngestBatch` 只在 `rest == 0 && spent == 0` 时判契约坏了；以前拿 `landed` 当代理，依赖方的段排在前面时
+   一片全停进等待缓冲（`landed = 0`）就抛 `StateError`，大库首次同步要连着失败约 N/256 轮。用例
+   `ingest_slices_count_parked_items_as_progress`（a 写 300、b 改这 300、c 收时 b 的段在前、预算 100，至少一片是「只停
+   放」，一路收完、与 b 收敛）。变异：回包 `spent` 改回 `landed` → 该用例红。
+2. **转发目标只认活跃位置（major）**：`head` 写 head 时记 `loc_state.last_ok`（不变跳过也记，这一轮在这个位置成功了）；
+   转发目标 = `last_ok` 非空、且离本机最近一次成功不超过 30 天（`ACTIVE_WINDOW_MS`，协议 3 同值）。与协议 3 不同，
+   `last_ok` 为空的不算：新代的空行来自迁移（`carry.rs` 把协议 3 见过的每个加密位置都灌进来）和 `plan` 第一次读到位置
+   时建的行，都证明不了位置还在用；新位置第一轮写完 head 就进来，晚一轮开始转发。用例
+   `stale_or_never_synced_locations_are_not_relay_targets`（迁移行 + 40 天前的旧位置：不留原文、`plan` 不为它补拉）、
+   `a_location_left_idle_past_the_window_stops_holding_relay_copies`（超出窗口后下一轮 `plan` 的 prune 清空原文、之后不再
+   留）。变异：去掉窗口筛选 → 两条都红。
+3. **协议 1 旧根的升级提示**：`srsSync2Round` 遇到 `srs_location_protocol1_root` 时 `report.error` 就是机读码本身
+   （`kSrsLocationProtocol1Root`）；i18n `srs_sync_location_protocol1_root`（`i18n_sync` 加齐 17 语言）；调度器发一次
+   `SrsSyncNotice.locationProtocol1`（toast），「立即同步」的失败原因与复习历史页的位置行都显示这句，不再是泛泛的
+   「同步失败 / 位置不可用」。定案改写见上「定案」第 2 条。
+4. **被转发 head 不当位置证据**：`a_device_on_two_locations_relays_between_them` 末尾先让 c 再写一条、b 在 L2 收下，再让 b 在
+   L1 跑一轮（读得到 L1 上 c 的 `rhd-`），断言 c 不进 L1 的 `loc_heads`、留给 L1 的原文没被 prune。变异：`plan` 的
+   `if !is_relayed` 改 `if true` → 该用例红（以前三个模块 35 条全绿）。
+5. **转发的读取**：`wanted_for_relay` 判原文在不在改用 `RELAY_HAS_SQL`（`SELECT 1 … LIMIT 1`，不读 `piece`）；`relay_out`
+   按 `(col, loc_key, device)` 主键前缀查（`Truth::relay_out_of`，`relay_ack` 循环里与 `sent_names` 都用它）；`plan` 与
+   `relay_outbox` 的旧身份整轮取一次。两条新语句进 `relay_lookups_use_their_keys`。
+6. **承袭段计入收段预算**：`land_slots` 把落下 / 待投的槽记进 `spent`；承袭段不在中途停，但用完预算后这一片不再开下一段。
+   用例 `heritage_segments_count_toward_the_ingest_budget`（旧根接手后的新设备按预算 1 收：第一片只收承袭段、`spent` ≥
+   落下的旧历史，原生段留到下一片）。变异：去掉计数 → 该用例红。`oldroot_ingest` 本身没切，见「没做」。
