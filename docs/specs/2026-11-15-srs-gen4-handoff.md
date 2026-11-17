@@ -1318,3 +1318,65 @@ G8 子规划文档在仓库里不存在（任务点名的「G8 子规划」找�
 - `ffi.rs` `every_protocol_3_command_has_a_gen4_wiring` 的未接线下限从 `> 10` 放到 `> 0`（未接线只会随模块接线减少）。
 - `cmd/dispatch_tests.rs` 的 `open` / `call` / `g4req` / `g4` / `T1` / `cfg` 与 `cmd::dispatch_tests` 模块改成 `pub(crate)`，
   给 `prepare_tests.rs` 经 C ABI 跑半截并入收尾用。
+
+## G9-5 复核修复（2026-11-17，同分支 `pr/srs-gen4-g9-5-profile-merge`）
+
+### 半截并入的 Dart 收尾接上了（复核 major）
+
+上一轮只改了内核：迁移不再拦 `mergeHalfDone`，标记带进新代库，`profile_merge_commit {from, to, now}` 收尾；但 Dart 的
+`_resumePendingMerges` 仍调协议 3 的 `srsMergeProfileUid`，第一步发 `profile_merge_mark`（`REMOVED`），而以前被拦在迁移
+外的这批用户现在能迁进来、`read_lib profile_merges` 读得到标记——每一轮 link 都失败、记一条错误日志，`from` 的集合作为
+看不见的第二个集合一直留着、收尾永远做不完。上一轮交接里「此前报 UNWIRED，同样失败，没有新的回退」对这批用户不成立，
+特此更正。本轮：
+
+- `srs_profile_merge.dart` 收成「续做半截并入」：`srsResumeProfileMerge(db, profileId, oldUid, newUid, commit, mediaRoot)`。
+  主库还指着旧 uid 时先拷媒体（内容寻址、不覆盖）、改主库 uid，再调 `commit`（生产 = `srsFinishProfileMerge`，发
+  `profile_merge_commit {from, to, now}`），之后再拷一次媒体并删旧媒体目录；主库已是新 uid 时只做收尾。顺序不能反：先收尾
+  后改主库，中间被杀主库就指着一个没有集合也没有标记的 uid，打开时建空集合、数据看上去全丢。失败留着标记，同样参数重跑。
+- 协议 3 的重映射算法（约 800 行）、`SrsProfileMergeDeferred` / `SrsProfileMergeStage` / `SrsProfileMergeResult` /
+  `kSrsMergedWriterPrefix` 删了；`srsMergeProfileUid` 只剩抛 `SrsProfileMergeRemoved`（签名留着只因冻结的协议 1 客户端测试
+  副本 `test/srs/sync2/v1_client` 不许改；那份副本随 G7-6 删时一起删）。
+- `srs_profile_data.dart`：删 `srsMarkProfileMerge`，`srsCommitProfileMerge` 换成新语义的 `srsFinishProfileMerge`
+  （回 `SrsProfileMergeFinish = (folded, outcome)`）。
+- `SrsDbProfileLinker`：`_resumePendingMerges` 改走 `srsResumeProfileMerge`；续做失败不往外抛（标记留着、下一轮重试），
+  同一个失败每进程只记一次日志（`_resumeFailuresLogged`），不每轮刷。新代没有「暂缓的并入」：`deferredMerge` 恒 null，
+  `_noteDeferred` / `_deferred` 删了；`SrsDeferredProfileMerge` / `SrsProfileAdoptDeferred` 类型留给调度器与同步状态页，
+  随关联重写删。用户在冲突弹窗里选定候选、本机有数据（要并入）时 `_switchUid` 在记退役设备之前就抛
+  `SrsProfileMergeRemoved`、什么都不改（以前是发到 `REMOVED` 才失败）。新的时钟注入点 `nowMs`。
+- 「调度器每一轮都调 link」仍是从 `srs_sync_scheduler` 持有 `profileLinker` 推出来的，没有 app 实测。
+
+### 其余复核项
+
+- **补完后第二次空间核对的调用处**：`migrate.rs` 加 `free_bytes` 测试注入点（`FREE_BYTES`，按调用现算）；测试
+  `prepare_tests.rs` `the_second_space_check_after_completion_does_not_count_the_copy_as_free`：副本出来之后那次核对注入
+  「副本要的 − 1」，结论必须 `noSpace`、原件不动、不留新代库。变异实测：`PrepCopy::InUse` → `Stale` 该测试红。
+- **真实半截并入的重映射副本**：`a_half_done_merge_with_remapped_copies_folds_them_back_into_one`——P 里放协议 3 并入第一遍
+  落下的副本（经 `apply` 写成 P 的操作；日志与卡都按兜底 ID `v5(NS, profile-merge/<P>/<旧 ID>)`），旧 uid 的默认牌组按旧
+  uid 派生。收尾之后复习日志按规范 ID 数不多出一条，兜底 ID 与原件同一个规范 ID，两个 uid 的默认牌组归成同一个。变异实测：
+  `gen4_ids/alias.rs` `fallbacks_of` 不认兜底 ID 时该测试红。**没覆盖**：`merged-…~<原写入者>` 改名写入者的修改记录与按新
+  uid 重新派生的笔记类型 / 字段 / 模板副本（夹具要先在旧 uid 下造笔记与修改记录；别名层对这两类各有单元测试）。另：一开始
+  把副本写成 P 的**旧投影行**（不是操作）时迁移对拍判 `fail`（P 已包完、补完不再包那一行）——那不是真实形态（协议 3 并入
+  经 `applyRemote` 写操作），记在这里免得后人再踩。
+- **`profile_purge` 的确认**：`srs_profile_cleanup.dart` 在 `_prepareUid`（给用户看规模、导出备份）时记下
+  `store.sync2Collection`，`run()` 作为 `collection` 传给 `srsPurgeProfileRows`；确认之后改绑 / 并入过就报错、一行不删。
+  测试 `fushi/test/srs/srs_profile_cleanup_test.dart`「G9-5: the purge checks the collection the user confirmed …」（准备后
+  经 `collection_adopt` 按 D27 并入对方并改绑，`run()` 抛错、规模不变）。`srs_backup_merge.dart` 里的两处调用（归 G11-4）
+  没传，未动。
+- **空集合换绑带走本机声明过的盐**：`AdoptOutcome::Bound` 加 `carry`（换绑丢掉的空集合里本机算数、对方不算数的盐）；
+  `cmd/identity.rs` `collection_adopt` 在 `ensure_self` 之后 `carry_salts` 补写一条 `Salts`。测试
+  `cmd/profile_data_tests.rs` `rebinding_an_empty_collection_carries_the_salts_it_declared`（`collection_salts_add` 过的旧 uid
+  换绑后仍在盐集合里、`nextSeq` = 3）。变异实测：`carry` 恒空该测试红。
+- **`srsRemoveOwnProfileFolder` 不再删 `v4/` 根**：只删 `v4/devices/<本机>`，根（含 `meta.json`）与 profile 目录永远留着——
+  别的设备可能已按 `meta.json` 换绑、还没发布设备目录。`srs_profile_link_test.dart`「清理认识新代根 v4/」改断言。
+- **死测试**：`fushi/test/srs/srs_pull_before_migrate_test.dart` 的「档案合并之前的拉取按进度判」整组（测协议 3 并入前的
+  只拉不发，路径已不存在）与只供它用的 `_HangingStore` / `_DeviceB` 删了；`srs_profile_purge_single_test.dart` 的并入用例删了。
+
+### 没做 / 交给谁（G9-5 续）
+
+- `srs_profile_link.dart` 关联流程改走 `collection_adopt` / `collection_join`（按 `v4/meta.json` 的 `collection` 列远端集合，
+  确认页沿用，位置目录用 `identity` 回的 `dir`，linker 传 `v4Device`）：没做。现状：本机有数据的 profile 在冲突弹窗里选定
+  候选会明确报 `SrsProfileMergeRemoved`（不改任何东西），只有本机没数据的「采用」还能走。没定的设计点：D27 吸收方向
+  （本机目录名小、对方并进来）时对方设备读不到本机位置上的 `Join`，要先定发现机制。
+- `ensureMigrated` 之后的「迁移前只拉不发」（`srs_sync_scheduler.dart` `_pullInto` / `pullBeforeMerge`、`srsSync2PullOnly`、
+  linker 的 `pullBeforeMerge` 参数与 app 装配）没删：调度器是同批多个模块的热点文件，删上千行留给 integration owner 合流后
+  单独一段做。`srs_pull_before_migrate_test.dart` 剩下的用例本来就 `skip`。

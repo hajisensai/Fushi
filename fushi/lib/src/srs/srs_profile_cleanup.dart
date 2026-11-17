@@ -202,6 +202,7 @@ class SrsProfileCleanup implements ProfileDeletionCascade {
         mediaDir: mediaDir,
         impact: scan.impact,
         backupPath: null,
+        collection: null,
       );
     }
     final SrsDbStore store;
@@ -230,6 +231,9 @@ class SrsProfileCleanup implements ProfileDeletionCascade {
       mediaDir: mediaDir,
       impact: scan.impact,
       backupPath: backup.path,
+      // 给用户看的规模、导出的备份都是这个集合的：删的时候让内核核对 profile 此刻还绑着它（确认之后改绑 / 并入过
+      // 就报错、什么都不删，G9-5 `profile_purge`）。
+      collection: store.sync2Collection,
     );
   }
 
@@ -303,6 +307,7 @@ class _SrsCleanup implements ProfileDeletionCleanup {
     required this.mediaDir,
     required this.impact,
     required this.backupPath,
+    required this.collection,
   });
 
   final SrsProfileCleanup owner;
@@ -315,12 +320,17 @@ class _SrsCleanup implements ProfileDeletionCleanup {
   @override
   final String? backupPath;
 
+  /// 准备时 profile 绑着的集合（用户确认删的就是它）；null = 库里没有它的行，不删库。
+  final String? collection;
+
   @override
   Future<void> run() async {
     final SrsStorage? s = storage;
     final SrsDbStore? target = store;
     if (s != null && target != null) {
-      await target.retire(() => srsPurgeProfileRows(s.core, uid));
+      await target.retire(
+        () => srsPurgeProfileRows(s.core, uid, collection: collection),
+      );
     }
     if (mediaDir.existsSync()) await mediaDir.delete(recursive: true);
     await owner._deleteRwkvSnapshots(uid);

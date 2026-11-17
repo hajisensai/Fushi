@@ -662,4 +662,37 @@ void main() {
       expect(backups.existsSync(), isFalse);
     },
   );
+
+  // G9-5 复核：删 profile 时内核核对「用户确认的就是这个集合」（`profile_purge` 的 `collection`）。准备（给用户看规模、
+  // 导出备份）之后、真正删除之前 profile 改绑到了别的集合（这里：本机目录名比对方大，按 D27 并入对方并改绑）——
+  // 删除报错，库里这个 profile 的数据一条不少。
+  test('G9-5: the purge checks the collection the user confirmed; a rebind in '
+      'between makes it fail and deletes nothing', () async {
+    await loadedVm();
+    final int goneId = await repo.createProfile('B');
+    final String goneUid = await uidOf(goneId);
+    await activeStore();
+    await seed(goneUid, notes: 2, reviews: 1);
+    final ProfileRow row = (await repo.getAllProfiles()).firstWhere(
+      (ProfileRow r) => r.id == goneId,
+    );
+    final ProfileDeletionCleanup cleanup = await newCleanup().prepare(row);
+    final Map<String, Object?> adopted = storage.core.sync2(<String, Object?>{
+      'op': 'collection_adopt',
+      'profile': goneUid,
+      'collection': '0193a1b2-0000-7000-8000-00000000f00d',
+      'dir': '00000000-0000-7000-8000-000000000000',
+      'confirmed': true,
+      'now': DateTime(2026, 10, 27, 9, 31).millisecondsSinceEpoch,
+    }).map;
+    expect(adopted['outcome'], 'joined', reason: '$adopted');
+    final SrsProfileFootprint before = await srsProfileFootprint(
+      storage.core,
+      goneUid,
+    );
+    expect(before.notes, 2);
+
+    await expectLater(cleanup.run(), throwsA(anything));
+    expect(await srsProfileFootprint(storage.core, goneUid), before);
+  });
 }

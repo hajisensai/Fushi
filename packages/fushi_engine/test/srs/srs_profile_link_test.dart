@@ -586,7 +586,7 @@ void main() {
     });
 
     // G9-5：新代集合根 `v4/` 不是写入者目录（名字碰巧像本设备的写入者也不算）；只删本机新代身份的设备目录，
-    // 别的设备还在就整个根与 profile 目录都留着；不给本机新代身份时 `v4/` 一个字节不碰。
+    // 根与 profile 目录永远留着；不给本机新代身份时 `v4/` 一个字节不碰。
     test('清理认识新代根 v4/：只删本机新代设备目录', () async {
       final String ns = await store.ensureNamespace(kSrsSync2Namespace);
       final String profile = await store.ensureFolder(ns, kMine);
@@ -624,21 +624,25 @@ void main() {
         isFalse,
       );
 
-      // 只剩本机自己的新代设备目录：根连同 profile 目录一起删。
+      // 只剩本机自己的新代设备目录：也只删它，根（含 meta.json）与 profile 目录留着——别的设备可能已按 meta.json
+      // 换绑到这个集合、只是还没发布自己的设备目录（复核 nit）。
       await store.deleteAsset(
         (await store.listChildren(devices)).single.id,
         isFolder: true,
       );
       await store.ensureFolder(devices, 'me4');
+      File('${root4.path}/meta.json').writeAsStringSync('{}');
       await srsRemoveOwnProfileFolder(
         store,
         profileUid: kMine,
         deviceId: kDevice,
         v4Device: 'me4',
       );
+      expect(Directory('${root4.path}/devices/me4').existsSync(), isFalse);
+      expect(File('${root4.path}/meta.json').existsSync(), isTrue);
       expect(
         Directory('${root.path}/$kSrsSync2Namespace/$kMine').existsSync(),
-        isFalse,
+        isTrue,
       );
     });
   });
