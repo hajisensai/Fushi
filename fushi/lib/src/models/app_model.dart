@@ -38,7 +38,7 @@ import 'package:fushi_engine/media/video/media_server/media_server_client_identi
     show mediaServerClientIdentity, resolveMediaServerClientIdentity;
 import 'package:fushi_engine/media/video/video_member_file.dart';
 import 'package:fushi_engine/media/video/video_local_files.dart'
-    show videoBookEpisodePath;
+    show videoBookDiscTitlePath, videoBookEpisodePath;
 import 'package:fushi_engine/media/video/video_storage.dart' show VideoStorage;
 import 'package:fushi_engine/media/video/youtube_source_resolver.dart'
     show YoutubeManifestException;
@@ -1142,6 +1142,7 @@ class AppModel
             ),
             database: () => database,
             resolveVideoPath: _resolveHostVideoPath,
+            resolveDiscTitlePath: _resolveHostDiscTitlePath,
             aiSettings: () => prefsRepo,
             mossStatus: appMossProvisionStatus,
           ),
@@ -8601,6 +8602,25 @@ class AppModel
     );
     if (path == null) return null;
     // ASR 要读媒体字节：DVD title / 网络流 / .strm 没有本地媒体文件。
+    return await hasLocalMediaFile(path) ? path : null;
+  }
+
+  /// `/api/jobs` 字幕任务的 (`videoId`, `discTitle`) → 那一行所在蓝光盘上那条 title 的
+  /// 成员路径（远端原盘会话里库中没有行的 title）。判据是 [videoBookDiscTitlePath]，
+  /// 与 fushi_server 同一份。
+  Future<String?> _resolveHostDiscTitlePath(
+    String videoId,
+    String discTitle,
+  ) async {
+    final VideoBookRow? row = await VideoBookRepository(
+      database,
+    ).getByBookUid(videoId);
+    if (row == null) return null;
+    final String? path = videoBookDiscTitlePath(
+      videoPath: row.videoPath,
+      discTitle: discTitle,
+    );
+    if (path == null) return null;
     return await hasLocalMediaFile(path) ? path : null;
   }
 

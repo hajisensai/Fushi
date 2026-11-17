@@ -7,6 +7,10 @@
 ///   `episode`（整数，默认 0）：这一行播放列表的第几集（下标同播放端点的
 ///   `?episode=`），只能和 `videoId` 一起给。capability 的 `acceptsEpisode` 声明
 ///   认这个参数——老 host 不认，会静默跑第 0 集，提交方必须先看这个位；
+///   `discTitle`（相对盘根的 `BDMV/PLAYLIST/<名>.mpls`）：`videoId` 那一行所在蓝光盘上
+///   的另一条 title（库里没有行的原盘 title，远端原盘会话用），经注入的
+///   [resolveDiscTitlePath] 定位，不能与 `episode` 同给。capability 的
+///   `acceptsDiscTitle` 声明认这个参数——老 host 不认，会静默跑 `videoId` 那一行；
 /// - `collectionId`：整季——合集的全部视频成员按成员顺序排队，已有
 ///   `<视频名>.<后缀>.srt` 的集跳过；
 /// - 都不给：用上传的输入（`input` 指名一个，否则全部上传的视频文件；可带 `title`
@@ -108,6 +112,7 @@ class VideoSubtitleJobParams {
   const VideoSubtitleJobParams({
     this.videoId,
     this.episode = 0,
+    this.discTitle,
     this.collectionId,
     this.input,
     this.title,
@@ -184,6 +189,17 @@ class VideoSubtitleJobParams {
         '$kVideoSubtitleJobKind: episode only applies to videoId',
       );
     }
+    final String? discTitle = text('discTitle');
+    if (discTitle != null && videoId == null) {
+      throw const FormatException(
+        '$kVideoSubtitleJobKind: discTitle only applies to videoId',
+      );
+    }
+    if (discTitle != null && episode > 0) {
+      throw const FormatException(
+        '$kVideoSubtitleJobKind: give episode or discTitle, not both',
+      );
+    }
     final String? languageText = text('language');
     final VideoSubtitleLanguage language = languageText == null
         ? VideoSubtitleLanguage.japanese
@@ -199,6 +215,7 @@ class VideoSubtitleJobParams {
     return VideoSubtitleJobParams(
       videoId: videoId,
       episode: episode,
+      discTitle: discTitle,
       collectionId: collectionId,
       input: text('input'),
       title: text('title'),
@@ -224,6 +241,10 @@ class VideoSubtitleJobParams {
 
   /// [videoId] 那一行播放列表的集下标（0 = 主视频 / 单视频）。
   final int episode;
+
+  /// [videoId] 那一行所在蓝光盘上的另一条 title（相对盘根，`BDMV/PLAYLIST/<名>.mpls`）；
+  /// null = 就是 [videoId] 那一行。
+  final String? discTitle;
   final int? collectionId;
   final String? input;
   final String? title;
@@ -267,6 +288,7 @@ class VideoSubtitleHostJobRunner implements HostJobRunner {
     required this.pipelineJobsRoot,
     this.database,
     this.resolveVideoPath,
+    this.resolveDiscTitlePath,
     this.aiSettings,
     AiChatClient Function()? chatClientFactory,
     this.mossStatus,
@@ -296,6 +318,11 @@ class VideoSubtitleHostJobRunner implements HostJobRunner {
   /// null = 不支持 videoId。
   final Future<String?> Function(String videoId, {int episodeIndex})?
   resolveVideoPath;
+
+  /// (`videoId`, `discTitle`) → `videoId` 那一行所在蓝光盘上那条 title 的成员路径（
+  /// 不是蓝光行 / title 不合法 / 本机读不到 → null）；null = 不认 `discTitle`。
+  final Future<String?> Function(String videoId, String discTitle)?
+  resolveDiscTitlePath;
 
   /// host 的 AI 指派（每次现取）；null = 不支持 AI 校对。
   final AiSettingsSource Function()? aiSettings;
@@ -362,6 +389,10 @@ class VideoSubtitleHostJobRunner implements HostJobRunner {
       // 认 `episode`（播放列表第 N 集）。老 host 没有这个位，收到 `episode` 会照第
       // 0 集跑：提交方据此决定第 N 集能不能交给这台 host。
       'acceptsEpisode': resolveVideoPath != null,
+      // 认 `discTitle`（同一张蓝光盘上库里没有行的 title）。老 host 没有这个位，收到
+      // `discTitle` 会照 `videoId` 那一行跑：提交方据此决定远端原盘的 title 能不能交给它。
+      'acceptsDiscTitle':
+          resolveVideoPath != null && resolveDiscTitlePath != null,
       'acceptsCollectionId': database != null,
       'proofreadAvailable': proofreadProvider() != null,
       // 校对提供商开了图片输入：`frames=true` 才真的会带画面。
@@ -390,6 +421,11 @@ class VideoSubtitleHostJobRunner implements HostJobRunner {
     if (parsed.videoId != null && resolveVideoPath == null) {
       throw const FormatException(
         '$kVideoSubtitleJobKind: videoId not supported on this host',
+      );
+    }
+    if (parsed.discTitle != null && resolveDiscTitlePath == null) {
+      throw const FormatException(
+        '$kVideoSubtitleJobKind: discTitle not supported on this host',
       );
     }
     if (parsed.collectionId != null && database == null) {
@@ -633,16 +669,30 @@ class VideoSubtitleHostJobRunner implements HostJobRunner {
           '$kVideoSubtitleJobKind: videoId not supported on this host',
         );
       }
-      final String? path = await resolve(videoId, episodeIndex: params.episode);
+      final String? discTitle = params.discTitle;
+      final Future<String?> Function(String, String)? resolveDisc =
+          resolveDiscTitlePath;
+      if (discTitle != null && resolveDisc == null) {
+        throw const FormatException(
+          '$kVideoSubtitleJobKind: discTitle not supported on this host',
+        );
+      }
+      final String? path = discTitle != null
+          ? await resolveDisc!(videoId, discTitle)
+          : await resolve(videoId, episodeIndex: params.episode);
       if (path == null) {
         throw FormatException(
-          params.episode == 0
+          discTitle != null
+              ? '$kVideoSubtitleJobKind: unknown videoId $videoId '
+                    'disc title $discTitle'
+              : params.episode == 0
               ? '$kVideoSubtitleJobKind: unknown videoId $videoId'
               : '$kVideoSubtitleJobKind: unknown videoId $videoId '
                     'episode ${params.episode}',
         );
       }
-      // 播放列表各集共用这一行的作品上下文与专名表（同一部作品）。
+      // 播放列表各集、同一张盘上的各条 title 共用这一行的作品上下文与专名表（同一部
+      // 作品）。
       final SubtitleWorkContext work =
           await loader?.forBook(videoId) ??
           _fallbackWork(path, params.title, useFolder: true);

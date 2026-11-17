@@ -24,7 +24,7 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi_engine/media/media_extensions.dart' show kVideoExtensions;
 import 'package:fushi_engine/media/video/bluray/bluray_source.dart'
-    show isBlurayPlaylistPath;
+    show blurayDiscRootForPlaylistPath, isBlurayPlaylistPath;
 import 'package:fushi_engine/media/video/dvd/dvd_disc.dart' show isDvdTitlePath;
 import 'package:fushi_engine/media/video/m3u8_playlist.dart' show PlaylistEntry;
 import 'package:fushi_engine/sync/ttu_filename.dart' show sanitizeTtuFilename;
@@ -95,6 +95,41 @@ String? videoBookEpisodePath({
   if (episodeIndex >= entries.length) return null;
   final String path = entries[episodeIndex];
   return path.isEmpty ? null : path;
+}
+
+/// 纯函数：与视频行成员路径 [videoPath] 同一张蓝光盘上的另一条 title（[discTitle]，
+/// 相对盘根、`/` 分隔，形如 `BDMV/PLAYLIST/00005.mpls`）的成员路径。host 按（盘,
+/// title）定位库里没有行的原盘 title（菜单里的特典等）的唯一判据：远端原盘会话的
+/// 字幕任务 `discTitle` 与 `clipaudio?discTitle=` 共用。
+///
+/// 只认蓝光播放列表：恰好三段 `BDMV/PLAYLIST/<名>.mpls`（大小写不敏感），名字里
+/// 不许有路径分隔符、`..`；[videoPath] 不是蓝光成员（没有盘根）→ null。路径只由这
+/// 一行自己的盘根拼出，[discTitle] 走不出这张盘。DVD title 不在此列：DVD 的媒体
+/// 要经原生 libdvdnav 按 title 读，ffmpeg 读不了（`hasLocalMediaFile` 对它恒假）。
+String? videoBookDiscTitlePath({
+  required String videoPath,
+  required String discTitle,
+}) {
+  if (!isBlurayPlaylistPath(videoPath)) return null;
+  final String? root = blurayDiscRootForPlaylistPath(videoPath);
+  if (root == null) return null;
+  final List<String> parts = discTitle.split('/');
+  if (parts.length != 3 ||
+      parts[0].toUpperCase() != 'BDMV' ||
+      parts[1].toUpperCase() != 'PLAYLIST') {
+    return null;
+  }
+  final String name = parts[2];
+  if (name.isEmpty ||
+      name.contains(r'\') ||
+      name.contains(':') ||
+      name.startsWith('.') ||
+      p.extension(name).toLowerCase() != '.mpls') {
+    return null;
+  }
+  final String path = p.join(root, parts[0], parts[1], name);
+  final String? back = blurayDiscRootForPlaylistPath(path);
+  return back != null && p.equals(back, root) ? path : null;
 }
 
 /// 纯函数：这一行视频在本机拥有的原始文件候选（`videoPath` + 播放列表各集），只

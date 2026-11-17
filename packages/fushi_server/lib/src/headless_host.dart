@@ -28,7 +28,7 @@ import 'package:fushi_engine/srs/sync2/srs_host_directory.dart'
     show srsHostUploadedSegmentDevice;
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/video_local_files.dart'
-    show videoBookEpisodePath;
+    show videoBookDiscTitlePath, videoBookEpisodePath;
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show VideoSubtitleBackfillReport;
@@ -403,6 +403,7 @@ class HeadlessHost {
           pipelineJobsRoot: videoSubtitleJobsRootUnder(paths.support),
           database: () => db,
           resolveVideoPath: _resolveVideoPath,
+          resolveDiscTitlePath: _resolveDiscTitlePath,
           aiSettings: () => ServerAiSettings(() => config.ai),
           mossStatus: (MossBackendPreference backend) =>
               mossProvisionStatus(backend: backend),
@@ -985,6 +986,24 @@ class HeadlessHost {
       videoPath: row.videoPath,
       playlistJson: row.playlistJson,
       episodeIndex: episodeIndex,
+    );
+    if (path == null) return null;
+    return await hasLocalMediaFile(path) ? path : null;
+  }
+
+  /// host 库里那一行所在蓝光盘上的另一条 title（远端原盘会话里库中没有行的 title）；
+  /// 判据是 [videoBookDiscTitlePath]，与 app 当 host 同一份。
+  Future<String?> _resolveDiscTitlePath(
+    String videoId,
+    String discTitle,
+  ) async {
+    final VideoBookRow? row = await VideoBookRepository(
+      db,
+    ).getByBookUid(videoId);
+    if (row == null) return null;
+    final String? path = videoBookDiscTitlePath(
+      videoPath: row.videoPath,
+      discTitle: discTitle,
     );
     if (path == null) return null;
     return await hasLocalMediaFile(path) ? path : null;

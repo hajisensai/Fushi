@@ -137,6 +137,58 @@ void main() {
     });
   });
 
+  group('videoBookDiscTitlePath（host 按盘 + title 定位）', () {
+    final String root = p.join(p.separator, 'discs', 'Show Disc 1');
+    final String main = p.join(root, 'BDMV', 'PLAYLIST', '00001.mpls');
+
+    test('同盘的另一条 title：由这一行自己的盘根拼出', () {
+      expect(
+        videoBookDiscTitlePath(
+          videoPath: main,
+          discTitle: 'BDMV/PLAYLIST/00005.mpls',
+        ),
+        p.join(root, 'BDMV', 'PLAYLIST', '00005.mpls'),
+      );
+      // 大小写不敏感（盘上常见大写目录名）；分集虚拟路径也能当锚点。
+      expect(
+        videoBookDiscTitlePath(
+          videoPath: p.join(root, 'BDMV', 'PLAYLIST', '00001.p03.mpls'),
+          discTitle: 'bdmv/playlist/00800.MPLS',
+        ),
+        p.join(root, 'bdmv', 'playlist', '00800.MPLS'),
+      );
+    });
+
+    test('走不出这张盘、不是蓝光播放列表、锚点不是蓝光行 → null', () {
+      for (final String bad in <String>[
+        '',
+        '00005.mpls',
+        'BDMV/PLAYLIST/../00005.mpls',
+        'BDMV/PLAYLIST/..',
+        'BDMV/STREAM/00005.m2ts',
+        'BDMV/PLAYLIST/00005.m2ts',
+        'BDMV/PLAYLIST/sub/00005.mpls',
+        r'BDMV/PLAYLIST/..\..\x.mpls',
+        'BDMV/PLAYLIST/C:x.mpls',
+        '/BDMV/PLAYLIST/00005.mpls',
+        'VIDEO_TS/TITLE_01.dvdtitle',
+      ]) {
+        expect(
+          videoBookDiscTitlePath(videoPath: main, discTitle: bad),
+          isNull,
+          reason: bad,
+        );
+      }
+      expect(
+        videoBookDiscTitlePath(
+          videoPath: p.join(p.separator, 'v', 'single.mkv'),
+          discTitle: 'BDMV/PLAYLIST/00005.mpls',
+        ),
+        isNull,
+      );
+    });
+  });
+
   group('localVideoFileCandidates', () {
     test('videoPath + 播放列表各集，去重、剔远端', () {
       // 路径样本按宿主平台构造：候选筛选走 isLocalVideoFilePath，它本就是宿主

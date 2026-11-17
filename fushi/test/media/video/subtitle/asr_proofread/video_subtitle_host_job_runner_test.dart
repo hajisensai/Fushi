@@ -102,6 +102,7 @@ void main() {
     AiSettingsSource? settings,
     AiChatClient Function()? client,
     Future<String?> Function(String, {int episodeIndex})? resolveVideo,
+    Future<String?> Function(String, String)? resolveDiscTitle,
   }) => VideoSubtitleHostJobRunner(
     resolveRecognizer:
         (
@@ -119,6 +120,7 @@ void main() {
     aiSettings: settings == null ? null : () => settings,
     chatClientFactory: client,
     resolveVideoPath: resolveVideo,
+    resolveDiscTitlePath: resolveDiscTitle,
     probeDurationMs: (String _) async => 1440000,
     // 测试里不起真 ffmpeg。
     frameSource: (String videoPath, int atMs) async => null,
@@ -192,6 +194,23 @@ void main() {
         <String, Object?>{'proofread': false, 'videoId': 'a', 'episode': 1.5},
         <String, Object?>{'proofread': false, 'episode': 2},
         <String, Object?>{'proofread': false, 'collectionId': 3, 'episode': 1},
+        // 原盘 title：只跟 videoId 一起、不与 episode 同给；这个 host 没接
+        // resolveDiscTitlePath（老 host 形状）也拒。
+        <String, Object?>{
+          'proofread': false,
+          'discTitle': 'BDMV/PLAYLIST/00005.mpls',
+        },
+        <String, Object?>{
+          'proofread': false,
+          'videoId': 'a',
+          'episode': 1,
+          'discTitle': 'BDMV/PLAYLIST/00005.mpls',
+        },
+        <String, Object?>{
+          'proofread': false,
+          'videoId': 'a',
+          'discTitle': 'BDMV/PLAYLIST/00005.mpls',
+        },
       ]) {
         expect(
           () => r.validateParams(bad),
@@ -327,6 +346,76 @@ void main() {
     expect(outcome.outputs, contains('00001.ja.srt'));
     expect(ctx.output('00001.ja.srt').existsSync(), isTrue);
   });
+
+  test(
+    '同盘另一条 title（discTitle）：经 resolveDiscTitlePath 定位，字幕落 disc_out 并拷进产物',
+    () async {
+      final Directory disc = Directory(p.join(tmp.path, 'lib', 'Show Disc 1'));
+      final Directory playlist = Directory(
+        p.join(disc.path, 'BDMV', 'PLAYLIST'),
+      )..createSync(recursive: true);
+      final File main = File(p.join(playlist.path, '00001.mpls'))
+        ..writeAsBytesSync(<int>[1, 2, 3]);
+      final File bonus = File(p.join(playlist.path, '00005.mpls'))
+        ..writeAsBytesSync(<int>[4, 5, 6]);
+      final List<(String, String)> asked = <(String, String)>[];
+      final VideoSubtitleHostJobRunner r = runner(
+        resolveVideo: (String id, {int episodeIndex = 0}) async =>
+            id == 'v1' ? main.path : null,
+        resolveDiscTitle: (String id, String title) async {
+          asked.add((id, title));
+          return id == 'v1' && title == 'BDMV/PLAYLIST/00005.mpls'
+              ? bonus.path
+              : null;
+        },
+      );
+      expect((await r.capability())['acceptsDiscTitle'], isTrue);
+      final (HostJobContext ctx, _) = context(const <String, Object?>{
+        'proofread': false,
+        'videoId': 'v1',
+        'discTitle': 'BDMV/PLAYLIST/00005.mpls',
+      });
+      r.validateParams(ctx.params);
+      final HostJobOutcome outcome = await r.run(ctx);
+      expect(asked, <(String, String)>[('v1', 'BDMV/PLAYLIST/00005.mpls')]);
+      expect(outcome.outputs, contains('00005.ja.srt'));
+      expect(outcome.outputs, isNot(contains('00001.ja.srt')));
+      expect(
+        File(
+          p.join(
+            videoSubtitleDiscExportDir(
+              Directory(p.join(tmp.path, 'pipeline')),
+              bonus.path,
+            )!.path,
+            '00005.ja.srt',
+          ),
+        ).existsSync(),
+        isTrue,
+      );
+      expect(
+        playlist.listSync().map((FileSystemEntity e) => p.basename(e.path)),
+        unorderedEquals(<String>['00001.mpls', '00005.mpls']),
+        reason: '盘结构里不能多出字幕',
+      );
+
+      // 认不到的 title：明确报出是哪条 title（→ 400），不退回 videoId 那一行。
+      final (HostJobContext bad, _) = context(const <String, Object?>{
+        'proofread': false,
+        'videoId': 'v1',
+        'discTitle': 'BDMV/PLAYLIST/00009.mpls',
+      }, jobId: 'j2');
+      await expectLater(
+        r.run(bad),
+        throwsA(
+          isA<FormatException>().having(
+            (FormatException e) => e.message,
+            'message',
+            contains('unknown videoId v1 disc title BDMV/PLAYLIST/00009.mpls'),
+          ),
+        ),
+      );
+    },
+  );
 
   test('播放列表第 N 集：集下标交给 resolveVideoPath，字幕写在那一集旁', () async {
     final Directory lib = Directory(p.join(tmp.path, 'lib', 'Show'))
@@ -577,6 +666,14 @@ void main() {
         resolveVideo: (String _, {int episodeIndex = 0}) async => null,
       ).capability())['acceptsEpisode'],
       isTrue,
+    );
+    // 没接 resolveDiscTitlePath 的 host 不认 discTitle（老 host 形状）。
+    expect(cap['acceptsDiscTitle'], isFalse);
+    expect(
+      (await runner(
+        resolveVideo: (String _, {int episodeIndex = 0}) async => null,
+      ).capability())['acceptsDiscTitle'],
+      isFalse,
     );
     expect(cap['segmenters'], <String>['auto', 'moss', 'window']);
     expect(
