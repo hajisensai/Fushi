@@ -160,7 +160,11 @@ class MangaAudiobookSourceService {
       return parseMangaJson(await json.readAsString());
     } on Object catch (e, stack) {
       // 坏文件：界面显示「本卷还没有可用的 OCR」，不在这里重试或修复。
-      ErrorLogService.instance.log('MangaAudiobookSource.loadPayload', e, stack);
+      ErrorLogService.instance.log(
+        'MangaAudiobookSource.loadPayload',
+        e,
+        stack,
+      );
       return null;
     }
   }
@@ -203,7 +207,11 @@ class MangaAudiobookSourceService {
       return attachTokenTimingIfAligned(stored, parsed);
     } on Object catch (e, stack) {
       // 逐 token 时间是可选增强：读不动只是半句命中不可用，整句匹配照常。
-      ErrorLogService.instance.log('MangaAudiobookSource.tokenTiming', e, stack);
+      ErrorLogService.instance.log(
+        'MangaAudiobookSource.tokenTiming',
+        e,
+        stack,
+      );
       return false;
     }
   }

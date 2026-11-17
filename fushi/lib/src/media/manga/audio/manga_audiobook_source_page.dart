@@ -201,7 +201,9 @@ class _MangaAudiobookSourcePanelState extends State<MangaAudiobookSourcePanel> {
   String _titleOf(String bookKey) => _titles[bookKey] ?? bookKey;
 
   /// 读最新演出稿 → [mutate] → 原子写，再把书单 / 策略同步回界面。
-  Future<MangaAudioScript> _mutate(void Function(MangaAudioScript) mutate) async {
+  Future<MangaAudioScript> _mutate(
+    void Function(MangaAudioScript) mutate,
+  ) async {
     final MangaAudioScript script = await _backend.loadScript(widget.bookKey);
     mutate(script);
     await _backend.saveScript(widget.bookKey, script);
@@ -276,7 +278,9 @@ class _MangaAudiobookSourcePanelState extends State<MangaAudiobookSourcePanel> {
       return;
     }
     final int written = await _backend.linkSourcesTo(volumes, _sources);
-    FushiToast.show(msg: t.manga_audio_source_apply_series_done(count: written));
+    FushiToast.show(
+      msg: t.manga_audio_source_apply_series_done(count: written),
+    );
   });
 
   Future<void> _setPolicy(MangaAudioSourcePolicy policy) => _guard(() async {
