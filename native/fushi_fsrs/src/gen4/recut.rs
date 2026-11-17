@@ -44,12 +44,12 @@ use std::borrow::Cow;
 use std::sync::Arc;
 
 use super::op::{
-    KIND_DEDUP, KIND_RETIRED_MEDIA_AT, Op4, PurgeTargets, chain_next4, chain_next4_parts,
-    native_allowed, read_purge_targets, write_purge_targets,
+    KIND_DEDUP, KIND_RETIRED_MEDIA_AT, MAX_OP_PAYLOAD, Op4, PurgeTargets, chain_next4,
+    chain_next4_parts, native_allowed, read_purge_targets, write_purge_targets,
 };
 use super::segment::{
-    NativeHeader, NativeItem, OpenNative, SignedDigest, TAG_OP, TAG_VOID, ZSTD_LEVEL, item_digest,
-    op_digest_parts, read_chain, read_op_slot, stream_err, void_digest, write_op_slot,
+    MAX_BODY_RAW, NativeHeader, NativeItem, OpenNative, SignedDigest, TAG_OP, TAG_VOID, ZSTD_LEVEL,
+    item_digest, op_digest_parts, read_chain, read_op_slot, stream_err, void_digest, write_op_slot,
 };
 use super::{bytes_min, iv_min, read_vv, uv_min};
 use crate::sync2::codec::{DResult, DecodeError, Reader, Writer, ZstdWindow};
@@ -383,7 +383,9 @@ fn write_items(items: &[RecutItem]) -> Vec<u8> {
 
 /// 解压、逐项解码（结构上的合规在 [check] 里核）。
 fn read_items(compressed: &[u8], header: &NativeHeader) -> Result<Vec<RecutItem>, SegmentError> {
-    let mut window = ZstdWindow::new(compressed).map_err(stream_err)?;
+    let mut window = ZstdWindow::new(compressed)
+        .map_err(stream_err)?
+        .limit(MAX_BODY_RAW);
     let span = header.last + 1 - header.first;
     let n = window.parse(uv_min).map_err(stream_err)?;
     if n == 0 || n > span {
@@ -407,7 +409,13 @@ fn read_items(compressed: &[u8], header: &NativeHeader) -> Result<Vec<RecutItem>
         let prev = deps.clone();
         let item = window
             .parse(|r| match r.u8()? {
-                TAG_OP => Ok(RecutItem::Op(read_op_slot(r, id, wall, prev.as_ref())?)),
+                TAG_OP => Ok(RecutItem::Op(read_op_slot(
+                    r,
+                    id,
+                    wall,
+                    prev.as_ref(),
+                    MAX_OP_PAYLOAD,
+                )?)),
                 TAG_VOID => {
                     let count = uv_min(r)?;
                     if count == 0 || count > left {
@@ -529,8 +537,12 @@ pub fn recut4(
     if !verify(author_public, &digest, author_sig) {
         return Err("recut: the items are not what the author signed".into());
     }
-    let compressed = zstd::bulk::compress(&write_items(items), ZSTD_LEVEL)
-        .map_err(|e| format!("recut compress: {e}"))?;
+    let raw = write_items(items);
+    if raw.len() as u64 > MAX_BODY_RAW {
+        return Err("recut: body over MAX_BODY_RAW".into());
+    }
+    let compressed =
+        zstd::bulk::compress(&raw, ZSTD_LEVEL).map_err(|e| format!("recut compress: {e}"))?;
     let sig = recutter.sign(&recut_digest(&head, author_sig, &recutter_id, &compressed));
     Ok(assemble(
         &head,

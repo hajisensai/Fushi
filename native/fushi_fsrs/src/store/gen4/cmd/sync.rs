@@ -1079,7 +1079,8 @@ pub fn outbox(
         .get("segBytes")
         .and_then(Value::as_u64)
         .unwrap_or(SEGMENT_TARGET_BYTES)
-        .max(1);
+        // 不超过默认目标：读侧按 [crate::gen4::segment::MAX_BODY_RAW] 拒解压后过大的段，切段目标不能往上放。
+        .clamp(1, SEGMENT_TARGET_BYTES);
     let mut out = load_out(t, col, progress, &me.device)?;
     let before = out.clone();
     let last = t.last_of(col, &me.device)?;

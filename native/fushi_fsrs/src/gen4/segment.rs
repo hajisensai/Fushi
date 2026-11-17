@@ -57,8 +57,8 @@ use std::borrow::Cow;
 use std::sync::Arc;
 
 use super::op::{
-    Op4, PurgeTargets, chain_next4, native_allowed, purge_targets_v1, read_deps, read_kind_fmt,
-    write_purge_targets,
+    MAX_OP_PAYLOAD, Op4, PurgeTargets, chain_next4, native_allowed, purge_targets_v1, read_deps,
+    read_kind_fmt, write_purge_targets,
 };
 use super::{bytes_min, iv_min, uv_min};
 use crate::sync2::codec::{DResult, DecodeError, Reader, StreamError, Writer, ZstdWindow};
@@ -74,6 +74,10 @@ pub const VERSION: u8 = 1;
 pub const ZSTD_LEVEL: i32 = 3;
 /// 校验一段时留在内存里的操作上限（载荷字节 + 每条固定开销）；超过的第二遍流式解。
 pub const KEEP_RAW_BYTES: u64 = 16 * 1024 * 1024;
+/// 段体（含重切件的段体）**解压后**的总字节上限。签名验在解压之后（文件头「签名」），这条上限让验签之前的工作量
+/// 有界：读侧解到超限就判损坏，写侧 [pack_native] 拒签超限的段。写者按估计体积切段（发件 4 MB、合并整组不超过
+/// [crate::sync2::segment::SEGMENT_MAX_RAW_BYTES]），一段再加一条最大载荷（[MAX_OP_PAYLOAD]）也远不到这里。
+pub const MAX_BODY_RAW: u64 = 64 * 1024 * 1024;
 
 const F_ENCRYPTED: u8 = 1;
 pub(crate) const TAG_OP: u8 = 0;
@@ -207,11 +211,14 @@ pub(crate) fn write_op_slot(w: &mut Writer, op: &Op4, prev_wall: i64, prev_deps:
     w.bytes(&op.payload);
 }
 
+/// [max_payload]：载荷长度前缀超过它就直接报错，不去补读（原生段 / 重切件传 [MAX_OP_PAYLOAD]；承袭段先验签后解压，
+/// 不设限）。
 pub(crate) fn read_op_slot(
     r: &mut Reader<'_>,
     id: OpId,
     prev_wall: i64,
     prev_deps: Option<&Arc<Vv>>,
+    max_payload: usize,
 ) -> DResult<Op4> {
     let wall = prev_wall.wrapping_add(iv_min(r)?);
     let logical = u32::try_from(uv_min(r)?).map_err(|_| DecodeError("hlc logical"))?;
@@ -227,6 +234,10 @@ pub(crate) fn read_op_slot(
         _ => return Err(DecodeError("deps flag")),
     };
     let (kind, fmt) = read_kind_fmt(r)?;
+    let n = usize::try_from(uv_min(r)?).map_err(|_| DecodeError("length overflow"))?;
+    if n > max_payload {
+        return Err(DecodeError("op payload too large"));
+    }
     Ok(Op4 {
         id,
         hlc: Hlc {
@@ -237,7 +248,7 @@ pub(crate) fn read_op_slot(
         deps,
         kind,
         fmt,
-        payload: bytes_min(r)?.into(),
+        payload: r.raw(n)?.into(),
     })
 }
 
@@ -265,7 +276,7 @@ pub(crate) fn write_body(items: &[NativeItem]) -> Vec<u8> {
 }
 
 /// 承袭段（`FSH4`）的头 + 体（压缩、可选加密）+ 签名：签名覆盖 `blake3(头 || 体)`，体加密时签的是密文。
-/// 原生段不走这里（签名覆盖明文压缩体，见 [seal_native]）。
+/// 原生段不走这里（签名覆盖明文的逐项摘要，见 [seal_native]）。
 pub(crate) fn seal(
     head_bytes: Vec<u8>,
     raw_body: &[u8],
@@ -403,6 +414,12 @@ fn seal_native(
     signer: &DeviceKey,
     key: Option<&CollectionKey>,
 ) -> Result<Vec<u8>, String> {
+    if raw_body.len() as u64 > MAX_BODY_RAW {
+        return Err(format!(
+            "segment body is {} bytes uncompressed, over MAX_BODY_RAW",
+            raw_body.len()
+        ));
+    }
     let compressed =
         zstd::bulk::compress(raw_body, ZSTD_LEVEL).map_err(|e| format!("segment compress: {e}"))?;
     let digest = native_digest(&head_bytes, header, &compressed)
@@ -521,7 +538,9 @@ pub struct ItemStream<'s> {
 impl<'s> ItemStream<'s> {
     fn new(compressed: &'s [u8], header: &NativeHeader) -> Result<ItemStream<'s>, SegmentError> {
         Ok(ItemStream {
-            window: ZstdWindow::new(compressed).map_err(stream_err)?,
+            window: ZstdWindow::new(compressed)
+                .map_err(stream_err)?
+                .limit(MAX_BODY_RAW),
             device: header.device,
             last: header.last,
             n: None,
@@ -567,7 +586,13 @@ impl<'s> ItemStream<'s> {
         let item = self
             .window
             .parse(|r| match r.u8()? {
-                TAG_OP => Ok(NativeItem::Op(read_op_slot(r, id, wall, deps.as_ref())?)),
+                TAG_OP => Ok(NativeItem::Op(read_op_slot(
+                    r,
+                    id,
+                    wall,
+                    deps.as_ref(),
+                    MAX_OP_PAYLOAD,
+                )?)),
                 TAG_VOID => {
                     let count = uv_min(r)?;
                     if count == 0 || count > left {
@@ -1392,6 +1417,142 @@ pub(crate) mod tests {
         assert_eq!(
             open_native(&bytes, &signer().public(), None).unwrap().1,
             vec![NativeItem::Op(op)]
+        );
+    }
+
+    /// 手拼一个 zstd 帧：`parts` 依次是原样字节（`次数 = 0`，raw 块）或 `(单字节, 重复次数)`（RLE 块，每块至多
+    /// 128 KiB）。解压后的明文可以很大，但测试里从不整份放进内存（压缩炸弹的形状）。
+    fn zstd_frame(parts: &[(Vec<u8>, u64)]) -> Vec<u8> {
+        const BLOCK: u64 = 128 * 1024;
+        // magic | 帧头描述符 0（无内容长度、非单段、无校验和）| 窗口描述符 0x50（1 MiB）
+        let mut out = vec![0x28, 0xb5, 0x2f, 0xfd, 0x00, 0x50];
+        let mut blocks: Vec<(u8, u64, Vec<u8>)> = Vec::new();
+        for (bytes, times) in parts {
+            if *times == 0 {
+                blocks.push((0, bytes.len() as u64, bytes.clone()));
+            } else {
+                let mut left = *times;
+                while left > 0 {
+                    let n = left.min(BLOCK);
+                    blocks.push((1, n, vec![bytes[0]]));
+                    left -= n;
+                }
+            }
+        }
+        let last = blocks.len() - 1;
+        for (i, (ty, size, content)) in blocks.into_iter().enumerate() {
+            let h = (size << 3) | (u64::from(ty) << 1) | u64::from(i == last);
+            out.extend_from_slice(&h.to_le_bytes()[..3]);
+            out.extend_from_slice(&content);
+        }
+        out
+    }
+
+    /// 段体里一条操作槽从 tag 到载荷长度前缀为止的字节（wall 增量 0、logical 0；第一条带空依赖向量）。
+    fn op_prefix(first: bool, payload_len: u64) -> Vec<u8> {
+        let mut w = Writer::new();
+        w.u8(TAG_OP);
+        w.iv(0);
+        w.uv(0);
+        if first {
+            w.u8(1);
+            w.uv(0);
+        } else {
+            w.u8(0);
+        }
+        w.uv(u64::from(crate::gen4::op::KIND_ENTITY));
+        w.uv(u64::from(BODY_FMT));
+        w.uv(payload_len);
+        w.into_vec()
+    }
+
+    /// 明文位置上的伪造件：头写本机认识的作者，签名随便填。
+    fn bomb(n: u64, body: Vec<u8>) -> Vec<u8> {
+        let header = NativeHeader {
+            encrypted: false,
+            collection: coll(),
+            device: id(DEV),
+            first: 1,
+            last: n,
+            prev_chain: [0; 32],
+            last_chain: [0; 32],
+        };
+        let mut w = Writer::new();
+        header.write(&mut w);
+        w.bytes(&body);
+        w.raw(&[0x5a; 64]);
+        w.into_vec()
+    }
+
+    /// 压缩炸弹（K2 根治复核 major）：签名在解压之后验，验签之前的工作量必须有界。一条载荷声明 1 GiB 的操作
+    /// 在读到长度前缀时就判损坏（不去补读，不为它开窗口）；每条都在上限内、但段体解压后总量超过 [MAX_BODY_RAW]
+    /// 的段解到上限就判损坏。两者都不是「验签失败」——根本没走到验签。
+    #[test]
+    fn a_decompression_bomb_is_refused_before_the_signature_within_bounded_work() {
+        const GIB: u64 = 1 << 30;
+        let mut head = Writer::new();
+        head.uv(1);
+        let mut first = head.into_vec();
+        first.extend(op_prefix(true, GIB));
+        let one = bomb(1, zstd_frame(&[(first, 0), (vec![b'A'], GIB)]));
+        assert!(one.len() < 64 * 1024, "the bomb itself is small");
+        match open_native_verified(&one, &signer().public(), None) {
+            Err(SegmentError::Corrupt(m)) => assert_eq!(m, "op payload too large"),
+            other => panic!("expected Corrupt, got {:?}", other.map(|_| ())),
+        }
+
+        // 每条 1 MiB（远低于 MAX_OP_PAYLOAD），条数让总量刚过 MAX_BODY_RAW。
+        const MIB: u64 = 1 << 20;
+        let n = MAX_BODY_RAW / MIB + 2;
+        let mut parts: Vec<(Vec<u8>, u64)> = Vec::new();
+        let mut w = Writer::new();
+        w.uv(n);
+        let mut lead = w.into_vec();
+        lead.extend(op_prefix(true, MIB));
+        parts.push((lead, 0));
+        parts.push((vec![b'B'], MIB));
+        for _ in 1..n {
+            parts.push((op_prefix(false, MIB), 0));
+            parts.push((vec![b'B'], MIB));
+        }
+        let many = bomb(n, zstd_frame(&parts));
+        assert!(many.len() < 64 * 1024, "the bomb itself is small");
+        match open_native_verified(&many, &signer().public(), None) {
+            Err(SegmentError::Corrupt(m)) => {
+                assert_eq!(m, crate::sync2::codec::LIMIT_EXCEEDED)
+            }
+            other => panic!("expected Corrupt, got {:?}", other.map(|_| ())),
+        }
+    }
+
+    /// 写侧与读侧同一条线：载荷超过 [MAX_OP_PAYLOAD] 的操作签不出（[native_allowed]），读侧也拒；正好在线上的照收。
+    #[test]
+    fn op_payload_cap_is_the_same_on_both_sides() {
+        let base = op_of(id(DEV), 1, &bodies()[0]);
+        let at_cap = Op4 {
+            payload: vec![0u8; MAX_OP_PAYLOAD].into(),
+            ..base.clone()
+        };
+        assert!(native_allowed(&at_cap).is_ok());
+        let over = Op4 {
+            payload: vec![0u8; MAX_OP_PAYLOAD + 1].into(),
+            ..base
+        };
+        assert_eq!(
+            native_allowed(&over),
+            Err("native op payload exceeds MAX_OP_PAYLOAD")
+        );
+        assert!(
+            pack_native(
+                coll(),
+                id(DEV),
+                1,
+                &[NativeItem::Op(over)],
+                [0; 32],
+                &signer(),
+                None
+            )
+            .is_err()
         );
     }
 }

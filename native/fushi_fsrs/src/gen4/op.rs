@@ -103,6 +103,10 @@ pub const DEDUP_MAX_PAIRS: usize = 20_000;
 /// 一张盐表最多多少项（Join 与 Salts 相同）。
 pub const SALTS_MAX: usize = 1 << 16;
 
+/// 原生日志里一条操作的载荷上限（[native_allowed] 写读两侧同用；读侧在 [super::segment::read_op_slot] 读到长度前缀时
+/// 就拒，不为超限的载荷开窗口）。实测本机存量 51.7 万条协议 3 操作最大载荷 311 KiB，留五十倍余量。
+pub const MAX_OP_PAYLOAD: usize = 16 * 1024 * 1024;
+
 /// 一条协议 4 的操作。克隆是廉价的（载荷与上下文共享）。
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Op4 {
@@ -1060,6 +1064,9 @@ fn read_log(r: &mut Reader<'_>, exact: bool) -> DResult<Log4> {
 /// 协议 3 的操作体、退役的 12、只属于承袭日志的 13、带旧戳的修改与带旧 HLC / 旧服务器时刻的日志不能（设计稿 §536：
 /// 换代后的新写入不携带 v1 形状的数据；写入 [crate::store::gen4::truth::Truth::append_native] 与收段两侧同用这一处）。带盐的 14 / 15 只能出现在这里（heritage.rs 拒）。
 pub fn native_allowed(op: &Op4) -> Result<(), &'static str> {
+    if op.payload.len() > MAX_OP_PAYLOAD {
+        return Err("native op payload exceeds MAX_OP_PAYLOAD");
+    }
     if op.fmt < BODY_FMT {
         return Err("native op body is not protocol 4");
     }
