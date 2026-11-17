@@ -3272,7 +3272,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
         : <String, List<SubtitleEvidenceTrack>>{videoPath: tracks};
   }
 
-  /// 打开字幕工作台（[showVideoSubtitleStudioSheet]）。参考区读的都是播放器的现值
+  /// 打开字幕工作台（[openVideoSubtitleStudioPage]）。参考区读的都是播放器的现值
   /// （主 / 副字幕 cue、各自扣过调轴的等效位置、裸画面截图），面板开着时随播放实时
   /// 刷新；工具全部复用本页既有路径，面板只负责分派。
   Future<void> _openSubtitleStudio(VideoPlayerController controller) async {
@@ -3288,7 +3288,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
     final VideoSubtitleStudioAiReference? aiReference =
         await _subtitleStudioAiReference();
     if (!context.mounted || !identical(_controller, controller)) return;
-    await showVideoSubtitleStudioSheet(
+    await openVideoSubtitleStudioPage(
       context: context,
       reference: VideoSubtitleStudioReference(
         listenable: controller.positionMsListenable,

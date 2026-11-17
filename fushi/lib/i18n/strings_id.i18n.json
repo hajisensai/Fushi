@@ -12877,6 +12877,7 @@
   "video_subtitle_studio_ai_subtitles_secondary": "The secondary subtitle compared above ($language) is handed over with your timing adjustment, together with other subtitles that come with the video",
   "video_subtitle_studio_align_hint": "Aligns the external subtitles to the video's own text subtitle track",
   "video_subtitle_studio_entry_hint": "Generate subtitles, split bilingual tracks and retime line by line, with the frame and other-language subtitles for reference",
+  "video_subtitle_studio_follow_playhead": "Follow playback",
   "video_subtitle_studio_frame_refresh": "Capture current frame",
   "video_subtitle_studio_frame_unavailable": "Couldn't capture the current frame",
   "video_subtitle_studio_jump_tooltip": "Jump to this line",

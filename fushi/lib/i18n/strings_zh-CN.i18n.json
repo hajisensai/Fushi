@@ -12877,6 +12877,7 @@
   "video_subtitle_studio_ai_subtitles_secondary": "上面对照着的副字幕（$language）会按你调好的时间轴交给 AI，视频自带的其它字幕也一并使用",
   "video_subtitle_studio_align_hint": "按视频自带的文本字幕轨对齐外挂字幕的时间轴",
   "video_subtitle_studio_entry_hint": "生成字幕、拆分双语、逐句对轴，可对照视频画面和其它语言字幕",
+  "video_subtitle_studio_follow_playhead": "跟随播放",
   "video_subtitle_studio_frame_refresh": "截取当前画面",
   "video_subtitle_studio_frame_unavailable": "截不到当前画面",
   "video_subtitle_studio_jump_tooltip": "跳到这一句",

@@ -147,13 +147,13 @@ import 'package:fushi/src/media/video/subtitle/app_video_subtitle_service.dart'
         AppVideoSubtitleTarget,
         AppVideoSubtitleTargetNotFound,
         appVideoSubtitleService;
-import 'package:fushi/src/media/video/subtitle/video_subtitle_studio_sheet.dart'
+import 'package:fushi/src/media/video/subtitle/video_subtitle_studio_page.dart'
     show
         VideoSubtitleStudioActions,
         VideoSubtitleStudioAiReference,
         VideoSubtitleStudioFramesProblem,
         VideoSubtitleStudioReference,
-        showVideoSubtitleStudioSheet,
+        openVideoSubtitleStudioPage,
         videoSubtitleStudioEvidenceTrack;
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_evidence.dart'
     show SubtitleEvidenceTrack;

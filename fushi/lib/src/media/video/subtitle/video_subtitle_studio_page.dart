@@ -1,9 +1,10 @@
-/// 「字幕工作台」面板（反馈 E1pq561P2q，维护者批示：把「自动生成字幕」那块改成工作台
-/// 样式，带各种可参考信息与开关）。
+/// 「字幕工作台」**全屏页面**（反馈 E1pq561P2q，维护者批示：把「自动生成字幕」那块改成
+/// 工作台样式，带各种可参考信息与开关；2026-11-17 维护者：工作台应该是全屏的、更专业）。
 ///
-/// 上半是**参考**：当前画面截图、当前字幕的语言、播放头前后几句主字幕与同一时刻的
-/// 其它语言字幕（副字幕轨）逐句对照——两个开关分别管画面与其它语言字幕显示与否；
-/// 表格随播放实时滚动，点某句跳过去。中间是**交给 AI 的参考**（spec
+/// 宽屏两栏、窄屏上下排。一栏是**参考**：当前画面（换句时自动重截）、当前字幕的语言、
+/// **整条**主字幕的逐句表格（序号、起点时间码、时长、正文、同一时刻的其它语言字幕）——
+/// 表格跟随播放头滚动（用户自己滚就停，点「跟随播放」恢复），点某句跳过去。另一栏先是
+/// **交给 AI 的参考**（spec
 /// `2026-11-11-video-subtitle-ai-reference`）：上面这两样不只给人看——「生成字幕」开着
 /// AI 校对时，画面（开关，首次说明会发送什么）与其它语言字幕会真的交给 AI。下半是**工具**：生成字幕（原入口，管线 / 本机
 /// 转录分流不变）、拆出双语字幕中的日语、按每句语音逐句对轴（模型重定时）、按内嵌
@@ -26,6 +27,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
@@ -37,8 +39,6 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
-import 'package:fushi/src/utils/misc/platform_utils.dart';
-import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 /// 参考区的数据源。全部是**读取函数**而不是快照：面板开着时视频照常播，
 /// [listenable]（播放位置推送）一响就按当前值重算对照表。
@@ -130,66 +130,68 @@ class VideoSubtitleStudioActions {
   final Future<void> Function()? alignEmbedded;
 }
 
-/// 对照表的一行：主字幕一句 + 同一时刻的其它语言字幕。
+/// 逐句表格的一行：主字幕一句 + 同一时刻的其它语言字幕。
 class VideoSubtitleStudioRow {
   const VideoSubtitleStudioRow({
     required this.cue,
-    required this.current,
     required this.secondaryText,
   });
 
   final AudioCue cue;
 
-  /// 播放头正落在这一句里。
-  final bool current;
-
   /// 与这一句时间重叠的副字幕正文（多句用换行连）；没有重叠为 null。
   final String? secondaryText;
 }
 
-/// **纯函数**：播放头附近的对照表。
+/// **纯函数**：整条主字幕的逐句表格（全集，不再只取播放头附近几句）。
 ///
-/// 以「起点 ≤ 播放头的最后一句」为锚（播放头在第一句之前时锚在第一句），取它前后
-/// 各 [around] 句。副字幕按 [secondaryShiftMs]（= 副等效位置 − 主等效位置）把主句的
-/// 时间窗平移到副字幕轴上再找重叠，两条轨各自的调轴偏移因此都算进去了。
-/// 渲染专用 cue（ASS 矢量绘图）和空文本 cue 不进表。
-List<VideoSubtitleStudioRow> videoSubtitleStudioRows({
+/// 副字幕按 [secondaryShiftMs]（= 副等效位置 − 主等效位置）把主句的时间窗平移到副字幕
+/// 轴上再找重叠，两条轨各自的调轴偏移因此都算进去了。渲染专用 cue（ASS 矢量绘图）和
+/// 空文本 cue 不进表。
+List<VideoSubtitleStudioRow> videoSubtitleStudioTable({
   required List<AudioCue> primary,
   required List<AudioCue> secondary,
-  required int primaryPositionMs,
   required int secondaryShiftMs,
-  int around = 2,
-}) {
-  final List<AudioCue> cues = <AudioCue>[
-    for (final AudioCue c in primary)
-      if (!c.isRenderOnly && c.text.trim().isNotEmpty) c,
-  ];
-  if (cues.isEmpty) return const <VideoSubtitleStudioRow>[];
-  int anchor = 0;
-  for (int i = 0; i < cues.length; i++) {
-    if (cues[i].startMs <= primaryPositionMs) {
-      anchor = i;
-    } else {
-      break;
-    }
-  }
-  final int from = (anchor - around).clamp(0, cues.length - 1);
-  final int to = (anchor + around).clamp(0, cues.length - 1);
-  return <VideoSubtitleStudioRow>[
-    for (int i = from; i <= to; i++)
+}) => <VideoSubtitleStudioRow>[
+  for (final AudioCue c in primary)
+    if (!c.isRenderOnly && c.text.trim().isNotEmpty)
       VideoSubtitleStudioRow(
-        cue: cues[i],
-        current:
-            cues[i].startMs <= primaryPositionMs &&
-            primaryPositionMs < cues[i].endMs,
+        cue: c,
         secondaryText: _overlappingText(
           secondary,
-          cues[i].startMs + secondaryShiftMs,
-          cues[i].endMs + secondaryShiftMs,
+          c.startMs + secondaryShiftMs,
+          c.endMs + secondaryShiftMs,
         ),
       ),
-  ];
+];
+
+/// **纯函数**：表格跟随播放时要滚到的那一行——「起点 ≤ 播放头的最后一句」（播放头在
+/// 第一句之前时是第一句）；空表为 null。[rows] 按起点升序（字幕轨本来的顺序）。
+int? videoSubtitleStudioAnchorIndex(
+  List<VideoSubtitleStudioRow> rows,
+  int positionMs,
+) {
+  if (rows.isEmpty) return null;
+  int lo = 0;
+  int hi = rows.length - 1;
+  int anchor = 0;
+  while (lo <= hi) {
+    final int mid = (lo + hi) >> 1;
+    if (rows[mid].cue.startMs <= positionMs) {
+      anchor = mid;
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  return anchor;
 }
+
+/// 播放头正落在这一句里（句间空隙里没有任何一句是当前句）。
+bool videoSubtitleStudioRowIsCurrent(
+  VideoSubtitleStudioRow row,
+  int positionMs,
+) => row.cue.startMs <= positionMs && positionMs < row.cue.endMs;
 
 String? _overlappingText(List<AudioCue> cues, int startMs, int endMs) {
   final List<String> texts = <String>[
@@ -243,13 +245,14 @@ SubtitleEvidenceTrack? videoSubtitleStudioEvidenceTrack({
   );
 }
 
-/// `m:ss`（≥1 小时 `h:mm:ss`）。
-String videoSubtitleStudioClock(int ms) {
+/// 逐句表格的时间码 `m:ss.cc`（≥1 小时 `h:mm:ss.cc`），精确到 1/100 秒。
+String videoSubtitleStudioTimecode(int ms) {
   final int v = ms < 0 ? 0 : ms;
   final int h = v ~/ 3600000;
   final int m = (v ~/ 60000) % 60;
   final String s = ((v ~/ 1000) % 60).toString().padLeft(2, '0');
-  return h > 0 ? '$h:${m.toString().padLeft(2, '0')}:$s' : '$m:$s';
+  final String cs = ((v ~/ 10) % 100).toString().padLeft(2, '0');
+  return h > 0 ? '$h:${m.toString().padLeft(2, '0')}:$s.$cs' : '$m:$s.$cs';
 }
 
 /// 当前字幕语言的显示名（母语写法，与字幕搜索同口径）；检测不出时「语言未知」。
@@ -257,38 +260,28 @@ String videoSubtitleStudioLanguageLabel(SubtitleContentLanguage language) =>
     subtitleContentLanguageNativeLabel(language) ??
     t.video_subtitle_studio_language_unknown;
 
-/// 打开字幕工作台（桌面对话框 / 移动端底部 sheet，同「生成字幕」面板）。
-Future<void> showVideoSubtitleStudioSheet({
+/// 打开字幕工作台：**全屏页面**。root navigator：播放页全屏态自建的路由在 root 上，
+/// 工作台必须盖在它之上（与字幕搜索页 `SubtitleWorkbenchPage.open` 同一做法）。
+Future<void> openVideoSubtitleStudioPage({
   required BuildContext context,
   required VideoSubtitleStudioReference reference,
   required VideoSubtitleStudioActions actions,
   VideoSubtitleStudioAiReference? aiReference,
 }) {
-  Widget build(BuildContext ctx) => VideoSubtitleStudioSheet(
-    reference: reference,
-    actions: actions,
-    aiReference: aiReference,
-  );
-  if (isDesktopPlatform) {
-    return showAppDialog<void>(
-      context: context,
-      builder: (BuildContext ctx) => FushiDialogFrame(
-        maxWidth: 640,
-        maxHeightFactor: 0.9,
-        scrollable: false,
-        child: build(ctx),
+  return Navigator.of(context, rootNavigator: true).push<void>(
+    MaterialPageRoute<void>(
+      fullscreenDialog: true,
+      builder: (_) => VideoSubtitleStudioPage(
+        reference: reference,
+        actions: actions,
+        aiReference: aiReference,
       ),
-    );
-  }
-  return adaptiveModalSheet<void>(
-    context: context,
-    showDragHandle: true,
-    builder: build,
+    ),
   );
 }
 
-class VideoSubtitleStudioSheet extends StatefulWidget {
-  const VideoSubtitleStudioSheet({
+class VideoSubtitleStudioPage extends StatefulWidget {
+  const VideoSubtitleStudioPage({
     super.key,
     required this.reference,
     required this.actions,
@@ -302,24 +295,169 @@ class VideoSubtitleStudioSheet extends StatefulWidget {
   final VideoSubtitleStudioAiReference? aiReference;
 
   @override
-  State<VideoSubtitleStudioSheet> createState() =>
-      _VideoSubtitleStudioSheetState();
+  State<VideoSubtitleStudioPage> createState() =>
+      _VideoSubtitleStudioPageState();
 }
 
-class _VideoSubtitleStudioSheetState extends State<VideoSubtitleStudioSheet> {
+class _VideoSubtitleStudioPageState extends State<VideoSubtitleStudioPage> {
+  /// 放得下「逐句表格 | 工具」两栏的最小宽度；更窄时上下排。
+  static const double _twoPaneMinWidth = 840;
+  static const double _toolsPaneWidth = 380;
+
+  /// 画面跟着播放走：换句时重截一张，两次之间至少隔这么久（截图要编码一帧 JPEG）。
+  static const Duration _autoCaptureInterval = Duration(milliseconds: 1500);
+
   VideoSubtitleStudioReference get _ref => widget.reference;
 
   bool _showFrame = true;
   bool _showSecondary = true;
 
+  /// 表格跟随播放头滚动。用户自己拖 / 滚表格时关掉，点「跟随播放」重新打开。
+  bool _follow = true;
+
   Uint8List? _frame;
   bool _capturing = false;
   bool _frameFailed = false;
+  DateTime? _lastAutoCapture;
+
+  final ScrollController _tableScroll = ScrollController();
+
+  /// 上一次跟随到的行（[videoSubtitleStudioAnchorIndex]）；换行才滚、才重截画面。
+  int? _anchor;
+
+  // 逐句表格按「cue 列表 + 两轨相对偏移」缓存：播放位置每次推送都要读它，重叠查找是
+  // O(主 × 副)，不能每一帧重算。
+  List<VideoSubtitleStudioRow> _rows = const <VideoSubtitleStudioRow>[];
+  List<AudioCue>? _rowsPrimary;
+  List<AudioCue>? _rowsSecondary;
+  int _rowsShift = 0;
 
   @override
   void initState() {
     super.initState();
+    _ref.listenable.addListener(_onPosition);
     if (_ref.captureFrame != null) unawaited(_capture());
+    // 首帧排完版才有滚动范围：直接跳到当前句（不做动画，打开就在位置上）。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _anchor = videoSubtitleStudioAnchorIndex(
+        _tableRows(),
+        _ref.primaryPositionMs(),
+      );
+      _scrollToAnchor(animate: false);
+    });
+  }
+
+  @override
+  void didUpdateWidget(VideoSubtitleStudioPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.reference.listenable, _ref.listenable)) {
+      oldWidget.reference.listenable.removeListener(_onPosition);
+      _ref.listenable.addListener(_onPosition);
+    }
+  }
+
+  @override
+  void dispose() {
+    _ref.listenable.removeListener(_onPosition);
+    _tableScroll.dispose();
+    super.dispose();
+  }
+
+  /// 播放器每次返回的 cue 列表可能是新包的一层 List：按长度 + 首尾元素身份判同一条轨。
+  static bool _sameCues(List<AudioCue> a, List<AudioCue> b) =>
+      identical(a, b) ||
+      (a.length == b.length &&
+          (a.isEmpty ||
+              (identical(a.first, b.first) && identical(a.last, b.last))));
+
+  List<VideoSubtitleStudioRow> _tableRows() {
+    final List<AudioCue> primary = _ref.primaryCues();
+    final List<AudioCue> secondary = _showSecondary
+        ? _ref.secondaryCues()
+        : const <AudioCue>[];
+    final int shift = _ref.secondaryPositionMs() - _ref.primaryPositionMs();
+    final List<AudioCue>? cachedPrimary = _rowsPrimary;
+    final List<AudioCue>? cachedSecondary = _rowsSecondary;
+    if (cachedPrimary != null &&
+        cachedSecondary != null &&
+        _rowsShift == shift &&
+        _sameCues(cachedPrimary, primary) &&
+        _sameCues(cachedSecondary, secondary)) {
+      return _rows;
+    }
+    _rowsPrimary = primary;
+    _rowsSecondary = secondary;
+    _rowsShift = shift;
+    return _rows = videoSubtitleStudioTable(
+      primary: primary,
+      secondary: secondary,
+      secondaryShiftMs: shift,
+    );
+  }
+
+  bool get _secondaryColumnShown =>
+      _showSecondary && _ref.secondaryCues().isNotEmpty;
+
+  /// 表格行高固定（主字幕一行 + 可选的对照一行，超长省略）：定高才能按行号直接算出
+  /// 滚动位置，全集几百上千句也只建可见的那几行。
+  double get _rowExtent => _secondaryColumnShown ? 64 : 48;
+
+  void _onPosition() {
+    final int? anchor = videoSubtitleStudioAnchorIndex(
+      _tableRows(),
+      _ref.primaryPositionMs(),
+    );
+    if (anchor == _anchor) return;
+    _anchor = anchor;
+    if (_follow) _scrollToAnchor(animate: true);
+    if (_showFrame && _ref.captureFrame != null) {
+      final DateTime now = DateTime.now();
+      final DateTime? last = _lastAutoCapture;
+      if (last == null || now.difference(last) >= _autoCaptureInterval) {
+        _lastAutoCapture = now;
+        unawaited(_capture());
+      }
+    }
+  }
+
+  /// 把当前句滚到表格中间。
+  void _scrollToAnchor({required bool animate}) {
+    final int? anchor = _anchor;
+    if (anchor == null || !_tableScroll.hasClients) return;
+    final ScrollPosition position = _tableScroll.position;
+    final double extent = _rowExtent;
+    final double target =
+        (anchor * extent - (position.viewportDimension - extent) / 2).clamp(
+          position.minScrollExtent,
+          position.maxScrollExtent,
+        );
+    if (!animate) {
+      _tableScroll.jumpTo(target);
+      return;
+    }
+    unawaited(
+      _tableScroll.animateTo(
+        target,
+        duration: context.fushiMotion.spatialDefault.duration,
+        curve: context.fushiMotion.spatialDefault.curve,
+      ),
+    );
+  }
+
+  void _stopFollowing() {
+    if (_follow) setState(() => _follow = false);
+  }
+
+  void _toggleFollow() {
+    setState(() => _follow = !_follow);
+    if (_follow) {
+      _anchor = videoSubtitleStudioAnchorIndex(
+        _tableRows(),
+        _ref.primaryPositionMs(),
+      );
+      _scrollToAnchor(animate: true);
+    }
   }
 
   Future<void> _capture() async {
@@ -345,7 +483,8 @@ class _VideoSubtitleStudioSheetState extends State<VideoSubtitleStudioSheet> {
     });
   }
 
-  /// 工具都会起自己的弹层 / OSD：先关工作台再跑，免得两层面板叠着。
+  /// 工具都会起自己的弹层 / OSD（OSD 画在播放页上）：先关工作台再跑，免得结果提示
+  /// 被整页盖住。
   Future<void> _run(Future<void> Function() action) async {
     await Navigator.of(context).maybePop();
     await action();
@@ -358,34 +497,63 @@ class _VideoSubtitleStudioSheetState extends State<VideoSubtitleStudioSheet> {
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final VideoSubtitleStudioAiReference? ai = widget.aiReference;
-    final int toolsAt = ai == null ? 2 : 5;
-    final List<Widget> sections = <Widget>[
-      _sectionTitle(0, t.video_subtitle_studio_reference_label),
-      _referenceCard(context, 1),
-      if (ai != null) ...<Widget>[
-        _sectionTitle(2, t.video_subtitle_studio_ai_label),
-        ..._aiRows(context, ai, 3),
-      ],
-      _sectionTitle(toolsAt, t.video_subtitle_studio_tools_label),
-      ..._toolRows(context, toolsAt + 1),
-    ];
-    return FushiModalSheetFrame(
-      title: t.video_subtitle_studio_title,
-      leadingIcon: FushiIcons.subtitles,
-      scrollable: true,
-      bodyPadding: EdgeInsets.symmetric(horizontal: tokens.spacing.card),
-      body: FushiEntranceScope(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: sections,
-        ),
+    final int toolsAt = ai == null ? 0 : 3;
+    final Widget tools = SingleChildScrollView(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          if (ai != null) ...<Widget>[
+            _sectionTitle(0, t.video_subtitle_studio_ai_label),
+            ..._aiRows(context, ai, 1),
+          ],
+          _sectionTitle(toolsAt, t.video_subtitle_studio_tools_label),
+          ..._toolRows(context, toolsAt + 1),
+        ],
       ),
-      footer: Align(
-        alignment: AlignmentDirectional.centerEnd,
-        child: FushiTextButton(
-          onPressed: () => Navigator.pop(context),
-          child: Text(t.dialog_close),
+    );
+    return FushiPageScaffold(
+      title: t.video_subtitle_studio_title,
+      // 不叠放：正文是定高版面（表格自己滚、工具栏自己滚），不是单一滚动视图，叠到
+      // 页头底下顶部控件会被胶囊盖住。
+      extendBodyBehindHeader: false,
+      body: Padding(
+        padding: withBottomSafeInset(
+          context,
+          EdgeInsets.fromLTRB(tokens.spacing.card, 4, tokens.spacing.card, 8),
+        ),
+        child: FushiEntranceScope(
+          child: LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints constraints) {
+              final bool twoPane = constraints.maxWidth >= _twoPaneMinWidth;
+              final Widget reference = _referencePane(
+                context,
+                frameMaxHeight: twoPane ? 260 : 110,
+              );
+              if (twoPane) {
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    Expanded(child: reference),
+                    SizedBox(width: tokens.spacing.card),
+                    SizedBox(width: _toolsPaneWidth, child: tools),
+                  ],
+                );
+              }
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  Expanded(child: reference),
+                  ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxHeight: constraints.maxHeight * 0.36,
+                    ),
+                    child: tools,
+                  ),
+                ],
+              );
+            },
+          ),
         ),
       ),
     );
@@ -421,22 +589,19 @@ class _VideoSubtitleStudioSheetState extends State<VideoSubtitleStudioSheet> {
     ],
   );
 
-  // ── 参考 ────────────────────────────────────────────────────────────────
+  // ── 参考：画面 + 逐句表格 ──────────────────────────────────────────────────
 
-  Widget _referenceCard(BuildContext context, int index) {
-    return FushiStaggeredEntrance(
-      index: index,
-      child: FushiGroupedListItem(
-        index: 0,
-        count: 1,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            spacing: 8,
-            children: <Widget>[
-              _hint(
+  Widget _referencePane(
+    BuildContext context, {
+    required double frameMaxHeight,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Row(
+          children: <Widget>[
+            Expanded(
+              child: _hint(
                 t.video_subtitle_studio_track_language(
                   language: videoSubtitleStudioLanguageLabel(
                     _ref.primaryLanguage,
@@ -444,40 +609,52 @@ class _VideoSubtitleStudioSheetState extends State<VideoSubtitleStudioSheet> {
                 ),
                 key: const ValueKey<String>('video-subtitle-studio-language'),
               ),
-              if (_ref.captureFrame != null) ...<Widget>[
-                _toggle(
-                  t.video_subtitle_studio_show_frame,
-                  _showFrame,
-                  (bool v) => setState(() => _showFrame = v),
-                  key: const ValueKey<String>('video-subtitle-studio-frame'),
-                ),
-                FushiAnimatedSize(
-                  duration: context.fushiMotion.spatialDefault.duration,
-                  curve: context.fushiMotion.spatialDefault.curve,
-                  alignment: Alignment.topCenter,
-                  child: _showFrame
-                      ? _framePreview(context)
-                      : const SizedBox(width: double.infinity),
-                ),
-              ],
-              _toggle(
-                t.video_subtitle_studio_show_secondary,
-                _showSecondary,
-                (bool v) => setState(() => _showSecondary = v),
-                key: const ValueKey<String>('video-subtitle-studio-secondary'),
+            ),
+            KeyedSubtree(
+              key: const ValueKey<String>('video-subtitle-studio-follow'),
+              child: FushiIconButton(
+                icon: FushiIcons.myLocation,
+                tooltip: t.video_subtitle_studio_follow_playhead,
+                selected: _follow,
+                onTap: _toggleFollow,
               ),
-              ListenableBuilder(
-                listenable: _ref.listenable,
-                builder: (BuildContext context, _) => _comparison(context),
-              ),
-            ],
+            ),
+          ],
+        ),
+        if (_ref.captureFrame != null) ...<Widget>[
+          _toggle(
+            t.video_subtitle_studio_show_frame,
+            _showFrame,
+            (bool v) => setState(() => _showFrame = v),
+            key: const ValueKey<String>('video-subtitle-studio-frame'),
+          ),
+          FushiAnimatedSize(
+            duration: context.fushiMotion.spatialDefault.duration,
+            curve: context.fushiMotion.spatialDefault.curve,
+            alignment: Alignment.topCenter,
+            child: _showFrame
+                ? _framePreview(context, frameMaxHeight)
+                : const SizedBox(width: double.infinity),
+          ),
+        ],
+        _toggle(
+          t.video_subtitle_studio_show_secondary,
+          _showSecondary,
+          (bool v) => setState(() => _showSecondary = v),
+          key: const ValueKey<String>('video-subtitle-studio-secondary'),
+        ),
+        const SizedBox(height: 8),
+        Expanded(
+          child: ListenableBuilder(
+            listenable: _ref.listenable,
+            builder: (BuildContext context, _) => _table(context),
           ),
         ),
-      ),
+      ],
     );
   }
 
-  Widget _framePreview(BuildContext context) {
+  Widget _framePreview(BuildContext context, double maxHeight) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final Uint8List? frame = _frame;
     return Column(
@@ -485,7 +662,7 @@ class _VideoSubtitleStudioSheetState extends State<VideoSubtitleStudioSheet> {
       spacing: 6,
       children: <Widget>[
         ConstrainedBox(
-          constraints: const BoxConstraints(maxHeight: 220),
+          constraints: BoxConstraints(maxHeight: maxHeight),
           child: AspectRatio(
             aspectRatio: 16 / 9,
             child: ClipRRect(
@@ -534,26 +711,23 @@ class _VideoSubtitleStudioSheetState extends State<VideoSubtitleStudioSheet> {
     );
   }
 
-  Widget _comparison(BuildContext context) {
-    final List<AudioCue> secondary = _ref.secondaryCues();
-    final int primaryPos = _ref.primaryPositionMs();
-    final List<VideoSubtitleStudioRow> rows = videoSubtitleStudioRows(
-      primary: _ref.primaryCues(),
-      secondary: _showSecondary ? secondary : const <AudioCue>[],
-      primaryPositionMs: primaryPos,
-      secondaryShiftMs: _ref.secondaryPositionMs() - primaryPos,
-    );
+  Widget _table(BuildContext context) {
+    final List<VideoSubtitleStudioRow> rows = _tableRows();
     if (rows.isEmpty) {
-      return _hint(
-        t.video_subtitle_studio_no_primary,
-        key: const ValueKey<String>('video-subtitle-studio-no-primary'),
+      return Align(
+        alignment: AlignmentDirectional.topStart,
+        child: _hint(
+          t.video_subtitle_studio_no_primary,
+          key: const ValueKey<String>('video-subtitle-studio-no-primary'),
+        ),
       );
     }
-    final bool showSecondary = _showSecondary && secondary.isNotEmpty;
+    final int positionMs = _ref.primaryPositionMs();
+    final bool showSecondary = _secondaryColumnShown;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        if (_showSecondary && secondary.isEmpty)
+        if (_showSecondary && !showSecondary)
           Padding(
             padding: const EdgeInsets.only(bottom: 6),
             child: _hint(
@@ -561,48 +735,117 @@ class _VideoSubtitleStudioSheetState extends State<VideoSubtitleStudioSheet> {
               key: const ValueKey<String>('video-subtitle-studio-no-secondary'),
             ),
           ),
-        for (final VideoSubtitleStudioRow row in rows)
-          _comparisonRow(context, row, showSecondary),
+        Expanded(
+          child: LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints constraints) {
+              // 窄屏放不下「时长」一列：先保正文。
+              final bool compact = constraints.maxWidth < 480;
+              return NotificationListener<ScrollStartNotification>(
+                // 手指 / 鼠标拖表格 = 用户要自己看别处，停止跟随。程序滚动
+                // （animateTo）没有 dragDetails，不会误关。
+                onNotification: (ScrollStartNotification notification) {
+                  if (notification.dragDetails != null) _stopFollowing();
+                  return false;
+                },
+                child: Listener(
+                  // 滚轮 / 触控板滚动不带 dragDetails，单独收。
+                  onPointerSignal: (_) => _stopFollowing(),
+                  child: ListView.builder(
+                    key: const ValueKey<String>('video-subtitle-studio-table'),
+                    controller: _tableScroll,
+                    itemExtent: _rowExtent,
+                    itemCount: rows.length,
+                    itemBuilder: (BuildContext context, int index) => _tableRow(
+                      context,
+                      index,
+                      rows[index],
+                      current: videoSubtitleStudioRowIsCurrent(
+                        rows[index],
+                        positionMs,
+                      ),
+                      showSecondary: showSecondary,
+                      compact: compact,
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
       ],
     );
   }
 
-  Widget _comparisonRow(
+  Widget _tableRow(
     BuildContext context,
-    VideoSubtitleStudioRow row,
-    bool showSecondary,
-  ) {
+    int index,
+    VideoSubtitleStudioRow row, {
+    required bool current,
+    required bool showSecondary,
+    required bool compact,
+  }) {
     final void Function(AudioCue cue)? jump = _ref.jumpToCue;
     final ColorScheme colors = Theme.of(context).colorScheme;
-    final TextStyle primaryStyle = row.current
-        ? context.fushiType.titleSmallEmphasized
-        : context.fushiType.bodyMedium;
-    final Widget content = Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        Text(row.cue.text.trim(), style: primaryStyle),
-        if (showSecondary)
-          Text(
-            row.secondaryText ?? '—',
-            style: context.fushiType.bodySmall.copyWith(
-              color: colors.onSurfaceVariant,
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final AudioCue cue = row.cue;
+    final TextStyle mono = context.fushiType.labelSmall.copyWith(
+      color: colors.onSurfaceVariant,
+      fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
+    );
+    final Widget content = Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      child: Row(
+        children: <Widget>[
+          SizedBox(width: 40, child: Text('${index + 1}', style: mono)),
+          SizedBox(
+            width: 76,
+            child: Text(videoSubtitleStudioTimecode(cue.startMs), style: mono),
+          ),
+          if (!compact)
+            SizedBox(
+              width: 52,
+              child: Text(
+                '${((cue.endMs - cue.startMs) / 1000).toStringAsFixed(1)}s',
+                style: mono,
+              ),
+            ),
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  cue.text.trim().replaceAll('\n', ' '),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: current
+                      ? context.fushiType.titleSmallEmphasized
+                      : context.fushiType.bodyMedium,
+                ),
+                if (showSecondary)
+                  Text(
+                    (row.secondaryText ?? '—').replaceAll('\n', ' '),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: context.fushiType.bodySmall.copyWith(
+                      color: colors.onSurfaceVariant,
+                    ),
+                  ),
+              ],
             ),
           ),
-      ],
-    );
-    final Widget tile = FushiListTileControl(
-      key: ValueKey<String>('video-subtitle-studio-row-${row.cue.startMs}'),
-      dense: true,
-      selected: row.current,
-      leading: Text(
-        videoSubtitleStudioClock(row.cue.startMs),
-        style: context.fushiType.labelSmall.copyWith(
-          fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
-        ),
+        ],
       ),
-      title: content,
-      onTap: jump == null ? null : () => jump(row.cue),
+    );
+    final Widget tile = Material(
+      key: ValueKey<String>('video-subtitle-studio-row-${cue.startMs}'),
+      color: current ? colors.secondaryContainer : Colors.transparent,
+      borderRadius: BorderRadius.circular(tokens.radii.control),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: jump == null ? null : () => jump(cue),
+        child: content,
+      ),
     );
     return jump == null
         ? tile

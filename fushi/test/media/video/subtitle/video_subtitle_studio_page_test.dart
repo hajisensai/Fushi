@@ -1,6 +1,6 @@
 // 反馈 E1pq561P2q：字幕工作台（生成 / 拆分双语 / 逐句对轴 / 参考面板）。
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/video/subtitle/video_subtitle_studio_sheet.dart';
+import 'package:fushi/src/media/video/subtitle/video_subtitle_studio_page.dart';
 import 'package:fushi_audio/fushi_audio.dart' show AudioCue;
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_evidence.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_content_language.dart';
@@ -25,36 +25,25 @@ final List<AudioCue> _secondary = <AudioCue>[
 ];
 
 void main() {
-  group('videoSubtitleStudioRows', () {
-    test('anchors on the line under the playhead with two lines around', () {
-      final List<VideoSubtitleStudioRow> rows = videoSubtitleStudioRows(
+  group('videoSubtitleStudioTable', () {
+    test('lists the whole track with the overlapping other-language line', () {
+      final List<VideoSubtitleStudioRow> rows = videoSubtitleStudioTable(
         primary: _primary,
         secondary: _secondary,
-        primaryPositionMs: 6500,
         secondaryShiftMs: 0,
       );
       expect(rows.map((VideoSubtitleStudioRow r) => r.cue.text), <String>[
-        '日本語1',
-        '日本語2',
-        '日本語3',
-        '日本語4',
-        '日本語5',
+        for (int i = 0; i < 8; i++) '日本語$i',
       ]);
-      expect(
-        rows.where((VideoSubtitleStudioRow r) => r.current).single.cue.text,
-        '日本語3',
-      );
-      expect(rows[2].secondaryText, 'English 3');
+      expect(rows[3].secondaryText, 'English 3');
     });
 
-    test('in a gap between lines nothing is current', () {
-      final List<VideoSubtitleStudioRow> rows = videoSubtitleStudioRows(
+    test('without a secondary track no row has other-language text', () {
+      final List<VideoSubtitleStudioRow> rows = videoSubtitleStudioTable(
         primary: _primary,
         secondary: const <AudioCue>[],
-        primaryPositionMs: 7800,
         secondaryShiftMs: 0,
       );
-      expect(rows.any((VideoSubtitleStudioRow r) => r.current), isFalse);
       expect(
         rows.every((VideoSubtitleStudioRow r) => r.secondaryText == null),
         isTrue,
@@ -63,32 +52,63 @@ void main() {
 
     test('secondary window follows each track\'s own delay', () {
       // 副字幕轴比主字幕晚 2 s（两条轨调轴不同）：主句 3 对上副字幕里的 English 4。
-      final List<VideoSubtitleStudioRow> rows = videoSubtitleStudioRows(
+      final List<VideoSubtitleStudioRow> rows = videoSubtitleStudioTable(
         primary: _primary,
         secondary: _secondary,
-        primaryPositionMs: 6500,
         secondaryShiftMs: 2000,
       );
-      expect(
-        rows.firstWhere((VideoSubtitleStudioRow r) => r.current).secondaryText,
-        'English 4',
-      );
+      expect(rows[3].secondaryText, 'English 4');
     });
 
     test(
       'render-only and empty cues are skipped; empty track gives no rows',
       () {
         expect(
-          videoSubtitleStudioRows(
+          videoSubtitleStudioTable(
             primary: <AudioCue>[_cue(0, 1000, '   ')],
             secondary: const <AudioCue>[],
-            primaryPositionMs: 0,
             secondaryShiftMs: 0,
           ),
           isEmpty,
         );
       },
     );
+  });
+
+  group('videoSubtitleStudioAnchorIndex', () {
+    final List<VideoSubtitleStudioRow> rows = videoSubtitleStudioTable(
+      primary: _primary,
+      secondary: const <AudioCue>[],
+      secondaryShiftMs: 0,
+    );
+
+    test('is the last line starting at or before the playhead', () {
+      expect(videoSubtitleStudioAnchorIndex(rows, 6500), 3);
+      expect(videoSubtitleStudioAnchorIndex(rows, 6000), 3);
+      expect(videoSubtitleStudioAnchorIndex(rows, 5999), 2);
+      expect(videoSubtitleStudioAnchorIndex(rows, 999999), 7);
+    });
+
+    test('before the first line it is the first line; empty table is null', () {
+      expect(videoSubtitleStudioAnchorIndex(rows, -100), 0);
+      expect(
+        videoSubtitleStudioAnchorIndex(const <VideoSubtitleStudioRow>[], 0),
+        isNull,
+      );
+    });
+
+    test('in a gap between lines nothing is current', () {
+      expect(videoSubtitleStudioRowIsCurrent(rows[3], 6500), isTrue);
+      // 7800 落在第 3 句（6000–7500）之后、第 4 句（8000）之前。
+      expect(videoSubtitleStudioAnchorIndex(rows, 7800), 3);
+      expect(
+        rows.any(
+          (VideoSubtitleStudioRow r) =>
+              videoSubtitleStudioRowIsCurrent(r, 7800),
+        ),
+        isFalse,
+      );
+    });
   });
 
   group('videoSubtitleStudioEvidenceTrack', () {
@@ -143,18 +163,20 @@ void main() {
     });
   });
 
-  test('videoSubtitleStudioClock', () {
-    expect(videoSubtitleStudioClock(65000), '1:05');
-    expect(videoSubtitleStudioClock(3723000), '1:02:03');
-    expect(videoSubtitleStudioClock(-5), '0:00');
+  test('videoSubtitleStudioTimecode', () {
+    expect(videoSubtitleStudioTimecode(65000), '1:05.00');
+    expect(videoSubtitleStudioTimecode(65432), '1:05.43');
+    expect(videoSubtitleStudioTimecode(3723450), '1:02:03.45');
+    expect(videoSubtitleStudioTimecode(-5), '0:00.00');
   });
 
-  group('VideoSubtitleStudioSheet', () {
+  group('VideoSubtitleStudioPage', () {
     Finder byKey(String key) => find.byKey(ValueKey<String>(key));
 
     Future<List<String>> pump(
       WidgetTester tester, {
       required SubtitleContentLanguage language,
+      List<AudioCue>? primary,
       List<AudioCue>? secondary,
       bool withRetime = true,
       ValueNotifier<int>? position,
@@ -166,6 +188,7 @@ void main() {
       addTearDown(tester.view.reset);
       final ValueNotifier<int> pos = position ?? ValueNotifier<int>(6500);
       final List<String> calls = <String>[];
+      final List<AudioCue> pri = primary ?? _primary;
       final List<AudioCue> sec = secondary ?? _secondary;
       await tester.pumpWidget(
         MaterialApp(
@@ -178,11 +201,11 @@ void main() {
               body: Center(
                 child: FilledButton(
                   key: const ValueKey<String>('open'),
-                  onPressed: () => showVideoSubtitleStudioSheet(
+                  onPressed: () => openVideoSubtitleStudioPage(
                     context: context,
                     reference: VideoSubtitleStudioReference(
                       listenable: pos,
-                      primaryCues: () => _primary,
+                      primaryCues: () => pri,
                       secondaryCues: () => sec,
                       primaryPositionMs: () => pos.value,
                       secondaryPositionMs: () => pos.value,
@@ -366,29 +389,80 @@ void main() {
       expect(hint(), isNot(contains('English')));
     });
 
-    testWidgets('reference shows the language, lines around the playhead and '
-        'the other-language subtitle', (WidgetTester tester) async {
+    testWidgets('reference shows the language and the whole track line by '
+        'line with timecodes and the other-language subtitle', (
+      WidgetTester tester,
+    ) async {
       await pump(tester, language: SubtitleContentLanguage.bilingualJaZh);
       expect(byKey('video-subtitle-studio-language'), findsOneWidget);
       expect(find.textContaining('中日双语'), findsOneWidget);
+      // 全集都在表里，不再只有播放头前后两句。
+      expect(find.text('日本語0'), findsOneWidget);
       expect(find.text('日本語3'), findsOneWidget);
+      expect(find.text('日本語7'), findsOneWidget);
       expect(find.text('English 3'), findsOneWidget);
-      expect(find.text('日本語0'), findsNothing);
+      expect(find.text('0:06.00'), findsOneWidget);
+    });
+
+    testWidgets('opens as a full page, not a dialog', (
+      WidgetTester tester,
+    ) async {
+      await pump(tester, language: SubtitleContentLanguage.japanese);
+      // 整页路由盖住了打开它的那一页。
+      expect(byKey('open').hitTestable(), findsNothing);
+      expect(find.byType(VideoSubtitleStudioPage), findsOneWidget);
     });
 
     testWidgets('the comparison follows the playhead live', (
       WidgetTester tester,
     ) async {
+      // 300 句的长轨：表格只建可见的那几行，远处的句子要跟着播放头滚过去才出现。
+      final List<AudioCue> long = <AudioCue>[
+        for (int i = 0; i < 300; i++) _cue(i * 2000, i * 2000 + 1500, '長い$i'),
+      ];
       final ValueNotifier<int> pos = ValueNotifier<int>(6500);
       await pump(
         tester,
         language: SubtitleContentLanguage.japanese,
+        primary: long,
+        secondary: const <AudioCue>[],
         position: pos,
       );
-      expect(find.text('日本語6'), findsNothing);
-      pos.value = 12500;
+      expect(find.text('長い3'), findsOneWidget);
+      expect(find.text('長い250'), findsNothing);
+      pos.value = 500500;
       await tester.pumpAndSettle();
-      expect(find.text('日本語6'), findsOneWidget);
+      expect(find.text('長い250'), findsOneWidget);
+      expect(find.text('長い3'), findsNothing);
+    });
+
+    testWidgets('scrolling the table by hand stops following; the follow '
+        'button brings it back', (WidgetTester tester) async {
+      final List<AudioCue> long = <AudioCue>[
+        for (int i = 0; i < 300; i++) _cue(i * 2000, i * 2000 + 1500, '長い$i'),
+      ];
+      final ValueNotifier<int> pos = ValueNotifier<int>(500500);
+      await pump(
+        tester,
+        language: SubtitleContentLanguage.japanese,
+        primary: long,
+        secondary: const <AudioCue>[],
+        position: pos,
+      );
+      // 打开就停在当前句上。
+      expect(find.text('長い250'), findsOneWidget);
+      await tester.drag(
+        byKey('video-subtitle-studio-table'),
+        const Offset(0, -200),
+      );
+      await tester.pumpAndSettle();
+      pos.value = 6500;
+      await tester.pumpAndSettle();
+      expect(find.text('長い3'), findsNothing);
+
+      await tester.tap(byKey('video-subtitle-studio-follow'));
+      await tester.pumpAndSettle();
+      expect(find.text('長い3'), findsOneWidget);
     });
 
     testWidgets('turning off other-language subtitles hides them', (
