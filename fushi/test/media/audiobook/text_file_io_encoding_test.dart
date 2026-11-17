@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/audiobook/platform_charset_detector.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 
 /// BUG-1490：桌面端非 UTF-8 字幕全被误报为「不支持」。
@@ -265,14 +266,14 @@ void main() {
     });
 
     test('非法字节降级到宽松 UTF-8，绝不抛异常', () async {
-      // Shift-JIS 字节 + 桌面端无 CharsetDetector 实现 = 旧实现在这里抛
+      // 既不是 Unicode 家族、也不是任何本地多字节编码的字节：旧实现在桌面端抛
       // MissingPluginException，整条字幕链失败。现在必须返回一个（有损的）字符串。
-      final Uint8List sjis = Uint8List.fromList(<int>[
+      final Uint8List garbage = Uint8List.fromList(<int>[
         ...utf8.encode('Dialogue: '),
-        0x93, 0xFA, 0x96, 0x7B, 0x8C, 0xEA, // CP932 「日本語」
+        0xFF, 0xFF, 0xFF, //
         0x0A,
       ]);
-      final String text = await readBytes(sjis, 'g.ass');
+      final String text = await readBytes(garbage, 'g.ass');
       expect(
         text.startsWith('Dialogue: '),
         isTrue,
@@ -283,6 +284,58 @@ void main() {
 
     test('空文件不抛', () async {
       expect(await readBytes(Uint8List(0), 'h.ass'), '');
+    });
+  });
+
+  // BUG-4794：桌面三端读 CP932 / GBK / Big5 / EUC-JP 字幕整份变成 U+FFFD。
+  //
+  // 与 app 在桌面端的装配同构：`installPlatformCharsetDetector()` 装了插件，但测试
+  // 宿主（同桌面三端）没有它的平台实现 → 恒返回 null → 落到 Rust 计算内核的
+  // `decodeLegacyText`。夹具与纯 Dart（无头服务端同构）一侧的用例在
+  // packages/fushi_audio/test/（`text_file_io_legacy_decode_test.dart`）。
+  group('readTextWithEncoding（本地多字节编码，桌面端装配）', () {
+    const String fixtureDir =
+        '../packages/fushi_audio/test/fixtures/legacy_text';
+
+    setUp(installPlatformCharsetDetector);
+
+    tearDown(() {
+      platformCharsetDecoder = null;
+    });
+
+    for (final String name in <String>[
+      'ja_cp932.ass',
+      'ja_eucjp.srt',
+      'zh_gbk.srt',
+      'zh_big5.srt',
+    ]) {
+      test('$name 解回原文', () async {
+        final String expected = utf8.decode(
+          File('$fixtureDir/$name.expected.txt').readAsBytesSync(),
+        );
+        expect(await readTextWithEncoding(File('$fixtureDir/$name')), expected);
+      });
+    }
+
+    test('CP932 的 ASS 解析出日文 cue', () async {
+      final List<AudioCue> cues = await AssParser.parse(
+        assFile: File('$fixtureDir/ja_cp932.ass'),
+        bookKey: 'bug4794',
+      );
+      expect(cues.length, 240);
+      expect(cues[0].text, 'おはよう、今日はいい天気ですね。');
+    });
+
+    test('短片段（证据不足）不猜编码，照旧降级到宽松 UTF-8', () async {
+      // CP932 「日本語」只有三个汉字：这点字节按 GBK / Big5 读也说得通。
+      final Uint8List sjis = Uint8List.fromList(<int>[
+        ...utf8.encode('Dialogue: '),
+        0x93, 0xFA, 0x96, 0x7B, 0x8C, 0xEA, //
+        0x0A,
+      ]);
+      final String text = await decodeTextBytes(sjis);
+      expect(text.startsWith('Dialogue: '), isTrue);
+      expect(text.contains('\u{FFFD}'), isTrue);
     });
   });
 
