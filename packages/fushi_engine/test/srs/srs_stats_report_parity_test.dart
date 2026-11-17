@@ -19,7 +19,6 @@ import 'package:fushi_engine/srs/srs_rwkv_scheduling.dart';
 import 'package:fushi_engine/srs/srs_stats.dart';
 import 'package:fushi_engine/srs/srs_stats_loader.dart';
 import 'package:fushi_srs/fushi_srs.dart';
-import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 import 'support/srs_test_storage.dart';
@@ -240,19 +239,11 @@ void main() {
     final FsrsEngine? engine = FfiFsrsEngine.tryCreate();
     expect(engine, isNotNull, reason: 'native fushi_fsrs (FUSHI_FSRS_LIB)');
     int t = _nows.first;
-    final Directory dir = Directory.systemTemp.createTempSync('srs_rep_');
-    addTearDown(() {
-      try {
-        dir.deleteSync(recursive: true);
-      } on FileSystemException {
-        // 句柄晚释放。
-      }
-    });
-    final String path = p.join(dir.path, 'srs.db');
-    File(path).writeAsBytesSync(
+    // 冻结库是协议 3 的 srs.db：经换代迁移（用户升级的同一条路）再开新代库。
+    final TestSrs srs = await openMigratedTestSrs(
       gzip.decode(File('$_fixtures/srs_stats_vectors.db.gz').readAsBytesSync()),
+      prefix: 'srs_rep_',
     );
-    final TestSrs srs = await openTestSrsAt(path);
     final SrsDbStore s = await SrsDbStore.open(
       core: srs.core,
       profileUid: _profile,

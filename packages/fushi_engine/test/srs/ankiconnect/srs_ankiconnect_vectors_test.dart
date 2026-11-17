@@ -278,17 +278,11 @@ void main() {
       dbFile.writeAsBytesSync(gzip.encode(File(snap).readAsBytesSync()));
       tmp.deleteSync(recursive: true);
     }
-    final Directory dir = Directory.systemTemp.createTempSync('srs_acvec_');
-    addTearDown(() {
-      try {
-        dir.deleteSync(recursive: true);
-      } on FileSystemException {
-        // 句柄晚释放。
-      }
-    });
-    final String path = p.join(dir.path, 'srs.db');
-    File(path).writeAsBytesSync(gzip.decode(dbFile.readAsBytesSync()));
-    final TestSrs srs = await openTestSrsAt(path);
+    // 冻结库是协议 3 的 srs.db：经换代迁移（用户升级的同一条路）再开新代库，新代的读命令对同一组向量。
+    final TestSrs srs = await openMigratedTestSrs(
+      gzip.decode(dbFile.readAsBytesSync()),
+      prefix: 'srs_acvec_',
+    );
     t = _queryNow;
     final SrsDbStore s = await SrsDbStore.open(
       core: srs.core,

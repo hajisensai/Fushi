@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show QueryRow;
@@ -123,7 +124,8 @@ Future<TestSrs> openMigratedTestSrs(
     out.verdict,
     SrsGen4MigrationVerdict.committed,
     reason:
-        'migrating the frozen protocol 3 fixture: ${out.code} ${out.reason}',
+        'migrating the frozen protocol 3 fixture: ${out.code} ${out.reason} '
+        '${out.reportPath} ${jsonEncode(out.report)}',
   );
   return openTestSrsIn(dir.path);
 }
