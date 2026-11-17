@@ -617,6 +617,81 @@ void main() {
       );
     });
 
+    test('合并撤销：败方重建时成员的 pinned 照快照恢复，AI 自动移出仍被拒绝（v159）', () async {
+      final String a = await book('A1');
+      final String pinned = await book('B1');
+      final String loose = await book('B2');
+      final int ca = await db.createMediaCollection(
+        'A',
+        origin: CollectionOrigin.ai,
+        organizeKey: 'k-a',
+      );
+      final int cb = await db.createMediaCollection(
+        'B',
+        origin: CollectionOrigin.ai,
+        organizeKey: 'k-b',
+      );
+      await db.addToCollection(ca, MediaKind.epub, a, userIntent: false);
+      // 用户否决过移出的成员：钉住但不接手合集所有权。
+      await db.addToCollectionRaw(
+        cb,
+        MediaKind.epub.dbValue,
+        pinned,
+        userIntent: false,
+        pinnedByUser: true,
+      );
+      await db.addToCollection(cb, MediaKind.epub, loose, userIntent: false);
+      final _FakeAi ai = _FakeAi(
+        (String prompt) => jsonEncode(<String, Object?>{
+          'merges': <Object?>[
+            <String, Object?>{
+              'collections': <String>[
+                _collectionIdOf(prompt, 'A'),
+                _collectionIdOf(prompt, 'B'),
+              ],
+              'confidence': 'high',
+            },
+          ],
+        }),
+      );
+      await service(
+        ai,
+      ).run(CollectionShelfDomain.books, trigger: OrganizeTrigger.manual);
+      expect(await db.getMediaCollectionById(cb), isNull);
+      final LibraryOrganizeChangeRow merge =
+          (await db.select(db.libraryOrganizeChanges).get()).singleWhere(
+            (LibraryOrganizeChangeRow r) => r.kind == 'merge',
+          );
+      expect(await undoLibraryOrganizeChanges(db, <int>[merge.id]), 1);
+      final MediaCollectionRow restored =
+          (await db.getMediaCollectionByNaturalKey('B', 'playlist') ??
+          await db.getMediaCollectionByNaturalKey('B', 'collection'))!;
+      final Map<String, bool> pins = <String, bool>{
+        for (final MediaCollectionItemRow m in await db.getCollectionItems(
+          restored.id,
+        ))
+          m.entryKey: m.pinnedByUser,
+      };
+      expect(pins, <String, bool>{pinned: true, loose: false});
+      expect(
+        await db.removeFromCollectionAutomatically(
+          restored.id,
+          MediaKind.epub.dbValue,
+          pinned,
+        ),
+        CollectionAutoRemoveResult.pinned,
+        reason: '撤销合并不得把用户钉住的成员变回 AI 可移出',
+      );
+      expect(
+        await db.removeFromCollectionAutomatically(
+          restored.id,
+          MediaKind.epub.dbValue,
+          loose,
+        ),
+        CollectionAutoRemoveResult.removed,
+      );
+    });
+
     test('新合集撞上别的分组删过的同名：换成确定性的名字', () async {
       for (final String t in haruhi) {
         await book(t);

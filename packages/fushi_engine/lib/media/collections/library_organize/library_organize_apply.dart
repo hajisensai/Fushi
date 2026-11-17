@@ -165,10 +165,16 @@ Future<Set<int>> applyOrganizeActions(
             'origin': s.origin,
             'key': s.organizeKey,
             'aliases': s.organizeAliases,
-            'members': <Map<String, String>>[
+            // pinned：用户亲手放进来 / 否决过移出的成员，撤销重建时照原样钉住
+            // （缺字段的旧记录按 false）。
+            'members': <Map<String, Object?>>[
               for (final MediaCollectionItemRow i
                   in await db.getCollectionItems(id))
-                <String, String>{'t': i.mediaType, 'k': i.entryKey},
+                <String, Object?>{
+                  't': i.mediaType,
+                  'k': i.entryKey,
+                  if (i.pinnedByUser) 'pinned': true,
+                },
             ],
           });
         }
@@ -487,8 +493,16 @@ Future<int> undoLibraryOrganizeChanges(
             organizeKey: s['key'] as String?,
             organizeAliases: sourceAliases,
           );
-          for (final ({String t, String k}) m in _members(s['members'])) {
-            await db.addToCollectionRaw(id, m.t, m.k, userIntent: false);
+          for (final ({String t, String k, bool pinned}) m in _membersWithPin(
+            s['members'],
+          )) {
+            await db.addToCollectionRaw(
+              id,
+              m.t,
+              m.k,
+              userIntent: false,
+              pinnedByUser: m.pinned,
+            );
             if (!before.contains('${m.t}\u0000${m.k}')) {
               await db.removeFromCollectionRaw(
                 c.id,
@@ -883,6 +897,17 @@ List<({String t, String k})> _members(Object? raw) => <({String t, String k})>[
     for (final Object? m in raw)
       if (m is Map && m['t'] is String && m['k'] is String)
         (t: m['t'] as String, k: m['k'] as String),
+];
+
+/// [_members] 连同成员行当时的 `pinned_by_user`（合并快照记的 `pinned`；旧记录缺
+/// 字段按 false）。
+List<({String t, String k, bool pinned})> _membersWithPin(
+  Object? raw,
+) => <({String t, String k, bool pinned})>[
+  if (raw is List)
+    for (final Object? m in raw)
+      if (m is Map && m['t'] is String && m['k'] is String)
+        (t: m['t'] as String, k: m['k'] as String, pinned: m['pinned'] == true),
 ];
 
 /// 一处改动的置信度字面量 → 枚举（整理记录页展示用）。
