@@ -123,10 +123,12 @@ class _Env {
       jsonEncode(e.toJson()),
   ]..sort();
 
-  /// [uid] 的集合里的操作条数（内核 `status` 的 `ops`：全部设备的日志条数；[dump] 是投影后的值，同一字段改两次只剩
-  /// 最后一条，不能拿它数写了几次）。
+  /// [uid] 的集合里本机写过的操作条数（内核 `status` 的 `nextSeq` − 1：本机日志的长度；每个集合只有本机一台设备）。
+  /// [dump] 是投影后的值，同一字段改两次只剩最后一条，不能拿它数写了几次。也不能数 `status` 的 `ops`（日志里还
+  /// 带内容的操作行数）：彻底清除在同一事务里把被清除实体的旧操作落成空洞（`weigh.rs` `execute_purges` →
+  /// `Truth::advance_purge`），清除一条笔记追加 删除 + 清除 两条、空洞掉它更早的几条，`ops` 反而变少。
   Future<int> ops(String uid) async =>
-      (await _storeOf(uid).sync2Status())['ops']! as int;
+      ((await _storeOf(uid).sync2Status())['nextSeq']! as int) - 1;
 }
 
 /// 一次调用的结局：正常返回（连同返回值的文本）或抛了哪一类错。

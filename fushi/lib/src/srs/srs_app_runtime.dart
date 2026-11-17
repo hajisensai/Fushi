@@ -128,15 +128,8 @@ srsAppRuntimeProvider = Provider<SrsAppRuntime?>((Ref ref) {
       mediaRoot: () async =>
           SrsMediaStore.mediaRootFor(await ref.read(srsSupportRootProvider)()),
       onError: ErrorLogService.instance.log,
-      // 并入之前先把目标 uid 已有的数据收进来（BUG-4011：合并沿用目标里已有的写入者，不再改名造出第二份）。
-      // 等多久、从哪收都在调度器里定（[SrsSyncScheduler.pullBeforeMerge]：按进度判，只从正在跑的那条通道和本机
-      // 目录 / 文件夹位置收）。
-      pullBeforeMerge: (SrsDbStore target, SyncAssetStore? within) =>
-          runtime.sync.pullBeforeMerge(target, within),
     ),
   );
-  // 旧库迁移推迟到首次同步确认之后（BUG-4011）：store 打开时不迁移（srs_providers.dart `deferMigration`），
-  // 由调度器在确认后的第一轮上传之前先收一轮再迁移（[SrsSyncScheduler.ensureMigrated]）。
   // 本机写了复习数据：去抖后经互联与云盘通道各推一轮（设计 §6.3，反馈 O4MSorhpie）。同步拉进来的变更不触发
   // （反馈 I1Bg6uMZ32：拉入 → 修订号 +1 → 又推一轮同步，见 [SrsRevisionOrigin]）。
   // BUG-4075 取证：修订号每跳一次按来源记一笔（`rev:local` 本机写入 / `rev:pulled` 同步拉入，后者在

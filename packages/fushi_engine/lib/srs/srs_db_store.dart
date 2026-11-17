@@ -36,10 +36,6 @@ import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
 export 'package:fushi_engine/srs/srs_edit_undo.dart';
 export 'package:fushi_engine/srs/srs_entity_views.dart' show SrsEntityView;
 
-/// 旧库迁移成同步 v2 操作时每批包多少条旧行（[SrsDbStore] 打开时）。每批是内核里一个独立提交的 savepoint：
-/// 被杀 / 关库只丢这一批。桌面实测见 docs/specs/2026-10-25-srs-sync-v2-plan.md「规模基准」。
-const int kSrsSync2MigrateBatch = 20000;
-
 /// 本进程（isolate）的身份：持久化的校时读数（服务器时间 + 开机时钟读数）只在写下它的进程里接着用。
 /// 同一进程里重开 profile / 副本时它不变，校时不丢；进程重启（含重新开机，开机时钟归零）后换新。
 final String _srsProcessBootId =
@@ -548,17 +544,6 @@ class SrsDbStore implements SrsSync2Host {
     if (changed && !reported) onBindingChanged();
     if (changed || reported) await _loadRootIds();
   }
-
-  /// 新代里开得了库就已经迁完（[SrsGen4Migration] 在开库之前整库做），没有推迟的迁移：立即返回，[beforeMigrate]
-  /// 不调。唯一的调用方是同步调度的 `ensureMigrated`（fushi/lib/src/srs/srs_sync_scheduler.dart；[sync2Migrated] 恒真，
-  /// 根本走不到这里）：那个文件归 G8-7，它删 `ensureMigrated` 时连同这里与 [kSrsSync2MigrateBatch] 一起删。
-  Future<void> migrateLegacy({
-    Future<void> Function(SrsDbStore store)? beforeMigrate,
-    int batch = kSrsSync2MigrateBatch,
-  }) async {}
-
-  /// 本 profile 的旧库已并成操作：新代里恒为 true（见 [migrateLegacy]）。
-  bool get sync2Migrated => true;
 
   /// 本机在这个 profile 集合里的同步 v2 设备 ID（换身份后会变）。打开之后恒非空（[_sync2Open]）。
   String? get sync2Device => _sync2Device;
