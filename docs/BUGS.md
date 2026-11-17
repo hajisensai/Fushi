@@ -33,17 +33,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4121 条。点号进各自文件。
+> 共 4136 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4765](bugs/BUG-4765-feedback-dev-save-file-macos.md) | ✅ | ✅ | 处理台另存样本文件在 macOS 上必定失败 |
-| [BUG-4764](bugs/BUG-4764-feedback-pending-file-missing-name.md) | ✅ | ✅ | 待传样本文件缺原文件名旁注时用假名上传、被服务端拒收后丢掉 |
-| [BUG-4763](bugs/BUG-4763-feedback-video-upload-after-files.md) | ✅ | ✅ | 反馈视频排在样本文件后上传，共用每 IP 每天额度被 429 挤掉 |
-> 共 4133 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4780](bugs/BUG-4780-feedback-dev-save-file-macos.md) | ✅ | ✅ | 处理台另存样本文件在 macOS 上必定失败 |
+| [BUG-4779](bugs/BUG-4779-feedback-pending-file-missing-name.md) | ✅ | ✅ | 待传样本文件缺原文件名旁注时用假名上传、被服务端拒收后丢掉 |
+| [BUG-4778](bugs/BUG-4778-feedback-video-upload-after-files.md) | ✅ | ✅ | 反馈视频排在样本文件后上传，共用每 IP 每天额度被 429 挤掉 |
 | [BUG-4777](bugs/BUG-4777-overwrite-snapshot-retention-stamp-failure.md) | ✅ | ✅ | 覆盖前快照钉修改时间失败会按旧库时间提前删快照 |
 | [BUG-4776](bugs/BUG-4776-overwrite-snapshot-preview-sync-probe-ui.md) | ✅ | ✅ | 覆盖前快照预览在 UI isolate 上同步检查书和视频文件 |
 | [BUG-4775](bugs/BUG-4775-merge-audiobook-pos-ignores-tombstone.md) | ✅ | ✅ | 合并与快照恢复的有声书进度不受墓碑与排除过滤 |
