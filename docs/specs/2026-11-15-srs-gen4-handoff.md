@@ -2253,8 +2253,19 @@ Rust `SCHEMA` 没升（没加表 / 索引，分到的 40024 没用）；ABI 不�
 
 - `srs_write_preread_cost`「彻底清除」仍红（ops 计数 Expected 973 / Actual 958），与本节无关：§26 C1C5 定因时就量到
   971 / 956（同样差 15），疑与 G8-7b 合入有关，归彻底清除 / 同步 owner。
-- Dart `srs_profile_merge.dart:617/631` 用 `l.hlc == srsImportedRevlogHlc(...)` 认导入日志：读侧的 `hlc` 现在就是派生值，
-  按代码路径应已恢复，但本节没有专门的测试覆盖它（G9-5 并入路径的 owner 复核）。
+- （更正）§26 C4 报告里说的「Dart `srs_profile_merge.dart:617/631` 按 `l.hlc == srsImportedRevlogHlc(...)` 认导入日志」是
+  另一条分支上的代码：G9-5 之后 profile 并入已移到 Rust，本分支的 `srs_profile_merge.dart` 只剩「续做半截并入」（169 行，
+  没有任何 hlc 引用）；`lib` 里用到 `srsImportedRevlogHlc` / `srsImportAnchorHlc` 的只有 `srs_apkg_import.dart` 写入侧
+  （2255 / 2312）。Dart 端没有按 hlc 认导入日志的代码，这一项无需交接。
 - 从 Fushi 导出包回导、按新卡重映射的「外来原生日志」（`srs_apkg_import.dart` `_remapExtLog`，origin = fushi）的 `hlc`
-  同样在 `parse_item` 被丢、按操作 HLC 排；它们的 EventKey 比卡，不跨卡成组，所以不会重复计数，但排序从作者 HLC 变成了
-  导入时刻。本节没改（不在 C4 范围，需要的话归导入 owner 判断要不要也在投影层保留作者时刻）。
+  同样在 `parse_item`（`cmd/writes.rs` `l.legacy_hlc = None`）被丢、按操作 HLC 排；它们的 EventKey 比卡，不跨卡成组，
+  所以不会重复计数，但排序从作者 HLC 变成了导入时刻：更早的外来复习可能排到本机更晚的原生复习之后、改掉当前排程（与 C4
+  第二种表现同类）。本节没改、没实测（不在 C4 范围）；已单列进规划 §6 合并条件，切换前由导入 owner 判断要不要在投影层
+  保留作者时刻。
+- 同批后一条写入盖掉前一条时，回包里前一项的修改行是 null（`edit_rows_in_the_reply_are_what_read_edits_gives` 明确如此），
+  而 Dart `_writtenEdits` 遇到 null 抛 `StateError`。旧 `_readBackEdits` 在同样场景下同样会抛，不是本节引入的回归，但
+  「内核说 null 正常、Dart 说是两边对不上」的契约矛盾仍在：另开一项，定同批重复写同一字段时 Dart 的返回语义（取最后一条
+  还是跳过），归写入接口 owner。
+- 性能注记：`editRows` 让读回修改行在写事务里做（`Session::finish` → `attach_rows` 对每个碰过的实体调一次 `edit_rows`）。
+  apkg 导入的 `_mapInto` 也走 `_emit(stamps: true)`，所以大批导入的写锁持有时间会变长；总工作量与原来的 Dart 回读相同，
+  命令后被并发写插队的窗口反而没了。暂不改；若量到导入时写锁过长，可以只对非导入调用发 `editRows`。
