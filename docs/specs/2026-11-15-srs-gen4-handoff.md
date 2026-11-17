@@ -2193,7 +2193,7 @@ Rust `SCHEMA` 没升（没加表 / 索引，分到的 40024 没用）；ABI 不�
   三份协议 3 测试 / 夹具（`srs_legacy_clock_conformance_test`、`legacy_clock_store_vectors.json`、`srs_gen4_rehearsal_test`）
   维持删除。
 
-## 第四波 K3 Anki 来源日志的 HLC 与写回包修改行（2026-11-17，分支 `pr/srs-gen4-k3-anki-log-hlc`，基于 `pr/srs-gen4-switch`）
+## 28. 第四波 K3 Anki 来源日志的 HLC 与写回包修改行（2026-11-17，分支 `pr/srs-gen4-k3-anki-log-hlc`，基于 `pr/srs-gen4-switch`）
 
 修 §26 的 C4，顺带根治 §26 记在 G9-7 名下的 `srs_write_preread_cost` 2 条（定因见下）。不改线格式、不改 `native_allowed`、
 不改冻结的 `history.rs` 规则，不升 SCHEMA（仍 40021）。
@@ -2270,7 +2270,7 @@ Rust `SCHEMA` 没升（没加表 / 索引，分到的 40024 没用）；ABI 不�
   apkg 导入的 `_mapInto` 也走 `_emit(stamps: true)`，所以大批导入的写锁持有时间会变长；总工作量与原来的 Dart 回读相同，
   命令后被并发写插队的窗口反而没了。暂不改；若量到导入时写锁过长，可以只对非导入调用发 `editRows`。
 
-## 第四波 内核 C6 / C7（2026-11-17，分支 `pr/srs-gen4-k4-undo-tags`，基于 `pr/srs-gen4-switch` `9ad57c7109`）
+## 29. 第四波 内核 C6 / C7（2026-11-17，分支 `pr/srs-gen4-k4-undo-tags`，基于 `pr/srs-gen4-switch` `9ad57c7109`）
 
 §26 T1 节的 C6（连续两步倒序撤销第二步被拒）与 C7（只改标签不前移修改时间）。只改 Rust，不改 Dart、不加表 / 索引，
 SCHEMA 不动（40021）。
@@ -2329,7 +2329,7 @@ SCHEMA 不动（40021）。
   用例红；`tags` 恒 false → C7 用例红；`tags` 只在 `keys` 为空时拼 → C7 用例（新断言）红。还原后工作区干净。
 - `cargo fmt --check` 0；`cargo test --profile quick --lib -j 4` 0，1318 过 / 0 败 / 39 忽略（存量）。没改 Dart，没重跑 engine / app 测试。
 
-## 第四波 K5 别名表增量（C8 `.apkg` 导入超线性，2026-11-17，分支 `pr/srs-gen4-k5-alias-incremental`，基于 `pr/srs-gen4-switch`）
+## 30. 第四波 K5 别名表增量（C8 `.apkg` 导入超线性，2026-11-17，分支 `pr/srs-gen4-k5-alias-incremental`，基于 `pr/srs-gen4-switch`）
 
 - **根因（§26 T1 节 C8 的疑点不对）**：不是 `cache.rs` 的整层重建，而是别名表的增量证明。Dart 导入按「笔记身份 → 字段 →
   标签 → 卡片修改」发草稿，`cmd/writes.rs` `apply_in` 在身份记录处、`expand_tags` 在标签项处各收尾一次，于是一条笔记的
@@ -2358,7 +2358,7 @@ SCHEMA 不动（40021）。
   单批均值 474 / 411 ms（不随库变大）；去掉修复同一探针 = 2.8 / 5.1 / 16.9 / 92.2 s，整表重算次数 = 笔记数，单批从
   1.3 s 涨到 3.5 s。
 
-## 第四波 G8-7c 同步收尾（2026-11-17，分支 `pr/srs-gen4-g8-7c-sync-tail`，基于 `pr/srs-gen4-switch`）
+## 31. 第四波 G8-7c 同步收尾（2026-11-17，分支 `pr/srs-gen4-g8-7c-sync-tail`，基于 `pr/srs-gen4-switch`）
 
 接 §22 的遗留。schema 不升（仍是 `40021`）：新增的状态都放进已有的 `srs_meta` / `loc_state`，没有新表。
 
