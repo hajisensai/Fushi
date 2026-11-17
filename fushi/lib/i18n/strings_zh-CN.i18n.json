@@ -8011,6 +8011,7 @@
   "screen_ocr_engine_follow_global": "跟随全局（${name}）",
   "screen_ocr_engine_hint": "默认跟随「设置 → 模型 → OCR」里的引擎。设备自带识别横排界面文字最快；竖排要用本地模型；Google Lens 会上传整张截图。跟随的本地模型还没下载时先用设备自带。",
   "screen_ocr_google_lens_disclosure_body": "应用外截屏识字时，整块显示器的截图会发送给 Google。该接口并非官方公开 API，可能随时失效。只有同意后才会上传。",
+  "screen_ocr_google_lens_disclosure_body_mobile": "应用外截屏识字时，整个屏幕的截图会发送给 Google。该接口并非官方公开 API，可能随时失效。只有同意后才会上传。",
   "screen_ocr_google_lens_disclosure_title": "将截屏发送到 Google Lens？",
   "screen_ocr_keep_session": "保持截屏会话",
   "screen_ocr_keep_session_hint": "同意一次录屏后，之后截屏识字不再每次弹系统确认框",

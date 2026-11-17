@@ -19,6 +19,7 @@ import 'package:fushi/src/lookup/overlay_bridge_handlers.dart'
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/media/manga/ocr/google_lens_disclosure.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/ocr/google_lens_screen_ocr.dart';
 import 'package:fushi/src/ocr/local_screen_ocr.dart';
@@ -2105,6 +2106,10 @@ void main() {
             });
             expect(target.log, contains('askLensConsent'));
             expect(target.log, isNot(contains('recognize')));
+            // 手机上的同意框不说「整块显示器」。
+            expect(target.askedLensScenes, <GoogleLensDisclosureScene>[
+              GoogleLensDisclosureScene.mobileScreens,
+            ]);
           });
 
           testWidgets('BUG-4508：ML Kit 报不可用后的本机模型重试，模型也没就绪 → unavailable、不识别', (
@@ -2153,6 +2158,9 @@ void main() {
           target.lensConsent = false;
           await startOcr(tester);
           expect(target.log, <String>['front', 'askLensConsent']);
+          expect(target.askedLensScenes, <GoogleLensDisclosureScene>[
+            GoogleLensDisclosureScene.desktopScreens,
+          ]);
           expect(called('startScreenOcrCapture'), isFalse);
           expect(target.recognizeEngines, isEmpty);
         });
@@ -2465,11 +2473,21 @@ class _RecordingActionTarget extends DesktopSystemBallActionTarget {
   bool lensConsent = true;
 
   @override
-  Future<bool> hasLensConsent() async => lensConsent;
+  Future<bool> hasLensConsent({
+    required GoogleLensDisclosureScene scene,
+  }) async => lensConsent;
+
+  /// 每次弹 Lens 同意框用的场景（文案）。
+  final List<GoogleLensDisclosureScene> askedLensScenes =
+      <GoogleLensDisclosureScene>[];
 
   @override
-  Future<bool> askLensConsent(BuildContext context) async {
+  Future<bool> askLensConsent(
+    BuildContext context, {
+    required GoogleLensDisclosureScene scene,
+  }) async {
     log.add('askLensConsent');
+    askedLensScenes.add(scene);
     return false;
   }
 
