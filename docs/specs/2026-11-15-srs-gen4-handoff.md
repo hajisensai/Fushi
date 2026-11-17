@@ -2192,3 +2192,98 @@ Rust `SCHEMA` 没升（没加表 / 索引，分到的 40024 没用）；ABI 不�
   `backup_merge_engine.dart` 保留 develop 的 `excludedBookKeys`，不带回 G11-4 已删的 `localSrs` / `sourceSrs`。develop 改过的
   三份协议 3 测试 / 夹具（`srs_legacy_clock_conformance_test`、`legacy_clock_store_vectors.json`、`srs_gen4_rehearsal_test`）
   维持删除。
+
+## 第四波 G9-5 续：profile 关联流程与并入相关测试（2026-11-17，分支 `pr/srs-gen4-g9-5d-link-flow`，基于 `pr/srs-gen4-switch` `9ad57c7109`）
+
+### 关联流程改走 `collection_adopt`（`packages/fushi_engine/lib/srs/srs_profile_link.dart`）
+
+- **不再改 profile uid**：`SrsDbProfileLinker` 的自动认领（`link` 判成 `SrsProfileLinkAdopt`）与用户选定（`adopt`）都调内核
+  `collection_adopt {collection, dir, confirmed: true, now}`；`_switchUid`、`_retireV2Device`、对 `srsAdoptProfileUid` 的调用删了，
+  也不再抛 `SrsProfileMergeRemoved`（本机有数据照样能选，按 D27 并入）。`srsAdoptProfileUid` 本身留着只因冻结的协议 1 客户端
+  副本 `test/srs/sync2/v1_client/srs_profile_link.dart` 还 import 它（随 G7-6 删那份副本时一起删）。
+- **按 `meta.json` 认集合**：`srsListRemoteProfiles` 给每个 `fushi-srs/<目录>/` 读 `v4/meta.json` 的 `collection`（没有新根退到
+  旧根 `v3/meta.json`），记进 `SrsRemoteProfile.collection`；`uid` 字段现在是**位置目录名**（字段名沿用）。外来文件按
+  `kSrsLocationJsonMaxBytes`（64 KiB）卡大小。
+- **判定**（`srsDecideProfileLink` 新增 `ownCollection` / `joined`）：`localUid` 传本机集合的 `dir`；集合标识等于本机的、在本机
+  `collection_info.joins` 里的（已经并进来的）、读不出集合标识的（没立过根，认领不了）目录都不算候选。其余规则（有数据交给
+  用户选、双方都空按目录名只让大的一边认领、`settled` 不再自动认领）照旧。认领目标若已绑在本机另一个 profile 上
+  （`collections.collection` 唯一）：自动路径保持、选定路径抛 `StateError`，都不改任何东西。
+- **认领之后收拾位置**（`_adoptCollection`）：`bound` / `joined` 且 `rebound`（本机离开了原目录）→ 删本机在原目录里的说明
+  文件目录（`v3/devices/<本机>`）；新代设备目录 `v4/devices/<本机>` 只在原集合里没有别的设备时才删（有的话它们跟过来之前还要
+  从那里收本机之前的段）；`v4/` 根永远留着（§21）。`joined` 没改绑（对方并进本机）→ 在对方目录里放**并入提示**（下条）。
+  收拾失败只记日志（认领已在内核提交）。`srsPublishProfileInfo` / `srsRemoveOwnProfileFolder` 加 `dir` 参数：说明文件写进
+  `identity` 的 `dir`，不再按 uid 拼。
+- **调度器**：`SrsProfileLinkOutcome` 加 `changed`；新代认领不换 store 对象，`SrsSyncScheduler._link` 在 `changed` 且对象没换时
+  直接通知界面重读（原来只靠比对象身份）。
+
+### 定案：D27 吸收方向的发现机制（所有者授权自定）
+
+问题（§21「没做」）：本机目录名小、对方并进本机时，`Join{from: 对方}` 写在本机集合的日志里、发在本机目录的 `v4/` 根；对方
+集合的设备只读自己目录的根，看不到它，也就永远不跟过来（而且对方集合里有别的设备时，旧判定按「已关联」直接保持，连候选都
+不列）。按设计稿 §5.4 第 3 条（「B 的根里留一个指向 A 的提示，放独立文件、不进 meta.json」「不凭提示自动跟随」「跟随前再问
+一次用户」D25）定案：
+
+1. 吸收的一方在被并入方的目录里写 `fushi-srs/<对方目录>/joined-into-<本机集合标识>.json`
+   （`{"v":1,"collection":<本机集合>,"dir":<本机目录>}`，`srsWriteJoinHint`）。放在集合目录这一级、不在 `v4/` 里：同步一轮只读
+   `v4/` / `v3/` / `v2/`，列 profile 时只认文件夹，旧版本不受影响；`srsRemoveOwnProfileFolder` 把它算成「别人的东西」，有它就
+   不删那个目录。内容只由两个集合标识决定，几台设备各写一次结果相同。
+2. 被并入方的设备每次关联时读自己目录里的提示；提示指向的目录在位置上、`meta.json` 的集合标识与提示一致、目录名比自己小、
+   不是本机集合也没并进来过，就把它当候选交给用户**再确认一次**——**不看「已关联」**（`srsDecideProfileLink` 里提示先于
+   `linked` 判）。用户确认后照常 `collection_adopt`，本机目录名大 → 按 D27 改绑过去，收敛。
+3. 提示没有签名：伪造它最多让对方多弹一次确认，跟不跟由用户定；设计稿里「依据受信设备签名的 `Join`」这一步没做——对方
+   设备通常从没见过吸收方的设备，谈不上信任，用户确认就是信任的来源。若要做，得让内核先读吸收方根里的 `Join` 再弹框（归 G10）。
+4. 已知时效：调度器对「已关联」的位置在进程内只判一次（`_linkDecided` 不过期），被吸收方已经跑着的进程要到下次启动才看到
+   提示。
+
+### 发现：打开过的 profile 不是「空集合」（`bound` 换绑在 app 里走不到）
+
+`SrsDbStore.open` → `ensureBuiltins` 把内置牌组 / 笔记类型写成本机日志里的身份记录，`discard.rs` `disposable` 只认「本机区间
+全是 `Salts`」，所以任何经 `SrsDbStore` 打开过的 profile 认领别的集合都是 `joined`（D27 改绑、写一条 `Join`），§20 的「空集合
+可换绑」只在内核直接建身份、没开过 store 的 profile 上成立（Rust 测试覆盖）。结果正确（内置记录是同一个规范 ID，随本机身份
+带过去，不丢不重），只是多一条 `Join`、留一个没用的旧集合标识进 `join_ix`。要让 `bound` 生效得让 `disposable` 把「只有内置
+实体身份记录」也算空——内核取舍，交 G9 身份模块，本分支没改。Dart 测试按「集合换了、旧集合标识不再绑着、只剩一个集合、
+profile uid 不变」断言，不分 `bound` / `joined`。
+
+### 删掉的死路径
+
+`ensureMigrated` 与「迁移前只拉不发」：`srs_sync_scheduler.dart` 的 `ensureMigrated` / `pullInto` / `pullBeforeMerge` / `_migrations` /
+`_SrsMigrateScope` 与构造参数 `migratePullBound` / `mergePullBound` / `pullTimer`；`SrsDbStore.migrateLegacy` / `sync2Migrated` /
+`kSrsSync2MigrateBatch`；linker 的 `pullBeforeMerge` 参数与 app 装配（`srs_app_runtime.dart`）；整个
+`packages/fushi_engine/lib/srs/sync2/srs_sync2_pull_first.dart`（`srsSync2PullOnly` / `srsSync2PullBounded` / `SrsPullBound` …）及其
+测试 `srs_sync2_pull_progress_test.dart`、`fushi/test/srs/srs_pull_before_migrate_test.dart`。
+
+### 合流后新冒的红：`srs_profile_ownership_test`「自己的 ID：照常生效 sync2Purge 笔记」
+
+根因：测试拿 `status.ops`（日志里还带内容的操作行数）数「写没写操作」；G8-7b 起彻底清除在同一事务里把被清除实体的旧操作落成
+空洞（`weigh.rs` `execute_purges` → `Truth::advance_purge`），清除一条笔记追加「删除 + 清除」两条、空洞掉更早的四条，行数从 26 降到
+24。产品行为正确，是度量错了：改数本机日志长度（`status.nextSeq − 1`）。78 条全绿。
+
+### 测试（本分支改的 / 新增的）
+
+- `srs_profile_link_sync_test`（7 → 8 条）：断言改成「同一个集合、同一个目录、profile uid 不变」；B 并入 A 用 `adopt(.., within:)`；
+  旧目录断言改成「不再列着本机这个写入者」（`v4/` 根按 §21 留着）；新增「A 吸收 B：B 的设备（已关联）经并入提示再确认一次，确认后
+  三台收敛到 A」。变异实测：去掉 `joined` 过滤 → 该条红在「已经并进 A 的集合不再算候选」；去掉提示判定（`srsDecideProfileLink` 里 `hinted` 不再返回 `Choose`）→ 该条红在「b：提示指向的 A 交给用户确认」（`Actual: <null>`）；还原后全绿（44 条，与本组其余四个文件同跑）。
+- `srs_profile_adopt_user_data_test`、`srs_collection_binding_test`：同口径改断言；`rows('sync2_ops')` 那条改成数新代 `collections`。
+- `srs_profile_purge_single_test`：协议 3 的「采用删旧 uid / 在途写入 / 回退」三条按新代重写（认领后旧集合标识不再绑着、只剩一个
+  集合、主库 uid 不变；与在途写入交错写下的笔记都在；目标是本机另一个 profile 的集合则拒绝、什么都不动）。
+- `fushi/test/srs/srs_limit_unit_legacy_count_test`（⑥）：W3 改成 `.fushisrs` 导入，不是生产上「只同步进来旧日志」的路；改回两台设备
+  经同一个位置跑同步一轮。协议 3 的前提「只并入日志不推进内容指纹」在新代不成立（收段后内容指纹的修订段推进，实测 `…:5 → …:6`），
+  不再断言；回归由结果钉住（合并前缓存了 0、合并后必须 1）。变异实测：把 `srs_providers.dart` 里提醒计数 provider 的缓存键
+  （`contentFingerprint|rwkvScoresKey`）换成常量 → 红在 `Expected: <1>`；还原后 1 条绿、工作区干净。
+
+### 没做 / 交出去
+
+- **BUG-4626 在新代的并入场景是真红（交 G9 身份 / 设计拍板）**：同库 A、B 两份 profile，A 拿 B 的笔记 / 卡片 ID 改字段、标签、
+  旗标、暂停（新代不在追加前拒绝，落成 A 集合里的悬空操作，B 当时看不到），之后另一台设备上的 B 经 `.fushisrs`
+  （`srsExportFushiSrs` → `srsImportFushiSrs`，用户确认）把 A 的集合并进来 → **B 的笔记字段变成 A 写的值**
+  （`Expected: '鳥'` / `Actual: '被 A 改'`）。设计稿 §2「ID 不再按 uid 加盐、并入 = 操作并集」下这是按设计并集的结果，还是该
+  让并入方丢掉「改的是本集合当时不存在的实体」的操作，属于语义取舍，本分支不定、不改内核。复现测试没提交（不提交红）：
+  写法是上面这一段，同库两份 store 用 `openTestSrsStorage` + `SrsFakeEngine`，B 的数据先经 `.fushisrs` 导到 `dev-remote` 上的 B，
+  再导 A 的。
+- ③ 余项没做：`srs_write_statement_cost_test` 第 1 条与 `bulk_ops_roundtrips` / `equivalence` 里依赖 `applyRemote` 外来已盖戳事件
+  的步骤改走集合并入；`dumpSrsState.serverTimes` 维度的变异测试。
+- ⑤ 没做（G11-4 遗留）：覆盖恢复后同集合多 profile 只有第一个重绑（`srs_backup_merge.dart:349`）、覆盖恢复后第一次合并把同一批
+  旧事件输入落两遍。分析：新代 `collections.profile_uid` / `collection` 都唯一，两个不同 uid 的本机 profile 不能绑同一个集合，
+  「同一单位多个 profile」只可能是共用 uid 的情形，要先在 G11-4 的备份格式里确认这种输入是否还存在再定修法。
+- `SrsDeferredProfileMerge` / `SrsProfileAdoptDeferred` 还留着（调度器与界面仍引用）；`srsAdoptProfileUid` 随 G7-6 删。
+- 本机目录名小、本机为空时只能等对方设备跟过来（对方按提示确认）；本机这边不主动做什么。
