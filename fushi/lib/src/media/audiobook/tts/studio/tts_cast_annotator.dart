@@ -7,6 +7,9 @@
 /// 用在前面章节的归属上。中途取消或失败，已落盘的角色表与已标完的章不丢；重跑时
 /// 未标完的章会重做第一遍（并入是幂等的：同名补别名 / 空特征，不覆盖已有值）。
 ///
+/// 系列：开标注前把系列里记住的角色并进本书角色表（同一个人在各卷用同一个名字），
+/// 结束（含取消 / 失败）后把本书角色表学回系列，下一卷接着用。
+///
 /// 采样温度：[AiChatClient.complete] 不暴露 temperature（各协议默认值不同，推理
 /// 模型还拒收这个字段），这里用服务端默认值；稳定性靠严格 JSON 约束 + 本地校验。
 library;
@@ -14,9 +17,12 @@ library;
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
+import 'package:fushi_engine/tts/cast/series_cast.dart';
 import 'package:fushi_engine/tts/render/tts_cast.dart';
 
+import 'package:fushi/src/media/audiobook/tts/cast/series_cast_resolver.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_cast_prompt.dart';
+import 'package:fushi/src/media/audiobook/tts/studio/tts_series_cast.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_service.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_book_plan.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -66,6 +72,12 @@ Future<TtsCast> annotateTtsCast({
 
   final TtsCastStore store = ttsCastStoreFor(appModel);
   final TtsCast cast = await store.load(bookKey);
+  final SeriesCastProfile? series = await loadTtsSeriesProfile(
+    appModel,
+    bookKey,
+  );
+  cast.series = series?.voices;
+  seedTtsRosterFromSeries(cast, series);
   _seedRosterFromLines(cast);
 
   final Map<int, List<TtsPlanSentence>> bySection =
@@ -171,6 +183,10 @@ Future<TtsCast> annotateTtsCast({
     }
   } finally {
     client.close();
+    // 取消 / 失败时已抽到的角色也学回系列（角色表只增不减，并入幂等）。
+    if (learnTtsRosterIntoSeries(cast, series)) {
+      await seriesCastStoreFor(appModel).save(series!);
+    }
   }
   return cast;
 }
