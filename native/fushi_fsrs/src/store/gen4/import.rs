@@ -396,6 +396,8 @@ pub struct ImportedOps {
     pub slots_forked: u64,
     /// 新记的链值记号（含重记的）。
     pub marks: u64,
+    /// 新记下的原生日志空洞内部链值记号（流的第 2 版，第五波）。
+    pub void_marks: u64,
     /// 第一次记下的设备公钥。
     pub peers: u64,
     /// 收尾时派生层的收法统计。
@@ -407,6 +409,7 @@ impl ImportedOps {
     pub fn unchanged(&self) -> bool {
         self.native_landed == 0
             && self.voids_landed == 0
+            && self.void_marks == 0
             && self.slots_inserted == 0
             && self.slots_replaced == 0
             && self.slots_forked == 0
@@ -567,7 +570,11 @@ pub fn import_ops_from<R: Read>(
                     run.next = seq + 1;
                     run.chain = after;
                 }
-                ExportItem::NativeVoid { n, chain_after } => {
+                ExportItem::NativeVoid {
+                    n,
+                    chain_after,
+                    marks,
+                } => {
                     let run = native.as_mut().ok_or("gen4 import: void outside a native log")?;
                     let (start, end) = (run.next, run.next + n - 1);
                     if start <= run.local_last + 1 {
@@ -584,6 +591,18 @@ pub fn import_ops_from<R: Read>(
                         out.voids_landed += 1;
                     }
                     out.native_known += run.local_last.min(end).saturating_sub(start - 1);
+                    // 区间内部的链值记号（第 2 版）：本机在那一格有链值就必须相同（与上面的区间末同一条判断）；本机那里也是
+                    // 空洞内部、没有记号的才记下（[Truth::land_void_mark]）。
+                    for (seq, chain) in &marks {
+                        match t.chain_known(col, &run.device, *seq)? {
+                            Some(_) => compare_native(t, col, &run.device, *seq, chain)?,
+                            None => {
+                                if t.land_void_mark(col, &run.device, *seq, chain)? {
+                                    out.void_marks += 1;
+                                }
+                            }
+                        }
+                    }
                     run.next = end + 1;
                     run.chain = chain_after;
                 }
@@ -755,7 +774,7 @@ pub fn own_fork_point<R: Read>(
                     c.items.push(NativeItem::Op(op));
                 }
             }
-            ExportItem::NativeVoid { n, chain_after } => {
+            ExportItem::NativeVoid { n, chain_after, .. } => {
                 if let Some(c) = mine.as_mut() {
                     c.seq += n;
                     c.chain = chain_after;
