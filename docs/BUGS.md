@@ -38,6 +38,7 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-4797](bugs/BUG-4797-online-novel-chapter-char-count-stale.md) | 🚧 | ✅ | 在线小说书取章后内存字数不刷新，统计与进度按占位页算 |
+| [BUG-4797](bugs/BUG-4797-feedback-files-share-video-ip-quota.md) | 🚧 | 🚧 | 样本文件与录屏共用每 IP 每天 200 MiB 额度，满额样本文件仍会被 429 挤掉 |
 | [BUG-4796](bugs/BUG-4796-disc-back-double-press-repeat-topmenu.md) | ✅ | ✅ | 原盘正片快速连按两次返回会重复发 topMenu，第二次失败会整盘退出 |
 | [BUG-4795](bugs/BUG-4795-disc-back-to-menu-transient-error-exits.md) | ✅ | ✅ | 原盘正片按返回回盘菜单时，任何暂时性错误都会让整个原盘会话退出 |
 | [BUG-4794](bugs/BUG-4794-subtitle-panel-favorites-filter-width-wasted.md) | 🚧 | 🚧 | 经典版式字幕列表收藏档的筛选分段被截到剩余宽度一半，收藏计数用不满的宽度空着 |
