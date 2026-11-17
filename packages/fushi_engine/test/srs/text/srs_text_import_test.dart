@@ -304,4 +304,89 @@ void main() {
     expect(added.guid, 'guid-2');
     expect(second(added), 'v2');
   });
+
+  String rowsOf(int n, String value) =>
+      <String>[for (int i = 0; i < n; i++) 'w$i\t$value'].join('\n');
+
+  test('纯更新的导入逐行阶段也报中间进度、能叫停（不再只在攒满 500 条新增时）', () async {
+    await runSrsTextImport(
+      store: store,
+      file: await parse('base.tsv', rowsOf(1200, 'v1')),
+      options: opts(),
+    );
+    final List<double> progress = <double>[];
+    int asked = 0;
+    await expectLater(
+      runSrsTextImport(
+        store: store,
+        file: await parse('upd.tsv', rowsOf(1200, 'v2')),
+        options: opts(),
+        onProgress: progress.add,
+        shouldStop: () => ++asked >= 1,
+      ),
+      throwsA(isA<SrsImportStopped>()),
+    );
+    expect(asked, 1);
+    expect(progress, hasLength(1));
+    expect(progress.single, inExclusiveRange(0, 1));
+    // 叫停在更新落库之前：一条都没改。
+    expect(
+      (await allNotes()).where((SrsNoteView n) => second(n) == 'v2'),
+      isEmpty,
+    );
+
+    // 不叫停时更新阶段也分批报进度，单调递增到 1。
+    progress.clear();
+    final SrsImportReport r = await runSrsTextImport(
+      store: store,
+      file: await parse('upd2.tsv', rowsOf(1200, 'v2')),
+      options: opts(),
+      onProgress: progress.add,
+      shouldStop: () => false,
+    );
+    expect(r.notesUpdated, 1200);
+    expect(progress.length, greaterThan(3));
+    for (int k = 1; k < progress.length; k++) {
+      expect(progress[k], greaterThan(progress[k - 1]));
+    }
+    expect(progress.last, 1);
+  });
+
+  test('牌组列里新的牌组到要写进去时才建：叫停、跳过的行不留空牌组', () async {
+    // 前 500 行进默认牌组；第 501 行起才用新牌组，第一个批间叫停。
+    final String text = <String>[
+      for (int i = 0; i < 500; i++) 'w$i\tv\t',
+      for (int i = 500; i < 600; i++) 'w$i\tv\tNew::Sub',
+    ].join('\n');
+    await expectLater(
+      runSrsTextImport(
+        store: store,
+        file: await parse('decks.tsv', text),
+        options: opts(deckColumn: 3),
+        shouldStop: () => true,
+      ),
+      throwsA(isA<SrsImportStopped>()),
+    );
+    Future<Set<String>> deckNames() async {
+      final SrsDeckTree tree = await store.deckTree();
+      return <String>{
+        for (final SrsDeckView d in tree.decks) tree.fullName(d.id),
+      };
+    }
+
+    expect(await deckNames(), isNot(contains('New')));
+    expect(await allNotes(), hasLength(500));
+
+    // 首字段为空被跳过的行不建它的牌组；真有新笔记的牌组照建。
+    final SrsImportReport r = await runSrsTextImport(
+      store: store,
+      file: await parse('skip.tsv', '\tv\tGhost\nfresh\tv\tReal\n'),
+      options: opts(deckColumn: 3),
+    );
+    expect(r.notesSkipped, 1);
+    expect(r.notesAdded, 1);
+    final Set<String> names = await deckNames();
+    expect(names, isNot(contains('Ghost')));
+    expect(names, contains('Real'));
+  });
 }
