@@ -53,14 +53,12 @@ void main() {
         ),
         isTrue,
       );
-      final TtsBookPlan out = ttsPlanWithSubstitutions(
-        plan,
-        const <CastTextSubstitution>[
-          CastTextSubstitution(source: 'セーラー服', replacement: '制服'),
-          CastTextSubstitution(source: '服', replacement: 'ふく'),
-          CastTextSubstitution(source: '子', replacement: 'こ', enabled: false),
-        ],
-      );
+      final TtsBookPlan out =
+          ttsPlanWithSubstitutions(plan, const <CastTextSubstitution>[
+            CastTextSubstitution(source: 'セーラー服', replacement: '制服'),
+            CastTextSubstitution(source: '服', replacement: 'ふく'),
+            CastTextSubstitution(source: '子', replacement: 'こ', enabled: false),
+          ]);
       // 长的优先，一次扫描不重复替换；停用的不生效。
       expect(out.sentences[0].text, '制服の子');
       expect(out.sentences[0].spokenText, '制服の子。');

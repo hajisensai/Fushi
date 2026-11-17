@@ -506,18 +506,27 @@ void main() {
       );
       final String content = mangaPayloadOcrSignature(payload('a'));
       expect(content, startsWith('content:'));
-      expect(mangaManifestVolumeMismatch(signed(content), payload('a')), isNull);
+      expect(
+        mangaManifestVolumeMismatch(signed(content), payload('a')),
+        isNull,
+      );
       expect(
         mangaManifestVolumeMismatch(signed(content), payload('b')),
         MangaAudioImportResult.ocrMismatch,
       );
       // 有引擎签名：按引擎签名比。
       expect(
-        mangaManifestVolumeMismatch(signed('eng-1'), payload('x', engine: 'eng-1')),
+        mangaManifestVolumeMismatch(
+          signed('eng-1'),
+          payload('x', engine: 'eng-1'),
+        ),
         isNull,
       );
       expect(
-        mangaManifestVolumeMismatch(signed('eng-1'), payload('x', engine: 'eng-2')),
+        mangaManifestVolumeMismatch(
+          signed('eng-1'),
+          payload('x', engine: 'eng-2'),
+        ),
         MangaAudioImportResult.ocrMismatch,
       );
     });

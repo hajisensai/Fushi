@@ -398,7 +398,8 @@ class _MangaAudioStudioPageState extends State<MangaAudioStudioPage> {
         if (!mounted) return;
         await _reload();
         FushiToast.show(
-          msg: run.failures.any(
+          msg:
+              run.failures.any(
                 (TtsSeriesRunFailure f) =>
                     f.code == kTtsSeriesRunMangaIncomplete,
               )
@@ -424,14 +425,13 @@ class _MangaAudioStudioPageState extends State<MangaAudioStudioPage> {
           seriesTitle: series.title.isEmpty ? seriesKey : series.title,
           initial: series.substitutions,
           save: (List<CastTextSubstitution> next) async {
-            final SeriesCastProfile fresh = await seriesCastStoreFor(
-              widget.appModel,
-            ).update(
-              seriesKey,
-              (SeriesCastProfile p) => p.substitutions
-                ..clear()
-                ..addAll(next),
-            );
+            final SeriesCastProfile fresh =
+                await seriesCastStoreFor(widget.appModel).update(
+                  seriesKey,
+                  (SeriesCastProfile p) => p.substitutions
+                    ..clear()
+                    ..addAll(next),
+                );
             if (fresh.title.isEmpty) fresh.title = series.title;
             volume.series = fresh;
             volume.script.series = fresh.voices;

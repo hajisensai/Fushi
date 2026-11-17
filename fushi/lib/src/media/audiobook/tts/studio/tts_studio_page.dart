@@ -498,7 +498,9 @@ class _TtsStudioPageState extends State<TtsStudioPage> {
   /// 改系列档案：[edit] 已经改过本页的拷贝（界面即时反映），这里在最新的档案上再做
   /// 一次（[SeriesCastStore.update] 串行读-改-写：按系列跑 / 漫画制作台 / AI 标注同时
   /// 写入时谁也不覆盖谁），再换上存盘后的档案。
-  Future<void> _updateSeries(void Function(SeriesCastProfile series) edit) async {
+  Future<void> _updateSeries(
+    void Function(SeriesCastProfile series) edit,
+  ) async {
     final SeriesCastProfile? series = _series;
     if (series == null) return;
     try {

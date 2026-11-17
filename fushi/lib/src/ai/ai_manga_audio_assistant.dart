@@ -93,6 +93,7 @@ class MangaAnnotateVolume {
   final Map<String, File> pageFiles;
 
   String get bookKey => row.bookKey;
+
   /// 本卷 OCR 签名（引擎签名优先，没有时按块内容算：mokuro 导入的卷也能判过期）。
   String get ocrSignature => mangaPayloadOcrSignature(payload);
   bool get hasText =>
@@ -405,8 +406,7 @@ class MangaAudioAnnotateSession {
       return await body(runner);
     } finally {
       client.close();
-      final List<TtsCastCharacter> found = runner.workingRoster.values
-          .toList();
+      final List<TtsCastCharacter> found = runner.workingRoster.values.toList();
       _editSeries((SeriesCastProfile p) => p.learnRoster(found));
       await save();
       await _saveSeries();

@@ -31,7 +31,11 @@ SeriesCastStore seriesCastStoreFor(AppModel appModel) => SeriesCastStore(
 
 /// [bookKey] 所属的系列身份；null = 不属于任何系列。
 Future<String?> resolveSeriesKey(AppModel appModel, String bookKey) =>
-    resolveSeriesKeyIn(appModel.database, seriesCastStoreFor(appModel), bookKey);
+    resolveSeriesKeyIn(
+      appModel.database,
+      seriesCastStoreFor(appModel),
+      bookKey,
+    );
 
 /// [resolveSeriesKey] 的本体（只依赖数据库与档案存储，测试直接调）。
 Future<String?> resolveSeriesKeyIn(

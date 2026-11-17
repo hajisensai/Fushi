@@ -360,7 +360,9 @@ class IrodoriLocalEngine extends EngineChangeNotifier {
     if (batchWorker.isBusy || batchWorker.phase == IrodoriBatchPhase.starting) {
       return false;
     }
-    if (batchWorker.phase != IrodoriBatchPhase.stopped) await batchWorker.stop();
+    if (batchWorker.phase != IrodoriBatchPhase.stopped) {
+      await batchWorker.stop();
+    }
     return server.start(launchSpec(found));
   }
 

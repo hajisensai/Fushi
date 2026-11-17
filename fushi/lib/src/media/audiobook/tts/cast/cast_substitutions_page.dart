@@ -34,7 +34,9 @@ import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
 /// 系列分组里那一行的摘要（条数 / 无）。
 String castSubstitutionsSummary(List<CastTextSubstitution> table) =>
-    table.isEmpty ? t.tts_substitutions_none : t.tts_substitutions_summary(n: table.length);
+    table.isEmpty
+    ? t.tts_substitutions_none
+    : t.tts_substitutions_summary(n: table.length);
 
 /// 一条的问题文案。
 String castSubstitutionProblemText(CastSubstitutionProblem problem) =>
@@ -42,7 +44,8 @@ String castSubstitutionProblemText(CastSubstitutionProblem problem) =>
       CastSubstitutionProblem.emptySource => t.tts_substitutions_problem_empty,
       CastSubstitutionProblem.duplicateSource =>
         t.tts_substitutions_problem_duplicate,
-      CastSubstitutionProblem.lineBreak => t.tts_substitutions_problem_line_break,
+      CastSubstitutionProblem.lineBreak =>
+        t.tts_substitutions_problem_line_break,
     };
 
 class CastSubstitutionsPage extends StatefulWidget {
@@ -81,7 +84,8 @@ class _CastSubstitutionsPageState extends State<CastSubstitutionsPage> {
     });
     try {
       final List<CastTextSubstitution> saved = await widget.save(next);
-      if (mounted) setState(() => _table = List<CastTextSubstitution>.of(saved));
+      if (mounted)
+        setState(() => _table = List<CastTextSubstitution>.of(saved));
     } catch (e, stack) {
       ErrorLogService.instance.log('CastSubstitutions.save', e, stack);
       FushiToast.show(msg: t.audiobook_studio_failure_internal);
@@ -129,9 +133,7 @@ class _CastSubstitutionsPageState extends State<CastSubstitutionsPage> {
   Future<void> _edit(int index) async {
     final CastTextSubstitution? edited = await _ask(_table[index]);
     if (edited == null) return;
-    await _commit(
-      List<CastTextSubstitution>.of(_table)..[index] = edited,
-    );
+    await _commit(List<CastTextSubstitution>.of(_table)..[index] = edited);
   }
 
   Future<void> _toggle(int index, bool enabled) {

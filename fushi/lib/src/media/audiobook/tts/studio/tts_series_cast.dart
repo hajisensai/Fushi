@@ -38,8 +38,7 @@ TtsBookPlan ttsPlanWithSubstitutions(
 ) {
   if (table.isEmpty) return plan;
   return TtsBookPlan(<TtsPlanSentence>[
-    for (final TtsPlanSentence s in plan.sentences)
-      _substituted(s, table),
+    for (final TtsPlanSentence s in plan.sentences) _substituted(s, table),
   ]);
 }
 
