@@ -64,6 +64,12 @@ abstract class SrsCardVideoPlayer {
   /// 视频画面尺寸（像素；宽高都已知且 > 0 时才发）。
   Stream<Size> get videoSizeStream;
 
+  /// 播放器报出的错误文本。**不等于致命**：media_kit 把 `error` 级的日志也发到这里
+  /// （解码器 `vd` / `ad` 的单帧报错等），加载不了的文件（0 字节、认不出格式）也只走
+  /// 这里——`open` 不抛、`completed` 不发。是否算「加载失败」由卡面片段按有没有拿到
+  /// 画面尺寸判断（BUG-4794）。
+  Stream<String> get errorStream;
+
   /// 此刻是否已播到结尾（点按播放时据此先回到开头）。
   bool get isCompleted;
 
@@ -132,6 +138,9 @@ class _MediaKitSrsCardVideoPlayer implements SrsCardVideoPlayer {
 
   @override
   Stream<bool> get completedStream => _player.stream.completed;
+
+  @override
+  Stream<String> get errorStream => _player.stream.error;
 
   @override
   Stream<Size> get videoSizeStream => _size.stream;
@@ -440,6 +449,11 @@ class _SrsCardVideoClipState extends ConsumerState<SrsCardVideoClip>
             setState(() => _videoSize = size);
           }
         }),
+      )
+      ..add(
+        player.errorStream.listen(
+          (String error) => _onPlayerError(name, error),
+        ),
       );
     setState(() => _available = true);
     try {
@@ -451,16 +465,43 @@ class _SrsCardVideoClipState extends ConsumerState<SrsCardVideoClip>
         'SrsCardVideoClip.open',
         'open failed: $name: $e',
       );
-      _teardown();
-      setState(() {
-        _available = false;
-        _missing = true;
-      });
-      _finishRun(false);
+      _failLoad();
       return null;
     }
     if (!_isCurrent(token)) return null;
     return player;
+  }
+
+  /// 播放器报错。加载不了的文件（0 字节、没有 moov、认不出格式）在 media_kit 里既不让
+  /// `open` 抛、也不发 `completed`，只走错误流；不接它，等这段片段播完的序列就永远不
+  /// 返回、卡面是一块黑框（BUG-4794）。错误流同时带非致命的解码日志，所以只在**还没
+  /// 拿到画面尺寸**时判加载失败；已出画面后的错误只记诊断。
+  void _onPlayerError(String name, String error) {
+    if (!mounted || _attachedName != name) return;
+    if (_videoSize != null) {
+      ErrorLogService.instance.logDiagnostic(
+        'SrsCardVideoClip.error',
+        'non-fatal after first frame: $name: $error',
+      );
+      return;
+    }
+    ErrorLogService.instance.logDiagnostic(
+      'SrsCardVideoClip.error',
+      'load failed: $name: $error',
+    );
+    _failLoad();
+  }
+
+  /// 片段打不开 / 加载不了：释放播放器并撤销登记（序列退回只播音频），作废进行中的
+  /// 序列播放（等待中的以 false 结束，还在起播路上的不再碰已释放的播放器），画占位。
+  void _failLoad() {
+    _interruptRun();
+    _teardown();
+    setState(() {
+      _available = false;
+      _missing = true;
+      _playing = false;
+    });
   }
 
   /// 文件不存在：撤销登记（序列退回只播音频），未完成的序列播放以 false 结束。
