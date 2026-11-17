@@ -407,6 +407,18 @@ Future<void> srsSync4Relay({
   });
 }
 
+/// 用户移除了同步位置 [locationId]（内核 `location_forget`，G8-7c）：本机忘掉这个位置的全部同步状态——加密记忆 / loc
+/// 标记 / `last_ok`、各设备的 head 记录、转发记账、旧根核对——并且不再向它转发（为它留着的原文按剩下的位置重判）。
+/// 位置上的文件、本机的卡片与复习记录一个不动；已传水位与媒体代号留着（同一个位置加回来时 head 代号接着往上）。
+/// 没记过这个位置也照常返回。G10 的 host 目录 / 通道位置的移除同样调这一个。回包 `{forgotten, relayDropped}`。
+Future<Map<String, Object?>> srsSync4ForgetLocation(
+  SrsSync2Host host,
+  String locationId,
+) async => (await host.sync2Command(<String, Object?>{
+  'op': 'location_forget',
+  'location': locationId,
+})).map;
+
 /// 本机旧身份（`obsolete` 回包的 [former]）目录里的旧 head（内核 `obsolete_former`：只删比最新 head 旧两代以上的，
 /// 段一个不删）。删不掉的记进 [SrsSync2Report.formerSweepErrors]，下一轮再删。
 Future<void> srsSync4SweepFormer({

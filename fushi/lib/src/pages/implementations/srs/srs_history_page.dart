@@ -514,12 +514,15 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
       destructive: true,
     );
     if (!ok || !mounted) return;
-    await ref.read(appProvider).setSrsFolderLocations(<SrsFolderLocation>[
-      for (final SrsFolderLocation x
-          in ref.read(appProvider).srsFolderLocations)
-        if (x.id != l.id) x,
-    ]);
-    if (mounted) setState(() {});
+    await _run('removeFolder', () async {
+      await ref.read(appProvider).setSrsFolderLocations(<SrsFolderLocation>[
+        for (final SrsFolderLocation x
+            in ref.read(appProvider).srsFolderLocations)
+          if (x.id != l.id) x,
+      ]);
+      // 内核忘掉这个位置的同步状态、不再向它转发（`location_forget`）；位置上的文件与本机卡片不动。
+      await ref.read(srsAppRuntimeProvider)?.sync.forgetLocation(l.locationId);
+    }, failure: t.srs_timeline_location_unavailable);
   }
 
   /// 位置的加密状态（最近一轮同步看到的；还没同步过的位置按本机记的密钥推断）。

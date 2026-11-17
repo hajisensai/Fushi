@@ -14,6 +14,7 @@ import 'package:fushi_engine/srs/sync2/srs_folder_location.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_store.dart'
     show SrsAssetLocationStore, kSrsSync2Folder, kSrsSync2Namespace;
 import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
+import 'package:fushi_engine/srs/sync2/srs_sync4_steps.dart';
 import 'package:fushi_engine/sync/local_directory_asset_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:path/path.dart' as p;
@@ -150,6 +151,57 @@ void main() {
     )).map['digest'];
     expect(await digest(a), await digest(b));
   });
+
+  test(
+    '移除位置（location_forget，G8-7c）：内核忘掉它的同步状态，位置上的文件与本机卡片不动；再同步一轮照常',
+    () async {
+      final SrsFolderLocation loc = folder();
+      final SrsDbStore a = await device('a');
+      await addNote(a, '猫');
+      expect((await run(loc, a)).ops?.error, isNull);
+      Future<List<Object?>> locations() async =>
+          ((await a.sync2Command(<String, Object?>{
+                'op': 'status',
+              })).map['locations']
+              as List?) ??
+          const <Object?>[];
+      bool listed(List<Object?> ls) =>
+          ls.any((Object? l) => (l! as Map)['location'] == loc.locationId);
+      expect(listed(await locations()), isTrue);
+      final List<String> before = <String>[
+        for (final FileSystemEntity f in Directory(
+          loc.path,
+        ).listSync(recursive: true))
+          if (f is File) f.path,
+      ]..sort();
+      final Map<String, Object?> r = await srsSync4ForgetLocation(
+        a,
+        loc.locationId,
+      );
+      expect(r['forgotten'], greaterThan(0));
+      expect(listed(await locations()), isFalse);
+      // 位置上的文件一个不碰；本机卡片照旧。
+      expect(
+        <String>[
+          for (final FileSystemEntity f in Directory(
+            loc.path,
+          ).listSync(recursive: true))
+            if (f is File) f.path,
+        ]..sort(),
+        before,
+      );
+      expect(
+        (await a.sync2Command(<String, Object?>{
+          'op': 'status',
+        })).map['devices'],
+        isNotEmpty,
+      );
+      // 幂等；把位置加回来照常同步。
+      expect((await srsSync4ForgetLocation(a, loc.locationId))['forgotten'], 0);
+      expect((await run(loc, a)).ops?.error, isNull);
+      expect(listed(await locations()), isTrue);
+    },
+  );
 
   test('云端位置实例直接用 identity 给的目录名，不再按 profile uid 映射一次', () async {
     final SrsAssetLocationStore loc = SrsAssetLocationStore(
