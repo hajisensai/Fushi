@@ -91,73 +91,126 @@ double? _doubleIn(Object? raw, double lo, double hi) {
 }
 
 /// 一句的音源：合成，或引用某本有声书里一段现成音频（不复制音频）。
+///
+/// [byUser] = 用户亲手定的音源：重跑有声书匹配（`manga_audiobook_match.dart` 的
+/// [applyMangaAudiobookMatches]）时不覆盖，且不受作品音源策略约束（见
+/// [MangaAudioScript.audioPlanFor]）。AI / 匹配器写的为 false。
 sealed class MangaLineAudioSource {
-  const MangaLineAudioSource();
+  const MangaLineAudioSource({this.byUser = false});
+
+  final bool byUser;
 
   Map<String, Object?> toJson();
 
   static MangaLineAudioSource fromJson(Object? raw) {
+    final bool byUser = raw is Map && raw['u'] == true;
     if (raw is Map && raw['t'] == MangaAudiobookClip.wireTag) {
       final Object? f = raw['f'];
       final Object? s = raw['s'];
       final Object? e = raw['e'];
+      final Object? k = raw['k'];
       if (f is int && s is int && e is int && f >= 0 && s >= 0 && e > s) {
-        return MangaAudiobookClip(fileIndex: f, startMs: s, endMs: e);
+        return MangaAudiobookClip(
+          bookKey: k is String && k.isNotEmpty ? k : null,
+          fileIndex: f,
+          startMs: s,
+          endMs: e,
+          byUser: byUser,
+        );
       }
     }
-    return const MangaSynthesized();
+    return byUser
+        ? const MangaSynthesized(byUser: true)
+        : const MangaSynthesized();
   }
 }
 
 /// 按声音指派表合成（默认）。
 final class MangaSynthesized extends MangaLineAudioSource {
-  const MangaSynthesized();
+  const MangaSynthesized({super.byUser});
 
   static const String wireTag = 'synth';
 
   @override
-  Map<String, Object?> toJson() => const <String, Object?>{'t': wireTag};
+  Map<String, Object?> toJson() => <String, Object?>{
+    't': wireTag,
+    if (byUser) 'u': true,
+  };
 
   @override
-  bool operator ==(Object other) => other is MangaSynthesized;
+  bool operator ==(Object other) =>
+      other is MangaSynthesized && other.byUser == byUser;
 
   @override
-  int get hashCode => wireTag.hashCode;
+  int get hashCode => Object.hash(wireTag, byUser);
 }
 
-/// 关联有声书里的一段：第 [fileIndex] 个音频文件的 `[startMs, endMs)`。
+/// 关联有声书里的一段：书 [bookKey]（`Audiobooks.bookKey`）的第 [fileIndex] 个音频
+/// 文件（`Audiobook.audioFilesInCueOrder`，与 `AudioCue.audioFileIndex` 同一坐标）的
+/// `[startMs, endMs)`。
+///
+/// [bookKey] 为 null 只出现在加 `k` 字段之前写下的旧行：那时演出稿只能关联一本书，
+/// 消费端按 [MangaAudioScript.audiobookSources] 的第一本解释。
 final class MangaAudiobookClip extends MangaLineAudioSource {
   const MangaAudiobookClip({
+    this.bookKey,
     required this.fileIndex,
     required this.startMs,
     required this.endMs,
+    super.byUser,
   });
 
   static const String wireTag = 'book';
 
+  final String? bookKey;
   final int fileIndex;
   final int startMs;
   final int endMs;
 
   int get durationMs => endMs - startMs;
 
+  MangaAudiobookClip asUserPinned() => MangaAudiobookClip(
+    bookKey: bookKey,
+    fileIndex: fileIndex,
+    startMs: startMs,
+    endMs: endMs,
+    byUser: true,
+  );
+
   @override
   Map<String, Object?> toJson() => <String, Object?>{
     't': wireTag,
+    if (bookKey != null) 'k': bookKey,
     'f': fileIndex,
     's': startMs,
     'e': endMs,
+    if (byUser) 'u': true,
   };
 
   @override
   bool operator ==(Object other) =>
       other is MangaAudiobookClip &&
+      other.bookKey == bookKey &&
       other.fileIndex == fileIndex &&
       other.startMs == startMs &&
-      other.endMs == endMs;
+      other.endMs == endMs &&
+      other.byUser == byUser;
 
   @override
-  int get hashCode => Object.hash(fileIndex, startMs, endMs);
+  int get hashCode => Object.hash(bookKey, fileIndex, startMs, endMs, byUser);
+}
+
+/// 一句最终怎么出声（[MangaAudioScript.audioPlanFor]），生成端只认这个结果。
+enum MangaLineAudioPlan {
+  /// 播放 / 导出关联有声书里的片段（[MangaScriptLine.audio] 是 [MangaAudiobookClip]）。
+  audiobookClip,
+
+  /// 按声音指派表合成。
+  synthesize,
+
+  /// 不读：策略是「只用有声书」而这句没命中。时间表里照常是一句（不跳页），没有音频；
+  /// 它不是「未配音」行，不进未配音账本、不走重试。
+  silent,
 }
 
 /// 演出稿里的一句。
@@ -290,7 +343,7 @@ class MangaScriptLine {
       },
     'src': source.name,
     if (confidence != null) 'c': confidence,
-    if (audio is! MangaSynthesized) 'audio': audio.toJson(),
+    if (audio != const MangaSynthesized()) 'audio': audio.toJson(),
     if (voice != null) 'voice': voice,
     if (say != null) 'say': say,
   };
@@ -463,11 +516,13 @@ class MangaAudioScript {
     List<MangaScriptLine>? lines,
     Map<int, MangaPageDirective>? pages,
     Set<int>? annotatedPages,
+    List<String>? audiobookSources,
   }) : voices = voices ?? CastVoiceAssignment(),
        roster = roster ?? <String, TtsCastCharacter>{},
        lines = lines ?? <MangaScriptLine>[],
        pages = pages ?? <int, MangaPageDirective>{},
-       annotatedPages = annotatedPages ?? <int>{};
+       annotatedPages = annotatedPages ?? <int>{},
+       audiobookSources = audiobookSources ?? <String>[];
 
   static const int schemaVersion = 1;
 
@@ -492,6 +547,44 @@ class MangaAudioScript {
 
   /// 已跑过 AI 标注的页。
   final Set<int> annotatedPages;
+
+  /// 关联的有声书（设计 §9）：书库里带 `Audiobooks` 的书的 bookKey，按**故事顺序**
+  /// （同一系列多卷小说时第 1 卷在前）。有声书匹配把它们的 cue 依次接成一条语料，
+  /// 单调推进。用户手动选，不自动猜。存在本卷演出稿里（JSON `books`，旧文件没有这个
+  /// 键 = 没关联）；「整个系列一起关联」由应用层把同一份列表写进系列里每一卷的演出稿，
+  /// 不另立 sidecar。
+  final List<String> audiobookSources;
+
+  /// 一句最终怎么出声：用户亲手定的音源（[MangaLineAudioSource.byUser]）优先，不受
+  /// 策略约束；否则按 [sourcePolicy]——只合成时忽略匹配写下的片段，「只用有声书」时
+  /// 没命中的句子不读。旧版没有 `k` 的片段在没有任何关联书时无从解释，按没命中处理。
+  MangaLineAudioPlan audioPlanFor(MangaScriptLine line) {
+    final MangaLineAudioSource audio = line.audio;
+    final bool clipUsable =
+        audio is MangaAudiobookClip &&
+        (audio.bookKey != null || audiobookSources.isNotEmpty);
+    if (audio.byUser) {
+      return clipUsable
+          ? MangaLineAudioPlan.audiobookClip
+          : MangaLineAudioPlan.synthesize;
+    }
+    return switch (sourcePolicy) {
+      MangaAudioSourcePolicy.synthOnly => MangaLineAudioPlan.synthesize,
+      MangaAudioSourcePolicy.audiobookFirst =>
+        clipUsable
+            ? MangaLineAudioPlan.audiobookClip
+            : MangaLineAudioPlan.synthesize,
+      MangaAudioSourcePolicy.audiobookOnly =>
+        clipUsable
+            ? MangaLineAudioPlan.audiobookClip
+            : MangaLineAudioPlan.silent,
+    };
+  }
+
+  /// 片段实际指向的有声书 bookKey（旧行没有 `k` 时取第一本关联书）。
+  String? clipBookKey(MangaAudiobookClip clip) =>
+      clip.bookKey ??
+      (audiobookSources.isEmpty ? null : audiobookSources.first);
 
   /// 某页的行（保持顺序）。
   List<MangaScriptLine> linesOnPage(int page) => <MangaScriptLine>[
@@ -607,6 +700,7 @@ class MangaAudioScript {
         '${e.key}': e.value.toJson(),
     },
     'annotated': annotatedPages.toList()..sort(),
+    if (audiobookSources.isNotEmpty) 'books': audiobookSources,
   };
 
   static MangaAudioScript fromJson(Object? raw) {
@@ -617,6 +711,7 @@ class MangaAudioScript {
     final Object? annotated = raw['annotated'];
     final Object? seed = raw['seed'];
     final Object? signature = raw['ocr'];
+    final Object? books = raw['books'];
     final List<MangaScriptLine> parsed = <MangaScriptLine>[
       if (lines is List)
         for (final Object? l in lines)
@@ -650,6 +745,12 @@ class MangaAudioScript {
           for (final Object? v in annotated)
             if (v is int && v >= 0) v,
       },
+      // 集合字面量保序去重（手改出来的重复书只留第一次出现）。
+      audiobookSources: <String>{
+        if (books is List)
+          for (final Object? b in books)
+            if (b is String && b.isNotEmpty) b,
+      }.toList(),
     );
   }
 }
