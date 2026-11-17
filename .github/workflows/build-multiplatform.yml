@@ -409,7 +409,7 @@ jobs:
   # job 级 CC/CXX 与 native-cache-warm.yml 的 linux job 逐字一致：它们进了持久库名字的
   # 哈希，PR 读的三份件（torrent / p2p / anki-sync debug）由那边在 develop 上预存。
   #
-  # runner 钉 ubuntu-22.04（glibc 2.35）而不是 latest（BUG-4836）：bundle 里除 glibc 全是
+  # runner 钉 ubuntu-22.04（glibc 2.35）而不是 latest（BUG-4843）：bundle 里除 glibc 全是
   # 静态链 / 随包的，构建机的 glibc 就是产物的最低要求。ubuntu-latest 换到 26.04 后
   # libfushi_compute.so 要 GLIBC_2.43、torrent / fushidicts 要 GLIBC_2.38，README 写的
   # glibc ≥ 2.35 落空（Debian 13 上 serve 直接起不来）。与 release-server.yml linux job 同一
@@ -916,7 +916,7 @@ jobs:
             || { echo "::error::lookup of 食べた did not deinflect to 食べる (transforms not bundled?)"; echo "$lookup"; cat "$cfg/serve.log"; exit 1; }
           kill $pid; wait $pid || true
           cat "$cfg/serve.log"
-      # README 声明的 glibc 基线（BUG-4836）：bundle 里每个 ELF 的最大 GLIBC_ 符号版本都不得
+      # README 声明的 glibc 基线（BUG-4843）：bundle 里每个 ELF 的最大 GLIBC_ 符号版本都不得
       # 超过它，超了就判红，不上传一个在声明支持的发行版上起不来的包。
       - name: Verify glibc baseline of bundled ELFs
         shell: bash

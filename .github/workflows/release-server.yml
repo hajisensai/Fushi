@@ -307,7 +307,7 @@ jobs:
       # bin/../share/fushi/transforms 定位。fushidicts 要 C++23（std::ranges::to 等），
       # 下限 GCC 14；ubuntu-22.04 系统源只到 gcc-12，所以从 ubuntu-toolchain-r/test PPA
       # 装 g++-14。libstdc++ / libgcc 静态链进 .so，目标机不需要这个 PPA 的运行库；
-      # glibc 下限由冒烟前「Verify glibc baseline」一步对整个 bundle 统一核（BUG-4836）。
+      # glibc 下限由冒烟前「Verify glibc baseline」一步对整个 bundle 统一核（BUG-4843）。
       # 失败口径同 torrent bridge：构建失败即 job 失败，不发缺查词能力的服务端包。
       - name: Install gcc-14 (ubuntu-toolchain-r/test PPA)
         shell: bash
@@ -356,7 +356,7 @@ jobs:
         run: |
           set -euo pipefail
           bash native/fushi_anki_sync/build.sh --install-dir build/fushi_server_linux/bundle/bin
-      # README 声明的 glibc 基线（BUG-4836）：bundle 里每个 ELF（含 fushi-anki-sync、
+      # README 声明的 glibc 基线（BUG-4843）：bundle 里每个 ELF（含 fushi-anki-sync、
       # onnxruntime、sqlite3 native asset）的最大 GLIBC_ 符号版本都不得超过它，超了不发版。
       - name: Verify glibc baseline of bundled ELFs
         shell: bash

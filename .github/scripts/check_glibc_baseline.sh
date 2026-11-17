@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Linux 无头服务端包的 glibc 基线门（BUG-4836）。
+# Linux 无头服务端包的 glibc 基线门（BUG-4843）。
 #
 #   check_glibc_baseline.sh <bundle-dir> [readme]
 #

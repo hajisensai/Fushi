@@ -1,4 +1,4 @@
-## BUG-4836 · Linux 服务端 CI 包原生库要 GLIBC_2.43，超出 README 声明的 glibc ≥ 2.35
+## BUG-4843 · Linux 服务端 CI 包原生库要 GLIBC_2.43，超出 README 声明的 glibc ≥ 2.35
 - **报告**：2026-11-18（用户：PVE 上给无头 fushi_server 建 BT 专用 VM，Debian 13 云镜像上 `serve` 起不来，只得改用 Ubuntu 26.04）
 - **真实性**：✅ 真 bug。`build-multiplatform.yml` 定时构建 run 43748443816 的 `fushi_server-linux-x64` 产物实测（`objdump -T`，在 Ubuntu 26.04 VM 上跑本次新增的检查脚本）：
   `lib/libfushi_compute.so` 要 GLIBC_2.43（`acosf` / `asinf` / `atan2f` 等 libm 新版本符号），`lib/libfushi_torrent_ffi.so` 与 `lib/libfushidicts_ffi.so` 要 GLIBC_2.38（`__isoc23_strtol` 等）；

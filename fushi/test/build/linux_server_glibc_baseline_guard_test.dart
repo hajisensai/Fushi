@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:test/test.dart';
 
-/// 守卫（BUG-4836）：Linux 无头服务端包的 glibc 基线只有一个数字，README 声明、CI
+/// 守卫（BUG-4843）：Linux 无头服务端包的 glibc 基线只有一个数字，README 声明、CI
 /// 产物检查、构建 runner 三者一致。
 ///
 /// bundle 里除 glibc 外全是静态链 / 随包的，构建机的 glibc 就是产物的最低要求。
