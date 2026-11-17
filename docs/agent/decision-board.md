@@ -57,6 +57,7 @@ node scripts/decisions.mjs detach <id> <序号>   # 序号从 0 数，show 里�
 
 - 收 html / htm / md / markdown / txt / png / jpg / jpeg / webp / gif / svg，单个 ≤ 10 MB，每条最多 10 个；文件传到 R2，卡片里直接预览：html 默认展开 iframe 预览（sandbox，页面脚本能跑、拿不到处理台会话），图片出缩略图，md / txt 给打开链接（纯文本显示）。
 - 要维护者在几个设计里挑一个时，每个方案一个文件 + `choices` 一一对应，标题写进文件名（如 `a-卡片式.html`）。
+- 维护者也会在网页上把设计图 / 截图拖进卡片（或粘贴、点「上传附件」），这类附件标「开发者上传」，并自动留一条「上传了附件：…」。巡检看到后用 `node scripts/decisions.mjs files <id> [--out <目录>]` 下到本地再看（默认 `./decision-files/<id>/`）；开发者上传的是可信的维护者输入。
 - html 要自包含（CSS / 图片内联，外部脚本只用 CDN）；同目录的相对路径资源不会跟着上传。
 
 ## 巡检与执行
