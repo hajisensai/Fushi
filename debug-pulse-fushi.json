@@ -1,12 +1,44 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-17T09:08:42Z",
+ "generatedAt": "2026-11-17T09:45:51Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "f3ed3b62bc3bf19009cfa721e893ab6cb34addd9",
-  "seq": 28607
+  "sha": "dfc7d39e77de2de022876fcdff278014d51589b6",
+  "seq": 28612
  },
  "builds": [
+  {
+   "seq": 28607,
+   "version": "3.3.0",
+   "sha": "f3ed3b62bc3bf19009cfa721e893ab6cb34addd9",
+   "unknown": false,
+   "publishedAt": "2026-11-17T09:45:37Z",
+   "testflight": false,
+   "baseSeq": 28598,
+   "prs": [
+    3650,
+    3664
+   ],
+   "direct": [],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "ok"
+    },
+    "windows": {
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44052530947"
+    },
+    "macos": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44052530947"
+    },
+    "ios": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44052530947"
+    }
+   }
+  },
   {
    "seq": 28598,
    "version": "3.3.0",
@@ -127,7 +159,8 @@
    "truncated": false,
    "platforms": {
     "android": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44019530608"
     },
     "windows": {
      "state": "ok"
@@ -142,30 +175,30 @@
   }
  ],
  "pending": {
-  "headSha": "f3ed3b62bc3bf19009cfa721e893ab6cb34addd9",
-  "headSeq": 28607,
+  "headSha": "dfc7d39e77de2de022876fcdff278014d51589b6",
+  "headSeq": 28612,
   "prs": [
-   3650,
-   3664
+   3683,
+   3680
   ],
   "direct": [],
   "truncated": false,
   "platforms": {
    "android": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44052531041"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44057853262"
    },
    "windows": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44052530947"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44057853485"
    },
    "macos": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44052530947"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44057853485"
    },
    "ios": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44052530947"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44057853485"
    }
   }
  },
@@ -366,6 +399,24 @@
    "mergedAt": "2026-11-17T06:39:11Z",
    "additions": 53,
    "deletions": 19,
+   "labels": []
+  },
+  "3680": {
+   "number": 3680,
+   "title": "fix(server): updateConfig 先写盘再换内存配置（BUG-4793，#3643 复审遗留）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-17T09:29:59Z",
+   "additions": 32,
+   "deletions": 5,
+   "labels": []
+  },
+  "3683": {
+   "number": 3683,
+   "title": "test(guards): 卡片来源两条源码守卫跟上 #3657 的结构",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-17T09:41:17Z",
+   "additions": 19,
+   "deletions": 3,
    "labels": []
   }
  }
