@@ -131,8 +131,9 @@ void main() {
   //     **缺席也是断言**：共享段正是拿「方法在不在」识别 shell（`scrollToChapterEnd`
   //     = 连续、`_charsBeforeEdge` = 连续、`warmPaginationMetrics` = 分页），往另一个
   //     shell 加同名方法会让共享段走错分支，所以多出来同样要红、要回来改表并写理由。
-  // 另有一条闭包检查：`lib/src` 里凡是用 `typeof window.fushiReader.<名>` 探测过的方法都
-  // 必须登记在表里——新加一个靠探测调用的方法而不声明它属于哪些 shell，就红。
+  // 另有一条闭包检查：`lib/src` 里凡是用 `typeof` 探测过的 shell 方法（`window.fushiReader.<名>`
+  // 以及共享段 / 桥接脚本里的 `this` / `r` / `reader` / `self` 别名写法）都必须登记在表里
+  // ——新加一个靠探测调用的方法而不声明它属于哪些 shell，就红。
   group('方法 × shell 总表', () {
     final Map<_Shell, String> scripts = <_Shell, String>{
       _Shell.paginated: maskJsComments(
@@ -197,35 +198,68 @@ void main() {
       );
     });
 
-    test('lib/src 里用 typeof window.fushiReader.<名> 探测的方法都登记在表里', () {
+    test('lib/src 里用 typeof 探测的 shell 方法都登记在表里', () {
       // Dart 把 JS 拼在相邻字符串字面量里，`typeof window.fushiReader.x` 与
       // `=== "function"` 可能分在两行两个字面量中，所以只锚 typeof 这一半。
-      final RegExp probe = RegExp(
+      //
+      // 探测有两种写法，口径不同：
+      //   · `typeof window.fushiReader.<名>`：接收者确定是阅读器对象，探测到的名字一律要登记。
+      //   · `typeof (this|r|reader|self).<名>`：共享段 / audiobook_bridge / webview.part 里的
+      //     别名写法。接收者不一定是阅读器（`r` 也可能是一个 Range），同一写法还用来读状态
+      //     字段（`typeof this.__imgReanchorProgress === 'number'`），所以只认「至少一种
+      //     shell 把这个名字定义成了方法」的那些——状态字段与别的对象的属性不会被定义成
+      //     shell 方法，自然排除；而一旦登记进表，「该有的 shell 缺席 / 不该有的 shell 多出」
+      //     就由上面两组逐格断言接管。
+      final RegExp qualifiedProbe = RegExp(
         r'typeof window\.fushiReader\.([A-Za-z_]\w*)',
+      );
+      //   · `this.<名> && this.<名>(`：不带 typeof 的同类探测（共享段的 revealRange）。
+      final RegExp aliasProbe = RegExp(
+        r'typeof (?:this|r|reader|self)\.([A-Za-z_]\w*)'
+        r'|(?:this|r|reader|self)\.([A-Za-z_]\w*) && (?:this|r|reader|self)\.\(',
       );
       final Set<String> declared = <String>{
         ..._requiredInAllShells,
         ..._shellSpecific.keys,
       };
       final Map<String, String> undeclared = <String, String>{};
-      int probes = 0;
+      int qualifiedProbes = 0;
+      int aliasMethodProbes = 0;
       for (final FileSystemEntity entity in Directory(
         'lib/src',
       ).listSync(recursive: true)) {
         if (entity is! File || !entity.path.endsWith('.dart')) continue;
         final String text = entity.readAsStringSync();
-        for (final RegExpMatch m in probe.allMatches(text)) {
-          probes++;
+        final String path = entity.path.replaceAll(r'\', '/');
+        for (final RegExpMatch m in qualifiedProbe.allMatches(text)) {
+          qualifiedProbes++;
           final String name = m.group(1)!;
           if (!declared.contains(name)) {
-            undeclared.putIfAbsent(
-              name,
-              () => entity.path.replaceAll(r'\', '/'),
-            );
+            undeclared.putIfAbsent(name, () => path);
+          }
+        }
+        for (final RegExpMatch m in aliasProbe.allMatches(text)) {
+          final String name = (m.group(1) ?? m.group(2))!;
+          final bool isShellMethod = scripts.values.any(
+            (String script) => _definesMethod(script, name),
+          );
+          if (!isShellMethod) continue;
+          aliasMethodProbes++;
+          if (!declared.contains(name)) {
+            undeclared.putIfAbsent(name, () => path);
           }
         }
       }
-      expect(probes, greaterThan(10), reason: '探测扫描没扫到东西：正则或目录失效，守卫等于零断言');
+      expect(
+        qualifiedProbes,
+        greaterThan(10),
+        reason: '探测扫描没扫到东西：正则或目录失效，守卫等于零断言',
+      );
+      expect(
+        aliasMethodProbes,
+        greaterThan(10),
+        reason: '别名写法的探测扫描没扫到东西：正则或目录失效，守卫等于零断言',
+      );
       expect(
         undeclared,
         isEmpty,
@@ -308,6 +342,7 @@ const List<String> _requiredInAllShells = <String>[
   'applySentenceAudioCues',
   'highlightSentenceAudioCue',
   'clearSentenceAudioCue',
+  'resetSentenceAudioCues',
   'cueIdAtPoint',
   'cueIdAtDomPoint',
 ];
@@ -395,6 +430,44 @@ const Map<String, _ShellSpecific> _shellSpecific = <String, _ShellSpecific>{
     '同 registerImageLateAnchor；图片 load 监听 typeof 探测后才调',
   ),
   'noteUserScroll': _ShellSpecific(_scrollShells, '滚动意图认领（放弃恢复锚）；VN 没有滚动'),
+  // ── 经别名（this / r / reader / self）探测的方法 ──
+  '_invalidateGeometryReanchor': _ShellSpecific(
+    _pagedOnly,
+    '几何重锚 token 只有分页有（列网格随几何变）；共享段 clearImageLateAnchor / '
+    'reapplyImageLateAnchor 用 typeof this._invalidateGeometryReanchor 分支，'
+    '连续 / VN 多出同名方法会让共享段去作废一个不存在的 token 协议',
+  ),
+  'exploredCharsThroughCharOffset': _ShellSpecific(
+    _pagedOnly,
+    '「已探索字数」按分页的页首索引换算；连续 / VN 探测不到时 Dart 侧脚本用 min(held, total)',
+  ),
+  'isEinkMode': _ShellSpecific(
+    _pagedOnly,
+    '翻页动画（reader_page_turn_script）只拼进分页 shell；探测不到即不是墨水屏分页',
+  ),
+  'followDragEnabled': _ShellSpecific(_pagedOnly, '跟手拖动翻页属于翻页动画模块，只有分页'),
+  'followDragCancel': _ShellSpecific(_pagedOnly, '同 followDragEnabled'),
+  'chapterCharTotal': _ShellSpecific(
+    _continuousOnly,
+    '连续按视口边缘前的字数算进度，要一份章总字数；分页走度量缓存，VN 走屏表',
+  ),
+  'claimBoundaryTurn': _ShellSpecific(
+    _continuousOnly,
+    '「滚到文档尽头就换章」的三条通道只有连续有；章节无缝衔接模块装饰的也是连续 shell 的这个方法',
+  ),
+  'revealElement': _ShellSpecific(
+    _scrollShells,
+    '跟读 / 跨图揭示入口（audiobook_bridge 的 __fushiRevealTarget 用 typeof r.revealElement '
+    '探测，缺席就静默退到原生 scrollIntoView）；VN 的揭示是换屏',
+  ),
+  'revealRange': _ShellSpecific(
+    _scrollShells,
+    '同 revealElement（BUG-3518：WebKit 上当前句是 Range）；共享段用 this.revealRange && 探测',
+  ),
+  'sourceTextPosition': _ShellSpecific(
+    _vnOnly,
+    'VN 重排后的 (节点, 偏移) → 原文位置映射；选区脚本探测不到时按 DOM 原样取',
+  ),
   // ── 只有 VN ──
   'highlightSelectorCue': _ShellSpecific(
     _vnOnly,

@@ -17,7 +17,7 @@ import 'package:fushi/src/reader/reader_study_unit_script.dart';
 ///
 /// 修复后两处都按**仍登记着的语义锚**重算（锚已清 / 已换代就不写位置）。这里在
 /// `flutter test` 内用 Node 真执行分页 shell 对象，定时器与动画帧由测试手动放行，用可移动
-/// 几何模拟迟到图片，断言见 `.js` 文件头 A～E。撤掉修复，Node 断言失败、本 Dart 守卫转红。
+/// 几何模拟迟到图片，断言见 `.js` 文件头 A～F。撤掉修复，Node 断言失败、本 Dart 守卫转红。
 /// 没有 node 的环境自动 skip。
 void main() {
   test(

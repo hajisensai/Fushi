@@ -3090,8 +3090,15 @@ $kReaderPageTurnJs
   // _alignRangeToPage 落页后下一帧的复核：揭示目标仍是当前语义锚（代际未变）才按它**现在**
   // 的几何重新落页。keepPageTurn = 正在播跟读淡入，只在位置不符时瞬时改写、不打断动画
   // （与旧实现同）；否则经 setPagePosition 无条件重设（防 reflow 把 scroll 归零）。
+  // 卷页预览中（curlPreview 不换锚代际，正文暂时落在相邻页）与 reapplyImageLateAnchor 同样
+  // 处理：不在预览页上写位置（否则正文被写回揭示页，而 _curl.base / target 仍指着预览），
+  // 记 pending，回卷后由 curlRevert 按仍登记着的揭示目标补做，提交翻页则作废。
   _realignRevealTarget: function(range, anchorGen, keepPageTurn) {
     if (this.__imgAnchorGen !== anchorGen) return;
+    if (this._curl) {
+      this._curlLateAnchorPending = true;
+      return;
+    }
     var context = this.getScrollContext();
     if (context.pageSize <= 0) return;
     var anchor = this.turnSpan(context.axis, this.getRect(range)).start
@@ -3414,10 +3421,21 @@ $kReaderPageTurnJs
   // （reapplyImageLateAnchor：字符 / progress / fragment / 揭示目标，与图片 load 同一条路，
   // 对稳定排版幂等，等价于「重设落点」）；锚已被清（用户翻页 / 滚动意图）说明位置已归别人
   // 所有，不再写位置。snap 基线一律取**此刻**的真实位置。
+  //
+  // 重算只在**位置被动过**时做：入口刚落定的位置（landed）只用来比较、绝不写回。位置原封
+  // 未动 = 这 16ms 里没有 reflow 把 scroll 归零、也没有别人改写，「重设落点」没有可做的事；
+  // 而重算并不便宜——字符锚要从章首走到锚字、progress 锚要两遍全章计数，都排在通知 Dart
+  // 之前（实测 11 万字 / 8400 个文本节点的章，桌面 Chromium 上章末字符锚 ~100 ms、progress
+  // 中段 ~60 ms，与入口落点本身同量级）。排版在窗口内变了而位置没变的情形各有自己的所有者：
+  // 图片 load 监听自己调 reapplyImageLateAnchor（load 事件还在队列里时也一样，轮到它就
+  // 重锚）；几何 / 样式变化走各自的重锚 token。
   _settleAndNotify: function() {
     var self = this;
+    var landed = this.getPagePosition(this.getScrollContext());
     setTimeout(function() {
-      self.reapplyImageLateAnchor();
+      if (self.getPagePosition(self.getScrollContext()) !== landed) {
+        self.reapplyImageLateAnchor();
+      }
       self.registerSnapScroll(self.getPagePosition(self.getScrollContext()));
       self.notifyRestoreComplete();
     }, 16);

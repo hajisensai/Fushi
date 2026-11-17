@@ -23,11 +23,16 @@
 //      (char / progress / fragment anchors), and the snap baseline is the live
 //      position;
 //   B. settle keeps its original job: a reflow that zeroed the scroll is re-landed;
+//      an untouched landing is neither re-derived (no second walk of the chapter
+//      before Dart is notified) nor rewritten;
 //   C. settle: a user page turn / a replacing reveal inside the window is not
 //      overwritten;
 //   D. reveal frame: a user page turn inside the frame is not pulled back; an
 //      unchanged target is re-landed (reflow) and a moved target is followed;
-//   E. audio-follow fade branch: same generation rule, without ending the fade.
+//   E. audio-follow fade branch: same generation rule, without ending the fade;
+//   F. reveal frame during a page-curl preview (the preview does not bump the
+//      anchor generation): no write on the previewed page; reverting the curl
+//      re-lands the still-registered target, committing it drops the pending work.
 //
 // Run: node fushi/test/reader/paged_settle_semantic_anchor_behavior_test.js <payload.json>
 // (driven from paged_settle_semantic_anchor_behavior_test.dart inside `flutter test`).
@@ -54,7 +59,7 @@ function instantiate() {
   // progress restores land on its page). Geometry is in document coordinates;
   // client rects are derived from the live scroll, like the engine sees them.
   const state = { scroll: 3000, anchorDoc: 5200 };
-  const calls = { setPage: [], setPageNow: [], snap: [], notify: 0, finishTurn: 0 };
+  const calls = { setPage: [], setPageNow: [], snap: [], notify: 0, finishTurn: 0, rederive: 0 };
   const timers = [];
   const frames = [];
   const elements = {};
@@ -104,6 +109,7 @@ function instantiate() {
   // Landing by semantic anchor = the page that holds the anchor's character in
   // the CURRENT layout.
   const landOnAnchor = () => {
+    calls.rederive++;
     reader.setPagePosition(context, Math.floor(state.anchorDoc / PAGE) * PAGE);
   };
   reader.charOffsetInRange = () => true;
@@ -182,14 +188,18 @@ function lateImageLoad(f, mutate) {
   }
   {
     // The image loads inside the window but its load event is still queued when
-    // the timer fires: the settle itself must land by the anchor in the layout
-    // it sees, not by the stale pixel value.
+    // the timer fires: the position is untouched, so the settle writes nothing
+    // (no stale pixel either) and the load listener, when its turn comes,
+    // re-anchors as for any image that loads after the restore.
     const f = instantiate();
     await f.reader.restoreToCharOffset(5700);
     f.state.anchorDoc = 6200;
+    const writes = f.calls.setPage.length;
     runTimer(f);
-    assert.strictEqual(f.state.scroll, 6000, 'settle re-derives the landing from the semantic anchor');
-    assert.deepStrictEqual(f.calls.snap, [6000]);
+    assert.strictEqual(f.calls.setPage.length, writes, 'an untouched position is not rewritten by the settle');
+    assert.strictEqual(f.calls.notify, 1);
+    lateImageLoad(f, () => {});
+    assert.strictEqual(f.state.scroll, 6000, 'the queued load event re-anchors by the semantic anchor');
   }
 
   // ── B. settle still re-lands after a reflow zeroed the scroll ─────────────
@@ -201,14 +211,25 @@ function lateImageLoad(f, mutate) {
     assert.strictEqual(f.state.scroll, 5000, 'settle re-lands the anchor after a reflow reset');
     assert.deepStrictEqual(f.calls.snap, [5000]);
     assert.strictEqual(f.calls.notify, 1);
+    assert.strictEqual(f.calls.rederive, 2, 'a displaced position is re-derived once by the settle');
   }
-  {
-    // Stable layout: the re-derivation is idempotent.
+  for (const [label, restore] of [
+    ['char anchor', (f) => f.reader.restoreToCharOffset(5700)],
+    ['progress anchor', (f) => f.reader.restoreProgress(0.5)],
+  ]) {
+    // Nothing moved the position inside the window: the settle must not walk
+    // the chapter again before notifying Dart (the walk to the anchor is as
+    // expensive as the restore itself on a long chapter).
     const f = instantiate();
-    await f.reader.restoreProgress(0.5);
+    await restore(f);
+    assert.strictEqual(f.calls.rederive, 1);
+    const writes = f.calls.setPage.length;
     runTimer(f);
-    assert.strictEqual(f.state.scroll, 5000, 'idempotent on a stable layout');
+    assert.strictEqual(f.calls.rederive, 1, label + ': an untouched landing is not re-derived by the settle');
+    assert.strictEqual(f.calls.setPage.length, writes, label + ': and nothing is written');
+    assert.strictEqual(f.state.scroll, 5000);
     assert.deepStrictEqual(f.calls.snap, [5000]);
+    assert.strictEqual(f.calls.notify, 1);
   }
 
   // ── C. the position was handed to someone else inside the window ──────────
@@ -307,6 +328,50 @@ function lateImageLoad(f, mutate) {
     } else {
       assert.strictEqual(f.state.scroll, before, 'user-turn: the fade frame must not pull the page back');
       assert.deepStrictEqual(f.calls.setPageNow, []);
+    }
+  }
+
+  // ── F. the reveal frame fires while a page-curl preview is showing ────────
+  for (const scenario of ['revert', 'revert-moved', 'commit']) {
+    for (const fade of [false, true]) {
+      const label = scenario + (fade ? ' (fade)' : '');
+      const f = instantiate();
+      // The preview / revert write the scroller directly (no bookkeeping).
+      f.reader.assignPagePosition = (ctx, position) => { f.state.scroll = position; };
+      f.reader.finishPageTurnAnimation = () => {};
+      f.reader._resetFollowDragVisual = () => {};
+      if (fade) {
+        f.reader.pageTurnEffect = () => 'fade';
+        f.reader._audioRevealPageTurn = true;
+      }
+      f.state.scroll = 4000;
+      const cue = { doc: 5200, size: 40 };
+      assert.strictEqual(f.reader.scrollToRange(fakeRange(f.state, cue)), true);
+      assert.strictEqual(f.state.scroll, 5000);
+      assert.strictEqual(f.frames.length, 1);
+      assert.strictEqual(f.reader.curlPreview('forward'), 'ok');
+      assert.strictEqual(f.state.scroll, 6000, label + ': the body shows the previewed page');
+      const writes = f.calls.setPage.length;
+      f.frames.shift()();
+      assert.strictEqual(f.state.scroll, 6000,
+        label + ': the reveal frame must not write the body back under the curl preview');
+      assert.strictEqual(f.calls.setPage.length, writes, label + ': no setPagePosition during the preview');
+      assert.deepStrictEqual(f.calls.setPageNow, [], label + ': no direct write during the preview');
+      assert.strictEqual(f.reader._curl.base, 5000, label + ': the preview state is intact');
+      if (scenario === 'commit') {
+        assert.strictEqual(f.reader.paginate('forward'), 'scrolled');
+        assert.strictEqual(f.state.scroll, 6000, label + ': the committed turn stays');
+        assert.strictEqual(f.reader._curlLateAnchorPending, false, label + ': commit drops the pending re-land');
+        while (f.frames.length) f.frames.shift()();
+        assert.strictEqual(f.state.scroll, 6000, label + ': nothing pulls the committed turn back');
+      } else {
+        if (scenario === 'revert-moved') cue.doc = 6200; // a late image moved the cue meanwhile
+        f.reader.curlRevert();
+        assert.strictEqual(f.reader._curl, null);
+        assert.strictEqual(f.state.scroll, scenario === 'revert-moved' ? 6000 : 5000,
+          label + ': reverting the curl re-lands the still-registered reveal target');
+        assert.strictEqual(f.reader._curlLateAnchorPending, false);
+      }
     }
   }
 

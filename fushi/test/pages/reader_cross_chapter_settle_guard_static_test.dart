@@ -92,6 +92,15 @@ void main() {
     );
     expect(
       body.contains(
+        'if (self.getPagePosition(self.getScrollContext()) !== landed) {',
+      ),
+      isTrue,
+      reason:
+          '语义锚重算只在位置被动过时做：位置原封未动时再从章首走到锚字，是把一次与入口'
+          '落点同量级的全章走查白白排在通知 Dart 之前（跨章耗时回退）。landed 只用于比较',
+    );
+    expect(
+      body.contains(
         'registerSnapScroll(self.getPagePosition(self.getScrollContext()))',
       ),
       isTrue,
