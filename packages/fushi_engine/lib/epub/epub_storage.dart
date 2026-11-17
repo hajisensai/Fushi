@@ -34,12 +34,17 @@ class EpubStorage {
 
   static int _stagingSeq = 0;
 
-  /// 导入暂存目录名的前缀。书库根下以它开头的目录都是「某次导入还没落位的半成品」，
-  /// 不属于任何书：孤儿扫描跳过它们，[ensureImportResidueSwept] 清掉上个进程留下的。
+  /// 导入暂存目录名的前缀。暂存目录的完整名字见 [_stagingDirName]。
   static const String kStagingDirPrefix = '.tmp-';
 
-  /// [moveDirIntoPlace] 替换无主目录时旧树让位用的名字：`<目标>.bak-<毫秒戳>`。
-  static final RegExp _bakDirName = RegExp(r'^(.+)\.bak-(\d+)$');
+  /// [nextStagingDirName] 写出的名字：`.tmp-<毫秒戳>-<序号>`（BUG-3337 之前没有序号
+  /// 段）。清扫只认这个形状——书名净化不处理前导点，一本叫 `.tmp-notes` 的书的目录
+  /// 同样以 [kStagingDirPrefix] 开头，按前缀认会把它当暂存删掉。
+  static final RegExp _stagingDirName = RegExp(r'^\.tmp-\d+(-\d+)?$');
+
+  /// [moveDirIntoPlace] 替换无主目录时旧树让位用的名字：`<目标>.bak-<13 位毫秒戳>`。
+  /// 位数钉死在实际写出的形状上，书名恰好以 `.bak-2` 结尾的孤儿目录不会被当成 bak。
+  static final RegExp _bakDirName = RegExp(r'^(.+)\.bak-(\d{13})$');
 
   /// [moveDirIntoPlace] 走「拷贝 + 删源」回退时，目标目录在拷完之前带着的标记文件。
   /// rename 落位是原子的，用不着标记；拷贝不是——进程死在拷贝中途，目标目录看起来
@@ -70,7 +75,8 @@ class EpubStorage {
 
   /// 本进程经 [createStagingDirectory] 建过的暂存目录名。清扫靠它认出「不是上个
   /// 进程留下的」：不是每个建暂存的入口都先等过清扫（就地重建没有库句柄可查活行），
-  /// 清扫又是首次导入时才跑，两者可能同时在场。名字带进程内单调序号，不会复用。
+  /// 清扫又是首次导入时才跑、删除还是异步的，两者可能同时在场。名字先登记再建目录
+  /// （中间没有 await），带进程内单调序号，不会复用。
   static final Set<String> _ownStagingNames = <String>{};
 
   static Future<void> _placementTail = Future<void>.value();
@@ -118,7 +124,7 @@ class EpubStorage {
     Future<Iterable<String>> Function() liveExtractDirs,
   ) async {
     try {
-      sweepImportResidue(
+      await sweepImportResidue(
         booksRoot: base,
         liveExtractDirs: await liveExtractDirs(),
       );
@@ -127,73 +133,101 @@ class EpubStorage {
     }
   }
 
+  static Future<void> _sweepTail = Future<void>.value();
+
   /// 清掉书库根 [booksRoot] 下崩溃 / 被杀的导入留下的东西，返回处置清单（测试与
   /// 排查用）。只看根下的直接子目录：
   ///
-  /// - `.tmp-*`：没落位的半成品，直接删——本进程经 [createStagingDirectory] 建的
-  ///   除外（那是正在进行的导入）。
-  /// - `<目标>.bak-<ts>`：[moveDirIntoPlace] 替换时让位的旧树。**不能盲删**——进程
-  ///   若死在「旧树改名 bak」与「新树就位」之间，bak 是那本书唯一的副本：
+  /// - 暂存目录（[_stagingDirName]）：没落位的半成品，直接删——本进程经
+  ///   [createStagingDirectory] 建的除外（那是正在进行的导入）。
+  /// - `<目标>.bak-<ts>`（[_bakDirName]）：[moveDirIntoPlace] 替换时让位的旧树。
+  ///   **不能盲删**——进程若死在「旧树改名 bak」与「新树就位」之间，bak 是那本书
+  ///   唯一的副本：
   ///   - 目标不在 → 把 bak 改回目标；
   ///   - 目标在但带着 [kIncompleteMarkerFileName]（拷贝回退拷到一半）→ 删掉半成品
-  ///     目标，把 bak 改回去；
+  ///     目标，把 bak 改回去；半成品没删干净就不动 bak，留给下一次；
   ///   - 目标完整在场 → bak 才是多余的，删。
   ///
   ///   同一个目标有多份 bak 时从最新的看起（最新那份才是替换前的最后状态）。
   /// - 带 [kIncompleteMarkerFileName]、又没有 bak 可还原的无主目录：新书落位拷到
   ///   一半、行没插进去，删掉——不然孤儿扫描会把半本书列成「可找回」。
   ///
-  /// [liveExtractDirs] 里的目录（某个活行的 `extract_dir`）一律不当 bak / 半成品
-  /// 处理，哪怕书名恰好长成 `x.bak-123`；唯一例外是「活行的目录带着未完成标记且旁边
-  /// 有 bak」——那是就地重建拷到一半，bak 才是这本书。全程同步：
-  /// [moveDirIntoPlace] 也是同步的，两者在同一个 isolate 里不可能交错，清扫看不到
-  /// 本进程「改名到一半」的 bak。
-  static List<String> sweepImportResidue({
+  /// [liveExtractDirs] 里的目录（某个活行的 `extract_dir`）一律不当暂存 / bak /
+  /// 半成品处理，哪怕书名恰好长成 `.tmp-1-0` 或 `x.bak-1700000000000`；唯一例外是
+  /// 「活行的目录带着未完成标记且旁边有 bak」——那是就地重建拷到一半，bak 才是这本书。
+  ///
+  /// 递归删除走异步 IO：残留可能是几百页漫画的整份暂存（几个 GB），同步删会把调用方
+  /// 所在的 isolate（app 里是 UI）卡到删完。「判定 → 改名」每一步仍是同步的、紧跟在
+  /// 现查的磁盘状态之后；[moveDirIntoPlace] 也是同步的，所以清扫看不到本进程「改名
+  /// 到一半」的 bak，只可能看到它整步做完之前或之后的样子。同一进程里的多次清扫
+  /// 排队跑，不会两趟同时删同一个目录。
+  static Future<List<String>> sweepImportResidue({
     required String booksRoot,
     required Iterable<String> liveExtractDirs,
   }) {
-    final List<String> actions = <String>[];
-    final Directory root = Directory(booksRoot);
-    if (!root.existsSync()) return actions;
     final Set<String> live = <String>{
       for (final String dir in liveExtractDirs)
         if (dir.isNotEmpty) p.canonicalize(dir),
     };
+    final Future<List<String>> run = _sweepTail.then(
+      (void _) => _sweepImportResidue(booksRoot, live),
+    );
+    // 队尾只管「上一趟结束了」；上一趟的错误由它自己的调用方拿到。
+    _sweepTail = run.then<void>(
+      (List<String> _) {},
+      onError: (Object _, StackTrace _) {},
+    );
+    return run;
+  }
+
+  static Future<List<String>> _sweepImportResidue(
+    String booksRoot,
+    Set<String> live,
+  ) async {
+    final List<String> actions = <String>[];
+    final Directory root = Directory(booksRoot);
+    if (!root.existsSync()) return actions;
     bool isLive(String path) => live.contains(p.canonicalize(path));
     bool isIncomplete(String path) =>
         File(p.join(path, kIncompleteMarkerFileName)).existsSync();
-    void act(String what, String path, void Function() run) {
+    // [run] 的同步部分在 `act(...)` 调用当下就执行，之后才让出。
+    Future<bool> act(
+      String what,
+      String path,
+      FutureOr<void> Function() run,
+    ) async {
       try {
-        run();
+        await run();
         actions.add('$what ${p.basename(path)}');
+        return true;
       } catch (e, stack) {
         engineLog.log('EpubStorage.sweepImportResidue.$what', e, stack);
+        return false;
       }
     }
 
+    final List<Directory> staleStaging = <Directory>[];
     final List<({String path, String target, int stamp})> baks =
         <({String path, String target, int stamp})>[];
     for (final FileSystemEntity entity in root.listSync(followLinks: false)) {
       if (entity is! Directory) continue;
+      if (isLive(entity.path)) continue;
       final String name = p.basename(entity.path);
-      if (name.startsWith(kStagingDirPrefix)) {
-        if (_ownStagingNames.contains(name)) continue;
-        act('deleteStaging', entity.path, () {
-          entity.deleteSync(recursive: true);
-        });
+      if (_stagingDirName.hasMatch(name)) {
+        if (!_ownStagingNames.contains(name)) staleStaging.add(entity);
         continue;
       }
-      if (isLive(entity.path)) continue;
       final RegExpMatch? bak = _bakDirName.firstMatch(name);
       if (bak != null) {
         baks.add((
           path: entity.path,
           target: p.join(booksRoot, bak.group(1)!),
-          stamp: int.tryParse(bak.group(2)!) ?? 0,
+          stamp: int.parse(bak.group(2)!),
         ));
       }
     }
 
+    // bak 先处置：还原唯一副本不该排在几个 GB 的暂存删除后面。
     baks.sort(
       (
         ({String path, String target, int stamp}) a,
@@ -203,29 +237,59 @@ class EpubStorage {
     for (final ({String path, String target, int stamp}) bak in baks) {
       final Directory target = Directory(bak.target);
       if (target.existsSync() && isIncomplete(bak.target)) {
-        act('deleteIncomplete', bak.target, () {
-          target.deleteSync(recursive: true);
-        });
+        final bool cleared = await act(
+          'deleteIncomplete',
+          bak.target,
+          () => _deleteIncompleteDir(target),
+        );
+        // 半成品还在场：bak 仍是这本书唯一完整的副本，不能往下走到「目标在场 →
+        // 删 bak」。
+        if (!cleared) continue;
       }
+      // 从这里到改名 / 发起删除之间没有 await：判定用的是现查的磁盘状态。
+      if (!Directory(bak.path).existsSync()) continue;
       if (target.existsSync()) {
-        act('deleteBak', bak.path, () {
-          Directory(bak.path).deleteSync(recursive: true);
-        });
+        await act(
+          'deleteBak',
+          bak.path,
+          () => Directory(bak.path).delete(recursive: true),
+        );
       } else {
-        act('restoreBak', bak.path, () {
+        await act('restoreBak', bak.path, () {
           Directory(bak.path).renameSync(bak.target);
         });
       }
     }
 
+    for (final Directory staging in staleStaging) {
+      await act(
+        'deleteStaging',
+        staging.path,
+        () => staging.delete(recursive: true),
+      );
+    }
+
     for (final FileSystemEntity entity in root.listSync(followLinks: false)) {
       if (entity is! Directory) continue;
       if (isLive(entity.path) || !isIncomplete(entity.path)) continue;
-      act('deleteIncomplete', entity.path, () {
-        entity.deleteSync(recursive: true);
-      });
+      await act(
+        'deleteIncomplete',
+        entity.path,
+        () => _deleteIncompleteDir(entity),
+      );
     }
     return actions;
+  }
+
+  /// 删一个带 [kIncompleteMarkerFileName] 的半成品目录，**标记最后删**。递归删除的
+  /// 顺序由平台定；标记要是先没了而删除半路失败（Windows 上文件被占用），剩下的
+  /// 半本目录看起来就是「完整的」，下一次清扫会把旁边完整的 bak 当多余的删掉。
+  static Future<void> _deleteIncompleteDir(Directory dir) async {
+    await for (final FileSystemEntity entity in dir.list(followLinks: false)) {
+      if (p.basename(entity.path) == kIncompleteMarkerFileName) continue;
+      await entity.delete(recursive: true);
+    }
+    await dir.delete(recursive: true);
   }
 
   /// Move the freshly-staged [srcDir] to [targetDir]; returns the directory

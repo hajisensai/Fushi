@@ -135,7 +135,7 @@ void main() {
       final String own = await EpubStorage.createStagingDirectory();
       File(p.join(own, 'x.txt')).writeAsStringSync('in flight');
 
-      EpubStorage.sweepImportResidue(
+      await EpubStorage.sweepImportResidue(
         booksRoot: booksRoot,
         liveExtractDirs: const <String>[],
       );
@@ -144,12 +144,12 @@ void main() {
       expect(File(p.join(own, 'x.txt')).readAsStringSync(), 'in flight');
     });
 
-    test('目标在场 → 删 bak；目标不在 → bak 改回目标（唯一副本不能丢）', () {
+    test('目标在场 → 删 bak；目标不在 → bak 改回目标（唯一副本不能丢）', () async {
       writeFile(p.join('在场', 'new.txt'), 'new');
-      writeFile(p.join('在场.bak-100', 'old.txt'), 'old');
-      writeFile(p.join('丢了.bak-100', 'only.txt'), 'only copy');
+      writeFile(p.join('在场.bak-1700000000100', 'old.txt'), 'old');
+      writeFile(p.join('丢了.bak-1700000000100', 'only.txt'), 'only copy');
 
-      EpubStorage.sweepImportResidue(
+      await EpubStorage.sweepImportResidue(
         booksRoot: booksRoot,
         liveExtractDirs: const <String>[],
       );
@@ -159,12 +159,12 @@ void main() {
       expect(readFile(p.join('丢了', 'only.txt')), 'only copy');
     });
 
-    test('目标带未完成标记（拷贝回退拷到一半）→ 丢掉半成品，bak 改回去', () {
+    test('目标带未完成标记（拷贝回退拷到一半）→ 丢掉半成品，bak 改回去', () async {
       writeFile(p.join('书', EpubStorage.kIncompleteMarkerFileName), '');
       writeFile(p.join('书', 'half.txt'), 'half');
-      writeFile(p.join('书.bak-100', 'full.txt'), 'full');
+      writeFile(p.join('书.bak-1700000000100', 'full.txt'), 'full');
 
-      EpubStorage.sweepImportResidue(
+      await EpubStorage.sweepImportResidue(
         booksRoot: booksRoot,
         // 就地重建的目标正是活行自己的目录：照样要还原。
         liveExtractDirs: <String>[p.join(booksRoot, '书')],
@@ -175,11 +175,11 @@ void main() {
       expect(File(p.join(booksRoot, '书', 'half.txt')).existsSync(), isFalse);
     });
 
-    test('同一目标多份 bak：最新那份改回去，其余删掉', () {
-      writeFile(p.join('书.bak-100', 'v.txt'), 'older');
-      writeFile(p.join('书.bak-200', 'v.txt'), 'newest');
+    test('同一目标多份 bak：最新那份改回去，其余删掉', () async {
+      writeFile(p.join('书.bak-1700000000100', 'v.txt'), 'older');
+      writeFile(p.join('书.bak-1700000000200', 'v.txt'), 'newest');
 
-      EpubStorage.sweepImportResidue(
+      await EpubStorage.sweepImportResidue(
         booksRoot: booksRoot,
         liveExtractDirs: const <String>[],
       );
@@ -188,23 +188,23 @@ void main() {
       expect(readFile(p.join('书', 'v.txt')), 'newest');
     });
 
-    test('活行的目录哪怕名字长成 x.bak-123 也不动', () {
-      writeFile(p.join('x.bak-123', 'book.txt'), 'a real book');
+    test('活行的目录哪怕名字长成 x.bak-<13 位毫秒戳> 也不动', () async {
+      writeFile(p.join('x.bak-1700000000123', 'book.txt'), 'a real book');
 
-      EpubStorage.sweepImportResidue(
+      await EpubStorage.sweepImportResidue(
         booksRoot: booksRoot,
-        liveExtractDirs: <String>[p.join(booksRoot, 'x.bak-123')],
+        liveExtractDirs: <String>[p.join(booksRoot, 'x.bak-1700000000123')],
       );
 
-      expect(rootNames(), <String>['x.bak-123']);
+      expect(rootNames(), <String>['x.bak-1700000000123']);
     });
 
-    test('带未完成标记、没有 bak 的无主目录删掉；普通孤儿目录不动', () {
+    test('带未完成标记、没有 bak 的无主目录删掉；普通孤儿目录不动', () async {
       writeFile(p.join('半本', EpubStorage.kIncompleteMarkerFileName), '');
       writeFile(p.join('半本', 'half.txt'), 'half');
       writeFile(p.join('孤儿', 'book.txt'), 'recoverable');
 
-      EpubStorage.sweepImportResidue(
+      await EpubStorage.sweepImportResidue(
         booksRoot: booksRoot,
         liveExtractDirs: const <String>[],
       );
@@ -212,9 +212,98 @@ void main() {
       expect(rootNames(), <String>['孤儿']);
     });
 
+    test('活行的目录名以 .tmp- 开头（书名如此）不当暂存删', () async {
+      // 书名净化不处理前导点：`.tmp-notes` / `.tmp-1-0` 都可以是真书的 bookKey。
+      writeFile(p.join('.tmp-notes', 'book.txt'), 'a real book');
+      writeFile(p.join('.tmp-1-0', 'book.txt'), 'another real book');
+      writeFile(p.join('.tmp-2-0', 'x.txt'), 'stale staging');
+
+      final List<String> actions = await EpubStorage.sweepImportResidue(
+        booksRoot: booksRoot,
+        liveExtractDirs: <String>[
+          p.join(booksRoot, '.tmp-notes'),
+          p.join(booksRoot, '.tmp-1-0'),
+        ],
+      );
+
+      expect(actions, <String>['deleteStaging .tmp-2-0']);
+      expect(rootNames(), <String>['.tmp-1-0', '.tmp-notes']);
+      expect(readFile(p.join('.tmp-notes', 'book.txt')), 'a real book');
+      expect(readFile(p.join('.tmp-1-0', 'book.txt')), 'another real book');
+    });
+
+    test('只是以 .tmp- 开头、不是暂存名形状的无主目录不删', () async {
+      writeFile(p.join('.tmp-notes', 'book.txt'), 'orphan');
+
+      final List<String> actions = await EpubStorage.sweepImportResidue(
+        booksRoot: booksRoot,
+        liveExtractDirs: const <String>[],
+      );
+
+      expect(actions, isEmpty);
+      expect(rootNames(), <String>['.tmp-notes']);
+    });
+
+    test('书名以 .bak-<短数字> 结尾的孤儿目录不当 bak：不删、不改名', () async {
+      // 让位用的 bak 一律是 13 位毫秒戳；`X.bak-2` 是一本书名如此的孤儿书。
+      writeFile(p.join('X', 'book.txt'), 'x');
+      writeFile(p.join('X.bak-2', 'book.txt'), 'orphan named X.bak-2');
+      writeFile(p.join('Y.bak-2', 'book.txt'), 'orphan named Y.bak-2');
+
+      final List<String> actions = await EpubStorage.sweepImportResidue(
+        booksRoot: booksRoot,
+        liveExtractDirs: const <String>[],
+      );
+
+      expect(actions, isEmpty);
+      expect(rootNames(), <String>['X', 'X.bak-2', 'Y.bak-2']);
+      expect(readFile(p.join('X.bak-2', 'book.txt')), 'orphan named X.bak-2');
+    });
+
+    test('两趟清扫同时发起：排队跑，每样残留只处置一次', () async {
+      writeFile(p.join('.tmp-1-0', 'a', 'x.txt'), 'stale');
+      writeFile(p.join('在场', 'new.txt'), 'new');
+      writeFile(p.join('在场.bak-1700000000100', 'old.txt'), 'old');
+      writeFile(p.join('丢了.bak-1700000000100', 'only.txt'), 'only copy');
+      writeFile(p.join('半本', EpubStorage.kIncompleteMarkerFileName), '');
+      writeFile(p.join('半本', 'sub', 'half.txt'), 'half');
+
+      final Future<List<String>> first = EpubStorage.sweepImportResidue(
+        booksRoot: booksRoot,
+        liveExtractDirs: const <String>[],
+      );
+      final Future<List<String>> second = EpubStorage.sweepImportResidue(
+        booksRoot: booksRoot,
+        liveExtractDirs: const <String>[],
+      );
+
+      expect((await first).toSet(), <String>{
+        'deleteStaging .tmp-1-0',
+        'deleteBak 在场.bak-1700000000100',
+        'restoreBak 丢了.bak-1700000000100',
+        'deleteIncomplete 半本',
+      });
+      expect(await second, isEmpty, reason: '第二趟看到的是第一趟收完之后的书库根');
+      expect(rootNames(), <String>['丢了', '在场']);
+      expect(readFile(p.join('丢了', 'only.txt')), 'only copy');
+    });
+
+    test('清扫不在调用栈里同步递归删：返回 Future 时残留还在', () async {
+      writeFile(p.join('.tmp-1-0', 'x.txt'), 'stale');
+
+      final Future<List<String>> sweep = EpubStorage.sweepImportResidue(
+        booksRoot: booksRoot,
+        liveExtractDirs: const <String>[],
+      );
+
+      expect(rootNames(), <String>['.tmp-1-0']);
+      await sweep;
+      expect(rootNames(), isEmpty);
+    });
+
     test('首次导入之前自动清扫一次', () async {
       writeFile(p.join('.tmp-1-0', 'x.txt'), 'stale');
-      writeFile(p.join('旧书.bak-100', 'only.txt'), 'only copy');
+      writeFile(p.join('旧书.bak-1700000000100', 'only.txt'), 'only copy');
       final File epub = File(p.join(tempRoot.path, 'book.epub'))
         ..writeAsBytesSync(_minimalEpub('新书'));
 

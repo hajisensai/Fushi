@@ -196,7 +196,7 @@ class OrphanBookRecovery {
       );
     }
     final List<EpubBookMeta> books = await database.getEpubBookMetas();
-    EpubStorage.sweepImportResidue(
+    await EpubStorage.sweepImportResidue(
       booksRoot: booksRoot,
       liveExtractDirs: books.map((EpubBookMeta b) => b.extractDir),
     );
