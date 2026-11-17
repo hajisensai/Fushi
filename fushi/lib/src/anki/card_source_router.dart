@@ -262,8 +262,7 @@ CardSourceVideoAction decideCardSourceVideoAction({
   if (local == CardSourceLocalVideoCheck.verified) {
     return CardSourceVideoAction.openLocal;
   }
-  if (lookup != null && lookup.cancelled)
-    return CardSourceVideoAction.cancelled;
+  if (lookup?.cancelled ?? false) return CardSourceVideoAction.cancelled;
   if (lookup?.value != null) return CardSourceVideoAction.openRemote;
   if (local == CardSourceLocalVideoCheck.mismatch ||
       (lookup?.fingerprintMismatch ?? false)) {
