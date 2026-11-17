@@ -2389,6 +2389,8 @@ class _GameCtl {
       'ok': true,
       'candidate': raw,
       'sources': await host.metadataSources(game.id),
+      // 撤销载荷据此判「之后有没有被改过」（`op_descriptions_games.dart`）。
+      'primarySource': updated.primarySource,
       ..._gameJson(updated),
     };
   }
