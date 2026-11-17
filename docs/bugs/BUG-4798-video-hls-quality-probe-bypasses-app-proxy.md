@@ -1,4 +1,4 @@
-## BUG-4791 · HLS 画质探测用顶层 http.get，不走应用代理，需代理的网络下画质菜单静默消失
+## BUG-4798 · HLS 画质探测用顶层 http.get，不走应用代理，需代理的网络下画质菜单静默消失
 - **报告**：2026-11-17（用户：小说 / 漫画 / 视频优化清单 video-13，复核后立项）
 - **真实性**：✅ 真 bug（代码路径确认，未在真机复现）。根因：
   - `fushi/lib/src/pages/implementations/video_fushi/quality.part.dart:36`（修前行号）`_detectHlsVariantsForLoad` 用 `package:http` 的顶层 `http.get(uri, …)` 取 master 正文。顶层便捷函数每次内部现建一个默认 `IOClient`，只认环境变量代理，不认 GUI 系统代理与用户手填的代理（应用代理由 `packages/fushi_engine/lib/utils/net/app_http.dart` 的 `createAppHttpClient` / `createAppHttpIoClient` 装 `findProxy`）。播放内核经应用代理放得出来的流，探测请求却连不上。

@@ -27,7 +27,7 @@ class HlsMasterProbeStatusException implements Exception {
 /// IO：GET [uri]，正文是 HLS master 时返回各档画质（高到低，
 /// [sortedHlsVariantsByQualityDesc]）；是媒体播放列表（单码率）时返回空表。
 ///
-/// 出站走应用代理出口（[createAppHttpIoClient]，BUG-4791）：此前用顶层 `http.get`，
+/// 出站走应用代理出口（[createAppHttpIoClient]，BUG-4798）：此前用顶层 `http.get`，
 /// 那是默认 `IOClient`，只认环境变量代理，不认 GUI 系统代理与用户手填的代理——播放
 /// 内核经应用代理放得出来的流，这里却连不上，画质菜单静默消失。
 ///

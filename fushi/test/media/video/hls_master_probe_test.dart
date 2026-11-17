@@ -1,4 +1,4 @@
-// BUG-4791：HLS 画质探测。
+// BUG-4798：HLS 画质探测。
 //
 // 原实现在播放页里直接用顶层 `http.get`（默认 IOClient，不认应用代理），失败还静默
 // 吞掉。现在取数收进 fushi_engine 的 [fetchHlsMasterVariants]：出站走统一装配点

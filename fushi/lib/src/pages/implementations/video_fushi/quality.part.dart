@@ -33,7 +33,7 @@ extension _VideoQuality on _VideoFushiPageState {
     if (uri == null || !(uri.isScheme('http') || uri.isScheme('https'))) return;
     final List<HlsVariant> variants;
     try {
-      // 走应用代理出口（BUG-4791）：与播放内核同一条出站路径。
+      // 走应用代理出口（BUG-4798）：与播放内核同一条出站路径。
       variants = await fetchHlsMasterVariants(
         uri,
         headers: _streamHttpHeaderFields,
