@@ -310,3 +310,123 @@ fn relay_lookups_use_their_keys() {
         );
     }
 }
+
+// ---------------------------------------------------------------------- 并入之后的同步
+
+/// 并入（`collection_join`）之后经位置同步：b 绑在集合 Y（盐 `uidB`）上写 N2；a 在自己的集合里写 N1，然后并入 Y。
+/// 两台经 Y 的位置同步之后都看得到 N1、N2；两份盐派生的默认牌组 ID 在两台上归一到同一个规范 ID（别名类按类回答）；
+/// 语义摘要相同、派生层增量 == 重建。
+#[test]
+fn devices_converge_after_a_join() {
+    use super::dispatch_tests::{cfg, g4, open};
+    use crate::gen4::op::tests::id;
+    use crate::store::sync2::config::default_deck_id;
+    use crate::store::sync2::tests::{P, tempdir};
+    let mut a = Dev::new("g87ja");
+    let mut b = {
+        let dir = tempdir::new("g87jb");
+        let h = open(&dir.0, 0).unwrap();
+        let v = g4(
+            h,
+            "collection_adopt",
+            T1,
+            json!({"collection": id(0x0a).text(), "dir": "0000-home", "salts": ["uidB"], "confirmed": true}),
+        );
+        assert_eq!(v["outcome"], json!("bound"), "{v}");
+        g4(h, "cache_config_set", T1, json!({"caches": cfg()}));
+        Dev { dir, h }
+    };
+    a.write(T1 + 1, N1, "鯨");
+    b.write(T1 + 2, N2, "猫");
+    let j = g4(
+        a.h,
+        "collection_join",
+        T1 + 3,
+        json!({"into": id(0x0a).text(), "dir": "0000-home"}),
+    );
+    assert_eq!(j["outcome"], json!("joined"), "{j}");
+    let mut loc = Loc::new();
+    sync_all(&[&b, &a], &mut loc, T1 + 4, Opts::default());
+    for d in [&a, &b] {
+        assert_eq!(d.field(N1), Some(json!("鯨")), "{}", d.device());
+        assert_eq!(d.field(N2), Some(json!("猫")), "{}", d.device());
+    }
+    let ids = json!({"ids": [default_deck_id(P), default_deck_id("uidB")]});
+    let ca = g4(a.h, "canonical_ids", T1, ids.clone());
+    let cb = g4(b.h, "canonical_ids", T1, ids);
+    assert_eq!(ca, cb);
+    assert_eq!(a.derived(), b.derived());
+}
+
+// ---------------------------------------------------------------------- 围栏中途
+
+/// 围栏中途：a 在一个协议 3 的存量位置上立新根时只写成了新根（`v4/`），旧根 meta 还没改写成围栏就断了。下一台设备
+/// b 进来：仍认它是存量集合（媒体根 `v3`、不立墓碑 head），把围栏补上；围栏立好之后不再改写；两台照常收敛。
+#[test]
+fn a_fence_interrupted_midway_is_completed_by_the_next_device() {
+    use crate::store::sync2::collection_of;
+    use crate::store::sync2::tests::P;
+    let a = Dev::new("g87fa");
+    let b = Dev::new("g87fb");
+    let mut loc = Loc::new();
+    let v3 = json!({"collection": collection_of(P).text(), "v": 3, "minReader": 3})
+        .to_string()
+        .into_bytes();
+    loc.insert("v3/meta.json".into(), v3.clone());
+    let root = |d: &Dev, loc: &Loc| -> (Value, Vec<(String, Vec<u8>)>) {
+        let mut blobs = Vec::new();
+        blobs.extend(loc.get("v4/meta.json").cloned());
+        blobs.extend(loc.get("v3/meta.json").cloned());
+        let locs: Vec<String> = loc
+            .keys()
+            .filter_map(|k| k.strip_prefix("v4/loc/").map(str::to_owned))
+            .collect();
+        cmd(
+            d.h,
+            "location_root",
+            T1,
+            json!({"location": "loc", "has4": loc.contains_key("v4/meta.json"),
+                "has3": loc.contains_key("v3/meta.json"), "locs": locs}),
+            &blobs,
+        )
+    };
+    let (r, files) = root(&a, &loc);
+    assert_eq!(r["state"], json!("ok"), "{r}");
+    assert_eq!(r["media"], json!("v3"));
+    // 只写成新根那一半（先新根、后围栏的顺序在 v3 之前断了）。
+    for (p, bytes) in files {
+        if p.starts_with("v4/") {
+            loc.insert(p, bytes);
+        }
+    }
+    assert_eq!(loc["v3/meta.json"], v3, "the fence was not written yet");
+    let (r, files) = root(&b, &loc);
+    assert_eq!(r["state"], json!("ok"), "{r}");
+    assert_eq!(r["media"], json!("v3"), "still an existing collection");
+    assert_eq!(
+        r["ensure"],
+        json!([]),
+        "no tombstone head for an existing collection"
+    );
+    let fence = files
+        .iter()
+        .find(|(p, _)| p == "v3/meta.json")
+        .expect("b completes the fence")
+        .1
+        .clone();
+    let fv: Value = serde_json::from_slice(&fence).unwrap();
+    assert_eq!(fv["minReader"], json!(4), "{fv}");
+    for (p, bytes) in files {
+        loc.insert(p, bytes);
+    }
+    // 围栏立好之后再来：不再改写旧根 meta。
+    let (_, again) = root(&a, &loc);
+    assert!(!again.iter().any(|(p, _)| p == "v3/meta.json"), "{again:?}");
+    a.write(T1 + 1, N1, "鯨");
+    b.write(T1 + 2, N2, "猫");
+    sync_all(&[&a, &b], &mut loc, T1 + 3, Opts::default());
+    for d in [&a, &b] {
+        assert_eq!(d.field(N1), Some(json!("鯨")));
+        assert_eq!(d.field(N2), Some(json!("猫")));
+    }
+}
