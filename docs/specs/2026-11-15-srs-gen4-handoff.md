@@ -1296,9 +1296,8 @@ G8 子规划文档在仓库里不存在（任务点名的「G8 子规划」找�
   有输入下标的项按它对 `_before`（请求形），没有下标的（意图命令自拼、`editNoteFieldsIf` / `mergeNotesInto` 等直接传
   `edits` 的调用点）仍按回包里的 (种类, 实体, 字段键)。草稿点名别名成员时撤销项也带 dot。
 - 改前值（`_currentValues`）：实体 ID 已按 `canon` 对回，但**键里嵌的 ID**（`f/<字段>`、`fieldDef/`、`fieldDesc/`、`tmplDef/`、
-  `historyFrom/`）是成员时，视图与寄存器按规范键出、按请求键取不到，改前值记成空，撤销把字段清空（e2e 测出来的）。现在
-  只对「取不到值且键里嵌 UUID」的键整批问一次 `canonical_ids`（`srsKeyEmbeddedId` + `srsCanonicalIdMap`），换规范键再取；
-  取得到的不多问，所以普通撤销不多一次往返。
+  `historyFrom/`）是成员时，视图与寄存器按规范键出、按请求键取不到，改前值记成空，撤销把字段清空（e2e 测出来的）。复核
+  后改成由内核随读回键的规范形（见下「复核修复」第 2 条），不再另发 `canonical_ids`。
 
 ### ID 审计接到新代（`store/gen4/id_audit.rs`）
 
@@ -1344,6 +1343,38 @@ G8 子规划文档在仓库里不存在（任务点名的「G8 子规划」找�
   `onRecords`，远程协议不回落下的 ID，报请求里的身份记录 ID（与它的 `canonicalIds` 原样返回同一处理）。
 - 本波定向测试里仍红、不归本模块（改动前同样红，已用 HEAD 的 Dart 源 + 同一 DLL 复核 `srs_edit_undo_test`）：
   `srs_write_statement_cost_test`「本机写操作的语句数与内核命令数」——以前先崩在 `_prefetchEdits`，现在走到最后的
-  `applyRemote`（另一台设备导出的带戳事件）被内核拒：`apply: stamped items carry a foreign identity`，属 **G9-5**（同步 /
-  并入）；`srs_edit_undo_test`「连续两步倒序撤」（与 ID 无关）；`fushi/test/srs/srs_remote_store_parity_guard_test`
+  `applyRemote`（另一台设备导出的带戳事件）被内核拒：`apply: stamped items carry a foreign identity`（见下「复核修复」第 4
+  条，归 **T1 / G9-5 二选一，由 integration owner 指定**）；`srs_edit_undo_test`「连续两步倒序撤」（与 ID 无关）；`fushi/test/srs/srs_remote_store_parity_guard_test`
   第 1 条（守卫的覆盖正则认不出 `late final String defaultDeckId = …` 这种覆写，本模块没碰这几行）。
+
+### 复核修复（2026-11-17，同一分支）
+
+1. **ID 审计的 Dart 自检改新代口径**（`packages/fushi_engine/test/srs/srs_id_audit_gate_test.dart`）。审计接到新代后测试宿主
+   优先加载 `prebuilt/windows-x64/id_audit/` 那份库（`FushiFsrs.isIdAuditVariant` 为真），这个门不再 skip，而它仍按协议 3 的
+   `srs_review_logs` 与 `srs_id(?)` 写，3/3 红（`no such table`）。改成新代的表与 ID 绑定：拿 UUID 文本比 `notes.id` 报
+   `id audit`；同一条语句一个按 Ref 绑、另一个漏成文本仍报；原始通道把 UUID 文本写进 `cache_log.note` 写完扫存储报；
+   按 Ref（16 字节，测试里的 `srsIdType`）绑、`collections.profile_uid` 这类按文本存的列绑文本照常执行（4 条）。
+2. **改前值的键归一放进内核**（复核 minor：`_currentValues` 给空字段写值时每次多一次 `canonical_ids`）。`read edits` 多一个
+   可选的 `keys`（调用方接下来要取值的字段键），回包 `keyCanon` 给其中归一后不同的「请求键 → 规范键」（`Index::canonical_key`，
+   与 `canon` 同口径、只列不同的，`cmd/reads.rs` `edits`）。Dart `_currentValues` 把嵌着 ID 的键交给它本来就要发的那次寄存器
+   读（`_entityEditsMany` → `_prefetchEdits` → `_editItemsById`，只在第一块带），按 `keyCanon` 换规范键取视图 / 寄存器的值；
+   删掉兜底的 `srsCanonicalIdMap` 往返。测试用的计数 `SrsDbStore.debugCanonicalIdsCalls`。
+3. **真迁移库的内置笔记类型折叠**（复核 minor：Dart 侧的「迁移形库」是先建规范内置实体再补带盐的，证不了真迁移库开库不
+   另建）。Dart 造不出协议 3 库（`ffsrs_store_open` 已删，Dart 没有协议 3 写入口；`SrsGen4Migration.run` 要现成的 `srs.db`），
+   所以在 Rust 补：`id_reply_tests::a_migrated_library_folds_the_salted_builtin_note_types_and_takes_new_writes`——协议 3 库里
+   按 uid 加盐写下内置 Lapis、Fushi 卡片（`ankiNum` + `builtin`）与一个用户牌组，经真 `gen4_migrate_run` 迁移；断言带盐的
+   三者与默认牌组都归到 `ids` 的答案、笔记类型表里没有带盐那份；按规范 ID 再发一遍 `ensureBuiltins` 那一批身份记录
+   `landed` 全 false、笔记类型 / 牌组集合不变；再建同名牌组（落在已有类上）、新牌组、新笔记，读回 `canon` 为空，按带盐
+   ID 改牌组名落在规范 ID 上、`edits` 按带盐 ID 读回 `canon`。撤销在 Dart（`revertEdits` 是条件写），Dart 的迁移形 e2e
+   覆盖。`dispatch_tests::migrated_prepared` 改成 `pub(super)` 供它用。
+4. **`srs_write_statement_cost_test` 第 1 条的归属**：红在最后一步 `dst.store.applyRemote(remote)`，内核按设计拒绝外来的带戳
+   事件（`apply: stamped items carry a foreign identity`，`cmd/writes.rs` 约 :621；复核用基线 Dart lib + 同一 DLL 同样卡在这
+   一步）。这条用例本身还是协议 3 的「两台设备互灌事件」场景，以前被 `_prefetchEdits` 的崩溃挡在前面。要改成走 collection
+   join（同步 / 并入的新路径）或删掉这一步——归 **T1（测试重写）/ G9-5（并入）二选一，由 integration owner 指定**；本模块
+   不改（不是 ID 口径）。
+5. **已知行为：信任未确认 / 名字史被清时的可见重复（推测，未复现）**。新口径下带盐存量能不能归到规范 ID 看盐集合，作者
+   未被本机信任时它带来的盐不算（`alias.rs` 模块说明、`Index::withheld_salts`）。所以：一台全新设备加入别人迁移出来的集合、
+   还没确认信任时，对方带盐的默认牌组 / Lapis 是独立的类，本机 `ensureBuiltins` 会再写一份规范的，用户短暂看到两个
+   Default；确认信任后两份并成一类，不丢数据。另外牌组名字史被清除后规范 ID 退回带盐 ID 自身，这时按同名再建牌组也会
+   重名。没让 `ensureBuiltins` 在有被扣住的盐时暂缓：暂缓意味着全新设备在确认信任前没有默认牌组 / Lapis 可用（制卡直接
+   失败），比短暂重复更糟；重复会在确认后自动合并。真要处理归确认信任的 UI（G9-4 / G8-7b）。
