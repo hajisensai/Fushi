@@ -11,6 +11,7 @@ import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ai/agent/agent_tool.dart';
+import 'package:fushi_engine/ai/ai_media_identity_assistant.dart';
 import 'package:fushi_engine/media/library_curate/library_curator.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_ai_identity.dart';
 import 'package:test/test.dart';
@@ -153,6 +154,17 @@ class _FakeFacts implements LibraryCurateFacts {
 
   @override
   Future<bool> musicChangedSince(int? sinceMs) async => true;
+
+  List<LibraryCurateBookUnit> bookUnits = <LibraryCurateBookUnit>[];
+  List<LibraryCurateGameUnit> gameUnits = <LibraryCurateGameUnit>[];
+
+  @override
+  Future<List<LibraryCurateBookUnit>> bookScrapeUnits(int? sinceMs) async =>
+      bookUnits;
+
+  @override
+  Future<List<LibraryCurateGameUnit>> gameScrapeUnits(int? sinceMs) async =>
+      gameUnits;
 }
 
 /// 内存里的「库」：合集成员、连接、作品身份。
@@ -177,6 +189,9 @@ void main() {
   late LibraryCurateAiAvailability ai;
   late int now;
   late List<AiVideoIdentityQuery> asked;
+  late List<AiMediaIdentityQuery> mediaAsked;
+  late AiVideoIdentityDecision? Function(AiMediaIdentityQuery q) mediaAnswer;
+  late bool mediaAssigned;
 
   LibraryCurator curator({
     LibraryCurateLimits limits = const LibraryCurateLimits(),
@@ -192,6 +207,12 @@ void main() {
       asked.add(q);
       return AiVideoIdentityDecision(key: 'anidb:2', confidence: 0.99);
     },
+    mediaDecider: () => mediaAssigned
+        ? (AiMediaIdentityQuery q) async {
+            mediaAsked.add(q);
+            return mediaAnswer(q);
+          }
+        : null,
   );
 
   setUp(() {
@@ -203,6 +224,9 @@ void main() {
     ai = (organize: true, videoIdentify: true, mediaLinks: true);
     now = 1000000;
     asked = <AiVideoIdentityQuery>[];
+    mediaAsked = <AiMediaIdentityQuery>[];
+    mediaAnswer = (AiMediaIdentityQuery q) => null;
+    mediaAssigned = true;
 
     toolbox
       ..op(
@@ -631,5 +655,437 @@ void main() {
     final LibraryCurateState back = LibraryCurateState.decode(s.encode());
     expect(back.encode(), s.encode());
     expect(LibraryCurateState.decode('not json').runs, isEmpty);
+  });
+
+  group('书 / 游戏刮削阶段', () {
+    /// 书的候选（按查询词）与游戏的候选（按游戏 id）。
+    late Map<String, List<Map<String, Object?>>> bookFound;
+    late Map<String, List<Map<String, Object?>>> gameFound;
+
+    /// 书上「用户设过」的字段（假路由的 onlyEmpty 据此过滤）。
+    late Map<String, Set<String>> userSet;
+
+    /// 写回的结果：书键 → 字段 → 候选 id；游戏 id → 候选。
+    late Map<String, Map<String, String>> bookWrites;
+    late Map<String, String> gameWrites;
+    late List<Map<String, Object?>> applyArgs;
+
+    Map<String, Object?> book(
+      String id,
+      String title, {
+      String? author = 'Author',
+      String source = 'bangumi',
+    }) => <String, Object?>{
+      'source': source,
+      'id': id,
+      'title': title,
+      'author': ?author,
+      'coverUrl': 'https://x/$id.jpg',
+    };
+
+    Map<String, Object?> game(String id, String name) => <String, Object?>{
+      'id': id,
+      'source': id.split(':').first,
+      'externalId': id.split(':').last,
+      'name': name,
+    };
+
+    LibraryCurateBookVolume vol(
+      String key,
+      String title, {
+      String? author,
+      bool missingCover = true,
+      String? isbn,
+    }) => LibraryCurateBookVolume(
+      bookKey: key,
+      title: title,
+      author: author,
+      isbn: isbn,
+      missingCover: missingCover,
+      fileNameTitle: looksLikeFileNameTitle(title),
+    );
+
+    LibraryCurateBookUnit single(LibraryCurateBookVolume v) =>
+        LibraryCurateBookUnit(
+          id: v.shelfKey,
+          title: v.title,
+          volumes: <LibraryCurateBookVolume>[v],
+        );
+
+    setUp(() {
+      ai = (organize: false, videoIdentify: true, mediaLinks: false);
+      bookFound = <String, List<Map<String, Object?>>>{};
+      gameFound = <String, List<Map<String, Object?>>>{};
+      userSet = <String, Set<String>>{};
+      bookWrites = <String, Map<String, String>>{};
+      gameWrites = <String, String>{};
+      applyArgs = <Map<String, Object?>>[];
+      // 只看这两个阶段：其余阶段的操作一律不可用（跳过）。
+      toolbox.ops.clear();
+      toolbox
+        ..op(
+          LibraryCurateOps.bookScrapeSearch,
+          (Map<String, Object?> a) async => <String, Object?>{
+            'candidates': bookFound['${a['query']}'] ?? const <Object?>[],
+          },
+          risk: AgentToolRisk.read,
+        )
+        ..op(
+          LibraryCurateOps.bookScrapeApply,
+          (Map<String, Object?> a) async {
+            applyArgs.add(a);
+            final String key = '${a['key']}';
+            final List<String> fields = <String>[
+              for (final Object? f in a['fields']! as List)
+                if (!(a['onlyEmpty'] == true &&
+                    (userSet[key]?.contains('$f') ?? false)))
+                  '$f',
+            ];
+            if (fields.isEmpty) throw const _Fail('rejected');
+            final Map<String, String> w = bookWrites.putIfAbsent(
+              key,
+              () => <String, String>{},
+            );
+            for (final String f in fields) {
+              w[f] = '${a['id']}';
+            }
+            return <String, Object?>{'key': key, 'applied': fields};
+          },
+          payload: (Map<String, Object?> a, Object? r) => <String, Object?>{
+            'key': a['key'],
+            'fields': (r! as Map)['applied'],
+          },
+          undo: (Map<String, Object?> p) async {
+            final Map<String, String>? w = bookWrites['${p['key']}'];
+            for (final Object? f in p['fields']! as List) {
+              w?.remove('$f');
+            }
+            if (w != null && w.isEmpty) bookWrites.remove('${p['key']}');
+          },
+        )
+        ..op(
+          LibraryCurateOps.gameScrapeSearch,
+          (Map<String, Object?> a) async => <String, Object?>{
+            'candidates': gameFound['${a['id']}'] ?? const <Object?>[],
+          },
+          risk: AgentToolRisk.read,
+        )
+        ..op(
+          LibraryCurateOps.gameScrapeApply,
+          (Map<String, Object?> a) async {
+            applyArgs.add(a);
+            gameWrites['${a['id']}'] = '${a['candidate']}';
+            return <String, Object?>{'ok': true};
+          },
+          payload: (Map<String, Object?> a, Object? r) => <String, Object?>{
+            'id': a['id'],
+          },
+          undo: (Map<String, Object?> p) async => gameWrites.remove(p['id']),
+        );
+    });
+
+    LibraryCurateStageResult stageOf(
+      LibraryCurateRun run,
+      LibraryCurateStage stage,
+    ) =>
+        run.stages.firstWhere((LibraryCurateStageResult s) => s.stage == stage);
+
+    test('唯一候选且标题一致：不问 AI 直接写回，只写空缺字段，游戏带 keepCover', () async {
+      facts.bookUnits = <LibraryCurateBookUnit>[
+        single(vol('k1', 'Alpha Book')),
+        // 作者已有（用户的）：只补封面。
+        single(vol('k2', 'Beta Book', author: 'Mine')),
+      ];
+      bookFound['Alpha Book'] = <Map<String, Object?>>[book('1', 'Alpha Book')];
+      bookFound['Beta Book'] = <Map<String, Object?>>[book('2', 'Beta Book')];
+      facts.gameUnits = const <LibraryCurateGameUnit>[
+        LibraryCurateGameUnit(id: 'g1', title: 'Clannad'),
+      ];
+      // 同一款游戏在两个源各一条 + 一条不相干的：每个源至多一条一致 → 认第一条。
+      gameFound['g1'] = <Map<String, Object?>>[
+        game('vndb:v4', 'CLANNAD'),
+        game('bgm:51', 'Clannad'),
+        game('vndb:v5', 'Clannad Side Stories'),
+      ];
+      final LibraryCurateRun run = await curator().run(
+        trigger: LibraryCurateTrigger.manual,
+      );
+      expect(mediaAsked, isEmpty);
+      expect(bookWrites, <String, Map<String, String>>{
+        'book:k1': <String, String>{'cover': '1', 'author': '1'},
+        'book:k2': <String, String>{'cover': '2'},
+      });
+      expect(
+        applyArgs.where((Map<String, Object?> a) => a.containsKey('key')),
+        everyElement(containsPair('onlyEmpty', true)),
+      );
+      expect(gameWrites, <String, String>{'g1': 'vndb:v4'});
+      expect(applyArgs.last['keepCover'], isTrue);
+      expect(stageOf(run, LibraryCurateStage.scrapeBooks).changes, 2);
+      expect(
+        stageOf(run, LibraryCurateStage.scrapeGames).status,
+        LibraryCurateStageStatus.done,
+      );
+    });
+
+    test('多候选、没指派 AI：一个 AI 请求都不发，留待确认（结果与 pending 里看得到）', () async {
+      ai = kLibraryCurateNoAi;
+      facts.bookUnits = <LibraryCurateBookUnit>[single(vol('k1', 'Gamma'))];
+      bookFound['Gamma'] = <Map<String, Object?>>[
+        book('1', 'Gamma'),
+        book('2', 'Gamma 2'),
+      ];
+      facts.gameUnits = const <LibraryCurateGameUnit>[
+        LibraryCurateGameUnit(id: 'g1', title: 'Delta'),
+      ];
+      gameFound['g1'] = <Map<String, Object?>>[
+        game('vndb:v1', 'Delta One'),
+        game('vndb:v2', 'Delta Two'),
+      ];
+      final LibraryCurateRun run = await curator().run(
+        trigger: LibraryCurateTrigger.manual,
+      );
+      expect(mediaAsked, isEmpty);
+      expect(bookWrites, isEmpty);
+      expect(gameWrites, isEmpty);
+      expect(
+        run.pendingItems.map(
+          (LibraryCuratePendingItem p) => '${p.kind}|${p.ref}|${p.reason}',
+        ),
+        containsAll(<String>[
+          'book_scrape_pending|book:k1|ambiguous',
+          'game_scrape_pending|game:g1|ambiguous',
+        ]),
+      );
+      expect(stageOf(run, LibraryCurateStage.scrapeBooks).pending, 1);
+      expect(stageOf(run, LibraryCurateStage.scrapeGames).pending, 1);
+    });
+
+    test('多候选：AI 高置信写回，低置信留待确认', () async {
+      facts.bookUnits = <LibraryCurateBookUnit>[
+        single(vol('k1', 'Eta')),
+        single(vol('k2', 'Theta')),
+      ];
+      bookFound['Eta'] = <Map<String, Object?>>[
+        book('1', 'Eta (novel)'),
+        book('2', 'Eta (manga)'),
+      ];
+      bookFound['Theta'] = <Map<String, Object?>>[
+        book('3', 'Theta I'),
+        book('4', 'Theta II'),
+      ];
+      mediaAnswer = (AiMediaIdentityQuery q) => q.localTitles.single == 'Eta'
+          ? const AiVideoIdentityDecision(key: 'bangumi:1', confidence: 0.95)
+          : const AiVideoIdentityDecision(key: 'bangumi:3', confidence: 0.6);
+      final LibraryCurateRun run = await curator().run(
+        trigger: LibraryCurateTrigger.manual,
+      );
+      expect(mediaAsked, hasLength(2));
+      expect(mediaAsked.first.candidates.map((c) => c.key), <String>[
+        'bangumi:1',
+        'bangumi:2',
+      ]);
+      expect(bookWrites.keys, <String>['book:k1']);
+      expect(
+        run.pendingItems.singleWhere(
+          (LibraryCuratePendingItem p) => p.kind == 'book_scrape_pending',
+        ),
+        isA<LibraryCuratePendingItem>()
+            .having((p) => p.ref, 'ref', 'book:k2')
+            .having((p) => p.reason, 'reason', 'low_confidence'),
+      );
+      expect(stageOf(run, LibraryCurateStage.scrapeBooks).requests, 2);
+    });
+
+    test('用户设过的字段（override 显示名 / 封面）不覆盖：全被滤掉时算没东西写，不算失败', () async {
+      facts.bookUnits = <LibraryCurateBookUnit>[
+        single(vol('k1', '[Circle] Iota.epub')),
+      ];
+      bookFound['[Circle] Iota.epub'] = <Map<String, Object?>>[
+        book('1', 'Iota'),
+        book('2', 'Iota 2'),
+      ];
+      userSet['book:k1'] = <String>{'cover', 'title', 'author'};
+      mediaAnswer = (_) =>
+          const AiVideoIdentityDecision(key: 'bangumi:1', confidence: 0.99);
+      final LibraryCurateRun run = await curator().run(
+        trigger: LibraryCurateTrigger.manual,
+      );
+      // 请求了三个空缺字段（文件名书名 → 也请求写显示名），路由按用户值全部滤掉。
+      expect(applyArgs.single['fields'], <String>['cover', 'author', 'title']);
+      expect(bookWrites, isEmpty);
+      final LibraryCurateStageResult s = stageOf(
+        run,
+        LibraryCurateStage.scrapeBooks,
+      );
+      expect(s.status, LibraryCurateStageStatus.done);
+      expect(s.changes, 0);
+    });
+
+    test('系列按合集名只查一次、只问一次 AI；各卷按卷名各自取封面', () async {
+      facts.bookUnits = <LibraryCurateBookUnit>[
+        LibraryCurateBookUnit(
+          id: 'collection:7',
+          title: 'Kappa',
+          isSeries: true,
+          volumes: <LibraryCurateBookVolume>[
+            vol('v1', 'Kappa 1'),
+            vol('v2', 'Kappa 2'),
+          ],
+        ),
+      ];
+      bookFound['Kappa'] = <Map<String, Object?>>[
+        book('10', 'Kappa', author: 'Series Author'),
+        book('11', 'Kappa Gaiden'),
+      ];
+      bookFound['Kappa 1'] = <Map<String, Object?>>[
+        book('21', 'Kappa 1', author: null),
+      ];
+      // 第 2 卷按卷名查不到唯一一致的：只补作者（来自系列候选）。
+      bookFound['Kappa 2'] = <Map<String, Object?>>[];
+      mediaAnswer = (_) =>
+          const AiVideoIdentityDecision(key: 'bangumi:10', confidence: 0.9);
+      await curator().run(trigger: LibraryCurateTrigger.manual);
+      expect(mediaAsked, hasLength(1));
+      expect(mediaAsked.single.volumeCount, 2);
+      expect(bookWrites, <String, Map<String, String>>{
+        'book:v1': <String, String>{'cover': '21'},
+        'book:v2': <String, String>{'author': '10'},
+      });
+    });
+
+    test('整趟撤销后下一趟（手动全量）不再写回同一本书 / 同一款游戏', () async {
+      facts.bookUnits = <LibraryCurateBookUnit>[single(vol('k1', 'Lambda'))];
+      bookFound['Lambda'] = <Map<String, Object?>>[book('1', 'Lambda')];
+      facts.gameUnits = const <LibraryCurateGameUnit>[
+        LibraryCurateGameUnit(id: 'g1', title: 'Mu'),
+      ];
+      gameFound['g1'] = <Map<String, Object?>>[game('bgm:1', 'Mu')];
+      final LibraryCurator c = curator();
+      final LibraryCurateRun run = await c.run(
+        trigger: LibraryCurateTrigger.manual,
+      );
+      expect(bookWrites, isNotEmpty);
+      expect(gameWrites, isNotEmpty);
+      final LibraryCurateUndoResult undone = await c.undoRun(run.id);
+      expect(undone.undone, 2);
+      expect(bookWrites, isEmpty);
+      expect(gameWrites, isEmpty);
+      expect(
+        (await store.load()).suppressed,
+        containsAll(<String>['scrape.books:book:k1', 'scrape.games:g1']),
+      );
+      applyArgs.clear();
+      await c.run(trigger: LibraryCurateTrigger.manual, full: true);
+      expect(applyArgs, isEmpty);
+      expect(bookWrites, isEmpty);
+      expect(gameWrites, isEmpty);
+    });
+
+    test('自动路径：AI 请求受单趟上限，超了的留到下一趟；单元数也有上限', () async {
+      facts.bookUnits = <LibraryCurateBookUnit>[
+        for (final String t in <String>['Nu', 'Xi', 'Omicron'])
+          single(vol(t, t)),
+      ];
+      for (final String t in <String>['Nu', 'Xi', 'Omicron']) {
+        bookFound[t] = <Map<String, Object?>>[book('$t-a', t), book('$t-b', t)];
+      }
+      mediaAnswer = (AiMediaIdentityQuery q) => AiVideoIdentityDecision(
+        key: 'bangumi:${q.localTitles.single}-a',
+        confidence: 0.99,
+      );
+      final LibraryCurator c = curator(
+        limits: const LibraryCurateLimits(autoMaxRequests: 2),
+      );
+      final LibraryCurateRun first = await c.run(
+        trigger: LibraryCurateTrigger.auto,
+      );
+      final LibraryCurateStageResult s = stageOf(
+        first,
+        LibraryCurateStage.scrapeBooks,
+      );
+      expect(s.status, LibraryCurateStageStatus.partial);
+      expect(s.error, 'request_cap');
+      expect(mediaAsked, hasLength(2));
+      expect(bookWrites.keys, <String>['book:Nu', 'book:Xi']);
+      expect(
+        (await store.load()).watermarks.containsKey('scrape.books'),
+        false,
+      );
+
+      mediaAsked.clear();
+      await c.run(trigger: LibraryCurateTrigger.auto);
+      // 下一趟只处理剩下的那本（已写回的不再查）。
+      expect(
+        mediaAsked.map((AiMediaIdentityQuery q) => q.localTitles.single),
+        <String>['Omicron'],
+      );
+
+      final LibraryCurator capped = curator(
+        limits: const LibraryCurateLimits(autoMaxGameUnits: 1),
+      );
+      facts.gameUnits = const <LibraryCurateGameUnit>[
+        LibraryCurateGameUnit(id: 'a', title: 'A'),
+        LibraryCurateGameUnit(id: 'b', title: 'B'),
+      ];
+      gameFound['a'] = <Map<String, Object?>>[game('bgm:1', 'A')];
+      gameFound['b'] = <Map<String, Object?>>[game('bgm:2', 'B')];
+      final LibraryCurateRun g = await capped.run(
+        trigger: LibraryCurateTrigger.auto,
+      );
+      expect(gameWrites, <String, String>{'a': 'bgm:1'});
+      expect(
+        stageOf(g, LibraryCurateStage.scrapeGames).status,
+        LibraryCurateStageStatus.partial,
+      );
+    });
+
+    test('费用预估把书 / 游戏单元算进去（没指派 AI 时请求为 0）', () async {
+      facts.bookUnits = <LibraryCurateBookUnit>[single(vol('k1', 'Pi'))];
+      facts.gameUnits = const <LibraryCurateGameUnit>[
+        LibraryCurateGameUnit(id: 'g1', title: 'Rho'),
+        LibraryCurateGameUnit(id: 'g2', title: 'Sigma'),
+      ];
+      final LibraryCurateEstimate e = await curator().estimate();
+      expect(e.itemsByStage[LibraryCurateStage.scrapeBooks], 1);
+      expect(e.requestsByStage[LibraryCurateStage.scrapeBooks], 1);
+      expect(e.itemsByStage[LibraryCurateStage.scrapeGames], 2);
+      expect(e.requestsByStage[LibraryCurateStage.scrapeGames], 2);
+      mediaAssigned = false;
+      final LibraryCurateEstimate none = await curator().estimate();
+      expect(none.requestsByStage[LibraryCurateStage.scrapeGames], isNull);
+      expect(none.itemsByStage[LibraryCurateStage.scrapeGames], 2);
+    });
+
+    test('按 ISBN 精确查到唯一一条：标题不一致也认', () async {
+      facts.bookUnits = <LibraryCurateBookUnit>[
+        single(vol('k1', 'scan_0001.pdf', isbn: '9784000000000')),
+      ];
+      bookFound['9784000000000'] = <Map<String, Object?>>[
+        book('9784000000000', 'Real Title', source: 'openbd'),
+      ];
+      await curator().run(trigger: LibraryCurateTrigger.manual);
+      expect(applyArgs.single['source'], 'openbd');
+      expect(applyArgs.single['fields'], <String>['cover', 'author', 'title']);
+    });
+  });
+
+  test('书名是文件名的判据', () {
+    expect(looksLikeFileNameTitle('Some Book.epub'), isTrue);
+    expect(looksLikeFileNameTitle('[作者] 書名 01'), isTrue);
+    expect(looksLikeFileNameTitle('【xx】タイトル'), isTrue);
+    expect(looksLikeFileNameTitle('普通の書名'), isFalse);
+    expect(looksLikeFileNameTitle('Re:Zero 1'), isFalse);
+  });
+
+  test('游戏候选规则：同名每个源至多一条才认', () {
+    final Map<String, Object?>? pick = pickStrongGameCandidate(
+      'Air',
+      <Map<String, Object?>>[
+        <String, Object?>{'id': 'vndb:1', 'source': 'vndb', 'name': 'AIR'},
+        <String, Object?>{'id': 'vndb:2', 'source': 'vndb', 'name': 'Air'},
+      ],
+    );
+    expect(pick, isNull);
   });
 }

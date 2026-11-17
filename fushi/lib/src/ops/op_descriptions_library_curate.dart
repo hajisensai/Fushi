@@ -57,7 +57,9 @@ List<OpDescription> describeLibraryCurateOps(OpDescribeKit kit) {
       summary:
           'Run the AI library curator once over the whole library: organize '
           'collection membership on every library page, identify unscraped '
-          'video works (single strong match or LLM pick among candidates), '
+          'video works, books / manga missing metadata (fills only empty '
+          'cover / author / file-name title) and games without any metadata '
+          'source (single strong match or LLM pick among candidates), '
           'infer cross-media relations (novel / manga / anime / game / music) '
           'and refresh the work layer. Only items added since the last run '
           'unless full=true. Each step uses its own LLM assignment and is '

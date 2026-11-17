@@ -948,6 +948,12 @@ List<OpDescription> describeGameOps(OpDescribeKit kit) {
               'game.scrape.search.',
           required: true,
         ),
+        OpParam.boolean(
+          'keepCover',
+          description:
+              'Keep the current cover when the game already has one (only '
+              'download the scraped cover when it has none).',
+        ),
       ],
       _scrapeApplyUndo(kit),
     ),

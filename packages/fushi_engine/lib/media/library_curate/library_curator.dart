@@ -18,7 +18,10 @@ import 'dart:convert';
 import 'package:drift/drift.dart' show QueryRow, Variable;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ai/agent/agent_tool.dart';
+import 'package:fushi_engine/ai/ai_media_identity_assistant.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
+import 'package:fushi_engine/media/collections/book_series_grouper.dart'
+    show isOnlineMangaSourceMetadata;
 import 'package:fushi_engine/media/collections/library_organize/library_organize_facts.dart';
 import 'package:fushi_engine/media/collections/library_organize/library_organize_plan.dart'
     show LibraryOrganizeFacts;
@@ -27,6 +30,8 @@ import 'package:fushi_engine/media/collections/library_organize/library_organize
 import 'package:fushi_engine/media/library_curate/library_curate_run.dart';
 import 'package:fushi_engine/media/links/work_graph.dart';
 import 'package:fushi_engine/media/links/work_graph_loader.dart';
+import 'package:fushi_engine/media/metadata/dlsite/dlsite_client.dart'
+    show DlsiteWorkId;
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_ai_identity.dart';
 
@@ -40,10 +45,17 @@ abstract final class LibraryCurateOps {
   static const String videoWorkIdentify = 'video.work.identify';
   static const String linksInfer = 'library.curate.links.infer';
   static const String linksMusic = 'library.curate.links.music';
+  static const String bookScrapeSearch = 'book.scrape.search';
+  static const String bookScrapeApply = 'book.scrape.apply';
+  static const String gameScrapeSearch = 'game.scrape.search';
+  static const String gameScrapeApply = 'game.scrape.apply';
 }
 
 /// 各步自己的 AI 指派是否可用（spec §9：不新增 `AiFeature`，每步用它自己的指派；
 /// 没指派的那一步跳过，其余照跑）。宿主每次现算（AI 模块门也折进来）。
+///
+/// 书 / 游戏刮削的 AI 消歧与视频刮削同一件事（在刮削候选里认作品），共用
+/// [videoIdentify] 这一项指派；没指派时这两步只做规则认领（不发 AI 请求）。
 typedef LibraryCurateAiAvailability = ({
   bool organize,
   bool videoIdentify,
@@ -62,6 +74,8 @@ class LibraryCurateLimits {
   const LibraryCurateLimits({
     this.autoMaxRequests = 40,
     this.autoMaxScrapeWorks = 10,
+    this.autoMaxBookUnits = 10,
+    this.autoMaxGameUnits = 10,
     this.autoMaxLinkEndpoints = 60,
     this.linkBatchSize = 10,
   });
@@ -72,6 +86,13 @@ class LibraryCurateLimits {
 
   /// 自动路径一趟最多查几部待确认视频作品（每部一次资料源搜索）。
   final int autoMaxScrapeWorks;
+
+  /// 自动路径一趟最多查几个书单元（系列 / 单书；每个一次资料源搜索，系列另按卷
+  /// 取封面）。
+  final int autoMaxBookUnits;
+
+  /// 自动路径一趟最多查几款游戏（每款一次资料源搜索）。
+  final int autoMaxGameUnits;
 
   /// 自动路径一趟最多推断几个端点（每个最多一次 AI 裁决，可能查 MAL / Wikidata）。
   final int autoMaxLinkEndpoints;
@@ -101,6 +122,13 @@ abstract interface class LibraryCurateFacts {
 
   /// 音乐库在 [sinceMs] 之后有没有变化（null = 有没有音乐）。
   Future<bool> musicChangedSince(int? sinceMs);
+
+  /// 要刮削的书单元（缺元数据的书，系列按合集归一个单元，确定性顺序）；[sinceMs]
+  /// 非 null 时只要含晚于它入库的书的单元。
+  Future<List<LibraryCurateBookUnit>> bookScrapeUnits(int? sinceMs);
+
+  /// 要刮削的游戏（没有任何资料源快照的）；[sinceMs] 非 null 时只要晚于它入库的。
+  Future<List<LibraryCurateGameUnit>> gameScrapeUnits(int? sinceMs);
 }
 
 /// 进度回调：正在跑第 [index] 个阶段（共 [total] 个）。
@@ -193,6 +221,7 @@ class LibraryCurator {
     required this.facts,
     required this.ai,
     this.videoDecider,
+    this.mediaDecider,
     this.limits = const LibraryCurateLimits(),
     this.onWorksChanged,
     DateTime Function()? clock,
@@ -207,6 +236,10 @@ class LibraryCurator {
   /// 待确认视频作品多候选时的 AI 消歧（复用 `videoIdentify` 的提示词结构：AI 只在
   /// 候选键里选，不产生任何 id）。null 或返回 null = 不问。
   final AiVideoIdentityDecider? Function()? videoDecider;
+
+  /// 书 / 游戏多候选时的 AI 消歧（同一判定契约：只在候选键里选）。null 或返回
+  /// null = 不问，只做规则认领。
+  final AiMediaIdentityDecider? Function()? mediaDecider;
   final LibraryCurateLimits limits;
 
   /// 作品层重算后通知宿主（宿主的作品图缓存本就随表变更失效，这里只是让界面立即
@@ -380,6 +413,8 @@ class LibraryCurator {
       ctx,
     ),
     LibraryCurateStage.scrape => _scrape(ctx),
+    LibraryCurateStage.scrapeBooks => _scrapeBooks(ctx),
+    LibraryCurateStage.scrapeGames => _scrapeGames(ctx),
     LibraryCurateStage.links => _links(ctx),
     LibraryCurateStage.music => _music(ctx),
     LibraryCurateStage.works => _works(ctx),
@@ -527,8 +562,7 @@ class LibraryCurator {
 
   /// spec §6：单候选且标题强匹配 → 直接认领；多候选 → AI 在候选键里选、达到自动
   /// 采用门槛才认领；其余留在待确认。批量刮削已经问过 AI 且被拒（`declined`）的
-  /// 不再重问。书 / 漫画 / 游戏不在这一步（见回报：书的写回不落外部身份、游戏写回
-  /// 不可撤销）。
+  /// 不再重问。书 / 漫画 / 游戏是紧接着的两个阶段（[_scrapeBooks] / [_scrapeGames]）。
   Future<LibraryCurateStageResult> _scrape(_RunContext ctx) async {
     const LibraryCurateStage stage = LibraryCurateStage.scrape;
     if (toolbox.describeTool(LibraryCurateOps.videoWorkIdentify) == null ||
@@ -719,6 +753,453 @@ class LibraryCurator {
               : VideoMetadataMediaKind.tv,
           year: (c['year'] as num?)?.toInt(),
           episodeCount: (c['episodes'] as num?)?.toInt(),
+        ),
+    ],
+  );
+
+  // ── ③ 书 / 漫画刮削 ───────────────────────────────────────────────────
+
+  /// spec §6：缺元数据的书（判据见 [looksLikeFileNameTitle] 与
+  /// [DatabaseLibraryCurateFacts.bookScrapeUnits]）用 `book.scrape.search` 取候选：
+  /// 候选唯一且标题规范化后一致（或按 ISBN / DLsite 编号精确查到唯一一条）→ 直接写回；
+  /// 多候选 → AI 在候选键里选、达到自动采用门槛才写回；其余留「待确认」。
+  ///
+  /// 一套系列（同一合集里两本以上缺资料的书）按系列名只查一次、只问一次 AI；选中后
+  /// 各卷各自按卷名查一次取封面（只认唯一强匹配，不问 AI）。写回一律带 `onlyEmpty`：
+  /// 只填空缺字段，不覆盖显示名覆盖 / 已有作者 / 已有 override 封面（这三处都没有
+  /// 「谁设的」标记，空着才填是唯一不碰用户值的口径）。
+  Future<LibraryCurateStageResult> _scrapeBooks(_RunContext ctx) async {
+    const LibraryCurateStage stage = LibraryCurateStage.scrapeBooks;
+    if (toolbox.describeTool(LibraryCurateOps.bookScrapeSearch) == null ||
+        toolbox.describeTool(LibraryCurateOps.bookScrapeApply) == null) {
+      return const LibraryCurateStageResult(
+        stage: stage,
+        status: LibraryCurateStageStatus.skipped,
+        error: 'unavailable',
+      );
+    }
+    final bool auto = ctx.run.trigger == LibraryCurateTrigger.auto;
+    final Set<String> progress = ctx.progressOf(stage);
+    final List<LibraryCurateBookUnit> units = _openBookUnits(
+      await facts.bookScrapeUnits(_since(stage, ctx)),
+      ctx.state,
+      progress: progress,
+      auto: auto,
+    );
+    final AiMediaIdentityDecider? decide = ctx.ai.videoIdentify
+        ? mediaDecider?.call()
+        : null;
+    int changes = 0;
+    int requests = 0;
+    int pending = 0;
+    bool incomplete = false;
+    int examined = 0;
+    for (final LibraryCurateBookUnit unit in units) {
+      if (ctx.isCancelled()) {
+        incomplete = true;
+        break;
+      }
+      if (auto && examined >= limits.autoMaxBookUnits) {
+        incomplete = true;
+        break;
+      }
+      examined++;
+      final (String? source, String query, bool exact) = bookScrapeQueryOf(
+        unit,
+      );
+      final List<Map<String, Object?>>? candidates = await _bookCandidates(
+        source,
+        query,
+      );
+      if (candidates == null) {
+        incomplete = true;
+        continue;
+      }
+      Map<String, Object?>? pick;
+      String reason = candidates.isEmpty ? 'no_candidates' : 'ambiguous';
+      if (candidates.length == 1 &&
+          (exact || _strongBookMatch(unit.title, candidates[0]))) {
+        pick = candidates[0];
+      } else if (candidates.length > 1 && decide != null) {
+        if (!ctx.spend(1)) {
+          incomplete = true;
+          break;
+        }
+        requests++;
+        final AiVideoIdentityDecision? decision;
+        try {
+          decision = await decide(_bookQuery(unit, candidates));
+        } on Object catch (error, stack) {
+          engineLog.log('libraryCurate.scrapeBooks.ai', error, stack);
+          incomplete = true;
+          continue;
+        }
+        if (decision != null && decision.isAutoAcceptable) {
+          for (final Map<String, Object?> c in candidates) {
+            if (_bookCandidateKey(c) == decision.key) pick = c;
+          }
+        } else if (decision?.key != null) {
+          reason = 'low_confidence';
+        }
+      }
+      if (pick == null) {
+        pending++;
+        ctx.state.seen.add('scrape.books:${unit.id}');
+        progress.add(unit.id);
+        ctx.run.pendingItems.add(
+          LibraryCuratePendingItem(
+            stage: stage,
+            kind: 'book_scrape_pending',
+            title: unit.title,
+            ref: unit.volumes.length == 1
+                ? unit.volumes.single.shelfKey
+                : unit.id,
+            reason: reason,
+          ),
+        );
+        continue;
+      }
+      bool unitFailed = false;
+      for (final LibraryCurateBookVolume volume in unit.volumes) {
+        if (ctx.isCancelled()) {
+          unitFailed = true;
+          break;
+        }
+        // 写哪条候选、写哪些字段：单本直接用选中的候选；系列里各卷按卷名再查一次
+        // 取封面（唯一强匹配），作者用系列候选的。
+        final List<(Map<String, Object?>, List<String>)> writes =
+            <(Map<String, Object?>, List<String>)>[];
+        if (!unit.isSeries) {
+          writes.add((pick, _bookFields(volume, pick, title: true)));
+        } else {
+          Map<String, Object?>? own;
+          if (volume.missingCover) {
+            final List<Map<String, Object?>>? found = await _bookCandidates(
+              source,
+              volume.title,
+            );
+            if (found == null) {
+              unitFailed = true;
+              continue;
+            }
+            final List<Map<String, Object?>> strong = <Map<String, Object?>>[
+              for (final Map<String, Object?> c in found)
+                if (_strongBookMatch(volume.title, c)) c,
+            ];
+            if (strong.length == 1) own = strong.single;
+          }
+          if (own != null) {
+            writes.add((own, _bookFields(volume, own, title: false)));
+          } else {
+            writes.add((
+              pick,
+              <String>[
+                if (volume.missingAuthor && _hasText(pick['author'])) 'author',
+              ],
+            ));
+          }
+        }
+        bool volumeFailed = false;
+        for (final (Map<String, Object?> c, List<String> fields) in writes) {
+          if (fields.isEmpty) continue;
+          final _Write w = await _write(
+            ctx,
+            LibraryCurateOps.bookScrapeApply,
+            <String, Object?>{
+              'key': volume.shelfKey,
+              'id': '${c['id']}',
+              if (c['source'] is String) 'source': c['source'],
+              'fields': fields,
+              'onlyEmpty': true,
+            },
+          );
+          if (w.needsConfirmation) {
+            pending++;
+            ctx.run.pendingItems.add(
+              LibraryCuratePendingItem(
+                stage: stage,
+                kind: 'needs_confirmation',
+                title: volume.title,
+                ref: volume.shelfKey,
+              ),
+            );
+            continue;
+          }
+          if (w.unavailable) {
+            volumeFailed = true;
+            continue;
+          }
+          final AgentToolResult r = w.result!;
+          // 422：要写的字段都已有值（`onlyEmpty` 全滤掉了）——不是失败，没东西写。
+          if (r.isError && r.errorCode != 'rejected') {
+            volumeFailed = true;
+            continue;
+          }
+          if (!r.isError) changes++;
+        }
+        if (volumeFailed) {
+          unitFailed = true;
+        } else {
+          ctx.state.seen.add(_bookDoneKey(volume));
+        }
+      }
+      if (unitFailed) {
+        incomplete = true;
+      } else {
+        progress.add(unit.id);
+      }
+    }
+    return LibraryCurateStageResult(
+      stage: stage,
+      status: incomplete
+          ? LibraryCurateStageStatus.partial
+          : LibraryCurateStageStatus.done,
+      changes: changes,
+      pending: pending,
+      requests: requests,
+      error: incomplete && ctx.capped ? 'request_cap' : null,
+    );
+  }
+
+  /// 还要处理的书单元：去掉撤销过（抑制）/ 已经写回过的卷，去掉这一水位下已处理的
+  /// 单元；自动路径另跳过查过但留在待确认的单元（手动照样重看）。
+  static List<LibraryCurateBookUnit> _openBookUnits(
+    List<LibraryCurateBookUnit> all,
+    LibraryCurateState state, {
+    required Set<String>? progress,
+    required bool auto,
+  }) => <LibraryCurateBookUnit>[
+    for (final LibraryCurateBookUnit u in all)
+      if (!(progress?.contains(u.id) ?? false) &&
+          !(auto && state.seen.contains('scrape.books:${u.id}')))
+        ?u.only(
+          (LibraryCurateBookVolume v) =>
+              !state.suppressed.contains('scrape.books:${v.shelfKey}') &&
+              !state.seen.contains(_bookDoneKey(v)),
+        ),
+  ];
+
+  static String _bookDoneKey(LibraryCurateBookVolume v) =>
+      'scrape.books.done:${v.shelfKey}';
+
+  /// `book.scrape.search` 一次；读不到 / 出错为 null。
+  Future<List<Map<String, Object?>>?> _bookCandidates(
+    String? source,
+    String query,
+  ) async {
+    final AgentToolResult? found = await _read(
+      LibraryCurateOps.bookScrapeSearch,
+      <String, Object?>{'query': query, 'source': ?source},
+    );
+    if (found == null || found.isError) return null;
+    return _list(found.data, 'candidates');
+  }
+
+  /// 单本要写的字段：只列空缺的、候选能给的。
+  static List<String> _bookFields(
+    LibraryCurateBookVolume volume,
+    Map<String, Object?> c, {
+    required bool title,
+  }) => <String>[
+    if (volume.missingCover && _hasText(c['coverUrl'])) 'cover',
+    if (volume.missingAuthor && _hasText(c['author'])) 'author',
+    if (title && volume.fileNameTitle && _hasText(c['title'])) 'title',
+  ];
+
+  static bool _hasText(Object? v) => v is String && v.trim().isNotEmpty;
+
+  static String _bookCandidateKey(Map<String, Object?> c) =>
+      '${c['source']}:${c['id']}';
+
+  static bool _strongBookMatch(String local, Map<String, Object?> c) {
+    final String l = foldMediaTitle(local);
+    if (l.isEmpty) return false;
+    for (final Object? t in <Object?>[c['title'], c['originalTitle']]) {
+      if (t is String && foldMediaTitle(t) == l) return true;
+    }
+    return false;
+  }
+
+  static AiMediaIdentityQuery _bookQuery(
+    LibraryCurateBookUnit unit,
+    List<Map<String, Object?>> candidates,
+  ) => AiMediaIdentityQuery(
+    kind: AiMediaIdentityKind.book,
+    localTitles: <String>[unit.title],
+    creator: unit.author,
+    volumeCount: unit.isSeries ? unit.volumes.length : null,
+    candidates: <AiMediaIdentityCandidate>[
+      for (final Map<String, Object?> c in candidates)
+        AiMediaIdentityCandidate(
+          key: _bookCandidateKey(c),
+          titles: <String>[
+            if (c['title'] is String) c['title']! as String,
+            if (c['originalTitle'] is String) c['originalTitle']! as String,
+          ],
+          creator: c['author'] as String?,
+          year: (c['year'] as num?)?.toInt(),
+          series: c['series'] as String?,
+          volume: c['volume'] == null ? null : '${c['volume']}',
+        ),
+    ],
+  );
+
+  // ── ③ 游戏刮削 ───────────────────────────────────────────────────────
+
+  /// spec §6：没有任何资料源快照的游戏（已有来源快照的不重刮）用 `game.scrape.search`
+  /// 取候选（各资料源一起查，同一款游戏会在不同源各出一条）：标题规范化后一致的
+  /// 候选每个源至多一条 → 认第一条；否则多候选交 AI 选；其余留「待确认」。写回走
+  /// `game.scrape.apply`（可撤销）且带 `keepCover`：游戏已有封面（用户导入 / 自动取的）
+  /// 不替换，只在没有封面时补图。
+  Future<LibraryCurateStageResult> _scrapeGames(_RunContext ctx) async {
+    const LibraryCurateStage stage = LibraryCurateStage.scrapeGames;
+    if (toolbox.describeTool(LibraryCurateOps.gameScrapeSearch) == null ||
+        toolbox.describeTool(LibraryCurateOps.gameScrapeApply) == null) {
+      return const LibraryCurateStageResult(
+        stage: stage,
+        status: LibraryCurateStageStatus.skipped,
+        error: 'unavailable',
+      );
+    }
+    final bool auto = ctx.run.trigger == LibraryCurateTrigger.auto;
+    final Set<String> progress = ctx.progressOf(stage);
+    final List<LibraryCurateGameUnit> units = <LibraryCurateGameUnit>[
+      for (final LibraryCurateGameUnit g in await facts.gameScrapeUnits(
+        _since(stage, ctx),
+      ))
+        if (!progress.contains(g.id) &&
+            !ctx.state.suppressed.contains('scrape.games:${g.id}') &&
+            !(auto && ctx.state.seen.contains('scrape.games:${g.id}')))
+          g,
+    ];
+    final AiMediaIdentityDecider? decide = ctx.ai.videoIdentify
+        ? mediaDecider?.call()
+        : null;
+    int changes = 0;
+    int requests = 0;
+    int pending = 0;
+    bool incomplete = false;
+    int examined = 0;
+    for (final LibraryCurateGameUnit game in units) {
+      if (ctx.isCancelled()) {
+        incomplete = true;
+        break;
+      }
+      if (auto && examined >= limits.autoMaxGameUnits) {
+        incomplete = true;
+        break;
+      }
+      examined++;
+      final AgentToolResult? found = await _read(
+        LibraryCurateOps.gameScrapeSearch,
+        <String, Object?>{'id': game.id},
+      );
+      if (found == null || found.isError) {
+        incomplete = true;
+        continue;
+      }
+      final List<Map<String, Object?>> candidates = _list(
+        found.data,
+        'candidates',
+      );
+      Map<String, Object?>? pick = pickStrongGameCandidate(
+        game.title,
+        candidates,
+      );
+      String reason = candidates.isEmpty ? 'no_candidates' : 'ambiguous';
+      if (pick == null && candidates.length > 1 && decide != null) {
+        if (!ctx.spend(1)) {
+          incomplete = true;
+          break;
+        }
+        requests++;
+        final AiVideoIdentityDecision? decision;
+        try {
+          decision = await decide(_gameQuery(game, candidates));
+        } on Object catch (error, stack) {
+          engineLog.log('libraryCurate.scrapeGames.ai', error, stack);
+          incomplete = true;
+          continue;
+        }
+        if (decision != null && decision.isAutoAcceptable) {
+          for (final Map<String, Object?> c in candidates) {
+            if ('${c['id']}' == decision.key) pick = c;
+          }
+        } else if (decision?.key != null) {
+          reason = 'low_confidence';
+        }
+      }
+      if (pick == null) {
+        pending++;
+        ctx.state.seen.add('scrape.games:${game.id}');
+        progress.add(game.id);
+        ctx.run.pendingItems.add(
+          LibraryCuratePendingItem(
+            stage: stage,
+            kind: 'game_scrape_pending',
+            title: game.title,
+            ref: 'game:${game.id}',
+            reason: reason,
+          ),
+        );
+        continue;
+      }
+      final _Write w = await _write(
+        ctx,
+        LibraryCurateOps.gameScrapeApply,
+        <String, Object?>{
+          'id': game.id,
+          'candidate': '${pick['id']}',
+          'keepCover': true,
+        },
+      );
+      if (w.needsConfirmation) {
+        pending++;
+        progress.add(game.id);
+        ctx.run.pendingItems.add(
+          LibraryCuratePendingItem(
+            stage: stage,
+            kind: 'needs_confirmation',
+            title: game.title,
+            ref: 'game:${game.id}',
+          ),
+        );
+        continue;
+      }
+      if (w.unavailable || w.result!.isError) {
+        incomplete = true;
+        continue;
+      }
+      changes++;
+      progress.add(game.id);
+    }
+    return LibraryCurateStageResult(
+      stage: stage,
+      status: incomplete
+          ? LibraryCurateStageStatus.partial
+          : LibraryCurateStageStatus.done,
+      changes: changes,
+      pending: pending,
+      requests: requests,
+      error: incomplete && ctx.capped ? 'request_cap' : null,
+    );
+  }
+
+  static AiMediaIdentityQuery _gameQuery(
+    LibraryCurateGameUnit game,
+    List<Map<String, Object?>> candidates,
+  ) => AiMediaIdentityQuery(
+    kind: AiMediaIdentityKind.game,
+    localTitles: <String>[game.title],
+    candidates: <AiMediaIdentityCandidate>[
+      for (final Map<String, Object?> c in candidates)
+        AiMediaIdentityCandidate(
+          key: '${c['id']}',
+          titles: <String>[
+            if (c['name'] is String) c['name']! as String,
+            if (c['nameCn'] is String) c['nameCn']! as String,
+          ],
+          year: int.tryParse('${c['releaseDate'] ?? ''}'.split('-').first),
         ),
     ],
   );
@@ -933,6 +1414,37 @@ class LibraryCurator {
         requests[LibraryCurateStage.scrape] = n;
       }
     }
+    // 书 / 游戏：每个单元一次资料源搜索，最多一次 AI 消歧（没指派 AI 时为 0）。
+    if (toolbox.describeTool(LibraryCurateOps.bookScrapeSearch) != null &&
+        toolbox.describeTool(LibraryCurateOps.bookScrapeApply) != null) {
+      final int n = _openBookUnits(
+        await facts.bookScrapeUnits(since(LibraryCurateStage.scrapeBooks)),
+        state,
+        progress: null,
+        auto: false,
+      ).length;
+      if (n > 0) {
+        items[LibraryCurateStage.scrapeBooks] = n;
+        if (a.videoIdentify && mediaDecider?.call() != null) {
+          requests[LibraryCurateStage.scrapeBooks] = n;
+        }
+      }
+    }
+    if (toolbox.describeTool(LibraryCurateOps.gameScrapeSearch) != null &&
+        toolbox.describeTool(LibraryCurateOps.gameScrapeApply) != null) {
+      final int n = <LibraryCurateGameUnit>[
+        for (final LibraryCurateGameUnit g in await facts.gameScrapeUnits(
+          since(LibraryCurateStage.scrapeGames),
+        ))
+          if (!state.suppressed.contains('scrape.games:${g.id}')) g,
+      ].length;
+      if (n > 0) {
+        items[LibraryCurateStage.scrapeGames] = n;
+        if (a.videoIdentify && mediaDecider?.call() != null) {
+          requests[LibraryCurateStage.scrapeGames] = n;
+        }
+      }
+    }
     if (a.mediaLinks &&
         toolbox.describeTool(LibraryCurateOps.linksInfer) != null) {
       final int n = <String>[
@@ -966,7 +1478,7 @@ class LibraryCurator {
   /// （之后被用户改过的部分报 superseded、保留现值）。
   ///
   /// 撤掉的认领与推断入口记进 [LibraryCurateState.suppressed]：下一趟（自动或手动）
-  /// 不再把同一部作品原样认领回来、不再对同一端点重推。
+  /// 不再把同一部作品 / 同一本书 / 同一款游戏原样认领回来、不再对同一端点重推。
   Future<LibraryCurateUndoResult> undoRun(int runId) async {
     if (_current?.id == runId) throw LibraryCurateBusy(runId);
     final List<AiAgentActionRow> actions = await db.listAiAgentActions(
@@ -1024,8 +1536,149 @@ class LibraryCurator {
         for (final Object? e in (args['items'] as List?) ?? const <Object?>[]) {
           yield 'links:$e';
         }
+      case LibraryCurateOps.bookScrapeApply:
+        if (args['key'] != null) yield 'scrape.books:${args['key']}';
+      case LibraryCurateOps.gameScrapeApply:
+        if (args['id'] != null) yield 'scrape.games:${args['id']}';
     }
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// ③ 书 / 游戏刮削的单元与判据
+// ─────────────────────────────────────────────────────────────────────────
+
+/// 一本缺元数据的书（`epub_books` 一行：EPUB / PDF / 漫画）。
+class LibraryCurateBookVolume {
+  const LibraryCurateBookVolume({
+    required this.bookKey,
+    required this.title,
+    this.author,
+    this.isbn,
+    required this.missingCover,
+    required this.fileNameTitle,
+  });
+
+  final String bookKey;
+  final String title;
+  final String? author;
+
+  /// ISBN-13（包里解析出来的；没有为 null）。
+  final String? isbn;
+
+  /// 书本身没有封面（`epub_books.cover_path` 为空）。
+  final bool missingCover;
+
+  /// 书名明显是文件名（[looksLikeFileNameTitle]）。
+  final bool fileNameTitle;
+
+  bool get missingAuthor => author == null || author!.trim().isEmpty;
+
+  /// 缺任何一项就算「缺元数据」。
+  bool get missing => missingCover || missingAuthor || fileNameTitle;
+
+  /// 书架键（`library.list` / `book.scrape.apply` 的 `key`）。
+  String get shelfKey => 'book:$bookKey';
+}
+
+/// 一个刮削单元：一套系列（同一合集里两本以上缺资料的书，按合集查一次）或一本单书。
+class LibraryCurateBookUnit {
+  const LibraryCurateBookUnit({
+    required this.id,
+    required this.title,
+    required this.volumes,
+    this.author,
+    this.isSeries = false,
+  });
+
+  /// `collection:<id>` / `book:<bookKey>`（进度 / 待确认的键）。
+  final String id;
+
+  /// 查询用的标题：系列 = 合集名，单书 = 书名。
+  final String title;
+  final String? author;
+  final List<LibraryCurateBookVolume> volumes;
+  final bool isSeries;
+
+  /// 只留满足 [keep] 的卷；一卷不剩为 null。
+  LibraryCurateBookUnit? only(bool Function(LibraryCurateBookVolume v) keep) {
+    final List<LibraryCurateBookVolume> left = volumes.where(keep).toList();
+    if (left.isEmpty) return null;
+    if (left.length == volumes.length) return this;
+    return LibraryCurateBookUnit(
+      id: id,
+      title: title,
+      author: author,
+      volumes: left,
+      isSeries: isSeries,
+    );
+  }
+}
+
+/// 一款没有任何资料源快照的游戏。
+class LibraryCurateGameUnit {
+  const LibraryCurateGameUnit({required this.id, required this.title});
+
+  final String id;
+
+  /// 显示名（用户改过名就用改的名，否则 exe 派生的本地名）。
+  final String title;
+}
+
+/// 书名明显是文件名：带书 / 压缩包扩展名，或以方括号标签开头（`[作者] 書名`、
+/// `【xx】…` 这类扫描 / 发布组命名）。只认这两种确定的形态，不猜。
+bool looksLikeFileNameTitle(String title) {
+  final String t = title.trim();
+  if (t.isEmpty) return true;
+  if (_kFileNameExtension.hasMatch(t)) return true;
+  return _kLeadingTag.hasMatch(t);
+}
+
+final RegExp _kFileNameExtension = RegExp(
+  r'\.(epub|pdf|zip|cbz|cbr|rar|7z|txt|mobi|azw3?)$',
+  caseSensitive: false,
+);
+final RegExp _kLeadingTag = RegExp(r'^\s*[\[【［][^\]】］]+[\]】］]');
+
+/// 书单元的来源与搜索词（沿用「在线匹配封面」弹窗的初始源规则
+/// `bookScrapeInitialState`，不新增默认来源、不碰要凭据的楽天）：单书有 ISBN →
+/// openBD 按 ISBN；书名里带 DLsite 编号 → DLsite 按编号；否则默认来源（Bangumi）按
+/// 标题。第三项 = 按编号精确查（唯一结果即可认，不要求标题一致）。
+(String? source, String query, bool exact) bookScrapeQueryOf(
+  LibraryCurateBookUnit unit,
+) {
+  if (!unit.isSeries) {
+    final String? isbn = unit.volumes.single.isbn;
+    if (isbn != null && isbn.isNotEmpty) return ('openbd', isbn, true);
+  }
+  final DlsiteWorkId? dlsite = DlsiteWorkId.findIn(unit.title);
+  if (dlsite != null) return ('dlsite', dlsite.value, true);
+  return (null, unit.title, false);
+}
+
+/// 游戏候选的规则认领：标题（`name` / `nameCn`）规范化后与本地显示名一致的候选，
+/// 每个资料源至多一条（同一款游戏在 bgm / vndb / dlsite 各出一条是常态）→ 认第一条；
+/// 没有或某个源里有两条一致的（同名不同作）→ null。
+Map<String, Object?>? pickStrongGameCandidate(
+  String local,
+  List<Map<String, Object?>> candidates,
+) {
+  final String l = foldMediaTitle(local);
+  if (l.isEmpty) return null;
+  final List<Map<String, Object?>> strong = <Map<String, Object?>>[
+    for (final Map<String, Object?> c in candidates)
+      if (<Object?>[
+        c['name'],
+        c['nameCn'],
+      ].any((Object? t) => t is String && foldMediaTitle(t) == l))
+        c,
+  ];
+  if (strong.isEmpty) return null;
+  final Set<String> sources = <String>{};
+  for (final Map<String, Object?> c in strong) {
+    if (!sources.add('${c['source']}')) return null;
+  }
+  return strong.first;
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -1199,5 +1852,135 @@ class DatabaseLibraryCurateFacts implements LibraryCurateFacts {
         )
         .get();
     return rows.isNotEmpty;
+  }
+
+  /// 「缺元数据」的书（[LibraryCurateBookVolume.missing]：没有封面 / 没有作者 / 书名是
+  /// 文件名），按合集归成系列单元：同一个 `collection` 型合集里有两本以上缺资料的书
+  /// → 一个系列单元（按合集名查）；其余每本一个单元。在线漫画源的书不算（资料归源站）。
+  /// [sinceMs] 非 null 时只要含新入库（`local_added_at` 晚于它）书的单元。
+  @override
+  Future<List<LibraryCurateBookUnit>> bookScrapeUnits(int? sinceMs) async {
+    final Map<String, (LibraryCurateBookVolume, String, int?)> missing =
+        <String, (LibraryCurateBookVolume, String, int?)>{};
+    for (final EpubBookRow book in await db.getAllEpubBooks()) {
+      if (book.uid.isEmpty || book.bookKey.isEmpty) continue;
+      if (isOnlineMangaSourceMetadata(book.sourceMetadata)) continue;
+      final LibraryCurateBookVolume v = LibraryCurateBookVolume(
+        bookKey: book.bookKey,
+        title: book.title,
+        author: book.author,
+        isbn: book.isbn,
+        missingCover: (book.coverPath ?? '').trim().isEmpty,
+        fileNameTitle: looksLikeFileNameTitle(book.title),
+      );
+      if (!v.missing) continue;
+      missing[book.uid] = (v, book.bookKey, book.localAddedAt);
+    }
+    if (missing.isEmpty) return const <LibraryCurateBookUnit>[];
+    final String epub = MediaKind.epub.dbValue;
+    final Map<int, String> names = <int, String>{};
+    final Map<int, List<String>> members = <int, List<String>>{};
+    final Map<String, String> uidByKey = <String, String>{
+      for (final MapEntry<String, (LibraryCurateBookVolume, String, int?)> e
+          in missing.entries)
+        e.value.$2: e.key,
+    };
+    for (final QueryRow row
+        in await db
+            .customSelect(
+              'SELECT c.id AS id, c.name AS name, i.entry_key AS k '
+              'FROM media_collections c '
+              'JOIN media_collection_items i ON i.collection_id = c.id '
+              "WHERE c.collection_type = 'collection' AND i.media_type = ?1 "
+              'ORDER BY c.id, i.sort_index',
+              variables: <Variable<Object>>[Variable<String>(epub)],
+            )
+            .get()) {
+      final String key = '${row.data['k']}';
+      final String? uid = missing.containsKey(key) ? key : uidByKey[key];
+      if (uid == null) continue;
+      final int id = row.read<int>('id');
+      names[id] = '${row.data['name']}';
+      final List<String> list = members.putIfAbsent(id, () => <String>[]);
+      if (!list.contains(uid)) list.add(uid);
+    }
+    final List<LibraryCurateBookUnit> out = <LibraryCurateBookUnit>[];
+    final Set<String> placed = <String>{};
+    bool fresh(Iterable<String> uids) =>
+        sinceMs == null ||
+        uids.any((String u) => (missing[u]!.$3 ?? 0) > sinceMs);
+    for (final int id in members.keys.toList()..sort()) {
+      final List<String> uids = <String>[
+        for (final String u in members[id]!)
+          if (!placed.contains(u)) u,
+      ];
+      if (uids.length < 2) continue;
+      placed.addAll(uids);
+      if (!fresh(uids)) continue;
+      final List<LibraryCurateBookVolume> volumes = <LibraryCurateBookVolume>[
+        for (final String u in uids) missing[u]!.$1,
+      ];
+      out.add(
+        LibraryCurateBookUnit(
+          id: 'collection:$id',
+          title: names[id]!,
+          author: volumes
+              .map((LibraryCurateBookVolume v) => v.author)
+              .firstWhere(
+                (String? a) => a != null && a.trim().isNotEmpty,
+                orElse: () => null,
+              ),
+          volumes: volumes,
+          isSeries: true,
+        ),
+      );
+    }
+    final List<String> singles =
+        <String>[
+          for (final String u in missing.keys)
+            if (!placed.contains(u) && fresh(<String>[u])) u,
+        ]..sort(
+          (String a, String b) =>
+              missing[a]!.$1.bookKey.compareTo(missing[b]!.$1.bookKey),
+        );
+    for (final String u in singles) {
+      final LibraryCurateBookVolume v = missing[u]!.$1;
+      out.add(
+        LibraryCurateBookUnit(
+          id: v.shelfKey,
+          title: v.title,
+          author: v.missingAuthor ? null : v.author,
+          volumes: <LibraryCurateBookVolume>[v],
+        ),
+      );
+    }
+    return out;
+  }
+
+  /// 没有任何资料源快照（`galgame_sources` 无行）的游戏；[sinceMs] 非 null 时只要
+  /// `added_at` 晚于它的。
+  @override
+  Future<List<LibraryCurateGameUnit>> gameScrapeUnits(int? sinceMs) async {
+    final List<LibraryCurateGameUnit> out = <LibraryCurateGameUnit>[];
+    for (final QueryRow row
+        in await db
+            .customSelect(
+              'SELECT g.id AS id, g.name AS name, '
+              'g.custom_data_json AS custom FROM galgames g '
+              'WHERE g.added_at > ?1 AND NOT EXISTS '
+              '(SELECT 1 FROM galgame_sources s WHERE s.game_id = g.id) '
+              'ORDER BY g.added_at, g.id',
+              variables: <Variable<Object>>[Variable<int>(sinceMs ?? -1)],
+            )
+            .get()) {
+      String title = '${row.data['name']}';
+      final Object? custom = _decode('${row.data['custom'] ?? ''}');
+      if (custom is Map && custom['name'] is String) {
+        final String n = (custom['name'] as String).trim();
+        if (n.isNotEmpty) title = n;
+      }
+      out.add(LibraryCurateGameUnit(id: '${row.data['id']}', title: title));
+    }
+    return out;
   }
 }

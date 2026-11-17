@@ -34,6 +34,12 @@ enum LibraryCurateStage {
   /// ③ 认身份 + 刮削（视频待确认作品）。
   scrape('scrape'),
 
+  /// ③ 书 / 漫画刮削（缺元数据的书，系列按合集查一次）。
+  scrapeBooks('scrape.books'),
+
+  /// ③ 游戏刮削（没有资料源快照的游戏）。
+  scrapeGames('scrape.games'),
+
   /// ④ 跨媒体关系推断（视频合集 / 书 / 游戏端点）。
   links('links'),
 
@@ -86,8 +92,9 @@ class LibraryCuratePendingItem {
 
   final LibraryCurateStage stage;
 
-  /// `scrape_pending`（视频作品没认出来）、`needs_confirmation`（这一步的操作要用户
-  /// 确认，自动编排不执行）、`organize_proposal`（合集级建议）等。
+  /// `scrape_pending`（视频作品没认出来）、`book_scrape_pending` /
+  /// `game_scrape_pending`（书 / 游戏没认出来）、`needs_confirmation`（这一步的操作要
+  /// 用户确认，自动编排不执行）、`organize_proposal`（合集级建议）等。
   final String kind;
   final String title;
 
@@ -296,11 +303,14 @@ const int kLibraryCurateRunHistoryLimit = 30;
 /// 水位下跳过它们，不重复花钱；阶段做完时清掉该阶段的进度。没有水位（首趟）= 全量。
 ///
 /// [suppressed]：整趟撤销时记下的「撤销过、别再自动做回来」的键
-/// （`scrape:<作品 id>`、`links:<端点>`）。合集移出与连接本身另有跨端的「只做一次」
+/// （`scrape:<作品 id>`、`scrape.books:book:<bookKey>`、`scrape.games:<游戏 id>`、
+/// `links:<端点>`）。合集移出与连接本身另有跨端的「只做一次」
 /// 语义（成员 `pinned_by_user`、连接否决墓碑），这里只兜本机认领与推断入口。
 ///
-/// [seen]：自动路径查过但留在待确认的视频作品（`scrape:<作品 id>`）——没有新证据
-/// 不再每趟重问；手动触发照样重看。
+/// [seen]：自动路径查过但留在待确认的视频作品 / 书单元 / 游戏（`scrape:<作品 id>`、
+/// `scrape.books:<单元>`、`scrape.games:<游戏 id>`）——没有新证据不再每趟重问；手动
+/// 触发照样重看。另记已经写回过的书（`scrape.books.done:book:<bookKey>`）：书的
+/// override 封面不改 `epub_books.cover_path`，不记的话全量跑会把它当缺封面再查一遍。
 class LibraryCurateState {
   LibraryCurateState({
     List<LibraryCurateRun>? runs,

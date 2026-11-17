@@ -11,6 +11,7 @@ library;
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:fushi_cli/fushi_cli.dart' show OpInvoker;
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/ai/ai_media_identity_assistant.dart';
 import 'package:fushi_engine/ai/ai_video_identity_assistant.dart';
 import 'package:fushi_engine/media/library_curate/library_curator.dart';
 
@@ -39,6 +40,8 @@ LibraryCurator buildAppLibraryCurator({
 }) {
   final PreferencesAiVideoIdentityAdvisor advisor =
       PreferencesAiVideoIdentityAdvisor(prefs);
+  final PreferencesAiMediaIdentityAdvisor mediaAdvisor =
+      PreferencesAiMediaIdentityAdvisor(prefs);
   return LibraryCurator(
     db: db,
     toolbox: AiAgentToolbox(invoker: invoker, database: db),
@@ -49,6 +52,7 @@ LibraryCurator buildAppLibraryCurator({
     ),
     ai: () => libraryCurateAiOf(prefs, aiModuleEnabled: aiModuleEnabled()),
     videoDecider: () => advisor.capabilityKey == null ? null : advisor.decide,
+    mediaDecider: () => mediaAdvisor.isAssigned ? mediaAdvisor.decide : null,
   );
 }
 

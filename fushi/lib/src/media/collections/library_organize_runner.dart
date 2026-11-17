@@ -354,6 +354,8 @@ String libraryCurateStageLabel(LibraryCurateStage stage) => switch (stage) {
     domain: libraryOrganizeDomainLabel(CollectionShelfDomain.games),
   ),
   LibraryCurateStage.scrape => t.library_curate_stage_scrape,
+  LibraryCurateStage.scrapeBooks => t.library_curate_stage_scrape_books,
+  LibraryCurateStage.scrapeGames => t.library_curate_stage_scrape_games,
   LibraryCurateStage.links => t.library_curate_stage_links,
   LibraryCurateStage.music => t.library_curate_stage_music,
   LibraryCurateStage.works => t.library_curate_stage_works,
