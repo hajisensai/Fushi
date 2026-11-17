@@ -4,7 +4,7 @@ import { BASE, call, makeEnv, registerUser } from './harness.js';
 import { hex, sha256 } from '../src/util.js';
 import { decisionStage, normalizeDecision } from '../src/decisions.js';
 import { DECISIONS_CLIENT_JS } from '../src/decisions_client.js';
-import { addSql, closeSql, noteSql, parseArgs, verdictSql } from '../scripts/decisions.mjs';
+import { addSql, attachPlan, closeSql, noteSql, parseArgs, verdictSql } from '../scripts/decisions.mjs';
 
 const NOW = Date.UTC(2026, 10, 10, 12);
 const DAY = 24 * 3600 * 1000;
@@ -188,6 +188,96 @@ describe('/dev/decisions', () => {
     expect(r.status).toBe(200);
     expect(JSON.stringify(r.data)).toContain('想点句子跳播');
     expect(() => normalizeDecision({ ...ITEMS[0], original: 'x'.repeat(8001) })).toThrow(/original/);
+  });
+
+  it('原文图片：反馈截图走本站附件、原文里只嵌 GitHub 白名单图片，CSP 同步放行', async () => {
+    const env = makeEnv();
+    const att = JSON.stringify([
+      { slot: 's0', kind: 'screenshot', key: 'k0', bytes: 10 }, { slot: 'v0', kind: 'video', key: 'kv', bytes: 10 },
+      { slot: 'log', kind: 'log', key: 'kl', bytes: 10 },
+    ]);
+    env.DB.raw.prepare(`INSERT INTO feedback (id, ticket_hash, category, title, body, attachments, created_at, updated_at)
+      VALUES ('fbimg1', 'h', 'bug', '截图反馈', '看图', ?, ?, ?)`).run(att, NOW - 50, NOW - 50);
+    const gh = 'https://github.com/user-attachments/assets/9a349d0b-e47d-4349-81b4-2a7a235a9bb0';
+    env.DB.raw.exec(addSql([
+      { id: 'fbimg1', kind: 'feedback', title: '反馈', ask: '要不要' },
+      {
+        id: 'pr10', kind: 'pr', title: 'PR 带图', ask: '要不要',
+        original: `before\n![shot](${gh})\n<img width="300" src="https://user-images.githubusercontent.com/1/a.png">\n`
+          + `![evil](https://evil.example/x.png)\n![dup](${gh})\nhttps://github.com/user-attachments/assets/aaaa-video`,
+      },
+    ], NOW - 10).sql);
+    const s = await devSession(env);
+    const res = await page(env, s, 'all');
+    const p = res.data;
+    const card = (id) => p.slice(p.indexOf(`id="d-${id}"`), p.indexOf('</article>', p.indexOf(`id="d-${id}"`)));
+    const fb = card('fbimg1');
+    expect(fb).toContain('<img src="/dev/f/fbimg1/a/s0"');
+    expect(fb).not.toContain('/a/log');
+    expect(fb).toContain('反馈详情（含视频）');
+    const pr = card('pr10');
+    expect(pr.match(/<img /g)).toHaveLength(2);
+    expect(pr).toContain(`<img src="${gh}"`);
+    expect(pr).toContain('<img src="https://user-images.githubusercontent.com/1/a.png"');
+    expect(pr).not.toContain('<img src="https://evil.example');
+    expect(pr).not.toContain('<img src="https://github.com/user-attachments/assets/aaaa-video"');
+    const csp = res.res.headers.get('Content-Security-Policy');
+    expect(csp).toContain("img-src 'self' https://github.com https://github-production-user-asset-6210df.s3.amazonaws.com");
+    expect(csp).not.toMatch(/img-src[^;]*https:(\s|;|$)/);
+  });
+
+  it('附件：attach 计划校验格式 / 大小 / 数量，key 落在 decisions/<id>/ 下', () => {
+    const plan = attachPlan('pr9', '[]', [{ path: 'D:/x/设计 稿.html', bytes: 100 }, { path: '/tmp/a.MD', bytes: 5 }], () => 'n0');
+    expect(plan.uploads.map((u) => [u.key, u.type])).toEqual([
+      ['decisions/pr9/n0-_.html', 'text/html; charset=utf-8'], ['decisions/pr9/n0-a.MD', 'text/plain; charset=utf-8'],
+    ]);
+    expect(JSON.parse(plan.files).map((f) => f.name)).toEqual(['设计 稿.html', 'a.MD']);
+    expect(() => attachPlan('pr9', '[]', [{ path: 'a.exe', bytes: 1 }])).toThrow(/不支持/);
+    expect(() => attachPlan('pr9', '[]', [{ path: 'a.png', bytes: 11 * 1024 * 1024 }])).toThrow(/10 MB/);
+    const ten = JSON.stringify(Array.from({ length: 10 }, (_, i) => ({ name: `${i}.png`, key: `decisions/pr9/${i}`, bytes: 1 })));
+    expect(() => attachPlan('pr9', ten, [{ path: 'b.png', bytes: 1 }])).toThrow(/最多 10/);
+    expect(() => attachPlan('a b', '[]', [{ path: 'b.png', bytes: 1 }])).toThrow(/id/);
+  });
+
+  it('附件：卡片预览 html（sandbox iframe）/ 图片 / md 链接；取文件回包带 sandbox CSP，越界与外部 key 一律 404', async () => {
+    const env = makeEnv();
+    env.DB.raw.exec(addSql([{ id: 'design-x', kind: 'design', title: '设计', ask: '选哪个' }], NOW - 10).sql);
+    const files = [
+      { name: 'mock.html', type: 'text/html', key: 'decisions/design-x/1-mock.html', bytes: 2048 },
+      { name: 'a.png', type: 'image/png', key: 'decisions/design-x/2-a.png', bytes: 10 },
+      { name: 'spec.md', type: 'text/plain', key: 'decisions/design-x/3-spec.md', bytes: 10 },
+      { name: 'evil.html', type: 'text/html', key: 'feedback/other/secret', bytes: 10 },
+    ];
+    env.DB.raw.prepare('UPDATE decisions SET files = ? WHERE id = ?').run(JSON.stringify(files), 'design-x');
+    await env.MEDIA.put('decisions/design-x/1-mock.html', new TextEncoder().encode('<h1>hi</h1>'));
+    await env.MEDIA.put('decisions/design-x/3-spec.md', new TextEncoder().encode('# 规格'));
+    await env.MEDIA.put('feedback/other/secret', new TextEncoder().encode('secret'));
+    const s = await devSession(env);
+    const res = await page(env, s, 'all');
+    const p = res.data;
+    expect(p).toContain('<iframe src="/dev/d/design-x/f/0"');
+    expect(p).toContain('sandbox="allow-scripts allow-popups allow-forms allow-modals"');
+    expect(p).toContain('<img src="/dev/d/design-x/f/1"');
+    expect(p).toContain('<a href="/dev/d/design-x/f/2" target="_blank" rel="noopener">spec.md</a>');
+    expect(p).not.toContain('evil.html');
+    expect(res.res.headers.get('Content-Security-Policy')).toContain("frame-src 'self'");
+
+    const get = (n) => call(env, 'GET', `/dev/d/design-x/f/${n}`, { headers: { Cookie: s.cookie }, now: NOW });
+    const html = await get(0);
+    expect(html.status).toBe(200);
+    expect(html.data).toBe('<h1>hi</h1>');
+    expect(html.res.headers.get('Content-Type')).toBe('text/html; charset=utf-8');
+    expect(html.res.headers.get('Content-Security-Policy')).toMatch(/^sandbox allow-scripts/);
+    expect(html.res.headers.get('Content-Security-Policy')).toContain("frame-ancestors 'self'");
+    expect(html.res.headers.get('X-Content-Type-Options')).toBe('nosniff');
+    const md = await get(2);
+    expect(md.data).toBe('# 规格');
+    expect(md.res.headers.get('Content-Type')).toBe('text/plain; charset=utf-8');
+    expect((await get(1)).status).toBe(404); // R2 里没有
+    expect((await get(3)).status).toBe(404); // key 不在本事项前缀下，不认
+    expect((await get(9)).status).toBe(404);
+    // 未登录拿不到附件。
+    expect((await call(env, 'GET', '/dev/d/design-x/f/0', { now: NOW })).status).toBe(303);
   });
 
   it('页面一次渲染全部事项，非当前栏 hidden；放行本站脚本', async () => {
