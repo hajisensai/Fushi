@@ -228,11 +228,13 @@ pub(crate) fn view(row: Option<&Map<String, Value>>) -> Value {
 
 /// `local_state`：Dart 开库 / 重读时要的那几个值（`{exists, revision, styleCursor, epoch, epochStored, anchor}`）。
 /// 只读，不建行、不补纪元。
+#[cfg(test)]
 pub(crate) fn read(c: &Connection, profile: &str) -> Result<Value, String> {
     Ok(view(stored(c, profile)?.as_ref()))
 }
 
 /// `local_state_ensure`：没有行就建、没有纪元就补，再回同 [read] 的形态（`exists` = 调用前有没有行）。
+#[cfg(test)]
 pub(crate) fn ensure(c: &Connection, profile: &str) -> Result<Value, String> {
     let existed = stored(c, profile)?.is_some();
     let row = edit(c, profile, |_| {})?;
@@ -242,6 +244,7 @@ pub(crate) fn ensure(c: &Connection, profile: &str) -> Result<Value, String> {
 }
 
 /// `local_anchor`：写下校时状态（没有行就建）。
+#[cfg(test)]
 pub(crate) fn set_anchor(c: &Connection, profile: &str, anchor: &Value) -> Result<(), String> {
     edit(c, profile, |row| {
         row.insert(ANCHOR_KEY.to_owned(), anchor.clone());
@@ -251,6 +254,7 @@ pub(crate) fn set_anchor(c: &Connection, profile: &str, anchor: &Value) -> Resul
 
 /// 存量样式去重从头再查（`rebuild_caches {resetStyles}`：覆盖恢复 / 采用别处的 profile 之后，恢复进来的行可能还是
 /// 内联样式）。还没有行就不写（新行没有游标 = 0）。
+#[cfg(test)]
 pub(crate) fn reset_style_cursor(c: &Connection, profile: &str) -> Result<(), String> {
     c.prepare_cached(
         "UPDATE srs_local_state SET json = json_remove(json, '$.styleCursor') \

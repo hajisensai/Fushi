@@ -125,6 +125,9 @@ pub fn collection_of(profile: &str) -> Id {
 }
 
 /// 本机在某 profile 集合里的身份与写入状态。
+// 冻结的协议 3 内核（store/legacy3）在生产构建里照常建这个结构；下面有的字段 / 变体只在测试构建才编的协议 3 路径里
+// 读 / 构造（G7-6）。
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) struct Local {
     pub profile: String,
     pub collection: Id,
@@ -272,6 +275,7 @@ pub(crate) fn intern_deps(conn: &Connection, bytes: &[u8]) -> Result<i64, String
         .map_err(sql)
 }
 
+#[cfg(test)]
 pub(crate) fn insert_op(
     conn: &Connection,
     profile: &str,
@@ -1205,6 +1209,7 @@ pub(crate) fn land_media_binding(
 /// 收到（已应用的）远端操作后推进本机 HLC 并持久化（设计 §3.2：`hlc = max(local, remote) + 1`，+1 在下一次发出时）。[seen] = 这批
 /// 远端操作里不超前的最大 HLC；超前（远端 wall 超出本机墙钟 [crate::sync2::hlc::MAX_AHEAD_MS]）的作者在
 /// [ahead] 里：照收，`sync2_devices.warning` 打 `clock_ahead`（已有分叉告警的不覆盖），不把本机时钟拽过去。
+#[cfg(test)]
 pub(crate) fn observe_remote(
     conn: &Connection,
     profile: &str,
@@ -1666,6 +1671,9 @@ pub(crate) fn group_lineage(
 }
 
 /// 一个归属组（链尾 + 广度优先的全部前身）的日志行与链尾所属的笔记（日志上记的，没有则取调用方给的）。
+// 冻结的协议 3 内核（store/legacy3）在生产构建里照常建这个结构；下面有的字段 / 变体只在测试构建才编的协议 3 路径里
+// 读 / 构造（G7-6）。
+#[cfg_attr(not(test), allow(dead_code))]
 struct Group {
     rows: Vec<(String, String, Option<i64>, Intent, String)>,
     note: Option<String>,
@@ -2191,6 +2199,7 @@ fn note_written_edit(out: &mut Vec<Value>, op: &Op, b: &Body) {
 }
 
 /// [SrsCore::sync2_identity] 的结果。
+#[cfg(test)]
 fn identity_json(l: &Local) -> Value {
     json!({
         "device": l.device.text(),
@@ -2208,6 +2217,7 @@ impl SrsCore {
     /// 身份已在（每轮同步、开库都走这里，绝大多数情况）只是一次读：走读连接的快照，不排写锁
     /// （[SrsCore::read_visible]）。只有还没有身份时才进写连接，
     /// 在 SAVEPOINT 里重查一遍再建（两个调用方同时看到「没有」，后进写锁的那个读到先建的那份，不会建两份）。
+    #[cfg(test)]
     pub fn sync2_identity(&self, profile: &str, now: i64) -> Result<Value, String> {
         if let Some(l) = self.read_visible(|c| Local::load(c, profile))? {
             return Ok(identity_json(&l));
@@ -2349,6 +2359,7 @@ impl SrsCore {
     /// `{"writers": {写入者: [seq, wall, logical, seq, wall, logical, ...]}}`。读操作日志而不是投影：被支配、已不在
     /// 投影里的记录也在。档案合并（Dart `srs_profile_merge.dart` `_Writers.alias`）据此判断目标里是否已有同一批记录
     /// （BUG-4011）。已清除内容的操作不算（载荷已剥掉）。
+    #[cfg(test)]
     pub fn sync2_legacy_dots(&self, profile: &str) -> Result<Value, String> {
         let r = self.reader()?;
         let mut out: Map<String, Value> = Map::new();
@@ -2388,6 +2399,7 @@ impl SrsCore {
     }
 
     /// 追加一批本机内部操作（冲突解决、清除、还原点）：与 [SrsCore::sync2_apply_local] 同一条落库 / 投影 / 重放路径。
+    #[cfg(test)]
     pub(crate) fn sync2_append(
         &self,
         profile: &str,
@@ -2400,6 +2412,7 @@ impl SrsCore {
 
     /// 冲突中心（设计 §5.3）：待用户定的破坏性并发。每项
     /// `{"id","kind":"delete_edit|delete_review|delete_move","entityKind","entity","by","others","at"}`。
+    #[cfg(test)]
     pub fn sync2_conflicts(&self, profile: &str) -> Result<Value, String> {
         let r = self.reader()?;
         let mut stmt = r
@@ -2428,6 +2441,7 @@ impl SrsCore {
 
     /// 解决一项冲突：`delete` = 以删除为准（一条因果覆盖并发方的新删除）；`keep` = 保留（一条覆盖删除的恢复）。
     /// 结论是普通操作，同步到各设备后同一冲突不会在别处再冒出来。
+    #[cfg(test)]
     pub fn sync2_resolve(
         &self,
         profile: &str,
@@ -2441,6 +2455,7 @@ impl SrsCore {
 
     /// 冲突 [conflict] 的实体（[SrsCore::sync2_resolve] 的预读）：在读连接上读已提交的冲突表，写锁外做。命令本身还没写过
     /// 任何东西，读不到「本命令内未提交」的行是对的；冲突行只由投影写入、只在写锁里改，读到的就是写锁里会看到的。
+    #[cfg(test)]
     pub(crate) fn sync2_conflict_target(
         &self,
         profile: &str,
@@ -2462,6 +2477,7 @@ impl SrsCore {
     }
 
     /// 彻底清除（设计 §10.5）：二次确认由界面做。先删除（保证实体不可见），再追加清除操作。
+    #[cfg(test)]
     pub fn sync2_purge(
         &self,
         profile: &str,
@@ -2473,6 +2489,7 @@ impl SrsCore {
     }
 
     /// 自动 / 手动还原点（设计 §10.2）。
+    #[cfg(test)]
     pub fn sync2_checkpoint(
         &self,
         profile: &str,
@@ -2484,6 +2501,7 @@ impl SrsCore {
     }
 
     /// 全量重放一个 profile 的全部卡（参数整体变更、自检用；设计 §3.4 `rebuild_all` 的调度部分）。
+    #[cfg(test)]
     pub fn sync2_replay_all(&self, profile: &str) -> Result<Vec<String>, String> {
         let w = self.writer()?;
         in_savepoint(&w, |c| {
@@ -2500,6 +2518,7 @@ impl SrsCore {
 }
 
 /// 设备 ID 文本 → 字节（FFI 入参）。
+#[cfg(test)]
 pub fn parse_device(s: &str) -> Result<Id, String> {
     Id::parse(s).ok_or_else(|| format!("bad device id {s}"))
 }
@@ -2584,6 +2603,7 @@ impl SrsCore {
     ///
     /// 只读（牌组树、血统日志、修改记录全是 SELECT，重放与 FSRS 是纯计算）：走读连接的快照，复习时每张卡的
     /// 预览不排在同步投递 / 缓存刷新这类长写后面（[SrsCore::read_visible]）。
+    #[cfg(test)]
     pub fn sync2_preview(
         &self,
         profile: &str,
@@ -2598,6 +2618,7 @@ impl SrsCore {
 }
 
 /// [SrsCore::sync2_preview] 在连接 [c] 上（调用方负责快照；对拍测试在写连接的 SAVEPOINT 里调）。
+#[cfg(test)]
 pub(crate) fn preview_on(
     c: &Connection,
     profile: &str,
@@ -2976,6 +2997,7 @@ pub(crate) fn apply_local_on(
 /// - 回包 `existed`：这批身份记录里落库前就已存在的实体 ID（导入据此按实际新建数计数）。
 ///
 /// 其余回包与 `apply` 同形；`landed` 按去掉不落的项之后的顺序。
+#[cfg(test)]
 pub(crate) fn import_drafts_on(
     c: &Connection,
     profile: &str,
@@ -3066,6 +3088,7 @@ pub(crate) fn import_drafts_on(
 
 /// [SrsCore::sync2_append] 的本体：在调用方的写连接、调用方开的 SAVEPOINT 里追加并投影（不自己取锁）。
 /// 指向别的 profile 实体的操作按「没有这个实体」跳过（ownership.rs；冲突解决、彻底清除都经这里）。
+#[cfg(test)]
 pub(crate) fn append_on(
     c: &Connection,
     profile: &str,

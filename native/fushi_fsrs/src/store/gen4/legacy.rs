@@ -141,6 +141,7 @@ pub fn migration_blockers(conn: &Connection, profile: &str) -> Result<Vec<String
 
 /// 并入做到一半留下的标记键（`srs_meta` 里的 `profile_merge/<旧 uid>`，升序；没有 `srs_meta` = 空）。D23 选 ②：并入由
 /// 冻结的旧并入代码（Dart `srs_profile_merge.dart` 驱动）做完，迁移补不了它。
+#[cfg(test)]
 pub fn merge_marks(conn: &Connection) -> Result<Vec<String>, String> {
     if !table_exists(conn, "srs_meta")? {
         return Ok(Vec::new());

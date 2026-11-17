@@ -60,7 +60,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
 use std::time::Duration;
 
-use rusqlite::types::{Value, ValueRef};
+use rusqlite::types::Value;
+#[cfg(any(test, feature = "raw_sql"))]
+use rusqlite::types::ValueRef;
 use rusqlite::{Connection, OpenFlags};
 
 const LEGACY_KEY: &str = "legacy_import";
@@ -112,6 +114,7 @@ pub struct SrsCore {
     bulk_holds_cache: AtomicBool,
     /// 批量写入的嵌套深度与要恢复的写连接 `wal_autocheckpoint`（`bulk_cache` 命令，[SrsCore::bulk_begin]）。按库计数：
     /// 几个 profile 的副本共用这一个写连接，只有最外层改 / 恢复阈值。
+    #[cfg(test)]
     bulk: Mutex<BulkDepth>,
     /// 各 profile 的缓存配置（内置笔记类型的代码默认值、默认牌组：只有 Dart 知道），Dart 每次打开副本时发
     /// `cache_config_set` 注册（store/cache_rev.rs）。只在内存：库重开（覆盖恢复会重开）就没了，所以每次打开都注册。
@@ -130,6 +133,7 @@ pub struct SrsCore {
     study_hub: Arc<queue::StudyHub>,
     /// 浏览页与 AnkiConnect 共用的常驻会话（store/browse.rs，按 profile）：搜索语料、列数据随写入增量更新；
     /// 按持有者登记，最后一个持有者释放才关。
+    #[cfg(test)]
     browse: Mutex<browse::Sessions>,
     /// 测试钩子：收段预处理拿完公钥、开始解码之前调用（测预处理不持写锁）。
     #[cfg(test)]
@@ -205,6 +209,7 @@ impl<'a> Conn<'a> {
 pub(crate) const BULK_WAL_AUTOCHECKPOINT_PAGES: i64 = 16384;
 
 /// [SrsCore] `bulk`：批量写入的嵌套深度与最外层开始时写连接的 `wal_autocheckpoint`。
+#[cfg(test)]
 #[derive(Default)]
 struct BulkDepth {
     depth: u32,
@@ -343,6 +348,7 @@ pub(crate) fn lock_recovering<T>(
 
 /// 只读连接的恢复：panic 时停在读事务里（`BEGIN` 之后没走到 `ROLLBACK`）就结束它。不结束，这条连接之后每次读都
 /// 读那份旧快照，WAL 也一直并不回主库。
+#[cfg(test)]
 pub(crate) fn end_read_tx(c: &Connection) -> Result<(), String> {
     if c.is_autocommit() {
         return Ok(());
@@ -504,12 +510,14 @@ impl SrsCore {
             ingest_yield: sync2::transport::YieldSignal::default(),
             ingest_holds_cache: AtomicBool::new(false),
             bulk_holds_cache: AtomicBool::new(false),
+            #[cfg(test)]
             bulk: Mutex::new(BulkDepth::default()),
             cache_configs: Mutex::new(std::collections::HashMap::new()),
             writer_cache: Mutex::new(mem_budget::WriterCache::new()),
             channel_live: AtomicBool::new(channel_live),
             refresh: Mutex::new(refresh::Refresh::new()),
             study_hub,
+            #[cfg(test)]
             browse: Mutex::new(browse::Sessions::default()),
             #[cfg(test)]
             ingest_prepare_hook: Mutex::new(None),
@@ -569,6 +577,7 @@ impl SrsCore {
 
     /// 批量写入期间写连接放回时留着页缓存（[SrsCore] `bulk_holds_cache`）。只由 [SrsCore::bulk_begin] /
     /// [SrsCore::bulk_end] 随深度调（测试也直接调）。
+    #[cfg(test)]
     pub(crate) fn set_bulk_holds_cache(&self, on: bool) {
         self.bulk_holds_cache.store(on, Ordering::Relaxed);
     }
@@ -580,6 +589,7 @@ impl SrsCore {
     /// 把同一批热页（索引、缓存表）拷回主库一遍——实测迁移 1.5 万笔记时 COMMIT 合计 37 秒，调大后 6 秒。中途崩溃也
     /// 无妨：下次打开时 SQLite 照常回放 WAL。不能整个关掉（以前设 0）：WAL 不并回就一直长，每读一页都要从新到旧逐段
     /// 查 wal-index 的哈希段，整体随规模平方增长；封顶后 WAL 最多几个哈希段。
+    #[cfg(test)]
     pub fn bulk_begin(&self) -> Result<u32, String> {
         let mut b = lock_recovering(&self.bulk, |_| Ok(()))?;
         if b.depth == 0 {
@@ -603,6 +613,7 @@ impl SrsCore {
     /// 把写连接的 `wal_autocheckpoint` 恢复成最外层开始时的原值——并完才恢复，免得恢复后的第一笔写入在写连接上抢先把
     /// 整份 WAL 并一遍。并回失败（库正被关 / 开不了 checkpoint 连接）也照样恢复（否则这条连接之后一直不并回，WAL 无上限
     /// 地涨到下次开库），报的是并回的错。没有配对的开始就结束是调用方的错，报错、深度不动。
+    #[cfg(test)]
     pub fn bulk_end(&self) -> Result<u32, String> {
         let mut b = lock_recovering(&self.bulk, |_| Ok(()))?;
         if b.depth == 0 {
@@ -679,12 +690,14 @@ impl SrsCore {
     /// 从内核读连接池借一条只读连接（用完放回；放回时还停在读事务里——命令 panic 在 `BEGIN` 与 `ROLLBACK` 之间——
     /// 就先结束它，见 store/read_pool.rs）。库已关闭报「已关闭」：关闭先关这个池并等借出的放回，所以持着它的调用
     /// （[SrsCore::register_side] 登记旁路连接）与关闭互斥。
+    #[cfg(test)]
     pub(crate) fn reader(&self) -> Result<read_pool::Pooled<'_>, String> {
         self.readers.get()
     }
 
     /// 写连接上是否挂着跨命令的事务（只有旧库搬迁）：挂着时只读命令也必须在写连接上读，才看得见那笔事务里
     /// 未提交的行。
+    #[cfg(test)]
     fn writer_tx_open(&self) -> bool {
         self.legacy_open.load(Ordering::SeqCst)
     }
@@ -692,6 +705,7 @@ impl SrsCore {
     /// 只读命令的连接选择：写连接上挂着事务（[SrsCore::writer_tx_open]）时在写连接的 SAVEPOINT 里读（嵌在那笔
     /// 事务里，看得见未提交的行，结束时 RELEASE 不改动任何东西）；否则从内核读连接池借一条、在它的一个读事务里读
     /// （整段同一份已提交快照，不排写锁；读命令之间各占一条连接，不互相排队，BUG-4298）。读连接是只读打开的：[f] 里混进写语句会直接报错，不会悄悄写到别处。
+    #[cfg(test)]
     pub(crate) fn read_visible<T>(
         &self,
         f: impl FnOnce(&Connection) -> Result<T, String>,
@@ -700,6 +714,7 @@ impl SrsCore {
     }
 
     /// [SrsCore::read_visible]，并告诉 [f] 它是不是在写连接上还没结束的事务里读（true = 看得见未提交的行）。
+    #[cfg(test)]
     pub(crate) fn read_visible_tx<T>(
         &self,
         f: impl FnOnce(&Connection, bool) -> Result<T, String>,
@@ -719,6 +734,7 @@ impl SrsCore {
     /// 从查询道专用的池（[SrsCore::query_readers]）借连接——那个池的上限就是 Dart 查询道的 worker 数
     /// （[SrsCore::read_concurrency]），几条长读把它借满也不占内核读命令（复习排队）的连接。整条命令在一个读事务里：
     /// 开读事务时取最新的 WAL 尾，所以调用方等到写命令返回后再发的查询一定看得见那笔写入。
+    #[cfg(test)]
     pub(crate) fn read_query<T>(
         &self,
         f: impl FnOnce(&Connection) -> Result<T, String>,
@@ -898,11 +914,13 @@ impl SrsCore {
     /// 快照一律写成 `auto_vacuum = INCREMENTAL`（源库是老的 NONE 也一样）：剥表后原地收空空闲链表，不再对快照整库
     /// `VACUUM`（那是第二次整份重写：磁盘峰值翻倍、耗时翻倍）。写之前按「有效数据 + [compact::MARGIN]」查目标所在卷
     /// 的空闲空间，不够就报 [SNAPSHOT_NO_SPACE]（一个字节都不写），不让它写到一半变成 SQLITE_FULL。
+    #[cfg(test)]
     pub fn snapshot_into(&self, target: &Path, strip_device_local: bool) -> Result<(), String> {
         self.snapshot_into_with_free_space(target, strip_device_local, compact::free_bytes)
     }
 
     /// [snapshot_into]，目标所在卷的空闲空间由 [free] 给（测试注入）。
+    #[cfg(test)]
     pub(crate) fn snapshot_into_with_free_space(
         &self,
         target: &Path,
@@ -1027,6 +1045,8 @@ impl SrsCore {
         (len(&self.path), len(Path::new(&wal)))
     }
 
+    /// [SrsCore::exec_raw] 的执行体（测试也直接在别的连接上用）：只在测试构建与带 `raw_sql` 的库里有。
+    #[cfg(any(test, feature = "raw_sql"))]
     fn exec_on(
         conn: &Connection,
         sql: &str,
@@ -1200,6 +1220,7 @@ impl SrsCore {
 
     /// 在读连接上跑一条只读 SQL，结果按 [rows] 编码；第一行是列名（文本）。只给测试与诊断用：
     /// 产品代码一律走粗粒度命令。
+    #[cfg(test)]
     pub fn debug_query(&self, sql: &str, params: &[Value]) -> Result<Vec<u8>, String> {
         query_rows(&*self.reader()?, sql, params)
     }
@@ -1207,6 +1228,7 @@ impl SrsCore {
     /// 按库文件路径另开一条旁路连接（[flags] 打开、[setup] 配置）并登记（[SrsCore::close] 逐个关掉）。开的时候借着一条
     /// 内核读连接：与 [SrsCore::close]（先关内核读连接池、等借出的放回）互斥，库已关闭就报「已关闭」，不会按路径
     /// 把关库后可能已被删换的库文件重新打开。
+    #[cfg(test)]
     fn register_side(
         &self,
         flags: OpenFlags,
@@ -1230,6 +1252,7 @@ impl SrsCore {
     /// checkpoint 锁与写锁互不相干，PASSIVE 也不等读者）。大批写入暂停自动 checkpoint 之后收尾用（Dart
     /// `SrsDbStore.bulkWrites`）：在写连接上并回几十 MB 的 WAL 要几百毫秒，那期间所有写入都排在它后面。
     /// 这条连接登记成旁路连接，库关闭时等它做完再关。返回 `{busy, log, checkpointed}`（`PRAGMA wal_checkpoint` 的三列）。
+    #[cfg(test)]
     pub fn wal_checkpoint(&self) -> Result<serde_json::Value, String> {
         let session = self.register_side(
             OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,

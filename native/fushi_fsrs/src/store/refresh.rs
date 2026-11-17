@@ -15,7 +15,9 @@
 
 use std::collections::HashMap;
 
-use serde_json::{Value, json};
+use serde_json::Value;
+#[cfg(test)]
+use serde_json::json;
 
 use super::sync2::Touched;
 
@@ -67,10 +69,12 @@ impl Counters {
         self.bump_rwkv(1);
     }
 
+    #[cfg(test)]
     fn hold(&mut self) {
         self.rwkv_held.get_or_insert(0);
     }
 
+    #[cfg(test)]
     fn release(&mut self) {
         if self.rwkv_held.take().is_some_and(|held| held > 0) {
             self.rwkv += 1;
@@ -155,6 +159,9 @@ impl Landed {
 }
 
 /// 一个库（一次打开）的刷新状态。
+// 冻结的协议 3 内核（store/legacy3）在生产构建里照常建这个结构；下面有的字段 / 变体只在测试构建才编的协议 3 路径里
+// 读 / 构造（G7-6）。
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) struct Refresh {
     /// 这次打开库的随机标识。
     open: String,
@@ -178,6 +185,7 @@ impl Refresh {
         self.by_profile.entry(profile.to_owned()).or_default()
     }
 
+    #[cfg(test)]
     fn keys(&self, profile: &str) -> Value {
         let zero = Counters::default();
         let c = self.by_profile.get(profile).unwrap_or(&zero);
@@ -200,6 +208,7 @@ impl super::SrsCore {
 
     /// `refresh_keys`：[profile] 此刻的刷新键（`{content, structure, rwkv, stats, landed}`，都是不透明串）。只读内存：
     /// 不碰通道、不拿写锁、不读库，调用方在自己的线程上同步调。
+    #[cfg(test)]
     pub(crate) fn refresh_keys(&self, profile: &str) -> Value {
         self.refresh().keys(profile)
     }
@@ -239,12 +248,14 @@ impl super::SrsCore {
 
     /// 收段会话开始（内核 `sync2_ingest_begin` 一进来，早于它自己做完上一次没收完的通道片）：之后这个 profile 的 RWKV
     /// 推进攒着。会话开不成时调用方紧接着 [Self::refresh_release]。
+    #[cfg(test)]
     pub(crate) fn refresh_hold(&self, profile: &str) {
         self.refresh().of(profile).hold();
     }
 
     /// 收段会话结束（内核 `sync2_ingest_end`：Dart 一轮结束 / 中途收手、作废副本、删 profile / 并入时内核自己放掉）：
     /// 攒下的 RWKV 推进并成一次（攒了 0 次不推进）。
+    #[cfg(test)]
     pub(crate) fn refresh_release(&self, profile: &str) {
         self.refresh().of(profile).release();
     }
@@ -255,6 +266,7 @@ impl super::SrsCore {
     }
 
     /// [profile] 的数据整份变了（`profile_purge`、并入提交的两头）：按键记的缓存全部作废，开着的收段会话的延后也放掉。
+    #[cfg(test)]
     pub(crate) fn refresh_replaced(&self, profile: &str) {
         let mut r = self.refresh();
         let c = r.of(profile);

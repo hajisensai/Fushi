@@ -145,6 +145,7 @@ pub(crate) struct Written {
 impl Written {
     /// 并入同一笔里后一次刷新写过的（`change` 的移牌组段，store/ffi.rs `local_write`）：各自去重；后一次写了整行的卡
     /// 不再算删掉的，后一次删掉的不再算写过的。
+    #[cfg(test)]
     pub(crate) fn absorb(&mut self, later: Written) {
         use std::collections::HashSet;
         {
@@ -570,6 +571,7 @@ fn load_types<'a>(
 /// 本 profile 全部笔记类型（含已删除的）物化视图里的文本：每个现行模板的正面、背面，再加 CSS（媒体回收的存活引用
 /// 扫这些，store/media_gc.rs）。与 Dart `SrsDbStore.noteTypesById` 物化出的 `templates` / `css` 同一份视图（内置类型的
 /// 代码默认值取缓存配置）。
+#[cfg(test)]
 pub(crate) fn note_type_texts(
     c: &Connection,
     profile: &str,
@@ -948,6 +950,7 @@ fn card_materials(
 /// 同一条规则（`registers::card_lineage_flags`），但只读前身链接那几条修改记录（血统只看 `historyFrom/<前身>`
 /// 寄存器，每个键的值与别的键无关）：优化器 / RWKV 取数、卡片历史按卡 id 调，血统在内核里解析
 /// （以前 Dart 先把整条血统的全部修改记录预读回 UI isolate 再交给内核，十万张卡上百次往返）。
+#[cfg(test)]
 pub(crate) fn lineage_ids(c: &Connection, cards: &[String]) -> Result<Vec<Vec<String>>, String> {
     if cards.is_empty() {
         return Ok(Vec::new());

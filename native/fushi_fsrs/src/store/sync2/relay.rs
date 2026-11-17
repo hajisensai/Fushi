@@ -20,24 +20,34 @@
 //! 一个位置缺的段本机还没有原文时（它们早就应用过、当时没留），看那个设备最新 head 的位置的 `plan` 会把它们列进
 //! 要拉的段（只为转发，不重复应用），下一轮就能转发。
 
+#[cfg(test)]
 use std::collections::{BTreeMap, BTreeSet};
 
+#[cfg(test)]
 use rusqlite::{Connection, OptionalExtension, params};
+#[cfg(test)]
 use serde_json::{Value, json};
 
+#[cfg(test)]
 use super::{Local, in_savepoint, sql};
 use crate::store::SrsCore;
+#[cfg(test)]
 use crate::sync2::id::Id;
+#[cfg(test)]
 use crate::sync2::keys::CollectionKey;
+#[cfg(test)]
 use crate::sync2::segment::{self, Head, SegmentHeader};
 
 /// 多久没成功同步过的位置不再算转发目标（换过密钥 / 被移除的位置留下的旧进度行，不让它们永远「缺」）。
+#[cfg(test)]
 const ACTIVE_WINDOW_MS: i64 = 30 * 24 * 60 * 60 * 1000;
 
+#[cfg(test)]
 fn names_of(h: &Head) -> String {
     serde_json::to_string(&h.segment_files()).unwrap_or_else(|_| "[]".to_owned())
 }
 
+#[cfg(test)]
 fn parse_names(s: &str) -> BTreeSet<String> {
     serde_json::from_str::<Vec<String>>(s)
         .unwrap_or_default()
@@ -45,11 +55,13 @@ fn parse_names(s: &str) -> BTreeSet<String> {
         .collect()
 }
 
+#[cfg(test)]
 fn id_of(b: Vec<u8>) -> Result<Id, String> {
     Ok(Id(b.try_into().map_err(|_| "bad id blob".to_string())?))
 }
 
 /// 转发目标：本机同步的全部位置里最近 [ACTIVE_WINDOW_MS] 内成功过的（还没成功过的也算）。
+#[cfg(test)]
 fn active_locations(c: &Connection, profile: &str) -> Result<Vec<String>, String> {
     let rows: Vec<(String, Option<i64>)> = c
         .prepare_cached(
@@ -69,6 +81,7 @@ fn active_locations(c: &Connection, profile: &str) -> Result<Vec<String>, String
 }
 
 /// 一台设备的转发源 head：`(代号, 序号, 段名)`。
+#[cfg(test)]
 fn relay_head(
     c: &Connection,
     profile: &str,
@@ -84,6 +97,7 @@ fn relay_head(
 }
 
 /// [location] 上 [device] 已有的段（上一轮看到的 head 引用的 + 本机转发上去的）与那份 head 的序号。
+#[cfg(test)]
 fn present_at(
     c: &Connection,
     profile: &str,
@@ -109,6 +123,7 @@ fn present_at(
 }
 
 /// 还有没有位置缺 [device] 的段 [name]（它在转发源 head 里，而某个活跃位置上那台设备的 head 落后、也没有这个段）。
+#[cfg(test)]
 fn needed(
     c: &Connection,
     profile: &str,
@@ -132,6 +147,7 @@ fn needed(
 }
 
 /// 本机自己（含冻结的旧身份）与被标为不可信的设备不转发。
+#[cfg(test)]
 fn relayable(c: &Connection, profile: &str, local: &Local, device: &Id) -> Result<bool, String> {
     if *device == local.device {
         return Ok(false);
@@ -149,6 +165,7 @@ fn relayable(c: &Connection, profile: &str, local: &Local, device: &Id) -> Resul
 
 /// 看 head 时（[heads] = 这一轮这个位置上各设备最新的、已验签可信的 head 与原文）：更新转发源 head；给了
 /// [location] 就把这个位置上的 head 记成「它此刻有什么」。返回只为转发要额外拉的段（按设备分组的段名）。
+#[cfg(test)]
 pub(crate) fn note_heads(
     c: &Connection,
     profile: &str,
@@ -220,6 +237,7 @@ pub(crate) fn note_heads(
 
 /// [note_heads] 这一次什么都不会改（各设备的转发源 head 不比这些旧、这个位置上记的 head 与这一轮看到的相同、本机转发
 /// 上去的 head 都还看得到）：`plan` 的只读快路径据此不拿写锁（审查 S-8）。
+#[cfg(test)]
 pub(crate) fn heads_noted(
     c: &Connection,
     profile: &str,
@@ -275,6 +293,7 @@ pub(crate) fn heads_noted(
 }
 
 /// 这个位置上就是某设备最新的 head：别的位置缺、本机又没留原文的段，从这里拉（只为转发）。只读。
+#[cfg(test)]
 pub(crate) fn relay_fetch(
     c: &Connection,
     profile: &str,
@@ -302,6 +321,7 @@ pub(crate) fn relay_fetch(
     Ok(fetch)
 }
 
+#[cfg(test)]
 fn held(c: &Connection, profile: &str, device: &Id, name: &str) -> Result<bool, String> {
     Ok(c
         .prepare_cached("SELECT 1 FROM sync2_relay_segs WHERE profile_uid = srs_id(?1) AND device = ?2 AND name = ?3")
@@ -314,6 +334,7 @@ fn held(c: &Connection, profile: &str, device: &Id, name: &str) -> Result<bool, 
 
 /// 收段时（[bytes] 已验过签名与链）：别的设备的段若还有位置缺它，留下原文（[key] = 它所在位置的密钥，用来解出
 /// 密文原段的明文压缩体）。
+#[cfg(test)]
 pub(crate) fn keep(
     c: &Connection,
     profile: &str,
@@ -346,6 +367,7 @@ pub(crate) fn keep(
 }
 
 /// 删掉 [device] 不再有位置需要的原段。
+#[cfg(test)]
 fn prune(c: &Connection, profile: &str, device: &Id) -> Result<(), String> {
     let names: Vec<String> = c
         .prepare_cached(
@@ -369,6 +391,7 @@ fn prune(c: &Connection, profile: &str, device: &Id) -> Result<(), String> {
 }
 
 /// [SrsCore::sync2_relay_outbox] 的一批。
+#[cfg(test)]
 pub struct RelayBatch {
     /// 要写到位置上的文件（相对路径 → 字节）：转发件，或段都已到位的设备的 head 原文。
     pub files: Vec<(String, Vec<u8>)>,
@@ -377,6 +400,7 @@ pub struct RelayBatch {
 }
 
 /// 从相对路径 `devices/<设备>/<文件>` 解出设备与文件名。
+#[cfg(test)]
 fn split_path(path: &str) -> Option<(Id, &str)> {
     let mut it = path.splitn(3, '/');
     (it.next()? == "devices").then_some(())?;
@@ -388,6 +412,7 @@ impl SrsCore {
     /// 转发发件（每轮自己的段与 head 写完之后）：[location] 缺的别的设备的段（装成转发件，[key] = 该位置的密钥）
     /// 与段都已到位的 head 原文，凑够 [max_bytes] 就停（一批至少一个文件）。head 只在它引用的段都已确认传上
     /// （[SrsCore::sync2_relay_ack]）之后才给，读者永远看到的是一致前缀。
+    #[cfg(test)]
     pub fn sync2_relay_outbox(
         &self,
         profile: &str,
@@ -467,6 +492,7 @@ impl SrsCore {
     /// 确认一批转发已经写到 [location]（[paths] = 那一批的相对路径）。返回 `{"delete": [相对路径]}`：被新转发的 head
     /// 取代的、本机之前转发到这个位置的旧 head 与旧转发件（归档位置由调用方跳过删除）。清单里的文件留在待删表
     /// （`sync2_relay_gone`）里，调用方删成功（或归档位置按策略跳过）后发 `obsolete_ack` 才移除。
+    #[cfg(test)]
     pub fn sync2_relay_ack(
         &self,
         profile: &str,

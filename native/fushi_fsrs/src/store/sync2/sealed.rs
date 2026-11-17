@@ -13,23 +13,30 @@
 //! 的 kdf（含校验值 `check`；只从段 / 媒体看到时为 null）}`。键以 `/<profile>` 结尾，删 profile 时随按后缀删的元数据
 //! 一起删（profile_data.rs）。记下就不撤：位置开了加密就不能在这里关（设计 §9）。
 
+#[cfg(test)]
 use rusqlite::{Connection, OptionalExtension, params};
+#[cfg(test)]
 use serde_json::{Value, json};
 
+#[cfg(test)]
 use super::{in_savepoint, sql};
 use crate::store::SrsCore;
+#[cfg(test)]
 use crate::sync2::segment::{MAGIC, RELAY_MAGIC};
 
 /// 记下的 kdf 序列化后的上限（参数来自不可信的 `meta.json`；Dart 侧已按界检查，这里再兜一层）。
+#[cfg(test)]
 const KDF_MAX_BYTES: usize = 1024;
 
 /// 记账键的前缀（键 = 前缀 + 位置 + `/` + profile）。迁移把它们搬进新代 `loc_state` 时按它扫（`gen4::carry`）。
 pub(crate) const SEALED_PREFIX: &str = "sync2_sealed/";
 
+#[cfg(test)]
 pub(crate) fn key(profile: &str, location: &str) -> String {
     format!("sync2_sealed/{location}/{profile}")
 }
 
+#[cfg(test)]
 fn record(c: &Connection, profile: &str, location: &str) -> Result<Option<Value>, String> {
     let raw: Option<String> = c
         .prepare_cached("SELECT value FROM srs_meta WHERE key = ?1")
@@ -42,6 +49,7 @@ fn record(c: &Connection, profile: &str, location: &str) -> Result<Option<Value>
 }
 
 /// 本机在修复之前用密钥同步过这个位置：上传进度身份 `<位置>#e…` 在 `sync2_locations` 里。
+#[cfg(test)]
 fn progressed_sealed(c: &Connection, profile: &str, location: &str) -> Result<bool, String> {
     c.prepare_cached(
         "SELECT EXISTS(SELECT 1 FROM sync2_locations WHERE profile_uid = srs_id(?1) \
@@ -52,6 +60,7 @@ fn progressed_sealed(c: &Connection, profile: &str, location: &str) -> Result<bo
     .map_err(sql)
 }
 
+#[cfg(test)]
 fn answer(rec: Option<&Value>, progressed: bool) -> Value {
     match rec {
         Some(v) => json!({"sealed": true, "kdf": v.get("kdf").cloned().unwrap_or(Value::Null)}),
@@ -62,6 +71,7 @@ fn answer(rec: Option<&Value>, progressed: bool) -> Value {
 /// 段文件或转发件对**它所在的位置**而言是不是密封的：原段看段头的加密位，转发件看外层的封装位（转发到明文位置的
 /// 密文原段带着明文体，对那个位置不算密封）。两种格式都是 `魔数[4] | 版本 u8 | flags u8（bit0）` 开头
 /// （crate::sync2::segment 的格式说明），所以只要前 6 个字节。认不出的前缀不算。
+#[cfg(test)]
 pub fn sealed_at_location(prefix: &[u8]) -> bool {
     (prefix.starts_with(MAGIC) || prefix.starts_with(RELAY_MAGIC))
         && prefix.get(5).is_some_and(|f| f & 1 != 0)
@@ -69,6 +79,7 @@ pub fn sealed_at_location(prefix: &[u8]) -> bool {
 
 impl SrsCore {
     /// 这个位置本机是否见过加密：`{"sealed": bool, "kdf": 最近见到的 kdf 或 null}`。
+    #[cfg(test)]
     pub fn sync2_location_sealed(&self, profile: &str, location: &str) -> Result<Value, String> {
         self.read_visible(|c| {
             let rec = record(c, profile, location)?;
@@ -81,6 +92,7 @@ impl SrsCore {
     /// 证据（`meta.json` 上有 `kdf` 但参数认不出、位置上有密封媒体目录）；[prefixes] = 从位置上读到的段 / 转发件的开头
     /// 几个字节（任一对这个位置是密封的就算见过）。都不成立时什么都不写。已记的 kdf 只在见到不同的 kdf 时更新（另一台
     /// 设备换了口令）；只从旁证看到时不抹掉已记的 kdf。返回同 [Self::sync2_location_sealed]。
+    #[cfg(test)]
     pub fn sync2_location_seal(
         &self,
         profile: &str,

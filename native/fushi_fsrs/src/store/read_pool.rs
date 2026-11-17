@@ -23,6 +23,7 @@
 //!   事务）：开读事务时取最新的 WAL 尾，所以调用方等到写返回后再发的查询一定看得见它。不同连接上并行的两条查询各自
 //!   看各自开始时刻的已提交数据。
 
+#[cfg(test)]
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Condvar, Mutex};
@@ -30,6 +31,7 @@ use std::time::{Duration, Instant};
 
 use rusqlite::Connection;
 
+#[cfg(test)]
 use super::CLOSED;
 
 // 上下界的实测依据（真实库 2.9 GB，16 逻辑核 Windows x64，[tests::real_db_parallel_long_reads]；表见
@@ -67,6 +69,9 @@ pub(crate) type Opener = fn(&Path) -> Result<Connection, String>;
 /// 时钟（测试注入，不等真实时间）。
 pub(crate) type Clock = Arc<dyn Fn() -> Instant + Send + Sync>;
 
+// 冻结的协议 3 内核（store/legacy3）在生产构建里照常建这个结构；下面有的字段 / 变体只在测试构建才编的协议 3 路径里
+// 读 / 构造（G7-6）。
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) struct ReadPool {
     path: PathBuf,
     cap: usize,
@@ -77,6 +82,9 @@ pub(crate) struct ReadPool {
     returned: Condvar,
 }
 
+// 冻结的协议 3 内核（store/legacy3）在生产构建里照常建这个结构；下面有的字段 / 变体只在测试构建才编的协议 3 路径里
+// 读 / 构造（G7-6）。
+#[cfg_attr(not(test), allow(dead_code))]
 struct Idle {
     conn: Connection,
     /// 放回的时刻。
@@ -95,6 +103,7 @@ struct State {
 
 impl State {
     /// 摘下空闲超过 [ttl] 的非常驻连接（调用方在锁外关掉它们）。
+    #[cfg(test)]
     fn reap(&mut self, now: Instant, ttl: Duration) -> Vec<Connection> {
         let mut out = Vec::new();
         let mut i = 0;
@@ -112,6 +121,7 @@ impl State {
 }
 
 /// 借出的一条连接；析构时放回（池子已关闭就关掉）。
+#[cfg(test)]
 pub(crate) struct Pooled<'a> {
     pool: &'a ReadPool,
     conn: Option<Connection>,
@@ -167,6 +177,7 @@ impl ReadPool {
     }
 
     /// 借一条连接：先回收超时的空闲连接；有空闲的就用最近放回的那条，没有且没到上限就新开，到上限等一条放回。
+    #[cfg(test)]
     pub(crate) fn get(&self) -> Result<Pooled<'_>, String> {
         let mut st = self.state();
         let expired = st.reap((self.clock)(), self.ttl);
@@ -224,6 +235,7 @@ impl ReadPool {
     }
 }
 
+#[cfg(test)]
 impl Deref for Pooled<'_> {
     type Target = Connection;
 
@@ -234,6 +246,7 @@ impl Deref for Pooled<'_> {
     }
 }
 
+#[cfg(test)]
 impl Drop for Pooled<'_> {
     fn drop(&mut self) {
         let Some(conn) = self.conn.take() else { return };

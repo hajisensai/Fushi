@@ -6,29 +6,43 @@
 //! 回滚。写出的修改记录与那几条命令逐条相同、同序（各批写的是互不相干的 (实体, 键)，「值没变不写」按合并前的状态判
 //! 结果相同）；旧版时钟每条走一步。
 
+#[cfg(test)]
 use std::collections::{HashMap, HashSet};
 
+#[cfg(test)]
 use rusqlite::{Connection, params};
+#[cfg(test)]
 use serde_json::{Value, json};
 
+#[cfg(test)]
 use super::change::merge_results;
+#[cfg(test)]
 use super::{LegacyApply, append_on, apply_local_on, checkpoint_bodies, config, sql};
+#[cfg(test)]
 use crate::card_cache::is_js_space;
+#[cfg(test)]
 use crate::registers;
+#[cfg(test)]
 use crate::store::caches;
+#[cfg(test)]
 use crate::sync2::op::EntKind;
 
 /// Dart `SrsFieldKeys.cardHistoryFromPrefix` / `noteTags` / `deleted`。
+#[cfg(test)]
 const HISTORY_FROM: &str = "historyFrom/";
+#[cfg(test)]
 const KEY_TAGS: &str = "tags";
+#[cfg(test)]
 const KEY_DELETED: &str = "deleted";
 
 /// Dart `String.trim().isEmpty`：`trim` 去掉的空白是 JS `\s` 那一组再加 U+0085。
+#[cfg(test)]
 fn dart_blank(s: &str) -> bool {
     s.chars().all(|c| is_js_space(c) || c == '\u{85}')
 }
 
 /// 测试注入：请求带 `failAfter: "apply"` 时在全部写完之后报错（验证整笔回滚；生产调用方不带）。
+#[cfg(test)]
 fn fail_after(req: &Value, stage: &str) -> Result<(), String> {
     if req["failAfter"].as_str() == Some(stage) {
         return Err(format!("merge_notes: injected failure after {stage}"));
@@ -37,6 +51,7 @@ fn fail_after(req: &Value, stage: &str) -> Result<(), String> {
 }
 
 /// 一条笔记的卡片缓存行（含隐藏卡，按 rowid；Dart `cardsOfNotes`）：(卡 ID, 模板 ID, cloze 序号)。
+#[cfg(test)]
 fn cards_of(c: &Connection, note: &str) -> Result<Vec<(String, String, i64)>, String> {
     c.prepare_cached(
         "SELECT srs_idt(id), srs_idt(template_id), cloze_ord FROM srs_cards_cache \
@@ -53,6 +68,7 @@ fn cards_of(c: &Connection, note: &str) -> Result<Vec<(String, String, i64)>, St
 /// `{"keep", "absorb": [...], "deletedAt", "legacyDevice", "tickNow", "ts"?}`。回包与 `apply` 同形，另带
 /// `linked`（挂成前身的卡数）与 `unmatched`（保留笔记没有对应模板的卡数）。`absorb` 去掉 `keep` 自己之后为空 = 什么都
 /// 不做。笔记不存在、笔记类型不同 = 报错，什么都不写。
+#[cfg(test)]
 pub(crate) fn merge_notes_on(
     c: &Connection,
     profile: &str,

@@ -253,73 +253,6 @@ pub extern "C" fn ffsrs_store_close(core: *mut SrsCoreHandle) {
     }));
 }
 
-/// `*out` = 1 已搬迁（或确认没有可搬的），0 未搬迁。
-#[no_mangle]
-pub extern "C" fn ffsrs_store_legacy_state(
-    core: *const SrsCoreHandle,
-    out: *mut i32,
-    error_out: *mut *mut c_char,
-) -> i32 {
-    if out.is_null() {
-        set_error(error_out, "null out");
-        return STORE_BAD_ARGUMENT;
-    }
-    run_core(core, error_out, |c| {
-        let v = c.legacy_imported()?;
-        unsafe { *out = v as i32 };
-        Ok(())
-    })
-}
-
-#[no_mangle]
-pub extern "C" fn ffsrs_store_legacy_begin(
-    core: *const SrsCoreHandle,
-    error_out: *mut *mut c_char,
-) -> i32 {
-    run_core(core, error_out, |c| c.legacy_begin())
-}
-
-/// 一页旧表行（rows.rs 编码）。
-#[no_mangle]
-pub extern "C" fn ffsrs_store_legacy_page(
-    core: *const SrsCoreHandle,
-    table: *const u8,
-    table_len: usize,
-    page: *const u8,
-    page_len: usize,
-    error_out: *mut *mut c_char,
-) -> i32 {
-    run_core(core, error_out, |c| {
-        let t = utf8(table, table_len)?;
-        let p = bytes(page, page_len).ok_or("null page")?;
-        c.legacy_page(t, p).map(|_| ())
-    })
-}
-
-#[no_mangle]
-pub extern "C" fn ffsrs_store_legacy_commit(
-    core: *const SrsCoreHandle,
-    error_out: *mut *mut c_char,
-) -> i32 {
-    run_core(core, error_out, |c| c.legacy_commit())
-}
-
-#[no_mangle]
-pub extern "C" fn ffsrs_store_legacy_abort(
-    core: *const SrsCoreHandle,
-    error_out: *mut *mut c_char,
-) -> i32 {
-    run_core(core, error_out, |c| c.legacy_abort())
-}
-
-#[no_mangle]
-pub extern "C" fn ffsrs_store_legacy_mark_none(
-    core: *const SrsCoreHandle,
-    error_out: *mut *mut c_char,
-) -> i32 {
-    run_core(core, error_out, |c| c.legacy_mark_none())
-}
-
 /// 新代库的整库一致快照（`G4Core::snapshot_into`，G11-4：`VACUUM INTO`，读不挡写；Secondary 报只读；
 /// `strip_device_local != 0` 报错——新代的 app 备份是按集合导出的流，不是剥了本机表的快照）。
 #[no_mangle]
@@ -1198,24 +1131,6 @@ mod tests {
         type Call<'a> = (&'static str, Box<dyn Fn(*mut *mut c_char) -> i32 + 'a>);
         let calls: Vec<Call<'_>> = vec![
             (
-                "legacy_state",
-                Box::new(|e| ffsrs_store_legacy_state(h, f, e)),
-            ),
-            ("legacy_begin", Box::new(|e| ffsrs_store_legacy_begin(h, e))),
-            (
-                "legacy_page",
-                Box::new(|e| ffsrs_store_legacy_page(h, sql.as_ptr(), 1, null(), 0, e)),
-            ),
-            (
-                "legacy_commit",
-                Box::new(|e| ffsrs_store_legacy_commit(h, e)),
-            ),
-            ("legacy_abort", Box::new(|e| ffsrs_store_legacy_abort(h, e))),
-            (
-                "legacy_mark_none",
-                Box::new(|e| ffsrs_store_legacy_mark_none(h, e)),
-            ),
-            (
                 "snapshot",
                 Box::new(|e| ffsrs_store_snapshot(h, snap.as_ptr(), snap.len(), 0, e)),
             ),
@@ -1262,7 +1177,7 @@ mod tests {
                 Box::new(|e| ffsrs_store_sync2(h, req.as_ptr(), req.len(), null(), 0, o, ol, e)),
             ),
         ];
-        assert_eq!(calls.len(), 17);
+        assert_eq!(calls.len(), 11);
         for (name, call) in &calls {
             let mut err: *mut c_char = null_mut();
             assert_eq!(call(&mut err), STORE_ERROR, "{name}");

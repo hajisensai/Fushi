@@ -20,7 +20,9 @@
 //! 一个结果可以有几张表，各自一块，放在 sync2 命令结果的 `files` 里。
 use rusqlite::Connection;
 use rusqlite::types::ValueRef;
+#[cfg(test)]
 use serde_json::{Value, json};
+#[cfg(test)]
 use std::collections::HashMap;
 
 use super::sync2::sql;
@@ -254,6 +256,7 @@ pub(crate) fn encode(rows: usize, names: &[&str], cols: &[Col]) -> Vec<u8> {
 /// `card_columns`：本 profile 的卡片缓存行（含隐藏；`visibleOnly` 为真只要可见的）按列交回。`fields` 限定要哪几列
 /// （缺省全部，见 [CARD_COLUMNS]）。行序与 Drift 以前发的 `SELECT * FROM srs_cards_cache WHERE profile_uid = srs_id(?)`
 /// 相同（同一条件、同一张表的同一查询计划）。
+#[cfg(test)]
 pub fn card_columns(c: &Connection, profile: &str, req: &Value) -> Result<Vec<u8>, String> {
     let wanted: Vec<&str> = match req.get("fields").and_then(Value::as_array) {
         Some(xs) => xs.iter().filter_map(Value::as_str).collect(),
@@ -282,6 +285,7 @@ pub fn card_columns(c: &Connection, profile: &str, req: &Value) -> Result<Vec<u8
 /// `anki_resolve`：AnkiConnect 数字 id → UUID（`notes` / `cards` 两组，查 v13 的 `anki_id` 索引）。结果与请求等长，
 /// 查不到 = null（同一个数字撞上两行时取 ID 最小的一行，与以前 Dart 整表映射「后写的覆盖」不同但都确定；53 位下
 /// 实际不会撞）。
+#[cfg(test)]
 pub fn anki_resolve(c: &Connection, profile: &str, req: &Value) -> Result<Value, String> {
     let mut out = serde_json::Map::new();
     for (key, table) in [("notes", "srs_notes_cache"), ("cards", "srs_cards_cache")] {
@@ -316,6 +320,7 @@ pub fn anki_resolve(c: &Connection, profile: &str, req: &Value) -> Result<Value,
 /// 以前 Dart 侧为这一个动作把每条笔记的身份记录与**全部**修改记录读成 Drift 行对象、组装成 `SrsEntitySource`、
 /// 物化后再连同修改记录列表建 `SrsNoteView`，另读一遍卡片缓存行；这里在只读快照上直接读、物化（与缓存行刷新
 /// 同一个寄存器内核与同一套 SQL，store/caches.rs [super::caches::note_infos]），只交回要用的值。
+#[cfg(test)]
 pub fn anki_notes_info(c: &Connection, profile: &str, req: &Value) -> Result<Value, String> {
     let nums: Vec<Option<i64>> = req
         .get("notes")
