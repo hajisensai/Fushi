@@ -132,8 +132,9 @@ void main() {
         RegExp(
           r'loadSubtitleCueResult\(\s*source,\s*videoPath',
         ).allMatches(src).length,
-        2,
-        reason: '主字幕与副字幕两条选择路径都必须保留失败原因',
+        4,
+        // 主 / 副各两处：内封分支（不锁菜单、带停止与世代）与外挂分支分开调用。
+        reason: '主字幕与副字幕两条选择路径（内封 / 外挂分支）都必须保留失败原因',
       );
     });
 

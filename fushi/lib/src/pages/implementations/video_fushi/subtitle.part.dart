@@ -197,6 +197,10 @@ extension _VideoSubtitle on _VideoFushiPageState {
     final Color? selectedFg = videoPanelSelectedForeground(context);
     final List<Widget> rows = <Widget>[
       if (_subtitleMenuLoading) const FushiLinearProgressIndicator(),
+      if (_primaryEmbeddedFullLoad case final _EmbeddedTextFullLoad load)
+        _embeddedTextFullLoadTile(load, secondary: false),
+      if (_secondaryEmbeddedFullLoad case final _EmbeddedTextFullLoad load)
+        _embeddedTextFullLoadTile(load, secondary: true),
       // TODO-573：「自动获取字幕(Jimaku)」对本地和远端视频都显示。Jimaku 只需要一个
       // 番名 query + 一个本地落盘目录；远端流没有本地视频文件（_currentVideoPath 恒
       // null），但有 host 下发的标题（_title / remoteInfo.title）可作 query，下载的
@@ -751,6 +755,10 @@ extension _VideoSubtitle on _VideoFushiPageState {
   Future<void> _forgetDeletedSubtitleSelection(
     VideoPlayerController controller,
   ) async {
+    _primarySubtitleSelectSeq++;
+    if (_primaryEmbeddedFullLoad != null) {
+      _rebuild(() => _primaryEmbeddedFullLoad = null);
+    }
     controller.claimDiscTrackOwnership();
     controller.setCues(const <AudioCue>[]);
     await controller.selectSubtitleTrack(SubtitleTrack.no());
@@ -1203,7 +1211,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
     switch (failure) {
       case SubtitleCueLoadFailure.unsupportedFormat:
       case SubtitleCueLoadFailure.extractionFailed:
-      // 取消只发生在退页 / 换集，结果按世代丢弃、到不了这里；列出只为穷尽 switch。
+      // 取消来自退页 / 换集（结果按世代丢弃）或用户点了「停止读取」（调用方不提示），
+      // 都到不了这里；列出只为穷尽 switch。
       case SubtitleCueLoadFailure.extractionCancelled:
         return t.video_subtitle_load_failed(label: label);
       // 轨没问题、是读视频文件卡住（BUG-4798）：不能说成「图形或不支持的轨」。
@@ -1236,21 +1245,50 @@ extension _VideoSubtitle on _VideoFushiPageState {
 
     final String? videoPath = _currentVideoPath;
     if (videoPath == null) return false;
-    // 副字幕只在播放器侧（设置面板 / 遥控 / CLI）选，第二屏面板没有副字幕入口。
-    _showSubtitleLoadingOverlay(origin: VideoSubtitlePickOrigin.player);
+    // 本次选择的世代：内封整轨抽取很慢、期间菜单不锁，结束时用户已另选就作废。
+    final int selectSeq = ++_secondarySubtitleSelectSeq;
+    bool stillChosen() => current() && selectSeq == _secondarySubtitleSelectSeq;
+    if (_secondaryEmbeddedFullLoad != null) {
+      _rebuild(() => _secondaryEmbeddedFullLoad = null);
+    }
     final SubtitleCueLoadResult result;
-    try {
+    if (source.isEmbedded) {
+      // 内封轨缓存未命中要整轨抽取（慢盘上一分钟以上）：不上锁菜单的加载遮罩，改在字幕
+      // 面板顶部显示「正在读取完整字幕」+ 停止入口（[_EmbeddedTextFullLoad]）。
       result = await loadSubtitleCueResult(
         source,
         videoPath,
         bookUid,
         cancel: _embeddedSubtitleExtractCancelFor(videoPath),
+        onExtractionStarted: () {
+          if (!stillChosen()) return;
+          _rebuild(
+            () => _secondaryEmbeddedFullLoad = _EmbeddedTextFullLoad(
+              label: source.label,
+              videoPath: videoPath,
+              selectSeq: selectSeq,
+            ),
+          );
+        },
       );
-    } finally {
-      _hideSubtitleLoadingOverlay();
+      if (mounted && _secondaryEmbeddedFullLoad?.selectSeq == selectSeq) {
+        _rebuild(() => _secondaryEmbeddedFullLoad = null);
+      }
+    } else {
+      // 副字幕只在播放器侧（设置面板 / 遥控 / CLI）选，第二屏面板没有副字幕入口。
+      _showSubtitleLoadingOverlay(origin: VideoSubtitlePickOrigin.player);
+      try {
+        result = await loadSubtitleCueResult(source, videoPath, bookUid);
+      } finally {
+        _hideSubtitleLoadingOverlay();
+      }
     }
-    if (!current()) return false;
+    if (!stillChosen()) return false;
     if (result.isFailure) {
+      // 用户点了「停止读取」：不当失败提示。
+      if (result.failure == SubtitleCueLoadFailure.extractionCancelled) {
+        return false;
+      }
       _showOsd(
         _subtitleFailureMessage(result.failure!, source.label),
         severity: ToastSeverity.error,
@@ -1284,6 +1322,11 @@ extension _VideoSubtitle on _VideoFushiPageState {
     VideoPlayerController controller,
   ) async {
     if (_discLearningBlocked) return;
+    // 在途的内封副字幕读取作废（结束时不再挂上来）。
+    _secondarySubtitleSelectSeq++;
+    if (_secondaryEmbeddedFullLoad != null) {
+      _rebuild(() => _secondaryEmbeddedFullLoad = null);
+    }
     final String bookUid = _activeBookUid;
     final int generation = _episodeLoadSeq;
     bool current() =>
@@ -3133,7 +3176,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
 
   /// 撤掉本页对内封文本字幕抽取的等待：[keepVideoPath] 的那份保留，其余全撤。
   /// 还在排队、没开始的下一集预热随之撤掉（`prewarmEmbeddedSubtitleCache` 的
-  /// background 排队）。
+  /// background 排队）。调用方紧接着会重建（换源）或页面已在销毁，这里不单独 setState。
   void _cancelEmbeddedSubtitleExtracts([String? keepVideoPath]) {
     final List<String> stale = <String>[
       for (final String path in _embeddedSubtitleExtractCancels.keys)
@@ -3141,6 +3184,12 @@ extension _VideoSubtitle on _VideoFushiPageState {
     ];
     for (final String path in stale) {
       _cancelEmbeddedSubtitleExtractFor(path);
+    }
+    if (_primaryEmbeddedFullLoad?.videoPath != keepVideoPath) {
+      _primaryEmbeddedFullLoad = null;
+    }
+    if (_secondaryEmbeddedFullLoad?.videoPath != keepVideoPath) {
+      _secondaryEmbeddedFullLoad = null;
     }
   }
 
@@ -3151,8 +3200,66 @@ extension _VideoSubtitle on _VideoFushiPageState {
     if (cancel != null && !cancel.isCompleted) cancel.complete();
     // 被撤掉的若正是预热过（或排着队）的下一集，忘掉「已预热」记号：之后再回到它的
     // 上一集时要重新预热，否则那一集换过去时字幕又得现读。
-    if (_lastPrewarmedEpisodePath == videoPath)
+    if (_lastPrewarmedEpisodePath == videoPath) {
       _lastPrewarmedEpisodePath = null;
+    }
+  }
+
+  /// 字幕面板上「正在读取完整字幕」行的「停止」：撤掉本页（当前集预热 / 菜单切轨）与
+  /// 播放器自动加载对这个视频整轨抽取的全部等待——没有别的等待方时 ffmpeg 被强杀，
+  /// 不再占着盘。播放器已在解码的那条轨照常显示（停的只是「补全列表」），字幕列表
+  /// 之后只随播放累积；用户之后再选一条需要抽取的轨会重新开始读取。
+  void _cancelEmbeddedTextFullLoad() {
+    final String? videoPath =
+        _primaryEmbeddedFullLoad?.videoPath ??
+        _secondaryEmbeddedFullLoad?.videoPath;
+    if (videoPath == null) return;
+    _cancelEmbeddedSubtitleExtractFor(videoPath);
+    _controller?.cancelEmbeddedTextAutoLoadExtract();
+    final bool live = _controller?.isPlayerDecodedTextSubtitleActive ?? false;
+    _rebuild(() {
+      _primaryEmbeddedFullLoad = null;
+      _secondaryEmbeddedFullLoad = null;
+    });
+    _showOsd(
+      live
+          ? t.video_subtitle_full_load_stopped_live
+          : t.video_subtitle_full_load_stopped,
+    );
+  }
+
+  /// 「正在读取完整字幕」行：转圈 + 哪条轨 + 说明 + 停止按钮。不禁用任何别的行。
+  Widget _embeddedTextFullLoadTile(
+    _EmbeddedTextFullLoad load, {
+    required bool secondary,
+  }) {
+    return FushiListTileControl(
+      key: ValueKey<String>(
+        secondary
+            ? 'video-subtitle-full-load-secondary'
+            : 'video-subtitle-full-load',
+      ),
+      leading: const SizedBox.square(
+        dimension: 24,
+        child: FushiCircularProgressIndicator(strokeWidth: 2.5),
+      ),
+      title: Text(t.video_subtitle_full_load_title(label: load.label)),
+      subtitle: Text(
+        secondary
+            ? t.video_subtitle_full_load_hint_secondary
+            : t.video_subtitle_full_load_hint,
+      ),
+      trailing: FushiIconButtonControl(
+        key: ValueKey<String>(
+          secondary
+              ? 'video-subtitle-full-load-secondary-cancel'
+              : 'video-subtitle-full-load-cancel',
+        ),
+        tooltip: t.video_subtitle_full_load_stop,
+        icon: const FushiIcon(Icons.stop_circle_outlined),
+        onPressed: _cancelEmbeddedTextFullLoad,
+      ),
+    );
   }
 
   /// 开始整轨转文字前的确认框：说明会用哪个识别引擎（漫画 OCR 设置里的引擎偏好 /
@@ -4254,6 +4361,14 @@ extension _VideoSubtitle on _VideoFushiPageState {
         identical(_controller, controller) &&
         _currentVideoPath == videoPath &&
         _episodeLoadSeq == loadSeq;
+    // 本次选择的世代：内封整轨抽取很慢、期间菜单不锁，结束时用户已另选（含关字幕）就作废，
+    // 不把新选择盖掉。上一次选择的「正在读取」行随之撤下（它的抽取若与本次共用同一个
+    // 视频，照样在跑、本次直接接着等，不重读）。
+    final int selectSeq = ++_primarySubtitleSelectSeq;
+    bool stillChosen() => isCurrent() && selectSeq == _primarySubtitleSelectSeq;
+    if (_primaryEmbeddedFullLoad != null) {
+      _rebuild(() => _primaryEmbeddedFullLoad = null);
+    }
 
     // BUG-122: 图形内封轨（PGS/DVD 等位图）无法转文本 cue（ffmpeg 抽 srt 直接报
     // bitmap→bitmap 拒绝），交给 libmpv 当画面字幕渲染：看得到、不可逐字查词。瞬时
@@ -4293,31 +4408,39 @@ extension _VideoSubtitle on _VideoFushiPageState {
       return true;
     }
 
-    // BUG-104: 内嵌字幕要从容器里 demux 抽取，大文件（如 27GB REMUX）首次可达
-    // ~20s，慢盘 / 与播放抢盘时一分钟以上（反馈 ZTDA2WQJj4）。期间给一个加载状态，
-    // 否则底栏菜单一关、画面字幕没变，用户会以为「点了没反应、没切换过去」。抽取走单趟
-    // 全轨缓存，同一视频后续切换瞬时命中。
-    //
-    // 缓存未命中（真要整轨抽取）时先借播放器解码这条轨即时出字（可点、可查词，与远端
-    // 直出容器同一条回流），抽完把边播边累积的 cue 换成完整列表。
     final String persisted = source.toPersistedValue();
-    Future<Object?>? bridge;
-    _showSubtitleLoadingOverlay(origin: origin);
     final SubtitleCueLoadResult result;
-    try {
+    // 播放器解码顶上的「桥」（[VideoPlayerController.beginEmbeddedTextBridge]）。
+    Future<Object?>? bridge;
+    if (source.isEmbedded) {
+      // BUG-104：内嵌字幕要从容器里 demux 抽取，整轨顺序读完整个文件——27GB REMUX
+      // 首次约 20s，慢盘 / 与播放抢盘时一分钟以上（反馈 ZTDA2WQJj4）。抽取走单趟全轨
+      // 缓存，同一视频后续切换瞬时命中。
+      //
+      // 缓存未命中时**不锁菜单**：先借播放器解码这条轨即时出字（可点、可查词，与远端
+      // 直出容器同一条回流），字幕面板顶部显示「正在读取完整字幕」+ 停止入口
+      // （[_EmbeddedTextFullLoad]）；用户随时可以停止读取、改选别的轨 / 关字幕 / 选外挂，
+      // 本次结果按 [selectSeq] 作废。抽完把边播边累积的 cue 换成完整列表。
       result = await loadSubtitleCueResult(
         source,
         videoPath,
         bookUid,
         cancel: _embeddedSubtitleExtractCancelFor(videoPath),
         onExtractionStarted: () {
-          if (!isCurrent()) return;
+          if (!stillChosen()) return;
+          _rebuild(
+            () => _primaryEmbeddedFullLoad = _EmbeddedTextFullLoad(
+              label: source.label,
+              videoPath: videoPath,
+              selectSeq: selectSeq,
+            ),
+          );
           final int? streamIndex = source.streamIndex;
           if (streamIndex == null) return;
           bridge = controller.beginEmbeddedTextBridge(streamIndex).then((
             Object? token,
           ) {
-            if (token != null && isCurrent()) {
+            if (token != null && stillChosen()) {
               _rebuild(() => _currentSubtitleSource = persisted);
               _showOsd(t.video_subtitle_full_load_live(label: source.label));
             }
@@ -4325,12 +4448,21 @@ extension _VideoSubtitle on _VideoFushiPageState {
           });
         },
       );
-    } finally {
-      _hideSubtitleLoadingOverlay();
+    } else {
+      // 外挂文件解析很快：沿用加载状态（锁菜单的时间可以忽略）。
+      _showSubtitleLoadingOverlay(origin: origin);
+      try {
+        result = await loadSubtitleCueResult(source, videoPath, bookUid);
+      } finally {
+        _hideSubtitleLoadingOverlay();
+      }
     }
     final Object? bridgeToken = await bridge;
-    if (!isCurrent()) return false;
-    // 桥装上过、但已被别的路径换掉了字幕：作废。
+    if (mounted && _primaryEmbeddedFullLoad?.selectSeq == selectSeq) {
+      _rebuild(() => _primaryEmbeddedFullLoad = null);
+    }
+    if (!stillChosen()) return false;
+    // 桥装上过、但已被别的路径换掉了字幕（不经本页选择世代的换源）：同样作废。
     if (bridgeToken != null &&
         !controller.isEmbeddedTextBridgeLive(bridgeToken)) {
       return false;
@@ -4338,9 +4470,9 @@ extension _VideoSubtitle on _VideoFushiPageState {
     if (result.isFailure) {
       final SubtitleCueLoadFailure failure = result.failure!;
       if (bridgeToken != null) {
-        // 完整列表没读出来（卡死 / 失败），但播放器解码的字幕一直在显示：保留它——对
-        // 用户最好，字幕没断、照样可查词制卡，只是列表不会预先补全。不持久化：下次打开
-        // 仍按上次成功落库的选择来，并会再试读取。
+        // 完整列表没读出来（卡死 / 失败 / 用户停止），但播放器解码的字幕一直在显示：
+        // 保留它——对用户最好，字幕没断、照样可查词制卡，只是列表不会预先补全。停止时
+        // 停止入口已提示过。不持久化：下次打开仍按上次成功落库的选择来，并会再试读取。
         if (failure != SubtitleCueLoadFailure.extractionCancelled) {
           _showOsd(
             t.video_subtitle_full_load_failed_live(label: source.label),
@@ -4352,11 +4484,13 @@ extension _VideoSubtitle on _VideoFushiPageState {
       // 抽取/解析后无任何 cue（图形字幕、ffmpeg 缺失、轨损坏、文件读不出等）：诚实告知
       // 失败，**不切换、不持久化**——避免谎报「已切换」却空屏，也避免用一个坏内封轨覆盖
       // 掉当前正常工作的字幕源（下次进来还是空）。文案按失败原因分流，见
-      // [_subtitleFailureMessage]（BUG-1490）。
-      _showOsd(
-        _subtitleFailureMessage(failure, source.label),
-        severity: ToastSeverity.error,
-      );
+      // [_subtitleFailureMessage]（BUG-1490）。用户停止读取不当失败提示。
+      if (failure != SubtitleCueLoadFailure.extractionCancelled) {
+        _showOsd(
+          _subtitleFailureMessage(failure, source.label),
+          severity: ToastSeverity.error,
+        );
+      }
       return false;
     }
     final List<AudioCue> cues = result.cues;
@@ -4405,6 +4539,11 @@ extension _VideoSubtitle on _VideoFushiPageState {
   /// 并短路掉 sidecar 探测与内嵌轨自动抽取两个自动重选向量。
   Future<void> _selectSubtitleOff(VideoPlayerController controller) async {
     if (_discLearningBlocked) return;
+    // 在途的内封读取作废（结束时不再把字幕挂回来）。
+    _primarySubtitleSelectSeq++;
+    if (_primaryEmbeddedFullLoad != null) {
+      _rebuild(() => _primaryEmbeddedFullLoad = null);
+    }
     final String bookUid = _activeBookUid;
     final int generation = _episodeLoadSeq;
     bool current() =>
@@ -5295,4 +5434,26 @@ class _GraphicOcrConsentGates {
 
   /// 替换 Google Lens 上传披露（`ensureGoogleLensDisclosure`）；false = 未同意。
   final Future<bool> Function() confirmLensUpload;
+}
+
+/// 本地视频内封文本轨正在后台读取完整字幕（整轨抽取）的一份状态：字幕面板顶部据此显示
+/// 「正在读取完整字幕」行与停止按钮（[_VideoSubtitle._cancelEmbeddedTextFullLoad]）。
+///
+/// 只描述「还在读」，不锁任何菜单项——抽取期间主字幕已由播放器解码顶着显示，用户随时
+/// 可以另选；另选时按 [selectSeq] 作废本次结果。
+class _EmbeddedTextFullLoad {
+  const _EmbeddedTextFullLoad({
+    required this.label,
+    required this.videoPath,
+    required this.selectSeq,
+  });
+
+  /// 正在读取的那条轨的菜单标签。
+  final String label;
+
+  /// 读的是哪个视频（换集时据此撤掉）。
+  final String videoPath;
+
+  /// 发起它的那次用户选择的世代；null = 播放器起播后的自动加载。
+  final int? selectSeq;
 }

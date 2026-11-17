@@ -6945,17 +6945,31 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     if (mounted) nav.pop();
   }
 
-  /// 自动加载挑中的内封文本轨要整轨抽取：把它标成当前字幕源——播放器此刻已解码这条轨
-  /// 顶着显示（见 [VideoPlayerController.beginEmbeddedTextBridge]）。
+  /// 自动加载挑中的内封文本轨要整轨抽取：显示「正在读取完整字幕」+ 取消入口，并把它
+  /// 标成当前字幕源（播放器此刻已解码这条轨顶着显示，见
+  /// [VideoPlayerController.beginEmbeddedTextBridge]）。
   void _handleEmbeddedSubtitleAutoLoadPending(SubtitleSource source) {
-    if (!mounted) return;
-    _rebuild(() => _currentSubtitleSource = source.toPersistedValue());
+    final String? videoPath = _currentVideoPath;
+    if (!mounted || videoPath == null) return;
+    _rebuild(() {
+      _primaryEmbeddedFullLoad = _EmbeddedTextFullLoad(
+        label: source.label,
+        videoPath: videoPath,
+        selectSeq: null,
+      );
+      _currentSubtitleSource = source.toPersistedValue();
+    });
   }
 
   void _handleEmbeddedSubtitleAutoLoad(
     DefaultEmbeddedSubtitleLoadResult result,
   ) {
     if (!mounted) return;
+    // 自动加载的读取状态到此结束（用户手选的那份 selectSeq 非 null，不归这里清）。
+    if (_primaryEmbeddedFullLoad?.selectSeq == null &&
+        _primaryEmbeddedFullLoad != null) {
+      _rebuild(() => _primaryEmbeddedFullLoad = null);
+    }
     if (result.status == DefaultEmbeddedSubtitleLoadStatus.loaded) {
       final SubtitleSource? source = result.source;
       if (source != null) {
@@ -12709,6 +12723,18 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 字幕抽取/解析当前是否在进行。状态显示在右侧半透明字幕源面板里，画面仍可见；
   /// 底层 ffmpeg/文件解析 Future 目前没有取消契约，关闭面板只是不再打断观看。
   bool _subtitleLoadingShown = false;
+
+  /// 本地视频内封文本轨正在后台读取完整字幕（整轨抽取，慢盘上一分钟以上）时的状态，
+  /// 主 / 副字幕各一份。它**不锁**字幕菜单（区别于 [_subtitleLoadingShown]）：抽取期间
+  /// 主字幕已由播放器解码顶着显示，用户可以随时取消读取、改选别的轨 / 关字幕 / 选外挂，
+  /// 见 `subtitle.part.dart` 的 [_EmbeddedTextFullLoad]。
+  _EmbeddedTextFullLoad? _primaryEmbeddedFullLoad;
+  _EmbeddedTextFullLoad? _secondaryEmbeddedFullLoad;
+
+  /// 主 / 副字幕「选择」的世代：每次用户选源（含关闭）+1。慢的内封抽取结束时世代变了
+  /// = 期间用户已经另选，结果作废、不覆盖新选择。
+  int _primarySubtitleSelectSeq = 0;
+  int _secondarySubtitleSelectSeq = 0;
 
   /// 正在把图形字幕轨整轨 OCR 成文字字幕（一次只跑一轨）。
   bool _graphicSubtitleOcrRunning = false;

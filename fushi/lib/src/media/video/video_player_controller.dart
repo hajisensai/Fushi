@@ -463,6 +463,11 @@ class VideoPlayerController extends ChangeNotifier
     if (cancel != null && !cancel.isCompleted) cancel.complete();
   }
 
+  /// 用户在字幕面板上取消「读取完整字幕」：撤掉本次 [load] 自动加载对整轨抽取的等待
+  /// （与页面撤掉自己的等待一起，抽取没有别的等待方就被强杀）。已在播放器解码出字的
+  /// 那条轨不受影响（[beginEmbeddedTextBridge]）。
+  void cancelEmbeddedTextAutoLoadExtract() => _cancelEmbeddedTextExtract();
+
   /// 自动加载（[_loadEmbeddedSubtitleIfNeeded]）挑中的内封文本轨缓存未命中、开始整轨
   /// 抽取时回调（播放页据此显示「正在读取完整字幕」+ 取消入口、标记当前字幕源）。
   void Function(SubtitleSource source)? onEmbeddedSubtitleAutoLoadPending;
