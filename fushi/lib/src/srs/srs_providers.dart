@@ -842,9 +842,11 @@ Future<int> _srsMemoByContent(
 
 String _srsContentFingerprint(SrsDbStore store) => store.contentFingerprint;
 
-/// 内容指纹 + RWKV 整表重查键：内容指纹不随复习日志变（本机评分不让角标重扫），但别的设备的复习日志并进来
-/// （同步合并、导入）也不推进它（store/refresh.rs `Counters::content`）。RWKV 键恰好在每次合并别的设备的事件时
-/// 推进、本机评分时不动，拼上它后「只并进来旧复习日志」也会让按日志算的计数重算。
+/// 内容指纹 + RWKV 整表重查键。内容指纹不随本机复习日志变（本机评分不让角标重扫）。协议 3 里别的设备的复习日志
+/// 并进来（同步合并、导入）也不推进它，当时靠拼上 RWKV 键（每次合并别的设备的事件都推进）让「只并进来旧复习日志」
+/// 也重算。新代（协议 4）里收段 / 导入只要落了东西就把刷新键整份作废（内核 `gen4/cmd/sync.rs` `Tally::all()`，
+/// `gen4/refresh.rs` 文件头「谁推进」），内容指纹本身就会推进，RWKV 这一半是冗余的保险，不再是唯一信号
+/// （`srs_limit_unit_legacy_count_test` 断言了这条前提）。
 String _srsContentAndMergeFingerprint(SrsDbStore store) =>
     '${store.contentFingerprint}|${store.rwkvScoresKey}';
 
@@ -875,7 +877,8 @@ final FutureProvider<int> srsLegacyLapisPendingProvider = FutureProvider<int>((
 
 /// 每日上限单位改缺省之前就在用、还没写过单位的牌组数（[SrsDbStore.limitUnitLegacyDecks]，牌组页的一次性提醒）。
 /// 复用上次结果（[_srsMemoByContent]）：它只取决于牌组设置与改缺省之前的复习，本机评分只落今天的日志，不会变；
-/// 改缺省之前的复习只可能随别的设备的事件并进来，所以键是内容指纹 + 合并（[_srsContentAndMergeFingerprint]）。
+/// 改缺省之前的复习只可能随别的设备的事件并进来，所以键要随合并推进（[_srsContentAndMergeFingerprint]；新代里内容指纹
+/// 本身就随收段推进）。
 final FutureProvider<int> srsLimitUnitLegacyCountProvider = FutureProvider<int>(
   (Ref ref) async {
     ref.watch(srsRevisionProvider);

@@ -3,9 +3,11 @@
 //
 // 两份内存库模拟两台设备（同一 profile、不同设备号，所以是同一个集合），经同一个同步位置跑真的同步一轮合并
 // （新代生产路径：收段落进来的操作）。W3 合流时改成了 `.fushisrs` 导入（不是生产上「只同步进来旧日志」的那条路），
-// 这里改回同步一轮（G9-5 续 ⑥）。协议 3 的前提「只并入复习日志不推进内容指纹」在新代不成立：收段之后内容指纹的
-// 修订段会推进（实测 `…:5` → `…:6`），所以不再断言它；回归由结果钉住——合并前算过一次 0 并缓存，合并后必须是 1，
-// 缓存键在这次合并下不变（无论哪一段）就会沿用 0、红。
+// 这里改回同步一轮（G9-5 续 ⑥）。协议 3 的前提「只并入复习日志不推进内容指纹」在新代反过来了：收段只要落了东西，
+// 内核就把刷新键整份作废（`gen4/cmd/sync.rs` `Tally::all()`），内容指纹本身推进，develop 那次修复拼上的 RWKV 键
+// （合并信号）成了冗余的保险。所以这里断言新代的前提「只并进旧复习日志也推进内容指纹」——撤掉合并信号仍然绿是
+// 预期的，那一半由这条前提顶替；内核哪天不再因收段推进内容指纹，这条前提先红。回归本身由结果钉住：合并前算过一次 0
+// 并缓存，合并后必须是 1。
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
@@ -76,7 +78,13 @@ void main() {
     // A 在改缺省之前评了分；这一批只多出这条复习日志。
     clock.advance(const Duration(minutes: 1));
     await a.answer(card, 3);
+    final String beforeMerge = b.contentFingerprint;
     await _ship(location, a, b);
+    expect(
+      b.contentFingerprint,
+      isNot(beforeMerge),
+      reason: '新代前提：只并进复习日志的一轮收段也推进内容指纹（合并信号因此冗余）',
+    );
     expect(await b.limitUnitLegacyDecks(), <String>{b.defaultDeckId});
     expect(await _count(container), 1);
 

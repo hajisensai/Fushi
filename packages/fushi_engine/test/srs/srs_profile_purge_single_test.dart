@@ -132,24 +132,35 @@ void main() {
     expect(await _allCollections(srs.core), 1, reason: '不留第二个集合');
   });
 
-  test('认领与在途写入交错：不管谁先，写下的笔记都在', () async {
-    final SrsDbStore store = await open(uid);
-    _plantCollection(root, _kForeignDir, _kForeignCollection);
-    final Future<String> writing = addNote(store, '在途');
-    final Future<SrsProfileAdoptResult> adopting = linkerFor(
-      () => store,
-    ).adopt(store, _kForeignDir, within: location);
-    final String note = await writing;
-    await adopting;
+  for (final bool writeFirst in <bool>[true, false]) {
+    test('认领与在途写入交错：不管谁先，写下的笔记都在（${writeFirst ? '写入先发' : '认领先发'}）', () async {
+      final SrsDbStore store = await open(uid);
+      _plantCollection(root, _kForeignDir, _kForeignCollection);
+      late final Future<String> writing;
+      late final Future<SrsProfileAdoptResult> adopting;
+      if (writeFirst) {
+        writing = addNote(store, '在途');
+        adopting = linkerFor(
+          () => store,
+        ).adopt(store, _kForeignDir, within: location);
+      } else {
+        adopting = linkerFor(
+          () => store,
+        ).adopt(store, _kForeignDir, within: location);
+        writing = addNote(store, '在途');
+      }
+      final String note = await writing;
+      await adopting;
 
-    expect(store.sync2Collection, _kForeignCollection);
-    expect(
-      (await store.note(
-        note,
-      ))?.field(srsLapisFieldId(store.profileUid, 'Expression')),
-      '在途',
-    );
-  });
+      expect(store.sync2Collection, _kForeignCollection);
+      expect(
+        (await store.note(
+          note,
+        ))?.field(srsLapisFieldId(store.profileUid, 'Expression')),
+        '在途',
+      );
+    });
+  }
 
   test('认领目标已是本机另一个 profile 的集合：拒绝，什么都不动', () async {
     final int now = DateTime.now().millisecondsSinceEpoch;
