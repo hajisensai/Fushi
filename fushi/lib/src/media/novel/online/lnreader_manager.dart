@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
@@ -9,6 +10,7 @@ import 'package:fushi/src/media/novel/online/lnreader_cloudflare.dart';
 import 'package:fushi/src/media/novel/online/lnreader_download_counts.dart';
 import 'package:fushi/src/media/novel/online/lnreader_models.dart';
 import 'package:fushi/src/media/novel/online/lnreader_runtime.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// LNReader 官方插件仓库地址。**不再内置**（2026-10-09 用户口径：「扩展仓库内置
 /// 仓库全部不内置」）——仓库列表与漫画 / 视频一样从空开始，由用户自己添加。
@@ -111,6 +113,17 @@ class LnReaderManager extends ChangeNotifier {
   Future<void>? _initialising;
   bool _disposed = false;
 
+  /// `state.json` 已经成功读进内存。读不出来（IO 失败）时恒 false：内存里的空
+  /// 列表不是真相，任何写盘都会拿它盖掉磁盘上完好的状态。
+  bool _stateLoaded = false;
+  Object? _stateError;
+  StackTrace? _stateErrorStack;
+
+  /// 最近一次读 `state.json` 的失败（null = 已读到，或还没读过）。此时
+  /// [installed] / [stores] 是空的占位而不是真相，所有改动都会被 [ensureReady]
+  /// 拒绝；下一次 [initialise] 重读。
+  Object? get stateError => _stateError;
+
   /// 已登记的仓库。
   List<LnReaderStore> get stores => _stores;
 
@@ -146,11 +159,42 @@ class LnReaderManager extends ChangeNotifier {
       id.replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_').replaceAll('..', '_');
 
   /// 读盘；幂等，页面进来就调。随后后台刷新用户添加的仓库目录。
-  Future<void> initialise() => _initialising ??= _initialise();
+  ///
+  /// **不抛**：页面是 fire-and-forget 调的。读盘失败记在 [stateError] 并写错误
+  /// 日志，状态保持「未加载」，且不缓存这次失败——下一次调用重读（一次瞬时 IO
+  /// 错误不该让本次进程再也进不去）。要「读不到就失败」的调用方用 [ensureReady]。
+  Future<void> initialise() => _initialising ??= _initialiseOnce();
+
+  Future<void> _initialiseOnce() async {
+    try {
+      await _initialise();
+      _stateError = null;
+      _stateErrorStack = null;
+    } on Object catch (error, stack) {
+      _initialising = null;
+      _stateError = error;
+      _stateErrorStack = stack;
+      ErrorLogService.instance.log('LnReaderManager.initialise', error, stack);
+      _notify();
+    }
+  }
+
+  /// 状态已从盘上读到才返回；读不到就把那次读盘错误原样抛给调用方。所有会写
+  /// `state.json` 的入口先过这里：没读到真相就不许写。
+  Future<void> ensureReady() async {
+    if (_stateLoaded) return;
+    await initialise();
+    if (_stateLoaded) return;
+    Error.throwWithStackTrace(
+      _stateError ?? StateError('LNReader state not loaded'),
+      _stateErrorStack ?? StackTrace.current,
+    );
+  }
 
   Future<void> _initialise() async {
     await rootDirectory.create(recursive: true);
-    final Map<String, Object?> state = await _readState();
+    final Map<String, Object?> state = await _readJsonObject(_stateFile);
+    _stateLoaded = true;
     final List<LnReaderStore> stored = <LnReaderStore>[
       if (state['stores'] is List)
         for (final Object? raw in state['stores'] as List)
@@ -181,23 +225,69 @@ class LnReaderManager extends ChangeNotifier {
     if (refreshOnInitialise) unawaited(refreshStores());
   }
 
-  Future<Map<String, Object?>> _readState() async {
+  /// 读一个 JSON 对象文件（`state.json` / 插件存储）。三种结果分开：
+  ///
+  /// - 文件不存在 → 空（全新安装 / 插件没写过存储）；
+  /// - **读不出来**（IO 失败：占用、权限、磁盘错误）→ 抛。文件多半完好，当空
+  ///   起的话下一次写盘就把它盖掉；
+  /// - 读出来但不是 JSON 对象（坏文件）→ 先把原文件改名留底，再按空起。坏文件
+  ///   不该让整个小说源功能进不去，但也不该被静默覆盖。留底失败同样抛。
+  Future<Map<String, Object?>> _readJsonObject(File file) async {
+    if (!await file.exists()) return <String, Object?>{};
+    final Uint8List bytes = await file.readAsBytes();
+    final Object? decoded;
     try {
-      if (!await _stateFile.exists()) return <String, Object?>{};
-      final Object? decoded = jsonDecode(await _stateFile.readAsString());
-      return decoded is Map
-          ? decoded.map(
-              (Object? key, Object? value) =>
-                  MapEntry<String, Object?>(key.toString(), value),
-            )
-          : <String, Object?>{};
-    } on Object {
-      // 坏文件不该让整个小说源功能进不去；按空状态起，下次写盘覆盖。
+      decoded = jsonDecode(utf8.decode(bytes));
+    } on FormatException catch (error, stack) {
+      await _quarantine(file, error, stack);
       return <String, Object?>{};
     }
+    if (decoded is! Map) {
+      await _quarantine(
+        file,
+        FormatException('Not a JSON object', file.path),
+        StackTrace.current,
+      );
+      return <String, Object?>{};
+    }
+    return decoded.map(
+      (Object? key, Object? value) =>
+          MapEntry<String, Object?>(key.toString(), value),
+    );
+  }
+
+  /// 坏文件留底名的前缀：`<原文件名>.corrupt-<时间戳>`。
+  static String _corruptPrefix(File file) =>
+      '${p.basename(file.path)}.corrupt-';
+
+  Future<void> _quarantine(File file, Object error, StackTrace stack) async {
+    final File backup = File(
+      p.join(file.parent.path, '${_corruptPrefix(file)}${_clock()}'),
+    );
+    await file.rename(backup.path);
+    ErrorLogService.instance.log(
+      'LnReaderManager.corruptFile',
+      '${p.basename(file.path)} -> ${p.basename(backup.path)}: $error',
+      stack,
+    );
+  }
+
+  /// [file] 的坏文件留底（[_quarantine] 留下的）。
+  Future<List<File>> _corruptBackups(File file) async {
+    final Directory parent = file.parent;
+    if (!await parent.exists()) return const <File>[];
+    final String prefix = _corruptPrefix(file);
+    return <File>[
+      await for (final FileSystemEntity entity in parent.list())
+        if (entity is File && p.basename(entity.path).startsWith(prefix))
+          entity,
+    ];
   }
 
   Future<void> _writeState() async {
+    if (!_stateLoaded) {
+      throw StateError('LNReader state must be loaded before it is written');
+    }
     await rootDirectory.create(recursive: true);
     await _writeAtomically(
       _stateFile,
@@ -285,6 +375,7 @@ class LnReaderManager extends ChangeNotifier {
   Future<void> addStore(String rawUrl) async {
     final String? url = normaliseStoreUrl(rawUrl);
     if (url == null) throw FormatException('Invalid repository URL', rawUrl);
+    await ensureReady();
     if (_stores.any((LnReaderStore store) => store.indexUrl == url)) return;
     _stores = <LnReaderStore>[
       ..._stores,
@@ -298,6 +389,7 @@ class LnReaderManager extends ChangeNotifier {
   Future<void> editStore(LnReaderStore store, String rawUrl) async {
     final String? url = normaliseStoreUrl(rawUrl);
     if (url == null) throw FormatException('Invalid repository URL', rawUrl);
+    await ensureReady();
     _stores = <LnReaderStore>[
       for (final LnReaderStore existing in _stores)
         if (existing.indexUrl == store.indexUrl)
@@ -311,6 +403,7 @@ class LnReaderManager extends ChangeNotifier {
   }
 
   Future<void> removeStore(LnReaderStore store) async {
+    await ensureReady();
     _stores = <LnReaderStore>[
       for (final LnReaderStore existing in _stores)
         if (existing.indexUrl != store.indexUrl) existing,
@@ -440,6 +533,7 @@ class LnReaderManager extends ChangeNotifier {
 
   /// 安装或更新：下载 JS → 原子落盘 → 登记（保留已有的启停 / 排序 / 置顶）。
   Future<void> install(LnReaderRepoPlugin plugin) async {
+    await ensureReady();
     if (!_busy.add(plugin.id)) return;
     _notify();
     try {
@@ -481,6 +575,7 @@ class LnReaderManager extends ChangeNotifier {
     LnReaderInstalledPlugin plugin, {
     bool clearData = false,
   }) async {
+    await ensureReady();
     _installed = <LnReaderInstalledPlugin>[
       for (final LnReaderInstalledPlugin other in _installed)
         if (other.id != plugin.id) other,
@@ -488,12 +583,9 @@ class LnReaderManager extends ChangeNotifier {
     await _writeState();
     _notify();
     await runtime.forget(plugin.id);
-    for (final File file in <File>[
-      pluginFile(plugin.id),
-      if (clearData) _storageFile(plugin.id),
-    ]) {
-      if (await file.exists()) await file.delete();
-    }
+    final File code = pluginFile(plugin.id);
+    if (await code.exists()) await code.delete();
+    if (clearData) await _deleteStorage(plugin.id);
   }
 
   Future<void> setEnabled(LnReaderInstalledPlugin plugin, bool enabled) =>
@@ -510,6 +602,7 @@ class LnReaderManager extends ChangeNotifier {
 
   /// 与相邻源交换位置（[delta] = -1 上移 / +1 下移）。
   Future<void> move(LnReaderInstalledPlugin plugin, int delta) async {
+    await ensureReady();
     final int index = _installed.indexWhere(
       (LnReaderInstalledPlugin e) => e.id == plugin.id,
     );
@@ -531,6 +624,7 @@ class LnReaderManager extends ChangeNotifier {
   /// 拖拽重排：按 [orderedIds] 的先后重新连续编号 `sortOrder`（置顶组与普通组
   /// 仍按置顶优先排，组内即给出的顺序）；列表里没有的插件按原相对顺序排在后面。
   Future<void> reorder(List<String> orderedIds) async {
+    await ensureReady();
     final Map<String, LnReaderInstalledPlugin> byId =
         <String, LnReaderInstalledPlugin>{
           for (final LnReaderInstalledPlugin plugin in _installed)
@@ -554,15 +648,27 @@ class LnReaderManager extends ChangeNotifier {
 
   /// 清掉插件的 `@libs/storage`（登录态 / 缓存的 token 等），并让运行时重新装载。
   Future<void> clearData(LnReaderInstalledPlugin plugin) async {
-    final File file = _storageFile(plugin.id);
-    if (await file.exists()) await file.delete();
+    await _deleteStorage(plugin.id);
     await runtime.forget(plugin.id);
+  }
+
+  /// 删插件存储，连同坏文件留底一起——留底里是同一份登录态 / token，「清除
+  /// 数据」不能把它剩在盘上。
+  Future<void> _deleteStorage(String pluginId) async {
+    final File file = _storageFile(pluginId);
+    for (final File target in <File>[
+      if (await file.exists()) file,
+      ...await _corruptBackups(file),
+    ]) {
+      await target.delete();
+    }
   }
 
   Future<void> _update(
     String pluginId,
     LnReaderInstalledPlugin Function(LnReaderInstalledPlugin plugin) change,
   ) async {
+    await ensureReady();
     _installed = _sorted(<LnReaderInstalledPlugin>[
       for (final LnReaderInstalledPlugin plugin in _installed)
         if (plugin.id == pluginId) change(plugin) else plugin,
@@ -582,25 +688,11 @@ class LnReaderManager extends ChangeNotifier {
         }
         return (
           code: await file.readAsString(),
-          storage: await _readStorage(plugin.id),
+          // 读不出来就让这次装载失败：带着空存储起插件的话，它第一次
+          // `storage.set` 就把盘上的登录态 / token 整份盖掉。
+          storage: await _readJsonObject(_storageFile(plugin.id)),
         );
       });
-
-  Future<Map<String, Object?>> _readStorage(String pluginId) async {
-    try {
-      final File file = _storageFile(pluginId);
-      if (!await file.exists()) return <String, Object?>{};
-      final Object? decoded = jsonDecode(await file.readAsString());
-      return decoded is Map
-          ? decoded.map(
-              (Object? key, Object? value) =>
-                  MapEntry<String, Object?>(key.toString(), value),
-            )
-          : <String, Object?>{};
-    } on Object {
-      return <String, Object?>{};
-    }
-  }
 
   /// 运行时回调：插件写了 `@libs/storage`。
   Future<void> persistStorage(

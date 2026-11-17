@@ -1,11 +1,65 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/novel/online/lnreader_manager.dart';
 import 'package:fushi/src/media/novel/online/lnreader_models.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 import 'fake_lnreader_runtime.dart';
+
+/// 存在、但读不出来的文件（占用 / 权限 / 磁盘错误）。锁文件、改权限在各平台
+/// 表现不一，所以经 [IOOverrides] 换掉这一个路径的 [File]。
+class _UnreadableFile implements File {
+  _UnreadableFile(this._real);
+
+  final File _real;
+
+  @override
+  String get path => _real.path;
+
+  @override
+  Directory get parent => _real.parent;
+
+  @override
+  Future<bool> exists() => _real.exists();
+
+  @override
+  Future<Uint8List> readAsBytes() async =>
+      throw FileSystemException('Access is denied', path);
+
+  @override
+  Future<String> readAsString({Encoding encoding = utf8}) async =>
+      throw FileSystemException('Access is denied', path);
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => throw UnsupportedError(
+    'unreadable file: ${invocation.memberName} must not be called',
+  );
+}
+
+/// 在 [body] 里，名字以 [suffix] 结尾的文件在 [unreadable] 返回 true 时读不出来。
+Future<T> _withUnreadable<T>(
+  String suffix,
+  bool Function() unreadable,
+  Future<T> Function() body,
+) => IOOverrides.runZoned<Future<T>>(
+  body,
+  createFile: (String path) {
+    final File real = Zone.root.run<File>(() => File(path));
+    return path.endsWith(suffix) && unreadable() ? _UnreadableFile(real) : real;
+  },
+);
+
+const String _installedState =
+    '{"stores":[{"indexUrl":"https://repo.example/plugins.min.json",'
+    '"name":"repo"}],"installed":[{"id":"yomou.syosetu","name":"Syosetu",'
+    '"site":"https://yomou.syosetu.com/","lang":"日本語","version":"1.0.0",'
+    '"url":"","iconUrl":"","storeUrl":"https://repo.example/plugins.min.json",'
+    '"enabled":true,"pinned":false,"sortOrder":0,"installedAt":0}],'
+    '"legacyBuiltinStoreMigrated":true}';
 
 void main() {
   late Directory root;
@@ -390,6 +444,108 @@ void main() {
     await m.initialise();
     expect(m.installed, isEmpty);
     expect(m.stores, isEmpty);
+  });
+
+  group('BUG-4791 读失败不当空', () {
+    test('state.json 读不出来：不进「已加载」、改动被拒、盘上原样；能读了就恢复', () async {
+      final File state = File('${root.path}/state.json');
+      await state.writeAsString(_installedState);
+      bool unreadable = true;
+      await _withUnreadable('state.json', () => unreadable, () async {
+        final LnReaderManager m = manager(FakeLnReaderRuntime());
+        await m.initialise();
+        expect(m.stateError, isA<FileSystemException>());
+        expect(m.installed, isEmpty, reason: '没读到真相，列表只是空占位。');
+        expect(
+          ErrorLogService.instance.entries.map((ErrorLogEntry e) => e.source),
+          contains('LnReaderManager.initialise'),
+        );
+
+        // 修复前：内存里的空状态在这一步整份写回，已装插件与仓库全丢。
+        await expectLater(
+          m.addStore('$base/plugins.min.json'),
+          throwsA(isA<FileSystemException>()),
+        );
+        await expectLater(m.ensureReady(), throwsA(isA<FileSystemException>()));
+        expect(await state.readAsString(), _installedState);
+
+        // 失败不缓存：一次瞬时 IO 错误之后，下一次调用重读。
+        unreadable = false;
+        await m.initialise();
+        expect(m.stateError, isNull);
+        expect(m.installed.single.id, 'yomou.syosetu');
+        expect(
+          m.stores.single.indexUrl,
+          'https://repo.example/plugins.min.json',
+        );
+        await m.setPinned(m.installed.single, true);
+        expect(
+          (jsonDecode(await state.readAsString())
+              as Map<String, Object?>)['installed'],
+          hasLength(1),
+        );
+      });
+    });
+
+    test('state.json 是坏 JSON：按空起，但原文件先改名留底', () async {
+      final File state = File('${root.path}/state.json');
+      for (final String broken in <String>['{"installed":[{"id":"x"', '[]']) {
+        await state.writeAsString(broken);
+        final LnReaderManager m = manager(FakeLnReaderRuntime());
+        await m.initialise();
+        expect(m.stateError, isNull);
+        expect(m.installed, isEmpty);
+        final File backup = File('${root.path}/state.json.corrupt-42');
+        expect(await backup.readAsString(), broken, reason: '原文件留底，不被覆盖。');
+        expect(state.existsSync(), isFalse);
+
+        await m.addStore('$base/plugins.min.json');
+        expect(state.existsSync(), isTrue);
+        expect(await backup.readAsString(), broken);
+        await state.delete();
+        await backup.delete();
+      }
+    });
+
+    test('插件存储读不出来：这次装载失败，插件不会带着空存储起来', () async {
+      final FakeLnReaderRuntime runtime = FakeLnReaderRuntime();
+      final LnReaderManager m = await ready(runtime: runtime);
+      await m.install(m.available.first);
+      await m.persistStorage('yomou.syosetu', <String, Object?>{'token': 'x'});
+      final File storage = File('${root.path}/storage/yomou.syosetu.json');
+
+      await _withUnreadable('yomou.syosetu.json', () => true, () async {
+        await expectLater(
+          m.load(m.installed.single),
+          throwsA(isA<FileSystemException>()),
+        );
+      });
+      expect(runtime.loaded, isEmpty);
+      expect(await storage.readAsString(), '{"token":"x"}');
+
+      await m.load(m.installed.single);
+      expect(runtime.loadedStorage['yomou.syosetu'], <String, Object?>{
+        'token': 'x',
+      });
+    });
+
+    test('插件存储是坏 JSON：留底后按空装载；清除数据连留底一起删', () async {
+      final FakeLnReaderRuntime runtime = FakeLnReaderRuntime();
+      final LnReaderManager m = await ready(runtime: runtime);
+      await m.install(m.available.first);
+      final File storage = File('${root.path}/storage/yomou.syosetu.json');
+      await storage.create(recursive: true);
+      await storage.writeAsString('{"token":"x"');
+      final File backup = File('${storage.path}.corrupt-42');
+
+      await m.load(m.installed.single);
+      expect(runtime.loadedStorage['yomou.syosetu'], isEmpty);
+      expect(await backup.readAsString(), '{"token":"x"');
+
+      await m.clearData(m.installed.single);
+      expect(backup.existsSync(), isFalse, reason: '留底里是同一份登录态。');
+      expect(storage.existsSync(), isFalse);
+    });
   });
 
   test('索引解析：不是数组直接报错（填成仓库主页地址的常见错误）', () {
