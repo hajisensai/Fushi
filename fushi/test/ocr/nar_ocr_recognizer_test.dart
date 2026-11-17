@@ -249,7 +249,7 @@ void main() {
       // 填充色就是图本身的颜色），不是 0。
       final NarInput input = narPreprocess(_solid(100, 30, 40, 80, 120));
       final int cells = input.gridRows * input.gridCols;
-      final double r = (40 / 255.0 - 0.48145466) / 0.26862954;
+      const double r = (40 / 255.0 - 0.48145466) / 0.26862954;
       for (int cell = 0; cell < cells; cell++) {
         expect(
           input.patches[cell * kNarPatchFeatures + kNarPatch * kNarPatch - 1],
