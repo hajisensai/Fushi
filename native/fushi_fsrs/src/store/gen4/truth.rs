@@ -1698,6 +1698,32 @@ impl<'c> Truth<'c> {
             .transpose()
     }
 
+    /// 集合里公钥是 [public] 的已在册设备（除 [except] 外），按设备 ID 升序。同一把签名钥匙 = 同一台设备换过身份
+    /// （迁移换新 ID、换身份都沿用钥匙），首次信任的身份承接（`cmd/sync.rs` `note_new_peer`）用。
+    pub fn peers_with_key(
+        &self,
+        col: i64,
+        public: &[u8; 32],
+        except: &Id,
+    ) -> Result<Vec<Id>, String> {
+        let mut stmt = self
+            .conn
+            .prepare_cached(
+                "SELECT device FROM peers WHERE col = ?1 AND public = ?2 AND device != ?3 ORDER BY device",
+            )
+            .map_err(sql)?;
+        let rows = stmt
+            .query_map(params![col, &public[..], &except.0[..]], |r| {
+                r.get::<_, Vec<u8>>(0)
+            })
+            .map_err(sql)?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(id_of(&row.map_err(sql)?)?);
+        }
+        Ok(out)
+    }
+
     /// 记下一台设备（迁移灌入 `sync2_devices`、收到它的 head）。公钥先到先得（协议 3 `trust_head` 的口径）：已经记过
     /// 另一个公钥 = [PeerPut::KeyMismatch]，什么都不写，由调用方当作冒名处理。同一个公钥：`name` / `ext` 给了就换，
     /// `head_gen` 只升不降，`first_seen` 留第一次的。

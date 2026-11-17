@@ -271,8 +271,13 @@ fn old_key() -> DeviceKey {
 
 /// 协议 3 旧根：设备 OLD 的 [n] 条操作按 [cuts] 切段写在 `v3/devices/<OLD>/`，带它的 head 与旧根 meta。
 fn old_root(loc: &mut Loc, n: u64, cuts: &[(u64, u64)]) {
+    old_root_ops(loc, crate::sync2::segment::tests::ops_for(id(OLD), n), cuts);
+}
+
+/// [old_root]，操作由调用方给（作者必须是 OLD、seq 从 1 连续）。
+fn old_root_ops(loc: &mut Loc, ops: Vec<crate::sync2::op::Op>, cuts: &[(u64, u64)]) {
     let dev = id(OLD);
-    let ops = crate::sync2::segment::tests::ops_for(dev, n);
+    let n = ops.len() as u64;
     let mut chain = CHAIN_ZERO;
     let chains: Vec<_> = ops
         .iter()
@@ -426,6 +431,55 @@ fn takeover_round(d: &Dev, loc: &mut Loc, now: i64) -> (Option<Value>, usize) {
     let up = upload_heritage(d, loc, now);
     round(d, loc, "loc", now + 1, Opts::default());
     (ing, up)
+}
+
+/// 首次信任（G10-4 复核）：捡旧根时第一次见到的协议 3 设备同样过首次信任。本机库有数据时陌生的 OLD 记成待确认，它的
+/// 清除被扣住（`heldPurges`），本机确认之后放行；库里没数据的全新设备捡同一个旧根，OLD 直接可信。
+#[test]
+fn an_unknown_old_root_device_is_pending_on_a_library_with_data() {
+    use crate::sync2::id::Key;
+    use crate::sync2::op::{Body, EntKind, KIND_PURGE};
+    let mut ops = crate::sync2::segment::tests::ops_for(id(OLD), 4);
+    ops[3].kind = KIND_PURGE;
+    ops[3].payload = Body::Purge {
+        kind: EntKind::Note,
+        entity: Key::of("n"),
+    }
+    .encode()
+    .into();
+    let mut loc = Loc::new();
+    old_root_ops(&mut loc, ops, &[(1, 4)]);
+    let mut fresh_loc = loc.clone();
+    let old = id(OLD).text();
+
+    let mut a = Dev::new("g104ora");
+    a.write(T1 + 1, N1, "鯨");
+    let (ing, _) = takeover_round(&a, &mut loc, T1 + 10);
+    let ing = ing.expect("a scans the old root");
+    assert_eq!(ing["errors"], json!([]), "{ing}");
+    assert_eq!(a.trust_state(&old), Some(TRUST_PENDING));
+    let row = status_row(&a, &old);
+    assert_eq!(row["trust"], json!("pending"), "{row}");
+    assert_eq!(row["heldPurges"], json!(1), "{row}");
+    let (v, _) = cmd(
+        a.h,
+        "trust",
+        T1 + 11,
+        json!({"device": old, "trust": true}),
+        &[],
+    );
+    assert_eq!(v["trusted"], json!(true), "{v}");
+    assert_eq!(a.trust_state(&old), None);
+
+    let mut c = Dev::new("g104orc");
+    round(&c, &mut fresh_loc, "loc", T1 + 20, Opts::default());
+    let (_, ing) = take_old_root(&c, &fresh_loc, T1 + 20);
+    assert_eq!(ing.expect("c scans")["errors"], json!([]));
+    assert_eq!(
+        c.trust_state(&old),
+        None,
+        "a library without data trusts the old device it meets first"
+    );
 }
 
 /// 旧根接手（硬条件）：协议 3 位置上有旧设备 OLD 的历史；两台各自升级的设备 A、B 各自捡旧根、各自承袭上传（B 看见 A

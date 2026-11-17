@@ -1301,6 +1301,25 @@ mod tests {
         assert_eq!(state(&conn, &t, col), state(&conn2, &t2, col2));
     }
 
+    /// 「库里有没有用户数据」（首次信任的判据，`cmd/reads.rs` `collection_has_user_data`）把还停在等待缓冲里的操作
+    /// 算作「有」：它们已经收下、只是还没投递（协议 3 BUG-4478 同类缺口）。
+    #[test]
+    fn ops_still_waiting_count_as_user_data() {
+        let conn = open_in_memory().unwrap();
+        let t = Truth::new(&conn);
+        let col = setup(&t);
+        let has = |t: &Truth<'_>| {
+            t.tx(|t| crate::store::gen4::cmd::reads::collection_has_user_data(t, col))
+                .unwrap()
+        };
+        assert!(!has(&t), "a fresh collection");
+        let w = world();
+        let (_, rec) = take(&t, col, Settle::Incremental, &[&w[2], &w[1]], None);
+        assert_eq!((rec.waiting, rec.delivered), (4, 0));
+        assert_eq!(t.tx(|t| t.audit(col)), Ok(0), "nothing landed yet");
+        assert!(has(&t), "ops waiting in the buffer are user data");
+    }
+
     /// 作者的日志与本机记的分叉：在末尾处比出来，之后的不落；段整个在本机日志里面时在段尾比。
     #[test]
     fn a_divergent_author_log_is_reported_and_nothing_after_it_lands() {

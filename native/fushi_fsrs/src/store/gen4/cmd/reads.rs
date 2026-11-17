@@ -512,6 +512,7 @@ impl<'t, 'c> Reads<'t, 'c> {
     /// - 不可信作者的删除 / 清除（[crate::store::gen4::weigh::S_DISTRUSTED]）算：协议 3 把它们放在投影外的扣住表里、不算；这里有意更保守——它们是
     ///   真实存在、等用户确认信任的操作，判成「有」只会让关联走并入而不是改用，不会丢任何东西。唯一结论不同的情形是
     ///   「除内置实体外只有一条不可信设备的删除」。
+    /// - 已收下、还停在缓冲里的操作（`op_wait` / `op_pending`，[Reads::has_buffered]）算：内容未知，只往「有」偏。
     ///
     /// 代价：身份记录逐行看、碰到第一个非内置的类就停（[Reads::each_class]），之后三个 `EXISTS` 各自碰到第一行就停。
     fn has_user_data(&mut self, req: &Value) -> Result<bool, String> {
@@ -550,7 +551,42 @@ impl<'t, 'c> Reads<'t, 'c> {
         if q.scalar(self.t)? != 0 {
             return Ok(true);
         }
+        if self.has_buffered()? {
+            return Ok(true);
+        }
         Ok(!self.unknown_ops(Some(1))?.is_empty())
+    }
+
+    /// 集合里有没有已收下、还停在缓冲里的操作（依赖不齐 / 前面缺着的原生操作 `op_wait`，待投递的承袭槽 `op_pending`）。
+    /// 它们还不在派生索引里，但已经是这个库要应用的数据：[Reads::has_user_data] 把它们算作「有」（只往「有」那边偏；
+    /// 协议 3 BUG-4478 同类缺口：先做完收段通道再判空）。每台设备的主键区间各碰到第一行就停。
+    fn has_buffered(&self) -> Result<bool, String> {
+        let devs: Vec<i64> = self
+            .t
+            .conn()
+            .prepare_cached("SELECT dev FROM devs WHERE col = ?1 ORDER BY dev")
+            .map_err(sql)?
+            .query_map([self.col], |r| r.get(0))
+            .map_err(sql)?
+            .collect::<Result<_, _>>()
+            .map_err(sql)?;
+        for dev in devs {
+            let (lo, hi) = k_range(dev);
+            let any: bool = self
+                .t
+                .conn()
+                .prepare_cached(
+                    "SELECT EXISTS (SELECT 1 FROM op_wait WHERE k BETWEEN ?1 AND ?2) \
+                     OR EXISTS (SELECT 1 FROM op_pending WHERE k BETWEEN ?1 AND ?2)",
+                )
+                .map_err(sql)?
+                .query_row(params![lo, hi], |r| r.get(0))
+                .map_err(sql)?;
+            if any {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 
     /// 集合里 `LegacyUnknown` 操作的原文（[limit] 条为止），按操作主键。

@@ -202,11 +202,17 @@ pub fn oldroot_ingest(
             head_gen: None,
             first_seen: Some(now),
         };
-        if t.set_peer(col, &peer)? == PeerPut::KeyMismatch {
-            errors.push(format!(
+        match t.set_peer(col, &peer)? {
+            PeerPut::KeyMismatch => errors.push(format!(
                 "v3 head of {}: signed by another key than the one on record (impostor)",
                 h.device
-            ));
+            )),
+            // 位置谁都能写：第一次见到的协议 3 设备同样过首次信任（陌生设备在有数据的库里待确认，同钥匙的承接前身），
+            // 不因为是旧根就免判——这里是本机直接读它的段，不是新代设备上传的承袭段（D20 管不到）。
+            PeerPut::Inserted => {
+                super::sync::note_new_peer(t, col, &h.device, &h.public, None, h.at_ms)?
+            }
+            PeerPut::Updated | PeerPut::Same => {}
         }
     }
     // 收尾批：落库之前按同一份清单重算待读列表（`Receiver::finish_oldroot` 要求这一批正好是它）。

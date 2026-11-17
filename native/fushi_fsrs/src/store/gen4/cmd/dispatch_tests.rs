@@ -218,8 +218,14 @@ pub(super) fn migrated_prepared(conflict: bool, prep: &dyn Fn(&Device)) -> Migra
         }
     }
     drop(b);
-    // 协议 3 一侧：按同一份配置把欠着的收尾做完、缓存整份重建（同 `writes_tests.rs` 的 `W::new`），并注册缓存配置
-    // （协议 3 的统计 / 浏览读它）。
+    let dir = migrate_legacy(&d, "s1g4");
+    let h = open(&dir.0, 0).unwrap_or_else(|(rc, e)| panic!("{rc} {e}"));
+    Migrated { d, h, dir }
+}
+
+/// 协议 3 设备 [d] 的库：把欠着的收尾做完、缓存整份重建（同 `writes_tests.rs` 的 `W::new`），注册缓存配置（协议 3 的
+/// 统计 / 浏览读它），再把副本放进新目录（[tag]）迁移。回迁移好的目录（[d] 自己不动）。
+pub(super) fn migrate_legacy(d: &Device, tag: &str) -> tempdir::Dir {
     {
         let w = d.core.writer().unwrap();
         crate::store::sync2::transport::replay_pending(
@@ -231,11 +237,10 @@ pub(super) fn migrated_prepared(conflict: bool, prep: &dyn Fn(&Device)) -> Migra
         let parsed = crate::store::caches::CacheConfig::parse(&cfg()).unwrap();
         crate::store::caches::rebuild(&w, P, &parsed).unwrap();
     }
-    p3(&d, "cache_config_set", T0, json!({}), None);
-    let dir = legacy_copy(&d, "s1g4");
+    p3(d, "cache_config_set", T0, json!({}), None);
+    let dir = legacy_copy(d, tag);
     migrate(&dir.0);
-    let h = open(&dir.0, 0).unwrap_or_else(|(rc, e)| panic!("{rc} {e}"));
-    Migrated { d, h, dir }
+    dir
 }
 
 fn study_req(now: i64, extra: Value) -> Value {

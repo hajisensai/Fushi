@@ -693,18 +693,55 @@ pub(crate) const LOC_STATE_SQL: &str =
 
 // ---------------------------------------------------------------------- 2. 读 head、定要拉的段
 
-/// 第一次见到 [device]（[plan] 里 `Truth::set_peer` 刚记下它的公钥）：本机集合里已经有用户自己的数据就记成**待确认**
-/// （设备信任的「首次信任」，协议 3 `store/sync2/trust.rs` `note_new_device`、BUG-4306；设计 §4.2「设备信任纯本机（首次
-/// 信任 + 待确认）」不变的机制）。待确认设备的删除与彻底清除照常进真相层，由派生层按信任扣住（`weigh.rs`
-/// `distrusted`），本机确认（`trust`）后放行。库里还没有用户数据（全新设备第一次同步、服务端刚开始提供）时认识的设备
-/// 直接可信：没有可丢的东西，扣住只会把整个库的删除都拦下。
+/// 第一次见到 [device]（[plan] 里 `Truth::set_peer` 刚记下它的公钥 [public]；[prev] 是它 head 自报的前一个身份）时
+/// 定它的信任（设备信任的「首次信任」，协议 3 `store/sync2/trust.rs` `note_new_device`、BUG-4306；设计 §4.2「设备信任
+/// 纯本机（首次信任 + 待确认）」不变的机制）：
 ///
-/// 位置上的 head 谁都能写，所以「第一次见到」只在这里判：迁移带来的（`carry.rs`）、导入时随备份记的（`import.rs`）
-/// 公钥不经这里，沿用各自的口径。旧根上的协议 3 设备（`sync_oldroot.rs`）同样不经这里：它们的承袭段按上传者的信任收
-/// （D20），上传者就是在这里被判定的那台设备。
-pub(crate) fn note_new_peer(t: &Truth<'_>, col: i64, device: &Id, now: i64) -> Result<(), String> {
-    if super::reads::collection_has_user_data(t, col)? {
-        t.set_trust(col, device, Some(TRUST_PENDING), now)?;
+/// 1. **身份承接**：签名钥匙是本机自己的（本机换身份之前的旧身份、协议 3 时期的旧设备），或与已在册的设备相同（迁移
+///    换新设备 ID、换身份都沿用钥匙，设计 §3.3）——同一把钥匙签的 head 就是同一台设备，新 ID 沿用前身的信任，不当作
+///    第一次见到。几台在册设备都用这把钥匙时：自报的 `prev` 在其中就取它的；否则取其中最不受信的（只往待确认那边偏）。
+///    只认钥匙、不单凭自报的 `prev`：`prev` 谁都能写，钥匙要签名才有（head 的签名在解码时验过）。
+/// 2. **陌生设备**：本机集合里已经有用户自己的数据就记成**待确认**；库里还没有用户数据（全新设备第一次同步、服务端
+///    刚开始提供）时认识的设备直接可信：没有可丢的东西，扣住只会把整个库的删除都拦下。
+///
+/// 待确认 / 拒绝设备的删除与彻底清除照常进真相层，由派生层按信任扣住（`weigh.rs` `distrusted`），本机确认（`trust`）
+/// 后放行。`since`（同步页的「首次出现」）取 head 的写出时刻 [seen_at]，与协议 3 `note_new_device` 同口径。
+///
+/// 位置上的 head 谁都能写，所以「第一次见到」在收 head 的两处判：这里（协议 4 head）与旧根上的协议 3 head
+/// （`sync_oldroot.rs` `oldroot_ingest`）。迁移带来的（`carry.rs`）、导入时随备份记的（`import.rs`）公钥不经这里，
+/// 沿用各自的口径（协议 3 的信任表随之带过去）。
+pub(crate) fn note_new_peer(
+    t: &Truth<'_>,
+    col: i64,
+    device: &Id,
+    public: &[u8; 32],
+    prev: Option<&Id>,
+    seen_at: i64,
+) -> Result<(), String> {
+    if t.self_identity(col)?
+        .is_some_and(|me| me.public() == *public)
+    {
+        return Ok(());
+    }
+    let same_key = t.peers_with_key(col, public, device)?;
+    let state = if !same_key.is_empty() {
+        match prev.filter(|p| same_key.contains(p)) {
+            Some(p) => t.trust_of(col, p)?,
+            None => {
+                let mut worst: Option<i64> = None;
+                for d in &same_key {
+                    worst = worst.max(t.trust_of(col, d)?);
+                }
+                worst
+            }
+        }
+    } else if super::reads::collection_has_user_data(t, col)? {
+        Some(TRUST_PENDING)
+    } else {
+        None
+    };
+    if state.is_some() {
+        t.set_trust(col, device, state, seen_at)?;
     }
     Ok(())
 }
@@ -818,7 +855,14 @@ pub fn plan(t: &Truth<'_>, col: i64, req: &Value, heads: &[Vec<u8>]) -> Result<V
                 ));
                 continue;
             }
-            PeerPut::Inserted => note_new_peer(t, col, &h.device, now)?,
+            PeerPut::Inserted => note_new_peer(
+                t,
+                col,
+                &h.device,
+                &h.public,
+                h.prev.as_ref().map(|p| &p.device),
+                h.at_ms,
+            )?,
             PeerPut::Updated | PeerPut::Same => {}
         }
         // 转发用：记下这台设备最新的 head（只进不退）。
