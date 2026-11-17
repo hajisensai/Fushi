@@ -121,7 +121,7 @@ void main() {
         reason: '解析不到句子必须提示，不得静默无反应',
       );
 
-      // 查词状态只有一个写点 `_applyLookupStateFromSelectionData`（BUG-4792），
+      // 查词状态只有一个写点 `_applyLookupStateFromSelectionData`（BUG-4799），
       // cue 解析在它里面；拖选 / 原生选区经 `_fillLookupStateFromSelectionData`、
       // tap 查词直接调它。
       final String apply = slice(

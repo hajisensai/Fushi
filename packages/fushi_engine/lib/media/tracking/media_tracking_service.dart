@@ -2185,9 +2185,10 @@ class MediaTrackingService {
   /// Returns whether this progress is **settled**: at least one site's queue
   /// holds it, and nothing is left that a later call with the same progress
   /// could still do — no site is waiting for a link (a title search that
-  /// failed or found nothing is retried after [_autoMappingMissRetry]) and no
-  /// enqueue failed. `false` means "call again": a caller that de-duplicates
-  /// (the reader) must not count such a call as reported.
+  /// failed or found nothing is retried after [_autoMappingMissRetry]; see
+  /// [_hasOpenBookLink]) and no enqueue failed. `false` means "call again": a
+  /// caller that de-duplicates (the reader) must not count such a call as
+  /// reported.
   Future<bool> recordBookProgress({
     required String bookKey,
     required int completedChapterCount,
@@ -2217,7 +2218,11 @@ class MediaTrackingService {
     // Bangumi's title search ran (or sits in its miss window) without a link.
     final bool bangumiLinkOpen =
         bangumiAutoMaps && bangumiMapping == null && isConfigured;
-    final bool settled = sent.queued > 0 && !sent.open && !bangumiLinkOpen;
+    final bool settled =
+        sent.queued > 0 &&
+        !sent.open &&
+        !bangumiLinkOpen &&
+        !await _hasOpenBookLink(bookKey);
     // Linking can wait minutes for the search budget, and the reader awaits
     // this call on its exit path: it runs in the background, then sends to
     // the sites it linked.
@@ -2255,9 +2260,8 @@ class MediaTrackingService {
   /// ([onlyProviders] limits it to those).
   ///
   /// `queued` counts the sites whose queue now holds this progress. `open` is
-  /// true when a later call could still do more: a site that links books by
-  /// itself has no link yet, Bangumi's chapter companion could not be built,
-  /// or an enqueue failed.
+  /// true when a later call could still do more for a site that has a link:
+  /// Bangumi's chapter companion could not be built, or an enqueue failed.
   Future<({int queued, bool open})> _sendBookProgress({
     required String bookKey,
     required int completedChapterCount,
@@ -2281,17 +2285,7 @@ class MediaTrackingService {
               mediaKey: bookKey,
               provider: provider.id,
             );
-      if (mapping == null) {
-        // [_linkBook] may still link this site (now, or once its miss window
-        // has passed). Bangumi's own matching is judged by the caller.
-        if (!isBangumi &&
-            provider is TrackingBookLinker &&
-            _isActive(provider)) {
-          open = true;
-        }
-        continue;
-      }
-      if (!_acceptsMapping(provider, mapping)) continue;
+      if (mapping == null || !_acceptsMapping(provider, mapping)) continue;
       final TrackingProgressMode? progressMode = TrackingProgressMode.tryParse(
         mapping.progressMode,
       );
@@ -2364,13 +2358,7 @@ class MediaTrackingService {
   /// link for it yet (Bangumi keeps its own matching). Returns the providers
   /// that got a new link. One run per book at a time.
   Future<Set<String>> _linkBook(String bookKey) {
-    final List<TrackingProvider> linkers = <TrackingProvider>[
-      for (final TrackingProvider provider in _registry.all)
-        if (provider.id != kTrackingProviderBangumi &&
-            provider is TrackingBookLinker &&
-            _isActive(provider))
-          provider,
-    ];
+    final List<TrackingProvider> linkers = _bookLinkers();
     if (linkers.isEmpty) return Future<Set<String>>.value(const <String>{});
     final ({int generation, Future<Set<String>> future})? running =
         _bookLinkInFlight[bookKey];
@@ -2398,16 +2386,28 @@ class MediaTrackingService {
     return future;
   }
 
-  Future<Set<String>> _runBookLink(
-    String bookKey,
-    List<TrackingProvider> linkers,
-  ) async {
-    if (await _isIgnored(TrackingMediaType.book, bookKey)) {
-      return const <String>{};
-    }
-    final EpubBookRow? book = await _repository.loadBook(bookKey);
-    if (book == null) return const <String>{};
-    final TrackingKind kind = await _bookKindOf(book);
+  /// The active sites other than Bangumi that link books by themselves.
+  List<TrackingProvider> _bookLinkers() => <TrackingProvider>[
+    for (final TrackingProvider provider in _registry.all)
+      if (provider.id != kTrackingProviderBangumi &&
+          provider is TrackingBookLinker &&
+          _isActive(provider))
+        provider,
+  ];
+
+  /// The [linkers] a linking run would search for [book]: they track its
+  /// [kind], have no link for it, and the item is not left to the user there.
+  /// [skipRecentMisses] leaves out the sites inside their miss window (what a
+  /// run started now would search); without it the list is every site that
+  /// is still to be linked, now or once its window has passed. Empty for a
+  /// private item (never searched for).
+  Future<List<TrackingProvider>> _linkersWithoutLink(
+    EpubBookRow book,
+    TrackingKind kind,
+    List<TrackingProvider> linkers, {
+    required bool skipRecentMisses,
+  }) async {
+    final String bookKey = book.bookKey;
     final int now = DateTime.now().millisecondsSinceEpoch;
     final List<TrackingProvider> missing = <TrackingProvider>[];
     for (final TrackingProvider provider in linkers) {
@@ -2415,10 +2415,12 @@ class MediaTrackingService {
           !isKindEnabled(provider.id, kind)) {
         continue;
       }
-      final int? missedAt = _bookLinkMissAt['${provider.id}:$bookKey'];
-      if (missedAt != null &&
-          now - missedAt < _autoMappingMissRetry.inMilliseconds) {
-        continue;
+      if (skipRecentMisses) {
+        final int? missedAt = _bookLinkMissAt['${provider.id}:$bookKey'];
+        if (missedAt != null &&
+            now - missedAt < _autoMappingMissRetry.inMilliseconds) {
+          continue;
+        }
       }
       final MediaTrackingMappingRow? existing = await _repository.findMapping(
         mediaType: TrackingMediaType.book,
@@ -2437,15 +2439,53 @@ class MediaTrackingService {
       }
       missing.add(provider);
     }
-    if (missing.isEmpty) return const <String>{};
+    if (missing.isEmpty) return missing;
     // A private item is never searched for and gets no new links.
     if (isTrackedMediaPrivate(
       await _repository.loadPrivacy(),
       TrackingMediaType.book.value,
       bookKey,
     )) {
+      return const <TrackingProvider>[];
+    }
+    return missing;
+  }
+
+  /// Whether some site may still link [bookKey] by itself — in the run
+  /// [recordBookProgress] just started, or in a later one after a miss. The
+  /// progress is not settled until then: the run sends to the sites it links,
+  /// but a search that failed or found nothing leaves the site for the next
+  /// call.
+  Future<bool> _hasOpenBookLink(String bookKey) async {
+    final List<TrackingProvider> linkers = _bookLinkers();
+    if (linkers.isEmpty) return false;
+    final EpubBookRow? book = await _repository.loadBook(bookKey);
+    if (book == null) return false;
+    return (await _linkersWithoutLink(
+      book,
+      await _bookKindOf(book),
+      linkers,
+      skipRecentMisses: false,
+    )).isNotEmpty;
+  }
+
+  Future<Set<String>> _runBookLink(
+    String bookKey,
+    List<TrackingProvider> linkers,
+  ) async {
+    if (await _isIgnored(TrackingMediaType.book, bookKey)) {
       return const <String>{};
     }
+    final EpubBookRow? book = await _repository.loadBook(bookKey);
+    if (book == null) return const <String>{};
+    final TrackingKind kind = await _bookKindOf(book);
+    final List<TrackingProvider> missing = await _linkersWithoutLink(
+      book,
+      kind,
+      linkers,
+      skipRecentMisses: true,
+    );
+    if (missing.isEmpty) return const <String>{};
     // The default site links first, so the others can link from its id.
     missing.sort(
       (TrackingProvider a, TrackingProvider b) =>

@@ -2396,7 +2396,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   int _lastSavedSection = -1;
   double _lastSavedProgress = -1;
 
-  /// BUG-4791：追踪进度上报口。只发起、不让位置落库（返回键等的那条链）等它，
+  /// BUG-4798：追踪进度上报口。只发起、不让位置落库（返回键等的那条链）等它，
   /// 同一份「完成章数 + 是否读完」只报一次；判据与失败处理见类文档。
   final ReaderTrackingProgressReporter _trackingProgressReporter =
       ReaderTrackingProgressReporter(
@@ -3943,7 +3943,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     // 退出的 `onSourcePagePop` 仍然探针 + await，异常拆栈时 WebView 本就在拆，
     // 探不到实时锚是 [ExitFlushRegistry] 一贯认下的降级（至多丢最后一窗滚动）。
     // 学习段不用在这里再 flush：上面的 detach 已把它攒进同一个汇合点。
-    // 同一笔里接着把在途的追踪上报等完（BUG-4791，见 [_flushPositionAndTrackingReport]）。
+    // 同一笔里接着把在途的追踪上报等完（BUG-4798，见 [_flushPositionAndTrackingReport]）。
     ExitFlushRegistry.instance.defer(_flushPositionAndTrackingReport);
     // TODO-702：有声书退出即停（默认）/ 后台续播（可选）。
     // 两种情况都先 detachReader——卸下本 reader 的 WebView 侧回调（跨章/边界跳句

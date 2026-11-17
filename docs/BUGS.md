@@ -33,16 +33,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4148 条。点号进各自文件。
+> 共 4155 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4792](bugs/BUG-4792-reader-tap-lookup-selection-state-after-await.md) | ✅ | ✅ | 点词查词的选区范围 / 章号写在 await 查词之后，查词在飞时是新旧混合态，连点两词会留下与弹窗不符的范围 |
-| [BUG-4791](bugs/BUG-4791-reader-exit-awaits-tracking-report.md) | ✅ | ✅ | 阅读器关书（返回键）等着追踪上报，未映射的书会等一次站点搜索 |
-> 共 4153 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4799](bugs/BUG-4799-reader-tap-lookup-selection-state-after-await.md) | ✅ | ✅ | 点词查词的选区范围 / 章号写在 await 查词之后，查词在飞时是新旧混合态，连点两词会留下与弹窗不符的范围 |
+| [BUG-4798](bugs/BUG-4798-reader-exit-awaits-tracking-report.md) | ✅ | ✅ | 阅读器关书（返回键）等着追踪上报，未映射的书会等一次站点搜索 |
 | [BUG-4797](bugs/BUG-4797-feedback-files-share-video-ip-quota.md) | 🚧 | 🚧 | 样本文件与录屏共用每 IP 每天 200 MiB 额度，满额样本文件仍会被 429 挤掉 |
 | [BUG-4796](bugs/BUG-4796-disc-back-double-press-repeat-topmenu.md) | ✅ | ✅ | 原盘正片快速连按两次返回会重复发 topMenu，第二次失败会整盘退出 |
 | [BUG-4795](bugs/BUG-4795-disc-back-to-menu-transient-error-exits.md) | ✅ | ✅ | 原盘正片按返回回盘菜单时，任何暂时性错误都会让整个原盘会话退出 |

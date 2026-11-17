@@ -1091,7 +1091,7 @@ void main() {
     expect(api.searches, isNotEmpty, reason: '对照：公开书照常自动映射搜索');
   });
 
-  group('recordBookProgress 的返回值 = 这份进度是否落定（BUG-4791）', () {
+  group('recordBookProgress 的返回值 = 这份进度是否落定（BUG-4798）', () {
     Future<void> seedNovel() => db.insertEpubBook(
       EpubBooksCompanion.insert(
         bookKey: 'novel-key',
@@ -1139,7 +1139,8 @@ void main() {
 
       // 已在队列里的进度再报一次：没有新东西入队，仍算落定。
       expect(await record(), isTrue);
-      expect(await repository.pendingCount(), 1);
+      // 入队会起一轮后台同步：等它跑完再让 tearDown 关库。
+      await service.syncNow();
     });
 
     test('搜索没有唯一高置信结果：没落定', () async {
@@ -1164,6 +1165,7 @@ void main() {
       ];
       expect(await record(), isTrue);
       expect(await repository.pendingCount(), 1);
+      await service.syncNow();
     });
 
     test('追踪关着：不算落定', () async {

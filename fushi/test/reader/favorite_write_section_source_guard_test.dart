@@ -107,7 +107,7 @@ void main() {
       reason: '歌词 cue 路径要写 section 快照',
     );
     // 主 onTextSelected 路径经共用写点 `_applyLookupStateFromSelectionData`
-    // （chrome.part，下面那条断言钉的就是它）写快照，不再自己抄一份（BUG-4792）。
+    // （chrome.part，下面那条断言钉的就是它）写快照，不再自己抄一份（BUG-4799）。
     expect(
       lookup,
       contains('_applyLookupStateFromSelectionData(data);'),

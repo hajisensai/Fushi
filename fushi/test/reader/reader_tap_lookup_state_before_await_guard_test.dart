@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import '../helpers/source_guard.dart';
 
-/// BUG-4792：点词查词的选区状态（选区 / 句子范围、音频坐标选区、所属章号）原先写在
+/// BUG-4799：点词查词的选区状态（选区 / 句子范围、音频坐标选区、所属章号）原先写在
 /// `await _runLookupAndHighlight` 之后，而 currentSentence / 句偏移 / cue 写在之前。
 ///
 /// - 查词在飞时这组字段是「新句子 + 新 cue + 旧选区范围」的混合态；
