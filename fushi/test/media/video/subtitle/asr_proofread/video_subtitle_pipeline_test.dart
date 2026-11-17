@@ -460,6 +460,86 @@ void main() {
     );
   });
 
+  test('原盘成员：默认落点在任务根的 disc_out 下，按成员分目录，不写进盘里', () async {
+    // 蓝光的「媒体旁」是 BDMV/PLAYLIST：挂载的 ISO / 光驱写不进，写得进也是污染盘结构。
+    final Directory disc = Directory(p.join(tmp.path, 'DiscA'));
+    final Directory playlist = Directory(p.join(disc.path, 'BDMV', 'PLAYLIST'))
+      ..createSync(recursive: true);
+    Directory(p.join(disc.path, 'BDMV', 'STREAM')).createSync();
+    final String mpls = p.join(playlist.path, '00001.mpls');
+    File(mpls).writeAsBytesSync(List<int>.filled(8, 1));
+    List<String> discFiles() => <String>[
+      for (final FileSystemEntity e in disc.listSync(recursive: true)) e.path,
+    ]..sort();
+    final List<String> before = discFiles();
+
+    final VideoSubtitlePipeline pl = VideoSubtitlePipeline(
+      recognizer: _FakeRecognizer(<String, List<SubtitleDraftCue>>{
+        '00001.mpls': _lines(<String>['結衣が来た', 'こんにちは', 'ありがとう', 'またね']),
+      }),
+      jobsRoot: jobs,
+      styleReference: null,
+      evidence: null,
+      probeDurationMs: duration,
+    );
+    final VideoSubtitlePipelineResult r = await pl.run(
+      videoPaths: <String>[mpls],
+      work: work,
+    );
+    final String expected = p.join(
+      jobs.path,
+      'disc_out',
+      videoSubtitleJobId(mpls),
+      '00001.ja.srt',
+    );
+    expect(r.episodes.single.status, VideoSubtitleEpisodeStatus.exported);
+    expect(r.episodes.single.outputPath, expected);
+    expect(File(expected).existsSync(), isTrue);
+    expect(pl.subtitlePathFor(mpls), expected);
+    expect(discFiles(), before, reason: '盘目录里不能多出任何文件');
+
+    // 别的盘上同名 title、蓝光虚拟分集、DVD title 各进各的目录；普通文件仍在媒体旁。
+    final String otherDisc = p.join(
+      tmp.path,
+      'DiscB',
+      'BDMV',
+      'PLAYLIST',
+      '00001.mpls',
+    );
+    final String episode = p.join(playlist.path, '00001.p02.mpls');
+    final String dvd = p.join(
+      tmp.path,
+      'DiscC',
+      'VIDEO_TS',
+      'TITLE_01.dvdtitle',
+    );
+    final Set<String> dirs = <String>{
+      p.dirname(expected),
+      for (final String member in <String>[otherDisc, episode, dvd])
+        videoSubtitleDiscExportDir(jobs, member)!.path,
+    };
+    expect(dirs, hasLength(4));
+    for (final String dir in dirs) {
+      expect(p.isWithin(p.join(jobs.path, 'disc_out'), dir), isTrue);
+    }
+    expect(videoSubtitleDiscExportDir(jobs, video('ep01.mkv')), isNull);
+    expect(videoSubtitleDefaultExportDir(jobs, video('ep01.mkv')), videos.path);
+
+    // 显式给了导出目录（CLI --out-dir / host 上传任务）照旧写那里。
+    final Directory out = Directory(p.join(tmp.path, 'out'));
+    expect(
+      VideoSubtitlePipeline(
+        recognizer: _FakeRecognizer(drafts),
+        jobsRoot: jobs,
+        styleReference: null,
+        evidence: null,
+        exportDir: out,
+        probeDurationMs: duration,
+      ).subtitlePathFor(mpls),
+      p.join(out.path, '00001.ja.srt'),
+    );
+  });
+
   test('已取消：抛 SubtitlePipelineCancelled，不识别', () async {
     final SubtitleCancelSource cancel = SubtitleCancelSource()..cancel();
     final _FakeRecognizer rec = _FakeRecognizer(drafts);

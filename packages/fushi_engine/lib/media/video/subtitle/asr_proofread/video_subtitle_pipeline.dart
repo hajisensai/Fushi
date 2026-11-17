@@ -238,6 +238,28 @@ class VideoSubtitleAiConfig {
 Directory videoSubtitleJobsRootUnder(Directory supportRoot) =>
     Directory(p.join(supportRoot.path, 'asr_jobs', 'video_subtitles'));
 
+/// 原盘成员（蓝光整卷 / 分集 `.mpls`、DVD title）的默认字幕导出目录：
+/// `<任务根>/disc_out/<videoSubtitleJobId(成员路径)>`。不是原盘成员返回 null。
+///
+/// 原盘的「媒体旁」是盘结构内部（`BDMV/PLAYLIST`）：挂载的 ISO、光驱、只读共享根本
+/// 写不进去，写得进也是往盘结构里塞文件；那里也不是播放页找字幕的地方（原盘会话的
+/// 外挂字幕靠库里登记的 `subtitleSource` 列出）。所以产物一律落在 app 自有目录，按成员
+/// 身份分目录（各盘同名 `00001.mpls` 很常见，同一目录会互相判成「已有同名字幕」）。
+/// app 本机、app / 服务端当 host、服务端 `subgen` 都经 [VideoSubtitlePipeline] 的默认
+/// 落点走这一处。
+Directory? videoSubtitleDiscExportDir(Directory jobsRoot, String mediaPath) =>
+    isDiscMemberPath(mediaPath)
+    ? Directory(
+        p.join(jobsRoot.path, 'disc_out', videoSubtitleJobId(mediaPath)),
+      )
+    : null;
+
+/// 没有指定导出目录时 [mediaPath] 的字幕落在哪：原盘成员 →
+/// [videoSubtitleDiscExportDir]，其余 → 媒体旁。
+String videoSubtitleDefaultExportDir(Directory jobsRoot, String mediaPath) =>
+    videoSubtitleDiscExportDir(jobsRoot, mediaPath)?.path ??
+    p.dirname(mediaPath);
+
 /// 日语任务目录名：`sha1(视频文件名 + '|' + 身份)`。其它语言用
 /// [videoSubtitleJobIdFor]。
 ///
@@ -380,11 +402,12 @@ class VideoSubtitlePipeline {
   /// 输出文件后缀：`<视频名>.<后缀>.srt`；默认 [VideoSubtitleLanguage.tag]。
   final String subtitleSuffix;
 
-  /// 字幕写到哪个目录；null = 视频旁（播放页的 sidecar 探测直接加载）。给了就全部
-  /// 写进这个目录（CLI `--out-dir`：不碰视频目录），已有字幕的判定也看这个目录。
+  /// 字幕写到哪个目录；null = 默认落点（[videoSubtitleDefaultExportDir]：视频旁，播放页
+  /// 的 sidecar 探测直接加载；原盘成员落到任务根下的 `disc_out`）。给了就全部写进这个
+  /// 目录（CLI `--out-dir`：不碰视频目录），已有字幕的判定也看这个目录。
   final Directory? exportDir;
 
-  /// 按媒体路径给导出目录（优先于 [exportDir]；返回 null = 回落 [exportDir] / 媒体旁）。
+  /// 按媒体路径给导出目录（优先于 [exportDir]；返回 null = 回落 [exportDir] / 默认落点）。
   /// 音乐库用它把每个音频的字幕放进应用自有的独立目录：曲库里大量同名 `01.flac`
   /// 写进同一个 [exportDir] 会互相判成「已有同名字幕（非本管线）」。
   final Directory? Function(String mediaPath)? exportDirFor;
@@ -392,7 +415,7 @@ class VideoSubtitlePipeline {
   String _exportDirOf(String mediaPath) =>
       exportDirFor?.call(mediaPath)?.path ??
       exportDir?.path ??
-      p.dirname(mediaPath);
+      videoSubtitleDefaultExportDir(jobsRoot, mediaPath);
 
   /// 样式参考（同一视频已有的 ASS，通常是别的语言）：找得到参考时，SRT 之外再按
   /// 参考的样式 / 位置导出一份 `<视频名>.<后缀>.ass`。生产默认

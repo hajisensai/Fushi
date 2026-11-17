@@ -61,6 +61,8 @@ import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_work_co
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_pipeline.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_recognizer.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_recognizer_factory.dart';
+import 'package:fushi_engine/media/video/video_member_file.dart'
+    show hasLocalMediaFile;
 import 'package:fushi_engine/sync/host_jobs/host_job_runner.dart';
 import 'package:path/path.dart' as p;
 
@@ -662,8 +664,10 @@ class VideoSubtitleHostJobRunner implements HostJobRunner {
         );
       }
       final List<String> videos = <String>[
+        // 蓝光分集是虚拟路径（背后是整卷 `.mpls`）：按「本机能不能读到媒体」判，
+        // 不按「路径本身是不是文件」（video_member_file.dart 第 2 种问法）。
         for (final String v in await loader.collectionVideoPaths(collectionId))
-          if (File(v).existsSync()) v,
+          if (await hasLocalMediaFile(v)) v,
       ];
       return _Target(videos: videos, work: work, wholeSeason: true);
     }
@@ -712,7 +716,7 @@ class VideoSubtitleHostJobRunner implements HostJobRunner {
     String? title, {
     required bool useFolder,
   }) {
-    final String folder = p.dirname(videoPath);
+    final String folder = subtitleWorkFolderOf(videoPath);
     final String name =
         title ??
         (useFolder

@@ -211,7 +211,7 @@ void main() {
     expect(updates, <String>['c1', 'c2']);
 
     // 产物在 <out>/<任务键>/image.ja.srt，音频目录里没有新文件。
-    final String srt = svc.subtitlePathFor(target, image);
+    final String srt = await svc.subtitlePathFor(target, image);
     expect(p.isWithin(out.path, srt), isTrue);
     expect(File(srt).existsSync(), isTrue);
     expect(
@@ -356,7 +356,7 @@ void main() {
     expect(job.registeredBookUids, <String>[uid]);
     expect(staged.existsSync(), isFalse, reason: '副本只是转写输入，登记完删掉');
     expect(
-      p.isWithin(out.path, svc.subtitlePathFor(target, staged.path)),
+      p.isWithin(out.path, await svc.subtitlePathFor(target, staged.path)),
       isTrue,
     );
 

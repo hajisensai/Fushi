@@ -11,6 +11,8 @@ import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/ai_text_completer.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_glossary.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_language.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_work_context_loader.dart'
+    show fallbackSubtitleWorkKey;
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_pipeline.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_recognizer_factory.dart';
 import 'package:path/path.dart' as p;
@@ -58,6 +60,21 @@ void main() {
     completerFactory: (AiProviderConfig _) =>
         (completer: completer, close: () {}),
   );
+
+  /// 一张蓝光盘的目录结构（盘根 / BDMV / PLAYLIST 下一条真实的 `.mpls`）。返回 `.mpls`。
+  String blurayTitle(String discName, [String playlist = '00001.mpls']) {
+    final String root = p.join(tmp.path, 'discs', discName);
+    Directory(p.join(root, 'BDMV', 'STREAM')).createSync(recursive: true);
+    final File f = File(p.join(root, 'BDMV', 'PLAYLIST', playlist))
+      ..createSync(recursive: true)
+      ..writeAsBytesSync(List<int>.filled(32, 7));
+    return f.path;
+  }
+
+  List<String> filesUnder(String dir) => <String>[
+    for (final FileSystemEntity e in Directory(dir).listSync(recursive: true))
+      e.path,
+  ]..sort();
 
   String video(String name) {
     final File f = File(p.join(tmp.path, 'videos', name))
@@ -235,9 +252,116 @@ void main() {
       );
       expect(only.videoPaths, <String>[ep2]);
     });
+
+    test('蓝光 title：整卷与分集 .mpls 都是一集并登记库条目，作品按盘根兜底', () async {
+      final String mpls = blurayTitle('Show Vol.1');
+      final String discRoot = p.join(tmp.path, 'discs', 'Show Vol.1');
+      // 按集展开的虚拟分集：磁盘上没有这个文件，背后是整卷 00001.mpls。
+      final String episode = p.join(p.dirname(mpls), '00001.p02.mpls');
+      final String gone = p.join(
+        tmp.path,
+        'discs',
+        'Gone',
+        'BDMV',
+        'PLAYLIST',
+        '00001.mpls',
+      );
+      await addBook('bd', mpls);
+      await addBook('bd-ep2', episode);
+      await addBook('bd-gone', gone);
+      final AppVideoSubtitleService service = buildService();
+
+      final AppVideoSubtitleTarget whole = await service.resolveBook('bd');
+      expect(whole.videoPaths, <String>[mpls]);
+      expect(whole.unavailable, isEmpty);
+      expect(whole.episodes.single.registersSubtitleSource, isTrue);
+      expect(
+        whole.work.workKey,
+        fallbackSubtitleWorkKey(folderPath: discRoot, title: 'bd'),
+        reason: '没刮削的盘按盘根兜底作品身份，不按每张盘都同名的 BDMV/PLAYLIST',
+      );
+
+      final AppVideoSubtitleTarget split = await service.resolveBook('bd-ep2');
+      expect(split.videoPaths, <String>[episode]);
+      expect(split.episodes.single.registersSubtitleSource, isTrue);
+
+      final int collection = await addCollection(<String>[
+        'bd',
+        'bd-ep2',
+        'bd-gone',
+      ]);
+      final AppVideoSubtitleTarget season = await service.resolveCollection(
+        collection,
+      );
+      expect(season.videoPaths, <String>[mpls, episode]);
+      expect(
+        season.unavailable.map((AppVideoSubtitleUnavailable u) => u.reason),
+        <AppVideoSubtitleUnavailableReason>[
+          AppVideoSubtitleUnavailableReason.missingFile,
+        ],
+      );
+
+      // 播放页当前 title（库里有这一行）走库解析；没入库的 `.mpls` 按文件解析，作品名
+      // 取盘根目录名。
+      final AppVideoSubtitleTarget playing = await service.resolvePlaying(
+        'bd',
+        videoPath: mpls,
+        title: 'ignored',
+      );
+      expect(playing.bookUid, 'bd');
+      expect(playing.episodes.single.registersSubtitleSource, isTrue);
+      final String loose = blurayTitle('Loose Disc', '00800.mpls');
+      final AppVideoSubtitleTarget file = await service.resolveFile(
+        loose,
+        title: '00800',
+      );
+      expect(file.videoPaths, <String>[loose]);
+      expect(file.work.title, 'Loose Disc');
+    });
   });
 
   group('任务', () {
+    test('蓝光 title：产物落在任务根的 disc_out，登记到这一行，盘里不多任何文件', () async {
+      final String mpls = blurayTitle('Show Vol.1');
+      final String discRoot = p.join(tmp.path, 'discs', 'Show Vol.1');
+      await addBook('bd', mpls, subtitleSource: 'embedded:3');
+      final List<String> before = filesUnder(discRoot);
+      final AppVideoSubtitleService service = buildService();
+      // 原盘会话里播放页给的就是当前 title 的 `.mpls`（视频页单集入口）。
+      final AppVideoSubtitleTarget target = await service.resolvePlaying(
+        'bd',
+        videoPath: mpls,
+        title: 'ignored',
+      );
+      final AppVideoSubtitleJob job = service.start(
+        target,
+        const AppVideoSubtitleOptions(),
+      );
+      await job.done;
+
+      expect(
+        job.status,
+        AppVideoSubtitleJobStatus.succeeded,
+        reason: '${job.errorMessage}',
+      );
+      final String expected = p.join(
+        jobs.path,
+        'disc_out',
+        videoSubtitleJobId(mpls),
+        '00001.ja.srt',
+      );
+      final VideoSubtitleEpisodeResult result = job.result!.episodes.single;
+      expect(result.exported, isTrue);
+      expect(result.outputPath, expected);
+      expect(File(expected).existsSync(), isTrue);
+      expect(await service.subtitlePathFor(target, mpls), expected);
+      expect(filesUnder(discRoot), before, reason: '盘结构里不能写字幕');
+      // 登记进这个 title 行（替换原盘内嵌轨的旧选择）：重进这张盘时字幕菜单按库里的
+      // subtitleSource 把它列成候选。
+      expect((await db.getVideoBookByBookUid('bd'))!.subtitleSource, expected);
+      expect(job.registeredBookUids, <String>['bd']);
+    });
+
     test('开了 AI 校对却没指派提供商：拒绝，一个请求都不发', () async {
       await addBook('a', video('ep01.mkv'));
       final AppVideoSubtitleService service = buildService();

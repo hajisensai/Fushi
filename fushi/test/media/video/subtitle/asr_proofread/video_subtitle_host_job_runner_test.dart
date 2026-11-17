@@ -294,6 +294,40 @@ void main() {
     expect(ctx.output('Show 01.ja.srt').existsSync(), isTrue);
   });
 
+  test('库里的蓝光 title：字幕不写进盘里，落在管线任务根的 disc_out 并拷进产物', () async {
+    final Directory disc = Directory(p.join(tmp.path, 'lib', 'Show Disc 1'));
+    final Directory playlist = Directory(p.join(disc.path, 'BDMV', 'PLAYLIST'))
+      ..createSync(recursive: true);
+    Directory(p.join(disc.path, 'BDMV', 'STREAM')).createSync();
+    final File mpls = File(p.join(playlist.path, '00001.mpls'))
+      ..writeAsBytesSync(<int>[1, 2, 3]);
+    final (HostJobContext ctx, _) = context(const <String, Object?>{
+      'proofread': false,
+      'videoId': 'v1',
+    });
+    final HostJobOutcome outcome = await runner(
+      resolveVideo: (String id, {int episodeIndex = 0}) async =>
+          id == 'v1' ? mpls.path : null,
+    ).run(ctx);
+    expect(
+      playlist.listSync().map((FileSystemEntity e) => p.basename(e.path)),
+      <String>['00001.mpls'],
+      reason: '盘结构里不能多出字幕',
+    );
+    final File written = File(
+      p.join(
+        videoSubtitleDiscExportDir(
+          Directory(p.join(tmp.path, 'pipeline')),
+          mpls.path,
+        )!.path,
+        '00001.ja.srt',
+      ),
+    );
+    expect(written.existsSync(), isTrue);
+    expect(outcome.outputs, contains('00001.ja.srt'));
+    expect(ctx.output('00001.ja.srt').existsSync(), isTrue);
+  });
+
   test('播放列表第 N 集：集下标交给 resolveVideoPath，字幕写在那一集旁', () async {
     final Directory lib = Directory(p.join(tmp.path, 'lib', 'Show'))
       ..createSync(recursive: true);
