@@ -213,16 +213,15 @@ abstract final class AudiobookStorage {
     final bool transcode = flacTranscodedExtensions.contains(
       p.extension(src.path).toLowerCase(),
     );
-    final String baseName = transcode
-        ? '${p.basenameWithoutExtension(src.path)}.flac'
-        : p.basename(src.path);
-    final String dest = _freeDestIn(persistDir, baseName);
+    final String dest = _freeDestIn(persistDir, _persistedBaseName(src.path));
     final int totalBytes = await src.length();
     if (transcode) return _transcodeToFlac(src, dest, totalBytes, onProgress);
 
     // 逐块 `await` 写：打不开落点 / 写到一半磁盘满都在这一句上直接抛给调用方。
     // `IOSink` 的写错误走的是 `done`，`add` 不报、`flush` 在落点打不开时不返回（macOS 实测）
     // （BUG-4791：拷贝失败必须以异常收场，调用方才撤得回去）。
+    // 末尾不调 `RandomAccessFile.flush()`：它是 fsync / FlushFileBuffers，每个文件
+    // 强制落盘一次；写错误已由每一块的 `await` 抛出，下面还有长度校验。
     RandomAccessFile? out;
     bool complete = false;
     try {
@@ -233,7 +232,6 @@ abstract final class AudiobookStorage {
         copied += chunk.length;
         onProgress?.call(copied, totalBytes);
       }
-      await out.flush();
       complete = true;
     } finally {
       try {
@@ -260,6 +258,12 @@ abstract final class AudiobookStorage {
     );
     return dest;
   }
+
+  /// [srcPath] 落进持久目录时用的文件名：AIFF 转码成 `<stem>.flac`，其余原名。
+  static String _persistedBaseName(String srcPath) =>
+      flacTranscodedExtensions.contains(p.extension(srcPath).toLowerCase())
+      ? '${p.basenameWithoutExtension(srcPath)}.flac'
+      : p.basename(srcPath);
 
   /// [persistFileWithProgress] 的 AIFF 分支：编码成 [dest]（FLAC）。进度按源文件
   /// 字节报（编码前 0、完成后满），与复制分支的累计口径一致。
@@ -397,10 +401,11 @@ abstract final class AudiobookStorage {
   ///
   /// 整组替换是**全有或全无**的（BUG-4791）。顺序固定为：
   ///   1. 新文件先全部拷进 `<persistDir>/.incoming/`（旧文件原样不动）；
-  ///   2. 被换下的旧音频挪进 `<persistDir>/.retired/`（同卷 rename，不删）；
+  ///   2. 被换下的旧音频挪进本次的回收批次 `<persistDir>/.retired/<n>/`（同卷
+  ///      rename，不删）；
   ///   3. 新文件从暂存挪到正式名字（旧文件已让出名字，不会被挤成 `<stem> _1`）；
   ///   4. 跑 [commit]——调用方的写库；
-  ///   5. 删掉 `.retired/`。
+  ///   5. 给回收批次落「已提交」标记，再删掉 `.retired/`。
   /// 1～4 任何一步抛错都原路撤回：新文件删掉、旧文件挪回原名，目录与调用前一致，
   /// 库也还没动（[commit] 自己要么全写要么不写——调用方包事务）。旧实现是「先删旧
   /// 再逐个拷」，拷到一半失败（磁盘满 / 源盘掉线 / AIFF 转码失败）时旧音频已经
@@ -410,8 +415,11 @@ abstract final class AudiobookStorage {
   /// 就是在写库**之后**才真正删除的；不给则 3 之后直接进 5（调用方随后自己写库，
   /// 写库失败时旧音频已经没了——新建一本书、目录本来就是空的调用方才可以不给）。
   ///
-  /// 上一次同步在 2～5 之间被杀进程时留下的 `.incoming/` / `.retired/` 在下一次
-  /// 同步开头收拾：暂存的新文件丢弃，被挪走的旧文件名字还空着的挪回原处。
+  /// 进程在 2～5 之间被杀时留下的目录在下一次同步开头收拾，判据是批次里有没有
+  /// 「已提交」标记，而不是原名是否空着：没有标记 = 库还是换之前的样子，批次里的
+  /// 旧文件挪回原名，占着原名的（同名替换时已落位、但从未写进库的新文件）丢弃；
+  /// 有标记 = 库已指向新文件，批次只是没删干净的垃圾。收拾的每一步各自尽力，
+  /// 删不掉 / 挪不回只记日志，不拦这一次同步。
   ///
   /// [copy] 为 false 时是引用导入（仅桌面）：不拷贝，直接返回原始绝对路径，持久
   /// 目录里的旧副本照样走 2 / 4 / 5（写库之后才删）。
@@ -453,6 +461,7 @@ abstract final class AudiobookStorage {
     final List<String> promoted = <String>[];
     final List<({String from, String to})> retiredMoves =
         <({String from, String to})>[];
+    Directory? batch;
     final List<String> persisted;
     try {
       // 1. 新文件进暂存目录。
@@ -478,19 +487,20 @@ abstract final class AudiobookStorage {
         }
       }
 
-      // 2. 被换下的旧音频让出名字（不删）。
+      // 2. 被换下的旧音频让出名字（不删），进本次自己的回收批次。
       if (persistDir.existsSync()) {
         for (final FileSystemEntity f in persistDir.listSync()) {
           if (f is! File || !isAudioFile(f.path)) continue;
           if (keep.contains(p.canonicalize(f.path))) continue;
-          await retired.create(recursive: true);
-          final String to = _freeDestIn(retired, p.basename(f.path));
+          final Directory into = batch ??= await _newRetiredBatch(retired);
+          final String to = p.join(into.path, p.basename(f.path));
           await f.rename(to);
           retiredMoves.add((from: f.path, to: to));
         }
       }
 
-      // 3. 新文件落到正式名字。
+      // 3. 新文件落到正式名字。名字按源文件算，不按暂存里的名字：暂存目录里有上
+      // 一次没删掉的同名残留时，暂存名会带序号，正式名不该跟着带。
       final List<String> landed = <String>[];
       for (int i = 0; i < sources.length; i++) {
         final String? stagedPath = staged[i];
@@ -498,7 +508,10 @@ abstract final class AudiobookStorage {
           landed.add(sources[i]);
           continue;
         }
-        final String dest = _freeDestIn(persistDir, p.basename(stagedPath));
+        final String dest = _freeDestIn(
+          persistDir,
+          _persistedBaseName(sources[i]),
+        );
         await File(stagedPath).rename(dest);
         promoted.add(dest);
         landed.add(dest);
@@ -513,12 +526,15 @@ abstract final class AudiobookStorage {
         retiredMoves: retiredMoves,
         incoming: incoming,
         retired: retired,
+        batch: batch,
       );
       rethrow;
     }
 
-    // 5. 库已指向新文件：旧的、以及空掉的暂存目录可以删了。删不掉只记日志——
-    // 换音频已经成立，留一个下次同步会收拾的目录不该让它报失败。
+    // 5. 库已指向新文件：回收目录里的东西（本次的批次，以及更早没挪回去的批次）
+    // 从此都是垃圾。先落标记再删——删到一半被杀 / 删不掉时，下一次同步靠标记知道
+    // 不能把它们挪回去。删不掉只记日志：换音频已经成立，不该让它报失败。
+    _markRetiredCommitted(retired);
     await _deleteSwapDir(incoming);
     await _deleteSwapDir(retired);
     return persisted;
@@ -527,12 +543,57 @@ abstract final class AudiobookStorage {
   /// [syncAudioFiles] 的暂存目录名（各书持久目录下）：拷贝中的新音频。
   static const String incomingDirName = '.incoming';
 
-  /// [syncAudioFiles] 的回收目录名（各书持久目录下）：已让出名字、等写库后删除的
-  /// 旧音频。
+  /// [syncAudioFiles] 的回收目录名（各书持久目录下）。里面按次分批（`1`、`2`…）：
+  /// 已让出名字、等写库后删除的旧音频。
   static const String retiredDirName = '.retired';
+
+  /// 回收批次里的「已提交」标记文件名：有它 = 那次换音频的写库已经成立。
+  static const String retiredCommittedMarker = '.committed';
 
   static bool _isInside(Directory dir, String path) =>
       p.isWithin(p.canonicalize(dir.path), p.canonicalize(path));
+
+  /// [retired] 下现有的回收批次，新的在前（批次名是递增序号）。
+  static List<Directory> _retiredBatches(Directory retired) {
+    if (!retired.existsSync()) return <Directory>[];
+    final List<({int n, Directory dir})> batches = <({int n, Directory dir})>[
+      for (final FileSystemEntity e in retired.listSync())
+        if (e is Directory && int.tryParse(p.basename(e.path)) != null)
+          (n: int.parse(p.basename(e.path)), dir: e),
+    ];
+    batches.sort(
+      (({int n, Directory dir}) a, ({int n, Directory dir}) b) =>
+          b.n.compareTo(a.n),
+    );
+    return <Directory>[for (final ({int n, Directory dir}) b in batches) b.dir];
+  }
+
+  /// 给这一次同步开一个新的回收批次：序号比现有的都大。没删干净的旧批次（带标记
+  /// 的垃圾、或没挪回去的旧文件）各在各的目录里，不与本次的文件混在一起。
+  static Future<Directory> _newRetiredBatch(Directory retired) async {
+    final List<Directory> existing = _retiredBatches(retired);
+    final int next = existing.isEmpty
+        ? 1
+        : int.parse(p.basename(existing.first.path)) + 1;
+    final Directory batch = Directory(p.join(retired.path, '$next'));
+    await batch.create(recursive: true);
+    return batch;
+  }
+
+  /// 写库成立之后给 [retired] 下每个批次落「已提交」标记。落不下只记日志（随后
+  /// 的删除照常进行；标记没落下、目录又没删掉时，下一次同步会把这批旧文件当成
+  /// 未提交的挪回去——两步都失败才会出现）。
+  static void _markRetiredCommitted(Directory retired) {
+    for (final Directory batch in _retiredBatches(retired)) {
+      try {
+        File(p.join(batch.path, retiredCommittedMarker)).writeAsStringSync('');
+      } catch (e) {
+        fushiDebugPrint(
+          '[fushi-import] swap cleanup: mark ${batch.path} failed: $e',
+        );
+      }
+    }
+  }
 
   /// 撤回一次没走完的 [syncAudioFiles]：删掉已落到正式名字的新文件，把挪走的旧
   /// 文件挪回原名，丢掉暂存目录。每一步各自尽力：撤回途中再出错只记日志，抛给
@@ -542,6 +603,7 @@ abstract final class AudiobookStorage {
     required List<({String from, String to})> retiredMoves,
     required Directory incoming,
     required Directory retired,
+    required Directory? batch,
   }) async {
     for (final String path in promoted) {
       try {
@@ -561,34 +623,61 @@ abstract final class AudiobookStorage {
       }
     }
     await _deleteSwapDir(incoming);
-    // 旧文件都挪回去了才删回收目录；有挪不回去的就留着，下一次同步开头再试。
-    if (retired.existsSync() && retired.listSync().isEmpty) {
-      await _deleteSwapDir(retired);
-    }
+    // 旧文件都挪回去了才删批次；有挪不回去的就留着（没有标记），下一次同步开头再试。
+    if (batch != null) await _deleteSwapDirIfEmpty(batch);
+    await _deleteSwapDirIfEmpty(retired);
   }
 
-  /// 上一次 [syncAudioFiles] 中途被杀进程留下的暂存 / 回收目录：暂存的新文件从未
-  /// 写进库，丢弃；回收目录里的旧文件，原名还空着的挪回去（库多半还指着它），
-  /// 原名已被占的（新文件已落位）丢弃。
+  /// 上一次 [syncAudioFiles] 留下的暂存 / 回收目录。暂存的新文件从未写进库，丢弃。
+  /// 回收批次按标记分两种：
+  ///   - 带「已提交」标记：库已指向新文件，整批删掉；
+  ///   - 不带：那次同步死在写库成立之前，库还指着旧文件——把它们挪回原名，占着
+  ///     原名的是同名替换里已落位、但从未写进库的新文件，先丢弃。
+  /// 新批次先处理、老批次后处理：老批次里是更早就没能挪回去的旧文件，同名时以它
+  /// 为准（两次之间库没有成功换过，否则它早被打上标记）。
+  ///
+  /// 每一步各自尽力，失败只记日志：这里抛错会让这本书在文件占用解除之前既换不了
+  /// 音频也换不了字幕。留下的批次不影响本次同步的正确性——本次用自己的新批次，
+  /// 写库成立后所有批次一起打标记。
   static Future<void> _recoverInterruptedSwap(
     Directory persistDir,
     Directory incoming,
     Directory retired,
   ) async {
-    if (incoming.existsSync()) await incoming.delete(recursive: true);
-    if (!retired.existsSync()) return;
-    for (final FileSystemEntity f in retired.listSync()) {
-      if (f is! File) continue;
-      final String home = p.join(persistDir.path, p.basename(f.path));
-      if (File(home).existsSync()) continue;
-      await f.rename(home);
+    await _deleteSwapDir(incoming);
+    for (final Directory batch in _retiredBatches(retired)) {
+      if (File(p.join(batch.path, retiredCommittedMarker)).existsSync()) {
+        await _deleteSwapDir(batch);
+        continue;
+      }
+      for (final FileSystemEntity f in batch.listSync()) {
+        if (f is! File) continue;
+        final File home = File(p.join(persistDir.path, p.basename(f.path)));
+        try {
+          if (home.existsSync()) await home.delete();
+          await f.rename(home.path);
+        } catch (e) {
+          fushiDebugPrint(
+            '[fushi-import] swap recovery: restore ${home.path} failed: $e',
+          );
+        }
+      }
+      await _deleteSwapDirIfEmpty(batch);
     }
-    await retired.delete(recursive: true);
+    await _deleteSwapDirIfEmpty(retired);
   }
 
   static Future<void> _deleteSwapDir(Directory dir) async {
     try {
       if (dir.existsSync()) await dir.delete(recursive: true);
+    } catch (e) {
+      fushiDebugPrint('[fushi-import] swap cleanup: ${dir.path} failed: $e');
+    }
+  }
+
+  static Future<void> _deleteSwapDirIfEmpty(Directory dir) async {
+    try {
+      if (dir.existsSync() && dir.listSync().isEmpty) await dir.delete();
     } catch (e) {
       fushiDebugPrint('[fushi-import] swap cleanup: ${dir.path} failed: $e');
     }

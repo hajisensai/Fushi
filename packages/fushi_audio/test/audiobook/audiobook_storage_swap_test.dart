@@ -43,6 +43,11 @@ void main() {
             .readAsStringSync(),
   };
 
+  /// 持久目录下第 [n] 个回收批次（被杀进程的残留现场用）。
+  Directory retiredBatch(Directory dir, int n) =>
+      Directory(p.join(dir.path, AudiobookStorage.retiredDirName, '$n'))
+        ..createSync(recursive: true);
+
   /// 让第二个文件的「拷贝」失败：AIFF 走转码器，转码器抛错。
   void failTranscode() {
     AudiobookStorage.flacTranscoder = (String src, String dest) async {
@@ -146,7 +151,7 @@ void main() {
     expect(handed, got);
     expect(duringCommit, <String, String>{
       'new.mp3': 'NEW',
-      '${AudiobookStorage.retiredDirName}/old.mp3': 'OLD',
+      '${AudiobookStorage.retiredDirName}/1/old.mp3': 'OLD',
     });
     expect(snapshot(dir), <String, String>{'new.mp3': 'NEW'});
   });
@@ -215,10 +220,8 @@ void main() {
       <String>[source('01.mp3', 'OLD-1').path, source('02.mp3', 'OLD-2').path],
     );
     // 进程死在「旧文件已挪走、新文件还没落位」：01 在回收目录，暂存里有半份新的。
-    final Directory retired = Directory(
-      p.join(dir.path, AudiobookStorage.retiredDirName),
-    )..createSync();
-    File(first[0]).renameSync(p.join(retired.path, '01.mp3'));
+    final Directory batch = retiredBatch(dir, 1);
+    File(first[0]).renameSync(p.join(batch.path, '01.mp3'));
     Directory(p.join(dir.path, AudiobookStorage.incomingDirName)).createSync();
     File(
       p.join(dir.path, AudiobookStorage.incomingDirName, 'new.mp3'),
@@ -236,6 +239,157 @@ void main() {
       '02.mp3': 'OLD-2',
     });
   });
+
+  test('a same-named swap killed before its commit gives the name back to '
+      'the old file', () async {
+    final Directory dir = persistDir();
+    final List<String> first = await AudiobookStorage.syncAudioFiles(
+      dir,
+      <String>[source('01.mp3', 'OLD-1').path, source('02.mp3', 'OLD-2').path],
+    );
+    // 进程死在「新 01 已落到正式名字」之后、写库成立之前：旧 01 在回收批次里，
+    // 没有已提交标记；库还是旧的 cue / 对齐 / 进度。
+    final Directory batch = retiredBatch(dir, 1);
+    File(first[0]).renameSync(p.join(batch.path, '01.mp3'));
+    File(first[0]).writeAsStringSync('NEW-1-NEVER-COMMITTED');
+
+    final List<String> again = await AudiobookStorage.syncAudioFiles(
+      dir,
+      first,
+    );
+
+    expect(again, first);
+    expect(snapshot(dir), <String, String>{
+      '01.mp3': 'OLD-1',
+      '02.mp3': 'OLD-2',
+    }, reason: '库指着的是旧音频：未提交的同名新文件不能顶替它');
+  });
+
+  test('a swap killed after its commit keeps the new file and drops the '
+      'retired one', () async {
+    final Directory dir = persistDir();
+    final List<String> current = await AudiobookStorage.syncAudioFiles(
+      dir,
+      <String>[source('01.mp3', 'NEW').path],
+    );
+    // 进程死在「写库已成立、标记已落」之后、删回收目录之前。
+    final Directory batch = retiredBatch(dir, 1);
+    File(p.join(batch.path, '01.mp3')).writeAsStringSync('OLD');
+    File(
+      p.join(batch.path, AudiobookStorage.retiredCommittedMarker),
+    ).writeAsStringSync('');
+
+    final List<String> again = await AudiobookStorage.syncAudioFiles(
+      dir,
+      current,
+    );
+
+    expect(again, current);
+    expect(snapshot(dir), <String, String>{'01.mp3': 'NEW'});
+  });
+
+  test('a successful swap marks its retired batch committed before '
+      'deleting it', () async {
+    final Directory dir = persistDir();
+    await AudiobookStorage.syncAudioFiles(dir, <String>[
+      source('01.mp3', 'OLD').path,
+    ]);
+    // 更早一次没走完、旧文件也没能挪回去的批次：这次写库成立后它同样作废。
+    final Directory stale = retiredBatch(dir, 3);
+    File(p.join(stale.path, 'ghost.mp3')).writeAsStringSync('GHOST');
+    // 让收拾阶段挪不回 ghost.mp3：原名被一个同名目录占着。
+    Directory(p.join(dir.path, 'ghost.mp3')).createSync();
+
+    Map<String, String>? duringCommit;
+    await AudiobookStorage.syncAudioFiles(
+      dir,
+      <String>[source('01.mp3', 'NEW', dir: 'src2').path],
+      commit: (List<String> persisted) async {
+        duringCommit = snapshot(dir);
+      },
+    );
+
+    expect(duringCommit, <String, String>{
+      '01.mp3': 'NEW',
+      '${AudiobookStorage.retiredDirName}/3/ghost.mp3': 'GHOST',
+      '${AudiobookStorage.retiredDirName}/4/01.mp3': 'OLD',
+    }, reason: '写库成立之前不落已提交标记；本次用自己的新批次');
+    expect(snapshot(dir), <String, String>{'01.mp3': 'NEW'});
+  });
+
+  group('held-open files (Windows sharing semantics)', () {
+    test('an old file that cannot be moved aside aborts the swap and puts '
+        'the others back', () async {
+      final Directory dir = persistDir();
+      final List<String> first =
+          await AudiobookStorage.syncAudioFiles(dir, <String>[
+            source('01.mp3', 'OLD-1').path,
+            source('02.mp3', 'OLD-2').path,
+            source('03.mp3', 'OLD-3').path,
+          ]);
+      final Map<String, String> before = snapshot(dir);
+      // 播放器还开着 02.mp3。
+      final RandomAccessFile held = File(first[1]).openSync();
+      try {
+        await expectLater(
+          AudiobookStorage.syncAudioFiles(dir, <String>[
+            source('new.mp3', 'NEW').path,
+          ]),
+          throwsA(isA<FileSystemException>()),
+        );
+        expect(snapshot(dir), before);
+      } finally {
+        held.closeSync();
+      }
+    });
+
+    test('leftovers that cannot be deleted do not block the next '
+        'sync', () async {
+      final Directory dir = persistDir();
+      await AudiobookStorage.syncAudioFiles(dir, <String>[
+        source('01.mp3', 'CURRENT').path,
+      ]);
+      // 上一次换音频已成立，但回收批次里的旧文件、暂存里的同名残留都还被占着。
+      final Directory batch = retiredBatch(dir, 1);
+      final File oldFile = File(p.join(batch.path, '00.mp3'))
+        ..writeAsStringSync('OLD');
+      File(
+        p.join(batch.path, AudiobookStorage.retiredCommittedMarker),
+      ).writeAsStringSync('');
+      final File staleStaged = File(
+        p.join(dir.path, AudiobookStorage.incomingDirName, 'new.mp3'),
+      )..createSync(recursive: true);
+      staleStaged.writeAsStringSync('STALE');
+      final List<RandomAccessFile> held = <RandomAccessFile>[
+        oldFile.openSync(),
+        staleStaged.openSync(),
+      ];
+      final List<String> got;
+      try {
+        got = await AudiobookStorage.syncAudioFiles(dir, <String>[
+          source('new.mp3', 'NEW').path,
+        ]);
+      } finally {
+        for (final RandomAccessFile f in held) {
+          f.closeSync();
+        }
+      }
+
+      expect(got.map(p.basename), <String>[
+        'new.mp3',
+      ], reason: '暂存目录里的同名残留不能把正式名字挤成 "new _1.mp3"');
+      expect(File(got.single).readAsStringSync(), 'NEW');
+      expect(File(p.join(dir.path, '01.mp3')).existsSync(), isFalse);
+
+      // 占用解除后的下一次同步把残留收干净，且不把作废的旧文件挪回来。
+      final List<String> again = await AudiobookStorage.syncAudioFiles(
+        dir,
+        got,
+      );
+      expect(again, got);
+      expect(snapshot(dir), <String, String>{'new.mp3': 'NEW'});
+    });
+  }, testOn: 'windows');
 
   group('SrtBookRepository.replaceAudio', () {
     late FushiDatabase db;
