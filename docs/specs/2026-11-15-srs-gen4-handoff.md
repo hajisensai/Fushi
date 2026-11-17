@@ -2287,3 +2287,49 @@ profile uid 不变」断言，不分 `bound` / `joined`。
   「同一单位多个 profile」只可能是共用 uid 的情形，要先在 G11-4 的备份格式里确认这种输入是否还存在再定修法。
 - `SrsDeferredProfileMerge` / `SrsProfileAdoptDeferred` 还留着（调度器与界面仍引用）；`srsAdoptProfileUid` 随 G7-6 删。
 - 本机目录名小、本机为空时只能等对方设备跟过来（对方按提示确认）；本机这边不主动做什么。
+
+### 复核修复（2026-11-17 第三轮，同分支，针对 `4f609737fc`）
+
+- **新代集合永远判成「已关联」，关联在生产路径上根本不发生（新发现，major）**：新代每轮立旧根围栏时在
+  `v3/devices/<墓碑设备>/` 写墓碑 head（内核 `gen4/location.rs` `tombstone_device` = `v5(NS, "fushi-srs/tombstone/4/<dir>")`），
+  `srsListRemoteProfiles` 把它当成写入者 `v2:<墓碑>`，于是每个新代集合都「有别的设备」→ `srsDecideProfileLink` 返回
+  `Keep(linked)`，空设备不自动认领、两边有数据也不弹冲突。本组测试一直没看出来，因为它们的 `_round` 直接调
+  `srsSync2Round` 且把旧根 `v3/` 当新根用（不传 `oldRoot`，不立围栏）。修复：`srsTombstoneDevice(dir)`，列 profile 时跳过它；
+  `srs_profile_link_sync_test` / `srs_collection_binding_test` / `srs_profile_adopt_user_data_test` 的一轮同步改走生产入口
+  `srsRunLocationRound`。变异实测：去掉跳过 → 3 条红（自动认领、候选、用户选定），还原后 20 条绿。
+- **互联 host 上用户选定候选必然失败（major）**：`SrsSyncScheduler.adoptProfile` 在本机目录（互联 host）上传 `within: null`，
+  而 `adopt` 现在没有 `within` 就抛错。改成一律传当前位置；`_onLocation` 的 `channel` 标志（只为旧的「并入前只拉不发」不重入
+  通道锁）删了。`fushi/test/sync/interconnect_srs_two_way_sync_test.dart` 按新代改写（5 条：集合 / 目录一致、uid 不变；host 经
+  本机目录认领客户端集合；host 吸收客户端集合、客户端经 WebDAV 读到提示再确认），删掉依赖协议 3 暂缓并入与外来已盖戳
+  事件的那条。变异实测：`within: null` → 两条 host 认领用例红在 `adopting … needs the location it was found on`。
+- **并入提示从持久状态派生（major）**：原来只在认领那一刻、那一个位置写一次，失败只记日志、以后没有代码补。现在
+  `SrsDbProfileLinker.publish`（每轮同步成功后都调）按本机集合 `collection_info.joins` 里受信、带 `dir` 的 `Join`，在当前位置上
+  对「目录在、`meta.json` 集合标识等于 `from`、还没有指向本机集合的提示」的目录补写 `joined-into-<本机集合>.json`
+  （`_ensureJoinHints`；同一位置同一组 `Join` 补齐一次后进程内不再列目录，没补齐就下一轮再补）。两个方向同一条规则：吸收
+  （`Join{from: 对方}`）在对方目录里放提示；**改绑**（`rebound`，`Join{from: 本机原集合}` 在新集合里）在离开的旧目录里放指向
+  新集合的提示，旧集合里没被问过的设备据此跟过来（设计 §5.4 第 3 条不分谁发起）。集合里别的设备、别的位置上的同名目录都会补。
+  认领那一刻照样先试一次（`_adoptCollection`）。新用例：首次写提示失败 → A 下一轮发布补上 → B 被问；x 改绑进 A → X 里
+  已关联的 x2 / x3 经提示被问并跟过来。变异实测：去掉发布里的补写 → 前者红；改绑时不写 → 后者红。
+- **已并入的集合只认受信的 `Join`（minor）**：`srsTrustedJoins` 只收 `trusted == true` 的条目，与内核 `AlreadyJoined`
+  （`identity.rs` `ix.joined`）同口径；判定（`joined`）与提示派生共用。纯函数用例；变异实测（去掉 `trusted` 判断）红。
+- **⑥ 存量单位提醒（minor）**：新代收段 / 导入只要落了东西就 `Tally::all()`（`gen4/cmd/sync.rs`），内容指纹本身推进，develop
+  拼上的 RWKV 键（合并信号）成了冗余保险——撤掉它测试仍绿是预期。测试改成断言这条新代前提（只并进复习日志的一轮收段也推进
+  内容指纹），`srs_providers.dart` 的注释同步改正。代码里的合并信号留着（无害）。
+- **认领与在途写入两种先后都测（nit）**：`srs_profile_purge_single_test` 加「认领先发、写入后发」。
+- **③ 余项**：`srs_write_statement_cost_test` 第 1 条、`srs_bulk_ops_roundtrips_test`「语句数不随事件数增长」、
+  `srs_bulk_ops_equivalence_test`「同步」组改走集合并入（新 helper `joinCollectionFrom`：`.fushisrs` 导出 → 确认导入）。
+  等价测试换成「一次并入对端最终集合 = 分几次并入它的增量（含重复并入、后来的改名支配先前的）」，`ops` 一行不比（每次导入
+  先打一个还原点，本机日志长度按导入次数本来就不同）。成本表重钉：`import` 内核命令 2 → 3（新代导入后重取 `identity`，这条以前
+  因为测试在 `applyRemote` 就崩了一直没被核对过）、`joinCollection` (0, 5)。
+- **没做：`dumpSrsState.serverTimes` 的变异实测**——新代只有承袭来的事件才有服务器时刻（内核 `gen4/cmd/reads.rs`
+  `server_times` 文档），Dart 侧造承袭事件只有旧事件备份读入（`legacy_backup_import {source: "events"}`）一条路，仓库里没有现成的
+  旧 `.fushisrs` 事件备份夹具；现有等价用例里这一维都是空表，变异无从下手。要做得先写旧事件备份夹具（归 G11-4 / T1）。
+- **⑤ G11-4 遗留的判断**：
+  - 「同一集合多个 profile，覆盖还原后只有第一个重新绑定」在新代**合法输入里不存在**：`collections.profile_uid` 与
+    `collection` 都是 UNIQUE（`gen4/schema.rs`），导出时 `_exportStreams` 按 `collection_info` 分组，每组恰好一个 profile；旧形态
+    （协议 3 `srs.db` / 主库老表）每个 profile 一个单元。只有伪造的清单会给一个单元多个 profile：只绑第一个，其余不动，数据经
+    第一个可见，不丢。不改代码。
+  - 「覆盖还原后第一次合并同一份旧事件输入多落一份」没做：要让旧备份读入在落库前先建本机身份（`collection_adopt` / `backup.rs`
+    的时序），是内核身份时序的改动，归 G9 身份模块；本分支没碰内核。
+- **BUG-4626 并入场景**仍按上一轮结论交出（真红、未提交）：要么写入口对「本集合没有、本库别的集合有」的实体 ID 拒绝（需要
+  跨 `col` 按实体查的索引，即新代库 schema 改动），要么并入时丢掉悬空操作（并集语义改动），都是内核取舍，本分支不定。
