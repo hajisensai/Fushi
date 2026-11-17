@@ -123,7 +123,7 @@ mod tests {
     fn dispatch(d: &Device, req: Value, blob: Option<String>) -> Result<Value, String> {
         let mut blobs: Vec<Vec<u8>> = blob.into_iter().map(String::into_bytes).collect();
         let mut files = Vec::new();
-        crate::store::ffi::sync2_dispatch(&d.core, &req, &mut blobs, &mut files)
+        crate::store::legacy3::sync2_dispatch(&d.core, &req, &mut blobs, &mut files)
     }
 
     fn add_note(d: &Device) {

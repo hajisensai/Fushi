@@ -101,7 +101,7 @@ fn str_of<'v>(req: &'v Value, k: &str) -> Result<&'v str, String> {
 /// 经协议 3 的分发器发一条命令（与旧 app 发的同形，`prepare.rs` 同口径）。
 fn p3(core: &SrsCore, req: Value, blobs: Vec<Vec<u8>>) -> Result<Value, String> {
     let mut blobs = blobs;
-    crate::store::ffi::sync2_dispatch(core, &req, &mut blobs, &mut Vec::new()).map_err(|e| {
+    crate::store::legacy3::dispatch(core, &req, &mut blobs).map_err(|e| {
         format!(
             "gen4 legacy backup import: protocol 3 `{}`: {e}",
             req["op"].as_str().unwrap_or_default()

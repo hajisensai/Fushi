@@ -29,6 +29,7 @@ pub mod gen4;
 pub(crate) mod ids;
 #[cfg(test)]
 mod kernel_reads_tests;
+pub(crate) mod legacy3;
 pub(crate) mod legacy_clock;
 pub(crate) mod local_state;
 pub(crate) mod media_gc;
@@ -1337,7 +1338,7 @@ mod tests {
         let bulk = |on: bool| {
             let mut blobs = Vec::new();
             let mut files = Vec::new();
-            ffi::sync2_dispatch(
+            legacy3::sync2_dispatch(
                 &core,
                 &serde_json::json!({"op": "bulk_cache", "on": on}),
                 &mut blobs,

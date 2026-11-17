@@ -23,7 +23,7 @@ fn caches(deck: &str) -> Value {
 fn dispatch(d: &Device, req: Value, blob: Option<String>) -> Value {
     let mut blobs: Vec<Vec<u8>> = blob.into_iter().map(String::into_bytes).collect();
     let mut files = Vec::new();
-    crate::store::ffi::sync2_dispatch(&d.core, &req, &mut blobs, &mut files).unwrap()
+    crate::store::legacy3::sync2_dispatch(&d.core, &req, &mut blobs, &mut files).unwrap()
 }
 
 /// 旧路径：Dart 组好的事件交给 `apply`（日志的笔记按缓存行给）。

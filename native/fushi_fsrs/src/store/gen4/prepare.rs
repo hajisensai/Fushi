@@ -269,7 +269,7 @@ pub(crate) fn complete(
 
 /// 经协议 3 的分发器发一条命令（与旧 app 发的同形）。
 fn dispatch(core: &SrsCore, req: Value) -> Result<Value, String> {
-    crate::store::ffi::sync2_dispatch(core, &req, &mut Vec::new(), &mut Vec::new()).map_err(|e| {
+    crate::store::legacy3::dispatch(core, &req, &mut Vec::new()).map_err(|e| {
         format!(
             "gen4 prepare: protocol 3 `{}` for {}: {e}",
             req["op"].as_str().unwrap_or_default(),

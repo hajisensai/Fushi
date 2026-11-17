@@ -159,7 +159,7 @@ pub(super) fn p3(
         .into_iter()
         .collect();
     let mut files = Vec::new();
-    let v = crate::store::ffi::sync2_dispatch(&d.core, &req, &mut blobs, &mut files)
+    let v = crate::store::legacy3::sync2_dispatch(&d.core, &req, &mut blobs, &mut files)
         .unwrap_or_else(|e| panic!("protocol 3 {req}: {e}"));
     (v, files)
 }
@@ -1336,7 +1336,7 @@ fn every_other_wired_write_matches_protocol_3_through_the_dispatcher() {
     let r1 = revision();
     let unknown = json!({"device": "0193a1b2-0000-7000-8000-0000000000ee", "trust": false});
     assert!(
-        crate::store::ffi::sync2_dispatch(
+        crate::store::legacy3::sync2_dispatch(
             &m.d.core,
             &{
                 let mut r = unknown.clone();

@@ -346,7 +346,8 @@ mod tests {
     fn dispatch(d: &Device, mut req: Value) -> Value {
         req["profile"] = json!(P);
         req["caches"] = json!({"defaultDeck": default_deck()});
-        crate::store::ffi::sync2_dispatch(&d.core, &req, &mut Vec::new(), &mut Vec::new()).unwrap()
+        crate::store::legacy3::sync2_dispatch(&d.core, &req, &mut Vec::new(), &mut Vec::new())
+            .unwrap()
     }
 
     fn apply(d: &Device, now: i64, events: Vec<Value>) -> Value {
@@ -355,7 +356,7 @@ mod tests {
             .map(|e| json!({"e": e, "note": null}))
             .collect();
         let mut blobs = vec![Value::Array(items).to_string().into_bytes()];
-        crate::store::ffi::sync2_dispatch(
+        crate::store::legacy3::sync2_dispatch(
             &d.core,
             &json!({
                 "op": "apply", "profile": P, "now": now, "caches": {"defaultDeck": default_deck()},

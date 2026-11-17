@@ -131,7 +131,7 @@ impl<'d> W<'d> {
             .into_iter()
             .collect();
         let mut files = Vec::new();
-        crate::store::ffi::sync2_dispatch(&self.p.d.core, &req, &mut blobs, &mut files)
+        crate::store::legacy3::sync2_dispatch(&self.p.d.core, &req, &mut blobs, &mut files)
     }
 
     fn req(now: i64, extra: Value) -> Value {
