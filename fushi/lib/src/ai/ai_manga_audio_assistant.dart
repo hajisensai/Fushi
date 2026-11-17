@@ -6,7 +6,9 @@
 /// - 回复落地前过引擎层本地校验；不合格的行丢弃并记进失败账本供复核界面列出。
 /// - 页图上传前的同意与预估请求数在界面层（`manga_audio_annotate_flow.dart`）。
 /// - 按系列：角色表从系列档案起步，每卷标完学回系列（[SeriesCastProfile.learnRoster]），
-///   下一卷带着上一卷认出的人继续；[annotateMangaSeries] 按系列成员顺序逐卷跑。
+///   下一卷带着上一卷认出的人继续；按系列跑（`TtsSeriesRun`）按系列成员顺序逐卷跑。
+/// - 会话只管一卷一次的读写；后台跑、取消、观察进度在进程级任务表
+///   `MangaAnnotateTasks`（`manga_audio_annotate_tasks.dart`），页面只是观察者。
 ///
 /// 只支持本地卷（整卷一个目录、一份 `manga.json`）；在线作品按章下载、每章一份
 /// OCR，没有「一卷」的页序，本期不做（[MangaAudioAnnotateError] `online_unsupported`）。
@@ -486,47 +488,3 @@ Future<List<EpubBookRow>> mangaSeriesVolumes(
         when BookFormat.tryParse(row.format) == BookFormat.manga)
       row,
 ];
-
-/// 按系列跑时一卷的结果。
-typedef MangaSeriesVolumeResult = ({
-  EpubBookRow row,
-  MangaAnnotateRunSummary? summary,
-  String? skipped,
-});
-
-/// 按系列标注：[volumes] 依次跑（每卷开新会话，角色表经系列档案一卷卷带下去），
-/// 每卷只标还没标过的页；读不了的卷（在线 / 没 OCR）跳过并给原因。整次中止
-/// （鉴权失败 / 取消）抛 [MangaAnnotateAbort]，已跑完的卷都已落盘。
-Future<List<MangaSeriesVolumeResult>> annotateMangaSeries({
-  required AppModel appModel,
-  required List<EpubBookRow> volumes,
-  required AiProviderConfig provider,
-  required bool Function() isCancelled,
-  void Function(int volume, int volumes)? onVolume,
-  void Function(MangaAnnotatePhase phase, int done, int total)? onProgress,
-}) async {
-  final List<MangaSeriesVolumeResult> results = <MangaSeriesVolumeResult>[];
-  for (int i = 0; i < volumes.length; i++) {
-    if (isCancelled()) throw const MangaAnnotateAbort('cancelled');
-    onVolume?.call(i, volumes.length);
-    final EpubBookRow row = volumes[i];
-    final MangaAudioAnnotateSession session;
-    try {
-      session = await MangaAudioAnnotateSession.open(appModel, row.bookKey);
-    } on MangaAudioAnnotateError catch (e) {
-      results.add((row: row, summary: null, skipped: e.code));
-      continue;
-    }
-    final List<int> pages = session.pagesToAnnotate();
-    final MangaAnnotateRunSummary summary = await session.annotate(
-      provider: provider,
-      pages: pages,
-      // 已经标过角色表的卷（有已标页）不再重跑角色表那一遍。
-      withRoster: session.script.annotatedPages.isEmpty || session.isStale,
-      isCancelled: isCancelled,
-      onProgress: onProgress,
-    );
-    results.add((row: row, summary: summary, skipped: null));
-  }
-  return results;
-}
