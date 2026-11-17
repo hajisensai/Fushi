@@ -364,6 +364,40 @@ Future<String> _canvasFor({
   return _writeCached(png, 'png');
 }
 
+/// 舞台页叠在画面下部的结构化逐字歌词：「模糊非当前行」偏好在这里订阅
+/// （`ref.watch` + `select`），页面开着时经 AI 操作 / 其他窗口改了也即时生效。
+class MusicKaraokeStageLyrics extends ConsumerWidget {
+  const MusicKaraokeStageLyrics({
+    super.key,
+    required this.timeline,
+    required this.clock,
+    required this.playing,
+    required this.offsetMs,
+    this.onSeek,
+  });
+
+  final LyricTimeline timeline;
+  final FushiPlaybackClock clock;
+  final bool playing;
+  final int offsetMs;
+  final ValueChanged<int>? onSeek;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final bool blurInactive = ref.watch(
+      appProvider.select((AppModel m) => m.musicLyricsBlurInactive),
+    );
+    return KaraokeLyricsView(
+      timeline: timeline,
+      clock: clock,
+      playing: playing,
+      offsetMs: offsetMs,
+      onSeek: onSeek,
+      appearance: KaraokeLyricsAppearance(blurInactive: blurInactive),
+    );
+  }
+}
+
 class MusicKaraokeStagePage extends ConsumerStatefulWidget {
   const MusicKaraokeStagePage({
     super.key,
@@ -882,16 +916,13 @@ class _MusicKaraokeStagePageState extends ConsumerState<MusicKaraokeStagePage> {
             colors: <Color>[Color(0x00000000), Color(0xB0000000)],
           ),
         ),
-        child: KaraokeLyricsView(
+        child: MusicKaraokeStageLyrics(
           timeline: lyrics,
           clock: _StageLyricClock(_player, () => _mvOffsetMs),
           playing: _playing,
           offsetMs: _lyricsOffsetMs,
           onSeek: (int ms) =>
               unawaited(_player.seek(Duration(milliseconds: ms + _mvOffsetMs))),
-          appearance: KaraokeLyricsAppearance(
-            blurInactive: _app.musicLyricsBlurInactive,
-          ),
         ),
       ),
     );
