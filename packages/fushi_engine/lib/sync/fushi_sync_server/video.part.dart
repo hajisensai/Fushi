@@ -692,7 +692,7 @@ extension _FushiSyncServerVideo on FushiSyncServer {
     // 「host 不支持指纹」（制卡不带链接 / 回跳按 bookUid 放行），与此前行为一致。
     // 新 host 有这个端点、却担保不了这份字节（条目 / 文件不在、算的期间被改写）时回
     // [kVideoFingerprintUnavailableStatus] + JSON reason，绝不回 404——否则 client 会把它
-    // 当成老 host 放行、绕过字节核验（BUG-4764）。
+    // 当成老 host 放行、绕过字节核验（BUG-4767）。
     final String? fingerprintId = _extractVideoId(reqPath, 'fingerprint');
     if (fingerprintId != null) {
       if (method != 'GET') return shelf.Response(405);
@@ -1575,7 +1575,7 @@ int _episodeIndexFromRequest(shelf.Request request) {
   return n;
 }
 
-/// `/fingerprint` 担保不了字节时的应答（BUG-4764）：不是 404，免得 client 当成老 host。
+/// `/fingerprint` 担保不了字节时的应答（BUG-4767）：不是 404，免得 client 当成老 host。
 shelf.Response _videoFingerprintUnavailable(String reason) => shelf.Response(
   kVideoFingerprintUnavailableStatus,
   body: jsonEncode(<String, String>{'reason': reason}),

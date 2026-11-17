@@ -51,7 +51,7 @@ void main() {
     },
   );
 
-  group('BUG-4763：同一文件并发请求只整文件算一遍', () {
+  group('BUG-4766：同一文件并发请求只整文件算一遍', () {
     test('同状态的并发调用共用一次计算，算完后命中缓存', () async {
       final File file = await File(
         '${directory.path}/big.mkv',

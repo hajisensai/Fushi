@@ -31,7 +31,7 @@ class VideoSourceFingerprint {
   final LinkedHashMap<String, (FileStat, String)> _cache =
       LinkedHashMap<String, (FileStat, String)>();
 
-  /// 在途去重（BUG-4763）：host 上两个 client（或同一 client 制卡 + 回跳）同时要
+  /// 在途去重（BUG-4766）：host 上两个 client（或同一 client 制卡 + 回跳）同时要
   /// 同一个大文件的指纹时只整文件读一遍盘，后到的复用同一个 Future。
   final Map<String, _PendingFingerprint> _inFlight =
       <String, _PendingFingerprint>{};
