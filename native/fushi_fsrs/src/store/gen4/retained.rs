@@ -42,7 +42,9 @@ pub const MIGRATED_AT_KEY: &str = "gen4_migrated_at_ms";
 /// 新代库 `srs_meta`：新代第一次同步成功的时刻（毫秒），只写一次。
 pub const FIRST_SYNC_KEY: &str = "gen4_first_sync_ok_ms";
 
-/// 新代库 `srs_meta`：上一次到期自动删没做成的原因；做成了删掉。
+/// 新代库 `srs_meta`：上一次到期自动删没做成的原因。只在保留副本还在（[CopyState::Sealed]）时有意义：[state] 只在那时
+/// 报它；副本没了（删成了，手动或自动）之后它就是陈旧的，下一次 Primary 开库（[sweep]）删掉。手动删（[delete]）不碰
+/// 新代库的写锁：删成没删成只看墓碑换没换上，不会因为同步正占着写锁而把「已删」误报成失败。
 pub const ERROR_KEY: &str = "gen4_retained_error";
 
 const DAY_MS: i64 = 86_400_000;
@@ -190,7 +192,7 @@ fn verify_gen4(conn: &Connection) -> Result<(), String> {
 
 /// 全局命令 `gen4_retained_state {dir, now}` → `{copy, bytes, migratedAtMs, firstSyncAtMs, dueAtMs, due, error}`：
 /// `copy` 是 [CopyState] 的线上名；时刻没有 = null；`due` = 保留副本在、到期了（下次开库自动删）；`error` = 上一次自动删
-/// 没做成的原因。没有新代库时只报 `copy`（其余 null / false）。只读，快：读两个文件里的几行。
+/// 没做成的原因。没有新代库时只报 `copy`（其余 null / false）；副本不在了时 `error` 恒为 null（[ERROR_KEY]）。只读：读两个文件里的几行。
 pub fn state(dir: &Path, now_ms: i64) -> Result<Value, String> {
     let copy = inspect(dir);
     let bytes = match copy {
@@ -210,6 +212,7 @@ pub fn state(dir: &Path, now_ms: i64) -> Result<Value, String> {
         (None, None, None, None)
     };
     let sealed = matches!(copy, CopyState::Sealed { .. });
+    let error = error.filter(|_| sealed);
     Ok(json!({
         "copy": copy.wire(),
         "bytes": bytes,
@@ -238,35 +241,39 @@ pub fn delete(dir: &Path) -> Result<Value, String> {
             "gen4 retained copy: there is no srs4.db next to it, keeping srs.db".to_owned(),
         );
     }
+    // 只读核对：不拿新代库的写锁（[ERROR_KEY] 留给下一次开库清）。
     let conn = files::open_ready(&path)?;
-    let out = verify_gen4(&conn).and_then(|()| tombstone(dir, &conn));
+    let verified = verify_gen4(&conn);
     conn.close().map_err(|(_, e)| sql(e))?;
+    verified?;
+    seal::write_tombstone(&dir.join(LEGACY_FILE))?;
     drop(lock);
-    out?;
     Ok(json!({"deleted": true, "freedBytes": bytes}))
 }
 
-/// 换墓碑、清掉 [ERROR_KEY]（[conn] = 新代库的读写连接）。
-fn tombstone(dir: &Path, conn: &Connection) -> Result<(), String> {
-    seal::write_tombstone(&dir.join(LEGACY_FILE))?;
-    conn.execute("DELETE FROM srs_meta WHERE key = ?1", [ERROR_KEY])
-        .map_err(sql)?;
+/// 删掉 [ERROR_KEY]（在的话）。
+fn clear_error(conn: &Connection) -> Result<(), String> {
+    if meta_get(conn, ERROR_KEY)?.is_some() {
+        conn.execute("DELETE FROM srs_meta WHERE key = ?1", [ERROR_KEY])
+            .map_err(sql)?;
+    }
     Ok(())
 }
 
 /// 开库时的到期自动删（`files::open_gen4` 的 Primary，持着换代锁，[ready] = 刚核对过的新代库读写连接）：保留副本在、
-/// 到期了 = 核对新代库、换墓碑。没到期 / 没有保留副本 = 什么都不做。返回 `Err` = 没做成的原因（调用方记进
-/// [ERROR_KEY]，不挡开库）。
+/// 到期了 = 核对新代库、换墓碑。没到期 = 什么都不做。没有保留副本 = 清掉陈旧的 [ERROR_KEY]。返回 `Err` = 没做成的
+/// 原因（调用方记进 [ERROR_KEY]，不挡开库）。
 pub(crate) fn sweep(dir: &Path, ready: &Connection, now_ms: i64) -> Result<(), String> {
     if !matches!(inspect(dir), CopyState::Sealed { .. }) {
-        return Ok(());
+        return clear_error(ready);
     }
     match due_at(ready)? {
         Some(at) if now_ms >= at => {}
         _ => return Ok(()),
     }
     verify_gen4(ready)?;
-    tombstone(dir, ready)
+    seal::write_tombstone(&dir.join(LEGACY_FILE))?;
+    clear_error(ready)
 }
 
 /// [sweep] 没做成：原因记进 [ERROR_KEY]（记不下 = 库写不了，开库也会失败，报回去）。

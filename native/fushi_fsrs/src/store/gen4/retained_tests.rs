@@ -71,6 +71,20 @@ fn delete_now(dir: &Path) -> Result<Value, String> {
     )
 }
 
+/// 新代库文件末尾多一页没人用的页（文件头的页数跟着改）：打得开、照常读写，完整性核对报「从没用过的页」。返回原来的字节。
+fn add_unused_page(dir: &Path) -> Vec<u8> {
+    let path = dir.join(GEN4_FILE);
+    let good = std::fs::read(&path).unwrap();
+    let mut bad = good.clone();
+    let page = u16::from_be_bytes([bad[16], bad[17]]) as usize;
+    let page = if page == 1 { 65_536 } else { page };
+    let pages = (bad.len() / page) as u32;
+    bad[28..32].copy_from_slice(&(pages + 1).to_be_bytes());
+    bad.extend(std::iter::repeat_n(0u8, page));
+    std::fs::write(&path, &bad).unwrap();
+    good
+}
+
 /// 旧版本（协议 3 的内核）打不开原路径上的库：封存与墓碑都一样拒绝，不会建一个空库照常跑。
 fn assert_refused_by_protocol_3(dir: &Path) {
     let err = SrsCore::open(&dir.join(LEGACY_FILE))
@@ -174,15 +188,7 @@ fn deleting_now_ignores_the_clock_and_is_idempotent() {
 fn a_bad_generation_4_library_keeps_the_copy() {
     let dir = migrated("d32-bad");
     let path = dir.0.join(GEN4_FILE);
-    let good = std::fs::read(&path).unwrap();
-    // 文件末尾多一页没人用的页（文件头的页数跟着改）：打得开、照常读写，完整性核对报「从没用过的页」。
-    let mut bad = good.clone();
-    let page = u16::from_be_bytes([bad[16], bad[17]]) as usize;
-    let page = if page == 1 { 65_536 } else { page };
-    let pages = (bad.len() / page) as u32;
-    bad[28..32].copy_from_slice(&(pages + 1).to_be_bytes());
-    bad.extend(std::iter::repeat_n(0u8, page));
-    std::fs::write(&path, &bad).unwrap();
+    let good = add_unused_page(&dir.0);
     let err = delete_now(&dir.0).unwrap_err();
     assert!(err.contains("integrity check"), "{err}");
     assert!(matches!(inspect(&dir.0), CopyState::Sealed { .. }));
@@ -193,6 +199,52 @@ fn a_bad_generation_4_library_keeps_the_copy() {
     std::fs::write(&path, &good).unwrap();
     // 新代库完好：核对之后再删。
     assert_eq!(delete_now(&dir.0).unwrap()["deleted"], true);
+}
+
+/// 到期自动删（开库时、不经用户确认的那条路）同样先核对新代库：完整性核对不过不删，保留副本原样，原因记进库里、状态
+/// 命令报出来；新代库照常打开。
+#[test]
+fn an_expired_copy_is_kept_when_generation_4_fails_its_check_on_open() {
+    let dir = migrated("d32-sweep-bad");
+    set_meta(&dir.0, MIGRATED_AT_KEY, "0");
+    add_unused_page(&dir.0);
+    let opened = open_gen4(&dir.0, OpenMode::Primary).unwrap();
+    assert!(!opened.retained_copy_unreadable);
+    drop(opened);
+    assert!(matches!(inspect(&dir.0), CopyState::Sealed { .. }));
+    let s = state_of(&dir.0, NOW);
+    assert_eq!(s["copy"], "sealed", "{s}");
+    assert!(
+        s["error"].as_str().unwrap().contains("integrity check"),
+        "{s}"
+    );
+}
+
+/// 立即删除不碰新代库的写锁：别的连接（比如正在跑的同步）占着写锁时照样删成、报 `deleted: true`，不会墓碑已经换上却
+/// 报「没删」。
+#[test]
+fn deleting_now_succeeds_while_another_connection_holds_the_write_lock() {
+    let dir = migrated("d32-busy");
+    set_meta(&dir.0, ERROR_KEY, "an earlier sweep failed");
+    let writer = gen4(&dir.0);
+    writer.execute_batch("BEGIN IMMEDIATE").unwrap();
+    let out = delete_now(&dir.0).unwrap();
+    writer.execute_batch("ROLLBACK").unwrap();
+    drop(writer);
+    assert_eq!(out["deleted"], true, "{out}");
+    assert_eq!(inspect(&dir.0), CopyState::Tombstone);
+    // 陈旧的原因：副本不在了就不报，下一次 Primary 开库删掉。
+    assert_eq!(state_of(&dir.0, NOW)["error"], Value::Null);
+    drop(open_gen4(&dir.0, OpenMode::Primary).unwrap());
+    let left: Option<String> = gen4(&dir.0)
+        .query_row(
+            "SELECT value FROM srs_meta WHERE key = ?1",
+            [ERROR_KEY],
+            |r| r.get(0),
+        )
+        .optional()
+        .unwrap();
+    assert_eq!(left, None);
 }
 
 /// 到期自动删没做成（这里：保留副本记的封存目标不在旁边，墓碑拒绝盖上去）：不挡开库，副本原样，原因记进库里、状态命令
