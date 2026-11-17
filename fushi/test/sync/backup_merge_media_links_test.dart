@@ -167,5 +167,36 @@ void main() {
         MediaLinkState.removed,
       );
     });
+
+    test('备份里否决了 (X, adaptation, Y)、本机 AI 以 same_work 生效：合并后不再生效', () async {
+      final String vetoed = await buildSrcDb((FushiDatabase src) async {
+        await src.upsertManualMediaLink(
+          relation: MediaLinkRelation.adaptation,
+          from: novel,
+          to: anime,
+          at: 10,
+        );
+        await src.removeMediaLink(
+          mediaLinkIdFor(MediaLinkRelation.adaptation, novel, anime),
+          at: 20,
+        );
+      });
+      final FushiDatabase a = FushiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(a.close);
+      final MediaLinkAiWrite w = (await aiApply(
+        a,
+        relation: MediaLinkRelation.sameWork,
+      ))!;
+      await attachAndMerge(a, vetoed);
+      expect(
+        mediaLinkStateOf((await a.mediaLinkById(w.id))!),
+        MediaLinkState.removed,
+        reason: '否决管一整对，不分关系与方向',
+      );
+      expect(
+        await a.mediaLinksForEndpoint(MediaLinkKind.book, 'novel'),
+        isEmpty,
+      );
+    });
   });
 }

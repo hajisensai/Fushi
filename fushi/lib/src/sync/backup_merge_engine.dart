@@ -1861,6 +1861,9 @@ class BackupMergeEngine {
         confirmerKnown: srcHasConfirmedBy,
       );
     }
+    // 否决管一整对（不分关系与方向）：逐 id 合并完再按不变量收掉落在被否决一对上的
+    // AI 生效（[FushiDatabase.enforceMediaLinkVetoes]）。
+    await _db.enforceMediaLinkVetoes();
   }
 
   /// Profiles UNION by name (device keeps its own profile + id on a name clash),

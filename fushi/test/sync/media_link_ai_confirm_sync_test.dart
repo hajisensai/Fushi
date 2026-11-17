@@ -6,6 +6,8 @@ import 'package:test/test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/sync/collection_manifest.dart';
 import 'package:fushi_engine/sync/collection_sync_engine.dart';
+import 'package:fushi_engine/media/links/work_graph.dart';
+import 'package:fushi_engine/media/links/work_graph_loader.dart';
 import 'package:fushi_engine/sync/media_link_sync.dart';
 
 /// AI 库管家设计稿 §5.3 / §7 / §13 的同步口径（v159）：
@@ -222,6 +224,135 @@ void main() {
       final MediaLinkRow row = (await rowOf(a, 1))!;
       expect(row.confirmedBy, MediaLinkConfirmer.ai, reason: '缺字段 = 未知，不是清空');
       expect(row.updatedAt, 99);
+    });
+
+    test(
+      'B 否决 (X, adaptation, Y)、A 的 AI 以另一关系 / 方向生效 → 同步后两端都不生效、作品图不并',
+      () async {
+        final FushiDatabase host = memDb();
+        final FushiDatabase a = memDb();
+        final FushiDatabase b = memDb();
+        await b.upsertManualMediaLink(
+          relation: MediaLinkRelation.adaptation,
+          from: bookEp(1),
+          to: episodeEp(1),
+          at: 10,
+        );
+        await b.removeMediaLink(pairId(1), at: 20);
+        // A 没见过否决：pair 1 换关系（same_work），pair 3 反方向的 adaptation。
+        final MediaLinkAiWrite same = (await a.applyAiMediaLink(
+          relation: MediaLinkRelation.sameWork,
+          from: episodeEp(1),
+          to: bookEp(1),
+          source: MediaLinkSource.ai,
+          confidence: 0.95,
+        ))!;
+        await b.proposeMediaLink(
+          relation: MediaLinkRelation.adaptation,
+          from: bookEp(3),
+          to: episodeEp(3),
+          source: MediaLinkSource.mal,
+          at: 10,
+        );
+        await b.removeMediaLink(pairId(3), at: 20);
+        final MediaLinkAiWrite reversed = (await a.applyAiMediaLink(
+          relation: MediaLinkRelation.adaptation,
+          from: episodeEp(3),
+          to: bookEp(3),
+          source: MediaLinkSource.ai,
+          confidence: 0.95,
+        ))!;
+        // 另一对：用户在 A 上确认过的 same_work 不受 B 的否决影响。
+        await b.upsertManualMediaLink(
+          relation: MediaLinkRelation.adaptation,
+          from: bookEp(2),
+          to: episodeEp(2),
+          at: 10,
+        );
+        await b.removeMediaLink(pairId(2), at: 20);
+        await a.upsertManualMediaLink(
+          relation: MediaLinkRelation.sameWork,
+          from: bookEp(2),
+          to: episodeEp(2),
+          at: 15,
+        );
+        for (int i = 0; i < 2; i++) {
+          await exchange(a, host);
+          await exchange(b, host);
+        }
+        for (final FushiDatabase d in <FushiDatabase>[a, b, host]) {
+          final MediaLinkRow row = (await d.mediaLinkById(same.id))!;
+          expect(
+            mediaLinkStateOf(row),
+            MediaLinkState.removed,
+            reason: '否决管一整对：AI 换个关系 / 方向也不得生效',
+          );
+          final List<MediaLinkRow> live = await d.mediaLinksForEndpoint(
+            MediaLinkKind.book,
+            'b1',
+          );
+          expect(live, isEmpty);
+          final WorkGraph g = await loadWorkGraph(d);
+          final Work? w = g.workOf(bookEp(1));
+          expect(
+            w == null || !w.members.contains(episodeEp(1)),
+            isTrue,
+            reason: '作品图不把被否决的一对并进同一作品',
+          );
+          expect(
+            mediaLinkStateOf((await d.mediaLinkById(reversed.id))!),
+            MediaLinkState.removed,
+            reason: '反方向同样算同一对',
+          );
+          final MediaLinkRow user = (await d.mediaLinkById(
+            mediaLinkIdFor(MediaLinkRelation.sameWork, bookEp(2), episodeEp(2)),
+          ))!;
+          expect(
+            mediaLinkConfirmerOf(user),
+            MediaLinkConfirmer.user,
+            reason: '用户确认过的行永远不动',
+          );
+          expect(user.deletedAt, isNull);
+        }
+        expect(await a.enforceMediaLinkVetoes(), 0, reason: '幂等');
+      },
+    );
+
+    test('合并带来两行后用户在本机否决其中一行：同一对的 AI 生效一并收掉', () async {
+      final FushiDatabase a = memDb();
+      final FushiDatabase b = memDb();
+      await a.proposeMediaLink(
+        relation: MediaLinkRelation.adaptation,
+        from: bookEp(1),
+        to: episodeEp(1),
+        source: MediaLinkSource.mal,
+        at: 10,
+      );
+      final MediaLinkAiWrite same = (await b.applyAiMediaLink(
+        relation: MediaLinkRelation.sameWork,
+        from: bookEp(1),
+        to: episodeEp(1),
+        source: MediaLinkSource.ai,
+      ))!;
+      await applyMediaLinkManifest(a, await loadLocalMediaLinkManifest(b));
+      expect(
+        (await a.mediaLinkById(same.id))!.confirmedBy,
+        MediaLinkConfirmer.ai,
+      );
+      await a.removeMediaLink(pairId(1), at: 30);
+      expect(
+        mediaLinkStateOf((await a.mediaLinkById(same.id))!),
+        MediaLinkState.removed,
+      );
+      expect(
+        await a.applyAiMediaLink(
+          relation: MediaLinkRelation.adaptation,
+          from: bookEp(1),
+          to: episodeEp(1),
+          source: MediaLinkSource.ai,
+        ),
+        isNull,
+      );
     });
 
     test('A 上 AI 生效 → 同步 → A 撤销 → 再同步：两端都不再生效，推断也不再连这一对', () async {

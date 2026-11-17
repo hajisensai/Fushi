@@ -274,6 +274,20 @@ mixin _FushiDbMediaLinks on _$FushiDatabase {
     });
   }
 
+  Expression<bool> _mediaLinkPairIs(
+    $MediaLinksTable t,
+    MediaLinkEndpoint a,
+    MediaLinkEndpoint b,
+  ) =>
+      (t.fromKind.equals(a.kind.dbValue) &
+          t.fromKey.equals(a.key) &
+          t.toKind.equals(b.kind.dbValue) &
+          t.toKey.equals(b.key)) |
+      (t.fromKind.equals(b.kind.dbValue) &
+          t.fromKey.equals(b.key) &
+          t.toKind.equals(a.kind.dbValue) &
+          t.toKey.equals(a.key));
+
   /// 两个端点之间是否已有任何行（任意关系、任意方向、含墓碑）。
   Future<bool> mediaLinkPairExists(
     MediaLinkEndpoint a,
@@ -281,16 +295,22 @@ mixin _FushiDbMediaLinks on _$FushiDatabase {
   ) async {
     final MediaLinkRow? row =
         await (select(mediaLinks)
+              ..where((t) => _mediaLinkPairIs(t, a, b))
+              ..limit(1))
+            .getSingleOrNull();
+    return row != null;
+  }
+
+  /// 两个端点之间是否有墓碑（任意关系、任意方向）——即这一对被否决过
+  /// （见 [enforceMediaLinkVetoes]）。
+  Future<bool> mediaLinkPairVetoed(
+    MediaLinkEndpoint a,
+    MediaLinkEndpoint b,
+  ) async {
+    final MediaLinkRow? row =
+        await (select(mediaLinks)
               ..where(
-                (t) =>
-                    (t.fromKind.equals(a.kind.dbValue) &
-                        t.fromKey.equals(a.key) &
-                        t.toKind.equals(b.kind.dbValue) &
-                        t.toKey.equals(b.key)) |
-                    (t.fromKind.equals(b.kind.dbValue) &
-                        t.fromKey.equals(b.key) &
-                        t.toKind.equals(a.kind.dbValue) &
-                        t.toKey.equals(a.key)),
+                (t) => _mediaLinkPairIs(t, a, b) & t.deletedAt.isNotNull(),
               )
               ..limit(1))
             .getSingleOrNull();
@@ -305,7 +325,8 @@ mixin _FushiDbMediaLinks on _$FushiDatabase {
   /// - 没有这一行、这一对条目之间也没有任何别的行 → 新建，`updatedAt` 为
   ///   [kMediaLinkAiBaseClock]；
   /// - 目标行已生效（用户确认 / AI 生效）、是否决墓碑（AI 不得复活用户否决过的一对），
-  ///   或这一对之间已有别的关系的行 → 不写，返回 null。
+  ///   这一对之间有任何墓碑（别的关系 / 方向被否决或撤销过，[enforceMediaLinkVetoes]
+  ///   的不变量），或这一对之间已有别的关系的行 → 不写，返回 null。
   ///
   /// 返回写入回执：[MediaLinkAiWrite.previous] 是写入前的行（null = 之前没有），交
   /// [revertAiMediaLink] 撤销用。
@@ -328,6 +349,7 @@ mixin _FushiDbMediaLinks on _$FushiDatabase {
       if (existing != null) {
         if (existing.deletedAt != null) return null;
         if (mediaLinkConfirmerOf(existing) != null) return null;
+        if (await mediaLinkPairVetoed(from, to)) return null;
         await (update(mediaLinks)..where((t) => _mediaLinkIdIs(t, id))).write(
           _confirmerColumns(MediaLinkConfirmer.ai).copyWith(
             source: Value<String>(source),
@@ -406,7 +428,58 @@ mixin _FushiDbMediaLinks on _$FushiDatabase {
               updatedAt: Value<int>(stamp),
             ),
     );
+    if (previous == null) await enforceMediaLinkVetoes(at: stamp);
     return true;
+  });
+
+  /// 否决的作用范围是**一对条目**，不是一行（AI 库管家设计稿 §5.3）：维护不变量
+  /// 「同一对端点（不分关系与方向）上有墓碑时，不得有 `confirmed_by = ai` 的生效行」。
+  /// 把违反它的 AI 生效行写成墓碑（时钟取 `max(now, updatedAt + 1)`，压过各端同一份
+  /// AI 生效）；用户确认的行永远不动。幂等，单事务；返回写了几行。
+  ///
+  /// 墓碑来源判不清——用户否决一条 AI 生效连接（[removeMediaLink]）与撤销 AI 自己写
+  /// 的连接（[revertAiMediaLink]）留下的墓碑在列上没有可靠区别（`confirmed_by` /
+  /// `source` 都原样留着），而后者语义上本来也是用户否决——所以任何墓碑都算（宁可
+  /// 少连）。
+  ///
+  /// 违反经合并出现（另一台设备在见到否决之前以别的关系 / 方向让 AI 生效了同一对），
+  /// 合并后用户再否决其中一行时也会出现，所以各处各自保证：[applyAiMediaLink] 写入前
+  /// 检查、互联清单合并（`applyMediaLinkManifest`）完、备份合并完，以及本机写墓碑的
+  /// [removeMediaLink] / [revertAiMediaLink] / [restoreMediaLinkSnapshot]。各端按同一
+  /// 份数据执行结果一致，再经 LWW 同步后收敛。
+  Future<int> enforceMediaLinkVetoes({int? at}) => transaction(() async {
+    final List<MediaLinkRow> rows = await allMediaLinks();
+    String end(String kind, String key) => '$kind\u0000$key';
+    String pairOf(MediaLinkRow r) {
+      final String a = end(r.fromKind, r.fromKey);
+      final String b = end(r.toKind, r.toKey);
+      return a.compareTo(b) <= 0 ? '$a\u0001$b' : '$b\u0001$a';
+    }
+
+    final Set<String> vetoed = <String>{
+      for (final MediaLinkRow r in rows)
+        if (r.deletedAt != null) pairOf(r),
+    };
+    if (vetoed.isEmpty) return 0;
+    final int now = at ?? DateTime.now().millisecondsSinceEpoch;
+    int written = 0;
+    for (final MediaLinkRow r in rows) {
+      if (r.deletedAt != null ||
+          mediaLinkConfirmerOf(r) != MediaLinkConfirmer.ai ||
+          !vetoed.contains(pairOf(r))) {
+        continue;
+      }
+      final int stamp = now > r.updatedAt ? now : r.updatedAt + 1;
+      final MediaLinkId id = mediaLinkIdOf(r);
+      await (update(mediaLinks)..where((t) => _mediaLinkIdIs(t, id))).write(
+        MediaLinksCompanion(
+          deletedAt: Value<int?>(stamp),
+          updatedAt: Value<int>(stamp),
+        ),
+      );
+      written++;
+    }
+    return written;
   });
 
   /// 用户确认一条建议或一条 AI 生效的连接（升为 `user`）。行不存在 / 已是墓碑返回
@@ -438,6 +511,8 @@ mixin _FushiDbMediaLinks on _$FushiDatabase {
             updatedAt: Value<int>(now),
           ),
         );
+        // 否决管一整对：同一对上别的关系 / 方向的 AI 生效（合并带来的）一并收掉。
+        await enforceMediaLinkVetoes(at: now);
         return true;
       });
 
@@ -527,6 +602,7 @@ mixin _FushiDbMediaLinks on _$FushiDatabase {
               updatedAt: Value<int>(stamp),
             ),
     );
+    if (previous == null) await enforceMediaLinkVetoes(at: stamp);
     return true;
   });
 

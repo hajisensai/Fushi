@@ -417,6 +417,10 @@ Future<int> applyMediaLinkManifest(
     );
     if (didChange) changed++;
   }
+  // 否决管一整对：对端带来的否决（或本机的 AI 生效遇上对端的否决）可能落在同一对
+  // 的另一种关系 / 方向上，逐 id 的 LWW 管不到——合并完按不变量把这一对上的 AI 生效
+  // 写成墓碑（FushiDatabase.enforceMediaLinkVetoes）。
+  changed += await db.enforceMediaLinkVetoes();
   return changed;
 }
 
