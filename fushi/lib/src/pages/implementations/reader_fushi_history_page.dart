@@ -61,6 +61,7 @@ import 'package:fushi/src/media/collections/collection_member_view.dart'
 import 'package:fushi/src/media/display_title.dart';
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
+import 'package:fushi/src/media/manga/audio/manga_audio_script_page.dart';
 import 'package:fushi/src/media/manga/book_format_convert.dart';
 import 'package:fushi/src/media/manga/book_format_rebuild.dart';
 import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source.dart';
@@ -4031,6 +4032,23 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
           label: t.manga_library_ocr_action,
           icon: Icons.document_scanner_outlined,
           onPressed: () => _ocrMangaBooks(<String>[bookKey], dialog: true),
+        ),
+      // 漫画有声演出稿：AI 看图标注说话人 / 类型 / 阅读顺序并复核（设计 2026-11-17
+      // manga-audio-mode §4）。在线作品与没 OCR 的卷由页面自己说明原因。
+      if (isManga && modules.isEnabled(ModuleId.manga))
+        DialogQuickAction(
+          label: t.manga_audio_script_title,
+          icon: FushiIcons.voice,
+          onPressed: () {
+            Navigator.pop(context);
+            unawaited(
+              openMangaAudioScriptPage(
+                context,
+                appModel: appModel,
+                bookKey: bookKey,
+              ),
+            );
+          },
         ),
       if (canAttachAudiobook)
         DialogQuickAction(
