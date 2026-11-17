@@ -752,7 +752,8 @@ void main() {
       (after.queue, after.dueAt, after.lastLogId),
       (before.queue, before.dueAt, before.lastLogId),
     );
-    expect(after.scheduledDays, before.scheduledDays);
+    // 不比 scheduledDays：历史前面多了一条复习，重放算出的间隔（记忆状态）本来就该变；钉的是「当前排程」——
+    // 队列、到期时刻、最后一条日志仍是本机那条。
     // 再导一次（更晚的导入时刻）：什么都不变。
     t += 86400000;
     await importInto(b, pkg);

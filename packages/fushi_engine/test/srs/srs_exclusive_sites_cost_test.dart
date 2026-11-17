@@ -149,6 +149,25 @@ void main() {
       notes[6],
     ]))[notes[6]]!.first.id;
     final String? base = (await s.cardRow(card))!.lastLogId;
+    // 远程复习 V2（G10-2）每个回包的信封带牌组树标签（`tt`，srs_remote_store.dart `_treeWire`）：按结构键缓存，
+    // 作答不让结构键变，所以只有服务的第一次调用取一次 `entity_views`。先打一次 `hello` 把它暖上，量的是作答
+    // 这一站自己的稳态开销（之前的期望是 V1 路由的，V2 那一轮这条用例还崩在 ID 口径上，没重量）。
+    final shelf.Response hello = await handleSrsRemoteStoreRequest(
+      service,
+      shelf.Request(
+        'POST',
+        Uri.parse('http://host/api/srs/remote2/call'),
+        body: jsonEncode(<String, Object?>{
+          'g': 4,
+          'profile': kBulkUid,
+          'op': 'hello',
+          'args': <String, Object?>{},
+        }),
+      ),
+      'POST',
+      '/api/srs/remote2/call',
+    );
+    expect(hello.statusCode, 200);
     late int status;
     f.counter.reset();
     costs['remoteAnswer'] = await _cost(s, () async {
@@ -197,8 +216,10 @@ void main() {
       'mergeNotes': (statements: 0, core: 1),
       'purgeNotesNow': (statements: 0, core: 3),
       'purgeExpired': (statements: 0, core: 2),
-      // 6 条都是 SELECT（上面钉了种类），不是这一步收掉的那条读卡缓存行；读站点改成命令归第 14 步。
-      'remoteAnswer': (statements: 6, core: 2),
+      // 3 条都是读命令（上面钉了种类），不是这一步收掉的那条读卡缓存行；读站点改成命令归第 14 步。原期望（6 条、
+      // 2 条命令）量的是 V1 路由；V2 没暖时实测 4 条读 + 3 条命令（多的是取牌组树的 `entity_views`），暖过（见上 `hello`）
+      // 之后是这里的数。
+      'remoteAnswer': (statements: 3, core: 2),
     });
   });
 }
