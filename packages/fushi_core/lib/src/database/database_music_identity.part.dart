@@ -559,6 +559,12 @@ mixin _FushiDbMusicIdentity on _$FushiDatabase {
   /// `source_id` 只记最后扫到它的那个，按 id 一律软删会把仍在另一个来源下的曲目删掉；
   /// 其余软删（与扫描器「文件已不在」同一语义）。[excludeSourceIds] 是同一次操作里也要
   /// 删掉的来源（不能改挂到它们）。返回（改挂数, 软删数）。
+  ///
+  /// 用户「从音乐库移除」的墓碑行（`hidden_at` 非 NULL，同时已软删）也要处理：被覆盖的
+  /// 改挂 `source_id`、保留墓碑（那个来源重扫时仍认得它、不复活）；没被覆盖的清墓碑、
+  /// 保持软删——来源都没了，它就不该再出现在「已移除的曲目」里，否则「恢复」会把一首
+  /// `source_id` 悬空的曲目放回曲库，之后任何重扫（按来源过滤）都清不掉它。
+  /// 这两类都不计入返回值（它们本来就不在曲库里）。
   Future<({int reassigned, int softDeleted})> releaseMusicTracksOfSource(
     int sourceId, {
     Set<int> excludeSourceIds = const <int>{},
@@ -580,17 +586,19 @@ mixin _FushiDbMusicIdentity on _$FushiDatabase {
           (MediaSourceRow a, MediaSourceRow b) =>
               b.rootPath.length.compareTo(a.rootPath.length),
         );
-    final List<MusicTrackRow> live =
+    final List<MusicTrackRow> owned =
         await (select(musicTracks)..where(
               ($MusicTracksTable t) =>
-                  t.sourceId.equals(sourceId) & t.deletedAt.isNull(),
+                  t.sourceId.equals(sourceId) &
+                  (t.deletedAt.isNull() | t.hiddenAt.isNotNull()),
             ))
             .get();
     int reassigned = 0;
     int softDeleted = 0;
     final int now = DateTime.now().millisecondsSinceEpoch;
     await transaction(() async {
-      for (final MusicTrackRow track in live) {
+      for (final MusicTrackRow track in owned) {
+        final bool hidden = track.hiddenAt != null;
         final String dir = ctx.dirname(track.path);
         MediaSourceRow? cover;
         for (final MediaSourceRow s in covers) {
@@ -605,7 +613,13 @@ mixin _FushiDbMusicIdentity on _$FushiDatabase {
                 ($MusicTracksTable t) => t.trackUid.equals(track.trackUid),
               ))
               .write(MusicTracksCompanion(sourceId: Value<int?>(cover.id)));
-          reassigned++;
+          if (!hidden) reassigned++;
+        } else if (hidden) {
+          // 已软删（隐藏即软删），只清墓碑：离开「已移除的曲目」，不能再被恢复。
+          await (update(musicTracks)..where(
+                ($MusicTracksTable t) => t.trackUid.equals(track.trackUid),
+              ))
+              .write(const MusicTracksCompanion(hiddenAt: Value<int?>(null)));
         } else {
           await (update(musicTracks)..where(
                 ($MusicTracksTable t) => t.trackUid.equals(track.trackUid),

@@ -1,7 +1,7 @@
-import 'plugin_instance.dart';
 import 'plugin_manager.dart';
 import 'plugin_models.dart';
 import 'plugin_net_guard.dart';
+import 'plugin_runtime.dart';
 
 /// 登录挑战里 `appUrl` 允许的自定义 scheme：只收各音乐平台 / 其账号体系的官方 App，宿主
 /// 只在用户点按钮后外部打开。其它 scheme（file / content / intent / javascript …）一律丢弃。
@@ -26,11 +26,11 @@ class MusicPluginSource {
   final MusicPluginManager _manager;
   final String pluginId;
 
-  Future<(MusicPluginInstance, Object?)> _call(
+  Future<(MusicPluginRuntime, Object?)> _call(
     MusicPluginCapability cap,
     Map<String, Object?> args,
   ) async {
-    final MusicPluginInstance inst = await _manager.instance(pluginId);
+    final MusicPluginRuntime inst = await _manager.runtime(pluginId);
     if (!inst.info.manifest.can(cap)) {
       throw MusicPluginException('插件不支持 ${cap.wire}', pluginId: pluginId);
     }
@@ -44,7 +44,7 @@ class MusicPluginSource {
 
   /// 整批核对封面地址（授权 + 主机解析不落私网），返回查表函数（越权 / 解析不过 / 缺失 → null）。
   Future<String? Function(String?)> _covers(
-    MusicPluginInstance inst,
+    MusicPluginRuntime inst,
     Iterable<String?> urls,
   ) async {
     final Map<String, String> ok = await inst.checkCoverUrls(
@@ -54,9 +54,9 @@ class MusicPluginSource {
   }
 
   /// 媒体地址交给播放器前：授权、请求头白名单、解析核对与逐跳重定向核对（见
-  /// [MusicPluginInstance.resolveMediaStream]）；任一不过都报错，不静默放行。
+  /// [MusicPluginRuntime.resolveMediaStream]）；任一不过都报错，不静默放行。
   Future<({String url, Map<String, String> headers})> _media(
-    MusicPluginInstance inst,
+    MusicPluginRuntime inst,
     String url,
     Map<String, String> headers,
     String what,
@@ -68,13 +68,13 @@ class MusicPluginSource {
     }
   }
 
-  Future<(MusicPluginInstance, Map<String, Object?>)> _search(
+  Future<(MusicPluginRuntime, Map<String, Object?>)> _search(
     MusicPluginSearchType type,
     String query,
     int page,
     int pageSize,
   ) async {
-    final (MusicPluginInstance inst, Object? v) = await _call(
+    final (MusicPluginRuntime inst, Object? v) = await _call(
       MusicPluginCapability.search,
       <String, Object?>{
         'query': query,
@@ -102,7 +102,7 @@ class MusicPluginSource {
     int page = 0,
     int pageSize = 30,
   }) async {
-    final (MusicPluginInstance inst, Map<String, Object?> r) = await _search(
+    final (MusicPluginRuntime inst, Map<String, Object?> r) = await _search(
       MusicPluginSearchType.song,
       query,
       page,
@@ -121,7 +121,7 @@ class MusicPluginSource {
     int page = 0,
     int pageSize = 30,
   }) async {
-    final (MusicPluginInstance inst, Map<String, Object?> r) = await _search(
+    final (MusicPluginRuntime inst, Map<String, Object?> r) = await _search(
       MusicPluginSearchType.album,
       query,
       page,
@@ -140,7 +140,7 @@ class MusicPluginSource {
     int page = 0,
     int pageSize = 30,
   }) async {
-    final (MusicPluginInstance inst, Map<String, Object?> r) = await _search(
+    final (MusicPluginRuntime inst, Map<String, Object?> r) = await _search(
       MusicPluginSearchType.artist,
       query,
       page,
@@ -163,7 +163,7 @@ class MusicPluginSource {
     int page = 0,
     int pageSize = 30,
   }) async {
-    final (MusicPluginInstance inst, Map<String, Object?> r) = await _search(
+    final (MusicPluginRuntime inst, Map<String, Object?> r) = await _search(
       MusicPluginSearchType.playlist,
       query,
       page,
@@ -185,7 +185,7 @@ class MusicPluginSource {
   /// [refresh] = 用户点了「换一批」：插件可以借此换掉可替换的段（推荐歌单等），
   /// 每日推荐这类按天固定的内容照旧。
   Future<List<MusicPluginHomeSection>> home({bool refresh = false}) async {
-    final (MusicPluginInstance inst, Object? v) = await _call(
+    final (MusicPluginRuntime inst, Object? v) = await _call(
       MusicPluginCapability.home,
       <String, Object?>{if (refresh) 'refresh': true},
     );
@@ -261,7 +261,7 @@ class MusicPluginSource {
     int page = 0,
     int pageSize = 50,
   }) async {
-    final (MusicPluginInstance inst, Object? v) = await _call(
+    final (MusicPluginRuntime inst, Object? v) = await _call(
       MusicPluginCapability.library,
       <String, Object?>{'page': page, 'pageSize': pageSize},
     );
@@ -281,7 +281,7 @@ class MusicPluginSource {
   Future<({MusicPluginAlbum album, List<MusicPluginTrack> tracks})> album(
     String id,
   ) async {
-    final (MusicPluginInstance inst, Object? v) = await _call(
+    final (MusicPluginRuntime inst, Object? v) = await _call(
       MusicPluginCapability.album,
       <String, Object?>{'id': id},
     );
@@ -314,7 +314,7 @@ class MusicPluginSource {
 
   Future<({MusicPluginPlaylist playlist, List<MusicPluginTrack> tracks})>
   playlist(String id) async {
-    final (MusicPluginInstance inst, Object? v) = await _call(
+    final (MusicPluginRuntime inst, Object? v) = await _call(
       MusicPluginCapability.playlist,
       <String, Object?>{'id': id},
     );
@@ -347,7 +347,7 @@ class MusicPluginSource {
     })
   >
   artist(String id) async {
-    final (MusicPluginInstance inst, Object? v) = await _call(
+    final (MusicPluginRuntime inst, Object? v) = await _call(
       MusicPluginCapability.artist,
       <String, Object?>{'id': id},
     );
@@ -383,7 +383,7 @@ class MusicPluginSource {
     int page = 0,
     int pageSize = 30,
   }) async {
-    final (MusicPluginInstance inst, Object? v) = await _call(
+    final (MusicPluginRuntime inst, Object? v) = await _call(
       MusicPluginCapability.artistAlbums,
       <String, Object?>{'id': artistId, 'page': page, 'pageSize': pageSize},
     );
@@ -402,7 +402,7 @@ class MusicPluginSource {
     int page = 0,
     int pageSize = 30,
   }) async {
-    final (MusicPluginInstance inst, Object? v) = await _call(
+    final (MusicPluginRuntime inst, Object? v) = await _call(
       MusicPluginCapability.artistMvs,
       <String, Object?>{'id': artistId, 'page': page, 'pageSize': pageSize},
     );
@@ -422,7 +422,7 @@ class MusicPluginSource {
     String mvId, {
     MusicPluginQuality quality = MusicPluginQuality.high,
   }) async {
-    final (MusicPluginInstance inst, Object? v) = await _call(
+    final (MusicPluginRuntime inst, Object? v) = await _call(
       MusicPluginCapability.mvStream,
       <String, Object?>{'id': mvId, 'quality': quality.wire},
     );
@@ -447,11 +447,11 @@ class MusicPluginSource {
 
   /// 搜索最佳匹配（`searchBest`）；插件不支持或返回 null 时为 [MusicPluginSearchBest.none]。
   Future<MusicPluginSearchBest> searchBest(String query) async {
-    final MusicPluginInstance probe = await _manager.instance(pluginId);
+    final MusicPluginRuntime probe = await _manager.runtime(pluginId);
     if (!probe.info.manifest.can(MusicPluginCapability.searchBest)) {
       return MusicPluginSearchBest.none;
     }
-    final (MusicPluginInstance inst, Object? v) = await _call(
+    final (MusicPluginRuntime inst, Object? v) = await _call(
       MusicPluginCapability.searchBest,
       <String, Object?>{'query': query},
     );
@@ -477,7 +477,7 @@ class MusicPluginSource {
   /// 已登录账号的喜欢集合（`like` 的 `op: 'list'`）；未登录时插件返回 null，这里也返回 null。
   /// 歌单封面照常按网络授权核对。
   Future<MusicPluginLikes?> likes() async {
-    final (MusicPluginInstance inst, Object? v) = await _call(
+    final (MusicPluginRuntime inst, Object? v) = await _call(
       MusicPluginCapability.like,
       const <String, Object?>{'op': 'list'},
     );
@@ -515,7 +515,7 @@ class MusicPluginSource {
     List<String> trackIds = const <String>[],
   }) async {
     final (
-      MusicPluginInstance inst,
+      MusicPluginRuntime inst,
       Object? v,
     ) = await _call(MusicPluginCapability.playlistEdit, <String, Object?>{
       'op': 'create',
@@ -570,7 +570,7 @@ class MusicPluginSource {
     String? seedTrackId,
     int? count,
   }) async {
-    final (MusicPluginInstance inst, Object? v) = await _call(
+    final (MusicPluginRuntime inst, Object? v) = await _call(
       MusicPluginCapability.radio,
       <String, Object?>{
         'op': 'next',
@@ -602,7 +602,7 @@ class MusicPluginSource {
 
   /// 相似艺人（`artistSimilar`），最多 [maxSimilarArtists] 位，坏项丢弃，封面按网络授权核对。
   Future<List<MusicPluginArtist>> similarArtists(String artistId) async {
-    final (MusicPluginInstance inst, Object? v) = await _call(
+    final (MusicPluginRuntime inst, Object? v) = await _call(
       MusicPluginCapability.artistSimilar,
       <String, Object?>{'id': artistId},
     );
@@ -651,7 +651,7 @@ class MusicPluginSource {
     String trackId, {
     MusicPluginQuality quality = MusicPluginQuality.high,
   }) async {
-    final (MusicPluginInstance inst, Object? v) = await _call(
+    final (MusicPluginRuntime inst, Object? v) = await _call(
       MusicPluginCapability.stream,
       <String, Object?>{'id': trackId, 'quality': quality.wire},
     );
@@ -725,7 +725,7 @@ class MusicPluginSource {
 
   /// 当前账号状态；插件不支持登录时恒为未登录。
   Future<MusicPluginAccount> account() async {
-    final MusicPluginInstance inst = await _manager.instance(pluginId);
+    final MusicPluginRuntime inst = await _manager.runtime(pluginId);
     if (!inst.info.manifest.can(MusicPluginCapability.account)) {
       return MusicPluginAccount.anonymous;
     }
@@ -792,7 +792,7 @@ class MusicPluginSource {
   Future<MusicPluginLoginChallenge> _challenge(
     Map<String, Object?> args,
   ) async {
-    final (MusicPluginInstance inst, Object? v) = await _call(
+    final (MusicPluginRuntime inst, Object? v) = await _call(
       MusicPluginCapability.login,
       args,
     );

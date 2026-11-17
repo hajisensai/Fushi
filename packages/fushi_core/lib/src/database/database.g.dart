@@ -7685,6 +7685,21 @@ class $MediaSourcesTable extends MediaSources
     ),
     defaultValue: const Constant(false),
   );
+  static const VerificationMeta _autoScanMeta = const VerificationMeta(
+    'autoScan',
+  );
+  @override
+  late final GeneratedColumn<bool> autoScan = GeneratedColumn<bool>(
+    'auto_scan',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("auto_scan" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
   static const VerificationMeta _sortOrderMeta = const VerificationMeta(
     'sortOrder',
   );
@@ -7736,6 +7751,7 @@ class $MediaSourcesTable extends MediaSources
     recursive,
     videoGroupingMode,
     isPrivate,
+    autoScan,
     sortOrder,
     createdAt,
     autoOwnerSourceId,
@@ -7836,6 +7852,12 @@ class $MediaSourcesTable extends MediaSources
         isPrivate.isAcceptableOrUnknown(data['is_private']!, _isPrivateMeta),
       );
     }
+    if (data.containsKey('auto_scan')) {
+      context.handle(
+        _autoScanMeta,
+        autoScan.isAcceptableOrUnknown(data['auto_scan']!, _autoScanMeta),
+      );
+    }
     if (data.containsKey('sort_order')) {
       context.handle(
         _sortOrderMeta,
@@ -7916,6 +7938,10 @@ class $MediaSourcesTable extends MediaSources
         DriftSqlType.bool,
         data['${effectivePrefix}is_private'],
       )!,
+      autoScan: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}auto_scan'],
+      )!,
       sortOrder: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}sort_order'],
@@ -7983,6 +8009,13 @@ class MediaSourceRow extends DataClass implements Insertable<MediaSourceRow> {
   /// `deleteMediaSource`）。
   final bool isPrivate;
 
+  /// 自动扫描（schema v157，拍板台 C_8oheua0H / ICOLa6LZLU / enSm2GOuFA）：true =
+  /// app 启动与回到前台时，这个来源按节流间隔自动重扫一次（调度见 fushi
+  /// `source_auto_scan.dart`），扫完照手动「重新扫描」的收尾走（视频来源串联
+  /// 「扫描后自动刮削」）。设备本地配置（来源只存在于本机，不进互联同步）；
+  /// 默认 false，存量来源 false。
+  final bool autoScan;
+
   /// 列表排序权重（同 [BookTags].sortOrder 范式）。
   final int sortOrder;
 
@@ -8007,6 +8040,7 @@ class MediaSourceRow extends DataClass implements Insertable<MediaSourceRow> {
     required this.recursive,
     required this.videoGroupingMode,
     required this.isPrivate,
+    required this.autoScan,
     required this.sortOrder,
     required this.createdAt,
     this.autoOwnerSourceId,
@@ -8032,6 +8066,7 @@ class MediaSourceRow extends DataClass implements Insertable<MediaSourceRow> {
     map['recursive'] = Variable<bool>(recursive);
     map['video_grouping_mode'] = Variable<String>(videoGroupingMode);
     map['is_private'] = Variable<bool>(isPrivate);
+    map['auto_scan'] = Variable<bool>(autoScan);
     map['sort_order'] = Variable<int>(sortOrder);
     map['created_at'] = Variable<int>(createdAt);
     if (!nullToAbsent || autoOwnerSourceId != null) {
@@ -8060,6 +8095,7 @@ class MediaSourceRow extends DataClass implements Insertable<MediaSourceRow> {
       recursive: Value(recursive),
       videoGroupingMode: Value(videoGroupingMode),
       isPrivate: Value(isPrivate),
+      autoScan: Value(autoScan),
       sortOrder: Value(sortOrder),
       createdAt: Value(createdAt),
       autoOwnerSourceId: autoOwnerSourceId == null && nullToAbsent
@@ -8086,6 +8122,7 @@ class MediaSourceRow extends DataClass implements Insertable<MediaSourceRow> {
       recursive: serializer.fromJson<bool>(json['recursive']),
       videoGroupingMode: serializer.fromJson<String>(json['videoGroupingMode']),
       isPrivate: serializer.fromJson<bool>(json['isPrivate']),
+      autoScan: serializer.fromJson<bool>(json['autoScan']),
       sortOrder: serializer.fromJson<int>(json['sortOrder']),
       createdAt: serializer.fromJson<int>(json['createdAt']),
       autoOwnerSourceId: serializer.fromJson<int?>(json['autoOwnerSourceId']),
@@ -8107,6 +8144,7 @@ class MediaSourceRow extends DataClass implements Insertable<MediaSourceRow> {
       'recursive': serializer.toJson<bool>(recursive),
       'videoGroupingMode': serializer.toJson<String>(videoGroupingMode),
       'isPrivate': serializer.toJson<bool>(isPrivate),
+      'autoScan': serializer.toJson<bool>(autoScan),
       'sortOrder': serializer.toJson<int>(sortOrder),
       'createdAt': serializer.toJson<int>(createdAt),
       'autoOwnerSourceId': serializer.toJson<int?>(autoOwnerSourceId),
@@ -8126,6 +8164,7 @@ class MediaSourceRow extends DataClass implements Insertable<MediaSourceRow> {
     bool? recursive,
     String? videoGroupingMode,
     bool? isPrivate,
+    bool? autoScan,
     int? sortOrder,
     int? createdAt,
     Value<int?> autoOwnerSourceId = const Value.absent(),
@@ -8146,6 +8185,7 @@ class MediaSourceRow extends DataClass implements Insertable<MediaSourceRow> {
     recursive: recursive ?? this.recursive,
     videoGroupingMode: videoGroupingMode ?? this.videoGroupingMode,
     isPrivate: isPrivate ?? this.isPrivate,
+    autoScan: autoScan ?? this.autoScan,
     sortOrder: sortOrder ?? this.sortOrder,
     createdAt: createdAt ?? this.createdAt,
     autoOwnerSourceId: autoOwnerSourceId.present
@@ -8176,6 +8216,7 @@ class MediaSourceRow extends DataClass implements Insertable<MediaSourceRow> {
           ? data.videoGroupingMode.value
           : this.videoGroupingMode,
       isPrivate: data.isPrivate.present ? data.isPrivate.value : this.isPrivate,
+      autoScan: data.autoScan.present ? data.autoScan.value : this.autoScan,
       sortOrder: data.sortOrder.present ? data.sortOrder.value : this.sortOrder,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       autoOwnerSourceId: data.autoOwnerSourceId.present
@@ -8199,6 +8240,7 @@ class MediaSourceRow extends DataClass implements Insertable<MediaSourceRow> {
           ..write('recursive: $recursive, ')
           ..write('videoGroupingMode: $videoGroupingMode, ')
           ..write('isPrivate: $isPrivate, ')
+          ..write('autoScan: $autoScan, ')
           ..write('sortOrder: $sortOrder, ')
           ..write('createdAt: $createdAt, ')
           ..write('autoOwnerSourceId: $autoOwnerSourceId')
@@ -8220,6 +8262,7 @@ class MediaSourceRow extends DataClass implements Insertable<MediaSourceRow> {
     recursive,
     videoGroupingMode,
     isPrivate,
+    autoScan,
     sortOrder,
     createdAt,
     autoOwnerSourceId,
@@ -8240,6 +8283,7 @@ class MediaSourceRow extends DataClass implements Insertable<MediaSourceRow> {
           other.recursive == this.recursive &&
           other.videoGroupingMode == this.videoGroupingMode &&
           other.isPrivate == this.isPrivate &&
+          other.autoScan == this.autoScan &&
           other.sortOrder == this.sortOrder &&
           other.createdAt == this.createdAt &&
           other.autoOwnerSourceId == this.autoOwnerSourceId);
@@ -8258,6 +8302,7 @@ class MediaSourcesCompanion extends UpdateCompanion<MediaSourceRow> {
   final Value<bool> recursive;
   final Value<String> videoGroupingMode;
   final Value<bool> isPrivate;
+  final Value<bool> autoScan;
   final Value<int> sortOrder;
   final Value<int> createdAt;
   final Value<int?> autoOwnerSourceId;
@@ -8274,6 +8319,7 @@ class MediaSourcesCompanion extends UpdateCompanion<MediaSourceRow> {
     this.recursive = const Value.absent(),
     this.videoGroupingMode = const Value.absent(),
     this.isPrivate = const Value.absent(),
+    this.autoScan = const Value.absent(),
     this.sortOrder = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.autoOwnerSourceId = const Value.absent(),
@@ -8291,6 +8337,7 @@ class MediaSourcesCompanion extends UpdateCompanion<MediaSourceRow> {
     this.recursive = const Value.absent(),
     this.videoGroupingMode = const Value.absent(),
     this.isPrivate = const Value.absent(),
+    this.autoScan = const Value.absent(),
     this.sortOrder = const Value.absent(),
     required int createdAt,
     this.autoOwnerSourceId = const Value.absent(),
@@ -8311,6 +8358,7 @@ class MediaSourcesCompanion extends UpdateCompanion<MediaSourceRow> {
     Expression<bool>? recursive,
     Expression<String>? videoGroupingMode,
     Expression<bool>? isPrivate,
+    Expression<bool>? autoScan,
     Expression<int>? sortOrder,
     Expression<int>? createdAt,
     Expression<int>? autoOwnerSourceId,
@@ -8328,6 +8376,7 @@ class MediaSourcesCompanion extends UpdateCompanion<MediaSourceRow> {
       if (recursive != null) 'recursive': recursive,
       if (videoGroupingMode != null) 'video_grouping_mode': videoGroupingMode,
       if (isPrivate != null) 'is_private': isPrivate,
+      if (autoScan != null) 'auto_scan': autoScan,
       if (sortOrder != null) 'sort_order': sortOrder,
       if (createdAt != null) 'created_at': createdAt,
       if (autoOwnerSourceId != null) 'auto_owner_source_id': autoOwnerSourceId,
@@ -8347,6 +8396,7 @@ class MediaSourcesCompanion extends UpdateCompanion<MediaSourceRow> {
     Value<bool>? recursive,
     Value<String>? videoGroupingMode,
     Value<bool>? isPrivate,
+    Value<bool>? autoScan,
     Value<int>? sortOrder,
     Value<int>? createdAt,
     Value<int?>? autoOwnerSourceId,
@@ -8364,6 +8414,7 @@ class MediaSourcesCompanion extends UpdateCompanion<MediaSourceRow> {
       recursive: recursive ?? this.recursive,
       videoGroupingMode: videoGroupingMode ?? this.videoGroupingMode,
       isPrivate: isPrivate ?? this.isPrivate,
+      autoScan: autoScan ?? this.autoScan,
       sortOrder: sortOrder ?? this.sortOrder,
       createdAt: createdAt ?? this.createdAt,
       autoOwnerSourceId: autoOwnerSourceId ?? this.autoOwnerSourceId,
@@ -8409,6 +8460,9 @@ class MediaSourcesCompanion extends UpdateCompanion<MediaSourceRow> {
     if (isPrivate.present) {
       map['is_private'] = Variable<bool>(isPrivate.value);
     }
+    if (autoScan.present) {
+      map['auto_scan'] = Variable<bool>(autoScan.value);
+    }
     if (sortOrder.present) {
       map['sort_order'] = Variable<int>(sortOrder.value);
     }
@@ -8436,6 +8490,7 @@ class MediaSourcesCompanion extends UpdateCompanion<MediaSourceRow> {
           ..write('recursive: $recursive, ')
           ..write('videoGroupingMode: $videoGroupingMode, ')
           ..write('isPrivate: $isPrivate, ')
+          ..write('autoScan: $autoScan, ')
           ..write('sortOrder: $sortOrder, ')
           ..write('createdAt: $createdAt, ')
           ..write('autoOwnerSourceId: $autoOwnerSourceId')
@@ -61945,6 +62000,331 @@ class MediaPrivacyFlagsCompanion extends UpdateCompanion<MediaPrivacyFlagRow> {
   }
 }
 
+class $MediaNsfwFlagsTable extends MediaNsfwFlags
+    with TableInfo<$MediaNsfwFlagsTable, MediaNsfwFlagRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $MediaNsfwFlagsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _mediaKindMeta = const VerificationMeta(
+    'mediaKind',
+  );
+  @override
+  late final GeneratedColumn<String> mediaKind = GeneratedColumn<String>(
+    'media_kind',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _entryKeyMeta = const VerificationMeta(
+    'entryKey',
+  );
+  @override
+  late final GeneratedColumn<String> entryKey = GeneratedColumn<String>(
+    'entry_key',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _nsfwAtMeta = const VerificationMeta('nsfwAt');
+  @override
+  late final GeneratedColumn<int> nsfwAt = GeneratedColumn<int>(
+    'nsfw_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _clearedAtMeta = const VerificationMeta(
+    'clearedAt',
+  );
+  @override
+  late final GeneratedColumn<int> clearedAt = GeneratedColumn<int>(
+    'cleared_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    mediaKind,
+    entryKey,
+    nsfwAt,
+    clearedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'media_nsfw_flags';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<MediaNsfwFlagRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('media_kind')) {
+      context.handle(
+        _mediaKindMeta,
+        mediaKind.isAcceptableOrUnknown(data['media_kind']!, _mediaKindMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_mediaKindMeta);
+    }
+    if (data.containsKey('entry_key')) {
+      context.handle(
+        _entryKeyMeta,
+        entryKey.isAcceptableOrUnknown(data['entry_key']!, _entryKeyMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_entryKeyMeta);
+    }
+    if (data.containsKey('nsfw_at')) {
+      context.handle(
+        _nsfwAtMeta,
+        nsfwAt.isAcceptableOrUnknown(data['nsfw_at']!, _nsfwAtMeta),
+      );
+    }
+    if (data.containsKey('cleared_at')) {
+      context.handle(
+        _clearedAtMeta,
+        clearedAt.isAcceptableOrUnknown(data['cleared_at']!, _clearedAtMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {mediaKind, entryKey};
+  @override
+  MediaNsfwFlagRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return MediaNsfwFlagRow(
+      mediaKind: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}media_kind'],
+      )!,
+      entryKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}entry_key'],
+      )!,
+      nsfwAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}nsfw_at'],
+      ),
+      clearedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}cleared_at'],
+      ),
+    );
+  }
+
+  @override
+  $MediaNsfwFlagsTable createAlias(String alias) {
+    return $MediaNsfwFlagsTable(attachedDatabase, alias);
+  }
+}
+
+class MediaNsfwFlagRow extends DataClass
+    implements Insertable<MediaNsfwFlagRow> {
+  final String mediaKind;
+  final String entryKey;
+
+  /// 最近一次标 NSFW 的毫秒戳；NULL = 从没标过。
+  final int? nsfwAt;
+
+  /// 最近一次取消 NSFW 的毫秒戳；NULL = 从没取消过。
+  final int? clearedAt;
+  const MediaNsfwFlagRow({
+    required this.mediaKind,
+    required this.entryKey,
+    this.nsfwAt,
+    this.clearedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['media_kind'] = Variable<String>(mediaKind);
+    map['entry_key'] = Variable<String>(entryKey);
+    if (!nullToAbsent || nsfwAt != null) {
+      map['nsfw_at'] = Variable<int>(nsfwAt);
+    }
+    if (!nullToAbsent || clearedAt != null) {
+      map['cleared_at'] = Variable<int>(clearedAt);
+    }
+    return map;
+  }
+
+  MediaNsfwFlagsCompanion toCompanion(bool nullToAbsent) {
+    return MediaNsfwFlagsCompanion(
+      mediaKind: Value(mediaKind),
+      entryKey: Value(entryKey),
+      nsfwAt: nsfwAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(nsfwAt),
+      clearedAt: clearedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(clearedAt),
+    );
+  }
+
+  factory MediaNsfwFlagRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return MediaNsfwFlagRow(
+      mediaKind: serializer.fromJson<String>(json['mediaKind']),
+      entryKey: serializer.fromJson<String>(json['entryKey']),
+      nsfwAt: serializer.fromJson<int?>(json['nsfwAt']),
+      clearedAt: serializer.fromJson<int?>(json['clearedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'mediaKind': serializer.toJson<String>(mediaKind),
+      'entryKey': serializer.toJson<String>(entryKey),
+      'nsfwAt': serializer.toJson<int?>(nsfwAt),
+      'clearedAt': serializer.toJson<int?>(clearedAt),
+    };
+  }
+
+  MediaNsfwFlagRow copyWith({
+    String? mediaKind,
+    String? entryKey,
+    Value<int?> nsfwAt = const Value.absent(),
+    Value<int?> clearedAt = const Value.absent(),
+  }) => MediaNsfwFlagRow(
+    mediaKind: mediaKind ?? this.mediaKind,
+    entryKey: entryKey ?? this.entryKey,
+    nsfwAt: nsfwAt.present ? nsfwAt.value : this.nsfwAt,
+    clearedAt: clearedAt.present ? clearedAt.value : this.clearedAt,
+  );
+  MediaNsfwFlagRow copyWithCompanion(MediaNsfwFlagsCompanion data) {
+    return MediaNsfwFlagRow(
+      mediaKind: data.mediaKind.present ? data.mediaKind.value : this.mediaKind,
+      entryKey: data.entryKey.present ? data.entryKey.value : this.entryKey,
+      nsfwAt: data.nsfwAt.present ? data.nsfwAt.value : this.nsfwAt,
+      clearedAt: data.clearedAt.present ? data.clearedAt.value : this.clearedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MediaNsfwFlagRow(')
+          ..write('mediaKind: $mediaKind, ')
+          ..write('entryKey: $entryKey, ')
+          ..write('nsfwAt: $nsfwAt, ')
+          ..write('clearedAt: $clearedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(mediaKind, entryKey, nsfwAt, clearedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MediaNsfwFlagRow &&
+          other.mediaKind == this.mediaKind &&
+          other.entryKey == this.entryKey &&
+          other.nsfwAt == this.nsfwAt &&
+          other.clearedAt == this.clearedAt);
+}
+
+class MediaNsfwFlagsCompanion extends UpdateCompanion<MediaNsfwFlagRow> {
+  final Value<String> mediaKind;
+  final Value<String> entryKey;
+  final Value<int?> nsfwAt;
+  final Value<int?> clearedAt;
+  final Value<int> rowid;
+  const MediaNsfwFlagsCompanion({
+    this.mediaKind = const Value.absent(),
+    this.entryKey = const Value.absent(),
+    this.nsfwAt = const Value.absent(),
+    this.clearedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  MediaNsfwFlagsCompanion.insert({
+    required String mediaKind,
+    required String entryKey,
+    this.nsfwAt = const Value.absent(),
+    this.clearedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : mediaKind = Value(mediaKind),
+       entryKey = Value(entryKey);
+  static Insertable<MediaNsfwFlagRow> custom({
+    Expression<String>? mediaKind,
+    Expression<String>? entryKey,
+    Expression<int>? nsfwAt,
+    Expression<int>? clearedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (mediaKind != null) 'media_kind': mediaKind,
+      if (entryKey != null) 'entry_key': entryKey,
+      if (nsfwAt != null) 'nsfw_at': nsfwAt,
+      if (clearedAt != null) 'cleared_at': clearedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  MediaNsfwFlagsCompanion copyWith({
+    Value<String>? mediaKind,
+    Value<String>? entryKey,
+    Value<int?>? nsfwAt,
+    Value<int?>? clearedAt,
+    Value<int>? rowid,
+  }) {
+    return MediaNsfwFlagsCompanion(
+      mediaKind: mediaKind ?? this.mediaKind,
+      entryKey: entryKey ?? this.entryKey,
+      nsfwAt: nsfwAt ?? this.nsfwAt,
+      clearedAt: clearedAt ?? this.clearedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (mediaKind.present) {
+      map['media_kind'] = Variable<String>(mediaKind.value);
+    }
+    if (entryKey.present) {
+      map['entry_key'] = Variable<String>(entryKey.value);
+    }
+    if (nsfwAt.present) {
+      map['nsfw_at'] = Variable<int>(nsfwAt.value);
+    }
+    if (clearedAt.present) {
+      map['cleared_at'] = Variable<int>(clearedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MediaNsfwFlagsCompanion(')
+          ..write('mediaKind: $mediaKind, ')
+          ..write('entryKey: $entryKey, ')
+          ..write('nsfwAt: $nsfwAt, ')
+          ..write('clearedAt: $clearedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class $LibraryOrganizeRunsTable extends LibraryOrganizeRuns
     with TableInfo<$LibraryOrganizeRunsTable, LibraryOrganizeRunRow> {
   @override
@@ -66602,6 +66982,17 @@ class $MusicTracksTable extends MusicTracks
     type: DriftSqlType.int,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _hiddenAtMeta = const VerificationMeta(
+    'hiddenAt',
+  );
+  @override
+  late final GeneratedColumn<int> hiddenAt = GeneratedColumn<int>(
+    'hidden_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     trackUid,
@@ -66638,6 +67029,7 @@ class $MusicTracksTable extends MusicTracks
     hasEmbeddedCover,
     addedAt,
     deletedAt,
+    hiddenAt,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -66897,6 +67289,12 @@ class $MusicTracksTable extends MusicTracks
         deletedAt.isAcceptableOrUnknown(data['deleted_at']!, _deletedAtMeta),
       );
     }
+    if (data.containsKey('hidden_at')) {
+      context.handle(
+        _hiddenAtMeta,
+        hiddenAt.isAcceptableOrUnknown(data['hidden_at']!, _hiddenAtMeta),
+      );
+    }
     return context;
   }
 
@@ -67042,6 +67440,10 @@ class $MusicTracksTable extends MusicTracks
         DriftSqlType.int,
         data['${effectivePrefix}deleted_at'],
       ),
+      hiddenAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}hidden_at'],
+      ),
     );
   }
 
@@ -67116,6 +67518,17 @@ class MusicTrackRow extends DataClass implements Insertable<MusicTrackRow> {
 
   /// 软删时刻（毫秒）：重扫发现文件消失时置位，歌单 / 播放记录仍能解析到行。
   final int? deletedAt;
+
+  /// 用户「从音乐库移除」的时刻（schema v158，拍板台 IDeN5PYaI7）：只从曲库隐藏、
+  /// 不碰磁盘文件。非 NULL 时 [deletedAt] 也非 NULL（隐藏的行和软删一样不进任何
+  /// 曲库查询）；它是墓碑——重扫见到同一个文件不清软删标记（`writeMusicScanBatch`
+  /// 跳过这一行），曲目不会复活，只有「恢复」（`unhideMusicTracks`）或用户显式重新
+  /// 导入光盘才清掉；移除它所属的音乐来源时，没有别的来源覆盖就清墓碑（保持软删，
+  /// `releaseMusicTracksOfSource`）。边界：墓碑按曲目身份（uid / 路径键）认，同一路径
+  /// 的文件被重新编码、音频指纹（时长 / 采样率 / 声道）变了会派生新 uid、认不回墓碑
+  /// 行，重扫会作为一首新曲目入库——这符合「指纹不同 = 换了文件」的身份语义。
+  /// 设备本地（同整张表）。
+  final int? hiddenAt;
   const MusicTrackRow({
     required this.trackUid,
     this.sourceId,
@@ -67151,6 +67564,7 @@ class MusicTrackRow extends DataClass implements Insertable<MusicTrackRow> {
     required this.hasEmbeddedCover,
     required this.addedAt,
     this.deletedAt,
+    this.hiddenAt,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -67241,6 +67655,9 @@ class MusicTrackRow extends DataClass implements Insertable<MusicTrackRow> {
     if (!nullToAbsent || deletedAt != null) {
       map['deleted_at'] = Variable<int>(deletedAt);
     }
+    if (!nullToAbsent || hiddenAt != null) {
+      map['hidden_at'] = Variable<int>(hiddenAt);
+    }
     return map;
   }
 
@@ -67330,6 +67747,9 @@ class MusicTrackRow extends DataClass implements Insertable<MusicTrackRow> {
       deletedAt: deletedAt == null && nullToAbsent
           ? const Value.absent()
           : Value(deletedAt),
+      hiddenAt: hiddenAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(hiddenAt),
     );
   }
 
@@ -67373,6 +67793,7 @@ class MusicTrackRow extends DataClass implements Insertable<MusicTrackRow> {
       hasEmbeddedCover: serializer.fromJson<bool>(json['hasEmbeddedCover']),
       addedAt: serializer.fromJson<int>(json['addedAt']),
       deletedAt: serializer.fromJson<int?>(json['deletedAt']),
+      hiddenAt: serializer.fromJson<int?>(json['hiddenAt']),
     );
   }
   @override
@@ -67413,6 +67834,7 @@ class MusicTrackRow extends DataClass implements Insertable<MusicTrackRow> {
       'hasEmbeddedCover': serializer.toJson<bool>(hasEmbeddedCover),
       'addedAt': serializer.toJson<int>(addedAt),
       'deletedAt': serializer.toJson<int?>(deletedAt),
+      'hiddenAt': serializer.toJson<int?>(hiddenAt),
     };
   }
 
@@ -67451,6 +67873,7 @@ class MusicTrackRow extends DataClass implements Insertable<MusicTrackRow> {
     bool? hasEmbeddedCover,
     int? addedAt,
     Value<int?> deletedAt = const Value.absent(),
+    Value<int?> hiddenAt = const Value.absent(),
   }) => MusicTrackRow(
     trackUid: trackUid ?? this.trackUid,
     sourceId: sourceId.present ? sourceId.value : this.sourceId,
@@ -67490,6 +67913,7 @@ class MusicTrackRow extends DataClass implements Insertable<MusicTrackRow> {
     hasEmbeddedCover: hasEmbeddedCover ?? this.hasEmbeddedCover,
     addedAt: addedAt ?? this.addedAt,
     deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
+    hiddenAt: hiddenAt.present ? hiddenAt.value : this.hiddenAt,
   );
   MusicTrackRow copyWithCompanion(MusicTracksCompanion data) {
     return MusicTrackRow(
@@ -67553,6 +67977,7 @@ class MusicTrackRow extends DataClass implements Insertable<MusicTrackRow> {
           : this.hasEmbeddedCover,
       addedAt: data.addedAt.present ? data.addedAt.value : this.addedAt,
       deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
+      hiddenAt: data.hiddenAt.present ? data.hiddenAt.value : this.hiddenAt,
     );
   }
 
@@ -67592,7 +68017,8 @@ class MusicTrackRow extends DataClass implements Insertable<MusicTrackRow> {
           ..write('fileSize: $fileSize, ')
           ..write('hasEmbeddedCover: $hasEmbeddedCover, ')
           ..write('addedAt: $addedAt, ')
-          ..write('deletedAt: $deletedAt')
+          ..write('deletedAt: $deletedAt, ')
+          ..write('hiddenAt: $hiddenAt')
           ..write(')'))
         .toString();
   }
@@ -67633,6 +68059,7 @@ class MusicTrackRow extends DataClass implements Insertable<MusicTrackRow> {
     hasEmbeddedCover,
     addedAt,
     deletedAt,
+    hiddenAt,
   ]);
   @override
   bool operator ==(Object other) =>
@@ -67671,7 +68098,8 @@ class MusicTrackRow extends DataClass implements Insertable<MusicTrackRow> {
           other.fileSize == this.fileSize &&
           other.hasEmbeddedCover == this.hasEmbeddedCover &&
           other.addedAt == this.addedAt &&
-          other.deletedAt == this.deletedAt);
+          other.deletedAt == this.deletedAt &&
+          other.hiddenAt == this.hiddenAt);
 }
 
 class MusicTracksCompanion extends UpdateCompanion<MusicTrackRow> {
@@ -67709,6 +68137,7 @@ class MusicTracksCompanion extends UpdateCompanion<MusicTrackRow> {
   final Value<bool> hasEmbeddedCover;
   final Value<int> addedAt;
   final Value<int?> deletedAt;
+  final Value<int?> hiddenAt;
   final Value<int> rowid;
   const MusicTracksCompanion({
     this.trackUid = const Value.absent(),
@@ -67745,6 +68174,7 @@ class MusicTracksCompanion extends UpdateCompanion<MusicTrackRow> {
     this.hasEmbeddedCover = const Value.absent(),
     this.addedAt = const Value.absent(),
     this.deletedAt = const Value.absent(),
+    this.hiddenAt = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   MusicTracksCompanion.insert({
@@ -67782,6 +68212,7 @@ class MusicTracksCompanion extends UpdateCompanion<MusicTrackRow> {
     this.hasEmbeddedCover = const Value.absent(),
     required int addedAt,
     this.deletedAt = const Value.absent(),
+    this.hiddenAt = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : trackUid = Value(trackUid),
        path = Value(path),
@@ -67824,6 +68255,7 @@ class MusicTracksCompanion extends UpdateCompanion<MusicTrackRow> {
     Expression<bool>? hasEmbeddedCover,
     Expression<int>? addedAt,
     Expression<int>? deletedAt,
+    Expression<int>? hiddenAt,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -67861,6 +68293,7 @@ class MusicTracksCompanion extends UpdateCompanion<MusicTrackRow> {
       if (hasEmbeddedCover != null) 'has_embedded_cover': hasEmbeddedCover,
       if (addedAt != null) 'added_at': addedAt,
       if (deletedAt != null) 'deleted_at': deletedAt,
+      if (hiddenAt != null) 'hidden_at': hiddenAt,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -67900,6 +68333,7 @@ class MusicTracksCompanion extends UpdateCompanion<MusicTrackRow> {
     Value<bool>? hasEmbeddedCover,
     Value<int>? addedAt,
     Value<int?>? deletedAt,
+    Value<int?>? hiddenAt,
     Value<int>? rowid,
   }) {
     return MusicTracksCompanion(
@@ -67937,6 +68371,7 @@ class MusicTracksCompanion extends UpdateCompanion<MusicTrackRow> {
       hasEmbeddedCover: hasEmbeddedCover ?? this.hasEmbeddedCover,
       addedAt: addedAt ?? this.addedAt,
       deletedAt: deletedAt ?? this.deletedAt,
+      hiddenAt: hiddenAt ?? this.hiddenAt,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -68046,6 +68481,9 @@ class MusicTracksCompanion extends UpdateCompanion<MusicTrackRow> {
     if (deletedAt.present) {
       map['deleted_at'] = Variable<int>(deletedAt.value);
     }
+    if (hiddenAt.present) {
+      map['hidden_at'] = Variable<int>(hiddenAt.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -68089,6 +68527,7 @@ class MusicTracksCompanion extends UpdateCompanion<MusicTrackRow> {
           ..write('hasEmbeddedCover: $hasEmbeddedCover, ')
           ..write('addedAt: $addedAt, ')
           ..write('deletedAt: $deletedAt, ')
+          ..write('hiddenAt: $hiddenAt, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -81453,6 +81892,7 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
       $VideoSubtitleTextOverridesTable(this);
   late final $MediaPrivacyFlagsTable mediaPrivacyFlags =
       $MediaPrivacyFlagsTable(this);
+  late final $MediaNsfwFlagsTable mediaNsfwFlags = $MediaNsfwFlagsTable(this);
   late final $LibraryOrganizeRunsTable libraryOrganizeRuns =
       $LibraryOrganizeRunsTable(this);
   late final $LibraryOrganizeChangesTable libraryOrganizeChanges =
@@ -81614,6 +82054,7 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
     videoSubtitleGlossaries,
     videoSubtitleTextOverrides,
     mediaPrivacyFlags,
+    mediaNsfwFlags,
     libraryOrganizeRuns,
     libraryOrganizeChanges,
     webBrowserHistory,
@@ -85930,6 +86371,7 @@ typedef $$MediaSourcesTableCreateCompanionBuilder =
       Value<bool> recursive,
       Value<String> videoGroupingMode,
       Value<bool> isPrivate,
+      Value<bool> autoScan,
       Value<int> sortOrder,
       required int createdAt,
       Value<int?> autoOwnerSourceId,
@@ -85948,6 +86390,7 @@ typedef $$MediaSourcesTableUpdateCompanionBuilder =
       Value<bool> recursive,
       Value<String> videoGroupingMode,
       Value<bool> isPrivate,
+      Value<bool> autoScan,
       Value<int> sortOrder,
       Value<int> createdAt,
       Value<int?> autoOwnerSourceId,
@@ -86227,6 +86670,11 @@ class $$MediaSourcesTableFilterComposer
 
   ColumnFilters<bool> get isPrivate => $composableBuilder(
     column: $table.isPrivate,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get autoScan => $composableBuilder(
+    column: $table.autoScan,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -86541,6 +86989,11 @@ class $$MediaSourcesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<bool> get autoScan => $composableBuilder(
+    column: $table.autoScan,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get sortOrder => $composableBuilder(
     column: $table.sortOrder,
     builder: (column) => ColumnOrderings(column),
@@ -86629,6 +87082,9 @@ class $$MediaSourcesTableAnnotationComposer
 
   GeneratedColumn<bool> get isPrivate =>
       $composableBuilder(column: $table.isPrivate, builder: (column) => column);
+
+  GeneratedColumn<bool> get autoScan =>
+      $composableBuilder(column: $table.autoScan, builder: (column) => column);
 
   GeneratedColumn<int> get sortOrder =>
       $composableBuilder(column: $table.sortOrder, builder: (column) => column);
@@ -86921,6 +87377,7 @@ class $$MediaSourcesTableTableManager
                 Value<bool> recursive = const Value.absent(),
                 Value<String> videoGroupingMode = const Value.absent(),
                 Value<bool> isPrivate = const Value.absent(),
+                Value<bool> autoScan = const Value.absent(),
                 Value<int> sortOrder = const Value.absent(),
                 Value<int> createdAt = const Value.absent(),
                 Value<int?> autoOwnerSourceId = const Value.absent(),
@@ -86937,6 +87394,7 @@ class $$MediaSourcesTableTableManager
                 recursive: recursive,
                 videoGroupingMode: videoGroupingMode,
                 isPrivate: isPrivate,
+                autoScan: autoScan,
                 sortOrder: sortOrder,
                 createdAt: createdAt,
                 autoOwnerSourceId: autoOwnerSourceId,
@@ -86955,6 +87413,7 @@ class $$MediaSourcesTableTableManager
                 Value<bool> recursive = const Value.absent(),
                 Value<String> videoGroupingMode = const Value.absent(),
                 Value<bool> isPrivate = const Value.absent(),
+                Value<bool> autoScan = const Value.absent(),
                 Value<int> sortOrder = const Value.absent(),
                 required int createdAt,
                 Value<int?> autoOwnerSourceId = const Value.absent(),
@@ -86971,6 +87430,7 @@ class $$MediaSourcesTableTableManager
                 recursive: recursive,
                 videoGroupingMode: videoGroupingMode,
                 isPrivate: isPrivate,
+                autoScan: autoScan,
                 sortOrder: sortOrder,
                 createdAt: createdAt,
                 autoOwnerSourceId: autoOwnerSourceId,
@@ -125414,6 +125874,193 @@ typedef $$MediaPrivacyFlagsTableProcessedTableManager =
       MediaPrivacyFlagRow,
       PrefetchHooks Function()
     >;
+typedef $$MediaNsfwFlagsTableCreateCompanionBuilder =
+    MediaNsfwFlagsCompanion Function({
+      required String mediaKind,
+      required String entryKey,
+      Value<int?> nsfwAt,
+      Value<int?> clearedAt,
+      Value<int> rowid,
+    });
+typedef $$MediaNsfwFlagsTableUpdateCompanionBuilder =
+    MediaNsfwFlagsCompanion Function({
+      Value<String> mediaKind,
+      Value<String> entryKey,
+      Value<int?> nsfwAt,
+      Value<int?> clearedAt,
+      Value<int> rowid,
+    });
+
+class $$MediaNsfwFlagsTableFilterComposer
+    extends Composer<_$FushiDatabase, $MediaNsfwFlagsTable> {
+  $$MediaNsfwFlagsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get mediaKind => $composableBuilder(
+    column: $table.mediaKind,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get entryKey => $composableBuilder(
+    column: $table.entryKey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get nsfwAt => $composableBuilder(
+    column: $table.nsfwAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get clearedAt => $composableBuilder(
+    column: $table.clearedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$MediaNsfwFlagsTableOrderingComposer
+    extends Composer<_$FushiDatabase, $MediaNsfwFlagsTable> {
+  $$MediaNsfwFlagsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get mediaKind => $composableBuilder(
+    column: $table.mediaKind,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get entryKey => $composableBuilder(
+    column: $table.entryKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get nsfwAt => $composableBuilder(
+    column: $table.nsfwAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get clearedAt => $composableBuilder(
+    column: $table.clearedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$MediaNsfwFlagsTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $MediaNsfwFlagsTable> {
+  $$MediaNsfwFlagsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get mediaKind =>
+      $composableBuilder(column: $table.mediaKind, builder: (column) => column);
+
+  GeneratedColumn<String> get entryKey =>
+      $composableBuilder(column: $table.entryKey, builder: (column) => column);
+
+  GeneratedColumn<int> get nsfwAt =>
+      $composableBuilder(column: $table.nsfwAt, builder: (column) => column);
+
+  GeneratedColumn<int> get clearedAt =>
+      $composableBuilder(column: $table.clearedAt, builder: (column) => column);
+}
+
+class $$MediaNsfwFlagsTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $MediaNsfwFlagsTable,
+          MediaNsfwFlagRow,
+          $$MediaNsfwFlagsTableFilterComposer,
+          $$MediaNsfwFlagsTableOrderingComposer,
+          $$MediaNsfwFlagsTableAnnotationComposer,
+          $$MediaNsfwFlagsTableCreateCompanionBuilder,
+          $$MediaNsfwFlagsTableUpdateCompanionBuilder,
+          (
+            MediaNsfwFlagRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $MediaNsfwFlagsTable,
+              MediaNsfwFlagRow
+            >,
+          ),
+          MediaNsfwFlagRow,
+          PrefetchHooks Function()
+        > {
+  $$MediaNsfwFlagsTableTableManager(
+    _$FushiDatabase db,
+    $MediaNsfwFlagsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$MediaNsfwFlagsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$MediaNsfwFlagsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$MediaNsfwFlagsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> mediaKind = const Value.absent(),
+                Value<String> entryKey = const Value.absent(),
+                Value<int?> nsfwAt = const Value.absent(),
+                Value<int?> clearedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => MediaNsfwFlagsCompanion(
+                mediaKind: mediaKind,
+                entryKey: entryKey,
+                nsfwAt: nsfwAt,
+                clearedAt: clearedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String mediaKind,
+                required String entryKey,
+                Value<int?> nsfwAt = const Value.absent(),
+                Value<int?> clearedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => MediaNsfwFlagsCompanion.insert(
+                mediaKind: mediaKind,
+                entryKey: entryKey,
+                nsfwAt: nsfwAt,
+                clearedAt: clearedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$MediaNsfwFlagsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $MediaNsfwFlagsTable,
+      MediaNsfwFlagRow,
+      $$MediaNsfwFlagsTableFilterComposer,
+      $$MediaNsfwFlagsTableOrderingComposer,
+      $$MediaNsfwFlagsTableAnnotationComposer,
+      $$MediaNsfwFlagsTableCreateCompanionBuilder,
+      $$MediaNsfwFlagsTableUpdateCompanionBuilder,
+      (
+        MediaNsfwFlagRow,
+        BaseReferences<_$FushiDatabase, $MediaNsfwFlagsTable, MediaNsfwFlagRow>,
+      ),
+      MediaNsfwFlagRow,
+      PrefetchHooks Function()
+    >;
 typedef $$LibraryOrganizeRunsTableCreateCompanionBuilder =
     LibraryOrganizeRunsCompanion Function({
       Value<int> id,
@@ -127927,6 +128574,7 @@ typedef $$MusicTracksTableCreateCompanionBuilder =
       Value<bool> hasEmbeddedCover,
       required int addedAt,
       Value<int?> deletedAt,
+      Value<int?> hiddenAt,
       Value<int> rowid,
     });
 typedef $$MusicTracksTableUpdateCompanionBuilder =
@@ -127965,6 +128613,7 @@ typedef $$MusicTracksTableUpdateCompanionBuilder =
       Value<bool> hasEmbeddedCover,
       Value<int> addedAt,
       Value<int?> deletedAt,
+      Value<int?> hiddenAt,
       Value<int> rowid,
     });
 
@@ -128144,6 +128793,11 @@ class $$MusicTracksTableFilterComposer
 
   ColumnFilters<int> get deletedAt => $composableBuilder(
     column: $table.deletedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get hiddenAt => $composableBuilder(
+    column: $table.hiddenAt,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -128326,6 +128980,11 @@ class $$MusicTracksTableOrderingComposer
     column: $table.deletedAt,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<int> get hiddenAt => $composableBuilder(
+    column: $table.hiddenAt,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$MusicTracksTableAnnotationComposer
@@ -128464,6 +129123,9 @@ class $$MusicTracksTableAnnotationComposer
 
   GeneratedColumn<int> get deletedAt =>
       $composableBuilder(column: $table.deletedAt, builder: (column) => column);
+
+  GeneratedColumn<int> get hiddenAt =>
+      $composableBuilder(column: $table.hiddenAt, builder: (column) => column);
 }
 
 class $$MusicTracksTableTableManager
@@ -128531,6 +129193,7 @@ class $$MusicTracksTableTableManager
                 Value<bool> hasEmbeddedCover = const Value.absent(),
                 Value<int> addedAt = const Value.absent(),
                 Value<int?> deletedAt = const Value.absent(),
+                Value<int?> hiddenAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => MusicTracksCompanion(
                 trackUid: trackUid,
@@ -128567,6 +129230,7 @@ class $$MusicTracksTableTableManager
                 hasEmbeddedCover: hasEmbeddedCover,
                 addedAt: addedAt,
                 deletedAt: deletedAt,
+                hiddenAt: hiddenAt,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -128605,6 +129269,7 @@ class $$MusicTracksTableTableManager
                 Value<bool> hasEmbeddedCover = const Value.absent(),
                 required int addedAt,
                 Value<int?> deletedAt = const Value.absent(),
+                Value<int?> hiddenAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => MusicTracksCompanion.insert(
                 trackUid: trackUid,
@@ -128641,6 +129306,7 @@ class $$MusicTracksTableTableManager
                 hasEmbeddedCover: hasEmbeddedCover,
                 addedAt: addedAt,
                 deletedAt: deletedAt,
+                hiddenAt: hiddenAt,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -135705,6 +136371,8 @@ class $FushiDatabaseManager {
       );
   $$MediaPrivacyFlagsTableTableManager get mediaPrivacyFlags =>
       $$MediaPrivacyFlagsTableTableManager(_db, _db.mediaPrivacyFlags);
+  $$MediaNsfwFlagsTableTableManager get mediaNsfwFlags =>
+      $$MediaNsfwFlagsTableTableManager(_db, _db.mediaNsfwFlags);
   $$LibraryOrganizeRunsTableTableManager get libraryOrganizeRuns =>
       $$LibraryOrganizeRunsTableTableManager(_db, _db.libraryOrganizeRuns);
   $$LibraryOrganizeChangesTableTableManager get libraryOrganizeChanges =>

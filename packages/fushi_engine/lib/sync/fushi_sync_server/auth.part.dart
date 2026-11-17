@@ -211,6 +211,9 @@ const List<_PublicRoute> _kPublicRoutes = <_PublicRoute>[
   // 远端原盘的盘目录：libbluray / libdvdnav 在 libmpv 里直接取文件，带不了
   // Authorization；门是路径里的会话 token（handler 内校验、按空闲过期）。
   _PublicRoute(<String>{'GET'}, isDiscShareSessionPath),
+  // 插件中继的媒体流：播放器拿裸 URL 取流；门是路径里的流票，handler 再现查签发凭据
+  // （仍是已配对的「我的设备」、host 开关开着）。
+  _PublicRoute(<String>{'GET', 'HEAD'}, _isPluginRelayStreamPath),
   // 查词音频文件交给平台播放器裸 GET；门是 RemoteLookupRoutes 里的短时不透明 id。
   _PublicRoute(<String>{'GET', 'HEAD'}, _isLookupAudioFilePath),
   // TODO-1215：词典媒体由网页 <img src> 取，带不了 Authorization，改用 query 凭据。

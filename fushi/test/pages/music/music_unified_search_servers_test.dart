@@ -473,7 +473,7 @@ void main() {
       await _settleSearch(tester);
     }
 
-    testWidgets('本地曲目：没有行尾「⋯」，整行右键给播放 / 曲目详情', (WidgetTester tester) async {
+    testWidgets('本地曲目：行尾「⋯」触屏可开菜单，整行右键给播放 / 曲目详情', (WidgetTester tester) async {
       await pumpSongs(
         tester,
         local: const MusicSearchLocalItems(tracks: <MusicTrackRow>[localTrack]),
@@ -482,10 +482,21 @@ void main() {
         const ValueKey<String>('music-search-song-local-lt1'),
       );
       expect(row, findsOneWidget);
+      final Finder more = find.byKey(
+        const ValueKey<String>('music-track-menu-lt1'),
+      );
+      expect(more, findsOneWidget, reason: '触屏没有右键，菜单里的其余动作只有这个入口');
+      await tester.tap(more); // 默认触屏指针。
+      await tester.pumpAndSettle();
       expect(
-        find.byKey(const ValueKey<String>('music-track-menu-lt1')),
+        find.byKey(const ValueKey<String>('music-menu-action-play')),
+        findsOneWidget,
+      );
+      await tester.tapAt(Offset.zero);
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey<String>('music-menu-action-play')),
         findsNothing,
-        reason: '点按播放、长按详情已覆盖本地菜单的两项，行尾不加按钮',
       );
       await tester.tap(
         row,

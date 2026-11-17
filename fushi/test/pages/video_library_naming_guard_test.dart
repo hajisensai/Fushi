@@ -43,10 +43,23 @@ void main() {
     final String src = compactCode(
       read('lib/src/pages/implementations/home_video_page.dart'),
     );
-    final String card = compactCode(
+    // ec348e9444（NSFW 封面模糊）起 `_buildCard` 只是 `MediaNsfwCoverScope` 外壳，
+    // 卡片本体搬进 `_buildCardInner`：外壳必须委托本体，集数断言落在本体上。
+    final String shell = compactCode(
       methodBody(
         read('lib/src/pages/implementations/home_video_page.dart'),
         'Widget _buildCard(',
+      ),
+    );
+    expect(
+      shell.contains('child:_buildCardInner(book,'),
+      isTrue,
+      reason: '_buildCard 只能是 NSFW 外壳，卡片本体必须委托给 _buildCardInner',
+    );
+    final String card = compactCode(
+      methodBody(
+        read('lib/src/pages/implementations/home_video_page.dart'),
+        'Widget _buildCardInner(',
       ),
     );
     final String meta = compactCode(

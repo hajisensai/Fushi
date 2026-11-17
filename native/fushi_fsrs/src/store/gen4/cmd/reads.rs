@@ -255,6 +255,7 @@ pub fn run(t: &Truth<'_>, col: i64, req: &Value, files: &mut Files) -> Result<Va
             "anki_logs_at" => single(files, r.anki_logs_at(req)?),
             "native_logs_near" => single(files, r.native_logs_near(req)?),
             "today_reviews" => r.today_reviews(req)?,
+            "reviewed_decks" => json!({"decks": r.reviewed_decks(req)?}),
             "review_grid" => single(files, r.review_grid(req)?),
             "server_times" => single(files, r.server_times(req)?),
             "cards" => single(files, r.cards(req)?),
@@ -1133,6 +1134,31 @@ impl<'t, 'c> Reads<'t, 'c> {
                 }))
             })
             .map_err(sql)
+    }
+
+    /// `reviewed_decks {before}`：有效复习投影里在 `before` 之前评过分的卡**现在**所在的牌组（去重、升序；同协议 3
+    /// `store/reads.rs`，develop 的「每日上限单位」存量牌组提醒用，W3 合流时接到新代）。
+    fn reviewed_decks(&mut self, req: &Value) -> Result<Vec<String>, String> {
+        let before = need_int(req, "before")?;
+        let mut stmt = self
+            .t
+            .conn()
+            .prepare_cached(
+                "SELECT DISTINCT c.deck_id FROM stats s \
+                 JOIN cards c ON c.col = s.col AND c.id = s.card \
+                 WHERE s.col = ?1 AND s.rating IS NOT NULL AND s.at < ?2",
+            )
+            .map_err(sql)?;
+        let rows = stmt
+            .query_map(params![self.col, before], |r| r.get::<_, Ref>(0))
+            .map_err(sql)?;
+        let mut decks = rows
+            .map(|r| r.map(|d| d.text()))
+            .collect::<Result<Vec<String>, _>>()
+            .map_err(sql)?;
+        decks.sort();
+        decks.dedup();
+        Ok(decks)
     }
 
     /// `review_grid {resetMs}`：评分复习按（统计日, 小时）聚合的时长（同协议 3），按 (日, 时) 排。

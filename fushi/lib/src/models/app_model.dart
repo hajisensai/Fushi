@@ -217,6 +217,7 @@ import 'package:fushi/src/dictionary/dict_resource_materializer.dart';
 import 'package:fushi/src/dictionary/dict_style_rules.dart';
 import 'package:fushi/src/dictionary/transform_description_locale.dart';
 import 'package:fushi/src/reader/dictionary_style_css.dart';
+import 'package:fushi/src/reader/eink_full_refresh.dart';
 import 'package:fushi/src/reader/reader_control_layout.dart';
 import 'package:fushi/src/media/manga/reader/manga_control_layout.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
@@ -299,6 +300,7 @@ import 'package:fushi_engine/utils/net/fake_ip_dns.dart';
 import 'package:fushi_torrent/fushi_torrent.dart' show FtSessionStatus;
 import 'package:fushi_engine/media/torrent/bt_site_config.dart';
 import 'package:fushi_engine/media/torrent/bt_site_legacy_migration.dart';
+import 'package:fushi_engine/media/torrent/bt_site_parser_rule.dart';
 import 'package:fushi_engine/media/torrent/bt_site_probe.dart';
 import 'package:fushi_engine/media/torrent/bt_site_providers.dart';
 import 'package:fushi_engine/media/external_provider.dart';
@@ -425,6 +427,9 @@ import 'package:fushi_engine/sync/host_jobs/host_job_runner.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi/src/sync/fushi_api_access_policy.dart';
 import 'package:fushi/src/sync/fushi_server_controller.dart';
+import 'package:fushi/src/sync/interconnect_source_share_kinds.dart';
+import 'package:fushi/src/sync/interconnect_source_share_sync.dart'
+    show AppInterconnectSourceShareHost;
 import 'package:fushi/src/sync/game_stream_library_host.dart';
 import 'package:fushi/src/sync/game_stream_mining.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
@@ -493,6 +498,8 @@ import 'package:fushi/src/media/music/mpv_music_output_backend.dart';
 import 'package:fushi_music/fushi_music.dart'
     show InstalledMusicPlugin, MusicPluginManager, MusicPluginQuality;
 import 'package:fushi/src/media/music/plugin/music_plugin_gate.dart';
+import 'package:fushi/src/media/music/plugin/music_plugin_relay_client.dart';
+import 'package:fushi/src/media/music/plugin/music_plugin_relay_host.dart';
 import 'package:fushi/src/media/favorites/web_video_favorite.dart'
     show ExtensionVideoFavoriteRequest, handleExtensionVideoFavorite;
 import 'package:fushi/src/media/music/plugin/music_plugin_favorites.dart';
@@ -1189,6 +1196,29 @@ class AppModel
         ).read(leaderboardServiceProvider);
       },
     ),
+    // 互联「来源共享」：服务器来源与插件包只发给本机主人标过「我的设备」的 peer。
+    sourceShareHost: () => AppInterconnectSourceShareHost(
+      db: database,
+      enabled: () =>
+          SyncRepository(database).isInterconnectSourceShareHostEnabled(),
+      isOwnerDevicePeer: (String token) =>
+          SyncRepository(database).isOwnerDevicePeerToken(token),
+      pluginStores: sourceSharePluginStoresOf,
+    ),
+    // 互联「插件中继」：替没有插件运行时的「我的设备」代跑本机插件。本机自己跑不了插件
+    // （合规门 / 原生库）时不接线；开关与「我的设备」判据同来源共享，按请求现读。
+    pluginRelayHost: () => isMusicPluginSourcesAvailable
+        ? AppMusicPluginRelayHost(
+            manager: () => musicPluginManager,
+            enabled: () =>
+                SyncRepository(database).isInterconnectSourceShareHostEnabled(),
+            isOwnerDevicePeer: (String token) =>
+                SyncRepository(database).isOwnerDevicePeerToken(token),
+            httpClientFactory: createAppHttpClient,
+            sharedItems: () =>
+                SyncRepository(database).getInterconnectSourceShareHostItems(),
+          )
+        : null,
     libraryServiceFactory: () => LocalLibraryHostService(
       db: database,
       dictionaryResourceRoot: dictionaryResourceDirectory,
@@ -1548,7 +1578,10 @@ class AppModel
       _mediaTrackingService?.notifyStatusChanged();
     }
 
-    if (report.settingsImported > 0 && report.serviceConfigsImported == 0) {
+    // 来源共享收下的服务器来源同样落在偏好里（OPDS / AList / Kavita / OpenSubsonic 清单），
+    // 读的是偏好缓存；插件管理器自己发变更事件，不需要这里管。
+    if ((report.settingsImported > 0 || report.sourcesShared > 0) &&
+        report.serviceConfigsImported == 0) {
       // 「同步设置」（AWp-0BtDDv）写进了别的设备的设置：偏好缓存、各媒体源设置、
       // 主题、快捷键都要从 DB 重读，否则要等下次冷启动才生效。
       await refreshPrefCache();
@@ -2310,7 +2343,7 @@ class AppModel
   /// 学习统计写入面）。三者共用同一个引擎，所以在一处一起建。
   MusicSession _createMusicSession() {
     // 插件曲目在 mpv 后端打开时才取流：装配点先于任何播放装好（管理器仍按需懒建）。
-    if (isMusicPluginSourcesAvailable) {
+    if (isMusicPluginSourcesUsable) {
       musicPluginPlaybackHost = MusicPluginPlaybackHost(
         manager: () => musicPluginManager,
         quality: (String path) => isPreferencesReady
@@ -2357,7 +2390,7 @@ class AppModel
           ? prefsRepo.musicResumeMode
           : MusicResumeMode.longTracks,
       // 歌曲收藏 = 平台账号的「喜欢」（插件 `like`）：首次被问到才拉喜欢集合。
-      favorites: _musicFavorites = isMusicPluginSourcesAvailable
+      favorites: _musicFavorites = isMusicPluginSourcesUsable
           ? MusicPluginFavorites(
               MusicPluginManagerLikeHost(() => musicPluginManager),
               onError: (Object e, StackTrace st) =>
@@ -2545,11 +2578,11 @@ class AppModel
           path: path,
         ),
     onlineEnabled: () => isDatabaseReady && prefsRepo.musicLyricsOnline,
-    pluginLyrics: isMusicPluginSourcesAvailable
+    pluginLyrics: isMusicPluginSourcesUsable
         ? (String pluginId, String trackId) =>
               musicPluginManager.source(pluginId).lyrics(trackId)
         : null,
-    pluginSearch: isMusicPluginSourcesAvailable
+    pluginSearch: isMusicPluginSourcesUsable
         ? (
             String pluginId,
             String title, {
@@ -2567,11 +2600,11 @@ class AppModel
                 query: query,
               )
         : null,
-    pluginFetch: isMusicPluginSourcesAvailable
+    pluginFetch: isMusicPluginSourcesUsable
         ? (String pluginId, Object ref) =>
               musicPluginManager.source(pluginId).lyricsFetch(ref)
         : null,
-    providers: isMusicPluginSourcesAvailable
+    providers: isMusicPluginSourcesUsable
         ? () async => enabledLyricsProviderIds(
             mergeLyricsSourceList(
               parseLyricsProviders(prefsRepo.musicLyricsProvidersRaw),
@@ -2588,9 +2621,22 @@ class AppModel
   /// 在线音源插件管理器（docs/specs/2026-10-28-music-plugins.md）：插件包与插件存储都在
   /// `<数据库目录>/music_plugins/`，不进 Drift。按首次访问懒建；没过
   /// [isMusicPluginSourcesAvailable] 的平台别来取。
+  /// 本机此刻能装 / 能共享插件包的插件体系（互联「来源共享」用）：音乐插件看合规门与
+  /// 原生库（iOS 没有，经互联中继用对端的插件）；追踪插件看管理器建没建（门同理）。
+  List<SharedPluginStore> sourceSharePluginStoresOf() => <SharedPluginStore>[
+    if (isMusicPluginSourcesAvailable)
+      MusicSharedPluginStore(musicPluginManager),
+    if (_trackingPluginManager case final TrackingPluginManager tracking)
+      TrackingSharedPluginStore(tracking),
+  ];
+
   MusicPluginManager? _musicPluginManager;
   MusicPluginManager get musicPluginManager =>
       _musicPluginManager ??= _createMusicPluginManager();
+
+  /// 本机没有插件运行时时经互联用「我的设备」host 上的插件（[isMusicPluginRelayClient]）；
+  /// 随管理器懒建，其余平台为 null。
+  InterconnectMusicPluginRelay? _musicPluginRelay;
 
   /// 插件账号登录 / 退出后调：收藏（平台「喜欢」）缓存按新账号重拉。
   void onMusicPluginAccountChanged(String pluginId) {
@@ -2613,6 +2659,21 @@ class AppModel
       // 插件日志是不可信文本：只进诊断日志，不进界面。
       log: (String id, String level, String message) =>
           debugPrint('[music-plugin] $id $level: $message'),
+      // 插件中继（拍板台 wOMR4_Er7s 方案 b）：互联开着、「接收共享来源」开着时，问已配对
+      // host 要它们愿意代跑的插件。
+      relay: _musicPluginRelay = isMusicPluginRelayClient
+          ? InterconnectMusicPluginRelay(
+              transport: InterconnectMusicPluginRelayTransport(
+                () => SyncRepository(database),
+              ),
+              enabled: () async {
+                if (!isDatabaseReady) return false;
+                final SyncRepository repo = SyncRepository(database);
+                return await repo.isInterconnectEnabled() &&
+                    await repo.isInterconnectSourceShareEnabled();
+              },
+            )
+          : null,
     );
     // 装卸 / 启停插件：收藏缓存跟着重拉（还没被问到过的不拉，首次读时自己会拉）。
     manager.changes.listen((_) {
@@ -2646,6 +2707,10 @@ class AppModel
   bool get musicLyricsLookupPause => prefsRepo.musicLyricsLookupPause;
   Future<void> setMusicLyricsLookupPause(bool value) =>
       prefsRepo.setMusicLyricsLookupPause(value);
+
+  bool get musicLyricsBlurInactive => prefsRepo.musicLyricsBlurInactive;
+  Future<void> setMusicLyricsBlurInactive(bool value) =>
+      prefsRepo.setMusicLyricsBlurInactive(value);
 
   /// 后台响度扫描（缺 ReplayGain 标签的曲目，设计 §7.3）。
   late final MusicLoudnessScanner musicLoudness = MusicLoudnessScanner(
@@ -5065,6 +5130,11 @@ class AppModel
       //    cloud backup backend can now coexist).
       StartupTimeline.mark('db-open+srs-host');
       await BackupRestoreService.recoverPendingRestore(_databaseDirectory.path);
+      // 覆盖导入保留的覆盖前快照过了保留期就删（维护者 2026-11-16 拍板）。放在
+      // recoverPendingRestore 之后：它可能刚把半途中断的覆盖导入收尾、换上新快照。
+      await BackupRestoreService.pruneExpiredOverwriteSnapshot(
+        _databaseDirectory.path,
+      );
 
       // 沙箱重定位自愈：数据根被**平台**挪走后，把库里的绝对路径重基过去。
       //
@@ -5228,6 +5298,9 @@ class AppModel
       _mediaTrackingService?.dispose();
       _mediaTrackingService = _buildMediaTrackingService();
       _startTrackingPlugins();
+      // 互联「来源共享」收插件时用的本机插件体系（同步编排在别处建，经全局装配点取）。
+      sourceSharePluginStores = sourceSharePluginStoresOf;
+      sourceSharePrefWriter = prefsRepo.replaceSharedSourceListPref;
       // Media tracking module: decided once from existing sign-ins (before
       // the first sync asks the switch).
       await prefsRepo.settleTrackingModuleInstallDefault(
@@ -6081,6 +6154,28 @@ class AppModel
   bool get einkMode => themeNotifier.einkMode;
   Future<void> setEinkMode(bool value) => themeNotifier.setEinkMode(value);
 
+  /// 墨水屏「每 N 页全刷」间隔（0 = 关）。偏好层未就绪（精简初始化 / 测试
+  /// harness）时回落「关」——阅读器翻页计数绝不能因为偏好没加载而崩。
+  int get einkFullRefreshInterval =>
+      _prefsRepo?.einkFullRefreshInterval ?? kEinkFullRefreshIntervalDefault;
+  Future<void> setEinkFullRefreshInterval(int value) =>
+      prefsRepo.setEinkFullRefreshInterval(value);
+
+  /// 墨水屏全刷方式（自动 = 设备厂商全刷优先，否则黑屏闪刷）。
+  EinkFullRefreshMethod get einkFullRefreshMethod =>
+      _prefsRepo?.einkFullRefreshMethod ?? EinkFullRefreshMethod.auto;
+  Future<void> setEinkFullRefreshMethod(EinkFullRefreshMethod method) =>
+      prefsRepo.setEinkFullRefreshMethod(method);
+
+  /// 全 app 唯一的全刷计数器：小说 / 漫画阅读器翻页时调 `notePageTurn`，根
+  /// Stack 顶层的 [EinkFullRefreshHost] 画黑屏闪刷。设置每次翻页现读。
+  late final EinkFullRefreshController einkFullRefresh =
+      EinkFullRefreshController(
+        settings: () =>
+            (interval: einkFullRefreshInterval, method: einkFullRefreshMethod),
+        device: AndroidEinkRefresh.instance,
+      );
+
   /// 功能层表面材质（导航 / 底部弹层 / 对话框的毛玻璃），与颜色主题正交。
   FushiGlassMaterial get glassMaterial => themeNotifier.glassMaterial;
   Future<void> setGlassMaterial(FushiGlassMaterial value) =>
@@ -6702,6 +6797,13 @@ class AppModel
 
   Future<void> setVideoSubtitleListTapLookup(bool value) =>
       prefsRepo.setVideoSubtitleListTapLookup(value);
+
+  /// 视频字幕列表是否列出特效字幕（H7r4mf_z2n，默认 true）。
+  bool get videoSubtitleListShowEffects =>
+      prefsRepo.videoSubtitleListShowEffects;
+
+  Future<void> setVideoSubtitleListShowEffects(bool value) =>
+      prefsRepo.setVideoSubtitleListShowEffects(value);
 
   /// 视频字幕列表上次打开的页签名（xlzGuK5YmD，`VideoSubtitleListFilter.name`）。
   String get videoSubtitleListFilter => prefsRepo.videoSubtitleListFilter;
@@ -9326,10 +9428,13 @@ class AppModel
   }
 
   /// 自动识别一个 BT 站地址是哪种站点（添加 / 重新检测）。失败抛
-  /// [BtSiteProbeException]，界面只显示中性提示。
+  /// [BtSiteProbeException]，界面只显示中性提示。给了 [parser]（用户导入的解析
+  /// 规则）就不自动识别，改为按规则验证，[cookie] 随请求发给站点。
   Future<BtSiteProbeResult> detectBtSite(
     String url, {
     bool allowInsecureHttp = false,
+    BtSiteParserRule? parser,
+    String cookie = '',
   }) async {
     final http.Client client = await createDownloadHttpClient();
     try {
@@ -9337,6 +9442,8 @@ class AppModel
         url,
         client: client,
         allowInsecureHttp: allowInsecureHttp,
+        parser: parser,
+        cookie: cookie,
       );
     } finally {
       client.close();
@@ -11754,6 +11861,16 @@ class AppModel
   Future<void> setBrowseMovedNoticeHandled() =>
       prefsRepo.setBrowseMovedNoticeHandled();
 
+  /// 库页默认改封面网格后的「拼贴仍可选」一次性提示是否已处理
+  /// （见 `library_layout_default_notice.dart`）。
+  bool get libraryLayoutDefaultNoticeHandled =>
+      prefsRepo.libraryLayoutDefaultNoticeHandled;
+  Future<void> setLibraryLayoutDefaultNoticeHandled() =>
+      prefsRepo.setLibraryLayoutDefaultNoticeHandled();
+
+  /// 当前 Profile 是否显式选过库页布局（落库值非空，含已删的 `blocks`）。
+  bool get shellContentLayoutChosen => themeNotifier.shellContentLayoutChosen;
+
   int get maximumTerms => prefsRepo.maximumTerms;
   void setMaximumTerms(int value) => prefsRepo.setMaximumTerms(value);
 
@@ -11974,6 +12091,8 @@ class AppModel
     _lnReaderManager = null;
     unawaited(_musicPluginManager?.dispose());
     _musicPluginManager = null;
+    _musicPluginRelay?.dispose();
+    _musicPluginRelay = null;
     _trackingPluginManager?.changes.removeListener(_applyTrackingProviders);
     unawaited(_trackingPluginManager?.dispose());
     _trackingPluginManager = null;

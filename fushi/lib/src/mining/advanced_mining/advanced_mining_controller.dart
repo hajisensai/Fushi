@@ -93,6 +93,10 @@ class AdvancedMiningController extends ChangeNotifier {
   AdvancedMiningMangaImageSection? get mangaSection => sections.mangaImage;
   AdvancedMiningStillImageSection? get stillSection => sections.stillImage;
 
+  /// 裁切分区框的是截屏识字的截图（没有分镜），见 [AdvancedMiningCropSource]。
+  bool get cropsScreenshot =>
+      mangaSection?.source == AdvancedMiningCropSource.screenshot;
+
   /// 卡片字段分区；没配字段映射（字段为空）时当作没有这项能力。
   AdvancedMiningFieldsSection? get fieldsSection {
     final AdvancedMiningFieldsSection? section = capabilities.fields;

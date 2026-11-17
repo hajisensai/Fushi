@@ -14,14 +14,14 @@
 #   .\tool\run_windows_itest.ps1 integration_test\app_smoke_test.dart
 #   .\tool\run_windows_itest.ps1 -DryRun integration_test\app_smoke_test.dart
 #   .\tool\run_windows_itest.ps1 -Visible integration_test\app_smoke_test.dart
-#   .\tool\run_windows_itest.ps1 -Proxy "" integration_test\app_smoke_test.dart
+#   .\tool\run_windows_itest.ps1 -Proxy http://<host>:<port> integration_test\app_smoke_test.dart
 #
 # FFI / native-assets: `flutter test -d windows` runs native build hooks
 # (sqlite3 / fushidicts). The runner isolates the app-under-test's runtime data
 # by redirecting APPDATA/LOCALAPPDATA/TEMP/USERPROFILE, but it pins PUB_CACHE to
 # the real cache so the build toolchain keeps resolving packages, and routes
-# downloads through -Proxy (default http://127.0.0.1:34151, applied only when
-# the parent has no proxy and the probe succeeds; pass -Proxy "" to disable).
+# downloads through -Proxy (default none; when given it is applied only if the
+# parent has no proxy and a quick TCP probe succeeds).
 #
 # Both modes are non-blocking: the window is always non-activating
 # (WS_EX_NOACTIVATE) and never steals the user's foreground/keyboard focus.
@@ -38,7 +38,7 @@ param(
   [string]$Target = "integration_test\desktop_settings_smoke_test.dart",
   [string]$EvidenceRoot = "",
   [string]$RunId = "",
-  [string]$Proxy = "http://127.0.0.1:34151",
+  [string]$Proxy = "",
   [switch]$DryRun,
   [switch]$Visible,
   # DRM live tests (Netflix / PlayReady in WebView2): the Media Foundation CDM
@@ -84,11 +84,10 @@ function Resolve-PubCachePath {
 $RealPubCache = Resolve-PubCachePath
 
 # Decide whether to inject HTTPS_PROXY / HTTP_PROXY for the child build. Native
-# assets download prebuilt binaries from GitHub / pub; on this network direct
-# GitHub is unreliable and must go through 127.0.0.1:34151. We never override a
-# proxy the parent already set (caller wins), and we never force a dead proxy on
-# a no-proxy machine: the default proxy is only applied when a quick TCP probe
-# confirms it is actually listening. Pass `-Proxy ""` to opt out entirely.
+# assets download prebuilt binaries from GitHub / pub. We never override a
+# proxy the parent already set (caller wins), and we never force a dead proxy:
+# an explicit -Proxy is only applied when a quick TCP probe confirms it is
+# actually listening. Default is no proxy (this machine connects directly).
 function Test-ProxyReachable {
   param([Parameter(Mandatory = $true)][string]$ProxyUrl)
   try {
