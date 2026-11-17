@@ -545,6 +545,49 @@ void main() {
         );
       },
     );
+
+    test('收段让路：依赖另一台设备的段排在前面时，只停进等待缓冲的一片也算进展，一轮收完不报错', () async {
+      // 操作的依赖 = 写它时本机已应用的版本向量：a 先写一批，b 收下后写一批（依赖 a），a 再收下写一批（依赖 b）。
+      // 新设备 c 收段时无论 a、b 谁的段排在前面，前面那台都有一长串依赖后面那台的项，整片只停进等待缓冲
+      // （`landed` 为 0）。以前 Dart 拿 `landed` 判进展，这里抛 StateError、一轮失败。
+      const int n = SrsDbStore.kSrsSync2IngestSliceItems;
+      final SrsDbStore a = await device('A');
+      final SrsDbStore b = await device('B');
+      final SrsDbStore c = await device('C');
+      final SrsMemoryLocationStore loc = SrsMemoryLocationStore();
+      Future<SrsSync2Report> round(SrsDbStore s) => srsSync2Round(
+        host: s,
+        location: loc,
+        locationId: 'loc',
+        nowMs: () => DateTime.now().millisecondsSinceEpoch,
+      );
+      for (int i = 0; i < n; i++) {
+        await addNote(a, '甲$i');
+      }
+      expect((await round(a)).error, isNull);
+      expect((await round(b)).error, isNull);
+      for (int i = 0; i < n; i++) {
+        await addNote(b, '乙$i');
+      }
+      expect((await round(b)).error, isNull);
+      expect((await round(a)).error, isNull);
+      for (int i = 0; i < n; i++) {
+        await addNote(a, '丙$i');
+      }
+      expect((await round(a)).error, isNull);
+      int slices = 0;
+      c.debugOnIngestSlice = () => slices++;
+      final SrsSync2Report rc = await round(c);
+      c.debugOnIngestSlice = null;
+      expect(rc.error, isNull);
+      expect(slices, greaterThanOrEqualTo(3), reason: 'ingest sliced');
+      expect((await c.sync2Status())['pending'], 0);
+      expect((await round(a)).error, isNull);
+      expect(
+        (await a.sync2Digest())['digest'],
+        (await c.sync2Digest())['digest'],
+      );
+    });
   });
 
   // 发件分批 + 水位续传（反馈 XDV7Mzc2gw / kB2ltk0u9F / U37Aku3oeL）：上传中途断掉，下一轮从已确认的水位接着发，

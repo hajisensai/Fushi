@@ -1349,9 +1349,6 @@ Dart：`srs_format_break_test`（保留并转绿）、`srs_sync4_round_test`（�
   大的旧根时一个事务可能装几百个协议 3 段，作答要等它。没切是因为收尾批（`settle`）要求「这一批正好是本轮重算的待读
   清单」才记指纹（指纹与落库同一事务，`oldroot.rs` 文件头）——按项切会让收尾批永远凑不齐整份清单，得先把指纹改成
   跨事务累计的形状。影响只在迁移后第一次捡旧根（之后清单不变不读）。
-- Dart 侧「双作者、依赖方段排在前面」的真内核用例没加：要本 worktree 重编原生库（内存紧、同批在编），本轮用 Rust 用例
-  `ingest_slices_count_parked_items_as_progress` 逐字照搬 Dart 的进展判据代替。下一个带原生库的 worktree 补一条
-  `srs_sync2_ingest_batching_test` 用例即可。
 - 移除位置没有生产路径删 `loc_state` / 调 `forget_location`（新代没有「移除位置」命令）：转发已按活跃窗口不再等死位置，
   剩下的只是几行状态。要做就在 G10 的位置管理里加一条命令。
 - `ffi.rs` wiring 分类断言是 `unwired > 0`（只剩 G9-5 的 `profile_merge_mark`）：G9-5 合流后要改成允许为空或删掉。
@@ -1362,7 +1359,10 @@ Dart：`srs_format_break_test`（保留并转绿）、`srs_sync4_round_test`（�
    Dart `sync2IngestBatch` 只在 `rest == 0 && spent == 0` 时判契约坏了；以前拿 `landed` 当代理，依赖方的段排在前面时
    一片全停进等待缓冲（`landed = 0`）就抛 `StateError`，大库首次同步要连着失败约 N/256 轮。用例
    `ingest_slices_count_parked_items_as_progress`（a 写 300、b 改这 300、c 收时 b 的段在前、预算 100，至少一片是「只停
-   放」，一路收完、与 b 收敛）。变异：回包 `spent` 改回 `landed` → 该用例红。
+   放」，一路收完、与 b 收敛）；Dart 真内核用例 `srs_sync2_ingest_batching_test`「收段让路：依赖另一台设备的段排在前面时…」
+   （a、b 交替各写 256 条，c 一轮收完无错、摘要与 a 相同——不论 a、b 谁的段在前，前面那台都有一长串依赖后面那台的项）。
+   变异：回包 `spent` 改回 `landed` → Rust 用例红；Dart 判据改回 `landed` → Dart 用例抛 `sync2 ingest slice made no
+   progress`。
 2. **转发目标只认活跃位置（major）**：`head` 写 head 时记 `loc_state.last_ok`（不变跳过也记，这一轮在这个位置成功了）；
    转发目标 = `last_ok` 非空、且离本机最近一次成功不超过 30 天（`ACTIVE_WINDOW_MS`，协议 3 同值）。与协议 3 不同，
    `last_ok` 为空的不算：新代的空行来自迁移（`carry.rs` 把协议 3 见过的每个加密位置都灌进来）和 `plan` 第一次读到位置
