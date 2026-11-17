@@ -102,7 +102,6 @@ void main() {
         expect(r.ops?.error, isNull);
         expect(r.ops?.needsUpgrade, isFalse);
         expect(r.ops?.mediaRoot, kSrs4Root);
-        expect(r.prepared, isNull);
       }
     }
     final String dir = await srsFolderLocationDir(a);

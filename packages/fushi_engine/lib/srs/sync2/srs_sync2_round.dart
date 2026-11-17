@@ -19,12 +19,10 @@ import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
 
-import 'package:fushi_engine/srs/srs_media_sync.dart' show kSrsMediaFolder;
 import 'package:fushi_engine/srs/sync2/srs_location_crypto.dart';
-import 'package:fushi_engine/srs/sync2/srs_location_migration.dart'
-    show kSrsV1MovedToKey, srsDecodeV1Fence, srsEncodeV1Fence;
 import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
 import 'package:fushi_engine/srs/sync2/srs_sync4_steps.dart';
+import 'package:fushi_engine/srs/sync2/srs_v1_fence.dart';
 import 'package:fushi_srs/fushi_srs.dart' show SrsSync2Result;
 
 /// 一轮同步要的内核接口（[SrsDbStore] 实现；测试可替身）。
@@ -86,8 +84,8 @@ const String kSrsSync2OutboxRecut = 'srs outbox batch was re-cut';
 /// 与这里同值但互不联动）。以后升协议只要布局没变，这里保持 3，v3.3.0 读者就能继续和没用到新内容的设备同步。
 ///
 /// 2 = 2026-10-30 断代：集合根从 `v2/` 挪到 `v3/`（srs_location_store.dart [kSrsSync2Folder]），媒体只剩内容寻址；
-/// 协议 1 的位置由一次性迁移搬过来（srs_location_migration.dart），旧根上只留一份 `minReader` = 2 的 `meta.json`
-/// 让旧版本停下。
+/// 协议 1 的位置当时由一次性迁移搬过来（新代已删那份迁移，只有协议 1 旧根的位置一律拒绝，D21），旧根上只留一份
+/// 让旧版本停下的围栏（srs_v1_fence.dart）。
 ///
 /// 3 = 存量重复流收敛（BUG-4005，内核 store/sync2/dedup.rs）：段里出现新种类 `Dedup` 与带副本说明的骨架，协议 2 的
 /// 读者解不开，head 的 `minReader` = 3 让它们停下、报需要升级（[SrsSync2Report.needsUpgrade]）。
@@ -594,11 +592,11 @@ bool srsIsOldRootFence(Uint8List? bytes) {
   }
 }
 
-/// 新根 [location] 下已经有设备目录或媒体（明文 / 加密）：有人在这个新根上同步过。
+/// 新根 [location] 下已经有设备目录或加密媒体：有人在这个新根上同步过（与握手 [srsLocationHandshake] 判「已有数据」
+/// 同一口径；明文媒体目录不算：内容寻址的明文对象可能先于 meta 落在位置上，它也不带 `kdf` / 媒体根的信息）。
 Future<bool> _srsV4HasData(SrsLocationStore location) async =>
     (await location.list('devices')).isNotEmpty ||
-    (await location.list(kSrsSealedMediaFolder)).isNotEmpty ||
-    (await location.list(kSrsMediaFolder)).isNotEmpty;
+    (await location.list(kSrsSealedMediaFolder)).isNotEmpty;
 
 /// [srsLocationHandshake] 看到的位置：`meta.json` 是这一轮读到的那份（新根的，没有就是旧根的），写 `meta.json`
 /// 不落盘、只记下要开的 `kdf`（新根 meta 只由内核 `location_root` 写）；别的路径照原位置读。
@@ -641,9 +639,8 @@ class _SrsMetaView implements SrsLocationStore {
 
 /// 一轮的读半边：读 [location] 上全部设备的 head（每台取代号最大的）→ 内核定要拉
 /// 的段 → 分批拉、分批收。结果累加进 [report]。返回 false = 这一轮到此为止：中途收手（[report] 的 error 是
-/// [kSrsSync2Stopped]）或有设备的 head 要求更新的读者（[SrsSync2Report.needsUpgrade]，什么都没收）。v1 位置的
-/// 一次性迁移也用它先把旧根上的段收进本机（srs_location_migration.dart），再补媒体绑定；迁移传 [progressId] = null：
-/// 不按位置记 head / 转发账（旧根不是一个同步位置，记了会清掉同一位置新根的转发记账）。
+/// [kSrsSync2Stopped]）或有设备的 head 要求更新的读者（[SrsSync2Report.needsUpgrade]，什么都没收）。[progressId] = null：
+/// 不按位置记 head / 转发账。
 /// [listed] 给了就记下读 head 时列到的每个设备目录（`devices/<id>` → 文件名）：一轮的作者自检用本机那一份，不再多列一次。
 Future<bool> srsSync2Pull({
   required SrsSync2Host host,

@@ -18,7 +18,7 @@ import 'package:fushi_engine/srs/srs_media_sync.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_engine/srs/sync2/srs_folder_location.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_crypto.dart';
-import 'package:fushi_engine/srs/sync2/srs_location_migration.dart';
+import 'package:fushi_engine/srs/sync2/srs_v1_fence.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
 import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
 import 'package:fushi_engine/sync/local_directory_asset_store.dart';
@@ -107,7 +107,6 @@ void main() {
     SrsDbStore s, {
     Directory? media,
     SrsLocationKey? key,
-    SrsLocationMigrationMemo? memo,
   }) {
     t += 1000;
     return srsSyncFolderLocation(
@@ -115,7 +114,6 @@ void main() {
       store: s,
       mediaRoot: media,
       key: key,
-      migrationMemo: memo,
     );
   }
 
