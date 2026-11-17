@@ -19,6 +19,7 @@ import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
 
+import 'package:fushi_engine/srs/srs_media_sync.dart' show kSrsMediaFolder;
 import 'package:fushi_engine/srs/sync2/srs_location_crypto.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_migration.dart'
     show kSrsV1MovedToKey, srsDecodeV1Fence, srsEncodeV1Fence;
@@ -476,6 +477,15 @@ Future<SrsLocationRoot?> srsSync4LocationRoot({
       ? await protocol1Root?.get('meta.json')
       : null;
   final bool has2 = meta2 != null && srsDecodeV1Fence(meta2) == null;
+  // 新根 meta 读不到（最终一致的网盘暂时列不到 / 被删）而这个集合的新根已经立过：旧根是围栏（围栏只在新根 meta 写好
+  // 之后才写），或新根下已有设备 / 媒体数据。这时新根原来的 `media` / `kdf` 从别处推不出来（围栏不带 `media`），重建
+  // 一份会把媒体根改错、在允许同名文件的后端上多出一份 meta：报 [kSrsSync2MetaUnavailable]，这一轮什么都不写（与协议 3
+  // 的「已有数据却读不到 meta 就不重写」同一条闸）。围栏也不能当 meta 交给握手——那正是绕过这道闸的路。
+  final bool v4Data = meta4 == null && await _srsV4HasData(location);
+  if (meta4 == null && (srsIsOldRootFence(meta3) || v4Data)) {
+    report.error = kSrsSync2MetaUnavailable;
+    return null;
+  }
   final _SrsMetaView view = _SrsMetaView(location, meta4 ?? meta3);
   final SrsLocationHandshake hs = await srsLocationHandshake(
     view,
@@ -507,6 +517,7 @@ Future<SrsLocationRoot?> srsSync4LocationRoot({
       'has4': meta4 != null,
       'has3': meta3 != null,
       'has2': has2,
+      'v4Data': v4Data,
       'locs': <String>[
         for (final SrsLocationEntry e in await location.list('loc'))
           if (!e.isFolder) e.name,
@@ -526,6 +537,8 @@ Future<SrsLocationRoot?> srsSync4LocationRoot({
     final Object? code = root.map['code'];
     report.error = code == kSrsLocationProtocol1Root
         ? kSrsLocationProtocol1Root
+        : code == kSrs4MetaUnavailableCode
+        ? kSrsSync2MetaUnavailable
         : code == null
         ? '$kSrs4LocationRefused: ${root.map['error']}'
         : '$kSrs4LocationRefused: $code: ${root.map['error']}';
@@ -564,6 +577,28 @@ Future<SrsLocationRoot?> srsSync4LocationRoot({
     media: media,
   );
 }
+
+/// 内核 `location_root` 拒绝码：新根 meta 读不到而新根已经立过（旧根是围栏 / 新根下已有数据），不重写
+/// （`gen4/cmd/sync.rs` `ERR_META_UNAVAILABLE`）。
+const String kSrs4MetaUnavailableCode = 'srs_location_meta_unavailable';
+
+/// [bytes]（旧根 `v3/meta.json`）是本版本立的围栏（`moved` = [kSrs4Root]，内核 `gen4/location.rs` `fence3`）。
+/// 解析不了 / 不是 JSON 对象 / 没有 `moved` 的都不算（存量协议 3 的 meta 由内核核对）。
+bool srsIsOldRootFence(Uint8List? bytes) {
+  if (bytes == null) return false;
+  try {
+    final Object? j = jsonDecode(utf8.decode(bytes));
+    return j is Map && j['moved'] == kSrs4Root;
+  } on FormatException {
+    return false;
+  }
+}
+
+/// 新根 [location] 下已经有设备目录或媒体（明文 / 加密）：有人在这个新根上同步过。
+Future<bool> _srsV4HasData(SrsLocationStore location) async =>
+    (await location.list('devices')).isNotEmpty ||
+    (await location.list(kSrsSealedMediaFolder)).isNotEmpty ||
+    (await location.list(kSrsMediaFolder)).isNotEmpty;
 
 /// [srsLocationHandshake] 看到的位置：`meta.json` 是这一轮读到的那份（新根的，没有就是旧根的），写 `meta.json`
 /// 不落盘、只记下要开的 `kdf`（新根 meta 只由内核 `location_root` 写）；别的路径照原位置读。

@@ -11,6 +11,8 @@ import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_engine/srs/sync2/srs_folder_location.dart';
+import 'package:fushi_engine/srs/sync2/srs_location_crypto.dart'
+    show kSrsSync2MetaUnavailable;
 import 'package:fushi_engine/srs/sync2/srs_location_store.dart'
     show SrsAssetLocationStore, kSrsSync2Folder, kSrsSync2Namespace;
 import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
@@ -226,6 +228,41 @@ void main() {
     expect(
       Directory(p.join(tmp.path, kSrsSync2Namespace, kProfile)).existsSync(),
       isFalse,
+    );
+  });
+
+  // 审计 R10：新根 `v4/meta.json` 一时读不到（最终一致的网盘 / 被删）而旧根围栏读得到时，以前把围栏当 meta 交给握手、
+  // 内核按围栏重建新根 meta——新集合的媒体根被从 v4 改成 v3（围栏不带 `media`）。现在报 meta 读不到、什么都不写。
+  test('新集合的新根 meta 读不到：不按围栏重写、不算一轮；放回后照常、媒体根仍是 v4', () async {
+    final SrsFolderLocation loc = folder();
+    final SrsDbStore a = await device('a');
+    await addNote(a, '猫');
+    expect((await run(loc, a)).ops?.error, isNull);
+    final String dir = await srsFolderLocationDir(a);
+    final File meta4 = File(
+      p.join(srsFolderNewRoot(loc, dir).path, 'meta.json'),
+    );
+    final File fence = File(
+      p.join(srsFolderCollectionRoot(loc, dir).path, 'meta.json'),
+    );
+    final List<int> original = meta4.readAsBytesSync();
+    final List<int> fenceBytes = fence.readAsBytesSync();
+    meta4.deleteSync();
+    await addNote(a, '犬');
+    final SrsFolderSyncReport r = await run(loc, a);
+    expect(r.ops?.error, kSrsSync2MetaUnavailable);
+    expect(r.ops?.uploaded ?? 0, 0);
+    expect(meta4.existsSync(), isFalse, reason: '新根 meta 不重写');
+    expect(fence.readAsBytesSync(), fenceBytes, reason: '围栏不动');
+    // 放回后照常：媒体根仍是 v4，新根 meta 逐字节没变。
+    meta4.writeAsBytesSync(original);
+    final SrsFolderSyncReport back = await run(loc, a);
+    expect(back.ops?.error, isNull);
+    expect(back.ops?.mediaRoot, kSrs4Root);
+    expect(meta4.readAsBytesSync(), original);
+    expect(
+      readJson(srsFolderNewRoot(loc, dir), 'meta.json')['media'],
+      kSrs4Root,
     );
   });
 

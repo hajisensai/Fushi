@@ -86,6 +86,10 @@ const KDF_MAX_BYTES: usize = 1024;
 pub const ROOT_OK: &str = "ok";
 pub const ROOT_NEEDS_UPGRADE: &str = "needsUpgrade";
 pub const ROOT_REFUSED: &str = "refused";
+/// [location_root] 的拒绝码：新根 meta 读不到，而这个集合的新根已经立过（旧根是 [fence3] 围栏——围栏只在新根 meta
+/// 写好之后才写——或 Dart 列到新根下已有数据，`v4Data`）。新根原来的 `media` / `kdf` 推不出来（围栏不带 `media`），
+/// 重建会把媒体根改错：不写、这一轮停下，等 meta 读得到（Dart `kSrsSync2MetaUnavailable`）。
+pub const ERR_META_UNAVAILABLE: &str = "srs_location_meta_unavailable";
 
 // ---------------------------------------------------------------------- 小工具
 
@@ -454,11 +458,12 @@ fn cut(
 
 // ---------------------------------------------------------------------- 1. 位置的根
 
-/// `location_root {profile, location, now, has4, has3, locs, enableKdf?}`，字节块依次是位置上的 `v4/meta.json`（`has4`）、
+/// `location_root {profile, location, now, has4, has3, has2?, v4Data?, locs, enableKdf?}`，字节块依次是位置上的 `v4/meta.json`（`has4`）、
 /// `v3/meta.json`（`has3`）。`locs` = `v4/loc/` 下的文件名。回包 `{state, error?, loc, kdf, media, fresh, ensure}`，要写的
 /// 文件在 [files]（路径相对位置目录，`v4/…` / `v3/…`，按顺序写：先新根、后围栏）；`ensure` 里的路径「不存在才写」
 /// （墓碑 head：内容是目录名的纯函数，每轮覆盖写没有意义）。
 ///
+/// - 新根 meta 读不到、而旧根已是围栏或新根下已有数据（`v4Data`）：报 [ERR_META_UNAVAILABLE]，什么都不写。
 /// - 新根 meta（设计 §4.1）：没有就写 [meta4]（`kdf` 从旧根原样抄；新集合没有旧根时取本机要开的 `enableKdf`）；有就按
 ///   字段核对（[check_meta4]）：要求更新的读者 → `needsUpgrade`，外形不认得 / 集合或媒体根不同 → `refused`，什么都
 ///   不写（不能当成可覆盖重建）。唯一允许的改写：位置上的 meta 没有 `kdf`、本机这一轮要开加密（`enableKdf`）。
@@ -554,6 +559,16 @@ pub fn location_root(
                 "v3/meta.json needs a newer reader".into(),
             ));
         }
+    }
+    // 新根 meta 读不到而新根已经立过：不按围栏 / 旧根重建（会把新集合的媒体根从 v4 改成 v3）。
+    let v4_data = req.get("v4Data") == Some(&Value::Bool(true));
+    if v4.is_none() && (fenced3 || v4_data) {
+        let mut v = refuse(
+            ROOT_REFUSED,
+            "v4/meta.json is unavailable but the new root already exists".into(),
+        );
+        v["code"] = json!(ERR_META_UNAVAILABLE);
+        return Ok(v);
     }
     let media = if v3.is_some() {
         MediaRoot::V3

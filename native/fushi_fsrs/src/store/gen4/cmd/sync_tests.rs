@@ -20,7 +20,9 @@ use rusqlite::{Connection, OpenFlags};
 use serde_json::{Value, json};
 
 use super::dispatch_tests::{T1, cfg, g4, g4req, open};
-use super::sync::{LOC_HEAD_SEQ_SQL, LOC_STATE_SQL, VOIDS_SQL, sealed_at_location};
+use super::sync::{
+    ERR_META_UNAVAILABLE, LOC_HEAD_SEQ_SQL, LOC_STATE_SQL, VOIDS_SQL, sealed_at_location,
+};
 use super::tests::{N1, N2, N3, card, note};
 use crate::gen4::head::Head4;
 use crate::gen4::location::{V4File, parse_v4_path};
@@ -962,6 +964,81 @@ fn the_location_root_fences_protocol_3_and_refuses_what_it_cannot_read() {
     );
     assert_eq!(r["state"], json!("refused"), "{r}");
     assert!(files.is_empty());
+}
+
+/// 新根 `v4/meta.json` 一时读不到（最终一致的网盘 / 被删）而新根已经立过：旧根是围栏，或 Dart 列到新根下已有数据
+/// （`v4Data`）。不能按围栏重建新根 meta——新集合的媒体根会从 `v4` 被改成 `v3`（围栏不带 `media`）——报
+/// `srs_location_meta_unavailable`、一个字节不写；meta 放回后照常，媒体根仍是 `v4`。
+#[test]
+fn an_unreadable_new_root_meta_behind_a_fence_is_not_rebuilt() {
+    let a = Dev::new("g87m");
+    // 全新集合：立新根（媒体在 v4）与围栏。
+    let (r, files) = cmd(
+        a.h,
+        "location_root",
+        T1,
+        json!({"location": "loc", "has4": false, "has3": false, "locs": []}),
+        &[],
+    );
+    assert_eq!(r["state"], json!("ok"), "{r}");
+    assert_eq!(r["media"], json!("v4"));
+    let meta = files
+        .iter()
+        .find(|(p, _)| p == "v4/meta.json")
+        .unwrap()
+        .1
+        .clone();
+    let fence = files
+        .iter()
+        .find(|(p, _)| p == "v3/meta.json")
+        .unwrap()
+        .1
+        .clone();
+    let mark = files
+        .iter()
+        .find_map(|(p, _)| p.strip_prefix("v4/loc/"))
+        .unwrap()
+        .to_owned();
+    // 新根 meta 读不到、旧根是围栏：拒绝，不写。
+    let (r, files) = cmd(
+        a.h,
+        "location_root",
+        T1,
+        json!({"location": "loc", "has4": false, "has3": true, "locs": [mark]}),
+        &[fence.clone()],
+    );
+    assert_eq!(r["state"], json!("refused"), "{r}");
+    assert_eq!(r["code"], json!(ERR_META_UNAVAILABLE));
+    assert!(
+        files.is_empty(),
+        "{:?}",
+        files.iter().map(|f| &f.0).collect::<Vec<_>>()
+    );
+    // 旧根也读不到、但新根下已有数据：同样拒绝。
+    let (r, files) = cmd(
+        a.h,
+        "location_root",
+        T1,
+        json!({"location": "loc", "has4": false, "has3": false, "v4Data": true, "locs": [mark]}),
+        &[],
+    );
+    assert_eq!(r["code"], json!(ERR_META_UNAVAILABLE), "{r}");
+    assert!(files.is_empty());
+    // 放回后照常：媒体根仍是 v4，什么都不重写。
+    let (r, files) = cmd(
+        a.h,
+        "location_root",
+        T1,
+        json!({"location": "loc", "has4": true, "has3": true, "locs": [mark]}),
+        &[meta, fence],
+    );
+    assert_eq!(r["state"], json!("ok"), "{r}");
+    assert_eq!(r["media"], json!("v4"));
+    assert!(
+        files.is_empty(),
+        "{:?}",
+        files.iter().map(|f| &f.0).collect::<Vec<_>>()
+    );
 }
 
 /// 位置上的 head 要更新的读者：`plan` 报 `needsUpgrade`（Dart 整轮停下）。
