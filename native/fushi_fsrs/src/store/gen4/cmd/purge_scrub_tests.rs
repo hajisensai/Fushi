@@ -354,6 +354,47 @@ fn a_purge_by_the_relay_does_not_cut_off_a_location_only_it_feeds() {
     }
 }
 
+/// b 收 a 的段时只同步着 L1（没留原文），清除之后才连上 L2：`plan` 不为转发去拉 a 的原文（`wanted_for_relay` 看到本机在那段
+/// 里清除过），转发到 L2 的是从 b 日志重切的件；只连 L2 的 c 收齐 a 其余的与 b 之后的。
+#[test]
+fn a_location_joined_after_the_purge_gets_a_recut_and_no_original_is_fetched() {
+    let mut a = Dev::new("c3ja");
+    let mut b = Dev::new("c3jb");
+    let c = Dev::new("c3jc");
+    let (mut l1, mut l2) = (Loc::new(), Loc::new());
+    let plain = Opts::default();
+    round(&b, &mut l1, "L1", T1, plain);
+    a.write(T1 + 1, N1, "secret-c3-join");
+    a.write(T1 + 1, N2, "keep-c3");
+    round(&a, &mut l1, "L1", T1 + 2, plain);
+    round(&b, &mut l1, "L1", T1 + 3, plain);
+    assert_eq!(b.field(N2), Some(json!("keep-c3")));
+    let da = a.device();
+    assert_eq!(relay_segs(&mut b), 0, "one location: nothing kept");
+
+    purge(&b, T1 + 4, N1);
+    b.write(T1 + 5, N3, "b-after-purge");
+    round(&c, &mut l2, "L2", T1 + 6, plain);
+    round(&b, &mut l2, "L2", T1 + 6, plain);
+    let r = round(&b, &mut l1, "L1", T1 + 7, plain);
+    assert!(
+        !fetches_from(&r.plan, &da),
+        "no original fetched: {}",
+        r.plan
+    );
+    relay(&b, &mut l2, "L2", None, T1 + 7);
+    let keys = [key_pair(&mut a), key_pair(&mut b)];
+    let (files, by, carrying) = relayed_at(&l2, &da, &keys, "secret-c3-join");
+    assert_eq!((files, carrying), (1, 0));
+    assert_eq!(by, vec![keys[1].0], "recut from b's log");
+
+    assert_eq!(settle(&c, &mut l2, "L2", T1 + 8, 3), 0);
+    assert_eq!(c.field(N2), Some(json!("keep-c3")));
+    assert_eq!(c.field(N3), Some(json!("b-after-purge")));
+    assert_eq!(bytes_carrying(&c.dir.0, "secret-c3-join"), 0);
+    assert_eq!(bytes_carrying(&b.dir.0, "secret-c3-join"), 0);
+}
+
 /// 一次清除跨过了作者的切点（a 的段 1..=1 与 2..=3，清除 N1 = seq 1、2）、而 b 已经没留这两段：b 的日志里两条空洞合成
 /// 一个区间，切点 1 处的链值靠合并时记下的记号还在，两段都能从日志重切；c 收齐 a 其余的与 b 之后的。
 #[test]
