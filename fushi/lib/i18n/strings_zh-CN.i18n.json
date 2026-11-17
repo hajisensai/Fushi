@@ -9270,6 +9270,8 @@
   "srs_deck_delete_purge_retained_hint": "立即在所有设备上删除牌组、卡片和不再使用的媒体，不可撤销。旧版本保留副本里仍有升级前的原文，直到保留副本被删除（到期自动删除，或在 设置 › 存储 里立即删除）。",
   "srs_deck_delete_purge_retained_keep": "只彻底清除",
   "srs_deck_delete_purge_retained_keep_hint": "保留副本到期再删",
+  "srs_deck_delete_purge_retained_keep_kept_hint": "保留副本留着，直到你手动删除",
+  "srs_deck_delete_purge_retained_kept_hint": "立即在所有设备上删除牌组、卡片和不再使用的媒体，不可撤销。旧版本保留副本里仍有升级前的原文，直到你在 设置 › 存储 里删除它（它不会自动到期）。",
   "srs_deck_delete_purge_retained_title": "保留副本里仍有原文",
   "srs_deck_delete_with_cards": "连卡片一起删除",
   "srs_deck_delete_with_cards_hint": "只在这些牌组里有卡的笔记整条删除；在别的牌组还有卡的笔记保留，这里的卡移到上级牌组",

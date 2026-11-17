@@ -114,7 +114,7 @@ List<CtlRoute> srsCtlRoutes(SrsCtlHost host) => <CtlRoute>[
   CtlRoute.get('$kSrsCtlRoot/retained', (CtlCall call) async {
     final String dir = _retainedDir(host);
     return _retainedJson(
-      host.retainedCopy.state(
+      await host.retainedCopy.state(
         dir,
         nowMs: DateTime.now().millisecondsSinceEpoch,
       ),

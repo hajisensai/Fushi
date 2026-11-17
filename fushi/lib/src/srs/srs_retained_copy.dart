@@ -26,6 +26,7 @@ import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_byte_format.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
@@ -39,15 +40,29 @@ final Provider<SrsRetainedCopyBackend> srsRetainedCopyBackendProvider =
 String? srsLibraryDirOf(AppModel app) =>
     app.isDatabaseOpen ? app.srsStorage.directory : null;
 
-/// 当前的保留副本状态；没有库目录 = null。只读、快（读两个文件里的几行），可在构建时调。
-SrsRetainedCopyState? srsRetainedCopyStateOf(
-  AppModel app,
-  SrsRetainedCopyBackend backend,
-) {
-  final String? dir = srsLibraryDirOf(app);
-  if (dir == null) return null;
-  return backend.state(dir, nowMs: DateTime.now().millisecondsSinceEpoch);
-}
+/// 本机的保留副本：所在库目录 + 状态。
+typedef SrsRetainedCopyInfo = ({String dir, SrsRetainedCopyState state});
+
+/// 当前的保留副本（设置行、牌组彻底清除共用）：状态命令在后台 isolate 跑（内核要打开两个 SQLite 文件）；随复习库的
+/// 修订号重读，删除之后调用方 invalidate。主库没开好 = null；读不了（新代库坏了等，内核报错）记日志、按没有处理——
+/// 它只决定提示文字和入口显不显示，不能让删牌组 / 设置页跟着用不了（删除本身同样会被内核拒绝）。
+final FutureProvider<SrsRetainedCopyInfo?> srsRetainedCopyProvider =
+    FutureProvider<SrsRetainedCopyInfo?>((Ref ref) async {
+      ref.watch(srsRevisionProvider);
+      final SrsDbStore? store = await ref.watch(srsStoreProvider.future);
+      if (store == null) return null;
+      final String? dir = srsLibraryDirOf(ref.read(appProvider));
+      if (dir == null) return null;
+      try {
+        final SrsRetainedCopyState state = await ref
+            .read(srsRetainedCopyBackendProvider)
+            .state(dir, nowMs: DateTime.now().millisecondsSinceEpoch);
+        return (dir: dir, state: state);
+      } on SrsCoreException catch (e, stack) {
+        ErrorLogService.instance.log('srs.retained_copy.state', e, stack);
+        return null;
+      }
+    });
 
 /// 设置行的副标题：大小 + 到期时刻（或「删除前一直保留」）；上一次自动删没做成时换成原因。
 String srsRetainedCopyStatusText(BuildContext context, SrsRetainedCopyState s) {
@@ -99,21 +114,26 @@ Future<bool> deleteSrsRetainedCopy(
   return false;
 }
 
-/// 设置里的入口：确认（不可撤销，说明后果）→ 删。没有保留副本 / 主库没开好 = 什么都不做。
-Future<void> confirmAndDeleteSrsRetainedCopy(
-  BuildContext context,
-  AppModel app,
-  SrsRetainedCopyBackend backend,
-) async {
-  final String? dir = srsLibraryDirOf(app);
-  final SrsRetainedCopyState? s = srsRetainedCopyStateOf(app, backend);
-  if (dir == null || s == null || !s.present) {
+/// 设置里的入口：确认（不可撤销，说明后果）→ 删 → 重读 [srsRetainedCopyProvider]。没有保留副本 / 主库没开好 =
+/// 提示没有，什么都不做。
+Future<void> confirmAndDeleteSrsRetainedCopy(BuildContext context) async {
+  // 容器先取出来：确认框开着时设置页可能被关掉，之后不能再碰 context 上的 ref。
+  final ProviderContainer container = ProviderScope.containerOf(
+    context,
+    listen: false,
+  );
+  final SrsRetainedCopyInfo? info = await container.read(
+    srsRetainedCopyProvider.future,
+  );
+  if (!context.mounted) return;
+  if (info == null || !info.state.present) {
     FushiToast.show(
       msg: t.srs_retained_copy_absent,
       severity: ToastSeverity.warning,
     );
     return;
   }
+  final SrsRetainedCopyState s = info.state;
   final bool ok = await showFushiConfirmDialog(
     context: context,
     title: t.srs_retained_copy_title,
@@ -125,7 +145,11 @@ Future<void> confirmAndDeleteSrsRetainedCopy(
     destructive: true,
   );
   if (!ok) return;
-  await deleteSrsRetainedCopy(backend, dir);
+  await deleteSrsRetainedCopy(
+    container.read(srsRetainedCopyBackendProvider),
+    info.dir,
+  );
+  container.invalidate(srsRetainedCopyProvider);
 }
 
 /// 彻底清除字节层收尾的状态（内核 `scrub_state`）：随复习库的修订号重读；库没就绪 = null。
@@ -157,10 +181,14 @@ class SrsScrubErrorNotice extends ConsumerWidget {
   }
 }
 
-/// 牌组删除对话框里「彻底清除」选项的说明：本机有保留副本时写明它里面仍有升级前的原文、怎么删（规划 §6 K2 ①）。
-String srsPurgeOptionHint(SrsRetainedCopyState? s) => s?.present ?? false
-    ? t.srs_deck_delete_purge_retained_hint
-    : t.srs_deck_delete_purge_hint;
+/// 牌组删除对话框里「彻底清除」选项的说明：本机有保留副本时写明它里面仍有升级前的原文、怎么删（规划 §6 K2 ①）；
+/// 会不会自动到期分开说（这一版之前的开发构建迁出来的库没有到期时刻，只能手动删）。
+String srsPurgeOptionHint(SrsRetainedCopyState? s) {
+  if (s == null || !s.present) return t.srs_deck_delete_purge_hint;
+  return s.dueAtMs == null
+      ? t.srs_deck_delete_purge_retained_kept_hint
+      : t.srs_deck_delete_purge_retained_hint;
+}
 
 /// 彻底清除时保留副本的去向（牌组列表的彻底清除选项之后问）。
 enum SrsPurgeRetainedChoice { keep, deleteNow }
@@ -183,7 +211,9 @@ Future<SrsPurgeRetainedChoice?> askSrsPurgeRetainedCopy(
       FushiChoiceOption<SrsPurgeRetainedChoice>(
         value: SrsPurgeRetainedChoice.keep,
         label: t.srs_deck_delete_purge_retained_keep,
-        subtitle: t.srs_deck_delete_purge_retained_keep_hint,
+        subtitle: s.dueAtMs == null
+            ? t.srs_deck_delete_purge_retained_keep_kept_hint
+            : t.srs_deck_delete_purge_retained_keep_hint,
         icon: FushiIcons.delete,
       ),
       FushiChoiceOption<SrsPurgeRetainedChoice>(
@@ -196,12 +226,12 @@ Future<SrsPurgeRetainedChoice?> askSrsPurgeRetainedCopy(
   );
 }
 
-/// [askSrsPurgeRetainedCopy] 选了立即删除：清除做完后调。
-Future<void> settleSrsPurgeRetainedCopy(
+/// [askSrsPurgeRetainedCopy] 选了立即删除：清除做完后调。删成了 = true（调用方重读 [srsRetainedCopyProvider]）。
+Future<bool> settleSrsPurgeRetainedCopy(
   SrsPurgeRetainedChoice choice,
   SrsRetainedCopyBackend backend,
   String? dir,
 ) async {
-  if (choice != SrsPurgeRetainedChoice.deleteNow || dir == null) return;
-  await deleteSrsRetainedCopy(backend, dir);
+  if (choice != SrsPurgeRetainedChoice.deleteNow || dir == null) return false;
+  return deleteSrsRetainedCopy(backend, dir);
 }

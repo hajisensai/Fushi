@@ -1,0 +1,269 @@
+// 保留副本入口的页面接线（D32；规划 §6 K2 ①）：helper 本身见 srs_retained_copy_test.dart，这里测它们真的挂在页面上。
+// - 牌组列表删牌组：有保留副本时「彻底清除」的说明写明副本里仍有原文；选彻底清除后再问副本去向，选立即删除 = 执行端
+//   被调到、状态重读；
+// - 状态读不了（内核报错）不挡删牌组：provider 记日志、按没有处理（不抛），删除照常走完；
+// - 设置 › 存储「删除旧版本保留副本」行：有副本时出现、副标题报大小与到期，没有时隐藏；点它 = 确认后删、状态重读。
+// 执行端是假的，不碰保留副本的原生命令（由 Rust retained_tests.rs 覆盖）；牌组库是真的临时库。
+import 'dart:async';
+
+import 'package:drift/drift.dart' show driftRuntimeOptions;
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/theme_notifier.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_deck_list_page.dart';
+import 'package:fushi/src/settings/settings_context.dart';
+import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_schema_storage.dart';
+import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi/src/srs/srs_retained_copy.dart';
+import 'package:fushi/src/srs/srs_storage_host.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
+import 'package:fushi/src/utils/misc/fushi_byte_format.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_srs/fushi_srs.dart';
+import 'package:material_ui/material_ui.dart';
+
+import 'srs_test_support.dart';
+
+const String _kDir = 'D:/lib';
+
+const SrsRetainedCopyState _sealed = SrsRetainedCopyState(
+  kind: SrsRetainedCopyKind.sealed,
+  bytes: 3 * 1024 * 1024,
+  migratedAtMs: 0,
+  dueAtMs: 1767225600000,
+);
+
+class _Backend implements SrsRetainedCopyBackend {
+  _Backend({this.refuseState});
+
+  final String? refuseState;
+  final List<String> deleted = <String>[];
+  int states = 0;
+
+  @override
+  Future<SrsRetainedCopyState> state(String dir, {required int nowMs}) async {
+    states++;
+    final String? why = refuseState;
+    if (why != null) throw SrsCoreException(-1, why);
+    return deleted.isEmpty
+        ? _sealed
+        : const SrsRetainedCopyState(kind: SrsRetainedCopyKind.tombstone);
+  }
+
+  @override
+  Future<SrsRetainedCopyDeletion> delete(String dir) async {
+    deleted.add(dir);
+    return const SrsRetainedCopyDeletion(deleted: true, freedBytes: 1);
+  }
+}
+
+/// 主库已开、复习库目录 = [_kDir] 的 app（保留副本 provider 按它取目录）。
+class _OpenAppModel extends SrsTestAppModel {
+  @override
+  bool get isDatabaseOpen => true;
+
+  @override
+  SrsStorageHost get srsStorage => SrsStorageHost(
+    dbDirectory: _kDir,
+    isMainProcess: false,
+    legacyDatabase: () => throw UnimplementedError(),
+  );
+}
+
+ThemeData _theme() => buildFushiThemeData(
+  scheme: ColorScheme.fromSeed(seedColor: Colors.teal),
+  textTheme: Typography.material2021().black,
+  designSystem: FushiDesignSystem.material,
+  glass: FushiGlassMaterial.off,
+  glassDesign: false,
+);
+
+Future<void> _pump(
+  WidgetTester tester, {
+  required SrsDbStore store,
+  required _Backend backend,
+  required Widget home,
+}) async {
+  tester.view.physicalSize = const Size(1100, 1200);
+  tester.view.devicePixelRatio = 1;
+  addTearDown(tester.view.reset);
+  final AppModel app = _OpenAppModel();
+  await tester.pumpWidget(
+    ProviderScope(
+      overrides: <Override>[
+        appProvider.overrideWith((Ref ref) => app),
+        srsStoreProvider.overrideWith((Ref ref) async => store),
+        srsMediaStoreProvider.overrideWith((Ref ref) async => null),
+        srsRwkvServiceProvider.overrideWith((Ref ref) async => null),
+        srsCardFaceBuilderProvider.overrideWithValue(
+          (BuildContext context, SrsCardFace face) =>
+              SrsPlainCardFace(face: face),
+        ),
+        srsReviewChromeFloatingProvider.overrideWithValue(false),
+        srsRetainedCopyBackendProvider.overrideWithValue(backend),
+      ],
+      child: TranslationProvider(
+        child: MaterialApp(
+          theme: _theme(),
+          builder: (BuildContext context, Widget? child) =>
+              FushiGlassScope(child: child!),
+          home: home,
+        ),
+      ),
+    ),
+  );
+  await srsSettle(tester);
+}
+
+Future<void> _unmount(WidgetTester tester) async {
+  await tester.pumpWidget(const SizedBox.shrink());
+  await tester.pump(const Duration(seconds: 1));
+}
+
+Future<SrsDbStore> _storeWithDeck(WidgetTester tester) async {
+  final (FushiDatabase db, SrsDbStore store) = (await tester.runAsync(
+    openSrsTestStore,
+  ))!;
+  addTearDown(() => tester.runAsync(db.close));
+  await tester.runAsync(() => store.ensureDeckPath('Spark'));
+  return store;
+}
+
+Future<bool> _hasSpark(WidgetTester tester, SrsDbStore store) async {
+  final SrsDeckTree tree = (await tester.runAsync(store.deckTree))!;
+  return tree.decks.any((SrsDeckView d) => tree.fullName(d.id) == 'Spark');
+}
+
+/// 右键牌组行 →「删除牌组」→ 删除方式对话框。
+Future<void> _openDeleteDialog(WidgetTester tester) async {
+  await tester.tap(find.text('Spark'), buttons: kSecondaryButton);
+  await srsSettle(tester);
+  await tester.tap(find.text(t.srs_deck_delete).last);
+  await srsSettle(tester);
+  expect(find.text(t.srs_deck_delete_purge), findsOneWidget);
+}
+
+void main() {
+  driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
+  setUp(() {
+    LocaleSettings.setLocale(AppLocale.en);
+    debugResetSrsFirstSyncAsked();
+  });
+
+  testWidgets('删牌组：有保留副本时彻底清除写明副本里仍有原文，再问去向；选立即删除 = 执行端删、状态重读', (
+    WidgetTester tester,
+  ) async {
+    final SrsDbStore store = await _storeWithDeck(tester);
+    final _Backend backend = _Backend();
+    await _pump(
+      tester,
+      store: store,
+      backend: backend,
+      home: const SrsDeckListPage(),
+    );
+    await _openDeleteDialog(tester);
+    expect(find.text(t.srs_deck_delete_purge_retained_hint), findsOneWidget);
+    expect(find.text(t.srs_deck_delete_purge_hint), findsNothing);
+
+    await tester.tap(find.text(t.srs_deck_delete_purge));
+    await srsSettle(tester);
+    expect(find.text(t.srs_deck_delete_purge_retained_title), findsOneWidget);
+    expect(
+      find.text(
+        t.srs_deck_delete_purge_retained_body(
+          size: FushiByteFormat.bytes(_sealed.bytes),
+        ),
+      ),
+      findsOneWidget,
+    );
+    final int before = backend.states;
+    await tester.tap(find.text(t.srs_deck_delete_purge_retained_delete));
+    await srsSettle(tester);
+    expect(backend.deleted, <String>[_kDir]);
+    expect(backend.states, greaterThan(before), reason: '删完重读保留副本状态');
+    expect(await _hasSpark(tester, store), isFalse, reason: '彻底清除照常做完');
+    expect(tester.takeException(), isNull);
+    await _unmount(tester);
+  });
+
+  testWidgets('删牌组：保留副本状态读不了（内核报错）不挡删除，按没有处理、不再问去向', (
+    WidgetTester tester,
+  ) async {
+    final SrsDbStore store = await _storeWithDeck(tester);
+    final _Backend backend = _Backend(refuseState: 'srs4.db is broken');
+    await _pump(
+      tester,
+      store: store,
+      backend: backend,
+      home: const SrsDeckListPage(),
+    );
+    await _openDeleteDialog(tester);
+    expect(backend.states, greaterThan(0));
+    expect(find.text(t.srs_deck_delete_purge_hint), findsOneWidget);
+    await tester.tap(find.text(t.srs_deck_delete_purge));
+    await srsSettle(tester);
+    expect(find.text(t.srs_deck_delete_purge_retained_title), findsNothing);
+    expect(await _hasSpark(tester, store), isFalse);
+    expect(backend.deleted, isEmpty);
+    expect(tester.takeException(), isNull);
+    await _unmount(tester);
+  });
+
+  testWidgets('设置 › 存储：有保留副本时出现「删除旧版本保留副本」并报大小；点它确认后删，删完行隐藏', (
+    WidgetTester tester,
+  ) async {
+    final SrsDbStore store = await _storeWithDeck(tester);
+    final _Backend backend = _Backend();
+    final SettingsActionItem item = buildStorageDestination().sections
+        .expand((SettingsSection s) => s.items)
+        .whereType<SettingsActionItem>()
+        .singleWhere(
+          (SettingsActionItem i) => i.id == 'storage.srs_retained_copy',
+        );
+    bool? visible;
+    String? subtitle;
+    late SettingsContext ctx;
+    await _pump(
+      tester,
+      store: store,
+      backend: backend,
+      home: Scaffold(
+        body: Consumer(
+          builder: (BuildContext context, WidgetRef ref, Widget? _) {
+            ctx = SettingsContext(
+              context: context,
+              appModel: ref.read(appProvider),
+              ref: ref,
+              readerSource: ReaderFushiSource.instance,
+              refresh: () {},
+            );
+            visible = item.visible!(ctx);
+            subtitle = item.subtitleBuilder!(ctx);
+            return const SizedBox();
+          },
+        ),
+      ),
+    );
+    expect(visible, isTrue);
+    expect(subtitle, srsRetainedCopyStatusText(ctx.context, _sealed));
+
+    // onTap 先等状态（已读好），再弹确认框。
+    unawaited(Future<void>.sync(() => item.onTap!(ctx)));
+    await srsSettle(tester);
+    expect(find.text(t.srs_retained_copy_confirm_action), findsOneWidget);
+    await tester.tap(find.text(t.srs_retained_copy_confirm_action));
+    await srsSettle(tester);
+    expect(backend.deleted, <String>[_kDir]);
+    expect(visible, isFalse, reason: '删完状态重读，行隐藏');
+    expect(subtitle, isNull);
+    expect(tester.takeException(), isNull);
+    await _unmount(tester);
+  });
+}

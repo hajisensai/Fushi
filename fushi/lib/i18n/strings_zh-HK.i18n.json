@@ -9270,6 +9270,8 @@
   "srs_deck_delete_purge_retained_hint": "Delete the deck, its cards and unused media now on all devices. This cannot be undone. The old-version retained copy still holds the original text from before the upgrade until it is deleted (automatically when it expires, or now in Settings › Storage).",
   "srs_deck_delete_purge_retained_keep": "Purge only",
   "srs_deck_delete_purge_retained_keep_hint": "Keep the retained copy until it expires",
+  "srs_deck_delete_purge_retained_keep_kept_hint": "Keep the retained copy until you delete it",
+  "srs_deck_delete_purge_retained_kept_hint": "Delete the deck, its cards and unused media now on all devices. This cannot be undone. The old-version retained copy still holds the original text from before the upgrade until you delete it in Settings › Storage (it does not expire on its own).",
   "srs_deck_delete_purge_retained_title": "The retained copy still holds the original text",
   "srs_deck_delete_with_cards": "Delete cards too",
   "srs_deck_delete_with_cards_hint": "Notes whose cards are all in these decks are deleted; notes that also have cards elsewhere keep them and their cards here move to the parent deck",

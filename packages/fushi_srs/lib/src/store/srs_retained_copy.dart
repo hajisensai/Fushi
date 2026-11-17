@@ -106,8 +106,8 @@ final class SrsRetainedCopyDeletion {
 
 /// 保留副本命令的执行端：app（设置 / 牌组彻底清除）、ctl 路由与服务端共用，测试换成假的。
 abstract interface class SrsRetainedCopyBackend {
-  /// 到期状态（只读、快，可在 UI isolate 上调）。
-  SrsRetainedCopyState state(String dir, {required int nowMs});
+  /// 到期状态（只读；内核要打开两个 SQLite 文件，在后台 isolate 跑）。
+  Future<SrsRetainedCopyState> state(String dir, {required int nowMs});
 
   /// 立即删除（核对新代库、换墓碑；在后台 isolate 跑）。核对不过抛 [SrsCoreException]，什么都不动。
   Future<SrsRetainedCopyDeletion> delete(String dir);
@@ -120,27 +120,36 @@ final class SrsNativeRetainedCopyBackend implements SrsRetainedCopyBackend {
   final String? libraryPath;
 
   @override
-  SrsRetainedCopyState state(String dir, {required int nowMs}) {
-    final Object? r = SrsCoreBindings.load(libraryPath: libraryPath).callGlobal(
-      <String, Object?>{'op': 'gen4_retained_state', 'dir': dir, 'now': nowMs},
-    );
-    return SrsRetainedCopyState.fromJson((r! as Map).cast<String, Object?>());
-  }
+  Future<SrsRetainedCopyState> state(String dir, {required int nowMs}) async =>
+      SrsRetainedCopyState.fromJson(
+        await _callInBackground(<String, Object?>{
+          'op': 'gen4_retained_state',
+          'dir': dir,
+          'now': nowMs,
+        }, 'srs-retained-state'),
+      );
 
   @override
-  Future<SrsRetainedCopyDeletion> delete(String dir) async {
+  Future<SrsRetainedCopyDeletion> delete(String dir) async =>
+      SrsRetainedCopyDeletion.fromJson(
+        await _callInBackground(<String, Object?>{
+          'op': 'gen4_retained_delete',
+          'dir': dir,
+        }, 'srs-retained-delete'),
+      );
+
+  /// 在后台 isolate 跑一条全局命令（内核报错 = [SrsCoreException]，原样抛回调用方）。
+  Future<Map<String, Object?>> _callInBackground(
+    Map<String, Object?> request,
+    String debugName,
+  ) {
     final String? lib = SrsCoreBindings.load(
       libraryPath: libraryPath,
     ).libraryPath;
-    final Map<String, Object?> request = <String, Object?>{
-      'op': 'gen4_retained_delete',
-      'dir': dir,
-    };
-    final Map<String, Object?> r = await Isolate.run(
+    return Isolate.run(
       () => (SrsCoreBindings.load(libraryPath: lib).callGlobal(request)! as Map)
           .cast<String, Object?>(),
-      debugName: 'srs-retained-delete',
+      debugName: debugName,
     );
-    return SrsRetainedCopyDeletion.fromJson(r);
   }
 }

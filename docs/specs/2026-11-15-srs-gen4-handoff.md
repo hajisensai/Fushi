@@ -3243,7 +3243,8 @@ profile uid 不变」断言，不分 `bound` / `joined`。
   墓碑要的「本机没有任何连接开着旧库」在那里不好保证。代价：到期之后要等下一次开库（下一次启动）才真正删。
 - **立即删除**：全局命令 `gen4_retained_delete {dir}` → `{deleted, freedBytes}` / `{deleted: false, reason: absent | migrating}`，
   不看到期，同样的核对，核对不过报错、什么都不动。`gen4_retained_state {dir, now}` → `{copy: sealed|tombstone|absent|other,
-  bytes, migratedAtMs, firstSyncAtMs, dueAtMs, due, error}`，只读、快（读两个文件里的几行，可在 UI isolate 调）。看保留副本
+  bytes, migratedAtMs, firstSyncAtMs, dueAtMs, due, error}`，只读（要打开两个 SQLite 文件，Dart 侧在后台 isolate 调，见下文
+  「复核修复」）。看保留副本
   一律**只读**打开：读写打开会在旁边建 `-wal` / `-shm`、改掉文件状态，让 `RETAINED_UNRELATED_KEY` 的「判过不是迁移来源」
   失效、每次开库重算整库摘要（第一版就这么踩了，`an_unrelated_older_library_is_digested_once_per_file_state` 红）。
 - **测试时钟**：开库用真实时钟判到期，而测试的迁移时刻 `NOW` 在 2023 年，所以测试里迁移完再 Primary 打开的库都会当场换成
@@ -3276,6 +3277,32 @@ profile uid 不变」断言，不分 `bound` / `joined`。
 - `SrsDbStore.scrubState()` 读内核 `scrub_state`（走写锁队列，不进 `kSrsSync2LockFreeOps`：那张表有逐项守卫，读一次很便宜）。
   `SrsScrubErrorNotice`（随复习库修订号重读）放在同步与历史页（云同步说明下面）和牌组列表横幅最前：`error` 非空时显示
   「清除的内容在磁盘上还没抹干净：<原因>」。
+
+### 复核修复（2026-11-18 第二轮）
+
+- **到期自动删的删前核对补了测试**：`an_expired_copy_is_kept_when_generation_4_fails_its_check_on_open`——迁移时刻设成已到期、
+  新代库多一页没人用的页（打得开、`quick_check` 不过），Primary 开库：副本仍是 `Sealed`，`error` 含 `integrity check`，开库
+  照常。变异：删掉 `sweep` 里的 `verify_gen4(ready)?;` 这条红。
+- **立即删除不再拿新代库的写锁**：以前换上墓碑之后还要 `DELETE` 掉 `gen4_retained_error`，同步正占着写锁时超过 busy timeout
+  就整体报错——ctl 回 409、app toast「没删」，文件其实已经换了。现在 `delete` 只读核对新代库、换墓碑，删成没删成只看墓碑；
+  `gen4_retained_error` 改成「只在副本还是 `Sealed` 时有意义」：`state` 只在那时报它，陈旧的那行由下一次 Primary 开库的
+  `sweep` 删掉（副本不在时）。测试 `deleting_now_succeeds_while_another_connection_holds_the_write_lock`（另一条连接
+  `BEGIN IMMEDIATE` 占着写锁时删 → `deleted: true`；陈旧原因不报；开库后那一行没了）。四处变异（删 sweep 核对 / `delete` 里
+  恢复写库清原因 / 去掉 `state` 的过滤 / 去掉 `sweep` 的清理）各自变红。
+- **状态命令挪到后台 isolate**：`SrsRetainedCopyBackend.state` 改成 `Future`，真实实现跟 `delete` 一样走 `Isolate.run`；app
+  侧新增 `srsRetainedCopyProvider`（`FutureProvider`，随复习库修订号重读，删完调用方 `invalidate`），设置行的 `visible` /
+  副标题 `watch` 它（读好之前行不显示），删牌组 `await` 它。没有实测 UI isolate 上的耗时：既然要开两个 SQLite 文件，直接按
+  「可能 >1 ms」放后台，不再纠结数字。
+- **状态读不了不挡删牌组**：读失败（内核报错）在 provider 里记日志、按「没有保留副本」处理（它只决定提示文字和入口显不显示；
+  删除本身同样会被内核拒绝）。设置页原来各自接异常的代码删掉，统一在 provider。
+- **没有到期时刻的副本**：彻底清除的说明与「只彻底清除」选项的副标题换成「直到你在 设置 › 存储 里删除它（不会自动到期）」
+  （`srs_deck_delete_purge_retained_kept_hint` / `srs_deck_delete_purge_retained_keep_kept_hint`），不再一律写「到期自动删除」。
+- **页面接线测试**：`fushi/test/srs/srs_retained_copy_wiring_test.dart`——真牌组列表上右键删牌组：有副本时彻底清除的说明是
+  保留副本那句，选彻底清除后出第二个对话框，选立即删除 → 执行端被调到、状态重读、牌组没了；状态命令抛错时说明是原来那句、
+  不问去向、删除照常做完；设置 › 存储的 `storage.srs_retained_copy` 行：有副本时可见、副标题是大小 + 到期，点它确认后删、
+  删完行隐藏。
+- 复核里「无身份中止的状态机测试用的是手写报告」没改：真实写报告处（`migrate.rs` `report.insert("legacyIdentity", json!(identity))`）
+  没有身份时就是 null，与手写报告一致。
 
 ### 没做 / 归属
 

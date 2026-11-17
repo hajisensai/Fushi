@@ -8,9 +8,7 @@ import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/src/settings/storage_usage_actions.dart';
 import 'package:fushi/src/srs/srs_retained_copy.dart';
-import 'package:fushi/src/utils/misc/error_log_service.dart';
-import 'package:fushi_srs/fushi_srs.dart'
-    show SrsCoreException, SrsRetainedCopyState;
+import 'package:fushi_srs/fushi_srs.dart' show SrsRetainedCopyState;
 import 'package:fushi/src/storage/storage_usage_service.dart';
 import 'package:fushi/src/sync/sync_settings_schema.dart'
     show buildDataStorageLocationSection;
@@ -81,11 +79,8 @@ SettingsDestination buildStorageDestination() {
               '删除旧版本保留副本走复习的控制通道：srs.retained.status 看大小与到期，'
               'srs.retained.delete（confirm: true）删除',
             ),
-            onTap: (SettingsContext c) => confirmAndDeleteSrsRetainedCopy(
-              c.context,
-              c.appModel,
-              c.ref.read(srsRetainedCopyBackendProvider),
-            ),
+            onTap: (SettingsContext c) =>
+                confirmAndDeleteSrsRetainedCopy(c.context),
           ),
         ],
       ),
@@ -124,18 +119,9 @@ SettingsDestination buildStorageDestination() {
   );
 }
 
-/// 本机保留副本的状态；读不了（新代库坏了等）记日志、按没有处理（删除同样会被内核拒绝）。
-SrsRetainedCopyState? _srsRetainedCopy(SettingsContext c) {
-  try {
-    return srsRetainedCopyStateOf(
-      c.appModel,
-      c.ref.read(srsRetainedCopyBackendProvider),
-    );
-  } on SrsCoreException catch (e, stack) {
-    ErrorLogService.instance.log('settings.srs_retained_copy', e, stack);
-    return null;
-  }
-}
+/// 本机保留副本的状态（后台读，读好之前 / 读不了 = null，行不显示；删完 provider 重读，行跟着消失）。
+SrsRetainedCopyState? _srsRetainedCopy(SettingsContext c) =>
+    c.ref.watch(srsRetainedCopyProvider).valueOrNull?.state;
 
 String? _srsRetainedCopySubtitle(SettingsContext c) {
   final SrsRetainedCopyState? s = _srsRetainedCopy(c);

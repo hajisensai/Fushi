@@ -984,7 +984,7 @@ class _FakeRetained implements SrsRetainedCopyBackend {
   String? refuse;
 
   @override
-  SrsRetainedCopyState state(String dir, {required int nowMs}) {
+  Future<SrsRetainedCopyState> state(String dir, {required int nowMs}) async {
     stateDirs.add(dir);
     return const SrsRetainedCopyState(
       kind: SrsRetainedCopyKind.sealed,

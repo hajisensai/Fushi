@@ -370,14 +370,19 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
     final SrsDbStore? before = await readSrsStore(ref);
     if (before == null || !mounted) return;
     // 迁移后的旧版本保留副本（D32）：彻底清除管不到它，里面仍有升级前的原文——选项说明与随后的选择写明，并给立即删除。
-    final AppModel app = ref.read(appProvider);
+    // 状态在后台读（provider 不抛：读不了按没有处理）。容器先取出来，删完重读它时本页可能已经卸载。
+    final ProviderContainer container = ProviderScope.containerOf(
+      context,
+      listen: false,
+    );
     final SrsRetainedCopyBackend retainedBackend = ref.read(
       srsRetainedCopyBackendProvider,
     );
-    final SrsRetainedCopyState? retained = srsRetainedCopyStateOf(
-      app,
-      retainedBackend,
+    final SrsRetainedCopyInfo? retainedInfo = await ref.read(
+      srsRetainedCopyProvider.future,
     );
+    if (!mounted) return;
+    final SrsRetainedCopyState? retained = retainedInfo?.state;
     final _DeckDeleteMode? mode = await showFushiChoiceDialog<_DeckDeleteMode>(
       context: context,
       title: t.srs_deck_delete,
@@ -410,7 +415,6 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
         ? await askSrsPurgeRetainedCopy(context, retained)
         : SrsPurgeRetainedChoice.keep;
     if (retainedChoice == null || !mounted) return;
-    final String? libraryDir = srsLibraryDirOf(app);
     // 控制器先取出来：删除途中本页可能被销毁（复习 tab 不常驻），之后不能再碰 ref。
     final SrsDeckDeleteController deleter = ref.read(
       srsDeckDeleteControllerProvider,
@@ -430,11 +434,13 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
       purgeNow: purge,
       mediaRoot: mediaRoot,
     );
-    await settleSrsPurgeRetainedCopy(
+    if (await settleSrsPurgeRetainedCopy(
       retainedChoice,
       retainedBackend,
-      libraryDir,
-    );
+      retainedInfo?.dir,
+    )) {
+      container.invalidate(srsRetainedCopyProvider);
+    }
   }
 
   /// 收起 / 展开子牌组：写进牌组本身（Anki deck collapsed），随同步到其它设备。

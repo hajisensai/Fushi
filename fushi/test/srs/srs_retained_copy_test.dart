@@ -27,7 +27,8 @@ class _Backend implements SrsRetainedCopyBackend {
   final List<String> deleted = <String>[];
 
   @override
-  SrsRetainedCopyState state(String dir, {required int nowMs}) => sealed;
+  Future<SrsRetainedCopyState> state(String dir, {required int nowMs}) async =>
+      sealed;
 
   @override
   Future<SrsRetainedCopyDeletion> delete(String dir) async {
@@ -74,6 +75,17 @@ void main() {
     expect(
       srsPurgeOptionHint(sealed),
       allOf(contains('retained copy'), contains('Settings › Storage')),
+    );
+    // 没有到期时刻（这一版之前的开发构建迁出来的库）：不说「到期自动删除」。
+    expect(
+      srsPurgeOptionHint(
+        SrsRetainedCopyState(kind: sealed.kind, bytes: sealed.bytes),
+      ),
+      t.srs_deck_delete_purge_retained_kept_hint,
+    );
+    expect(
+      t.srs_deck_delete_purge_retained_kept_hint,
+      isNot(contains('automatically')),
     );
     expect(srsPurgeOptionHint(null), t.srs_deck_delete_purge_hint);
     expect(
@@ -137,13 +149,16 @@ void main() {
       await tester.pumpAndSettle();
       expect(got, SrsPurgeRetainedChoice.deleteNow);
 
-      await settleSrsPurgeRetainedCopy(
-        SrsPurgeRetainedChoice.keep,
-        backend,
-        'D:/lib',
+      expect(
+        await settleSrsPurgeRetainedCopy(
+          SrsPurgeRetainedChoice.keep,
+          backend,
+          'D:/lib',
+        ),
+        isFalse,
       );
       expect(backend.deleted, isEmpty);
-      await settleSrsPurgeRetainedCopy(got!, backend, 'D:/lib');
+      expect(await settleSrsPurgeRetainedCopy(got!, backend, 'D:/lib'), isTrue);
       expect(backend.deleted, <String>['D:/lib']);
     },
   );

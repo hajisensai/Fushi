@@ -17,7 +17,7 @@ void main() {
     () async {
       final SrsCore core = SrsCore.open(dir.path);
       core.close();
-      final SrsRetainedCopyState s = backend.state(dir.path, nowMs: 1);
+      final SrsRetainedCopyState s = await backend.state(dir.path, nowMs: 1);
       expect(s.kind, SrsRetainedCopyKind.absent);
       expect(s.present, isFalse);
       expect(s.dueAtMs, isNull);
