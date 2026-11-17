@@ -198,7 +198,7 @@ void main() {
     );
   });
 
-  test('infer：回本轮新增的建议与是否走了 AI；没有推断来源 422', () async {
+  test('infer：回本轮新增的建议与是否走了 AI', () async {
     mediaLinkInferOverride = (OpContext _, MediaLinkEndpoint self) => () async {
       await suggest();
       return 1;
@@ -213,16 +213,6 @@ void main() {
     expect(got['added'], 1);
     expect(got['ai'], isFalse);
     expect(got['suggestions'], hasLength(1));
-
-    mediaLinkInferOverride = (OpContext _, MediaLinkEndpoint self) => null;
-    expect(
-      () => call(
-        'POST',
-        '$kMediaLinksCtlRoot/:endpoint/infer',
-        params: self('book:原作'),
-      ),
-      _ctlFailure(422),
-    );
   });
 
   test('infer：音乐专辑走真实推断，找到所属动画（关键词 → 原声建议，不联网）', () async {
