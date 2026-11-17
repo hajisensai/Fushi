@@ -109,6 +109,13 @@ The full plan needs its own design spec under `docs/specs/`. Size: L/XL.
     recorded for undo (admin only, use `--dry-run` first).
   - Profiles whose sync location is end-to-end encrypted are not served in v1. Serving them
     would need the passphrase on the server.
+  - The server does not publish a profile info file (`profile.json`) for the collections it
+    serves. The app writes it per device under `v4/devices/<device>/` (`srsPublishProfileInfo`,
+    called from `SrsProfileLinker.publish`); the server's `srsRunLocationRound` call passes no
+    `publishDeviceInfo`. A gen4 collection that only the server ever wrote to therefore shows no
+    name or note count in other devices' link lists. Fixing it needs a name source on the server
+    (it only mirrors names reported by devices today) and the note count from the kernel
+    (`userNoteCount`). Recorded by the SRS gen4 wave 5 identity tail (handoff, "第五波 G9 身份收尾").
   - AnkiConnect `getProfiles` reports one profile per key.
   - Device trust (srs.db v29, BUG-4306, `native/fushi_fsrs/src/store/sync2/trust.rs`) is
     confirmed on the server itself: a device that first syncs after the server's copy of a
