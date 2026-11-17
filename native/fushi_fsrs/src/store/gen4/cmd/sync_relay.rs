@@ -20,6 +20,12 @@
 //! - 只存作者受信（`trust` 没有行）、不是本机（当前或旧身份）的原生段。
 //! - 每次确认转发（[relay_ack]）与读到 head（`plan` 调 [prune]）之后，删掉**每个**位置都已有的段：那个位置上作者的
 //!   head 已覆盖到段尾、head 引用了它，或本机已转发过去。
+//! - **彻底清除**（设计 §3.2「清除后原文不在本机」，交接 §26 C3）：本机把一条操作落成空洞时，覆盖它的转发件在同一个
+//!   事务里整份删掉（`Truth::advance_purge`；作者签过的段改不出空洞，只能整份删）。之后收到的段若在本机已清除的 seq
+//!   上还带着完整内容（作者还没重切），[keep] 不留，并记下拒收时作者 head 的代号（`gen4_rrefuse/…`）：作者写出更新
+//!   的 head 之前 [wanted_for_relay] 不再为它拉这一段。作者重切出的同名段带着空洞，照常留下、转发。这期间这位作者的
+//!   转发整台跳过（[relay_outbox] 的 `incomplete`），不发半截。
+//!   已经转发到别的位置上的 `rly-` 不在本机，本模块不处理（交接 §28）。
 //!
 //! 本机在同步着 ≥ 2 个位置之前就收过的段当时没留原文：`plan` 读到作者 head 时把「本机早有、没留原文、别的位置缺」的
 //! 段再要一次（[wanted_for_relay]），收段时按本机已有跳过、只留原文，下一轮就能转发。转发时缺的段本机还凑不齐原文的
@@ -35,7 +41,8 @@ use super::sync::{meta_get, meta_set};
 use super::sync_oldroot::former_identities;
 use crate::gen4::head::Head4;
 use crate::gen4::location::{V4File, device_path, parse_v4_path, relay_head_name};
-use crate::gen4::relay::{peek_relay4, wrap_relay4};
+use crate::gen4::relay::{open_relay4_items, peek_relay4, wrap_relay4};
+use crate::gen4::segment::NativeItem;
 use crate::store::gen4::schema::sql;
 use crate::store::gen4::truth::Truth;
 use crate::sync2::id::Id;
@@ -81,6 +88,61 @@ fn rhead_key(col: i64, device: &Id) -> String {
 
 fn rhead_range(col: i64) -> (String, String) {
     (format!("gen4_rhead/{col}/"), format!("gen4_rhead/{col}0"))
+}
+
+/// `srs_meta` 键：作者 [device] 的段 [name] 因为带着本机已清除的内容被 [keep] 拒收过，值 = 拒收时记下的作者 head 代号。
+fn refused_key(col: i64, device: &Id, name: &str) -> String {
+    format!("gen4_rrefuse/{col}/{}/{name}", device.text())
+}
+
+fn meta_del(t: &Truth<'_>, key: &str) -> Result<(), String> {
+    t.write(|| {
+        t.conn()
+            .prepare_cached("DELETE FROM srs_meta WHERE key = ?1")
+            .map_err(sql)?
+            .execute([key])
+            .map_err(sql)?;
+        Ok(())
+    })
+}
+
+/// 这一段 [name] 被拒收过、而作者此后还没写出比那时更新的 head（[gen] = 眼下读到的作者 head 代号）：不必再拉。
+fn refused_since(
+    t: &Truth<'_>,
+    col: i64,
+    device: &Id,
+    name: &str,
+    gen: u64,
+) -> Result<bool, String> {
+    Ok(meta_get(t, &refused_key(col, device, name))?
+        .and_then(|v| v.parse::<u64>().ok())
+        .is_some_and(|at| gen <= at))
+}
+
+/// 不封装的中继件 [piece]（作者 [header]）在本机已清除（空洞）的 seq 上带着操作的完整内容。本机这段没有空洞 = 否，
+/// 不解段。
+fn carries_voided(
+    t: &Truth<'_>,
+    col: i64,
+    header: &crate::gen4::segment::NativeHeader,
+    piece: &[u8],
+    public: &[u8; 32],
+) -> Result<bool, String> {
+    let voids = t.voids_within(col, &header.device, header.first, header.last)?;
+    if voids.is_empty() {
+        return Ok(false);
+    }
+    let (_, items) = open_relay4_items(piece, public, None)
+        .map_err(|e| format!("relay: kept piece unreadable: {e:?}"))?;
+    let mut seq = header.first;
+    for item in &items {
+        if matches!(item, NativeItem::Op(_)) && voids.iter().any(|(a, b)| (*a..=*b).contains(&seq))
+        {
+            return Ok(true);
+        }
+        seq += item.span();
+    }
+    Ok(false)
 }
 
 fn str_req<'a>(req: &'a Value, k: &str) -> Result<&'a str, String> {
@@ -193,6 +255,19 @@ pub(crate) fn keep(
         return Ok(false);
     };
     let tag = chain_tag(&header.last_chain);
+    let name = segment_file_name(header.first, header.last, &tag);
+    // 本机已经清除了这段里的操作，而这一份还带着它们的完整内容（作者还没重切；`Truth::advance_purge` 删掉的那份又被
+    // 拉了回来）：不留。记下拒收时作者 head 的代号，作者写出更新的 head 之前 `wanted_for_relay` 不再为它拉这一段。
+    if carries_voided(t, col, &header, &piece, &public)? {
+        let gen = stored_head(t, col, &header.device)?.map_or(0, |h| h.gen);
+        meta_set(
+            t,
+            &refused_key(col, &header.device, &name),
+            &gen.to_string(),
+        )?;
+        return Ok(false);
+    }
+    meta_del(t, &refused_key(col, &header.device, &name))?;
     t.write(|| {
         let n = t
             .conn()
@@ -486,7 +561,10 @@ pub(crate) fn wanted_for_relay(
         let lacking = others
             .iter()
             .any(|(seq, names)| *seq < *b && !names.contains(&name));
-        if lacking && !has_piece(t, col, &h.device, (*a, *b, tag))? {
+        if lacking
+            && !has_piece(t, col, &h.device, (*a, *b, tag))?
+            && !refused_since(t, col, &h.device, &name, h.gen)?
+        {
             out.push(name);
         }
     }

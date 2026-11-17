@@ -22,7 +22,13 @@ use crate::store::sync2::tests::{DAY, edit};
 const KEY2: &str = "2222222222222222222222222222222222222222222222222222222222222222";
 
 /// 跑一遍转发：要一批、写上、确认，直到没有；最后删掉待删的、报回去。回包：写上的文件路径（相对 `v4/`）。
-fn relay(d: &Dev, loc: &mut Loc, location: &str, key: Option<&str>, now: i64) -> Vec<String> {
+pub(super) fn relay(
+    d: &Dev,
+    loc: &mut Loc,
+    location: &str,
+    key: Option<&str>,
+    now: i64,
+) -> Vec<String> {
     let mut written = Vec::new();
     let mut delete: Vec<Value> = Vec::new();
     for _ in 0..64 {
@@ -66,7 +72,7 @@ fn relay(d: &Dev, loc: &mut Loc, location: &str, key: Option<&str>, now: i64) ->
     written
 }
 
-fn relay_segs(d: &mut Dev) -> i64 {
+pub(super) fn relay_segs(d: &mut Dev) -> i64 {
     d.direct(|t, _| {
         t.conn()
             .query_row("SELECT COUNT(*) FROM relay_segs", [], |r| r.get(0))

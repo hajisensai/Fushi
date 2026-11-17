@@ -1460,6 +1460,46 @@ impl<'c> Truth<'c> {
         })
     }
 
+    /// 设备 [device] 的日志在 `first..=last` 里已经落成空洞（已清除）的 seq 区间，按 seq 升序、各自截到这个范围里。
+    /// 本机没有这台设备 = 空。转发缓存据此拒收带着已清除内容的作者段（`cmd/sync_relay.rs` `keep`）。
+    pub fn voids_within(
+        &self,
+        col: i64,
+        device: &Id,
+        first: u64,
+        last: u64,
+    ) -> Result<Vec<(u64, u64)>, String> {
+        if first == 0 || last < first {
+            return Ok(Vec::new());
+        }
+        let Some(dev) = self.dev_find(col, device)? else {
+            return Ok(Vec::new());
+        };
+        let mut out = Vec::new();
+        if let Some(run) = self.run_at_or_before(dev, first)? {
+            if run.end() >= first {
+                out.push((first, run.end().min(last)));
+            }
+        }
+        if first < last {
+            let mut stmt = self
+                .conn
+                .prepare_cached("SELECT k, n FROM op_voids WHERE k BETWEEN ?1 AND ?2 ORDER BY k")
+                .map_err(sql)?;
+            let rows = stmt
+                .query_map(params![opk(dev, first + 1)?, opk(dev, last)?], |r| {
+                    Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)? as u64))
+                })
+                .map_err(sql)?;
+            for row in rows {
+                let (k, n) = row.map_err(sql)?;
+                let s = k_seq(k);
+                out.push((s, (s + n - 1).min(last)));
+            }
+        }
+        Ok(out)
+    }
+
     /// 起点不晚于 [seq] 的最后一个空洞区间（不一定盖得到 [seq]）。
     fn run_at_or_before(&self, dev: i64, seq: u64) -> Result<Option<VoidRun>, String> {
         let (lo, _) = k_range(dev);
@@ -2926,6 +2966,20 @@ impl<'c> Truth<'c> {
                     self.insert_void_run(dev, target.seq, 1, None, Some(chain), A_LOCAL)?;
                 }
             }
+            // 转发缓存（`cmd/sync_relay.rs`，G8-7b）里存着的、覆盖这个 seq 的作者段原文也是这条内容的副本：同一个事务里
+            // 删掉，不留在本机、也不再转发出去。作者签过的段改不出空洞（`gen4/segment.rs` 文件头：含空洞的段只能由
+            // 作者签出），所以只能整份删；作者重切出带空洞的同名段之后，`wanted_for_relay` 下一轮为转发再拉一次。
+            self.conn
+                .prepare_cached(
+                    "DELETE FROM relay_segs WHERE col = ?1 AND device = ?2 AND first <= ?3 AND last >= ?3",
+                )
+                .map_err(sql)?
+                .execute(params![
+                    col,
+                    &target.device.0[..],
+                    i64::try_from(target.seq).map_err(|_| "gen4 store: seq out of range")?
+                ])
+                .map_err(sql)?;
             // 字节层：原文还在空闲空间与 WAL 旧帧里，提交之后要收尾（`scrub.rs`）。同一个事务里记下欠着的收尾。
             super::scrub::mark_due(self.conn)?;
             self.voided.set(true);
