@@ -382,6 +382,19 @@ pub(super) fn edit_rows(
     c: &Ref,
     profile: &str,
 ) -> Result<Vec<(String, String, Option<i64>)>, String> {
+    edit_rows_with(t, ix, kind, c, profile, true)
+}
+
+/// [edit_rows]；[tags] = false 时不拼笔记的合成 `tags` 行（调用方只要字段键时省掉 [tags_line] 的那几次查询，浏览
+/// `browse.rs` `edits_with`），别的行一样。
+pub(super) fn edit_rows_with(
+    t: &Truth<'_>,
+    ix: &mut Index<'_, '_>,
+    kind: EntKind,
+    c: &Ref,
+    profile: &str,
+    tags: bool,
+) -> Result<Vec<(String, String, Option<i64>)>, String> {
     let (lines, _) = ix.class_lines(kind, c)?;
     let mut rows: Vec<(String, String, Option<i64>)> = Vec::with_capacity(lines.len() + 1);
     for (json, st) in lines {
@@ -395,7 +408,7 @@ pub(super) fn edit_rows(
         }
         rows.push((f, json, st));
     }
-    if kind == EntKind::Note {
+    if kind == EntKind::Note && tags {
         if let Some(json) = tags_line(t, ix, c, profile)? {
             rows.push(("tags".to_owned(), json, None));
         }

@@ -62,6 +62,10 @@
 //! 没有写入时每条命令多一次 `cache_gen` 主键点读。有写入时：一次 `cache_log` 主键范围扫（代号 > 会话代号）+ 每条变了的
 //! 笔记一次 `cards_note` 点读 + 会话里卡的一遍线性扫（找这些笔记的旧卡，O(会话卡数)，十万张卡约 1 ms）+ 按 id 重读。
 //! 整份建会话：`notes` / `cards` 各一次顺序扫（同协议 3）。
+//!
+//! 取修改行（`edits_with`，`edited:`、按修改时间排序、全文检索首次都走它）每条笔记一次按类判定（[Index::class_lines]）；
+//! 要合成 `tags` 行时（不限键、或键里有 `tags`）再加每份成员一次 `tag_ix` / `reg_ix` 查询 + 每条标签操作一次日志点读
+//! + 一次按类求标签值（`cmd/mod.rs` `tags_line`）。只要字段键时不拼这一行，不付这份。
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -270,8 +274,10 @@ fn edits_with(
     keys: &[String],
     sink: &mut dyn FnMut(&str, &[StoredEdit<'_>]) -> Result<(), String>,
 ) -> Result<(), String> {
+    // 只要字段键时不拼合成 `tags` 行（文件头「代价」）。
+    let tags = keys.is_empty() || keys.iter().any(|k| k == "tags");
     for id in notes {
-        let rows = super::edit_rows(t, ix, EntKind::Note, &ref_of(id), "")?;
+        let rows = super::edit_rows_with(t, ix, EntKind::Note, &ref_of(id), "", tags)?;
         let stored: Vec<StoredEdit<'_>> = rows
             .iter()
             .filter(|(f, _, _)| keys.is_empty() || keys.iter().any(|k| k == f))

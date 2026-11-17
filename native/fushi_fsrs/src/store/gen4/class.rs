@@ -1536,6 +1536,45 @@ mod tests {
         });
     }
 
+    /// 撤销校验的「见没见过」按类问带旧戳的写入（[Index::class_write_sees] → [Index::write_sees] 的旧戳分支）：(w1, 2)
+    /// 的旧上下文写的是改名后的 `merged:1`，按类过同一个换名（`Canon::dvv`）后它见过规范 dot (w1, 1)；没写进去的
+    /// (w1, 5) 没见过；类里没有的 dot（找不到那次写入）= false。
+    ///
+    /// 撤销路径上被问的那次写入是不带旧戳的原生写入，旧戳上下文里只有旧写入者名，实际走到这条分支答 true 的情形罕见；
+    /// 这里钉住换名本身，不让它退回按原名查。
+    #[test]
+    fn class_write_sees_renames_a_heritage_context() {
+        with(|t, col| {
+            let merged = merged_w1();
+            let ctx = format!(r#"{{"vv":{{"{merged}":1}}}}"#);
+            t.tx(|t| {
+                let mut ix = Index::new(t, col);
+                let salts = Body4::salts([U1]).unwrap();
+                native(t, &mut ix, col, &op(0xa1, 1, 1, &[], &salts));
+                let x1 = stamped("x", stamp("w1", 1, r#"{"vv":{}}"#, 100));
+                let x2 = stamped("x", stamp(&merged, 1, r#"{"vv":{}}"#, 100));
+                let y = stamped("y", stamp("w1", 2, &ctx, 200));
+                heritage(t, &mut ix, col, op(0xd1, 1, 1, &[], &x1));
+                heritage(t, &mut ix, col, op(0xd2, 1, 2, &[], &x2));
+                heritage(t, &mut ix, col, op(0xd1, 2, 3, &[], &y));
+                ix.settle()?;
+                assert_eq!(ix.canonical_writer(&merged)?, "w1");
+                let e = native_edit();
+                let canon = Ref::of(&e.entity);
+                let ckey = ix.canonical_key(&e.key)?;
+                let writers = ix.writer_aliases()?;
+                let mut sees = |live: (&str, i64), ours: (&str, i64)| {
+                    ix.class_write_sees(EntKind::Note, &canon, &ckey, &writers, live, ours)
+                };
+                assert!(sees(("w1", 2), ("w1", 1))?);
+                assert!(!sees(("w1", 2), ("w1", 5))?);
+                assert!(!sees(("w1", 9), ("w1", 1))?);
+                Ok(())
+            })
+            .unwrap();
+        });
+    }
+
     /// 改名写入者的另一对同一套 seq 的证据：`(w1, seq)` 与 `(merged, seq)` 同一个 HLC，落在 `proof` 键上。
     fn proof_pair(
         t: &Truth<'_>,

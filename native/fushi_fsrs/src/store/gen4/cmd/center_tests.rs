@@ -511,6 +511,59 @@ fn undo_check_reverse_steps_across_an_alias_class() {
     });
 }
 
+/// 「见没见过」这道判据接进裁决之后真的起作用：唯一活着、值与那次写入相同，但它的作者没见过那次写入——不能撤（协议 3
+/// 同一情形按行上下文也判不能撤），不只按值放行。0xf1:1 写 V；0xf2:1 见过它、写 W；0xf3:1 只见过 0xf2:1（依赖里没有
+/// 0xf1）、写回 V：0xf1:1 被 0xf2:1 盖掉、0xf2:1 被 0xf3:1 盖掉，活着的只有 0xf3:1。问 0xf1:1 不能撤、问 0xf3:1 能撤；
+/// 0xf4:1 见过 0xf1:1 与 0xf3:1 再写 V：唯一活着、见过 0xf1:1，能撤。
+///
+/// 原生写入按因果顺序投递时这种依赖（见过 0xf2:1 却没见过它见过的 0xf1:1）造不出来，判据在新代是保险；这里直接喂操作
+/// （同步来的对端操作不可信），钉住它没被放宽。
+#[test]
+fn undo_check_refuses_a_lone_same_value_write_that_never_saw_ours() {
+    with(|t, col| {
+        let w = tests_class::land(t, col);
+        let base = tests_class::base_seen(&w);
+        let put = |dev: u8, seen: &[(u8, u64)], v: &str| {
+            let body = Body4::Edit(Edit4 {
+                kind: EntKind::Note,
+                entity: Key::Uuid(w.note[0]),
+                key: format!("f/{}", w.field[0].text()),
+                value: json!(v).to_string(),
+                ..crate::gen4::op::tests::native_edit()
+            });
+            t.tx(|t| {
+                let mut ix = Index::new(t, col);
+                native(t, &mut ix, col, &op(dev, 1, 600 + dev as i64, seen, &body));
+                ix.settle().map(|_| ())
+            })
+            .unwrap();
+        };
+        let ask = |dev: u8| -> Value {
+            undo_check(
+                t,
+                col,
+                &json!({"items": [{"k": "note", "e": w.note[0].text(),
+                    "f": format!("f/{}", w.field[0].text()), "w": id(dev).text(), "s": 1}]}),
+            )
+            .unwrap()["r"][0]
+                .clone()
+        };
+        let pre = [base, (0xb1, 1), (0xb2, 1)];
+        put(0xf1, &pre, "V");
+        put(0xf2, &[base, (0xb1, 1), (0xb2, 1), (0xf1, 1)], "W");
+        put(0xf3, &[base, (0xb1, 1), (0xb2, 1), (0xf2, 1)], "V");
+        assert_eq!(ask(0xf1), json!({"ok": false, "cur": "V"}));
+        assert_eq!(ask(0xf3), json!({"ok": true, "cur": "V"}));
+        put(
+            0xf4,
+            &[base, (0xb1, 1), (0xb2, 1), (0xf1, 1), (0xf3, 1)],
+            "V",
+        );
+        assert_eq!(ask(0xf1), json!({"ok": true, "cur": "V"}));
+        assert_rebuild_is_identity(t, col);
+    });
+}
+
 /// 被扣住的删除落在带盐成员上（0xd1 只见过定义就删了第二份成员；0xb1 / 0xb2 各在一份成员上改过字段，都与它并发）：
 /// `conflicts` 的 `entity` 是规范号、`others` 数全类成员上的并发修改（两条，不只是删除落的那份成员上的一条）；用列出来的
 /// ID 交给 `resolve` 找得到这条冲突，裁决（按规范号写）之后它从列表里消失、另一条待裁决的笔记还在。每一步逐条维护与
