@@ -26,7 +26,7 @@ export const DECISION_STAGES = [
   ['todo', '待拍'], ['explain', '等解释'], ['exec', '待执行'], ['later', '以后'], ['never', '永远不做'], ['closed', '已结'], ['all', '全部'],
 ];
 export const DECISION_LIMITS = {
-  idMax: 40, titleMax: 200, askMax: 6000, prosConsMax: 2000, sourceMax: 500, noteMax: 4000, resolutionMax: 4000,
+  idMax: 40, titleMax: 200, askMax: 6000, prosConsMax: 2000, sourceMax: 500, originalMax: 8000, noteMax: 4000, resolutionMax: 4000,
   choicesMax: 6, choiceLabelMax: 60, listMax: 500,
 };
 export const DECISION_ID_RE = /^[A-Za-z0-9_-]{1,40}$/;
@@ -53,7 +53,7 @@ function clean(v, max, field, { required = false } = {}) {
  * 写入方（CLI）给的一条事项 → 规范化后的行。不合法直接抛错（整批不写）。
  * @param {Record<string, unknown>} input
  * @returns {{id: string, kind: string, title: string, ask: string, pros: string|null, cons: string|null,
- *   choices: string|null, source: string|null, rec: string}}
+ *   choices: string|null, source: string|null, original: string|null, rec: string}}
  */
 export function normalizeDecision(input) {
   if (!input || typeof input !== 'object') throw new Error('事项必须是对象');
@@ -86,6 +86,7 @@ export function normalizeDecision(input) {
     cons: clean(input.cons, DECISION_LIMITS.prosConsMax, `${id}: cons`),
     choices,
     source: clean(input.source, DECISION_LIMITS.sourceMax, `${id}: source`),
+    original: clean(input.original, DECISION_LIMITS.originalMax, `${id}: original`),
     rec,
   };
 }
@@ -99,12 +100,12 @@ export function cleanDecisionText(text, max = DECISION_LIMITS.noteMax, field = '
 
 /** 新事项；同 id 已存在则什么都不改（重复写入不覆盖开发者已拍的结果）。 */
 export const INSERT_DECISION_SQL = `INSERT INTO decisions
-  (id, kind, title, ask, pros, cons, choices, source, rec, state, created_at, updated_at)
-  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'open', ?10, ?10)
+  (id, kind, title, ask, pros, cons, choices, source, rec, state, created_at, updated_at, original)
+  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'open', ?10, ?10, ?11)
   ON CONFLICT(id) DO NOTHING`;
 
 export function insertDecisionArgs(d, now) {
-  return [d.id, d.kind, d.title, d.ask, d.pros, d.cons, d.choices, d.source, d.rec, now];
+  return [d.id, d.kind, d.title, d.ask, d.pros, d.cons, d.choices, d.source, d.rec, now, d.original ?? null];
 }
 
 export const SET_VERDICT_SQL = `UPDATE decisions SET verdict = ?2, choice = ?3, verdict_by = ?4, verdict_at = ?5, updated_at = ?6
@@ -122,10 +123,18 @@ export const ADD_NOTE_SQL = `INSERT INTO decision_notes (decision_id, author, ac
 
 export const CLOSE_DECISION_SQL = `UPDATE decisions SET state = ?2, resolution = ?3, updated_at = ?4 WHERE id = ?1`;
 
-/** 列表：最近的 listMax 条，带拍板人昵称与最近一条 claude 留言的时刻。 */
-export const LIST_DECISIONS_SQL = `SELECT d.*, a.nickname AS verdict_nick,
-    (SELECT MAX(n.created_at) FROM decision_notes n WHERE n.decision_id = d.id AND n.author = 'claude') AS claude_at
-  FROM decisions d LEFT JOIN accounts a ON a.id = d.verdict_by
+/**
+ * 一条事项的完整列：拍板人昵称、最近一条 claude 留言的时刻，以及反馈类事项联表取到的用户原文
+ * （feedback_title / feedback_body；id 或 source 就是反馈 id）。列表与单条共用。
+ */
+const DECISION_COLUMNS_SQL = `SELECT d.*, a.nickname AS verdict_nick,
+    (SELECT MAX(n.created_at) FROM decision_notes n WHERE n.decision_id = d.id AND n.author = 'claude') AS claude_at,
+    (SELECT f.title FROM feedback f WHERE d.kind = 'feedback' AND f.id IN (d.id, d.source) LIMIT 1) AS feedback_title,
+    (SELECT f.body FROM feedback f WHERE d.kind = 'feedback' AND f.id IN (d.id, d.source) LIMIT 1) AS feedback_body
+  FROM decisions d LEFT JOIN accounts a ON a.id = d.verdict_by`;
+
+/** 列表：最近的 listMax 条。 */
+export const LIST_DECISIONS_SQL = `${DECISION_COLUMNS_SQL}
   ORDER BY d.created_at DESC, d.id LIMIT ${DECISION_LIMITS.listMax}`;
 
 export const LIST_NOTES_SQL = `SELECT n.*, a.nickname AS nick FROM decision_notes n LEFT JOIN accounts a ON a.id = n.account_id
@@ -260,6 +269,24 @@ function sourceHtml(src) {
   }).join(' · ');
 }
 
+/**
+ * 原文：写入方给的 original 优先，否则反馈类事项用联表取到的用户标题 + 正文。都是不可信数据，只转义展示。
+ * @param {{original?: string|null, feedback_title?: string|null, feedback_body?: string|null}} row
+ * @returns {string|null}
+ */
+export function decisionOriginal(row) {
+  if (row.original) return row.original;
+  const parts = [row.feedback_title, row.feedback_body].map((s) => (s || '').trim()).filter(Boolean);
+  return parts.length ? parts.join('\n\n') : null;
+}
+
+/** 原文块：默认展开（维护者要求直接看到原文），点标题收起。 */
+function originalHtml(row) {
+  const text = decisionOriginal(row);
+  if (!text) return '';
+  return `<details class="dorig" open><summary>原文</summary><div class="body">${esc(text)}</div></details>`;
+}
+
 const STAGE_LABEL = { todo: '待拍', explain: '等 Claude 解释', exec: '等 Claude 执行', later: '挂着', closed: '已结' };
 
 /** 决定按钮：值、文案、样式、快捷键。「做」/ 方案的快捷键是数字 1…6。 */
@@ -321,6 +348,7 @@ function card(row, back, { hidden = false } = {}) {
 <span class="muted">${sourceHtml(row.source)}</span> <span class="muted">#${esc(row.id)}</span></div>
 <h3>${esc(row.title)}</h3>
 <div class="body">${esc(row.ask)}</div>
+${originalHtml(row)}
 ${row.pros || row.cons ? `<div class="pc">${row.pros ? `<div><b class="up">好处</b> ${esc(row.pros)}</div>` : ''}${
     row.cons ? `<div><b class="err">代价</b> ${esc(row.cons)}</div>` : ''}</div>` : ''}
 ${row.resolution ? `<div class="card ai"><b>处理结果（${esc(row.state === 'dropped' ? '撤回' : '已结')}）</b><div class="body">${esc(row.resolution)}</div></div>` : ''}
@@ -341,9 +369,7 @@ export function decisionItem(row) {
 /** 单条（含拍板人昵称、claude_at 与留言），拍板后回给客户端换卡用。 */
 export async function getDecision(env, id) {
   const [r, notes] = await Promise.all([
-    env.DB.prepare(`SELECT d.*, a.nickname AS verdict_nick,
-        (SELECT MAX(n.created_at) FROM decision_notes n WHERE n.decision_id = d.id AND n.author = 'claude') AS claude_at
-      FROM decisions d LEFT JOIN accounts a ON a.id = d.verdict_by WHERE d.id = ?1`).bind(id).first(),
+    env.DB.prepare(`${DECISION_COLUMNS_SQL} WHERE d.id = ?1`).bind(id).first(),
     env.DB.prepare(`SELECT n.*, a.nickname AS nick FROM decision_notes n LEFT JOIN accounts a ON a.id = n.account_id
       WHERE n.decision_id = ?1 ORDER BY n.created_at, n.id`).bind(id).all(),
   ]);
@@ -405,6 +431,10 @@ kbd{display:inline-block;min-width:1.4em;padding:0 4px;margin-left:6px;border:1p
 .badge.stage-exec{border-color:var(--ok);color:var(--ok)}
 .pc{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:4px 12px;margin-top:8px;font-size:14px}
 .msg.claude{border-color:var(--c2)}
+.dorig{margin-top:8px;padding:6px 10px;border:1px dashed var(--line);border-radius:8px;font-size:14px}
+.dorig summary{cursor:pointer;color:var(--muted);font-size:13px}
+.dorig[open] summary{margin-bottom:4px}
+.dorig .body{max-height:24em;overflow:auto}
 .dform textarea{min-height:0;margin-top:10px;resize:vertical}
 .vrow{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px}
 .vrow button{margin:0}
