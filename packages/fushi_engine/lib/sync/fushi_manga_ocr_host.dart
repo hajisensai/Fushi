@@ -261,6 +261,10 @@ class MangaOcrHostJobManager {
   /// 逐页断点缓存（`MangaOcrFilePageCache`）按「页名 + 大小 + 修改时间」认页，而
   /// 取消会删页图、重传又是新写——不带回源时间，修改时间永远是 host 落盘那一刻，
   /// 保留下来的缓存一页也命中不了（BUG-4791）。老客户端不带则保持落盘时间。
+  ///
+  /// 设修改时间只为续传，页图本身已经写好：文件系统不收这个时间（FAT / exFAT 的
+  /// 可表示范围比 NTFS / POSIX 窄）或页图在两步之间被取消删掉时，这一页只是不能
+  /// 续传，上传照常算成功——不能让一个省重复识别的步骤把整卷代跑变成 500。
   Future<String?> uploadPage(
     MangaOcrHostJob job, {
     required String name,
@@ -275,7 +279,13 @@ class MangaOcrHostJobManager {
     final File dest = File(p.joinAll(<String>[job.dir.path, ...segments]));
     dest.parent.createSync(recursive: true);
     await dest.writeAsBytes(bytes, flush: true);
-    if (sourceModified != null) await dest.setLastModified(sourceModified);
+    if (sourceModified != null) {
+      try {
+        await dest.setLastModified(sourceModified);
+      } on FileSystemException {
+        // 见方法注释：这页保持落盘时间（不续传），不算上传失败。
+      }
+    }
     job.pagesUploaded += 1;
     job.state = MangaOcrHostJobState.uploading;
     job.touchedAt = _now();

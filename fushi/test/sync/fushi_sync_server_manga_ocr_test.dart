@@ -31,6 +31,40 @@ import 'package:fushi_engine/sync/fushi_sync_server.dart';
 
 /// Fake host OCR 服务：按上传目录枚举页图，写 `manga_ocr_out/manga.json`。
 /// [gate] 非 null 时在 finished 前等待（测串行队列/取消）。
+/// 页图照常落盘、但拒绝改修改时间的文件（模拟 FAT / exFAT 表示不了的时间，或
+/// 页图在落盘与设时间之间被删）。只实现 `uploadPage` 用到的成员。
+class _MtimeRejectingFile implements File {
+  _MtimeRejectingFile(this._real, this._onRejected);
+
+  final File _real;
+  final void Function() _onRejected;
+
+  @override
+  String get path => _real.path;
+
+  @override
+  Directory get parent => _real.parent;
+
+  @override
+  Future<File> writeAsBytes(
+    List<int> bytes, {
+    FileMode mode = FileMode.write,
+    bool flush = false,
+  }) async {
+    await _real.writeAsBytes(bytes, mode: mode, flush: flush);
+    return this;
+  }
+
+  @override
+  Future<void> setLastModified(DateTime time) async {
+    _onRejected();
+    throw FileSystemException('Failed to set file modification time', path);
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
 class _FakeOcrService implements MangaOcrService {
   _FakeOcrService({this.supported = true, this.ready = true});
 
@@ -749,6 +783,41 @@ void main() {
         ).lastModifiedSync().millisecondsSinceEpoch,
         isNot(sourceMs),
       );
+    },
+  );
+
+  // 设修改时间只为续传：文件系统不收这个时间 / 页图在两步之间被删时，页图已经
+  // 写好，上传照常成功（只是这页不续传），不能变成 500。
+  test(
+    'page upload still succeeds when the file system rejects the source mtime',
+    () async {
+      final MangaOcrHostJobManager manager = MangaOcrHostJobManager(
+        service: _FakeOcrService(),
+        jobRoot: Directory(p.join(tmpRoot.path, 'jobs')),
+      );
+      final MangaOcrHostJob job = manager.createJob(volumeTitle: '同卷');
+      int rejected = 0;
+      final String? refusal = await IOOverrides.runZoned<Future<String?>>(
+        () => manager.uploadPage(
+          job,
+          name: 'p001.jpg',
+          bytes: <int>[1, 2, 3],
+          sourceModified: DateTime.utc(2024, 3, 5),
+        ),
+        createFile: (String path) => _MtimeRejectingFile(
+          Zone.root.run<File>(() => File(path)),
+          () => rejected += 1,
+        ),
+      );
+      expect(rejected, 1, reason: '确实走到了设修改时间那一步');
+      expect(refusal, isNull);
+      expect(job.pagesUploaded, 1);
+      expect(job.state, MangaOcrHostJobState.uploading);
+      expect(File(p.join(job.dir.path, 'p001.jpg')).readAsBytesSync(), <int>[
+        1,
+        2,
+        3,
+      ]);
     },
   );
 

@@ -153,8 +153,7 @@ class MangaAiOcrJobFollower implements MangaOcrJobFollower {
   Future<void> cancel() async {
     if (_cancelled) return;
     _cancelled = true;
-    _flushTimer?.cancel();
-    _flushTimer = null;
+    // 待写批直接丢（重跑从大模型逐页缓存回放）；定时冲刷由 [_finish] 停掉。
     _pending = <_PendingWrite>[];
     _refiner.cancel();
     _finish();
