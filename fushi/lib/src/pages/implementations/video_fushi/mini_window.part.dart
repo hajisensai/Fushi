@@ -54,24 +54,23 @@ extension _VideoMiniWindow on _VideoFushiPageState {
   /// 结束 PiP（用户点小窗上的关闭、或系统回收），漏订阅就会让 [_miniSurface] 永远
   /// 卡在 PiP 态、chrome 再也不回来。
   void _initMiniWindowSupport() {
-    if (isDesktopPlatform) {
-      // 本地换集 `pushReplacement`：旧页 dispose 晚于本页 initState。上一集在小窗里
-      // 就把所有权接过来，旧页的 exit 因 owner 不符 no-op，小窗跨集保持（否则每换
-      // 一集——含自动连播——小窗都弹回主窗，而挂角落看番正是小窗的核心场景）。
-      if (DesktopMiniWindowMode.claim(owner: this)) {
-        _miniSurface.value = VideoMiniSurface.desktopMiniWindow;
-      }
-      return;
-    }
+    // 起步表面：本地换集是 `pushReplacement` 的新页，上一集留下的小窗在换页期间
+    // 一直没动，两边都不会补发「已经在小窗里」——只能在这里同步读一次当前值（判据
+    // 见 [videoInitialMiniSurface]）。initState 期，直接写值，不需要 [_rebuild]。
+    _miniSurface.value = videoInitialMiniSurface(
+      // 桌面：旧页 dispose 晚于本页 initState。上一集在小窗里就把所有权接过来，
+      // 旧页的 exit 因 owner 不符 no-op，小窗跨集保持（否则每换一集——含自动
+      // 连播——小窗都弹回主窗，而挂角落看番正是小窗的核心场景）。
+      desktopMiniWindowClaimed:
+          isDesktopPlatform && DesktopMiniWindowMode.claim(owner: this),
+      // 移动端：[AndroidPictureInPicture.modeChanges] 只在翻转时发事件，PiP 里自动
+      // 连播到下一集时系统窗口没动；不读这一次，新页就以 `none` 起步、在 PiP 小窗里
+      // 画出整套常规 chrome，直到用户退出 PiP 都收不到事件（BUG-4794）。必须排在
+      // 下面的订阅之前。
+      pictureInPictureActive:
+          isMobilePlatform && AndroidPictureInPicture.isActive,
+    );
     if (!isMobilePlatform) return;
-    // 与桌面的 claim 对称：本地换集是 `pushReplacement` 的新页，而 PiP 里自动连播到
-    // 下一集时系统窗口一直没动、[AndroidPictureInPicture.modeChanges] 只在翻转时发
-    // 事件——不在订阅之前同步读一次当前值，新页就以 `none` 起步、在 PiP 小窗里画出
-    // 整套常规 chrome，直到用户退出 PiP 都收不到事件（BUG-4794）。initState 期，
-    // 直接写值，不需要 [_rebuild]。
-    if (AndroidPictureInPicture.isActive) {
-      _miniSurface.value = VideoMiniSurface.pictureInPicture;
-    }
     _pictureInPictureSub = AndroidPictureInPicture.modeChanges.listen(
       _handlePictureInPictureChanged,
     );
@@ -158,11 +157,10 @@ extension _VideoMiniWindow on _VideoFushiPageState {
     await AndroidPictureInPicture.enter(
       aspectRatio: aspectRatio,
       // 小窗上的播放 / 暂停键：系统不会自己给，得随进入参数一起交（之后的图标
-      // 翻转与换集比例由 [_buildPictureInPicturePlaybackSync] 持续同步）。
-      controls: PictureInPictureControls(
-        playing: _controller?.isPlaying ?? false,
-        playPauseLabel: t.video_bottom_play_pause,
-      ),
+      // 翻转与换集比例由 [_buildPictureInPicturePlaybackSync] 持续同步）。交不交
+      // 只看此刻有没有同步器挂着——没有（原盘菜单阶段 controls 子树被整块替换）就
+      // 交 null、窗口上不出键，免得点了没人接；同步器挂上来时自己会把键补上。
+      controls: AndroidPictureInPicturePlaybackSync.currentControls(),
     );
   }
 
@@ -327,8 +325,9 @@ extension _VideoMiniWindow on _VideoFushiPageState {
   Widget _buildMiniWindowCenterControls(VideoPlayerController controller) {
     final VideoControlsDensitySpec density = _controlsDensity;
     if (!density.showCenterTransport) {
-      // 系统画中画落在这一支（那边 showCenterTransport 恒 false）：画面里不画三键，
-      // 改由系统窗口上的播放 / 暂停键顶上。
+      // 常规档与系统画中画都落在这一支（PiP 下 showCenterTransport 恒 false）：画面
+      // 里不画三键。PiP 里改由系统窗口上的播放 / 暂停键顶上，同步器从常规档起就
+      // 挂着（进 PiP 时才有键可交）。
       return _buildPictureInPicturePlaybackSync(controller);
     }
     final ColorScheme cs = _videoChromeColorScheme(context);
@@ -392,16 +391,19 @@ extension _VideoMiniWindow on _VideoFushiPageState {
     );
   }
 
-  /// 系统画中画期间把播放器接到 PiP 窗口上：播放态 → 按钮图标，画面比例 → 窗口
-  /// 比例（换集后新页挂载即对齐），窗口上的播放 / 暂停键 → 播放器。
+  /// 把播放器接到系统画中画窗口上：播放态 → 按钮图标，画面比例 → 窗口比例（换集后
+  /// 新页挂载即对齐），窗口上的播放 / 暂停键 → 播放器。
   ///
-  /// 只在 PiP 表面挂载，其余时候零开销；订阅的生命周期归这个零尺寸 widget 自己管
-  /// （见 [AndroidPictureInPicturePlaybackSync]）。动作与画面里那枚居中播放键同一
-  /// 条路（`playOrPause`），不另立语义。
+  /// **窗口上有没有这枚键，只取决于这个同步器挂没挂着**（见
+  /// [AndroidPictureInPicturePlaybackSync]）：它在 controls 子树里，播放器没就绪 /
+  /// 加载失败 / 原盘菜单阶段这棵子树不存在，键随之撤掉，不会留一枚点了没人接的键。
+  /// 所以它不看「此刻在不在 PiP 里」——进 PiP 之前就得挂着，进入时才有键可交；不在
+  /// PiP 里时它只是播放器上的一个早退的监听，不发通道调用。桌面不挂（那边的小窗
+  /// chrome 是本仓自绘的）；门用同步可读的平台判据而不是异步探测出来的
+  /// `_pictureInPictureSupported`，免得「探测结果晚到、这棵子树却没重建」时漏挂。
+  /// 动作与画面里那枚居中播放键同一条路（`playOrPause`），不另立语义。
   Widget _buildPictureInPicturePlaybackSync(VideoPlayerController controller) {
-    if (_miniWindowSurface != VideoMiniSurface.pictureInPicture) {
-      return const SizedBox.shrink();
-    }
+    if (!isMobilePlatform) return const SizedBox.shrink();
     return AndroidPictureInPicturePlaybackSync(
       playback: controller,
       isPlaying: () => controller.isPlaying,

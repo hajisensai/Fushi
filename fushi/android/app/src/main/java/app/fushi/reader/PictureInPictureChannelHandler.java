@@ -285,7 +285,7 @@ public final class PictureInPictureChannelHandler {
     /**
      * 组装 PiP 参数。{@code rawAspectRatio} 为 null 时不设比例（仅 {@link #update}
      * 会这样传；{@link #enter} 的 Dart 侧恒带比例）；{@code playing} 为 null 表示
-     * 调用方没要动作键（不传 = 窗口上只有系统的「展开 / 关闭」）。
+     * 调用方不要动作键：窗口上只留系统的「展开 / 关闭」，之前交过的键一并撤掉。
      */
     @RequiresApi(Build.VERSION_CODES.O)
     @NonNull
@@ -297,11 +297,17 @@ public final class PictureInPictureChannelHandler {
         if (rawAspectRatio != null) {
             builder.setAspectRatio(toRational(asDouble(rawAspectRatio)));
         }
+        // 动作键每次都**显式**设：{@code setPictureInPictureParams} 只合并已设字段，
+        // 不设 = 沿用 Activity 上一次留下的那组键。Dart 侧没有可操作的播放器时
+        // （换集加载中 / 加载失败 / 原盘菜单）传的是 playing == null，此时必须交一个
+        // 空列表把键撤掉——否则它留在窗口上、点了没人接。
         // 设备可以把 PiP 动作键上限配成 0（getMaxNumPictureInPictureActions），那时
-        // 多交会被系统截断并打警告日志，干脆不交。
+        // 多交会被系统截断并打警告日志，同样交空列表。
         if (playing != null && activity.getMaxNumPictureInPictureActions() >= 1) {
             builder.setActions(Collections.singletonList(
                     buildPlayPauseAction(playing, playPauseLabel)));
+        } else {
+            builder.setActions(Collections.<RemoteAction>emptyList());
         }
         return builder.build();
     }

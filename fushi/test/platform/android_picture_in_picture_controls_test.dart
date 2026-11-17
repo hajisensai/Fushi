@@ -4,7 +4,8 @@
 //   1. enter / update 把播放态与标题带给原生（图标跟播放态走）；
 //   2. update 去重——播放器每个进度 tick 都通知一次，不能跟着发 binder 往返；
 //   3. 原生的 onAction 回程落到 actions 流，并最终只让**一份**同步器执行；
-//   4. 换集后新页挂载的同步器把新比例推给窗口，比例未知时不乱跳。
+//   4. 换集后新页挂载的同步器把新比例推给窗口，比例未知时不乱跳；
+//   5. 窗口上有没有键与「有没有同步器挂着」同步：没人能接住点击时键被撤掉。
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -179,6 +180,31 @@ void main() {
       expect(updates().last['playing'], isFalse);
     });
 
+    test('update 传 controls: null 把动作键撤掉（不带动作键参数）', () async {
+      await AndroidPictureInPicture.enter(
+        aspectRatio: 16 / 9,
+        controls: const PictureInPictureControls(
+          playing: true,
+          playPauseLabel: 'x',
+        ),
+      );
+
+      expect(
+        await AndroidPictureInPicture.update(aspectRatio: null, controls: null),
+        isTrue,
+      );
+      // 原生侧约定：没有 playing = 交空的动作键列表。
+      expect(updates().single.containsKey('playing'), isFalse);
+      expect(updates().single.containsKey('playPauseLabel'), isFalse);
+      expect(updates().single['aspectRatio'], 16 / 9, reason: '窗口比例保持原样');
+
+      expect(
+        await AndroidPictureInPicture.update(aspectRatio: null, controls: null),
+        isFalse,
+        reason: '已经撤掉了，不重复发',
+      );
+    });
+
     test('退出 PiP 清掉去重账：再进来一定重新送', () async {
       const PictureInPictureControls playing = PictureInPictureControls(
         playing: true,
@@ -342,6 +368,68 @@ void main() {
       expect(fullscreen.toggles, 1);
     });
 
+    testWidgets('不在 PiP 里时挂着不发任何调用，currentControls 读得到当前播放态', (
+      WidgetTester tester,
+    ) async {
+      expect(
+        AndroidPictureInPicturePlaybackSync.currentControls(),
+        isNull,
+        reason: '没有同步器挂着 = 进 PiP 时不交键',
+      );
+      final _FakePlayback playback = _FakePlayback()..playing = false;
+      await tester.pumpWidget(_sync(playback));
+      playback.tick();
+      await tester.pump();
+
+      expect(calls, isEmpty);
+      expect(
+        AndroidPictureInPicturePlaybackSync.currentControls(),
+        const PictureInPictureControls(
+          playing: false,
+          playPauseLabel: 'Play / pause',
+        ),
+      );
+      playback.playing = true;
+      expect(
+        AndroidPictureInPicturePlaybackSync.currentControls()?.playing,
+        isTrue,
+        reason: '每次现读播放器，不是挂载时的快照',
+      );
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      expect(AndroidPictureInPicturePlaybackSync.currentControls(), isNull);
+      expect(calls, isEmpty, reason: '不在 PiP 里卸载也不发调用');
+    });
+
+    testWidgets('PiP 里最后一份同步器卸载 → 撤掉窗口上的键；再挂上来补回去', (
+      WidgetTester tester,
+    ) async {
+      // 换集后新一集还在加载 / 加载失败 / 进了原盘菜单：controls 子树不在了，键
+      // 留在窗口上就是「点了没反应、图标也不更新」。
+      await previousEpisodeInPictureInPicture(playing: true);
+      final _FakePlayback playback = _FakePlayback()..aspectRatio = 4 / 3;
+      await tester.pumpWidget(_sync(playback));
+      await tester.pump();
+      expect(updates(), isEmpty, reason: '与窗口上已有的参数一致');
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+      expect(updates(), hasLength(1));
+      expect(updates().single.containsKey('playing'), isFalse, reason: '键被撤掉');
+      expect(updates().single['aspectRatio'], 4 / 3, reason: '窗口比例不动');
+
+      // 没有订阅者时的点击不该落到任何地方（也不抛）。
+      AndroidPictureInPicture.debugHandleAction('playPause');
+      await tester.pump();
+      expect(playback.toggles, 0);
+
+      // 新一集就绪、controls 子树回来：键补回去。
+      await tester.pumpWidget(_sync(playback));
+      await tester.pump();
+      expect(updates(), hasLength(2));
+      expect(updates().last['playing'], isTrue);
+    });
+
     testWidgets('卸载后不再监听播放器、不再响应动作键', (WidgetTester tester) async {
       AndroidPictureInPicture.debugHandleModeChanged(true);
       final _FakePlayback playback = _FakePlayback();
@@ -361,7 +449,10 @@ void main() {
     });
   });
 
-  group('BUG-4794：换集后的新页拿得到「已在 PiP 里」', () {
+  // 这一条**不是** BUG-4794 的回归测试（撤掉修复它照样绿）：它钉的是修复所依赖的
+  // 门面契约——事件流不补发当前值，所以页面起步时必须同步读 isActive。修复本身的
+  // 行为测试是 video_controls_density_test.dart 的 videoInitialMiniSurface 那组。
+  group('门面契约（BUG-4794 的前提）', () {
     test('modeChanges 只在翻转时发事件，晚订阅者收不到当前值——只能靠 isActive 播种', () async {
       AndroidPictureInPicture.debugHandleModeChanged(true);
       await pumpEventQueue();

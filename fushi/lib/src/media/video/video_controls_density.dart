@@ -23,6 +23,26 @@ enum VideoMiniSurface {
   bool get systemOwnsChrome => this == VideoMiniSurface.pictureInPicture;
 }
 
+/// 新挂载的视频页该以哪个小窗表面起步。
+///
+/// 本地换集（含自动连播）是 `pushReplacement` 的新页，而上一集留下的小窗——桌面
+/// 无边框小窗或 Android 系统画中画——在换页期间一直没动：两边的「进 / 出」通知都
+/// 只在状态翻转时发，新页等不到任何事件，只能在起步那一刻读当前值。漏读就是新页
+/// 以 [VideoMiniSurface.none] 起步、在小窗里画出整套常规 chrome（BUG-4794 是
+/// Android 那一半）。
+///
+/// [desktopMiniWindowClaimed]：桌面上本页是否接过了上一集的小窗所有权；
+/// [pictureInPictureActive]：移动端此刻是否已在系统画中画里。两者来自不同平台，
+/// 不会同时为真。
+VideoMiniSurface videoInitialMiniSurface({
+  required bool desktopMiniWindowClaimed,
+  required bool pictureInPictureActive,
+}) {
+  if (desktopMiniWindowClaimed) return VideoMiniSurface.desktopMiniWindow;
+  if (pictureInPictureActive) return VideoMiniSurface.pictureInPicture;
+  return VideoMiniSurface.none;
+}
+
 /// 控制条密度档位：按**播放区宽度**（不是屏幕宽度）分三档。
 ///
 /// 只看宽度、不看高度，是为了不误伤移动端：视频页在手机上全程强制横屏，

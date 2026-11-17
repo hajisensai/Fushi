@@ -59,14 +59,18 @@ void main() {
   });
 
   group('Android 系统画中画接线', () {
+    // 起步值「该是什么」是纯函数 videoInitialMiniSurface 的事，行为测试在
+    // test/media/video/video_controls_density_test.dart；这里只钉接线：页面确实把
+    // 当前的 isActive 喂给它、把结果写进 _miniSurface，并且排在订阅之前。
     test('BUG-4794：新页订阅 modeChanges 之前先用 isActive 播种', () {
       final String flat = methodBody(
         miniPart,
         'void _initMiniWindowSupport()',
       ).replaceAll(RegExp(r'\s+'), '');
+      expect(flat, contains('_miniSurface.value=videoInitialMiniSurface('));
       const String seed =
-          'if(AndroidPictureInPicture.isActive){'
-          '_miniSurface.value=VideoMiniSurface.pictureInPicture;}';
+          'pictureInPictureActive:'
+          'isMobilePlatform&&AndroidPictureInPicture.isActive,';
       final int seedAt = flat.indexOf(seed);
       final int listenAt = flat.indexOf(
         'AndroidPictureInPicture.modeChanges.listen(',
@@ -89,12 +93,17 @@ void main() {
       ).replaceAll(RegExp(r'\s+'), '');
       expect(
         flat,
-        contains('controls:PictureInPictureControls('),
-        reason: '系统只画 app 交的 RemoteAction；不交，小窗上只有「展开 / 关闭」、暂停不了',
+        contains(
+          'controls:AndroidPictureInPicturePlaybackSync.currentControls(),',
+        ),
+        reason:
+            '系统只画 app 交的 RemoteAction；不交，小窗上只有「展开 / 关闭」、暂停不了。'
+            '交什么由「有没有同步器挂着」决定——页面自己拼一份就会在原盘菜单阶段交出'
+            '一枚没人接的键',
       );
     });
 
-    test('PiP 期间挂同步器：播放态 / 换集比例 → 窗口，窗口上的键 → 播放器', () {
+    test('controls 子树挂同步器：播放态 / 换集比例 → 窗口，窗口上的键 → 播放器', () {
       final String center = methodBody(
         miniPart,
         'Widget _buildMiniWindowCenterControls(VideoPlayerController controller)',
@@ -102,7 +111,7 @@ void main() {
       expect(
         center,
         contains('_buildPictureInPicturePlaybackSync(controller)'),
-        reason: 'PiP 下 showCenterTransport 恒 false，同步器挂在这一支上',
+        reason: 'PiP 与常规档 showCenterTransport 都是 false，同步器挂在这一支上',
       );
       final String sync = methodBody(
         miniPart,
@@ -112,11 +121,15 @@ void main() {
       final String flat = sync.replaceAll(RegExp(r'\s+'), '');
       expect(
         flat,
-        contains(
-          'if(_miniWindowSurface!=VideoMiniSurface.pictureInPicture)'
-          '{returnconstSizedBox.shrink();}',
-        ),
-        reason: '只在 PiP 表面挂载，常规播放零开销',
+        contains('if(!isMobilePlatform)returnconstSizedBox.shrink();'),
+        reason: '桌面的小窗 chrome 是自绘的，不挂',
+      );
+      expect(
+        flat,
+        isNot(contains('_miniWindowSurface')),
+        reason:
+            '不能按「此刻在不在 PiP 里」决定挂不挂：进 PiP 之前就得挂着，进入时才有键'
+            '可交（见 AndroidPictureInPicturePlaybackSync.currentControls）',
       );
       expect(
         flat,
@@ -151,6 +164,13 @@ void main() {
       );
       expect(flat, contains('activity.unregisterReceiver(actionReceiver)'));
       expect(flat, contains('activity.setPictureInPictureParams('));
+      expect(
+        flat,
+        contains('builder.setActions(Collections.<RemoteAction>emptyList());'),
+        reason:
+            'setPictureInPictureParams 只合并已设字段：Dart 说「没有可操作的播放器」'
+            '时不显式交空列表，上一组键就一直留在窗口上、点了没人接',
+      );
       // 跨语言契约：方法名 / 参数名 / 动作 wire 名两边逐字一致。
       for (final String name in <String>[
         '"update"',

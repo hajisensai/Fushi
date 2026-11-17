@@ -204,11 +204,14 @@ abstract final class AndroidPictureInPicture {
   /// 此时只刷按钮、窗口比例保持原样——宁可沿用上一集的比例一小会儿，也不先跳到
   /// 16:9 再跳到真实比例。
   ///
+  /// [controls] 传 null 表示「此刻没有可操作的播放器」：把窗口上的动作键撤掉，
+  /// 只留系统的「展开 / 关闭」。
+  ///
   /// 与上一次送出的内容相同则不发调用。不在 PiP 里也不发：进入时 [enter] 会带上
   /// 当时的全部参数。返回是否真的送了一次。
   static Future<bool> update({
     required double? aspectRatio,
-    required PictureInPictureControls controls,
+    required PictureInPictureControls? controls,
   }) async {
     if (!_active) return false;
     final double? clamped = aspectRatio == null
@@ -222,7 +225,7 @@ abstract final class AndroidPictureInPicture {
     try {
       await _channel.invokeMethod<void>(_methodUpdate, <String, Object?>{
         _argAspectRatio: clamped,
-        ..._controlsArguments(controls),
+        if (controls != null) ..._controlsArguments(controls),
       });
     } on MissingPluginException {
       return false;
@@ -341,8 +344,17 @@ abstract final class AndroidPictureInPicture {
 /// 把播放器的状态持续同步进 PiP 窗口的参数，并把窗口上的播放 / 暂停键接回播放器。
 ///
 /// 不画任何东西（零尺寸），只借 widget 的生命周期管两条订阅：挂在视频页的 controls
-/// 子树里、且**只在系统画中画期间**挂载，换集 / 退页 / 退出 PiP 时随子树自动解绑，
-/// 不需要页面再记一份「订了没、退了没」。
+/// 子树里，换集 / 退页时随子树自动解绑，不需要页面再记一份「订了没、退了没」。
+///
+/// **PiP 窗口上有没有动作键，与「有没有同步器挂着」严格同步**：键一旦交给系统就
+/// 留在窗口上，而能接住点击的只有挂着的同步器。所以进入时交什么由
+/// [currentControls] 决定（没有同步器就不交），PiP 里最后一份同步器卸载时把键撤掉
+/// （[AndroidPictureInPicture.update] 的 `controls: null`），再挂上来时补回去。
+/// controls 子树不存在的那些状态——换集后新一集还在加载、加载失败、蓝光原盘菜单
+/// 阶段——窗口上因此不会留一枚点了没反应、图标也不再更新的键。
+///
+/// 不在 PiP 里时它只是播放器上的一个监听，[AndroidPictureInPicture.update] 第一行
+/// 就早退，不发通道调用。
 ///
 /// 同一个播放器可能同时被两棵 controls 子树引用（页面本身 + 全屏路由复用同一个
 /// controls builder），两份都响应的话一次点击会被执行两遍（暂停完立刻又播）。所以
@@ -374,6 +386,14 @@ class AndroidPictureInPicturePlaybackSync extends StatefulWidget {
   /// 用户在 PiP 窗口上点了播放 / 暂停。
   final VoidCallback onPlayPause;
 
+  /// 此刻该交给 PiP 窗口的动作键：有同步器挂着就是它读到的当前播放态，没有则为
+  /// null（不交键）。给 [AndroidPictureInPicture.enter] 的调用方用。
+  static PictureInPictureControls? currentControls() {
+    final List<_AndroidPictureInPicturePlaybackSyncState> mounted =
+        _AndroidPictureInPicturePlaybackSyncState._mounted;
+    return mounted.isEmpty ? null : mounted.last._controls;
+  }
+
   @override
   State<AndroidPictureInPicturePlaybackSync> createState() =>
       _AndroidPictureInPicturePlaybackSyncState();
@@ -388,6 +408,11 @@ class _AndroidPictureInPicturePlaybackSyncState
   StreamSubscription<PictureInPictureAction>? _actionSub;
 
   bool get _isCurrent => _mounted.isNotEmpty && identical(_mounted.last, this);
+
+  PictureInPictureControls get _controls => PictureInPictureControls(
+    playing: widget.isPlaying(),
+    playPauseLabel: widget.playPauseLabel,
+  );
 
   @override
   void initState() {
@@ -416,20 +441,27 @@ class _AndroidPictureInPicturePlaybackSyncState
     unawaited(_actionSub?.cancel());
     _actionSub = null;
     _mounted.remove(this);
-    // 接手的那一份立刻对齐一次（它在让位期间没推过参数）。
-    if (_mounted.isNotEmpty) _mounted.last._push();
+    if (_mounted.isNotEmpty) {
+      // 接手的那一份立刻对齐一次（它在让位期间没推过参数）。
+      _mounted.last._push();
+    } else {
+      // 没有接手的了：再没有谁能接住窗口上那枚键的点击，把它撤掉（不在 PiP 里时
+      // update 自己早退）。比例传 null = 窗口保持原样。
+      unawaited(
+        AndroidPictureInPicture.update(aspectRatio: null, controls: null),
+      );
+    }
     super.dispose();
   }
 
   void _push() {
-    if (!_isCurrent) return;
+    // 不在 PiP 里：播放器每个进度 tick 都会进来，别为一次注定早退的 update 去读
+    // 播放态、拼参数。
+    if (!_isCurrent || !AndroidPictureInPicture.isActive) return;
     unawaited(
       AndroidPictureInPicture.update(
         aspectRatio: widget.aspectRatio(),
-        controls: PictureInPictureControls(
-          playing: widget.isPlaying(),
-          playPauseLabel: widget.playPauseLabel,
-        ),
+        controls: _controls,
       ),
     );
   }
