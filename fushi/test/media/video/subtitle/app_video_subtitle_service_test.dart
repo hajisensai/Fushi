@@ -149,6 +149,65 @@ void main() {
       );
     });
 
+    test('没入库的文件：按文件解析，作品身份按所在文件夹兜底，不登记库条目', () async {
+      final String ep1 = video('loose01.mkv');
+      final String ep2 = video('loose02.mkv');
+      final AppVideoSubtitleService service = buildService();
+
+      final AppVideoSubtitleTarget a = await service.resolveFile(
+        ep1,
+        title: 'loose01',
+      );
+      expect(a.videoPaths, <String>[ep1]);
+      expect(a.bookUid, isNull);
+      expect(a.wholeSeason, isFalse);
+      expect(a.episodes.single.bookUid, isNull);
+      expect(a.episodes.single.registersSubtitleSource, isFalse);
+      // 同一文件夹里的各集共用一份作品身份（专名表 / 缓存），任务键各不相同。
+      final AppVideoSubtitleTarget b = await service.resolveFile(
+        ep2,
+        title: 'loose02',
+      );
+      expect(b.work.workKey, a.work.workKey);
+      expect(b.key, isNot(a.key));
+      // 互联镜像任务的主体：没有库条目也没有合集时用目标自己的键，不是 collection:null。
+      expect(VideoBookSubtitleSink(db).mirrorSubject(a), a.key);
+
+      await expectLater(
+        service.resolveFile(
+          p.join(tmp.path, 'videos', 'gone.mkv'),
+          title: 'gone',
+        ),
+        throwsA(isA<AppVideoSubtitleTargetNotFound>()),
+      );
+      await expectLater(
+        service.resolveFile('https://host.invalid/v.mkv', title: 'remote'),
+        throwsA(isA<AppVideoSubtitleTargetNotFound>()),
+      );
+    });
+
+    test('播放页当前集：库里有就按库解析，没有就按文件解析', () async {
+      final String inLibrary = video('lib01.mkv');
+      final String loose = video('loose03.mkv');
+      await addBook('lib', inLibrary);
+      final AppVideoSubtitleService service = buildService();
+
+      final AppVideoSubtitleTarget fromBook = await service.resolvePlaying(
+        'lib',
+        videoPath: inLibrary,
+        title: 'ignored',
+      );
+      expect(fromBook.bookUid, 'lib');
+
+      final AppVideoSubtitleTarget fromFile = await service.resolvePlaying(
+        'not-in-library',
+        videoPath: loose,
+        title: 'loose03',
+      );
+      expect(fromFile.bookUid, isNull);
+      expect(fromFile.videoPaths, <String>[loose]);
+    });
+
     test('播放列表条目：各集都处理，但不替整行登记字幕选择', () async {
       final String ep1 = video('p01.mkv');
       final String ep2 = video('p02.mkv');

@@ -3321,7 +3321,12 @@ extension _VideoSubtitle on _VideoFushiPageState {
     final AppVideoSubtitleService service = appVideoSubtitleService(appModel);
     final AppVideoSubtitleTarget target;
     try {
-      target = await service.resolveBook(_activeBookUid, videoPath: videoPath);
+      // 库里没有这一行（直接打开的文件）时按文件解析，同样走完整管线。
+      target = await service.resolvePlaying(
+        _activeBookUid,
+        videoPath: videoPath,
+        title: _title ?? p.basenameWithoutExtension(videoPath),
+      );
     } on AppVideoSubtitleTargetNotFound {
       return null;
     }
@@ -3608,9 +3613,14 @@ extension _VideoSubtitle on _VideoFushiPageState {
     final AppVideoSubtitleService service = appVideoSubtitleService(appModel);
     final AppVideoSubtitleTarget target;
     try {
-      target = await service.resolveBook(_activeBookUid, videoPath: videoPath);
+      // 库里没有这一行（直接打开的文件）时按文件解析，同样走完整管线。
+      target = await service.resolvePlaying(
+        _activeBookUid,
+        videoPath: videoPath,
+        title: _title ?? p.basenameWithoutExtension(videoPath),
+      );
     } on AppVideoSubtitleTargetNotFound {
-      // 管线认不到这一集（不在库里）时本机转录照样能用：直接走那条。
+      // 管线认不到这一集（文件已不在本机）时本机转录照样能用：直接走那条。
       if (onTranscribeInApp != null) {
         await _generateSubtitleWithSpeechModel(controller);
         return;

@@ -169,7 +169,11 @@ class VideoBookSubtitleSink implements AppSubtitleOutputSink {
 
   @override
   String mirrorSubject(AppVideoSubtitleTarget target) =>
-      target.bookUid ?? 'collection:${target.collectionId}';
+      target.bookUid ??
+      (target.collectionId != null
+          ? 'collection:${target.collectionId}'
+          // 没入库的文件（[AppVideoSubtitleService.resolveFile]）：按目标自己的键。
+          : target.key);
 
   /// 生产证据：这一集在库里登记的导入字幕（手动导入、Jimaku 下载、播放时图形字幕
   /// OCR 出的 SRT 都住在 app 文档目录里，扫视频目录扫不到）。
@@ -730,6 +734,54 @@ class AppVideoSubtitleService {
       unavailable: unavailable,
       bookUid: bookUid,
     );
+  }
+
+  /// **没入库**的本机视频文件（直接打开的文件：`video_books` 里没有这一行）。
+  ///
+  /// 管线本身只要一个本机媒体文件：作品身份按「所在文件夹」兜底（[_fallbackWork]，
+  /// 作品名取文件夹名）——同一文件夹里的各集因此共用一份专名表与缓存，与入库但没刮削
+  /// 的作品同一口径。产物照样写在视频旁；没有库条目可登记字幕选择
+  /// （[AppVideoSubtitleEpisode.bookUid] 为 null，[VideoBookSubtitleSink.register] 不写库），
+  /// 由打开它的页面在任务结束时自己选中。文件不是本机文件 / 已不存在时抛
+  /// [AppVideoSubtitleTargetNotFound]。
+  Future<AppVideoSubtitleTarget> resolveFile(
+    String videoPath, {
+    required String title,
+  }) async {
+    if (!isLocalVideoFilePath(videoPath) ||
+        !await videoPathFileExists(videoPath)) {
+      throw AppVideoSubtitleTargetNotFound('file $videoPath');
+    }
+    final String folderName = p.basename(p.dirname(videoPath));
+    return AppVideoSubtitleTarget(
+      title: title,
+      work: _fallbackWork(
+        title: folderName.trim().isEmpty ? title : folderName,
+        videoPath: videoPath,
+      ),
+      episodes: <AppVideoSubtitleEpisode>[
+        AppVideoSubtitleEpisode(
+          videoPath: videoPath,
+          title: title,
+          registersSubtitleSource: false,
+        ),
+      ],
+      key: 'file:$videoPath',
+    );
+  }
+
+  /// 播放页正在放的这一集：库里有这一行就按库解析（[resolveBook]），没有（直接打开的
+  /// 文件）就按文件解析（[resolveFile]）——两种都走完整管线。
+  Future<AppVideoSubtitleTarget> resolvePlaying(
+    String bookUid, {
+    required String videoPath,
+    required String title,
+  }) async {
+    try {
+      return await resolveBook(bookUid, videoPath: videoPath);
+    } on AppVideoSubtitleTargetNotFound {
+      return resolveFile(videoPath, title: title);
+    }
   }
 
   /// 一个合集的全部视频成员（按合集顺序）。
