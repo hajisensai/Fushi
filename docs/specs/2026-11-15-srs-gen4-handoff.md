@@ -3220,3 +3220,67 @@ profile uid 不变」断言，不分 `bound` / `joined`。
 - **BUG-4626 新代并入场景已正式登记为 BUG-4836**（`docs/bugs/BUG-4836-srs-gen4-dangling-op-joins-into-other-collection.md`）：根因
   `file:line`（`gen4/cmd/writes.rs:31` / `:886` 写入口不设闸，`gen4/identity.rs:430` / `:572` 并入无条件并集）、两种修法与复现用例
   全文都在 bug 文件里，交 G9 身份 / 设计；本分支仍不改内核。
+
+## 36. 第五波 重切件根治（K2 残余，2026-11-18，分支 `pr/srs-gen4-w5-recut-proof`，基于 `pr/srs-gen4-switch` `3d78fe51d0`）
+
+§33「转发里的副本」记下的残余风险（受信重切者能换掉空洞之前的操作、链尾只核 4 字节标签）与复核 minor（作者段清单取各位置
+最大代号、而代号与切点按位置各自走，合法的重切件被永远判 `Unlisted`；`Defer::Unlisted` 每轮重拉）在本节根治。§33 里
+「现在的收法」「根治方案（没做）」两段描述的是被本节取代的旧设计，本节不改 §33 原文，以本节为准。
+
+### 做法（可剔除的作者签名）
+
+- **FSG4 作者签名改签逐项摘要**（`gen4/segment.rs` 文件头「签名」）：
+  `digest = blake3("fushi-srs-seg/4\n" ‖ 段头 ‖ item_digest × n)`；操作项 `blake3(0x00 ‖ 信封 ‖ blake3(载荷) ‖ 清除目标 v1)`，
+  空洞项 `blake3(0x01 ‖ 条数 uv ‖ chain_after)`。链定义（`chain_next4`）不变。段字节形状不变，黄金向量重生成
+  （`GOLDEN_FILE` / `GOLDEN_FILE_SEALED` / `GOLDEN_RELAY` / `GOLDEN_RELAY_SEALED`）。签不出的段（某条操作的信封解不出，例如
+  依赖里点了作者自己）`pack_native` 直接拒签，读者算摘要时报坏件。
+- **清除目标 v1**（`gen4/op.rs` `purge_targets_v1`，冻结规则，镜像 `weigh.rs`「彻底清除」）：fmt 4 的 Edit（键不是 `deleted`）→
+  (kind, entity)，卡片的 `deck` 编辑值是 JSON 字符串时再加 (Deck, d)；TagAdd / TagRemove / TagOrder → (Note, note)；其余为空。
+  键按 `Key::of(text)` 归一。以后 Purge 语义变了要另立 v2（旧段的摘要里签的是 v1）。
+- **FRX4 第 2 版**（`gen4/recut.rs` 文件头）：带作者原签名；槽 0 操作 / 1 作者空洞 / 2 剔除项（wall、logical、deps、kind、fmt、
+  载荷哈希、清除目标、清掉它的 Purge 的 OpId）。重切者签名覆盖 `段头 ‖ 作者签名 ‖ recutter ‖ 明文压缩体`。`ver = 1` 一律按损坏拒。
+- **读者**（`store/gen4/receive.rs` `native_inner`）：验重切者签名 → 结构（没有重切者自造的空洞、至少一个剔除项）→ 经剔除项重算链 →
+  **作者签名**（留下的每条操作都是作者原件、每个剔除项对应作者签过的一条操作）→ 本机日志末尾之后的每个剔除项核对它点名的
+  Purge（`purge_vouches`：日志或等待缓冲里有、是 `KIND_PURGE`、目标在剔除项的清除目标里、剔除项作者写它时没见过它）。
+  Purge 本机还没有 = `Defer::PurgePending(OpId)`；管不到 = `Reject::NotPurged(OpId)`；Purge 的作者本机不信任 = `UntrustedUploader`。
+  重切者信任闸保留，作纵深防御。`Defer::Unlisted`、`Truth::note_author_head` / `author_listed`、`gen4_ahead/…` 元数据键整套删掉：
+  区间与链尾由作者签名担保，不再看任何位置的 head（复核 minor 的跨位置代号问题与无限重试一并消失）。开发期集成分支库里
+  可能残留的 `gen4_ahead/…` 键没人读，无害。
+- **材料在收段 / 清除时存下**（上一版卡在 `recut_from_log` 拿不到被挖操作的信封与载荷哈希）：SCHEMA **40024** 加两张本机状态表
+  （不同步、不导出）：`relay_auth (col, device, first, last, head, sig, voids)` 每个区间记一份作者签名版本（只换成作者签的空洞
+  更多的那份，`Truth::note_author_version`，收别的设备的原生段 / 中继件 / 重切件整段走完时记）；`relay_stubs (k, stub)` 剔除记录
+  （`Truth::put_stub`：收重切件落下剔除项时、`Truth::advance_purge` 把别的设备的操作挖空之前按 `purge_covering` 找到的生效 Purge 记）。
+  `recut_from_log` 用作者签名版本 + 日志里的操作 + 剔除记录拼出、先拿作者公钥核过再交 `recut4` 签出。
+- 顺带修：`Truth::relay_purged` 遇到缓存里那份在这个 seq 上本来就没有内容的件（作者自己重切过的那份，或已是重切件）不再
+  重切 / 删除（上一版靠旧重切路径碰巧保住，新路径下作者版本还没记进来时会把作者的新段删掉，
+  `a_purge_by_the_author_takes_back_what_was_already_relayed` 抓到）。
+- `gen4/segment.rs` 文件头与 FRX4 矛盾的那段（复核 nit）改写：只有作者签的空洞只能由作者签出，重切件留的是剔除项。
+
+### 测试
+
+- `gen4/recut.rs`：`the_author_signature_binds_every_kept_op_and_every_stub`（改留下操作的内容、重置空洞、改清除目标、伪造以后的
+  seq 全拒；剔除项换一条别的 Purge 仍过作者签名——由读者核 Purge）、`stubs_round_trip_and_know_which_purge_covers_them`、
+  `landing_items_chain_through_the_stubs`、`open_is_strict` 等 8 条。
+- `receive.rs`：`a_trusted_recutter_cannot_forge_kept_ops_future_seqs_or_unpurged_stubs`（伪造留下操作的内容 → `BadSignature` /
+  `ChainMismatch`；伪造以后的 seq → `BadSignature`；重置空洞 → `BadSignature`；剔除没有 Purge 管的操作（点名的是普通操作、清别的
+  实体的 Purge、作者已见过的 Purge）→ `NotPurged`；Purge 未到 → `PurgePending`；都不落、不进等待缓冲；合法那份随后照收）、
+  `a_legal_recut_lands_on_every_reader`（只有 Purge 的、有原文没 Purge 的、两者都有的、只有前一半的读者）、
+  `recut_pieces_need_a_trusted_recutter_and_land_their_voids`（剔除记录与作者签名版本都记下）、`a_recut_of_my_own_log_must_carry_my_signature`、
+  `an_op_with_a_bad_envelope_refuses_its_whole_segment`（改为手拼段，`pack_native` 已签不出）。
+- `sync_state.rs`：`author_versions_keep_the_most_voided_and_stubs_round_trip`（取代 `the_authors_listing_only_moves_forward…`）。
+- `cmd/purge_scrub_tests.rs` 五条端到端（含 `a_purge_by_the_relay_does_not_cut_off_a_location_only_it_feeds`、
+  `a_purge_across_the_authors_cut_point_still_recuts_both_segments`）全绿，未改断言。
+- 变异实测（脚本逐个改、跑、还原，工作区干净）：M1 不核点名的 Purge → forge 测试红；M2 不验作者签名 → forge 测试与
+  `the_author_signature_binds…` 红；M3 收段不记作者签名版本 → `recut_pieces_need…` 与 `a_purge_by_the_relay_does_not_cut_off…` 红；
+  M4 清除时不记剔除记录 → `a_purge_by_the_relay_does_not_cut_off…` 红；M5 缓存件不带内容也重切 / 删 → `a_purge_by_the_author_takes_back…` 红。
+
+### 已知限制（如实记下）
+
+- 受信重切者点名一条永远不来的 Purge：这一件一直 `PurgePending`、每轮按通用的「延后件重拉」再拉一次（与其它延后原因同一
+  口径，不落、不进等待缓冲，不影响作者真正的段）。被拒的件同样按通用口径每轮重拉。
+- 一批之内不重试：Purge 与重切件同批到、重切件先到时这一轮 `PurgePending`，下一轮收下（测试按多轮收敛）。
+- `.fushisrs` 导出不带 `relay_auth` / `relay_stubs`：从备份还原的库再要从日志重切时缺材料，退回 `incomplete`（与 §33 的
+  `log_marks` 同一类代价），归 G11 owner 评估导出流升版。
+- 剔除项的载荷哈希允许「猜测确认」，与段头明文链值同类泄露，没有新增。
+- 直接调 `advance_purge` 而本机没有生效 Purge 的路径（测试与工具）不记剔除记录：这一段本机重切不出来，转发退回「缺」。
+- 协调目录 claim 没登记：本代理在隔离 worktree 里，写 `.worktrees/coordination/claims/` 被拒。
