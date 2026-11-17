@@ -131,6 +131,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // music_lyrics_service_test 咬住。
   'music/Online lyrics (LRCLIB)':
       'test/media/music/lyrics/music_lyrics_service_test.dart',
+  // 歌词来源列表里的 LRCLIB 启停（与歌词插件同一份有序列表）：生效点是 MusicLyricsService
+  // 解析时问不问 LRCLIB，harness 没有在播的曲目。停用后不问 LRCLIB 由
+  // music_lyrics_service_plugins_test 咬住，开关写入来源列表偏好由 music_lyrics_providers_test 咬住。
+  'music/LRCLIB':
+      'test/media/music/lyrics/music_lyrics_service_plugins_test.dart + test/pages/music/music_lyrics_providers_test.dart',
   // 查词时暂停：生效点在歌词页查词回调（musicLyricsShouldPauseForLookup）与桌面歌词
   // 点词（MusicLookupPause，music_lookup_pause_test，BUG-4198），harness 设置页两者
   // 都没有；判据由 music_lyrics_page_logic_test 咬住。
@@ -228,6 +233,10 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // ShelfCoverNsfw 打模糊、制卡图片开关关 / 开的行为由 media_nsfw_test 咬住。
   'appearance/Blur NSFW covers': 'test/media/nsfw/media_nsfw_test.dart',
   'appearance/Blur card images too': 'test/media/nsfw/media_nsfw_test.dart',
+  // 墨水屏每 N 页全刷：生效点是小说三种 view mode 与漫画阅读器的翻页计数和全刷画布，
+  // harness 设置页里没有阅读器。间隔值 → 每 N 次翻页触发一次、0 = 关、阅读器接线由
+  // eink_full_refresh_test 咬住。
+  'appearance/E-ink full refresh': 'test/reader/eink_full_refresh_test.dart',
   // 词典统一 M3E 配色：生效点在查词弹窗 WebView 里的 popup.js / popup.css，
   // harness 没有 WebView。注入接线、默认值与 CSS 层由
   // popup_dict_unified_style_test 咬住。
@@ -410,6 +419,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 连续收听提醒的间隔档位：默认受「连续收听提醒」开关门控 disabled，harness 驱动不动属
   // 预期；生效点（档位改了对正在进行的这一轮立即生效、档位外存值归档）由单测守。
   'general/Remind after': 'test/media/listening_reminder_test.dart',
+  // 连续收听提醒开关本身：生效点是全局收听计时器（开 = 播放中按档位计时到点提醒，
+  // 关 = 停计时清计数），harness 设置页里没有在播的播放器。开 / 关对计时器的效果由
+  // listening_reminder_test 咬住，开关经 enableListeningReminder 接到 AppModel 由
+  // listening_reminder_app_test 咬住。
+  'general/Listening break reminder':
+      'test/media/listening_reminder_test.dart + test/media/listening_reminder_app_test.dart',
   // 句子音频来源：生效点在制卡 ffmpeg 抽音参数（中置声道 pan 滤镜 / 音轨选择）。
   'cardCreation/Sentence audio source':
       'test/mining/sentence_audio_source_test.dart',

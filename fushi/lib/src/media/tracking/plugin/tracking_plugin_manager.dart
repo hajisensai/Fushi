@@ -6,7 +6,6 @@ import 'package:flutter/foundation.dart';
 import 'package:fushi/src/media/tracking/plugin/tracking_plugin_engine.dart';
 import 'package:fushi/src/media/tracking/plugin/tracking_plugin_models.dart';
 import 'package:fushi_engine/media/tracking/tracking_rate_gate.dart';
-import 'package:fushi_music/fushi_music.dart' show packInstalledPluginDirectory;
 
 /// Installed tracking plugins: install, enable / disable, remove, runtimes
 /// and this device's sign-in state (spec
@@ -507,7 +506,7 @@ class TrackingPluginManager {
   /// installed.
   Future<Uint8List?> exportPackage(String id) async {
     if (!_idPattern.hasMatch(id)) return null;
-    return packInstalledPluginDirectory(_dirOf(id));
+    return packTrackingPluginDirectory(_dirOf(id));
   }
 
   /// Removes the package, its storage, its credentials and its account state.
