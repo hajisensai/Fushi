@@ -281,6 +281,9 @@ Future<void> showVideoSubtitleGenerateSheet({
   return adaptiveModalSheet<void>(
     context: context,
     showDragHandle: true,
+    // 与桌面分支（showAppDialog）一致开在 root navigator 上：字幕工作台是 root 上的
+    // 整页，面板从它下面的视频页起，不在 root 上会被整页挡住。
+    useRootNavigator: true,
     builder: build,
   );
 }
@@ -715,7 +718,8 @@ class _VideoSubtitleGenerateSheetState
     // 转录弹层的 AI 校对同样会带画面（`appAsrProofreadHost` 现读偏好）：先把知情补上。
     await _resolveFrames();
     if (!mounted) return;
-    await Navigator.of(context).maybePop();
+    // 嵌入形态没有自己的路由可关（pop 掉的会是整个工作台）：转录弹层直接盖在上面。
+    if (!widget.embedded) await Navigator.of(context).maybePop();
     transcribe(proofread: proofread);
   }
 

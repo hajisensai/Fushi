@@ -94,6 +94,9 @@ Future<void> showRemoteVideoSubtitleSheet({
   return adaptiveModalSheet<void>(
     context: context,
     showDragHandle: true,
+    // 与桌面分支（showAppDialog）一致开在 root navigator 上：字幕工作台是 root 上的
+    // 整页，面板从它下面的视频页起，不在 root 上会被整页挡住。
+    useRootNavigator: true,
     builder: build,
   );
 }
@@ -106,7 +109,12 @@ class RemoteVideoSubtitleSheet extends StatefulWidget {
     required this.prefs,
     this.onJobStarted,
     this.onTranscribeInApp,
+    this.embedded = false,
   });
+
+  /// 嵌在字幕工作台的工具栏里：不套弹层外框、没有标题和「关闭」按钮，滚动交给外层
+  /// （与 `VideoSubtitleGenerateSheet.embedded` 同一约定）。
+  final bool embedded;
 
   final RemoteVideoSubtitleService service;
   final RemoteVideoSubtitleTarget target;
@@ -234,7 +242,8 @@ class _RemoteVideoSubtitleSheetState extends State<RemoteVideoSubtitleSheet> {
     final VideoSubtitleInAppTranscribe? transcribe = widget.onTranscribeInApp;
     if (transcribe == null) return;
     final bool proofread = _proofread;
-    await Navigator.of(context).maybePop();
+    // 嵌入形态没有自己的路由可关（pop 掉的会是整个工作台）。
+    if (!widget.embedded) await Navigator.of(context).maybePop();
     transcribe(proofread: proofread);
   }
 
@@ -451,6 +460,54 @@ class _RemoteVideoSubtitleSheetState extends State<RemoteVideoSubtitleSheet> {
         _section(i, parts.length, parts[i].$1, parts[i].$2),
     ];
     final RemoteVideoSubtitleJob? job = _job;
+    final Widget body = FushiEntranceScope(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          ...sections,
+          FushiAnimatedSize(
+            duration: context.fushiMotion.spatialDefault.duration,
+            curve: context.fushiMotion.spatialDefault.curve,
+            alignment: Alignment.topCenter,
+            child: job == null || !_saveBeside
+                ? const SizedBox(width: double.infinity)
+                : Padding(
+                    padding: EdgeInsets.only(top: tokens.spacing.rowVertical),
+                    child: FushiStaggeredEntrance(
+                      index: sections.length,
+                      child: _jobCard(job),
+                    ),
+                  ),
+          ),
+          if (_startError != null)
+            Padding(
+              padding: EdgeInsets.only(top: tokens.spacing.gap),
+              child: _hint(_startError!, error: true),
+            ),
+        ],
+      ),
+    );
+    final Widget footer = Wrap(
+      alignment: WrapAlignment.end,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: tokens.spacing.gap,
+      runSpacing: tokens.spacing.gap,
+      children: _footer(job),
+    );
+    if (widget.embedded) {
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          body,
+          Padding(
+            padding: EdgeInsets.only(top: tokens.spacing.rowVertical),
+            child: footer,
+          ),
+        ],
+      );
+    }
     return FushiModalSheetFrame(
       // 合并入口（带本机转录）的单集面板与本机面板同名「生成字幕」。
       title: target.wholeSeason
@@ -461,41 +518,8 @@ class _RemoteVideoSubtitleSheetState extends State<RemoteVideoSubtitleSheet> {
       leadingIcon: FushiIcons.subtitles,
       scrollable: true,
       bodyPadding: EdgeInsets.symmetric(horizontal: tokens.spacing.card),
-      body: FushiEntranceScope(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            ...sections,
-            FushiAnimatedSize(
-              duration: context.fushiMotion.spatialDefault.duration,
-              curve: context.fushiMotion.spatialDefault.curve,
-              alignment: Alignment.topCenter,
-              child: job == null || !_saveBeside
-                  ? const SizedBox(width: double.infinity)
-                  : Padding(
-                      padding: EdgeInsets.only(top: tokens.spacing.rowVertical),
-                      child: FushiStaggeredEntrance(
-                        index: sections.length,
-                        child: _jobCard(job),
-                      ),
-                    ),
-            ),
-            if (_startError != null)
-              Padding(
-                padding: EdgeInsets.only(top: tokens.spacing.gap),
-                child: _hint(_startError!, error: true),
-              ),
-          ],
-        ),
-      ),
-      footer: Wrap(
-        alignment: WrapAlignment.end,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        spacing: tokens.spacing.gap,
-        runSpacing: tokens.spacing.gap,
-        children: _footer(job),
-      ),
+      body: body,
+      footer: footer,
     );
   }
 
@@ -626,10 +650,11 @@ class _RemoteVideoSubtitleSheetState extends State<RemoteVideoSubtitleSheet> {
 
   List<Widget> _footer(RemoteVideoSubtitleJob? job) {
     final List<Widget> buttons = <Widget>[
-      FushiTextButton(
-        onPressed: () => Navigator.pop(context),
-        child: Text(_running ? t.video_subtitle_ai_hide : t.dialog_close),
-      ),
+      if (!widget.embedded)
+        FushiTextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text(_running ? t.video_subtitle_ai_hide : t.dialog_close),
+        ),
     ];
     if (!_saveBeside) {
       // 本机转录不需要 host 支持 video_subtitle 任务，只要能裁回音轨（入口已判）。

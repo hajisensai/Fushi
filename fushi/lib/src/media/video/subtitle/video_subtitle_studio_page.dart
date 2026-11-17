@@ -137,19 +137,14 @@ class VideoSubtitleStudioActions {
     this.generatePanel,
     this.splitBilingual,
     this.retime,
-    this.retimeInPlace = true,
     this.alignEmbedded,
   });
 
   /// 「生成字幕」的选项面板，直接嵌在工具栏里（对象、语言、识别模型、分段方式、
-  /// AI 校对、任务进度、开始 / 取消 / 继续都在原地）。null = 这个视频走不了本机管线，
-  /// 退回 [generate] 那一行按钮。
+  /// AI 校对、任务进度、开始 / 取消 / 继续都在原地）：本机管线与互联 host 管线各有
+  /// 一块。null = 这个视频只能本机转录（不在媒体库里、蓝光、非互联的远端流），退回
+  /// [generate] 那一行按钮，点了转录弹层盖在工作台上。
   final WidgetBuilder? generatePanel;
-
-  /// [retime] 能不能留在工作台里跑。它要先起转录弹层：桌面端弹层在 root navigator
-  /// 上、盖得住工作台；移动端是播放页那层的底部 sheet，会被工作台整页挡住，只能先关
-  /// 工作台。
-  final bool retimeInPlace;
 
   /// 生成字幕（原「生成字幕」入口：管线 / 本机转录分流）。
   final Future<void> Function()? generate;
@@ -539,20 +534,12 @@ class _VideoSubtitleStudioPageState extends State<VideoSubtitleStudioPage> {
     setState(() => _notice = notice);
   }
 
-  /// 跑一个工具。[inPlace]：留在工作台里跑——期间其它工具不能点，进度与结果由播放页
-  /// 的提示转过来显示（[VideoSubtitleStudioReference.notice]），跑完换了主字幕表格
-  /// 当场跟着变。不能就地跑的（自己要起一层会被工作台挡住的弹层）先关工作台再跑。
-  Future<void> _run(
-    String key,
-    Future<void> Function() action, {
-    required bool inPlace,
-  }) async {
+  /// 跑一个工具：留在工作台里跑——期间其它工具不能点，进度与结果由播放页的提示转
+  /// 过来显示（[VideoSubtitleStudioReference.notice]），跑完换了主字幕表格当场跟着
+  /// 变。工具自己起的弹层（转录、确认）都开在 root navigator 上，盖在工作台之上，
+  /// 五个平台同一行为。
+  Future<void> _run(String key, Future<void> Function() action) async {
     if (_busyTool != null) return;
-    if (!inPlace) {
-      await Navigator.of(context).maybePop();
-      await action();
-      return;
-    }
     setState(() {
       _busyTool = key;
       _notice = null;
@@ -1166,15 +1153,7 @@ class _VideoSubtitleStudioPageState extends State<VideoSubtitleStudioPage> {
                 onTap: switch (tools[i].action) {
                   null => null,
                   final Future<void> Function() action => () => unawaited(
-                    _run(
-                      tools[i].key,
-                      action,
-                      // 「生成字幕」那一行（没有嵌入面板时的退路）自己起面板，
-                      // 照旧先关工作台。
-                      inPlace:
-                          tools[i].key != 'generate' &&
-                          (tools[i].key != 'retime' || a.retimeInPlace),
-                    ),
+                    _run(tools[i].key, action),
                   ),
                 },
               ),

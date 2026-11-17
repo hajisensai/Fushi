@@ -184,10 +184,14 @@ import 'package:fushi/src/media/video/subtitle/remote_video_subtitle_service.dar
         RemoteVideoSubtitleEpisodeProgress,
         RemoteVideoSubtitleJob,
         RemoteVideoSubtitleJobStatus,
+        RemoteVideoSubtitleService,
         RemoteVideoSubtitleTarget,
         appRemoteVideoSubtitleService;
 import 'package:fushi/src/media/video/subtitle/remote_video_subtitle_sheet.dart'
-    show remoteVideoSubtitleEpisodeResultLabel, showRemoteVideoSubtitleSheet;
+    show
+        RemoteVideoSubtitleSheet,
+        remoteVideoSubtitleEpisodeResultLabel,
+        showRemoteVideoSubtitleSheet;
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_pipeline.dart'
     show VideoSubtitleEpisodeResult;
 import 'package:fushi/src/media/audiobook/audiobook_auto_transcribe.dart'

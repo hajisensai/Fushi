@@ -177,6 +177,9 @@ Future<String?> showAsrTranscribeSheet({
     context: context,
     showDragHandle: true,
     isDismissible: false,
+    // 与桌面分支（showAppDialog）一致开在 root navigator 上：视频页的字幕工作台是
+    // root 上的整页，从它下面起的转录弹层不在 root 上会被整页挡住。
+    useRootNavigator: true,
     builder: build,
   );
 }

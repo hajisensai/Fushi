@@ -3273,21 +3273,15 @@ extension _VideoSubtitle on _VideoFushiPageState {
   }
 
   /// 「生成字幕」嵌进工作台工具栏的选项面板（[VideoSubtitleStudioActions.generatePanel]）：
-  /// 与 [_openJapaneseSubtitlePipeline] 同一个面板、同一套参数，只是不另起弹层。只有
-  /// 本机管线认得到这一集时才有；认不到（不在库里 / 互联远端 / 只能本机转录）返回
-  /// null，工作台退回「生成字幕」那一行按钮走 [_openSubtitleGeneration]。
+  /// 与 [_openJapaneseSubtitlePipeline] / [_openRemoteJapaneseSubtitlePipeline] 同一个
+  /// 面板、同一套参数，只是不另起弹层——本机视频嵌本机管线面板，互联远端视频嵌 host
+  /// 管线面板。管线认不到这一集时返回 null（不在媒体库里、蓝光、非互联的远端流、host
+  /// 播放列表第 2 集起）：这些只有本机转录一条路，工作台退回「生成字幕」那一行按钮走
+  /// [_openSubtitleGeneration]，转录弹层盖在工作台上。
   Future<WidgetBuilder?> _subtitleStudioGeneratePanel(
     VideoPlayerController controller,
   ) async {
-    final String? videoPath = _currentVideoPath;
-    if (videoPath == null || _isRemote || !_canRunSubtitlePipeline) return null;
-    final AppVideoSubtitleService service = appVideoSubtitleService(appModel);
-    final AppVideoSubtitleTarget target;
-    try {
-      target = await service.resolveBook(_activeBookUid, videoPath: videoPath);
-    } on AppVideoSubtitleTargetNotFound {
-      return null;
-    }
+    if (!_canRunSubtitlePipeline) return null;
     final VideoSubtitleInAppTranscribe? inApp = _canTranscribeVideoSpeech
         ? ({required bool proofread}) => unawaited(
             _generateSubtitleWithSpeechModel(
@@ -3296,6 +3290,41 @@ extension _VideoSubtitle on _VideoFushiPageState {
             ),
           )
         : null;
+    if (_isRemote) {
+      final (InterconnectSyncBackend, String, int)? host =
+          _remoteHostVideoTarget();
+      if (host == null) return null;
+      final (InterconnectSyncBackend _, String videoId, int episode) = host;
+      // host 任务认不到播放列表里第 2 集起的文件：只剩本机转录。
+      if (episode > 0) return null;
+      final String title = _title ?? _effectiveRemoteInfo?.title ?? videoId;
+      final RemoteVideoSubtitleService remoteService =
+          appRemoteVideoSubtitleService(appModel);
+      return (BuildContext context) => RemoteVideoSubtitleSheet(
+        embedded: true,
+        service: remoteService,
+        target: RemoteVideoSubtitleTarget(
+          title: title,
+          episodes: <RemoteVideoSubtitleEpisode>[
+            RemoteVideoSubtitleEpisode(videoId: videoId, title: title),
+          ],
+        ),
+        prefs: PrefsRepoVideoSubtitleGeneratePrefs(appModel.prefsRepo),
+        onJobStarted: (RemoteVideoSubtitleJob job) => unawaited(
+          _applyRemotePipelineSubtitleWhenDone(controller, job, videoId),
+        ),
+        onTranscribeInApp: inApp,
+      );
+    }
+    final String? videoPath = _currentVideoPath;
+    if (videoPath == null) return null;
+    final AppVideoSubtitleService service = appVideoSubtitleService(appModel);
+    final AppVideoSubtitleTarget target;
+    try {
+      target = await service.resolveBook(_activeBookUid, videoPath: videoPath);
+    } on AppVideoSubtitleTargetNotFound {
+      return null;
+    }
     // 播放器里正对照着的其它语言字幕交给 AI 校对当参考：工作台盖着播放页期间换不了
     // 副字幕，打开时取一次即可。
     final Map<String, List<SubtitleEvidenceTrack>> pinnedEvidence =
@@ -3381,9 +3410,6 @@ extension _VideoSubtitle on _VideoFushiPageState {
         retime: _canTranscribeVideoSpeech
             ? () => _retimeSubtitleWithSpeechModel(controller)
             : null,
-        // 重定时先起转录弹层：桌面端在 root navigator 上、盖得住工作台；移动端是本页
-        // 这层的底部 sheet，会被工作台挡住，所以移动端先关工作台再跑。
-        retimeInPlace: isDesktopPlatform,
         alignEmbedded: _currentVideoPath != null
             ? () => _alignSubtitleToEmbeddedTracks(controller)
             : null,

@@ -184,7 +184,6 @@ void main() {
       bool withRetime = true,
       ValueNotifier<int>? position,
       VideoSubtitleStudioAiReference? ai,
-      bool retimeInPlace = true,
       WidgetBuilder? generatePanel,
       ValueNotifier<VideoSubtitleStudioNotice?>? notice,
       Future<void> Function()? split,
@@ -229,7 +228,6 @@ void main() {
                       retime: withRetime
                           ? () async => calls.add('retime')
                           : null,
-                      retimeInPlace: retimeInPlace,
                       alignEmbedded: () async => calls.add('align'),
                     ),
                     aiReference: ai,
@@ -579,19 +577,6 @@ void main() {
       expect(calls, <String>['align']);
     });
 
-    testWidgets('retime closes the workbench first where its sheet would be '
-        'hidden behind the page', (WidgetTester tester) async {
-      final List<String> calls = await pump(
-        tester,
-        language: SubtitleContentLanguage.japanese,
-        retimeInPlace: false,
-      );
-      await tester.tap(byKey('video-subtitle-studio-retime'));
-      await tester.pumpAndSettle();
-      expect(calls, <String>['retime']);
-      expect(byKey('video-subtitle-studio-retime'), findsNothing);
-    });
-
     testWidgets('an embedded generate panel replaces the generate row and the '
         'duplicate frames switch', (WidgetTester tester) async {
       await pump(
@@ -626,13 +611,14 @@ void main() {
       await tester.tap(byKey('video-subtitle-studio-generate'));
       await tester.pumpAndSettle();
       expect(calls, <String>['generate']);
-      // 没有嵌入面板时「生成字幕」自己起面板：照旧先关工作台。
-      expect(byKey('video-subtitle-studio-generate'), findsNothing);
+      // 没有嵌入面板时「生成字幕」自己起面板（盖在工作台上）：工作台不关。
+      expect(byKey('video-subtitle-studio-generate'), findsOneWidget);
 
       calls = await pump(tester, language: SubtitleContentLanguage.japanese);
       await tester.tap(byKey('video-subtitle-studio-retime'));
       await tester.pumpAndSettle();
       expect(calls, <String>['retime']);
+      expect(byKey('video-subtitle-studio-retime'), findsOneWidget);
 
       calls = await pump(tester, language: SubtitleContentLanguage.japanese);
       await tester.tap(byKey('video-subtitle-studio-align'));
