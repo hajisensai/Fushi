@@ -1,20 +1,12 @@
-/// 备份「合并导入」的 SRS 专用步骤（docs/specs/2026-10-14-fushi-srs-design.md 铁律 E）。
+/// 备份还原（覆盖 / 合并）里复习数据的落库步骤（docs/specs/2026-10-14-fushi-srs-design.md 铁律 E；新代口径见
+/// 交接说明「G11-4」一节）。
 ///
-/// 通用合并路径按业务键逐行 upsert / 按名重映射 profile id，对 SRS 不成立：SRS 的行按
-/// `profiles.uid` 归属、事件 ID 全局唯一且不可变。所以 srs_* 表在通用路径登记为跳过
-/// （`mergeSkippedDeviceLocalTableNames`），由这里按 profile uid 归位后，经本机
-/// [SrsDbStore.applyRemote] 合并——与多设备同步同一套合并函数（按 ID 取并集、修改记录走支配判定）。
+/// 通用合并路径按业务键逐行 upsert / 按名重映射 profile id，对 SRS 不成立：复习数据按集合归属（profile 经绑定指向
+/// 集合）。所以 srs_* 表在通用路径登记为跳过（`mergeSkippedDeviceLocalTableNames`），由 [mergeSrsFromBackup] 按
+/// profile uid / 名字对上本机 profile 之后，交给内核命令落库（新形态 `import`、旧形态 `legacy_backup_import`，
+/// srs_backup_bundle.dart）——与 `.fushisrs` 导入同一套认领与确认，不做任何 ID 重映射。
 ///
-/// 对备份里每个**有 SRS 数据**的 profile（只有内置行不算）：
-/// 1. 本机有同 uid 的 profile → 直接合并进去。
-/// 2. 否则本机有同名 profile，且它没有用户笔记、也从未发布过批次 → 该 profile 采用备份的 uid
-///    （先删掉它旧 uid 下的 SRS 行：只可能是内置行 / 本机状态 / 缓存，内置行 ID 由 uid 派生，
-///    会随新 uid 重新生成），再合并。发布过的不能改 uid：旧同步目录会成孤儿、已关联的设备断开
-///    （第六轮审查第 15 条）。
-/// 3. 否则为备份的 uid 新建本机 profile「<原名>（备份）」，再合并。
-///
-/// 不做任何 ID 重映射。合并进来的新事件重新进本机发件箱：备份来源设备可能从未同步过，
-/// 不重发这些事件就只活在本机；已在云端的事件重复发布无害（按 ID 取并集）。
+/// [SrsBackupSource] 只读 2026-10-23 之前的老形态备份（SRS 表在备份主库里，v1 事件），由调用方写成 JSONL 交给内核。
 library;
 
 import 'dart:convert';
@@ -23,6 +15,7 @@ import 'package:drift/drift.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
+import 'package:fushi_engine/srs/srs_backup_bundle.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_profile_data.dart'
@@ -30,58 +23,33 @@ import 'package:fushi_engine/srs/srs_profile_data.dart'
 import 'package:fushi_engine/srs/srs_reads.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
 
-/// 只读地读一份备份里的 SRS 数据。
-///
-/// profile 名字与 uid 总在备份的主库（`profiles` 表）里；SRS 的事件有两种存放：
-/// - 老备份（2026-10-23 之前）：srs_* 表也在备份的主库里——[SrsBackupSource.database]（单独打开
-///   的备份库）或 [SrsBackupSource.attached]（ATTACH 在本机主库连接上，合并导入引擎的形态）；
-/// - 新备份：备份里单独的 `srs.db`，由 Rust 打开（[SrsBackupSource.split]），读的是内核读命令（srs_reads.dart）；
-///   Dart 的 SQLite 绝不打开它，见 docs/specs/2026-10-23-srs-rust-store.md §1。
-/// 老形态的 SQL 只发 SELECT，打在备份主库（fushi.db 形态）上，不碰任何 srs.db。
+/// 只读地读一份老形态备份（2026-10-23 之前：srs_* 表在备份主库里）的 SRS 数据：[SrsBackupSource.database]（单独
+/// 打开的备份库）或 [SrsBackupSource.attached]（ATTACH 在本机主库连接上）。只发 SELECT，不碰任何 SRS 库。
 class SrsBackupSource {
-  SrsBackupSource.database(DatabaseConnectionUser db)
-    : this._(db, '', db, '', null);
+  SrsBackupSource.database(DatabaseConnectionUser db) : this._(db, '', db, '');
 
   /// [schema] 是 `ATTACH DATABASE ... AS <schema>` 的别名。
   SrsBackupSource.attached(DatabaseConnectionUser connection, String schema)
-    : this._(connection, '$schema.', connection, '$schema.', null);
-
-  /// profile 从 [profiles]（可带 ATTACH 别名 [profilesSchema]）读，SRS 事件经 [srs]（那份 srs.db 的内核句柄）的
-  /// 读命令读。
-  SrsBackupSource.split({
-    required DatabaseConnectionUser profiles,
-    String? profilesSchema,
-    required SrsCore srs,
-  }) : this._(
-         profiles,
-         profilesSchema == null ? '' : '$profilesSchema.',
-         null,
-         '',
-         srs,
-       );
+    : this._(connection, '$schema.', connection, '$schema.');
 
   SrsBackupSource._(
     this._profilesDb,
     this._profilesPrefix,
     this._legacy,
     this._prefix,
-    this._srs,
   );
 
   final DatabaseConnectionUser _profilesDb;
   final String _profilesPrefix;
 
-  /// 老形态：srs_* 表在备份主库里（[_srs] 为 null 时非空）。
-  final DatabaseConnectionUser? _legacy;
+  /// srs_* 表所在的连接。
+  final DatabaseConnectionUser _legacy;
   final String _prefix;
-
-  /// 新形态：备份里单独的 srs.db 的内核句柄。
-  final SrsCore? _srs;
 
   String _t(String table) => '$_prefix$table';
 
   Future<bool> _any(String table, String profileUid) async =>
-      await _legacy!
+      await _legacy
           .customSelect(
             'SELECT 1 FROM ${_t(table)} WHERE profile_uid = ? LIMIT 1',
             variables: <Variable<Object>>[Variable<String>(profileUid)],
@@ -94,14 +62,7 @@ class SrsBackupSource {
     final Set<String> builtin = <String>{
       for (final SrsEntityRecord r in srsBuiltinEntities(profileUid)) r.id,
     };
-    final SrsCore? srs = _srs;
-    if (srs != null) {
-      return (await srsRead(srs, profileUid, 'has_user_data', <String, Object?>{
-            'builtins': builtin.toList(),
-          })).json['any'] ==
-          true;
-    }
-    final List<QueryRow> ids = await _legacy!
+    final List<QueryRow> ids = await _legacy
         .customSelect(
           'SELECT id FROM ${_t('srs_entities')} WHERE profile_uid = ?',
           variables: <Variable<Object>>[Variable<String>(profileUid)],
@@ -138,12 +99,38 @@ class SrsBackupSource {
     return out;
   }
 
+  /// 该 profile 的卡片 → 笔记（老形态的 `srs_cards_cache`；没有这张表回空）：v1 复习日志写成 JSONL 时要带笔记 ID
+  /// （srs_backup_bundle.dart `srsWriteLegacyEventsJsonl`）。
+  Future<Map<String, String>> noteOfCard(String profileUid) async {
+    final String schema = _prefix.isEmpty
+        ? 'main'
+        : _prefix.substring(0, _prefix.length - 1);
+    final bool has =
+        (await _legacy
+            .customSelect(
+              'SELECT 1 FROM $schema.sqlite_master '
+              "WHERE type = 'table' AND name = 'srs_cards_cache'",
+            )
+            .getSingleOrNull()) !=
+        null;
+    if (!has) return const <String, String>{};
+    return <String, String>{
+      for (final QueryRow r
+          in await _legacy
+              .customSelect(
+                'SELECT id, note_id FROM ${_t('srs_cards_cache')} '
+                'WHERE profile_uid = ? AND note_id IS NOT NULL',
+                variables: <Variable<Object>>[Variable<String>(profileUid)],
+              )
+              .get())
+        r.read<String>('id'): r.read<String>('note_id'),
+    };
+  }
+
   /// 该 profile 的全部事件（身份记录 → 修改记录 → 复习日志 → 不认识的事件），
   /// 解码方式与 [SrsDbStore.exportAll] 一致。
   Future<List<SrsEvent>> eventsOf(String profileUid) async {
-    final SrsCore? srs = _srs;
-    if (srs != null) return srsEventsOf(srs, profileUid);
-    final DatabaseConnectionUser db = _legacy!;
+    final DatabaseConnectionUser db = _legacy;
     final List<Variable<Object>> v = <Variable<Object>>[
       Variable<String>(profileUid),
     ];
@@ -254,19 +241,25 @@ class SrsBackupProfile {
   final String name;
 }
 
-/// 备份 profile 落到本机的方式（铁律 E 的三种情况）。
+/// 备份 profile 落到本机的方式（铁律 E 在新代上的三种情况）。
 enum SrsBackupMergeAction {
   /// 本机已有同 uid 的 profile。
   sameUid,
 
-  /// 本机同名 profile（无用户笔记、从未发布）采用了备份的 uid。
-  adoptedUid,
+  /// 本机有 profile 已经绑在备份的这个集合上（之前合并 / 关联过：集合标识相同，或它的盐里有备份里的 uid）。
+  sameCollection,
 
-  /// 新建了「<原名>（备份）」profile。
+  /// 本机同名 profile（无用户数据、从未发布）认领了备份的集合（内核 `collection_adopt`，profile 的 uid 不变）。
+  adoptedCollection,
+
+  /// 新建了「<原名>（备份）」profile（uid = 备份里的 uid）。
   createdProfile,
+
+  /// 要用户确认（另一个复习库 / 新的旧 profile 标识 / 新设备公钥）而调用方没确认：这一份没落，本机一点没动。
+  declined,
 }
 
-/// 一个备份 profile 的合并结果。
+/// 一个备份集合的合并结果。
 class SrsBackupMergeResult {
   const SrsBackupMergeResult({
     required this.profileUid,
@@ -275,16 +268,38 @@ class SrsBackupMergeResult {
     required this.newEvents,
   });
 
+  /// 落进的本机 profile uid（[SrsBackupMergeAction.declined] 时是本该落进的那个）。
   final String profileUid;
-  final int localProfileId;
+
+  /// 本机 profile 的自增 id（[SrsBackupMergeAction.declined] 且要新建时为 null）。
+  final int? localProfileId;
   final SrsBackupMergeAction action;
 
-  /// 本次新落进本机（并重新进发件箱）的事件数；重复合并同一份备份为 0。
+  /// 内核这次并入的操作数（`applied`）；重复合并同一份备份为 0。
   final int newEvents;
 }
 
-/// 新建本机 profile（返回本地自增 id）。由调用方决定建法（通用合并路径是直接插 profiles 行）。
-typedef SrsCreateProfile = Future<int> Function(String name);
+/// 新建本机 profile「[name]」并让它用 uid [uid]，返回本地自增 id；由调用方决定建法（合并导入直接插 profiles 行）。
+/// 覆盖还原在主库换好之前就落复习数据：先记下、主库换好后再插，此时回 null。
+typedef SrsCreateProfile = Future<int?> Function(String name, String uid);
+
+/// 本机一个 profile（主库 `profiles` 的一行）。
+typedef SrsLocalProfile = ({int id, String name, String? uid});
+
+/// 读主库 [db] 里的全部 profile（按自增 id 排）。
+Future<List<SrsLocalProfile>> srsLocalProfilesOf(
+  DatabaseConnectionUser db,
+) async => <SrsLocalProfile>[
+  for (final QueryRow r
+      in await db
+          .customSelect('SELECT id, name, uid FROM main.profiles ORDER BY id')
+          .get())
+    (
+      id: r.read<int>('id'),
+      name: r.read<String>('name'),
+      uid: r.read<String?>('uid'),
+    ),
+];
 
 /// 新建 profile 的名字：「<原名>（备份）」，撞名时「<原名>（备份 2）」……
 String srsBackupProfileName(String original, Set<String> taken) {
@@ -296,81 +311,167 @@ String srsBackupProfileName(String original, Set<String> taken) {
   }
 }
 
-/// 把 [source] 里每个有 SRS 数据的 profile 合并进本机（铁律 E，见库注释）：profile 行在主库
-/// [local]，SRS 事件在 [localSrs]。
+/// 备份里一份要落库的复习数据：它在备份里属于哪些 profile（第一个的名字用来按名对上本机）+ 文件。
+final class SrsBackupLandUnit {
+  const SrsBackupLandUnit({required this.profiles, required this.file});
+
+  final List<SrsBackupProfile> profiles;
+  final SrsBackupSourceFile file;
+}
+
+/// 把 [units] 逐个落进本机新代库 [localSrs]（Primary）：profile 行在主库 [local]（铁律 E，新代口径）：
 ///
-/// 幂等：同一份备份合并两次，第二次全部走「同 uid」且不新增事件。两个文件不能一起原子提交：
-/// 改 uid 时先删 [localSrs] 里旧 uid 的行、再写主库的 `profiles.uid`，两步都幂等，中途失败重跑即收敛。
+/// 1. 本机有 uid 与备份里那个集合的某个 profile 相同的 profile → 落进它；否则本机有 profile 已经绑在这个集合上
+///    （集合标识相同，或它的盐里有备份里的 uid：之前合并 / 关联过）→ 落进它。
+/// 2. 否则本机有同名 profile，且它没有用户数据、也从未发布过（[freshLibrary] = 目标库是覆盖还原新建的空库，本机
+///    profile 在里面都还没有数据）→ 它认领备份的集合（内核 `collection_adopt`，profile 的 uid 不变；以前是改 uid）。
+/// 3. 否则为备份的 uid 新建本机 profile「<原名>（备份）」，再落进去。
 ///
-/// 前提：[localSrs] 的写连接只归这次合并用（调用方自己开的存储：合并导入与覆盖恢复都在 app 的 SRS 存储关掉
-/// 之后另开一份，backup_service/restore.part.dart）。删旧 uid 是内核命令、直接在写连接上跑，不经任何副本的
-/// 独占区；这里一路顺序 await，连接上没有别的写入者开着事务，它就不会夹进别人的事务里随之回滚。别的 [SrsCore]
-/// 是另一条连接，不会共用事务。
+/// 落库是内核命令（新形态 `import`、旧形态 `legacy_backup_import`），先认领再读入，一个写事务。并入另一个复习库、
+/// 记下新的旧 profile 标识（盐）或新设备公钥要用户确认：[confirmed] 为假时先预检（什么都不写），需要确认的那一份
+/// 记成 [SrsBackupMergeAction.declined]、不建 profile、什么都不写。
+///
+/// 幂等：同一份备份合并两次，第二次全部走第 1 种（第 3 种建出的 profile 用的就是备份 uid；第 2 种认领之后绑在
+/// 备份的集合上）、内核回 `unchanged`。
+/// 两个文件不能一起原子提交：新建 profile 先写主库再落库，落库失败时留下一个空 profile，重跑时按「同 uid」接着落。
 Future<List<SrsBackupMergeResult>> mergeSrsFromBackup({
-  required SrsBackupSource source,
-  required FushiDatabase local,
-  required SrsStorage localSrs,
-  required String deviceId,
+  required List<SrsBackupLandUnit> units,
+  required Future<List<SrsLocalProfile>> Function() localProfiles,
+  required SrsCore localSrs,
   required SrsCreateProfile createProfile,
+  required bool confirmed,
+  required int nowMs,
+  bool freshLibrary = false,
 }) async {
   final List<SrsBackupMergeResult> results = <SrsBackupMergeResult>[];
-  for (final SrsBackupProfile bp in await source.profilesWithSrsData()) {
-    final List<_LocalProfile> profiles = await _localProfiles(local);
-    final _LocalProfile? sameUid = _firstWhere(
+  for (final SrsBackupLandUnit unit in units) {
+    if (unit.profiles.isEmpty) continue;
+    final SrsBackupProfile bp = unit.profiles.first;
+    final List<SrsLocalProfile> profiles = await localProfiles();
+    final SrsLocalProfile? sameUid = _firstWhere(
       profiles,
-      (_LocalProfile p) => p.uid == bp.uid,
+      (SrsLocalProfile p) =>
+          unit.profiles.any((SrsBackupProfile b) => b.uid == p.uid),
     );
-    final int localId;
-    final SrsBackupMergeAction action;
+    String target;
+    int? localId;
+    SrsBackupMergeAction action;
+    final SrsLocalProfile? sameCollection = sameUid != null || freshLibrary
+        ? null
+        : await _boundToUnit(localSrs, profiles, unit);
     if (sameUid != null) {
+      target = sameUid.uid!;
       localId = sameUid.id;
       action = SrsBackupMergeAction.sameUid;
+    } else if (sameCollection != null) {
+      target = sameCollection.uid!;
+      localId = sameCollection.id;
+      action = SrsBackupMergeAction.sameCollection;
     } else {
-      final _LocalProfile? sameName = _firstWhere(
+      final SrsLocalProfile? sameName = _firstWhere(
         profiles,
-        (_LocalProfile p) => p.name == bp.name,
+        (SrsLocalProfile p) =>
+            p.name == bp.name && p.uid != null && p.uid!.isNotEmpty,
       );
-      if (sameName != null && await _canAdoptUid(localSrs, sameName.uid)) {
-        final String? oldUid = sameName.uid;
-        if (oldUid != null && oldUid.isNotEmpty) {
-          await srsPurgeProfileRows(localSrs.core, oldUid);
-        }
-        await local.adoptProfileUid(sameName.id, bp.uid);
+      if (sameName != null &&
+          (freshLibrary || await _canAdoptUid(localSrs, sameName.uid))) {
+        target = sameName.uid!;
         localId = sameName.id;
-        action = SrsBackupMergeAction.adoptedUid;
+        action = SrsBackupMergeAction.adoptedCollection;
       } else {
-        final String name = srsBackupProfileName(bp.name, <String>{
-          for (final _LocalProfile p in profiles) p.name,
-        });
-        localId = await createProfile(name);
-        await local.adoptProfileUid(localId, bp.uid);
+        target = bp.uid;
+        localId = null;
         action = SrsBackupMergeAction.createdProfile;
       }
     }
-    final int added = await _mergeEvents(
-      local: localSrs,
-      profileUid: bp.uid,
-      deviceId: deviceId,
-      events: await source.eventsOf(bp.uid),
+    if (!confirmed) {
+      final SrsBackupLanded pre = await srsLandBackupUnit(
+        core: localSrs,
+        targetUid: target,
+        file: unit.file,
+        confirmed: false,
+        preflight: true,
+        nowMs: nowMs,
+      );
+      if (pre.needsConfirm) {
+        results.add(
+          SrsBackupMergeResult(
+            profileUid: target,
+            localProfileId: localId,
+            action: SrsBackupMergeAction.declined,
+            newEvents: 0,
+          ),
+        );
+        continue;
+      }
+    }
+    if (action == SrsBackupMergeAction.createdProfile) {
+      final String name = srsBackupProfileName(bp.name, <String>{
+        for (final SrsLocalProfile p in profiles) p.name,
+      });
+      localId = await createProfile(name, bp.uid);
+    }
+    final SrsBackupLanded landed = await srsLandBackupUnit(
+      core: localSrs,
+      targetUid: target,
+      file: unit.file,
+      confirmed: confirmed,
+      nowMs: nowMs,
     );
+    if (landed.needsConfirm) {
+      // 预检之后绑定变了（别的调用改了这个 profile）：不按旧结论落，交给用户重来。
+      throw StateError(
+        'srs backup restore: the profile binding changed while restoring; '
+        'restore again',
+      );
+    }
     results.add(
       SrsBackupMergeResult(
-        profileUid: bp.uid,
+        profileUid: target,
         localProfileId: localId,
         action: action,
-        newEvents: added,
+        newEvents: landed.applied,
       ),
     );
   }
   return results;
 }
 
-class _LocalProfile {
-  const _LocalProfile(this.id, this.name, this.uid);
-
-  final int id;
-  final String name;
-  final String? uid;
+/// [profiles] 里已经绑在 [unit] 那个集合上的第一个 profile（内核 `collection_info`：集合标识相同，或盐里有备份里
+/// 的 uid）；没绑过集合的跳过。
+Future<SrsLocalProfile?> _boundToUnit(
+  SrsCore core,
+  List<SrsLocalProfile> profiles,
+  SrsBackupLandUnit unit,
+) async {
+  final Set<String> uids = <String>{
+    for (final SrsBackupProfile b in unit.profiles) b.uid,
+  };
+  final SrsBackupSourceFile file = unit.file;
+  final String? collection = file is SrsBackupStreamFile
+      ? file.unit.collection
+      : null;
+  for (final SrsLocalProfile p in profiles) {
+    final String? uid = p.uid;
+    if (uid == null || uid.isEmpty) continue;
+    final Map<String, Object?> info;
+    try {
+      info = core.sync2(<String, Object?>{
+        'op': 'collection_info',
+        'profile': uid,
+      }).map;
+    } on SrsProfileUnboundException {
+      continue;
+    }
+    if (collection != null && info['collection'] == collection) return p;
+    // 协议 3 形态（`srs.db` 条目 / 主库老表）：那时集合 = collection_of(uid)、位置目录名 = uid，认领后绑定的目录名
+    // 就是备份里那个 profile 的 uid。
+    final Object? dir = info['dir'];
+    if (dir is String && uids.contains(dir)) return p;
+    final Object? salts = info['salts'];
+    if (salts is List && salts.any(uids.contains)) return p;
+  }
+  return null;
 }
 
 T? _firstWhere<T>(Iterable<T> items, bool Function(T) test) {
@@ -380,30 +481,23 @@ T? _firstWhere<T>(Iterable<T> items, bool Function(T) test) {
   return null;
 }
 
-Future<List<_LocalProfile>> _localProfiles(
-  FushiDatabase db,
-) async => <_LocalProfile>[
-  for (final QueryRow r
-      in await db
-          .customSelect('SELECT id, name, uid FROM main.profiles ORDER BY id')
-          .get())
-    _LocalProfile(
-      r.read<int>('id'),
-      r.read<String>('name'),
-      r.read<String?>('uid'),
-    ),
-];
-
 /// 本机 profile（当前 uid [uid]）能否改用备份的 uid：没有用户数据（[srsProfileHasUserData]：不只是笔记，自建牌组、
 /// 改过的预设也算），且从未发布过批次。
-Future<bool> _canAdoptUid(SrsStorage srs, String? uid) async {
+///
+/// 新代：这个 profile 在库里还没有集合（[SrsProfileUnboundException]）= 没有数据、也没发布过。
+Future<bool> _canAdoptUid(SrsCore core, String? uid) async {
   if (uid == null || uid.isEmpty) return true;
-  if (await srsProfileHasUserData(srs.core, uid)) return false;
-  // 同步 v2：传到过任何位置就算发布过（别的设备可能已经拿到这个身份下的操作）。只读判断，不打开副本。
-  final Object? locations = srs.core.sync2(<String, Object?>{
-    'op': 'status',
-    'profile': uid,
-  }).map['locations'];
+  final Object? locations;
+  try {
+    if (await srsProfileHasUserData(core, uid)) return false;
+    // 同步 v2：传到过任何位置就算发布过（别的设备可能已经拿到这个身份下的操作）。只读判断。
+    locations = core.sync2(<String, Object?>{
+      'op': 'status',
+      'profile': uid,
+    }).map['locations'];
+  } on SrsProfileUnboundException {
+    return true;
+  }
   final bool published =
       locations is List &&
       locations.any(
@@ -415,7 +509,7 @@ Future<bool> _canAdoptUid(SrsStorage srs, String? uid) async {
 /// 本机 profile（当前 uid [currentUid]）能否改用另一个 uid：没有用户数据、也从未发布过批次（铁律 E）。
 /// 复习备份页「从文件恢复」另一台设备的备份时用：新装的设备可以直接接上那个 profile。
 Future<bool> srsCanAdoptProfileUid(SrsStorage db, String currentUid) =>
-    _canAdoptUid(db, currentUid);
+    _canAdoptUid(db.core, currentUid);
 
 /// 本机 profile [profileId] 改用 [newUid]：先删掉旧 uid 下的全部 SRS 行（只可能是内置行 / 本机状态 /
 /// 缓存，内置行的 ID 由 uid 派生，换 uid 后随新 uid 重新生成）。调用方先用 [srsCanAdoptProfileUid] 检查。
@@ -434,50 +528,4 @@ Future<void> srsAdoptProfileUid(
 }) async {
   await srsPurgeProfileRows(srs, oldUid);
   await db.adoptProfileUid(profileId, newUid);
-}
-
-/// 本机 [profileUid] 名下四张事件表里已存在的事件 ID（内核读命令 `events_present`）。
-Future<Set<String>> _existingEventIds(
-  SrsCore core,
-  String profileUid,
-  List<String> ids,
-) async => (await srsRead(core, profileUid, 'events_present', <String, Object?>{
-  'ids': ids,
-})).table.strings('id').toList().toSet();
-
-/// 经本机副本合并一组事件，返回新落下的事件数（这些事件重新进发件箱）。
-Future<int> _mergeEvents({
-  required SrsStorage local,
-  required String profileUid,
-  required String deviceId,
-  required List<SrsEvent> events,
-}) async {
-  final SrsDbStore store = await SrsDbStore.open(
-    core: local.core,
-    profileUid: profileUid,
-    deviceId: deviceId,
-  );
-  if (events.isEmpty) return 0;
-  final List<String> ids = <String>[for (final SrsEvent e in events) e.id];
-  final Set<String> before = await _existingEventIds(
-    local.core,
-    profileUid,
-    ids,
-  );
-  await store.applyRemote(events);
-  final List<String> fresh = <String>[
-    for (final String id in ids)
-      if (!before.contains(id)) id,
-  ];
-  if (fresh.isEmpty) return 0;
-  // 被本机更晚的修改支配而丢掉的记录不在库里；落进来的都已是本机操作（同步 v2：并入即发布，不需要发件箱）。
-  final Set<String> landed = await _existingEventIds(
-    local.core,
-    profileUid,
-    fresh,
-  );
-  return <String>[
-    for (final String id in fresh)
-      if (landed.contains(id)) id,
-  ].length;
 }

@@ -22,9 +22,16 @@ import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
+import 'package:fushi_engine/srs/srs_backup_bundle.dart';
 import 'package:fushi_engine/srs/srs_backup_merge.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
-import 'package:fushi_srs/fushi_srs.dart' show SrsCore, SrsStoreOpenBlocked;
+import 'package:fushi_srs/fushi_srs.dart'
+    show
+        SrsCore,
+        SrsGen4Migration,
+        SrsGen4MigrationStatus,
+        SrsGenState,
+        SrsStoreOpenBlocked;
 import 'package:path/path.dart' as p;
 import 'package:sqlite3/sqlite3.dart' as sqlite;
 import 'package:fushi_engine/media/video/anime_source_video_path.dart';
@@ -34,6 +41,7 @@ import 'package:fushi/src/storage/download_layout.dart';
 part 'backup_service/fs_retry.part.dart';
 part 'backup_service/path_rebase.part.dart';
 part 'backup_service/restore.part.dart';
+part 'backup_service/srs_restore.part.dart';
 part 'backup_service/table_rules.part.dart';
 
 /// Optional file-tree categories a backup export can include. The database
@@ -122,15 +130,14 @@ enum BackupCategory {
   /// instead of being wiped to empty. Included by default.
   profiles,
 
-  /// 复习（SRS）：Rust 的 `srs.db` 快照（zip 条目 `srs.db`，四张同步数据表随包、六张设备
-  /// 本地表在快照里清空）+ 媒体目录 `<support>/srs_media/`（按 profile 子目录原样打包，
-  /// 归档前缀 `srs_media/`，文件名 = 内容 sha1）。老形态备份（2026-10-23 之前）的 SRS 表在
-  /// `fushi.db` 条目里，恢复 / 合并照样认（见 backup_srs_tables.dart）。
+  /// 复习（SRS）：内核按集合导出的操作流（`srs/manifest.json` + `srs/<n>.bin`，G11-4，
+  /// srs_backup_bundle.dart）+ 媒体目录 `<support>/srs_media/`（按 profile 子目录原样打包，
+  /// 归档前缀 `srs_media/`，文件名 = 内容 sha1）。旧形态照样认：协议 3 的 `srs.db` 条目
+  /// （2026-10-23 起）、SRS 表在 `fushi.db` 条目里的老备份（见 backup_srs_tables.dart）。
   ///
-  /// **依赖 `profiles` 的 uid**：SRS 行按 `profiles.uid` 归属。覆盖恢复时，配置档案
-  /// 若来自备份（勾了导入设置与配置档案），本机 srs.db 就整份换成备份的；否则本机配置档案被保留、
-  /// 备份的 uid 对不上任何本机档案，SRS 数据改走 SRS 专用合并（同 uid 并入 / 同名且
-  /// 无笔记未发布则采用 uid / 否则新建「（备份）」档案），不留孤儿。导出时不勾
+  /// **依赖 `profiles` 的 uid**：复习数据按 profile 归属。覆盖恢复 = 新建一份空的新代库、把备份的
+  /// 复习数据落进去、再换下本机的（本机的旧库改名留作回退，不删）；落库时按 uid / 名字对上本机
+  /// 档案（同 uid / 同名且无数据未发布则认领备份的集合 / 否则新建「（备份）」档案），不留孤儿。导出时不勾
   /// `profiles` 但勾了本类别，仍保留拥有 SRS 数据的那几行 `profiles`（只有名字与 uid，
   /// 档案设置照样剥离），否则恢复端无从得知这些数据该归到哪个档案。
   ///
@@ -422,8 +429,8 @@ const String _gameCoversPrefix = 'game_covers';
 /// 与磁盘目录同名（[SrsMediaStore.mediaRootFor]），各 profile 子目录原样往返。
 const String _srsMediaPrefix = 'srs_media';
 
-/// 备份 zip 里的 SRS 事件库快照条目名（与磁盘上的 `srs.db` 同名）。新形态备份（2026-10-23 起）
-/// 勾「复习」时带它；老形态备份的 SRS 表在 `fushi.db` 条目里（见 backup_srs_tables.dart）。
+/// 协议 3 时代备份（2026-10-23 起、这一版之前）的 SRS 库快照条目名（与磁盘上的 `srs.db` 同名）：只读，这一版
+/// 不再写它（新形态见 [kSrsBackupManifestEntry]）。更老的备份 SRS 表在 `fushi.db` 条目里（见 backup_srs_tables.dart）。
 const String _srsDbName = kSrsDatabaseFileName;
 
 /// 媒体存储写入中途的临时文件（`<name>.<rand>.tmp`，见 [SrsMediaStore.store]）：
@@ -1218,18 +1225,21 @@ class BackupService {
     return total;
   }
 
-  /// 用 Rust 把本机 srs.db `VACUUM INTO` 到 [path]（必须不存在），并清空快照里的 6 张设备本地表。
-  /// 在后台 isolate 跑（库大时要几百毫秒）；句柄线程安全。
-  static Future<void> _snapshotSrs(SrsStorage srs, String path) {
-    final int address = srs.core.address;
-    final String? libraryPath = srs.core.libraryPath;
-    return Isolate.run<void>(
-      () => SrsCore.fromAddress(
-        address,
-        libraryPath: libraryPath,
-      ).snapshotInto(path, stripDeviceLocal: true),
-    );
-  }
+  /// 主库里有 uid 的 profile（复习导出按它们找集合；按自增 id 排，确定性）。
+  Future<List<SrsBackupProfile>> _srsBackupProfiles() async =>
+      <SrsBackupProfile>[
+        for (final QueryRow r
+            in await _db
+                .customSelect(
+                  'SELECT name, uid FROM profiles '
+                  "WHERE uid IS NOT NULL AND uid != '' ORDER BY id",
+                )
+                .get())
+          SrsBackupProfile(
+            uid: r.read<String>('uid'),
+            name: r.read<String>('name'),
+          ),
+      ];
 
   /// 复习媒体根（`<support>/srs_media`）。支持目录即 [_dbDirectory]（活库所在目录，
   /// 与 `AppPaths.supportRootDirectory` 同一个根），规则与
@@ -1335,17 +1345,39 @@ class BackupService {
         await File(_dbPath).copy(cleanDbPath);
       }
 
-      // 复习：SRS 事件在 Rust 的 srs.db 里，另由 Rust 出一份快照（设备本地表已清空）作为
-      // zip 里的 `srs.db` 条目；主库副本里不带 SRS（老形态的残表在下面剥掉）。本机还没有
-      // srs.db（SRS 仍在主库老表里）时没有快照，老表照旧随主库副本走。
+      // 复习（G11-4，新代）：内核按集合导出操作流（`srs/<n>.bin`，FSRS4EXP）+ 清单
+      // `srs/manifest.json`（srs_backup_bundle.dart）；不再写 `srs.db` 快照条目，也不带签名私钥。主库副本里不带
+      // SRS（老形态的残表在下面剥掉）。本机复习库没开（SRS 仍在主库老表里）时没有流，老表照旧随主库副本走。
       final bool includeSrs = wants(BackupCategory.srs);
       final SrsStorage? srs = includeSrs ? await _srsStorage?.call() : null;
-      String? srsSnapshotPath;
+      final Map<String, String> srsEntries = <String, String>{};
       Set<String>? srsProfileUidSet;
       if (srs != null) {
-        srsSnapshotPath = p.join(tmpDir.path, _srsDbName);
-        await _snapshotSrs(srs, srsSnapshotPath);
-        srsProfileUidSet = await srsProfileUidsIn(srs.core);
+        final Directory srsDir = Directory(p.join(tmpDir.path, 'srs'));
+        await srsDir.create();
+        final SrsBackupManifest? manifest = await srsExportBackupStreams(
+          core: srs.core,
+          profiles: await _srsBackupProfiles(),
+          outDir: srsDir.path,
+          nowMs: DateTime.now().millisecondsSinceEpoch,
+        );
+        srsProfileUidSet = <String>{};
+        if (manifest != null) {
+          final String manifestPath = p.join(srsDir.path, 'manifest.json');
+          await File(
+            manifestPath,
+          ).writeAsString(jsonEncode(manifest.toJson()), flush: true);
+          srsEntries[kSrsBackupManifestEntry] = manifestPath;
+          for (final SrsBackupUnit u in manifest.units) {
+            srsEntries[srsBackupStreamEntry(u.n)] = p.join(
+              srsDir.path,
+              '${u.n}.bin',
+            );
+            srsProfileUidSet.addAll(<String>[
+              for (final SrsBackupProfile pr in u.profiles) pr.uid,
+            ]);
+          }
+        }
       }
 
       // Strip sync credentials from the copy before it leaves the device.
@@ -1448,9 +1480,9 @@ class BackupService {
       final bool includeStatistics = wants(BackupCategory.statistics);
       final bool includeSettings = wants(BackupCategory.settings);
       final bool includeProfiles = wants(BackupCategory.profiles);
-      // 复习：srs.db 快照 + srs_media/ 文件树，一起随勾选走。主库副本里老形态的 SRS 表只在
-      // 「勾了复习、本机还没有 srs.db」时保留（那时它们就是 SRS 数据本身）。
-      final bool stripLegacySrs = !includeSrs || srsSnapshotPath != null;
+      // 复习：操作流 + srs_media/ 文件树，一起随勾选走。主库副本里老形态的 SRS 表只在
+      // 「勾了复习、本机复习库没开」时保留（那时它们就是 SRS 数据本身）。
+      final bool stripLegacySrs = !includeSrs || srs != null;
       if (!includeProgress ||
           !includeStatistics ||
           !includeSettings ||
@@ -1521,7 +1553,7 @@ class BackupService {
       // the UI isolate — that froze the app (ANR) on any non-trivial library.
       final Map<String, String> files = <String, String>{
         _dbName: cleanDbPath,
-        if (srsSnapshotPath != null) _srsDbName: srsSnapshotPath,
+        ...srsEntries,
       };
       Map<String, String> videoFiles = const <String, String>{};
       if (includeVideos) {

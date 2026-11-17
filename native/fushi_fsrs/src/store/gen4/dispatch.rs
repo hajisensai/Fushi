@@ -53,9 +53,10 @@ use serde_json::{Value, json};
 use super::cache::CFG_KEY;
 use super::cmd::{self, snapshot};
 use super::derive::{Index, Ref, Settled};
+use super::files::OpenMode;
 use super::identity::BindingChanged;
 use super::ingest::{Settle, ingest_settle};
-use super::kernel::{G4Core, StatsEntry, removed, unwired};
+use super::kernel::{G4Core, READ_ONLY, StatsEntry, removed, unwired};
 use super::local;
 use super::refresh::Tally;
 use super::schema::sql;
@@ -163,6 +164,8 @@ pub fn wiring(op: &str) -> Option<Wiring> {
         "relay_outbox" | "relay_ack" => Wired,
         // 导入 / 导出（G11-3，`cmd/fushisrs.rs`）
         "import" | "export" => Wired,
+        // 整包备份里换代之前的复习数据读入（G11-4，`cmd/backup.rs`；新代才有的命令）
+        "legacy_backup_import" => Wired,
         // 新代不需要
         "channel_settle" => Removed(NO_CHANNEL),
         "migrate"
@@ -601,6 +604,29 @@ fn run(
             let src = cmd::fushisrs::Source::of(req, blobs)?;
             let v = write_binding(c, |t| {
                 cmd::fushisrs::import(t, profile, req, &src, anchor.as_ref(), &|t| {
+                    col_of(t, profile)
+                })
+            })?;
+            noted(c, profile, v)
+        }
+        // 换代之前的整包备份 / 事件备份（cmd/backup.rs）：先在新代库的写锁之外用冻结的协议 3 代码备好副本，再在一个写事务
+        // 里认领 + 旧备份读入 + 本机状态行；绑定变了提交后进回包。Secondary 直接报只读（不白备副本）。
+        "legacy_backup_import" => {
+            if c.mode() == OpenMode::Secondary {
+                return Err(READ_ONLY.to_owned());
+            }
+            let anchor = crate::store::local_state::anchor_of(req)?;
+            // 副本身份的本机秘密（cmd/backup.rs `seed_scratch_identity`）：一个读快照取目标集合的本机签名钥匙种子。
+            let secret = c.read(|t| {
+                snapshot(t, |t| match t.binding_of(profile)? {
+                    Some(b) => Ok(t.self_identity(b.col)?.map(|s| s.sk)),
+                    None => Ok(None),
+                })
+            })?;
+            let prepared = cmd::backup::prepare(req, secret.as_ref(), c.dir())?;
+            let src = super::dryrun::open_legacy(&prepared.db)?;
+            let v = write_binding(c, |t| {
+                cmd::backup::land(t, profile, req, &prepared, &src, anchor.as_ref(), &|t| {
                     col_of(t, profile)
                 })
             })?;

@@ -17,8 +17,8 @@
 //! 关库（[G4Core::close]）：先关读连接池（等借出的放回），再关写连接（最后关的连接把 WAL 并回主文件）。之后经它的命令
 //! 一律报 `CLOSED`（与协议 3 同文，Dart 按它认「已关闭」）。
 //!
-//! 还没有新代实现的 C 直出入口（`ffsrs_store_legacy_*` / `ffsrs_store_snapshot`）在这里有同名方法，报 [unwired] 的「尚未
-//! 接线」错误——C 入口照常解析输入，接线的模块只替换方法体。逐卡重放与训练集的 C 入口已接（S1b，`dispatch.rs` 末尾
+//! 还没有新代实现的 C 直出入口（`ffsrs_store_legacy_*`）在这里有同名方法，报 [unwired] 的「尚未接线」错误——C 入口照常
+//! 解析输入，接线的模块只替换方法体。`ffsrs_store_snapshot` 已接（G11-4，[G4Core::snapshot_into]）。逐卡重放与训练集的 C 入口已接（S1b，`dispatch.rs` 末尾
 //! 「C 直出入口」一节）。
 //!
 //! 迁移（`gen4_migrate_status` / `gen4_migrate_profiles` / `gen4_migrate_run` / `gen4_migrate_cancel`）是不针对已打开库的
@@ -546,11 +546,92 @@ impl G4Core {
         Err(unwired("ffsrs_store_legacy_mark_none", LEGACY_OWNER))
     }
 
-    /// 备份快照：剥掉哪些本机表是新代备份格式的事（G11-4 备份 / 还原）。
-    pub fn snapshot_into(&self, _target: &Path, _strip_device_local: bool) -> Result<(), String> {
-        Err(unwired("ffsrs_store_snapshot", "G11-4"))
+    /// 整库一致快照（`ffsrs_store_snapshot`，G11-4）：把 `srs4.db` `VACUUM INTO` 到 [target]（必须不存在），得到一份
+    /// 可以原样当新代库打开的文件（魔数、schema 号、全部真相 / 派生 / 本机状态，含本机签名钥匙）。
+    ///
+    /// - **用途**：服务端整机备份（`server_backup.dart` 第 2 版，同一台设备原样回来，身份与同步进度都要在）。app 的整包
+    ///   备份**不**用它，用按集合导出的 `FSRS4EXP` 流（`export`，交接说明 G11-4 一节）：快照带着本机签名钥匙，还原到
+    ///   另一台设备上就是两台设备共用一个身份（必然分叉）。
+    /// - **一致**：`VACUUM INTO` 在一条只读连接的一个读事务里读源库，看到的是开始那一刻已提交的全部（WAL 里已提交的帧
+    ///   也算）；写连接照常写（WAL 下读不挡写），只是快照期间 WAL 检查点追不过这个读事务。
+    /// - **不剥本机表**（[strip_device_local] 为真报错）：新代的备份不需要剥了本机身份的快照（上一条），不给一个半定义
+    ///   的模式。
+    /// - Secondary（辅助进程）不可用：快照是主进程的事（备份 / 服务端），辅助进程可能在没有写权限的沙箱里。
+    /// - 写之前按「有效数据 + 余量」查目标卷的空闲空间，不够报 `SNAPSHOT_NO_SPACE`（一个字节不写）；写完开一遍核对它是
+    ///   建好的新代库（`schema::check_ready`），不是就删掉报错。中途出错删掉半截目标。
+    pub fn snapshot_into(&self, target: &Path, strip_device_local: bool) -> Result<(), String> {
+        self.snapshot_into_with_free_space(
+            target,
+            strip_device_local,
+            crate::store::compact::free_bytes,
+        )
+    }
+
+    /// [G4Core::snapshot_into]，目标卷的空闲空间由 [free] 给（测试注入）。
+    pub(crate) fn snapshot_into_with_free_space(
+        &self,
+        target: &Path,
+        strip_device_local: bool,
+        free: impl Fn(&Path) -> Option<u64>,
+    ) -> Result<(), String> {
+        if matches!(self.mode, OpenMode::Secondary) {
+            return Err(READ_ONLY.to_owned());
+        }
+        if strip_device_local {
+            return Err(SNAPSHOT_NO_STRIP.to_owned());
+        }
+        if target.exists() {
+            return Err(format!(
+                "gen4 snapshot: {} already exists",
+                target.display()
+            ));
+        }
+        let target_str = target
+            .to_str()
+            .ok_or_else(|| "gen4 snapshot: path is not UTF-8".to_owned())?;
+        // 借一条读连接撑住「库开着」（与 [G4Core::close] 互斥，同 [G4Core::wal_checkpoint]），快照本身开一条单独的只读
+        // 连接：池里的读连接是 `query_only`，那个开关也管 `VACUUM`。
+        let _hold = self.reader()?;
+        let conn = Connection::open_with_flags(
+            &self.path,
+            OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )
+        .map_err(|e| format!("gen4 snapshot: open a snapshot connection: {e}"))?;
+        conn.busy_timeout(schema::BUSY_TIMEOUT).map_err(sql)?;
+        let pragma = |name: &str| -> Result<u64, String> {
+            conn.query_row(&format!("PRAGMA {name}"), [], |row| row.get::<_, i64>(0))
+                .map(|v| v.max(0) as u64)
+                .map_err(sql)
+        };
+        let live =
+            pragma("page_size")? * pragma("page_count")?.saturating_sub(pragma("freelist_count")?);
+        let need = live.saturating_add(crate::store::compact::MARGIN);
+        if let Some(free) = free(target).filter(|&f| f < need) {
+            return Err(format!(
+                "{}{}",
+                crate::store::SNAPSHOT_NO_SPACE,
+                json!({"need": need, "free": free})
+            ));
+        }
+        let written = (|| -> Result<(), String> {
+            conn.execute("VACUUM INTO ?1", [target_str])
+                .map_err(|e| format!("gen4 snapshot: {e}"))?;
+            drop(conn);
+            let check = files::open_ready(target)
+                .map_err(|e| format!("gen4 snapshot: the snapshot does not open: {e}"))?;
+            check.close().map_err(|(_, e)| sql(e))?;
+            Ok(())
+        })();
+        if written.is_err() {
+            let _ = crate::store::seal::remove_sqlite_files(target);
+        }
+        written
     }
 }
+
+/// [G4Core::snapshot_into] 收到 `strip_device_local` 时的错误（文档在那里）。
+pub const SNAPSHOT_NO_STRIP: &str = "gen4 snapshot: stripping device-local state is not supported; \
+     app backups carry per-collection export streams (`export`), not library snapshots";
 
 /// 协议 1 旧主库搬迁（`ffsrs_store_legacy_*`）：协议 1 旧库按 D21 走只读转译（`gen4/import.rs`），入口由 G7-6 删 / 改。
 const LEGACY_OWNER: &str = "G7-6 (D21: protocol 1 libraries go through gen4/import.rs)";
