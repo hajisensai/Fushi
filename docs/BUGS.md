@@ -50,6 +50,7 @@
 |---|:--:|:--:|---|
 | [BUG-4799](bugs/BUG-4799-video-subtitle-edit-saved-under-new-source.md) | ✅ | ✅ | 字幕手改的存储键在输入框关闭后才取：编辑期间换了字幕源，改动存到新源名下 |
 | [BUG-4798](bugs/BUG-4798-graphic-sub-region-extract-cancel-first-caller-owned.md) | ✅ | ✅ | 图形字幕位图时间表抽取的取消权归第一个调用方：本地文件由控制器发起时取消不了，换集 / 退出后 ffmpeg 仍把整个文件读完 |
+| [BUG-4798](bugs/BUG-4798-android-pip-episode-switch-not-seeded.md) | ✅ | ✅ | Android 系统画中画里本地换集（含自动连播），新页不认领 PiP 状态：小窗里画出整套常规 chrome |
 | [BUG-4797](bugs/BUG-4797-feedback-files-share-video-ip-quota.md) | 🚧 | 🚧 | 样本文件与录屏共用每 IP 每天 200 MiB 额度，满额样本文件仍会被 429 挤掉 |
 | [BUG-4796](bugs/BUG-4796-disc-back-double-press-repeat-topmenu.md) | ✅ | ✅ | 原盘正片快速连按两次返回会重复发 topMenu，第二次失败会整盘退出 |
 | [BUG-4795](bugs/BUG-4795-disc-back-to-menu-transient-error-exits.md) | ✅ | ✅ | 原盘正片按返回回盘菜单时，任何暂时性错误都会让整个原盘会话退出 |
