@@ -1,12 +1,54 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-17T06:24:35Z",
+ "generatedAt": "2026-11-17T07:04:06Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "4c3472878350f3cb22d76aac04abfce8c981e529",
-  "seq": 28598
+  "sha": "8d58da51da95979f54a169017f01628f65396e4c",
+  "seq": 28600
  },
  "builds": [
+  {
+   "seq": 28558,
+   "version": "3.3.0",
+   "sha": "91a2fbd5ca8c82c41546f7d03144098bff5fea93",
+   "unknown": false,
+   "publishedAt": "2026-11-17T07:03:55Z",
+   "testflight": true,
+   "baseSeq": 28460,
+   "prs": [
+    3646,
+    3653,
+    3651,
+    3654,
+    3655,
+    3648,
+    3658,
+    3652,
+    3647,
+    3645,
+    3643,
+    3642,
+    3639
+   ],
+   "direct": [],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44027435011"
+    },
+    "windows": {
+     "state": "ok"
+    },
+    "macos": {
+     "state": "failed",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44027435105"
+    },
+    "ios": {
+     "state": "ok"
+    }
+   }
+  },
   {
    "seq": 28460,
    "version": "3.3.0",
@@ -73,80 +115,38 @@
    "unknown": false,
    "publishedAt": "2026-11-17T03:58:01Z",
    "testflight": false,
-   "baseSeq": 28436,
-   "prs": [
-    3630,
-    3629
-   ],
-   "direct": [],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "ok"
-    },
-    "windows": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44008978831"
-    },
-    "macos": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44008978831"
-    },
-    "ios": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44008978831"
-    }
-   }
-  },
-  {
-   "seq": 28436,
-   "version": "3.3.0",
-   "sha": "bd1b65b0f87e99e9688cc7377352206b3f9ce7f4",
-   "unknown": false,
-   "publishedAt": "2026-11-17T03:31:19Z",
-   "testflight": true,
    "baseSeq": null,
    "prs": [],
    "direct": [],
    "truncated": false,
    "platforms": {
     "android": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44003998317"
+     "state": "ok"
     },
     "windows": {
-     "state": "ok"
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44008978831"
     },
     "macos": {
-     "state": "ok"
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44008978831"
     },
     "ios": {
-     "state": "ok"
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44008978831"
     }
    }
   }
  ],
  "pending": {
-  "headSha": "4c3472878350f3cb22d76aac04abfce8c981e529",
-  "headSeq": 28598,
+  "headSha": "8d58da51da95979f54a169017f01628f65396e4c",
+  "headSeq": 28600,
   "prs": [
+   3664,
    3659,
    3661,
    3660,
-   3657,
-   3646,
-   3653,
-   3651,
-   3654,
-   3655,
-   3648,
-   3658,
-   3652,
-   3647,
-   3645,
-   3643,
-   3642,
-   3639
+   3657
   ],
   "direct": [],
   "truncated": false,
@@ -170,24 +170,6 @@
   }
  },
  "prs": {
-  "3629": {
-   "number": 3629,
-   "title": "fix(guards): develop 尖端 structure 组三条红（import 大环 653→640、追踪 seam、新设置项登记）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-17T02:53:58Z",
-   "additions": 155,
-   "deletions": 108,
-   "labels": []
-  },
-  "3630": {
-   "number": 3630,
-   "title": "fix(tests): develop 视频首页组红——图标走 FushiIcons、守卫锚点跟进 NSFW 外壳与外部入库抽取、批量删除测试驱动进度对话框",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-17T03:16:01Z",
-   "additions": 170,
-   "deletions": 23,
-   "labels": []
-  },
   "3633": {
    "number": 3633,
    "title": "fix(srs): develop 上 fushi_engine 两条 SRS 红——gen4 嵌入 ID 归一补内置规则、预演测试跟上 open 签名、旧版 HLC 夹具重生成",
@@ -384,6 +366,15 @@
    "mergedAt": "2026-11-17T06:06:37Z",
    "additions": 271,
    "deletions": 7,
+   "labels": []
+  },
+  "3664": {
+   "number": 3664,
+   "title": "feat(leaderboard): 拍板台加「要设计图」决定",
+   "author": "W1ght",
+   "mergedAt": "2026-11-17T06:39:11Z",
+   "additions": 53,
+   "deletions": 19,
    "labels": []
   }
  }
