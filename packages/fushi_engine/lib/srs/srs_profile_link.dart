@@ -26,7 +26,10 @@
 ///   A 的提示，放独立文件、不进 meta.json」）；对方设备每轮关联时读自己目录里的提示，提示指向的集合确实在位置上
 ///   （目录名、`meta.json` 的集合标识都对得上）且目录名比自己小，就把它当成候选**再问一次用户**（D25），即使自己的
 ///   集合里已经有别的设备（[srsDecideProfileLink] 的「已关联」不挡提示）。提示没有签名，伪造它最多让对方多问一次，
-///   跟不跟由用户定；确认之后对方按 D27 改绑到本机的集合，两边收敛；
+///   跟不跟由用户定；确认之后对方按 D27 改绑到本机的集合，两边收敛。提示从持久状态派生：集合里每台设备每轮发布时
+///   按本机集合日志里受信、带目录名的 `Join` 在当前位置上补写缺的提示（[SrsDbProfileLinker.publish]），不只靠认领那一刻
+///   的一次写入——写失败、换了位置、集合里别的设备都覆盖到；本机改绑进别的集合（`rebound`）时同样在离开的旧目录里放
+///   指向新集合的提示，旧集合里没被问过的设备据此跟过来；
 /// - 没有用户笔记的 profile 不算候选：它所在的设备会来采用有数据的一方；
 /// - 双方都没有用户笔记时按 uid 字典序只让一边采用，不会两边互相采用来回翻；
 /// - 已经选定要并入别的 uid、只是并入暂缓着的写入者（说明文件里的 `mergingInto`，BUG-4296）不再算它旧 profile 的
@@ -759,7 +762,8 @@ abstract interface class SrsProfileLinker {
   /// [SrsDeferredProfileMerge]）。
   Future<SrsDeferredProfileMerge?> deferredMerge(SrsDbStore store);
 
-  /// 引擎跑成功之后：在本机写入者目录里写 profile 说明文件（内容没变就不重写）。
+  /// 引擎跑成功之后：在本机写入者目录里写 profile 说明文件（内容没变就不重写），再按本机集合的 `Join` 补写缺的并入
+  /// 提示（见文件头「吸收方向的发现」）。
   Future<void> publish(
     SyncAssetStore backend,
     SrsDbStore store,
@@ -797,6 +801,9 @@ class SrsDbProfileLinker implements SrsProfileLinker {
 
   /// 目录 → 上次发布的说明内容（同一进程里不重复写）。
   final Map<String, String> _published = <String, String>{};
+
+  /// 位置 → 已经补齐并入提示的那组 `Join`（[_publishJoinHints]）。
+  final Map<String, String> _hinted = <String, String>{};
 
   /// 已经记过的续做失败（`profile|旧 uid->新 uid|错误`）：同一个失败每个进程只记一次日志，不每轮刷（标记留着，每一轮
   /// 照样重试；错误变了再记）。
@@ -1003,14 +1010,59 @@ class SrsDbProfileLinker implements SrsProfileLinker {
     final Map<String, Object?> info = (await store.sync2Command(
       <String, Object?>{'op': 'collection_info'},
     )).map;
+    // 只认受信作者写的 `Join`：内核 `AlreadyJoined`（`identity.rs` `ix.joined`）也只认它们。未受信设备同步进来的一条
+    // `Join` 不能让本机把对应集合从候选里藏掉——内核仍认为那是另一个集合。
+    final List<({String from, String? dir})> joins =
+        <({String from, String? dir})>[
+          for (final Object? j in (info['joins'] as List<Object?>?) ?? const [])
+            if (j is Map && j['trusted'] == true && j['from'] is String)
+              (
+                from: j['from']! as String,
+                dir: j['dir'] is String ? j['dir']! as String : null,
+              ),
+        ];
     return (
       collection: info['collection']! as String,
       dir: info['dir']! as String,
-      joined: <String>{
-        for (final Object? j in (info['joins'] as List<Object?>?) ?? const [])
-          if (j is Map && j['from'] is String) j['from']! as String,
-      },
+      joined: <String>{for (final j in joins) j.from},
+      joins: joins,
     );
+  }
+
+  /// 并入提示从持久状态派生（设计 §5.4 第 3 条，见文件头「吸收方向的发现」）：本机集合 [own] 里每条受信、带目录名的
+  /// `Join{from, dir}`，只要位置 [backend] 上有那个目录、它的 `meta.json` 集合标识就是 `from`、里面还没有指向本机集合
+  /// 的提示，就补写 `joined-into-<本机集合>.json`。两个方向一样：本机吸收了对方（`Join{from: 对方}` 在本机集合里），
+  /// 或本机改绑进了别的集合（`Join{from: 本机原来的集合}` 在新集合里）——旧集合 / 被吸收集合里没被问过的设备都靠它
+  /// 发现。不是只在认领那一刻写一次：每台设备、每个位置都按日志补，写失败下次再补，集合里别的设备、别的位置上的
+  /// 同一个旧目录都覆盖到。[remote] 是这一轮刚列的目录（null = 现列）。写失败原样抛。
+  Future<void> _ensureJoinHints(
+    SyncAssetStore backend,
+    _SrsOwnCollection own, {
+    List<SrsRemoteProfile>? remote,
+  }) async {
+    if (own.joins.every((j) => j.dir == null)) return;
+    final List<SrsRemoteProfile> listed =
+        remote ?? await srsListRemoteProfiles(backend);
+    for (final ({String from, String? dir}) j in own.joins) {
+      final String? dir = j.dir;
+      if (dir == null || dir == own.dir) continue;
+      final SrsRemoteProfile? there = listed
+          .where((SrsRemoteProfile r) => r.uid == dir)
+          .firstOrNull;
+      // 目录不在这个位置上，或那里已经不是这个集合（读不出 / 对不上）：这里没有要提示的设备。
+      if (there == null || there.collection != j.from) continue;
+      if (there.joinHints.any(
+        (SrsJoinHint h) => h.collection == own.collection && h.dir == own.dir,
+      )) {
+        continue;
+      }
+      await srsWriteJoinHint(
+        backend,
+        targetDir: dir,
+        collection: own.collection,
+        dir: own.dir,
+      );
+    }
   }
 
   /// 集合 [collection] 已绑在本机 [store] 之外的某个 profile 上（内核 `collections.collection` 唯一，`collection_adopt`
@@ -1047,10 +1099,11 @@ class SrsDbProfileLinker implements SrsProfileLinker {
   ///   在那里的说明文件目录与新代设备目录（[srsRemoveOwnProfileFolder]；`v4/` 根与别人的东西不动）——否则别的设备
   ///   一直把那个旧目录当候选。`joined` 改绑而旧集合里还有别的设备时不删新代设备目录：它们跟过来之前还要从那里收本机
   ///   之前的段。
-  /// - `joined` 且没改绑（对方并进本机）：在对方的目录里放并入提示（[srsWriteJoinHint]），对方的设备据此再问它们的用户
-  ///   （见文件头「吸收方向的发现」）。
+  /// - `joined`（两个方向）：在被并入 / 本机离开的那个目录里放并入提示（[_ensureJoinHints]），那个集合的设备据此再问
+  ///   它们的用户（见文件头「吸收方向的发现」）。
   /// - `same` / `alreadyJoined` / `saltsAdded`：位置上不用动。
-  /// 收拾位置失败只记日志：认领已经在本机提交，下一轮 [link] 还能补（旧目录照样按「本机的旧化身」不算别人的数据）。
+  /// 收拾位置失败只记日志：认领已经在本机提交；提示由之后每轮的 [publish] 按日志补写，旧目录照样按「本机的旧化身」
+  /// 不算别人的数据。
   Future<void> _adoptCollection(
     SyncAssetStore backend,
     SrsDbStore store,
@@ -1093,20 +1146,21 @@ class SrsDbProfileLinker implements SrsProfileLinker {
             );
           }
         case 'joined':
-          await srsWriteJoinHint(
-            backend,
-            targetDir: target.uid,
-            collection: out['collection']! as String,
-            dir: out['dir']! as String,
-          );
         case 'same' || 'alreadyJoined' || 'saltsAdded':
           break;
         default:
           throw StateError('collection_adopt: unexpected outcome $outcome');
       }
+      if (outcome == 'joined') {
+        // 两个方向都在被并入 / 离开的那个目录里放提示（[_ensureJoinHints]，按刚写下的 `Join` 派生）。目录在上面可能刚
+        // 收拾过：重新列。
+        await _ensureJoinHints(backend, await _ownCollection(store));
+      }
     } on StateError {
       rethrow;
     } catch (e, stack) {
+      // 认领已在内核提交；位置上的收拾下一轮补：旧目录照样按「本机的旧化身」不算别人的数据，提示由每轮发布
+      // （[publish] → [_ensureJoinHints]）按日志补写。
       onError?.call('SrsProfileLinker.adoptCleanup', e, stack);
     }
   }
@@ -1211,19 +1265,40 @@ class SrsDbProfileLinker implements SrsProfileLinker {
     final String sig =
         '${store.profileUid}|${dir ?? ''}|$device|$name|$noteCount|$hasNotes|'
         '${deviceLabel ?? ''}|${mergingInto ?? ''}';
-    if (_published[directoryKey] == sig) return;
-    await srsPublishProfileInfo(
-      backend,
-      profileUid: store.profileUid,
-      dir: dir,
-      writerId: device,
-      name: name,
-      hasNotes: hasNotes,
-      device: deviceLabel,
-      noteCount: noteCount,
-      mergingInto: mergingInto,
-    );
-    _published[directoryKey] = sig;
+    if (_published[directoryKey] != sig) {
+      await srsPublishProfileInfo(
+        backend,
+        profileUid: store.profileUid,
+        dir: dir,
+        writerId: device,
+        name: name,
+        hasNotes: hasNotes,
+        device: deviceLabel,
+        noteCount: noteCount,
+        mergingInto: mergingInto,
+      );
+      _published[directoryKey] = sig;
+    }
+    await _publishJoinHints(backend, store, directoryKey);
+  }
+
+  /// [publish] 里按本机集合的 `Join` 补写并入提示（[_ensureJoinHints]）。同一位置上同一组 `Join` 补齐过一次就不再列目录
+  /// （进程内）；没补齐（写失败抛出去）就不记，下一轮发布再补。
+  Future<void> _publishJoinHints(
+    SyncAssetStore backend,
+    SrsDbStore store,
+    String directoryKey,
+  ) async {
+    final _SrsOwnCollection own = await _ownCollection(store);
+    final String sig = <String>[
+      own.collection,
+      own.dir,
+      for (final ({String from, String? dir}) j in own.joins)
+        '${j.from}@${j.dir ?? ''}',
+    ].join('|');
+    if (_hinted[directoryKey] == sig) return;
+    await _ensureJoinHints(backend, own);
+    _hinted[directoryKey] = sig;
   }
 
   /// [store] 所属的当前 profile 有没做完的并入、且它还在旧 uid 上（[srsPendingProfileMerges]）：要并入的 uid；否则 null。
@@ -1245,4 +1320,5 @@ typedef _SrsOwnCollection = ({
   String collection,
   String dir,
   Set<String> joined,
+  List<({String from, String? dir})> joins,
 });

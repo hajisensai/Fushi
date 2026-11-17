@@ -1356,11 +1356,11 @@ class SrsSyncScheduler {
   }
 
   /// 在位置 [directoryKey] 上跑 [body]，返回是否找到了这个位置。锁的顺序与常规轮次相同：通道先拿通道锁、再
-  /// [_serially]（通道锁不可重入）；本机直接读写的目录（互联 host）只 [_serially]。[body] 的 `channel` = 这是一条
-  /// 通道（并入之前只从通道收目标 uid 的数据，本机目录由拉取自己收）。[body] 抛的错原样抛出。
+  /// [_serially]（通道锁不可重入）；本机直接读写的目录（互联 host）只 [_serially]。[body] 拿到的是那个位置本身
+  /// （通道或本机目录的 store）。[body] 抛的错原样抛出。
   Future<bool> _onLocation(
     String directoryKey,
-    Future<void> Function(SyncAssetStore backend, bool channel) body,
+    Future<void> Function(SyncAssetStore backend) body,
   ) async {
     bool found = false;
     Object? failure;
@@ -1369,7 +1369,7 @@ class SrsSyncScheduler {
       if (found || await _directoryKeyOf(backend) != directoryKey) return;
       found = true;
       try {
-        await _serially(() => body(backend, true));
+        await _serially(() => body(backend));
       } catch (e, stack) {
         // [_channels] 把每条通道的错误收进 errors：这里截下来原样抛。
         failure = e;
@@ -1383,7 +1383,7 @@ class SrsSyncScheduler {
     if (local == null || _halted) return false;
     for (final SrsLocalDirectory d in await local()) {
       if (d.directoryKey != directoryKey) continue;
-      await _serially(() => body(d.store, false));
+      await _serially(() => body(d.store));
       return true;
     }
     return false;
@@ -1405,7 +1405,6 @@ class SrsSyncScheduler {
     try {
       found = await _onLocation(conflict.directoryKey, (
         SyncAssetStore backend,
-        bool _,
       ) async {
         final SrsDbStore? store = await _readStore();
         if (store == null ||
@@ -1455,13 +1454,13 @@ class SrsSyncScheduler {
     final SrsProfileLinker? linker = _profileLinker;
     if (linker == null) return const SrsSyncNowResult(ran: 0);
     SrsProfileAdoptResult? adoptedResult;
-    // 候选在某条通道上：在那条通道的锁里重判、并入（并入之前要从它收目标 uid 的数据，BUG-4011）；在本机目录上
-    // （互联 host）不拿通道锁。
+    // 候选在某条通道上：在那条通道的锁里重判、认领；在本机目录上（互联 host）不拿通道锁。两种位置都把它交给
+    // [SrsProfileLinker.adopt] 的 `within`：认领从它重读候选的集合标识、在它上面收拾目录 / 放并入提示（本机目录的
+    // store 就是关联判定读的那个位置）。
     bool found = false;
     try {
       found = await _onLocation(conflict.directoryKey, (
         SyncAssetStore backend,
-        bool channel,
       ) async {
         final SrsDbStore? store = await _readStore();
         if (store == null || _halted) return;
@@ -1491,7 +1490,7 @@ class SrsSyncScheduler {
         final SrsProfileAdoptResult result = await linker.adopt(
           store,
           uid,
-          within: channel ? backend : null,
+          within: backend,
           directoryKey: conflict.directoryKey,
         );
         adoptedResult = result;

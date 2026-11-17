@@ -362,4 +362,113 @@ void main() {
     }
     // 三台设备、十几轮同步：默认 30 秒在满载的机器上不够。
   }, timeout: const Timeout(Duration(minutes: 3)));
+
+  // 复核：提示原来只在认领那一刻写一次、失败只记日志，之后再没有代码补——被吸收方的设备永远不会被问，同步悄悄变成单向。
+  // 提示改成从本机集合日志里的 `Join` 派生，每轮发布时补写缺的。
+  test('A 吸收 B 时提示第一次没写成：之后 A 的同步轮次补上，B 的设备随后被问', () async {
+    final _FlakyHintStore flaky = _FlakyHintStore(root, failures: 1);
+    final _Device a = await _Device.open('a');
+    final _Device b = await _Device.open('b');
+    final _Device b2 = await _Device.open('b2');
+    await a.addNote('雪');
+    await b.addNote('雨');
+    expect((await b.sync(dir)).error, isNull);
+    expect((await b2.sync(dir)).error, isNull);
+    _sameCollection(b2, b);
+    expect((await b.sync(dir)).error, isNull);
+    final String aDir = a.store.sync2Dir!;
+    final String bDir = b.store.sync2Dir!;
+    expect(aDir.compareTo(bDir), lessThan(0));
+    expect((await a.linker.link(flaky, a.store)).choose?.single.uid, bDir);
+    await a.linker.adopt(a.store, bDir, within: flaky);
+    expect(flaky.failed, 1, reason: '第一次写提示失败了');
+    final File hint = File(
+      '${root.path}/$kSrsSync2Namespace/$bDir/'
+      '$kSrsJoinHintPrefix${a.store.sync2Collection}.json',
+    );
+    expect(hint.existsSync(), isFalse);
+    expect((await b.linker.link(dir, b.store)).choose, isNull, reason: '还没有提示');
+    expect((await a.sync(flaky)).error, isNull);
+    expect(hint.existsSync(), isTrue, reason: 'A 的下一轮发布按 Join 补写了提示');
+    final SrsProfileLinkOutcome atB = await b.linker.link(dir, b.store);
+    expect(atB.choose?.map((SrsRemoteProfile c) => c.uid), <String>[aDir]);
+  }, timeout: const Timeout(Duration(minutes: 3)));
+
+  // 吸收的反方向（设计 §5.4 第 3 条不分谁发起）：x 改绑进 A 之后，旧集合 X 里还有别的设备（「已关联」）——它们靠 x
+  // 在 X 目录里留的提示发现 A。
+  test('x 改绑进 A：X 里留下的设备经提示被问，确认后跟过来', () async {
+    final _Device a = await _Device.open('a');
+    final _Device x = await _Device.open('x');
+    final _Device x2 = await _Device.open('x2');
+    final _Device x3 = await _Device.open('x3');
+    final String snow = await a.addNote('雪');
+    final String rain = await x.addNote('雨');
+    expect((await a.sync(dir)).error, isNull);
+    expect((await x.sync(dir)).error, isNull);
+    for (final _Device d in <_Device>[x2, x3]) {
+      d.store = (await d.linker.adopt(
+        d.store,
+        x.store.sync2Dir!,
+        within: dir,
+      )).store;
+      _sameCollection(d, x);
+      expect((await d.sync(dir)).error, isNull);
+    }
+    final String aDir = a.store.sync2Dir!;
+    final String xDir = x.store.sync2Dir!;
+    expect(aDir.compareTo(xDir), lessThan(0));
+    // x2 在 X 里有别的设备（x3）：已关联，没有提示时不会被问。
+    expect((await x2.linker.link(dir, x2.store)).choose, isNull);
+
+    x.store = (await x.linker.adopt(x.store, aDir, within: dir)).store;
+    _sameCollection(x, a);
+    expect(
+      File(
+        '${root.path}/$kSrsSync2Namespace/$xDir/'
+        '$kSrsJoinHintPrefix${a.store.sync2Collection}.json',
+      ).existsSync(),
+      isTrue,
+      reason: 'x 离开的 X 目录里留了指向 A 的提示',
+    );
+    for (final _Device d in <_Device>[x2, x3]) {
+      final SrsProfileLinkOutcome o = await d.linker.link(dir, d.store);
+      expect(o.choose?.map((SrsRemoteProfile c) => c.uid), <String>[
+        aDir,
+      ], reason: d.deviceId);
+      d.store = (await d.linker.adopt(d.store, aDir, within: dir)).store;
+      _sameCollection(d, a);
+    }
+    for (int i = 0; i < 3; i++) {
+      for (final _Device d in <_Device>[x, x2, x3, a]) {
+        expect((await d.sync(dir)).error, isNull, reason: '${d.deviceId} $i');
+      }
+    }
+    for (final _Device d in <_Device>[a, x, x2, x3]) {
+      expect(await d.expressionOf(snow), '雪', reason: d.deviceId);
+      expect(await d.expressionOf(rain), '雨', reason: d.deviceId);
+    }
+  }, timeout: const Timeout(Duration(minutes: 3)));
+}
+
+/// 写并入提示的前 [failures] 次抛 [FileSystemException]（云盘 / 互联写失败），其余照常。
+class _FlakyHintStore extends LocalDirectoryAssetStore {
+  _FlakyHintStore(super.root, {required this.failures});
+
+  int failures;
+  int failed = 0;
+
+  @override
+  Future<void> putAsset(
+    String namespaceId,
+    String name,
+    File file, {
+    void Function(double progress)? onProgress,
+  }) async {
+    if (name.startsWith(kSrsJoinHintPrefix) && failures > 0) {
+      failures--;
+      failed++;
+      throw FileSystemException('injected hint write failure', name);
+    }
+    return super.putAsset(namespaceId, name, file, onProgress: onProgress);
+  }
 }
