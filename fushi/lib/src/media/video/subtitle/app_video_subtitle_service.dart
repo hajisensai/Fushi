@@ -81,6 +81,7 @@ import 'package:fushi/src/media/video/subtitle/video_subtitle_model_ports.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/media/video/subtitle/app_video_subtitle_types.dart';
+import 'package:fushi/src/media/video/subtitle/video_stream_subtitle_sink.dart';
 import 'package:fushi/src/media/video/video_playback_remote.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
@@ -779,6 +780,54 @@ class AppVideoSubtitleService {
     );
   }
 
+  /// **非互联的在线流**（在线视频源、粘贴的流 / YouTube、音乐 MV、媒体服务器、云盘流）：
+  /// [audioPath] 是已拉到本机的整集音频副本（`VideoStreamSubtitleAudioStager`），管线照
+  /// 本机文件转写它。
+  ///
+  /// - 作品身份：[workTitle]（来源给的作品名，如在线源的合集名）优先，没有就用 [title]；
+  ///   按作品名兜底（[fallbackSubtitleWorkKey] 不带文件夹），同一部作品的各集共用一份
+  ///   专名表与缓存。
+  /// - 产物落 [exportDir]（app 自有目录，流没有「媒体旁」），不写库；[remember] 把产物
+  ///   记成这一集的字幕选择（远端按集的 prefs），登记后删掉音频副本（[VideoStreamSubtitleSink]）。
+  /// - [frameSource]：AI 校对参考画面从播放中的流里抽（副本只有音频）。
+  /// - [contentLanguage]：当前音轨的语言标签（副本是单轨，探测拿不到原流的标签）。
+  ///
+  /// 副本不在时抛 [AppVideoSubtitleTargetNotFound]。
+  Future<AppVideoSubtitleTarget> resolveStream({
+    required String audioPath,
+    required String title,
+    required String key,
+    required Directory exportDir,
+    String? workTitle,
+    String? contentLanguage,
+    Future<void> Function(String subtitlePath)? remember,
+    SubtitleFrameSource? frameSource,
+  }) async {
+    if (!await File(audioPath).exists()) {
+      throw AppVideoSubtitleTargetNotFound('stream audio $audioPath');
+    }
+    final String work = workTitle?.trim() ?? '';
+    return AppVideoSubtitleTarget(
+      title: title,
+      work: _fallbackWork(title: work.isEmpty ? title : work, videoPath: null),
+      episodes: <AppVideoSubtitleEpisode>[
+        AppVideoSubtitleEpisode(
+          videoPath: audioPath,
+          title: title,
+          registersSubtitleSource: false,
+          contentLanguage: contentLanguage,
+        ),
+      ],
+      sink: VideoStreamSubtitleSink(
+        exportDir: exportDir,
+        stagedAudio: <String>{audioPath},
+        remember: remember,
+      ),
+      frameSource: frameSource,
+      key: 'stream:$key',
+    );
+  }
+
   /// 播放页正在放的这一集：库里有这一行就按库解析（[resolveBook]），没有（直接打开的
   /// 文件）就按文件解析（[resolveFile]）——两种都走完整管线。
   Future<AppVideoSubtitleTarget> resolvePlaying(
@@ -1384,7 +1433,9 @@ class AppVideoSubtitleService {
           proofreadConcurrency: provider.batchConcurrency,
           regenerateGlossary: job.options.regenerateGlossary,
           // 画面只发给开了图片输入的提供商：收不了图的端点会整批报错。
-          frames: wantFrames && provider.acceptsImages ? _frameSource : null,
+          frames: wantFrames && provider.acceptsImages
+              ? target.frameSource ?? _frameSource
+              : null,
         );
       }
       final SubtitleEvidenceSource? collected = _evidenceSource == null

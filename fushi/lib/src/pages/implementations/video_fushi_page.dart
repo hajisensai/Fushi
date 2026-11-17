@@ -149,6 +149,20 @@ import 'package:fushi/src/media/video/subtitle/app_video_subtitle_service.dart'
         appVideoSubtitleService;
 import 'package:fushi/src/media/video/subtitle/video_subtitle_pipeline_gate.dart'
     show canRunLocalVideoSubtitlePipeline;
+import 'package:fushi/src/media/video/subtitle/video_stream_subtitle_audio.dart'
+    show
+        VideoStreamSubtitleAudioCancelled,
+        VideoStreamSubtitleAudioInput,
+        VideoStreamSubtitleAudioStaging,
+        VideoStreamSubtitleAudioUnavailable,
+        appVideoStreamSubtitleAudioStager,
+        currentVideoStreamSubtitleAudio,
+        videoStreamSubtitleAudioAvailable,
+        videoStreamSubtitleAudioKey,
+        videoStreamSubtitleExportDirUnder,
+        videoStreamSubtitleFrameSource;
+import 'package:fushi/src/media/video/subtitle/video_stream_subtitle_audio_panel.dart'
+    show VideoStreamSubtitleAudioPanel;
 import 'package:fushi/src/media/video/subtitle/video_subtitle_studio_page.dart'
     show
         VideoSubtitleStudioActions,
@@ -488,7 +502,12 @@ import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
         fushiFloatingToolbarPalette,
         kFushiFloatingToolbarEdgeMargin;
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
-    show FushiChoiceOption, showFushiChoiceDialog, showFushiTextInputDialog;
+    show
+        FushiChoiceOption,
+        FushiProgressDialogHandle,
+        showFushiChoiceDialog,
+        showFushiProgressDialog,
+        showFushiTextInputDialog;
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/platform/screen_brightness_controller.dart';

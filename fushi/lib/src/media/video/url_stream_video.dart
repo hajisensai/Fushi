@@ -11,7 +11,12 @@ import 'package:fushi/src/media/video/youtube_range_relay.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
 import 'package:fushi_engine/media/video/youtube_source_resolver.dart'
-    show isYoutubeUrl, youtubeVideoIdOrNull, YoutubeCaptionTrack;
+    show
+        isYoutubeUrl,
+        resolveYoutubeAudioStream,
+        youtubeVideoIdOrNull,
+        YoutubeAudioStream,
+        YoutubeCaptionTrack;
 import 'package:http/http.dart' as http;
 import 'package:fushi_engine/utils/net/app_http.dart';
 
@@ -256,8 +261,15 @@ String? separatedAudioFallbackStreamUrl(RemoteVideoStreamUrls urls) {
 ///
 /// [httpHeaderFields] 是可选防盗链 header（Referer / User-Agent 等），由播放页在
 /// load 时下发到 libmpv `http-header-fields`（阶段①仅 session 内有效，不落 DB）。
+/// 现取一条 YouTube audio-only 流（生产 [resolveYoutubeAudioStream]；测试注入假件）。
+typedef YoutubeAudioStreamResolver =
+    Future<YoutubeAudioStream> Function(String videoId);
+
 class UrlStreamVideoClient
-    implements RemoteVideoClient, RemoteVideoStreamHeaders {
+    implements
+        RemoteVideoClient,
+        RemoteVideoStreamHeaders,
+        RemoteVideoSubtitleAudioRefresh {
   UrlStreamVideoClient({
     required this.streamUrl,
     this.subtitleUrl,
@@ -271,8 +283,12 @@ class UrlStreamVideoClient
     this.urlResolver,
     http.Client? httpClient,
     YoutubeStreamRelay? youtubeStreamRelay,
+    YoutubeAudioStreamResolver? youtubeAudioResolver,
   }) : _httpClient = httpClient ?? createAppHttpIoClient(),
-       _youtubeStreamRelay = youtubeStreamRelay ?? relayYoutubeStreamUrl;
+       _youtubeStreamRelay = youtubeStreamRelay ?? relayYoutubeStreamUrl,
+       _youtubeAudioResolver =
+           youtubeAudioResolver ??
+           ((String videoId) => resolveYoutubeAudioStream(videoId));
 
   /// 播放期直链解析器（AList 来源：条目地址 → 临期签名 `raw_url`）。null =
   /// [streamUrl] / [subtitleUrl] 本身就可播。每次起播与字幕下载前都重新解析，
@@ -366,6 +382,8 @@ class UrlStreamVideoClient
   /// [relayYoutubeStreamUrl]；非 googlevideo 原样）。测试注入假件以离线覆盖。
   final YoutubeStreamRelay _youtubeStreamRelay;
 
+  final YoutubeAudioStreamResolver _youtubeAudioResolver;
+
   @override
   Future<List<RemoteVideoInfo>> listRemoteVideos() async =>
       const <RemoteVideoInfo>[];
@@ -397,6 +415,38 @@ class UrlStreamVideoClient
           ? null
           : await _youtubeStreamRelay(mining, httpHeaderFields),
       miningVideoHasAudio: miningVideoHasAudio,
+    );
+  }
+
+  /// 字幕生成拉整集音频前现取地址，不动播放会话：
+  ///
+  /// - YouTube（[youtubeCaptionsUrl] 是 watch URL）：现取一条 audio-only 流
+  ///   （起播时解析出的 googlevideo 直链数小时后过期，且整集音频只需要音轨），经
+  ///   [YoutubeRangeRelay] 换成本地地址（googlevideo 只接有界 Range，BUG-2507）；
+  /// - 其余（直链 / HLS / AList 等）：与起播同一条解析（[urlResolver] 现签临期直链）。
+  @override
+  Future<RemoteVideoSubtitleAudio> freshSubtitleAudio(
+    String id, {
+    String? currentAudioUrl,
+  }) async {
+    final String? watchUrl = youtubeCaptionsUrl;
+    final String? videoId = watchUrl == null
+        ? null
+        : youtubeVideoIdOrNull(watchUrl);
+    if (videoId != null) {
+      final YoutubeAudioStream audio = await _youtubeAudioResolver(videoId);
+      return RemoteVideoSubtitleAudio(
+        url: await _youtubeStreamRelay(audio.url, audio.httpHeaders),
+        headers: audio.httpHeaders,
+        audioOnly: true,
+      );
+    }
+    return RemoteVideoSubtitleAudio(
+      url: await _youtubeStreamRelay(
+        await _resolveUrl(streamUrl),
+        httpHeaderFields,
+      ),
+      headers: httpHeaderFields,
     );
   }
 

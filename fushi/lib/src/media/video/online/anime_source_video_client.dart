@@ -45,7 +45,8 @@ class AnimeSourceVideoClient
         RemoteVideoStreamHeaders,
         RemoteVideoStreamVariants,
         RemoteVideoEpisodeNumber,
-        RemoteVideoCollectionIsWork {
+        RemoteVideoCollectionIsWork,
+        RemoteVideoSubtitleAudioRefresh {
   AnimeSourceVideoClient({
     required this.manager,
     required this.context,
@@ -587,6 +588,59 @@ class AnimeSourceVideoClient
     await dest.parent.create(recursive: true);
     await dest.writeAsBytes(response.bodyBytes);
     onProgress?.call(1.0);
+  }
+
+  /// 字幕生成拉整集音频前现取地址：与 [downloadRemoteVideo] 一样**重新向扩展取流**
+  /// （签名链接短 TTL，BUG-2617），挑法与起播同一套（钉住的线路 > 扩展排好的默认），
+  /// 但不改当前流（[_currentVideo] 与播放用的请求头保持不动）。
+  ///
+  /// 播放器正从外挂音轨放声音（[currentAudioUrl] 是上一轮那条音轨的地址）时，在新
+  /// 候选里挑同一位置的外挂音轨；否则取流本身（自带音轨）。
+  @override
+  Future<RemoteVideoSubtitleAudio> freshSubtitleAudio(
+    String id, {
+    String? currentAudioUrl,
+  }) async {
+    final MihonEpisode? episode = episodeForVideoId(id);
+    if (episode == null) {
+      throw ArgumentError.value(id, 'id', 'not an episode of this anime');
+    }
+    final MihonVideo? previous = _currentEpisodeId == id ? _currentVideo : null;
+    final List<MihonVideo> candidates = await resolveVideos(
+      episode,
+      refresh: true,
+    );
+    if (candidates.isEmpty) {
+      throw const MihonRuntimeException(
+        'NO_VIDEOS',
+        'Source did not return any playable video for this episode',
+      );
+    }
+    final MihonVideo chosen =
+        _matchPinned(_pinnedVideos[id], candidates) ??
+        _chooseDefault(candidates);
+    _rejectTorrent(chosen, episode);
+    final Map<String, String> headers = streamHeadersFor(chosen);
+    final int audioIndex = previous == null || currentAudioUrl == null
+        ? -1
+        : externalAudioTracksFor(previous).indexWhere(
+            (RemoteVideoExternalAudioTrack t) => t.url == currentAudioUrl,
+          );
+    final List<RemoteVideoExternalAudioTrack> audio = externalAudioTracksFor(
+      chosen,
+    );
+    // 认不出同一条（扩展这一轮换了音轨表）时取第一条外挂音轨：声音本来就从外挂音轨
+    // 出，流本身多半是 DASH 纯视频。
+    if (currentAudioUrl != null && audio.isNotEmpty) {
+      return RemoteVideoSubtitleAudio(
+        url:
+            audio[audioIndex >= 0 && audioIndex < audio.length ? audioIndex : 0]
+                .url,
+        headers: headers,
+        audioOnly: true,
+      );
+    }
+    return RemoteVideoSubtitleAudio(url: chosen.resolvedUrl, headers: headers);
   }
 
   /// 下载一集到 [dest]：每次（重）跑都**重新向扩展取流**（签名链接短 TTL，重放旧
