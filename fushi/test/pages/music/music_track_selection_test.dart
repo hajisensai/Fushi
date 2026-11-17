@@ -17,6 +17,8 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/music/music_album_page.dart';
 import 'package:fushi/src/pages/implementations/music/music_track_list.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
+    show FushiEinkTheme;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -141,14 +143,21 @@ void main() {
     dir.deleteSync(recursive: true);
   });
 
-  Future<void> pumpList(WidgetTester tester, Widget list) async {
+  Future<void> pumpList(
+    WidgetTester tester,
+    Widget list, {
+    bool eink = false,
+  }) async {
     LocaleSettings.setLocale(AppLocale.en);
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: container,
         child: TranslationProvider(
           child: MaterialApp(
-            theme: ThemeData(useMaterial3: true),
+            theme: ThemeData(
+              useMaterial3: true,
+              extensions: <ThemeExtension<dynamic>>[FushiEinkTheme(eink)],
+            ),
             builder: (BuildContext context, Widget? child) => MediaQuery(
               data: MediaQuery.of(context).copyWith(disableAnimations: true),
               child: child!,
@@ -357,6 +366,60 @@ void main() {
     );
     await tester.pumpWidget(const SizedBox.shrink());
   });
+
+  // PR #3620 遗留：本地曲目行原来只能右键开菜单，触屏在歌曲 / 艺人 / 歌单页进不了多选、
+  // 也点不到「从歌单移除」。行尾补「⋯」后触屏点它打开同一份菜单（重设计行与 eink 旧行）。
+  for (final bool eink in <bool>[false, true]) {
+    testWidgets('触屏：歌单页本地曲目行尾「⋯」开菜单，有多选与从歌单移除（eink=$eink）', (
+      WidgetTester tester,
+    ) async {
+      final MusicPlaylistRow p = await db.createMusicPlaylist(
+        'Touch',
+        at: 1,
+        trackUids: <String>['a', 'b'],
+      );
+      final List<MusicPlaylistEntryRow> rows = await db
+          .listMusicPlaylistEntries(p.playlistUid);
+      final Map<String, MusicTrackRow> byUid = <String, MusicTrackRow>{
+        for (final MusicTrackRow r in await tracks()) r.trackUid: r,
+      };
+      await pumpList(
+        tester,
+        MusicTrackList.entries(
+          entries: <MusicLibraryEntry>[
+            for (final MusicPlaylistEntryRow r in rows)
+              MusicLocalEntry(byUid[r.trackUid]!),
+          ],
+          albums: const <String, MusicAlbumRow>{},
+          context: MusicQueueContext.mixed,
+          playlist: MusicTrackListPlaylist(
+            playlist: p,
+            entryIds: <int>[for (final MusicPlaylistEntryRow r in rows) r.id],
+          ),
+        ),
+        eink: eink,
+      );
+      final Finder more = find.byKey(
+        const ValueKey<String>('music-track-menu-b'),
+      );
+      expect(more, findsOneWidget, reason: '本地曲目行尾要有「⋯」');
+      await tester.tap(more); // 默认触屏指针。
+      await tester.pumpAndSettle();
+      expect(menuAction('select'), findsOneWidget);
+      final Finder remove = menuAction('removeFromPlaylist');
+      await tester.ensureVisible(remove);
+      await tester.pumpAndSettle();
+      await tester.tap(remove);
+      await tester.pumpAndSettle();
+      expect(
+        (await db.listMusicPlaylistEntries(
+          p.playlistUid,
+        )).map((MusicPlaylistEntryRow r) => r.trackUid),
+        <String>['a'],
+      );
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+  }
 
   testWidgets('专辑页：跨碟多选（菜单进入、长按勾选）；批量从音乐库移除写墓碑，撤销放回；单首菜单可移除', (
     WidgetTester tester,
