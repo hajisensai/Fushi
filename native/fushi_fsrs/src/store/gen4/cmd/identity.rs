@@ -200,6 +200,17 @@ impl PendingSelf {
         }
     }
 
+    /// 沿用现有签名钥匙种子 [seed]、设备 ID 新生成的一份：profile 已绑定、但认领可能走「空集合可换绑」（`identity.rs`
+    /// `rebind_empty` 丢掉本机的空集合、在对方集合里重建本机身份）的命令用它，换绑之后本机秘密仍是 [seed]。设备 ID 不沿用：
+    /// 被丢掉的空集合导出过的话，它的设备号与序号可能已在别处出现，同一个设备号在新集合里从头记会撞号。钥匙只在本机，
+    /// 空集合从没发布过（`discard.rs` `disposable`），沿用不扩大暴露面。
+    pub fn carrying(profile: &str, now: i64, seed: [u8; 32]) -> PendingSelf {
+        PendingSelf {
+            device: random_device(profile, now),
+            seed,
+        }
+    }
+
     /// 签名钥匙种子（副本身份的本机秘密）。
     pub fn seed(&self) -> &[u8; 32] {
         &self.seed

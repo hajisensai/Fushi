@@ -326,12 +326,13 @@ pub(crate) fn legacy_backup_import(
             None => Ok(None),
         })
     })?;
+    // 已绑定、已有本机身份：认领若走「空集合可换绑」，对方集合里重建的本机身份沿用现有钥匙种子（[PendingSelf::carrying]），
+    // 否则现生成的钥匙与派生副本身份用的秘密对不上。
+    let now = int_of(req, "now")?;
     let pending = match bound {
-        None => Some(cmd::identity::PendingSelf::generate(
-            profile,
-            int_of(req, "now")?,
-        )),
-        Some(_) => None,
+        None => Some(cmd::identity::PendingSelf::generate(profile, now)),
+        Some(Some(sk)) => Some(cmd::identity::PendingSelf::carrying(profile, now, sk)),
+        Some(None) => None,
     };
     let secret = match (&bound, &pending) {
         (Some(sk), _) => *sk,

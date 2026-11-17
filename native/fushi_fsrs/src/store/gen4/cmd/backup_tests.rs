@@ -293,6 +293,22 @@ fn another_collection_needs_confirmation_and_bad_files_change_nothing() {
     .unwrap();
     // Q 是全新 profile、集合是空集合：G9-5「空集合可换绑」之后确认即换绑到对方（`bound`），不再写 Join。
     assert_eq!(got["outcome"], json!("bound"), "{got}");
+    // 换绑后在对方集合里重建的本机身份沿用原来的钥匙种子（`PendingSelf::carrying`）：副本身份是按它派生的，换个新副本
+    // 目录再读同一份输入全是已有的槽（没有一条以另一个合成设备再落；这一次的结论是 `saltsAdded`，见交接第五波节）。
+    let sc2 = tempdir::new("g114dbqsc2");
+    let again = try_g4(
+        q,
+        Q,
+        "legacy_backup_import",
+        legacy_req(&snap, "db", &sc2.0, json!({"confirmed": true})),
+    )
+    .unwrap();
+    assert_eq!(again["applied"], json!(0), "{again}");
+    assert_eq!(again["counts"]["inserted"], json!(0), "{again}");
+    assert_eq!(
+        again["counts"]["same"], again["counts"]["applied"],
+        "{again}"
+    );
     ffsrs_store_close(q);
 }
 
