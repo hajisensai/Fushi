@@ -1,12 +1,44 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-17T03:37:36Z",
+ "generatedAt": "2026-11-17T03:58:13Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "a509b5928ead51de0bc833161ad9f502fc76da07",
   "seq": 28450
  },
  "builds": [
+  {
+   "seq": 28442,
+   "version": "3.3.0",
+   "sha": "f650a4771313007ea9893c2c552dc2ab29764d3c",
+   "unknown": false,
+   "publishedAt": "2026-11-17T03:58:01Z",
+   "testflight": false,
+   "baseSeq": 28436,
+   "prs": [
+    3630,
+    3629
+   ],
+   "direct": [],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "ok"
+    },
+    "windows": {
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44008978831"
+    },
+    "macos": {
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44008978831"
+    },
+    "ios": {
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44008978831"
+    }
+   }
+  },
   {
    "seq": 28436,
    "version": "3.3.0",
@@ -95,33 +127,8 @@
    "unknown": false,
    "publishedAt": "2026-11-16T22:22:03Z",
    "testflight": true,
-   "baseSeq": 28147,
-   "prs": [
-    3524,
-    3538,
-    3607,
-    3528,
-    3565,
-    3525,
-    3556,
-    3562,
-    3511,
-    3576,
-    3606,
-    3552,
-    3593,
-    3596,
-    3604,
-    3599,
-    3600,
-    3592,
-    3597,
-    3553,
-    3523,
-    3584,
-    3542,
-    3495
-   ],
+   "baseSeq": null,
+   "prs": [],
    "direct": [],
    "truncated": false,
    "platforms": {
@@ -140,35 +147,6 @@
      "state": "ok"
     }
    }
-  },
-  {
-   "seq": 28147,
-   "version": "3.3.0",
-   "sha": "202ad6d8edb89ec1cbb481605d5494e57f40beb0",
-   "unknown": false,
-   "publishedAt": "2026-11-16T22:09:12Z",
-   "testflight": false,
-   "baseSeq": null,
-   "prs": [],
-   "direct": [],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "ok"
-    },
-    "windows": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43911031319"
-    },
-    "macos": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43911031319"
-    },
-    "ios": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43911031319"
-    }
-   }
   }
  ],
  "pending": {
@@ -176,9 +154,7 @@
   "headSeq": 28450,
   "prs": [
    3634,
-   3633,
-   3630,
-   3629
+   3633
   ],
   "direct": [],
   "truncated": false,
@@ -202,15 +178,6 @@
   }
  },
  "prs": {
-  "3495": {
-   "number": 3495,
-   "title": "fix(extension): 制卡入队只在真正写进 storage 后才报成功，读-改-写防丢项 (BUG-4695)",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-16T16:54:59Z",
-   "additions": 584,
-   "deletions": 91,
-   "labels": []
-  },
   "3510": {
    "number": 3510,
    "title": "feat(music): 解密 QQ 音乐加密 QRC，QRC 假名注音轨渲染成 ruby",
@@ -218,15 +185,6 @@
    "mergedAt": "2026-11-16T19:00:02Z",
    "additions": 778,
    "deletions": 18,
-   "labels": []
-  },
-  "3511": {
-   "number": 3511,
-   "title": "fix(video): 原盘正片阶段返回先回盘菜单，不越级退出整个会话（拍板台 58EoAZOXVN）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-16T18:27:09Z",
-   "additions": 172,
-   "deletions": 20,
    "labels": []
   },
   "3512": {
@@ -245,42 +203,6 @@
    "mergedAt": "2026-11-16T19:59:44Z",
    "additions": 526,
    "deletions": 53,
-   "labels": []
-  },
-  "3523": {
-   "number": 3523,
-   "title": "复习页 WebView 卡面滑动几何改按全局坐标量，修跟手时卡面来回抖动",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-16T17:02:54Z",
-   "additions": 277,
-   "deletions": 3,
-   "labels": []
-  },
-  "3524": {
-   "number": 3524,
-   "title": "fix(lnreader): kakuyomu 热门 / 搜索列表经站点 GraphQL 补齐封面（BUG-4759）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-16T18:43:55Z",
-   "additions": 142,
-   "deletions": 7,
-   "labels": []
-  },
-  "3525": {
-   "number": 3525,
-   "title": "fix(asr): iOS 也过设备端 ASR 内存门槛（jetsam 额度）+ 开跑面包屑带模型名（BUG-4711）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-16T18:32:07Z",
-   "additions": 673,
-   "deletions": 58,
-   "labels": []
-  },
-  "3528": {
-   "number": 3528,
-   "title": "BT 站支持导入解析规则（自动识别不了的私有站 / 需登录站）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-16T18:32:58Z",
-   "additions": 2394,
-   "deletions": 37,
    "labels": []
   },
   "3530": {
@@ -310,24 +232,6 @@
    "deletions": 25,
    "labels": []
   },
-  "3538": {
-   "number": 3538,
-   "title": "feat(mining): 远程播放互联 host 视频制卡带来源回跳链接（拍板台 IFCPPprIpT）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-16T18:37:20Z",
-   "additions": 592,
-   "deletions": 50,
-   "labels": []
-  },
-  "3542": {
-   "number": 3542,
-   "title": "fix(video): 批量删除去掉逐条 N+1 并加进度对话框（35YfcYO-zR / BUG-4709）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-16T16:57:33Z",
-   "additions": 1349,
-   "deletions": 302,
-   "labels": []
-  },
   "3545": {
    "number": 3545,
    "title": "feat(video): 解析层标出特效字幕，字幕列表加「显示特效字幕」开关 (H7r4mf_z2n)",
@@ -346,33 +250,6 @@
    "deletions": 45,
    "labels": []
   },
-  "3552": {
-   "number": 3552,
-   "title": "feat(sources): 来源自动扫描——每源开关，启动 / 回前台串行限流扫描并串联自动刮削",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-16T18:10:53Z",
-   "additions": 1599,
-   "deletions": 157,
-   "labels": []
-  },
-  "3553": {
-   "number": 3553,
-   "title": "漫画按话「第N話 前編 [hash]」归入同一系列合集",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-16T17:04:15Z",
-   "additions": 311,
-   "deletions": 30,
-   "labels": []
-  },
-  "3556": {
-   "number": 3556,
-   "title": "fix(diagnostics): MIUI 熄屏耗电检查杀进程不再报成闪退，内存采样加累计 CPU（BUG-4717）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-16T18:29:35Z",
-   "additions": 242,
-   "deletions": 14,
-   "labels": []
-  },
   "3561": {
    "number": 3561,
    "title": "feat(server): RWKV 模型档位可在 WebUI / admin API 手动切换并当场生效（拍板 pr3463）",
@@ -382,15 +259,6 @@
    "deletions": 33,
    "labels": []
   },
-  "3562": {
-   "number": 3562,
-   "title": "fix(anki): SelectionText 不再为 Lapis 释义高亮让位，选中内容总是填入（BUG-4756）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-16T18:28:44Z",
-   "additions": 98,
-   "deletions": 192,
-   "labels": []
-  },
   "3563": {
    "number": 3563,
    "title": "fix(anidb): 启用已登记的 HTTP 客户端",
@@ -398,15 +266,6 @@
    "mergedAt": "2026-11-16T19:17:13Z",
    "additions": 123,
    "deletions": 80,
-   "labels": []
-  },
-  "3565": {
-   "number": 3565,
-   "title": "feat(feedback): 反馈支持样本文件附件（字幕 / 书 / 音视频原件 / 词典 / md）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-16T18:32:39Z",
-   "additions": 1620,
-   "deletions": 89,
    "labels": []
   },
   "3567": {
@@ -436,15 +295,6 @@
    "deletions": 14,
    "labels": []
   },
-  "3576": {
-   "number": 3576,
-   "title": "chore(asr): repin fushi-subtitles to 63881fd (NeMo CTC GPU batch cap by VRAM, #3380)",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-16T18:26:39Z",
-   "additions": 16,
-   "deletions": 16,
-   "labels": []
-  },
   "3577": {
    "number": 3577,
    "title": "feat(music): 歌词「模糊非当前行」可在设置里关闭",
@@ -463,33 +313,6 @@
    "deletions": 42,
    "labels": []
   },
-  "3584": {
-   "number": 3584,
-   "title": "feat(reader): 墨水屏每 N 页全刷（黑屏闪刷 + 厂商 EPD 全刷）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-16T17:01:38Z",
-   "additions": 1415,
-   "deletions": 0,
-   "labels": []
-  },
-  "3592": {
-   "number": 3592,
-   "title": "feat(interconnect): 来源共享——服务器来源与插件自动同步到我的设备（拍板台 wOMR4_Er7s 方案 a）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-16T17:13:17Z",
-   "additions": 3223,
-   "deletions": 3,
-   "labels": []
-  },
-  "3593": {
-   "number": 3593,
-   "title": "feat(media): 所有媒体可标 NSFW，封面模糊 + 制卡图片可选模糊（拍板台 w04vrhUAaX）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-16T18:00:31Z",
-   "additions": 3283,
-   "deletions": 247,
-   "labels": []
-  },
   "3595": {
    "number": 3595,
    "title": "chore: 去掉已停用本机代理 127.0.0.1:34151 的默认值与文档指令",
@@ -497,69 +320,6 @@
    "mergedAt": "2026-11-16T19:12:48Z",
    "additions": 20,
    "deletions": 34,
-   "labels": []
-  },
-  "3596": {
-   "number": 3596,
-   "title": "feat(interconnect): 插件中继——没有插件运行时的设备（iOS）经「我的设备」用主机上的插件（拍板台 wOMR4_Er7s 方案 b）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-16T17:49:31Z",
-   "additions": 2515,
-   "deletions": 85,
-   "labels": []
-  },
-  "3597": {
-   "number": 3597,
-   "title": "fix(i18n): 补外观设置与导航速览卡的日文译文并加守卫",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-16T17:11:45Z",
-   "additions": 209,
-   "deletions": 130,
-   "labels": []
-  },
-  "3599": {
-   "number": 3599,
-   "title": "fix(popup): 释义点字按字框坐标系命中，修旧 WebKit zoom 与沙箱半字偏移（BUG-4753）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-16T17:37:32Z",
-   "additions": 820,
-   "deletions": 33,
-   "labels": []
-  },
-  "3600": {
-   "number": 3600,
-   "title": "fix(android): open-with 只读 Fushi 除 URI grant 外读不到的 content:// URI（BUG-4746）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-16T17:15:32Z",
-   "additions": 436,
-   "deletions": 8,
-   "labels": []
-  },
-  "3604": {
-   "number": 3604,
-   "title": "docs(bugs): 修 develop 上 BUG-4750 文件名与正文号不一致、与 BUG-4747 撞号",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-16T17:41:58Z",
-   "additions": 2,
-   "deletions": 2,
-   "labels": []
-  },
-  "3606": {
-   "number": 3606,
-   "title": "docs: 功能黑名单加 4 条拍板台「永远不做」",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-16T18:14:54Z",
-   "additions": 4,
-   "deletions": 0,
-   "labels": []
-  },
-  "3607": {
-   "number": 3607,
-   "title": "docs(blacklist): 看完自动筛 i+1 可制卡句子列入永远不做",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-16T18:34:49Z",
-   "additions": 1,
-   "deletions": 0,
    "labels": []
   },
   "3608": {
