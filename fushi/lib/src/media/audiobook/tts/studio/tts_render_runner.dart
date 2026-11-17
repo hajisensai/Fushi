@@ -61,6 +61,7 @@ import 'package:fushi/src/media/audiobook/tts/studio/tts_render_verify.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_render_voices.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_service.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_book_plan.dart';
+import 'package:fushi/src/media/audiobook/tts/irodori_voice_packs.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
@@ -236,11 +237,17 @@ class AppTtsRenderRunner implements TtsRenderRunner {
 
   _RenderVoice _resolveVoice(TtsServices tts, String presetId) {
     TtsVoicePreset? preset;
-    for (final TtsVoicePreset candidate in tts.store.loadPresets()) {
+    // 声音预设 + 声音包（`pack:<packId>/<group>`）：选角表里两类 id 都可能出现。
+    for (final TtsVoicePreset candidate in ttsProductionPresets(
+      tts,
+      appModel,
+    )) {
       if (candidate.id == presetId) preset = candidate;
     }
     if (preset == null) throw const TtsRenderFailure('voice_missing');
-    final TtsProviderDescriptor? descriptor = tts.registry[preset.providerId];
+    final TtsProviderDescriptor? descriptor = tts.productionDescriptor(
+      preset.providerId,
+    );
     if (descriptor == null || !descriptor.isAvailable) {
       throw const TtsRenderFailure('voice_unavailable');
     }
