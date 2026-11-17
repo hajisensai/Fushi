@@ -65,7 +65,7 @@ abstract class SrsCardVideoPlayer {
   Stream<Size> get videoSizeStream;
 
   /// [open] 的文件加载不了（0 字节、没有 moov、认不出格式、没有可播的轨）时发一次，
-  /// 带一句原因。这种文件在 media_kit 里 `open` 不抛、`completed` 也不发（BUG-4794）。
+  /// 带一句原因。这种文件在 media_kit 里 `open` 不抛、`completed` 也不发（BUG-4798）。
   ///
   /// **不是**播放器的错误流：那条流里还有非致命的 `error` 级日志（硬解打不开后回退
   /// 软解、解码器单帧报错），拿它判失败会把能播的片段判死。
@@ -535,7 +535,7 @@ class _SrsCardVideoClipState extends ConsumerState<SrsCardVideoClip>
 
   /// 播放器判定这份文件加载不了（0 字节、没有 moov、认不出格式）。media_kit 里这种
   /// 文件既不让 `open` 抛、也不发 `completed`；不接这条流，等这段片段播完的序列就永远
-  /// 不返回、卡面是一块黑框（BUG-4794）。
+  /// 不返回、卡面是一块黑框（BUG-4798）。
   void _onLoadFailed(String name, String reason) {
     if (!mounted || _attachedName != name) return;
     ErrorLogService.instance.logDiagnostic(
