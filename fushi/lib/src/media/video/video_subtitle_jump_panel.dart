@@ -2004,9 +2004,12 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
               ),
             ],
           ),
+          // 筛选区与收藏计数都是松弛 Flexible：宽面板各取自身宽度（开关紧跟筛选），
+          // 窄面板（最窄 240）里两者按 flex 分剩余宽度——筛选区可横向拖动、计数省略号
+          // 截断，固定宽的特效开关与导出钮始终完整可见，整行不右溢。
           Row(
             children: <Widget>[
-              Expanded(
+              Flexible(
                 child: HorizontalDragScrollable(
                   child: SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
@@ -2033,28 +2036,25 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                             textStyle: TextStyle(fontSize: widget.fontSize - 1),
                           ),
                         ),
-                        // H7r4mf_z2n：「显示特效字幕」开关放在筛选旁（经典版式第一行
-                        // 工具组在最窄 240 面板里已满；这一行本就可横向拖动）。
-                        const SizedBox(width: 4),
-                        FushiIconButtonControl(
-                          key: const ValueKey<String>(
-                            'video-subtitle-list-show-effects',
-                          ),
-                          tooltip: t.video_subtitle_list_show_effects,
-                          icon: FushiIcon(FushiIcons.animation, size: iconSize),
-                          color: _showEffects
-                              ? cs.primary
-                              : cs.onSurfaceVariant,
-                          // 开 / 关不只靠颜色：选中态同时进 Semantics（toggled）。
-                          isSelected: _showEffects,
-                          onPressed: _toggleShowEffects,
-                          visualDensity: VisualDensity.compact,
-                          style: _kHeaderIconButtonStyle,
-                        ),
                       ],
                     ),
                   ),
                 ),
+              ),
+              // H7r4mf_z2n：「显示特效字幕」开关。不放进上面可横向拖动的筛选区：收藏档右侧
+              // 多出导出钮与计数后可滚区被压窄，开关会被裁到视口外（窄面板要横向拖才看得到）。
+              // 放在可滚区外与导出 / 计数同排，任何面板宽度下都直接可见。
+              const SizedBox(width: 4),
+              FushiIconButtonControl(
+                key: const ValueKey<String>('video-subtitle-list-show-effects'),
+                tooltip: t.video_subtitle_list_show_effects,
+                icon: FushiIcon(FushiIcons.animation, size: iconSize),
+                color: _showEffects ? cs.primary : cs.onSurfaceVariant,
+                // 开 / 关不只靠颜色：选中态同时进 Semantics（toggled）。
+                isSelected: _showEffects,
+                onPressed: _toggleShowEffects,
+                visualDensity: VisualDensity.compact,
+                style: _kHeaderIconButtonStyle,
               ),
               // BUG-1907：导出收藏语句。只在收藏档出现——它导的就是这一档的内容，
               // 放在计数旁边语义自洽；也避免把第一行挤爆（面板最窄 240px）。
@@ -2077,16 +2077,18 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
               // 并入字幕列表收藏档——只在 favorites 档显示，让用户切到收藏档时一眼看到本
               // 视频已收藏多少句（与列表条目数一致，复用同一 isCueFavorited 谓词）。
               if (_filter == VideoSubtitleListFilter.favorites)
-                Padding(
-                  padding: const EdgeInsets.only(left: 8, right: 4),
-                  child: Text(
-                    t.video_favorite_count(count: _favoriteCueCount(cues)),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: cs.primary,
-                      fontSize: widget.fontSize - 1,
-                      fontWeight: FontWeight.w600,
+                Flexible(
+                  child: Padding(
+                    padding: const EdgeInsets.only(left: 8, right: 4),
+                    child: Text(
+                      t.video_favorite_count(count: _favoriteCueCount(cues)),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: cs.primary,
+                        fontSize: widget.fontSize - 1,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
                 ),
