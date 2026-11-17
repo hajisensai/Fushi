@@ -67,4 +67,20 @@ void main() {
       r'D:\video\ep01.mkv',
     );
   });
+
+  test('DVD 原盘会话：title 可抽取（dvdvideo 按 title 读）就走管线，读的是当前 title', () {
+    const String title = r'D:\discs\Show\VIDEO_TS\TITLE_02.dvdtitle';
+    expect(
+      localVideoSubtitlePipelineMediaPath(
+        currentVideoPath: title,
+        discSession: true,
+        discExtractionPath: title,
+      ),
+      title,
+    );
+    expect(
+      gate(videoPath: title, discSession: true, discExtractionAvailable: true),
+      isTrue,
+    );
+  });
 }

@@ -104,8 +104,9 @@ String? videoBookEpisodePath({
 ///
 /// 只认蓝光播放列表：恰好三段 `BDMV/PLAYLIST/<名>.mpls`（大小写不敏感），名字里
 /// 不许有路径分隔符、`..`；[videoPath] 不是蓝光成员（没有盘根）→ null。路径只由这
-/// 一行自己的盘根拼出，[discTitle] 走不出这张盘。DVD title 不在此列：DVD 的媒体
-/// 要经原生 libdvdnav 按 title 读，ffmpeg 读不了（`hasLocalMediaFile` 对它恒假）。
+/// 一行自己的盘根拼出，[discTitle] 走不出这张盘。只认蓝光：DVD title 在 host 库里
+/// 按 title 各成一行（`ensureDvdTitleInLibrary`），远端原盘会话的（盘, title）定位
+/// 目前只接蓝光的 `RemoteDiscMenuSource.hostTitleFor`。
 String? videoBookDiscTitlePath({
   required String videoPath,
   required String discTitle,

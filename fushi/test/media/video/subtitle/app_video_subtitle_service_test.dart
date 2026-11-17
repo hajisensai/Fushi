@@ -17,6 +17,8 @@ import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_work_co
     show fallbackSubtitleWorkKey;
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_pipeline.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_recognizer_factory.dart';
+import 'package:fushi_engine/media/video/dvd/dvd_title_path.dart'
+    show dvdTitlePath;
 import 'package:fushi_engine/media/video/video_duration_probe.dart'
     show AudioTrackFacts;
 import 'package:path/path.dart' as p;
@@ -608,6 +610,69 @@ void main() {
       expect(
         (await service.resolveBook('dual')).episodes.single.audioTrack,
         isNull,
+      );
+    });
+
+    test('DVD title：经 dvdvideo 按 title 读，解析成一集，产物落 disc_out 并登记到这一行', () async {
+      final String discRoot = p.join(tmp.path, 'discs', 'Show DVD');
+      File(p.join(discRoot, 'VIDEO_TS', 'VIDEO_TS.IFO'))
+        ..createSync(recursive: true)
+        ..writeAsBytesSync(List<int>.filled(16, 1));
+      final String title = dvdTitlePath(discRoot, 2);
+      await addBook('dvd', title, subtitleSource: 'embedded:1');
+      final List<String> before = filesUnder(discRoot);
+      final AppVideoSubtitleService service = buildService();
+
+      // 播放页（原盘会话里当前 title）与合集整季都认得这一条。
+      final AppVideoSubtitleTarget target = await service.resolvePlaying(
+        'dvd',
+        videoPath: title,
+        title: 'ignored',
+      );
+      expect(target.videoPaths, <String>[title]);
+      expect(target.unavailable, isEmpty);
+      expect(target.episodes.single.registersSubtitleSource, isTrue);
+      expect(
+        target.work.workKey,
+        fallbackSubtitleWorkKey(folderPath: discRoot, title: 'dvd'),
+        reason: '没刮削的盘按盘根兜底作品身份',
+      );
+      expect(
+        (await service.resolveCollection(
+          await addCollection(<String>['dvd']),
+        )).videoPaths,
+        <String>[title],
+      );
+
+      final AppVideoSubtitleJob job = service.start(
+        target,
+        const AppVideoSubtitleOptions(),
+      );
+      await job.done;
+      expect(
+        job.status,
+        AppVideoSubtitleJobStatus.succeeded,
+        reason: '${job.errorMessage}',
+      );
+      final String output = job.result!.episodes.single.outputPath!;
+      expect(
+        p.isWithin(
+          p.join(jobs.path, 'disc_out', videoSubtitleJobId(title)),
+          output,
+        ),
+        isTrue,
+        reason: output,
+      );
+      expect(filesUnder(discRoot), before, reason: '盘结构里不能写字幕');
+      expect((await db.getVideoBookByBookUid('dvd'))!.subtitleSource, output);
+
+      // 盘不在了：照常报文件不在，不进管线。
+      File(p.join(discRoot, 'VIDEO_TS', 'VIDEO_TS.IFO')).deleteSync();
+      final AppVideoSubtitleTarget gone = await service.resolveBook('dvd');
+      expect(gone.episodes, isEmpty);
+      expect(
+        gone.unavailable.single.reason,
+        AppVideoSubtitleUnavailableReason.missingFile,
       );
     });
 

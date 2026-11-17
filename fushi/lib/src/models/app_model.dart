@@ -8601,7 +8601,7 @@ class AppModel
       episodeIndex: episodeIndex,
     );
     if (path == null) return null;
-    // ASR 要读媒体字节：DVD title / 网络流 / .strm 没有本地媒体文件。
+    // ASR 要本机读得到媒体（网络流 / .strm 没有）；DVD title 经 dvdvideo demuxer 读。
     return await hasLocalMediaFile(path) ? path : null;
   }
 

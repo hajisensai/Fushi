@@ -2,7 +2,8 @@
 ///
 /// 判的是「本机能不能读到这一集的媒体」，不是「这是什么来源」：普通本机文件、蓝光
 /// 原盘会话（当前 title 是盘里的 `.mpls`，ffmpeg 经 `BlurayFfmpegBackend` 按播放列表
-/// 读）都一样走管线。原盘会话只看原盘 VM 给出的可抽取性
+/// 读）、DVD 原盘会话（当前 title 是虚拟路径 `VIDEO_TS/TITLE_nn.dvdtitle`，ffmpeg 经
+/// `DvdFfmpegBackend` 的 `dvdvideo` demuxer 按 title 读）都一样走管线。原盘会话只看原盘 VM 给出的可抽取性
 /// （`VideoPlayerController.discMiningAvailable`：AACS 加密没密钥、片段缺失、角度还没
 /// 报上来时为假；多角度 title 按正在播的角度抽，见 `discExtractionPathForAngle`）与
 /// 当前 title 是否已就绪（盘菜单正在前台 / title 还没绑定时不能用）——与仅本机

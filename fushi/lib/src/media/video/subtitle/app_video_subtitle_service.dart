@@ -37,8 +37,8 @@ import 'package:fushi_core/fushi_core.dart'
         platformPathKey;
 import 'package:fushi_engine/media/video/bluray/bluray_angle.dart'
     show BlurayAngleRef, blurayAnglePath, parseBlurayAnglePath;
-import 'package:fushi_engine/media/video/bluray/bluray_source.dart'
-    show isBlurayPlaylistPath;
+import 'package:fushi_engine/media/video/disc/disc_format.dart'
+    show isDiscMemberPath;
 import 'package:fushi_engine/media/video/strm_file.dart'
     show lacksLocalMediaFile;
 import 'package:fushi_engine/media/video/video_member_file.dart';
@@ -936,7 +936,9 @@ class AppVideoSubtitleService {
           AppVideoSubtitleUnavailable(
             bookUid: row.bookUid,
             title: playlist ? p.basenameWithoutExtension(path) : row.title,
-            reason: lacksLocalMediaFile(path)
+            // 原盘成员（DVD title 也是「没有单文件媒体字节」的虚拟路径）读不到就是盘
+            // 不在了，不是远端。
+            reason: lacksLocalMediaFile(path) && !isDiscMemberPath(path)
                 ? AppVideoSubtitleUnavailableReason.remote
                 : AppVideoSubtitleUnavailableReason.missingFile,
           ),
@@ -958,9 +960,10 @@ class AppVideoSubtitleService {
   }
 
   /// 一行视频里管线要处理的媒体（按库里的顺序）：本机原始文件（[localVideoFileCandidates]）
-  /// 加上蓝光成员（整卷 / 分集 `.mpls`）。后者不算「可删除的原始文件」（删除护栏把它
-  /// 排除在外，删它等于拆盘），但它就是这一条的媒体：ffmpeg 经 `BlurayFfmpegBackend`
-  /// 按播放列表的片段与 IN/OUT 读，抽音频、探测、取帧与普通文件同一条路。
+  /// 加上原盘成员（蓝光整卷 / 分集 `.mpls`、DVD title）。后者不算「可删除的原始文件」
+  /// （删除护栏把它排除在外，删它等于拆盘），但它就是这一条的媒体：ffmpeg 经
+  /// `BlurayFfmpegBackend` 按播放列表的片段与 IN/OUT 读、经 `DvdFfmpegBackend` 按 DVD
+  /// title 读（`dvdvideo` demuxer），抽音频、探测、取帧与普通文件同一条路。
   static List<String> _pipelineMediaCandidates(VideoBookRow row) {
     final Set<String> files = <String>{
       for (final String path in localVideoFileCandidates(
@@ -978,7 +981,7 @@ class AppVideoSubtitleService {
       final String path = raw.trim();
       if (!isLocalVideoFilePath(path)) continue;
       final bool media =
-          isBlurayPlaylistPath(path) || files.contains(platformPathKey(path));
+          isDiscMemberPath(path) || files.contains(platformPathKey(path));
       if (media && seen.add(platformPathKey(path))) out.add(path);
     }
     return out;
