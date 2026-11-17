@@ -735,7 +735,20 @@ pub fn open(path: &Path) -> Result<Connection, String> {
     conn.busy_timeout(BUSY_TIMEOUT).map_err(sql)?;
     check_kind(&conn)?;
     configure(&conn)?;
-    in_write_tx(&conn, install)?;
+    in_write_tx(&conn, |c| {
+        // 还没有任何表 = 这一笔建库：从第一页起就开着 `secure_delete`，记下来（`scrub.rs` 第 3 条：有这个标记的库
+        // 清除时不必整库整理）。
+        let born = !c
+            .query_row("SELECT EXISTS (SELECT 1 FROM sqlite_schema)", [], |r| {
+                r.get::<_, bool>(0)
+            })
+            .map_err(sql)?;
+        install(c)?;
+        if born {
+            super::scrub::mark_secure_from_birth(c)?;
+        }
+        Ok(())
+    })?;
     Ok(conn)
 }
 
@@ -785,6 +798,13 @@ pub(crate) fn configure(conn: &Connection) -> Result<(), String> {
     }
     conn.execute_batch("PRAGMA synchronous = NORMAL; PRAGMA cache_size = -16384;")
         .map_err(sql)?;
+    // 删行 / 改行 / 释放页时把旧内容写零（彻底清除的字节层，`scrub.rs`）。按连接生效，每条写连接都经这里。
+    let on: i64 = conn
+        .query_row("PRAGMA secure_delete = ON", [], |r| r.get(0))
+        .map_err(sql)?;
+    if on != 1 {
+        return Err(format!("gen4 store: secure_delete is {on}, expected 1"));
+    }
     Ok(())
 }
 

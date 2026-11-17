@@ -623,9 +623,19 @@ pub fn import_ops_from<R: Read>(
             }
         }
         finish_heritage(&mut heritage, &mut out)?;
-        out.settled = ingest_settle(t, &mut Index::new(t, col), col, Settle::Rebuild)?;
+        out.settled = settle_imported(t, col)?;
         Ok(out)
     })
+}
+
+/// 灌入的收尾：从真相整个重建派生层（[Settle::Rebuild]），再把派生层判成「已清除」的操作在真相层落成空洞（同
+/// `cmd/writes.rs` 的 `finish`、`receive.rs` 的收尾，[Index::execute_purges]）。灌进来的 `Purge` 由此在同一个事务里
+/// 生效，不留到下一条写命令；落了空洞的会话提交之后由内核做字节层收尾（`scrub.rs`）。
+fn settle_imported(t: &Truth<'_>, col: i64) -> Result<Settled, String> {
+    let mut ix = Index::new(t, col);
+    let settled = ingest_settle(t, &mut ix, col, Settle::Rebuild)?;
+    ix.execute_purges()?;
+    Ok(settled)
 }
 
 /// 本机这台设备原生日志在 [seq] 处的链值与流里的比：本机那格在空洞内部（没有链值）时比不了，不算分叉。
@@ -869,7 +879,7 @@ pub fn import_v1(t: &Truth<'_>, col: i64, bytes: &[u8]) -> Result<ImportedOps, S
         }
         // 没有操作的设备抬头也算进来（读入器不为它们回调）。
         out.heritage_logs = stats.devices;
-        out.settled = ingest_settle(t, &mut Index::new(t, col), col, Settle::Rebuild)?;
+        out.settled = settle_imported(t, col)?;
         Ok(out)
     })
 }
@@ -925,7 +935,7 @@ pub fn import_backup(
             out.untrusted += 1;
         }
         out.peers = backup_peers(src, profile, t, col)?;
-        ingest_settle(t, &mut Index::new(t, col), col, Settle::Rebuild)?;
+        settle_imported(t, col)?;
         Ok(out)
     })
 }

@@ -62,7 +62,7 @@
 //! 在不在事务里，见 `Truth::ensure_snapshot`），每次写入前比一次。别的连接在这之后提交过（值变了）= 调用方自己开了事务却没 reset，写入报错、不落库（不
 //! 毒化会话：reset 之后照常）。同一个连接自己的提交不改这个值；拿着写事务时别人提交不了，所以事务内不会误报。
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 
@@ -464,6 +464,8 @@ pub struct Truth<'c> {
     conn: &'c Connection,
     st: RefCell<State>,
     no_deps: Arc<Vv>,
+    /// 这个会话里有操作落成了空洞（[Truth::advance_purge]）：提交之后要做字节层收尾（`scrub.rs`）。
+    voided: Cell<bool>,
 }
 
 struct N<'a, 'c>(&'a Truth<'c>);
@@ -634,11 +636,17 @@ impl<'c> Truth<'c> {
             conn,
             st: RefCell::new(State::default()),
             no_deps: Arc::new(Vv::new()),
+            voided: Cell::new(false),
         }
     }
 
     pub fn conn(&self) -> &'c Connection {
         self.conn
+    }
+
+    /// 取走「这个会话里有操作落成了空洞」（[Truth::advance_purge]）：写命令提交之后据此做字节层收尾（`scrub.rs`）。
+    pub(crate) fn take_voided(&self) -> bool {
+        self.voided.replace(false)
     }
 
     fn data_version(&self) -> Result<i64, String> {
@@ -2918,6 +2926,9 @@ impl<'c> Truth<'c> {
                     self.insert_void_run(dev, target.seq, 1, None, Some(chain), A_LOCAL)?;
                 }
             }
+            // 字节层：原文还在空闲空间与 WAL 旧帧里，提交之后要收尾（`scrub.rs`）。同一个事务里记下欠着的收尾。
+            super::scrub::mark_due(self.conn)?;
+            self.voided.set(true);
             Ok(true)
         })
     }
