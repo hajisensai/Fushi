@@ -192,7 +192,10 @@ void main() {
   test('缓存刷新找后继卡：单次改卡 / 评分的语句数是常数', () async {
     // 每次缓存刷新（每次评分、每次改卡）都要找「哪些卡继承了这张卡的历史」。协议 3 这里还用 EXPLAIN 钉住按
     // `srs_field_edits` 的部分覆盖索引找；新代没有这张表（继承关系在内核的血统索引里，native/fushi_fsrs/src/store/
-    // gen4/inherit.rs），那段查询计划断言删了，语句数是常数照旧钉住。
+    // gen4/inherit.rs），那段查询计划断言删了，语句数是常数照旧钉住。新代缓存刷新找后继 / 前身的语句在
+    // gen4/cache.rs `load_links`（`reg_ix` 按 `(col, ekind, key)` / `(col, ekind, ent)` 取），查询计划由 Rust
+    // `store::gen4::schema::tests::lookups_with_a_key_never_walk_the_whole_collection` 钉住（逐条 EXPLAIN cache.rs 里的
+    // 同一份语句常量，不许整集合扫描或只按 `col` 找）。
     final BulkFixture f = await BulkFixture.open(notes: 20);
     // 部分索引的条件与 fushi_srs 的前缀一致（fushi_core 不依赖 fushi_srs，另写了一次）。
     const String prefix = SrsFieldKeys.cardHistoryFromPrefix;
