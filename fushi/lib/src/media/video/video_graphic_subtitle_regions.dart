@@ -324,6 +324,26 @@ void _logGraphicSubtitleRegionFailure(
   );
 }
 
+/// ffmpeg 失败摘要里说明「这次失败出在环境上」的系统错误文本（小写）：输出盘写满 / 写不
+/// 进去（载荷写在系统临时目录下）、读写中途的设备错误（网络盘断开）。环境好了再抽就能
+/// 成，所以这类非零退出不算「这条轨抽不出来」。
+const List<String> _kEnvironmentalExtractFailureMarkers = <String>[
+  'no space left on device',
+  'disk quota exceeded',
+  'permission denied',
+  'input/output error',
+  'i/o error',
+  'error opening output',
+];
+
+/// [summary]（[FfmpegRunResult.failureSummary]）是不是环境造成的失败，见
+/// [_kEnvironmentalExtractFailureMarkers]。
+@visibleForTesting
+bool graphicSubtitleExtractFailureIsEnvironmental(String summary) {
+  final String lower = summary.toLowerCase();
+  return _kEnvironmentalExtractFailureMarkers.any(lower.contains);
+}
+
 /// 一条轨的在途抽取，各等待者共用。
 class _InflightRegionLoad {
   /// 完成 = 全部等待者都放弃了：抽轨进程被杀。
@@ -364,8 +384,9 @@ class FfmpegGraphicSubtitleRegionLoader implements GraphicSubtitleRegionLoader {
   final Map<String, _InflightRegionLoad> _inflight =
       <String, _InflightRegionLoad>{};
 
-  /// 本次运行里确定抽不出来的轨（本地文件 + ffmpeg 非零退出），键同缓存键——含文件
-  /// 大小与修改时间，文件换了键就变。只在内存里：重启 app 后会再试一次。
+  /// 本次运行里确定抽不出来的轨（本地文件 + ffmpeg 非零退出，且不是环境造成的失败），
+  /// 键同缓存键——含文件大小与修改时间，文件换了键就变。只在内存里：重启 app 后会再试
+  /// 一次。
   final Set<String> _failed = <String>{};
 
   /// 测试可见：所有在途任务上还在等结果的调用方总数。
@@ -471,6 +492,7 @@ class FfmpegGraphicSubtitleRegionLoader implements GraphicSubtitleRegionLoader {
       final _ExitRecordingBackend backend = _ExitRecordingBackend.wrap(
         _backend ?? resolveFfmpegBackend(),
       );
+      String? failure;
       final bool ok = await extractGraphicSubtitleTrack(
         input: request.input,
         streamIndex: request.streamIndex,
@@ -479,13 +501,22 @@ class FfmpegGraphicSubtitleRegionLoader implements GraphicSubtitleRegionLoader {
         cancel: cancel,
         backend: backend,
         // 取消不报失败（抽取函数的契约），这里拿到的都是真失败。
-        onFailure: (String summary) => _onExtractFailure(request, summary),
+        onFailure: (String summary) {
+          failure = summary;
+          _onExtractFailure(request, summary);
+        },
       );
       if (!ok) {
         // 只记「本地文件 + ffmpeg 非零退出」：同一份文件再抽还是同样的结果。网络流、
-        // 无进度判活 / 超时（退出码为 null，慢盘 / NAS）、探测失败都可能是瞬时的，不记。
+        // 无进度判活 / 超时（退出码为 null，慢盘 / NAS）、探测失败都可能是瞬时的，不记；
+        // 非零退出里出在环境上的（临时目录所在盘写满、网络盘断开）也不记。
         final int? exitCode = backend.extractExitCode;
-        if (!request.input.isRemote && exitCode != null && exitCode != 0) {
+        final String? summary = failure;
+        if (!request.input.isRemote &&
+            exitCode != null &&
+            exitCode != 0 &&
+            (summary == null ||
+                !graphicSubtitleExtractFailureIsEnvironmental(summary))) {
           _failed.add(key);
         }
         return null;

@@ -1,5 +1,8 @@
 part of '../video_fushi_page.dart';
 
+/// 一层手改字幕的存储键（视频 + 字幕源）。
+typedef _SubtitleTextOverrideKeys = ({String videoKey, String sourceKey});
+
 /// 字幕列表里手改单条字幕（反馈 gleDreKAvo / dpAsMkUjKT）。
 ///
 /// 数据流：字幕列表行菜单「编辑字幕」→ [_editCueText] 弹输入框 → 写 Drift 表
@@ -11,9 +14,6 @@ part of '../video_fushi_page.dart';
 /// 覆盖随「视频 + 字幕源」切换：[_currentSubtitleSource] 每次写入、以及控制器每次
 /// 换上一份新 cue（[VideoPlayerController.onCuesReplaced]）都重读一次，换源 / 换集 /
 /// 重载后照样生效；不同源互不影响（ASR 产物每次是新文件 = 新源）。
-/// 一层手改字幕的存储键（视频 + 字幕源）。
-typedef _SubtitleTextOverrideKeys = ({String videoKey, String sourceKey});
-
 extension _VideoSubtitleTextEdit on _VideoFushiPageState {
   /// 当前这一集的覆盖层视频键（与远端字幕偏好同一口径，见 [_remotePositionKeyForIndex]）。
   String get _subtitleTextOverrideVideoKey {

@@ -700,6 +700,55 @@ void main() {
       expect(await other, isNotNull);
     });
 
+    test('非零退出出在环境上（输出盘写满）记日志但不记失败：腾出空间后重抽', () async {
+      backend.failureOutput =
+          'Error submitting a packet to the muxer: No space left on device\n'
+          'Conversion failed!';
+      final Future<GraphicSubtitleRegionTrack?> first = loader.load(
+        local,
+        fallbackCanvas: _canvas,
+      );
+      await until(() => backend.started == 1);
+      backend.finish(0, 1);
+      expect(await first, isNull);
+      expect(failures, hasLength(1));
+      expect(failures.single, contains('No space left on device'));
+
+      final Future<GraphicSubtitleRegionTrack?> second = loader.load(
+        local,
+        fallbackCanvas: _canvas,
+      );
+      await until(() => backend.started == 2);
+      backend.finish(1, 0);
+      expect(await second, isNotNull);
+    });
+
+    test('环境失败的判据：系统错误文本算，数据 / 编码错误不算', () {
+      for (final String summary in <String>[
+        'ffmpeg exit 1; stderr=av_interleaved_write_frame(): No space left on device',
+        'ffmpeg exit 1; stderr=Error opening output file track.sup. | Permission denied',
+        'ffmpeg exit 1; stderr=Error during demuxing: Input/output error',
+        'ffmpeg exit 1; stderr=Error during demuxing: I/O error',
+      ]) {
+        expect(
+          graphicSubtitleExtractFailureIsEnvironmental(summary),
+          isTrue,
+          reason: summary,
+        );
+      }
+      for (final String summary in <String>[
+        'ffmpeg exit 1; stderr=Invalid data found when processing input',
+        "ffmpeg exit 1; stderr=Stream map '0:s:3' matches no streams.",
+        'ffmpeg exit 69; stderr=Conversion failed!',
+      ]) {
+        expect(
+          graphicSubtitleExtractFailureIsEnvironmental(summary),
+          isFalse,
+          reason: summary,
+        );
+      }
+    });
+
     test('卡死 / 超时被强杀（没有退出码）记日志但不记失败：下次请求重抽', () async {
       final Future<GraphicSubtitleRegionTrack?> first = loader.load(
         local,
@@ -751,6 +800,9 @@ class _ScriptedBackend implements FfmpegBackend, FfmpegWatchedRunner {
   _ScriptedBackend(this.payload);
 
   final Uint8List payload;
+
+  /// 非零退出 / 被强杀时的 ffmpeg 日志。
+  String failureOutput = 'Invalid data found when processing input';
   final List<Completer<int?>> _runs = <Completer<int?>>[];
   int killed = 0;
 
@@ -779,7 +831,7 @@ class _ScriptedBackend implements FfmpegBackend, FfmpegWatchedRunner {
     }
     return FfmpegRunResult(
       returnCode: code,
-      output: code == 0 ? '' : 'Invalid data found when processing input',
+      output: code == 0 ? '' : failureOutput,
     );
   }
 
