@@ -524,18 +524,32 @@ void main() {
     },
   );
 
-  test('PUT 带 rwkvModel、改配置失败：档位文件写回原值', () async {
+  test('PUT 带 rwkvModel 与别的字段、config.yaml 写不进去：档位文件写回原值，内存配置也不动', () async {
     final Directory support = host.paths.support;
     final File configFile = File(p.join(tmp.path, 'fushi_server.yaml'));
+    Future<Object?> rolloverHourNow() async {
+      final shelf.Response g = await api.handle(
+        shelf.Request('GET', Uri.parse('http://localhost/api/admin/srs')),
+      );
+      final Map<String, Object?> body = Map<String, Object?>.from(
+        jsonDecode(await g.readAsString()) as Map,
+      );
+      return Map<String, Object?>.from(body['config']! as Map)['rolloverHour'];
+    }
+
+    final Object? hourBefore = await rolloverHourNow();
     // config.yaml 的位置被目录占了：写配置失败。
     await configFile.delete();
     await Directory(configFile.path).create();
 
     final shelf.Response r = await rawPut(<String, Object?>{
+      'rolloverHour': hourBefore == 7 ? 8 : 7,
       'rwkvModel': 'tiny',
     });
     expect(r.statusCode, 500, reason: await r.readAsString());
     expect(readSrsRwkvModelSize(support), SrsRwkvModelSize.small);
+    // 写盘失败 = 这次改动没落地：admin 内存里的配置（GET 读的那份）不能先换成新的。
+    expect(await rolloverHourNow(), hourBefore);
   });
 
   test('ServerAgentToolbox：能搜到；写操作记进服务端库、撤销写回；同步没确认拒绝', () async {
