@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:drift/native.dart';
@@ -7,6 +8,7 @@ import 'package:fushi/src/media/kavita/kavita_progress_resolver.dart';
 import 'package:fushi/src/media/kavita/kavita_server_config.dart';
 import 'package:fushi/src/media/manga/kavita/kavita_library_adapter.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/kavita/kavita_api.dart';
 import 'package:fushi_engine/media/kavita/kavita_models.dart';
@@ -54,11 +56,24 @@ OnlineMangaLibraryEntry _entry({
 );
 
 class _Server {
-  _Server({this.pageNum = 0, this.modifiedAt, this.offline = false});
+  _Server({
+    this.pageNum = 0,
+    this.modifiedAt,
+    this.offline = false,
+    this.hang,
+    this.progressStatus = 200,
+  });
 
   int pageNum;
   int? modifiedAt;
   bool offline;
+
+  /// 非空时 get-progress 一直挂到它完成（模拟连上了但迟迟不答的服务器）。
+  Completer<void>? hang;
+
+  /// get-progress 的 HTTP 状态（非 200 = 服务器在、但出错）。
+  int progressStatus;
+  int progressCalls = 0;
   int chapterInfoCalls = 0;
   final List<http.Request> writes = <http.Request>[];
 
@@ -71,6 +86,10 @@ class _Server {
       }
       if (offline) throw http.ClientException('offline');
       if (r.url.path == '/api/Reader/get-progress') {
+        progressCalls++;
+        final Completer<void>? gate = hang;
+        if (gate != null) await gate.future;
+        if (progressStatus != 200) return http.Response('', progressStatus);
         return http.Response(
           jsonEncode(<String, Object?>{
             'chapterId': 201,
@@ -120,9 +139,12 @@ class _Server {
 void main() {
   late FushiDatabase db;
   late InMemoryKavitaMangaSyncStampStore stamps;
+  late KavitaReachability reachability;
   setUp(() {
     db = FushiDatabase.forTesting(NativeDatabase.memory());
     stamps = InMemoryKavitaMangaSyncStampStore();
+    // 每个用例一份：进程级的那份会把上一个离线用例的「不可达」带到下一个用例。
+    reachability = KavitaReachability();
   });
   tearDown(() => db.close());
 
@@ -144,6 +166,7 @@ void main() {
     KavitaMangaConflictPrompt? prompt,
     List<KavitaServerConfig>? servers,
     int? nowMs,
+    Duration pullTimeout = const Duration(seconds: 2),
   }) {
     final OnlineMangaLibraryEntry e = entry ?? _entry();
     return KavitaMangaSyncSession.attach(
@@ -155,8 +178,9 @@ void main() {
       apiFor: (KavitaServerConfig _) => server.api(),
       stamps: stamps,
       promptConflict: prompt,
+      reachability: reachability,
       debounce: const Duration(milliseconds: 20),
-      pullTimeout: const Duration(seconds: 2),
+      pullTimeout: pullTimeout,
       nowMs: () => nowMs ?? DateTime.now().millisecondsSinceEpoch,
     );
   }
@@ -513,6 +537,168 @@ void main() {
     session.onPageSaved(_chapterKey, 6);
     await session.close();
     expect(server.pushedPages, <int>[6]);
+  });
+
+  group('unreachable server is remembered (manga-d11)', () {
+    setUp(() => ErrorLogService.instance.clear());
+
+    List<ErrorLogEntry> pullDiagnostics() => ErrorLogService
+        .instance
+        .diagnosticEntries
+        .where((ErrorLogEntry e) => e.source == 'KavitaMangaSync.pull')
+        .toList();
+
+    test('second open does not wait for the pull again', () async {
+      final Completer<void> hang = Completer<void>();
+      final _Server server = _Server(pageNum: 6, modifiedAt: _base, hang: hang);
+      // 第一次：把拉取预算等满，记为不可达。
+      final KavitaMangaSyncSession? first = await attach(
+        server,
+        pullTimeout: const Duration(milliseconds: 100),
+      );
+      expect(first, isNotNull);
+      expect(first!.adoptedPage, isNull);
+      expect(reachability.isUnreachable('srv'), isTrue);
+      await first.close();
+
+      // 第二次：预算给到 1 分钟，服务器照样挂着——等的话这条用例必超时。
+      final KavitaMangaSyncSession? second = await attach(
+        server,
+        pullTimeout: const Duration(minutes: 1),
+      );
+      expect(hang.isCompleted, isFalse, reason: 'returned without the server');
+      expect(second, isNotNull);
+      expect(second!.adoptedPage, isNull);
+      await pumpEventQueue();
+      expect(hang.isCompleted, isFalse);
+      expect(server.progressCalls, 2, reason: 'the pull still goes out');
+      expect(await localPage(), isNull, reason: 'local untouched');
+      await second.close();
+      hang.complete();
+    }, timeout: const Timeout(Duration(seconds: 20)));
+
+    test(
+      'a probe answered in time clears the mark; the next open syncs fully',
+      () async {
+        final _Server server = _Server(
+          pageNum: 6,
+          modifiedAt: _base,
+          offline: true,
+        );
+        final KavitaMangaSyncSession? first = await attach(server);
+        await first!.close();
+        expect(reachability.isUnreachable('srv'), isTrue);
+
+        // 服务器回来了：这次开章不等（不采用服务器进度），但探针清掉标记。
+        server.offline = false;
+        final KavitaMangaSyncSession? second = await attach(server);
+        expect(second!.adoptedPage, isNull);
+        await second.close();
+        await pumpEventQueue();
+        expect(reachability.isUnreachable('srv'), isFalse);
+
+        final KavitaMangaSyncSession? third = await attach(server);
+        expect(third!.adoptedPage, 6);
+        expect(await localPage(), 6);
+        await third.close();
+      },
+    );
+
+    test('a probe that also fails keeps the mark', () async {
+      final _Server server = _Server(offline: true);
+      await (await attach(server))!.close();
+      await (await attach(server))!.close();
+      await pumpEventQueue();
+      expect(reachability.isUnreachable('srv'), isTrue);
+      expect(
+        pullDiagnostics(),
+        hasLength(1),
+        reason: 'one diagnostic per outage, not one per chapter',
+      );
+      expect(
+        ErrorLogService.instance.entries,
+        isEmpty,
+        reason: 'offline is not an app error',
+      );
+    });
+
+    test('a server that answers with an error is not unreachable', () async {
+      final _Server server = _Server(progressStatus: 500);
+      final KavitaMangaSyncSession? session = await attach(server);
+      expect(session, isNotNull);
+      await session!.close();
+      expect(reachability.isUnreachable('srv'), isFalse);
+      expect(pullDiagnostics(), isEmpty);
+      final List<ErrorLogEntry> errors = ErrorLogService.instance.entries;
+      expect(errors, hasLength(1));
+      expect(errors.single.source, 'KavitaMangaSync.pull');
+      expect(errors.single.error, contains('500'));
+    });
+
+    test('the mark is per server', () async {
+      reachability.markUnreachable('other');
+      final _Server server = _Server(pageNum: 6, modifiedAt: _base);
+      final KavitaMangaSyncSession? session = await attach(server);
+      expect(session!.adoptedPage, 6);
+      await session.close();
+    });
+  });
+
+  group('swallowed store failures are logged', () {
+    setUp(() => ErrorLogService.instance.clear());
+
+    List<String> sources() => <String>[
+      for (final ErrorLogEntry e in ErrorLogService.instance.entries) e.source,
+    ];
+
+    // 让章进度表的读写都抛库错误。
+    Future<void> breakChapterStates() =>
+        db.customStatement('DROP TABLE manga_chapter_states');
+
+    test('reconcile', () async {
+      await breakChapterStates();
+      final int written = await reconcileKavitaChapterStates(
+        db: db,
+        bookUid: _uid,
+        chapters: <OnlineMangaChapter>[
+          OnlineMangaChapter(
+            key: _chapterKey,
+            name: 'c',
+            raw: const <String, Object?>{'pages': 10, 'pagesRead': 4},
+          ),
+        ],
+      );
+      expect(written, 0);
+      expect(sources(), <String>['KavitaMangaSync.reconcile']);
+    });
+
+    test('align mark', () async {
+      await breakChapterStates();
+      await alignKavitaMangaChapterMark(
+        db: db,
+        stamps: stamps,
+        bookUid: _uid,
+        chapterKey: _chapterKey,
+        read: true,
+        totalPages: 10,
+      );
+      expect(sources(), <String>['KavitaMangaSync.alignMark']);
+    });
+
+    test('stamp write, with credentials redacted', () async {
+      final PrefKavitaMangaSyncStampStore store = PrefKavitaMangaSyncStampStore(
+        read: () => '',
+        write: (String v) async => throw StateError(
+          'write failed for https://kavita.example.com/x?apiKey=SECRET-KEY',
+        ),
+      );
+      await store.record('a', '1', 10, page: 4);
+      expect(sources(), <String>['KavitaMangaSync.recordStamp']);
+      expect(
+        ErrorLogService.instance.entries.single.error,
+        isNot(contains('SECRET-KEY')),
+      );
+    });
   });
 
   test('offline and no descriptor ids: no session (cannot push)', () async {

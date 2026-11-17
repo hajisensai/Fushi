@@ -42,6 +42,20 @@ class KavitaApiException implements Exception {
   String toString() => 'KavitaApiException($statusCode, $path)';
 }
 
+/// 传输层失败（连不上、连接中断、请求被中止）：服务器没给出任何 HTTP 状态。
+///
+/// 与 [KavitaApiException]（服务器答了非 2xx）分开，调用方据此区分「服务器不可达」
+/// 和「服务器在、但拒绝 / 出错」。[message] 已经过 `redactCredentialsInText`。
+/// 文本形态沿用改类型前的 `Exception: <message>`（界面与日志里的错误文案不变）。
+class KavitaTransportException implements Exception {
+  const KavitaTransportException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => 'Exception: $message';
+}
+
 /// 下载被取消。
 class KavitaDownloadCancelled implements Exception {
   const KavitaDownloadCancelled();
@@ -81,6 +95,7 @@ class KavitaApi {
     this.pluginName = kPluginName,
     http.Client? client,
     KavitaAuthResult? initialAuth,
+    this.imageStallTimeout = kImageStallTimeout,
   }) : _client = client ?? createAppHttpIoClient(),
        _token = initialAuth?.token;
 
@@ -92,6 +107,12 @@ class KavitaApi {
 
   /// 下载时两个数据块之间允许的最长停顿（stall 超时，整体不设限）。
   static const Duration kDownloadStallTimeout = Duration(seconds: 60);
+
+  /// 页图 / 封面：等响应头、以及两个数据块之间允许的最长停顿（整体不设限）。
+  static const Duration kImageStallTimeout = Duration(seconds: 20);
+
+  /// 本实例取页图 / 封面用的停顿超时（测试缝；生产取 [kImageStallTimeout]）。
+  final Duration imageStallTimeout;
 
   /// 归一化后的服务器根 URL（含 scheme、无尾斜杠）。
   final String serverUrl;
@@ -219,7 +240,7 @@ class KavitaApi {
       }
       return res;
     } on http.ClientException catch (e) {
-      throw Exception(redactCredentialsInText(e.toString()));
+      throw KavitaTransportException(redactCredentialsInText(e.toString()));
     }
   }
 
@@ -360,31 +381,49 @@ class KavitaApi {
   }
 
   /// 阅读器分页图片字节（带 apiKey，不依赖 JWT）。
-  Future<Uint8List> fetchPageBytes(int chapterId, int page) async {
-    try {
-      final http.Response res = await _client
-          .get(Uri.parse(pageImageUrl(chapterId, page)))
-          .timeout(kRequestTimeout);
-      if (res.statusCode < 200 || res.statusCode >= 300) {
-        throw KavitaApiException(res.statusCode, '/api/Reader/image');
-      }
-      return res.bodyBytes;
-    } on http.ClientException catch (e) {
-      throw Exception(redactCredentialsInText(e.toString()));
-    }
-  }
+  Future<Uint8List> fetchPageBytes(int chapterId, int page) => _fetchImageBytes(
+    Uri.parse(pageImageUrl(chapterId, page)),
+    '/api/Reader/image',
+  );
 
-  Future<Uint8List> fetchSeriesCoverBytes(int seriesId) async {
+  Future<Uint8List> fetchSeriesCoverBytes(int seriesId) => _fetchImageBytes(
+    Uri.parse(seriesCoverUrl(seriesId)),
+    '/api/Image/series-cover',
+  );
+
+  /// 流式取一张图：超时按**停顿**算（等响应头、相邻两块之间各不超过
+  /// [imageStallTimeout]），整体不设限——慢链路上的大页图只要还在走就不判失败。
+  ///
+  /// 任何失败（停顿超时、非 2xx、连接中断）都经 [http.AbortableRequest] 真正中止
+  /// 底层请求 / 响应流：只让等待方放弃的 `Future.timeout` 会把连接留在后台继续传。
+  /// [path] 只用于异常文本（不含查询串，URL 里有 apiKey）。
+  Future<Uint8List> _fetchImageBytes(Uri url, String path) async {
+    final Completer<void> abort = Completer<void>();
+    bool completed = false;
     try {
-      final http.Response res = await _client
-          .get(Uri.parse(seriesCoverUrl(seriesId)))
-          .timeout(kRequestTimeout);
-      if (res.statusCode < 200 || res.statusCode >= 300) {
-        throw KavitaApiException(res.statusCode, '/api/Image/series-cover');
+      final http.AbortableRequest request = http.AbortableRequest(
+        'GET',
+        url,
+        abortTrigger: abort.future,
+      );
+      final http.StreamedResponse response = await _client
+          .send(request)
+          .timeout(imageStallTimeout);
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw KavitaApiException(response.statusCode, path);
       }
-      return res.bodyBytes;
+      final BytesBuilder bytes = BytesBuilder(copy: false);
+      await for (final List<int> chunk in response.stream.timeout(
+        imageStallTimeout,
+      )) {
+        bytes.add(chunk);
+      }
+      completed = true;
+      return bytes.takeBytes();
     } on http.ClientException catch (e) {
-      throw Exception(redactCredentialsInText(e.toString()));
+      throw KavitaTransportException(redactCredentialsInText(e.toString()));
+    } finally {
+      if (!completed) abort.complete();
     }
   }
 
@@ -544,7 +583,7 @@ class KavitaApi {
       req.headers['Authorization'] = 'Bearer $_token';
       return await _client.send(req).timeout(kRequestTimeout);
     } on http.ClientException catch (e) {
-      throw Exception(redactCredentialsInText(e.toString()));
+      throw KavitaTransportException(redactCredentialsInText(e.toString()));
     }
   }
 

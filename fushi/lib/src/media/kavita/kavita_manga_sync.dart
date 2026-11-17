@@ -14,7 +14,8 @@
 /// 1. [KavitaMangaSyncSession.attach] 在阅读器读章进度**之前**调用：拉服务器进度 →
 ///    与本地章进度按 `resolveKavitaProgress` 决策 → 采用服务器（写本地章进度，
 ///    阅读器随后按章进度自然落到那一页）/ 推本地 / 冲突时询问 / 不动。拉取有短
-///    超时，离线直接放行，不卡开章；
+///    超时，离线直接放行，不卡开章；服务器不可达会被 [KavitaReachability] 记住，
+///    之后开章 / 换章不再等这次拉取（后台照发，答得上来就恢复）；
 /// 2. 阅读中每次章进度落库后调 [KavitaMangaSyncSession.onPageSaved]，由
 ///    `KavitaProgressSync` 防抖上报，读到最后一页推成功后标已读；
 /// 3. 换章 / 关书时 [KavitaMangaSyncSession.close]：限时 flush 再释放。
@@ -25,21 +26,62 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/kavita/kavita_api.dart';
 import 'package:fushi_engine/media/kavita/kavita_models.dart';
+import 'package:fushi_engine/media/metadata/credential_redaction.dart'
+    show redactCredentialsInText;
 
 import 'package:fushi/src/media/kavita/kavita_progress_resolver.dart';
 import 'package:fushi/src/media/kavita/kavita_progress_sync.dart';
 import 'package:fushi/src/media/kavita/kavita_server_config.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// 设备本地偏好：Kavita 漫画每章「上次成功同步」时刻（JSON 对象）。
 ///
 /// 已登记进 `kKnownPreferenceKeys` 与 `SyncRepository.deviceLocalPrefKeys`
 /// （同步时刻只对这台设备的本地进度有意义，漂到别的设备会让决策基线错位）。
 const String kKavitaMangaSyncStatePref = 'kavita_manga_sync_state';
+
+/// 开章拉取的失败是不是「服务器不可达」（连不上 / 超时 / 连接中断），区别于服务器
+/// 答了非 2xx（[KavitaApiException]）或响应解析不了。
+bool isKavitaUnreachableError(Object error) =>
+    error is TimeoutException ||
+    error is KavitaTransportException ||
+    error is IOException;
+
+/// 进程内记住哪些 Kavita 服务器在开章拉取预算内答不上来。
+///
+/// 没有这份记忆时，服务器断开后每次开章、换章都要把
+/// [KavitaMangaSyncSession.kPullTimeout] 等满，读已下载的章也一样。记住之后
+/// [KavitaMangaSyncSession.attach] 不再等拉取：请求照发、只当探针，在预算内答上来
+/// 就清掉标记，下一次开章恢复完整对账。只存在内存里（进程一退就没了），不落盘。
+class KavitaReachability {
+  /// 生产用的进程级实例。
+  static final KavitaReachability session = KavitaReachability();
+
+  final Set<String> _unreachable = <String>{};
+
+  bool isUnreachable(String serverId) => _unreachable.contains(serverId);
+
+  /// 记为不可达；返回是否是这次才记上（调用方据此每次断开只记一条日志）。
+  bool markUnreachable(String serverId) => _unreachable.add(serverId);
+
+  void markReachable(String serverId) => _unreachable.remove(serverId);
+}
+
+/// 同步路径上被吞掉的失败留一条可查的记录。文本过 `redactCredentialsInText`
+/// （Kavita 的图片 URL 带 apiKey，异常文本里可能带出整条 URL）。
+void _logSyncError(String stage, Object error, StackTrace stack) {
+  ErrorLogService.instance.log(
+    'KavitaMangaSync.$stage',
+    redactCredentialsInText('$error'),
+    stack,
+  );
+}
 
 /// 两侧都动过时询问用户：返回 [KavitaSyncAction.adoptServer] /
 /// [KavitaSyncAction.pushLocal]，其它值（或抛错）按「保留本地、不推送」处理。
@@ -168,8 +210,9 @@ class PrefKavitaMangaSyncStampStore implements KavitaMangaSyncStampStore {
             },
         }),
       );
-    } on Object {
+    } on Object catch (e, stack) {
       // 记账失败：下次开章按「从没同步过」比较，不影响阅读。
+      _logSyncError('recordStamp', e, stack);
     }
   }
 }
@@ -209,7 +252,10 @@ class KavitaMangaSyncSession {
 
   /// 为 [entry] 的 [chapter] 建同步会话（含打开时的拉取与决策）；不适用返回 null。
   ///
-  /// 永不抛错：任何网络 / 解析失败都按「不同步本章」或「离线放行」处理。
+  /// 网络 / 解析失败不抛错，按「不同步本章」或「离线放行」处理。
+  ///
+  /// [reachability] 记着这台服务器不可达时不等拉取（见 [KavitaReachability]）；
+  /// 缺省用进程级的 [KavitaReachability.session]。
   static Future<KavitaMangaSyncSession?> attach({
     required FushiDatabase db,
     required String bookUid,
@@ -219,6 +265,7 @@ class KavitaMangaSyncSession {
     required KavitaApi Function(KavitaServerConfig) apiFor,
     required KavitaMangaSyncStampStore stamps,
     KavitaMangaConflictPrompt? promptConflict,
+    KavitaReachability? reachability,
     Duration pullTimeout = kPullTimeout,
     Duration debounce = const Duration(seconds: 10),
     int Function()? nowMs,
@@ -244,20 +291,51 @@ class KavitaMangaSyncSession {
     int pages = _asInt(chapter.raw['pages']) ?? 0;
     final bool needInfo = volumeId == null || libraryId == null || pages <= 0;
 
+    final KavitaReachability reach = reachability ?? KavitaReachability.session;
+    final String serverId = server.id;
     KavitaProgress? remote;
     KavitaChapterInfo? info;
-    try {
-      final List<Object?> results = await Future.wait<Object?>(
-        <Future<Object?>>[
-          api.getProgress(chapterId),
-          if (needInfo) api.getChapterInfo(chapterId),
-        ],
-      ).timeout(pullTimeout);
-      remote = results[0] as KavitaProgress?;
-      if (needInfo) info = results[1] as KavitaChapterInfo?;
-    } on Object {
-      remote = null; // 离线 / 超时 / 服务器错误：放行。
-      info = null;
+    final Stopwatch pullClock = Stopwatch()..start();
+    final Future<List<Object?>> pull = Future.wait<Object?>(<Future<Object?>>[
+      api.getProgress(chapterId),
+      if (needInfo) api.getChapterInfo(chapterId),
+    ]);
+    if (reach.isUnreachable(serverId)) {
+      // 已知不可达：不等。请求照发、只当探针——在预算内答上来（哪怕答的是错误
+      // 状态）就清标记，下一次开章恢复完整对账；本章按离线放行。
+      void probed() {
+        if (pullClock.elapsed <= pullTimeout) reach.markReachable(serverId);
+      }
+
+      unawaited(
+        pull.then<void>(
+          (List<Object?> _) => probed(),
+          onError: (Object e) {
+            if (!isKavitaUnreachableError(e)) probed();
+          },
+        ),
+      );
+    } else {
+      try {
+        final List<Object?> results = await pull.timeout(pullTimeout);
+        remote = results[0] as KavitaProgress?;
+        if (needInfo) info = results[1] as KavitaChapterInfo?;
+      } on Object catch (e, stack) {
+        remote = null; // 离线 / 超时 / 服务器错误：放行。
+        info = null;
+        if (isKavitaUnreachableError(e)) {
+          // 离线是常态：每次断开只记一条诊断，不逐章刷屏。
+          if (reach.markUnreachable(serverId)) {
+            ErrorLogService.instance.logDiagnostic(
+              'KavitaMangaSync.pull',
+              'server unreachable, skipping pull waits until it answers: '
+                  '${redactCredentialsInText('$e')}',
+            );
+          }
+        } else {
+          _logSyncError('pull', e, stack);
+        }
+      }
     }
     if (info != null) {
       volumeId = info.volumeId;
@@ -458,8 +536,9 @@ Future<int> reconcileKavitaChapterStates({
       );
       written++;
     }
-  } on Object {
+  } on Object catch (e, stack) {
     // 对账失败不影响作品页展示；下次刷新再来。
+    _logSyncError('reconcile', e, stack);
   }
   return written;
 }
@@ -524,7 +603,8 @@ Future<void> alignKavitaMangaChapterMark({
         );
       }
     }
-  } on Object {
+  } on Object catch (e, stack) {
     // 对齐失败：下次开章由逐章对账兜底。
+    _logSyncError('alignMark', e, stack);
   }
 }

@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:fushi_engine/media/kavita/kavita_api.dart';
 import 'package:fushi_engine/media/kavita/kavita_models.dart';
@@ -295,6 +297,133 @@ void main() {
       final KavitaProgress p = await api.getProgress(2);
       expect(p.pageNum, 9);
       expect(p.lastModifiedUtc, DateTime.utc(2026, 10, 26, 8));
+    });
+  });
+
+  group('page image / cover bytes', () {
+    const Duration stall = Duration(milliseconds: 150);
+
+    KavitaApi streamingApi(
+      Future<http.StreamedResponse> Function(http.BaseRequest request) handler,
+    ) => KavitaApi(
+      serverUrl: 'http://kavita.test:5000',
+      apiKey: _key,
+      imageStallTimeout: stall,
+      client: MockClient.streaming(
+        (http.BaseRequest request, http.ByteStream body) => handler(request),
+      ),
+    );
+
+    Future<void> abortOf(http.BaseRequest request) =>
+        (request as http.Abortable).abortTrigger!;
+
+    test('reads the body across chunks; request is abortable', () async {
+      late http.BaseRequest seen;
+      final KavitaApi api = streamingApi((http.BaseRequest request) async {
+        seen = request;
+        return http.StreamedResponse(
+          Stream<List<int>>.fromIterable(<List<int>>[
+            <int>[1, 2, 3],
+            <int>[4, 5],
+          ]),
+          200,
+        );
+      });
+      final Uint8List bytes = await api.fetchPageBytes(9, 3);
+      expect(bytes, <int>[1, 2, 3, 4, 5]);
+      expect(seen.url.path, '/api/Reader/image');
+      expect(seen.url.queryParameters['chapterId'], '9');
+      expect(seen.url.queryParameters['page'], '3');
+      expect(seen, isA<http.Abortable>());
+      bool aborted = false;
+      unawaited(abortOf(seen).then((_) => aborted = true));
+      await Future<void>.delayed(Duration.zero);
+      expect(aborted, isFalse, reason: 'a finished request is not aborted');
+    });
+
+    test('a slow body that keeps moving outlives the stall budget', () async {
+      // 整体耗时是停顿预算的 4 倍，但块间从不超过预算：旧的整请求超时会判失败。
+      final KavitaApi api = streamingApi((http.BaseRequest request) async {
+        Stream<List<int>> body() async* {
+          for (int i = 0; i < 6; i++) {
+            await Future<void>.delayed(stall * (2 / 3));
+            yield <int>[i];
+          }
+        }
+
+        return http.StreamedResponse(body(), 200);
+      });
+      final Stopwatch clock = Stopwatch()..start();
+      expect(await api.fetchSeriesCoverBytes(1), <int>[0, 1, 2, 3, 4, 5]);
+      expect(clock.elapsed, greaterThan(stall * 3));
+    });
+
+    test('a stalled body times out and aborts the request', () async {
+      final Completer<void> aborted = Completer<void>();
+      final StreamController<List<int>> body = StreamController<List<int>>();
+      bool cancelled = false;
+      body.onCancel = () => cancelled = true;
+      final KavitaApi api = streamingApi((http.BaseRequest request) async {
+        unawaited(abortOf(request).then((_) => aborted.complete()));
+        body.add(<int>[1, 2, 3]);
+        return http.StreamedResponse(body.stream, 200);
+      });
+      await expectLater(
+        api.fetchPageBytes(1, 0),
+        throwsA(isA<TimeoutException>()),
+      );
+      await aborted.future.timeout(const Duration(seconds: 5));
+      expect(cancelled, isTrue, reason: 'response stream is released');
+    });
+
+    test('stalled response headers time out and abort the request', () async {
+      final Completer<void> aborted = Completer<void>();
+      final Completer<http.StreamedResponse> never =
+          Completer<http.StreamedResponse>();
+      final KavitaApi api = streamingApi((http.BaseRequest request) {
+        unawaited(abortOf(request).then((_) => aborted.complete()));
+        return never.future;
+      });
+      await expectLater(
+        api.fetchSeriesCoverBytes(1),
+        throwsA(isA<TimeoutException>()),
+      );
+      await aborted.future.timeout(const Duration(seconds: 5));
+    });
+
+    test('non-2xx surfaces as KavitaApiException without the query', () async {
+      final KavitaApi api = streamingApi(
+        (http.BaseRequest request) async =>
+            http.StreamedResponse(const Stream<List<int>>.empty(), 404),
+      );
+      await expectLater(
+        api.fetchPageBytes(1, 0),
+        throwsA(
+          isA<KavitaApiException>()
+              .having((KavitaApiException e) => e.isNotFound, 'notFound', true)
+              .having(
+                (KavitaApiException e) => '$e',
+                'text',
+                isNot(contains(_key)),
+              ),
+        ),
+      );
+    });
+
+    test('transport failure is typed and redacts the api key', () async {
+      final KavitaApi api = streamingApi((http.BaseRequest request) async {
+        throw http.ClientException('connection refused', request.url);
+      });
+      await expectLater(
+        api.fetchPageBytes(1, 0),
+        throwsA(
+          isA<KavitaTransportException>().having(
+            (KavitaTransportException e) => '$e',
+            'text',
+            allOf(contains('connection refused'), isNot(contains(_key))),
+          ),
+        ),
+      );
     });
   });
 
