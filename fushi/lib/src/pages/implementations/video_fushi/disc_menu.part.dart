@@ -69,7 +69,6 @@ extension _VideoDiscMenu on _VideoFushiPageState {
     if (!controller.isBlurayNavigationSession) return true;
     if (controller.discMiningAvailable && !_discLearningBlocked) return true;
     final String message = switch (controller.discMiningUnavailableReason) {
-      'multi-angle-source' => t.video_disc_angle_extraction_unavailable,
       'audio-track-unavailable' => t.video_disc_audio_selection_pending,
       'extraction-source-unavailable' => t.video_clip_export_input_missing,
       'encrypted-extraction-source' => t.video_disc_extraction_unavailable,

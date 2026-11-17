@@ -2,8 +2,8 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'dart:async';
 import 'package:fushi_engine/media/video/video_member_file.dart';
-import 'package:fushi_engine/media/video/bluray/bluray_angle.dart'
-    show blurayAngleBaseMemberPath;
+import 'package:fushi_engine/media/video/disc/disc_angle.dart'
+    show discAngleBaseMemberPath;
 import 'package:fushi_engine/media/video/bluray/bluray_source.dart'
     show isBlurayPlaylistPath;
 import 'package:fushi_engine/media/video/bluray/bluray_remote_title.dart';

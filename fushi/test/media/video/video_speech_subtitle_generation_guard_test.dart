@@ -243,6 +243,8 @@ void main() {
     expect(bind, contains('_checkDiscExtractionSource(extractionPath)'));
     expect(bind, contains(': extractionPath;'));
     expect(discVm, isNot(contains("angle != 0) return 'multi-angle-source'")));
+    // DVD 多角度 title 同样按正在播的角度抽（`TITLE_nn.aK.dvdtitle`），不再拒绝。
+    expect(discVm, isNot(contains('multi-angle-source')));
 
     final String studioPanel = source
         .split('Future<WidgetBuilder?> _subtitleStudioGeneratePanel(')[1]
@@ -264,7 +266,7 @@ void main() {
         .split('({String key, String title')[0];
     expect(
       done,
-      contains('_currentVideoPath != blurayAngleBaseMemberPath(videoPath)'),
+      contains('_currentVideoPath != discAngleBaseMemberPath(videoPath)'),
     );
   });
 
@@ -285,7 +287,7 @@ void main() {
     expect(locate, contains('_discLearningBlocked'));
     // 多角度 title 按正在播的角度交给 host（角度成员路径）。
     expect(locate, contains('discExtractionPathForAngle('));
-    // DVD 会话的 title 也交给 host（dvdvideo 按 title 读），只认默认角度。
+    // DVD 会话的 title 也交给 host（dvdvideo 按 title 读），同样按正在播的角度。
     expect(locate, contains('final bool dvd = isDvdTitlePath(path);'));
     expect(locate, contains('dvd: dvd,'));
     expect(locate, contains('source.hostTitleFor(member)'));

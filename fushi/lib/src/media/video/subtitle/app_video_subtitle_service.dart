@@ -35,8 +35,8 @@ import 'package:fushi_core/fushi_core.dart'
         MediaCollectionRow,
         VideoBookRow,
         platformPathKey;
-import 'package:fushi_engine/media/video/bluray/bluray_angle.dart'
-    show BlurayAngleRef, blurayAnglePath, parseBlurayAnglePath;
+import 'package:fushi_engine/media/video/disc/disc_angle.dart'
+    show DiscAngleRef, discAnglePath, parseDiscAnglePath;
 import 'package:fushi_engine/media/video/disc/disc_format.dart'
     show isDiscMemberPath;
 import 'package:fushi_engine/media/video/strm_file.dart'
@@ -918,17 +918,18 @@ class AppVideoSubtitleService {
     }
     final bool playlist = candidates.length > 1;
     // 原盘会话正放着多角度 title 的第 N 个角度时，页面给的是角度成员路径
-    // （`00001.a2.mpls`，见 `bluray_angle.dart`）：库身份仍是不带角度的那一行，媒体按
-    // 该角度读——这一集照常登记到这一行，管线抽的是正在播的角度。
-    final BlurayAngleRef? angle = onlyPath == null
+    // （蓝光 `00001.a2.mpls` / DVD `TITLE_03.a2.dvdtitle`，见 `disc_angle.dart`）：库身份
+    // 仍是不带角度的那一行，媒体按该角度读——这一集照常登记到这一行，管线抽的是正在播
+    // 的角度。
+    final DiscAngleRef? angle = onlyPath == null
         ? null
-        : parseBlurayAnglePath(onlyPath);
+        : parseDiscAnglePath(onlyPath);
     final String? onlyMember = angle?.memberPath ?? onlyPath;
     for (final String path in candidates) {
       if (onlyMember != null && !p.equals(path, onlyMember)) continue;
       final String mediaPath = angle == null
           ? path
-          : blurayAnglePath(path, angle.angleIndex);
+          : discAnglePath(path, angle.angleIndex);
       // 「本机能不能读到这一集的媒体」（video_member_file.dart 第 2 种问法）：蓝光分集
       // 是虚拟路径，裸 `File.exists` 判不了；本地 `.strm` 是文件却没有媒体字节。
       if (!await hasLocalMediaFile(mediaPath)) {

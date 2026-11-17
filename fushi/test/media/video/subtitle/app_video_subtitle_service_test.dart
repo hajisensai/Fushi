@@ -17,6 +17,8 @@ import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_work_co
     show fallbackSubtitleWorkKey;
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_pipeline.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_recognizer_factory.dart';
+import 'package:fushi_engine/media/video/dvd/dvd_angle.dart'
+    show dvdTitleAnglePath;
 import 'package:fushi_engine/media/video/dvd/dvd_title_path.dart'
     show dvdTitlePath;
 import 'package:fushi_engine/media/video/video_duration_probe.dart'
@@ -674,6 +676,54 @@ void main() {
         gone.unavailable.single.reason,
         AppVideoSubtitleUnavailableReason.missingFile,
       );
+    });
+
+    test('DVD 多角度 title：按当前角度的抽取路径跑，产物分角度落 disc_out、登记到不带角度的行', () async {
+      final String discRoot = p.join(tmp.path, 'discs', 'Angle DVD');
+      File(p.join(discRoot, 'VIDEO_TS', 'VIDEO_TS.IFO'))
+        ..createSync(recursive: true)
+        ..writeAsBytesSync(List<int>.filled(16, 1));
+      final String title = dvdTitlePath(discRoot, 2);
+      await addBook('dvd', title, subtitleSource: 'embedded:1');
+      final List<String> before = filesUnder(discRoot);
+      final AppVideoSubtitleService service = buildService();
+      // 原盘会话正放第 2 个角度：播放页给的是角度成员路径（虚拟，盘上没有这个文件）。
+      final String angle = dvdTitleAnglePath(title, 1);
+      final AppVideoSubtitleTarget target = await service.resolvePlaying(
+        'dvd',
+        videoPath: angle,
+        title: 'ignored',
+      );
+      expect(target.bookUid, 'dvd');
+      expect(target.videoPaths, <String>[angle]);
+      expect(target.unavailable, isEmpty);
+      expect(target.episodes.single.registersSubtitleSource, isTrue);
+
+      final AppVideoSubtitleJob job = service.start(
+        target,
+        const AppVideoSubtitleOptions(),
+      );
+      await job.done;
+      expect(
+        job.status,
+        AppVideoSubtitleJobStatus.succeeded,
+        reason: '${job.errorMessage}',
+      );
+      final VideoSubtitleEpisodeResult result = job.result!.episodes.single;
+      expect(result.videoPath, angle);
+      final String output = result.outputPath!;
+      expect(
+        p.isWithin(
+          p.join(jobs.path, 'disc_out', videoSubtitleJobId(angle)),
+          output,
+        ),
+        isTrue,
+        reason: output,
+      );
+      expect(videoSubtitleJobId(angle), isNot(videoSubtitleJobId(title)));
+      expect(filesUnder(discRoot), before, reason: '盘结构里不能写字幕');
+      expect((await db.getVideoBookByBookUid('dvd'))!.subtitleSource, output);
+      expect(job.registeredBookUids, <String>['dvd']);
     });
 
     test('没入库的多角度 title 也按角度成员路径解析成一集', () async {

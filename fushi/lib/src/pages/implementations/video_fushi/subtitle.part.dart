@@ -1977,8 +1977,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
     if (path == null) return null;
     final bool dvd = isDvdTitlePath(path);
     if (!dvd && !isBlurayPlaylistPath(path)) return null;
-    // 多角度 title 按正在播的角度交给 host（角度成员路径 `00001.a2.mpls`）；角度还没报
-    // 上来时与本机抽取同口径，不定位（DVD 只认默认角度，同本机）。
+    // 多角度 title 按正在播的角度交给 host（角度成员路径：蓝光 `00001.a2.mpls`、DVD
+    // `TITLE_03.a2.dvdtitle`）；角度还没报上来时与本机抽取同口径，不定位。
     final String? member = discExtractionPathForAngle(
       path,
       angle: controller.discNavigationState?.angle ?? -1,
@@ -3985,7 +3985,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
     if (!mounted ||
         !identical(_controller, controller) ||
         _episodeLoadSeq != loadSeq ||
-        _currentVideoPath != blurayAngleBaseMemberPath(videoPath) ||
+        _currentVideoPath != discAngleBaseMemberPath(videoPath) ||
         job.status != AppVideoSubtitleJobStatus.succeeded) {
       return;
     }
