@@ -30,6 +30,9 @@ import 'package:path/path.dart' as p;
 class _Recognizer implements VideoSubtitleRecognizer {
   int calls = 0;
 
+  /// 每次识别收到的（视频名, 音轨流序号）。
+  final List<(String, int?)> streams = <(String, int?)>[];
+
   @override
   String get id => 'fake';
 
@@ -42,6 +45,7 @@ class _Recognizer implements VideoSubtitleRecognizer {
     int? audioStreamIndex,
   }) async {
     calls++;
+    streams.add((p.basename(videoPath), audioStreamIndex));
     onProgress(0.5, 'transcribing');
     return <SubtitleDraftCue>[
       for (int i = 0; i < 5; i++)
@@ -110,6 +114,7 @@ void main() {
     AiChatClient Function()? client,
     Future<String?> Function(String, {int episodeIndex})? resolveVideo,
     Future<String?> Function(String, String)? resolveDiscTitle,
+    VideoSubtitleAudioStreamResolver? resolveAudioStream,
   }) => VideoSubtitleHostJobRunner(
     resolveRecognizer:
         (
@@ -129,6 +134,7 @@ void main() {
     resolveVideoPath: resolveVideo,
     resolveDiscTitlePath: resolveDiscTitle,
     probeDurationMs: (String _) async => 1440000,
+    resolveAudioStream: resolveAudioStream,
     // 测试里不起真 ffmpeg。
     frameSource: (String videoPath, int atMs) async => null,
   );
@@ -218,6 +224,24 @@ void main() {
           'videoId': 'a',
           'discTitle': 'BDMV/PLAYLIST/00005.mpls',
         },
+        // 音轨：非负整数，且只跟 videoId 一起。
+        <String, Object?>{'proofread': false, 'videoId': 'a', 'audioTrack': -1},
+        <String, Object?>{
+          'proofread': false,
+          'videoId': 'a',
+          'audioTrack': 'x',
+        },
+        <String, Object?>{
+          'proofread': false,
+          'videoId': 'a',
+          'audioTrack': 1.5,
+        },
+        <String, Object?>{'proofread': false, 'audioTrack': 1},
+        <String, Object?>{
+          'proofread': false,
+          'collectionId': 3,
+          'audioTrack': 1,
+        },
       ]) {
         expect(
           () => r.validateParams(bad),
@@ -239,6 +263,24 @@ void main() {
       expect(ok.mossBackend, MossBackendPreference.vulkan);
       expect(ok.regenerateGlossary, isTrue);
       expect(ok.episode, 0, reason: '老客户端不带 episode：按第 0 集，行为不变');
+      expect(ok.audioTrack, isNull, reason: '不带 audioTrack：按识别语言挑');
+      final VideoSubtitleJobParams withTrack = VideoSubtitleJobParams.parse(
+        const <String, Object?>{
+          'videoId': 'v1',
+          'episode': '2',
+          'audioTrack': '1',
+        },
+      );
+      expect((withTrack.episode, withTrack.audioTrack), (2, 1));
+      expect(
+        VideoSubtitleJobParams.parse(const <String, Object?>{
+          'videoId': 'v1',
+          'discTitle': 'BDMV/PLAYLIST/00005.mpls',
+          'audioTrack': 0,
+        }).audioTrack,
+        0,
+        reason: '可与 discTitle 组合',
+      );
       expect(
         VideoSubtitleJobParams.parse(const <String, Object?>{
           'videoId': 'v1',
@@ -762,6 +804,47 @@ void main() {
     expect(await recordedFrames('f3', images: true, frames: false), isFalse);
   });
 
+  test('audioTrack：交给管线按播放器当前音轨识别；不给按语言挑', () async {
+    final Directory lib = Directory(p.join(tmp.path, 'lib', 'Show'))
+      ..createSync(recursive: true);
+    final File ep1 = File(p.join(lib.path, 'Show 01.mkv'))
+      ..writeAsBytesSync(<int>[1, 2, 3]);
+    final File ep2 = File(p.join(lib.path, 'Show 02.mkv'))
+      ..writeAsBytesSync(<int>[4, 5, 6]);
+    Future<String?> resolve(String id, {int episodeIndex = 0}) async =>
+        id == 'v1' ? (episodeIndex == 0 ? ep1.path : ep2.path) : null;
+    final List<(String, int)> mapped = <(String, int)>[];
+    // 音轨序号 → 流序号：第 N 条音轨在流 N + 1（流 0 是视频）。
+    Future<int?> streams(String videoPath, int audioTrack) async {
+      mapped.add((p.basename(videoPath), audioTrack));
+      return audioTrack + 1;
+    }
+
+    final VideoSubtitleHostJobRunner r = runner(
+      resolveVideo: resolve,
+      resolveAudioStream: streams,
+    );
+    expect((await r.capability())['acceptsAudioTrack'], isTrue);
+    final (HostJobContext ctx, _) = context(const <String, Object?>{
+      'proofread': false,
+      'videoId': 'v1',
+      'episode': 1,
+      'audioTrack': 1,
+    });
+    await r.run(ctx);
+    expect(mapped, <(String, int)>[('Show 02.mkv', 1)]);
+    expect(recognizer.streams, <(String, int?)>[('Show 02.mkv', 2)]);
+
+    // 不带 audioTrack（批量 / 老客户端）：不换算，按识别语言挑（null）。
+    final (HostJobContext plain, _) = context(const <String, Object?>{
+      'proofread': false,
+      'videoId': 'v1',
+    }, jobId: 'j2');
+    await r.run(plain);
+    expect(mapped, hasLength(1));
+    expect(recognizer.streams.last, ('Show 01.mkv', null));
+  });
+
   test('capability 报能力位；没装 AI 时 proofreadAvailable = false', () async {
     final Map<String, Object?> cap = await runner().capability();
     expect(cap['proofreadAvailable'], isFalse);
@@ -778,6 +861,8 @@ void main() {
     expect(cap['acceptsDiscTitle'], isFalse);
     expect(cap['acceptsDiscTitleAngle'], isFalse);
     expect(cap['acceptsDiscTitleDvd'], isFalse);
+    // 没接 resolveVideoPath：不认 videoId，也就不认 audioTrack。
+    expect(cap['acceptsAudioTrack'], isFalse);
     expect(
       (await runner(
         resolveVideo: (String _, {int episodeIndex = 0}) async => null,
