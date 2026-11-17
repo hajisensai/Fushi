@@ -27,7 +27,7 @@ export const DECISION_STAGES = [
 ];
 export const DECISION_LIMITS = {
   idMax: 40, titleMax: 200, askMax: 6000, prosConsMax: 2000, sourceMax: 500, originalMax: 8000, noteMax: 4000, resolutionMax: 4000,
-  choicesMax: 6, choiceLabelMax: 60, listMax: 500,
+  choicesMax: 6, choiceLabelMax: 60, listMax: 500, fileMax: 10 * 1024 * 1024, filesMax: 10, fileNameMax: 120,
 };
 export const DECISION_ID_RE = /^[A-Za-z0-9_-]{1,40}$/;
 const CHOICE_KEY_RE = /^[a-z0-9]{1,8}$/;
@@ -89,6 +89,99 @@ export function normalizeDecision(input) {
     original: clean(input.original, DECISION_LIMITS.originalMax, `${id}: original`),
     rec,
   };
+}
+
+// ---- 附件（迁移 0023） ----
+
+/**
+ * 能附的文件：扩展名 → [回包 Content-Type, 卡片里的展示方式]。md / txt 按纯文本回（浏览器直接看，不会触发下载）。
+ * 只认这张表，其余扩展名 CLI 拒收。
+ */
+export const DECISION_FILE_TYPES = Object.freeze({
+  html: ['text/html; charset=utf-8', 'html'], htm: ['text/html; charset=utf-8', 'html'],
+  md: ['text/plain; charset=utf-8', 'text'], markdown: ['text/plain; charset=utf-8', 'text'], txt: ['text/plain; charset=utf-8', 'text'],
+  png: ['image/png', 'image'], jpg: ['image/jpeg', 'image'], jpeg: ['image/jpeg', 'image'], webp: ['image/webp', 'image'],
+  gif: ['image/gif', 'image'], svg: ['image/svg+xml', 'image'],
+});
+
+/**
+ * 文件名 → {ext, type, view}；扩展名不在表里返回 null。
+ * @param {string} name
+ * @returns {{ext: string, type: string, view: 'html'|'text'|'image'}|null}
+ */
+export function decisionFileType(name) {
+  const m = /\.([A-Za-z0-9]+)$/.exec(String(name || ''));
+  const t = m && DECISION_FILE_TYPES[m[1].toLowerCase()];
+  return t ? { ext: m[1].toLowerCase(), type: t[0], view: t[1] } : null;
+}
+
+/**
+ * files 列 → 合法条目（坏 JSON / 坏条目丢掉，key 必须落在本事项的 decisions/<id>/ 下）。
+ * @param {string|null} raw
+ * @param {string} id
+ * @returns {Array<{name: string, type: string, key: string, bytes: number}>}
+ */
+export function parseDecisionFiles(raw, id) {
+  let list;
+  try {
+    list = JSON.parse(raw || '[]');
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(list)) return [];
+  return list.filter((f) => f && typeof f.name === 'string' && typeof f.key === 'string'
+    && f.key.startsWith(`decisions/${id}/`) && decisionFileType(f.name));
+}
+
+export const SET_FILES_SQL = `UPDATE decisions SET files = ?2, updated_at = ?3 WHERE id = ?1`;
+
+/**
+ * GET /dev/d/:id/f/:n：从 R2 取附件。回包一律 CSP sandbox（不透明源：页面脚本照跑，但读不到处理台
+ * 的 Cookie / 同源接口），只许本站嵌进 iframe 预览；nosniff 防按内容猜类型。
+ * @returns {Promise<Response>}
+ */
+export async function decisionFileResponse(env, id, n) {
+  const row = await env.DB.prepare('SELECT files FROM decisions WHERE id = ?1').bind(id).first();
+  const f = row && parseDecisionFiles(row.files, id)[n];
+  if (!f) throw new HttpError(404, 'not_found');
+  const obj = await env.MEDIA.get(f.key);
+  if (!obj) throw new HttpError(404, 'not_found');
+  return new Response(obj.body, {
+    headers: {
+      'Content-Type': decisionFileType(f.name).type,
+      'Content-Security-Policy': "sandbox allow-scripts allow-popups allow-forms allow-modals; frame-ancestors 'self'",
+      'X-Content-Type-Options': 'nosniff',
+      'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(f.name)}`,
+      'Cache-Control': 'private, max-age=300',
+      'Referrer-Policy': 'no-referrer',
+    },
+  });
+}
+
+function fmtSize(bytes) {
+  const n = Number(bytes) || 0;
+  return n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`;
+}
+
+/** 附件块：图片出缩略图，html 默认展开 iframe 预览（sandbox，懒加载），md / txt 给打开链接。 */
+function filesHtml(row) {
+  const files = parseDecisionFiles(row.files, row.id);
+  if (!files.length) return '';
+  const items = files.map((f, n) => {
+    const href = `/dev/d/${esc(row.id)}/f/${n}`;
+    const view = decisionFileType(f.name).view;
+    const open = `<a href="${href}" target="_blank" rel="noopener">${esc(f.name)}</a> <span class="muted">${esc(fmtSize(f.bytes))}</span>`;
+    if (view === 'image') {
+      return `<div class="dfile">${open}<a href="${href}" target="_blank" rel="noopener"><img src="${href}" alt="${
+        esc(f.name)}" loading="lazy"></a></div>`;
+    }
+    if (view === 'html') {
+      return `<details class="dfile" open><summary>${open}</summary><iframe src="${href}" title="${
+        esc(f.name)}" loading="lazy" sandbox="allow-scripts allow-popups allow-forms allow-modals"></iframe></details>`;
+    }
+    return `<div class="dfile">${open}</div>`;
+  }).join('');
+  return `<div class="dfiles"><b>附件</b>${items}</div>`;
 }
 
 /** 留言 / 结单说明的清洗：空白 → null。 */
@@ -417,6 +510,7 @@ function card(row, back, { hidden = false } = {}) {
 <h3>${esc(row.title)}</h3>
 <div class="body">${esc(row.ask)}</div>
 ${originalHtml(row)}
+${filesHtml(row)}
 ${row.pros || row.cons ? `<div class="pc">${row.pros ? `<div><b class="up">好处</b> ${esc(row.pros)}</div>` : ''}${
     row.cons ? `<div><b class="err">代价</b> ${esc(row.cons)}</div>` : ''}</div>` : ''}
 ${row.resolution ? `<div class="card ai"><b>处理结果（${esc(row.state === 'dropped' ? '撤回' : '已结')}）</b><div class="body">${esc(row.resolution)}</div></div>` : ''}
@@ -506,6 +600,11 @@ kbd{display:inline-block;min-width:1.4em;padding:0 4px;margin-left:6px;border:1p
 .dshots{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
 .dshots img{display:block;max-width:220px;max-height:320px;border:1px solid var(--line);border-radius:8px}
 .dorig-links{margin:6px 0 0;font-size:13px}
+.dfiles{margin-top:8px;font-size:14px}
+.dfile{margin-top:6px}
+.dfile summary{cursor:pointer}
+.dfile img{display:block;margin-top:4px;max-width:min(100%,480px);max-height:360px;border:1px solid var(--line);border-radius:8px}
+.dfile iframe{display:block;width:100%;height:520px;margin-top:4px;border:1px solid var(--line);border-radius:8px;background:#fff;resize:vertical}
 .dform textarea{min-height:0;margin-top:10px;resize:vertical}
 .vrow{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px}
 .vrow button{margin:0}

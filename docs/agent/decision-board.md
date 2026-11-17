@@ -48,6 +48,17 @@ node scripts/decisions.mjs add --json items.json
 - `ask` 要自洽：说清现状、诉求、建议。维护者点「没看懂」最常见的原因是缺上下文（例如「咱们不是自己有了吗」），写之前先查清现有实现，把「已有什么、差什么」写进去。
 - 写之前先查 [feature-blacklist.md](feature-blacklist.md)，命中就不写。
 
+### 附设计图
+
+```bash
+node scripts/decisions.mjs attach <id> design-a.html design-b.html spec.md shot.png
+node scripts/decisions.mjs detach <id> <序号>   # 序号从 0 数，show 里能看到
+```
+
+- 收 html / htm / md / markdown / txt / png / jpg / jpeg / webp / gif / svg，单个 ≤ 10 MB，每条最多 10 个；文件传到 R2，卡片里直接预览：html 默认展开 iframe 预览（sandbox，页面脚本能跑、拿不到处理台会话），图片出缩略图，md / txt 给打开链接（纯文本显示）。
+- 要维护者在几个设计里挑一个时，每个方案一个文件 + `choices` 一一对应，标题写进文件名（如 `a-卡片式.html`）。
+- html 要自包含（CSS / 图片内联，外部脚本只用 CDN）；同目录的相对路径资源不会跟着上传。
+
 ## 巡检与执行
 
 维护者说「看拍板台」「按拍板结果做」，或接手相关工作时：
