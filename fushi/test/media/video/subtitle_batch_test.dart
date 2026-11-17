@@ -9,6 +9,7 @@ import 'package:fushi/src/media/video/subtitle/subtitle_batch.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_content_language.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_version_groups.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_version_language_probe.dart';
+import 'package:fushi_engine/media/video/subtitle/subtitle_archive.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 
 /// 来源无关的合集批量编排：判据委托 `chooseSubtitleForEpisode`、下载走 registry、
@@ -23,6 +24,76 @@ class _Cand extends VideoSubtitleCandidate {
         providerPriority: 1,
         episode: episode,
       );
+}
+
+/// 整季 ZIP 包候选。
+class _Pack extends VideoSubtitleCandidate {
+  _Pack(String name)
+    : super(
+        providerId: 'fake',
+        remoteId: name,
+        fileName: name,
+        language: 'ja',
+        providerPriority: 1,
+        archiveFormat: SubtitleArchiveFormat.zip,
+      );
+}
+
+/// 整季包来源：[failing] 里的包下载抛错，其余回 [entries] 里登记的包内文件。
+class _PackProvider implements VideoSubtitleProvider {
+  _PackProvider({
+    this.failing = const <String>{},
+    this.entries = const <String, List<String>>{},
+  });
+
+  final Set<String> failing;
+  final Map<String, List<String>> entries;
+  final List<String> downloaded = <String>[];
+
+  @override
+  String get id => 'fake';
+  @override
+  int get priority => 1;
+  @override
+  bool get allowsFreeProbeDownload => true;
+  @override
+  void close() {}
+
+  @override
+  Future<ProviderBatchResult<VideoSubtitleCandidate>> search(
+    VideoSubtitleSearchRequest request,
+  ) async => ProviderBatchResult<VideoSubtitleCandidate>.success(
+    const <VideoSubtitleCandidate>[],
+  );
+
+  @override
+  Future<VideoSubtitleDownload> download(
+    VideoSubtitleCandidate candidate,
+  ) async {
+    downloaded.add(candidate.fileName);
+    if (failing.contains(candidate.fileName)) {
+      throw const ExternalProviderFailure(
+        providerId: 'fake',
+        operation: 'download',
+        kind: ExternalProviderFailureKind.rateLimited,
+        message: 'slow down',
+        statusCode: 429,
+      );
+    }
+    final Uint8List body = Uint8List.fromList(
+      utf8.encode('1\n00:00:01,000 --> 00:00:02,000\nx\n'),
+    );
+    return VideoSubtitleDownload(
+      bytes: body,
+      fileName: candidate.fileName,
+      language: candidate.language,
+      archiveEntries: <ArchivedSubtitle>[
+        for (final String name
+            in entries[candidate.fileName] ?? const <String>[])
+          ArchivedSubtitle(fileName: name, bytes: body),
+      ],
+    );
+  }
 }
 
 class _FakeProvider implements VideoSubtitleProvider {
@@ -425,6 +496,85 @@ void main() {
       // 暂时性下载失败留给下一次探测重试；判不出是结论，不再重探。
       expect(probed, <String, SubtitleContentLanguage?>{'opaque': null});
     });
+  });
+
+  test('唯一的整季包没下下来：每集带同一个异常对象，日志去重后只剩一条', () async {
+    final _PackProvider provider = _PackProvider(
+      failing: <String>{'Show S1.zip'},
+    );
+    final List<SubtitleBatchItem> results = await runSubtitleBatch(
+      registry: VideoSubtitleRegistry(<VideoSubtitleProvider>[provider]),
+      candidates: <VideoSubtitleCandidate>[_Pack('Show S1.zip')],
+      targets: <SubtitleBatchTarget>[
+        for (int ep = 1; ep <= 3; ep++) _target(ep - 1, 'Show - 0$ep'),
+      ],
+      saveDirectory: tmp.path,
+    );
+    expect(provider.downloaded, <String>['Show S1.zip'], reason: '包只下一次');
+    expect(
+      results.map((SubtitleBatchItem i) => i.status),
+      everyElement(SubtitleBatchStatus.noMatch),
+    );
+    expect(
+      results.first.error,
+      isA<ExternalProviderFailure>().having(
+        (ExternalProviderFailure f) => f.statusCode,
+        'statusCode',
+        429,
+      ),
+      reason: '「包没下下来」与「真的没有这一集」要分得开',
+    );
+    final List<SubtitleBatchItem> distinct = subtitleBatchDistinctFailures(
+      results,
+    );
+    expect(distinct, hasLength(1), reason: '同一个包的失败逐集各记一条，3 集就是 3 条相同的报错');
+    expect(distinct.single.episode, 1);
+  });
+
+  test('一个包失败、另一个包下成功但没有这一集：这一集不挂别的包的下载异常', () async {
+    final _PackProvider provider = _PackProvider(
+      failing: <String>{'Show S1 [A].zip'},
+      entries: <String, List<String>>{
+        'Show S1 [B].zip': <String>['Show - 01.ja.srt'],
+      },
+    );
+    final List<SubtitleBatchItem> results = await runSubtitleBatch(
+      registry: VideoSubtitleRegistry(<VideoSubtitleProvider>[provider]),
+      candidates: <VideoSubtitleCandidate>[
+        _Pack('Show S1 [A].zip'),
+        _Pack('Show S1 [B].zip'),
+      ],
+      targets: <SubtitleBatchTarget>[
+        _target(0, 'Show - 01'),
+        _target(1, 'Show - 02'),
+      ],
+      saveDirectory: tmp.path,
+    );
+    expect(provider.downloaded.toSet(), <String>{
+      'Show S1 [A].zip',
+      'Show S1 [B].zip',
+    });
+    expect(results[0].status, SubtitleBatchStatus.done);
+    expect(results[1].status, SubtitleBatchStatus.noMatch);
+    expect(
+      results[1].error,
+      isNull,
+      reason: 'B 包下成功了、里面没有第 2 集；挂上 A 包的 429 会让行文案说成限流',
+    );
+    expect(subtitleBatchDistinctFailures(results), isEmpty);
+  });
+
+  test('subtitleBatchDistinctFailures：不同的异常各留一条，按首次出现的集', () {
+    SubtitleBatchItem item(int episode, Object? error) => SubtitleBatchItem(
+      target: _target(episode - 1, 'Show - 0$episode'),
+      episode: episode,
+    )..error = error;
+    final StateError a = StateError('a');
+    final StateError b = StateError('a');
+    final List<SubtitleBatchItem> distinct = subtitleBatchDistinctFailures(
+      <SubtitleBatchItem>[item(1, a), item(2, null), item(3, b), item(4, a)],
+    );
+    expect(distinct.map((SubtitleBatchItem i) => i.episode), <int>[1, 3]);
   });
 
   test('未编号字幕只在唯一目标时采用；多目标 → ambiguousUnnumbered', () async {

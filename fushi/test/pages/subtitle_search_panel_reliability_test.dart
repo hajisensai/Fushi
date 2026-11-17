@@ -6,24 +6,28 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_version_groups.dart';
+import 'package:fushi/src/pages/implementations/jimaku_subtitle_dialog.dart'
+    show JimakuSubtitleDialog;
 import 'package:fushi/src/pages/implementations/subtitle_search_panel.dart';
-import 'package:fushi/src/pages/implementations/subtitle_workbench_page.dart'
-    show workbenchEpisodePaths;
+import 'package:fushi/src/pages/implementations/subtitle_workbench_page.dart';
 import 'package:fushi/src/utils/components/batch_action_bar.dart';
+import 'package:fushi_core/fushi_core.dart' show FushiDatabase;
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
 import 'package:fushi_engine/media/video/jimaku_client.dart'
     show jimakuLanguageLabel;
+import 'package:fushi_engine/media/video/subtitle/embedded_reference_subtitle_sync.dart'
+    show AutomaticSubtitleAligner;
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart' as http_testing;
 import 'package:material_ui/material_ui.dart';
 
 /// 本集字幕面板的两组可靠性契约：
-/// - BUG-4795：搜索有代次——后提交的一轮赢，迟到的旧一轮不覆盖结果、不提前收转圈；
+/// - BUG-4799：搜索有代次——后提交的一轮赢，迟到的旧一轮不覆盖结果、不提前收转圈；
 ///   保存 key 抛错不会让搜索钮永久禁用。
-/// - BUG-4794：多选——全选 / 反选只作用于筛选后看得见的；重搜清勾选；部分失败不
-///   自动关页，已落盘的逐条交给宿主。
+/// - BUG-4798：多选——全选 / 反选只作用于筛选后看得见的；重搜清勾选；部分失败不
+///   自动关页，已落盘的逐条交给宿主、关页时带回；页面一关（路由被 pop）就不再落盘。
 class _Cand extends VideoSubtitleCandidate {
   _Cand(String name, {int? episode, String language = 'ja'})
     : super(
@@ -92,6 +96,36 @@ Future<http.Client> _noAniListHits() async => http_testing.MockClient(
   ),
 );
 
+/// 只开「本集」作用域的工作台宿主：一个假来源、AniList 查无此番。
+class _WorkbenchHost implements SubtitleWorkbenchHost {
+  _WorkbenchHost(VideoSubtitleProvider provider)
+    : _registry = VideoSubtitleRegistry(<VideoSubtitleProvider>[provider]);
+
+  final VideoSubtitleRegistry _registry;
+
+  /// 只有「整个合集」作用域读数据库，这里的用例不开它。
+  @override
+  FushiDatabase get database => throw UnimplementedError();
+  @override
+  Future<VideoSubtitleRegistry?> subtitleRegistry() async => _registry;
+  @override
+  String get jimakuApiKey => 'key';
+  @override
+  Future<void> setJimakuApiKey(String key) async {}
+  @override
+  Future<http.Client> createHttpClient() => _noAniListHits();
+  @override
+  String? preferredLanguageFor(String seriesKey) => null;
+  @override
+  Future<void> setPreferredLanguage(String seriesKey, String langCode) async {}
+  @override
+  String? get defaultContentLanguage => null;
+  @override
+  Future<void> persistRemoteSubtitle(String bookUid, String path) async {}
+  @override
+  AutomaticSubtitleAligner? get subtitleAligner => null;
+}
+
 List<JimakuCandidate> _seeded(List<VideoSubtitleCandidate> sources) =>
     <JimakuCandidate>[
       for (final VideoSubtitleCandidate source in sources)
@@ -111,6 +145,7 @@ void main() {
     void Function(String path)? onSubtitleSaved,
     String saveDirectory = '/tmp/fushi-sub',
     List<JimakuCandidate>? seeded,
+    Future<VideoSubtitleRegistry?> Function()? subtitleRegistry,
   }) async {
     tester.view.physicalSize = const Size(1400, 1000);
     tester.view.devicePixelRatio = 1.0;
@@ -130,7 +165,7 @@ void main() {
               initialApiKey: initialApiKey,
               onApiKeyChanged: onApiKeyChanged ?? (_) async {},
               saveDirectory: saveDirectory,
-              subtitleRegistry: () async => registry,
+              subtitleRegistry: subtitleRegistry ?? () async => registry,
               httpClientFactory: _noAniListHits,
               debugInitialCandidates: seeded,
             ),
@@ -158,7 +193,7 @@ void main() {
     }
   }
 
-  group('BUG-4795 搜索代次', () {
+  group('BUG-4799 搜索代次', () {
     /// 提交 Alpha（挂起）→ 改词回车提交 Beta（挂起）。返回两轮各自的 completer。
     Future<Map<String, Completer<ProviderBatchResult<VideoSubtitleCandidate>>>>
     submitTwoRounds(WidgetTester tester) async {
@@ -252,9 +287,63 @@ void main() {
       expect(find.textContaining(t.video_jimaku_search_failed), findsOneWidget);
       expect(searches, 0, reason: 'key 没存上，这一轮不该继续发检索');
     });
+
+    testWidgets('代次在提交时刻分配：两次来源探测乱序返回，仍是后提交的词赢', (WidgetTester tester) async {
+      // Jimaku key 框为空时，检索先问一次「有没有配置的来源」再往下走。头两次探测
+      // 挂起、由测试决定谁先回；之后的取 registry 一律立即返回。
+      final VideoSubtitleRegistry registry =
+          VideoSubtitleRegistry(<VideoSubtitleProvider>[
+            _FakeProvider(
+              onSearch: (VideoSubtitleSearchRequest request) async =>
+                  _hits('${request.query} - 01.ja.srt'),
+            ),
+          ]);
+      final List<Completer<VideoSubtitleRegistry?>> probes =
+          <Completer<VideoSubtitleRegistry?>>[];
+      bool gated = false;
+      await pumpPanel(
+        tester,
+        provider: _FakeProvider(),
+        initialApiKey: '',
+        subtitleRegistry: () {
+          if (!gated || probes.length >= 2) {
+            return Future<VideoSubtitleRegistry?>.value(registry);
+          }
+          final Completer<VideoSubtitleRegistry?> probe =
+              Completer<VideoSubtitleRegistry?>();
+          probes.add(probe);
+          return probe.future;
+        },
+      );
+      gated = true;
+      await tester.enterText(fieldWithText('Alpha'), 'Alpha');
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pump();
+      expect(probes, hasLength(1));
+      await tester.enterText(fieldWithText('Alpha'), 'Beta');
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pump();
+      expect(probes, hasLength(2));
+
+      // 后提交的 Beta 先探完、先出结果。
+      probes[1].complete(registry);
+      await settleSearch(tester);
+      expect(find.textContaining('Beta - 01'), findsWidgets);
+
+      // 先提交的 Alpha 这时才探完：它在提交时就已经被顶掉，不得再发起检索。
+      probes[0].complete(registry);
+      await settleSearch(tester);
+      expect(
+        find.textContaining('Alpha - 01'),
+        findsNothing,
+        reason: '代次若在探测返回后才分配，先提交的旧词会拿到更大的代次、反过来赢',
+      );
+      expect(find.textContaining('Beta - 01'), findsWidgets);
+      expect(searchEnabled(tester), isTrue);
+    });
   });
 
-  group('BUG-4794 多选', () {
+  group('BUG-4798 多选', () {
     List<VideoSubtitleCandidate> sources() => <VideoSubtitleCandidate>[
       for (int ep = 1; ep <= 3; ep++)
         _Cand('[SubsPlease] Show - 0$ep.ass', episode: ep),
@@ -447,6 +536,271 @@ void main() {
         await driveIo(tester, () => closedWith != null);
         expect(closedWith, hasLength(1));
         expect(File(closedWith!.single).existsSync(), isTrue);
+      });
+
+      VideoSubtitleDownload body(VideoSubtitleCandidate c) =>
+          VideoSubtitleDownload(
+            bytes: Uint8List.fromList(utf8.encode('1')),
+            fileName: c.fileName,
+            language: c.language,
+          );
+
+      /// 在一张「播放页」上经 [SubtitleWorkbenchPage.open] 推工作台并搜出 [sources]。
+      /// 返回 open() 的 future——播放页拿到的就是它。
+      Future<Future<List<String>?>> openWorkbench(
+        WidgetTester tester,
+        _Download onDownload,
+      ) async {
+        tester.view.physicalSize = const Size(1400, 1000);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        await tester.pumpWidget(
+          TranslationProvider(
+            child: const MaterialApp(
+              home: Scaffold(body: Center(child: Text('player-page'))),
+            ),
+          ),
+        );
+        final Future<List<String>?> result = SubtitleWorkbenchPage.open(
+          tester.element(find.text('player-page')),
+          host: _WorkbenchHost(
+            _FakeProvider(
+              onSearch: (_) async =>
+                  ProviderBatchResult<VideoSubtitleCandidate>.success(
+                    sources(),
+                  ),
+              onDownload: onDownload,
+            ),
+          ),
+          saveDirectory: saveDir.path,
+          episode: const SubtitleEpisodeSearchSpec(
+            initialQuery: 'Show',
+            seriesKey: 'show',
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(searchButton());
+        await settleSearch(tester);
+        await tester.pumpAndSettle();
+        return result;
+      }
+
+      /// 关页之后再推进一小段：比退场转场（约 300 ms）短，面板此时仍 mounted。
+      Future<void> driveInsideExitTransition(WidgetTester tester) async {
+        for (int i = 0; i < 8; i++) {
+          await tester.pump(const Duration(milliseconds: 20));
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 5)),
+          );
+        }
+      }
+
+      testWidgets('工作台：部分失败后用户自己返回，open() 的返回值里有已落盘的那条', (
+        WidgetTester tester,
+      ) async {
+        final SubtitleVersionGroup group = jaGroup(sources());
+        final Future<List<String>?> result = await openWorkbench(
+          tester,
+          download,
+        );
+        bool closed = false;
+        List<String>? returned;
+        unawaited(
+          result.then((List<String>? paths) {
+            closed = true;
+            returned = paths;
+          }),
+        );
+        await expandAndTick(tester, group, <VideoSubtitleCandidate>[
+          for (final VideoSubtitleCandidate c in group.members)
+            if (c.episode != 3) c,
+        ]);
+        await tester.tap(
+          find.byKey(const ValueKey<String>('subtitle-batch-download')),
+        );
+        await driveIo(
+          tester,
+          () => find.byKey(kSubtitleNoticeBannerKey).evaluate().isNotEmpty,
+        );
+        expect(closed, isFalse, reason: '部分失败不自动关页');
+        expect(find.textContaining('404'), findsOneWidget);
+
+        // 系统返回：面板没有主动带回任何路径，全靠 open() 在路由外收下的那份。
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+        expect(closed, isTrue);
+        expect(returned, hasLength(1), reason: '接线断了的话，部分失败后已下好的字幕一条都回不到播放页');
+        expect(File(returned!.single).existsSync(), isTrue);
+        expect(saveDir.listSync(), hasLength(1));
+      });
+
+      testWidgets('工作台：批量途中返回，退场转场里才回来的那条不落盘、不成孤儿', (
+        WidgetTester tester,
+      ) async {
+        final SubtitleVersionGroup group = jaGroup(sources());
+        final Completer<VideoSubtitleDownload> late =
+            Completer<VideoSubtitleDownload>();
+        bool lateRequested = false;
+        final Future<List<String>?> result = await openWorkbench(tester, (
+          VideoSubtitleCandidate c,
+        ) {
+          if (c.episode != 3) {
+            return Future<VideoSubtitleDownload>.value(body(c));
+          }
+          lateRequested = true;
+          return late.future;
+        });
+        bool closed = false;
+        List<String>? returned;
+        unawaited(
+          result.then((List<String>? paths) {
+            closed = true;
+            returned = paths;
+          }),
+        );
+        final VideoSubtitleCandidate slow = group.members.firstWhere(
+          (VideoSubtitleCandidate c) => c.episode == 3,
+        );
+        await expandAndTick(tester, group, <VideoSubtitleCandidate>[
+          group.members.firstWhere(
+            (VideoSubtitleCandidate c) => c.episode == 1,
+          ),
+          slow,
+        ]);
+        await tester.tap(
+          find.byKey(const ValueKey<String>('subtitle-batch-download')),
+        );
+        await driveIo(
+          tester,
+          () => lateRequested && saveDir.listSync().length == 1,
+        );
+        expect(lateRequested, isTrue);
+        expect(saveDir.listSync(), hasLength(1));
+
+        // 第 3 集还在下载时返回：open() 当下就把结果交给播放页，而面板要等转场
+        // 跑完才 dispose。第 3 集就在这段时间里回来。
+        await tester.binding.handlePopRoute();
+        late.complete(body(slow));
+        await driveInsideExitTransition(tester);
+        expect(closed, isTrue);
+        expect(returned, hasLength(1));
+        await tester.pumpAndSettle();
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 20)),
+        );
+        expect(
+          saveDir.listSync(),
+          hasLength(1),
+          reason: '返回值已经交出去了，之后落盘的文件没有人登记',
+        );
+        expect(find.text('player-page'), findsOneWidget);
+      });
+
+      testWidgets('工作台：单条下载途中返回，迟到的那条不落盘，也不 pop 掉底下的播放页', (
+        WidgetTester tester,
+      ) async {
+        final SubtitleVersionGroup group = jaGroup(sources());
+        final Completer<VideoSubtitleDownload> late =
+            Completer<VideoSubtitleDownload>();
+        bool lateRequested = false;
+        final Future<List<String>?> result = await openWorkbench(tester, (
+          VideoSubtitleCandidate c,
+        ) {
+          lateRequested = true;
+          return late.future;
+        });
+        bool closed = false;
+        List<String>? returned;
+        unawaited(
+          result.then((List<String>? paths) {
+            closed = true;
+            returned = paths;
+          }),
+        );
+        final VideoSubtitleCandidate slow = group.members.first;
+        await tester.tap(
+          find.byKey(ValueKey<String>('subtitle-version-${group.key}')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(ValueKey<String>('subtitle-file-${slow.identityKey}')),
+        );
+        await driveIo(tester, () => lateRequested);
+        expect(lateRequested, isTrue);
+
+        await tester.binding.handlePopRoute();
+        late.complete(body(slow));
+        await driveInsideExitTransition(tester);
+        expect(closed, isTrue);
+        expect(returned, isNull);
+        await tester.pumpAndSettle();
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 20)),
+        );
+        expect(saveDir.listSync(), isEmpty);
+        expect(
+          find.text('player-page'),
+          findsOneWidget,
+          reason: '面板的下载完成回调是 pop：页面已关时再调，弹掉的是底下那一页',
+        );
+      });
+
+      testWidgets('对话框壳：部分失败后点「取消」带回已落盘的第一条', (WidgetTester tester) async {
+        tester.view.physicalSize = const Size(1400, 1000);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        final List<VideoSubtitleCandidate> all = sources();
+        final SubtitleVersionGroup group = jaGroup(all);
+        final VideoSubtitleRegistry registry = VideoSubtitleRegistry(
+          <VideoSubtitleProvider>[_FakeProvider(onDownload: download)],
+        );
+        await tester.pumpWidget(
+          TranslationProvider(
+            child: const MaterialApp(
+              home: Scaffold(body: Center(child: Text('player-page'))),
+            ),
+          ),
+        );
+        bool closed = false;
+        String? returned;
+        unawaited(
+          showDialog<String>(
+            context: tester.element(find.text('player-page')),
+            builder: (_) => JimakuSubtitleDialog(
+              initialQuery: 'Show',
+              initialApiKey: 'key',
+              onApiKeyChanged: (_) async {},
+              saveDirectory: saveDir.path,
+              subtitleRegistry: () async => registry,
+              httpClientFactory: _noAniListHits,
+              debugInitialCandidates: _seeded(all),
+            ),
+          ).then((String? path) {
+            closed = true;
+            returned = path;
+          }),
+        );
+        await tester.pumpAndSettle();
+        await expandAndTick(tester, group, <VideoSubtitleCandidate>[
+          for (final VideoSubtitleCandidate c in group.members)
+            if (c.episode != 3) c,
+        ]);
+        await tester.tap(
+          find.byKey(const ValueKey<String>('subtitle-batch-download')),
+        );
+        await driveIo(
+          tester,
+          () => find.byKey(kSubtitleNoticeBannerKey).evaluate().isNotEmpty,
+        );
+        expect(closed, isFalse);
+
+        await tester.tap(find.text(t.dialog_cancel));
+        await tester.pumpAndSettle();
+        expect(closed, isTrue);
+        expect(returned, isNotNull, reason: '取消曾一律带回 null，已下好的那条没人登记');
+        expect(File(returned!).existsSync(), isTrue);
       });
     });
 

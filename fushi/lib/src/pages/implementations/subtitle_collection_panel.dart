@@ -1076,13 +1076,14 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
       if (mounted) setState(() => _running = false);
     }
     // 每集的失败原因进错误日志（含持久化抛错——批量把它归到该集、继续下一集）：
-    // 行副标题只放得下一句话，排查要靠这里。面板已关也照记。
-    for (final SubtitleBatchItem item in results) {
-      final Object? error = item.error;
-      if (error == null) continue;
+    // 行副标题只放得下一句话，排查要靠这里。面板已关也照记。同一个整季包的失败
+    // 只记一次（挂在它覆盖的第一集上），不逐集重复。
+    for (final SubtitleBatchItem item in subtitleBatchDistinctFailures(
+      results,
+    )) {
       logSubtitleDownloadFailure(
         'SubtitleCollectionPanel.batch[EP${item.episode}]',
-        error,
+        item.error!,
       );
     }
     if (!mounted) return;
@@ -1614,7 +1615,7 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
                                 isDense: true,
                               ),
                               // 与右边的按钮同一道闸：批量途中回车重搜会清掉
-                              // 在跑的各集行状态、换掉来源（BUG-4795）。
+                              // 在跑的各集行状态、换掉来源（BUG-4799）。
                               onSubmitted: (_) {
                                 if (_resolving || _searching || _running) {
                                   return;

@@ -40,7 +40,7 @@ List<String> workbenchPathsToApply({
     collectionPathForCurrent,
 ];
 
-/// 工作台关闭时「本集」作用域要带回播放页的字幕路径（BUG-4794）。
+/// 工作台关闭时「本集」作用域要带回播放页的字幕路径（BUG-4798）。
 ///
 /// [explicit] 是面板下载完成后主动关页带回的那批（用户最后一次显式选择，排前面）；
 /// [savedWhileOpen] 是多选下载期间逐条落盘、但没随关页带回的那些——部分失败后面板
@@ -245,7 +245,7 @@ class SubtitleWorkbenchPage extends StatefulWidget {
   onCollectionSubtitlePersisted;
 
   /// 「本集」多选下载每落盘一条就回调（见 [SubtitleSearchPanel.onSubtitleSaved]）。
-  /// [open] 用它收下「已落盘但面板没主动关页」的路径，关页时一并返回（BUG-4794）。
+  /// [open] 用它收下「已落盘但面板没主动关页」的路径，关页时一并返回（BUG-4798）。
   final void Function(String path)? onEpisodeSubtitleSaved;
 
   /// 推整页路由。返回「本集」作用域下载落盘的**全部**字幕绝对路径，按用户勾选
@@ -267,6 +267,9 @@ class SubtitleWorkbenchPage extends StatefulWidget {
     void Function(String bookUid, String path)? onCollectionSubtitlePersisted,
   }) async {
     // 收在路由外面：页头返回 / 系统返回 / 侧滑哪条路关页都拿得到，不必拦截 pop。
+    // 能拿到的是「pop 那一刻之前」落盘的；pop 之后面板不再落盘（它看的是路由是否
+    // 仍活动，见 `_SubtitleSearchPanelState._pageClosed`），所以这里读走之后不会
+    // 再有新路径进来。
     final List<String> savedWhileOpen = <String>[];
     final List<String>? explicit =
         await Navigator.of(context, rootNavigator: true).push<List<String>>(

@@ -1,4 +1,4 @@
-## BUG-4794 · 本集字幕面板多选：全选无视筛选、重搜不清勾选、多选态点行仍直接下载并关页、部分失败的原因与已落盘文件随关页丢失
+## BUG-4798 · 本集字幕面板多选：全选无视筛选、重搜不清勾选、多选态点行仍直接下载并关页、部分失败的原因与已落盘文件随关页丢失
 - **报告**：2026-11-17（优化计划 W1 c23 / gap-subpanels-3：代码走查发现，五处都按代码路径确证，未经用户报告）
 - **真实性**：✅ 真 bug（五处，同一个「多选」契约没立住）。根因均为修前行号：
   1. 全选 / 反选取全量：`fushi/lib/src/pages/implementations/subtitle_search_panel.dart:1635-1656` 用 `_candidates`，而列表显示的是 `:1519-1526` 按语言 / 类型 / 关键词筛过的 `filtered`。筛到「日语 · ASS」后点全选会把所有语言、所有来源的文件一起勾上，包括按次计配额的 OpenSubtitles。
@@ -10,7 +10,7 @@
   - 面板（`subtitle_search_panel.dart`）：筛选结果收成 `_filteredCandidates()`，列表渲染与批量栏共用；全选 = 把看得见的全部勾上，反选只在看得见的范围内翻转，筛选只影响显示、不影响已有勾选。`_search` / `_selectSeries` 清空候选的同一个 `setState` 里清勾选。多选下载每落盘一条就经新回调 `onSubtitleSaved` 交给宿主并取消该条勾选；部分失败时（宿主接了该回调）不再调 `onDownloaded`，面板留着显示「N 项失败 · 原因（HTTP 状态码）」，失败的几条仍勾着可重试；每条失败经 `logSubtitleDownloadFailure` 进错误日志。页面已关时不再往盘上写，写盘期间关页的那一条删掉。
   - 版本卡列表（`subtitle_version_group_list.dart`）：有勾选时点文件行切换勾选、点卡片只展开 / 收起。
   - 宿主：`SubtitleWorkbenchPage.open` 在路由外收 `onEpisodeSubtitleSaved` 的路径，关页（面板主动关 / 页头返回 / 系统返回）时由纯函数 `workbenchEpisodePaths` 与显式结果合并返回；存量对话框壳 `JimakuSubtitleDialog` 改成 StatefulWidget，「取消」带回已落盘的第一条。
-- **[x] ② 已加自动化测试** — `fushi/test/pages/subtitle_search_panel_reliability_test.dart`「BUG-4794 多选」组（筛选后全选只勾看得见的、反选不动看不见的勾选、重搜后批量栏消失；部分失败不关页、原因带 404、成功的取消勾选、已落盘路径逐条交给宿主；宿主没接回调时仍走旧出口；`workbenchEpisodePaths` 合并顺序），`fushi/test/pages/subtitle_version_group_list_test.dart`「多选勾选」组新增三条（有勾选时点行只切换勾选、点卡片只展开；没有勾选时点行仍直接下载）。
+- **[x] ② 已加自动化测试** — `fushi/test/pages/subtitle_search_panel_reliability_test.dart`「BUG-4798 多选」组（筛选后全选只勾看得见的、反选不动看不见的勾选、重搜后批量栏消失；部分失败不关页、原因带 404、成功的取消勾选、已落盘路径逐条交给宿主；宿主没接回调时仍走旧出口；`workbenchEpisodePaths` 合并顺序），`fushi/test/pages/subtitle_version_group_list_test.dart`「多选勾选」组新增三条（有勾选时点行只切换勾选、点卡片只展开；没有勾选时点行仍直接下载）。
 - **备注**：
   - 对话框壳点遮罩 / 系统返回关闭时拿不到已落盘路径（单值出口、生产里已无调用方，只有测试在用），没有为它加 pop 拦截。
   - 单条下载 `_downloadSource` 在写盘后才发现页面已关时仍会留下一份没登记的文件（修前就有，不在本条范围）。

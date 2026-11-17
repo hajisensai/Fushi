@@ -11,6 +11,8 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
+import 'package:fushi_engine/media/video/subtitle/subtitle_archive.dart'
+    show SubtitleArchiveFormat;
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_content_language.dart';
@@ -43,6 +45,21 @@ class _Cand extends VideoSubtitleCandidate {
          collectionId: source,
          collectionLabel: source,
        );
+}
+
+/// 整季 ZIP 包候选。
+class _PackCand extends VideoSubtitleCandidate {
+  _PackCand(String name, {required String source})
+    : super(
+        providerId: 'fake',
+        remoteId: '$source:$name',
+        fileName: name,
+        language: 'ja',
+        providerPriority: 1,
+        collectionId: source,
+        collectionLabel: source,
+        archiveFormat: SubtitleArchiveFormat.zip,
+      );
 }
 
 typedef _Search =
@@ -120,6 +137,7 @@ void main() {
     required VideoBookRow member,
     required _Search onSearch,
     _Download? onDownload,
+    List<VideoBookRow>? members,
     Future<http.Client> Function()? httpClientFactory,
     bool withProvider = true,
     ThemeData? theme,
@@ -138,7 +156,7 @@ void main() {
           body: SubtitleCollectionPanel(
             database: db,
             collection: collection,
-            members: <VideoBookRow>[member],
+            members: members ?? <VideoBookRow>[member],
             subtitleRegistry: () async => registry,
             initialApiKey: 'test-key',
             onApiKeyChanged: (_) async {},
@@ -417,7 +435,66 @@ void main() {
     expect(find.text(t.video_jimaku_download_failed), findsNothing);
   });
 
-  testWidgets('BUG-4795 批量途中在输入框回车不重搜：在跑的行状态与来源不被清掉', (
+  testWidgets('整季包没下下来：没配上的集说出原因（状态码），不是一句「找不到字幕」', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(1400, 1600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final VideoBookRow member = await seedMember();
+    // 两集：只有一集时未编号的包会被当成「唯一目标的单文件」直接下载，走不到
+    // 「从整季包里按集号拆」这条路。
+    await db.upsertVideoBook(
+      const VideoBooksCompanion(
+        bookUid: Value<String>('video/show-02'),
+        title: Value<String>('Show - 02'),
+        videoPath: Value<String>('C:/video/Show - 02.mkv'),
+      ),
+    );
+    final VideoBookRow second = (await VideoBookRepository(
+      db,
+    ).getByBookUid('video/show-02'))!;
+    final MediaCollectionRow collection = await seedCollection(anilistId: 21);
+    await tester.pumpWidget(
+      wrap(
+        collection: collection,
+        member: member,
+        members: <VideoBookRow>[member, second],
+        onSearch: (_) async =>
+            ProviderBatchResult<VideoSubtitleCandidate>.success(
+              <VideoSubtitleCandidate>[
+                // 第 1 集有单集文件；第 2 集只能从整季包里拆。
+                _Cand('Show - 01.ja.srt', source: 'Source', episode: 1),
+                _PackCand('Show S1.zip', source: 'Source'),
+              ],
+            ),
+        onDownload: (_) async => throw const ExternalProviderFailure(
+          providerId: 'fake',
+          operation: 'download',
+          kind: ExternalProviderFailureKind.rateLimited,
+          message: 'slow down',
+          statusCode: 429,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(downloadButton());
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(
+        t.video_subtitle_error_with_code(
+          msg: t.video_jimaku_no_results,
+          code: 429,
+        ),
+      ),
+      findsOneWidget,
+      reason: '「包被限流没下下来」与「来源里真的没有这一集」曾经长得一样',
+    );
+  });
+
+  testWidgets('BUG-4799 批量途中在输入框回车不重搜：在跑的行状态与来源不被清掉', (
     WidgetTester tester,
   ) async {
     final VideoBookRow member = await seedMember();
