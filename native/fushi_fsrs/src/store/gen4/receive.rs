@@ -1090,8 +1090,8 @@ mod tests {
     use crate::gen4::heritage::{HeritageMeta, pack_heritage};
     use crate::gen4::op::Op4;
     use crate::gen4::op::tests::id;
-    use crate::gen4::relay::wrap_relay4;
     use crate::gen4::recut::{recut4, void_one};
+    use crate::gen4::relay::wrap_relay4;
     use crate::gen4::segment::pack_native;
     use crate::gen4::segment::tests::{chain_of, coll};
     use crate::store::gen4::derive::tests::{assert_rebuild_is_identity, dump, op};
@@ -1483,7 +1483,17 @@ mod tests {
         let (got, r) = take(&t, col, Settle::Incremental, &[&cut(B, B)], None);
         assert_eq!(got, vec![landed(3, 0, 0)]);
         assert_eq!((r.delivered, r.waiting), (1, 0));
-        let at = |s: u64| t.entry(col, &OpId { device: id(A), seq: s }).unwrap().unwrap();
+        let at = |s: u64| {
+            t.entry(
+                col,
+                &OpId {
+                    device: id(A),
+                    seq: s,
+                },
+            )
+            .unwrap()
+            .unwrap()
+        };
         assert!(at(1).is_whole() && at(3).is_whole());
         assert!(!at(2).is_whole(), "the recut void lands as a void");
         assert_eq!(t.last_of(col, &id(B)).unwrap(), 1);

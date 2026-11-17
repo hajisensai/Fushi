@@ -31,9 +31,9 @@ use crate::gen4::op::Op4;
 use crate::gen4::recut::{self, open_recut4_items, peek_recut4, recut4, void_one};
 use crate::gen4::relay::open_relay4_items;
 use crate::gen4::segment::{NativeHeader, NativeItem};
-use crate::sync2::segment::chain_tag;
 use crate::sync2::codec::Reader;
 use crate::sync2::id::Id;
+use crate::sync2::segment::chain_tag;
 use crate::sync2::vv::OpId;
 
 /// 重切一份缓存的作者段（[Truth::recut_kept]）的结果。

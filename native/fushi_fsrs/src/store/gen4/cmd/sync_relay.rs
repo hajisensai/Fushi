@@ -44,7 +44,9 @@ use super::sync::{meta_get, meta_set};
 use super::sync_oldroot::former_identities;
 use crate::gen4::head::Head4;
 use crate::gen4::location::{V4File, device_path, parse_v4_path, relay_head_name};
-use crate::gen4::recut::{MAGIC as RECUT_MAGIC, open_recut4_items, peek_recut4, recut4, rewrap_recut4};
+use crate::gen4::recut::{
+    MAGIC as RECUT_MAGIC, open_recut4_items, peek_recut4, recut4, rewrap_recut4,
+};
 use crate::gen4::relay::{open_relay4_items, peek_relay4, wrap_relay4};
 use crate::gen4::segment::{NativeHeader, NativeItem};
 use crate::store::gen4::schema::sql;

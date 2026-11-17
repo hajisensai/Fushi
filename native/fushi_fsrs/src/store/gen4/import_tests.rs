@@ -198,6 +198,13 @@ fn truth_lines(t: &Truth<'_>, col: i64) -> Vec<String> {
         })
         .unwrap();
         for (seq, c) in t.marks(col, &d.id).unwrap() {
+            if d.kind == Some(crate::store::gen4::truth::DEV_NATIVE)
+                && void_interior(t, col, &d.id, seq, d.last)
+            {
+                // 别的设备的原生日志上、合并空洞时记下的区间内部链值（`Truth::insert_void_run`，交接 §28）：导出流的
+                // 空洞只带区间末的链值，带不走它们（[void_interior_marks] 单独核对）。
+                continue;
+            }
             out.push(format!("  mark {seq} {c:?}"));
         }
         logs.push((d.id, out));
@@ -213,6 +220,33 @@ fn truth_lines(t: &Truth<'_>, col: i64) -> Vec<String> {
     forks.sort();
     out.extend(forks);
     out
+}
+
+/// [seq] 在设备 [device] 的日志里落在一个空洞区间内部（它与下一格都是空洞，[last] = 日志末尾）。
+fn void_interior(t: &Truth<'_>, col: i64, device: &Id, seq: u64, last: u64) -> bool {
+    let void = |s: u64| {
+        t.entry(
+            col,
+            &crate::sync2::vv::OpId {
+                device: *device,
+                seq: s,
+            },
+        )
+        .unwrap()
+        .is_some_and(|e| !e.is_whole())
+    };
+    seq < last && void(seq) && void(seq + 1)
+}
+
+/// [t] 里设备 [device] 原生日志上空洞区间内部的链值记号。
+fn void_interior_marks(t: &Truth<'_>, col: i64, device: &Id) -> Vec<u64> {
+    let last = t.last_of(col, device).unwrap();
+    t.marks(col, device)
+        .unwrap()
+        .into_iter()
+        .map(|(s, _)| s)
+        .filter(|s| void_interior(t, col, device, *s, last))
+        .collect()
 }
 
 fn ops_rows(conn: &Connection) -> i64 {
@@ -265,6 +299,13 @@ fn export_then_import_round_trips_byte_for_byte_and_row_for_row() {
     assert_eq!(rows(&tb, col_b), rows(&ta, col_a));
     assert!(!rows(&tb, col_b).is_empty());
     assert_eq!(truth_lines(&tb, col_b), truth_lines(&ta, col_a));
+    // 唯一带不走的：PEER 的 5、6 两格空洞分两次落、合并时记下的 5 处链值（转发重切用，交接 §28）。导出流的空洞只带
+    // 区间末的链值，导入方只有 6 处的。
+    assert_eq!(void_interior_marks(&ta, col_a, &id(PEER)), vec![5]);
+    assert_eq!(
+        void_interior_marks(&tb, col_b, &id(PEER)),
+        Vec::<u64>::new()
+    );
     assert_rebuild_is_identity(&tb, col_b);
 
     // 再导一遍：什么都不改。

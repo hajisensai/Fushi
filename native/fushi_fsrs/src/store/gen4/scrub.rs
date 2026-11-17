@@ -165,3 +165,49 @@ fn checkpoint_truncate(conn: &Connection) -> Result<bool, String> {
         .map_err(sql)?;
     Ok(busy == 0)
 }
+
+#[cfg(test)]
+mod tests {
+    use std::time::{Duration, Instant};
+
+    use super::*;
+    use crate::store::gen4::schema::{BUSY_TIMEOUT, open};
+    use crate::store::sync2::tests::tempdir;
+
+    /// 第三轮复核：[Wait::No] 被读者挡住时立刻回来（不等 [BUSY_TIMEOUT]），「欠一次收尾」留着、不算出错，连接的忙等
+    /// 照旧；读者放手之后同样不等就做成。
+    #[test]
+    fn a_retry_that_does_not_wait_returns_at_once_when_a_reader_holds_the_wal() {
+        let dir = tempdir::new("scrub-nowait");
+        let path = dir.0.join("srs4.db");
+        let w = open(&path).unwrap();
+        w.execute_batch("INSERT INTO srs_meta (key, value) VALUES ('scrub-test-1', 'x')")
+            .unwrap();
+        let r = rusqlite::Connection::open(&path).unwrap();
+        r.execute_batch("BEGIN").unwrap();
+        let _: i64 = r
+            .query_row("SELECT COUNT(*) FROM srs_meta", [], |x| x.get(0))
+            .unwrap();
+        w.execute_batch("INSERT INTO srs_meta (key, value) VALUES ('scrub-test-2', 'y')")
+            .unwrap();
+        mark_due(&w).unwrap();
+
+        let started = Instant::now();
+        assert_eq!(scrub(&w, Wait::No), Ok(false), "blocked by the reader");
+        let took = started.elapsed();
+        assert!(
+            took < BUSY_TIMEOUT / 5,
+            "did not wait for the reader: {took:?}"
+        );
+        assert!(due(&w).unwrap(), "still owed");
+        assert_eq!(state(&w).unwrap(), (true, None), "blocked is not an error");
+        let ms: i64 = w
+            .query_row("PRAGMA busy_timeout", [], |x| x.get(0))
+            .unwrap();
+        assert_eq!(Duration::from_millis(ms as u64), BUSY_TIMEOUT);
+
+        r.execute_batch("COMMIT").unwrap();
+        assert_eq!(scrub(&w, Wait::No), Ok(true));
+        assert!(!due(&w).unwrap());
+    }
+}

@@ -350,8 +350,9 @@ mod tests {
         CollectionKey([6; 32])
     }
 
+    /// 与作者（`segment::tests::signer`，种子 7）不同的钥匙：作者公钥验不过重切件。
     fn recutter() -> DeviceKey {
-        DeviceKey::from_seed(&[7; 32])
+        DeviceKey::from_seed(&[0x5b; 32])
     }
 
     const RC: u8 = 0xb7;
@@ -375,7 +376,10 @@ mod tests {
                 let bytes = recut4(&header, &voided, &recutter(), id(RC), dk).unwrap();
                 assert!(bytes.starts_with(MAGIC));
                 let p = peek_recut4(&bytes).unwrap();
-                assert_eq!((p.sealed, &p.header, p.recutter), (dk.is_some(), &header, id(RC)));
+                assert_eq!(
+                    (p.sealed, &p.header, p.recutter),
+                    (dk.is_some(), &header, id(RC))
+                );
                 let (_, back) = open_recut4_items(&bytes, &recutter().public(), dk).unwrap();
                 assert_eq!(back, voided);
                 let again = rewrap_recut4(&bytes, &recutter().public(), dk, Some(&k2())).unwrap();
@@ -408,7 +412,10 @@ mod tests {
         );
         assert_eq!(two.len(), 4);
         assert!(void_one(&two, 1, [0; 32], 2).is_none(), "already a void");
-        assert!(void_one(&two, 1, [0; 32], 9).is_none(), "not in the segment");
+        assert!(
+            void_one(&two, 1, [0; 32], 9).is_none(),
+            "not in the segment"
+        );
     }
 
     /// 重切件只认重切者的签名：作者公钥、别的钥匙验不过；内容被改（重新压缩一份伪造的体、留着原签名）验不过；

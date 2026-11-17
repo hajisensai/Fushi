@@ -81,10 +81,7 @@ fn a_purge_leaves_no_bytes_of_the_text_in_the_library_files() {
 
 /// 解开一份不封装的转发件：中继件 `FRL4`（作者签）或重切件 `FRX4`（重切者签）。签名者的公钥由 [key_of] 按设备给。
 /// 回 (重切者, 全部项)。
-fn piece_items(
-    bytes: &[u8],
-    key_of: &dyn Fn(&Id) -> [u8; 32],
-) -> (Option<Id>, Vec<NativeItem>) {
+fn piece_items(bytes: &[u8], key_of: &dyn Fn(&Id) -> [u8; 32]) -> (Option<Id>, Vec<NativeItem>) {
     if bytes.starts_with(recut::MAGIC) {
         let r = peek_recut4(bytes).unwrap().recutter;
         let (_, items) = open_recut4_items(bytes, &key_of(&r), None).unwrap();
@@ -195,8 +192,8 @@ fn settle(d: &Dev, loc: &mut Loc, location: &str, now: i64, n: usize) -> u64 {
 }
 
 /// 转发缓存（`cmd/sync_relay.rs`，交接 §26 C3 / §28）：a 只连 L1、c 只连 L2、b 两个都连。b 收下 a 的段、留着原文准备
-/// 转发到 L2；a 清除之后 b 收到清除，同一个事务里把留着的那份**原地重切**（换成 b 签的、带空洞的同名件），不等作者重切
-/// 就转发到 L2，c 照样收齐其余的。
+/// 转发到 L2，还没转发就由 b 自己清除（作者 a 不在场）：同一个事务里把留着的那份**原地重切**（换成 b 签的、带空洞的
+/// 同名件），转发到 L2 的是重切件；c 收齐 a 其余的与 b 此后的。
 #[test]
 fn a_purge_recuts_the_relay_copy_in_place_and_relays_the_recut() {
     let mut a = Dev::new("c3ra");
@@ -214,9 +211,8 @@ fn a_purge_recuts_the_relay_copy_in_place_and_relays_the_recut() {
     let da = a.device();
     assert_eq!(kept_of(&mut b, &da, "secret-c3-relay"), (1, 0, 1));
 
-    purge(&a, T1 + 4, N1);
-    round(&a, &mut l1, "L1", T1 + 5, plain);
-    round(&b, &mut l1, "L1", T1 + 6, plain);
+    purge(&b, T1 + 4, N1);
+    b.write(T1 + 5, N3, "b-after-purge");
     assert_eq!(
         kept_of(&mut b, &da, "secret-c3-relay"),
         (1, 1, 0),
@@ -225,22 +221,24 @@ fn a_purge_recuts_the_relay_copy_in_place_and_relays_the_recut() {
     assert_eq!(kept_of(&mut b, &da, "keep-c3").2, 1);
     assert_eq!(bytes_carrying(&b.dir.0, "secret-c3-relay"), 0);
 
+    round(&b, &mut l2, "L2", T1 + 6, plain);
     relay(&b, &mut l2, "L2", None, T1 + 7);
     let keys = [key_pair(&mut a), key_pair(&mut b)];
     let (files, by, carrying) = relayed_at(&l2, &da, &keys, "secret-c3-relay");
-    assert!(files > 0, "a's segments reach L2");
+    assert_eq!(files, 1, "a's segment reaches L2");
     assert_eq!(by, vec![keys[1].0], "signed by b, the recutter");
     assert_eq!(carrying, 0);
-    assert_eq!(settle(&c, &mut l2, "L2", T1 + 8, 2), 0);
+    assert_eq!(settle(&c, &mut l2, "L2", T1 + 8, 3), 0);
     assert_eq!(c.field(N2), Some(json!("keep-c3")));
+    assert_eq!(c.field(N3), Some(json!("b-after-purge")));
     assert_eq!(bytes_carrying(&c.dir.0, "secret-c3-relay"), 0);
 }
 
-/// 清除之前 b 已经把 a 的段转发到了 L2（之后留着的那份因为每个位置都有了被删掉）：b 收到清除时把 L2 上那份 `rly-`
-/// 改成待删，下一次转发从 b 自己的日志重切出同名件、把它覆盖掉（不等作者重切）；b 不再为转发去拉 a 的原文。L2 上从此
-/// 没有被清除的内容，c 照样收齐其余的。
+/// 清除之前 b 已经把 a 的段转发到了 L2（之后留着的那份因为每个位置都有了被删掉），清除由作者 a 发起：b 收到清除时把
+/// L2 上那份 `rly-` 改成待删；a 已经按新切点重切了自己的段、新 head 不再引用旧段，所以 b 转发的是 a 自己签的新段，旧
+/// `rly-` 被删掉；b 不再为转发去拉 a 的原文。L2 上从此没有被清除的内容，c 照样收齐其余的。
 #[test]
-fn a_purge_takes_back_what_was_already_relayed_and_rewrites_it_recut() {
+fn a_purge_by_the_author_takes_back_what_was_already_relayed() {
     let mut a = Dev::new("c3ta");
     let mut b = Dev::new("c3tb");
     let c = Dev::new("c3tc");
@@ -257,15 +255,23 @@ fn a_purge_takes_back_what_was_already_relayed_and_rewrites_it_recut() {
     let da = a.device();
     let keys = [key_pair(&mut a), key_pair(&mut b)];
     assert_eq!(relayed_at(&l2, &da, &keys, "secret-c3-taken").2, 1);
-    assert_eq!(relay_segs(&mut b), 0, "relayed everywhere, the copy is dropped");
+    assert_eq!(
+        relay_segs(&mut b),
+        0,
+        "relayed everywhere, the copy is dropped"
+    );
 
     purge(&a, T1 + 4, N1);
     round(&a, &mut l1, "L1", T1 + 5, plain);
     round(&b, &mut l1, "L1", T1 + 6, plain);
     relay(&b, &mut l2, "L2", None, T1 + 6);
     let (files, by, carrying) = relayed_at(&l2, &da, &keys, "secret-c3-taken");
-    assert_eq!((files, carrying), (1, 0), "overwritten by the recut");
-    assert_eq!(by, vec![keys[1].0]);
+    assert_eq!(
+        (files, carrying),
+        (1, 0),
+        "the old one deleted, the author's own recut relayed"
+    );
+    assert_eq!(by, Vec::<Id>::new(), "signed by the author");
     let r = round(&b, &mut l1, "L1", T1 + 7, plain);
     assert!(!fetches_from(&r.plan, &da), "no refetch: {}", r.plan);
     assert_eq!(relay_segs(&mut b), 0);
@@ -333,11 +339,17 @@ fn a_purge_by_the_relay_does_not_cut_off_a_location_only_it_feeds() {
         "not kept"
     );
 
+    let purged = b.field(N1);
+    assert_ne!(purged, Some(json!("secret-c3-relay-purge")));
     for c in [&c1, &c2] {
-        assert_eq!(settle(c, &mut l2, "L2", T1 + 9, 3), 0, "nothing left waiting");
+        assert_eq!(
+            settle(c, &mut l2, "L2", T1 + 9, 3),
+            0,
+            "nothing left waiting"
+        );
         assert_eq!(c.field(N2), Some(json!("keep-c3")));
         assert_eq!(c.field(N3), Some(json!("b-after-purge")));
-        assert_eq!(c.field(N1), None);
+        assert_eq!(c.field(N1), purged, "purged as on b");
         assert_eq!(bytes_carrying(&c.dir.0, "secret-c3-relay-purge"), 0);
     }
 }

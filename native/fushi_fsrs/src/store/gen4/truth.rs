@@ -2313,7 +2313,7 @@ impl<'c> Truth<'c> {
 
     /// 写一个空洞区间，并与两侧同样标志的相邻区间合并。
     ///
-    /// 原生日志的区间只记区间末的链值；合并时被合进区间内部的那几处区间末链值（左邻的末尾、本区间的末尾）记成链值
+    /// 原生日志的区间只记区间末的链值；别的设备的原生日志合并时，被合进区间内部的那几处区间末链值（左邻的末尾、本区间的末尾）记成链值
     /// 记号（`log_marks`），不随合并丢掉：清除只拿走内容，链值是公开的、算得出的事实，转发要按作者的切点重切段
     /// （`sync_state.rs` [Truth::recut_from_log]，交接 §28），切点可能正落在一次跨段的清除里面。[Truth::chain_known]
     /// 在空洞内部先查这些记号。承袭日志（`fps`）不记：那里的记号是切承袭段的切点。
@@ -2333,10 +2333,13 @@ impl<'c> Truth<'c> {
         let mergeable = |run: &VoidRun, fps: &Option<Vec<u8>>| {
             run.flags == flags && run.fps.is_some() == fps.is_some()
         };
+        // 只给别的设备的原生日志记：本机自己的段由本机按新的切点重签（`cmd/sync.rs`），用不着旧切点的链值；这样只
+        // 动本机自己日志的清除（导出 / 导入往返）不多出导出流带不走的记号。
+        let foreign = fps.is_none() && !self.is_self_dev(dev)?;
         if first > 1 {
             if let Some(left) = self.run_at_or_before(dev, first - 1)? {
                 if left.end() + 1 == first && mergeable(&left, &fps) {
-                    if fps.is_none() {
+                    if foreign {
                         if let Some(c) = &left.chain {
                             self.put_mark(dev, left.end(), &chain_of(c)?)?;
                         }
@@ -2364,7 +2367,7 @@ impl<'c> Truth<'c> {
                 .map_err(sql)?;
             if let Some(right) = right {
                 if mergeable(&right, &fps) {
-                    if fps.is_none() {
+                    if foreign {
                         if let Some(c) = &chain {
                             self.put_mark(dev, first + n - 1, &chain_of(c)?)?;
                         }
@@ -2390,6 +2393,14 @@ impl<'c> Truth<'c> {
             .execute(params![k, len as i64, flags, fps, chain])
             .map_err(sql)?;
         Ok(())
+    }
+
+    /// 设备下标 [dev] 是不是它所在集合的本机当前身份。
+    fn is_self_dev(&self, dev: i64) -> Result<bool, String> {
+        let row = self.dev_row(dev)?;
+        Ok(self
+            .self_identity(row.col)?
+            .is_some_and(|me| me.device == row.id))
     }
 
     fn delete_run(&self, k: i64) -> Result<(), String> {
@@ -3641,6 +3652,38 @@ pub(crate) mod tests {
         let t = Truth::new(&conn);
         assert_eq!(t.last_of(col, &id(OLD)).unwrap(), 7);
         assert_eq!(count(&conn, "op_voids"), 1);
+    }
+
+    /// [Truth::voids_within]（转发缓存拒收、不为转发拉原文、从日志重切都靠它，交接 §28）：区间各自截到查询范围；
+    /// 查询范围的起点落在一个更早开始的空洞区间里（前导分支）、或正是被清除的段首，都要报出来。
+    #[test]
+    fn voids_within_reports_runs_cut_to_the_range_including_a_leading_one() {
+        let conn = open_in_memory().unwrap();
+        let t = Truth::new(&conn);
+        let col = bound(&t);
+        for seq in 1..=7u64 {
+            let slot = HeritageSlot::op(
+                [seq as u8; 8],
+                op_of(id(OLD), seq, &Body4::Edit(native_edit())),
+            );
+            put(&t, col, &slot, 1).unwrap();
+        }
+        for seq in [1, 3, 4] {
+            assert_eq!(t.tx(|t| t.advance_purge(col, &oid(seq))), Ok(true));
+        }
+        let w = |a: u64, b: u64| t.voids_within(col, &id(OLD), a, b).unwrap();
+        assert_eq!(w(1, 7), vec![(1, 1), (3, 4)]);
+        assert_eq!(w(1, 1), vec![(1, 1)], "the segment's first op purged");
+        assert_eq!(w(2, 7), vec![(3, 4)]);
+        assert_eq!(w(4, 7), vec![(4, 4)], "a run that began before the range");
+        assert_eq!(w(4, 4), vec![(4, 4)]);
+        assert_eq!(w(5, 7), Vec::<(u64, u64)>::new());
+        assert_eq!(w(2, 2), Vec::<(u64, u64)>::new());
+        assert_eq!(
+            t.voids_within(col, &id(0x77), 1, 7).unwrap(),
+            Vec::<(u64, u64)>::new(),
+            "an unknown device"
+        );
     }
 
     #[test]
