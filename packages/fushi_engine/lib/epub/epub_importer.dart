@@ -27,7 +27,7 @@ class EpubImporter {
   static String nextTempDirName() => EpubStorage.nextStagingDirName();
 
   /// 建本次导入独占的暂存目录（书库根下的 `.tmp-*`）。先等「上个进程的导入残留」
-  /// 清扫跑完（每进程一次，BUG-4791）再建。
+  /// 清扫跑完（每进程一次，BUG-4797）再建。
   ///
   /// 公开给漫画导入（`MangaImporter` / `MangaArchiveImporter`）共用：所有「往书库根
   /// 落一本书」的入口走同一种暂存 + 同一把落位锁。
@@ -54,7 +54,7 @@ class EpubImporter {
     final String tempDir = await createStagingDir(db);
 
     // 解析失败（坏包、OPF 解析不出、字数统计抛出）时 [_persistParsed] 根本没被调到，
-    // 它的清理也就轮不到：暂存目录必须在这里自己收（BUG-4791）。
+    // 它的清理也就轮不到：暂存目录必须在这里自己收（BUG-4797）。
     final _ParseResult result;
     try {
       result = await Isolate.run(
@@ -101,7 +101,7 @@ class EpubImporter {
   }) async {
     final String tempDir = await createStagingDir(db);
 
-    // 同 [import]：解析失败时暂存目录在这里收（BUG-4791）。
+    // 同 [import]：解析失败时暂存目录在这里收（BUG-4797）。
     final _ParseResult result;
     try {
       result = await Isolate.run(
@@ -152,7 +152,7 @@ class EpubImporter {
           : book.title;
 
       // 书名定夺 + 落位 + 插行走 [placeUnderResolvedTitle]：同名询问在锁外，
-      // 「重取快照 → 挪目录 → 插行」在落位锁内一次做完（BUG-4792）。
+      // 「重取快照 → 挪目录 → 插行」在落位锁内一次做完（BUG-4798）。
       final ({String storedTitle, String bookKey, int importedAtMs})
       placed = await placeUnderResolvedTitle(
         db: db,
@@ -255,8 +255,8 @@ class EpubImporter {
     }
   }
 
-  /// 「定书名 → 落位 → 插行」的**唯一**编排，EPUB 与漫画导入共用（BUG-4792 /
-  /// BUG-4793）。
+  /// 「定书名 → 落位 → 插行」的**唯一**编排，EPUB 与漫画导入共用（BUG-4798 /
+  /// BUG-4799）。
   ///
   /// 1. 锁外：取书库快照，按 [policy] 解决同名（[DuplicatePolicy.ask] 会停在用户
   ///    对话框上，所以这一步绝不能持锁）；随后跑一次 [stage]（调用方把内容备进自己
@@ -381,7 +381,7 @@ class EpubImporter {
   }) async {
     final _ParseResult result = await _reparseExtracted(extractDir);
     // 插行持落位锁：导入在锁内按快照判「这个目录有没有活行」，登记若在它的快照与
-    // 挪目录之间插进来，导入会把刚登记的书目录当无主的换掉（BUG-4792）。
+    // 挪目录之间插进来，导入会把刚登记的书目录当无主的换掉（BUG-4798）。
     return EpubStorage.withBookPlacementLock(
       () => db.insertEpubBook(
         bookRowFor(
@@ -506,7 +506,7 @@ class EpubImporter {
   }
 
   /// 书目录落位。实现已提到 [EpubStorage.moveDirIntoPlace]（漫画导入共用同一个
-  /// 落位原语，BUG-4793），语义见那里；这里保留原名给既有调用方与测试。
+  /// 落位原语，BUG-4799），语义见那里；这里保留原名给既有调用方与测试。
   @visibleForTesting
   static String moveExtractedDirIntoPlace({
     required Directory srcDir,

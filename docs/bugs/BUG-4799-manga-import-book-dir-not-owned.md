@@ -1,4 +1,4 @@
-## BUG-4793 · 漫画导入直接往书目录里写、失败回滚无条件删目录：会删掉同名并发导入或孤儿书的目录；暂存在系统临时目录
+## BUG-4799 · 漫画导入直接往书目录里写、失败回滚无条件删目录：会删掉同名并发导入或孤儿书的目录；暂存在系统临时目录
 - **报告**：2026-11-17（用户：小说 / 漫画 / 视频优化清单 manga-11 + gap-mangamisc-9，代码复核确认）
 - **真实性**：✅ 真 bug（代码路径确认 + 单测复现；并发频率未实测）。根因（行号按修复前的 upstream/develop @ 8d58da51da9）：
   - `packages/fushi_engine/lib/media/manga/manga_importer.dart:461-462`：`MangaStorage.bookDirectory(bookKey)` →`packages/fushi_engine/lib/epub/epub_storage.dart:44-52` 存在即复用。页图与 `manga.json` 直接往 `<fushi_books>/<bookKey>/` 里写（`copyMangaArtifacts`，`:226-274`）。
@@ -9,7 +9,7 @@
 - **[x] ① 已修复** —
   - `MangaImporter._copyAndInsert` 改用 EPUB 那一套：页图 + `manga.json` 先备进书库根下本次独占的 `.tmp-*`（`EpubImporter.createStagingDir`），再经 `EpubImporter.placeUnderResolvedTitle` 在落位锁内「重取快照 → `EpubStorage.moveDirIntoPlace` → 插行」。活行占着的目录绝不碰（改落 `~n`）；无主的同名目录沿用 EPUB 的既有取舍（BUG-564）带 `.bak` 回滚整体替换，不混写。回滚只删本次自己建的：暂存目录，和已落位而行没插成的目录。
   - 落位原语从 `EpubImporter.moveExtractedDirIntoPlace` 提到 `EpubStorage.moveDirIntoPlace`，EPUB 与漫画共用一份（原名留作转发）。
-  - 压缩包 staging 与纯图 EPUB 解压目录改建在书库根下的 `.tmp-*`；格式转换的暂存改成书目录的兄弟 `.tmp-*`（`EpubStorage.createStagingDirectory(parentDir:)`）。都与书目录同卷，残留归 BUG-4791 的清扫管。
+  - 压缩包 staging 与纯图 EPUB 解压目录改建在书库根下的 `.tmp-*`；格式转换的暂存改成书目录的兄弟 `.tmp-*`（`EpubStorage.createStagingDirectory(parentDir:)`）。都与书目录同卷，残留归 BUG-4797 的清扫管。
   - `PdfEngine.bgraToPng`（`fushi/lib/src/pdf/pdf_engine.dart`）补上 `ImmutableBuffer` / `ImageDescriptor` 的 dispose；`reader_pdf_page.dart` 里那份同名私有实现删掉、改调它。
 - **[x] ② 已加自动化测试** — `fushi/test/media/manga/manga_import_dir_ownership_test.dart` 七条：并发同名（suffix / skip）、拷图期间书目录尚不存在而页图在 `.tmp-*` 里、拷图中途失败不留目录不留行、失败时同名孤儿目录原封不动、成功时孤儿目录被整体替换不混写、插行失败的回滚不动活行占着的目录。`fushi/test/media/manga/manga_archive_importer_test.dart` 的 staging 残留断言改盯书库根下的 `.tmp-*`（同时仍盯系统临时目录的旧名）；`fushi/test/media/manga/book_format_rebuild_test.dart`「PDF 转成漫画」加断言：暂存是书目录的兄弟 `.tmp-*`、转化完即删。
 - **备注**：

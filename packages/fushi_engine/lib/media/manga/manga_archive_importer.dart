@@ -502,7 +502,7 @@ abstract final class MangaArchiveImporter {
     final String extension = p.extension(archivePath).toLowerCase();
     _OpenedArchive? opened;
     _ZipEntryStreamer? streamer;
-    // 暂存在书库根下的 `.tmp-*`（BUG-4793），不放系统临时目录：与书目录同卷，页图
+    // 暂存在书库根下的 `.tmp-*`（BUG-4799），不放系统临时目录：与书目录同卷，页图
     // 进书目录是 rename 而不是「跨卷拷贝 + 删源」；崩溃留下的残留也归导入残留清扫管
     // （桌面端系统临时目录里的残留，app 内既看不见也清不掉）。
     final Directory staging = Directory(

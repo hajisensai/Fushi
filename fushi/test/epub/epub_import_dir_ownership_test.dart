@@ -1,8 +1,8 @@
-// 导入目录的归属与残留（BUG-4791 / BUG-4792）。
+// 导入目录的归属与残留（BUG-4797 / BUG-4798）。
 //
-//  - BUG-4791：解析失败时 `.tmp-*` 暂存目录要收掉；上个进程留下的 `.tmp-*` /
+//  - BUG-4797：解析失败时 `.tmp-*` 暂存目录要收掉；上个进程留下的 `.tmp-*` /
 //    `.bak-*` 在首次导入前清扫，`.bak-*` 不能盲删。
-//  - BUG-4792：并发导入同名书，「重取快照 → 挪目录 → 插行」在落位锁内串行，谁也
+//  - BUG-4798：并发导入同名书，「重取快照 → 挪目录 → 插行」在落位锁内串行，谁也
 //    不会把别人的书目录换掉 / 删掉。
 import 'dart:async';
 import 'dart:convert';
@@ -95,7 +95,7 @@ void main() {
   String readFile(String rel) =>
       File(p.join(booksRoot, rel)).readAsStringSync();
 
-  group('BUG-4791 解析失败不留暂存目录', () {
+  group('BUG-4797 解析失败不留暂存目录', () {
     test('importFromPath：不是 zip 的文件解析失败后书库根下没有 .tmp-*', () async {
       final File bad = File(p.join(tempRoot.path, 'bad.epub'))
         ..writeAsStringSync('this is not a zip archive');
@@ -129,7 +129,7 @@ void main() {
     });
   });
 
-  group('BUG-4791 导入残留清扫', () {
+  group('BUG-4797 导入残留清扫', () {
     test('.tmp-* 直接删；本进程自己建的暂存目录不碰', () async {
       writeFile(p.join('.tmp-1-0', 'x.txt'), 'stale');
       final String own = await EpubStorage.createStagingDirectory();
@@ -338,7 +338,7 @@ void main() {
     });
   });
 
-  group('BUG-4792 并发导入同名书', () {
+  group('BUG-4798 并发导入同名书', () {
     Future<void> expectIntactBook(EpubBookRow row, String body) async {
       expect(
         Directory(row.extractDir).existsSync(),

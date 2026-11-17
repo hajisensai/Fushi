@@ -1009,7 +1009,7 @@ String _writeArchive(
   return path;
 }
 
-/// 导入器留下的 staging 目录名。BUG-4793 起 staging 是书库根（[app] 下的
+/// 导入器留下的 staging 目录名。BUG-4799 起 staging 是书库根（[app] 下的
 /// `fushi_books`）里的 `.tmp-*`；系统临时目录里的旧名 `fushi_manga_archive_*` 一并
 /// 盯着——哪天有人把 staging 挪回去，残留也照样被抓到。
 Set<String> _mangaStagingDirs(Directory app) {
