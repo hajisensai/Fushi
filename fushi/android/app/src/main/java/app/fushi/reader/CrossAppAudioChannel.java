@@ -67,10 +67,21 @@ final class CrossAppAudioChannel {
             final String method = call.method;
             if (CrossAppAudioPolicy.callsProviderOffMain(method)) {
                 // 跨进程 RPC（+ snapshot 在 Provider 端的同步写盘）不压在平台主线程上
-                // （BUG-4791）。单线程执行器保证 stop → status 这类先后顺序不乱。
+                // （BUG-4791）。单线程执行器保证 RPC 按 Dart 发出的顺序到达 Provider。
                 final Integer backMs = call.argument("backMs");
                 PROVIDER_IO.execute(() -> {
-                    final Object value = runProviderCall(app, method, backMs);
+                    final Object value;
+                    try {
+                        value = runProviderCall(app, method, backMs);
+                    } catch (RuntimeException e) {
+                        // 平台主线程上 Flutter 的 IncomingMethodCallHandler 会把 RuntimeException
+                        // 回成 error；挪到执行器后这层兜底没了，未捕获异常会杀掉整个进程（查词窗
+                        // 进程连同窗口），Dart 的 Future 也永远不完成。这里照原语义回 error。
+                        Log.e(TAG, "cross-app audio " + method + " failed", e);
+                        MAIN.post(() -> result.error(
+                                "CROSS_APP_AUDIO_ERROR", String.valueOf(e.getMessage()), null));
+                        return;
+                    }
                     MAIN.post(() -> result.success(value));
                 });
                 return;
