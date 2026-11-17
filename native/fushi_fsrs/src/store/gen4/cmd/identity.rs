@@ -192,6 +192,20 @@ fn ensure_self(t: &Truth<'_>, col: i64, profile: &str, now: i64) -> Result<bool,
     Ok(true)
 }
 
+/// 换绑丢掉的空集合里本机声明过的盐（[AdoptOutcome::Bound] 的 `carry`）：本机身份在新集合里建好之后，新集合还不算数的
+/// 那几个由本机另写一条 `Salts`（同 [ensure_self] 写初始盐的口径）。
+fn carry_salts(t: &Truth<'_>, col: i64, carry: &BTreeSet<String>, now: i64) -> Result<(), String> {
+    let have = binding_of(t, col)?.salts;
+    let missing: BTreeSet<String> = carry.difference(&have).cloned().collect();
+    if missing.is_empty() {
+        return Ok(());
+    }
+    let mut ix = Index::new(t, col);
+    Native::open(t, col)?.write_salts(&mut ix, &missing, now)?;
+    ingest_settle(t, &mut ix, col, Settle::Incremental)?;
+    Ok(())
+}
+
 // ---------------------------------------------------------------------- 绑定状态
 
 /// `binding_set {state, via, now}`（协议 3 `store/binding.rs` 的同名命令，只进不退；状态认不出报错，什么都不写）。
@@ -307,8 +321,9 @@ pub fn collection_adopt(t: &Truth<'_>, profile: &str, req: &Value) -> Result<Emi
     let now = now_of(req, "collection_adopt")?;
     t.tx(|t| {
         let out = adopt_foreign(t, profile, &foreign, confirmed, now)?;
-        if let AdoptOutcome::Bound { col, .. } = &out {
+        if let AdoptOutcome::Bound { col, carry, .. } = &out {
             ensure_self(t, *col, profile, now)?;
+            carry_salts(t, *col, carry, now)?;
         }
         Ok((outcome_json(&out), out.binding_changed().cloned()))
     })

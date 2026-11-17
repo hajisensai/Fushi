@@ -136,8 +136,14 @@ pub enum AdoptOutcome {
     /// 另一个集合，调用方还没拿到用户的确认（BUG-4011 / D25：确认之前不绑定、不并入）：什么都没写。
     NeedsConfirm,
     /// 这个 profile 还没绑过集合，或绑着的是空集合（文件头「空集合可换绑」，那个空集合同一个事务里丢掉）：确认后直接
-    /// 绑到对方（设计 §5.4 第 5 条「先加入」）。没有写任何操作；[col] 是新的本机集合号。
-    Bound { col: i64, changed: BindingChanged },
+    /// 绑到对方（设计 §5.4 第 5 条「先加入」）。没有写任何操作；[col] 是新的本机集合号。[carry]：换绑丢掉的空集合里
+    /// 本机声明过、对方还不算数的盐（只在换绑时非空）：命令层建好本机身份后在对方集合里另写一条 `Salts` 带过去
+    /// （`cmd/identity.rs` `collection_adopt`），用户确认过的旧 uid 不随空集合丢掉。
+    Bound {
+        col: i64,
+        changed: BindingChanged,
+        carry: BTreeSet<String>,
+    },
     /// 并入了（方向见文件头）。本机改绑到对方之后，对方带来的、本机还不算数的盐另写一条 `Salts`（[salts]）。
     Joined {
         written: JoinWritten,
@@ -443,6 +449,7 @@ pub fn adopt_foreign(
                     profile: profile.to_owned(),
                     col,
                 },
+                carry: BTreeSet::new(),
             });
         };
         let col = before.col;
@@ -493,7 +500,7 @@ pub fn adopt_foreign(
         }
         if disposable(t, col)? {
             // 空集合可换绑（文件头「空集合可换绑」）：丢掉本机这个空集合、直接绑到对方，不写 Join。
-            return rebind_empty(t, profile, col, foreign);
+            return rebind_empty(t, profile, col, foreign, &have);
         }
         let (rebound, (op, chain, join), salts) = if dir == Ordering::Greater {
             // 本机的目录名更大：本机并入对方。本机的盐整份带进 Join；对方的盐本机还不算数的，改绑后另写一条 Salts。
@@ -536,12 +543,14 @@ pub(crate) const DERIVE_CFG_OF_SQL: &str =
 /// 「空集合可换绑」（[adopt_foreign] 的确认之后、本机集合 [col] 是 [disposable] 时）：同一个事务里丢掉 [col]
 /// （[discard_collection]）、把 [profile] 绑到对方（[Truth::bind]），派生层配置（`derive_cfg`，Dart 按 profile 给的缓存
 /// 配置）照搬到新集合号。结论 `Bound`：本机身份由命令层在对方集合里重建（`cmd/identity.rs` `collection_adopt`），不写
-/// `Join`、别的设备不用再确认（规划 §6 / D25）。
+/// `Join`、别的设备不用再确认（规划 §6 / D25）。[have] 是空集合算数的盐（空集合里只有本机写的 `Salts`，都是本机声明
+/// 的）：对方不算数的那几个放进 `carry`，由命令层在对方集合里补写。
 fn rebind_empty(
     t: &Truth<'_>,
     profile: &str,
     col: i64,
     foreign: &Foreign,
+    have: &BTreeSet<String>,
 ) -> Result<AdoptOutcome, String> {
     let cfg: Vec<(String, String)> = {
         let mut stmt = t.conn().prepare_cached(DERIVE_CFG_OF_SQL).map_err(sql)?;
@@ -561,6 +570,7 @@ fn rebind_empty(
             profile: profile.to_owned(),
             col: fresh,
         },
+        carry: have.difference(&foreign.salts).cloned().collect(),
     })
 }
 
@@ -900,7 +910,7 @@ mod tests {
         assert_eq!(adopt(&t, &f, false), Ok(AdoptOutcome::NeedsConfirm));
         assert_eq!(t.binding_of(P), Ok(None));
         let got = adopt(&t, &f, true).unwrap();
-        let AdoptOutcome::Bound { col, changed } = got else {
+        let AdoptOutcome::Bound { col, changed, .. } = got else {
             panic!("{got:?}");
         };
         assert_eq!(

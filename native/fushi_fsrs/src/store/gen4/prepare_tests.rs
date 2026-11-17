@@ -1077,3 +1077,95 @@ fn an_unrelated_older_library_is_digested_once_per_file_state() {
     assert_eq!(digests(), n0 + 2, "文件动过：重判");
     assert_eq!(schema_of(&dir.0), 26);
 }
+
+/// G7-2b verify2 遗留（G9-5 补测）：补完之后的第二次空间核对按**在用**的副本算——副本不算可用空间。注入的可用空间在
+/// 第二次核对时恰好比副本要的少 1 字节：副本若被算成可用（`PrepCopy::Stale`）就会放行，正确结论是 `noSpace`、原件不动、
+/// 不留新代库。
+#[test]
+fn the_second_space_check_after_completion_does_not_count_the_copy_as_free() {
+    let dir = unsynced_dir("g95-space2", &with_orphan);
+    assert!(!plan_of(&dir.0).is_empty(), "夹具要补完");
+    let before = legacy_bytes(&dir.0);
+    let calls = std::rc::Rc::new(std::cell::Cell::new(0u32));
+    let seen = calls.clone();
+    migrate::FREE_BYTES.with(|f| {
+        *f.borrow_mut() = Some(Box::new(move |d: &Path| {
+            // 补完副本出来之前的核对（开跑与拷副本前）都放行；副本出来之后的那一次卡在「副本要的 - 1」。
+            let copy = d.join(crate::store::gen4::files::PREPARE_COPY);
+            if !copy.exists() {
+                return Some(u64::MAX / 4);
+            }
+            seen.set(seen.get() + 1);
+            Some(migrate::space_needed_for_tests(&copy).unwrap() - 1)
+        }));
+    });
+    let out = migrate_with(&dir.0, &caches(), &Stop::new());
+    migrate::FREE_BYTES.with(|f| *f.borrow_mut() = None);
+    assert_eq!(calls.get(), 1, "补完之后核对一次");
+    assert!(matches!(out, migrate::Outcome::NoSpace { .. }), "{out:?}");
+    assert_original_untouched(&dir.0, &before);
+    assert!(!dir.0.join(GEN4_FILE).exists());
+}
+
+/// 真实的半截并入（G9-5 复核补测）：协议 3 并入在中断前已经把旧 uid 的复习日志按兜底 ID
+/// （`v5(NS, profile-merge/<P>/<旧 ID>)`，卡片同样兜底）落进 P。收尾把旧 uid 的原件再导进 P 之后，别名层把副本归回原件：
+/// 复习日志按规范 ID 数不多出一条，兜底 ID 与原件的规范 ID 相同；旧 uid 的默认牌组（按旧 uid 派生）与 P 的归成同一个。
+#[test]
+fn a_half_done_merge_with_remapped_copies_folds_them_back_into_one() {
+    use crate::gen4_ids::rules::merge_fallback;
+    const E9: &str = "0193a1b2-0000-7000-8000-0000000000e9";
+    const C9: &str = "0193a1b2-0000-7000-8000-0000000000c9";
+    let marker = json!({"profileId": 7, "newUid": P}).to_string();
+    let dir = unsynced_dir("g95-merge-copies", &|d| {
+        with_orphan(d);
+        // 协议 3 并入的第一遍已经落进 P 的副本（并入经 `applyRemote` 写，是 P 里的操作）：日志与卡都按兜底 ID。
+        d.apply(
+            T0 + 20,
+            vec![review(
+                &merge_fallback(P, E9).text(),
+                &merge_fallback(P, C9).text(),
+                T0 - 600,
+                3,
+                "review",
+            )],
+        );
+        let w = d.core.writer().unwrap();
+        w.execute(
+            "INSERT INTO srs_meta (key, value) VALUES (?1, ?2)",
+            params![format!("profile_merge/{ORPHAN}"), marker],
+        )
+        .unwrap();
+    });
+    let logs = count(&raw(&dir.0), "SELECT COUNT(*) FROM srs_review_logs");
+    let out = migrate_with(&dir.0, &caches(), &Stop::new());
+    assert_committed(&dir.0, &out, logs, 2);
+    let h = crate::store::gen4::cmd::dispatch_tests::open(&dir.0, 0).unwrap();
+    let reviews = |profile: &str| {
+        g4_as(h, profile, "profile_footprint", json!({})).unwrap()["reviews"]
+            .as_i64()
+            .unwrap()
+    };
+    let p_before = reviews(P);
+    assert_eq!(reviews(ORPHAN), 1);
+    let v = g4_as(
+        h,
+        P,
+        "profile_merge_commit",
+        json!({"from": ORPHAN, "to": P}),
+    )
+    .unwrap();
+    assert_eq!(v["folded"], json!(true), "{v}");
+    assert_eq!(reviews(P), p_before, "兜底副本与原件是同一条，不多出一条");
+    let ids = g4_as(
+        h,
+        P,
+        "canonical_ids",
+        json!({"ids": [merge_fallback(P, E9).text(), E9,
+                       default_deck_id(ORPHAN), default_deck_id(P)]}),
+    )
+    .unwrap()["ids"]
+        .clone();
+    assert_eq!(ids[0], ids[1], "兜底 ID 归回原件：{ids}");
+    assert_eq!(ids[2], ids[3], "两个 uid 派生的默认牌组是同一个：{ids}");
+    crate::store::ffi::ffsrs_store_close(h);
+}

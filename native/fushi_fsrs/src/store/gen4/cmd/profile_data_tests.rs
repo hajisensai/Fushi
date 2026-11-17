@@ -473,3 +473,36 @@ fn new_statements_use_their_keys() {
     let p = plan(&c, q);
     assert!(p.iter().all(|l| !l.contains("TEMP B-TREE")), "{q}: {p:?}");
 }
+
+/// 空集合里本机经 `collection_salts_add` 确认过的旧 uid（只有本机写的 `Salts`，仍是空集合）换绑时不丢：本机身份在对方
+/// 集合里重建之后另写一条 `Salts` 把它带过去（复核 nit：以前只重写 `Salts{profile}`）。
+#[test]
+fn rebinding_an_empty_collection_carries_the_salts_it_declared() {
+    let other = migrated();
+    let theirs = g4(other.h, "identity", T1, json!({}));
+    let their_info = g4(other.h, "collection_info", T1, json!({}));
+    let (_dir, h) = fresh("g95-carry", Q);
+    let v = as_profile(h, Q, "collection_salts_add", json!({"salts": [R]}));
+    assert_eq!(v["outcome"], json!("saltsAdded"), "{v}");
+    let v = as_profile(
+        h,
+        Q,
+        "collection_adopt",
+        json!({
+            "collection": theirs["collection"], "dir": theirs["dir"], "salts": their_info["salts"],
+            "confirmed": true,
+        }),
+    );
+    assert_eq!(v["outcome"], json!("bound"), "仍是空集合：{v}");
+    let info = as_profile(h, Q, "collection_info", json!({}));
+    let mut want = vec![Q, R];
+    want.sort();
+    assert_eq!(info["salts"], json!(want), "{info}");
+    assert_eq!(info["joins"], json!([]), "{info}");
+    assert_eq!(
+        as_profile(h, Q, "identity", json!({}))["nextSeq"],
+        json!(3),
+        "本机身份的 Salts{{profile}} 之后补一条 Salts{{旧 uid}}"
+    );
+    ffsrs_store_close(h);
+}

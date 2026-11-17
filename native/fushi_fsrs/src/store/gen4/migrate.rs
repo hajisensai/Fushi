@@ -454,13 +454,38 @@ fn check_space(
     copy: PrepCopy,
 ) -> Result<Option<Outcome>, String> {
     let needed = space_needed(source)? + extra;
-    if let Some(free) = crate::store::compact::free_bytes(dir) {
+    if let Some(free) = free_bytes(dir) {
         let free = free + reclaimable(dir, copy);
         if free < needed {
             return Ok(Some(Outcome::NoSpace { needed, free }));
         }
     }
     Ok(None)
+}
+
+/// [check_space] 量的可用空间。测试可以经 [FREE_BYTES] 注入（按调用现算：要在补完副本出来之后按它的大小卡边界）。
+fn free_bytes(dir: &Path) -> Option<u64> {
+    #[cfg(test)]
+    if let Some(v) = FREE_BYTES.with(|f| f.borrow_mut().as_mut().map(|f| f(dir))) {
+        return v;
+    }
+    crate::store::compact::free_bytes(dir)
+}
+
+/// [free_bytes] 的测试注入点（每个线程一份；`None` = 量真实磁盘）。
+#[cfg(test)]
+pub(crate) type FreeBytesHook = Box<dyn FnMut(&Path) -> Option<u64>>;
+
+#[cfg(test)]
+thread_local! {
+    pub(crate) static FREE_BYTES: std::cell::RefCell<Option<FreeBytesHook>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// 一次迁移要的空间（[check_space] 的 `needed` 去掉 `extra`；测试据此卡边界）。
+#[cfg(test)]
+pub(crate) fn space_needed_for_tests(source: &Path) -> Result<u64, String> {
+    space_needed(source)
 }
 
 /// 对旧库开写事务并持住（不写任何东西）。旧库正被别的连接写、等满忙等时限 = None。
