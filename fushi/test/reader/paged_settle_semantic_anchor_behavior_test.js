@@ -1,4 +1,4 @@
-// BUG-4797 behavior test: the paged shell's deferred "land once more" callbacks
+// BUG-4798 behavior test: the paged shell's deferred "land once more" callbacks
 // re-derive the landing from the registered SEMANTIC anchor instead of writing
 // back a pixel position captured before the deferral.
 //

@@ -15,7 +15,7 @@ import '../helpers/source_guard.dart';
 /// 钉三条：
 /// 1. 两处 `_settleAndNotify` 各只剩**一层** `setTimeout`（第二层空等不许回来）。
 /// 2. 分页 shell 的那一层里，落点是**同步写死**再通知的：`reapplyImageLateAnchor`
-///    （按已登记的语义锚重设落点，BUG-4797）→ `registerSnapScroll` →
+///    （按已登记的语义锚重设落点，BUG-4798）→ `registerSnapScroll` →
 ///    `notifyRestoreComplete` 顺序在位。这是「Dart 收到通知时落点已定」的 program-order
 ///    保证，不是时间赌——顺序一乱就退化成赌。回调**不得**写回延后之前捕获的像素位置
 ///    （迟到图片重锚 / 用户翻页会被盖掉）；行为由
@@ -73,21 +73,21 @@ void main() {
     expect(
       setPos,
       greaterThan(-1),
-      reason: 'settle 必须同步重设落点（按已登记的语义锚重算，BUG-4797）',
+      reason: 'settle 必须同步重设落点（按已登记的语义锚重算，BUG-4798）',
     );
     expect(snap, greaterThan(setPos), reason: 'snap 基线须在落点写入之后注册');
     expect(
       body.contains('_settleAndNotify: function()'),
       isTrue,
       reason:
-          'BUG-4797：settle 不再接收延后之前捕获的 (context, pos)——'
+          'BUG-4798：settle 不再接收延后之前捕获的 (context, pos)——'
           '带着像素位置进来，回调就会把它写回去、盖掉这 16ms 内的迟到图片重锚',
     );
     expect(
       body.contains('setPagePosition('),
       isFalse,
       reason:
-          'BUG-4797：settle 回调不得直接写像素位置；重设落点只走 '
+          'BUG-4798：settle 回调不得直接写像素位置；重设落点只走 '
           'reapplyImageLateAnchor（锚已清 = 位置已归别人所有，不写）',
     );
     expect(

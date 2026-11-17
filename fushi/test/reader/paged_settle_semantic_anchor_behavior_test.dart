@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/reader/reader_pagination_scripts.dart';
 import 'package:fushi/src/reader/reader_study_unit_script.dart';
 
-/// BUG-4797：分页恢复落点后的 16 ms settle、以及揭示落页后的下一帧重写，把**延后之前
+/// BUG-4798：分页恢复落点后的 16 ms settle、以及揭示落页后的下一帧重写，把**延后之前
 /// 捕获的像素位置**原样写回。
 ///
 /// 三个恢复入口（`restoreProgress` / `restoreToCharOffset` / `jumpToFragment`）落点后读出
