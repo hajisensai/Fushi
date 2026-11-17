@@ -304,6 +304,26 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  /// 批量删除点头之后：bfa7138bf1（BUG-4709 / 35YfcYO-zR）起删除期间挂着不可点掉
+  /// 的进度对话框（不定态指示器持续出帧），删除链路里的真实 IO（资产目录 / 文件
+  /// 回收）在 fakeAsync 下不回话，直接 pumpAndSettle 只会对着转圈超时。这里交替
+  /// pump 与 runAsync 让真实 IO 跑完，直到进度对话框自己关掉；30s 上界内没关 =
+  /// 删除真的卡死，照样失败。
+  Future<void> finishBatchDelete(WidgetTester tester) async {
+    final Finder progress = find.text(t.video_library_delete_progress_title);
+    final DateTime deadline = DateTime.now().add(const Duration(seconds: 30));
+    await tester.pump();
+    while (progress.evaluate().isNotEmpty &&
+        DateTime.now().isBefore(deadline)) {
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      });
+      await tester.pump(const Duration(milliseconds: 20));
+    }
+    await tester.pumpAndSettle();
+    expect(progress, findsNothing, reason: '删除结束后进度对话框必须关掉');
+  }
+
   Future<void> seedTaggedVideo() async {
     await db.upsertVideoBook(
       const VideoBooksCompanion(
@@ -1105,7 +1125,7 @@ void main() {
     await tester.pumpAndSettle();
     // 确认对话框的「删除」按钮（AlertDialog 内）。
     await tester.tap(find.text(t.dialog_delete).last);
-    await tester.pumpAndSettle();
+    await finishBatchDelete(tester);
 
     final List<VideoBookRow> remaining = await VideoBookRepository(
       db,
@@ -1245,7 +1265,7 @@ void main() {
     await tester.tap(find.byIcon(Icons.delete_outline).last);
     await tester.pumpAndSettle();
     await tester.tap(find.text(t.dialog_delete).last);
-    await tester.pumpAndSettle();
+    await finishBatchDelete(tester);
     await waitForAsyncCleanup(
       tester,
       () =>

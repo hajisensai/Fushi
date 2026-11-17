@@ -9,6 +9,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/video/cover_ui/video_frame_cover_picker.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 /// 拍板 wb8RZZbn90「从视频画面选取封面」守卫：
@@ -113,7 +114,7 @@ void main() {
     expect(confirmEnabled(tester), isTrue);
 
     // +10 秒微调：取新预览并更新时间戳。
-    await tester.tap(find.byIcon(Icons.forward_10));
+    await tester.tap(find.byIcon(FushiIcons.forward10));
     await tester.pumpAndSettle();
     expect(calls.last.atMs, 130000);
     expect(find.text('2:10 / 20:00'), findsOneWidget);
@@ -145,9 +146,9 @@ void main() {
     expect(confirmEnabled(tester), isTrue);
 
     // 连点两次 −10 秒：50s 与 40s 两个请求在途。
-    await tester.tap(find.byIcon(Icons.replay_10));
+    await tester.tap(find.byIcon(FushiIcons.replay10));
     await tester.pump();
-    await tester.tap(find.byIcon(Icons.replay_10));
+    await tester.tap(find.byIcon(FushiIcons.replay10));
     await tester.pump();
     expect(pending.keys, containsAll(<int>[50000, 40000]));
     expect(confirmEnabled(tester), isFalse);
