@@ -566,8 +566,10 @@ pub fn run(dir: &Path, opts: Options<'_>) -> Result<Outcome, String> {
     out
 }
 
-/// 删掉 [LEFTOVER_REHEARSAL_DIR]（不在就算删过）。
-fn remove_leftover_rehearsal(dir: &Path) -> Result<(), String> {
+/// 删掉 [LEFTOVER_REHEARSAL_DIR]（不在就算删过）。两处调：迁移拿到换代锁之后（[run]），以及新代库按 Primary 打开时
+/// （kernel.rs `G4Core::open`）——在早期预发布版上已经迁移完、或迁移在拿锁之前就被挡住的用户，不再走 [run] 拿锁
+/// 那一步，预演目录（里面可能有一份旧库内容的副本）要靠开库清掉。
+pub(crate) fn remove_leftover_rehearsal(dir: &Path) -> Result<(), String> {
     let work = dir.join(LEFTOVER_REHEARSAL_DIR);
     match std::fs::remove_dir_all(&work) {
         Ok(()) => Ok(()),

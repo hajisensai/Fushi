@@ -17,8 +17,7 @@
 //! 关库（[G4Core::close]）：先关读连接池（等借出的放回），再关写连接（最后关的连接把 WAL 并回主文件）。之后经它的命令
 //! 一律报 `CLOSED`（与协议 3 同文，Dart 按它认「已关闭」）。
 //!
-//! 还没有新代实现的 C 直出入口（`ffsrs_store_legacy_*`）在这里有同名方法，报 [unwired] 的「尚未接线」错误——C 入口照常
-//! 解析输入，接线的模块只替换方法体。`ffsrs_store_snapshot` 已接（G11-4，[G4Core::snapshot_into]）。逐卡重放与训练集的 C 入口已接（S1b，`dispatch.rs` 末尾
+//! `ffsrs_store_snapshot` 已接（G11-4，[G4Core::snapshot_into]）。逐卡重放与训练集的 C 入口已接（S1b，`dispatch.rs` 末尾
 //! 「C 直出入口」一节）。
 //!
 //! 迁移（`gen4_migrate_status` / `gen4_migrate_profiles` / `gen4_migrate_run` / `gen4_migrate_cancel`）是不针对已打开库的
@@ -282,6 +281,10 @@ impl G4Core {
                         Ok(false)
                     );
                 }
+                // 已删的换代前预演留在库旁的工作目录（G7-6，`migrate.rs` [super::migrate::LEFTOVER_REHEARSAL_DIR]）：Primary
+                // 是这个目录唯一的写者，幂等删掉。删不掉（文件被别的进程占着、权限）不挡开库：那只是一份过时的副本，与
+                // 用户的卡片无关，因它打不开库才是让用户出问题；下一次 Primary 打开或迁移再删。
+                let _ = super::migrate::remove_leftover_rehearsal(dir);
                 Some(opened.conn)
             }
             OpenMode::Secondary => {
