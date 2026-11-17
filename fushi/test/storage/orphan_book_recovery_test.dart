@@ -188,7 +188,7 @@ void main() {
     expect(again.unrecoverable, hasLength(4));
   });
 
-  test('BUG-4797：替换到一半留下的 .bak-* 先改回原名，再按正确的 bookKey 列出', () async {
+  test('BUG-4800：替换到一半留下的 .bak-* 先改回原名，再按正确的 bookKey 列出', () async {
     // 进程死在「旧树改名 bak」与「新树就位」之间：bak 是这本书唯一的副本。
     writeEpub('被打断的书.bak-1700000000000', '被打断的书');
     // 新树已就位、bak 只是没删掉：bak 是多余的。

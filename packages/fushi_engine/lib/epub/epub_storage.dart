@@ -106,7 +106,7 @@ class EpubStorage {
   static final Map<String, Future<void>> _residueSweeps =
       <String, Future<void>>{};
 
-  /// 每个进程（每个书库根）只跑一次的导入残留清扫（BUG-4797）。导入入口在建自己的
+  /// 每个进程（每个书库根）只跑一次的导入残留清扫（BUG-4800）。导入入口在建自己的
   /// 暂存目录之前 await 它；并发的导入等的是同一个 Future。本进程自己建的暂存目录
   /// 清扫认得出、不碰（见 [sweepImportResidue]）。
   ///

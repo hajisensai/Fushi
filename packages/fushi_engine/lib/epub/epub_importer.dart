@@ -27,7 +27,7 @@ class EpubImporter {
   static String nextTempDirName() => EpubStorage.nextStagingDirName();
 
   /// 建本次导入独占的暂存目录（书库根下的 `.tmp-*`）。先等「上个进程的导入残留」
-  /// 清扫跑完（每进程一次，BUG-4797）再建。
+  /// 清扫跑完（每进程一次，BUG-4800）再建。
   ///
   /// 公开给漫画导入（`MangaImporter` / `MangaArchiveImporter`）共用：所有「往书库根
   /// 落一本书」的入口走同一种暂存 + 同一把落位锁。
@@ -54,7 +54,7 @@ class EpubImporter {
     final String tempDir = await createStagingDir(db);
 
     // 解析失败（坏包、OPF 解析不出、字数统计抛出）时 [_persistParsed] 根本没被调到，
-    // 它的清理也就轮不到：暂存目录必须在这里自己收（BUG-4797）。
+    // 它的清理也就轮不到：暂存目录必须在这里自己收（BUG-4800）。
     final _ParseResult result;
     try {
       result = await Isolate.run(
@@ -101,7 +101,7 @@ class EpubImporter {
   }) async {
     final String tempDir = await createStagingDir(db);
 
-    // 同 [import]：解析失败时暂存目录在这里收（BUG-4797）。
+    // 同 [import]：解析失败时暂存目录在这里收（BUG-4800）。
     final _ParseResult result;
     try {
       result = await Isolate.run(
