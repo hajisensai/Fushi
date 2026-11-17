@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show File;
 import 'dart:math' as math;
 import 'dart:ui' show PathMetric;
 
@@ -11,9 +12,10 @@ import 'package:fushi/src/media/links/theme_song/theme_song_plan.dart'
 import 'package:fushi/src/media/links/work_graph_store.dart';
 import 'package:fushi/src/media/links/work_network_layout.dart';
 import 'package:fushi/src/media/links/work_plans.dart';
-import 'package:fushi/src/media/media_cover_source.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/cover_image.dart'
+    show kLocalCoverDecodePixelWidth, resizedFileImage;
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart'
     show FushiCardTone;
@@ -597,10 +599,15 @@ class _NetworkNode extends StatelessWidget {
   }
 
   Widget _cover(BuildContext context) {
-    final MediaKind? kind = mediaKindOfLinkKind(entry.endpoint.kind);
-    final ImageProvider? local = kind == null
+    // 与区块同一口径（本机封面文件按库页解码上限缩放）；不经 `media_cover_source`
+    // ——那里为书架远端封面依赖 AppModel，会把本页拖进 import 大环。
+    final String? path = entry.coverPath;
+    final ImageProvider? local =
+        mediaKindOfLinkKind(entry.endpoint.kind) == null ||
+            path == null ||
+            path.isEmpty
         ? null
-        : resolveMediaCoverImage(kind: kind, localPath: entry.coverPath);
+        : resizedFileImage(File(path), width: kLocalCoverDecodePixelWidth);
     final Widget placeholder = ShelfCoverPlaceholder(
       icon: mediaLinkKindIcon(entry.endpoint.kind),
       iconSize: 28,

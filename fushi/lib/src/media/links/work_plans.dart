@@ -105,7 +105,7 @@ final class WorkSectionPlan {
 /// - [snapshot] 为 null（首次建图未完成）时只用 [confirmed]（本条目的直接已生效
 ///   连接）兜底，与旧版区块同内容，不闪空。
 /// - 本条目自己、以及它所在的系列合集（含合集的其余各卷）不列出。
-/// - 本条目若自己不在任何多成员作品里，但经卫星关系挂在别的作品上（主题曲详情
+/// - 本条目是音乐、自己不在任何多成员作品里，但经卫星关系挂在别的作品上（主题曲详情
 ///   页），列出那些作品——「这首歌属于哪部作品」。
 /// - 直接连接一律能找到落点：图还没跟上（去抖中）的新连接按对端分组补进来。
 WorkSectionPlan planWorkSection({
@@ -146,8 +146,11 @@ WorkSectionPlan planWorkSection({
     final WorkGraph graph = snapshot.graph;
     final Work? own = graph.workOf(self);
     final List<Work> works = <Work>[?own];
-    if (own == null || own.members.length < 2) {
-      // 附属物视角（主题曲 / 原声详情页）：经已生效卫星关系挂到的作品。
+    bool showNetwork = true;
+    if (mediaLinkIsMusicKind(self.kind) &&
+        (own == null || own.members.length < 2)) {
+      // 附属物视角（主题曲 / 原声详情页）：经已生效卫星关系挂到的作品。音乐自己的
+      // 「网」会把它挂的动画算成它的卫星（方向反了），没有宿主作品时不出网。
       final List<Work> hosts = <Work>[];
       for (final MediaLinkView v in confirmed) {
         final MediaLinkRelation? r = v.relation;
@@ -159,7 +162,11 @@ WorkSectionPlan planWorkSection({
           hosts.add(host);
         }
       }
-      if (hosts.isNotEmpty) networkEndpoint = hosts.first.identity;
+      if (hosts.isNotEmpty) {
+        networkEndpoint = hosts.first.identity;
+      } else {
+        showNetwork = false;
+      }
       works.addAll(hosts);
     }
     for (final Work work in works) {
@@ -169,7 +176,9 @@ WorkSectionPlan planWorkSection({
         if (work.original == m) card.original = true;
       }
     }
-    final WorkNetwork? network = graph.networkOf(networkEndpoint);
+    final WorkNetwork? network = showNetwork
+        ? graph.networkOf(networkEndpoint)
+        : null;
     if (network != null) {
       networkNodeCount = network.nodes.length;
       for (final WorkNetworkNode n in network.nodes) {
