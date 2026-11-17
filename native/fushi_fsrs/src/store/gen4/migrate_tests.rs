@@ -1524,3 +1524,118 @@ fn a_disk_full_midway_through_staging_leaves_the_library_as_it_was() {
     assert_eq!(status(&dir.0), Ok(GenState::NeedsMigration));
     assert_eq!(migrate(&dir.0).verdict(), "committed");
 }
+
+fn hex(b: &[u8]) -> String {
+    b.iter().map(|x| format!("{x:02x}")).collect()
+}
+
+/// 迁移完的新代库里不随本机新身份变的部分，一行一项：每个集合的 profile、集合标识、目录名、盐集合、新根 meta 的字节
+/// （`location::meta4`，纯函数）、本机身份的签名钥匙与 `prev`；每台承袭设备（`devs.src` 有值）的来源集合与日志里每个槽的
+/// 规范编码；本机原生日志里每条操作的 (seq, kind, fmt, deps, 载荷)。本机新设备 ID 单独返回。
+fn device_independent(dir: &Path) -> (Vec<String>, Vec<Id>) {
+    use crate::gen4::location::{MediaRoot, meta4};
+    let opened = open_gen4(dir, OpenMode::Primary).unwrap();
+    let t = Truth::new(&opened.conn);
+    let mut out = Vec::new();
+    let mut me_all = Vec::new();
+    for profile in [P, Q] {
+        let b = t.binding_of(profile).unwrap().unwrap();
+        out.push(format!(
+            "{profile}: collection {} dir {} salts {:?}",
+            b.collection.text(),
+            b.dir,
+            b.salts
+        ));
+        out.push(format!(
+            "{profile}: meta4 {}",
+            hex(&meta4(&b.collection, None, MediaRoot::V4).unwrap())
+        ));
+        let me = t.self_identity(b.col).unwrap().unwrap();
+        out.push(format!("{profile}: sk {} prev {:?}", hex(&me.sk), me.prev));
+        me_all.push(me.device);
+        let mut heritage = 0;
+        for d in t.devices(b.col).unwrap() {
+            if d.id == me.device {
+                t.for_each(b.col, &d.id, 1, |e| {
+                    let op = e.op().expect("native log holds whole ops");
+                    out.push(format!(
+                        "{profile}: native {} kind {} fmt {} deps {:?} payload {}",
+                        e.id.seq,
+                        op.kind,
+                        op.fmt,
+                        op.deps,
+                        hex(&op.payload)
+                    ));
+                    Ok(())
+                })
+                .unwrap();
+                continue;
+            }
+            let Some(src) = d.src else { continue };
+            out.push(format!(
+                "{profile}: heritage device {} from {} last {}",
+                d.id.text(),
+                src.text(),
+                d.last
+            ));
+            t.for_each(b.col, &d.id, 1, |e| {
+                let slot = e.slot().expect("a heritage log holds slots");
+                heritage += 1;
+                out.push(format!(
+                    "{profile}: slot {} {}",
+                    e.id.seq,
+                    hex(&slot.encode())
+                ));
+                Ok(())
+            })
+            .unwrap();
+        }
+        assert!(heritage > 0, "{profile}: no heritage slots");
+    }
+    (out, me_all)
+}
+
+/// 设计 §6.3「两台同时升级」：两台设备各自迁移同一份协议 3 库（两个 profile），本机新设备 ID、迁移时刻、批大小都不同；
+/// 转译出的承袭日志逐槽字节相同、集合标识 / 目录名 / 盐集合相同、新根 `meta.json` 字节相同、新身份沿用同一把钥匙且
+/// `prev` 指向同一个旧日志末尾，原生日志（那一条 `Salts`）除作者与时间以外也相同。于是两台谁先上传承袭段都一样
+/// （重叠上传幂等），谁的新根 meta 覆盖谁都一样。
+#[test]
+fn two_devices_upgrading_at_once_translate_the_same_bytes() {
+    const OTHER_DEV: Id = Id([0x4f; 16]);
+    let base = legacy_dir("g72-twin", &add_second_profile);
+    let a = copy_dir(&base.0, "g72-twin-a");
+    let b = copy_dir(&base.0, "g72-twin-b");
+    let out_a = migrate_with(&a.0, &caches_pq(), &Stop::new(), &mut Vec::new());
+    assert_eq!(out_a.verdict(), "committed", "{out_a:?}");
+    let out_b = run(
+        &b.0,
+        Options {
+            caches: &caches_pq(),
+            batch: 3,
+            now_ms: NOW + 1_000,
+            stop: &Stop::new(),
+            progress: &mut |_, _, _| {},
+            new_device: &|_, _| OTHER_DEV,
+        },
+    )
+    .unwrap();
+    assert_eq!(out_b.verdict(), "committed", "{out_b:?}");
+    let (left, devs_a) = device_independent(&a.0);
+    let (right, devs_b) = device_independent(&b.0);
+    assert_eq!(devs_a, vec![NEW_DEV, NEW_DEV]);
+    assert_eq!(devs_b, vec![OTHER_DEV, OTHER_DEV]);
+    assert!(left.iter().any(|l| l.contains(": native ")), "{left:#?}");
+    let diff: Vec<String> = left
+        .iter()
+        .zip(&right)
+        .filter(|(l, r)| l != r)
+        .map(|(l, r)| format!("A {l}\nB {r}"))
+        .collect();
+    assert!(
+        diff.is_empty() && left.len() == right.len(),
+        "two devices migrated the same library differently ({} vs {} lines):\n{}",
+        left.len(),
+        right.len(),
+        diff.join("\n")
+    );
+}
