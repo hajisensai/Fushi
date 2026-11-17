@@ -17,11 +17,16 @@ import 'package:fushi_engine/tts/manga_audio/manga_audio_script.dart';
 import 'package:fushi_engine/tts/render/tts_render_queue.dart';
 import 'package:fushi_engine/tts/tts_voice_preset.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:fushi_engine/tts/cast/cast_text_substitution.dart';
+import 'package:fushi_engine/tts/cast/series_cast.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/audiobook/tts/irodori_voice_packs.dart';
+import 'package:fushi/src/media/audiobook/tts/cast/cast_substitutions_page.dart';
+import 'package:fushi/src/media/audiobook/tts/cast/series_cast_resolver.dart';
+import 'package:fushi/src/media/audiobook/tts/studio/tts_series_run.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_series_cast.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_service.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_text.dart';
@@ -123,6 +128,9 @@ class _MangaAudioStudioPageState extends State<MangaAudioStudioPage> {
 
   /// 改声音指派时只写这一卷（关 = 写系列，下一卷自动沿用）。
   bool _volumeOnly = false;
+
+  /// 按系列跑（与小说共用，一次只跑一个）：进来时接上正在跑的那个。
+  TtsSeriesRun? _seriesRun = activeTtsSeriesRun;
 
   String? _regenerating;
   AudioPlayer? _player;
@@ -333,20 +341,179 @@ class _MangaAudioStudioPageState extends State<MangaAudioStudioPage> {
     if (mounted) setState(() {});
   }
 
-  Future<void> _generateSeries() async {
+  /// 按系列跑（与小说同一个 [TtsSeriesRun]）：逐卷看图标注没标过的页，再排整卷
+  /// 生成任务；某卷标注没做完就不排它。
+  Future<void> _startSeriesRun() async {
     final MangaAudioVolume? volume = _volume;
     final String? base = _basePresetId;
     final String? seriesKey = volume?.seriesKey;
-    if (volume == null || base == null || seriesKey == null) return;
-    final ({int queued, int skipped}) r = await enqueueMangaSeriesRender(
+    if (volume == null || seriesKey == null) return;
+    final TtsSeriesRunMode? mode =
+        await showFushiChoiceDialog<TtsSeriesRunMode>(
+          context: context,
+          title: t.audiobook_studio_series_run,
+          message: t.audiobook_studio_series_run_hint,
+          icon: FushiIcons.playlist,
+          options: <FushiChoiceOption<TtsSeriesRunMode>>[
+            FushiChoiceOption<TtsSeriesRunMode>(
+              value: TtsSeriesRunMode.both,
+              label: t.audiobook_studio_series_run_both,
+            ),
+            FushiChoiceOption<TtsSeriesRunMode>(
+              value: TtsSeriesRunMode.annotate,
+              label: t.audiobook_studio_series_run_annotate,
+            ),
+            FushiChoiceOption<TtsSeriesRunMode>(
+              value: TtsSeriesRunMode.render,
+              label: t.audiobook_studio_series_run_render,
+            ),
+          ],
+        );
+    if (mode == null || !mounted) return;
+    if (mode.renders && base == null) {
+      FushiToast.show(msg: t.audiobook_studio_no_voice);
+      return;
+    }
+    final List<String> volumes = await mangaSeriesVolumeKeys(
       widget.appModel,
-      seriesKey: seriesKey,
-      presetId: base,
+      seriesKey,
     );
-    FushiToast.show(
-      msg: t.manga_audio_series_queued(queued: r.queued, skipped: r.skipped),
+    if (!mounted) return;
+    final TtsSeriesRun run = TtsSeriesRun.start(
+      appModel: widget.appModel,
+      seriesKey: seriesKey,
+      books: volumes,
+      mode: mode,
+      kind: TtsRenderJobKind.manga,
+      render: (
+        presetId: base ?? '',
+        verify: false,
+        pausePreset: 'standard',
+        normalizeLoudness: false,
+      ),
+    );
+    setState(() => _seriesRun = run);
+    unawaited(
+      run.done.then((_) async {
+        if (!mounted) return;
+        await _reload();
+        FushiToast.show(
+          msg: run.failures.any(
+                (TtsSeriesRunFailure f) =>
+                    f.code == kTtsSeriesRunMangaIncomplete,
+              )
+              ? '${t.manga_audio_series_run_failed(queued: run.queued.length, failed: run.failures.length)}\n'
+                    '${t.manga_audio_series_run_annotate_incomplete}'
+              : t.manga_audio_series_run_failed(
+                  queued: run.queued.length,
+                  failed: run.failures.length,
+                ),
+        );
+      }),
+    );
+  }
+
+  /// 系列用词替换表（只改生成端念的文字与字幕；原文 / AI 标注 / 手填念法不变）。
+  Future<void> _editSubstitutions(MangaAudioVolume volume) async {
+    final SeriesCastProfile? series = volume.series;
+    final String? seriesKey = volume.seriesKey;
+    if (series == null || seriesKey == null) return;
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => CastSubstitutionsPage(
+          seriesTitle: series.title.isEmpty ? seriesKey : series.title,
+          initial: series.substitutions,
+          save: (List<CastTextSubstitution> next) async {
+            final SeriesCastProfile fresh = await seriesCastStoreFor(
+              widget.appModel,
+            ).update(
+              seriesKey,
+              (SeriesCastProfile p) => p.substitutions
+                ..clear()
+                ..addAll(next),
+            );
+            if (fresh.title.isEmpty) fresh.title = series.title;
+            volume.series = fresh;
+            volume.script.series = fresh.voices;
+            volume.script.substitutions = fresh.substitutions;
+            return fresh.substitutions;
+          },
+        ),
+      ),
     );
     if (mounted) setState(() {});
+  }
+
+  Widget _seriesSection(BuildContext context, MangaAudioVolume volume) {
+    final TtsSeriesRun? run = _seriesRun;
+    if (run == null) return _seriesSectionContent(context, volume);
+    return ListenableBuilder(
+      listenable: run,
+      builder: (BuildContext context, Widget? _) =>
+          _seriesSectionContent(context, volume),
+    );
+  }
+
+  Widget _seriesSectionContent(BuildContext context, MangaAudioVolume volume) {
+    final SeriesCastProfile? series = volume.series;
+    final TtsSeriesRun? run = _seriesRun;
+    final bool running = run != null && run.running;
+    final double inset = FushiDesignTokens.of(context).spacing.rowHorizontal;
+    return AdaptiveSettingsSection(
+      key: const ValueKey<String>('manga-audio-series'),
+      title: t.audiobook_studio_series_title,
+      children: <Widget>[
+        AdaptiveSettingsRow(
+          key: const ValueKey<String>('manga-audio-substitutions'),
+          icon: FushiIcons.swap,
+          showIcon: true,
+          title: t.tts_substitutions_title,
+          subtitle: castSubstitutionsSummary(
+            series?.substitutions ?? const <CastTextSubstitution>[],
+          ),
+          onTap: series == null
+              ? null
+              : () => unawaited(_editSubstitutions(volume)),
+        ),
+        AdaptiveSettingsRow(
+          key: const ValueKey<String>('manga-audio-series-run'),
+          icon: FushiIcons.playlist,
+          showIcon: true,
+          title: t.audiobook_studio_series_run,
+          subtitle: running
+              ? t.audiobook_studio_series_run_progress(
+                  done: run.index + 1,
+                  total: run.books.length,
+                  title: run.title,
+                )
+              : t.audiobook_studio_series_run_hint,
+          onTap: running ? null : () => unawaited(_startSeriesRun()),
+        ),
+        if (running) ...<Widget>[
+          Padding(
+            key: const ValueKey<String>('manga-audio-series-run-progress'),
+            padding: EdgeInsets.fromLTRB(inset, 0, inset, 12),
+            child: FushiLinearProgressIndicator(
+              value: run.books.isEmpty
+                  ? null
+                  : ((run.index +
+                                (run.annotateTotal <= 0
+                                    ? 0
+                                    : run.annotateDone / run.annotateTotal)) /
+                            run.books.length)
+                        .clamp(0.0, 1.0),
+            ),
+          ),
+          AdaptiveSettingsRow(
+            key: const ValueKey<String>('manga-audio-series-run-cancel'),
+            icon: FushiIcons.stop,
+            showIcon: true,
+            title: t.audiobook_studio_cancel,
+            onTap: run.cancelled ? null : run.cancel,
+          ),
+        ],
+      ],
+    );
   }
 
   /// 排一个补回任务；这一卷已有任务在跑时不排（队列会把请求并进那个任务而丢掉）。
@@ -665,6 +832,7 @@ class _MangaAudioStudioPageState extends State<MangaAudioStudioPage> {
     return <Widget>[
       _summarySection(volume),
       _jobSection(context, volume),
+      if (volume.seriesKey != null) _seriesSection(context, volume),
       _voiceSection(volume),
       _retrySection(volume),
       _unvoicedSection(volume),
@@ -763,12 +931,12 @@ class _MangaAudioStudioPageState extends State<MangaAudioStudioPage> {
               ),
               if (volume.seriesKey != null)
                 FushiPressScale(
-                  enabled: _basePresetId != null,
+                  enabled: !(_seriesRun?.running ?? false),
                   child: FushiOutlinedButton.icon(
                     key: const ValueKey<String>('manga-audio-generate-series'),
-                    onPressed: _basePresetId == null
+                    onPressed: (_seriesRun?.running ?? false)
                         ? null
-                        : () => unawaited(_generateSeries()),
+                        : () => unawaited(_startSeriesRun()),
                     icon: const FushiIcon(FushiIcons.audiobook),
                     label: Text(t.manga_audio_generate_series),
                   ),

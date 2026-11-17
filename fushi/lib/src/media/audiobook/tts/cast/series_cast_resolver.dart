@@ -71,3 +71,43 @@ Future<int?> _firstCollectionOf(FushiDatabase db, String bookKey) async {
   }
   return null;
 }
+
+/// 系列成员书（bookKey），按系列顺序：合集推断的系列先按合集内顺序（成员键 uid /
+/// bookKey 都认），再接档案里显式关联的成员；显式关联到别的系列 / 显式不归入的书
+/// 剔掉，不在书库的剔掉。小说「按系列跑」、漫画按系列标注与生成共用这一份顺序。
+Future<List<String>> seriesMemberBooks(AppModel appModel, String seriesKey) =>
+    seriesMemberBooksIn(
+      appModel.database,
+      seriesCastStoreFor(appModel),
+      seriesKey,
+    );
+
+/// [seriesMemberBooks] 的本体（只依赖数据库与档案存储，测试直接调）。
+Future<List<String>> seriesMemberBooksIn(
+  FushiDatabase db,
+  SeriesCastStore store,
+  String seriesKey,
+) async {
+  final List<String> ordered = <String>[];
+  final int? collection = seriesCollectionId(seriesKey);
+  if (collection != null) {
+    for (final MediaCollectionItemRow item in await db.getCollectionItems(
+      collection,
+    )) {
+      if (item.mediaType != 'epub') continue;
+      final EpubBookRow? row =
+          await db.getEpubBookByUid(item.entryKey) ??
+          await db.getEpubBook(item.entryKey);
+      if (row != null) ordered.add(row.bookKey);
+    }
+  }
+  final SeriesCastProfile profile = await store.load(seriesKey);
+  final List<String> out = <String>[];
+  for (final String bookKey in <String>{...ordered, ...profile.members}) {
+    final String? link = await store.linkOf(bookKey);
+    if (link != null && link != seriesKey) continue;
+    if (await db.getEpubBook(bookKey) == null) continue;
+    out.add(bookKey);
+  }
+  return out;
+}

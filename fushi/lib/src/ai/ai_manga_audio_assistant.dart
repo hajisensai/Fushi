@@ -81,8 +81,8 @@ AiProviderConfig? resolveMangaAudioProvider(
 }
 
 /// 一卷本地漫画：书架行、OCR 结果与页图文件（`relativeUrl` → 文件）。
-class MangaAudioVolume {
-  const MangaAudioVolume({
+class MangaAnnotateVolume {
+  const MangaAnnotateVolume({
     required this.row,
     required this.payload,
     required this.pageFiles,
@@ -100,7 +100,7 @@ class MangaAudioVolume {
 }
 
 /// 读一卷；不是本地漫画卷 / 没识别过 / 读不出时抛 [MangaAudioAnnotateError]。
-Future<MangaAudioVolume> loadMangaAudioVolume(
+Future<MangaAnnotateVolume> loadMangaAnnotateVolume(
   AppModel appModel,
   String bookKey,
 ) async {
@@ -116,7 +116,7 @@ Future<MangaAudioVolume> loadMangaAudioVolume(
   final ({MokuroPayload payload, Map<String, String> files})? read =
       await Isolate.run(() => _readVolume(jsonPath, dir));
   if (read == null) throw const MangaAudioAnnotateError('unreadable');
-  final MangaAudioVolume volume = MangaAudioVolume(
+  final MangaAnnotateVolume volume = MangaAnnotateVolume(
     row: row,
     payload: read.payload,
     pageFiles: <String, File>{
@@ -151,7 +151,7 @@ Future<({MokuroPayload payload, Map<String, String> files})?> _readVolume(
 /// 读第 [page] 页并缩到长边 [kMangaAnnotateImageMaxSide] 的 JPEG；本来就不大于它的
 /// JPEG / PNG / WebP 原样发，其它格式转 JPEG。读不出返回 null（记 `image` 失败）。
 Future<AiChatImage?> loadMangaAnnotatePageImage(
-  MangaAudioVolume volume,
+  MangaAnnotateVolume volume,
   int page,
 ) async {
   if (page < 0 || page >= volume.payload.images.length) return null;
@@ -214,7 +214,7 @@ class MangaAudioAnnotateSession {
   });
 
   final AppModel appModel;
-  final MangaAudioVolume volume;
+  final MangaAnnotateVolume volume;
   final MangaAudioScript script;
   final MangaAnnotationLedger ledger;
 
@@ -242,7 +242,7 @@ class MangaAudioAnnotateSession {
     AppModel appModel,
     String bookKey,
   ) async {
-    final MangaAudioVolume volume = await loadMangaAudioVolume(
+    final MangaAnnotateVolume volume = await loadMangaAnnotateVolume(
       appModel,
       bookKey,
     );
@@ -475,42 +475,17 @@ class MangaAudioAnnotateSession {
   }
 }
 
-/// 系列的成员卷（按标注顺序）：合集系列按合集成员顺序；再补上显式关联到本系列、
-/// 合集里没有的卷。只收漫画格式的书。
+/// 系列的成员卷（按标注顺序 = [seriesMemberBooks] 的系列顺序，与生成、小说按系列跑
+/// 同一份）。只收漫画格式的书；在线卷由标注会话自己报「暂不支持」。
 Future<List<EpubBookRow>> mangaSeriesVolumes(
   AppModel appModel,
   String seriesKey,
-) async {
-  final FushiDatabase db = appModel.database;
-  final List<EpubBookRow> out = <EpubBookRow>[];
-  final Set<String> seen = <String>{};
-  Future<void> add(String key) async {
-    final EpubBookRow? row =
-        await db.getEpubBook(key) ?? await db.getEpubBookByUid(key);
-    if (row == null || !seen.add(row.bookKey)) return;
-    if (BookFormat.tryParse(row.format) != BookFormat.manga) return;
-    out.add(row);
-  }
-
-  const String prefix = 'collection:';
-  if (seriesKey.startsWith(prefix)) {
-    final int? id = int.tryParse(seriesKey.substring(prefix.length));
-    if (id != null) {
-      for (final MediaCollectionItemRow item in await db.getCollectionItems(
-        id,
-      )) {
-        if (item.mediaType == 'epub') await add(item.entryKey);
-      }
-    }
-  }
-  final SeriesCastProfile profile = await seriesCastStoreFor(
-    appModel,
-  ).load(seriesKey);
-  for (final String key in profile.members) {
-    await add(key);
-  }
-  return out;
-}
+) async => <EpubBookRow>[
+  for (final String key in await seriesMemberBooks(appModel, seriesKey))
+    if (await appModel.database.getEpubBook(key) case final EpubBookRow row
+        when BookFormat.tryParse(row.format) == BookFormat.manga)
+      row,
+];
 
 /// 按系列跑时一卷的结果。
 typedef MangaSeriesVolumeResult = ({

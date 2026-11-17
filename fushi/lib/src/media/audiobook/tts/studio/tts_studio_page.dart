@@ -10,6 +10,7 @@ import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/epub_book.dart';
 import 'package:fushi_engine/tts/cast/cast_line_voicing.dart';
+import 'package:fushi_engine/tts/cast/cast_text_substitution.dart';
 import 'package:fushi_engine/tts/cast/series_cast.dart';
 import 'package:fushi_engine/tts/render/tts_cast.dart';
 import 'package:fushi_engine/tts/render/tts_pause.dart';
@@ -23,6 +24,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/asr_host/asr_host.dart' show isAsrSupported;
+import 'package:fushi/src/media/audiobook/tts/cast/cast_substitutions_page.dart';
 import 'package:fushi/src/media/audiobook/tts/cast/series_cast_resolver.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/audiobook_m4b_export_flow.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_cast_annotator.dart';
@@ -794,6 +796,29 @@ class _TtsStudioPageState extends State<TtsStudioPage> {
     } else {
       await _saveCast();
     }
+  }
+
+  /// 系列用词替换表（只改生成端念的文字与字幕；原文 / AI 标注 / 手填念法不变）。
+  Future<void> _editSubstitutions() async {
+    final SeriesCastProfile? series = _series;
+    if (series == null) return;
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => CastSubstitutionsPage(
+          seriesTitle: series.title,
+          initial: series.substitutions,
+          save: (List<CastTextSubstitution> next) async {
+            await _updateSeries(
+              (SeriesCastProfile fresh) => fresh.substitutions
+                ..clear()
+                ..addAll(next),
+            );
+            return _series?.substitutions ?? next;
+          },
+        ),
+      ),
+    );
+    if (mounted) setState(() {});
   }
 
   Future<void> _startSeriesRun() async {
@@ -1834,6 +1859,16 @@ class _TtsStudioPageState extends State<TtsStudioPage> {
           subtitle: _retryVoicesSummary,
           onTap: _castLocked ? null : () => unawaited(_editRetryVoices()),
         ),
+        if (series != null)
+          AdaptiveSettingsRow(
+            key: const ValueKey<String>('tts-studio-substitutions'),
+            icon: FushiIcons.swap,
+            showIcon: true,
+            title: t.tts_substitutions_title,
+            subtitle: castSubstitutionsSummary(series.substitutions),
+            onTap: _castLocked ? null : () => unawaited(_editSubstitutions()),
+            trailing: _chevron(context),
+          ),
         if (series != null)
           AdaptiveSettingsRow(
             key: const ValueKey<String>('tts-studio-series-run'),

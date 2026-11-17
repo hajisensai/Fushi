@@ -31,7 +31,6 @@ import 'package:path/path.dart' as p;
 import 'package:fushi/src/media/audiobook/tts/cast/series_cast_resolver.dart';
 import 'package:fushi/src/media/audiobook/tts/irodori_voice_packs.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_series_cast.dart';
-import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_service.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_library.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_render_backend.dart';
@@ -419,63 +418,18 @@ Future<List<String>> mangaSeriesVolumeKeys(
   seriesKey,
 );
 
-/// [mangaSeriesVolumeKeys] 的本体（只依赖数据库与档案存储，测试直接调）。
+/// [mangaSeriesVolumeKeys] 的本体（只依赖数据库与档案存储，测试直接调）：系列成员
+/// 顺序（[seriesMemberBooksIn]，与小说按系列跑同一份）里的本地漫画卷。
 Future<List<String>> mangaSeriesVolumeKeysIn(
   FushiDatabase db,
   SeriesCastStore store,
   String seriesKey,
-) async {
-  final List<String> ordered = <String>[];
-  final int? id = seriesCollectionId(seriesKey);
-  if (id != null) {
-    for (final MediaCollectionItemRow item in await db.getCollectionItems(id)) {
-      if (item.mediaType != 'epub') continue;
-      final EpubBookRow? row =
-          await db.getEpubBookByUid(item.entryKey) ??
-          await db.getEpubBook(item.entryKey);
-      if (row != null) ordered.add(row.bookKey);
-    }
-  }
-  final SeriesCastProfile profile = await store.load(seriesKey);
-  for (final String key in profile.members) {
-    if (!ordered.contains(key)) ordered.add(key);
-  }
-  final List<String> out = <String>[];
-  for (final String key in ordered) {
-    final EpubBookRow? row = await db.getEpubBook(key);
-    if (row != null && isLocalMangaVolume(row)) out.add(key);
-  }
-  return out;
-}
-
-/// 「按系列跑」：系列里每一卷（按顺序）排一个整卷生成任务；没有可读台词的卷跳过。
-/// 返回排上的卷数与跳过的卷数。队列串行，所以各卷按这里的顺序依次生成。
-Future<({int queued, int skipped})> enqueueMangaSeriesRender(
-  AppModel appModel, {
-  required String seriesKey,
-  required String presetId,
-}) async {
-  final TtsRenderQueue queue = ttsRenderQueueFor(appModel);
-  final MangaAudioScriptStore scripts = mangaAudioScriptStoreFor(appModel);
-  int queued = 0;
-  int skipped = 0;
-  for (final String key in await mangaSeriesVolumeKeys(appModel, seriesKey)) {
-    final MangaAudioScript script = await scripts.load(key);
-    if (script.audibleLines.isEmpty) {
-      skipped++;
-      continue;
-    }
-    final EpubBookRow? row = await appModel.database.getEpubBook(key);
-    await queue.enqueue(
-      bookKey: key,
-      title: row?.title ?? key,
-      presetId: presetId,
-      kind: TtsRenderJobKind.manga,
-    );
-    queued++;
-  }
-  return (queued: queued, skipped: skipped);
-}
+) async => <String>[
+  for (final String key in await seriesMemberBooksIn(db, store, seriesKey))
+    if (await db.getEpubBook(key) case final EpubBookRow row
+        when isLocalMangaVolume(row))
+      key,
+];
 
 /// 声音指派的改动写到哪：系列（默认，下一卷自动沿用）或只这一卷。没有系列时只能写
 /// 这一卷。

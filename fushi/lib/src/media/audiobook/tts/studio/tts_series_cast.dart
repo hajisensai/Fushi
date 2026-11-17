@@ -120,36 +120,11 @@ Future<List<({String key, String title})>> ttsSeriesCandidates(
       (key: '$kSeriesKeyCollectionPrefix${c.id}', title: c.name),
 ];
 
-/// 系列成员书（bookKey），按系列顺序：合集推断的系列先按合集内顺序，再接档案里显式
-/// 关联的成员；显式关联到别的系列 / 显式不归入的书剔掉。
+/// 系列成员书（bookKey），按系列顺序（[seriesMemberBooks]）。
 Future<List<String>> ttsSeriesMemberBooks(
   AppModel appModel,
   SeriesCastProfile profile,
-) async {
-  final FushiDatabase db = appModel.database;
-  final List<String> ordered = <String>[];
-  final int? collection = seriesCollectionId(profile.seriesKey);
-  if (collection != null) {
-    for (final MediaCollectionItemRow item in await db.getCollectionItems(
-      collection,
-    )) {
-      if (item.mediaType != 'epub') continue;
-      final EpubBookRow? row =
-          await db.getEpubBook(item.entryKey) ??
-          await db.getEpubBookByUid(item.entryKey);
-      if (row != null) ordered.add(row.bookKey);
-    }
-  }
-  final SeriesCastStore store = seriesCastStoreFor(appModel);
-  final List<String> out = <String>[];
-  for (final String bookKey in <String>{...ordered, ...profile.members}) {
-    final String? link = await store.linkOf(bookKey);
-    if (link != null && link != profile.seriesKey) continue;
-    if (await db.getEpubBook(bookKey) == null) continue;
-    out.add(bookKey);
-  }
-  return out;
-}
+) => seriesMemberBooks(appModel, profile.seriesKey);
 
 /// 给角色选声音写到哪一层。
 enum TtsVoiceScope {
