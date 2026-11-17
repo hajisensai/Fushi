@@ -652,8 +652,31 @@ Future<void> runCheckedVideoDiscCommand(
   List<String> command,
 ) async {
   final int result = await _runVideoDiscCommand(native, command);
-  if (result < 0) throw VideoDiscMenuException('command-failed:$result');
+  if (result < 0)
+    throw VideoDiscMenuException(videoDiscCommandFailedCode(result));
 }
+
+/// mpv's generic `MPV_ERROR_COMMAND`: what the shipped `fushi-discnav1` patch
+/// returns when the stream answers a nav command with `STREAM_ERROR` — for a
+/// menu call that is libbluray's `bd_menu_call` refused by the disc's UO mask
+/// (or a DVD root-menu UOP), or a stream that is no longer a navigable disc.
+const int kMpvErrorCommand = -12;
+
+/// The [VideoDiscMenuException.code] of a checked disc command that mpv
+/// answered with the negative [result].
+String videoDiscCommandFailedCode(int result) => 'command-failed:$result';
+
+/// Whether [error], thrown by a top-menu / title-menu call
+/// ([VideoPlayerController.discMenuKey]), means the disc itself refused the
+/// menu call: the disc has no menu layer to return to right now.
+///
+/// Everything else — the navigation still initializing, the session not active
+/// at send time, a missing command result over the media_kit bridge (-1), any
+/// other mpv error — is a failed attempt, not an answer from the disc, and must
+/// not be read as "this disc has no menu".
+bool isVideoDiscMenuCallRefusal(Object error) =>
+    error is VideoDiscMenuException &&
+    error.code == videoDiscCommandFailedCode(kMpvErrorCommand);
 
 /// BUG-3507: goes through the media_kit patch's `commandWithResult`
 /// (`mpv_command_async`). A synchronous `mpv_command` waits for the mpv core
