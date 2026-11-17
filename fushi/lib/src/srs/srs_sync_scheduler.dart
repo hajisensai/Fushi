@@ -1304,6 +1304,9 @@ class SrsSyncScheduler {
       directoryKey: key,
     );
     final SrsDbStore linked = link.store;
+    // 新代认领 / 并入不换 profile uid，store 可能还是同一个对象（绑定变了由它自己重读身份）：调用方按对象身份判「换了」
+    // 会漏掉，这里直接通知界面重读。
+    if (link.changed && identical(linked, store)) _onDataChanged();
     final List<SrsRemoteProfile>? choose = link.choose;
     if (choose == null) {
       _linkDecided.remove(linkKey);
