@@ -20,6 +20,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi_audio/fushi_audio.dart' show Bookmark;
 import 'package:fushi_core/fushi_core.dart';
@@ -314,7 +315,10 @@ void main() {
         null;
 
     /// 先走页面自己的「加入书架」建好在线书，再换成源站卡住的运行时重进页面。
-    Future<_GatedRuntime> reenterWithGatedSource(WidgetTester tester) async {
+    Future<_GatedRuntime> reenterWithGatedSource(
+      WidgetTester tester, {
+      bool newChapter = true,
+    }) async {
       await pumpDetail(tester);
       await pumpUntil(tester, find.byKey(addKey));
       await tester.tap(find.byKey(addKey));
@@ -322,13 +326,14 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
 
       final _GatedRuntime gated = _GatedRuntime(
-        novelResult: const LnReaderNovel(
+        novelResult: LnReaderNovel(
           name: 'Novel A',
           path: '/a',
           author: 'Author A',
           chapters: <LnReaderChapter>[
             ...chapters,
-            LnReaderChapter(name: 'Chapter four', path: '/a/4'),
+            if (newChapter)
+              const LnReaderChapter(name: 'Chapter four', path: '/a/4'),
           ],
           totalPages: 1,
         ),
@@ -376,6 +381,34 @@ void main() {
       expect(secondaryEnabled(tester, downloadKey), isTrue);
       expect(enabled(tester, rowDownloadKey), isTrue);
     });
+
+    Object? replayKey(WidgetTester tester) => tester
+        .widget<FushiEntranceScope>(
+          find.ancestor(
+            of: find.text('Chapter one'),
+            matching: find.byType(FushiEntranceScope),
+          ),
+        )
+        .replayKey;
+
+    for (final bool newChapter in <bool>[false, true]) {
+      testWidgets('章节列表的进场动画：源站目录的章节${newChapter ? '变了，重播' : '与旧目录相同，不重播'}', (
+        WidgetTester tester,
+      ) async {
+        late _GatedRuntime gated;
+        late Object? before;
+        await tester.runAsync(() async {
+          gated = await reenterWithGatedSource(tester, newChapter: newChapter);
+          await pumpUntil(tester, find.text('Chapter one'));
+          before = replayKey(tester);
+          gated.gate.complete();
+          // 作者只有源站详情里有：它出来说明已经从旧目录换成了源站目录。
+          await pumpUntil(tester, find.text('Author A'));
+        });
+        expect(before, isNotNull);
+        expect(identical(replayKey(tester), before), !newChapter);
+      });
+    }
 
     testWidgets('源站取不回来：旧目录留着照常可读，头部挂错误，不退成整页报错', (WidgetTester tester) async {
       late _GatedRuntime gated;

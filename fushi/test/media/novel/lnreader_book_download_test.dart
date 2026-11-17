@@ -23,6 +23,14 @@ final Uint8List _png = base64Decode(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
 );
 
+/// AVIF 文件头（`ftyp` + brand `avif`）：[sniffLnReaderImageMediaType] 不认。
+final Uint8List _avif = Uint8List.fromList(<int>[
+  0x00, 0x00, 0x00, 0x1C, 0x66, 0x74, 0x79, 0x70, //
+  0x61, 0x76, 0x69, 0x66, 0x00, 0x00, 0x00, 0x00, //
+  0x61, 0x76, 0x69, 0x66, 0x6D, 0x69, 0x66, 0x31, //
+  0x6D, 0x69, 0x61, 0x66,
+]);
+
 Archive _unzip(Uint8List bytes) => ZipDecoder().decodeBytes(bytes);
 
 String _entry(Archive archive, String name) =>
@@ -52,6 +60,12 @@ void main() {
             request.headers;
         if (request.uri.path == '/ok.png') {
           request.response.add(_png);
+        } else if (request.uri.path == '/auto.img') {
+          // 按 Accept 协商格式的图床（Cloudflare Images / imgix auto=format）：
+          // 客户端声明能收 AVIF 就回 AVIF，否则回原图。
+          final String accept =
+              request.headers.value(HttpHeaders.acceptHeader) ?? '';
+          request.response.add(accept.contains('image/avif') ? _avif : _png);
         } else if (request.uri.path == '/redirect.png') {
           request.response.statusCode = HttpStatus.found;
           request.response.headers.set(
@@ -291,6 +305,61 @@ void main() {
           'https://example.com/2',
           reason: 'Referer 是章节页地址，不退成站点首页。',
         );
+      });
+
+      test('按 Accept 协商格式的图床：不声明 AVIF，拿回嗅探认得的原图（插图与封面）', () async {
+        expect(
+          sniffLnReaderImageMediaType(_avif),
+          isNull,
+          reason: '前提：嗅探不认 AVIF。认了的话这条测试与 Accept 的收窄都该重看。',
+        );
+        final (
+          LnReaderManager manager,
+          FakeLnReaderRuntime _,
+        ) = await setUpManager(
+          chapter2: '<p>図<img src="$imageBase/auto.img"/></p>',
+        );
+        final LnReaderEpubChapter chapter = await fetchSecond(manager);
+        expect(
+          chapter.images.single.mediaType,
+          'image/png',
+          reason: '声明 image/avif 时图床回 AVIF，嗅探不认，整张图被当成「不是图片」丢掉。',
+        );
+        expect(
+          requestHeaders['127.0.0.1/auto.img']!.value(HttpHeaders.acceptHeader),
+          LnReaderBookDownload.epubImageAccept,
+        );
+        expect(LnReaderBookDownload.epubImageAccept, isNot(contains('avif')));
+
+        final FushiDatabase db = FushiDatabase.forTesting(
+          NativeDatabase.memory(),
+        );
+        final LnReaderBookDownload download = LnReaderBookDownload(
+          manager: manager,
+          database: db,
+          httpClientFactory: HttpClient.new,
+          isBlockedHost: (String _) => false,
+          isBlockedAddress: (InternetAddress _) => false,
+        );
+        final HttpClient client = download.openClient();
+        try {
+          final LnReaderEpubImage? cover = await download.fetchCover(
+            client: client,
+            plugin: plugin,
+            info: await manager.load(plugin),
+            novel: LnReaderNovel(
+              name: 'N',
+              path: '/n',
+              cover: '$imageBase/auto.img',
+              chapters: const <LnReaderChapter>[],
+              totalPages: 1,
+            ),
+          );
+          expect(cover?.mediaType, 'image/png');
+        } finally {
+          client.close(force: true);
+          await db.close();
+        }
       });
 
       test('重定向到别的主机：上一跳的 cookie 不跟过去', () async {

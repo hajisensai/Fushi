@@ -217,7 +217,7 @@ class LnReaderBookDownload {
         headersFor: (Uri uri) => lnReaderImageHeaders(
           uri: uri,
           referer: baseUrl,
-          pluginHeaders: info.imageHeaders,
+          pluginHeaders: _epubImageHeaders(info.imageHeaders),
           cloudflare: manager.cloudflare,
         ),
         onFailure: (String reason) {
@@ -260,11 +260,24 @@ class LnReaderBookDownload {
       headersFor: (Uri uri) => lnReaderImageHeaders(
         uri: uri,
         referer: plugin.site,
-        pluginHeaders: info.imageHeaders,
+        pluginHeaders: _epubImageHeaders(info.imageHeaders),
         cloudflare: manager.cloudflare,
       ),
     );
   }
+
+  /// 进 EPUB 的图只声明 [sniffLnReaderImageMediaType] 认得的格式。
+  ///
+  /// [lnReaderImageHeaders] 默认的 `Accept` 带 `image/avif`（给 app 里直接显示的
+  /// 封面网格用）；按 `Accept` 协商格式的图床（Cloudflare Images、imgix
+  /// `auto=format`、wsrv.nl 一类）看到它就回 AVIF，而嗅探不认 AVIF，整张图会被
+  /// 当成「不是图片」丢掉。插件自己写了 `Accept` 的以插件为准。
+  static const String epubImageAccept =
+      'image/webp,image/apng,image/png,image/jpeg,image/gif,*/*;q=0.8';
+
+  static Map<String, String> _epubImageHeaders(
+    Map<String, String> pluginHeaders,
+  ) => <String, String>{'Accept': epubImageAccept, ...pluginHeaders};
 
   /// 下一张图；取不到返回 null，原因（不含地址里的查询串）交给 [onFailure]。
   ///

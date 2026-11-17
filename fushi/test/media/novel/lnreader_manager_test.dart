@@ -40,6 +40,35 @@ class _UnreadableFile implements File {
   );
 }
 
+/// 写不进去的文件（磁盘满 / 占用）：只有写入失败，其余照常。
+class _UnwritableFile implements File {
+  _UnwritableFile(this._real);
+
+  final File _real;
+
+  @override
+  String get path => _real.path;
+
+  @override
+  Directory get parent => _real.parent;
+
+  @override
+  Future<bool> exists() => _real.exists();
+
+  @override
+  Future<File> writeAsString(
+    String contents, {
+    FileMode mode = FileMode.write,
+    Encoding encoding = utf8,
+    bool flush = false,
+  }) async => throw FileSystemException('No space left on device', path);
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => throw UnsupportedError(
+    'unwritable file: ${invocation.memberName} must not be called',
+  );
+}
+
 /// 在 [body] 里，名字以 [suffix] 结尾的文件在 [unreadable] 返回 true 时读不出来。
 Future<T> _withUnreadable<T>(
   String suffix,
@@ -487,6 +516,55 @@ void main() {
       });
     });
 
+    test('读到之后迁移标记写盘失败：重试只补写标记，不重读盘把内存盖回去', () async {
+      // 旧版本的 state.json：没有迁移标记，initialise 读完要补写一次。
+      final String legacyState = _installedState.replaceFirst(
+        ',"legacyBuiltinStoreMigrated":true',
+        '',
+      );
+      expect(legacyState, isNot(contains('legacyBuiltinStoreMigrated')));
+      final File state = File('${root.path}/state.json');
+      await state.writeAsString(legacyState);
+      bool diskFull = true;
+      await IOOverrides.runZoned<Future<void>>(
+        () async {
+          final LnReaderManager m = manager(FakeLnReaderRuntime());
+          await m.initialise();
+          expect(m.installed.single.id, 'yomou.syosetu');
+          expect(m.stateError, isNull, reason: '读到了：stateError 只表示没读到。');
+          expect(await state.readAsString(), legacyState);
+          expect(
+            ErrorLogService.instance.entries.map((ErrorLogEntry e) => e.source),
+            contains('LnReaderManager.initialise'),
+            reason: '写盘失败不无痕。',
+          );
+          // 读到之后内存就是真相，改动不被拒。
+          await expectLater(m.ensureReady(), completes);
+
+          // 盘上的文件此后与内存不同（等价于「用户改动的写盘还在路上」）。修复
+          // 前：失败后的下一次 initialise 整份重读，把内存换回盘上的内容。
+          diskFull = false;
+          await state.writeAsString('{"stores":[],"installed":[]}');
+          await m.initialise();
+          expect(
+            m.installed.single.id,
+            'yomou.syosetu',
+            reason: '重试不重读：内存里的状态不被盘上的旧文件盖掉。',
+          );
+          final Map<String, Object?> written =
+              jsonDecode(await state.readAsString()) as Map<String, Object?>;
+          expect(written[kLnReaderLegacyStoreMigratedKey], isTrue);
+          expect(written['installed'], hasLength(1));
+        },
+        createFile: (String path) {
+          final File real = Zone.root.run<File>(() => File(path));
+          return path.endsWith('.part') && diskFull
+              ? _UnwritableFile(real)
+              : real;
+        },
+      );
+    });
+
     test('state.json 是坏 JSON：按空起，但原文件先改名留底', () async {
       final File state = File('${root.path}/state.json');
       for (final String broken in <String>['{"installed":[{"id":"x"', '[]']) {
@@ -542,8 +620,18 @@ void main() {
       expect(runtime.loadedStorage['yomou.syosetu'], isEmpty);
       expect(await backup.readAsString(), '{"token":"x"');
 
+      // 另一个插件（id `yomou.syosetu.json.corrupt-x`）的存储文件：文件名以本插件
+      // 的留底前缀开头，但不是留底。
+      final File neighbour = File('${storage.path}.corrupt-x.json');
+      await neighbour.writeAsString('{"token":"other"}');
+
       await m.clearData(m.installed.single);
       expect(backup.existsSync(), isFalse, reason: '留底里是同一份登录态。');
+      expect(
+        await neighbour.readAsString(),
+        '{"token":"other"}',
+        reason: '只比前缀会把别的插件的登录态一起删掉。',
+      );
       expect(storage.existsSync(), isFalse);
     });
   });

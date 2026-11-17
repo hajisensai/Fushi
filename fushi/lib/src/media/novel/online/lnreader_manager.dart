@@ -116,6 +116,10 @@ class LnReaderManager extends ChangeNotifier {
   /// `state.json` 已经成功读进内存。读不出来（IO 失败）时恒 false：内存里的空
   /// 列表不是真相，任何写盘都会拿它盖掉磁盘上完好的状态。
   bool _stateLoaded = false;
+
+  /// 旧内置仓库的迁移标记还没落盘（读盘时发现缺标记，写盘还没成功）。任何一次
+  /// 成功的 [_writeState] 都带标记，所以它成功即清。
+  bool _migrationMarkerPending = false;
   Object? _stateError;
   StackTrace? _stateErrorStack;
 
@@ -163,17 +167,25 @@ class LnReaderManager extends ChangeNotifier {
   /// **不抛**：页面是 fire-and-forget 调的。读盘失败记在 [stateError] 并写错误
   /// 日志，状态保持「未加载」，且不缓存这次失败——下一次调用重读（一次瞬时 IO
   /// 错误不该让本次进程再也进不去）。要「读不到就失败」的调用方用 [ensureReady]。
+  ///
+  /// 重试只补没做完的那一步：盘上状态**只读一次**。读到之后内存就是真相（用户
+  /// 的改动都落在内存上），再读一遍会拿盘上的旧文件把它盖掉；所以读到之后的
+  /// 失败（迁移标记写盘）下一次只补写标记。
   Future<void> initialise() => _initialising ??= _initialiseOnce();
 
   Future<void> _initialiseOnce() async {
     try {
-      await _initialise();
+      if (!_stateLoaded) await _loadState();
       _stateError = null;
       _stateErrorStack = null;
+      if (_migrationMarkerPending) await _writeState();
     } on Object catch (error, stack) {
       _initialising = null;
-      _stateError = error;
-      _stateErrorStack = stack;
+      // [stateError] 只表示「没读到」；读到之后的写盘失败只进错误日志。
+      if (!_stateLoaded) {
+        _stateError = error;
+        _stateErrorStack = stack;
+      }
       ErrorLogService.instance.log('LnReaderManager.initialise', error, stack);
       _notify();
     }
@@ -191,10 +203,10 @@ class LnReaderManager extends ChangeNotifier {
     );
   }
 
-  Future<void> _initialise() async {
+  /// 把 `state.json` 读进内存。整个进程只成功一次（见 [initialise]）。
+  Future<void> _loadState() async {
     await rootDirectory.create(recursive: true);
     final Map<String, Object?> state = await _readJsonObject(_stateFile);
-    _stateLoaded = true;
     final List<LnReaderStore> stored = <LnReaderStore>[
       if (state['stores'] is List)
         for (final Object? raw in state['stores'] as List)
@@ -218,9 +230,9 @@ class LnReaderManager extends ChangeNotifier {
     // 迁移只做一次：无论补没补仓库都落一次标记，此后用户删掉它不会被塞回来。
     // 全新安装（没有 state.json、没装过任何插件）不写盘，等第一次真实改动时
     // 由 [_writeState] 一并带上标记。
-    if (!migrated && (state.isNotEmpty || _stores.isNotEmpty)) {
-      await _writeState();
-    }
+    _migrationMarkerPending =
+        !migrated && (state.isNotEmpty || _stores.isNotEmpty);
+    _stateLoaded = true;
     _notify();
     if (refreshOnInitialise) unawaited(refreshStores());
   }
@@ -260,6 +272,15 @@ class LnReaderManager extends ChangeNotifier {
   static String _corruptPrefix(File file) =>
       '${p.basename(file.path)}.corrupt-';
 
+  /// [name] 是不是 [file] 的留底：前缀之后必须是纯数字时间戳。只比前缀会命中
+  /// 别的插件的存储文件（id 为 `a.json.corrupt-x` 的插件，存储文件名正好以
+  /// 插件 `a` 的留底前缀开头）。
+  static bool _isCorruptBackupName(File file, String name) {
+    final String prefix = _corruptPrefix(file);
+    return name.startsWith(prefix) &&
+        RegExp(r'^\d+$').hasMatch(name.substring(prefix.length));
+  }
+
   Future<void> _quarantine(File file, Object error, StackTrace stack) async {
     final File backup = File(
       p.join(file.parent.path, '${_corruptPrefix(file)}${_clock()}'),
@@ -276,10 +297,10 @@ class LnReaderManager extends ChangeNotifier {
   Future<List<File>> _corruptBackups(File file) async {
     final Directory parent = file.parent;
     if (!await parent.exists()) return const <File>[];
-    final String prefix = _corruptPrefix(file);
     return <File>[
       await for (final FileSystemEntity entity in parent.list())
-        if (entity is File && p.basename(entity.path).startsWith(prefix))
+        if (entity is File &&
+            _isCorruptBackupName(file, p.basename(entity.path)))
           entity,
     ];
   }
@@ -303,6 +324,7 @@ class LnReaderManager extends ChangeNotifier {
         kLnReaderLegacyStoreMigratedKey: true,
       }),
     );
+    _migrationMarkerPending = false;
   }
 
   /// 每个目标文件一条写入链：同一文件的写按调用顺序串行（审查 B3）。
