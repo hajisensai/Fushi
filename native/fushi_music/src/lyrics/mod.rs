@@ -92,6 +92,22 @@ fn parse_qrc(text: &str, duration_ms: Option<i64>) -> Timeline {
     syllabic::parse(&body, flavor, duration_ms)
 }
 
+/// 加密歌词（KRC / 加密 QRC）解出的明文上限。真实整首歌词（含 XML 包装、翻译、注音轨）
+/// 在几十到几百 KB；zlib 压缩比可到约 1000:1，不设上限时插件结果上限（8 MiB）级别的
+/// 输入就能解出 GB 级明文，OOM 是 abort、FFI 的 panic 守卫接不住。
+pub const MAX_INFLATED_BYTES: usize = 4 * 1024 * 1024;
+
+/// zlib 解压，输出超过 `limit` 字节或流损坏都返回 None（只读到 `limit + 1` 字节就停）。
+pub(crate) fn inflate_bounded(data: &[u8], limit: usize) -> Option<Vec<u8>> {
+    use std::io::Read;
+    let mut out = Vec::new();
+    flate2::read::ZlibDecoder::new(data)
+        .take(limit as u64 + 1)
+        .read_to_end(&mut out)
+        .ok()?;
+    (out.len() <= limit).then_some(out)
+}
+
 fn parse_ttml(text: &str, duration_ms: Option<i64>) -> Result<Timeline, String> {
     ttml::parse(text, duration_ms).ok_or_else(|| "malformed TTML document".to_owned())
 }

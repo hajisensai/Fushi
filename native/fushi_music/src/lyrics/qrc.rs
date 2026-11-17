@@ -19,8 +19,6 @@
 //!    这是**来源文件自带的注音**（QQ 音乐提供），照原样显示；Fushi 自己不推断任何读音
 //!    （feature-blacklist：禁止自动注音）。注音段数与正文汉字数对不上时整份不挂，宁缺不错位。
 
-use std::io::Read;
-
 use super::model::*;
 
 /// 本地缓存 `.qrc` 的文件头（QMC1 异或后的明文是 `[offset:0]\n`）。
@@ -107,11 +105,7 @@ pub fn decrypt(bytes: &[u8], cipher: Cipher) -> Option<Vec<u8>> {
     for block in data.chunks_exact_mut(8) {
         des.crypt(block);
     }
-    let mut out = Vec::new();
-    flate2::read::ZlibDecoder::new(&data[..])
-        .read_to_end(&mut out)
-        .ok()?;
-    Some(out)
+    super::inflate_bounded(&data, super::MAX_INFLATED_BYTES)
 }
 
 /// 测试 / 往返用：把明文 QRC 加密成 [Cipher::Raw] 密文（zlib → 补零到 8 的倍数 → 3DES）。
@@ -605,6 +599,23 @@ mod tests {
         assert_eq!(sniff_encrypted(plain, true), None);
         assert_eq!(decrypt(b"0123456789ABCDEF", Cipher::Hex), None);
         assert_eq!(decrypt(b"short", Cipher::Raw), None);
+    }
+
+    #[test]
+    fn qrc_decompression_bomb_is_rejected() {
+        // 三种载体都走同一个有上限的解压：超过明文上限一律 None。
+        let plain = vec![b'['; crate::lyrics::MAX_INFLATED_BYTES + 1];
+        let raw = encrypt_raw(&plain);
+        assert!(raw.len() < 64 * 1024);
+        assert_eq!(decrypt(&raw, Cipher::Raw), None);
+        assert_eq!(decrypt(encrypt_hex(&plain).as_bytes(), Cipher::Hex), None);
+        assert_eq!(decrypt(&encrypt_local(&plain), Cipher::Local), None);
+        assert!(crate::lyrics::parse(encrypt_hex(&plain).as_bytes(), "qrc", None).is_err());
+        let at_limit = vec![b'['; crate::lyrics::MAX_INFLATED_BYTES];
+        assert_eq!(
+            decrypt(&encrypt_raw(&at_limit), Cipher::Raw).map(|v| v.len()),
+            Some(crate::lyrics::MAX_INFLATED_BYTES)
+        );
     }
 
     #[test]
