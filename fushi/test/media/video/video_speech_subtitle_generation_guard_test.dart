@@ -269,4 +269,142 @@ void main() {
       ),
     );
   });
+
+  // 网页模式（站点自己的播放器）也走完整管线：媒体地址从页面取（YouTube 现取 audio-only
+  // 流），整集音频与在线流同一个拉取器、同一个 resolveStream；产物登记到这一集的书上，作为
+  // 「生成的字幕」轨并进站点轨、选中，重进时读回。字幕菜单里有工作台入口。
+  test('web mode reaches the full pipeline and shows the generated track', () {
+    final String web = File(
+      'lib/src/pages/implementations/video_fushi/web_source.part.dart',
+    ).readAsStringSync();
+
+    final String gate = source
+        .split('bool get _canRunSubtitlePipeline =>')[1]
+        .split('bool _subtitleStudioAvailable(')[0];
+    expect(gate, contains('_canRunWebSubtitlePipeline'));
+    expect(
+      web.split('bool get _canRunWebSubtitlePipeline =>')[1],
+      contains('encrypted: _webSession?.lastState?.encrypted ?? false'),
+    );
+
+    final String router = source
+        .split('Future<void> _openSubtitleGeneration(')[1]
+        .split('Future<void> _generateSubtitleWithSpeechModel(')[0];
+    expect(router, contains('await _openWebSubtitlePipeline(controller)'));
+    expect(
+      router.indexOf('if (_webMode)'),
+      lessThan(router.indexOf('_remoteHostVideoTarget() == null')),
+    );
+
+    final String studioPanel = source
+        .split('Future<WidgetBuilder?> _subtitleStudioGeneratePanel(')[1]
+        .split('final String? videoPath = _currentVideoPath;')[0];
+    expect(
+      studioPanel,
+      contains('if (_webMode) return _webSubtitleStudioPanel(controller);'),
+    );
+
+    final String aiReference = source
+        .split(
+          'Future<VideoSubtitleStudioAiReference?> _subtitleStudioAiReference(',
+        )[1]
+        .split(
+          'Map<String, List<SubtitleEvidenceTrack>> _playerSubtitleEvidence(',
+        )[0];
+    expect(aiReference, contains('_canRunWebSubtitlePipeline'));
+    expect(aiReference, contains('_webSubtitleFrameInput(webSession)'));
+
+    // 菜单：工作台入口在网页档轨列表里。
+    final String rows = web
+        .split('Widget _buildWebSubtitleTrackRows(')[1]
+        .split('void _onWebPageLookup(')[0];
+    expect(rows, contains("'video-web-subtitle-studio'"));
+    expect(rows, contains('_subtitleStudioAvailable(controller)'));
+    expect(rows, contains('_openSubtitleStudio(controller)'));
+
+    // 取地址：页面回执 + cookie；拿不到时以说明原因的失败结束。
+    final String prepare = web
+        .split(
+          'Future<VideoStreamSubtitleAudioInput> _prepareWebWholeAudio(',
+        )[1]
+        .split('VideoStreamSubtitleAudioStaging? _startWebWholeAudio()')[0];
+    expect(prepare, contains('prepareWebVideoSubtitleAudio('));
+    expect(prepare, contains("'window.__fushiWebVideo.mediaSource()'"));
+    expect(prepare, contains('cookieHeader: session.cookieHeaderFor'));
+    expect(prepare, contains('throw VideoStreamSubtitleAudioUnavailable('));
+    expect(
+      web.split('VideoStreamSubtitleAudioStaging? _startWebWholeAudio()')[1],
+      contains('appVideoStreamSubtitleAudioStager.start('),
+    );
+
+    final String target = web
+        .split('Future<AppVideoSubtitleTarget?> _webSubtitleTarget(')[1]
+        .split('Future<void> _openWebSubtitlePipeline(')[0];
+    expect(target, contains('.resolveStream('));
+    expect(
+      target,
+      contains('repo.updateSubtitleSource(bookUid, subtitlePath)'),
+    );
+    expect(target, contains('videoStreamSubtitleFrameSource('));
+
+    final String open = web
+        .split('Future<void> _openWebSubtitlePipeline(')[1]
+        .split('WidgetBuilder? _webSubtitleStudioPanel(')[0];
+    expect(open, contains('_stageWholeAudioWithDialog('));
+    expect(open, contains('showVideoSubtitleGenerateSheet('));
+    expect(open, contains('_applyWebPipelineSubtitleWhenDone('));
+    final String panel = web
+        .split('WidgetBuilder? _webSubtitleStudioPanel(')[1]
+        .split('Future<void> _applyWebPipelineSubtitleWhenDone(')[0];
+    expect(panel, contains('VideoStreamSubtitleAudioPanel('));
+    expect(panel, contains('embedded: true'));
+    expect(panel, contains('_applyWebPipelineSubtitleWhenDone('));
+
+    // 结束后：同一播放器、同一集才装上并选中。
+    final String done = web
+        .split('Future<void> _applyWebPipelineSubtitleWhenDone(')[1]
+        .split('Future<void> _restoreWebGeneratedSubtitle()')[0];
+    expect(done, contains('identical(_controller, controller)'));
+    expect(done, contains('_activeBookUid == bookUid'));
+    expect(done, contains('AppVideoSubtitleJobStatus.succeeded'));
+    expect(done, contains('_installWebGeneratedTrack(select: true)'));
+
+    // 重进：落书后读回登记；站点换视频 key 时按新 key 重挂；已选上时不被每集默认站点轨抢走。
+    final String restore = web
+        .split('Future<void> _restoreWebGeneratedSubtitle()')[1]
+        .split('void _installWebGeneratedTrack(')[0];
+    expect(restore, contains('getVideoBookByBookUid('));
+    expect(restore, contains('row?.subtitleSource'));
+    final String bind = web
+        .split('Future<void> _bindWebEpisode(')[1]
+        .split('Future<void> _linkWebSeries(')[0];
+    expect(
+      'unawaited(_restoreWebGeneratedSubtitle());'.allMatches(bind),
+      hasLength(2),
+    );
+    expect(
+      web
+          .split('void _onWebState(')[1]
+          .split('Future<void> _bindWebEpisode(')[0],
+      contains('_installWebGeneratedTrack(select: generatedWasActive)'),
+    );
+    expect(
+      web
+          .split('void _maybeRequestDefaultSiteTrack()')[1]
+          .split('void _syncWebAudioTracks(')[0],
+      contains('webVideoGeneratedTrackKey(_webVideoKey)'),
+    );
+    final String install = web
+        .split('void _installWebGeneratedTrack(')[1]
+        .split('void _onWebPageLookup(')[0];
+    expect(install, contains('_webPendingTrackKey = null'));
+    expect(install, contains('_webPinnedTrackKey = key'));
+    expect(install, contains('_reselectWebTrack()'));
+
+    // 工作台拆分的日语字幕在网页档作为本机轨选中（与手机下载字幕同一个 helper）。
+    final String split = source
+        .split('Future<void> _extractJapaneseFromBilingualSubtitle(')[1]
+        .split('Future<void> _openSubtitleGeneration(')[0];
+    expect(split, contains('_selectWebLocalSubtitleTrack(target, cues)'));
+  });
 }
