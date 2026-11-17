@@ -307,7 +307,7 @@ void main() {
               true,
               true,
             ),
-            // 重试不会变的三类：不给「重新升级」。
+            // 重试不会变的两类：不给「重新升级」。
             (
               'schemaNewer',
               'the protocol 3 library is at schema 31',
@@ -319,13 +319,6 @@ void main() {
               'corrupt',
               'srs.db is damaged: file is not a database',
               t.srs_gen4_blocked_damaged,
-              true,
-              false,
-            ),
-            (
-              'mergeHalfDone',
-              'a profile merge is half done (profile_merge/x)',
-              t.srs_gen4_blocked_merge,
               true,
               false,
             ),

@@ -96,13 +96,19 @@ Future<SrsProfileFootprint> srsProfileFootprint(
 
 /// 一个事务里删掉 [profileUid] 在本机 srs.db 里的全部行（只动本机，远端已同步的集合不碰）。返回删之前的规模。
 /// 调用方负责先备份、并保证没有这个 uid 的副本还在写（见 `SrsDbStore.retire`）。
+///
+/// 新代（G9-5，`cmd/profile_data.rs` `profile_purge`）删的是这个 profile 绑定的那一个集合与它的本机状态行，别的
+/// profile 的集合一行不碰。[collection]：给用户看过、用户确认要删的集合标识（`identity` / `collection_info` 回的）；
+/// 给了内核就核对，profile 此刻绑的不是它（确认之后改绑 / 并入过）就报错、什么都不删。
 Future<SrsProfileFootprint> srsPurgeProfileRows(
   SrsCore core,
-  String profileUid,
-) async => SrsProfileFootprint.fromJson(
+  String profileUid, {
+  String? collection,
+}) async => SrsProfileFootprint.fromJson(
   await _run(core, <String, Object?>{
     'op': 'profile_purge',
     'profile': profileUid,
+    'collection': ?collection,
   }),
 );
 

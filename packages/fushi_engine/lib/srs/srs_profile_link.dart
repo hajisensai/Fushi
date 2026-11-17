@@ -398,11 +398,17 @@ Future<void> srsPublishProfileInfo(
 /// （`v2/devices/<[v2Device]>`）。[srsDecideProfileLink] 只在旧目录里没有别的设备时才会决定采用，所以删的只是
 /// 本设备自己的孤儿目录；`v2/devices` 下没有别的设备了，v2 集合根（meta.json、媒体）也只属于本设备。旧 profile
 /// 目录空了一并删除——否则后来的设备会看到两个同名 profile，判不出该关联哪个。
+///
+/// 新代集合根 `v4/`（[kSrs4Root]，G9-5）：与 v2 根同形（`devices/<设备>/…` + `meta.json` + 媒体），先于写入者目录判，
+/// 绝不当成旧格式的写入者目录。只删本机新代身份的设备目录 `v4/devices/<[v4Device]>`；`v4/devices` 下还有别的设备
+/// 就保留整个根（连同 profile 目录）。[v4Device] 不给 = 本机在这个集合里没有新代身份：`v4/` 整个算别人的，一个字节
+/// 不碰。
 Future<void> srsRemoveOwnProfileFolder(
   SyncAssetStore store, {
   required String profileUid,
   required String deviceId,
   String? v2Device,
+  String? v4Device,
 }) async {
   final String ns = await store.ensureNamespace(kSrsSync2Namespace);
   AssetEntry? profile;
@@ -413,7 +419,11 @@ Future<void> srsRemoveOwnProfileFolder(
   if (profile == null) return;
   bool foreign = false;
   for (final AssetEntry e in await store.listChildren(profile.id)) {
-    if (e.isFolder && srsWriterOfDevice(e.name, deviceId)) {
+    if (e.isFolder && e.name == kSrs4Root) {
+      if (v4Device == null || !await _removeOwnV2Device(store, e, v4Device)) {
+        foreign = true;
+      }
+    } else if (e.isFolder && srsWriterOfDevice(e.name, deviceId)) {
       await store.deleteAsset(e.id, isFolder: true);
     } else if (e.isFolder &&
         (e.name == kSrsSync2Folder || e.name == kSrsSync2V1Folder)) {

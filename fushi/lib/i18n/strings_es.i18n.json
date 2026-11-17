@@ -9353,7 +9353,6 @@
   "srs_gen4_aborted": "The upgrade did not pass verification and was rolled back. Your old library was not changed. A diagnostic report (IDs and counts only) was saved to ${path}",
   "srs_gen4_blocked": "The review library is busy right now (another window or process is using it). Try again in a moment.",
   "srs_gen4_blocked_damaged": "The old review library file is damaged and can't be upgraded. It was left exactly as it is. Don't restore a backup over it; contact support with your logs.",
-  "srs_gen4_blocked_merge": "A profile merge from an earlier version did not finish, so this version can't upgrade the review library yet. Your cards and review history are kept as they are.",
   "srs_gen4_blocked_newer": "This review library was written by a newer version of Fushi. Install the latest version to upgrade it; your data is unchanged.",
   "srs_gen4_blocked_unfinished": "The old library could not be prepared for the upgrade (details below). Your cards and review history are unchanged. You can upgrade again; if it keeps failing, contact support with your logs.",
   "srs_gen4_cancel_hint": "You can cancel until the final step; cancelling leaves everything as it was.",
