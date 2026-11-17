@@ -22,12 +22,12 @@ import 'package:path/path.dart' as p;
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  late FushiDatabase db;
+  late _CountingDatabase db;
   late Directory tmp;
   late LocalLibraryHostService svc;
 
   setUp(() {
-    db = FushiDatabase.forTesting(NativeDatabase.memory());
+    db = _CountingDatabase();
     tmp = Directory.systemTemp.createTempSync('hbk_host_manga');
     svc = LocalLibraryHostService(
       db: db,
@@ -264,6 +264,148 @@ void main() {
     );
     return dir.path;
   }
+
+  // 对端每翻一页打一次 mangaPageFile / mangaChapterPageFile：不能回回全表读书库、
+  // 整份重读重解析 manga.json、再对整卷 / 整章逐页 stat。
+  group('逐页请求不重复做整卷的活', () {
+    /// 把 [json] 换成 [content]，但修改时间保持 [modified]（与原文件大小相同时，
+    /// 缓存键「路径 + 修改时间 + 大小」完全不变）。
+    void rewriteKeepingMtime(File json, String content, DateTime modified) {
+      json.writeAsStringSync(content);
+      json.setLastModifiedSync(modified);
+    }
+
+    String pagesJson(List<String> urls) => jsonEncode(<String, Object?>{
+      'pages': <Object?>[
+        for (final String url in urls)
+          <String, Object?>{
+            'url': url,
+            'width': 800,
+            'height': 1200,
+            'blocks': <Object?>[],
+          },
+      ],
+    });
+
+    test('按主键取行：bookKey 命中时不读全表；传书名才回落全表找', () async {
+      await insertManga(bookKey: 'vol1');
+      await insertManga(bookKey: 'vol2');
+      await (db.update(db.epubBooks)
+            ..where(($EpubBooksTable t) => t.bookKey.equals('vol2')))
+          .write(const EpubBooksCompanion(title: Value<String>('第二巻')));
+      db.allBookReads = 0;
+
+      await svc.mangaPageFile('vol1', 0);
+      await svc.mangaPageFile('vol1', 1);
+      await svc.mangaManifest('vol1');
+      expect(db.allBookReads, 0, reason: 'bookKey 命中主键，不该读全表');
+
+      final File byTitle = await svc.mangaPageFile('第二巻', 0);
+      expect(byTitle.path, contains('vol2'));
+      expect(db.allBookReads, 1, reason: '书名只能回落全表找');
+    });
+
+    test('单卷：manga.json 没变就用上次的解析结果；修改时间或大小一变即重读', () async {
+      final String dir = await insertManga(bookKey: 'vol1');
+      final File json = File(p.join(dir, kMangaPackageMarker));
+      final DateTime modified = json.lastModifiedSync();
+      expect((await svc.mangaPageFile('vol1', 0)).readAsBytesSync().last, 0);
+
+      // 同大小、同修改时间，内容里两页对调：缓存键没变 → 仍按上次解析的页序给。
+      rewriteKeepingMtime(
+        json,
+        pagesJson(const <String>['images/p2.jpg', 'images/p1.jpg']),
+        modified,
+      );
+      expect((await svc.mangaPageFile('vol1', 0)).readAsBytesSync().last, 0);
+
+      // 修改时间变了 → 重读，页序换成盘上的。
+      json.setLastModifiedSync(modified.add(const Duration(seconds: 2)));
+      expect((await svc.mangaPageFile('vol1', 0)).readAsBytesSync().last, 1);
+
+      // 大小变了（修改时间保持）→ 重读：只剩一页，第 1 页越界。
+      rewriteKeepingMtime(
+        json,
+        pagesJson(const <String>['images/p1.jpg']),
+        modified.add(const Duration(seconds: 2)),
+      );
+      expect((await svc.mangaPageFile('vol1', 0)).readAsBytesSync().last, 0);
+      await expectLater(
+        svc.mangaPageFile('vol1', 1),
+        throwsA(isA<StateError>()),
+      );
+    });
+
+    test('单卷：缓存命中后只核对被请求的那一页', () async {
+      final String dir = await insertManga(bookKey: 'vol1');
+      await svc.mangaPageFile('vol1', 0);
+      File(p.join(dir, 'images', 'p2.jpg')).deleteSync();
+      // 被删的那页 404 形状；没被删的照给（没缓存时整卷判「缺页图」，见上面的用例）。
+      expect((await svc.mangaPageFile('vol1', 0)).existsSync(), isTrue);
+      await expectLater(
+        svc.mangaPageFile('vol1', 1),
+        throwsA(isA<StateError>()),
+      );
+    });
+
+    test('章节式：章 manga.json 没变就不重读；被请求页不在则回到完整判定', () async {
+      final String dir = await insertOnlineManga(
+        bookKey: 'mihon-abc',
+        chapterKeys: const <String>['/c/1'],
+        downloaded: const <String>{'/c/1'},
+      );
+      final String digest = mangaChapterDigest('/c/1');
+      final Directory chapterDir = mangaChapterDirectory(dir, '/c/1');
+      final File json = mangaChapterJsonFile(chapterDir);
+      final DateTime modified = json.lastModifiedSync();
+      expect(
+        (await svc.mangaChapterPageFile(
+          'mihon-abc',
+          digest,
+          0,
+        )).readAsBytesSync().last,
+        0,
+      );
+
+      // 同大小、同修改时间，两页对调：缓存命中 → 仍是上次解析的页序。
+      rewriteKeepingMtime(
+        json,
+        jsonEncode(<String, Object?>{
+          'pages': <Object?>[
+            for (final int i in const <int>[2, 1])
+              <String, Object?>{
+                'url': 'images/page-00000$i.jpg',
+                'width': 700,
+                'height': 1000,
+                'blocks': <Object?>[],
+              },
+          ],
+        }),
+        modified,
+      );
+      expect(
+        (await svc.mangaChapterPageFile(
+          'mihon-abc',
+          digest,
+          0,
+        )).readAsBytesSync().last,
+        0,
+      );
+
+      // 被请求的页图没了：回到完整判定——这章不再算「完整下载」，本机又没有
+      // 运行时可现取 → 与没有缓存时同一个 404 形状。
+      File(p.join(chapterDir.path, 'images', 'page-000001.jpg')).deleteSync();
+      await expectLater(
+        svc.mangaChapterPageFile('mihon-abc', digest, 0),
+        throwsA(isA<StateError>()),
+      );
+      // 另一页也不再给：完整判定没过关，缓存已清。
+      await expectLater(
+        svc.mangaChapterPageFile('mihon-abc', digest, 1),
+        throwsA(isA<StateError>()),
+      );
+    });
+  });
 
   group('章节式在线漫画（BUG-2474）', () {
     test('清单：占位根目录不算 hasMangaContent，但有已下载的章即 hasMangaChapters', () async {
@@ -614,5 +756,18 @@ class _FakeOnlineReader implements OnlineMangaHostReader {
     pageFetches++;
     await gate?.future;
     return Uint8List.fromList(pageBytes(index));
+  }
+}
+
+/// 数全表读书库的次数（逐页请求不该走全表）。
+class _CountingDatabase extends FushiDatabase {
+  _CountingDatabase() : super.forTesting(NativeDatabase.memory());
+
+  int allBookReads = 0;
+
+  @override
+  Future<List<EpubBookRow>> getAllEpubBooks() {
+    allBookReads += 1;
+    return super.getAllEpubBooks();
   }
 }
