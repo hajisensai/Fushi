@@ -68,21 +68,14 @@ final class _SrsRestoreUnits {
   }
 }
 
-/// 本机复习库能不能接受还原（[SrsRestoreBlockedException]）。只读：看代际状态；已有新代库时试开一次（旁边留着没迁移的
-/// 协议 3 库等打不开的状态在这里暴露），马上关掉。没有任何复习库时不建库。
+/// 本机复习库能不能接受还原（[SrsRestoreBlockedException]）。只看代际状态（内核按磁盘上的文件判：旁边留着没迁移的
+/// 协议 3 库 = needsMigration，别的进程在迁、只剩封存旧库、上次迁移失败都不是 ready），**不开库**：开库会写库
+/// （文件头的变更计数等），还原之后若失败本机就不再逐字节原样。没有任何复习库时也不建库。
 Future<void> _checkSrsLibraryRestorable(String dbDirectory) async {
   final SrsGen4MigrationStatus st = SrsGen4Migration.status(dbDirectory);
   if (st.state != SrsGenState.ready) {
     throw SrsRestoreBlockedException(st.state.wire);
   }
-  if (!File(SrsStorage.gen4PathIn(dbDirectory)).existsSync()) return;
-  final SrsCore core;
-  try {
-    core = await SrsCore.openInBackground(dbDirectory);
-  } on SrsStoreOpenBlocked catch (e) {
-    throw SrsRestoreBlockedException('$e');
-  }
-  core.close();
 }
 
 /// 读备份 [archive] 里的复习数据，解到一个新的临时工作目录，回待落库的单元；备份不带复习数据回 null。坏的 / 来自更新

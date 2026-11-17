@@ -6,6 +6,8 @@ import 'dart:io';
 import 'package:archive/archive_io.dart';
 import 'package:drift/native.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_server/src/backup/server_backup.dart';
 import 'package:fushi_server/src/config/server_srs_config.dart';
 import 'package:fushi_server/src/server_srs.dart';
@@ -50,18 +52,34 @@ void main() {
     }
   });
 
-  /// 用支持目录 [support] 开一份 ServerSrs，看牌组还在不在。
-  Future<bool> hasDeck(Directory support, String deck) async {
-    final ServerSrs restored = srsAt(support);
-    await restored.start();
-    await restored.syncNow();
+  /// 直接开 [support] 里的复习库跑 [body]（不经 ServerSrs：它要第一轮同步跑完才把库交出来，这里只关心库里的数据）。
+  Future<T> withStore<T>(
+    Directory support,
+    Future<T> Function(SrsDbStore store) body,
+  ) async {
+    final SrsStorage storage = await SrsStorage.open(directory: support.path);
     try {
-      final tree = await restored.storeFor(kJa)!.deckTree();
-      return tree.decks.any((d) => tree.fullName(d.id) == deck);
+      return await body(
+        await SrsDbStore.open(
+          core: storage.core,
+          profileUid: kJa,
+          deviceId: 'server-device',
+        ),
+      );
     } finally {
-      await restored.stop();
+      await storage.close();
     }
   }
+
+  Future<void> seedDeck(Directory support, String deck) =>
+      withStore(support, (SrsDbStore s) => s.createDeck(deck));
+
+  /// 支持目录 [support] 里的复习库还有没有牌组 [deck]。
+  Future<bool> hasDeck(Directory support, String deck) =>
+      withStore(support, (SrsDbStore s) async {
+        final tree = await s.deckTree();
+        return tree.decks.any((d) => tree.fullName(d.id) == deck);
+      });
 
   /// 把包里的 srs4.db 解到一个新的支持目录，看牌组还在不在。
   Future<bool> restoredHasDeck(File zip, String deck) async {
@@ -94,10 +112,11 @@ void main() {
   }
 
   test('serve 在跑：走开着的连接出快照，包里有 srs4.db、没有 -wal / -shm，还原后数据在', () async {
-    final ServerSrs srs = srsAt(Directory(p.join(dataDir.path, 'support')));
+    final Directory support = Directory(p.join(dataDir.path, 'support'));
+    await seedDeck(support, 'Backed up');
+    final ServerSrs srs = srsAt(support);
     await srs.start();
-    await srs.syncNow();
-    await srs.storeFor(kJa)!.createDeck('Backed up');
+    expect(srs.snapshotFn, isNotNull);
     final File zip = await createServerBackup(
       db: db,
       dataDir: dataDir.path,
@@ -114,10 +133,10 @@ void main() {
   });
 
   test('离线（没有开着的复习库连接）：临时打开库目录出快照', () async {
-    final ServerSrs srs = srsAt(Directory(p.join(dataDir.path, 'support')));
+    final Directory support = Directory(p.join(dataDir.path, 'support'));
+    await seedDeck(support, 'Offline');
+    final ServerSrs srs = srsAt(support);
     await srs.start();
-    await srs.syncNow();
-    await srs.storeFor(kJa)!.createDeck('Offline');
     await srs.stop();
     expect(srs.snapshotFn, isNull);
     final File zip = await createServerBackup(
@@ -142,11 +161,7 @@ void main() {
 
   test('v2 往返：整机还原后新代库照常打开、封存的旧库逐字节原样回来', () async {
     final Directory support = Directory(p.join(dataDir.path, 'support'));
-    final ServerSrs srs = srsAt(support);
-    await srs.start();
-    await srs.syncNow();
-    await srs.storeFor(kJa)!.createDeck('Round trip');
-    await srs.stop();
+    await seedDeck(support, 'Round trip');
     // 迁移之后原位封存的协议 3 库（没人打开它）：内容不透明，只要求原样往返。
     final List<int> sealed = List<int>.generate(4096, (int i) => i * 7 % 251);
     File(p.join(support.path, 'srs.db')).writeAsBytesSync(sealed);

@@ -246,6 +246,9 @@ enum SrsBackupMergeAction {
   /// 本机已有同 uid 的 profile。
   sameUid,
 
+  /// 本机有 profile 已经绑在备份的这个集合上（之前合并 / 关联过：集合标识相同，或它的盐里有备份里的 uid）。
+  sameCollection,
+
   /// 本机同名 profile（无用户数据、从未发布）认领了备份的集合（内核 `collection_adopt`，profile 的 uid 不变）。
   adoptedCollection,
 
@@ -318,7 +321,8 @@ final class SrsBackupLandUnit {
 
 /// 把 [units] 逐个落进本机新代库 [localSrs]（Primary）：profile 行在主库 [local]（铁律 E，新代口径）：
 ///
-/// 1. 本机有 uid 与备份里那个集合的某个 profile 相同的 profile → 落进它。
+/// 1. 本机有 uid 与备份里那个集合的某个 profile 相同的 profile → 落进它；否则本机有 profile 已经绑在这个集合上
+///    （集合标识相同，或它的盐里有备份里的 uid：之前合并 / 关联过）→ 落进它。
 /// 2. 否则本机有同名 profile，且它没有用户数据、也从未发布过（[freshLibrary] = 目标库是覆盖还原新建的空库，本机
 ///    profile 在里面都还没有数据）→ 它认领备份的集合（内核 `collection_adopt`，profile 的 uid 不变；以前是改 uid）。
 /// 3. 否则为备份的 uid 新建本机 profile「<原名>（备份）」，再落进去。
@@ -327,7 +331,8 @@ final class SrsBackupLandUnit {
 /// 记下新的旧 profile 标识（盐）或新设备公钥要用户确认：[confirmed] 为假时先预检（什么都不写），需要确认的那一份
 /// 记成 [SrsBackupMergeAction.declined]、不建 profile、什么都不写。
 ///
-/// 幂等：同一份备份合并两次，第二次全部走「同 uid」（第 3 种建出的 profile 用的就是备份 uid）、内核回 `unchanged`。
+/// 幂等：同一份备份合并两次，第二次全部走第 1 种（第 3 种建出的 profile 用的就是备份 uid；第 2 种认领之后绑在
+/// 备份的集合上）、内核回 `unchanged`。
 /// 两个文件不能一起原子提交：新建 profile 先写主库再落库，落库失败时留下一个空 profile，重跑时按「同 uid」接着落。
 Future<List<SrsBackupMergeResult>> mergeSrsFromBackup({
   required List<SrsBackupLandUnit> units,
@@ -351,10 +356,17 @@ Future<List<SrsBackupMergeResult>> mergeSrsFromBackup({
     String target;
     int? localId;
     SrsBackupMergeAction action;
+    final SrsLocalProfile? sameCollection = sameUid != null || freshLibrary
+        ? null
+        : await _boundToUnit(localSrs, profiles, unit);
     if (sameUid != null) {
       target = sameUid.uid!;
       localId = sameUid.id;
       action = SrsBackupMergeAction.sameUid;
+    } else if (sameCollection != null) {
+      target = sameCollection.uid!;
+      localId = sameCollection.id;
+      action = SrsBackupMergeAction.sameCollection;
     } else {
       final SrsLocalProfile? sameName = _firstWhere(
         profiles,
@@ -423,6 +435,43 @@ Future<List<SrsBackupMergeResult>> mergeSrsFromBackup({
     );
   }
   return results;
+}
+
+/// [profiles] 里已经绑在 [unit] 那个集合上的第一个 profile（内核 `collection_info`：集合标识相同，或盐里有备份里
+/// 的 uid）；没绑过集合的跳过。
+Future<SrsLocalProfile?> _boundToUnit(
+  SrsCore core,
+  List<SrsLocalProfile> profiles,
+  SrsBackupLandUnit unit,
+) async {
+  final Set<String> uids = <String>{
+    for (final SrsBackupProfile b in unit.profiles) b.uid,
+  };
+  final SrsBackupSourceFile file = unit.file;
+  final String? collection = file is SrsBackupStreamFile
+      ? file.unit.collection
+      : null;
+  for (final SrsLocalProfile p in profiles) {
+    final String? uid = p.uid;
+    if (uid == null || uid.isEmpty) continue;
+    final Map<String, Object?> info;
+    try {
+      info = core.sync2(<String, Object?>{
+        'op': 'collection_info',
+        'profile': uid,
+      }).map;
+    } on SrsProfileUnboundException {
+      continue;
+    }
+    if (collection != null && info['collection'] == collection) return p;
+    // 协议 3 形态（`srs.db` 条目 / 主库老表）：那时集合 = collection_of(uid)、位置目录名 = uid，认领后绑定的目录名
+    // 就是备份里那个 profile 的 uid。
+    final Object? dir = info['dir'];
+    if (dir is String && uids.contains(dir)) return p;
+    final Object? salts = info['salts'];
+    if (salts is List && salts.any(uids.contains)) return p;
+  }
+  return null;
 }
 
 T? _firstWhere<T>(Iterable<T> items, bool Function(T) test) {
