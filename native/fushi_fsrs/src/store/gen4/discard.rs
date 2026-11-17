@@ -29,11 +29,17 @@
 //!
 //! # 「空集合」（[disposable]）
 //!
-//! 规划 §6：本机集合的日志**只有本机身份写的 `Salts`**、**没有别的设备**、**从没发布到任何位置**——丢掉它不丢任何人的
-//! 东西、也没有别的设备可能已经认它（并入它、跟着它）。逐条：
+//! 规划 §6：本机集合里**没有任何用户内容**、**没有别的设备**、**从没发布到任何位置**——丢掉它不丢任何人的东西、也没有
+//! 别的设备可能已经认它（并入它、跟着它）。逐条：
 //!
 //! - 有本机身份；`devs` 里只有本机设备（承袭日志、别的设备一个都没有，连「被点过名、还没见过日志」的也没有）；
-//! - 本机日志里每条操作都是 `Salts`（种类 15），没有空洞、承袭槽、暂缓 / 分叉 / 等待中的条目；
+//! - **没有用户内容**：与首次信任同一个判据 [Truth::library_fresh]（`truth/trust.rs`，一份实现）——日志里只有内置种子
+//!   （Dart 开库就写的默认牌组、内置笔记类型，`SrsDbStore.ensureBuiltins`）、盐、还原点，没有空洞、承袭槽、暂缓 / 分叉
+//!   / 等待中的条目。以前这里只认「每条都是 `Salts`」，于是 app 里开过 store 的全新 profile（`ensureBuiltins` 写了内置
+//!   实体）一律判成非空、关联已有集合时照 D27 写 `Join`，§6「新设备关联已有集合，结论 bound、不产生 Join」在 app 里
+//!   达不到（第五波 G9 身份收尾）。内置种子按规范规则派生、不带盐（G9-7），对方集合里的同一个内置实体是同一个 ID，
+//!   丢掉本机这几条不丢东西；
+//! - 本机日志里没有 `Join`：并入过别的集合 = 那个集合的设备可能跟着它（与下一条「发布过」同一类理由）；
 //! - `peers` 里除本机自己没有别的设备，`trust` 里没有任何记录；
 //! - 没发布过：`loc_heads` 没有本集合的行（`head` 写下的本机 head 就记在这里）、`relay_out` 没有、`srs_meta` 里没有
 //!   已传水位 `gen4_out/<col>/…`（`outbox_ack` 记的）、**`loc_state` 没有**（G9-5 第二轮复核）——`location_root`
@@ -54,7 +60,7 @@ use rusqlite::{OptionalExtension, params};
 
 use super::schema::{k_range, sql};
 use super::truth::Truth;
-use crate::gen4::op::KIND_SALTS;
+use crate::gen4::op::KIND_JOIN;
 
 /// `srs_meta` 里按集合号记的键前缀（`<前缀><col>` 或 `<前缀><col>/…`）。
 pub(crate) const META_COL_PREFIXES: [&str; 3] = ["self_info/", "gen4_out/", "gen4_retired/"];
@@ -217,35 +223,34 @@ pub(crate) const META_DELETE_SQL: &str = "DELETE FROM srs_meta WHERE key = ?1 \
      OR (key >= ?2 AND key < substr(?2, 1, length(?2) - 1) || '0')";
 
 /// [disposable] 执行的语句（执行计划测试用同一份）：?1 = col，?2 = 本机设备（16 字节），?3..?4 = 本机设备的主键区间。
-pub(crate) const DISPOSABLE_SQL: [&str; 7] = [
+/// 前四条是不读日志的「别人 / 发布过」判据（[CHEAP]），第五条读本机日志，放在 [Truth::library_fresh] 之后（非空集合
+/// 在那里碰到第一条用户内容就停，不为找 `Join` 扫整份日志），第六条取本机身份。
+pub(crate) const DISPOSABLE_SQL: [&str; 6] = [
     // 本机以外的设备（含只被点过名的）。
     "SELECT EXISTS(SELECT 1 FROM devs WHERE col = ?1 AND id != ?2)",
-    // 本机日志里不是 Salts 的操作。
-    "SELECT EXISTS(SELECT 1 FROM ops WHERE k BETWEEN ?3 AND ?4 AND kind != ?5)",
-    // 空洞、承袭槽、暂缓、分叉、等待中的条目。
-    "SELECT EXISTS(SELECT 1 FROM op_voids WHERE k BETWEEN ?3 AND ?4) \
-     OR EXISTS(SELECT 1 FROM op_alias WHERE k BETWEEN ?3 AND ?4) \
-     OR EXISTS(SELECT 1 FROM op_pending WHERE k BETWEEN ?3 AND ?4) \
-     OR EXISTS(SELECT 1 FROM op_forks WHERE k BETWEEN ?3 AND ?4) \
-     OR EXISTS(SELECT 1 FROM op_wait WHERE k BETWEEN ?3 AND ?4)",
     // 本机以外的公钥、任何信任记录。
-    "SELECT EXISTS(SELECT 1 FROM peers WHERE col = ?1 AND device != ?2) \
-     OR EXISTS(SELECT 1 FROM trust WHERE col = ?1)",
+    "SELECT EXISTS(SELECT 1 FROM peers WHERE col = ?1 AND device != ?2)      OR EXISTS(SELECT 1 FROM trust WHERE col = ?1)",
     // 发布过 head / 转发过 / 立过位置的根或记过位置的加密（文件头「空集合」）。
-    "SELECT EXISTS(SELECT 1 FROM loc_heads WHERE col = ?1) \
-     OR EXISTS(SELECT 1 FROM relay_out WHERE col = ?1) \
-     OR EXISTS(SELECT 1 FROM loc_state WHERE col = ?1)",
+    "SELECT EXISTS(SELECT 1 FROM loc_heads WHERE col = ?1)      OR EXISTS(SELECT 1 FROM relay_out WHERE col = ?1)      OR EXISTS(SELECT 1 FROM loc_state WHERE col = ?1)",
     // 已传水位（`outbox_ack`）：`gen4_out/<col>/` 开头的键（区间同 [META_DELETE_SQL]）。
     "SELECT EXISTS(SELECT 1 FROM srs_meta WHERE key >= ?6 AND key < substr(?6, 1, length(?6) - 1) || '0')",
+    // 本机日志里的 `Join`（并入过别的集合）。
+    "SELECT EXISTS(SELECT 1 FROM ops WHERE k BETWEEN ?3 AND ?4 AND kind = ?5)",
     // 有没有本机身份（缺 = 不是「本机身份写的」，不算空）。
     "SELECT device FROM self_ WHERE col = ?1",
 ];
+
+/// [DISPOSABLE_SQL] 里不读日志的那几条。
+const CHEAP: std::ops::Range<usize> = 0..4;
+
+/// [DISPOSABLE_SQL] 里找本机日志 `Join` 的那条。
+const JOINED: usize = 4;
 
 /// 集合 [col] 是不是「空集合」（文件头）：可以在确认之后整个丢掉、改绑到别的集合。
 pub fn disposable(t: &Truth<'_>, col: i64) -> Result<bool, String> {
     let conn = t.conn();
     let me: Option<Vec<u8>> = conn
-        .prepare_cached(DISPOSABLE_SQL[6])
+        .prepare_cached(DISPOSABLE_SQL[5])
         .map_err(sql)?
         .query_row([col], |r| r.get(0))
         .optional()
@@ -253,45 +258,44 @@ pub fn disposable(t: &Truth<'_>, col: i64) -> Result<bool, String> {
     let Some(me) = me else {
         return Ok(false);
     };
-    let Some(dev) = conn
+    // 有身份、日志里一条都没有（`devs` 里还没有本机）：给一个空区间，什么都没写过。
+    let range = conn
         .prepare_cached("SELECT dev FROM devs WHERE col = ?1 AND id = ?2")
         .map_err(sql)?
         .query_row(params![col, me], |r| r.get::<_, i64>(0))
         .optional()
         .map_err(sql)?
-    else {
-        // 有身份、日志里一条都没有（`devs` 里还没有本机）：什么都没写过，同样是空的。
-        return Ok(!any(t, col, &me, (0, -1))?);
-    };
-    Ok(!any(t, col, &me, k_range(dev))?)
-}
-
-/// [DISPOSABLE_SQL] 前六条里有没有一条成立（[range] = 本机设备的主键区间；没有日志时给一个空区间）。
-fn any(t: &Truth<'_>, col: i64, me: &[u8], range: (i64, i64)) -> Result<bool, String> {
-    let out_prefix = format!("gen4_out/{col}/");
-    let conn = t.conn();
-    for q in &DISPOSABLE_SQL[..6] {
-        let mut stmt = conn.prepare_cached(q).map_err(sql)?;
-        // 每条语句只绑它用到的参数（rusqlite 按语句里出现的最大编号要参数）。
-        let hit: bool = match stmt.parameter_count() {
-            2 => stmt.query_row(params![col, me], |r| r.get(0)),
-            4 => stmt.query_row(params![col, me, range.0, range.1], |r| r.get(0)),
-            5 => stmt.query_row(params![col, me, range.0, range.1, KIND_SALTS as i64], |r| {
-                r.get(0)
-            }),
-            6 => stmt.query_row(
-                params![col, me, range.0, range.1, KIND_SALTS as i64, out_prefix],
-                |r| r.get(0),
-            ),
-            1 => stmt.query_row([col], |r| r.get(0)),
-            n => return Err(format!("gen4 discard: unexpected parameter count {n}")),
-        }
-        .map_err(sql)?;
-        if hit {
-            return Ok(true);
+        .map_or((0, -1), k_range);
+    for q in &DISPOSABLE_SQL[CHEAP] {
+        if hit(t, q, col, &me, range)? {
+            return Ok(false);
         }
     }
-    Ok(false)
+    // 用户内容：与首次信任同一个判据（文件头「空集合」第二条）。`devs` 里只有本机（上面第一条），所以它看的就是本机日志。
+    if !t.library_fresh(col)? {
+        return Ok(false);
+    }
+    Ok(!hit(t, DISPOSABLE_SQL[JOINED], col, &me, range)?)
+}
+
+/// [DISPOSABLE_SQL] 的一条成立不成立（[range] = 本机设备的主键区间；没有日志时给一个空区间）。
+fn hit(t: &Truth<'_>, q: &str, col: i64, me: &[u8], range: (i64, i64)) -> Result<bool, String> {
+    let out_prefix = format!("gen4_out/{col}/");
+    let mut stmt = t.conn().prepare_cached(q).map_err(sql)?;
+    // 每条语句只绑它用到的参数（rusqlite 按语句里出现的最大编号要参数）。
+    match stmt.parameter_count() {
+        2 => stmt.query_row(params![col, me], |r| r.get(0)),
+        5 => stmt.query_row(params![col, me, range.0, range.1, KIND_JOIN as i64], |r| {
+            r.get(0)
+        }),
+        6 => stmt.query_row(
+            params![col, me, range.0, range.1, KIND_JOIN as i64, out_prefix],
+            |r| r.get(0),
+        ),
+        1 => stmt.query_row([col], |r| r.get(0)),
+        n => return Err(format!("gen4 discard: unexpected parameter count {n}")),
+    }
+    .map_err(sql)
 }
 
 #[cfg(test)]

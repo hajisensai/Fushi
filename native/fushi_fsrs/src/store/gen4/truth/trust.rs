@@ -72,7 +72,11 @@ const NOT_CONTENT: [u16; 3] = [KIND_SALTS, KIND_JOIN, KIND_CHECKPOINT];
 impl Truth<'_> {
     /// 集合 [col] 里还没有用户自己的东西：真相里除了内置种子（`data` 带 `builtin` 的实体创建：默认牌组、内置笔记类型，
     /// Dart 开库就写，`SrsDbStore.ensureBuiltins`）与 [NOT_CONTENT] 以外一条操作都没有，也没有空洞、副本记录、待投递的
-    /// 承袭槽、还在等待缓冲里的原生操作（它们都说明这里有过内容；后者已收下、只是前面缺着，G10-4）。原生日志与承袭日志一样看。
+    /// 承袭槽、暂缓 / 分叉中的条目、还在等待缓冲里的原生操作（它们都说明这里有过内容；后者已收下、只是前面缺着，G10-4）。
+    /// 原生日志与承袭日志一样看。
+    ///
+    /// 这是「库里有没有用户的东西」的唯一实现：首次信任（本文件）与「空集合可换绑」（`discard.rs` [super::super::discard::disposable]，
+    /// 第五波 G9 身份收尾）都问它，两处口径不会分叉。
     ///
     /// 直接查真相、不读派生投影：真相先于派生落库，判定不受投影是否收好影响（协议 3 BUG-4478 是读投影读到了空库）。
     /// 协议 3 的口径（`store/sync2/trust.rs` `library_fresh`：没有复习日志、没有修改记录、身份记录全是内置的）在这里
@@ -90,7 +94,7 @@ impl Truth<'_> {
         );
         for d in self.devices(col)? {
             let (lo, hi) = k_range(d.dev);
-            for table in ["op_voids", "op_alias", "op_pending", "op_wait"] {
+            for table in ["op_voids", "op_alias", "op_pending", "op_forks", "op_wait"] {
                 let any: bool = self
                     .conn
                     .prepare_cached(&format!(

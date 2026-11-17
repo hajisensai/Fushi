@@ -142,6 +142,38 @@ fn a_new_device_binds_to_an_existing_collection_without_a_join() {
     ffsrs_store_close(h);
 }
 
+/// app 里的新设备（第五波 G9 身份收尾，规划 §6「新设备关联已有集合，结论 bound、不产生 Join」）：Dart 开库就写内置
+/// 种子（`SrsDbStore.ensureBuiltins`：`data` 带 `builtin` 的实体创建），之后又打过一个还原点。这些都不是用户内容（与首次
+/// 信任同一个判据 `library_fresh`），关联已有集合照样 `bound`、不写 `Join`、旧集合整个丢掉。以前「空集合」只认 `Salts`，
+/// 开过 store 的 profile 一律 `joined`。
+#[test]
+fn a_profile_with_only_builtin_seeds_binds_without_a_join() {
+    let other = migrated();
+    let theirs = g4(other.h, "identity", T1, json!({}));
+    let (dir, h) = fresh("g95-bind-seeds", Q);
+    let mut seed = json!({"t": "entity", "x": {"id": default_deck_id(Q), "p": Q, "k": "deck", "d": {"createdAt": 1, "builtin": "default"}}});
+    let mut req = g4req("apply", T1, json!({}));
+    req["profile"] = json!(Q);
+    let (v, _) = call(h, &req, Some(&[json!({"e": seed.take()})])).unwrap();
+    assert_eq!(v["landed"], json!([true]), "{v}");
+    let v = as_profile(h, Q, "checkpoint", json!({"name": "c", "reason": "manual"}));
+    assert!(v.get("error").is_none(), "{v}");
+    let v = as_profile(
+        h,
+        Q,
+        "collection_adopt",
+        json!({"collection": theirs["collection"], "dir": theirs["dir"], "confirmed": true}),
+    );
+    assert_eq!(v["outcome"], json!("bound"), "{v}");
+    let info = as_profile(h, Q, "collection_info", json!({}));
+    assert_eq!(info["joins"], json!([]), "没有 Join：{info}");
+    let n: i64 = ro(&dir.0)
+        .query_row("SELECT COUNT(*) FROM collections", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(n, 1, "旧集合（只有内置种子）丢掉了");
+    ffsrs_store_close(h);
+}
+
 /// 本机集合里多出任何一样（规划 §6 的三个条件逐项翻转）就不是空集合：确认后照常 `Join`（D27：本机目录名更大，本机并入
 /// 对方），本机的集合不丢。
 #[test]
