@@ -11,7 +11,7 @@
 //     正在写的留言草稿与焦点在换卡后原样恢复；
 //   - 附件：把文件拖到卡片上、在留言框里粘贴截图、或点「上传附件」选文件，逐个 POST /dev/d/:id/files（multipart），
 //     传完换卡；
-//   - 键盘：J/K 移动，1…6 做 / 方案，X 不做，L 以后，N 永远不做，E 没看懂，Y 你定，C 写留言，U 撤销，
+//   - 键盘：J/K 移动，1…6 做 / 方案，X 不做，L 以后，N 永远不做，E 没看懂，D 要设计图，Y 你定，C 写留言，U 撤销，
 //     Ctrl+Enter 只发留言，Esc 离开输入框。
 
 export const DECISIONS_CLIENT_JS = String.raw`(function () {
@@ -401,7 +401,7 @@ export const DECISIONS_CLIENT_JS = String.raw`(function () {
     if (k === 'j') { e.preventDefault(); move(1); return; }
     if (k === 'k') { e.preventDefault(); move(-1); return; }
     if (!current || current.hidden) {
-      if ('123456xlneycu'.indexOf(k) >= 0) { move(0); }
+      if ('123456xlnedycu'.indexOf(k) >= 0) { move(0); }
       return;
     }
     if (k === 'c') {
