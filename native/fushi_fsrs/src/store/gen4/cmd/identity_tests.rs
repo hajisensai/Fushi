@@ -622,3 +622,102 @@ fn lookups_are_capped_per_request() {
     );
     assert_eq!(ok["evidence"].as_array().unwrap().len(), LOOKUP_MAX);
 }
+
+// ---------------------------------------------------------------------- 位置目录名 → profile（G10-4）
+
+/// 不带 profile 的 `profile_of_dir`。
+fn of_dir(h: *mut crate::store::ffi::SrsCoreHandle, dir: Value) -> Result<Value, (i32, String)> {
+    call(h, &json!({"op": "profile_of_dir", "dir": dir}), None).map(|(v, _)| v)
+}
+
+/// `profile_of_dir` 按**绑定**的目录名找 profile：没绑过的目录是空表；认领到别的目录的 profile 只在那个目录下出现、
+/// 不在自己的 uid 下出现（目录名 ≠ 本机 uid）；并入改绑后跟着新目录走。请求不需要 profile。
+#[test]
+fn profile_of_dir_follows_the_binding_not_the_uid() {
+    let dir = tempdir::new("g104ofdir");
+    let h = open(&dir.0, 0).unwrap();
+    assert_eq!(of_dir(h, json!(P)).unwrap(), json!({"profiles": []}));
+    g4(h, "identity", T1, json!({}));
+    as_profile(h, Q, "identity", json!({}));
+    assert_eq!(of_dir(h, json!(P)).unwrap(), json!({"profiles": [P]}));
+    assert_eq!(of_dir(h, json!(Q)).unwrap(), json!({"profiles": [Q]}));
+    // R 认领了位置目录 `zz-remote` 上的集合：找得到的是那个目录，不是 R 的 uid。
+    let foreign = id(0xe0).text();
+    let v = as_profile(
+        h,
+        R,
+        "collection_adopt",
+        json!({"collection": foreign, "dir": "zz-remote", "salts": [], "confirmed": true}),
+    );
+    assert_eq!(v["outcome"], json!("bound"), "{v}");
+    assert_eq!(
+        of_dir(h, json!("zz-remote")).unwrap(),
+        json!({"profiles": [R]})
+    );
+    assert_eq!(of_dir(h, json!(R)).unwrap(), json!({"profiles": []}));
+    // 大小写不同的目录名不是同一个目录。
+    assert_eq!(
+        of_dir(h, json!("ZZ-REMOTE")).unwrap(),
+        json!({"profiles": []})
+    );
+    ffsrs_store_close(h);
+
+    // 并入改绑：目录跟着绑定走。
+    let m = migrated();
+    g4(m.h, "identity", T1, json!({}));
+    assert_eq!(of_dir(m.h, json!(P)).unwrap(), json!({"profiles": [P]}));
+    let v = g4(
+        m.h,
+        "collection_join",
+        T1,
+        json!({"into": id(0x0a).text(), "dir": "0000-home"}),
+    );
+    assert_eq!(v["outcome"], json!("joined"), "{v}");
+    assert_eq!(
+        of_dir(m.h, json!("0000-home")).unwrap(),
+        json!({"profiles": [P]})
+    );
+    assert_eq!(of_dir(m.h, json!(P)).unwrap(), json!({"profiles": []}));
+    // 只读的 Secondary 上同样能查（读命令）。
+    let s = open(&m.dir.0, 1).unwrap();
+    assert_eq!(
+        of_dir(s, json!("0000-home")).unwrap(),
+        json!({"profiles": [P]})
+    );
+    ffsrs_store_close(s);
+}
+
+/// 目录名来自对端写入的路径，不可信：缺、不是字符串、空、`.` / `..`、含分隔符、超长一律明确报错，不回空表（调用方
+/// 据此区分坏路径与「没人绑这个目录」），也不碰库。
+#[test]
+fn profile_of_dir_refuses_untrusted_dir_names() {
+    let dir = tempdir::new("g104baddir");
+    let h = open(&dir.0, 0).unwrap();
+    g4(h, "identity", T1, json!({}));
+    let (rc, e) = call(h, &json!({"op": "profile_of_dir"}), None).unwrap_err();
+    assert_eq!(rc, STORE_ERROR);
+    assert!(e.contains("missing dir"), "{e}");
+    for bad in [json!(5), json!(null), json!([P]), json!({"dir": P})] {
+        let (rc, e) = of_dir(h, bad.clone()).unwrap_err();
+        assert_eq!(rc, STORE_ERROR, "{bad}");
+        assert!(e.contains("dir must be a string"), "{bad}: {e}");
+    }
+    let long = "a".repeat(super::identity::DIR_MAX + 1);
+    for bad in [
+        "",
+        ".",
+        "..",
+        "a/b",
+        "a\\b",
+        "../0193a1b2-0000-7000-8000-00000000beef",
+        long.as_str(),
+    ] {
+        let (rc, e) = of_dir(h, json!(bad)).unwrap_err();
+        assert_eq!(rc, STORE_ERROR, "{bad:?}");
+        assert!(e.contains("profile_of_dir: bad dir"), "{bad:?}: {e}");
+    }
+    // 上限本身可用。
+    let edge = "a".repeat(super::identity::DIR_MAX);
+    assert_eq!(of_dir(h, json!(edge)).unwrap(), json!({"profiles": []}));
+    ffsrs_store_close(h);
+}

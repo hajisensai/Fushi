@@ -247,6 +247,28 @@ pub fn collection_info(t: &Truth<'_>, col: i64) -> Result<Value, String> {
     })
 }
 
+/// 位置目录名的长度上限（字节；常见文件系统单个名字 255 字节）。超了不可能是哪个集合的目录。
+pub const DIR_MAX: usize = 255;
+
+/// `profile_of_dir`（G10-4，规划 §1.1 G10 行「`profile_of_dir(dir)` 由 `collection_info` 反查提供」）：不针对单个
+/// profile 的读。请求 `{dir}`，回 `{profiles: [uid, …]}`——当前**绑定**的位置目录名等于 [dir] 的本机 profile（按 uid
+/// 排，没有 = 空表）。互联 host（无头服务端）收到已配对设备往 `fushi-srs/<dir>/…` 的写入，据此找该同步哪份 profile，
+/// 不把目录名当 uid（并入 / 认领后两者不同，设计 §5.1 2026-11-17 修订）。
+///
+/// [dir] 来自对端写入的路径，不可信：不是字符串、空、`.` / `..`、含路径分隔符或超过 [DIR_MAX] 字节一律报错（不回空表，
+/// 调用方据此区分「坏路径」与「没人绑这个目录」）。
+pub fn profile_of_dir(t: &Truth<'_>, req: &Value) -> Result<Value, String> {
+    let dir = req
+        .get("dir")
+        .ok_or("profile_of_dir: missing dir")?
+        .as_str()
+        .ok_or("profile_of_dir: dir must be a string")?;
+    if dir.len() > DIR_MAX || !crate::gen4::location::dir_name_ok(dir) {
+        return Err("profile_of_dir: bad dir".into());
+    }
+    snapshot(t, |t| Ok(json!({"profiles": t.profiles_of_dir(dir)?})))
+}
+
 fn written_json(w: &JoinWritten) -> Value {
     json!({
         "op": op_json(&w.op),
