@@ -3379,6 +3379,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
           appRemoteVideoSubtitleService(appModel);
       final RemoteVideoSubtitleTarget remoteTarget = _remoteDiscSubtitleTarget(
         discTitle,
+        audioTrack: controller.currentAudioStreamIndex,
       );
       return (BuildContext context) => RemoteVideoSubtitleSheet(
         embedded: true,
@@ -3399,6 +3400,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
       final RemoteVideoSubtitleTarget remoteTarget = _remoteHostSubtitleTarget(
         videoId,
         episode,
+        audioTrack: controller.currentAudioStreamIndex,
       );
       final RemoteVideoSubtitleService remoteService =
           appRemoteVideoSubtitleService(appModel);
@@ -3793,7 +3795,11 @@ extension _VideoSubtitle on _VideoFushiPageState {
     await showRemoteVideoSubtitleSheet(
       context: context,
       service: appRemoteVideoSubtitleService(appModel),
-      target: _remoteHostSubtitleTarget(videoId, episode),
+      target: _remoteHostSubtitleTarget(
+        videoId,
+        episode,
+        audioTrack: controller.currentAudioStreamIndex,
+      ),
       prefs: PrefsRepoVideoSubtitleGeneratePrefs(appModel.prefsRepo),
       onJobStarted: (RemoteVideoSubtitleJob job) => unawaited(
         _applyRemotePipelineSubtitleWhenDone(controller, job, videoId, episode),
@@ -3803,11 +3809,15 @@ extension _VideoSubtitle on _VideoFushiPageState {
   }
 
   /// host 管线的单集目标：host 上的 ([videoId], 集下标 [episode])。播放列表的集名取剧集
-  /// 面板那一集的名字（与选集列表同口径），单视频 / 合集成员取视频标题。
+  /// 面板那一集的名字（与选集列表同口径），单视频 / 合集成员取视频标题。[audioTrack] 是
+  /// 播放器当前音轨（0 起的音轨序号）：远端直传播放的就是 host 上这份文件，序号与 host
+  /// ffmpeg 的 `0:a:N` 同口径（转码流只有一条音轨，[VideoPlayerController.currentAudioStreamIndex]
+  /// 为 null，host 按语言挑）。
   RemoteVideoSubtitleTarget _remoteHostSubtitleTarget(
     String videoId,
-    int episode,
-  ) {
+    int episode, {
+    int? audioTrack,
+  }) {
     final _PlaylistEpisodeRef? ref =
         !_isRemoteCollection && _isPlaylist && episode < _episodes.length
         ? _episodes[episode]
@@ -3824,6 +3834,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
           videoId: videoId,
           episodeIndex: episode,
           title: title,
+          audioTrack: audioTrack,
         ),
       ],
     );
@@ -3839,7 +3850,10 @@ extension _VideoSubtitle on _VideoFushiPageState {
     await showRemoteVideoSubtitleSheet(
       context: context,
       service: appRemoteVideoSubtitleService(appModel),
-      target: _remoteDiscSubtitleTarget(title),
+      target: _remoteDiscSubtitleTarget(
+        title,
+        audioTrack: controller.currentAudioStreamIndex,
+      ),
       prefs: PrefsRepoVideoSubtitleGeneratePrefs(appModel.prefsRepo),
       onJobStarted: (RemoteVideoSubtitleJob job) => unawaited(
         _applyRemoteDiscPipelineSubtitleWhenDone(controller, job, title),
@@ -3849,9 +3863,11 @@ extension _VideoSubtitle on _VideoFushiPageState {
   }
 
   /// 远端原盘 title 的单集目标：名字取「盘名 · 播放列表号」（远端 title 没有库行标题）。
+  /// [audioTrack] 是播放器当前音轨，与按（盘, title）裁音频（`clipaudio?discTitle=`）同口径。
   RemoteVideoSubtitleTarget _remoteDiscSubtitleTarget(
-    RemoteDiscHostTitle title,
-  ) {
+    RemoteDiscHostTitle title, {
+    int? audioTrack,
+  }) {
     final String disc = widget.remoteDisc?.title ?? _title ?? '';
     final String name = p.basenameWithoutExtension(title.memberPath);
     final String label = disc.isEmpty ? name : '$disc · $name';
@@ -3862,6 +3878,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
           videoId: title.videoId,
           discTitle: title.discTitle,
           title: label,
+          audioTrack: audioTrack,
         ),
       ],
     );

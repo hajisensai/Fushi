@@ -103,13 +103,31 @@ void main() {
     expect(remote, contains('onTranscribeInApp: onTranscribeInApp'));
     // host 播放列表的任意一集都交给 host 管线（带集下标），本机转录作为面板里的
     // 「保存」选项保留；不再按集下标放弃 host 管线。
-    expect(remote, contains('_remoteHostSubtitleTarget(videoId, episode)'));
+    // 带上播放器当前音轨（host 识别那条轨；老 host 降级按语言挑）。
+    expect(
+      remote,
+      matches(
+        RegExp(
+          r'_remoteHostSubtitleTarget\(\s*videoId,\s*episode,\s*'
+          r'audioTrack: controller\.currentAudioStreamIndex',
+        ),
+      ),
+    );
     expect(remote, contains('episodeIndex: episode'));
     expect(remote, isNot(contains('episode > 0')));
     final String studioPanel = source
         .split('Future<WidgetBuilder?> _subtitleStudioGeneratePanel(')[1]
         .split('final String? videoPath = _localPipelineMediaPath;')[0];
     expect(studioPanel, contains('_remoteHostSubtitleTarget('));
+    expect(
+      studioPanel,
+      matches(
+        RegExp(
+          r'_remoteHostSubtitleTarget\([^;]*'
+          r'audioTrack: controller\.currentAudioStreamIndex',
+        ),
+      ),
+    );
     expect(studioPanel, contains('onTranscribeInApp: inApp'));
     expect(studioPanel, isNot(contains('episode > 0')));
 
@@ -285,6 +303,21 @@ void main() {
         .split('Future<WidgetBuilder?> _subtitleStudioGeneratePanel(')[1]
         .split('Future<void> _openSubtitleStudio(')[0];
     expect(studioPanel, contains('_remoteDiscSubtitleTarget('));
+    // 远端原盘 title 也带播放器当前音轨（面板与菜单两个入口）。
+    final String discMenu = source
+        .split('Future<void> _openRemoteDiscSubtitlePipeline(')[1]
+        .split('RemoteVideoSubtitleTarget _remoteDiscSubtitleTarget(')[0];
+    for (final String entry in <String>[studioPanel, discMenu]) {
+      expect(
+        entry,
+        matches(
+          RegExp(
+            r'_remoteDiscSubtitleTarget\([^;]*'
+            r'audioTrack: controller\.currentAudioStreamIndex',
+          ),
+        ),
+      );
+    }
     expect(
       studioPanel,
       contains(
@@ -300,6 +333,7 @@ void main() {
         .split('RemoteVideoSubtitleTarget _remoteDiscSubtitleTarget(')[1]
         .split('Future<void> _applyRemoteDiscPipelineSubtitleWhenDone(')[0];
     expect(target, contains('discTitle: title.discTitle'));
+    expect(target, contains('audioTrack: audioTrack'));
 
     final String done = source
         .split('Future<void> _applyRemoteDiscPipelineSubtitleWhenDone(')[1]

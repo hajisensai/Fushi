@@ -482,6 +482,109 @@ void main() {
     });
   });
 
+  group('播放器当前音轨（audioTrack）', () {
+    const RemoteVideoSubtitleTarget episodeTrack = RemoteVideoSubtitleTarget(
+      title: 'K-ON 02',
+      episodes: <RemoteVideoSubtitleEpisode>[
+        RemoteVideoSubtitleEpisode(
+          videoId: 'v1',
+          episodeIndex: 1,
+          title: 'K-ON 02',
+          audioTrack: 1,
+        ),
+      ],
+    );
+    const RemoteVideoSubtitleTarget discTrack = RemoteVideoSubtitleTarget(
+      title: 'Disc · 00005',
+      episodes: <RemoteVideoSubtitleEpisode>[
+        RemoteVideoSubtitleEpisode(
+          videoId: 'disc-main',
+          discTitle: 'BDMV/PLAYLIST/00005.mpls',
+          title: 'Disc · 00005',
+          audioTrack: 2,
+        ),
+      ],
+    );
+
+    test(
+      '新 host（acceptsAudioTrack）：参数带 audioTrack，可与 episode / discTitle 组合',
+      () async {
+        final FakeHostPort host = FakeHostPort(
+          target: hostTarget(
+            <String>['video_subtitle'],
+            capability: const <String, Object?>{
+              'video_subtitle': <String, Object?>{
+                'acceptsEpisode': true,
+                'acceptsDiscTitle': true,
+                'acceptsAudioTrack': true,
+              },
+            },
+          ),
+          script: exportEpisode,
+        );
+        final RemoteVideoSubtitleService svc = service(host);
+        expect(episodeTrack.wantsAudioTrack, isTrue);
+        expect(single.wantsAudioTrack, isFalse);
+        await svc.start(episodeTrack, const RemoteVideoSubtitleOptions()).done;
+        final RemoteVideoSubtitleJob disc = svc.start(
+          discTrack,
+          const RemoteVideoSubtitleOptions(),
+        );
+        await disc.done;
+        expect(disc.status, RemoteVideoSubtitleJobStatus.succeeded);
+        expect(host.submitted.first['episode'], 1);
+        expect(host.submitted.first['audioTrack'], 1);
+        expect(host.submitted.last, <String, Object?>{
+          'videoId': 'disc-main',
+          'discTitle': 'BDMV/PLAYLIST/00005.mpls',
+          'audioTrack': 2,
+          'proofread': false,
+          'segmenter': 'auto',
+          'mossBackend': 'auto',
+        });
+      },
+    );
+
+    test(
+      '老 host（没有 acceptsAudioTrack）：照常提交、不带 audioTrack（按语言挑，降级不拦）',
+      () async {
+        final FakeHostPort host = FakeHostPort(
+          target: hostTarget(
+            <String>['video_subtitle'],
+            capability: const <String, Object?>{
+              'video_subtitle': <String, Object?>{'acceptsEpisode': true},
+            },
+          ),
+          script: exportEpisode,
+        );
+        final RemoteVideoSubtitleJob job = service(
+          host,
+        ).start(episodeTrack, const RemoteVideoSubtitleOptions());
+        await job.done;
+        expect(job.status, RemoteVideoSubtitleJobStatus.succeeded);
+        expect(host.submitted.single['episode'], 1);
+        expect(host.submitted.single.containsKey('audioTrack'), isFalse);
+        expect(hostAcceptsVideoSubtitleAudioTrack(host.target!), isFalse);
+      },
+    );
+
+    test('没有播放上下文（audioTrack 为 null）：新 host 上也不带', () async {
+      final FakeHostPort host = FakeHostPort(
+        target: hostTarget(
+          <String>['video_subtitle'],
+          capability: const <String, Object?>{
+            'video_subtitle': <String, Object?>{'acceptsAudioTrack': true},
+          },
+        ),
+        script: exportEpisode,
+      );
+      await service(
+        host,
+      ).start(single, const RemoteVideoSubtitleOptions()).done;
+      expect(host.submitted.single.containsKey('audioTrack'), isFalse);
+    });
+  });
+
   test('host 另出了套样式的 ASS：取回 ASS 而不是 SRT', () async {
     final FakeHostPort host = FakeHostPort(
       target: hostTarget(<String>['video_subtitle']),

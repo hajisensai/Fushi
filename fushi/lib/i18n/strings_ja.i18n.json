@@ -12642,6 +12642,7 @@
   "video_subtitle_ai_proofread_hint": "AIで人名や誤認識を直します（初期設定はオフ）",
   "video_subtitle_ai_proofread_label": "AI校正",
   "video_subtitle_ai_provider": "プロバイダー：${name}（${model}）",
+  "video_subtitle_ai_remote_audio_track_host_outdated": "The host's Fushi version is older and doesn't take the audio track you're playing; it will pick the audio track automatically by language.",
   "video_subtitle_ai_remote_disc_title_host_outdated": "The host's Fushi version is too old to generate subtitles for this disc title. Update Fushi on the host first.",
   "video_subtitle_ai_remote_episode_host_outdated": "The host's Fushi version is too old to generate subtitles for episode 2 onward of a host playlist. Update Fushi on the host first.",
   "video_subtitle_ai_remote_host": "Runs on ${host}",

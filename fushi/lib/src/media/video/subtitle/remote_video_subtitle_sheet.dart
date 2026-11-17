@@ -208,6 +208,16 @@ class _RemoteVideoSubtitleSheetState extends State<RemoteVideoSubtitleSheet> {
         !hostAcceptsVideoSubtitleDiscTitle(host);
   }
 
+  /// 目标要 host 识别播放器当前音轨，而 host 没声明 `acceptsAudioTrack`：任务照发（不带
+  /// 音轨），host 按识别语言挑——降级而非错结果，只如实提示一句。
+  bool get _audioTrackDowngraded {
+    final HostJobTarget? host = _host;
+    return host != null &&
+        _hostSupportsKind &&
+        widget.target.wantsAudioTrack &&
+        !hostAcceptsVideoSubtitleAudioTrack(host);
+  }
+
   bool get _supported =>
       _hostSupportsKind && !_episodeBlocked && !_discTitleBlocked;
 
@@ -391,6 +401,13 @@ class _RemoteVideoSubtitleSheetState extends State<RemoteVideoSubtitleSheet> {
                 ),
               ),
             if (_saveBeside) _hostLine(),
+            if (_saveBeside && _audioTrackDowngraded)
+              _hint(
+                t.video_subtitle_ai_remote_audio_track_host_outdated,
+                key: const ValueKey<String>(
+                  'remote-subtitle-audio-track-downgraded',
+                ),
+              ),
           ],
         ),
       ),

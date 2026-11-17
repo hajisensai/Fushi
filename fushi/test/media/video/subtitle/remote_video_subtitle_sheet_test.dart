@@ -467,6 +467,78 @@ void main() {
     });
   });
 
+  group('从播放页发起：播放器当前音轨（audioTrack）', () {
+    const RemoteVideoSubtitleTarget playing = RemoteVideoSubtitleTarget(
+      title: 'K-ON 01',
+      episodes: <RemoteVideoSubtitleEpisode>[
+        RemoteVideoSubtitleEpisode(
+          videoId: 'v1',
+          title: 'K-ON 01',
+          audioTrack: 1,
+        ),
+      ],
+    );
+
+    testWidgets('老 host（没报 acceptsAudioTrack）：如实提示将按语言选轨，「开始」照常可点、提交不带音轨', (
+      WidgetTester tester,
+    ) async {
+      final _Host host = _Host(const <String>['video_subtitle']);
+      await pump(tester, service(host), sheetTarget: playing);
+      expect(
+        find.byKey(
+          const ValueKey<String>('remote-subtitle-audio-track-downgraded'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining(
+          t.video_subtitle_ai_remote_audio_track_host_outdated,
+        ),
+        findsOneWidget,
+      );
+      expect(startPressed(tester), isNotNull, reason: '降级不是错结果，不拦任务');
+      await tester.tap(
+        find.byKey(const ValueKey<String>('remote-subtitle-start')),
+      );
+      await tester.pumpAndSettle();
+      expect(host.runs.single['videoId'], 'v1');
+      expect(host.runs.single.containsKey('audioTrack'), isFalse);
+    });
+
+    testWidgets('新 host（acceptsAudioTrack）：不提示，提交带音轨', (
+      WidgetTester tester,
+    ) async {
+      final _Host host = _Host(
+        const <String>['video_subtitle'],
+        capability: const <String, Object?>{
+          'video_subtitle': <String, Object?>{'acceptsAudioTrack': true},
+        },
+      );
+      await pump(tester, service(host), sheetTarget: playing);
+      expect(
+        find.byKey(
+          const ValueKey<String>('remote-subtitle-audio-track-downgraded'),
+        ),
+        findsNothing,
+      );
+      await tester.tap(
+        find.byKey(const ValueKey<String>('remote-subtitle-start')),
+      );
+      await tester.pumpAndSettle();
+      expect(host.runs.single['audioTrack'], 1);
+    });
+
+    testWidgets('没有播放上下文（整季 / 合集页）：老 host 上也不提示', (WidgetTester tester) async {
+      await pump(tester, service(_Host(const <String>['video_subtitle'])));
+      expect(
+        find.byKey(
+          const ValueKey<String>('remote-subtitle-audio-track-downgraded'),
+        ),
+        findsNothing,
+      );
+    });
+  });
+
   testWidgets('支持的 host：显示在哪台上运行，「开始」可点', (WidgetTester tester) async {
     await pump(tester, service(_Host(<String>['video_subtitle'])));
     expect(
