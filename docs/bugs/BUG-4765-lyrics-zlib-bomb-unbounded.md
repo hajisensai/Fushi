@@ -1,4 +1,4 @@
-## BUG-4763 · KRC / 加密 QRC 解压没有明文上限，构造的歌词文件或插件结果能把内存撑爆导致闪退
+## BUG-4765 · KRC / 加密 QRC 解压没有明文上限，构造的歌词文件或插件结果能把内存撑爆导致闪退
 - **报告**：2026-11-17（PR #3510 合入后的遗留项核实：歌词 KRC / QRC 解密）
 - **真实性**：✅ 真 bug。`native/fushi_music/src/lyrics/qrc.rs:110`（修前，`decrypt`）与 `native/fushi_music/src/lyrics/syllabic.rs:278`（修前，`decrypt_krc`）都是 `ZlibDecoder::new(..).read_to_end(&mut out)`，没有输出上限。入口 `lyrics/mod.rs` 的 `parse()`：`krc1` 头的任何字节（本地文件、内嵌、插件结果）都进 KRC 解密；`hint == "qrc"` 时插件交来的十六进制串 / 裸密文进 QRC 解密。插件结果上限是 `plugin/runtime.rs` 的 `MAX_RESULT_BYTES = 8 MiB`，zlib 压缩比可到约 1000:1，能解出 GB 级明文；OOM 是 abort，`lib.rs` 的 FFI panic 守卫接不住，app 直接被杀。同 crate 的 `plugin/package.rs` 解压插件包时早已用 `.take(MAX_FILE_BYTES + 1)` 限住，这里没跟上。
 - **[x] ① 已修复** — `9fcb777570`：`native/fushi_music/src/lyrics/mod.rs:101` 新增 `inflate_bounded(data, limit)`（`ZlibDecoder.take(limit + 1)`，超过上限返回 None），明文上限 `MAX_INFLATED_BYTES = 4 MiB`（`mod.rs:98`，真实整首歌词含 XML 包装 / 翻译 / 注音在几十到几百 KB）；`qrc.rs:108` 与 `syllabic.rs:276` 两处解密都改用它，超限按「解密失败」返回 Err，不再整份解进内存。
