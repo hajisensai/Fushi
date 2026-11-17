@@ -3204,7 +3204,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
   /// 原盘 VM 给的可抽取性（[canRunLocalVideoSubtitlePipeline]）；互联远端视频在放视频的
   /// 那台 host 上跑（host 任务 `video_subtitle`，老 host 面板里说明不支持），取回 SRT
   /// 当本机外挂字幕加载；其它远端流把整集音频拉到本机后在本机跑
-  /// （[_canRunStreamSubtitlePipeline]）。
+  /// （[_canRunStreamSubtitlePipeline]）；网页档（站点自己的播放器）从页面取媒体地址、
+  /// 同样把整集音频拉到本机后在本机跑（[_canRunWebSubtitlePipeline]）。
   bool get _canRunSubtitlePipeline =>
       canRunLocalVideoSubtitlePipeline(
         videoPath: _currentVideoPath,
@@ -3216,7 +3217,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
             !_discLearningBlocked,
       ) ||
       (_isRemote && _remoteHostVideoTarget() != null) ||
-      _canRunStreamSubtitlePipeline;
+      _canRunStreamSubtitlePipeline ||
+      _canRunWebSubtitlePipeline;
 
   /// 非互联的远端流（在线视频源、粘贴的流 / YouTube、音乐 MV、媒体服务器、云盘流）：
   /// 整集音频拉到本机（[appVideoStreamSubtitleAudioStager]）后在本机跑同一条管线
@@ -3239,15 +3241,21 @@ extension _VideoSubtitle on _VideoFushiPageState {
   Future<VideoSubtitleStudioAiReference?> _subtitleStudioAiReference() async {
     final String? videoPath = _currentVideoPath;
     final bool stream = _canRunStreamSubtitlePipeline;
+    final bool web = _canRunWebSubtitlePipeline;
+    final WebVideoSession? webSession = _webSession;
     if (!_canRunSubtitlePipeline) return null;
-    if (!stream && (videoPath == null || _isRemote)) return null;
+    if (!stream && !web && (videoPath == null || _isRemote)) return null;
     final PrefsRepoVideoSubtitleGeneratePrefs prefs =
         PrefsRepoVideoSubtitleGeneratePrefs(appModel.prefsRepo);
     final AppVideoSubtitleService service = appVideoSubtitleService(appModel);
     // 异步 stat：视频在网络盘上时同步 stat 会冻结 UI isolate（BUG-3756）。在线流的
-    // 画面从播放中的流里抽（[videoStreamSubtitleFrameSource]），不看本机文件。
+    // 画面从播放中的流里抽（[videoStreamSubtitleFrameSource]），不看本机文件；网页档
+    // 从页面给的视频地址抽，YouTube 现取的是纯音频流、没有画面（[_webSubtitleFrameInput]）。
     final bool localFile =
         stream ||
+        (web &&
+            webSession != null &&
+            await _webSubtitleFrameInput(webSession) != null) ||
         (videoPath != null &&
             !isNetworkMediaPath(videoPath) &&
             await hasLocalMediaFile(videoPath));
@@ -3311,6 +3319,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
             ),
           )
         : null;
+    // 网页档：先从页面取媒体地址把整集音频拉到本机，再换成本机管线面板。
+    if (_webMode) return _webSubtitleStudioPanel(controller);
     if (_isRemote) {
       final (InterconnectSyncBackend, String, int)? host =
           _remoteHostVideoTarget();
@@ -3473,14 +3483,17 @@ extension _VideoSubtitle on _VideoFushiPageState {
     }
     final int loadSeq = _episodeLoadSeq;
     final String? videoPath = _currentVideoPath;
+    // 网页档站内换集不走 [_episodeLoadSeq]，按这一集的书判。
+    final String bookUid = _activeBookUid;
     bool isCurrent() =>
         mounted &&
         identical(_controller, controller) &&
         _episodeLoadSeq == loadSeq &&
-        _currentVideoPath == videoPath;
+        _currentVideoPath == videoPath &&
+        _activeBookUid == bookUid;
     // 远端片名直接拼进档名：「Re:Zero」这类带 `:` / `/` 的标题在 Windows 上写不出
     // 文件（或被当成子目录），先按全仓唯一的文件名安全化规则清洗。
-    final String rawBaseName = _isRemote
+    final String rawBaseName = _isRemote || _webMode
         ? (_title ?? _effectiveRemoteInfo?.title ?? '')
         : p.basenameWithoutExtension(videoPath ?? '');
     final String safeBaseName = safeWindowsFileName(rawBaseName).trim();
@@ -3500,7 +3513,15 @@ extension _VideoSubtitle on _VideoFushiPageState {
         target,
       ).writeAsString(subtitleTextCuesToSrt(split.cues), flush: true);
       if (!isCurrent()) return;
-      if (_isRemote) {
+      if (_webMode) {
+        // 网页档：与手机下载的字幕同一条路，作为一条本机轨并进站点轨并选中。
+        final List<AudioCue> cues = await _loadExternalSubtitleCues(
+          target,
+          _activeBookUid,
+        );
+        if (!isCurrent()) return;
+        _selectWebLocalSubtitleTrack(target, cues);
+      } else if (_isRemote) {
         _registerImportedSubtitleSource(target);
         if (await _applyRemoteSubtitle(controller, target)) {
           if (!isCurrent()) return;
@@ -3551,7 +3572,9 @@ extension _VideoSubtitle on _VideoFushiPageState {
             ),
           )
         : null;
-    if (_isRemote && _remoteHostVideoTarget() == null) {
+    if (_webMode) {
+      await _openWebSubtitlePipeline(controller);
+    } else if (_isRemote && _remoteHostVideoTarget() == null) {
       await _openStreamSubtitlePipeline(controller, onTranscribeInApp: inApp);
     } else if (_isRemote) {
       await _openRemoteJapaneseSubtitlePipeline(
@@ -3930,13 +3953,30 @@ extension _VideoSubtitle on _VideoFushiPageState {
     })?
     id = _streamWholeAudioIdentity();
     if (id == null) return null;
-    final File? existing = await appVideoStreamSubtitleAudioStager.existing(
+    return _stageWholeAudioWithDialog(
       key: id.key,
       title: id.title,
+      start: _startStreamWholeAudio,
+      logTag: 'video.streamSubtitleAudio',
+    );
+  }
+
+  /// 整集音频副本（[key] / [title] 见 `videoStreamSubtitleAudioFileIn`）：已拉好直接用；
+  /// 否则 [start] 开拉（同一集已在拉就接上那一次），在进度对话框里等（可取消）。取消
+  /// 返回 null；失败按 [logTag] 记日志、提示原因后返回 null。在线流与网页档共用。
+  Future<File?> _stageWholeAudioWithDialog({
+    required String key,
+    required String title,
+    required VideoStreamSubtitleAudioStaging? Function() start,
+    required String logTag,
+  }) async {
+    final File? existing = await appVideoStreamSubtitleAudioStager.existing(
+      key: key,
+      title: title,
     );
     if (existing != null) return existing;
     if (!context.mounted) return null;
-    final VideoStreamSubtitleAudioStaging? staging = _startStreamWholeAudio();
+    final VideoStreamSubtitleAudioStaging? staging = start();
     if (staging == null) return null;
     final FushiProgressDialogHandle dialog = showFushiProgressDialog(
       context: context,
@@ -3956,7 +3996,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
     } on VideoStreamSubtitleAudioCancelled {
       return null;
     } on VideoStreamSubtitleAudioUnavailable catch (error, stack) {
-      ErrorLogService.instance.log('video.streamSubtitleAudio', error, stack);
+      ErrorLogService.instance.log(logTag, error, stack);
       if (mounted) {
         _showOsd(
           t.video_subtitle_stream_audio_failed(reason: error.message),

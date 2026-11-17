@@ -413,16 +413,7 @@ extension _VideoRemoteControl on _VideoFushiPageState {
       if (cues.isEmpty) {
         throw const VideoRemoteException(409, 'subtitle_track_unavailable');
       }
-      final String name = p.basename(path);
-      final String key = '$_webVideoKey|download:$name';
-      // 网页轨的显示名取 lang（[_webTrackLabel]）：下载档用文件名。
-      _webTracks[key] = WebVideoTrack(
-        key: key,
-        videoKey: _webVideoKey,
-        lang: name,
-        cues: cues,
-      );
-      _selectWebTrack(key);
+      _selectWebLocalSubtitleTrack(path, cues);
     };
   }
 

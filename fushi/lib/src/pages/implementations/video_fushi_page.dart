@@ -262,6 +262,16 @@ import 'package:fushi/src/media/video/web_video_hosting.dart'
 import 'package:fushi/src/media/video/netflix_metadata.dart';
 import 'package:fushi/src/media/video/web_video_platform_player.dart';
 import 'package:fushi/src/media/video/web_video_session.dart';
+import 'package:fushi/src/media/video/web_video_subtitle_media.dart'
+    show
+        WebVideoSubtitleMediaBlock,
+        WebVideoSubtitleMediaBlocked,
+        kWebVideoGeneratedTrackLang,
+        prepareWebVideoSubtitleAudio,
+        webVideoGeneratedSubtitleLanguage,
+        webVideoGeneratedTrackKey,
+        webVideoSubtitleFrameInput,
+        webVideoSubtitlePipelineAvailable;
 import 'package:fushi_engine/sync/immersion_mine_payload.dart';
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart'
     show RemoteMineResult;
@@ -2478,6 +2488,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 站点当前视频身份（glue 的 `videoKey`；SPA 换集即变）与它名下的字幕轨。
   String _webVideoKey = '';
   final Map<String, WebVideoTrack> _webTracks = <String, WebVideoTrack>{};
+
+  /// 这一集生成的字幕（完整管线产物，登记在这一集的书 `subtitleSource` 上，重进时读回）：
+  /// 作为一条可选轨并进 [_webTracks]（key 见 [webVideoGeneratedTrackKey]），站点换了视频
+  /// key 而仍是这一集时按新 key 重挂。
+  ({String bookUid, String path, List<AudioCue> cues})? _webGeneratedSubtitle;
+
+  /// 已读过生成字幕登记的那一集的书：每集只读一次（换集后重读）。
+  String? _webGeneratedCheckedBookUid;
 
   /// 当前显示的轨（[chooseWebVideoTrackKey] 的结果，每次轨集变化重算）。
   String? _webActiveTrackKey;
