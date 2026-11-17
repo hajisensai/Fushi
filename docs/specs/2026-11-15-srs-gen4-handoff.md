@@ -2201,8 +2201,11 @@ Rust `SCHEMA` 没升（没加表 / 索引，分到的 40025 没用）；ABI 不�
 ### 规划与现状不符处（以代码为准）
 
 - 规划 §2.2 只写了「G10-4 host 目录与信任 ← G9-5、G8-7」，没有条目细则；设计稿 §8 G10 行写的「服务端设备信任（#3294）接到
-  新表」**已经成立**：admin `GET/POST /api/admin/srs/devices[/trust]` → `srsSetDeviceTrust` → 内核 `trust`（新代
-  `cmd/writes_local.rs`，S1 已接线），本块没改信任的实现，只补拒绝路径的测试（见「测试」）。
+  新表」只成立一半：admin `GET/POST /api/admin/srs/devices[/trust]` → `srsSetDeviceTrust` → 内核 `trust`（新代
+  `cmd/writes_local.rs`，S1 已接线）、派生层按信任扣删除（`weigh.rs` `distrusted`）都在，但**没有任何写者会把设备记成待确认**：
+  协议 3 的「首次信任」（`store/sync2/trust.rs` `note_new_device`，BUG-4306）没移进新代，gen4 `plan` 记下新对端公钥时不判信任，
+  所以所有设备一律可信、服务端直接应用陌生设备的删除。`admin_srs_device_trust_test.dart` 里 3 条在 `pr/srs-gen4-switch` 上本来就是红的
+  （删除没被扣住），就是这个缺口。本块补上（见「实现」最后一条）。
 - §10 写「`collections.dir` 没有索引，需要时加索引（升 schema）」：一台设备的 `collections` 只有几行，`profile_of_dir` 全表扫，
   **不加索引、不升 SCHEMA**。
 - 「host 目录」在 app 侧没有按目录名找 profile 的读法：`srs_app_runtime.dart` 的 `_onHostClientWrite` 只叫醒本机目录的整轮同步，
@@ -2235,6 +2238,11 @@ Rust `SCHEMA` 没升（没加表 / 索引，分到的 40025 没用）；ABI 不�
   `SrsRemoteRootIds`，内置类型的代码默认值（字段 / 模板 ID）由 `ids.lapis` / `ids.fushi` 派生（新 `srsBuiltinNoteTypeIn(nt, spec)`，
   `srsBuiltinNoteType(uid, spec)` 改为转调它）。信封没带某种内置类型的 ID 时报线格式错，不退回按 uid 派生。G9-7 之后
   `SrsKernelIds(uid)` 的内置 ID 与 uid 无关，所以这是口径收口（客户端不再拿主机 uid 派生任何 ID），不是行为修复。
+- **首次信任**（内核 `cmd/sync.rs`）：`plan` 里 `Truth::set_peer` 回 `PeerPut::Inserted`（第一次见到这台设备的公钥）时调新
+  `note_new_peer`：本机集合已有用户数据（新 `reads::collection_has_user_data`，与 `has_user_data` 读同一判据，内置默认牌组 / 笔记类型
+  按规范 ID 不算）就设 `TRUST_PENDING`；库还空（全新设备第一次同步、服务端刚开始提供）直接可信。`Updated` / `Same` 不动信任，
+  冒名（`KeyMismatch`）照旧报错跳过。迁移带来的（`carry.rs`）、导入随备份记的（`import.rs`）、旧根上的协议 3 设备
+  （`sync_oldroot.rs`，承袭段按上传者信任收，D20）不经这里。没加表，`SCHEMA` 不变。
 
 ### 每 profile 一个库目录（评估，本块不做）
 
@@ -2264,8 +2272,18 @@ Rust `SCHEMA` 没升（没加表 / 索引，分到的 40025 没用）；ABI 不�
   重复放开只算一次、迁移中拿不到占位、没有推迟就不因放开重跑。
 - 服务端 `admin_srs_device_trust_test.dart`「参数与拒绝原因」补：不是设备 ID 的串（`../uid`、500 字符）点名 profile 回 404
   `device_unknown`，空白回 400。
-- engine `srs_remote_store_test.dart`「线格式还原的视图与主机上读到的相同」改用主机根 ID，并加一条：对调两种内置类型的根 ID，
-  物化出的字段 ID 跟着变（证明默认值来自给的 ID）。
+- engine `srs_remote_store_test.dart`「线格式还原的视图与主机上读到的相同」改用主机根 ID：经线格式还原的内置 Lapis 与主机
+  `noteTypes()` 里的逐字段相同；对调两种内置类型的根 ID 后物化出的不同（证明默认值来自给的 ID）。
+- Rust 首次信任：`sync_tests.rs` 新 `first_sight_of_a_device_is_pending_only_when_the_library_has_data`（空库见到的设备可信；有数据的库见到
+  的设备待确认，`trust` 后可信、再同步不回待确认；第三台新设备照样待确认）。改了口径的两条旧测试补显式确认：
+  `sync_relay_tests.rs` `a_device_on_two_locations_relays_between_them`（b 先断言 c 待确认再 `trust`，否则不转发 c 的段）、
+  `sync_complete_tests.rs` `old_root_takeover_reaches_migrated_and_new_devices_alike`（b 有数据，先确认 a 再收 a 上传的承袭段）。
+- 服务端 `admin_srs_device_trust_test.dart` 原有 3 条（待确认设备的删除被扣住 / 确认后放行 / 拒绝）在基线上红，首次信任补上后转绿。
+- 变异实测（去掉修复 → 红，复原 → 绿）：`note_new_peer` 调用换成空臂 → 首次信任、中继、旧根接手 3 条红；
+  `profile_of_dir` 去掉目录名校验 → `profile_of_dir_refuses_untrusted_dir_names` 红；`onClientWrite` 改回「目录名当 uid」→
+  「写入按绑定的位置目录找 profile」红；`_beginMigration` 去掉占位判断 → 「整机备份与迁移互斥」红；`_builtinOf` 改回
+  `srsBuiltinNoteType(uid, spec)` → 「线格式还原的视图与主机上读到的相同」红。复原后 cargo 定向 5 条、服务端 3 个文件 28 条、
+  engine 2 个文件 35 条全绿。
 
 ### 没做 / 交给谁
 
