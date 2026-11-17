@@ -682,6 +682,11 @@ extension _FushiSyncServerPairing on FushiSyncServer {
         // 互联远端片段导出（`GET .../clipvideo`，反馈 6nBmSBj_2W）。老 host 无此字段
         // → client 提示「对端版本过低」，不发请求。
         kVideoClipExportCapability: _libraryService is VideoClipExportHost,
+        // `clipaudio?discTitle=`：按（盘, title）裁音频，远端原盘会话里库中没有行的
+        // title 也能本机转录 / 重定时 / 对轴。老 host 无此字段 → client 不带
+        // `discTitle` 请求（老 host 会照 `<id>` 那一行裁）。
+        kVideoClipAudioDiscTitleCapability:
+            _libraryService is VideoDiscTitleAudioHost,
         'videoSubtitleBackfill': lib && videoSubtitleBackfill != null,
         // 图形字幕整轨回传（`GET .../graphicsubtitle?embeddedStreamIndex=`）。老 host
         // 无此字段 / 没注入抽取实现 → false，client 不请求、时间表只靠边播边记。

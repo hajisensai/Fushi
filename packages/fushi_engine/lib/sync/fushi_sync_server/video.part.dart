@@ -744,16 +744,39 @@ extension _FushiSyncServerVideo on FushiSyncServer {
           int.tryParse(request.url.queryParameters['ac'] ?? '') ?? 1;
       final String audioBitrate =
           request.url.queryParameters['bitrate'] ?? '64k';
-      final File? clip = await svc.clipVideoAudio(
-        clipAudioId,
-        startMs: startMs,
-        endMs: endMs,
-        episodeIndex: episodeIndex,
-        audioStreamIndex: audioStreamIndex,
-        audioStreamCount: audioStreamCount,
-        audioChannels: audioChannels,
-        audioBitrate: audioBitrate,
-      );
+      // `?discTitle=BDMV/PLAYLIST/<名>.mpls`：同一张蓝光盘上的另一条 title（远端原盘
+      // 会话，能力位 [kVideoClipAudioDiscTitleCapability]）。不与 `episode` 同给。
+      final String? discTitle = request.url.queryParameters['discTitle'];
+      final File? clip;
+      if (discTitle != null && discTitle.isNotEmpty) {
+        if (svc is! VideoDiscTitleAudioHost) {
+          return shelf.Response.notFound('Disc title clip unsupported');
+        }
+        if (episodeIndex > 0) {
+          return shelf.Response(400, body: 'episode and discTitle conflict');
+        }
+        clip = await (svc as VideoDiscTitleAudioHost).clipVideoDiscTitleAudio(
+          clipAudioId,
+          discTitle: discTitle,
+          startMs: startMs,
+          endMs: endMs,
+          audioStreamIndex: audioStreamIndex,
+          audioStreamCount: audioStreamCount,
+          audioChannels: audioChannels,
+          audioBitrate: audioBitrate,
+        );
+      } else {
+        clip = await svc.clipVideoAudio(
+          clipAudioId,
+          startMs: startMs,
+          endMs: endMs,
+          episodeIndex: episodeIndex,
+          audioStreamIndex: audioStreamIndex,
+          audioStreamCount: audioStreamCount,
+          audioChannels: audioChannels,
+          audioBitrate: audioBitrate,
+        );
+      }
       if (clip == null) {
         return shelf.Response.notFound('Clip unavailable');
       }

@@ -3562,12 +3562,18 @@ class InterconnectSyncBackend extends SyncBackend
   ///
   /// 老 host 无 `clipaudio` 端点 → 该子路径 GET 落 host 兜底 → 404 → [downloadContentFile]
   /// 抛可重试 `SyncBackendError`；调用方 catch 后回退直连 ffmpeg 抽取（Never break userspace）。
+  ///
+  /// [discTitle]（远端原盘会话）：[id] 那一行所在蓝光盘上的另一条 title（相对盘根，
+  /// `BDMV/PLAYLIST/<名>.mpls`），不与 [episodeIndex] 同给。要 host 声明
+  /// `liveLibrary.videoClipAudioDiscTitle`：老 host 不认 `discTitle`，会照 [id] 那一行裁出
+  /// 另一条 title 的音频，所以不支持时抛 [RemoteDiscTitleAudioUnsupported]、不发请求。
   Future<void> getRemoteVideoAudioClip(
     String id,
     File dest, {
     required int startMs,
     required int endMs,
     int episodeIndex = 0,
+    String? discTitle,
     int? audioStreamIndex,
     int? audioStreamCount,
     int audioChannels = 1,
@@ -3575,10 +3581,19 @@ class InterconnectSyncBackend extends SyncBackend
     void Function(double progress)? onProgress,
   }) async {
     await _ensureResolved();
+    if (discTitle != null) {
+      if (episodeIndex > 0) {
+        throw ArgumentError('episodeIndex and discTitle are exclusive');
+      }
+      if (!await hostSupportsDiscTitleAudio()) {
+        throw const RemoteDiscTitleAudioUnsupported();
+      }
+    }
     final Map<String, String> query = <String, String>{
       'startMs': '$startMs',
       'endMs': '$endMs',
       if (episodeIndex > 0) 'episode': '$episodeIndex',
+      'discTitle': ?discTitle,
       if (audioStreamIndex != null) 'audioStreamIndex': '$audioStreamIndex',
       if (audioStreamCount != null) 'audioStreamCount': '$audioStreamCount',
       'ac': '$audioChannels',
@@ -3593,6 +3608,12 @@ class InterconnectSyncBackend extends SyncBackend
       onProgress: syncTransferFractionOnly(onProgress),
     );
   }
+
+  /// host 是否声明 `liveLibrary.videoClipAudioDiscTitle`（`clipaudio?discTitle=`，远端原盘
+  /// 会话按盘 + title 裁音频）。与默认字幕上传共用同一份按 host 缓存的能力表。
+  Future<bool> hostSupportsDiscTitleAudio() async =>
+      (await _liveLibraryCapabilities())[kVideoClipAudioDiscTitleCapability] ==
+      true;
 
   String? _clipExportCapabilityScope;
   bool? _clipExportCapability;

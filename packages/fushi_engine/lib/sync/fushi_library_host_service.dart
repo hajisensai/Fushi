@@ -3839,6 +3839,33 @@ abstract interface class VideoDiscShareHost {
 /// `/api/capabilities` 的 `liveLibrary` 里声明 [VideoClipExportHost] 的能力位。
 const String kVideoClipExportCapability = 'videoClipExport';
 
+/// `/api/capabilities` 的 `liveLibrary` 里声明 [VideoDiscTitleAudioHost] 的能力位：
+/// `clipaudio` 认 `?discTitle=`。老 host 无此字段 → client 不带 `discTitle` 请求（老 host
+/// 不认它，会照 `<id>` 那一行裁，拿回的是另一条 title 的音频）。
+const String kVideoClipAudioDiscTitleCapability = 'videoClipAudioDiscTitle';
+
+/// host 端「按（盘, title）裁音频」的**可选**能力（远端原盘会话：盘在 host 上，会话里
+/// 正在看的 title 可能是库里没有行的特典 / 菜单 title）。与 [VideoClipExportHost] 同范式：
+/// server 用 `is` 探测，不实现 → `clipaudio?discTitle=` 404、能力位
+/// [kVideoClipAudioDiscTitleCapability] 为 false。
+abstract interface class VideoDiscTitleAudioHost {
+  /// 在 host 本地裁出视频 [id] 那一行所在蓝光盘上 [discTitle]（相对盘根，
+  /// `BDMV/PLAYLIST/<名>.mpls`）那条 title 的 `[startMs, endMs)` 音频，返回落在**独立
+  /// 临时目录**里的 aac 文件（调用方读完负责删该目录）。视频未知 / 不是蓝光行 / title
+  /// 不合法或本机读不到 / 区间非法 / ffmpeg 失败 → null。其余参数同
+  /// [FushiLibraryHostService.clipVideoAudio]。
+  Future<File?> clipVideoDiscTitleAudio(
+    String id, {
+    required String discTitle,
+    required int startMs,
+    required int endMs,
+    int? audioStreamIndex,
+    int? audioStreamCount,
+    int audioChannels = 1,
+    String audioBitrate = '64k',
+  });
+}
+
 /// host 端「替 client 裁出视频片段原料」的**可选**能力（反馈 6nBmSBj_2W：互联远端
 /// 视频的片段导出）。
 ///

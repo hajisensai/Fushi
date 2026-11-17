@@ -26,6 +26,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/media/video/video_sidecar.dart';
 import 'package:fushi_engine/sync/local_library_host_service.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
+import 'package:fushi/src/sync/remote_disc_share.dart'
+    show RemoteDiscTitleAudioUnsupported;
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
@@ -545,6 +547,7 @@ void main() {
     late int capabilityProbes;
     late int subtitlePuts;
     final List<String> oldHostSuffixes = <String>[];
+    final List<Map<String, String>> clipQueries = <Map<String, String>>[];
     // null = /api/capabilities 整个端点 404（更老的 host）。
     Map<String, dynamic>? capabilities;
 
@@ -555,6 +558,7 @@ void main() {
       capabilityProbes = 0;
       subtitlePuts = 0;
       oldHostSuffixes.clear();
+      clipQueries.clear();
       fake = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
       fake.listen((HttpRequest req) async {
         final HttpResponse res = req.response;
@@ -578,6 +582,10 @@ void main() {
           final List<int> body = <int>[];
           await req.forEach(body.addAll);
           File(p.join(work.path, 'movie$suffix')).writeAsBytesSync(body);
+        } else if (req.method == 'GET' && req.uri.path.endsWith('/clipaudio')) {
+          // 老 host 的 clipaudio 不认 discTitle：照 <id> 那一行裁。
+          clipQueries.add(req.uri.queryParameters);
+          res.add(<int>[0xAA, 0xBB]);
         } else {
           res.statusCode = 404;
         }
@@ -659,6 +667,65 @@ void main() {
       );
       expect(subtitlePuts, 0);
       expect(hostJa.readAsBytesSync(), before);
+    });
+
+    test(
+      '远端原盘 title 取音频：没声明 videoClipAudioDiscTitle 时不发 clipaudio（老 host 会裁错 title）',
+      () async {
+        capabilities = <String, dynamic>{
+          'liveLibrary': <String, dynamic>{'videos': true},
+        };
+        final InterconnectSyncBackend backend = await _clientBackend(
+          base: base,
+          token: 'old-host-token',
+        );
+        final File dest = File(p.join(work.path, 'title.aac'));
+        await expectLater(
+          backend.getRemoteVideoAudioClip(
+            'disc/main',
+            dest,
+            startMs: 0,
+            endMs: 60000,
+            discTitle: 'BDMV/PLAYLIST/00005.mpls',
+          ),
+          throwsA(isA<RemoteDiscTitleAudioUnsupported>()),
+        );
+        expect(clipQueries, isEmpty);
+        expect(dest.existsSync(), isFalse);
+        // 库里有行的 title（不带 discTitle）照常走老端点。
+        await backend.getRemoteVideoAudioClip(
+          'disc/main',
+          dest,
+          startMs: 0,
+          endMs: 60000,
+        );
+        expect(clipQueries.single.containsKey('discTitle'), isFalse);
+      },
+    );
+
+    test('声明了 videoClipAudioDiscTitle：clipaudio 带 discTitle', () async {
+      capabilities = <String, dynamic>{
+        'liveLibrary': <String, dynamic>{
+          kVideoClipAudioDiscTitleCapability: true,
+        },
+      };
+      final InterconnectSyncBackend backend = await _clientBackend(
+        base: base,
+        token: 'old-host-token',
+      );
+      final File dest = File(p.join(work.path, 'title.aac'));
+      await backend.getRemoteVideoAudioClip(
+        'disc/main',
+        dest,
+        startMs: 0,
+        endMs: 60000,
+        discTitle: 'BDMV/PLAYLIST/00005.mpls',
+        audioStreamIndex: 1,
+      );
+      expect(clipQueries.single['discTitle'], 'BDMV/PLAYLIST/00005.mpls');
+      expect(clipQueries.single['audioStreamIndex'], '1');
+      expect(clipQueries.single.containsKey('episode'), isFalse);
+      expect(dest.readAsBytesSync(), <int>[0xAA, 0xBB]);
     });
 
     test('能力位为 true 时才上传（假 host 的覆盖语义证明门确实在 PUT 之前）', () async {

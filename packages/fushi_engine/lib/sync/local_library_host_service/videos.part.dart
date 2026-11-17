@@ -552,12 +552,67 @@ mixin _LocalLibraryHostVideos
     if (endMs <= startMs) return null;
     final File? file = await resolveVideoFile(id, episodeIndex: episodeIndex);
     if (file == null) return null;
+    return _clipAudioFrom(
+      file.path,
+      startMs: startMs,
+      endMs: endMs,
+      audioStreamIndex: audioStreamIndex,
+      audioStreamCount: audioStreamCount,
+      audioChannels: audioChannels,
+      audioBitrate: audioBitrate,
+    );
+  }
+
+  /// 远端原盘会话：按（盘, title）裁音频（见 [VideoDiscTitleAudioHost]）。title 的成员
+  /// 路径只由 [id] 那一行自己的盘根拼出（[videoBookDiscTitlePath]），ffmpeg 经蓝光后端
+  /// 按播放列表读盘上的 m2ts，与 [clipVideoAudio] 对蓝光行同一条路。
+  @override
+  Future<File?> clipVideoDiscTitleAudio(
+    String id, {
+    required String discTitle,
+    required int startMs,
+    required int endMs,
+    int? audioStreamIndex,
+    int? audioStreamCount,
+    int audioChannels = 1,
+    String audioBitrate = '64k',
+  }) async {
+    if (endMs <= startMs) return null;
+    final VideoBookRow? row = await _db.getVideoBookByBookUid(id);
+    if (row == null) return null;
+    final String? path = videoBookDiscTitlePath(
+      videoPath: row.videoPath,
+      discTitle: discTitle,
+    );
+    if (path == null || !await hasLocalMediaFile(path)) return null;
+    return _clipAudioFrom(
+      path,
+      startMs: startMs,
+      endMs: endMs,
+      audioStreamIndex: audioStreamIndex,
+      audioStreamCount: audioStreamCount,
+      audioChannels: audioChannels,
+      audioBitrate: audioBitrate,
+    );
+  }
+
+  /// 把本机媒体 [inputPath] 的 `[startMs, endMs)` 裁进独立临时目录（调用方读完删该
+  /// 目录）；失败清掉临时目录并返回 null。
+  Future<File?> _clipAudioFrom(
+    String inputPath, {
+    required int startMs,
+    required int endMs,
+    int? audioStreamIndex,
+    int? audioStreamCount,
+    required int audioChannels,
+    required String audioBitrate,
+  }) async {
     final Directory tmp = await Directory.systemTemp.createTemp(
       'fushi_clip_audio',
     );
     final String out = p.join(tmp.path, 'clip.aac');
     final String? result = await extractAudioSegmentViaFfmpeg(
-      inputPath: file.path,
+      inputPath: inputPath,
       startMs: startMs,
       endMs: endMs,
       outputPath: out,
