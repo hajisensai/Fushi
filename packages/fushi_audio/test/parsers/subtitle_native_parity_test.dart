@@ -30,9 +30,11 @@ import 'subtitle_parity_corpus.dart';
 /// `double.nan` = `0.0 / 0.0` = 0x7FF8…）上复测：把删除前的旧 Dart 实现
 /// （d3d21182ed^ 的 `subtitle_markup.dart`，与 e35042dda1 逐字相同）和 Rust 新实现放在同一
 /// 进程里对同一语料逐条比对，20000 条 0 处差异，两边摘要都是 `9e8c3c547a4312bb`。
-/// be82e21cf3 曾把它改成「旧实现实测值」`9d8ad6ef76adc21f`，那次实测不可复现（同一台
-/// arm64 上旧实现给出的就是 9e8c…，语料自那以后未改），已改回。同一 harness 在 Windows
-/// x64 上旧实现给出 `72e2b157fcf311f9`，与 x64 表一致。
+/// be82e21cf3 曾把它改成 `9d8ad6ef76adc21f`：那正是把语料里 PlayRes 的 NaN 换成 0xFFF8…
+/// 后旧实现与 Rust 共同给出的摘要（同一台 arm64 上实测），即那次运行喂进去的 NaN 输入符号位
+/// 不同——语料当时用的是 `double.nan` 常量，其位模式随求值它的工具链。现在语料按位写明
+/// 硬件 NaN（`kParityHardwareNan`），摘要不再受工具链影响，arm64 项改回 9e8c…。同一
+/// harness 在 Windows x64 上旧实现给出 `72e2b157fcf311f9`，与 x64 表一致。
 ///
 /// srt / vtt 两项（两表相同，语料无 NaN）在 #2313 / BUG-3532 改为多行以 `\N` 连接后，用
 /// 「旧 Dart 实现 + 该修复」（PR #2313 head 2014749e8a 的 Dart 解析器）对同一语料重新求得，
