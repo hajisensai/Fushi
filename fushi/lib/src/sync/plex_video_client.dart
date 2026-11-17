@@ -649,11 +649,16 @@ class PlexVideoClient
   }
 
   @override
-  Future<MediaServerItem> itemDetail(String itemId) async {
-    // 结果（连同失败）留给紧随其后的取流 / 取字幕复用，见 [_launchDetail]。
+  Future<MediaServerItem> itemDetail(
+    String itemId, {
+    bool forLaunch = false,
+  }) async {
+    // 结果留给紧随其后的取流 / 取字幕复用，见 [_launchDetail]。失败只有重开入口
+    // 那一次（[forLaunch]）才留：详情页取详情失败后点播放，照常重新请求。
     final PlexMetadata m = await _launchDetail.fetchAndRemember(
       itemId,
       () => api.metadata(itemId),
+      keepFailure: forLaunch,
     );
     final MediaServerItemType? type = mediaServerTypeOf(m);
     if (type == null) {

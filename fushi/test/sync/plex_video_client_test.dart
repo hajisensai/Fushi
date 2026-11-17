@@ -604,7 +604,7 @@ void main() {
       addTearDown(() => dir.deleteSync(recursive: true));
 
       // buildMediaServerLaunch 的那一次。
-      await c.itemDetail('ep-9');
+      await c.itemDetail('ep-9', forLaunch: true);
       await c.remoteVideoStreamUrls('ep-9');
       // 假服务器对字幕文件回 404；这里只数条目详情的请求次数。
       await expectLater(
@@ -646,7 +646,7 @@ void main() {
       final PlexVideoClient c = _client(pms);
       Object? launchError;
       try {
-        await c.itemDetail('ep-9');
+        await c.itemDetail('ep-9', forLaunch: true);
       } on PlexApiException catch (e) {
         launchError = e;
       }
@@ -666,6 +666,27 @@ void main() {
       final RemoteVideoStreamUrls urls = await c.remoteVideoStreamUrls('ep-9');
       expect(urls.streamUrl, contains('/library/parts/77/'));
       expect(_hits(pms, '/library/metadata/ep-9'), hasLength(2));
+    });
+
+    test('详情页取详情失败（不是重开入口）：随后点播放照常重新请求；'
+        '成功的那份照常留给取流', () async {
+      final _FakePms pms = _FakePms()..failing.add('/library/metadata/ep-9');
+      final PlexVideoClient c = _client(pms);
+      await expectLater(c.itemDetail('ep-9'), throwsA(isA<PlexApiException>()));
+      // 服务器恢复了：取流不能拿着那次旧错直接失败。
+      pms.failing.clear();
+      final RemoteVideoStreamUrls urls = await c.remoteVideoStreamUrls('ep-9');
+      expect(urls.streamUrl, contains('/library/parts/77/'));
+      expect(_hits(pms, '/library/metadata/ep-9'), hasLength(2));
+
+      await c.itemDetail('ep-9');
+      await c.remoteVideoStreamUrls('ep-9');
+      expect(_hits(pms, '/library/metadata/ep-9'), hasLength(3));
+    });
+
+    test('起播用的客户端就是浏览器本身（短复用靠同一个实例接上）', () {
+      final PlexVideoClient c = _client(_FakePms());
+      expect(identical(c.playbackClient, c), isTrue);
     });
 
     test('取流自己请求失败不留记录：紧接着重试会重新请求', () async {

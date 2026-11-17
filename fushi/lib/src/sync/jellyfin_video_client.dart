@@ -2512,6 +2512,7 @@ class JellyfinVideoClient
 
   /// 一次起播内的条目详情短复用（[LaunchItemDetailMemo]）：重开入口的
   /// [itemDetail]、取流、下默认字幕要的是同一份 `/Users/{uid}/Items/{id}`。
+  /// [playbackClient] 必须是本对象——换成别的实例这一格就接不上了。
   /// 存的是服务器原样的条目，版本由读出的一方各自过 [_withChosenVersion]——换了
   /// 版本再取字幕，拿到的仍是当下选中的版本。[remoteVideoPosition] 要服务器最新
   /// 断点，不走这里。
@@ -3263,13 +3264,18 @@ class JellyfinVideoClient
   }
 
   @override
-  Future<MediaServerItem> itemDetail(String itemId) async {
+  Future<MediaServerItem> itemDetail(
+    String itemId, {
+    bool forLaunch = false,
+  }) async {
     // `/Users/{uid}/Items/{id}` 不看 Fields、全量返回（Overview / Genres /
     // MediaSources 都在），与播放路径用的是同一发请求，不另加参数——所以结果
-    // （连同失败）留给紧随其后的取流 / 取字幕复用，见 [_launchDetail]。
+    // 留给紧随其后的取流 / 取字幕复用，见 [_launchDetail]。失败只有重开入口那
+    // 一次（[forLaunch]）才留：详情页取详情失败后点播放，照常重新请求。
     final JellyfinItem item = await _launchDetail.fetchAndRemember(
       itemId,
       () => api.itemDetail(userId: userId, itemId: itemId),
+      keepFailure: forLaunch,
     );
     final MediaServerItemType? type = mediaServerTypeOf(item);
     if (type == null) {

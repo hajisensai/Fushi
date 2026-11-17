@@ -484,7 +484,10 @@ buildMediaServerLaunch({
   );
   if (startIndex < 0) startIndex = 0;
   try {
-    final MediaServerItem detail = await browser.itemDetail(spec.itemId);
+    final MediaServerItem detail = await browser.itemDetail(
+      spec.itemId,
+      forLaunch: true,
+    );
     if (detail.isPlayable) {
       members[startIndex] = browser.toRemoteVideoInfo(detail);
     }

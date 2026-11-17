@@ -9,8 +9,10 @@
 /// * 只留**一格**（最近那一条），存的是服务器原样返回的详情——版本选择由各消费
 ///   方在读出后各自套用，所以换了版本再取字幕拿到的仍是当下选中的那个版本。
 /// * 窗口 [window] 从请求**落定**起算，过了就重新取。
-/// * 重开入口那一次的失败也记一格，**只交给下一次读取一次**：随后的取流立刻
-///   抛同一个错，不再等第二轮超时；用户之后重试时照常重新请求。
+/// * **只有重开入口那一次**（`keepFailure: true`）的失败记一格，并且**只交给一个
+///   读取方一次**：随后的取流立刻抛同一个错，不再等第二轮超时；用户之后重试时
+///   照常重新请求。别处取详情（详情页）失败不留——那里的失败页面自己吞掉了，
+///   不该让随后的起播不发请求就失败。
 /// * 断点（LWW 用）必须是服务器最新值，读断点的路径不走这里。
 library;
 
@@ -19,13 +21,17 @@ library;
 const Duration kLaunchItemDetailReuseWindow = Duration(seconds: 10);
 
 class _LaunchItemDetailSlot<T> {
-  _LaunchItemDetailSlot(this.id, this.future, {required this.keepFailure});
+  _LaunchItemDetailSlot(this.id, this.future);
 
   final String id;
   final Future<T> future;
 
-  /// 失败后是否留给下一次读取（只有重开入口那一次留）。
-  final bool keepFailure;
+  /// 失败后是否留给下一次读取：重开入口发起或接上这一发时置真。
+  bool keepFailure = false;
+
+  /// 这一发的结果已经有读取方（[LaunchItemDetailMemo.reuseOrFetch]）在等：它失败
+  /// 时那个读取方当场就拿到错了，不能再留一格交给下一次读取。
+  bool readerAttached = false;
 
   DateTime? settledAt;
   bool failed = false;
@@ -44,42 +50,45 @@ class LaunchItemDetailMemo<T> {
 
   _LaunchItemDetailSlot<T>? _slot;
 
-  /// 重开入口用：要服务器的最新值，所以已落定的旧结果一律不用（同一条还在途的
-  /// 那一发本身就是最新的，直接共用）。结果与失败都记下，留给随后的 [reuseOrFetch]。
-  Future<T> fetchAndRemember(String id, Future<T> Function() fetch) {
-    final _LaunchItemDetailSlot<T>? slot = _slot;
-    if (slot != null && slot.id == id && slot.settledAt == null) {
-      return slot.future;
+  /// 取详情用：要服务器的最新值，所以已落定的旧结果一律不用（同一条还在途的
+  /// 那一发本身就是最新的，直接共用）。成功结果总是记下，留给随后的
+  /// [reuseOrFetch]；失败只在 [keepFailure]（重开入口那一次）时才留。
+  Future<T> fetchAndRemember(
+    String id,
+    Future<T> Function() fetch, {
+    required bool keepFailure,
+  }) {
+    _LaunchItemDetailSlot<T>? slot = _slot;
+    if (slot == null || slot.id != id || slot.settledAt != null) {
+      slot = _start(id, fetch);
     }
-    return _start(id, fetch, keepFailure: true);
+    if (keepFailure) slot.keepFailure = true;
+    return slot.future;
   }
 
   /// 取流 / 取字幕用：同一条在途或窗口内已落定的那一份直接用，否则现取。
   ///
-  /// 记下的失败只在这里抛一次就清掉；自己现取失败不留记录。
+  /// 记下的失败只在这里抛一次就清掉；接上在途的那一发、或自己现取的，失败都由
+  /// 这次调用当场拿走，不留记录。
   Future<T> reuseOrFetch(String id, Future<T> Function() fetch) {
-    final _LaunchItemDetailSlot<T>? slot = _slot;
+    _LaunchItemDetailSlot<T>? slot = _slot;
     if (slot != null && slot.id == id) {
       final DateTime? settledAt = slot.settledAt;
-      if (settledAt == null) return slot.future;
+      if (settledAt == null) {
+        slot.readerAttached = true;
+        return slot.future;
+      }
       if (_now().difference(settledAt) <= window) {
         if (slot.failed) _slot = null;
         return slot.future;
       }
     }
-    return _start(id, fetch, keepFailure: false);
+    slot = _start(id, fetch)..readerAttached = true;
+    return slot.future;
   }
 
-  Future<T> _start(
-    String id,
-    Future<T> Function() fetch, {
-    required bool keepFailure,
-  }) {
-    final _LaunchItemDetailSlot<T> slot = _LaunchItemDetailSlot<T>(
-      id,
-      fetch(),
-      keepFailure: keepFailure,
-    );
+  _LaunchItemDetailSlot<T> _start(String id, Future<T> Function() fetch) {
+    final _LaunchItemDetailSlot<T> slot = _LaunchItemDetailSlot<T>(id, fetch());
     _slot = slot;
     slot.future.then<void>(
       (T _) {
@@ -89,9 +98,10 @@ class LaunchItemDetailMemo<T> {
         slot
           ..settledAt = _now()
           ..failed = true;
-        if (!slot.keepFailure && identical(_slot, slot)) _slot = null;
+        final bool keep = slot.keepFailure && !slot.readerAttached;
+        if (!keep && identical(_slot, slot)) _slot = null;
       },
     );
-    return slot.future;
+    return slot;
   }
 }
