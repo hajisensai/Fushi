@@ -363,6 +363,27 @@ const Map<String, String> kWebUiEnglish = <String, String>{
   '数据来自更新版本的 Fushi，请升级服务端':
       'The data comes from a newer Fushi; update the server',
   '复习库升级中': 'Upgrading the review library',
+  '升级中': 'Upgrading',
+  '另一个进程在升级': 'Another process is upgrading it',
+  '需要升级': 'Needs an upgrade',
+  '升级失败': 'Upgrade failed',
+  '只剩封存的旧库': 'Only the sealed old library is left',
+  '新库旁边还有没升级的旧库':
+      'An old library that was never upgraded sits beside the new one',
+  '升级受阻': 'Upgrade blocked',
+  '磁盘空间不够': 'Not enough disk space',
+  ' · 已请求叫停': ' · stop requested',
+  '复习库换代': 'Review library upgrade',
+  '原因': 'Reason',
+  '报告': 'Report',
+  '开始升级': 'Start upgrade',
+  '叫停升级': 'Stop upgrade',
+  '开始升级复习库？升级期间远程复习与制卡暂停；旧的 srs.db 会封存保留，不删除任何文件。':
+      'Start upgrading the review library? Remote review and mining pause meanwhile; the old srs.db is sealed and kept, no file is deleted.',
+  '叫停复习库升级？提交步骤之前叫停会回到升级前的样子；刚好进入提交步骤时以最终结论为准。':
+      'Stop the review library upgrade? Before the commit step everything goes back to how it was; if it just entered the commit step, the final verdict is what counts.',
+  '已开始升级': 'Upgrade started',
+  '已请求叫停': 'Stop requested',
   '复习库升级没完成，需在服务端处理（ctl srs migration）':
       'The review library upgrade did not finish; handle it on the server (ctl srs migration)',
   '已开启': 'On',

@@ -18,6 +18,7 @@ import 'package:fushi_engine/srs/srs_remote_store.dart';
 import 'package:fushi_engine/srs/srs_remote_store_routes.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_server/src/admin/admin_srs_ctl.dart';
+import 'package:fushi_server/src/admin/web_ui.dart' show adminWebUiHtml;
 import 'package:fushi_server/src/config/server_srs_config.dart';
 import 'package:fushi_server/src/remote_mining_host.dart';
 import 'package:fushi_server/src/server_srs.dart';
@@ -688,5 +689,41 @@ void main() {
     expect(fake.runs, isEmpty);
     expect(srs.generation.state, ServerSrsGenState.ready);
     expect(srs.remoteStore, isNull);
+  });
+
+  group('WebUI 复习库换代', () {
+    test('每个非 ready 状态都有文案；开始 / 叫停要管理员表态才发', () {
+      final int at = adminWebUiHtml.indexOf('const SRS_GEN_STATE = {');
+      expect(at, isNonNegative);
+      final String table = adminWebUiHtml.substring(
+        at,
+        adminWebUiHtml.indexOf('};', at),
+      );
+      for (final ServerSrsGenState s in ServerSrsGenState.values) {
+        if (s == ServerSrsGenState.ready) continue;
+        expect(table, contains('${s.wire}:T('), reason: s.wire);
+      }
+      final int fn = adminWebUiHtml.indexOf('function renderSrsMigration(');
+      expect(fn, isNonNegative);
+      final String body = adminWebUiHtml.substring(
+        fn,
+        adminWebUiHtml.indexOf('\nlet srsFormKey', fn),
+      );
+      // 失败类状态不自动重跑：页面只在管理员确认（ask）之后才发 start / cancel。
+      for (final String path in <String>[
+        "post('srs/migration/start')",
+        "post('srs/migration/cancel')",
+      ]) {
+        final int call = body.indexOf(path);
+        expect(call, isNonNegative, reason: path);
+        final int guardAt = body.lastIndexOf('if(!await ask(', call);
+        final int lineStart = body.lastIndexOf('\n', call);
+        expect(guardAt, greaterThan(lineStart), reason: path);
+      }
+      // 叫停只在可叫停（提交点之前）时出按钮。
+      expect(body, contains('g.cancellable ?'));
+      expect(adminWebUiHtml, contains('renderSrsMigration(st.generation)'));
+      expect(adminWebUiHtml, contains('<div id="srs-migration"></div>'));
+    });
   });
 }
