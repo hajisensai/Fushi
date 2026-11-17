@@ -97,14 +97,14 @@ void main() {
               .single['n']!
           as int;
 
-  Future<int> rawStyleRows(SrsStorage db) async =>
-      db.core
-              .debugSelectRaw(
-                'SELECT COUNT(*) AS n FROM ops '
-                "WHERE instr(body, CAST('<style>' AS BLOB)) > 0",
-              )
-              .single['n']!
-          as int;
+  // 落库形态（对外读一律展开）：内核 `events` 读出的修改记录是不展开的原值，数其中带内联 `<style>` 的条数。以前直接在
+  // 新代 `ops` 的操作体上 instr，但够大的操作体本机按 zstd 存（`gen4/pack.rs`），内联样式在压缩字节里查不到，「有一条」
+  // 永远数成 0、「没有」恒真。
+  Future<int> rawStyleRows(SrsDbStore s) async =>
+      (await s.exportAll()).whereType<SrsEditEvent>().where((SrsEditEvent e) {
+        final Object? v = e.edit.value;
+        return v is String && v.contains('<style>');
+      }).length;
 
   const List<String> dicts = <String>['JMdict', '大辞林', '明鏡'];
 
@@ -121,7 +121,7 @@ void main() {
     final String glossary = stored.field(fid('Glossary'));
     expect(glossary, isNot(contains('<style>')));
     expect(srsStyleRefsIn(glossary), hasLength(3));
-    expect(await rawStyleRows(dedupDb), 0);
+    expect(await rawStyleRows(s), 0);
     for (final String name in srsStyleRefsIn(glossary)) {
       expect(File(p.join(tmp.path, 'media', name)).existsSync(), isTrue);
     }
@@ -216,7 +216,7 @@ void main() {
     }
     // 同步 v2：操作不可变，C 发来的内联原文按原样落进 B 的投影（本机写的才在落库前换成引用行）。
     // 存量去重（compactStoredStyles）随协议 3 一起删了（G7-5）。
-    expect(await rawStyleRows(dbB), 1);
+    expect(await rawStyleRows(b), 1);
     expect(await render(b, id), await render(a, id));
     await dbA.close();
     await dbB.close();
@@ -321,7 +321,7 @@ void main() {
     for (final MapEntry<String, String> f in original.entries) {
       expect(await other.expandStyles(back.field(f.key)), f.value);
     }
-    expect(await rawStyleRows(db2), 0);
+    expect(await rawStyleRows(other), 0);
     await db.close();
     await db2.close();
   });
