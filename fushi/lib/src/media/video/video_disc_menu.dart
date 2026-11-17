@@ -652,8 +652,9 @@ Future<void> runCheckedVideoDiscCommand(
   List<String> command,
 ) async {
   final int result = await _runVideoDiscCommand(native, command);
-  if (result < 0)
+  if (result < 0) {
     throw VideoDiscMenuException(videoDiscCommandFailedCode(result));
+  }
 }
 
 /// mpv's generic `MPV_ERROR_COMMAND`: what the shipped `fushi-discnav1` patch
