@@ -2235,3 +2235,19 @@ SCHEMA 不动（40021）。
 - `native/fushi_fsrs`：`cargo fmt --check` 0；`cargo test --profile quick --lib -j 4` 0，1316 过 / 0 败 / 39 忽略（忽略的是存量）。
 - 真内核（本 worktree `--profile quick --features raw_sql` 编的 `fushi_fsrs.dll`，`FUSHI_FSRS_LIB`）：engine
   `srs_edit_undo_test` + `srs_browse_test` 24/24；app `srs_review_inline_edit_test` 2/2（`heavy.dart --here`）。
+
+### 复核修复（2026-11-17，同分支）
+
+- 「见没见过」接进裁决后没有用例能区分（把注入的闭包改成恒真，相关用例全过）：补 `center_tests.rs`
+  `undo_check_refuses_a_lone_same_value_write_that_never_saw_ours`——0xf1:1 写 V、0xf2:1 见过它写 W、0xf3:1 只见过 0xf2:1 写回 V，
+  唯一活着、值相同、没见过 0xf1:1 → 不能撤；0xf4:1 见过两者再写 V → 能撤。原生写入按因果顺序投递时造不出「见过 0xf2:1 却没见过
+  它见过的 0xf1:1」这种依赖，判据在新代是保险（防不可信的对端操作），用例直接喂操作。
+- `write_sees` 旧戳分支的按类换名（`Canon::dvv`）没被钉住：补 `class.rs` `class_write_sees_renames_a_heritage_context`
+  （(w1, 2) 的旧上下文写的是改名后的 `merged:1`，按类见过 (w1, 1)；(w1, 5) 没见过；类里没有的 dot = false）。撤销路径上被问的是不带
+  旧戳的原生写入，这条分支答 true 的情形罕见。
+- 浏览 `edits_with` 只要字段键时也拼合成 `tags` 行（每份成员一次 `tag_ix` / `reg_ix` 查询 + 每条标签操作一次读）：拆出
+  `cmd/mod.rs` `edit_rows_with(.., tags: bool)`，`edits_with` 在 `keys` 为空或含 `tags` 时才拼；`browse.rs` 文件头「代价」写明。
+  `browse_edits_count_the_last_tag_op_as_a_modification` 加「键里点名 `tags` 时带它」两条断言。
+- 变异实测（各自单独套上、跑 `undo_check browse_ class_` 过滤、再还原）：闭包恒真 → 新 center 用例红；旧戳分支不换名 → 新 class
+  用例红；`tags` 恒 false → C7 用例红；`tags` 只在 `keys` 为空时拼 → C7 用例（新断言）红。还原后工作区干净。
+- `cargo fmt --check` 0；`cargo test --profile quick --lib -j 4` 0，1318 过 / 0 败 / 39 忽略（存量）。没改 Dart，没重跑 engine / app 测试。

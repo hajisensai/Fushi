@@ -627,6 +627,9 @@ fn browse_edits_count_the_last_tag_op_as_a_modification() {
         assert!(after_values.iter().all(|(k, _)| k != "tags"));
         // 只要字段键：没有 `tags` 行，最后改动时刻还是字段的。
         assert_eq!(modified(std::slice::from_ref(&field)).1, Some(before));
+        // 键里点名了 `tags`：带它（只要字段键时省掉的那一行，点名时不能省）。
+        assert_eq!(modified(&[field.clone(), "tags".to_owned()]).1, Some(900));
+        assert_eq!(modified(&["tags".to_owned()]).1, Some(900));
     });
 }
 
