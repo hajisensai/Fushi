@@ -2086,13 +2086,13 @@ Rust `SCHEMA` 没升（没加表 / 索引，分到的 40024 没用）；ABI 不�
    所以先当夹具问题：要么用真实协议 3 发布版造的库跑一次同样的迁移（过了就按那份重生成两份冻结夹具，不再手改 schema 标记），
    要么由内核 owner 判 parity 对这类开发版数据该给什么结论。重生成要一个能写协议 3 库的生成器（Dart 侧已没有协议 3 开库入口，
    只能在 Rust 侧做），本模块没做。3 个文件的向量用例因此仍红（已知红，归属：换代迁移 owner 定因后决定重生成或改判）。
-2. 新设备首次出现不判「待确认」（BUG-4276 回归）：协议 3 在 `store/sync2/trust.rs:70 note_new_device` 判库非空时首见的
+2. 新设备首次出现不判「待确认」（BUG-4306 回归；原写的 BUG-4276 号有误，那个号是互联局域网设备列表）：协议 3 在 `store/sync2/trust.rs:70 note_new_device` 判库非空时首见的
    设备为 pending、它的删除 / 清除扣住；新代生产代码里没有任何地方写 `TRUST_PENDING`（只有 `cmd/writes_local.rs:136`
-   用户手动改信任与测试），`receive.rs:537` 只读 `trust_of`。别的设备的删除直接生效。红：引擎 `srs_devices_test`（4）、
+   用户手动改信任与测试），`receive.rs:592`（承袭段上传者核对）只读 `trust_of`。**已修：§28。**别的设备的删除直接生效。红：引擎 `srs_devices_test`（4）、
    `srs_db_store_test`「删除与对端并发修改」，app `srs_device_trust_test`（4）、`srs_conflicts_held_delete_test`（2）。
 3. 彻底清除不抹本机操作日志里的内容：`Truth::advance_purge`（`store/gen4/truth.rs:2881`，完整内容 → 空洞）在生产代码里
    没有调用方，`cmd/writes.rs:989 purge` 只追加 删除 + Purge 两条操作。清除后 `ops` 里带原文的修改记录原样留着（实测
-   seq 6、7 两条仍含 `secret-snow`，`op_voids` / `op_alias` 都是 0 行）。红：`srs_purge_test` 2 条。
+   seq 6、7 两条仍含 `secret-snow`，`op_voids` / `op_alias` 都是 0 行）。红：`srs_purge_test` 2 条。表层由 G8-7b 补上，字节层（空闲页 / WAL 残留）**已修：§28。**
 4. Anki 导入日志的 HLC 被内核重打，同一条 revlog 的副本不再归成一个事件：选取的事件身份（`history.rs:118-139`
    `EventKey`）对 Anki 来源只靠「由 revlog id 派生的 HLC」把换卡导入的副本归一（文件头 :19、:154），新代落库丢掉日志
    自带的 HLC、改用操作自己的（`cmd/writes.rs:23` / `:643`）。同一条 revlog 落到血统里两张卡（Lapis → Fushi 卡片后再
@@ -2192,3 +2192,55 @@ Rust `SCHEMA` 没升（没加表 / 索引，分到的 40024 没用）；ABI 不�
   `backup_merge_engine.dart` 保留 develop 的 `excludedBookKeys`，不带回 G11-4 已删的 `localSrs` / `sourceSrs`。develop 改过的
   三份协议 3 测试 / 夹具（`srs_legacy_clock_conformance_test`、`legacy_clock_store_vectors.json`、`srs_gen4_rehearsal_test`）
   维持删除。
+
+## 28. 第四波 K2 首见信任与清除字节层（2026-11-17，分支 `pr/srs-gen4-k2-trust-purge`，基于 `pr/srs-gen4-switch`）
+
+修 §26 T1 节的 C2、C3。SCHEMA 不升（没加表 / 索引，只多两个 `srs_meta` 键）。
+
+### C2 首见设备判待确认（BUG-4306）
+
+- 真相层新子模块 `store/gen4/truth/trust.rs`：`Truth::library_fresh(col)` 直接查真相（逐台设备按主键区间扫 `ops`，
+  只认内置种子 = `data` 带 `builtin` 的实体创建、盐、并入、还原点为「没有用户内容」；有空洞 / 副本记录 / 待投递承袭槽
+  就不算空），不读派生投影（BUG-4478 那类「投影滞后误判空库」从结构上没有）。比协议 3 的口径更保守，偏差方向只会多问。
+- `Truth::note_new_peer(col, device, public, prev, seen_at)`，判定顺序：① 本机已有它的日志（承袭日志先于公钥到）→ 不追溯，
+  按可信（协议 3 给「有设备行、没公钥」补公钥时也不判待确认）；② 带 `prev` 且 `peers` 里旧身份的公钥与新 head 公钥逐字节
+  相同 → 原样继承旧身份的信任状态与 `since`，新身份没自报名字时带上旧名字；公钥不同不继承；③ 库空 → 首次信任；④ 待确认。
+  由于 ①，写下信任行的设备在本机一条已落库的操作都没有，派生层不必重判。
+- 入口：`cmd/sync.rs` `plan`（含转发来的 head）与 `cmd/sync_oldroot.rs` `oldroot_ingest`（v3 head，没有 prev）在
+  `PeerPut::Inserted` 时调。`plan` 是本机状态写命令（`write_local`，不动派生层），所以不调 `trust_changed`；旧根那条在写了
+  信任行时调 `Receiver::trust_changed` 兜底。
+- 迁移端到端已实测（`sync_trust_tests` 的 `a_migrated_*`）：协议 3 两台库迁移后各换新身份，新 head 的 `prev` 公钥就是
+  `peers` 里搬来的旧公钥（迁移沿用 `key_seed`），b 上 a 的新身份原样继承可信 / 待确认、`since`、名字，不会整批待确认。
+- 语义变化的连带：库非空的设备首见对端都是待确认，D20（不受信上传者的承袭段等确认再收）与转发「只存受信作者的段」从此真的
+  生效。两条既有测试（`old_root_takeover_reaches_migrated_and_new_devices_alike`、`a_device_on_two_locations_relays_between_them`）
+  改成先确认对端再断言原意。
+
+### C3 清除的字节层
+
+- `schema.rs` `configure`：写连接一律 `PRAGMA secure_delete = ON`（读回核对）。新代库的写连接只有 `schema::open` 一个口
+  （内核写连接、迁移 / 预演目标库）；读连接 `query_only`；`kernel.rs` 并 WAL 的旁路连接只做检查点；协议 3 旧库连接不是新代库。
+- 新模块 `store/gen4/scrub.rs`：`advance_purge` 落空洞的同一个事务里记 `srs_meta` `gen4_scrub_due`；`kernel.rs` `write_tx`
+  提交后（事务外、仍拿写锁）做收尾：没有 `gen4_secure_delete` 标记的存量库先 `VACUUM` 一次并记标记，再
+  `wal_checkpoint(TRUNCATE)`，成了才删 `gen4_scrub_due`。检查点被读者挡住 / 收尾失败：标记留着，下一条写命令与下一次打开
+  接着做（命令本身已提交，不改它的结果）。`schema::open` 建库那一笔记 `gen4_secure_delete`，所以换代迁移建的库与全新安装都
+  不需要整理。
+- 存量库的取舍：每次清除都 `VACUUM` 代价太大（约等于库大小的临时空间、期间占写锁），开库时做会让每个存量库启动卡一次；
+  只在第一次清除时做一次。生产里需要整理的只有换代开发期间用集成分支建的库（develop 上只有预演，没有在用的 `srs4.db`）。
+- 绕开 `write()`/`finish` 的灌库入口：`.fushisrs` 第 2 版、第 1 版、旧备份读入（`import.rs` 三处）原来只 `ingest_settle(Rebuild)`，
+  带进来的 `Purge` 要等下一条写命令的 `finish` 才执行；改成同一个事务里 `execute_purges`（`settle_imported`）。迁移
+  （`dryrun.rs` 的重建）没改：协议 3 的清除在旧库里已经执行过，迁移不改真相是既定口径。
+
+### 封存旧库 `srs.db` 里的原文（定案）
+
+不改封存库。理由：保留副本存在的意义是「出事能回退旧版本」，在封存库上做局部清除会让它变成协议 3 自己也没写过的状态
+（协议 3 的清除要同时改投影、日志、段缓存），回退时反而可能出问题；按 D6 / D32 的设计，它在新代第一次同步成功 14 天后整份删除（设置里
+可提前删），迁移前的原文随之消失。**依赖**：D32 的自动删除与提前删除入口还没实现（§25 末、G7-6），彻底清除确认处的说明也要跟
+那个入口一起加（说明里要指向真实存在的删除入口，现在加只会说空话）。归属 G7-6 / 保留副本 owner。
+
+### 没做 / 归属别的模块
+
+- 转发缓存 `relay_segs`（G8-7b，`cmd/sync_relay.rs`）存的是作者段原文：同步着 ≥ 2 个位置时，被清除的内容会留在
+  `relay_segs` 里直到每个位置都有了那一段，期间还会原样转发到别的位置。清除时应当丢掉 / 重切含被清操作的转发件。没改，
+  归转发 owner（单位置的字节扫描测试覆盖不到这条路径）。
+- 迁移本身（`dryrun.rs` 重建）不执行清除，见上。
+- Dart：`srs_purge_test`、`srs_devices_test`、`srs_db_store_test` 等的复跑结果见 PR 描述。
