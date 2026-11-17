@@ -1,6 +1,6 @@
 // 笔记引用的媒体（srs.db schema v4 的 srs_notes_cache.media_refs，缓存修订号 3）：
 // srsReferencedMedia 读这一列而不再解析全部字段值；新建 / 改字段 / 删除 / 存量样式去重改写字段后
-// 都随笔记缓存刷新；整层重建后同值。
+// 都随笔记缓存刷新；派生列被改坏后整层重建按真相复原。
 import 'dart:io';
 
 import 'package:drift/drift.dart' show driftRuntimeOptions;
@@ -86,7 +86,8 @@ void main() {
   });
 
   // 协议 3 的「老库（缓存修订号 2）打开时补齐」改成整层重建：新代没有 `cacheRev`，派生层是真相的纯函数。
-  test('派生层整层重建后引用集不变', () async {
+  // 先经原始通道把 `notes.media_refs` 改坏，重建必须按笔记字段重算回来（只比重建前后同值测不出重建坏掉）。
+  test('媒体引用列改坏后整层重建复原，引用集不变', () async {
     final SrsDbStore s = await open();
     await s.createNote(
       noteTypeId: s.lapisNoteTypeId,
@@ -98,7 +99,11 @@ void main() {
     );
     final Set<String> want = await srsReferencedMedia(s);
     expect(want, containsAll(<String>['a.png', 'b.mp3']));
-    await s.rebuildCaches();
+    await expectRebuildRestores(
+      s,
+      'notes',
+      "UPDATE notes SET media_refs = 'damaged.png'",
+    );
     expect(await srsReferencedMedia(s), want);
     expect(await srsReferencedMedia(await open()), want);
   });

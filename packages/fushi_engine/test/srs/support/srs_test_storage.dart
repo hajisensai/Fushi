@@ -34,30 +34,24 @@ Future<SrsStorage> openTestSrsStorage() async {
   return storage;
 }
 
-/// 打开的 srs.db（关闭由 [openTestSrsAt] 注册）。
+/// 打开的复习库（关闭由 [openTestSrsIn] 注册）。
 ///
-/// srs.db 的读只有内核读命令（`srsRead` / [SrsDbStore] 的读方法）；测试要直接看表时用 [SrsCore.debugSelectRaw]
+/// 读只有内核读命令（`srsRead` / [SrsDbStore] 的读方法）；测试要直接看表时用 [SrsCore.debugSelectRaw]
 /// （测试专用的原始通道：ID 参数写 `srs_id(?)`，表达式列套 `srs_idt(...)`，直接选出的 ID 列已还原成文本）。
 typedef TestSrs = ({SrsCore core});
 
-/// 在 [path] 上直接打开复习库（Rust 独占连接）。读命令照常在内核命令 worker 的查询道上跑（与 app 相同）。
-/// 注册清理：关 Rust 连接；不删文件（调用方管目录）。
-///
-/// 新代的 [SrsCore.open] 收的是**库目录**（里面放 `srs.gen.lock` / 代际文件），不是单个 `.db` 文件；调用方沿用
-/// 旧写法传 `<tmp>/srs.db` 时，这里把它当成目录建出来（同一路径重开仍落到同一个库，不同文件名仍是不同的库）。
-Future<TestSrs> openTestSrsAt(String path) async {
-  // 已是文件（调用方抄进来的协议 3 夹具库）就不动：那类用例本身已过时，让它照实失败。
-  if (!File(path).existsSync()) Directory(path).createSync(recursive: true);
-  final SrsCore core = SrsCore.open(path);
-  SrsCoreWorkers.of(core.libraryPath).setQueryConcurrency(core.readConcurrency);
-  addTearDown(core.close);
-  return (core: core);
+/// [parent] 下名为 [name] 的子库目录（同一个临时目录里要开几个互不相干的库时用；清理跟着 [parent]）。
+String testSrsSubdir(Directory parent, String name) {
+  final Directory d = Directory('${parent.path}${Platform.pathSeparator}$name')
+    ..createSync(recursive: true);
+  return d.path;
 }
 
 /// 新建一个临时**库目录**（新代 [SrsCore.open] 收目录；里面放 `srs.gen.lock`、新代库 `srs4.db`、封存旧库 `srs.db`）。
 /// 注册清理：删目录（Windows 句柄滞后删不掉时留给系统）。清理按注册的倒序跑，先注册目录、后开库，关库就在删目录之前。
-Directory newTestSrsDir([String prefix = 'srs_test_']) {
-  final Directory dir = Directory.systemTemp.createTempSync(prefix);
+Directory newTestSrsDir([String prefix = 'srs_test_', String? root]) {
+  final Directory dir = (root == null ? Directory.systemTemp : Directory(root))
+      .createTempSync(prefix);
   addTearDown(() {
     try {
       dir.deleteSync(recursive: true);
@@ -107,11 +101,42 @@ Future<TestSrs> openMigratedTestSrs(
   List<int> legacyBytes, {
   String prefix = 'srs_migrated_',
   int? nowMs,
-}) async {
+}) {
   final Directory dir = newTestSrsDir(prefix);
   File(
     '${dir.path}${Platform.pathSeparator}srs.db',
   ).writeAsBytesSync(legacyBytes);
+  return _migrateAndOpen(dir, nowMs);
+}
+
+/// 真实数据基准用，一律在副本上跑（不动 [source]）：[source] 是新代**库目录**就把其中的文件拷进临时库目录再开；
+/// 是一份协议 3 的 `srs.db` 文件（旧版 app 的复习库）就拷进临时库目录当封存旧库，走换代迁移
+/// （[openMigratedTestSrs] 同一条路）再打开——新代的 [SrsCore.open] 不收单个 `.db` 文件。[tmpRoot] 给大库指定
+/// 临时目录所在的盘（缺省系统临时目录）。
+Future<TestSrs> openRealDataTestSrs(
+  String source, {
+  String? tmpRoot,
+  int? nowMs,
+}) {
+  final Directory dir = newTestSrsDir('srs_real_data_', tmpRoot);
+  if (Directory(source).existsSync()) {
+    copyTestSrsLibrary(source, dir.path);
+    return Future<TestSrs>.value(openTestSrsIn(dir.path));
+  }
+  File(source).copySync('${dir.path}${Platform.pathSeparator}srs.db');
+  return _migrateAndOpen(dir, nowMs);
+}
+
+/// 把新代库目录 [from] 里的文件（代际锁、`srs4.db` 与它的 WAL 等）拷进 [to]（库目录是平的，不含子目录）。
+void copyTestSrsLibrary(String from, String to) {
+  for (final FileSystemEntity e in Directory(from).listSync()) {
+    if (e is File) {
+      e.copySync('$to${Platform.pathSeparator}${e.uri.pathSegments.last}');
+    }
+  }
+}
+
+Future<TestSrs> _migrateAndOpen(Directory dir, int? nowMs) async {
   final List<String> uids = await SrsGen4Migration.legacyProfiles(dir.path);
   final SrsGen4MigrationOutcome out = await SrsGen4Migration.run(
     dir.path,
@@ -128,6 +153,45 @@ Future<TestSrs> openMigratedTestSrs(
         '${out.reportPath} ${jsonEncode(out.report)}',
   );
   return openTestSrsIn(dir.path);
+}
+
+/// 派生表 [table]（新代的 `notes` / `cards` / `stats`）的全部行，经测试原始通道读、按行内容排序（与行序无关）。
+List<String> derivedTableRows(SrsCore core, String table) {
+  final List<String> rows = <String>[
+    for (final Map<String, Object?> r in core.debugSelectRaw(
+      'SELECT * FROM $table',
+    ))
+      jsonEncode(r, toEncodable: (Object? v) => v.toString()),
+  ]..sort();
+  return rows;
+}
+
+/// 锁住「整层重建真的按真相重算派生层」：先记下 [table] 的全部行，再经原始通道执行 [damage]（改坏 / 删掉派生行，
+/// 必须真改到行），确认表已不同，然后 [SrsDbStore.rebuildCaches]，断言表逐行复原。
+///
+/// 只比「重建前后某个读命令同值」测不出重建坏掉（重建什么都不做也同值）；派生层没有公开写命令，改坏它只能走原始
+/// 通道。返回重建前的行，调用方可再比公开读命令。
+Future<List<String>> expectRebuildRestores(
+  SrsDbStore s,
+  String table,
+  String damage,
+) async {
+  final List<String> before = derivedTableRows(s.core, table);
+  expect(before, isNotEmpty, reason: '$table has no rows to damage');
+  s.core.debugExecRaw(damage);
+  expect(
+    derivedTableRows(s.core, table),
+    isNot(before),
+    reason: 'damage did not change $table: $damage',
+  );
+  await s.rebuildCaches();
+  expect(
+    derivedTableRows(s.core, table),
+    before,
+    reason:
+        'rebuild_caches must recompute $table from the truth after: $damage',
+  );
+  return before;
 }
 
 /// 模拟 2026-10-23 之前的老形态：在 [legacy]（主库形态的 FushiDatabase）上用旧表定义建出 9 张

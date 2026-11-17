@@ -1,6 +1,6 @@
 // 牌组设置页打开时的读路径（deckTree + 同步冲突）在真实库上的墙钟耗时（手动跑；默认跳过）。
 //
-// FUSHI_SRS_REAL_DB=<srs.db 副本路径> dart test test/srs/srs_deck_settings_open_bench_test.dart
+// FUSHI_SRS_REAL_DB=<新代库目录或协议 3 的 srs.db；在副本上跑> dart test test/srs/srs_deck_settings_open_bench_test.dart
 //
 // 必须用副本：打开 store 可能做升级写入。
 import 'dart:io';
@@ -21,7 +21,7 @@ void main() {
   test(
     '牌组设置页打开读路径',
     () async {
-      final TestSrs srs = await openTestSrsAt(path!);
+      final TestSrs srs = await openRealDataTestSrs(path!);
       final String uid =
           (await srs.core
                   .customSelect(

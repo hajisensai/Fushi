@@ -176,7 +176,7 @@ Future<SrsDbStore> _openStore(
   String name,
   SrsReadCounter? c,
 ) async {
-  final TestSrs srs = await openTestSrsAt('${tmp.path}/$name.db');
+  final TestSrs srs = openTestSrsIn(testSrsSubdir(tmp, name));
   return SrsDbStore.open(
     core: srs.core,
     profileUid: '01928c3e-0000-7000-8000-00000000e3e3',

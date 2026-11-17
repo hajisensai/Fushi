@@ -7,7 +7,8 @@
 // 新代：投影只经公开读命令看（统计页的读取 [statsRowsOf]），参考实现的日志 / 服务器时刻取自导出（`read events`）与
 // `server_times` 读命令。协议 3 的「缓存修订号 1 / 2 的存量库打开时补齐投影」两条已删：新代没有本机状态行的
 // `cacheRev`（派生层是真相的纯函数，配置随 `cache_config_set` 进内核，协议 3 的旧库只经换代迁移整份重建），
-// 对应的保证由「增量 = 整份重建」（[SrsDbStore.rebuildCaches]）覆盖。
+// 对应的保证由「投影行被删光后整份重建复原、且 = 增量 = 参考实现」覆盖（[expectRebuildRestores]：先经原始通道
+// 删掉派生表 `stats` 的行再 [SrsDbStore.rebuildCaches]，只比重建前后同值测不出重建坏掉）。
 import 'dart:io';
 import 'dart:math' as math;
 
@@ -225,7 +226,7 @@ void main() {
         // 句柄晚释放。
       }
     });
-    srs = await openTestSrsAt('${tmp.path}/srs.db');
+    srs = openTestSrsIn(tmp.path);
     store = await open();
   });
 
@@ -251,7 +252,7 @@ void main() {
     expect(want.where((String s) => s.startsWith('r ')), hasLength(6 * 3 + 3));
     expect(await fromLoader(store, jst), want);
 
-    await store.rebuildCaches();
+    await expectRebuildRestores(store, 'stats', 'DELETE FROM stats');
     expect(await projectionRows(store), incremental);
     expect(await fromLoader(store, jst), want);
   });
@@ -340,7 +341,7 @@ void main() {
     expect(await projectionRows(store), before);
     expect(await fromLoader(store, jst), stats);
 
-    await store.rebuildCaches();
+    await expectRebuildRestores(store, 'stats', 'DELETE FROM stats');
     expect(
       await projectionRows(store),
       before,
@@ -421,7 +422,7 @@ void main() {
       ]);
       expect(stats, await fromReference(a, jst));
 
-      await a.rebuildCaches();
+      await expectRebuildRestores(a, 'stats', 'DELETE FROM stats');
       expect(await projectionRows(a), incremental);
       expect(await fromLoader(a, jst), stats);
 
@@ -437,7 +438,7 @@ void main() {
       expect(await projectionRows(b), incremental);
       expect(await fromLoader(b, jst), stats);
       expect(await fromReference(b, jst), stats);
-      await b.rebuildCaches();
+      await expectRebuildRestores(b, 'stats', 'DELETE FROM stats');
       expect(await projectionRows(b), incremental);
     });
 
@@ -520,7 +521,7 @@ void main() {
       expect(await fromLoader(b, jst), stats);
       expect(await fromReference(b, jst), stats);
       final List<String> incremental = await projectionRows(a);
-      await a.rebuildCaches();
+      await expectRebuildRestores(a, 'stats', 'DELETE FROM stats');
       expect(await projectionRows(a), incremental);
     });
   });

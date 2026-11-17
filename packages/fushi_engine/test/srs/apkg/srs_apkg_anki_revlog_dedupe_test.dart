@@ -20,6 +20,7 @@ import 'package:test/test.dart';
 
 import '../support/srs_stats_rows.dart';
 import 'apkg_test_support.dart';
+import '../support/srs_test_storage.dart';
 
 const String kProfile = '01928c3e-0000-7000-8000-000000000001';
 const int kDeck = 1700000000010;
@@ -382,7 +383,7 @@ void main() {
       final SrsCardCacheRow after = (await visibleCardsOfG0(s)).single;
       expect(after.reps, before.reps);
       expect(after.dueDay, before.dueDay);
-      await s.rebuildCaches();
+      await expectRebuildRestores(s, 'stats', 'DELETE FROM stats');
       expect(await reviews(s), kSourceReviews);
     });
 
@@ -395,7 +396,7 @@ void main() {
       const String orphan = '0193a1b2-0000-7000-8000-00000000dead';
       await writeOldCopies(s, visible, orphan);
       expect(await reviews(s), kSourceReviews);
-      await s.rebuildCaches();
+      await expectRebuildRestores(s, 'stats', 'DELETE FROM stats');
       expect(await reviews(s), kSourceReviews);
       expect(await effectiveAnkiReviews(s, visible), 2);
     });

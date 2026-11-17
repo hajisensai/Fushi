@@ -444,7 +444,12 @@ void main() {
     final String cardId = (await a.cardsOfNote(noteId)).single.id;
     await a.answer(cardId, 4);
     final SrsCardCacheRow before = (await a.cardRow(cardId))!;
-    await a.rebuildCaches();
+    // 经原始通道把卡行打回新卡形态：重建必须按日志重放回来（只比重建前后同值测不出重建坏掉）。
+    await expectRebuildRestores(
+      a,
+      'cards',
+      "UPDATE cards SET queue = 'new', due_day = NULL, reps = 0, last_log_id = NULL",
+    );
     final SrsCardCacheRow after = (await a.cardRow(cardId))!;
     expect(after.queue, before.queue);
     expect(after.dueDay, before.dueDay);

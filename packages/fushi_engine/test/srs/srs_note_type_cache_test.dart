@@ -42,9 +42,7 @@ void main() {
         // 句柄晚释放。
       }
     });
-    final TestSrs srs = await openTestSrsAt(
-      '${tmp.path}/$kSrsDatabaseFileName',
-    );
+    final TestSrs srs = openTestSrsIn(tmp.path);
     final SrsDbStore s = await SrsDbStore.open(
       core: srs.core,
       profileUid: kNtProfile,

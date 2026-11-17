@@ -28,8 +28,8 @@ void main() {
   test(
     'review page first card timing',
     () async {
-      // FUSHI_SRS_OPEN_BENCH_DB 指向一份 srs.db（Rust 独占库）。
-      final TestSrs srs = await openTestSrsAt(source!);
+      // FUSHI_SRS_OPEN_BENCH_DB 指向新代库目录或协议 3 的 srs.db（拷副本；旧库经换代迁移，openRealDataTestSrs）。
+      final TestSrs srs = await openRealDataTestSrs(source!);
       final SrsCore db = srs.core;
       final String profileUid =
           (await db

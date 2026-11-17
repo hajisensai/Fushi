@@ -379,7 +379,7 @@ void main() {
         // 句柄晚释放。
       }
     });
-    final TestSrs srs = await openTestSrsAt('${dir.path}/srs.db');
+    final TestSrs srs = openTestSrsIn(dir.path);
     final SrsDbStore s = await SrsDbStore.open(
       core: srs.core,
       profileUid: kAcProfile,

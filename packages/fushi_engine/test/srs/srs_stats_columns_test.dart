@@ -1,4 +1,4 @@
-// 内核读：统计指纹的订阅粒度、出处列（统计「制卡来源」）随写入维护与整层重建同值、AnkiConnect 数字 id 反查、
+// 内核读：统计指纹的订阅粒度、出处列（统计「制卡来源」）随写入维护、改坏后整层重建按真相复原、AnkiConnect 数字 id 反查、
 // `cardColumns` 与逐行读同值。
 
 import 'package:drift/drift.dart' show driftRuntimeOptions;
@@ -11,6 +11,7 @@ import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
 
 import 'apkg/apkg_test_support.dart';
+import 'support/srs_test_storage.dart';
 
 const String kProfile = '01928c3e-0000-7000-8000-0000000000c4';
 
@@ -57,11 +58,11 @@ void main() {
   });
 
   // 协议 3 的「缓存修订号 6 的老库打开时补齐出处列」已删：新代没有本机状态行的 `cacheRev`，派生层是真相的纯函数
-  // （协议 3 的旧库只经换代迁移整份重建）；出处列随写入维护与整层重建同值由下一条的 [SrsDbStore.rebuildCaches] 覆盖。
+  // （协议 3 的旧库只经换代迁移整份重建）；出处列随写入维护、改坏后整层重建复原由下一条覆盖。
 
   // 反馈 AhIskigAq3：改名前的 Hibiki / 早期 Fushi 制的卡（经 Anki 迁进来）没有出处记录，只有制卡标签，
   // 统计页「制卡来源」以前全归「无出处」。
-  test('没有出处记录的制卡笔记按制卡标签认出处；派生层整层重建后同值', () async {
+  test('没有出处记录的制卡笔记按制卡标签认出处；出处列改坏后整层重建复原', () async {
     final SrsDbStore s = await openTestStore(
       profileUid: kProfile,
       deviceId: 'd',
@@ -89,7 +90,12 @@ void main() {
     ]..sort();
     expect(shares(await (await loadSrsStats(s)).report()), expected);
 
-    await s.rebuildCaches();
+    // 出处列经原始通道清空：重建必须按标签 / 出处记录重算回来。
+    await expectRebuildRestores(
+      s,
+      'notes',
+      "UPDATE notes SET source_kind = 'damaged', source_title = 'damaged'",
+    );
     expect(shares(await (await loadSrsStats(s)).report()), expected);
     final SrsDbStore reopened = await SrsDbStore.open(
       core: s.core,

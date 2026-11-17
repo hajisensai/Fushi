@@ -44,7 +44,7 @@ Directory _tmp() {
 Future<(SrsDbStore, SrsReadCounter)> _emptyStore(String deviceId) async {
   final SrsReadCounter counter = SrsReadCounter();
   final Directory dir = _tmp();
-  final TestSrs srs = await openTestSrsAt('${dir.path}/srs.db');
+  final TestSrs srs = openTestSrsIn(dir.path);
   final SrsDbStore store = await SrsDbStore.open(
     core: srs.core,
     profileUid: kBulkUid,

@@ -54,7 +54,7 @@ class BulkFixture {
         // 句柄晚释放。
       }
     });
-    final TestSrs srs = await openTestSrsAt('${tmp.path}/srs.db');
+    final TestSrs srs = openTestSrsIn(tmp.path);
     final SrsDbStore store = await SrsDbStore.open(
       core: srs.core,
       profileUid: kBulkUid,
@@ -150,6 +150,8 @@ Future<ChangeSpec> reversedChange(SrsDbStore s) async {
 ///   写了几次靠这两个数）。本机修订号不比：新代按写命令推进（一条命令一次），逐条走与成批走命令数本来就不同；
 /// - 派生层：笔记缓存行、卡片缓存行（[SrsDbStore.listNotes] / [SrsDbStore.allCardRows]），按 ID 排。卡片行第 9 列
 ///   （下标 8）是 hidden（`0` / `1`）。
+/// - 服务器时刻：`server_times` 读命令（日志 ID → 收到它的同步段的服务器时刻；统计与排程按它取时刻），日志 ID 同上
+///   换成序号后排序。
 Future<Map<String, List<String>>> dumpSrsState(SrsDbStore s) async {
   final String device = s.sync2Device ?? '\u0000';
   final List<SrsEvent> events = await s.exportAll();
@@ -178,6 +180,10 @@ Future<Map<String, List<String>>> dumpSrsState(SrsDbStore s) async {
 
   String bit(bool b) => b ? '1' : '0';
   final Map<String, Object?> status = await s.sync2Status();
+  final SrsColumns serverTimes = await s.readTable(
+    'server_times',
+    const <String, Object?>{},
+  );
   return <String, List<String>>{
     'entities': <String>[
       for (final SrsEvent e in events)
@@ -199,6 +205,10 @@ Future<Map<String, List<String>>> dumpSrsState(SrsDbStore s) async {
         if (e is SrsUnknownEvent) jsonEncode(e.toJson()),
     ]..sort(),
     'ops': <String>['${status['ops']}|${status['nextSeq']}'],
+    'serverTimes': <String>[
+      for (int i = 0; i < serverTimes.strings('id').length; i++)
+        '${norm(serverTimes.strings('id')[i])}|${serverTimes.ints('st')[i]}',
+    ]..sort(),
     'notesCache': <String>[
       for (final SrsNoteCacheRow n in await s.listNotes(limit: 1 << 30))
         <Object?>[

@@ -10,6 +10,7 @@ import 'package:test/test.dart';
 
 import 'apkg/apkg_test_support.dart';
 import 'support/srs_sync2_peers.dart';
+import 'support/srs_test_storage.dart';
 
 const String kPosProfile = '01928c3e-0000-7000-8000-0000000000b7';
 
@@ -171,11 +172,16 @@ void main() {
 
   // 协议 3 的「v123 之前的设备收下的 newPos 升级后定向重算（只做一次）」改成整层重建：新代没有 `cacheRev` / 定向重算，
   // 协议 3 的旧库只经换代迁移整份重建派生层。
-  test('派生层整层重建后位置照修改记录重算', () async {
+  // 先经原始通道清掉 `cards.new_position`，重建必须照修改记录算回来。
+  test('位置列被清掉后整层重建照修改记录算回', () async {
     final SrsDbStore a = await open();
     final List<String> c = await addNotes(a, <String>['一', '二', '三']);
     await a.setNewCardPositions(<String, int>{c[2]: 1});
-    await a.rebuildCaches();
+    await expectRebuildRestores(
+      a,
+      'cards',
+      'UPDATE cards SET new_position = NULL',
+    );
     expect((await a.cardRow(c[2]))!.newPosition, 1);
     expect((await a.cardRow(c[0]))!.newPosition, isNull);
     expect(await a.nextCard(a.defaultDeckId), c[2]);
