@@ -42,8 +42,28 @@ enum Recut {
     Done(Vec<u8>),
     /// 那一条在这份里本来就是空洞：不用动。
     Already,
-    /// 本机还没有身份，签不了。
+    /// 本机还没有身份签不了，或这份缓存读不了（解不开、签名者的公钥本机没有）：整份删掉。删的是转发缓存、不是数据，
+    /// 缺的那一段之后由 `relay_outbox` 从日志重切或记缺。不往上报错：辅助缓存不能挡住用户的彻底清除。
     Unsigned,
+}
+
+/// 本机记下的作者签过的段清单（[Truth::note_author_head]）。
+#[derive(serde::Deserialize)]
+struct AuthorHead {
+    gen: u64,
+    seq: u64,
+    /// 末端链值（小写十六进制）。
+    chain: String,
+    segs: Vec<(u64, u64, String)>,
+}
+
+fn hex32(c: &[u8; 32]) -> String {
+    c.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// [Truth::note_author_head] 在 `srs_meta` 里的键。
+pub(crate) fn author_head_key(col: i64, device: &Id) -> String {
+    format!("gen4_ahead/{col}/{}", device.text())
 }
 
 /// 一个位置上一台设备最新的 head（只记同步层要的几样）。
@@ -182,6 +202,78 @@ impl<'c> Truth<'c> {
             return Err(format!("gen4 store: no collection {col}"));
         }
         Ok(())
+    }
+
+    // ------------------------------------------------------------ 作者签过的段清单
+
+    /// `plan` 读到一份验过签名、公钥与本机记录相符的别的设备的 head（直接读到的与被转发来的都算）：代号比记下的大就换
+    /// （只进不退），记它的 (代号, seq, 末端链值, 段清单)。收重切件（[Truth::author_listed]）用：重切件由重切者签名担保，
+    /// 区间与链尾只能拿作者自己签的清单核对。存在 `srs_meta` 的 [author_head_key]（本机状态，不同步、不导出；丢了下一轮
+    /// `plan` 读到 head 就回来，期间重切件只是晚收）。记录坏了按没记过，照写。
+    pub(crate) fn note_author_head(
+        &self,
+        col: i64,
+        device: &Id,
+        gen: u64,
+        seq: u64,
+        chain: &[u8; 32],
+        segs: &[(u64, u64, String)],
+    ) -> Result<(), String> {
+        self.write(|| {
+            let key = author_head_key(col, device);
+            if self.author_head(&key)?.is_some_and(|old| old.gen >= gen) {
+                return Ok(());
+            }
+            let value = serde_json::json!({
+                "gen": gen,
+                "seq": seq,
+                "chain": hex32(chain),
+                "segs": segs,
+            })
+            .to_string();
+            self.conn()
+                .prepare_cached("INSERT OR REPLACE INTO srs_meta (key, value) VALUES (?1, ?2)")
+                .map_err(sql)?
+                .execute(params![key, value])
+                .map_err(sql)?;
+            Ok(())
+        })
+    }
+
+    fn author_head(&self, key: &str) -> Result<Option<AuthorHead>, String> {
+        let text: Option<String> = self
+            .conn()
+            .prepare_cached("SELECT value FROM srs_meta WHERE key = ?1")
+            .map_err(sql)?
+            .query_row([key], |r| r.get(0))
+            .optional()
+            .map_err(sql)?;
+        Ok(text.and_then(|t| serde_json::from_str(&t).ok()))
+    }
+
+    /// 作者 [device] 签过的、本机记下的最新 head（[Truth::note_author_head]）列出了段 `[first, last]`、链尾标签是
+    /// [last_chain] 的；`last` 正好是那份 head 的 seq 时，完整的末端链值也得相同（标签只有 4 字节）。没记过这位作者的
+    /// head、清单里没有这一段 = 否。
+    pub(crate) fn author_listed(
+        &self,
+        col: i64,
+        device: &Id,
+        first: u64,
+        last: u64,
+        last_chain: &[u8; 32],
+    ) -> Result<bool, String> {
+        let Some(h) = self.author_head(&author_head_key(col, device))? else {
+            return Ok(false);
+        };
+        let tag = chain_tag(last_chain);
+        if !h
+            .segs
+            .iter()
+            .any(|(a, b, t)| *a == first && *b == last && *t == tag)
+        {
+            return Ok(false);
+        }
+        Ok(last != h.seq || h.chain == hex32(last_chain))
     }
 
     // ------------------------------------------------------------ loc_heads
@@ -498,27 +590,34 @@ impl<'c> Truth<'c> {
             return Ok(Recut::Unsigned);
         };
         let opened = if piece.starts_with(recut::MAGIC) {
-            let r = peek_recut4(piece)
-                .map_err(|e| format!("relay: kept recut unreadable: {e:?}"))?
-                .recutter;
+            let Ok(r) = peek_recut4(piece).map(|p| p.recutter) else {
+                return Ok(Recut::Unsigned);
+            };
             let public = if r == me.device {
                 Some(me.public())
             } else {
                 self.device_key(col, &r)?
             };
-            let public = public.ok_or_else(|| format!("relay: kept recut by unknown {r}"))?;
+            let Some(public) = public else {
+                return Ok(Recut::Unsigned);
+            };
             open_recut4_items(piece, &public, None).map(|(p, items)| (p.header, items))
         } else {
-            let public = self
-                .device_key(col, device)?
-                .ok_or_else(|| format!("relay: kept piece of unknown {device}"))?;
+            let Some(public) = self.device_key(col, device)? else {
+                return Ok(Recut::Unsigned);
+            };
             open_relay4_items(piece, &public, None)
         };
-        let (header, items) = opened.map_err(|e| format!("relay: kept piece unreadable: {e:?}"))?;
+        let Ok((header, items)) = opened else {
+            return Ok(Recut::Unsigned);
+        };
         let Some(items) = void_one(&items, header.first, header.prev_chain, seq) else {
             return Ok(Recut::Already);
         };
-        recut4(&header, &items, &me.key(), me.device, None).map(Recut::Done)
+        Ok(
+            recut4(&header, &items, &me.key(), me.device, None)
+                .map_or(Recut::Unsigned, Recut::Done),
+        )
     }
 
     /// 从本机日志重切作者 [device] 的段 `[first, last]`（链尾标签 [tag]）：本机这段里有空洞（清除过）、日志盖得到、两端
@@ -809,6 +908,88 @@ mod tests {
             seq,
             segs: segs.iter().map(|s| s.to_string()).collect(),
         }
+    }
+
+    /// 作者签过的段清单只进不退；区间、链尾标签都要相同，区间末是 head 的末端时完整链值也要相同；没记过 = 否。
+    #[test]
+    fn the_authors_listing_only_moves_forward_and_binds_range_and_chain() {
+        let conn = open_in_memory().unwrap();
+        let t = Truth::new(&conn);
+        let col = bound(&t);
+        let a = id(0x21);
+        let (c3, c5) = ([3u8; 32], [5u8; 32]);
+        let listed =
+            |first: u64, last: u64, c: &[u8; 32]| t.author_listed(col, &a, first, last, c).unwrap();
+        assert!(!listed(1, 3, &c3), "nothing recorded");
+        let note = |gen: u64, seq: u64, chain: &[u8; 32], segs: &[(u64, u64, String)]| {
+            t.tx(|t| t.note_author_head(col, &a, gen, seq, chain, segs))
+                .unwrap()
+        };
+        note(2, 5, &c5, &[(1, 3, chain_tag(&c3)), (4, 5, chain_tag(&c5))]);
+        assert!(listed(1, 3, &c3) && listed(4, 5, &c5));
+        assert!(!listed(1, 4, &c3), "range");
+        assert!(!listed(1, 3, &[4; 32]), "tag");
+        let mut same_tag = c5;
+        same_tag[31] = 0;
+        assert!(
+            !listed(4, 5, &same_tag),
+            "the head's own end binds the full chain"
+        );
+        let mut mid = c3;
+        mid[31] = 0;
+        assert!(listed(1, 3, &mid), "inside the log only the tag is signed");
+        // 更旧的代号不覆盖。
+        note(1, 9, &[9; 32], &[(1, 9, chain_tag(&[9; 32]))]);
+        assert!(listed(1, 3, &c3) && !listed(1, 9, &[9; 32]));
+        // 更新的代号换掉（作者改了切点）。
+        note(3, 9, &[9; 32], &[(1, 9, chain_tag(&[9; 32]))]);
+        assert!(!listed(1, 3, &c3) && listed(1, 9, &[9; 32]));
+        // 别的集合、别的设备互不相干。
+        assert!(!t.author_listed(col, &id(0x22), 1, 9, &[9; 32]).unwrap());
+    }
+
+    /// 复核 minor：转发缓存里读不了的件（解不开、签名者的公钥本机没有）不让清除失败：整份删掉，清除照常。
+    #[test]
+    fn an_unreadable_relay_copy_does_not_fail_the_purge() {
+        let conn = open_in_memory().unwrap();
+        let t = Truth::new(&conn);
+        let col = crate::store::gen4::native::tests::ready(&t);
+        // a 的公钥本机有（件解不开）；u 的没有（签名者不认得）。
+        let (a, u) = (id(0x21), id(0x22));
+        t.tx(|t| {
+            t.set_peer(
+                col,
+                &crate::store::gen4::truth::Peer {
+                    device: a,
+                    public: crate::sync2::keys::DeviceKey::from_seed(&[0x21; 32]).public(),
+                    name: None,
+                    ext: None,
+                    head_gen: None,
+                    first_seen: None,
+                },
+            )
+            .map(|_| ())
+        })
+        .unwrap();
+        let rows: [(&Id, &[u8]); 4] = [
+            (&a, b"FRX4 not a recut"),
+            (&a, b"FRL4 not a relay"),
+            (&a, b"garbage"),
+            (&u, b"FRL4 of a device without a key"),
+        ];
+        for (i, (dev, piece)) in rows.iter().enumerate() {
+            conn.execute(
+                "INSERT INTO relay_segs (col, device, first, last, tag, piece) VALUES (?1, ?2, 1, ?3, 'x', ?4)",
+                params![col, &dev.0[..], 3 + i as i64, piece],
+            )
+            .unwrap();
+        }
+        assert_eq!(t.tx(|t| t.relay_purged(col, &a, 2)), Ok(()));
+        assert_eq!(t.tx(|t| t.relay_purged(col, &u, 2)), Ok(()));
+        let n: i64 = conn
+            .query_row("SELECT COUNT(*) FROM relay_segs", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(n, 0);
     }
 
     #[test]

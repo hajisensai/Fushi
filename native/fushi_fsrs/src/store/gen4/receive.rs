@@ -66,8 +66,9 @@
 //!
 //! `FRX4`（`gen4/recut.rs`）= 转发者把本机已彻底清除的操作换成空洞、用自己的钥匙签出的作者段（区间与首尾链值同原段）。
 //! 先要有作者的公钥（读过它的 head）与重切者的公钥，重切者必须是本机信任的设备（本机自己也算），否则
-//! [Defer::UnknownSigner] / [Defer::UntrustedUploader]；验过重切者签名之后与原生段同一套核对与落库（空洞落成空洞，
-//! 本机已有的完整操作不因此被清掉）。
+//! [Defer::UnknownSigner] / [Defer::UntrustedUploader]；区间与链尾必须是本机记下的作者自己签的 head 列出的一段（标签
+//! 相同；正好是那份 head 的末端时完整链值相同），否则 [Defer::Unlisted]；之后与原生段同一套核对与落库（空洞落成空洞，
+//! 本机已有的完整操作不因此被清掉）。空洞之前的操作仍只由重切者担保（`gen4/recut.rs`「信任口径」的残余风险）。
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -104,6 +105,9 @@ pub enum Defer {
     UntrustedUploader(Id),
     /// 加密的件、本机没有（或拿错了）密钥。
     Undecryptable,
+    /// 重切中继件（`FRX4`）的区间与链尾不在本机记下的、作者自己签的段清单里（作者的 head 还没读到、作者还没写到
+    /// 那里、或件是伪造的）。重切件由重切者签名担保，作者没列出的区间一律不收（`gen4/recut.rs`「信任口径」）。
+    Unlisted(Id),
 }
 
 /// 这一段是坏的，永远不收。
@@ -380,6 +384,11 @@ impl<'t, 'c> Receiver<'t, 'c> {
                 "header changed under the signature".into(),
             )));
         }
+        // 重切件的段头由重切者担保：区间与链尾必须是作者自己签过的清单里的一段。不核的话受信的重切者能以作者的名义
+        // 写进作者还没写到的 seq（抢占作者以后的日志）、编出任意链尾。
+        if recutter.is_some() && !self.author_listed(&header)? {
+            return Ok(Taken::Deferred(Defer::Unlisted(device)));
+        }
         // 每条操作的信封：作者的、依赖里不点作者自己（真相层的原生日志拒收这两样，到落库时才发现就晚了）。流式解一遍、
         // 不落库；整段的链在下面 verify。
         let stream = match open.items() {
@@ -485,6 +494,23 @@ impl<'t, 'c> Receiver<'t, 'c> {
             known,
             parked,
         })
+    }
+
+    /// 重切件的区间 `[first, last]` 与链尾是不是作者自己签过的一段：本机自己的日志 = 本机已写到那里、那里的链值相同；
+    /// 别的设备 = 本机记下的它最新的 head 列出了这一段（[Truth::author_listed]）。
+    fn author_listed(&self, header: &NativeHeader) -> Result<bool, String> {
+        if matches!(&self.me, Some((me, _)) if *me == header.device) {
+            return Ok(self.t.last_of(self.col, &header.device)? >= header.last
+                && self.t.chain_known(self.col, &header.device, header.last)?
+                    == Some(header.last_chain));
+        }
+        self.t.author_listed(
+            self.col,
+            &header.device,
+            header.first,
+            header.last,
+            &header.last_chain,
+        )
     }
 
     /// 本机这台设备日志末尾的链值（原生日志；一条都没有 = 链的起点）。
@@ -1480,6 +1506,17 @@ mod tests {
         t.tx(|t| t.set_trust(col, &id(B), None, NOW)).unwrap();
         let (got, _) = take(&t, col, Settle::Incremental, &[&cut(A, B)], None);
         assert_eq!(got, vec![Taken::Rejected(Reject::BadSignature)]);
+        // A 自己签的清单还没读到：重切件的区间没有作者担保，不收。
+        let (got, _) = take(&t, col, Settle::Incremental, &[&cut(B, B)], None);
+        assert_eq!(got, vec![Taken::Deferred(Defer::Unlisted(id(A)))]);
+        note_author(
+            &t,
+            col,
+            A,
+            3,
+            &header.last_chain,
+            &[(1, 3, header.last_chain)],
+        );
         let (got, r) = take(&t, col, Settle::Incremental, &[&cut(B, B)], None);
         assert_eq!(got, vec![landed(3, 0, 0)]);
         assert_eq!((r.delivered, r.waiting), (1, 0));
@@ -1498,6 +1535,119 @@ mod tests {
         assert!(!at(2).is_whole(), "the recut void lands as a void");
         assert_eq!(t.last_of(col, &id(B)).unwrap(), 1);
         assert_eq!(t.chain_at(col, &id(A), 3).unwrap(), header.last_chain);
+    }
+
+    /// 本机记下作者 [dev] 签过的 head：seq = [seq]、末端链值 [chain]、段清单 [segs]（区间与链尾）。
+    fn note_author(
+        t: &Truth<'_>,
+        col: i64,
+        dev: u8,
+        seq: u64,
+        chain: &Chain,
+        segs: &[(u64, u64, Chain)],
+    ) {
+        let segs: Vec<(u64, u64, String)> = segs
+            .iter()
+            .map(|(a, b, c)| (*a, *b, crate::sync2::segment::chain_tag(c)))
+            .collect();
+        t.tx(|t| t.note_author_head(col, &id(dev), 1, seq, chain, &segs))
+            .unwrap();
+    }
+
+    /// 重切者 B（受信）以 [dev] 的名义签的件：区间 `[first, last]`，[ops] 之后一个空洞盖满，链尾 = 空洞的链值 = [end]。
+    fn forge(dev: u8, first: u64, last: u64, ops: &[Op4], end: Chain) -> Vec<u8> {
+        let mut items = ops_items(ops);
+        items.push(NativeItem::Void {
+            count: last - first + 1 - ops.len() as u64,
+            chain_after: end,
+        });
+        let header = NativeHeader {
+            encrypted: false,
+            collection: coll(),
+            device: id(dev),
+            first,
+            last,
+            prev_chain: CHAIN_ZERO,
+            last_chain: end,
+        };
+        recut4(&header, &items, &key_of(B), id(B), None).unwrap()
+    }
+
+    /// 复核 major（K2 第四轮）：受信的重切者 B 不能借重切件以作者 A 的名义写进 A 没签过的区间。A 一条都没写过时伪造
+    /// A 的 1..=4（三条伪造内容 + 一个空洞，链尾随便填）；A 签了 1..=3 之后伪造超出它 head 的 1..=4、在 1..=3 编一个
+    /// 链尾标签不同的、标签相同而完整链值不同的（区间末就是 head 的末端）：一律不收、一条都不落、不进等待缓冲。A 自己
+    /// 签的段之后照常收下，接在后面的也照常（没有被伪造的链值占住）。
+    #[test]
+    fn a_trusted_recutter_cannot_write_where_the_author_has_not_signed() {
+        let conn = open_in_memory().unwrap();
+        let t = Truth::new(&conn);
+        let col = setup(&t);
+        let forged: Vec<Op4> = (1..=3)
+            .map(|s| op(A, s, s as i64 * 10 + 7, &[], &edit("FORGED")))
+            .collect();
+        let nothing = |t: &Truth<'_>| {
+            assert_eq!(t.last_of(col, &id(A)).unwrap(), 0);
+            assert!(t.waiting(col).unwrap().is_empty());
+        };
+
+        // A 还没有任何 head：伪造它未来的 seq。
+        let (got, _) = take(
+            &t,
+            col,
+            Settle::Incremental,
+            &[&forge(A, 1, 4, &forged, [0x42; 32])],
+            None,
+        );
+        assert_eq!(got, vec![Taken::Deferred(Defer::Unlisted(id(A)))]);
+        nothing(&t);
+
+        let a: Vec<Op4> = (1..=3).map(|s| nop(A, s, &[])).collect();
+        let real = chain_of(CHAIN_ZERO, &a);
+        note_author(&t, col, A, 3, &real, &[(1, 3, real)]);
+        let mut same_tag = real;
+        same_tag[31] ^= 0xff;
+        for bad in [
+            forge(A, 1, 4, &forged, [0x42; 32]),
+            forge(A, 1, 3, &forged[..2], [0x42; 32]),
+            forge(A, 1, 3, &forged[..2], same_tag),
+        ] {
+            let (got, _) = take(&t, col, Settle::Incremental, &[&bad], None);
+            assert_eq!(got, vec![Taken::Deferred(Defer::Unlisted(id(A)))]);
+            nothing(&t);
+        }
+
+        let a4 = nop(A, 4, &[]);
+        let (got, _) = take(
+            &t,
+            col,
+            Settle::Incremental,
+            &[
+                &seg_of(A, CHAIN_ZERO, &ops_items(&a), None),
+                &seg_of(A, real, &ops_items(std::slice::from_ref(&a4)), None),
+            ],
+            None,
+        );
+        assert_eq!(got, vec![landed(3, 0, 0), landed(1, 0, 0)]);
+        assert_eq!(t.last_of(col, &id(A)).unwrap(), 4);
+    }
+
+    /// 本机自己的日志：重切件只收本机已写到、链尾与本机相同的区间，伪造本机以后的 seq 不收。
+    #[test]
+    fn a_recut_of_my_own_log_must_match_what_i_wrote() {
+        use crate::store::gen4::native::tests::ME;
+        let conn = open_in_memory().unwrap();
+        let t = Truth::new(&conn);
+        let col = setup(&t);
+        let forged = [op(ME, 1, 17, &[], &edit("FORGED"))];
+        let (got, _) = take(
+            &t,
+            col,
+            Settle::Incremental,
+            &[&forge(ME, 1, 2, &forged, [0x42; 32])],
+            None,
+        );
+        assert_eq!(got, vec![Taken::Deferred(Defer::Unlisted(id(ME)))]);
+        assert_eq!(t.last_of(col, &id(ME)).unwrap(), 0);
     }
 
     #[test]

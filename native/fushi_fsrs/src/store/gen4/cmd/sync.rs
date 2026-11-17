@@ -813,6 +813,8 @@ pub fn plan(t: &Truth<'_>, col: i64, req: &Value, heads: &[Vec<u8>]) -> Result<V
         }
         // 转发用：记下这台设备最新的 head（只进不退）。
         super::sync_relay::note_head(t, col, &h, bytes)?;
+        // 收重切件用：作者自己签的段清单（不论信任、不论直接读到还是被转发来的；`receive.rs` [Defer::Unlisted]）。
+        t.note_author_head(col, &h.device, h.gen, h.seq, &h.chain, &h.segs)?;
         if !is_relayed {
             let lh = LocHead {
                 device: h.device,
