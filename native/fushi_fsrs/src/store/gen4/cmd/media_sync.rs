@@ -63,11 +63,11 @@ pub(crate) const LOCAL_SQL: &str =
 /// 本机记的一个媒体文件：(size, mtime, 内容, 上次与绑定对齐时的内容)。
 pub type LocalRow = (i64, i64, [u8; 32], Option<[u8; 32]>);
 
-fn hex32(b: &[u8; 32]) -> String {
+pub(super) fn hex32(b: &[u8; 32]) -> String {
     b.iter().map(|x| format!("{x:02x}")).collect()
 }
 
-fn unhex32(s: &str) -> Option<[u8; 32]> {
+pub(super) fn unhex32(s: &str) -> Option<[u8; 32]> {
     if s.len() != 64 {
         return None;
     }

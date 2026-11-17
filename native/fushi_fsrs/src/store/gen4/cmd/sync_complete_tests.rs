@@ -339,8 +339,22 @@ fn old_listing(loc: &Loc) -> Vec<Value> {
         .collect()
 }
 
-/// 捡旧根（Dart：扫 → 读 head 与段 → 带 `settle` 一批收完）。回 (扫的回包, 收的回包)。
+/// 捡旧根（Dart：扫 → 读 head 与段 → 一批收完 → 带 `settle` 收尾）。回 (扫的回包, 合起来的收的回包)。
 fn take_old_root(d: &Dev, loc: &Loc, now: i64) -> (Value, Option<Value>) {
+    take_old_root_sliced(d, loc, now, None, false)
+}
+
+/// 照搬 Dart `srsSync4TakeOldRoot` 的循环捡旧根：扫；按 `maxItems` 切片交段（交完的从队首去掉，`drainMore` 就不带段
+/// 再交），每片带这一轮的 `fp`；最后不带段、带 `settle` 与清单交一次。[reverse] = 倒着交（后面的段先到）。回 (扫的
+/// 回包, 合起来的回包：`landed` / `delivered` 求和、`errors` 拼接、`slices` 片数、`drains` 不带段的投递片数、
+/// `maxDelivered` 单片最多投出的、`recorded` = 收尾那一次记了指纹没有)。
+fn take_old_root_sliced(
+    d: &Dev,
+    loc: &Loc,
+    now: i64,
+    max_items: Option<u64>,
+    reverse: bool,
+) -> (Value, Option<Value>) {
     let listing = old_listing(loc);
     let (scan, _) = cmd(
         d.h,
@@ -359,21 +373,79 @@ fn take_old_root(d: &Dev, loc: &Loc, now: i64) -> (Value, Option<Value>) {
             .map(|p| p.as_str().unwrap().to_owned())
             .collect()
     };
-    let heads = strs(&scan["heads"]);
-    let fetch = strs(&scan["fetch"]);
-    let blobs: Vec<Vec<u8>> = heads
+    let fp = scan["fp"].clone();
+    let mut heads: Vec<Vec<u8>> = strs(&scan["heads"])
         .iter()
-        .chain(&fetch)
         .map(|p| loc[&format!("v3/{p}")].clone())
         .collect();
-    let (ing, _) = cmd(
+    let mut fetch = strs(&scan["fetch"]);
+    if reverse {
+        fetch.reverse();
+    }
+    let (mut landed, mut delivered, mut slices, mut drains, mut max_delivered) =
+        (0u64, 0u64, 0u64, 0u64, 0u64);
+    let mut errors: Vec<Value> = Vec::new();
+    let mut absorb = |v: &Value| {
+        landed += v["landed"].as_u64().unwrap();
+        let n = v["delivered"].as_u64().unwrap();
+        delivered += n;
+        max_delivered = max_delivered.max(n);
+        errors.extend(v["errors"].as_array().unwrap().iter().cloned());
+    };
+    loop {
+        let blobs: Vec<Vec<u8>> = heads
+            .iter()
+            .cloned()
+            .chain(fetch.iter().map(|p| loc[&format!("v3/{p}")].clone()))
+            .collect();
+        let (v, _) = cmd(
+            d.h,
+            "oldroot_ingest",
+            now,
+            json!({"location": "loc", "fp": fp, "paths": fetch, "heads": heads.len(), "maxItems": max_items}),
+            &blobs,
+        );
+        absorb(&v);
+        slices += 1;
+        assert!(slices < 200, "{v}");
+        if fetch.is_empty() {
+            drains += 1;
+        }
+        heads.clear();
+        let done = v["rest"].as_u64().unwrap() as usize;
+        let spent = v["spent"].as_u64().unwrap();
+        if let Some(m) = max_items {
+            assert!(v["delivered"].as_u64().unwrap() <= m, "{v}");
+        }
+        if done >= fetch.len() {
+            if v["drainMore"] == json!(true) {
+                assert!(spent > 0, "a drain slice must deliver something: {v}");
+                fetch.clear();
+                continue;
+            }
+            break;
+        }
+        assert!(!(done == 0 && spent == 0), "no progress: {v}");
+        fetch.drain(..done);
+    }
+    let (fin, _) = cmd(
         d.h,
         "oldroot_ingest",
         now,
-        json!({"location": "loc", "listing": listing, "paths": fetch, "heads": heads.len(), "settle": true}),
-        &blobs,
+        json!({"location": "loc", "fp": fp, "listing": listing, "paths": [], "heads": 0, "settle": true}),
+        &[],
     );
-    (scan, Some(ing))
+    absorb(&fin);
+    let out = json!({
+        "landed": landed,
+        "delivered": delivered,
+        "errors": errors,
+        "slices": slices,
+        "drains": drains,
+        "maxDelivered": max_delivered,
+        "recorded": fin["recorded"],
+    });
+    (scan, Some(out))
 }
 
 /// 承袭上传（Dart：`heritage_plan` → 读 → `heritage_outbox` → 写 → `heritage_ack`）。回写上的文件数。
@@ -466,6 +538,36 @@ fn old_root_takeover_reaches_migrated_and_new_devices_alike() {
     let (da, db, dc) = (a.derived(), b.derived(), c.derived());
     assert_eq!(da, db);
     assert_eq!(da, dc);
+}
+
+/// 旧根接手按 `maxItems` 切片（G8-7c）：迁移后第一次捡旧根，几段旧根分在几个写事务里收（一段不在中途切），每个事务
+/// 把这一批的结论记到这一轮指纹名下；交完之后不带段的收尾那一次凭前面几批的结论记下指纹，下一轮清单不变不再读。
+/// 倒着交（后面的段先到、整段停进承袭待投递）时，前面那段到了之后的投递也按预算切成几个不带段的投递片。
+#[test]
+fn old_root_takeover_is_sliced_and_still_records_its_fingerprint() {
+    for reverse in [false, true] {
+        let a = Dev::new(if reverse { "g87bsr" } else { "g87bsf" });
+        let mut loc = Loc::new();
+        old_root(&mut loc, 12, &[(1, 5), (6, 12)]);
+        round(&a, &mut loc, "loc", T1 + 10, Opts::default());
+        let (_, ing) = take_old_root_sliced(&a, &loc, T1 + 10, Some(3), reverse);
+        let ing = ing.expect("a scans the old root");
+        assert_eq!(ing["errors"], json!([]), "{ing}");
+        assert_eq!(ing["recorded"], json!(true), "{ing}");
+        assert!(
+            ing["slices"].as_u64().unwrap() >= 2,
+            "one segment per slice: {ing}"
+        );
+        assert_eq!(d_old_len(&a), 12);
+        if reverse {
+            assert!(ing["drains"].as_u64().unwrap() >= 2, "{ing}");
+            assert!(ing["maxDelivered"].as_u64().unwrap() <= 3, "{ing}");
+            assert_eq!(ing["delivered"], json!(7), "{ing}");
+        }
+        let (scan, again) = take_old_root(&a, &loc, T1 + 11);
+        assert_eq!(scan["changed"], json!(false), "{scan}");
+        assert!(again.is_none());
+    }
 }
 
 /// 设备上 OLD 的承袭日志末尾。

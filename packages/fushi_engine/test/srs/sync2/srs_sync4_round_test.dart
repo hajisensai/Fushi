@@ -6,13 +6,14 @@
 // - 发：outbox → 写 → outbox_ack 直到 `more` 为假；被拒（本机日志变了）就不写 head。
 // - head：没变且上次那份还在位置上就不写；上次那份不在了就不带 `skipUnchangedMs` 再要一次。
 // - 收尾：obsolete 给的路径照删。
-// - G8-7b：旧根接手（扫 → 学公钥的 head + 段分批收、最后一批带 settle）、承袭上传（plan → 读 → outbox → 写 → ack；
+// - G8-7b / G8-7c：旧根接手（扫 → 学公钥的 head + 段按字节分批、每批按 maxItems 切事务，最后不带段带 settle）、承袭上传（plan → 读 → outbox → 写 → ack；
 //   传不上去的不记指纹）、媒体清单收发、旧身份目录清理、只有协议 1 旧根时 `has2`。
 import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
 import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
+import 'package:fushi_engine/srs/sync2/srs_sync4_steps.dart';
 import 'package:fushi_srs/fushi_srs.dart' show SrsSync2Result;
 import 'package:test/test.dart';
 
@@ -480,79 +481,194 @@ void main() {
     },
   );
 
-  test('旧根接手：学公钥的 head 先于段；分批收、重扫后最后一批带 settle 与清单；包在收段会话里', () async {
-    v3.files['devices/old/head-000000000001-aa.json'] = _b('h-old');
-    v3.files['devices/old/seg-000000000001-000000000002-aa.bin'] = _b('s1');
-    v3.files['devices/old/seg-000000000003-000000000004-bb.bin'] = _b('s2');
-    final Map<String, List<SrsSync2Result>> replies = happy()
-      ..['oldroot_scan'] = <SrsSync2Result>[
-        _r(<String, Object?>{
-          'changed': true,
-          'heads': <String>['devices/old/head-000000000001-aa.json'],
-          'fetch': <String>[
-            'devices/old/seg-000000000001-000000000002-aa.bin',
-            'devices/old/seg-000000000003-000000000004-bb.bin',
-          ],
-        }),
-        // 分批收完之后重扫：剩下第二段（还收不了）。
-        _r(<String, Object?>{
-          'changed': true,
-          'heads': <String>[],
-          'fetch': <String>['devices/old/seg-000000000003-000000000004-bb.bin'],
-        }),
-      ]
-      ..['oldroot_ingest'] = <SrsSync2Result>[
-        _r(<String, Object?>{'applied': 2, 'errors': <String>[]}),
-        _r(<String, Object?>{'applied': 0, 'errors': <String>[]}),
-        _r(<String, Object?>{
-          'applied': 0,
-          'errors': <String>['seg-3-4: Deferred'],
-        }),
-      ];
-    final _FakeHost host = _FakeHost(replies);
-    final SrsSync2Report r = await run(host);
-    expect(r.error, isNull);
-    final List<Map<String, Object?>> ings = host.requests
-        .where((Map<String, Object?> q) => q['op'] == 'oldroot_ingest')
-        .toList();
-    // 预算 1 字节：两段各一批（不带 settle），重扫后最后一批带 settle 与整份清单。
-    expect(ings.length, 3);
-    expect(ings[0]['heads'], 1);
-    expect(ings[0]['paths'], <String>[
-      'devices/old/seg-000000000001-000000000002-aa.bin',
-    ]);
-    expect(ings[0].containsKey('settle'), isFalse);
-    expect(ings[1]['heads'], 0);
-    expect(ings[2]['settle'], isTrue);
-    expect(ings[2]['paths'], <String>[
-      'devices/old/seg-000000000003-000000000004-bb.bin',
-    ]);
-    // 整份旧根清单（三个旧设备文件 + 这一轮根立的墓碑 head）。
-    expect(
-      <Object?>[
-        for (final Object? e in ings[2]['listing']! as List)
-          (e! as Map)['path'],
-      ],
-      containsAll(<String>[
-        'devices/old/head-000000000001-aa.json',
+  test(
+    '旧根接手：学公钥的 head 先于段；按字节分批收、每批带这一轮的 fp；最后不带段带 settle 与清单；包在收段会话里',
+    () async {
+      v3.files['devices/old/head-000000000001-aa.json'] = _b('h-old');
+      v3.files['devices/old/seg-000000000001-000000000002-aa.bin'] = _b('s1');
+      v3.files['devices/old/seg-000000000003-000000000004-bb.bin'] = _b('s2');
+      final Map<String, List<SrsSync2Result>> replies = happy()
+        ..['oldroot_scan'] = <SrsSync2Result>[
+          _r(<String, Object?>{
+            'changed': true,
+            'fp':
+                'abababababababababababababababababababababababababababababababab',
+            'heads': <String>['devices/old/head-000000000001-aa.json'],
+            'fetch': <String>[
+              'devices/old/seg-000000000001-000000000002-aa.bin',
+              'devices/old/seg-000000000003-000000000004-bb.bin',
+            ],
+          }),
+        ]
+        ..['oldroot_ingest'] = <SrsSync2Result>[
+          _r(<String, Object?>{'applied': 2, 'rest': 1, 'errors': <String>[]}),
+          _r(<String, Object?>{
+            'applied': 0,
+            'rest': 1,
+            'errors': <String>['seg-3-4: Deferred'],
+          }),
+          _r(<String, Object?>{
+            'applied': 0,
+            'rest': 0,
+            'recorded': false,
+            'errors': <String>[],
+          }),
+        ];
+      final _FakeHost host = _FakeHost(replies);
+      final SrsSync2Report r = await run(host);
+      expect(r.error, isNull);
+      final List<Map<String, Object?>> ings = host.requests
+          .where((Map<String, Object?> q) => q['op'] == 'oldroot_ingest')
+          .toList();
+      // 预算 1 字节：两段各一批（不带 settle），之后不带段的收尾那一次带 settle 与整份清单；不再重扫。
+      expect(host.ops().where((String o) => o == 'oldroot_scan').length, 1);
+      expect(ings.length, 3);
+      expect(ings[0]['heads'], 1);
+      expect(ings[0]['paths'], <String>[
         'devices/old/seg-000000000001-000000000002-aa.bin',
+      ]);
+      expect(ings[0].containsKey('settle'), isFalse);
+      expect(ings[1]['heads'], 0);
+      expect(ings[1]['paths'], <String>[
         'devices/old/seg-000000000003-000000000004-bb.bin',
-      ]),
+      ]);
+      expect(ings[2]['settle'], isTrue);
+      expect(ings[2]['paths'], isEmpty);
+      expect(ings[2]['heads'], 0);
+      // 整份旧根清单（三个旧设备文件 + 这一轮根立的墓碑 head）。
+      expect(
+        <Object?>[
+          for (final Object? e in ings[2]['listing']! as List)
+            (e! as Map)['path'],
+        ],
+        containsAll(<String>[
+          'devices/old/head-000000000001-aa.json',
+          'devices/old/seg-000000000001-000000000002-aa.bin',
+          'devices/old/seg-000000000003-000000000004-bb.bin',
+        ]),
+      );
+      for (final Map<String, Object?> q in ings) {
+        expect(q['location'], 'L');
+        expect(
+          q['fp'],
+          'abababababababababababababababababababababababababababababababab',
+          reason: '每个事务都带这一轮的指纹',
+        );
+        expect(q['maxItems'], kSrsSync4OldRootSliceItems);
+      }
+      expect(r.applied, 2, reason: '新根的段不在位置上，只有旧根落的');
+      expect(r.errors, contains('old root: seg-3-4: Deferred'));
+      // 收新根一段会话、旧根一段会话。
+      expect(host.begins, 2);
+      expect(host.ends, 2);
+      // 旧根接手在发件之前。
+      expect(
+        host.ops().indexOf('oldroot_ingest'),
+        lessThan(host.ops().indexOf('outbox')),
+      );
+    },
+  );
+
+  test(
+    '旧根接手按 maxItems 切片：交完的段从队首去掉、剩下的下一个事务再交；drainMore 不带段接着交；收尾那一次也按片',
+    () async {
+      for (final String n in <String>['1', '2', '3']) {
+        v3.files['devices/old/seg-00000000000$n-00000000000$n-aa.bin'] = _b(n);
+      }
+      final List<String> segs = <String>[
+        for (final String n in <String>['1', '2', '3'])
+          'devices/old/seg-00000000000$n-00000000000$n-aa.bin',
+      ];
+      final _FakeHost host = _FakeHost(<String, List<SrsSync2Result>>{
+        'oldroot_scan': <SrsSync2Result>[
+          _r(<String, Object?>{
+            'changed': true,
+            'fp':
+                'abababababababababababababababababababababababababababababababab',
+            'heads': <String>[],
+            'fetch': segs,
+          }),
+        ],
+        'oldroot_ingest': <SrsSync2Result>[
+          _r(<String, Object?>{'applied': 5, 'rest': 1, 'spent': 5}),
+          _r(<String, Object?>{
+            'applied': 3,
+            'rest': 2,
+            'spent': 3,
+            'drainMore': true,
+          }),
+          _r(<String, Object?>{'applied': 2, 'rest': 0, 'spent': 2}),
+          // 收尾那一次也可能要接着投。
+          _r(<String, Object?>{
+            'applied': 1,
+            'rest': 0,
+            'spent': 1,
+            'drainMore': true,
+          }),
+          _r(<String, Object?>{'applied': 0, 'rest': 0, 'recorded': true}),
+        ],
+      });
+      final SrsSync2Report report = SrsSync2Report();
+      await srsSync4TakeOldRoot(
+        host: host,
+        oldRoot: v3,
+        locationId: 'L',
+        keyHex: null,
+        report: report,
+        nowMs: () => 1,
+        sliceItems: 4,
+      );
+      final List<Map<String, Object?>> ings = host.requests
+          .where((Map<String, Object?> q) => q['op'] == 'oldroot_ingest')
+          .toList();
+      expect(
+        <Object?>[for (final Map<String, Object?> q in ings) q['paths']],
+        <Object?>[segs, segs.sublist(1), <String>[], <String>[], <String>[]],
+      );
+      expect(
+        <Object?>[
+          for (final Map<String, Object?> q in ings) q['settle'] == true,
+        ],
+        <bool>[false, false, false, true, true],
+      );
+      expect(
+        ings.every((Map<String, Object?> q) => q['maxItems'] == 4),
+        isTrue,
+      );
+      expect(report.applied, 11);
+      expect(host.begins, 1);
+      expect(host.ends, 1);
+    },
+  );
+
+  test('旧根接手的一片既没交完段也没做新工作：契约坏了，抛错不原地打转', () async {
+    v3.files['devices/old/seg-000000000001-000000000001-aa.bin'] = _b('1');
+    final _FakeHost host = _FakeHost(<String, List<SrsSync2Result>>{
+      'oldroot_scan': <SrsSync2Result>[
+        _r(<String, Object?>{
+          'changed': true,
+          'fp':
+              'abababababababababababababababababababababababababababababababab',
+          'heads': <String>[],
+          'fetch': <String>['devices/old/seg-000000000001-000000000001-aa.bin'],
+        }),
+      ],
+      'oldroot_ingest': <SrsSync2Result>[
+        _r(<String, Object?>{'applied': 0, 'rest': 0, 'spent': 0}),
+      ],
+    });
+    await expectLater(
+      srsSync4TakeOldRoot(
+        host: host,
+        oldRoot: v3,
+        locationId: 'L',
+        keyHex: null,
+        report: SrsSync2Report(),
+        nowMs: () => 1,
+      ),
+      throwsStateError,
     );
-    expect(
-      ings.every((Map<String, Object?> q) => q['location'] == 'L'),
-      isTrue,
-    );
-    expect(r.applied, 2, reason: '新根的段不在位置上，只有旧根落的');
-    expect(r.errors, contains('old root: seg-3-4: Deferred'));
-    // 收新根一段会话、旧根一段会话。
-    expect(host.begins, 2);
-    expect(host.ends, 2);
-    // 旧根接手在发件之前。
-    expect(
-      host.ops().indexOf('oldroot_ingest'),
-      lessThan(host.ops().indexOf('outbox')),
-    );
+    expect(host.ends, 1, reason: '收段会话照样收尾');
   });
 
   test('承袭上传：读位置上相关的承袭段 → 打包写上 → 记指纹；在本机原生段之前', () async {

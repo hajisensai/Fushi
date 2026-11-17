@@ -46,11 +46,17 @@ List<List<String>> srsChunkBySize(
   return out;
 }
 
+/// 捡旧根每个写事务最多做的新工作（内核 `oldroot_ingest` 的 `maxItems`）：与收新根的段同一个取值
+/// （`SrsDbStore.kSrsSync2IngestSliceItems`，作答最多等 1～2 s）。旧根段不在中途切，一个事务最多超出一段。
+const int kSrsSync4OldRootSliceItems = 256;
+
 /// 捡旧根（设计 §6.2 第 1–4 步；内核 `oldroot_scan` / `oldroot_ingest`）：列 [oldRoot] 的 `devices/` 交内核；清单指纹
-/// 没变就什么都不读。变了：先读要学公钥的协议 3 head，再按 [budgetBytes] 分批读段、收进承袭日志（每批一个写事务，
-/// 复习写入在批与批之间进得来）；最后一批带 `settle`，内核在同一个事务里核对「这一批正好是剩下的全部」后记下指纹
-/// （不止一批时先分批收、再重扫一次，剩下的——还收不了的、坏的——作为最后一批）。围栏由这一轮开头的
-/// `location_root` 写好。落了东西计进 [SrsSync2Report.applied] / `changed`，逐段没收的原因进 `errors`。
+/// 没变就什么都不读。变了：先读要学公钥的协议 3 head，再按 [budgetBytes] 分批读段；每批再按
+/// [kSrsSync4OldRootSliceItems] 切成几个写事务交内核（回包 `rest` = 交完的段数，剩下的下一个事务再交；`drainMore` =
+/// 收尾投递没投完，不带段再交），复习写入在事务之间进得来。每个事务都带这一轮的指纹 `fp`，内核把交完的段的结论记到
+/// 它名下（跨事务累计）；段都交完后不带段、带 `settle` 与清单再交一次，内核核对「待读的每段都在这一轮名下有了结论」后
+/// 记下指纹（还收不了的段没有结论，下一轮清单不变也照样重读）。围栏由这一轮开头的 `location_root` 写好。落了东西
+/// 计进 [SrsSync2Report.applied] / `changed`，逐段没收的原因进 `errors`。
 Future<void> srsSync4TakeOldRoot({
   required SrsSync2Host host,
   required SrsLocationStore oldRoot,
@@ -59,6 +65,7 @@ Future<void> srsSync4TakeOldRoot({
   required SrsSync2Report report,
   required int Function() nowMs,
   int budgetBytes = kSrsSync2IngestBudgetBytes,
+  int sliceItems = kSrsSync4OldRootSliceItems,
   bool Function()? shouldStop,
   SrsSyncStepCallback? onStep,
 }) async {
@@ -81,14 +88,13 @@ Future<void> srsSync4TakeOldRoot({
             'modified': f.modifiedAt,
           },
   ];
-  Future<Map<String, Object?>> scan() async =>
-      (await host.sync2Command(<String, Object?>{
-        'op': 'oldroot_scan',
-        'location': locationId,
-        'listing': listing,
-      })).map;
-  final Map<String, Object?> first = await scan();
+  final Map<String, Object?> first = (await host.sync2Command(<String, Object?>{
+    'op': 'oldroot_scan',
+    'location': locationId,
+    'listing': listing,
+  })).map;
   if (first['changed'] != true) return;
+  final Object? fp = first['fp'];
   final Map<String, int> sizeOf = <String, int>{
     for (final Map<String, Object?> e in listing)
       e['path']! as String: (e['size'] as int?) ?? 0,
@@ -102,38 +108,80 @@ Future<void> srsSync4TakeOldRoot({
       ?b,
   ];
 
+  /// 交一个写事务；回包计进报告。
+  Future<Map<String, Object?>> step(
+    List<String> paths,
+    List<Uint8List> blobs, {
+    List<Uint8List> heads = const <Uint8List>[],
+    bool settle = false,
+  }) async {
+    final Map<String, Object?> r = (await host.sync2Command(
+      <String, Object?>{
+        'op': 'oldroot_ingest',
+        'location': locationId,
+        'fp': fp,
+        'paths': paths,
+        'heads': heads.length,
+        'key': keyHex,
+        'now': nowMs(),
+        'maxItems': sliceItems,
+        if (settle) 'settle': true,
+        if (settle) 'listing': listing,
+      },
+      blobs: <Uint8List>[...heads, ...blobs],
+    )).map;
+    final int applied = (r['applied'] as int?) ?? 0;
+    report.applied += applied;
+    report.changed = report.changed || applied > 0;
+    _addErrors(report, r['errors'], 'old root: ');
+    return r;
+  }
+
+  /// 一批（按字节预算切出来的）按 `maxItems` 切成几个事务交完；`drainMore` 时不带段接着交。[settle] = 这是收尾那一次。
   Future<void> ingest(
     List<String> paths, {
-    required bool settle,
     List<Uint8List> heads = const <Uint8List>[],
+    bool settle = false,
   }) async {
     final List<Uint8List?> got = await srsRunPooled(
       paths,
       kSrsSync2Concurrency,
       oldRoot.get,
     );
-    // 列出来之后被删掉的（旧版本还在写）：这一批不带它；收尾批因此与剩下的不符，内核只收不记，下一轮再核对。
-    final List<String> present = <String>[
+    // 列出来之后被删掉的（旧版本还在写）：不交它；它没有结论，收尾时内核不记指纹，下一轮再核对。
+    List<String> rest = <String>[
       for (int i = 0; i < paths.length; i++)
         if (got[i] != null) paths[i],
     ];
-    final Map<String, Object?> r = (await host.sync2Command(
-      <String, Object?>{
-        'op': 'oldroot_ingest',
-        'location': locationId,
-        'paths': present,
-        'heads': heads.length,
-        'key': keyHex,
-        'now': nowMs(),
-        if (settle) 'settle': true,
-        if (settle) 'listing': listing,
-      },
-      blobs: <Uint8List>[...heads, for (final Uint8List? b in got) ?b],
-    )).map;
-    final int applied = (r['applied'] as int?) ?? 0;
-    report.applied += applied;
-    report.changed = report.changed || applied > 0;
-    _addErrors(report, r['errors'], 'old root: ');
+    List<Uint8List> blobs = <Uint8List>[for (final Uint8List? b in got) ?b];
+    if (rest.isEmpty && heads.isEmpty && !settle) return;
+    List<Uint8List> h = heads;
+    while (true) {
+      final Map<String, Object?> r = await step(
+        rest,
+        blobs,
+        heads: h,
+        settle: settle,
+      );
+      h = const <Uint8List>[];
+      final int done = (r['rest'] as int?) ?? rest.length;
+      final int spent = (r['spent'] as int?) ?? 0;
+      if (done >= rest.length) {
+        if (r['drainMore'] != true) return;
+        // 收尾投递按片：投递片必有进展，否则契约坏了，不原地打转。
+        if (rest.isEmpty && spent == 0) {
+          throw StateError('oldroot ingest drain made no progress: $r');
+        }
+        rest = const <String>[];
+        blobs = const <Uint8List>[];
+        continue;
+      }
+      if (done == 0 && spent == 0) {
+        throw StateError('oldroot ingest slice made no progress: $r');
+      }
+      rest = rest.sublist(done);
+      blobs = blobs.sublist(done);
+    }
   }
 
   final List<List<String>> chunks = srsChunkBySize(
@@ -144,21 +192,13 @@ Future<void> srsSync4TakeOldRoot({
   // 收段会话：内核把 RWKV 刷新键攒到会话结束（与收新根的段同一套，[SrsSync2Host.sync2IngestBegin]）。
   await host.sync2IngestBegin();
   try {
-    if (chunks.length <= 1) {
-      onStep?.call('oldRoot ingest');
-      await ingest(
-        chunks.isEmpty ? const <String>[] : chunks.single,
-        settle: true,
-        heads: heads,
-      );
-      return;
-    }
     for (int i = 0; i < chunks.length; i++) {
       onStep?.call('oldRoot ingest ${i + 1}/${chunks.length}');
-      await ingest(chunks[i], settle: false, heads: i == 0 ? heads : const []);
+      await ingest(chunks[i], heads: i == 0 ? heads : const <Uint8List>[]);
       if (shouldStop?.call() ?? false) return;
     }
-    await ingest(_strings((await scan())['fetch']), settle: true);
+    onStep?.call('oldRoot settle');
+    await ingest(const <String>[], settle: true);
   } finally {
     await host.sync2IngestEnd();
   }
