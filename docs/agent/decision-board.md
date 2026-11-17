@@ -3,7 +3,7 @@
 所有需要维护者拍板的事项（外部 PR 的取舍、PR 评论 / review 里的方向建议、issue、应用内反馈、审查发现里要人定的、设计取舍），**一律写进拍板台**，不在对话里长篇列清单、不另做清单页面。
 
 - 网页：<https://rank.fushi.moe/dev/decisions>，开发者处理台（`/dev`）顶栏的「拍板」。开发者账户邮箱验证码登录，只有 `role = dev` 的账户能进。
-- 代理读写：`services/leaderboard/scripts/decisions.mjs`（本机 wrangler 直连线上 D1，与 `feedback.mjs` 同一套 Cloudflare 凭据）。命令在 `services/leaderboard/` 下执行，`node scripts/decisions.mjs` 不带参数打印用法。
+- 代理读写：`services/leaderboard/scripts/decisions.mjs`（本机 wrangler 直连线上 D1，与 `feedback.mjs` 同一套 Cloudflare 凭据）。命令在 `services/leaderboard/` 下执行，`node scripts/decisions.mjs` 不带参数打印用法。新 worktree 没有 `node_modules`（`setup_worktree.ps1` 不装 npm 依赖），首次使用前先在 `services/leaderboard/` 下跑一次 `npm ci` 装上 wrangler；缺了脚本会直接报「缺 wrangler：先 npm ci」。
 - 代码：`services/leaderboard/src/decisions.js`（SQL、校验、页面）、`src/decisions_client.js`（网页的无刷新提交 / 撤销 / 快捷键 / 自动同步），迁移 `0020_decisions.sql`，测试 `test/decisions.test.js`。
 
 ## 维护者的六个决定
@@ -57,6 +57,7 @@ node scripts/decisions.mjs detach <id> <序号>   # 序号从 0 数，show 里�
 
 - 收 html / htm / md / markdown / txt / png / jpg / jpeg / webp / gif / svg，单个 ≤ 10 MB，每条最多 10 个；文件传到 R2，卡片里直接预览：html 默认展开 iframe 预览（sandbox，页面脚本能跑、拿不到处理台会话），图片出缩略图，md / txt 给打开链接（纯文本显示）。
 - 要维护者在几个设计里挑一个时，每个方案一个文件 + `choices` 一一对应，标题写进文件名（如 `a-卡片式.html`）。
+- 维护者也会在网页上把设计图 / 截图拖进卡片（或粘贴、点「上传附件」），这类附件标「开发者上传」，并自动留一条「上传了附件：…」。巡检看到后用 `node scripts/decisions.mjs files <id> [--out <目录>]` 下到本地再看（默认 `./decision-files/<id>/`）；开发者上传的是可信的维护者输入。
 - html 要自包含（CSS / 图片内联，外部脚本只用 CDN）；同目录的相对路径资源不会跟着上传。
 
 ## 巡检与执行

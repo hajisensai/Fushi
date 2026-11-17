@@ -135,6 +135,54 @@ export function parseDecisionFiles(raw, id) {
 
 export const SET_FILES_SQL = `UPDATE decisions SET files = ?2, updated_at = ?3 WHERE id = ?1`;
 
+/** 网页上传：原子追加一个附件（json_insert 到数组末尾），并刷新 updated_at 让别的页面同步到。 */
+const APPEND_FILE_SQL = `UPDATE decisions SET files = json_insert(COALESCE(files, '[]'), '$[#]', json(?2)), updated_at = ?3
+  WHERE id = ?1 AND state = 'open'`;
+
+/** 网页上传一次请求的体积上限（整包进 Worker 内存）：最多约 3 个满额文件；页面脚本一次只传一个文件。 */
+export const DECISION_UPLOAD_BODY_MAX = 3 * DECISION_LIMITS.fileMax + 64 * 1024;
+
+/**
+ * 开发者在拍板台网页上传附件（POST /dev/d/:id/files，multipart 字段 file 可多个）。
+ * 校验扩展名 / 大小 / 总数后写 R2（decisions/<id>/<随机>-<安全名>），逐个原子追加进 files 列，
+ * 再以开发者身份留一条「上传了附件：…」，代理巡检时能看到。
+ * @param {object} env
+ * @param {{id: string}} dev
+ * @param {string} id
+ * @param {File[]} files
+ * @param {number} now
+ * @returns {Promise<string[]>} 收下的文件名
+ */
+export async function uploadDecisionFiles(env, dev, id, files, now) {
+  if (!DECISION_ID_RE.test(id)) throw new HttpError(404, 'not_found');
+  const row = await env.DB.prepare('SELECT state, files FROM decisions WHERE id = ?1').bind(id).first();
+  if (!row) throw new HttpError(404, 'not_found');
+  if (row.state !== 'open') throw new HttpError(409, 'decision_closed');
+  const list = files.filter((f) => f && typeof f === 'object' && typeof f.name === 'string' && f.size > 0);
+  if (!list.length) throw new HttpError(400, 'no_file');
+  if (parseDecisionFiles(row.files, id).length + list.length > DECISION_LIMITS.filesMax) throw new HttpError(400, 'too_many_files');
+  for (const f of list) {
+    if (!decisionFileType(f.name)) throw new HttpError(400, 'bad_file_type');
+    if (f.name.length > DECISION_LIMITS.fileNameMax) throw new HttpError(400, 'bad_file_name');
+    if (f.size > DECISION_LIMITS.fileMax) throw new HttpError(413, 'file_too_large');
+  }
+  const names = [];
+  for (const f of list) {
+    const nonce = [...crypto.getRandomValues(new Uint8Array(4))].map((b) => b.toString(16).padStart(2, '0')).join('');
+    const key = `decisions/${id}/${nonce}-${f.name.replace(/[^A-Za-z0-9._-]+/g, '_')}`;
+    const type = decisionFileType(f.name).type;
+    await env.MEDIA.put(key, await f.arrayBuffer(), { httpMetadata: { contentType: type } });
+    const entry = { name: f.name, type, key, bytes: f.size, by: 'dev' };
+    await env.DB.prepare(APPEND_FILE_SQL).bind(id, JSON.stringify(entry), now).run();
+    names.push(f.name);
+  }
+  await env.DB.prepare(ADD_NOTE_SQL).bind(id, 'dev', dev.id, `上传了附件：${names.join('、')}`, now).run();
+  return names;
+}
+
+/** 文件选择框的 accept：与 DECISION_FILE_TYPES 同一张表。 */
+const UPLOAD_ACCEPT = Object.keys(DECISION_FILE_TYPES).map((e) => `.${e}`).join(',');
+
 /**
  * GET /dev/d/:id/f/:n：从 R2 取附件。回包一律 CSP sandbox（不透明源：页面脚本照跑，但读不到处理台
  * 的 Cookie / 同源接口），只许本站嵌进 iframe 预览；nosniff 防按内容猜类型。
@@ -170,7 +218,8 @@ function filesHtml(row) {
   const items = files.map((f, n) => {
     const href = `/dev/d/${esc(row.id)}/f/${n}`;
     const view = decisionFileType(f.name).view;
-    const open = `<a href="${href}" target="_blank" rel="noopener">${esc(f.name)}</a> <span class="muted">${esc(fmtSize(f.bytes))}</span>`;
+    const open = `<a href="${href}" target="_blank" rel="noopener">${esc(f.name)}</a> <span class="muted">${esc(fmtSize(f.bytes))}${
+      f.by === 'dev' ? ' · 开发者上传' : ''}</span>`;
     if (view === 'image') {
       return `<div class="dfile">${open}<a href="${href}" target="_blank" rel="noopener"><img src="${href}" alt="${
         esc(f.name)}" loading="lazy"></a></div>`;
@@ -499,6 +548,12 @@ function card(row, back, { hidden = false } = {}) {
 <div class="vrow">${verdictButtons}<span class="vsp"></span>${
   row.verdict ? '<button name="v" value="clear" class="vb v-clear" data-key="u" title="撤销决定（快捷键 U）">撤销决定</button>' : ''
 }<button name="v" value="note" class="vb v-note" title="只发留言，不改决定（Ctrl+Enter）">只留言</button></div>
+</form>
+<form method="post" action="/dev/d/${esc(row.id)}/files" enctype="multipart/form-data" class="dupload">
+<input type="hidden" name="back" value="${esc(back)}">
+<label class="dpick">上传附件<input type="file" name="file" multiple accept="${esc(UPLOAD_ACCEPT)}"></label>
+<span class="muted">也可以把文件拖到这张卡上，或在留言框里粘贴截图（html / md / txt / 图片，单个 ≤ 10 MB）</span>
+<noscript><button class="vb">上传</button></noscript>
 </form>`;
   return `<article class="card dcard st-${esc(row.verdict || 'none')}${closed ? ' closed' : ''}" id="d-${esc(row.id)}" data-id="${
     esc(row.id)}" data-stage="${esc(stage)}" data-never="${row.verdict === 'never' ? 1 : 0}" data-verdict="${esc(current)}" data-v="${
@@ -604,6 +659,12 @@ kbd{display:inline-block;min-width:1.4em;padding:0 4px;margin-left:6px;border:1p
 .dfile{margin-top:6px}
 .dfile summary{cursor:pointer}
 .dfile img{display:block;margin-top:4px;max-width:min(100%,480px);max-height:360px;border:1px solid var(--line);border-radius:8px}
+.dupload{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:8px;font-size:13px}
+.dpick{display:inline-block;padding:4px 10px;border:1px dashed var(--line);border-radius:8px;cursor:pointer}
+.dpick:hover{border-color:var(--fg)}
+.dpick input{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+.dpick:focus-within{outline:2px solid var(--accent)}
+.dcard.dragover{box-shadow:0 0 0 3px var(--c2);background:color-mix(in srgb,var(--c2) 8%,transparent)}
 .dfile iframe{display:block;width:100%;height:520px;margin-top:4px;border:1px solid var(--line);border-radius:8px;background:#fff;resize:vertical}
 .dform textarea{min-height:0;margin-top:10px;resize:vertical}
 .vrow{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px}

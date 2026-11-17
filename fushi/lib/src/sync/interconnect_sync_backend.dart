@@ -3395,8 +3395,9 @@ class InterconnectSyncBackend extends SyncBackend
   static const Duration _videoFingerprintTimeout = Duration(minutes: 5);
 
   /// GET `/api/library/videos/<id>/fingerprint`（拍板台 IFCPPprIpT）。404（老 host
-  /// 无此端点 / 条目或文件不在）→ null；回的不是 64 位小写 hex 也当取不到，不把
-  /// 不可担保的值写进卡片。
+  /// 无此端点）→ null；新 host 担保不了字节（[kVideoFingerprintUnavailableStatus]）或
+  /// 回的不是 64 位小写 hex → 抛 [RemoteVideoFingerprintUnavailable]，不把不可担保的
+  /// 值写进卡片、也不让回跳当老 host 放行（BUG-4782）。
   @override
   Future<String?> fetchRemoteVideoFingerprint(
     String id, {
@@ -3416,15 +3417,34 @@ class InterconnectSyncBackend extends SyncBackend
       await res.drain<void>();
       return null;
     }
+    if (res.statusCode == kVideoFingerprintUnavailableStatus) {
+      final Object? reason = _tryDecodeJson(await _readBodyBounded(res));
+      throw RemoteVideoFingerprintUnavailable(
+        id,
+        reason is Map && reason['reason'] is String
+            ? reason['reason'] as String
+            : 'unknown',
+      );
+    }
     _ops!.checkStatus(
       res.statusCode,
       'GET /api/library/videos/$id/fingerprint',
     );
-    final Object? decoded = jsonDecode(await _readBodyBounded(res));
+    final Object? decoded = _tryDecodeJson(await _readBodyBounded(res));
     final Object? value = decoded is Map ? decoded['fingerprint'] : null;
-    return value is String && RegExp(r'^[0-9a-f]{64}$').hasMatch(value)
-        ? value
-        : null;
+    if (value is String && RegExp(r'^[0-9a-f]{64}$').hasMatch(value)) {
+      return value;
+    }
+    throw RemoteVideoFingerprintUnavailable(id, 'malformed');
+  }
+
+  /// 指纹端点的响应体解析：不是 JSON 时返回 null（由调用方按「担保不了」处理）。
+  static Object? _tryDecodeJson(String body) {
+    try {
+      return jsonDecode(body);
+    } on FormatException {
+      return null;
+    }
   }
 
   /// media_kit 兼容接口：当前协议走 token URL，因此无需额外 HTTP headers。
