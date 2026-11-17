@@ -33,16 +33,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4154 条。点号进各自文件。
+> 共 4155 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4799](bugs/BUG-4799-lnreader-state-read-failure-overwrites.md) | ✅ | ✅ | LNReader 的 state.json / 插件存储读失败被当成空，下一次写盘把已装插件、仓库和登录态整份盖掉 |
 | [BUG-4798](bugs/BUG-4798-lnreader-chapter-images-no-cloudflare-cookie.md) | ✅ | ✅ | 小说在线源章节插图不带 Cloudflare 放行 cookie 与 Accept，过了验证的站点插图仍被拦，且丢图不留痕 |
-| [BUG-4797](bugs/BUG-4797-lnreader-state-read-failure-overwrites.md) | ✅ | ✅ | LNReader 的 state.json / 插件存储读失败被当成空，下一次写盘把已装插件、仓库和登录态整份盖掉 |
-> 共 4153 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
 | [BUG-4797](bugs/BUG-4797-feedback-files-share-video-ip-quota.md) | 🚧 | 🚧 | 样本文件与录屏共用每 IP 每天 200 MiB 额度，满额样本文件仍会被 429 挤掉 |
 | [BUG-4796](bugs/BUG-4796-disc-back-double-press-repeat-topmenu.md) | ✅ | ✅ | 原盘正片快速连按两次返回会重复发 topMenu，第二次失败会整盘退出 |
 | [BUG-4795](bugs/BUG-4795-disc-back-to-menu-transient-error-exits.md) | ✅ | ✅ | 原盘正片按返回回盘菜单时，任何暂时性错误都会让整个原盘会话退出 |
