@@ -2088,11 +2088,11 @@ Rust `SCHEMA` 没升（没加表 / 索引，分到的 40024 没用）；ABI 不�
    只能在 Rust 侧做），本模块没做。3 个文件的向量用例因此仍红（已知红，归属：换代迁移 owner 定因后决定重生成或改判）。
 2. 新设备首次出现不判「待确认」（BUG-4306 回归；原写的 BUG-4276 号有误，那个号是互联局域网设备列表）：协议 3 在 `store/sync2/trust.rs:70 note_new_device` 判库非空时首见的
    设备为 pending、它的删除 / 清除扣住；新代生产代码里没有任何地方写 `TRUST_PENDING`（只有 `cmd/writes_local.rs:136`
-   用户手动改信任与测试），`receive.rs:592`（承袭段上传者核对）只读 `trust_of`。**已修：§28。**别的设备的删除直接生效。红：引擎 `srs_devices_test`（4）、
+   用户手动改信任与测试），`receive.rs:592`（承袭段上传者核对）只读 `trust_of`。别的设备的删除直接生效。红：引擎 `srs_devices_test`（4）、
    `srs_db_store_test`「删除与对端并发修改」，app `srs_device_trust_test`（4）、`srs_conflicts_held_delete_test`（2）。
 3. 彻底清除不抹本机操作日志里的内容：`Truth::advance_purge`（`store/gen4/truth.rs:2881`，完整内容 → 空洞）在生产代码里
    没有调用方，`cmd/writes.rs:989 purge` 只追加 删除 + Purge 两条操作。清除后 `ops` 里带原文的修改记录原样留着（实测
-   seq 6、7 两条仍含 `secret-snow`，`op_voids` / `op_alias` 都是 0 行）。红：`srs_purge_test` 2 条。表层由 G8-7b 补上，字节层（空闲页 / WAL 残留）**已修：§28。**
+   seq 6、7 两条仍含 `secret-snow`，`op_voids` / `op_alias` 都是 0 行）。红：`srs_purge_test` 2 条。
 4. Anki 导入日志的 HLC 被内核重打，同一条 revlog 的副本不再归成一个事件：选取的事件身份（`history.rs:118-139`
    `EventKey`）对 Anki 来源只靠「由 revlog id 派生的 HLC」把换卡导入的副本归一（文件头 :19、:154），新代落库丢掉日志
    自带的 HLC、改用操作自己的（`cmd/writes.rs:23` / `:643`）。同一条 revlog 落到血统里两张卡（Lapis → Fushi 卡片后再
@@ -2247,27 +2247,53 @@ Rust `SCHEMA` 没升（没加表 / 索引，分到的 40024 没用）；ABI 不�
 （「清除的内容在磁盘上还没抹干净：<原因>」）。在 G7-6 落地之前，彻底清除迁移前的内容后封存库里原文仍在、界面没有提示，
 这是已知缺口。
 
-### 转发里的副本（复核修复，2026-11-17）
+### 转发里的副本（复核修复两轮，2026-11-17 / 11-18）
 
 复核指出转发缓存 `relay_segs`（G8-7b）存着作者段原文：同步着 ≥ 2 个位置时，清除之后原文仍留在 `srs4.db` 里、之后还会
-原样转发出去。清除的执行点归本模块，所以在这里修，不外推给转发 owner：
+原样转发出去。清除的执行点归本模块，所以在这里修，不外推给转发 owner。
 
-- `Truth::advance_purge` 落空洞的同一个事务里调 `sync_state.rs` `Truth::relay_purged`：`relay_segs` 里覆盖这个 seq 的件
-  整份删掉；`relay_out` 里已转发到各位置、覆盖它的 `rly-` 改成待删（`gone = 1`，下一次 `relay_ack` 交给调用方删掉位置上
-  那份带原文的件，两段式删除照旧）。作者签过的段改不出空洞（`gen4/segment.rs` 文件头），只能整份删。
-- 收段时 `keep` 先查本机在这一段的区间里有没有空洞（`Truth::voids_within`），有就解开中继件逐项看：在本机已清除的 seq
-  上还带着完整内容（作者还没重切）的不留，并在 `srs_meta` 记 `gen4_rrefuse/<col>/<作者>/<段名>` = 当时作者 head 的代号；
-  `wanted_for_relay` 在作者写出更新的 head 之前不再为它拉这一段（不每轮白拉）。作者重切出的同名段带着空洞，照常留下，
-  因为那个位置「缺」这一段（`relay_out` 那行已待删 / 删掉），重新转发过去、覆盖同名件。
-- 代价：作者重切之前，这位作者的转发整台跳过（`relay_outbox` 的 `incomplete`，不发半截），只经本机转发拿数据的位置在这段
-  时间收不到这位作者的新操作。作者长期不回来（清除是别的设备发起的）时一直如此，靠停用（`retire`）或作者回来解开。
-- 测试（`cmd/purge_scrub_tests.rs`）：`a_purge_drops_the_relay_copy_and_only_the_voided_segment_is_relayed_on`（a 只连 L1、
-  b 连 L1 + L2、c 只连 L2；b 收到清除后转发缓存里没有原文，转发到 L2 的件不带被清内容，c 收齐其余的）、
-  `a_purge_takes_back_what_was_already_relayed_to_another_location`（清除前已转发到 L2 的件被删掉、作者重切后重发）、
-  `an_unrecut_segment_carrying_purged_text_is_refused_once_and_not_refetched`。变异：去掉 `relay_segs` 删除 / 去掉拒收 /
-  去掉拒收记录 / 去掉 `relay_out` 待删，各自对应测试变红。
+**第一版（6c8d73af34）的回归，已废弃**：清除时整份删掉缓存里的作者段、把已转发的 `rly-` 改成待删、收段时拒收带原文的段，
+等作者自己重切。第二轮复核实测：清除由**转发者 b**（不是作者 a）发起、a 不回来时，只连 L2 的 c 拿不到 a 那一段，b 的 Purge
+指向 a 的 seq、b 此后每条操作的依赖都点着 a，于是 **b 之后的全部操作**（包括普通复习）在 c 上都卡在等待缓冲。根因：作者
+签名覆盖整段明文，转发者改不出空洞，「不搬」就断流。
+
+**现在的数据流（第三轮）**：转发者自己**重切**——新格式 `FRX4`（`gen4/recut.rs`）：同区间、同首尾链值、同文件名，把本机
+已清除的操作换成空洞（相邻空洞合并），用**转发者自己的钥匙**签（签名覆盖原段头、重切者 ID、明文压缩体，域前缀
+`fushi-srs-recut/4`）。读者照原生段的规则落库（空洞落成空洞，本机已有的完整操作不因此被清掉），但只收**本机信任的**
+重切者签的件（`receive.rs`：没记过重切者公钥 = `UnknownSigner`，信任表有它的行 = `UntrustedUploader`，同承袭段上传者，D20）。
+受信设备本来就能发 Purge 清掉任何内容，重切件给它的权力不超过这一条；作者自己签的段到了之后链值不接 = 分叉，照常报 G8-6。
+
+- 清除时（`Truth::advance_purge` 同一个事务，`sync_state.rs` `Truth::relay_purged`）：缓存里覆盖这个 seq 的件原地换成本机签
+  的重切件（本机还没有身份签不了才整份删）；`relay_out` 里已转发到各位置、覆盖它的 `rly-` 改成待删。
+- 转发时（`cmd/sync_relay.rs` `relay_outbox`）：待删的同名件算「缺」，用重切件同名重写（`relay_ack` 记回在用，不删）；作者
+  新 head 不再引用的旧名的待删件照两段式删除。缓存里没有这一段（从没留、或每个位置都有了已删）时从本机日志重切
+  （`Truth::recut_from_log`：本机这段有空洞、日志盖得到、两端链值都在、段尾链值与文件名的标签相符）。
+- 收段时（`keep`）：在本机已清除的 seq 上还带着完整内容的件（作者 / 别的重切者清除之前的那份）不留；同一段已存着重切件、
+  这回收到作者签的那份（作者自己重切了）就换成作者签的，读者不必信任本机这个重切者。`wanted_for_relay` 不再为本机清除过
+  其中操作的段去拉原文（`Truth::voids_within`）。原来的 `gen4_rrefuse/…` 拒收记录整套去掉（第二轮复核 nit：键不回收、
+  没有 head 时代号记 0 每轮白拉），不再写这种键；开发期集成分支库里可能残留的这种键没人读，无害。
+- 切点落在一次跨段清除的空洞内部（作者分两次同步写的同一条笔记、两段相邻，清除把两条合成一个空洞区间）：原生日志的空洞
+  区间只记区间末的链值，合并会把切点处的链值埋掉。`Truth::insert_void_run` 合并**别的设备**的原生日志的空洞时，把被合进
+  区间内部的那几处区间末链值记成 `log_marks` 记号，`Truth::chain_known` 在空洞内部先查记号。本机自己的日志不记（本机的段
+  按新切点重签，`cmd/sync.rs`）。**代价**：`.fushisrs` 第 2 版导出流的空洞只带区间末的链值，导入方拿不到这些记号
+  （`import_tests` 的往返测试显式核对了这一处差异，`truth_lines` 不比空洞内部的记号）；从备份还原的库若又要从日志重切一段
+  切点埋在空洞里的作者段，退回「这位作者整台不转发」（`incomplete`）。要彻底补上需导出流升 `ver` 带上这些链值，归 G11 owner
+  评估，本分支不改导出格式。
+- 测试（`cmd/purge_scrub_tests.rs`，a 只连 L1、b 连 L1 + L2、c 只连 L2）：
+  - `a_purge_by_the_relay_does_not_cut_off_a_location_only_it_feeds`（复核 major 的原场景：b 已把 a 的段转发到 L2 后由 b 清除、
+    b 再写一条，a 一直不回来；c1 清除前收过原文、c2 只在清除后来，两台都收齐 a 其余的与 b 之后的、等待缓冲为 0，L2 / c 的库
+    字节里扫不到原文；作者签的原文再到 b 手里，缓存不留）；
+  - `a_purge_recuts_the_relay_copy_in_place_and_relays_the_recut`（缓存原地重切，转发到 L2 的是 b 签的件）；
+  - `a_purge_across_the_authors_cut_point_still_recuts_both_segments`（切点埋在合并后的空洞里，两段都从日志重切出来）；
+  - `a_purge_by_the_author_takes_back_what_was_already_relayed`（作者发起：已转发的旧 `rly-` 删掉，转发作者自己重切的新段，
+    不为转发去拉原文）；
+  - `receive.rs` `recut_pieces_need_a_trusted_recutter_and_land_their_voids`、`gen4/recut.rs` 六条编解码 / 验签 / 拒写测试；
+  - `truth.rs` `voids_within_reports_runs_cut_to_the_range_including_a_leading_one`（第二轮复核 minor：前导空洞分支）、
+    `scrub.rs` `a_retry_that_does_not_wait_returns_at_once_when_a_reader_holds_the_wal`（第二轮复核 minor：`Wait::No` 不等读者）。
+  - 变异实测见 PR 描述（9 项，各自对应测试变红）。
 - 没覆盖：别的设备从 L2 上拉走那份旧件、在它收到清除之前——那台设备收到清除时自己落空洞、做字节层收尾，与作者自己的段
   同一个口径。
+- 交接 §26 T1 节 C2、C3 两条上一轮加的「已修：§28」指针已撤回（不改别人的节）；修复记录只在本节。
 
 ### 已知残余风险（复核记录）
 
@@ -2284,3 +2310,5 @@ Rust `SCHEMA` 没升（没加表 / 索引，分到的 40024 没用）；ABI 不�
 - 迁移本身（`dryrun.rs` 重建）不执行清除，见上。
 - Dart 侧没接 `scrub_state`（没有 UI 提示），归 G7-6，见上「封存旧库」节的任务清单。
 - Dart：`srs_purge_test`、`srs_devices_test`、`srs_db_store_test` 等的复跑结果见 PR 描述。
+- 清除确认处的封存库说明与 `scrub_state` 出错提示已写成规划 §6 的合并条件（G7-6 不带上这两项不合入 develop）。
+- 导出流带不走空洞内部的链值记号（见「转发里的副本」节的代价），要补需导出格式升 `ver`，归 G11 owner。
