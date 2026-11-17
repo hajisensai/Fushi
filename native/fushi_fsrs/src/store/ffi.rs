@@ -2777,7 +2777,8 @@ mod tests {
             }
         }
         assert!(
-            wired > 40 && unwired > 0 && gone > 8,
+            // W3 合流后各模块都已接线，不再有未接线命令。
+            wired > 40 && unwired == 0 && gone > 8,
             "{wired} / {unwired} / {gone}"
         );
         ffsrs_store_close(h);

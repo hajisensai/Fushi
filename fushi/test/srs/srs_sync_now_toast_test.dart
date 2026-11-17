@@ -3,6 +3,7 @@ import 'package:fushi/src/srs/srs_import_entry.dart';
 import 'package:fushi/src/srs/srs_sync_progress.dart';
 import 'package:fushi/src/srs/srs_sync_progress_ui.dart';
 import 'package:fushi/src/srs/srs_sync_scheduler.dart';
+import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/misc/toast_severity.dart';
 
@@ -46,6 +47,13 @@ void main() {
         const SrsSyncReportError(kSrsSyncDirectoryIdentityUnavailable),
       ),
       t.srs_sync_directory_unidentified,
+    );
+  });
+
+  test('只有协议 1 旧根的位置：给专门的升级提示，不当一般错误', () {
+    expect(
+      srsSyncErrorReason(const SrsSyncReportError(kSrsLocationProtocol1Root)),
+      t.srs_sync_location_protocol1_root,
     );
   });
 

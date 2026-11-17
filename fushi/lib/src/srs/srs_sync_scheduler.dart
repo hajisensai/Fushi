@@ -377,6 +377,9 @@ enum SrsSyncNotice {
 
   /// 升级到同步 v2 后首次同步还没确认（[kSrsSyncAwaitingConfirm]），复习数据暂不同步。
   awaitingConfirm,
+
+  /// 有同步位置只有协议 1 旧根 `v2/`（[kSrsLocationProtocol1Root]）：要先用 3.x 同步一次把它升级，或换一个位置。
+  locationProtocol1,
 }
 
 /// [SrsSyncScheduler.ensureMigrated] 迁移之前那轮只拉不发的范围：[within] 非 null = 只收调用方这一轮的那条位置；
@@ -718,23 +721,6 @@ class SrsSyncScheduler {
   /// 各位置最近一轮看到的加密状态（同步与历史页显示「已加密 / 需要口令 / 口令不对」）。
   final Map<String, SrsLocationCryptoState> locationCrypto =
       <String, SrsLocationCryptoState>{};
-
-  /// 设计 §4.5：两台设备在同一进度下派生状态摘要不同 = 有一边的派生行是旧的或确定性 bug。内核先自动重建（按组指纹
-  /// 定位、重放本机落在不同组里的卡，store/sync2/heal.rs），只把修不好的交出来（[SrsSync2Report.healFailed]，每个对端
-  /// 每组集合只给一次），这里只记这些（不让用户处理）。
-  void _reportHealFailed(SrsSync2Report report) {
-    for (final Map<String, Object?> f in report.healFailed) {
-      ErrorLogService.instance.log(
-        'SrsSync2.healFailed',
-        StateError(
-          'SRS state digest differs from device ${f['device']} at the same version vector '
-          'and replaying did not converge: reason=${f['reason']} groups=${f['groups']} '
-          'rows=${f['rows']} peerApp=${f['app']}',
-        ),
-        StackTrace.current,
-      );
-    }
-  }
 
   /// 记下一轮的加密结论；本机刚开的加密生效了就交给调用方保存。
   Future<void> _noteCrypto(String locationId, SrsSync2Report? r) async {
@@ -1240,7 +1226,9 @@ class SrsSyncScheduler {
     if (report.error == kSrsSyncNeedsUpgrade) {
       _noticeOnce(SrsSyncNotice.backendUnsupported);
     }
-    _reportHealFailed(report);
+    if (report.error == kSrsLocationProtocol1Root) {
+      _noticeOnce(SrsSyncNotice.locationProtocol1);
+    }
     bool mediaChanged = false;
     final Future<Directory?> Function()? readMediaRoot = _readMediaRoot;
     // 媒体对账要逐个过一遍全部引用的媒体、扫三遍笔记引用：只在媒体引用可能变了（本机或别的设备改了笔记 / 笔记类型
@@ -1850,6 +1838,9 @@ class SrsSyncScheduler {
         final String? error = outcome.locationError;
         if (error != null) {
           folderErrors[l.id] = SrsSyncReportError(error);
+          if (error == kSrsLocationProtocol1Root) {
+            _noticeOnce(SrsSyncNotice.locationProtocol1);
+          }
           continue;
         }
         folderErrors.remove(l.id);

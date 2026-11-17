@@ -37,13 +37,17 @@ use crate::sync2::id::Id;
 use crate::sync2::keys::DeviceKey;
 use crate::sync2::vv::OpId;
 
-type Loc = BTreeMap<String, Vec<u8>>;
+pub(super) type Loc = BTreeMap<String, Vec<u8>>;
 type Files = Vec<(String, Vec<u8>)>;
 
 const KEY: &str = "1111111111111111111111111111111111111111111111111111111111111111";
 
 /// 经 C ABI 发一条命令，字节块原样带上（`[条数][长度][字节]…`）。
-fn raw(h: *mut SrsCoreHandle, req: &Value, blobs: &[Vec<u8>]) -> Result<(Value, Files), String> {
+pub(super) fn raw(
+    h: *mut SrsCoreHandle,
+    req: &Value,
+    blobs: &[Vec<u8>],
+) -> Result<(Value, Files), String> {
     let text = req.to_string();
     let mut framed = Vec::new();
     if !blobs.is_empty() {
@@ -95,7 +99,7 @@ fn raw(h: *mut SrsCoreHandle, req: &Value, blobs: &[Vec<u8>]) -> Result<(Value, 
     Ok((v, files))
 }
 
-fn cmd(
+pub(super) fn cmd(
     h: *mut SrsCoreHandle,
     op: &str,
     now: i64,
@@ -107,13 +111,13 @@ fn cmd(
 }
 
 /// 一台全新设备：建身份、注册缓存配置。
-struct Dev {
-    dir: tempdir::Dir,
-    h: *mut SrsCoreHandle,
+pub(super) struct Dev {
+    pub(super) dir: tempdir::Dir,
+    pub(super) h: *mut SrsCoreHandle,
 }
 
 impl Dev {
-    fn new(tag: &str) -> Dev {
+    pub(super) fn new(tag: &str) -> Dev {
         let dir = tempdir::new(tag);
         let h = open(&dir.0, 0).unwrap();
         g4(h, "identity", T1, json!({}));
@@ -122,7 +126,7 @@ impl Dev {
     }
 
     /// 同一个库目录的一份拷贝（关着拷，模拟「复制了整个数据目录」）。
-    fn copy(&mut self, tag: &str) -> Dev {
+    pub(super) fn copy(&mut self, tag: &str) -> Dev {
         ffsrs_store_close(self.h);
         let dir = tempdir::new(tag);
         copy_dir(&self.dir.0, &dir.0);
@@ -131,21 +135,21 @@ impl Dev {
         Dev { dir, h }
     }
 
-    fn device(&self) -> String {
+    pub(super) fn device(&self) -> String {
         g4(self.h, "identity", T1, json!({}))["device"]
             .as_str()
             .unwrap()
             .to_owned()
     }
 
-    fn write(&self, now: i64, note: &str, v: &str) {
+    pub(super) fn write(&self, now: i64, note: &str, v: &str) {
         let items = vec![json!({"e": edit("note", note, "f/fa", json!(v)), "note": note})];
         let blob = Value::Array(items).to_string().into_bytes();
         let (v, _) = cmd(self.h, "apply", now, json!({}), &[blob]);
         assert_eq!(v["landed"], json!([true]), "{v}");
     }
 
-    fn field(&self, note: &str) -> Option<Value> {
+    pub(super) fn field(&self, note: &str) -> Option<Value> {
         let hist = g4(
             self.h,
             "history",
@@ -160,7 +164,7 @@ impl Dev {
     }
 
     /// 关掉句柄，在库上直接跑 [f]（真相层 API），再打开。
-    fn direct<T>(&mut self, f: impl FnOnce(&Truth<'_>, i64) -> Result<T, String>) -> T {
+    pub(super) fn direct<T>(&mut self, f: impl FnOnce(&Truth<'_>, i64) -> Result<T, String>) -> T {
         ffsrs_store_close(self.h);
         let out = {
             let c = G4Core::open(&self.dir.0, OpenMode::Primary).unwrap();
@@ -179,7 +183,7 @@ impl Dev {
 
     /// 派生层：增量维护的与整个重建的逐行相同（[assert_rebuild_is_identity]），回语义摘要（head 的 `digest`，跨设备
     /// 可比；派生表逐行含本机设备号 `k`，不能跨设备比）。
-    fn derived(&mut self) -> String {
+    pub(super) fn derived(&mut self) -> String {
         self.direct(|t, col| {
             assert!(!dump(t.conn(), col).is_empty());
             assert_rebuild_is_identity(t, col);
@@ -208,7 +212,7 @@ fn copy_dir(from: &Path, to: &Path) {
 }
 
 /// 位置上一台设备目录下的文件名（相对 `v4/devices/<设备>/`）。
-fn names_of(loc: &Loc, device: &str) -> Vec<String> {
+pub(super) fn names_of(loc: &Loc, device: &str) -> Vec<String> {
     let prefix = format!("v4/devices/{device}/");
     loc.keys()
         .filter_map(|k| k.strip_prefix(&prefix).map(str::to_owned))
@@ -216,7 +220,7 @@ fn names_of(loc: &Loc, device: &str) -> Vec<String> {
 }
 
 /// 每台设备目录的文件名清单（`plan` 的 `listing`）。
-fn listing(loc: &Loc) -> BTreeMap<String, Vec<String>> {
+pub(super) fn listing(loc: &Loc) -> BTreeMap<String, Vec<String>> {
     let mut out: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for k in loc.keys() {
         if let Some(rest) = k.strip_prefix("v4/devices/") {
@@ -229,7 +233,7 @@ fn listing(loc: &Loc) -> BTreeMap<String, Vec<String>> {
 }
 
 /// 每台设备代号最大的 head 的字节。
-fn heads(loc: &Loc) -> Vec<Vec<u8>> {
+pub(super) fn heads(loc: &Loc) -> Vec<Vec<u8>> {
     let mut best: BTreeMap<String, (u64, String)> = BTreeMap::new();
     for k in loc.keys() {
         let Some(rel) = k.strip_prefix("v4/") else {
@@ -245,29 +249,55 @@ fn heads(loc: &Loc) -> Vec<Vec<u8>> {
     best.values().map(|(_, k)| loc[k].clone()).collect()
 }
 
+/// 每台设备代号最大的被转发 head（`rhd-`，`cmd/sync_relay.rs`）的字节。
+pub(super) fn relayed_heads(loc: &Loc) -> Vec<Vec<u8>> {
+    let mut best: BTreeMap<String, (u64, String)> = BTreeMap::new();
+    for k in loc.keys() {
+        let Some(rel) = k.strip_prefix("v4/") else {
+            continue;
+        };
+        if let Some(V4File::RelayHead { author, gen, .. }) = parse_v4_path(rel) {
+            let e = best.entry(author.text()).or_insert((0, String::new()));
+            if gen > e.0 {
+                *e = (gen, k.clone());
+            }
+        }
+    }
+    best.values().map(|(_, k)| loc[k].clone()).collect()
+}
+
+/// 拉一个段：作者自写的 `seg-…` 不在就拉别的设备转发来的同名 `rly-…`（Dart `srsFetchSegment`）。
+pub(super) fn fetch_seg(loc: &Loc, path: &str) -> Option<Vec<u8>> {
+    loc.get(&format!("v4/{path}")).cloned().or_else(|| {
+        let (dir, name) = path.rsplit_once('/')?;
+        let rest = name.strip_prefix("seg-")?;
+        loc.get(&format!("v4/{dir}/rly-{rest}")).cloned()
+    })
+}
+
 /// 一轮的选项。
 #[derive(Clone, Copy, Default)]
-struct Opts<'a> {
-    key: Option<&'a str>,
-    seg_bytes: Option<u64>,
-    max_bytes: Option<u64>,
-    skip_unchanged: bool,
-    archive: bool,
+pub(super) struct Opts<'a> {
+    pub(super) key: Option<&'a str>,
+    pub(super) seg_bytes: Option<u64>,
+    pub(super) max_bytes: Option<u64>,
+    pub(super) skip_unchanged: bool,
+    pub(super) archive: bool,
 }
 
 /// 一轮里各步的回包（断言用）。
 #[derive(Debug, Default)]
-struct Round {
-    plan: Value,
-    ingest: Vec<Value>,
-    finish: Option<Value>,
-    batches: usize,
-    head: Value,
-    deleted: Vec<String>,
+pub(super) struct Round {
+    pub(super) plan: Value,
+    pub(super) ingest: Vec<Value>,
+    pub(super) finish: Option<Value>,
+    pub(super) batches: usize,
+    pub(super) head: Value,
+    pub(super) deleted: Vec<String>,
 }
 
 /// 按 Dart 的顺序跑一轮：根 → plan → ingest(+finish) → outbox/ack → head → obsolete。
-fn round(d: &Dev, loc: &mut Loc, location: &str, now: i64, o: Opts<'_>) -> Round {
+pub(super) fn round(d: &Dev, loc: &mut Loc, location: &str, now: i64, o: Opts<'_>) -> Round {
     let mut out = Round::default();
     // 1. 根。
     let mut blobs = Vec::new();
@@ -301,13 +331,17 @@ fn round(d: &Dev, loc: &mut Loc, location: &str, now: i64, o: Opts<'_>) -> Round
         loc.insert(p, b);
     }
     let loc_id = root["loc"].as_str().unwrap().to_owned();
-    // 2. plan。
+    // 2. plan（作者自写的 head 在前，被转发的 head 在后，`relayed` 是后者的份数）。
+    let mut hs = heads(loc);
+    let rh = relayed_heads(loc);
+    let relayed = rh.len();
+    hs.extend(rh);
     let (plan, _) = cmd(
         d.h,
         "plan",
         now,
-        json!({"location": location, "loc": loc_id, "listing": listing(loc)}),
-        &heads(loc),
+        json!({"location": location, "loc": loc_id, "listing": listing(loc), "relayed": relayed}),
+        &hs,
     );
     assert_eq!(plan["needsUpgrade"], json!(false), "{plan}");
     // 3. 收。
@@ -316,7 +350,7 @@ fn round(d: &Dev, loc: &mut Loc, location: &str, now: i64, o: Opts<'_>) -> Round
         .unwrap()
         .iter()
         .flat_map(|f| f["files"].as_array().unwrap().clone())
-        .filter_map(|p| loc.get(&format!("v4/{}", p.as_str().unwrap())).cloned())
+        .filter_map(|p| fetch_seg(loc, p.as_str().unwrap()))
         .collect();
     let mut fork = plan["finishPending"] == json!(true);
     if !fetched.is_empty() {
@@ -391,7 +425,7 @@ fn round(d: &Dev, loc: &mut Loc, location: &str, now: i64, o: Opts<'_>) -> Round
     out
 }
 
-fn sync_all(devs: &[&Dev], loc: &mut Loc, now: i64, o: Opts<'_>) {
+pub(super) fn sync_all(devs: &[&Dev], loc: &mut Loc, now: i64, o: Opts<'_>) {
     for _ in 0..2 {
         for d in devs {
             round(d, loc, "loc", now, o);
@@ -508,8 +542,8 @@ fn a_lost_segment_is_uploaded_again() {
 /// 清除已经发布的操作（本机日志里那一条成了空洞）：已传的段重切重传（新段带空洞），旧段被 `obsolete` 删掉，位置上
 /// 不留已清除的原文。
 ///
-/// `purge` 命令目前只追加「删除 + 清除」两条操作、不把目标落成空洞（`Truth::advance_purge` 没有生产调用方，交接说明
-/// 「G8-7 同步一轮」上游缺口），所以这里直接在真相层上推进那个槽，测的是发件这一侧。
+/// 这里直接在真相层上推进那个槽，只测发件这一侧；`purge` 命令经生产路径落空洞、对端跟着落的端到端见
+/// `sync_complete_tests.rs` `the_purge_command_voids_published_ops_everywhere`（G8-7b）。
 #[test]
 fn purging_published_ops_rewrites_the_uploaded_segments() {
     let mut a = Dev::new("g87pa");
@@ -824,7 +858,7 @@ const N5: &str = "0193a1b2-0000-7000-8000-0000000000a5";
 const N6: &str = "0193a1b2-0000-7000-8000-0000000000a6";
 
 /// [d] 的 `status` 里 [device] 那一行。
-fn status_row(d: &Dev, device: &str) -> Value {
+pub(super) fn status_row(d: &Dev, device: &str) -> Value {
     g4(d.h, "status", T1, json!({}))["devices"]
         .as_array()
         .unwrap()
@@ -1097,7 +1131,7 @@ fn removed_and_unwired_sync_commands_name_their_reason() {
     let a = Dev::new("g87w");
     for op in [
         "ingest_yield",
-        "ingest_begin",
+        "ingest_commit",
         "replay_pending",
         "digest_buckets",
         "obsolete_ack",
@@ -1105,9 +1139,13 @@ fn removed_and_unwired_sync_commands_name_their_reason() {
         let e = raw(a.h, &g4req(op, T1, json!({})), &[]).unwrap_err();
         assert!(e.contains(REMOVED), "{op}: {e}");
     }
-    for op in ["relay_outbox", "media_scan"] {
+    // 转发（G8-7b）已接线：缺参数报参数错，不再报未接线。
+    for op in ["relay_outbox", "relay_ack"] {
         let e = raw(a.h, &g4req(op, T1, json!({})), &[]).unwrap_err();
-        assert!(e.contains(UNWIRED) && e.contains("G8-7b"), "{op}: {e}");
+        assert!(
+            !e.contains(UNWIRED) && e.contains("missing location"),
+            "{op}: {e}"
+        );
     }
 }
 

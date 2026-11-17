@@ -20,7 +20,10 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:fushi_engine/srs/sync2/srs_location_crypto.dart';
+import 'package:fushi_engine/srs/sync2/srs_location_migration.dart'
+    show kSrsV1MovedToKey, srsDecodeV1Fence, srsEncodeV1Fence;
 import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
+import 'package:fushi_engine/srs/sync2/srs_sync4_steps.dart';
 import 'package:fushi_srs/fushi_srs.dart' show SrsSync2Result;
 
 /// 一轮同步要的内核接口（[SrsDbStore] 实现；测试可替身）。
@@ -104,6 +107,10 @@ const String kSrs4RootNeedsUpgrade = 'needsUpgrade';
 /// 位置上的新根 meta 与本机对不上（别的集合 / 认不得的外形）：这一轮不同步，什么都不写。
 const String kSrs4LocationRefused = 'srs location root refused';
 
+/// 位置只有协议 1 旧根 `v2/`（内核 `oldroot.rs` `ERR_PROTOCOL1_ROOT`，同一个机读码）：这一轮的 [SrsSync2Report.error]
+/// 正好是它，界面据此给专门的升级提示（先用 3.x 同步一次把位置升级，或换位置；本机卡片不受影响），不当一般错误报。
+const String kSrsLocationProtocol1Root = 'srs_location_protocol1_root';
+
 /// 不是一个同步位置的读（v1 旧根的一次性迁移）：`plan` 记位置上的 head 时用的位置名。
 const String kSrs4NoLocation = 'oldroot';
 
@@ -123,7 +130,7 @@ class SrsSync2Report {
   /// 这一轮上传的段数。
   int uploaded = 0;
 
-  /// 这一轮转发到这个位置的文件数（新代的转发归 G8-7b，接上之前恒为 0）。
+  /// 这一轮转发到这个位置的文件数（中继件 `rly-` 与被转发的 head `rhd-`，[srsSync4Relay]）。
   int relayed = 0;
 
   /// 发现本机身份分叉（已换身份重签发）。
@@ -168,14 +175,10 @@ class SrsSync2Report {
   /// 非致命错误（段损坏 / 签名不符 / 解不开……）：记日志，不打断这一轮。
   final List<String> errors = <String>[];
 
-  /// 清位置上本机旧身份的目录时没做成的（新代还没接旧身份目录的清理，恒为空），每项
+  /// 清位置上本机旧身份的目录时没做成的（[srsSync4SweepFormer]），每项
   /// `<旧身份>: <原因>`。不算这一轮失败、也不算跳过了段（不进 [errors]）：这一轮自己的收发与 head 都已完成，旧
   /// 目录里多留几份旧 head 不影响任何设备读到的内容，内核过一个周期再让看。只供记日志。
   final List<String> formerSweepErrors = <String>[];
-
-  /// 摘要不一致、自动重建修不好（协议 3 `heal.rs` 的 `healFailed`；新代的摘要核对还没接，恒为空）。
-  /// 每项 `{device, groups, rows: {e, f, l}, app, reason}`。
-  final List<Map<String, Object?>> healFailed = <Map<String, Object?>>[];
 }
 
 /// 跑一轮。[locationId] 是这个位置的稳定身份（本机记每个位置传到了哪）；[key] = 本机为这个位置记的密钥
@@ -187,7 +190,8 @@ class SrsSync2Report {
 /// 用来先传媒体；[shouldStop] 每批收完后问一次，为真就以 [kSrsSync2Stopped] 收手（已收的
 /// 批次都已提交）；发件的每批确认后也问一次（已确认的批次水位已持久化）。[ingestBudgetBytes] 见
 /// [kSrsSync2IngestBudgetBytes]；[fetchConcurrency] = 拉段时同时在途的下载数；[outboxBudgetBytes] = 发件一批的
-/// 字节预算（null = 内核默认 `OUTBOX_BATCH_BYTES`，测试用小值逼出多批）。
+/// 字节预算（null = 内核默认 `OUTBOX_BATCH_BYTES`，测试用小值逼出多批）；[outboxSegmentBytes] = 切段的目标体积
+/// （null = 内核默认 `SEGMENT_TARGET_BYTES`，测试用小值逼出多段）。
 /// 一轮里的细分步骤（诊断用）：调度器把它写进活动面包屑，进程死在一轮里时下次启动能报出死在哪一步、当时多少
 /// 内存（反馈 i8qNDs_V_D：大库上一轮卡在「开始」4.5 分钟后被系统杀，开头这段原本只有一个阶段名）。只做记录，
 /// 不得抛出、不得做慢事。
@@ -199,6 +203,7 @@ Future<SrsSync2Report> srsSync2Round({
   required String locationId,
   required int Function() nowMs,
   SrsLocationStore? oldRoot,
+  SrsLocationStore? protocol1Root,
   int Function()? bootClockMs,
   SrsLocationKey? key,
   bool archive = false,
@@ -209,6 +214,7 @@ Future<SrsSync2Report> srsSync2Round({
   int ingestBudgetBytes = kSrsSync2IngestBudgetBytes,
   int fetchConcurrency = kSrsSync2Concurrency,
   int? outboxBudgetBytes,
+  int? outboxSegmentBytes,
   SrsSyncStepCallback? onStep,
   void Function(SrsLocationRoot root)? onLocationRoot,
 }) async {
@@ -223,6 +229,7 @@ Future<SrsSync2Report> srsSync2Round({
     host: host,
     location: location,
     oldRoot: oldRoot,
+    protocol1Root: protocol1Root,
     locationId: locationId,
     nowMs: nowMs,
     key: key,
@@ -270,12 +277,49 @@ Future<SrsSync2Report> srsSync2Round({
             'now': nowMs(),
           })).map['device']!
           as String;
-  final List<String> present = listed['devices/$self'] ?? <String>[];
+  final List<String> present = List<String>.of(
+    listed['devices/$self'] ?? const <String>[],
+  );
 
-  // 3. 发件：先段、后 head，分批（一批全部写成后 `outbox_ack` 持久化水位，再取下一批）。媒体先于引用它的段。
+  // 2b. 旧根接手（G8-7b）：协议 3 旧根上的段收进本机承袭日志。
+  if (oldRoot != null) {
+    await srsSync4TakeOldRoot(
+      host: host,
+      oldRoot: oldRoot,
+      locationId: locationId,
+      keyHex: keyHex,
+      report: report,
+      nowMs: nowMs,
+      budgetBytes: ingestBudgetBytes,
+      shouldStop: shouldStop,
+      onStep: onStep,
+    );
+    if (shouldStop?.call() ?? false) return report..error = kSrsSync2Stopped;
+  }
+  // 2c. 别的设备的媒体清单：本机媒体对账（发件前那一步）据此知道位置上有什么。
+  await srsSync4MediaManifestsIn(
+    host: host,
+    location: location,
+    locationId: locationId,
+    listed: listed,
+    report: report,
+    nowMs: nowMs,
+  );
+
+  // 3. 发件：媒体 → 承袭段 → 本机原生段 → head，分批（一批全部写成后 `outbox_ack` 持久化水位，再取下一批）。媒体先于
+  // 引用它的段；承袭段先于本机原生段（D19：新设备先拿到旧历史）。
   onStep?.call('beforeUpload');
   if (beforeUpload != null) await beforeUpload(keyHex);
   onUploadStart?.call();
+  await srsSync4UploadHeritage(
+    host: host,
+    location: location,
+    progressId: progressId,
+    keyHex: keyHex,
+    listed: listed,
+    report: report,
+    onStep: onStep,
+  );
   bool audited = false;
   while (true) {
     final SrsSync2Result out = await host.sync2Command(<String, Object?>{
@@ -283,6 +327,7 @@ Future<SrsSync2Report> srsSync2Round({
       'progress': progressId,
       'key': keyHex,
       if (outboxBudgetBytes != null) 'maxBytes': outboxBudgetBytes,
+      if (outboxSegmentBytes != null) 'segBytes': outboxSegmentBytes,
       if (!audited) 'present': present,
     });
     audited = true;
@@ -357,6 +402,33 @@ Future<SrsSync2Report> srsSync2Round({
     kSrsSync2Concurrency,
     location.delete,
   );
+  // 6. 本机旧身份目录里的旧 head；本机这一轮的媒体观察打成清单。
+  await srsSync4SweepFormer(
+    host: host,
+    location: location,
+    former: obsolete['former'],
+    listed: listed,
+    archive: archive,
+    report: report,
+  );
+  await srsSync4MediaManifestsOut(
+    host: host,
+    location: location,
+    locationId: locationId,
+    loc: loc,
+    self: self,
+    listed: listed,
+  );
+  // 7. 转发（内核 `cmd/sync_relay.rs`）：本机收到过、这个位置缺的别的设备的段与 head。
+  await srsSync4Relay(
+    host: host,
+    location: location,
+    locationId: locationId,
+    keyHex: keyHex,
+    archive: archive,
+    report: report,
+    shouldStop: shouldStop,
+  );
   return report;
 }
 
@@ -394,9 +466,16 @@ Future<SrsLocationRoot?> srsSync4LocationRoot({
   required Object? collection,
   required SrsSync2Report report,
   SrsLocationKey? key,
+  SrsLocationStore? protocol1Root,
 }) async {
   final Uint8List? meta4 = await location.get('meta.json');
   final Uint8List? meta3 = await oldRoot?.get('meta.json');
+  // 只有协议 1 旧根 `v2/` 的位置：内核明确拒绝（D21），一个字节不写。新根、旧根都在时不用看它；`v2/` 上只有围栏
+  // （协议 2 的迁移或下面立的）不算协议 1 的集合。
+  final Uint8List? meta2 = meta4 == null && meta3 == null
+      ? await protocol1Root?.get('meta.json')
+      : null;
+  final bool has2 = meta2 != null && srsDecodeV1Fence(meta2) == null;
   final _SrsMetaView view = _SrsMetaView(location, meta4 ?? meta3);
   final SrsLocationHandshake hs = await srsLocationHandshake(
     view,
@@ -427,6 +506,7 @@ Future<SrsLocationRoot?> srsSync4LocationRoot({
       'now': nowMs(),
       'has4': meta4 != null,
       'has3': meta3 != null,
+      'has2': has2,
       'locs': <String>[
         for (final SrsLocationEntry e in await location.list('loc'))
           if (!e.isFolder) e.name,
@@ -441,7 +521,14 @@ Future<SrsLocationRoot?> srsSync4LocationRoot({
     return null;
   }
   if (state != kSrs4RootOk) {
-    report.error = '$kSrs4LocationRefused: ${root.map['error']}';
+    // 只有协议 1 旧根：错误就是机读码本身（[kSrsLocationProtocol1Root]），界面按它给专门的升级提示；其余带码的拒绝把
+    // 码放在前面。
+    final Object? code = root.map['code'];
+    report.error = code == kSrsLocationProtocol1Root
+        ? kSrsLocationProtocol1Root
+        : code == null
+        ? '$kSrs4LocationRefused: ${root.map['error']}'
+        : '$kSrs4LocationRefused: $code: ${root.map['error']}';
     return null;
   }
   final Set<String> ensure = <String>{
@@ -456,6 +543,18 @@ Future<SrsLocationRoot?> srsSync4LocationRoot({
     final String rel = path.substring(path.indexOf('/') + 1);
     if (ensure.contains(path) && await target.exists(rel)) continue;
     await target.put(rel, bytes);
+  }
+  // 协议 1 的版本只看 `v2/`：那里没有 `meta.json` 时它会另起一个集合、和新版本各同步各的。新根与旧根围栏立住之后
+  // 在 `v2/` 立一份它解析不了的围栏，让它在握手就停下（字节固定，几台设备并发立的相同）。
+  if (protocol1Root != null && !await protocol1Root.exists('meta.json')) {
+    await protocol1Root.put(
+      'meta.json',
+      srsEncodeV1Fence(<String, Object?>{
+        'v': kSrsSync2Protocol,
+        'minReader': kSrsSync2MinReader,
+        kSrsV1MovedToKey: kSrs4Root,
+      }),
+    );
   }
   final String media = (root.map['media'] as String?) ?? kSrs4Root;
   report.mediaRoot = media;
@@ -533,32 +632,55 @@ Future<bool> srsSync2Pull({
     for (final SrsLocationEntry d in await location.list('devices'))
       if (d.isFolder) 'devices/${d.name}',
   ];
-  final List<List<String>> headPaths = await srsRunPooled(
+  final List<(List<String>, String?)> headPaths = await srsRunPooled(
     deviceDirs,
     kSrsSync2Concurrency,
     (String dir) async {
       int top = -1;
       final Map<String, int> genOf = <String, int>{};
+      int relayTop = -1;
+      String? relayHead;
       final List<SrsLocationEntry> files = await location.list(dir);
       listed?[dir] = <String>[
         for (final SrsLocationEntry f in files)
           if (!f.isFolder) f.name,
       ];
       for (final SrsLocationEntry f in files) {
+        final int? r = _relayHeadGen(f.name);
+        if (r != null && r > relayTop) {
+          relayTop = r;
+          relayHead = '$dir/${f.name}';
+        }
         final int? g = _headGen(f.name);
         if (g == null) continue;
         genOf[f.name] = g;
         if (g > top) top = g;
       }
-      return <String>[
-        for (final MapEntry<String, int> e in genOf.entries)
-          if (e.value == top) '$dir/${e.key}',
-      ];
+      return (
+        <String>[
+          for (final MapEntry<String, int> e in genOf.entries)
+            if (e.value == top) '$dir/${e.key}',
+        ],
+        relayHead,
+      );
     },
   );
   final List<Uint8List> heads = <Uint8List>[
     for (final Uint8List? b in await srsRunPooled(
-      <String>[for (final List<String> p in headPaths) ...p],
+      <String>[for (final (List<String>, String?) p in headPaths) ...p.$1],
+      kSrsSync2Concurrency,
+      location.get,
+    ))
+      ?b,
+  ];
+  // 别的设备转发来的 head（`rhd-`，每台取代号最大的一份）：排在作者自写的之后，`relayed` 告诉内核有几份——内核拿它
+  // 认作者公钥、定要拉的段（`seg-` 不在就拉 `rly-`），但不当这个位置的证据。
+  final List<Uint8List> relayedHeads = <Uint8List>[
+    for (final Uint8List? b in await srsRunPooled(
+      <String>[
+        for (final (List<String>, String?) p in headPaths)
+          if (p.$2 != null) p.$2!,
+      ],
       kSrsSync2Concurrency,
       location.get,
     ))
@@ -570,18 +692,22 @@ Future<bool> srsSync2Pull({
   // `location`：内核记下这个位置上有谁的哪些段（别的位置缺、本机可以转发的，见步骤 3 之后的转发）。
   // `location`：内核记下这个位置上每台设备的 head（状态页的「已传到」）；`listing`：各设备目录的文件名（承袭段按
   // 文件名定区间）；`loc`：本位置的 loc 标记（本位置自写的 head 带 `seal` = 位置是加密的）。
-  final Map<String, Object?> plan = (await host.sync2Command(<String, Object?>{
-    'op': 'plan',
-    'location': progressId == null
-        ? kSrs4NoLocation
-        : srsLocationOfProgressId(progressId),
-    'now': nowMs(),
-    'loc': ?loc,
-    'listing': <String, List<String>>{
-      for (final MapEntry<String, List<String>> e in listed.entries)
-        e.key.substring(e.key.indexOf('/') + 1): e.value,
+  final Map<String, Object?> plan = (await host.sync2Command(
+    <String, Object?>{
+      'op': 'plan',
+      'location': progressId == null
+          ? kSrs4NoLocation
+          : srsLocationOfProgressId(progressId),
+      'now': nowMs(),
+      'loc': ?loc,
+      'listing': <String, List<String>>{
+        for (final MapEntry<String, List<String>> e in listed.entries)
+          e.key.substring(e.key.indexOf('/') + 1): e.value,
+      },
+      'relayed': relayedHeads.length,
     },
-  }, blobs: heads)).map;
+    blobs: <Uint8List>[...heads, ...relayedHeads],
+  )).map;
   report.errors.addAll(<String>[
     for (final Object? x in (plan['errors'] as List?) ?? const <Object?>[])
       '$x',
@@ -799,6 +925,13 @@ class _FetchRead {
   final SrsFetchedBatch batch;
   final Object? error;
   final StackTrace? stack;
+}
+
+/// `rhd-<gen>-<tag>.json`（被转发的 head，内核 `gen4/location.rs` `relay_head_name`）的代号；不是返回 null。
+int? _relayHeadGen(String name) {
+  if (!name.startsWith('rhd-') || !name.endsWith('.json')) return null;
+  final List<String> parts = name.substring(4, name.length - 5).split('-');
+  return parts.length == 2 ? int.tryParse(parts[0]) : null;
 }
 
 /// `head-<gen>-<tag>.json` 的代号；不是 head 返回 null。

@@ -21,6 +21,7 @@ import 'package:fushi_engine/srs/srs_profile_link.dart'
 import 'package:fushi_engine/srs/sync2/srs_folder_location.dart';
 import 'package:fushi_engine/srs/sync2/srs_fushisrs.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_crypto.dart';
+import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -721,7 +722,11 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
             subtitle: <String>[
               _purposesLabel(l),
               ?_cryptoLabel(l.locationId),
-              if (errors.containsKey(l.id))
+              if (errors[l.id] case SrsSyncReportError(
+                message: kSrsLocationProtocol1Root,
+              ))
+                t.srs_sync_location_protocol1_root
+              else if (errors.containsKey(l.id))
                 t.srs_timeline_location_unavailable
               else
                 _lastOkLabel(context, lastOk[l.locationId]),

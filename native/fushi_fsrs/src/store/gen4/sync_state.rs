@@ -58,6 +58,9 @@ pub enum LocHeadPut {
     Conflict,
 }
 
+/// 一个位置上本机转发过的一台作者的文件（`relay_out` 主键前缀；查询计划测试用同一份）。
+pub(crate) const RELAY_OUT_OF_SQL: &str = "SELECT name, gen, gone FROM relay_out      WHERE col = ?1 AND loc_key = ?2 AND device = ?3 ORDER BY name";
+
 /// 本机转发到一个位置的一个文件（`relay_out` 的一行）。
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RelayOut {
@@ -370,6 +373,31 @@ impl<'c> Truth<'c> {
                 })
             })
             .collect()
+    }
+
+    /// 位置 [loc] 上本机转发过的作者 [device] 的文件（主键前缀 `(col, loc_key, device)`，[RELAY_OUT_OF_SQL]）。
+    pub fn relay_out_of(&self, col: i64, loc: &str, device: &Id) -> Result<Vec<RelayOut>, String> {
+        let mut stmt = self.conn().prepare_cached(RELAY_OUT_OF_SQL).map_err(sql)?;
+        let rows = stmt
+            .query_map(params![col, loc, &device.0[..]], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, i64>(1)?,
+                    r.get::<_, i64>(2)?,
+                ))
+            })
+            .map_err(sql)?;
+        let mut out = Vec::new();
+        for row in rows {
+            let (name, gen, gone) = row.map_err(sql)?;
+            out.push(RelayOut {
+                device: *device,
+                name,
+                gen: u64_of(gen, "relay gen")?,
+                gone: gone != 0,
+            });
+        }
+        Ok(out)
     }
 
     /// 位置 [loc] 上待删的转发件。

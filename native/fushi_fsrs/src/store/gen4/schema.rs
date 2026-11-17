@@ -63,8 +63,10 @@ use rusqlite::Connection;
 /// 「设备下标 × 2^40 + seq」，不随落库单调，晚到的低下标设备的日志会落在游标之前）；G7-4g 起 `40019`
 /// （AnkiConnect 数字 id 的成员反查表 `anki_members` 与它按笔记维护用的 `anki_members_note`——`cmd/columns.rs`
 /// 按号点查，不再扫别名表逐个算号，`cache.rs` 文件头「表」；`entity_count {kind, limit}` 按种类数到 `limit` 就停用的
-/// `ent_ix` 部分索引 `ent_kind`，`cmd/reads.rs` `each_class`）。整批推送前每个改表的 PR 各自用分到的号。
-pub const SCHEMA: i64 = 40_019;
+/// `ent_ix` 部分索引 `ent_kind`，`cmd/reads.rs` `each_class`）；G8-7b 起 `40021`（转发要的作者段原文 `relay_segs`，
+/// [SYNC]，`cmd/sync_relay.rs`；没有显式索引，[PLANNER_STATS] 不变；40020 预分配给同批别的 PR）。整批推送前每个改表的
+/// PR 各自用分到的号。
+pub const SCHEMA: i64 = 40_021;
 
 /// 新代的号段从这里起：`schema` 小于它的都不是新代库（协议 3 的 1～29 与封存值 39999）。
 pub const GEN_FLOOR: i64 = 40_000;
@@ -305,6 +307,10 @@ CREATE TABLE IF NOT EXISTS loc_state (
 /// - `relay_out`：本机转发到各位置的文件（`rly-` 中继件 / `rhd-` 转发 head）与当时转发的 head 代号；`gone` = 1 是被更新的
 ///   转发取代、等调用方删掉位置上的文件（两段式删除，协议 3 `sync2_relay_out` + `sync2_relay_gone`）。
 /// - `oldroot_fp`：每个位置旧根（`v3/`）上一次核对时的清单指纹与时刻（设计 §6.2 第 4 步「每轮核对旧根」）。
+/// - `relay_segs`（G8-7b 起）：收段时留下的、可以转发给别的位置的作者段原文（不封装的中继件 `FRL4`，`piece`），按
+///   （作者, 区间, 链尾标签）唯一；每个位置都有了就删（`cmd/sync_relay.rs`）。行里是几 KB 到几 MB 的 blob，所以是普通
+///   rowid 表（唯一约束的自动索引承担全部查找：前缀 `(col, device)` 与整键等值），不用 `WITHOUT ROWID`。协议 3
+///   `sync2_relay_segs` 的对应物。
 pub(crate) const SYNC: &str = "
 CREATE TABLE IF NOT EXISTS loc_heads (
   col INTEGER NOT NULL,
@@ -332,6 +338,16 @@ CREATE TABLE IF NOT EXISTS relay_out (
   gone INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (col, loc_key, device, name)
 ) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS relay_segs (
+  id INTEGER PRIMARY KEY,
+  col INTEGER NOT NULL,
+  device BLOB NOT NULL,
+  first INTEGER NOT NULL,
+  last INTEGER NOT NULL,
+  tag TEXT NOT NULL,
+  piece BLOB NOT NULL,
+  UNIQUE (col, device, first, last, tag)
+);
 CREATE TABLE IF NOT EXISTS oldroot_fp (
   col INTEGER NOT NULL,
   loc_key TEXT NOT NULL,
@@ -1041,7 +1057,7 @@ mod tests {
                 .collect::<Result<_, _>>()
                 .unwrap()
         };
-        let want: [(&str, &[&str]); 15] = [
+        let want: [(&str, &[&str]); 16] = [
             (
                 "collections",
                 &[
@@ -1191,6 +1207,18 @@ mod tests {
                     "name TEXT NN PK4",
                     "gen INTEGER NN",
                     "gone INTEGER NN",
+                ],
+            ),
+            (
+                "relay_segs",
+                &[
+                    "id INTEGER PK1",
+                    "col INTEGER NN",
+                    "device BLOB NN",
+                    "first INTEGER NN",
+                    "last INTEGER NN",
+                    "tag TEXT NN",
+                    "piece BLOB NN",
                 ],
             ),
             (

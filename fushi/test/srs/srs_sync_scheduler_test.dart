@@ -2611,6 +2611,13 @@ void main() {
         classifySrsFolderReport(withOps(SrsSync2Report()..needsUpgrade = true)),
         (stopped: false, locationError: kSrsSyncNeedsUpgrade),
       );
+      expect(
+        classifySrsFolderReport(
+          withOps(SrsSync2Report()..error = kSrsLocationProtocol1Root),
+        ),
+        (stopped: false, locationError: kSrsLocationProtocol1Root),
+        reason: '只有协议 1 旧根的位置是这个位置的错，带专门的机读码',
+      );
     });
 
     test('文件夹一轮跑到一半收手：连续失败数不动、不记 folderErrors、不算 ran', () async {

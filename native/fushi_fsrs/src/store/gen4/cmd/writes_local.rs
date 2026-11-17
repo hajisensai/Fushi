@@ -51,6 +51,9 @@ const TEXT_MAX: usize = 64;
 /// 设备行里照抄的扩展键（协议 3 `devices.rs` `EXT_KEYS` 同一组）。
 const EXT_KEYS: [&str; 3] = ["model", "app", "platform"];
 
+/// 设备行 `warning`：对端与本机在同一个版本向量下摘要不同（`digestMismatch`）。
+pub(crate) const DIGEST_MISMATCH_WARNING: &str = "digest mismatch at the same version vector";
+
 fn clip(s: &str) -> String {
     s.trim()
         .chars()
@@ -232,8 +235,10 @@ fn self_view(m: &Map<String, Value>, changed: bool) -> Value {
 /// - `ops`：这个集合全部设备日志的条数（真相层的操作 + 副本记录 + 空洞不算）；`pending`：收到了、因果还没齐的
 ///   （`op_wait`，G8-4）；`migrated` 恒为 true（新代库本来就是迁移之后的）。
 /// - `devices`：真相层登记过的每台设备；`applied` = 本机日志末尾；`behind` = 各位置上它最新 head 的 seq 减
-///   `applied`（不小于 0）；`name` = 对端自报名（`peers`），没有就是空串；`seenAt` / `warning` 为 null、`frozen` /
-///   `digestMismatch` 为 false（协议 3 的这几项来自旧 head 与旧摘要，新代的对应物由 G8-7 接）；`gap` / `blocking`
+///   `applied`（不小于 0）；`name` = 对端自报名（`peers`），没有就是空串；`seenAt` = 本机见过的它最新 head 的写出时刻
+///   （`plan` 记进 `peers.ext`，没见过 = null）；`frozen` = 本机换身份留下的旧身份（`sync_oldroot.rs`
+///   `former_identities`）；`digestMismatch` = 它最近的 head 与本机上次写的 head 是同一个版本向量、摘要却不同（不自动
+///   重建，见交接说明「G8-7b 同步补全」），此时 `warning` = [DIGEST_MISMATCH_WARNING]，否则 null；`gap` / `blocking`
 ///   = 原生等待缓冲 `op_wait` 里卡住的操作按「卡在谁身上」归账（[stuck]，协议 3 `devices.rs` `stuck` 同一个判据）；
 ///   `state` = 同步状态，判定顺序同协议 3 `status_extras`：本机 ok；对端自报的协议（`peers.ext` 的 `v`）低于本版本
 ///   head 声明的最低读者 [crate::gen4::MIN_READER] = upgrade；有 `gap` / `blocking` = missing；落后 = behind；其余 ok。
@@ -329,6 +334,9 @@ pub fn status(t: &Truth<'_>, col: i64) -> Result<Value, String> {
             ops.iter().filter(|o| o.device == *d).count() as i64
         };
         let info = parse_obj(meta_get(t, &self_info_key(col))?);
+        let mine_digest = parse_obj(meta_get(t, &super::sync::self_digest_key(col))?);
+        // 本机换身份留下的旧身份（不再写新操作，同步页标「已冻结」）。
+        let former = super::sync_oldroot::former_identities(t, col)?;
         let mut devices = Vec::with_capacity(rows.len());
         for (id, last) in &rows {
             let d = DevRow {
@@ -338,6 +346,18 @@ pub fn status(t: &Truth<'_>, col: i64) -> Result<Value, String> {
             let is_self = d.id == me.device;
             let peer = t.peer(col, &d.id)?;
             let applied = d.last as i64;
+            let seen = parse_obj(peer.as_ref().and_then(|p| p.ext.clone()));
+            // 摘要核对（交接说明「G8-7b 同步补全」摘要一节）：对端最近一份 head 与本机上次写 head 时是同一个版本向量、
+            // 摘要却不同 = 两边见过同一组操作却算出了不同的状态。新代不自动重建（重建会掩盖派生层的缺陷），只报出来。
+            let mismatch = !is_self
+                && seen
+                    .get(super::sync::SEEN_ACK_KEY)
+                    .and_then(Value::as_str)
+                    .is_some_and(|a| str_of(&mine_digest, "ack") == a)
+                && seen
+                    .get(super::sync::SEEN_DIGEST_KEY)
+                    .and_then(Value::as_str)
+                    .is_some_and(|g| str_of(&mine_digest, "digest") != g);
             let behind = head_seq
                 .get(&d.id.0.to_vec())
                 .map_or(0, |s| (s - applied).max(0));
@@ -346,11 +366,11 @@ pub fn status(t: &Truth<'_>, col: i64) -> Result<Value, String> {
                 "self": is_self,
                 "applied": applied,
                 "behind": behind,
-                "seenAt": Value::Null,
+                "seenAt": seen.get(super::sync::SEEN_AT_KEY).cloned().unwrap_or(Value::Null),
                 "name": peer.as_ref().and_then(|p| p.name.clone()).unwrap_or_default(),
-                "frozen": false,
-                "warning": Value::Null,
-                "digestMismatch": false,
+                "frozen": former.contains(&d.id),
+                "warning": if mismatch { json!(DIGEST_MISMATCH_WARNING) } else { Value::Null },
+                "digestMismatch": mismatch,
             });
             let m = row.as_object_mut().expect("object");
             // 扩展信息：本机取 `device_info` 存的，对端取它自报的（`peers.ext`，G8-7 收 head 时写）。协议 3

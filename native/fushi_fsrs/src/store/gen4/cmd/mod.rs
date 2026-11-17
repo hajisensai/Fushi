@@ -60,7 +60,9 @@ pub mod fushisrs;
 pub mod history;
 pub mod identity;
 pub mod lineage;
+// 媒体同步（G8-7b）：见 [media_sync] 文件头。
 pub mod media_gc;
+pub mod media_sync;
 pub mod preview;
 pub mod profile;
 pub mod profile_data;
@@ -69,6 +71,10 @@ pub mod stats;
 pub mod study;
 // 同步一轮（G8-7）：见 [sync] 文件头。
 pub mod sync;
+// 旧根接手与承袭上传（G8-7b）：见 [sync_oldroot] 文件头。
+pub mod sync_oldroot;
+// 转发（G8-7b）：见 [sync_relay] 文件头。
+pub mod sync_relay;
 pub mod training;
 pub mod views;
 // 写命令的新代实现（规划 §2.1 G7-3b），同样还没接分发器：见 [writes] 文件头。
@@ -93,6 +99,10 @@ mod identity_tests;
 mod refresh_tests;
 #[cfg(test)]
 mod study_tests;
+#[cfg(test)]
+mod sync_complete_tests;
+#[cfg(test)]
+mod sync_relay_tests;
 #[cfg(test)]
 mod sync_tests;
 #[cfg(test)]

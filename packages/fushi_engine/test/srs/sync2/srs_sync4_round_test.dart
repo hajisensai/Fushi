@@ -6,6 +6,8 @@
 // - 发：outbox → 写 → outbox_ack 直到 `more` 为假；被拒（本机日志变了）就不写 head。
 // - head：没变且上次那份还在位置上就不写；上次那份不在了就不带 `skipUnchangedMs` 再要一次。
 // - 收尾：obsolete 给的路径照删。
+// - G8-7b：旧根接手（扫 → 学公钥的 head + 段分批收、最后一批带 settle）、承袭上传（plan → 读 → outbox → 写 → ack；
+//   传不上去的不记指纹）、媒体清单收发、旧身份目录清理、只有协议 1 旧根时 `has2`。
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -199,6 +201,19 @@ void main() {
             'delete': <String>['devices/dev-a/head-000000000001-old.json'],
           }),
         ],
+        // 旧根清单没变、没有承袭日志、位置上没有别的设备的新清单（真内核在这些情形下的回包）。
+        'oldroot_scan': <SrsSync2Result>[
+          _r(<String, Object?>{'changed': false}),
+        ],
+        'heritage_plan': <SrsSync2Result>[
+          _r(<String, Object?>{'skip': true}),
+        ],
+        'media_manifests': <SrsSync2Result>[
+          _r(<String, Object?>{'fetch': <String>[]}),
+        ],
+        'media_manifest_build': <SrsSync2Result>[
+          _r(<String, Object?>{'built': false}),
+        ],
       };
 
   test('一轮按顺序走完：根分到两个根、分批收、分叉收尾、分批发、写 head、删旧的', () async {
@@ -224,12 +239,18 @@ void main() {
       <String>[
         'location_root',
         'plan',
+        'oldroot_scan',
+        'media_manifests',
+        'heritage_plan',
         'outbox',
         'outbox_ack',
         'outbox',
         'outbox_ack',
         'head',
         'obsolete',
+        'media_manifest_build',
+        'relay_outbox',
+        'relay_ack',
       ],
     );
     // 根：新根 meta / loc 标记进 v4，围栏进 v3；墓碑已在，不覆盖。
@@ -458,6 +479,336 @@ void main() {
       expect(host.last('obsolete')['archive'], isTrue);
     },
   );
+
+  test('旧根接手：学公钥的 head 先于段；分批收、重扫后最后一批带 settle 与清单；包在收段会话里', () async {
+    v3.files['devices/old/head-000000000001-aa.json'] = _b('h-old');
+    v3.files['devices/old/seg-000000000001-000000000002-aa.bin'] = _b('s1');
+    v3.files['devices/old/seg-000000000003-000000000004-bb.bin'] = _b('s2');
+    final Map<String, List<SrsSync2Result>> replies = happy()
+      ..['oldroot_scan'] = <SrsSync2Result>[
+        _r(<String, Object?>{
+          'changed': true,
+          'heads': <String>['devices/old/head-000000000001-aa.json'],
+          'fetch': <String>[
+            'devices/old/seg-000000000001-000000000002-aa.bin',
+            'devices/old/seg-000000000003-000000000004-bb.bin',
+          ],
+        }),
+        // 分批收完之后重扫：剩下第二段（还收不了）。
+        _r(<String, Object?>{
+          'changed': true,
+          'heads': <String>[],
+          'fetch': <String>['devices/old/seg-000000000003-000000000004-bb.bin'],
+        }),
+      ]
+      ..['oldroot_ingest'] = <SrsSync2Result>[
+        _r(<String, Object?>{'applied': 2, 'errors': <String>[]}),
+        _r(<String, Object?>{'applied': 0, 'errors': <String>[]}),
+        _r(<String, Object?>{
+          'applied': 0,
+          'errors': <String>['seg-3-4: Deferred'],
+        }),
+      ];
+    final _FakeHost host = _FakeHost(replies);
+    final SrsSync2Report r = await run(host);
+    expect(r.error, isNull);
+    final List<Map<String, Object?>> ings = host.requests
+        .where((Map<String, Object?> q) => q['op'] == 'oldroot_ingest')
+        .toList();
+    // 预算 1 字节：两段各一批（不带 settle），重扫后最后一批带 settle 与整份清单。
+    expect(ings.length, 3);
+    expect(ings[0]['heads'], 1);
+    expect(ings[0]['paths'], <String>[
+      'devices/old/seg-000000000001-000000000002-aa.bin',
+    ]);
+    expect(ings[0].containsKey('settle'), isFalse);
+    expect(ings[1]['heads'], 0);
+    expect(ings[2]['settle'], isTrue);
+    expect(ings[2]['paths'], <String>[
+      'devices/old/seg-000000000003-000000000004-bb.bin',
+    ]);
+    // 整份旧根清单（三个旧设备文件 + 这一轮根立的墓碑 head）。
+    expect(
+      <Object?>[
+        for (final Object? e in ings[2]['listing']! as List)
+          (e! as Map)['path'],
+      ],
+      containsAll(<String>[
+        'devices/old/head-000000000001-aa.json',
+        'devices/old/seg-000000000001-000000000002-aa.bin',
+        'devices/old/seg-000000000003-000000000004-bb.bin',
+      ]),
+    );
+    expect(
+      ings.every((Map<String, Object?> q) => q['location'] == 'L'),
+      isTrue,
+    );
+    expect(r.applied, 2, reason: '新根的段不在位置上，只有旧根落的');
+    expect(r.errors, contains('old root: seg-3-4: Deferred'));
+    // 收新根一段会话、旧根一段会话。
+    expect(host.begins, 2);
+    expect(host.ends, 2);
+    // 旧根接手在发件之前。
+    expect(
+      host.ops().indexOf('oldroot_ingest'),
+      lessThan(host.ops().indexOf('outbox')),
+    );
+  });
+
+  test('承袭上传：读位置上相关的承袭段 → 打包写上 → 记指纹；在本机原生段之前', () async {
+    v4.files['meta.json'] = _b('{"fmt":"m4"}');
+    v4.files['devices/dev-c/hrt-x.bin'] = _b('their heritage');
+    final Map<String, List<SrsSync2Result>> replies = happy()
+      ..['heritage_plan'] = <SrsSync2Result>[
+        _r(<String, Object?>{
+          'skip': false,
+          'read': <String>['devices/dev-c/hrt-x.bin'],
+        }),
+      ]
+      ..['heritage_outbox'] = <SrsSync2Result>[
+        _r(
+          <String, Object?>{
+            'put': 1,
+            'blocked': <Object?>[],
+            'keptForked': <Object?>[],
+            'errors': <String>[],
+          },
+          <(String, Uint8List)>[('devices/dev-a/hrt-mine.bin', _b('mine'))],
+        ),
+      ];
+    final _FakeHost host = _FakeHost(replies);
+    final SrsSync2Report r = await run(host);
+    expect(r.error, isNull);
+    expect(utf8.decode(v4.files['devices/dev-a/hrt-mine.bin']!), 'mine');
+    final Map<String, Object?> out = host.last('heritage_outbox');
+    expect(out['paths'], <String>['devices/dev-c/hrt-x.bin']);
+    // 记指纹时的清单里有刚写上的那份。
+    final Map<String, Object?> ack = host.last('heritage_ack');
+    expect((ack['listing']! as Map)['dev-a'], contains('hrt-mine.bin'));
+    final List<String> ops = host.ops();
+    expect(ops.indexOf('heritage_ack'), lessThan(ops.indexOf('outbox')));
+    expect(r.uploaded, 1 + 2);
+  });
+
+  test('承袭上传有传不上去的地方：报进 errors、不记指纹', () async {
+    final Map<String, List<SrsSync2Result>> replies = happy()
+      ..['heritage_plan'] = <SrsSync2Result>[
+        _r(<String, Object?>{'skip': false, 'read': <String>[]}),
+      ]
+      ..['heritage_outbox'] = <SrsSync2Result>[
+        _r(<String, Object?>{
+          'put': 0,
+          'blocked': <Object?>[
+            <Object?>['dev-old', 3, 9],
+          ],
+          'keptForked': <Object?>[],
+          'errors': <String>[],
+        }),
+      ];
+    final _FakeHost host = _FakeHost(replies);
+    final SrsSync2Report r = await run(host);
+    expect(host.ops(), isNot(contains('heritage_ack')));
+    expect(r.errors.any((String e) => e.contains('dev-old')), isTrue);
+  });
+
+  test('媒体清单：收别的设备的（读不到的标 present=false）；head 之后发本机的、写上再确认', () async {
+    v4.files['meta.json'] = _b('{"fmt":"m4"}');
+    v4.files['devices/dev-b/mf-000000000001-aa.bin'] = _b('mf-b');
+    final Map<String, List<SrsSync2Result>> replies = happy()
+      ..['media_manifests'] = <SrsSync2Result>[
+        _r(<String, Object?>{
+          'fetch': <String>[
+            'devices/dev-b/mf-000000000001-aa.bin',
+            'devices/dev-b/mf-000000000002-bb.bin',
+          ],
+        }),
+      ]
+      ..['media_manifest_ingest'] = <SrsSync2Result>[
+        _r(<String, Object?>{'ingested': 1, 'errors': <String>[]}),
+      ]
+      ..['media_manifest_build'] = <SrsSync2Result>[
+        _r(
+          <String, Object?>{
+            'built': true,
+            'path': 'devices/dev-a/mf-000000000004-cc.bin',
+            'gen': 4,
+          },
+          <(String, Uint8List)>[
+            ('devices/dev-a/mf-000000000004-cc.bin', _b('mf-a')),
+          ],
+        ),
+      ];
+    v4.files['devices/dev-a/mf-000000000003-zz.bin'] = _b('mine before');
+    final _FakeHost host = _FakeHost(replies);
+    final SrsSync2Report r = await run(host);
+    expect(r.error, isNull);
+    final Map<String, Object?> ing = host.last('media_manifest_ingest');
+    expect(ing['location'], 'L');
+    expect(ing['present'], <bool>[true, false]);
+    expect(host.last('media_manifest_build')['ownGens'], <int>[3]);
+    expect(host.last('media_manifest_build')['loc'], 'LOC1');
+    expect(
+      utf8.decode(v4.files['devices/dev-a/mf-000000000004-cc.bin']!),
+      'mf-a',
+    );
+    final List<String> ops = host.ops();
+    // 本机清单发完才轮到转发（一轮的最后一步）。
+    expect(
+      ops.indexOf('media_manifest_published'),
+      lessThan(ops.indexOf('relay_outbox')),
+    );
+    expect(ops.last, 'relay_ack');
+    expect(
+      ops.indexOf('media_manifest_ingest'),
+      lessThan(ops.indexOf('outbox')),
+    );
+  });
+
+  test('转发：一批写完再确认、要下一批；被取代的旧件删掉后报回 deleted；归档位置不删也报回', () async {
+    for (final bool archive in <bool>[false, true]) {
+      v4.files['meta.json'] = _b('{"fmt":"m4"}');
+      v4.files['devices/dev-x/rhd-000000000001-old.json'] = _b('old rhd');
+      final Map<String, List<SrsSync2Result>> replies = happy()
+        ..['relay_outbox'] = <SrsSync2Result>[
+          _r(
+            <String, Object?>{
+              'files': <String>[
+                'devices/dev-x/rly-000000000001-000000000002-aa.bin',
+              ],
+              'more': true,
+            },
+            <(String, Uint8List)>[
+              (
+                'devices/dev-x/rly-000000000001-000000000002-aa.bin',
+                _b('piece'),
+              ),
+            ],
+          ),
+          _r(
+            <String, Object?>{
+              'files': <String>['devices/dev-x/rhd-000000000002-aa.json'],
+              'more': false,
+            },
+            <(String, Uint8List)>[
+              ('devices/dev-x/rhd-000000000002-aa.json', _b('new rhd')),
+            ],
+          ),
+        ]
+        ..['relay_ack'] = <SrsSync2Result>[
+          _r(<String, Object?>{'delete': <String>[]}),
+          _r(<String, Object?>{
+            'delete': <String>['devices/dev-x/rhd-000000000001-old.json'],
+          }),
+          _r(<String, Object?>{'delete': <String>[]}),
+        ];
+      final _FakeHost host = _FakeHost(replies);
+      final SrsSync2Report r = await srsSync2Round(
+        host: host,
+        location: v4,
+        oldRoot: v3,
+        locationId: 'L',
+        nowMs: () => 1000,
+        archive: archive,
+      );
+      expect(r.error, isNull);
+      expect(r.relayed, 2);
+      expect(
+        utf8.decode(
+          v4.files['devices/dev-x/rly-000000000001-000000000002-aa.bin']!,
+        ),
+        'piece',
+      );
+      final List<Map<String, Object?>> acks = <Map<String, Object?>>[
+        for (final Map<String, Object?> q in host.requests)
+          if (q['op'] == 'relay_ack') q,
+      ];
+      expect(acks, hasLength(3));
+      expect(acks[0]['paths'], <String>[
+        'devices/dev-x/rly-000000000001-000000000002-aa.bin',
+      ]);
+      expect(acks[1]['paths'], <String>[
+        'devices/dev-x/rhd-000000000002-aa.json',
+      ]);
+      expect(acks[2]['deleted'], <String>[
+        'devices/dev-x/rhd-000000000001-old.json',
+      ]);
+      expect(
+        acks.every((Map<String, Object?> q) => q['location'] == 'L'),
+        isTrue,
+      );
+      expect(
+        v4.files.containsKey('devices/dev-x/rhd-000000000001-old.json'),
+        archive,
+        reason: 'an archive location keeps the superseded relay head',
+      );
+    }
+  });
+
+  test('旧身份目录：obsolete 报的 former 逐个交 obsolete_former，给的路径照删', () async {
+    v4.files['meta.json'] = _b('{"fmt":"m4"}');
+    v4.files['devices/dev-old/head-000000000001-aa.json'] = _b('h1');
+    v4.files['devices/dev-old/seg-000000000001-000000000002-aa.bin'] = _b('s');
+    final Map<String, List<SrsSync2Result>> replies = happy()
+      ..['obsolete'] = <SrsSync2Result>[
+        _r(<String, Object?>{
+          'delete': <String>[],
+          'former': <String>['dev-old'],
+        }),
+      ]
+      ..['obsolete_former'] = <SrsSync2Result>[
+        _r(<String, Object?>{
+          'delete': <String>['devices/dev-old/head-000000000001-aa.json'],
+        }),
+      ];
+    final _FakeHost host = _FakeHost(replies);
+    await run(host);
+    final Map<String, Object?> f = host.last('obsolete_former');
+    expect(f['device'], 'dev-old');
+    expect(
+      f['present'],
+      containsAll(<String>[
+        'head-000000000001-aa.json',
+        'seg-000000000001-000000000002-aa.bin',
+      ]),
+    );
+    expect(
+      v4.files.containsKey('devices/dev-old/head-000000000001-aa.json'),
+      isFalse,
+    );
+    expect(
+      v4.files.containsKey(
+        'devices/dev-old/seg-000000000001-000000000002-aa.bin',
+      ),
+      isTrue,
+    );
+  });
+
+  test('只有协议 1 旧根：带 has2，拒绝时把机读码放进错误', () async {
+    final SrsMemoryLocationStore v2 = SrsMemoryLocationStore();
+    v2.files['meta.json'] = _b('{"v":1}');
+    final _FakeHost host = _FakeHost(<String, List<SrsSync2Result>>{
+      'location_root': <SrsSync2Result>[
+        _r(<String, Object?>{
+          'state': 'refused',
+          'code': 'srs_location_protocol1_root',
+          'error': 'protocol 1 layout',
+        }),
+      ],
+    });
+    final SrsSync2Report r = await srsSync2Round(
+      host: host,
+      location: v4,
+      oldRoot: v3,
+      protocol1Root: v2,
+      locationId: 'L',
+      nowMs: () => 1000,
+    );
+    expect(host.last('location_root')['has2'], isTrue);
+    expect(r.error, kSrsLocationProtocol1Root);
+    expect(host.ops(), isNot(contains('plan')));
+    expect(v4.files, isEmpty);
+    expect(v3.files, isEmpty);
+  });
 
   test('只走根这一步（只做媒体的位置）：没过就返回 null、什么都不写', () async {
     final _FakeHost host = _FakeHost(<String, List<SrsSync2Result>>{

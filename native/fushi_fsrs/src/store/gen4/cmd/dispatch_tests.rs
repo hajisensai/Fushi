@@ -26,7 +26,7 @@ use crate::store::ffi::{
 };
 use crate::store::gen4::cache::CFG_KEY;
 use crate::store::gen4::files::{GEN4_FILE, GenLock, LEGACY_FILE, OpenMode};
-use crate::store::gen4::kernel::{G4Core, READ_ONLY, REMOVED, UNWIRED, global};
+use crate::store::gen4::kernel::{G4Core, READ_ONLY, REMOVED, global};
 use crate::store::gen4::truth::Truth;
 use crate::store::sync2::config::default_deck_id;
 use crate::store::sync2::tests::{DAY, Device, P, edit, review, tempdir};
@@ -751,11 +751,8 @@ fn a_migration_cancelled_before_it_starts_does_nothing() {
 #[test]
 fn unwired_and_removed_commands_name_their_owner() {
     let m = migrated();
-    for (op, owner) in [("relay_outbox", "G8-7b")] {
-        let (rc, e) = call(m.h, &g4req(op, T1, json!({})), None).unwrap_err();
-        assert_eq!(rc, STORE_ERROR, "{op}");
-        assert!(e.contains(UNWIRED) && e.contains(owner), "{op}: {e}");
-    }
+    // W3 合流后已没有未接线命令（relay_outbox 归 G8-7b、profile_merge_mark 归 G9-5 删除），未接线臂由 ffi.rs 的
+    // 全量分类测试兜底。
     for op in [
         "channel_settle",
         "migrate",
