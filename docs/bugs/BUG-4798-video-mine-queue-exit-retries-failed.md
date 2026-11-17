@@ -3,7 +3,7 @@
 - **真实性**：✅ 真 bug。两处根因：
   - `fushi/lib/src/mining/video_mine_queue.dart:156`（修前）`_commitAllLocked` 开头无条件 `requeueFailed(bookUid)`；而 `fushi/lib/src/media/video/video_mine_queue_dialog.dart:74-86`（修前）离开播放页时只要 pending **或 failed** 非空就 `commitAll`。失败行里有永久性的——重复卡（`:232-238` 标 `duplicate`）、暂存媒体没了（`:195-199`）——于是用户每退出一次这部视频，这些卡就被重新排队、再打一遍 Anki、再弹一次「N 张失败」，永远清不掉，除非进列表手动删。
   - `fushi/lib/src/mining/web_mine_queue_store.dart:75-85`（修前）`markDone` 只把状态改成 `done`、不删行；`done` 行全仓没有读取方（列表 / 角标 / 调度只看 pending 与 failed），唯一的清理 `deleteFinished` 在 `lib` 下零调用。每张写完的卡连同整份 `fieldsJson`（Anki 字段，含词典释义）永久留在 `web_mine_queue` 里，本地暂存与网页档重放两条路径都如此。
-- **[x] ① 已修复**（`86e285e827e`）—
+- **[x] ① 已修复**（`86e285e827e`、`6b8a5641214`）—
   - `VideoMineQueue.commitAll` 加必填参数 `retryFailed`，由入口决定要不要重排失败行：待制卡列表的「全部写入」（`video_fushi/mine_queue.part.dart` `_commitStagedMines`）与 `video mine-send`（`ctl_video_player_routes.dart`）传 `true`；离开播放页的自动写入传 `false`，且只在有 pending 行时才跑（`commitPendingVideoMines`）。失败行原样留在列表与角标里，等用户看到原因后重试或丢弃。提交逻辑仍是一套。
   - `WebMineQueueStore.markDone` 改为直接删行（只按 id），不升 schema、不改表名与列。旧版本留下的 `done` 行由 `deleteDone()`（只删 `done`）收，经 `sweepLegacyDone()` 每个库只扫一遍，挂在两条队列各自的入口：网页档后台调度的 `pendingBookUids()` 与本地视频播放页角标的 `VideoMineQueue.openCount()`——不等「下一张卡写成功」。网页档成功行带的 warning（如 `loopback_empty`）原来写在完成行的 `error` 列，行出表后改记一条诊断日志（`web_mine_queue.markDone`，带行 id 与 noteId）。零调用且会连 failed 一起删的 `deleteFinished` 删除。
   - 退出写入「这一趟有没有东西可写」改在 `commitAll` 的串行链里面判（看实际处理的行数，0 行返回 `null` 不报 toast），不在排队前先查 pending：排队期间另一次写入可能正好把这些行写完，先查的那一眼会过期并报出「成功 0、失败 0」。
