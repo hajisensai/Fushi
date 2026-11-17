@@ -11,6 +11,9 @@
 ///   的另一条 title（库里没有行的原盘 title，远端原盘会话用），经注入的
 ///   [resolveDiscTitlePath] 定位，不能与 `episode` 同给。capability 的
 ///   `acceptsDiscTitle` 声明认这个参数——老 host 不认，会静默跑 `videoId` 那一行；
+///   `discTitle` 也可以是多角度 title 的角度成员路径（`BDMV/PLAYLIST/00001.a2.mpls`，
+///   `bluray_angle.dart`），按该角度的片段抽取。capability 的 `acceptsDiscTitleAngle`
+///   声明认它——老 host 读不到这个虚拟路径，会报找不到这条 title；
 /// - `collectionId`：整季——合集的全部视频成员按成员顺序排队，已有
 ///   `<视频名>.<后缀>.srt` 的集跳过；
 /// - 都不给：用上传的输入（`input` 指名一个，否则全部上传的视频文件；可带 `title`
@@ -392,6 +395,10 @@ class VideoSubtitleHostJobRunner implements HostJobRunner {
       // 认 `discTitle`（同一张蓝光盘上库里没有行的 title）。老 host 没有这个位，收到
       // `discTitle` 会照 `videoId` 那一行跑：提交方据此决定远端原盘的 title 能不能交给它。
       'acceptsDiscTitle':
+          resolveVideoPath != null && resolveDiscTitlePath != null,
+      // `discTitle` 认多角度 title 的角度成员路径（`00001.a2.mpls`）：蓝光成员的存在性与
+      // 抽取都经 `bluray_angle.dart` 按角度读。老 host 没有这个位，提交方不发角度路径。
+      'acceptsDiscTitleAngle':
           resolveVideoPath != null && resolveDiscTitlePath != null,
       'acceptsCollectionId': database != null,
       'proofreadAvailable': proofreadProvider() != null,

@@ -16,6 +16,10 @@ import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_h
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_pipeline.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_recognizer.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_recognizer_factory.dart';
+import 'package:fushi_engine/media/video/video_local_files.dart'
+    show videoBookDiscTitlePath;
+import 'package:fushi_engine/media/video/video_member_file.dart'
+    show hasLocalMediaFile;
 import 'package:fushi_engine/sync/host_jobs/host_job_runner.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -417,6 +421,55 @@ void main() {
     },
   );
 
+  test('多角度 title 的角度成员路径（discTitle）：按 host 的装配定位，产物按角度分开落 disc_out', () async {
+    final Directory disc = Directory(p.join(tmp.path, 'lib', 'Angle Disc'));
+    final Directory playlist = Directory(p.join(disc.path, 'BDMV', 'PLAYLIST'))
+      ..createSync(recursive: true);
+    final File main = File(p.join(playlist.path, '00001.mpls'))
+      ..writeAsBytesSync(<int>[1, 2, 3]);
+    // 与 app 主机 / fushi_server 的 resolveDiscTitlePath 同一装配：由这一行的盘根拼出
+    // title 路径，再按「本机能读到媒体」判。
+    final VideoSubtitleHostJobRunner r = runner(
+      resolveVideo: (String id, {int episodeIndex = 0}) async =>
+          id == 'v1' ? main.path : null,
+      resolveDiscTitle: (String id, String title) async {
+        if (id != 'v1') return null;
+        final String? path = videoBookDiscTitlePath(
+          videoPath: main.path,
+          discTitle: title,
+        );
+        return path != null && await hasLocalMediaFile(path) ? path : null;
+      },
+    );
+    expect((await r.capability())['acceptsDiscTitleAngle'], isTrue);
+    final (HostJobContext ctx, _) = context(const <String, Object?>{
+      'proofread': false,
+      'videoId': 'v1',
+      'discTitle': 'BDMV/PLAYLIST/00001.a2.mpls',
+    });
+    r.validateParams(ctx.params);
+    final HostJobOutcome outcome = await r.run(ctx);
+    expect(outcome.outputs, contains('00001.a2.ja.srt'));
+    final String angle = p.join(playlist.path, '00001.a2.mpls');
+    expect(
+      File(
+        p.join(
+          videoSubtitleDiscExportDir(
+            Directory(p.join(tmp.path, 'pipeline')),
+            angle,
+          )!.path,
+          '00001.a2.ja.srt',
+        ),
+      ).existsSync(),
+      isTrue,
+    );
+    expect(
+      playlist.listSync().map((FileSystemEntity e) => p.basename(e.path)),
+      <String>['00001.mpls'],
+      reason: '角度成员路径是虚拟的，盘结构里不能多出文件',
+    );
+  });
+
   test('播放列表第 N 集：集下标交给 resolveVideoPath，字幕写在那一集旁', () async {
     final Directory lib = Directory(p.join(tmp.path, 'lib', 'Show'))
       ..createSync(recursive: true);
@@ -669,6 +722,7 @@ void main() {
     );
     // 没接 resolveDiscTitlePath 的 host 不认 discTitle（老 host 形状）。
     expect(cap['acceptsDiscTitle'], isFalse);
+    expect(cap['acceptsDiscTitleAngle'], isFalse);
     expect(
       (await runner(
         resolveVideo: (String _, {int episodeIndex = 0}) async => null,

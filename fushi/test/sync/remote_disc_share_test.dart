@@ -490,6 +490,29 @@ void main() {
       expect(bonus.key, isNot(s.hostTitleFor(member(s, '00006.mpls'))!.key));
     });
 
+    test('多角度 title 的非第 1 个角度：按 title 找行，总带角度成员路径的 discTitle', () {
+      final RemoteDiscMenuSource s = source();
+      // host 库里有这条 title 的行：仍用它，但要 host 按第 2 个角度读。
+      final RemoteDiscHostTitle angle = s.hostTitleFor(
+        member(s, '00001.a2.mpls'),
+      )!;
+      expect(angle.videoId, 'host/t1');
+      expect(angle.memberPath, 'BDMV/PLAYLIST/00001.a2.mpls');
+      expect(angle.discTitle, 'BDMV/PLAYLIST/00001.a2.mpls');
+      expect(angle.readsAngle, isTrue);
+      expect(angle.key, isNot(s.hostTitleFor(member(s, '00001.mpls'))!.key));
+      // 库里没有行的 title：同盘锚点 + 角度成员路径。
+      final RemoteDiscHostTitle bonus = s.hostTitleFor(
+        member(s, '00005.a3.mpls'),
+      )!;
+      expect(bonus.videoId, 'host/t1');
+      expect(bonus.discTitle, 'BDMV/PLAYLIST/00005.a3.mpls');
+      expect(bonus.readsAngle, isTrue);
+      // 第 1 个角度不带后缀，老 host 也认。
+      expect(s.hostTitleFor(member(s, '00001.mpls'))!.readsAngle, isFalse);
+      expect(s.hostTitleFor(member(s, '00005.mpls'))!.readsAngle, isFalse);
+    });
+
     test('不在这张盘的身份根下 / DVD title / 没有蓝光行可当锚点 → null', () {
       final RemoteDiscMenuSource s = source();
       expect(

@@ -244,7 +244,9 @@ void main() {
         .split('bool get _subtitleAppliesInMemory')[0];
     expect(locate, contains('controller.isRemoteDiscSession'));
     expect(locate, contains('_discLearningBlocked'));
-    expect(locate, contains('source.hostTitleFor(path)'));
+    // 多角度 title 按正在播的角度交给 host（角度成员路径）。
+    expect(locate, contains('discExtractionPathForAngle('));
+    expect(locate, contains('source.hostTitleFor(member)'));
 
     final String router = source
         .split('Future<void> _openSubtitleGeneration(')[1]

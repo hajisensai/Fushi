@@ -159,6 +159,16 @@ void main() {
       );
     });
 
+    test('多角度 title 的角度成员路径也能定位（host 按角度读）', () {
+      expect(
+        videoBookDiscTitlePath(
+          videoPath: main,
+          discTitle: 'BDMV/PLAYLIST/00001.a2.mpls',
+        ),
+        p.join(root, 'BDMV', 'PLAYLIST', '00001.a2.mpls'),
+      );
+    });
+
     test('走不出这张盘、不是蓝光播放列表、锚点不是蓝光行 → null', () {
       for (final String bad in <String>[
         '',

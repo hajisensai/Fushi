@@ -1973,7 +1973,15 @@ extension _VideoSubtitle on _VideoFushiPageState {
       return null;
     }
     final String? path = controller.selectedDiscPlaylistPath;
-    return path == null ? null : source.hostTitleFor(path);
+    if (path == null || !isBlurayPlaylistPath(path)) return null;
+    // 多角度 title 按正在播的角度交给 host（角度成员路径 `00001.a2.mpls`）；角度还没报
+    // 上来时与本机抽取同口径，不定位。
+    final String? member = discExtractionPathForAngle(
+      path,
+      angle: controller.discNavigationState?.angle ?? -1,
+      dvd: false,
+    );
+    return member == null ? null : source.hostTitleFor(member);
   }
 
   /// 生成 / 转录 / 重定时得到的字幕只在内存里应用（[_applyRemoteSubtitle]），不落本机库：

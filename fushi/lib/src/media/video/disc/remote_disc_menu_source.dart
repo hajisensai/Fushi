@@ -1,6 +1,8 @@
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:fushi_engine/media/video/bluray/bluray_angle.dart'
+    show blurayAngleBaseMemberPath, parseBlurayAnglePath;
 import 'package:fushi_engine/media/video/bluray/bluray_menu_info.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_source.dart'
     show isBlurayPlaylistPath;
@@ -49,6 +51,11 @@ class RemoteDiscMenuSource {
   /// （菜单里的特典等）就用盘上任一条蓝光行当锚点、带上相对盘根的 title 路径，由 host
   /// 按（盘, title）定位（字幕任务的 `discTitle`、`clipaudio?discTitle=`）。
   ///
+  /// 会话正放多角度 title 的第 N 个角度时，[sessionMemberPath] 是角度成员路径
+  /// （`00001.a2.mpls`，见 `bluray_angle.dart`）：按不带角度的那条找 host 行，但总带
+  /// `discTitle`（= 角度成员路径），让 host 按该角度读（要 host 声明认角度路径，见
+  /// [RemoteDiscHostTitle.readsAngle]）。
+  ///
   /// 不在这张盘的身份根下、不是蓝光播放列表（DVD title：DVD 的媒体要经原生 libdvdnav
   /// 按 title 读，host 上的 ffmpeg 读不了，`hasLocalMediaFile` 对它恒假）、或共享里
   /// 没有任何蓝光行可当锚点 → null。
@@ -66,10 +73,19 @@ class RemoteDiscMenuSource {
       return null;
     }
     final String memberPath = rel.join('/');
-    final String key = memberPath.toUpperCase();
+    final bool angle = parseBlurayAnglePath(rel[2]) != null;
+    final String key = <String>[
+      rel[0],
+      rel[1],
+      blurayAngleBaseMemberPath(rel[2]),
+    ].join('/').toUpperCase();
     for (final RemoteDiscShareTitle t in share.titles) {
       if (t.path.toUpperCase() == key) {
-        return RemoteDiscHostTitle(videoId: t.id, memberPath: memberPath);
+        return RemoteDiscHostTitle(
+          videoId: t.id,
+          memberPath: memberPath,
+          discTitle: angle ? memberPath : null,
+        );
       }
     }
     for (final RemoteDiscShareTitle t in share.titles) {
@@ -145,9 +161,14 @@ class RemoteDiscHostTitle {
   /// 相对盘根的成员路径（`BDMV/PLAYLIST/00800.mpls`），总有。
   final String memberPath;
 
-  /// host 库里没有这条 title 的行时要 host 按（盘, title）定位的 title（= [memberPath]）；
-  /// null = [videoId] 就是这条 title。
+  /// host 库里没有这条 title 的行、或要按非第 1 个角度读时，要 host 按（盘, title）定位
+  /// 的 title（= [memberPath]）；null = [videoId] 就是这条 title。
   final String? discTitle;
+
+  /// [discTitle] 是多角度 title 的角度成员路径（`00001.a2.mpls`）：host 要声明认角度路径
+  /// （字幕任务 `acceptsDiscTitleAngle`、`liveLibrary.videoClipAudioDiscTitleAngle`）才发。
+  bool get readsAngle =>
+      discTitle != null && parseBlurayAnglePath(discTitle!) != null;
 
   /// 同一张盘上各条 title 互不相同的稳定标识（任务键、落盘名用）。
   String get key => discTitle == null ? videoId : '$videoId@$discTitle';

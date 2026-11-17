@@ -17,6 +17,8 @@ import 'package:fushi_engine/sync/tag_sync.dart';
 import 'package:fushi_engine/sync/video_metadata_manifest.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
+import 'package:fushi_engine/media/video/bluray/bluray_angle.dart'
+    show parseBlurayAnglePath;
 import 'package:fushi_engine/sync/interconnect_dav_tree_listing.dart';
 import 'package:fushi_engine/sync/pdf_sync_package.dart'
     show interconnectHostAcceptsPdfBooks;
@@ -3567,6 +3569,8 @@ class InterconnectSyncBackend extends SyncBackend
   /// `BDMV/PLAYLIST/<名>.mpls`），不与 [episodeIndex] 同给。要 host 声明
   /// `liveLibrary.videoClipAudioDiscTitle`：老 host 不认 `discTitle`，会照 [id] 那一行裁出
   /// 另一条 title 的音频，所以不支持时抛 [RemoteDiscTitleAudioUnsupported]、不发请求。
+  /// [discTitle] 是多角度 title 的角度成员路径（`00001.a2.mpls`）时还要 host 声明
+  /// `liveLibrary.videoClipAudioDiscTitleAngle`，否则同样抛、不发请求。
   Future<void> getRemoteVideoAudioClip(
     String id,
     File dest, {
@@ -3585,7 +3589,9 @@ class InterconnectSyncBackend extends SyncBackend
       if (episodeIndex > 0) {
         throw ArgumentError('episodeIndex and discTitle are exclusive');
       }
-      if (!await hostSupportsDiscTitleAudio()) {
+      if (!await hostSupportsDiscTitleAudio() ||
+          (parseBlurayAnglePath(discTitle) != null &&
+              !await hostSupportsDiscTitleAngleAudio())) {
         throw const RemoteDiscTitleAudioUnsupported();
       }
     }
@@ -3613,6 +3619,12 @@ class InterconnectSyncBackend extends SyncBackend
   /// 会话按盘 + title 裁音频）。与默认字幕上传共用同一份按 host 缓存的能力表。
   Future<bool> hostSupportsDiscTitleAudio() async =>
       (await _liveLibraryCapabilities())[kVideoClipAudioDiscTitleCapability] ==
+      true;
+
+  /// host 是否声明 `liveLibrary.videoClipAudioDiscTitleAngle`（`clipaudio?discTitle=` 认
+  /// 多角度 title 的角度成员路径，按会话里正在播的角度裁）。
+  Future<bool> hostSupportsDiscTitleAngleAudio() async =>
+      (await _liveLibraryCapabilities())[kVideoClipAudioDiscTitleAngleCapability] ==
       true;
 
   String? _clipExportCapabilityScope;

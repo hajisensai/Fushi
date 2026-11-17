@@ -565,6 +565,7 @@ void main() {
       final (int code, Map<dynamic, dynamic> live) = await capabilities(base);
       expect(code, 200);
       expect(live[kVideoClipAudioDiscTitleCapability], isFalse);
+      expect(live[kVideoClipAudioDiscTitleAngleCapability], isFalse);
       expect(
         await get(
           base,
@@ -590,6 +591,7 @@ void main() {
         final String at = 'http://127.0.0.1:${discServer.port}';
         final (int _, Map<dynamic, dynamic> live) = await capabilities(at);
         expect(live[kVideoClipAudioDiscTitleCapability], isTrue);
+        expect(live[kVideoClipAudioDiscTitleAngleCapability], isTrue);
         expect(
           await get(
             at,

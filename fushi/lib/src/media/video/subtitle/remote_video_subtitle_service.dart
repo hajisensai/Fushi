@@ -14,7 +14,10 @@
 ///   （相对盘根的 `BDMV/PLAYLIST/<名>.mpls`），host 按（盘, title）定位，产物落 host 的
 ///   `disc_out`、随任务产物取回。老 host 不认 `discTitle`（会静默跑锚点那一行），所以
 ///   只有 capability 声明 `acceptsDiscTitle` 才发；否则
-///   [RemoteVideoSubtitleJobStatus.discTitleUnsupported]，不发任务。
+///   [RemoteVideoSubtitleJobStatus.discTitleUnsupported]，不发任务。会话正放多角度 title
+///   的非第 1 个角度时 `discTitle` 是角度成员路径（`00001.a2.mpls`），还要 host 声明
+///   `acceptsDiscTitleAngle`（老 host 读不到这个虚拟路径），否则同样
+///   [RemoteVideoSubtitleJobStatus.discTitleUnsupported]。
 /// - 整季（远端合集）：wire 上的远端视频只带合集**名**、不带 host 的合集 id，所以按
 ///   成员逐集提交 `videoId` 任务。host 侧 `SubtitleWorkContextLoader.forBook` 会把合集
 ///   成员解析到同一个作品键（`collection:<host 合集 id>`），各集共用 host 上的同一张
@@ -30,6 +33,8 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
+import 'package:fushi_engine/media/video/bluray/bluray_angle.dart'
+    show parseBlurayAnglePath;
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_host_job_runner.dart'
     show kVideoSubtitleJobKind, kVideoSubtitleSummaryOutput;
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_pipeline.dart'
@@ -160,6 +165,13 @@ class RemoteVideoSubtitleTarget {
   /// 有没有要 host 按（盘, title）定位的原盘 title（要 host 声明 `acceptsDiscTitle`）。
   bool get needsDiscTitleSupport =>
       episodes.any((RemoteVideoSubtitleEpisode e) => e.discTitle != null);
+
+  /// 有没有按多角度 title 的角度成员路径定位的原盘 title（要 host 声明
+  /// `acceptsDiscTitleAngle`）。
+  bool get needsDiscTitleAngleSupport => episodes.any(
+    (RemoteVideoSubtitleEpisode e) =>
+        e.discTitle != null && parseBlurayAnglePath(e.discTitle!) != null,
+  );
 }
 
 /// 远端任务的选项（AI 提供商是 host 自己的，不在这里）。
@@ -307,6 +319,13 @@ bool hostAcceptsVideoSubtitleDiscTitle(HostJobTarget target) {
   return entry is Map && entry['acceptsDiscTitle'] == true;
 }
 
+/// host 的 `video_subtitle` 能力里有没有 `acceptsDiscTitleAngle`（`discTitle` 认多角度
+/// title 的角度成员路径 `00001.a2.mpls`）。老 host 没有这个位：它读不到这个虚拟路径。
+bool hostAcceptsVideoSubtitleDiscTitleAngle(HostJobTarget target) {
+  final Object? entry = target.capability[kVideoSubtitleJobKind];
+  return entry is Map && entry['acceptsDiscTitleAngle'] == true;
+}
+
 /// host 报错的原话：HTTP 错误体是 `{"error": "..."}` 时取 `error`，否则原样。
 String remoteVideoSubtitleErrorText(Object error) {
   if (error is HostJobRemoteException) {
@@ -396,8 +415,10 @@ class RemoteVideoSubtitleService {
         job._finish(RemoteVideoSubtitleJobStatus.episodeUnsupported);
         return;
       }
-      if (job.target.needsDiscTitleSupport &&
-          !hostAcceptsVideoSubtitleDiscTitle(target)) {
+      if ((job.target.needsDiscTitleSupport &&
+              !hostAcceptsVideoSubtitleDiscTitle(target)) ||
+          (job.target.needsDiscTitleAngleSupport &&
+              !hostAcceptsVideoSubtitleDiscTitleAngle(target))) {
         job._finish(RemoteVideoSubtitleJobStatus.discTitleUnsupported);
         return;
       }

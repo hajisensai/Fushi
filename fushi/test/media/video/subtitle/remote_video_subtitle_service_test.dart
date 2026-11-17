@@ -307,6 +307,65 @@ void main() {
       expect(host.submitted, isEmpty, reason: '老 host 会静默跑锚点那一行');
     });
 
+    test('多角度 title：host 没声明 acceptsDiscTitleAngle 不发，声明了才带角度成员路径', () async {
+      const RemoteVideoSubtitleTarget angle = RemoteVideoSubtitleTarget(
+        title: 'Disc · 00001',
+        episodes: <RemoteVideoSubtitleEpisode>[
+          RemoteVideoSubtitleEpisode(
+            videoId: 'disc-main',
+            discTitle: 'BDMV/PLAYLIST/00001.a2.mpls',
+            title: 'Disc · 00001',
+          ),
+        ],
+      );
+      expect(angle.needsDiscTitleAngleSupport, isTrue);
+      expect(bonus.needsDiscTitleAngleSupport, isFalse);
+      final FakeHostPort old = FakeHostPort(
+        target: hostTarget(
+          <String>['video_subtitle'],
+          capability: const <String, Object?>{
+            'video_subtitle': <String, Object?>{'acceptsDiscTitle': true},
+          },
+        ),
+        script: exportEpisode,
+      );
+      final RemoteVideoSubtitleJob rejected = service(
+        old,
+      ).start(angle, const RemoteVideoSubtitleOptions());
+      await rejected.done;
+      expect(
+        rejected.status,
+        RemoteVideoSubtitleJobStatus.discTitleUnsupported,
+      );
+      expect(old.submitted, isEmpty, reason: '老 host 读不到角度成员路径');
+
+      final FakeHostPort host = FakeHostPort(
+        target: hostTarget(
+          <String>['video_subtitle'],
+          capability: const <String, Object?>{
+            'video_subtitle': <String, Object?>{
+              'acceptsDiscTitle': true,
+              'acceptsDiscTitleAngle': true,
+            },
+          },
+        ),
+        script: exportEpisode,
+      );
+      final RemoteVideoSubtitleJob job = service(
+        host,
+      ).start(angle, const RemoteVideoSubtitleOptions());
+      await job.done;
+      expect(job.status, RemoteVideoSubtitleJobStatus.succeeded);
+      expect(host.submitted.single['discTitle'], 'BDMV/PLAYLIST/00001.a2.mpls');
+      expect(
+        job.episodes.single.episode.matchesDiscTitle(
+          'disc-main',
+          'BDMV/PLAYLIST/00001.a2.mpls',
+        ),
+        isTrue,
+      );
+    });
+
     test('库里有行的 title 在老 host 上照常提交，不带 discTitle', () async {
       final FakeHostPort host = FakeHostPort(
         target: hostTarget(<String>['video_subtitle']),

@@ -4,6 +4,8 @@ import 'dart:async';
 import 'package:fushi_engine/media/video/video_member_file.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_angle.dart'
     show blurayAngleBaseMemberPath;
+import 'package:fushi_engine/media/video/bluray/bluray_source.dart'
+    show isBlurayPlaylistPath;
 import 'package:fushi_engine/media/video/bluray/bluray_remote_title.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_library_title.dart';
 import 'package:fushi_engine/media/video/disc/disc_format.dart'
