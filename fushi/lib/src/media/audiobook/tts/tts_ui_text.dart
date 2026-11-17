@@ -8,6 +8,8 @@ import 'package:fushi_engine/tts/providers/custom_http_tts_provider.dart';
 import 'package:fushi_engine/tts/providers/edge_tts_provider.dart';
 import 'package:fushi_engine/tts/providers/google_cloud_tts_provider.dart';
 import 'package:fushi_engine/tts/providers/gpt_sovits_tts_provider.dart';
+import 'package:fushi_engine/tts/local/irodori_voice_pack_provider.dart'
+    show kIrodoriPackProviderId;
 import 'package:fushi_engine/tts/providers/irodori_server_tts_provider.dart';
 import 'package:fushi_engine/tts/providers/openai_compatible_tts_provider.dart';
 import 'package:fushi_engine/tts/providers/irodori_tts_provider.dart';
@@ -50,6 +52,7 @@ String ttsProviderLabel(String providerId) => switch (providerId) {
   AivisSpeechTtsDescriptor.providerId => t.audiobook_tts_provider_aivis_speech,
   SharevoxTtsDescriptor.providerId => t.audiobook_tts_provider_sharevox,
   VoicepeakTtsDescriptor.providerId => t.audiobook_tts_provider_voicepeak,
+  kIrodoriPackProviderId => t.audiobook_tts_provider_irodori_pack,
   _ => providerId,
 };
 

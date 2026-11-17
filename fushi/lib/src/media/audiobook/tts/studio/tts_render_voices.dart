@@ -28,14 +28,21 @@ class TtsRenderVoice {
 }
 
 /// 按 id 解析声音预设：缺失 / 引擎不可用 / 配置不完整分别抛 `voice_missing` /
-/// `voice_unavailable` / `voice_incomplete`（[TtsRenderFailure]）。
-TtsRenderVoice resolveTtsRenderVoice(TtsServices tts, String presetId) {
+/// `voice_unavailable` / `voice_incomplete`（[TtsRenderFailure]）。[presets] 是制作侧
+/// 可选的全部声音（`ttsProductionPresets`：声音预设 + 声音包虚拟预设）。
+TtsRenderVoice resolveTtsRenderVoice(
+  TtsServices tts,
+  String presetId, {
+  required Iterable<TtsVoicePreset> presets,
+}) {
   TtsVoicePreset? preset;
-  for (final TtsVoicePreset candidate in tts.store.loadPresets()) {
+  for (final TtsVoicePreset candidate in presets) {
     if (candidate.id == presetId) preset = candidate;
   }
   if (preset == null) throw const TtsRenderFailure('voice_missing');
-  final TtsProviderDescriptor? descriptor = tts.registry[preset.providerId];
+  final TtsProviderDescriptor? descriptor = tts.productionDescriptor(
+    preset.providerId,
+  );
   if (descriptor == null || !descriptor.isAvailable) {
     throw const TtsRenderFailure('voice_unavailable');
   }

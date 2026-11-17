@@ -21,7 +21,9 @@ import 'package:fushi_engine/tts/tts_audio_cache.dart';
 import 'package:fushi_engine/tts/tts_provider.dart';
 import 'package:fushi_engine/tts/tts_retry.dart';
 import 'package:fushi_engine/tts/tts_types.dart';
+import 'package:fushi_engine/tts/tts_voice_preset.dart';
 
+import 'package:fushi/src/media/audiobook/tts/irodori_voice_packs.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_render_unvoiced.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_render_voices.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_series_cast.dart';
@@ -237,6 +239,10 @@ Future<TtsBackfillResult> backfillTtsUnvoiced({
 
   final TtsAudioCache cache = await tts.cache();
   final Map<String, TtsProvider> providers = <String, TtsProvider>{};
+  final List<TtsVoicePreset> productionPresets = ttsProductionPresets(
+    tts,
+    appModel,
+  );
   final Map<String, TtsRenderVoice> voices = <String, TtsRenderVoice>{};
   final TtsCancelToken cancel = TtsCancelToken();
   int succeeded = 0;
@@ -248,7 +254,11 @@ Future<TtsBackfillResult> backfillTtsUnvoiced({
       final TtsBackfillAttempt attempt = backfill.attempts[i];
       try {
         final TtsRenderVoice voice = voices[attempt.presetId] ??=
-            resolveTtsRenderVoice(tts, attempt.presetId);
+            resolveTtsRenderVoice(
+              tts,
+              attempt.presetId,
+              presets: productionPresets,
+            );
         final TtsProvider provider = providers[attempt.presetId] ??= voice
             .descriptor
             .create(voice.preset, tts.host);

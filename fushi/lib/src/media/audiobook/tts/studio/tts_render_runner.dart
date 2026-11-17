@@ -58,6 +58,7 @@ import 'package:fushi_engine/tts/tts_audio_cache.dart';
 import 'package:fushi_engine/tts/tts_provider.dart';
 import 'package:fushi_engine/tts/tts_retry.dart';
 import 'package:fushi_engine/tts/tts_types.dart';
+import 'package:fushi_engine/tts/tts_voice_preset.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/asr_host/asr_host.dart';
@@ -69,6 +70,7 @@ import 'package:fushi/src/media/audiobook/tts/studio/tts_render_voices.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_series_cast.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_service.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_book_plan.dart';
+import 'package:fushi/src/media/audiobook/tts/irodori_voice_packs.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_render_service.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -137,12 +139,21 @@ class AppTtsRenderRunner implements TtsRenderRunner {
       cast: cast,
       defaultPresetId: job.presetId,
     );
+    // 声音预设 + 声音包（`pack:<packId>/<group>`）：选角表里两类 id 都可能出现。
+    final List<TtsVoicePreset> productionPresets = ttsProductionPresets(
+      tts,
+      appModel,
+    );
     final Map<String, TtsRenderVoice> voices = <String, TtsRenderVoice>{};
     final Map<String, TtsRenderFailure> unavailable =
         <String, TtsRenderFailure>{};
     for (final String presetId in presetOf.values.toSet()) {
       try {
-        voices[presetId] = resolveTtsRenderVoice(tts, presetId);
+        voices[presetId] = resolveTtsRenderVoice(
+          tts,
+          presetId,
+          presets: productionPresets,
+        );
       } on TtsRenderFailure catch (e) {
         if (presetId == job.presetId) rethrow;
         unavailable[presetId] = e;

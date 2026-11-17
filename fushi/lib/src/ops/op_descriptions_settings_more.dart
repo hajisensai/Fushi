@@ -1330,7 +1330,10 @@ List<OpDescription> _modelOps(OpDescribeKit kit) => <OpDescription>[
         'variant',
         description: 'gpt-sovits package variant (default by GPU).',
       ),
-      OpParam.string('model', description: 'irodori model: small / mf.'),
+      OpParam.string(
+        'model',
+        description: 'irodori model: small / mf / large.',
+      ),
       OpParam.string(
         'backend',
         description: 'irodori torch backend (default by GPU).',

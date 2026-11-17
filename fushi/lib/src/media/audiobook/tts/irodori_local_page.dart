@@ -23,6 +23,7 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/audiobook/tts/gpt_sovits_local_page.dart'
     show formatGptSovitsBytes;
+import 'package:fushi/src/media/audiobook/tts/irodori_voice_pack_page.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_ui_text.dart'
     show localInstallRemoveFailureText;
@@ -73,6 +74,7 @@ String irodoriBackendLabel(IrodoriTorchBackend backend) => switch (backend) {
 String irodoriModelLabel(IrodoriModelChoice model) => switch (model) {
   IrodoriModelChoice.small => t.audiobook_tts_irodori_local_model_small,
   IrodoriModelChoice.smallMeanFlow => t.audiobook_tts_irodori_local_model_mf,
+  IrodoriModelChoice.large => t.audiobook_tts_irodori_local_model_large,
 };
 
 String irodoriSourceLabel(IrodoriDownloadSource source) => switch (source) {
@@ -739,6 +741,22 @@ class _IrodoriLocalPageState extends State<IrodoriLocalPage> {
         ],
       ),
       _voicesSection(),
+      AdaptiveSettingsSection(
+        children: <Widget>[
+          AdaptiveSettingsRow(
+            key: const ValueKey<String>('irodori-local-voice-packs'),
+            icon: FushiIcons.voice,
+            showIcon: true,
+            title: t.audiobook_tts_voice_pack_title,
+            subtitle: _engine.batchModelReady
+                ? t.audiobook_tts_voice_pack_entry_hint
+                : t.audiobook_tts_voice_pack_needs_large,
+            subtitleMaxLines: 3,
+            onTap: () =>
+                unawaited(openIrodoriVoicePackPage(context, widget.services)),
+          ),
+        ],
+      ),
       AdaptiveSettingsSection(
         children: <Widget>[
           AdaptiveSettingsRow(

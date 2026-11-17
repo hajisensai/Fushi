@@ -36,6 +36,7 @@ import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_text.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_unvoiced_backfill.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_unvoiced_page.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_book_plan.dart';
+import 'package:fushi/src/media/audiobook/tts/irodori_voice_packs.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_ui_text.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_voice_settings_page.dart';
@@ -212,7 +213,7 @@ class _TtsStudioPageState extends State<TtsStudioPage> {
 
   TtsProviderDescriptor? get _descriptor {
     final TtsVoicePreset? preset = _preset;
-    return preset == null ? null : _tts.registry[preset.providerId];
+    return preset == null ? null : _tts.productionDescriptor(preset.providerId);
   }
 
   bool get _voiceUsable {
@@ -225,7 +226,11 @@ class _TtsStudioPageState extends State<TtsStudioPage> {
   }
 
   void _reloadPresets({bool preferJobPreset = false}) {
-    final List<TtsVoicePreset> presets = _tts.store.loadPresets();
+    // 制作侧的声音 = 声音预设 + 声音包（选角、默认声音都能指到声音包的某组参考音频）。
+    final List<TtsVoicePreset> presets = ttsProductionPresets(
+      _tts,
+      widget.appModel,
+    );
     String? id = _presetId;
     if (preferJobPreset) {
       id = _queue.latestFor(widget.bookKey)?.presetId;
@@ -520,7 +525,8 @@ class _TtsStudioPageState extends State<TtsStudioPage> {
     };
     for (final TtsVoicePreset p in _presets) {
       if (!ids.contains(p.id)) continue;
-      if (_tts.registry[p.providerId]?.category == TtsProviderCategory.online) {
+      if (_tts.productionDescriptor(p.providerId)?.category ==
+          TtsProviderCategory.online) {
         return true;
       }
     }
@@ -1066,7 +1072,7 @@ class _TtsStudioPageState extends State<TtsStudioPage> {
         .firstOrNull;
     final TtsProviderDescriptor? descriptor = preset == null
         ? null
-        : _tts.registry[preset.providerId];
+        : _tts.productionDescriptor(preset.providerId);
     if (preset == null || descriptor == null) {
       FushiToast.show(msg: t.audiobook_studio_failure_voice_missing);
       return;

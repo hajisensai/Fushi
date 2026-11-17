@@ -756,8 +756,9 @@ class _CtlModelState {
         'mf' ||
         'small-mf' ||
         'v4.1-small-mf' => IrodoriModelChoice.smallMeanFlow,
+        'large' || 'v4-large' => IrodoriModelChoice.large,
         _ => throw CtlFailure.badRequest(
-          '--model 只能是 small / mf，收到「$modelRaw」',
+          '--model 只能是 small / mf / large，收到「$modelRaw」',
         ),
       });
     }
