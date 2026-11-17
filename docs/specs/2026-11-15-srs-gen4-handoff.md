@@ -3278,9 +3278,45 @@ profile uid 不变」断言，不分 `bound` / `joined`。
 
 - 受信重切者点名一条永远不来的 Purge：这一件一直 `PurgePending`、每轮按通用的「延后件重拉」再拉一次（与其它延后原因同一
   口径，不落、不进等待缓冲，不影响作者真正的段）。被拒的件同样按通用口径每轮重拉。
-- 一批之内不重试：Purge 与重切件同批到、重切件先到时这一轮 `PurgePending`，下一轮收下（测试按多轮收敛）。
+- ~~一批之内不重试~~：已修，见下文「复核修复」。
 - `.fushisrs` 导出不带 `relay_auth` / `relay_stubs`：从备份还原的库再要从日志重切时缺材料，退回 `incomplete`（与 §33 的
   `log_marks` 同一类代价），归 G11 owner 评估导出流升版。
 - 剔除项的载荷哈希允许「猜测确认」，与段头明文链值同类泄露，没有新增。
 - 直接调 `advance_purge` 而本机没有生效 Purge 的路径（测试与工具）不记剔除记录：这一段本机重切不出来，转发退回「缺」。
 - 协调目录 claim 没登记：本代理在隔离 worktree 里，写 `.worktrees/coordination/claims/` 被拒。
+
+### 复核修复（2026-11-18，同分支）
+
+- **压缩炸弹（major，相对基线的回归）**：FSG4 改签逐项摘要后，验签之前要先解压、逐项解码，明文位置上任何人放一个段头写着
+  已知作者、签名乱填、里面一条高压缩比巨大载荷的件，读者每轮都在验签前分配 GB 级内存。修法是让验签前的工作量有硬上限：
+  - `sync2/codec.rs` `ZstdWindow::limit(n)`：解压总字节超过 `n` 报 `LIMIT_EXCEEDED`（多解最多一个字节，窗口与解码器不为超限
+    部分分配）；不设就是不限（导入、协议 3 路径不变）。
+  - `gen4/segment.rs` `MAX_BODY_RAW = 64 MiB`：`ItemStream`（原生段 / 中继件，验签与校验两遍都走它）与 `recut.rs` `read_items`
+    都带这个上限；写侧 `seal_native` 与 `recut4` 拒签解压后超限的段体。
+  - `gen4/op.rs` `MAX_OP_PAYLOAD = 16 MiB`：`native_allowed` 写读两侧同用（本机写入 `append_native`、`pack_native`、收段）；
+    读侧 `read_op_slot(…, max_payload)` 读到长度前缀就拒，不去补读。承袭段 `FSH4` 先验签（签名覆盖压缩体）后解压，传
+    `usize::MAX`，行为不变。取值依据：本机真实库 `srs.db` `sync2_ops` 51.7 万条，最大载荷 311 KiB（只读查询）。
+  - 写者保证不碰上限：发件 `outbox` 的 `segBytes` 夹到不超过 `SEGMENT_TARGET_BYTES`（4 MB 估计体积）；小段合并整组打一段时
+    额外要求未压缩估计体积不超过 `SEGMENT_MAX_RAW_BYTES`（16 MiB），超了按 `min(target, 上限)` 切（以前只看压缩后体积，
+    重复度高的内容能打出解压后几百 MB 的段）。
+  - 测试：`a_decompression_bomb_is_refused_before_the_signature_within_bounded_work`（手拼 zstd RLE 帧，件本身 < 64 KiB：
+    一条声明 1 GiB 载荷的 → `Corrupt("op payload too large")`；每条 1 MiB、总量过 64 MiB 的 → `Corrupt(LIMIT_EXCEEDED)`，
+    都没走到验签）、`op_payload_cap_is_the_same_on_both_sides`、`zstd_window_limit_is_exact`、
+    `a_group_that_compresses_small_but_is_large_uncompressed_is_cut`。
+- **Purge 作者不受信 → 延后（minor，缺测试）**：`a_stub_naming_a_purge_by_an_untrusted_author_is_deferred_until_trusted`
+  （待确认 / 已拒绝两态：`Deferred(UntrustedUploader(B))`、A 的日志不前进、没有剔除记录；信任之后同一件照收）。
+- **一批之内的顺序**：`ingest` 里等 Purge（`PurgePending`）的重切件在整批交完之后再收一次（`Receiver::native_again`，先前
+  那次延后不再计数）；预算截断时从这一件起由 Dart 下一个事务重交。测试 `a_recut_ahead_of_its_purge_in_one_batch_lands_in_that_round`
+  （测试轮次 `Opts::recut_first` 把重切件排到最前面；修之前第一轮报 `PurgePending`、等待 3 条）。
+- 变异实测（`mut.py` 逐个改、跑、还原，工作区干净）：去掉单条载荷前缀检查 / 去掉段体总量上限 / 去掉窗口超限判断 /
+  去掉 `native_allowed` 载荷上限 / 合并不看未压缩体积 / 去掉 Purge 作者信任闸 / 去掉一批内重收，各自对应的测试都红。
+
+### 复核修复后仍未做（如实记下）
+
+- 受信重切者点名一条读者永远拿不到的 Purge、或 Purge 的作者被读者拒绝：这一件每轮按通用口径重拉（不丢数据；只经这位
+  重切者供数据的位置对该读者仍然断流）。待办：按 (件名, 原因) 记延后次数或在 Purge 所在设备的 head 上退避。
+- `relay_auth` / `relay_stubs` 的回收：集合删除**已经**覆盖（`discard.rs` 按 `sqlite_schema` 现查表，带 `col` 列的
+  `relay_auth` 按 col 删、带 `k` 列的 `relay_stubs` 按设备主键区间删；复核说「集合删除不清」与代码不符）；本机自己身份的
+  日志截断（换身份）不涉及（本机设备的操作不记剔除记录）。没做的是作者重切 / 合并之后旧区间的 `relay_auth` 行与已不需要
+  转发的段的剔除记录：别的位置的 head 可能还列着旧区间，按区间回收要先定「哪些位置还需要」，留给 G8 转发 owner。
+- 发件 `segBytes` 夹紧没有单独测试（要 4 MB 以上的数据，本机内存紧，没写）。
