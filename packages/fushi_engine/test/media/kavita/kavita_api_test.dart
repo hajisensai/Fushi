@@ -442,8 +442,10 @@ void main() {
 
     setUp(() async {
       server = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
-      // 裸 IOClient：不走应用代理出口，回环请求不受本机代理配置影响。
-      client = IOClient(HttpClient());
+      // 裸 IOClient：不走应用代理出口，回环请求不受本机代理配置影响。空闲连接
+      // 1 秒就关（默认 15 秒）：放回连接池的连接很快在服务器侧表现为「被关掉」，
+      // 而一条响应没人读的连接永远不会变成空闲，也就永远不关。
+      client = IOClient(HttpClient()..idleTimeout = const Duration(seconds: 1));
     });
     tearDown(() async {
       client.close();
@@ -511,7 +513,8 @@ void main() {
           ),
         ),
       );
-      // 没人读也没人取消的错误体会让这条连接一直开着（撤掉修复，这里等到超时）。
+      // 错误体已到齐：取消后连接回池，空闲到点即关。没人读也没人取消的话它一直
+      // 算「在用」，永远不关（撤掉修复，这里等到超时）。
       await peerClosed.timeout(closeWithin);
       expect(
         kavita.answerCount,
@@ -519,6 +522,24 @@ void main() {
         reason: 'a 404 is still the server talking',
       );
     });
+
+    test(
+      'non-2xx with an unfinished error body closes the connection',
+      () async {
+        final Future<void> peerClosed = serveOnce(
+          'HTTP/1.1 500 Internal Server Error\r\n'
+          'Content-Type: text/plain\r\n'
+          'Content-Length: 100000\r\n'
+          '\r\n'
+          'only-the-first-bytes',
+        );
+        await expectLater(
+          api().fetchPageBytes(1, 0),
+          throwsA(isA<KavitaApiException>()),
+        );
+        await peerClosed.timeout(closeWithin);
+      },
+    );
 
     test(
       'stalled response headers time out and close the connection',

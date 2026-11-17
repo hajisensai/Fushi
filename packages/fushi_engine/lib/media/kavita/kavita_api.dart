@@ -423,8 +423,9 @@ class KavitaApi {
   /// 失败时不把连接留在后台：只让等待方放弃的 `Future.timeout` 会让请求继续传完。
   /// - 等响应头超时：经 [http.AbortableRequest] 中止请求；
   /// - 正文停顿超时 / 连接中断：`await for` 退出即取消响应流的订阅，连接随之关闭；
-  /// - 非 2xx：先取消响应流再抛错。`IOClient` 在「已有响应、还没人 listen」时 abort
-  ///   只置标志、不碰底层响应，没人读也没人取消的错误体会把连接一直占着。
+  /// - 非 2xx：先取消响应流再抛错（错误体已到齐的连接回池，没到齐的直接关）。
+  ///   `IOClient` 在「已有响应、还没人 listen」时 abort 只置标志、不碰底层响应，
+  ///   没人读也没人取消的错误体会把连接一直占着。
   /// [path] 只用于异常文本（不含查询串，URL 里有 apiKey）。
   Future<Uint8List> _fetchImageBytes(Uri url, String path) async {
     final Completer<void> abort = Completer<void>();
