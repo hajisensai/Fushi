@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
@@ -149,7 +150,11 @@ void main() {
             ),
           ),
         ),
+        // 只替换临时文件：Windows 上替换目标前还要打开锁文件，那个得是真文件。
         createFile: (String path) {
+          if (!path.endsWith('.tmp')) {
+            return Zone.root.run(() => File(path));
+          }
           final _StubbornTemporary file = _StubbornTemporary(path);
           created.add(file);
           return file;
@@ -157,6 +162,30 @@ void main() {
       );
       expect(created.single.deleteAttempted, isTrue, reason: '清理要试，只是不能顶掉原错误');
     });
+  });
+
+  // Windows 上同一目标的替换靠锁文件上的一个字节互斥（BUG-4801）：这个字节得在
+  // 各 isolate / 各进程里算出同一个，不同目标各算各的。
+  test('替换锁的字节偏移：同一目标处处相同（含另一个 isolate），不同目标不同', () async {
+    final String path = p.join(temporary.path, 'page.json');
+    final int here = replaceLockOffsetForTarget(File(path));
+    expect(replaceLockOffsetForTarget(File(path)), here);
+    expect(
+      await Isolate.run<int>(() => replaceLockOffsetForTarget(File(path))),
+      here,
+    );
+    expect(
+      replaceLockOffsetForTarget(
+        File(p.join(temporary.path, '.', 'page.json')),
+      ),
+      here,
+      reason: '同一文件的不同写法落在同一个字节上',
+    );
+    expect(
+      replaceLockOffsetForTarget(File(p.join(temporary.path, 'other.json'))),
+      isNot(here),
+    );
+    expect(here, inInclusiveRange(0, 0xffffffff));
   });
 
   // 行为断言测不到「崩溃时刻目标是否存在」，只能钉源码：先 delete 再 rename 会

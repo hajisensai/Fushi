@@ -4,6 +4,10 @@
 ///
 /// 主机的串行队列与全局名额是同一个问题：旧 isolate 还占着整套模型时就放行下一
 /// 个任务，主机上就是两套模型同时在内存；页图也不能在旧 isolate 还在读的时候删。
+///
+/// [MangaOcrHostJobManager.disposeAll] 相反，不能等：`FushiSyncServer.stop()`
+/// 顺序 await 它，原生推理卡住时取消的 Future 永远不完成。它只发取消、清表就
+/// 返回，各任务的收尾仍排在自己的执行体停下之后。
 library;
 
 import 'dart:async';
@@ -11,6 +15,7 @@ import 'dart:io';
 
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi_engine/sync/fushi_manga_ocr_host.dart';
+import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
@@ -130,5 +135,148 @@ void main() {
     // 收尾：B 的执行体也「退出」，不留挂着的取消。
     service.exits.last.complete();
     await manager.cancelAndCleanup(b);
+  });
+
+  /// 建任务、传一页、start。
+  Future<MangaOcrHostJob> startedJob(
+    MangaOcrHostJobManager manager,
+    String title,
+  ) async {
+    final MangaOcrHostJob job = manager.createJob(volumeTitle: title);
+    expect(
+      await manager.uploadPage(job, name: 'p001.jpg', bytes: <int>[1]),
+      isNull,
+    );
+    expect(await manager.start(job), isNull);
+    return job;
+  }
+
+  group('disposeAll', () {
+    test('执行体没停就返回；排队中的任务不再启动；完成信号等执行体停下才补', () async {
+      final _LingeringOcrService service = _LingeringOcrService();
+      final MangaOcrHostJobManager manager = MangaOcrHostJobManager(
+        service: service,
+        jobRoot: Directory(p.join(tmpRoot.path, 'jobs')),
+      );
+      final MangaOcrHostJob a = await startedJob(manager, '卷一');
+      final MangaOcrHostJob b = await startedJob(manager, '卷二');
+      await _waitFor(() => service.startedDirs.length == 1);
+
+      // 执行体一直不退出（原生推理卡住）：disposeAll 也得返回。
+      await manager.disposeAll().timeout(const Duration(seconds: 5));
+      expect(service.cancelRequests, 1, reason: '取消已经发给在跑的执行体');
+      expect(manager.jobCount, 0);
+      expect(a.state, MangaOcrHostJobState.cancelled);
+      expect(b.state, MangaOcrHostJobState.cancelled);
+
+      bool allStopped = false;
+      unawaited(manager.whenExecutorsStopped.then((_) => allStopped = true));
+
+      // 管理器仍被引用时再来一个任务：旧执行体还占着模型，它不能先起。
+      final MangaOcrHostJob c = await startedJob(manager, '卷三');
+      await _settle();
+      expect(service.startedDirs, hasLength(1), reason: '旧执行体停下之前队列不放行');
+      expect(allStopped, isFalse);
+
+      service.exits.first.complete();
+      await _waitFor(() => service.startedDirs.length == 2);
+      expect(service.startedDirs.last, c.dir.path, reason: '停机时还在排队的 B 不再启动');
+      expect(allStopped, isTrue);
+
+      service.exits.last.complete();
+      await manager.cancelAndCleanup(c);
+    });
+
+    test('等执行体停下的那段时间里别的路径增删任务：不抛并发修改', () async {
+      final _LingeringOcrService service = _LingeringOcrService();
+      final MangaOcrHostJobManager manager = MangaOcrHostJobManager(
+        service: service,
+        jobRoot: Directory(p.join(tmpRoot.path, 'jobs')),
+      );
+      await startedJob(manager, '卷一');
+      await _waitFor(() => service.startedDirs.length == 1);
+      // 表里排在在跑任务后面的两个：遍历还要往下走。
+      final MangaOcrHostJob pending = manager.createJob(volumeTitle: '卷二');
+      manager.createJob(volumeTitle: '卷三');
+
+      final Future<void> disposed = manager.disposeAll();
+      // 停机途中：新建一个任务、删掉一个旧任务。
+      final MangaOcrHostJob added = manager.createJob(volumeTitle: '卷四');
+      await manager.cancelAndCleanup(pending);
+      service.exits.first.complete();
+      await disposed.timeout(const Duration(seconds: 5));
+      await manager.whenExecutorsStopped;
+
+      expect(manager.job(added.id), same(added), reason: '停机之后建的任务不被清表带走');
+      expect(manager.jobCount, 1);
+    });
+
+    test('途中的 cancelAndCleanup：disposeAll 先返回，页图仍等执行体停下才删', () async {
+      final _LingeringOcrService service = _LingeringOcrService();
+      final MangaOcrHostJobManager manager = MangaOcrHostJobManager(
+        service: service,
+        jobRoot: Directory(p.join(tmpRoot.path, 'jobs')),
+      );
+      final MangaOcrHostJob a = await startedJob(manager, '卷一');
+      await _waitFor(() => service.startedDirs.length == 1);
+      final File pageImage = File(p.join(a.dir.path, 'p001.jpg'));
+
+      bool cleaned = false;
+      unawaited(manager.cancelAndCleanup(a).then((_) => cleaned = true));
+      await manager.disposeAll().timeout(const Duration(seconds: 5));
+      await _settle();
+      expect(cleaned, isFalse);
+      expect(pageImage.existsSync(), isTrue, reason: '执行体还在读页图，不能先删');
+      expect(a.dir.existsSync(), isTrue, reason: '停机不删任务目录');
+
+      service.exits.first.complete();
+      await _waitFor(() => cleaned);
+      await manager.whenExecutorsStopped;
+      expect(pageImage.existsSync(), isFalse);
+    });
+
+    test('执行体收尾抛错：完成信号照补，后面的任务照常起跑', () async {
+      final _LingeringOcrService service = _LingeringOcrService();
+      final MangaOcrHostJobManager manager = MangaOcrHostJobManager(
+        service: service,
+        jobRoot: Directory(p.join(tmpRoot.path, 'jobs')),
+      );
+      await startedJob(manager, '卷一');
+      await _waitFor(() => service.startedDirs.length == 1);
+      await manager.disposeAll();
+      final MangaOcrHostJob next = await startedJob(manager, '卷二');
+
+      service.exits.first.completeError(StateError('engine close failed'));
+      await manager.whenExecutorsStopped;
+      await _waitFor(() => service.startedDirs.length == 2);
+      expect(service.startedDirs.last, next.dir.path);
+
+      service.exits.last.complete();
+      await manager.cancelAndCleanup(next);
+    });
+
+    test('FushiSyncServer.stop() 不被还没停下的 OCR 执行体挂住', () async {
+      final _LingeringOcrService service = _LingeringOcrService();
+      final MangaOcrHostJobManager manager = MangaOcrHostJobManager(
+        service: service,
+        jobRoot: Directory(p.join(tmpRoot.path, 'jobs')),
+      );
+      final FushiSyncServer server = FushiSyncServer(
+        syncDataDir: Directory(p.join(tmpRoot.path, 'sync')).path,
+        port: 0,
+        token: 'tok',
+        mangaOcrJobs: manager,
+      );
+      await server.start();
+      await startedJob(manager, '卷一');
+      await _waitFor(() => service.startedDirs.length == 1);
+
+      await server.stop().timeout(const Duration(seconds: 10));
+      expect(service.cancelRequests, 1);
+      expect(service.exits.single.isCompleted, isFalse, reason: '执行体此刻还没停');
+
+      service.exits.single.complete();
+      await manager.whenExecutorsStopped;
+    });
   });
 }

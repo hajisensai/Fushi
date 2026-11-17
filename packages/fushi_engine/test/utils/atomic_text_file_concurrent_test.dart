@@ -1,9 +1,8 @@
-// 真并发压测只在非 Windows 上跑：Windows 上两个 rename 在同一瞬间替换同一个目标
-// 时，`MoveFileEx` 会让其中一个以「拒绝访问」失败（POSIX 的 rename 没有这个
-// 限制）。唯一临时名解决的是「两个写者共用一个临时文件」，不是这个平台限制；
-// Windows 上由 atomic_text_file_test.dart 里那条确定性的交错用例、以及
-// atomic_text_file_concurrent_windows_test.dart（落败的写者只能干净地失败）钉住。
-@TestOn('!windows')
+// 真并发压测，各平台都跑。Windows 上两个 rename 在同一瞬间替换同一个目标时
+// `MoveFileEx` 会让其中一个以「拒绝访问」失败，所以那里替换目标要排队
+// （atomic_text_file.dart 的 `_replaceTarget`）；POSIX 的 rename 本来就能并发。
+// 两边的结局一样：全部写者成功，目标是其中一份完整内容。Windows 这一侧自己的
+// 断言（锁文件在哪、留不留东西）在 atomic_text_file_concurrent_windows_test.dart。
 library;
 
 import 'dart:convert';
@@ -50,7 +49,7 @@ void main() {
     expect(_leftoverTemporaries(temporary), isEmpty);
   });
 
-  test('两个 isolate 并发写同一个目标：都成功，目标是完整内容', () async {
+  test('四个 isolate 并发写同一个目标：都成功，目标是完整内容', () async {
     final String targetPath = p.join(temporary.path, 'page.json');
     Future<void> writer(int seed) => Isolate.run<void>(() async {
       for (int i = 0; i < 40; i++) {
@@ -61,7 +60,9 @@ void main() {
       }
     });
 
-    await Future.wait(<Future<void>>[writer(1), writer(2)]);
+    await Future.wait(<Future<void>>[
+      for (int seed = 1; seed <= 4; seed++) writer(seed),
+    ]);
     final Object? decoded = jsonDecode(File(targetPath).readAsStringSync());
     expect(decoded, isA<List<Object?>>());
     expect((decoded! as List<Object?>).length, 20000);

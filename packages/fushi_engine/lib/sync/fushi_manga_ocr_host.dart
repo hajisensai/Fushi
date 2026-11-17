@@ -28,6 +28,7 @@ import 'package:meta/meta.dart';
 import 'package:path/path.dart' as p;
 import 'package:shelf/shelf.dart' as shelf;
 
+import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart'
     show kMangaOcrOutDirName;
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
@@ -190,20 +191,70 @@ class MangaOcrHostJobManager {
   @visibleForTesting
   int get jobCount => _jobs.length;
 
-  /// server 停机：中止全部在跑任务的订阅（页边界停，断点缓存保留），任务表清空。
+  /// server 停机：向全部在跑任务发出取消（页边界停，断点缓存保留），任务表清空。
   /// 磁盘目录留给下次启动的孤儿清扫（TTL 内的还能续传）。
+  ///
+  /// **不等执行体停下就返回**：取消订阅的 Future 要到执行体真正停下（本地模型 =
+  /// 整卷 isolate 跑完当前页、关掉推理会话、退出）才完成，原生推理卡住时永远不
+  /// 完成。`FushiSyncServer.stop()` 顺序 await 这里，其后才释放别的 host 资源，
+  /// 不能被它挂住（BUG-4800）。
+  ///
+  /// 先取任务快照、清表，再逐个发取消，中间没有 await：别的路径同时增删任务
+  /// 不会撞上这里的遍历。还没轮到的排队任务标成已取消，轮到时不再启动。
+  ///
+  /// 各任务的收尾仍排在自己的执行体停下之后（[_finishWhenStopped]）：串行队列的
+  /// 完成信号到那时才补，管理器若仍被引用，后面的任务不会在旧执行体还占着模型时
+  /// 起跑；正在途中的 [cancelAndCleanup] 等的是同一个取消 Future，它的删页图也
+  /// 仍在执行体停下之后。全部停下的时刻见 [whenExecutorsStopped]。
   Future<void> disposeAll() async {
-    for (final MangaOcrHostJob job in _jobs.values) {
-      await job.subscription?.cancel();
-      job.subscription = null;
-      // 同 cancelAndCleanup：补完成信号，防串行队列卡死（管理器可能仍被引用）。
-      final Completer<void>? running = job.runCompleted;
-      if (running != null && !running.isCompleted) {
-        running.complete();
-      }
-      job.runCompleted = null;
-    }
+    final List<MangaOcrHostJob> jobs = _jobs.values.toList(growable: false);
     _jobs.clear();
+    for (final MangaOcrHostJob job in jobs) {
+      if (!job.state.isTerminal) {
+        job.state = MangaOcrHostJobState.cancelled;
+      }
+      final StreamSubscription<MangaOcrVolumeEvent>? subscription =
+          job.subscription;
+      job.subscription = null;
+      final Completer<void>? running = job.runCompleted;
+      job.runCompleted = null;
+      if (subscription == null) {
+        // 没有执行体在跑（未 start / 还在排队 / 已收尾）：没有可等的东西。
+        if (running != null && !running.isCompleted) running.complete();
+        continue;
+      }
+      _trackStopping(_finishWhenStopped(subscription.cancel(), running));
+    }
+  }
+
+  /// [disposeAll] 发出取消后还没停下的执行体（各自收尾的 Future）。
+  final Set<Future<void>> _stopping = <Future<void>>{};
+
+  /// [disposeAll] 取消掉的执行体全部真正停下（各自的收尾也做完）时完成；没有
+  /// 在停的立即完成。要动任务根目录（删除 / 搬走）的调用方先等它——执行体停下
+  /// 之前还会往自己的卷目录里写逐页缓存。原生推理卡住时它不完成。
+  Future<void> get whenExecutorsStopped =>
+      Future.wait<void>(_stopping.toList(growable: false));
+
+  void _trackStopping(Future<void> stopped) {
+    _stopping.add(stopped);
+    unawaited(stopped.whenComplete(() => _stopping.remove(stopped)));
+  }
+
+  /// 等执行体真正停下（[stopped] = 取消订阅的 Future），再补串行队列的完成信号。
+  /// 执行体收尾抛的错没有调用方可交（停机已经返回），记日志；完成信号照补，
+  /// 否则队列卡死。
+  Future<void> _finishWhenStopped(
+    Future<void> stopped,
+    Completer<void>? running,
+  ) async {
+    try {
+      await stopped;
+    } on Object catch (error, stack) {
+      engineLog.log('MangaOcrHostJobManager.disposeAll', error, stack);
+    } finally {
+      if (running != null && !running.isCompleted) running.complete();
+    }
   }
 
   // ── 任务生命周期 ────────────────────────────────────────────────

@@ -1,16 +1,22 @@
 // Windows 专属：两个写者在同一瞬间 rename 到同一个目标时，`MoveFileEx` 会让其中
-// 一些以「拒绝访问」失败（POSIX 没有这个限制，那边所有写者都成功，见
-// atomic_text_file_concurrent_test.dart）。这个平台限制没有消掉（BUG-4801
-// 备注）；这里钉住的是它的边界：落败的写者只能干净地失败。
+// 一个以「拒绝访问」失败（POSIX 没有这个限制）。`writeTextFileAtomically` 在
+// Windows 上让同一目标的替换互斥（系统临时目录里一个锁文件上的字节区间锁，
+// BUG-4801）。各平台共有的「全部写者成功」在 atomic_text_file_concurrent_test.dart；
+// 这里钉 Windows 这一侧自己的事：互斥不往目标目录里放东西、锁文件不长大、
+// 出错的写者不把锁带走。
 @TestOn('windows')
 library;
 
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:fushi_engine/utils/misc/atomic_text_file.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
+
+File _lockFile() =>
+    File(p.join(Directory.systemTemp.path, kAtomicWriteReplaceLockFileName));
 
 void main() {
   late Directory temporary;
@@ -23,25 +29,96 @@ void main() {
     if (temporary.existsSync()) temporary.deleteSync(recursive: true);
   });
 
-  test('并发写同一个目标：目标是其中一份完整内容、不留临时文件，落败的写者只以文件系统错误收场', () async {
+  test('同 isolate 12 个写者并发写同一个目标：全部成功，目标目录里只有目标本身', () async {
     final File target = File(p.join(temporary.path, 'page.json'));
     final List<String> contents = <String>[
       for (int i = 0; i < 12; i++) jsonEncode(List<int>.filled(200000, i)),
     ];
-    final List<Object?> outcomes = await Future.wait(<Future<Object?>>[
-      for (final String content in contents)
-        writeTextFileAtomically(
-          target,
-          content,
-        ).then<Object?>((_) => null, onError: (Object error) => error),
+    // 不加互斥时这里必有写者以「拒绝访问」（errno 5）失败。
+    for (int round = 0; round < 5; round++) {
+      await Future.wait(<Future<void>>[
+        for (final String content in contents)
+          writeTextFileAtomically(target, content),
+      ]);
+      expect(contents, contains(target.readAsStringSync()));
+    }
+    expect(
+      <String>[
+        for (final FileSystemEntity entry in temporary.listSync())
+          p.basename(entry.path),
+      ],
+      <String>['page.json'],
+      reason: '不留临时文件，也不在目标旁边放锁文件',
+    );
+  });
+
+  test('跨 isolate 并发写同一个目标，同时各自还在写别的目标：全部成功', () async {
+    final String shared = p.join(temporary.path, 'shared.json');
+    final String dir = temporary.path;
+    Future<void> writer(int seed) => Isolate.run<void>(() async {
+      for (int i = 0; i < 60; i++) {
+        await Future.wait(<Future<void>>[
+          writeTextFileAtomically(
+            File(shared),
+            jsonEncode(List<int>.filled(4000, seed)),
+          ),
+          writeTextFileAtomically(
+            File(p.join(dir, 'own-$seed.json')),
+            jsonEncode(<int>[seed, i]),
+          ),
+        ]);
+      }
+    });
+
+    await Future.wait(<Future<void>>[
+      for (int seed = 1; seed <= 4; seed++) writer(seed),
     ]);
-    final List<Object> failures = outcomes.nonNulls.toList();
-    expect(failures, everyElement(isA<FileSystemException>()));
-    expect(failures.length, lessThan(contents.length), reason: '至少有一个写者成功');
-    expect(contents, contains(target.readAsStringSync()));
-    expect(<String>[
-      for (final FileSystemEntity entry in temporary.listSync())
-        if (entry.path.endsWith('.tmp')) p.basename(entry.path),
-    ], isEmpty);
+    final Object? decoded = jsonDecode(File(shared).readAsStringSync());
+    expect((decoded! as List<Object?>).length, 4000);
+    for (int seed = 1; seed <= 4; seed++) {
+      expect(
+        jsonDecode(File(p.join(dir, 'own-$seed.json')).readAsStringSync()),
+        <int>[seed, 59],
+      );
+    }
+    expect(temporary.listSync(), hasLength(5));
+  });
+
+  test('锁文件在系统临时目录、始终 0 字节；替换失败的写者不把锁带走', () async {
+    final File target = File(p.join(temporary.path, 'page.json'));
+    await writeTextFileAtomically(target, 'first');
+    expect(_lockFile().existsSync(), isTrue);
+    expect(_lockFile().lengthSync(), 0);
+    expect(p.equals(_lockFile().parent.path, temporary.path), isFalse);
+
+    // 目标位置是个目录：替换失败。同一个目标字节上的锁必须已经放掉，把目录
+    // 挪走之后再写同一路径不会卡住。
+    final Directory blocked = Directory(p.join(temporary.path, 'blocked.json'))
+      ..createSync();
+    await expectLater(
+      writeTextFileAtomically(File(blocked.path), 'x'),
+      throwsA(isA<FileSystemException>()),
+    );
+    blocked.deleteSync();
+    await writeTextFileAtomically(
+      File(blocked.path),
+      'second',
+    ).timeout(const Duration(seconds: 10));
+    expect(File(blocked.path).readAsStringSync(), 'second');
+    expect(_lockFile().lengthSync(), 0);
+  });
+
+  test('锁文件被清理工具删掉：下一次写入照常', () async {
+    final File target = File(p.join(temporary.path, 'page.json'));
+    await writeTextFileAtomically(target, 'first');
+    // 没有写入在进行时锁文件没人打开着，删得掉；测试并行跑时别的 isolate 可能
+    // 正好拿着它，那就删不掉——两种情况下一次写入都得成功。
+    try {
+      _lockFile().deleteSync();
+    } on FileSystemException {
+      // 别的测试 isolate 正拿着：等价于「没被删」。
+    }
+    await writeTextFileAtomically(target, 'second');
+    expect(target.readAsStringSync(), 'second');
   });
 }
