@@ -698,6 +698,57 @@ impl<'t, 'c> Index<'t, 'c> {
         Ok(false)
     }
 
+    /// 撤销校验（`cmd/center.rs`）的「见没见过」：别名类 [canon]（种类 [kind]）在规范键 [ckey] 上按类拼行时 dot 是
+    /// [live]（规范写入者, seq）的那次写入，作者见没见过 dot [ours]（规范写入者, seq）。按 [live] 在这个类的寄存器里找回
+    /// 操作（同一个规范 dot 有几条时取操作号最小的代表，与 [Index::edit_lines_as] 并行相同），再从真相层答
+    /// （[Index::write_sees]，闭包过同一个换名）。[writers] 是这一次读的归回写入者表（[Index::writer_aliases]）。
+    ///
+    /// 找不到这个 dot 的写入 = false：只有笔记 `tags` 的合成行（写入者 `sync2:tags:<笔记>`，`cmd/mod.rs` `tags_line`）
+    /// 这样，它不是谁写的，没有因果过去（协议 3 那一行也是空上下文）。
+    pub(super) fn class_write_sees(
+        &mut self,
+        kind: EntKind,
+        canon: &Ref,
+        ckey: &str,
+        writers: &BTreeMap<String, String>,
+        live: (&str, i64),
+        ours: (&str, i64),
+    ) -> Result<bool, String> {
+        let canonical_writer = |w: &str| writers.get(w).cloned().unwrap_or_else(|| w.to_owned());
+        let mut rep: Option<(OpId, i64)> = None;
+        for m in &self.members(canon)? {
+            for (key, k, state) in self.member_registers(kind, m)? {
+                if state < R_DOMINATED {
+                    continue;
+                }
+                let text = read_edit_key(&mut Reader::new(&key))
+                    .map_err(|e| format!("gen4 index: bad register key: {e}"))?;
+                if self.canonical_key(&text)? != ckey {
+                    continue;
+                }
+                let d = self.dot_of(k)?;
+                if d.seq != live.1 || canonical_writer(&d.writer) != live.0 {
+                    continue;
+                }
+                if rep.is_none_or(|(id, _)| d.op < id) {
+                    rep = Some((d.op, k));
+                }
+            }
+        }
+        let Some((_, k)) = rep else {
+            return Ok(false);
+        };
+        let renamed = Renamed::default();
+        let c = Canon {
+            writers,
+            renamed: &renamed,
+            entity: self.canonical(canon)?.text(),
+            key: ckey.to_owned(),
+            keys: None,
+        };
+        self.write_sees(k, ours.0, ours.1, Some(&c))
+    }
+
     /// 一条修改的 dot 与旧 HLC 的物理时刻、计数（带旧戳且 HLC 解得开时才有）。
     fn dot_of(&self, k: i64) -> Result<DotOf, String> {
         let e = self

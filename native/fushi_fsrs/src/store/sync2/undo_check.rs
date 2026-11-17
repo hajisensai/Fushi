@@ -66,7 +66,10 @@ fn check_item(conn: &Connection, profile: &str, it: &Value) -> Result<(bool, Val
         seq: *s,
         value: v,
     });
-    undo_verdict(&items, key, target.as_ref(), it.get("v"))
+    // 修改记录的上下文是写入者维护的完整 DVV：「见没见过」按行上下文判。
+    undo_verdict(&items, key, target.as_ref(), it.get("v"), &mut |x, o| {
+        Ok(x.ctx_contains(o.writer, o.seq))
+    })
 }
 
 type LiveRow = (String, Option<i64>, Option<crate::registers::EditCols>);

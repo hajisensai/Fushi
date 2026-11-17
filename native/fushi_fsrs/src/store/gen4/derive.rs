@@ -773,6 +773,55 @@ impl<'t, 'c> Index<'t, 'c> {
         Ok(false)
     }
 
+    /// 修改操作 [k]：(操作号, 修改体, HLC 墙钟, HLC 计数, 作者写的时候的完整上下文——依赖 + 自己之前的全部，协议 3
+    /// `Op::ctx`)。
+    fn edit_write(&self, k: i64) -> Result<(OpId, Edit4, i64, u32, Vv), String> {
+        let e = self
+            .t
+            .entry_by_key(k)?
+            .ok_or_else(|| format!("gen4 index: register row {k} has no op"))?;
+        let (wall, logical, deps) = match &e.body {
+            SlotBody::Op(op) => (op.hlc.wall, op.hlc.logical, op.deps.clone()),
+            SlotBody::Raw3(raw) => {
+                let v = raw.to_v3();
+                (v.hlc.wall, v.hlc.logical, v.deps)
+            }
+            _ => return Err(format!("gen4 index: register row {k} is not an op")),
+        };
+        let Some(Body4::Edit(ed)) = body_of(&e) else {
+            return Err(format!("gen4 index: register row {k} is not an edit"));
+        };
+        let mut full = (*deps).clone();
+        full.set(e.id.device, e.id.seq - 1);
+        Ok((e.id, ed, wall, logical, full))
+    }
+
+    /// 修改操作 [k] 的作者写的时候见没见过 dot `(w, q)`——因果事实，从真相层答（撤销校验，`cmd/center.rs`）：带旧戳的
+    /// 写入看旧戳的上下文（写入者维护的完整 DVV；按类问时过同一个换名 [super::class::Canon::dvv]），不带的看依赖与
+    /// 旧闭包（[Index::seen]，含别名类的换名）。
+    ///
+    /// 不能拿投影行的 `ctx` 代替：[Index::edit_lines_as] 给不带旧戳的写入拼的上下文只含别的**要输出的**行（判寄存器支配
+    /// 够用），被支配、不输出的旧写入永远不在里面。[class] 的含义同 [Index::seen]（Some 时 [w] 是规范写入者）。
+    pub(super) fn write_sees(
+        &mut self,
+        k: i64,
+        w: &str,
+        q: i64,
+        class: Option<&super::class::Canon>,
+    ) -> Result<bool, String> {
+        let (_, ed, _, _, full) = self.edit_write(k)?;
+        match &ed.stamp {
+            Some(s) => {
+                let ctx = s.ctx.to_dvv();
+                Ok(match class {
+                    None => ctx.contains(w, q),
+                    Some(c) => c.dvv(&ctx).contains(w, q),
+                })
+            }
+            None => self.seen(&full, w, q, class),
+        }
+    }
+
     // ------------------------------------------------------------ 判定
 
     pub(super) fn reg_rows(&self, r: &Reg) -> Result<Vec<(i64, i64)>, String> {
@@ -908,27 +957,10 @@ impl<'t, 'c> Index<'t, 'c> {
         }
         let mut writes = Vec::with_capacity(ks.len());
         for &k in ks {
-            let e = self
-                .t
-                .entry_by_key(k)?
-                .ok_or_else(|| format!("gen4 index: register row {k} has no op"))?;
-            let (wall, logical, deps) = match &e.body {
-                SlotBody::Op(op) => (op.hlc.wall, op.hlc.logical, op.deps.clone()),
-                SlotBody::Raw3(raw) => {
-                    let v = raw.to_v3();
-                    (v.hlc.wall, v.hlc.logical, v.deps)
-                }
-                _ => return Err(format!("gen4 index: register row {k} is not an op")),
-            };
-            let Some(Body4::Edit(ed)) = body_of(&e) else {
-                return Err(format!("gen4 index: register row {k} is not an edit"));
-            };
-            // 作者的完整上下文：依赖 + 自己之前的全部（协议 3 `Op::ctx`）。
-            let mut full = (*deps).clone();
-            full.set(e.id.device, e.id.seq - 1);
+            let (id, ed, wall, logical, full) = self.edit_write(k)?;
             writes.push(Write {
                 k,
-                id: e.id,
+                id,
                 ed,
                 wall,
                 logical,
