@@ -1,4 +1,4 @@
-## BUG-4791 · 后台补刮计划失败被吞成空清单：待确认提醒条凭空消失且无日志
+## BUG-4798 · 后台补刮计划失败被吞成空清单：待确认提醒条凭空消失且无日志
 - **报告**：2026-11-17（来源：小说 / 漫画 / 视频优化清单复核 video-14，代码审读发现）
 - **真实性**：✅ 真 bug。根因（修前行号，基准 `8d58da51da9`）：
   - `packages/fushi_engine/lib/media/video/metadata/video_library_scrape_sweep.dart:678-684`
