@@ -1127,12 +1127,15 @@ class SyncOrchestrator {
     //
     // 互联（InterconnectSyncBackend）有声书包走 live 端点；
     // 云后端仍走原暂存路径（不变）。
+    List<RemoteVideoInfo>? hostVideosAfterFilePush;
     if (isInterconnect) {
       if (syncAudioBookFiles) await _syncAudiobooksLive(report, b);
       // 互联视频文件 live push（client→host）：单文件本地视频经 host 上传端点注册进
       // host 视频库。与云后端 syncVideoAssets 同为 syncVideoFiles 开关驱动、同为
       // upload-only（host→client 仍走按需流式/下载）。
-      if (syncVideoFiles) await _syncVideosLive(report, b);
+      if (syncVideoFiles) {
+        hostVideosAfterFilePush = await _syncVideosLive(report, b);
+      }
     } else {
       if (syncAudioBookFiles) {
         await syncAudiobookPackages(
@@ -1158,7 +1161,13 @@ class SyncOrchestrator {
       // 书进度已在书内容之后跑过（见上）。视频 / 有声书断点只对 host 也有的条目
       // 同步，留在各自文件上传之后：本轮刚推上去的那一项这一轮就能对上。
       _emitPhaseStart(SyncPhase.readingData);
-      await _syncVideoProgressLive(report, b);
+      // 文件阶段没向 host 推任何东西时，它取的那份 host 清单仍然是现状，不再取
+      // 第二遍；推过就重取（见 [_syncVideosLive] 的返回值约定）。
+      await _syncVideoProgressLive(
+        report,
+        b,
+        hostVideos: hostVideosAfterFilePush,
+      );
       mark('videoProgressLive');
       await _syncAudiobookProgressLive(report, b);
       mark('audiobookProgressLive');
