@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-17T19:30:58Z",
+ "generatedAt": "2026-11-17T20:08:58Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "538601d4d79d3bfa301baeb6b7b45500f6420d0a",
@@ -12,8 +12,8 @@
    "version": "3.3.0",
    "sha": "538601d4d79d3bfa301baeb6b7b45500f6420d0a",
    "unknown": false,
-   "publishedAt": "2026-11-17T19:30:46Z",
-   "testflight": false,
+   "publishedAt": "2026-11-17T20:08:45Z",
+   "testflight": true,
    "baseSeq": 28650,
    "prs": [
     3721,
@@ -57,16 +57,13 @@
      "state": "ok"
     },
     "windows": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44150320224"
+     "state": "ok"
     },
     "macos": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44150320224"
+     "state": "ok"
     },
     "ios": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44150320224"
+     "state": "ok"
     }
    }
   },
@@ -128,158 +125,10 @@
      "state": "ok"
     }
    }
-  },
-  {
-   "seq": 28629,
-   "version": "3.3.0",
-   "sha": "76421df71842084f166fb224a08f8deba5648768",
-   "unknown": false,
-   "publishedAt": "2026-11-17T11:02:49Z",
-   "testflight": true,
-   "baseSeq": 28546,
-   "prs": [
-    3644,
-    3689,
-    3686,
-    3683,
-    3680,
-    3650,
-    3664,
-    3659,
-    3661,
-    3660,
-    3657,
-    3646
-   ],
-   "direct": [],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44060409366"
-    },
-    "windows": {
-     "state": "ok"
-    },
-    "macos": {
-     "state": "ok"
-    },
-    "ios": {
-     "state": "ok"
-    }
-   }
   }
  ],
  "pending": null,
  "prs": {
-  "3644": {
-   "number": 3644,
-   "title": "fix(video): 原盘回盘菜单只在盘拒绝时退会话、连按不重复发 topMenu",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-17T09:58:00Z",
-   "additions": 337,
-   "deletions": 20,
-   "labels": []
-  },
-  "3646": {
-   "number": 3646,
-   "title": "fix: subtitle list show-effects toggle clipped on narrow favorites row; arm64 markup parity digest",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-17T05:55:10Z",
-   "additions": 125,
-   "deletions": 42,
-   "labels": []
-  },
-  "3650": {
-   "number": 3650,
-   "title": "fix(android): 跨应用语音 RPC 移出主线程、授权页销毁结账 start；CI 跑 Android JVM 单测",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-17T09:06:34Z",
-   "additions": 242,
-   "deletions": 27,
-   "labels": []
-  },
-  "3657": {
-   "number": 3657,
-   "title": "fix(video): 视频指纹在途去重 + host 担保不了字节时不再当老 host 放行 + 回跳去向行为测试",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-17T05:57:09Z",
-   "additions": 648,
-   "deletions": 86,
-   "labels": []
-  },
-  "3659": {
-   "number": 3659,
-   "title": "fix(screen-ocr): 截屏识字遗留缺陷（卡图丢失、引擎销毁挂死、Lens 手机文案）与测试缺口",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-17T06:11:47Z",
-   "additions": 901,
-   "deletions": 77,
-   "labels": []
-  },
-  "3660": {
-   "number": 3660,
-   "title": "fix(feedback): 视频先传、样本文件待传原子落地、macOS 另存、wrangler 缺依赖提示",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-17T05:59:28Z",
-   "additions": 457,
-   "deletions": 37,
-   "labels": []
-  },
-  "3661": {
-   "number": 3661,
-   "title": "feat(leaderboard): 拍板台网页上传附件（拖放 / 粘贴截图 / 选文件）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-17T06:06:37Z",
-   "additions": 271,
-   "deletions": 7,
-   "labels": []
-  },
-  "3664": {
-   "number": 3664,
-   "title": "feat(leaderboard): 拍板台加「要设计图」决定",
-   "author": "W1ght",
-   "mergedAt": "2026-11-17T06:39:11Z",
-   "additions": 53,
-   "deletions": 19,
-   "labels": []
-  },
-  "3680": {
-   "number": 3680,
-   "title": "fix(server): updateConfig 先写盘再换内存配置（BUG-4793，#3643 复审遗留）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-17T09:29:59Z",
-   "additions": 32,
-   "deletions": 5,
-   "labels": []
-  },
-  "3683": {
-   "number": 3683,
-   "title": "test(guards): 卡片来源两条源码守卫跟上 #3657 的结构",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-17T09:41:17Z",
-   "additions": 19,
-   "deletions": 3,
-   "labels": []
-  },
-  "3686": {
-   "number": 3686,
-   "title": "fix(android): 跨应用语音 provider RPC 后台化后补回异常回 error + 接线守卫",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-17T09:49:09Z",
-   "additions": 98,
-   "deletions": 2,
-   "labels": []
-  },
-  "3689": {
-   "number": 3689,
-   "title": "docs(bugs): 登记 BUG-4794 经典版式收藏档筛选分段被对半截窄",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-17T09:55:03Z",
-   "additions": 17,
-   "deletions": 1,
-   "labels": []
-  },
   "3692": {
    "number": 3692,
    "title": "fix(feedback): 清半成品失败不连累扫待传附件（#3660 复审补修）",
