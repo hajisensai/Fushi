@@ -164,6 +164,80 @@ fn a_device_on_two_locations_relays_between_them() {
     assert!(!rows.contains(&dc), "{rows:?}");
 }
 
+/// b 在 L2 上的状态行（`loc_state`、`loc_heads`）数。
+fn l2_rows(d: &Dev) -> (i64, i64) {
+    let c = Connection::open_with_flags(
+        d.dir.0.join(GEN4_FILE),
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .unwrap();
+    let n = |q: &str| -> i64 { c.query_row(q, ["L2"], |r| r.get(0)).unwrap() };
+    (
+        n("SELECT COUNT(*) FROM loc_state WHERE loc_key = ?1"),
+        n("SELECT COUNT(*) FROM loc_heads WHERE loc_key = ?1"),
+    )
+}
+
+/// 移除位置（G8-7c，`location_forget`）：b 同步着 L1、L2，为 L2 留着 a 的原文；移除 L2 之后它的状态行（加密记忆 / loc
+/// 标记 / `last_ok`、head 记录）全没了，留给它的原文按剩下的一个位置全删，之后 a 再写、b 在 L1 收也不再留原文（不再
+/// 向 L2 转发）；再移除一次照常回包。之后把 L2 加回来：b 在 L2 上的 head 代号接着往上（水位没清），收敛照旧。
+#[test]
+fn a_removed_location_is_forgotten_and_no_longer_relayed_to() {
+    let a = Dev::new("g87fga");
+    let mut b = Dev::new("g87fgb");
+    let (mut l1, mut l2) = (Loc::new(), Loc::new());
+    let plain = Opts::default();
+    let sealed = Opts {
+        key: Some(KEY2),
+        ..Opts::default()
+    };
+    round(&b, &mut l1, "L1", T1, plain);
+    let before = round(&b, &mut l2, "L2", T1, sealed);
+    let gen_before = before.head["gen"].as_u64().unwrap();
+    a.write(T1 + 1, N1, "鯨");
+    round(&a, &mut l1, "L1", T1 + 2, plain);
+    round(&b, &mut l1, "L1", T1 + 3, plain);
+    assert!(relay_segs(&mut b) >= 1, "b keeps a's segment for L2");
+    let (st, hs) = l2_rows(&b);
+    assert!(st == 1 && hs >= 1, "{st} {hs}");
+
+    let (v, _) = cmd(
+        b.h,
+        "location_forget",
+        T1 + 4,
+        json!({"location": "L2"}),
+        &[],
+    );
+    assert!(v["forgotten"].as_u64().unwrap() >= 2, "{v}");
+    assert!(v["relayDropped"].as_u64().unwrap() >= 1, "{v}");
+    assert_eq!(l2_rows(&b), (0, 0));
+    assert_eq!(relay_segs(&mut b), 0);
+    assert!(relay(&b, &mut l2, "L2", Some(KEY2), T1 + 4).is_empty());
+    // 只剩一个位置：再收别的设备的段也不留原文。
+    a.write(T1 + 5, N2, "猫");
+    round(&a, &mut l1, "L1", T1 + 6, plain);
+    round(&b, &mut l1, "L1", T1 + 7, plain);
+    assert_eq!(b.field(N2), Some(json!("猫")));
+    assert_eq!(relay_segs(&mut b), 0);
+    // 幂等。
+    let (v, _) = cmd(
+        b.h,
+        "location_forget",
+        T1 + 8,
+        json!({"location": "L2"}),
+        &[],
+    );
+    assert_eq!(v, json!({"forgotten": 0, "relayDropped": 0}));
+    // 加回来：head 代号接着往上，b 在 L2 上照常发布。
+    let after = round(&b, &mut l2, "L2", T1 + 9, sealed);
+    assert!(
+        after.head["gen"].as_u64().unwrap() > gen_before,
+        "{}",
+        after.head
+    );
+    assert_eq!(after.head["unchanged"], json!(false));
+}
+
 /// a 的作者自己后来也连上了 L2：b 留着的 a 的原文被删掉（L2 上作者 head 已覆盖），转发件也不再给。
 #[test]
 fn an_author_reaching_the_location_itself_ends_the_relay() {
@@ -715,6 +789,8 @@ fn relay_lookups_use_their_keys() {
         (crate::store::gen4::sync_state::RELAY_OUT_OF_SQL, 3),
         (RELAY_LIST_SQL, 2),
         (RHEAD_RANGE_SQL, 2),
+        (super::sync::RELAY_AUTHORS_SQL, 1),
+        (super::sync::LOC_STATE_DROP_SQL, 2),
     ] {
         let params: Vec<i64> = (0..n).map(|i| i + 1).collect();
         let plan: Vec<String> = c

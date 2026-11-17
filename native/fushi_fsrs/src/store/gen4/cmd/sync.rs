@@ -1487,6 +1487,56 @@ pub fn obsolete_former(t: &Truth<'_>, col: i64, req: &Value) -> Result<Value, St
     Ok(json!({"delete": delete}))
 }
 
+// ---------------------------------------------------------------------- 移除位置
+
+/// 可转发原文里出现过的作者（`relay_segs` 唯一约束的前缀 `(col, device)` 上去重）。
+pub(crate) const RELAY_AUTHORS_SQL: &str =
+    "SELECT DISTINCT device FROM relay_segs WHERE col = ?1 ORDER BY device";
+
+/// 删掉一个位置的加密记忆 / loc 标记 / `last_ok`（`loc_state` 主键点删）。
+pub(crate) const LOC_STATE_DROP_SQL: &str = "DELETE FROM loc_state WHERE col = ?1 AND loc_key = ?2";
+
+/// `location_forget {profile, location}`（`write_local`）：用户移除了同步位置 [location]（位置管理入口：本机文件夹位置的
+/// 「移除」，以后 G10 的 host 目录 / 通道位置的移除也走这一条）。本机不再记这个位置的任何同步状态：
+///
+/// - `loc_state` 那一行（加密记忆、loc 标记、`last_ok`）——转发目标只从这里取（`cmd/sync_relay.rs` `locations`），行没了
+///   就**不再向它转发**；
+/// - [Truth::forget_location]：位置上各设备的 head 记录、转发记账与待删的转发件、旧根指纹；
+/// - 旧根接手累计的段结论（`oldroot.rs` [Truth::oldroot_forget_run]）；
+/// - 为它留着的可转发原文：按剩下的位置逐个作者重判（[super::sync_relay::prune]；只剩一个位置时全删）。
+///
+/// 不动：已传水位与承袭上传指纹（键带位置与密钥指纹，里面记着本机在那里写过的最大 head 代号——同一个位置再加回来时
+/// 代号必须接着往上，不能回到 1 让别的设备当成旧 head）；媒体的「在不在」记录与清单代号（`media_*`：代号只升不降，
+/// 一个代号只对应一个文件，G8-3）。位置上的文件一个不碰（位置已经不用了，上面的东西不归本机管），本机的卡片与复习
+/// 记录一条不动。没记过这个位置也照常回包（幂等）。回包 `{forgotten, relayDropped}`：删掉的状态行数、删掉的原文份数。
+pub fn location_forget(t: &Truth<'_>, col: i64, req: &Value) -> Result<Value, String> {
+    let location = str_req(req, "location")?;
+    let mut forgotten = t.forget_location(col, location)?;
+    forgotten += t.write(|| {
+        t.conn()
+            .prepare_cached(LOC_STATE_DROP_SQL)
+            .map_err(sql)?
+            .execute(params![col, location])
+            .map_err(sql)
+            .map(|n| n as u64)
+    })?;
+    t.oldroot_forget_run(col, location)?;
+    let authors: Vec<Vec<u8>> = {
+        let mut stmt = t.conn().prepare_cached(RELAY_AUTHORS_SQL).map_err(sql)?;
+        let rows = stmt.query_map([col], |r| r.get(0)).map_err(sql)?;
+        rows.collect::<rusqlite::Result<_>>().map_err(sql)?
+    };
+    let mut dropped = 0u64;
+    for a in authors {
+        let device = Id(a
+            .as_slice()
+            .try_into()
+            .map_err(|_| "location_forget: bad device in relay_segs")?);
+        dropped += super::sync_relay::prune(t, col, &device)?;
+    }
+    Ok(json!({"forgotten": forgotten, "relayDropped": dropped}))
+}
+
 // ---------------------------------------------------------------------- 设备：停用、换身份
 
 /// `retire {profile, device, retire, now}`：停用 / 取消停用一台别的设备（协议 3 `devices.rs` `retire` 同语义）：停用后

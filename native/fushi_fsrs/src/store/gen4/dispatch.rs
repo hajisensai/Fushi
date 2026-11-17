@@ -136,6 +136,8 @@ pub fn wiring(op: &str) -> Option<Wiring> {
         "location_root" | "plan" | "ingest" | "ingest_finish" | "outbox" | "outbox_ack"
         | "head" | "obsolete" | "retire" | "rotate" | "location_sealed" | "location_seal"
         | "digest" => Wired,
+        // 移除位置（G8-7c，`cmd/sync.rs` `location_forget`；新代才有的命令）
+        "location_forget" => Wired,
         "ingest_yield" | "ingest_commit" | "ingest_batch" | "ingest_prepare" | "replay_pending" => {
             Removed(NO_CHANNEL)
         }
@@ -686,6 +688,9 @@ fn run(
         }
         "location_seal" => {
             c.write_local(|t| cmd::sync::location_seal(t, col_of(t, profile)?, req, blobs))?
+        }
+        "location_forget" => {
+            c.write_local(|t| cmd::sync::location_forget(t, col_of(t, profile)?, req))?
         }
         // ------------------------------------------------------------ 转发（cmd/sync_relay.rs）
         "relay_outbox" => {
