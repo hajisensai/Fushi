@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4120 条。点号进各自文件。
+> 共 4121 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4766](bugs/BUG-4766-srs-text-import-batch-failure-leaves-new-decks.md) | 🚧 | 🚧 | 文本导入某一批落库抛异常时这一批刚建的牌组留成空牌组 |
 | [BUG-4764](bugs/BUG-4764-srs-text-import-progress-stop-empty-decks.md) | ✅ | ✅ | 文本导入纯更新时进度一直是 0、点不了停止；叫停后牌组列新建的牌组留成空牌组 |
 | [BUG-4763](bugs/BUG-4763-srs-browse-source-sort-episode-split.md) | ✅ | ✅ | 复习卡浏览按出处列排序时同一部番的笔记被别作同名集拆散，与出处视图的集顺序不一致 |
 | [BUG-4762](bugs/BUG-4762-cover-meta-store-zone-hang.md) | ✅ | ✅ | CoverMetaStore 共享加载 / 写锁建在发起者 Zone 里，那个 Zone 停摆后同目录读写全部永久挂住 |
