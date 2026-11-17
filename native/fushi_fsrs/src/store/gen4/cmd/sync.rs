@@ -56,7 +56,7 @@ use crate::store::gen4::derive::{Index, Settled};
 use crate::store::gen4::fork::{self, ForkScan, OwnHead};
 use crate::store::gen4::ingest::Settle;
 use crate::store::gen4::local;
-use crate::store::gen4::receive::{Received, Receiver, Taken};
+use crate::store::gen4::receive::{Defer, Received, Receiver, Taken};
 use crate::store::gen4::refresh::{TALLY_KEY, Tally};
 use crate::store::gen4::schema::{k_range, k_seq, sql};
 use crate::store::gen4::sync_state::LocHead;
@@ -940,6 +940,9 @@ pub fn ingest(
     let mut kept = 0u64;
     // 这一批交完了几段（后面的 Dart 下一个事务再交；中途停下的那一段算没交完）。
     let mut rest = blobs.len();
+    // 等 Purge 的重切件（下标、作者、延后的结论）：这一批交完之后再收一次（见循环之后）。
+    let mut purge_wait: Vec<(usize, Option<Id>, Taken)> = Vec::new();
+    let who = |author: Option<Id>| author.map_or_else(|| "?".to_owned(), |d| d.text());
     for (i, b) in blobs.iter().enumerate() {
         if rx.exhausted() {
             rest = i;
@@ -969,10 +972,10 @@ pub fn ingest(
                     kept += 1;
                 }
             }
-            other => errors.push(format!(
-                "{}: {other:?}",
-                author.map_or_else(|| "?".to_owned(), |d| d.text())
-            )),
+            Taken::Deferred(Defer::PurgePending(_)) if recut => {
+                purge_wait.push((i, author, taken.clone()));
+            }
+            other => errors.push(format!("{}: {other:?}", who(author))),
         }
         if cut {
             // 预算在这一段中途用完：这一段下一批原样再交（已落的部分按本机已有跳过）；比链等它整段收完再做。
@@ -997,6 +1000,35 @@ pub fn ingest(
                 }
                 Err(e) => errors.push(format!("own segment: {e:?}")),
             }
+        }
+    }
+    // 重切件点名的 Purge 可能在同一批后面的段里：整批交完（没被预算截断）之后，这些件再收一次，收段的结论与一批之内
+    // 的先后无关。还缺（Purge 不在这一批）就照常延后，下一轮再拉。这一步里预算用完 / 截断：从这一件起 Dart 下一个
+    // 事务重交（下标递增，剩下的都在它后面），不报错。
+    if rest == blobs.len() {
+        for (i, author, _) in purge_wait {
+            if rx.exhausted() {
+                rest = i;
+                break;
+            }
+            let b = &blobs[i];
+            let taken = rx.native_again(b, key)?;
+            match &taken {
+                Taken::Landed { .. } => {
+                    if author.is_some_and(|a| a != me.device) && keep(t, col, b, key)? {
+                        kept += 1;
+                    }
+                }
+                other => errors.push(format!("{}: {other:?}", who(author))),
+            }
+            if rx.cut() {
+                rest = i;
+                break;
+            }
+        }
+    } else {
+        for (_, author, taken) in purge_wait {
+            errors.push(format!("{}: {taken:?}", who(author)));
         }
     }
     let r: Received = rx.finish()?;

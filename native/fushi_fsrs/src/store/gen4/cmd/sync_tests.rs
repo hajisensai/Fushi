@@ -283,6 +283,8 @@ pub(super) struct Opts<'a> {
     pub(super) max_bytes: Option<u64>,
     pub(super) skip_unchanged: bool,
     pub(super) archive: bool,
+    /// 这一批里重切中继件（`FRX4`）排在最前面交（同一批里它点名的 Purge 在后面）。
+    pub(super) recut_first: bool,
 }
 
 /// 一轮里各步的回包（断言用）。
@@ -347,13 +349,16 @@ pub(super) fn round(d: &Dev, loc: &mut Loc, location: &str, now: i64, o: Opts<'_
     );
     assert_eq!(plan["needsUpgrade"], json!(false), "{plan}");
     // 3. 收。
-    let fetched: Vec<Vec<u8>> = plan["fetch"]
+    let mut fetched: Vec<Vec<u8>> = plan["fetch"]
         .as_array()
         .unwrap()
         .iter()
         .flat_map(|f| f["files"].as_array().unwrap().clone())
         .filter_map(|p| fetch_seg(loc, p.as_str().unwrap()))
         .collect();
+    if o.recut_first {
+        fetched.sort_by_key(|b| !b.starts_with(crate::gen4::recut::MAGIC));
+    }
     let mut fork = plan["finishPending"] == json!(true);
     if !fetched.is_empty() {
         let (v, _) = cmd(d.h, "ingest", now, json!({"key": o.key}), &fetched);

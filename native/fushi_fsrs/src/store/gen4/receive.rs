@@ -339,6 +339,17 @@ impl<'t, 'c> Receiver<'t, 'c> {
         taken
     }
 
+    /// 这一批里先前因 [Defer::PurgePending] 延后的重切件再收一次（`cmd/sync.rs` `ingest` 在一批交完之后调：它点名的
+    /// Purge 可能在同一批后面的段里，那时已落或进了等待缓冲）。先前那次延后不再计数，计这一次的结论。
+    pub fn native_again(
+        &mut self,
+        bytes: &[u8],
+        key: Option<&CollectionKey>,
+    ) -> Result<Taken, String> {
+        self.tally.deferred = self.tally.deferred.saturating_sub(1);
+        self.native(bytes, key)
+    }
+
     // ------------------------------------------------------------ 原生段
 
     /// 收一个原生段（`seg-…`，`FSG4`）、中继件（`rly-…`，`FRL4`）或重切中继件（`rly-…`，`FRX4`）。[key] = 它所在位置的密钥。
