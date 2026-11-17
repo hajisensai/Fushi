@@ -288,7 +288,9 @@ class MangaAudioPlaybackPlan {
           ..bookKey = bookKey
           ..chapterHref = mangaPageHref(item.page)
           ..sentenceIndex = i
-          ..textFragmentId = line == null ? '' : mangaBlocksFragment(line.blocks)
+          ..textFragmentId = line == null
+              ? ''
+              : mangaBlocksFragment(line.blocks)
           ..text = line?.text ?? ''
           ..startMs = 0
           ..endMs = item.durationMs

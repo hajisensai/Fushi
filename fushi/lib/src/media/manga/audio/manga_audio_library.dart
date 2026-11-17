@@ -18,6 +18,8 @@ import 'dart:io';
 
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/manga/mokuro_payload.dart'
+    show parseMangaJson;
 import 'package:fushi_engine/tts/manga_audio/manga_audio_render.dart';
 import 'package:path/path.dart' as p;
 
@@ -36,7 +38,8 @@ class MangaAudioRegistration {
   String get manifestDir => manifestFile.parent.path;
 
   /// 第 [lineIndex] 句音频的绝对路径。
-  String linePath(MangaRenderedLine line) => mangaAudioLinePath(manifestFile, line);
+  String linePath(MangaRenderedLine line) =>
+      mangaAudioLinePath(manifestFile, line);
 }
 
 /// 清单里一句音频（相对清单目录）的绝对路径。
@@ -50,15 +53,16 @@ List<AudioCue> mangaAudioCues(String bookKey, MangaRenderManifest manifest) =>
         _cueFor(bookKey, manifest.lines[i], i),
     ];
 
-AudioCue _cueFor(String bookKey, MangaRenderedLine line, int index) => AudioCue()
-  ..bookKey = bookKey
-  ..chapterHref = mangaPageHref(line.page)
-  ..sentenceIndex = index
-  ..textFragmentId = mangaBlocksFragment(line.blocks)
-  ..text = line.text
-  ..startMs = 0
-  ..endMs = line.durationMs
-  ..audioFileIndex = index;
+AudioCue _cueFor(String bookKey, MangaRenderedLine line, int index) =>
+    AudioCue()
+      ..bookKey = bookKey
+      ..chapterHref = mangaPageHref(line.page)
+      ..sentenceIndex = index
+      ..textFragmentId = mangaBlocksFragment(line.blocks)
+      ..text = line.text
+      ..startMs = 0
+      ..endMs = line.durationMs
+      ..audioFileIndex = index;
 
 /// 登记（或整份替换）[bookKey] 的漫画有声成品。幂等：同一份清单重复登记得到同样的
 /// 行；换了清单则音频列表、对齐与 cue 整组换掉。进度按仓库层既有规则处理：音频列表
@@ -84,7 +88,10 @@ Future<void> registerMangaAudio(
         mangaAudioLinePath(manifestFile.absolute, line),
     ],
   );
-  await repo.saveCues(bookKey: bookKey, cues: mangaAudioCues(bookKey, manifest));
+  await repo.saveCues(
+    bookKey: bookKey,
+    cues: mangaAudioCues(bookKey, manifest),
+  );
 }
 
 /// 单句补回之后更新库：生成端已用 [MangaRenderManifest.replaceLine] 换好这一句并
@@ -152,4 +159,59 @@ Future<MangaAudioRegistration?> loadMangaAudio(
     manifestFile: manifestFile,
     manifest: manifest,
   );
+}
+
+/// 手动导入一份清单的结果。
+enum MangaAudioImportResult {
+  imported,
+
+  /// 读不出 / 结构坏的清单。
+  invalid,
+
+  /// 清单页数与这一卷的 `manga.json` 不符（不是这卷的成品）。
+  pageMismatch,
+
+  /// 清单引用的音频文件缺失。
+  missingAudio,
+}
+
+/// 漫画卡「导入漫画有声」：校验清单（结构、页数与本卷一致、音频都在）后登记。
+/// 生成端（制作台）直接调 [registerMangaAudio]，不走这里。
+Future<MangaAudioImportResult> importMangaAudioManifest(
+  FushiDatabase db, {
+  required String bookKey,
+  required File manifestFile,
+}) async {
+  final MangaRenderManifest? manifest = await MangaRenderManifest.load(
+    manifestFile,
+  );
+  if (manifest == null) return MangaAudioImportResult.invalid;
+  final EpubBookRow? row = await db.getEpubBook(bookKey);
+  if (row != null) {
+    final File mangaJson = File(p.join(row.extractDir, row.epubPath));
+    if (await mangaJson.exists()) {
+      try {
+        final int pages = parseMangaJson(
+          await mangaJson.readAsString(),
+        ).images.length;
+        if (pages != manifest.pageCount) {
+          return MangaAudioImportResult.pageMismatch;
+        }
+      } on Object {
+        // 读不出本卷的 manga.json：不拿它否决导入，播放时阅读器还会再核一次页数。
+      }
+    }
+  }
+  for (final MangaRenderedLine line in manifest.lines) {
+    if (!await File(mangaAudioLinePath(manifestFile, line)).exists()) {
+      return MangaAudioImportResult.missingAudio;
+    }
+  }
+  await registerMangaAudio(
+    db,
+    bookKey: bookKey,
+    manifestFile: manifestFile,
+    manifest: manifest,
+  );
+  return MangaAudioImportResult.imported;
 }

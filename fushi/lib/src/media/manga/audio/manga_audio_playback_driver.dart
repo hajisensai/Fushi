@@ -71,6 +71,9 @@ class MangaAudioPlaybackDriver extends ChangeNotifier
       : MangaPlaybackMode.listenOnly;
 
   bool get followPage => _followPage;
+
+  /// 会话停止时随之释放；释放后宿主不要再调它。
+  bool get isDisposed => _disposed;
   bool get hasHost => _host != null;
   bool get isPlaying => _player.isPlaying;
   int get positionMs => _player.positionMs;
