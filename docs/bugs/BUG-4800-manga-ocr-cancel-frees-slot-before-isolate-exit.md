@@ -49,22 +49,35 @@
     事件：取消请求没有当场传到任务、或中间任何一层丢掉取消 Future 都变红。
   - `fushi/test/sync/manga_ocr_host_cancel_waits_exit_test.dart`（1 条，提交 `7c3e8af6646`）：
     互联主机 `cancelAndCleanup` 等执行体停下之后才删页图、才放行串行队列里的下一个任务。
+    同文件「disposeAll」组 5 条（提交 `4e1d78fa2f8`）：执行体没停就返回、排队中的任务不再启动、
+    完成信号等执行体停下才补；停机途中别的路径增删任务不抛并发修改；途中的 `cancelAndCleanup`
+    仍等执行体停下才删页图；执行体收尾抛错时完成信号照补；真 `FushiSyncServer.stop()` 不被还没
+    停下的执行体挂住。
 - **备注**：
   - **真机复测未做，待补**（Android / iOS，本地模型）：整卷识别中点暂停后立刻点继续、以及取消后
     立刻对另一本点识别，量 ① 取消到旧 isolate 退出的时间（`manga_ocr_volume_job` isolate 消失）
     ② 这段时间的内存峰值（应只有一套模型）。尾巴多长此前没有实测数据；「暂停立即有反应」「被
     打断的那一页只识别一次」也只有自动化测试，没在设备上看过。
   - 副作用：所有 await `ocrFolder` 订阅取消的调用方现在都等到 isolate 退出，包括互联主机
-    `fushi_manga_ocr_host.dart` 的 `cancelAndCleanup` / `disposeAll` 与 `fushi_server` 的 `ocr`
-    命令。`cancelAndCleanup` 等是对的（它的串行队列原先有同一个问题：补完成信号时旧 isolate 还
+    `fushi_manga_ocr_host.dart` 的 `cancelAndCleanup`（`disposeAll` 见下一条）。
+    `cancelAndCleanup` 等是对的（它的串行队列原先有同一个问题：补完成信号时旧 isolate 还
     活着；页图也不该在旧 isolate 还在读时删），客户端的 DELETE 因此最多多等一页的识别时间。
-  - **遗留（没修）**：`disposeAll`（`packages/fushi_engine/lib/sync/fushi_manga_ocr_host.dart:195`）
-    不该等——`FushiSyncServer.stop()`（`fushi_sync_server.dart:1178`）顺序 await 它，其后才
-    dispose 屏幕 OCR / 主机任务 / 助手。主机代跑整卷 OCR 时关互联，`stop()` 现在要等 isolate 跑完
-    当前页（原先立即返回），原生推理卡死时 `stop()` 不完成；它还在 `for … in _jobs.values` 里
-    await，等待期间别的路径改 `_jobs` 会抛 `ConcurrentModificationError`。修法是先对任务快照发出
-    全部取消、补完成信号、清表，不 await 取消的 Future。没在本条里改：那个文件登记在另一个在途
-    分支（`pr/manga-ocr-host-io`，PR #3696）名下，等它合入后单独修。
+  - **`disposeAll` 已修**（提交 `4e1d78fa2f8`）：它原先在 `for … in _jobs.values` 里逐个
+    `await job.subscription?.cancel()`，而 `FushiSyncServer.stop()`（`fushi_sync_server.dart:1178`）
+    顺序 await 它，其后才 dispose 屏幕 OCR / 主机任务 / 助手——主机代跑整卷 OCR 时关互联，
+    `stop()` 要等 isolate 跑完当前页，原生推理卡死时不完成；等待期间别的路径改 `_jobs` 还会抛
+    `ConcurrentModificationError`。现在它取任务快照、清表、逐个发取消就返回，中间没有 await。
+    收尾仍排在各自执行体停下之后：串行队列的完成信号到那时才补（管理器仍被引用时，后面的任务
+    不会在旧执行体还占着模型时起跑），途中的 `cancelAndCleanup` 等的是同一个取消 Future，删页图
+    也仍在其后；执行体收尾抛的错记日志。顺带改掉一处：停机时还在排队的任务原先保持 `running`，
+    轮到时会在停机之后起一个 isolate，现在标成已取消。要动任务根目录的调用方可等
+    `whenExecutorsStopped`（目前没有这样的调用方，停机不删目录）。
+  - 其他 await 取消的调用方核对过：`fushi_server` 的 `ocr` 命令是 `await for` 读到流结束，循环体
+    不提前退出，走不到取消；向导、阅读器、管理页对 OCR 订阅的取消都是 `unawaited`。只有互联
+    主机这两处在等。
+  - 没改：`MangaOcrHostJobManager.start()` 在 `await service.modelStatus()` 期间遇上停机，回来后
+    仍会把任务排进队列并起跑（停机前就有，一次模型状态查询的窗口）；app 侧每次开互联新建管理器
+    与服务，「关互联后立刻再开」时旧 isolate 可能还在收尾当前页，新管理器的队列管不到它。
   - 没动：Lens / 系统 OCR / 外部 mokuro / 配对主机的事件流也是 `async*` + `await for`，取消同样
     要等到下一个事件才生效（Lens 一页一次 HTTP、系统 OCR 一页一次平台调用，晚的是「当前这一页
     之后才停」；外部 mokuro 的 kill 要等它下一行输出）。它们不占模型内存，不在本条范围，另记。
