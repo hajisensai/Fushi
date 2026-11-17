@@ -102,6 +102,14 @@
 | [BUG-4799](bugs/BUG-4799-kavita-page-image-whole-request-timeout.md) | ✅ | ✅ | Kavita 页图 / 封面用整请求超时且不中止，慢链路大页图必失败；同步路径吞掉的失败不留日志 |
 | [BUG-4798](bugs/BUG-4798-manga-split-large-panel-rows-dead.md) | ✅ | ✅ | 分镜大格按行切是死代码：文字框上下排列时被切成竖条 |
 | [BUG-4798](bugs/BUG-4798-interconnect-ocr-resume-cache-never-hits.md) | ✅ | ✅ | 互联主机代跑 OCR：取消后重传同卷，保留的逐页断点缓存一页也命中不了 |
+> 共 4157 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4801](bugs/BUG-4801-web-mine-host-machine-playhead-persisted.md) | ✅ | ✅ | 制卡交接页把机器驱动的播放头写成本书续播点，并在开跑前后计观看 |
+| [BUG-4800](bugs/BUG-4800-web-mine-queue-yield-marked-navigate-timeout.md) | ✅ | ✅ | 空闲自动制卡正在换视频时用户回来，那一行被永久标成 navigate_timeout |
+| [BUG-4799](bugs/BUG-4799-web-mine-queue-round-throw-no-finish.md) | ✅ | ✅ | 网页视频制卡队列一轮中途抛异常时不收尾：交接页回不去、后台制卡页不关、调度器停在「在跑」 |
+| [BUG-4798](bugs/BUG-4798-web-video-session-dispose-stale-cookie-copyback.md) | ✅ | ✅ | 关掉原生播放器网页档时，把内置档罐里的旧 cookie 整批盖回浏览器共享罐 |
 | [BUG-4797](bugs/BUG-4797-feedback-files-share-video-ip-quota.md) | 🚧 | 🚧 | 样本文件与录屏共用每 IP 每天 200 MiB 额度，满额样本文件仍会被 429 挤掉 |
 | [BUG-4796](bugs/BUG-4796-disc-back-double-press-repeat-topmenu.md) | ✅ | ✅ | 原盘正片快速连按两次返回会重复发 topMenu，第二次失败会整盘退出 |
 | [BUG-4795](bugs/BUG-4795-disc-back-to-menu-transient-error-exits.md) | ✅ | ✅ | 原盘正片按返回回盘菜单时，任何暂时性错误都会让整个原盘会话退出 |
